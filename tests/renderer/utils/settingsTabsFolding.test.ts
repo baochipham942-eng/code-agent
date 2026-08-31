@@ -62,13 +62,13 @@ describe('Settings IA 分组 v2', () => {
     expect(CAPABILITY_HUB_TAB_BY_SETTINGS_TAB.plugins).toBe('plugins');
   });
 
-  it('voice-input 未安装时深链落到功能包，装入后才落设置页', () => {
+  it('voice-input 未安装时深链落到插件，装入后才落设置页', () => {
     expect(isSettingsTabCapabilityAvailable('voiceInput', new Set())).toBe(false);
     expect(isSettingsTabCapabilityAvailable('voiceLive', new Set())).toBe(false);
     expect(isSettingsTabCapabilityAvailable('voiceModel', new Set())).toBe(false);
     expect(resolveSettingsDeepLink('voiceInput', new Set())).toEqual({
       kind: 'capabilityHub',
-      tab: 'packages',
+      tab: 'plugins',
       capabilityId: 'builtin.voice-input',
     });
     expect(resolveSettingsDeepLink('voiceInput', new Set(['builtin.voice-input']))).toEqual({

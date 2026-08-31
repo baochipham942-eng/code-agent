@@ -50,8 +50,13 @@ describe('settings search index', () => {
     expect(searchSettings('capability center', { isAdmin: true })).toHaveLength(0);
   });
 
-  it('hides plugins from regular-user search while keeping hooks searchable', () => {
-    expect(searchSettings(zh.settings.searchIndex.pluginMarketplace).map((entry) => entry.tab)).not.toContain('plugins');
+  it('routes regular-user plugin searches to the hub while keeping marketplace source management hidden', () => {
+    expect(searchSettings(zh.settings.searchIndex.pluginMarketplace).map((entry) => entry.tab)).toContain('plugins');
+    expect(searchSettings(zh.settings.searchIndex.pluginVisibility).map((entry) => entry.tab)).toContain('plugins');
+    expect(searchSettings(zh.settings.searchIndex.marketplaceSource).map((entry) => entry.labelKey))
+      .not.toContain('marketplaceSource');
+    expect(searchSettings(zh.settings.searchIndex.marketplaceSource, { isAdmin: true }).map((entry) => entry.labelKey))
+      .toContain('marketplaceSource');
     expect(searchSettings(zh.settings.searchIndex.hookConfig).map((entry) => entry.tab)).toContain('hooks');
   });
 

@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { IPC_CHANNELS } from '../../../src/shared/ipc';
 
-// marketplace.ipc.ts：marketplace:* 通道。12 个 handler 全经 admin 门控包装
-// （非 admin 一律拒），委派给 skills/marketplace 的 12 个函数并归一成
+// marketplace.ipc.ts：marketplace:* 通道。目录浏览和目录内插件生命周期对普通用户开放，
+// 只有源的增删保留 admin 门控；其余委派给 skills/marketplace 并归一成
 // MarketplaceResult。mock 这 12 个函数 + adminGuard，验证门控 / 成功映射 /
 // manifest 读失败降级 / refresh-all 容错 / 安装记录回填 / 错误归一 errorResult。
 
@@ -70,12 +70,63 @@ beforeEach(() => {
   registerMarketplaceHandlers({ handle: (ch: string, fn: HandlerFn) => handlers.set(ch, fn) } as never);
 });
 
-describe('admin 门控', () => {
-  it('非 admin 调任意通道一律拒', async () => {
+describe('来源权限', () => {
+  it('非 admin 可读取目录，但增删 marketplace 源仍被拒且不触碰服务', async () => {
     mp.isAdmin = false;
-    expect(await call(IPC_CHANNELS.MARKETPLACE_LIST)).toEqual({ success: false, error: 'Marketplace: Admin permission required' });
-    expect(await call(IPC_CHANNELS.MARKETPLACE_INSTALL_PLUGIN, 'p')).toEqual({ success: false, error: 'Marketplace: Admin permission required' });
-    expect(mp.listMarketplaces).not.toHaveBeenCalled();
+    expect(await call(IPC_CHANNELS.MARKETPLACE_LIST)).toEqual({ success: true, data: [] });
+    expect(await call(IPC_CHANNELS.MARKETPLACE_ADD, 'https://untrusted.example/catalog')).toEqual({
+      success: false,
+      error: 'Marketplace: Admin permission required',
+    });
+    expect(await call(IPC_CHANNELS.MARKETPLACE_REMOVE, 'official')).toEqual({
+      success: false,
+      error: 'Marketplace: Admin permission required',
+    });
+    expect(mp.addMarketplace).not.toHaveBeenCalled();
+    expect(mp.removeMarketplace).not.toHaveBeenCalled();
+  });
+
+  it('非 admin 可安装已配置目录里的插件，伪造或未上架 spec 被拒', async () => {
+    mp.isAdmin = false;
+    mp.listMarketplaces.mockResolvedValue({ official: entry() });
+    mp.listAllPlugins.mockResolvedValue([{
+      plugin: { name: 'pdf', description: 'PDF', source: './pdf' },
+      marketplace: 'official',
+    }]);
+
+    expect(await call(IPC_CHANNELS.MARKETPLACE_INSTALL_PLUGIN, 'pdf@official')).toMatchObject({ success: true });
+    expect(mp.installPlugin).toHaveBeenCalledWith(
+      'pdf@official',
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+
+    expect(await call(IPC_CHANNELS.MARKETPLACE_INSTALL_PLUGIN, 'shell@official')).toEqual({
+      success: false,
+      error: 'Marketplace plugin is not listed by a configured source',
+    });
+    expect(await call(IPC_CHANNELS.MARKETPLACE_INSTALL_PLUGIN, 'pdf@unknown')).toEqual({
+      success: false,
+      error: 'Marketplace plugin source is not configured',
+    });
+    expect(mp.installPlugin).toHaveBeenCalledTimes(1);
+  });
+
+  it('非 admin 可卸载和启停已配置目录里的已安装插件', async () => {
+    mp.isAdmin = false;
+    mp.listMarketplaces.mockResolvedValue({ official: entry() });
+    mp.listInstalledPlugins.mockResolvedValue({
+      'pdf@official': {
+        plugin: 'pdf', marketplace: 'official', scope: 'user', isEnabled: true,
+        installedAt: '2026-01-02T00:00:00.000Z', pluginRoot: '/pdf', types: [], skills: [], commands: [],
+      },
+    });
+
+    expect(await call(IPC_CHANNELS.MARKETPLACE_DISABLE_PLUGIN, 'pdf@official')).toEqual({ success: true, data: undefined });
+    expect(await call(IPC_CHANNELS.MARKETPLACE_ENABLE_PLUGIN, 'pdf@official')).toEqual({ success: true, data: undefined });
+    expect(await call(IPC_CHANNELS.MARKETPLACE_UNINSTALL_PLUGIN, 'pdf@official', 'user')).toEqual({ success: true, data: undefined });
+    expect(mp.disablePlugin).toHaveBeenCalledWith('pdf@official');
+    expect(mp.enablePlugin).toHaveBeenCalledWith('pdf@official');
+    expect(mp.uninstallPlugin).toHaveBeenCalledWith('pdf@official', { scope: 'user' });
   });
 });
 

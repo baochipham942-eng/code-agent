@@ -105,7 +105,7 @@ async function locatePackageRoot(initialDir: string): Promise<string> {
     if (visibleDirs.length !== 1) break;
     current = path.join(current, visibleDirs[0].name);
   }
-  throw new Error('能力包里找不到 plugin.json、manifest.json 或 package.json');
+  throw new Error('插件里找不到 plugin.json、manifest.json 或 package.json');
 }
 
 async function readRawManifest(rootDir: string): Promise<Record<string, unknown>> {
@@ -117,17 +117,17 @@ async function readRawManifest(rootDir: string): Promise<Record<string, unknown>
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue;
       if (error instanceof SyntaxError) {
-        throw new Error(`能力包清单 ${filename} 不是合法 JSON`, { cause: error });
+        throw new Error(`插件清单 ${filename} 不是合法 JSON`, { cause: error });
       }
       throw error;
     }
   }
-  throw new Error('能力包缺少清单文件');
+  throw new Error('插件缺少清单文件');
 }
 
 function requireString(manifest: Record<string, unknown>, field: string, label: string): string {
   const value = manifest[field];
-  if (typeof value !== 'string' || !value.trim()) throw new Error(`能力包清单缺少${label}（${field}）`);
+  if (typeof value !== 'string' || !value.trim()) throw new Error(`插件清单缺少${label}（${field}）`);
   return value.trim();
 }
 
@@ -146,18 +146,18 @@ function validateStrictManifest(raw: Record<string, unknown>): void {
     const label = capabilityIssue.field === 'depends' ? '依赖声明' : '能力声明';
     throw new Error(`${label}不合规：${capabilityIssue.message}`);
   }
-  if (!Array.isArray(raw.permissions)) throw new Error('能力包清单必须声明 permissions 权限列表，可以是空数组');
+  if (!Array.isArray(raw.permissions)) throw new Error('插件清单必须声明 permissions 权限列表，可以是空数组');
   if (!Array.isArray(raw.surfaces) || raw.surfaces.length !== 1) {
-    throw new Error('能力包只能声明一个 surface');
+    throw new Error('插件只能声明一个 surface');
   }
   if (raw.surfaces[0] === 'internal-feature') {
     if (raw.distribution !== 'internal' || raw.adminOnly !== true) {
-      throw new Error('内部能力包必须声明 distribution=internal 且 adminOnly=true');
+      throw new Error('内部插件必须声明 distribution=internal 且 adminOnly=true');
     }
     return;
   }
   if (raw.surfaces[0] !== 'tools') {
-    throw new Error('可执行能力包的 surfaces 只能声明 tools；内部包可声明 internal-feature');
+    throw new Error('可执行插件的 surfaces 只能声明 tools；内部包可声明 internal-feature');
   }
 }
 
@@ -257,7 +257,7 @@ const api = Object.freeze({
   getConstants: () => Object.freeze({}),
 });
 await entry.activate(api);
-if (${JSON.stringify(requireTool)} && toolNames.length === 0) throw new Error('能力包没有注册任何工具');
+if (${JSON.stringify(requireTool)} && toolNames.length === 0) throw new Error('插件没有注册任何工具');
 return { toolNames: [...new Set(toolNames)].sort() };
 `;
   return `${prefix}${source}\n${suffix}`;
@@ -298,11 +298,11 @@ export class ManualCapabilityPackageService {
   async stageBundled(pluginId: string): Promise<CapabilityPackagePreview> {
     await this.pruneExpired();
     const descriptor = findBuiltinPlugin(pluginId);
-    if (!descriptor) throw new Error('找不到可安装的内置能力包');
+    if (!descriptor) throw new Error('找不到可安装的内置插件');
     if (pluginId === COMPUTER_USE_CAPABILITY_ID && process.platform !== 'darwin') {
-      throw new Error('Computer Use 能力包当前只支持 macOS');
+      throw new Error('Computer Use 插件当前只支持 macOS');
     }
-    if (this.registry.getPlugin(pluginId)) throw new Error(`${descriptor.manifest.name} 能力包已经安装`);
+    if (this.registry.getPlugin(pluginId)) throw new Error(`${descriptor.manifest.name} 插件已经安装`);
 
     const token = randomUUID();
     const expiresAt = this.now() + STAGE_TTL_MS;
@@ -326,7 +326,7 @@ export class ManualCapabilityPackageService {
   async stage(selectedPath: string): Promise<CapabilityPackagePreview> {
     await this.pruneExpired();
     const selectedStat = await fs.stat(selectedPath).catch(() => null);
-    if (!selectedStat) throw new Error('选择的能力包已经不存在');
+    if (!selectedStat) throw new Error('选择的插件已经不存在');
     let rootDir: string;
     let ownedTempDir: string | undefined;
     let sourceKind: CapabilityPackagePreview['sourceKind'];
@@ -338,7 +338,7 @@ export class ManualCapabilityPackageService {
       sourceKind = 'manifest';
     } else if (path.extname(selectedPath).toLowerCase() === '.zip') {
       const archive = await fs.readFile(selectedPath);
-      if (archive.byteLength > MAX_ARCHIVE_BYTES) throw new Error('能力包超过 50 MB，已拒绝');
+      if (archive.byteLength > MAX_ARCHIVE_BYTES) throw new Error('插件超过 50 MB，已拒绝');
       ownedTempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'neo-capability-stage-'));
       try {
         await extractZipSafely(archive, ownedTempDir);
@@ -349,7 +349,7 @@ export class ManualCapabilityPackageService {
       }
       sourceKind = 'zip';
     } else {
-      throw new Error('请选择能力包目录、清单文件或 .zip 文件');
+      throw new Error('请选择插件目录、清单文件或 .zip 文件');
     }
 
     try {
@@ -361,18 +361,18 @@ export class ManualCapabilityPackageService {
         throw new Error(manifestValidation.errors.map((item) => describeValidationError(item.field, item.message)).join('；'));
       }
       const manifest = await readPluginManifest(rootDir);
-      if (!manifest) throw new Error('能力包清单无法读取');
+      if (!manifest) throw new Error('插件清单无法读取');
       try {
         this.registry.validatePluginCapabilityManifest(manifest);
       } catch (error) {
         const detail = error instanceof Error ? error.message : String(error);
         this.lifecycle(manifest.id, 'failed', detail);
-        throw new Error(`能力包依赖校验没通过：${detail}`, { cause: error });
+        throw new Error(`插件依赖校验没通过：${detail}`, { cause: error });
       }
       const entryPath = path.join(rootDir, manifest.main);
       const source = await fs.readFile(entryPath, 'utf8');
       if (Buffer.byteLength(source, 'utf8') > MAX_ENTRY_BYTES) throw new Error('入口代码超过 48 KB，已拒绝');
-      if (!/module\s*\.\s*exports/.test(source)) throw new Error('当前只支持 CommonJS 能力包，入口需使用 module.exports');
+      if (!/module\s*\.\s*exports/.test(source)) throw new Error('当前只支持 CommonJS 插件，入口需使用 module.exports');
       assertNoAmbientAuthority(source);
       const surface = manifest.surfaces?.[0] === 'internal-feature' ? 'internal-feature' : 'tools';
       const probeScript = sandboxProbeScript(source, manifest.permissions ?? [], surface === 'tools');
@@ -386,13 +386,13 @@ export class ManualCapabilityPackageService {
         cpuPollIntervalMs: 100,
         maxOldGenMb: 64,
         useOsSandbox: this.useOsSandbox,
-        onRpc: async (request) => ({ id: request.id, ok: false, error: '能力包探针不允许调用宿主原语' }),
+        onRpc: async (request) => ({ id: request.id, ok: false, error: '插件探针不允许调用宿主原语' }),
       });
       if (!probe.ok || !isRecord(probe.result) || !Array.isArray(probe.result.toolNames)) {
         throw new Error(`沙箱校验没通过：${probe.error ?? '入口探针没有返回工具清单'}`);
       }
       const toolNames = probe.result.toolNames.filter((item): item is string => typeof item === 'string');
-      if (surface === 'tools' && toolNames.length === 0) throw new Error('沙箱校验没通过：能力包没有注册工具');
+      if (surface === 'tools' && toolNames.length === 0) throw new Error('沙箱校验没通过：插件没有注册工具');
       const packageHash = await hashPluginPackage(rootDir);
       const token = randomUUID();
       const stagedAt = this.now();
@@ -440,12 +440,31 @@ export class ManualCapabilityPackageService {
     }
   }
 
+  async getStagedPackageSource(token: string): Promise<'bundled' | 'local' | null> {
+    await this.pruneExpired();
+    if (this.stagedBundled.has(token)) return 'bundled';
+    if (this.staged.has(token)) return 'local';
+    return null;
+  }
+
+  async getInstalledPackageSource(pluginId: string): Promise<'bundled' | 'local' | null> {
+    if (isBuiltinCapabilityId(pluginId)) return 'bundled';
+    const plugin = this.registry.getPlugin(pluginId);
+    if (!plugin || plugin.rootPath.startsWith('builtin:')) return null;
+    try {
+      await verifyPluginApprovalReceipt(plugin.rootPath, plugin.manifest.id, plugin.manifest.permissions ?? []);
+      return 'local';
+    } catch {
+      return null;
+    }
+  }
+
   async confirm(token: string): Promise<CapabilityPackageInstallResult> {
     await this.pruneExpired();
     const bundled = this.stagedBundled.get(token);
     if (bundled) return this.confirmBundled(bundled);
     const staged = this.staged.get(token);
-    if (!staged) throw new Error('导入确认已过期，请重新选择能力包');
+    if (!staged) throw new Error('导入确认已过期，请重新选择插件');
     const pluginsDir = this.getPluginsDir();
     await fs.mkdir(pluginsDir, { recursive: true });
     const installTemp = path.join(pluginsDir, `.install-${staged.manifest.id}-${token}`);
@@ -456,7 +475,7 @@ export class ManualCapabilityPackageService {
     try {
       await copyPackage(staged.rootDir, installTemp);
       const copiedHash = await hashPluginPackage(installTemp);
-      if (copiedHash !== staged.packageHash) throw new Error('能力包在确认前发生变化，请重新导入');
+      if (copiedHash !== staged.packageHash) throw new Error('插件在确认前发生变化，请重新导入');
       await writePluginApprovalReceipt(installTemp, {
         pluginId: staged.manifest.id,
         packageHash: copiedHash,
@@ -472,7 +491,7 @@ export class ManualCapabilityPackageService {
       }
       await fs.rename(installTemp, targetDir);
       const installed = await this.registry.installPluginFromDirectory(targetDir);
-      if (!installed.success) throw new Error(installed.error ?? '能力包激活失败');
+      if (!installed.success) throw new Error(installed.error ?? '插件激活失败');
       if (hadBackup) await fs.rm(backupDir, { recursive: true, force: true }).catch(() => undefined);
       this.lifecycle(staged.manifest.id, 'loaded', `version=${staged.manifest.version}; tools=${staged.toolNames.join(',')}`);
       return {
@@ -498,14 +517,14 @@ export class ManualCapabilityPackageService {
 
   private async confirmBundled(staged: StagedBundledPackage): Promise<CapabilityPackageInstallResult> {
     const descriptor = findBuiltinPlugin(staged.pluginId);
-    if (!descriptor) throw new Error('找不到可安装的内置能力包');
+    if (!descriptor) throw new Error('找不到可安装的内置插件');
     const dataDir = this.builtinStateDir();
     const previousState = await readBuiltinCapabilityState(staged.pluginId, dataDir);
     let mcpAdded = false;
     try {
       await writeBuiltinCapabilityState(staged.pluginId, 'installed', { dataDir });
       if (!await this.registry.installBuiltinCapability(staged.pluginId)) {
-        throw new Error(`${descriptor.manifest.name} 能力包激活失败`);
+        throw new Error(`${descriptor.manifest.name} 插件激活失败`);
       }
       if (staged.pluginId === COMPUTER_USE_CAPABILITY_ID) {
         const mcpConfig = this.resolveComputerUseMcpConfig();
@@ -586,12 +605,12 @@ export class ManualCapabilityPackageService {
       return;
     }
     const plugin = this.registry.getPlugin(pluginId);
-    if (!plugin || plugin.rootPath.startsWith('builtin:')) throw new Error('找不到可卸载的手动能力包');
+    if (!plugin || plugin.rootPath.startsWith('builtin:')) throw new Error('找不到可卸载的手动插件');
     await verifyPluginApprovalReceipt(plugin.rootPath, plugin.manifest.id, plugin.manifest.permissions ?? []);
     const backupDir = path.join(this.getPluginsDir(), `.uninstall-${pluginId}-${randomUUID()}`);
     const watcherWasActive = this.registry.pauseWatching();
     try {
-      if (!await this.registry.removePluginFromRegistry(pluginId)) throw new Error('能力包运行时卸载失败');
+      if (!await this.registry.removePluginFromRegistry(pluginId)) throw new Error('插件运行时卸载失败');
       await fs.rename(plugin.rootPath, backupDir);
       this.lifecycle(pluginId, 'unloaded', `version=${plugin.manifest.version}`);
       await fs.rm(backupDir, { recursive: true, force: true });
@@ -609,10 +628,10 @@ export class ManualCapabilityPackageService {
 
   private async uninstallBundledCapability(pluginId: BuiltinCapabilityId): Promise<void> {
     const descriptor = findBuiltinPlugin(pluginId);
-    if (!descriptor) throw new Error('找不到可卸载的内置能力包');
+    if (!descriptor) throw new Error('找不到可卸载的内置插件');
     const plugin = this.registry.getPlugin(pluginId);
     if (plugin?.rootPath !== `builtin:${pluginId}`) {
-      throw new Error(`${descriptor.manifest.name} 能力包尚未安装`);
+      throw new Error(`${descriptor.manifest.name} 插件尚未安装`);
     }
     const dataDir = this.builtinStateDir();
     const previousState = await readBuiltinCapabilityState(pluginId, dataDir);
@@ -622,7 +641,7 @@ export class ManualCapabilityPackageService {
     try {
       if (hadMcp) await this.mcpClient.removeServer(CUA_DRIVER_SERVER_NAME);
       if (!await this.registry.removeBuiltinCapability(pluginId)) {
-        throw new Error(`${descriptor.manifest.name} 能力包运行时卸载失败`);
+        throw new Error(`${descriptor.manifest.name} 插件运行时卸载失败`);
       }
       await writeBuiltinCapabilityState(pluginId, 'removed', { dataDir });
       this.lifecycle(pluginId, 'unloaded', `version=${descriptor.manifest.version}`);

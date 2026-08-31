@@ -1,25 +1,20 @@
-import React, { useEffect, useMemo } from 'react';
-import { Blocks, Boxes, Lightbulb, Link2, Package, Sparkles } from 'lucide-react';
+import React, { useEffect } from 'react';
+import { Blocks, Boxes, Lightbulb, Link2, Sparkles } from 'lucide-react';
 import { useAppStore, type CapabilityHubTab } from '../../../stores/appStore';
-import { useAuthStore } from '../../../stores/authStore';
 import { useI18n } from '../../../hooks/useI18n';
-import { createAccessSubject } from '../../../utils/accessControl';
-import { canAccessSettingsTab } from '../../../utils/settingsTabs';
 import { FullScreenPage } from '../shared/FullScreenPage';
 import { PageContent } from '../shared/PageContent';
 import { ExpertPanel } from '../expert/ExpertPanel';
 import { HubTabHeader } from './HubTabHeader';
 
-// 四个重型 tab 一律懒加载：能力中心比设置页开得频繁得多，
+// 重型 tab 一律懒加载：能力中心比设置页开得频繁得多，
 // 首屏不该背着技能/连接器/插件/能力清单的注册表。
 const SkillsSettings = React.lazy(() => import('../settings/tabs/SkillsSettings').then((m) => ({ default: m.SkillsSettings })));
 const MCPSettings = React.lazy(() => import('../settings/tabs/MCPSettings').then((m) => ({ default: m.MCPSettings })));
 const PluginsSettings = React.lazy(() => import('../settings/tabs/PluginsSettings').then((m) => ({ default: m.PluginsSettings })));
 const CapabilityCandidatesTab = React.lazy(() => import('./CapabilityCandidatesTab').then((m) => ({ default: m.CapabilityCandidatesTab })));
-const BundledCapabilitiesTab = React.lazy(() => import('./BundledCapabilitiesTab').then((m) => ({ default: m.BundledCapabilitiesTab })));
 
 const HUB_TABS: Array<{ key: CapabilityHubTab; icon: React.ReactNode; label: (t: ReturnType<typeof useI18n>['t']) => string }> = [
-  { key: 'packages', icon: <Package className="h-4 w-4" />, label: (t) => t.capabilityHub.tabPackages },
   { key: 'experts', icon: <Boxes className="h-4 w-4" />, label: (t) => t.capabilityHub.tabExperts },
   { key: 'skills', icon: <Sparkles className="h-4 w-4" />, label: (t) => t.capabilityHub.tabSkills },
   { key: 'connectors', icon: <Link2 className="h-4 w-4" />, label: (t) => t.capabilityHub.tabConnectors },
@@ -29,52 +24,49 @@ const HUB_TABS: Array<{ key: CapabilityHubTab; icon: React.ReactNode; label: (t:
 
 export const CapabilityHubPage: React.FC = () => {
   const { t } = useI18n();
-  const currentUser = useAuthStore((s) => s.user);
-  const accessSubject = useMemo(() => createAccessSubject(currentUser), [currentUser]);
   const { capabilityHubTab, openCapabilityHub } = useAppStore();
-  // 「插件」tab 仅管理员可见（E5，2026-07-27 拍板；#751 曾无条件下架，此处按工单
-  // 收敛为 access 门控：普通用户不渲染入口，admin 保留可达路径）。深链常量保留，
-  // 指向 plugins 的深链由下方 useEffect 兜底回退到第一个可见 tab，不崩不白屏。
-  const visibleTabs = useMemo(() => HUB_TABS.filter(({ key }) => (
-    key !== 'plugins' || canAccessSettingsTab('plugins', accessSubject)
-  )), [accessSubject]);
+  const legacyTab = capabilityHubTab as string;
+  const activeTab: CapabilityHubTab = legacyTab === 'packages' ? 'plugins' : capabilityHubTab;
   // 提示词管理入口已移走（2026-07-27 二次拍板：它是管理员工具 ⇒ 账号菜单 admin 档，
   // 既不在能力中心 header，也不在设置页）。
 
-  // tab state 指向已隐藏入口（如 plugins 深链）时，回退到第一个可见 tab。
+  // 旧 packages 深链归并到 plugins；其他失效值仍回退到首个合法 tab，避免白屏。
   useEffect(() => {
-    if (visibleTabs.some((tab) => tab.key === capabilityHubTab)) return;
-    openCapabilityHub(visibleTabs[0].key);
-  }, [capabilityHubTab, openCapabilityHub, visibleTabs]);
+    if (legacyTab === 'packages') {
+      openCapabilityHub('plugins');
+      return;
+    }
+    if (HUB_TABS.some((tab) => tab.key === capabilityHubTab)) return;
+    openCapabilityHub(HUB_TABS[0].key);
+  }, [capabilityHubTab, legacyTab, openCapabilityHub]);
 
-  const content = capabilityHubTab === 'packages' ? <BundledCapabilitiesTab />
-    : capabilityHubTab === 'experts' ? <ExpertPanel />
-    : capabilityHubTab === 'skills' ? <SkillsSettings />
-    : capabilityHubTab === 'connectors' ? <MCPSettings />
-    : capabilityHubTab === 'plugins' && canAccessSettingsTab('plugins', accessSubject) ? <PluginsSettings />
-    : capabilityHubTab === 'candidates' ? <CapabilityCandidatesTab />
+  const content = activeTab === 'experts' ? <ExpertPanel />
+    : activeTab === 'skills' ? <SkillsSettings />
+    : activeTab === 'connectors' ? <MCPSettings />
+    : activeTab === 'plugins' ? <PluginsSettings />
+    : activeTab === 'candidates' ? <CapabilityCandidatesTab />
     : null;
 
-  const activeTabLabel = (visibleTabs.find((tab) => tab.key === capabilityHubTab) ?? visibleTabs[0]).label(t);
+  const activeTabLabel = (HUB_TABS.find((tab) => tab.key === activeTab) ?? HUB_TABS[0]).label(t);
 
   return (
     <FullScreenPage testId="capability-hub-page" variant="inline">
-      {/* 2026-07-27 审美关拍板（对标 WorkBuddy）：四个 tab 从右上角小胶囊提为顶行主导航，
+      {/* 2026-07-27 审美关拍板（对标 WorkBuddy）：顶层 tab 从右上角小胶囊提为顶行主导航，
           本 header 只留 pill 导航；大标题下沉到各 tab 自己的 HubTabHeader，
           这样标题才可能和同 tab 的操作簇同行。 */}
       <header data-tauri-drag-region="deep" className="shrink-0 px-6 pt-4">
         <div className="flex items-center gap-3">
           <nav className="flex items-center gap-1" role="tablist" aria-label={t.capabilityHub.title}>
-            {visibleTabs.map(({ key, icon, label }) => (
+            {HUB_TABS.map(({ key, icon, label }) => (
               <button /* ds-allow:button: 能力中心主导航 pill（role=tab，图标+文案左对齐），Button primitive 无 tab 语义变体 */
                 key={key}
                 type="button"
                 role="tab"
-                aria-selected={capabilityHubTab === key}
+                aria-selected={activeTab === key}
                 data-testid={`capability-hub-tab-${key}`}
                 onClick={() => openCapabilityHub(key)}
                 className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm transition-colors ${
-                  capabilityHubTab === key
+                  activeTab === key
                     ? 'bg-zinc-800 text-zinc-100'
                     : 'text-zinc-500 hover:bg-zinc-800/60 hover:text-zinc-300'
                 }`}

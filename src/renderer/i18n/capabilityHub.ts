@@ -1,8 +1,7 @@
 export const capabilityHubZh = {
   capabilityHub: {
     title: '能力中心',
-    description: '功能包 · 专家 · 自动化 · 技能 · 连接器 · 插件',
-    tabPackages: '功能包',
+    description: '插件 · 专家 · 自动化 · 技能 · 连接器',
     tabExperts: '专家',
     tabAutomation: '自动化',
     tabSkills: '技能',
@@ -12,7 +11,7 @@ export const capabilityHubZh = {
     tabCandidates: '候选能力',
   },
   capabilityPackages: {
-    title: '功能包',
+    title: '插件',
     installed: '已装入',
     removed: '未装入',
     install: '装入',
@@ -20,7 +19,7 @@ export const capabilityHubZh = {
     permissionsTitle: '权限披露',
     readinessTitle: '本地识别就绪度',
     copyCommand: '复制安装命令',
-    assetsPreserved: '卸载功能包不会删除你自行安装的 whisper-cpp 或模型。',
+    assetsPreserved: '卸载插件不会删除你自行安装的 whisper-cpp 或模型。',
     readiness: {
       ready: '本地 whisper-cpp 与模型已就绪',
       fallback: '本地依赖缺失，当前会走 Groq fallback',
@@ -84,8 +83,7 @@ export const capabilityHubZh = {
 export const capabilityHubEn = {
   capabilityHub: {
     title: 'Capability Hub',
-    description: 'Packages · Experts · Automation · Skills · Connectors · Plugins',
-    tabPackages: 'Packages',
+    description: 'Plugins · Experts · Automation · Skills · Connectors',
     tabExperts: 'Experts',
     tabAutomation: 'Automation',
     tabSkills: 'Skills',
@@ -95,7 +93,7 @@ export const capabilityHubEn = {
     tabCandidates: 'Candidates',
   },
   capabilityPackages: {
-    title: 'Packages',
+    title: 'Plugins',
     installed: 'Installed',
     removed: 'Not installed',
     install: 'Install',
@@ -103,7 +101,7 @@ export const capabilityHubEn = {
     permissionsTitle: 'Permission disclosure',
     readinessTitle: 'Local transcription readiness',
     copyCommand: 'Copy install command',
-    assetsPreserved: 'Uninstalling the package does not delete whisper-cpp or models you installed yourself.',
+    assetsPreserved: 'Uninstalling the plugin does not delete whisper-cpp or models you installed yourself.',
     readiness: {
       ready: 'Local whisper-cpp and model are ready',
       fallback: 'Local dependencies are missing; Groq fallback will be used',

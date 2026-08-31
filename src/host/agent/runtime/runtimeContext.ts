@@ -42,6 +42,7 @@ import type { BudgetScope } from '../../services/core/budgetService';
 import type { SkillDiscoveryService } from '../../services/skills/skillDiscoveryService';
 import type { SystemPromptCache } from '../../telemetry/systemPromptCache';
 import type { TurnSnapshotSink } from './turnSnapshotWriter';
+import type { ScopedCostRecorder } from '../../services/core/scopedCostLimit';
 
 /**
  * 运行时组合根：单对象，所有 runtime 模块共享同一引用（ADR-038）。
@@ -86,6 +87,7 @@ export interface RuntimeContext {
   readonly skillDiscoveryService?: SkillDiscoveryService;
   readonly persistMessage?: (message: Message) => Promise<void>;
   readonly turnSnapshotSink?: TurnSnapshotSink;
+  readonly scopedCostRecorder?: ScopedCostRecorder;
   readonly onToolExecutionLog?: (log: { sessionId: string; toolCallId: string; toolName: string; args: Record<string, unknown>; result: ToolResult }) => void;
   readonly toolScope?: WorkbenchToolScope;
   readonly executionIntent?: ConversationExecutionIntent;

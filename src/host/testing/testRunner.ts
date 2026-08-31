@@ -41,7 +41,7 @@ import { OS_SANDBOX } from '../../shared/constants/sandbox';
 import { TEST_TIMEOUTS } from '../../shared/constants/timeouts';
 import { getSandboxManager } from '../sandbox';
 import { isRedlineCase } from './testCaseClassification';
-import { createScopedCostLimit, isScopedCostLimitExceeded } from '../services/core/scopedCostLimit';
+import { createScopedCostLimit, isScopedCostLimitExceeded, type ScopedCostRecorder } from '../services/core/scopedCostLimit';
 import { getMockCasePolicy } from './mockEvalPolicy';
 import { completePlannedResults, createNotRunResult, isRealAgentRunCase, markInvalidResultWithoutModel } from './testRunCompletion';
 import { appendTimeoutTelemetryFailureReason, attachTelemetryReplay } from './testRunnerTelemetryReplay';
@@ -89,7 +89,7 @@ export function isInfraExclusionError(msg: string): boolean {
  */
 export interface AgentInterface {
   /** Send a message to the agent and get response */
-  sendMessage(prompt: string): Promise<{
+  sendMessage(prompt: string, options?: { scopedCostRecorder?: ScopedCostRecorder }): Promise<{
     responses: string[];
     toolExecutions: ToolExecutionRecord[];
     turnCount: number;
@@ -689,7 +689,9 @@ export class TestRunner {
     if (testCase.max_cost_usd !== undefined) {
       result.costLimitUsd = testCase.max_cost_usd;
     }
-    const sendMessage = (prompt: string) => costTracker.run(() => agent.sendMessage(prompt));
+    const sendMessage = (prompt: string) => costTracker.run(() => agent.sendMessage(prompt, {
+      scopedCostRecorder: costTracker.recordUsage,
+    }));
     let completedExecution = false;
 
     logger.info('Running test', { testId: testCase.id });

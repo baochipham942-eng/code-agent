@@ -144,7 +144,7 @@ export class ContextAssembly {
       timestamp: Date.now(),
       sessionId: this.ctx.sessionId,
       source,
-    });
+    }, this.ctx.scopedCostRecorder);
   }
 
   private makeCtx(): ContextAssemblyCtx {

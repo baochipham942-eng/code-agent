@@ -4,8 +4,12 @@ export interface ModelCapabilityMatrixEntry {
   protocol: 'chat-completions' | 'responses' | 'anthropic-messages';
   search?: { mode: 'none' | 'deepseek-responses' | 'bailian-enable-search' };
   thinking?: { interleaved: boolean };
-  /** chat-completions 请求体的历史消息兼容字段；仅在明确声明的 (provider, model) 上发送。 */
-  requestCompat?: { deepseekReasoningContent: boolean };
+  /** chat-completions 请求体兼容开关；仅在明确声明的 (provider, model) 上改变默认请求形状。 */
+  requestCompat?: {
+    deepseekReasoningContent?: boolean;
+    /** 端点明确拒绝 stream_options 时关闭 include_usage；未声明默认开启。 */
+    noStreamOptions?: true;
+  };
   /** Responses 端点是否在 API 根（true 时剥掉 baseUrl 末尾的 /vN）；默认 false = 端点在 baseUrl 之下的 /responses。 */
   responsesAtApiRoot?: boolean;
 }

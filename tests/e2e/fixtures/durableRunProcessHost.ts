@@ -270,7 +270,6 @@ async function recoverAndExit(selected: DurableRunKillRestartScenario): Promise<
   let recoveryAction = selected.expectedRecoveryAction;
   let requiresReviewReason: string | null = null;
   let graphTerminalCount = 0;
-  let logicalIdentityLinked = false;
   const fakeExternalRunner = async (request: {
     sessionId: string;
     durableLifecycle?: {
@@ -377,6 +376,9 @@ async function recoverAndExit(selected: DurableRunKillRestartScenario): Promise<
         await saveCounters(counters);
         return { resultRef: 'tool-result:deduplicated' };
       },
+      classifyReplaySafety: async () => ({ stored: 'unknown' as const, current: 'unknown' as const }),
+      dispatchPrepared: async () => ({ resultRef: 'tool-result:replayed' }),
+      interrupt: async () => ({ resultRef: 'tool-result:interrupted' }),
     },
     approval: {
       read: async (approvalId: string) => approvalId === 'approval-stable-1' ? 'pending' as const : 'missing' as const,
@@ -441,7 +443,7 @@ async function recoverAndExit(selected: DurableRunKillRestartScenario): Promise<
   const latestAfterRecovery = await repository.get(`acceptance-${selected.id}`);
   const originalState = JSON.parse(String((db.prepare(`SELECT state_json FROM durable_run_checkpoints
     WHERE run_id = ? AND checkpoint_seq = 1`).get(`acceptance-${selected.id}`) as { state_json: string }).state_json)) as PersistedAcceptanceState;
-  logicalIdentityLinked = latestAfterRecovery?.runId === originalState.runId
+  const logicalIdentityLinked = latestAfterRecovery?.runId === originalState.runId
     && latestAfterRecovery.sessionId === originalState.sessionId
     && (latestAfterRecovery.engine.kind !== 'external_cli'
       || latestAfterRecovery.engine.externalSessionId === originalState.externalSessionId);

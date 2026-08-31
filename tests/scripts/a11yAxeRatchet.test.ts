@@ -149,11 +149,11 @@ describe('a11y-axe-ratchet', () => {
 });
 
 describe('axe e2e wiring', () => {
-  it('当前全部 25 个 spec 走自动 fixture，配置统一挂聚合 reporter', () => {
+  it('当前全部 26 个 spec 走自动 fixture，配置统一挂聚合 reporter', () => {
     const specFiles = readdirSync('tests/e2e')
       .filter((file) => file.endsWith('.spec.ts'))
       .sort();
-    expect(specFiles).toHaveLength(25);
+    expect(specFiles).toHaveLength(26);
     for (const file of specFiles) {
       const source = readFileSync(join('tests/e2e', file), 'utf8');
       expect(source, file).toContain("from './fixtures/axeTest'");
@@ -181,5 +181,11 @@ describe('axe e2e wiring', () => {
     const runPos = ratchetStep.indexOf('a11y-axe-ratchet.mjs --compare-baseline');
     expect(fetchPos, '棘轮步骤缺少 git fetch origin/main').toBeGreaterThanOrEqual(0);
     expect(runPos, '棘轮步骤缺少 compare-baseline 调用').toBeGreaterThan(fetchPos);
+  });
+
+  it('swarm-ci 上传 CI 视觉基线，失败 artifact 保留 screenshot diff 三件套', () => {
+    const workflow = readFileSync('.github/workflows/swarm-ci.yml', 'utf8');
+    expect(workflow).toContain('tests/e2e/**/*-snapshots/*.png');
+    expect(workflow).toContain('test-results/');
   });
 });

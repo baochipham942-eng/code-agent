@@ -24,6 +24,8 @@ export interface RecoveredOperation {
   startedAt: number;
   /** 从开始执行到恢复扫描时刻的耗时（崩溃前已跑多久） */
   elapsedMs: number;
+  toolCallId: string | null;
+  replaySafety: import('../../../shared/contract').ToolReplaySafety | null;
 }
 
 /** 一个 session 在崩溃时正在进行的工序集合 */
@@ -85,6 +87,8 @@ export function buildRecoverySnapshot(
       params: o.params,
       startedAt: o.startedAt,
       elapsedMs: now - o.startedAt,
+      toolCallId: o.toolCallId,
+      replaySafety: o.replaySafety,
     });
   }
 
@@ -107,10 +111,12 @@ export function acknowledgeRecovery(
   repo: RecoveryAcknowledger,
   snapshot: RecoverySnapshot,
   recordedAt: number,
+  shouldAcknowledge: (operation: RecoveredOperation) => boolean = () => true,
 ): number {
   let acked = 0;
   for (const session of snapshot.sessions) {
     for (const op of session.operations) {
+      if (!shouldAcknowledge(op)) continue;
       repo.appendComplete({
         executionId: op.executionId,
         toolName: op.toolName,

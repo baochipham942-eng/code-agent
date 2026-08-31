@@ -47,6 +47,7 @@ export interface InstalledCapabilityPackage {
     rendererEntry: string;
     rendererStyles: string;
     hostEntry: string;
+    loadedHash?: string;
     builtFrom?: {
       appVersion: string;
       commit: string;

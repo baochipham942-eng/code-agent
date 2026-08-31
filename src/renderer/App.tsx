@@ -121,9 +121,8 @@ const ActivityPanel = React.lazy(() => import('./components/features/activity/Ac
 const LocalOpsPage = React.lazy(() => import('./components/features/localOps/LocalOpsPage').then((module) => ({
   default: module.LocalOpsPage,
 })));
-const InAppValidationWorkspace = React.lazy(() => import('./components/features/inAppValidation/InAppValidationWorkspace').then((module) => ({
-  default: module.InAppValidationWorkspace,
-})));
+const InAppValidationWorkspace = React.lazy(() => import('./components/features/inAppValidation/InAppValidationWorkspace').then(({ InAppValidationWorkspace: defaultExport }) => ({ default: defaultExport })));
+const InternalFeatureHost = React.lazy(() => import('./internalFeatures/InternalFeatureHost').then(({ InternalFeatureHost: defaultExport }) => ({ default: defaultExport })));
 
 async function invokeDomain<T>(domain: string, action: string, payload?: unknown): Promise<T> {
   return ipcService.invokeDomain<T>(domain, action, payload);
@@ -167,6 +166,7 @@ export const App: React.FC = () => {
     showLab,
     showLocalOpsPanel,
     showInAppValidation,
+    activeInternalFeatureId,
     showProjectCollaborationPage,
     projectCollaborationPageProjectId,
     closeProjectCollaborationPage,
@@ -885,7 +885,7 @@ export const App: React.FC = () => {
   // 只为压住底下的顶栏不随设置开关抖动（覆盖层在位时它反正不可见）。
   const inlineSecondaryPageActive = Boolean(
     expertDetailRoleId || showLibraryPanel
-    || showCapabilityHub || showCronCenter || showLocalOpsPanel || showInAppValidation
+    || showCapabilityHub || showCronCenter || showLocalOpsPanel || showInAppValidation || activeInternalFeatureId
     || showProjectSpacePage
     || showSettings || showPromptManager || showLab || showTimeCapabilityCenter
     || showActivityPanel || showProjectCollaborationPage || showDesktopPanel
@@ -1009,7 +1009,7 @@ export const App: React.FC = () => {
                 <React.Suspense fallback={null}>
                   <LocalOpsPage />
                 </React.Suspense>
-              ) : showInAppValidation ? (
+              ) : activeInternalFeatureId ? <React.Suspense fallback={null}><InternalFeatureHost featureId={activeInternalFeatureId} /></React.Suspense> : showInAppValidation ? (
                 <React.Suspense fallback={null}>
                   <InAppValidationWorkspace />
                 </React.Suspense>

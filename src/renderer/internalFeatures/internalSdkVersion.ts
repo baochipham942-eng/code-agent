@@ -1,0 +1,1 @@
+export const RENDERER_INTERNAL_SDK_VERSION = '86ff8b14';

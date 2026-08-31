@@ -230,6 +230,7 @@ export interface AppState {
   showLocalOpsPanel: boolean;
   /** browser-control 共用的应用内验证工作台，独立于内部评测中心。 */
   showInAppValidation: boolean;
+  activeInternalFeatureId: string | null;
   /** 本机操作页当前 tab；openLocalOpsPanel 可带 tab 深链。 */
   localOpsTab: LocalOpsTab;
   pendingInAppValidationRequest: import('@shared/contract/browserInteraction').InAppValidationRequest | null;
@@ -372,6 +373,7 @@ export interface AppState {
   setShowDesktopPanel: (show: boolean) => void;
   setShowLocalOpsPanel: (show: boolean) => void;
   setShowInAppValidation: (show: boolean) => void;
+  setActiveInternalFeature: (id: string | null) => void;
   /** 打开「本机操作」页并切到指定 tab（默认桌面）。 */
   openLocalOpsPanel: (tab?: LocalOpsTab) => void;
   /** @deprecated 合并页兼容 shim：打开 = 本机操作页·桌面 tab；关闭 = 关页。 */
@@ -502,6 +504,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   showDesktopPanel: false,
   showLocalOpsPanel: false,
   showInAppValidation: false,
+  activeInternalFeatureId: null,
   localOpsTab: 'browser',
   pendingInAppValidationRequest: null,
   showProjectCollaborationPage: false,
@@ -675,6 +678,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   setShowDesktopPanel: (show) => set({ ...(show ? SECONDARY_PAGES_CLOSED : {}), showDesktopPanel: show }),
   setShowLocalOpsPanel: (show) => set({ ...(show ? SECONDARY_PAGES_CLOSED : {}), showLocalOpsPanel: show }),
   setShowInAppValidation: (show) => set({ ...(show ? SECONDARY_PAGES_CLOSED : {}), showInAppValidation: show }),
+  setActiveInternalFeature: (id) => set({ ...(id ? SECONDARY_PAGES_CLOSED : {}), activeInternalFeatureId: id }),
   openLocalOpsPanel: (tab) => set({
     ...SECONDARY_PAGES_CLOSED,
     showLocalOpsPanel: true,

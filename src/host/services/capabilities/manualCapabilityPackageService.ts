@@ -650,6 +650,9 @@ export class ManualCapabilityPackageService {
             ? 'error'
             : plugin.state === 'active' ? 'inactive' : plugin.state
         : plugin.state;
+      const loadedHash = isInternalFeature
+        ? this.internalFeatureRuntime.loadedHash(plugin.manifest.id)
+        : undefined;
       result.push({
         id: plugin.manifest.id,
         name: plugin.manifest.name,
@@ -659,7 +662,12 @@ export class ManualCapabilityPackageService {
         state,
         toolNames: [...plugin.registeredTools],
         surface: plugin.manifest.surfaces?.[0] === 'internal-feature' ? 'internal-feature' : 'tools',
-        ...(plugin.manifest.internalFeature ? { internalFeature: plugin.manifest.internalFeature } : {}),
+        ...(plugin.manifest.internalFeature ? {
+          internalFeature: {
+            ...plugin.manifest.internalFeature,
+            ...(loadedHash ? { loadedHash } : {}),
+          },
+        } : {}),
         ...(plugin.error ? { error: plugin.error } : {}),
       });
     }

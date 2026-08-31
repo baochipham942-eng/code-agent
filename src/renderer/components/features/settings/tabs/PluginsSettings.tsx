@@ -59,6 +59,31 @@ import {
   toDisplayPath,
 } from './PluginsSettings.helpers';
 
+const PLUGIN_RELOAD_RETRY_DELAYS_MS = [25, 75, 150] as const;
+
+async function waitForPluginBridge(delayMs: number): Promise<void> {
+  await new Promise<void>((resolve) => {
+    window.setTimeout(resolve, delayMs);
+  });
+}
+
+async function invokePluginReloadBatch() {
+  for (let attempt = 0; attempt <= PLUGIN_RELOAD_RETRY_DELAYS_MS.length; attempt += 1) {
+    const results = await Promise.all([
+      ipcService.invoke(IPC_CHANNELS.MARKETPLACE_LIST),
+      ipcService.invoke(IPC_CHANNELS.MARKETPLACE_LIST_PLUGINS),
+      ipcService.invoke(IPC_CHANNELS.MARKETPLACE_LIST_INSTALLED, 'all'),
+      ipcService.invoke(IPC_CHANNELS.CAPABILITY_PACKAGE_LIST),
+    ]);
+
+    if (results.every((result) => result !== undefined)) return results;
+    if (attempt === PLUGIN_RELOAD_RETRY_DELAYS_MS.length) return undefined;
+    await waitForPluginBridge(PLUGIN_RELOAD_RETRY_DELAYS_MS[attempt]);
+  }
+
+  return undefined;
+}
+
 const SummaryTile: React.FC<{
   label: string;
   value: number | string;
@@ -101,7 +126,7 @@ export const PluginsSettings: React.FC = () => {
   const { t } = useI18n();
   const pluginsText = t.settings.plugins;
   const currentUser = useAuthStore((state) => state.user);
-  const canManageMarketplaceSources = canAccessFeature(
+  const canAccessPluginAdmin = canAccessFeature(
     'settings.plugins',
     createAccessSubject(currentUser),
   );
@@ -125,12 +150,9 @@ export const PluginsSettings: React.FC = () => {
     setLoading(true);
     setNotice(null);
     try {
-      const [marketplaceResult, catalogResult, installedResult, capabilityPackageResult] = await Promise.all([
-        ipcService.invoke(IPC_CHANNELS.MARKETPLACE_LIST),
-        ipcService.invoke(IPC_CHANNELS.MARKETPLACE_LIST_PLUGINS),
-        ipcService.invoke(IPC_CHANNELS.MARKETPLACE_LIST_INSTALLED, 'all'),
-        ipcService.invoke(IPC_CHANNELS.CAPABILITY_PACKAGE_LIST),
-      ]);
+      const results = await invokePluginReloadBatch();
+      if (!results) return;
+      const [marketplaceResult, catalogResult, installedResult, capabilityPackageResult] = results;
 
       const marketplacesState = normalizeMarketplaceResult<MarketplaceInfo[]>(
         marketplaceResult,
@@ -507,10 +529,11 @@ export const PluginsSettings: React.FC = () => {
         )}
       </SettingsSection>
 
-      <SettingsSection
-        title={pluginsText.installed.title}
-        description={pluginsText.installed.description}
-      >
+      {canAccessPluginAdmin && (
+        <SettingsSection
+          title={pluginsText.installed.title}
+          description={pluginsText.installed.description}
+        >
         {loading ? (
           <div className="flex items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/40 py-8 text-sm text-zinc-500">
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -598,12 +621,14 @@ export const PluginsSettings: React.FC = () => {
             })}
           </div>
         )}
-      </SettingsSection>
+        </SettingsSection>
+      )}
 
-      <SettingsSection
-        title={pluginsText.marketplace.title}
-        description={pluginsText.marketplace.description}
-      >
+      {canAccessPluginAdmin && (
+        <SettingsSection
+          title={pluginsText.marketplace.title}
+          description={pluginsText.marketplace.description}
+        >
         <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-3">
           <div className="grid gap-3 lg:grid-cols-[1fr_180px_160px]">
             <label className="relative block">
@@ -741,12 +766,14 @@ export const PluginsSettings: React.FC = () => {
             })}
           </div>
         )}
-      </SettingsSection>
+        </SettingsSection>
+      )}
 
-      <SettingsDetails
-        title={pluginsText.overview.title}
-        description={pluginsText.overview.description}
-      >
+      {canAccessPluginAdmin && (
+        <SettingsDetails
+          title={pluginsText.overview.title}
+          description={pluginsText.overview.description}
+        >
         <div className="grid gap-3 md:grid-cols-6">
           <SummaryTile label={pluginsText.overview.marketplace} value={marketplaces.length} />
           <SummaryTile label={pluginsText.overview.marketPlugins} value={catalog.length} />
@@ -782,12 +809,14 @@ export const PluginsSettings: React.FC = () => {
             </div>
           </div>
         </div>
-      </SettingsDetails>
+        </SettingsDetails>
+      )}
 
-      <SettingsDetails
-        title={pluginsText.completeness.title}
-        description={pluginsText.completeness.description}
-      >
+      {canAccessPluginAdmin && (
+        <SettingsDetails
+          title={pluginsText.completeness.title}
+          description={pluginsText.completeness.description}
+        >
         <div className="overflow-hidden rounded-lg border border-zinc-800">
           <table className="w-full text-left text-sm">
             <thead className="bg-zinc-900 text-xs text-zinc-500">
@@ -812,9 +841,10 @@ export const PluginsSettings: React.FC = () => {
             </tbody>
           </table>
         </div>
-      </SettingsDetails>
+        </SettingsDetails>
+      )}
 
-      {canManageMarketplaceSources && (
+      {canAccessPluginAdmin && (
         <div data-testid="marketplace-source-management">
           <SettingsDetails
             title={pluginsText.marketplaceSources.title}
@@ -905,10 +935,11 @@ export const PluginsSettings: React.FC = () => {
         </div>
       )}
 
-      <SettingsDetails
-        title={pluginsText.visibleList.title}
-        description={pluginsText.visibleList.description}
-      >
+      {canAccessPluginAdmin && (
+        <SettingsDetails
+          title={pluginsText.visibleList.title}
+          description={pluginsText.visibleList.description}
+        >
         <div className="grid gap-4 lg:grid-cols-2">
           <div>
             <h4 className="mb-2 text-xs font-medium text-badge-success">{pluginsText.visibleList.userVisibleTitle}</h4>
@@ -947,7 +978,8 @@ export const PluginsSettings: React.FC = () => {
             )}
           </div>
         </div>
-      </SettingsDetails>
+        </SettingsDetails>
+      )}
 
       <Modal
         isOpen={packagePreview !== null}

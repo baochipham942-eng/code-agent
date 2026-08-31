@@ -170,6 +170,7 @@ for (const theme of ['light', 'dark'] as const) {
         animations: 'disabled',
         caret: 'hide',
         mask: [
+          timestampRegion,
           avatarRegions,
           dynamicExpertIdentityRows,
           streamingRegion,

@@ -28,6 +28,60 @@ describe('PluginsSettings install cancellation', () => {
 
   afterEach(() => cleanup());
 
+  it('silently closes the import flow when the file dialog is cancelled', async () => {
+    invoke.mockImplementation((channel: string) => {
+      if (
+        channel === IPC_CHANNELS.MARKETPLACE_LIST
+        || channel === IPC_CHANNELS.MARKETPLACE_LIST_PLUGINS
+        || channel === IPC_CHANNELS.MARKETPLACE_LIST_INSTALLED
+        || channel === IPC_CHANNELS.CAPABILITY_PACKAGE_LIST
+      ) {
+        return Promise.resolve({ success: true, data: [] });
+      }
+      if (channel === IPC_CHANNELS.CAPABILITY_PACKAGE_SELECT_STAGE) {
+        return Promise.resolve({ success: true, data: null });
+      }
+      if (channel === IPC_CHANNELS.CAPABILITY_STATE_READINESS) {
+        return Promise.resolve({ status: 'fallback' });
+      }
+      throw new Error(`Unexpected channel ${channel}`);
+    });
+
+    render(<PluginsSettings />);
+    fireEvent.click(await screen.findByRole('button', { name: zh.settings.plugins.manualImport.action }));
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith(IPC_CHANNELS.CAPABILITY_PACKAGE_SELECT_STAGE);
+    });
+    expect(screen.queryByText(zh.settings.plugins.manualImport.confirmTitle)).toBeNull();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('surfaces a genuine import failure without crashing the page', async () => {
+    invoke.mockImplementation((channel: string) => {
+      if (
+        channel === IPC_CHANNELS.MARKETPLACE_LIST
+        || channel === IPC_CHANNELS.MARKETPLACE_LIST_PLUGINS
+        || channel === IPC_CHANNELS.MARKETPLACE_LIST_INSTALLED
+        || channel === IPC_CHANNELS.CAPABILITY_PACKAGE_LIST
+      ) {
+        return Promise.resolve({ success: true, data: [] });
+      }
+      if (channel === IPC_CHANNELS.CAPABILITY_PACKAGE_SELECT_STAGE) {
+        return Promise.resolve({ success: false, error: '插件包校验失败' });
+      }
+      if (channel === IPC_CHANNELS.CAPABILITY_STATE_READINESS) {
+        return Promise.resolve({ status: 'fallback' });
+      }
+      throw new Error(`Unexpected channel ${channel}`);
+    });
+
+    render(<PluginsSettings />);
+    fireEvent.click(await screen.findByRole('button', { name: zh.settings.plugins.manualImport.action }));
+
+    expect((await screen.findByRole('alert')).textContent).toContain('插件包校验失败');
+  });
+
   it('returns installing → cancelling → idle on a narrow slow install without an error notice', async () => {
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: 320 });
     let finishInstall!: (value: { success: false; cancelled: true }) => void;
@@ -141,6 +195,9 @@ describe('PluginsSettings install cancellation', () => {
         'validated-package-token',
       );
     });
+    expect(await screen.findByText(
+      `${zh.settings.plugins.manualImport.installedPrefix}本机网页研究`,
+    )).toBeTruthy();
   });
 
   it('installs bundled Computer Use only after disclosing Accessibility and Screen Recording', async () => {

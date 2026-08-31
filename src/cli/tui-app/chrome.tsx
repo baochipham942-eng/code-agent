@@ -42,10 +42,7 @@ export function StatusBar({ state, gitBranch, gitDirty, fallbackModel, fallbackP
   });
   return (
     <Box paddingX={1} width={columns} justifyContent="space-between">
-      <Box>
-        <Text color="green">⏺ </Text>
-        <Text wrap="truncate-end">{left}</Text>
-      </Box>
+      <Text wrap="truncate-end">{left}</Text>
       {right ? <Text dimColor wrap="truncate-end">{right}</Text> : null}
     </Box>
   );

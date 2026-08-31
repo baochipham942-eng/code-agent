@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildTerminalNotification,
   buildTerminalTitleSequence,
+  classifyStrippedCsi,
   formatTerminalTitle,
   isFocusEventInput,
   parseFocusEvent,
@@ -78,5 +79,33 @@ describe('isFocusEventInput（Ink 剥 ESC 后的焦点事件残片过滤）', ()
     expect(isFocusEventInput('[Info] 日志')).toBe(false);
     expect(isFocusEventInput('\x1b[I')).toBe(false); // 带 ESC 原文不在这里拦（stdin 监听侧处理）
     expect(isFocusEventInput('')).toBe(false);
+  });
+});
+
+describe('classifyStrippedCsi（Ink 剥 ESC 后的 Shift+Enter / CSI 残片）', () => {
+  it('modifyOtherKeys / CSI-u 的 Shift+Enter 识别为换行', () => {
+    expect(classifyStrippedCsi('[27;2;13~')).toBe('shift-enter');
+    expect(classifyStrippedCsi('[27;2;10~')).toBe('shift-enter');
+    expect(classifyStrippedCsi('\x1b[27;2;13~')).toBe('shift-enter');
+    expect(classifyStrippedCsi('[13;2u')).toBe('shift-enter');
+    expect(classifyStrippedCsi('[10;2u')).toBe('shift-enter');
+    expect(classifyStrippedCsi('[27;4;13~')).toBe('shift-enter');
+  });
+
+  it('其它 CSI 残片丢弃，不进草稿', () => {
+    expect(classifyStrippedCsi('[27;5;13~')).toBe('drop');
+    expect(classifyStrippedCsi('[15~')).toBe('drop');
+    expect(classifyStrippedCsi('[<32;1;1M')).toBe('drop');
+    expect(classifyStrippedCsi('[13;5u')).toBe('drop');
+  });
+
+  it('普通输入和粘贴标记不误伤', () => {
+    expect(classifyStrippedCsi('hello')).toBeNull();
+    expect(classifyStrippedCsi('[')).toBeNull();
+    expect(classifyStrippedCsi('1111')).toBeNull();
+    expect(classifyStrippedCsi('[200~')).toBeNull();
+    expect(classifyStrippedCsi('[201~')).toBeNull();
+    expect(classifyStrippedCsi('[I')).toBeNull();
+    expect(classifyStrippedCsi('[Info] 日志')).toBeNull();
   });
 });

@@ -8,6 +8,7 @@ import {
   WELCOME_COMPACT_ROWS,
   WELCOME_HEADLINE,
   WELCOME_SUBHEAD,
+  welcomeActionIndexAt,
 } from '../../../../src/cli/tui-app/welcomeSplash';
 
 describe('welcomeSplash', () => {
@@ -33,7 +34,17 @@ describe('welcomeSplash', () => {
       '/help',
       'ctrl+q',
     ]);
+    expect(WELCOME_ACTIONS.map((item) => item.id)).toEqual(['model', 'sessions', 'help', 'quit']);
     expect(WELCOME_COMPACT_ROWS).toBeGreaterThan(16);
+  });
+
+  it('30x100 全屏钉底帧上，动作表 4 行可被鼠标命中', () => {
+    expect(welcomeActionIndexAt(15, 30, 5, false)).toBe(0);
+    expect(welcomeActionIndexAt(16, 30, 5, false)).toBe(1);
+    expect(welcomeActionIndexAt(17, 30, 5, false)).toBe(2);
+    expect(welcomeActionIndexAt(18, 30, 5, false)).toBe(3);
+    expect(welcomeActionIndexAt(10, 30, 5, false)).toBeNull();
+    expect(welcomeActionIndexAt(25, 30, 5, false)).toBeNull();
   });
 
   it('abbreviateHomePath 把家目录换成 ~', () => {

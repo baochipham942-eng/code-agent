@@ -21,10 +21,23 @@ import type { PermissionRequestData } from '../../host/tools/types';
 import { setInteractiveApprovalProvider } from '../permissionPolicy';
 import { approvalOptions, SessionAllowList, type ApprovalChoice } from './approval';
 import { ApprovalCard } from './ApprovalCard';
-import { getAllBackgroundTasks, onBackgroundTaskLifecycleEvent } from '../../host/tools/shell/backgroundTasks';
+import { onBackgroundTaskLifecycleEvent } from '../../host/tools/shell/backgroundTasks';
 import { pickStartupTip } from './tips';
 import { WelcomeCard } from './WelcomeCard';
-import { formatWorkspaceLine, WELCOME_COMPACT_ROWS } from './welcomeSplash';
+import {
+  formatWorkspaceLine,
+  WELCOME_ACTIONS,
+  WELCOME_COMPACT_ROWS,
+  welcomeActionIndexAt,
+  type WelcomeActionId,
+} from './welcomeSplash';
+import { formatStatusBar } from './statusBar';
+import {
+  isMouseEventInput,
+  MOUSE_SGR_DISABLE,
+  MOUSE_SGR_ENABLE,
+  parseSgrMouse,
+} from './mouse';
 import {
   buildTerminalNotification,
   FOCUS_REPORTING_DISABLE,
@@ -67,7 +80,6 @@ import {
 } from './editorState';
 import { filterSlashCommands, type SlashItem } from './slashCommands';
 import { editorVisualRows, planDynamicLayout } from './layout';
-import { displayWidth } from './editorState';
 import { Editor } from './Editor';
 import { SlashMenu } from './SlashMenu';
 import { MessageView } from './MessageView';
@@ -100,16 +112,13 @@ export interface InkChatOptions {
   slashItems: SlashItem[];
   /** /model 交互选择器数据源（chat.ts 由 PROVIDER_REGISTRY 构建） */
   modelItems: ModelPickerItem[];
+  /** StatusBar 左侧权限档（TTY 默认 ask；--permission-mode auto 为 auto） */
+  permissionLabel?: string;
 }
 
 /** braille spinner，刻意 ~7.5fps（规格：30fps 每帧停 4 tick ≈ 133ms/帧） */
 const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧'];
 const SPINNER_INTERVAL_MS = 133;
-
-/** 呼吸 ◆ 周期 ~1.3s（sin² 脉动，空闲等待输入时显示） */
-const PULSE_PERIOD_MS = 1300;
-/** 呼吸 ◆ 的 4 档亮度（accent_user 绿色系） */
-const PULSE_COLORS = ['#1d4d1d', '#2e7d2e', '#57c757', '#2e7d2e'];
 
 /** Toast 自动消失时间 */
 const TOAST_MS = 3000;
@@ -132,54 +141,36 @@ function activityColor(activity: string | null): string {
 // （后台任务、token、ctx% 迷你条、成本、turns、工具数、上轮耗时、phase）
 // ---------------------------------------------------------------------------
 
-/** ctx% 迷你条（5 格） */
-function ctxBar(percent: number): string {
-  const filled = Math.round((Math.min(percent, 100) / 100) * 5);
-  return '▓'.repeat(filled) + '░'.repeat(5 - filled);
-}
-
-function StatusBar({ state, cwd, gitBranch, gitDirty, fallbackModel, fallbackProvider, columns, bgTasks }: {
+function StatusBar({ state, gitBranch, gitDirty, fallbackModel, fallbackProvider, permissionLabel, columns }: {
   state: ChatState;
-  cwd: string;
   gitBranch: string;
-  /** 工作树有未提交改动（不含未跟踪文件）时分支名后加 *（Claude Code 同款） */
   gitDirty?: boolean;
   fallbackModel: string;
   fallbackProvider?: string;
+  permissionLabel: string;
   columns: number;
-  /** 运行中的后台任务数（0 = 不显示该分段） */
-  bgTasks: number;
 }) {
   const model = state.model ?? fallbackModel;
-  const provider = state.provider ?? fallbackProvider;
+  const provider = state.provider ?? fallbackProvider ?? '';
   const cost = estimateCostUsd(model, state.inputTokens, state.outputTokens);
-  const leftText = `⏺ ${model}${provider ? ` (${provider})` : ''}`;
-  const rightText = [
-    bgTasks > 0 ? `◉${bgTasks} bg` : '',
-    state.inputTokens + state.outputTokens > 0 ? `⇡${state.inputTokens} ⇣${state.outputTokens}` : '',
-    state.contextPercent != null ? `ctx ${ctxBar(state.contextPercent)} ${state.contextPercent.toFixed(0)}%` : '',
-    cost > 0 ? `$${cost.toFixed(4)}` : '',
-    state.turns > 0 ? `⟳${state.turns}` : '',
-    state.toolNames.length > 0 ? `${state.toolNames.length} tools` : '',
-    state.lastTurnMs != null ? formatDuration(state.lastTurnMs) : '',
-    state.running ? 'running' : 'idle',
-  ].filter(Boolean).join('  ');
-  // 单行合成：中段 cwd(branch*) 按剩余宽度截断，保证永不折行（布局预算按 1 行算）
-  const middleFull = `${cwd}${gitBranch ? ` (${gitBranch}${gitDirty ? '*' : ''})` : ''}`;
-  const middleBudget = columns - 2 - displayWidth(leftText) - displayWidth(rightText) - 4;
-  const middle = middleBudget >= 8 && displayWidth(middleFull) > middleBudget
-    ? middleFull.slice(0, Math.max(1, middleBudget - 1)) + '…'
-    : middleFull;
-  const gap1 = middle ? '  ' : '';
-  const gap2 = middle ? '  ' : '  ';
+  const { left, right } = formatStatusBar({
+    permissionLabel,
+    model,
+    provider,
+    gitBranch,
+    gitDirty,
+    inputTokens: state.inputTokens,
+    outputTokens: state.outputTokens,
+    contextPercent: state.contextPercent,
+    costUsd: cost,
+  });
   return (
-    <Box paddingX={1}>
-      <Text wrap="truncate-end">
+    <Box paddingX={1} width={columns} justifyContent="space-between">
+      <Box>
         <Text color="green">⏺ </Text>
-        <Text bold>{model}</Text>
-        {provider ? <Text dimColor> ({provider})</Text> : null}
-        <Text dimColor>{gap1}{middle}{gap2}{rightText}</Text>
-      </Text>
+        <Text wrap="truncate-end">{left}</Text>
+      </Box>
+      {right ? <Text dimColor wrap="truncate-end">{right}</Text> : null}
     </Box>
   );
 }
@@ -337,7 +328,7 @@ export function App({ agent, options, onExit }: {
   /** 终端焦点（焦点上报 1004；默认聚焦 → 不打扰） */
   const focusedRef = useRef(true);
   /** 运行中后台任务数（StatusBar 分段） */
-  const [bgTaskCount, setBgTaskCount] = useState(0);
+
   /** Ctrl+Q 首次按下时间（QUIT_CONFIRM_MS 内再按才退出） */
   const quitArmedAtRef = useRef(0);
   /** Ctrl+R 历史搜索：query + 当前匹配游标；null = 关闭 */
@@ -346,6 +337,12 @@ export function App({ agent, options, onExit }: {
   historySearchRef.current = historySearch;
   /** 进搜索前的草稿（Esc 恢复） */
   const historySearchDraftRef = useRef('');
+  /** 首屏动作高亮（键盘 ↑↓ / 鼠标悬停） */
+  const [welcomeSelected, setWelcomeSelected] = useState(0);
+  const welcomeSelectedRef = useRef(0);
+  welcomeSelectedRef.current = welcomeSelected;
+  const onWelcomeMouseRef = useRef<(event: { button: number; x: number; y: number; kind: 'press' | 'release' | 'move' }) => void>(() => {});
+  const welcomeGeometryRef = useRef({ termRows: 24, chromeRows: 5, compact: false });
 
   /** 终端通知：失焦才发（语义对齐桌面 shouldSuppressOsNotification），OSC 9 回退 BEL */
   const notify = useCallback((message: string) => {
@@ -383,20 +380,26 @@ export function App({ agent, options, onExit }: {
     return () => setInteractiveApprovalProvider(null);
   }, [setApproval, notify]);
 
-  // 终端焦点上报（DECSET 1004）：挂载开、卸载关；stdin 扫焦点事件序列。
-  // 开启必须推迟到 Ink raw mode 就绪之后——否则启动窗口里 tty 还在规范模式，
-  // 焦点序列会被 ECHOCTL 回显成 '^[[I' 糊在屏幕上（首屏无周期重渲会一直挂着）。
+  // 终端焦点上报（DECSET 1004）+ 首屏 SGR 鼠标。开启推迟到 raw mode 就绪之后。
+  const showWelcomeRef = useRef(true);
   useEffect(() => {
-    const timer = setTimeout(() => stdout?.write(FOCUS_REPORTING_ENABLE), 0);
+    const timer = setTimeout(() => {
+      stdout?.write(FOCUS_REPORTING_ENABLE);
+      if (showWelcomeRef.current) stdout?.write(MOUSE_SGR_ENABLE);
+    }, 0);
     const onData = (chunk: Buffer | string) => {
-      const event = parseFocusEvent(chunk.toString());
-      if (event === 'in') focusedRef.current = true;
-      if (event === 'out') focusedRef.current = false;
+      const text = chunk.toString();
+      const focus = parseFocusEvent(text);
+      if (focus === 'in') focusedRef.current = true;
+      if (focus === 'out') focusedRef.current = false;
+      const mouse = parseSgrMouse(text);
+      if (mouse && showWelcomeRef.current) onWelcomeMouseRef.current(mouse);
     };
     process.stdin.on('data', onData);
     return () => {
       clearTimeout(timer);
       process.stdin.off('data', onData);
+      stdout?.write(MOUSE_SGR_DISABLE);
       stdout?.write(FOCUS_REPORTING_DISABLE);
     };
   }, [stdout]);
@@ -404,7 +407,6 @@ export function App({ agent, options, onExit }: {
   // 后台任务：StatusBar 计数 + 完成/失败时系统消息 + 失焦通知
   useEffect(() => {
     return onBackgroundTaskLifecycleEvent((event) => {
-      setBgTaskCount(getAllBackgroundTasks().filter((t) => t.status === 'running').length);
       if (event.type === 'started') return;
       const short = event.task.taskId.slice(0, 8);
       const summary = `后台任务 ${short} ${event.type === 'completed' ? '完成' : '失败'}：${event.task.command.replace(/\s+/g, ' ').slice(0, 60)}`;
@@ -422,14 +424,23 @@ export function App({ agent, options, onExit }: {
     prevRunningRef.current = state.running;
   }, [state.running, notify]);
 
-  // spinner + 呼吸 ◆ 共用 tick：运行时 braille ~7.5fps，空闲时 sin² 脉动
+  // 只在 turn 运行时 ~7.5fps 跳 spinner / 计时。空闲停表——否则整树 133ms
+  // 一渲，placeholder 光标和空闲 ◆ 都会卡闪。
   useEffect(() => {
+    if (!state.running) return;
+    setNow(Date.now());
     const timer = setInterval(() => {
       setFrame((prev) => prev + 1);
       setNow(Date.now());
     }, SPINNER_INTERVAL_MS);
     return () => clearInterval(timer);
-  }, []);
+  }, [state.running]);
+
+  useEffect(() => {
+    const welcome = state.messages.length === 0;
+    showWelcomeRef.current = welcome;
+    stdout?.write(welcome ? MOUSE_SGR_ENABLE : MOUSE_SGR_DISABLE);
+  }, [state.messages.length, stdout]);
 
   // slash 菜单当前过滤结果（handler 与渲染共用，走 ref 保证新鲜）
   const computeMenuItems = useCallback((): SlashItem[] => {
@@ -460,6 +471,29 @@ export function App({ agent, options, onExit }: {
       onExit();
     }
   }, [options, onExit, showToast]);
+
+  const activateWelcomeAction = useCallback((id: WelcomeActionId) => {
+    if (id === 'model') {
+      const currentIndex = Math.max(0, options.modelItems.findIndex((item) => item.current));
+      setModelPicker({ index: currentIndex });
+      return;
+    }
+    if (id === 'quit') {
+      onExit();
+      return;
+    }
+    void handleSlash(id === 'sessions' ? '/sessions' : '/help');
+  }, [options.modelItems, onExit, handleSlash]);
+
+  onWelcomeMouseRef.current = (event) => {
+    const geo = welcomeGeometryRef.current;
+    const index = welcomeActionIndexAt(event.y, geo.termRows, geo.chromeRows, geo.compact);
+    if (index == null) return;
+    setWelcomeSelected(index);
+    if (event.kind === 'press' && event.button === 0) {
+      activateWelcomeAction(WELCOME_ACTIONS[index].id);
+    }
+  };
 
   const runPrompt = useCallback(async (text: string) => {
     setState((prev) => markRunStarted(appendUserMessage(prev, text)));
@@ -545,13 +579,19 @@ export function App({ agent, options, onExit }: {
   /** Enter：`\` 结尾续行，否则提交（chip 在提交时展开） */
   const onEnter = useCallback(() => {
     const current = content(editorRef.current);
-    if (!current.trim()) return;
+    if (!current.trim()) {
+      if (showWelcomeRef.current) {
+        const action = WELCOME_ACTIONS[welcomeSelectedRef.current];
+        if (action) activateWelcomeAction(action.id);
+      }
+      return;
+    }
     if (current.replace(/[ \t]+$/, '').endsWith('\\')) {
       setEditor(insertNewline(editorRef.current));
       return;
     }
     submit(expandedContent(editorRef.current));
-  }, [setEditor, submit]);
+  }, [setEditor, submit, activateWelcomeAction]);
 
   /** Ctrl+O：把 chip 徽章展开回原文（展开查看） */
   const expandChips = useCallback(() => {
@@ -562,7 +602,7 @@ export function App({ agent, options, onExit }: {
   useInput((input, key) => {
     // 焦点事件残片（DECSET 1004 的 \x1b[I/\x1b[O 被 Ink 剥 ESC 后成 '[I'/'[O'）：
     // 丢弃，不进草稿、不触发任何快捷键
-    if (isFocusEventInput(input)) return;
+    if (isFocusEventInput(input) || isMouseEventInput(input)) return;
     // 审批卡接管键盘：数字直选、↑↓+Enter、Tab 展开 diff、Esc/Ctrl+C = reject（agent 继续）
     const pendingApproval = approvalRef.current;
     if (pendingApproval) {
@@ -817,6 +857,10 @@ export function App({ agent, options, onExit }: {
       return;
     }
     if (key.upArrow) {
+      if (showWelcomeRef.current && isEmpty(editorRef.current) && !historyRef.current.browsing) {
+        setWelcomeSelected((index) => Math.max(0, index - 1));
+        return;
+      }
       // 空 prompt（或已在翻历史）按 ↑ 翻历史，翻到的内容落回编辑器可编辑
       if (isEmpty(editorRef.current) || historyRef.current.browsing) {
         const text = historyRef.current.prev(content(editorRef.current));
@@ -827,6 +871,10 @@ export function App({ agent, options, onExit }: {
       return;
     }
     if (key.downArrow) {
+      if (showWelcomeRef.current && isEmpty(editorRef.current) && !historyRef.current.browsing) {
+        setWelcomeSelected((index) => Math.min(WELCOME_ACTIONS.length - 1, index + 1));
+        return;
+      }
       if (historyRef.current.browsing) {
         const text = historyRef.current.next();
         if (text !== null) setEditor(withContent(editorRef.current, text));
@@ -926,10 +974,6 @@ export function App({ agent, options, onExit }: {
   const menuItems = computeMenuItems();
   const menuIndex = Math.min(slashIndex, Math.max(menuItems.length - 1, 0));
 
-  // 空闲呼吸 ◆：sin² 脉动（~1.3s 周期），turn 运行时位置被 TurnStatus 占用
-  const pulseAlpha = Math.sin((now / PULSE_PERIOD_MS) * Math.PI) ** 2;
-  const pulseColor = PULSE_COLORS[Math.min(PULSE_COLORS.length - 1, Math.floor(pulseAlpha * PULSE_COLORS.length))];
-
   // Ctrl+R 搜索当前匹配（渲染用）
   const searchMatches = historySearch ? historyRef.current.search(historySearch.query) : [];
   const searchMatch = historySearch
@@ -961,6 +1005,7 @@ export function App({ agent, options, onExit }: {
   // 首屏欢迎海报（Grok Build 构图）：顶左 workspace 行 + live 区居中宽卡，
   // 呼吸 ◆ 让位（零噪音）；首条消息出现即切回消息流
   const showWelcome = state.messages.length === 0;
+  showWelcomeRef.current = showWelcome;
   const welcomeCompact = rows < WELCOME_COMPACT_ROWS;
   // 首屏 tip 行（Grok 风格）：空会话空闲时在输入框上方显示一条轮换提示
   const [tip] = useState(() => pickStartupTip(Date.now()));
@@ -969,9 +1014,10 @@ export function App({ agent, options, onExit }: {
   // 空闲空草稿的首屏不显示（可发现性由轮换 tip 行承担）
   const shortcutsVisible = state.running || menuItems.length > 0 || !isEmpty(editor)
     || approval !== null || historySearch !== null;
-  const chromeRows = 1 /* StatusBar（输入框下） */ + (showWelcome ? 0 : 1) /* TurnStatus/呼吸◆（首屏让位） */
+  const chromeRows = 1 /* StatusBar（输入框下） */ + (state.running ? 1 : 0) /* TurnStatus */
     + Math.min(menuItems.length, 8)
     + promptRows + (toast ? 1 : 0) + (showTip ? 1 : 0) + (shortcutsVisible ? 1 : 0);
+  welcomeGeometryRef.current = { termRows: rows, chromeRows, compact: welcomeCompact };
   const layoutPlan = planDynamicLayout(state.messages, messageWidth, rows, chromeRows);
   const liveAllocation = layoutPlan.allocation;
   const visibleLive = state.messages.filter((message) => liveAllocation.has(message.id));
@@ -1000,6 +1046,7 @@ export function App({ agent, options, onExit }: {
                     version={options.version ?? ''}
                     columns={columns}
                     compact={welcomeCompact}
+                    selectedIndex={welcomeSelected}
                   />
                 </Box>
               </Box>
@@ -1012,13 +1059,7 @@ export function App({ agent, options, onExit }: {
         </Box>
         {state.running
           ? <TurnStatus state={state} frame={frame} now={now} queuedCount={queuedCount} />
-          : showWelcome
-            ? null
-            : (
-              <Box paddingX={1}>
-                <Text color={pulseColor}>◆</Text>
-            </Box>
-          )}
+          : null}
         {menuItems.length > 0 ? <SlashMenu items={menuItems} selected={menuIndex} /> : null}
         {showTip
           ? (
@@ -1042,7 +1083,15 @@ export function App({ agent, options, onExit }: {
               ? <HistorySearchBar query={historySearch.query} match={searchMatch} />
               : <Editor state={editor} width={columns} maxRows={editorMaxRows} placeholder="让 Neo 做点什么…" />}
         {toast ? <Toast text={toast} /> : null}
-        <StatusBar state={state} cwd={options.cwd} gitBranch={options.gitBranch} gitDirty={options.gitDirty} fallbackModel={options.model} fallbackProvider={options.provider} columns={columns} bgTasks={bgTaskCount} />
+        <StatusBar
+          state={state}
+          gitBranch={options.gitBranch}
+          gitDirty={options.gitDirty}
+          fallbackModel={options.model}
+          fallbackProvider={options.provider}
+          permissionLabel={options.permissionLabel ?? 'ask'}
+          columns={columns}
+        />
         {shortcutsVisible
           ? (
             <ShortcutsBar

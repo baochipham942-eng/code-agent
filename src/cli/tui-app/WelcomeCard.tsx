@@ -13,10 +13,12 @@ import {
   WELCOME_SUBHEAD,
 } from './welcomeSplash';
 
-export function WelcomeCard({ version, columns, compact }: {
+export function WelcomeCard({ version, columns, compact, selectedIndex = 0 }: {
   version: string;
   columns: number;
   compact?: boolean;
+  /** 当前高亮的动作（键盘/鼠标）；-1 = 不高亮 */
+  selectedIndex?: number;
 }) {
   const logo = compact ? NEO_LOGO_COMPACT : NEO_LOGO_FULL;
   const cardWidth = Math.min(Math.max(columns - 8, 42), 78);
@@ -45,12 +47,17 @@ export function WelcomeCard({ version, columns, compact }: {
         <Text color="yellow" bold>{WELCOME_HEADLINE}</Text>
         <Text dimColor>{WELCOME_SUBHEAD}</Text>
         {compact ? null : <Box height={1} />}
-        {WELCOME_ACTIONS.map((action) => (
-          <Box key={action.label} width={contentWidth} justifyContent="space-between">
-            <Text>{action.label}</Text>
-            <Text dimColor>{action.shortcut}</Text>
-          </Box>
-        ))}
+        {WELCOME_ACTIONS.map((action, index) => {
+          const selected = index === selectedIndex;
+          return (
+            <Box key={action.id} width={contentWidth} justifyContent="space-between">
+              <Text inverse={selected} color={selected ? 'cyan' : undefined}>{action.label}</Text>
+              <Text dimColor={!selected} inverse={selected} color={selected ? 'cyan' : undefined}>
+                {action.shortcut}
+              </Text>
+            </Box>
+          );
+        })}
       </Box>
     </Box>
   );

@@ -5,6 +5,11 @@ export interface PickNativeDirectoryOptions {
   title?: string;
 }
 
+export interface PickNativeFileOptions {
+  title?: string;
+  extensions?: string[];
+}
+
 export async function listenTauriEvent<T>(
   event: string,
   handler: TauriEventHandler<T>,
@@ -41,6 +46,21 @@ export async function pickNativeDirectory(
     directory: true,
     multiple: false,
     ...(options.title ? { title: options.title } : {}),
+  });
+  return typeof result === 'string' ? result : null;
+}
+
+export async function pickNativeFile(
+  options: PickNativeFileOptions = {},
+): Promise<string | null> {
+  const { open } = await import('@tauri-apps/plugin-dialog');
+  const result = await open({
+    directory: false,
+    multiple: false,
+    ...(options.title ? { title: options.title } : {}),
+    ...(options.extensions?.length
+      ? { filters: [{ name: 'Plugin', extensions: options.extensions }] }
+      : {}),
   });
   return typeof result === 'string' ? result : null;
 }

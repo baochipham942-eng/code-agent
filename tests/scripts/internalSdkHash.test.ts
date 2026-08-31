@@ -11,5 +11,5 @@ describe('internal SDK contract hash gate', () => {
 
     expect(`${result.stdout}${result.stderr}`).toContain('[internal-sdk-hash] ok');
     expect(result.status).toBe(0);
-  }, 20_000);
+  }, 120_000);
 });

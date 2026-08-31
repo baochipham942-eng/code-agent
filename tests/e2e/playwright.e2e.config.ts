@@ -47,6 +47,9 @@ const e2eDataDir = process.env.CODE_AGENT_E2E_DATA_DIR
 export default defineConfig({
   testDir: '.',
   testMatch: ['**/*.spec.ts'],
+  // 视觉基线只能由 Swarm full 的 Ubuntu/Chromium record 阶段产生；路径把浏览器与平台
+  // 写进文件名，回填时能直接看出来源，避免本机 darwin PNG 混入仓库。
+  snapshotPathTemplate: '{testDir}/{testFilePath}-snapshots/{arg}-chromium-{platform}{ext}',
   // 这三个剧本**自带 webServer**（prepareFakeHome + spawn dist/web/webServer.cjs）和自己的
   // 系统 Chrome，归 playwright.system-chrome.config.ts 管（见 package.json 的
   // test:e2e:goal-mode / test:e2e:model-strategy）。之前它们也被本 config 收进来，

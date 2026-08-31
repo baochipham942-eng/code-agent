@@ -98,7 +98,7 @@ export const BundledCapabilitiesTab: React.FC<{ showHeader?: boolean }> = ({ sho
   };
   const action = (id: VoiceCapabilityId, installed: boolean) => (
     <Button
-      variant={installed ? 'danger' : 'secondary'}
+      variant={installed ? 'ghost' : 'secondary'}
       size="sm"
       loading={busyId === id}
       disabled={busyId !== null}

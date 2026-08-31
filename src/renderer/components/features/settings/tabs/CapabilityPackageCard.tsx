@@ -126,7 +126,7 @@ export const CapabilityPackageCard: React.FC<CapabilityPackageCardProps> = ({
               </Button>
             ) : null}
             <Button
-              variant="danger"
+              variant="ghost"
               size="sm"
               onClick={() => onUninstall(plugin)}
               loading={busy}

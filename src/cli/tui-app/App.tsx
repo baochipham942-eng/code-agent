@@ -112,7 +112,7 @@ export interface InkChatOptions {
   slashItems: SlashItem[];
   /** /model 交互选择器数据源（chat.ts 由 PROVIDER_REGISTRY 构建） */
   modelItems: ModelPickerItem[];
-  /** StatusBar 左侧权限档（TTY 默认 ask；--permission-mode auto 为 auto） */
+  /** StatusBar 左侧权限档（TTY 默认 auto） */
   permissionLabel?: string;
 }
 
@@ -1089,7 +1089,7 @@ export function App({ agent, options, onExit }: {
           gitDirty={options.gitDirty}
           fallbackModel={options.model}
           fallbackProvider={options.provider}
-          permissionLabel={options.permissionLabel ?? 'ask'}
+          permissionLabel={options.permissionLabel ?? 'auto'}
           columns={columns}
         />
         {shortcutsVisible

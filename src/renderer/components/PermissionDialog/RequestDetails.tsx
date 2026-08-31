@@ -98,7 +98,7 @@ export function RequestDetails({ request }: RequestDetailsProps) {
       {/* 确认门控 非 diff 预览（命令/网络/通用） */}
       {details.preview && details.preview.type !== 'diff' && (
         <div className="mt-4">
-          <div className="text-xs text-zinc-500 mb-2">{details.preview.summary}</div>
+          <div className="text-xs text-zinc-400 mb-2">{details.preview.summary}</div>
           {details.preview.diff && (
             <pre className="text-xs p-2 rounded bg-zinc-700 border border-zinc-700 text-zinc-400 overflow-x-auto max-h-32 whitespace-pre-wrap break-all">
               {details.preview.diff}
@@ -271,7 +271,7 @@ function DetailItem({ label, value, isPath, isCode, isUrl, isDangerous }: Detail
 
   return (
     <div>
-      <div className="text-xs text-zinc-500 mb-1">{label}</div>
+      <div className="text-xs text-zinc-400 mb-1">{label}</div>
       <div
         className={`
           p-2 rounded font-mono text-xs

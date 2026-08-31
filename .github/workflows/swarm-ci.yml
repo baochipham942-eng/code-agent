@@ -477,6 +477,17 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+      # record 阶段由本 job 的 Ubuntu/Chromium 生成，回填仓库后每轮继续上传同一批文件，
+      # 让平台来源与实际参与比较的 expected PNG 都可审计。
+      - name: Upload visual screenshot baselines
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: swarm-e2e-visual-baselines-${{ github.run_id }}
+          path: tests/e2e/**/*-snapshots/*.png
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Record result (success)
         if: success()
         id: result
@@ -492,6 +503,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: swarm-e2e-trace-${{ github.run_id }}
+          # Playwright 默认把 -actual / -expected / -diff 三件套写进 test-results/。
           path: |
             playwright-report/
             test-results/

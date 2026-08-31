@@ -79,3 +79,27 @@ export function parseFocusEvent(chunk: string): 'in' | 'out' | null {
 export function isFocusEventInput(input: string): boolean {
   return input === '[I' || input === '[O';
 }
+
+/**
+ * Ink 剥 ESC 后的 CSI 残片分类。整段匹配，避免手敲 '[' 被吃。
+ * Ghostty/xterm modifyOtherKeys 的 Shift+Enter 是 `[27;2;13~`，不识别就会
+ * 当文本插进草稿（截图像 `1111[27;2;13~`）。
+ */
+export type StrippedCsiKind = 'shift-enter' | 'drop';
+
+export function classifyStrippedCsi(input: string): StrippedCsiKind | null {
+  const s = input.startsWith('\x1b') ? input.slice(1) : input;
+  // bracketed-paste 标记留给粘贴路径
+  if (s === '[200~' || s === '[201~') return null;
+  // modifyOtherKeys / kitty CSI-u：Shift(+Alt)+Enter
+  if (
+    s === '[27;2;13~' || s === '[27;2;10~'
+    || s === '[27;4;13~' || s === '[27;4;10~'
+    || s === '[13;2u' || s === '[10;2u'
+    || s === '[13;4u' || s === '[10;4u'
+  ) {
+    return 'shift-enter';
+  }
+  if (/^\[(?:\d+(?:;\d+)*[~u]|<\d+;\d+;\d+[Mm])$/.test(s)) return 'drop';
+  return null;
+}

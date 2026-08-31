@@ -62,11 +62,12 @@ function LineContent({ line, cursorCol, state }: {
   return <Text wrap="wrap">{nodes}</Text>;
 }
 
-/** 空草稿：块光标在 ❯ 之后、placeholder 之前，不吃掉首字 */
+/** 空草稿：块光标在 ❯ 之后、placeholder 之前。用背景色格子，不用 inverse——
+ *  inverse 空格紧贴 CJK 时部分终端会把「让」一起反色。 */
 function PlaceholderLine({ text, showCursor }: { text: string; showCursor: boolean }) {
   return (
     <Text>
-      {showCursor ? <Text inverse color={CURSOR}> </Text> : null}
+      {showCursor ? <Text backgroundColor={CURSOR} color={CURSOR}> </Text> : null}
       <Text dimColor>{text}</Text>
     </Text>
   );
@@ -86,6 +87,7 @@ export function Editor({ state, width, maxRows = 10, active = true, placeholder 
   const innerWidth = Math.max(width - 6, 8);
   const { startRow, endRow } = computeWindow(state.lines, state.cursorRow, innerWidth, maxRows);
   const empty = state.lines.every((line) => line.length === 0);
+  const shellPrefix = !empty && state.lines[0].startsWith('!');
 
   const rows: ReactNode[] = [];
   for (let row = startRow; row < endRow; row++) {
@@ -108,7 +110,7 @@ export function Editor({ state, width, maxRows = 10, active = true, placeholder 
     );
   }
   return (
-    <Box borderStyle="round" borderColor="gray" paddingX={1} paddingY={1} flexDirection="column" width={width}>
+    <Box borderStyle="round" borderColor={shellPrefix ? 'yellow' : 'gray'} paddingX={1} paddingY={1} flexDirection="column" width={width}>
       {rows}
     </Box>
   );

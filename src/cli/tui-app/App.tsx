@@ -41,6 +41,7 @@ import {
   FOCUS_REPORTING_DISABLE,
   FOCUS_REPORTING_ENABLE,
   formatTerminalTitle,
+  classifyStrippedCsi,
   isFocusEventInput,
   parseFocusEvent,
   shouldTerminalNotify,
@@ -267,7 +268,10 @@ export function App({ agent, options, onExit }: {
       const text = chunk.toString();
       const focus = parseFocusEvent(text);
       if (focus === 'in') focusedRef.current = true;
-      if (focus === 'out') focusedRef.current = false;
+      if (focus === 'out') {
+        focusedRef.current = false;
+        setWelcomeSelected(-1);
+      }
       const mouse = parseSgrMouse(text);
       if (mouse) onWelcomeMouseRef.current(mouse);
     };
@@ -384,9 +388,12 @@ export function App({ agent, options, onExit }: {
     const geo = welcomeGeometryRef.current;
     if (event.kind !== 'move' && event.kind !== 'press') return;
     if (showWelcomeRef.current) {
-      const index = welcomeActionIndexAt(
-        event.y, geo.termRows, geo.chromeRows, geo.compact, event.x, geo.termCols,
-      );
+      const chromeStart = geo.termRows - geo.chromeRows + 1;
+      const index = event.y >= chromeStart
+        ? null
+        : welcomeActionIndexAt(
+          event.y, geo.termRows, geo.chromeRows, geo.compact, event.x, geo.termCols,
+        );
       const next = index ?? -1;
       if (next !== welcomeSelectedRef.current) setWelcomeSelected(next);
     }
@@ -535,6 +542,18 @@ export function App({ agent, options, onExit }: {
     // 焦点事件残片（DECSET 1004 的 \x1b[I/\x1b[O 被 Ink 剥 ESC 后成 '[I'/'[O'）：
     // 丢弃，不进草稿、不触发任何快捷键
     if (isFocusEventInput(input) || isMouseEventInput(input)) return;
+    const strippedCsi = classifyStrippedCsi(input);
+    if (strippedCsi === 'drop') return;
+    if (strippedCsi === 'shift-enter') {
+      if (approvalRef.current && approvalFeedback !== null) {
+        setApprovalFeedback((prev) => (prev ?? '') + '\n');
+        return;
+      }
+      if (historySearch) return;
+      if (welcomeSelectedRef.current >= 0) setWelcomeSelected(-1);
+      setEditor(insertNewline(editorRef.current));
+      return;
+    }
     // 审批卡接管键盘：数字直选、↑↓+Enter、Tab 展开 diff、Esc/Ctrl+C = reject（agent 继续）
     const pendingApproval = approvalRef.current;
     if (pendingApproval) {
@@ -777,8 +796,8 @@ export function App({ agent, options, onExit }: {
       }
     }
 
-    if (key.return && key.shift) {
-      // kitty 协议终端的 Shift+Enter（其余终端用 Ctrl+J 换行）
+    if ((key.return && key.shift) || (key.ctrl && (input === 'j' || input === '\n'))) {
+      if (welcomeSelectedRef.current >= 0) setWelcomeSelected(-1);
       setEditor(insertNewline(editorRef.current));
       return;
     }
@@ -853,6 +872,7 @@ export function App({ agent, options, onExit }: {
     if (input && !key.ctrl && !key.meta) {
       // 逐字符状态机（合批按键不乱序）：\n 换行、\x7f 退格、可打印字符插入
       const insertTyped = (s: string) => {
+        if (welcomeSelectedRef.current >= 0) setWelcomeSelected(-1);
         for (const ch of s) {
           if (ch === '\n') {
             setEditor(insertNewline(editorRef.current));

@@ -148,6 +148,7 @@ for (const theme of ['light', 'dark'] as const) {
       hasText: /^\d{2}:\d{2}$/,
     }).first();
     const avatarRegions = page.locator('img[alt=""], [data-testid^="role-initial-avatar-"]');
+    const dynamicExpertIdentityRegions = page.getByText(/^e2e-scout-\d+$/, { exact: true });
 
     await expect(permissionCard).toBeVisible({ timeout: 15_000 });
     await expect(permissionCard).toContainText('rm -rf ./dist');
@@ -168,7 +169,12 @@ for (const theme of ['light', 'dark'] as const) {
       {
         animations: 'disabled',
         caret: 'hide',
-        mask: [timestampRegion, avatarRegions, streamingRegion],
+        mask: [
+          timestampRegion,
+          avatarRegions,
+          dynamicExpertIdentityRegions,
+          streamingRegion,
+        ],
       },
     );
   });

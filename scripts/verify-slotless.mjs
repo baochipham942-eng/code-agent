@@ -2,7 +2,7 @@
 
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { closeSync, chmodSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { closeSync, chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
@@ -16,6 +16,7 @@ const STATE_FILE = '.neo-verify-state.json';
 const DEFAULT_SECRET_FILE = path.join(os.homedir(), '.ship', 'secrets', 'neo-dogfood.env');
 const DEFAULT_SOURCE_DATA_DIR = path.join(os.homedir(), '.code-agent-dev');
 const DEFAULT_SOURCE_CONFIG = path.join(DEFAULT_SOURCE_DATA_DIR, 'config.json');
+const SECURE_STORAGE_FILES = ['secure-storage.json', '.secure-key'];
 const NATIVE_CONNECTOR_APPS = new Map([
   ['calendar', 'Calendar'],
   ['reminders', 'Reminders'],
@@ -31,6 +32,7 @@ function usage() {
     '  node scripts/verify-slotless.mjs --stop <NEO_VERIFY_DATA_DIR>',
     '',
     'Starts the worktree webServer on an isolated port and signs in with the dogfood account.',
+    'Copies the selected source data directory secure-storage.json + .secure-key pair by default.',
     'By default, native connectors keep the source config and no system apps are probed.',
     'Use --native calendar,reminders to opt in to native connector verification on macOS.',
     `The source template defaults to ${DEFAULT_SOURCE_CONFIG}; use --source-config to select it explicitly.`,
@@ -211,6 +213,28 @@ export function linkCliConnectorInstallDirectories(
     results.push({ id: descriptor.id, installDirectory, status: 'linked', source, target });
   }
   return results;
+}
+
+function validateSecureStorageSources(sourceDataDir) {
+  return SECURE_STORAGE_FILES.map((fileName) => {
+    const source = path.join(sourceDataDir, fileName);
+    if (!existsSync(source)) fail(`secure storage source file is required: ${source}`);
+    const sourceStat = statSync(source);
+    if (!sourceStat.isFile()) fail(`secure storage source path is not a file: ${source}`);
+    if ((sourceStat.mode & 0o777) !== 0o600) {
+      fail(`secure storage source file must have mode 600: ${source}`);
+    }
+    return { fileName, source };
+  });
+}
+
+export function copySecureStoragePair(sourceDataDir, targetDataDir) {
+  const sources = validateSecureStorageSources(sourceDataDir);
+  for (const { fileName, source } of sources) {
+    const target = path.join(targetDataDir, fileName);
+    copyFileSync(source, target);
+    chmodSync(target, 0o600);
+  }
 }
 
 function stripInlineComment(value) {
@@ -569,6 +593,89 @@ async function stopProcessGroup(state) {
   if (isAlive(state.pid)) signalRun(state, 'SIGKILL');
 }
 
+function escapePgrepPattern(value) {
+  return value.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&');
+}
+
+const defaultResidualRuntime = {
+  pgrep(pattern) {
+    const result = spawnSync('pgrep', ['-f', pattern], { encoding: 'utf8' });
+    if (result.error) fail(`failed to inspect slotless residual processes: ${result.error.message}`);
+    if (result.status === 1) return [];
+    if (result.status !== 0) {
+      fail(`failed to inspect slotless residual processes: pgrep exited ${result.status ?? 'unknown'}`);
+    }
+    const raw = result.stdout.trim();
+    if (!raw) return [];
+    const pids = raw.split(/\s+/).map(Number);
+    if (pids.some((pid) => !Number.isInteger(pid) || pid <= 0)) {
+      fail('failed to inspect slotless residual processes: pgrep returned invalid pids');
+    }
+    return pids;
+  },
+  command(pid) {
+    const result = spawnSync('ps', ['-p', String(pid), '-o', 'command='], { encoding: 'utf8' });
+    if (result.error) fail(`failed to inspect slotless residual pid ${pid}: ${result.error.message}`);
+    if (result.status === 1) return null;
+    if (result.status !== 0) {
+      fail(`failed to inspect slotless residual pid ${pid}: ps exited ${result.status ?? 'unknown'}`);
+    }
+    return result.stdout.trim() || null;
+  },
+  isAlive,
+  signal(pid, signal) {
+    try {
+      process.kill(pid, signal);
+    } catch (error) {
+      if (error?.code !== 'ESRCH') throw error;
+    }
+  },
+  sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  },
+  now: () => Date.now(),
+};
+
+function isOwnedResidualCommand(command, disposableDir, marker) {
+  if (!command.includes(disposableDir) && !command.includes(marker)) return false;
+  const isCuaHelper = command.includes('.tauri-resources.noindex/scripts/Agent Neo Computer Use')
+    || command.includes('/Agent Neo Computer Use.app/Contents/')
+    || command.includes('/Agent Neo Computer Use Dev.app/Contents/');
+  const isPlaywright = /(?:playwright|ms-playwright|playwright_chromiumdev_profile|--user-data-dir=)/i.test(command);
+  return isCuaHelper || isPlaywright;
+}
+
+function findOwnedResidualProcesses(disposableDir, marker, runtime) {
+  const candidatePids = new Set([
+    ...runtime.pgrep(escapePgrepPattern(disposableDir)),
+    ...runtime.pgrep(escapePgrepPattern(marker)),
+  ]);
+  candidatePids.delete(process.pid);
+  return [...candidatePids].filter((pid) => {
+    if (!runtime.isAlive(pid)) return false;
+    const command = runtime.command(pid);
+    return command !== null && isOwnedResidualCommand(command, disposableDir, marker);
+  });
+}
+
+async function stopOwnedResidualProcesses(disposableDir, marker, runtime = defaultResidualRuntime) {
+  let residualPids = findOwnedResidualProcesses(disposableDir, marker, runtime);
+  for (const pid of residualPids) runtime.signal(pid, 'SIGTERM');
+
+  const deadline = runtime.now() + 5_000;
+  while (residualPids.length > 0 && runtime.now() < deadline) {
+    await runtime.sleep(100);
+    residualPids = findOwnedResidualProcesses(disposableDir, marker, runtime);
+  }
+  for (const pid of residualPids) runtime.signal(pid, 'SIGKILL');
+  if (residualPids.length > 0) await runtime.sleep(100);
+
+  const survivors = findOwnedResidualProcesses(disposableDir, marker, runtime);
+  if (survivors.length > 0) {
+    fail(`slotless residual processes remain after cleanup: ${survivors.join(', ')}`);
+  }
+}
+
 function assertDisposableDataDir(dataDir) {
   const resolved = realpathSync(dataDir);
   const tempRoot = realpathSync(os.tmpdir());
@@ -578,7 +685,7 @@ function assertDisposableDataDir(dataDir) {
   return resolved;
 }
 
-export async function stopRun(dataDirArg) {
+export async function stopRun(dataDirArg, { residualRuntime = defaultResidualRuntime } = {}) {
   const dataDir = path.resolve(dataDirArg || process.env.NEO_VERIFY_DATA_DIR || '');
   if (!dataDirArg && !process.env.NEO_VERIFY_DATA_DIR) fail('--stop requires NEO_VERIFY_DATA_DIR');
   if (!existsSync(dataDir)) fail(`slotless data directory does not exist: ${dataDir}`);
@@ -595,6 +702,7 @@ export async function stopRun(dataDirArg) {
   writePrivateJson(statePath, { ...state, launchedNativeApps });
   await stopProcessGroup(state);
   quitNativeApps(launchedNativeApps);
+  await stopOwnedResidualProcesses(disposableDir, state.marker, residualRuntime);
   rmSync(disposableDir, { recursive: true, force: false });
   console.log(`NEO_VERIFY_STOPPED=${disposableDir}`);
 }
@@ -607,8 +715,11 @@ async function cleanupFailedStart(child, dataDir, marker, nativeConnectorIds, na
       try { process.kill(-child.pid, 'SIGKILL'); } catch { /* process may already be gone */ }
     }
   }
-  quitNativeApps(detectLaunchedNativeApps(nativeConnectorIds, nativeAppsBeforeStart));
-  if (dataDir && existsSync(dataDir)) rmSync(dataDir, { recursive: true, force: true });
+  try {
+    quitNativeApps(detectLaunchedNativeApps(nativeConnectorIds, nativeAppsBeforeStart));
+  } finally {
+    if (dataDir && existsSync(dataDir)) rmSync(dataDir, { recursive: true, force: true });
+  }
 }
 
 async function startRun(ticketArg, reuseDist, nativeConnectorIds, sourceConfigArg) {
@@ -618,43 +729,53 @@ async function startRun(ticketArg, reuseDist, nativeConnectorIds, sourceConfigAr
   if (!existsSync(requestedSourceConfig)) fail(`source config is required: ${requestedSourceConfig}`);
   if (!statSync(requestedSourceConfig).isFile()) fail(`source config path is not a file: ${requestedSourceConfig}`);
   const sourceConfigPath = realpathSync(requestedSourceConfig);
+  const sourceDataDir = path.dirname(sourceConfigPath);
+  validateSecureStorageSources(sourceDataDir);
   const sourceConfig = JSON.parse(readFileSync(sourceConfigPath, 'utf8'));
   const config = buildSlotlessConfig(sourceConfig, credentials.tokenRhythmKey, nativeConnectorIds);
   const template = buildSlotlessTemplateProvenance(config, sourceConfigPath);
   const requestedNativeConnectorIds = nativeConnectorIds ?? [];
   const webServer = ensureDist(reuseDist);
   const dataDir = mkdtempSync(path.join(os.tmpdir(), `neo-verify-${ticket}-`));
-  chmodSync(dataDir, 0o700);
-  writePrivateJson(path.join(dataDir, 'config.json'), config);
-  linkCliConnectorInstallDirectories(DEFAULT_SOURCE_DATA_DIR, dataDir);
-
-  const port = await reservePort();
-  const url = `http://127.0.0.1:${port}`;
   const marker = path.basename(dataDir);
-  const logPath = path.join(dataDir, 'webserver.log');
-  const logFd = openSync(logPath, 'a', 0o600);
-  const nativeAppsBeforeStart = snapshotNativeApps(requestedNativeConnectorIds);
+  let nativeAppsBeforeStart = {};
   let child;
   try {
-    child = spawn(process.execPath, [webServer, `--neo-verify-run=${marker}`], {
-      cwd: dataDir,
-      detached: true,
-      env: {
-        ...process.env,
-        AGENT_NEO_BUNDLED_RUNTIME_ROOT: repoRoot,
-        CODE_AGENT_DATA_DIR: dataDir,
-        CODE_AGENT_DISABLE_RENDERER_HOT_UPDATE: '1',
-        CODE_AGENT_WORKING_DIR: repoRoot,
-        WEB_HOST: '127.0.0.1',
-        WEB_PORT: String(port),
-      },
-      stdio: ['ignore', logFd, logFd],
-    });
-  } finally {
-    closeSync(logFd);
-  }
+    chmodSync(dataDir, 0o700);
+    writePrivateJson(path.join(dataDir, 'config.json'), config);
+    copySecureStoragePair(sourceDataDir, dataDir);
+    linkCliConnectorInstallDirectories(DEFAULT_SOURCE_DATA_DIR, dataDir);
+    const runtimeTmpDir = path.join(dataDir, 'runtime-tmp');
+    mkdirSync(runtimeTmpDir, { mode: 0o700 });
+    chmodSync(runtimeTmpDir, 0o700);
 
-  try {
+    const port = await reservePort();
+    const url = `http://127.0.0.1:${port}`;
+    const logPath = path.join(dataDir, 'webserver.log');
+    const logFd = openSync(logPath, 'a', 0o600);
+    nativeAppsBeforeStart = snapshotNativeApps(requestedNativeConnectorIds);
+    try {
+      child = spawn(process.execPath, [webServer, `--neo-verify-run=${marker}`], {
+        cwd: dataDir,
+        detached: true,
+        env: {
+          ...process.env,
+          AGENT_NEO_BUNDLED_RUNTIME_ROOT: repoRoot,
+          CODE_AGENT_DATA_DIR: dataDir,
+          CODE_AGENT_DISABLE_RENDERER_HOT_UPDATE: '1',
+          CODE_AGENT_WORKING_DIR: repoRoot,
+          TEMP: runtimeTmpDir,
+          TMP: runtimeTmpDir,
+          TMPDIR: runtimeTmpDir,
+          WEB_HOST: '127.0.0.1',
+          WEB_PORT: String(port),
+        },
+        stdio: ['ignore', logFd, logFd],
+      });
+    } finally {
+      closeSync(logFd);
+    }
+
     await waitForHealth(child, url);
     const token = await readServerToken(dataDir);
     await signInDogfood(url, token, credentials);
@@ -678,6 +799,7 @@ async function startRun(ticketArg, reuseDist, nativeConnectorIds, sourceConfigAr
       startedAt: new Date().toISOString(),
     });
     child.unref();
+    console.log('NEO_VERIFY_SECURE_STORAGE=configured');
     console.log(`NEO_VERIFY_KEY=${maskTokenRhythmKey(credentials.tokenRhythmKey)}`);
     console.log(`NEO_VERIFY_MODEL=${PROVIDER_ID}/${MODEL_ID}`);
     console.log(

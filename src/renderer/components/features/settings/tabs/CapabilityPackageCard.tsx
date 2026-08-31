@@ -1,5 +1,5 @@
 import React from 'react';
-import { Download, Trash2, Upload } from 'lucide-react';
+import { Blocks, Download, PackagePlus, Trash2, Upload } from 'lucide-react';
 import type {
   CapabilityPackagePermission,
   InstalledCapabilityPackage,
@@ -7,25 +7,8 @@ import type {
 import { useAppStore } from '../../../../stores/appStore';
 import { useI18n } from '../../../../hooks/useI18n';
 import { Button } from '../../../primitives';
-
-export const Pill: React.FC<{
-  children: React.ReactNode;
-  tone?: 'default' | 'success' | 'warning' | 'danger';
-}> = ({ children, tone = 'default' }) => {
-  const toneClass = tone === 'success'
-    ? 'border-badge-success/30 bg-emerald-500/10 text-badge-success'
-    : tone === 'warning'
-      ? 'border-badge-warning/30 bg-amber-500/10 text-badge-warning'
-      : tone === 'danger'
-        ? 'border-red-500/30 bg-red-500/10 text-badge-danger'
-        : 'border-zinc-700 bg-zinc-800 text-zinc-300';
-
-  return (
-    <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[11px] ${toneClass}`}>
-      {children}
-    </span>
-  );
-};
+import { PluginCard } from '../../capabilityHub/PluginCard';
+import { Pill } from './PluginsSettings.ui';
 
 interface CapabilityPackageCardProps {
   plugin: InstalledCapabilityPackage;
@@ -53,37 +36,37 @@ export const CapabilityPackageCard: React.FC<CapabilityPackageCardProps> = ({
   const isInternal = plugin.surface === 'internal-feature';
   const isActiveInternal = isInternal && plugin.state === 'active';
   const isFailedInternal = isInternal && plugin.state === 'error';
+  const permissions = [
+    ...plugin.permissions.map(permissionLabel),
+    isInternal
+      ? pluginsText.manualImport.internalFeature
+      : `${plugin.toolNames.length}${pluginsText.manualImport.toolsSuffix}`,
+  ];
+  const status = plugin.state !== 'available' ? t.capabilityPackages.installed : t.capabilityPackages.removed;
+  const statusTone = plugin.state === 'active' ? 'active' : isFailedInternal ? 'warning' : 'inactive';
+  const notice = (
+    <>
+      {isActiveInternal ? (
+        <p className="mt-3 text-xs text-badge-success">{t.internalFeatures.activeHint}</p>
+      ) : null}
+      {isFailedInternal && plugin.error ? (
+        <p className="mt-3 text-xs text-badge-danger">{t.internalFeatures.startErrorPrefix}{plugin.error}</p>
+      ) : null}
+    </>
+  );
 
   return (
-    <div
-      data-testid={`capability-package-${plugin.id}`}
-      className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4"
-    >
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <h4 className="text-sm font-medium text-zinc-100">{plugin.name}</h4>
-            <Pill>{plugin.version}</Pill>
-            <Pill tone={plugin.state === 'active' ? 'success' : 'default'}>
-              {plugin.state !== 'available' ? t.capabilityPackages.installed : t.capabilityPackages.removed}
-            </Pill>
-          </div>
-          <p className="mt-1 text-xs leading-5 text-zinc-500">{plugin.description}</p>
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {plugin.permissions.map((permission) => <Pill key={permission}>{permissionLabel(permission)}</Pill>)}
-            {isInternal ? (
-              <Pill tone="warning">{pluginsText.manualImport.internalFeature}</Pill>
-            ) : (
-              <Pill>{plugin.toolNames.length}{pluginsText.manualImport.toolsSuffix}</Pill>
-            )}
-          </div>
-          {isActiveInternal ? <p className="mt-2 text-xs text-badge-success">{t.internalFeatures.activeHint}</p> : null}
-          {isFailedInternal && plugin.error ? (
-            <p className="mt-2 text-xs text-badge-danger">{t.internalFeatures.startErrorPrefix}{plugin.error}</p>
-          ) : null}
-        </div>
-
-        {plugin.state === 'available' ? (
+    <PluginCard
+      testId={`capability-package-${plugin.id}`}
+      icon={isInternal ? <Blocks className="h-4 w-4" /> : <PackagePlus className="h-4 w-4" />}
+      name={plugin.name}
+      status={status}
+      statusTone={statusTone}
+      description={plugin.description}
+      permissions={permissions}
+      meta={<Pill>{plugin.version}</Pill>}
+      notice={notice}
+      action={plugin.state === 'available' ? (
           <Button
             variant="secondary"
             size="sm"
@@ -129,7 +112,6 @@ export const CapabilityPackageCard: React.FC<CapabilityPackageCardProps> = ({
             </Button>
           </div>
         )}
-      </div>
-    </div>
+    />
   );
 };

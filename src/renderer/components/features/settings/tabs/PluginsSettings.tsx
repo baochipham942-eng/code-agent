@@ -35,12 +35,15 @@ import { useAuthStore } from '../../../../stores/authStore';
 import { useInternalFeatureStore } from '../../../../internalFeatures/internalFeatureStore';
 import { useI18n } from '../../../../hooks/useI18n';
 import ipcService from '../../../../services/ipcService';
+import { pickNativeFile } from '../../../../services/tauriPluginFacade';
+import { isTauriMode } from '../../../../utils/platform';
 import { canAccessFeature, createAccessSubject } from '../../../../utils/accessControl';
 import { Button, EmptyState, Modal, ModalFooter } from '../../../primitives';
 import { SettingsDetails, SettingsSection } from '../SettingsLayout';
 import { BundledCapabilitiesTab } from '../../capabilityHub/BundledCapabilitiesTab';
 import { HubTabHeader } from '../../capabilityHub/HubTabHeader';
-import { CapabilityPackageCard, Pill } from './CapabilityPackageCard';
+import { Pill, SummaryTile } from './PluginsSettings.ui';
+import { CapabilityPackageCard } from './CapabilityPackageCard';
 
 type Notice = { type: 'success' | 'error'; text: string };
 export * from './PluginsSettings.helpers';
@@ -85,25 +88,6 @@ async function invokePluginReloadBatch() {
 
   return undefined;
 }
-
-const SummaryTile: React.FC<{
-  label: string;
-  value: number | string;
-  tone?: 'default' | 'success' | 'warning';
-}> = ({ label, value, tone = 'default' }) => {
-  const valueClass = tone === 'success'
-    ? 'text-badge-success'
-    : tone === 'warning'
-      ? 'text-badge-warning'
-      : 'text-zinc-100';
-
-  return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-900/60 px-3 py-2">
-      <div className={`text-lg font-semibold ${valueClass}`}>{value}</div>
-      <div className="mt-0.5 text-xs text-zinc-500">{label}</div>
-    </div>
-  );
-};
 
 export const PluginsSettings: React.FC = () => {
   const { t } = useI18n();
@@ -326,7 +310,18 @@ export const PluginsSettings: React.FC = () => {
     setNotice(null);
     void (async () => {
       try {
-        const result = await ipcService.invoke(IPC_CHANNELS.CAPABILITY_PACKAGE_SELECT_STAGE);
+        const selectedPath = isTauriMode()
+          ? await pickNativeFile({
+            title: pluginsText.manualImport.action,
+            extensions: ['zip', 'json'],
+          })
+          : null;
+        if (isTauriMode() && !selectedPath) return;
+
+        const result = selectedPath
+          ? await ipcService.invoke(IPC_CHANNELS.CAPABILITY_PACKAGE_STAGE_PATH, selectedPath)
+          : await ipcService.invoke(IPC_CHANNELS.CAPABILITY_PACKAGE_SELECT_STAGE);
+        if (!result) throw new Error(pluginsText.manualImport.importUnavailable);
         if (!result.success) throw new Error(result.error);
         if (result.data) setPackagePreview(result.data);
       } catch (error) {
@@ -335,7 +330,7 @@ export const PluginsSettings: React.FC = () => {
         setPackageBusy(false);
       }
     })();
-  }, []);
+  }, [pluginsText.manualImport.action, pluginsText.manualImport.importUnavailable]);
 
   const closePackagePreview = useCallback(() => {
     const token = packagePreview?.token;

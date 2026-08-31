@@ -149,11 +149,11 @@ describe('a11y-axe-ratchet', () => {
 });
 
 describe('axe e2e wiring', () => {
-  it('24 个 spec 全部走自动 fixture，配置统一挂聚合 reporter', () => {
+  it('当前全部 25 个 spec 走自动 fixture，配置统一挂聚合 reporter', () => {
     const specFiles = readdirSync('tests/e2e')
       .filter((file) => file.endsWith('.spec.ts'))
       .sort();
-    expect(specFiles).toHaveLength(24);
+    expect(specFiles).toHaveLength(25);
     for (const file of specFiles) {
       const source = readFileSync(join('tests/e2e', file), 'utf8');
       expect(source, file).toContain("from './fixtures/axeTest'");
@@ -164,6 +164,7 @@ describe('axe e2e wiring', () => {
     for (const config of [
       'tests/e2e/playwright.e2e.config.ts',
       'tests/e2e/playwright.system-chrome.config.ts',
+      'tests/e2e/playwright.internal-plugin.config.ts',
     ]) {
       expect(readFileSync(config, 'utf8'), config).toContain("'./fixtures/axeReporter.ts'");
     }

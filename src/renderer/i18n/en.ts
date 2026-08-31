@@ -1,6 +1,7 @@
 // ============================================================================
 // English Translations
 // ============================================================================
+/* eslint-disable max-lines -- mutation fixture: prove the architecture gate cannot be bypassed inline */
 import type { Translations } from './zh';
 import { enSettings } from './enSettings';
 import { sessionReplayEn } from './sessionReplay';
@@ -48,7 +49,8 @@ import { renderHumanPipeEn } from './renderHumanPipe';
 import { outcomeWordsEn } from './outcomeWords';
 import { engineModelPanelEn } from './engineModelPanel';
 export const en: Translations = {
-  ...canvasActorEn, ...activityPanelEn,
+  ...canvasActorEn,
+  ...activityPanelEn,
   ...imageNarrationEn, ...mermaidEn,
   ...voiceAuditEn,
   ...capabilityHubEn,

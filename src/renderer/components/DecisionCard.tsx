@@ -262,7 +262,7 @@ export const DecisionCard: React.FC<DecisionCardProps> = ({
       <div
         ref={cardRef}
         tabIndex={-1}
-        className={`w-full max-w-3xl mx-auto bg-zinc-900 rounded-lg shadow-md dark:shadow-2xl border-4 outline-hidden ${
+        className={`w-full max-w-3xl mx-auto bg-zinc-900 rounded-lg shadow-md dark:shadow-2xl border-2 outline-hidden ${
           settled ? 'border-zinc-700' : danger ? 'border-red-500' : amber ? 'border-badge-warning/60' : 'border-badge-info/60'
         } ${compact ? 'overflow-hidden' : pinActions ? 'flex max-h-[40vh] flex-col overflow-hidden' : ''}`}
         data-view-mode={viewMode}

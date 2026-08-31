@@ -166,18 +166,20 @@ export const PluginsSettings: React.FC = () => {
         installedResult,
         pluginsText.loadErrors.installed,
       );
-
+      // HTTP transport unwraps `{ success: true, data }` responses, while the
+      // native bridge preserves the CapabilityPackageResult envelope.
+      const capabilityPackagesState = normalizeMarketplaceResult<InstalledCapabilityPackage[]>(capabilityPackageResult, pluginsText.errors.operationFailed);
       if (!marketplacesState.success) throw new Error(getResultError(marketplacesState, pluginsText.errors));
       if (!catalogState.success) throw new Error(getResultError(catalogState, pluginsText.errors));
       if (!installedState.success) throw new Error(getResultError(installedState, pluginsText.errors));
-      if (!capabilityPackageResult.success) throw new Error(capabilityPackageResult.error);
+      if (!capabilityPackagesState.success) throw new Error(getResultError(capabilityPackagesState, pluginsText.errors));
 
       setMarketplaces(marketplacesState.data ?? []);
       setCatalog(catalogState.data ?? []);
       setInstalled(installedState.data ?? []);
-      setCapabilityPackages(capabilityPackageResult.data);
+      setCapabilityPackages(capabilityPackagesState.data ?? []);
     } catch (error) {
-      const text = error instanceof Error ? error.message : String(error);
+      const text = (error instanceof Error ? error.message : String(error)).trim() || pluginsText.errors.operationFailed;
       setNotice({ type: 'error', text });
     } finally {
       setLoading(false);
@@ -411,6 +413,7 @@ export const PluginsSettings: React.FC = () => {
   const permissionLabel = useCallback((permission: CapabilityPackagePermission): string => (
     pluginsText.manualImport.permissions[permission]
   ), [pluginsText.manualImport.permissions]);
+  const visibleNotice = notice?.text.trim() ? notice : null;
 
   // 页头走能力中心共用的 HubTabHeader：大标题「插件」+ 刷新同一行
   // （刷新原是「已安装」section 的 actions，提进页头操作簇与其余 tab 口径一致）。
@@ -444,15 +447,16 @@ export const PluginsSettings: React.FC = () => {
         )}
       />
       {/* 操作结果通知（页面级，所有 section 的操作都在这里反馈） */}
-      {notice && (
+      {visibleNotice && (
         <div className={`flex items-start gap-2 rounded-lg border px-3 py-2 text-sm ${
-          notice.type === 'success'
+          visibleNotice.type === 'success'
             ? 'border-badge-success/30 bg-emerald-500/10 text-badge-success'
             : 'border-red-500/30 bg-red-500/10 text-badge-danger'
         }`}
+        role={visibleNotice.type === 'error' ? 'alert' : 'status'}
         >
-          {notice.type === 'success' ? <CheckCircle className="mt-0.5 h-4 w-4 shrink-0" /> : <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />}
-          <span>{notice.text}</span>
+          {visibleNotice.type === 'success' ? <CheckCircle className="mt-0.5 h-4 w-4 shrink-0" /> : <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />}
+          <span>{visibleNotice.text}</span>
         </div>
       )}
 

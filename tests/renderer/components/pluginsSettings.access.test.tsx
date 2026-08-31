@@ -236,6 +236,45 @@ describe('PluginsSettings access boundaries', () => {
     expect(invoke.mock.calls.filter(([channel]) => channel === IPC_CHANNELS.CAPABILITY_PACKAGE_LIST)).toHaveLength(2);
   });
 
+  it('accepts the HTTP bridge unwrapped capability package list without an error notice', async () => {
+    useAuthStore.setState({ user: { id: 'user', email: 'user@example.com', isAdmin: false } });
+    invoke.mockImplementation((channel: string) => {
+      if (channel === IPC_CHANNELS.CAPABILITY_PACKAGE_LIST) {
+        return Promise.resolve([{
+          id: 'local.http-bridge',
+          name: 'HTTP Bridge Plugin',
+          version: '1.0.0',
+          description: 'Unwrapped by the HTTP transport',
+          permissions: [],
+          state: 'active',
+          surface: 'tools',
+          toolNames: ['http_bridge'],
+        }]);
+      }
+      return Promise.resolve({ success: true, data: [] });
+    });
+
+    render(<PluginsSettings />);
+
+    expect(await screen.findByTestId('capability-package-local.http-bridge')).toBeTruthy();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('uses a non-empty fallback when capability package loading fails without an error message', async () => {
+    useAuthStore.setState({ user: { id: 'user', email: 'user@example.com', isAdmin: false } });
+    invoke.mockImplementation((channel: string) => {
+      if (channel === IPC_CHANNELS.CAPABILITY_PACKAGE_LIST) {
+        return Promise.resolve({ success: false, error: undefined });
+      }
+      return Promise.resolve({ success: true, data: [] });
+    });
+
+    render(<PluginsSettings />);
+
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent?.trim()).toBe(zh.settings.plugins.errors.operationFailed);
+  });
+
   it('still surfaces genuine marketplace failures', async () => {
     useAuthStore.setState({ user: { id: 'admin', email: 'admin@example.com', isAdmin: true } });
     invoke.mockImplementation((channel: string) => {

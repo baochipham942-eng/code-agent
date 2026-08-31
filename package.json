@@ -52,6 +52,7 @@
     "test:e2e:workbench-overview": "node scripts/verify-browser-runtime.mjs --config tests/e2e/playwright.e2e.config.ts && playwright test --config tests/e2e/playwright.e2e.config.ts tests/e2e/workbench-overview-preview-first.spec.ts",
     "test:e2e:goal-mode": "node scripts/verify-browser-runtime.mjs --config tests/e2e/playwright.system-chrome.config.ts && playwright test --config tests/e2e/playwright.system-chrome.config.ts tests/e2e/goal-mode.spec.ts",
     "test:e2e:model-strategy": "node scripts/verify-browser-runtime.mjs --config tests/e2e/playwright.system-chrome.config.ts && playwright test --config tests/e2e/playwright.system-chrome.config.ts tests/e2e/model-strategy-recommendation.spec.ts",
+    "test:e2e:internal-plugin": "node scripts/verify-browser-runtime.mjs --config tests/e2e/playwright.internal-plugin.config.ts && playwright test --config tests/e2e/playwright.internal-plugin.config.ts tests/e2e/internal-plugin-lifecycle.spec.ts",
     "acceptance:browser-computer": "jiti scripts/acceptance/browser-computer-smoke.ts",
     "acceptance:browser-computer-workflow": "jiti scripts/acceptance/browser-computer-workflow-smoke.ts",
     "acceptance:browser-task-benchmark": "jiti scripts/acceptance/browser-task-benchmark.ts",

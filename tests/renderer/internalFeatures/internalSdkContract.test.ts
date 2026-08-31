@@ -40,6 +40,7 @@ describe('renderer internal plugin shared table', () => {
       '@renderer/components/composites/ConfirmDialog',
       '@renderer/components/features/shared/FullScreenPage',
       '@renderer/components/features/shared/PageContent',
+      '@renderer/components/features/inAppValidation/InAppValidationWorkspace',
       '@renderer/stores/appStore',
       '@renderer/stores/authStore',
       '@renderer/stores/sessionStore',

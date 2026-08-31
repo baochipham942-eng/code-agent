@@ -13,15 +13,16 @@ import * as m8 from '../components/primitives/IconButton';
 import * as m9 from '../components/composites/ConfirmDialog';
 import * as m10 from '../components/features/shared/FullScreenPage';
 import * as m11 from '../components/features/shared/PageContent';
-import * as m12 from '../stores/appStore';
-import * as m13 from '../stores/authStore';
-import * as m14 from '../stores/sessionStore';
-import * as m15 from '../services/ipcService';
-import * as m16 from '../hooks/useToast';
-import * as m17 from '../hooks/useI18n';
-import * as m18 from '../utils/accessControl';
-import * as m19 from '../utils/sessionPresentation';
-import * as m20 from '../styles/zLayers';
+import * as m12 from './internalInAppValidationWorkspace';
+import * as m13 from '../stores/appStore';
+import * as m14 from '../stores/authStore';
+import * as m15 from '../stores/sessionStore';
+import * as m16 from '../services/ipcService';
+import * as m17 from '../hooks/useToast';
+import * as m18 from '../hooks/useI18n';
+import * as m19 from '../utils/accessControl';
+import * as m20 from '../utils/sessionPresentation';
+import * as m21 from '../styles/zLayers';
 import { RENDERER_INTERNAL_SDK_VERSION } from './internalSdkVersion';
 
 const ReactModule = (React as typeof React & { default?: typeof React }).default ?? React;
@@ -44,15 +45,16 @@ export const INTERNAL_RENDERER_SDK = Object.freeze({
     '@renderer/components/composites/ConfirmDialog': m9,
     '@renderer/components/features/shared/FullScreenPage': m10,
     '@renderer/components/features/shared/PageContent': m11,
-    '@renderer/stores/appStore': m12,
-    '@renderer/stores/authStore': m13,
-    '@renderer/stores/sessionStore': m14,
-    '@renderer/services/ipcService': m15,
-    '@renderer/hooks/useToast': m16,
-    '@renderer/hooks/useI18n': m17,
-    '@renderer/utils/accessControl': m18,
-    '@renderer/utils/sessionPresentation': m19,
-    '@renderer/styles/zLayers': m20,
+    '@renderer/components/features/inAppValidation/InAppValidationWorkspace': m12,
+    '@renderer/stores/appStore': m13,
+    '@renderer/stores/authStore': m14,
+    '@renderer/stores/sessionStore': m15,
+    '@renderer/services/ipcService': m16,
+    '@renderer/hooks/useToast': m17,
+    '@renderer/hooks/useI18n': m18,
+    '@renderer/utils/accessControl': m19,
+    '@renderer/utils/sessionPresentation': m20,
+    '@renderer/styles/zLayers': m21,
   }),
 });
 

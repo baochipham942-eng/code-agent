@@ -233,8 +233,13 @@ export function analyzeContent(text: string): ContentAnalysis {
 export function estimateTokens(text: string): number {
   if (!text) return 0;
 
+  // Prompt registry values can be live string-like proxies. Materialize once so
+  // hashing/tokenization does not rebuild the full prompt for every character.
+  const normalizedText = typeof text === 'string' ? text : String(text);
+  if (!normalizedText) return 0;
+
   // LRU cache lookup
-  const hash = simpleHash(text);
+  const hash = simpleHash(normalizedText);
   const cached = tokenCache.get(hash);
   if (cached !== undefined) {
     // Move to end (most recent) for LRU ordering
@@ -243,9 +248,9 @@ export function estimateTokens(text: string): number {
     return cached;
   }
 
-  const tokens = text.length > EXACT_TOKENIZATION_MAX_CHARS
-    ? estimateTokensDetailed(text).total
-    : encode(text).length;
+  const tokens = normalizedText.length > EXACT_TOKENIZATION_MAX_CHARS
+    ? estimateTokensDetailed(normalizedText).total
+    : encode(normalizedText).length;
 
   // Store in LRU cache, evict oldest entry if at capacity
   if (tokenCache.size >= TOKEN_CACHE_MAX) {

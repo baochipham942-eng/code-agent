@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
@@ -8,6 +8,8 @@ import type { ChannelAccount } from '../../../../src/shared/contract/channel';
 import type { CapabilityCenterItem } from '../../../../src/shared/contract/capability';
 import type { ControlPlaneEnvelope } from '../../../../src/shared/contract/controlPlane';
 
+const agentEngineList = vi.hoisted(() => vi.fn());
+
 // 本文件几条用例原先没传 remoteCapabilityRegistryService，于是落到真实单例
 // getRemoteCapabilityRegistryService()。实测（去掉下面的 opt-out 反复对拍三次）：走真实
 // 单例这条路每条要 ~4s，传 null 走 opt-out 只要 ~20ms，稳定复现。这 4s 在 30s 默认超时下
@@ -16,6 +18,8 @@ import type { ControlPlaneEnvelope } from '../../../../src/shared/contract/contr
 // ⚠️ 那 ~4s 具体耗在哪还没定死：已排除真实网络（在 fetch 上插过探针，一次都没被调用——
 // readRegistry() 在没有控制面公钥时就早退了），怀疑是该单例路径上的懒加载/模块初始化。
 // 没查清之前不要把这里的 opt-out 去掉。
+// 2026-08-31 又抓到 inventory 会等待真实 Agent Engine registry 探测（本机约 5s）；
+// 本单在下方固定 descriptor，避免单元测试碰外部 CLI 探测及其负载放大。
 
 const skillEnable = vi.fn();
 const skillDisable = vi.fn();
@@ -26,6 +30,7 @@ const mcpRemoveServer = vi.fn();
 const connectorConfigure = vi.fn();
 const channelUpdateAccount = vi.fn();
 const configUpdateSettings = vi.fn();
+const cleanupProbe = vi.fn<() => string>();
 
 const projectSkill: ParsedSkill = {
   name: 'research',
@@ -241,6 +246,12 @@ vi.mock('../../../../src/host/lightMemory/indexLoader', () => ({
   getMemoryDir: () => '/tmp/code-agent-missing-memory-dir',
 }));
 
+vi.mock('../../../../src/host/services/agentEngine', () => ({
+  getAgentEngineRegistry: () => ({
+    list: agentEngineList,
+  }),
+}));
+
 import { CapabilityCenterService } from '../../../../src/host/services/capabilities/capabilityCenterService';
 import { RemoteCapabilityRegistryService } from '../../../../src/host/services/capabilities/remoteCapabilityRegistryService';
 import {
@@ -320,7 +331,26 @@ function buildRemoteMcpRegistryPayload(id = 'remote-filesystem-readonly') {
 
 describe('CapabilityCenterService', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    cleanupProbe.mockReturnValue('clean');
+    agentEngineList.mockResolvedValue([{
+      manifestId: 'codex-cli',
+      kind: 'codex_cli',
+      label: 'Codex CLI',
+      summary: 'External Codex CLI fixture',
+      installState: 'installed',
+      runtimeState: 'ready',
+      executable: true,
+      command: 'codex',
+      binaryPath: '/opt/homebrew/bin/codex',
+      version: 'test',
+      capabilities: ['execute'],
+      defaultPermissionProfile: 'read_only',
+      cwdPolicy: 'workspace_only',
+      riskTier: 'medium',
+      detectedAt: Date.parse('2026-08-31T00:00:00.000Z'),
+      auditNotes: [],
+      modelSelection: 'runtime_catalog',
+    }]);
     mcpStates = [{ ...githubMcpState, config: { ...githubMcpState.config } }];
     configUpdateSettings.mockResolvedValue(undefined);
     mcpSetEnabled.mockResolvedValue(undefined);
@@ -338,6 +368,26 @@ describe('CapabilityCenterService', () => {
     channelUpdateAccount.mockResolvedValue(httpAccount);
   });
 
+  afterEach(() => {
+    mcpStates = [];
+    vi.restoreAllMocks();
+    vi.resetAllMocks();
+  });
+
+  it('runs cleanup after a mock throws', () => {
+    cleanupProbe.mockImplementationOnce(() => {
+      throw new Error('cleanup probe failure');
+    });
+
+    expect(() => cleanupProbe()).toThrow('cleanup probe failure');
+    expect(cleanupProbe).toHaveBeenCalledTimes(1);
+  });
+
+  it('starts after the throwing mock fixture with clean state', () => {
+    expect(cleanupProbe).not.toHaveBeenCalled();
+    expect(cleanupProbe()).toBe('clean');
+  });
+
   it('builds a local inventory without leaking secrets', async () => {
     const service = new CapabilityCenterService();
     const inventory = await service.listCapabilities({
@@ -346,6 +396,7 @@ describe('CapabilityCenterService', () => {
         getSettings: () => ({ connectors: { enabledNative: ['calendar'] } }),
         updateSettings: configUpdateSettings,
       } as never,
+      remoteCapabilityRegistryService: null,
     });
 
     expect(inventory.items.some((item) => item.kind === 'tool_bundle')).toBe(true);
@@ -617,6 +668,7 @@ describe('CapabilityCenterService', () => {
         getSettings: () => ({ connectors: { enabledNative: [] } }),
         updateSettings: configUpdateSettings,
       } as never,
+      remoteCapabilityRegistryService: null,
     });
 
     expect(inventory.items.find((item) => item.id === 'curated:mcp_template%3Aunsafe-enabled-mcp')).toMatchObject({

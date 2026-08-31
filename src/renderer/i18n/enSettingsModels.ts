@@ -749,8 +749,8 @@ export const enSettingsModels = {
       description: 'Manage built-in, locally imported, and marketplace plugins. Only source addition and removal require an administrator.',
       manualImport: {
         action: 'Import plugin',
-        title: 'Built-in and local plugins',
-        description: 'Install Neo built-ins or import a local plugin from a directory, manifest file, or ZIP. It becomes available after validation and permission confirmation.',
+        title: 'Available plugins',
+        description: 'Official plugins ship with Neo and work once installed; you can also import your own plugin from a local file. It becomes available after validation and permission confirmation.',
         empty: 'No installable or imported plugins yet.',
         active: 'Available next turn',
         available: 'Available to install',

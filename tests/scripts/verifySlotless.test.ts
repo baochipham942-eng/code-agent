@@ -15,7 +15,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 // @ts-expect-error —— 纯 JS 本机验证入口，无类型声明
-import { buildSlotlessConfig, buildSlotlessTemplateProvenance, linkCliConnectorInstallDirectories, maskTokenRhythmKey, parseDogfoodEnv, readDogfoodCredentials, resolveSourceConfigPath, stopRun } from '../../scripts/verify-slotless.mjs';
+import { buildSlotlessConfig, buildSlotlessTemplateProvenance, copySecureStoragePair, linkCliConnectorInstallDirectories, maskTokenRhythmKey, parseDogfoodEnv, readDogfoodCredentials, resolveSourceConfigPath, stopRun } from '../../scripts/verify-slotless.mjs';
 // @ts-expect-error —— 纯 JS 本机验证入口，无类型声明
 import { parseViewport } from '../../scripts/verify-shot.mjs';
 
@@ -181,6 +181,33 @@ describe('slotless verification scripts', () => {
     expect(logs.filter((line) => line.startsWith('CLI_CONNECTOR_SKIPPED='))).toHaveLength(2);
   });
 
+  it('copies both secure storage files with mode 600', () => {
+    const sourceDataDir = mkdtempSync(path.join(os.tmpdir(), 'neo-verify-secure-source-test-'));
+    const targetDataDir = mkdtempSync(path.join(os.tmpdir(), 'neo-verify-secure-target-test-'));
+    tempDirs.push(sourceDataDir, targetDataDir);
+    writeFileSync(path.join(sourceDataDir, 'secure-storage.json'), 'fixture-storage', { mode: 0o600 });
+    writeFileSync(path.join(sourceDataDir, '.secure-key'), 'fixture-key', { mode: 0o600 });
+
+    copySecureStoragePair(sourceDataDir, targetDataDir);
+
+    for (const fileName of ['secure-storage.json', '.secure-key']) {
+      const copied = path.join(targetDataDir, fileName);
+      expect(existsSync(copied)).toBe(true);
+      expect(statSync(copied).mode & 0o777).toBe(0o600);
+    }
+  });
+
+  it('fails closed before copying when either secure storage source file is missing', () => {
+    const sourceDataDir = mkdtempSync(path.join(os.tmpdir(), 'neo-verify-secure-source-test-'));
+    const targetDataDir = mkdtempSync(path.join(os.tmpdir(), 'neo-verify-secure-target-test-'));
+    tempDirs.push(sourceDataDir, targetDataDir);
+    writeFileSync(path.join(sourceDataDir, 'secure-storage.json'), 'fixture-storage', { mode: 0o600 });
+
+    expect(() => copySecureStoragePair(sourceDataDir, targetDataDir)).toThrow(/secure storage source file is required: .*\.secure-key/);
+    expect(existsSync(path.join(targetDataDir, 'secure-storage.json'))).toBe(false);
+    expect(existsSync(path.join(targetDataDir, '.secure-key'))).toBe(false);
+  });
+
   it('--stop removes connector links without touching the source installation', () => {
     const sourceDataDir = mkdtempSync(path.join(os.tmpdir(), 'neo-verify-source-test-'));
     const dataDir = mkdtempSync(path.join(os.tmpdir(), 'neo-verify-stop-test-'));
@@ -288,6 +315,73 @@ describe('slotless verification scripts', () => {
 
     expect(readFileSync(osascriptLog, 'utf8')).toBe('-e quit app "Calendar"\n');
     expect(existsSync(dir)).toBe(false);
+  });
+
+  it('--stop reaps and verifies only CUA and Playwright processes anchored to this data directory', async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'neo-verify-stop-test-'));
+    tempDirs.push(dir);
+    const marker = path.basename(dir);
+    writeFileSync(path.join(dir, '.neo-verify-state.json'), JSON.stringify({
+      pid: 2_147_483_647,
+      marker,
+    }));
+    const commands = new Map([
+      [4101, `${path.resolve('.tauri-resources.noindex/scripts/Agent Neo Computer Use.app/Contents/MacOS/cua-driver')} serve --socket ${dir}/runtime-tmp/cua.sock`],
+      [4102, `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome --user-data-dir=${dir}/playwright-profile`],
+      [4103, '/opt/ms-playwright/chromium --user-data-dir=/tmp/neo-verify-sibling/playwright-profile'],
+    ]);
+    const alive = new Set(commands.keys());
+    const signals: Array<{ pid: number; signal: string }> = [];
+    let pgrepCalls = 0;
+    const residualRuntime = {
+      pgrep: () => {
+        pgrepCalls += 1;
+        return [...alive];
+      },
+      command: (pid: number) => commands.get(pid) ?? null,
+      isAlive: (pid: number) => alive.has(pid),
+      signal: (pid: number, signal: string) => {
+        signals.push({ pid, signal });
+        alive.delete(pid);
+      },
+      sleep: async () => undefined,
+      now: () => Date.now(),
+    };
+
+    await stopRun(dir, { residualRuntime });
+
+    expect(signals).toEqual([
+      { pid: 4101, signal: 'SIGTERM' },
+      { pid: 4102, signal: 'SIGTERM' },
+    ]);
+    expect(alive.has(4103)).toBe(true);
+    expect(pgrepCalls).toBeGreaterThanOrEqual(4);
+    expect(existsSync(dir)).toBe(false);
+  });
+
+  it('--stop fails closed when an owned residual survives TERM and KILL verification', async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'neo-verify-stop-test-'));
+    tempDirs.push(dir);
+    const marker = path.basename(dir);
+    writeFileSync(path.join(dir, '.neo-verify-state.json'), JSON.stringify({
+      pid: 2_147_483_647,
+      marker,
+    }));
+    let clock = 0;
+    const signals: string[] = [];
+    const residualRuntime = {
+      pgrep: () => [4201],
+      command: () => `/opt/ms-playwright/chromium --user-data-dir=${dir}/playwright-profile`,
+      isAlive: () => true,
+      signal: (_pid: number, signal: string) => signals.push(signal),
+      sleep: async (ms: number) => { clock += ms; },
+      now: () => clock,
+    };
+
+    await expect(stopRun(dir, { residualRuntime })).rejects.toThrow('slotless residual processes remain after cleanup: 4201');
+
+    expect(signals).toEqual(['SIGTERM', 'SIGKILL']);
+    expect(existsSync(dir)).toBe(true);
   });
 
   it('validates screenshot viewport bounds', () => {

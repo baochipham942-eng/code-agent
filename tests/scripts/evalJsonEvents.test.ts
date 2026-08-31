@@ -15,14 +15,14 @@ const tsxCli = path.join(repoRoot, 'node_modules', 'tsx', 'dist', 'cli.mjs');
 const evalScript = path.join(repoRoot, 'packages', 'internal', 'evaluation-center', 'scripts', 'eval-ci.ts');
 const tempDirs: string[] = [];
 
-async function runJsonEval(): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+async function runJsonEval(extraArgs: string[] = []): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   const dataDir = await mkdtemp(path.join(os.tmpdir(), 'code-agent-json-events-'));
   tempDirs.push(dataDir);
 
   return new Promise((resolve, reject) => {
     const child = spawn(
       process.execPath,
-      [tsxCli, evalScript, '--scope', 'smoke', '--json-events'],
+      [tsxCli, evalScript, '--scope', 'smoke', '--max-cases', '1', '--json-events', ...extraArgs],
       {
         cwd: repoRoot,
         env: { ...process.env, CODE_AGENT_DATA_DIR: dataDir },
@@ -182,7 +182,7 @@ describe('eval-ci --json-events', () => {
       (event): event is Extract<EvalRunEvent, { type: 'tool_result' }> => event.type === 'tool_result',
     );
     const plannedCaseIds = new Set(runStart.plannedCaseIds);
-    expect(runStart.plannedCaseIds.length).toBeGreaterThan(0);
+    expect(runStart.plannedCaseIds).toHaveLength(1);
     expect(caseEnds).toHaveLength(runStart.plannedCaseIds.length);
     expect(caseEnds.every((event) => !('responses' in event) && !('toolExecutions' in event))).toBe(true);
     expect(toolCalls.length).toBeGreaterThanOrEqual(1);
@@ -212,6 +212,15 @@ describe('eval-ci --json-events', () => {
     // Mutation guard: all paths share the one persistence choke point.
     const evalSource = await readFile(evalScript, 'utf8');
     expect(evalSource.match(/\bsaveReport\(/g)).toHaveLength(1);
+  }, 120_000);
+
+  it('lets --force bypass --max-cases and plan the full filtered suite', async () => {
+    const result = await runJsonEval(['--force']);
+    const events = result.stdout.trim().split('\n').map((line) => JSON.parse(line) as EvalRunEvent);
+    const runStart = events[0] as Extract<EvalRunEvent, { type: 'run_start' }>;
+
+    expect(runStart.plannedCaseIds.length).toBeGreaterThan(1);
+    expect(runStart.config.maxCases).toBe(runStart.plannedCaseIds.length);
   }, 120_000);
 
   it('keeps a thrown run failure as NDJSON ending in run_end and reports details on stderr', async () => {

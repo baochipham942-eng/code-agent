@@ -93,11 +93,13 @@ describe('PluginsSettings access boundaries', () => {
     useAuthStore.setState({ user: { id: 'user', email: 'user@example.com', isAdmin: false } });
     render(<PluginsSettings />);
 
-    expect(screen.getByTestId('voice-live-capability-card')).toBeTruthy();
-    expect(screen.getByTestId('voice-input-capability-card')).toBeTruthy();
+    const availablePlugins = screen.getByTestId('available-plugins-list');
+    expect(within(availablePlugins).getByTestId('voice-live-capability-card')).toBeTruthy();
+    expect(within(availablePlugins).getByTestId('voice-input-capability-card')).toBeTruthy();
+    expect(screen.getAllByText(zh.settings.plugins.manualImport.title)).toHaveLength(1);
     expect(screen.getByRole('button', { name: zh.settings.plugins.manualImport.action })).toBeTruthy();
     for (const id of builtinIds) {
-      expect(await screen.findByTestId(`capability-package-${id}`)).toBeTruthy();
+      expect(await within(availablePlugins).findByTestId(`capability-package-${id}`)).toBeTruthy();
     }
     expect(screen.queryByText('official-web')).toBeNull();
     expect(screen.queryByText(zh.settings.plugins.installed.title)).toBeNull();

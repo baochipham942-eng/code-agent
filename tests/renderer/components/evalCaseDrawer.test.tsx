@@ -263,7 +263,63 @@ describe('EvalCaseDrawer', () => {
 });
 
 describe('EvalRunHistory case drawer entry', () => {
-  it('T7：点变化行请求本轮单题证据，Esc 关闭抽屉', async () => {
+  it('T-A1：单轮不选对比也能展开逐题并打开所点题目的证据', async () => {
+    const runs: EvalBaselineExperimentListItem[] = [
+      { id: 'run-single', name: 'eval-daily-2026-08-31', timestamp: 3, model: 'm', provider: 'p', scope: 'full', source: 'eval', gitCommit: 'c', config: { mode: 'real', k: 1, caseBankSha: 'sha', aggregationRuleVersion: 4, evalSet: { split: 'held-in' } }, summary: { completed: true, notRun: 0, passRate: 0.5, plannedCaseIds: ['case-1', 'case-2'], invalidCases: 0, aggregationRuleVersion: 4 }, caseResults: { 'case-1': { status: 'passed', score: 1 }, 'case-2': { status: 'failed', score: 0 } } },
+    ];
+    evaluation.invoke.mockImplementation(async (channel: string, payload: unknown) => {
+      if (channel === EVALUATION_CHANNELS.BASELINE_INFO) return { groups: {} };
+      if (channel === EVALUATION_CHANNELS.LOAD_CASE) {
+        const target = payload as { experimentId: string; caseId: string };
+        return detail({ caseId: target.caseId });
+      }
+      return null;
+    });
+    render(
+      <EvalRunHistory
+        experiments={runs} loadState="ready" loadError={null} hasActiveRun={false} probe={null}
+        labels={evalRunPanelZh.runPanel} language="zh" loadingText="加载" onRefresh={vi.fn()} onOpenWizard={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByLabelText(evalRunPanelZh.runPanel.selectForCompare).getAttribute('aria-pressed')).toBe('false');
+    fireEvent.click(screen.getByTestId('benchmark-run-expand-run-single'));
+    expect(screen.getByTestId('benchmark-run-case-run-single-case-1')).toBeTruthy();
+    const caseRow = screen.getByTestId('benchmark-run-case-run-single-case-2');
+    const caseButton = caseRow.querySelector('button');
+    expect(caseButton).toBeTruthy();
+    fireEvent.click(caseButton!);
+
+    await waitFor(() => expect(evaluation.invoke).toHaveBeenCalledWith(
+      EVALUATION_CHANNELS.LOAD_CASE,
+      { experimentId: 'run-single', caseId: 'case-2' },
+    ));
+    expect(evaluation.invoke).not.toHaveBeenCalledWith(EVALUATION_CHANNELS.LOAD_EXPERIMENT, expect.anything());
+    expect(screen.getByRole('dialog')).toBeTruthy();
+  });
+
+  it('T-A2：本轮没有逐题结果时展开显示空态', async () => {
+    const runs: EvalBaselineExperimentListItem[] = [
+      { id: 'run-empty', name: 'eval-daily-2026-08-31', timestamp: 3, model: 'm', provider: 'p', scope: 'full', source: 'eval', gitCommit: 'c', config: { mode: 'real', k: 1, caseBankSha: 'sha', aggregationRuleVersion: 4, evalSet: { split: 'held-in' } }, summary: { completed: true, notRun: 0, passRate: 0, plannedCaseIds: [], invalidCases: 0, aggregationRuleVersion: 4 }, caseResults: {} },
+      { id: 'run-missing', name: 'eval-daily-2026-08-30', timestamp: 2, model: 'm', provider: 'p', scope: 'full', source: 'eval', gitCommit: 'b', config: { mode: 'real', k: 1, caseBankSha: 'sha', aggregationRuleVersion: 4, evalSet: { split: 'held-in' } }, summary: { completed: true, notRun: 0, passRate: 0, plannedCaseIds: [], invalidCases: 0, aggregationRuleVersion: 4 } },
+    ];
+    evaluation.invoke.mockImplementation(async (channel: string) => (
+      channel === EVALUATION_CHANNELS.BASELINE_INFO ? { groups: {} } : null
+    ));
+    render(
+      <EvalRunHistory
+        experiments={runs} loadState="ready" loadError={null} hasActiveRun={false} probe={null}
+        labels={evalRunPanelZh.runPanel} language="zh" loadingText="加载" onRefresh={vi.fn()} onOpenWizard={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId('benchmark-run-expand-run-empty'));
+    fireEvent.click(screen.getByTestId('benchmark-run-expand-run-missing'));
+    expect(await screen.findAllByText(evalRunPanelZh.runPanel.noRunCases)).toHaveLength(2);
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('T-A3 / T7：勾两轮后点变化行仍请求本轮单题证据，Esc 关闭抽屉', async () => {
     const runs: EvalBaselineExperimentListItem[] = [
       { id: 'run-new', name: 'eval-daily-2026-08-30', timestamp: 2, model: 'm', provider: 'p', scope: 'full', source: 'eval', gitCommit: 'b', config: { mode: 'real', k: 1, caseBankSha: 'sha', aggregationRuleVersion: 4, evalSet: { split: 'held-in' } }, summary: { completed: true, notRun: 0, passRate: 0, plannedCaseIds: ['case-1'], invalidCases: 0, aggregationRuleVersion: 4 }, caseResults: { 'case-1': { status: 'failed', score: 0 } } },
       { id: 'run-old', name: 'eval-daily-2026-08-29', timestamp: 1, model: 'm', provider: 'p', scope: 'full', source: 'eval', gitCommit: 'a', config: { mode: 'real', k: 1, caseBankSha: 'sha', aggregationRuleVersion: 4, evalSet: { split: 'held-in' } }, summary: { completed: true, notRun: 0, passRate: 1, plannedCaseIds: ['case-1'], invalidCases: 0, aggregationRuleVersion: 4 }, caseResults: { 'case-1': { status: 'passed', score: 1 } } },

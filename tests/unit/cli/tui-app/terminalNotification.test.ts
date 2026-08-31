@@ -53,6 +53,21 @@ describe('formatTerminalTitle', () => {
     expect(formatTerminalTitle({ running: false, activity: null, queued: 2 })).toBe('neo · 2 queued');
   });
 
+  it('有会话标题时替代 neo；默认占位标题不展示', () => {
+    expect(formatTerminalTitle({ running: false, activity: null, queued: 0, sessionTitle: '修 TUI 行高' }))
+      .toBe('修 TUI 行高');
+    expect(formatTerminalTitle({ running: true, activity: 'Thinking…', queued: 0, sessionTitle: '修 TUI 行高' }))
+      .toBe('Thinking… · 修 TUI 行高');
+    expect(formatTerminalTitle({ running: false, activity: null, queued: 1, sessionTitle: '修 TUI 行高' }))
+      .toBe('修 TUI 行高 · 1 queued');
+    expect(formatTerminalTitle({ running: false, activity: null, queued: 0, sessionTitle: 'CLI Session 8/31/2026 1:22:33 PM' }))
+      .toBe('neo');
+    expect(formatTerminalTitle({ running: false, activity: null, queued: 0, sessionTitle: '新对话' }))
+      .toBe('neo');
+    expect(formatTerminalTitle({ running: false, activity: null, queued: 0, sessionTitle: '  ' }))
+      .toBe('neo');
+  });
+
   it('OSC 0 标题序列', () => {
     expect(buildTerminalTitleSequence('Thinking… · neo')).toBe('\x1b]0;Thinking… · neo\x07');
   });

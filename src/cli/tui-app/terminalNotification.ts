@@ -47,10 +47,18 @@ export function formatTerminalTitle(input: {
   running: boolean;
   activity: string | null;
   queued: number;
+  /** 会话标题；默认占位标题（尚未自动命名）不展示，回退产品名 */
+  sessionTitle?: string | null;
 }): string {
-  if (input.running) return `${input.activity ?? 'Working…'} · neo`;
-  if (input.queued > 0) return `neo · ${input.queued} queued`;
-  return 'neo';
+  const raw = input.sessionTitle?.trim() ?? '';
+  const isDefault = !raw
+    || raw.startsWith('CLI Session ')
+    || raw === 'New Chat'
+    || raw === '新对话';
+  const title = isDefault ? 'neo' : raw;
+  if (input.running) return `${input.activity ?? 'Working…'} · ${title}`;
+  if (input.queued > 0) return `${title} · ${input.queued} queued`;
+  return title;
 }
 
 export function buildTerminalTitleSequence(title: string): string {

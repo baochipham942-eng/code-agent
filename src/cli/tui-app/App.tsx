@@ -114,10 +114,12 @@ export interface InkChatOptions {
   modelItems: ModelPickerItem[];
   /** StatusBar 左侧权限档（TTY 默认 auto） */
   permissionLabel?: string;
+  /** 当前会话标题（终端标签标题用；首条消息后会被自动命名，调用方在 turn 边界重取） */
+  getSessionTitle?: () => Promise<string | null>;
 }
 
-/** braille spinner，刻意 ~7.5fps（规格：30fps 每帧停 4 tick ≈ 133ms/帧） */
-const SPINNER_INTERVAL_MS = 133;
+/** braille spinner，降到 ~4fps：Ink 每次帧变化整屏擦除重写，133ms 一档肉眼可见闪烁 */
+const SPINNER_INTERVAL_MS = 250;
 
 /** Toast 自动消失时间 */
 const TOAST_MS = 3000;
@@ -312,13 +314,34 @@ export function App({ agent, options, onExit }: {
     stdout?.write('\x1b[?25l');
   });
 
+  // 会话标题：首条消息后 quick model 自动改名（异步，实测在 agent_complete 后 1-2s 才落库），
+  // 在 turn 边界/消息数变化时重取，turn 结束后再补几次延迟重取追上改名
+  const [sessionTitle, setSessionTitle] = useState<string | null>(null);
+  useEffect(() => {
+    const fetchTitle = options.getSessionTitle;
+    if (!fetchTitle) return;
+    let cancelled = false;
+    const refresh = () => {
+      void fetchTitle().then((title) => {
+        if (!cancelled && title) setSessionTitle((prev) => (prev === title ? prev : title));
+      });
+    };
+    refresh();
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    if (!state.running && state.messages.length > 0) {
+      for (const ms of [2000, 5000, 10000]) timers.push(setTimeout(refresh, ms));
+    }
+    return () => { cancelled = true; timers.forEach(clearTimeout); };
+  }, [options, state.running, state.messages.length]);
+
   useEffect(() => {
     stdout?.write(buildTerminalTitleSequence(formatTerminalTitle({
       running: state.running,
       activity: state.activity,
       queued: queuedItems.length,
+      sessionTitle,
     })));
-  }, [state.running, state.activity, queuedItems.length, stdout]);
+  }, [state.running, state.activity, queuedItems.length, sessionTitle, stdout]);
 
   // 只在 turn 运行时 ~7.5fps 跳 spinner / 计时。空闲停表——否则整树 133ms
   // 一渲，placeholder 光标和空闲 ◆ 都会卡闪。
@@ -955,8 +978,8 @@ export function App({ agent, options, onExit }: {
       ? pickerRows
       : historySearch
         ? 2
-        // 输入框：边框上下各 1 + 内边距上下各 1（Grok 式 composer 高度）
-        : editorVisualRows(editor, Math.max(columns - 6, 8), editorMaxRows) + 4;
+        // 输入框：边框上下各 1，无纵向内边距（2026-08-31 实测：paddingY=1 单行占 5 行太高）
+        : editorVisualRows(editor, Math.max(columns - 6, 8), editorMaxRows) + 2;
   // 首屏欢迎海报（Grok Build 构图）：顶左 workspace 行 + live 区居中宽卡，
   // 呼吸 ◆ 让位（零噪音）；首条消息出现即切回消息流
   const showWelcome = state.messages.length === 0;

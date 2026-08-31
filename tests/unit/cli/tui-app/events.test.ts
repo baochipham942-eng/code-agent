@@ -204,4 +204,18 @@ describe('task_progress 活动标签不闪', () => {
     expect(state.running).toBe(true);
     expect(state.activity).toBe('Searching codebase');
   });
+
+  it('turn 末尾的「生成回复中」不盖掉当前标签（实测只活 0.4s，纯闪烁）', () => {
+    let state = markRunStarted(createChatState(), 1);
+    expect(state.activity).toBe('Thinking…');
+    const next = reduceAgentEvent(state, ev('task_progress', { phase: 'generating', step: '生成回复中...' }));
+    expect(next.activity).toBe('Thinking…');
+    // 具体工具标签同样不被盖
+    state = reduceAgentEvent(state, ev('task_progress', { phase: 'tool_running', step: 'Searching codebase' }));
+    const after = reduceAgentEvent(state, ev('task_progress', { phase: 'generating', step: '生成回复中...' }));
+    expect(after.activity).toBe('Searching codebase');
+    // agent_thinking 通道同规则
+    const viaThinking = reduceAgentEvent(state, ev('agent_thinking', { message: '生成回复中...' }));
+    expect(viaThinking.activity).toBe('Searching codebase');
+  });
 });

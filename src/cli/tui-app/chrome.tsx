@@ -3,11 +3,22 @@
 // ============================================================================
 
 import { Box, Text } from 'ink';
-import { estimateCostUsd, formatDuration, type ChatState } from './events';
+import { estimateCostUsd, type ChatState } from './events';
 import { formatStatusBar } from './statusBar';
 import { QUEUE_ACTIONS, truncateQueueText, type QueueActionId } from './queueBar';
 
 const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧'];
+
+/**
+ * 运行中计时用整秒粒度：0.1s 粒度让这行每 100ms 必变一次，Ink 每次状态变化
+ * 整帧擦除重写，肉眼就是「Thinking… 一行一直在闪」（2026-08-31 实测复现）。
+ * 封口的「Thought for Xs」仍走 formatDuration 保留 0.1s 精度。
+ */
+function formatElapsedSeconds(ms: number): string {
+  const total = Math.floor(ms / 1000);
+  if (total < 60) return `${total}s`;
+  return `${Math.floor(total / 60)}m${String(total % 60).padStart(2, '0')}s`;
+}
 
 function activityColor(activity: string | null): string {
   if (!activity) return 'cyan';
@@ -95,7 +106,7 @@ export function TurnStatus({ state, frame, now }: {
       <Text>
         <Text color={activityColor(state.activity)}>{SPINNER_FRAMES[frame % SPINNER_FRAMES.length]} </Text>
         <Text color={activityColor(state.activity)}>{state.activity ?? 'Working…'}</Text>
-        <Text dimColor>  {formatDuration(elapsed)}</Text>
+        <Text dimColor>  {formatElapsedSeconds(elapsed)}</Text>
         {state.outputTokens > 0 ? <Text dimColor>  ⇣{state.outputTokens}</Text> : null}
       </Text>
     </Box>

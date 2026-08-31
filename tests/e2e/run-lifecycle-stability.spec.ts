@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import { expect, test, type APIRequestContext, type Page } from './fixtures/axeTest';
 
 async function getAuthToken(page: Page): Promise<string> {
   await page.goto('/');

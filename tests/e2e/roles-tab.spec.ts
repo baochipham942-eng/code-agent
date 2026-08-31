@@ -19,7 +19,7 @@
 //     主动性 + 角色记忆 + 工作履历在「记录」，角色定义在「个性化」。
 // ============================================================================
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from './fixtures/axeTest';
 import { dismissFirstRunDialogs } from './firstRunDialogs';
 
 test.setTimeout(60_000);

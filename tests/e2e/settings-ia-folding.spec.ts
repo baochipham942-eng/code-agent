@@ -9,7 +9,7 @@
 //   4. 再点收起
 // ============================================================================
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from './fixtures/axeTest';
 
 test.setTimeout(60_000);
 

@@ -9,7 +9,7 @@
 //   4. 选择未配置 Provider 显示渐进式空态（无模型区块）
 // ============================================================================
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from './fixtures/axeTest';
 
 test.setTimeout(60_000);
 

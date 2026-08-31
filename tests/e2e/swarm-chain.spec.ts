@@ -23,7 +23,7 @@
 // 其它所有节点都是生产代码。
 // ============================================================================
 
-import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
+import { test, expect, type APIRequestContext, type Page } from './fixtures/axeTest';
 import type { SwarmEvent } from '../../src/shared/contract/swarm';
 
 test.setTimeout(60_000);

@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { expect, test, type Route } from '@playwright/test';
+import { expect, test, type Route } from './fixtures/axeTest';
 import { dismissFirstRunDialogs } from './firstRunDialogs';
 
 test('排队发送只按真实事件推进发送、启动、等待模型和首 token', async ({ page, request }) => {

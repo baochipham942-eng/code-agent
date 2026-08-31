@@ -1,4 +1,4 @@
-import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
+import { test, expect, type APIRequestContext, type Page } from './fixtures/axeTest';
 import type { AgentEvent, SessionTask } from '../../src/shared/contract';
 import { dismissFirstRunDialogs } from './firstRunDialogs';
 

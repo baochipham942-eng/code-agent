@@ -8,7 +8,7 @@
 // 长内容流式期间跟随滚底（alignToBottom 移除后 followOutput 路径不回归）。
 // ============================================================================
 
-import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
+import { test, expect, type APIRequestContext, type Page } from './fixtures/axeTest';
 import type { AgentEvent } from '../../src/shared/contract';
 
 type RendererAgentEvent = AgentEvent & { sessionId?: string };

@@ -51,6 +51,8 @@ on:
       - 'scripts/ci/**'
       - 'scripts/console-scan.mjs'
       - 'scripts/a11y-scan.mjs'
+      - 'scripts/a11y-axe-ratchet.mjs'
+      - 'scripts/a11y-axe-ratchet-baseline.json'
       - 'scripts/stale-dist-scan.mjs'
       - 'scripts/check-design-system.mjs'
       - 'scripts/design-system-baseline.json'
@@ -456,6 +458,21 @@ jobs:
           CI: '1'
         run: npm run test:swarm:e2e
 
+      # 两阶段启门：首轮 PR 用 record 模式从 Swarm full 的 Linux/Chromium 环境取真实计数，
+      # 回填 scripts/a11y-axe-ratchet-baseline.json 后删掉 --record，才开始阻断增量。
+      - name: Record axe runtime accessibility baseline
+        if: always()
+        run: node scripts/a11y-axe-ratchet.mjs --record
+
+      - name: Upload axe runtime accessibility report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: swarm-e2e-axe-${{ github.run_id }}
+          path: test-results/axe/axe-report.json
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Record result (success)
         if: success()
         id: result
@@ -474,6 +491,7 @@ jobs:
           path: |
             playwright-report/
             test-results/
+            test-results/axe/axe-report.json
             tests/e2e/screenshots/
           if-no-files-found: ignore
           retention-days: 14

@@ -329,6 +329,7 @@ export const chatCommand = new Command('chat')
           gitBranch,
           gitDirty,
           permissionLabel: permissionMode,
+          getSessionTitle: () => agent.getSessionTitle(),
           onCommand,
           onShellCommand,
           slashItems,

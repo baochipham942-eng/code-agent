@@ -43,19 +43,19 @@ function thinking(lineCount: number): ChatMessage {
 }
 
 describe('messageLineCost', () => {
-  it('assistant = markdown 行数 + marginTop 2 + paddingBottom 1', () => {
-    // 纯文本段落，宽 20：27 字符 reflow 后 2 行 + 3 = 5
+  it('assistant = markdown 行数 + marginTop 1', () => {
+    // 纯文本段落，宽 20：27 字符 reflow 后 2 行 + 1 = 3
     const cost = messageLineCost(assistant('hello world foo bar baz qux'), 20);
-    expect(cost).toBe(5);
+    expect(cost).toBe(3);
   });
 
-  it('thinking 运行中 = 标题 + 尾部 ≤3 行 + marginTop 2', () => {
-    expect(messageLineCost(thinking(2), 80)).toBe(1 + 2 + 2);
-    expect(messageLineCost(thinking(10), 80)).toBe(1 + 3 + 2);
+  it('thinking 运行中 = 标题 + 尾部 ≤3 行 + marginTop 1', () => {
+    expect(messageLineCost(thinking(2), 80)).toBe(1 + 2 + 1);
+    expect(messageLineCost(thinking(10), 80)).toBe(1 + 3 + 1);
   });
 
-  it('tool_group 单行 + marginTop 2', () => {
-    expect(messageLineCost(toolGroup(), 80)).toBe(3);
+  it('tool_group 单行 + marginTop 1', () => {
+    expect(messageLineCost(toolGroup(), 80)).toBe(2);
   });
 });
 
@@ -64,16 +64,16 @@ describe('allocateLiveBudget（经 planDynamicLayout 验证分配语义）', () 
     const messages = [assistant('短'), toolGroup()];
     const plan = planDynamicLayout(messages, 80, 100, 6);
     expect(plan.height).toBe(100);
-    expect(plan.allocation.get('a1')).toBe(4);
-    expect(plan.allocation.get('t1')).toBe(3);
+    expect(plan.allocation.get('a1')).toBe(2);
+    expect(plan.allocation.get('t1')).toBe(2);
   });
 
   it('预算不足：从最旧开始砍，最旧一条截尾', () => {
     const messages = [assistant('```\n第一行\n第二行\n第三行\n第四行\n```'), toolGroup()];
     const plan = planDynamicLayout(messages, 80, 44, 40);
     expect(plan.height).toBe(44);
-    expect(plan.allocation.get('t1')).toBe(3);
-    expect(plan.allocation.get('a1')).toBe(1);
+    expect(plan.allocation.get('t1')).toBe(2);
+    expect(plan.allocation.get('a1')).toBe(2);
   });
 
   it('预算为 0：空分配', () => {
@@ -83,8 +83,8 @@ describe('allocateLiveBudget（经 planDynamicLayout 验证分配语义）', () 
 
   it('最新优先：中间消息被淘汰', () => {
     const messages = [toolGroup(), { ...assistant('新'), id: 'a2' }];
-    // 预算 3（rows 43 - chrome 40）：a2 全量 4 行截到 3，t1 被淘汰
-    const plan = planDynamicLayout(messages, 80, 43, 40);
+    // 预算 2（rows 42 - chrome 40）：a2 全量 2 行吃满，t1 被淘汰
+    const plan = planDynamicLayout(messages, 80, 42, 40);
     expect(plan.allocation.has('a2')).toBe(true);
     expect(plan.allocation.has('t1')).toBe(false);
   });
@@ -111,12 +111,12 @@ describe('planDynamicLayout（全屏钉底布局）', () => {
   });
 
   it('内容不满一屏：高度恒等于终端行高，消息全量不截断（留白在内容之上）', () => {
-    // width=10：'x'*19 → 2 行 → 成本 4；'x'*29 → 3 行 → 成本 5
+    // width=10：'x'*19 → 2 行 → 成本 3；'x'*29 → 3 行 → 成本 4
     const messages = [msg('a', 'x'.repeat(19)), msg('b', 'x'.repeat(29))];
     const plan = planDynamicLayout(messages, 10, 40, 6);
     expect(plan.height).toBe(40);
-    expect(plan.allocation.get('a')).toBe(4);
-    expect(plan.allocation.get('b')).toBe(5);
+    expect(plan.allocation.get('a')).toBe(3);
+    expect(plan.allocation.get('b')).toBe(4);
   });
 
   it('空消息：高度=终端行高（首屏输入区钉底）', () => {
@@ -126,18 +126,18 @@ describe('planDynamicLayout（全屏钉底布局）', () => {
   });
 
   it('内容超高：满高 + 尾部预算分配', () => {
-    // 每条成本 ceil(200/10)+2 = 22，两条 44 > 预算 34
+    // 每条成本 ceil(200/10)+1 = 21，两条 42 > 预算 34
     const messages = [msg('a', 'x'.repeat(200)), msg('b', 'x'.repeat(200))];
     const plan = planDynamicLayout(messages, 10, 40, 6);
     expect(plan.height).toBe(40);
-    // 预算 34：最新的 b 全量 22，a 只分到 12（截尾）
-    expect(plan.allocation.get('b')).toBe(22);
-    expect(plan.allocation.get('a')).toBe(12);
+    // 预算 34：最新的 b 全量 21，a 只分到 13（截尾）
+    expect(plan.allocation.get('b')).toBe(21);
+    expect(plan.allocation.get('a')).toBe(13);
   });
 
   it('恰好等于预算：全量不截断', () => {
-    // 成本 ceil(320/10)+2 = 34 = 预算 34
-    const messages = [msg('a', 'x'.repeat(320))];
+    // 成本 ceil(330/10)+1 = 34 = 预算 34
+    const messages = [msg('a', 'x'.repeat(330))];
     const plan = planDynamicLayout(messages, 10, 40, 6);
     expect(plan.height).toBe(40);
     expect(plan.allocation.get('a')).toBe(34);

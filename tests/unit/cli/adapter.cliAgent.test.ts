@@ -394,6 +394,29 @@ describe('CLIAgent', () => {
     expect(seen).toEqual(['turn_start', 'agent_complete']);
   });
 
+  it('Ink 模式（已注册 observer）：事件不再落 legacy 线性渲染（防 stdout 泄漏闪屏/污染 scrollback）', async () => {
+    installLoop(async (ctl) => {
+      ctl.onEvent({ type: 'task_progress', data: { phase: 'thinking', step: '分析请求中...' } } as AgentEvent);
+      ctl.onEvent({ type: 'agent_complete' } as AgentEvent);
+    });
+
+    const agent = new CLIAgent();
+    agent.setEventObserver(() => {});
+    await agent.run('ink');
+    expect(mocks.terminalHandleEvent).not.toHaveBeenCalled();
+  });
+
+  it('无 observer（legacy readline）：事件照常走 terminalOutput', async () => {
+    installLoop(async (ctl) => {
+      ctl.onEvent({ type: 'turn_start', data: { iteration: 1 } } as AgentEvent);
+      ctl.onEvent({ type: 'agent_complete' } as AgentEvent);
+    });
+
+    const agent = new CLIAgent();
+    await agent.run('plain');
+    expect(mocks.terminalHandleEvent).toHaveBeenCalled();
+  });
+
   it('stream-json output writes JSONL for tool/text/done and maps agent_dispatch', async () => {
     mocks.buildCLIConfig.mockReturnValue({
       ...baseConfig,

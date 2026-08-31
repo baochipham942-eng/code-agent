@@ -15,30 +15,30 @@ import { computeWindow, displayWidth, visualRowCount, type EditorState } from '.
 export function messageLineCost(message: ChatMessage, width: number): number {
   switch (message.kind) {
     case 'assistant':
-      return markdownLineCount(message.text, width) + 3;
+      return markdownLineCount(message.text, width) + 1;
     case 'thinking': {
       // 运行中：标题 1 行 + 尾部 ≤3 行；完成：单行折叠
-      if (message.endedAt !== undefined) return 3;
+      if (message.endedAt !== undefined) return 2;
       const lines = message.text.split('\n').filter((line) => line.trim().length > 0).length;
-      return 1 + Math.min(3, lines) + 2;
+      return 1 + Math.min(3, lines) + 1;
     }
     case 'tool_group': {
       // 归组单行；单个调用 1 行（+错误预览 1 行）
       const single = message.calls.length <= 1;
       const hasErrorPreview = single && message.status === 'error' && message.calls[0]?.resultPreview;
-      return 1 + (hasErrorPreview ? 1 : 0) + 2;
+      return 1 + (hasErrorPreview ? 1 : 0) + 1;
     }
     case 'system': {
       const w = Math.max(width, 8);
       const lines = Math.max(1, Math.ceil(displayWidth(message.text) / w));
-      return lines + 2;
+      return lines + 1;
     }
     case 'user': {
       const w = Math.max(width - 2, 8);
-      return Math.max(1, Math.ceil(displayWidth(message.text) / w)) + 3;
+      return Math.max(1, Math.ceil(displayWidth(message.text) / w)) + 1;
     }
     default:
-      return 3;
+      return 2;
   }
 }
 

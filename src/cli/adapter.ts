@@ -414,7 +414,10 @@ export class CLIAgent {
     } else if (this.config.outputFormat === 'json') {
       // 根据输出格式分发事件
       jsonOutput.handleEvent(event);
-    } else {
+    } else if (!this.eventObserver) {
+      // Ink TUI 拥有屏幕时（eventObserver 已注册）不能再走 legacy 线性渲染——
+      // 它直接写 stdout 的进度行/原文/状态横幅会被 Ink 下一帧擦掉（左下角频闪
+      // 「分析请求中」的真凶），并在 scrollback 留下未渲染的 markdown 原文
       terminalOutput.handleEvent(event);
     }
 
@@ -622,6 +625,20 @@ export class CLIAgent {
    */
   getSessionId(): string | null {
     return this.sessionId;
+  }
+
+  /**
+   * 获取当前会话标题（Ink TUI 终端标签标题用）。首条用户消息后会由 quick model
+   * 自动改名（SessionManager.maybeUpdateTitle），因此调用方应在 turn 边界重取。
+   */
+  async getSessionTitle(): Promise<string | null> {
+    if (!this.sessionId) return null;
+    try {
+      const session = await getSessionManager().getSession(this.sessionId, 0);
+      return session?.title ?? null;
+    } catch {
+      return null;
+    }
   }
 
   getLastRunContext(): RunContext | null {

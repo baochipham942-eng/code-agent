@@ -79,6 +79,13 @@ export type ChatMessage =
   | ToolGroupMessage
   | SystemMessage;
 
+/**
+ * 无信息量的瞬时 step：「分析请求中」每个 iteration 开头都发；「生成回复中/正在生成报告」
+ * 是最终文本到手后才发的（实测定型：活 0.4s 就随 agent_complete 消失），盖掉当前标签
+ * 只制造一次末尾闪烁。一律视为噪音：有具体标签时不许盖。
+ */
+const TRANSIENT_STEP = /分析请求|生成回复中|正在生成报告/;
+
 /** 主机侧「分析请求中」与 Thinking… 来回切会闪；归一成同一标签 */
 function normalizeActivityLabel(label: string): string {
   if (/分析请求/.test(label)) return 'Thinking…';
@@ -443,7 +450,7 @@ export function reduceAgentEvent(state: ChatState, event: AgentEvent, now: numbe
         // 回合还在跑时不要把标签清空。真正收口走 agent_complete。
         return state;
       }
-      const noisy = Boolean(data.step && /分析请求/.test(data.step));
+      const noisy = Boolean(data.step && TRANSIENT_STEP.test(data.step));
       const raw = (!data.step || noisy)
         ? (data.phase === 'thinking' ? 'Thinking…' : data.phase === 'tool_running' ? 'Run command' : 'Working…')
         : data.step;
@@ -459,10 +466,11 @@ export function reduceAgentEvent(state: ChatState, event: AgentEvent, now: numbe
     case 'agent_thinking': {
       const message = event.data?.message;
       if (!message) return state;
-      const noisy = /分析请求/.test(message);
+      const noisy = TRANSIENT_STEP.test(message);
       const label = normalizeActivityLabel(message);
       if (label === state.activity) return state;
-      if (noisy && state.activity && state.activity !== 'Thinking…') return state;
+      // 瞬时噪音标签：已有任何标签时都不许盖（含 Thinking…，否则末尾闪一下）
+      if (noisy && state.activity) return state;
       return { ...state, activity: label };
     }
 

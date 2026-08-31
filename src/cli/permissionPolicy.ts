@@ -5,7 +5,7 @@
 // CLI run/batch 没有审批 UI，无法人工确认。凡是已经进入 requestPermission 的操作
 // 都在等人批准；没有真实批准动作时必须拒绝，不能以布尔 true 冒充用户响应。
 // `--dangerously-skip-permissions` 是显式逃生门，恢复全自动批准。
-// `--permission-mode auto` 是两者之间的中间档（参考 Codex CLI granular approval）：
+// `--permission-mode auto`（chat/TTY 默认）是中间档（参考 Codex CLI granular approval）：
 // 走到审批处理器的请求再经 permissionClassifier 裁决一次——分类器判 approve
 // （只读工具 / 工作区内写入 / 安全命令）才放行，并以 approvalSource='cli-auto-approve'
 // 自报机器批准来源入账；ask/deny、forceConfirm 与硬门（exec-policy always_confirm、
@@ -17,8 +17,8 @@ import type { DecisionTrace } from '../shared/contract/decisionTrace';
 import { classifyPermission } from '../host/tools/permissionClassifier';
 import { resolveBackgroundWorkspaceAuthority } from '../host/runtime/workspaceAuthority';
 
-/** CLI 侧颗粒度权限档。目前只有 auto 一档；不加标志 = 现有行为不变。 */
-export type CLIPermissionMode = 'auto';
+/** CLI 侧颗粒度权限档。chat/TTY 默认 auto；ask 恢复「每条都弹卡」。 */
+export type CLIPermissionMode = 'auto' | 'ask';
 
 export interface CLIPermissionPolicyOptions {
   /** 显式逃生门：恢复全自动批准（含危险操作） */
@@ -40,17 +40,17 @@ export function resolveCLIPermissionModeFlag(
   dangerouslySkipPermissions?: boolean,
 ): CLIPermissionMode | undefined {
   if (raw === undefined) return undefined;
-  if (raw !== 'auto') {
-    throw new Error(`--permission-mode 目前仅支持 "auto"（收到: "${raw}"）；不加该标志保持现有行为。`);
+  if (raw !== 'auto' && raw !== 'ask') {
+    throw new Error(`--permission-mode 仅支持 "auto" 或 "ask"（收到: "${raw}"）。`);
   }
-  if (dangerouslySkipPermissions) {
+  if (raw === 'auto' && dangerouslySkipPermissions) {
     throw new Error(
       '--permission-mode auto 与 --dangerously-skip-permissions 互斥：'
       + 'auto 是分类器裁决的中间档（安全类自动批准、其余 fail-closed 拒绝），'
       + 'skip 是全量放行（含危险操作），二者语义冲突，请只保留一个。',
     );
   }
-  return 'auto';
+  return raw;
 }
 
 /** requestPermission 代表一个等待人工回答的 ask；CLI/web headless 无法回答。 */
@@ -80,14 +80,17 @@ export function createCLIPermissionHandler(
     if (options.dangerouslySkipPermissions) {
       return { approved: true };
     }
-    // 交互通道优先（Ink TUI 审批卡）；调用时现查，注册/注销不需要重建 executor。
-    // 有人能回答时 auto 档不抢答——auto 是 headless 中间档，不是交互模式的替代品。
     const provider = interactiveApprovalProvider;
+    if (options.permissionMode === 'auto') {
+      const autoResult = await decideAutoMode(request, options);
+      if (autoResult.approved) return autoResult;
+      // TTY：分类器没放行的再交给审批卡；headless 没有人可问，沿用 fail-closed。
+      if (provider) return provider(request);
+      warn(autoResult.message ?? `[permission] --permission-mode auto 拒绝: ${request.tool}`);
+      return autoResult;
+    }
     if (provider) {
       return provider(request);
-    }
-    if (options.permissionMode === 'auto') {
-      return decideAutoMode(request, options, warn);
     }
     if (requiresHumanConfirmation(request)) {
       const target = String(
@@ -138,18 +141,17 @@ function findAutoModeHardGate(trace: DecisionTrace | undefined): string | null {
 async function decideAutoMode(
   request: PermissionRequestData,
   options: CLIPermissionPolicyOptions,
-  warn: (message: string) => void,
 ): Promise<PermissionAskResult> {
   const target = String(
     request.details?.command || request.details?.path || request.details?.url || request.tool,
   );
   const deny = (reason: string): PermissionAskResult => {
-    warn(`[permission] --permission-mode auto 拒绝: ${request.tool} (${target}) — ${reason}`);
     return {
       approved: false,
       denialSource: 'no-approval-ui',
       message:
-        `${request.tool} 未获自动批准（--permission-mode auto）：${reason}。`
+        `[permission] --permission-mode auto 拒绝: ${request.tool} (${target}) — ${reason}\n`
+        + `${request.tool} 未获自动批准（--permission-mode auto）：${reason}。`
         + 'auto 档只放行分类器判定安全的操作（只读工具、工作区/临时目录内写入、安全命令），'
         + '其余一律 fail-closed 拒绝——重试结果相同，不要重试。'
         + '出路：改用有审批界面的交互模式（GUI），或显式加 --dangerously-skip-permissions 重跑（危险）。',

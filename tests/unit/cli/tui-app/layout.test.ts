@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import {
   editorVisualRows,
   messageLineCost,
+  partitionScrollback,
   planDynamicLayout,
 } from '../../../../src/cli/tui-app/layout';
 import type { ChatMessage } from '../../../../src/cli/tui-app/events';
@@ -41,19 +42,19 @@ function thinking(lineCount: number): ChatMessage {
 }
 
 describe('messageLineCost', () => {
-  it('assistant = markdown 行数 + margin', () => {
-    // 纯文本段落，宽 20：27 字符 reflow 后 2 行 + 1 margin = 3
+  it('assistant = markdown 行数 + marginTop 2 + paddingBottom 1', () => {
+    // 纯文本段落，宽 20：27 字符 reflow 后 2 行 + 3 = 5
     const cost = messageLineCost(assistant('hello world foo bar baz qux'), 20);
-    expect(cost).toBe(3);
+    expect(cost).toBe(5);
   });
 
-  it('thinking 运行中 = 标题 + 尾部 ≤3 行 + margin', () => {
-    expect(messageLineCost(thinking(2), 80)).toBe(1 + 2 + 1);
-    expect(messageLineCost(thinking(10), 80)).toBe(1 + 3 + 1);
+  it('thinking 运行中 = 标题 + 尾部 ≤3 行 + marginTop 2', () => {
+    expect(messageLineCost(thinking(2), 80)).toBe(1 + 2 + 2);
+    expect(messageLineCost(thinking(10), 80)).toBe(1 + 3 + 2);
   });
 
-  it('tool_group 单行 + margin', () => {
-    expect(messageLineCost(toolGroup(), 80)).toBe(2);
+  it('tool_group 单行 + marginTop 2', () => {
+    expect(messageLineCost(toolGroup(), 80)).toBe(3);
   });
 });
 
@@ -62,18 +63,16 @@ describe('allocateLiveBudget（经 planDynamicLayout 验证分配语义）', () 
     const messages = [assistant('短'), toolGroup()];
     const plan = planDynamicLayout(messages, 80, 100, 6);
     expect(plan.height).toBe(100);
-    expect(plan.allocation.get('a1')).toBe(2);
-    expect(plan.allocation.get('t1')).toBe(2);
+    expect(plan.allocation.get('a1')).toBe(4);
+    expect(plan.allocation.get('t1')).toBe(3);
   });
 
   it('预算不足：从最旧开始砍，最旧一条截尾', () => {
-    // 围栏代码块行数不打折：6 行 → 成本 7（markdown 软换行会并段，不能拿来凑行数）
     const messages = [assistant('```\n第一行\n第二行\n第三行\n第四行\n```'), toolGroup()];
-    // tool_group 要 2 行，assistant 全量要 7 行；预算 4（rows 44 - chrome 40）→ assistant 只剩 2
     const plan = planDynamicLayout(messages, 80, 44, 40);
     expect(plan.height).toBe(44);
-    expect(plan.allocation.get('t1')).toBe(2);
-    expect(plan.allocation.get('a1')).toBe(2);
+    expect(plan.allocation.get('t1')).toBe(3);
+    expect(plan.allocation.get('a1')).toBe(1);
   });
 
   it('预算为 0：空分配', () => {
@@ -83,8 +82,8 @@ describe('allocateLiveBudget（经 planDynamicLayout 验证分配语义）', () 
 
   it('最新优先：中间消息被淘汰', () => {
     const messages = [toolGroup(), { ...assistant('新'), id: 'a2' }];
-    // 预算 2（rows 42 - chrome 40）：a2 全量 2 行，t1 被淘汰
-    const plan = planDynamicLayout(messages, 80, 42, 40);
+    // 预算 3（rows 43 - chrome 40）：a2 全量 4 行截到 3，t1 被淘汰
+    const plan = planDynamicLayout(messages, 80, 43, 40);
     expect(plan.allocation.has('a2')).toBe(true);
     expect(plan.allocation.has('t1')).toBe(false);
   });
@@ -111,12 +110,12 @@ describe('planDynamicLayout（全屏钉底布局）', () => {
   });
 
   it('内容不满一屏：高度恒等于终端行高，消息全量不截断（留白在内容之上）', () => {
-    // width=10：'x'*19 → 2 行 → 成本 3；'x'*29 → 3 行 → 成本 4
+    // width=10：'x'*19 → 2 行 → 成本 4；'x'*29 → 3 行 → 成本 5
     const messages = [msg('a', 'x'.repeat(19)), msg('b', 'x'.repeat(29))];
     const plan = planDynamicLayout(messages, 10, 40, 6);
     expect(plan.height).toBe(40);
-    expect(plan.allocation.get('a')).toBe(3);
-    expect(plan.allocation.get('b')).toBe(4);
+    expect(plan.allocation.get('a')).toBe(4);
+    expect(plan.allocation.get('b')).toBe(5);
   });
 
   it('空消息：高度=终端行高（首屏输入区钉底）', () => {
@@ -126,20 +125,50 @@ describe('planDynamicLayout（全屏钉底布局）', () => {
   });
 
   it('内容超高：满高 + 尾部预算分配', () => {
-    // 每条成本 ceil(200/10)+1 = 21，两条 42 > 预算 34
+    // 每条成本 ceil(200/10)+2 = 22，两条 44 > 预算 34
     const messages = [msg('a', 'x'.repeat(200)), msg('b', 'x'.repeat(200))];
     const plan = planDynamicLayout(messages, 10, 40, 6);
     expect(plan.height).toBe(40);
-    // 预算 34：最新的 b 全量 21，a 只分到 13（截尾）
-    expect(plan.allocation.get('b')).toBe(21);
-    expect(plan.allocation.get('a')).toBe(13);
+    // 预算 34：最新的 b 全量 22，a 只分到 12（截尾）
+    expect(plan.allocation.get('b')).toBe(22);
+    expect(plan.allocation.get('a')).toBe(12);
   });
 
   it('恰好等于预算：全量不截断', () => {
-    // 成本 ceil(330/10)+1 = 34 = 预算 34
-    const messages = [msg('a', 'x'.repeat(330))];
+    // 成本 ceil(320/10)+2 = 34 = 预算 34
+    const messages = [msg('a', 'x'.repeat(320))];
     const plan = planDynamicLayout(messages, 10, 40, 6);
     expect(plan.height).toBe(40);
     expect(plan.allocation.get('a')).toBe(34);
+  });
+});
+
+describe('partitionScrollback', () => {
+  it('短会话全进 live，Static 为空（不上下各画一份）', () => {
+    const messages = [assistant('短'), toolGroup()];
+    const plan = planDynamicLayout(messages, 80, 40, 6);
+    const { scrollback, live } = partitionScrollback(messages, plan.allocation);
+    expect(scrollback).toEqual([]);
+    expect(live.map((m) => m.id)).toEqual(['a1', 't1']);
+  });
+
+  it('被预算挤出的已封口消息才进 Static，与 live 无交集', () => {
+    const oldUser: ChatMessage = { id: 'u1', kind: 'user', text: 'old' };
+    const huge = assistant('```\n' + 'line\n'.repeat(40) + '```');
+    const messages = [oldUser, huge];
+    const plan = planDynamicLayout(messages, 80, 24, 8);
+    const { scrollback, live } = partitionScrollback(messages, plan.allocation);
+    const liveIds = new Set(live.map((m) => m.id));
+    const scrollIds = new Set(scrollback.map((m) => m.id));
+    expect([...liveIds].some((id) => scrollIds.has(id))).toBe(false);
+    expect(scrollIds.has('u1') || liveIds.has('u1')).toBe(true);
+  });
+
+  it('流式中的 assistant 即使预算内也不进 Static', () => {
+    const streaming = assistant('正在写');
+    const plan = planDynamicLayout([streaming], 80, 40, 6);
+    const { scrollback, live } = partitionScrollback([streaming], plan.allocation);
+    expect(scrollback).toEqual([]);
+    expect(live).toEqual([streaming]);
   });
 });

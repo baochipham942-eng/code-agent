@@ -64,7 +64,7 @@ export const capabilityHubZh = {
     unloadedSuffix: '插件已卸载',
   },
   // 候选能力（N-CAP1 / F12）。文案纪律：这一区只出现「能力」，
-  // 不许出现 插件 / plugin / manifest / cordis / 意图簇 这类实现概念。
+  // 不许出现 plugin / manifest / cordis / 意图簇这类实现概念。
   capabilityCandidates: {
     title: '候选能力',
     intro: '这里记的是你反复让我拼着做的事。只记账，不打扰——想看才看。',

@@ -40,7 +40,7 @@ beforeEach(async () => {
       internalFeature: {
         id: 'evaluation-center',
         label: '评测中心',
-        sdkVersion: { host: INTERNAL_SDK_VERSION.host, renderer: 'pending' },
+        sdkVersion: INTERNAL_SDK_VERSION,
         rendererEntry: 'dist/renderer/index.js',
         rendererStyles: 'dist/renderer/index.css',
         hostEntry: 'dist/host/index.cjs',

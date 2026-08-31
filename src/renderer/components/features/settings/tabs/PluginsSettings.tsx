@@ -32,6 +32,7 @@ import type {
   InstalledCapabilityPackage,
 } from '@shared/contract/capabilityPackage';
 import { useAuthStore } from '../../../../stores/authStore';
+import { useInternalFeatureStore } from '../../../../internalFeatures/internalFeatureStore';
 import { useI18n } from '../../../../hooks/useI18n';
 import ipcService from '../../../../services/ipcService';
 import { pickNativeFile } from '../../../../services/tauriPluginFacade';
@@ -42,6 +43,7 @@ import { SettingsDetails, SettingsSection } from '../SettingsLayout';
 import { BundledCapabilitiesTab } from '../../capabilityHub/BundledCapabilitiesTab';
 import { HubTabHeader } from '../../capabilityHub/HubTabHeader';
 import { Pill, SummaryTile } from './PluginsSettings.ui';
+import { CapabilityPackageCard } from './CapabilityPackageCard';
 
 type Notice = { type: 'success' | 'error'; text: string };
 export * from './PluginsSettings.helpers';
@@ -141,6 +143,7 @@ export const PluginsSettings: React.FC = () => {
       setCatalog(catalogState.data ?? []);
       setInstalled(installedState.data ?? []);
       setCapabilityPackages(capabilityPackagesState.data ?? []);
+      await useInternalFeatureStore.getState().refresh();
     } catch (error) {
       const text = (error instanceof Error ? error.message : String(error)).trim() || pluginsText.errors.operationFailed;
       setNotice({ type: 'error', text });
@@ -444,63 +447,18 @@ export const PluginsSettings: React.FC = () => {
             <EmptyState text={pluginsText.manualImport.empty} />
           ) : (
             <div className="space-y-3">
-              {capabilityPackages.map((plugin) => {
-                const busy = busyKey === `capability-package:uninstall:${plugin.id}`;
-                return (
-                  <div
-                    key={plugin.id}
-                    data-testid={`capability-package-${plugin.id}`}
-                    className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4"
-                  >
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <h4 className="text-sm font-medium text-zinc-100">{plugin.name}</h4>
-                          <Pill>{plugin.version}</Pill>
-                          <Pill tone={plugin.state === 'active' ? 'success' : 'default'}>
-                            {plugin.state === 'active'
-                              ? t.capabilityPackages.installed
-                              : t.capabilityPackages.removed}
-                          </Pill>
-                        </div>
-                        <p className="mt-1 text-xs leading-5 text-zinc-500">{plugin.description}</p>
-                        <div className="mt-2 flex flex-wrap gap-1.5">
-                          {plugin.permissions.map((permission) => <Pill key={permission}>{permissionLabel(permission)}</Pill>)}
-                          {plugin.surface === 'internal-feature' ? (
-                            <Pill tone="warning">{pluginsText.manualImport.internalFeature}</Pill>
-                          ) : (
-                            <Pill>{plugin.toolNames.length}{pluginsText.manualImport.toolsSuffix}</Pill>
-                          )}
-                        </div>
-                        {plugin.error && <p className="mt-2 text-xs text-badge-danger">{plugin.error}</p>}
-                      </div>
-                      {plugin.state === 'available' ? (
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          onClick={() => handleInstallBundledCapabilityPackage(plugin)}
-                          loading={packageBusy}
-                          disabled={busyKey !== null || packageBusy}
-                          leftIcon={<Download className="h-3.5 w-3.5" />}
-                        >
-                          {pluginsText.manualImport.install}
-                        </Button>
-                      ) : (
-                        <Button
-                          variant="danger"
-                          size="sm"
-                          onClick={() => handleUninstallCapabilityPackage(plugin)}
-                          loading={busy}
-                          disabled={busyKey !== null}
-                          leftIcon={<Trash2 className="h-3.5 w-3.5" />}
-                        >
-                          {pluginsText.manualImport.uninstall}
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
+              {capabilityPackages.map((plugin) => (
+                <CapabilityPackageCard
+                  key={plugin.id}
+                  plugin={plugin}
+                  busyKey={busyKey}
+                  packageBusy={packageBusy}
+                  permissionLabel={permissionLabel}
+                  onInstall={handleInstallBundledCapabilityPackage}
+                  onUninstall={handleUninstallCapabilityPackage}
+                  onReinstall={handleSelectCapabilityPackage}
+                />
+              ))}
             </div>
           )}
         </div>

@@ -362,6 +362,7 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.MARKETPLACE_ENABLE_PLUGIN]: (pluginId: string) => Promise<MarketplaceResult<void>>;
   [IPC_CHANNELS.MARKETPLACE_DISABLE_PLUGIN]: (pluginId: string) => Promise<MarketplaceResult<void>>;
   [IPC_CHANNELS.CAPABILITY_PACKAGE_SELECT_STAGE]: () => Promise<CapabilityPackageResult<CapabilityPackagePreview | null>>;
+  [IPC_CHANNELS.CAPABILITY_PACKAGE_STAGE_PATH]: (selectedPath: string) => Promise<CapabilityPackageResult<CapabilityPackagePreview>>;
   [IPC_CHANNELS.CAPABILITY_PACKAGE_STAGE_BUNDLED]: (pluginId: string) => Promise<CapabilityPackageResult<CapabilityPackagePreview>>;
   [IPC_CHANNELS.CAPABILITY_PACKAGE_LIST]: () => Promise<CapabilityPackageResult<InstalledCapabilityPackage[]>>;
   [IPC_CHANNELS.CAPABILITY_PACKAGE_CONFIRM]: (token: string) => Promise<CapabilityPackageResult<CapabilityPackageInstallResult>>;

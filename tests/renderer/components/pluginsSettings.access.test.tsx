@@ -6,12 +6,20 @@ import { IPC_CHANNELS } from '../../../src/shared/ipc';
 import { zh } from '../../../src/renderer/i18n/zh';
 
 const invoke = vi.hoisted(() => vi.fn());
+const platform = vi.hoisted(() => ({ tauri: false }));
+const pickNativeFile = vi.hoisted(() => vi.fn());
 
 vi.mock('../../../src/renderer/hooks/useI18n', () => ({
   useI18n: () => ({ t: zh }),
 }));
 vi.mock('../../../src/renderer/services/ipcService', () => ({
   default: { invoke },
+}));
+vi.mock('../../../src/renderer/services/tauriPluginFacade', () => ({
+  pickNativeFile,
+}));
+vi.mock('../../../src/renderer/utils/platform', () => ({
+  isTauriMode: () => platform.tauri,
 }));
 
 import { PluginsSettings } from '../../../src/renderer/components/features/settings/tabs/PluginsSettings';
@@ -29,6 +37,8 @@ const builtinIds = [
 ] as const;
 
 beforeEach(() => {
+  platform.tauri = false;
+  pickNativeFile.mockReset();
   invoke.mockImplementation((channel: string) => {
     if (channel === IPC_CHANNELS.MARKETPLACE_LIST) {
       return Promise.resolve({
@@ -198,6 +208,85 @@ describe('PluginsSettings access boundaries', () => {
         'local-import-token',
       );
     });
+  });
+
+  it('routes a Tauri native file pick through the path staging IPC', async () => {
+    platform.tauri = true;
+    useAuthStore.setState({ user: { id: 'user', email: 'user@example.com', isAdmin: false } });
+    pickNativeFile.mockResolvedValue('/Users/linchen/Downloads/local-plugin.zip');
+    invoke.mockImplementation((channel: string) => {
+      if (
+        channel === IPC_CHANNELS.MARKETPLACE_LIST
+        || channel === IPC_CHANNELS.MARKETPLACE_LIST_PLUGINS
+        || channel === IPC_CHANNELS.MARKETPLACE_LIST_INSTALLED
+        || channel === IPC_CHANNELS.CAPABILITY_PACKAGE_LIST
+      ) {
+        return Promise.resolve({ success: true, data: [] });
+      }
+      if (channel === IPC_CHANNELS.CAPABILITY_STATE_READINESS) {
+        return Promise.resolve({ status: 'fallback' });
+      }
+      if (channel === IPC_CHANNELS.CAPABILITY_PACKAGE_STAGE_PATH) {
+        return Promise.resolve({
+          success: true,
+          data: {
+            token: 'tauri-import-token',
+            id: 'local.tauri-import',
+            name: 'Tauri Import',
+            version: '1.0.0',
+            description: 'Imported from native picker',
+            permissions: [],
+            toolNames: ['tauri_import'],
+            surface: 'tools',
+            sourceKind: 'zip',
+            sourceLabel: 'local-plugin.zip',
+            sandbox: { passed: true, summary: 'ready' },
+            expiresAt: Date.now() + 60_000,
+          },
+        });
+      }
+      throw new Error(`Unexpected channel ${channel}`);
+    });
+
+    render(<PluginsSettings />);
+    fireEvent.click(await screen.findByRole('button', { name: zh.settings.plugins.manualImport.action }));
+
+    expect(await screen.findByText(zh.settings.plugins.manualImport.confirmTitle)).toBeTruthy();
+    expect(pickNativeFile).toHaveBeenCalledWith({
+      title: zh.settings.plugins.manualImport.action,
+      extensions: ['zip', 'json'],
+    });
+    expect(invoke).toHaveBeenCalledWith(
+      IPC_CHANNELS.CAPABILITY_PACKAGE_STAGE_PATH,
+      '/Users/linchen/Downloads/local-plugin.zip',
+    );
+    expect(invoke).not.toHaveBeenCalledWith(IPC_CHANNELS.CAPABILITY_PACKAGE_SELECT_STAGE);
+  });
+
+  it('surfaces an explicit local import route error when the IPC picker is missing', async () => {
+    useAuthStore.setState({ user: { id: 'user', email: 'user@example.com', isAdmin: false } });
+    invoke.mockImplementation((channel: string) => {
+      if (
+        channel === IPC_CHANNELS.MARKETPLACE_LIST
+        || channel === IPC_CHANNELS.MARKETPLACE_LIST_PLUGINS
+        || channel === IPC_CHANNELS.MARKETPLACE_LIST_INSTALLED
+        || channel === IPC_CHANNELS.CAPABILITY_PACKAGE_LIST
+      ) {
+        return Promise.resolve({ success: true, data: [] });
+      }
+      if (channel === IPC_CHANNELS.CAPABILITY_STATE_READINESS) {
+        return Promise.resolve({ status: 'fallback' });
+      }
+      if (channel === IPC_CHANNELS.CAPABILITY_PACKAGE_SELECT_STAGE) return undefined;
+      throw new Error(`Unexpected channel ${channel}`);
+    });
+
+    render(<PluginsSettings />);
+    fireEvent.click(await screen.findByRole('button', { name: zh.settings.plugins.manualImport.action }));
+
+    expect((await screen.findByRole('alert')).textContent).toContain(
+      zh.settings.plugins.manualImport.importUnavailable,
+    );
   });
 
   it('waits for an initially unavailable bridge and loads without an error notice once ready', async () => {

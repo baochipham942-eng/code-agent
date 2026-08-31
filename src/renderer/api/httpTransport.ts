@@ -145,6 +145,15 @@ function normalizeIpcResultEnvelope(channel: string, value: unknown): unknown {
   return { success: true, data: value };
 }
 
+function normalizeIpcTransportFailure(channel: string, status: number | null, message: string): unknown {
+  if (!expectsIpcResultEnvelope(channel)) return undefined;
+  const statusLabel = status === null ? '' : ` (${status})`;
+  return {
+    success: false,
+    error: message || `插件通道请求失败${statusLabel}`,
+  };
+}
+
 function normalizeStringArray(value: unknown): string[] {
   return Array.isArray(value)
     ? value.filter((item): item is string => typeof item === 'string')
@@ -761,7 +770,11 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
             errorMessage || errorBody,
           );
           recordTransportFailure(channel, response.status, errorMessage || errorBody);
-          return undefined as ReturnType<IpcInvokeHandlers[K]>;
+          return normalizeIpcTransportFailure(
+            channel,
+            response.status,
+            errorMessage || errorBody,
+          ) as ReturnType<IpcInvokeHandlers[K]>;
         }
         clearAuthTokenReloadAttempt();
 
@@ -794,8 +807,9 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
         return undefined as ReturnType<IpcInvokeHandlers[K]>;
       } catch (err) {
         logTransportErrorThrottled(`${channel}:exception`, `[HttpTransport] ${channel} error:`, err);
-        recordTransportFailure(channel, null, err instanceof Error ? err.message : String(err));
-        return undefined as ReturnType<IpcInvokeHandlers[K]>;
+        const message = err instanceof Error ? err.message : String(err);
+        recordTransportFailure(channel, null, message);
+        return normalizeIpcTransportFailure(channel, null, message) as ReturnType<IpcInvokeHandlers[K]>;
       }
     }) as CommandBridgeAPI['invoke'],
 

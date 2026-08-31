@@ -754,6 +754,7 @@ export const zhSettingsModels = {
         title: '可用插件',
         description: '官方插件随 Neo 自带，装入即可用；也可以从本机文件导入你自己的插件。校验和权限确认通过后会装入本机。',
         empty: '还没有可安装或已导入的插件。',
+        importUnavailable: '当前运行环境没有可用的本机插件导入路由。',
         internalFeature: '仅管理员内部界面',
         toolsSuffix: ' 个工具',
         uninstall: '卸载',

@@ -5,6 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   editorVisualRows,
+  hitLiveToolGroup,
   messageLineCost,
   partitionScrollback,
   planDynamicLayout,
@@ -162,6 +163,26 @@ describe('partitionScrollback', () => {
     const scrollIds = new Set(scrollback.map((m) => m.id));
     expect([...liveIds].some((id) => scrollIds.has(id))).toBe(false);
     expect(scrollIds.has('u1') || liveIds.has('u1')).toBe(true);
+  });
+
+  it('从 live 区底部命中 tool_group', () => {
+    const group: ChatMessage = {
+      id: 't1',
+      kind: 'tool_group',
+      name: 'read_file',
+      activeVerb: 'Reading',
+      doneVerb: 'Read',
+      groupNoun: 'file',
+      calls: [{
+        id: 'c1', name: 'read_file', activeVerb: 'Reading', doneVerb: 'Read',
+        summary: '/a.ts', status: 'done', startedAt: 0,
+      }],
+      status: 'done',
+    };
+    const plan = planDynamicLayout([group], 80, 20, 6);
+    const { live } = partitionScrollback([group], plan.allocation);
+    expect(hitLiveToolGroup(14, live, plan.allocation, 20, 6)).toBe('t1');
+    expect(hitLiveToolGroup(20, live, plan.allocation, 20, 6)).toBeNull();
   });
 
   it('流式中的 assistant 即使预算内也不进 Static', () => {

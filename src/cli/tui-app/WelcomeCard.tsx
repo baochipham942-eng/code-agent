@@ -4,6 +4,7 @@
 // 矮终端退回 3 行紧缩 logo，避免把输入区顶出屏。
 // ============================================================================
 
+import { useEffect, useState } from 'react';
 import { Box, Text } from 'ink';
 import {
   NEO_LOGO_COMPACT,
@@ -13,6 +14,9 @@ import {
   WELCOME_SUBHEAD,
 } from './welcomeSplash';
 
+/** 只动 logo 自己的 state，900ms 一帧，不拉整棵 App 树 */
+const LOGO_TICK_MS = 900;
+
 export function WelcomeCard({ version, columns, compact, selectedIndex = -1 }: {
   version: string;
   columns: number;
@@ -20,7 +24,14 @@ export function WelcomeCard({ version, columns, compact, selectedIndex = -1 }: {
   /** 当前高亮的动作（键盘/鼠标悬停白底）；-1 = 不高亮 */
   selectedIndex?: number;
 }) {
+  const [logoTick, setLogoTick] = useState(0);
+  useEffect(() => {
+    if (compact) return;
+    const timer = setInterval(() => setLogoTick((tick) => tick + 1), LOGO_TICK_MS);
+    return () => clearInterval(timer);
+  }, [compact]);
   const logo = compact ? NEO_LOGO_COMPACT : NEO_LOGO_FULL;
+  const center = Math.floor(logo.length / 2);
   const cardWidth = Math.min(Math.max(columns - 8, 42), 78);
   const contentWidth = Math.max(28, cardWidth - 28);
 
@@ -35,7 +46,12 @@ export function WelcomeCard({ version, columns, compact, selectedIndex = -1 }: {
     >
       <Box flexDirection="column">
         {logo.map((line, index) => (
-          <Text key={index} color="cyan">{line}</Text>
+          <Text
+            key={index}
+            color={!compact && index === center && logoTick % 2 === 1 ? 'white' : 'cyan'}
+          >
+            {line}
+          </Text>
         ))}
       </Box>
       <Box flexDirection="column" width={contentWidth}>

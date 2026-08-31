@@ -109,6 +109,29 @@ export function planDynamicLayout(
  * 被预算挤出的已封口消息才进 Static scrollback。
  * 先前「封口前缀全进 Static + live 再画一遍」会在中间撑出一块空，上下各一份正文。
  */
+/** live 区 flex-end：从下往上命中 tool_group id，供鼠标展开/收起 */
+export function hitLiveToolGroup(
+  clickRow1: number,
+  live: ChatMessage[],
+  allocation: Map<string, number>,
+  termRows: number,
+  chromeRows: number,
+): string | null {
+  const liveBottom = termRows - chromeRows;
+  if (clickRow1 < 1 || clickRow1 > liveBottom) return null;
+  let row = liveBottom;
+  for (let i = live.length - 1; i >= 0; i--) {
+    const height = allocation.get(live[i].id) ?? 0;
+    if (height <= 0) continue;
+    const top = row - height + 1;
+    if (clickRow1 >= top && clickRow1 <= row && live[i].kind === 'tool_group') {
+      return live[i].id;
+    }
+    row = top - 1;
+  }
+  return null;
+}
+
 export function partitionScrollback(
   messages: ChatMessage[],
   allocation: Map<string, number>,

@@ -458,11 +458,11 @@ jobs:
           CI: '1'
         run: npm run test:swarm:e2e
 
-      # 两阶段启门：首轮 PR 用 record 模式从 Swarm full 的 Linux/Chromium 环境取真实计数，
-      # 回填 scripts/a11y-axe-ratchet-baseline.json 后删掉 --record，才开始阻断增量。
-      - name: Record axe runtime accessibility baseline
+      # 初值来自本 PR 的 Swarm full Linux/Chromium record artifact（run 33397733582），
+      # 不使用本机计数；当前高于基线 fail，低于基线提示下调。
+      - name: Check axe runtime accessibility ratchet
         if: always()
-        run: node scripts/a11y-axe-ratchet.mjs --record
+        run: node scripts/a11y-axe-ratchet.mjs --compare-baseline origin/main
 
       - name: Upload axe runtime accessibility report
         if: always()

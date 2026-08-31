@@ -79,6 +79,23 @@ export type ChatMessage =
   | ToolGroupMessage
   | SystemMessage;
 
+/** 已封口 = 不会再变，可进 Static scrollback（与 live 互斥） */
+export function isSettledMessage(message: ChatMessage): boolean {
+  switch (message.kind) {
+    case 'user':
+    case 'system':
+      return true;
+    case 'assistant':
+      return !message.streaming;
+    case 'thinking':
+      return message.endedAt !== undefined;
+    case 'tool_group':
+      return message.status !== 'running';
+    default:
+      return true;
+  }
+}
+
 export interface ChatState {
   messages: ChatMessage[];
   /** turn 是否在运行（驱动 Turn status 行） */

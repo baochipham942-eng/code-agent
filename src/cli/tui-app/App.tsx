@@ -1,9 +1,7 @@
 // ============================================================================
-// Ink TUI 主界面：<Static> 消息滚动区（已封口消息滚入终端历史）→ 动态区
-// （未封口消息 → Turn status 行 → Slash 补全弹窗 → 多行编辑器 ❯ + rail ┃
-// → StatusBar（输入框下）→ ShortcutsBar）。
-// 布局为紧凑流式：动态块 = 内容自然高（封顶终端行高），空会话无整屏留白；
-// 内容超高回退 P3 钉顶满高 + 预算截尾（Ink v7 裁剪护栏）。
+// Ink TUI：Static（被挤出视口的封口消息）→ live（预算内消息，与 Static 互斥）
+// → Turn status → Slash → 多行编辑器 → StatusBar → ShortcutsBar。
+// 动态块高度 = 终端行高，输入钉底；live 与 Static 不得重复渲染同一条。
 // P2 能力：多行编辑（Shift+Enter/Ctrl+J/`\` 续行）、粘贴 chip、slash 补全、
 // 真 slash 命令（onCommand 注入）、运行中排队 follow-up、100 条输入历史。
 // P1 高频体感：/ps /stop 后台任务（StatusBar 计数）、OSC 9 终端通知（失焦才发）、
@@ -56,7 +54,6 @@ import {
   markRunStarted,
   reduceAgentEvent,
   resolveShellCommand,
-  type ChatMessage,
   type ChatState,
 } from './events';
 import {
@@ -79,7 +76,7 @@ import {
   type EditorState,
 } from './editorState';
 import { filterSlashCommands, type SlashItem } from './slashCommands';
-import { editorVisualRows, planDynamicLayout } from './layout';
+import { editorVisualRows, partitionScrollback, planDynamicLayout } from './layout';
 import { Editor } from './Editor';
 import { SlashMenu } from './SlashMenu';
 import { MessageView } from './MessageView';
@@ -337,9 +334,9 @@ export function App({ agent, options, onExit }: {
   historySearchRef.current = historySearch;
   /** 进搜索前的草稿（Esc 恢复） */
   const historySearchDraftRef = useRef('');
-  /** 首屏动作高亮（键盘 ↑↓ / 鼠标悬停） */
-  const [welcomeSelected, setWelcomeSelected] = useState(0);
-  const welcomeSelectedRef = useRef(0);
+  /** 首屏动作高亮（键盘 ↑↓ / 鼠标悬停）；-1 = 无悬停，不预选 */
+  const [welcomeSelected, setWelcomeSelected] = useState(-1);
+  const welcomeSelectedRef = useRef(-1);
   welcomeSelectedRef.current = welcomeSelected;
   const onWelcomeMouseRef = useRef<(event: { button: number; x: number; y: number; kind: 'press' | 'release' | 'move' }) => void>(() => {});
   const welcomeGeometryRef = useRef({ termRows: 24, chromeRows: 5, compact: false });
@@ -488,11 +485,10 @@ export function App({ agent, options, onExit }: {
   onWelcomeMouseRef.current = (event) => {
     const geo = welcomeGeometryRef.current;
     const index = welcomeActionIndexAt(event.y, geo.termRows, geo.chromeRows, geo.compact);
-    if (index == null) return;
-    setWelcomeSelected(index);
-    if (event.kind === 'press' && event.button === 0) {
-      activateWelcomeAction(WELCOME_ACTIONS[index].id);
-    }
+    if (event.kind !== 'move' && event.kind !== 'press') return;
+    const next = index ?? -1;
+    if (next !== welcomeSelectedRef.current) setWelcomeSelected(next);
+    // 点击只点亮白底，不执行；Enter 才触发（hover 呼应，避免一点就跳走）
   };
 
   const runPrompt = useCallback(async (text: string) => {
@@ -581,7 +577,8 @@ export function App({ agent, options, onExit }: {
     const current = content(editorRef.current);
     if (!current.trim()) {
       if (showWelcomeRef.current) {
-        const action = WELCOME_ACTIONS[welcomeSelectedRef.current];
+        const selected = welcomeSelectedRef.current;
+        const action = selected >= 0 ? WELCOME_ACTIONS[selected] : undefined;
         if (action) activateWelcomeAction(action.id);
       }
       return;
@@ -858,7 +855,7 @@ export function App({ agent, options, onExit }: {
     }
     if (key.upArrow) {
       if (showWelcomeRef.current && isEmpty(editorRef.current) && !historyRef.current.browsing) {
-        setWelcomeSelected((index) => Math.max(0, index - 1));
+        setWelcomeSelected((index) => (index < 0 ? 0 : Math.max(0, index - 1)));
         return;
       }
       // 空 prompt（或已在翻历史）按 ↑ 翻历史，翻到的内容落回编辑器可编辑
@@ -872,7 +869,7 @@ export function App({ agent, options, onExit }: {
     }
     if (key.downArrow) {
       if (showWelcomeRef.current && isEmpty(editorRef.current) && !historyRef.current.browsing) {
-        setWelcomeSelected((index) => Math.min(WELCOME_ACTIONS.length - 1, index + 1));
+        setWelcomeSelected((index) => (index < 0 ? 0 : Math.min(WELCOME_ACTIONS.length - 1, index + 1)));
         return;
       }
       if (historyRef.current.browsing) {
@@ -966,10 +963,8 @@ export function App({ agent, options, onExit }: {
   // 消息区可用宽度：左右 padding 各 2 列（规格）
   const messageWidth = useMemo(() => Math.max(columns - 4, 20), [columns]);
 
-  // 消息一分为二：已封口的进 <Static>（滚入终端历史，天然滚动区）；
-  // 未封口的（流式 assistant/thinking/运行中工具组）留在动态区原地更新。
-  const firstLiveIndex = state.messages.findIndex((message) => !isSettled(message));
-  const settled = firstLiveIndex === -1 ? state.messages : state.messages.slice(0, firstLiveIndex);
+  // 消息一分为二且互斥：视口预算内的只在 live 画一次；
+  // 被挤出视口的已封口消息才进 Static scrollback。
 
   const menuItems = computeMenuItems();
   const menuIndex = Math.min(slashIndex, Math.max(menuItems.length - 1, 0));
@@ -1000,8 +995,8 @@ export function App({ agent, options, onExit }: {
       ? pickerRows
       : historySearch
         ? 2
-        // 输入框圆角边框上下各 1 行（Editor 组件内渲染，这里计入布局预算）
-        : editorVisualRows(editor, Math.max(columns - 6, 8), editorMaxRows) + 2;
+        // 输入框：边框上下各 1 + 内边距上下各 1（Grok 式 composer 高度）
+        : editorVisualRows(editor, Math.max(columns - 6, 8), editorMaxRows) + 4;
   // 首屏欢迎海报（Grok Build 构图）：顶左 workspace 行 + live 区居中宽卡，
   // 呼吸 ◆ 让位（零噪音）；首条消息出现即切回消息流
   const showWelcome = state.messages.length === 0;
@@ -1020,7 +1015,7 @@ export function App({ agent, options, onExit }: {
   welcomeGeometryRef.current = { termRows: rows, chromeRows, compact: welcomeCompact };
   const layoutPlan = planDynamicLayout(state.messages, messageWidth, rows, chromeRows);
   const liveAllocation = layoutPlan.allocation;
-  const visibleLive = state.messages.filter((message) => liveAllocation.has(message.id));
+  const { scrollback: settled, live: visibleLive } = partitionScrollback(state.messages, liveAllocation);
 
   return (
     <Box flexDirection="column">
@@ -1108,19 +1103,4 @@ export function App({ agent, options, onExit }: {
   );
 }
 
-/** 消息是否已封口（不会再变，可永久落入终端 scrollback） */
-function isSettled(message: ChatMessage): boolean {
-  switch (message.kind) {
-    case 'user':
-    case 'system':
-      return true;
-    case 'assistant':
-      return !message.streaming;
-    case 'thinking':
-      return message.endedAt !== undefined;
-    case 'tool_group':
-      return message.status !== 'running';
-    default:
-      return true;
-  }
-}
+

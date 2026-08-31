@@ -7,6 +7,13 @@ import ipcService from '../../../services/ipcService';
 import { useBundledCapabilityStore } from '../../../stores/bundledCapabilityStore';
 import { Button } from '../../primitives';
 import { HubTabHeader } from './HubTabHeader';
+import { PluginCard } from './PluginCard';
+
+type VoiceCapabilityId = 'builtin.voice-live' | 'builtin.voice-input';
+
+function permissionName(permission: string): string {
+  return permission.split(/[：:]/, 1)[0].trim();
+}
 
 export const BundledCapabilitiesTab: React.FC<{ showHeader?: boolean }> = ({ showHeader = true }) => {
   const { t } = useI18n();
@@ -18,8 +25,8 @@ export const BundledCapabilitiesTab: React.FC<{ showHeader?: boolean }> = ({ sho
   ));
   const refresh = useBundledCapabilityStore((state) => state.refresh);
   const [readiness, setReadiness] = useState<BundledHostCapabilityReadiness | null>(null);
-  const [busyId, setBusyId] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<VoiceCapabilityId | null>(null);
+  const [error, setError] = useState<{ id: VoiceCapabilityId; text: string } | null>(null);
 
   const loadReadiness = useCallback(async () => {
     try {
@@ -29,7 +36,10 @@ export const BundledCapabilitiesTab: React.FC<{ showHeader?: boolean }> = ({ sho
       ));
     } catch (readinessError) {
       setReadiness(null);
-      setError(readinessError instanceof Error ? readinessError.message : String(readinessError));
+      setError({
+        id: 'builtin.voice-input',
+        text: readinessError instanceof Error ? readinessError.message : String(readinessError),
+      });
     }
   }, []);
 
@@ -38,7 +48,7 @@ export const BundledCapabilitiesTab: React.FC<{ showHeader?: boolean }> = ({ sho
   }, [loadReadiness, revision]);
 
   const changeInstallState = useCallback(async (
-    id: 'builtin.voice-live' | 'builtin.voice-input',
+    id: VoiceCapabilityId,
     nextInstalled: boolean,
   ) => {
     setBusyId(id);
@@ -51,7 +61,7 @@ export const BundledCapabilitiesTab: React.FC<{ showHeader?: boolean }> = ({ sho
       await refresh();
       if (id === 'builtin.voice-input') await loadReadiness();
     } catch (actionError) {
-      setError(actionError instanceof Error ? actionError.message : String(actionError));
+      setError({ id, text: actionError instanceof Error ? actionError.message : String(actionError) });
     } finally {
       setBusyId(null);
     }
@@ -63,137 +73,121 @@ export const BundledCapabilitiesTab: React.FC<{ showHeader?: boolean }> = ({ sho
       ? copy.readiness.fallback
       : copy.readiness.notReady;
 
+  const status = (installed: boolean) => installed ? copy.installed : copy.removed;
+  const action = (id: VoiceCapabilityId, installed: boolean) => (
+    <Button
+      variant={installed ? 'danger' : 'secondary'}
+      size="sm"
+      loading={busyId === id}
+      disabled={busyId !== null}
+      leftIcon={installed ? <Trash2 className="h-3.5 w-3.5" /> : <PackagePlus className="h-3.5 w-3.5" />}
+      onClick={() => { void changeInstallState(id, !installed); }}
+    >
+      {installed ? copy.uninstall : copy.install}
+    </Button>
+  );
+  const notice = (id: VoiceCapabilityId, installed: boolean, installPrompt: string) => (
+    <>
+      {!installed && (
+        <div className="mt-3 rounded-lg border border-indigo-500/20 bg-indigo-500/10 px-3 py-2 text-xs text-badge-accent">
+          {installPrompt}
+        </div>
+      )}
+      {error?.id === id && (
+        <div role="alert" className="mt-3 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-badge-danger">
+          {error.text}
+        </div>
+      )}
+    </>
+  );
+
   return (
-    <div data-testid="bundled-capabilities-tab" className="space-y-5">
+    <div data-testid="bundled-capabilities-tab" className="space-y-3">
       {showHeader && <HubTabHeader title={copy.title} />}
-      <section className="rounded-2xl border border-zinc-800 bg-zinc-950/70 p-5" data-testid="voice-live-capability-card">
-        <div className="flex items-start justify-between gap-5">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <Phone className="h-5 w-5 text-badge-accent" />
-              <h2 className="text-base font-semibold text-zinc-100">{copy.voiceLive.name}</h2>
-              <span className={`rounded-full px-2 py-0.5 text-xs ${liveInstalled ? 'bg-emerald-500/10 text-badge-success' : 'bg-zinc-800 text-zinc-400'}`}>
-                {liveInstalled ? copy.installed : copy.removed}
-              </span>
+      <PluginCard
+        testId="voice-live-capability-card"
+        icon={<Phone className="h-4 w-4" />}
+        name={copy.voiceLive.name}
+        status={status(liveInstalled)}
+        statusTone={liveInstalled ? 'active' : 'inactive'}
+        description={copy.voiceLive.summary}
+        permissions={copy.voiceLive.permissions.map(permissionName)}
+        action={action('builtin.voice-live', liveInstalled)}
+        detailsLabel={copy.detailsLabel}
+        notice={notice('builtin.voice-live', liveInstalled, copy.voiceLive.installPrompt)}
+        details={(
+          <div className="grid gap-3 lg:grid-cols-2">
+            <div>
+              <h4 className="text-xs font-medium text-zinc-200">{copy.permissionsTitle}</h4>
+              <ul className="mt-2 space-y-1.5 text-xs leading-5 text-zinc-400">
+                {copy.voiceLive.permissions.map((permission) => (
+                  <li key={permission} className="flex items-start gap-2">
+                    <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-badge-success" />
+                    <span>{permission}</span>
+                  </li>
+                ))}
+              </ul>
             </div>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-400">{copy.voiceLive.summary}</p>
-          </div>
-          <Button
-            variant={liveInstalled ? 'ghost' : 'primary'}
-            disabled={busyId === 'builtin.voice-live'}
-            leftIcon={liveInstalled ? <Trash2 className="h-4 w-4" /> : <PackagePlus className="h-4 w-4" />}
-            onClick={() => { void changeInstallState('builtin.voice-live', !liveInstalled); }}
-          >
-            {liveInstalled ? copy.uninstall : copy.install}
-          </Button>
-        </div>
-        {!liveInstalled && (
-          <div className="mt-4 rounded-xl border border-indigo-500/20 bg-indigo-500/10 px-3 py-2 text-sm text-badge-accent">
-            {copy.voiceLive.installPrompt}
+            <p className="rounded-lg border border-zinc-800 bg-zinc-950/60 p-3 text-xs leading-5 text-zinc-400">
+              {copy.voiceLive.optionalAssets}
+            </p>
           </div>
         )}
-        <div className="mt-5 grid gap-5 lg:grid-cols-2">
-          <div>
-            <h3 className="text-sm font-medium text-zinc-200">{copy.permissionsTitle}</h3>
-            <ul className="mt-3 space-y-2 text-sm text-zinc-400">
-              {copy.voiceLive.permissions.map((permission) => (
-                <li key={permission} className="flex items-start gap-2">
-                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-badge-success" />
-                  <span>{permission}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-          <p className="rounded-xl border border-zinc-800 bg-zinc-900/70 p-3 text-sm leading-6 text-zinc-400">
-            {copy.voiceLive.optionalAssets}
-          </p>
-        </div>
-      </section>
-      <section className="rounded-2xl border border-zinc-800 bg-zinc-950/70 p-5" data-testid="voice-input-capability-card">
-        <div className="flex items-start justify-between gap-5">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <Mic className="h-5 w-5 text-badge-accent" />
-              <h2 className="text-base font-semibold text-zinc-100">{copy.voiceInput.name}</h2>
-              <span className={`rounded-full px-2 py-0.5 text-xs ${inputInstalled ? 'bg-emerald-500/10 text-badge-success' : 'bg-zinc-800 text-zinc-400'}`}>
-                {inputInstalled ? copy.installed : copy.removed}
-              </span>
+      />
+      <PluginCard
+        testId="voice-input-capability-card"
+        icon={<Mic className="h-4 w-4" />}
+        name={copy.voiceInput.name}
+        status={status(inputInstalled)}
+        statusTone={inputInstalled ? 'active' : 'inactive'}
+        description={copy.voiceInput.summary}
+        permissions={copy.voiceInput.permissions.map(permissionName)}
+        action={action('builtin.voice-input', inputInstalled)}
+        detailsLabel={copy.detailsLabel}
+        notice={notice('builtin.voice-input', inputInstalled, copy.voiceInput.installPrompt)}
+        details={(
+          <div className="grid gap-3 lg:grid-cols-2">
+            <div>
+              <h4 className="text-xs font-medium text-zinc-200">{copy.permissionsTitle}</h4>
+              <ul className="mt-2 space-y-1.5 text-xs leading-5 text-zinc-400">
+                {copy.voiceInput.permissions.map((permission) => (
+                  <li key={permission} className="flex items-start gap-2">
+                    <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-badge-success" />
+                    <span>{permission}</span>
+                  </li>
+                ))}
+              </ul>
             </div>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-400">{copy.voiceInput.summary}</p>
-          </div>
-          {inputInstalled ? (
-            <Button
-              variant="ghost"
-              disabled={busyId === 'builtin.voice-input'}
-              leftIcon={<Trash2 className="h-4 w-4" />}
-              onClick={() => { void changeInstallState('builtin.voice-input', false); }}
-            >
-              {copy.uninstall}
-            </Button>
-          ) : (
-            <Button
-              variant="primary"
-              disabled={busyId === 'builtin.voice-input'}
-              leftIcon={<PackagePlus className="h-4 w-4" />}
-              onClick={() => { void changeInstallState('builtin.voice-input', true); }}
-            >
-              {copy.install}
-            </Button>
-          )}
-        </div>
-
-        {!inputInstalled && (
-          <div className="mt-4 rounded-xl border border-indigo-500/20 bg-indigo-500/10 px-3 py-2 text-sm text-badge-accent">
-            {copy.voiceInput.installPrompt}
-          </div>
-        )}
-
-        <div className="mt-5 grid gap-5 lg:grid-cols-2">
-          <div>
-            <h3 className="text-sm font-medium text-zinc-200">{copy.permissionsTitle}</h3>
-            <ul className="mt-3 space-y-2 text-sm text-zinc-400">
-              {copy.voiceInput.permissions.map((permission) => (
-                <li key={permission} className="flex items-start gap-2">
-                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-badge-success" />
-                  <span>{permission}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-          <div>
-            <h3 className="text-sm font-medium text-zinc-200">{copy.readinessTitle}</h3>
-            <div className="mt-3 rounded-xl border border-zinc-800 bg-zinc-900/70 p-3">
-              <div className="flex items-center gap-2 text-sm text-zinc-200">
-                {readiness?.status === 'ready'
-                  ? <CheckCircle2 className="h-4 w-4 text-badge-success" />
-                  : <TriangleAlert className="h-4 w-4 text-badge-warning" />}
-                <span>{readinessLabel}</span>
-              </div>
-              {readiness?.installCommand && (
-                <div className="mt-3 flex items-start gap-2 rounded-lg bg-zinc-950 p-2">
-                  <code className="min-w-0 flex-1 whitespace-pre-wrap break-all text-xs text-zinc-400">
-                    {readiness.installCommand}
-                  </code>
-                  <button
-                    type="button"
-                    aria-label={copy.copyCommand}
-                    className="rounded p-1 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200"
-                    onClick={() => { void navigator.clipboard.writeText(readiness.installCommand ?? ''); }}
-                  >
-                    <Copy className="h-4 w-4" />
-                  </button>
+            <div>
+              <h4 className="text-xs font-medium text-zinc-200">{copy.readinessTitle}</h4>
+              <div className="mt-2 rounded-lg border border-zinc-800 bg-zinc-950/60 p-3">
+                <div className="flex items-center gap-2 text-xs text-zinc-200">
+                  {readiness?.status === 'ready'
+                    ? <CheckCircle2 className="h-3.5 w-3.5 text-badge-success" />
+                    : <TriangleAlert className="h-3.5 w-3.5 text-badge-warning" />}
+                  <span>{readinessLabel}</span>
                 </div>
-              )}
-              <p className="mt-2 text-xs text-zinc-500">{copy.assetsPreserved}</p>
+                {readiness?.installCommand && (
+                  <div className="mt-2 flex items-start gap-2 rounded-md bg-zinc-900 p-2">
+                    <code className="min-w-0 flex-1 whitespace-pre-wrap break-all text-[11px] text-zinc-400">
+                      {readiness.installCommand}
+                    </code>
+                    <button
+                      type="button"
+                      aria-label={copy.copyCommand}
+                      className="rounded p-1 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200"
+                      onClick={() => { void navigator.clipboard.writeText(readiness.installCommand ?? ''); }}
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                )}
+                <p className="mt-2 text-[11px] text-zinc-500">{copy.assetsPreserved}</p>
+              </div>
             </div>
           </div>
-        </div>
-        {error && (
-          <div role="alert" className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-badge-danger">
-            {error}
-          </div>
         )}
-      </section>
+      />
     </div>
   );
 };

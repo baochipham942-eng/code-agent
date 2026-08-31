@@ -74,8 +74,31 @@ describe('coverage-ratchet', () => {
     writeFileSync(join(root, 'scripts/coverage-ratchet-baseline.json'), JSON.stringify({ ...baseline, branches: 34 }));
     const result = run(root, ['--baseline-only', '--compare-baseline', 'HEAD']);
     expect(result.status).toBe(1);
-    expect(result.stderr).toContain('branches 基线被放宽：35.00% -> 34.00%');
+    expect(result.stderr).toContain('branches 基线下调：35.00% -> 34.00%');
     expect(result.stderr).toContain('只许升不许降');
+  });
+
+  it('带新鲜 lowerJustification 的基线校正放行，复制旧理由不放行', () => {
+    const { root, baseline } = fixture();
+    execFileSync('git', ['init', '-q'], { cwd: root });
+    execFileSync('git', ['config', 'user.email', 'fixture@example.com'], { cwd: root });
+    execFileSync('git', ['config', 'user.name', 'Fixture'], { cwd: root });
+    execFileSync('git', ['add', '.'], { cwd: root });
+    execFileSync('git', ['commit', '-qm', 'baseline'], { cwd: root });
+
+    const corrected = { ...baseline, branches: 34, lowerJustification: '初值取错环境，按 CI 实测校正' };
+    writeFileSync(join(root, 'scripts/coverage-ratchet-baseline.json'), JSON.stringify(corrected));
+    const ok = run(root, ['--baseline-only', '--compare-baseline', 'HEAD']);
+    expect(ok.status, ok.stderr).toBe(0);
+    expect(ok.stderr).toContain('带正当理由的基线校正');
+
+    // 校正落地后再降一次、沿用同一条旧理由：必须拦（理由不复用）
+    execFileSync('git', ['add', '.'], { cwd: root });
+    execFileSync('git', ['commit', '-qm', 'corrected'], { cwd: root });
+    writeFileSync(join(root, 'scripts/coverage-ratchet-baseline.json'), JSON.stringify({ ...corrected, branches: 33 }));
+    const stale = run(root, ['--baseline-only', '--compare-baseline', 'HEAD']);
+    expect(stale.status).toBe(1);
+    expect(stale.stderr).toContain('只许升不许降');
   });
 
   it('改动行报表只计可执行行，并列出未执行行', () => {

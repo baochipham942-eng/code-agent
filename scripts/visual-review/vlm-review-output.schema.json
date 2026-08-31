@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["draftOnly", "mode", "recommendHumanOpen", "summary", "items"],
+  "properties": {
+    "draftOnly": { "type": "boolean", "const": true },
+    "mode": { "type": "string", "enum": ["single", "triptych"] },
+    "recommendHumanOpen": { "type": "boolean" },
+    "summary": { "type": "string", "minLength": 1, "maxLength": 300 },
+    "items": {
+      "type": "array",
+      "minItems": 13,
+      "maxItems": 13,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["rubricId", "status", "reason", "region"],
+        "properties": {
+          "rubricId": {
+            "type": "string",
+            "enum": [
+              "VR-01", "VR-02", "VR-03", "VR-04", "VR-05", "VR-06", "VR-07",
+              "VR-08", "VR-09", "VR-10", "VR-11", "VR-12", "VR-13"
+            ]
+          },
+          "status": { "type": "string", "enum": ["PASS", "RED", "NA"] },
+          "reason": { "type": "string", "minLength": 1, "maxLength": 240 },
+          "region": { "type": "string", "minLength": 1, "maxLength": 100 }
+        }
+      }
+    }
+  }
+}

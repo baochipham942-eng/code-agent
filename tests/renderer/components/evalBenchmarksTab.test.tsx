@@ -96,6 +96,12 @@ const detail = (run: EvalExperimentListItem, cases: EvalExperimentDetail['cases'
   cases,
 });
 
+function deferred<T>(): { promise: Promise<T>; resolve(value: T): void } {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => { resolve = done; });
+  return { promise, resolve };
+}
+
 function configureIpc(
   list: () => EvalExperimentListItem[] = () => [],
   eventsOnSubscribe: EvalRunEvent[] = [],
@@ -145,6 +151,61 @@ afterEach(() => {
 });
 
 describe('EvalBenchmarksTab 跑分闭环', () => {
+  it('max-cases T1：用户输入后，晚到探针不覆盖输入或发车 payload', async () => {
+    const delayedProbe = deferred<EvalRunPanelProbe>();
+    configureIpc();
+    mocks.invoke.mockImplementation(async (channel: string, arg?: unknown) => {
+      if (channel === EVALUATION_CHANNELS.LIST_EXPERIMENTS) return [];
+      if (channel === EVALUATION_CHANNELS.RUN_EVENTS && !arg) return delayedProbe.promise;
+      if (channel === EVALUATION_CHANNELS.RUN_SUITE) return { runId: 'run-live' };
+      if (channel === EVALUATION_CHANNELS.RUN_EVENTS) return { runId: 'run-live', running: true };
+      return null;
+    });
+    render(<EvalBenchmarksTab />);
+
+    fireEvent.click(await screen.findByRole('button', { name: '开跑' }));
+    const maxCasesInput = screen.getByRole('spinbutton');
+    fireEvent.change(maxCasesInput, { target: { value: '' } });
+    fireEvent.change(maxCasesInput, { target: { value: '1' } });
+    await act(async () => { delayedProbe.resolve(probe); });
+
+    expect(maxCasesInput.getAttribute('value')).toBe('1');
+    fireEvent.click(screen.getByTestId('eval-run-confirm'));
+    fireEvent.click(screen.getByTestId('eval-run-confirm'));
+    await waitFor(() => expect(mocks.invoke.mock.calls.some(([channel]) => channel === EVALUATION_CHANNELS.RUN_SUITE)).toBe(true));
+    const call = mocks.invoke.mock.calls.find(([channel]) => channel === EVALUATION_CHANNELS.RUN_SUITE);
+    expect(call?.[1]).toMatchObject({ maxCases: 1 });
+  });
+
+  it('max-cases T2：用户未输入时，晚到探针仍应用题集默认值', async () => {
+    const delayedProbe = deferred<EvalRunPanelProbe>();
+    configureIpc();
+    mocks.invoke.mockImplementation(async (channel: string, arg?: unknown) => {
+      if (channel === EVALUATION_CHANNELS.LIST_EXPERIMENTS) return [];
+      if (channel === EVALUATION_CHANNELS.RUN_EVENTS && !arg) return delayedProbe.promise;
+      return null;
+    });
+    render(<EvalBenchmarksTab />);
+
+    fireEvent.click(await screen.findByRole('button', { name: '开跑' }));
+    const maxCasesInput = screen.getByRole('spinbutton');
+    await act(async () => { delayedProbe.resolve(probe); });
+
+    expect(maxCasesInput.getAttribute('value')).toBe('76');
+  });
+
+  it('max-cases T3：切换 split 开启新一轮意图并应用新 split 默认值', async () => {
+    configureIpc();
+    render(<EvalBenchmarksTab />);
+
+    fireEvent.click(await screen.findByRole('button', { name: '开跑' }));
+    const maxCasesInput = screen.getByRole('spinbutton');
+    fireEvent.change(maxCasesInput, { target: { value: '1' } });
+    fireEvent.click(screen.getByRole('button', { name: /留出集/ }));
+
+    expect(maxCasesInput.getAttribute('value')).toBe('52');
+  });
+
   it('T3：读侧即使返回 compare 行，跑分历史仍主动隔离', async () => {
     const compare = { ...experiment('compare-only', 1_000, { split: 'held-in', k: 1, mode: 'real' }), source: 'compare' };
     configureIpc(() => [compare]);

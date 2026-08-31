@@ -521,6 +521,8 @@ async function runEvals(
     model?: string;
     provider?: string;
     concurrency?: number;
+    maxCases: number;
+    force: boolean;
     tags?: string[];
     ids?: string[];
     prediction?: { predictedFixes: string[]; riskTasks: string[] };
@@ -535,6 +537,17 @@ async function runEvals(
     throw new Error('事件桥评测要求每个用例独立运行，concurrency 必须为 1。');
   }
   const repoStatusBefore = getRepoStatusSnapshot(workingDir);
+  const testCaseDir = opts.caseDir ?? resolveCoreTestCaseDir(workingDir);
+  const suites = await loadAllTestSuites(testCaseDir);
+  const filteredTestCases = filterTestCases(suites, {
+    filterTags: opts.tags,
+    filterIds: opts.ids,
+  });
+  const selectedCaseIds = (opts.force
+    ? filteredTestCases
+    : filteredTestCases.slice(0, opts.maxCases))
+    .map((testCase) => testCase.id);
+  const eventConfig = { ...opts.eventConfig, maxCases: selectedCaseIds.length };
   const generatedDataDir = opts.eventStream && !process.env.CODE_AGENT_DATA_DIR
     ? fs.mkdtempSync(path.join(os.tmpdir(), 'code-agent-eval-data-'))
     : undefined;
@@ -543,7 +556,7 @@ async function runEvals(
   const agentWorkingDir = sandbox.dir;
   const forwardSignal = (event: Extract<TestEvent,
     { type: 'skill_activated' | 'memory_injected' | 'subagent_spawned' }>) => {
-    if (opts.eventStream && opts.eventConfig) opts.eventStream.forward(event, opts.eventConfig);
+    if (opts.eventStream) opts.eventStream.forward(event, eventConfig);
   };
   try {
     if (opts.real) {
@@ -553,14 +566,14 @@ async function runEvals(
     const config = createDefaultConfig(workingDir, {
       ...(opts.eventStream ? { runId: opts.eventStream.runId } : {}),
       persistExperiment: opts.eventStream === undefined,
-      stamp: selectRunStamp(opts.eventConfig),
+      stamp: selectRunStamp(eventConfig),
       verbose: false,
       workingDirectory: agentWorkingDir,
-      testCaseDir: opts.caseDir ?? resolveCoreTestCaseDir(workingDir),
+      testCaseDir,
       filterTags: opts.tags,
-      filterIds: opts.ids,
+      filterIds: selectedCaseIds,
       trialsPerCase: opts.repeat,
-      aiReview: opts.real ? opts.eventConfig.scorers.aiReview : [],
+      aiReview: opts.real ? eventConfig.scorers.aiReview : [],
       ...(opts.concurrency ? { maxParallel: opts.concurrency, parallel: true } : {}),
       // WP1-4: 预测登记随 summary 落盘/DB，deltaReporter 对账
       ...(opts.prediction ? { prediction: opts.prediction } : {}),
@@ -644,8 +657,8 @@ async function runEvals(
     );
 
     runner.addEventListener((event) => {
-      if (opts.eventStream && opts.eventConfig) {
-        opts.eventStream.forward(event, opts.eventConfig);
+      if (opts.eventStream) {
+        opts.eventStream.forward(event, eventConfig);
       }
       switch (event.type) {
         case 'case_end': {
@@ -1157,6 +1170,8 @@ async function mainImpl(
       real: false,
       mockEvalPolicy,
       concurrency,
+      maxCases,
+      force,
       tags,
       ids,
       repeat,
@@ -1208,7 +1223,7 @@ async function mainImpl(
       const totalCases = filterTestCases(suites, { filterTags: tags, filterIds: ids }).length;
       const resolvedModel = model || process.env.AUTO_TEST_MODEL || DEFAULT_MODEL;
       const resolvedProvider = provider || process.env.AUTO_TEST_PROVIDER || DEFAULT_PROVIDER;
-      const casesToRun = Math.min(totalCases, maxCases);
+      const casesToRun = force ? totalCases : Math.min(totalCases, maxCases);
       const estimatedCost = estimateRunCost(resolvedModel, casesToRun).toFixed(2);
 
       console.log(chalk.yellow(
@@ -1218,13 +1233,6 @@ async function mainImpl(
       ));
       console.log('');
 
-      if (totalCases > maxCases && !force) {
-        console.error(chalk.red(
-          `  Error: ${totalCases} test cases exceed --max-cases limit (${maxCases}). ` +
-          `Use --force to override or --max-cases <n> to raise the limit.`
-        ));
-        process.exit(1);
-      }
     }
 
     console.log(chalk.bold('  Running evals before promoting to baseline...'));
@@ -1234,6 +1242,8 @@ async function mainImpl(
       model,
       provider,
       concurrency,
+      maxCases,
+      force,
       tags,
       ids,
       repeat,
@@ -1323,7 +1333,7 @@ async function mainImpl(
     const totalCases = filterTestCases(suites, { filterTags: tags, filterIds: ids }).length;
     const resolvedModel = model || process.env.AUTO_TEST_MODEL || DEFAULT_MODEL;
     const resolvedProvider = provider || process.env.AUTO_TEST_PROVIDER || DEFAULT_PROVIDER;
-    const casesToRun = Math.min(totalCases, maxCases);
+    const casesToRun = force ? totalCases : Math.min(totalCases, maxCases);
     const estimatedCost = estimateRunCost(resolvedModel, casesToRun).toFixed(2);
 
     console.log(chalk.yellow(
@@ -1333,13 +1343,6 @@ async function mainImpl(
     ));
     console.log('');
 
-    if (totalCases > maxCases && !force) {
-      console.error(chalk.red(
-        `  Error: ${totalCases} test cases exceed --max-cases limit (${maxCases}). ` +
-        `Use --force to override or --max-cases <n> to raise the limit.`
-      ));
-      process.exit(1);
-    }
   }
 
   // Run evals
@@ -1351,6 +1354,8 @@ async function mainImpl(
     model,
     provider,
     concurrency,
+    maxCases,
+    force,
     tags,
     ids,
     prediction,

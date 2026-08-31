@@ -111,8 +111,9 @@ function MessageBody({ message, width, maxLines, expandTools }: { message: ChatM
     case 'user':
       return (
         <Box marginTop={1}>
-          <Text>{'❯ '}</Text>
-          <Text wrap="wrap">{message.text}</Text>
+          {/* 用户消息用青色 ❯ + 加粗与助手正文区分（助手保持默认色，长文阅读不花哨） */}
+          <Text color="cyan">{'❯ '}</Text>
+          <Text wrap="wrap" bold>{message.text}</Text>
         </Box>
       );
     case 'assistant':

@@ -414,7 +414,10 @@ export class CLIAgent {
     } else if (this.config.outputFormat === 'json') {
       // 根据输出格式分发事件
       jsonOutput.handleEvent(event);
-    } else {
+    } else if (!this.eventObserver) {
+      // Ink TUI 拥有屏幕时（eventObserver 已注册）不能再走 legacy 线性渲染——
+      // 它直接写 stdout 的进度行/原文/状态横幅会被 Ink 下一帧擦掉（左下角频闪
+      // 「分析请求中」的真凶），并在 scrollback 留下未渲染的 markdown 原文
       terminalOutput.handleEvent(event);
     }
 

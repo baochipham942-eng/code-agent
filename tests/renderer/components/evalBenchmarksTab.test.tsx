@@ -330,7 +330,7 @@ describe('EvalBenchmarksTab 跑分闭环', () => {
     render(<EvalBenchmarksTab />);
 
     expect(await screen.findByText('日常集 · k=1')).toBeTruthy();
-    expect(screen.getAllByTestId(/benchmark-run-/)).toHaveLength(3);
+    expect(screen.getAllByRole('row')).toHaveLength(3);
     expect(screen.queryByTestId('benchmark-run-mock')).toBeNull();
 
     fireEvent.click(screen.getByTestId('benchmark-run-a').querySelector('button') as HTMLButtonElement);

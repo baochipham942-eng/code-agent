@@ -22,6 +22,7 @@ import {
   type EvalRunTransition,
 } from './evalRunDelta';
 import { EvalRunBaselineControls, EvalRunBaselineHeader } from './EvalRunBaselineControls';
+import { EvalRunCaseResults } from './EvalRunCaseResults';
 
 const EVALUATION_GUIDE_URL = 'https://github.com/baochipham942-eng/code-agent/blob/main/docs/architecture/decisions/ADR-036-eval-scoring-credibility-and-redline-jail.md';
 interface GroupComparison {
@@ -173,6 +174,7 @@ export const EvalRunHistory: React.FC<EvalRunHistoryProps> = ({
   const [baselineGroups, setBaselineGroups] = useState<EvalBaselineInfoResult['groups']>({});
   const [setErrors, setSetErrors] = useState<Record<string, EvalBaselineSetError>>({});
   const [drawerTarget, setDrawerTarget] = useState<EvalCaseDrawerTarget | null>(null);
+  const [expandedRunIds, setExpandedRunIds] = useState<Set<string>>(() => new Set());
   const groups = useMemo(() => groupRuns(experiments), [experiments]);
   const quickCost = probe ? probe.estimatedCostPerCaseUsd * probe.quickCheck.maxCases : undefined;
   useEffect(() => {
@@ -248,6 +250,15 @@ export const EvalRunHistory: React.FC<EvalRunHistoryProps> = ({
         ...regressionsAgainstBaseline(baseline.caseResults, run.caseResults ?? {}),
       },
     }));
+  }, []);
+
+  const toggleRunExpanded = useCallback((runId: string) => {
+    setExpandedRunIds((current) => {
+      const next = new Set(current);
+      if (next.has(runId)) next.delete(runId);
+      else next.add(runId);
+      return next;
+    });
   }, []);
 
   const renderComparison = (group: RunGroup) => {
@@ -346,30 +357,46 @@ export const EvalRunHistory: React.FC<EvalRunHistoryProps> = ({
                   const regression = baseline && !current && tag !== 'old-rule'
                     ? regressionsAgainstBaseline(baseline.caseResults, run.caseResults ?? {}) : null;
                   const regressedCount = regression?.transitions.filter((item) => item.kind === 'regressed').length ?? 0;
+                  const expanded = expandedRunIds.has(run.id);
                   return (
-                    <div key={run.id} role="row" className={`flex items-center gap-3 border-t border-zinc-800 px-3 py-2 text-xs ${current ? 'bg-zinc-800/40' : 'text-zinc-300'}`} data-testid={`benchmark-run-${run.id}`}>
-                      <button /* ds-allow:button: 历史行对比勾选框，原生 checkbox 视觉无法表达组内最多两轮 */ type="button" aria-label={reason || tag === 'old-rule' ? labels.incompleteCannotCompare : labels.selectForCompare} aria-pressed={selected} disabled={Boolean(reason) || tag === 'old-rule'} onClick={() => toggleSelected(group, run)} className="flex h-4 w-4 shrink-0 items-center justify-center rounded border border-zinc-600 disabled:border-zinc-800">
-                        {selected && <Check className="h-3 w-3" />}
-                      </button>
-                      <span className="min-w-0 flex-1 truncate">{normalizeDatasetName(run.name)}</span>
-                      <span className="text-zinc-500">{new Date(run.timestamp).toLocaleString(language === 'zh' ? 'zh-CN' : 'en-US')}</span>
-                      <span className="w-24 truncate text-zinc-500">{run.model ?? 'unknown'}</span>
-                      <span className="w-32 text-right font-mono">
-                        {labels.passRate} {formatPercent(run.summary?.passRate)}
-                        {delta !== null && <span className={`ml-1 ${delta < 0 ? 'text-badge-danger' : delta > 0 ? 'text-badge-success' : 'text-zinc-500'}`}>{formatDelta(delta)}</span>}
-                      </span>
-                      <span className="w-28 text-right text-zinc-500">
-                        {tag === 'case-bank-updated' && <><span>{labels.caseBankUpdated}</span><small className="block">{labels.compareSharedCases}</small></>}
-                        {tag === 'old-rule' && <span>{labels.oldScoringRule}</span>}
-                      </span>
-                      <span className="w-20 text-right">
-                        {regression && <button /* ds-allow:button: 退步计数直接展开组内逐题变化 */ type="button" className={regressedCount > 0 ? 'text-badge-danger' : 'text-zinc-500'} onClick={() => baseline && compareAgainstBaseline(group, run, baseline)}>{replace(labels.regressed, { n: regressedCount })}</button>}
-                      </span>
-                      <span className={`w-14 text-right ${run.summary?.completed === false ? 'text-zinc-500' : 'text-badge-success'}`}>
-                        {run.summary?.completed === false ? labels.incomplete : labels.complete}
-                      </span>
-                      <EvalRunBaselineControls current={current} disabledReason={reason} labels={labels} onSet={() => void setBaseline(group, run.id)} />
-                    </div>
+                    <React.Fragment key={run.id}>
+                      <div role="row" className={`flex items-center gap-3 border-t border-zinc-800 px-3 py-2 text-xs ${current ? 'bg-zinc-800/40' : 'text-zinc-300'}`} data-testid={`benchmark-run-${run.id}`}>
+                        <button /* ds-allow:button: 历史行对比勾选框，原生 checkbox 视觉无法表达组内最多两轮 */ type="button" aria-label={reason || tag === 'old-rule' ? labels.incompleteCannotCompare : labels.selectForCompare} aria-pressed={selected} disabled={Boolean(reason) || tag === 'old-rule'} onClick={() => toggleSelected(group, run)} className="flex h-4 w-4 shrink-0 items-center justify-center rounded border border-zinc-600 disabled:border-zinc-800">
+                          {selected && <Check className="h-3 w-3" />}
+                        </button>
+                        <span className="min-w-0 flex-1 truncate">{normalizeDatasetName(run.name)}</span>
+                        <span className="text-zinc-500">{new Date(run.timestamp).toLocaleString(language === 'zh' ? 'zh-CN' : 'en-US')}</span>
+                        <span className="w-24 truncate text-zinc-500">{run.model ?? 'unknown'}</span>
+                        <span className="w-32 text-right font-mono">
+                          {labels.passRate} {formatPercent(run.summary?.passRate)}
+                          {delta !== null && <span className={`ml-1 ${delta < 0 ? 'text-badge-danger' : delta > 0 ? 'text-badge-success' : 'text-zinc-500'}`}>{formatDelta(delta)}</span>}
+                        </span>
+                        <span className="w-28 text-right text-zinc-500">
+                          {tag === 'case-bank-updated' && <><span>{labels.caseBankUpdated}</span><small className="block">{labels.compareSharedCases}</small></>}
+                          {tag === 'old-rule' && <span>{labels.oldScoringRule}</span>}
+                        </span>
+                        <span className="w-20 text-right">
+                          {regression && <button /* ds-allow:button: 退步计数直接展开组内逐题变化 */ type="button" className={regressedCount > 0 ? 'text-badge-danger' : 'text-zinc-500'} onClick={() => baseline && compareAgainstBaseline(group, run, baseline)}>{replace(labels.regressed, { n: regressedCount })}</button>}
+                        </span>
+                        <span className="w-24 text-right">
+                          <button /* ds-allow:button: 跑分历史行逐题结果在原地展开 */ type="button" aria-expanded={expanded} data-testid={`benchmark-run-expand-${run.id}`} className="text-zinc-500" onClick={() => toggleRunExpanded(run.id)}>
+                            {expanded ? labels.hideRunCases : labels.showRunCases}
+                          </button>
+                        </span>
+                        <span className={`w-14 text-right ${run.summary?.completed === false ? 'text-zinc-500' : 'text-badge-success'}`}>
+                          {run.summary?.completed === false ? labels.incomplete : labels.complete}
+                        </span>
+                        <EvalRunBaselineControls current={current} disabledReason={reason} labels={labels} onSet={() => void setBaseline(group, run.id)} />
+                      </div>
+                      {expanded && (
+                        <EvalRunCaseResults
+                          runId={run.id}
+                          caseResults={run.caseResults}
+                          labels={labels}
+                          onOpenCase={(caseId) => setDrawerTarget({ experimentId: run.id, caseId })}
+                        />
+                      )}
+                    </React.Fragment>
                   );
                 })}
               </div>

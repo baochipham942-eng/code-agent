@@ -27,6 +27,7 @@ on:
       # （改窄 include / 删测试目录）溜过门。
       - 'tsconfig.tests.json'
       - 'scripts/tsc-tests-ratchet.mjs'
+      - 'scripts/internal-sdk-hash.ts'
       - 'scripts/ci/agent-event-schema-gate.mjs'
       - 'src/shared/contract/agent.ts'
       - 'src/shared/contract/agentEventSchemas.ts'
@@ -146,6 +147,9 @@ jobs:
         # 棘轮门抓。（历史坑：tests/e2e/claude-e2e/fixtures/bug-syntax-error 是**故意**写坏的
         # 样例工程，会抛 TS1005 让 tsc 提前中止，tsconfig.tests.json 已在 exclude 里排除它。）
         run: npm run typecheck
+
+      - name: Internal plugin SDK contract hash
+        run: npx tsx scripts/internal-sdk-hash.ts --check
 
       - name: Agent event JSON Schema drift gate
         run: node scripts/ci/agent-event-schema-gate.mjs

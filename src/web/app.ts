@@ -41,6 +41,9 @@ import { createExtractRouter } from './routes/extract';
 import { createDomainRouter } from './routes/domain';
 import { createShellRouter } from './routes/shell';
 import { createStaticRouter } from './routes/static';
+import { createInternalFeaturesRouter } from './routes/internalFeatures';
+import type { InternalFeatureHostRuntime } from '../host/internalFeatures/internalFeatureHostRuntime';
+import type { PluginRegistry } from '../host/plugins/pluginRegistry';
 import { resolveRendererServeDecision } from '../host/services/renderer/rendererBundleCache';
 import { createAgentRouter } from './routes/agent';
 import type { PendingLocalToolCall } from './routes/agent';
@@ -72,6 +75,11 @@ export interface CreateAppDeps {
   getBuildInfo: () => BuildInfo | null;
   getDurableRunRollout: () => { policy: DurableRunRolloutPolicy; ready: boolean };
   getDurableRunReadService: () => DurableRunReadService | undefined;
+  internalFeatures: {
+    runtime: Pick<InternalFeatureHostRuntime, 'isLoaded' | 'loadedHash'>;
+    registry: Pick<PluginRegistry, 'getPlugin'>;
+    pluginsDir: string;
+  };
   getPendingPermissionRequests?: () => PermissionRequest[];
   registerQueuedInputStartupSweep?: (runStartupSweep: () => void) => void;
   registerQueuedInputEnqueueHook?: (onEnqueued: (sessionId: string) => void) => void;
@@ -127,6 +135,7 @@ export function createApp(deps: CreateAppDeps): express.Express {
     getDurableRunRollout,
     getDurableRunReadService,
     getPendingPermissionRequests,
+    internalFeatures,
   } = deps;
 
   const app = express();
@@ -236,6 +245,8 @@ export function createApp(deps: CreateAppDeps): express.Express {
   app.use('/api', createShellRouter({ getAppVersion }));
 
   // ── Static & SPA (extracted to routes/static.ts) ───────────────────
+  app.use(createInternalFeaturesRouter(internalFeatures));
+
   // 传 dataDir → 运行时解析 serve 目录：云端 active bundle 健康则 serve 热更前端，
   // 否则回包内基线（builtinDir 由 static.ts 按 __dirname 解析）。
   app.use(createStaticRouter({

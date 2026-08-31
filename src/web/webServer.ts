@@ -1019,6 +1019,11 @@ async function main(): Promise<void> {
     getBuildInfo,
     getDurableRunRollout,
     getDurableRunReadService,
+    internalFeatures: {
+      runtime: (await import('../host/internalFeatures/internalFeatureHostRuntime')).getInternalFeatureHostRuntime(),
+      registry: (await import('../host/plugins/pluginRegistry')).getPluginRegistry(),
+      pluginsDir: (await import('../host/plugins/pluginLoader')).getPluginsDir(),
+    },
     getPendingPermissionRequests: () => getTaskManager().listPendingPermissionRequests(),
     registerQueuedInputStartupSweep: (runStartupSweep) => queuedInputStartupSweep.registerTrigger(runStartupSweep),
     registerQueuedInputEnqueueHook: (onEnqueued) => { onQueuedInputEnqueued = onEnqueued; },

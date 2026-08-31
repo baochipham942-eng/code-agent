@@ -7,8 +7,10 @@
 // 本 PR 自身净减 1（否定回看+词边界修复），但合并队列里先落地的
 // fix/mcp-args-normalize（PR#657）新增 1 处 prefer-optional-chain warning，
 // 与本 PR 无关且不在本 PR 改动范围内，两者相抵后真实基线仍是 427。
-// 两条基线彼此独立、只能下降：任一计数超基线都阻塞 CI；清理后把对应常量
-// 调小到新的实测值，禁止为放行新增问题而抬高基线。
+// 两条基线彼此独立、只能下降：任一计数超基线都阻塞 CI。续航时不把常量
+// 贴着当次 current 改，而是再清理 ESLINT_BASELINE_HEADROOM 条并把基线压到
+// current - ESLINT_BASELINE_HEADROOM；固定的 5 条续航余量防止小幅波动把棘轮卡在零缓冲位。
+// 降基线必须和清理同一次落地，禁止单独把常量调到低于当前实测值，也禁止抬高基线。
 //
 // 自检 guard 有意 fail loud：0 文件、不可解析 JSON、缺失 errorCount / warningCount
 // 都说明门本身已经失去测量能力。此时静默通过会制造“门在但没在看”的假绿。
@@ -25,6 +27,7 @@ const BASELINE_ERROR_MAX = 0;
 // 判据是把 sharp 降回 0.34.5（--no-save，src/ 与 main 一字未改）重跑一次 —— 两侧
 // 同为 415，排除了「依赖换了 .d.ts 位置导致类型感知规则少报」这条解释。
 const BASELINE_WARNING_MAX = 376;
+const ESLINT_BASELINE_HEADROOM = 5;
 const MAX_FINDINGS_TO_PRINT = 50;
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
@@ -96,6 +99,10 @@ function formatDelta(current, baseline) {
   return delta > 0 ? `+${delta}` : String(delta);
 }
 
+function nextBaselineTarget(current) {
+  return Math.max(0, current - ESLINT_BASELINE_HEADROOM);
+}
+
 console.log(`[eslint-ratchet] 扫描 ${report.length} 个文件`);
 console.log(`[eslint-ratchet] errors current=${errors} baseline=${BASELINE_ERROR_MAX} delta=${formatDelta(errors, BASELINE_ERROR_MAX)}`);
 console.log(`[eslint-ratchet] warnings current=${warnings} baseline=${BASELINE_WARNING_MAX} delta=${formatDelta(warnings, BASELINE_WARNING_MAX)}`);
@@ -139,10 +146,10 @@ if (breachedSeverities.size > 0) {
     || a.column - b.column);
 
   if (errors > BASELINE_ERROR_MAX) {
-    console.error(`[eslint-ratchet] ✗ errors 超基线 ${errors - BASELINE_ERROR_MAX}；修复后若低于 ${BASELINE_ERROR_MAX}，把 BASELINE_ERROR_MAX 调小到新的 current 值`);
+    console.error(`[eslint-ratchet] ✗ errors 超基线 ${errors - BASELINE_ERROR_MAX}；修复后按续航余量 ${ESLINT_BASELINE_HEADROOM} 条，清理至当次 current-${ESLINT_BASELINE_HEADROOM}=${nextBaselineTarget(errors)} 再同步下调 BASELINE_ERROR_MAX`);
   }
   if (warnings > BASELINE_WARNING_MAX) {
-    console.error(`[eslint-ratchet] ✗ warnings 超基线 ${warnings - BASELINE_WARNING_MAX}；修复后若低于 ${BASELINE_WARNING_MAX}，把 BASELINE_WARNING_MAX 调小到新的 current 值`);
+    console.error(`[eslint-ratchet] ✗ warnings 超基线 ${warnings - BASELINE_WARNING_MAX}；修复后按续航余量 ${ESLINT_BASELINE_HEADROOM} 条，清理至当次 current-${ESLINT_BASELINE_HEADROOM}=${nextBaselineTarget(warnings)} 再同步下调 BASELINE_WARNING_MAX`);
   }
   console.error('[eslint-ratchet] 超基线 findings（已改动/未跟踪文件优先）：');
   for (const finding of findings.slice(0, MAX_FINDINGS_TO_PRINT)) {
@@ -155,10 +162,10 @@ if (breachedSeverities.size > 0) {
 }
 
 if (errors < BASELINE_ERROR_MAX) {
-  console.log(`[eslint-ratchet] ✓ 请把 BASELINE_ERROR_MAX 从 ${BASELINE_ERROR_MAX} 调小到 ${errors}`);
+  console.log(`[eslint-ratchet] ✓ errors 已低于基线；按续航余量 ${ESLINT_BASELINE_HEADROOM} 条，再清理至 current-${ESLINT_BASELINE_HEADROOM}=${nextBaselineTarget(errors)} 后把 BASELINE_ERROR_MAX 调小到该目标`);
 }
 if (warnings < BASELINE_WARNING_MAX) {
-  console.log(`[eslint-ratchet] ✓ 请把 BASELINE_WARNING_MAX 从 ${BASELINE_WARNING_MAX} 调小到 ${warnings}`);
+  console.log(`[eslint-ratchet] ✓ warnings 已低于基线；按续航余量 ${ESLINT_BASELINE_HEADROOM} 条，再清理至 current-${ESLINT_BASELINE_HEADROOM}=${nextBaselineTarget(warnings)} 后把 BASELINE_WARNING_MAX 调小到该目标`);
 }
 if (errors === BASELINE_ERROR_MAX && warnings === BASELINE_WARNING_MAX) {
   console.log('[eslint-ratchet] ✓ 两条基线均持平，通过（未新增）');

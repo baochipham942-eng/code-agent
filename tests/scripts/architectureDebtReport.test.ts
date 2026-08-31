@@ -69,11 +69,27 @@ describe('architecture debt report', () => {
     expect(report.eslintNoUnsafe.skipped).toBe(true);
   });
 
+  it('keeps report mode non-blocking and makes gate mode fail on non-whitelisted effective overages', () => {
+    const reportOnly = runDebtReport(['--skip-eslint', '--max-lines', '999', '--limit', '1']);
+    const gate = runDebtReport(['--gate', '--skip-eslint', '--max-lines', '999', '--limit', '1']);
+
+    expect(reportOnly.status).toBe(0);
+    expect(gate.status).toBe(1);
+    expect(gate.stderr).toContain('[architecture-debt-report] ✗');
+    expect(gate.stderr).toMatch(/src\/.+ physical=\d+ effective=\d+/);
+  });
+
   it('is wired into package scripts', () => {
     const packageJson = JSON.parse(readFileSync(resolve(repoRoot, 'package.json'), 'utf8')) as {
       scripts: Record<string, string>;
     };
 
     expect(packageJson.scripts['debt:report']).toBe('node scripts/architecture-debt-report.mjs');
+
+    const workflow = readFileSync(resolve(repoRoot, '.github/workflows/swarm-ci.yml'), 'utf8');
+    const eslintStep = workflow.indexOf('run: node scripts/eslint-ratchet.mjs');
+    const architectureGateStep = workflow.indexOf('run: node scripts/architecture-debt-report.mjs --gate --skip-eslint');
+    expect(eslintStep).toBeGreaterThan(-1);
+    expect(architectureGateStep).toBeGreaterThan(eslintStep);
   });
 });

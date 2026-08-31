@@ -7,19 +7,32 @@ import ipcService from '../../../services/ipcService';
 import { useBundledCapabilityStore } from '../../../stores/bundledCapabilityStore';
 import { Button } from '../../primitives';
 import { HubTabHeader } from './HubTabHeader';
-import { PluginCard } from './PluginCard';
+import { PluginCard, PluginCardPill } from './PluginCard';
+import { formatPluginPermissionLabel, type PluginPermissionEntry } from './pluginPermissionText';
 
 type VoiceCapabilityId = 'builtin.voice-live' | 'builtin.voice-input';
 
-function permissionName(permission: string): string {
-  return permission.split(/[：:]/, 1)[0].trim();
-}
+const voiceLivePermissions: readonly PluginPermissionEntry[] = [
+  { permission: 'microphone' },
+  { permission: 'network' },
+  { permission: 'filesystem', optional: true },
+] as const;
+
+const voiceInputPermissions: readonly PluginPermissionEntry[] = [
+  { permission: 'microphone' },
+  { permission: 'network' },
+  { permission: 'clipboard' },
+  { permission: 'accessibility' },
+  { permission: 'shell' },
+] as const;
 
 export const BundledCapabilitiesTab: React.FC<{ showHeader?: boolean }> = ({ showHeader = true }) => {
   const { t } = useI18n();
   const copy = t.capabilityPackages;
   const inputInstalled = useBundledCapabilityStore((state) => state.installed['builtin.voice-input']);
   const liveInstalled = useBundledCapabilityStore((state) => state.installed['builtin.voice-live']);
+  const loaded = useBundledCapabilityStore((state) => state.loaded);
+  const states = useBundledCapabilityStore((state) => state.states);
   const revision = useBundledCapabilityStore((state) => (
     state.states.find((item) => item.id === 'builtin.voice-input')?.revision ?? 0
   ));
@@ -46,6 +59,10 @@ export const BundledCapabilitiesTab: React.FC<{ showHeader?: boolean }> = ({ sho
   useEffect(() => {
     void loadReadiness();
   }, [loadReadiness, revision]);
+
+  useEffect(() => {
+    if (!loaded) void refresh();
+  }, [loaded, refresh]);
 
   const changeInstallState = useCallback(async (
     id: VoiceCapabilityId,
@@ -74,6 +91,11 @@ export const BundledCapabilitiesTab: React.FC<{ showHeader?: boolean }> = ({ sho
       : copy.readiness.notReady;
 
   const status = (installed: boolean) => installed ? copy.installed : copy.removed;
+  const version = (id: VoiceCapabilityId) => states.find((item) => item.id === id)?.version;
+  const versionMeta = (id: VoiceCapabilityId) => {
+    const value = version(id);
+    return value ? <PluginCardPill>v{value}</PluginCardPill> : null;
+  };
   const action = (id: VoiceCapabilityId, installed: boolean) => (
     <Button
       variant={installed ? 'danger' : 'secondary'}
@@ -126,8 +148,9 @@ export const BundledCapabilitiesTab: React.FC<{ showHeader?: boolean }> = ({ sho
         status={status(liveInstalled)}
         statusTone={liveInstalled ? 'active' : 'inactive'}
         description={copy.voiceLive.summary}
-        permissions={copy.voiceLive.permissions.map(permissionName)}
+        permissions={voiceLivePermissions.map((permission) => formatPluginPermissionLabel(permission, copy.permissionText))}
         action={action('builtin.voice-live', liveInstalled)}
+        meta={versionMeta('builtin.voice-live')}
         detailsLabel={copy.detailsLabel}
         notice={notice('builtin.voice-live', liveInstalled, copy.voiceLive.installPrompt)}
         details={(
@@ -156,8 +179,9 @@ export const BundledCapabilitiesTab: React.FC<{ showHeader?: boolean }> = ({ sho
         status={status(inputInstalled)}
         statusTone={inputInstalled ? 'active' : 'inactive'}
         description={copy.voiceInput.summary}
-        permissions={copy.voiceInput.permissions.map(permissionName)}
+        permissions={voiceInputPermissions.map((permission) => formatPluginPermissionLabel(permission, copy.permissionText))}
         action={action('builtin.voice-input', inputInstalled)}
+        meta={versionMeta('builtin.voice-input')}
         detailsLabel={copy.detailsLabel}
         notice={inputNotice}
         details={(

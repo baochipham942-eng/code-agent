@@ -24,6 +24,12 @@ const statusClass: Record<PluginCardStatusTone, string> = {
   warning: 'border-badge-warning/30 bg-amber-500/10 text-badge-warning',
 };
 
+export const PluginCardPill: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <span className="inline-flex items-center rounded-md border border-zinc-700 bg-zinc-800 px-2 py-0.5 text-[11px] text-zinc-300">
+    {children}
+  </span>
+);
+
 export const PluginCard: React.FC<PluginCardProps> = ({
   testId,
   icon,
@@ -49,7 +55,10 @@ export const PluginCard: React.FC<PluginCardProps> = ({
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex min-w-0 flex-1 items-start gap-3">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-950 text-badge-accent">
+          <div
+            data-testid={`${testId}-icon`}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-950 text-badge-accent"
+          >
             {icon}
           </div>
           <div className="min-w-0 flex-1">
@@ -63,12 +72,9 @@ export const PluginCard: React.FC<PluginCardProps> = ({
             <p className="mt-1 text-xs leading-5 text-zinc-500">{description}</p>
             <div className="mt-2 flex flex-wrap gap-1.5" data-testid={`${testId}-permissions`}>
               {permissions.map((permission) => (
-                <span
-                  key={permission}
-                  className="inline-flex items-center rounded-md border border-zinc-700 bg-zinc-800 px-2 py-0.5 text-[11px] text-zinc-300"
-                >
+                <PluginCardPill key={permission}>
                   {permission}
-                </span>
+                </PluginCardPill>
               ))}
             </div>
             {details && (

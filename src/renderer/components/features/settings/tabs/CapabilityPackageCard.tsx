@@ -1,5 +1,5 @@
 import React from 'react';
-import { Blocks, Download, PackagePlus, Trash2, Upload } from 'lucide-react';
+import { Blocks, CheckCircle2, Download, PackagePlus, Trash2, Upload } from 'lucide-react';
 import type {
   CapabilityPackagePermission,
   InstalledCapabilityPackage,
@@ -7,14 +7,16 @@ import type {
 import { useAppStore } from '../../../../stores/appStore';
 import { useI18n } from '../../../../hooks/useI18n';
 import { Button } from '../../../primitives';
-import { PluginCard } from '../../capabilityHub/PluginCard';
-import { Pill } from './PluginsSettings.ui';
+import { PluginCard, PluginCardPill } from '../../capabilityHub/PluginCard';
+import {
+  formatPluginPermissionDescription,
+  formatPluginPermissionLabel,
+} from '../../capabilityHub/pluginPermissionText';
 
 interface CapabilityPackageCardProps {
   plugin: InstalledCapabilityPackage;
   busyKey: string | null;
   packageBusy: boolean;
-  permissionLabel: (permission: CapabilityPackagePermission) => string;
   onInstall: (plugin: InstalledCapabilityPackage) => void;
   onUninstall: (plugin: InstalledCapabilityPackage) => void;
   onReinstall: () => void;
@@ -24,26 +26,31 @@ export const CapabilityPackageCard: React.FC<CapabilityPackageCardProps> = ({
   plugin,
   busyKey,
   packageBusy,
-  permissionLabel,
   onInstall,
   onUninstall,
   onReinstall,
 }) => {
   const { t } = useI18n();
   const pluginsText = t.settings.plugins;
+  const capabilityText = t.capabilityPackages;
   const setActiveInternalFeature = useAppStore((state) => state.setActiveInternalFeature);
   const busy = busyKey === `capability-package:uninstall:${plugin.id}`;
   const isInternal = plugin.surface === 'internal-feature';
   const isActiveInternal = isInternal && plugin.state === 'active';
   const isFailedInternal = isInternal && plugin.state === 'error';
-  const permissions = [
-    ...plugin.permissions.map(permissionLabel),
-    isInternal
-      ? pluginsText.manualImport.internalFeature
-      : `${plugin.toolNames.length}${pluginsText.manualImport.toolsSuffix}`,
-  ];
+  const permissions = plugin.permissions.map((permission) => (
+    formatPluginPermissionLabel({ permission }, capabilityText.permissionText)
+  ));
+  const toolCount = plugin.toolNames.length;
   const status = plugin.state !== 'available' ? t.capabilityPackages.installed : t.capabilityPackages.removed;
   const statusTone = plugin.state === 'active' ? 'active' : isFailedInternal ? 'warning' : 'inactive';
+  const meta = (
+    <>
+      {plugin.version ? <PluginCardPill>v{plugin.version}</PluginCardPill> : null}
+      {isInternal ? <PluginCardPill>{pluginsText.manualImport.internalFeature}</PluginCardPill> : null}
+      {toolCount > 0 ? <PluginCardPill>{toolCount}{pluginsText.manualImport.toolsSuffix}</PluginCardPill> : null}
+    </>
+  );
   const notice = (
     <>
       {isActiveInternal ? (
@@ -64,7 +71,25 @@ export const CapabilityPackageCard: React.FC<CapabilityPackageCardProps> = ({
       statusTone={statusTone}
       description={plugin.description}
       permissions={permissions}
-      meta={<Pill>{plugin.version}</Pill>}
+      meta={meta}
+      detailsLabel={capabilityText.detailsLabel}
+      details={(
+        <div>
+          <h4 className="text-xs font-medium text-zinc-200">{capabilityText.permissionsTitle}</h4>
+          {plugin.permissions.length === 0 ? (
+            <p className="mt-2 text-xs leading-5 text-zinc-500">{pluginsText.manualImport.noPermissions}</p>
+          ) : (
+            <ul className="mt-2 space-y-1.5 text-xs leading-5 text-zinc-400">
+              {plugin.permissions.map((permission: CapabilityPackagePermission) => (
+                <li key={permission} className="flex items-start gap-2">
+                  <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-badge-success" />
+                  <span>{formatPluginPermissionDescription({ permission }, capabilityText.permissionText)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
       notice={notice}
       action={plugin.state === 'available' ? (
           <Button

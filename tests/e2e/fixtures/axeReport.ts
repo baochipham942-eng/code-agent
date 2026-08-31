@@ -1,4 +1,4 @@
-import type { Result, RunOnly, SerialFrameSelector, TagValue } from 'axe-core';
+import type { AxeBuilder } from '@axe-core/playwright';
 
 export const AXE_ATTACHMENT_NAME = 'axe-runtime-scan';
 export const AXE_REPORT_PATH = 'test-results/axe/axe-report.json';
@@ -10,9 +10,10 @@ export const AXE_WCAG_TAGS = [
   'wcag21aa',
   'wcag22a',
   'wcag22aa',
-] as const satisfies readonly TagValue[];
+] as const;
 
-export type AxeRoot = SerialFrameSelector;
+export type AxeRoot = Parameters<AxeBuilder['include']>[0];
+type AxeViolation = Awaited<ReturnType<AxeBuilder['analyze']>>['violations'][number];
 
 export interface AxeScanRecord {
   schemaVersion: 1;
@@ -25,7 +26,7 @@ export interface AxeScanRecord {
   titlePath: string[];
   projectName: string;
   retry: number;
-  violations: Result[];
+  violations: AxeViolation[];
 }
 
 export interface AxeRuntimeReport {
@@ -34,7 +35,10 @@ export interface AxeRuntimeReport {
   source: {
     package: '@axe-core/playwright';
     version: string;
-    runOnly: RunOnly;
+    runOnly: {
+      type: 'tag';
+      values: string[];
+    };
   };
   totals: {
     scans: number;

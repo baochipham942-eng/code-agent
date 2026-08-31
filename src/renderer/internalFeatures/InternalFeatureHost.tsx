@@ -35,7 +35,7 @@ function removeStylesheet(id: string, cssUrl: string): void {
   stylesheetLinks(id).filter((link) => link.href === target).forEach((link) => link.remove());
 }
 
-export function loadInternalFeature(
+function loadInternalFeature(
   id: string,
   loadedHash: string,
   entryUrl: string,

@@ -312,6 +312,69 @@ describe('SwarmTraceRepository', () => {
     expect(repo.getRunDetail('run-1')?.agents).toEqual([]);
   });
 
+  it('replaceRunCache 保留 events 并正确替换 agents', () => {
+    repo.startRun({
+      id: 'run-1', sessionId: 'session-before', coordinator: 'hybrid',
+      startedAt: 100, totalAgents: 1, trigger: 'auto',
+    });
+    repo.upsertAgent({
+      runId: 'run-1', agentId: 'old-agent', name: 'Old', role: 'reviewer',
+      status: 'running', startTime: 100, endTime: null, durationMs: null,
+      tokensIn: 1, tokensOut: 2, toolCalls: 3, costUsd: 0.01,
+      error: null, failureCategory: null, filesChanged: ['old.ts'],
+    });
+    repo.appendEvent({
+      runId: 'run-1', seq: 0, timestamp: 101, eventType: 'swarm:started',
+      agentId: null, level: 'info', title: 'started', summary: 'first', payload: { step: 1 },
+    });
+    repo.appendEvent({
+      runId: 'run-1', seq: 1, timestamp: 102, eventType: 'swarm:agent:completed',
+      agentId: 'old-agent', level: 'info', title: 'completed', summary: 'second', payload: { step: 2 },
+    });
+
+    const detail = repo.getRunDetail('run-1')!;
+    repo.replaceRunCache({
+      run: {
+        ...detail.run,
+        sessionId: 'session-after',
+        status: 'completed',
+        endedAt: 200,
+        totalAgents: 1,
+        completedCount: 1,
+        totalTokensIn: 10,
+        totalTokensOut: 20,
+        totalToolCalls: 4,
+        totalCostUsd: 0.05,
+        tags: ['rebuilt'],
+      },
+      agents: [{
+        runId: 'run-1', agentId: 'new-agent', name: 'New', role: 'coder',
+        status: 'completed', startTime: 110, endTime: 190, durationMs: 80,
+        tokensIn: 10, tokensOut: 20, toolCalls: 4, costUsd: 0.05,
+        error: null, failureCategory: null, filesChanged: ['new.ts'],
+      }],
+      events: detail.events,
+    });
+
+    const rebuilt = repo.getRunDetail('run-1')!;
+    expect(rebuilt.run).toMatchObject({
+      sessionId: 'session-after',
+      status: 'completed',
+      totalTokensIn: 10,
+      tags: ['rebuilt'],
+    });
+    expect(rebuilt.agents).toHaveLength(1);
+    expect(rebuilt.agents[0]).toMatchObject({
+      agentId: 'new-agent',
+      status: 'completed',
+      filesChanged: ['new.ts'],
+    });
+    expect(rebuilt.events.map((event) => ({ seq: event.seq, eventType: event.eventType, payload: event.payload }))).toEqual([
+      { seq: 0, eventType: 'swarm:started', payload: { step: 1 } },
+      { seq: 1, eventType: 'swarm:agent:completed', payload: { step: 2 } },
+    ]);
+  });
+
   // --------------------------------------------------------------------------
   // Events
   // --------------------------------------------------------------------------

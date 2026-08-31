@@ -8,6 +8,7 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'
 const versionFile = path.join(repoRoot, 'src/host/internalFeatures/internalSdkVersion.ts');
 const hostSdkFile = path.join(repoRoot, 'src/host/internalFeatures/internalHostSdk.ts');
 const rendererSdkFile = path.join(repoRoot, 'src/renderer/internalFeatures/internalSdk.ts');
+const rendererVersionFile = path.join(repoRoot, 'src/renderer/internalFeatures/internalSdkVersion.ts');
 const checkOnly = process.argv.includes('--check');
 
 interface ContractRow {
@@ -84,10 +85,7 @@ function readRecordedVersions(source: string): { host: string; renderer: string 
 
 const context = createContractProgram();
 const expectedHost = contractHash(collectContractRows(hostSdkFile, '@host/', context));
-const rendererAvailable = fs.existsSync(rendererSdkFile);
-const expectedRenderer = rendererAvailable
-  ? contractHash(collectContractRows(rendererSdkFile, '@renderer/', context))
-  : null;
+const expectedRenderer = contractHash(collectContractRows(rendererSdkFile, '@renderer/', context));
 const source = fs.readFileSync(versionFile, 'utf8');
 const recorded = readRecordedVersions(source);
 
@@ -97,18 +95,25 @@ if (checkOnly) {
     console.error(`[internal-sdk-hash] host mismatch: recorded=${recorded.host} expected=${expectedHost}`);
     failed = true;
   }
-  if (expectedRenderer && recorded.renderer !== expectedRenderer) {
+  if (recorded.renderer !== expectedRenderer) {
     console.error(`[internal-sdk-hash] renderer mismatch: recorded=${recorded.renderer} expected=${expectedRenderer}`);
     failed = true;
-  } else if (!expectedRenderer) {
-    console.log('[internal-sdk-hash] renderer table pending; renderer check skipped until L3');
+  }
+  const rendererRecorded = fs.readFileSync(rendererVersionFile, 'utf8')
+    .match(/RENDERER_INTERNAL_SDK_VERSION\s*=\s*'([^']+)'/u)?.[1];
+  if (rendererRecorded !== expectedRenderer) {
+    console.error(`[internal-sdk-hash] renderer module mismatch: recorded=${rendererRecorded ?? 'missing'} expected=${expectedRenderer}`);
+    failed = true;
   }
   if (failed) process.exit(1);
-  console.log(`[internal-sdk-hash] ok host=${expectedHost} renderer=${expectedRenderer ?? 'pending'}`);
+  console.log(`[internal-sdk-hash] ok host=${expectedHost} renderer=${expectedRenderer}`);
 } else {
   const next = source
     .replace(/\bhost:\s*'[^']+'/u, `host: '${expectedHost}'`)
-    .replace(/\brenderer:\s*'[^']+'/u, `renderer: '${expectedRenderer ?? 'pending'}'`);
+    .replace(/\brenderer:\s*'[^']+'/u, `renderer: '${expectedRenderer}'`);
   fs.writeFileSync(versionFile, next, 'utf8');
-  console.log(`[internal-sdk-hash] updated host=${expectedHost} renderer=${expectedRenderer ?? 'pending'}`);
+  const rendererVersionSource = fs.readFileSync(rendererVersionFile, 'utf8')
+    .replace(/RENDERER_INTERNAL_SDK_VERSION\s*=\s*'[^']+'/u, `RENDERER_INTERNAL_SDK_VERSION = '${expectedRenderer}'`);
+  fs.writeFileSync(rendererVersionFile, rendererVersionSource, 'utf8');
+  console.log(`[internal-sdk-hash] updated host=${expectedHost} renderer=${expectedRenderer}`);
 }

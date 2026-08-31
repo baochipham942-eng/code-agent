@@ -12,6 +12,7 @@
 import React from 'react';
 import {
   Activity,
+  Blocks,
   CalendarDays,
   ChevronRight,
   FlaskConical,
@@ -26,6 +27,7 @@ import { useAuthStore } from '../../../stores/authStore';
 import { useI18n } from '../../../hooks/useI18n';
 import { canAccessFeature } from '../../../utils/accessControl';
 import { AccountMenuItem, AccountMenuLabel } from './sidebarPresentation';
+import { useInternalFeatureStore } from '../../../internalFeatures/internalFeatureStore';
 
 interface SidebarAccountMenuProps {
   onClose: () => void;
@@ -57,9 +59,12 @@ export const SidebarAccountMenu: React.FC<SidebarAccountMenuProps> = ({
     showLocalOpsPanel,
     openLocalOpsPanel,
     setShowPromptManager,
+    setActiveInternalFeature,
   } = useAppStore();
 
   const canOpenPromptManager = canAccessFeature('prompt.manager', user);
+  const canOpenInternal = canAccessFeature('capability.internal', user);
+  const internalFeatures = useInternalFeatureStore((state) => state.features);
 
   return (
     <div className="absolute bottom-full left-2 right-2 z-50 max-h-[80vh] overflow-y-auto rounded-xl elevation-l2 popover-enter py-1">
@@ -83,6 +88,15 @@ export const SidebarAccountMenu: React.FC<SidebarAccountMenuProps> = ({
           testId="user-menu-open-prompt-manager"
         />
       )}
+      {canOpenInternal && internalFeatures.map((feature) => (
+        <AccountMenuItem
+          key={feature.id}
+          onClick={() => { setActiveInternalFeature(feature.id); onClose(); }}
+          icon={<Blocks className="h-4 w-4 text-badge-warning/80" />}
+          label={feature.internalFeature?.label ?? feature.name}
+          testId={`account-menu-internal-${feature.id}`}
+        />
+      ))}
 
       <div className="my-1 border-t border-zinc-800" />
       <button /* ds-allow:button: 折叠组头是 11px 微字号纯文本行头，primitive 无对应变体（同款豁免见 SidebarProjectDrawer） */

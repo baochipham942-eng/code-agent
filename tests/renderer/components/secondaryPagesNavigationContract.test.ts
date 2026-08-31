@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-const sourceRoot = resolve(process.cwd(), 'src/renderer/components/features');
+const rendererRoot = resolve(process.cwd(), 'src/renderer');
+const sourceRoot = resolve(rendererRoot, 'components/features');
 
 const PRIMARY_PAGE_HEADERS = [
   ['活动', 'activity/ActivityPanel.tsx'],
@@ -45,5 +46,13 @@ describe('一级二级页与下钻页的返回按钮契约', () => {
   it('提示词管理从设置打开时保留返回设置的入口，侧栏直达仍不加返回按钮', () => {
     const props = fullScreenPageHeaderProps('prompts/PromptManagerModal.tsx');
     expect(props).toContain('onClose={showSettings ? () => setShowPromptManager(false) : undefined}');
+  });
+
+  it('内部插件槽登记在二级页注册面，并排在应用内验证之前', () => {
+    const registry = readFileSync(resolve(rendererRoot, 'stores/secondaryPages.ts'), 'utf8');
+    const app = readFileSync(resolve(rendererRoot, 'App.tsx'), 'utf8');
+    expect(registry).toContain('activeInternalFeatureId: null');
+    expect(app.indexOf('activeInternalFeatureId ?')).toBeGreaterThanOrEqual(0);
+    expect(app.indexOf('activeInternalFeatureId ?')).toBeLessThan(app.indexOf('showInAppValidation ?'));
   });
 });

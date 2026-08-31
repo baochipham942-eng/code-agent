@@ -50,8 +50,21 @@ export const capabilityHubZh = {
       ],
     },
   },
+  internalFeatures: {
+    loading: '正在打开{label}…',
+    versionMismatch: '这个插件的界面版本与当前应用不匹配。',
+    reinstallInHub: '去能力中心重新安装',
+    loadFailed: '{label}没能打开。',
+    loadHelp: '你可以重试，或去能力中心重新安装。',
+    retry: '重试',
+    reinstall: '重新安装',
+    activeHint: '已启用，可在左下角菜单打开',
+    open: '打开',
+    startErrorPrefix: '这个插件没能启动：',
+    unloadedSuffix: '插件已卸载',
+  },
   // 候选能力（N-CAP1 / F12）。文案纪律：这一区只出现「能力」，
-  // 不许出现 插件 / plugin / manifest / cordis / 意图簇 这类实现概念。
+  // 不许出现 plugin / manifest / cordis / 意图簇这类实现概念。
   capabilityCandidates: {
     title: '候选能力',
     intro: '这里记的是你反复让我拼着做的事。只记账，不打扰——想看才看。',
@@ -132,6 +145,19 @@ export const capabilityHubEn = {
         'Filesystem (optional): stores call recordings or voiceprint enrollment data when enabled.',
       ],
     },
+  },
+  internalFeatures: {
+    loading: 'Opening {label}…',
+    versionMismatch: 'This plugin interface does not match the current app.',
+    reinstallInHub: 'Reinstall in Capability Hub',
+    loadFailed: '{label} could not open.',
+    loadHelp: 'Try again, or reinstall it in Capability Hub.',
+    retry: 'Try again',
+    reinstall: 'Reinstall',
+    activeHint: 'Enabled. Open it from the lower-left menu.',
+    open: 'Open',
+    startErrorPrefix: 'This plugin could not start: ',
+    unloadedSuffix: ' plugin was uninstalled',
   },
   capabilityCandidates: {
     title: 'Candidate capabilities',

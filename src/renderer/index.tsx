@@ -6,6 +6,11 @@ import {
   trackRenderer,
 } from "./observability/posthogRenderer";
 import { POSTHOG_EVENTS } from "@shared/observability/posthog-events";
+import { installInternalSdk } from './internalFeatures/internalSdk';
+import { initializeInternalFeatureStore } from './internalFeatures/internalFeatureStore';
+
+installInternalSdk();
+initializeInternalFeatureStore();
 
 // recon: 挂载耗时打点——本 mark 在全部 eager import 求值完成后执行，
 // [navigationStart → 此处] ≈ 首包下载+parse+eval（H1/H2 段）

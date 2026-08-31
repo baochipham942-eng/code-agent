@@ -222,6 +222,11 @@ const gates = [
     ],
   },
   {
+    ci: 'eval-harness / harness / Build evaluation-center plugin',
+    command: 'npm',
+    args: ['--prefix', 'packages/internal/evaluation-center', 'run', 'build'],
+  },
+  {
     ci: 'swarm-ci / smoke / Main-chain vitest subset',
     command: 'node',
     // ⚠️ 目标清单必须与 swarm-ci.yml 同名步骤**逐项一致**。

@@ -355,6 +355,10 @@ export class EvalRunBridge {
     return { runId, pid: state.pid, terminated };
   }
 
+  async abortAll(reason: string): Promise<void> {
+    await Promise.all([...this.runs.keys()].map((runId) => this.abortRun(runId, reason)));
+  }
+
   private consumeStdout(state: InternalRunState, chunk: string): void {
     state.buffer += chunk;
     for (;;) {

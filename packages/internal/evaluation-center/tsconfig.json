@@ -12,6 +12,7 @@
   },
   "include": [
     "../../../src/**/*.d.ts",
+    "*.config.ts",
     "src/**/*.ts",
     "src/**/*.tsx",
     "scripts/**/*.ts"

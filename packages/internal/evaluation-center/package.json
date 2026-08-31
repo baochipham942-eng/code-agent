@@ -2,8 +2,13 @@
   "name": "@code-agent/internal-evaluation-center",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "description": "Admin-only internal evaluation center capability package",
   "scripts": {
+    "build": "node ../../../node_modules/tsx/dist/cli.mjs scripts/build.ts",
+    "build:renderer": "node ../../../node_modules/vite/bin/vite.js build --config vite.renderer.config.ts",
+    "build:host": "node ../../../node_modules/tsx/dist/cli.mjs esbuild.host.config.ts",
+    "pack": "node ../../../node_modules/tsx/dist/cli.mjs scripts/pack.ts",
     "typecheck": "../../../node_modules/typescript7/bin/tsc --noEmit -p tsconfig.json",
     "eval": "npx tsx scripts/eval-ci.ts --split held-in",
     "eval:smoke": "npx tsx scripts/eval-ci.ts --scope smoke",

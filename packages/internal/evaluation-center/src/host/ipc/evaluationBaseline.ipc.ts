@@ -202,7 +202,7 @@ async function loadBaselineGroups(): Promise<EvalBaselineInfoResult> {
   return { groups };
 }
 
-export function registerEvaluationBaselineHandlers(ipcMain: IpcMain): void {
+export function registerEvaluationBaselineHandlers(ipcMain: IpcMain): string[] {
   ipcMain.handle(EVALUATION_CHANNELS.SET_BASELINE, async (_event, payload?: { experimentId?: string }) => {
     const denied = getChannelAccessIpcError(EVALUATION_CHANNELS.SET_BASELINE, 'Evaluation baseline write');
     if (denied) return denied;
@@ -216,4 +216,5 @@ export function registerEvaluationBaselineHandlers(ipcMain: IpcMain): void {
     if (denied) return denied;
     return loadBaselineGroups();
   });
+  return [EVALUATION_CHANNELS.SET_BASELINE, EVALUATION_CHANNELS.BASELINE_INFO];
 }

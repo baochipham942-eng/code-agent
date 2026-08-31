@@ -73,6 +73,9 @@ jobs:
           npm --prefix packages/eval-harness run typecheck
           npm --prefix packages/internal/evaluation-center run typecheck
 
+      - name: Build evaluation-center plugin
+        run: npm --prefix packages/internal/evaluation-center run build
+
       - name: Eval harness 单测
         # 断言引擎 + baseline/trend 来源护栏 + judge 校准计算 + replay gate
         # ADR-036 F5a：tests/eval + tests/eval-harness 全 hermetic（40 测试 <0.5s，

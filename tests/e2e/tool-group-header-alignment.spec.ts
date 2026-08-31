@@ -18,7 +18,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from './fixtures/axeTest';
 
 const require_ = createRequire(import.meta.url);
 

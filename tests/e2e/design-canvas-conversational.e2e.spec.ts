@@ -20,7 +20,7 @@
 // harness 完全跟随 new-session.e2e.spec.ts。
 // ============================================================================
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from './fixtures/axeTest';
 
 // design-canvas tab label 走 i18n（zh.ts: '设计画布'）。E2E 默认中文 UI。
 const CANVAS_TAB_LABEL = '设计画布';

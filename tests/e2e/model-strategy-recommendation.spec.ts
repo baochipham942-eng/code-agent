@@ -17,7 +17,7 @@
 // 时才会退回 Playwright pipe launch，避免把 CDP 环境问题伪装成产品断言失败。
 // ============================================================================
 
-import { expect, test } from '@playwright/test';
+import { expect, scanA11y, test } from './fixtures/axeTest';
 import { chromium, type Browser, type Page } from 'playwright';
 import { spawn, type ChildProcessByStdio } from 'child_process';
 import type { Readable } from 'stream';
@@ -587,7 +587,7 @@ test.describe('Model strategy recommendation browser flow', () => {
     if (server) await stopServer(server);
   });
 
-  test('adopts auto model strategy from the composer recommendation strip', async () => {
+  test('adopts auto model strategy from the composer recommendation strip', async (_fixtures, testInfo) => {
     const context = browser.browser.contexts()[0] ?? await browser.browser.newContext();
     const page = context.pages()[0] ?? await context.newPage();
     const sessionId = await openAppWithInitialSession(page, server.baseUrl);
@@ -612,9 +612,10 @@ test.describe('Model strategy recommendation browser flow', () => {
       model: MAIN_MODEL,
       adaptive: true,
     });
+    await scanA11y(page, testInfo, { scanName: 'managed-browser-page' });
   });
 
-  test('switches back to Native from an external engine failure recommendation', async () => {
+  test('switches back to Native from an external engine failure recommendation', async (_fixtures, testInfo) => {
     const context = browser.browser.contexts()[0] ?? await browser.browser.newContext();
     const page = context.pages()[0] ?? await context.newPage();
     const sessionId = await openAppWithInitialSession(page, server.baseUrl);
@@ -638,5 +639,6 @@ test.describe('Model strategy recommendation browser flow', () => {
     ).toMatchObject({
       kind: 'native',
     });
+    await scanA11y(page, testInfo, { scanName: 'managed-browser-page' });
   });
 });

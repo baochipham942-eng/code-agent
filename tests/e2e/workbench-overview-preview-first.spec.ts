@@ -1,4 +1,4 @@
-import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
+import { test, expect, type APIRequestContext, type Page } from './fixtures/axeTest';
 import type { AgentEvent, Artifact } from '../../src/shared/contract';
 
 type RendererAgentEvent = AgentEvent & { sessionId?: string };

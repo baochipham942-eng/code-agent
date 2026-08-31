@@ -5,7 +5,7 @@
 // 拨号阶段由运行命令注入无效临时 Key，不读写系统 Key，不会产生成功语音/TTS 计费。
 // ============================================================================
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from './fixtures/axeTest';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 

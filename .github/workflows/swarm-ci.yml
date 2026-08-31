@@ -51,6 +51,8 @@ on:
       - 'scripts/ci/**'
       - 'scripts/console-scan.mjs'
       - 'scripts/a11y-scan.mjs'
+      - 'scripts/a11y-axe-ratchet.mjs'
+      - 'scripts/a11y-axe-ratchet-baseline.json'
       - 'scripts/stale-dist-scan.mjs'
       - 'scripts/check-design-system.mjs'
       - 'scripts/design-system-baseline.json'
@@ -456,6 +458,25 @@ jobs:
           CI: '1'
         run: npm run test:swarm:e2e
 
+      # 初值来自本 PR 的 Swarm full Linux/Chromium record artifact（run 33397733582），
+      # 不使用本机计数；当前高于基线 fail，低于基线提示下调。
+      - name: Check axe runtime accessibility ratchet
+        if: always()
+        run: |
+          # full job 的 checkout 是 PR merge 浅克隆，本地没有 origin/main 引用，
+          # 显式抓 main 顶端供基线对照（只读基线文件，depth=1 足够）。
+          git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main
+          node scripts/a11y-axe-ratchet.mjs --compare-baseline origin/main
+
+      - name: Upload axe runtime accessibility report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: swarm-e2e-axe-${{ github.run_id }}
+          path: test-results/axe/axe-report.json
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Record result (success)
         if: success()
         id: result
@@ -474,6 +495,7 @@ jobs:
           path: |
             playwright-report/
             test-results/
+            test-results/axe/axe-report.json
             tests/e2e/screenshots/
           if-no-files-found: ignore
           retention-days: 14

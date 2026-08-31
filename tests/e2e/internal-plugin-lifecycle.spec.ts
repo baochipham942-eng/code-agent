@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures/axeTest';
 import { execFile as execFileCallback, spawn, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs/promises';
 import net from 'node:net';

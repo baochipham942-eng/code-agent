@@ -18,7 +18,7 @@
 // 见 docs/audits/e2e-strategy.md §3 Flow A.
 // ============================================================================
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from './fixtures/axeTest';
 
 test.setTimeout(30_000);
 

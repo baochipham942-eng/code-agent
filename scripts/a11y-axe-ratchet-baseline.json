@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "measuredAt": "2026-08-31T13:56:45.270Z",
+  "source": "Swarm full CI https://github.com/baochipham942-eng/code-agent/actions/runs/33397733582; artifact swarm-e2e-axe-33397733582",
+  "ruleCounts": {
+    "aria-required-children": 7,
+    "color-contrast": 33,
+    "document-title": 7,
+    "nested-interactive": 19,
+    "target-size": 1
+  }
+}

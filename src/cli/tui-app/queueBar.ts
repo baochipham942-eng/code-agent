@@ -11,7 +11,7 @@ export const QUEUE_ACTIONS = [
 
 export type QueueActionId = (typeof QUEUE_ACTIONS)[number]['id'];
 
-export function queueActionsSuffix(): string {
+function queueActionsSuffix(): string {
   return QUEUE_ACTIONS.map((action) => `[${action.label}]`).join('');
 }
 

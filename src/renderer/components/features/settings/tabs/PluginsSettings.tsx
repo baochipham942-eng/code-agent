@@ -27,7 +27,6 @@ import type {
   PluginScope,
 } from '@shared/contract/marketplace';
 import type {
-  CapabilityPackagePermission,
   CapabilityPackagePreview,
   InstalledCapabilityPackage,
 } from '@shared/contract/capabilityPackage';
@@ -42,6 +41,7 @@ import { Button, EmptyState, Modal, ModalFooter } from '../../../primitives';
 import { SettingsDetails, SettingsSection } from '../SettingsLayout';
 import { BundledCapabilitiesTab } from '../../capabilityHub/BundledCapabilitiesTab';
 import { HubTabHeader } from '../../capabilityHub/HubTabHeader';
+import { formatPluginPermissionDescription } from '../../capabilityHub/pluginPermissionText';
 import { Pill, SummaryTile } from './PluginsSettings.ui';
 import { CapabilityPackageCard } from './CapabilityPackageCard';
 
@@ -387,9 +387,6 @@ export const PluginsSettings: React.FC = () => {
     })();
   }, []);
 
-  const permissionLabel = useCallback((permission: CapabilityPackagePermission): string => (
-    pluginsText.manualImport.permissions[permission]
-  ), [pluginsText.manualImport.permissions]);
   const visibleNotice = notice?.text.trim() ? notice : null;
 
   // 页头走能力中心共用的 HubTabHeader：大标题「插件」+ 刷新同一行
@@ -453,7 +450,6 @@ export const PluginsSettings: React.FC = () => {
                   plugin={plugin}
                   busyKey={busyKey}
                   packageBusy={packageBusy}
-                  permissionLabel={permissionLabel}
                   onInstall={handleInstallBundledCapabilityPackage}
                   onUninstall={handleUninstallCapabilityPackage}
                   onReinstall={handleSelectCapabilityPackage}
@@ -969,7 +965,7 @@ export const PluginsSettings: React.FC = () => {
                   </div>
                 ) : packagePreview.permissions.map((permission) => (
                   <div key={permission} className="rounded-lg border border-badge-warning/20 bg-amber-500/5 p-3 text-sm text-zinc-300">
-                    {permissionLabel(permission)}
+                    {formatPluginPermissionDescription({ permission }, t.capabilityPackages.permissionText)}
                   </div>
                 ))}
               </div>

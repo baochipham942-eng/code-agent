@@ -210,6 +210,73 @@ describe('PluginsSettings access boundaries', () => {
     });
   });
 
+  it('uses the same plugin card anatomy for first-party packages', async () => {
+    useAuthStore.setState({ user: { id: 'user', email: 'user@example.com', isAdmin: false } });
+    invoke.mockImplementation((channel: string) => {
+      if (
+        channel === IPC_CHANNELS.MARKETPLACE_LIST
+        || channel === IPC_CHANNELS.MARKETPLACE_LIST_PLUGINS
+        || channel === IPC_CHANNELS.MARKETPLACE_LIST_INSTALLED
+      ) {
+        return Promise.resolve({ success: true, data: [] });
+      }
+      if (channel === IPC_CHANNELS.CAPABILITY_PACKAGE_LIST) {
+        return Promise.resolve({
+          success: true,
+          data: [
+            {
+              id: 'builtin.imageProcess',
+              name: 'Image Process',
+              version: '1.0.0',
+              description: 'First-party image plugin',
+              permissions: ['filesystem', 'network'],
+              state: 'active',
+              surface: 'tools',
+              toolNames: ['image_process'],
+            },
+            {
+              id: 'builtin.emptyTools',
+              name: 'Empty Tools',
+              version: '1.0.0',
+              description: 'No contributed tools yet',
+              permissions: [],
+              state: 'active',
+              surface: 'tools',
+              toolNames: [],
+            },
+          ],
+        });
+      }
+      if (channel === IPC_CHANNELS.CAPABILITY_STATE_READINESS) {
+        return Promise.resolve({ status: 'fallback' });
+      }
+      throw new Error(`Unexpected channel ${channel}`);
+    });
+
+    render(<PluginsSettings />);
+
+    const imageCard = await screen.findByTestId('capability-package-builtin.imageProcess');
+    expect(imageCard.getAttribute('data-plugin-card')).toBe('unified');
+    expect(within(imageCard).getByTestId('capability-package-builtin.imageProcess-icon')).toBeTruthy();
+    expect(within(imageCard).getByText('v1.0.0')).toBeTruthy();
+    expect(within(imageCard).getByText(`1${zh.settings.plugins.manualImport.toolsSuffix}`)).toBeTruthy();
+    const permissions = within(imageCard).getByTestId('capability-package-builtin.imageProcess-permissions');
+    expect(within(permissions).getByText(zh.capabilityPackages.permissionText.labels.filesystem)).toBeTruthy();
+    expect(within(permissions).getByText(zh.capabilityPackages.permissionText.labels.network)).toBeTruthy();
+    expect(within(imageCard).getByRole('button', { name: zh.capabilityPackages.detailsLabel })).toBeTruthy();
+    fireEvent.click(within(imageCard).getByRole('button', { name: zh.capabilityPackages.detailsLabel }));
+    expect(within(imageCard).getByText(
+      `网络：${zh.capabilityPackages.permissionText.descriptions.network}`,
+    )).toBeTruthy();
+
+    const emptyCard = await screen.findByTestId('capability-package-builtin.emptyTools');
+    expect(within(emptyCard).queryByText(`0${zh.settings.plugins.manualImport.toolsSuffix}`)).toBeNull();
+    fireEvent.click(within(emptyCard).getByRole('button', { name: zh.capabilityPackages.detailsLabel }));
+    expect(within(emptyCard).getByText(zh.settings.plugins.manualImport.noPermissions)).toBeTruthy();
+    expect(document.body.textContent).not.toContain('访问网络与服务凭据');
+    expect(document.body.textContent).not.toContain('文件系统（可选）');
+  });
+
   it('routes a Tauri native file pick through the path staging IPC', async () => {
     platform.tauri = true;
     useAuthStore.setState({ user: { id: 'user', email: 'user@example.com', isAdmin: false } });

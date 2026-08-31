@@ -45,7 +45,12 @@ function fixture(overrides: Partial<NativeRecoveryHostPorts> = {}) {
       canRetrySafely: vi.fn(async () => true),
       retrySafe: vi.fn(async () => ({ resultRef: 'model:retried' })),
     },
-    tool: { queryResult: vi.fn(async () => ({ resultRef: 'tool:queried' })) },
+    tool: {
+      queryResult: vi.fn(async () => ({ resultRef: 'tool:queried' })),
+      classifyReplaySafety: vi.fn(async () => ({ stored: 'unknown' as const, current: 'unknown' as const })),
+      dispatchPrepared: vi.fn(async () => ({ resultRef: 'tool:replayed' })),
+      interrupt: vi.fn(async () => ({ resultRef: 'tool:interrupted' })),
+    },
     approval: { read: vi.fn(async (_approvalId: string) => 'pending' as const) },
     ...overrides,
   };
@@ -65,12 +70,33 @@ describe('NativeRecoveryHost production recovery', () => {
     expect(registry.terminalDurable).toHaveBeenCalledOnce();
   });
 
-  it('keeps unknown writes in review without invoking the tool', async () => {
+  it('settles unknown writes as interrupted without replaying the tool', async () => {
     const { handler, ports, registry } = fixture();
     const pending = operation({ kind: 'tool_call', sideEffect: true, providerOperationId: undefined });
-    await expect(handler.recover(plan(pending), 10)).resolves.toMatchObject({ status: 'requires_review', reason: 'unknown_write_side_effect' });
+    await expect(handler.recover(plan(pending), 10)).resolves.toMatchObject({ status: 'recovered', reason: 'unknown_write_side_effect' });
     expect(ports.tool.queryResult).not.toHaveBeenCalled();
-    expect(registry.terminalDurable).not.toHaveBeenCalled();
+    expect(ports.tool.dispatchPrepared).not.toHaveBeenCalled();
+    expect(ports.tool.interrupt).toHaveBeenCalledOnce();
+    expect(registry.terminalDurable).toHaveBeenCalledOnce();
+  });
+
+  it('replays only when stored and current declarations are both automatic', async () => {
+    const { handler, ports } = fixture({
+      tool: {
+        queryResult: vi.fn(async () => null),
+        classifyReplaySafety: vi.fn(async () => ({ stored: 'automatic' as const, current: 'automatic' as const })),
+        dispatchPrepared: vi.fn(async () => ({ resultRef: 'tool:replayed' })),
+        interrupt: vi.fn(async () => ({ resultRef: 'tool:interrupted' })),
+      },
+    });
+    const pending = operation({ kind: 'tool_call', sideEffect: false, providerOperationId: 'tool-ledger' });
+
+    await expect(handler.recover(plan(pending), 10)).resolves.toMatchObject({
+      status: 'recovered',
+      reason: 'replay_safe_tool_once',
+    });
+    expect(ports.tool.dispatchPrepared).toHaveBeenCalledOnce();
+    expect(ports.tool.interrupt).not.toHaveBeenCalled();
   });
 
   it('reuses the unanswered approval identity', async () => {

@@ -67,7 +67,14 @@ export function runStartupMaintenance(deps: StartupMaintenanceDeps): RecoverySna
       logger.warn(
         `[DatabaseService] Crash recovery: ${snapshot.totalInFlight} in-flight tool execution(s) across ${snapshot.sessions.length} session(s) reconstructed from ledger`,
       );
-      acknowledgeRecovery(toolExecutionEventRepo, snapshot, Date.now());
+      // Stored-automatic operations stay open until the application continuation
+      // rechecks the current declaration and either replays or interrupts them.
+      acknowledgeRecovery(
+        toolExecutionEventRepo,
+        snapshot,
+        Date.now(),
+        (operation) => operation.replaySafety !== 'automatic',
+      );
     }
   } catch (err) {
     logger.warn('[DatabaseService] Crash recovery scan failed (ignored):', err);
@@ -77,12 +84,23 @@ export function runStartupMaintenance(deps: StartupMaintenanceDeps): RecoverySna
   for (const sessionId of crashedSessions.sessionIds) {
     try {
       const messages = sessionRepo.getMessages(sessionId);
+      const storedAutomaticToolCallIds = new Set(
+        snapshot?.sessions
+          .find((session) => session.sessionId === sessionId)
+          ?.operations
+          .filter((operation) => operation.replaySafety === 'automatic' && operation.toolCallId)
+          .map((operation) => operation.toolCallId as string) ?? [],
+      );
       for (const assistantMessage of messages) {
         if (assistantMessage.role !== 'assistant' || !assistantMessage.toolCalls?.length) continue;
+        const toolCallsToInterrupt = assistantMessage.toolCalls.filter(
+          (toolCall) => !storedAutomaticToolCallIds.has(toolCall.id),
+        );
+        if (toolCallsToInterrupt.length === 0) continue;
         persistCancelledToolCallClosures({
           messages,
           assistantMessage,
-          toolCalls: assistantMessage.toolCalls,
+          toolCalls: toolCallsToInterrupt,
           placeholder: INTERRUPTED_TOOL_CALL_PLACEHOLDER,
           messageIdSuffix: 'interrupted-tool-results',
           persistMessage: (message) => {

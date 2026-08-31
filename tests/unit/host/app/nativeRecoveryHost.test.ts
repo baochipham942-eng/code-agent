@@ -6,7 +6,7 @@ import type {
 } from '../../../../src/host/runtime/nativeRecoveryHost';
 import type { RunRehydrationPlan } from '../../../../src/host/runtime/durableRunStores';
 import type { PendingOperation } from '../../../../src/shared/contract/durableRun';
-import type { Message } from '../../../../src/shared/contract';
+import type { Message, ToolDefinition } from '../../../../src/shared/contract';
 
 function recoveryInput(): NativeRecoveryOperationInput {
   const operation: PendingOperation = {
@@ -211,5 +211,156 @@ describe('application Native model continuation ports', () => {
     await expect(ports.model.retrySafe(input)).rejects.toThrow(
       'native model safe retry is not proven by the current provider contract',
     );
+  });
+});
+
+describe('application Native tool continuation ports', () => {
+  function toolInput(): NativeRecoveryOperationInput {
+    const input = recoveryInput();
+    const toolOperation: PendingOperation = {
+      ...input.operation,
+      operationId: 'tool:call-read',
+      kind: 'tool_call',
+      status: 'dispatched',
+      providerOperationId: 'execution-read',
+      sideEffect: false,
+    };
+    const descriptor: NativeRecoveryDescriptor = {
+      ...input.descriptor,
+      provider: 'tool',
+      model: 'Read',
+      logicalOperationId: 'call-read',
+      operationId: toolOperation.operationId,
+      phase: 'tool_dispatched',
+    };
+    return {
+      operation: toolOperation,
+      descriptor,
+      plan: {
+        ...input.plan,
+        envelope: {
+          ...input.plan.envelope,
+          pendingOperations: [toolOperation],
+        },
+        checkpoint: input.plan.checkpoint
+          ? { ...input.plan.checkpoint, state: descriptor }
+          : null,
+        pendingOperations: [toolOperation],
+      },
+    };
+  }
+
+  function toolMessages(): Message[] {
+    return [
+      sourceMessage(),
+      {
+        id: 'assistant-tool-call',
+        role: 'assistant',
+        content: '',
+        timestamp: 2,
+        toolCalls: [{
+          id: 'call-read',
+          name: 'Read',
+          arguments: { file_path: 'README.md' },
+        }],
+      },
+    ];
+  }
+
+  const readDefinition: ToolDefinition = {
+    name: 'Read',
+    description: 'read',
+    inputSchema: { type: 'object', properties: {} },
+    outputSchema: { type: 'string' },
+    requiresPermission: false,
+    permissionLevel: 'read' as const,
+    readOnly: true,
+  };
+
+  it('replays persisted read-only arguments and records the real result', async () => {
+    const input = toolInput();
+    const persisted: Message[] = [];
+    const executeTool = vi.fn(async () => ({ success: true, output: 'file contents' }));
+    const acknowledgeToolRecovery = vi.fn();
+    const ports = createApplicationNativeRecoveryPorts(
+      { checkpointDurable: vi.fn(async () => undefined) } as never,
+      {
+        sessions: {
+          getMessages: vi.fn(async () => [...toolMessages(), ...persisted]),
+          updateMessage: vi.fn(async () => undefined),
+        },
+        tasks: { setSessionContext: vi.fn(), startTask: vi.fn(async () => undefined) },
+        resolveToolDefinition: vi.fn(() => readDefinition),
+        storedToolReplaySafety: vi.fn(() => 'automatic' as const),
+        executeTool,
+        persistToolMessage: vi.fn(async (_sessionId, message) => { persisted.push(message); }),
+        acknowledgeToolRecovery,
+        now: () => 20,
+      },
+    );
+
+    await expect(ports.tool.classifyReplaySafety(input)).resolves.toEqual({
+      stored: 'automatic',
+      current: 'automatic',
+    });
+    await expect(ports.tool.dispatchPrepared(input)).resolves.toEqual({
+      resultRef: 'message-ledger:assistant-tool-call:replayed-tool-result:call-read',
+    });
+    expect(executeTool).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'Read',
+      arguments: { file_path: 'README.md' },
+      toolCallId: 'call-read',
+    }));
+    expect(persisted[0]).toMatchObject({
+      role: 'tool',
+      toolResults: [{ toolCallId: 'call-read', success: true, output: 'file contents' }],
+    });
+    expect(acknowledgeToolRecovery).toHaveBeenCalledWith(
+      'session-recovery',
+      'execution-read',
+      'Read',
+    );
+  });
+
+  it('writes interrupted for a write tool and never invokes execution', async () => {
+    const input = toolInput();
+    input.operation.sideEffect = true;
+    const persisted: Message[] = [];
+    const executeTool = vi.fn(async () => ({ success: true, output: 'must not run' }));
+    const ports = createApplicationNativeRecoveryPorts(
+      { checkpointDurable: vi.fn(async () => undefined) } as never,
+      {
+        sessions: {
+          getMessages: vi.fn(async () => [...toolMessages(), ...persisted]),
+          updateMessage: vi.fn(async () => undefined),
+        },
+        tasks: { setSessionContext: vi.fn(), startTask: vi.fn(async () => undefined) },
+        resolveToolDefinition: vi.fn(() => ({
+          ...readDefinition,
+          permissionLevel: 'write' as const,
+          readOnly: false,
+        })),
+        storedToolReplaySafety: vi.fn(() => 'unknown' as const),
+        executeTool,
+        persistToolMessage: vi.fn(async (_sessionId, message) => { persisted.push(message); }),
+        acknowledgeToolRecovery: vi.fn(),
+        now: () => 20,
+      },
+    );
+
+    await expect(ports.tool.classifyReplaySafety(input)).resolves.toEqual({
+      stored: 'unknown',
+      current: 'unknown',
+    });
+    await ports.tool.interrupt(input);
+    expect(executeTool).not.toHaveBeenCalled();
+    expect(persisted[0]).toMatchObject({
+      role: 'tool',
+      toolResults: [{
+        toolCallId: 'call-read',
+        success: false,
+        error: expect.stringContaining('interrupted'),
+      }],
+    });
   });
 });

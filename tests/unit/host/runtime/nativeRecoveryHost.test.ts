@@ -99,6 +99,25 @@ describe('NativeRecoveryHost production recovery', () => {
     expect(ports.tool.interrupt).not.toHaveBeenCalled();
   });
 
+  it('interrupts when the stored automatic declaration has degraded to unknown', async () => {
+    const { handler, ports } = fixture({
+      tool: {
+        queryResult: vi.fn(async () => null),
+        classifyReplaySafety: vi.fn(async () => ({ stored: 'automatic' as const, current: 'unknown' as const })),
+        dispatchPrepared: vi.fn(async () => ({ resultRef: 'tool:replayed' })),
+        interrupt: vi.fn(async () => ({ resultRef: 'tool:interrupted' })),
+      },
+    });
+    const pending = operation({ kind: 'tool_call', sideEffect: false, providerOperationId: 'tool-ledger' });
+
+    await expect(handler.recover(plan(pending), 10)).resolves.toMatchObject({
+      status: 'recovered',
+      reason: 'interrupt_unproven_tool_replay',
+    });
+    expect(ports.tool.dispatchPrepared).not.toHaveBeenCalled();
+    expect(ports.tool.interrupt).toHaveBeenCalledOnce();
+  });
+
   it('reuses the unanswered approval identity', async () => {
     const { handler, ports, registry } = fixture();
     const pending = operation({ kind: 'approval', status: 'waiting', providerOperationId: 'approval:approval-1' });

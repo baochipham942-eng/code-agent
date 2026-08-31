@@ -280,10 +280,11 @@ describe('application Native tool continuation ports', () => {
   it('replays persisted read-only arguments and records the real result', async () => {
     const input = toolInput();
     const persisted: Message[] = [];
+    const checkpointDurable = vi.fn(async () => undefined);
     const executeTool = vi.fn(async () => ({ success: true, output: 'file contents' }));
     const acknowledgeToolRecovery = vi.fn();
     const ports = createApplicationNativeRecoveryPorts(
-      { checkpointDurable: vi.fn(async () => undefined) } as never,
+      { checkpointDurable } as never,
       {
         sessions: {
           getMessages: vi.fn(async () => [...toolMessages(), ...persisted]),
@@ -306,6 +307,9 @@ describe('application Native tool continuation ports', () => {
     await expect(ports.tool.dispatchPrepared(input)).resolves.toEqual({
       resultRef: 'message-ledger:assistant-tool-call:replayed-tool-result:call-read',
     });
+    expect(checkpointDurable).toHaveBeenCalledOnce();
+    expect(checkpointDurable.mock.invocationCallOrder[0])
+      .toBeLessThan(executeTool.mock.invocationCallOrder[0]);
     expect(executeTool).toHaveBeenCalledWith(expect.objectContaining({
       name: 'Read',
       arguments: { file_path: 'README.md' },
@@ -322,13 +326,52 @@ describe('application Native tool continuation ports', () => {
     );
   });
 
+  it('rejects dispatch when the current replay declaration degrades after classification', async () => {
+    const input = toolInput();
+    const checkpointDurable = vi.fn(async () => undefined);
+    const executeTool = vi.fn(async () => ({ success: true, output: 'must not run' }));
+    const resolveToolDefinition = vi.fn()
+      .mockReturnValueOnce(readDefinition)
+      .mockReturnValue({
+        ...readDefinition,
+        permissionLevel: 'write' as const,
+        readOnly: false,
+      });
+    const ports = createApplicationNativeRecoveryPorts(
+      { checkpointDurable } as never,
+      {
+        sessions: {
+          getMessages: vi.fn(async () => toolMessages()),
+          updateMessage: vi.fn(async () => undefined),
+        },
+        tasks: { setSessionContext: vi.fn(), startTask: vi.fn(async () => undefined) },
+        resolveToolDefinition,
+        storedToolReplaySafety: vi.fn(() => 'automatic' as const),
+        executeTool,
+        persistToolMessage: vi.fn(async () => undefined),
+        acknowledgeToolRecovery: vi.fn(),
+      },
+    );
+
+    await expect(ports.tool.classifyReplaySafety(input)).resolves.toEqual({
+      stored: 'automatic',
+      current: 'automatic',
+    });
+    await expect(ports.tool.dispatchPrepared(input)).rejects.toThrow(
+      'native tool replay declaration changed before dispatch',
+    );
+    expect(checkpointDurable).not.toHaveBeenCalled();
+    expect(executeTool).not.toHaveBeenCalled();
+  });
+
   it('writes interrupted for a write tool and never invokes execution', async () => {
     const input = toolInput();
     input.operation.sideEffect = true;
     const persisted: Message[] = [];
+    const checkpointDurable = vi.fn(async () => undefined);
     const executeTool = vi.fn(async () => ({ success: true, output: 'must not run' }));
     const ports = createApplicationNativeRecoveryPorts(
-      { checkpointDurable: vi.fn(async () => undefined) } as never,
+      { checkpointDurable } as never,
       {
         sessions: {
           getMessages: vi.fn(async () => [...toolMessages(), ...persisted]),
@@ -353,6 +396,7 @@ describe('application Native tool continuation ports', () => {
       current: 'unknown',
     });
     await ports.tool.interrupt(input);
+    expect(checkpointDurable).not.toHaveBeenCalled();
     expect(executeTool).not.toHaveBeenCalled();
     expect(persisted[0]).toMatchObject({
       role: 'tool',

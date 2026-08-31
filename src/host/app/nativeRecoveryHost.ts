@@ -13,6 +13,11 @@ import type {
   NativeRecoveryResultEvidence,
 } from '../runtime/nativeRecoveryHost';
 import { getProjectService } from '../services/project/projectService';
+import type { ToolDefinition, ToolReplaySafety, ToolResult } from '../../shared/contract';
+import { ToolExecutor } from '../tools/toolExecutor';
+import type { ToolExecutionResult } from '../tools/types';
+import { getToolDefinitionWithCloudMeta } from '../tools/dispatch/toolDefinitions';
+import { classifyToolReplaySafety } from '../tools/toolReplaySafety';
 
 interface NativeModelContinuationSessions {
   getMessages(sessionId: string, limit?: number): Promise<Message[]>;
@@ -35,6 +40,18 @@ interface ApplicationNativeRecoveryDependencies {
   sessions: NativeModelContinuationSessions;
   tasks: NativeModelContinuationTasks;
   now(): number;
+  resolveToolDefinition(name: string): ToolDefinition | undefined;
+  executeTool(input: {
+    name: string;
+    arguments: Record<string, unknown>;
+    sessionId: string;
+    sourceMessageId: string;
+    toolCallId: string;
+    workingDirectory: string;
+  }): Promise<ToolExecutionResult>;
+  persistToolMessage(sessionId: string, message: Message): Promise<void>;
+  storedToolReplaySafety(sessionId: string, executionId?: string): ToolReplaySafety | null;
+  acknowledgeToolRecovery(sessionId: string, executionId: string | undefined, toolName: string): void;
 }
 
 const MODEL_RECOVERY_MESSAGE_LIMIT = 500;
@@ -56,6 +73,67 @@ function preparedModelEvidence(
     message.role === 'assistant' && message.visibility !== 'rewound'
   ));
   return result ? { resultRef: `message-ledger:${result.id}` } : null;
+}
+
+function toolResultEvidence(
+  messages: Message[],
+  toolCallId: string,
+): NativeRecoveryResultEvidence | null {
+  const message = messages.find((candidate) => (
+    candidate.role === 'tool'
+    && candidate.toolResults?.some((result) => result.toolCallId === toolCallId)
+  ));
+  return message ? { resultRef: `message-ledger:${message.id}` } : null;
+}
+
+function persistedToolCall(messages: Message[], toolCallId: string) {
+  for (const message of messages) {
+    if (message.role !== 'assistant') continue;
+    const toolCall = message.toolCalls?.find((candidate) => candidate.id === toolCallId);
+    if (toolCall) return { assistantMessage: message, toolCall };
+  }
+  return null;
+}
+
+function buildRecoveredToolMessage(input: {
+  assistantMessage: Message;
+  toolCallId: string;
+  result: ToolResult;
+  now: number;
+  kind: 'replayed' | 'interrupted';
+}): Message {
+  return {
+    id: `${input.assistantMessage.id}:${input.kind}-tool-result:${input.toolCallId}`,
+    role: 'tool',
+    content: JSON.stringify([input.result]),
+    timestamp: input.now,
+    toolResults: [input.result],
+    ...(input.assistantMessage.isMeta ? { isMeta: true } : {}),
+  };
+}
+
+async function checkpointToolReplayFence(
+  registry: Pick<RunRegistry, 'checkpointDurable'>,
+  input: NativeRecoveryOperationInput,
+  now: number,
+): Promise<void> {
+  await registry.checkpointDurable(input.plan.envelope.runId, {
+    now,
+    status: 'running',
+    state: input.descriptor,
+    engineCursor: input.plan.checkpoint?.cursor.engineCursor,
+    pendingOperations: input.plan.pendingOperations.map((operation) => (
+      operation.operationId === input.operation.operationId
+        ? { ...operation, status: 'unknown' as const, updatedAt: now }
+        : operation
+    )),
+    childRuns: input.plan.childRuns,
+    events: [{
+      type: 'native_tool_recovery_dispatch_fenced',
+      payload: { operationId: input.operation.operationId },
+      recordedAt: now,
+    }],
+  });
 }
 
 async function checkpointModelDispatchFence(
@@ -98,6 +176,39 @@ export function createApplicationNativeRecoveryPorts(
     sessions: overrides.sessions ?? getSessionManager(),
     tasks: overrides.tasks ?? getTaskManager(),
     now: overrides.now ?? Date.now,
+    resolveToolDefinition: overrides.resolveToolDefinition ?? getToolDefinitionWithCloudMeta,
+    executeTool: overrides.executeTool ?? (async (input) => {
+      const executor = new ToolExecutor({
+        requestPermission: async () => true,
+        workingDirectory: input.workingDirectory,
+        ledgerOrigin: 'desktop',
+      });
+      return executor.execute(input.name, input.arguments, {
+        sessionId: input.sessionId,
+        sourceMessageId: input.sourceMessageId,
+        currentToolCallId: input.toolCallId,
+        turnId: input.toolCallId,
+      });
+    }),
+    persistToolMessage: overrides.persistToolMessage ?? (async (sessionId, message) => {
+      getDatabase().addMessage(sessionId, message, { provenanceKind: 'crash-recovery' });
+    }),
+    storedToolReplaySafety: overrides.storedToolReplaySafety ?? ((sessionId, executionId) => {
+      if (!executionId) return null;
+      return getDatabase().getToolExecutionsBySession(sessionId, 500)
+        .find((event) => event.executionId === executionId && event.phase === 'begin')
+        ?.replaySafety ?? null;
+    }),
+    acknowledgeToolRecovery: overrides.acknowledgeToolRecovery ?? ((sessionId, executionId, toolName) => {
+      if (!executionId) return;
+      getDatabase().appendToolExecutionComplete({
+        executionId,
+        sessionId,
+        toolName,
+        status: 'recovered',
+        recordedAt: Date.now(),
+      });
+    }),
   });
   return {
     continuationExecutor: 'available',
@@ -200,8 +311,105 @@ export function createApplicationNativeRecoveryPorts(
         const completed = getDatabase().getToolExecutionsBySession(plan.envelope.sessionId, 500)
           .find((event) => event.executionId === providerOperationId
             && event.phase === 'complete'
-            && (event.status === 'success' || event.status === 'recovered'));
+            && event.status === 'success');
         return completed ? { resultRef: `tool-ledger:${providerOperationId}` } : null;
+      },
+      async classifyReplaySafety(input) {
+        const { sessions, resolveToolDefinition, storedToolReplaySafety } = dependencies();
+        const messages = await sessions.getMessages(input.plan.envelope.sessionId, MODEL_RECOVERY_MESSAGE_LIMIT);
+        const persisted = persistedToolCall(messages, input.descriptor.logicalOperationId);
+        const toolName = persisted?.toolCall.name ?? input.descriptor.model;
+        return {
+          stored: storedToolReplaySafety(
+            input.plan.envelope.sessionId,
+            input.operation.providerOperationId,
+          ),
+          current: classifyToolReplaySafety(resolveToolDefinition(toolName)),
+        };
+      },
+      async dispatchPrepared(input) {
+        if (!registry) throw new Error('native tool continuation requires the application RunRegistry');
+        const deps = dependencies();
+        const messages = await deps.sessions.getMessages(
+          input.plan.envelope.sessionId,
+          MODEL_RECOVERY_MESSAGE_LIMIT,
+        );
+        const existing = toolResultEvidence(messages, input.descriptor.logicalOperationId);
+        if (existing) {
+          deps.acknowledgeToolRecovery(
+            input.plan.envelope.sessionId,
+            input.operation.providerOperationId,
+            input.descriptor.model,
+          );
+          return existing;
+        }
+        const persisted = persistedToolCall(messages, input.descriptor.logicalOperationId);
+        if (!persisted) throw new Error('native tool continuation payload is unavailable');
+        if (classifyToolReplaySafety(deps.resolveToolDefinition(persisted.toolCall.name)) !== 'automatic') {
+          throw new Error('native tool replay declaration changed before dispatch');
+        }
+        await checkpointToolReplayFence(registry, input, deps.now());
+        const result = await deps.executeTool({
+          name: persisted.toolCall.name,
+          arguments: persisted.toolCall.arguments,
+          sessionId: input.plan.envelope.sessionId,
+          sourceMessageId: input.descriptor.sourceMessageId,
+          toolCallId: persisted.toolCall.id,
+          workingDirectory: input.descriptor.workspace.cwd,
+        });
+        const toolResult: ToolResult = {
+          toolCallId: persisted.toolCall.id,
+          success: result.success,
+          ...(result.output !== undefined ? { output: result.output } : {}),
+          ...(result.error !== undefined ? { error: result.error } : {}),
+          duration: 0,
+          ...(result.metadata ? { metadata: result.metadata } : {}),
+        };
+        const message = buildRecoveredToolMessage({
+          assistantMessage: persisted.assistantMessage,
+          toolCallId: persisted.toolCall.id,
+          result: toolResult,
+          now: deps.now(),
+          kind: 'replayed',
+        });
+        await deps.persistToolMessage(input.plan.envelope.sessionId, message);
+        deps.acknowledgeToolRecovery(
+          input.plan.envelope.sessionId,
+          input.operation.providerOperationId,
+          persisted.toolCall.name,
+        );
+        return { resultRef: `message-ledger:${message.id}` };
+      },
+      async interrupt(input) {
+        const deps = dependencies();
+        const messages = await deps.sessions.getMessages(
+          input.plan.envelope.sessionId,
+          MODEL_RECOVERY_MESSAGE_LIMIT,
+        );
+        const existing = toolResultEvidence(messages, input.descriptor.logicalOperationId);
+        if (existing) return existing;
+        const persisted = persistedToolCall(messages, input.descriptor.logicalOperationId);
+        if (!persisted) throw new Error('native interrupted tool payload is unavailable');
+        const toolResult: ToolResult = {
+          toolCallId: persisted.toolCall.id,
+          success: false,
+          error: 'interrupted: process crashed before a result was recorded; do not assume it ran or succeeded',
+          duration: 0,
+        };
+        const message = buildRecoveredToolMessage({
+          assistantMessage: persisted.assistantMessage,
+          toolCallId: persisted.toolCall.id,
+          result: toolResult,
+          now: deps.now(),
+          kind: 'interrupted',
+        });
+        await deps.persistToolMessage(input.plan.envelope.sessionId, message);
+        deps.acknowledgeToolRecovery(
+          input.plan.envelope.sessionId,
+          input.operation.providerOperationId,
+          persisted.toolCall.name,
+        );
+        return { resultRef: `message-ledger:${message.id}` };
       },
     },
     approval: {

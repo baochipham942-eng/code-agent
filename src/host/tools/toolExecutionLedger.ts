@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import type { ToolLedgerOrigin } from '../../shared/constants/toolLedger';
 import type { ToolEmissionDescriptor } from '../../shared/contract';
+import type { ToolReplaySafety } from '../../shared/contract';
 import { getToolLedgerSink } from './toolLedgerSink';
 import { redactSecrets } from '../security/secretRedaction';
 import { sanitizeToolParams } from './toolExecutorHelpers';
@@ -104,6 +105,8 @@ export function createToolExecutionLedger(input: {
   workingDirectory: string;
   workspace: string;
   turnTrace?: TurnTraceRecorder;
+  toolCallId?: string;
+  replaySafety: ToolReplaySafety;
 }) {
   const executionId = randomUUID();
   const params = sanitizeToolParams(input.params);
@@ -128,6 +131,8 @@ export function createToolExecutionLedger(input: {
           params,
           recordedAt: input.startedAt,
           origin: input.origin,
+          toolCallId: input.toolCallId,
+          replaySafety: input.replaySafety,
         });
       } catch {
         // The recovery ledger is fail-safe and never blocks tool execution.

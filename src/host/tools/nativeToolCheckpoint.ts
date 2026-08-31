@@ -1,6 +1,7 @@
 import type { ToolDefinition } from '../../shared/contract';
 import { getConfiguredApplicationRunRegistry } from '../app/applicationRunRegistry';
 import { getDatabase } from '../services/core/databaseService';
+import { hasNativeToolSideEffect } from './toolReplaySafety';
 
 export interface NativeToolCheckpoint {
   complete(success: boolean): Promise<void>;
@@ -31,8 +32,7 @@ export async function prepareNativeToolCheckpoint(input: {
     throw new Error('Native Durable tool checkpoint requires a stable source message id');
   }
 
-  const sideEffect = input.toolDefinition.permissionLevel !== 'read'
-    && !(input.toolDefinition.permissionLevel === 'network' && input.toolDefinition.readOnly === true);
+  const sideEffect = hasNativeToolSideEffect(input.toolDefinition);
   const operation = {
     runId: input.runId,
     sourceMessageId,

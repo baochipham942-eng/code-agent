@@ -216,6 +216,8 @@ export class ReadOnlySessionDatabase {
       summary: optionalString(row.summary) ?? null, params: parseJson(row.params_json, null),
       phase: String(row.phase), status: optionalString(row.status) ?? null,
       origin: optionalString(row.origin) as ToolExecutionEventRecord['origin'],
+      toolCallId: optionalString(row.tool_call_id) ?? null,
+      replaySafety: optionalString(row.replay_safety) as ToolExecutionEventRecord['replaySafety'],
       error: optionalString(row.error) ?? null, recordedAt: Number(row.recorded_at),
     }));
   }

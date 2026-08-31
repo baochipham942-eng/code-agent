@@ -59,7 +59,8 @@ describe('ToolExecutionEventRepository（事件账本第二期 · 执行生命�
       const repo = new ToolExecutionEventRepository(db);
       repo.appendBegin({
         executionId: 'exec-1', sessionId: 's1', toolName: 'Bash',
-        summary: 'npm run build', params: { command: 'npm run build', cwd: '/tmp' }, origin: 'desktop', recordedAt: 1000,
+        summary: 'npm run build', params: { command: 'npm run build', cwd: '/tmp' },
+        origin: 'desktop', toolCallId: 'call-1', replaySafety: 'automatic', recordedAt: 1000,
       });
       const open = repo.getOpenExecutions();
       expect(open).toHaveLength(1);
@@ -67,6 +68,8 @@ describe('ToolExecutionEventRepository（事件账本第二期 · 执行生命�
       expect(open[0].sessionId).toBe('s1');
       expect(open[0].toolName).toBe('Bash');
       expect(open[0].params).toEqual({ command: 'npm run build', cwd: '/tmp' });
+      expect(open[0].toolCallId).toBe('call-1');
+      expect(open[0].replaySafety).toBe('automatic');
       expect(open[0].startedAt).toBe(1000);
     } finally {
       db.close();

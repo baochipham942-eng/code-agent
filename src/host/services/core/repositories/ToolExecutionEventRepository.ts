@@ -11,6 +11,7 @@
 
 import type BetterSqlite3 from 'better-sqlite3';
 import type { ToolLedgerOrigin } from '../../../../shared/constants/toolLedger';
+import type { ToolReplaySafety } from '../../../../shared/contract';
 
 type SQLiteRow = Record<string, unknown>;
 
@@ -26,6 +27,10 @@ export interface ToolExecutionBeginInput {
   /** begin 时间戳（毫秒），由调用方传入 */
   recordedAt: number;
   origin?: ToolLedgerOrigin;
+  /** Stable tool-call identity used to settle the matching orphan message. */
+  toolCallId?: string;
+  /** Replay declaration captured before the original dispatch. */
+  replaySafety?: ToolReplaySafety;
 }
 
 /** 一个工具执行结束（成功 / 出错 / 被恢复确认）所需的输入 */
@@ -56,6 +61,8 @@ export interface ToolExecutionEventRecord {
   error: string | null;
   recordedAt: number;
   origin: ToolLedgerOrigin | null;
+  toolCallId: string | null;
+  replaySafety: ToolReplaySafety | null;
 }
 
 /** 一条"在飞执行"（崩溃现场的一个工序）：有 begin 无 complete */
@@ -66,6 +73,8 @@ export interface OpenToolExecution {
   summary: string | null;
   params: Record<string, unknown> | null;
   startedAt: number;
+  toolCallId: string | null;
+  replaySafety: ToolReplaySafety | null;
 }
 
 function parseParams(raw: unknown): Record<string, unknown> | null {
@@ -90,6 +99,8 @@ function rowToRecord(row: SQLiteRow): ToolExecutionEventRecord {
     error: (row.error as string | null) ?? null,
     recordedAt: Number(row.recorded_at),
     origin: (row.origin as ToolLedgerOrigin | null) ?? null,
+    toolCallId: (row.tool_call_id as string | null) ?? null,
+    replaySafety: (row.replay_safety as ToolReplaySafety | null) ?? null,
   };
 }
 
@@ -100,8 +111,9 @@ export class ToolExecutionEventRepository {
   appendBegin(input: ToolExecutionBeginInput): void {
     this.db.prepare(`
       INSERT INTO tool_execution_events
-        (execution_id, session_id, tool_name, summary, params_json, phase, status, error, origin, recorded_at)
-      VALUES (?, ?, ?, ?, ?, 'begin', NULL, NULL, ?, ?)
+        (execution_id, session_id, tool_name, summary, params_json, phase, status, error, origin,
+         tool_call_id, replay_safety, recorded_at)
+      VALUES (?, ?, ?, ?, ?, 'begin', NULL, NULL, ?, ?, ?, ?)
     `).run(
       input.executionId,
       input.sessionId ?? null,
@@ -109,6 +121,8 @@ export class ToolExecutionEventRepository {
       input.summary ?? null,
       JSON.stringify(input.params ?? {}),
       input.origin ?? null,
+      input.toolCallId ?? null,
+      input.replaySafety ?? null,
       input.recordedAt,
     );
   }
@@ -137,7 +151,8 @@ export class ToolExecutionEventRepository {
    */
   getOpenExecutions(): OpenToolExecution[] {
     const rows = this.db.prepare(`
-      SELECT b.execution_id, b.session_id, b.tool_name, b.summary, b.params_json, b.recorded_at
+      SELECT b.execution_id, b.session_id, b.tool_name, b.summary, b.params_json,
+             b.tool_call_id, b.replay_safety, b.recorded_at
       FROM tool_execution_events b
       WHERE b.phase = 'begin'
         AND NOT EXISTS (
@@ -153,6 +168,8 @@ export class ToolExecutionEventRepository {
       summary: (row.summary as string | null) ?? null,
       params: parseParams(row.params_json),
       startedAt: Number(row.recorded_at),
+      toolCallId: (row.tool_call_id as string | null) ?? null,
+      replaySafety: (row.replay_safety as ToolReplaySafety | null) ?? null,
     }));
   }
 

@@ -80,7 +80,7 @@ export type ChatMessage =
   | SystemMessage;
 
 /** 主机侧「分析请求中」与 Thinking… 来回切会闪；归一成同一标签 */
-export function normalizeActivityLabel(label: string): string {
+function normalizeActivityLabel(label: string): string {
   if (/分析请求/.test(label)) return 'Thinking…';
   return label;
 }

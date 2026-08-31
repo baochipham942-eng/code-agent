@@ -90,7 +90,7 @@ function welcomeCardGeometry(termRows: number, chromeRows: number, compact: bool
 }
 
 /** 动作表所在列范围（0-based，含左不含右）。只命中右侧文案，不命中 logo。 */
-export function welcomeActionColumnRange(termCols: number, compact?: boolean): {
+function welcomeActionColumnRange(termCols: number, compact?: boolean): {
   left: number;
   right: number;
 } {

@@ -7,7 +7,7 @@ import { estimateCostUsd, formatDuration, type ChatState } from './events';
 import { formatStatusBar } from './statusBar';
 import { QUEUE_ACTIONS, truncateQueueText, type QueueActionId } from './queueBar';
 
-export const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧'];
+const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧'];
 
 function activityColor(activity: string | null): string {
   if (!activity) return 'cyan';

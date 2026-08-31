@@ -134,6 +134,17 @@ function isWrappedHttpResponse(value: unknown): value is WrappedHttpResponse {
   return isRecord(value) && typeof value.success === 'boolean';
 }
 
+function expectsIpcResultEnvelope(channel: string): boolean {
+  return channel.startsWith('marketplace:') || channel.startsWith('capability-package:');
+}
+
+function normalizeIpcResultEnvelope(channel: string, value: unknown): unknown {
+  if (!expectsIpcResultEnvelope(channel) || isWrappedHttpResponse(value)) {
+    return value;
+  }
+  return { success: true, data: value };
+}
+
 function normalizeStringArray(value: unknown): string[] {
   return Array.isArray(value)
     ? value.filter((item): item is string => typeof item === 'string')
@@ -757,6 +768,13 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
         const contentType = response.headers.get('content-type');
         if (contentType?.includes('application/json')) {
           const json = await readJsonResponse(response);
+          // Marketplace and capability-package handlers define `{ success, data }`
+          // as their business result. Preserve that envelope instead of treating it
+          // as the web server's generic transport wrapper. A bare value is accepted
+          // for compatibility and promoted to the same contract at this boundary.
+          if (expectsIpcResultEnvelope(channel)) {
+            return normalizeIpcResultEnvelope(channel, json) as ReturnType<IpcInvokeHandlers[K]>;
+          }
           // 解包 IPCResponse 格式: webServer 返回 {success, data} 包装体
           // 前端 store 期望的是裸数据（Session[], AppSettings 等）
           if (isWrappedHttpResponse(json)) {

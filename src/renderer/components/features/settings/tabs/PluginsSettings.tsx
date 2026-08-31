@@ -166,8 +166,6 @@ export const PluginsSettings: React.FC = () => {
         installedResult,
         pluginsText.loadErrors.installed,
       );
-      // HTTP transport unwraps `{ success: true, data }` responses, while the
-      // native bridge preserves the CapabilityPackageResult envelope.
       const capabilityPackagesState = normalizeMarketplaceResult<InstalledCapabilityPackage[]>(capabilityPackageResult, pluginsText.errors.operationFailed);
       if (!marketplacesState.success) throw new Error(getResultError(marketplacesState, pluginsText.errors));
       if (!catalogState.success) throw new Error(getResultError(catalogState, pluginsText.errors));
@@ -371,11 +369,11 @@ export const PluginsSettings: React.FC = () => {
         const result = await ipcService.invoke(IPC_CHANNELS.CAPABILITY_PACKAGE_CONFIRM, packagePreview.token);
         if (!result.success) throw new Error(result.error);
         setPackagePreview(null);
+        await reload();
         setNotice({
           type: 'success',
           text: `${pluginsText.manualImport.installedPrefix}${packageName}`,
         });
-        await reload();
       } catch (error) {
         setNotice({ type: 'error', text: error instanceof Error ? error.message : String(error) });
         setPackagePreview(null);
@@ -460,77 +458,76 @@ export const PluginsSettings: React.FC = () => {
         </div>
       )}
 
-      <BundledCapabilitiesTab showHeader={false} />
-
       <SettingsSection
         title={pluginsText.manualImport.title}
         description={pluginsText.manualImport.description}
       >
-        {capabilityPackages.length === 0 ? (
-          <EmptyState text={pluginsText.manualImport.empty} />
-        ) : (
-          <div className="space-y-3">
-            {capabilityPackages.map((plugin) => {
-              const busy = busyKey === `capability-package:uninstall:${plugin.id}`;
-              return (
-                <div
-                  key={plugin.id}
-                  data-testid={`capability-package-${plugin.id}`}
-                  className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4"
-                >
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h4 className="text-sm font-medium text-zinc-100">{plugin.name}</h4>
-                        <Pill>{plugin.version}</Pill>
-                        <Pill tone={plugin.state === 'active' ? 'success' : plugin.state === 'available' ? 'warning' : 'danger'}>
-                          {plugin.state === 'active'
-                            ? pluginsText.manualImport.active
-                            : plugin.state === 'available'
-                              ? pluginsText.manualImport.available
-                              : pluginsText.manualImport.inactive}
-                        </Pill>
+        <div data-testid="available-plugins-list" className="space-y-5">
+          <BundledCapabilitiesTab showHeader={false} />
+          {capabilityPackages.length === 0 ? (
+            <EmptyState text={pluginsText.manualImport.empty} />
+          ) : (
+            <div className="space-y-3">
+              {capabilityPackages.map((plugin) => {
+                const busy = busyKey === `capability-package:uninstall:${plugin.id}`;
+                return (
+                  <div
+                    key={plugin.id}
+                    data-testid={`capability-package-${plugin.id}`}
+                    className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h4 className="text-sm font-medium text-zinc-100">{plugin.name}</h4>
+                          <Pill>{plugin.version}</Pill>
+                          <Pill tone={plugin.state === 'active' ? 'success' : 'default'}>
+                            {plugin.state === 'active'
+                              ? t.capabilityPackages.installed
+                              : t.capabilityPackages.removed}
+                          </Pill>
+                        </div>
+                        <p className="mt-1 text-xs leading-5 text-zinc-500">{plugin.description}</p>
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {plugin.permissions.map((permission) => <Pill key={permission}>{permissionLabel(permission)}</Pill>)}
+                          {plugin.surface === 'internal-feature' ? (
+                            <Pill tone="warning">{pluginsText.manualImport.internalFeature}</Pill>
+                          ) : (
+                            <Pill>{plugin.toolNames.length}{pluginsText.manualImport.toolsSuffix}</Pill>
+                          )}
+                        </div>
+                        {plugin.error && <p className="mt-2 text-xs text-badge-danger">{plugin.error}</p>}
                       </div>
-                      <p className="mt-1 text-xs leading-5 text-zinc-500">{plugin.description}</p>
-                      <div className="mt-2 flex flex-wrap gap-1.5">
-                        {plugin.permissions.map((permission) => <Pill key={permission}>{permissionLabel(permission)}</Pill>)}
-                        {plugin.surface === 'internal-feature' ? (
-                          <Pill tone="warning">{pluginsText.manualImport.internalFeature}</Pill>
-                        ) : (
-                          <Pill>{plugin.toolNames.length}{pluginsText.manualImport.toolsSuffix}</Pill>
-                        )}
-                      </div>
-                      {plugin.error && <p className="mt-2 text-xs text-badge-danger">{plugin.error}</p>}
+                      {plugin.state === 'available' ? (
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => handleInstallBundledCapabilityPackage(plugin)}
+                          loading={packageBusy}
+                          disabled={busyKey !== null || packageBusy}
+                          leftIcon={<Download className="h-3.5 w-3.5" />}
+                        >
+                          {pluginsText.manualImport.install}
+                        </Button>
+                      ) : (
+                        <Button
+                          variant="danger"
+                          size="sm"
+                          onClick={() => handleUninstallCapabilityPackage(plugin)}
+                          loading={busy}
+                          disabled={busyKey !== null}
+                          leftIcon={<Trash2 className="h-3.5 w-3.5" />}
+                        >
+                          {pluginsText.manualImport.uninstall}
+                        </Button>
+                      )}
                     </div>
-                    {plugin.state === 'available' ? (
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => handleInstallBundledCapabilityPackage(plugin)}
-                        loading={packageBusy}
-                        disabled={busyKey !== null || packageBusy}
-                        leftIcon={<Download className="h-3.5 w-3.5" />}
-                      >
-                        {pluginsText.manualImport.install}
-                      </Button>
-                    ) : (
-                      <Button
-                        variant="danger"
-                        size="sm"
-                        onClick={() => handleUninstallCapabilityPackage(plugin)}
-                        loading={busy}
-                        disabled={busyKey !== null}
-                        leftIcon={<Trash2 className="h-3.5 w-3.5" />}
-                      >
-                        {pluginsText.manualImport.uninstall}
-                      </Button>
-                    )}
                   </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
+                );
+              })}
+            </div>
+          )}
+        </div>
       </SettingsSection>
 
       {canAccessPluginAdmin && (

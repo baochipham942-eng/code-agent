@@ -17,7 +17,7 @@ vi.mock('../../../src/renderer/services/localBridge', () => ({
 };
 
 import { createHttpCodeAgentAPI, createHttpDomainAPI } from '../../../src/renderer/api/httpTransport';
-import { IPC_DOMAINS } from '../../../src/shared/ipc';
+import { IPC_CHANNELS, IPC_DOMAINS } from '../../../src/shared/ipc';
 import type { AgentMessageRequest } from '../../../src/shared/ipc/types';
 import { TELEMETRY_CHANNELS } from '../../../src/shared/ipc/channels';
 import { DEFAULT_OPENCHRONICLE_SETTINGS } from '../../../src/shared/contract/openchronicle';
@@ -165,6 +165,40 @@ describe('httpTransport domain API', () => {
       },
     });
     expect(result).toEqual(health);
+  });
+
+  it('preserves result envelopes for plugin channels, including a cancelled file dialog', async () => {
+    const responses = [
+      { success: true, data: null },
+      { id: 'local.imported', version: '1.0.0', toolNames: ['local_tool'], surface: 'tools' },
+      { success: false, error: 'uninstall rejected' },
+    ];
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockImplementation(async () => ({
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      json: async () => responses.shift(),
+      text: async () => '',
+    }));
+    const api = createHttpCodeAgentAPI('http://localhost:8180');
+
+    await expect(api.invoke(IPC_CHANNELS.CAPABILITY_PACKAGE_SELECT_STAGE)).resolves.toEqual({
+      success: true,
+      data: null,
+    });
+    await expect(api.invoke(IPC_CHANNELS.CAPABILITY_PACKAGE_CONFIRM, 'stage-token')).resolves.toEqual({
+      success: true,
+      data: {
+        id: 'local.imported',
+        version: '1.0.0',
+        toolNames: ['local_tool'],
+        surface: 'tools',
+      },
+    });
+    await expect(api.invoke(IPC_CHANNELS.CAPABILITY_PACKAGE_UNINSTALL, 'local.imported')).resolves.toEqual({
+      success: false,
+      error: 'uninstall rejected',
+    });
   });
 
   it('forwards clientMessageId for SSE-backed chat sends', async () => {

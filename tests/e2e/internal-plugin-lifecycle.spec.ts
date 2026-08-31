@@ -23,6 +23,23 @@ const screenshots = {
   uninstalledPage: path.join(evidenceAssetsDir, 'N-LOADER-L4-uninstalled-page.png'),
 } as const;
 
+const realEvalScreenshots = {
+  selection: path.join(evidenceAssetsDir, 'N-LOADER-L5-01-selection.png'),
+  confirmation: path.join(evidenceAssetsDir, 'N-LOADER-L5-02-confirmation.png'),
+  active: path.join(evidenceAssetsDir, 'N-LOADER-L5-03-active.png'),
+  result: path.join(evidenceAssetsDir, 'N-LOADER-L5-04-result.png'),
+  usage: path.join(evidenceAssetsDir, 'N-LOADER-L5-05-usage.png'),
+  drawer: path.join(evidenceAssetsDir, 'N-LOADER-L5-06-drawer.png'),
+  baseline: path.join(evidenceAssetsDir, 'N-LOADER-L5-07-baseline.png'),
+} as const;
+
+const realEvalEnabled = process.env.CODE_AGENT_REAL_EVAL_E2E === '1';
+if (!realEvalEnabled) {
+  process.stdout.write(
+    'REAL_EVAL_E2E_SKIP=CODE_AGENT_REAL_EVAL_E2E is not 1; paid chatprobe evaluation is local opt-in only\n',
+  );
+}
+
 type PackageResult<T> = { success: true; data: T } | { success: false; error: string };
 
 interface PackagePreview {
@@ -52,6 +69,24 @@ interface InstalledPackage {
   };
 }
 
+interface CapturedEvalEvent {
+  schemaVersion: number;
+  type: string;
+  runId: string;
+  testId?: string;
+  status?: string;
+  usageStatus?: string;
+  costUsd?: number;
+  plannedCaseIds?: string[];
+  config?: { split?: string; k?: number; model?: string; provider?: string };
+  summary?: {
+    passed?: number;
+    failed?: number;
+    completed?: boolean;
+    plannedCaseIds?: string[];
+  };
+}
+
 let currentZipPath: string;
 let oldContractZipPath: string;
 let builtManifest: InstalledPackage & { internalFeature: NonNullable<InstalledPackage['internalFeature']> };
@@ -78,6 +113,51 @@ async function waitForAppReady(page: Page): Promise<void> {
   }
   await expect(page.getByTestId('sidebar-capability-zone')).toBeVisible({ timeout: 20_000 });
 }
+
+async function readCapturedEvalEvents(page: Page): Promise<CapturedEvalEvent[]> {
+  return page.evaluate(() => (
+    (window as unknown as { __l5RealEvalEvents?: CapturedEvalEvent[] }).__l5RealEvalEvents ?? []
+  ));
+}
+
+async function startCapturingEvalEvents(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const state = window as unknown as {
+      __l5RealEvalEvents?: CapturedEvalEvent[];
+      __l5RealEvalUnsubscribe?: () => void;
+    };
+    state.__l5RealEvalEvents = [];
+    const api = window.codeAgentAPI || window.electronAPI;
+    if (!api?.on) throw new Error('Code Agent event bridge is unavailable');
+    const eventApi = api as unknown as {
+      on: (channel: string, listener: (event: unknown) => void) => () => void;
+    };
+    state.__l5RealEvalUnsubscribe = eventApi.on('evaluation:run-events', (event: unknown) => {
+      state.__l5RealEvalEvents?.push(event as CapturedEvalEvent);
+    });
+  });
+}
+
+async function stopCapturingEvalEvents(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const state = window as unknown as { __l5RealEvalUnsubscribe?: () => void };
+    state.__l5RealEvalUnsubscribe?.();
+    delete state.__l5RealEvalUnsubscribe;
+  });
+}
+
+test.afterEach(async ({ page }) => {
+  if (!realEvalEnabled) return;
+  const events = await readCapturedEvalEvents(page).catch(() => []);
+  const runStart = [...events].reverse().find((event) => event.type === 'run_start');
+  if (!runStart || events.some((event) => event.runId === runStart.runId && event.type === 'run_end')) return;
+  const abortResult = await invokeCommand<unknown>(
+    page,
+    'evaluation:abort-run',
+    { runId: runStart.runId, reason: 'Playwright real-eval test ended before run_end' },
+  ).catch((error: unknown) => ({ abortError: error instanceof Error ? error.message : String(error) }));
+  process.stdout.write(`REAL_EVAL_CLEANUP_ABORT=${JSON.stringify({ runId: runStart.runId, abortResult })}\n`);
+});
 
 async function buildFreshPluginZips(): Promise<void> {
   await fs.mkdir(evidenceAssetsDir, { recursive: true });
@@ -391,5 +471,178 @@ test('真插件装、出项、打开、卸载，并复验 HTTP 安全边界', as
   await expect(menuEntry).toHaveCount(0);
   await page.screenshot({ path: screenshots.uninstalledMenu, fullPage: true });
 
-  // TODO(N-EVAL-USAGE-COMPAT): 扩成真评测流程：选集 → 真跑 → 进行中 → 结果 → 抽屉 → 设基准。
+});
+
+const realEvalTest = realEvalEnabled ? test : test.skip;
+
+realEvalTest('真插件内完成选集、真跑、结果下钻与设基准', async ({ page }) => {
+  test.setTimeout(420_000);
+  await waitForAppReady(page);
+
+  const staged = await invokeCommand<PackageResult<PackagePreview>>(
+    page,
+    'capability-package:stage-path',
+    currentZipPath,
+  );
+  expect(staged.success).toBe(true);
+  if (!staged.success) throw new Error(staged.error);
+  expect(staged.data).toMatchObject({ surface: 'internal-feature', sandbox: { passed: true } });
+  const confirmed = await invokeCommand<PackageResult<{ id: string; surface: string }>>(
+    page,
+    'capability-package:confirm',
+    staged.data.token,
+  );
+  expect(confirmed).toMatchObject({
+    success: true,
+    data: { id: 'evaluation-center', surface: 'internal-feature' },
+  });
+
+  await page.getByTestId('sidebar-capability-hub').click();
+  await page.getByTestId('capability-hub-tab-plugins').click();
+  await expect(page.getByTestId('capability-package-evaluation-center')).toBeVisible({ timeout: 20_000 });
+
+  const accountButton = page.getByRole('button', { name: /用户菜单|User menu/u });
+  await accountButton.click();
+  const menuEntry = page.getByTestId('account-menu-internal-evaluation-center');
+  await expect(menuEntry).toBeVisible({ timeout: 30_000 });
+  await menuEntry.click();
+  await expect(page.getByTestId('eval-center-page')).toBeVisible({ timeout: 30_000 });
+  await page.getByTestId('eval-center-tab-benchmarks').click();
+  await expect(page.getByTestId('eval-benchmarks-tab')).toBeVisible();
+
+  await page.getByRole('button', { name: '开跑', exact: true }).click();
+  const selection = page.getByTestId('eval-case-selection-fields');
+  await expect(selection).toBeVisible();
+  const heldIn = selection.getByRole('button', { name: /日常集/u });
+  const maxCases = selection.getByRole('spinbutton', { name: '最多跑 N 题' });
+  await expect(heldIn.locator('span').last()).toHaveText(/^\d+$/u, { timeout: 30_000 });
+  const heldInCount = (await heldIn.locator('span').last().textContent())?.trim();
+  await heldIn.click();
+  await expect(heldIn).toHaveClass(/ring-1/u);
+  if (!heldInCount || !/^\d+$/u.test(heldInCount)) throw new Error('日常集题量不可读');
+  await expect(maxCases).toHaveValue(heldInCount);
+  await maxCases.fill('1');
+  await expect(maxCases).toHaveValue('1');
+  await page.screenshot({ path: realEvalScreenshots.selection, fullPage: true });
+
+  const confirmRun = page.getByTestId('eval-run-confirm');
+  const estimatedCost = page.getByText(/^约 \$\d/u).first();
+  await expect(estimatedCost).toContainText('按价格表');
+  await startCapturingEvalEvents(page);
+  await confirmRun.click();
+  await expect(confirmRun).toContainText('再点一次确认');
+  await page.screenshot({ path: realEvalScreenshots.confirmation, fullPage: true });
+  await confirmRun.click();
+
+  const activeRun = page.getByTestId('eval-run-active');
+  await expect(activeRun).toBeVisible({ timeout: 30_000 });
+  await expect.poll(
+    async () => (await readCapturedEvalEvents(page)).some((event) => event.type === 'run_start'),
+    { timeout: 30_000, message: 'run_start must arrive through RUN_EVENTS' },
+  ).toBe(true);
+  const runStart = (await readCapturedEvalEvents(page)).find((event) => event.type === 'run_start');
+  if (!runStart) throw new Error('RUN_EVENTS did not contain run_start');
+  const runId = runStart.runId;
+  expect(runStart.plannedCaseIds).toHaveLength(1);
+  await expect.poll(
+    async () => (await readCapturedEvalEvents(page)).some(
+      (event) => event.runId === runId && event.type === 'case_start',
+    ),
+    { timeout: 60_000, message: 'progress must advance to a real case_start event' },
+  ).toBe(true);
+  await expect(activeRun).toContainText(/第 1\/1 题/u);
+  await page.screenshot({ path: realEvalScreenshots.active, fullPage: true });
+
+  await expect.poll(
+    async () => (await readCapturedEvalEvents(page)).some(
+      (event) => event.runId === runId && event.type === 'run_end',
+    ),
+    { timeout: 300_000, intervals: [250, 500, 1_000], message: 'real evaluation must emit run_end' },
+  ).toBe(true);
+  const events = await readCapturedEvalEvents(page);
+  const runEnd = events.find((event) => event.runId === runId && event.type === 'run_end');
+  if (!runEnd) throw new Error(`RUN_EVENTS did not contain run_end for ${runId}`);
+  expect(runEnd.summary?.completed).toBe(true);
+  expect(runEnd.summary?.passed).toEqual(expect.any(Number));
+  expect(runEnd.summary?.failed).toEqual(expect.any(Number));
+
+  await expect(activeRun).toHaveCount(0, { timeout: 30_000 });
+  const resultRow = page.getByTestId(`benchmark-run-${runId}`);
+  await expect(resultRow).toBeVisible({ timeout: 30_000 });
+  await expect(resultRow).toContainText('通过率');
+  await expect(resultRow).toContainText('完成');
+  await page.screenshot({ path: realEvalScreenshots.result, fullPage: true });
+
+  const caseEnds = events.filter((event) => event.runId === runId && event.type === 'case_end');
+  expect(caseEnds).toHaveLength(1);
+  const caseEnd = caseEnds[0];
+  expect(caseEnd.usageStatus).toBe('available');
+  expect(caseEnd.costUsd).toBeGreaterThan(0);
+  process.stdout.write(`REAL_EVAL_CASE_END=${JSON.stringify(caseEnd)}\n`);
+  process.stdout.write(`REAL_EVAL_RUN=${JSON.stringify({ runId, costUsd: caseEnd.costUsd })}\n`);
+
+  const experiments = await invokeCommand<Array<{ id: string }>>(
+    page,
+    'evaluation:list-experiments',
+    { limit: 100, source: 'eval' },
+  );
+  expect(experiments.some((experiment) => experiment.id === runId)).toBe(true);
+  const caseId = caseEnd.testId ?? runStart.plannedCaseIds?.[0];
+  if (!caseId) throw new Error(`No caseId was persisted for ${runId}`);
+  const persistedCase = await invokeCommand<unknown>(
+    page,
+    'evaluation:load-case',
+    { experimentId: runId, caseId },
+  );
+  expect(persistedCase).toBeTruthy();
+  await page.screenshot({ path: realEvalScreenshots.usage, fullPage: true });
+
+  await page.getByTestId(`benchmark-run-expand-${runId}`).click();
+  const caseRow = page.getByTestId(`benchmark-run-case-${runId}-${caseId}`);
+  await expect(caseRow).toBeVisible();
+  await caseRow.getByRole('button').click();
+  const drawer = page.getByTestId('eval-case-drawer');
+  await expect(drawer).toBeVisible();
+  await expect(page.getByTestId('eval-case-conclusion')).toHaveText(/\S/u);
+  await page.screenshot({ path: realEvalScreenshots.drawer, fullPage: true });
+  await page.keyboard.press('Escape');
+  await expect(drawer).toHaveCount(0);
+
+  const split = runStart.config?.split ?? 'held-in';
+  const k = runStart.config?.k ?? 1;
+  const baselineFile = path.join(repositoryRoot, '.claude', `eval-baseline.${split}.k${k}.json`);
+  let priorBaseline: Buffer | undefined;
+  try {
+    priorBaseline = await fs.readFile(baselineFile);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+  }
+  try {
+    await resultRow.getByRole('button', { name: '设为对比基准' }).click();
+    const confirmBaseline = resultRow.getByRole('button', { name: '再点一次确认' });
+    await expect(confirmBaseline).toBeVisible();
+    await confirmBaseline.click();
+    await expect.poll(async () => {
+      const info = await invokeCommand<{ groups: Record<string, { experimentId?: string }> }>(
+        page,
+        'evaluation:baseline-info',
+      );
+      return Object.values(info.groups).some((group) => group.experimentId === runId);
+    }, { timeout: 30_000, message: 'BASELINE_INFO must return the real runId' }).toBe(true);
+    const baselineInfo = await invokeCommand<{ groups: Record<string, { experimentId?: string }> }>(
+      page,
+      'evaluation:baseline-info',
+    );
+    process.stdout.write(`REAL_EVAL_BASELINE_INFO=${JSON.stringify(baselineInfo)}\n`);
+    expect(Object.values(baselineInfo.groups).some((group) => group.experimentId === runId)).toBe(true);
+    await expect(resultRow).toContainText('当前对比基准');
+    await page.screenshot({ path: realEvalScreenshots.baseline, fullPage: true });
+  } finally {
+    if (priorBaseline) {
+      await fs.writeFile(baselineFile, priorBaseline);
+    } else {
+      await fs.rm(baselineFile, { force: true });
+    }
+    await stopCapturingEvalEvents(page);
+  }
 });

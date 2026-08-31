@@ -2,6 +2,7 @@ import { defineConfig } from '@playwright/test';
 import os from 'node:os';
 import path from 'node:path';
 import { resolveE2eWebPort } from './e2eWebPort';
+import { prepareRealEvalCredentials } from './internal-plugin-real-eval-credentials';
 
 delete process.env.FORCE_COLOR;
 delete process.env.NO_COLOR;
@@ -16,6 +17,13 @@ const e2eDataDir = process.env.CODE_AGENT_E2E_DATA_DIR
 process.env.CODE_AGENT_E2E_HOME = e2eHome;
 process.env.CODE_AGENT_E2E_DATA_DIR = e2eDataDir;
 
+if (process.env.CODE_AGENT_REAL_EVAL_E2E === '1') {
+  const sourceDir = process.env.CODE_AGENT_REAL_EVAL_SOURCE_DIR
+    || path.join(os.homedir(), '.code-agent-chatprobe');
+  prepareRealEvalCredentials(sourceDir, e2eDataDir);
+  console.error(`  Real eval E2E credentials: selectively imported from ${sourceDir}`);
+}
+
 console.error(`  Internal plugin E2E web port: ${webPort}`);
 console.error(`  Internal plugin E2E data dir: ${e2eDataDir}`);
 
@@ -29,7 +37,7 @@ export default defineConfig({
     ['list'],
     ['./fixtures/axeReporter.ts'],
   ],
-  timeout: 180_000,
+  timeout: process.env.CODE_AGENT_REAL_EVAL_E2E === '1' ? 420_000 : 180_000,
   use: {
     baseURL: `http://127.0.0.1:${webPort}`,
     channel: 'chrome',

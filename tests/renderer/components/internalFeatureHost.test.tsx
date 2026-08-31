@@ -74,9 +74,10 @@ describe('InternalFeatureHost', () => {
   it('脚本加载失败后显示失败卡，重试会重新注入脚本', async () => {
     const installed = feature('script-failure', 'hash-r4');
     useInternalFeatureStore.setState({ features: [installed] });
-    render(<InternalFeatureHost featureId={installed.id} />);
+    const view = render(<InternalFeatureHost featureId={installed.id} />);
 
     expect(screen.getByText('正在打开评测中心…')).toBeTruthy();
+    expect(view.container.firstElementChild?.className).toContain('flex-1');
     const first = currentScript(installed.id);
     fireEvent.error(first);
     expect(await screen.findByText('评测中心没能打开。')).toBeTruthy();

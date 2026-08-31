@@ -137,6 +137,12 @@ const FailureCard: React.FC<{
   </div>
 );
 
+const HostSurface: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <div className="h-full min-h-0 min-w-0 flex-1 overflow-hidden bg-zinc-900">
+    {children}
+  </div>
+);
+
 export const InternalFeatureHost: React.FC<{ featureId: string }> = ({ featureId }) => {
   const { t } = useI18n();
   const copy = t.internalFeatures;
@@ -175,39 +181,51 @@ export const InternalFeatureHost: React.FC<{ featureId: string }> = ({ featureId
 
   if (detail && detail.sdkVersion.renderer !== RENDERER_INTERNAL_SDK_VERSION) {
     return (
-      <FailureCard
-        title={copy.versionMismatch}
-        help={copy.reinstallInHub}
-        reinstallLabel={copy.reinstallInHub}
-        onReinstall={reinstall}
-      />
+      <HostSurface>
+        <FailureCard
+          title={copy.versionMismatch}
+          help={copy.reinstallInHub}
+          reinstallLabel={copy.reinstallInHub}
+          onReinstall={reinstall}
+        />
+      </HostSurface>
     );
   }
 
   if (failure || (detail && !loadedHash)) {
     return (
-      <FailureCard
-        title={copy.loadFailed.replace('{label}', label)}
-        help={copy.loadHelp}
-        retryLabel={copy.retry}
-        onRetry={() => setAttempt((value) => value + 1)}
-        reinstallLabel={copy.reinstall}
-        onReinstall={reinstall}
-      />
+      <HostSurface>
+        <FailureCard
+          title={copy.loadFailed.replace('{label}', label)}
+          help={copy.loadHelp}
+          retryLabel={copy.retry}
+          onRetry={() => setAttempt((value) => value + 1)}
+          reinstallLabel={copy.reinstall}
+          onReinstall={reinstall}
+        />
+      </HostSurface>
     );
   }
 
-  if (!Page) return <LoadingView text={copy.loading.replace('{label}', label)} />;
+  if (!Page) {
+    return (
+      <HostSurface>
+        <LoadingView text={copy.loading.replace('{label}', label)} />
+      </HostSurface>
+    );
+  }
 
   return (
-    <RemotePageBoundary
-      key={`${loadedHash}:${attempt}`}
-      onError={(error) => {
-        console.error(`[InternalFeatureHost] ${featureId} page crashed`, error);
-        setFailure(error);
-      }}
-    >
-      <Page key={loadedHash} />
-    </RemotePageBoundary>
+    <HostSurface>
+      <RemotePageBoundary
+        key={`${loadedHash}:${attempt}`}
+        onError={(error) => {
+          console.error(`[InternalFeatureHost] ${featureId} page crashed`, error);
+          setFailure(error);
+        }}
+      >
+        <Page key={loadedHash} />
+      </RemotePageBoundary>
+    </HostSurface>
   );
 };

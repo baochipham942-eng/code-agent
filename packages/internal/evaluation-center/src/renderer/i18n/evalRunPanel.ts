@@ -1,4 +1,5 @@
 import type { AiReviewDimension } from '@shared/contract/evaluation';
+import type { EvalStatusLabels } from './evalStatusLabels';
 
 export interface EvalRunPanelLabels {
   launch: string;
@@ -88,6 +89,11 @@ export interface EvalRunPanelLabels {
   noCaseChanges: string;
   caseStatusRegressed: string;
   caseStatusFixed: string;
+  showRunCases: string;
+  hideRunCases: string;
+  noRunCases: string;
+  runCaseScore: string;
+  runCaseStatus: EvalStatusLabels;
   selectForCompare: string;
   incompleteCannotCompare: string;
   refresh: string;
@@ -210,6 +216,11 @@ export const evalRunPanelZh: EvalRunPanelDictionary = {
     noCaseChanges: '题目状态没有变化',
     caseStatusRegressed: '退步',
     caseStatusFixed: '进步',
+    showRunCases: '看本轮逐题',
+    hideRunCases: '收起逐题',
+    noRunCases: '本轮没有逐题结果',
+    runCaseScore: '得分 {score}',
+    runCaseStatus: { passed: '通过', failed: '失败', infra: '环境故障', invalid: '判废', skipped: '跳过', costExceeded: '成本超限', notRun: '未执行', partial: '部分通过', error: '出错' },
     selectForCompare: '选择这轮用于对比',
     incompleteCannotCompare: '未跑满的轮次不能用于对比',
     refresh: '刷新',
@@ -329,6 +340,11 @@ export const evalRunPanelEn: EvalRunPanelDictionary = {
     noCaseChanges: 'No case status changes',
     caseStatusRegressed: 'Regressed',
     caseStatusFixed: 'Improved',
+    showRunCases: 'View cases',
+    hideRunCases: 'Hide cases',
+    noRunCases: 'No case results were recorded for this run',
+    runCaseScore: 'Score {score}',
+    runCaseStatus: { passed: 'Passed', failed: 'Failed', infra: 'Environment issue', invalid: 'Invalid', skipped: 'Skipped', costExceeded: 'Cost limit reached', notRun: 'Not run', partial: 'Partially passed', error: 'Error' },
     selectForCompare: 'Select this run for comparison',
     incompleteCannotCompare: 'Incomplete runs cannot be compared',
     refresh: 'Refresh',

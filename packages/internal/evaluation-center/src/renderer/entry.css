@@ -1,0 +1,6 @@
+@import 'tailwindcss/theme' layer(theme);
+@import 'tailwindcss/utilities' layer(utilities);
+@config '../../tailwind.config.js';
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *, [data-theme='high-contrast-dark'], [data-theme='high-contrast-dark'] *));
+@source './**/*.{ts,tsx}';
+@source inline('dark:block');

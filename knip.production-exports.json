@@ -6,8 +6,10 @@
     "src/host/mcp/mcp-server-entry.ts",
     "src/renderer/index.tsx",
     "packages/bridge/src/index.ts",
-    "packages/internal/evaluation-center/src/host/ipc/evaluation.ipc.ts",
-    "packages/internal/evaluation-center/src/renderer/evalCenter/EvalCenterPage.tsx",
+    "packages/internal/evaluation-center/src/host/entry.ts",
+    "packages/internal/evaluation-center/src/renderer/entry.tsx",
+    "packages/internal/evaluation-center/esbuild.host.config.ts",
+    "packages/internal/evaluation-center/vite.renderer.config.ts",
     "packages/internal/evaluation-center/scripts/**/*.ts"
   ],
   "project": [

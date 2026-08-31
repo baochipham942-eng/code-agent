@@ -26,11 +26,10 @@ import { useEvaluationI18n } from '../i18n/useEvaluationI18n';
 import { canAccessFeature, createAccessSubject } from '@renderer/utils/accessControl';
 import { FullScreenPage, FullScreenPageHeader } from '@renderer/components/features/shared/FullScreenPage';
 import { PageContent } from '@renderer/components/features/shared/PageContent';
+import { InAppValidationWorkspace } from '@renderer/components/features/inAppValidation/InAppValidationWorkspace';
 
-// tab 内容都偏重（回放面板 / 题库 / 验证工作台 / 遥测查看器 / 基准视图），懒加载，
-// 首开评测中心不背全部包。
+// 包内 tab 继续懒加载；宿主 SDK 模块必须是静态 external，避免 IIFE 代码分割。
 const EvalReplayExplorer = React.lazy(() => import('./EvalReplayExplorer').then((m) => ({ default: m.EvalReplayExplorer })));
-const InAppValidationWorkspace = React.lazy(() => import('@renderer/components/features/inAppValidation/InAppValidationWorkspace').then((m) => ({ default: m.InAppValidationWorkspace })));
 const EvalTelemetryTab = React.lazy(() => import('./EvalTelemetryTab').then((m) => ({ default: m.EvalTelemetryTab })));
 const EvalCaseListTab = React.lazy(() => import('./EvalCaseListTab').then((m) => ({ default: m.EvalCaseListTab })));
 const EvalBenchmarksTab = React.lazy(() => import('./EvalBenchmarksTab').then((m) => ({ default: m.EvalBenchmarksTab })));

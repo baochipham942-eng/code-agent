@@ -1,16 +1,29 @@
 {
   "id": "evaluation-center",
   "name": "评测中心",
-  "version": "1.0.0",
+  "version": "0.0.0-unbuilt",
   "description": "Neo 内部评测、回放、轨迹归因与遥测查询能力，仅供管理员和 dogfood 环境安装。",
   "main": "index.cjs",
-  "permissions": ["filesystem", "network", "shell", "storage"],
-  "surfaces": ["internal-feature"],
+  "permissions": [
+    "filesystem",
+    "network",
+    "shell",
+    "storage"
+  ],
+  "surfaces": [
+    "internal-feature"
+  ],
   "distribution": "internal",
   "adminOnly": true,
   "internalFeature": {
     "id": "evaluation-center",
     "label": "评测中心",
-    "rendererEntry": "src/renderer/evalCenter/EvalCenterPage.tsx"
+    "sdkVersion": {
+      "host": "unbuilt",
+      "renderer": "unbuilt"
+    },
+    "rendererEntry": "dist/renderer/index.js",
+    "rendererStyles": "dist/renderer/index.css",
+    "hostEntry": "dist/host/index.cjs"
   }
 }

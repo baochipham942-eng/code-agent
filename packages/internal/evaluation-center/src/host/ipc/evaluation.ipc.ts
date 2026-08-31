@@ -40,9 +40,10 @@ const logger = createLogger('EvaluationIPC');
 export function registerEvaluationHandlers(
   ipcMain: IpcMain,
   runBridge: EvalRunBridge = getEvalRunBridge(),
-): void {
-  registerAdminChannels(Object.values(EVALUATION_CHANNELS));
-  registerEvaluationBaselineHandlers(ipcMain);
+): { channels: string[]; disposeAdmin: () => void } {
+  const channels = Object.values(EVALUATION_CHANNELS);
+  const disposeAdmin = registerAdminChannels(channels);
+  const baselineChannels = registerEvaluationBaselineHandlers(ipcMain);
   ipcMain.handle(EVALUATION_CHANNELS.RUN_SUITE, async (_event, payload: unknown) => {
     const denied = getChannelAccessIpcError(EVALUATION_CHANNELS.RUN_SUITE, 'Evaluation run');
     if (denied) return denied;
@@ -232,8 +233,9 @@ export function registerEvaluationHandlers(
   );
 
   logger.info('Evaluation handlers registered', {
-    channels: Object.values(EVALUATION_CHANNELS),
+    channels,
   });
+  return { channels: [...new Set([...channels, ...baselineChannels])], disposeAdmin };
 }
 function validateAnnotationRequest(payload: unknown): SaveEvalAnnotationRequest {
   assertAiReviewDimensionsComplete();

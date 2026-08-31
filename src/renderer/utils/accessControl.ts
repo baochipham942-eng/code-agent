@@ -12,7 +12,7 @@ export const ACCESS_CONTROL_REGISTRY = {
   // 桌面端无任何调用方，注册项一并移除。
   // 插件入口仅管理员可见；Hook 仍允许普通用户自行配置。
   'settings.plugins': {
-    label: '插件管理',
+    label: 'Marketplace 源管理',
     adminOnly: true,
   },
   'settings.hooks': {
@@ -24,7 +24,7 @@ export const ACCESS_CONTROL_REGISTRY = {
     adminOnly: true,
   },
   'capability.internal': {
-    label: '内部能力包',
+    label: '内部插件',
     adminOnly: true,
   },
   'telemetry.replay': {

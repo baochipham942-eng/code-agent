@@ -46,7 +46,6 @@ export type SettingsTab = typeof SETTINGS_TAB_IDS[number];
 
 // 能力中心的顶层 tab（ADR-049）。单一真源放在 tab 注册表这里，appStore 只做 re-export。
 export type CapabilityHubTab =
-  | 'packages'
   | 'experts'
   | 'skills'
   | 'connectors'
@@ -101,7 +100,7 @@ export function resolveSettingsDeepLink(
   if (!isSettingsTabCapabilityAvailable(tab, installedCapabilities)) {
     return {
       kind: 'capabilityHub',
-      tab: 'packages',
+      tab: 'plugins',
       capabilityId: SETTINGS_TAB_REQUIRES_ANY_CAPABILITY[tab]?.[0],
     };
   }

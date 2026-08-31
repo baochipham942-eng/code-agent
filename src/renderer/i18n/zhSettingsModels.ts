@@ -751,8 +751,8 @@ export const zhSettingsModels = {
       description: '管理内置、本机导入和 marketplace 目录里的插件；源的增删仅对管理员开放。',
       manualImport: {
         action: '导入插件',
-        title: '一方与本机插件',
-        description: '安装 Neo 内置插件，或从目录、清单文件、ZIP 导入本机插件。校验和权限确认通过后立即生效。',
+        title: '可用插件',
+        description: '官方插件随 Neo 自带，装入即可用；也可以从本机文件导入你自己的插件。校验和权限确认通过后立即生效。',
         empty: '还没有可安装或已导入的插件。',
         active: '下一轮可用',
         available: '可安装',

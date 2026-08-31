@@ -29,6 +29,9 @@ export type ToolTag =
  */
 export type ToolSource = 'builtin' | 'mcp' | 'dynamic';
 
+/** Durable replay policy derived from existing tool declarations. */
+export type ToolReplaySafety = 'automatic' | 'unknown' | 'forbidden';
+
 export interface ToolDescriptionContext {
   readonly provider?: string;
   readonly model?: string;

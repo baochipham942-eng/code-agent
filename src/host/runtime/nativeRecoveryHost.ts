@@ -1,8 +1,10 @@
 import type { PendingOperation } from '../../shared/contract/durableRun';
+import type { ToolReplaySafety } from '../../shared/contract';
 import type { WorkspaceScope } from '../../shared/contract/project';
 import type { RunRehydrationPlan } from './durableRunStores';
 import type { RunRegistry } from './runRegistry';
 import type { DurableEngineRecoveryHandler } from './durableRecoveryDispatcher';
+import { canAutomaticallyReplayTool } from '../tools/toolReplaySafety';
 
 export const NATIVE_RECOVERY_SCHEMA_VERSION = 1 as const;
 
@@ -48,6 +50,12 @@ export interface NativeRecoveryHostPorts {
   };
   tool: {
     queryResult(input: NativeRecoveryOperationInput & { providerOperationId: string }): Promise<NativeRecoveryResultEvidence | null>;
+    classifyReplaySafety(input: NativeRecoveryOperationInput): Promise<{
+      stored: ToolReplaySafety | null;
+      current: ToolReplaySafety;
+    }>;
+    dispatchPrepared(input: NativeRecoveryOperationInput): Promise<NativeRecoveryResultEvidence>;
+    interrupt(input: NativeRecoveryOperationInput): Promise<NativeRecoveryResultEvidence>;
   };
   approval: {
     read(approvalId: string): Promise<'pending' | 'approved' | 'rejected' | 'missing' | 'conflict'>;
@@ -159,14 +167,35 @@ export class NativeRecoveryHost {
       }
       evidence = await this.ports.model.retrySafe(input);
       action = 'retry_safe_model_compute_once';
-    } else if (operation.kind === 'tool_call'
-      && operation.providerOperationId
-      && operation.requiresHumanConfirmation !== true) {
-      evidence = await this.ports.tool.queryResult({ ...input, providerOperationId: operation.providerOperationId });
-      action = 'query_confirmed_tool_result';
-      if (!evidence) return this.review(plan, now, 'tool_result_evidence_missing');
-    } else if (operation.kind === 'tool_call' && operation.sideEffect) {
-      return this.review(plan, now, 'unknown_write_side_effect');
+    } else if (operation.kind === 'tool_call') {
+      if (operation.providerOperationId && operation.requiresHumanConfirmation !== true) {
+        evidence = await this.ports.tool.queryResult({ ...input, providerOperationId: operation.providerOperationId });
+      }
+      if (evidence) {
+        action = 'query_confirmed_tool_result';
+      } else {
+        if (this.ports.continuationExecutor === 'unavailable') {
+          return this.failUnrecoverable(
+            plan,
+            now,
+            operation.providerOperationId
+              ? 'tool_result_evidence_missing'
+              : operation.sideEffect
+                ? 'unknown_write_side_effect'
+                : 'tool_result_evidence_missing',
+          );
+        }
+        const replaySafety = await this.ports.tool.classifyReplaySafety(input);
+        if (canAutomaticallyReplayTool(replaySafety.stored, replaySafety.current)) {
+          evidence = await this.ports.tool.dispatchPrepared(input);
+          action = 'replay_safe_tool_once';
+        } else {
+          evidence = await this.ports.tool.interrupt(input);
+          action = operation.sideEffect
+            ? 'unknown_write_side_effect'
+            : 'interrupt_unproven_tool_replay';
+        }
+      }
     } else {
       return this.review(plan, now, 'native_operation_not_safely_recoverable');
     }
@@ -305,7 +334,12 @@ export function createUnavailableNativeRecoveryPorts(): NativeRecoveryHostPorts 
       canRetrySafely: async () => false,
       retrySafe: unavailable,
     },
-    tool: { queryResult: unavailable },
+    tool: {
+      queryResult: unavailable,
+      classifyReplaySafety: unavailable,
+      dispatchPrepared: unavailable,
+      interrupt: unavailable,
+    },
     approval: { read: async () => 'missing' },
   };
 }

@@ -139,6 +139,35 @@ describe('startup maintenance orphan tool-call closure', () => {
     `).get()).toEqual({ count: 2 });
   });
 
+  it('leaves stored-automatic calls open for application continuation instead of interrupting them', () => {
+    createSession('automatic-session', 'running');
+    sessionRepo.addMessage(
+      'automatic-session',
+      assistantToolCall('assistant-automatic', 'call-automatic'),
+    );
+    toolExecutionEventRepo.appendBegin({
+      executionId: 'execution-automatic',
+      sessionId: 'automatic-session',
+      toolName: 'Read',
+      summary: 'read file',
+      params: { file_path: 'README.md' },
+      toolCallId: 'call-automatic',
+      replaySafety: 'automatic',
+      recordedAt: 20,
+    });
+
+    runMaintenance();
+
+    expect(sessionRepo.getMessages('automatic-session')).toHaveLength(1);
+    expect(toolExecutionEventRepo.getOpenExecutions()).toEqual([
+      expect.objectContaining({
+        executionId: 'execution-automatic',
+        toolCallId: 'call-automatic',
+        replaySafety: 'automatic',
+      }),
+    ]);
+  });
+
   it('does not modify completed sessions or crashed sessions whose tool calls already have results', () => {
     createSession('completed-session', 'completed');
     sessionRepo.addMessage(

@@ -405,10 +405,14 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
       status TEXT,
       error TEXT,
       origin TEXT,
+      tool_call_id TEXT,
+      replay_safety TEXT,
       recorded_at INTEGER NOT NULL
     )
   `);
   safeAlter(db, `ALTER TABLE tool_execution_events ADD COLUMN origin TEXT`, logger);
+  safeAlter(db, `ALTER TABLE tool_execution_events ADD COLUMN tool_call_id TEXT`, logger);
+  safeAlter(db, `ALTER TABLE tool_execution_events ADD COLUMN replay_safety TEXT`, logger);
   // (execution_id, phase) 复合索引前缀覆盖旧的单列 execution_id 索引，并让启动时
   // getOpenExecutions 的 NOT EXISTS 反连接走 execution_id 探测——缺它时 planner 选
   // phase 索引，begin×complete 全交叉，大账本上实测 1.8s（启动关键路径）。

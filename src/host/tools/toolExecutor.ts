@@ -59,6 +59,7 @@ import { annotateToolExecution, getApprovalWaitMs, reportUndeclaredToolParams, r
 import type { ToolLedgerOrigin } from '../../shared/constants/toolLedger';
 import { recordCachedToolReplay } from './cachedToolReplay';
 import { createToolExecutionLedger } from './toolExecutionLedger';
+import { classifyToolReplaySafety } from './toolReplaySafety';
 import { type ExecutionTopology } from '../permissions';
 import { boundaryIdForRequestType } from './permissionBoundaryMapping';
 import {
@@ -1593,6 +1594,8 @@ export class ToolExecutor {
       workingDirectory: this.executionCwd,
       workspace: this.runtimeWorkspace,
       turnTrace: options.turnTrace,
+      toolCallId: options.currentToolCallId,
+      replaySafety: classifyToolReplaySafety(toolDef),
     });
     const { executionId } = executionLedger;
     try {

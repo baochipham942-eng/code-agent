@@ -41,7 +41,7 @@ import { ToolExecutor } from '../../../src/host/tools/toolExecutor';
 function readDef() {
   return {
     name: 'Read', description: 'read', inputSchema: { type: 'object', properties: {}, required: [] },
-    requiresPermission: true, permissionLevel: 'read',
+    outputSchema: { type: 'string' }, requiresPermission: true, permissionLevel: 'read', readOnly: true,
   };
 }
 
@@ -61,13 +61,22 @@ describe('ToolExecutor → 执行生命周期事件账本 接入（第二期）'
     resolverState.getDefinition.mockReturnValue(readDef());
     const executor = new ToolExecutor({ requestPermission: vi.fn().mockResolvedValue(true), workingDirectory: '/tmp/workbench' });
 
-    await executor.execute('Read', { file_path: 'README.md' }, { sessionId: 's1' });
+    await executor.execute('Read', { file_path: 'README.md' }, {
+      sessionId: 's1',
+      currentToolCallId: 'call-read',
+    });
 
     expect(ledgerState.appendToolExecutionBegin).toHaveBeenCalledTimes(1);
     expect(ledgerState.appendToolExecutionComplete).toHaveBeenCalledTimes(1);
     const begin = ledgerState.appendToolExecutionBegin.mock.calls[0][0];
     const complete = ledgerState.appendToolExecutionComplete.mock.calls[0][0];
-    expect(begin).toMatchObject({ toolName: 'Read', sessionId: 's1', origin: 'desktop' });
+    expect(begin).toMatchObject({
+      toolName: 'Read',
+      sessionId: 's1',
+      origin: 'desktop',
+      toolCallId: 'call-read',
+      replaySafety: 'automatic',
+    });
     expect(typeof begin.executionId).toBe('string');
     expect(begin.executionId.length).toBeGreaterThan(0);
     expect(begin.params).toEqual({ file_path: 'README.md' });

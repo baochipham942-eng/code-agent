@@ -48,6 +48,23 @@ describe('单 case 成本硬上限', () => {
     expect(tracker.getCostUsd()).toBeGreaterThan(0);
   });
 
+  it('estimated source 的 usage 不冒充 provider（getUsage 返 undefined · Grok 盲区③ 监工代笔·验收④）', () => {
+    const tracker = createScopedCostLimit(Number.MAX_VALUE);
+    initBudgetService({ enabled: false }).recordUsage({
+      inputTokens: 130,
+      outputTokens: 70,
+      cacheReadTokens: 5,
+      model: 'glm-5',
+      provider: 'custom-tokenrhythm',
+      timestamp: Date.now(),
+      source: 'estimated',
+    }, tracker.recordUsage);
+
+    // estimated 回落的 usage 记了成本、但不得当 provider usage 累计 → 仍 usage_unavailable
+    expect(tracker.getUsage()).toBeUndefined();
+    expect(tracker.getCostUsd()).toBeGreaterThan(0);
+  });
+
   it('首个 usage 越线后 fail-loud，停止后续轮次且不进能力分母', async () => {
     initBudgetService({ enabled: false });
     const prompts: string[] = [];

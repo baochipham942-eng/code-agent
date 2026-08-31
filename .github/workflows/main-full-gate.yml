@@ -37,6 +37,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          # coverage 基线方向和 merge diff 报表都需要当前提交的直接父节点。
+          fetch-depth: 2
 
       - name: Setup Node.js
         uses: actions/setup-node@v5
@@ -79,12 +82,30 @@ jobs:
         env:
           NODE_OPTIONS: --max-old-space-size=6144
 
-      - name: Full vitest
+      - name: Full vitest with coverage
         # --retry=1 与 swarm-ci flake 约定一致，吸收 game/browser 族已知负载抖动。
-        run: node scripts/ci/vitest-with-flake-ledger.mjs --job "Full vitest" -- npx vitest run --retry=1
+        # coverage 复用合后本就会跑的全量套件，不给 PR 门增加全量长跑。
+        run: node scripts/ci/vitest-with-flake-ledger.mjs --job "Full vitest with coverage" -- npx vitest run --retry=1 --coverage
         env:
           CI: 'true'
           NODE_OPTIONS: --max-old-space-size=6144
+
+      - name: Coverage ratchet
+        run: |
+          BASELINE_REF="${{ github.event.before }}"
+          if [ -z "${BASELINE_REF}" ] || [ "${BASELINE_REF}" = "0000000000000000000000000000000000000000" ]; then
+            BASELINE_REF="HEAD^"
+          fi
+          node scripts/coverage-ratchet.mjs --compare-baseline "${BASELINE_REF}"
+
+      - name: Changed-line execution report (non-blocking)
+        continue-on-error: true
+        run: |
+          DIFF_BASE="${{ github.event.before }}"
+          if [ -z "${DIFF_BASE}" ] || [ "${DIFF_BASE}" = "0000000000000000000000000000000000000000" ]; then
+            DIFF_BASE="HEAD^"
+          fi
+          node scripts/coverage-ratchet.mjs --changed-lines --diff-base "${DIFF_BASE}" --diff-head "${GITHUB_SHA}"
 
       - name: Announce failure (open or update the tracking issue)
         # 2026-07-25 建。这道门是**检测型**的：红了不挡任何合并，也不通知任何人——

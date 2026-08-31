@@ -44,13 +44,12 @@ export default defineConfig({
         'src/**/*.d.ts',
         'src/**/__tests__/**',
         'src/host/tools/media/ppt/__tests__/**',
+        // V8 provider 的 uncovered-file remap 会把这个 Yoga CJS/WASM 打包垫片
+        // 当原生 JS 交给 Rolldown，无法解析其 TypeScript-only 类型声明。
+        // 它由 CLI bundle/runtime 门验证，在这里显式排除，避免 `all: true`
+        // 汇总时暗中丢文件（N-DIFFCOVER 首轮实测暴露）。
+        'src/cli/tui-app/yogaCjsShim.ts',
       ],
-      thresholds: {
-        statements: 38,
-        branches: 34,
-        functions: 36,
-        lines: 39,
-      },
     },
     // The suite contains several real browser/native-runtime tests; allowing Vitest
     // to use every host core starves them past their deterministic 30s timeout.

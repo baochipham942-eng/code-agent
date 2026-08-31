@@ -65,35 +65,43 @@ function ToolCallView({ call }: { call: ToolCallItem }) {
   );
 }
 
-/** 工具分组：单行 bullet + 时态动词 + 参数摘要；同类连续调用折叠 "Read 3 files"（› 可展开） */
+function toolGroupHasBody(group: ToolGroupMessage): boolean {
+  return group.calls.length > 1
+    || group.calls.some((call) => (call.outputLines && call.outputLines.length > 0) || Boolean(call.resultPreview));
+}
+
+/** 工具分组：默认折叠一行（Read 5 files / Run cmd ›）；点击或 Ctrl+X 展开结果 */
 function ToolGroupView({ group, expanded }: { group: ToolGroupMessage; expanded?: boolean }) {
   const done = group.status !== 'running';
   const error = group.status === 'error';
   const color = error ? 'red' : done ? undefined : 'cyan';
   const bullet = error ? '✗' : '◆';
+  const hasBody = toolGroupHasBody(group);
 
-  // 归组折叠态（Read 3 files / Searched 4 patterns），› 提示可展开（Ctrl+X）
-  if (group.groupNoun && group.calls.length > 1 && !expanded) {
-    const plural = `${group.groupNoun}s`;
+  if (!expanded && hasBody) {
+    const grouped = Boolean(group.groupNoun && group.calls.length > 1);
     const verb = done ? group.doneVerb : group.activeVerb;
+    const summary = grouped
+      ? `${group.calls.length} ${group.groupNoun}s`
+      : (group.calls[0]?.summary ?? '');
     const runningSummary = group.status === 'running'
       ? group.calls[group.calls.length - 1]?.summary
       : '';
     return (
       <Text dimColor={done && !error} color={color}>
-        {bullet} {verb} {group.calls.length} {plural}
-        {runningSummary ? <Text dimColor>  {runningSummary}</Text> : null}
+        {bullet} {verb}{summary ? ` ${summary}` : ''}
+        {runningSummary && !grouped ? <Text dimColor>  {runningSummary}</Text> : null}
         <Text dimColor> ›</Text>
       </Text>
     );
   }
 
-  // 展开态（或不成组的单次调用）：逐调用一行，shell 成功输出随调用展示
   return (
     <Box flexDirection="column">
       {group.calls.map((call) => (
         <ToolCallView key={call.id} call={call} />
       ))}
+      {hasBody ? <Text dimColor>  ‹</Text> : null}
     </Box>
   );
 }
@@ -103,8 +111,8 @@ function MessageBody({ message, width, maxLines, expandTools }: { message: ChatM
     case 'user':
       return (
         <Box marginTop={2} paddingBottom={1}>
-          <Text bold color="green">{'❯ '}</Text>
-          <Text bold wrap="wrap">{message.text}</Text>
+          <Text>{'❯ '}</Text>
+          <Text wrap="wrap">{message.text}</Text>
         </Box>
       );
     case 'assistant':

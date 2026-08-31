@@ -100,6 +100,21 @@ export const BundledCapabilitiesTab: React.FC<{ showHeader?: boolean }> = ({ sho
       )}
     </>
   );
+  const inputNotice = (
+    <>
+      {notice('builtin.voice-input', inputInstalled, copy.voiceInput.installPrompt)}
+      {readiness && readiness.status !== 'ready' && (
+        <div
+          role="status"
+          data-testid="voice-input-readiness-warning"
+          className="mt-3 flex items-center gap-2 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-badge-warning"
+        >
+          <TriangleAlert className="h-3.5 w-3.5 shrink-0" />
+          <span>{readinessLabel}</span>
+        </div>
+      )}
+    </>
+  );
 
   return (
     <div data-testid="bundled-capabilities-tab" className="space-y-3">
@@ -144,7 +159,7 @@ export const BundledCapabilitiesTab: React.FC<{ showHeader?: boolean }> = ({ sho
         permissions={copy.voiceInput.permissions.map(permissionName)}
         action={action('builtin.voice-input', inputInstalled)}
         detailsLabel={copy.detailsLabel}
-        notice={notice('builtin.voice-input', inputInstalled, copy.voiceInput.installPrompt)}
+        notice={inputNotice}
         details={(
           <div className="grid gap-3 lg:grid-cols-2">
             <div>

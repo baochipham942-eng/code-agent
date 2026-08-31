@@ -61,6 +61,9 @@ on:
       - 'scripts/attention-budget-ratchet.mjs'
       # 基线也要触发：只改基线 = 手工放宽棘轮，不能溜过门（与 knip 基线同理）
       - 'scripts/attention-budget-ratchet-baseline.json'
+      - 'scripts/coverage-ratchet.mjs'
+      # 覆盖率基线也必须触发：只改基线 = 手工放宽棘轮，不能溜过门
+      - 'scripts/coverage-ratchet-baseline.json'
       - 'scripts/ci/host-esm-cjs-lint.mjs'
       - 'tailwind.config.js'
       - 'scripts/knip-ratchet.mjs'
@@ -215,6 +218,10 @@ jobs:
         # 此前只在 gates-local 本地跑、CI 零执行——#1199 改语音文案后 CI 全绿合入，把主线门带红（N-L8-ATT11/12）。
         # 脚本对 0 命中文件 / 找不到语音文案锚点 fail-loud，不会扫空假绿。
         run: node scripts/attention-budget-ratchet.mjs
+
+      - name: Coverage baseline direction (no PR coverage run)
+        # PR 只做毫秒级的基线方向检查，阻止手工下调；全量 coverage 只在 main-full-gate 跑。
+        run: node scripts/coverage-ratchet.mjs --baseline-only --compare-baseline origin/main
 
       - name: Host ESM/CJS static gate
         # 只扫 host 工具和插件的发行源码；根路径/解析/0 文件都会失败，防止 ESM 构建中

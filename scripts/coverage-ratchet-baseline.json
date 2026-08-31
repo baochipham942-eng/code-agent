@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "statements": 66.35,
+  "branches": 60.05,
+  "functions": 66.69,
+  "lines": 67.8,
+  "measuredAt": "2026-08-31T08:51:00Z",
+  "source": "npx vitest run --retry=1 --coverage @ ab731c6e1\uff08origin/main\uff09\uff0cload 6.98\uff0ccoverage-summary.json total.pct"
+}

@@ -148,8 +148,8 @@ function resolveModel(config: ModelConfig, req: ProviderRequest, options?: { sea
       if (!req.baseURL) {
         throw new Error(`[AiSdkAdapter] 无法解析 provider "${config.provider}" 的 baseURL`);
       }
-      // zhipu/moonshot/xiaomi 在此叠加 vendor quirks；其余 openai-compatible provider
-      // （longcat/qwen/minimax/custom 等）buildVendorCompatSettings 返回 {} 不受影响。
+      // openai-compatible provider 默认请求流式 usage；zhipu/moonshot/xiaomi 再叠加 vendor
+      // quirks。明确拒绝 stream_options 的端点由能力矩阵 requestCompat.noStreamOptions 关闭。
       const vendor = buildVendorCompatSettings(config, options);
       return createOpenAICompatible({
         name: config.provider,

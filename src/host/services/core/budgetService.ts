@@ -12,7 +12,11 @@ import {
   type ModelPricingEntry,
 } from '../../../shared/constants';
 import { getDatabase } from './databaseService';
-import { recordScopedCost, recordScopedUsage } from './scopedCostLimit';
+import {
+  recordScopedCost,
+  recordScopedUsage,
+  type ScopedCostRecorder,
+} from './scopedCostLimit';
 
 const logger = createLogger('BudgetService');
 
@@ -225,12 +229,16 @@ export class BudgetService {
   /**
    * Record token usage from an API call
    */
-  recordUsage(usage: TokenUsage): void {
+  recordUsage(usage: TokenUsage, scopedCostRecorder?: ScopedCostRecorder): void {
     // eval 的单 case hard cap 独立于全局 budget 开关：即使用户关闭全局告警，
     // case 声明的上限仍必须 fail-closed，不能退化成只显示估算。
     const cost = this.calculateCost(usage);
-    recordScopedUsage(usage);
-    recordScopedCost(cost);
+    if (scopedCostRecorder) {
+      scopedCostRecorder(usage, cost);
+    } else {
+      recordScopedUsage(usage);
+      recordScopedCost(cost);
+    }
     if (!this.config.enabled) return;
 
     // Check if period needs reset

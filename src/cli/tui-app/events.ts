@@ -79,6 +79,12 @@ export type ChatMessage =
   | ToolGroupMessage
   | SystemMessage;
 
+/** 主机侧「分析请求中」与 Thinking… 来回切会闪；归一成同一标签 */
+export function normalizeActivityLabel(label: string): string {
+  if (/分析请求/.test(label)) return 'Thinking…';
+  return label;
+}
+
 /** 已封口 = 不会再变，可进 Static scrollback（与 live 互斥） */
 export function isSettledMessage(message: ChatMessage): boolean {
   switch (message.kind) {
@@ -434,22 +440,30 @@ export function reduceAgentEvent(state: ChatState, event: AgentEvent, now: numbe
       const data = event.data;
       if (!data) return state;
       if (data.phase === 'completed' || data.phase === 'failed') {
-        // 回合还在跑时不要把标签清空——空标签 + 下一条 thinking 会让
-        // 「分析请求中」在 TurnStatus 里闪烁。真正收口走 agent_complete。
+        // 回合还在跑时不要把标签清空。真正收口走 agent_complete。
         return state;
       }
-      const label = data.step
-        || (data.phase === 'thinking' ? 'Thinking…' : data.phase === 'tool_running' ? 'Run command' : 'Working…');
+      const noisy = Boolean(data.step && /分析请求/.test(data.step));
+      const raw = (!data.step || noisy)
+        ? (data.phase === 'thinking' ? 'Thinking…' : data.phase === 'tool_running' ? 'Run command' : 'Working…')
+        : data.step;
+      const label = normalizeActivityLabel(raw);
       if (state.activity === label && state.running) return state;
-      // 已有更具体的 step 时，不要被无 step 的泛化标签（Thinking…）盖掉
-      if (!data.step && state.activity) return state.running ? state : { ...state, running: true };
+      // 已有更具体的 step 时，不要被无 step / 「分析请求中」盖掉
+      if ((!data.step || noisy) && state.activity) {
+        return state.running ? state : { ...state, running: true };
+      }
       return { ...state, running: true, activity: label };
     }
 
     case 'agent_thinking': {
       const message = event.data?.message;
-      if (!message || message === state.activity) return state;
-      return { ...state, activity: message };
+      if (!message) return state;
+      const noisy = /分析请求/.test(message);
+      const label = normalizeActivityLabel(message);
+      if (label === state.activity) return state;
+      if (noisy && state.activity && state.activity !== 'Thinking…') return state;
+      return { ...state, activity: label };
     }
 
     case 'tool_progress': {

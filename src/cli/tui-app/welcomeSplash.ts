@@ -89,15 +89,40 @@ function welcomeCardGeometry(termRows: number, chromeRows: number, compact: bool
   };
 }
 
-/** 终端 1-based 行号 → 动作下标；未点中返回 null */
+/** 动作表所在列范围（0-based，含左不含右）。只命中右侧文案，不命中 logo。 */
+export function welcomeActionColumnRange(termCols: number, compact?: boolean): {
+  left: number;
+  right: number;
+} {
+  const cardWidth = Math.min(Math.max(termCols - 8, 42), 78);
+  const parentPad = 2;
+  const inner = Math.max(termCols - parentPad * 2, 0);
+  const cardLeft = parentPad + Math.max(0, Math.floor((inner - cardWidth) / 2));
+  const logoWidth = compact ? NEO_LOGO_COMPACT[0].length : NEO_LOGO_FULL[0].length;
+  const border = 1;
+  const padX = 3;
+  const gap = 3;
+  const left = cardLeft + border + padX + logoWidth + gap;
+  const right = cardLeft + cardWidth - border - padX;
+  return { left, right };
+}
+
+/** 终端 1-based 行号（+ 可选列）→ 动作下标；未点中返回 null */
 export function welcomeActionIndexAt(
   clickRow1: number,
   termRows: number,
   chromeRows: number,
   compact: boolean,
+  clickCol1?: number,
+  termCols?: number,
 ): number | null {
   const { action0, actionCount } = welcomeCardGeometry(termRows, chromeRows, compact);
   const index = clickRow1 - 1 - action0;
   if (index < 0 || index >= actionCount) return null;
+  if (clickCol1 != null && termCols != null) {
+    const { left, right } = welcomeActionColumnRange(termCols, compact);
+    const col = clickCol1 - 1;
+    if (col < left || col >= right) return null;
+  }
   return index;
 }

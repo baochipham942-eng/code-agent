@@ -10,7 +10,7 @@
 // P2b：/model 交互选择器（blocking picker，↑↓+Enter 切换）。
 // ============================================================================
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Box, Static, Text, useInput, useStdout } from 'ink';
 import type { CLIAgent } from '../adapter';
 import type { AgentEvent } from '../../shared/contract';
@@ -29,7 +29,6 @@ import {
   welcomeActionIndexAt,
   type WelcomeActionId,
 } from './welcomeSplash';
-import { formatStatusBar } from './statusBar';
 import {
   isMouseEventInput,
   MOUSE_SGR_DISABLE,
@@ -38,22 +37,24 @@ import {
 } from './mouse';
 import {
   buildTerminalNotification,
+  buildTerminalTitleSequence,
   FOCUS_REPORTING_DISABLE,
   FOCUS_REPORTING_ENABLE,
+  formatTerminalTitle,
   isFocusEventInput,
   parseFocusEvent,
   shouldTerminalNotify,
 } from './terminalNotification';
+import { queueActionAt, type QueueActionId } from './queueBar';
 import {
   appendShellCommand,
   appendSystemMessage,
   appendUserMessage,
   createChatState,
-  estimateCostUsd,
-  formatDuration,
   markRunStarted,
   reduceAgentEvent,
   resolveShellCommand,
+  type ChatMessage,
   type ChatState,
 } from './events';
 import {
@@ -76,7 +77,8 @@ import {
   type EditorState,
 } from './editorState';
 import { filterSlashCommands, type SlashItem } from './slashCommands';
-import { editorVisualRows, partitionScrollback, planDynamicLayout } from './layout';
+import { editorVisualRows, hitLiveToolGroup, partitionScrollback, planDynamicLayout } from './layout';
+import { HistorySearchBar, QueueBar, ShortcutsBar, StatusBar, Toast, TurnStatus } from './chrome';
 import { Editor } from './Editor';
 import { SlashMenu } from './SlashMenu';
 import { MessageView } from './MessageView';
@@ -114,7 +116,6 @@ export interface InkChatOptions {
 }
 
 /** braille spinner，刻意 ~7.5fps（规格：30fps 每帧停 4 tick ≈ 133ms/帧） */
-const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧'];
 const SPINNER_INTERVAL_MS = 133;
 
 /** Toast 自动消失时间 */
@@ -123,138 +124,6 @@ const TOAST_MS = 3000;
 const CANCEL_COOLDOWN_MS = 1000;
 /** Ctrl+Q 双击确认退出的时间窗（规格：1000ms 防误触） */
 const QUIT_CONFIRM_MS = 1000;
-
-/** 活动标签按类型着色（规格：accent 槽位） */
-function activityColor(activity: string | null): string {
-  if (!activity) return 'cyan';
-  if (/^Thinking/.test(activity)) return 'magenta';
-  if (/^(Running|Run)/.test(activity)) return 'yellow';
-  if (/^(Writing|Editing|Appending|Deleting|Wrote|Edited)/.test(activity)) return 'red';
-  return 'cyan'; // Reading/Searching/Finding/Listing 等读取类
-}
-
-// ---------------------------------------------------------------------------
-// StatusBar：左 model(provider) / 中 cwd·branch / 右 条件分段
-// （后台任务、token、ctx% 迷你条、成本、turns、工具数、上轮耗时、phase）
-// ---------------------------------------------------------------------------
-
-function StatusBar({ state, gitBranch, gitDirty, fallbackModel, fallbackProvider, permissionLabel, columns }: {
-  state: ChatState;
-  gitBranch: string;
-  gitDirty?: boolean;
-  fallbackModel: string;
-  fallbackProvider?: string;
-  permissionLabel: string;
-  columns: number;
-}) {
-  const model = state.model ?? fallbackModel;
-  const provider = state.provider ?? fallbackProvider ?? '';
-  const cost = estimateCostUsd(model, state.inputTokens, state.outputTokens);
-  const { left, right } = formatStatusBar({
-    permissionLabel,
-    model,
-    provider,
-    gitBranch,
-    gitDirty,
-    inputTokens: state.inputTokens,
-    outputTokens: state.outputTokens,
-    contextPercent: state.contextPercent,
-    costUsd: cost,
-  });
-  return (
-    <Box paddingX={1} width={columns} justifyContent="space-between">
-      <Box>
-        <Text color="green">⏺ </Text>
-        <Text wrap="truncate-end">{left}</Text>
-      </Box>
-      {right ? <Text dimColor wrap="truncate-end">{right}</Text> : null}
-    </Box>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// 底部 shortcuts bar：随上下文切换提示内容
-// ---------------------------------------------------------------------------
-
-function ShortcutsBar({ running, menuOpen, hasDraft, approvalOpen, searchOpen }: {
-  running: boolean;
-  menuOpen: boolean;
-  hasDraft: boolean;
-  approvalOpen: boolean;
-  searchOpen: boolean;
-}) {
-  const text = approvalOpen
-    ? '数字直选 · ↑↓ 选择 · Enter 确认 · Tab diff · Esc 拒绝'
-    : searchOpen
-      ? '输入过滤 · Ctrl+R 下一条 · Enter 采纳 · Esc 取消'
-      : menuOpen
-        ? '↑↓ 选择 · Tab 采纳 · Enter 采纳/执行 · Esc 关闭'
-        : running
-          ? 'Esc 取消 · 带文本 Enter 排队 · Shift+Enter 换行'
-          : hasDraft
-            ? 'Enter 提交 · Ctrl+C 清草稿 · Shift+Enter 换行'
-            : '/ 命令 · ↑ 历史 · Ctrl+R 搜索 · Ctrl+Q 双击退出';
-  return (
-    <Box paddingX={1}>
-      <Text dimColor>{text}</Text>
-    </Box>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Toast：单行右对齐轻提示，几秒自动消失
-// ---------------------------------------------------------------------------
-
-function Toast({ text }: { text: string }) {
-  return (
-    <Box paddingX={1} justifyContent="flex-end">
-      <Text dimColor>{text}</Text>
-    </Box>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Turn status 行（运行时）：spinner + 活动标签 + 计时 + token + 排队数
-// ---------------------------------------------------------------------------
-
-function TurnStatus({ state, frame, now, queuedCount }: {
-  state: ChatState;
-  frame: number;
-  now: number;
-  queuedCount: number;
-}) {
-  const elapsed = state.turnStartedAt != null ? now - state.turnStartedAt : 0;
-  return (
-    <Box paddingX={1}>
-      <Text>
-        <Text color={activityColor(state.activity)}>{SPINNER_FRAMES[frame % SPINNER_FRAMES.length]} </Text>
-        <Text color={activityColor(state.activity)}>{state.activity ?? 'Working…'}</Text>
-        <Text dimColor>  {formatDuration(elapsed)}</Text>
-        {state.outputTokens > 0 ? <Text dimColor>  ⇣{state.outputTokens}</Text> : null}
-        {queuedCount > 0 ? <Text dimColor>  · {queuedCount} queued</Text> : null}
-      </Text>
-    </Box>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Ctrl+R 历史搜索行（占据 prompt 区域）
-// ---------------------------------------------------------------------------
-
-function HistorySearchBar({ query, match }: { query: string; match: string | null }) {
-  const preview = match
-    ? (match.split('\n').length > 1 ? `${match.split('\n')[0]} ⏎(${match.split('\n').length} 行)` : match)
-    : '（无匹配）';
-  return (
-    <Box flexDirection="column" paddingX={1}>
-      <Text>
-        <Text color="cyan">(reverse-search) </Text>
-        <Text>{`'${query}'`}</Text>
-      </Text>
-      <Text dimColor wrap="truncate-end">  {preview}</Text>
-    </Box>
-  );
-}
 
 // ---------------------------------------------------------------------------
 // App
@@ -279,7 +148,14 @@ export function App({ agent, options, onExit }: {
   }, []);
   const historyRef = useRef(new PromptHistory());
   const queueRef = useRef<string[]>([]);
-  const [queuedCount, setQueuedCount] = useState(0);
+  const [queuedItems, setQueuedItems] = useState<string[]>([]);
+  const syncQueue = useCallback((next: string[]) => {
+    queueRef.current = next;
+    setQueuedItems(next);
+  }, []);
+  const [queueHover, setQueueHover] = useState<QueueActionId | 'body' | null>(null);
+  const visibleLiveRef = useRef<ChatMessage[]>([]);
+  const liveAllocationRef = useRef<Map<string, number>>(new Map());
   const slashDismissedRef = useRef(false);
   const [slashIndex, setSlashIndex] = useState(0);
   const runningRef = useRef(false);
@@ -320,8 +196,8 @@ export function App({ agent, options, onExit }: {
   const [modelPicker, setModelPicker] = useState<{ index: number } | null>(null);
   const modelPickerRef = useRef(modelPicker);
   modelPickerRef.current = modelPicker;
-  /** 工具归组展开开关（Ctrl+X 切换；只影响动态区，Static 已封口消息不回溯） */
-  const [expandTools, setExpandTools] = useState(false);
+  /** 展开中的 tool_group id（点击行 / Ctrl+X 切最后一个） */
+  const [expandedTools, setExpandedTools] = useState<ReadonlySet<string>>(() => new Set());
   /** 终端焦点（焦点上报 1004；默认聚焦 → 不打扰） */
   const focusedRef = useRef(true);
   /** 运行中后台任务数（StatusBar 分段） */
@@ -339,7 +215,10 @@ export function App({ agent, options, onExit }: {
   const welcomeSelectedRef = useRef(-1);
   welcomeSelectedRef.current = welcomeSelected;
   const onWelcomeMouseRef = useRef<(event: { button: number; x: number; y: number; kind: 'press' | 'release' | 'move' }) => void>(() => {});
-  const welcomeGeometryRef = useRef({ termRows: 24, chromeRows: 5, compact: false });
+  const welcomeGeometryRef = useRef({
+    termRows: 24, termCols: 80, chromeRows: 5, compact: false,
+    queueRow: 0, promptRows: 5, shortcuts: false, toast: false,
+  });
 
   /** 终端通知：失焦才发（语义对齐桌面 shouldSuppressOsNotification），OSC 9 回退 BEL */
   const notify = useCallback((message: string) => {
@@ -390,7 +269,7 @@ export function App({ agent, options, onExit }: {
       if (focus === 'in') focusedRef.current = true;
       if (focus === 'out') focusedRef.current = false;
       const mouse = parseSgrMouse(text);
-      if (mouse && showWelcomeRef.current) onWelcomeMouseRef.current(mouse);
+      if (mouse) onWelcomeMouseRef.current(mouse);
     };
     process.stdin.on('data', onData);
     return () => {
@@ -416,10 +295,26 @@ export function App({ agent, options, onExit }: {
   const prevRunningRef = useRef(false);
   useEffect(() => {
     if (prevRunningRef.current && !state.running) {
-      notify('Turn 完成');
+      const last = [...state.messages].reverse().find((message) => message.kind === 'assistant' && message.text.trim());
+      const snippet = last?.kind === 'assistant'
+        ? last.text.replace(/\s+/g, ' ').trim().slice(0, 80)
+        : '';
+      notify(snippet || 'Turn 完成');
     }
     prevRunningRef.current = state.running;
-  }, [state.running, notify]);
+  }, [state.running, state.messages, notify]);
+
+  useLayoutEffect(() => {
+    stdout?.write('\x1b[?25l');
+  });
+
+  useEffect(() => {
+    stdout?.write(buildTerminalTitleSequence(formatTerminalTitle({
+      running: state.running,
+      activity: state.activity,
+      queued: queuedItems.length,
+    })));
+  }, [state.running, state.activity, queuedItems.length, stdout]);
 
   // 只在 turn 运行时 ~7.5fps 跳 spinner / 计时。空闲停表——否则整树 133ms
   // 一渲，placeholder 光标和空闲 ◆ 都会卡闪。
@@ -433,11 +328,14 @@ export function App({ agent, options, onExit }: {
     return () => clearInterval(timer);
   }, [state.running]);
 
+  const wantsMouse = state.messages.length === 0
+    || queuedItems.length > 0
+    || state.messages.some((message) => message.kind === 'tool_group');
   useEffect(() => {
     const welcome = state.messages.length === 0;
     showWelcomeRef.current = welcome;
-    stdout?.write(welcome ? MOUSE_SGR_ENABLE : MOUSE_SGR_DISABLE);
-  }, [state.messages.length, stdout]);
+    stdout?.write(wantsMouse ? MOUSE_SGR_ENABLE : MOUSE_SGR_DISABLE);
+  }, [wantsMouse, state.messages.length, stdout]);
 
   // slash 菜单当前过滤结果（handler 与渲染共用，走 ref 保证新鲜）
   const computeMenuItems = useCallback((): SlashItem[] => {
@@ -484,11 +382,49 @@ export function App({ agent, options, onExit }: {
 
   onWelcomeMouseRef.current = (event) => {
     const geo = welcomeGeometryRef.current;
-    const index = welcomeActionIndexAt(event.y, geo.termRows, geo.chromeRows, geo.compact);
     if (event.kind !== 'move' && event.kind !== 'press') return;
-    const next = index ?? -1;
-    if (next !== welcomeSelectedRef.current) setWelcomeSelected(next);
-    // 点击只点亮白底，不执行；Enter 才触发（hover 呼应，避免一点就跳走）
+    if (showWelcomeRef.current) {
+      const index = welcomeActionIndexAt(
+        event.y, geo.termRows, geo.chromeRows, geo.compact, event.x, geo.termCols,
+      );
+      const next = index ?? -1;
+      if (next !== welcomeSelectedRef.current) setWelcomeSelected(next);
+    }
+    if (queueRef.current.length > 0 && geo.queueRow > 0) {
+      if (event.y === geo.queueRow) {
+        const action = queueActionAt(event.x, geo.termCols);
+        setQueueHover(action);
+        if (event.kind === 'press' && event.button === 0) {
+          const items = queueRef.current;
+          if (action === 'cancel') {
+            syncQueue(items.slice(1));
+            setQueueHover(null);
+          } else if (action === 'edit' || action === 'body') {
+            const [head, ...rest] = items;
+            syncQueue(rest);
+            if (head) setEditor(withContent(editorRef.current, head));
+            setQueueHover(null);
+          } else if (action === 'send') {
+            showToast('本轮结束后发出');
+          }
+        }
+      } else if (event.kind === 'move') {
+        setQueueHover(null);
+      }
+    }
+    if (event.kind === 'press' && event.button === 0 && !showWelcomeRef.current) {
+      const id = hitLiveToolGroup(
+        event.y, visibleLiveRef.current, liveAllocationRef.current, geo.termRows, geo.chromeRows,
+      );
+      if (id) {
+        setExpandedTools((prev) => {
+          const next = new Set(prev);
+          if (next.has(id)) next.delete(id);
+          else next.add(id);
+          return next;
+        });
+      }
+    }
   };
 
   const runPrompt = useCallback(async (text: string) => {
@@ -511,12 +447,12 @@ export function App({ agent, options, onExit }: {
     // agent_complete 事件正常收口；这里兜底一次防事件丢失卡死 running 态
     setState((prev) => (prev.running ? { ...prev, running: false, activity: null } : prev));
     // 排队 follow-up：当前 turn 结束后自动发出下一条
-    const next = queueRef.current.shift();
+    const [next, ...rest] = queueRef.current;
     if (next !== undefined) {
-      setQueuedCount(queueRef.current.length);
+      syncQueue(rest);
       await runPrompt(next);
     }
-  }, [agent]);
+  }, [agent, syncQueue]);
 
   /** `!` shell 直通：追加进行中工具块 → 走正式链路执行 → 用结果收口。
    *  审批卡打开时不并发（键盘与审批 Promise 都被卡片独占）。 */
@@ -564,13 +500,12 @@ export function App({ agent, options, onExit }: {
       return;
     }
     if (runningRef.current) {
-      // turn 运行中：带文本 Enter = 排队 follow-up
-      queueRef.current.push(text);
-      setQueuedCount(queueRef.current.length);
+      // turn 运行中：带文本 Enter = 排队 follow-up（此时才出现队列条）
+      syncQueue([...queueRef.current, text]);
       return;
     }
     void runPrompt(text);
-  }, [handleSlash, runPrompt, runShellCommand, setEditor, options]);
+  }, [handleSlash, runPrompt, runShellCommand, setEditor, options, syncQueue]);
 
   /** Enter：`\` 结尾续行，否则提交（chip 在提交时展开） */
   const onEnter = useCallback(() => {
@@ -784,8 +719,7 @@ export function App({ agent, options, onExit }: {
       if (runningRef.current) {
         if (Date.now() - lastCancelAtRef.current < CANCEL_COOLDOWN_MS) return; // 冷静期内忽略
         lastCancelAtRef.current = Date.now();
-        queueRef.current = []; // 取消时丢弃排队
-        setQueuedCount(0);
+        syncQueue([]);
         agent.cancel();
         showToast('已取消当前 turn');
       }
@@ -801,8 +735,7 @@ export function App({ agent, options, onExit }: {
       if (runningRef.current) {
         if (Date.now() - lastCancelAtRef.current < CANCEL_COOLDOWN_MS) return;
         lastCancelAtRef.current = Date.now();
-        queueRef.current = [];
-        setQueuedCount(0);
+        syncQueue([]);
         agent.cancel();
         showToast('已取消当前 turn');
       } else {
@@ -905,8 +838,15 @@ export function App({ agent, options, onExit }: {
       return;
     }
     if (key.ctrl && input === 'x') {
-      // 工具归组展开/折叠（› 明细）：开关全局切换，动态区即时生效
-      setExpandTools((prev) => !prev);
+      const last = [...state.messages].reverse().find((message) => message.kind === 'tool_group');
+      if (last) {
+        setExpandedTools((prev) => {
+          const next = new Set(prev);
+          if (next.has(last.id)) next.delete(last.id);
+          else next.add(last.id);
+          return next;
+        });
+      }
       return;
     }
 
@@ -1007,22 +947,32 @@ export function App({ agent, options, onExit }: {
   const showTip = showWelcome && !state.running && !approval && !modelPicker && !historySearch;
   // 零噪音首屏（Grok）：快捷键提示栏只在有上下文时出现——
   // 空闲空草稿的首屏不显示（可发现性由轮换 tip 行承担）
+  const queued = queuedItems.length > 0;
   const shortcutsVisible = state.running || menuItems.length > 0 || !isEmpty(editor)
-    || approval !== null || historySearch !== null;
+    || approval !== null || historySearch !== null || queued;
   const chromeRows = 1 /* StatusBar（输入框下） */ + (state.running ? 1 : 0) /* TurnStatus */
     + Math.min(menuItems.length, 8)
-    + promptRows + (toast ? 1 : 0) + (showTip ? 1 : 0) + (shortcutsVisible ? 1 : 0);
-  welcomeGeometryRef.current = { termRows: rows, chromeRows, compact: welcomeCompact };
+    + promptRows + (toast ? 1 : 0) + (showTip ? 1 : 0) + (shortcutsVisible ? 1 : 0)
+    + (queued ? 1 : 0);
+  const queueRow = queued
+    ? rows - (shortcutsVisible ? 1 : 0) - 1 - (toast ? 1 : 0) - promptRows
+    : 0;
+  welcomeGeometryRef.current = {
+    termRows: rows, termCols: columns, chromeRows, compact: welcomeCompact,
+    queueRow, promptRows, shortcuts: shortcutsVisible, toast: Boolean(toast),
+  };
   const layoutPlan = planDynamicLayout(state.messages, messageWidth, rows, chromeRows);
   const liveAllocation = layoutPlan.allocation;
   const { scrollback: settled, live: visibleLive } = partitionScrollback(state.messages, liveAllocation);
+  visibleLiveRef.current = visibleLive;
+  liveAllocationRef.current = liveAllocation;
 
   return (
     <Box flexDirection="column">
       <Static items={settled}>
         {(message) => (
           <Box key={message.id} paddingX={2}>
-            <MessageView message={message} width={messageWidth} expandTools={expandTools} />
+            <MessageView message={message} width={messageWidth} expandTools={expandedTools.has(message.id)} />
           </Box>
         )}
       </Static>
@@ -1048,12 +998,12 @@ export function App({ agent, options, onExit }: {
             )
             : visibleLive.map((message) => (
               <Box key={message.id} paddingX={2}>
-                <MessageView message={message} width={messageWidth} maxLines={liveAllocation.get(message.id)} expandTools={expandTools} />
+                <MessageView message={message} width={messageWidth} maxLines={liveAllocation.get(message.id)} expandTools={expandedTools.has(message.id)} />
               </Box>
             ))}
         </Box>
         {state.running
-          ? <TurnStatus state={state} frame={frame} now={now} queuedCount={queuedCount} />
+          ? <TurnStatus state={state} frame={frame} now={now} />
           : null}
         {menuItems.length > 0 ? <SlashMenu items={menuItems} selected={menuIndex} /> : null}
         {showTip
@@ -1076,7 +1026,14 @@ export function App({ agent, options, onExit }: {
             ? <ModelPicker items={options.modelItems} selected={modelPicker.index} />
             : historySearch
               ? <HistorySearchBar query={historySearch.query} match={searchMatch} />
-              : <Editor state={editor} width={columns} maxRows={editorMaxRows} placeholder="让 Neo 做点什么…" />}
+              : (
+                <Box flexDirection="column">
+                  {queued
+                    ? <QueueBar items={queuedItems} columns={columns} hover={queueHover} />
+                    : null}
+                  <Editor state={editor} width={columns} maxRows={editorMaxRows} placeholder="让 Neo 做点什么…" />
+                </Box>
+              )}
         {toast ? <Toast text={toast} /> : null}
         <StatusBar
           state={state}
@@ -1095,6 +1052,7 @@ export function App({ agent, options, onExit }: {
               hasDraft={!isEmpty(editor)}
               approvalOpen={approval !== null}
               searchOpen={historySearch !== null}
+              queued={queued}
             />
           )
           : null}

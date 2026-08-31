@@ -5,6 +5,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildTerminalNotification,
+  buildTerminalTitleSequence,
+  formatTerminalTitle,
   isFocusEventInput,
   parseFocusEvent,
   shouldTerminalNotify,
@@ -40,6 +42,18 @@ describe('buildTerminalNotification', () => {
   it('超长消息截断到 120 字符', () => {
     const seq = buildTerminalNotification('x'.repeat(200), { TERM_PROGRAM: 'iTerm.app' });
     expect(seq).toBe(`\x1b]9;${'x'.repeat(120)}\x07`);
+  });
+});
+
+describe('formatTerminalTitle', () => {
+  it('运行中用活动标签，空闲 neo，有队列才带 queued', () => {
+    expect(formatTerminalTitle({ running: true, activity: 'Thinking…', queued: 0 })).toBe('Thinking… · neo');
+    expect(formatTerminalTitle({ running: false, activity: null, queued: 0 })).toBe('neo');
+    expect(formatTerminalTitle({ running: false, activity: null, queued: 2 })).toBe('neo · 2 queued');
+  });
+
+  it('OSC 0 标题序列', () => {
+    expect(buildTerminalTitleSequence('Thinking… · neo')).toBe('\x1b]0;Thinking… · neo\x07');
   });
 });
 

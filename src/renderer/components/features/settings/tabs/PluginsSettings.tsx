@@ -34,8 +34,10 @@ import type {
 import { useAuthStore } from '../../../../stores/authStore';
 import { useI18n } from '../../../../hooks/useI18n';
 import ipcService from '../../../../services/ipcService';
+import { canAccessFeature, createAccessSubject } from '../../../../utils/accessControl';
 import { Button, EmptyState, Modal, ModalFooter } from '../../../primitives';
 import { SettingsDetails, SettingsSection } from '../SettingsLayout';
+import { BundledCapabilitiesTab } from '../../capabilityHub/BundledCapabilitiesTab';
 import { HubTabHeader } from '../../capabilityHub/HubTabHeader';
 
 type Notice = { type: 'success' | 'error'; text: string };
@@ -98,7 +100,11 @@ const Pill: React.FC<{
 export const PluginsSettings: React.FC = () => {
   const { t } = useI18n();
   const pluginsText = t.settings.plugins;
-  const isAdmin = useAuthStore((state) => state.user?.isAdmin === true);
+  const currentUser = useAuthStore((state) => state.user);
+  const canManageMarketplaceSources = canAccessFeature(
+    'settings.plugins',
+    createAccessSubject(currentUser),
+  );
   const [marketplaces, setMarketplaces] = useState<MarketplaceInfo[]>([]);
   const [catalog, setCatalog] = useState<MarketplacePluginEntry[]>([]);
   const [installed, setInstalled] = useState<InstalledPlugin[]>([]);
@@ -116,7 +122,6 @@ export const PluginsSettings: React.FC = () => {
   const [notice, setNotice] = useState<Notice | null>(null);
 
   const reload = useCallback(async () => {
-    if (!isAdmin) return;
     setLoading(true);
     setNotice(null);
     try {
@@ -155,7 +160,7 @@ export const PluginsSettings: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [isAdmin, pluginsText]);
+  }, [pluginsText]);
 
   useEffect(() => {
     void reload();
@@ -385,18 +390,7 @@ export const PluginsSettings: React.FC = () => {
     pluginsText.manualImport.permissions[permission]
   ), [pluginsText.manualImport.permissions]);
 
-  if (!isAdmin) {
-    return (
-      <div className="space-y-6">
-        <HubTabHeader testId="plugins-hub-header" title={t.capabilityHub.tabPlugins} />
-        <div className="rounded-lg border border-badge-warning/30 bg-amber-500/10 p-4 text-sm text-badge-warning">
-          {pluginsText.adminRequiredNotice}
-        </div>
-      </div>
-    );
-  }
-
-  // 页头走四 tab 共用的 HubTabHeader：大标题「插件」+ 刷新同一行
+  // 页头走能力中心共用的 HubTabHeader：大标题「插件」+ 刷新同一行
   // （刷新原是「已安装」section 的 actions，提进页头操作簇与其余 tab 口径一致）。
   return (
     <div className="space-y-6">
@@ -440,6 +434,8 @@ export const PluginsSettings: React.FC = () => {
         </div>
       )}
 
+      <BundledCapabilitiesTab showHeader={false} />
+
       <SettingsSection
         title={pluginsText.manualImport.title}
         description={pluginsText.manualImport.description}
@@ -451,7 +447,11 @@ export const PluginsSettings: React.FC = () => {
             {capabilityPackages.map((plugin) => {
               const busy = busyKey === `capability-package:uninstall:${plugin.id}`;
               return (
-                <div key={plugin.id} className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4">
+                <div
+                  key={plugin.id}
+                  data-testid={`capability-package-${plugin.id}`}
+                  className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4"
+                >
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
@@ -814,92 +814,96 @@ export const PluginsSettings: React.FC = () => {
         </div>
       </SettingsDetails>
 
-      <SettingsDetails
-        title={pluginsText.marketplaceSources.title}
-        description={pluginsText.marketplaceSources.description}
-      >
-        <div className="flex flex-col gap-3 md:flex-row">
-          <input
-            type="text"
-            value={newMarketplaceSource}
-            onChange={(event) => setNewMarketplaceSource(event.target.value)}
-            placeholder={pluginsText.marketplaceSources.placeholder}
-            className="h-9 min-w-0 flex-1 rounded-lg border border-zinc-700 bg-zinc-950 px-3 text-sm text-zinc-100 outline-hidden transition-colors placeholder:text-zinc-600 focus:border-zinc-500"
-          />
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={handleAddMarketplace}
-            loading={busyKey === 'marketplace:add'}
-            disabled={busyKey !== null}
-            leftIcon={<PackagePlus className="h-3.5 w-3.5" />}
+      {canManageMarketplaceSources && (
+        <div data-testid="marketplace-source-management">
+          <SettingsDetails
+            title={pluginsText.marketplaceSources.title}
+            description={pluginsText.marketplaceSources.description}
           >
-            {pluginsText.marketplaceSources.add}
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => handleRefreshMarketplace()}
-            loading={busyKey === 'marketplace:refresh:all'}
-            disabled={busyKey !== null}
-            leftIcon={<RefreshCw className="h-3.5 w-3.5" />}
-          >
-            {pluginsText.marketplaceSources.refreshAll}
-          </Button>
-        </div>
+            <div className="flex flex-col gap-3 md:flex-row">
+              <input
+                type="text"
+                value={newMarketplaceSource}
+                onChange={(event) => setNewMarketplaceSource(event.target.value)}
+                placeholder={pluginsText.marketplaceSources.placeholder}
+                className="h-9 min-w-0 flex-1 rounded-lg border border-zinc-700 bg-zinc-950 px-3 text-sm text-zinc-100 outline-hidden transition-colors placeholder:text-zinc-600 focus:border-zinc-500"
+              />
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={handleAddMarketplace}
+                loading={busyKey === 'marketplace:add'}
+                disabled={busyKey !== null}
+                leftIcon={<PackagePlus className="h-3.5 w-3.5" />}
+              >
+                {pluginsText.marketplaceSources.add}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => handleRefreshMarketplace()}
+                loading={busyKey === 'marketplace:refresh:all'}
+                disabled={busyKey !== null}
+                leftIcon={<RefreshCw className="h-3.5 w-3.5" />}
+              >
+                {pluginsText.marketplaceSources.refreshAll}
+              </Button>
+            </div>
 
-        <div className="mt-4 space-y-2">
-          {marketplaces.length === 0 ? (
-            <EmptyState text={pluginsText.marketplaceSources.empty} />
-          ) : (
-            marketplaces.map((marketplace) => (
-              <div key={marketplace.name} className="rounded-lg border border-zinc-800 bg-zinc-950/50 p-3">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h4 className="text-sm font-medium text-zinc-100">{marketplace.name}</h4>
-                      <Pill>{marketplace.pluginCount} plugins</Pill>
-                      {marketplace.autoUpdate && <Pill tone="success">auto update</Pill>}
-                    </div>
-                    {marketplace.description && (
-                      <p className="mt-1 text-xs text-zinc-500">{marketplace.description}</p>
-                    )}
-                    <div className="mt-2 break-all text-xs text-zinc-600">
-                      {formatMarketplaceSource(marketplace.source)}
-                    </div>
-                    <div className="mt-1 break-all text-xs text-zinc-600">
-                      {pluginsText.marketplaceSources.cachePrefix}{marketplace.installLocation}
-                      {pluginsText.marketplaceSources.updatePrefix}{formatDate(marketplace.lastUpdated, pluginsText.date)}
+            <div className="mt-4 space-y-2">
+              {marketplaces.length === 0 ? (
+                <EmptyState text={pluginsText.marketplaceSources.empty} />
+              ) : (
+                marketplaces.map((marketplace) => (
+                  <div key={marketplace.name} className="rounded-lg border border-zinc-800 bg-zinc-950/50 p-3">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h4 className="text-sm font-medium text-zinc-100">{marketplace.name}</h4>
+                          <Pill>{marketplace.pluginCount} plugins</Pill>
+                          {marketplace.autoUpdate && <Pill tone="success">auto update</Pill>}
+                        </div>
+                        {marketplace.description && (
+                          <p className="mt-1 text-xs text-zinc-500">{marketplace.description}</p>
+                        )}
+                        <div className="mt-2 break-all text-xs text-zinc-600">
+                          {formatMarketplaceSource(marketplace.source)}
+                        </div>
+                        <div className="mt-1 break-all text-xs text-zinc-600">
+                          {pluginsText.marketplaceSources.cachePrefix}{marketplace.installLocation}
+                          {pluginsText.marketplaceSources.updatePrefix}{formatDate(marketplace.lastUpdated, pluginsText.date)}
+                        </div>
+                      </div>
+                      <div className="flex shrink-0 gap-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleRefreshMarketplace(marketplace.name)}
+                          loading={busyKey === `marketplace:refresh:${marketplace.name}`}
+                          disabled={busyKey !== null}
+                          leftIcon={<RefreshCw className="h-3.5 w-3.5" />}
+                        >
+                          {pluginsText.marketplaceSources.refresh}
+                        </Button>
+                        <Button
+                          variant="danger"
+                          size="sm"
+                          onClick={() => handleRemoveMarketplace(marketplace.name)}
+                          loading={busyKey === `marketplace:remove:${marketplace.name}`}
+                          disabled={busyKey !== null}
+                          leftIcon={<Trash2 className="h-3.5 w-3.5" />}
+                        >
+                          {pluginsText.marketplaceSources.remove}
+                        </Button>
+                      </div>
                     </div>
                   </div>
-                  <div className="flex shrink-0 gap-2">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleRefreshMarketplace(marketplace.name)}
-                      loading={busyKey === `marketplace:refresh:${marketplace.name}`}
-                      disabled={busyKey !== null}
-                      leftIcon={<RefreshCw className="h-3.5 w-3.5" />}
-                    >
-                      {pluginsText.marketplaceSources.refresh}
-                    </Button>
-                    <Button
-                      variant="danger"
-                      size="sm"
-                      onClick={() => handleRemoveMarketplace(marketplace.name)}
-                      loading={busyKey === `marketplace:remove:${marketplace.name}`}
-                      disabled={busyKey !== null}
-                      leftIcon={<Trash2 className="h-3.5 w-3.5" />}
-                    >
-                      {pluginsText.marketplaceSources.remove}
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            ))
-          )}
+                ))
+              )}
+            </div>
+          </SettingsDetails>
         </div>
-      </SettingsDetails>
+      )}
 
       <SettingsDetails
         title={pluginsText.visibleList.title}

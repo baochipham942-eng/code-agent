@@ -36,7 +36,7 @@ export const zhSettingsCore = {
       openchronicle: '屏幕记忆',
       privacy: '隐私防线',
       mcp: 'MCP',
-      plugins: '插件管理',
+      plugins: '插件',
       hooks: 'Hook',
       appshots: '应用截图',
       cache: '数据与存储',

@@ -8,7 +8,7 @@ import { useBundledCapabilityStore } from '../../../stores/bundledCapabilityStor
 import { Button } from '../../primitives';
 import { HubTabHeader } from './HubTabHeader';
 
-export const BundledCapabilitiesTab: React.FC = () => {
+export const BundledCapabilitiesTab: React.FC<{ showHeader?: boolean }> = ({ showHeader = true }) => {
   const { t } = useI18n();
   const copy = t.capabilityPackages;
   const inputInstalled = useBundledCapabilityStore((state) => state.installed['builtin.voice-input']);
@@ -65,7 +65,7 @@ export const BundledCapabilitiesTab: React.FC = () => {
 
   return (
     <div data-testid="bundled-capabilities-tab" className="space-y-5">
-      <HubTabHeader title={copy.title} />
+      {showHeader && <HubTabHeader title={copy.title} />}
       <section className="rounded-2xl border border-zinc-800 bg-zinc-950/70 p-5" data-testid="voice-live-capability-card">
         <div className="flex items-start justify-between gap-5">
           <div className="min-w-0">

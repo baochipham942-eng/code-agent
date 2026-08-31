@@ -61,6 +61,39 @@ function formatPluginAuthor(author: unknown): string | undefined {
   return undefined;
 }
 
+function splitMarketplacePluginSpec(pluginSpec: string): { pluginName: string; marketplaceName: string } | null {
+  const separator = pluginSpec.lastIndexOf('@');
+  if (separator <= 0 || separator === pluginSpec.length - 1) return null;
+  return {
+    pluginName: pluginSpec.slice(0, separator),
+    marketplaceName: pluginSpec.slice(separator + 1),
+  };
+}
+
+async function assertConfiguredCatalogPlugin(pluginSpec: string): Promise<void> {
+  const parsed = splitMarketplacePluginSpec(pluginSpec);
+  if (!parsed) throw new Error('Marketplace plugin source is not configured');
+  const marketplaces = await listMarketplaces();
+  if (!Object.hasOwn(marketplaces, parsed.marketplaceName)) {
+    throw new Error('Marketplace plugin source is not configured');
+  }
+  const catalog = await listAllPlugins();
+  const isListed = catalog.some(({ plugin, marketplace }) => (
+    plugin.name === parsed.pluginName && marketplace === parsed.marketplaceName
+  ));
+  if (!isListed) throw new Error('Marketplace plugin is not listed by a configured source');
+}
+
+async function assertInstalledConfiguredPlugin(pluginSpec: string): Promise<void> {
+  const installed = await listInstalledPlugins();
+  const record = installed[pluginSpec];
+  if (!record) throw new Error('Marketplace plugin is not installed');
+  const marketplaces = await listMarketplaces();
+  if (!Object.hasOwn(marketplaces, record.marketplace)) {
+    throw new Error('Marketplace plugin source is not configured');
+  }
+}
+
 // ----------------------------------------------------------------------------
 // Public Registration
 // ----------------------------------------------------------------------------
@@ -74,9 +107,10 @@ export function registerMarketplaceHandlers(ipcMain: IpcMain): void {
   const handleMarketplace = <TArgs extends unknown[], TResult>(
     channel: string,
     handler: MarketplaceHandler<TArgs, TResult>,
+    options?: { adminOnly?: boolean },
   ): void => {
     ipcMain.handle(channel, async (event, ...args: unknown[]): Promise<TResult> => {
-      if (!isCurrentUserAdmin()) {
+      if (options?.adminOnly && !isCurrentUserAdmin()) {
         return {
           success: false,
           error: 'Marketplace: Admin permission required',
@@ -147,7 +181,8 @@ export function registerMarketplaceHandlers(ipcMain: IpcMain): void {
         logger.error('Failed to add marketplace', { source, error });
         return errorResult(error);
       }
-    }
+    },
+    { adminOnly: true },
   );
 
   // Remove a marketplace
@@ -161,7 +196,8 @@ export function registerMarketplaceHandlers(ipcMain: IpcMain): void {
         logger.error('Failed to remove marketplace', { name, error });
         return errorResult(error);
       }
-    }
+    },
+    { adminOnly: true },
   );
 
   // Refresh a marketplace
@@ -292,6 +328,13 @@ export function registerMarketplaceHandlers(ipcMain: IpcMain): void {
   handleMarketplace(
     IPC_CHANNELS.MARKETPLACE_INSTALL_PLUGIN,
     async (_, pluginSpec: string, options?: { scope?: 'user' | 'project'; projectPath?: string }): Promise<PluginInstallResult> => {
+      if (!isCurrentUserAdmin()) {
+        try {
+          await assertConfiguredCatalogPlugin(pluginSpec);
+        } catch (error) {
+          return errorResult(error);
+        }
+      }
       if (activeMarketplaceInstalls.has(pluginSpec)) {
         return {
           success: false,
@@ -364,6 +407,7 @@ export function registerMarketplaceHandlers(ipcMain: IpcMain): void {
     IPC_CHANNELS.MARKETPLACE_UNINSTALL_PLUGIN,
     async (_, pluginSpec: string, scope?: 'user' | 'project'): Promise<MarketplaceResult<void>> => {
       try {
+        if (!isCurrentUserAdmin()) await assertInstalledConfiguredPlugin(pluginSpec);
         await uninstallPlugin(pluginSpec, { scope });
         return successResult(undefined);
       } catch (error) {
@@ -414,6 +458,7 @@ export function registerMarketplaceHandlers(ipcMain: IpcMain): void {
     IPC_CHANNELS.MARKETPLACE_ENABLE_PLUGIN,
     async (_, pluginSpec: string): Promise<MarketplaceResult<void>> => {
       try {
+        if (!isCurrentUserAdmin()) await assertInstalledConfiguredPlugin(pluginSpec);
         await enablePlugin(pluginSpec);
         return successResult(undefined);
       } catch (error) {
@@ -428,6 +473,7 @@ export function registerMarketplaceHandlers(ipcMain: IpcMain): void {
     IPC_CHANNELS.MARKETPLACE_DISABLE_PLUGIN,
     async (_, pluginSpec: string): Promise<MarketplaceResult<void>> => {
       try {
+        if (!isCurrentUserAdmin()) await assertInstalledConfiguredPlugin(pluginSpec);
         await disablePlugin(pluginSpec);
         return successResult(undefined);
       } catch (error) {

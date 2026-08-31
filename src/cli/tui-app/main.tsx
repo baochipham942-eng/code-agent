@@ -21,6 +21,7 @@ export function startInkChat(agent: CLIAgent, options: InkChatOptions): Promise<
         agent={agent}
         options={options}
         onExit={() => {
+          process.stdout.write('\x1b]0;neo\x07');
           process.stdout.write(SHOW_CURSOR);
           setStderrSinkMuted(false);
           instance.unmount();

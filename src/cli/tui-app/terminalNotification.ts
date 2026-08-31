@@ -42,6 +42,23 @@ export function buildTerminalNotification(
 }
 
 /** 焦点上报（DECSET 1004）开关序列：Ink 挂载时开，卸载时关 */
+/** Ghostty / iTerm 标签标题（OSC 0） */
+export function formatTerminalTitle(input: {
+  running: boolean;
+  activity: string | null;
+  queued: number;
+}): string {
+  if (input.running) return `${input.activity ?? 'Working…'} · neo`;
+  if (input.queued > 0) return `neo · ${input.queued} queued`;
+  return 'neo';
+}
+
+export function buildTerminalTitleSequence(title: string): string {
+  // eslint-disable-next-line no-control-regex -- 剥控制字符防 OSC 注入
+  const sanitized = title.replace(/[\x00-\x1f\x7f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80);
+  return `\x1b]0;${sanitized || 'neo'}\x07`;
+}
+
 export const FOCUS_REPORTING_ENABLE = '\x1b[?1004h';
 export const FOCUS_REPORTING_DISABLE = '\x1b[?1004l';
 

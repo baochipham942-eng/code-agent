@@ -47,6 +47,11 @@ describe('welcomeSplash', () => {
     expect(welcomeActionIndexAt(25, 30, 5, false)).toBeNull();
   });
 
+  it('带列坐标时只命中动作文案列，logo / 空白不选中', () => {
+    expect(welcomeActionIndexAt(15, 30, 5, false, 2, 100)).toBeNull();
+    expect(welcomeActionIndexAt(15, 30, 5, false, 70, 100)).toBe(0);
+  });
+
   it('abbreviateHomePath 把家目录换成 ~', () => {
     expect(abbreviateHomePath('/Users/linchen/Downloads/ai', '/Users/linchen')).toBe('~/Downloads/ai');
     expect(abbreviateHomePath('/Users/linchen', '/Users/linchen')).toBe('~');

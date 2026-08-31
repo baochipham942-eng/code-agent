@@ -1,7 +1,7 @@
 // ============================================================================
 // 多行编辑器渲染组件（受控：状态在 App 的 editorRef，编辑逻辑在 editor.ts）
 // 圆角边框输入框（对标 Kimi/Grok 的 boxed input）+ 首行 ❯ 前缀；
-// 空草稿显示 dim placeholder（Codex 风格，光标叠首字符）；
+// 空草稿显示 dim placeholder；块光标在 ❯ 之后、不吃首字；
 // chip marker 渲染成 [Pasted: N lines] 徽章；
 // 高度随内容伸缩（computeWindow，上限 maxRows），光标行保持可见。
 // ============================================================================
@@ -14,7 +14,7 @@ import {
   type EditorState,
 } from './editorState';
 
-const ACCENT = 'green';
+const CURSOR = 'green';
 
 /** 单行内容渲染：chip marker → 徽章，光标位置 → 反色字符 */
 function LineContent({ line, cursorCol, state }: {
@@ -47,14 +47,14 @@ function LineContent({ line, cursorCol, state }: {
     }
     if (cursorCol === i) {
       flush();
-      nodes.push(<Text key={key++} inverse color={ACCENT}>{ch}</Text>);
+      nodes.push(<Text key={key++} inverse color={CURSOR}>{ch}</Text>);
       continue;
     }
     run += ch;
   }
   flush();
   if (cursorCol === line.length) {
-    nodes.push(<Text key={key++} inverse color={ACCENT}> </Text>);
+    nodes.push(<Text key={key++} inverse color={CURSOR}> </Text>);
   }
   if (nodes.length === 0) {
     return <Text> </Text>;
@@ -62,15 +62,12 @@ function LineContent({ line, cursorCol, state }: {
   return <Text wrap="wrap">{nodes}</Text>;
 }
 
-/** 空草稿 placeholder：绿色块光标叠在首字符上，避免默认 inverse 变成白块 */
+/** 空草稿：块光标在 ❯ 之后、placeholder 之前，不吃掉首字 */
 function PlaceholderLine({ text, showCursor }: { text: string; showCursor: boolean }) {
-  if (!showCursor || text.length === 0) {
-    return <Text dimColor>{text}</Text>;
-  }
   return (
     <Text>
-      <Text inverse color={ACCENT}>{text[0]}</Text>
-      <Text dimColor>{text.slice(1)}</Text>
+      {showCursor ? <Text inverse color={CURSOR}> </Text> : null}
+      <Text dimColor>{text}</Text>
     </Text>
   );
 }
@@ -96,7 +93,7 @@ export function Editor({ state, width, maxRows = 10, active = true, placeholder 
     rows.push(
       <Box key={row}>
         {isFirst
-          ? <Text color={ACCENT} bold>{'❯ '}</Text>
+          ? <Text>{'❯ '}</Text>
           : <Text>{'  '}</Text>}
         {empty && isFirst && placeholder
           ? <PlaceholderLine text={placeholder} showCursor={active && state.cursorRow === 0} />

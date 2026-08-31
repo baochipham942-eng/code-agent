@@ -7,39 +7,38 @@
 // 所以靠预算分配杜绝溢出，而不是依赖裁剪。
 // ============================================================================
 
-import type { ChatMessage } from './events';
+import { isSettledMessage, type ChatMessage } from './events';
 import { markdownLineCount } from './markdown';
 import { computeWindow, displayWidth, visualRowCount, type EditorState } from './editorState';
 
-/** 每条消息占用的视觉行数（含 MessageView 的 marginTop 1 行） */
+/** 每条消息占用的视觉行数（含 MessageView 的 marginTop 2 行；user/assistant 另 + paddingBottom 1） */
 export function messageLineCost(message: ChatMessage, width: number): number {
   switch (message.kind) {
     case 'assistant':
-      return markdownLineCount(message.text, width) + 1;
+      return markdownLineCount(message.text, width) + 3;
     case 'thinking': {
-      // 运行中：标题 1 行 + 尾部 ≤3 行；完成：单行折叠（不会出现在 live 区）
-      if (message.endedAt !== undefined) return 2;
+      // 运行中：标题 1 行 + 尾部 ≤3 行；完成：单行折叠
+      if (message.endedAt !== undefined) return 3;
       const lines = message.text.split('\n').filter((line) => line.trim().length > 0).length;
-      return 1 + Math.min(3, lines) + 1;
+      return 1 + Math.min(3, lines) + 2;
     }
     case 'tool_group': {
       // 归组单行；单个调用 1 行（+错误预览 1 行）
       const single = message.calls.length <= 1;
       const hasErrorPreview = single && message.status === 'error' && message.calls[0]?.resultPreview;
-      return 1 + (hasErrorPreview ? 1 : 0) + 1;
+      return 1 + (hasErrorPreview ? 1 : 0) + 2;
     }
     case 'system': {
       const w = Math.max(width, 8);
       const lines = Math.max(1, Math.ceil(displayWidth(message.text) / w));
-      return lines + 1;
+      return lines + 2;
     }
     case 'user': {
-      // live 区不出现（提交即 settled），兜底按折行估算
       const w = Math.max(width - 2, 8);
-      return Math.max(1, Math.ceil(displayWidth(message.text) / w)) + 1;
+      return Math.max(1, Math.ceil(displayWidth(message.text) / w)) + 3;
     }
     default:
-      return 2;
+      return 3;
   }
 }
 
@@ -103,4 +102,19 @@ export function planDynamicLayout(
 ): DynamicLayoutPlan {
   const liveBudget = Math.max(0, rows - chromeRows);
   return { height: rows, allocation: allocateLiveBudget(messages, width, liveBudget) };
+}
+
+/**
+ * Static 与 live 互斥：还在视口预算里的消息只渲染一次（live）。
+ * 被预算挤出的已封口消息才进 Static scrollback。
+ * 先前「封口前缀全进 Static + live 再画一遍」会在中间撑出一块空，上下各一份正文。
+ */
+export function partitionScrollback(
+  messages: ChatMessage[],
+  allocation: Map<string, number>,
+): { scrollback: ChatMessage[]; live: ChatMessage[] } {
+  const live = messages.filter((message) => allocation.has(message.id));
+  const liveIds = new Set(live.map((message) => message.id));
+  const scrollback = messages.filter((message) => isSettledMessage(message) && !liveIds.has(message.id));
+  return { scrollback, live };
 }

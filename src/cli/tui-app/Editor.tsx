@@ -111,7 +111,7 @@ export function Editor({ state, width, maxRows = 10, active = true, placeholder 
     );
   }
   return (
-    <Box borderStyle="round" borderColor="gray" paddingX={1} flexDirection="column" width={width}>
+    <Box borderStyle="round" borderColor="gray" paddingX={1} paddingY={1} flexDirection="column" width={width}>
       {rows}
     </Box>
   );

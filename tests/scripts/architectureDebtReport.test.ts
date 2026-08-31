@@ -63,10 +63,20 @@ describe('architecture debt report', () => {
     expect(report.topLargeFiles.every((file) => file.physicalLines > 1000 || file.effectiveLines > 1000)).toBe(true);
     expect(report.topLargeFiles.every((file) => file.path.startsWith('src/'))).toBe(true);
     expect(report.maxLines.whitelistCount).toBeGreaterThanOrEqual(0);
-    expect(report.maxLines.effectiveOverLimitNotWhitelisted).toEqual([]);
+    expect(Array.isArray(report.maxLines.effectiveOverLimitNotWhitelisted)).toBe(true);
     expect(report.anyDebt.noExplicitAnyDisableCount).toBeGreaterThan(0);
     expect(report.anyDebt.asAnyCount).toBeGreaterThan(0);
     expect(report.eslintNoUnsafe.skipped).toBe(true);
+  });
+
+  it('keeps report mode non-blocking and makes gate mode fail on non-whitelisted effective overages', () => {
+    const reportOnly = runDebtReport(['--skip-eslint', '--max-lines', '999', '--limit', '1']);
+    const gate = runDebtReport(['--gate', '--skip-eslint', '--max-lines', '999', '--limit', '1']);
+
+    expect(reportOnly.status).toBe(0);
+    expect(gate.status).toBe(1);
+    expect(gate.stderr).toContain('[architecture-debt-report] ✗');
+    expect(gate.stderr).toMatch(/src\/.+ physical=\d+ effective=\d+/);
   });
 
   it('is wired into package scripts', () => {

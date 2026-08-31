@@ -22,6 +22,7 @@ function getNumberArg(name, fallback) {
 }
 
 const jsonOnly = hasArg('--json') || hasArg('--format=json');
+const gateMode = hasArg('--gate');
 const skipEslint = hasArg('--skip-eslint') || process.env.DEBT_REPORT_SKIP_ESLINT === '1';
 const limit = getNumberArg('--limit', 20);
 const maxLineThreshold = getNumberArg('--max-lines', 1000);
@@ -404,4 +405,14 @@ if (jsonOnly) {
   console.log(JSON.stringify(report, null, 2));
 } else {
   printHuman(report);
+}
+
+if (gateMode && report.maxLines.effectiveOverLimitNotWhitelisted.length > 0) {
+  console.error(`[architecture-debt-report] ✗ ${report.maxLines.effectiveOverLimitNotWhitelisted.length} 个非白名单文件 effective 行数超过 ${report.threshold.maxLines}：`);
+  const largeFilesByPath = new Map(report.largeFiles.map((file) => [file.path, file]));
+  for (const filePath of report.maxLines.effectiveOverLimitNotWhitelisted) {
+    const file = largeFilesByPath.get(filePath);
+    console.error(`  ${filePath} physical=${file?.physicalLines ?? 'unknown'} effective=${file?.effectiveLines ?? 'unknown'}`);
+  }
+  process.exit(1);
 }

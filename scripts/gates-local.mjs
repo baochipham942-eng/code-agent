@@ -85,6 +85,11 @@ const gates = [
     args: ['run', 'typecheck'],
   },
   {
+    ci: 'swarm-ci / smoke / Internal plugin SDK contract hash',
+    command: 'npx',
+    args: ['tsx', 'scripts/internal-sdk-hash.ts', '--check'],
+  },
+  {
     ci: 'swarm-ci / smoke / Agent event JSON Schema drift gate',
     command: 'node',
     args: ['scripts/ci/agent-event-schema-gate.mjs'],

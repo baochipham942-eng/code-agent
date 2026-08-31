@@ -28,7 +28,13 @@ import {
   writePluginApprovalReceipt,
 } from '../../plugins/pluginApprovalReceipt';
 import type { PluginManifest, PluginPermission } from '../../plugins/types';
+import { assertInternalFeatureHostCompatibility } from '../../internalFeatures/internalFeatureContract';
+import {
+  getInternalFeatureHostRuntime,
+  type InternalFeatureHostRuntime,
+} from '../../internalFeatures/internalFeatureHostRuntime';
 import { validatePluginCapabilityDeclaration } from '../../plugins/pluginCapabilitySurface';
+import { isCurrentUserAdmin } from '../../ipc/adminGuard';
 import type {
   CapabilityPackageInstallResult,
   CapabilityPackagePreview,
@@ -75,6 +81,7 @@ interface MCPClientPort {
 }
 
 type SandboxRunner = (options: RunSandboxOptions) => Promise<WorkerOutcome>;
+type InternalFeatureRuntimePort = Pick<InternalFeatureHostRuntime, 'isLoaded' | 'load' | 'loadedHash' | 'unload'>;
 
 interface ManualCapabilityPackageServiceDependencies {
   pluginsDir?: () => string;
@@ -86,6 +93,8 @@ interface ManualCapabilityPackageServiceDependencies {
   computerUseStateDir?: () => string | undefined;
   mcpClient?: MCPClientPort;
   resolveComputerUseMcpConfig?: () => MCPServerConfig | undefined;
+  internalFeatureRuntime?: InternalFeatureRuntimePort;
+  isCurrentUserAdmin?: () => boolean;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -280,6 +289,8 @@ export class ManualCapabilityPackageService {
   private readonly builtinStateDir: () => string | undefined;
   private readonly mcpClient: MCPClientPort;
   private readonly resolveComputerUseMcpConfig: () => MCPServerConfig | undefined;
+  private readonly internalFeatureRuntime: InternalFeatureRuntimePort;
+  private readonly isCurrentUserAdmin: () => boolean;
 
   constructor(dependencies: ManualCapabilityPackageServiceDependencies = {}) {
     this.getPluginsDir = dependencies.pluginsDir ?? getPluginsDir;
@@ -293,6 +304,8 @@ export class ManualCapabilityPackageService {
     this.resolveComputerUseMcpConfig = dependencies.resolveComputerUseMcpConfig ?? (() => (
       getDefaultMCPServers().find((server) => server.name === CUA_DRIVER_SERVER_NAME)
     ));
+    this.internalFeatureRuntime = dependencies.internalFeatureRuntime ?? getInternalFeatureHostRuntime();
+    this.isCurrentUserAdmin = dependencies.isCurrentUserAdmin ?? isCurrentUserAdmin;
   }
 
   async stageBundled(pluginId: string): Promise<CapabilityPackagePreview> {
@@ -362,6 +375,10 @@ export class ManualCapabilityPackageService {
       }
       const manifest = await readPluginManifest(rootDir);
       if (!manifest) throw new Error('插件清单无法读取');
+      if (manifest.adminOnly === true && !this.isCurrentUserAdmin()) {
+        throw new Error('这个插件只能由管理员安装');
+      }
+      assertInternalFeatureHostCompatibility(manifest);
       try {
         this.registry.validatePluginCapabilityManifest(manifest);
       } catch (error) {
@@ -470,7 +487,11 @@ export class ManualCapabilityPackageService {
     const installTemp = path.join(pluginsDir, `.install-${staged.manifest.id}-${token}`);
     const targetDir = path.join(pluginsDir, staged.manifest.id);
     const backupDir = path.join(pluginsDir, `.backup-${staged.manifest.id}-${token}`);
+    const previousPlugin = this.registry.getPlugin(staged.manifest.id);
+    const isInternalFeature = staged.manifest.surfaces?.[0] === 'internal-feature';
     let hadBackup = false;
+    let hostUnloaded = false;
+    let registryInstalled = false;
     const watcherWasActive = this.registry.pauseWatching();
     try {
       await copyPackage(staged.rootDir, installTemp);
@@ -483,6 +504,10 @@ export class ManualCapabilityPackageService {
         sandboxValidatedAt: staged.stagedAt,
         approvedAt: this.now(),
       });
+      if (isInternalFeature) {
+        await this.internalFeatureRuntime.unload(staged.manifest.id);
+        hostUnloaded = true;
+      }
       try {
         await fs.rename(targetDir, backupDir);
         hadBackup = true;
@@ -492,6 +517,12 @@ export class ManualCapabilityPackageService {
       await fs.rename(installTemp, targetDir);
       const installed = await this.registry.installPluginFromDirectory(targetDir);
       if (!installed.success) throw new Error(installed.error ?? '插件激活失败');
+      registryInstalled = true;
+      if (isInternalFeature) {
+        const plugin = this.registry.getPlugin(staged.manifest.id);
+        if (!plugin) throw new Error('插件已写入磁盘，但注册表没有返回已安装实例');
+        await this.internalFeatureRuntime.load(plugin);
+      }
       if (hadBackup) await fs.rm(backupDir, { recursive: true, force: true }).catch(() => undefined);
       this.lifecycle(staged.manifest.id, 'loaded', `version=${staged.manifest.version}; tools=${staged.toolNames.join(',')}`);
       return {
@@ -502,12 +533,40 @@ export class ManualCapabilityPackageService {
         ...(staged.replacesInstalledVersion ? { replacedVersion: staged.replacesInstalledVersion } : {}),
       };
     } catch (error) {
+      if (registryInstalled) {
+        await this.registry.removePluginFromRegistry(staged.manifest.id).catch(() => false);
+      }
       await fs.rm(targetDir, { recursive: true, force: true });
-      if (hadBackup) await fs.rename(backupDir, targetDir).catch(() => undefined);
+      let rollbackError: unknown;
+      if (hadBackup) {
+        try {
+          await fs.rename(backupDir, targetDir);
+          const restored = await this.registry.installPluginFromDirectory(targetDir);
+          if (!restored.success) throw new Error(restored.error ?? '旧插件注册表恢复失败', { cause: error });
+          if (isInternalFeature) {
+            const restoredPlugin = this.registry.getPlugin(staged.manifest.id);
+            if (!restoredPlugin) throw new Error('旧插件恢复后注册表没有返回实例', { cause: error });
+            await this.internalFeatureRuntime.load(restoredPlugin);
+          }
+        } catch (restoreError) {
+          rollbackError = restoreError;
+        }
+      } else if (hostUnloaded && previousPlugin && !registryInstalled) {
+        try {
+          await this.internalFeatureRuntime.load(previousPlugin);
+        } catch (restoreError) {
+          rollbackError = restoreError;
+        }
+      }
       await fs.rm(installTemp, { recursive: true, force: true });
       const detail = error instanceof Error ? error.message : String(error);
       this.lifecycle(staged.manifest.id, 'failed', detail);
       this.lifecycle(staged.manifest.id, 'rolled_back', hadBackup ? 'restored previous package' : 'removed rejected package');
+      if (rollbackError) {
+        throw new Error(`${detail}；旧插件恢复失败：${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`, {
+          cause: error,
+        });
+      }
       throw error;
     } finally {
       if (watcherWasActive) this.registry.resumeWatching();
@@ -583,13 +642,21 @@ export class ManualCapabilityPackageService {
       } catch {
         continue;
       }
+      const isInternalFeature = plugin.manifest.surfaces?.[0] === 'internal-feature';
+      const state = isInternalFeature
+        ? this.internalFeatureRuntime.isLoaded(plugin.manifest.id)
+          ? 'active'
+          : plugin.error
+            ? 'error'
+            : plugin.state === 'active' ? 'inactive' : plugin.state
+        : plugin.state;
       result.push({
         id: plugin.manifest.id,
         name: plugin.manifest.name,
         version: plugin.manifest.version,
         description: plugin.manifest.description ?? '',
         permissions: plugin.manifest.permissions ?? [],
-        state: plugin.state,
+        state,
         toolNames: [...plugin.registeredTools],
         surface: plugin.manifest.surfaces?.[0] === 'internal-feature' ? 'internal-feature' : 'tools',
         ...(plugin.manifest.internalFeature ? { internalFeature: plugin.manifest.internalFeature } : {}),
@@ -608,16 +675,31 @@ export class ManualCapabilityPackageService {
     if (!plugin || plugin.rootPath.startsWith('builtin:')) throw new Error('找不到可卸载的手动插件');
     await verifyPluginApprovalReceipt(plugin.rootPath, plugin.manifest.id, plugin.manifest.permissions ?? []);
     const backupDir = path.join(this.getPluginsDir(), `.uninstall-${pluginId}-${randomUUID()}`);
+    const isInternalFeature = plugin.manifest.surfaces?.[0] === 'internal-feature';
     const watcherWasActive = this.registry.pauseWatching();
+    let runtimeUnloaded = false;
+    let registryRemoved = false;
     try {
+      if (isInternalFeature) {
+        await this.internalFeatureRuntime.unload(pluginId);
+        runtimeUnloaded = true;
+      }
       if (!await this.registry.removePluginFromRegistry(pluginId)) throw new Error('插件运行时卸载失败');
+      registryRemoved = true;
       await fs.rename(plugin.rootPath, backupDir);
       this.lifecycle(pluginId, 'unloaded', `version=${plugin.manifest.version}`);
       await fs.rm(backupDir, { recursive: true, force: true });
     } catch (error) {
       const targetExists = await fs.stat(plugin.rootPath).then(() => true, () => false);
       if (!targetExists) await fs.rename(backupDir, plugin.rootPath).catch(() => undefined);
-      await this.registry.installPluginFromDirectory(plugin.rootPath).catch(() => undefined);
+      let restoredPlugin = this.registry.getPlugin(pluginId);
+      if (registryRemoved) {
+        const restored = await this.registry.installPluginFromDirectory(plugin.rootPath).catch(() => null);
+        if (restored?.success) restoredPlugin = this.registry.getPlugin(pluginId);
+      }
+      if (isInternalFeature && runtimeUnloaded && restoredPlugin) {
+        await this.internalFeatureRuntime.load(restoredPlugin).catch(() => undefined);
+      }
       this.lifecycle(pluginId, 'failed', error instanceof Error ? error.message : String(error));
       this.lifecycle(pluginId, 'rolled_back', 'uninstall failed; restored package');
       throw error;

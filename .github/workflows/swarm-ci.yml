@@ -462,7 +462,11 @@ jobs:
       # 不使用本机计数；当前高于基线 fail，低于基线提示下调。
       - name: Check axe runtime accessibility ratchet
         if: always()
-        run: node scripts/a11y-axe-ratchet.mjs --compare-baseline origin/main
+        run: |
+          # full job 的 checkout 是 PR merge 浅克隆，本地没有 origin/main 引用，
+          # 显式抓 main 顶端供基线对照（只读基线文件，depth=1 足够）。
+          git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main
+          node scripts/a11y-axe-ratchet.mjs --compare-baseline origin/main
 
       - name: Upload axe runtime accessibility report
         if: always()

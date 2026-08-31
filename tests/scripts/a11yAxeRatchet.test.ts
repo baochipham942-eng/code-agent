@@ -169,4 +169,17 @@ describe('axe e2e wiring', () => {
       expect(readFileSync(config, 'utf8'), config).toContain("'./fixtures/axeReporter.ts'");
     }
   });
+
+  it('swarm-ci 在跑棘轮前显式抓 origin/main（PR merge 浅克隆没有该引用）', () => {
+    // full job 的 checkout 只有 PR merge 提交，不带 origin/main 远程跟踪引用；
+    // 不显式 fetch 时棘轮自检 exit 1「Not a valid object name origin/main」。
+    const workflow = readFileSync('.github/workflows/swarm-ci.yml', 'utf8');
+    const ratchetStep = workflow.slice(
+      workflow.indexOf('Check axe runtime accessibility ratchet'),
+    );
+    const fetchPos = ratchetStep.indexOf('git fetch');
+    const runPos = ratchetStep.indexOf('a11y-axe-ratchet.mjs --compare-baseline');
+    expect(fetchPos, '棘轮步骤缺少 git fetch origin/main').toBeGreaterThanOrEqual(0);
+    expect(runPos, '棘轮步骤缺少 compare-baseline 调用').toBeGreaterThan(fetchPos);
+  });
 });

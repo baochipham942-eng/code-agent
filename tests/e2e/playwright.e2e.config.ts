@@ -63,7 +63,9 @@ export default defineConfig({
   workers: 1,
   // ADR-010 #1: CI flake 重试上限 1 次，本地开发保持 0。
   retries: process.env.CI ? 1 : 0,
-  reporter: process.env.CI ? [['list'], ['html', { outputFolder: 'playwright-report', open: 'never' }]] : 'list',
+  reporter: process.env.CI
+    ? [['list'], ['html', { outputFolder: 'playwright-report', open: 'never' }], ['./fixtures/axeReporter.ts']]
+    : [['list'], ['./fixtures/axeReporter.ts']],
   timeout: 60000,
   use: {
     baseURL: `http://127.0.0.1:${webPort}`,

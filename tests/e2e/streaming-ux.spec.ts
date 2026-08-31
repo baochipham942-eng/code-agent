@@ -2,7 +2,7 @@
 // E2E: streaming-ux — 验证批量 agent 事件能进入聊天页并完成前端平滑链路
 // ============================================================================
 
-import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
+import { test, expect, type APIRequestContext, type Page } from './fixtures/axeTest';
 import type { AgentEvent } from '../../src/shared/contract';
 
 type RendererAgentEvent = AgentEvent & { sessionId?: string };

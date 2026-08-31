@@ -15,7 +15,7 @@
 //   key 优先取 CMD_E2E_API_KEY，否则回落真实 ~/.code-agent/.env 的 ZHIPU_API_KEY。
 // ============================================================================
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from './fixtures/axeTest';
 import { spawn, type ChildProcessByStdio } from 'child_process';
 import type { Readable } from 'stream';
 import { access, mkdir, mkdtemp, readFile, writeFile } from 'fs/promises';
@@ -279,7 +279,6 @@ test.describe('/schedule + /loop 斜杠命令', () => {
     };
     await prepareFakeHome(env);
     server = await startServer(env);
-    // eslint-disable-next-line no-console
     console.log(`[slash-cmd-e2e] fake HOME: ${env.fakeHome}, server: ${server.baseUrl}`);
   });
 

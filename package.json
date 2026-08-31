@@ -226,6 +226,7 @@
     "@ai-sdk/google": "^4.0.39",
     "@ai-sdk/openai-compatible": "^3.0.28",
     "@anthropic-ai/sdk": "^0.116.0",
+    "@axe-core/playwright": "4.13.0",
     "@babel/parser": "^7.29.3",
     "@codemirror/lang-javascript": "^6.2.5",
     "@codemirror/lang-json": "^6.0.2",

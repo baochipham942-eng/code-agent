@@ -3,7 +3,7 @@
 // Web Server 模式下运行（无需 Tauri/Electron）
 // ============================================================================
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures/axeTest';
 
 // 每个测试的超时
 test.setTimeout(30_000);

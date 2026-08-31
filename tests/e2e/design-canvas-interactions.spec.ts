@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures/axeTest';
 import { writeFile } from 'node:fs/promises';
 
 const ONE_PIXEL_PNG_BASE64 =

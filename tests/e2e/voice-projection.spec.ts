@@ -11,7 +11,7 @@
 // 截图落 tests/e2e/screenshots/（gitignore 目录，测试产物不进仓）。
 // ============================================================================
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from './fixtures/axeTest';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { QWEN_OMNI_REALTIME_MODEL } from '../../src/shared/constants/voice';

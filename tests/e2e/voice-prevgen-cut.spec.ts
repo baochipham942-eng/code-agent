@@ -3,7 +3,7 @@
 // Web Server 模式验证设置页真实挂载结果；存量拨号回落由 host 单测与 Dev 槽事件流验证。
 // ============================================================================
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from './fixtures/axeTest';
 
 test.setTimeout(60_000);
 

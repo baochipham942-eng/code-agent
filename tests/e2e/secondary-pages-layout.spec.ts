@@ -9,7 +9,7 @@
 //      能力中心页内 tab 深链（capability-hub-tab-*）仍可切换
 // ============================================================================
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from './fixtures/axeTest';
 
 test.setTimeout(90_000);
 

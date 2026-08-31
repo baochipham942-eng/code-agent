@@ -22,7 +22,7 @@
 //   不污染真实 ~/.code-agent。模型用 zhipu/glm-5（app 的 zhipu 端点即 0ki 代理）。
 // ============================================================================
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from './fixtures/axeTest';
 import { spawn, type ChildProcessByStdio } from 'child_process';
 import type { Readable } from 'stream';
 import { access, mkdir, mkdtemp, readFile, writeFile } from 'fs/promises';
@@ -263,7 +263,6 @@ test.describe('Goal Mode 渲染器实时点击流', () => {
     };
     await prepareFakeHome(env);
     server = await startServer(env);
-    // eslint-disable-next-line no-console
     console.log(`[goal-e2e] fake HOME: ${env.fakeHome}, server: ${server.baseUrl}`);
   });
 
@@ -340,7 +339,6 @@ test.describe('Goal Mode 渲染器实时点击流', () => {
       const cardText = await abortedCard.innerText();
       const isTransient = /服务繁忙|稍后重试|rate limit|429|overloaded/i.test(cardText);
       if (isTransient && attempt < 2) {
-        // eslint-disable-next-line no-console
         console.log(`[goal-e2e] run 因瞬时模型错误中止，${TRANSIENT_RETRY_BACKOFF_MS / 1000}s 后重试: ${cardText}`);
         await delay(TRANSIENT_RETRY_BACKOFF_MS);
         continue;

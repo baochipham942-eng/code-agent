@@ -19,7 +19,7 @@
 // 断言随之从「分组容器里含某角色」改成「点该分类 chip 后货架只剩它」。
 // ============================================================================
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from './fixtures/axeTest';
 import { dismissFirstRunDialogs } from './firstRunDialogs';
 
 test.setTimeout(60_000);

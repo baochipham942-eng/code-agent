@@ -99,6 +99,9 @@ jobs:
           node scripts/coverage-ratchet.mjs --compare-baseline "${BASELINE_REF}"
 
       - name: Changed-line execution report (non-blocking)
+        # if: always()——棘轮转红时报表照样要出（首跑实测：棘轮红导致报表被 skip）；
+        # continue-on-error 保它自身失败不连坐。
+        if: always()
         continue-on-error: true
         run: |
           DIFF_BASE="${{ github.event.before }}"

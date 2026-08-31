@@ -114,12 +114,21 @@ if (compareBaselineRef) {
     validateBaseline(previous, `${compareBaselineRef} 中的基线`);
     const lowered = METRICS.filter((metric) => baseline[metric] < previous[metric]);
     if (lowered.length > 0) {
+      // 正当理由闸门：基线原则上只许升不许降。唯一例外是带新鲜 lowerJustification 的
+      // 校正（如初值取错环境、门槛口径修正）——理由必须非空且与上一版不同，
+      // 防止旧理由被复制粘贴反复复用。（先例：eslint-ratchet.mjs 文件头的基线订正记录。）
+      const justification = typeof baseline.lowerJustification === 'string' ? baseline.lowerJustification.trim() : '';
+      const previousJustification = typeof previous.lowerJustification === 'string' ? previous.lowerJustification.trim() : '';
+      const justified = justification.length > 0 && justification !== previousJustification;
       for (const metric of lowered) {
-        console.error(`[coverage-ratchet] ✗ ${metric} 基线被放宽：${previous[metric].toFixed(2)}% -> ${baseline[metric].toFixed(2)}%`);
+        console.error(`[coverage-ratchet] ${justified ? '!' : '✗'} ${metric} 基线下调：${previous[metric].toFixed(2)}% -> ${baseline[metric].toFixed(2)}%`);
       }
-      fail('覆盖率基线只许升不许降');
+      if (!justified) {
+        fail('覆盖率基线只许升不许降；确需校正必须在基线 JSON 写新的非空 lowerJustification');
+      }
+      console.error(`[coverage-ratchet] ! 带正当理由的基线校正：${justification}`);
     }
-    console.log(`[coverage-ratchet] ✓ 基线方向检查通过（相对 ${compareBaselineRef} 无任何一项下调）`);
+    console.log(`[coverage-ratchet] ✓ 基线方向检查通过（相对 ${compareBaselineRef} 无未授权下调）`);
   }
 }
 

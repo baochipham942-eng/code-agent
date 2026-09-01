@@ -9,13 +9,19 @@ name: Eval Harness Gate
 # （断言引擎、baseline/trend 来源护栏、judge 校准计算）。agent 真实能力的
 # 评测靠内部包的 `npm run eval -- --real`（详见 docs/guides/evaluation-system.md）。
 #
-# 触发条件：仅在评测基础设施文件改动时跑，其余 PR 直接绿灯，不串进 swarm-ci。
+# 触发条件：评测基础设施或插件机制相关文件改动时跑，其余 PR 不触发。
+# 插件生命周期 job 只跑免费 L4 链路；付费真评测保持本地显式开关。
 
 on:
   pull_request:
     branches: [main]
     paths:
       - 'src/host/testing/**'
+      - 'src/host/internalFeatures/**'
+      - 'src/renderer/internalFeatures/**'
+      - 'src/web/routes/internalFeatures.ts'
+      - 'src/host/services/capabilities/manualCapabilityPackageService.ts'
+      - 'src/host/plugins/**'
       - 'packages/internal/evaluation-center/**'
       - 'packages/eval-harness/**'
       - '.claude/test-cases/**'
@@ -23,17 +29,24 @@ on:
       - 'tests/unit/evaluation/**'
       - 'tests/eval/**'
       - 'tests/eval-harness/**'
+      - 'tests/e2e/internal-plugin*'
       - '.github/workflows/eval-harness-gate.yml'
   push:
     branches: [main]
     paths:
       - 'src/host/testing/**'
+      - 'src/host/internalFeatures/**'
+      - 'src/renderer/internalFeatures/**'
+      - 'src/web/routes/internalFeatures.ts'
+      - 'src/host/services/capabilities/manualCapabilityPackageService.ts'
+      - 'src/host/plugins/**'
       - 'packages/internal/evaluation-center/**'
       - 'packages/eval-harness/**'
       - 'tests/unit/testing/**'
       - 'tests/unit/evaluation/**'
       - 'tests/eval/**'
       - 'tests/eval-harness/**'
+      - 'tests/e2e/internal-plugin*'
       - '.github/workflows/eval-harness-gate.yml'
   workflow_dispatch:
 
@@ -81,3 +94,44 @@ jobs:
         # ADR-036 F5a：tests/eval + tests/eval-harness 全 hermetic（40 测试 <0.5s，
         # 无真网/无 API key），纳入门禁堵住"grader/harness 改动无 CI 兜底"的缺口。
         run: npx vitest run tests/unit/testing tests/unit/evaluation tests/eval tests/eval-harness
+
+  internal-plugin-lifecycle:
+    name: 插件装/开/卸 + HTTP 负例
+    # macOS runner：真插件 stage 走平台沙箱，Linux 的 bubblewrap 在 GitHub runner 上
+    # 拿不到用户命名空间（bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted），
+    # macOS 的 seatbelt 是系统自带且本机真跑验证过的那条路径。公有仓 runner 免费。
+    # 同判例见 .github/workflows/main-full-gate.yml。
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Build node-pty native binding
+        # --ignore-scripts 会跳过 node-pty 的原生编译；webServer 启动时会同步加载该原生模块。
+        run: |
+          npm rebuild node-pty --build-from-source
+          test -f node_modules/node-pty/build/Release/pty.node
+
+      - name: Verify plugin sandbox runtime
+        # 真插件 stage fail-closed 依赖平台沙箱；macOS 走 seatbelt（系统自带 sandbox-exec）。
+        run: test -x /usr/bin/sandbox-exec
+
+      - name: Verify system Chrome
+        # playwright channel: 'chrome' 要求系统 Chrome；macOS runner 镜像预装。
+        run: test -x "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+
+      - name: Run free internal-plugin lifecycle E2E
+        env:
+          # Paid real evaluation stays local opt-in; CI must never consume credentials or model budget.
+          CODE_AGENT_REAL_EVAL_E2E: '0'
+        run: npm run test:e2e:internal-plugin

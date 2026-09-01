@@ -4,10 +4,11 @@ import type {
   ConversationMessageSnapshot,
   ConversationReplayMessage,
 } from '../../../../shared/contract/conversationBranch';
+import {
+  PORTABLE_CONVERSATION_HISTORY_SCHEMA,
+  PORTABLE_CONVERSATION_HISTORY_VERSION,
+} from '../../../../shared/contract/conversationHistory';
 import type { ConversationBranchRepository } from '../../core/repositories/ConversationBranchRepository';
-
-export const PORTABLE_CONVERSATION_HISTORY_SCHEMA = 'neo.conversation-history' as const;
-export const PORTABLE_CONVERSATION_HISTORY_VERSION = 1 as const;
 
 export type PortableConversationHistoryErrorCode =
   | 'INVALID_HISTORY'

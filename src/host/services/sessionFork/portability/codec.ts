@@ -1,4 +1,8 @@
 import type { MessageAttachment } from '../../../../shared/contract/message';
+import {
+  DataFormatVersionError,
+  migrateDataFormatToCurrent,
+} from '../../../../shared/contract/dataFormatVersionRegistry';
 import type {
   BuildSessionExportEnvelopeV2Input,
   ForkLineageDraftV1,
@@ -416,7 +420,10 @@ export function validateForkLineageEnvelopeV1(
     lineage.schema !== FORK_LINEAGE_ENVELOPE_SCHEMA
     || lineage.version !== FORK_LINEAGE_ENVELOPE_VERSION
   ) {
-    fail('UNSUPPORTED_SCHEMA_VERSION', 'expected neo.fork-lineage version 1');
+    fail(
+      'UNSUPPORTED_SCHEMA_VERSION',
+      `expected neo.fork-lineage version ${FORK_LINEAGE_ENVELOPE_VERSION}`,
+    );
   }
   if (!Array.isArray(lineage.nodes) || !Array.isArray(lineage.messageMappings)) {
     fail('INVALID_ENVELOPE', 'lineage nodes and mappings must be arrays');
@@ -595,7 +602,16 @@ export function decodeForkLineageEnvelopeV1(
 ): ForkLineageEnvelopeV1 {
   const parsed = parseJson(value, 'lineage envelope');
   assertObject(parsed, 'lineage envelope');
-  const lineage = parsed as unknown as ForkLineageEnvelopeV1;
+  let current: unknown;
+  try {
+    current = migrateDataFormatToCurrent('forkLineageEnvelope', parsed);
+  } catch (error) {
+    if (error instanceof DataFormatVersionError) {
+      fail('UNSUPPORTED_SCHEMA_VERSION', error.message);
+    }
+    throw error;
+  }
+  const lineage = current as ForkLineageEnvelopeV1;
   validateForkLineageEnvelopeV1(lineage, scope);
   return deepPortableClone(lineage);
 }
@@ -692,7 +708,10 @@ export function validateSessionExportEnvelopeV2(
     envelope.schema !== SESSION_EXPORT_ENVELOPE_SCHEMA
     || envelope.version !== SESSION_EXPORT_ENVELOPE_VERSION
   ) {
-    fail('UNSUPPORTED_SCHEMA_VERSION', 'expected neo.session-export version 2');
+    fail(
+      'UNSUPPORTED_SCHEMA_VERSION',
+      `expected neo.session-export version ${SESSION_EXPORT_ENVELOPE_VERSION}`,
+    );
   }
   assertNonEmptyString(envelope.exportId, 'exportId');
   assertNonEmptyString(envelope.ownerScopeId, 'ownerScopeId');
@@ -982,7 +1001,16 @@ export function decodeSessionExportEnvelopeV2(
 ): SessionExportEnvelopeV2 {
   const parsed = parseJson(value, 'session export envelope');
   assertObject(parsed, 'session export envelope');
-  const envelope = parsed as unknown as SessionExportEnvelopeV2;
+  let current: unknown;
+  try {
+    current = migrateDataFormatToCurrent('sessionExportEnvelope', parsed);
+  } catch (error) {
+    if (error instanceof DataFormatVersionError) {
+      fail('UNSUPPORTED_SCHEMA_VERSION', error.message);
+    }
+    throw error;
+  }
+  const envelope = current as SessionExportEnvelopeV2;
   validateSessionExportEnvelopeV2(envelope, scope);
   return deepPortableClone(envelope);
 }

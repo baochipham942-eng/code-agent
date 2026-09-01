@@ -35,8 +35,7 @@ function canonicalProjectionMessage(message: Message): string {
   });
 }
 
-function runLiveDiff(): void {
-  const dbPath = path.join(os.homedir(), '.code-agent', 'code-agent.db');
+function runLiveDiff(dbPath: string): void {
   const db = new Database(dbPath, { readonly: true, fileMustExist: true });
   try {
     const ledger = new ConversationBranchRepository(db);
@@ -210,11 +209,24 @@ function runPerformance(): void {
   }
 }
 
-const mode = process.argv[2];
+function readDbPath(argv: string[]): string {
+  const dbIndex = argv.indexOf('--db');
+  if (dbIndex < 0) return path.join(os.homedir(), '.code-agent', 'code-agent.db');
+  const candidate = argv[dbIndex + 1];
+  if (!candidate || candidate.startsWith('--')) {
+    throw new Error('--db requires an explicit SQLite database path');
+  }
+  return path.resolve(candidate);
+}
+
+const args = process.argv.slice(2);
+const mode = args[0];
 if (mode === '--live-diff') {
-  runLiveDiff();
+  runLiveDiff(readDbPath(args));
 } else if (mode === '--performance') {
   runPerformance();
 } else {
-  throw new Error('Usage: npx tsx scripts/acceptance/n-readflip-evidence.ts --live-diff|--performance');
+  throw new Error(
+    'Usage: npx tsx scripts/acceptance/n-readflip-evidence.ts --live-diff [--db PATH]|--performance',
+  );
 }

@@ -182,9 +182,9 @@ export function createAgentDurableRouteRunLifecycle(
 /**
  * agent/run 现在能不能接单——**唯一判据**。
  *
- * durable 就绪是 fire-and-forget 设在 capabilityBootstrap 之后的（webServer.ts），
- * 而 startup token 早在那之前就打出来了。/api/health 的 `durableRunReady` 与这里
- * 共用同一个谓词，别在两处各写一遍条件（写两遍必漂移）。
+ * durable 就绪由 webServer 在本地 kernel 装配完成后设置；中断 run 的恢复仍可在
+ * capabilityBootstrap 之后继续。/api/health 的 `durableRunReady` 与这里共用同一个
+ * 谓词，别在两处各写一遍条件（写两遍必漂移）。
  */
 export function isDurableRunGateOpen(
   rollout: { policy: DurableRunRolloutPolicy; ready: boolean } | undefined,

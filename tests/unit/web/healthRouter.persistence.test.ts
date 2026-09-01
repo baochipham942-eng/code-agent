@@ -124,7 +124,7 @@ describe('createHealthRouter persistence health', () => {
     expect(body.build).toEqual(build);
   });
 
-  // durable 就绪排在 capabilityBootstrap 之后异步完成，这段窗口里 agent/run 一律 503。
+  // durable 就绪只依赖本地 kernel 装配，不依赖随后异步完成的 capability/recovery。
   // `status: 'ok'` 判的是进程活着，判「服务能不能接单」必须看 durableRunReady。
   it('reports durableRunReady independently of status: ok', async () => {
     const persistence = {

@@ -6,6 +6,7 @@ vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
 
 import {
+  assembleDurableRun,
   DurableRunRolloutInitializationError,
   initializeDurableRun,
 } from '../../../../src/host/app/initializeDurableRun';
@@ -25,6 +26,25 @@ describe('shared Durable Run application initialization', () => {
       registry: new RunRegistry(), repository: null, dataDir: '/tmp', ownerId: 'owner',
       processInstanceId: 'process', env: {},
     })).rejects.toBeInstanceOf(DurableRunRolloutInitializationError);
+  });
+
+  it('installs the kernel before interrupted-run recovery begins', async () => {
+    const { db, repo } = repository();
+    const registry = new RunRegistry();
+    const assembly = assembleDurableRun({
+      registry,
+      repository: repo,
+      ownerId: 'owner',
+      processInstanceId: 'process',
+      env: { CODE_AGENT_DURABLE_RUN_MODE: 'durable_preferred' },
+    });
+
+    expect(assembly.kernel).not.toBeNull();
+    await expect(registry.waitForDurableKernel(1)).resolves.toBe(true);
+
+    const runtime = await assembly.recover({ dataDir: '/tmp', now: 1 });
+    await runtime.shutdown();
+    db.close();
   });
 
   it('supports durable_preferred -> legacy -> durable_preferred across restarts without deleting history', async () => {
@@ -54,10 +74,11 @@ describe('shared Durable Run application initialization', () => {
     db.close();
   });
 
-  it('keeps the shipped Web bootstrap on the shared rollout initializer', () => {
+  it('keeps the shipped Web bootstrap on the shared rollout assembly', () => {
     const root = path.resolve(import.meta.dirname, '../../../..');
     const web = readFileSync(path.join(root, 'src/web/webServer.ts'), 'utf8');
     expect(web).toContain("from '../host/app/initializeDurableRun'");
-    expect(web).toContain('await initializeDurableRun({');
+    expect(web).toContain('assemble: () => assembleDurableRun({');
+    expect(web).toContain('recover: (assembly) => assembly.recover({');
   });
 });

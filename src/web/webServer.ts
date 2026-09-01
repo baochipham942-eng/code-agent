@@ -357,13 +357,14 @@ import { getApplicationRunRegistry } from '../host/app/applicationRunRegistry';
 import { createApplicationAutoAgentRecoveryHost } from '../host/app/autoAgentRecoveryHost';
 import { createApplicationNativeRecoveryPorts } from '../host/app/nativeRecoveryHost';
 import {
-  initializeDurableRun,
+  assembleDurableRun,
   type DurableRunApplicationRuntime,
 } from '../host/app/initializeDurableRun';
 import { resolveDurableRunRollout } from '../host/app/durableRunRollout';
 import type { PendingDevPermissionRequest } from './routes/dev';
 import { createApp } from './app';
 import { installSessionDomainHandler } from './sessionDomainHandler';
+import { startDurableRunStartup } from './durableRunStartup';
 
 // Re-export broadcastSSE for backward compatibility
 export { broadcastSSE };
@@ -376,6 +377,7 @@ onRendererPush((channel, data) => {
 // Native run lifecycle ownership. Primary key is runId; sessionId is unique while active.
 const runRegistry = getApplicationRunRegistry();
 let durableRunRuntime: DurableRunApplicationRuntime | undefined;
+let durableRunReadService: DurableRunApplicationRuntime['readService'] | undefined;
 let durableRunRolloutPolicy = resolveDurableRunRollout({});
 let durableRunRolloutReady = false;
 const queuedInputStartupSweep = createQueuedInputStartupSweepGate();
@@ -394,7 +396,7 @@ function getDurableRunRollout(): { policy: typeof durableRunRolloutPolicy; ready
 }
 
 function getDurableRunReadService() {
-  return durableRunRuntime?.readService;
+  return durableRunReadService;
 }
 
 // ── Local Tool Bridge: 待处理的本地工具调用 ──
@@ -611,30 +613,44 @@ async function initializeServices(): Promise<void> {
   const capabilityBootstrap = startWebCapabilityBootstrap(configService);
   bootMark('capability-bootstrap-kickoff'); // 非阻塞：应≈0ms
   if (databaseForDurableRun) {
-    void capabilityBootstrap.then(async () => {
-      durableRunRuntime = await initializeDurableRun({
+    startDurableRunStartup({
+      capabilityBootstrap,
+      assemble: () => assembleDurableRun({
         registry: runRegistry,
         repository: durableRunRolloutPolicy.durableActivation
           ? databaseForDurableRun?.getDurableRunRepository() ?? null
           : null,
-        dataDir,
         ownerId: 'web-native-host',
         processInstanceId: `web-${process.pid}-${randomUUID()}`,
+      }),
+      onAssemblyReady: (assembly) => {
+        durableRunReadService = assembly.readService;
+        durableRunRolloutReady = true;
+        queuedInputStartupSweep.setReady(true);
+        queuedInputStartupSweep.maybeRun();
+        logger.info('Durable rollout assembled', { mode: assembly.policy.mode });
+      },
+      onAssemblyError: (error) => {
+        durableRunRolloutReady = false;
+        logger.warn('Durable rollout initialization failed (non-blocking):', error instanceof Error ? error.message : String(error));
+      },
+      recover: (assembly) => assembly.recover({
+        dataDir,
         autoAgentRecoveryHost: createApplicationAutoAgentRecoveryHost(runRegistry),
         nativeRecoveryPorts: createApplicationNativeRecoveryPorts(runRegistry),
         onSweepResults: (results) => logger.debug('Durable sweeper recovery dispatched', { results }),
         onSweepError: (recoveryError) => logger.error('Durable Run sweeper recovery failed:', recoveryError),
-      });
-      durableRunRolloutReady = true;
-      queuedInputStartupSweep.setReady(true);
-      queuedInputStartupSweep.maybeRun();
-      logger.info('Durable rollout initialized', {
-        mode: durableRunRuntime.policy.mode,
-        results: durableRunRuntime.recoveryResults,
-      });
-    }).catch((error) => {
-      durableRunRolloutReady = false;
-      logger.warn('Durable rollout initialization failed (non-blocking):', error instanceof Error ? error.message : String(error));
+      }),
+      onRecoveryComplete: (runtime) => {
+        durableRunRuntime = runtime;
+        logger.info('Durable rollout initialized', {
+          mode: runtime.policy.mode,
+          results: runtime.recoveryResults,
+        });
+      },
+      onRecoveryError: (error) => {
+        logger.warn('Durable rollout recovery failed (non-blocking):', error instanceof Error ? error.message : String(error));
+      },
     });
   }
 

@@ -57,6 +57,8 @@ export class ArtifactIssueRepository {
 
   upsertIssue(issue: ArtifactIssue): void {
     const tx = this.db.transaction((nextIssue: ArtifactIssue) => {
+      // 这里刻意使用 OR REPLACE 的 DELETE+INSERT 语义：issue 与 evidence 是同一份完整快照，
+      // 父行替换时允许 ON DELETE CASCADE 清空旧 evidence，随后在本事务内按入参完整重建。
       this.db
         .prepare(`
           INSERT OR REPLACE INTO artifact_issues (

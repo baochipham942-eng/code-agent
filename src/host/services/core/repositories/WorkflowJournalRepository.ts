@@ -117,7 +117,10 @@ export class WorkflowJournalRepository {
 
   // ── 写入 ─────────────────────────────────────────────────────────────────
 
-  /** run 开始：写 running 占位行（INSERT OR REPLACE 允许同 runId 重启覆盖）。 */
+  /**
+   * run 开始：写 running 占位行。这里刻意使用 OR REPLACE 的 DELETE+INSERT 语义：
+   * 同 runId 重启必须通过 ON DELETE CASCADE 清空旧 workflow_run_calls，从空 journal 开始。
+   */
   startRun(input: StartRunInput): void {
     this.db
       .prepare(`

@@ -20,6 +20,7 @@ RUN npm install --global \
 
 WORKDIR /app
 COPY package.json package-lock.json ./
+COPY scripts/rebuild-native-system.sh ./scripts/rebuild-native-system.sh
 
 RUN npm_config_cache=/tmp/npm-cache npm ci --legacy-peer-deps \
     && rm -rf /tmp/npm-cache

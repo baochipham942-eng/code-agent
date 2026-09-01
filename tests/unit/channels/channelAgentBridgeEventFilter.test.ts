@@ -125,8 +125,29 @@ describe('ChannelAgentBridge event declaration', () => {
     };
 
     expect(bridge.getSessionKey('account-1', { ...base, ingressAuth: 'guest' }))
-      .toBe('account-1:group-1:auth=guest');
+      .toBe(JSON.stringify(['account-1', 'group-1', '', 'guest']));
     expect(bridge.getSessionKey('account-1', { ...base, ingressAuth: 'paired' }))
-      .toBe('account-1:group-1:auth=paired');
+      .toBe(JSON.stringify(['account-1', 'group-1', '', 'paired']));
+  });
+
+  it('keeps threads in the same chat on different session keys', () => {
+    const bridge = new ChannelAgentBridge({ configService: {} as never }) as unknown as ChannelAgentBridgeHarness;
+    const base: ChannelMessage = {
+      id: 'message',
+      channelId: 'feishu-1',
+      sender: { id: 'sender', name: 'Sender' },
+      context: { chatId: 'group-1', chatType: 'group' },
+      content: 'hello',
+      timestamp: 1,
+    };
+
+    expect(bridge.getSessionKey('account-1', {
+      ...base,
+      context: { ...base.context, threadId: 'thread-1' },
+    })).toBe(JSON.stringify(['account-1', 'group-1', 'thread-1', 'paired']));
+    expect(bridge.getSessionKey('account-1', {
+      ...base,
+      context: { ...base.context, threadId: 'thread-2' },
+    })).toBe(JSON.stringify(['account-1', 'group-1', 'thread-2', 'paired']));
   });
 });

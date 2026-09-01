@@ -19,7 +19,7 @@ describe('plugin manifest surfaces', () => {
       expect(result.valid).toBe(false);
       expect(result.errors).toContainEqual({
         field: 'surfaces',
-        message: `Unknown surface '${removed}'. Valid: tools, internal-feature`,
+        message: `Unknown surface '${removed}'. Valid: tools, internal-feature, ui`,
       });
     }
   });
@@ -37,6 +37,34 @@ describe('plugin manifest surfaces', () => {
       .toContainEqual({
         field: 'provides',
         message: "'provides' must include the plugin's own capability key 'plugin:surface-test'",
+      });
+  });
+
+  it('accepts UI slot requests from the public catalog and rejects missing seats', () => {
+    const valid = validateManifest({
+      ...manifest('ui'),
+      uiSlots: ['workspace.page', 'conversation.turnTail'],
+    });
+    expect(valid.valid).toBe(true);
+
+    const missing = validateManifest({ ...manifest('ui'), uiSlots: ['missing.seat'] });
+    expect(missing.valid).toBe(false);
+    expect(missing.errors).toContainEqual({
+      field: 'uiSlots',
+      message: '插件申请的座位 "missing.seat" 不存在，请检查 uiSlots。',
+    });
+  });
+
+  it('requires UI requests to opt into the ui surface', () => {
+    expect(validateManifest({ ...manifest('ui'), uiSlots: [] }).errors)
+      .toContainEqual({
+        field: 'uiSlots',
+        message: '插件声明 ui surface 时，uiSlots 至少要申请一个座位。',
+      });
+    expect(validateManifest({ ...manifest('tools'), uiSlots: ['workspace.page'] }).errors)
+      .toContainEqual({
+        field: 'surfaces',
+        message: "申请 uiSlots 的插件必须在 surfaces 中包含 'ui'。",
       });
   });
 });

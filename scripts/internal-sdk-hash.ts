@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
+import { UI_SLOT_CONTRACTS } from '../src/shared/contract/uiSlots';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const versionFile = path.join(repoRoot, 'src/host/internalFeatures/internalSdkVersion.ts');
@@ -76,6 +77,16 @@ function contractHash(rows: ContractRow[]): string {
   return createHash('sha256').update(JSON.stringify(rows)).digest('hex').slice(0, 8);
 }
 
+function collectSlotContractRows(): ContractRow[] {
+  return Object.entries(UI_SLOT_CONTRACTS).map(([name, contract]) => ({
+    module: `slot:${name}`,
+    exports: [
+      `kind:${contract.kind}`,
+      `props:${JSON.stringify(contract.props)}`,
+    ],
+  })).sort((left, right) => left.module.localeCompare(right.module));
+}
+
 function readRecordedVersions(source: string): { host: string; renderer: string } {
   const host = source.match(/\bhost:\s*'([^']+)'/u)?.[1];
   const renderer = source.match(/\brenderer:\s*'([^']+)'/u)?.[1];
@@ -85,7 +96,10 @@ function readRecordedVersions(source: string): { host: string; renderer: string 
 
 const context = createContractProgram();
 const expectedHost = contractHash(collectContractRows(hostSdkFile, '@host/', context));
-const expectedRenderer = contractHash(collectContractRows(rendererSdkFile, '@renderer/', context));
+const expectedRenderer = contractHash([
+  ...collectContractRows(rendererSdkFile, '@renderer/', context),
+  ...collectSlotContractRows(),
+]);
 const source = fs.readFileSync(versionFile, 'utf8');
 const recorded = readRecordedVersions(source);
 

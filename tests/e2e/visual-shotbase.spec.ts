@@ -126,32 +126,24 @@ async function holdVisualTurnRunning(
   }));
 }
 
-async function collapseWorkbenchForVisualFrame(page: Page): Promise<void> {
+async function ensureWorkbenchExpandedForVisualFrame(page: Page): Promise<void> {
   const collapsePanel = page.getByRole('button', { name: '收起面板' }).first();
   const expandPanel = page.getByRole('button', { name: '展开面板' });
 
-  if (await collapsePanel.isVisible().catch(() => false)) {
-    await collapsePanel.click();
+  if (await expandPanel.isVisible().catch(() => false)) {
+    await expandPanel.click();
   }
-  await expect(expandPanel).toBeVisible({ timeout: 10_000 });
+  await expect(collapsePanel).toBeVisible({ timeout: 10_000 });
   await page.evaluate(() => new Promise<void>((resolve) => {
     requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
   }));
-}
-
-async function suppressUnrelatedRuntimeChrome(page: Page): Promise<void> {
-  // Swarm full 复用同一个浏览器服务，前序 spec 可能给新会话留下团队预选/运行账本，
-  // 从而异步插入输入框上方的成员摘要并把审批卡整体顶高。该区域不属于本视觉基线，
-  // 用持久 CSS 固定为不参与布局；比 screenshot mask 更彻底，因为 mask 仍会保留高度。
-  await page.addStyleTag({
-    content: '[data-testid="session-member-bar-collapsed"] { display: none !important; }',
-  });
+  await expect(page.getByText(RUNTIME_COMPOSER_PLACEHOLDER, { exact: true }))
+    .toBeVisible({ timeout: 5_000 });
 }
 
 for (const theme of ['light', 'dark'] as const) {
   test(`危险命令审批卡 · ${theme}`, async ({ page, request }, testInfo) => {
     await openAppWithTheme(page, theme);
-    await suppressUnrelatedRuntimeChrome(page);
     const token = await getAuthToken(page);
     const sessionId = await createCleanSession(page);
     const turnId = `visual-approval-${theme}-${Date.now()}`;
@@ -198,6 +190,7 @@ for (const theme of ['light', 'dark'] as const) {
     }).first();
     const avatarRegions = page.locator('img[alt=""], [data-testid^="role-initial-avatar-"]');
     const dynamicExpertIdentityRows = page.locator('[data-testid^="agents-panel-row-"]');
+    const sessionMemberBar = page.getByTestId('session-member-bar-collapsed');
 
     await expect(permissionCard).toBeVisible({ timeout: 15_000 });
     await expect(permissionCard).toContainText('rm -rf ./dist');
@@ -206,11 +199,9 @@ for (const theme of ['light', 'dark'] as const) {
     await waitForStableVisualFrame(page, theme);
 
     await holdVisualTurnRunning(page, request, token, sessionId, turnId);
-    // agent event 到达时，右侧专家面板可能沿用/恢复为展开态，令整块工作区横移。
-    // Linux 基线固定为收起态；截图前显式进入同一布局，并再次确认 turn 仍在运行。
-    await collapseWorkbenchForVisualFrame(page);
-    await expect(page.getByText(RUNTIME_COMPOSER_PLACEHOLDER, { exact: true }))
-      .toBeVisible({ timeout: 5_000 });
+    // Linux 基线记录的是右侧专家面板展开态。agent event 到达后显式恢复
+    // 这一布局，等两帧并再次确认 turn 仍在运行。
+    await ensureWorkbenchExpandedForVisualFrame(page);
 
     await expect(page.locator('.h-screen')).toHaveScreenshot(
       `dangerous-command-approval-${theme}.png`,
@@ -221,6 +212,7 @@ for (const theme of ['light', 'dark'] as const) {
           timestampRegion,
           avatarRegions,
           dynamicExpertIdentityRows,
+          sessionMemberBar,
           streamingRegion,
         ],
       },

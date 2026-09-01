@@ -84,6 +84,7 @@ import {
 } from './utils/swarmEventRouting';
 import { openSurfaceForArtifact } from './services/surfaceIntentDispatcher';
 import { useInAppValidationBridge } from './hooks/useInAppValidationBridge';
+import { InternalFeatureWorkspaceRegistration, ShellOverlaySlotHost, WorkspacePageSlotHost } from './slots/productSlotHosts';
 
 const logger = createLogger('App');
 const SIDEBAR_AUTO_COLLAPSE_WIDTH = 1180;
@@ -122,8 +123,6 @@ const LocalOpsPage = React.lazy(() => import('./components/features/localOps/Loc
   default: module.LocalOpsPage,
 })));
 const InAppValidationWorkspace = React.lazy(() => import('./components/features/inAppValidation/InAppValidationWorkspace').then(({ InAppValidationWorkspace: defaultExport }) => ({ default: defaultExport })));
-const InternalFeatureHost = React.lazy(() => import('./internalFeatures/InternalFeatureHost').then(({ InternalFeatureHost: defaultExport }) => ({ default: defaultExport })));
-
 async function invokeDomain<T>(domain: string, action: string, payload?: unknown): Promise<T> {
   return ipcService.invokeDomain<T>(domain, action, payload);
 }
@@ -1009,12 +1008,10 @@ export const App: React.FC = () => {
                 <React.Suspense fallback={null}>
                   <LocalOpsPage />
                 </React.Suspense>
-              ) : activeInternalFeatureId ? <React.Suspense fallback={null}><InternalFeatureHost featureId={activeInternalFeatureId} /></React.Suspense> : showInAppValidation ? (
-                <React.Suspense fallback={null}>
-                  <InAppValidationWorkspace />
-                </React.Suspense>
               ) : (
-                <PanelGroup orientation="horizontal" className="flex-1 min-h-0" id="main-layout">
+                <WorkspacePageSlotHost fallback={showInAppValidation
+                  ? <React.Suspense fallback={null}><InAppValidationWorkspace /></React.Suspense>
+                  : <PanelGroup orientation="horizontal" className="flex-1 min-h-0" id="main-layout">
                   {/* 专注态（2026-08-01 工单①）：聊天列整列收起，右栏占满窗口宽度；
                       maxSize=35 只对侧栏态生效，专注态不约束（工单明确不改 maxSize）。 */}
                   {!workbenchFocusActive && (
@@ -1046,7 +1043,7 @@ export const App: React.FC = () => {
                       {renderWorkbenchContent(true)}
                     </Panel>
                   )}
-                </PanelGroup>
+                  </PanelGroup>} />
               )}
             </div>
           </div>
@@ -1170,6 +1167,9 @@ export const App: React.FC = () => {
 
       {/* Memo Floater - Tauri 全局热键浮窗 */}
       <MemoFloater />
+
+      <InternalFeatureWorkspaceRegistration featureId={activeInternalFeatureId} />
+      <ShellOverlaySlotHost />
 
       {/* Background Task Panel - 后台任务浮动面板 */}
       <BackgroundSessionPanel />

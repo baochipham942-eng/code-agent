@@ -17,6 +17,10 @@ import { useI18n } from '../../../hooks/useI18n';
 import { SessionModelsContext } from './sessionModelsContext';
 import { hasIncompleteStreamSnapshot } from '../../../utils/streamingStatePresentation';
 import { isTurnVisibleInRange } from '../../../utils/turnVisibility';
+import {
+  ConversationTurnTailSlot,
+  ConversationTurnTailSlotHost,
+} from '../../../slots/productSlotHosts';
 
 interface TurnBasedTraceViewProps {
   projection: TraceProjection;
@@ -1006,6 +1010,10 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
               beforeUserMessage={index === 0 ? beforeFirstUserMessage : undefined}
               suppressBusySignal={isStreaming && suppressActiveBusySignal}
             />
+            <ConversationTurnTailSlot
+              sessionId={projection.sessionId}
+              turnId={turn.turnId}
+            />
           </div>
         </div>
       );
@@ -1030,6 +1038,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
 
   return (
     <SessionModelsContext.Provider value={sessionModels}>
+    <ConversationTurnTailSlotHost />
     <div className="relative h-full min-h-0" data-virtuoso-first-item-index={firstItemIndex}>
       <Virtuoso
         // key=sessionId：切换会话时重挂载，使 initialTopMostItemIndex 对每个会话都生效

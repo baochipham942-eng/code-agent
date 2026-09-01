@@ -6,6 +6,7 @@ import { FullScreenPage } from '../shared/FullScreenPage';
 import { PageContent } from '../shared/PageContent';
 import { ExpertPanel } from '../expert/ExpertPanel';
 import { HubTabHeader } from './HubTabHeader';
+import { HubTabSlotHost } from '../../../slots/productSlotHosts';
 
 // 重型 tab 一律懒加载：能力中心比设置页开得频繁得多，
 // 首屏不该背着技能/连接器/插件/能力清单的注册表。
@@ -14,7 +15,7 @@ const MCPSettings = React.lazy(() => import('../settings/tabs/MCPSettings').then
 const PluginsSettings = React.lazy(() => import('../settings/tabs/PluginsSettings').then((m) => ({ default: m.PluginsSettings })));
 const CapabilityCandidatesTab = React.lazy(() => import('./CapabilityCandidatesTab').then((m) => ({ default: m.CapabilityCandidatesTab })));
 
-const HUB_TABS: Array<{ key: CapabilityHubTab; icon: React.ReactNode; label: (t: ReturnType<typeof useI18n>['t']) => string }> = [
+const BUILT_IN_HUB_TABS: Array<{ key: CapabilityHubTab; icon: React.ReactNode; label: (t: ReturnType<typeof useI18n>['t']) => string }> = [
   { key: 'experts', icon: <Boxes className="h-4 w-4" />, label: (t) => t.capabilityHub.tabExperts },
   { key: 'skills', icon: <Sparkles className="h-4 w-4" />, label: (t) => t.capabilityHub.tabSkills },
   { key: 'connectors', icon: <Link2 className="h-4 w-4" />, label: (t) => t.capabilityHub.tabConnectors },
@@ -36,8 +37,8 @@ export const CapabilityHubPage: React.FC = () => {
       openCapabilityHub('plugins');
       return;
     }
-    if (HUB_TABS.some((tab) => tab.key === capabilityHubTab)) return;
-    openCapabilityHub(HUB_TABS[0].key);
+    if (BUILT_IN_HUB_TABS.some((tab) => tab.key === capabilityHubTab)) return;
+    openCapabilityHub(BUILT_IN_HUB_TABS[0].key);
   }, [capabilityHubTab, legacyTab, openCapabilityHub]);
 
   const content = activeTab === 'experts' ? <ExpertPanel />
@@ -47,7 +48,7 @@ export const CapabilityHubPage: React.FC = () => {
     : activeTab === 'candidates' ? <CapabilityCandidatesTab />
     : null;
 
-  const activeTabLabel = (HUB_TABS.find((tab) => tab.key === activeTab) ?? HUB_TABS[0]).label(t);
+  const activeTabLabel = (BUILT_IN_HUB_TABS.find((tab) => tab.key === activeTab) ?? BUILT_IN_HUB_TABS[0]).label(t);
 
   return (
     <FullScreenPage testId="capability-hub-page" variant="inline">
@@ -57,7 +58,7 @@ export const CapabilityHubPage: React.FC = () => {
       <header data-tauri-drag-region="deep" className="shrink-0 px-6 pt-4">
         <div className="flex items-center gap-3">
           <nav className="flex items-center gap-1" role="tablist" aria-label={t.capabilityHub.title}>
-            {HUB_TABS.map(({ key, icon, label }) => (
+            {BUILT_IN_HUB_TABS.map(({ key, icon, label }) => (
               <button /* ds-allow:button: 能力中心主导航 pill（role=tab，图标+文案左对齐），Button primitive 无 tab 语义变体 */
                 key={key}
                 type="button"
@@ -75,6 +76,7 @@ export const CapabilityHubPage: React.FC = () => {
                 {label(t)}
               </button>
             ))}
+            <HubTabSlotHost active />
           </nav>
         </div>
       </header>

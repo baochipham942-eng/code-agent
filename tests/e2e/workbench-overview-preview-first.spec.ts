@@ -3,6 +3,8 @@ import type { AgentEvent, Artifact } from '../../src/shared/contract';
 
 type RendererAgentEvent = AgentEvent & { sessionId?: string };
 
+const IDLE_COMPOSER_PLACEHOLDER = '继续描述…（@ 引用文件，/ 调用技能）';
+
 test.setTimeout(90_000);
 
 async function getAuthToken(page: Page): Promise<string> {
@@ -63,7 +65,16 @@ async function createSessionAndGetId(page: Page): Promise<string> {
   await expect(activeSession).toBeVisible({ timeout: 15_000 });
   const sessionId = await activeSession.getAttribute('data-session-id');
   expect(sessionId, 'active session id missing after creating an E2E session').toBeTruthy();
+  await expect(page.locator('[data-chat-input]')).toBeVisible({ timeout: 10_000 });
   return sessionId!;
+}
+
+async function expectArtifactTurnSettled(page: Page, artifactTitle: string): Promise<void> {
+  await expect(page.getByText(`已产出 ${artifactTitle}。`).first()).toBeVisible({ timeout: 3_000 });
+  // stream_chunk 会比带 artifacts 的 message 早一步上屏。等 agent_complete 将
+  // composer 放回 idle，才证明这批事件已全部投影，不用早到的文字猜产物就绪。
+  await expect(page.getByText(IDLE_COMPOSER_PLACEHOLDER, { exact: true }))
+    .toBeVisible({ timeout: 3_000 });
 }
 
 async function openOverviewView(page: Page): Promise<void> {
@@ -164,15 +175,16 @@ test('右栏概览有产物时：四模块分区稳定，点击后一步进入�
       content: `graph TD;\n  A[${firstMarker}] --> B[产物内容占满右栏];`,
       version: 1,
     }));
-    await expect(page.getByText('已产出 第一版流程图。').first()).toBeVisible({ timeout: 3_000 });
+    await expectArtifactTurnSettled(page, '第一版流程图');
   }).toPass({ timeout: 30_000 });
 
   // ① 四模块工作台：产物在完成态收拢成缩略行，正文不抢占概览。
   // 本场景无 TODO（无计划步骤）→ Todo 模块按空态不渲染；诊断 UI 已整体删除（拍板三）。
   const workspace = overview.getByTestId('task-workspace-overview');
   await expect(workspace).toBeVisible({ timeout: 20_000 });
-  await expect(workspace.getByTestId('overview-artifacts-module')).toBeVisible();
-  await expect(workspace.getByTestId('overview-artifact-thumb').filter({ hasText: '第一版流程图' })).toBeVisible();
+  await expect(workspace.getByTestId('overview-artifacts-module')).toBeVisible({ timeout: 20_000 });
+  await expect(workspace.getByTestId('overview-artifact-thumb').filter({ hasText: '第一版流程图' }))
+    .toBeVisible({ timeout: 20_000 });
   await expect(workspace.getByTestId('overview-todo-module')).toHaveCount(0);
   await expect(workspace.getByText(firstMarker)).toHaveCount(0);
 
@@ -199,12 +211,14 @@ test('右栏概览有产物时：四模块分区稳定，点击后一步进入�
       content: 'graph TD;\n  C[第二个产物] --> D[切换器出现];',
       version: 1,
     }));
-    await expect(page.getByText('已产出 第二版流程图。').first()).toBeVisible({ timeout: 3_000 });
+    await expectArtifactTurnSettled(page, '第二版流程图');
   }).toPass({ timeout: 30_000 });
   await page.getByTestId('workbench-tab-overview').click();
-  await expect(page.getByTestId('task-workspace-overview')).toBeVisible();
-  await expect(page.getByTestId('overview-artifact-thumb').filter({ hasText: '第一版流程图' })).toBeVisible();
-  await expect(page.getByTestId('overview-artifact-thumb').filter({ hasText: '第二版流程图' })).toBeVisible();
+  await expect(page.getByTestId('task-workspace-overview')).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByTestId('overview-artifact-thumb').filter({ hasText: '第一版流程图' }))
+    .toBeVisible({ timeout: 20_000 });
+  await expect(page.getByTestId('overview-artifact-thumb').filter({ hasText: '第二版流程图' }))
+    .toBeVisible({ timeout: 20_000 });
 
   await overview.screenshot({ path: 'tests/e2e/screenshots/workbench-overview-with-artifacts.png' });
 });

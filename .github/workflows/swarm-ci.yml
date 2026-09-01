@@ -458,8 +458,9 @@ jobs:
           CI: '1'
         run: npm run test:swarm:e2e
 
-      # 初值来自本 PR 的 Swarm full Linux/Chromium record artifact（run 33397733582），
-      # 不使用本机计数；当前高于基线 fail，低于基线提示下调。
+      # 规则类型初值与计数参考来自本 PR 的 Swarm full Linux/Chromium
+      # record artifact（run 33397733582）。新增规则类型 fail；已有规则的 DOM 节点计数
+      # 会随 teardown 扫描时的运行态波动，只进 step summary 和 artifact，不再卡 merge。
       - name: Check axe runtime accessibility ratchet
         if: always()
         run: |

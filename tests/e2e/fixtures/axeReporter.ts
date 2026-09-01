@@ -26,7 +26,7 @@ function summaryMarkdown(report: ReturnType<typeof buildAxeRuntimeReport>): stri
     '| --- | ---: |',
     ...(rows.length > 0 ? rows : ['| none | 0 |']),
     '',
-    'WCAG violations are reported here; the ratchet only blocks counts above the CI baseline.',
+    'WCAG violations are reported here; the ratchet blocks new rule types and reports existing-rule count drift.',
   ].join('\n');
 }
 

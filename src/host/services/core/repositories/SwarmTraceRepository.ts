@@ -188,12 +188,30 @@ export class SwarmTraceRepository implements SwarmTraceRepo {
     const run = detail.run;
     const tx = this.db.transaction(() => {
       this.db.prepare(`
-        INSERT OR REPLACE INTO swarm_runs (
+        INSERT INTO swarm_runs (
           id, session_id, coordinator, status, started_at, ended_at,
           total_agents, completed_count, failed_count, parallel_peak,
           total_tokens_in, total_tokens_out, total_tool_calls, total_cost_usd,
           trigger, error_summary, aggregation_json, tags_json
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          session_id = excluded.session_id,
+          coordinator = excluded.coordinator,
+          status = excluded.status,
+          started_at = excluded.started_at,
+          ended_at = excluded.ended_at,
+          total_agents = excluded.total_agents,
+          completed_count = excluded.completed_count,
+          failed_count = excluded.failed_count,
+          parallel_peak = excluded.parallel_peak,
+          total_tokens_in = excluded.total_tokens_in,
+          total_tokens_out = excluded.total_tokens_out,
+          total_tool_calls = excluded.total_tool_calls,
+          total_cost_usd = excluded.total_cost_usd,
+          trigger = excluded.trigger,
+          error_summary = excluded.error_summary,
+          aggregation_json = excluded.aggregation_json,
+          tags_json = excluded.tags_json
       `).run(
         run.id, run.sessionId, run.coordinator, run.status, run.startedAt, run.endedAt,
         run.totalAgents, run.completedCount, run.failedCount, run.parallelPeak,

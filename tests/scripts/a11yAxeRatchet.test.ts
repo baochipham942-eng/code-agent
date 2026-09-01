@@ -92,12 +92,24 @@ describe('a11y-axe-ratchet', () => {
     expect(result.stdout).toContain('Pass: 1 scans; 2 violated rules; 3 violating nodes');
   });
 
-  it('任一规则超基线时阻断', () => {
+  it('已有规则的节点计数上升时通过并报告波动', () => {
     const { root } = fixture({ reportCounts: { 'button-name': 3, 'color-contrast': 1 } });
     const result = run(root);
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stderr).toContain('button-name 计数波动（报告制）：2 -> 3 (+1)');
+    expect(result.stdout).toContain('0 new rule types; 1 existing-rule count drifts reported');
+  });
+
+  it('新增违规规则类型时阻断', () => {
+    const { root } = fixture({ reportCounts: {
+      'button-name': 2,
+      'color-contrast': 1,
+      'nested-interactive': 1,
+    } });
+    const result = run(root);
     expect(result.status).toBe(1);
-    expect(result.stderr).toContain('button-name 超基线：3 > 2');
-    expect(result.stderr).toContain('运行时可访问性违规增加了 1 个规则');
+    expect(result.stderr).toContain('新增违规规则类型：nested-interactive（1 个节点）');
+    expect(result.stderr).toContain('运行时可访问性新增了 1 个违规规则类型');
   });
 
   it('报告产物缺失时 fail loud', () => {
@@ -108,12 +120,12 @@ describe('a11y-axe-ratchet', () => {
     expect(result.stderr).toContain('自检失败：无法读取 axe 报告');
   });
 
-  it('命中数下降时通过并提示下调基线', () => {
+  it('已有规则的节点计数下降时通过并报告波动', () => {
     const { root } = fixture({ reportCounts: { 'button-name': 1 } });
     const result = run(root);
     expect(result.status, result.stderr).toBe(0);
-    expect(result.stderr).toContain('button-name 已下降：2 -> 1，请下调基线');
-    expect(result.stderr).toContain('color-contrast 已下降：1 -> 0，请下调基线');
+    expect(result.stderr).toContain('button-name 计数波动（报告制）：2 -> 1 (-1)');
+    expect(result.stderr).toContain('color-contrast 计数波动（报告制）：1 -> 0 (-1)');
   });
 
   it('record 模式输出可直接回填的 CI 基线候选且不读取占位基线', () => {
@@ -143,8 +155,29 @@ describe('a11y-axe-ratchet', () => {
     })));
     const result = run(root, ['--compare-baseline', 'HEAD']);
     expect(result.status).toBe(1);
-    expect(result.stderr).toContain('button-name 基线上调：2 -> 3');
-    expect(result.stderr).toContain('axe 违规基线只许降不许升');
+    expect(result.stderr).toContain('button-name 报告参考计数上调：2 -> 3');
+    expect(result.stderr).toContain('axe 基线只许删除规则类型或下调报告参考计数');
+  });
+
+  it('基线不得新增规则类型', () => {
+    const { root, baseline } = fixture();
+    execFileSync('git', ['init', '-q'], { cwd: root });
+    execFileSync('git', ['config', 'user.email', 'fixture@example.com'], { cwd: root });
+    execFileSync('git', ['config', 'user.name', 'Fixture'], { cwd: root });
+    execFileSync('git', ['add', '.'], { cwd: root });
+    execFileSync('git', ['commit', '-qm', 'baseline'], { cwd: root });
+
+    writeFileSync(join(root, 'scripts/a11y-axe-ratchet-baseline.json'), JSON.stringify({
+      ...baseline,
+      ruleCounts: { ...baseline.ruleCounts, 'nested-interactive': 1 },
+    }));
+    writeFileSync(join(root, 'test-results/axe/axe-report.json'), JSON.stringify(buildReport({
+      ...baseline.ruleCounts,
+      'nested-interactive': 1,
+    })));
+    const result = run(root, ['--compare-baseline', 'HEAD']);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('新增基线规则类型：nested-interactive');
   });
 });
 

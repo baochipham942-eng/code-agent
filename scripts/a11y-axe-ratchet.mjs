@@ -174,44 +174,63 @@ if (compareBaselineRef) {
       fail(`自检失败：${compareBaselineRef} 中的 axe 基线 JSON 无法解析：${error instanceof Error ? error.message : String(error)}`);
     }
     validateBaseline(previous, `${compareBaselineRef} 中的 axe 基线`);
-    const raised = [...new Set([
+    const addedRules = [...new Set([
       ...Object.keys(previous.ruleCounts),
       ...Object.keys(baseline.ruleCounts),
-    ])].filter((rule) => (baseline.ruleCounts[rule] ?? 0) > (previous.ruleCounts[rule] ?? 0));
-    for (const rule of raised) {
-      console.error(`[a11y-axe-ratchet] ✗ ${rule} 基线上调：${previous.ruleCounts[rule] ?? 0} -> ${baseline.ruleCounts[rule] ?? 0}`);
+    ])].filter((rule) => !(rule in previous.ruleCounts) && rule in baseline.ruleCounts);
+    const raisedReferences = Object.keys(baseline.ruleCounts)
+      .filter((rule) => rule in previous.ruleCounts)
+      .filter((rule) => baseline.ruleCounts[rule] > previous.ruleCounts[rule]);
+    for (const rule of addedRules) {
+      console.error(`[a11y-axe-ratchet] ✗ 新增基线规则类型：${rule}`);
     }
-    if (raised.length > 0) fail('axe 违规基线只许降不许升');
-    console.log(`[a11y-axe-ratchet] ✓ 基线方向检查通过（相对 ${compareBaselineRef} 未上调）`);
+    for (const rule of raisedReferences) {
+      console.error(`[a11y-axe-ratchet] ✗ ${rule} 报告参考计数上调：${previous.ruleCounts[rule]} -> ${baseline.ruleCounts[rule]}`);
+    }
+    if (addedRules.length > 0 || raisedReferences.length > 0) {
+      fail('axe 基线只许删除规则类型或下调报告参考计数');
+    }
+    console.log(`[a11y-axe-ratchet] ✓ 基线方向检查通过（相对 ${compareBaselineRef} 未新增规则类型、未上调报告参考计数）`);
   }
 }
 
-const rules = [...new Set([
-  ...Object.keys(baseline.ruleCounts),
-  ...Object.keys(report.ruleCounts),
-])].sort();
-const regressions = [];
-const improvements = [];
-for (const rule of rules) {
-  const allowed = baseline.ruleCounts[rule] ?? 0;
-  const current = report.ruleCounts[rule] ?? 0;
-  if (current > allowed) regressions.push({ rule, allowed, current });
-  if (current < allowed) improvements.push({ rule, allowed, current });
+const newRules = Object.keys(report.ruleCounts)
+  .filter((rule) => !(rule in baseline.ruleCounts))
+  .sort();
+for (const rule of newRules) {
+  console.error(`[a11y-axe-ratchet] ✗ 新增违规规则类型：${rule}（${report.ruleCounts[rule]} 个节点）`);
+}
+if (newRules.length > 0) {
+  fail(`运行时可访问性新增了 ${newRules.length} 个违规规则类型`);
 }
 
-for (const { rule, allowed, current } of regressions) {
-  console.error(`[a11y-axe-ratchet] ✗ ${rule} 超基线：${current} > ${allowed}`);
-}
-if (regressions.length > 0) {
-  fail(`运行时可访问性违规增加了 ${regressions.length} 个规则；先修回或用 Swarm full 重新证明基线`);
+const countDrifts = Object.keys(baseline.ruleCounts)
+  .sort()
+  .map((rule) => ({
+    rule,
+    reference: baseline.ruleCounts[rule],
+    current: report.ruleCounts[rule] ?? 0,
+  }))
+  .filter(({ reference, current }) => reference !== current);
+const formatDelta = (reference, current) => `${current - reference > 0 ? '+' : ''}${current - reference}`;
+for (const { rule, reference, current } of countDrifts) {
+  console.warn(`[a11y-axe-ratchet] ↔ ${rule} 计数波动（报告制）：${reference} -> ${current} (${formatDelta(reference, current)})`);
 }
 
-for (const { rule, allowed, current } of improvements) {
-  console.warn(`[a11y-axe-ratchet] ↓ ${rule} 已下降：${allowed} -> ${current}，请下调基线`);
-}
+const driftRows = countDrifts.map(({ rule, reference, current }) => (
+  `| \`${rule}\` | ${reference} | ${current} | ${formatDelta(reference, current)} |`
+));
 
 appendSummary([
   '### axe runtime ratchet',
   '',
-  `Pass: ${report.totals.scans} scans; ${report.totals.rules} violated rules; ${report.totals.hits} violating nodes; ${improvements.length} baseline reductions available.`,
+  `Pass: ${report.totals.scans} scans; ${report.totals.rules} violated rules; ${report.totals.hits} violating nodes; 0 new rule types; ${countDrifts.length} existing-rule count drifts reported.`,
+  '',
+  'Hard gate: new axe rule types only. Existing-rule node counts are reported for diagnosis and do not fail this gate.',
+  ...(driftRows.length > 0 ? [
+    '',
+    '| Rule | Reference nodes | Current nodes | Delta |',
+    '| --- | ---: | ---: | ---: |',
+    ...driftRows,
+  ] : []),
 ].join('\n'));

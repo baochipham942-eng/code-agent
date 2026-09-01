@@ -11,6 +11,8 @@ import { dismissFirstRunDialogs } from './firstRunDialogs';
 type RendererAgentEvent = AgentEvent & { sessionId?: string };
 type VisualTheme = 'light' | 'dark';
 
+const RUNTIME_COMPOSER_PLACEHOLDER = '继续描述…（Enter 排队，⌘/Ctrl+Enter 改道）';
+
 test.setTimeout(90_000);
 test.use({ viewport: { width: 1440, height: 900 } });
 test.skip(
@@ -100,9 +102,56 @@ async function waitForStableVisualFrame(page: Page, theme: VisualTheme): Promise
   ).toBe(theme);
 }
 
+async function holdVisualTurnRunning(
+  page: Page,
+  request: APIRequestContext,
+  token: string,
+  sessionId: string,
+  turnId: string,
+): Promise<void> {
+  await expect(async () => {
+    // 新会话的 idle session snapshot 可能在 E2E 注入 turn_start 之后才抵达，
+    // 把运行态撤回 idle。截图前从真实 agent:event 链路补一个同 turn
+    // keepalive，并以运行态 placeholder 上屏作为屏障。正文区已被 mask。
+    await emitAgentEvents(request, token, [{
+      type: 'stream_chunk',
+      sessionId,
+      data: { turnId, content: '等待危险命令审批。' },
+    }]);
+    await expect(page.getByText(RUNTIME_COMPOSER_PLACEHOLDER, { exact: true }))
+      .toBeVisible({ timeout: 2_000 });
+  }).toPass({ timeout: 10_000 });
+  await page.evaluate(() => new Promise<void>((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+  }));
+}
+
+async function collapseWorkbenchForVisualFrame(page: Page): Promise<void> {
+  const collapsePanel = page.getByRole('button', { name: '收起面板' }).first();
+  const expandPanel = page.getByRole('button', { name: '展开面板' });
+
+  if (await collapsePanel.isVisible().catch(() => false)) {
+    await collapsePanel.click();
+  }
+  await expect(expandPanel).toBeVisible({ timeout: 10_000 });
+  await page.evaluate(() => new Promise<void>((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+  }));
+}
+
+async function suppressUnrelatedRuntimeChrome(page: Page): Promise<void> {
+  // Swarm full 复用同一个浏览器服务，前序 spec 可能给新会话留下团队预选/运行账本，
+  // 从而异步插入输入框上方的成员摘要并把审批卡整体顶高。该区域不属于本视觉基线，
+  // 用持久 CSS 固定为不参与布局；比 screenshot mask 更彻底，因为 mask 仍会保留高度。
+  await page.addStyleTag({
+    content: '[data-testid="session-member-bar-collapsed"] { display: none !important; }',
+  });
+}
+
 for (const theme of ['light', 'dark'] as const) {
   test(`危险命令审批卡 · ${theme}`, async ({ page, request }, testInfo) => {
     await openAppWithTheme(page, theme);
+    await suppressUnrelatedRuntimeChrome(page);
     const token = await getAuthToken(page);
     const sessionId = await createCleanSession(page);
     const turnId = `visual-approval-${theme}-${Date.now()}`;
@@ -156,13 +205,12 @@ for (const theme of ['light', 'dark'] as const) {
     await expect(timestampRegion).toHaveText(/^\d{2}:\d{2}$/);
     await waitForStableVisualFrame(page, theme);
 
-    // 新视觉 spec 仍走 axe fixture；只扫本用例新增的决策面，避免把同一页壳层的存量
-    // 违规按新增测试次数重复累计进全局 node 计数。该根必须保持 0 违规。
-    const axeRecord = await scanA11y(page, testInfo, {
-      root: '[data-testid="permission-card"]',
-      scanName: `visual-dangerous-command-${theme}`,
-    });
-    expect(axeRecord.violations).toEqual([]);
+    await holdVisualTurnRunning(page, request, token, sessionId, turnId);
+    // agent event 到达时，右侧专家面板可能沿用/恢复为展开态，令整块工作区横移。
+    // Linux 基线固定为收起态；截图前显式进入同一布局，并再次确认 turn 仍在运行。
+    await collapseWorkbenchForVisualFrame(page);
+    await expect(page.getByText(RUNTIME_COMPOSER_PLACEHOLDER, { exact: true }))
+      .toBeVisible({ timeout: 5_000 });
 
     await expect(page.locator('.h-screen')).toHaveScreenshot(
       `dangerous-command-approval-${theme}.png`,
@@ -177,5 +225,13 @@ for (const theme of ['light', 'dark'] as const) {
         ],
       },
     );
+
+    // 新视觉 spec 仍走 axe fixture；只扫本用例新增的决策面，避免把同一页壳层的存量
+    // 违规按新增测试次数重复累计进全局 node 计数。该根必须保持 0 违规。
+    const axeRecord = await scanA11y(page, testInfo, {
+      root: '[data-testid="permission-card"]',
+      scanName: `visual-dangerous-command-${theme}`,
+    });
+    expect(axeRecord.violations).toEqual([]);
   });
 }

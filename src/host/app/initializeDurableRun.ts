@@ -38,15 +38,17 @@ export interface DurableRunApplicationRuntime {
   shutdown(): Promise<void>;
 }
 
-/** Shared Web/Tauri Durable rollout wiring and the acceptance bootstrap. */
-export async function initializeDurableRun(input: {
+interface DurableRunAssemblyInput {
   registry: RunRegistry;
   repository: DurableRunRepository | null;
-  dataDir: string;
   ownerId: string;
   processInstanceId: string;
   env?: NodeJS.ProcessEnv;
   leaseDurationMs?: number;
+}
+
+interface DurableRunRecoveryInput {
+  dataDir: string;
   now?: number;
   dynamicWorkflowHost?: DynamicWorkflowRecoveryHost;
   nativeRecoveryPorts?: NativeRecoveryHostPorts;
@@ -59,17 +61,37 @@ export async function initializeDurableRun(input: {
     | ((kernel: DurableRunKernel) => DurableRecoveryHandlerOverrides);
   onSweepResults?: (results: DurableRunApplicationRuntime['recoveryResults']) => void;
   onSweepError?: (error: unknown) => void;
-}): Promise<DurableRunApplicationRuntime> {
+}
+
+interface DurableRunApplicationAssembly {
+  policy: DurableRunRolloutPolicy;
+  kernel: DurableRunKernel | null;
+  readService: DurableRunReadService;
+  recover(input: DurableRunRecoveryInput): Promise<DurableRunApplicationRuntime>;
+}
+
+/**
+ * Installs the Durable kernel into the registry. Once this returns, new runs can be
+ * accepted; interrupted-run recovery is deliberately deferred to recover().
+ */
+export function assembleDurableRun(
+  input: DurableRunAssemblyInput,
+): DurableRunApplicationAssembly {
   const policy = resolveDurableRunRollout(input.env);
   const readService = new DurableRunReadService(policy, input.repository);
   if (!policy.durableActivation) {
     return {
       policy,
       kernel: null,
-      recoveryRuntime: null,
       readService,
-      recoveryResults: [],
-      shutdown: async () => undefined,
+      recover: async () => ({
+        policy,
+        kernel: null,
+        recoveryRuntime: null,
+        readService,
+        recoveryResults: [],
+        shutdown: async () => undefined,
+      }),
     };
   }
   if (!input.repository) {
@@ -87,36 +109,52 @@ export async function initializeDurableRun(input: {
       leaseDurationMs,
     });
     input.registry.configureDurableKernel(kernel);
-    const handlerOverrides = typeof input.recoveryHandlerOverrides === 'function'
-      ? input.recoveryHandlerOverrides(kernel)
-      : input.recoveryHandlerOverrides;
-    const recoveryRuntime = createDurableRecoveryRuntime({
-      registry: input.registry,
-      kernel,
-      dataDir: input.dataDir,
-      dynamicWorkflowHost: input.dynamicWorkflowHost,
-      nativeRecoveryPorts: input.nativeRecoveryPorts,
-      autoAgentRecoveryHost: input.autoAgentRecoveryHost,
-      externalRunners: input.externalRunners,
-      getMcpClient: input.getMcpClient,
-      trustedMcpServerIdentities: input.trustedMcpServerIdentities,
-      handlerOverrides,
-    });
-    const recoveryResults = await recoveryRuntime.recoverAndDispatch(input.now ?? Date.now());
-    recoveryRuntime.startSweeper(Math.max(
-      1,
-      Math.floor(leaseDurationMs / DURABLE_RECOVERY_SWEEP_INTERVAL_DIVISOR),
-    ), {
-      onResults: input.onSweepResults,
-      onError: input.onSweepError,
-    });
     return {
       policy,
       kernel,
-      recoveryRuntime,
       readService,
-      recoveryResults,
-      shutdown: () => recoveryRuntime.shutdown(),
+      recover: async (recoveryInput) => {
+        try {
+          const handlerOverrides = typeof recoveryInput.recoveryHandlerOverrides === 'function'
+            ? recoveryInput.recoveryHandlerOverrides(kernel)
+            : recoveryInput.recoveryHandlerOverrides;
+          const recoveryRuntime = createDurableRecoveryRuntime({
+            registry: input.registry,
+            kernel,
+            dataDir: recoveryInput.dataDir,
+            dynamicWorkflowHost: recoveryInput.dynamicWorkflowHost,
+            nativeRecoveryPorts: recoveryInput.nativeRecoveryPorts,
+            autoAgentRecoveryHost: recoveryInput.autoAgentRecoveryHost,
+            externalRunners: recoveryInput.externalRunners,
+            getMcpClient: recoveryInput.getMcpClient,
+            trustedMcpServerIdentities: recoveryInput.trustedMcpServerIdentities,
+            handlerOverrides,
+          });
+          const recoveryResults = await recoveryRuntime.recoverAndDispatch(
+            recoveryInput.now ?? Date.now(),
+          );
+          recoveryRuntime.startSweeper(Math.max(
+            1,
+            Math.floor(leaseDurationMs / DURABLE_RECOVERY_SWEEP_INTERVAL_DIVISOR),
+          ), {
+            onResults: recoveryInput.onSweepResults,
+            onError: recoveryInput.onSweepError,
+          });
+          return {
+            policy,
+            kernel,
+            recoveryRuntime,
+            readService,
+            recoveryResults,
+            shutdown: () => recoveryRuntime.shutdown(),
+          };
+        } catch (error) {
+          throw new DurableRunRolloutInitializationError(
+            `Failed to recover ${policy.mode} Durable Run runtime`,
+            { cause: error },
+          );
+        }
+      },
     };
   } catch (error) {
     if (error instanceof DurableRunRolloutInitializationError) throw error;
@@ -125,4 +163,12 @@ export async function initializeDurableRun(input: {
       { cause: error },
     );
   }
+}
+
+/** Shared Web/Tauri Durable rollout wiring and the acceptance bootstrap. */
+export async function initializeDurableRun(
+  input: DurableRunAssemblyInput & DurableRunRecoveryInput,
+): Promise<DurableRunApplicationRuntime> {
+  const assembly = assembleDurableRun(input);
+  return assembly.recover(input);
 }

@@ -36,3 +36,5 @@ export const UI_SLOT_CONTRACTS = Object.freeze({
     replaceRisk: 'none',
   }),
 } as const satisfies Record<string, UiSlotContract>);
+
+export type UiSlotName = keyof typeof UI_SLOT_CONTRACTS;

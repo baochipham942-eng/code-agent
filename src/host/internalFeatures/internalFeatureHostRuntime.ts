@@ -1,7 +1,7 @@
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { ipcHost } from '../platform';
-import { verifyPluginApprovalReceipt } from '../plugins/pluginApprovalReceipt';
+import { verifyInstalledPluginTrust } from '../plugins/pluginPackageTrust';
 import { getPluginRegistry } from '../plugins/pluginRegistry';
 import type { LoadedPlugin } from '../plugins/types';
 import { recordCapabilityPackageLifecycle } from '../services/capabilities/capabilityPackageLifecycle';
@@ -24,6 +24,7 @@ interface InternalFeatureHostRuntimeDependencies {
   sdk?: typeof INTERNAL_HOST_SDK;
   lifecycle?: typeof recordCapabilityPackageLifecycle;
   logger?: RuntimeLogger;
+  verifyPluginTrust?: typeof verifyInstalledPluginTrust;
 }
 
 interface LoadedHostFeature {
@@ -65,6 +66,7 @@ export class InternalFeatureHostRuntime {
   private readonly sdk: typeof INTERNAL_HOST_SDK;
   private readonly lifecycle: typeof recordCapabilityPackageLifecycle;
   private readonly logger: RuntimeLogger;
+  private readonly verifyPluginTrust: typeof verifyInstalledPluginTrust;
   private readonly loaded = new Map<string, LoadedHostFeature>();
 
   constructor(dependencies: InternalFeatureHostRuntimeDependencies) {
@@ -73,6 +75,7 @@ export class InternalFeatureHostRuntime {
     this.sdk = dependencies.sdk ?? INTERNAL_HOST_SDK;
     this.lifecycle = dependencies.lifecycle ?? recordCapabilityPackageLifecycle;
     this.logger = dependencies.logger ?? createLogger('InternalFeatureHostRuntime');
+    this.verifyPluginTrust = dependencies.verifyPluginTrust ?? verifyInstalledPluginTrust;
     globalThis.__NEO_INTERNAL_HOST_SDK__ = this.sdk;
   }
 
@@ -93,11 +96,7 @@ export class InternalFeatureHostRuntime {
     try {
       if (this.loaded.has(pluginId)) await this.unload(pluginId);
       assertInternalFeatureHostCompatibility(plugin.manifest);
-      const receipt = await verifyPluginApprovalReceipt(
-        plugin.rootPath,
-        pluginId,
-        plugin.manifest.permissions ?? [],
-      );
+      const trust = await this.verifyPluginTrust(plugin.rootPath, plugin.manifest);
       const feature = plugin.manifest.internalFeature;
       if (!feature) throw new Error('插件清单缺少 internalFeature 契约');
 
@@ -118,7 +117,7 @@ export class InternalFeatureHostRuntime {
       }
 
       const deactivate = (handle as { deactivate: () => Promise<void> | void }).deactivate.bind(handle);
-      this.loaded.set(pluginId, { deactivate, entryPath: resolvedEntry, hash: receipt.packageHash });
+      this.loaded.set(pluginId, { deactivate, entryPath: resolvedEntry, hash: trust.packageHash });
       plugin.state = 'active';
       delete plugin.error;
       this.logger.info(`Internal plugin host loaded: ${pluginId}`);

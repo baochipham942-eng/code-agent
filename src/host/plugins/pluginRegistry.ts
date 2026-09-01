@@ -855,6 +855,8 @@ export function getPluginRegistry(): PluginRegistry {
 }
 
 export async function initPluginSystem(): Promise<void> {
+  const { getRemoteCapabilityRegistryService } = await import('../services/capabilities/remoteCapabilityRegistryService');
+  await getRemoteCapabilityRegistryService().readRegistry();
   await pluginRegistry.initialize();
   const { getInternalFeatureHostRuntime } = await import('../internalFeatures/internalFeatureHostRuntime');
   await getInternalFeatureHostRuntime().loadInstalled();

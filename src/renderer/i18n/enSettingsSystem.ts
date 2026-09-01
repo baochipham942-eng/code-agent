@@ -701,6 +701,7 @@ export const enSettingsSystem = {
         runtime_assets_manifest: 'Runtime assets manifest',
         renderer_bundle: 'Renderer hot-update bundle',
         renderer_bundle_rollout: 'Renderer hot-update rollout policy',
+        plugin_package: 'Plugin package',
       },
       releaseStatusTitle: 'Release status',
       refresh: 'Refresh',

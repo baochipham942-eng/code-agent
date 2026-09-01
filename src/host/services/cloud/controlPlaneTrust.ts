@@ -136,7 +136,7 @@ export function buildControlPlaneContentHash(payload: unknown): string {
     .digest('hex')}`;
 }
 
-export function buildControlPlaneSigningPayload(envelope: ControlPlaneEnvelope): string {
+export function buildControlPlaneSigningPayload<TPayload>(envelope: ControlPlaneEnvelope<TPayload>): string {
   return JSON.stringify(canonicalizeForControlPlane({
     schemaVersion: envelope.schemaVersion,
     kind: envelope.kind,

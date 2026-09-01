@@ -17,9 +17,15 @@ export interface CapabilityPackagePreview {
   description: string;
   permissions: CapabilityPackagePermission[];
   toolNames: string[];
-  surface: 'tools' | 'internal-feature';
+  surface: 'tools' | 'internal-feature' | 'ui';
   sourceKind: 'directory' | 'manifest' | 'zip' | 'bundled';
   sourceLabel: string;
+  sourceTrust: {
+    level: 'signed' | 'unsigned';
+    reason: string;
+    keyId?: string;
+  };
+  requestedUiSlots: string[];
   replacesInstalledVersion?: string;
   sandbox: {
     passed: true;
@@ -36,7 +42,7 @@ export interface InstalledCapabilityPackage {
   permissions: CapabilityPackagePermission[];
   state: 'available' | 'inactive' | 'activating' | 'active' | 'error' | 'disabled';
   toolNames: string[];
-  surface: 'tools' | 'internal-feature';
+  surface: 'tools' | 'internal-feature' | 'ui';
   internalFeature?: {
     id: string;
     label: string;
@@ -60,7 +66,7 @@ export interface CapabilityPackageInstallResult {
   id: string;
   version: string;
   toolNames: string[];
-  surface: 'tools' | 'internal-feature';
+  surface: 'tools' | 'internal-feature' | 'ui';
   replacedVersion?: string;
 }
 

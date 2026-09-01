@@ -23,8 +23,18 @@ export class ExperimentRepository {
     git_commit?: string;
   }): void {
     this.db.prepare(`
-      INSERT OR REPLACE INTO experiments (id, name, timestamp, model, provider, scope, config_json, summary_json, source, git_commit)
+      INSERT INTO experiments (id, name, timestamp, model, provider, scope, config_json, summary_json, source, git_commit)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        name = excluded.name,
+        timestamp = excluded.timestamp,
+        model = excluded.model,
+        provider = excluded.provider,
+        scope = excluded.scope,
+        config_json = excluded.config_json,
+        summary_json = excluded.summary_json,
+        source = excluded.source,
+        git_commit = excluded.git_commit
     `).run(
       experiment.id,
       experiment.name,

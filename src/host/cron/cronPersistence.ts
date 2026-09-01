@@ -40,9 +40,28 @@ export async function saveCronJob(
     const db = getDatabase().getDb();
     if (!db) return;
     db.prepare(`
-      INSERT OR REPLACE INTO cron_jobs
+      INSERT INTO cron_jobs
       (id, name, description, schedule_type, schedule, action, runs_on, max_run_budget, min_interval_seconds, result_channel, cloud_job_id, enabled, max_retries, retry_delay, timeout, tags, metadata, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        name = excluded.name,
+        description = excluded.description,
+        schedule_type = excluded.schedule_type,
+        schedule = excluded.schedule,
+        action = excluded.action,
+        runs_on = excluded.runs_on,
+        max_run_budget = excluded.max_run_budget,
+        min_interval_seconds = excluded.min_interval_seconds,
+        result_channel = excluded.result_channel,
+        cloud_job_id = excluded.cloud_job_id,
+        enabled = excluded.enabled,
+        max_retries = excluded.max_retries,
+        retry_delay = excluded.retry_delay,
+        timeout = excluded.timeout,
+        tags = excluded.tags,
+        metadata = excluded.metadata,
+        created_at = excluded.created_at,
+        updated_at = excluded.updated_at
     `).run(
       job.id, job.name, job.description || null,
       job.scheduleType, JSON.stringify(job.schedule), JSON.stringify(job.action),

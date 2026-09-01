@@ -142,10 +142,19 @@ def _lifecycle_agent(harness: str, build_agent: Callable[[str, str], Agent]) -> 
         async def execute(state: AgentState) -> AgentState:
             workspace, isolated_home = await _prepare_workspace(harness)
             runtime = store().get("harness_runtime", {})
-            runtime["config_isolation"] = {
-                "process_home": str(isolated_home),
-                "workspace": str(workspace),
-            }
+            runtime["config_isolation"] = (
+                {
+                    "process_home": "/root",
+                    "config_root": "/root/.kimi-code",
+                    "scope": "per-sample container",
+                    "workspace": str(workspace),
+                }
+                if harness == "kimi"
+                else {
+                    "process_home": str(isolated_home),
+                    "workspace": str(workspace),
+                }
+            )
             store().set("harness_runtime", runtime)
             cli_agent = build_agent(workspace, isolated_home)
             follow_ups = store().get("harness_case", {}).get("follow_up_prompts", []) or []
@@ -197,13 +206,11 @@ async def _drop_unsupported_codex_cache_key(
     )
 
 
-def _kimi_agent(workspace: str, isolated_home: str) -> Agent:
-    kimi_home = f"{isolated_home}/.kimi-code"
+def _kimi_agent(workspace: str, _isolated_home: str) -> Agent:
     return kimi_code(
         cwd=workspace,
         version="sandbox",
         sandbox=None,
-        env={"HOME": isolated_home, "KIMI_CODE_HOME": kimi_home},
     )
 
 

@@ -230,6 +230,11 @@ jobs:
         # 残留裸 require、__dirname 或 module.exports，在惰性工具路径上延迟爆炸。
         run: node scripts/ci/host-esm-cjs-lint.mjs
 
+      - name: Visual shotbase baseline sync gate
+        # 截图前契约变了，light/dark 两张 Linux PNG 必须同步重录；
+        # 同时拒绝本机 -darwin 产物冒充 Swarm full 的 Linux/Chromium 基线。
+        run: npm run check:visual-shotbase-baselines
+
       - name: Script gates (vitest tests/scripts)
         # tests/scripts 下的守门测试（designSystemGate / architectureDebtReport /
         # windowChromeContract / releaseMacosGates 等）此前不在任何 CI 套件里，

@@ -28,6 +28,7 @@
     "debt:report": "node scripts/architecture-debt-report.mjs",
     "gates:local": "node scripts/gates-local.mjs",
     "check:agent-event-schema": "node scripts/ci/agent-event-schema-gate.mjs",
+    "check:visual-shotbase-baselines": "node scripts/ci/visual-shotbase-baseline-gate.mjs",
     "acceptance:request-replay": "npx tsx packages/internal/evaluation-center/scripts/acceptance/request-replay-smoke.ts",
     "closure:task": "node scripts/task-closure.mjs",
     "closure:delivery": "node scripts/delivery-closure.mjs",

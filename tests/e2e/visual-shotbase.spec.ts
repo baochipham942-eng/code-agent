@@ -202,6 +202,8 @@ for (const theme of ['light', 'dark'] as const) {
     // Linux 基线记录的是右侧专家面板展开态。agent event 到达后显式恢复
     // 这一布局，等两帧并再次确认 turn 仍在运行。
     await ensureWorkbenchExpandedForVisualFrame(page);
+    // 基线保留成员条的文本与布局，只通过 avatarRegions mask 遮住动态头像。
+    await expect(sessionMemberBar).toBeVisible({ timeout: 5_000 });
 
     await expect(page.locator('.h-screen')).toHaveScreenshot(
       `dangerous-command-approval-${theme}.png`,
@@ -212,7 +214,6 @@ for (const theme of ['light', 'dark'] as const) {
           timestampRegion,
           avatarRegions,
           dynamicExpertIdentityRows,
-          sessionMemberBar,
           streamingRegion,
         ],
       },

@@ -33,7 +33,8 @@ function decision(over: Partial<PermissionDecisionRecord>): PermissionDecisionRe
 function execution(over: Partial<ToolExecutionEventRecord>): ToolExecutionEventRecord {
   return {
     id: 1, executionId: 'exec-1', sessionId: SID, toolName: 'Bash', summary: null,
-    params: null, phase: 'begin', status: null, error: null, origin: null, recordedAt: 0,
+    params: null, phase: 'begin', status: null, error: null, origin: null,
+    toolCallId: null, replaySafety: null, recordedAt: 0,
     ...over,
   };
 }

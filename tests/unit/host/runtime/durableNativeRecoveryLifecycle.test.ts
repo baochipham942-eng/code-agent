@@ -19,7 +19,7 @@ import type { RunRehydrationPlan } from '../../../../src/host/runtime/durableRun
 import { RunRegistry, RunSessionConflictError } from '../../../../src/host/runtime/runRegistry';
 import { DurableRunRepository } from '../../../../src/host/services/core/repositories/DurableRunRepository';
 import { DURABLE_ACTIVE_SESSION_CONFLICT_CODE } from '../../../../src/shared/contract/durableRun';
-import type { Message } from '../../../../src/shared/contract';
+import type { Message, ToolDefinition } from '../../../../src/shared/contract';
 
 function createRepository() {
   const db = new Database(':memory:');
@@ -139,7 +139,12 @@ function unavailablePorts(input: {
       queryResult: vi.fn(async () => null),
       canRetrySafely: vi.fn(async () => false),
     },
-    tool: { queryResult: vi.fn(async () => null) },
+    tool: {
+      queryResult: vi.fn(async () => null),
+      classifyReplaySafety: vi.fn(async () => ({ stored: 'unknown' as const, current: 'unknown' as const })),
+      dispatchPrepared: unavailable.tool.dispatchPrepared,
+      interrupt: unavailable.tool.interrupt,
+    },
     approval: { read: vi.fn(async () => input.approval ?? 'pending') },
   };
 }
@@ -232,6 +237,107 @@ describe('durable Native recovery lifecycle', () => {
     }
   });
 
+  it('restarts a persisted read-only tool and commits its real result', async () => {
+    const workspace = realpathSync(mkdtempSync(path.join(tmpdir(), 'durable-native-tool-')));
+    const { db, repository } = createRepository();
+    const firstRegistry = new RunRegistry();
+    firstRegistry.configureDurableKernel(kernel(repository, 'tool-before-crash'));
+    const recoveredRegistry = new RunRegistry();
+    recoveredRegistry.configureDurableKernel(kernel(repository, 'tool-after-crash'));
+    const messages: Message[] = [
+      { id: 'tool-source', role: 'user', content: '读取文件', timestamp: 1_005 },
+      {
+        id: 'assistant-read',
+        role: 'assistant',
+        content: '',
+        timestamp: 1_006,
+        toolCalls: [{
+          id: 'call-read',
+          name: 'Read',
+          arguments: { file_path: 'README.md' },
+        }],
+      },
+    ];
+    const executeTool = vi.fn(async () => ({ success: true, output: 'durable file contents' }));
+
+    try {
+      const original = await firstRegistry.startDurable({
+        runId: 'run-tool-before-crash',
+        sessionId: 'session-tool-before-crash',
+        workspace,
+        cwd: workspace,
+      }, 1_000);
+      await firstRegistry.checkpointNativeToolOperation({
+        runId: original.context.runId,
+        sourceMessageId: 'tool-source',
+        toolName: 'Read',
+        logicalOperationId: 'call-read',
+        providerOperationId: 'execution-read',
+        sideEffect: false,
+        status: 'dispatched',
+        now: 1_010,
+      });
+      firstRegistry.clear();
+
+      const [recoveryPlan] = await recoveredRegistry.recoverDurable(2_000);
+      const applicationPorts = createApplicationNativeRecoveryPorts(recoveredRegistry, {
+        sessions: {
+          getMessages: vi.fn(async () => messages),
+          updateMessage: vi.fn(async () => undefined),
+        },
+        tasks: { setSessionContext: vi.fn(), startTask: vi.fn(async () => undefined) },
+        resolveToolDefinition: vi.fn(() => ({
+          name: 'Read',
+          description: 'read',
+          inputSchema: { type: 'object', properties: {} },
+          outputSchema: { type: 'string' },
+          requiresPermission: false,
+          permissionLevel: 'read',
+          readOnly: true,
+        } satisfies ToolDefinition)),
+        storedToolReplaySafety: vi.fn(() => 'automatic' as const),
+        executeTool,
+        persistToolMessage: vi.fn(async (_sessionId, message) => { messages.push(message); }),
+        acknowledgeToolRecovery: vi.fn(),
+        now: () => 2_000,
+      });
+      const ports: NativeRecoveryHostPorts = {
+        ...applicationPorts,
+        resolveWorkspaceScopeVersion: vi.fn(async (projectId) => (
+          recoveryPlan.checkpoint?.state
+          && (recoveryPlan.checkpoint.state as NativeRecoveryDescriptor).workspace.scope?.projectId === projectId
+            ? (recoveryPlan.checkpoint.state as NativeRecoveryDescriptor).workspace.scope?.version ?? null
+            : null
+        )),
+        tool: {
+          ...applicationPorts.tool,
+          queryResult: vi.fn(async () => null),
+        },
+      };
+
+      await expect(new NativeRecoveryHost(recoveredRegistry, ports).createHandler().recover(recoveryPlan, 2_000))
+        .resolves.toMatchObject({
+          status: 'recovered',
+          reason: 'replay_safe_tool_once',
+          detail: { resultRef: 'message-ledger:assistant-read:replayed-tool-result:call-read' },
+        });
+      expect(executeTool).toHaveBeenCalledOnce();
+      expect(messages.at(-1)).toMatchObject({
+        role: 'tool',
+        toolResults: [{ toolCallId: 'call-read', success: true, output: 'durable file contents' }],
+      });
+      expect(await repository.get(original.context.runId)).toMatchObject({
+        status: 'completed',
+        terminal: { reason: 'replay_safe_tool_once' },
+      });
+    } finally {
+      firstRegistry.clear();
+      recoveredRegistry.clear();
+      db.close();
+      rmSync(workspace, { recursive: true, force: true });
+    }
+  });
+
   it.each([
     {
       branch: 'dispatched model with a provider operation id',
@@ -288,21 +394,6 @@ describe('durable Native recovery lifecycle', () => {
   });
 
   it.each([
-    {
-      branch: 'unknown write side effect',
-      operation: {
-        kind: 'tool_call' as const,
-        status: 'dispatched' as const,
-        sideEffect: true,
-        providerOperationId: undefined,
-      },
-      descriptor: { phase: 'tool_dispatched' as const },
-      ports: () => createApplicationNativeRecoveryPorts(),
-      reason: 'unknown_write_side_effect',
-      recoveryStatus: 'requires_review',
-      persistedOperationStatus: 'unknown',
-      eventType: 'native_recovery_requires_review',
-    },
     {
       branch: 'pending approval without a recovery resolution path',
       operation: {
@@ -451,7 +542,12 @@ describe('durable Native recovery lifecycle', () => {
         canRetrySafely: vi.fn(async () => false),
         retrySafe: vi.fn(async () => ({ resultRef: 'unused' })),
       },
-      tool: { queryResult: vi.fn(async () => null) },
+      tool: {
+        queryResult: vi.fn(async () => null),
+        classifyReplaySafety: vi.fn(async () => ({ stored: 'unknown' as const, current: 'unknown' as const })),
+        dispatchPrepared: vi.fn(async () => ({ resultRef: 'unused' })),
+        interrupt: vi.fn(async () => ({ resultRef: 'interrupted' })),
+      },
       approval: { read: vi.fn(async (_approvalId: string) => 'pending' as const) },
     };
 
@@ -623,17 +719,6 @@ describe('durable Native recovery lifecycle', () => {
   });
 
   it.each([
-    {
-      branch: 'unknown write side effect',
-      plan: () => planWith({
-        kind: 'tool_call',
-        status: 'dispatched',
-        providerOperationId: undefined,
-        sideEffect: true,
-      }),
-      reason: 'unknown_write_side_effect',
-      status: 'requires_review',
-    },
     {
       branch: 'pending approval',
       plan: () => planWith({

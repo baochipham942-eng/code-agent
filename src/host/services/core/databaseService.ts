@@ -1085,6 +1085,7 @@ export class DatabaseService extends DurableRunDatabaseSupport {
       skipTimestampUpdate?: boolean;
       syncOrigin?: 'local' | 'remote';
       syncedAt?: number | null;
+      provenanceKind?: 'compatibility_projection_append' | 'crash-recovery';
     }
   ): void {
     this.ensureDb();

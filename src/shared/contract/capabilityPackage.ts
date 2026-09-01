@@ -59,6 +59,20 @@ export interface InstalledCapabilityPackage {
       commit: string;
     };
   };
+  pluginUi?: {
+    sdkVersion: {
+      renderer: string;
+    };
+    rendererEntry: string;
+    rendererStyles: string;
+    loadedHash: string;
+    sourceTrust: {
+      level: 'signed' | 'unsigned';
+      reason: string;
+      keyId?: string;
+    };
+    requestedUiSlots: string[];
+  };
   error?: string;
 }
 

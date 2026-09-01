@@ -368,6 +368,7 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.CAPABILITY_PACKAGE_CONFIRM]: (token: string) => Promise<CapabilityPackageResult<CapabilityPackageInstallResult>>;
   [IPC_CHANNELS.CAPABILITY_PACKAGE_CANCEL]: (token: string) => Promise<CapabilityPackageResult<void>>;
   [IPC_CHANNELS.CAPABILITY_PACKAGE_UNINSTALL]: (pluginId: string) => Promise<CapabilityPackageResult<void>>;
+  [IPC_CHANNELS.CAPABILITY_PACKAGE_UI_LOAD_STATE]: (pluginId: string, error?: string) => Promise<CapabilityPackageResult<void>>;
   [IPC_CHANNELS.CAPABILITY_STATE_LIST]: () => Promise<BundledHostCapabilityState[]>;
   [IPC_CHANNELS.CAPABILITY_STATE_INSTALL]: (id: BundledHostCapabilityId) => Promise<void>;
   [IPC_CHANNELS.CAPABILITY_STATE_UNINSTALL]: (id: BundledHostCapabilityId) => Promise<void>;

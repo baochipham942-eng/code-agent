@@ -47,6 +47,14 @@ export interface PluginManifest extends PluginMetadata {
   surfaces?: PluginSurface[];
   /** UI seats requested from the ADR-062 public slot contract. */
   uiSlots?: UiSlotName[];
+  /** Renderer bundle metadata for a third-party UI plugin. */
+  pluginUi?: {
+    sdkVersion: {
+      renderer: string;
+    };
+    rendererEntry: string;
+    rendererStyles: string;
+  };
   /**
    * 领域能力标签（kebab-case），供 CapabilityRecommender / Gap 提示语义匹配
    * 用，如 `['image-generation', 'image-processing']`。host 不做白名单校验，

@@ -14,6 +14,7 @@ import {
 } from './pluginUiActivationPolicy';
 import { Z_LAYERS } from '../styles/zLayers';
 import ipcService from '../services/ipcService';
+import { refreshThirdPartyPluginUi } from './thirdPartyPluginUiLoader';
 
 const InternalFeatureHost = React.lazy(() => import('../internalFeatures/InternalFeatureHost').then(({ InternalFeatureHost: component }) => ({ default: component })));
 
@@ -21,7 +22,11 @@ export const PluginUiActivationPolicyBootstrap: React.FC = () => {
   useEffect(() => {
     let cancelled = false;
     void ipcService.invokeDomain<AppSettings>(IPC_DOMAINS.SETTINGS, 'get')
-      .then((settings) => (cancelled ? undefined : applyPluginUiActivationSettings(settings)))
+      .then(async (settings) => {
+        if (cancelled) return;
+        await applyPluginUiActivationSettings(settings);
+        if (!cancelled) await refreshThirdPartyPluginUi();
+      })
       .catch(() => undefined);
     return () => { cancelled = true; };
   }, []);

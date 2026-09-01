@@ -117,10 +117,10 @@ describe('InternalFeatureHost', () => {
     });
     await waitFor(() => {
       const scripts = Array.from(document.querySelectorAll<HTMLScriptElement>('script[data-internal-feature]'));
-      expect(scripts).toHaveLength(2);
-      expect(scripts[1]?.src).toContain('v=hash-b');
+      expect(scripts).toHaveLength(1);
+      expect(scripts[0]?.src).toContain('v=hash-b');
     });
-    const secondScript = Array.from(document.querySelectorAll<HTMLScriptElement>('script[data-internal-feature]'))[1]!;
+    const secondScript = currentScript(id);
     expect(secondScript).not.toBe(firstScript);
     (window as unknown as Record<string, unknown>)[pluginGlobal(id)] = {
       Page: () => <div>PAGE B</div>,

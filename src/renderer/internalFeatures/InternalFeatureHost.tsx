@@ -5,34 +5,12 @@ import { useI18n } from '../hooks/useI18n';
 import { useAppStore } from '../stores/appStore';
 import { useInternalFeatureStore } from './internalFeatureStore';
 import { RENDERER_INTERNAL_SDK_VERSION } from './internalSdkVersion';
+import { acquireRemoteRendererBundle } from './remoteRendererBundle';
 
 type InternalFeaturePage = React.FC;
 
-const loadCache = new Map<string, Promise<InternalFeaturePage>>();
-
 function globalName(id: string): string {
   return `__neoInternalFeature_${id.replace(/[^A-Za-z0-9]/g, '_')}`;
-}
-
-function stylesheetLinks(id: string): HTMLLinkElement[] {
-  return Array.from(document.querySelectorAll<HTMLLinkElement>('link[data-internal-feature]'))
-    .filter((link) => link.dataset.internalFeature === id);
-}
-
-function ensureStylesheet(id: string, cssUrl: string): void {
-  const matching = stylesheetLinks(id).find((link) => link.href === new URL(cssUrl, window.location.href).href);
-  if (matching) return;
-  stylesheetLinks(id).forEach((link) => link.remove());
-  const link = document.createElement('link');
-  link.rel = 'stylesheet';
-  link.href = cssUrl;
-  link.dataset.internalFeature = id;
-  document.head.appendChild(link);
-}
-
-function removeStylesheet(id: string, cssUrl: string): void {
-  const target = new URL(cssUrl, window.location.href).href;
-  stylesheetLinks(id).filter((link) => link.href === target).forEach((link) => link.remove());
 }
 
 function loadInternalFeature(
@@ -40,42 +18,22 @@ function loadInternalFeature(
   loadedHash: string,
   entryUrl: string,
   cssUrl: string,
-): Promise<InternalFeaturePage> {
-  ensureStylesheet(id, cssUrl);
-  const cacheKey = `${id}:${loadedHash}`;
-  const cached = loadCache.get(cacheKey);
-  if (cached) return cached;
-
-  const promise = new Promise<InternalFeaturePage>((resolve, reject) => {
-    const name = globalName(id);
-    delete (window as unknown as Record<string, unknown>)[name];
-    const script = document.createElement('script');
-    script.src = entryUrl;
-    script.async = true;
-    script.dataset.internalFeature = id;
-    script.onload = () => {
-      const remote = (window as unknown as Record<string, unknown>)[name] as { Page?: unknown } | undefined;
+) {
+  return acquireRemoteRendererBundle({
+    cacheKey: `internal-feature:${id}:${loadedHash}`,
+    cssUrl,
+    dataAttribute: 'data-internal-feature',
+    entryUrl,
+    globalName: globalName(id),
+    ownerId: id,
+    readModule: (value) => {
+      const remote = value as { Page?: unknown } | undefined;
       if (typeof remote?.Page !== 'function') {
-        reject(new Error(`Plugin ${id} did not register a Page function`));
-        return;
+        throw new Error(`Plugin ${id} did not register a Page function`);
       }
-      resolve(remote.Page as InternalFeaturePage);
-    };
-    script.onerror = () => reject(new Error(`Plugin ${id} script failed to load`));
-    document.head.appendChild(script);
-  }).catch((error) => {
-    loadCache.delete(cacheKey);
-    document.querySelectorAll<HTMLScriptElement>('script[data-internal-feature]')
-      .forEach((script) => {
-        if (script.dataset.internalFeature === id && script.src === new URL(entryUrl, window.location.href).href) {
-          script.remove();
-        }
-      });
-    throw error;
+      return remote.Page as InternalFeaturePage;
+    },
   });
-
-  loadCache.set(cacheKey, promise);
-  return promise;
 }
 
 class RemotePageBoundary extends React.Component<{
@@ -166,16 +124,19 @@ export const InternalFeatureHost: React.FC<{ featureId: string }> = ({ featureId
     let active = true;
     setPage(null);
     setFailure(null);
-    void loadInternalFeature(featureId, loadedHash, entryUrl, cssUrl)
+    const bundle = loadInternalFeature(featureId, loadedHash, entryUrl, cssUrl);
+    void bundle.promise
       .then((loadedPage) => { if (active) setPage(() => loadedPage); })
       .catch((error: unknown) => {
         const reason = error instanceof Error ? error : new Error(String(error));
-        console.error(`[InternalFeatureHost] ${featureId} failed to load`, reason);
-        if (active) setFailure(reason);
+        if (active) {
+          console.error(`[InternalFeatureHost] ${featureId} failed to load`, reason);
+          setFailure(reason);
+        }
       });
     return () => {
       active = false;
-      removeStylesheet(featureId, cssUrl);
+      bundle.dispose();
     };
   }, [attempt, cssUrl, detail, entryUrl, featureId, loadedHash]);
 

@@ -157,6 +157,7 @@ const EXPECTED_ROUTES: Array<[string, string]> = [
   ['get', '/shell/capabilities'],
   // static router (mounted at root, not under /api)
   ['get', '/internal-features/:id/{*path}'],
+  ['get', '/plugin-ui/:id/{*path}'],
   ['get', '/{*path}'],
 ];
 

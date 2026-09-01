@@ -8,6 +8,13 @@ function manifest(surface: string): Record<string, unknown> {
     version: '1.0.0',
     main: 'index.js',
     surfaces: [surface],
+    ...(surface === 'ui' ? {
+      pluginUi: {
+        sdkVersion: { renderer: 'fixture-version' },
+        rendererEntry: 'dist/renderer/index.js',
+        rendererStyles: 'dist/renderer/index.css',
+      },
+    } : {}),
   };
 }
 

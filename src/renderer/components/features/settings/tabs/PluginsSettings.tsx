@@ -31,6 +31,7 @@ import type {
 } from '@shared/contract/capabilityPackage';
 import { useAuthStore } from '../../../../stores/authStore';
 import { useInternalFeatureStore } from '../../../../internalFeatures/internalFeatureStore';
+import { refreshThirdPartyPluginUi } from '../../../../slots/thirdPartyPluginUiLoader';
 import { useI18n } from '../../../../hooks/useI18n';
 import ipcService from '../../../../services/ipcService';
 import { pickNativeFile } from '../../../../services/tauriPluginFacade';
@@ -143,6 +144,7 @@ export const PluginsSettings: React.FC = () => {
       setInstalled(installedState.data ?? []);
       setCapabilityPackages(capabilityPackagesState.data ?? []);
       await useInternalFeatureStore.getState().refresh();
+      await refreshThirdPartyPluginUi(capabilityPackagesState.data ?? []);
     } catch (error) {
       const text = (error instanceof Error ? error.message : String(error)).trim() || pluginsText.errors.operationFailed;
       setNotice({ type: 'error', text });

@@ -92,4 +92,31 @@ describe('switchSession 的 isHydratingSession 窗口', () => {
     expect(useSessionStore.getState().isHydratingSession).toBe(false);
     expect(useSessionStore.getState().error).toBe('boom');
   });
+
+  it('epoch 强制 snapshot 期间合并实时尾部，不被较旧 snapshot 覆盖', async () => {
+    useSessionStore.setState({
+      currentSessionId: 's1',
+      messages: [{ id: 'm1', role: 'assistant', content: 'old', timestamp: 1 }],
+    });
+    let resolveLoad: (value: unknown) => void = () => {};
+    mockDomainInvoke.mockImplementation((_domain: string, action: string) => {
+      if (action === 'load') {
+        return new Promise((resolve) => {
+          resolveLoad = resolve;
+        });
+      }
+      return Promise.resolve({ success: true, data: [] });
+    });
+
+    const refreshing = useSessionStore.getState().switchSession('s1', { force: true });
+    useSessionStore.getState().updateMessage('m1', { content: 'old + live tail' });
+    resolveLoad(loadedSession('s1', [
+      { id: 'm1', role: 'assistant', content: 'old + snapshot', timestamp: 1 },
+    ]));
+    await refreshing;
+
+    expect(useSessionStore.getState().messages).toEqual([
+      expect.objectContaining({ id: 'm1', content: 'old + live tail' }),
+    ]);
+  });
 });

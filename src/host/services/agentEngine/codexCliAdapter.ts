@@ -8,7 +8,7 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
 import { getLogsPath } from '../../platform';
-import type { AgentEventEnvelope, Message, MessageMetadata } from '../../../shared/contract';
+import type { AgentEvent, Message, MessageMetadata } from '../../../shared/contract';
 import type {
   AgentEnginePermissionProfile,
   AgentEngineRunRequest,
@@ -44,7 +44,7 @@ export interface CodexCliRunRequest extends AgentEngineRunRequest {
   workspaceRoot: string;
   attachmentsCount?: number;
   messageMetadata?: MessageMetadata;
-  emitEvent?: (event: AgentEventEnvelope) => void;
+  emitEvent?: (event: AgentEvent) => void;
   timeoutMs?: number;
   stallWarningMs?: number;
   durableLifecycle?: ExternalEngineDurableLifecycle;
@@ -182,7 +182,7 @@ export class CodexCliAdapter {
       data: { runId, cwd, permissionProfile, model },
     });
 
-    const emit = (event: AgentEventEnvelope) => emitAgentEvent(request.sessionId, event, request.emitEvent);
+    const emit = (event: AgentEvent) => emitAgentEvent(request.sessionId, event, request.emitEvent);
 
     emit({
       type: 'turn_start',
@@ -769,8 +769,8 @@ async function readFileIfExists(filePath: string): Promise<string | undefined> {
 
 function emitAgentEvent(
   sessionId: string,
-  event: AgentEventEnvelope,
-  localSink?: (event: AgentEventEnvelope) => void,
+  event: AgentEvent,
+  localSink?: (event: AgentEvent) => void,
 ): void {
   emitExternalAgentEvent(sessionId, event, localSink);
 }

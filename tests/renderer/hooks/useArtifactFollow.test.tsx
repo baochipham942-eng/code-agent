@@ -53,7 +53,9 @@ function emit(event: AgentEventEnvelope): void {
 function writeStart(): AgentEventEnvelope {
   return {
     type: 'tool_call_start',
+    streamEpoch: 'native:artifact-follow-test',
     sessionId: 'session-1',
+    seq: 1,
     data: {
       id: 'write-1',
       name: 'Write',

@@ -92,7 +92,7 @@ interface SessionCreateStoreSlice {
   currentSessionId: string | null;
   messages: Message[];
   todos: TodoItem[];
-  switchSession: (sessionId: string) => Promise<void>;
+  switchSession: (sessionId: string, options?: { force?: boolean }) => Promise<void>;
   updateSessionEngine: (sessionId: string, engine: Partial<AgentEngineSessionMetadata>) => Promise<void>;
 }
 

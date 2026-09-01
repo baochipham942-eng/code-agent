@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AgentEventEnvelope } from '../../../src/shared/contract';
+import type { AgentEvent } from '../../../src/shared/contract';
 
 const mocks = vi.hoisted(() => ({
   webContentsSend: vi.fn(),
@@ -14,7 +14,7 @@ vi.mock('../../../src/host/platform', () => ({
 import { emitExternalAgentEvent } from '../../../src/host/services/agentEngine/agentEngineEventSink';
 
 describe('external agent engine event sink routing', () => {
-  const event = { type: 'turn_start', data: { turnId: 'turn-1' } } as AgentEventEnvelope;
+  const event: AgentEvent = { type: 'turn_start', data: { turnId: 'turn-1' } };
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -35,7 +35,12 @@ describe('external agent engine event sink routing', () => {
     expect(mocks.webContentsSend).toHaveBeenCalledTimes(1);
     expect(mocks.webContentsSend).toHaveBeenCalledWith(
       expect.any(String),
-      { ...event, sessionId: 'desktop-session' },
+      expect.objectContaining({
+        ...event,
+        streamEpoch: expect.stringMatching(/^native:/),
+        sessionId: 'desktop-session',
+        seq: 1,
+      }),
     );
   });
 });

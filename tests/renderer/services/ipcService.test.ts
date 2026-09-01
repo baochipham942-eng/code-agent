@@ -103,13 +103,13 @@ describe('ipcService.on', () => {
     expect(mockOn).toHaveBeenCalledWith(IPC_CHANNELS.AGENT_EVENT_BATCH, expect.any(Function));
 
     listeners.get(IPC_CHANNELS.AGENT_EVENT_BATCH)?.([
-      { type: 'stream_chunk', data: { content: 'hello ' } },
-      { type: 'stream_chunk', data: { content: 'world' } },
+      { type: 'stream_chunk', streamEpoch: 'native:host-1', sessionId: 'session-1', seq: 1, data: { content: 'hello ' } },
+      { type: 'stream_chunk', streamEpoch: 'native:host-1', sessionId: 'session-1', seq: 2, data: { content: 'world' } },
     ]);
 
     expect(callback).toHaveBeenCalledTimes(2);
-    expect(callback).toHaveBeenNthCalledWith(1, { type: 'stream_chunk', data: { content: 'hello ' } });
-    expect(callback).toHaveBeenNthCalledWith(2, { type: 'stream_chunk', data: { content: 'world' } });
+    expect(callback).toHaveBeenNthCalledWith(1, { type: 'stream_chunk', streamEpoch: 'native:host-1', sessionId: 'session-1', seq: 1, data: { content: 'hello ' } });
+    expect(callback).toHaveBeenNthCalledWith(2, { type: 'stream_chunk', streamEpoch: 'native:host-1', sessionId: 'session-1', seq: 2, data: { content: 'world' } });
     expect(getStreamingPerformanceSnapshot().counters).toMatchObject({
       'stream.ipc.batch_received': 1,
       'stream.ipc.batch_events': 2,
@@ -128,6 +128,7 @@ describe('ipcService.on', () => {
 
     const event = {
       type: 'stream_chunk',
+      streamEpoch: 'native:host-1',
       sessionId: 'session-1',
       seq: 1,
       data: { content: 'hello', turnId: 'turn-1' },
@@ -139,6 +140,51 @@ describe('ipcService.on', () => {
     expect(getStreamingPerformanceSnapshot().counters).toMatchObject({
       'stream.ipc.duplicate_dropped': 1,
     });
+  });
+
+  it('accepts a restarted host epoch even when its session sequence restarts at one', () => {
+    const listeners = new Map<string, (...args: any[]) => void>();
+    mockOn.mockImplementation((channel: string, callback: (...args: any[]) => void) => {
+      listeners.set(channel, callback);
+      return () => {};
+    });
+
+    const callback = vi.fn();
+    const snapshotRequired = vi.fn();
+    const unsubscribeSnapshot = ipcService.on(
+      IPC_CHANNELS.AGENT_STREAM_SNAPSHOT_REQUIRED,
+      snapshotRequired,
+    );
+    ipcService.on(IPC_CHANNELS.AGENT_EVENT, callback);
+
+    listeners.get(IPC_CHANNELS.AGENT_EVENT)?.({
+      type: 'stream_chunk',
+      streamEpoch: 'native:host-before-restart',
+      sessionId: 'session-1',
+      seq: 3,
+      data: { content: 'before restart', turnId: 'turn-1' },
+    });
+    listeners.get(IPC_CHANNELS.AGENT_EVENT)?.({
+      type: 'stream_chunk',
+      streamEpoch: 'native:host-after-restart',
+      sessionId: 'session-1',
+      seq: 1,
+      data: { content: 'after restart', turnId: 'turn-2' },
+    });
+
+    expect(callback).toHaveBeenCalledTimes(2);
+    expect(callback).toHaveBeenLastCalledWith(expect.objectContaining({
+      streamEpoch: 'native:host-after-restart',
+      seq: 1,
+    }));
+    expect(snapshotRequired).toHaveBeenCalledWith({
+      transport: 'native-ipc',
+      streamEpoch: 'native:host-after-restart',
+      sessionId: 'session-1',
+      watermark: 1,
+      reason: 'epoch_changed',
+    });
+    unsubscribeSnapshot?.();
   });
 
   it('keeps sequenced dedupe state isolated across agent event subscribers', () => {
@@ -155,6 +201,7 @@ describe('ipcService.on', () => {
 
     const event = {
       type: 'stream_chunk',
+      streamEpoch: 'native:host-1',
       sessionId: 'session-1',
       seq: 1,
       data: { content: 'hello', turnId: 'turn-1' },

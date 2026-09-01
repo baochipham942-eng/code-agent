@@ -475,6 +475,7 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
   // ADR-010 #6: 跟踪 backend 分配的单调 event id；重连时作为 lastEventId 传回，
   // 让服务端 replay buffer 补发断线窗口内错过的事件。
   let lastSeenEventId = -1;
+  let lastSeenStreamEpoch: string | undefined;
 
   /**
    * 初始化 SSE 连接，接收后端推送事件
@@ -486,6 +487,7 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
     const params = new URLSearchParams();
     if (token) params.set('token', token);
     if (lastSeenEventId >= 0) params.set('lastEventId', String(lastSeenEventId));
+    if (lastSeenStreamEpoch) params.set('streamEpoch', lastSeenStreamEpoch);
     const query = params.toString();
     const sseUrl = query ? `${baseUrl}/api/events?${query}` : `${baseUrl}/api/events`;
     eventSource = new EventSource(sseUrl);
@@ -503,6 +505,34 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
       }
       const payload = parseSSEPayload(eventData);
       if (payload) {
+        if (payload.channel === 'connected' && isRecord(payload.args)) {
+          const streamEpoch = getStringField(payload.args, 'streamEpoch');
+          const sessionId = getStringField(payload.args, 'sessionId');
+          const watermark = getNumberField(payload.args, 'seq');
+          if (streamEpoch && sessionId === '__sse__' && watermark !== undefined) {
+            const epochChanged = lastSeenStreamEpoch !== undefined
+              && lastSeenStreamEpoch !== streamEpoch;
+            lastSeenStreamEpoch = streamEpoch;
+            if (epochChanged || payload.args.requiresSnapshot === true) {
+              lastSeenEventId = watermark;
+              dispatchSSEPayload(
+                IPC_CHANNELS.AGENT_STREAM_SNAPSHOT_REQUIRED,
+                {
+                  transport: 'http-sse',
+                  streamEpoch,
+                  watermark,
+                  reason: epochChanged
+                    ? 'epoch_changed'
+                    : getStringField(payload.args, 'reason') ?? 'initial_snapshot',
+                },
+                listeners.get(IPC_CHANNELS.AGENT_STREAM_SNAPSHOT_REQUIRED),
+              );
+            } else if (watermark > lastSeenEventId) {
+              lastSeenEventId = watermark;
+            }
+          }
+          return;
+        }
         dispatchSSEPayload(payload.channel, payload.args, listeners.get(payload.channel));
       }
     };
@@ -620,6 +650,8 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
           let buffer = '';
           let streamSessionId = sessionId;
           let streamRunId: string | undefined;
+          let streamEpoch: string | undefined;
+          let streamSeq = 0;
 
           const processStream = async () => {
             let currentEvent = '';  // 移到 while 外面，防止跨 chunk 时 event/data 分属不同 read() 导致丢失
@@ -637,7 +669,11 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
                         const data = parseJsonValue(line.slice(6));
                         if (data !== undefined) {
                           const currentSessionId = getStringField(data, 'sessionId');
+                          const currentStreamEpoch = getStringField(data, 'streamEpoch');
+                          const currentSeq = getNumberField(data, 'seq');
                           if (currentSessionId) streamSessionId = currentSessionId;
+                          if (currentStreamEpoch) streamEpoch = currentStreamEpoch;
+                          if (currentSeq !== undefined) streamSeq = currentSeq;
                           if (isRecord(data)) {
                             streamRunId = interceptLocalBridgeEvent(baseUrl, currentEvent, data)
                               ?? streamRunId;
@@ -647,8 +683,9 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
                             cbs.forEach((cb) => cb({
                               type: currentEvent,
                               data,
+                              streamEpoch: currentStreamEpoch,
                               sessionId: currentSessionId,
-                              seq: getNumberField(data, 'seq'),
+                              seq: currentSeq,
                             }));
                           }
                         }
@@ -659,10 +696,13 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
                   // 流结束兜底：确保 agent_complete 被派发（防止后端异常退出时状态卡住）
                   const completeCbs = listeners.get('agent:event');
                   if (completeCbs) {
+                    streamSeq += 1;
                     completeCbs.forEach((cb) => cb({
                       type: 'stream_end',
                       data: streamSessionId ? { sessionId: streamSessionId } : {},
+                      streamEpoch,
                       sessionId: streamSessionId,
+                      seq: streamSeq,
                     }));
                   }
                   break;
@@ -678,7 +718,11 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
                     const data = parseJsonValue(line.slice(6));
                     if (data !== undefined) {
                       const currentSessionId = getStringField(data, 'sessionId');
+                      const currentStreamEpoch = getStringField(data, 'streamEpoch');
+                      const currentSeq = getNumberField(data, 'seq');
                       if (currentSessionId) streamSessionId = currentSessionId;
+                      if (currentStreamEpoch) streamEpoch = currentStreamEpoch;
+                      if (currentSeq !== undefined) streamSeq = currentSeq;
 
                       if (isRecord(data)) {
                         streamRunId = interceptLocalBridgeEvent(baseUrl, currentEvent, data)
@@ -694,8 +738,9 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
                         cbs.forEach((cb) => cb({
                           type: currentEvent,
                           data,
+                          streamEpoch: currentStreamEpoch,
                           sessionId: currentSessionId,
-                          seq: getNumberField(data, 'seq'),
+                          seq: currentSeq,
                         }));
                       }
                     }
@@ -707,10 +752,13 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
               console.error('[HttpTransport] processStream error:', err);
               const errorCbs = listeners.get('agent:event');
               if (errorCbs) {
+                streamSeq += 1;
                 errorCbs.forEach((cb) => cb({
                   type: 'error',
                   data: { message: err instanceof Error ? err.message : 'Stream error' },
+                  streamEpoch,
                   sessionId: streamSessionId,
+                  seq: streamSeq,
                 }));
               }
             } finally {

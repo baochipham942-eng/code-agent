@@ -4,6 +4,7 @@ import { IPC_CHANNELS } from '../../shared/ipc';
 import { MessageDeltaAccumulator } from '../../host/protocol/messageDeltaAccumulator';
 import { createAgentRunSSEBatcher } from '../helpers/agentRunSSEBatcher';
 import { broadcastSSE, sendSSE } from '../helpers/sse';
+import { envelopeWebAgentEvent } from '../helpers/agentStreamCursor';
 import type { AgentSessionManagerLike } from './agentRouteTypes';
 import type { WebRouteLogger } from './routeTypes';
 import type { RunHandle } from '../../host/runtime/runContext';
@@ -112,14 +113,15 @@ export class AgentRunController {
       //
       // 只包镜像这一路：直连轮继续用原格式写 res，两边在 renderer 侧得到同一个信封。
       const payload = isRecord(data) ? data : undefined;
-      broadcastSSE(IPC_CHANNELS.AGENT_EVENT, {
-        type: event,
-        data,
+      const sessionId = typeof payload?.sessionId === 'string'
+        ? payload.sessionId
+        : this.deps.sessionId;
+      broadcastSSE(IPC_CHANNELS.AGENT_EVENT, envelopeWebAgentEvent(sessionId, {
+        type: event as AgentEvent['type'],
+        data: data as AgentEvent['data'],
         // 这几个调用方（task_start / tool_warning / tool_call_local）不过 batcher，
         // data 里没有 sessionId；缺了它 renderer 会把事件误算到当前会话头上。
-        sessionId: typeof payload?.sessionId === 'string' ? payload.sessionId : this.deps.sessionId,
-        seq: typeof payload?.seq === 'number' ? payload.seq : undefined,
-      });
+      } as AgentEvent, typeof payload?.seq === 'number' ? payload.seq : undefined));
     }
     if (!this.canWriteSSE()) return;
     try {

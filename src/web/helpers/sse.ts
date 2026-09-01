@@ -5,6 +5,7 @@
 import http from 'http';
 import type { Response } from 'express';
 import { isAdminChannel } from '../../host/ipc/channelAccessPolicy';
+import { getWebStreamEpoch } from './agentStreamCursor';
 
 /** Registry of active SSE clients */
 export const sseClients = new Set<Response>();
@@ -42,6 +43,12 @@ interface BufferedSSEEvent {
   id: number;
   channel: string;
   args: unknown;
+}
+
+export interface SSEStreamCursor {
+  streamEpoch: string;
+  sessionId: '__sse__';
+  seq: number;
 }
 
 let nextSSEEventId = 0;
@@ -132,7 +139,14 @@ export function sendSSEPayload(res: http.ServerResponse, channel: string, args: 
  * 如果 lastEventId 已经落在 buffer 头之前（ring buffer 已轮转覆盖），
  * 返回 -1 表示数据丢失 — 调用方可以据此决定是否提示 renderer 刷新。
  */
-export function replayFromLastEventId(res: Response, lastEventId: number): number {
+export function replayFromCursor(res: Response, cursor: SSEStreamCursor): number {
+  if (cursor.streamEpoch !== getWebStreamEpoch() || cursor.sessionId !== '__sse__') {
+    return -1;
+  }
+  const lastEventId = cursor.seq;
+  if (lastEventId > nextSSEEventId) {
+    return -1;
+  }
   if (sseReplayBuffer.length === 0) {
     return lastEventId >= 0 ? 0 : 0;
   }
@@ -153,6 +167,14 @@ export function replayFromLastEventId(res: Response, lastEventId: number): numbe
     }
   }
   return replayed;
+}
+
+export function getSSEStreamCursor(): SSEStreamCursor {
+  return {
+    streamEpoch: getWebStreamEpoch(),
+    sessionId: '__sse__',
+    seq: nextSSEEventId,
+  };
 }
 
 /** 测试辅助：重置 id 计数器和 buffer。仅限单测使用。 */

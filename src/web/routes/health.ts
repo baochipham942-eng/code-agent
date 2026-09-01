@@ -1,7 +1,14 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 import type { HandlerFn } from '../electronMock';
-import { sseClients, registerSSEClient, replayFromLastEventId, sendSSEPayload } from '../helpers/sse';
+import {
+  getSSEStreamCursor,
+  registerSSEClient,
+  replayFromCursor,
+  sendSSEPayload,
+  sseClients,
+} from '../helpers/sse';
+import { envelopeWebAgentEvent } from '../helpers/agentStreamCursor';
 import { isCurrentUserAdmin } from '../../host/ipc/adminGuard';
 import type {
   BuildInfo,
@@ -26,9 +33,10 @@ function sendPendingPermissionSnapshots(
 ): number {
   for (const request of requests) {
     sendSSEPayload(res, 'agent:event', {
-      type: 'permission_request',
-      data: request,
-      sessionId: request.sessionId,
+      ...envelopeWebAgentEvent(request.sessionId ?? 'global', {
+        type: 'permission_request',
+        data: request,
+      }),
       snapshot: true,
     });
   }
@@ -64,7 +72,6 @@ export function createHealthRouter(deps: HealthDeps): Router {
       'Cache-Control': 'no-cache',
       'Connection': 'keep-alive',
     });
-    res.write('data: {"channel":"connected","args":{}}\n\n');
     registerSSEClient(res, isCurrentUserAdmin());
 
     // ADR-010 #6: 客户端重连时通过 Last-Event-ID header 或 lastEventId query 带上
@@ -72,15 +79,32 @@ export function createHealthRouter(deps: HealthDeps): Router {
     const headerLastId = _req.header('Last-Event-ID');
     const queryLastId = typeof _req.query.lastEventId === 'string' ? _req.query.lastEventId : undefined;
     const rawLastId = headerLastId ?? queryLastId;
-    let needsHostSnapshot = rawLastId === undefined;
-    if (rawLastId !== undefined) {
+    const queryStreamEpoch = typeof _req.query.streamEpoch === 'string'
+      ? _req.query.streamEpoch
+      : undefined;
+    let needsHostSnapshot = rawLastId === undefined || queryStreamEpoch === undefined;
+    let snapshotReason: 'initial_snapshot' | 'replay_gap' = 'initial_snapshot';
+    if (rawLastId !== undefined && queryStreamEpoch !== undefined) {
       const parsed = Number.parseInt(rawLastId, 10);
       if (Number.isFinite(parsed) && parsed >= 0) {
-        needsHostSnapshot = replayFromLastEventId(res, parsed) < 0;
+        needsHostSnapshot = replayFromCursor(res, {
+          streamEpoch: queryStreamEpoch,
+          sessionId: '__sse__',
+          seq: parsed,
+        }) < 0;
+        if (needsHostSnapshot) snapshotReason = 'replay_gap';
       } else {
         needsHostSnapshot = true;
+        snapshotReason = 'replay_gap';
       }
     }
+
+    const watermark = getSSEStreamCursor();
+    sendSSEPayload(res, 'connected', {
+      ...watermark,
+      requiresSnapshot: needsHostSnapshot,
+      reason: snapshotReason,
+    });
 
     // 新 renderer 没有旧游标；replay buffer 覆盖时同样无法补齐。两种情况都从
     // host 当前仍持有 resolver 的请求恢复审批卡，不重发工具，也不新建审批。

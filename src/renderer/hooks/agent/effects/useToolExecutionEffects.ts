@@ -2,7 +2,7 @@
 import { useEffect } from 'react';
 import type {
   AgentPointerEvent,
-  AgentEventEnvelope,
+  AgentEvent as AgentEventBody,
   Message,
   ToolCall,
   ToolOutputDeltaData,
@@ -23,7 +23,7 @@ import { buildAgentPointerEvent } from '../../../utils/agentPointer';
 
 const logger = createLogger('useAgent');
 
-export type ToolExecutionEvent = AgentEventEnvelope | {
+export type ToolExecutionEvent = (AgentEventBody & { sessionId?: string }) | {
   type: 'stream_end';
   data: null;
   sessionId?: string;

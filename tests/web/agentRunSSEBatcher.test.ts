@@ -12,21 +12,28 @@ describe('agentRunSSEBatcher', () => {
   });
 
   it('preserves the existing sessionId payload shape', () => {
-    expect(attachSessionIdToAgentEventData({ content: 'hi' }, 'session-1')).toEqual({
+    expect(attachSessionIdToAgentEventData({ content: 'hi' }, 'session-1', 1)).toEqual({
       content: 'hi',
+      streamEpoch: expect.stringMatching(/^http:/),
       sessionId: 'session-1',
+      seq: 1,
     });
     expect(attachSessionIdToAgentEventData({ content: 'hi' }, 'session-1', 7)).toEqual({
       content: 'hi',
+      streamEpoch: expect.stringMatching(/^http:/),
       sessionId: 'session-1',
       seq: 7,
     });
-    expect(attachSessionIdToAgentEventData([{ id: 'todo-1' }], 'session-1')).toEqual({
+    expect(attachSessionIdToAgentEventData([{ id: 'todo-1' }], 'session-1', 8)).toEqual({
       items: [{ id: 'todo-1' }],
+      streamEpoch: expect.stringMatching(/^http:/),
       sessionId: 'session-1',
+      seq: 8,
     });
-    expect(attachSessionIdToAgentEventData(null, 'session-1')).toEqual({
+    expect(attachSessionIdToAgentEventData(null, 'session-1', 9)).toEqual({
+      streamEpoch: expect.stringMatching(/^http:/),
       sessionId: 'session-1',
+      seq: 9,
     });
   });
 
@@ -43,6 +50,7 @@ describe('agentRunSSEBatcher', () => {
       content: 'hello world',
       turnId: 'turn-1',
       parentToolUseId: undefined,
+      streamEpoch: expect.stringMatching(/^http:/),
       sessionId: 'session-1',
       seq: 1,
     });
@@ -85,6 +93,7 @@ describe('agentRunSSEBatcher', () => {
       turnId: 'turn-1',
       messageId: 'turn-1',
       parentToolUseId: undefined,
+      streamEpoch: expect.stringMatching(/^http:/),
       sessionId: 'session-1',
       seq: 1,
     });
@@ -101,10 +110,12 @@ describe('agentRunSSEBatcher', () => {
       content: 'done',
       turnId: 'turn-1',
       parentToolUseId: undefined,
+      streamEpoch: expect.stringMatching(/^http:/),
       sessionId: 'session-1',
       seq: 1,
     });
     expect(writeEvent).toHaveBeenNthCalledWith(2, 'agent_complete', {
+      streamEpoch: expect.stringMatching(/^http:/),
       sessionId: 'session-1',
       seq: 2,
     });

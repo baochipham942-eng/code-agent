@@ -121,12 +121,12 @@ function lines(value) {
   return value ? value.split('\n').filter(Boolean) : [];
 }
 
-function changedPathsFrom(baseSha) {
+function changedPathsSince(ref) {
   const changed = new Set(lines(git([
     'diff',
     '--name-only',
     '--diff-filter=ACMR',
-    baseSha,
+    ref,
     '--',
     specPath,
     snapshotDir,
@@ -135,6 +135,28 @@ function changedPathsFrom(baseSha) {
     changed.add(untracked);
   }
   return changed;
+}
+
+function latestCommittedContractChange(baseSha, baseContract) {
+  const commits = lines(git([
+    'rev-list',
+    '--reverse',
+    `${baseSha}..HEAD`,
+    '--',
+    specPath,
+  ]));
+  let previousContract = baseContract;
+  let latestChange;
+
+  for (const commit of commits) {
+    const contract = screenshotContractTokens(
+      readAtRef(commit, specPath),
+      `commit ${commit.slice(0, 10)}`,
+    );
+    if (contract !== previousContract) latestChange = commit;
+    previousContract = contract;
+  }
+  return latestChange;
 }
 
 function darwinSnapshotsInWorkingTree() {
@@ -164,10 +186,22 @@ if (darwinSnapshots.length > 0) {
 }
 
 const baseContract = screenshotContractTokens(readAtRef(baseSha, specPath), `${baseRef}@${baseSha}`);
+const headContract = screenshotContractTokens(readAtRef('HEAD', specPath), 'HEAD');
 const currentContract = screenshotContractTokens(readCurrent(specPath), '当前工作树');
-const changedPaths = changedPathsFrom(baseSha);
 
-if (baseContract !== currentContract) {
+let baselineChangeBoundary;
+if (headContract !== currentContract) {
+  // 本地反向变异或未提交修改：不能拿本分支更早改过的 PNG 充数。
+  baselineChangeBoundary = 'HEAD';
+} else if (baseContract !== headContract) {
+  const contractCommit = latestCommittedContractChange(baseSha, baseContract);
+  if (!contractCommit) fail('截图契约已变化，但无法定位对应提交');
+  // PNG 与截图契约同提交更新合法；更早的 PNG 不算同步。
+  baselineChangeBoundary = `${contractCommit}^`;
+}
+
+if (baselineChangeBoundary) {
+  const changedPaths = changedPathsSince(baselineChangeBoundary);
   const missingBaselines = linuxBaselines.filter((baseline) => !changedPaths.has(baseline));
   if (missingBaselines.length > 0) {
     fail(

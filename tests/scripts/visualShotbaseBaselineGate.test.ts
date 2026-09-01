@@ -49,13 +49,13 @@ function makeFixture(): string {
   return root;
 }
 
-function runGate(root: string) {
+function runGate(root: string, baseRef = 'HEAD') {
   return spawnSync(process.execPath, [
     gateScript,
     '--repo-root',
     root,
     '--base-ref',
-    'HEAD',
+    baseRef,
   ], { encoding: 'utf8' });
 }
 
@@ -94,6 +94,27 @@ describe('visual-shotbase baseline gate', () => {
 
     const result = runGate(root);
     expect(result.status, result.stderr).toBe(0);
+  });
+
+  it('拒绝拿更早提交改过的基线为后续截图契约变化充数', () => {
+    const root = makeFixture();
+    const baseRef = git(root, 'rev-parse', 'HEAD');
+    write(root, lightBaseline, 'linux-light-v2');
+    write(root, darkBaseline, 'linux-dark-v2');
+    git(root, 'add', '.');
+    git(root, 'commit', '-qm', 'refresh baselines first');
+
+    const spec = join(root, specPath);
+    const source = String(execFileSync('git', ['show', `HEAD:${specPath}`], { cwd: root }));
+    writeFileSync(spec, source.replace("await page.goto('/');", "await page.goto('/?panel=expanded');"));
+    git(root, 'add', specPath);
+    git(root, 'commit', '-qm', 'change visual contract later');
+
+    const result = runGate(root, baseRef);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('你改了截图前的页面状态但没重生成基线');
+    expect(result.stderr).toContain(lightBaseline);
+    expect(result.stderr).toContain(darkBaseline);
   });
 
   it('拒绝 -darwin 后缀基线冒充 Linux 产物', () => {

@@ -92,7 +92,15 @@ export function hostSdkStubPlugin(options: HostSdkStubPluginOptions): Plugin {
   const sdkSource = options.hostSdkSource
     ?? path.join(hostRoot, 'internalFeatures/internalHostSdk.ts');
   const sdkSpecifiers = readInternalHostSdkSpecifiers(sdkSource);
-  const sdkRuntimeExports = readSdkRuntimeExports(hostRoot, sdkSpecifiers);
+  let sdkRuntimeExports: Map<string, string[]> | undefined;
+
+  function getSdkRuntimeExports(): Map<string, string[]> {
+    // A rejected, unexposed import never needs the SDK export table. Keep the
+    // full TypeScript Program off that boundary path; under coverage it was
+    // consuming almost the entire 30s test budget before esbuild even started.
+    sdkRuntimeExports ??= readSdkRuntimeExports(hostRoot, sdkSpecifiers);
+    return sdkRuntimeExports;
+  }
 
   function canonicalSdkName(name: string): string {
     if (sdkSpecifiers.has(name)) return name;
@@ -142,7 +150,7 @@ export function hostSdkStubPlugin(options: HostSdkStubPluginOptions): Plugin {
 
       build.onLoad({ filter: /.*/, namespace: 'neo-host-sdk' }, (args) => ({
         loader: 'js',
-        contents: `const exportKeys = ${JSON.stringify(sdkRuntimeExports.get(args.path) ?? [])};
+        contents: `const exportKeys = ${JSON.stringify(getSdkRuntimeExports().get(args.path) ?? [])};
 module.exports = new Proxy({}, {
   ownKeys: () => exportKeys,
   getOwnPropertyDescriptor: () => ({ enumerable: true, configurable: true }),

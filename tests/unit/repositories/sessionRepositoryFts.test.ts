@@ -4,7 +4,7 @@
 // 用 in-memory better-sqlite3 驱动真实 SQL + triggers，验证：
 //   - messages INSERT/UPDATE/DELETE 通过 triggers 自动同步 FTS
 //   - searchSessionMessagesFts 能按关键词 / 会话作用域 / limit 召回
-//   - backfillSessionMessagesFts 幂等，FTS 空 + messages 非空时才跑
+//   - backfillSessionMessagesFts 对账行数，只在投影不一致时事务化重建
 // ============================================================================
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -290,6 +290,36 @@ describe('SessionRepository — Episodic FTS5', () => {
     expect(results.length).toBe(3);
   });
 
+  it('rebuilds the full projection when FTS is only partially missing', () => {
+    repo.addMessage('sess-A', makeMessage('m1', 'projection repair alpha'));
+    repo.addMessage('sess-A', makeMessage('m2', 'projection repair beta'));
+    repo.addMessage('sess-B', makeMessage('m3', 'projection repair gamma', 'assistant'));
+
+    db.prepare('DELETE FROM session_messages_fts WHERE message_id = ?').run('m2');
+    db.prepare('UPDATE session_messages_fts SET content = ? WHERE message_id = ?')
+      .run('stale projection content', 'm1');
+
+    const rebuilt = repo.backfillSessionMessagesFts();
+
+    expect(rebuilt).toBe(3);
+    expect(
+      db.prepare(
+        `SELECT message_id, session_id, role, content, timestamp
+         FROM session_messages_fts
+         ORDER BY message_id`
+      ).all()
+    ).toEqual(
+      db.prepare(
+        `SELECT id AS message_id, session_id, role, content, timestamp
+         FROM messages
+         ORDER BY id`
+      ).all()
+    );
+
+    repo.addMessage('sess-A', makeMessage('m4', 'projection repair delta'));
+    expect(repo.searchSessionMessagesFts('repair delta').map((row) => row.messageId)).toEqual(['m4']);
+  });
+
   it('backfill skips meta and loop-internal messages', () => {
     db.exec('DROP TRIGGER IF EXISTS messages_ai_fts;');
     const stmt = db.prepare(
@@ -311,7 +341,7 @@ describe('SessionRepository — Episodic FTS5', () => {
     expect(results.map((row) => row.messageId)).toEqual(['legacy-visible']);
   });
 
-  it('backfill is a no-op when FTS already has rows', () => {
+  it('backfill is a no-op when FTS already matches the source row count', () => {
     repo.addMessage('sess-A', makeMessage('m1', 'already indexed message'));
     const inserted = repo.backfillSessionMessagesFts();
     expect(inserted).toBe(0);

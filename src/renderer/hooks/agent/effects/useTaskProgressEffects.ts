@@ -1,6 +1,6 @@
 // useAgentTaskProgressEffects - task_progress, task_complete, todo_update
 import { useEffect } from 'react';
-import type { AgentEventEnvelope, SessionTask, TodoItem } from '@shared/contract';
+import type { AgentEvent as AgentEventBody, SessionTask, TodoItem } from '@shared/contract';
 import { createLogger } from '../../../utils/logger';
 import { useSessionStore } from '../../../stores/sessionStore';
 import ipcService from '../../../services/ipcService';
@@ -9,7 +9,8 @@ import { getAgentEventSessionId, isAgentEventForCurrentSession } from '../agentE
 
 const logger = createLogger('useAgent');
 
-type AgentEvent = AgentEventEnvelope | { type: 'stream_end'; data: null; sessionId?: string };
+type AgentEvent = (AgentEventBody & { sessionId?: string })
+  | { type: 'stream_end'; data: null; sessionId?: string };
 
 export interface TaskProgressEventDeps {
   debug: (message: string, context: Record<string, unknown>) => void;

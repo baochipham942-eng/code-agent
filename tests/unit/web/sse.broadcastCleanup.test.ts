@@ -7,8 +7,9 @@ import type { Response } from 'express';
 import {
   __resetSSEReplayBufferForTests,
   broadcastSSE,
+  getSSEStreamCursor,
   registerSSEClient,
-  replayFromLastEventId,
+  replayFromCursor,
   sendSSE,
   sseClients,
 } from '../../../src/web/helpers/sse';
@@ -27,6 +28,10 @@ function fakeClient(options: { failWrite?: boolean } = {}) {
       return true;
     },
   };
+}
+
+function replayFromLastEventId(response: Response, seq: number): number {
+  return replayFromCursor(response, { ...getSSEStreamCursor(), seq });
 }
 
 beforeEach(() => {
@@ -173,9 +178,9 @@ describe('sendSSE', () => {
 });
 
 describe('replayFromLastEventId empty buffer', () => {
-  it('returns 0 when buffer is empty regardless of lastEventId', () => {
+  it('rejects a future cursor and accepts an empty initial cursor', () => {
     const res = fakeClient();
-    expect(replayFromLastEventId(res as unknown as Response, 99)).toBe(0);
+    expect(replayFromLastEventId(res as unknown as Response, 99)).toBe(-1);
     expect(replayFromLastEventId(res as unknown as Response, -1)).toBe(0);
     expect(res.chunks).toHaveLength(0);
   });

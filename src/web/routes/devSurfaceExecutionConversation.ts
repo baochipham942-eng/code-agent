@@ -9,6 +9,7 @@ import {
 } from '../../host/services/surfaceExecution/SurfaceConversationProjectionService';
 import { getSurfaceExecutionRuntime } from '../../host/services/surfaceExecution/SurfaceExecutionRuntime';
 import { broadcastSSE } from '../helpers/sse';
+import { envelopeWebAgentEvent } from '../helpers/agentStreamCursor';
 import { readDevSurfaceExecutionConversationSeed } from './devSurfaceExecutionConversationSeed';
 import type { WebRouteLogger } from './routeTypes';
 
@@ -22,11 +23,10 @@ interface DevSurfaceExecutionConversationDeps {
 }
 
 function broadcastSurfaceEvent(conversationId: string, event: SurfaceExecutionEventV1): void {
-  broadcastSSE(IPC_CHANNELS.AGENT_EVENT, {
+  broadcastSSE(IPC_CHANNELS.AGENT_EVENT, envelopeWebAgentEvent(conversationId, {
     type: 'surface_execution',
-    sessionId: conversationId,
     data: event,
-  });
+  }));
 }
 
 export function createDevSurfaceExecutionConversationRouter(

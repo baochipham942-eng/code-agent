@@ -670,8 +670,9 @@ export const AgentEventSchema = z.discriminatedUnion('type', [
 type AgentEventFromSchema = z.infer<typeof AgentEventSchema>;
 
 export const AgentEventEnvelopeSchema = AgentEventSchema.and(z.object({
-  sessionId: z.string().optional(),
-  seq: z.number().optional(),
+  streamEpoch: z.string().min(1),
+  sessionId: z.string().min(1),
+  seq: z.number().int().positive(),
 })).meta({
   title: 'AgentEventEnvelope',
   description: 'Self-contained AgentEvent envelope for transport, persistence, and replay.',

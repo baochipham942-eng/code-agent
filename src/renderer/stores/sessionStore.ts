@@ -27,6 +27,7 @@ import {
 } from './sessionTerminalFrames';
 import { executeCreateSession } from './sessionCreate';
 import { bumpSessionsLocalVersion, executeLoadOlderSessions, executeLoadSessions } from './sessionListPagination';
+import { mergeSnapshotWithLiveTail } from './sessionSnapshotMerge';
 
 const logger = createLogger('SessionStore');
 
@@ -247,7 +248,7 @@ interface SessionActions {
   createSession: (title?: string, options?: CreateSessionOptions) => Promise<Session | null>;
   /** In-flight createSession promise, if any — send path awaits this to rebind to the new session. */
   getPendingSessionCreate: () => Promise<Session | null> | null;
-  switchSession: (sessionId: string) => Promise<void>;
+  switchSession: (sessionId: string, options?: { force?: boolean }) => Promise<void>;
   refreshContextHealth: (sessionId?: string) => Promise<ContextHealthState | null>;
   deleteSession: (sessionId: string) => Promise<void>;
   archiveSession: (sessionId: string) => Promise<void>;
@@ -344,12 +345,12 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       }
     },
 
-    switchSession: async (sessionId: string) => {
+    switchSession: async (sessionId: string, options) => {
       const { currentSessionId, unreadSessionIds } = get();
       // 落到某个会话 = 回到会话区：二级页（能力中心/资料库/自动化…）让位。
       // 放在早退之前——从二级页点当前会话也要回得来。
-      useAppStore.getState().closeSecondaryPages();
-      if (currentSessionId === sessionId) return;
+      if (!options?.force) useAppStore.getState().closeSecondaryPages();
+      if (currentSessionId === sessionId && !options?.force) return;
 
       // 竞态保护：记录本次切换的版本号，异步完成后检查是否过期
       const switchVersion = ++_switchCounter;
@@ -366,10 +367,10 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       useAppStore.getState().syncWorkbenchForSession(sessionId);
       set({
         currentSessionId: sessionId,
-        messages: [],
-        todos: [],
-        sessionTasks: [],
-        streamSnapshot: null,
+        messages: options?.force ? get().messages : [],
+        todos: options?.force ? get().todos : [],
+        sessionTasks: options?.force ? get().sessionTasks : [],
+        streamSnapshot: options?.force ? get().streamSnapshot : null,
         hasOlderMessages: false,
         isLoadingOlder: false,
         unreadSessionIds: nextUnreadIds,
@@ -377,6 +378,8 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
         isHydratingSession: true,
         error: null,
       });
+      // 从 set 后的引用观察 hydration 在途事件；切换前引用可能属于上一会话。
+      const messagesAtHydrationStart = get().messages;
       try {
         const [session, sessionTasks] = await Promise.all([
           invokeSession<Session & { messages?: Message[]; todos?: TodoItem[]; activeRun?: boolean } | null>('load', { sessionId }),
@@ -400,11 +403,26 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
           // F4：非 final 的 streamSnapshot 回填成一条 id=snapshot.turnId 的 streaming
           // assistant 消息——切走期间的 partial 立即上屏，本轮剩余流式事件按 turnId
           // 寻址也能命中同一条消息无缝续接。不走 addMessage（它会无条件清掉 snapshot）。
-          const loadedMessages = mergeStreamSnapshotIntoMessages(
+          const snapshotMessages = mergeStreamSnapshotIntoMessages(
             hydrateToolCallResults(session.messages || []),
             streamSnapshot,
             activeForRecovery,
           );
+          const liveMessages = get().messages;
+          const hasLiveMessagesDuringHydration = liveMessages !== messagesAtHydrationStart;
+          // force 也要比较请求前已上屏但尚未落库的 live 消息。
+          const snapshotMerge = options?.force || hasLiveMessagesDuringHydration
+            ? mergeSnapshotWithLiveTail(snapshotMessages, liveMessages)
+            : null;
+          const loadedMessages = snapshotMerge?.messages ?? snapshotMessages;
+          // agent live 事件会先点亮 app/task 的纯内存运行态。dev 注入事件不落库，
+          // 因而慢快照可能仍返回 idle + 空消息；只要 live 消息在请求期间出现、且
+          // renderer 此刻仍明确在跑，就不能让这个旧快照撤掉运行态。若 live 终态
+          // 已先到，两个 store 会先回 idle，这里仍允许 snapshot 正常收口。
+          const taskStatus = useTaskStore.getState().sessionStates[sessionId]?.status;
+          const preserveLiveRunState = snapshotMerge?.hasLiveTail === true
+            && (useAppStore.getState().isSessionProcessing(sessionId) || get().runningSessionIds.has(sessionId)
+              || taskStatus === 'running' || taskStatus === 'queued' || taskStatus === 'cancelling');
           useAppStore.getState().syncActiveAgentForSession(sessionId, {
             metadata: session.metadata,
           });
@@ -432,7 +450,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
           if (activeForRecovery) {
             useAppStore.getState().setSessionProcessing(sessionId, true);
             useTaskStore.getState().updateSessionState(sessionId, { status: 'running' });
-          } else if (isTerminalRecoverySessionStatus(session.status)) {
+          } else if (isTerminalRecoverySessionStatus(session.status) && !preserveLiveRunState) {
             // session.load 可能发生在终态落库与 registry release 之间。终态是本轮展示真相，
             // 清掉旧页面或早到事件留下的运行态，时间线与侧栏共用这一处裁决。
             useAppStore.getState().setSessionProcessing(sessionId, false);

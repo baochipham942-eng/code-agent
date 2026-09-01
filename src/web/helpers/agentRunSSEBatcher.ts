@@ -1,22 +1,19 @@
 import type { AgentEvent } from '../../shared/contract';
 import { EventBatcher } from '../../host/agent/eventBatcher';
+import {
+  getWebStreamEpoch,
+  nextWebAgentEventSeq,
+  resetWebAgentEventSequencesForTests,
+} from './agentStreamCursor';
 
 export type AgentRunSSEWriter = (event: string, data: unknown) => void;
-
-const agentRunEventSequences = new Map<string, number>();
-
-function nextAgentRunEventSeq(sessionId: string): number {
-  const next = (agentRunEventSequences.get(sessionId) || 0) + 1;
-  agentRunEventSequences.set(sessionId, next);
-  return next;
-}
 
 export function attachSessionIdToAgentEventData(
   data: unknown,
   sessionId: string,
-  seq?: number,
+  seq: number,
 ): unknown {
-  const envelope = seq === undefined ? { sessionId } : { sessionId, seq };
+  const envelope = { streamEpoch: getWebStreamEpoch(), sessionId, seq };
   if (Array.isArray(data)) {
     return { items: data, ...envelope };
   }
@@ -42,7 +39,7 @@ export function createAgentRunSSEBatcher(
         writeEvent(event.type, attachSessionIdToAgentEventData(
           event.data,
           sessionId,
-          nextAgentRunEventSeq(sessionId),
+          nextWebAgentEventSeq(sessionId),
         ));
       }
     },
@@ -56,5 +53,5 @@ export function createAgentRunSSEBatcher(
 }
 
 export function resetAgentRunSSESequencesForTests(): void {
-  agentRunEventSequences.clear();
+  resetWebAgentEventSequencesForTests();
 }

@@ -33,7 +33,7 @@ import { randomUUID } from 'crypto';
 import { Readable, Writable, PassThrough } from 'node:stream';
 import { client, ndJsonStream } from '@agentclientprotocol/sdk';
 import { getLogsPath } from '../../platform';
-import type { AgentEventEnvelope, Message, MessageMetadata } from '../../../shared/contract';
+import type { AgentEvent, Message, MessageMetadata } from '../../../shared/contract';
 import type {
   AgentEngineRunRequest,
   AgentEngineRunResult,
@@ -72,7 +72,7 @@ interface AcpClientRunRequest extends AgentEngineRunRequest {
   workspaceRoot: string;
   attachmentsCount?: number;
   messageMetadata?: MessageMetadata;
-  emitEvent?: (event: AgentEventEnvelope) => void;
+  emitEvent?: (event: AgentEvent) => void;
   timeoutMs?: number;
   stallWarningMs?: number;
   durableLifecycle?: ExternalEngineDurableLifecycle;
@@ -194,7 +194,7 @@ class AcpClientAdapter {
       data: { runId, cwd, permissionProfile, model, resumed: Boolean(request.externalSessionId) },
     });
 
-    const emit = (event: AgentEventEnvelope) => emitExternalAgentEvent(request.sessionId, event, request.emitEvent);
+    const emit = (event: AgentEvent) => emitExternalAgentEvent(request.sessionId, event, request.emitEvent);
     emit({ type: 'turn_start', data: { turnId, iteration: 1 } });
 
     const child = spawn(binaryPath, config.acpArgs, {

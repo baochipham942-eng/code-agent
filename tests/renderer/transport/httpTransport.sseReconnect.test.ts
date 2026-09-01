@@ -15,6 +15,7 @@
 // ============================================================================
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { IPC_CHANNELS } from '../../../src/shared/ipc';
 
 // `localBridgeStore` 在 import 阶段 touch `localStorage`，
 // `localBridge` 也用到浏览器 global。都不是 transport 本测关心的面，直接 mock。
@@ -238,6 +239,10 @@ describe('httpTransport SSE reconnect chaos', () => {
     expect(fake.instances).toHaveLength(1);
     // 第一次连接没有 lastEventId 参数
     expect(fake.instances[0].url).not.toContain('lastEventId=');
+    fake.instances[0]._triggerMessage({
+      channel: 'connected',
+      args: { streamEpoch: 'http:host-1', sessionId: '__sse__', seq: 0, requiresSnapshot: false },
+    });
 
     // 服务器推送 3 条带 id 的事件
     fake.instances[0]._triggerMessage(
@@ -260,6 +265,47 @@ describe('httpTransport SSE reconnect chaos', () => {
     expect(fake.instances).toHaveLength(2);
     // 重连 URL 必须带上最大已见 id
     expect(fake.instances[1].url).toContain('lastEventId=3');
+    expect(fake.instances[1].url).toContain('streamEpoch=http%3Ahost-1');
+  });
+
+  it('宿主 epoch 变化时丢弃旧 event id 游标并强制取 snapshot', () => {
+    const api = createHttpCodeAgentAPI('http://localhost:8180');
+    const snapshotRequired = vi.fn();
+    api.on(IPC_CHANNELS.AGENT_STREAM_SNAPSHOT_REQUIRED, snapshotRequired);
+    api.on('swarm:event', () => {});
+
+    fake.instances[0]._triggerMessage({
+      channel: 'connected',
+      args: { streamEpoch: 'http:host-before-restart', sessionId: '__sse__', seq: 0, requiresSnapshot: false },
+    });
+    fake.instances[0]._triggerMessage({ channel: 'swarm:event', args: {} }, '17');
+    fake.instances[0]._triggerError();
+    vi.advanceTimersByTime(5000);
+    expect(fake.instances[1].url).toContain('lastEventId=17');
+
+    fake.instances[1]._triggerMessage({
+      channel: 'connected',
+      args: {
+        streamEpoch: 'http:host-after-restart',
+        sessionId: '__sse__',
+        seq: 0,
+        requiresSnapshot: true,
+        reason: 'replay_gap',
+      },
+    });
+
+    expect(snapshotRequired).toHaveBeenCalledWith({
+      transport: 'http-sse',
+      streamEpoch: 'http:host-after-restart',
+      watermark: 0,
+      reason: 'epoch_changed',
+    });
+
+    fake.instances[1]._triggerError();
+    vi.advanceTimersByTime(5000);
+    expect(fake.instances[2].url).toContain('lastEventId=0');
+    expect(fake.instances[2].url).toContain('streamEpoch=http%3Ahost-after-restart');
+    expect(fake.instances[2].url).not.toContain('lastEventId=17');
   });
 
   it('重连后的 EventSource 投递重放事件，listener 能正常收到', () => {

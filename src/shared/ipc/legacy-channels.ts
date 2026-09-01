@@ -20,6 +20,7 @@ export const IPC_CHANNELS = {
   AGENT_CANCEL: 'agent:cancel',
   AGENT_EVENT: 'agent:event',
   AGENT_EVENT_BATCH: 'agent:event:batch',
+  AGENT_STREAM_SNAPSHOT_REQUIRED: 'agent:stream-snapshot-required',
   AGENT_PERMISSION_RESPONSE: 'agent:permission-response',
 
 

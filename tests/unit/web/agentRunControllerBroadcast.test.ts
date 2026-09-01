@@ -85,6 +85,7 @@ describe('AgentRunController 广播镜像', () => {
     expect(broadcastSSE).toHaveBeenCalledWith('agent:event', {
       type: 'turn_start',
       data: { turnId: 't1', sessionId: 'session-1', seq: 7 },
+      streamEpoch: expect.stringMatching(/^http:/),
       sessionId: 'session-1',
       seq: 7,
     });
@@ -156,6 +157,7 @@ describe('AgentRunController 断流后的 surface 终态兜底', () => {
     expect(broadcastSSE).toHaveBeenCalledWith('agent:event', {
       type: 'surface_execution',
       data: surfaceEvent,
+      streamEpoch: expect.stringMatching(/^http:/),
       sessionId: 'session-1',
       seq: 12,
     });

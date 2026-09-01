@@ -14,6 +14,7 @@ from inspect_ai.model import (
     ChatMessageAssistant,
     ChatMessageTool,
     ChatMessageUser,
+    GenerateInput,
     ModelCost,
     ModelInfo,
     set_model_cost,
@@ -172,6 +173,27 @@ def _codex_agent(workspace: str, isolated_home: str) -> Agent:
         goals=False,
         sandbox=None,
         env={"HOME": isolated_home},
+        filter=_drop_unsupported_codex_cache_key,
+    )
+
+
+async def _drop_unsupported_codex_cache_key(
+    _model: Any,
+    messages: list[Any],
+    tools: list[Any],
+    tool_choice: Any,
+    config: Any,
+) -> GenerateInput | None:
+    extra_body = config.extra_body
+    if not isinstance(extra_body, dict) or "prompt_cache_key" not in extra_body:
+        return None
+    supported_extra_body = dict(extra_body)
+    supported_extra_body.pop("prompt_cache_key")
+    return GenerateInput(
+        input=messages,
+        tools=tools,
+        tool_choice=tool_choice,
+        config=config.model_copy(update={"extra_body": supported_extra_body or None}),
     )
 
 

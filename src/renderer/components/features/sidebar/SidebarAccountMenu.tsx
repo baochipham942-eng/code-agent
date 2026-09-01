@@ -28,6 +28,7 @@ import { useI18n } from '../../../hooks/useI18n';
 import { canAccessFeature } from '../../../utils/accessControl';
 import { AccountMenuItem, AccountMenuLabel } from './sidebarPresentation';
 import { useInternalFeatureStore } from '../../../internalFeatures/internalFeatureStore';
+import { NavAccountItemSlotHost } from '../../../slots/productSlotHosts';
 
 interface SidebarAccountMenuProps {
   onClose: () => void;
@@ -97,6 +98,7 @@ export const SidebarAccountMenu: React.FC<SidebarAccountMenuProps> = ({
           testId={`account-menu-internal-${feature.id}`}
         />
       ))}
+      <NavAccountItemSlotHost onClose={onClose} />
 
       <div className="my-1 border-t border-zinc-800" />
       <button /* ds-allow:button: 折叠组头是 11px 微字号纯文本行头，primitive 无对应变体（同款豁免见 SidebarProjectDrawer） */

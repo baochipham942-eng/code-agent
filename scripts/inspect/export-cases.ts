@@ -54,6 +54,7 @@ export function inspectTextCaseRejection(testCase: TestCase): string | undefined
 export async function exportInspectDataset(options: {
   caseDir: string;
   ids: string[];
+  allowCaseLifecycle?: boolean;
 }): Promise<InspectDatasetRecord[]> {
   if (options.ids.length === 0) throw new Error('At least one case id is required');
   const duplicateIds = options.ids.filter((id, index) => options.ids.indexOf(id) !== index);
@@ -69,7 +70,9 @@ export async function exportInspectDataset(options: {
 
   return options.ids.map((id) => {
     const testCase = byId.get(id)!;
-    const rejection = inspectTextCaseRejection(testCase);
+    const rejection = options.allowCaseLifecycle
+      ? inspectHarnessCaseRejection(testCase)
+      : inspectTextCaseRejection(testCase);
     if (rejection) throw new Error(`Case ${id} is not a pure-text Inspect case: ${rejection}`);
     return {
       id,
@@ -78,6 +81,14 @@ export async function exportInspectDataset(options: {
       metadata: { case: testCase },
     };
   });
+}
+
+function inspectHarnessCaseRejection(testCase: TestCase): string | undefined {
+  if (testCase.files?.length) return 'has external file injection';
+  if (testCase.user_simulation || testCase.goal_contract) {
+    return 'uses conditional simulation or a goal contract';
+  }
+  return undefined;
 }
 
 interface CliOptions {
@@ -108,7 +119,11 @@ async function main(): Promise<void> {
     .split(/\r?\n/u)
     .map((line) => line.trim())
     .filter((line) => line && !line.startsWith('#'));
-  const records = await exportInspectDataset({ caseDir: options.caseDir, ids });
+  const records = await exportInspectDataset({
+    caseDir: options.caseDir,
+    ids,
+    allowCaseLifecycle: true,
+  });
   await fs.mkdir(path.dirname(options.output), { recursive: true });
   await fs.writeFile(options.output, `${records.map((record) => JSON.stringify(record)).join('\n')}\n`);
   process.stdout.write(`${options.output}\n`);

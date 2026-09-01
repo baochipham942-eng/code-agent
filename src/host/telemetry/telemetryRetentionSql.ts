@@ -12,8 +12,20 @@ export function deleteAgedTelemetryRows(db: Database.Database, now: number): voi
   const cutoff = now - TELEMETRY_RETENTION.MAX_AGE_MS;
   db.transaction(() => {
     db.prepare('DELETE FROM telemetry_events WHERE timestamp < ?').run(cutoff);
-    db.prepare('DELETE FROM telemetry_model_calls WHERE timestamp < ?').run(cutoff);
-    db.prepare('DELETE FROM telemetry_tool_calls WHERE timestamp < ?').run(cutoff);
+    db.prepare(`
+      DELETE FROM telemetry_model_calls
+      WHERE timestamp < ?
+        AND session_id IN (
+          SELECT id FROM telemetry_sessions WHERE synced_at IS NOT NULL
+        )
+    `).run(cutoff);
+    db.prepare(`
+      DELETE FROM telemetry_tool_calls
+      WHERE timestamp < ?
+        AND session_id IN (
+          SELECT id FROM telemetry_sessions WHERE synced_at IS NOT NULL
+        )
+    `).run(cutoff);
     db.prepare('DELETE FROM telemetry_diagnostic_bundles WHERE created_at < ? AND synced_at IS NOT NULL').run(cutoff);
     db.prepare('DELETE FROM system_prompt_cache WHERE created_at < ?').run(cutoff);
     db.prepare('DELETE FROM tool_schema_cache WHERE created_at < ?').run(cutoff);

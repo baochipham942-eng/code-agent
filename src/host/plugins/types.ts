@@ -4,6 +4,7 @@
 
 import type { Tool } from '../tools/types';
 import type { ToolModule } from '../protocol/tools';
+import type { UiSlotName } from '../../shared/contract/uiSlots';
 
 /**
  * Plugin metadata from package.json or plugin.json
@@ -45,7 +46,7 @@ export interface PluginManifest extends PluginMetadata {
    */
   surfaces?: PluginSurface[];
   /** UI seats requested from the ADR-062 public slot contract. */
-  uiSlots?: string[];
+  uiSlots?: UiSlotName[];
   /**
    * 领域能力标签（kebab-case），供 CapabilityRecommender / Gap 提示语义匹配
    * 用，如 `['image-generation', 'image-processing']`。host 不做白名单校验，

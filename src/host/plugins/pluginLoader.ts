@@ -17,7 +17,7 @@ import {
   validatePlugin,
   formatValidationResult,
 } from './pluginValidator';
-import { verifyPluginApprovalReceipt } from './pluginApprovalReceipt';
+import { verifyInstalledPluginTrust } from './pluginPackageTrust';
 import { normalizePluginCapabilityDeclaration } from './pluginCapabilitySurface';
 
 // ----------------------------------------------------------------------------
@@ -187,7 +187,7 @@ export async function loadPlugin(pluginDir: string): Promise<PluginLoadResult> {
       };
     }
 
-    await verifyPluginApprovalReceipt(pluginDir, manifest.id, manifest.permissions ?? []);
+    await verifyInstalledPluginTrust(pluginDir, manifest);
 
     // Load entry module
     const entryPath = path.join(pluginDir, manifest.main);

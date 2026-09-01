@@ -15,6 +15,7 @@ import {
   type ControlPlanePublicKeys,
 } from '../cloud/controlPlaneTrust';
 import { createLogger } from '../infra/logger';
+import { updatePluginPackageRevocations } from '../../plugins/pluginPackageRevocationStore';
 import {
   parseCapabilityRegistryPayload,
   type ParsedCapabilityRegistrySourceTrust,
@@ -40,6 +41,7 @@ export interface RemoteCapabilityRegistryServiceOptions {
   endpoint?: string;
   fetchImpl?: typeof fetch;
   now?: number;
+  pluginRevocationFile?: string;
 }
 
 function diagnostic(
@@ -188,6 +190,12 @@ export class RemoteCapabilityRegistryService {
           diagnostics: trust.diagnostics.map((entry) => trustDiagnosticToCapabilityDiagnostic(entry, endpoint)),
         };
       }
+
+      await updatePluginPackageRevocations(
+        trust.payload.revokedIds ?? [],
+        trust.contentHash || value.contentHash,
+        { filePath: this.options.pluginRevocationFile, now: this.options.now },
+      );
 
       const sourceTrust: ParsedCapabilityRegistrySourceTrust = {
         ...(trust.contentHash ? { contentHash: trust.contentHash } : {}),

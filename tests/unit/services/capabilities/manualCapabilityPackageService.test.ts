@@ -1,3 +1,4 @@
+import { generateKeyPairSync, sign, type KeyObject } from 'node:crypto';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -14,7 +15,15 @@ import { COMPUTER_USE_CAPABILITY_ID } from '../../../../src/host/plugins/builtin
 import type { MCPServerConfig } from '../../../../src/host/mcp/types';
 import { InternalFeatureHostRuntime } from '../../../../src/host/internalFeatures/internalFeatureHostRuntime';
 import { INTERNAL_SDK_VERSION } from '../../../../src/host/internalFeatures/internalSdkVersion';
-import { hashPluginPackage } from '../../../../src/host/plugins/pluginApprovalReceipt';
+import {
+  hashPluginPackage,
+  PLUGIN_PACKAGE_SIGNATURE_FILE,
+} from '../../../../src/host/plugins/pluginApprovalReceipt';
+import {
+  buildControlPlaneContentHash,
+  buildControlPlaneSigningPayload,
+} from '../../../../src/host/services/cloud/controlPlaneTrust';
+import type { ControlPlaneEnvelope } from '../../../../src/shared/contract/controlPlane';
 import type { ipcHost } from '../../../../src/host/platform';
 
 interface LifecycleEntry {
@@ -27,6 +36,10 @@ let tempRoot: string;
 let pluginsDir: string;
 let registry: PluginRegistry;
 let lifecycle: LifecycleEntry[];
+let signingPrivateKey: KeyObject;
+let signingPublicKey: string;
+
+const SIGNING_KEY_ID = 'marketplace-author';
 
 function manifest(id: string, overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
@@ -69,6 +82,26 @@ async function writePackage(
   await fs.writeFile(path.join(root, 'plugin.json'), JSON.stringify(options.manifest ?? manifest(id)), 'utf8');
   await fs.writeFile(path.join(root, 'index.js'), options.source ?? entrySource(id), 'utf8');
   return root;
+}
+
+async function signPackage(root: string, pluginId: string): Promise<void> {
+  const packageHash = await hashPluginPackage(root);
+  const payload = { schemaVersion: 1 as const, pluginId, packageHash };
+  const envelope: ControlPlaneEnvelope<typeof payload> = {
+    schemaVersion: 1,
+    kind: 'plugin_package',
+    issuedAt: '2026-09-01T00:00:00.000Z',
+    expiresAt: '2099-01-01T00:00:00.000Z',
+    contentHash: buildControlPlaneContentHash(payload),
+    keyId: SIGNING_KEY_ID,
+    payload,
+  };
+  envelope.signature = sign(
+    null,
+    Buffer.from(buildControlPlaneSigningPayload(envelope)),
+    signingPrivateKey,
+  ).toString('base64');
+  await fs.writeFile(path.join(root, PLUGIN_PACKAGE_SIGNATURE_FILE), JSON.stringify(envelope), 'utf8');
 }
 
 type ServiceDependencies = NonNullable<ConstructorParameters<typeof ManualCapabilityPackageService>[0]>;
@@ -132,6 +165,9 @@ beforeEach(async () => {
   resetProtocolRegistry();
   registry = new PluginRegistry();
   lifecycle = [];
+  const keys = generateKeyPairSync('ed25519');
+  signingPrivateKey = keys.privateKey;
+  signingPublicKey = keys.publicKey.export({ type: 'spki', format: 'pem' }).toString();
 });
 
 afterEach(async () => {
@@ -183,6 +219,81 @@ describe('ManualCapabilityPackageService', () => {
     const manifestPreview = await service.stage(path.join(source, 'plugin.json'));
     expect(manifestPreview.sourceKind).toBe('manifest');
     await service.discard(manifestPreview.token);
+  });
+
+  it('rejects an invalid package signature during stage with a user-facing reason', async () => {
+    const source = await writePackage('invalid-signature');
+    await signPackage(source, 'invalid-signature');
+    const signaturePath = path.join(source, PLUGIN_PACKAGE_SIGNATURE_FILE);
+    const envelope = JSON.parse(await fs.readFile(signaturePath, 'utf8')) as Record<string, unknown>;
+    envelope.signature = Buffer.alloc(64, 7).toString('base64');
+    await fs.writeFile(signaturePath, JSON.stringify(envelope), 'utf8');
+
+    const service = createService({ controlPlanePublicKeys: { [SIGNING_KEY_ID]: signingPublicKey } });
+    await expect(service.stage(source)).rejects.toThrow(
+      '插件签名无效，无法确认发布来源，请从插件市场重新下载',
+    );
+  });
+
+  it('rejects package content tampered after signing during stage', async () => {
+    const source = await writePackage('tampered-signature');
+    await signPackage(source, 'tampered-signature');
+    await fs.appendFile(path.join(source, 'index.js'), '\n// tampered after signing\n', 'utf8');
+
+    const service = createService({ controlPlanePublicKeys: { [SIGNING_KEY_ID]: signingPublicKey } });
+    await expect(service.stage(source)).rejects.toThrow(
+      '插件内容与签名不一致，可能已被篡改，请从插件市场重新下载',
+    );
+  });
+
+  it('classifies a package with no signature as unsigned instead of taking the signed branch', async () => {
+    const source = await writePackage('unsigned-workspace', {
+      manifest: manifest('unsigned-workspace', { surfaces: ['ui'], uiSlots: ['workspace.page'] }),
+    });
+
+    const preview = await createService().stage(source);
+    expect(preview.sourceTrust).toEqual({
+      level: 'unsigned',
+      reason: '插件包没有签名，来源未经验证',
+    });
+    expect(preview.requestedUiSlots).toEqual(['workspace.page']);
+  });
+
+  it('allows a signed package to request all six UI slots', async () => {
+    const uiSlots = [
+      'nav.account.item',
+      'hub.tab',
+      'settings.section',
+      'workspace.page',
+      'shell.overlay',
+      'conversation.turnTail',
+    ];
+    const source = await writePackage('signed-all-slots', {
+      manifest: manifest('signed-all-slots', { surfaces: ['ui'], uiSlots }),
+    });
+    await signPackage(source, 'signed-all-slots');
+
+    const preview = await createService({
+      controlPlanePublicKeys: { [SIGNING_KEY_ID]: signingPublicKey },
+    }).stage(source);
+    expect(preview.sourceTrust).toMatchObject({ level: 'signed', keyId: SIGNING_KEY_ID });
+    expect(preview.requestedUiSlots).toEqual(uiSlots);
+  });
+
+  it.each([
+    'nav.account.item',
+    'hub.tab',
+    'shell.overlay',
+    'conversation.turnTail',
+  ] as const)('rejects unsigned package requesting restricted slot %s', async (slot) => {
+    const pluginId = `unsigned-${slot.replaceAll('.', '-').toLowerCase()}`;
+    const source = await writePackage(pluginId, {
+      manifest: manifest(pluginId, { surfaces: ['ui'], uiSlots: [slot] }),
+    });
+
+    await expect(createService().stage(source)).rejects.toThrow(
+      `这个插件的来源未经验证，不能挂到 ${slot}`,
+    );
   });
 
   it('classifies only server-staged and approval-backed package sources for IPC authorization', async () => {

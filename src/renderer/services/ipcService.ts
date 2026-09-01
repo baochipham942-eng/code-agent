@@ -3,8 +3,6 @@ import type { SpeechTranscribeOptions, SpeechTranscribeResult } from '@shared/co
 import { recordStreamingPerformanceCounter } from '../utils/streamingPerformanceMetrics';
 import { createInflightDedupe } from '../utils/inflightDedupe';
 
-type AgentEventEnvelope = Parameters<IpcEventHandlers[typeof IPC_CHANNELS.AGENT_EVENT]>[0];
-
 function commandApi() {
   return window.codeAgentAPI || window.electronAPI;
 }
@@ -32,48 +30,76 @@ export function unsafeInvoke<T = unknown>(channel: string, ...args: unknown[]): 
   return raw?.(channel, ...args);
 }
 
-function getStringField(data: unknown, field: string): string | undefined {
-  if (!data || typeof data !== 'object' || Array.isArray(data)) {
-    return undefined;
+type SnapshotRequiredHandler = IpcEventHandlers[typeof IPC_CHANNELS.AGENT_STREAM_SNAPSHOT_REQUIRED];
+
+const snapshotRequiredHandlers = new Set<SnapshotRequiredHandler>();
+const lastSnapshotRequestBySession = new Map<string, string>();
+
+function notifySnapshotRequired(event: Parameters<SnapshotRequiredHandler>[0]): void {
+  const key = `${event.streamEpoch}:${event.watermark}:${event.reason}`;
+  const sessionKey = event.sessionId ?? '__global__';
+  if (lastSnapshotRequestBySession.get(sessionKey) === key) return;
+  lastSnapshotRequestBySession.set(sessionKey, key);
+  if (lastSnapshotRequestBySession.size > 256) {
+    const oldest = lastSnapshotRequestBySession.keys().next().value;
+    if (oldest !== undefined) lastSnapshotRequestBySession.delete(oldest);
   }
-  const value = (data as Record<string, unknown>)[field];
-  return typeof value === 'string' ? value : undefined;
-}
-
-function getNumberField(data: unknown, field: string): number | undefined {
-  if (!data || typeof data !== 'object' || Array.isArray(data)) {
-    return undefined;
-  }
-  const value = (data as Record<string, unknown>)[field];
-  return typeof value === 'number' ? value : undefined;
-}
-
-function getAgentEventSeq(event: AgentEventEnvelope): number | undefined {
-  return typeof event.seq === 'number'
-    ? event.seq
-    : getNumberField(event.data, 'seq');
-}
-
-function getAgentEventSessionKey(event: AgentEventEnvelope): string {
-  return event.sessionId || getStringField(event.data, 'sessionId') || '__global__';
+  snapshotRequiredHandlers.forEach((handler) => {
+    try {
+      void Promise.resolve(handler(event)).catch((error) => {
+        console.error('[ipcService] Failed to refresh agent stream snapshot', error);
+      });
+    } catch (error) {
+      console.error('[ipcService] Failed to request agent stream snapshot', error);
+    }
+  });
 }
 
 function createSequencedAgentEventDispatcher(
   callback: IpcEventHandlers[typeof IPC_CHANNELS.AGENT_EVENT],
 ): IpcEventHandlers[typeof IPC_CHANNELS.AGENT_EVENT] {
+  let activeStreamEpoch: string | undefined;
   const lastSeqBySession = new Map<string, number>();
 
   return (event) => {
-    const seq = getAgentEventSeq(event);
-    if (seq !== undefined) {
-      const sessionKey = getAgentEventSessionKey(event);
-      const lastSeq = lastSeqBySession.get(sessionKey);
-      if (lastSeq !== undefined && seq <= lastSeq) {
-        recordStreamingPerformanceCounter('stream.ipc.duplicate_dropped');
-        return;
-      }
-      lastSeqBySession.set(sessionKey, seq);
+    const { streamEpoch, sessionId, seq } = event;
+    if (
+      typeof streamEpoch !== 'string'
+      || streamEpoch.length === 0
+      || typeof sessionId !== 'string'
+      || sessionId.length === 0
+      || !Number.isInteger(seq)
+      || seq <= 0
+    ) {
+      return;
     }
+    if (activeStreamEpoch !== undefined && streamEpoch !== activeStreamEpoch) {
+      lastSeqBySession.clear();
+      notifySnapshotRequired({
+        transport: streamEpoch.startsWith('http:') ? 'http-sse' : 'native-ipc',
+        streamEpoch,
+        sessionId,
+        watermark: seq,
+        reason: 'epoch_changed',
+      });
+    }
+    activeStreamEpoch = streamEpoch;
+
+    const lastSeq = lastSeqBySession.get(sessionId);
+    if (lastSeq !== undefined && seq <= lastSeq) {
+      recordStreamingPerformanceCounter('stream.ipc.duplicate_dropped');
+      return;
+    }
+    if ((lastSeq === undefined && seq > 1) || (lastSeq !== undefined && seq > lastSeq + 1)) {
+      notifySnapshotRequired({
+        transport: streamEpoch.startsWith('http:') ? 'http-sse' : 'native-ipc',
+        streamEpoch,
+        sessionId,
+        watermark: seq,
+        reason: 'sequence_gap',
+      });
+    }
+    lastSeqBySession.set(sessionId, seq);
 
     callback(event);
   };
@@ -84,6 +110,18 @@ export function on<K extends keyof IpcEventHandlers>(
   callback: IpcEventHandlers[K]
 ): (() => void) | undefined {
   const api = commandApi();
+  if (channel === IPC_CHANNELS.AGENT_STREAM_SNAPSHOT_REQUIRED) {
+    const snapshotCallback = callback as SnapshotRequiredHandler;
+    snapshotRequiredHandlers.add(snapshotCallback);
+    const unsubscribeBridge = api?.on(
+      IPC_CHANNELS.AGENT_STREAM_SNAPSHOT_REQUIRED,
+      snapshotCallback,
+    );
+    return () => {
+      snapshotRequiredHandlers.delete(snapshotCallback);
+      unsubscribeBridge?.();
+    };
+  }
   if (!api) return undefined;
 
   if (channel !== IPC_CHANNELS.AGENT_EVENT) {

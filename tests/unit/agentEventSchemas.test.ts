@@ -63,10 +63,12 @@ describe('AgentEventSchema', () => {
   it('accepts the event envelope fields without changing the event body', () => {
     expect(AgentEventEnvelopeSchema.parse({
       ...legalEvents[0],
+      streamEpoch: 'native:host-1',
       sessionId: 'session-1',
       seq: 7,
     })).toEqual({
       ...legalEvents[0],
+      streamEpoch: 'native:host-1',
       sessionId: 'session-1',
       seq: 7,
     });
@@ -78,6 +80,7 @@ describe('AgentEventSchema', () => {
     ['wrong payload primitive', { type: 'tool_call_end', data: { toolCallId: 1, success: true } }],
     ['wrong null terminal payload', { type: 'agent_complete', data: {} }],
     ['wrong envelope field', { type: 'turn_end', data: { turnId: 'turn-1' }, seq: '1' }],
+    ['missing required sequence', { type: 'turn_end', data: { turnId: 'turn-1' }, streamEpoch: 'native:host-1', sessionId: 'session-1' }],
   ])('rejects %s', (_label, sample) => {
     expect(() => AgentEventEnvelopeSchema.parse(sample)).toThrow();
   });

@@ -4,6 +4,7 @@ export function applyIndexes(db: BetterSqlite3.Database): void {
   // 基础索引
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id);
+    CREATE INDEX IF NOT EXISTS idx_channel_session_bindings_session ON channel_session_bindings(session_id);
     CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON messages(timestamp);
     CREATE INDEX IF NOT EXISTS idx_tool_executions_session ON tool_executions(session_id);
     CREATE INDEX IF NOT EXISTS idx_tool_executions_hash ON tool_executions(arguments_hash);

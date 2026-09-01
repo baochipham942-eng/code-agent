@@ -646,6 +646,13 @@ export interface IpcEventHandlers {
   [IPC_CHANNELS.VOICE_PASTE_STATUS]: (event: { status: 'recording' | 'transcribing' | 'processing' | 'idle'; error?: string }) => void;
   [IPC_CHANNELS.AGENT_EVENT]: (event: AgentEventEnvelope) => void;
   [IPC_CHANNELS.AGENT_EVENT_BATCH]: (events: AgentEventEnvelope[]) => void;
+  [IPC_CHANNELS.AGENT_STREAM_SNAPSHOT_REQUIRED]: (event: {
+    transport: 'native-ipc' | 'http-sse';
+    streamEpoch: string;
+    sessionId?: string;
+    watermark: number;
+    reason: 'epoch_changed' | 'sequence_gap' | 'initial_snapshot' | 'replay_gap';
+  }) => void | Promise<void>;
   [IPC_CHANNELS.MEMORY_LEARNED]: (event: MemoryLearnedEvent) => void;
   [IPC_CHANNELS.MEMORY_CONFIRM_REQUEST]: (request: MemoryConfirmRequest) => void;
   [IPC_CHANNELS.PLANNING_EVENT]: (event: PlanningEvent) => void;

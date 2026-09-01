@@ -5459,13 +5459,25 @@
     "__schema226": {
       "type": "object",
       "properties": {
+        "streamEpoch": {
+          "type": "string",
+          "minLength": 1
+        },
         "sessionId": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1
         },
         "seq": {
-          "type": "number"
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
         }
       },
+      "required": [
+        "streamEpoch",
+        "sessionId",
+        "seq"
+      ],
       "additionalProperties": false
     }
   }

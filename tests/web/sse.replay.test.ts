@@ -9,7 +9,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
   broadcastSSE,
-  replayFromLastEventId,
+  getSSEStreamCursor,
+  replayFromCursor,
   registerSSEClient,
   sseClients,
   __resetSSEReplayBufferForTests,
@@ -31,6 +32,13 @@ function fakeResponse(): CapturedResponse {
     },
     _chunks: chunks,
   };
+}
+
+function replayFromLastEventId(response: CapturedResponse, seq: number): number {
+  return replayFromCursor(
+    response as unknown as Parameters<typeof replayFromCursor>[0],
+    { ...getSSEStreamCursor(), seq },
+  );
 }
 
 function parseChunks(chunks: string[]): Array<{ id: number; channel: string }> {
@@ -118,6 +126,17 @@ describe('sse replay buffer', () => {
       10, // 太旧
     );
     expect(replayed).toBe(-1);
+  });
+
+  it('旧宿主 epoch 的 event id 即使数值命中也拒绝 replay', () => {
+    broadcastSSE('swarm:event', { type: 'current-host-event' });
+    const reconnecting = fakeResponse();
+
+    expect(replayFromCursor(
+      reconnecting as unknown as Parameters<typeof replayFromCursor>[0],
+      { streamEpoch: 'http:retired-host', sessionId: '__sse__', seq: 0 },
+    )).toBe(-1);
+    expect(reconnecting._chunks).toHaveLength(0);
   });
 
   it('id 单调递增不因 sseClients 清空而重置', () => {

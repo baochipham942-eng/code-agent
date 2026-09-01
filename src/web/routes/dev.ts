@@ -11,6 +11,7 @@ import { shouldRefusePackagedDevMode } from '../../shared/security/packagedDevMo
 import { generatePermissionRequestId } from '../../shared/utils/id';
 import { IPC_CHANNELS } from '../../shared/ipc';
 import { sseClients, broadcastSSE } from '../helpers/sse';
+import { envelopeWebAgentEvent } from '../helpers/agentStreamCursor';
 import { formatError } from '../helpers/utils';
 import { isWorkspaceFileAllowed, getContentType } from '../helpers/upload';
 import { getEventBus } from '../../host/services/eventing/bus';
@@ -79,7 +80,7 @@ interface OfficeSmokeStep {
   check: 'connected' | 'array';
 }
 
-type RendererAgentEvent = AgentEvent & { sessionId?: string };
+type RendererAgentEvent = AgentEvent & { sessionId: string };
 
 export interface PendingDevPermissionRequest {
   request: PermissionRequest;
@@ -414,7 +415,7 @@ function normalizeDevAgentEvents(body: unknown): RendererAgentEvent[] | null {
     const candidate = event as Partial<RendererAgentEvent> & { type?: unknown; sessionId?: unknown };
     if (
       typeof candidate.type !== 'string'
-      || (candidate.sessionId !== undefined && typeof candidate.sessionId !== 'string')
+      || typeof candidate.sessionId !== 'string'
     ) {
       return null;
     }
@@ -722,10 +723,13 @@ export function createDevRouter(deps: DevRouterDeps): Router {
       return;
     }
 
-    if (events.length === 1) {
-      broadcastSSE(IPC_CHANNELS.AGENT_EVENT, events[0]);
+    const enveloped = events.map(({ sessionId, ...event }) => (
+      envelopeWebAgentEvent(sessionId, event)
+    ));
+    if (enveloped.length === 1) {
+      broadcastSSE(IPC_CHANNELS.AGENT_EVENT, enveloped[0]);
     } else {
-      broadcastSSE(IPC_CHANNELS.AGENT_EVENT_BATCH, events);
+      broadcastSSE(IPC_CHANNELS.AGENT_EVENT_BATCH, enveloped);
     }
     res.json({ ok: true, count: events.length });
   });

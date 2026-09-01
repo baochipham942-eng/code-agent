@@ -23,6 +23,11 @@ import { sanitizeChannelText } from './privacy/channelPrivacyFirewall';
 import { BACKGROUND_AGENT_EVENT_FILTER } from '../protocol/events/eventFilter';
 import { getAllToolDefinitions } from '../tools/dispatch/toolDefinitions';
 import { selectGuestChannelAllowedToolNames } from './channelGuestToolPolicy';
+import {
+  ChannelSessionBindingStore,
+  type ChannelSessionBindingKey,
+  type ChannelSessionBindingStorage,
+} from './channelSessionBindingStore';
 
 const logger = createLogger('ChannelAgentBridge');
 
@@ -77,6 +82,7 @@ function toChannelContext(value: unknown): ChannelContext {
  */
 export interface ChannelAgentBridgeConfig {
   configService: ConfigService;
+  bindingStore?: ChannelSessionBindingStorage;
 }
 
 /**
@@ -90,6 +96,7 @@ export class ChannelAgentBridge {
   private channelManager = getChannelManager();
   private pipeline: IngressPipeline;
   private channelSessions: Map<string, string> = new Map();
+  private bindingStore: ChannelSessionBindingStorage;
 
   // 追踪正在处理的消息
   private processingMessages: Map<string, {
@@ -105,6 +112,7 @@ export class ChannelAgentBridge {
 
   constructor(config: ChannelAgentBridgeConfig) {
     this.config = config;
+    this.bindingStore = config.bindingStore ?? new ChannelSessionBindingStore();
     this.pipeline = new IngressPipeline({
       processMessage: (msg) => this.processIngressMessage(msg),
     });
@@ -606,7 +614,22 @@ export class ChannelAgentBridge {
   }
 
   private getSessionKey(accountId: string, message: ChannelMessage): string {
-    return `${accountId}:${message.context.chatId}:auth=${message.ingressAuth ?? 'paired'}`;
+    const binding = this.getSessionBindingKey(accountId, message);
+    return JSON.stringify([
+      binding.accountId,
+      binding.chatId,
+      binding.threadId,
+      binding.ingressAuth,
+    ]);
+  }
+
+  private getSessionBindingKey(accountId: string, message: ChannelMessage): ChannelSessionBindingKey {
+    return {
+      accountId,
+      chatId: message.context.chatId,
+      threadId: message.context.threadId ?? '',
+      ingressAuth: message.ingressAuth ?? 'paired',
+    };
   }
 
   private async getOrCreateChannelSessionId(
@@ -615,6 +638,7 @@ export class ChannelAgentBridge {
     message: ChannelMessage
   ): Promise<string> {
     const sessionManager = getSessionManager();
+    const bindingKey = this.getSessionBindingKey(accountId, message);
     const mappedSessionId = this.channelSessions.get(sessionKey);
 
     if (mappedSessionId) {
@@ -623,6 +647,24 @@ export class ChannelAgentBridge {
         return mappedSessionId;
       }
       this.channelSessions.delete(sessionKey);
+      this.bindingStore.delete(bindingKey);
+    }
+
+    const persistedSessionId = this.bindingStore.get(bindingKey);
+    if (persistedSessionId) {
+      const existingSession = await sessionManager.getSession(persistedSessionId, 1);
+      if (existingSession) {
+        this.channelSessions.set(sessionKey, persistedSessionId);
+        logger.info('Restored dedicated channel session', {
+          sessionKey,
+          sessionId: persistedSessionId,
+          accountId,
+          chatId: message.context.chatId,
+          threadId: message.context.threadId,
+        });
+        return persistedSessionId;
+      }
+      this.bindingStore.delete(bindingKey);
     }
 
     const account = this.channelManager.getAccount(accountId);
@@ -641,17 +683,20 @@ export class ChannelAgentBridge {
           accountName: account?.name,
           chatType: message.context.chatType,
           chatName: message.context.chatName,
+          threadId: message.context.threadId,
           ingressAuth: message.ingressAuth ?? 'paired',
         },
       },
     });
 
+    this.bindingStore.set(bindingKey, session.id);
     this.channelSessions.set(sessionKey, session.id);
     logger.info('Created dedicated channel session', {
       sessionKey,
       sessionId: session.id,
       accountId,
       chatId: message.context.chatId,
+      threadId: message.context.threadId,
     });
 
     return session.id;

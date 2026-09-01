@@ -7,7 +7,7 @@
 
 import { createLogger } from '../services/infra/logger';
 import type { ConfigService } from '../services';
-import type { AgentEventEnvelope } from '../../shared/contract';
+import type { AgentEvent } from '../../shared/contract';
 import { IPC_CHANNELS } from '../../shared/ipc';
 import { getTaskManager } from '../task';
 import { initChannelAgentBridge } from '../channels/channelAgentBridge';
@@ -16,18 +16,11 @@ import { getChannelManager } from '../channels';
 import { getMainWindow } from './window';
 import { EventBatcher } from '../agent/eventBatcher';
 import type { RunRegistry } from '../runtime/runRegistry';
+import { envelopeRendererAgentEvent } from '../protocol/rendererAgentStreamCursor';
 
 const logger = createLogger('Bootstrap:AgentRuntime');
 
-type RendererAgentEvent = AgentEventEnvelope & { sessionId: string };
-
-const rendererEventSequences = new Map<string, number>();
-
-function nextRendererEventSeq(sessionId: string): number {
-  const next = (rendererEventSequences.get(sessionId) || 0) + 1;
-  rendererEventSequences.set(sessionId, next);
-  return next;
-}
+type RendererAgentEvent = AgentEvent & { sessionId: string };
 
 /**
  * Initialize TaskManager and Channel Agent Bridge.
@@ -42,10 +35,7 @@ export function createAgentRuntime(configService: ConfigService, runRegistry?: R
     maxBatchSize: 50,
     onFlush: (events) => {
       if (!mainWindow || mainWindow.isDestroyed()) return;
-      const sequencedEvents = events.map((event) => ({
-        ...event,
-        seq: nextRendererEventSeq(event.sessionId),
-      }));
+      const sequencedEvents = events.map((event) => envelopeRendererAgentEvent(event.sessionId, event));
       if (sequencedEvents.length === 1) {
         mainWindow.webContents.send(IPC_CHANNELS.AGENT_EVENT, sequencedEvents[0]);
         return;

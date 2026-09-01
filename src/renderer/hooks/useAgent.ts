@@ -38,6 +38,8 @@ import {
 import { useAgentState } from './agent/useAgentState';
 import { applyToolCallArgumentDelta } from '../utils/toolCallStreaming';
 import { recordStreamingPerformanceCounter } from '../utils/streamingPerformanceMetrics';
+import ipcService from '../services/ipcService';
+import { IPC_CHANNELS } from '@shared/ipc';
 
 export { resolveDirectRouting } from './agent/useAgentIPC';
 
@@ -181,6 +183,15 @@ export const useAgent = () => {
       flushStreamingMessages();
     };
   }, [flushStreamingMessages]);
+
+  useEffect(() => ipcService.on(
+    IPC_CHANNELS.AGENT_STREAM_SNAPSHOT_REQUIRED,
+    async ({ sessionId }) => {
+      const current = useSessionStore.getState().currentSessionId;
+      if (!current || (sessionId && sessionId !== current)) return;
+      await useSessionStore.getState().switchSession(current, { force: true });
+    },
+  ), []);
 
   const handleBatchUpdate = useCallback((updates: MessageUpdate[]) => {
     for (const update of updates) {

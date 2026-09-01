@@ -10,7 +10,7 @@ import {
 } from './accessControl';
 import type { BundledHostCapabilityId } from '@shared/contract/bundledHostCapability';
 
-export const SETTINGS_TAB_IDS = [
+const BUILT_IN_SETTINGS_TAB_IDS = [
   'general',
   'conversation',
   'search',
@@ -42,7 +42,8 @@ export const SETTINGS_TAB_IDS = [
   'about',
 ] as const;
 
-export type SettingsTab = typeof SETTINGS_TAB_IDS[number];
+export type SettingsTab = typeof BUILT_IN_SETTINGS_TAB_IDS[number];
+export const SETTINGS_TAB_IDS: readonly SettingsTab[] = BUILT_IN_SETTINGS_TAB_IDS;
 
 // 能力中心的顶层 tab（ADR-049）。单一真源放在 tab 注册表这里，appStore 只做 re-export。
 export type CapabilityHubTab =

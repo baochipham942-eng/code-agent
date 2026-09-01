@@ -68,6 +68,7 @@ import {
   type SettingsTabGroupId,
 } from '../../../utils/settingsTabs';
 import { tauriCheckForUpdate } from '../../../utils/tauriUpdater';
+import { SettingsSectionSlotHost } from '../../../slots/productSlotHosts';
 
 const logger = createLogger('SettingsModal');
 
@@ -606,6 +607,7 @@ export const SettingsModal: React.FC = () => {
               )}
               {activeTab === 'about' && <AboutSettings />}
             </React.Suspense>
+            <SettingsSectionSlotHost />
           </div>
         </main>
       </div>

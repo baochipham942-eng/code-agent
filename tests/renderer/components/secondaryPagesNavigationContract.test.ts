@@ -48,11 +48,12 @@ describe('一级二级页与下钻页的返回按钮契约', () => {
     expect(props).toContain('onClose={showSettings ? () => setShowPromptManager(false) : undefined}');
   });
 
-  it('内部插件槽登记在二级页注册面，并排在应用内验证之前', () => {
+  it('内部插件经 workspace.page 座位登记，并排在应用内验证之前', () => {
     const registry = readFileSync(resolve(rendererRoot, 'stores/secondaryPages.ts'), 'utf8');
     const app = readFileSync(resolve(rendererRoot, 'App.tsx'), 'utf8');
     expect(registry).toContain('activeInternalFeatureId: null');
-    expect(app.indexOf('activeInternalFeatureId ?')).toBeGreaterThanOrEqual(0);
-    expect(app.indexOf('activeInternalFeatureId ?')).toBeLessThan(app.indexOf('showInAppValidation ?'));
+    expect(app).not.toContain('activeInternalFeatureId ?');
+    expect(app).toContain('featureId={activeInternalFeatureId}');
+    expect(app.indexOf('<WorkspacePageSlotHost fallback={showInAppValidation')).toBeGreaterThanOrEqual(0);
   });
 });

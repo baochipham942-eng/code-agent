@@ -32,7 +32,8 @@ describe('TelemetryStorage.pruneAgedTelemetry', () => {
         end_time INTEGER, duration_ms INTEGER, turn_count INTEGER DEFAULT 0,
         total_input_tokens INTEGER DEFAULT 0, total_output_tokens INTEGER DEFAULT 0,
         total_tokens INTEGER DEFAULT 0, estimated_cost REAL DEFAULT 0, total_tool_calls INTEGER DEFAULT 0,
-        tool_success_rate REAL DEFAULT 0, total_errors INTEGER DEFAULT 0, session_type TEXT, status TEXT
+        tool_success_rate REAL DEFAULT 0, total_errors INTEGER DEFAULT 0, session_type TEXT, status TEXT,
+        synced_at INTEGER
       );
       CREATE TABLE telemetry_turns (
         id TEXT PRIMARY KEY, session_id TEXT NOT NULL, turn_number INTEGER NOT NULL,
@@ -67,16 +68,28 @@ describe('TelemetryStorage.pruneAgedTelemetry', () => {
     `);
     // 每张重量表塞一条过期 + 一条新鲜
     dbState.sqlite.exec(`
-      INSERT INTO telemetry_sessions (id, title, model_provider, model_name, working_directory, start_time)
-        VALUES ('s-old', 't', 'openai', 'm', '/tmp', ${OLD}), ('s-new', 't', 'openai', 'm', '/tmp', ${FRESH});
+      INSERT INTO telemetry_sessions (id, title, model_provider, model_name, working_directory, start_time, synced_at)
+        VALUES
+          ('s-old', 't', 'openai', 'm', '/tmp', ${OLD}, NULL),
+          ('s-old-synced', 't', 'openai', 'm', '/tmp', ${OLD}, ${NOW}),
+          ('s-new', 't', 'openai', 'm', '/tmp', ${FRESH}, NULL);
       INSERT INTO telemetry_turns (id, session_id, turn_number, start_time, end_time, duration_ms)
-        VALUES ('tn-old', 's-old', 1, ${OLD}, ${OLD}, 1), ('tn-new', 's-new', 1, ${FRESH}, ${FRESH}, 1);
+        VALUES
+          ('tn-old', 's-old', 1, ${OLD}, ${OLD}, 1),
+          ('tn-old-synced', 's-old-synced', 1, ${OLD}, ${OLD}, 1),
+          ('tn-new', 's-new', 1, ${FRESH}, ${FRESH}, 1);
       INSERT INTO telemetry_events (id, turn_id, session_id, timestamp, event_type)
         VALUES ('e-old', 'tn-old', 's-old', ${OLD}, 'x'), ('e-new', 'tn-new', 's-new', ${FRESH}, 'x');
       INSERT INTO telemetry_model_calls (id, turn_id, session_id, timestamp, provider, model)
-        VALUES ('mc-old', 'tn-old', 's-old', ${OLD}, 'openai', 'm'), ('mc-new', 'tn-new', 's-new', ${FRESH}, 'openai', 'm');
+        VALUES
+          ('mc-old', 'tn-old', 's-old', ${OLD}, 'openai', 'm'),
+          ('mc-old-synced', 'tn-old-synced', 's-old-synced', ${OLD}, 'openai', 'm'),
+          ('mc-new', 'tn-new', 's-new', ${FRESH}, 'openai', 'm');
       INSERT INTO telemetry_tool_calls (id, turn_id, session_id, tool_call_id, name, timestamp)
-        VALUES ('tc-old', 'tn-old', 's-old', 'tc-old', 'Bash', ${OLD}), ('tc-new', 'tn-new', 's-new', 'tc-new', 'Bash', ${FRESH});
+        VALUES
+          ('tc-old', 'tn-old', 's-old', 'tc-old', 'Bash', ${OLD}),
+          ('tc-old-synced', 'tn-old-synced', 's-old-synced', 'tc-old-synced', 'Bash', ${OLD}),
+          ('tc-new', 'tn-new', 's-new', 'tc-new', 'Bash', ${FRESH});
       INSERT INTO telemetry_diagnostic_bundles (id, session_id, trigger_reason, built_at, bundle, created_at, synced_at)
         VALUES ('b-old', 's-old', 'x', ${OLD}, '{}', ${OLD}, ${NOW}), ('b-new', 's-new', 'x', ${FRESH}, '{}', ${FRESH}, NULL);
       INSERT INTO system_prompt_cache (hash, content, tokens, created_at)
@@ -99,13 +112,34 @@ describe('TelemetryStorage.pruneAgedTelemetry', () => {
     dbState.sqlite = null;
   });
 
-  it('删除超过 MAX_AGE_MS 的 events/model_calls/tool_calls,保留新鲜行', () => {
+  it('保留未同步 session 的过期 model/tool calls', () => {
     new TelemetryStorage().pruneAgedTelemetry(NOW);
 
-    for (const table of ['telemetry_events', 'telemetry_model_calls', 'telemetry_tool_calls']) {
-      const rows = dbState.sqlite!.prepare(`SELECT id FROM ${table}`).all() as { id: string }[];
-      expect(rows.map((r) => r.id).some((id) => id.endsWith('-old'))).toBe(false);
-      expect(rows.map((r) => r.id).some((id) => id.endsWith('-new'))).toBe(true);
+    expect(dbState.sqlite!.prepare('SELECT id FROM telemetry_model_calls WHERE id = ?').get('mc-old'))
+      .toEqual({ id: 'mc-old' });
+    expect(dbState.sqlite!.prepare('SELECT id FROM telemetry_tool_calls WHERE id = ?').get('tc-old'))
+      .toEqual({ id: 'tc-old' });
+  });
+
+  it('删除已同步 session 的过期 model/tool calls', () => {
+    new TelemetryStorage().pruneAgedTelemetry(NOW);
+
+    expect(dbState.sqlite!.prepare('SELECT id FROM telemetry_model_calls WHERE id = ?').get('mc-old-synced'))
+      .toBeUndefined();
+    expect(dbState.sqlite!.prepare('SELECT id FROM telemetry_tool_calls WHERE id = ?').get('tc-old-synced'))
+      .toBeUndefined();
+  });
+
+  it('删除过期 events，保留新鲜明细行', () => {
+    new TelemetryStorage().pruneAgedTelemetry(NOW);
+
+    expect(dbState.sqlite!.prepare('SELECT id FROM telemetry_events WHERE id = ?').get('e-old')).toBeUndefined();
+    for (const [table, id] of [
+      ['telemetry_events', 'e-new'],
+      ['telemetry_model_calls', 'mc-new'],
+      ['telemetry_tool_calls', 'tc-new'],
+    ]) {
+      expect(dbState.sqlite!.prepare(`SELECT id FROM ${table} WHERE id = ?`).get(id)).toEqual({ id });
     }
   });
 
@@ -147,8 +181,8 @@ describe('TelemetryStorage.pruneAgedTelemetry', () => {
   it('保留 telemetry_sessions/turns 分析主干(不删,历史用量分析不丢)', () => {
     new TelemetryStorage().pruneAgedTelemetry(NOW);
 
-    expect(count('telemetry_sessions')).toBe(2);
-    expect(count('telemetry_turns')).toBe(2);
+    expect(count('telemetry_sessions')).toBe(3);
+    expect(count('telemetry_turns')).toBe(3);
   });
 
   it('DB 不可用时是 no-op,不抛', () => {
@@ -159,9 +193,11 @@ describe('TelemetryStorage.pruneAgedTelemetry', () => {
 
   it('中央 schema 冷启动即可跑 retention（issue #1072：system_prompt_cache 曾惰性建表拖死整个事务）', async () => {
     const { applyTelemetrySchema } = await import('../../../src/host/services/core/database/schemaTelemetry');
+    const { applyTelemetryTurnsMigrations } = await import('../../../src/host/services/core/database/migrations');
     const fresh = new Database(':memory:');
     const noop = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} };
     applyTelemetrySchema(fresh, noop as never);
+    applyTelemetryTurnsMigrations(fresh, noop as never);
     fresh.prepare('INSERT INTO telemetry_events (id, turn_id, session_id, timestamp, event_type) VALUES (?, ?, ?, ?, ?)')
       .run('aged', 't1', 's1', OLD, 'tool_call');
     const { deleteAgedTelemetryRows } = await import('../../../src/host/telemetry/telemetryRetentionSql');

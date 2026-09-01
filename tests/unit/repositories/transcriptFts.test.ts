@@ -460,6 +460,33 @@ describe('SessionRepository — Transcript FTS5 (kind-decomposed)', () => {
     expect(repo.backfillTranscriptFts()).toBe(0);
   });
 
+  it('rebuilds every kind when the transcript projection is only partially missing', () => {
+    repo.addMessage(
+      'sess-A',
+      makeMessage('repair1', 'repairable quokka answer', {
+        role: 'assistant',
+        thinking: 'repairable quokka reasoning',
+        toolCalls: [makeToolCall('tc1', 'Bash', { command: 'echo quokka' }, { output: 'quokka repaired' })],
+      })
+    );
+    repo.addMessage('sess-B', makeMessage('repair2', 'repairable quokka question'));
+
+    const expectedRows = allFtsRows(db);
+    db.prepare('DELETE FROM transcript_fts WHERE message_id = ? AND kind = ?')
+      .run('repair1', 'reasoning');
+    db.prepare('UPDATE transcript_fts SET body = ? WHERE message_id = ? AND kind = ?')
+      .run('stale transcript body', 'repair1', 'assistant_text');
+
+    const rebuilt = repo.backfillTranscriptFts();
+
+    expect(rebuilt).toBe(expectedRows.length);
+    expect(allFtsRows(db)).toEqual(expectedRows);
+    expect(repo.searchTranscriptFts('quokka reasoning', { kinds: ['reasoning'] })).toHaveLength(1);
+
+    repo.addMessage('sess-A', makeMessage('repair3', 'trigger remains active after transcript repair'));
+    expect(repo.searchTranscriptFts('transcript repair', { kinds: ['user_text'] })).toHaveLength(1);
+  });
+
   // ---- around ----------------------------------------------------------------
 
   it('returns ±N messages around an anchor with matched flag', () => {

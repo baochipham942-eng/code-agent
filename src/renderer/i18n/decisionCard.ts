@@ -13,7 +13,7 @@ export const decisionCardZh = {
     collapse: '收起▴',
     dangerTitle: '危险操作',
     dangerBadge: '危险',
-    stillExecute: '仍然执行',
+    stillExecute: '确认仍然执行',
     dangerCopy: '这是一个危险命令',
     dangerDefaultReason: '此操作可能导致数据丢失或系统损坏，请仔细确认后再执行。',
     permission: {

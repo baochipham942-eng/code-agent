@@ -49,6 +49,10 @@ import {
   type PromptRewindRestoreResult,
   type PromptRewindResult,
 } from './SessionRewindRepository';
+import {
+  clearAllMessagesWithLedger,
+  reconcileMessageProjectionOrderWithLedger,
+} from './sessionRepositoryMessageLedger';
 
 export type { StoredSession, StoredMessage };
 export type {
@@ -520,9 +524,10 @@ export class SessionRepository {
   }
 
   clearAllMessages(): number {
-    const stmt = this.db.prepare('DELETE FROM messages');
-    const result = stmt.run();
-    return result.changes;
+    return clearAllMessagesWithLedger(
+      this.db, this.conversationBranchRepo,
+      (sessionId) => this.readConversationBoundary(sessionId),
+    );
   }
 
   hasMessages(sessionId: string): boolean {
@@ -693,6 +698,14 @@ export class SessionRepository {
     replaceFn();
   }
 
+  reconcileMessageProjectionOrder(sessionId: string, reason: string, createdAt = Date.now()): void {
+    reconcileMessageProjectionOrderWithLedger(
+      this.db, this.conversationBranchRepo,
+      (targetSessionId) => this.readConversationBoundary(targetSessionId),
+      sessionId, reason, createdAt,
+    );
+  }
+
   updateMessage(messageId: string, updates: Partial<Message>, sessionId?: string): void {
     const setClauses: string[] = [];
     const values: unknown[] = [];
@@ -776,6 +789,9 @@ export class SessionRepository {
       : 'SELECT session_id FROM messages WHERE id = ? LIMIT 1')
       .get(...(sessionId ? [messageId, sessionId] : [messageId])) as { session_id: string } | undefined;
     const resolvedSessionId = target?.session_id;
+    // visibility/hidden* are compatibility cache fields. Authoritative history
+    // visibility is expressed only by rewind/rewind_restore ledger events; a
+    // direct cache-only visibility patch deliberately disappears on replay.
     const recordsRevision = Object.keys(updates).some((key) => ![
       'visibility',
       'hiddenByRewindId',
@@ -986,6 +1002,8 @@ export class SessionRepository {
     if (messageIds.length === 0) return;
     const now = Date.now();
     const placeholders = messageIds.map(() => '?').join(',');
+    // synced_at is a projection-cache upload cursor, not conversation payload.
+    // It is intentionally exempt from immutable conversation ledger events.
     this.db.prepare(`UPDATE messages SET synced_at = ? WHERE id IN (${placeholders})`).run(now, ...messageIds);
   }
 

@@ -29,6 +29,9 @@ import {
 import { extractArtifacts } from '../host/agent/artifactExtractor';
 import { migrateCliSessionsTable, createCliTables, createCliIndexes } from './cliDatabaseSchema';
 import { visibleHistoryMessageWhere } from './cliDatabaseSql';
+import { applyConversationBranchSchema } from '../host/services/core/database/schemaConversationBranch';
+import { SessionRepository } from '../host/services/core/repositories/SessionRepository';
+import { ConversationBranchRepository } from '../host/services/core/repositories/ConversationBranchRepository';
 
 // ----------------------------------------------------------------------------
 // Types
@@ -105,6 +108,8 @@ let Database: typeof import('better-sqlite3') | null = null;
 
 export class CLIDatabaseService {
   private db: import('better-sqlite3').Database | null = null;
+  private sessionRepository: SessionRepository | null = null;
+  private conversationBranchRepository: ConversationBranchRepository | null = null;
   private dbPath: string;
   private _initialized = false;
   private _initPromise: Promise<void> | null = null;
@@ -190,6 +195,15 @@ export class CLIDatabaseService {
 
     this.createTables();
     this.migrateSessionsTable();
+    const hadConversationLedger = Boolean(this.db.prepare(`
+      SELECT 1
+      FROM sqlite_master
+      WHERE type = 'table' AND name = 'conversation_branches'
+      LIMIT 1
+    `).get());
+    applyConversationBranchSchema(this.db, { backfillLegacy: !hadConversationLedger });
+    this.conversationBranchRepository = new ConversationBranchRepository(this.db);
+    this.sessionRepository = new SessionRepository(this.db);
     this.createIndexes();
     this._initialized = true;
   }
@@ -562,87 +576,14 @@ export class CLIDatabaseService {
 
   addMessage(sessionId: string, message: Message): void {
     if (!this.db) throw new Error('Database not initialized');
-
-    const stmt = this.db.prepare(`
-      INSERT INTO messages (id, session_id, role, content, timestamp, tool_calls, tool_results, attachments, content_parts, is_meta, thinking, metadata)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    const attachmentsMeta = sanitizeAttachmentsForPersistence(message.attachments);
-
-    stmt.run(
-      message.id,
-      sessionId,
-      message.role,
-      message.content,
-      message.timestamp,
-      message.toolCalls ? JSON.stringify(message.toolCalls) : null,
-      message.toolResults ? JSON.stringify(message.toolResults) : null,
-      attachmentsMeta ? JSON.stringify(attachmentsMeta) : null,
-      message.contentParts ? JSON.stringify(message.contentParts) : null,
-      message.isMeta ? 1 : 0,
-      message.thinking || message.reasoning || null,
-      message.metadata ? JSON.stringify(message.metadata) : null
-    );
-
-    // 更新 session 的 updated_at
-    if (!message.isMeta) {
-      this.db.prepare('UPDATE sessions SET updated_at = ? WHERE id = ?').run(Date.now(), sessionId);
-    }
+    if (!this.sessionRepository) throw new Error('Conversation ledger repository not initialized');
+    this.sessionRepository.addMessage(sessionId, message);
   }
 
   updateMessage(messageId: string, updates: Partial<Message>, sessionId?: string): void {
     if (!this.db) throw new Error('Database not initialized');
-
-    const setClauses: string[] = [];
-    const values: unknown[] = [];
-    const addJsonUpdate = (column: string, value: unknown): void => {
-      setClauses.push(`${column} = ?`);
-      values.push(value == null ? null : JSON.stringify(value));
-    };
-
-    if (updates.content !== undefined) {
-      setClauses.push('content = ?');
-      values.push(updates.content);
-    }
-    if (updates.role !== undefined) {
-      setClauses.push('role = ?');
-      values.push(updates.role);
-    }
-    if (updates.timestamp !== undefined) {
-      setClauses.push('timestamp = ?');
-      values.push(updates.timestamp);
-    }
-    if (updates.toolCalls !== undefined) addJsonUpdate('tool_calls', updates.toolCalls);
-    if (updates.toolResults !== undefined) addJsonUpdate('tool_results', updates.toolResults);
-    if (updates.attachments !== undefined) {
-      addJsonUpdate('attachments', sanitizeAttachmentsForPersistence(updates.attachments));
-    }
-    if (updates.contentParts !== undefined) addJsonUpdate('content_parts', updates.contentParts);
-    if (updates.isMeta !== undefined) {
-      setClauses.push('is_meta = ?');
-      values.push(updates.isMeta ? 1 : 0);
-    }
-    if (updates.thinking !== undefined || updates.reasoning !== undefined) {
-      setClauses.push('thinking = ?');
-      values.push(updates.thinking || updates.reasoning || null);
-    }
-    if (updates.metadata !== undefined) addJsonUpdate('metadata', updates.metadata);
-
-    if (setClauses.length === 0) return;
-    const guardedSql = sessionId
-      ? `UPDATE messages SET ${setClauses.join(', ')} WHERE id = ? AND session_id = ?`
-      : `UPDATE messages SET ${setClauses.join(', ')} WHERE session_id = COALESCE(?, session_id) AND id = ?`;
-    if (sessionId) {
-      values.push(messageId, sessionId);
-    } else {
-      // 兼容普通 updateMessage 调用；碰撞恢复路径必须显式传入目标 sessionId。
-      values.push(null, messageId);
-    }
-    const result = this.db.prepare(guardedSql).run(...values);
-    if (result.changes === 0) {
-      throw new Error(`Message update missed for session ${sessionId ?? 'unknown'} and id ${messageId}`);
-    }
+    if (!this.sessionRepository) throw new Error('Conversation ledger repository not initialized');
+    this.sessionRepository.updateMessage(messageId, updates, sessionId);
   }
 
   updateMessageForSession(sessionId: string, messageId: string, updates: Partial<Message>): void {
@@ -681,6 +622,30 @@ export class CLIDatabaseService {
     const rows = stmt.all(sessionId, count) as SQLiteRow[];
 
     return rows.reverse().map(rowToMessage);
+  }
+
+  getMessagesForLoad(sessionId: string, count: number): Message[] {
+    if (!this.db || !this.conversationBranchRepository) {
+      throw new Error('Conversation ledger repository not initialized');
+    }
+    const session = this.db.prepare(`
+      SELECT user_id, project_id
+      FROM sessions
+      WHERE id = ?
+      LIMIT 1
+    `).get(sessionId) as { user_id: string | null; project_id: string | null } | undefined;
+    if (!session) return [];
+    const branch = this.db.prepare(`
+      SELECT 1
+      FROM conversation_branches
+      WHERE session_id = ?
+      LIMIT 1
+    `).get(sessionId);
+    if (!branch) return [];
+    return this.conversationBranchRepository.replayForLoad(sessionId, {
+      ownerUserId: session.user_id,
+      projectId: session.project_id,
+    }).messages.slice(-count).map((entry) => entry.message as Message);
   }
 
   // --------------------------------------------------------------------------
@@ -1171,6 +1136,8 @@ export class CLIDatabaseService {
     if (this.db) {
       this.db.close();
       this.db = null;
+      this.sessionRepository = null;
+      this.conversationBranchRepository = null;
     }
   }
 

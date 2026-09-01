@@ -10,6 +10,7 @@ import {
 import { getPath } from '../../platform/appPaths';
 import { getBrowserComputerProofLedgerPath } from '../../session/browserComputerProofStore';
 import { getCompletionSummaryPath } from '../../session/completionSummaryService';
+import { SessionRepository } from '../core/repositories/SessionRepository';
 
 export interface EvidenceInvalidationResult {
   staleRefCount: number;
@@ -19,7 +20,7 @@ export interface EvidenceInvalidationResult {
 function updateJsonColumnRows(
   db: BetterSqlite3.Database,
   selectSql: string,
-  updateSql: string,
+  updateTarget: string | ((value: unknown, rowKey: string | number) => void),
   params: unknown[],
   invalidation: EvidenceInvalidationRecord,
   staleIds: Set<string>,
@@ -29,7 +30,8 @@ function updateJsonColumnRows(
     payload: string | null;
   }>;
   let updated = 0;
-  const update = db.prepare(updateSql);
+  const update = typeof updateTarget === 'string' ? db.prepare(updateTarget) : null;
+  const updateCallback = typeof updateTarget === 'function' ? updateTarget : null;
   for (const row of rows) {
     if (!row.payload) continue;
     try {
@@ -37,7 +39,11 @@ function updateJsonColumnRows(
       const before = staleIds.size;
       const next = applyEvidenceInvalidation(parsed, invalidation, staleIds);
       if (staleIds.size !== before) {
-        update.run(JSON.stringify(next), row.row_key);
+        if (update) {
+          update.run(JSON.stringify(next), row.row_key);
+        } else {
+          updateCallback?.(next, row.row_key);
+        }
         updated += 1;
       }
     } catch {
@@ -80,6 +86,7 @@ export async function invalidateSessionEvidence(
     invalidateRunEvidence: true,
   };
   const staleIds = new Set<string>();
+  const sessions = new SessionRepository(db);
   const updateDatabase = db.transaction(() => {
     let updated = 0;
     updated += updateJsonColumnRows(
@@ -93,7 +100,11 @@ export async function invalidateSessionEvidence(
     updated += updateJsonColumnRows(
       db,
       'SELECT id AS row_key, metadata AS payload FROM messages WHERE session_id = ?',
-      'UPDATE messages SET metadata = ?, synced_at = NULL WHERE id = ?',
+      (metadata, messageId) => sessions.updateMessage(
+        String(messageId),
+        { metadata: metadata as Record<string, unknown> },
+        sessionId,
+      ),
       [sessionId],
       invalidation,
       staleIds,

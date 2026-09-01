@@ -1,8 +1,8 @@
 /**
  * Append-only conversation truth model.
  *
- * `messages` remains the compatibility projection consumed by existing
- * surfaces. These contracts describe the immutable entry / branch ledger used
+ * `messages` is a rebuildable compatibility cache for legacy surfaces and
+ * sync. Session loading derives from the immutable entry / branch ledger used
  * for replay, fork provenance, rewind visibility, evaluation attribution, and
  * lineage repair.
  */

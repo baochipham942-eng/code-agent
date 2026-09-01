@@ -886,6 +886,25 @@ export function applyConversationBranchSchema(
       CHECK (length(event_digest) = 64)
     );
 
+    -- Loading replay snapshots are disposable caches. The immutable ledger is
+    -- their only rebuild source; they must never be used to restore messages.
+    CREATE TABLE IF NOT EXISTS conversation_branch_replay_snapshots (
+      branch_id TEXT PRIMARY KEY,
+      through_event_sequence INTEGER NOT NULL,
+      through_event_digest TEXT NOT NULL,
+      through_ordinal INTEGER NOT NULL,
+      replay_payload_json TEXT NOT NULL,
+      replay_payload_digest TEXT NOT NULL,
+      schema_version INTEGER NOT NULL,
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY (branch_id) REFERENCES conversation_branches(id) ON DELETE CASCADE,
+      CHECK (through_event_sequence > 0),
+      CHECK (through_ordinal >= 0),
+      CHECK (length(through_event_digest) = 64),
+      CHECK (length(replay_payload_digest) = 64),
+      CHECK (schema_version = 1)
+    );
+
     CREATE INDEX IF NOT EXISTS idx_conversation_entries_source
       ON conversation_entries(source_session_id, source_message_id);
     CREATE INDEX IF NOT EXISTS idx_conversation_branch_entries_entry

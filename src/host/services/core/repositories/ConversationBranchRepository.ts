@@ -26,6 +26,7 @@ import {
   parseConversationStringArray as parseStringArray,
 } from './ConversationBranchLedgerStore';
 import { ConversationProjectionRepairRepository } from './ConversationProjectionRepairRepository';
+import { replayConversationBranchForLoad } from './conversationLoadingReplay';
 
 type SQLiteRow = Record<string, unknown>;
 
@@ -659,6 +660,23 @@ export class ConversationBranchRepository {
       );
     }
     return this.replayUnchecked(branch, options);
+  }
+
+  /**
+   * Production loading replay. A persisted snapshot is a disposable cache only:
+   * every validation failure falls back to the unchanged audit-grade replay.
+   */
+  replayForLoad(
+    sessionId: string,
+    boundary: ConversationBoundary,
+  ): ConversationReplay {
+    const branch = this.requireBranch(sessionId, boundary);
+    return replayConversationBranchForLoad({
+      db: this.db,
+      store: this.store,
+      branch,
+      auditReplay: () => this.replay(sessionId, boundary),
+    });
   }
 
   private replayUnchecked(

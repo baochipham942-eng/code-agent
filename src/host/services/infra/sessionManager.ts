@@ -7,10 +7,9 @@ import { AppWindow } from '../../platform';
 import { getDatabase, type StoredSession } from '../core';
 import { getToolCache } from './toolCache';
 import {
-  findMissingTelemetryPromptRows,
-  formatTelemetryRecoveredPrompt,
   sanitizeModelConfigForSession,
 } from './sessionManagerNormalization';
+import { backfillMissingTelemetryUserPrompts } from './sessionManagerTelemetryBackfill';
 import { getAuthService } from '../auth/authService';
 import { getSupabase, isSupabaseInitialized } from './supabaseService';
 import { IPC_CHANNELS } from '../../../shared/ipc';
@@ -90,17 +89,6 @@ export interface SessionListOptions {
   archivedOnly?: boolean;
 }
 
-interface TelemetryUserPromptRow {
-  id: string;
-  user_prompt: string;
-  start_time: number | string;
-}
-
-interface ExistingUserMessageRow {
-  content: string;
-  timestamp?: number | string;
-}
-
 // ----------------------------------------------------------------------------
 // Session Manager
 // ----------------------------------------------------------------------------
@@ -122,73 +110,11 @@ export class SessionManager implements Disposable {
     });
   }
 
-  private backfillMissingTelemetryUserPrompts(sessionId: string): number {
-    const db = getDatabase();
-    const rawDb = db.getDb();
-    if (!rawDb) return 0;
-
-    try {
-      const telemetryRows = rawDb
-        .prepare(
-          `
-        SELECT id, user_prompt, start_time
-        FROM telemetry_turns
-        WHERE session_id = ?
-          AND COALESCE(turn_type, 'user') = 'user'
-          AND user_prompt IS NOT NULL
-          AND TRIM(user_prompt) != ''
-        ORDER BY start_time ASC, turn_number ASC, id ASC
-      `
-        )
-        .all(sessionId) as TelemetryUserPromptRow[];
-
-      if (telemetryRows.length === 0) return 0;
-
-      const existingRows = rawDb
-        .prepare(
-          `
-        SELECT content, timestamp
-        FROM messages
-        WHERE session_id = ?
-          AND role = 'user'
-      `
-        )
-        .all(sessionId) as ExistingUserMessageRow[];
-
-      const missingTelemetryRows = findMissingTelemetryPromptRows(telemetryRows, existingRows);
-
-      let inserted = 0;
-      for (const row of missingTelemetryRows) {
-        const content = row.user_prompt;
-        const timestamp = Number(row.start_time);
-        db.addMessage(
-          sessionId,
-          {
-            id: `telemetry-user-${row.id}`,
-            role: 'user',
-            content: formatTelemetryRecoveredPrompt(content),
-            timestamp: Number.isFinite(timestamp) ? timestamp : Date.now()
-          },
-          { skipTimestampUpdate: true }
-        );
-        inserted++;
-      }
-
-      if (inserted > 0) {
-        logger.info('Backfilled missing user prompts from telemetry', {
-          sessionId,
-          inserted
-        });
-      }
-
-      return inserted;
-    } catch (error) {
-      logger.warn('Failed to backfill user prompts from telemetry', {
-        sessionId,
-        error: error instanceof Error ? error.message : String(error)
-      });
-      return 0;
-    }
+  private backfillMissingTelemetryUserPrompts(
+    sessionId: string,
+    authoritativeMessages?: readonly Message[],
+  ): number {
+    return backfillMissingTelemetryUserPrompts(sessionId, authoritativeMessages);
   }
 
   private updateCachedWorkbenchState(session: SessionWithMessages): void {
@@ -358,7 +284,11 @@ export class SessionManager implements Disposable {
    * @param sessionId 会话 ID
    * @param messageLimit 加载的消息数量限制，默认 30 条（首轮响应优化）
    */
-  async getSession(sessionId: string, messageLimit: number = 30): Promise<SessionWithMessages | null> {
+  async getSession(
+    sessionId: string,
+    messageLimit: number = 30,
+    options: { messageSource?: 'projection' | 'ledger' } = {},
+  ): Promise<SessionWithMessages | null> {
     const db = getDatabase();
     const ownerId = this.currentOwnerUserId();
 
@@ -386,13 +316,39 @@ export class SessionManager implements Disposable {
     let storedSession = db.getSession(sessionId, { userId: ownerId });
     if (!storedSession) return null;
 
-    const backfilled = this.backfillMissingTelemetryUserPrompts(sessionId);
+    const replayBoundary = {
+      ownerUserId: storedSession.userId ?? null,
+      projectId: storedSession.projectId ?? null,
+    };
+    let preloadedLedgerMessages: Message[] | null = null;
+    if (options.messageSource === 'ledger' && db.hasConversationBranch(sessionId)) {
+      preloadedLedgerMessages = db.replayConversationBranchForLoad(
+        sessionId,
+        replayBoundary,
+      ).messages.map((entry) => entry.message as Message);
+    }
+    const backfilled = this.backfillMissingTelemetryUserPrompts(
+      sessionId,
+      preloadedLedgerMessages ?? undefined,
+    );
     if (backfilled > 0) {
       storedSession = db.getSession(sessionId, { userId: ownerId }) ?? storedSession;
     }
 
     // 懒加载：只加载最近 N 条消息（性能优化）
-    let messages = db.getRecentMessages(sessionId, messageLimit);
+    const loadPersistedMessages = (): Message[] => {
+      if (options.messageSource !== 'ledger') {
+        return db.getRecentMessages(sessionId, messageLimit);
+      }
+      if (!db.hasConversationBranch(sessionId)) return [];
+      const messages = backfilled > 0 || !preloadedLedgerMessages
+        ? db.replayConversationBranchForLoad(sessionId, replayBoundary)
+            .messages.map((entry) => entry.message as Message)
+        : preloadedLedgerMessages;
+      return messages.slice(-messageLimit);
+    };
+
+    let messages = loadPersistedMessages();
 
     // 如果本地没有消息，尝试从云端拉取
     if (messages.length === 0) {
@@ -406,7 +362,7 @@ export class SessionManager implements Disposable {
           });
         }
         // 云端拉取后从本地按 active 口径读取，避免 rewound 尝试重新进入上下文
-        messages = db.getRecentMessages(sessionId, messageLimit);
+        messages = loadPersistedMessages();
       }
     }
 
@@ -1184,19 +1140,23 @@ export class SessionManager implements Disposable {
   /**
    * 恢复会话（加载消息和状态）
    *
-   * restoreSession 必须强制从 DB 全量 reload messages，原因：
+   * restoreSession 必须强制从账本全量 replay，原因：
    * 1. getSession 默认只 load 最近 30 条（懒加载性能优化）
-   * 2. sessionCache 一旦装入就 cache hit 直接返回，不会重新读 DB
+   * 2. sessionCache 一旦装入就 cache hit 直接返回，不会重新 replay
    * 3. webServer 重启后 cache 是空的，但首次 load 走 getSession 默认 limit=30
    *
    * 这三层叠加导致：webServer 重启 → 用户继续对话 → LLM 拿到的 messages 只有最近 30 条
-   * （甚至更少，如果走的 fresh load 路径），历史 tool result/assistant 输出全丢，
-   * 模型像金鱼一样失忆。修法：清 cache + 全量 reload。
+   * （甚至更少，如果走的 fresh load 路径），历史 tool result/assistant 输出全丢。
+   * messages 只是兼容缓存；生产恢复的读源固定为加载级 replay。
    */
   async restoreSession(sessionId: string): Promise<SessionWithMessages | null> {
-    // 清缓存确保下面的 getSession 走 DB 全量路径
+    // 清缓存确保下面的 getSession 走账本全量加载路径
     this.sessionCache.delete(sessionId);
-    const session = await this.getSession(sessionId, Number.MAX_SAFE_INTEGER);
+    const session = await this.getSession(
+      sessionId,
+      Number.MAX_SAFE_INTEGER,
+      { messageSource: 'ledger' },
+    );
     if (!session) return null;
 
     this.setCurrentSession(sessionId);

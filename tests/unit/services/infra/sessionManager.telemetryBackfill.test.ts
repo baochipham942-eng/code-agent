@@ -17,6 +17,7 @@ const dbMock = {
   addMessage: vi.fn((sessionId: string, message: Record<string, unknown>) => {
     insertedMessages.push({ sessionId, message });
   }),
+  reconcileMessageProjectionOrder: vi.fn(),
 };
 
 vi.mock('../../../../src/host/platform', () => ({
@@ -40,12 +41,15 @@ vi.mock('../../../../src/host/services/infra/supabaseService', () => ({
   getSupabase: () => null,
 }));
 
-async function backfill(sessionId = 'session-url-normalization'): Promise<number> {
+async function backfill(
+  sessionId = 'session-url-normalization',
+  authoritativeMessages?: Array<Record<string, unknown>>,
+): Promise<number> {
   const { SessionManager } = await import('../../../../src/host/services/infra/sessionManager');
   const manager = new SessionManager();
   return (manager as unknown as {
-    backfillMissingTelemetryUserPrompts(id: string): number;
-  }).backfillMissingTelemetryUserPrompts(sessionId);
+    backfillMissingTelemetryUserPrompts(id: string, messages?: Array<Record<string, unknown>>): number;
+  }).backfillMissingTelemetryUserPrompts(sessionId, authoritativeMessages);
 }
 
 describe('SessionManager telemetry user prompt backfill', () => {
@@ -104,6 +108,28 @@ describe('SessionManager telemetry user prompt backfill', () => {
           '【历史恢复提示】原始 user 消息缺失；以下内容由脱敏后的 telemetry 重建，不是用户原话。路径、标识符、数字和敏感值可能已被缩写或替换，不要将它们当作可直接执行的精确文件或命令目标。\n\n检查 https://example.org/',
       }),
     }]);
+    expect(dbMock.reconcileMessageProjectionOrder).toHaveBeenCalledWith(
+      'session-url-normalization',
+      'SessionManager telemetry backfill chronological reconciliation',
+    );
+  });
+
+  it('uses ledger-derived messages instead of an empty projection cache during restore', async () => {
+    telemetryRows.push({
+      id: 'ledger-existing-prompt',
+      user_prompt: 'already in immutable history',
+      start_time: 1_785_600_000_250,
+    });
+
+    await expect(backfill('ledger-session', [{
+      id: 'u-ledger',
+      role: 'user',
+      content: 'already in immutable history',
+      timestamp: 1_785_600_000_250,
+    }])).resolves.toBe(0);
+
+    expect(dbMock.addMessage).not.toHaveBeenCalled();
+    expect(dbMock.reconcileMessageProjectionOrder).not.toHaveBeenCalled();
   });
 
   it('does not backfill an auxiliary meta prompt whose home path was expanded during persistence', async () => {

@@ -74,6 +74,11 @@ export interface AppendConversationEventResult {
   inserted: boolean;
 }
 
+export interface ConversationReplayFoldState {
+  activeOrdinals: number[];
+  openRewinds: Array<{ rewindId: string; hiddenOrdinals: number[] }>;
+}
+
 export function parseConversationRecord(value: string): Record<string, unknown> {
   try {
     const parsed = JSON.parse(value) as unknown;
@@ -89,6 +94,89 @@ function parseConversationNumberArray(value: unknown): number[] {
   return Array.isArray(value)
     ? value.filter((item): item is number => typeof item === 'number' && Number.isInteger(item))
     : [];
+}
+
+export function foldConversationReplayEvents(
+  events: ConversationEventRow[],
+  options: { includeRewound?: boolean } = {},
+  initialState: ConversationReplayFoldState = { activeOrdinals: [], openRewinds: [] },
+): ConversationReplayFoldState {
+  let activeOrdinals = [...initialState.activeOrdinals];
+  const openRewinds = initialState.openRewinds.map((rewind) => ({
+    rewindId: rewind.rewindId,
+    hiddenOrdinals: [...rewind.hiddenOrdinals],
+  }));
+
+  for (const event of events) {
+    const payload = parseConversationRecord(event.payload_json);
+    switch (event.event_type) {
+      case 'legacy_backfill':
+      case 'fork':
+        activeOrdinals.push(...parseConversationNumberArray(payload.ordinals).filter(
+          (ordinal) => !activeOrdinals.includes(ordinal),
+        ));
+        break;
+      case 'append': {
+        const ordinal = Number(payload.ordinal);
+        if (Number.isInteger(ordinal) && !activeOrdinals.includes(ordinal)) {
+          activeOrdinals.push(ordinal);
+        }
+        break;
+      }
+      case 'message_revision': {
+        const targetOrdinal = Number(payload.targetOrdinal);
+        const replacementOrdinal = Number(payload.replacementOrdinal);
+        const index = activeOrdinals.indexOf(targetOrdinal);
+        if (index >= 0 && Number.isInteger(replacementOrdinal)) {
+          activeOrdinals[index] = replacementOrdinal;
+        }
+        break;
+      }
+      case 'projection_replace':
+        activeOrdinals = parseConversationNumberArray(payload.replacementOrdinals);
+        if (!options.includeRewound) {
+          openRewinds.length = 0;
+        }
+        break;
+      case 'projection_repair':
+        break;
+      case 'rewind': {
+        if (!options.includeRewound) {
+          const hiddenOrdinals = Array.isArray(payload.hidden)
+            ? payload.hidden.flatMap((item) => (
+                item
+                && typeof item === 'object'
+                && Number.isInteger((item as { ordinal?: unknown }).ordinal)
+                  ? [(item as { ordinal: number }).ordinal]
+                  : []
+              ))
+            : [];
+          const hidden = new Set(hiddenOrdinals);
+          activeOrdinals = activeOrdinals.filter((ordinal) => !hidden.has(ordinal));
+          openRewinds.push({
+            rewindId: String(payload.rewindId ?? ''),
+            hiddenOrdinals,
+          });
+        }
+        break;
+      }
+      case 'rewind_restore': {
+        if (!options.includeRewound) {
+          const rewindId = String(payload.rewindId ?? '');
+          const open = openRewinds[openRewinds.length - 1];
+          if (open?.rewindId === rewindId) {
+            activeOrdinals.push(...open.hiddenOrdinals);
+            openRewinds.pop();
+          }
+        }
+        break;
+      }
+      default:
+        break;
+    }
+  }
+
+  return { activeOrdinals, openRewinds };
 }
 
 export function parseConversationStringArray(value: unknown): string[] {
@@ -244,6 +332,20 @@ export class ConversationBranchLedgerStore {
     `).all(branchId) as ConversationReferenceRow[];
   }
 
+  readReferencesAfter(branchId: string, ordinal: number): ConversationReferenceRow[] {
+    return this.db.prepare(`
+      SELECT r.*,
+             e.message_json,
+             e.payload_digest,
+             e.owner_user_id AS entry_owner_user_id,
+             e.project_id AS entry_project_id
+      FROM conversation_branch_entries r
+      JOIN conversation_entries e ON e.id = r.entry_id
+      WHERE r.branch_id = ? AND r.ordinal > ?
+      ORDER BY r.ordinal ASC
+    `).all(branchId, ordinal) as ConversationReferenceRow[];
+  }
+
   requireReference(branchId: string, ordinal: number): ConversationReferenceRow {
     const reference = this.db.prepare(`
       SELECT r.*,
@@ -381,6 +483,15 @@ export class ConversationBranchLedgerStore {
       WHERE branch_id = ?
       ORDER BY sequence ASC
     `).all(branchId) as ConversationEventRow[];
+  }
+
+  readEventsAfter(branchId: string, sequence: number): ConversationEventRow[] {
+    return this.db.prepare(`
+      SELECT *
+      FROM conversation_branch_events
+      WHERE branch_id = ? AND sequence > ?
+      ORDER BY sequence ASC
+    `).all(branchId, sequence) as ConversationEventRow[];
   }
 
   readIdempotentEvent(
@@ -546,87 +657,17 @@ export class ConversationBranchLedgerStore {
     options: { includeRewound?: boolean } = {},
   ): ConversationReplay {
     const byOrdinal = new Map(references.map((reference) => [reference.ordinal, reference]));
-    let activeOrdinals: number[] = [];
-    const openRewinds: Array<{ rewindId: string; hiddenOrdinals: number[] }> = [];
-
-    for (const event of events) {
-      const payload = parseConversationRecord(event.payload_json);
-      switch (event.event_type) {
-        case 'legacy_backfill':
-        case 'fork':
-          activeOrdinals.push(...parseConversationNumberArray(payload.ordinals).filter(
-            (ordinal) => !activeOrdinals.includes(ordinal),
-          ));
-          break;
-        case 'append': {
-          const ordinal = Number(payload.ordinal);
-          if (Number.isInteger(ordinal) && !activeOrdinals.includes(ordinal)) {
-            activeOrdinals.push(ordinal);
-          }
-          break;
-        }
-        case 'message_revision': {
-          const targetOrdinal = Number(payload.targetOrdinal);
-          const replacementOrdinal = Number(payload.replacementOrdinal);
-          const index = activeOrdinals.indexOf(targetOrdinal);
-          if (index >= 0 && Number.isInteger(replacementOrdinal)) {
-            activeOrdinals[index] = replacementOrdinal;
-          }
-          break;
-        }
-        case 'projection_replace':
-          activeOrdinals = parseConversationNumberArray(payload.replacementOrdinals);
-          if (!options.includeRewound) {
-            openRewinds.length = 0;
-          }
-          break;
-        case 'projection_repair':
-          break;
-        case 'rewind': {
-          if (!options.includeRewound) {
-            const hiddenOrdinals = Array.isArray(payload.hidden)
-              ? payload.hidden.flatMap((item) => (
-                  item
-                  && typeof item === 'object'
-                  && Number.isInteger((item as { ordinal?: unknown }).ordinal)
-                    ? [(item as { ordinal: number }).ordinal]
-                    : []
-                ))
-              : [];
-            const hidden = new Set(hiddenOrdinals);
-            activeOrdinals = activeOrdinals.filter((ordinal) => !hidden.has(ordinal));
-            openRewinds.push({
-              rewindId: String(payload.rewindId ?? ''),
-              hiddenOrdinals,
-            });
-          }
-          break;
-        }
-        case 'rewind_restore': {
-          if (!options.includeRewound) {
-            const rewindId = String(payload.rewindId ?? '');
-            const open = openRewinds[openRewinds.length - 1];
-            if (open?.rewindId === rewindId) {
-              activeOrdinals.push(...open.hiddenOrdinals);
-              openRewinds.pop();
-            }
-          }
-          break;
-        }
-        default:
-          break;
-      }
-    }
+    const state = foldConversationReplayEvents(events, options);
 
     return {
       lineage: this.toLineage(branch),
-      messages: activeOrdinals.flatMap((ordinal) => {
+      messages: state.activeOrdinals.flatMap((ordinal) => {
         const reference = byOrdinal.get(ordinal);
         return reference ? [this.referenceToReplayMessage(reference)] : [];
       }),
       openRewindIds: options.includeRewound
         ? []
-        : openRewinds.map((rewind) => rewind.rewindId),
+        : state.openRewinds.map((rewind) => rewind.rewindId),
       ledgerEventCount: events.length,
     };
   }

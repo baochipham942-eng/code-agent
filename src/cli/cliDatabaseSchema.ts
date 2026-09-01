@@ -67,6 +67,9 @@ export function createCliTables(db: CliDb): void {
       updated_at INTEGER NOT NULL
     )
   `);
+  addColumnIfMissing(db, `ALTER TABLE sessions ADD COLUMN user_id TEXT`);
+  addColumnIfMissing(db, `ALTER TABLE sessions ADD COLUMN project_id TEXT`);
+  addColumnIfMissing(db, `ALTER TABLE sessions ADD COLUMN synced_at INTEGER`);
 
   // Messages 表
   db.exec(`
@@ -99,6 +102,13 @@ export function createCliTables(db: CliDb): void {
   // metadata 列：持久化消息级 metadata（turnQuality 安静徽标等）。缺失时 web 生产
   // 路径（AgentLoop → CLISessionManager 落库）会丢 metadata，reload 后徽标消失。
   addColumnIfMissing(db, `ALTER TABLE messages ADD COLUMN metadata TEXT`);
+  addColumnIfMissing(db, `ALTER TABLE messages ADD COLUMN responses_output TEXT`);
+  addColumnIfMissing(db, `ALTER TABLE messages ADD COLUMN effort_level TEXT`);
+  addColumnIfMissing(db, `ALTER TABLE messages ADD COLUMN synced_at INTEGER`);
+  addColumnIfMissing(db, `ALTER TABLE messages ADD COLUMN compaction TEXT`);
+  addColumnIfMissing(db, `ALTER TABLE messages ADD COLUMN visibility TEXT NOT NULL DEFAULT 'active'`);
+  addColumnIfMissing(db, `ALTER TABLE messages ADD COLUMN hidden_by_rewind_id TEXT`);
+  addColumnIfMissing(db, `ALTER TABLE messages ADD COLUMN hidden_at INTEGER`);
 
   // 添加 pr_link 列（如果不存在）
   addColumnIfMissing(db, `ALTER TABLE sessions ADD COLUMN pr_link TEXT`);

@@ -1095,6 +1095,10 @@ export class DatabaseService extends DurableRunDatabaseSupport {
     this.ensureDb();
     this.sessionRepo.replaceMessages(sessionId, messages, updatedAt);
   }
+  reconcileMessageProjectionOrder(sessionId: string, reason: string, createdAt?: number): void {
+    this.ensureDb();
+    this.sessionRepo.reconcileMessageProjectionOrder(sessionId, reason, createdAt);
+  }
   updateMessage(messageId: string, updates: Partial<Message>, sessionId?: string): void {
     this.ensureDb();
     this.sessionRepo.updateMessage(messageId, updates, sessionId);
@@ -1753,6 +1757,24 @@ export class DatabaseService extends DurableRunDatabaseSupport {
   ): import('../../../shared/contract/conversationBranch').ConversationReplay {
     this.ensureDb();
     return this.conversationBranchRepo.replay(sessionId, boundary, options);
+  }
+  replayConversationBranchForLoad(
+    sessionId: string,
+    boundary: import('../../../shared/contract/conversationBranch').ConversationBoundary,
+  ): import('../../../shared/contract/conversationBranch').ConversationReplay {
+    this.ensureDb();
+    return this.conversationBranchRepo.replayForLoad(sessionId, boundary);
+  }
+  hasConversationBranch(sessionId: string): boolean {
+    this.ensureDb();
+    const db = this.getDb();
+    if (!db) return false;
+    return Boolean(db.prepare(`
+      SELECT 1
+      FROM conversation_branches
+      WHERE session_id = ?
+      LIMIT 1
+    `).get(sessionId));
   }
   compareConversationBranches(
     leftSessionId: string,

@@ -8,6 +8,7 @@ import type { Message, Session } from '../../../src/shared/contract';
 import { CLIDatabaseService } from '../../../src/cli/database';
 import { DatabaseService } from '../../../src/host/services/core/databaseService';
 import { SessionRepository } from '../../../src/host/services/core/repositories/SessionRepository';
+import { ConversationBranchRepository } from '../../../src/host/services/core/repositories/ConversationBranchRepository';
 
 const session: Session = {
   id: 'sess-parity',
@@ -172,5 +173,29 @@ describe('CLIDatabaseService/core DatabaseService message parity', () => {
     expect(message?.attachments).toEqual([legacyAttachment]);
     expect(message?.attachments?.[0]?.data).toBeUndefined();
     expect(message?.attachments?.[0]?.metadata).toBeUndefined();
+  });
+
+  it('CLI append 与 update 都经不可变会话账本', () => {
+    cliDb.addMessage(session.id, {
+      id: 'cli-ledger-message',
+      role: 'assistant',
+      content: 'before',
+      timestamp: 1_700_000_000_300,
+    });
+    cliDb.updateMessageForSession(session.id, 'cli-ledger-message', { content: 'after' });
+
+    const replay = new ConversationBranchRepository(cliDb.getDb()!).replay(
+      session.id,
+      { ownerUserId: null, projectId: null },
+    );
+    expect(replay.messages.map((message) => message.message.content)).toEqual(['after']);
+    expect(cliDb.getDb()!.prepare(`
+      SELECT event_type
+      FROM conversation_branch_events
+      ORDER BY sequence ASC
+    `).all()).toEqual([
+      { event_type: 'append' },
+      { event_type: 'message_revision' },
+    ]);
   });
 });

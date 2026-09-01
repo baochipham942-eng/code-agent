@@ -659,7 +659,7 @@ GAP-009 的"落盘后截断"进一步升级为**可寻址归档 + 按需回水**
 | `compactionAuditRecorder.ts` | 记录压缩源、preserved/compacted 计数、survivor manifest 覆盖情况 |
 | `compactionSummaryValidator.ts` | 检查 summary 是否遗漏 survivor items，必要时生成 repair instruction |
 | `PreCompact` / `PostCompact` hooks | 允许用户 hook 在压缩前后提取或观察关键上下文 |
-| `compactionSnapshotWriter.ts` | 压缩前后快照落 `compaction_snapshots`，供 debug 命令和设置页回看 |
+| `compactionAuditRecorder.ts` | 压缩前后审计快照落 `compaction_snapshots`，供 debug 命令和设置页回看 |
 
 压缩层级、阈值和生产调用关系以 `compressionPipeline.ts`、`contextPressureController.ts` 与 `contextAssembly/{messageBuild,compression}.ts` 为事实源；`CompactionService` 负责安全摘要与提交，不等同于整条压缩管线。
 

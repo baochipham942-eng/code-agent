@@ -1,10 +1,13 @@
 import type BetterSqlite3 from 'better-sqlite3';
 import type { Message } from '../../../../shared/contract';
 import { MEMORY } from '../../../../shared/constants';
-import { runTranscriptFtsBackfill, type TranscriptKind } from '../../../../shared/transcriptFts.sql';
+import {
+  countTranscriptFtsSourceRows,
+  rebuildTranscriptFts,
+  type TranscriptKind,
+} from '../../../../shared/transcriptFts.sql';
 import { createLogger } from '../../infra/logger';
 import {
-  loopInternalMessageWhere,
   rowToMessage,
   visibleHistoryMessageWhere,
 } from './sessionRepositoryParsers';
@@ -18,6 +21,24 @@ import type {
 const logger = createLogger('SessionFtsRepository');
 
 type SQLiteRow = Record<string, unknown>;
+type TriggerDefinition = { name: string; sql: string };
+
+const SESSION_FTS_SOURCE_WHERE = `
+  COALESCE(is_meta, 0) = 0
+  AND COALESCE(content, '') NOT LIKE '%【循环模式 · 第%轮】%'
+  AND COALESCE(content, '') NOT LIKE '%[[LOOP_WAIT]]%'
+`;
+
+const SESSION_FTS_STAGING_TABLE_SQL = `
+  CREATE VIRTUAL TABLE session_messages_fts_rebuild USING fts5(
+    message_id UNINDEXED,
+    session_id UNINDEXED,
+    role UNINDEXED,
+    content,
+    timestamp UNINDEXED,
+    tokenize = 'trigram'
+  )
+`;
 
 export class SessionFtsRepository {
   constructor(private readonly db: BetterSqlite3.Database) {}
@@ -38,32 +59,94 @@ export class SessionFtsRepository {
 
   backfillSessionMessagesFts(): number {
     try {
-      const ftsHasRows = this.db.prepare('SELECT 1 FROM session_messages_fts LIMIT 1').get() !== undefined;
-      const msgHasRows = this.db.prepare('SELECT 1 FROM messages LIMIT 1').get() !== undefined;
+      const ftsRows = this.countRows('session_messages_fts');
+      const sourceRows = this.countSessionMessagesFtsSourceRows();
 
-      if (ftsHasRows || !msgHasRows) {
+      if (ftsRows === sourceRows) {
         return 0;
       }
 
-      logger.info('[EpisodicFts] Backfilling FTS from messages...');
-      const result = this.db
-        .prepare(
-          `
-          INSERT INTO session_messages_fts (message_id, session_id, role, content, timestamp)
-          SELECT id, session_id, role, COALESCE(content, ''), timestamp
-          FROM messages
-          WHERE COALESCE(is_meta, 0) = 0
-            AND ${loopInternalMessageWhere('messages')}
-          `,
-        )
-        .run();
-      const inserted = Number(result.changes ?? 0);
-      logger.info(`[EpisodicFts] Backfill complete: ${inserted} rows`);
-      return inserted;
+      logger.info(`[EpisodicFts] Rebuilding projection: source=${sourceRows}, fts=${ftsRows}`);
+      const rebuilt = this.rebuildSessionMessagesFts();
+      logger.info(`[EpisodicFts] Rebuild complete: ${rebuilt} rows`);
+      return rebuilt;
     } catch (err) {
       logger.warn('[EpisodicFts] Backfill failed (non-blocking)', { error: err });
       return 0;
     }
+  }
+
+  private countRows(tableName: 'session_messages_fts' | 'transcript_fts'): number {
+    const row = this.db.prepare(`SELECT COUNT(*) AS count FROM ${tableName}`).get() as {
+      count: number | bigint;
+    };
+    return Number(row.count);
+  }
+
+  private countSessionMessagesFtsSourceRows(): number {
+    const row = this.db.prepare(`SELECT COUNT(*) AS count FROM messages WHERE ${SESSION_FTS_SOURCE_WHERE}`).get() as {
+      count: number | bigint;
+    };
+    return Number(row.count);
+  }
+
+  private rebuildSessionMessagesFts(): number {
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const triggers = this.sessionMessagesFtsTriggerDefinitions();
+      this.db.exec('DROP TABLE IF EXISTS session_messages_fts_rebuild');
+      this.db.exec(SESSION_FTS_STAGING_TABLE_SQL);
+      this.db.prepare(
+        `
+          INSERT INTO session_messages_fts_rebuild (message_id, session_id, role, content, timestamp)
+          SELECT id, session_id, role, COALESCE(content, ''), timestamp
+          FROM messages
+          WHERE ${SESSION_FTS_SOURCE_WHERE}
+        `,
+      ).run();
+
+      const sourceRows = this.countSessionMessagesFtsSourceRows();
+      const stagingRows = Number(
+        (this.db.prepare('SELECT COUNT(*) AS count FROM session_messages_fts_rebuild').get() as {
+          count: number | bigint;
+        }).count,
+      );
+      if (stagingRows !== sourceRows) {
+        throw new Error(`Session FTS rebuild row count mismatch: source=${sourceRows}, staging=${stagingRows}`);
+      }
+
+      for (const trigger of triggers) {
+        this.db.exec(`DROP TRIGGER ${this.quoteSqlIdentifier(trigger.name)}`);
+      }
+      this.db.exec('DROP TABLE session_messages_fts');
+      this.db.exec('ALTER TABLE session_messages_fts_rebuild RENAME TO session_messages_fts');
+      for (const trigger of triggers) {
+        this.db.exec(trigger.sql);
+      }
+      this.db.exec('COMMIT');
+      return stagingRows;
+    } catch (err) {
+      try {
+        this.db.exec('ROLLBACK');
+      } catch {
+        // SQLite may already have rolled back the transaction.
+      }
+      throw err;
+    }
+  }
+
+  private sessionMessagesFtsTriggerDefinitions(): TriggerDefinition[] {
+    return this.db.prepare(`
+      SELECT name, sql
+      FROM sqlite_master
+      WHERE type = 'trigger'
+        AND instr(sql, 'session_messages_fts') > 0
+        AND sql IS NOT NULL
+    `).all() as TriggerDefinition[];
+  }
+
+  private quoteSqlIdentifier(identifier: string): string {
+    return `"${identifier.replaceAll('"', '""')}"`;
   }
 
   searchTranscriptFts(
@@ -148,16 +231,16 @@ export class SessionFtsRepository {
 
   backfillTranscriptFts(): number {
     try {
-      const ftsHasRows = this.db.prepare('SELECT 1 FROM transcript_fts LIMIT 1').get() !== undefined;
-      const msgHasRows = this.db.prepare('SELECT 1 FROM messages LIMIT 1').get() !== undefined;
-      if (ftsHasRows || !msgHasRows) {
+      const ftsRows = this.countRows('transcript_fts');
+      const sourceRows = countTranscriptFtsSourceRows(this.db);
+      if (ftsRows === sourceRows) {
         return 0;
       }
 
-      logger.info('[TranscriptFts] Backfilling from messages...');
-      const inserted = runTranscriptFtsBackfill(this.db);
-      logger.info(`[TranscriptFts] Backfill complete: ${inserted} rows`);
-      return inserted;
+      logger.info(`[TranscriptFts] Rebuilding projection: source=${sourceRows}, fts=${ftsRows}`);
+      const rebuilt = rebuildTranscriptFts(this.db);
+      logger.info(`[TranscriptFts] Rebuild complete: ${rebuilt} rows`);
+      return rebuilt;
     } catch (err) {
       logger.warn('[TranscriptFts] Backfill failed (non-blocking)', { error: err });
       return 0;

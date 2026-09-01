@@ -53,8 +53,8 @@ function safeJsonArray(expr: string): string {
   return `CASE WHEN json_valid(${expr}) AND json_type(${expr}) = 'array' THEN ${expr} ELSE '[]' END`;
 }
 
-const INSERT_COLUMNS =
-  'INSERT INTO transcript_fts (message_id, session_id, kind, tool_name, body, timestamp)';
+const insertColumns = (tableName: string) =>
+  `INSERT INTO ${tableName} (message_id, session_id, kind, tool_name, body, timestamp)`;
 
 /**
  * 生成 5 类 kind 的 INSERT…SELECT 语句。
@@ -63,7 +63,7 @@ const INSERT_COLUMNS =
  * @param fromMessages backfill 场景为 true，语句会扫 `FROM messages <ref>`；
  *                     trigger 场景为 false，直接引用 new.* 行
  */
-function buildInsertSelects(ref: string, fromMessages: boolean): string[] {
+function buildProjectionSelects(ref: string, fromMessages: boolean): string[] {
   const cap = TRANSCRIPT_FTS_BODY_CAP;
   const base = baseFilter(ref);
   // trigger 场景文本类语句没有 FROM；json 类语句 FROM json_each(...)。
@@ -75,7 +75,6 @@ function buildInsertSelects(ref: string, fromMessages: boolean): string[] {
   const toolResultsJson = safeJsonArray(`${ref}.tool_results`);
 
   const userAssistantText = `
-    ${INSERT_COLUMNS}
     SELECT ${ref}.id, ${ref}.session_id,
            CASE ${ref}.role WHEN 'user' THEN 'user_text' ELSE 'assistant_text' END,
            NULL,
@@ -87,7 +86,6 @@ function buildInsertSelects(ref: string, fromMessages: boolean): string[] {
       AND COALESCE(${ref}.content, '') <> ''`;
 
   const reasoning = `
-    ${INSERT_COLUMNS}
     SELECT ${ref}.id, ${ref}.session_id, 'reasoning', NULL,
            substr(${ref}.thinking, 1, ${cap}),
            ${ref}.timestamp
@@ -96,7 +94,6 @@ function buildInsertSelects(ref: string, fromMessages: boolean): string[] {
       AND COALESCE(${ref}.thinking, '') <> ''`;
 
   const toolInput = `
-    ${INSERT_COLUMNS}
     SELECT ${ref}.id, ${ref}.session_id, 'tool_input',
            COALESCE(json_extract(tc.value, '$.name'), ''),
            substr(
@@ -110,7 +107,6 @@ function buildInsertSelects(ref: string, fromMessages: boolean): string[] {
 
   // tool 结果的主路径：result 内嵌在 tool_calls[*].result（tool_call_end 回填）
   const toolOutputInline = `
-    ${INSERT_COLUMNS}
     SELECT ${ref}.id, ${ref}.session_id, 'tool_output',
            COALESCE(json_extract(tc.value, '$.name'), ''),
            substr(
@@ -131,7 +127,6 @@ function buildInsertSelects(ref: string, fromMessages: boolean): string[] {
   // 兼容路径：tool_results 独立列（CLI / 旧数据）。tool_name 反查 tool_calls；
   // 已有内嵌 result 的条目去重跳过，避免双写。
   const toolOutputColumn = `
-    ${INSERT_COLUMNS}
     SELECT ${ref}.id, ${ref}.session_id, 'tool_output',
            COALESCE((SELECT json_extract(tc.value, '$.name')
                      FROM json_each(${toolCallsJson}) AS tc
@@ -160,12 +155,19 @@ function buildInsertSelects(ref: string, fromMessages: boolean): string[] {
   return [userAssistantText, reasoning, toolInput, toolOutputInline, toolOutputColumn];
 }
 
+function buildInsertSelects(tableName: string, ref: string, fromMessages: boolean): string[] {
+  return buildProjectionSelects(ref, fromMessages).map(
+    (select) => `${insertColumns(tableName)} ${select}`,
+  );
+}
+
 // ----------------------------------------------------------------------------
 // Public DDL
 // ----------------------------------------------------------------------------
 
-export const TRANSCRIPT_FTS_TABLE_SQL = `
-  CREATE VIRTUAL TABLE IF NOT EXISTS transcript_fts USING fts5(
+function transcriptFtsTableSql(tableName: string, ifNotExists: boolean): string {
+  return `
+  CREATE VIRTUAL TABLE ${ifNotExists ? 'IF NOT EXISTS ' : ''}${tableName} USING fts5(
     message_id UNINDEXED,
     session_id UNINDEXED,
     kind UNINDEXED,
@@ -175,18 +177,102 @@ export const TRANSCRIPT_FTS_TABLE_SQL = `
     tokenize = 'trigram'
   )
 `;
+}
+
+export const TRANSCRIPT_FTS_TABLE_SQL = transcriptFtsTableSql('transcript_fts', true);
 
 /** snippet() 用的 body 列下标（0-based，对应上面建表列序） */
 export const TRANSCRIPT_FTS_BODY_COLUMN_INDEX = 4;
 
 /** backfill 用的 INSERT…SELECT 语句组（扫全量 messages 表） */
-export const TRANSCRIPT_FTS_BACKFILL_STATEMENTS: readonly string[] = buildInsertSelects('m', true);
+export const TRANSCRIPT_FTS_BACKFILL_STATEMENTS: readonly string[] = buildInsertSelects(
+  'transcript_fts',
+  'm',
+  true,
+);
+
+const TRANSCRIPT_FTS_SOURCE_COUNT_STATEMENTS = buildProjectionSelects('m', true).map(
+  (select) => `SELECT COUNT(*) AS count FROM (${select})`,
+);
+
+type TranscriptFtsDatabase = {
+  exec(sql: string): unknown;
+  prepare(sql: string): {
+    all(): unknown[];
+    get(): unknown;
+    run(): { changes?: number | bigint };
+  };
+};
+
+function quoteSqlIdentifier(identifier: string): string {
+  return `"${identifier.replaceAll('"', '""')}"`;
+}
+
+function transcriptTriggerDefinitions(db: TranscriptFtsDatabase): Array<{ name: string; sql: string }> {
+  return db.prepare(`
+    SELECT name, sql
+    FROM sqlite_master
+    WHERE type = 'trigger'
+      AND instr(sql, 'transcript_fts') > 0
+      AND sql IS NOT NULL
+  `).all() as Array<{ name: string; sql: string }>;
+}
+
+/** messages 按 transcript 分解规则应产生的投影总行数。 */
+export function countTranscriptFtsSourceRows(db: TranscriptFtsDatabase): number {
+  return TRANSCRIPT_FTS_SOURCE_COUNT_STATEMENTS.reduce((total, statement) => {
+    const row = db.prepare(statement).get() as { count: number | bigint };
+    return total + Number(row.count);
+  }, 0);
+}
 
 /**
- * 原子执行全量 backfill。5 条语句包在单事务里：任何一条失败整体回滚并抛错。
- * 没有事务时，部分成功会让 transcript_fts 非空，下次启动被幂等检查
- * （count > 0 即跳过）永久跳过，留下半截索引。
- * 调用方负责幂等前置检查（FTS 空 + messages 非空）与错误兜底。
+ * 在独立 staging FTS 中全量重建，校验后于同一事务内替换正式表。
+ * 任何建表、填充、校验或替换失败都会回滚，旧投影保持可用。
+ */
+export function rebuildTranscriptFts(db: TranscriptFtsDatabase): number {
+  const stagingTable = 'transcript_fts_rebuild';
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const triggers = transcriptTriggerDefinitions(db);
+    db.exec(`DROP TABLE IF EXISTS ${stagingTable}`);
+    db.exec(transcriptFtsTableSql(stagingTable, false));
+
+    for (const statement of buildInsertSelects(stagingTable, 'm', true)) {
+      db.prepare(statement).run();
+    }
+
+    const sourceRows = countTranscriptFtsSourceRows(db);
+    const stagingRows = Number(
+      (db.prepare(`SELECT COUNT(*) AS count FROM ${stagingTable}`).get() as { count: number | bigint }).count,
+    );
+    if (stagingRows !== sourceRows) {
+      throw new Error(`Transcript FTS rebuild row count mismatch: source=${sourceRows}, staging=${stagingRows}`);
+    }
+
+    for (const trigger of triggers) {
+      db.exec(`DROP TRIGGER ${quoteSqlIdentifier(trigger.name)}`);
+    }
+    db.exec('DROP TABLE transcript_fts');
+    db.exec(`ALTER TABLE ${stagingTable} RENAME TO transcript_fts`);
+    for (const trigger of triggers) {
+      db.exec(trigger.sql);
+    }
+    db.exec('COMMIT');
+    return stagingRows;
+  } catch (err) {
+    try {
+      db.exec('ROLLBACK');
+    } catch {
+      // 事务已被 SQLite 自动回滚时 ROLLBACK 会报错，忽略
+    }
+    throw err;
+  }
+}
+
+/**
+ * 兼容 CLI 旧库初始化的原子 backfill。5 条语句包在单事务里：任何一条失败
+ * 整体回滚并抛错。Host 启动维护走上面的 staging rebuild。
  */
 export function runTranscriptFtsBackfill(db: {
   exec(sql: string): unknown;
@@ -237,7 +323,7 @@ export function applyTranscriptFtsSchema(db: { exec(sql: string): unknown }): vo
 
   db.exec(TRANSCRIPT_FTS_TABLE_SQL);
 
-  const inserts = buildInsertSelects('new', false)
+  const inserts = buildInsertSelects('transcript_fts', 'new', false)
     .map((stmt) => `${stmt};`)
     .join('\n');
 

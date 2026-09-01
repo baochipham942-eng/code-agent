@@ -162,8 +162,8 @@ export class CLISessionManager {
     const storedSession = this.getDb()!.getSession(sessionId);
     if (!storedSession) return null;
 
-    // 加载消息
-    const messages = this.getDb()!.getRecentMessages(sessionId, messageLimit);
+    // 会话恢复从不可变账本派生；messages 仅保留为兼容缓存与同步投影。
+    const messages = this.getDb()!.getMessagesForLoad(sessionId, messageLimit);
     const todos = this.getDb()!.getTodos(sessionId);
 
     const sessionWithMessages: SessionWithMessages = {

@@ -11,6 +11,7 @@ import type { ArtifactLocatorV1 } from './artifactLocator';
 import type { NormalizedToolArtifactMeta } from './artifactBlob';
 import type { VoiceCallFailureCode, VoiceCallFailurePhase, VoiceCallSummary, VoiceToolCallOrigin } from './voice';
 import type { TurnDiffEventData } from './turnDiff';
+import type { EvidenceRef } from './evidence';
 
 export type MessageRole = 'user' | 'assistant' | 'system' | 'tool';
 export type MessageVisibility = 'active' | 'rewound';
@@ -301,6 +302,8 @@ export interface InputRedirectReceiptMetadata {
 }
 
 export interface MessageMetadata {
+  /** Structured verification evidence carried by message-level projections. */
+  evidenceRefs?: EvidenceRef[];
   /** Stable join keys for reconstructing a persisted message's runtime turn. */
   correlation?: {
     turnId: string;

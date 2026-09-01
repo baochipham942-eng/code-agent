@@ -20,10 +20,12 @@ import { makeEvidenceRef } from '../../../src/shared/contract/evidence';
 import { applySchema } from '../../../src/host/services/core/database/schema';
 import { applySessionsMigrations } from '../../../src/host/services/core/database/migrations';
 import { applyIndexes } from '../../../src/host/services/core/database/indexes';
+import { applyConversationBranchSchema } from '../../../src/host/services/core/database/schemaConversationBranch';
 import { FileCheckpointService } from '../../../src/host/services/checkpoint/fileCheckpointService';
 import { invalidateSessionEvidence } from '../../../src/host/services/checkpoint/evidenceInvalidationService';
 import { TurnCheckoutService } from '../../../src/host/services/checkpoint/turnCheckoutService';
 import { SessionRepository } from '../../../src/host/services/core/repositories/SessionRepository';
+import { ConversationBranchRepository } from '../../../src/host/services/core/repositories/ConversationBranchRepository';
 import { SessionRewindService } from '../../../src/host/services/sessionRewind/SessionRewindService';
 
 const logger = {
@@ -78,6 +80,9 @@ describe('atomic turn checkout integration', () => {
     `);
     insertMessage.run('user-target', 'user', 'change two files', now - 1_500);
     insertMessage.run('assistant-suffix', 'assistant', 'done', now - 500);
+    applyConversationBranchSchema(db);
+    repository = new SessionRepository(db);
+    rewindService = new SessionRewindService(repository, { ownerUserId: null });
     db.prepare(`
       INSERT INTO generative_ui_instances (
         instance_id, session_id, source_message_id, source_ordinal, source_key,
@@ -331,6 +336,23 @@ describe('atomic turn checkout integration', () => {
     const ledgerPath = path.join(tempDir, 'evidence-ledger.jsonl');
     const originalLine = JSON.stringify({ sessionId: 'other-session', value: 'keep-me' });
     await fs.writeFile(ledgerPath, `${originalLine}\n`, 'utf-8');
+    repository.updateMessage('assistant-suffix', {
+      metadata: {
+        evidenceRefs: [makeEvidenceRef({
+          id: 'message-evidence',
+          kind: 'test',
+          ref: `${fileA}$ npm test`,
+          source: 'VerificationRunner',
+          state: 'fresh',
+        })],
+      },
+    }, 'session-turn');
+    const beforeMessageInvalidationEvents = Number((db.prepare(`
+      SELECT COUNT(*) AS count
+      FROM conversation_branch_events event
+      JOIN conversation_branches branch ON branch.id = event.branch_id
+      WHERE branch.session_id = 'session-turn'
+    `).get() as { count: number }).count);
 
     await invalidateSessionEvidence(
       db,
@@ -346,6 +368,18 @@ describe('atomic turn checkout integration', () => {
       sessionId: 'session-turn',
     });
     expect(digestState(db)).toBe('stale');
+    expect(db.prepare(`
+      SELECT COUNT(*) AS count
+      FROM conversation_branch_events event
+      JOIN conversation_branches branch ON branch.id = event.branch_id
+      WHERE branch.session_id = 'session-turn'
+    `).get()).toEqual({ count: beforeMessageInvalidationEvents + 1 });
+    const replay = new ConversationBranchRepository(db)
+      .replay('session-turn', { ownerUserId: null, projectId: null });
+    expect(replay.messages.find((message) => message.projectedMessageId === 'assistant-suffix')
+      ?.message.metadata).toMatchObject({
+        evidenceRefs: [expect.objectContaining({ freshness: expect.objectContaining({ state: 'stale' }) })],
+      });
   });
 
   it('skips a file manually edited after checkout when Redo runs', async () => {

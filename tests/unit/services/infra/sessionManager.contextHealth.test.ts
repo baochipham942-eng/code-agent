@@ -19,7 +19,20 @@ const database = vi.hoisted(() => ({
   getRecentMessages: vi.fn((sessionId: string, messageLimit: number) => (
     (state.messages.get(sessionId) ?? []).slice(-messageLimit)
   )),
+  replayConversationBranchForLoad: vi.fn((sessionId: string) => ({
+    messages: (state.messages.get(sessionId) ?? []).map((message, ordinal) => ({
+      ordinal,
+      entryId: `entry-${ordinal}`,
+      projectedMessageId: message.id,
+      sourceSessionId: sessionId,
+      sourceMessageId: message.id,
+      aliasKind: 'native',
+      message,
+    })),
+  })),
+  hasConversationBranch: vi.fn(() => true),
   getTodos: vi.fn(() => []),
+  logAuditEvent: vi.fn(),
   replaceMessages: vi.fn((sessionId: string, messages: any[]) => {
     state.messages.set(sessionId, messages);
   }),
@@ -44,7 +57,7 @@ vi.mock('../../../../src/host/services/infra/supabaseService', () => ({
 }));
 
 vi.mock('../../../../src/host/services/infra/toolCache', () => ({
-  getToolCache: () => ({ clearSession: vi.fn() }),
+  getToolCache: () => ({ clearSession: vi.fn(), setSessionId: vi.fn() }),
 }));
 
 import { getContextHealthService } from '../../../../src/host/context/contextHealthService';
@@ -64,6 +77,7 @@ describe('SessionManager cache messageLimit hydration', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     state.messages.clear();
+    database.hasConversationBranch.mockReturnValue(true);
   });
 
   it('reloads the full history after a one-message cache fill', async () => {
@@ -106,6 +120,33 @@ describe('SessionManager cache messageLimit hydration', () => {
     expect((await manager.getSession(sessionId, 80))?.messages).toEqual(persistedMessages);
 
     expect(database.getRecentMessages).toHaveBeenCalledTimes(1);
+  });
+
+  it('restores full history from loading replay without reading the messages projection', async () => {
+    const sessionId = 'restore-from-ledger';
+    state.messages.set(sessionId, messages(100));
+    const manager = new SessionManager();
+
+    const restored = await manager.restoreSession(sessionId);
+
+    expect(restored?.messages).toHaveLength(100);
+    expect(database.replayConversationBranchForLoad).toHaveBeenCalledWith(sessionId, {
+      ownerUserId: null,
+      projectId: null,
+    });
+    expect(database.getRecentMessages).not.toHaveBeenCalled();
+  });
+
+  it('restores an empty unbound session without creating a ledger branch', async () => {
+    const sessionId = 'empty-unbound-session';
+    state.messages.set(sessionId, []);
+    database.hasConversationBranch.mockReturnValue(false);
+    const manager = new SessionManager();
+
+    const restored = await manager.restoreSession(sessionId);
+
+    expect(restored?.messages).toEqual([]);
+    expect(database.replayConversationBranchForLoad).not.toHaveBeenCalled();
   });
 });
 

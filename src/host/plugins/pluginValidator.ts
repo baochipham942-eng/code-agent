@@ -6,6 +6,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import type { PluginPermission, PluginSurface, PluginPlatform } from './types';
 import { validatePluginCapabilityDeclaration } from './pluginCapabilitySurface';
+import { UI_SLOT_CONTRACTS } from '../../shared/contract/uiSlots';
 
 // ----------------------------------------------------------------------------
 // Types
@@ -37,7 +38,7 @@ const VALID_PERMISSIONS: PluginPermission[] = [
 ];
 
 const VALID_SURFACES: PluginSurface[] = [
-  'tools', 'internal-feature',
+  'tools', 'internal-feature', 'ui',
 ];
 
 const VALID_PLATFORMS: PluginPlatform[] = ['darwin', 'win32', 'linux'];
@@ -49,6 +50,15 @@ function isSafeRelativeEntry(value: string): boolean {
   if (value.split(/[\\/]+/u).includes('..')) return false;
   const normalized = path.normalize(value);
   return normalized !== '..' && !normalized.startsWith(`..${path.sep}`);
+}
+
+function isUiSlotAllowedForSource(_manifest: Record<string, unknown>, _slot: string): boolean {
+  // TODO(N-PLUGINUI-L3-SIGN): 按签名来源分级限制可申请座位。
+  return true;
+}
+
+function isUiSlotName(value: string): boolean {
+  return Object.prototype.hasOwnProperty.call(UI_SLOT_CONTRACTS, value);
 }
 
 async function validateInternalFeatureFiles(
@@ -163,6 +173,36 @@ export function validateManifest(manifest: unknown): ValidationResult {
         }
       }
     }
+  }
+  if (m.uiSlots !== undefined) {
+    if (!Array.isArray(m.uiSlots)) {
+      errors.push({ field: 'uiSlots', message: "'uiSlots' must be an array" });
+    } else {
+      const seen = new Set<string>();
+      for (const slot of m.uiSlots) {
+        if (typeof slot !== 'string' || !isUiSlotName(slot)) {
+          errors.push({
+            field: 'uiSlots',
+            message: `插件申请的座位 "${String(slot)}" 不存在，请检查 uiSlots。`,
+          });
+          continue;
+        }
+        if (seen.has(slot)) {
+          errors.push({ field: 'uiSlots', message: `插件重复申请了座位 "${slot}"。` });
+        }
+        seen.add(slot);
+        if (!isUiSlotAllowedForSource(m, slot)) {
+          errors.push({ field: 'uiSlots', message: `插件当前来源不能申请座位 "${slot}"。` });
+        }
+      }
+    }
+  }
+  if (Array.isArray(m.surfaces) && m.surfaces.includes('ui')) {
+    if (!Array.isArray(m.uiSlots) || m.uiSlots.length === 0) {
+      errors.push({ field: 'uiSlots', message: "插件声明 ui surface 时，uiSlots 至少要申请一个座位。" });
+    }
+  } else if (Array.isArray(m.uiSlots) && m.uiSlots.length > 0) {
+    errors.push({ field: 'surfaces', message: "申请 uiSlots 的插件必须在 surfaces 中包含 'ui'。" });
   }
 
   if (Array.isArray(m.surfaces) && m.surfaces.includes('internal-feature')) {

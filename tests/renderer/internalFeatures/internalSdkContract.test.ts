@@ -50,6 +50,7 @@ describe('renderer internal plugin shared table', () => {
       '@renderer/utils/accessControl',
       '@renderer/utils/sessionPresentation',
       '@renderer/styles/zLayers',
+      '@renderer/slots/pluginUiSdk',
     ]);
     expect(Object.isFrozen(INTERNAL_RENDERER_SDK)).toBe(true);
     expect(Object.isFrozen(INTERNAL_RENDERER_SDK.modules)).toBe(true);

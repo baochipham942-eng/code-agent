@@ -44,6 +44,8 @@ export interface PluginManifest extends PluginMetadata {
    * `capabilities` 给"领域能力标签"。host 内部统一读 `manifest.surfaces`。
    */
   surfaces?: PluginSurface[];
+  /** UI seats requested from the ADR-062 public slot contract. */
+  uiSlots?: string[];
   /**
    * 领域能力标签（kebab-case），供 CapabilityRecommender / Gap 提示语义匹配
    * 用，如 `['image-generation', 'image-processing']`。host 不做白名单校验，
@@ -126,7 +128,8 @@ export type PluginPermission =
  */
 export type PluginSurface =
   | 'tools'        // Provides tools
-  | 'internal-feature'; // Admin-installed internal/dogfood product surface
+  | 'internal-feature' // Admin-installed internal/dogfood product surface
+  | 'ui'; // Contributes renderer components through declared slots
 
 /**
  * Plugin lifecycle hooks

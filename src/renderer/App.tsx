@@ -84,7 +84,7 @@ import {
 } from './utils/swarmEventRouting';
 import { openSurfaceForArtifact } from './services/surfaceIntentDispatcher';
 import { useInAppValidationBridge } from './hooks/useInAppValidationBridge';
-import { InternalFeatureWorkspaceRegistration, ShellOverlaySlotHost, WorkspacePageSlotHost } from './slots/productSlotHosts';
+import { InternalFeatureWorkspaceRegistration, PluginUiActivationPolicyBootstrap, ShellOverlaySlotHost, WorkspacePageSlotHost } from './slots/productSlotHosts';
 
 const logger = createLogger('App');
 const SIDEBAR_AUTO_COLLAPSE_WIDTH = 1180;
@@ -1168,7 +1168,7 @@ export const App: React.FC = () => {
       {/* Memo Floater - Tauri 全局热键浮窗 */}
       <MemoFloater />
 
-      <InternalFeatureWorkspaceRegistration featureId={activeInternalFeatureId} />
+      <PluginUiActivationPolicyBootstrap /><InternalFeatureWorkspaceRegistration featureId={activeInternalFeatureId} />
       <ShellOverlaySlotHost />
 
       {/* Background Task Panel - 后台任务浮动面板 */}

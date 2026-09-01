@@ -15,7 +15,6 @@ import {
   RefreshCw,
   Search,
   Shield,
-  ShieldCheck,
   Trash2,
   Upload,
 } from 'lucide-react';
@@ -37,13 +36,13 @@ import ipcService from '../../../../services/ipcService';
 import { pickNativeFile } from '../../../../services/tauriPluginFacade';
 import { isTauriMode } from '../../../../utils/platform';
 import { canAccessFeature, createAccessSubject } from '../../../../utils/accessControl';
-import { Button, EmptyState, Modal, ModalFooter } from '../../../primitives';
+import { Button, EmptyState } from '../../../primitives';
 import { SettingsDetails, SettingsSection } from '../SettingsLayout';
 import { BundledCapabilitiesTab } from '../../capabilityHub/BundledCapabilitiesTab';
 import { HubTabHeader } from '../../capabilityHub/HubTabHeader';
-import { formatPluginPermissionDescription } from '../../capabilityHub/pluginPermissionText';
 import { Pill, SummaryTile } from './PluginsSettings.ui';
 import { CapabilityPackageCard } from './CapabilityPackageCard';
+import { PluginInstallDisclosure } from './PluginInstallDisclosure';
 
 type Notice = { type: 'success' | 'error'; text: string };
 export * from './PluginsSettings.helpers';
@@ -912,70 +911,13 @@ export const PluginsSettings: React.FC = () => {
         </SettingsDetails>
       )}
 
-      <Modal
-        isOpen={packagePreview !== null}
-        onClose={packageBusy ? undefined : closePackagePreview}
-        closeOnBackdropClick={false}
-        closeOnEsc={!packageBusy}
-        title={pluginsText.manualImport.confirmTitle}
-        headerIcon={<ShieldCheck className="h-5 w-5 text-badge-warning" />}
-        size="lg"
-        footer={(
-          <ModalFooter
-            cancelText={pluginsText.manualImport.cancel}
-            confirmText={pluginsText.manualImport.confirm}
-            onCancel={closePackagePreview}
-            onConfirm={handleConfirmCapabilityPackage}
-            cancelDisabled={packageBusy}
-            confirmDisabled={packageBusy}
-          />
-        )}
-      >
-        {packagePreview && (
-          <div className="space-y-4">
-            <div>
-              <div className="flex flex-wrap items-center gap-2">
-                <h3 className="text-sm font-semibold text-zinc-100">{packagePreview.name}</h3>
-                <Pill>{packagePreview.version}</Pill>
-                {packagePreview.surface === 'internal-feature' && (
-                  <Pill tone="warning">{pluginsText.manualImport.internalFeature}</Pill>
-                )}
-                {packagePreview.replacesInstalledVersion && (
-                  <Pill tone="warning">{pluginsText.manualImport.replacePrefix}{packagePreview.replacesInstalledVersion}</Pill>
-                )}
-              </div>
-              <p className="mt-2 text-sm leading-6 text-zinc-400">{packagePreview.description}</p>
-            </div>
-            <div className="rounded-lg border border-badge-success/25 bg-emerald-500/5 p-3">
-              <div className="flex items-center gap-2 text-sm font-medium text-badge-success">
-                <ShieldCheck className="h-4 w-4" />
-                {packagePreview.sourceKind === 'bundled'
-                  ? pluginsText.manualImport.bundledVerified
-                  : pluginsText.manualImport.sandboxPassed}
-              </div>
-              <p className="mt-1 text-xs text-zinc-500">{packagePreview.sandbox.summary}</p>
-            </div>
-            <div>
-              <h4 className="text-sm font-medium text-zinc-200">{pluginsText.manualImport.permissionTitle}</h4>
-              <p className="mt-1 text-xs leading-5 text-zinc-500">{pluginsText.manualImport.permissionDescription}</p>
-              <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                {packagePreview.permissions.length === 0 ? (
-                  <div className="rounded-lg border border-zinc-800 bg-zinc-950/50 p-3 text-xs text-zinc-500">
-                    {pluginsText.manualImport.noPermissions}
-                  </div>
-                ) : packagePreview.permissions.map((permission) => (
-                  <div key={permission} className="rounded-lg border border-badge-warning/20 bg-amber-500/5 p-3 text-sm text-zinc-300">
-                    {formatPluginPermissionDescription({ permission }, t.capabilityPackages.permissionText)}
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div className="rounded-lg bg-zinc-950/60 p-3 text-xs leading-5 text-zinc-500">
-              {pluginsText.manualImport.failureEffect}
-            </div>
-          </div>
-        )}
-      </Modal>
+      <PluginInstallDisclosure
+        busy={packageBusy}
+        onCancel={closePackagePreview}
+        onConfirm={handleConfirmCapabilityPackage}
+        preview={packagePreview}
+        text={pluginsText.manualImport}
+      />
     </div>
   );
 };

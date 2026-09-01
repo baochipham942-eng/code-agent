@@ -830,6 +830,13 @@ export const zhSettingsWork = {
         displayLabel: '展示: ',
         diagnosticsLabel: '诊断: ',
       },
+      pluginUi: {
+        title: '第三方界面插件',
+        description: '安全总开关，只在权限与安全相关设置中管理，默认关闭。',
+        label: '允许第三方插件显示界面',
+        body: '打开后，已安装的第三方插件可以在 Neo 里显示内容。插件和 Neo 运行在一起，它能看到你的会话内容和其他插件的数据，权限和 Neo 本身一样大。',
+        adminHint: '只有管理员可以更改这项设置。',
+      },
       telemetry: {
         title: '数据共享',
         description: '两个独立开关，切换立即生效，所有上报通道统一遵守。上报的元数据不含完整对话内容或代码。默认均为开启。',

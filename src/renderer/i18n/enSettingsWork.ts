@@ -828,6 +828,13 @@ export const enSettingsWork = {
         displayLabel: 'Display: ',
         diagnosticsLabel: 'Diagnostics: ',
       },
+      pluginUi: {
+        title: 'Third-party interface plugins',
+        description: 'A security-wide setting managed only here. It is off by default.',
+        label: 'Allow third-party plugins to show interface content',
+        body: 'When enabled, installed third-party plugins can show content inside Neo. A plugin runs inside Neo and can see your conversations and data from other plugins, with the same access as Neo itself.',
+        adminHint: 'Only an administrator can change this setting.',
+      },
       telemetry: {
         title: 'Data sharing',
         description: 'Two independent switches, both take effect immediately and are honored by every reporting channel. Metadata never includes full prompts or code content. Both are on by default.',

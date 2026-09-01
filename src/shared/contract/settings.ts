@@ -178,6 +178,8 @@ export interface AgentEngineModelPreferenceSettings {
   updatedAt?: number;
 }
 
+export const DEFAULT_THIRD_PARTY_UI_PLUGINS_ENABLED = false;
+
 export type TaskStrategyMode = 'auto' | 'manual';
 export type TaskStrategyProfileId = 'fast' | 'main' | 'deep' | 'vision';
 export type TaskStrategyRuleIntent = 'simple_chat' | 'coding' | 'research' | 'vision' | 'artifact';
@@ -407,6 +409,10 @@ export interface AppSettings {
     usageDataEnabled?: boolean;
     /** 崩溃报告：Sentry node + renderer。缺省 = 开 */
     crashReportingEnabled?: boolean;
+  };
+  /** 第三方界面插件总开关。缺省与默认配置均为关闭。 */
+  pluginUi?: {
+    thirdPartyEnabled?: boolean;
   };
   // 安全校验配置
   sanitization?: {

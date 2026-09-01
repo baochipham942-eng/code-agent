@@ -4,7 +4,10 @@ import {
   DEFAULT_MODELS,
 } from '../../../shared/constants';
 import { DEFAULT_SPEECH_INPUT_SETTINGS } from '../../../shared/contract/speech';
-import { VOICE_LIVE_ENABLED_DEFAULT } from '../../../shared/contract/settings';
+import {
+  DEFAULT_THIRD_PARTY_UI_PLUGINS_ENABLED,
+  VOICE_LIVE_ENABLED_DEFAULT,
+} from '../../../shared/contract/settings';
 import {
   createDefaultKeybindingsSettings,
   getKeybindingPlatformFromNodePlatform,
@@ -144,6 +147,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   // 原生连接器默认全关
   connectors: {
     enabledNative: [],
+  },
+  pluginUi: {
+    thirdPartyEnabled: DEFAULT_THIRD_PARTY_UI_PLUGINS_ENABLED,
   },
   contextCompression: {
     enabled: true,

@@ -356,7 +356,7 @@ export class ManualCapabilityPackageService {
         reason: '随 Neo 签名发货，发布来源可追溯并可通过应用更新吊销',
       },
       requestedUiSlots: [],
-      sandbox: { passed: true, summary: '随 Neo 签名发货的内置能力已通过完整性校验' },
+      sandbox: { passed: true, summary: '随 Neo 发货的内建插件已通过完整性校验' },
       expiresAt,
     };
   }
@@ -481,10 +481,10 @@ export class ManualCapabilityPackageService {
         sandbox: {
           passed: true,
           summary: surface === 'internal-feature'
-            ? '隔离进程试跑通过，内部界面声明有效'
+            ? '装入前检查已完成，内建插件界面声明可读取'
             : surface === 'ui'
-              ? '隔离进程试跑通过，插件座位声明有效'
-              : `隔离进程试跑通过，发现 ${toolNames.length} 个工具`,
+              ? '装入前检查已完成，插件申请的显示位置可读取'
+              : `装入前检查已完成，发现 ${toolNames.length} 个工具`,
         },
         expiresAt,
       };

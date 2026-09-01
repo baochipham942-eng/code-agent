@@ -116,6 +116,13 @@ describe('admin 门控', () => {
     expect(await callSettings('set', { settings: { permissions: {} } })).toEqual(env.adminAccessError);
   });
 
+  it('set 第三方界面插件总开关触发管理员门控', async () => {
+    env.adminAccessError = { success: false, error: { code: 'ADMIN_REQUIRED', message: 'no' } };
+    expect(await callSettings('set', { settings: { pluginUi: { thirdPartyEnabled: true } } }))
+      .toEqual(env.adminAccessError);
+    expect(env.config.updateSettings).not.toHaveBeenCalled();
+  });
+
   it('set 仅含普通 key 不触发门控', async () => {
     env.adminAccessError = { success: false, error: { code: 'ADMIN_REQUIRED', message: 'no' } };
     const res = await callSettings('set', { settings: { theme: 'dark' } as never });

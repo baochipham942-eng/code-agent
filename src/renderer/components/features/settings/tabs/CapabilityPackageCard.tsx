@@ -36,14 +36,15 @@ export const CapabilityPackageCard: React.FC<CapabilityPackageCardProps> = ({
   const setActiveInternalFeature = useAppStore((state) => state.setActiveInternalFeature);
   const busy = busyKey === `capability-package:uninstall:${plugin.id}`;
   const isInternal = plugin.surface === 'internal-feature';
+  const isPluginUi = plugin.surface === 'ui';
   const isActiveInternal = isInternal && plugin.state === 'active';
-  const isFailedInternal = isInternal && plugin.state === 'error';
+  const isFailedRendererPlugin = (isInternal || isPluginUi) && plugin.state === 'error';
   const permissions = plugin.permissions.map((permission) => (
     formatPluginPermissionLabel({ permission }, capabilityText.permissionText)
   ));
   const toolCount = plugin.toolNames.length;
   const status = plugin.state !== 'available' ? t.capabilityPackages.installed : t.capabilityPackages.removed;
-  const statusTone = plugin.state === 'active' ? 'active' : isFailedInternal ? 'warning' : 'inactive';
+  const statusTone = plugin.state === 'active' ? 'active' : isFailedRendererPlugin ? 'warning' : 'inactive';
   const meta = (
     <>
       {plugin.version ? <PluginCardPill>v{plugin.version}</PluginCardPill> : null}
@@ -56,7 +57,7 @@ export const CapabilityPackageCard: React.FC<CapabilityPackageCardProps> = ({
       {isActiveInternal ? (
         <p className="mt-3 text-xs text-badge-success">{t.internalFeatures.activeHint}</p>
       ) : null}
-      {isFailedInternal && plugin.error ? (
+      {isFailedRendererPlugin && plugin.error ? (
         <p className="mt-3 text-xs text-badge-danger">{t.internalFeatures.startErrorPrefix}{plugin.error}</p>
       ) : null}
     </>
@@ -114,7 +115,7 @@ export const CapabilityPackageCard: React.FC<CapabilityPackageCardProps> = ({
                 {t.internalFeatures.open}
               </Button>
             ) : null}
-            {isFailedInternal ? (
+            {isFailedRendererPlugin ? (
               <Button
                 variant="secondary"
                 size="sm"

@@ -14,3 +14,11 @@ export function assertInternalFeatureHostCompatibility(manifest: PluginManifest)
     throw new Error('这个插件的界面版本与当前应用不匹配，请重新安装');
   }
 }
+
+export function assertPluginUiRendererCompatibility(manifest: PluginManifest): void {
+  const pluginUi = manifest.pluginUi;
+  if (manifest.surfaces?.[0] !== 'ui' || !pluginUi) return;
+  if (pluginUi.sdkVersion.renderer !== INTERNAL_SDK_VERSION.renderer) {
+    throw new Error('这个插件的界面版本与当前应用不匹配，请重新安装');
+  }
+}

@@ -5,6 +5,7 @@ import type {
   UiSlotReplaceRisk,
   UiSlotScope,
 } from '@shared/contract/uiSlots';
+import { assertPluginUiRuntimeAdmission } from './pluginUiRuntimeAdmission';
 
 type SlotComponent = React.ComponentType<Record<string, unknown>>;
 type Disposer = () => void;
@@ -120,6 +121,7 @@ class SlotRegistry {
 
   inject(name: string, callback: () => void | Disposer): Disposer {
     const pluginId = this.requirePlugin();
+    assertPluginUiRuntimeAdmission(pluginId, name);
     const injection: Injection = { callback, disposers: new Set(), name, pluginId };
     this.injections.add(injection);
     if (this.declarations.has(name)) this.runInjection(injection);
@@ -131,6 +133,7 @@ class SlotRegistry {
 
   register(target: RegisterSlotTarget, component: SlotComponent): Disposer {
     const pluginId = this.requirePlugin();
+    assertPluginUiRuntimeAdmission(pluginId, target.name);
     const contract = this.declarations.get(target.name);
     if (!contract) throw new Error(`Slot ${target.name} is not declared`);
     if (contract.kind === 'keyed' && !target.key) {

@@ -35,6 +35,20 @@ function plugin(state: InstalledCapabilityPackage['state'], error?: string): Ins
   };
 }
 
+function thirdPartyUiPlugin(error: string): InstalledCapabilityPackage {
+  return {
+    id: 'third-party-ui',
+    name: '第三方插件',
+    version: '1.0.0',
+    description: '界面装载测试',
+    permissions: [],
+    state: 'error',
+    surface: 'ui',
+    toolNames: [],
+    error,
+  };
+}
+
 const callbacks = {
   onInstall: vi.fn(),
   onUninstall: vi.fn(),
@@ -87,6 +101,21 @@ describe('CapabilityPackageCard internal plugin states', () => {
     expect(screen.queryByRole('button', { name: '打开' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: '重新安装' }));
     expect(callbacks.onReinstall).toHaveBeenCalledOnce();
+    expect(screen.getByRole('button', { name: '卸载' })).toBeTruthy();
+  });
+
+  it('第三方插件沿用同一条 error 展示和重新安装入口', () => {
+    render(
+      <CapabilityPackageCard
+        plugin={thirdPartyUiPlugin('界面文件加载失败')}
+        busyKey={null}
+        packageBusy={false}
+        {...callbacks}
+      />,
+    );
+
+    expect(screen.getByText('这个插件没能启动：界面文件加载失败')).toBeTruthy();
+    expect(screen.getByRole('button', { name: '重新安装' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '卸载' })).toBeTruthy();
   });
 });

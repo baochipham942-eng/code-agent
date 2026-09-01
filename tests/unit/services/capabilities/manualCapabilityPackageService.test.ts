@@ -42,7 +42,7 @@ let signingPublicKey: string;
 const SIGNING_KEY_ID = 'marketplace-author';
 
 function manifest(id: string, overrides: Record<string, unknown> = {}): Record<string, unknown> {
-  return {
+  const result: Record<string, unknown> = {
     id,
     name: `能力 ${id}`,
     version: '1.0.0',
@@ -52,6 +52,14 @@ function manifest(id: string, overrides: Record<string, unknown> = {}): Record<s
     surfaces: ['tools'],
     ...overrides,
   };
+  if (Array.isArray(result.surfaces) && result.surfaces.includes('ui') && !result.pluginUi) {
+    result.pluginUi = {
+      sdkVersion: { renderer: INTERNAL_SDK_VERSION.renderer },
+      rendererEntry: 'dist/renderer/index.js',
+      rendererStyles: 'dist/renderer/index.css',
+    };
+  }
+  return result;
 }
 
 function entrySource(id: string, activationPrefix = ''): string {
@@ -81,6 +89,13 @@ async function writePackage(
   await fs.mkdir(root, { recursive: true });
   await fs.writeFile(path.join(root, 'plugin.json'), JSON.stringify(options.manifest ?? manifest(id)), 'utf8');
   await fs.writeFile(path.join(root, 'index.js'), options.source ?? entrySource(id), 'utf8');
+  const packageManifest = options.manifest ?? manifest(id);
+  if (Array.isArray(packageManifest.surfaces) && packageManifest.surfaces.includes('ui')) {
+    const rendererDir = path.join(root, 'dist', 'renderer');
+    await fs.mkdir(rendererDir, { recursive: true });
+    await fs.writeFile(path.join(rendererDir, 'index.js'), 'window.__fixturePluginUi = true;', 'utf8');
+    await fs.writeFile(path.join(rendererDir, 'index.css'), '.fixture-plugin-ui {}', 'utf8');
+  }
   return root;
 }
 
@@ -294,6 +309,46 @@ describe('ManualCapabilityPackageService', () => {
     await expect(createService().stage(source)).rejects.toThrow(
       `这个插件的来源未经验证，不能挂到 ${slot}`,
     );
+  });
+
+  it('rejects a third-party UI package built for a different renderer contract', async () => {
+    const pluginId = 'mismatched-renderer-ui';
+    const source = await writePackage(pluginId, {
+      manifest: manifest(pluginId, {
+        surfaces: ['ui'],
+        uiSlots: ['settings.section'],
+        pluginUi: {
+          sdkVersion: { renderer: 'deadbeef' },
+          rendererEntry: 'dist/renderer/index.js',
+          rendererStyles: 'dist/renderer/index.css',
+        },
+      }),
+    });
+
+    await expect(createService().stage(source)).rejects.toThrow(
+      '这个插件的界面版本与当前应用不匹配，请重新安装',
+    );
+  });
+
+  it('projects renderer load failures through InstalledCapabilityPackage state and error', async () => {
+    const pluginId = 'renderer-load-state';
+    const source = await writePackage(pluginId, {
+      manifest: manifest(pluginId, { surfaces: ['ui'], uiSlots: ['settings.section'] }),
+      source: 'module.exports = { async activate() {} };',
+    });
+    const service = createService();
+    await service.confirm((await service.stage(source)).token);
+
+    service.reportPluginUiLoadState(pluginId, 'fixture renderer failed');
+    expect((await service.list()).find((item) => item.id === pluginId)).toMatchObject({
+      state: 'error',
+      error: 'fixture renderer failed',
+    });
+
+    service.reportPluginUiLoadState(pluginId);
+    expect((await service.list()).find((item) => item.id === pluginId)).toMatchObject({
+      state: 'active',
+    });
   });
 
   it('classifies only server-staged and approval-backed package sources for IPC authorization', async () => {

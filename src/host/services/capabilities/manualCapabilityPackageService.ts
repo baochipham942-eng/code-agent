@@ -33,7 +33,10 @@ import {
   type PluginPackageSourceTrust,
 } from '../../plugins/pluginPackageTrust';
 import type { ControlPlanePublicKeys } from '../cloud/controlPlaneTrust';
-import { assertInternalFeatureHostCompatibility } from '../../internalFeatures/internalFeatureContract';
+import {
+  assertInternalFeatureHostCompatibility,
+  assertPluginUiRendererCompatibility,
+} from '../../internalFeatures/internalFeatureContract';
 import {
   getInternalFeatureHostRuntime,
   type InternalFeatureHostRuntime,
@@ -188,6 +191,7 @@ function describeValidationError(field: string, message: string): string {
   if (field === 'main') return `入口文件不合规：${message}`;
   if (field === 'permissions') return `权限声明不合规：${message}`;
   if (field === 'surfaces') return `能力类型声明不合规：${message}`;
+  if (field.startsWith('pluginUi')) return `界面文件不合规：${message}`;
   return `${field} 不合规：${message}`;
 }
 
@@ -404,6 +408,7 @@ export class ManualCapabilityPackageService {
         throw new Error('这个插件只能由管理员安装');
       }
       assertInternalFeatureHostCompatibility(manifest);
+      assertPluginUiRendererCompatibility(manifest);
       try {
         this.registry.validatePluginCapabilityManifest(manifest);
       } catch (error) {
@@ -679,8 +684,9 @@ export class ManualCapabilityPackageService {
     });
     for (const plugin of this.registry.getPlugins()) {
       if (plugin.rootPath.startsWith('builtin:')) continue;
+      let installedTrust;
       try {
-        await verifyInstalledPluginTrust(plugin.rootPath, plugin.manifest, {
+        installedTrust = await verifyInstalledPluginTrust(plugin.rootPath, plugin.manifest, {
           publicKeys: this.controlPlanePublicKeys,
           revokedIds: this.revokedPluginIds,
           revocationFile: this.pluginRevocationFile,
@@ -715,10 +721,34 @@ export class ManualCapabilityPackageService {
             ...(loadedHash ? { loadedHash } : {}),
           },
         } : {}),
+        ...(plugin.manifest.pluginUi ? {
+          pluginUi: {
+            ...plugin.manifest.pluginUi,
+            loadedHash: installedTrust.packageHash,
+            sourceTrust: installedTrust.sourceTrust,
+            requestedUiSlots: [...(plugin.manifest.uiSlots ?? [])],
+          },
+        } : {}),
         ...(plugin.error ? { error: plugin.error } : {}),
       });
     }
     return result.sort((left, right) => left.name.localeCompare(right.name));
+  }
+
+  reportPluginUiLoadState(pluginId: string, error?: string): void {
+    const plugin = this.registry.getPlugin(pluginId);
+    if (!plugin || plugin.manifest.surfaces?.[0] !== 'ui') {
+      throw new Error('找不到已安装的界面插件');
+    }
+    const detail = error?.trim();
+    if (detail) {
+      plugin.state = 'error';
+      plugin.error = detail;
+      this.lifecycle(pluginId, 'failed', detail);
+      return;
+    }
+    plugin.state = 'active';
+    delete plugin.error;
   }
 
   async uninstall(pluginId: string): Promise<void> {

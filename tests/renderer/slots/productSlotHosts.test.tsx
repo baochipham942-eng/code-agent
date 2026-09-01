@@ -28,6 +28,7 @@ import {
   slots,
   unloadPluginUi,
 } from '../../../src/renderer/slots/pluginUiSdk';
+import { applyPluginUiActivationSettings } from '../../../src/renderer/slots/pluginUiActivationPolicy';
 
 const activePluginIds = new Set<string>();
 
@@ -163,6 +164,7 @@ describe('ADR-062 六个产品座位', () => {
   });
 
   it('evaluation-center 通过 workspace.page 注册出现，关闭后 occupant 与页面一起消失', async () => {
+    await applyPluginUiActivationSettings({ pluginUi: { thirdPartyEnabled: false } });
     const view = render(
       <>
         <WorkspacePageSlotHost fallback={<div>CHAT</div>} />

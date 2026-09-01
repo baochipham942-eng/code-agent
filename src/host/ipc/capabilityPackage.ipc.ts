@@ -104,4 +104,16 @@ export function registerCapabilityPackageHandlers(
       return failure(error);
     }
   });
+
+  handle(IPC_CHANNELS.CAPABILITY_PACKAGE_UI_LOAD_STATE, async (
+    pluginId: string,
+    error?: string,
+  ): Promise<CapabilityPackageResult<void>> => {
+    try {
+      getManualCapabilityPackageService().reportPluginUiLoadState(pluginId, error);
+      return success(undefined);
+    } catch (loadStateError) {
+      return failure(loadStateError);
+    }
+  });
 }

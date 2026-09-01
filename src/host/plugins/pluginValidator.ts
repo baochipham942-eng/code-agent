@@ -81,6 +81,26 @@ async function validateInternalFeatureFiles(
   return errors;
 }
 
+async function validatePluginUiFiles(
+  pluginDir: string,
+  pluginUi: Record<string, unknown>,
+): Promise<ValidationError[]> {
+  const errors: ValidationError[] = [];
+  for (const field of ['rendererEntry', 'rendererStyles'] as const) {
+    const relativePath = pluginUi[field];
+    if (typeof relativePath !== 'string' || !isSafeRelativeEntry(relativePath)) continue;
+    const filePath = path.resolve(pluginDir, relativePath);
+    const stat = await fs.stat(filePath).catch(() => null);
+    if (!stat?.isFile()) {
+      errors.push({
+        field: `pluginUi.${field}`,
+        message: `插件界面文件不存在：${relativePath}`,
+      });
+    }
+  }
+  return errors;
+}
+
 // ----------------------------------------------------------------------------
 // Manifest Validation
 // ----------------------------------------------------------------------------
@@ -201,6 +221,25 @@ export function validateManifest(manifest: unknown): ValidationResult {
     if (!Array.isArray(m.uiSlots) || m.uiSlots.length === 0) {
       errors.push({ field: 'uiSlots', message: "插件声明 ui surface 时，uiSlots 至少要申请一个座位。" });
     }
+    if (!m.pluginUi || typeof m.pluginUi !== 'object' || Array.isArray(m.pluginUi)) {
+      errors.push({ field: 'pluginUi', message: '插件必须声明界面文件和兼容版本。' });
+    } else {
+      const pluginUi = m.pluginUi as Record<string, unknown>;
+      const sdkVersion = pluginUi.sdkVersion;
+      if (!sdkVersion || typeof sdkVersion !== 'object' || Array.isArray(sdkVersion)
+        || typeof (sdkVersion as Record<string, unknown>).renderer !== 'string'
+        || !(sdkVersion as Record<string, unknown>).renderer) {
+        errors.push({ field: 'pluginUi.sdkVersion', message: '插件必须声明界面兼容版本。' });
+      }
+      for (const field of ['rendererEntry', 'rendererStyles'] as const) {
+        if (typeof pluginUi[field] !== 'string' || !isSafeRelativeEntry(pluginUi[field])) {
+          errors.push({
+            field: `pluginUi.${field}`,
+            message: '插件界面文件必须位于插件目录内。',
+          });
+        }
+      }
+    }
   } else if (Array.isArray(m.uiSlots) && m.uiSlots.length > 0) {
     errors.push({ field: 'surfaces', message: "申请 uiSlots 的插件必须在 surfaces 中包含 'ui'。" });
   }
@@ -246,7 +285,6 @@ export function validateManifest(manifest: unknown): ValidationResult {
       }
     }
   }
-
   // Optional: capabilities (领域能力标签, kebab-case 字符串数组 — host 不校验值域)
   if (m.capabilities !== undefined) {
     if (!Array.isArray(m.capabilities)) {
@@ -405,6 +443,10 @@ export async function validatePlugin(
   if (Array.isArray(m.surfaces) && m.surfaces.includes('internal-feature')) {
     const feature = m.internalFeature as Record<string, unknown>;
     allErrors.push(...await validateInternalFeatureFiles(pluginDir, feature));
+  }
+  if (Array.isArray(m.surfaces) && m.surfaces.includes('ui')) {
+    const pluginUi = m.pluginUi as Record<string, unknown>;
+    allErrors.push(...await validatePluginUiFiles(pluginDir, pluginUi));
   }
 
   // 3. Validate hooks if present

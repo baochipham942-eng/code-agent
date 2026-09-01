@@ -35,6 +35,7 @@ import {
   applyPluginUiActivationSettings,
   isThirdPartyPluginUiEnabled,
 } from '../../../../slots/pluginUiActivationPolicy';
+import { refreshThirdPartyPluginUi } from '../../../../slots/thirdPartyPluginUiLoader';
 
 type SetupState = 'idle' | 'running' | 'completed' | 'error';
 
@@ -173,6 +174,11 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
       await ipcService.invokeDomain(IPC_DOMAINS.SETTINGS, 'set', { pluginUi: nextCfg } as Partial<AppSettings>);
       pluginUiCfgRef.current = nextCfg;
       await applyPluginUiActivationSettings({ pluginUi: nextCfg });
+      if (next) {
+        await refreshThirdPartyPluginUi().catch((error) => {
+          console.warn('[PrivacySettings] enabled plugins could not be refreshed', error);
+        });
+      }
     } catch {
       setThirdPartyUiEnabled(previous);
       await applyPluginUiActivationSettings({ pluginUi: { thirdPartyEnabled: previous } });

@@ -224,6 +224,7 @@ export const IPC_CHANNELS = {
   CAPABILITY_PACKAGE_CONFIRM: 'capability-package:confirm',
   CAPABILITY_PACKAGE_CANCEL: 'capability-package:cancel',
   CAPABILITY_PACKAGE_UNINSTALL: 'capability-package:uninstall',
+  CAPABILITY_PACKAGE_UI_LOAD_STATE: 'capability-package:ui-load-state',
 
   // Public bundled host capability state projection (no admin gate)
   CAPABILITY_STATE_LIST: 'capability-state:list',

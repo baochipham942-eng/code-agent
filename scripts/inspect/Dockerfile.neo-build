@@ -21,7 +21,7 @@ RUN npm install --global \
 WORKDIR /app
 COPY package.json package-lock.json ./
 
-RUN npm_config_cache=/tmp/npm-cache npm ci \
+RUN npm_config_cache=/tmp/npm-cache npm ci --legacy-peer-deps \
     && rm -rf /tmp/npm-cache
 
 COPY . /app

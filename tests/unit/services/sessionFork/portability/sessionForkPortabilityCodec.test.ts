@@ -151,6 +151,28 @@ describe('session fork portability codecs', () => {
     })).toThrow(/REFERENCE_NOT_CLOSED/);
   });
 
+  it('treats a session export without a version as legacy v0 and fails loudly without a migration', () => {
+    const legacy: Record<string, unknown> = {
+      ...structuredClone(buildSessionExportEnvelopeV2(subtreeDraft())),
+    };
+    delete legacy.version;
+
+    expect(() => decodeSessionExportEnvelopeV2(JSON.stringify(legacy))).toThrow(
+      /session export envelope version 0 has no registered migration to version 2/u,
+    );
+  });
+
+  it('fails loudly for an unknown session export version', () => {
+    const unknown = {
+      ...buildSessionExportEnvelopeV2(subtreeDraft()),
+      version: 99,
+    };
+
+    expect(() => decodeSessionExportEnvelopeV2(JSON.stringify(unknown))).toThrow(
+      /session export envelope has unknown version 99; current version is 2/u,
+    );
+  });
+
   it('represents a single child as detached provenance without claiming an attached parent', () => {
     const draft = subtreeDraft();
     const envelope = buildSessionExportEnvelopeV2({

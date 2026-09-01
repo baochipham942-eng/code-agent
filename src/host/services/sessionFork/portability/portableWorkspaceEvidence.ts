@@ -10,6 +10,11 @@ import type {
   SessionExportSourceV2,
 } from '../../../../shared/contract/sessionForkPortability';
 import {
+  DataFormatVersionError,
+  PORTABLE_WORKSPACE_EVIDENCE_VERSION,
+  migrateDataFormatToCurrent,
+} from '../../../../shared/contract/dataFormatVersionRegistry';
+import {
   PORTABLE_ANCHOR_MAX_PATCH_BYTES,
   PORTABLE_ANCHOR_MAX_UNTRACKED_BYTES,
   PORTABLE_ANCHOR_MAX_UNTRACKED_FILES,
@@ -143,6 +148,17 @@ function validateContent(
   label: string,
 ): void {
   assertObject(content, label);
+  try {
+    content = migrateDataFormatToCurrent(
+      'portableWorkspaceEvidence',
+      content,
+    ) as PortableIsolatedAnchorContentV1;
+  } catch (error) {
+    if (error instanceof DataFormatVersionError) {
+      fail('UNSUPPORTED_SCHEMA_VERSION', error.message);
+    }
+    throw error;
+  }
   assertOnlyKeys(content as unknown as Record<string, unknown>, [
     'version',
     'stagedPatch',
@@ -151,8 +167,11 @@ function validateContent(
     'blobs',
     'payloadDigest',
   ], label);
-  if (content.version !== 1) {
-    fail('UNSUPPORTED_SCHEMA_VERSION', `${label}.version must be 1`);
+  if (content.version !== PORTABLE_WORKSPACE_EVIDENCE_VERSION) {
+    fail(
+      'UNSUPPORTED_SCHEMA_VERSION',
+      `${label}.version must be ${PORTABLE_WORKSPACE_EVIDENCE_VERSION}`,
+    );
   }
   assertObject(content.blobs, `${label}.blobs`);
   assertDigest(content.payloadDigest, `${label}.payloadDigest`);

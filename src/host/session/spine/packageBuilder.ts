@@ -4,6 +4,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import JSZip from 'jszip';
 import type BetterSqlite3 from 'better-sqlite3';
+import { DATA_FORMAT_VERSION_REGISTRY } from '../../../shared/contract/dataFormatVersionRegistry';
 import type { SessionLedger } from '../../../shared/contract/sessionLedger';
 import { TelemetryStorage } from '../../telemetry/telemetryStorage';
 import { getAppVersion, getLogsPath, getUserDataPath } from '../../platform/appPaths';
@@ -22,7 +23,7 @@ import { sanitizePackageText, sanitizePackageValue, type SessionPackagePrivacyLe
 import { projectSessionTranscript, transcriptToJsonl, type TranscriptProjectionResult } from './transcriptProjector';
 
 export interface SessionPackageManifest {
-  packageVersion: 2;
+  packageVersion: typeof DATA_FORMAT_VERSION_REGISTRY.sessionSpinePackageManifest.currentVersion;
   sessionId: string;
   builtAt: number;
   privacyLevel: SessionPackagePrivacyLevel;
@@ -225,7 +226,7 @@ export async function buildSessionPackage(
   const files = new Map<string, Buffer>();
   const add = (name: string, content: string): void => { files.set(name, Buffer.from(content, 'utf8')); };
   add('README.txt', [
-    'Neo session diagnostics package v2',
+    `Neo session diagnostics package v${DATA_FORMAT_VERSION_REGISTRY.sessionSpinePackageManifest.currentVersion}`,
     `Session: ${sessionId}`,
     `Privacy: ${privacyLevel}`,
     '',
@@ -247,7 +248,7 @@ export async function buildSessionPackage(
   add('environment.json', json(environment));
 
   const manifest: SessionPackageManifest = {
-    packageVersion: 2,
+    packageVersion: DATA_FORMAT_VERSION_REGISTRY.sessionSpinePackageManifest.currentVersion,
     sessionId,
     builtAt,
     privacyLevel,

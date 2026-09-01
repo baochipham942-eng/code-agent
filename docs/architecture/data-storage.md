@@ -83,7 +83,7 @@ SQLite 继续承担会话事实源；post-v0.30 新增的是统一 projection �
 | ~~`review_queue_items.delivery_review`~~ | 已下线；旧 Delivery Review 不再写 review queue | 5/19 evaluation cleanup |
 | ~~`preview_feedback_items`~~ | 已下线；Workspace Preview 不再维护旧 Preview Feedback 侧栏 | 5/19 evaluation cleanup |
 | `telemetry_sessions / telemetry_turns / telemetry_model_calls / telemetry_tool_calls / telemetry_events` | structured replay 与 eval completeness gate 的事实来源 | `TelemetryCollector` / `TelemetryStorage` |
-| `turn_snapshots / compaction_snapshots` | 调试快照与压缩前后诊断，支持 CLI debug 和 settings retention | `turnSnapshotWriter` / `compactionSnapshotWriter` |
+| `turn_snapshots / compaction_snapshots` | 调试快照与压缩前后诊断，支持 CLI debug 和 settings retention | `turnSnapshotWriter` / `compactionAuditRecorder` |
 
 当前边界：unit 级恢复链已经覆盖 todos、session_tasks、context interventions、runtime state、pending approvals、structured replay；完整 app restart / reload smoke 仍按对应计划文档里的延后风险处理。
 

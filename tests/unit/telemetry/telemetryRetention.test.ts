@@ -77,8 +77,8 @@ describe('TelemetryStorage.pruneAgedTelemetry', () => {
         VALUES ('mc-old', 'tn-old', 's-old', ${OLD}, 'openai', 'm'), ('mc-new', 'tn-new', 's-new', ${FRESH}, 'openai', 'm');
       INSERT INTO telemetry_tool_calls (id, turn_id, session_id, tool_call_id, name, timestamp)
         VALUES ('tc-old', 'tn-old', 's-old', 'tc-old', 'Bash', ${OLD}), ('tc-new', 'tn-new', 's-new', 'tc-new', 'Bash', ${FRESH});
-      INSERT INTO telemetry_diagnostic_bundles (id, session_id, trigger_reason, built_at, bundle, created_at)
-        VALUES ('b-old', 's-old', 'x', ${OLD}, '{}', ${OLD}), ('b-new', 's-new', 'x', ${FRESH}, '{}', ${FRESH});
+      INSERT INTO telemetry_diagnostic_bundles (id, session_id, trigger_reason, built_at, bundle, created_at, synced_at)
+        VALUES ('b-old', 's-old', 'x', ${OLD}, '{}', ${OLD}, ${NOW}), ('b-new', 's-new', 'x', ${FRESH}, '{}', ${FRESH}, NULL);
       INSERT INTO system_prompt_cache (hash, content, tokens, created_at)
         VALUES ('h-old', 'c', 1, ${OLD}), ('h-new', 'c', 1, ${FRESH});
       INSERT INTO tool_schema_cache (hash, content, created_at)
@@ -120,6 +120,28 @@ describe('TelemetryStorage.pruneAgedTelemetry', () => {
     expect(dbState.sqlite!.prepare("SELECT hash FROM system_prompt_cache").get()).toEqual({ hash: 'h-new' });
     expect(dbState.sqlite!.prepare("SELECT hash FROM tool_schema_cache").get()).toEqual({ hash: 't-new' });
     expect(dbState.sqlite!.prepare("SELECT hash FROM content_cache").get()).toEqual({ hash: 'c-new' });
+  });
+
+  it('保留超过 MAX_AGE_MS 但尚未上传的 diagnostic bundle', () => {
+    dbState.sqlite!.prepare(`
+      INSERT INTO telemetry_diagnostic_bundles
+        (id, session_id, trigger_reason, built_at, bundle, created_at, synced_at)
+      VALUES (?, ?, ?, ?, ?, ?, NULL)
+    `).run('b-old-unsynced', 's-old', 'x', OLD, '{}', OLD);
+
+    new TelemetryStorage().pruneAgedTelemetry(NOW);
+
+    expect(dbState.sqlite!.prepare(
+      'SELECT id FROM telemetry_diagnostic_bundles WHERE id = ?',
+    ).get('b-old-unsynced')).toEqual({ id: 'b-old-unsynced' });
+  });
+
+  it('删除超过 MAX_AGE_MS 且已经上传的 diagnostic bundle', () => {
+    new TelemetryStorage().pruneAgedTelemetry(NOW);
+
+    expect(dbState.sqlite!.prepare(
+      'SELECT id FROM telemetry_diagnostic_bundles WHERE id = ?',
+    ).get('b-old')).toBeUndefined();
   });
 
   it('保留 telemetry_sessions/turns 分析主干(不删,历史用量分析不丢)', () => {

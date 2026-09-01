@@ -440,6 +440,78 @@ describe('compactionService', () => {
     });
   });
 
+  it('preserves sampled critical facts after compaction (omission)', async () => {
+    const criticalFacts = [
+      { question: 'Which deployment region was approved?', answer: 'eu-west-1' },
+      { question: 'What is the retry limit?', answer: '3' },
+      { question: 'Who owns the rollout?', answer: 'platform-oncall' },
+    ];
+    const sourceFacts = criticalFacts
+      .map(({ question, answer }) => `${question} Answer: ${answer}.`)
+      .join(' ');
+    const summary = criticalFacts
+      .map(({ question, answer }) => `${question} ${answer}.`)
+      .join('\n');
+    compactionServiceMocks.summarizeWithMetadata.mockResolvedValue({
+      summary,
+      metadata: compactionServiceMocks.summaryModel,
+    });
+
+    const result = await compactMessagesWithSummary({
+      sessionId: 'session-omission',
+      source: 'manual_current',
+      messages: [
+        message('m1', 'system', sourceFacts.repeat(80)),
+        message('m2', 'assistant', 'These approved facts are the source of truth. '.repeat(80)),
+        message('m3', 'assistant', 'Keep all three facts during compaction. '.repeat(80)),
+        message('m4', 'assistant', 'recent answer'),
+      ],
+      preserveRecentCount: 1,
+    });
+
+    expect(result.success).toBe(true);
+    const compactedContent = result.summaryMessage?.content ?? '';
+    for (const { question, answer } of criticalFacts) {
+      expect(compactedContent, `membership answer missing for: ${question}`).toContain(answer);
+    }
+  });
+
+  it('does not add or mutate source-of-truth claims after compaction (commission)', async () => {
+    const sourceClaim = 'deployment_region=eu-west-1 retry_limit=3 owner=platform-oncall';
+    const summary = [
+      'Deployment contract:',
+      'deployment_region=eu-west-1',
+      'retry_limit=3',
+      'owner=platform-oncall',
+    ].join('\n');
+    compactionServiceMocks.summarizeWithMetadata.mockResolvedValue({
+      summary,
+      metadata: compactionServiceMocks.summaryModel,
+    });
+    const messages = [
+      message('m1', 'system', sourceClaim.repeat(80)),
+      message('m2', 'assistant', 'Treat the deployment contract as authoritative. '.repeat(80)),
+      message('m3', 'assistant', 'Do not alter the deployment contract. '.repeat(80)),
+      message('m4', 'assistant', 'recent answer'),
+    ];
+
+    const result = await compactMessagesWithSummary({
+      sessionId: 'session-commission',
+      source: 'manual_current',
+      messages,
+      preserveRecentCount: 1,
+    });
+
+    expect(result.success).toBe(true);
+    const extractClaims = (text: string): Record<string, string> =>
+      Object.fromEntries(
+        Array.from(text.matchAll(/\b(deployment_region|retry_limit|owner)=([a-z0-9-]+)/g))
+          .map(([, key, value]) => [key, value]),
+      );
+    const originalContent = messages.slice(0, 3).map(item => item.content).join('\n');
+    expect(extractClaims(result.summaryMessage?.content ?? '')).toEqual(extractClaims(originalContent));
+  });
+
   it('keeps the summary transcript bounded and omits raw tool output from the prompt body', () => {
     const secretToolOutput = 'SECRET_FILE_CONTENT '.repeat(240);
     const messages: Message[] = [

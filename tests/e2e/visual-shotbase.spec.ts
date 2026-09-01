@@ -196,6 +196,12 @@ for (const theme of ['light', 'dark'] as const) {
     await expect(permissionCard).toContainText('rm -rf ./dist');
     await expect(streamingRegion).toBeVisible({ timeout: 10_000 });
     await expect(timestampRegion).toHaveText(/^\d{2}:\d{2}$/);
+    // 时间文本已在上面做语义断言；截图时只隐藏字形并保留原布局。
+    // Playwright 的 mask 会按实时 bounding box 涂色，Linux 上该宽度会在
+    // 25/26px 间跳动，形成与产品画面无关的 16px 稳定红。
+    await timestampRegion.evaluate((element) => {
+      (element as HTMLElement).style.visibility = 'hidden';
+    });
     await waitForStableVisualFrame(page, theme);
 
     await holdVisualTurnRunning(page, request, token, sessionId, turnId);
@@ -211,7 +217,6 @@ for (const theme of ['light', 'dark'] as const) {
         animations: 'disabled',
         caret: 'hide',
         mask: [
-          timestampRegion,
           avatarRegions,
           dynamicExpertIdentityRows,
           streamingRegion,

@@ -47,6 +47,22 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
   safeAlter(db, `ALTER TABLE sessions ADD COLUMN project_id TEXT`, logger);
   safeAlter(db, `ALTER TABLE sessions ADD COLUMN is_archived INTEGER NOT NULL DEFAULT 0`, logger);
 
+  // Channel ingress identity → session continuity. thread_id uses '' for
+  // platforms/entry points without thread support, preserving one chat-level lane.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS channel_session_bindings (
+      account_id TEXT NOT NULL,
+      chat_id TEXT NOT NULL,
+      thread_id TEXT NOT NULL DEFAULT '',
+      ingress_auth TEXT NOT NULL,
+      session_id TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY (account_id, chat_id, thread_id, ingress_auth),
+      FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+    )
+  `);
+
   // Historical session references are summarized lazily. The message fingerprint
   // makes a cached digest invalid as soon as the visible conversation changes.
   db.exec(`

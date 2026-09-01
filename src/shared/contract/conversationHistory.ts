@@ -3,9 +3,10 @@ import type {
   ConversationMessageSnapshot,
   ConversationReplayMessage,
 } from './conversationBranch';
+import { PORTABLE_CONVERSATION_HISTORY_VERSION } from './dataFormatVersionRegistry';
 
-const PORTABLE_CONVERSATION_HISTORY_SCHEMA = 'neo.conversation-history' as const;
-const PORTABLE_CONVERSATION_HISTORY_VERSION = 1 as const;
+export const PORTABLE_CONVERSATION_HISTORY_SCHEMA = 'neo.conversation-history' as const;
+export { PORTABLE_CONVERSATION_HISTORY_VERSION } from './dataFormatVersionRegistry';
 
 interface PortableConversationAttachmentProvenance {
   idDigest: string;

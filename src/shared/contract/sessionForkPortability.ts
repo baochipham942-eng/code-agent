@@ -3,15 +3,22 @@ import type { Artifact, Message, MessageAttachment, MessageRole, MessageVisibili
 import type { ModelCapability, ModelProvider, ModelProviderProtocol, ModelReasoningEffort } from './model';
 import type { Session, SessionMemoryMode, SessionOrigin, SessionType } from './session';
 import type { PortableConversationHistoryV1 } from './conversationHistory';
+import {
+  FORK_LINEAGE_ENVELOPE_VERSION,
+  PORTABLE_WORKSPACE_EVIDENCE_VERSION,
+  SESSION_EXPORT_ENVELOPE_VERSION,
+} from './dataFormatVersionRegistry';
 import type {
   SessionForkContextDeliveryMode,
   SessionForkWorkspaceMode,
 } from './sessionFork';
 
 export const SESSION_EXPORT_ENVELOPE_SCHEMA = 'neo.session-export' as const;
-export const SESSION_EXPORT_ENVELOPE_VERSION = 2 as const;
 export const FORK_LINEAGE_ENVELOPE_SCHEMA = 'neo.fork-lineage' as const;
-export const FORK_LINEAGE_ENVELOPE_VERSION = 1 as const;
+export {
+  FORK_LINEAGE_ENVELOPE_VERSION,
+  SESSION_EXPORT_ENVELOPE_VERSION,
+} from './dataFormatVersionRegistry';
 /** Portable boundary for an explicitly local/anonymous Neo profile. */
 export const LOCAL_SESSION_FORK_OWNER_SCOPE_ID = 'neo.local-owner' as const;
 export const PORTABLE_ANCHOR_MAX_PATCH_BYTES = 64 * 1024 * 1024;
@@ -91,7 +98,7 @@ export interface PortableUntrackedFileV1 extends PortableContentAddressedBlobRef
 }
 
 export interface PortableIsolatedAnchorContentV1 {
-  version: 1;
+  version: typeof PORTABLE_WORKSPACE_EVIDENCE_VERSION;
   stagedPatch: PortableContentAddressedBlobRefV1;
   unstagedPatch: PortableContentAddressedBlobRefV1;
   untrackedFiles: PortableUntrackedFileV1[];

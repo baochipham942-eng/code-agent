@@ -2,10 +2,16 @@ import type {
   ConversationBranchEventType,
   ConversationReplayMessage,
 } from '../../../../shared/contract/conversationBranch';
-import { canonicalJson, deepPortableClone, portabilityDigest } from './canonical';
 import {
   PORTABLE_CONVERSATION_HISTORY_SCHEMA,
   PORTABLE_CONVERSATION_HISTORY_VERSION,
+} from '../../../../shared/contract/conversationHistory';
+import {
+  DataFormatVersionError,
+  migrateDataFormatToCurrent,
+} from '../../../../shared/contract/dataFormatVersionRegistry';
+import { canonicalJson, deepPortableClone, portabilityDigest } from './canonical';
+import {
   PortableConversationHistoryError,
   SUPPORTED_CONVERSATION_HISTORY_EVENTS as SUPPORTED_EVENTS,
   type ConversationHistorySourceRow as SourceRow,
@@ -888,7 +894,14 @@ export function decodePortableConversationHistory(
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
     fail('INVALID_HISTORY', 'portable conversation history must be an object');
   }
-  const history = parsed as PortableConversationHistoryV1;
+  let current: unknown;
+  try {
+    current = migrateDataFormatToCurrent('portableConversationHistory', parsed);
+  } catch (error) {
+    if (error instanceof DataFormatVersionError) fail('INVALID_HISTORY', error.message);
+    throw error;
+  }
+  const history = current as PortableConversationHistoryV1;
   validatePortableConversationHistory(history);
   return deepPortableClone(history);
 }

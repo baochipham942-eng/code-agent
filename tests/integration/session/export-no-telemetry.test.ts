@@ -11,6 +11,7 @@ import { getDatabase } from '../../../src/host/services/core/databaseService';
 import { SessionRepository } from '../../../src/host/services/core/repositories/SessionRepository';
 import { TelemetryStorage } from '../../../src/host/telemetry/telemetryStorage';
 import { buildSessionPackage, buildSessionTranscriptJsonl } from '../../../src/host/session/spine/packageBuilder';
+import { DATA_FORMAT_VERSION_REGISTRY } from '../../../src/shared/contract/dataFormatVersionRegistry';
 import type { Message } from '../../../src/shared/contract/message';
 
 const SID = 'session-export-v2-12345678';
@@ -73,7 +74,9 @@ describe('session export package v2', () => {
       homeDir: '/Users/tester',
     });
 
-    expect(result.manifest.packageVersion).toBe(2);
+    expect(result.manifest.packageVersion).toBe(
+      DATA_FORMAT_VERSION_REGISTRY.sessionSpinePackageManifest.currentVersion,
+    );
     expect(result.manifest.source.hadTelemetrySession).toBe(false);
     expect(result.manifest.includes.telemetryBundle).toBe(false);
     expect(result.manifest.stats.messageCount).toBe(3);

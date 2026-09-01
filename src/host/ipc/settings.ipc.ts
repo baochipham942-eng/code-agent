@@ -244,6 +244,7 @@ function settingsUpdateRequiresAdmin(updates: Partial<AppSettings>): boolean {
     'sanitization',
     'confirmationGate',
     'budget',
+    'pluginUi',
   ];
 
   return adminOnlyKeys.some((key) => Object.prototype.hasOwnProperty.call(updates, key));

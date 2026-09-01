@@ -1,15 +1,32 @@
 import React, { useEffect } from 'react';
+import type { AppSettings } from '@shared/contract';
+import { IPC_DOMAINS } from '@shared/ipc';
 import { UI_SLOT_CONTRACTS } from '@shared/contract/uiSlots';
 import {
   Slot,
-  activatePluginUi,
   declareSlot,
   slots,
-  unloadPluginUi,
 } from './pluginUiSdk';
+import {
+  activatePluginUiWithPolicy,
+  applyPluginUiActivationSettings,
+  unloadPluginUiWithPolicy,
+} from './pluginUiActivationPolicy';
 import { Z_LAYERS } from '../styles/zLayers';
+import ipcService from '../services/ipcService';
 
 const InternalFeatureHost = React.lazy(() => import('../internalFeatures/InternalFeatureHost').then(({ InternalFeatureHost: component }) => ({ default: component })));
+
+export const PluginUiActivationPolicyBootstrap: React.FC = () => {
+  useEffect(() => {
+    let cancelled = false;
+    void ipcService.invokeDomain<AppSettings>(IPC_DOMAINS.SETTINGS, 'get')
+      .then((settings) => (cancelled ? undefined : applyPluginUiActivationSettings(settings)))
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, []);
+  return null;
+};
 
 export const NavAccountItemSlotHost: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   useEffect(() => {
@@ -105,7 +122,7 @@ export const InternalFeatureWorkspaceRegistration: React.FC<{
   useEffect(() => {
     if (!featureId) return undefined;
     let disposed = false;
-    void activatePluginUi(featureId, () => {
+    void activatePluginUiWithPolicy('internal-feature', featureId, () => {
       if (disposed) return;
       const Page = () => (
         <React.Suspense fallback={null}>
@@ -116,12 +133,12 @@ export const InternalFeatureWorkspaceRegistration: React.FC<{
         slots.register({ name: 'workspace.page', key: featureId }, Page)
       ));
     }).then(() => {
-      if (disposed) void unloadPluginUi(featureId);
+      if (disposed) void unloadPluginUiWithPolicy(featureId);
     });
 
     return () => {
       disposed = true;
-      void unloadPluginUi(featureId);
+      void unloadPluginUiWithPolicy(featureId);
     };
   }, [featureId]);
 

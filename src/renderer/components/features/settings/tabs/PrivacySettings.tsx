@@ -30,6 +30,11 @@ import { SettingsPage, SettingsSection } from '../SettingsLayout';
 import type { SettingsTab } from '../../../../utils/settingsTabs';
 import { useI18n } from '../../../../hooks/useI18n';
 import { zh } from '../../../../i18n/zh';
+import { useAuthStore } from '../../../../stores/authStore';
+import {
+  applyPluginUiActivationSettings,
+  isThirdPartyPluginUiEnabled,
+} from '../../../../slots/pluginUiActivationPolicy';
 
 type SetupState = 'idle' | 'running' | 'completed' | 'error';
 
@@ -89,6 +94,7 @@ interface PrivacySettingsProps {
 const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings }) => {
   const { t } = useI18n();
   const privacyText = t.settings.privacy;
+  const isAdmin = useAuthStore((authState) => authState.user?.isAdmin === true);
   const [state, setState] = useState<SetupState>('idle');
   const [step, setStep] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
@@ -100,8 +106,10 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
   // 隐私两档开关（使用数据 / 崩溃报告）。写 settings.privacy.*，host 侧 privacyGate 统一接线。
   const [usageDataEnabled, setUsageDataEnabled] = useState(true);
   const [crashReportingEnabled, setCrashReportingEnabled] = useState(true);
+  const [thirdPartyUiEnabled, setThirdPartyUiEnabled] = useState(false);
   const [privacySaving, setPrivacySaving] = useState(false);
   const privacyCfgRef = useRef<NonNullable<AppSettings['privacy']> | undefined>(undefined);
+  const pluginUiCfgRef = useRef<NonNullable<AppSettings['pluginUi']> | undefined>(undefined);
 
   const refreshReady = useCallback(async () => {
     try {
@@ -145,14 +153,33 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
       try {
         const s = await ipcService.invokeDomain<AppSettings | undefined>(IPC_DOMAINS.SETTINGS, 'get');
         privacyCfgRef.current = s?.privacy;
+        pluginUiCfgRef.current = s?.pluginUi;
         const flags = resolvePrivacyFlags(s);
         setUsageDataEnabled(flags.usageData);
         setCrashReportingEnabled(flags.crashReporting);
+        setThirdPartyUiEnabled(isThirdPartyPluginUiEnabled(s));
       } catch {
-        // ignore — 默认视为开启
+        // ignore — 保持各项产品默认值
       }
     })();
   }, []);
+
+  const handleThirdPartyUiToggle = useCallback(async (next: boolean) => {
+    const previous = thirdPartyUiEnabled;
+    setPrivacySaving(true);
+    setThirdPartyUiEnabled(next);
+    try {
+      const nextCfg = { ...(pluginUiCfgRef.current ?? {}), thirdPartyEnabled: next };
+      await ipcService.invokeDomain(IPC_DOMAINS.SETTINGS, 'set', { pluginUi: nextCfg } as Partial<AppSettings>);
+      pluginUiCfgRef.current = nextCfg;
+      await applyPluginUiActivationSettings({ pluginUi: nextCfg });
+    } catch {
+      setThirdPartyUiEnabled(previous);
+      await applyPluginUiActivationSettings({ pluginUi: { thirdPartyEnabled: previous } });
+    } finally {
+      setPrivacySaving(false);
+    }
+  }, [thirdPartyUiEnabled]);
 
   const handlePrivacyToggle = useCallback(async (
     key: 'usageDataEnabled' | 'crashReportingEnabled',
@@ -319,6 +346,29 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
             </div>
           ))}
         </div>
+      </SettingsSection>
+
+      <SettingsSection
+        title={privacyText.pluginUi.title}
+        description={privacyText.pluginUi.description}
+      >
+        <label className="flex items-start gap-3 rounded-lg border border-red-500/25 bg-red-500/5 p-3 cursor-pointer">
+          <input
+            type="checkbox"
+            className="mt-0.5 h-4 w-4 accent-primary-700"
+            checked={thirdPartyUiEnabled}
+            disabled={privacySaving || !isAdmin}
+            onChange={(event) => { void handleThirdPartyUiToggle(event.target.checked); }}
+          />
+          <div className="flex items-start gap-2 text-sm">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-badge-danger" />
+            <div>
+              <div className="font-medium text-zinc-200">{privacyText.pluginUi.label}</div>
+              <div className="mt-0.5 text-xs leading-5 text-zinc-400">{privacyText.pluginUi.body}</div>
+              {!isAdmin ? <div className="mt-1 text-xs text-zinc-500">{privacyText.pluginUi.adminHint}</div> : null}
+            </div>
+          </div>
+        </label>
       </SettingsSection>
 
       <SettingsSection

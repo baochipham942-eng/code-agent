@@ -37,6 +37,9 @@ describe('PrivacySettings boundary copy', () => {
       'Voice Paste',
       'MCP OAuth 授权',
       '浏览器 Relay Token',
+      '第三方界面插件',
+      '允许第三方插件显示界面',
+      '权限和 Neo 本身一样大',
     ]) {
       expect(html).toContain(text);
     }

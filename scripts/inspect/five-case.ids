@@ -1,6 +1,4 @@
-# N-L4-INSPECT: fixed representative pure-text slice of subset45
+# N-EVAL-HARNESSDIFF: same three cases for every CLI harness
 bash-ls
-bash-pwd
-conv-understand-intent
-error-file-not-found
-prompt-smoke-read-package
+prompt-smoke-edit-edits-schema
+multi-turn-context-memory

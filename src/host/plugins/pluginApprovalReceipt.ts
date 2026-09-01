@@ -4,6 +4,7 @@ import path from 'node:path';
 import type { PluginApprovalReceipt, PluginPermission } from './types';
 
 const PLUGIN_APPROVAL_RECEIPT_FILE = '.neo-capability-approval.json';
+export const PLUGIN_PACKAGE_SIGNATURE_FILE = '.neo-plugin-signature.json';
 
 const RECEIPT_SCHEMA_VERSION = 1;
 
@@ -11,7 +12,7 @@ async function collectFiles(rootDir: string, currentDir = rootDir): Promise<stri
   const entries = await fs.readdir(currentDir, { withFileTypes: true });
   const files: string[] = [];
   for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
-    if (entry.name === PLUGIN_APPROVAL_RECEIPT_FILE) continue;
+    if (entry.name === PLUGIN_APPROVAL_RECEIPT_FILE || entry.name === PLUGIN_PACKAGE_SIGNATURE_FILE) continue;
     const absolutePath = path.join(currentDir, entry.name);
     if (entry.isSymbolicLink()) {
       throw new Error(`能力包包含符号链接，已拒绝：${path.relative(rootDir, absolutePath)}`);

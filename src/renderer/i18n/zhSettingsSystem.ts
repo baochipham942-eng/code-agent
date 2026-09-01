@@ -703,6 +703,7 @@ export const zhSettingsSystem = {
         runtime_assets_manifest: '运行时资产清单',
         renderer_bundle: '前端热更包',
         renderer_bundle_rollout: '前端热更灰度策略',
+        plugin_package: '插件包',
       },
       releaseStatusTitle: '发布状态',
       refresh: '刷新',

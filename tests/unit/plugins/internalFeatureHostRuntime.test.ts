@@ -1,3 +1,4 @@
+import { generateKeyPairSync, sign, type KeyObject } from 'node:crypto';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -5,8 +6,18 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { InternalFeatureHostRuntime } from '../../../src/host/internalFeatures/internalFeatureHostRuntime';
 import { INTERNAL_SDK_VERSION } from '../../../src/host/internalFeatures/internalSdkVersion';
 import type { LoadedPlugin, PluginManifest } from '../../../src/host/plugins/types';
-import { hashPluginPackage, writePluginApprovalReceipt } from '../../../src/host/plugins/pluginApprovalReceipt';
+import {
+  hashPluginPackage,
+  PLUGIN_PACKAGE_SIGNATURE_FILE,
+  writePluginApprovalReceipt,
+} from '../../../src/host/plugins/pluginApprovalReceipt';
+import { verifyInstalledPluginTrust } from '../../../src/host/plugins/pluginPackageTrust';
 import type { ipcHost } from '../../../src/host/platform';
+import {
+  buildControlPlaneContentHash,
+  buildControlPlaneSigningPayload,
+} from '../../../src/host/services/cloud/controlPlaneTrust';
+import type { ControlPlaneEnvelope } from '../../../src/shared/contract/controlPlane';
 
 let tempRoot: string;
 
@@ -47,6 +58,32 @@ async function writeRuntimePlugin(source: string): Promise<LoadedPlugin> {
     approvedAt: 2,
   });
   return { manifest, rootPath, state: 'inactive', registeredTools: [] };
+}
+
+async function signRuntimePlugin(plugin: LoadedPlugin, privateKey: KeyObject, keyId: string): Promise<void> {
+  const payload = {
+    schemaVersion: 1 as const,
+    pluginId: plugin.manifest.id,
+    packageHash: await hashPluginPackage(plugin.rootPath),
+  };
+  const envelope: ControlPlaneEnvelope<typeof payload> = {
+    schemaVersion: 1,
+    kind: 'plugin_package',
+    expiresAt: '2099-01-01T00:00:00.000Z',
+    contentHash: buildControlPlaneContentHash(payload),
+    keyId,
+    payload,
+  };
+  envelope.signature = sign(
+    null,
+    Buffer.from(buildControlPlaneSigningPayload(envelope)),
+    privateKey,
+  ).toString('base64');
+  await fs.writeFile(
+    path.join(plugin.rootPath, PLUGIN_PACKAGE_SIGNATURE_FILE),
+    JSON.stringify(envelope),
+    'utf8',
+  );
 }
 
 function createTestIpc(): { handlers: Map<string, unknown>; ipcMain: typeof ipcHost } {
@@ -129,5 +166,33 @@ module.exports.activate = () => { throw new Error('host boom'); };
     await expect(runtime.load(plugin)).rejects.toThrow('host boom');
     expect(plugin).toMatchObject({ state: 'error', error: 'host boom' });
     expect(lifecycle).toContainEqual({ action: 'failed', detail: 'host boom' });
+  });
+
+  it('loadInstalled blocks a previously valid plugin after its author is revoked', async () => {
+    const plugin = await writeRuntimePlugin(`
+module.exports.activate = () => ({ deactivate() {} });
+`);
+    const keyId = 'revoked-author';
+    const keys = generateKeyPairSync('ed25519');
+    const publicKey = keys.publicKey.export({ type: 'spki', format: 'pem' }).toString();
+    await signRuntimePlugin(plugin, keys.privateKey, keyId);
+    const { ipcMain } = createTestIpc();
+    const runtime = new InternalFeatureHostRuntime({
+      registry: { getPlugins: () => [plugin] },
+      ipcMain,
+      verifyPluginTrust: (rootPath, value) => verifyInstalledPluginTrust(rootPath, value, {
+        publicKeys: { [keyId]: publicKey },
+        revokedIds: new Set([`plugin-key:${keyId}`]),
+      }),
+      logger: { info: () => undefined, warn: () => undefined, error: () => undefined },
+    });
+
+    await runtime.loadInstalled();
+
+    expect(runtime.isLoaded(plugin.manifest.id)).toBe(false);
+    expect(plugin).toMatchObject({
+      state: 'error',
+      error: '这个插件的发布者已被吊销，插件已停止装载，请联系管理员',
+    });
   });
 });

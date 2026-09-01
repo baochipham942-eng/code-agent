@@ -46,7 +46,8 @@ export type ControlPlaneArtifactKind =
   | 'update_manifest'
   | 'runtime_assets_manifest'
   | 'renderer_bundle'
-  | 'renderer_bundle_rollout';
+  | 'renderer_bundle_rollout'
+  | 'plugin_package';
 
 export interface ControlPlaneEnvelope<TPayload = unknown> {
   schemaVersion: 1;

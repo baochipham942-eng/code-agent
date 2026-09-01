@@ -24,10 +24,15 @@ import { getMCPClient } from '../../mcp/mcpClient';
 import { CUA_DRIVER_SERVER_NAME, type MCPServerConfig } from '../../mcp/types';
 import {
   hashPluginPackage,
-  verifyPluginApprovalReceipt,
   writePluginApprovalReceipt,
 } from '../../plugins/pluginApprovalReceipt';
 import type { PluginManifest, PluginPermission } from '../../plugins/types';
+import {
+  assessPluginPackageTrust,
+  verifyInstalledPluginTrust,
+  type PluginPackageSourceTrust,
+} from '../../plugins/pluginPackageTrust';
+import type { ControlPlanePublicKeys } from '../cloud/controlPlaneTrust';
 import { assertInternalFeatureHostCompatibility } from '../../internalFeatures/internalFeatureContract';
 import {
   getInternalFeatureHostRuntime,
@@ -57,6 +62,7 @@ interface StagedPackage {
   sourceKind: CapabilityPackagePreview['sourceKind'];
   sourceLabel: string;
   toolNames: string[];
+  sourceTrust: PluginPackageSourceTrust;
   replacesInstalledVersion?: string;
   stagedAt: number;
   expiresAt: number;
@@ -95,6 +101,9 @@ interface ManualCapabilityPackageServiceDependencies {
   resolveComputerUseMcpConfig?: () => MCPServerConfig | undefined;
   internalFeatureRuntime?: InternalFeatureRuntimePort;
   isCurrentUserAdmin?: () => boolean;
+  controlPlanePublicKeys?: ControlPlanePublicKeys;
+  revokedPluginIds?: ReadonlySet<string>;
+  pluginRevocationFile?: string;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -165,9 +174,14 @@ function validateStrictManifest(raw: Record<string, unknown>): void {
     }
     return;
   }
-  if (raw.surfaces[0] !== 'tools') {
-    throw new Error('可执行插件的 surfaces 只能声明 tools；内部包可声明 internal-feature');
+  if (raw.surfaces[0] !== 'tools' && raw.surfaces[0] !== 'ui') {
+    throw new Error('插件的 surfaces 只能声明 tools 或 ui；内部插件可声明 internal-feature');
   }
+}
+
+function packageSurface(manifest: PluginManifest): CapabilityPackagePreview['surface'] {
+  const surface = manifest.surfaces?.[0];
+  return surface === 'internal-feature' || surface === 'ui' ? surface : 'tools';
 }
 
 function describeValidationError(field: string, message: string): string {
@@ -291,6 +305,9 @@ export class ManualCapabilityPackageService {
   private readonly resolveComputerUseMcpConfig: () => MCPServerConfig | undefined;
   private readonly internalFeatureRuntime: InternalFeatureRuntimePort;
   private readonly isCurrentUserAdmin: () => boolean;
+  private readonly controlPlanePublicKeys: ControlPlanePublicKeys | undefined;
+  private readonly revokedPluginIds: ReadonlySet<string> | undefined;
+  private readonly pluginRevocationFile: string | undefined;
 
   constructor(dependencies: ManualCapabilityPackageServiceDependencies = {}) {
     this.getPluginsDir = dependencies.pluginsDir ?? getPluginsDir;
@@ -306,6 +323,9 @@ export class ManualCapabilityPackageService {
     ));
     this.internalFeatureRuntime = dependencies.internalFeatureRuntime ?? getInternalFeatureHostRuntime();
     this.isCurrentUserAdmin = dependencies.isCurrentUserAdmin ?? isCurrentUserAdmin;
+    this.controlPlanePublicKeys = dependencies.controlPlanePublicKeys;
+    this.revokedPluginIds = dependencies.revokedPluginIds;
+    this.pluginRevocationFile = dependencies.pluginRevocationFile;
   }
 
   async stageBundled(pluginId: string): Promise<CapabilityPackagePreview> {
@@ -331,6 +351,11 @@ export class ManualCapabilityPackageService {
       surface: 'tools',
       sourceKind: 'bundled',
       sourceLabel: 'Agent Neo',
+      sourceTrust: {
+        level: 'signed',
+        reason: '随 Neo 签名发货，发布来源可追溯并可通过应用更新吊销',
+      },
+      requestedUiSlots: [],
       sandbox: { passed: true, summary: '随 Neo 签名发货的内置能力已通过完整性校验' },
       expiresAt,
     };
@@ -386,12 +411,20 @@ export class ManualCapabilityPackageService {
         this.lifecycle(manifest.id, 'failed', detail);
         throw new Error(`插件依赖校验没通过：${detail}`, { cause: error });
       }
+      const packageHash = await hashPluginPackage(rootDir);
+      const sourceTrust = await assessPluginPackageTrust(rootDir, manifest, {
+        packageHash,
+        publicKeys: this.controlPlanePublicKeys,
+        revokedIds: this.revokedPluginIds,
+        revocationFile: this.pluginRevocationFile,
+        now: this.now(),
+      });
       const entryPath = path.join(rootDir, manifest.main);
       const source = await fs.readFile(entryPath, 'utf8');
       if (Buffer.byteLength(source, 'utf8') > MAX_ENTRY_BYTES) throw new Error('入口代码超过 48 KB，已拒绝');
       if (!/module\s*\.\s*exports/.test(source)) throw new Error('当前只支持 CommonJS 插件，入口需使用 module.exports');
       assertNoAmbientAuthority(source);
-      const surface = manifest.surfaces?.[0] === 'internal-feature' ? 'internal-feature' : 'tools';
+      const surface = packageSurface(manifest);
       const probeScript = sandboxProbeScript(source, manifest.permissions ?? [], surface === 'tools');
       const validation = validateScript(probeScript);
       if (!validation.ok) throw new Error(`沙箱校验没通过：${validation.error}`);
@@ -410,7 +443,6 @@ export class ManualCapabilityPackageService {
       }
       const toolNames = probe.result.toolNames.filter((item): item is string => typeof item === 'string');
       if (surface === 'tools' && toolNames.length === 0) throw new Error('沙箱校验没通过：插件没有注册工具');
-      const packageHash = await hashPluginPackage(rootDir);
       const token = randomUUID();
       const stagedAt = this.now();
       const expiresAt = stagedAt + STAGE_TTL_MS;
@@ -424,6 +456,7 @@ export class ManualCapabilityPackageService {
         sourceKind,
         sourceLabel: path.basename(selectedPath),
         toolNames,
+        sourceTrust,
         ...(existing && !existing.rootPath.startsWith('builtin:')
           ? { replacesInstalledVersion: existing.manifest.version }
           : {}),
@@ -442,12 +475,16 @@ export class ManualCapabilityPackageService {
         surface,
         sourceKind,
         sourceLabel: staged.sourceLabel,
+        sourceTrust: staged.sourceTrust,
+        requestedUiSlots: [...(manifest.uiSlots ?? [])],
         ...(staged.replacesInstalledVersion ? { replacesInstalledVersion: staged.replacesInstalledVersion } : {}),
         sandbox: {
           passed: true,
           summary: surface === 'internal-feature'
             ? '隔离进程试跑通过，内部界面声明有效'
-            : `隔离进程试跑通过，发现 ${toolNames.length} 个工具`,
+            : surface === 'ui'
+              ? '隔离进程试跑通过，插件座位声明有效'
+              : `隔离进程试跑通过，发现 ${toolNames.length} 个工具`,
         },
         expiresAt,
       };
@@ -469,7 +506,12 @@ export class ManualCapabilityPackageService {
     const plugin = this.registry.getPlugin(pluginId);
     if (!plugin || plugin.rootPath.startsWith('builtin:')) return null;
     try {
-      await verifyPluginApprovalReceipt(plugin.rootPath, plugin.manifest.id, plugin.manifest.permissions ?? []);
+      await verifyInstalledPluginTrust(plugin.rootPath, plugin.manifest, {
+        publicKeys: this.controlPlanePublicKeys,
+        revokedIds: this.revokedPluginIds,
+        revocationFile: this.pluginRevocationFile,
+        now: this.now(),
+      });
       return 'local';
     } catch {
       return null;
@@ -529,7 +571,7 @@ export class ManualCapabilityPackageService {
         id: staged.manifest.id,
         version: staged.manifest.version,
         toolNames: staged.toolNames.map((name) => `${staged.manifest.id}:${name}`),
-        surface: staged.manifest.surfaces?.[0] === 'internal-feature' ? 'internal-feature' : 'tools',
+        surface: packageSurface(staged.manifest),
         ...(staged.replacesInstalledVersion ? { replacedVersion: staged.replacesInstalledVersion } : {}),
       };
     } catch (error) {
@@ -638,7 +680,12 @@ export class ManualCapabilityPackageService {
     for (const plugin of this.registry.getPlugins()) {
       if (plugin.rootPath.startsWith('builtin:')) continue;
       try {
-        await verifyPluginApprovalReceipt(plugin.rootPath, plugin.manifest.id, plugin.manifest.permissions ?? []);
+        await verifyInstalledPluginTrust(plugin.rootPath, plugin.manifest, {
+          publicKeys: this.controlPlanePublicKeys,
+          revokedIds: this.revokedPluginIds,
+          revocationFile: this.pluginRevocationFile,
+          now: this.now(),
+        });
       } catch {
         continue;
       }
@@ -661,7 +708,7 @@ export class ManualCapabilityPackageService {
         permissions: plugin.manifest.permissions ?? [],
         state,
         toolNames: [...plugin.registeredTools],
-        surface: plugin.manifest.surfaces?.[0] === 'internal-feature' ? 'internal-feature' : 'tools',
+        surface: packageSurface(plugin.manifest),
         ...(plugin.manifest.internalFeature ? {
           internalFeature: {
             ...plugin.manifest.internalFeature,
@@ -681,7 +728,12 @@ export class ManualCapabilityPackageService {
     }
     const plugin = this.registry.getPlugin(pluginId);
     if (!plugin || plugin.rootPath.startsWith('builtin:')) throw new Error('找不到可卸载的手动插件');
-    await verifyPluginApprovalReceipt(plugin.rootPath, plugin.manifest.id, plugin.manifest.permissions ?? []);
+    await verifyInstalledPluginTrust(plugin.rootPath, plugin.manifest, {
+      publicKeys: this.controlPlanePublicKeys,
+      revokedIds: this.revokedPluginIds,
+      revocationFile: this.pluginRevocationFile,
+      now: this.now(),
+    });
     const backupDir = path.join(this.getPluginsDir(), `.uninstall-${pluginId}-${randomUUID()}`);
     const isInternalFeature = plugin.manifest.surfaces?.[0] === 'internal-feature';
     const watcherWasActive = this.registry.pauseWatching();

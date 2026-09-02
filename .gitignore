@@ -142,3 +142,6 @@ src-tauri/.dev-slot.json
 
 # better-harness 的运行产物（每次 neo-review 跑出来一批，非输入）
 better-harness-out/
+
+# 会话临时工作区（派活守望脚本 / spike 产物），永不入库；留在树里会让 ship pr 判脏树
+scratchpad/

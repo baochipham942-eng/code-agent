@@ -685,9 +685,10 @@ export class TestRunner {
     const isMockRun = usesMockEvalPolicy
       || agent.getAgentInfo().provider === 'mock';
     // 每个 case 都建独立 usage 账，未声明 hard cap 时用有限的最大安全数，仅做归集不触发闸。
-    const costTracker = createScopedCostLimit(testCase.max_cost_usd ?? Number.MAX_VALUE);
-    if (testCase.max_cost_usd !== undefined) {
-      result.costLimitUsd = testCase.max_cost_usd;
+    const caseCostLimitUsd = this.config.caseCostLimitUsd ?? testCase.max_cost_usd;
+    const costTracker = createScopedCostLimit(caseCostLimitUsd ?? Number.MAX_VALUE);
+    if (caseCostLimitUsd !== undefined) {
+      result.costLimitUsd = caseCostLimitUsd;
     }
     const sendMessage = (prompt: string) => costTracker.run(() => agent.sendMessage(prompt, {
       scopedCostRecorder: costTracker.recordUsage,
@@ -978,15 +979,11 @@ export class TestRunner {
         } else if (expResult.overallScore > 0 && !expResult.hasCriticalFailure) {
           result.status = 'partial';
           result.failureReason = expResult.results
-            .filter((r) => !r.passed)
-            .map((r) => `[${r.expectation.type}] ${r.evidence.details ?? 'failed'}`)
-            .join('; ');
+            .filter((r) => !r.passed).map((r) => `[${r.expectation.type}] ${r.evidence.details ?? 'failed'}`).join('; ');
         } else {
           result.status = 'failed';
           result.failureReason = expResult.results
-            .filter((r) => !r.passed)
-            .map((r) => `[${r.expectation.type}] ${r.evidence.details ?? 'failed'}`)
-            .join('; ');
+            .filter((r) => !r.passed).map((r) => `[${r.expectation.type}] ${r.evidence.details ?? 'failed'}`).join('; ');
         }
       }
       await attachAiReview(this.config, testCase, result, agent.usesMockEvalPolicy?.() === true);

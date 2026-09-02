@@ -4,6 +4,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   findRepositoryRoot,
+  resolveAnswerSideFile,
   resolveAnswerSideRoot,
 } from '../../../src/host/testing/answerSide';
 import { loadEvalSplits, saveEvalSplits, splitsPath } from '../../../src/host/testing/ci/sampleSplits';
@@ -169,5 +170,25 @@ describe('answer-side resolver and loader merge', () => {
     await saveEvalSplits(plain, split(['fixture-case']));
     expect(splitsPath(plain)).toBe(path.join(plain, '.claude', 'eval-splits.json'));
     await expect(loadEvalSplits(plain)).resolves.toEqual(split(['fixture-case']));
+  });
+
+  it('软链题库目录按真实路径配答案侧（主仓 .code-agent/test-cases -> .claude/test-cases）', async () => {
+    const root = await gitRepo();
+    const source = '.claude/test-cases/suite.yaml';
+    const canonical = path.join(root, ...source.split('/'));
+    const answerRoot = path.join(root, 'private-eval');
+    process.env.NEO_EVAL_ANSWERS_DIR = answerRoot;
+    await fs.mkdir(path.dirname(canonical), { recursive: true });
+    await fs.mkdir(path.join(root, '.code-agent'), { recursive: true });
+    await fs.symlink(path.join('..', '.claude', 'test-cases'), path.join(root, '.code-agent', 'test-cases'), 'dir');
+    await fs.mkdir(answerRoot, { recursive: true });
+    await fs.writeFile(canonical, suite([{ id: 'linked' }]));
+    await writeAnswer(answerRoot, source, [{ id: 'linked', answer: 'side' }]);
+
+    const linked = path.join(root, '.code-agent', 'test-cases', 'suite.yaml');
+    expect(resolveAnswerSideFile(linked)?.source).toBe(source);
+    await expect(loadTestSuite(linked)).resolves.toMatchObject({
+      cases: [{ id: 'linked', expect: { response_contains: ['side'] } }],
+    });
   });
 });

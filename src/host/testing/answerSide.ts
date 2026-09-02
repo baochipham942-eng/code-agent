@@ -60,17 +60,35 @@ export function resolveAnswerSideRoot(fromPath: string): string | null {
   return answerSideCandidates(repoRoot).find(existingDirectory) ?? null;
 }
 
+function canonicalPath(target: string): string {
+  try {
+    return fs.realpathSync(target);
+  } catch {
+    return path.resolve(target);
+  }
+}
+
+/**
+ * 公开题面相对仓库根的路径（'/' 分隔），是答案侧文件的 key。
+ * 先 realpath 再取相对：题库目录是软链时（主仓 .code-agent/test-cases -> .claude/test-cases）
+ * 按软链路径取会得到 .code-agent/…，私档里没有这个 key，整套题全成 not_run。
+ */
+export function repoRelativeSource(repoRoot: string, filePath: string): string | null {
+  const relative = path.relative(canonicalPath(repoRoot), canonicalPath(filePath));
+  if (!relative || relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    return null;
+  }
+  return relative.split(path.sep).join('/');
+}
+
 export function resolveAnswerSideFile(yamlPath: string): ResolvedAnswerSideFile | null {
   const repoRoot = findRepositoryRoot(yamlPath);
   if (!repoRoot) return null;
   const answerRoot = resolveAnswerSideRoot(repoRoot);
   if (!answerRoot) return null;
 
-  const relative = path.relative(repoRoot, path.resolve(yamlPath));
-  if (!relative || relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
-    return null;
-  }
-  const source = relative.split(path.sep).join('/');
+  const source = repoRelativeSource(repoRoot, yamlPath);
+  if (!source) return null;
   return {
     answerRoot,
     answerFile: path.join(answerRoot, 'answers', ...source.split('/')),

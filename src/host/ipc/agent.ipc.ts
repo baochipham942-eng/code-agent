@@ -25,8 +25,6 @@ import { getAgentTreeSnapshot } from '../agent/agentTreeService';
 import { getAgentWorktreeReview } from '../agent/agentWorktree';
 import { getSpawnGuard } from '../agent/spawnGuard';
 import { sendMemberInput } from '../agent/memberInput';
-import { sendSwarmUserMessage } from './swarm.ipc';
-import { getSessionCommandCenter } from '../services/commandCenter/sessionCommandCenter';
 import type { MemberInputRequest } from '../../shared/contract/memberInput';
 import {
   MODE_CONFIGS,
@@ -268,6 +266,13 @@ export function registerAgentHandlers(
               error: { code: 'INVALID_MEMBER_INPUT', message: 'sessionId, memberId, kind and message are required' },
             };
           }
+          // 两条通道按需加载：swarm.ipc / 命令中心静态 import 会把 services 索引 → browserService 单例
+          // 拉进本模块的加载图，只 mock 了 platform.app.getVersion 的宿主单测在 import 期就炸
+          // （main@9021f2307 全量门 sessionDefaultMode.test.ts「app?.getPath is not a function」）。
+          const [{ sendSwarmUserMessage }, { getSessionCommandCenter }] = await Promise.all([
+            import('./swarm.ipc'),
+            import('../services/commandCenter/sessionCommandCenter'),
+          ]);
           const receipt = await sendMemberInput({
             sessionId,
             runId: typeof req.runId === 'string' && req.runId ? req.runId : undefined,

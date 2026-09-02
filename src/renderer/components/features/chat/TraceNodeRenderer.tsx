@@ -38,6 +38,7 @@ import { UI } from '@shared/constants';
 import { humanizeToolError } from '../../../utils/toolExecutionPresentation';
 import { getHumanToolLabel } from '../../../utils/toolHumanLabel';
 import { useI18n } from '../../../hooks/useI18n';
+import { MemberInputNote } from '../expert/MemberInputNote';
 
 interface TraceNodeRendererProps {
   node: TraceNode;
@@ -87,6 +88,11 @@ export const TraceNodeRenderer: React.FC<TraceNodeRendererProps> = ({
       );
       break;
     case 'assistant_text':
+      // 用户给成员补话的折叠记录（isMeta + memberInput）：一行灰字，不走助手气泡
+      if (node.metadata?.memberInput) {
+        content = <MemberInputNote node={node} />;
+        break;
+      }
       content = (
         <AssistantTextNode
           node={node}

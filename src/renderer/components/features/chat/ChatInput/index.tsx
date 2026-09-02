@@ -408,7 +408,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const agentEntries = useAgentRegistryStore((state) => state.entries);
   const activeAgentId = useAppStore((state) => state.activeAgentId);
   const viewingMemberId = useMemberViewStore((state) => state.viewingMemberId);
-  const setViewingMemberId = useMemberViewStore((state) => state.setViewingMemberId);
   const setActiveAgentId = useAppStore((state) => state.setActiveAgentId);
   const hasMessages = useSessionStore((state) => (
     state.messages.length > 0
@@ -1062,7 +1061,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   });
 
   return (
+    // 看某位成员时主输入框整块让位给成员视图自己的输入条（N-SUBAGENT-INPUT），状态与排队托盘都留着
     <div
+      hidden={Boolean(viewingMemberId)}
       className={`chat-col-pad pb-[18.5px] pt-0 transition-colors ${isDragOver ? 'bg-primary-500/5' : ''}`}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
@@ -1262,19 +1263,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
         {/* composer 浮起（2026-08-04 §3.1）：L2 底 + 投影，默认无边框、聚焦描边显现，
             与聊天内容拉开亮度层级，样式真源在 global.css .composer-elevated */}
         <div className="relative composer-elevated rounded-2xl">
-          {/* 看某位成员时输入框整块封住：人只跟团长说话，不跟成员说话 */}
-          {viewingMemberId && (
-            <div className="absolute inset-0 z-20 flex items-center justify-center rounded-2xl bg-zinc-900/80 backdrop-blur-sm">
-              <button /* ds-allow:button: 覆盖层里唯一的返回动作，需盖住整个输入区 */
-                type="button"
-                data-testid="member-return-main"
-                onClick={() => setViewingMemberId(null)}
-                className="rounded-full border border-zinc-600 bg-zinc-800 px-4 py-1.5 text-xs text-zinc-100 hover:border-zinc-400"
-              >
-                ↩ {t.expert.memberBar.returnToMain}
-              </button>
-            </div>
-          )}
           {/* Slash command inline popover */}
           <SlashCommandPopover
             isOpen={showSlashPopover}

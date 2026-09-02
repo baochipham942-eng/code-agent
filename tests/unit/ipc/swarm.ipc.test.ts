@@ -403,6 +403,49 @@ describe('swarm.ipc run-scoped control plane', () => {
     );
   });
 
+  // N-SUBAGENT-INPUT：SpawnGuard 回退投的是结构化 from='user' 消息，执行器抽干时按来源打前缀
+  it('falls back to SpawnGuard with a user-origin structured message when the coordinator cannot receive', async () => {
+    coordinatorA.canReceiveMessage.mockReturnValue(false);
+    coordinatorA.sendMessage.mockResolvedValue(false);
+    spawnGuardState.get.mockReturnValue({ status: 'running' });
+    spawnGuardState.sendMessage.mockReturnValue(true);
+
+    const result = await handler('swarm:send-user-message')({}, {
+      sessionId: scopeA.sessionId,
+      runId: scopeA.runId,
+      agentId: agentA,
+      message: '顺便把页码加上',
+      timestamp: 777,
+    } as never);
+
+    expect(result).toEqual({ delivered: true, persisted: true });
+    expect(spawnGuardState.sendMessage).toHaveBeenCalledWith(
+      agentA,
+      { type: 'text', from: 'user', payload: '顺便把页码加上', timestamp: 777 },
+      expect.objectContaining({ sessionId: scopeA.sessionId, runId: scopeA.runId }),
+    );
+  });
+
+  // N-SUBAGENT-INPUT：改道时投给成员的 message 带指令行，账本/落库只收 displayMessage 原话
+  it('persists and ledgers displayMessage while delivering the full message to the agent', async () => {
+    const result = await handler('swarm:send-user-message')({}, {
+      sessionId: scopeA.sessionId,
+      runId: scopeA.runId,
+      agentId: agentA,
+      message: '换成按季度汇总\n\n这条消息是用户显式选择的改道指令',
+      displayMessage: '换成按季度汇总',
+      messageId: 'source-message-9',
+      timestamp: 999,
+    } as never);
+
+    expect(result).toEqual({ delivered: true, persisted: true });
+    expect(coordinatorA.sendMessage).toHaveBeenCalledWith(agentA, '换成按季度汇总\n\n这条消息是用户显式选择的改道指令');
+    expect(sessionManagerState.addMessageToSession).toHaveBeenCalledWith(scopeA.sessionId, expect.objectContaining({
+      content: '换成按季度汇总',
+    }));
+    expect(teammateState.onUserMessage).toHaveBeenCalledWith(scopeA, agentA, '换成按季度汇总', expect.anything());
+  });
+
   it('does not display/persist a phantom success for an unavailable target', async () => {
     coordinatorA.canReceiveMessage.mockReturnValue(false);
     const result = await handler('swarm:send-user-message')({}, {

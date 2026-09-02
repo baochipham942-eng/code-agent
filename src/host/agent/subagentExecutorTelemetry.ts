@@ -157,7 +157,10 @@ export function drainSubagentMessages(params: {
       break;
     }
     // Text and other message types: inject into conversation
-    const prefix = msg.type === 'text' ? 'Parent agent message' : `Agent message (${msg.type})`;
+    // 用户在成员视图直接补的话（N-SUBAGENT-INPUT）不冒充父 agent；其余文本仍是父/协调器转来的
+    const prefix = msg.type === 'text'
+      ? (msg.from === 'user' ? 'User message' : 'Parent agent message')
+      : `Agent message (${msg.type})`;
     messages.push(createRuntimeMessage({
       role: 'user',
       content: `[${prefix}]: ${msg.payload}`,

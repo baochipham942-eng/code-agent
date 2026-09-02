@@ -12,9 +12,7 @@
 
 import React, { useState } from 'react';
 import { Bot, ChevronDown, ChevronRight, Clock, Square, X, Zap } from 'lucide-react';
-import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 import { cancelSwarmRunOrFallback } from '../features/swarm/SwarmInlineMonitor';
-import ipcService from '../../services/ipcService';
 import { useI18n } from '../../hooks/useI18n';
 import { useSessionAgentRows } from '../../hooks/useSessionAgentRows';
 import { useDurableSwarmRunDetail } from '../../hooks/useDurableSwarmRunDetail';
@@ -25,6 +23,7 @@ import { useComposerStore } from '../../stores/composerStore';
 import { useMemberViewStore } from '../../stores/memberViewStore';
 import { useVoiceLiveRuntime } from '../../hooks/useVoiceLiveRuntime';
 import { deriveAgentMergeState } from '../../utils/agentMergeState';
+import { stopSessionAgent } from '../../utils/stopSessionAgent';
 import type { AgentRow } from '../../utils/agentRows';
 import { RoleInitialAvatar } from '../features/expert/RoleInitialAvatar';
 import { DiscussionStream } from '../features/swarm/DiscussionStream';
@@ -88,26 +87,12 @@ export const SessionAgentsPanel: React.FC = () => {
     store.setStandbyExcludedMemberKeys([...store.standbyExcludedMemberKeys, standbyKey]);
   };
 
-  // 行级停：三类各走既有通道——Team 成员 swarm:cancel-agent；普通代理 agent.closeAgent
-  // （close_agent 工具的 IPC 形态）；后台任务 task.cancelBackgroundTask（TaskManager 既有方法）
+  // 行级停：三类通道在 stopSessionAgent 里（成员视图顶栏「停掉这位成员」共用）
   const stopRow = async (row: AgentRow) => {
     if (stoppingKey) return;
     setStoppingKey(row.key);
     try {
-      if (row.kind === 'expert') {
-        if (!sessionId || !activeRunId) return;
-        await ipcService
-          .invoke(IPC_CHANNELS.SWARM_CANCEL_AGENT, { sessionId, runId: activeRunId, agentId: row.key })
-          .catch(() => false);
-      } else if (row.kind === 'agent') {
-        await ipcService
-          .invokeDomain(IPC_DOMAINS.AGENT, 'closeAgent', { agentId: row.key, sessionId })
-          .catch(() => null);
-      } else {
-        await window.domainAPI
-          ?.invoke(IPC_DOMAINS.TASK, 'cancelBackgroundTask', { taskId: row.key })
-          .catch(() => null);
-      }
+      await stopSessionAgent(row, sessionId, activeRunId ?? undefined);
     } finally {
       setStoppingKey(null);
     }
@@ -121,17 +106,9 @@ export const SessionAgentsPanel: React.FC = () => {
       const swarmStop = sessionId && activeRunId && expertRows.length > 0
         ? cancelSwarmRunOrFallback({ sessionId, runId: activeRunId }, expertRows.map((row) => ({ id: row.key })))
         : Promise.resolve();
-      await Promise.all([swarmStop, ...stoppableRows.map((row) => {
-        if (row.kind === 'expert') return Promise.resolve();
-        if (row.kind === 'agent') {
-          return ipcService
-            .invokeDomain(IPC_DOMAINS.AGENT, 'closeAgent', { agentId: row.key, sessionId })
-            .catch(() => null);
-        }
-        return window.domainAPI
-          ?.invoke(IPC_DOMAINS.TASK, 'cancelBackgroundTask', { taskId: row.key })
-          .catch(() => null);
-      })]);
+      await Promise.all([swarmStop, ...stoppableRows.map((row) => (
+        row.kind === 'expert' ? Promise.resolve() : stopSessionAgent(row, sessionId)
+      ))]);
     } finally {
       setStoppingAll(false);
     }

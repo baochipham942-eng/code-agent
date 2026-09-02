@@ -4,10 +4,13 @@
 // N-L6-AGENTVIEW S3 后：入口从成员条 pill 搬到「本会话的代理」面板行
 // （agents-panel-open-*，接线在 sessionAgentsPanel.test.tsx 断言），本文件直接
 // set viewingMemberId；回主会话走顶部「← 返回主会话」（member-view-back）。
+// N-SUBAGENT-INPUT（09-02）：成员页不再只读——底部输入条 Enter 补话 / ⌘Enter 改道，
+// 顶栏「停掉这位成员」；回执三态；已收工不给输入框。团队面板旧 1:1 输入框的三条契约
+// （没送到留草稿并报原因 / 送到没记下清草稿不催重发 / 切换成员清草稿丢旧结果）搬到这里。
 // ============================================================================
 
 import React from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { zh } from '../../../src/renderer/i18n/zh';
 import type { AgentTreeNode, AgentTreeSnapshot } from '../../../src/shared/contract/agentTree';
@@ -37,6 +40,7 @@ import { useComposerStore } from '../../../src/renderer/stores/composerStore';
 import { useTeamRecipeStore } from '../../../src/renderer/stores/teamRecipeStore';
 import { useAgentRegistryStore } from '../../../src/renderer/stores/agentRegistryStore';
 import { useBackgroundTaskStore } from '../../../src/renderer/stores/backgroundTaskStore';
+import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
 
 const record: SwarmRunAgentRecord = {
   runId: 'run-1', agentId: 'researcher', name: '调研员', role: 'researcher', status: 'completed',
@@ -264,5 +268,208 @@ describe('成员对话页', () => {
     expect(screen.getByTestId('member-usage').textContent).toContain('5s');
     // 没有工具步时不渲染虚构的当前动作
     expect(screen.queryByTestId('member-current-action')).toBeNull();
+  });
+
+  // ── N-SUBAGENT-INPUT：给成员补话 / 改道 / 停掉 ──
+
+  function runningMember() {
+    swarmState.agents = [agentOf({ status: 'running' })];
+    // 账本里也是 running（成员状态以账本为真相源）
+    invokeMock.mockImplementation((channel: unknown) => {
+      if (channel === IPC_CHANNELS.SWARM_LIST_TRACE_RUNS) return Promise.resolve([{ ...ledgerRun, status: 'running', endedAt: null }]);
+      if (channel === IPC_CHANNELS.SWARM_GET_TRACE_RUN_DETAIL) {
+        return Promise.resolve({ ...ledgerDetail, agents: [{ ...record, status: 'running', endTime: null }, writerRecord] });
+      }
+      return Promise.resolve(null);
+    });
+    useSessionStore.setState({ currentSessionId: 'session-1', messages: [] });
+    useMemberViewStore.setState({ viewingMemberId: 'researcher' });
+  }
+
+  it('运行中的成员：Enter 补话走 sendMemberInput（supplement），回执「已送到」，草稿清空，主对话落一条记录', async () => {
+    runningMember();
+    invokeDomainMock.mockResolvedValue({ outcome: 'delivered', effect: 'next_step', persisted: true });
+
+    render(<MemberConversationView sessionId="session-1" />);
+    const input = await screen.findByTestId('member-input') as HTMLTextAreaElement;
+    expect(input.placeholder).toBe(zh.expert.memberBar.inputPlaceholder.replace('{name}', '行业研究员'));
+    fireEvent.change(input, { target: { value: '顺便把页码加上' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    await waitFor(() => expect(screen.getByTestId('member-input-receipt').getAttribute('data-state')).toBe('delivered'));
+    expect(invokeDomainMock).toHaveBeenCalledWith(IPC_DOMAINS.AGENT, 'sendMemberInput', expect.objectContaining({
+      sessionId: 'session-1', runId: 'run-1', memberId: 'researcher', kind: 'expert', message: '顺便把页码加上', mode: 'supplement',
+    }));
+    expect(screen.getByTestId('member-input-receipt').textContent).toContain(zh.expert.memberBar.receiptDelivered);
+    expect(input.value).toBe('');
+    const recorded = useSessionStore.getState().messages.find((message) => message.content === '顺便把页码加上');
+    expect(recorded?.metadata?.memberInput).toEqual({ memberId: 'researcher', memberName: '行业研究员', mode: 'supplement' });
+  });
+
+  it('⌘Enter 改道：mode=redirect，回执说明手头这步做完才改', async () => {
+    runningMember();
+    invokeDomainMock.mockResolvedValue({ outcome: 'delivered', effect: 'next_step', persisted: true });
+
+    render(<MemberConversationView sessionId="session-1" />);
+    const input = await screen.findByTestId('member-input');
+    fireEvent.change(input, { target: { value: '换成按季度汇总' } });
+    fireEvent.keyDown(input, { key: 'Enter', metaKey: true });
+
+    await waitFor(() => expect(screen.getByTestId('member-input-receipt').getAttribute('data-state')).toBe('redirect_next'));
+    expect(invokeDomainMock).toHaveBeenCalledWith(IPC_DOMAINS.AGENT, 'sendMemberInput', expect.objectContaining({ mode: 'redirect' }));
+    expect(screen.getByTestId('member-input-receipt').textContent).toContain(zh.expert.memberBar.receiptRedirectNextStep);
+  });
+
+  it('没送到（成员已收工）：草稿留着，回执带原因，主对话不落记录', async () => {
+    runningMember();
+    invokeDomainMock.mockResolvedValue({ outcome: 'rejected', reason: 'finished' });
+
+    render(<MemberConversationView sessionId="session-1" />);
+    const input = await screen.findByTestId('member-input') as HTMLTextAreaElement;
+    fireEvent.change(input, { target: { value: '再补一句' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    await waitFor(() => expect(screen.getByTestId('member-input-receipt').getAttribute('data-state')).toBe('rejected'));
+    expect(screen.getByTestId('member-input-receipt').textContent).toContain(zh.expert.memberBar.rejectFinished);
+    expect(input.value).toBe('再补一句');
+    expect(useSessionStore.getState().messages).toHaveLength(0);
+  });
+
+  it('送到了但主会话没记下：清草稿并提示别重发（重发会让成员执行两次）', async () => {
+    runningMember();
+    invokeDomainMock.mockResolvedValue({ outcome: 'delivered', effect: 'next_step', persisted: false });
+
+    render(<MemberConversationView sessionId="session-1" />);
+    const input = await screen.findByTestId('member-input') as HTMLTextAreaElement;
+    fireEvent.change(input, { target: { value: '只执行一次' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    await waitFor(() => expect(screen.getByRole('status').textContent).toContain(zh.expert.memberBar.sentNotRecorded));
+    expect(input.value).toBe('');
+    expect(useSessionStore.getState().messages).toHaveLength(0);
+  });
+
+  it('切换成员时清草稿，旧发送的结果作废不显示', async () => {
+    runningMember();
+    swarmState.agents = [agentOf({ status: 'running' }), agentOf({ id: 'writer', name: '撰稿员', role: 'writer', status: 'running' })];
+    invokeMock.mockImplementation((channel: unknown) => {
+      if (channel === IPC_CHANNELS.SWARM_LIST_TRACE_RUNS) return Promise.resolve([{ ...ledgerRun, status: 'running', endedAt: null }]);
+      if (channel === IPC_CHANNELS.SWARM_GET_TRACE_RUN_DETAIL) {
+        return Promise.resolve({ ...ledgerDetail, agents: [
+          { ...record, status: 'running', endTime: null },
+          { ...writerRecord, status: 'running', endTime: null },
+        ] });
+      }
+      return Promise.resolve(null);
+    });
+    let resolveOld: ((value: unknown) => void) | undefined;
+    invokeDomainMock.mockImplementation(() => new Promise((resolve) => { resolveOld = resolve; }));
+
+    render(<MemberConversationView sessionId="session-1" />);
+    const oldInput = await screen.findByTestId('member-input') as HTMLTextAreaElement;
+    fireEvent.change(oldInput, { target: { value: 'A draft' } });
+    fireEvent.keyDown(oldInput, { key: 'Enter' });
+
+    useMemberViewStore.setState({ viewingMemberId: 'writer' });
+    const newInput = await screen.findByTestId('member-input') as HTMLTextAreaElement;
+    await waitFor(() => expect(newInput.value).toBe(''));
+    fireEvent.change(newInput, { target: { value: 'B draft' } });
+
+    resolveOld?.({ outcome: 'rejected', reason: 'finished' });
+    // 真刷一次（一个微任务不够让 invoke 的 await 落地——变异实测：只 await Promise.resolve() 的断言是瞎的）
+    await act(() => new Promise<void>((resolve) => { setTimeout(resolve, 20); }));
+    expect(newInput.value).toBe('B draft');
+    expect(screen.queryByTestId('member-input-receipt')).toBeNull();
+
+    // 正向对照：同样的刷新时长下，当前成员自己的发送结果是能显示出来的
+    invokeDomainMock.mockResolvedValue({ outcome: 'delivered', effect: 'next_step', persisted: false });
+    fireEvent.keyDown(newInput, { key: 'Enter' });
+    await waitFor(() => expect(screen.getByTestId('member-input-receipt').getAttribute('data-state')).toBe('delivered'));
+  });
+
+  it('已收工的成员：没有输入框，只留「回主会话再派」，也没有停止按钮', async () => {
+    useMemberViewStore.setState({ viewingMemberId: 'researcher' });
+
+    render(<MemberConversationView sessionId="session-1" />);
+    await waitFor(() => expect(screen.getByTestId('member-input-finished')).toBeTruthy());
+    expect(screen.getByTestId('member-input-finished').textContent)
+      .toBe(zh.expert.memberBar.finishedHint.replace('{name}', '行业研究员'));
+    expect(screen.queryByTestId('member-input')).toBeNull();
+    expect(screen.queryByTestId('member-view-stop')).toBeNull();
+    expect(invokeDomainMock).not.toHaveBeenCalledWith(IPC_DOMAINS.AGENT, 'sendMemberInput', expect.anything());
+  });
+
+  it('顶栏「停掉这位成员」：专家团成员走 swarm:cancel-agent', async () => {
+    runningMember();
+
+    render(<MemberConversationView sessionId="session-1" />);
+    const stop = await screen.findByTestId('member-view-stop');
+    expect(stop.textContent).toContain(zh.expert.memberBar.stopMember);
+    fireEvent.click(stop);
+    await waitFor(() => expect(invokeMock).toHaveBeenCalledWith(
+      IPC_CHANNELS.SWARM_CANCEL_AGENT,
+      { sessionId: 'session-1', runId: 'run-1', agentId: 'researcher' },
+    ));
+  });
+
+  it('后台任务：kind=task 不需要 runId，steer 成功回执「已读到」；停掉走 cancelBackgroundTask', async () => {
+    invokeMock.mockReset();
+    invokeMock.mockResolvedValue([]);
+    const task: Task = {
+      id: 'task-7', sessionId: 'session-1', source: 'delegate_task', title: '核对发布清单',
+      status: 'running', createdAt: 1, updatedAt: 2, events: [], outputRefs: [],
+    };
+    useBackgroundTaskStore.setState({ tasks: [task] });
+    useSessionStore.setState({ currentSessionId: 'session-1', messages: [] });
+    useMemberViewStore.setState({ viewingMemberId: 'task-7' });
+    const domainInvoke = vi.fn().mockResolvedValue(null);
+    (window as unknown as { domainAPI?: unknown }).domainAPI = { invoke: domainInvoke };
+    invokeDomainMock.mockImplementation((domain: unknown, action: unknown) => {
+      if (domain === IPC_DOMAINS.AGENT && action === 'sendMemberInput') {
+        return Promise.resolve({ outcome: 'delivered', effect: 'now', persisted: true });
+      }
+      return Promise.resolve(null);
+    });
+
+    render(<MemberConversationView sessionId="session-1" />);
+    const input = await screen.findByTestId('member-input');
+    fireEvent.change(input, { target: { value: '优先给业务结论' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await waitFor(() => expect(screen.getByTestId('member-input-receipt').getAttribute('data-state')).toBe('read'));
+    expect(invokeDomainMock).toHaveBeenCalledWith(IPC_DOMAINS.AGENT, 'sendMemberInput', expect.objectContaining({
+      memberId: 'task-7', kind: 'task', runId: undefined, mode: 'supplement',
+    }));
+    expect(screen.getByTestId('member-input-receipt').textContent).toContain(zh.expert.memberBar.receiptRead);
+    // 后台任务路径的主对话记录由运行时以 isMeta 落库，渲染层不另插一条
+    expect(useSessionStore.getState().messages).toHaveLength(0);
+
+    fireEvent.click(screen.getByTestId('member-view-stop'));
+    await waitFor(() => expect(domainInvoke).toHaveBeenCalledWith(IPC_DOMAINS.TASK, 'cancelBackgroundTask', { taskId: 'task-7' }));
+    (window as unknown as { domainAPI?: unknown }).domainAPI = undefined;
+  });
+
+  it('后台任务排队中送到但记录没写成：清草稿并提示别重发（任务书已经改了，重发会重复追加）', async () => {
+    invokeMock.mockReset();
+    invokeMock.mockResolvedValue([]);
+    const task: Task = {
+      id: 'task-8', sessionId: 'session-1', source: 'delegate_task', title: '核对发布清单',
+      status: 'queued', createdAt: 1, updatedAt: 2, events: [], outputRefs: [],
+    };
+    useBackgroundTaskStore.setState({ tasks: [task] });
+    useSessionStore.setState({ currentSessionId: 'session-1', messages: [] });
+    useMemberViewStore.setState({ viewingMemberId: 'task-8' });
+    invokeDomainMock.mockImplementation((domain: unknown, action: unknown) => (
+      domain === IPC_DOMAINS.AGENT && action === 'sendMemberInput'
+        ? Promise.resolve({ outcome: 'delivered', effect: 'queued', persisted: false })
+        : Promise.resolve(null)
+    ));
+
+    render(<MemberConversationView sessionId="session-1" />);
+    const input = await screen.findByTestId('member-input') as HTMLTextAreaElement;
+    fireEvent.change(input, { target: { value: '只执行一次' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await waitFor(() => expect(screen.getByRole('status').textContent).toContain(zh.expert.memberBar.sentNotRecorded));
+    expect(input.value).toBe('');
+    expect(screen.getByTestId('member-input-receipt').getAttribute('data-state')).toBe('queued');
   });
 });

@@ -52,6 +52,8 @@ function seedRun(sessionId: string, runId: string, timestamp: number): void {
   }, timestamp + 1));
 }
 
+// N-SUBAGENT-INPUT（09-02）：抽屉里的 1:1 输入框并进了成员视图（MemberInputBar），本文件只剩看板的
+// 作用域契约；输入框那三条契约搬到 memberConversationView.test.tsx。
 describe('AgentTeamPanel run scope', () => {
   beforeEach(() => {
     invokeMock.mockReset();
@@ -64,60 +66,6 @@ describe('AgentTeamPanel run scope', () => {
 
   afterEach(() => {
     cleanup();
-  });
-
-  it('keeps input and renders an error when Host returns delivered:false', async () => {
-    invokeMock.mockImplementation((channel: string) => {
-      if (channel === IPC_CHANNELS.SWARM_GET_AGENT_MESSAGES) return Promise.resolve([]);
-      if (channel === IPC_CHANNELS.SWARM_SEND_USER_MESSAGE) {
-        return Promise.resolve({ delivered: false, persisted: false });
-      }
-      return Promise.resolve(undefined);
-    });
-
-    const view = render(
-      <AgentTeamPanel sessionId="session-a" runId="run-a" />,
-    );
-    const input = view.getByPlaceholderText('发消息给 Reviewer session-a…') as HTMLInputElement;
-    fireEvent.change(input, { target: { value: '请复核实现' } });
-    fireEvent.click(view.getByRole('button', { name: '发送消息' }));
-
-    await waitFor(() => {
-      expect(view.getByRole('alert').textContent).toContain('消息未送达');
-    });
-    expect(input.value).toBe('请复核实现');
-    expect(useSwarmStore.getState().messages).toHaveLength(0);
-    expect(invokeMock).toHaveBeenCalledWith(
-      IPC_CHANNELS.SWARM_SEND_USER_MESSAGE,
-      expect.objectContaining({
-        sessionId: 'session-a',
-        runId: 'run-a',
-        agentId: AGENT_ID,
-        message: '请复核实现',
-        messageId: expect.any(String),
-        timestamp: expect.any(Number),
-      }),
-    );
-  });
-
-  it('clears input without asking for retry when delivery succeeded but persistence failed', async () => {
-    invokeMock.mockImplementation((channel: string) => {
-      if (channel === IPC_CHANNELS.SWARM_GET_AGENT_MESSAGES) return Promise.resolve([]);
-      if (channel === IPC_CHANNELS.SWARM_SEND_USER_MESSAGE) {
-        return Promise.resolve({ delivered: true, persisted: false });
-      }
-      return Promise.resolve(undefined);
-    });
-
-    const view = render(<AgentTeamPanel sessionId="session-a" runId="run-a" />);
-    const input = view.getByPlaceholderText('发消息给 Reviewer session-a…') as HTMLInputElement;
-    fireEvent.change(input, { target: { value: '只执行一次' } });
-    fireEvent.click(view.getByRole('button', { name: '发送消息' }));
-
-    await waitFor(() => {
-      expect(view.getByRole('alert').textContent).toContain('请勿重复发送');
-    });
-    expect(input.value).toBe('');
   });
 
   it('drops stale history and foreign live messages after switching run scope', async () => {
@@ -211,38 +159,5 @@ describe('AgentTeamPanel run scope', () => {
     await waitFor(() => {
       expect(view.getAllByText('只显示一次')).toHaveLength(1);
     });
-  });
-
-  it('clears the draft on scope switch and ignores the old send promise result', async () => {
-    let resolveOldSend: ((result: { delivered: boolean; persisted: boolean }) => void) | undefined;
-    invokeMock.mockImplementation((channel: string, payload: { sessionId?: string }) => {
-      if (channel === IPC_CHANNELS.SWARM_GET_AGENT_MESSAGES) return Promise.resolve([]);
-      if (channel === IPC_CHANNELS.SWARM_SEND_USER_MESSAGE && payload.sessionId === 'session-a') {
-        return new Promise((resolve) => {
-          resolveOldSend = resolve;
-        });
-      }
-      return Promise.resolve({ delivered: true, persisted: true });
-    });
-
-    const view = render(<AgentTeamPanel sessionId="session-a" runId="run-a" />);
-    const oldInput = view.getByPlaceholderText('发消息给 Reviewer session-a…') as HTMLInputElement;
-    fireEvent.change(oldInput, { target: { value: 'A draft' } });
-    fireEvent.click(view.getByRole('button', { name: '发送消息' }));
-
-    seedRun('session-b', 'run-b', 400);
-    useSwarmStore.getState().activateScope('session-b', 'run-b');
-    useAppStore.setState({ selectedSwarmAgentId: AGENT_ID });
-    view.rerender(<AgentTeamPanel sessionId="session-b" runId="run-b" />);
-
-    const newInput = await view.findByPlaceholderText('发消息给 Reviewer session-b…') as HTMLInputElement;
-    await waitFor(() => expect(newInput.value).toBe(''));
-    fireEvent.change(newInput, { target: { value: 'B draft' } });
-
-    resolveOldSend?.({ delivered: false, persisted: false });
-    await Promise.resolve();
-
-    expect(newInput.value).toBe('B draft');
-    expect(view.queryByRole('alert')).toBeNull();
   });
 });

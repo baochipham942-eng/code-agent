@@ -1,4 +1,4 @@
-import type { AgentEvent, MessageAttachment, TaskProgressData } from '../../../shared/contract';
+import type { AgentEvent, Message, MessageAttachment, TaskProgressData } from '../../../shared/contract';
 import type { TaskProgress } from '../../../shared/contract/backgroundTask';
 import type { NormalizedToolArtifactMeta } from '../../../shared/contract/artifactBlob';
 import type { WorkspaceScope } from '../../../shared/contract/project';
@@ -16,6 +16,8 @@ import { getBackgroundTaskLedger } from '../../task/backgroundTaskLedger';
 import { createForegroundWake } from './foregroundWake';
 import { getConfigService } from '../core/configService';
 import { formatSessionTaskSlotRecoveryDetail } from '../../../shared/i18n/sessionTaskSlot';
+import type { RuntimeInputMode } from '../../../shared/contract/conversationEnvelope';
+import { RUNTIME_INPUT_REDIRECT_LINE, RUNTIME_INPUT_SUPPLEMENT_LINE } from '../../../shared/constants/runtimeInput';
 
 const logger = createLogger('SessionCommandCenter');
 
@@ -47,6 +49,18 @@ export interface SessionCommandTask {
   parentTurnId?: string;
   toolCallId?: string;
   progress?: TaskProgress;
+  /** 用户在成员视图直接给这个任务补话/改道的次数（N-SUBAGENT-INPUT）；终态唤醒摘要据此带一句。 */
+  userInputCount?: number;
+}
+
+/** 谁在 steer：团长的 steer_task 工具（缺省）还是用户在成员视图亲手补的话。 */
+export interface SteerOptions {
+  origin: 'user';
+  mode: RuntimeInputMode;
+  memberName: string;
+  /** 渲染层生成的稳定消息 id / 时间戳：排队路径落库用，与乐观展示同一身份 */
+  messageId?: string;
+  timestamp?: number;
 }
 
 export interface SpawnSessionTaskInput {
@@ -70,7 +84,8 @@ export type SpawnSessionTaskResult =
   | { outcome: 'requires_choice'; active: SessionCommandTask[] };
 
 export type SessionTaskReferenceResult =
-  | { outcome: 'resolved'; task: SessionCommandTask }
+  /** recorded=false：指令已进任务书，但主会话记录没写成——回执要告诉用户「已送到、没记下、别重发」 */
+  | { outcome: 'resolved'; task: SessionCommandTask; recorded?: boolean }
   | { outcome: 'missing' }
   | { outcome: 'ambiguous'; candidates: SessionCommandTask[] };
 
@@ -81,6 +96,8 @@ type TerminalTaskStatus = Extract<SessionCommandTaskStatus, 'completed' | 'faile
 
 interface SessionCommandCenterDependencies {
   projectTerminalResult?: (task: SessionCommandTask, status: TerminalTaskStatus) => Promise<void>;
+  /** 排队任务收到用户补话时落主会话记录（运行中路径由运行时 injectSteerMessage 落，不在这里重复） */
+  persistMemberInput?: (sessionId: string, message: Message) => Promise<void>;
   wakeForegroundBrain?: (task: SessionCommandTask, status: TerminalTaskStatus) => Promise<void>;
   slotLedgerOptions?: Omit<SessionTaskSlotLedgerOptions, 'onRecovery'>;
   slotRecoveryLocale?: 'zh' | 'en';
@@ -101,6 +118,7 @@ export class SessionCommandCenter {
   private readonly ledgers = new Map<string, SessionTaskSlotLedger>();
   private readonly manager: TaskManager;
   private readonly projectTerminalResult: NonNullable<SessionCommandCenterDependencies['projectTerminalResult']>;
+  private readonly persistMemberInput: NonNullable<SessionCommandCenterDependencies['persistMemberInput']>;
   private readonly wakeForegroundBrain: NonNullable<SessionCommandCenterDependencies['wakeForegroundBrain']>;
   private readonly slotLedgerOptions: NonNullable<SessionCommandCenterDependencies['slotLedgerOptions']>;
   private readonly slotRecoveryLocale?: SessionCommandCenterDependencies['slotRecoveryLocale'];
@@ -115,6 +133,8 @@ export class SessionCommandCenter {
   ) {
     this.manager = manager;
     this.projectTerminalResult = dependencies.projectTerminalResult ?? projectTerminalResult;
+    this.persistMemberInput = dependencies.persistMemberInput
+      ?? ((sessionId, message) => getSessionManager().addMessageToSession(sessionId, message));
     this.wakeForegroundBrain = dependencies.wakeForegroundBrain ?? createForegroundWake();
     this.slotLedgerOptions = dependencies.slotLedgerOptions ?? {};
     this.slotRecoveryLocale = dependencies.slotRecoveryLocale;
@@ -224,21 +244,76 @@ export class SessionCommandCenter {
     return { outcome: 'missing' };
   }
 
-  async steer(sessionId: string, target: string | undefined, instruction: string): Promise<SessionTaskReferenceResult> {
+  async steer(
+    sessionId: string,
+    target: string | undefined,
+    instruction: string,
+    steerOptions?: SteerOptions,
+  ): Promise<SessionTaskReferenceResult> {
     const resolution = this.resolve(sessionId, target);
     if (resolution.outcome !== 'resolved') return resolution;
-    const task = resolution.task;
+    // resolve() 经 list() 拿到的是快照拷贝；改 prompt / 计数必须落到台账里那份，否则排队任务
+    // 开工时读到的还是老任务书（此前团长 steer_task 排队任务就是这样静默丢的）。
+    const task = this.tasks(sessionId).get(resolution.task.id) ?? resolution.task;
+    if (steerOptions?.origin === 'user') task.userInputCount = (task.userInputCount ?? 0) + 1;
     if (task.status === 'queued') {
-      task.prompt = `${task.prompt}\n\n补充要求：${instruction}`;
+      // 还没开工：写进任务书。改道要带改道指令行，否则开工时仍沿用原思路
+      task.prompt = steerOptions?.mode === 'redirect'
+        ? `${task.prompt}\n\n改道要求：${instruction}\n${RUNTIME_INPUT_REDIRECT_LINE}`
+        : `${task.prompt}\n\n补充要求：${instruction}`;
       task.updatedAt = Date.now();
+      if (steerOptions) {
+        // 主对话落一条 isMeta+memberInput 记录（刷新/回放/团长汇总都看得见；运行中路径由运行时落）。
+        // 任务书已经改了，落库失败不能抛成「没送到」——用户会重发、指令重复追加；降级成「已送到、没记下」。
+        const timestamp = steerOptions.timestamp ?? task.updatedAt;
+        try {
+          await this.persistMemberInput(sessionId, {
+          id: steerOptions.messageId ?? `member-input-${task.id}-${timestamp}`,
+          role: 'user',
+          content: instruction,
+          timestamp,
+          isMeta: true,
+          source: 'system',
+          metadata: {
+            workbench: { runtimeInputMode: steerOptions.mode },
+            memberInput: { memberId: task.id, memberName: steerOptions.memberName, mode: steerOptions.mode },
+          },
+        });
+        } catch (error) {
+          logger.warn('Queued task accepted member input but the session record failed', {
+            taskId: task.id,
+            message: error instanceof Error ? error.message : String(error),
+          });
+          return { outcome: 'resolved', task: { ...task }, recorded: false };
+        }
+      }
       return { outcome: 'resolved', task: { ...task } };
     }
-    const outcome = await this.manager.interruptBackgroundTask(
-      task.id,
-      instruction,
-      task.attachments,
-      task.options,
-    );
+    // 用户亲手补的话：与主输入框同一套两档指令行（补充/改道），并把 runtimeInputMode + memberInput
+    // 挂到落库元数据上——改道由运行时出回执，主对话按 memberInput 折叠成一行记录。
+    const outcome = steerOptions
+      ? await this.manager.interruptBackgroundTask(
+        task.id,
+        instruction,
+        task.attachments,
+        {
+          ...(task.options ?? { mode: 'normal' }),
+          turnSystemContext: [
+            ...(task.options?.turnSystemContext ?? []),
+            steerOptions.mode === 'redirect' ? RUNTIME_INPUT_REDIRECT_LINE : RUNTIME_INPUT_SUPPLEMENT_LINE,
+          ],
+        },
+        {
+          workbench: { runtimeInputMode: steerOptions.mode },
+          memberInput: { memberId: task.id, memberName: steerOptions.memberName, mode: steerOptions.mode },
+        },
+      )
+      : await this.manager.interruptBackgroundTask(
+        task.id,
+        instruction,
+        task.attachments,
+        task.options,
+      );
     if (!outcome) return { outcome: 'missing' };
     task.updatedAt = Date.now();
     return { outcome: 'resolved', task: { ...task } };

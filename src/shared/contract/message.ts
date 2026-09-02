@@ -4,6 +4,7 @@
 
 import type { ToolCall, ToolResult } from './tool';
 import type { WorkbenchMessageMetadata } from './conversationEnvelope';
+import type { MemberInputMessageMetadata } from './memberInput';
 import type { ModelDecisionEventData } from './modelDecision';
 import type { TurnQualitySummary } from './turnQuality';
 import type { SessionAutomationMessageMetadata } from './sessionAutomation';
@@ -340,6 +341,8 @@ export interface MessageMetadata {
   /** agent 运行失败的结构化错误（会话区渲染 AgentErrorCard），见 AgentErrorMetadata */
   agentError?: AgentErrorMetadata;
   automation?: SessionAutomationMessageMetadata;
+  /** 用户在成员视图直接给某位成员补话/改道后，落在主对话里的折叠记录（N-SUBAGENT-INPUT）。 */
+  memberInput?: MemberInputMessageMetadata;
   turnQuality?: TurnQualitySummary;
   /**
    * 这条 `role:'user'` 消息不是用户说的，是通话 brain 改写后发给执行引擎的指令

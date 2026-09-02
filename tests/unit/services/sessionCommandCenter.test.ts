@@ -339,4 +339,111 @@ describe('SessionCommandCenter', () => {
     expect(manager.cancelBackgroundTask).toHaveBeenCalledWith(first.task.id);
     center.dispose();
   });
+
+  // 顺手抓到的老病：resolve() 经 list() 返回快照拷贝，steer 改的 prompt 从没落到台账那份，
+  // 排队任务开工时读到的还是老任务书。断言落在台账（list 再读）而不是 steer 的返回值上。
+  it('steer on a queued task appends to the ledger copy of the prompt, not a snapshot', async () => {
+    const manager = new FakeTaskManager();
+    const center = new SessionCommandCenter(manager as unknown as TaskManager, {
+      projectTerminalResult: vi.fn(),
+      wakeForegroundBrain: vi.fn(),
+      persistMemberInput: vi.fn().mockResolvedValue(undefined),
+    });
+    await center.spawn(input(1, 'report'));
+    const queued = await center.spawn({ ...input(2, 'report'), queueWhenFull: true });
+    if (queued.outcome !== 'queued') throw new Error(`expected queued, got ${queued.outcome}`);
+
+    await center.steer('session-a', queued.task.id, '顺便把页码加上');
+    expect(center.list('session-a').find((task) => task.id === queued.task.id)?.prompt)
+      .toContain('补充要求：顺便把页码加上');
+    // 排队任务的改道也要落到任务书里，且带改道指令行（否则开工时沿用原思路）
+    await center.steer('session-a', queued.task.id, '换成按季度汇总', { origin: 'user', mode: 'redirect', memberName: '任务2', messageId: 'm-9', timestamp: 4200 });
+    const prompt = center.list('session-a').find((task) => task.id === queued.task.id)?.prompt ?? '';
+    expect(prompt).toContain('改道要求：换成按季度汇总');
+    expect(prompt).toContain('改道指令');
+    expect(manager.interruptBackgroundTask).not.toHaveBeenCalled();
+    center.dispose();
+  });
+
+  // N-SUBAGENT-INPUT：用户在成员视图亲手补的话，与团长 steer_task 走同一条 interruptBackgroundTask，
+  // 但要带两档指令行 + runtimeInputMode/memberInput 元数据，并给终态唤醒摘要计数。
+  it('user-origin steer carries the runtime input line, member metadata and counts toward the wake summary', async () => {
+    const manager = new FakeTaskManager();
+    const center = new SessionCommandCenter(manager as unknown as TaskManager, {
+      projectTerminalResult: vi.fn(),
+      wakeForegroundBrain: vi.fn(),
+    });
+    const first = await center.spawn(input(1, 'report'));
+    if (first.outcome === 'requires_choice') throw new Error('unexpected admission result');
+
+    const result = await center.steer('session-a', first.task.id, '顺便把页码加上', {
+      origin: 'user', mode: 'redirect', memberName: '报告任务',
+    });
+    expect(result).toMatchObject({ outcome: 'resolved', task: { userInputCount: 1 } });
+    expect(manager.interruptBackgroundTask).toHaveBeenCalledWith(
+      first.task.id,
+      '顺便把页码加上',
+      undefined,
+      expect.objectContaining({
+        turnSystemContext: expect.arrayContaining([expect.stringContaining('改道指令')]),
+      }),
+      {
+        workbench: { runtimeInputMode: 'redirect' },
+        memberInput: { memberId: first.task.id, memberName: '报告任务', mode: 'redirect' },
+      },
+    );
+
+    await center.steer('session-a', first.task.id, '再补一句', { origin: 'user', mode: 'supplement', memberName: '报告任务' });
+    expect(center.list('session-a').find((task) => task.id === first.task.id)?.userInputCount).toBe(2);
+    // 团长 steer_task 不计入用户补话
+    await center.steer('session-a', first.task.id, '团长转述');
+    expect(center.list('session-a').find((task) => task.id === first.task.id)?.userInputCount).toBe(2);
+    center.dispose();
+  });
+
+  // N-SUBAGENT-INPUT：排队任务收到用户补话时，主会话要落一条 isMeta+memberInput 记录（刷新/回放/团长汇总都看得见）；
+  // 团长 steer_task 不落（那是模型转述，不是用户说的）
+  it('persists a member-input record for a queued task on user-origin steer only', async () => {
+    const manager = new FakeTaskManager();
+    const persistMemberInput = vi.fn().mockResolvedValue(undefined);
+    const center = new SessionCommandCenter(manager as unknown as TaskManager, {
+      projectTerminalResult: vi.fn(),
+      wakeForegroundBrain: vi.fn(),
+      persistMemberInput,
+    });
+    await center.spawn(input(1, 'report'));
+    const queued = await center.spawn({ ...input(2, 'report'), queueWhenFull: true });
+    if (queued.outcome !== 'queued') throw new Error(`expected queued, got ${queued.outcome}`);
+
+    await center.steer('session-a', queued.task.id, '顺便把页码加上', { origin: 'user', mode: 'supplement', memberName: '任务2', messageId: 'm-7', timestamp: 4100 });
+    expect(persistMemberInput).toHaveBeenCalledWith('session-a', expect.objectContaining({
+      id: 'm-7', role: 'user', content: '顺便把页码加上', timestamp: 4100, isMeta: true,
+      metadata: {
+        workbench: { runtimeInputMode: 'supplement' },
+        memberInput: { memberId: queued.task.id, memberName: '任务2', mode: 'supplement' },
+      },
+    }));
+
+    await center.steer('session-a', queued.task.id, '团长转述');
+    expect(persistMemberInput).toHaveBeenCalledTimes(1);
+    center.dispose();
+  });
+
+  // 落库失败不能报成「没送到」：任务书已经改了，用户重发会重复追加。降级为 recorded:false 让回执说「已送到、没记下、别重发」
+  it('reports recorded:false instead of throwing when the member-input record fails after the prompt changed', async () => {
+    const manager = new FakeTaskManager();
+    const center = new SessionCommandCenter(manager as unknown as TaskManager, {
+      projectTerminalResult: vi.fn(),
+      wakeForegroundBrain: vi.fn(),
+      persistMemberInput: vi.fn().mockRejectedValue(new Error('db down')),
+    });
+    await center.spawn(input(1, 'report'));
+    const queued = await center.spawn({ ...input(2, 'report'), queueWhenFull: true });
+    if (queued.outcome !== 'queued') throw new Error(`expected queued, got ${queued.outcome}`);
+
+    const result = await center.steer('session-a', queued.task.id, '顺便把页码加上', { origin: 'user', mode: 'supplement', memberName: '任务2', messageId: 'm-8' });
+    expect(result).toMatchObject({ outcome: 'resolved', recorded: false });
+    expect(center.list('session-a').find((task) => task.id === queued.task.id)?.prompt).toContain('补充要求：顺便把页码加上');
+    center.dispose();
+  });
 });

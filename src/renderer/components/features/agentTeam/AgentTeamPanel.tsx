@@ -11,7 +11,6 @@ import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import {
   X,
   Users,
-  Send,
   MessageSquare,
   Circle,
   ChevronRight,
@@ -27,7 +26,6 @@ import { useAppStore } from '../../../stores/appStore';
 import type { SwarmAgentState } from '@shared/contract/swarm';
 import ipcService from '../../../services/ipcService';
 import { IPC_CHANNELS } from '@shared/ipc';
-import { generateMessageId } from '@shared/utils/id';
 
 // ============================================================================
 // Types
@@ -227,16 +225,10 @@ export const AgentTeamPanel: React.FC<AgentTeamPanelProps> = ({
   const { agents, isRunning, messages: liveMessages, activeTreeId } = useSwarmStore();
   const selectedAgentId = useAppStore((state) => state.selectedSwarmAgentId);
   const setSelectedAgentId = useAppStore((state) => state.setSelectedSwarmAgentId);
-  const [inputValue, setInputValue] = useState('');
   const [historyMessages, setHistoryMessages] = useState<TeammateMessageDisplay[]>([]);
-  const [sendError, setSendError] = useState<string | null>(null);
-  const [sending, setSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
   const treeId = activeTreeId ?? '__unbound__';
   const scopeKey = `${sessionId}:${runId}:${treeId}`;
-  const activeScopeTokenRef = useRef(scopeKey);
-  activeScopeTokenRef.current = scopeKey;
   const messages = useMemo(() => {
     const byId = new Map<string, TeammateMessageDisplay>();
     for (const message of historyMessages) byId.set(message.id, message);
@@ -264,9 +256,6 @@ export const AgentTeamPanel: React.FC<AgentTeamPanelProps> = ({
 
   useEffect(() => {
     setHistoryMessages([]);
-    setInputValue('');
-    setSendError(null);
-    setSending(false);
   }, [scopeKey]);
 
   useEffect(() => {
@@ -283,7 +272,6 @@ export const AgentTeamPanel: React.FC<AgentTeamPanelProps> = ({
 
   useEffect(() => {
     setHistoryMessages([]);
-    setSendError(null);
     if (!selectedAgentId) return;
 
     let cancelled = false;
@@ -315,52 +303,7 @@ export const AgentTeamPanel: React.FC<AgentTeamPanelProps> = ({
     };
   }, [runId, selectedAgentId, sessionId, treeId]);
 
-  // 发送消息给选中的 agent
-  const handleSend = useCallback(async () => {
-    const content = inputValue.trim();
-    if (!content || !selectedAgentId || sending) return;
-    const requestScopeToken = scopeKey;
-
-    setSending(true);
-    setSendError(null);
-    try {
-      const timestamp = Date.now();
-      const result = await ipcService.invoke(IPC_CHANNELS.SWARM_SEND_USER_MESSAGE, {
-        sessionId,
-        runId,
-        agentId: selectedAgentId,
-        message: content,
-        messageId: generateMessageId(),
-        timestamp,
-      });
-      if (activeScopeTokenRef.current !== requestScopeToken) return;
-      if (!result?.delivered) {
-        setSendError('消息未送达，目标 Agent 可能已结束。');
-        return;
-      }
-
-      // delivered:true means the agent and live Team ledger already received
-      // the instruction. Clear the draft even if durable session persistence
-      // failed, otherwise a retry would execute the same instruction twice.
-      setInputValue('');
-      if (!result.persisted) {
-        setSendError('消息已送达，但未写入持久 Team 记录；请勿重复发送。');
-        return;
-      }
-
-      // 成功消息由 Host ledger 的 scoped swarm:user:message 回放进入 store，
-      // 不在 Renderer 乐观插入，避免 delivered:false 仍显示假成功。
-    } catch (error) {
-      if (activeScopeTokenRef.current !== requestScopeToken) return;
-      console.error('Failed to send message:', error);
-      setSendError('发送失败，请重试。');
-    } finally {
-      if (activeScopeTokenRef.current === requestScopeToken) {
-        setSending(false);
-      }
-    }
-  }, [inputValue, runId, scopeKey, selectedAgentId, sending, sessionId]);
-
+  // 给成员打字已并进成员视图（MemberInputBar，N-SUBAGENT-INPUT）；抽屉只留看板
   const selectedAgent = agents.find(a => a.id === selectedAgentId);
   const filteredMessages = selectedAgentId
     ? messages.filter(
@@ -458,42 +401,6 @@ export const AgentTeamPanel: React.FC<AgentTeamPanelProps> = ({
         )}
       </div>
 
-      {/* Input Area */}
-      {selectedAgentId && (
-        <div className="px-3 py-2.5 border-t border-zinc-700">
-          <div className="flex items-center gap-2">
-            <input
-              ref={inputRef}
-              type="text"
-              value={inputValue}
-              onChange={e => setInputValue(e.target.value)}
-              onKeyDown={e => {
-                if (e.nativeEvent.isComposing || e.keyCode === 229) return;
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  handleSend();
-                }
-              }}
-              placeholder={`发消息给 ${selectedAgent?.name || 'Agent'}…`}
-              disabled={sending}
-              className="flex-1 bg-zinc-800 border border-zinc-800 rounded-lg px-3 py-1.5 text-xs text-zinc-200 placeholder-zinc-600 focus:outline-hidden focus:border-badge-info/40"
-            />
-            <button
-              onClick={handleSend}
-              disabled={!inputValue.trim() || sending}
-              aria-label="发送消息"
-              className="p-1.5 rounded-lg bg-cyan-500/20 text-badge-info hover:bg-cyan-500/30 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-            >
-              <Send className="w-3.5 h-3.5" />
-            </button>
-          </div>
-          {sendError && (
-            <div role="alert" className="mt-1.5 text-[11px] text-badge-danger">
-              {sendError}
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 };

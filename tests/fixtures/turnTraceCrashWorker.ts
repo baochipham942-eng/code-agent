@@ -51,4 +51,8 @@ recorder.record('inference', {
 });
 
 process.stdout.write(`${JSON.stringify({ marker: 'incremental-flush-complete', sessionId })}\n`);
-setInterval(() => undefined, 60_000);
+// 常驻等测试 SIGKILL；但 vitest worker 自己被杀（harness 收后台任务）时 afterEach 不会跑，
+// 本进程会被 launchd 收养（ppid=1）后永远挂着（09-02 收掉 3 个挂了 2–3 天的）。父死即自退。
+setInterval(() => {
+  if (process.ppid === 1) process.exit(0);
+}, 1_000);

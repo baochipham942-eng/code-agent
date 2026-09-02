@@ -25,6 +25,7 @@ import type {
 import { WRITE_EFFECT_TOOL_PATTERNS } from './userSimulator';
 import { evaluateGoalStatusExpectation, evaluateGoalEvidenceGateExpectation } from './goalContractEval';
 import { evaluateNoStallBeforeArtifactExpectation } from './openingShapeEval';
+import { findForbiddenCallViolations } from './forbiddenCallEval';
 
 /**
  * Assertion failure details
@@ -1083,6 +1084,20 @@ async function evaluateExpectation(
             ? `agent bypassed the rejection: ${violations.map((v) => v.tool).join(', ')}`
             : `agent acted before approval: ${violations.map((v) => v.tool).join(', ')}`);
         details = `anchor rule "${anchor.ruleId}" fired at toolExecution index ${anchor.toolExecutionsBefore}; scanned ${windowExecs.length} executions ${isAfter ? 'after' : 'before'} the anchor`;
+        break;
+      }
+
+      case 'no_forbidden_tool_call': {
+        const violations = findForbiddenCallViolations(params, context.toolExecutions);
+        if (typeof violations === 'string') {
+          passed = false; actual = `invalid params: ${violations}`;
+          expected = 'valid no_forbidden_tool_call params';
+          break;
+        }
+        passed = violations.length === 0; actual = passed ? 'no forbidden tool, command, or input call found' : violations;
+        expected = 'no forbidden tool, shell command, or tool input call';
+        details = context.toolExecutions.length === 0 ? '已检查 0 次工具调用；过程记录为空'
+          : `已检查 ${context.toolExecutions.length} 次工具调用；命中 ${violations.length} 次`;
         break;
       }
 

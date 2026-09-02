@@ -112,6 +112,11 @@ export interface AgentInterface {
    */
   configureUserSimulation?(sim: UserSimulation | undefined): void;
   /**
+   * N-EVAL-L3-HARNESS：题超时时 runner 调它真的掐掉在跑的 run（withTimeout 只是赛跑）。
+   * 不实现的 adapter 维持旧行为（loop 活到下一题）。
+   */
+  cancelActiveRun?(): Promise<void>;
+  /**
    * B6b-①：接收当前 case 的 goal 契约（case 以 /goal 自治模式跑）。
    * runner 每个 case 都会调用（无契约时传 undefined 清除上个 case 的配置）。
    */
@@ -1008,8 +1013,7 @@ export class TestRunner {
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       // harness 总时限超限是能力失败；provider/network timeout 仍由瞬态词表归环境故障。
-      const killedByTimeout = !/request timeout after \d+ms/i.test(message)
-        && /timeout after \d+ms/i.test(message);
+      const killedByTimeout = !/request timeout after \d+ms/i.test(message) && /timeout after \d+ms/i.test(message);
       if (isScopedCostLimitExceeded(error)) {
         result.status = 'cost_exceeded';
         result.failureStage = 'cost_limit';
@@ -1017,6 +1021,8 @@ export class TestRunner {
       } else if (killedByTimeout) {
         result.status = 'failed';
         result.failureStage = 'timeout';
+        // N-EVAL-L3-HARNESS：超时题的循环/工具不能活到下一题，这里真的掐掉。
+        await agent.cancelActiveRun?.().catch((cancelError: unknown) => logger.warn('cancelActiveRun failed after timeout', { testId: testCase.id, error: String(cancelError) }));
       } else if (isInfraExclusionError(message)) {
         result.status = 'infra_excluded';
         result.failureStage = 'infra';
@@ -1031,8 +1037,7 @@ export class TestRunner {
       // 避免后续 case 重复踩同一个错误烧 API 费。
       if (isNonRetryableError(message)) {
         logger.error('Fatal inference error — aborting run', { testId: testCase.id, error: message });
-        this.aborted = true;
-        this.abortReason = message;
+        this.aborted = true; this.abortReason = message;
       }
     } finally {
       // B6b-①（审计 R1-M2）：超时/异常跳过了 try 内的断言前捕获时，在此兜底保留

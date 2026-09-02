@@ -8,8 +8,10 @@ import { turnDiffEn, turnDiffZh } from './turnDiff';
 import { turnCheckoutChatEn, turnCheckoutChatZh } from './turnCheckout';
 import { outcomeWordsEn, outcomeWordsZh } from './outcomeWords';
 import { toolStepVerbsEn, toolStepVerbsZh } from './toolStepVerbs';
+import { turnRailEn, turnRailZh } from './turnRail';
 
 export const chatTranscriptZh = {
+  ...turnRailZh,
 chat: {
   thinking: '正在思考…',
   // 回响信号（等模型）
@@ -551,6 +553,7 @@ toolDisplay: {
 };
 
 export const chatTranscriptEn: typeof chatTranscriptZh = {
+  ...turnRailEn,
 chat: {
   thinking: 'Thinking…',
   // Echo signal (waiting on the model)

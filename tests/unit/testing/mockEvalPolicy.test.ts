@@ -1,4 +1,3 @@
-import { readFileSync } from 'fs';
 import { mkdtemp, readFile, rm } from 'fs/promises';
 import os from 'os';
 import path from 'path';
@@ -18,12 +17,8 @@ afterEach(async () => {
 });
 
 describe('mock eval policy', () => {
-  it('显式覆盖 held-in 76 case，并稳定分成 20 fixture / 56 real-only', () => {
-    const split = JSON.parse(readFileSync(path.join(process.cwd(), '.claude/eval-splits.json'), 'utf8')) as {
-      heldIn: string[];
-    };
-
-    expect(assertMockPolicyCoverage(split.heldIn)).toEqual({ fixture: 20, realOnly: 56 });
+  it('遇到未分类或过期 case 时 fail-loud', () => {
+    expect(() => assertMockPolicyCoverage(['new-unclassified-case'])).toThrow(/missing=.*new-unclassified-case.*stale=/);
   });
 
   it('五个诊断样本的 A/B 裁决固定下来', () => {

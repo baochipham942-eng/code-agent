@@ -22,98 +22,32 @@ cases:
     description: "基础 Web 搜索"
     prompt: "搜索 TypeScript 5.0 有哪些新特性"
     reference_solution: "使用 web_search 工具搜索并返回包含关键信息的结果"
-    expect:
-      response_contains:
-        - TypeScript
-      no_crash: true
 
-    expectations:
-      - type: response_contains
-        description: "响应应包含 'TypeScript'"
-        weight: 0.8
-        params:
-          text: "TypeScript"
-      - type: no_crash
-        description: "不应崩溃"
-        weight: 1
-        critical: true
-        params: {}
   - id: web-search-chinese
     type: task
     description: "中文搜索"
     prompt: "搜索 Electron 桌面应用开发的最佳实践"
-    expect:
-      no_crash: true
 
   # --------------------------------------------------------------------------
   # L2: URL 抓取
   # --------------------------------------------------------------------------
-    expectations:
-      - type: no_crash
-        description: "不应崩溃"
-        weight: 1
-        critical: true
-        params: {}
   - id: web-fetch-page
     type: task
     description: "抓取网页内容"
     prompt: "抓取 https://httpbin.org/html 这个页面的内容，告诉我页面上有什么"
-    expect:
-      no_crash: true
 
-    expectations:
-      - type: no_crash
-        description: "不应崩溃"
-        weight: 1
-        critical: true
-        params: {}
   - id: web-fetch-json-api
     type: task
     description: "获取 JSON API"
     prompt: "访问 https://httpbin.org/json 获取返回的 JSON 数据"
-    expect:
-      no_crash: true
 
   # --------------------------------------------------------------------------
   # L3: 搜索 + 整合
   # --------------------------------------------------------------------------
-    expectations:
-      - type: no_crash
-        description: "不应崩溃"
-        weight: 1
-        critical: true
-        params: {}
   - id: web-search-and-summarize
     type: task
     description: "搜索后整合信息"
     prompt: "搜索 esbuild 和 webpack 的区别，用一段话总结各自的优缺点"
-    expect:
-      min_tool_calls: 1
-      response_contains:
-        - esbuild
-        - webpack
-      no_crash: true
-    expectations:
-      - type: response_contains
-        description: "响应应包含 'esbuild'"
-        weight: 0.8
-        params:
-          text: "esbuild"
-      - type: response_contains
-        description: "响应应包含 'webpack'"
-        weight: 0.8
-        params:
-          text: "webpack"
-      - type: min_tool_calls
-        description: "至少应调用 1 次工具"
-        weight: 0.3
-        params:
-          min: 1
-      - type: no_crash
-        description: "不应崩溃"
-        weight: 1
-        critical: true
-        params: {}
     timeout: 180000
 
   # --------------------------------------------------------------------------
@@ -123,30 +57,8 @@ cases:
     type: error_handling
     description: "无效 URL 处理"
     prompt: "抓取 https://this-domain-absolutely-does-not-exist-xyz123.com 的内容"
-    expect:
-      error_handled: true
-      no_crash: true
 
-    expectations:
-      - type: error_handled
-        description: "应优雅处理错误"
-        weight: 0.8
-        params: {}
-      - type: no_crash
-        description: "不应崩溃"
-        weight: 1
-        critical: true
-        params: {}
   - id: web-search-no-results
     type: task
     description: "搜索无结果处理"
     prompt: "搜索 xyznonexistentterm98765432 的详细信息"
-    expect:
-      no_crash: true
-
-    expectations:
-      - type: no_crash
-        description: "不应崩溃"
-        weight: 1
-        critical: true
-        params: {}

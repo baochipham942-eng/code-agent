@@ -12,12 +12,11 @@
 //     --seed wp1b-2026-07 [--ratio 0.4] [--out <dir>]
 
 import fs from 'fs';
-import path from 'path';
 import {
-  EVAL_SPLITS_RELATIVE_PATH,
   assertValidEvalSplits,
   splitHeldInOut,
   saveEvalSplits,
+  splitsPath,
 } from '@host/testing/ci/sampleSplits';
 import { filterTestCases, loadAllTestSuites } from '@host/testing/testCaseLoader';
 import { countDeclaredAssertions } from '@host/testing/assertionEngine';
@@ -31,7 +30,7 @@ Options:
   --ids <a,b,c>           或显式给 id 列表
   --seed <s>              切分种子（必填——换卷子必须显式留痕）
   --ratio <0-1>           held-out 份额（默认 0.4）
-  --out <dir>             输出目录（默认当前仓库根，落 .claude/eval-splits.json）
+  --out <dir>             输出目录（默认当前仓库根；有答案根时写私档 eval-splits.json）
   --help                  显示本帮助`;
 
 function parseArgs(argv: string[]) {
@@ -108,7 +107,7 @@ async function main() {
   await saveEvalSplits(out, file);
 
   console.log(`✅ 切分完成（seed=${seed}）：held-in ${heldIn.length} / held-out ${heldOut.length} / control ${control.length} / safety ${safety.length}`);
-  console.log(`   → ${path.join(out, EVAL_SPLITS_RELATIVE_PATH)}`);
+  console.log(`   → ${splitsPath(out)}`);
 }
 
 main().catch((e) => { console.error('eval-split failed:', e); process.exit(1); });

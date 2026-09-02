@@ -23,57 +23,17 @@ cases:
     prompt: "读取 package.json，告诉我项目名称和版本号"
     follow_up_prompts:
       - "刚才读到的版本号是多少？"
-    expect:
-      min_tool_calls: 1
-      response_contains:
-        - version
-      no_crash: true
 
-    expectations:
-      - type: response_contains
-        description: "响应应包含版本号模式 '0.'"
-        weight: 0.8
-        params:
-          text: "0."
-      - type: response_contains
-        description: "响应应提到版本（中/英任一）"
-        weight: 0.5
-        params:
-          text: "版本|version"
-      - type: min_tool_calls
-        description: "至少应调用 1 次工具"
-        weight: 0.3
-        params:
-          min: 1
-      - type: no_crash
-        description: "不应崩溃"
-        weight: 1
-        critical: true
-        params: {}
   - id: multi-turn-pronoun-resolution
     type: conversation
     description: "指代消解 - 理解'它'、'那个'指什么"
     prompt: "读取 tsconfig.json 文件"
     follow_up_prompts:
       - "它里面配置了哪些编译选项？"
-    expect:
-      min_tool_calls: 1
-      no_crash: true
 
   # --------------------------------------------------------------------------
   # L3: 渐进式任务
   # --------------------------------------------------------------------------
-    expectations:
-      - type: min_tool_calls
-        description: "至少应调用 1 次工具"
-        weight: 0.3
-        params:
-          min: 1
-      - type: no_crash
-        description: "不应崩溃"
-        weight: 1
-        critical: true
-        params: {}
   - id: multi-turn-incremental-task
     type: task
     description: "分步完成任务"
@@ -81,38 +41,6 @@ cases:
     follow_up_prompts:
       - "在同一个文件里再加一个 multiply 函数"
       - "现在给这两个函数都加上 TypeScript 类型注解"
-    expect:
-      files_created:
-        - test-multi-step.ts
-      file_contains:
-        test-multi-step.ts:
-          - "add"
-          - "multiply"
-      no_crash: true
-    expectations:
-      - type: file_exists
-        description: "文件应存在: test-multi-step.ts"
-        weight: 1
-        critical: true
-        params:
-          path: "test-multi-step.ts"
-      - type: content_contains
-        description: "文件 test-multi-step.ts 应包含 'add'"
-        weight: 0.8
-        params:
-          path: "test-multi-step.ts"
-          contains: "add"
-      - type: content_contains
-        description: "文件 test-multi-step.ts 应包含 'multiply'"
-        weight: 0.8
-        params:
-          path: "test-multi-step.ts"
-          contains: "multiply"
-      - type: no_crash
-        description: "不应崩溃"
-        weight: 1
-        critical: true
-        params: {}
     cleanup:
       - rm -f test-multi-step.ts
 
@@ -122,31 +50,6 @@ cases:
     prompt: "创建 test-greeting.ts，写一个 greet 函数，接收名字参数，返回问候语"
     follow_up_prompts:
       - "不对，我想要返回中文问候，比如'你好，张三'"
-    expect:
-      files_created:
-        - test-greeting.ts
-      file_contains:
-        test-greeting.ts:
-          - "你好"
-      no_crash: true
-    expectations:
-      - type: file_exists
-        description: "文件应存在: test-greeting.ts"
-        weight: 1
-        critical: true
-        params:
-          path: "test-greeting.ts"
-      - type: content_contains
-        description: "文件 test-greeting.ts 应包含 '你好'"
-        weight: 0.8
-        params:
-          path: "test-greeting.ts"
-          contains: "你好"
-      - type: no_crash
-        description: "不应崩溃"
-        weight: 1
-        critical: true
-        params: {}
     cleanup:
       - rm -f test-greeting.ts
 
@@ -160,28 +63,7 @@ cases:
     follow_up_prompts:
       - "tools 目录下有什么？"
       - "找一个最大的工具文件，读取前 20 行"
-    expect:
-      min_tool_calls: 3
-      response_contains:
-        - tools
-      no_crash: true
 
-    expectations:
-      - type: response_contains
-        description: "响应应包含 'tools'"
-        weight: 0.8
-        params:
-          text: "tools"
-      - type: min_tool_calls
-        description: "至少应调用 3 次工具"
-        weight: 0.3
-        params:
-          min: 3
-      - type: no_crash
-        description: "不应崩溃"
-        weight: 1
-        critical: true
-        params: {}
   - id: multi-turn-build-on-previous
     type: task
     description: "基于前轮结果继续"
@@ -198,29 +80,6 @@ cases:
     follow_up_prompts:
       - "谁的分数最高？"
       - "把所有人的分数都加 5 分，保存回文件"
-    expect:
-      min_tool_calls: 2
-      file_contains:
-        test-scores.csv:
-          - "100"
-      no_crash: true
-    expectations:
-      - type: content_contains
-        description: "文件 test-scores.csv 应包含 '100'"
-        weight: 0.8
-        params:
-          path: "test-scores.csv"
-          contains: "100"
-      - type: min_tool_calls
-        description: "至少应调用 2 次工具"
-        weight: 0.3
-        params:
-          min: 2
-      - type: no_crash
-        description: "不应崩溃"
-        weight: 1
-        critical: true
-        params: {}
     cleanup:
       - rm -f test-scores.csv
 
@@ -233,58 +92,12 @@ cases:
     prompt: "帮我看看 src 目录"
     follow_up_prompts:
       - "不是 src 目录结构，我是说帮我看看 src/host/testing 下面有几个文件"
-    expect:
-      min_tool_calls: 2
-      no_crash: true
 
-    expectations:
-      - type: min_tool_calls
-        description: "至少应调用 2 次工具"
-        weight: 0.3
-        params:
-          min: 2
-      - type: no_crash
-        description: "不应崩溃"
-        weight: 1
-        critical: true
-        params: {}
   - id: multi-turn-add-constraint
     type: task
     description: "追加约束条件"
     prompt: "创建 test-config.json，写一个配置对象，包含 host 和 port"
     follow_up_prompts:
       - "port 必须是 3000，host 必须是 localhost"
-    expect:
-      files_created:
-        - test-config.json
-      file_contains:
-        test-config.json:
-          - "3000"
-          - "localhost"
-      no_crash: true
-    expectations:
-      - type: file_exists
-        description: "文件应存在: test-config.json"
-        weight: 1
-        critical: true
-        params:
-          path: "test-config.json"
-      - type: content_contains
-        description: "文件 test-config.json 应包含 '3000'"
-        weight: 0.8
-        params:
-          path: "test-config.json"
-          contains: "3000"
-      - type: content_contains
-        description: "文件 test-config.json 应包含 'localhost'"
-        weight: 0.8
-        params:
-          path: "test-config.json"
-          contains: "localhost"
-      - type: no_crash
-        description: "不应崩溃"
-        weight: 1
-        critical: true
-        params: {}
     cleanup:
       - rm -f test-config.json

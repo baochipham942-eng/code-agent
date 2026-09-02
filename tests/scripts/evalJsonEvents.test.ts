@@ -3,17 +3,23 @@ import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   EVAL_RUN_STAMP_KEYS,
   EVAL_RUN_EVENT_SCHEMA_VERSION,
   type EvalRunEvent,
 } from '../../src/shared/contract/evaluation';
+import { createCasebankFixture } from '../utils/casebankFixture';
 
-const repoRoot = process.cwd();
-const tsxCli = path.join(repoRoot, 'node_modules', 'tsx', 'dist', 'cli.mjs');
-const evalScript = path.join(repoRoot, 'packages', 'internal', 'evaluation-center', 'scripts', 'eval-ci.ts');
+const sourceRepoRoot = process.cwd();
+const tsxCli = path.join(sourceRepoRoot, 'node_modules', 'tsx', 'dist', 'cli.mjs');
+const evalScript = path.join(sourceRepoRoot, 'packages', 'internal', 'evaluation-center', 'scripts', 'eval-ci.ts');
 const tempDirs: string[] = [];
+let fixture: Awaited<ReturnType<typeof createCasebankFixture>>;
+
+beforeAll(async () => {
+  fixture = await createCasebankFixture();
+});
 
 async function runJsonEval(extraArgs: string[] = []): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   const dataDir = await mkdtemp(path.join(os.tmpdir(), 'code-agent-json-events-'));
@@ -24,8 +30,13 @@ async function runJsonEval(extraArgs: string[] = []): Promise<{ stdout: string; 
       process.execPath,
       [tsxCli, evalScript, '--scope', 'smoke', '--max-cases', '1', '--json-events', ...extraArgs],
       {
-        cwd: repoRoot,
-        env: { ...process.env, CODE_AGENT_DATA_DIR: dataDir },
+        cwd: fixture.repoRoot,
+        env: {
+          ...process.env,
+          ...fixture.env,
+          CODE_AGENT_DATA_DIR: dataDir,
+          TSX_TSCONFIG_PATH: path.join(sourceRepoRoot, 'tsconfig.json'),
+        },
         stdio: ['ignore', 'pipe', 'pipe'],
       },
     );
@@ -82,12 +93,14 @@ async function runJsonEvalFailure(): Promise<{ stdout: string; stderr: string; e
         '--force',
       ],
       {
-        cwd: repoRoot,
+        cwd: fixture.repoRoot,
         env: {
           ...process.env,
+          ...fixture.env,
           AUTO_TEST_API_KEY: 'test-key',
           AUTO_TEST_BASE_URL: '',
           CODE_AGENT_DATA_DIR: dataDir,
+          TSX_TSCONFIG_PATH: path.join(sourceRepoRoot, 'tsconfig.json'),
         },
         stdio: ['ignore', 'pipe', 'pipe'],
       },
@@ -121,12 +134,14 @@ async function runJsonEvalWithoutPolicy(): Promise<{ stdout: string; stderr: str
         '--force',
       ],
       {
-        cwd: repoRoot,
+        cwd: fixture.repoRoot,
         env: {
           ...process.env,
+          ...fixture.env,
           AUTO_TEST_API_KEY: 'test-key',
           CODE_AGENT_DATA_DIR: dataDir,
           NEO_SCRIPTED_APPROVAL_POLICY: '',
+          TSX_TSCONFIG_PATH: path.join(sourceRepoRoot, 'tsconfig.json'),
         },
         stdio: ['ignore', 'pipe', 'pipe'],
       },
@@ -143,6 +158,7 @@ async function runJsonEvalWithoutPolicy(): Promise<{ stdout: string; stderr: str
 }
 
 afterAll(async () => {
+  await fixture.cleanup();
   await Promise.all(tempDirs.map((dir) => rm(dir, { recursive: true, force: true })));
 });
 

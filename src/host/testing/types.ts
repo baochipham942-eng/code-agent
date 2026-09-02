@@ -259,6 +259,12 @@ export interface TestCase {
   difficulty?: TestDifficulty;
   /** CASELIST/compare report layer, derived from the owning YAML path. */
   layer?: string;
+  /** 答案根已解析，但该题在答案文件中缺席。运行侧必须转为 not_run。 */
+  answerSide?: 'missing';
+  /** 缺失时本应读取的答案文件。 */
+  answerSidePath?: string;
+  /** 已解析到的私档答案根。 */
+  answerSideRoot?: string;
   /** Test category */
   category?: TestCategory;
   /** Expectation-based assertions (P1) */
@@ -374,6 +380,12 @@ export interface TestResult {
   responses: string[];
   /** Failure reason if failed */
   failureReason?: string;
+  /** 缺失答案侧的可审计定位；与 not_run 一起进入报告。 */
+  answerSide?: {
+    status: 'missing';
+    filePath: string;
+    root: string;
+  };
   /** Detailed failure info */
   failureDetails?: {
     expected: unknown;

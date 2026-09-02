@@ -29,32 +29,6 @@ cases:
             f.write('\n'.join(lines))
         "
     prompt: "读取 test-large-file.txt，找到包含 SECRET_MARKER 的那一行，告诉我是第几行"
-    expect:
-      min_tool_calls: 1
-      response_contains:
-        - "247"
-      no_crash: true
-    expectations:
-      - type: response_contains
-        description: "响应应包含 '247'（0-indexed 行号）"
-        weight: 0.8
-        params:
-          text: "247"
-      - type: response_contains
-        description: "响应应包含 '248'（1-indexed 行号）"
-        weight: 0.5
-        params:
-          text: "248"
-      - type: min_tool_calls
-        description: "至少应调用 1 次工具"
-        weight: 0.3
-        params:
-          min: 1
-      - type: no_crash
-        description: "不应崩溃"
-        weight: 1
-        critical: true
-        params: {}
     cleanup:
       - rm -f test-large-file.txt
 
@@ -75,27 +49,6 @@ cases:
             f.write('\n'.join(lines))
         "
     prompt: "扫描 test-todo-scan.ts 文件，找出所有包含 TODO 的行，统计总数"
-    expect:
-      min_tool_calls: 1
-      response_contains:
-        - TODO
-      no_crash: true
-    expectations:
-      - type: response_contains
-        description: "响应应包含 'TODO'"
-        weight: 0.8
-        params:
-          text: "TODO"
-      - type: min_tool_calls
-        description: "至少应调用 1 次工具"
-        weight: 0.3
-        params:
-          min: 1
-      - type: no_crash
-        description: "不应崩溃"
-        weight: 1
-        critical: true
-        params: {}
     cleanup:
       - rm -f test-todo-scan.ts
 
@@ -113,29 +66,6 @@ cases:
       额外上下文 — 项目使用 TypeScript 开发，采用 Electron 框架，前端用 React，状态管理用 Zustand。构建工具是 esbuild 和 Vite。AI 模型主要使用 Kimi K2.5，备选有 DeepSeek 和 OpenAI。数据库用 Supabase 加 pgvector。这些信息其实跟当前任务无关。
       真正的任务 — 创建 test-long-prompt-result.txt，内容写 "I understood the core task despite the long prompt"。就这么简单。
       更多无关信息 — 之前我们做过评测，发现工具调用的成功率在 85% 以上，对话质量评分平均 15 分（满分 20），安全维度基本满分。但这些跟当前任务也没关系。
-    expect:
-      files_created:
-        - test-long-prompt-result.txt
-      file_contains:
-        test-long-prompt-result.txt: "core task"
-      no_crash: true
-    expectations:
-      - type: file_exists
-        description: "文件应存在: test-long-prompt-result.txt"
-        weight: 1
-        params:
-          path: "test-long-prompt-result.txt"
-      - type: content_contains
-        description: "文件 test-long-prompt-result.txt 应包含 'core task'"
-        weight: 0.8
-        params:
-          path: "test-long-prompt-result.txt"
-          contains: "core task"
-      - type: no_crash
-        description: "不应崩溃"
-        weight: 1
-        critical: true
-        params: {}
     cleanup:
       - rm -f test-long-prompt-result.txt
 
@@ -146,20 +76,6 @@ cases:
     type: task
     description: "扫描大量文件提取信息"
     prompt: "扫描 src/host/tools 目录下所有 .ts 文件，统计每个文件的行数，找出最大的 3 个文件"
-    expect:
-      min_tool_calls: 2
-      no_crash: true
-    expectations:
-      - type: min_tool_calls
-        description: "至少应调用 2 次工具"
-        weight: 0.3
-        params:
-          min: 2
-      - type: no_crash
-        description: "不应崩溃"
-        weight: 1
-        critical: true
-        params: {}
     timeout: 600000
 
   # --------------------------------------------------------------------------
@@ -169,43 +85,5 @@ cases:
     type: task
     description: "生成结构化长文档"
     prompt: "读取 package.json 和 src/host 目录结构，生成一份 test-project-overview.md，至少包含：项目简介、技术栈、目录结构说明、主要模块描述，不少于 200 字"
-    expect:
-      min_tool_calls: 2
-      files_created:
-        - test-project-overview.md
-      file_contains:
-        test-project-overview.md:
-          - "#"
-          - Electron
-      no_crash: true
-    expectations:
-      - type: file_exists
-        description: "文件应存在: test-project-overview.md"
-        weight: 1
-        critical: true
-        params:
-          path: "test-project-overview.md"
-      - type: content_contains
-        description: "文件 test-project-overview.md 应包含 '#'"
-        weight: 0.8
-        params:
-          path: "test-project-overview.md"
-          contains: "#"
-      - type: content_contains
-        description: "文件 test-project-overview.md 应包含 'Electron'"
-        weight: 0.8
-        params:
-          path: "test-project-overview.md"
-          contains: "Electron"
-      - type: min_tool_calls
-        description: "至少应调用 2 次工具"
-        weight: 0.3
-        params:
-          min: 2
-      - type: no_crash
-        description: "不应崩溃"
-        weight: 1
-        critical: true
-        params: {}
     cleanup:
       - rm -f test-project-overview.md

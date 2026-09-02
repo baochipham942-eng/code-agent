@@ -60,7 +60,7 @@ import { assertMockPolicyCoverage, getMockCasePolicy } from '@host/testing/mockE
 import {
   requireScriptedRunPermissionHandler,
 } from '@host/permissions/scriptedRunPermissionPolicy';
-import { cloneEvalSandbox, createStrictEvalSandbox, type EvalSandbox } from './lib/eval-sandbox';
+import { cloneEvalSandbox, createCleanEvalSandbox, createStrictEvalSandbox, type EvalSandbox } from './lib/eval-sandbox';
 import type { DatabaseService } from '@host/services/core/databaseService';
 import type { TelemetryCollector } from '@host/telemetry/telemetryCollector';
 import { EvalRunEventStream, type EvalRunStartConfig } from './lib/eval-run-event-stream';
@@ -387,13 +387,14 @@ function assertRepoUnchanged(repoDir: string, before: string[] | null): void {
   );
 }
 
-function createEvalSandbox(repoDir: string, real: boolean): EvalSandbox {
+function createEvalSandbox(repoDir: string, real: boolean, cleanWorkdir = false): EvalSandbox {
   if (!real && process.env.CODE_AGENT_EVAL_NO_SANDBOX === 'true') {
     return { dir: repoDir, cleanup: () => undefined };
   }
   let sandbox: EvalSandbox;
   try {
-    sandbox = createStrictEvalSandbox(repoDir);
+    // N-EVAL-L3-WORKDIR：safety split 用干净目录（只有 setup 夹具），不用整仓副本。
+    sandbox = cleanWorkdir ? createCleanEvalSandbox(repoDir) : createStrictEvalSandbox(repoDir);
   } catch (error) {
     if (real) throw error;
     return { dir: repoDir, cleanup: () => undefined };
@@ -543,6 +544,8 @@ async function runEvals(
     caseDir?: string;
     repeat: number;
     skills?: string[];
+    /** N-EVAL-L3-WORKDIR：safety split 用干净沙箱（只有 setup 夹具），不用整仓副本 */
+    cleanWorkdir?: boolean;
     eventStream?: EvalRunEventStream;
     eventConfig: EvalRunStartConfig;
   }
@@ -569,7 +572,8 @@ async function runEvals(
     ? fs.mkdtempSync(path.join(os.tmpdir(), 'code-agent-eval-data-'))
     : undefined;
   if (generatedDataDir) process.env.CODE_AGENT_DATA_DIR = generatedDataDir;
-  const sandbox = createEvalSandbox(workingDir, opts.real);
+  const cleanWorkdir = opts.cleanWorkdir ?? false;
+  const sandbox = createEvalSandbox(workingDir, opts.real, cleanWorkdir);
   const agentWorkingDir = sandbox.dir;
   const forwardSignal = (event: Extract<TestEvent,
     { type: 'skill_activated' | 'memory_injected' | 'subagent_spawned' }>) => {
@@ -628,7 +632,7 @@ async function runEvals(
         : undefined,
       useParallelWorkers
         ? () => {
-            const workerSandbox = createEvalSandbox(workingDir, opts.real);
+            const workerSandbox = createEvalSandbox(workingDir, opts.real, cleanWorkdir);
             return {
               workingDirectory: workerSandbox.dir,
               cleanup: workerSandbox.cleanup,
@@ -876,7 +880,7 @@ async function runCompareCommand(
     testCaseDir,
   });
   const repoStatusBefore = getRepoStatusSnapshot(workingDir);
-  const sandbox = createEvalSandbox(workingDir, opts.real);
+  const sandbox = createEvalSandbox(workingDir, opts.real, opts.split === 'safety');
   const agentWorkingDir = sandbox?.dir ?? workingDir;
   try {
     if (opts.real) await prepareRealEvalRuntime();
@@ -1215,6 +1219,7 @@ async function mainImpl(
       ids,
       repeat,
       skills: selectedSkills,
+      cleanWorkdir: split === 'safety',
       eventStream,
       eventConfig: createRunStartConfig({
         real: false,
@@ -1290,6 +1295,7 @@ async function mainImpl(
       ids,
       repeat,
       skills: selectedSkills,
+      cleanWorkdir: split === 'safety',
       eventStream,
       eventConfig: createRunStartConfig({
         real: effectiveReal,

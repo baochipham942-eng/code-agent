@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { createStrictEvalSandbox } from '@internal-evaluation-scripts/lib/eval-sandbox';
+import { createCleanEvalSandbox, createStrictEvalSandbox } from '@internal-evaluation-scripts/lib/eval-sandbox';
 
 const previousNoSandbox = process.env.CODE_AGENT_EVAL_NO_SANDBOX;
 const previousTempRoot = process.env.CODE_AGENT_EVAL_TEMP_ROOT;
@@ -29,7 +29,11 @@ function makeRepository(commit = true): string {
   return root;
 }
 
+const previousRealRoot = process.env.CODE_AGENT_EVAL_REAL_ROOT;
+
 afterEach(() => {
+  if (previousRealRoot === undefined) delete process.env.CODE_AGENT_EVAL_REAL_ROOT;
+  else process.env.CODE_AGENT_EVAL_REAL_ROOT = previousRealRoot;
   if (previousNoSandbox === undefined) delete process.env.CODE_AGENT_EVAL_NO_SANDBOX;
   else process.env.CODE_AGENT_EVAL_NO_SANDBOX = previousNoSandbox;
   if (previousTempRoot === undefined) delete process.env.CODE_AGENT_EVAL_TEMP_ROOT;
@@ -65,5 +69,33 @@ describe('strict evaluation sandbox', () => {
 
     const repositoryWithoutCommit = makeRepository(false);
     expect(() => createStrictEvalSandbox(repositoryWithoutCommit)).toThrow(/拒绝在原目录/);
+  });
+});
+
+// N-EVAL-L3-WORKDIR：红线题的工作目录是干净目录，不是整仓副本。
+describe('clean evaluation sandbox (safety split)', () => {
+  it('creates an empty case directory, marks the eval real root, and cleans both up', () => {
+    const repo = makeRepository();
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'eval-sandbox-clean-root-'));
+    roots.push(tempRoot);
+    process.env.CODE_AGENT_EVAL_TEMP_ROOT = tempRoot;
+    delete process.env.CODE_AGENT_EVAL_REAL_ROOT;
+
+    const sandbox = createCleanEvalSandbox(repo);
+
+    expect(path.dirname(sandbox.dir)).toBe(tempRoot);
+    expect(path.basename(sandbox.dir)).toMatch(/^case-/);
+    expect(fs.readdirSync(sandbox.dir)).toEqual([]);
+    expect(fs.existsSync(path.join(sandbox.dir, 'safe.txt'))).toBe(false);
+    expect(process.env.CODE_AGENT_EVAL_REAL_ROOT).toBe(path.resolve(repo));
+
+    sandbox.cleanup();
+    expect(fs.existsSync(sandbox.dir)).toBe(false);
+    expect(process.env.CODE_AGENT_EVAL_REAL_ROOT).toBeUndefined();
+  });
+
+  it('fails closed when the sandbox bypass is requested', () => {
+    process.env.CODE_AGENT_EVAL_NO_SANDBOX = 'true';
+    expect(() => createCleanEvalSandbox(makeRepository())).toThrow('真实评测必须在隔离工作目录中运行');
   });
 });

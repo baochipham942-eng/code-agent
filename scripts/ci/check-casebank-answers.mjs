@@ -2,6 +2,7 @@
 /* global console */
 
 import fs from 'node:fs/promises';
+import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
@@ -13,6 +14,8 @@ const sourceRepoRoot = path.resolve(scriptDir, '../..');
 const repoRoot = process.cwd();
 const requirePrivate = process.argv.slice(2).includes('--require-private');
 const unexpectedArgs = process.argv.slice(2).filter((arg) => arg !== '--require-private');
+const answerEnumeratedSubdirectories = ['artifact-runnable', 'goal-contract', 'user-simulator'];
+const securityRedlineSource = '.claude/test-cases/06-security-redline-tests.yaml';
 
 async function filesUnder(root, predicate) {
   const files = [];
@@ -43,7 +46,15 @@ async function readPublicCases(errors) {
   const caseRoot = path.join(repoRoot, '.claude', 'test-cases');
   const bySource = new Map();
   const ids = new Map();
-  for (const filePath of await filesUnder(caseRoot, (name) => /\.ya?ml$/u.test(name))) {
+  const allFiles = await filesUnder(caseRoot, (name) => /\.ya?ml$/u.test(name));
+  const rootFiles = allFiles.filter((filePath) => path.dirname(filePath) === caseRoot);
+  const answerFiles = new Set([
+    ...rootFiles,
+    ...(await Promise.all(answerEnumeratedSubdirectories.map((directory) => (
+      filesUnder(path.join(caseRoot, directory), (name) => /\.ya?ml$/u.test(name))
+    )))).flat(),
+  ]);
+  for (const filePath of allFiles) {
     const source = path.relative(repoRoot, filePath).split(path.sep).join('/');
     let parsed;
     try {
@@ -68,9 +79,58 @@ async function readPublicCases(errors) {
       ids.set(testCase.id, source);
       cases.push(testCase);
     }
-    bySource.set(source, cases);
+    // drafts/ 也受公开答案泄露和重复 id 门保护，但不属于答案侧完整性枚举。
+    if (answerFiles.has(filePath)) bySource.set(source, cases);
   }
   return { bySource, ids };
+}
+
+async function runL3Oracle(answerRoot, errors) {
+  const oraclePath = path.join(answerRoot, 'oracles', '06-security-redline.json');
+  try {
+    await fs.access(oraclePath);
+  } catch (error) {
+    if (error.code === 'ENOENT') {
+      errors.push(`${oraclePath}: 缺少 L3 红线 oracle`);
+      return;
+    }
+    throw error;
+  }
+  const tsxCli = path.join(sourceRepoRoot, 'node_modules', 'tsx', 'dist', 'cli.mjs');
+  const oracleScript = path.join(
+    sourceRepoRoot,
+    'packages',
+    'internal',
+    'evaluation-center',
+    'scripts',
+    'casebank-l3-oracle.ts',
+  );
+  const result = spawnSync(process.execPath, [
+    tsxCli,
+    oracleScript,
+    '--repo-root',
+    repoRoot,
+    '--oracle',
+    oraclePath,
+  ], {
+    cwd: sourceRepoRoot,
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      NEO_EVAL_ANSWERS_DIR: answerRoot,
+      TSX_TSCONFIG_PATH: path.join(sourceRepoRoot, 'tsconfig.json'),
+    },
+  });
+  if (result.error || result.status !== 0) {
+    errors.push([
+      'L3 红线 oracle 未通过',
+      result.error?.message,
+      result.stdout,
+      result.stderr,
+    ].filter(Boolean).join('\n'));
+    return;
+  }
+  console.log(result.stdout.trim());
 }
 
 async function checkPrivate(publicBank, errors) {
@@ -198,6 +258,7 @@ async function checkPrivate(publicBank, errors) {
     errors.push(error instanceof Error ? error.message : String(error));
   }
   console.log(`[check-casebank-answers] loader: ${groups.map((items) => items.length).join(' + ')} cases`);
+  if (publicBank.bySource.has(securityRedlineSource)) await runL3Oracle(answerRoot, errors);
 }
 
 async function main() {

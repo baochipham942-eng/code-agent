@@ -270,7 +270,7 @@ export interface TestCase {
   /** Expectation-based assertions (P1) */
   expectations?: Expectation[];
   /** Rotation metadata for test lifecycle */
-  rotation?: { introduced: string; retire_after?: string; variant?: number };
+  rotation?: { introduced: string; retire_after?: string; reason?: string; variant?: number };
   /** 回流草稿溯源：生成该用例的原始会话 id（trajectory:to-case，批 1 B1） */
   sourceSessionId?: string;
   /** 回流草稿 review 状态：pending=未补断言不进正式套件，reviewed=已人工硬化 */
@@ -502,6 +502,8 @@ export interface TestRunSummary {
   costExceeded?: number;
   /** 计划内未执行的题数；这些题仍计入通过率。 */
   notRun: number;
+  /** 已到 rotation.retire_after、因此未进入本轮计划的题目 id。 */
+  retiredSkipped?: string[];
   /** 真跑中没有调用真实模型的题数；这些题不得计为通过。 */
   invalidCases: number;
   /** 题级最终失败结果按唯一表现码计数；unknown 始终保留以衡量码本覆盖率。 */
@@ -621,6 +623,10 @@ export interface TestRunnerConfig {
   filterTags?: string[];
   /** Filter by test IDs */
   filterIds?: string[];
+  /** Include cases whose rotation.retire_after is today or earlier. */
+  includeRetired?: boolean;
+  /** Cases removed by an entry-point preselection before the runner starts. */
+  retiredSkipped?: string[];
   /** Verbose logging */
   verbose: boolean;
   /** Parallel execution (future) */

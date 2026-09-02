@@ -294,6 +294,7 @@ interface EvalRunStartConfig extends EvalRunStamp {
   split?: 'held-in' | 'held-out' | 'control' | 'safety';
   tags?: string[];
   ids?: string[];
+  includeRetired?: boolean;
   maxCases: number;
   concurrency: number;
   compare?: {
@@ -420,6 +421,7 @@ export type EvalRunEventSummary = {
   plannedCaseIds: string[];
   completed: boolean;
   notRun: number;
+  retiredSkipped?: string[];
   invalidCases: number;
   failureDistribution?: Record<string, number>;
   failureCodebookSource?: 'project' | 'bundled';

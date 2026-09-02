@@ -71,7 +71,7 @@ async function main() {
     testDirs.testCases.legacy,
   );
   const suites = await loadAllTestSuites(testCaseDir.resolved);
-  const cases = filterTestCases(suites, {});
+  const cases = filterTestCases(suites, { includeRetired: true });
   const caseById = new Map(cases.map((testCase) => [testCase.id, testCase]));
   const unknown = ids.filter((id) => !caseById.has(id));
   if (unknown.length > 0) {

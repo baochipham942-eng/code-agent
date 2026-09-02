@@ -77,6 +77,9 @@ export function generateMarkdownReport(
   if (summary.notRun > 0) {
     lines.push(`| 未跑 | ${summary.notRun} ⏸️ |`);
   }
+  if (summary.retiredSkipped?.length) {
+    lines.push(`| 已退休跳过 | ${summary.retiredSkipped.join(', ')} |`);
+  }
   if (summary.invalidCases > 0) {
     lines.push(`| 无效题（没调真模型） | ${summary.invalidCases} ⚠️ |`);
   }
@@ -636,6 +639,9 @@ export function generateConsoleReport(summary: TestRunSummary): string {
   const mockSegment = (summary.mockExcluded ?? 0) > 0 ? `  |  🧪 mock-excluded ${summary.mockExcluded}` : '';
   const notRunSegment = summary.notRun > 0 ? `  |  ⏸️ 未跑 ${summary.notRun}` : '';
   const invalidSegment = summary.invalidCases > 0 ? `  |  ⚠️ 无效题 ${summary.invalidCases}` : '';
+  const retiredSegment = summary.retiredSkipped?.length
+    ? `  |  🗄️ retired-skipped [${summary.retiredSkipped.join(',')}]`
+    : '';
   const costSummary = summarizeCostUsage(summary.results);
   const skillTotals = summary.results.reduce<Record<string, number>>((totals, result) => {
     for (const [name, count] of Object.entries(result.skillActivations ?? {})) {
@@ -643,7 +649,7 @@ export function generateConsoleReport(summary: TestRunSummary): string {
     }
     return totals;
   }, {});
-  lines.push(`  Total: ${summary.total}  |  ✅ ${summary.passed}  |  🟡 ${summary.partial}  |  ❌ ${summary.failed}  |  ⏭️ ${summary.skipped}${mockSegment}${infraSegment}${costSegment}${notRunSegment}${invalidSegment}`);
+  lines.push(`  Total: ${summary.total}  |  ✅ ${summary.passed}  |  🟡 ${summary.partial}  |  ❌ ${summary.failed}  |  ⏭️ ${summary.skipped}${mockSegment}${infraSegment}${costSegment}${notRunSegment}${invalidSegment}${retiredSegment}`);
   lines.push(`  Duration: ${formatDuration(summary.duration)}  |  ${mainMetricLabel}: ${getPassRate(summary)}%  |  Avg score: ${(summary.averageScore * 100).toFixed(1)}%`);
   lines.push(`  Cost: $${costSummary.costUsd.toFixed(6)}  |  Provider usage: ${costSummary.availableCases}/${summary.results.length} cases${costSummary.unavailableCases > 0 ? `  |  usage_unavailable ${costSummary.unavailableCases}` : ''}`);
   lines.push(`  Skill activations: ${formatSkillActivationCounts(skillTotals)}`);

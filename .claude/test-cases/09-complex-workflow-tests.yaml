@@ -35,6 +35,9 @@ cases:
     prompt: "读取 test-calculator.ts，修复除以零的 bug（应该抛出错误而不是返回 Infinity），然后验证修复是否正确"
     cleanup:
       - rm -f test-calculator.ts
+    rotation:
+      retire_after: '2026-09-30'
+      reason: 'legacy-code-assistant-era'
 
   # --------------------------------------------------------------------------
   # L3: 多文件协同修改

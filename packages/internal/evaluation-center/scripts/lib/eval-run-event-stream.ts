@@ -279,6 +279,7 @@ export class EvalRunEventStream {
             plannedCaseIds: summary.plannedCaseIds,
             completed: summary.completed,
             notRun: summary.notRun,
+            ...(summary.retiredSkipped?.length ? { retiredSkipped: summary.retiredSkipped } : {}),
             invalidCases: summary.invalidCases,
             failureDistribution: summary.failureDistribution,
             failureCodebookSource: summary.failureCodebookSource,

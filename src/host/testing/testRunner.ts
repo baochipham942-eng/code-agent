@@ -271,18 +271,16 @@ export class TestRunner {
         'parallel execution requires agentFactory so each worker has an isolated agent instance'
       );
     }
-
     const runId = this.config.runId || uuidv4();
     const startTime = Date.now();
     const results: TestResult[] = [];
     this.aborted = false;
     this.abortReason = undefined;
-
     // Load test suites
     const suites = await loadAllTestSuites(this.config.testCaseDir);
     const testCases = filterTestCases(suites, {
-      filterTags: this.config.filterTags,
-      filterIds: this.config.filterIds,
+      filterTags: this.config.filterTags, filterIds: this.config.filterIds,
+      includeRetired: this.config.includeRetired, retiredSkipped: (this.config.retiredSkipped ??= []),
     });
     const sortedCases = sortByDependencies(testCases);
     const plannedCaseIds = sortedCases.map((testCase) => testCase.id);
@@ -395,6 +393,7 @@ export class TestRunner {
       infraExcluded: results.filter((r) => r.status === 'infra_excluded').length,
       costExceeded: results.filter((r) => r.status === 'cost_exceeded').length,
       notRun: completion.notRun,
+      retiredSkipped: [...new Set(this.config.retiredSkipped ?? [])],
       invalidCases: results.filter((r) => r.invalid !== undefined).length,
       failureDistribution: results.reduce<Record<string, number>>((distribution, result) => {
         if (result.failure) distribution[result.failure.code] = (distribution[result.failure.code] ?? 0) + 1;

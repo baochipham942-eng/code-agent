@@ -16,6 +16,7 @@ const requirePrivate = process.argv.slice(2).includes('--require-private');
 const unexpectedArgs = process.argv.slice(2).filter((arg) => arg !== '--require-private');
 const answerEnumeratedSubdirectories = ['artifact-runnable', 'goal-contract', 'user-simulator'];
 const securityRedlineSource = '.claude/test-cases/06-security-redline-tests.yaml';
+const gitWorkflowSource = '.claude/test-cases/10-git-workflow-tests.yaml';
 
 async function filesUnder(root, predicate) {
   const files = [];
@@ -133,6 +134,54 @@ async function runL3Oracle(answerRoot, errors) {
   console.log(result.stdout.trim());
 }
 
+async function runL0GitOracle(answerRoot, errors) {
+  const oraclePath = path.join(answerRoot, 'oracles', '10-git-workflow.json');
+  try {
+    await fs.access(oraclePath);
+  } catch (error) {
+    if (error.code === 'ENOENT') {
+      errors.push(`${oraclePath}: 缺少 L0 git 反向样本 oracle`);
+      return;
+    }
+    throw error;
+  }
+  const tsxCli = path.join(sourceRepoRoot, 'node_modules', 'tsx', 'dist', 'cli.mjs');
+  const oracleScript = path.join(
+    sourceRepoRoot,
+    'packages',
+    'internal',
+    'evaluation-center',
+    'scripts',
+    'casebank-l0-git-oracle.ts',
+  );
+  const result = spawnSync(process.execPath, [
+    tsxCli,
+    oracleScript,
+    '--repo-root',
+    repoRoot,
+    '--oracle',
+    oraclePath,
+  ], {
+    cwd: sourceRepoRoot,
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      NEO_EVAL_ANSWERS_DIR: answerRoot,
+      TSX_TSCONFIG_PATH: path.join(sourceRepoRoot, 'tsconfig.json'),
+    },
+  });
+  if (result.error || result.status !== 0) {
+    errors.push([
+      'L0 git 反向样本 oracle 未通过',
+      result.error?.message,
+      result.stdout,
+      result.stderr,
+    ].filter(Boolean).join('\n'));
+    return;
+  }
+  console.log(result.stdout.trim());
+}
+
 async function checkPrivate(publicBank, errors) {
   const { resolveAnswerSideRoot } = await tsImport(
     path.join(sourceRepoRoot, 'src/host/testing/answerSide.ts'),
@@ -221,7 +270,7 @@ async function checkPrivate(publicBank, errors) {
   let groups;
   try {
     groups = await Promise.all(directories.map(async (directory) => (
-      loader.filterTestCases(await loader.loadAllTestSuites(directory), {})
+      loader.filterTestCases(await loader.loadAllTestSuites(directory), { includeRetired: true })
     )));
   } finally {
     console.error = originalConsoleError;
@@ -259,6 +308,7 @@ async function checkPrivate(publicBank, errors) {
   }
   console.log(`[check-casebank-answers] loader: ${groups.map((items) => items.length).join(' + ')} cases`);
   if (publicBank.bySource.has(securityRedlineSource)) await runL3Oracle(answerRoot, errors);
+  if (publicBank.bySource.has(gitWorkflowSource)) await runL0GitOracle(answerRoot, errors);
 }
 
 async function main() {

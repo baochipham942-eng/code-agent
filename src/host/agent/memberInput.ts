@@ -71,9 +71,9 @@ export async function sendMemberInput(
       timestamp: request.timestamp,
     });
     if (result.outcome === 'resolved') {
-      // 排队：命令中心落记录；运行中：运行时 injectSteerMessage 落记录——两条都已持久
+      // 排队：命令中心落记录（recorded=false 表示任务书改了但记录没写成）；运行中：运行时 injectSteerMessage 落记录
       return result.task.status === 'queued'
-        ? { outcome: 'delivered', effect: 'queued', persisted: true }
+        ? { outcome: 'delivered', effect: 'queued', persisted: result.recorded !== false }
         : { outcome: 'delivered', effect: 'now', persisted: true };
     }
     const known = deps.commandCenter.list(request.sessionId).some((task) => task.id === request.memberId);

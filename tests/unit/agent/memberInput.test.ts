@@ -130,6 +130,16 @@ describe('sendMemberInput', () => {
     await expect(sendMemberInput({ ...base, kind: 'task', memberId: 'task-7', mode: 'supplement', messageId: 'm-queued' }, d))
       .resolves.toEqual({ outcome: 'delivered', effect: 'queued', persisted: true });
     expect(d.commandCenter.steer).toHaveBeenCalledWith('session-a', 'task-7', '顺便把页码加上', expect.objectContaining({ messageId: 'm-queued', timestamp: 1000 }));
+
+    // 记录没写成（recorded:false）⇒ 已送到但 persisted:false，界面提示别重发
+    const unrecorded = deps({
+      commandCenter: {
+        list: vi.fn().mockReturnValue([]),
+        steer: vi.fn().mockResolvedValue({ outcome: 'resolved', task: { id: 'task-7', status: 'queued' }, recorded: false }),
+      },
+    });
+    await expect(sendMemberInput({ ...base, kind: 'task', memberId: 'task-7', mode: 'supplement' }, unrecorded))
+      .resolves.toEqual({ outcome: 'delivered', effect: 'queued', persisted: false });
   });
 
   it('后台任务已收工：拒收「finished」，不排队；不存在：「not_found」', async () => {

@@ -90,10 +90,10 @@ export const MemberInputBar: React.FC<{
       if (receipt.outcome !== 'delivered') return;
       // delivered 就清草稿：即使主会话没记下，重发也会让成员执行两次
       setValue('');
-      if (member.kind !== 'task') {
-        if (!receipt.persisted) {
-          setHint(text.sentNotRecorded);
-        } else if (useSessionStore.getState().currentSessionId === sessionId) {
+      if (!receipt.persisted) {
+        setHint(text.sentNotRecorded);
+      } else if (member.kind !== 'task') {
+        if (useSessionStore.getState().currentSessionId === sessionId) {
           // 主对话里落同一条记录（团队路径宿主已落库，这里只做即时显示；重载后以宿主那条为准）
           useSessionStore.getState().addMessage({
             id: messageId,

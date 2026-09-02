@@ -428,4 +428,22 @@ describe('SessionCommandCenter', () => {
     expect(persistMemberInput).toHaveBeenCalledTimes(1);
     center.dispose();
   });
+
+  // 落库失败不能报成「没送到」：任务书已经改了，用户重发会重复追加。降级为 recorded:false 让回执说「已送到、没记下、别重发」
+  it('reports recorded:false instead of throwing when the member-input record fails after the prompt changed', async () => {
+    const manager = new FakeTaskManager();
+    const center = new SessionCommandCenter(manager as unknown as TaskManager, {
+      projectTerminalResult: vi.fn(),
+      wakeForegroundBrain: vi.fn(),
+      persistMemberInput: vi.fn().mockRejectedValue(new Error('db down')),
+    });
+    await center.spawn(input(1, 'report'));
+    const queued = await center.spawn({ ...input(2, 'report'), queueWhenFull: true });
+    if (queued.outcome !== 'queued') throw new Error(`expected queued, got ${queued.outcome}`);
+
+    const result = await center.steer('session-a', queued.task.id, '顺便把页码加上', { origin: 'user', mode: 'supplement', memberName: '任务2', messageId: 'm-8' });
+    expect(result).toMatchObject({ outcome: 'resolved', recorded: false });
+    expect(center.list('session-a').find((task) => task.id === queued.task.id)?.prompt).toContain('补充要求：顺便把页码加上');
+    center.dispose();
+  });
 });

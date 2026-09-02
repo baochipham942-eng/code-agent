@@ -84,7 +84,8 @@ export type SpawnSessionTaskResult =
   | { outcome: 'requires_choice'; active: SessionCommandTask[] };
 
 export type SessionTaskReferenceResult =
-  | { outcome: 'resolved'; task: SessionCommandTask }
+  /** recorded=false：指令已进任务书，但主会话记录没写成——回执要告诉用户「已送到、没记下、别重发」 */
+  | { outcome: 'resolved'; task: SessionCommandTask; recorded?: boolean }
   | { outcome: 'missing' }
   | { outcome: 'ambiguous'; candidates: SessionCommandTask[] };
 
@@ -262,9 +263,11 @@ export class SessionCommandCenter {
         : `${task.prompt}\n\n补充要求：${instruction}`;
       task.updatedAt = Date.now();
       if (steerOptions) {
-        // 主对话落一条 isMeta+memberInput 记录（刷新/回放/团长汇总都看得见；运行中路径由运行时落）
+        // 主对话落一条 isMeta+memberInput 记录（刷新/回放/团长汇总都看得见；运行中路径由运行时落）。
+        // 任务书已经改了，落库失败不能抛成「没送到」——用户会重发、指令重复追加；降级成「已送到、没记下」。
         const timestamp = steerOptions.timestamp ?? task.updatedAt;
-        await this.persistMemberInput(sessionId, {
+        try {
+          await this.persistMemberInput(sessionId, {
           id: steerOptions.messageId ?? `member-input-${task.id}-${timestamp}`,
           role: 'user',
           content: instruction,
@@ -276,6 +279,13 @@ export class SessionCommandCenter {
             memberInput: { memberId: task.id, memberName: steerOptions.memberName, mode: steerOptions.mode },
           },
         });
+        } catch (error) {
+          logger.warn('Queued task accepted member input but the session record failed', {
+            taskId: task.id,
+            message: error instanceof Error ? error.message : String(error),
+          });
+          return { outcome: 'resolved', task: { ...task }, recorded: false };
+        }
       }
       return { outcome: 'resolved', task: { ...task } };
     }

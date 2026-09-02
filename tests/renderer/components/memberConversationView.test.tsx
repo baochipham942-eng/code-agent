@@ -447,4 +447,29 @@ describe('成员对话页', () => {
     await waitFor(() => expect(domainInvoke).toHaveBeenCalledWith(IPC_DOMAINS.TASK, 'cancelBackgroundTask', { taskId: 'task-7' }));
     (window as unknown as { domainAPI?: unknown }).domainAPI = undefined;
   });
+
+  it('后台任务排队中送到但记录没写成：清草稿并提示别重发（任务书已经改了，重发会重复追加）', async () => {
+    invokeMock.mockReset();
+    invokeMock.mockResolvedValue([]);
+    const task: Task = {
+      id: 'task-8', sessionId: 'session-1', source: 'delegate_task', title: '核对发布清单',
+      status: 'queued', createdAt: 1, updatedAt: 2, events: [], outputRefs: [],
+    };
+    useBackgroundTaskStore.setState({ tasks: [task] });
+    useSessionStore.setState({ currentSessionId: 'session-1', messages: [] });
+    useMemberViewStore.setState({ viewingMemberId: 'task-8' });
+    invokeDomainMock.mockImplementation((domain: unknown, action: unknown) => (
+      domain === IPC_DOMAINS.AGENT && action === 'sendMemberInput'
+        ? Promise.resolve({ outcome: 'delivered', effect: 'queued', persisted: false })
+        : Promise.resolve(null)
+    ));
+
+    render(<MemberConversationView sessionId="session-1" />);
+    const input = await screen.findByTestId('member-input') as HTMLTextAreaElement;
+    fireEvent.change(input, { target: { value: '只执行一次' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await waitFor(() => expect(screen.getByRole('status').textContent).toContain(zh.expert.memberBar.sentNotRecorded));
+    expect(input.value).toBe('');
+    expect(screen.getByTestId('member-input-receipt').getAttribute('data-state')).toBe('queued');
+  });
 });

@@ -3,7 +3,8 @@
 // ============================================================================
 
 import type { AgentInterface } from './testRunner';
-import type { ToolExecutionRecord, HarnessVariantConfig, UserSimulation, EvalGoalContract, GoalRunRecord } from './types';
+import type { ToolExecutionRecord, HarnessVariantConfig, UserSimulation, EvalGoalContract, GoalRunRecord, PermissionRequestRecord } from './types';
+import { createPermissionRequestRecorder } from './approvalRequestEval';
 import { buildPermissionDecider } from './userSimulator';
 import { applyGoalEvent, buildLoopGoalContract, createGoalRunRecord } from './goalContractEval';
 import type { AgentLoop } from '../agent/agentLoop';
@@ -500,6 +501,7 @@ export class StandaloneAgentAdapter implements AgentInterface {
     turnCount: number;
     errors: string[];
   }> {
+    let permissionRequests: PermissionRequestRecord[] | undefined;
     const responses: string[] = [];
     const toolExecutions: ToolExecutionRecord[] = [];
     const errors: string[] = [];
@@ -529,8 +531,12 @@ export class StandaloneAgentAdapter implements AgentInterface {
       // 最后才保留存量 eval auto-approve 行为。
       const permissionDecider = this.simConfig ? buildPermissionDecider(this.simConfig) : null;
       const telemetryCollector = this.telemetryCollector ?? getTelemetryCollector();
+      // N-EVAL-APPROVALEVAL · B：显式 scripted 策略下把每次审批请求落账（approval_* 断言的证据源）。
+      // 每个 sendMessage 一个记录器，按题隔离；没有 scripted 策略的存量路径不记（保持 undefined ⇒ 断言 fail-loud）。
+      const recorder = this.requestPermission ? createPermissionRequestRecorder(this.requestPermission) : null;
+      permissionRequests = recorder?.records;
       const toolExecutor = new ToolExecutor({
-        requestPermission: this.requestPermission
+        requestPermission: recorder?.handler
           ?? (permissionDecider
             ? async (request) => permissionDecider({ ...request, toolName: request.tool })
             : async () => true),
@@ -714,7 +720,13 @@ export class StandaloneAgentAdapter implements AgentInterface {
       errors.push(message || String(error));
     }
 
-    return { responses, toolExecutions, turnCount: turnCount || responses.length, errors };
+    return {
+      responses,
+      toolExecutions,
+      turnCount: turnCount || responses.length,
+      errors,
+      ...(permissionRequests ? { permissionRequests } : {}),
+    };
   }
 
   /** 批 6：testRunner 每 case 注入 user_simulation（无模拟的 case 传 undefined 清除） */

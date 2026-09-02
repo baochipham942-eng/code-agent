@@ -21,6 +21,7 @@ import type {
   UserSimulation,
   EvalGoalContract,
   GoalRunRecord,
+  PermissionRequestRecord,
 } from './types';
 import { loadAllTestSuites, filterTestCases, sortByDependencies } from './testCaseLoader';
 import { validateUserSimulation, evaluateSimRules, DEFAULT_SIM_MAX_TURNS } from './userSimulator';
@@ -94,6 +95,8 @@ export interface AgentInterface {
     toolExecutions: ToolExecutionRecord[];
     turnCount: number;
     errors: string[];
+    /** adapter 接了审批记录器时才有；缺席 ⇒ approval_* 断言 fail-loud */
+    permissionRequests?: PermissionRequestRecord[];
   }>;
   /** Reset the agent state for a new test */
   reset(): Promise<void>;
@@ -806,6 +809,7 @@ export class TestRunner {
 
       result.responses = agentResult.responses;
       result.toolExecutions = agentResult.toolExecutions;
+      if (agentResult.permissionRequests) result.permissionRequests = agentResult.permissionRequests;
       result.turnCount = agentResult.turnCount;
       result.errors = agentResult.errors;
       result.sessionId = agent.getSessionId?.();
@@ -938,9 +942,7 @@ export class TestRunner {
         result.status = 'passed';
       } else if (assertionResult.score > 0) {
         result.status = 'partial';
-        result.failureReason = assertionResult.failures
-          .map((f) => f.message)
-          .join('; ');
+        result.failureReason = assertionResult.failures.map((f) => f.message).join('; ');
         result.failureDetails = {
           expected: assertionResult.failures.map((f) => f.expected),
           actual: assertionResult.failures.map((f) => f.actual),
@@ -948,9 +950,7 @@ export class TestRunner {
         };
       } else {
         result.status = 'failed';
-        result.failureReason = assertionResult.failures
-          .map((f) => f.message)
-          .join('; ');
+        result.failureReason = assertionResult.failures.map((f) => f.message).join('; ');
         result.failureDetails = {
           expected: assertionResult.failures.map((f) => f.expected),
           actual: assertionResult.failures.map((f) => f.actual),
@@ -968,6 +968,7 @@ export class TestRunner {
           workingDirectory,
           simTurns: result.simTurns,
           goalRun: result.goalRun,
+          permissionRequests: result.permissionRequests,
         });
         result.expectationResults = expResult.results;
         result.score = expResult.overallScore;

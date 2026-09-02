@@ -1,0 +1,570 @@
+{
+  "version": 1,
+  "denominatorVersion": 4,
+  "aggregationRule": "pass_rate_k1",
+  "aggregationRuleVersion": 4,
+  "plannedCaseIds": [
+    "bash-pwd",
+    "bash-echo",
+    "read-file-not-exists",
+    "write-file-new",
+    "edit-file-modify",
+    "task-create-json-config",
+    "task-analyze-structure",
+    "task-explain-code",
+    "conv-understand-intent",
+    "conv-understand-context",
+    "conv-ask-clarification",
+    "conv-handle-ambiguous",
+    "error-file-not-found",
+    "error-directory-not-found",
+    "error-command-failed",
+    "error-recovery-retry",
+    "error-graceful-fallback",
+    "debug-syntax-error",
+    "debug-runtime-error",
+    "codegen-typescript",
+    "refactor-extract-function",
+    "refactor-rename-variable",
+    "recovery-tool-fallback",
+    "recovery-path-fallback",
+    "recovery-write-readonly",
+    "recovery-partial-success",
+    "recovery-command-retry",
+    "recovery-binary-file",
+    "data-csv-basic",
+    "data-cleaning",
+    "workflow-read-modify-verify",
+    "workflow-multi-file",
+    "workflow-analyze-and-document",
+    "workflow-e2e-improve",
+    "git-status",
+    "git-log",
+    "git-diff-analysis",
+    "git-branch-create",
+    "git-conflict-awareness",
+    "web-search-basic",
+    "web-search-chinese",
+    "web-fetch-page",
+    "web-fetch-json-api",
+    "longtext-read-large-file",
+    "longtext-scan-directory",
+    "longtext-generate-doc",
+    "ppt-from-outline",
+    "doc-data-to-report",
+    "edge-unicode-filename",
+    "edge-single-word",
+    "edge-emoji-input",
+    "edge-malformed-json",
+    "multi-turn-context-memory",
+    "multi-turn-incremental-task",
+    "multi-turn-correction",
+    "multi-turn-drill-down",
+    "multi-turn-build-on-previous",
+    "multi-turn-misunderstand-fix",
+    "vision-screenshot-describe",
+    "multiagent-workflow-analysis",
+    "multiagent-cross-file-analysis",
+    "excel-bench-59196",
+    "excel-bench-66-1",
+    "excel-bench-46167",
+    "excel-bench-55427",
+    "reread-loop-trap",
+    "modify-verify-modify",
+    "cross-file-consistent-edit",
+    "long-chain-budget-15",
+    "prompt-smoke-read-package",
+    "prompt-smoke-write-file",
+    "prompt-smoke-edit-multiple-replacements",
+    "prompt-smoke-grep-current-name",
+    "prompt-smoke-toolsearch-json-arguments",
+    "prompt-smoke-task-single-delegate",
+    "prompt-smoke-git-status-no-commit"
+  ],
+  "experimentId": "805d09be-5af3-4913-94a5-cabba5d8f906",
+  "commit": "925ecb2a8c4f707791a724c70e183a81cf2f1e2a",
+  "caseBankSha": "fbc84ed1922e12ef5ae5fad5faefbd59b512b15e",
+  "shape": {
+    "skills": [],
+    "memory": false,
+    "swarm": false,
+    "harness": null
+  },
+  "divergesFromProduction": true,
+  "productionDifferences": [
+    "skills",
+    "memory",
+    "swarm",
+    "harness"
+  ],
+  "excludedCaseIds": [],
+  "knownIssues": [],
+  "history": [
+    {
+      "experimentId": "805d09be-5af3-4913-94a5-cabba5d8f906",
+      "updatedAt": 1788351174661,
+      "updatedBy": "925ecb2a8c4f707791a724c70e183a81cf2f1e2a"
+    }
+  ],
+  "updatedAt": 1788351174661,
+  "updatedBy": "925ecb2a8c4f707791a724c70e183a81cf2f1e2a",
+  "mode": "real",
+  "globalMetrics": {
+    "passRate": 0.868421052631579,
+    "averageScore": 0.93582440950862,
+    "totalCases": 76
+  },
+  "caseResults": {
+    "bash-pwd": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1788349911073,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "bash-echo": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1788349919734,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "read-file-not-exists": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1788349918384,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "write-file-new": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1788349930157,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "edit-file-modify": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1788349936978,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "task-create-json-config": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1788349944037,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "task-analyze-structure": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1788349966974,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "task-explain-code": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1788349971739,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "conv-understand-intent": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1788349982920,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "conv-understand-context": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1788349985359,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "conv-ask-clarification": {
+      "status": "partial",
+      "score": 0.5555555555555556,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "conv-handle-ambiguous": {
+      "status": "failed",
+      "score": 0,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "error-file-not-found": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1788349994468,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "error-directory-not-found": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1788350013090,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "error-command-failed": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1788350024055,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "error-recovery-retry": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1788350031993,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "error-graceful-fallback": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1788350044682,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "debug-syntax-error": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1788350052463,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "debug-runtime-error": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1788350078801,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "codegen-typescript": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1788350083292,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "refactor-extract-function": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1788350134103,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "refactor-rename-variable": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1788350111040,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "recovery-tool-fallback": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1788350126120,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "recovery-path-fallback": {
+      "status": "partial",
+      "score": 0.6190476190476191,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "recovery-write-readonly": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1788350184783,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "recovery-partial-success": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1788350168712,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "recovery-command-retry": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1788350183589,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "recovery-binary-file": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1788350193364,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "data-csv-basic": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1788350196635,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "data-cleaning": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1788350208641,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "workflow-read-modify-verify": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1788350276049,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "workflow-multi-file": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1788350243970,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "workflow-analyze-and-document": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1788350324063,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "workflow-e2e-improve": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1788350300908,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "git-status": {
+      "status": "failed",
+      "score": 0,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "git-log": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1788350381952,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "git-diff-analysis": {
+      "status": "failed",
+      "score": 0,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "git-branch-create": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1788350399165,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "git-conflict-awareness": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1788350421572,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "web-search-basic": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1788350435493,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "web-search-chinese": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1788350443807,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "web-fetch-page": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1788350452513,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "web-fetch-json-api": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1788350463756,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "longtext-read-large-file": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1788350536072,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "longtext-scan-directory": {
+      "status": "partial",
+      "score": 0.7692307692307692,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "longtext-generate-doc": {
+      "status": "partial",
+      "score": 0.7948717948717949,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "ppt-from-outline": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1788350614895,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "doc-data-to-report": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1788350660966,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "edge-unicode-filename": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1788350625956,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "edge-single-word": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1788350630626,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "edge-emoji-input": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1788350635077,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "edge-malformed-json": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1788350666330,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "multi-turn-context-memory": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1788350671998,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "multi-turn-incremental-task": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1788350713807,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "multi-turn-correction": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1788350703316,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "multi-turn-drill-down": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1788350731521,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "multi-turn-build-on-previous": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1788350729697,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "multi-turn-misunderstand-fix": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1788350767103,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "vision-screenshot-describe": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1788350743043,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "multiagent-workflow-analysis": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1788350879790,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "multiagent-cross-file-analysis": {
+      "status": "partial",
+      "score": 0.7692307692307692,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "excel-bench-59196": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1788350835523,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "excel-bench-66-1": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1788350884600,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "excel-bench-46167": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1788350913305,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "excel-bench-55427": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1788350976166,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "reread-loop-trap": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1788350931761,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "modify-verify-modify": {
+      "status": "partial",
+      "score": 0.8571428571428571,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "cross-file-consistent-edit": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1788351019139,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "long-chain-budget-15": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1788351170209,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "prompt-smoke-read-package": {
+      "status": "partial",
+      "score": 0.7575757575757576,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "prompt-smoke-write-file": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1788351053257,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "prompt-smoke-edit-multiple-replacements": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1788351065717,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "prompt-smoke-grep-current-name": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1788351084375,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "prompt-smoke-toolsearch-json-arguments": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1788351090536,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "prompt-smoke-task-single-delegate": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1788351133731,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    },
+    "prompt-smoke-git-status-no-commit": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1788351139273,
+      "model": "custom-tokenrhythm/deepseek-v4-flash"
+    }
+  },
+  "thresholds": {
+    "minPassRate": 0.7,
+    "maxScoreDrop": 0.15,
+    "maxNewFailures": 2
+  }
+}

@@ -4,6 +4,8 @@ interface ForbiddenCallPatterns {
   toolPatterns: RegExp[];
   commandPatterns: RegExp[];
   inputPatterns: RegExp[];
+  /** K5：false = 被审批卡拦下（permissionDenied）的尝试不算违规；默认 true */
+  countDenied: boolean;
 }
 
 interface ForbiddenCallViolation {
@@ -33,7 +35,9 @@ function parseForbiddenCallPatterns(params: Record<string, unknown>): ForbiddenC
   if (typeof commandPatterns === 'string') return commandPatterns;
   const inputPatterns = inputValues === undefined ? [] : parseList(inputValues, 'forbidden_inputs');
   if (typeof inputPatterns === 'string') return inputPatterns;
-  return { toolPatterns, commandPatterns, inputPatterns };
+  const countDenied = params.count_denied;
+  if (countDenied !== undefined && typeof countDenied !== 'boolean') return 'count_denied must be a boolean';
+  return { toolPatterns, commandPatterns, inputPatterns, countDenied: countDenied ?? true };
 }
 
 export function findForbiddenCallViolations(
@@ -44,6 +48,7 @@ export function findForbiddenCallViolations(
   if (typeof patterns === 'string') return patterns;
   const shellToolPattern = /^(?:(?:power)?shell|bash|terminal)(?:$|[_ -])/i;
   return toolExecutions.flatMap((execution) => {
+    if (!patterns.countDenied && execution.permissionDenied === true) return [];
     const command = execution.input.command ?? null;
     const serializedInput = JSON.stringify(execution.input);
     const inputMatch = patterns.inputPatterns

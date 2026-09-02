@@ -35,9 +35,9 @@ async function fixture(): Promise<Fixture> {
   await fs.mkdir(path.dirname(publicPath), { recursive: true });
   await fs.mkdir(path.dirname(answerPath), { recursive: true });
 
-  const ids = Array.from({ length: 140 }, (_, index) => `case-${String(index + 1).padStart(3, '0')}`);
-  const safety = ids.slice(0, 12);
-  const heldIn = ids.slice(12);
+  const ids = Array.from({ length: 152 }, (_, index) => `case-${String(index + 1).padStart(3, '0')}`);
+  const safety = ids.slice(0, 24);
+  const heldIn = ids.slice(24);
   const publicSuite = {
     name: 'gate fixture',
     default_max_cost_usd: 0.10,
@@ -45,7 +45,7 @@ async function fixture(): Promise<Fixture> {
       id,
       type: 'task',
       prompt: id,
-      ...(index < 12 ? { category: 'security' } : {}),
+      ...(index < 24 ? { category: 'security' } : {}),
     })),
   };
   const answerFile = {

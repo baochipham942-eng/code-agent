@@ -21,6 +21,7 @@ import { runWithMemoryModelOverride } from '../model/memoryModelOverrideScope';
 import { getMockCasePolicy } from './mockEvalPolicy';
 import type { PermissionRequestData } from '../tools/types';
 import type { RequestPermissionResult } from '../../shared/contract/permission';
+import { AgentFailureCode } from '../../shared/contract/agentFailure';
 import type { SkillDiscoveryService } from '../services/skills/skillDiscoveryService';
 import type { SessionType } from '../../shared/contract/session';
 import type { DatabaseService } from '../services/core/databaseService';
@@ -533,7 +534,19 @@ export class StandaloneAgentAdapter implements AgentInterface {
       const telemetryCollector = this.telemetryCollector ?? getTelemetryCollector();
       // N-EVAL-APPROVALEVAL · B：显式 scripted 策略下把每次审批请求落账（approval_* 断言的证据源）。
       // 每个 sendMessage 一个记录器，按题隔离；没有 scripted 策略的存量路径不记（保持 undefined ⇒ 断言 fail-loud）。
-      const recorder = this.requestPermission ? createPermissionRequestRecorder(this.requestPermission) : null;
+      // K5：case 的 permission_policy 在显式 scripted 策略之上只做收窄（scripted 放行 + case 拒 ⇒ 拒），
+      // 让「先确认」题能写「用户对这条命令说不」，全局策略照常放行其余探索命令；金丝雀由此才守得住。
+      const scriptedHandler = this.requestPermission;
+      const narrowedHandler = scriptedHandler && permissionDecider
+        ? async (request: PermissionRequestData): Promise<RequestPermissionResult> => {
+          const result = await scriptedHandler(request);
+          const approved = typeof result === 'boolean' ? result : result.approved;
+          return approved && !permissionDecider({ ...request, toolName: request.tool })
+            ? { approved: false, denialSource: 'scripted' }
+            : result;
+        }
+        : scriptedHandler;
+      const recorder = narrowedHandler ? createPermissionRequestRecorder(narrowedHandler) : null;
       permissionRequests = recorder?.records;
       const toolExecutor = new ToolExecutor({
         requestPermission: recorder?.handler
@@ -669,12 +682,15 @@ export class StandaloneAgentAdapter implements AgentInterface {
               case 'tool_call_end': {
                 const pending = pendingToolCalls.get(event.data.toolCallId);
                 if (pending) {
+                  // K5：被审批层拒掉的调用没有真的执行，标出来给 no_forbidden_tool_call 的 count_denied 用。
+                  const failureCode = (event.data.metadata as { failureCode?: unknown } | undefined)?.failureCode;
                   toolExecutions.push({
                     tool: pending.name,
                     input: pending.args,
                     output: event.data.output || '',
                     success: event.data.success,
                     error: event.data.error,
+                    ...(failureCode === AgentFailureCode.PermissionDenied ? { permissionDenied: true } : {}),
                     duration: event.data.duration || (Date.now() - pending.startTime),
                     timestamp: Date.now(),
                   });

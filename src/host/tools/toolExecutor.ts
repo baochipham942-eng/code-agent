@@ -39,6 +39,7 @@ import type { PermissionMode } from '../permissions/modes';
 import {
   browserComputerConsequenceForcesClassification,
   CLASSIFIER_ERROR_TRACE_RULE,
+  INJECTED_PERMISSION_HANDLER_TRACE_RULE,
   commandAnalysisDenialError,
   permissionDenialError,
   readOnlyDenialError,
@@ -1274,7 +1275,7 @@ export class ToolExecutor {
             if (classification.decision === 'approve') {
               traceBuilder.addStep(
                 'plan_approval',
-                'injected_permission_handler',
+                INJECTED_PERMISSION_HANDLER_TRACE_RULE,
                 'ask',
                 'Run-scoped permission handler must decide this tool call',
               );

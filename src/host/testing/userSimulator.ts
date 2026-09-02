@@ -139,6 +139,16 @@ export function validateUserSimulation(sim: UserSimulation): string | null {
       }
     }
   }
+  if (sim.permission_reject_commands !== undefined) {
+    if (!Array.isArray(sim.permission_reject_commands) || sim.permission_reject_commands.length === 0) {
+      return 'user_simulation.permission_reject_commands must be a non-empty array of regex strings';
+    }
+    for (const pattern of sim.permission_reject_commands) {
+      if (typeof pattern !== 'string' || !compileRegex(pattern)) {
+        return `user_simulation.permission_reject_commands contains an invalid regex: "${String(pattern)}"`;
+      }
+    }
+  }
   return null;
 }
 
@@ -198,8 +208,13 @@ export function buildPermissionDecider(
     return () => true;
   }
   const rejectPatterns = sim.permission_reject_tools?.map((p) => compileRegex(p));
+  // K5：按命令收窄——只拒 details.command 命中的那条（「用户对整目录删除说不，对 ls 说行」）。
+  const rejectCommands = sim.permission_reject_commands?.map((p) => compileRegex(p));
   return (request) => {
-    if (!rejectPatterns) return false;
-    return !rejectPatterns.some((regex) => regex?.test(request.toolName));
+    if (!rejectPatterns && !rejectCommands) return false;
+    if (rejectPatterns?.some((regex) => regex?.test(request.toolName))) return false;
+    const command = (request.details as { command?: unknown } | undefined)?.command;
+    if (typeof command === 'string' && rejectCommands?.some((regex) => regex?.test(command))) return false;
+    return true;
   };
 }

@@ -21,11 +21,13 @@ import type {
   ExpectationResult,
   SimTurnRecord,
   GoalRunRecord,
+  PermissionRequestRecord,
 } from './types';
 import { WRITE_EFFECT_TOOL_PATTERNS } from './userSimulator';
 import { evaluateGoalStatusExpectation, evaluateGoalEvidenceGateExpectation } from './goalContractEval';
 import { evaluateNoStallBeforeArtifactExpectation } from './openingShapeEval';
 import { findForbiddenCallViolations } from './forbiddenCallEval';
+import { evaluateApprovalRequestExpectation } from './approvalRequestEval';
 
 /**
  * Assertion failure details
@@ -711,6 +713,8 @@ interface ExpectationContext {
   simTurns?: SimTurnRecord[];
   /** 批 6 · B6b-①：goal run 行为落账（goal_status / goal_evidence_gate 断言的锚点数据） */
   goalRun?: GoalRunRecord;
+  /** N-EVAL-APPROVALEVAL · B：审批处理器被调用记录（approval_* 断言的证据源；缺席时那两个断言 fail-loud） */
+  permissionRequests?: PermissionRequestRecord[];
 }
 
 /**
@@ -1098,6 +1102,17 @@ async function evaluateExpectation(
         expected = 'no forbidden tool, shell command, or tool input call';
         details = context.toolExecutions.length === 0 ? '已检查 0 次工具调用；过程记录为空'
           : `已检查 ${context.toolExecutions.length} 次工具调用；命中 ${violations.length} 次`;
+        break;
+      }
+
+      case 'approval_requested':
+      case 'approval_not_requested': {
+        // 实现在 approvalRequestEval（保持本文件在债务门内）；fail-loud 口径见该模块 doc comment。
+        const evaluation = evaluateApprovalRequestExpectation(expectation.type, params, context.permissionRequests);
+        passed = evaluation.passed;
+        actual = evaluation.actual;
+        expected = evaluation.expected;
+        details = evaluation.details;
         break;
       }
 

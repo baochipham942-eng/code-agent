@@ -12,6 +12,12 @@ name: Eval Harness Gate
 #
 # 触发条件：评测基础设施或插件机制相关文件改动时跑，其余 PR 不触发。
 # 插件生命周期 job 只跑免费 L4 链路；付费真评测保持本地显式开关。
+#
+# paths 推导判据：覆盖会影响「插件装入 → 出现在座位 → 打开 → 卸载 → HTTP 边界」
+# 的改动：① host 装载、校验与路由；② renderer 的 declareSlot 声明处与每个渲染
+# *SlotHost 的宿主文件；③ E2E 自身及它断言的文案 / testid 归属文件。
+# 判断口诀：你的文件 import 了 slots/ 或渲染了任一 *SlotHost，或 E2E 断言了你文件里的
+# 字符串 / testid ⇒ 必须补进 pull_request.paths 和 push.paths 两处。
 
 on:
   pull_request:
@@ -20,6 +26,19 @@ on:
       - 'src/host/testing/**'
       - 'src/host/internalFeatures/**'
       - 'src/renderer/internalFeatures/**'
+      - 'src/renderer/slots/**'
+      - 'src/renderer/App.tsx'
+      - 'src/renderer/components/features/capabilityHub/CapabilityHubPage.tsx'
+      - 'src/renderer/components/features/chat/TurnBasedTraceView.tsx'
+      - 'src/renderer/components/features/settings/SettingsModal.tsx'
+      - 'src/renderer/components/features/settings/tabs/CapabilityPackageCard.tsx'
+      - 'src/renderer/components/features/settings/tabs/PluginsSettings.tsx'
+      - 'src/renderer/components/features/settings/tabs/PrivacySettings.tsx'
+      - 'src/renderer/components/features/sidebar/SidebarAccountMenu.tsx'
+      - 'src/renderer/components/features/sidebar/SidebarCapabilityZone.tsx'
+      - 'src/renderer/i18n/capabilityHub.ts'
+      - 'src/renderer/i18n/zhSettingsModels.ts'
+      - 'src/renderer/utils/settingsTabs.ts'
       - 'src/web/routes/internalFeatures.ts'
       - 'src/host/services/capabilities/manualCapabilityPackageService.ts'
       - 'src/host/plugins/**'
@@ -33,6 +52,9 @@ on:
       - 'tests/eval/**'
       - 'tests/eval-harness/**'
       - 'tests/e2e/internal-plugin*'
+      - 'tests/renderer/components/secondaryPagesNavigationContract.test.ts'
+      - 'tests/renderer/slots/**'
+      - 'tests/scripts/pluginGatePaths.test.ts'
       - '.github/workflows/eval-harness-gate.yml'
   push:
     branches: [main]
@@ -40,6 +62,19 @@ on:
       - 'src/host/testing/**'
       - 'src/host/internalFeatures/**'
       - 'src/renderer/internalFeatures/**'
+      - 'src/renderer/slots/**'
+      - 'src/renderer/App.tsx'
+      - 'src/renderer/components/features/capabilityHub/CapabilityHubPage.tsx'
+      - 'src/renderer/components/features/chat/TurnBasedTraceView.tsx'
+      - 'src/renderer/components/features/settings/SettingsModal.tsx'
+      - 'src/renderer/components/features/settings/tabs/CapabilityPackageCard.tsx'
+      - 'src/renderer/components/features/settings/tabs/PluginsSettings.tsx'
+      - 'src/renderer/components/features/settings/tabs/PrivacySettings.tsx'
+      - 'src/renderer/components/features/sidebar/SidebarAccountMenu.tsx'
+      - 'src/renderer/components/features/sidebar/SidebarCapabilityZone.tsx'
+      - 'src/renderer/i18n/capabilityHub.ts'
+      - 'src/renderer/i18n/zhSettingsModels.ts'
+      - 'src/renderer/utils/settingsTabs.ts'
       - 'src/web/routes/internalFeatures.ts'
       - 'src/host/services/capabilities/manualCapabilityPackageService.ts'
       - 'src/host/plugins/**'
@@ -53,6 +88,9 @@ on:
       - 'tests/eval/**'
       - 'tests/eval-harness/**'
       - 'tests/e2e/internal-plugin*'
+      - 'tests/renderer/components/secondaryPagesNavigationContract.test.ts'
+      - 'tests/renderer/slots/**'
+      - 'tests/scripts/pluginGatePaths.test.ts'
       - '.github/workflows/eval-harness-gate.yml'
   workflow_dispatch:
 
@@ -97,6 +135,14 @@ jobs:
 
       - name: Build evaluation-center plugin
         run: npm --prefix packages/internal/evaluation-center run build
+
+      - name: Guard source evaluation-center manifest
+        run: |
+          npx vitest run tests/scripts/evaluationCenterSourceManifest.test.ts
+          if ! git diff --exit-code -- packages/internal/evaluation-center/plugin.json; then
+            echo "::error file=packages/internal/evaluation-center/plugin.json::构建产物泄漏回源码：packages/internal/evaluation-center/plugin.json 被改写；源码只留 unbuilt 占位，真实指纹只进 dist/。恢复命令：git restore -- packages/internal/evaluation-center/plugin.json"
+            exit 1
+          fi
 
       - name: Eval harness 单测
         # 断言引擎 + baseline/trend 来源护栏 + judge 校准计算 + replay gate

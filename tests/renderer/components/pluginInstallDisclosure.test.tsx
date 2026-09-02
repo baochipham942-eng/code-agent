@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CapabilityPackagePreview } from '../../../src/shared/contract/capabilityPackage';
 import { zh } from '../../../src/renderer/i18n/zh';
 import { en } from '../../../src/renderer/i18n/en';
+import { BUTTON_PRIMARY_CLASS } from '../../../src/renderer/components/primitives/Button';
 
 vi.mock('../../../src/renderer/hooks/useI18n', () => ({
   useI18n: () => ({ t: zh }),
@@ -115,6 +116,29 @@ describe('plugin install disclosure', () => {
   it('V8 states that an interface plugin has the same access as Neo', () => {
     renderDisclosure();
     expect(screen.getByText('插件和 Neo 运行在一起，它能看到你的会话内容和其他插件的数据，权限和 Neo 本身一样大。')).toBeTruthy();
+  });
+
+  it('shows the pre-install check record', () => {
+    renderDisclosure();
+    expect(screen.getByText(zh.settings.plugins.manualImport.preInstallCheckTitle)).toBeTruthy();
+  });
+
+  it('states that a verified source does not establish plugin safety', () => {
+    renderDisclosure();
+    expect(screen.getByText(zh.settings.plugins.manualImport.source.signedBody)).toBeTruthy();
+  });
+
+  it('states where the plugin will appear', () => {
+    renderDisclosure();
+    expect(screen.getByText(zh.settings.plugins.manualImport.uiLocations.title)).toBeTruthy();
+  });
+
+  it('makes one-version approval the only primary authorization action', () => {
+    renderDisclosure();
+    expect(screen.getByRole('button', { name: zh.settings.plugins.manualImport.confirm }).className)
+      .toContain(BUTTON_PRIMARY_CLASS);
+    expect(screen.getByRole('button', { name: zh.settings.plugins.manualImport.approveFuture }).className)
+      .not.toContain(BUTTON_PRIMARY_CLASS);
   });
 
   it('V12 scans the exact task copy branches for forbidden implementation terms', () => {

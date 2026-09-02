@@ -426,6 +426,26 @@ describe('swarm.ipc run-scoped control plane', () => {
     );
   });
 
+  // N-SUBAGENT-INPUT：改道时投给成员的 message 带指令行，账本/落库只收 displayMessage 原话
+  it('persists and ledgers displayMessage while delivering the full message to the agent', async () => {
+    const result = await handler('swarm:send-user-message')({}, {
+      sessionId: scopeA.sessionId,
+      runId: scopeA.runId,
+      agentId: agentA,
+      message: '换成按季度汇总\n\n这条消息是用户显式选择的改道指令',
+      displayMessage: '换成按季度汇总',
+      messageId: 'source-message-9',
+      timestamp: 999,
+    } as never);
+
+    expect(result).toEqual({ delivered: true, persisted: true });
+    expect(coordinatorA.sendMessage).toHaveBeenCalledWith(agentA, '换成按季度汇总\n\n这条消息是用户显式选择的改道指令');
+    expect(sessionManagerState.addMessageToSession).toHaveBeenCalledWith(scopeA.sessionId, expect.objectContaining({
+      content: '换成按季度汇总',
+    }));
+    expect(teammateState.onUserMessage).toHaveBeenCalledWith(scopeA, agentA, '换成按季度汇总', expect.anything());
+  });
+
   it('does not display/persist a phantom success for an unavailable target', async () => {
     coordinatorA.canReceiveMessage.mockReturnValue(false);
     const result = await handler('swarm:send-user-message')({}, {

@@ -48,9 +48,11 @@ describe('sendMemberInput', () => {
   it('专家团成员改道：投递文本带改道指令行（执行器只在两轮之间抽干，下一轮生效）', async () => {
     const d = deps();
     await sendMemberInput({ ...base, kind: 'expert', runId: 'run-a', memberId: 'r', mode: 'redirect' }, d);
-    const payload = (d.sendSwarmUserMessage as ReturnType<typeof vi.fn>).mock.calls[0][0] as { message: string };
+    const payload = (d.sendSwarmUserMessage as ReturnType<typeof vi.fn>).mock.calls[0][0] as { message: string; displayMessage?: string };
     expect(payload.message).toContain('顺便把页码加上');
     expect(payload.message).toContain(RUNTIME_INPUT_REDIRECT_LINE);
+    // 落库/账本用原话：指令行不能露给用户
+    expect(payload.displayMessage).toBe('顺便把页码加上');
   });
 
   it('专家团成员已收工（处理器 delivered:false）：拒收，不排队', async () => {

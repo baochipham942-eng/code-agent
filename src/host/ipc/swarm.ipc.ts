@@ -42,6 +42,8 @@ export interface SwarmSendUserMessagePayload {
   runId: string;
   agentId: string;
   message: string;
+  /** 落库与投递账本用的原话；缺省等于 message。给成员的 message 可带运行时指令行（如改道），不能露给用户。 */
+  displayMessage?: string;
   messageId?: string;
   timestamp?: number;
   metadata?: Message['metadata'];
@@ -62,7 +64,7 @@ function buildPersistedUserMessage(
     // per target in TeammateService below.
     id: createScopedSwarmMessageId(scope, `conversation:${sourceId}`),
     role: 'user',
-    content: payload.message,
+    content: payload.displayMessage ?? payload.message,
     timestamp: payload.timestamp ?? Date.now(),
     metadata: {
       ...payload.metadata,
@@ -238,7 +240,7 @@ export async function sendSwarmUserMessage(
     }
 
     try {
-      services.teammateService.onUserMessage(scope, payload.agentId, payload.message, {
+      services.teammateService.onUserMessage(scope, payload.agentId, payload.displayMessage ?? payload.message, {
         id: createScopedSwarmMessageId(
           scope,
           `delivery:${sessionMessage.id}:${payload.agentId}`,

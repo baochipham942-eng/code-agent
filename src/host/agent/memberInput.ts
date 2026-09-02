@@ -24,6 +24,7 @@ export interface MemberInputDeps {
     runId: string;
     agentId: string;
     message: string;
+    displayMessage?: string;
     messageId?: string;
     timestamp?: number;
     metadata?: Message['metadata'];
@@ -81,7 +82,9 @@ export async function sendMemberInput(
       sessionId: request.sessionId,
       runId: request.runId,
       agentId: request.memberId,
+      // 投给成员的带指令行；落库/投递账本用原话（刷新后不能把运行时脚手架露给用户）
       message: deliveryText(message, request.mode),
+      displayMessage: message,
       messageId: request.messageId,
       timestamp: request.timestamp,
       metadata: {

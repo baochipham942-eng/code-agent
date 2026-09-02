@@ -355,6 +355,11 @@ describe('SessionCommandCenter', () => {
     await center.steer('session-a', queued.task.id, '顺便把页码加上');
     expect(center.list('session-a').find((task) => task.id === queued.task.id)?.prompt)
       .toContain('补充要求：顺便把页码加上');
+    // 排队任务的改道也要落到任务书里，且带改道指令行（否则开工时沿用原思路）
+    await center.steer('session-a', queued.task.id, '换成按季度汇总', { origin: 'user', mode: 'redirect', memberName: '任务2' });
+    const prompt = center.list('session-a').find((task) => task.id === queued.task.id)?.prompt ?? '';
+    expect(prompt).toContain('改道要求：换成按季度汇总');
+    expect(prompt).toContain('改道指令');
     expect(manager.interruptBackgroundTask).not.toHaveBeenCalled();
     center.dispose();
   });

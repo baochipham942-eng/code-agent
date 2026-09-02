@@ -326,8 +326,9 @@ export function projectTurns(
       continue;
     }
 
-    // 可渲染的 meta 记录：自动化提示 / 用户给成员补话的折叠记录（N-SUBAGENT-INPUT），都收成一行
-    if (msg.isMeta && (msg.metadata?.automation || msg.metadata?.memberInput)) {
+    // 折叠成一行的记录：自动化提示（isMeta）/ 用户给成员补话（N-SUBAGENT-INPUT）。后者不看 isMeta：
+    // 专家团路径落的是可见 user 消息（团长推理历史要看得到，isMeta 会被过滤掉），展示上同样折叠、不开新轮。
+    if (msg.metadata?.memberInput || (msg.isMeta && msg.metadata?.automation)) {
       if (!currentTurn) {
         turnCounter++;
         currentTurn = {
@@ -340,7 +341,7 @@ export function projectTurns(
         turns.push(currentTurn);
       }
       currentTurn.nodes.push({
-        id: `${msg.id}-${msg.metadata.automation ? 'automation' : 'member-input'}`,
+        id: `${msg.id}-${msg.metadata.memberInput ? 'member-input' : 'automation'}`,
         messageId: msg.id,
         type: 'assistant_text',
         content: msg.content,

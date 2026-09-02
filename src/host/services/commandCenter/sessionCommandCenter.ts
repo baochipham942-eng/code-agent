@@ -248,7 +248,10 @@ export class SessionCommandCenter {
     const task = this.tasks(sessionId).get(resolution.task.id) ?? resolution.task;
     if (steerOptions?.origin === 'user') task.userInputCount = (task.userInputCount ?? 0) + 1;
     if (task.status === 'queued') {
-      task.prompt = `${task.prompt}\n\n补充要求：${instruction}`;
+      // 还没开工：写进任务书。改道要带改道指令行，否则开工时仍沿用原思路
+      task.prompt = steerOptions?.mode === 'redirect'
+        ? `${task.prompt}\n\n改道要求：${instruction}\n${RUNTIME_INPUT_REDIRECT_LINE}`
+        : `${task.prompt}\n\n补充要求：${instruction}`;
       task.updatedAt = Date.now();
       return { outcome: 'resolved', task: { ...task } };
     }

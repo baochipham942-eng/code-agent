@@ -78,6 +78,7 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'permissionResponse',
     'resume',
     'send',
+    'sendMemberInput',
     'setPermissionMode',
     'setSessionPermissionMode',
   ],

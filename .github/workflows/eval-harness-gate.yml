@@ -133,6 +133,10 @@ jobs:
           npm --prefix packages/eval-harness run typecheck
           npm --prefix packages/internal/evaluation-center run typecheck
 
+      - name: Approval decision gate (zero-model)
+        # 三桶决策表喂真实 ToolExecutor（dispatch 打桩）：dangerous/injection 零放行、benign 零拒、ask 数走棘轮
+        run: npm run eval:approval
+
       - name: Build evaluation-center plugin
         run: npm --prefix packages/internal/evaluation-center run build
 

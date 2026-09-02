@@ -24,6 +24,10 @@ import type {
 import { getAgentTreeSnapshot } from '../agent/agentTreeService';
 import { getAgentWorktreeReview } from '../agent/agentWorktree';
 import { getSpawnGuard } from '../agent/spawnGuard';
+import { sendMemberInput } from '../agent/memberInput';
+import { sendSwarmUserMessage } from './swarm.ipc';
+import { getSessionCommandCenter } from '../services/commandCenter/sessionCommandCenter';
+import type { MemberInputRequest } from '../../shared/contract/memberInput';
 import {
   MODE_CONFIGS,
   getPermissionModeManager,
@@ -251,6 +255,35 @@ export function registerAgentHandlers(
             sessionId ? { sessionId } : undefined,
           );
           return { success: true, data: { cancelled } };
+        }
+        case 'sendMemberInput': {
+          // 成员视图输入框（N-SUBAGENT-INPUT）：一个入口，宿主按成员类型三分路由到现成通道
+          const req = (payload ?? {}) as Partial<MemberInputRequest>;
+          const memberId = typeof req.memberId === 'string' ? req.memberId.trim() : '';
+          const sessionId = typeof req.sessionId === 'string' ? req.sessionId.trim() : '';
+          const message = typeof req.message === 'string' ? req.message.trim() : '';
+          if (!memberId || !sessionId || !message || !req.kind) {
+            return {
+              success: false,
+              error: { code: 'INVALID_MEMBER_INPUT', message: 'sessionId, memberId, kind and message are required' },
+            };
+          }
+          const receipt = await sendMemberInput({
+            sessionId,
+            runId: typeof req.runId === 'string' && req.runId ? req.runId : undefined,
+            memberId,
+            memberName: typeof req.memberName === 'string' && req.memberName ? req.memberName : memberId,
+            kind: req.kind,
+            message,
+            mode: req.mode === 'redirect' ? 'redirect' : 'supplement',
+            messageId: typeof req.messageId === 'string' ? req.messageId : undefined,
+            timestamp: typeof req.timestamp === 'number' ? req.timestamp : undefined,
+          }, {
+            sendSwarmUserMessage,
+            spawnGuard: getSpawnGuard(),
+            commandCenter: getSessionCommandCenter(),
+          });
+          return { success: true, data: receipt };
         }
         case 'getWorktreeReview': {
           const agentId = (payload as AgentWorktreeReviewRequest | undefined)?.agentId?.trim();

@@ -3,6 +3,7 @@
 // ============================================================================
 //
 // 历史背景：swarm.ipc.ts 早期直 import 6 个业务 singleton（planApproval、
+import type { AgentMessage } from './spawnGuard';
 // launchApproval、parallelCoordinator、spawnGuard、teammateService、
 // agentHistoryPersistence），ADR-008 已通过 EventBus 断开了反向边
 // （业务 → IPC），但 IPC → 业务 的正向边仍是硬耦合。
@@ -37,7 +38,7 @@ export interface SpawnGuardLike {
   cancelSession(sessionId: string, reason?: string): number;
   cancelAll?(reason?: string): number;
   get?(agentId: string, scope?: SwarmRunRef): { status?: string } | undefined;
-  sendMessage?(agentId: string, message: string, scope?: SwarmRunRef): boolean;
+  sendMessage?(agentId: string, message: string | AgentMessage, scope?: SwarmRunRef): boolean;
 }
 
 /**

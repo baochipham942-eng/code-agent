@@ -93,7 +93,9 @@ function latestVisibleUserMessageId(messages: Message[]): string | null {
 
 function wakePrompt(task: SessionCommandTask, status: Extract<WakeStatus, 'completed' | 'failed'>): string {
   const outcome = status === 'completed' ? '完成' : '失败';
-  return `后台任务 ${task.shortName} 已${outcome}，结果摘要：${task.summary ?? task.detail ?? '无摘要'}。`;
+  // 用户绕过团长直接给这个任务补过话（N-SUBAGENT-INPUT）：收工汇总要知道，免得漏掉用户改过的要求
+  const supplement = task.userInputCount ? `期间用户直接给它补了 ${task.userInputCount} 句。` : '';
+  return `后台任务 ${task.shortName} 已${outcome}，结果摘要：${task.summary ?? task.detail ?? '无摘要'}。${supplement}`;
 }
 
 export function createForegroundWake(

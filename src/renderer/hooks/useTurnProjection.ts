@@ -326,7 +326,8 @@ export function projectTurns(
       continue;
     }
 
-    if (msg.isMeta && msg.metadata?.automation) {
+    // 可渲染的 meta 记录：自动化提示 / 用户给成员补话的折叠记录（N-SUBAGENT-INPUT），都收成一行
+    if (msg.isMeta && (msg.metadata?.automation || msg.metadata?.memberInput)) {
       if (!currentTurn) {
         turnCounter++;
         currentTurn = {
@@ -339,7 +340,7 @@ export function projectTurns(
         turns.push(currentTurn);
       }
       currentTurn.nodes.push({
-        id: `${msg.id}-automation`,
+        id: `${msg.id}-${msg.metadata.automation ? 'automation' : 'member-input'}`,
         messageId: msg.id,
         type: 'assistant_text',
         content: msg.content,

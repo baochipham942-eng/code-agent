@@ -64,7 +64,7 @@ function isVisibleHistoryMessage(message: Message): boolean {
 }
 
 function isRenderableMetaMessage(message: Message): boolean {
-  return Boolean(message.isMeta && message.metadata?.automation);
+  return Boolean(message.isMeta && (message.metadata?.automation || message.metadata?.memberInput));
 }
 
 async function refreshContextHealthForSession(sessionId: string, switchVersion: number): Promise<void> {

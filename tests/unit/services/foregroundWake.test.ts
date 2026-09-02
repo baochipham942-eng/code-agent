@@ -153,4 +153,14 @@ describe('foreground task-result wake', () => {
     const wake = createForegroundWake(dependencies());
     await expect(wake(task(), 'completed')).rejects.toThrow('model unavailable');
   });
+
+  // N-SUBAGENT-INPUT：用户绕过团长直接给任务补过话，收工摘要要带一句让团长汇总时不漏
+  it('mentions how many times the user supplemented the task directly', async () => {
+    const wake = createForegroundWake(dependencies());
+    await wake({ ...task(), userInputCount: 2 }, 'completed');
+    expect(sendMessage.mock.calls[0][0]).toContain('期间用户直接给它补了 2 句');
+
+    await wake(task('task-2'), 'completed');
+    expect(sendMessage.mock.calls[1][0]).not.toContain('期间用户');
+  });
 });

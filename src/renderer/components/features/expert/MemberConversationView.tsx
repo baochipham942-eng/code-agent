@@ -3,15 +3,16 @@
 // ============================================================================
 // 从成员条/「本会话的代理」面板点进来，聊天区整块换成这位成员的对话：团长下发给
 // 他的任务（用户位气泡）→ 运行中他和团队之间的过程消息 → 他回传的产出。
-// 只读：人只跟团长说话，不跟成员说话，所以输入框被「回主会话」覆盖层挡住
-// （覆盖层在 ChatInput 侧，不在这里）。
+// N-SUBAGENT-INPUT（09-02 爸拍板）：底部是真输入框（MemberInputBar），Enter 补话 / ⌘Enter 改道
+// 与主输入框同手势；顶栏带「停掉这位成员」；已收工的成员只留「回主会话再派」不排队。
+// 主 ChatInput 在看成员时整块隐藏（hidden），不再用覆盖层。
 // N-L6-AGENTVIEW S3：顶部显式「← 返回主会话」（爸 08-22「没看到返回」）；当前动作
 // 置顶高亮；普通代理（非 Team 成员）也能点进来——只展示 agentTree 节点 / Task 上
 // 已有的字段（派到的任务 / 最近动作 / 最终输出 / 用量），不另起 live 子 transcript。
 // ============================================================================
 
-import React, { useMemo } from 'react';
-import { ArrowLeft, Bot, Clock, Wrench, Zap } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { ArrowLeft, Bot, Clock, Square, Wrench, Zap } from 'lucide-react';
 import { useSwarmStore } from '../../../stores/swarmStore';
 import { useMemberViewStore } from '../../../stores/memberViewStore';
 import { useDurableSwarmRunDetail } from '../../../hooks/useDurableSwarmRunDetail';
@@ -22,6 +23,8 @@ import { humanizeToolStep } from '../../../utils/humanizeToolStep';
 import { describeLastToolStep } from '../../../utils/agentActivity';
 import { RoleInitialAvatar } from './RoleInitialAvatar';
 import { useSessionMembers } from './SessionMemberBar';
+import { MemberInputBar, type MemberInputTarget } from './MemberInputBar';
+import { stopSessionAgent } from '../../../utils/stopSessionAgent';
 
 /** 轨迹只回看最近这几条：成员视图是「他现在在干嘛」，不是全量审计日志。 */
 const RUN_TRAIL_LIMIT = 12;
@@ -51,6 +54,36 @@ const BackToMainButton: React.FC<{ label: string }> = ({ label }) => {
   );
 };
 
+/** 顶栏「停掉这位成员」：三类通道在 stopSessionAgent（与「专家」面板行级停共用）。 */
+const StopMemberButton: React.FC<{
+  target: MemberInputTarget;
+  sessionId: string | null;
+  runId?: string;
+}> = ({ target, sessionId, runId }) => {
+  const { t } = useI18n();
+  const text = t.expert.memberBar;
+  const [stopping, setStopping] = useState(false);
+  if (!target.live) return null;
+  return (
+    <button /* ds-allow:button: 顶栏超小文本按钮，与「专家」面板「停止全部」同档 */
+      type="button"
+      data-testid="member-view-stop"
+      disabled={stopping}
+      onClick={() => {
+        setStopping(true);
+        void stopSessionAgent(target, sessionId, runId).finally(() => setStopping(false));
+      }}
+      className="inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[11px] text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-badge-danger disabled:cursor-not-allowed disabled:opacity-50"
+    >
+      <Square className="h-3 w-3" aria-hidden />
+      {stopping ? text.stopMemberStopping : text.stopMember}
+    </button>
+  );
+};
+
+const LIVE_NODE_STATUSES = new Set(['running', 'running-recovered']);
+const LIVE_TASK_STATUSES = new Set(['queued', 'running']);
+
 export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({ sessionId }) => {
   const { t } = useI18n();
   const text = t.expert.workRecord;
@@ -59,6 +92,7 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
   const messages = useSwarmStore((state) => state.messages);
   const members = useSessionMembers(sessionId);
   const durableDetail = useDurableSwarmRunDetail(sessionId);
+  const activeRunId = useSwarmStore((state) => (state.activeSessionId === sessionId ? state.activeRunId : undefined));
   // 普通代理（非 Team 成员）的两条既有脊柱：agentTree 快照 + delegate_task 后台任务
   const { snapshot } = useAgentTreeSnapshot(sessionId);
   const backgroundTasks = useBackgroundTaskStore((state) => state.tasks);
@@ -130,8 +164,13 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
     const elapsed = plainTask?.durationMs
       ?? (plainNode?.createdAt ? (plainNode.completedAt ?? Date.now()) - plainNode.createdAt : null);
 
+    const plainTarget: MemberInputTarget = plainNode
+      ? { key: plainNode.id, kind: 'agent', name, live: LIVE_NODE_STATUSES.has(plainNode.status) }
+      : { key: plainTask?.id ?? viewingMemberId ?? '', kind: 'task', name, live: LIVE_TASK_STATUSES.has(plainTask?.status ?? '') };
+
     return (
-      <div data-testid="member-conversation-view" className="flex-1 overflow-y-auto px-4 py-4">
+      <div data-testid="member-conversation-view" className="flex min-h-0 flex-1 flex-col">
+      <div className="flex-1 overflow-y-auto px-4 py-4">
         <div className="mx-auto max-w-3xl">
           <BackToMainButton label={text.backToChat} />
         </div>
@@ -142,7 +181,7 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
           <div className="min-w-0 flex-1">
             <h2 className="truncate text-sm font-semibold text-zinc-100">{name}</h2>
           </div>
-          <span className="shrink-0 text-[11px] text-zinc-500">{memberText.readOnlyHint}</span>
+          <StopMemberButton target={plainTarget} sessionId={sessionId} runId={activeRunId} />
         </header>
 
         <div className="mx-auto max-w-3xl space-y-4 py-4 text-sm">
@@ -192,14 +231,26 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
           </section>
         </div>
       </div>
+      <MemberInputBar sessionId={sessionId} runId={activeRunId} member={plainTarget} />
+      </div>
     );
   }
 
   const tokens = (agent.tokenUsage?.input ?? 0) + (agent.tokenUsage?.output ?? 0);
   const elapsed = agent.startTime ? (agent.endTime ?? Date.now()) - agent.startTime : null;
 
+  // 专家团成员：投递要带 swarm run id（宿主 swarm:send-user-message 按 run 作用域解析）
+  const memberRunId = durableDetail?.run.id ?? activeRunId;
+  const memberTarget: MemberInputTarget = {
+    key: member.key,
+    kind: 'expert',
+    name: member.profession || member.name,
+    live: member.status === 'running',
+  };
+
   return (
-    <div data-testid="member-conversation-view" className="flex-1 overflow-y-auto px-4 py-4">
+    <div data-testid="member-conversation-view" className="flex min-h-0 flex-1 flex-col">
+    <div className="flex-1 overflow-y-auto px-4 py-4">
       <div className="mx-auto max-w-3xl">
         <BackToMainButton label={text.backToChat} />
       </div>
@@ -209,7 +260,7 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
           <h2 className="truncate text-sm font-semibold text-zinc-100">{member.profession || member.name}</h2>
           <p className="truncate text-xs text-zinc-400">{member.profession ? member.name : member.roleId}</p>
         </div>
-        <span className="shrink-0 text-[11px] text-zinc-500">{memberText.readOnlyHint}</span>
+        <StopMemberButton target={memberTarget} sessionId={sessionId} runId={memberRunId} />
       </header>
 
       <div className="mx-auto max-w-3xl space-y-4 py-4 text-sm">
@@ -298,6 +349,8 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
           <span>${(agent.cost ?? 0).toFixed(4)}</span>
         </section>
       </div>
+    </div>
+    <MemberInputBar sessionId={sessionId} runId={memberRunId} member={memberTarget} />
     </div>
   );
 };

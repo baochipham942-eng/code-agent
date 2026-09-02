@@ -18,6 +18,7 @@ import { readDesignMdSummary } from '../../design/design-md-loader';
 import { getActiveBrandSync } from '../services/design/brandRegistry';
 import { brandContractToBriefProjection } from '../../shared/contract/brandContract';
 import { normalizeWorkbenchToolScope } from '../tools/workbenchToolScope';
+import { RUNTIME_INPUT_REDIRECT_LINE, RUNTIME_INPUT_SUPPLEMENT_LINE } from '../../shared/constants/runtimeInput';
 import { resolveAgent } from '../agent/agentRegistry';
 import { resolveSessionConnectorIds } from '../../shared/contract/expertConnectors';
 import { trackNode } from '../observability/posthogNode';
@@ -154,11 +155,11 @@ export function buildWorkbenchTurnSystemContext(
   lines.push(...buildWorkbenchCapabilityContextLines(context));
 
   if (context.runtimeInput?.mode === 'supplement') {
-    lines.push('这条消息是用户在 agent 运行过程中的补充指令：把它纳入当前任务和已有计划，除非内容明确要求改方向，不要把它当成全新任务。');
+    lines.push(RUNTIME_INPUT_SUPPLEMENT_LINE);
   }
 
   if (context.runtimeInput?.mode === 'redirect') {
-    lines.push('这条消息是用户显式选择的改道指令：停止沿用当前思路，按这条新要求重组接下来的执行。');
+    lines.push(RUNTIME_INPUT_REDIRECT_LINE);
   }
 
   if (context.executionIntent?.browserSessionMode === 'managed') {

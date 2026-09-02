@@ -401,6 +401,8 @@ export class TaskManager extends EventEmitter {
     message: string,
     attachments?: unknown[],
     options?: AgentRunOptions,
+    /** 用户在成员视图直接补话/改道时带上：runtimeInputMode 决定改道回执，memberInput 让主对话折叠记录认得出它 */
+    messageMetadata?: MessageMetadata,
   ): Promise<SteerOrQueueOutcome | null> {
     const run = this.backgroundRuns.get(taskId);
     if (run?.status !== 'running') return null;
@@ -424,6 +426,7 @@ export class TaskManager extends EventEmitter {
           AUXILIARY_RUN_SYSTEM_CONTEXT,
         ],
       },
+      messageMetadata,
     );
   }
 

@@ -339,4 +339,59 @@ describe('SessionCommandCenter', () => {
     expect(manager.cancelBackgroundTask).toHaveBeenCalledWith(first.task.id);
     center.dispose();
   });
+
+  // 顺手抓到的老病：resolve() 经 list() 返回快照拷贝，steer 改的 prompt 从没落到台账那份，
+  // 排队任务开工时读到的还是老任务书。断言落在台账（list 再读）而不是 steer 的返回值上。
+  it('steer on a queued task appends to the ledger copy of the prompt, not a snapshot', async () => {
+    const manager = new FakeTaskManager();
+    const center = new SessionCommandCenter(manager as unknown as TaskManager, {
+      projectTerminalResult: vi.fn(),
+      wakeForegroundBrain: vi.fn(),
+    });
+    await center.spawn(input(1, 'report'));
+    const queued = await center.spawn({ ...input(2, 'report'), queueWhenFull: true });
+    if (queued.outcome !== 'queued') throw new Error(`expected queued, got ${queued.outcome}`);
+
+    await center.steer('session-a', queued.task.id, '顺便把页码加上');
+    expect(center.list('session-a').find((task) => task.id === queued.task.id)?.prompt)
+      .toContain('补充要求：顺便把页码加上');
+    expect(manager.interruptBackgroundTask).not.toHaveBeenCalled();
+    center.dispose();
+  });
+
+  // N-SUBAGENT-INPUT：用户在成员视图亲手补的话，与团长 steer_task 走同一条 interruptBackgroundTask，
+  // 但要带两档指令行 + runtimeInputMode/memberInput 元数据，并给终态唤醒摘要计数。
+  it('user-origin steer carries the runtime input line, member metadata and counts toward the wake summary', async () => {
+    const manager = new FakeTaskManager();
+    const center = new SessionCommandCenter(manager as unknown as TaskManager, {
+      projectTerminalResult: vi.fn(),
+      wakeForegroundBrain: vi.fn(),
+    });
+    const first = await center.spawn(input(1, 'report'));
+    if (first.outcome === 'requires_choice') throw new Error('unexpected admission result');
+
+    const result = await center.steer('session-a', first.task.id, '顺便把页码加上', {
+      origin: 'user', mode: 'redirect', memberName: '报告任务',
+    });
+    expect(result).toMatchObject({ outcome: 'resolved', task: { userInputCount: 1 } });
+    expect(manager.interruptBackgroundTask).toHaveBeenCalledWith(
+      first.task.id,
+      '顺便把页码加上',
+      undefined,
+      expect.objectContaining({
+        turnSystemContext: expect.arrayContaining([expect.stringContaining('改道指令')]),
+      }),
+      {
+        workbench: { runtimeInputMode: 'redirect' },
+        memberInput: { memberId: first.task.id, memberName: '报告任务', mode: 'redirect' },
+      },
+    );
+
+    await center.steer('session-a', first.task.id, '再补一句', { origin: 'user', mode: 'supplement', memberName: '报告任务' });
+    expect(center.list('session-a').find((task) => task.id === first.task.id)?.userInputCount).toBe(2);
+    // 团长 steer_task 不计入用户补话
+    await center.steer('session-a', first.task.id, '团长转述');
+    expect(center.list('session-a').find((task) => task.id === first.task.id)?.userInputCount).toBe(2);
+    center.dispose();
+  });
 });

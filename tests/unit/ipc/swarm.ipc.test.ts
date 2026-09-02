@@ -403,6 +403,29 @@ describe('swarm.ipc run-scoped control plane', () => {
     );
   });
 
+  // N-SUBAGENT-INPUT：SpawnGuard 回退投的是结构化 from='user' 消息，执行器抽干时按来源打前缀
+  it('falls back to SpawnGuard with a user-origin structured message when the coordinator cannot receive', async () => {
+    coordinatorA.canReceiveMessage.mockReturnValue(false);
+    coordinatorA.sendMessage.mockResolvedValue(false);
+    spawnGuardState.get.mockReturnValue({ status: 'running' });
+    spawnGuardState.sendMessage.mockReturnValue(true);
+
+    const result = await handler('swarm:send-user-message')({}, {
+      sessionId: scopeA.sessionId,
+      runId: scopeA.runId,
+      agentId: agentA,
+      message: '顺便把页码加上',
+      timestamp: 777,
+    } as never);
+
+    expect(result).toEqual({ delivered: true, persisted: true });
+    expect(spawnGuardState.sendMessage).toHaveBeenCalledWith(
+      agentA,
+      { type: 'text', from: 'user', payload: '顺便把页码加上', timestamp: 777 },
+      expect.objectContaining({ sessionId: scopeA.sessionId, runId: scopeA.runId }),
+    );
+  });
+
   it('does not display/persist a phantom success for an unavailable target', async () => {
     coordinatorA.canReceiveMessage.mockReturnValue(false);
     const result = await handler('swarm:send-user-message')({}, {

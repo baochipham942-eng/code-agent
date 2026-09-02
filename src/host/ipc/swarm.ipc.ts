@@ -37,7 +37,7 @@ const logger = createLogger('SwarmIPC');
 type SwarmEventListener = (event: SwarmEvent) => void;
 const swarmEventListeners: SwarmEventListener[] = [];
 
-interface SwarmSendUserMessagePayload {
+export interface SwarmSendUserMessagePayload {
   sessionId: string;
   runId: string;
   agentId: string;
@@ -179,6 +179,102 @@ ensureSwarmBusBridge();
 // IPC Handler 注册（Renderer → Main）
 // ============================================================================
 
+/**
+ * 用户发消息给某位 Team 成员（渲染层 @专家 直达 / 成员视图补话 / 团队面板都走这一条）。
+ * 协调器 durable 入队 → SpawnGuard 回退 → TeammateService 投递账本 → 会话落库。
+ */
+export async function sendSwarmUserMessage(
+  payload: SwarmSendUserMessagePayload,
+): Promise<{ delivered: boolean; persisted: boolean }> {
+  try {
+    const services = getSwarmServices();
+    const ref: SwarmAgentRef = payload;
+    const scope = resolveAgentScope(ref);
+    if (!scope) return { delivered: false, persisted: false };
+    const coordinator = services.parallelCoordinators.get(scope);
+    if (!coordinator) return { delivered: false, persisted: false };
+
+    const canDeliverToParallel = coordinator.canReceiveMessage(payload.agentId);
+    const spawnGuardAgent = services.spawnGuard.get?.(payload.agentId, ref);
+    const canDeliverToSpawnGuard = spawnGuardAgent?.status === 'running';
+
+    if (!canDeliverToParallel && !canDeliverToSpawnGuard) {
+      return {
+        delivered: false,
+        persisted: false,
+      };
+    }
+
+    const requestedTargetIds = Array.from(new Set([
+      payload.agentId,
+      ...(payload.metadata?.workbench?.targetAgentIds ?? []),
+    ]));
+    const validatedTargetIds = requestedTargetIds.filter((agentId) => {
+      const parsed = parseScopedSwarmAgentId(agentId);
+      if (
+        parsed?.scope.sessionId !== scope.sessionId
+        || parsed.scope.runId !== scope.runId
+        || parsed.scope.treeId !== scope.treeId
+      ) {
+        return false;
+      }
+      if (coordinator.canReceiveMessage(agentId)) return true;
+      return services.spawnGuard.get?.(agentId, ref)?.status === 'running';
+    });
+    const sessionMessage = buildPersistedUserMessage(payload, scope, validatedTargetIds);
+    let delivered = await coordinator.sendMessage(payload.agentId, payload.message);
+    if (!delivered) {
+      // SpawnGuard 回退按结构化消息投：from='user'，执行器抽干时按来源打前缀（不再冒充父 agent）
+      delivered = Boolean(services.spawnGuard.sendMessage?.(payload.agentId, {
+        type: 'text', from: 'user', payload: payload.message, timestamp: sessionMessage.timestamp,
+      }, ref));
+    }
+
+    if (!delivered) {
+      return {
+        delivered: false,
+        persisted: false,
+      };
+    }
+
+    try {
+      services.teammateService.onUserMessage(scope, payload.agentId, payload.message, {
+        id: createScopedSwarmMessageId(
+          scope,
+          `delivery:${sessionMessage.id}:${payload.agentId}`,
+        ),
+        timestamp: sessionMessage.timestamp,
+      });
+    } catch (error) {
+      logger.warn('swarm:send-user-message delivery ledger failed', { error: String(error) });
+    }
+
+    let persisted = false;
+    try {
+      await getSessionManager().addMessageToSession(payload.sessionId, sessionMessage);
+      persisted = true;
+    } catch (error) {
+      if (isDuplicateMessageInsert(error)) {
+        persisted = true;
+      } else {
+        logger.error('swarm:send-user-message persistence failed after delivery', {
+          error: String(error),
+        });
+      }
+    }
+    return {
+      delivered,
+      persisted,
+    };
+  } catch (error) {
+    logger.error('swarm:send-user-message failed', { error: String(error) });
+    return {
+      delivered: false,
+      persisted: false,
+    };
+  }
+}
+
 export function registerSwarmHandlers(
   getAppService: () => AgentApplicationService | null
 ): void {
@@ -186,92 +282,7 @@ export function registerSwarmHandlers(
   ensureSwarmBusBridge();
 
   // 用户发送消息给 Agent
-  ipcHost.handle('swarm:send-user-message', async (_, payload: SwarmSendUserMessagePayload) => {
-    try {
-      const services = getSwarmServices();
-      const ref: SwarmAgentRef = payload;
-      const scope = resolveAgentScope(ref);
-      if (!scope) return { delivered: false, persisted: false };
-      const coordinator = services.parallelCoordinators.get(scope);
-      if (!coordinator) return { delivered: false, persisted: false };
-
-      const canDeliverToParallel = coordinator.canReceiveMessage(payload.agentId);
-      const spawnGuardAgent = services.spawnGuard.get?.(payload.agentId, ref);
-      const canDeliverToSpawnGuard = spawnGuardAgent?.status === 'running';
-
-      if (!canDeliverToParallel && !canDeliverToSpawnGuard) {
-        return {
-          delivered: false,
-          persisted: false,
-        };
-      }
-
-      const requestedTargetIds = Array.from(new Set([
-        payload.agentId,
-        ...(payload.metadata?.workbench?.targetAgentIds ?? []),
-      ]));
-      const validatedTargetIds = requestedTargetIds.filter((agentId) => {
-        const parsed = parseScopedSwarmAgentId(agentId);
-        if (
-          parsed?.scope.sessionId !== scope.sessionId
-          || parsed.scope.runId !== scope.runId
-          || parsed.scope.treeId !== scope.treeId
-        ) {
-          return false;
-        }
-        if (coordinator.canReceiveMessage(agentId)) return true;
-        return services.spawnGuard.get?.(agentId, ref)?.status === 'running';
-      });
-      const sessionMessage = buildPersistedUserMessage(payload, scope, validatedTargetIds);
-      let delivered = await coordinator.sendMessage(payload.agentId, payload.message);
-      if (!delivered) {
-        delivered = Boolean(services.spawnGuard.sendMessage?.(payload.agentId, payload.message, ref));
-      }
-
-      if (!delivered) {
-        return {
-          delivered: false,
-          persisted: false,
-        };
-      }
-
-      try {
-        services.teammateService.onUserMessage(scope, payload.agentId, payload.message, {
-          id: createScopedSwarmMessageId(
-            scope,
-            `delivery:${sessionMessage.id}:${payload.agentId}`,
-          ),
-          timestamp: sessionMessage.timestamp,
-        });
-      } catch (error) {
-        logger.warn('swarm:send-user-message delivery ledger failed', { error: String(error) });
-      }
-
-      let persisted = false;
-      try {
-        await getSessionManager().addMessageToSession(payload.sessionId, sessionMessage);
-        persisted = true;
-      } catch (error) {
-        if (isDuplicateMessageInsert(error)) {
-          persisted = true;
-        } else {
-          logger.error('swarm:send-user-message persistence failed after delivery', {
-            error: String(error),
-          });
-        }
-      }
-      return {
-        delivered,
-        persisted,
-      };
-    } catch (error) {
-      logger.error('swarm:send-user-message failed', { error: String(error) });
-      return {
-        delivered: false,
-        persisted: false,
-      };
-    }
-  });
+  ipcHost.handle('swarm:send-user-message', (_, payload: SwarmSendUserMessagePayload) => sendSwarmUserMessage(payload));
 
   // 获取 Agent 消息历史
   ipcHost.handle('swarm:get-agent-messages', async (_, payload: SwarmAgentRef) => {

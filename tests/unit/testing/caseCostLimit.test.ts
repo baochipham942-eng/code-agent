@@ -113,6 +113,45 @@ describe('单 case 成本硬上限', () => {
     });
   });
 
+  it('跑级 caseCostLimitUsd 压过 case max_cost_usd（custom 渠道保守计价下重题不被题面 0.10 掐掉）', async () => {
+    initBudgetService({ enabled: false });
+    const agent: AgentInterface = {
+      async sendMessage() {
+        initBudgetService({ enabled: false }).recordUsage({
+          inputTokens: 1_000,
+          outputTokens: 1_000,
+          model: 'gpt-4o',
+          provider: 'openai',
+          timestamp: Date.now(),
+        });
+        return { responses: ['ok'], toolExecutions: [], turnCount: 1, errors: [] };
+      },
+      async reset() {},
+      getAgentInfo: () => ({ name: 'cost-test', model: 'gpt-4o', provider: 'openai' }),
+    };
+    const config = {
+      testCaseDir: process.cwd(),
+      resultsDir: process.cwd(),
+      workingDirectory: process.cwd(),
+      defaultTimeout: 1_000,
+      parallel: false,
+      maxParallel: 1,
+      stopOnFailure: false,
+      verbose: false,
+    };
+    // 题面 0.000001 会掐；跑级给 1 USD 压过它 ⇒ 正常跑完，报告里记的是跑级上限
+    const raised = await new TestRunner({ ...config, caseCostLimitUsd: 1 }, agent)
+      .runSingleTest({ ...COST_CASE, follow_up_prompts: [] });
+    expect(raised.status).not.toBe('cost_exceeded');
+    expect(raised.costLimitUsd).toBe(1);
+    // 反向：题面没写上限，跑级给一个必越线的 ⇒ 仍然 fail-loud 掐掉
+    const { max_cost_usd: _omit, ...uncapped } = COST_CASE;
+    const lowered = await new TestRunner({ ...config, caseCostLimitUsd: 0.000001 }, agent)
+      .runSingleTest({ ...uncapped, follow_up_prompts: [] });
+    expect(lowered.status).toBe('cost_exceeded');
+    expect(lowered.costLimitUsd).toBe(0.000001);
+  });
+
   it('多 trial 在第一次越线后立即停，summary 与 baseline 都把它单列', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'case-cost-limit-'));
     const casesDir = path.join(root, 'cases');

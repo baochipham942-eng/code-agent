@@ -77,6 +77,11 @@ export function readOnlyDenialError(toolName: string): HostReasonPayload {
  * 单独一个常量是为了让「故障回退」与「正常判 ask」在账本里天然可区分。
  */
 export const CLASSIFIER_ERROR_TRACE_RULE = 'classifier_error';
+/**
+ * forcePermissionHandler（run-scoped / eval scripted 处理器）把分类器本会自动放行的调用也送去处理器时
+ * 写进 decisionTrace 的 rule 名。eval 靠它区分「处理器被叫」与「产品会真弹卡」。
+ */
+export const INJECTED_PERMISSION_HANDLER_TRACE_RULE = 'injected_permission_handler';
 const BROWSER_COMPUTER_CONSEQUENCE_TRACE_RULE = 'browser_computer_consequence';
 const BROWSER_COMPUTER_HIGH_RISK_BLOCKED_CODE = 'BROWSER_COMPUTER_HIGH_RISK_BLOCKED';
 

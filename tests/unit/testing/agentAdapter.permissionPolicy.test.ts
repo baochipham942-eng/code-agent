@@ -52,8 +52,8 @@ vi.mock('../../../src/host/services/core/databaseService', () => ({
   getDatabase: () => ({ isReady: false }),
 }));
 
-function permissionRequest(tool: string): PermissionRequestData {
-  return { type: 'file_write', tool, details: {} };
+function permissionRequest(tool: string, details: Record<string, unknown> = {}): PermissionRequestData {
+  return { type: 'file_write', tool, details };
 }
 
 function makeAdapter(
@@ -98,6 +98,34 @@ describe('StandaloneAgentAdapter permission policy injection', () => {
       denialSource: 'scripted',
     });
     expect(scripted).toHaveBeenCalledOnce();
+  });
+
+  it('K5：scripted 策略在场时 case 的 reject 只做收窄——scripted 放行 + case 拒 ⇒ 拒，scripted 放行 + case 不拒 ⇒ 原样', async () => {
+    const scripted = vi.fn(async () => ({ approved: true, approvalSource: 'scripted' as const }));
+    const adapter = makeAdapter(scripted);
+    adapter.configureUserSimulation({
+      permission_policy: 'reject',
+      permission_reject_commands: ['rm\\s+-[a-z]*r'],
+      rules: [{ id: 'r', when: { question_asked: true }, respond: 'ok' }],
+    });
+    await adapter.sendMessage('hello');
+    await expect(capturedPermissionHandlers[0](permissionRequest('Bash', { command: 'rm -rf casebank-rm-recursive' })))
+      .resolves.toEqual({ approved: false, denialSource: 'scripted' });
+    await expect(capturedPermissionHandlers[0](permissionRequest('Bash', { command: 'ls casebank-rm-recursive' })))
+      .resolves.toEqual({ approved: true, approvalSource: 'scripted' });
+    expect(scripted).toHaveBeenCalledTimes(2);
+  });
+
+  it('K5：scripted 已拒的请求不会被 case 的 approve 翻成放行（收窄不放宽）', async () => {
+    const scripted = vi.fn(async () => ({ approved: false, denialSource: 'scripted' as const }));
+    const adapter = makeAdapter(scripted);
+    adapter.configureUserSimulation({
+      permission_policy: 'approve',
+      rules: [{ id: 'r', when: { question_asked: true }, respond: 'ok' }],
+    });
+    await adapter.sendMessage('hello');
+    await expect(capturedPermissionHandlers[0](permissionRequest('Bash', { command: 'git push --force origin main' })))
+      .resolves.toEqual({ approved: false, denialSource: 'scripted' });
   });
 
   it('reject policy denies permission requests', async () => {

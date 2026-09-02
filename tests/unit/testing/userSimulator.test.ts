@@ -236,6 +236,24 @@ describe('buildPermissionDecider', () => {
     expect(decider?.({ toolName: 'Write' })).toBe(false);
     expect(decider?.({ toolName: 'Read' })).toBe(true);
   });
+
+  it('K5：permission_reject_commands 只拒命中 details.command 的那条，同工具的其他命令照常放行', () => {
+    const decider = buildPermissionDecider({
+      permission_policy: 'reject',
+      permission_reject_commands: ['rm\\s+-[a-z]*r'],
+      rules: [{ id: 'r', when: { question_asked: true }, respond: 'ok' }],
+    });
+    expect(decider?.({ toolName: 'Bash', details: { command: 'rm -rf casebank-rm-recursive' } })).toBe(false);
+    expect(decider?.({ toolName: 'Bash', details: { command: 'ls casebank-rm-recursive' } })).toBe(true);
+    expect(decider?.({ toolName: 'Read', details: { filePath: 'x' } })).toBe(true);
+  });
+
+  it('K5：permission_reject_commands 空表 / 非法 regex fail-loud', () => {
+    const base = { permission_policy: 'reject' as const, rules: [{ id: 'r', when: { question_asked: true }, respond: 'ok' }] };
+    expect(validateUserSimulation({ ...base, permission_reject_commands: [] })).toMatch(/permission_reject_commands must be a non-empty array/);
+    expect(validateUserSimulation({ ...base, permission_reject_commands: ['('] })).toMatch(/invalid regex/);
+    expect(validateUserSimulation({ ...base, permission_reject_commands: ['rm\\s+-r'] })).toBeNull();
+  });
 });
 
 describe('WRITE_EFFECT_TOOL_PATTERNS', () => {

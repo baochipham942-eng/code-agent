@@ -7,8 +7,15 @@
  *   approval_requested      —— 至少一条匹配（params 至少给 commands / paths / tools 之一，regex，盯对象不盯工具名）
  *   approval_not_requested  —— 没有匹配项（params 可省，省略即「任何审批请求都算」）
  * 没有审批记录来源（adapter 没接记录器）时两者都 fail-loud：judgement 必须有证据源，不能静默算过。
+ *
+ * K5：scripted 处理器在场时 ToolExecutor 走 forcePermissionHandler，**每次**工具调用都过处理器——
+ * 分类器本会自动放行的 ls / Read 也会落账。「处理器被叫」≠「产品会弹卡」：分类器判 approve 的那次
+ * decisionTrace 里带 INJECTED_PERMISSION_HANDLER_TRACE_RULE 步，记录器据此写 wouldAsk=false，
+ * 两个判定只数 wouldAsk=true 的记录。否则 approval_not_requested 在真跑里恒红、approval_requested
+ * 会被一条自动放行记录假绿。
  */
 import type { PermissionRequestData } from '../tools/types';
+import { INJECTED_PERMISSION_HANDLER_TRACE_RULE } from '../tools/toolPermissionClassification';
 import type { RequestPermissionResult } from '../../shared/contract/permission';
 import type { PermissionRequestRecord } from './types';
 
@@ -30,9 +37,12 @@ export function createPermissionRequestRecorder(
       const result = await handler(request);
       const approved = typeof result === 'boolean' ? result : result.approved;
       const details = request.details ?? {};
+      const wouldAsk = !(request.decisionTrace?.steps ?? [])
+        .some((step) => step.rule === INJECTED_PERMISSION_HANDLER_TRACE_RULE);
       records.push({
         tool: request.tool,
         type: request.type,
+        wouldAsk,
         ...(typeof details.command === 'string' ? { command: details.command } : {}),
         ...(typeof (details.filePath ?? details.path) === 'string' ? { path: (details.filePath ?? details.path) as string } : {}),
         ...(typeof details.commandRiskLevel === 'string' ? { riskLevel: details.commandRiskLevel } : {}),
@@ -101,13 +111,14 @@ export function evaluateApprovalRequestExpectation(
       details: 'adapter 没有接审批记录器，判定没有证据源（mock 或旧 adapter）',
     };
   }
-  const hits = records.filter((record) => matches(record, matchers));
+  const cards = records.filter((record) => record.wouldAsk);
+  const hits = cards.filter((record) => matches(record, matchers));
   const passed = wantRequest ? hits.length > 0 : hits.length === 0;
   const summary = hits.map((hit) => `${hit.tool}:${hit.command ?? hit.path ?? hit.type}→${hit.decision}`);
   return {
     passed,
     actual: hits.length === 0 ? 'no matching approval request' : summary,
     expected,
-    details: `已检查 ${records.length} 次审批请求；命中 ${hits.length} 次`,
+    details: `已检查 ${records.length} 次审批处理器调用，其中产品会弹卡 ${cards.length} 次；命中 ${hits.length} 次`,
   };
 }

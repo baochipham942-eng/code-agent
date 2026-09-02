@@ -92,6 +92,8 @@ export interface PendingDevPermissionRequest {
 // ── Constants ─────────────────────────────────────────────────────────────
 
 const DEV_EXEC_ALLOWED_TOOLS = new Set([
+  // e2e 直接起一个后台任务（N-SUBAGENT-INPUT member-input.spec）：不经前台 brain 的工具面
+  'delegate_task',
   'desktop_activity_recent',
   'desktop_activity_stats',
   'task_create',
@@ -112,6 +114,7 @@ const DEV_EXEC_ALLOWED_TOOLS = new Set([
 ]);
 
 const DEV_WRITE_TOOLS = new Set([
+  'delegate_task',
   'task_create',
   'task_update',
   'mail_draft',

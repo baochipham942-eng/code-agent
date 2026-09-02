@@ -43,7 +43,10 @@ import { BundledCapabilitiesTab } from '../../capabilityHub/BundledCapabilitiesT
 import { HubTabHeader } from '../../capabilityHub/HubTabHeader';
 import { Pill, SummaryTile } from './PluginsSettings.ui';
 import { CapabilityPackageCard } from './CapabilityPackageCard';
-import { PluginInstallDisclosure } from './PluginInstallDisclosure';
+import {
+  PLUGIN_APPROVAL_COMPLETED_EVENT,
+  PLUGIN_APPROVAL_REFRESH_EVENT,
+} from '../../../../slots/PluginApprovalOverlay';
 
 type Notice = { type: 'success' | 'error'; text: string };
 export * from './PluginsSettings.helpers';
@@ -101,7 +104,6 @@ export const PluginsSettings: React.FC = () => {
   const [catalog, setCatalog] = useState<MarketplacePluginEntry[]>([]);
   const [installed, setInstalled] = useState<InstalledPlugin[]>([]);
   const [capabilityPackages, setCapabilityPackages] = useState<InstalledCapabilityPackage[]>([]);
-  const [packagePreview, setPackagePreview] = useState<CapabilityPackagePreview | null>(null);
   const [packageBusy, setPackageBusy] = useState(false);
   const [selectedMarketplace, setSelectedMarketplace] = useState('all');
   const [query, setQuery] = useState('');
@@ -152,6 +154,28 @@ export const PluginsSettings: React.FC = () => {
       setLoading(false);
     }
   }, [pluginsText]);
+
+  useEffect(() => {
+    const handleCompleted = () => { void reload(); };
+    window.addEventListener(PLUGIN_APPROVAL_COMPLETED_EVENT, handleCompleted);
+    return () => window.removeEventListener(PLUGIN_APPROVAL_COMPLETED_EVENT, handleCompleted);
+  }, [reload]);
+
+  const continueStagedPackage = useCallback(async (preview: CapabilityPackagePreview): Promise<void> => {
+    if (preview.approvalRequired) {
+      window.dispatchEvent(new Event(PLUGIN_APPROVAL_REFRESH_EVENT));
+      setNotice({ type: 'success', text: `${pluginsText.manualImport.approvalQueued}${preview.name}` });
+      return;
+    }
+    const result = await ipcService.invoke(IPC_CHANNELS.CAPABILITY_PACKAGE_CONFIRM, preview.token, false);
+    if (!result.success) throw new Error(result.error);
+    await reload();
+    if (result.data.surface === 'ui') await refreshThirdPartyPluginUi();
+    setNotice({
+      type: 'success',
+      text: `${pluginsText.manualImport.installedPrefix}${preview.name}`,
+    });
+  }, [pluginsText.manualImport, reload]);
 
   useEffect(() => {
     void reload();
@@ -324,44 +348,14 @@ export const PluginsSettings: React.FC = () => {
           : await ipcService.invoke(IPC_CHANNELS.CAPABILITY_PACKAGE_SELECT_STAGE);
         if (!result) throw new Error(pluginsText.manualImport.importUnavailable);
         if (!result.success) throw new Error(result.error);
-        if (result.data) setPackagePreview(result.data);
+        if (result.data) await continueStagedPackage(result.data);
       } catch (error) {
         setNotice({ type: 'error', text: error instanceof Error ? error.message : String(error) });
       } finally {
         setPackageBusy(false);
       }
     })();
-  }, [pluginsText.manualImport.action, pluginsText.manualImport.importUnavailable]);
-
-  const closePackagePreview = useCallback(() => {
-    const token = packagePreview?.token;
-    setPackagePreview(null);
-    if (token) void ipcService.invoke(IPC_CHANNELS.CAPABILITY_PACKAGE_CANCEL, token);
-  }, [packagePreview]);
-
-  const handleConfirmCapabilityPackage = useCallback(() => {
-    if (!packagePreview) return;
-    const packageName = packagePreview.name;
-    setPackageBusy(true);
-    setNotice(null);
-    void (async () => {
-      try {
-        const result = await ipcService.invoke(IPC_CHANNELS.CAPABILITY_PACKAGE_CONFIRM, packagePreview.token);
-        if (!result.success) throw new Error(result.error);
-        setPackagePreview(null);
-        await reload();
-        setNotice({
-          type: 'success',
-          text: `${pluginsText.manualImport.installedPrefix}${packageName}`,
-        });
-      } catch (error) {
-        setNotice({ type: 'error', text: error instanceof Error ? error.message : String(error) });
-        setPackagePreview(null);
-      } finally {
-        setPackageBusy(false);
-      }
-    })();
-  }, [packagePreview, pluginsText.manualImport.installedPrefix, reload]);
+  }, [continueStagedPackage, pluginsText.manualImport.action, pluginsText.manualImport.importUnavailable]);
 
   const handleUninstallCapabilityPackage = useCallback((plugin: InstalledCapabilityPackage) => {
     if (!window.confirm(`${pluginsText.manualImport.uninstallConfirmPrefix}${plugin.name}${pluginsText.manualImport.uninstallConfirmSuffix}`)) return;
@@ -372,6 +366,18 @@ export const PluginsSettings: React.FC = () => {
     });
   }, [pluginsText.manualImport, runAction]);
 
+  const handleRunCapabilityPackage = useCallback((
+    plugin: InstalledCapabilityPackage,
+    packageId: string,
+  ) => {
+    void runAction(`capability-package:run:${plugin.id}:${packageId}`, async () => {
+      const result = await ipcService.invoke(IPC_CHANNELS.CAPABILITY_PACKAGE_RUN, plugin.id, packageId);
+      if (!result.success) throw new Error(result.error);
+      if (result.data.surface === 'ui') await refreshThirdPartyPluginUi();
+      return `${pluginsText.manualImport.startedVersionPrefix}${plugin.name}`;
+    });
+  }, [pluginsText.manualImport.startedVersionPrefix, runAction]);
+
   const handleInstallBundledCapabilityPackage = useCallback((plugin: InstalledCapabilityPackage) => {
     setPackageBusy(true);
     setNotice(null);
@@ -379,14 +385,14 @@ export const PluginsSettings: React.FC = () => {
       try {
         const result = await ipcService.invoke(IPC_CHANNELS.CAPABILITY_PACKAGE_STAGE_BUNDLED, plugin.id);
         if (!result.success) throw new Error(result.error);
-        setPackagePreview(result.data);
+        await continueStagedPackage(result.data);
       } catch (error) {
         setNotice({ type: 'error', text: error instanceof Error ? error.message : String(error) });
       } finally {
         setPackageBusy(false);
       }
     })();
-  }, []);
+  }, [continueStagedPackage]);
 
   const visibleNotice = notice?.text.trim() ? notice : null;
 
@@ -454,6 +460,7 @@ export const PluginsSettings: React.FC = () => {
                   onInstall={handleInstallBundledCapabilityPackage}
                   onUninstall={handleUninstallCapabilityPackage}
                   onReinstall={handleSelectCapabilityPackage}
+                  onRunVersion={handleRunCapabilityPackage}
                 />
               ))}
             </div>
@@ -913,13 +920,6 @@ export const PluginsSettings: React.FC = () => {
         </SettingsDetails>
       )}
 
-      <PluginInstallDisclosure
-        busy={packageBusy}
-        onCancel={closePackagePreview}
-        onConfirm={handleConfirmCapabilityPackage}
-        preview={packagePreview}
-        text={pluginsText.manualImport}
-      />
     </div>
   );
 };

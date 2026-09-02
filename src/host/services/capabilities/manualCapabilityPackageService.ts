@@ -24,7 +24,6 @@ import { getMCPClient } from '../../mcp/mcpClient';
 import { CUA_DRIVER_SERVER_NAME, type MCPServerConfig } from '../../mcp/types';
 import {
   hashPluginPackage,
-  writePluginApprovalReceipt,
 } from '../../plugins/pluginApprovalReceipt';
 import type { PluginManifest, PluginPermission } from '../../plugins/types';
 import {
@@ -49,6 +48,10 @@ import type {
   InstalledCapabilityPackage,
 } from '../../../shared/contract/capabilityPackage';
 import { recordCapabilityPackageLifecycle } from './capabilityPackageLifecycle';
+import {
+  PluginPackageVersionRuntime,
+  type StoredPluginCandidate,
+} from './pluginPackageVersionRuntime';
 
 const STAGE_TTL_MS = 10 * 60 * 1000;
 const MAX_ARCHIVE_BYTES = 50 * 1024 * 1024;
@@ -58,16 +61,16 @@ const SEMVER = /^\d+\.\d+\.\d+(?:-[\w.]+)?(?:\+[\w.]+)?$/;
 
 interface StagedPackage {
   token: string;
-  rootDir: string;
   ownedTempDir?: string;
   manifest: PluginManifest;
-  packageHash: string;
   sourceKind: CapabilityPackagePreview['sourceKind'];
   sourceLabel: string;
   toolNames: string[];
   sourceTrust: PluginPackageSourceTrust;
+  versionCandidate: StoredPluginCandidate;
+  approvalRequired: boolean;
+  mode: CapabilityPackagePreview['mode'];
   replacesInstalledVersion?: string;
-  stagedAt: number;
   expiresAt: number;
 }
 
@@ -290,11 +293,6 @@ return { toolNames: [...new Set(toolNames)].sort() };
   return `${prefix}${source}\n${suffix}`;
 }
 
-async function copyPackage(sourceDir: string, destinationDir: string): Promise<void> {
-  await hashPluginPackage(sourceDir);
-  await fs.cp(sourceDir, destinationDir, { recursive: true, errorOnExist: true, force: false });
-}
-
 export class ManualCapabilityPackageService {
   private readonly staged = new Map<string, StagedPackage>();
   private readonly stagedBundled = new Map<string, StagedBundledPackage>();
@@ -312,6 +310,7 @@ export class ManualCapabilityPackageService {
   private readonly controlPlanePublicKeys: ControlPlanePublicKeys | undefined;
   private readonly revokedPluginIds: ReadonlySet<string> | undefined;
   private readonly pluginRevocationFile: string | undefined;
+  private readonly versionRuntime: PluginPackageVersionRuntime;
 
   constructor(dependencies: ManualCapabilityPackageServiceDependencies = {}) {
     this.getPluginsDir = dependencies.pluginsDir ?? getPluginsDir;
@@ -330,6 +329,13 @@ export class ManualCapabilityPackageService {
     this.controlPlanePublicKeys = dependencies.controlPlanePublicKeys;
     this.revokedPluginIds = dependencies.revokedPluginIds;
     this.pluginRevocationFile = dependencies.pluginRevocationFile;
+    this.versionRuntime = new PluginPackageVersionRuntime({
+      pluginsDir: this.getPluginsDir,
+      registry: this.registry,
+      internalFeatureRuntime: this.internalFeatureRuntime,
+      now: this.now,
+      lifecycle: this.lifecycle,
+    });
   }
 
   async stageBundled(pluginId: string): Promise<CapabilityPackagePreview> {
@@ -347,6 +353,9 @@ export class ManualCapabilityPackageService {
     return {
       token,
       id: descriptor.manifest.id,
+      packageId: `builtin-${descriptor.manifest.version}`,
+      mode: 'run',
+      approvalRequired: false,
       name: descriptor.manifest.name,
       version: descriptor.manifest.version,
       description: descriptor.manifest.description ?? '',
@@ -452,26 +461,43 @@ export class ManualCapabilityPackageService {
       const stagedAt = this.now();
       const expiresAt = stagedAt + STAGE_TTL_MS;
       const existing = this.registry.getPlugin(manifest.id);
+      const versionCandidate = await this.versionRuntime.storeCandidate({
+        manifest,
+        sourceRoot: rootDir,
+        packageHash,
+        sourceTrust,
+      });
+      const versionState = await this.versionRuntime.readState(manifest.id);
+      const currentVersion = versionState?.currentPackageId
+        ? versionState.packages[versionState.currentPackageId]?.version
+        : existing?.manifest.version;
+      const mode: CapabilityPackagePreview['mode'] = versionState?.currentPackageId
+        && versionState.currentPackageId !== versionCandidate.packageId
+        ? 'update'
+        : 'run';
       const staged: StagedPackage = {
         token,
-        rootDir,
         ownedTempDir,
         manifest,
-        packageHash,
         sourceKind,
         sourceLabel: path.basename(selectedPath),
         toolNames,
         sourceTrust,
-        ...(existing && !existing.rootPath.startsWith('builtin:')
-          ? { replacesInstalledVersion: existing.manifest.version }
+        versionCandidate,
+        approvalRequired: versionCandidate.approvalRequired,
+        mode,
+        ...(currentVersion
+          ? { replacesInstalledVersion: currentVersion }
           : {}),
-        stagedAt,
         expiresAt,
       };
       this.staged.set(token, staged);
       return {
         token,
         id: manifest.id,
+        packageId: versionCandidate.packageId,
+        mode,
+        approvalRequired: versionCandidate.approvalRequired,
         name: manifest.name,
         version: manifest.version,
         description: manifest.description ?? '',
@@ -506,10 +532,49 @@ export class ManualCapabilityPackageService {
     return null;
   }
 
+  async listPendingApprovals(): Promise<CapabilityPackagePreview[]> {
+    await this.pruneExpired();
+    return [...this.staged.values()]
+      .filter((staged) => staged.approvalRequired)
+      .map((staged) => ({
+        token: staged.token,
+        id: staged.manifest.id,
+        packageId: staged.versionCandidate.packageId,
+        mode: staged.mode,
+        approvalRequired: true,
+        name: staged.manifest.name,
+        version: staged.manifest.version,
+        description: staged.manifest.description ?? '',
+        permissions: staged.manifest.permissions ?? [],
+        toolNames: staged.toolNames,
+        surface: packageSurface(staged.manifest),
+        sourceKind: staged.sourceKind,
+        sourceLabel: staged.sourceLabel,
+        sourceTrust: staged.sourceTrust,
+        requestedUiSlots: [...(staged.manifest.uiSlots ?? [])],
+        ...(staged.replacesInstalledVersion
+          ? { replacesInstalledVersion: staged.replacesInstalledVersion }
+          : {}),
+        sandbox: {
+          passed: true,
+          summary: staged.manifest.surfaces?.[0] === 'ui'
+            ? '装入前检查已完成，插件申请的显示位置可读取'
+            : '装入前检查已完成',
+        },
+        expiresAt: staged.expiresAt,
+      }));
+  }
+
   async getInstalledPackageSource(pluginId: string): Promise<'bundled' | 'local' | null> {
     if (isBuiltinCapabilityId(pluginId)) return 'bundled';
     const plugin = this.registry.getPlugin(pluginId);
-    if (!plugin || plugin.rootPath.startsWith('builtin:')) return null;
+    if (!plugin) {
+      const state = await this.versionRuntime.readState(pluginId);
+      return state && Object.values(state.packages).some((item) => item.approval === 'approved')
+        ? 'local'
+        : null;
+    }
+    if (plugin.rootPath.startsWith('builtin:')) return null;
     try {
       await verifyInstalledPluginTrust(plugin.rootPath, plugin.manifest, {
         publicKeys: this.controlPlanePublicKeys,
@@ -523,100 +588,18 @@ export class ManualCapabilityPackageService {
     }
   }
 
-  async confirm(token: string): Promise<CapabilityPackageInstallResult> {
+  async confirm(token: string, approveFutureVersions = false): Promise<CapabilityPackageInstallResult> {
     await this.pruneExpired();
     const bundled = this.stagedBundled.get(token);
     if (bundled) return this.confirmBundled(bundled);
     const staged = this.staged.get(token);
     if (!staged) throw new Error('导入确认已过期，请重新选择插件');
-    const pluginsDir = this.getPluginsDir();
-    await fs.mkdir(pluginsDir, { recursive: true });
-    const installTemp = path.join(pluginsDir, `.install-${staged.manifest.id}-${token}`);
-    const targetDir = path.join(pluginsDir, staged.manifest.id);
-    const backupDir = path.join(pluginsDir, `.backup-${staged.manifest.id}-${token}`);
-    const previousPlugin = this.registry.getPlugin(staged.manifest.id);
-    const isInternalFeature = staged.manifest.surfaces?.[0] === 'internal-feature';
-    let hadBackup = false;
-    let hostUnloaded = false;
-    let registryInstalled = false;
-    const watcherWasActive = this.registry.pauseWatching();
     try {
-      await copyPackage(staged.rootDir, installTemp);
-      const copiedHash = await hashPluginPackage(installTemp);
-      if (copiedHash !== staged.packageHash) throw new Error('插件在确认前发生变化，请重新导入');
-      await writePluginApprovalReceipt(installTemp, {
-        pluginId: staged.manifest.id,
-        packageHash: copiedHash,
-        permissions: staged.manifest.permissions ?? [],
-        sandboxValidatedAt: staged.stagedAt,
-        approvedAt: this.now(),
-      });
-      if (isInternalFeature) {
-        await this.internalFeatureRuntime.unload(staged.manifest.id);
-        hostUnloaded = true;
-      }
-      try {
-        await fs.rename(targetDir, backupDir);
-        hadBackup = true;
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-      }
-      await fs.rename(installTemp, targetDir);
-      const installed = await this.registry.installPluginFromDirectory(targetDir);
-      if (!installed.success) throw new Error(installed.error ?? '插件激活失败');
-      registryInstalled = true;
-      if (isInternalFeature) {
-        const plugin = this.registry.getPlugin(staged.manifest.id);
-        if (!plugin) throw new Error('插件已写入磁盘，但注册表没有返回已安装实例');
-        await this.internalFeatureRuntime.load(plugin);
-      }
-      if (hadBackup) await fs.rm(backupDir, { recursive: true, force: true }).catch(() => undefined);
-      this.lifecycle(staged.manifest.id, 'loaded', `version=${staged.manifest.version}; tools=${staged.toolNames.join(',')}`);
-      return {
-        id: staged.manifest.id,
-        version: staged.manifest.version,
-        toolNames: staged.toolNames.map((name) => `${staged.manifest.id}:${name}`),
-        surface: packageSurface(staged.manifest),
-        ...(staged.replacesInstalledVersion ? { replacedVersion: staged.replacesInstalledVersion } : {}),
-      };
-    } catch (error) {
-      if (registryInstalled) {
-        await this.registry.removePluginFromRegistry(staged.manifest.id).catch(() => false);
-      }
-      await fs.rm(targetDir, { recursive: true, force: true });
-      let rollbackError: unknown;
-      if (hadBackup) {
-        try {
-          await fs.rename(backupDir, targetDir);
-          const restored = await this.registry.installPluginFromDirectory(targetDir);
-          if (!restored.success) throw new Error(restored.error ?? '旧插件注册表恢复失败', { cause: error });
-          if (isInternalFeature) {
-            const restoredPlugin = this.registry.getPlugin(staged.manifest.id);
-            if (!restoredPlugin) throw new Error('旧插件恢复后注册表没有返回实例', { cause: error });
-            await this.internalFeatureRuntime.load(restoredPlugin);
-          }
-        } catch (restoreError) {
-          rollbackError = restoreError;
-        }
-      } else if (hostUnloaded && previousPlugin && !registryInstalled) {
-        try {
-          await this.internalFeatureRuntime.load(previousPlugin);
-        } catch (restoreError) {
-          rollbackError = restoreError;
-        }
-      }
-      await fs.rm(installTemp, { recursive: true, force: true });
-      const detail = error instanceof Error ? error.message : String(error);
-      this.lifecycle(staged.manifest.id, 'failed', detail);
-      this.lifecycle(staged.manifest.id, 'rolled_back', hadBackup ? 'restored previous package' : 'removed rejected package');
-      if (rollbackError) {
-        throw new Error(`${detail}；旧插件恢复失败：${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`, {
-          cause: error,
-        });
-      }
-      throw error;
+      return await this.versionRuntime.approveAndActivate(
+        staged.versionCandidate,
+        staged.approvalRequired && approveFutureVersions,
+      );
     } finally {
-      if (watcherWasActive) this.registry.resumeWatching();
       await this.discard(token);
     }
   }
@@ -682,6 +665,8 @@ export class ManualCapabilityPackageService {
         ...(plugin?.error ? { error: plugin.error } : {}),
       };
     });
+    const storedStates = await this.versionRuntime.listStates();
+    const storedById = new Map(storedStates.map((entry) => [entry.state.pluginId, entry]));
     for (const plugin of this.registry.getPlugins()) {
       if (plugin.rootPath.startsWith('builtin:')) continue;
       let installedTrust;
@@ -696,18 +681,41 @@ export class ManualCapabilityPackageService {
         continue;
       }
       const isInternalFeature = plugin.manifest.surfaces?.[0] === 'internal-feature';
-      const state = isInternalFeature
+      const versionState = storedById.get(plugin.manifest.id)?.state;
+      const runtimeState = isInternalFeature
         ? this.internalFeatureRuntime.isLoaded(plugin.manifest.id)
           ? 'active'
           : plugin.error
             ? 'error'
             : plugin.state === 'active' ? 'inactive' : plugin.state
         : plugin.state;
+      const state = versionState?.lastRun?.status === 'awaiting-client'
+        || versionState?.lastRun?.status === 'activating'
+        ? 'activating'
+        : runtimeState;
       const loadedHash = isInternalFeature
         ? this.internalFeatureRuntime.loadedHash(plugin.manifest.id)
         : undefined;
       result.push({
         id: plugin.manifest.id,
+        ...(versionState ? {
+          packageId: path.basename(plugin.rootPath),
+          ...(versionState.currentPackageId ? { currentPackageId: versionState.currentPackageId } : {}),
+          ...(versionState.nextPackageId ? { nextPackageId: versionState.nextPackageId } : {}),
+          ...(versionState.runningPackageId ? { runningPackageId: versionState.runningPackageId } : {}),
+          ...(versionState.lastRun ? { pluginRunId: versionState.lastRun.pluginRunId } : {}),
+          packages: Object.values(versionState.packages).map((stored) => ({
+            packageId: stored.packageId,
+            version: stored.version,
+            approval: stored.approval,
+            ...(versionState.lastRun?.packageId === stored.packageId
+              ? {
+                lastRunState: versionState.lastRun.status,
+                ...(versionState.lastRun.error ? { error: versionState.lastRun.error } : {}),
+              }
+              : {}),
+          })),
+        } : {}),
         name: plugin.manifest.name,
         version: plugin.manifest.version,
         description: plugin.manifest.description ?? '',
@@ -731,24 +739,85 @@ export class ManualCapabilityPackageService {
         } : {}),
         ...(plugin.error ? { error: plugin.error } : {}),
       });
+      storedById.delete(plugin.manifest.id);
+    }
+    for (const { pluginRoot, state: versionState } of storedById.values()) {
+      const packageId = versionState.nextPackageId ?? versionState.currentPackageId;
+      if (!packageId) continue;
+      const manifest = await this.versionRuntime.readPackageManifest(pluginRoot, packageId);
+      const stored = versionState.packages[packageId];
+      if (!manifest || !stored) continue;
+      const isFailed = versionState.lastRun?.packageId === packageId
+        && versionState.lastRun.status === 'failed';
+      const isActivating = versionState.lastRun?.packageId === packageId
+        && (versionState.lastRun.status === 'activating' || versionState.lastRun.status === 'awaiting-client');
+      result.push({
+        id: manifest.id,
+        packageId,
+        ...(versionState.currentPackageId ? { currentPackageId: versionState.currentPackageId } : {}),
+        ...(versionState.nextPackageId ? { nextPackageId: versionState.nextPackageId } : {}),
+        ...(versionState.runningPackageId ? { runningPackageId: versionState.runningPackageId } : {}),
+        ...(versionState.lastRun ? { pluginRunId: versionState.lastRun.pluginRunId } : {}),
+        packages: Object.values(versionState.packages).map((item) => ({
+          packageId: item.packageId,
+          version: item.version,
+          approval: item.approval,
+          ...(versionState.lastRun?.packageId === item.packageId
+            ? {
+              lastRunState: versionState.lastRun.status,
+              ...(versionState.lastRun.error ? { error: versionState.lastRun.error } : {}),
+            }
+            : {}),
+        })),
+        name: manifest.name,
+        version: manifest.version,
+        description: manifest.description ?? '',
+        permissions: manifest.permissions ?? [],
+        state: isFailed ? 'error' : isActivating ? 'activating' : 'inactive',
+        toolNames: [],
+        surface: packageSurface(manifest),
+        ...(manifest.internalFeature ? { internalFeature: { ...manifest.internalFeature } } : {}),
+        ...(manifest.pluginUi ? {
+          pluginUi: {
+            ...manifest.pluginUi,
+            loadedHash: stored.packageHash,
+            sourceTrust: stored.sourceTrust,
+            requestedUiSlots: [...(manifest.uiSlots ?? [])],
+          },
+        } : {}),
+        ...(isFailed && versionState.lastRun?.error ? { error: versionState.lastRun.error } : {}),
+      });
     }
     return result.sort((left, right) => left.name.localeCompare(right.name));
   }
 
-  reportPluginUiLoadState(pluginId: string, error?: string): void {
+  async reportPluginUiLoadState(pluginId: string, error?: string): Promise<void> {
     const plugin = this.registry.getPlugin(pluginId);
-    if (!plugin || plugin.manifest.surfaces?.[0] !== 'ui') {
+    const versionState = await this.versionRuntime.readState(pluginId);
+    if ((!plugin || plugin.manifest.surfaces?.[0] !== 'ui') && !versionState) {
       throw new Error('找不到已安装的界面插件');
     }
     const detail = error?.trim();
+    await this.versionRuntime.reportUiLoadState(pluginId, detail);
+    if (!plugin) return;
     if (detail) {
       plugin.state = 'error';
       plugin.error = detail;
-      this.lifecycle(pluginId, 'failed', detail);
       return;
     }
     plugin.state = 'active';
     delete plugin.error;
+  }
+
+  async runPackage(pluginId: string, packageId: string): Promise<CapabilityPackageInstallResult> {
+    return this.versionRuntime.activate(pluginId, packageId);
+  }
+
+  async reject(token: string): Promise<void> {
+    const staged = this.staged.get(token);
+    if (!staged) throw new Error('插件授权请求已过期');
+    await this.versionRuntime.reject(staged.versionCandidate);
+    await this.discard(token);
   }
 
   async uninstall(pluginId: string): Promise<void> {
@@ -757,15 +826,27 @@ export class ManualCapabilityPackageService {
       return;
     }
     const plugin = this.registry.getPlugin(pluginId);
-    if (!plugin || plugin.rootPath.startsWith('builtin:')) throw new Error('找不到可卸载的手动插件');
-    await verifyInstalledPluginTrust(plugin.rootPath, plugin.manifest, {
-      publicKeys: this.controlPlanePublicKeys,
-      revokedIds: this.revokedPluginIds,
-      revocationFile: this.pluginRevocationFile,
-      now: this.now(),
-    });
+    if (plugin?.rootPath.startsWith('builtin:')) throw new Error('找不到可卸载的手动插件');
+    const versionState = await this.versionRuntime.readState(pluginId);
+    const pluginRoot = path.join(this.getPluginsDir(), pluginId);
+    const referencePackageId = versionState?.runningPackageId
+      ?? versionState?.nextPackageId
+      ?? versionState?.currentPackageId;
+    const referenceManifest = plugin?.manifest
+      ?? (referencePackageId
+        ? await this.versionRuntime.readPackageManifest(pluginRoot, referencePackageId)
+        : null);
+    if (!referenceManifest) throw new Error('找不到可卸载的手动插件');
+    if (plugin) {
+      await verifyInstalledPluginTrust(plugin.rootPath, plugin.manifest, {
+        publicKeys: this.controlPlanePublicKeys,
+        revokedIds: this.revokedPluginIds,
+        revocationFile: this.pluginRevocationFile,
+        now: this.now(),
+      });
+    }
     const backupDir = path.join(this.getPluginsDir(), `.uninstall-${pluginId}-${randomUUID()}`);
-    const isInternalFeature = plugin.manifest.surfaces?.[0] === 'internal-feature';
+    const isInternalFeature = referenceManifest.surfaces?.[0] === 'internal-feature';
     const watcherWasActive = this.registry.pauseWatching();
     let runtimeUnloaded = false;
     let registryRemoved = false;
@@ -774,17 +855,20 @@ export class ManualCapabilityPackageService {
         await this.internalFeatureRuntime.unload(pluginId);
         runtimeUnloaded = true;
       }
-      if (!await this.registry.removePluginFromRegistry(pluginId)) throw new Error('插件运行时卸载失败');
-      registryRemoved = true;
-      await fs.rename(plugin.rootPath, backupDir);
-      this.lifecycle(pluginId, 'unloaded', `version=${plugin.manifest.version}`);
+      if (plugin) {
+        if (!await this.registry.removePluginFromRegistry(pluginId)) throw new Error('插件运行时卸载失败');
+        registryRemoved = true;
+      }
+      await fs.rename(pluginRoot, backupDir);
+      this.lifecycle(pluginId, 'unloaded', `version=${referenceManifest.version}`);
       await fs.rm(backupDir, { recursive: true, force: true });
     } catch (error) {
-      const targetExists = await fs.stat(plugin.rootPath).then(() => true, () => false);
-      if (!targetExists) await fs.rename(backupDir, plugin.rootPath).catch(() => undefined);
+      const targetExists = await fs.stat(pluginRoot).then(() => true, () => false);
+      if (!targetExists) await fs.rename(backupDir, pluginRoot).catch(() => undefined);
       let restoredPlugin = this.registry.getPlugin(pluginId);
-      if (registryRemoved) {
-        const restored = await this.registry.installPluginFromDirectory(plugin.rootPath).catch(() => null);
+      if (registryRemoved && versionState?.runningPackageId) {
+        const restoredPath = path.join(pluginRoot, 'packages', versionState.runningPackageId);
+        const restored = await this.registry.installPluginFromDirectory(restoredPath).catch(() => null);
         if (restored?.success) restoredPlugin = this.registry.getPlugin(pluginId);
       }
       if (isInternalFeature && runtimeUnloaded && restoredPlugin) {

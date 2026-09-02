@@ -2,7 +2,7 @@ import React from 'react';
 import { AlertTriangle, KeyRound, MapPin, ShieldCheck } from 'lucide-react';
 import type { CapabilityPackagePreview } from '@shared/contract/capabilityPackage';
 import type { UiSlotName } from '@shared/contract/uiSlots';
-import { Modal, ModalFooter } from '../../../primitives';
+import { Button, Modal } from '../../../primitives';
 import { useI18n } from '../../../../hooks/useI18n';
 import { formatPluginPermissionDescription } from '../../capabilityHub/pluginPermissionText';
 import type { PluginsSettingsText } from './PluginsSettings.helpers';
@@ -20,7 +20,7 @@ const LOCATION_COPY_KEYS = {
 interface PluginInstallDisclosureProps {
   busy: boolean;
   onCancel: () => void;
-  onConfirm: () => void;
+  onConfirm: (approveFutureVersions: boolean) => void;
   preview: CapabilityPackagePreview | null;
   text: PluginsSettingsText['manualImport'];
 }
@@ -48,14 +48,11 @@ export const PluginInstallDisclosure: React.FC<PluginInstallDisclosureProps> = (
       headerIcon={<ShieldCheck className="h-5 w-5 text-badge-warning" />}
       size="lg"
       footer={(
-        <ModalFooter
-          cancelText={text.cancel}
-          confirmText={text.confirm}
-          onCancel={onCancel}
-          onConfirm={onConfirm}
-          cancelDisabled={busy}
-          confirmDisabled={busy}
-        />
+        <div className="flex flex-wrap items-center justify-end gap-2 px-6 py-4">
+          <Button variant="ghost" onClick={onCancel} disabled={busy}>{text.cancel}</Button>
+          <Button variant="secondary" onClick={() => onConfirm(false)} disabled={busy}>{text.confirm}</Button>
+          <Button onClick={() => onConfirm(true)} disabled={busy}>{text.approveFuture}</Button>
+        </div>
       )}
     >
       {preview && (

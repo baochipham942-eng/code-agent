@@ -18,7 +18,13 @@ import { INTERNAL_SDK_VERSION } from '../../../../src/host/internalFeatures/inte
 import {
   hashPluginPackage,
   PLUGIN_PACKAGE_SIGNATURE_FILE,
+  writePluginApprovalReceipt,
 } from '../../../../src/host/plugins/pluginApprovalReceipt';
+import {
+  activationMode,
+  migrateLegacyPluginDirectory,
+  readPluginVersionState,
+} from '../../../../src/host/plugins/pluginPackageVersionStore';
 import {
   buildControlPlaneContentHash,
   buildControlPlaneSigningPayload,
@@ -216,7 +222,7 @@ describe('ManualCapabilityPackageService', () => {
     expect(lifecycle.map((entry) => entry.action)).toEqual(['loaded', 'unloaded']);
   });
 
-  it('accepts both a directory and its manifest file without writing before confirmation', async () => {
+  it('accepts both a directory and its manifest file and saves an immutable version before approval', async () => {
     const service = createService();
     const source = await writePackage('directory-cap');
 
@@ -228,7 +234,11 @@ describe('ManualCapabilityPackageService', () => {
       depends: [],
       provides: ['plugin:directory-cap'],
     });
-    await expect(fs.stat(path.join(pluginsDir, 'directory-cap'))).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(directoryPreview.approvalRequired).toBe(true);
+    expect(await fs.readFile(
+      path.join(pluginsDir, 'directory-cap', 'packages', directoryPreview.packageId, 'plugin.json'),
+      'utf8',
+    )).toContain('directory-cap');
     await service.discard(directoryPreview.token);
 
     const manifestPreview = await service.stage(path.join(source, 'plugin.json'));
@@ -339,13 +349,14 @@ describe('ManualCapabilityPackageService', () => {
     const service = createService();
     await service.confirm((await service.stage(source)).token);
 
-    service.reportPluginUiLoadState(pluginId, 'fixture renderer failed');
+    await service.reportPluginUiLoadState(pluginId, 'fixture renderer failed');
     expect((await service.list()).find((item) => item.id === pluginId)).toMatchObject({
       state: 'error',
       error: 'fixture renderer failed',
     });
 
-    service.reportPluginUiLoadState(pluginId);
+    await service.runPackage(pluginId, (await service.list()).find((item) => item.id === pluginId)!.nextPackageId!);
+    await service.reportPluginUiLoadState(pluginId);
     expect((await service.list()).find((item) => item.id === pluginId)).toMatchObject({
       state: 'active',
     });
@@ -582,7 +593,7 @@ describe('ManualCapabilityPackageService', () => {
     const preview = await service.stage(source);
     await expect(service.confirm(preview.token)).rejects.toThrow(/必须声明 'network' 权限/);
     expect(hasProtocolTool('runtime-permission-gap:ping')).toBe(false);
-    expect(lifecycle.map((entry) => entry.action)).toEqual(['failed', 'rolled_back']);
+    expect(lifecycle.map((entry) => entry.action)).toEqual(['failed']);
   });
 
   it('installs only with a validated stage token, records load/unload, and exposes the tool next turn', async () => {
@@ -606,7 +617,7 @@ describe('ManualCapabilityPackageService', () => {
     expect(lifecycle.map((entry) => entry.action)).toEqual(['loaded', 'unloaded']);
   });
 
-  it('restores the prior version and records the rollback when replacement activation fails', async () => {
+  it('V2 V7 keeps current separate from running and requires explicit rollback after update failure', async () => {
     const service = createService();
     const firstSource = await writePackage('rollback-cap');
     const firstPreview = await service.stage(firstSource);
@@ -622,18 +633,35 @@ describe('ManualCapabilityPackageService', () => {
 
     expect(preview.replacesInstalledVersion).toBe('1.0.0');
     await expect(service.confirm(preview.token)).rejects.toThrow('真实激活失败');
+    expect(hasProtocolTool('rollback-cap:ping')).toBe(false);
+    const failed = (await service.list()).find((item) => item.id === 'rollback-cap');
+    expect(failed).toMatchObject({
+      id: 'rollback-cap',
+      version: '2.0.0',
+      state: 'error',
+      currentPackageId: firstPreview.packageId,
+      nextPackageId: preview.packageId,
+    });
+    expect(failed?.runningPackageId).toBeUndefined();
+    expect(failed?.packages).toHaveLength(2);
+    expect(JSON.parse(await fs.readFile(
+      path.join(pluginsDir, 'rollback-cap', 'packages', firstPreview.packageId, 'plugin.json'),
+      'utf8',
+    )))
+      .toMatchObject({ version: '1.0.0' });
+    const rollbackRun = await service.runPackage('rollback-cap', firstPreview.packageId);
+    expect(rollbackRun.mode).toBe('run');
     expect(hasProtocolTool('rollback-cap:ping')).toBe(true);
     expect((await service.list()).find((item) => item.id === 'rollback-cap')).toMatchObject({
-      id: 'rollback-cap',
       version: '1.0.0',
+      currentPackageId: firstPreview.packageId,
+      runningPackageId: firstPreview.packageId,
       state: 'active',
     });
-    expect(JSON.parse(await fs.readFile(path.join(pluginsDir, 'rollback-cap', 'plugin.json'), 'utf8')))
-      .toMatchObject({ version: '1.0.0' });
-    expect(lifecycle.map((entry) => entry.action)).toEqual(['loaded', 'failed', 'rolled_back']);
+    expect(lifecycle.map((entry) => entry.action)).toEqual(['loaded', 'failed', 'loaded']);
   });
 
-  it('reloads the old internal host and hash when replacement host activation fails', async () => {
+  it('leaves an internal plugin stopped until its prior version is explicitly started', async () => {
     const handlers = new Map<string, unknown>();
     const ipcMain: typeof ipcHost = {
       handle: (channel, handler) => { handlers.set(channel, handler); },
@@ -671,10 +699,13 @@ describe('ManualCapabilityPackageService', () => {
     );
 
     await expect(service.confirm((await service.stage(replacement)).token)).rejects.toThrow('new host failed');
+    expect(runtime.isLoaded('evaluation-center')).toBe(false);
+    expect(handlers.has('test:ping')).toBe(false);
+    expect(registry.getPlugin('evaluation-center')).toBeUndefined();
+    await service.runPackage('evaluation-center', (await service.list()).find((item) => item.id === 'evaluation-center')!.currentPackageId!);
     expect(runtime.isLoaded('evaluation-center')).toBe(true);
     expect(runtime.loadedHash('evaluation-center')).toBe(oldHash);
     expect(handlers.has('test:ping')).toBe(true);
-    expect(await hashPluginPackage(path.join(pluginsDir, 'evaluation-center'))).toBe(oldHash);
     expect(registry.getPlugin('evaluation-center')).toMatchObject({ manifest: { version: '1.0.0' } });
   });
 
@@ -756,5 +787,157 @@ describe('ManualCapabilityPackageService', () => {
     } finally {
       Object.defineProperty(process, 'platform', originalPlatform);
     }
+  });
+
+  it('V3 uses run when no version has succeeded yet', () => {
+    expect(activationMode(undefined, 'package-a')).toBe('run');
+  });
+
+  it('V4 uses run when starting the same successful version again', () => {
+    expect(activationMode('package-a', 'package-a')).toBe('run');
+  });
+
+  it('V5 uses update when starting a different version', () => {
+    expect(activationMode('package-a', 'package-b')).toBe('update');
+  });
+
+  it('V6 uses run when explicit rollback targets the successful version', () => {
+    expect(activationMode('package-a', 'package-a')).toBe('run');
+  });
+
+  it('V9 keeps one-version approval local to that version', async () => {
+    const service = createService();
+    const first = await service.stage(await writePackage('single-version-approval'));
+    await service.confirm(first.token, false);
+    const second = await service.stage(await writePackage('single-version-approval', {
+      manifest: manifest('single-version-approval', { version: '2.0.0' }),
+    }));
+
+    expect(second.approvalRequired).toBe(true);
+    expect(await service.listPendingApprovals()).toEqual([
+      expect.objectContaining({ packageId: second.packageId, mode: 'update' }),
+    ]);
+  });
+
+  it('future-version approval starts later versions without another prompt', async () => {
+    const service = createService();
+    const first = await service.stage(await writePackage('future-version-approval'));
+    await service.confirm(first.token, true);
+    const second = await service.stage(await writePackage('future-version-approval', {
+      manifest: manifest('future-version-approval', { version: '2.0.0' }),
+    }));
+
+    expect(second.approvalRequired).toBe(false);
+    expect(await service.listPendingApprovals()).toEqual([]);
+    await service.confirm(second.token);
+    expect((await service.list()).find((item) => item.id === 'future-version-approval')).toMatchObject({
+      version: '2.0.0',
+      state: 'active',
+    });
+  });
+
+  it('V10 records a rejection and never retries it from list or refresh operations', async () => {
+    const service = createService();
+    const preview = await service.stage(await writePackage('denied-version'));
+    await service.reject(preview.token);
+
+    expect(await service.listPendingApprovals()).toEqual([]);
+    expect(registry.getPlugin('denied-version')).toBeUndefined();
+    expect(await service.list()).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'denied-version', state: 'active' }),
+    ]));
+    const state = await readPluginVersionState(path.join(pluginsDir, 'denied-version'));
+    expect(state?.packages[preview.packageId].approval).toBe('denied');
+  });
+
+  it('V11 retains approval after a technical failure', async () => {
+    const service = createService({
+      runSandbox: async () => ({ ok: true, result: { toolNames: ['ping'] } }),
+    });
+    const source = await writePackage('approved-failure', {
+      source: entrySource('approved-failure', "throw new Error('technical failure');"),
+    });
+    const preview = await service.stage(source);
+    await expect(service.confirm(preview.token)).rejects.toThrow('technical failure');
+    const state = await readPluginVersionState(path.join(pluginsDir, 'approved-failure'));
+    expect(state?.packages[preview.packageId].approval).toBe('approved');
+    await expect(service.runPackage('approved-failure', preview.packageId)).rejects.toThrow('technical failure');
+    expect((await service.listPendingApprovals())).toEqual([]);
+  });
+
+  it('V1 V8 preserves failed code and appends repaired code as another immutable version', async () => {
+    const service = createService({
+      runSandbox: async () => ({ ok: true, result: { toolNames: ['ping'] } }),
+    });
+    const first = await service.stage(await writePackage('immutable-repair'));
+    await service.confirm(first.token);
+    const broken = await service.stage(await writePackage('immutable-repair', {
+      manifest: manifest('immutable-repair', { version: '2.0.0' }),
+      source: entrySource('immutable-repair', "throw new Error('broken update');"),
+    }));
+    await expect(service.confirm(broken.token)).rejects.toThrow('broken update');
+    const repaired = await service.stage(await writePackage('immutable-repair', {
+      manifest: manifest('immutable-repair', { version: '2.0.0' }),
+      source: entrySource('immutable-repair', '// repaired package'),
+    }));
+
+    expect(repaired.packageId).not.toBe(broken.packageId);
+    expect(await fs.readFile(
+      path.join(pluginsDir, 'immutable-repair', 'packages', broken.packageId, 'index.js'),
+      'utf8',
+    )).toContain('broken update');
+    const state = await readPluginVersionState(path.join(pluginsDir, 'immutable-repair'));
+    expect(Object.keys(state?.packages ?? {})).toHaveLength(3);
+  });
+
+  it('V13 migrates a legacy directory idempotently and restores it if the atomic switch fails', async () => {
+    const source = await writePackage('legacy-layout');
+    const legacyRoot = path.join(pluginsDir, 'legacy-layout');
+    await fs.cp(source, legacyRoot, { recursive: true });
+    const packageHash = await hashPluginPackage(legacyRoot);
+    await writePluginApprovalReceipt(legacyRoot, {
+      pluginId: 'legacy-layout',
+      packageHash,
+      permissions: [],
+      sandboxValidatedAt: 1,
+      approvedAt: 2,
+    });
+    const parsedManifest = await readPluginManifest(legacyRoot);
+    if (!parsedManifest) throw new Error('legacy fixture manifest missing');
+    const migrated = await migrateLegacyPluginDirectory(legacyRoot, parsedManifest, {
+      packageHash,
+      sourceTrust: { level: 'unsigned', reason: 'legacy fixture' },
+      now: 3,
+    });
+    const before = await fs.readdir(legacyRoot, { recursive: true });
+    const migratedAgain = await migrateLegacyPluginDirectory(legacyRoot, parsedManifest, {
+      packageHash,
+      sourceTrust: { level: 'unsigned', reason: 'legacy fixture' },
+      now: 999,
+    });
+    expect(migratedAgain).toEqual(migrated);
+    expect(await fs.readdir(legacyRoot, { recursive: true })).toEqual(before);
+
+    const failedSource = await writePackage('legacy-failure');
+    const failedRoot = path.join(pluginsDir, 'legacy-failure');
+    await fs.cp(failedSource, failedRoot, { recursive: true });
+    const failedHash = await hashPluginPackage(failedRoot);
+    const failedManifest = await readPluginManifest(failedRoot);
+    if (!failedManifest) throw new Error('failure fixture manifest missing');
+    const originalRename = fs.rename.bind(fs);
+    let renameCount = 0;
+    const renameSpy = vi.spyOn(fs, 'rename').mockImplementation(async (from, to) => {
+      renameCount += 1;
+      if (renameCount === 3) throw new Error('fixture atomic switch failure');
+      return originalRename(from, to);
+    });
+    await expect(migrateLegacyPluginDirectory(failedRoot, failedManifest, {
+      packageHash: failedHash,
+      sourceTrust: { level: 'unsigned', reason: 'legacy fixture' },
+      now: 4,
+    })).rejects.toThrow('旧插件迁移失败，已保留原目录');
+    renameSpy.mockRestore();
+    expect(await readPluginManifest(failedRoot)).toMatchObject({ id: 'legacy-failure', version: '1.0.0' });
+    expect(await readPluginVersionState(failedRoot)).toBeNull();
   });
 });

@@ -140,7 +140,7 @@ describe('PluginsSettings install cancellation', () => {
     expect(document.body.textContent).not.toContain(zh.settings.plugins.errors.operationFailed);
   });
 
-  it('discloses permissions and waits for the explicit confirmation before installing', async () => {
+  it('queues local plugin approval in the framework overlay instead of installing from settings', async () => {
     invoke.mockImplementation((channel: string) => {
       if (
         channel === IPC_CHANNELS.MARKETPLACE_LIST
@@ -156,6 +156,9 @@ describe('PluginsSettings install cancellation', () => {
           data: {
             token: 'validated-package-token',
             id: 'local.web-research',
+            packageId: '1.0.0-local',
+            mode: 'run',
+            approvalRequired: true,
             name: '本机网页研究',
             version: '1.0.0',
             description: '读取网页并整理证据。',
@@ -183,28 +186,14 @@ describe('PluginsSettings install cancellation', () => {
     render(<PluginsSettings />);
     fireEvent.click(await screen.findByRole('button', { name: zh.settings.plugins.manualImport.action }));
 
-    expect(await screen.findByText(zh.settings.plugins.manualImport.confirmTitle)).toBeTruthy();
-    expect(screen.getByText(
-      `网络：${zh.capabilityPackages.permissionText.descriptions.network}`,
+    expect(await screen.findByText(
+      `${zh.settings.plugins.manualImport.approvalQueued}本机网页研究`,
     )).toBeTruthy();
-    expect(screen.getByText(
-      `本地数据：${zh.capabilityPackages.permissionText.descriptions.storage}`,
-    )).toBeTruthy();
+    expect(screen.queryByText(zh.settings.plugins.manualImport.confirmTitle)).toBeNull();
     expect(invoke).not.toHaveBeenCalledWith(
       IPC_CHANNELS.CAPABILITY_PACKAGE_CONFIRM,
       expect.anything(),
     );
-
-    fireEvent.click(screen.getByRole('button', { name: zh.settings.plugins.manualImport.confirm }));
-    await waitFor(() => {
-      expect(invoke).toHaveBeenCalledWith(
-        IPC_CHANNELS.CAPABILITY_PACKAGE_CONFIRM,
-        'validated-package-token',
-      );
-    });
-    expect(await screen.findByText(
-      `${zh.settings.plugins.manualImport.installedPrefix}本机网页研究`,
-    )).toBeTruthy();
   });
 
   it('installs bundled Computer Use only after disclosing Accessibility and Screen Recording', async () => {
@@ -247,6 +236,9 @@ describe('PluginsSettings install cancellation', () => {
           data: {
             token: 'bundled-cua-token',
             id: 'builtin.computerUse',
+            packageId: 'builtin-1.0.0',
+            mode: 'run',
+            approvalRequired: false,
             name: 'Computer Use',
             version: '1.0.0',
             description: 'macOS 桌面控制',
@@ -276,20 +268,12 @@ describe('PluginsSettings install cancellation', () => {
     expect(screen.getByText('Computer Use')).toBeTruthy();
     fireEvent.click(await screen.findByRole('button', { name: zh.settings.plugins.manualImport.install }));
 
-    expect(await screen.findByText(zh.settings.plugins.manualImport.confirmTitle)).toBeTruthy();
-    expect(screen.getAllByText(zh.capabilityPackages.permissionText.labels.accessibility).length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText(
-      `辅助功能：${zh.capabilityPackages.permissionText.descriptions.accessibility}`,
-    )).toBeTruthy();
-    expect(screen.getAllByText(zh.capabilityPackages.permissionText.labels['screen-recording']).length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText(
-      `屏幕录制：${zh.capabilityPackages.permissionText.descriptions['screen-recording']}`,
-    )).toBeTruthy();
-    expect(invoke).not.toHaveBeenCalledWith(IPC_CHANNELS.CAPABILITY_PACKAGE_CONFIRM, expect.anything());
-
-    fireEvent.click(screen.getByRole('button', { name: zh.settings.plugins.manualImport.confirm }));
     await waitFor(() => {
-      expect(invoke).toHaveBeenCalledWith(IPC_CHANNELS.CAPABILITY_PACKAGE_CONFIRM, 'bundled-cua-token');
+      expect(invoke).toHaveBeenCalledWith(
+        IPC_CHANNELS.CAPABILITY_PACKAGE_CONFIRM,
+        'bundled-cua-token',
+        false,
+      );
     });
   });
 });

@@ -116,7 +116,7 @@ beforeEach(async () => {
   installInternalSdk();
   invoke.mockImplementation(async (channel: string, id: string, error?: string) => {
     if (channel === IPC_CHANNELS.CAPABILITY_PACKAGE_UI_LOAD_STATE) {
-      service.reportPluginUiLoadState(id, error);
+      await service.reportPluginUiLoadState(id, error);
       return { success: true, data: undefined };
     }
     throw new Error(`unexpected IPC channel ${channel}`);
@@ -177,7 +177,9 @@ describe('third-party UI package lifecycle integration', () => {
     expect(screen.queryByTestId('integration-plugin-ui')).toBeNull();
 
     await applyPluginUiActivationSettings({ pluginUi: { thirdPartyEnabled: true } });
-    const secondLoad = refreshThirdPartyPluginUi([installed]);
+    const restarted = (await service.list()).find((item) => item.id === pluginId);
+    if (!restarted) throw new Error('restarted package projection missing');
+    const secondLoad = refreshThirdPartyPluginUi([restarted]);
     await act(async () => {
       await executeServedBundle(servedBundle);
       await secondLoad;

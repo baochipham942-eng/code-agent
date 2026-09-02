@@ -144,7 +144,9 @@ async function refreshInstalledPluginUi(
   const packages = installedPackages ?? packageList(
     await ipcService.invoke(IPC_CHANNELS.CAPABILITY_PACKAGE_LIST),
   );
-  const plugins = packages.filter((plugin) => plugin.surface === 'ui');
+  const plugins = packages.filter((plugin) => (
+    plugin.surface === 'ui' && (plugin.state === 'active' || plugin.state === 'activating')
+  ));
   const installedIds = new Set(plugins.map((plugin) => plugin.id));
 
   for (const pluginId of [...knownPluginIds]) {

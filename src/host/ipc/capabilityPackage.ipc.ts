@@ -64,6 +64,14 @@ export function registerCapabilityPackageHandlers(
     }
   });
 
+  handle(IPC_CHANNELS.CAPABILITY_PACKAGE_APPROVAL_LIST, async (): Promise<CapabilityPackageResult<CapabilityPackagePreview[]>> => {
+    try {
+      return success(await getManualCapabilityPackageService().listPendingApprovals());
+    } catch (error) {
+      return failure(error);
+    }
+  });
+
   handle(IPC_CHANNELS.CAPABILITY_PACKAGE_STAGE_BUNDLED, async (pluginId: string): Promise<CapabilityPackageResult<CapabilityPackagePreview>> => {
     if (!isBuiltinCapabilityId(pluginId)) return failure('只允许安装 Neo 内置插件');
     try {
@@ -73,11 +81,36 @@ export function registerCapabilityPackageHandlers(
     }
   });
 
-  handle(IPC_CHANNELS.CAPABILITY_PACKAGE_CONFIRM, async (token: string): Promise<CapabilityPackageResult<CapabilityPackageInstallResult>> => {
+  handle<[string, boolean?], CapabilityPackageInstallResult>(IPC_CHANNELS.CAPABILITY_PACKAGE_CONFIRM, async (
+    token: string,
+    approveFutureVersions = false,
+  ): Promise<CapabilityPackageResult<CapabilityPackageInstallResult>> => {
     try {
       const service = getManualCapabilityPackageService();
       if (!await service.getStagedPackageSource(token)) return failure('插件确认来源无效或已过期');
-      return success(await service.confirm(token));
+      return success(await service.confirm(token, approveFutureVersions));
+    } catch (error) {
+      return failure(error);
+    }
+  });
+
+  handle(IPC_CHANNELS.CAPABILITY_PACKAGE_REJECT, async (token: string): Promise<CapabilityPackageResult<void>> => {
+    try {
+      const service = getManualCapabilityPackageService();
+      if (await service.getStagedPackageSource(token) !== 'local') return failure('插件授权请求无效或已过期');
+      await service.reject(token);
+      return success(undefined);
+    } catch (error) {
+      return failure(error);
+    }
+  });
+
+  handle(IPC_CHANNELS.CAPABILITY_PACKAGE_RUN, async (
+    pluginId: string,
+    packageId: string,
+  ): Promise<CapabilityPackageResult<CapabilityPackageInstallResult>> => {
+    try {
+      return success(await getManualCapabilityPackageService().runPackage(pluginId, packageId));
     } catch (error) {
       return failure(error);
     }
@@ -86,8 +119,10 @@ export function registerCapabilityPackageHandlers(
   handle(IPC_CHANNELS.CAPABILITY_PACKAGE_CANCEL, async (token: string): Promise<CapabilityPackageResult<void>> => {
     try {
       const service = getManualCapabilityPackageService();
-      if (!await service.getStagedPackageSource(token)) return failure('插件确认来源无效或已过期');
-      await service.discard(token);
+      const source = await service.getStagedPackageSource(token);
+      if (!source) return failure('插件确认来源无效或已过期');
+      if (source === 'local') await service.reject(token);
+      else await service.discard(token);
       return success(undefined);
     } catch (error) {
       return failure(error);
@@ -110,7 +145,7 @@ export function registerCapabilityPackageHandlers(
     error?: string,
   ): Promise<CapabilityPackageResult<void>> => {
     try {
-      getManualCapabilityPackageService().reportPluginUiLoadState(pluginId, error);
+      await getManualCapabilityPackageService().reportPluginUiLoadState(pluginId, error);
       return success(undefined);
     } catch (loadStateError) {
       return failure(loadStateError);

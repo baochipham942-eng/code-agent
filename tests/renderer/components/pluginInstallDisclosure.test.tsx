@@ -25,6 +25,9 @@ function preview(overrides: Partial<CapabilityPackagePreview> = {}): CapabilityP
   return {
     token: 'preview-token',
     id: 'third-party.timeline',
+    packageId: '1.0.0-fixture',
+    mode: 'run',
+    approvalRequired: true,
     name: 'Timeline',
     version: '1.0.0',
     description: 'Adds a reviewed timeline.',

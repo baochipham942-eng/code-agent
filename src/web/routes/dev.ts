@@ -336,7 +336,7 @@ async function executeDevTool(
   if (!tool) {
     throw new DevApiError(400, 'Missing tool.');
   }
-  if (!DEV_EXEC_ALLOWED_TOOLS.has(tool)) {
+  if (!isDevExecToolAllowed(tool)) {
     throw new DevApiError(403, `Tool is not allowed in dev host exec: ${tool}`);
   }
   if (DEV_WRITE_TOOLS.has(tool) && request.allowWrite !== true) {

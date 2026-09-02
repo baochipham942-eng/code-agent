@@ -4,6 +4,7 @@ import { buildRuntimeModeBlock } from '../../../src/host/agent/messageHandling/c
 describe('buildRuntimeModeBlock', () => {
   const previousCliMode = process.env.CODE_AGENT_CLI_MODE;
   const previousWebMode = process.env.CODE_AGENT_WEB_MODE;
+  const previousEvalRealRoot = process.env.CODE_AGENT_EVAL_REAL_ROOT;
 
   afterEach(() => {
     if (previousCliMode === undefined) delete process.env.CODE_AGENT_CLI_MODE;
@@ -11,6 +12,9 @@ describe('buildRuntimeModeBlock', () => {
 
     if (previousWebMode === undefined) delete process.env.CODE_AGENT_WEB_MODE;
     else process.env.CODE_AGENT_WEB_MODE = previousWebMode;
+
+    if (previousEvalRealRoot === undefined) delete process.env.CODE_AGENT_EVAL_REAL_ROOT;
+    else process.env.CODE_AGENT_EVAL_REAL_ROOT = previousEvalRealRoot;
   });
 
   it('does not describe app-host web mode as CLI-only', () => {
@@ -43,5 +47,19 @@ describe('buildRuntimeModeBlock', () => {
 
     expect(samePathBlock).not.toContain('Your own source code is at:');
     expect(differentPathBlock).toContain(`Your own source code is at: ${process.cwd()}`);
+  });
+
+  // N-EVAL-L3-WORKDIR：评测沙箱是仓库副本（eval-sandbox 设 CODE_AGENT_EVAL_REAL_ROOT），不许再指回原仓——
+  // 09-02 L3 真跑里模型照这句去 ~/…/code-agent/casebank-* 找题目目录，找不到就 find / 全盘搜。
+  it('inside an eval sandbox (CODE_AGENT_EVAL_REAL_ROOT set) never points the model back at the original repo', () => {
+    delete process.env.CODE_AGENT_CLI_MODE;
+    delete process.env.CODE_AGENT_WEB_MODE;
+    process.env.CODE_AGENT_EVAL_REAL_ROOT = process.cwd();
+
+    const sandboxBlock = buildRuntimeModeBlock('/tmp/case-abc123');
+
+    expect(sandboxBlock).not.toContain('Your own source code is at:');
+    expect(sandboxBlock).not.toContain('not the sandbox working directory');
+    expect(sandboxBlock).toContain('You ARE the');
   });
 });

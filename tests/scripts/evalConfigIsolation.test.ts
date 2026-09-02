@@ -11,12 +11,22 @@
 import { execFile } from 'node:child_process';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { createCasebankFixture } from '../utils/casebankFixture';
 
 const execFileAsync = promisify(execFile);
-const repoRoot = process.cwd();
-const tsxCli = path.join(repoRoot, 'node_modules', 'tsx', 'dist', 'cli.mjs');
-const evalScript = path.join(repoRoot, 'packages', 'internal', 'evaluation-center', 'scripts', 'eval-ci.ts');
+const sourceRepoRoot = process.cwd();
+const tsxCli = path.join(sourceRepoRoot, 'node_modules', 'tsx', 'dist', 'cli.mjs');
+const evalScript = path.join(sourceRepoRoot, 'packages', 'internal', 'evaluation-center', 'scripts', 'eval-ci.ts');
+let fixture: Awaited<ReturnType<typeof createCasebankFixture>>;
+
+beforeAll(async () => {
+  fixture = await createCasebankFixture();
+});
+
+afterAll(async () => {
+  await fixture.cleanup();
+});
 
 // 每次调用给独立数据目录，避免轮次间互相污染。
 // ⚠️ 目录名不能含 'eval-config-isolation'——dotenvx 会把数据目录下的 .env 探测路径
@@ -47,12 +57,14 @@ function runEvalCi(env: Record<string, string>) {
       dataDir,
     ],
     {
-      cwd: repoRoot,
+      cwd: fixture.repoRoot,
       timeout: 60_000,
       env: {
         ...process.env,
+        ...fixture.env,
         AUTO_TEST_API_KEY: 'dummy-key-not-used',
         CODE_AGENT_DATA_DIR: '',
+        TSX_TSCONFIG_PATH: path.join(sourceRepoRoot, 'tsconfig.json'),
         ...env,
       },
     },

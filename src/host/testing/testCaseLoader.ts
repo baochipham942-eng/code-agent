@@ -8,12 +8,83 @@ import * as yaml from 'js-yaml';
 import type { TestSuite, TestCase } from './types';
 import { resolveCaseLayer } from './caseLayer';
 import { isCaseHardened } from './caseHardening';
+import { findRepositoryRoot, resolveAnswerSideFile } from './answerSide';
+
+interface AnswerCase {
+  id: string;
+  expect?: TestCase['expect'];
+  expectations?: TestCase['expectations'];
+}
+
+interface AnswerFile {
+  version: 1;
+  source: string;
+  cases: AnswerCase[];
+}
 
 /**
  * Parse YAML content using js-yaml
  */
 function parseYaml(content: string): unknown {
   return yaml.load(content);
+}
+
+function hasNonEmptyAnswer(testCase: Pick<TestCase, 'expect' | 'expectations'>): boolean {
+  return Object.keys(testCase.expect ?? {}).length > 0 || (testCase.expectations?.length ?? 0) > 0;
+}
+
+async function mergeAnswerSide(data: unknown, filePath: string): Promise<unknown> {
+  const suite = data as Record<string, unknown>;
+  if (!Array.isArray(suite.cases)) return data;
+  const resolved = resolveAnswerSideFile(filePath);
+  const repoRoot = findRepositoryRoot(filePath);
+  const repoRelative = repoRoot
+    ? path.relative(repoRoot, path.resolve(filePath)).split(path.sep).join('/')
+    : null;
+  const isPublicCaseBankFile = repoRelative?.startsWith('.claude/test-cases/') === true;
+  if (!resolved && !isPublicCaseBankFile) return data;
+
+  let answerFile: AnswerFile | null = null;
+  if (resolved) {
+    try {
+      answerFile = parseYaml(await fs.readFile(resolved.answerFile, 'utf8')) as AnswerFile;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
+  }
+
+  if (answerFile && resolved) {
+    if (answerFile.version !== 1 || answerFile.source !== resolved.source || !Array.isArray(answerFile.cases)) {
+      throw new Error(`答案文件结构无效: ${resolved.answerFile}（source 应为 ${resolved.source}）`);
+    }
+    const duplicateIds = answerFile.cases
+      .map((item) => item.id)
+      .filter((id, index, ids) => ids.indexOf(id) !== index);
+    if (duplicateIds.length > 0) {
+      throw new Error(`答案文件存在重复 id: ${resolved.answerFile}（${[...new Set(duplicateIds)].join(', ')}）`);
+    }
+  }
+  const answersById = new Map((answerFile?.cases ?? []).map((item) => [item.id, item]));
+
+  for (const rawCase of suite.cases) {
+    const testCase = rawCase as Record<string, unknown>;
+    const id = typeof testCase.id === 'string' ? testCase.id : '';
+    const answer = answersById.get(id);
+    if (answer && resolved && hasNonEmptyAnswer(testCase as unknown as Pick<TestCase, 'expect' | 'expectations'>)) {
+      throw new Error(
+        `Test case ${id}: 内联答案与答案侧同时存在（二义）: ${filePath} / ${resolved.answerFile}`,
+      );
+    }
+    if (answer) {
+      if (answer.expect !== undefined) testCase.expect = answer.expect;
+      if (answer.expectations !== undefined) testCase.expectations = answer.expectations;
+    } else if (!hasNonEmptyAnswer(testCase as unknown as Pick<TestCase, 'expect' | 'expectations'>)) {
+      testCase.answerSide = 'missing';
+      testCase.answerSidePath = resolved?.answerFile ?? `answers/${repoRelative ?? path.basename(filePath)}`;
+      testCase.answerSideRoot = resolved?.answerRoot ?? '未解析到私档';
+    }
+  }
+  return data;
 }
 
 /**
@@ -38,9 +109,11 @@ function validateTestCase(testCase: unknown, index: number, requireHardened: boo
     tc.description = tc.id;
   }
 
+  tc.expect ??= {};
+
   if (requireHardened) {
-    const hardening = isCaseHardened(tc as unknown as Pick<TestCase, 'expect' | 'expectations' | 'reviewStatus'>);
-    if (!hardening.hardened) {
+    const hardening = isCaseHardened(tc as unknown as Pick<TestCase, 'expect' | 'expectations' | 'reviewStatus' | 'answerSide'>);
+    if (!hardening.hardened && hardening.reason !== 'answer_side_missing') {
       throw new Error(`Test case ${tc.id}: 还没有判定标准（${hardening.reason}）`);
     }
   }
@@ -100,7 +173,7 @@ export async function loadTestSuite(
   options: { requireHardened?: boolean } = {},
 ): Promise<TestSuite> {
   const content = await fs.readFile(filePath, 'utf-8');
-  const data = parseYaml(content);
+  const data = await mergeAnswerSide(parseYaml(content), filePath);
   return validateTestSuite(data, filePath, options.requireHardened !== false);
 }
 

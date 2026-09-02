@@ -16,6 +16,7 @@ import { getAiReviewPromptHash } from '@host/testing/judge/dimensionJudge';
 import { getSkillDiscoveryService } from '@host/services/skills/skillDiscoveryService';
 import { buildProductionCompareArm } from './evalCompareRequest';
 import { enumerateCaseBank } from '../testing/caseBank';
+import { splitsPath } from '@host/testing/ci/sampleSplits';
 
 const FALLBACK_SPLIT_COUNTS: EvalRunPanelProbe['splitCounts'] = {
   'held-in': 76,
@@ -27,7 +28,7 @@ function readSplitCounts(repositoryRoot?: string): EvalRunPanelProbe['splitCount
   if (!repositoryRoot) return FALLBACK_SPLIT_COUNTS;
   try {
     const parsed = JSON.parse(fs.readFileSync(
-      path.join(repositoryRoot, '.claude', 'eval-splits.json'),
+      splitsPath(repositoryRoot),
       'utf8',
     )) as Record<string, unknown>;
     const count = (key: 'heldIn' | 'heldOut' | 'safety', fallback: number): number => (

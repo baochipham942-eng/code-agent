@@ -69,6 +69,7 @@ function formatKeySource(source: EvalRunStamp['keySource']): string {
 export function getRunStampReportRows(stamp: EvalRunStamp): Array<[string, string]> {
   return [
     ['题库版本', stamp.caseBankSha],
+    ['答案侧版本', stamp.answerSideSha],
     ['评测集', formatEvalSet(stamp)],
     ['打分器', formatScorers(stamp)],
     ['每题跑几次', String(stamp.k)],

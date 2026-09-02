@@ -1,6 +1,7 @@
 name: Eval Harness Gate
 
 # 评测基础设施完整性门禁。
+# 答案侧不在本仓，CI 只守「没泄露」。
 #
 # 设计边界（重要）：real-mode eval（--real，真实模型执行）依赖用户本地代理
 # （mimo Token Plan 走 token-plan-sgp 海外端点，需 HTTPS_PROXY=127.0.0.1:7897）
@@ -25,6 +26,8 @@ on:
       - 'packages/internal/evaluation-center/**'
       - 'packages/eval-harness/**'
       - '.claude/test-cases/**'
+      - 'scripts/ci/check-casebank-answers.mjs'
+      - 'tests/scripts/checkCasebankAnswers.test.ts'
       - 'tests/unit/testing/**'
       - 'tests/unit/evaluation/**'
       - 'tests/eval/**'
@@ -42,6 +45,9 @@ on:
       - 'src/host/plugins/**'
       - 'packages/internal/evaluation-center/**'
       - 'packages/eval-harness/**'
+      - '.claude/test-cases/**'
+      - 'scripts/ci/check-casebank-answers.mjs'
+      - 'tests/scripts/checkCasebankAnswers.test.ts'
       - 'tests/unit/testing/**'
       - 'tests/unit/evaluation/**'
       - 'tests/eval/**'
@@ -79,6 +85,9 @@ jobs:
         run: |
           test -f node_modules/better-sqlite3/prebuilds/linux-x64.node
           node -e "const Database=require('better-sqlite3'); const db=new Database(':memory:'); db.prepare('SELECT 1').get(); db.close()"
+
+      - name: Check public case-bank answer leakage
+        run: node scripts/ci/check-casebank-answers.mjs
 
       - name: Typecheck
         run: |

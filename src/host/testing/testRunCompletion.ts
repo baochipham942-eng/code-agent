@@ -12,6 +12,7 @@ export function isRealAgentRunCase(testCase: TestCase): boolean {
 
 export function createNotRunResult(testCase: TestCase, reason?: string): TestResult {
   const now = Date.now();
+  const answerSideMissing = testCase.answerSide === 'missing';
   return {
     testId: testCase.id,
     description: testCase.description,
@@ -26,7 +27,16 @@ export function createNotRunResult(testCase: TestCase, reason?: string): TestRes
     errors: [],
     turnCount: 0,
     score: 0,
-    failureReason: `轮次中断：${reason || '计划题集未执行完'}`,
+    failureReason: answerSideMissing
+      ? `答案侧未找到（${testCase.answerSidePath ?? '未知路径'}）`
+      : `轮次中断：${reason || '计划题集未执行完'}`,
+    ...(answerSideMissing ? {
+      answerSide: {
+        status: 'missing' as const,
+        filePath: testCase.answerSidePath ?? '未知路径',
+        root: testCase.answerSideRoot ?? '未解析到私档',
+      },
+    } : {}),
   };
 }
 

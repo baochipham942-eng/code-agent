@@ -31,27 +31,6 @@ cases:
         2024-01-07,Widget C,7,99.99
         EOF
     prompt: "分析 test-sales.csv，告诉我：1) 总销售额 2) 哪个产品卖得最多 3) 平均单价"
-    expect:
-      min_tool_calls: 1
-      response_contains:
-        - Widget
-      no_crash: true
-    expectations:
-      - type: response_contains
-        description: "响应应包含 'Widget'"
-        weight: 0.8
-        params:
-          text: "Widget"
-      - type: min_tool_calls
-        description: "至少应调用 1 次工具"
-        weight: 0.3
-        params:
-          min: 1
-      - type: no_crash
-        description: "不应崩溃"
-        weight: 1
-        critical: true
-        params: {}
     cleanup:
       - rm -f test-sales.csv
 
@@ -71,42 +50,6 @@ cases:
         Grace,Sales,88000,5
         EOF
     prompt: "读取 test-employees.csv，按部门统计平均薪资和人数，结果保存到 test-dept-summary.csv"
-    expect:
-      min_tool_calls: 2
-      files_created:
-        - test-dept-summary.csv
-      file_contains:
-        test-dept-summary.csv:
-          - Engineering
-          - Marketing
-    expectations:
-      - type: file_exists
-        description: "文件应存在: test-dept-summary.csv"
-        weight: 1
-        params:
-          path: "test-dept-summary.csv"
-      - type: content_contains
-        description: "文件 test-dept-summary.csv 应包含 'Engineering'"
-        weight: 0.8
-        params:
-          path: "test-dept-summary.csv"
-          contains: "Engineering"
-      - type: content_contains
-        description: "文件 test-dept-summary.csv 应包含 'Marketing'"
-        weight: 0.8
-        params:
-          path: "test-dept-summary.csv"
-          contains: "Marketing"
-      - type: min_tool_calls
-        description: "至少应调用 2 次工具"
-        weight: 0.3
-        params:
-          min: 2
-      - type: no_crash
-        description: "不应崩溃"
-        weight: 1
-        critical: true
-        params: {}
     cleanup:
       - rm -f test-employees.csv test-dept-summary.csv
 
@@ -126,42 +69,6 @@ cases:
         ]
         EOF
     prompt: "读取 test-users.json，提取所有 active 用户的 full name（first + last）和 email，保存到 test-active-users.json"
-    expect:
-      min_tool_calls: 2
-      files_created:
-        - test-active-users.json
-      file_contains:
-        test-active-users.json:
-          - John Doe
-          - Bob Wilson
-    expectations:
-      - type: file_exists
-        description: "文件应存在: test-active-users.json"
-        weight: 1
-        params:
-          path: "test-active-users.json"
-      - type: content_contains
-        description: "文件 test-active-users.json 应包含 'John Doe'"
-        weight: 0.8
-        params:
-          path: "test-active-users.json"
-          contains: "John Doe"
-      - type: content_contains
-        description: "文件 test-active-users.json 应包含 'Bob Wilson'"
-        weight: 0.8
-        params:
-          path: "test-active-users.json"
-          contains: "Bob Wilson"
-      - type: min_tool_calls
-        description: "至少应调用 2 次工具"
-        weight: 0.3
-        params:
-          min: 2
-      - type: no_crash
-        description: "不应崩溃"
-        weight: 1
-        critical: true
-        params: {}
     cleanup:
       - rm -f test-users.json test-active-users.json
 
@@ -183,27 +90,5 @@ cases:
         Eve,22,91
         EOF
     prompt: "test-dirty-data.csv 有脏数据（缺失值、负数年龄、超过100的分数），帮我清洗后保存为 test-clean-data.csv，说明你做了哪些清洗"
-    expect:
-      min_tool_calls: 2
-      files_created:
-        - test-clean-data.csv
-      no_crash: true
-    expectations:
-      - type: file_exists
-        description: "文件应存在: test-clean-data.csv"
-        weight: 1
-        critical: true
-        params:
-          path: "test-clean-data.csv"
-      - type: min_tool_calls
-        description: "至少应调用 2 次工具"
-        weight: 0.3
-        params:
-          min: 2
-      - type: no_crash
-        description: "不应崩溃"
-        weight: 1
-        critical: true
-        params: {}
     cleanup:
       - rm -f test-dirty-data.csv test-clean-data.csv

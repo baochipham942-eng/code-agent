@@ -10,6 +10,8 @@ import { AGGREGATION_RULES } from '@host/testing/ci/baselineManager';
 import { resolveProductionShape } from '../../src/host/evaluation/productionShape';
 import { getQuickModelInfo } from '@host/model/quickModel';
 import { estimateRunCost, PRICING_TABLE_VERSION } from './eval-cost-estimate';
+import { resolveAnswerSideRoot } from '@host/testing/answerSide';
+import { splitsPath } from '@host/testing/ci/sampleSplits';
 
 const PROVIDER_KEY_CANDIDATES: Record<string, string[]> = {
   moonshot: ['KIMI_K25_API_KEY', 'MOONSHOT_API_KEY'],
@@ -36,6 +38,7 @@ export interface LoadedApiKey {
 export function selectRunStamp(source: EvalRunStamp): EvalRunStamp {
   return {
     caseBankSha: source.caseBankSha,
+    answerSideSha: source.answerSideSha,
     evalSet: source.evalSet,
     scorers: source.scorers,
     k: source.k,
@@ -127,10 +130,50 @@ function resolveCaseBankSha(workingDir: string, testCaseDir: string): string {
   return dirty ? `${sha}-dirty` : sha;
 }
 
+function contentSha(filePath: string): string {
+  try {
+    return `sha256:${createHash('sha256').update(fs.readFileSync(filePath)).digest('hex')}`;
+  } catch {
+    return 'missing';
+  }
+}
+
 function resolveSplitsFileSha(workingDir: string): string {
-  const repoRoot = resolveRepoRoot(workingDir);
-  if (!repoRoot) return 'missing';
-  return gitOutput(repoRoot, ['rev-parse', 'HEAD:.claude/eval-splits.json']) ?? 'missing';
+  return contentSha(splitsPath(workingDir));
+}
+
+function answerFiles(root: string): string[] {
+  const answersRoot = path.join(root, 'answers');
+  const files: string[] = [];
+  const visit = (directory: string): void => {
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(directory, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const target = path.join(directory, entry.name);
+      if (entry.isDirectory()) visit(target);
+      else if (entry.isFile()) files.push(target);
+    }
+  };
+  visit(answersRoot);
+  return files.sort((left, right) => (
+    path.relative(answersRoot, left).localeCompare(path.relative(answersRoot, right))
+  ));
+}
+
+function resolveAnswerSideSha(workingDir: string): string {
+  const root = resolveAnswerSideRoot(workingDir);
+  if (!root) return 'missing';
+  const answersRoot = path.join(root, 'answers');
+  const hash = createHash('sha256');
+  for (const filePath of answerFiles(root)) {
+    hash.update(path.relative(answersRoot, filePath).split(path.sep).join('/'));
+    hash.update(fs.readFileSync(filePath));
+  }
+  return `sha256:${hash.digest('hex')}`;
 }
 
 function stableJson(value: unknown): string {
@@ -191,6 +234,7 @@ export function buildRunStamp(opts: {
 
   return {
     caseBankSha: resolveCaseBankSha(opts.workingDir, opts.testCaseDir),
+    answerSideSha: resolveAnswerSideSha(opts.workingDir),
     evalSet: {
       split: opts.split ?? 'all',
       splitsFileSha: resolveSplitsFileSha(opts.workingDir),

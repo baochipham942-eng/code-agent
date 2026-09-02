@@ -304,7 +304,22 @@ export function generateMarkdownReport(
     lines.push('');
   }
 
-  const notRunTests = summary.results.filter((result) => result.status === 'not_run');
+  const missingAnswerTests = summary.results.filter((result) => result.answerSide?.status === 'missing');
+  if (missingAnswerTests.length > 0) {
+    const roots = [...new Set(missingAnswerTests.map((result) => result.answerSide?.root ?? '未解析到私档'))];
+    lines.push('## 缺判定标准（答案侧未找到）');
+    lines.push('');
+    lines.push(`> 答案根：${roots.join('、')}`);
+    lines.push('');
+    for (const result of missingAnswerTests) {
+      lines.push(`- ⏸️ **${result.testId}**: ${result.failureReason ?? '答案侧未找到'}`);
+    }
+    lines.push('');
+  }
+
+  const notRunTests = summary.results.filter(
+    (result) => result.status === 'not_run' && result.answerSide?.status !== 'missing',
+  );
   if (notRunTests.length > 0) {
     lines.push('## 未跑题目');
     lines.push('');

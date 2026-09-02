@@ -33,25 +33,6 @@ cases:
       我需要一个公式，在 H 列(H3:H5)中，找出每一行中数值最大的列，并返回该列的标题。
       请直接修改 test-59196.xlsx，在 H3:H5 填入公式或结果。
       预期答案：H3=D, H4=A, H5=D
-    expect:
-      min_tool_calls: 2
-      no_crash: true
-    expectations:
-      - type: response_contains
-        description: "结果应包含列标题 D 和 A"
-        weight: 1.0
-        critical: true
-        params:
-          text: "D"
-      - type: response_contains
-        description: "应提到 INDEX 或 MATCH 或 MAX"
-        weight: 0.5
-        params:
-          text: "INDEX|MATCH|MAX"
-      - type: no_crash
-        weight: 1.0
-        critical: true
-        params: {}
     cleanup:
       - rm -f test-59196.xlsx
 
@@ -72,24 +53,6 @@ cases:
       第一次出现不标记。
       请用 Python openpyxl 实现，修改 test-CF28766.xlsx。
       目标范围：C3:G14。
-    expect:
-      min_tool_calls: 2
-      no_crash: true
-    expectations:
-      - type: response_contains
-        description: "应提到重复检测逻辑"
-        weight: 0.8
-        params:
-          text: "duplicate|重复|COUNTIF"
-      - type: min_tool_calls
-        description: "至少调用 2 次工具"
-        weight: 0.3
-        params:
-          min: 2
-      - type: no_crash
-        weight: 1.0
-        critical: true
-        params: {}
     cleanup:
       - rm -f test-CF28766.xlsx
 
@@ -110,22 +73,6 @@ cases:
       例如 Totals!B2 = Sheet1!B2 + Sheet2!B2 + Sheet3!B2。
       请用 Python openpyxl 实现，直接修改 test-382-29.xlsx。
       预期答案示例：B2=42, B3=36, B4=18
-    expect:
-      min_tool_calls: 2
-      response_contains:
-        - "42"
-      no_crash: true
-    expectations:
-      - type: response_contains
-        description: "结果应包含求和值"
-        weight: 1.0
-        critical: true
-        params:
-          text: "42"
-      - type: no_crash
-        weight: 1.0
-        critical: true
-        params: {}
     cleanup:
       - rm -f test-382-29.xlsx
 
@@ -145,20 +92,6 @@ cases:
       需求：在 E 列(E2:E11)计算每个产品的面积（平方米 m2），宽x高/1000000。
       请用 Python openpyxl 实现，读取描述中的尺寸数字，计算面积并填入 E 列。
       预期答案示例：E2=2.4, E3=2, E4=3
-    expect:
-      min_tool_calls: 2
-      no_crash: true
-    expectations:
-      - type: response_contains
-        description: "结果应包含面积值"
-        weight: 1.0
-        critical: true
-        params:
-          text: "2.4"
-      - type: no_crash
-        weight: 1.0
-        critical: true
-        params: {}
     cleanup:
       - rm -f test-66-1.xlsx
 
@@ -179,19 +112,6 @@ cases:
       同时将前一个月的数据和公式复制到新列中。
       请用 Python openpyxl 分析文件结构，然后实现此逻辑。
       目标范围：靠近 AL-AO 列。
-    expect:
-      min_tool_calls: 3
-      no_crash: true
-    expectations:
-      - type: min_tool_calls
-        description: "至少 3 次工具调用（读取+分析+写入）"
-        weight: 0.5
-        params:
-          min: 3
-      - type: no_crash
-        weight: 1.0
-        critical: true
-        params: {}
     cleanup:
       - rm -f test-353-50.xlsx
 
@@ -215,19 +135,6 @@ cases:
       4. I:K 列用现有公式计算
       请用 Python openpyxl 实现。
       预期表头示例：TRANSFERRING BALANCE, PURCHASE, SALES, CASH PR, CASH DM
-    expect:
-      min_tool_calls: 3
-      no_crash: true
-    expectations:
-      - type: response_contains
-        description: "应包含关键表头"
-        weight: 0.8
-        params:
-          text: "PURCHASE|SALES|BALANCE"
-      - type: no_crash
-        weight: 1.0
-        critical: true
-        params: {}
     cleanup:
       - rm -f test-91-3.xlsx
 
@@ -247,27 +154,6 @@ cases:
       需求：在 D2 单元格创建一个 SUMIF 公式，计算 PRODUCT ID 为 111111 的所有 QTY 之和。
       预期结果：D2 = 270（来自 50 + 60 + 70 + 90）。
       请直接修改 test-46167.xlsx。
-    expect:
-      min_tool_calls: 2
-      response_contains:
-        - "270"
-      no_crash: true
-    expectations:
-      - type: response_contains
-        description: "结果应包含 270"
-        weight: 1.0
-        critical: true
-        params:
-          text: "270"
-      - type: response_contains
-        description: "应提到 SUMIF"
-        weight: 0.5
-        params:
-          text: "SUMIF"
-      - type: no_crash
-        weight: 1.0
-        critical: true
-        params: {}
     cleanup:
       - rm -f test-46167.xlsx
 
@@ -288,20 +174,6 @@ cases:
       在 Sheet1!F8 单元格输出结果。
       请用 Python 或公式实现。
       预期答案：F8 = 750ml
-    expect:
-      min_tool_calls: 2
-      no_crash: true
-    expectations:
-      - type: response_contains
-        description: "应包含提取结果"
-        weight: 1.0
-        critical: true
-        params:
-          text: "750"
-      - type: no_crash
-        weight: 1.0
-        critical: true
-        params: {}
     cleanup:
       - rm -f test-58994.xlsx
 
@@ -324,24 +196,6 @@ cases:
       预期公式：=INDEX('URN lookup'!$D$2:$D$1461,MATCH(L2,'URN lookup'!$K$2:$K$1461,0))
       请用 Python openpyxl 实现。
       预期答案示例：B2=2002
-    expect:
-      min_tool_calls: 3
-      no_crash: true
-    expectations:
-      - type: response_contains
-        description: "应提到 INDEX/MATCH"
-        weight: 0.7
-        params:
-          text: "INDEX|MATCH|lookup"
-      - type: response_contains
-        description: "应包含查找结果"
-        weight: 0.8
-        params:
-          text: "2002"
-      - type: no_crash
-        weight: 1.0
-        critical: true
-        params: {}
     cleanup:
       - rm -f test-55427.xlsx
 
@@ -361,24 +215,5 @@ cases:
       如果有多个列的值相同且都是最小值，则用逗号分隔，例如 "KWH,VB"。
       请用 Python openpyxl 实现，直接修改 test-44389.xlsx。
       预期答案示例：P2=MMX, P3=Catch, P4=KWH,VB, P5=Amazon, P6=KWH
-    expect:
-      min_tool_calls: 2
-      no_crash: true
-    expectations:
-      - type: response_contains
-        description: "结果应包含列标题"
-        weight: 1.0
-        critical: true
-        params:
-          text: "MMX"
-      - type: response_contains
-        description: "应处理多值情况"
-        weight: 0.8
-        params:
-          text: "KWH"
-      - type: no_crash
-        weight: 1.0
-        critical: true
-        params: {}
     cleanup:
       - rm -f test-44389.xlsx

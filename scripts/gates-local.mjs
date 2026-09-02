@@ -80,6 +80,11 @@ const gates = [
     args: ['scripts/ci/check-repository-structure.mjs'],
   },
   {
+    ci: 'eval-harness / harness / Check public case-bank answer leakage（CI 只有公开 checkout；本地追加 --require-private 校验私档齐全）',
+    command: 'node',
+    args: ['scripts/ci/check-casebank-answers.mjs', '--require-private'],
+  },
+  {
     ci: 'swarm-ci / smoke / Typecheck (src only)',
     command: 'npm',
     args: ['run', 'typecheck'],

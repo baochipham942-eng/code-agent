@@ -20,13 +20,6 @@ cases:
     prompt: "这是产物断言回归 case，产物为仓库内置标本。请只回复'标本已就位'，不要调用任何工具。"
     timeout: 60000
     tags: [artifact-runnable]
-    expectations:
-      - type: game_smoke
-        description: "light 契约必须探出未捕获运行时异常（2026-07-03 run4 标本）"
-        critical: true
-        params:
-          path: .claude/test-cases/artifact-runnable/fixtures/bad-game-referenceerror.html
-          expected_verdict: not_runnable
 
   - id: artifact-bad-game-mechanics-caught-full
     type: task
@@ -36,14 +29,6 @@ cases:
     prompt: "这是产物断言回归 case，产物为仓库内置标本。请只回复'标本已就位'，不要调用任何工具。"
     timeout: 60000
     tags: [artifact-runnable]
-    expectations:
-      - type: game_smoke
-        description: "full（goal 验收级）契约必须探出机制证据缺失（2026-07-03 run3 标本）"
-        critical: true
-        params:
-          path: .claude/test-cases/artifact-runnable/fixtures/bad-game-mechanics-broken.html
-          expected_verdict: not_runnable
-          contract: full
 
   - id: artifact-good-game-passes-smoke
     type: task
@@ -53,12 +38,6 @@ cases:
     prompt: "这是产物断言回归 case，产物为仓库内置标本。请只回复'标本已就位'，不要调用任何工具。"
     timeout: 60000
     tags: [artifact-runnable]
-    expectations:
-      - type: game_smoke
-        description: "好游戏 light 契约必须 runnable"
-        critical: true
-        params:
-          path: .claude/test-cases/artifact-runnable/fixtures/good-game-playable.html
 
   - id: artifact-bad-game-html-hard-signal
     type: task
@@ -68,13 +47,6 @@ cases:
     prompt: "这是产物断言回归 case，产物为仓库内置标本。请只回复'标本已就位'，不要调用任何工具。"
     timeout: 60000
     tags: [artifact-runnable]
-    expectations:
-      - type: html_renders
-        description: "page_error 是 html_renders 硬信号"
-        critical: true
-        params:
-          path: .claude/test-cases/artifact-runnable/fixtures/bad-game-referenceerror.html
-          expected_verdict: not_runnable
 
   - id: artifact-good-game-html-renders
     type: task
@@ -84,12 +56,6 @@ cases:
     prompt: "这是产物断言回归 case，产物为仓库内置标本。请只回复'标本已就位'，不要调用任何工具。"
     timeout: 60000
     tags: [artifact-runnable]
-    expectations:
-      - type: html_renders
-        description: "布局质量 finding（missing_main_element 等）不判 not_runnable"
-        critical: true
-        params:
-          path: .claude/test-cases/artifact-runnable/fixtures/good-game-playable.html
 
   - id: artifact-good-pptx-opens
     type: task
@@ -99,12 +65,6 @@ cases:
     prompt: "这是产物断言回归 case，产物为仓库内置标本。请只回复'标本已就位'，不要调用任何工具。"
     timeout: 30000
     tags: [artifact-runnable]
-    expectations:
-      - type: pptx_opens
-        description: "OOXML 结构完整（Content_Types + presentation.xml + ≥1 slide）"
-        critical: true
-        params:
-          path: .claude/test-cases/artifact-runnable/fixtures/good-deck.pptx
 
   - id: artifact-corrupt-pptx-caught
     type: task
@@ -114,10 +74,3 @@ cases:
     prompt: "这是产物断言回归 case，产物为仓库内置标本。请只回复'标本已就位'，不要调用任何工具。"
     timeout: 30000
     tags: [artifact-runnable]
-    expectations:
-      - type: pptx_opens
-        description: "非 zip 字节流必须 not_runnable"
-        critical: true
-        params:
-          path: .claude/test-cases/artifact-runnable/fixtures/corrupt-deck.pptx
-          expected_verdict: not_runnable

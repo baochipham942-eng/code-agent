@@ -10,9 +10,12 @@ import {
 } from '../../../src/shared/contract/evaluation';
 import { EvalRunBridge } from '@internal-evaluation/host/evaluation/evalRunBridge';
 import { inspectEvalEnvironment } from '@internal-evaluation/host/evaluation/evalEnvironment';
+import { filterTestCases, loadAllTestSuites } from '../../../src/host/testing/testCaseLoader';
+import { isRedlineCase } from '../../../src/host/testing/testCaseClassification';
 
 const roots: string[] = [];
 const previousDataDir = process.env.CODE_AGENT_DATA_DIR;
+const previousAnswerDir = process.env.NEO_EVAL_ANSWERS_DIR;
 
 async function waitFor(predicate: () => boolean, timeoutMs = 30_000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
@@ -25,6 +28,8 @@ async function waitFor(predicate: () => boolean, timeoutMs = 30_000): Promise<vo
 afterEach(() => {
   if (previousDataDir === undefined) delete process.env.CODE_AGENT_DATA_DIR;
   else process.env.CODE_AGENT_DATA_DIR = previousDataDir;
+  if (previousAnswerDir === undefined) delete process.env.NEO_EVAL_ANSWERS_DIR;
+  else process.env.NEO_EVAL_ANSWERS_DIR = previousAnswerDir;
   for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
 });
 
@@ -36,6 +41,39 @@ describe('EvalRunBridge child-process integration', () => {
     fs.writeFileSync(sentinelDb, 'parent-sentinel');
     const mtimeBefore = fs.statSync(sentinelDb).mtimeMs;
     process.env.CODE_AGENT_DATA_DIR = sentinelRoot;
+    const answerRoot = path.join(sentinelRoot, 'private-eval');
+    const answerPath = path.join(
+      answerRoot,
+      'answers',
+      '.claude',
+      'test-cases',
+      '01-tool-tests.yaml',
+    );
+    fs.mkdirSync(path.dirname(answerPath), { recursive: true });
+    fs.writeFileSync(answerPath, [
+      'version: 1',
+      'source: .claude/test-cases/01-tool-tests.yaml',
+      'cases:',
+      '  - id: bash-pwd',
+      '    expect: { response_contains: [/] }',
+      '',
+    ].join('\n'));
+    const coreCases = filterTestCases(
+      await loadAllTestSuites(path.join(process.cwd(), '.claude', 'test-cases')),
+      {},
+    );
+    const safety = coreCases.filter(isRedlineCase).map((testCase) => testCase.id);
+    const heldIn = coreCases.filter((testCase) => !safety.includes(testCase.id)).map((testCase) => testCase.id);
+    fs.writeFileSync(path.join(answerRoot, 'eval-splits.json'), JSON.stringify({
+      version: 1,
+      seed: 'bridge-hermetic',
+      createdAt: '2026-09-02',
+      heldIn,
+      heldOut: [],
+      control: [],
+      safety,
+    }));
+    process.env.NEO_EVAL_ANSWERS_DIR = answerRoot;
 
     const database = {
       isReady: true,

@@ -18,6 +18,7 @@ const evalCiScript = path.resolve(repoRoot, 'packages/internal/evaluation-center
 const roots: string[] = [];
 
 afterEach(async () => {
+  delete process.env.NEO_EVAL_ANSWERS_DIR;
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
@@ -115,6 +116,15 @@ async function runEvalCi(cwd: string, args: string[]): Promise<void> {
   });
 }
 
+async function runEvalCiFailure(cwd: string, args: string[]): Promise<NodeJS.ErrnoException & { code?: number; stdout?: string; stderr?: string }> {
+  try {
+    await runEvalCi(cwd, args);
+    throw new Error('eval-ci unexpectedly succeeded');
+  } catch (error) {
+    return error as NodeJS.ErrnoException & { code?: number; stdout?: string; stderr?: string };
+  }
+}
+
 function resultsDir(root: string): string {
   return path.join(root, CONFIG_DIR_NEW, 'test-results');
 }
@@ -193,5 +203,60 @@ describe('eval-ci report baseline flow', () => {
     const markdown = await readFile(path.join(resultsDir(root), 'latest-report.md'), 'utf8');
     expect(markdown).toContain('# Agent Neo 自动化测试报告');
     expect(markdown).not.toContain('Baseline Delta');
+  });
+
+  it('答案文件存在但缺 id 时保留计划题为 not_run，报告列缺判定标准，全部缺失 exit 2', async () => {
+    const root = await createWorkRoot();
+    const source = '.claude/test-cases/suite.yaml';
+    const caseDir = path.join(root, '.claude', 'test-cases');
+    const answerRoot = path.join(root, 'private-eval');
+    process.env.NEO_EVAL_ANSWERS_DIR = answerRoot;
+    await mkdir(path.join(root, '.git'), { recursive: true });
+    await mkdir(caseDir, { recursive: true });
+    await mkdir(path.join(answerRoot, 'answers', '.claude', 'test-cases'), { recursive: true });
+    await writeFile(path.join(caseDir, 'suite.yaml'), [
+      'name: missing-answer',
+      'cases:',
+      '  - id: case-a',
+      '    type: task',
+      '    description: answer missing',
+      '    prompt: should not execute',
+      '',
+    ].join('\n'));
+    const answerFile = path.join(answerRoot, 'answers', ...source.split('/'));
+    await writeFile(answerFile, [
+      'version: 1',
+      `source: ${source}`,
+      'cases: []',
+      '',
+    ].join('\n'));
+    await writeFile(path.join(answerRoot, 'eval-splits.json'), JSON.stringify({
+      version: 1,
+      seed: 'missing-answer-test',
+      createdAt: '2026-09-02',
+      heldIn: ['case-a'],
+      heldOut: [],
+      control: [],
+      safety: [],
+    }));
+
+    const failure = await runEvalCiFailure(root, ['--scope', 'smoke']);
+
+    expect(failure.code).toBe(2);
+    const report = JSON.parse(
+      await readFile(path.join(resultsDir(root), 'latest-report.json'), 'utf8'),
+    ) as { total: number; notRun: number; results: Array<{ testId: string; status: string; failureReason?: string }> };
+    expect(report).toMatchObject({ total: 1, notRun: 1 });
+    expect(report.results).toEqual([
+      expect.objectContaining({
+        testId: 'case-a',
+        status: 'not_run',
+        failureReason: `答案侧未找到（${answerFile}）`,
+      }),
+    ]);
+    const markdown = await readFile(path.join(resultsDir(root), 'latest-report.md'), 'utf8');
+    expect(markdown).toContain('## 缺判定标准（答案侧未找到）');
+    expect(markdown).toContain('case-a');
+    expect(markdown).toContain(answerRoot);
   });
 });

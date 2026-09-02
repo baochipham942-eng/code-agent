@@ -580,9 +580,7 @@ export class TestRunner {
     trialsPerCase: number,
     context: TestExecutionContext,
   ): Promise<TestResult> {
-    if (trialsPerCase <= 1) {
-      return this.runIsolatedSingleTest(testCase, context);
-    }
+    if (testCase.answerSide === 'missing' || trialsPerCase <= 1) return this.runIsolatedSingleTest(testCase, context);
 
     const completedTrials: TestResult[] = [];
 
@@ -701,6 +699,7 @@ export class TestRunner {
     const injectedFiles: string[] = [];
 
     try {
+      if (testCase.answerSide === 'missing') return Object.assign(result, createNotRunResult(testCase));
       const mockPolicy = usesMockEvalPolicy ? getMockCasePolicy(testCase.id) : undefined;
       if (usesMockEvalPolicy && !mockPolicy) {
         result.status = 'failed';

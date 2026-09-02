@@ -14,6 +14,7 @@
 import { createHash } from 'crypto';
 import { promises as fs } from 'fs';
 import path from 'path';
+import { resolveAnswerSideRoot } from '../answerSide';
 export interface EvalSplitFile {
   version: 1;
   /** 切分种子——换种子=换卷子，必须留痕 */
@@ -75,8 +76,11 @@ export function applySplitFilter(
   return ids.filter((id) => allowed.has(id));
 }
 
-function splitsPath(workingDir: string): string {
-  return path.join(workingDir, EVAL_SPLITS_RELATIVE_PATH);
+export function splitsPath(workingDir: string): string {
+  const answerRoot = resolveAnswerSideRoot(workingDir);
+  return answerRoot
+    ? path.join(answerRoot, 'eval-splits.json')
+    : path.join(workingDir, EVAL_SPLITS_RELATIVE_PATH);
 }
 
 function duplicates(ids: string[]): string[] {

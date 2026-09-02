@@ -80,6 +80,7 @@ const gates = [
     args: ['scripts/ci/check-repository-structure.mjs'],
   },
   {
+    // --require-private 还会运行 06-security-redline 的真阳/真阴 oracle；公开 CI 不读取私档。
     ci: 'eval-harness / harness / Check public case-bank answer leakage（CI 只有公开 checkout；本地追加 --require-private 校验私档齐全）',
     command: 'node',
     args: ['scripts/ci/check-casebank-answers.mjs', '--require-private'],

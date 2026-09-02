@@ -94,6 +94,50 @@ describe('check-casebank-answers gate', () => {
     expect(result.stderr).toContain('公开仓存在非空 expect');
   });
 
+  it('drafts 里塞非空 expectations 时公开模式变红', async () => {
+    const target = await fixture();
+    const draftPath = path.join(target.root, '.claude', 'test-cases', 'drafts', 'leaky.yaml');
+    await fs.mkdir(path.dirname(draftPath), { recursive: true });
+    await fs.writeFile(draftPath, JSON.stringify({
+      name: 'leaky draft',
+      cases: [{
+        id: 'leaky-draft',
+        type: 'conversation',
+        prompt: 'draft',
+        reviewStatus: 'pending',
+        expectations: [{ type: 'no_crash', description: 'leak', params: {} }],
+      }],
+    }));
+
+    const result = spawnSync(process.execPath, [gateScript], { cwd: target.root, encoding: 'utf8' });
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('drafts/leaky.yaml#leaky-draft: 公开仓存在非空 expectations');
+  });
+
+  it('空判定 draft 不进入私档答案完整性枚举', async () => {
+    const target = await fixture();
+    const draftPath = path.join(target.root, '.claude', 'test-cases', 'drafts', 'pending.yaml');
+    await fs.mkdir(path.dirname(draftPath), { recursive: true });
+    await fs.writeFile(draftPath, JSON.stringify({
+      name: 'pending draft',
+      cases: [{
+        id: 'pending-draft',
+        type: 'conversation',
+        prompt: 'draft',
+        reviewStatus: 'pending',
+        expect: {},
+      }],
+    }));
+
+    const result = runGate(target);
+
+    expect(result.status).toBe(1); // 该最小夹具会在生产 mock policy 对账处失败。
+    expect(result.stderr).toContain('mock policy 与当前 case 集不一致');
+    expect(result.stderr).not.toContain('pending-draft');
+    expect(result.stderr).not.toContain('drafts/pending.yaml: 缺少答案文件');
+  });
+
   it('私档删一条答案时本地模式变红', async () => {
     const target = await fixture();
     target.answerFile.cases.splice(20, 1);

@@ -8,7 +8,7 @@ import * as yaml from 'js-yaml';
 import type { TestSuite, TestCase } from './types';
 import { resolveCaseLayer } from './caseLayer';
 import { isCaseHardened } from './caseHardening';
-import { findRepositoryRoot, resolveAnswerSideFile } from './answerSide';
+import { findRepositoryRoot, repoRelativeSource, resolveAnswerSideFile } from './answerSide';
 
 interface AnswerCase {
   id: string;
@@ -38,9 +38,7 @@ async function mergeAnswerSide(data: unknown, filePath: string): Promise<unknown
   if (!Array.isArray(suite.cases)) return data;
   const resolved = resolveAnswerSideFile(filePath);
   const repoRoot = findRepositoryRoot(filePath);
-  const repoRelative = repoRoot
-    ? path.relative(repoRoot, path.resolve(filePath)).split(path.sep).join('/')
-    : null;
+  const repoRelative = repoRoot ? repoRelativeSource(repoRoot, filePath) : null;
   const isPublicCaseBankFile = repoRelative?.startsWith('.claude/test-cases/') === true;
   if (!resolved && !isPublicCaseBankFile) return data;
 

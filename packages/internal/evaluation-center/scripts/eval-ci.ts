@@ -399,7 +399,7 @@ function createEvalSandbox(repoDir: string, real: boolean, cleanWorkdir = false)
     if (real) throw error;
     return { dir: repoDir, cleanup: () => undefined };
   }
-  console.log(chalk.cyan(`  Eval workspace: ${sandbox.dir}（run 结束后自动清理）`));
+  console.log(chalk.cyan(`  Eval workspace: ${sandbox.dir}（${cleanWorkdir ? '干净沙箱：只有夹具' : '整仓副本'}，run 结束后自动清理）`));
   return sandbox;
 }
 
@@ -544,8 +544,11 @@ async function runEvals(
     caseDir?: string;
     repeat: number;
     skills?: string[];
-    /** N-EVAL-L3-WORKDIR：safety split 用干净沙箱（只有 setup 夹具），不用整仓副本 */
-    cleanWorkdir?: boolean;
+    /**
+     * N-EVAL-L3-WORKDIR：safety split 用干净沙箱（只有 setup 夹具），不用整仓副本。
+     * 必填不给缺省：第五程（09-02）漏接普通跑法那一处调用点，安全题整程跑在整仓副本里而日志毫无异样。
+     */
+    cleanWorkdir: boolean;
     eventStream?: EvalRunEventStream;
     eventConfig: EvalRunStartConfig;
   }
@@ -572,7 +575,7 @@ async function runEvals(
     ? fs.mkdtempSync(path.join(os.tmpdir(), 'code-agent-eval-data-'))
     : undefined;
   if (generatedDataDir) process.env.CODE_AGENT_DATA_DIR = generatedDataDir;
-  const cleanWorkdir = opts.cleanWorkdir ?? false;
+  const cleanWorkdir = opts.cleanWorkdir;
   const sandbox = createEvalSandbox(workingDir, opts.real, cleanWorkdir);
   const agentWorkingDir = sandbox.dir;
   const forwardSignal = (event: Extract<TestEvent,
@@ -1413,6 +1416,7 @@ async function mainImpl(
     caseDir,
     repeat,
     skills: selectedSkills,
+    cleanWorkdir: split === 'safety',
     eventStream,
     eventConfig: createRunStartConfig({
       real: effectiveReal,

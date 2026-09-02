@@ -1,5 +1,7 @@
 # Agent Neo / Code Agent - 架构设计文档
 
+<!-- N-PLUGINGATE-PATHS non-trigger probe: documentation-only changes must not run the plugin lifecycle gate. -->
+
 > 版本: 9.32 (9.31 + v0.33.0 as-built：模型能力矩阵与逐轮联网、Turn Trace/会话检查器、capability lifecycle/补偿登记、语音轮流说话与审计、审批来源、可编辑计划审批、产物跟随与长会话三门)
 > 版本: 9.31 (9.30 + 2026-08-04~09 post-v0.30 as-built：会话指挥台任务槽位、单 spawn 后台可见、composer 上下文分槽、Browser 用户接管/账号态、session spine/CLI/FTS/分页、指令记忆 path authority；含 ADR-056 指挥台写入路由收口——`spawn_task`→`delegate_task` 路由契约进工具 description、`spawn_agent` 补登记为前台角色委派入口、cwd 作写边界须过宽度校验)
 > 版本: 9.30 (9.29 + 2026-08-05 ADR-054 会话指挥台四批落地：文字/语音统一任务槽位、前台窄工具与持续输入、User Directives/User Memory 权限分块、随时开口快捷键引导、实时语音成本与单通上限)

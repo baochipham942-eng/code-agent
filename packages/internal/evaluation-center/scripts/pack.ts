@@ -19,7 +19,7 @@ async function addTree(zip: JSZip, absoluteDir: string, zipDir: string): Promise
 
 export async function packPlugin(): Promise<string> {
   await buildPlugin();
-  const manifestPath = path.join(packageRoot, 'plugin.json');
+  const manifestPath = path.join(packageRoot, 'dist', 'plugin.json');
   const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf8')) as { version?: unknown };
   if (typeof manifest.version !== 'string') throw new Error('plugin.json 缺少构建版本号');
   const zip = new JSZip();

@@ -98,6 +98,14 @@ jobs:
       - name: Build evaluation-center plugin
         run: npm --prefix packages/internal/evaluation-center run build
 
+      - name: Guard source evaluation-center manifest
+        run: |
+          npx vitest run tests/scripts/evaluationCenterSourceManifest.test.ts
+          if ! git diff --exit-code -- packages/internal/evaluation-center/plugin.json; then
+            echo "::error file=packages/internal/evaluation-center/plugin.json::构建产物泄漏回源码：packages/internal/evaluation-center/plugin.json 被改写；源码只留 unbuilt 占位，真实指纹只进 dist/。恢复命令：git restore -- packages/internal/evaluation-center/plugin.json"
+            exit 1
+          fi
+
       - name: Eval harness 单测
         # 断言引擎 + baseline/trend 来源护栏 + judge 校准计算 + replay gate
         # ADR-036 F5a：tests/eval + tests/eval-harness 全 hermetic（40 测试 <0.5s，

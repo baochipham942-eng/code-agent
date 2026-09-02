@@ -22,13 +22,15 @@ function readSdkVersion(source: string): SdkVersion {
 }
 
 export async function buildPlugin(): Promise<void> {
+  const sourceManifestPath = path.join(packageRoot, 'plugin.json');
+  const sourceManifestBeforeBuild = await fs.readFile(sourceManifestPath);
   await Promise.all([
     viteBuild(rendererConfig),
     buildHostBundle(),
   ]);
 
   const [manifestText, appPackageText, sdkSource] = await Promise.all([
-    fs.readFile(path.join(packageRoot, 'plugin.json'), 'utf8'),
+    fs.readFile(sourceManifestPath, 'utf8'),
     fs.readFile(path.join(repositoryRoot, 'package.json'), 'utf8'),
     fs.readFile(path.join(repositoryRoot, 'src/host/internalFeatures/internalSdkVersion.ts'), 'utf8'),
   ]);
@@ -48,8 +50,18 @@ export async function buildPlugin(): Promise<void> {
   feature.rendererStyles = 'dist/renderer/index.css';
   feature.hostEntry = 'dist/host/index.cjs';
   feature.builtFrom = { appVersion: appPackage.version, commit };
-  await fs.writeFile(path.join(packageRoot, 'plugin.json'), `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+  await fs.writeFile(
+    path.join(packageRoot, 'dist', 'plugin.json'),
+    `${JSON.stringify(manifest, null, 2)}\n`,
+    'utf8',
+  );
   assertPluginBundle(packageRoot);
+  const sourceManifestAfterBuild = await fs.readFile(sourceManifestPath);
+  if (!sourceManifestAfterBuild.equals(sourceManifestBeforeBuild)) {
+    throw new Error(
+      `构建产物泄漏回源码：${sourceManifestPath} 被改写；源码只留 unbuilt 占位，真实指纹只进 dist/`,
+    );
+  }
   process.stdout.write(`[evaluation-center] built ${manifest.version}\n`);
 }
 

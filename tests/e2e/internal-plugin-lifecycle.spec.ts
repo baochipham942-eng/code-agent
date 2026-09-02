@@ -161,43 +161,37 @@ test.afterEach(async ({ page }) => {
 
 async function buildFreshPluginZips(): Promise<void> {
   await fs.mkdir(evidenceAssetsDir, { recursive: true });
-  const manifestPath = path.join(packageRoot, 'plugin.json');
-  const originalManifest = await fs.readFile(manifestPath, 'utf8');
-  try {
-    const result = await execFile('npm', ['--prefix', packageRoot, 'run', 'pack'], {
-      cwd: repositoryRoot,
-      maxBuffer: 16 * 1024 * 1024,
-    });
-    const packStdout = `${result.stdout}${result.stderr}`;
-    process.stdout.write(packStdout);
-    const packedLine = packStdout.split('\n').find((line) => line.includes('[evaluation-center] packed '));
-    const packedMatch = packedLine?.match(/\[evaluation-center\] packed (.+) \(\d+ bytes\)$/u);
-    if (!packedMatch) throw new Error('Fresh plugin pack did not report its zip path');
-    currentZipPath = packedMatch[1];
+  const result = await execFile('npm', ['--prefix', packageRoot, 'run', 'pack'], {
+    cwd: repositoryRoot,
+    maxBuffer: 16 * 1024 * 1024,
+  });
+  const packStdout = `${result.stdout}${result.stderr}`;
+  process.stdout.write(packStdout);
+  const packedLine = packStdout.split('\n').find((line) => line.includes('[evaluation-center] packed '));
+  const packedMatch = packedLine?.match(/\[evaluation-center\] packed (.+) \(\d+ bytes\)$/u);
+  if (!packedMatch) throw new Error('Fresh plugin pack did not report its zip path');
+  currentZipPath = packedMatch[1];
 
-    const currentArchive = await fs.readFile(currentZipPath);
-    const zip = await JSZip.loadAsync(currentArchive);
-    const manifestEntry = zip.file('plugin.json');
-    if (!manifestEntry) throw new Error('Fresh plugin zip has no plugin.json');
-    builtManifest = JSON.parse(await manifestEntry.async('string')) as typeof builtManifest;
+  const currentArchive = await fs.readFile(currentZipPath);
+  const zip = await JSZip.loadAsync(currentArchive);
+  const manifestEntry = zip.file('plugin.json');
+  if (!manifestEntry) throw new Error('Fresh plugin zip has no plugin.json');
+  builtManifest = JSON.parse(await manifestEntry.async('string')) as typeof builtManifest;
 
-    mutationDir = await fs.mkdtemp(path.join(os.tmpdir(), 'neo-internal-plugin-old-contract-'));
-    const oldManifest = structuredClone(builtManifest);
-    oldManifest.internalFeature.sdkVersion.renderer = 'pending';
-    zip.file('plugin.json', `${JSON.stringify(oldManifest, null, 2)}\n`);
-    oldContractZipPath = path.join(mutationDir, 'evaluation-center-old-renderer-contract.zip');
-    await fs.writeFile(
-      oldContractZipPath,
-      await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' }),
-    );
+  mutationDir = await fs.mkdtemp(path.join(os.tmpdir(), 'neo-internal-plugin-old-contract-'));
+  const oldManifest = structuredClone(builtManifest);
+  oldManifest.internalFeature.sdkVersion.renderer = 'pending';
+  zip.file('plugin.json', `${JSON.stringify(oldManifest, null, 2)}\n`);
+  oldContractZipPath = path.join(mutationDir, 'evaluation-center-old-renderer-contract.zip');
+  await fs.writeFile(
+    oldContractZipPath,
+    await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' }),
+  );
 
-    const currentStat = await fs.stat(currentZipPath);
-    const oldStat = await fs.stat(oldContractZipPath);
-    process.stdout.write(`FRESH_ZIP=${currentZipPath} bytes=${currentStat.size}\n`);
-    process.stdout.write(`OLD_CONTRACT_ZIP=${oldContractZipPath} bytes=${oldStat.size}\n`);
-  } finally {
-    await fs.writeFile(manifestPath, originalManifest, 'utf8');
-  }
+  const currentStat = await fs.stat(currentZipPath);
+  const oldStat = await fs.stat(oldContractZipPath);
+  process.stdout.write(`FRESH_ZIP=${currentZipPath} bytes=${currentStat.size}\n`);
+  process.stdout.write(`OLD_CONTRACT_ZIP=${oldContractZipPath} bytes=${oldStat.size}\n`);
 }
 
 async function getFreePort(): Promise<number> {

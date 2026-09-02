@@ -120,6 +120,7 @@ export async function enumerateCaseBank(repoRoot: string, today = todayIso()): P
           turns: caseTurns(testCase),
           hasExpect: expectationExists(testCase),
           hardened,
+          ...(testCase.answerSide ? { answerSide: testCase.answerSide } : {}),
           reviewStatus: testCase.reviewStatus,
           source: testCase.sourceSessionId ? 'session' : 'manual',
           type: testCase.type,

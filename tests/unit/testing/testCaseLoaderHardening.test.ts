@@ -54,16 +54,4 @@ describe('test case loader criteria gate', () => {
     error.mockRestore();
   });
 
-  it('T3：真实默认集与三个专项集共 153 题，门开启后零拒收', async () => {
-    const root = path.join(process.cwd(), '.claude', 'test-cases');
-    const roots = [root, 'artifact-runnable', 'goal-contract', 'user-simulator']
-      .map((item) => path.isAbsolute(item) ? item : path.join(root, item));
-    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-
-    const suites = (await Promise.all(roots.map((item) => loadAllTestSuites(item)))).flat();
-
-    expect(suites.flatMap((item) => item.cases)).toHaveLength(153);
-    expect(error).not.toHaveBeenCalled();
-    error.mockRestore();
-  });
 });

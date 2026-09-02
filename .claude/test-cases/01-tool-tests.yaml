@@ -22,31 +22,6 @@ cases:
     description: "bash 工具 - 列出目录"
     prompt: "列出当前目录的文件"
     reference_solution: "调用 bash 执行 ls，输出应包含 package.json"
-    expect:
-      response_contains:
-        - package.json
-    expectations:
-      - type: tool_output_contains
-        description: "工具输出应包含 package.json"
-        weight: 1.0
-        critical: true
-        params:
-          text:
-            - package.json
-      - type: tool_called
-        description: "应调用 bash、list_directory 或 glob 工具来列出目录"
-        weight: 0.8
-        params:
-          tool: bash|list_directory|glob
-      - type: no_crash
-        description: "不应崩溃"
-        weight: 0.5
-        params: {}
-      - type: max_turns
-        description: "简单任务应在 10 轮内完成"
-        weight: 0.3
-        params:
-          max: 10
 
   - id: bash-pwd
     type: tool
@@ -55,131 +30,37 @@ cases:
     description: "bash 工具 - 显示当前路径"
     prompt: "显示当前工作目录的完整路径"
     reference_solution: "调用 bash 执行 pwd，输出当前工作目录的绝对路径"
-    expect:
-      response_contains:
-        - /
-    expectations:
-      - type: response_contains
-        description: "响应应包含路径（含 /）"
-        weight: 1.0
-        critical: true
-        params:
-          text: "/"
-      - type: no_crash
-        description: "不应崩溃"
-        weight: 0.5
-        params: {}
-      - type: max_turns
-        description: "简单任务应在 5 轮内完成"
-        weight: 0.3
-        params:
-          max: 5
 
   - id: bash-echo
     type: tool
     description: "bash 工具 - 输出文本"
     prompt: "执行 echo 命令输出 'Hello Test'"
     reference_solution: "调用 bash 执行 echo 'Hello Test'，输出中包含 Hello Test"
-    expect:
-      response_contains:
-        - Hello Test
 
   # --------------------------------------------------------------------------
   # 文件读取测试
   # --------------------------------------------------------------------------
-    expectations:
-      - type: response_contains
-        description: "响应应包含 'Hello Test'"
-        weight: 0.8
-        params:
-          text: "Hello Test"
-      - type: no_crash
-        description: "不应崩溃"
-        weight: 1
-        critical: true
-        params: {}
   - id: read-file-exists
     type: tool
     description: "read_file 工具 - 读取存在的文件"
     prompt: "读取 package.json 文件的内容"
     reference_solution: "调用 read_file 读取 package.json，输出包含 name 和 version 字段"
-    expect:
-      response_contains:
-        - name
-        - version
 
-    expectations:
-      - type: response_contains
-        description: "响应应报出项目名（package.json 的 name 值）"
-        weight: 0.8
-        params:
-          text: "code-agent"
-      - type: response_contains
-        description: "响应应报出版本（中/英/版本号任一）"
-        weight: 0.8
-        params:
-          text: "版本|version|0.16"
-      - type: no_crash
-        description: "不应崩溃"
-        weight: 1
-        critical: true
-        params: {}
   - id: read-file-not-exists
     type: error_handling
     description: "read_file 工具 - 读取不存在的文件"
     prompt: "读取 this-file-does-not-exist-12345.txt 文件"
     reference_solution: "读取不存在的文件时，agent 应优雅处理错误而非崩溃"
-    expect:
-      error_handled: true
-      no_crash: true
 
   # --------------------------------------------------------------------------
   # 文件写入测试
   # --------------------------------------------------------------------------
-    expectations:
-      - type: error_handled
-        description: "应优雅处理错误"
-        weight: 0.8
-        params: {}
-      - type: no_crash
-        description: "不应崩溃"
-        weight: 1
-        critical: true
-        params: {}
   - id: write-file-new
     type: tool
     category: basic_tool
     difficulty: easy
     description: "write_file 工具 - 创建新文件"
     prompt: "创建一个名为 test-write-temp.txt 的文件，内容是 'Test content 123'"
-    expect:
-      files_created:
-        - test-write-temp.txt
-      file_contains:
-        test-write-temp.txt: Test content 123
-    expectations:
-      - type: file_exists
-        description: "文件 test-write-temp.txt 应被创建"
-        weight: 1.0
-        critical: true
-        params:
-          path: test-write-temp.txt
-      - type: content_contains
-        description: "文件内容应包含指定文本"
-        weight: 1.0
-        critical: true
-        params:
-          path: test-write-temp.txt
-          contains: "Test content 123"
-      - type: no_crash
-        description: "不应崩溃"
-        weight: 0.5
-        params: {}
-      - type: max_turns
-        description: "简单任务应在 10 轮内完成"
-        weight: 0.3
-        params:
-          max: 10
     cleanup:
       - rm -f test-write-temp.txt
 
@@ -194,37 +75,6 @@ cases:
     prompt: "先读取 test-edit-temp.txt，然后把 'OLD' 替换成 'NEW'"
     setup:
       - echo "This is OLD content" > test-edit-temp.txt
-    expect:
-      file_contains:
-        test-edit-temp.txt: NEW
-    expectations:
-      - type: content_contains
-        description: "文件应包含替换后的 NEW"
-        weight: 1.0
-        critical: true
-        params:
-          path: test-edit-temp.txt
-          contains: "NEW"
-      - type: content_not_contains
-        description: "文件不应包含原始的 OLD"
-        weight: 0.8
-        params:
-          path: test-edit-temp.txt
-          not_contains: "OLD"
-      - type: tool_called
-        description: "应调用读取和编辑/写入工具"
-        weight: 0.5
-        params:
-          tool: read_file|edit_file|write_file|bash
-      - type: no_crash
-        description: "不应崩溃"
-        weight: 0.5
-        params: {}
-      - type: max_turns
-        description: "应在 10 轮内完成"
-        weight: 0.3
-        params:
-          max: 10
     cleanup:
       - rm -f test-edit-temp.txt
 
@@ -235,51 +85,13 @@ cases:
     type: tool
     description: "glob 工具 - 查找 TypeScript 文件"
     prompt: "查找 src 目录下所有的 .ts 文件"
-    expect:
-      min_tool_calls: 1
 
   # --------------------------------------------------------------------------
   # Grep 工具测试
   # --------------------------------------------------------------------------
-    expectations:
-      - type: min_tool_calls
-        description: "至少应调用 1 次工具"
-        weight: 0.3
-        params:
-          min: 1
-      - type: no_crash
-        description: "不应崩溃"
-        weight: 1
-        critical: true
-        params: {}
   - id: grep-search
     type: tool
     category: basic_tool
     difficulty: easy
     description: "grep 工具 - 搜索代码"
     prompt: "在 src 目录中搜索包含 'import' 的文件"
-    expect:
-      min_tool_calls: 1
-      response_contains:
-        - import
-    expectations:
-      - type: tool_called
-        description: "应调用 grep 或 bash 工具进行搜索"
-        weight: 1.0
-        critical: true
-        params:
-          tool: grep|bash
-      - type: tool_output_contains
-        description: "搜索结果应包含文件路径"
-        weight: 0.8
-        params:
-          text: ".ts"
-      - type: no_crash
-        description: "不应崩溃"
-        weight: 0.5
-        params: {}
-      - type: max_turns
-        description: "应在 5 轮内完成"
-        weight: 0.3
-        params:
-          max: 5

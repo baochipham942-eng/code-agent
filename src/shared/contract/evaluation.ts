@@ -204,6 +204,7 @@ export interface EvalFailureClassification {
 
 export interface EvalRunStamp {
   caseBankSha: string;
+  answerSideSha: string;
   evalSet: {
     split: 'held-in' | 'held-out' | 'control' | 'safety' | 'all';
     splitsFileSha: string;
@@ -243,6 +244,7 @@ export interface EvalRunStamp {
 
 export const EVAL_RUN_STAMP_KEYS = [
   'caseBankSha',
+  'answerSideSha',
   'evalSet',
   'scorers',
   'k',
@@ -264,6 +266,7 @@ void _evalRunStampKeysExhaustive;
 /** Explicit fallback for a run that died before it could announce its configuration. */
 export const UNKNOWN_EVAL_RUN_STAMP: EvalRunStamp = {
   caseBankSha: 'unknown',
+  answerSideSha: 'missing',
   evalSet: { split: 'all', splitsFileSha: 'missing', tags: [], ids: [] },
   scorers: {
     deterministic: true,
@@ -811,6 +814,7 @@ export interface EvalCaseListEntry {
   turns: number | 'simulator';
   hasExpect: boolean;
   hardened: boolean;
+  answerSide?: 'missing';
   reviewStatus?: 'pending' | 'reviewed';
   source: 'manual' | 'session';
   type?: string;

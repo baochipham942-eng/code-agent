@@ -1,5 +1,7 @@
+import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import {
   exportInspectDataset,
   inspectTextCaseRejection,
@@ -7,7 +9,23 @@ import {
 import type { TestCase } from '../../../src/host/testing/types';
 
 describe('YAML to Inspect Dataset exporter', () => {
+  const roots: string[] = [];
+
+  afterEach(async () => {
+    delete process.env.NEO_EVAL_ANSWERS_DIR;
+    await Promise.all(roots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true })));
+  });
+
   it('exports the fixed five cases in manifest order with original assertions', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'inspect-answer-side-'));
+    roots.push(root);
+    const caseDir = path.join(root, '.claude', 'test-cases');
+    const source = '.claude/test-cases/inspect.yaml';
+    const answerRoot = path.join(root, 'private-eval');
+    await fs.mkdir(path.join(root, '.git'), { recursive: true });
+    await fs.mkdir(caseDir, { recursive: true });
+    await fs.mkdir(path.join(answerRoot, 'answers', '.claude', 'test-cases'), { recursive: true });
+    process.env.NEO_EVAL_ANSWERS_DIR = answerRoot;
     const ids = [
       'bash-ls',
       'bash-pwd',
@@ -15,8 +33,36 @@ describe('YAML to Inspect Dataset exporter', () => {
       'error-file-not-found',
       'prompt-smoke-read-package',
     ];
+    await fs.writeFile(path.join(caseDir, 'inspect.yaml'), [
+      'name: inspect',
+      'cases:',
+      ...ids.flatMap((id) => [
+        `  - id: ${id}`,
+        '    type: task',
+        `    prompt: ${id}`,
+      ]),
+      '',
+    ].join('\n'));
+    await fs.writeFile(path.join(answerRoot, 'answers', ...source.split('/')), [
+      'version: 1',
+      `source: ${source}`,
+      'cases:',
+      '  - id: bash-ls',
+      '    expectations:',
+      '      - type: tool_called',
+      '        params: { tool: bash }',
+      '  - id: bash-pwd',
+      '    expect: { response_contains: [pwd] }',
+      '  - id: conv-understand-intent',
+      '    expect: { response_contains: [intent] }',
+      '  - id: error-file-not-found',
+      '    expect: { error_handled: true }',
+      '  - id: prompt-smoke-read-package',
+      '    expect: { response_contains: [package.json] }',
+      '',
+    ].join('\n'));
     const records = await exportInspectDataset({
-      caseDir: path.resolve('.claude/test-cases'),
+      caseDir,
       ids,
     });
 

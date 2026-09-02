@@ -22,6 +22,7 @@ const roots: string[] = [];
 
 afterEach(async () => {
   delete process.env.RUNSTAMP_API_KEY;
+  delete process.env.NEO_EVAL_ANSWERS_DIR;
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
@@ -29,17 +30,23 @@ function git(cwd: string, args: string[]): void {
   execFileSync('git', args, { cwd, stdio: 'ignore' });
 }
 
-async function createGitRepo(): Promise<{ root: string; caseDir: string }> {
+async function createGitRepo(): Promise<{ root: string; caseDir: string; answerRoot: string; answerFile: string; splitFile: string }> {
   const root = await mkdtemp(path.join(os.tmpdir(), 'eval-runstamp-repo-'));
   roots.push(root);
   const caseDir = path.join(root, '.claude', 'test-cases');
+  const answerRoot = path.join(root, 'private-eval');
+  const answerFile = path.join(answerRoot, 'answers', '.claude', 'test-cases', 'x.yaml');
+  const splitFile = path.join(answerRoot, 'eval-splits.json');
   await mkdir(caseDir, { recursive: true });
+  await mkdir(path.dirname(answerFile), { recursive: true });
   await writeFile(path.join(caseDir, 'x.yaml'), 'name: x\ncases: []\n');
-  await writeFile(path.join(root, '.claude', 'eval-splits.json'), '{"heldIn":[]}\n');
+  await writeFile(answerFile, 'version: 1\nsource: .claude/test-cases/x.yaml\ncases: []\n');
+  await writeFile(splitFile, '{"heldIn":[]}\n');
+  process.env.NEO_EVAL_ANSWERS_DIR = answerRoot;
   git(root, ['init', '-q']);
-  git(root, ['add', '.']);
+  git(root, ['add', '.claude/test-cases']);
   git(root, ['-c', 'user.name=Eval Test', '-c', 'user.email=eval@example.com', 'commit', '-qm', 'fixture']);
-  return { root, caseDir };
+  return { root, caseDir, answerRoot, answerFile, splitFile };
 }
 
 function stampOptions(
@@ -71,7 +78,7 @@ describe('eval run stamp', () => {
     expect([...EVAL_RUN_STAMP_KEYS].sort()).toEqual(Object.keys(UNKNOWN_EVAL_RUN_STAMP).sort());
   });
   it('records every required key and tracks case-bank dirtiness and external directories', async () => {
-    const { root, caseDir } = await createGitRepo();
+    const { root, caseDir, answerFile, splitFile } = await createGitRepo();
     const clean = buildRunStamp(stampOptions(root, caseDir));
 
     for (const key of EVAL_RUN_STAMP_KEYS) {
@@ -80,6 +87,13 @@ describe('eval run stamp', () => {
       expect(clean[key], key).not.toBeNull();
     }
     expect(clean.caseBankSha).toMatch(/^[0-9a-f]{40}$/);
+    expect(clean.answerSideSha).toMatch(/^sha256:[0-9a-f]{64}$/);
+    expect(clean.evalSet.splitsFileSha).toMatch(/^sha256:[0-9a-f]{64}$/);
+
+    await writeFile(answerFile, 'version: 1\nsource: .claude/test-cases/x.yaml\ncases: [{ id: changed, expect: { no_crash: true } }]\n');
+    expect(buildRunStamp(stampOptions(root, caseDir)).answerSideSha).not.toBe(clean.answerSideSha);
+    await writeFile(splitFile, '{"heldIn":["changed"]}\n');
+    expect(buildRunStamp(stampOptions(root, caseDir)).evalSet.splitsFileSha).not.toBe(clean.evalSet.splitsFileSha);
 
     await writeFile(path.join(caseDir, 'x.yaml'), 'name: changed\ncases: []\n');
     expect(buildRunStamp(stampOptions(root, caseDir)).caseBankSha).toMatch(/^[0-9a-f]{40}-dirty$/);

@@ -25,30 +25,6 @@ cases:
       - "mkdir -p test-git-repo && cd test-git-repo && git init && echo 'hello' > file.txt && git add . && git commit -m 'init'"
     prompt: "查看 test-git-repo 目录的 git status"
     reference_solution: "调用 git status 展示当前仓库状态"
-    expect:
-      no_crash: true
-    expectations:
-      - type: tool_called
-        description: "应调用 bash 执行 git 命令"
-        weight: 1.0
-        critical: true
-        params:
-          tool: bash
-      - type: tool_output_contains
-        description: "git 输出应包含 branch 信息"
-        weight: 0.8
-        params:
-          text: "branch"
-          tool: bash
-      - type: no_crash
-        description: "不应崩溃"
-        weight: 0.5
-        params: {}
-      - type: max_turns
-        description: "应在 5 轮内完成"
-        weight: 0.3
-        params:
-          max: 5
     cleanup:
       - rm -rf test-git-repo
 
@@ -58,27 +34,6 @@ cases:
     setup:
       - "mkdir -p test-git-repo && git -C test-git-repo init && git -C test-git-repo config user.email 'test@test.com' && git -C test-git-repo config user.name 'Test' && echo 'v1' > test-git-repo/file.txt && git -C test-git-repo add . && git -C test-git-repo commit -m 'first commit' && echo 'v2' > test-git-repo/file.txt && git -C test-git-repo add . && git -C test-git-repo commit -m 'second commit'"
     prompt: "查看 test-git-repo 的最近 git 提交记录"
-    expect:
-      min_tool_calls: 1
-      response_contains:
-        - commit
-      no_crash: true
-    expectations:
-      - type: response_contains
-        description: "响应应包含 'commit'"
-        weight: 0.8
-        params:
-          text: "commit"
-      - type: min_tool_calls
-        description: "至少应调用 1 次工具"
-        weight: 0.3
-        params:
-          min: 1
-      - type: no_crash
-        description: "不应崩溃"
-        weight: 1
-        critical: true
-        params: {}
     cleanup:
       - rm -rf test-git-repo
 
@@ -104,27 +59,6 @@ cases:
         }
         EOF
     prompt: "查看 test-git-repo 中的未提交变更（git diff），并解释做了什么修改"
-    expect:
-      min_tool_calls: 1
-      response_contains:
-        - name
-      no_crash: true
-    expectations:
-      - type: response_contains
-        description: "响应应包含 'name'"
-        weight: 0.8
-        params:
-          text: "name"
-      - type: min_tool_calls
-        description: "至少应调用 1 次工具"
-        weight: 0.3
-        params:
-          min: 1
-      - type: no_crash
-        description: "不应崩溃"
-        weight: 1
-        critical: true
-        params: {}
     cleanup:
       - rm -rf test-git-repo
 
@@ -138,20 +72,6 @@ cases:
         git add . && git commit -m 'init'
         echo 'const API_URL = "https://new-api.com"' > config.js
     prompt: "查看 test-git-repo 的变更，帮我写一个合适的 git commit message（不要真的提交）"
-    expect:
-      min_tool_calls: 1
-      no_crash: true
-    expectations:
-      - type: min_tool_calls
-        description: "至少应调用 1 次工具"
-        weight: 0.3
-        params:
-          min: 1
-      - type: no_crash
-        description: "不应崩溃"
-        weight: 1
-        critical: true
-        params: {}
     cleanup:
       - rm -rf test-git-repo
 
@@ -164,20 +84,6 @@ cases:
     setup:
       - "mkdir -p test-git-repo && cd test-git-repo && git init && echo 'init' > file.txt && git add . && git commit -m 'init'"
     prompt: "在 test-git-repo 中：1) 创建 feature/add-readme 分支 2) 切换到该分支 3) 创建 README.md 写入项目说明 4) 提交"
-    expect:
-      min_tool_calls: 3
-      no_crash: true
-    expectations:
-      - type: min_tool_calls
-        description: "至少应调用 3 次工具"
-        weight: 0.3
-        params:
-          min: 3
-      - type: no_crash
-        description: "不应崩溃"
-        weight: 1
-        critical: true
-        params: {}
     cleanup:
       - rm -rf test-git-repo
 
@@ -193,19 +99,5 @@ cases:
         echo 'main change' > shared.txt && git add . && git commit -m 'main change'
         git merge feature --no-commit 2>/dev/null || true
     prompt: "test-git-repo 中有合并冲突，帮我查看冲突内容并解释怎么解决"
-    expect:
-      min_tool_calls: 1
-      no_crash: true
-    expectations:
-      - type: min_tool_calls
-        description: "至少应调用 1 次工具"
-        weight: 0.3
-        params:
-          min: 1
-      - type: no_crash
-        description: "不应崩溃"
-        weight: 1
-        critical: true
-        params: {}
     cleanup:
       - rm -rf test-git-repo

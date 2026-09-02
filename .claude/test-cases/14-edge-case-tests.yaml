@@ -19,30 +19,6 @@ cases:
     type: task
     description: "处理 Unicode 文件名"
     prompt: "创建一个名为 test-中文文件.txt 的文件，内容写 '测试中文文件名'"
-    expect:
-      files_created:
-        - "test-中文文件.txt"
-      file_contains:
-        "test-中文文件.txt": "测试中文文件名"
-      no_crash: true
-    expectations:
-      - type: file_exists
-        description: "文件应存在: test-中文文件.txt"
-        weight: 1
-        critical: true
-        params:
-          path: "test-中文文件.txt"
-      - type: content_contains
-        description: "文件 test-中文文件.txt 应包含 '测试中文文件名'"
-        weight: 0.8
-        params:
-          path: "test-中文文件.txt"
-          contains: "测试中文文件名"
-      - type: no_crash
-        description: "不应崩溃"
-        weight: 1
-        critical: true
-        params: {}
     cleanup:
       - "rm -f 'test-中文文件.txt'"
 
@@ -50,22 +26,6 @@ cases:
     type: task
     description: "处理含空格文件名"
     prompt: "创建一个名为 'test file with spaces.txt' 的文件，写入 'spaces work'"
-    expect:
-      files_created:
-        - "test file with spaces.txt"
-      no_crash: true
-    expectations:
-      - type: file_exists
-        description: "文件应存在: test file with spaces.txt"
-        weight: 1
-        critical: true
-        params:
-          path: "test file with spaces.txt"
-      - type: no_crash
-        description: "不应崩溃"
-        weight: 1
-        critical: true
-        params: {}
     cleanup:
       - "rm -f 'test file with spaces.txt'"
 
@@ -76,86 +36,28 @@ cases:
     type: conversation
     description: "单词输入"
     prompt: "帮助"
-    expect:
-      no_crash: true
-      response_not_contains:
-        - FATAL
-        - error
 
-    expectations:
-      - type: response_not_contains
-        description: "响应不应包含 'FATAL'"
-        weight: 0.8
-        params:
-          text: "FATAL"
-      - type: response_not_contains
-        description: "响应不应包含 'error'"
-        weight: 0.8
-        params:
-          text: "error"
-      - type: no_crash
-        description: "不应崩溃"
-        weight: 1
-        critical: true
-        params: {}
   - id: edge-emoji-input
     type: conversation
     description: "纯 Emoji 输入"
     prompt: "👍"
-    expect:
-      no_crash: true
 
   # --------------------------------------------------------------------------
   # 矛盾指令
   # --------------------------------------------------------------------------
-    expectations:
-      - type: no_crash
-        description: "不应崩溃"
-        weight: 1
-        critical: true
-        params: {}
   - id: edge-contradictory
     type: conversation
     description: "矛盾指令处理"
     prompt: "创建一个文件 test-contra.txt 但不要写入任何内容也不要创建任何文件"
-    expect:
-      no_crash: true
-      files_not_exist:
-        - test-contra.txt
 
-    expectations:
-      - type: file_not_exists
-        description: "文件不应存在: test-contra.txt"
-        weight: 0.8
-        params:
-          path: "test-contra.txt"
-      - type: no_crash
-        description: "不应崩溃"
-        weight: 1
-        critical: true
-        params: {}
   - id: edge-multiple-tasks
     type: conversation
     description: "一句话多个无关任务"
     prompt: "帮我查看天气、计算 1+1、列出当前目录文件、翻译一段英文"
-    expect:
-      no_crash: true
-      min_tool_calls: 1
 
   # --------------------------------------------------------------------------
   # 格式异常数据
   # --------------------------------------------------------------------------
-    expectations:
-      - type: min_tool_calls
-        description: "至少应调用 1 次工具"
-        weight: 0.3
-        params:
-          min: 1
-      - type: no_crash
-        description: "不应崩溃"
-        weight: 1
-        critical: true
-        params: {}
   - id: edge-malformed-json
     type: task
     description: "处理畸形 JSON"
@@ -163,20 +65,6 @@ cases:
       - |
         echo '{"name": "test", "value": 42, "nested": {"a": 1, "b": }' > test-malformed.json
     prompt: "读取 test-malformed.json 并解析。如果 JSON 格式有错误，指出问题并修复"
-    expect:
-      min_tool_calls: 1
-      no_crash: true
-    expectations:
-      - type: min_tool_calls
-        description: "至少应调用 1 次工具"
-        weight: 0.3
-        params:
-          min: 1
-      - type: no_crash
-        description: "不应崩溃"
-        weight: 1
-        critical: true
-        params: {}
     cleanup:
       - rm -f test-malformed.json
 
@@ -187,27 +75,6 @@ cases:
       - |
         printf 'Line 1: Hello\nLine 2: 你好\nLine 3: こんにちは\nLine 4: 🎉🚀\nLine 5: café résumé naïve\n' > test-encoding.txt
     prompt: "读取 test-encoding.txt，告诉我文件里有哪些语言的文字"
-    expect:
-      min_tool_calls: 1
-      response_contains:
-        - 中文
-      no_crash: true
-    expectations:
-      - type: response_contains
-        description: "响应应包含 '中文'"
-        weight: 0.8
-        params:
-          text: "中文"
-      - type: min_tool_calls
-        description: "至少应调用 1 次工具"
-        weight: 0.3
-        params:
-          min: 1
-      - type: no_crash
-        description: "不应崩溃"
-        weight: 1
-        critical: true
-        params: {}
     cleanup:
       - rm -f test-encoding.txt
 
@@ -218,36 +85,6 @@ cases:
     type: task
     description: "深层路径创建和读取"
     prompt: "创建 test-deep/a/b/c/d/deep-file.txt 文件，写入 'deep path test'，然后读取确认内容"
-    expect:
-      min_tool_calls: 2
-      files_created:
-        - test-deep/a/b/c/d/deep-file.txt
-      file_contains:
-        test-deep/a/b/c/d/deep-file.txt: "deep path test"
-      no_crash: true
-    expectations:
-      - type: file_exists
-        description: "文件应存在: test-deep/a/b/c/d/deep-file.txt"
-        weight: 1
-        critical: true
-        params:
-          path: "test-deep/a/b/c/d/deep-file.txt"
-      - type: content_contains
-        description: "文件 test-deep/a/b/c/d/deep-file.txt 应包含 'deep path test'"
-        weight: 0.8
-        params:
-          path: "test-deep/a/b/c/d/deep-file.txt"
-          contains: "deep path test"
-      - type: min_tool_calls
-        description: "至少应调用 2 次工具"
-        weight: 0.3
-        params:
-          min: 2
-      - type: no_crash
-        description: "不应崩溃"
-        weight: 1
-        critical: true
-        params: {}
     cleanup:
       - rm -rf test-deep
 
@@ -255,29 +92,5 @@ cases:
     type: task
     description: "处理隐藏文件（dotfile）"
     prompt: "创建 .test-hidden-config 文件，写入 'hidden=true'，然后读取确认"
-    expect:
-      files_created:
-        - .test-hidden-config
-      file_contains:
-        .test-hidden-config: "hidden=true"
-      no_crash: true
-    expectations:
-      - type: file_exists
-        description: "文件应存在: .test-hidden-config"
-        weight: 1
-        critical: true
-        params:
-          path: ".test-hidden-config"
-      - type: content_contains
-        description: "文件 .test-hidden-config 应包含 'hidden=true'"
-        weight: 0.8
-        params:
-          path: ".test-hidden-config"
-          contains: "hidden=true"
-      - type: no_crash
-        description: "不应崩溃"
-        weight: 1
-        critical: true
-        params: {}
     cleanup:
       - rm -f .test-hidden-config

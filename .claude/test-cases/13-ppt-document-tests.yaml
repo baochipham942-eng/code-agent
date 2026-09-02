@@ -20,42 +20,6 @@ cases:
     type: task
     description: "生成简单 PPT"
     prompt: "帮我做一个 3 页的 PPT，主题是 AI Agent 架构概述，保存为 test-simple.pptx"
-    expect:
-      min_tool_calls: 1
-      files_created:
-        - test-simple.pptx
-      no_crash: true
-    expectations:
-      - type: file_exists
-        description: "文件应存在: test-simple.pptx"
-        weight: 1
-        critical: true
-        params:
-          path: "test-simple.pptx"
-      - type: min_tool_calls
-        description: "至少应调用 1 次工具"
-        weight: 0.3
-        params:
-          min: 1
-      - type: no_crash
-        description: "不应崩溃"
-        weight: 1
-        critical: true
-        params: {}
-      # 方案 D 二期遗留：打破天花板效应。上面三条只测「最后有没有文件」，
-      # 本条测「怎么开场」—— 产物提示词改的正是开场。
-      # 本用例主题通用（AI Agent 架构概述）、无附件，按产物 reminder 的口径
-      # 应先落骨架：不依赖时效数据就不该先 WebSearch，风格页数直接假设、不该先问。
-      # 只列这两个工具：它们对本 prompt 是无歧义的拖延。同文件另三条用例都带附件、
-      # 必须先 Read，故不挂本断言（也正因如此不设全局默认工具表）。
-      # 非 critical：这是读数不是硬门，别让开场把产物能力判死。
-      - type: no_stall_before_artifact
-        description: "开场应先落骨架，而不是先调研/先问需求"
-        weight: 0.5
-        critical: false
-        params:
-          artifact_tools: ["Skill", "ppt_generate", "Write"]
-          stall_tools: ["WebSearch", "AskUserQuestion"]
     cleanup:
       - rm -f test-simple.pptx
     timeout: 600000
@@ -82,28 +46,6 @@ cases:
         - 多 LLM 后端支持
         EOF
     prompt: "根据 test-outline.md 大纲生成 PPT，保存为 test-from-outline.pptx"
-    expect:
-      min_tool_calls: 2
-      files_created:
-        - test-from-outline.pptx
-      no_crash: true
-    expectations:
-      - type: file_exists
-        description: "文件应存在: test-from-outline.pptx"
-        weight: 1
-        critical: true
-        params:
-          path: "test-from-outline.pptx"
-      - type: min_tool_calls
-        description: "至少应调用 2 次工具"
-        weight: 0.3
-        params:
-          min: 2
-      - type: no_crash
-        description: "不应崩溃"
-        weight: 1
-        critical: true
-        params: {}
     cleanup:
       - rm -f test-outline.md test-from-outline.pptx
     timeout: 600000
@@ -138,50 +80,6 @@ cases:
         **返回**：新用户对象
         EOF
     prompt: "读取 test-api-doc.md，把 API 信息提取成 JSON 格式保存到 test-api-spec.json，包含 path、method、params、description"
-    expect:
-      min_tool_calls: 2
-      files_created:
-        - test-api-spec.json
-      file_contains:
-        test-api-spec.json:
-          - "/users"
-          - "GET"
-          - "POST"
-    expectations:
-      - type: file_exists
-        description: "文件应存在: test-api-spec.json"
-        weight: 1
-        critical: true
-        params:
-          path: "test-api-spec.json"
-      - type: content_contains
-        description: "文件 test-api-spec.json 应包含 '/users'"
-        weight: 0.8
-        params:
-          path: "test-api-spec.json"
-          contains: "/users"
-      - type: content_contains
-        description: "文件 test-api-spec.json 应包含 'GET'"
-        weight: 0.8
-        params:
-          path: "test-api-spec.json"
-          contains: "GET"
-      - type: content_contains
-        description: "文件 test-api-spec.json 应包含 'POST'"
-        weight: 0.8
-        params:
-          path: "test-api-spec.json"
-          contains: "POST"
-      - type: min_tool_calls
-        description: "至少应调用 2 次工具"
-        weight: 0.3
-        params:
-          min: 2
-      - type: no_crash
-        description: "不应崩溃"
-        weight: 1
-        critical: true
-        params: {}
     cleanup:
       - rm -f test-api-doc.md test-api-spec.json
 
@@ -203,35 +101,5 @@ cases:
         v0.16.37,154,77%,36s
         EOF
     prompt: "读取 test-metrics.csv，分析版本间的评测分数变化趋势，生成 test-trend-report.md 报告，包含关键发现和建议"
-    expect:
-      min_tool_calls: 2
-      files_created:
-        - test-trend-report.md
-      file_contains:
-        test-trend-report.md:
-          - "v0.16"
-      no_crash: true
-    expectations:
-      - type: file_exists
-        description: "文件应存在: test-trend-report.md"
-        weight: 1
-        params:
-          path: "test-trend-report.md"
-      - type: content_contains
-        description: "文件 test-trend-report.md 应包含 'v0.16'"
-        weight: 0.8
-        params:
-          path: "test-trend-report.md"
-          contains: "v0.16"
-      - type: min_tool_calls
-        description: "至少应调用 2 次工具"
-        weight: 0.3
-        params:
-          min: 2
-      - type: no_crash
-        description: "不应崩溃"
-        weight: 1
-        critical: true
-        params: {}
     cleanup:
       - rm -f test-metrics.csv test-trend-report.md

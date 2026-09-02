@@ -32,18 +32,6 @@ cases:
       - rm -f neo-goal-met.txt
     cleanup:
       - rm -f neo-goal-met.txt
-    expectations:
-      - type: goal_status
-        description: "goal 终态必须是验证全过的 met（无降级标记）"
-        critical: true
-        params:
-          expected: met
-          degraded: false
-      - type: file_exists
-        description: "产物必须真实落盘（防验证命令被绕过的双保险）"
-        critical: true
-        params:
-          path: neo-goal-met.txt
 
   - id: goal-degraded
     type: task
@@ -58,13 +46,6 @@ cases:
       max_turns: 10
     cleanup:
       - rm -f neo-goal-degraded.txt
-    expectations:
-      - type: goal_status
-        description: "修复预算耗尽必须走到限放行：met + degraded=true（绝不无限阻塞，也不谎报全过）"
-        critical: true
-        params:
-          expected: met
-          degraded: true
 
   - id: goal-evidence-exhausted
     type: task
@@ -77,10 +58,3 @@ cases:
     goal_contract:
       review_condition: "工作目录中存在文件 neo-goal-evidence-missing.txt 且内容非空"
       max_turns: 12
-    expectations:
-      - type: goal_evidence_gate
-        description: "闸0 必须打回假证据（≥2 次 bounce）且打回预算耗尽后 exhausted_release 放行，不死锁"
-        critical: true
-        params:
-          expected_verdict: exhausted_release
-          min_bounces: 2

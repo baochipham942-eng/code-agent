@@ -21,152 +21,42 @@ cases:
     difficulty: easy
     description: "处理文件不存在错误"
     prompt: "读取 nonexistent-file-xyz-123.txt 文件并显示内容"
-    expect:
-      error_handled: true
-      no_crash: true
-      response_not_contains:
-        - FATAL
-        - crash
-    expectations:
-      - type: no_crash
-        description: "不应崩溃"
-        weight: 1.0
-        critical: true
-        params: {}
-      - type: response_not_contains
-        description: "不应输出 FATAL 或 crash"
-        weight: 0.8
-        params:
-          text: "FATAL"
-      - type: error_handled
-        description: "应优雅处理错误"
-        weight: 0.8
-        params: {}
-      - type: max_turns
-        description: "应在 5 轮内完成"
-        weight: 0.3
-        params:
-          max: 5
 
   - id: error-directory-not-found
     type: error_handling
     description: "处理目录不存在错误"
     prompt: "列出 /this/path/does/not/exist/12345 目录的内容"
-    expect:
-      error_handled: true
-      no_crash: true
 
   # --------------------------------------------------------------------------
   # 权限错误
   # --------------------------------------------------------------------------
-    expectations:
-      - type: error_handled
-        description: "应优雅处理错误"
-        weight: 0.8
-        params: {}
-      - type: no_crash
-        description: "不应崩溃"
-        weight: 1
-        critical: true
-        params: {}
   - id: error-permission-denied
     type: error_handling
     description: "处理权限拒绝错误"
     prompt: "尝试读取 /etc/shadow 文件"
-    expect:
-      error_handled: true
-      no_crash: true
 
   # --------------------------------------------------------------------------
   # 命令执行错误
   # --------------------------------------------------------------------------
-    expectations:
-      - type: error_handled
-        description: "应优雅处理错误"
-        weight: 0.8
-        params: {}
-      - type: no_crash
-        description: "不应崩溃"
-        weight: 1
-        critical: true
-        params: {}
   - id: error-command-failed
     type: error_handling
     description: "处理命令执行失败"
     prompt: "执行命令 this-command-does-not-exist-xyz"
-    expect:
-      error_handled: true
-      no_crash: true
 
-    expectations:
-      - type: error_handled
-        description: "应优雅处理错误"
-        weight: 0.8
-        params: {}
-      - type: no_crash
-        description: "不应崩溃"
-        weight: 1
-        critical: true
-        params: {}
   - id: error-command-syntax
     type: error_handling
     description: "处理命令语法错误"
     prompt: "执行 bash 命令：if then else"
-    expect:
-      error_handled: true
-      no_crash: true
 
   # --------------------------------------------------------------------------
   # 恢复能力
   # --------------------------------------------------------------------------
-    expectations:
-      - type: error_handled
-        description: "应优雅处理错误"
-        weight: 0.8
-        params: {}
-      - type: no_crash
-        description: "不应崩溃"
-        weight: 1
-        critical: true
-        params: {}
   - id: error-recovery-retry
     type: error_handling
     category: error_recovery
     difficulty: hard
     description: "错误后继续执行"
     prompt: "先尝试读取 nonexistent.txt，如果失败就创建它并写入 'Created after error'"
-    expect:
-      no_crash: true
-      files_created:
-        - nonexistent.txt
-    expectations:
-      - type: no_crash
-        description: "遇到错误不应崩溃"
-        weight: 1.0
-        critical: true
-        params: {}
-      - type: error_handled
-        description: "应优雅处理文件不存在错误"
-        weight: 1.0
-        critical: true
-        params: {}
-      - type: file_exists
-        description: "应在错误后创建 nonexistent.txt"
-        weight: 1.0
-        critical: true
-        params:
-          path: nonexistent.txt
-      - type: content_contains
-        description: "创建的文件应包含指定内容"
-        weight: 0.8
-        params:
-          path: nonexistent.txt
-          contains: "Created after error"
-      - type: max_turns
-        description: "错误恢复任务应在 20 轮内完成"
-        weight: 0.3
-        params:
-          max: 20
     cleanup:
       - rm -f nonexistent.txt
 
@@ -176,38 +66,6 @@ cases:
     difficulty: medium
     description: "优雅降级"
     prompt: "尝试读取 config.yaml，如果不存在就读取 package.json"
-    expect:
-      no_crash: true
-      min_tool_calls: 1
-      response_contains:
-        - name
-    expectations:
-      - type: no_crash
-        description: "遇到错误不应崩溃"
-        weight: 1.0
-        critical: true
-        params: {}
-      - type: response_contains
-        description: "降级到 package.json 后应报出项目名（name 值）"
-        weight: 1.0
-        critical: true
-        params:
-          text:
-            - "code-agent"
-      - type: min_tool_calls
-        description: "应至少调用 1 个工具"
-        weight: 0.8
-        params:
-          min: 1
-      - type: error_handled
-        description: "应优雅处理 config.yaml 不存在的情况"
-        weight: 0.8
-        params: {}
-      - type: max_turns
-        description: "中等任务应在 15 轮内完成"
-        weight: 0.3
-        params:
-          max: 15
 
   # --------------------------------------------------------------------------
   # 超时处理
@@ -216,14 +74,6 @@ cases:
     type: error_handling
     description: "长时间任务不崩溃"
     prompt: "搜索 src 目录下所有包含 'function' 的文件"
-    expect:
-      no_crash: true
-    expectations:
-      - type: no_crash
-        description: "不应崩溃"
-        weight: 1
-        critical: true
-        params: {}
     timeout: 90000
 
   # --------------------------------------------------------------------------
@@ -233,17 +83,3 @@ cases:
     type: error_handling
     description: "处理无效路径"
     prompt: "读取文件路径：\"\""
-    expect:
-      error_handled: true
-      no_crash: true
-
-    expectations:
-      - type: error_handled
-        description: "应优雅处理错误"
-        weight: 0.8
-        params: {}
-      - type: no_crash
-        description: "不应崩溃"
-        weight: 1
-        critical: true
-        params: {}

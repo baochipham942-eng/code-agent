@@ -617,6 +617,12 @@ export interface TestRunnerConfig {
   workingDirectory: string;
   /** Default timeout */
   defaultTimeout: number;
+  /**
+   * 跑级单 case 成本上限（USD），压过 suite default_max_cost_usd 与 case max_cost_usd。
+   * 用途：custom 渠道按设计只给保守 default 价（$1/$3），题面里 0.10 的上限会把 140K+ token 的重题
+   * 中途掐成 cost_exceeded；这是跑法配置与计价打架，不是能力信号，跑的人显式给上限自己负责。
+   */
+  caseCostLimitUsd?: number;
   /** Stop on first failure */
   stopOnFailure: boolean;
   /** Filter by tags */

@@ -112,6 +112,7 @@ function parseArgs(argv: string[]) {
   let provider: string | undefined;
   let concurrency: number | undefined;
   let maxCases: number = DEFAULT_MAX_CASES;
+  let caseCostLimit: number | undefined;
   let force = false;
   let includeRetired = false;
   let tags: string[] | undefined;
@@ -158,6 +159,12 @@ function parseArgs(argv: string[]) {
       concurrency = parseInt(args[++i], 10);
     } else if (arg === '--max-cases' && i + 1 < args.length) {
       maxCases = parseInt(args[++i], 10);
+    } else if (arg === '--case-cost-limit' && i + 1 < args.length) {
+      caseCostLimit = Number(args[++i]);
+      if (!Number.isFinite(caseCostLimit) || caseCostLimit <= 0) {
+        console.error(chalk.red('  Error: --case-cost-limit 必须是大于 0 的有限数（USD）'));
+        process.exit(1);
+      }
     } else if (arg === '--tags' && i + 1 < args.length) {
       tags = args[++i].split(',').map((tag) => tag.trim()).filter(Boolean);
     } else if (arg === '--ids' && i + 1 < args.length) {
@@ -233,7 +240,7 @@ function parseArgs(argv: string[]) {
     process.exit(1);
   }
 
-  return { scope, promote, promoteMockHarness, baselineInfo, trend, base, real, model, provider, concurrency, maxCases, force, includeRetired, tags, ids, compare, judge, predictedFixes, riskTasks, caseDir, split, dataDir, runId, repeat, skills, aiReview };
+  return { scope, promote, promoteMockHarness, baselineInfo, trend, base, real, model, provider, concurrency, maxCases, caseCostLimit, force, includeRetired, tags, ids, compare, judge, predictedFixes, riskTasks, caseDir, split, dataDir, runId, repeat, skills, aiReview };
 }
 function printUsage() {
   console.log(`
@@ -248,6 +255,7 @@ ${chalk.dim('Usage:')}
   npx tsx scripts/eval-ci.ts --concurrency <n>  Parallel test execution count
   npx tsx scripts/eval-ci.ts --json-events      Emit NDJSON events on stdout; human output goes to stderr
   npx tsx scripts/eval-ci.ts --max-cases <n>    Max cases in --real mode (default: 50)
+  npx tsx scripts/eval-ci.ts --case-cost-limit <usd>  Per-case cost cap override (beats suite/case max_cost_usd; custom providers are priced at the conservative default)
   npx tsx scripts/eval-ci.ts --repeat <k>        Run every case k times (default: 1)
   npx tsx scripts/eval-ci.ts --skills <a,b>      Expose exactly these discoverable skills to a normal eval run
   npx tsx scripts/eval-ci.ts --ai-review <a,b>   Add independent yes/no AI review dimensions
@@ -526,6 +534,7 @@ async function runEvals(
     provider?: string;
     concurrency?: number;
     maxCases: number;
+    caseCostLimit?: number;
     force: boolean;
     includeRetired: boolean;
     tags?: string[];
@@ -583,6 +592,7 @@ async function runEvals(
       includeRetired: opts.includeRetired,
       retiredSkipped,
       trialsPerCase: opts.repeat,
+      ...(opts.caseCostLimit !== undefined ? { caseCostLimitUsd: opts.caseCostLimit } : {}),
       aiReview: opts.real ? eventConfig.scorers.aiReview : [],
       ...(opts.concurrency ? { maxParallel: opts.concurrency, parallel: true } : {}),
       // WP1-4: 预测登记随 summary 落盘/DB，deltaReporter 对账
@@ -758,6 +768,7 @@ async function runCompareCommand(
     tags?: string[];
     ids?: string[];
     maxCases: number;
+    caseCostLimit?: number;
     force: boolean;
     includeRetired: boolean;
     judge: 'rules' | 'llm';
@@ -841,6 +852,7 @@ async function runCompareCommand(
       ids: opts.ids,
       judge: opts.judge,
       trialsPerCase: opts.repeat,
+      ...(opts.caseCostLimit !== undefined ? { caseCostLimitUsd: opts.caseCostLimit } : {}),
       shape: buildCompareArmShape(config, baseline, EVAL_GOAL_ALLOW_SWARM),
       estimatedCases: casesToRun * opts.repeat,
     });
@@ -966,6 +978,7 @@ async function runCompareCommand(
       runnerConfig: (config) => ({
         ...runnerConfig,
         trialsPerCase: opts.repeat,
+        ...(opts.caseCostLimit !== undefined ? { caseCostLimitUsd: opts.caseCostLimit } : {}),
         stamp: config === baseline ? baselineStamp : candidateStamp,
       }),
       llmCall,
@@ -1065,7 +1078,7 @@ async function mainImpl(
   cwd: string,
   eventStream?: EvalRunEventStream,
 ): Promise<void> {
-  const { scope, promote, promoteMockHarness, baselineInfo, trend, base, real, model, provider, concurrency, maxCases, force, includeRetired, tags, ids: rawIds, compare, judge, predictedFixes, riskTasks, caseDir, split, dataDir, repeat, skills, aiReview } = parseArgs(argv);
+  const { scope, promote, promoteMockHarness, baselineInfo, trend, base, real, model, provider, concurrency, maxCases, caseCostLimit, force, includeRetired, tags, ids: rawIds, compare, judge, predictedFixes, riskTasks, caseDir, split, dataDir, repeat, skills, aiReview } = parseArgs(argv);
   const workingDir = cwd;
   if (dataDir) {
     process.env.CODE_AGENT_DATA_DIR = path.resolve(cwd, dataDir);
@@ -1161,6 +1174,7 @@ async function mainImpl(
         tags,
         ids,
         maxCases,
+        caseCostLimit,
         force,
         includeRetired,
         judge,
@@ -1194,6 +1208,7 @@ async function mainImpl(
       mockEvalPolicy,
       concurrency,
       maxCases,
+      caseCostLimit,
       force,
       includeRetired,
       tags,
@@ -1268,6 +1283,7 @@ async function mainImpl(
       provider,
       concurrency,
       maxCases,
+      caseCostLimit,
       force,
       includeRetired,
       tags,
@@ -1382,6 +1398,7 @@ async function mainImpl(
     provider,
     concurrency,
     maxCases,
+    caseCostLimit,
     force,
     includeRetired,
     tags,

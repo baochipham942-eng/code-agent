@@ -1,5 +1,5 @@
 import React from 'react';
-import { Blocks, CheckCircle2, Download, PackagePlus, Trash2, Upload } from 'lucide-react';
+import { Blocks, CheckCircle2, Download, PackagePlus, Play, Trash2, Upload } from 'lucide-react';
 import type {
   CapabilityPackagePermission,
   InstalledCapabilityPackage,
@@ -20,6 +20,7 @@ interface CapabilityPackageCardProps {
   onInstall: (plugin: InstalledCapabilityPackage) => void;
   onUninstall: (plugin: InstalledCapabilityPackage) => void;
   onReinstall: () => void;
+  onRunVersion: (plugin: InstalledCapabilityPackage, packageId: string) => void;
 }
 
 export const CapabilityPackageCard: React.FC<CapabilityPackageCardProps> = ({
@@ -29,6 +30,7 @@ export const CapabilityPackageCard: React.FC<CapabilityPackageCardProps> = ({
   onInstall,
   onUninstall,
   onReinstall,
+  onRunVersion,
 }) => {
   const { t } = useI18n();
   const pluginsText = t.settings.plugins;
@@ -75,7 +77,42 @@ export const CapabilityPackageCard: React.FC<CapabilityPackageCardProps> = ({
       meta={meta}
       detailsLabel={capabilityText.detailsLabel}
       details={(
-        <div>
+        <div className="space-y-4">
+          {plugin.packages && plugin.packages.length > 0 ? (
+            <div>
+              <h4 className="text-xs font-medium text-zinc-200">{pluginsText.manualImport.versionsTitle}</h4>
+              <div className="mt-2 space-y-2">
+                {plugin.packages.map((version) => {
+                  const isRunning = plugin.runningPackageId === version.packageId;
+                  const isCurrent = plugin.currentPackageId === version.packageId;
+                  const versionBusy = busyKey === `capability-package:run:${plugin.id}:${version.packageId}`;
+                  return (
+                    <div key={version.packageId} className="flex items-center justify-between gap-3 rounded-lg border border-zinc-800 p-2.5">
+                      <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-300">
+                        <span>v{version.version}</span>
+                        {isRunning ? <PluginCardPill>{pluginsText.manualImport.runningVersion}</PluginCardPill> : null}
+                        {isCurrent ? <PluginCardPill>{pluginsText.manualImport.lastSuccessfulVersion}</PluginCardPill> : null}
+                        {version.lastRunState === 'failed' ? <PluginCardPill>{pluginsText.manualImport.failedVersion}</PluginCardPill> : null}
+                      </div>
+                      {version.approval === 'approved' && !isRunning ? (
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => onRunVersion(plugin, version.packageId)}
+                          loading={versionBusy}
+                          disabled={busyKey !== null || packageBusy}
+                          leftIcon={<Play className="h-3.5 w-3.5" />}
+                        >
+                          {isCurrent ? pluginsText.manualImport.restoreVersion : pluginsText.manualImport.startVersion}
+                        </Button>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+          <div>
           <h4 className="text-xs font-medium text-zinc-200">{capabilityText.permissionsTitle}</h4>
           {plugin.permissions.length === 0 ? (
             <p className="mt-2 text-xs leading-5 text-zinc-500">{pluginsText.manualImport.noPermissions}</p>
@@ -89,6 +126,7 @@ export const CapabilityPackageCard: React.FC<CapabilityPackageCardProps> = ({
               ))}
             </ul>
           )}
+          </div>
         </div>
       )}
       notice={notice}

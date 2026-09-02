@@ -19,6 +19,11 @@ import {
 } from './pluginValidator';
 import { verifyInstalledPluginTrust } from './pluginPackageTrust';
 import { normalizePluginCapabilityDeclaration } from './pluginCapabilitySurface';
+import {
+  migrateLegacyPluginDirectory,
+  readPluginVersionState,
+  resolveStoredPluginRunDirectory,
+} from './pluginPackageVersionStore';
 
 // ----------------------------------------------------------------------------
 // Constants
@@ -238,6 +243,21 @@ export async function loadPlugin(pluginDir: string): Promise<PluginLoadResult> {
   }
 }
 
+async function prepareDiscoveredPluginDirectory(pluginRoot: string): Promise<string | null> {
+  const existingState = await readPluginVersionState(pluginRoot);
+  if (!existingState) {
+    const manifest = await readPluginManifest(pluginRoot);
+    if (!manifest) return pluginRoot;
+    const trust = await verifyInstalledPluginTrust(pluginRoot, manifest);
+    await migrateLegacyPluginDirectory(pluginRoot, manifest, {
+      packageHash: trust.packageHash,
+      sourceTrust: trust.sourceTrust,
+      now: Date.now(),
+    });
+  }
+  return resolveStoredPluginRunDirectory(pluginRoot);
+}
+
 /**
  * Discover and load all plugins from plugins directory
  */
@@ -257,7 +277,9 @@ export async function discoverPlugins(
       // Skip hidden directories
       if (entry.name.startsWith('.')) continue;
 
-      const pluginDir = path.join(pluginsDir, entry.name);
+      const pluginRoot = path.join(pluginsDir, entry.name);
+      const pluginDir = await prepareDiscoveredPluginDirectory(pluginRoot);
+      if (!pluginDir) continue;
       const result = await loadPlugin(pluginDir);
 
       if (result.success && result.plugin) {
@@ -298,7 +320,8 @@ export function watchPluginsDir(
           try {
             const stat = await fs.stat(pluginPath);
             if (stat.isDirectory()) {
-              onPluginAdded(pluginPath);
+              const pluginDir = await prepareDiscoveredPluginDirectory(pluginPath);
+              if (pluginDir) onPluginAdded(pluginDir);
             }
           } catch {
             // Directory was removed

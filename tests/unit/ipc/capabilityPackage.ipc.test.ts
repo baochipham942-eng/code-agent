@@ -4,7 +4,7 @@ import { IPC_CHANNELS } from '../../../src/shared/ipc';
 const state = vi.hoisted(() => ({
   stagedSources: new Map<string, 'bundled' | 'local'>(),
   installedSources: new Map<string, 'bundled' | 'local'>(),
-  confirm: vi.fn(async (_token: string) => ({
+  confirm: vi.fn(async (_token: string, _approveFutureVersions = false) => ({
     id: 'evaluation-center',
     version: '1.0.0',
     toolNames: [],
@@ -25,18 +25,30 @@ const state = vi.hoisted(() => ({
     expiresAt: Date.now() + 60_000,
   })),
   discard: vi.fn(async (_token: string) => undefined),
+  reject: vi.fn(async (_token: string) => undefined),
+  runPackage: vi.fn(async (pluginId: string, packageId: string) => ({
+    id: pluginId,
+    packageId,
+    version: '1.0.0',
+    toolNames: [],
+    surface: 'tools' as const,
+  })),
+  listPendingApprovals: vi.fn(async () => []),
   uninstall: vi.fn(async (_pluginId: string) => undefined),
   list: vi.fn(async () => []),
 }));
 
 vi.mock('../../../src/host/services/capabilities/manualCapabilityPackageService', () => ({
   getManualCapabilityPackageService: () => ({
-    confirm: (token: string) => state.confirm(token),
+    confirm: (token: string, approveFutureVersions?: boolean) => state.confirm(token, approveFutureVersions),
     list: () => state.list(),
+    listPendingApprovals: () => state.listPendingApprovals(),
     stageBundled: (pluginId: string) => state.stageBundled(pluginId),
     getStagedPackageSource: vi.fn(async (token: string) => state.stagedSources.get(token) ?? null),
     getInstalledPackageSource: vi.fn(async (pluginId: string) => state.installedSources.get(pluginId) ?? null),
     discard: (token: string) => state.discard(token),
+    reject: (token: string) => state.reject(token),
+    runPackage: (pluginId: string, packageId: string) => state.runPackage(pluginId, packageId),
     uninstall: (pluginId: string) => state.uninstall(pluginId),
   }),
 }));
@@ -81,7 +93,7 @@ describe('capability package source authorization', () => {
         surface: 'internal-feature',
       },
     });
-    expect(state.confirm).toHaveBeenCalledWith(token);
+    expect(state.confirm).toHaveBeenCalledWith(token, false);
   });
 
   it('rejects an unknown confirmation token before touching the installer', async () => {
@@ -98,13 +110,28 @@ describe('capability package source authorization', () => {
       success: true,
       data: undefined,
     });
-    expect(state.discard).toHaveBeenCalledWith('local-token');
+    expect(state.reject).toHaveBeenCalledWith('local-token');
 
     expect(await call(IPC_CHANNELS.CAPABILITY_PACKAGE_CANCEL, 'forged-token')).toEqual({
       success: false,
       error: '插件确认来源无效或已过期',
     });
-    expect(state.discard).toHaveBeenCalledTimes(1);
+    expect(state.reject).toHaveBeenCalledTimes(1);
+  });
+
+  it('exposes the framework approval queue and forwards the explicit future-version choice', async () => {
+    expect(await call(IPC_CHANNELS.CAPABILITY_PACKAGE_APPROVAL_LIST)).toEqual({ success: true, data: [] });
+    state.stagedSources.set('local-token', 'local');
+    await call(IPC_CHANNELS.CAPABILITY_PACKAGE_CONFIRM, 'local-token', true);
+    expect(state.confirm).toHaveBeenCalledWith('local-token', true);
+  });
+
+  it('runs an already approved immutable version by identity', async () => {
+    expect(await call(IPC_CHANNELS.CAPABILITY_PACKAGE_RUN, 'plugin-a', 'package-a')).toMatchObject({
+      success: true,
+      data: { id: 'plugin-a', packageId: 'package-a' },
+    });
+    expect(state.runPackage).toHaveBeenCalledWith('plugin-a', 'package-a');
   });
 
   it('allows only the eight first-party ids through bundled staging', async () => {

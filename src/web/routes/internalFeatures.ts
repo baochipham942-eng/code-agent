@@ -42,7 +42,7 @@ export function createInternalFeaturesRouter(deps: InternalFeaturesRouterDeps): 
       return;
     }
 
-    const base = path.resolve(deps.pluginsDir, pluginId, path.dirname(feature.rendererEntry));
+    const base = path.resolve(plugin.rootPath, path.dirname(feature.rendererEntry));
     const requestedFile = path.resolve(base, wildcardPath(req.params.path));
     if (!requestedFile.startsWith(`${base}${path.sep}`)) {
       res.sendStatus(404);

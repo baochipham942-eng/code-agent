@@ -17,10 +17,16 @@ let originalEnv: Record<string, string | undefined>;
 
 beforeEach(async () => {
   pluginsDir = await fs.mkdtemp(path.join(os.tmpdir(), 'neo-internal-route-'));
-  const rendererDir = path.join(pluginsDir, 'evaluation-center', 'dist', 'renderer');
+  const internalPluginRoot = path.join(
+    pluginsDir,
+    'evaluation-center',
+    'packages',
+    '1.0.0-fixture',
+  );
+  const rendererDir = path.join(internalPluginRoot, 'dist', 'renderer');
   await fs.mkdir(rendererDir, { recursive: true });
   await fs.writeFile(path.join(rendererDir, 'index.js'), 'window.TEST_PLUGIN = true;', 'utf8');
-  await fs.writeFile(path.join(pluginsDir, 'evaluation-center', 'dist', 'secret.js'), 'DO-NOT-SERVE', 'utf8');
+  await fs.writeFile(path.join(internalPluginRoot, 'dist', 'secret.js'), 'DO-NOT-SERVE', 'utf8');
   const uiRendererDir = path.join(pluginsDir, 'test-ui', 'dist', 'renderer');
   await fs.mkdir(uiRendererDir, { recursive: true });
   await fs.writeFile(path.join(uiRendererDir, 'index.js'), 'window.TEST_THIRD_PARTY_UI = true;', 'utf8');
@@ -53,7 +59,7 @@ beforeEach(async () => {
         hostEntry: 'dist/host/index.cjs',
       },
     },
-    rootPath: path.join(pluginsDir, 'evaluation-center'),
+    rootPath: internalPluginRoot,
     state: 'active',
     registeredTools: [],
   };

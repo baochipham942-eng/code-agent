@@ -53,6 +53,7 @@ const callbacks = {
   onInstall: vi.fn(),
   onUninstall: vi.fn(),
   onReinstall: vi.fn(),
+  onRunVersion: vi.fn(),
 };
 
 beforeEach(() => {

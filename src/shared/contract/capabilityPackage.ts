@@ -9,9 +9,24 @@ export type CapabilityPackagePermission =
   | 'microphone'
   | 'screen-recording';
 
+export type PluginActivationMode = 'run' | 'update';
+
+export type PluginPackageApprovalState = 'pending' | 'approved' | 'denied';
+
+interface InstalledPluginPackageVersion {
+  packageId: string;
+  version: string;
+  approval: PluginPackageApprovalState;
+  lastRunState?: 'activating' | 'awaiting-client' | 'succeeded' | 'failed';
+  error?: string;
+}
+
 export interface CapabilityPackagePreview {
   token: string;
   id: string;
+  packageId: string;
+  mode: PluginActivationMode;
+  approvalRequired: boolean;
   name: string;
   version: string;
   description: string;
@@ -36,6 +51,12 @@ export interface CapabilityPackagePreview {
 
 export interface InstalledCapabilityPackage {
   id: string;
+  packageId?: string;
+  currentPackageId?: string;
+  nextPackageId?: string;
+  runningPackageId?: string;
+  pluginRunId?: string;
+  packages?: InstalledPluginPackageVersion[];
   name: string;
   version: string;
   description: string;
@@ -78,6 +99,9 @@ export interface InstalledCapabilityPackage {
 
 export interface CapabilityPackageInstallResult {
   id: string;
+  packageId?: string;
+  pluginRunId?: string;
+  mode?: PluginActivationMode;
   version: string;
   toolNames: string[];
   surface: 'tools' | 'internal-feature' | 'ui';

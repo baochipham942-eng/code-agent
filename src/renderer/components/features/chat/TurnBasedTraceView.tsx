@@ -9,6 +9,7 @@ import { Virtuoso, type ListRange, type VirtuosoHandle } from 'react-virtuoso';
 import type { TraceProjection, TraceTurn } from '@shared/contract/trace';
 import type { SearchMatch } from './ChatSearchBar';
 import { TurnCard } from './TurnCard';
+import { TurnRail } from './TurnRail';
 import { useAppStore } from '../../../stores/appStore';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useTaskStore } from '../../../stores/taskStore';
@@ -17,6 +18,7 @@ import { useI18n } from '../../../hooks/useI18n';
 import { SessionModelsContext } from './sessionModelsContext';
 import { hasIncompleteStreamSnapshot } from '../../../utils/streamingStatePresentation';
 import { isTurnVisibleInRange } from '../../../utils/turnVisibility';
+import { buildTurnRailItems } from '../../../utils/turnRailItems';
 import {
   ConversationTurnTailSlot,
   ConversationTurnTailSlotHost,
@@ -328,6 +330,10 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   const [followedOutputTurnId, setFollowedOutputTurnId] = useState<string | null>(null);
   // 用户上滚离开底部时浮出「回到底部」按钮（贴底时隐藏）
   const [isAtBottom, setIsAtBottom] = useState(true);
+  // 轮次导航（N-TURNRAIL）：当前轮 = 视口顶部那一轮，由 Virtuoso 的可见范围回报驱动；
+  // 宽/窄两态由容器查询（外层 @container）切换。历史整段加载，跳转直接 scrollToIndex。
+  const railItems = useMemo(() => buildTurnRailItems(projection.turns), [projection.turns]);
+  const [railActiveTurnId, setRailActiveTurnId] = useState<string | null>(null);
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
   const streamSnapshot = useSessionStore((state) => state.streamSnapshot);
   const processingSessionIds = useAppStore((state) => state.processingSessionIds);
@@ -399,6 +405,8 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   const visibleRangeRef = useRef<ListRange | null>(null);
   const reportVisibleRange = useCallback((range: ListRange) => {
     visibleRangeRef.current = range;
+    const topTurnId = projectionTurnsRef.current[range.startIndex - firstItemIndex]?.turnId ?? null;
+    if (topTurnId) setRailActiveTurnId((current) => (current === topTurnId ? current : topTurnId));
     onInterruptionPointVisibilityChange?.(
       isTurnVisibleInRange(range, interruptionTurnIndex, firstItemIndex),
     );
@@ -972,6 +980,16 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
       : setTimeout(settleBottom, 16);
   }, [projection.turns]);
 
+  // 导航格点击：与搜索跳转同一套——停止跟随，按数组下标顶对齐、无动画（长距离虚拟跳转带动画会丢）
+  const handleRailJump = useCallback((turnId: string) => {
+    const index = projectionTurnsRef.current.findIndex((turn) => turn.turnId === turnId);
+    if (index < 0) return;
+    keepActiveOutputVisibleRef.current = false;
+    activeDisplayScrollCancelRef.current?.();
+    activeDisplayScrollCancelRef.current = null;
+    virtuosoRef.current?.scrollToIndex({ index, align: 'start', behavior: 'auto' });
+  }, []);
+
   // Render individual turn card
   const itemContent = useCallback(
     (virtuosoIndex: number, turn: TraceTurn) => {
@@ -1039,7 +1057,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   return (
     <SessionModelsContext.Provider value={sessionModels}>
     <ConversationTurnTailSlotHost />
-    <div className="relative h-full min-h-0" data-virtuoso-first-item-index={firstItemIndex}>
+    <div className="relative h-full min-h-0 @container" data-virtuoso-first-item-index={firstItemIndex}>
       <Virtuoso
         // key=sessionId：切换会话时重挂载，使 initialTopMostItemIndex 对每个会话都生效
         ref={virtuosoRef}
@@ -1090,6 +1108,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
           <ArrowDown className="w-4 h-4" />
         </button>
       )}
+      <TurnRail items={railItems} activeTurnId={railActiveTurnId} onJump={handleRailJump} />
     </div>
     </SessionModelsContext.Provider>
   );

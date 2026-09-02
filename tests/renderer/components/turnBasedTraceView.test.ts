@@ -783,3 +783,30 @@ describe('TurnBasedTraceView 不向虚拟列表灌入每渲染变身份的 props
     expect(mocks.virtuosoProps.itemContent).toBe(firstSearchMatches);
   });
 });
+
+describe('TurnBasedTraceView turn rail (N-TURNRAIL)', () => {
+  const railTick = (view: ReturnType<typeof render>, n: number) =>
+    view.getByRole('button', { name: new RegExp(`^(回到第 ${n} 轮|Back to turn ${n})$`) });
+
+  it('会话不足 8 轮不显示轮次导航', () => {
+    const view = render(React.createElement(TurnBasedTraceView, { projection: makeProjection(-1, 7) }));
+    expect(view.container.querySelector('[data-testid="turn-rail"]')).toBeNull();
+  });
+
+  it('点导航格用数组下标 scrollToIndex 顶对齐（不带 firstItemIndex 偏移）', () => {
+    const view = render(React.createElement(TurnBasedTraceView, { projection: makeProjection(-1, 10) }));
+    mocks.scrollToIndex.mockClear();
+    fireEvent.click(railTick(view, 3));
+    expect(mocks.scrollToIndex).toHaveBeenCalledWith({ index: 2, align: 'start', behavior: 'auto' });
+  });
+
+  it('可见范围变化时当前轮高亮跟着视口顶部那一轮走（减掉 firstItemIndex 偏移）', () => {
+    const view = render(React.createElement(TurnBasedTraceView, { projection: makeProjection(-1, 10) }));
+    const firstItemIndex = Number(view.container.querySelector('[data-virtuoso-first-item-index]')!.getAttribute('data-virtuoso-first-item-index'));
+    act(() => {
+      mocks.virtuosoProps.rangeChanged({ startIndex: firstItemIndex + 4, endIndex: firstItemIndex + 6 });
+    });
+    expect(railTick(view, 5).getAttribute('aria-current')).toBe('true');
+    expect(railTick(view, 4).getAttribute('aria-current')).toBeNull();
+  });
+});

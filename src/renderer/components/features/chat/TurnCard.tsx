@@ -31,6 +31,7 @@ import { ExpandableContent } from './ExpandableContent';
 import { StreamingIndicator, getRunningSubagentCount, getRunningToolStartTime, getStreamingWaitingReason } from './StreamingIndicator';
 import { TurnDiffSummary } from './MessageBubble/TurnDiffSummary';
 import { buildTurnFileChanges, isFileChangeCardOwnedNode } from '../../../utils/turnDiffSummary';
+import { getTurnFinalTextNode, getTurnUserNode } from '../../../utils/turnRailItems';
 import { TurnFeedback } from './TurnFeedback';
 import { TurnCompactionMarker } from './TurnCompactionMarker';
 import { TurnOutcomeBadge } from './TurnOutcomeBadge';
@@ -167,23 +168,11 @@ export const TurnCard: React.FC<TurnCardProps> = ({
   }, [turn.nodes]);
   const isVoiceTurn = Boolean(voiceDispatch);
 
-  const foldedView = useMemo(() => {
-    const userNode = turn.nodes.find((n) => n.type === 'user') || null;
-    // 「结论」= 这一轮最后一条有正文的 assistant 文本。语音任务卡里要把派活指令
-    // 节点自己排除掉——它也是 assistant_text 且有正文（改写后的指令），不排除的话
-    // 一个什么都没产出的轮会把指令原文顶到卡外当结论。
-    const finalTextNode =
-      [...turn.nodes]
-        .reverse()
-        .find(
-          (n) =>
-            n.type === 'assistant_text' &&
-            typeof n.content === 'string' &&
-            n.content.trim().length > 0 &&
-            !(isVoiceTurn && n.metadata?.voiceDispatch)
-        ) || null;
-    return { userNode, finalTextNode };
-  }, [turn.nodes, isVoiceTurn]);
+  // 「用户那句 + 结论」的取法与轮次导航共用（turnRailItems.ts），两处别各写一套。
+  const foldedView = useMemo(() => ({
+    userNode: getTurnUserNode(turn),
+    finalTextNode: getTurnFinalTextNode(turn, isVoiceTurn),
+  }), [turn, isVoiceTurn]);
 
   // 折叠策略：已完成 + 非 streaming + 节点数达阈值 + 确实有最终 assistant 文本。
   // 语音任务卡不套这条阈值——电话里派出去的活不管几步都折成卡（用户在打电话，不看屏幕），

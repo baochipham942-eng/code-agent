@@ -217,8 +217,8 @@ export function getTraceNodeSelector(nodeId: string, nodeType: string): string {
 }
 
 const TRACE_TURN_ANCHOR_SELECTOR = '[data-trace-turn-id]';
-/** 轮次导航判「当前轮」时，上一轮至少要在顶边下方露出这么多像素才算还在视口里 */
-const RAIL_ACTIVE_EDGE_PX = 8;
+/** 轮次导航判「当前轮」的顶边容差：盖住列表 pt-3 的 12px 内边距，让顶对齐跳转后的目标轮算作已到顶 */
+const RAIL_ACTIVE_EDGE_PX = 16;
 
 // 默认值必须是模块级常量：写成 `searchMatches = []` 的话，调用方不传时每次渲染
 // 都是新数组，itemContent 跟着换身份，等于每渲染往 virtuoso store 发布一次新 props。
@@ -569,13 +569,14 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
       const measuredTurns = Array.from(scroller.querySelectorAll<HTMLElement>(TRACE_TURN_ANCHOR_SELECTOR))
         .map((element) => ({ element, rect: element.getBoundingClientRect() }))
         .sort((left, right) => left.rect.top - right.rect.top);
-      // 轮次导航的当前轮 = 视口顶部那一轮（同一次扫描，不另起观察器）。判据比 prepend 锚点严：
-      // 上一轮的底边刚好贴着顶边（顶对齐跳转后必然如此）不算它还在视口里；rect 全 0 是 jsdom，跳过。
-      const railTurnId = measuredTurns.find(({ rect }) => (
-        rect.height > 0
-        && rect.bottom > scrollerRect.top + RAIL_ACTIVE_EDGE_PX
-        && rect.top < scrollerRect.bottom
-      ))?.element.dataset.traceTurnId;
+      // 轮次导航的当前轮 = 最后一个「顶边已越过视口顶边」的轮（文档大纲的定式；同一次扫描，不另起观察器）。
+      // 容差盖住列表顶部内边距：顶对齐跳转后目标轮顶边在顶边下方 12px，上一轮不能因为露出这 12px 被算成当前轮。
+      // rect 全 0 是 jsdom，跳过；视口顶部之上没有任何轮时取第一轮。
+      const laidOutTurns = measuredTurns.filter(({ rect }) => rect.height > 0);
+      const railTurnId = (
+        [...laidOutTurns].reverse().find(({ rect }) => rect.top <= scrollerRect.top + RAIL_ACTIVE_EDGE_PX)
+        ?? laidOutTurns[0]
+      )?.element.dataset.traceTurnId;
       if (railTurnId) {
         railActiveFromDomRef.current = true;
         setRailActiveTurnId((current) => (current === railTurnId ? current : railTurnId));

@@ -18,10 +18,10 @@ interface TurnRailProps {
 
 /** 相邻两格的固定间距：条的长度跟轮数走，超出高度时条内滚动 */
 const TICK_PITCH_PX = 10;
-/** 聊天列窄于这个宽度时收成小按钮（容器查询断点，与 TurnBasedTraceView 的 @container 配对） */
-const TURN_RAIL_NARROW_BELOW_PX = 640;
-const WIDE_ONLY = `@max-[${TURN_RAIL_NARROW_BELOW_PX}px]:hidden`;
-const NARROW_ONLY = `@min-[${TURN_RAIL_NARROW_BELOW_PX}px]:hidden`;
+// 聊天列窄于 640px 时收成小按钮：容器查询断点与 TurnBasedTraceView 的 @container 配对。
+// 类名必须写成字面量——Tailwind 按源码扫描完整类名，模板字符串拼出来的不会被生成（09-02 真机实付）。
+const WIDE_ONLY = '@max-[640px]:hidden';
+const NARROW_ONLY = '@min-[640px]:hidden';
 
 function fill(template: string, values: Record<string, number | string>): string {
   return Object.entries(values).reduce((text, [key, value]) => text.replace(`{${key}}`, String(value)), template);

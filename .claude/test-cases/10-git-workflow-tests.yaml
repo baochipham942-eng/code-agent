@@ -36,6 +36,9 @@ cases:
     prompt: "查看 test-git-repo 的最近 git 提交记录"
     cleanup:
       - rm -rf test-git-repo
+    rotation:
+      retire_after: '2026-09-30'
+      reason: 'legacy-code-assistant-era'
 
   # --------------------------------------------------------------------------
   # L2: Git 分析操作
@@ -68,6 +71,7 @@ cases:
     setup:
       - |
         mkdir -p test-git-repo && cd test-git-repo && git init
+        git config user.email 'test@test.com' && git config user.name 'Test'
         echo 'const API_URL = "http://old-api.com"' > config.js
         git add . && git commit -m 'init'
         echo 'const API_URL = "https://new-api.com"' > config.js
@@ -82,7 +86,7 @@ cases:
     type: task
     description: "创建分支并提交"
     setup:
-      - "mkdir -p test-git-repo && cd test-git-repo && git init && echo 'init' > file.txt && git add . && git commit -m 'init'"
+      - "mkdir -p test-git-repo && cd test-git-repo && git init && git config user.email 'test@test.com' && git config user.name 'Test' && echo 'init' > file.txt && git add . && git commit -m 'init'"
     prompt: "在 test-git-repo 中：1) 创建 feature/add-readme 分支 2) 切换到该分支 3) 创建 README.md 写入项目说明 4) 提交"
     cleanup:
       - rm -rf test-git-repo
@@ -93,6 +97,7 @@ cases:
     setup:
       - |
         mkdir -p test-git-repo && cd test-git-repo && git init
+        git config user.email 'test@test.com' && git config user.name 'Test'
         echo 'line 1' > shared.txt && git add . && git commit -m 'init'
         git checkout -b feature && echo 'feature change' > shared.txt && git add . && git commit -m 'feature'
         git checkout main 2>/dev/null || git checkout master

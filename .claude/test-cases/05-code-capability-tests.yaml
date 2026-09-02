@@ -41,6 +41,9 @@ cases:
     reference_solution: "发现 items[len(items)] 越界，修改为 items[len(items) - 1]"
     cleanup:
       - rm -f test-debug-logic.py
+    rotation:
+      retire_after: '2026-09-30'
+      reason: 'legacy-code-assistant-era'
 
   - id: debug-runtime-error
     type: task
@@ -59,6 +62,9 @@ cases:
     prompt: "test-debug-runtime.js 在 user 为 null 时会崩溃，帮我加上防御性检查"
     cleanup:
       - rm -f test-debug-runtime.js
+    rotation:
+      retire_after: '2026-09-30'
+      reason: 'legacy-code-assistant-era'
 
   # --------------------------------------------------------------------------
   # L2: 代码生成 — 多语言
@@ -76,6 +82,9 @@ cases:
     prompt: "创建 test-stack.ts，实现一个泛型栈（Stack<T>），包含 push、pop、peek、isEmpty 方法"
     cleanup:
       - rm -f test-stack.ts
+    rotation:
+      retire_after: '2026-09-30'
+      reason: 'legacy-code-assistant-era'
 
   # --------------------------------------------------------------------------
   # L3: 代码重构 — 需要理解代码结构
@@ -123,6 +132,9 @@ cases:
     prompt: "test-rename.ts 的变量命名太差（d, f, r, x），帮我重命名为有意义的名字"
     cleanup:
       - rm -f test-rename.ts
+    rotation:
+      retire_after: '2026-09-30'
+      reason: 'legacy-code-assistant-era'
 
   # --------------------------------------------------------------------------
   # L3: 测试代码生成

@@ -81,6 +81,46 @@ describe('case bank enumeration and YAML writes', () => {
     expect(filterTestCases([loaded], { filterTags: ['case-tag'] }).map((item) => item.id)).toEqual(['tagged']);
   });
 
+  it('退休日前保留、到期后默认跳过，并可显式放回历史题', async () => {
+    const { bank } = await makeRepo();
+    const file = path.join(bank, '05-rotation.yaml');
+    await fs.writeFile(file, [
+      'name: rotation-suite',
+      'cases:',
+      '  - id: legacy-case',
+      '    type: task',
+      '    prompt: legacy prompt',
+      '    expect:',
+      '      no_crash: true',
+      '    rotation:',
+      "      retire_after: '2026-09-30'",
+      "      reason: 'legacy-code-assistant-era'",
+      '  - id: active-case',
+      '    type: task',
+      '    prompt: active prompt',
+      '    expect:',
+      '      no_crash: true',
+      '',
+    ].join('\n'));
+    const loaded = await loadTestSuite(file);
+
+    expect(filterTestCases([loaded], { today: '2026-09-29' }).map((item) => item.id))
+      .toEqual(['legacy-case', 'active-case']);
+
+    const retiredSkipped: string[] = [];
+    expect(filterTestCases([loaded], { today: '2026-10-01', retiredSkipped }).map((item) => item.id))
+      .toEqual(['active-case']);
+    expect(retiredSkipped).toEqual(['legacy-case']);
+
+    const replaySkipped: string[] = [];
+    expect(filterTestCases([loaded], {
+      today: '2026-10-01',
+      includeRetired: true,
+      retiredSkipped: replaySkipped,
+    }).map((item) => item.id)).toEqual(['legacy-case', 'active-case']);
+    expect(replaySkipped).toEqual([]);
+  });
+
   it('归档只给目标 case 增加 rotation 两行并保留原注释与顺序', async () => {
     const { root, bank } = await makeRepo();
     const file = path.join(bank, '01-archive.yaml');

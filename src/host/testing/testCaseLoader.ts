@@ -214,9 +214,22 @@ export function filterTestCases(
     filterTags?: string[];
     filterIds?: string[];
     includeOnly?: boolean;
+    includeRetired?: boolean;
+    today?: string;
+    retiredSkipped?: string[];
   }
 ): TestCase[] {
-  const { filterTags, filterIds, includeOnly } = options;
+  const {
+    filterTags,
+    filterIds,
+    includeOnly,
+    includeRetired = false,
+    retiredSkipped,
+  } = options;
+  const today = options.today ?? process.env.NEO_EVAL_TODAY ?? new Date().toISOString().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(today)) {
+    throw new Error(`Invalid eval retirement date: ${today}`);
+  }
   const allCases: TestCase[] = [];
 
   for (const suite of suites) {
@@ -239,6 +252,12 @@ export function filterTestCases(
 
       // Check "only" flag
       if (includeOnly && !testCase.only) continue;
+
+      const retireAfter = testCase.rotation?.retire_after;
+      if (!includeRetired && retireAfter && retireAfter <= today) {
+        retiredSkipped?.push(testCase.id);
+        continue;
+      }
 
       // Apply suite defaults
       if (!testCase.timeout && suite.default_timeout) {

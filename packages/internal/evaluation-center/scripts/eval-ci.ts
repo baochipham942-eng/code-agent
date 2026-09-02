@@ -113,6 +113,7 @@ function parseArgs(argv: string[]) {
   let concurrency: number | undefined;
   let maxCases: number = DEFAULT_MAX_CASES;
   let force = false;
+  let includeRetired = false;
   let tags: string[] | undefined;
   let ids: string[] | undefined;
   let compare: string | undefined;
@@ -197,6 +198,8 @@ function parseArgs(argv: string[]) {
       }
     } else if (arg === '--force') {
       force = true;
+    } else if (arg === '--include-retired') {
+      includeRetired = true;
     } else if (arg === '--json-events') {
       // Parsed at main() entry so console can be redirected before any work.
     } else if (arg === '--help' || arg === '-h') {
@@ -230,7 +233,7 @@ function parseArgs(argv: string[]) {
     process.exit(1);
   }
 
-  return { scope, promote, promoteMockHarness, baselineInfo, trend, base, real, model, provider, concurrency, maxCases, force, tags, ids, compare, judge, predictedFixes, riskTasks, caseDir, split, dataDir, runId, repeat, skills, aiReview };
+  return { scope, promote, promoteMockHarness, baselineInfo, trend, base, real, model, provider, concurrency, maxCases, force, includeRetired, tags, ids, compare, judge, predictedFixes, riskTasks, caseDir, split, dataDir, runId, repeat, skills, aiReview };
 }
 function printUsage() {
   console.log(`
@@ -252,6 +255,7 @@ ${chalk.dim('Usage:')}
   npx tsx scripts/eval-ci.ts --ids <a,b>        Filter test cases by IDs
   npx tsx scripts/eval-ci.ts --split <bucket>   Filter to 'held-in' (daily) / 'held-out' (milestone) / 'control' (judge calibration) / 'safety' (OS jail only)
   npx tsx scripts/eval-ci.ts --force             Bypass --max-cases limit
+  npx tsx scripts/eval-ci.ts --include-retired   Include cases past rotation.retire_after for replay
   npx tsx scripts/eval-ci.ts --compare <yaml>   A/B paired blind test: baseline vs candidate config
   npx tsx scripts/eval-ci.ts --judge <mode>     Grading for --compare: 'rules' (default, free) or 'llm'
   npx tsx scripts/eval-ci.ts --predicted-fixes <a,b>  Register case ids this change should fix (delta report reconciles)
@@ -523,6 +527,7 @@ async function runEvals(
     concurrency?: number;
     maxCases: number;
     force: boolean;
+    includeRetired: boolean;
     tags?: string[];
     ids?: string[];
     prediction?: { predictedFixes: string[]; riskTasks: string[] };
@@ -539,9 +544,12 @@ async function runEvals(
   const repoStatusBefore = getRepoStatusSnapshot(workingDir);
   const testCaseDir = opts.caseDir ?? resolveCoreTestCaseDir(workingDir);
   const suites = await loadAllTestSuites(testCaseDir);
+  const retiredSkipped: string[] = [];
   const filteredTestCases = filterTestCases(suites, {
     filterTags: opts.tags,
     filterIds: opts.ids,
+    includeRetired: opts.includeRetired,
+    retiredSkipped,
   });
   const selectedCaseIds = (opts.force
     ? filteredTestCases
@@ -572,6 +580,8 @@ async function runEvals(
       testCaseDir,
       filterTags: opts.tags,
       filterIds: selectedCaseIds,
+      includeRetired: opts.includeRetired,
+      retiredSkipped,
       trialsPerCase: opts.repeat,
       aiReview: opts.real ? eventConfig.scorers.aiReview : [],
       ...(opts.concurrency ? { maxParallel: opts.concurrency, parallel: true } : {}),
@@ -749,6 +759,7 @@ async function runCompareCommand(
     ids?: string[];
     maxCases: number;
     force: boolean;
+    includeRetired: boolean;
     judge: 'rules' | 'llm';
     caseDir?: string;
     split?: SplitBucket;
@@ -771,7 +782,11 @@ async function runCompareCommand(
   assertCompareArmsDistinct(baseline, candidate);
   const defaultConfig = createDefaultConfig(workingDir);
   const suites = await loadAllTestSuites(opts.caseDir ?? resolveCoreTestCaseDir(workingDir));
-  const selectedTestCases = filterTestCases(suites, { filterTags: opts.tags, filterIds: opts.ids });
+  const selectedTestCases = filterTestCases(suites, {
+    filterTags: opts.tags,
+    filterIds: opts.ids,
+    includeRetired: opts.includeRetired,
+  });
   const testCases = !opts.real && opts.mockEvalPolicy
     ? selectedTestCases.filter((testCase) => getMockCasePolicy(testCase.id)?.kind === 'fixture')
     : selectedTestCases;
@@ -841,6 +856,7 @@ async function runCompareCommand(
     ...(opts.split ? { split: opts.split } : {}),
     ...(opts.tags?.length ? { tags: opts.tags } : {}),
     ...(opts.ids?.length ? { ids: opts.ids } : {}),
+    ...(opts.includeRetired ? { includeRetired: true } : {}),
     maxCases: casesToRun,
     concurrency: 1,
     compare: { baseline, candidate, diff: describeEvalCompareDiff(baseline, candidate) },
@@ -998,6 +1014,7 @@ function createRunStartConfig(opts: {
   repeat: number;
   skills?: string[];
   aiReview: AiReviewDimension[];
+  includeRetired: boolean;
 }): EvalRunStartConfig {
   const model = opts.real
     ? opts.model || process.env.AUTO_TEST_MODEL || DEFAULT_MODEL
@@ -1035,6 +1052,7 @@ function createRunStartConfig(opts: {
     ...(!opts.caseDir && opts.split ? { split: opts.split } : {}),
     ...(opts.tags?.length ? { tags: opts.tags } : {}),
     ...(opts.ids?.length ? { ids: opts.ids } : {}),
+    ...(opts.includeRetired ? { includeRetired: true } : {}),
     maxCases: opts.maxCases,
     concurrency: opts.concurrency ?? 1,
     gitCommit: getCommitSha(),
@@ -1047,7 +1065,7 @@ async function mainImpl(
   cwd: string,
   eventStream?: EvalRunEventStream,
 ): Promise<void> {
-  const { scope, promote, promoteMockHarness, baselineInfo, trend, base, real, model, provider, concurrency, maxCases, force, tags, ids: rawIds, compare, judge, predictedFixes, riskTasks, caseDir, split, dataDir, repeat, skills, aiReview } = parseArgs(argv);
+  const { scope, promote, promoteMockHarness, baselineInfo, trend, base, real, model, provider, concurrency, maxCases, force, includeRetired, tags, ids: rawIds, compare, judge, predictedFixes, riskTasks, caseDir, split, dataDir, repeat, skills, aiReview } = parseArgs(argv);
   const workingDir = cwd;
   if (dataDir) {
     process.env.CODE_AGENT_DATA_DIR = path.resolve(cwd, dataDir);
@@ -1075,7 +1093,7 @@ async function mainImpl(
     }
     const externalCaseDir = path.isAbsolute(caseDir) ? caseDir : path.resolve(cwd, caseDir);
     const suites = await loadAllTestSuites(externalCaseDir);
-    fullSelectedCaseIds = filterTestCases(suites, {}).map((testCase) => testCase.id);
+    fullSelectedCaseIds = filterTestCases(suites, { includeRetired }).map((testCase) => testCase.id);
   } else {
     const effectiveSplit: SplitBucket = split ?? 'held-in';
     const splitFile = await loadEvalSplits(cwd);
@@ -1084,17 +1102,21 @@ async function mainImpl(
       process.exit(1);
     }
     const suites = await loadAllTestSuites(resolveCoreTestCaseDir(cwd));
-    const allCases = filterTestCases(suites, {});
+    const allCasesIncludingRetired = filterTestCases(suites, { includeRetired: true });
+    const runnableCaseIds = new Set(
+      filterTestCases(suites, { includeRetired }).map((testCase) => testCase.id),
+    );
     try {
       assertValidEvalSplits(splitFile, {
-        allCaseIds: allCases.map((testCase) => testCase.id),
-        safetyCaseIds: allCases.filter(isRedlineCase).map((testCase) => testCase.id),
+        allCaseIds: allCasesIncludingRetired.map((testCase) => testCase.id),
+        safetyCaseIds: allCasesIncludingRetired.filter(isRedlineCase).map((testCase) => testCase.id),
       });
     } catch (error) {
       console.error(chalk.red(`  Error: ${error instanceof Error ? error.message : String(error)}`));
       process.exit(1);
     }
-    fullSelectedCaseIds = applySplitFilter(undefined, splitFile, effectiveSplit);
+    fullSelectedCaseIds = applySplitFilter(undefined, splitFile, effectiveSplit)
+      .filter((id) => runnableCaseIds.has(id));
     ids = applySplitFilter(rawIds, splitFile, effectiveSplit);
     if (ids.length === 0) {
       console.error(chalk.red(`  Error: --split ${effectiveSplit} 过滤后没有可跑的 case（检查 --ids 是否与桶相交）。`));
@@ -1140,6 +1162,7 @@ async function mainImpl(
         ids,
         maxCases,
         force,
+        includeRetired,
         judge,
         caseDir,
         split: caseDir ? undefined : split ?? 'held-in',
@@ -1172,6 +1195,7 @@ async function mainImpl(
       concurrency,
       maxCases,
       force,
+      includeRetired,
       tags,
       ids,
       repeat,
@@ -1188,6 +1212,7 @@ async function mainImpl(
         repeat,
         skills: selectedSkills,
         aiReview,
+        includeRetired,
         judge,
         workingDir,
       }),
@@ -1220,7 +1245,7 @@ async function mainImpl(
     if (effectiveReal) {
       const testCaseDir_ = resolveCoreTestCaseDir(workingDir);
       const suites = await loadAllTestSuites(testCaseDir_);
-      const totalCases = filterTestCases(suites, { filterTags: tags, filterIds: ids }).length;
+      const totalCases = filterTestCases(suites, { filterTags: tags, filterIds: ids, includeRetired }).length;
       const resolvedModel = model || process.env.AUTO_TEST_MODEL || DEFAULT_MODEL;
       const resolvedProvider = provider || process.env.AUTO_TEST_PROVIDER || DEFAULT_PROVIDER;
       const casesToRun = force ? totalCases : Math.min(totalCases, maxCases);
@@ -1244,6 +1269,7 @@ async function mainImpl(
       concurrency,
       maxCases,
       force,
+      includeRetired,
       tags,
       ids,
       repeat,
@@ -1262,6 +1288,7 @@ async function mainImpl(
         repeat,
         skills: selectedSkills,
         aiReview,
+        includeRetired,
         judge,
         workingDir,
       }),
@@ -1330,7 +1357,7 @@ async function mainImpl(
     // Load suites to count total cases
     const testCaseDir_ = caseDir ?? resolveCoreTestCaseDir(workingDir);
     const suites = await loadAllTestSuites(testCaseDir_);
-    const totalCases = filterTestCases(suites, { filterTags: tags, filterIds: ids }).length;
+    const totalCases = filterTestCases(suites, { filterTags: tags, filterIds: ids, includeRetired }).length;
     const resolvedModel = model || process.env.AUTO_TEST_MODEL || DEFAULT_MODEL;
     const resolvedProvider = provider || process.env.AUTO_TEST_PROVIDER || DEFAULT_PROVIDER;
     const casesToRun = force ? totalCases : Math.min(totalCases, maxCases);
@@ -1356,6 +1383,7 @@ async function mainImpl(
     concurrency,
     maxCases,
     force,
+    includeRetired,
     tags,
     ids,
     prediction,
@@ -1376,6 +1404,7 @@ async function mainImpl(
       repeat,
       skills: selectedSkills,
       aiReview,
+      includeRetired,
       judge,
       workingDir,
       caseDir,

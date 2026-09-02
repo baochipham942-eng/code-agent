@@ -45,6 +45,20 @@ function fixtureRunner(dir: string, diagnostics: object, options: {
   return file;
 }
 
+function diagnosticReporterRunner(dir: string, errors: Array<Record<string, string>>) {
+  const file = join(dir, 'actual-diagnostic-reporter-fixture.mjs');
+  const reporter = resolve('scripts/ci/vitest-flake-diagnostic-reporter.mjs');
+  writeFileSync(file, [
+    "import { writeFileSync } from 'node:fs';",
+    `import Reporter from ${JSON.stringify(reporter)};`,
+    "const output = process.argv.find((arg) => arg.startsWith('--outputFile.json=')).slice('--outputFile.json='.length);",
+    "writeFileSync(output, JSON.stringify({ testResults: [] }));",
+    `const errors = ${JSON.stringify(errors)}.map((error) => Object.assign(new Error(error.message), error));`,
+    'new Reporter().onTestRunEnd([], errors);',
+  ].join('\n'));
+  return file;
+}
+
 afterEach(() => {
   for (const dir of roots.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
@@ -55,6 +69,7 @@ describe('vitest flake ledger wrapper', () => {
     const ledger = join(dir, 'ledger.jsonl');
     const flaky = fixtureRunner(dir, {
       testDiagnostics: [{ file: 'tests/example.test.ts', test: 'suite retries once', retryCount: 1, flaky: true }],
+      unhandledErrors: [],
     });
     const flakyResult = run(['--job', 'fixture retry', '--ledger', ledger, '--', process.execPath, flaky]);
     expect(flakyResult.status, flakyResult.stderr).toBe(0);
@@ -64,11 +79,41 @@ describe('vitest flake ledger wrapper', () => {
     const zeroLedger = join(dir, 'zero-ledger.jsonl');
     const zero = fixtureRunner(dir, {
       testDiagnostics: [{ file: 'tests/zero.test.ts', test: 'suite stays green', retryCount: 0, flaky: false }],
+      unhandledErrors: [],
     });
     const zeroResult = run(['--job', 'fixture zero', '--ledger', zeroLedger, '--', process.execPath, zero]);
     expect(zeroResult.status, zeroResult.stderr).toBe(0);
     expect(zeroResult.stdout).toContain('retryCount>0: 0');
+    expect(zeroResult.stdout).toContain('unhandled errors: 0');
     expect(() => readFileSync(zeroLedger, 'utf8')).toThrow();
+  });
+
+  it('records unhandled errors without changing a green child exit code', () => {
+    const dir = root();
+    const ledger = join(dir, 'unhandled-ledger.jsonl');
+    const runner = diagnosticReporterRunner(dir, [{
+      VITEST_TEST_PATH: 'tests/agent/example.test.ts',
+      VITEST_TEST_NAME: 'example test',
+      name: 'EnvironmentTeardownError',
+      message: 'Closing rpc while onUserConsoleLog was pending',
+    }]);
+    const result = run(['--job', 'fixture unhandled', '--ledger', ledger, '--', process.execPath, runner]);
+
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain('unhandled errors: 1');
+    expect(result.stdout).toContain(
+      'tests/agent/example.test.ts:EnvironmentTeardownError:Closing rpc while onUserConsoleLog was pending',
+    );
+    expect(readFileSync(ledger, 'utf8')).toContain('"kind":"unhandled-error"');
+  });
+
+  it('fails loud when diagnostic JSON is missing unhandledErrors[]', () => {
+    const dir = root();
+    const runner = fixtureRunner(dir, { testDiagnostics: [] });
+    const result = run(['--job', 'missing unhandled errors', '--ledger', join(dir, 'ledger.jsonl'), '--', process.execPath, runner]);
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('diagnostic JSON is missing unhandledErrors[]');
   });
 
   it('still writes the summary to stdout when GITHUB_STEP_SUMMARY is set', () => {
@@ -78,6 +123,7 @@ describe('vitest flake ledger wrapper', () => {
     writeFileSync(stepSummary, '');
     const runner = fixtureRunner(dir, {
       testDiagnostics: [{ file: 'tests/example.test.ts', test: 'suite retries once', retryCount: 1, flaky: true }],
+      unhandledErrors: [],
     });
     const result = run(
       ['--job', 'ci summary', '--ledger', ledger, '--', process.execPath, runner],
@@ -90,7 +136,7 @@ describe('vitest flake ledger wrapper', () => {
 
   it('fails loud when the Vitest JSON report is missing', () => {
     const dir = root();
-    const runner = fixtureRunner(dir, { testDiagnostics: [] }, { writeReport: false });
+    const runner = fixtureRunner(dir, { testDiagnostics: [], unhandledErrors: [] }, { writeReport: false });
     const result = run(['--job', 'missing report', '--ledger', join(dir, 'ledger.jsonl'), '--', process.execPath, runner]);
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('JSON reporter did not create');
@@ -98,7 +144,7 @@ describe('vitest flake ledger wrapper', () => {
 
   it('fails loud when the Vitest JSON report cannot be parsed', () => {
     const dir = root();
-    const runner = fixtureRunner(dir, { testDiagnostics: [] }, { reportText: '{not-json' });
+    const runner = fixtureRunner(dir, { testDiagnostics: [], unhandledErrors: [] }, { reportText: '{not-json' });
     const result = run(['--job', 'invalid report', '--ledger', join(dir, 'ledger.jsonl'), '--', process.execPath, runner]);
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('cannot parse JSON reporter output');

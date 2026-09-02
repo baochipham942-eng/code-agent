@@ -15,6 +15,7 @@ import {
 import { Z_LAYERS } from '../styles/zLayers';
 import ipcService from '../services/ipcService';
 import { refreshThirdPartyPluginUi } from './thirdPartyPluginUiLoader';
+import { PluginApprovalOverlay } from './PluginApprovalOverlay';
 
 const InternalFeatureHost = React.lazy(() => import('../internalFeatures/InternalFeatureHost').then(({ InternalFeatureHost: component }) => ({ default: component })));
 
@@ -97,6 +98,7 @@ export const ShellOverlaySlotHost: React.FC = () => {
       data-plugin-slot-host="shell.overlay"
       style={{ zIndex: Z_LAYERS.modal }}
     >
+      <PluginApprovalOverlay />
       <Slot name="shell.overlay" />
     </div>
   );

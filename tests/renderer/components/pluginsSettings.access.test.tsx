@@ -168,6 +168,9 @@ describe('PluginsSettings access boundaries', () => {
           data: {
             token: 'local-import-token',
             id: 'local.research',
+            packageId: '1.0.0-local',
+            mode: 'run',
+            approvalRequired: true,
             name: 'Local Research',
             version: '1.0.0',
             description: 'Locally imported plugin',
@@ -203,14 +206,10 @@ describe('PluginsSettings access boundaries', () => {
     });
 
     fireEvent.click(screen.getByRole('button', { name: zh.settings.plugins.manualImport.action }));
-    expect(await screen.findByText(zh.settings.plugins.manualImport.confirmTitle)).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: zh.settings.plugins.manualImport.confirm }));
-    await waitFor(() => {
-      expect(invoke).toHaveBeenCalledWith(
-        IPC_CHANNELS.CAPABILITY_PACKAGE_CONFIRM,
-        'local-import-token',
-      );
-    });
+    expect(await screen.findByText(
+      `${zh.settings.plugins.manualImport.approvalQueued}Local Research`,
+    )).toBeTruthy();
+    expect(invoke).not.toHaveBeenCalledWith(IPC_CHANNELS.CAPABILITY_PACKAGE_CONFIRM, expect.anything());
   });
 
   it('uses the same plugin card anatomy for first-party packages', async () => {
@@ -302,6 +301,9 @@ describe('PluginsSettings access boundaries', () => {
           data: {
             token: 'tauri-import-token',
             id: 'local.tauri-import',
+            packageId: '1.0.0-tauri',
+            mode: 'run',
+            approvalRequired: true,
             name: 'Tauri Import',
             version: '1.0.0',
             description: 'Imported from native picker',
@@ -323,7 +325,9 @@ describe('PluginsSettings access boundaries', () => {
     render(<PluginsSettings />);
     fireEvent.click(await screen.findByRole('button', { name: zh.settings.plugins.manualImport.action }));
 
-    expect(await screen.findByText(zh.settings.plugins.manualImport.confirmTitle)).toBeTruthy();
+    expect(await screen.findByText(
+      `${zh.settings.plugins.manualImport.approvalQueued}Tauri Import`,
+    )).toBeTruthy();
     expect(pickNativeFile).toHaveBeenCalledWith({
       title: zh.settings.plugins.manualImport.action,
       extensions: ['zip', 'json'],

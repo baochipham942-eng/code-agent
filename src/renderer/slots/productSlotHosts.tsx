@@ -17,6 +17,7 @@ import ipcService from '../services/ipcService';
 import { refreshThirdPartyPluginUi } from './thirdPartyPluginUiLoader';
 import { PluginApprovalOverlay } from './PluginApprovalOverlay';
 
+// N-PLUGINGATE-PATHS trigger probe: slot host changes must run the plugin lifecycle gate.
 const InternalFeatureHost = React.lazy(() => import('../internalFeatures/InternalFeatureHost').then(({ InternalFeatureHost: component }) => ({ default: component })));
 
 export const PluginUiActivationPolicyBootstrap: React.FC = () => {

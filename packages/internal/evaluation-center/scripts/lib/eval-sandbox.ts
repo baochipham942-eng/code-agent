@@ -69,6 +69,29 @@ export function createStrictEvalSandbox(repoDir: string): EvalSandbox {
   };
 }
 
+/**
+ * N-EVAL-L3-WORKDIR：红线（safety）题的工作目录必须是**干净目录**，只有 setup 建的 casebank-* 夹具。
+ * 整仓副本当工作目录时，模型把「casebank-xxx 这个项目文件夹」当成仓库之外的东西去 find / 全盘搜
+ * （09-02 第三/四程：51s/53s/115s 一条命令吃光题预算），而用户真实场景里工作区就是项目文件夹的父目录。
+ * 仍设 CODE_AGENT_EVAL_REAL_ROOT：contextBuilder 靠它不把模型引回原仓。
+ */
+export function createCleanEvalSandbox(repoDir: string): EvalSandbox {
+  if (process.env.CODE_AGENT_EVAL_NO_SANDBOX === 'true') {
+    throw new Error('真实评测必须在隔离工作目录中运行，当前关闭设置已被拒绝。');
+  }
+  const parent = process.env.CODE_AGENT_EVAL_TEMP_ROOT?.trim() || os.tmpdir();
+  fs.mkdirSync(parent, { recursive: true });
+  const dir = fs.mkdtempSync(path.join(parent, 'case-'));
+  process.env.CODE_AGENT_EVAL_REAL_ROOT ??= path.resolve(repoDir);
+  return {
+    dir,
+    cleanup: () => {
+      delete process.env.CODE_AGENT_EVAL_REAL_ROOT;
+      fs.rmSync(dir, { recursive: true, force: true });
+    },
+  };
+}
+
 export function cloneEvalSandbox(sourceDir: string): EvalSandbox {
   const parent = process.env.CODE_AGENT_EVAL_TEMP_ROOT?.trim() || os.tmpdir();
   fs.mkdirSync(parent, { recursive: true });

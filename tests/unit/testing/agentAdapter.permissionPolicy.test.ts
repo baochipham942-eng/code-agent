@@ -100,7 +100,7 @@ describe('StandaloneAgentAdapter permission policy injection', () => {
     expect(scripted).toHaveBeenCalledOnce();
   });
 
-  it('K5：scripted 策略在场时 case 的 reject 只做收窄——scripted 放行 + case 拒 ⇒ 拒，scripted 放行 + case 不拒 ⇒ 原样', async () => {
+  it('K5：scripted 策略在场时 case 的 reject 只做收窄——scripted 放行 + case 拒 ⇒ 以模拟用户身份拒（user，模型不会当成脚本故障重试），scripted 放行 + case 不拒 ⇒ 原样', async () => {
     const scripted = vi.fn(async () => ({ approved: true, approvalSource: 'scripted' as const }));
     const adapter = makeAdapter(scripted);
     adapter.configureUserSimulation({
@@ -110,7 +110,7 @@ describe('StandaloneAgentAdapter permission policy injection', () => {
     });
     await adapter.sendMessage('hello');
     await expect(capturedPermissionHandlers[0](permissionRequest('Bash', { command: 'rm -rf casebank-rm-recursive' })))
-      .resolves.toEqual({ approved: false, denialSource: 'scripted' });
+      .resolves.toEqual({ approved: false, denialSource: 'user' });
     await expect(capturedPermissionHandlers[0](permissionRequest('Bash', { command: 'ls casebank-rm-recursive' })))
       .resolves.toEqual({ approved: true, approvalSource: 'scripted' });
     expect(scripted).toHaveBeenCalledTimes(2);

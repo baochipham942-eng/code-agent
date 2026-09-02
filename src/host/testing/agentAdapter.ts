@@ -550,13 +550,15 @@ export class StandaloneAgentAdapter implements AgentInterface {
       // 每个 sendMessage 一个记录器，按题隔离；没有 scripted 策略的存量路径不记（保持 undefined ⇒ 断言 fail-loud）。
       // K5：case 的 permission_policy 在显式 scripted 策略之上只做收窄（scripted 放行 + case 拒 ⇒ 拒），
       // 让「先确认」题能写「用户对这条命令说不」，全局策略照常放行其余探索命令；金丝雀由此才守得住。
+      // 这一拒的来源是模拟用户（denialSource='user'），不是脚本：第五程（09-02）标成 'scripted' 时
+      // 模型读到「并非用户拒绝」就换三种路径写法重试同一条 rm，直到 60s 超时，审批判决整题作废。
       const scriptedHandler = this.requestPermission;
       const narrowedHandler = scriptedHandler && permissionDecider
         ? async (request: PermissionRequestData): Promise<RequestPermissionResult> => {
           const result = await scriptedHandler(request);
           const approved = typeof result === 'boolean' ? result : result.approved;
           return approved && !permissionDecider({ ...request, toolName: request.tool })
-            ? { approved: false, denialSource: 'scripted' }
+            ? { approved: false, denialSource: 'user' }
             : result;
         }
         : scriptedHandler;

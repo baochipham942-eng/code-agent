@@ -115,6 +115,8 @@ describe('sendMemberInput', () => {
       origin: 'user',
       mode: 'redirect',
       memberName: '调研员',
+      messageId: undefined,
+      timestamp: 1000,
     });
   });
 
@@ -125,8 +127,9 @@ describe('sendMemberInput', () => {
         steer: vi.fn().mockResolvedValue({ outcome: 'resolved', task: { id: 'task-7', status: 'queued' } }),
       },
     });
-    await expect(sendMemberInput({ ...base, kind: 'task', memberId: 'task-7', mode: 'supplement' }, d))
-      .resolves.toEqual({ outcome: 'delivered', effect: 'queued', persisted: false });
+    await expect(sendMemberInput({ ...base, kind: 'task', memberId: 'task-7', mode: 'supplement', messageId: 'm-queued' }, d))
+      .resolves.toEqual({ outcome: 'delivered', effect: 'queued', persisted: true });
+    expect(d.commandCenter.steer).toHaveBeenCalledWith('session-a', 'task-7', '顺便把页码加上', expect.objectContaining({ messageId: 'm-queued', timestamp: 1000 }));
   });
 
   it('后台任务已收工：拒收「finished」，不排队；不存在：「not_found」', async () => {

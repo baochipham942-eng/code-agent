@@ -39,7 +39,7 @@ export interface MemberInputDeps {
       sessionId: string,
       target: string,
       instruction: string,
-      options: { origin: 'user'; mode: RuntimeInputMode; memberName: string },
+      options: { origin: 'user'; mode: RuntimeInputMode; memberName: string; messageId?: string; timestamp?: number },
     ): Promise<SessionTaskReferenceResult>;
   };
 }
@@ -67,10 +67,13 @@ export async function sendMemberInput(
       origin: 'user',
       mode: request.mode,
       memberName: request.memberName,
+      messageId: request.messageId,
+      timestamp: request.timestamp,
     });
     if (result.outcome === 'resolved') {
+      // 排队：命令中心落记录；运行中：运行时 injectSteerMessage 落记录——两条都已持久
       return result.task.status === 'queued'
-        ? { outcome: 'delivered', effect: 'queued', persisted: false }
+        ? { outcome: 'delivered', effect: 'queued', persisted: true }
         : { outcome: 'delivered', effect: 'now', persisted: true };
     }
     const known = deps.commandCenter.list(request.sessionId).some((task) => task.id === request.memberId);

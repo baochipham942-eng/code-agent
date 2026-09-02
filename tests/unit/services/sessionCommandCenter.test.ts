@@ -347,6 +347,7 @@ describe('SessionCommandCenter', () => {
     const center = new SessionCommandCenter(manager as unknown as TaskManager, {
       projectTerminalResult: vi.fn(),
       wakeForegroundBrain: vi.fn(),
+      persistMemberInput: vi.fn().mockResolvedValue(undefined),
     });
     await center.spawn(input(1, 'report'));
     const queued = await center.spawn({ ...input(2, 'report'), queueWhenFull: true });
@@ -356,7 +357,7 @@ describe('SessionCommandCenter', () => {
     expect(center.list('session-a').find((task) => task.id === queued.task.id)?.prompt)
       .toContain('补充要求：顺便把页码加上');
     // 排队任务的改道也要落到任务书里，且带改道指令行（否则开工时沿用原思路）
-    await center.steer('session-a', queued.task.id, '换成按季度汇总', { origin: 'user', mode: 'redirect', memberName: '任务2' });
+    await center.steer('session-a', queued.task.id, '换成按季度汇总', { origin: 'user', mode: 'redirect', memberName: '任务2', messageId: 'm-9', timestamp: 4200 });
     const prompt = center.list('session-a').find((task) => task.id === queued.task.id)?.prompt ?? '';
     expect(prompt).toContain('改道要求：换成按季度汇总');
     expect(prompt).toContain('改道指令');
@@ -397,6 +398,34 @@ describe('SessionCommandCenter', () => {
     // 团长 steer_task 不计入用户补话
     await center.steer('session-a', first.task.id, '团长转述');
     expect(center.list('session-a').find((task) => task.id === first.task.id)?.userInputCount).toBe(2);
+    center.dispose();
+  });
+
+  // N-SUBAGENT-INPUT：排队任务收到用户补话时，主会话要落一条 isMeta+memberInput 记录（刷新/回放/团长汇总都看得见）；
+  // 团长 steer_task 不落（那是模型转述，不是用户说的）
+  it('persists a member-input record for a queued task on user-origin steer only', async () => {
+    const manager = new FakeTaskManager();
+    const persistMemberInput = vi.fn().mockResolvedValue(undefined);
+    const center = new SessionCommandCenter(manager as unknown as TaskManager, {
+      projectTerminalResult: vi.fn(),
+      wakeForegroundBrain: vi.fn(),
+      persistMemberInput,
+    });
+    await center.spawn(input(1, 'report'));
+    const queued = await center.spawn({ ...input(2, 'report'), queueWhenFull: true });
+    if (queued.outcome !== 'queued') throw new Error(`expected queued, got ${queued.outcome}`);
+
+    await center.steer('session-a', queued.task.id, '顺便把页码加上', { origin: 'user', mode: 'supplement', memberName: '任务2', messageId: 'm-7', timestamp: 4100 });
+    expect(persistMemberInput).toHaveBeenCalledWith('session-a', expect.objectContaining({
+      id: 'm-7', role: 'user', content: '顺便把页码加上', timestamp: 4100, isMeta: true,
+      metadata: {
+        workbench: { runtimeInputMode: 'supplement' },
+        memberInput: { memberId: queued.task.id, memberName: '任务2', mode: 'supplement' },
+      },
+    }));
+
+    await center.steer('session-a', queued.task.id, '团长转述');
+    expect(persistMemberInput).toHaveBeenCalledTimes(1);
     center.dispose();
   });
 });

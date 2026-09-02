@@ -1,4 +1,4 @@
-import type { AgentEvent, MessageAttachment, TaskProgressData } from '../../../shared/contract';
+import type { AgentEvent, Message, MessageAttachment, TaskProgressData } from '../../../shared/contract';
 import type { TaskProgress } from '../../../shared/contract/backgroundTask';
 import type { NormalizedToolArtifactMeta } from '../../../shared/contract/artifactBlob';
 import type { WorkspaceScope } from '../../../shared/contract/project';
@@ -58,6 +58,9 @@ export interface SteerOptions {
   origin: 'user';
   mode: RuntimeInputMode;
   memberName: string;
+  /** 渲染层生成的稳定消息 id / 时间戳：排队路径落库用，与乐观展示同一身份 */
+  messageId?: string;
+  timestamp?: number;
 }
 
 export interface SpawnSessionTaskInput {
@@ -92,6 +95,8 @@ type TerminalTaskStatus = Extract<SessionCommandTaskStatus, 'completed' | 'faile
 
 interface SessionCommandCenterDependencies {
   projectTerminalResult?: (task: SessionCommandTask, status: TerminalTaskStatus) => Promise<void>;
+  /** 排队任务收到用户补话时落主会话记录（运行中路径由运行时 injectSteerMessage 落，不在这里重复） */
+  persistMemberInput?: (sessionId: string, message: Message) => Promise<void>;
   wakeForegroundBrain?: (task: SessionCommandTask, status: TerminalTaskStatus) => Promise<void>;
   slotLedgerOptions?: Omit<SessionTaskSlotLedgerOptions, 'onRecovery'>;
   slotRecoveryLocale?: 'zh' | 'en';
@@ -112,6 +117,7 @@ export class SessionCommandCenter {
   private readonly ledgers = new Map<string, SessionTaskSlotLedger>();
   private readonly manager: TaskManager;
   private readonly projectTerminalResult: NonNullable<SessionCommandCenterDependencies['projectTerminalResult']>;
+  private readonly persistMemberInput: NonNullable<SessionCommandCenterDependencies['persistMemberInput']>;
   private readonly wakeForegroundBrain: NonNullable<SessionCommandCenterDependencies['wakeForegroundBrain']>;
   private readonly slotLedgerOptions: NonNullable<SessionCommandCenterDependencies['slotLedgerOptions']>;
   private readonly slotRecoveryLocale?: SessionCommandCenterDependencies['slotRecoveryLocale'];
@@ -126,6 +132,8 @@ export class SessionCommandCenter {
   ) {
     this.manager = manager;
     this.projectTerminalResult = dependencies.projectTerminalResult ?? projectTerminalResult;
+    this.persistMemberInput = dependencies.persistMemberInput
+      ?? ((sessionId, message) => getSessionManager().addMessageToSession(sessionId, message));
     this.wakeForegroundBrain = dependencies.wakeForegroundBrain ?? createForegroundWake();
     this.slotLedgerOptions = dependencies.slotLedgerOptions ?? {};
     this.slotRecoveryLocale = dependencies.slotRecoveryLocale;
@@ -253,6 +261,22 @@ export class SessionCommandCenter {
         ? `${task.prompt}\n\n改道要求：${instruction}\n${RUNTIME_INPUT_REDIRECT_LINE}`
         : `${task.prompt}\n\n补充要求：${instruction}`;
       task.updatedAt = Date.now();
+      if (steerOptions) {
+        // 主对话落一条 isMeta+memberInput 记录（刷新/回放/团长汇总都看得见；运行中路径由运行时落）
+        const timestamp = steerOptions.timestamp ?? task.updatedAt;
+        await this.persistMemberInput(sessionId, {
+          id: steerOptions.messageId ?? `member-input-${task.id}-${timestamp}`,
+          role: 'user',
+          content: instruction,
+          timestamp,
+          isMeta: true,
+          source: 'system',
+          metadata: {
+            workbench: { runtimeInputMode: steerOptions.mode },
+            memberInput: { memberId: task.id, memberName: steerOptions.memberName, mode: steerOptions.mode },
+          },
+        });
+      }
       return { outcome: 'resolved', task: { ...task } };
     }
     // 用户亲手补的话：与主输入框同一套两档指令行（补充/改道），并把 runtimeInputMode + memberInput

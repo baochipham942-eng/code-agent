@@ -1556,7 +1556,12 @@ function isDirectRun(): boolean {
 }
 
 if (isDirectRun()) {
-  main().catch((err) => {
+  // N-EVAL-CI-NOEXIT：三条 process.exit 都在 1/2 分支，成功路径靠事件循环自然排空——真跑
+  // 里隔离库/日志/服务的常驻句柄让它排不空（09-02 held-in 钉基线后挂 12 分钟、L3 后挂 14 分钟）。
+  // CLI 惯例：活干完就退；先把 stdout 排空再退，避免管道场景截断汇总行。
+  main().then(() => {
+    process.stdout.write('', () => process.exit(process.exitCode ?? 0));
+  }).catch((err) => {
     const jsonEvents = process.argv.slice(2).includes('--json-events');
     if (jsonEvents) {
       const detail = err instanceof Error ? err.stack ?? err.message : String(err);

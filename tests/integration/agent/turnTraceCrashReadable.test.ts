@@ -8,7 +8,6 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { TraceReadService } from '../../../src/host/app/traceReadService';
 
 const repoRoot = path.resolve(import.meta.dirname, '../../..');
-const tsxCli = path.join(repoRoot, 'node_modules/tsx/dist/cli.mjs');
 const workerEntry = path.join(repoRoot, 'tests/fixtures/turnTraceCrashWorker.ts');
 const roots: string[] = [];
 type CrashWorker = ChildProcessByStdio<null, Readable, Readable>;
@@ -29,7 +28,10 @@ describe('turn trace crash readability', () => {
     const dataDir = mkdtempSync(path.join(os.tmpdir(), 'code-agent-turntrace-crash-'));
     roots.push(dataDir);
     const sessionId = `session-crash-${process.pid}`;
-    const child = spawn(process.execPath, [tsxCli, workerEntry, dataDir, sessionId], {
+    // 直接用 --import tsx 起 worker，不经 tsx cli 包一层：cli 是它自己再 spawn 的子进程的父，
+    // 下面的 SIGKILL 只打得到 cli，真正的 worker 会被 launchd 收养后永远挂着
+    // （09-02 收掉 24 个挂了 2–3 天的），且「SIGKILL 后可读」实际从没杀过 worker。
+    const child = spawn(process.execPath, ['--import', 'tsx', workerEntry, dataDir, sessionId], {
       cwd: repoRoot,
       env: { ...process.env, CODE_AGENT_DATA_DIR: dataDir },
       stdio: ['ignore', 'pipe', 'pipe'],

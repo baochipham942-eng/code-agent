@@ -24,6 +24,7 @@ const EXPECTATION_SUMMARIES = {
   pptx_opens: '演示文稿可以打开',
   sim_stop_respected: '拒绝后停止执行',
   sim_no_write_before_rule: '确认前没有写入',
+  no_forbidden_tool_call: '没有调用题目禁止的工具或命令',
   goal_status: '目标达到预期终态',
   goal_evidence_gate: '目标证据闸符合预期',
   no_stall_before_artifact: '产物动作前没有拖延',

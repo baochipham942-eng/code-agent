@@ -25,6 +25,11 @@ describe('dev route guard', () => {
     expect(isDevExecToolAllowed('task_list')).toBe(true);
     expect(isDevExecToolAllowed('task_update')).toBe(true);
     expect(isDevExecToolAllowed('Bash')).toBe(false);
+    // delegate_task 只在 e2e 模式下可达：它能用任意 prompt 起带 shell/文件工具的后台 agent，
+    // 不能随 CODE_AGENT_ENABLE_DEV_API 常驻（PR#1601 ai-review）
+    expect(isDevExecToolAllowed('delegate_task', { CODE_AGENT_ENABLE_DEV_API: 'true' })).toBe(false);
+    expect(isDevExecToolAllowed('delegate_task', { CODE_AGENT_E2E: '1' })).toBe(true);
+    expect(devExecToolRequiresAllowWrite('delegate_task')).toBe(true);
     expect(isDevExecToolAllowed('bash')).toBe(false);
 
     expect(devExecToolRequiresAllowWrite('task_create')).toBe(true);

@@ -92,8 +92,6 @@ export interface PendingDevPermissionRequest {
 // ── Constants ─────────────────────────────────────────────────────────────
 
 const DEV_EXEC_ALLOWED_TOOLS = new Set([
-  // e2e 直接起一个后台任务（N-SUBAGENT-INPUT member-input.spec）：不经前台 brain 的工具面
-  'delegate_task',
   'desktop_activity_recent',
   'desktop_activity_stats',
   'task_create',
@@ -158,7 +156,15 @@ export function isDevApiEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
     && (env.CODE_AGENT_ENABLE_DEV_API === 'true' || env.CODE_AGENT_E2E === '1');
 }
 
-export function isDevExecToolAllowed(tool: string): boolean {
+/**
+ * e2e 专用：直接起一个后台任务（N-SUBAGENT-INPUT member-input.spec 不经前台 brain 的工具面）。
+ * 只在 CODE_AGENT_E2E=1 下放行——它能用任意 prompt 起一个带 shell/文件工具的后台 agent，
+ * 不能随 CODE_AGENT_ENABLE_DEV_API 常驻在 dev 路由的白名单里（PR#1601 ai-review）。
+ */
+const DEV_E2E_ONLY_TOOLS = new Set(['delegate_task']);
+
+export function isDevExecToolAllowed(tool: string, env: NodeJS.ProcessEnv = process.env): boolean {
+  if (DEV_E2E_ONLY_TOOLS.has(tool)) return env.CODE_AGENT_E2E === '1';
   return DEV_EXEC_ALLOWED_TOOLS.has(tool);
 }
 

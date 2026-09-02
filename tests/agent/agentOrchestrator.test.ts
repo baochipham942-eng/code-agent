@@ -2,7 +2,58 @@
 // Agent Orchestrator Tests
 // ============================================================================
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach, afterAll } from 'vitest';
+
+const teardownConsoleProbe = vi.hoisted(() => ({
+  armed: false,
+  testRunning: false,
+  writes: [] as Array<{ method: string; text: string; stack: string }>,
+  restore: undefined as undefined | (() => void),
+}));
+
+beforeAll(() => {
+  const methods = ['debug', 'info', 'log', 'warn', 'error'] as const;
+  const originals = new Map(methods.map((method) => [method, console[method]]));
+  for (const method of methods) {
+    const original = originals.get(method)!;
+    console[method] = (...args: unknown[]) => {
+      if (teardownConsoleProbe.armed && !teardownConsoleProbe.testRunning) {
+        teardownConsoleProbe.writes.push({
+          method,
+          text: args.map(String).join(' '),
+          stack: new Error('console write while no test is running').stack ?? '',
+        });
+      }
+      original(...args);
+    };
+  }
+  teardownConsoleProbe.restore = () => {
+    for (const method of methods) console[method] = originals.get(method)!;
+  };
+});
+
+beforeEach(() => {
+  teardownConsoleProbe.testRunning = true;
+});
+
+afterEach(async () => {
+  // AgentOrchestrator intentionally starts host-level workspace services without
+  // blocking a foreground turn. Tests must still drain those imports before the
+  // worker tears down, otherwise their console callbacks outlive this file.
+  await vi.dynamicImportSettled();
+  teardownConsoleProbe.testRunning = false;
+  teardownConsoleProbe.armed = true;
+});
+
+afterAll(async () => {
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  teardownConsoleProbe.restore?.();
+  if (teardownConsoleProbe.writes.length > 0) {
+    throw new Error(`late console writes:\n${teardownConsoleProbe.writes.map((write) => (
+      `[${write.method}] ${write.text}\n${write.stack}`
+    )).join('\n---\n')}`);
+  }
+});
 
 const browserMocks = vi.hoisted(() => {
   const service = {

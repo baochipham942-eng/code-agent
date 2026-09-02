@@ -58,10 +58,37 @@ function findDiagnostics(report) {
   }).filter((test) => test.retryCount > 0);
 }
 
-function markdown(job, flakes) {
+function findUnhandledErrors(report) {
+  if (!Array.isArray(report.unhandledErrors)) fail('diagnostic JSON is missing unhandledErrors[]');
+  return report.unhandledErrors.map((error, index) => {
+    if (typeof error?.name !== 'string' || typeof error?.message !== 'string') {
+      fail(`diagnostic JSON unhandledErrors[${index}] is missing name or message`);
+    }
+    for (const field of ['file', 'test', 'stack']) {
+      if (error[field] !== undefined && typeof error[field] !== 'string') {
+        fail(`diagnostic JSON unhandledErrors[${index}].${field} is not a string`);
+      }
+    }
+    return {
+      name: error.name,
+      message: error.message,
+      ...(error.file ? { file: error.file } : {}),
+      ...(error.test ? { test: error.test } : {}),
+      ...(error.stack ? { stack: error.stack } : {}),
+    };
+  });
+}
+
+function markdown(job, flakes, unhandledErrors) {
   const heading = `### Vitest flake ledger: ${job} (${flakes.length})`;
-  if (!flakes.length) return `${heading}\n\nretryCount>0: 0\n`;
-  return `${heading}\n\n${flakes.map((flake) => `- ${flake.file}:${flake.test}:${flake.retryCount}${flake.flaky ? ' (flaky=true)' : ''}`).join('\n')}\n`;
+  const retryLines = flakes.length
+    ? flakes.map((flake) => `- ${flake.file}:${flake.test}:${flake.retryCount}${flake.flaky ? ' (flaky=true)' : ''}`)
+    : ['retryCount>0: 0'];
+  const unhandledLines = [
+    `unhandled errors: ${unhandledErrors.length}`,
+    ...unhandledErrors.map((error) => `- ${error.file ?? '<unknown file>'}:${error.name}:${error.message}`),
+  ];
+  return `${heading}\n\n${[...retryLines, ...unhandledLines].join('\n')}\n`;
 }
 
 function gitSha() {
@@ -101,18 +128,19 @@ try {
 }
 
 const flakes = findDiagnostics(diagnostics);
-const summary = markdown(job, flakes);
+const unhandledErrors = findUnhandledErrors(diagnostics);
+const summary = markdown(job, flakes, unhandledErrors);
 process.stdout.write(summary);
 if (process.env.GITHUB_STEP_SUMMARY) {
   appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary);
 }
 
-if (flakes.length) {
+if (flakes.length || unhandledErrors.length) {
   mkdirSync(path.dirname(ledger), { recursive: true });
   const at = new Date().toISOString();
   const sha = gitSha();
   const runId = process.env.GITHUB_RUN_ID;
-  appendFileSync(ledger, flakes.map((flake) => JSON.stringify({
+  const records = flakes.map((flake) => ({
     at,
     sha,
     job,
@@ -120,7 +148,20 @@ if (flakes.length) {
     test: flake.test,
     retryCount: flake.retryCount,
     ...(runId ? { runId } : {}),
-  })).join('\n') + '\n');
+  }));
+  records.push(...unhandledErrors.map((error) => ({
+    at,
+    sha,
+    job,
+    kind: 'unhandled-error',
+    ...(error.file ? { file: error.file } : {}),
+    ...(error.test ? { test: error.test } : {}),
+    name: error.name,
+    message: error.message,
+    ...(error.stack ? { stack: error.stack } : {}),
+    ...(runId ? { runId } : {}),
+  })));
+  appendFileSync(ledger, records.map((record) => JSON.stringify(record)).join('\n') + '\n');
 }
 
 if (result.error) fail(`could not start ${vitestArgs[0]}: ${result.error.message}`);

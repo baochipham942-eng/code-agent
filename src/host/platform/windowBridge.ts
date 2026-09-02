@@ -90,6 +90,17 @@ export function setBrowserWindowInteractionProbe(probe: (() => boolean) | null):
 }
 
 /**
+ * 临时覆盖交互探针，返回恢复函数（恢复到覆盖前那一个，而不是清空）。
+ * eval 跑题期间用：没有人答问句，AskUserQuestion 必须立刻走「用户未响应」回退，
+ * 不能因为进程里挂着 AppWindow 就以为有人在看。
+ */
+export function overrideBrowserWindowInteractionProbe(probe: () => boolean): () => void {
+  const previous = rendererInteractionProbe;
+  rendererInteractionProbe = probe;
+  return () => { rendererInteractionProbe = previous; };
+}
+
+/**
  * Host 侧唯一的「此刻是否有人能在 UI 回答」判定源。
  *
  * Web 模式始终有一个 AppWindow bridge，不能用 window 数量判断；webServer 注册的

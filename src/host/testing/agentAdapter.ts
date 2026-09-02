@@ -22,6 +22,7 @@ import { getMockCasePolicy } from './mockEvalPolicy';
 import type { PermissionRequestData } from '../tools/types';
 import type { RequestPermissionResult } from '../../shared/contract/permission';
 import { AgentFailureCode } from '../../shared/contract/agentFailure';
+import { overrideBrowserWindowInteractionProbe } from '../platform/windowBridge';
 import type { SkillDiscoveryService } from '../services/skills/skillDiscoveryService';
 import type { SessionType } from '../../shared/contract/session';
 import type { DatabaseService } from '../services/core/databaseService';
@@ -362,6 +363,8 @@ export class StandaloneAgentAdapter implements AgentInterface {
   private readonly database?: DatabaseService;
   private readonly telemetryCollector?: TelemetryCollector;
   private evaluationTestId?: string;
+  /** N-EVAL-L3-HARNESS：当前在跑的 loop，题超时时 runner 调 cancelActiveRun 真的掐掉它 */
+  private activeLoop?: { cancel(reason?: 'user' | 'session-switch'): Promise<void> };
   private readonly skillActivations = new Map<string, Record<string, number>>();
 
   // Persisted across sendMessage() calls so multi-turn follow-ups share conversation history.
@@ -481,6 +484,17 @@ export class StandaloneAgentAdapter implements AgentInterface {
 
   configureEvaluationCase(testId: string | undefined): void {
     this.evaluationTestId = testId;
+  }
+
+  /**
+   * N-EVAL-L3-HARNESS：题超时时真的中止当前 run。runner 的 withTimeout 只是赛跑，不掐 loop：
+   * 超时题的工具/循环会活到下一题（工作目录已清 ⇒ ENOENT ⇒ 模型转去 find / 全盘搜，
+   * 09-02 首程 8 红里 7 红是它）。cancel 沿 runAbortController 把 abort 传到工具与 bash 子进程。
+   */
+  async cancelActiveRun(): Promise<void> {
+    const loop = this.activeLoop;
+    this.activeLoop = undefined;
+    await loop?.cancel('user');
   }
 
   consumeSkillActivations(testId: string): Record<string, number> {
@@ -714,6 +728,15 @@ export class StandaloneAgentAdapter implements AgentInterface {
           timestamp: Date.now(),
         } as import('../../shared/contract').Message);
 
+        // N-EVAL-L3-HARNESS：eval 里没有人答问句。AskUserQuestion 靠 hasInteractiveUi() 判有没有界面，
+        // eval 进程里挂着 AppWindow ⇒ 它以为有人、一等 90s+ 把整题拖超时（09-02 首程）。
+        // 只在 runner 标了 evaluationTestId 的 case 内把探针置 false：工具立刻走「用户未响应」回退，
+        // 轮次结束后 user_simulation 规则接管（问句路线的口径归 approval_*）。
+        const restoreProbe = this.evaluationTestId !== undefined
+          ? overrideBrowserWindowInteractionProbe(() => false)
+          : () => {};
+        this.activeLoop = loop;
+        try {
         // GAP-017: context 压缩是 harness 对照实验维度之一。
         // autoCompressor 是全局单例，run 期间临时覆盖、结束后恢复，避免污染同进程其他会话。
         if (this.harness?.contextCompression !== undefined) {
@@ -728,6 +751,10 @@ export class StandaloneAgentAdapter implements AgentInterface {
           }
         } else {
           await loop.run(prompt);
+        }
+        } finally {
+          restoreProbe();
+          if (this.activeLoop === loop) this.activeLoop = undefined;
         }
         }),
       );

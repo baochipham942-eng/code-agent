@@ -60,6 +60,18 @@
       "effect": "allow",
       "tool": "append_file",
       "match": { "requestType": "file_write" }
+    },
+    {
+      "id": "allow-bash-directive-memory-probe-in-eval",
+      "effect": "allow",
+      "tool": "Bash",
+      "match": { "requestType": "file_write" }
+    },
+    {
+      "id": "allow-lowercase-bash-directive-memory-probe-in-eval",
+      "effect": "allow",
+      "tool": "bash",
+      "match": { "requestType": "file_write" }
     }
   ]
 }

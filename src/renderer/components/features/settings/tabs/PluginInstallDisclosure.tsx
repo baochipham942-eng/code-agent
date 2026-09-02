@@ -50,8 +50,8 @@ export const PluginInstallDisclosure: React.FC<PluginInstallDisclosureProps> = (
       footer={(
         <div className="flex flex-wrap items-center justify-end gap-2 px-6 py-4">
           <Button variant="ghost" onClick={onCancel} disabled={busy}>{text.cancel}</Button>
-          <Button variant="secondary" onClick={() => onConfirm(false)} disabled={busy}>{text.confirm}</Button>
-          <Button onClick={() => onConfirm(true)} disabled={busy}>{text.approveFuture}</Button>
+          <Button onClick={() => onConfirm(false)} disabled={busy}>{text.confirm}</Button>
+          <Button variant="secondary" onClick={() => onConfirm(true)} disabled={busy}>{text.approveFuture}</Button>
         </div>
       )}
     >

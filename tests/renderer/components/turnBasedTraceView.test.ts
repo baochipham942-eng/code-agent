@@ -783,3 +783,50 @@ describe('TurnBasedTraceView 不向虚拟列表灌入每渲染变身份的 props
     expect(mocks.virtuosoProps.itemContent).toBe(firstSearchMatches);
   });
 });
+
+describe('TurnBasedTraceView turn rail (N-TURNRAIL)', () => {
+  const railTick = (view: ReturnType<typeof render>, n: number) =>
+    view.getByRole('button', { name: new RegExp(`^(回到第 ${n} 轮|Back to turn ${n})$`) });
+
+  it('会话不足 8 轮不显示轮次导航', () => {
+    const view = render(React.createElement(TurnBasedTraceView, { projection: makeProjection(-1, 7) }));
+    expect(view.container.querySelector('[data-testid="turn-rail"]')).toBeNull();
+  });
+
+  it('点导航格用数组下标 scrollToIndex 顶对齐（不带 firstItemIndex 偏移）', () => {
+    const view = render(React.createElement(TurnBasedTraceView, { projection: makeProjection(-1, 10) }));
+    mocks.scrollToIndex.mockClear();
+    fireEvent.click(railTick(view, 3));
+    expect(mocks.scrollToIndex).toHaveBeenCalledWith({ index: 2, align: 'start', behavior: 'auto' });
+  });
+
+  it('可见范围变化时当前轮高亮跟着视口顶部那一轮走（减掉 firstItemIndex 偏移）', () => {
+    const view = render(React.createElement(TurnBasedTraceView, { projection: makeProjection(-1, 10) }));
+    const firstItemIndex = Number(view.container.querySelector('[data-virtuoso-first-item-index]')!.getAttribute('data-virtuoso-first-item-index'));
+    act(() => {
+      mocks.virtuosoProps.rangeChanged({ startIndex: firstItemIndex + 4, endIndex: firstItemIndex + 6 });
+    });
+    expect(railTick(view, 5).getAttribute('aria-current')).toBe('true');
+    expect(railTick(view, 4).getAttribute('aria-current')).toBeNull();
+  });
+
+  it('滚动后当前轮按 DOM 真实位置判定（视口顶部那一轮），不受 Virtuoso 预渲染余量影响', () => {
+    const view = render(React.createElement(TurnBasedTraceView, { projection: makeProjection(-1, 10) }));
+    const scroller = view.getByTestId('virtuoso-scroller');
+    scroller.getBoundingClientRect = () => rect(0, 500);
+    const turnElements = Array.from(view.container.querySelectorAll<HTMLElement>('[data-trace-turn-id]'));
+    // turn-1..4 已滚出视口上方，turn-5 顶在视口顶部，之后的在下面
+    turnElements.forEach((element, index) => {
+      element.getBoundingClientRect = () => rect(-400 + index * 100, -300 + index * 100);
+    });
+    const firstItemIndex = Number(view.container.querySelector('[data-virtuoso-first-item-index]')!.getAttribute('data-virtuoso-first-item-index'));
+    act(() => {
+      // 预渲染余量让 rangeChanged 从 turn-3 起报，DOM 说视口顶部是 turn-5：以 DOM 为准
+      mocks.virtuosoProps.rangeChanged({ startIndex: firstItemIndex + 2, endIndex: firstItemIndex + 8 });
+      fireEvent.scroll(scroller);
+      flushAnimationFrames();
+    });
+    expect(railTick(view, 5).getAttribute('aria-current')).toBe('true');
+    expect(railTick(view, 3).getAttribute('aria-current')).toBeNull();
+  });
+});

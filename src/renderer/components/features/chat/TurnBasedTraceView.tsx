@@ -217,6 +217,8 @@ export function getTraceNodeSelector(nodeId: string, nodeType: string): string {
 }
 
 const TRACE_TURN_ANCHOR_SELECTOR = '[data-trace-turn-id]';
+/** 轮次导航判「当前轮」时，上一轮至少要在顶边下方露出这么多像素才算还在视口里 */
+const RAIL_ACTIVE_EDGE_PX = 8;
 
 // 默认值必须是模块级常量：写成 `searchMatches = []` 的话，调用方不传时每次渲染
 // 都是新数组，itemContent 跟着换身份，等于每渲染往 virtuoso store 发布一次新 props。
@@ -334,6 +336,9 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   // 宽/窄两态由容器查询（外层 @container）切换。历史整段加载，跳转直接 scrollToIndex。
   const railItems = useMemo(() => buildTurnRailItems(projection.turns), [projection.turns]);
   const [railActiveTurnId, setRailActiveTurnId] = useState<string | null>(null);
+  // Virtuoso 的可见范围含预渲染余量（overscan / increaseViewportBy），顶部那项不等于视口里最上面那轮；
+  // 有真实布局时以 DOM 位置为准（滚动监听里顺手算），范围回报只在 DOM 还没判过时兜底（jsdom）。
+  const railActiveFromDomRef = useRef(false);
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
   const streamSnapshot = useSessionStore((state) => state.streamSnapshot);
   const processingSessionIds = useAppStore((state) => state.processingSessionIds);
@@ -406,7 +411,9 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   const reportVisibleRange = useCallback((range: ListRange) => {
     visibleRangeRef.current = range;
     const topTurnId = projectionTurnsRef.current[range.startIndex - firstItemIndex]?.turnId ?? null;
-    if (topTurnId) setRailActiveTurnId((current) => (current === topTurnId ? current : topTurnId));
+    if (topTurnId && !railActiveFromDomRef.current) {
+      setRailActiveTurnId((current) => (current === topTurnId ? current : topTurnId));
+    }
     onInterruptionPointVisibilityChange?.(
       isTurnVisibleInRange(range, interruptionTurnIndex, firstItemIndex),
     );
@@ -559,10 +566,22 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
 
     const capturePrependAnchor = () => {
       const scrollerRect = scroller.getBoundingClientRect();
-      const visibleTurn = Array.from(scroller.querySelectorAll<HTMLElement>(TRACE_TURN_ANCHOR_SELECTOR))
+      const measuredTurns = Array.from(scroller.querySelectorAll<HTMLElement>(TRACE_TURN_ANCHOR_SELECTOR))
         .map((element) => ({ element, rect: element.getBoundingClientRect() }))
-        .filter(({ rect }) => rect.bottom >= scrollerRect.top && rect.top <= scrollerRect.bottom)
-        .sort((left, right) => left.rect.top - right.rect.top)[0];
+        .sort((left, right) => left.rect.top - right.rect.top);
+      // 轮次导航的当前轮 = 视口顶部那一轮（同一次扫描，不另起观察器）。判据比 prepend 锚点严：
+      // 上一轮的底边刚好贴着顶边（顶对齐跳转后必然如此）不算它还在视口里；rect 全 0 是 jsdom，跳过。
+      const railTurnId = measuredTurns.find(({ rect }) => (
+        rect.height > 0
+        && rect.bottom > scrollerRect.top + RAIL_ACTIVE_EDGE_PX
+        && rect.top < scrollerRect.bottom
+      ))?.element.dataset.traceTurnId;
+      if (railTurnId) {
+        railActiveFromDomRef.current = true;
+        setRailActiveTurnId((current) => (current === railTurnId ? current : railTurnId));
+      }
+      const visibleTurn = measuredTurns
+        .find(({ rect }) => rect.bottom >= scrollerRect.top && rect.top <= scrollerRect.bottom);
       if (!visibleTurn?.element.dataset.traceTurnId) return;
       prependViewportAnchorRef.current = {
         sessionId: projection.sessionId,

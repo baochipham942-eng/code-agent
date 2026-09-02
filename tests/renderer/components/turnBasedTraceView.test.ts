@@ -809,4 +809,24 @@ describe('TurnBasedTraceView turn rail (N-TURNRAIL)', () => {
     expect(railTick(view, 5).getAttribute('aria-current')).toBe('true');
     expect(railTick(view, 4).getAttribute('aria-current')).toBeNull();
   });
+
+  it('滚动后当前轮按 DOM 真实位置判定（视口顶部那一轮），不受 Virtuoso 预渲染余量影响', () => {
+    const view = render(React.createElement(TurnBasedTraceView, { projection: makeProjection(-1, 10) }));
+    const scroller = view.getByTestId('virtuoso-scroller');
+    scroller.getBoundingClientRect = () => rect(0, 500);
+    const turnElements = Array.from(view.container.querySelectorAll<HTMLElement>('[data-trace-turn-id]'));
+    // turn-1..4 已滚出视口上方，turn-5 顶在视口顶部，之后的在下面
+    turnElements.forEach((element, index) => {
+      element.getBoundingClientRect = () => rect(-400 + index * 100, -300 + index * 100);
+    });
+    const firstItemIndex = Number(view.container.querySelector('[data-virtuoso-first-item-index]')!.getAttribute('data-virtuoso-first-item-index'));
+    act(() => {
+      // 预渲染余量让 rangeChanged 从 turn-3 起报，DOM 说视口顶部是 turn-5：以 DOM 为准
+      mocks.virtuosoProps.rangeChanged({ startIndex: firstItemIndex + 2, endIndex: firstItemIndex + 8 });
+      fireEvent.scroll(scroller);
+      flushAnimationFrames();
+    });
+    expect(railTick(view, 5).getAttribute('aria-current')).toBe('true');
+    expect(railTick(view, 3).getAttribute('aria-current')).toBeNull();
+  });
 });

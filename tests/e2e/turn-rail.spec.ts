@@ -1,15 +1,17 @@
 // ============================================================================
-// 轮次导航（N-TURNRAIL）全链路：真会话、真输入框、真 AgentLoop（E2E 本地假模型，零付费）跑满
-// 10 轮 → 右缘出现导航条 → 点第 2 格 → 聊天滚到第 2 轮且导航高亮落到它。
-// 历史整段加载，跳转不需要分页。跑法：CODE_AGENT_E2E_LOCAL_AGENT_MODEL=1（本地模型只对带
-// E2E_REAL_AGENT_REPLAY_EVAL_FIXTURE 标记的消息回话，每轮真调一次 Read 工具再给结论）。
+// 轮次导航（N-TURNRAIL）全链路：真会话 + 真 AgentLoop 跑满 10 轮（HTTP /api/run，E2E 本地假模型，
+// 零付费；每轮真调一次 Read 工具再给结论）→ 打开会话 → 右缘出现导航条 → 点第 2 格 →
+// 聊天滚到第 2 轮且导航高亮落到它。历史整段加载，跳转不需要分页。
+// 跑法：CODE_AGENT_E2E_LOCAL_AGENT_MODEL=1（本地模型只对带 E2E_REAL_AGENT_REPLAY_EVAL_FIXTURE
+// 标记的消息回话）。走 HTTP 而不走输入框，是因为 e2e 数据目录没有配模型 key，输入框首发会被
+// 引到「通用模型」设置页；HTTP 路径在 modelRouter 层被本地模型截住，不需要 key。
 // ============================================================================
-import { test, expect, type Page } from './fixtures/axeTest';
+import { test, expect, type APIRequestContext, type Page } from './fixtures/axeTest';
 
 const TURNS = 10;
 const FIXTURE_MARKER = 'E2E_REAL_AGENT_REPLAY_EVAL_FIXTURE';
 
-test.setTimeout(180_000);
+test.setTimeout(240_000);
 test.skip(process.env.CODE_AGENT_E2E_LOCAL_AGENT_MODEL !== '1', '需要 CODE_AGENT_E2E_LOCAL_AGENT_MODEL=1（本地假模型跑真轮次，不进默认 e2e 批）');
 
 // 首启/每次 reload 都会重弹的遮罩（信任文件夹 → 连接模型 onboarding → 跳过后落在设置页 → 返回应用），
@@ -31,30 +33,73 @@ async function dismissOverlays(page: Page): Promise<void> {
   }
 }
 
-async function openNewSession(page: Page): Promise<void> {
+async function waitForAppReady(page: Page): Promise<void> {
   await page.goto('/');
   await expect(page.locator('.h-screen')).toBeVisible({ timeout: 15_000 });
   await dismissOverlays(page);
-  const newSessionBtn = page.getByRole('button', { name: /新任务|New task/ }).first();
-  if (await newSessionBtn.isVisible().catch(() => false)) await newSessionBtn.click();
+}
+
+async function getAuthToken(page: Page): Promise<string> {
+  const token = await page.evaluate(() =>
+    (window as unknown as Record<string, unknown>).__CODE_AGENT_TOKEN__ as string | undefined,
+  );
+  expect(token, 'window.__CODE_AGENT_TOKEN__ missing').toBeTruthy();
+  return token!;
+}
+
+async function createSessionViaApi(request: APIRequestContext, token: string, title: string): Promise<string> {
+  const response = await request.post('/api/sessions', {
+    data: { title },
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  expect(response.ok(), `create session failed: ${response.status()} ${await response.text()}`).toBe(true);
+  const body = await response.json();
+  expect(body.data?.id).toBeTruthy();
+  return body.data.id as string;
+}
+
+async function countAssistantMessages(request: APIRequestContext, token: string, sessionId: string): Promise<number> {
+  const response = await request.get(`/api/sessions/${sessionId}/messages`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok()) return -1;
+  const body = await response.json();
+  const messages = (body.data?.messages ?? body.data ?? body.messages ?? []) as Array<{ role?: string; content?: unknown }>;
+  return messages.filter((message) => message.role === 'assistant' && typeof message.content === 'string' && message.content.includes('smoke completed')).length;
+}
+
+/** 一轮 = 用户一句 → 本地模型真调 Read → 结论文本（含 smoke completed）；等结论落库再发下一句。 */
+async function runTurn(request: APIRequestContext, token: string, sessionId: string, n: number): Promise<void> {
+  const response = await request.post('/api/run', {
+    data: { sessionId, prompt: `第 ${n} 件事：把第 ${n} 页的标题改一下 ${FIXTURE_MARKER}` },
+    headers: { Authorization: `Bearer ${token}` },
+    timeout: 60_000,
+  });
+  expect(response.ok(), `run ${n} failed: ${response.status()} ${(await response.text()).slice(0, 300)}`).toBe(true);
+  await expect.poll(() => countAssistantMessages(request, token, sessionId), { timeout: 45_000, intervals: [500, 1000] }).toBeGreaterThanOrEqual(n);
+}
+
+async function openSession(page: Page, sessionId: string): Promise<void> {
+  await page.reload();
+  await expect(page.locator('.h-screen')).toBeVisible({ timeout: 15_000 });
+  await dismissOverlays(page);
+  const item = page.locator(`[data-session-id="${sessionId}"]`).first();
+  await expect(item).toBeVisible({ timeout: 15_000 });
+  await item.click();
   await expect(page.locator('[data-chat-input]')).toBeVisible({ timeout: 10_000 });
 }
 
-/** 一轮 = 用户一句（真输入框 Enter）→ 本地模型真调 Read → 结论文本；等这一轮的结论落地再发下一句。 */
-async function runTurn(page: Page, n: number): Promise<void> {
-  const chatInput = page.locator('[data-chat-input]');
-  await chatInput.fill(`第 ${n} 件事：把第 ${n} 页的标题改一下 ${FIXTURE_MARKER}`);
-  await chatInput.press('Enter');
-  await expect(page.locator('[data-trace-turn-id]')).toHaveCount(n, { timeout: 20_000 });
-  await expect(page.getByText(/smoke completed/).nth(n - 1)).toBeVisible({ timeout: 30_000 });
-}
-
-test('长会话右缘出现轮次导航，点第 2 格聊天滚到第 2 轮且高亮同步', async ({ page }) => {
-  await openNewSession(page);
+test('长会话右缘出现轮次导航，点第 2 格聊天滚到第 2 轮且高亮同步', async ({ page, request }) => {
+  await waitForAppReady(page);
+  const token = await getAuthToken(page);
+  const sessionId = await createSessionViaApi(request, token, '轮次导航 e2e');
 
   for (let n = 1; n <= TURNS; n += 1) {
-    await runTurn(page, n);
+    await runTurn(request, token, sessionId, n);
   }
+
+  await openSession(page, sessionId);
+  await expect(page.locator('[data-trace-turn-id]').first()).toBeVisible({ timeout: 15_000 });
 
   const rail = page.getByTestId('turn-rail-ticks');
   await expect(rail).toBeVisible({ timeout: 10_000 });

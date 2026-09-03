@@ -1,8 +1,10 @@
 // ============================================================================
 // CapabilitySourceHover —— 底栏图标 / 框内胶囊的「来源」悬停卡外壳
 // ============================================================================
-// 只管浮层怎么开怎么关，卡里写什么由调用方给。悬停拿取、移开即走，不占常驻空间；
-// 触屏没有 hover，长按兜底。底栏在窗口最下面，卡一律向上弹。
+// 只管浮层怎么开怎么关，卡里写什么由调用方给。鼠标悬停拿取、移开即走，不占常驻空间；
+// 触屏没有 hover，长按兜底——长按打开后**必须留在屏上**，否则用户既读不完卡上的来源，
+// 也点不到卡里那个「去能力中心连接」的出口（长按打开＝一次显式开卡，收由点卡外负责）。
+// 底栏在窗口最下面，卡一律向上弹。
 // ============================================================================
 
 import React, { useEffect, useRef, useState } from 'react';
@@ -17,6 +19,9 @@ export const CapabilitySourceHover: React.FC<{
 }> = ({ testId, card, children, className }) => {
   const [open, setOpen] = useState(false);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** 长按开的卡不受鼠标事件支配：移动端浏览器会合成 mouseleave，跟着关就等于没开过 */
+  const openedByTouch = useRef(false);
+  const rootRef = useRef<HTMLDivElement>(null);
 
   const clearLongPress = () => {
     if (longPressTimer.current) {
@@ -24,23 +29,40 @@ export const CapabilitySourceHover: React.FC<{
       longPressTimer.current = null;
     }
   };
+  const close = () => {
+    openedByTouch.current = false;
+    setOpen(false);
+  };
   useEffect(() => clearLongPress, []);
+
+  // 长按开的卡靠「点卡外」收。鼠标那条路本来就有 mouseleave，这里顺带兜住
+  // 「hover 开着卡、手指/鼠标去点了页面别处」的情况。
+  useEffect(() => {
+    if (!open) return undefined;
+    const onPointerDown = (event: Event) => {
+      if (!rootRef.current?.contains(event.target as Node)) close();
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    return () => document.removeEventListener('pointerdown', onPointerDown);
+  }, [open]);
 
   return (
     <div
+      ref={rootRef}
       className={`relative ${className || ''}`}
       onMouseEnter={() => setOpen(true)}
-      onMouseLeave={() => setOpen(false)}
+      onMouseLeave={() => { if (!openedByTouch.current) setOpen(false); }}
       onFocus={() => setOpen(true)}
-      onBlur={() => setOpen(false)}
+      onBlur={() => { if (!openedByTouch.current) setOpen(false); }}
       onTouchStart={() => {
         clearLongPress();
-        longPressTimer.current = setTimeout(() => setOpen(true), LONG_PRESS_MS);
+        longPressTimer.current = setTimeout(() => {
+          openedByTouch.current = true;
+          setOpen(true);
+        }, LONG_PRESS_MS);
       }}
-      onTouchEnd={() => {
-        clearLongPress();
-        setOpen(false);
-      }}
+      onTouchEnd={clearLongPress}
+      onTouchCancel={clearLongPress}
     >
       {children}
       {open && (

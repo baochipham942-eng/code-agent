@@ -137,14 +137,12 @@ function substitute(value: unknown, vars: Record<string, string>): unknown {
 }
 
 /**
- * 决策表里 {{work}} 指向的临时项目：有 README/.env/.env.example/scripts/build，够表里的路径都落到真实文件上。
- * 不放 os.tmpdir()：macOS 上它是 /var/folders/…，命令安全层把 /var 当系统目录，项目内的 rm 会被误判成
- * 「递归删除系统目录」——那测的是夹具位置不是决策。放仓库 .code-agent/（gitignored）下，像真实项目路径。
+ * 决策表里 {{work}} 指向系统临时目录下的项目。macOS 的词面路径会落在
+ * /var/folders，而 realpath 会落在 /private/var/folders；两种形态必须同判。
  */
-export function createApprovalWorkspace(root = process.cwd()): string {
-  const parent = path.join(root, '.code-agent', 'approval-eval');
-  fs.mkdirSync(parent, { recursive: true });
-  const work = fs.mkdtempSync(path.join(parent, 'ws-'));
+export function createApprovalWorkspace(root = os.tmpdir()): string {
+  fs.mkdirSync(root, { recursive: true });
+  const work = fs.mkdtempSync(path.join(root, 'approval-eval-'));
   fs.writeFileSync(path.join(work, 'README.md'), '# approval-eval fixture\n');
   fs.writeFileSync(path.join(work, '.env'), 'SECRET=fixture\n');
   fs.writeFileSync(path.join(work, '.env.example'), 'SECRET=\n');

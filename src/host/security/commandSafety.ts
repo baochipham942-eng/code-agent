@@ -17,6 +17,10 @@ import {
 } from './shellRules/windowsRules';
 import { RM_FLAGS, RM_FLAGS_REQUIRED, RM_HEAD } from './rmFlagPattern';
 import { canonicalizeCommand } from './canonicalizeCommand';
+import {
+  rmIsContainedInWorkspace,
+  type RecursiveRmPathContext,
+} from './recursiveRmPathSafety';
 
 const logger = createLogger('CommandSafety');
 
@@ -511,7 +515,11 @@ const SENSITIVE_ENV_PATTERNS = [
  *
  * @returns ValidationResult — critical 级别命令会被拦截（allowed=false）
  */
-export function validateCommand(command: string, shell: ShellKind = defaultShellKind()): ValidationResult {
+export function validateCommand(
+  command: string,
+  shell: ShellKind = defaultShellKind(),
+  pathContext?: RecursiveRmPathContext,
+): ValidationResult {
   const canonical = canonicalizeCommand(command ?? '');
   const normalized = canonical.command;
   const analysis = {
@@ -556,13 +564,16 @@ export function validateCommand(command: string, shell: ShellKind = defaultShell
   const riskOrder: RiskLevel[] = ['safe', 'low', 'medium', 'high', 'critical'];
 
   for (const p of DANGEROUS_PATTERNS) {
-    if (p.pattern.test(normalized)) {
-      securityFlags.push(p.flag);
-      if (riskOrder.indexOf(p.riskLevel) > riskOrder.indexOf(highestRisk)) {
-        highestRisk = p.riskLevel;
-        blockReason = p.reason;
-        suggestion = p.suggestion;
-      }
+    if (!p.pattern.test(normalized)) continue;
+    const workspaceContainedSystemDelete = pathContext
+      && (p.flag === 'system_dir_delete' || p.flag === 'container_dir_delete')
+      && rmIsContainedInWorkspace(normalized, pathContext);
+    if (workspaceContainedSystemDelete) continue;
+    securityFlags.push(p.flag);
+    if (riskOrder.indexOf(p.riskLevel) > riskOrder.indexOf(highestRisk)) {
+      highestRisk = p.riskLevel;
+      blockReason = p.reason;
+      suggestion = p.suggestion;
     }
   }
 

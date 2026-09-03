@@ -29,6 +29,7 @@ import { resolveCanonicalRunPath } from '../runtime/runContext';
 import { isPathWithinRoot } from '../runtime/workspaceScope';
 import { connectorExternalWriteReason, isConnectorToolName } from '../../shared/contract/workbenchTools';
 import { isSensitiveCredentialPath } from '../sandbox/sensitivePaths';
+import { resolvedRmCriticalTarget } from '../security/recursiveRmPathSafety';
 
 const logger = createLogger('PermissionClassifier');
 
@@ -178,15 +179,10 @@ const WRITE_TOOLS = new Set([
 ]);
 
 const HOME_DIR = os.homedir();
-const CLAUDE_MEMORY_DIR = path.join(HOME_DIR, '.claude', 'context', 'memory');
-const CLAUDE_PROJECTS_DIR = path.join(HOME_DIR, '.claude', 'projects');
-const CODEX_MEMORIES_DIR = path.join(HOME_DIR, '.codex', 'memories');
-const CREDENTIAL_READ_COMMANDS = new Set([
-  'cat', 'head', 'tail', 'less', 'more', 'bat', 'strings', 'xxd', 'base64', 'cp', 'scp',
-]);
-const SYSTEM_DIRECTORIES = [
-  'System', 'usr', 'bin', 'sbin', 'etc', 'var', 'private', 'opt', 'cores', 'dev', 'Network', 'Library',
-].map((name) => path.join(path.parse(HOME_DIR).root, name));
+const CANONICAL_HOME_DIR = resolveCanonicalRunPath(HOME_DIR);
+const CLAUDE_MEMORY_DIR = path.join(CANONICAL_HOME_DIR, '.claude', 'context', 'memory');
+const CLAUDE_PROJECTS_DIR = path.join(CANONICAL_HOME_DIR, '.claude', 'projects');
+const CODEX_MEMORIES_DIR = path.join(CANONICAL_HOME_DIR, '.codex', 'memories');
 
 function expandLeadingTilde(rawPath: string): string {
   if (rawPath === '~') return HOME_DIR;
@@ -216,9 +212,10 @@ function stripInlineReadParams(rawPath: string): string {
 function resolveCandidatePath(rawPath: string, workingDirectory: string): string {
   const sanitized = stripInlineReadParams(rawPath);
   const expanded = expandLeadingTilde(sanitized);
-  return path.isAbsolute(expanded)
+  const resolved = path.isAbsolute(expanded)
     ? path.resolve(expanded)
     : path.resolve(workingDirectory, expanded);
+  return resolveCanonicalRunPath(resolved);
 }
 
 function isPathInside(candidate: string, boundary: string): boolean {
@@ -257,66 +254,11 @@ function commandProgram(word: string | undefined): string {
   return word ? path.posix.basename(word) : '';
 }
 
-const SHELL_ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
-
-function effectiveCommandWords(command: string): string[] {
-  const words = commandWords(command);
-  let index = 0;
-  while (index < words.length) {
-    while (index < words.length && SHELL_ASSIGNMENT.test(words[index])) index += 1;
-    const wrapperStart = index;
-    const program = commandProgram(words[index]);
-
-    if (program === 'command') {
-      index += 1;
-      while (index < words.length && words[index].startsWith('-')) {
-        const option = words[index];
-        if (option === '--') {
-          index += 1;
-          break;
-        }
-        // `command -v/-V` only inspects names; it does not execute the following word.
-        if (/^-[p]*[vV]/.test(option)) return words.slice(wrapperStart);
-        if (!/^-p+$/.test(option)) return words.slice(wrapperStart);
-        index += 1;
-      }
-      continue;
-    }
-
-    if (program !== 'env') return words.slice(index);
-    index += 1;
-    while (index < words.length) {
-      const word = words[index];
-      if (word === '--') {
-        index += 1;
-        break;
-      }
-      if (SHELL_ASSIGNMENT.test(word)) {
-        index += 1;
-        continue;
-      }
-      if (['-u', '--unset', '-C', '--chdir'].includes(word)) {
-        index += 2;
-        continue;
-      }
-      if (word.startsWith('--unset=') || word.startsWith('--chdir=')) {
-        index += 1;
-        continue;
-      }
-      if (word.startsWith('-')) {
-        index += 1;
-        continue;
-      }
-      break;
-    }
-  }
-  return words.slice(index);
-}
-
 function gitCommand(command: string): { subcommand: string; args: string[] } | null {
-  const words = effectiveCommandWords(command);
-  if (commandProgram(words[0]) !== 'git') return null;
-  let index = 1;
+  const words = commandWords(command);
+  const gitIndex = words.findIndex((word) => commandProgram(word) === 'git');
+  if (gitIndex < 0) return null;
+  let index = gitIndex + 1;
   while (index < words.length && words[index].startsWith('-')) {
     const option = words[index];
     if (['-C', '-c', '--git-dir', '--work-tree', '--namespace'].includes(option)) index += 2;
@@ -373,15 +315,29 @@ function gitMutationReason(command: string): string | null {
 }
 
 function credentialReadTarget(command: string, context: ClassificationContext): string | null {
-  const words = effectiveCommandWords(command);
-  if (!CREDENTIAL_READ_COMMANDS.has(commandProgram(words[0]))) return null;
-  const projectRoot = context.workspaceRoot ?? context.workingDirectory;
-  for (const word of words.slice(1)) {
-    if (!word || word.startsWith('-')) continue;
+  const words = commandWords(command);
+  const projectRoot = resolveCanonicalRunPath(context.workspaceRoot ?? context.workingDirectory);
+  for (const word of words) {
+    if (!word) continue;
     const resolved = resolveCandidatePath(word, context.workingDirectory);
-    if (isSensitiveCredentialPath(resolved, { homeDir: HOME_DIR, projectRoot })) return resolved;
+    if (isSensitiveCredentialPath(resolved, { homeDir: CANONICAL_HOME_DIR, projectRoot })) return resolved;
   }
   return null;
+}
+
+function ddCopiesWorkspaceFile(command: string, context: ClassificationContext): boolean {
+  const words = commandWords(command);
+  const ddIndex = words.findIndex((word) => commandProgram(word) === 'dd');
+  if (ddIndex < 0) return false;
+
+  const input = words.slice(ddIndex + 1).find((word) => word.startsWith('if='))?.slice(3);
+  const output = words.slice(ddIndex + 1).find((word) => word.startsWith('of='))?.slice(3);
+  if (!input || !output) return false;
+
+  const workspace = resolveCanonicalRunPath(context.workspaceRoot ?? context.workingDirectory);
+  const resolvedInput = resolveCanonicalRunPath(resolveCandidatePath(input, context.workingDirectory));
+  const resolvedOutput = resolveCanonicalRunPath(resolveCandidatePath(output, context.workingDirectory));
+  return isPathInside(resolvedInput, workspace) && isPathInside(resolvedOutput, workspace);
 }
 
 function readPathCandidates(args: Record<string, unknown>): string[] {
@@ -391,56 +347,6 @@ function readPathCandidates(args: Record<string, unknown>): string[] {
       return key.includes('path') || key === 'pattern';
     })
     .map(([, value]) => value as string);
-}
-
-function resolvedRecursiveRmTargets(command: string, workingDirectory: string): string[] | null {
-  const words = effectiveCommandWords(command);
-  if (commandProgram(words[0]) !== 'rm') return null;
-  const flags = words.slice(1).filter((word) => word.startsWith('-') && word !== '--');
-  const recursive = flags.some((flag) => flag === '--recursive' || /^-[A-Za-z]*[rR]/.test(flag));
-  if (!recursive) return null;
-
-  return words.slice(1)
-    .filter((word) => !word.startsWith('-'))
-    .map((target) => resolveCandidatePath(target, workingDirectory));
-}
-
-function resolvedRmCriticalTarget(command: string, context: ClassificationContext): string | null {
-  const workdir = path.resolve(context.workingDirectory);
-  const workspace = path.resolve(context.workspaceRoot ?? workdir);
-  const targets = resolvedRecursiveRmTargets(command, workdir);
-  if (!targets) return null;
-
-  for (const resolved of targets) {
-    const root = path.parse(resolved).root;
-    const rootLevel = path.dirname(resolved) === root;
-    const home = resolved === HOME_DIR;
-    const workdirOrParent = isPathInside(workdir, resolved);
-    if (resolved === root || rootLevel || home || workdirOrParent) return resolved;
-
-    // The workspace boundary is authoritative even when macOS places the
-    // checkout below /private/tmp. Its descendants continue through the
-    // normal classifier chain instead of inheriting a lexical system-dir deny.
-    if (isPathInside(resolved, workspace)) continue;
-
-    const systemDirectory = SYSTEM_DIRECTORIES.some((directory) => isPathInside(resolved, directory));
-    if (systemDirectory) return resolved;
-  }
-  return null;
-}
-
-export function recursiveRmIsContainedInWorkspace(
-  command: string,
-  context: Pick<ClassificationContext, 'workingDirectory' | 'workspaceRoot'>,
-): boolean {
-  const workdir = path.resolve(context.workingDirectory);
-  const workspace = path.resolve(context.workspaceRoot ?? workdir);
-  const targets = resolvedRecursiveRmTargets(command, workdir);
-  if (!targets?.length) return false;
-  return targets.every((resolved) => (
-    isPathInside(resolved, workspace)
-    && !isPathInside(workdir, resolved)
-  ));
 }
 
 function contextAfterCdSegment(
@@ -497,8 +403,8 @@ export function readArgumentsRequirePermission(
   return readPathCandidates(args).some((candidate) => {
     const resolved = resolveCandidatePath(candidate, context.workingDirectory);
     return isSensitiveCredentialPath(resolved, {
-      homeDir: HOME_DIR,
-      projectRoot: context.workspaceRoot ?? context.workingDirectory,
+      homeDir: CANONICAL_HOME_DIR,
+      projectRoot: resolveCanonicalRunPath(context.workspaceRoot ?? context.workingDirectory),
     });
   });
 }
@@ -750,8 +656,8 @@ export class PermissionClassifier {
     for (const candidate of candidates) {
       const resolved = resolveCandidatePath(candidate, context.workingDirectory);
       if (isSensitiveCredentialPath(resolved, {
-        homeDir: HOME_DIR,
-        projectRoot: context.workspaceRoot ?? context.workingDirectory,
+        homeDir: CANONICAL_HOME_DIR,
+        projectRoot: resolveCanonicalRunPath(context.workspaceRoot ?? context.workingDirectory),
       })) {
         const reason = `读取凭据路径需要用户确认: ${resolved}`;
         return {
@@ -929,7 +835,7 @@ export class PermissionClassifier {
     }
 
     // B2: Bash 安全判据统一由 commandSafety 解析重定向、复合命令与危险参数。
-    if (isKnownSafeCommand(command)) {
+    if (isKnownSafeCommand(command) || ddCopiesWorkspaceFile(command, context)) {
       return {
         decision: 'approve',
         reason: '安全命令',

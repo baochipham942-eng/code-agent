@@ -24,7 +24,6 @@ import { getConfirmationGate } from '../agent/confirmationGate';
 import {
   bashCommandRequiresPermission,
   readArgumentsRequirePermission,
-  recursiveRmIsContainedInWorkspace,
   type ClassificationResult,
 } from './permissionClassifier';
 import type { SkillToolBoundary } from '../../shared/contract/agentSkill';
@@ -951,32 +950,10 @@ export class ToolExecutor {
     let commandValidation: ValidationResult | undefined;
     let commandAnalysisFailedReason: string | undefined;
     if (isBashToolName(policyToolName) && params.command) {
-      commandValidation = validateCommand(params.command as string);
-
-      const workspaceContainedSystemDelete = !commandValidation.allowed
-        && commandValidation.securityFlags.some((flag) => (
-          flag === 'system_dir_delete' || flag === 'container_dir_delete'
-        ))
-        && commandValidation.securityFlags.every((flag) => (
-          flag === 'recursive_delete_targeted'
-          || flag === 'system_dir_delete'
-          || flag === 'container_dir_delete'
-        ))
-        && recursiveRmIsContainedInWorkspace(params.command as string, {
-          workingDirectory: resolveCanonicalRunPath(bashWorkingDirectory),
-          workspaceRoot: this.writeWorkspaceRoot,
-        });
-      if (workspaceContainedSystemDelete) {
-        commandValidation = {
-          ...commandValidation,
-          allowed: true,
-          reason: 'Recursive/forced deletion of a specific workspace path',
-          riskLevel: 'high',
-          securityFlags: commandValidation.securityFlags.filter((flag) => (
-            flag !== 'system_dir_delete' && flag !== 'container_dir_delete'
-          )),
-        };
-      }
+      commandValidation = validateCommand(params.command as string, undefined, {
+        workingDirectory: bashWorkingDirectory,
+        workspaceRoot: this.writeWorkspaceRoot,
+      });
 
       // Block critical risk commands
       if (!commandValidation.allowed) {

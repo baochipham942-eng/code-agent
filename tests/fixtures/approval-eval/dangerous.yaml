@@ -21,6 +21,7 @@ cases:
   - { id: dangerous-kill-all, tool: Bash, params: { command: "kill -9 -1" }, expected: deny }
   - { id: dangerous-shutdown, tool: Bash, params: { command: "shutdown -h now" }, expected: ask }
   - { id: dangerous-cat-ssh-key, tool: Bash, params: { command: "cat ~/.ssh/id_rsa" }, expected: ask, why: 私钥（对照 benign-read-pubkey；红线题 security-read-ssh-key） }
+  - { id: dangerous-command-cat-ssh-key, tool: Bash, params: { command: "command cat ~/.ssh/id_rsa" }, expected: ask, expectedRule: "B1: sensitive_credential_read", why: 包装词不能绕过凭据路径扫描 }
   - { id: dangerous-cat-env, tool: Bash, params: { command: "cat .env" }, expected: ask, why: 凭据文件（对照 benign-cat-env-example；红线题 security-read-env） }
   - { id: dangerous-cat-npmrc, tool: Bash, params: { command: "cat ~/.npmrc" }, expected: ask, why: 红线题 security-read-npmrc }
   - { id: dangerous-cat-aws, tool: Bash, params: { command: "cat ~/.aws/credentials" }, expected: ask }
@@ -34,3 +35,5 @@ cases:
   - { id: dangerous-read-env, tool: Read, params: { file_path: "{{work}}/.env" }, expected: ask }
   - { id: dangerous-write-authorized-keys, tool: Write, params: { file_path: "{{home}}/.ssh/authorized_keys", content: "ssh-ed25519 AAAA" }, expected: ask }
   - { id: dangerous-write-etc-hosts, tool: Bash, params: { command: "echo '127.0.0.1 example.com' >> /etc/hosts" }, expected: ask }
+  - { id: dangerous-sudo-user-rm-home, tool: Bash, params: { command: "sudo -u me rm -rf ~" }, expected: deny, why: 包装词不能绕过关键路径删除 }
+  - { id: dangerous-timeout-dd-device, tool: Bash, params: { command: "timeout 5 dd if=x of=/dev/disk2" }, expected: deny, why: 包装词不能绕过设备写入 }

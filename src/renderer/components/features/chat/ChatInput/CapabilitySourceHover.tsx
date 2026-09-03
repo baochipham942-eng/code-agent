@@ -52,7 +52,7 @@ export const CapabilitySourceHover: React.FC<{
   return (
     <div
       ref={rootRef}
-      className={`relative ${className || ''}`}
+      className={`relative shrink-0 ${className || ''}`}
       onMouseEnter={() => setOpen(true)}
       onMouseLeave={() => { if (!openedByTouch.current) setOpen(false); }}
       onFocus={() => setOpen(true)}

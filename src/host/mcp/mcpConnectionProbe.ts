@@ -10,6 +10,8 @@
 // 没人注册过就一律当「没连上」——落到调用方的「都没连上 ⇒ 不收窄」那条安全侧。
 // ============================================================================
 
+import type { MCPServerStatus } from './types';
+
 type McpConnectionProbe = (serverName: string) => boolean;
 
 let probe: McpConnectionProbe | undefined;
@@ -28,7 +30,7 @@ export function setMcpConnectionProbe(next: McpConnectionProbe | undefined): voi
  * 安全侧不变：状态不存在（没装 / 拼错）、enabled=false、'error' 一律 false ⇒ 不收窄。
  */
 export function isMcpStatusUsableForScope(
-  status: 'lazy' | 'disconnected' | 'connecting' | 'connected' | 'error' | undefined,
+  status: MCPServerStatus | undefined,
   enabled: boolean,
 ): boolean {
   if (!status || !enabled) return false;

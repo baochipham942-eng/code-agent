@@ -292,6 +292,19 @@ describe('toolSearchModule (native)', () => {
       }
     });
 
+    // discovery 会真的把 lazy stdio server 拉起子进程——范围外的拉起来结果也会被丢掉，
+    // scope 判据必须前置到 discovery 调用上（ai-review 第十四轮 Nit）
+    it('turn scope 收窄时 lazy discovery 只拉起范围内的 server', async () => {
+      searchToolsMock.mockResolvedValue({ tools: [], loadedTools: [], totalCount: 0, hasMore: false });
+      const scopedCtx = makeCtx({ toolScope: { allowedMcpServerIds: ['lark'] } } as Partial<ToolContext>);
+      await run({ query: 'feishu' }, scopedCtx);
+      expect(discoverLazyServersForSearchMock).toHaveBeenCalledWith('feishu', ['lark']);
+
+      discoverLazyServersForSearchMock.mockClear();
+      await run({ query: 'feishu' });
+      expect(discoverLazyServersForSearchMock).toHaveBeenCalledWith('feishu', undefined);
+    });
+
     it('formats skill hits with not-callable reason and invocation', async () => {
       searchToolsMock.mockResolvedValue({
         tools: [

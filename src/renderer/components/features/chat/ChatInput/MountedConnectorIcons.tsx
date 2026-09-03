@@ -65,8 +65,9 @@ export const MountedConnectorIcons: React.FC = () => {
   // oauthStatus 冷缓存会起 CLI 子进程做 status()，不能落在每个输入区的渲染路径上
   const showSettings = useAppStore((state) => state.showSettings);
   const expertForOauth = agentEntries.find((entry) => entry.id === activeAgentId);
-  const cliConnectorInPlay = selectedConnectorIds.some((id) => id === 'feishu' || id === 'tmeet')
-    || Boolean(expertForOauth?.connectors?.some((connector) => connector.id === 'feishu' || connector.id === 'tmeet'));
+  const isCliConnector = (id: string) => CLI_CONNECTOR_DESCRIPTORS.some((descriptor) => descriptor.id === id);
+  const cliConnectorInPlay = selectedConnectorIds.some(isCliConnector)
+    || Boolean(expertForOauth?.connectors?.some((connector) => isCliConnector(connector.id)));
   const oauthStatuses = useConnectorOAuthStatuses(
     `${[...selectedConnectorIds].sort().join(',')}|${showSettings ? 'open' : 'closed'}`,
     cliConnectorInPlay,

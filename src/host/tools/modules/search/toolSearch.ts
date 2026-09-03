@@ -67,9 +67,12 @@ export async function executeToolSearch(
 
   try {
     const service = getToolSearchService();
+    // scope 判据前置：discovery 会真的把 lazy stdio server 拉起来（起子进程），
+    // 范围外的拉起来结果也会被丢掉，白起——收窄生效时只发现范围内的
+    const scopedMcpServerIds = normalizeWorkbenchToolScope(ctx.toolScope)?.allowedMcpServerIds;
     let mcpDiscovery: McpDiscoveryEntry[] = [];
     try {
-      mcpDiscovery = await getMCPClient().discoverLazyServersForSearch(query);
+      mcpDiscovery = await getMCPClient().discoverLazyServersForSearch(query, scopedMcpServerIds);
     } catch (discoveryError) {
       ctx.logger.warn('Lazy MCP discovery during tool search failed', {
         error: discoveryError instanceof Error ? discoveryError.message : String(discoveryError),
@@ -86,7 +89,6 @@ export async function executeToolSearch(
     // 搜出来模型照单点名、调用在 dispatch 门挨挡，「看见却调不动」比看不见更误导。
     // 计数也要对齐过滤后的列表，否则「找到 N 个」与列出的条目对不上；
     // hasMore 保留服务真值——范围内匹配超过 maxResults 时模型该知道还能缩关键词
-    const scopedMcpServerIds = normalizeWorkbenchToolScope(ctx.toolScope)?.allowedMcpServerIds;
     if (scopedMcpServerIds?.length) {
       result.tools = result.tools.filter((tool) =>
         tool.source !== 'mcp' || !tool.mcpServer || scopedMcpServerIds.includes(tool.mcpServer));

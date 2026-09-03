@@ -560,13 +560,14 @@ export function withWorkbenchTurnSystemContext(
   // 全都没连上 ⇒ 空 ⇒ 不收窄，仍是「先宽后收」。
   // 同一条保护理由的另一半：内置进程内 server（memory-kv/code-index）是基础设施不是
   // 「连接器」，专家收窄若把它们滤掉，该专家**每一轮**都静默失去记忆与代码索引——
-  // 收窄时并回来（手选那支不并：那是用户当次的显式决定，撤不撤他自己说了算）。
+  // 但**只在专家确实要收窄时**才并回来：它们在生产恒存在，无条件并会把普通会话
+  // （没专家也没手选）的每一轮都收窄成只剩这两个（ai-review 第十四轮抓的实回归）。
+  const expertScopedMcpServerIds = expertMcpServerIds.filter((serverId) => isMcpServerConnected(serverId));
   const allowedMcpServerIds = explicitMcpServerIds.length > 0
     ? explicitMcpServerIds
-    : [
-        ...expertMcpServerIds.filter((serverId) => isMcpServerConnected(serverId)),
-        ...getBuiltinInProcessMcpServerIds(),
-      ];
+    : expertScopedMcpServerIds.length > 0
+      ? [...expertScopedMcpServerIds, ...getBuiltinInProcessMcpServerIds()]
+      : [];
 
   const toolScope = normalizeWorkbenchToolScope({
     allowedSkillIds: [

@@ -133,6 +133,17 @@ describe('ADR-052 C：专家连接器的运行时收窄', () => {
     expect(mcpScopeOf(undefined, { preferredAgentId: 'writer', selectedMcpServerIds: ['lark'] })).toEqual(['lark']);
   });
 
+  // 反向对照（ai-review 第十四轮抓的实回归）：基础设施在生产恒存在，无条件并回会把
+  // 普通会话的每一轮都收窄成只剩 memory-kv/code-index——没有专家也没有手选时必须不收窄
+  it('没有专家也没有手选时，内置进程内 server 不自己组成 scope（普通会话不收窄）', () => {
+    inProcessMcpServers.add('memory-kv');
+    inProcessMcpServers.add('code-index');
+    resolveAgentMock.mockReturnValue({ id: 'writer', name: 'writer' });
+
+    expect(mcpScopeOf(undefined, { preferredAgentId: 'writer' })?.length ?? 0).toBe(0);
+    expect(mcpScopeOf(undefined, undefined)?.length ?? 0).toBe(0);
+  });
+
   it('连接器侧（CLI 的 feishu + 注册表里的 crm）与 MCP 名各归各位', () => {
     cliConnectorStatus.feishu = { connected: true };
     resolveAgentMock.mockReturnValue(expertWithConnectors([

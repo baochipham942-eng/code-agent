@@ -64,13 +64,86 @@ function readShellWord(command: string, start: number): { raw: string; end: numb
       quote = char;
       continue;
     }
-    if (/\s/.test(char) || char === ';' || char === '|' || char === '&') break;
+    if (/\s/.test(char) || char === ';' || char === '|' || char === '&' || char === '>') break;
   }
   return { raw: command.slice(wordStart, index), end: index };
 }
 
-function shellRedirectTargets(command: string): string[] {
+interface ShellRedirectScan {
+  targets: string[];
+  uncertain: string[];
+}
+
+const SHELL_COMMAND_WRAPPERS = new Set(['sh', 'bash', 'zsh', 'dash']);
+const MAX_REDIRECT_WRAPPER_DEPTH = 3;
+
+function splitShellSegments(command: string): string[] {
+  const segments: string[] = [];
+  let segmentStart = 0;
+  let quote: "'" | '"' | undefined;
+  let escaped = false;
+  for (let index = 0; index < command.length; index += 1) {
+    const char = command[index];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (char === '\\' && quote !== "'") {
+      escaped = true;
+      continue;
+    }
+    if (quote) {
+      if (char === quote) quote = undefined;
+      continue;
+    }
+    if (char === "'" || char === '"') {
+      quote = char;
+      continue;
+    }
+    if (char !== ';' && char !== '|'
+      && !(char === '&' && command[index + 1] === '&')) continue;
+    segments.push(command.slice(segmentStart, index));
+    if (command[index + 1] === char) index += 1;
+    segmentStart = index + 1;
+  }
+  segments.push(command.slice(segmentStart));
+  return segments;
+}
+
+function readShellWords(command: string): string[] {
+  const words: string[] = [];
+  let index = 0;
+  let previousWordEnd = -1;
+  while (index < command.length) {
+    while (index < command.length && /\s/.test(command[index])) index += 1;
+    const redirectsOutput = command[index] === '>'
+      || (command[index] === '&' && command[index + 1] === '>');
+    if (redirectsOutput) {
+      if (
+        command[index] === '>'
+        && previousWordEnd === index
+        && /^\d+$/.test(words.at(-1) ?? '')
+      ) words.pop();
+      if (command[index] === '&') index += 1;
+      while (command[index + 1] === '>') index += 1;
+      const duplicatesFileDescriptor = command[index + 1] === '&';
+      const target = readShellWord(command, index + (duplicatesFileDescriptor ? 2 : 1));
+      index = Math.max(index + 1, target.end);
+      continue;
+    }
+    const word = readShellWord(command, index);
+    if (word.raw !== '') {
+      words.push(word.raw);
+      previousWordEnd = word.end;
+    }
+    index = word.end > index ? word.end : index + 1;
+  }
+  return words;
+}
+
+function shellRedirectTargets(command: string, depth = 0): ShellRedirectScan {
   const targets: string[] = [];
+  const uncertain: string[] = [];
   let quote: "'" | '"' | undefined;
   let escaped = false;
   for (let index = 0; index < command.length; index += 1) {
@@ -106,7 +179,41 @@ function shellRedirectTargets(command: string): string[] {
     }
     index = Math.max(index, target.end - 1);
   }
-  return targets;
+
+  for (const segment of splitShellSegments(command)) {
+    const words = readShellWords(segment);
+    const wrapper = canonicalizeCommand(words[0] ?? '').command;
+    const isShellWrapper = SHELL_COMMAND_WRAPPERS.has(wrapper);
+    const isEvalWrapper = wrapper === 'eval';
+    if (!isShellWrapper && !isEvalWrapper) continue;
+
+    const scriptWords = isShellWrapper
+      ? (/^-[A-Za-z]*c[A-Za-z]*$/.test(canonicalizeCommand(words[1] ?? '').command)
+          ? words.slice(2, 3)
+          : [])
+      : words.slice(1);
+    if (scriptWords.length === 0) continue;
+    if (depth >= MAX_REDIRECT_WRAPPER_DEPTH) {
+      uncertain.push(`uncertain-redirection:${wrapper}`);
+      continue;
+    }
+    const decodedWords = scriptWords.map((word) => canonicalizeCommand(word));
+    const decodedScript = decodedWords.map((word) => word.command).join(' ');
+    const decodedAssessment = canonicalizeCommand(decodedScript);
+    if (
+      scriptWords.some((word) => word.includes('$(') || word.includes('`'))
+      || decodedWords.some((word) => word.parsingFailed)
+      || decodedAssessment.parsingFailed
+    ) {
+      uncertain.push(`uncertain-redirection:${wrapper}`);
+      continue;
+    }
+    const nested = shellRedirectTargets(decodedScript, depth + 1);
+    targets.push(...nested.targets);
+    uncertain.push(...nested.uncertain);
+  }
+
+  return { targets, uncertain };
 }
 
 function genericPathAssessment(
@@ -191,12 +298,13 @@ function descriptorAssessment(
   const uncertain: string[] = [];
   const memoryAlias = path.join(path.basename(path.dirname(memoryDir)), path.basename(memoryDir));
   const canonical = canonicalizeCommand(command);
-  const redirectTargets = shellRedirectTargets(command);
-  if (canonical.parsingFailed && redirectTargets.length > 0) {
+  const redirectScan = shellRedirectTargets(command);
+  uncertain.push(...redirectScan.uncertain);
+  if (canonical.parsingFailed && redirectScan.targets.length > 0) {
     uncertain.push(`uncertain-command-analysis:${canonical.failureReason ?? 'parse-failure'}`);
   }
   if (canonical.command.includes(memoryDir) || canonical.command.includes(memoryAlias)) targets.push(memoryDir);
-  for (const rawTarget of redirectTargets) {
+  for (const rawTarget of redirectScan.targets) {
     const target = rawTarget;
     if (!target || /[$`*?{}]/.test(target)) {
       uncertain.push(`uncertain-redirection:${rawTarget || '<missing>'}`);

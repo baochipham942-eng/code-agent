@@ -199,6 +199,7 @@ describe('ToolExecutor directive memory path authority', () => {
     ['MemoryWrite direct', 'MemoryWrite', { action: 'write', filename: 'c1.md', content: 'directive' }],
     ['Write direct', 'Write', { file_path: path.join(memoryDir, 'c1.md'), content: 'directive' }],
     ['Bash redirect', 'Bash', { command: `printf directive > ${path.join(memoryDir, 'c1.md')}` }],
+    ['Bash shell wrapper redirect', 'Bash', { command: `sh -c "printf directive > ${path.join(memoryDir, 'c2.md')}"` }],
     ['Bash append INDEX', 'Bash', { command: `printf entry >> ${path.join(memoryDir, 'INDEX.md')}` }],
     ['future declared writer', 'FutureArtifactWriter', { destination: path.join(memoryDir, 'future.md') }],
   ] as const;

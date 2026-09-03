@@ -32,6 +32,7 @@ import {
   getCachedCliConnectorConnectionStatus,
   isCliConnectorId,
 } from '../connectors/cli/cliConnectorStatusCache';
+import { isMcpServerConnected } from '../mcp/mcpConnectionProbe';
 import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('WorkbenchTurnContext');
@@ -531,7 +532,11 @@ export function withWorkbenchTurnSystemContext(
   // 「会话覆盖专家」要整支让位：会话在**任一侧**做过显式选择（连接器或 MCP），
   // 专家声明就整批不参与，两侧口径一致——只让一侧让位会出现「你选了连接器、
   // 专家的 MCP 还在悄悄收窄」，和渲染层那句「这轮以你选的连接器为准」打架。
-  const sessionPickedScope = explicitConnectorIds.length > 0 || explicitMcpServerIds.length > 0;
+  // 🔴 只认 context 那侧：options.toolScope 是上游（子代理 / cron / 调用方）传进来的范围，
+  // 不是用户手选；把它当手选，会出现「上游带了 MCP 范围 ⇒ 专家声明的连接器那支被清空、
+  // 那类工具重新全开放」。
+  const sessionPickedScope = (workbenchToolScope?.allowedConnectorIds?.length ?? 0) > 0
+    || (workbenchToolScope?.allowedMcpServerIds?.length ?? 0) > 0;
   const expertCoreIds = sessionPickedScope ? [] : resolveSessionConnectorIds({ expertConnectors });
   const expertConnectorSideIds = expertCoreIds.filter(isConnectorSideId);
   const expertMcpServerIds = expertCoreIds.filter((id) => !isConnectorSideId(id));
@@ -542,13 +547,13 @@ export function withWorkbenchTurnSystemContext(
   const allowedConnectorIds = explicitConnectorIds.length > 0
     ? explicitConnectorIds
     : getReadySelectedConnectorIds(expertConnectorSideIds);
-  // MCP 那支不另做「连上了没」的过滤——和「用户手选 MCP」那条既有路径同口径
-  // （selectedMcpServerIds 直接进 scope，不问连没连）。不在这里发明第二套宽松规则；
-  // 「声明了一个没连上的 MCP 会把 MCP 工具面锁死」是手选路径本来就有的账，
-  // 要治在 N-EXPERT-CORE-MCPSCOPE 里一起治。
+  // 专家那支的 MCP 也要过一次「连上了没」，和连接器那支同口径：没装 / 没连 / 名字写错的
+  // 声明一旦进了 scope，会把**其他所有** MCP 工具挡掉（allowedMcpServerIds 非空即收窄）。
+  // 用户手选是他自己的显式决定，专家声明是背后自动生效的，出错代价不该落到用户头上。
+  // 全都没连上 ⇒ 空 ⇒ 不收窄，仍是「先宽后收」。
   const allowedMcpServerIds = explicitMcpServerIds.length > 0
     ? explicitMcpServerIds
-    : expertMcpServerIds;
+    : expertMcpServerIds.filter((serverId) => isMcpServerConnected(serverId));
 
   const toolScope = normalizeWorkbenchToolScope({
     allowedSkillIds: [

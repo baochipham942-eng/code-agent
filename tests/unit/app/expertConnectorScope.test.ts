@@ -29,6 +29,11 @@ vi.mock('../../../src/host/observability/posthogNode', () => ({
 // CLI 连接器（feishu/tmeet）的「连上了没」走自己的状态缓存，不进 connector registry，
 // 所以要测「声明了但没连上」这一支必须从这里给状态。
 const cliConnectorStatus = vi.hoisted(() => ({} as Record<string, { connected: boolean } | undefined>));
+// 专家声明的 MCP 也要过「连上了没」——没连上的进了 scope 会把其他 MCP 工具全挡掉
+const connectedMcpServers = vi.hoisted(() => new Set<string>());
+vi.mock('../../../src/host/mcp/mcpConnectionProbe', () => ({
+  isMcpServerConnected: (name: string) => connectedMcpServers.has(name),
+}));
 vi.mock('../../../src/host/connectors/cli/cliConnectorStatusCache', () => ({
   isCliConnectorId: (id: string) => id === 'feishu' || id === 'tmeet',
   getCachedCliConnectorConnectionStatus: (id: string) => cliConnectorStatus[id],
@@ -77,6 +82,8 @@ describe('ADR-052 C：专家连接器的运行时收窄', () => {
     // 现在只注册真正属于连接器侧的 crm（原生连接器），MCP 名一律不注册。
     registerConnector('crm', { connected: true });
     for (const key of Object.keys(cliConnectorStatus)) delete cliConnectorStatus[key];
+    connectedMcpServers.clear();
+    connectedMcpServers.add('lark');
   });
 
   afterEach(() => {
@@ -149,6 +156,34 @@ describe('ADR-052 C：专家连接器的运行时收窄', () => {
 
     expect(mcpScopeOf(undefined, context)).toEqual(['notion']);
     expect(connectorScopeOf(undefined, context)?.length ?? 0).toBe(0);
+  });
+
+  // 上游（子代理 / cron / 调用方）传进来的 toolScope 不是「用户手选」。把它当手选，
+  // 会出现「上游带了 MCP 范围 ⇒ 专家声明的连接器那支被清空、那类工具重新全开放」。
+  it('上游 options.toolScope 带了 MCP 范围，不算用户手选，专家的连接器那支照常收窄', () => {
+    cliConnectorStatus.feishu = { connected: true };
+    resolveAgentMock.mockReturnValue(expertWithConnectors([{ id: 'feishu', level: 'core' }]));
+
+    expect(connectorScopeOf(
+      { toolScope: { allowedMcpServerIds: ['upstream-mcp'] } },
+      { preferredAgentId: 'writer' },
+    )).toEqual(['feishu']);
+  });
+
+  // 用户手选是他自己的显式决定；专家声明是背后自动生效的，写错一个名字就把所有
+  // MCP 工具挡掉，代价不该落到用户头上。
+  it('专家声明的 MCP 没连上时不进 scope；全都没连上就不收窄', () => {
+    connectedMcpServers.clear();
+    resolveAgentMock.mockReturnValue(expertWithConnectors([
+      { id: 'lark', level: 'core' },
+      { id: 'typo-mcp', level: 'core' },
+    ]));
+
+    expect(mcpScopeOf(undefined, { preferredAgentId: 'writer' })?.length ?? 0).toBe(0);
+
+    // 正向对照：连上一个就收窄到它，证明上面那个 0 不是「这条路本来就走不通」
+    connectedMcpServers.add('lark');
+    expect(mcpScopeOf(undefined, { preferredAgentId: 'writer' })).toEqual(['lark']);
   });
 
   // 拍板口径：先宽后收。没身份不是"一个都不给"，而是维持现状不收窄。

@@ -37,6 +37,7 @@ import type {
   InProcessMCPServerInterface,
 } from './types';
 import { isStdioConfig, isInProcessConfig, isHttpStreamableConfig, CUA_DRIVER_SERVER_NAME } from './types';
+import { setMcpConnectionProbe } from './mcpConnectionProbe';
 import { buildCuaAgentCursorCapabilityForToolCall } from './cuaAgentCursor';
 import { CUA_READONLY_TOOLS, gateCuaToolCall } from './cuaSessionLock';
 import { gateCuaBudget } from './cuaTrajectoryBudget';
@@ -1291,3 +1292,7 @@ export async function initMCPClient(
 export async function refreshMCPServersFromCloud(): Promise<void> {
   return _refreshMCPServersFromCloud(getMCPClient);
 }
+
+// 连接态探针接电：turn scope 那条同步路径要判断「专家声明的 MCP 连上了没」，
+// 但不能反向 import 本模块（依赖图 + 行数门）。见 mcpConnectionProbe.ts。
+setMcpConnectionProbe((serverName) => getMCPClient().getServerState(serverName)?.status === 'connected');

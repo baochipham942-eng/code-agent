@@ -65,14 +65,18 @@ describe('shell redirect write targets', () => {
     ["sh -lc 'printf x > out.txt'", 'out.txt'],
     ["sh -c -- 'printf x > out.txt'", 'out.txt'],
     ["bash --noprofile -c 'printf x > out.txt'", 'out.txt'],
-    ["bash --rcfile bashrc -c 'printf x > out.txt'", 'out.txt'],
+    ["bash --norc --noprofile -c 'printf x > out.txt'", 'out.txt'],
     ["zsh -ec 'printf x > out.txt'", 'out.txt'],
     ["dash -c 'printf x > out.txt'", 'out.txt'],
     ["MODE=1 sh -c 'printf x > out.txt'", 'out.txt'],
     ["env sh -c 'printf x > out.txt'", 'out.txt'],
+    ["env FOO=1 sh -c 'printf x > out.txt'", 'out.txt'],
     ["env -i sh -c 'printf x > out.txt'", 'out.txt'],
     ["env -u MODE sh -c 'printf x > out.txt'", 'out.txt'],
     ["env MODE=1 /bin/bash -c 'printf x > out.txt'", 'out.txt'],
+    ["nohup sh -c 'printf x > out.txt'", 'out.txt'],
+    ["timeout 5 sh -c 'printf x > out.txt'", 'out.txt'],
+    ["nice sh -c 'printf x > out.txt'", 'out.txt'],
     ["/bin/sh -c 'printf x > out.txt'", 'out.txt'],
     ["command sh -c 'printf x > out.txt'", 'out.txt'],
     ["command -p sh -c 'printf x > out.txt'", 'out.txt'],
@@ -107,9 +111,18 @@ describe('shell redirect write targets', () => {
     });
   });
 
+  it('still scans a located -c script after an ambiguous option value', () => {
+    expect(resolve('bash --rcfile "$F" -c \'echo hi > out.txt\'')).toMatchObject({
+      targets: [resolveCanonicalRunPath(path.join(workingDirectory, 'out.txt'))],
+      uncertain: ['uncertain-redirection:bash'],
+    });
+  });
+
   it.each([
     ["sh -c 'echo $(date) > out.txt'", 'uncertain-redirection:sh'],
-    ["bash --unknown value -c 'echo hi > out.txt'", 'uncertain-redirection:bash'],
+    ['bash -x script.sh', 'uncertain-redirection:bash'],
+    ['bash "$SCRIPT"', 'uncertain-redirection:bash'],
+    ['bash --rcfile "$F" -c \'echo hi\'', 'uncertain-redirection:bash'],
     ['sh -c "$SCRIPT"', 'uncertain-redirection:sh'],
     ['eval "${SCRIPT}"', 'uncertain-redirection:eval'],
     ["eval 'echo `date` > out.txt'", 'uncertain-redirection:eval'],

@@ -80,22 +80,6 @@ const SHELL_PARAMETER_EXPANSION = /\$(?:\{|[A-Za-z_]|[0-9@*#?$!-])/;
 const SHELL_ASSIGNMENT_PREFIX = /^[A-Za-z_][A-Za-z0-9_]*=/;
 const ENV_OPTIONS_WITHOUT_VALUES = new Set(['-i', '--ignore-environment', '-0', '--null', '-v', '--debug']);
 const ENV_OPTIONS_WITH_VALUES = new Set(['-u', '--unset', '-C', '--chdir', '--argv0', '-P']);
-const SHELL_OPTIONS_WITHOUT_VALUES = new Set([
-  '--debugger',
-  '--dump-po-strings',
-  '--dump-strings',
-  '--help',
-  '--login',
-  '--noediting',
-  '--noprofile',
-  '--norc',
-  '--posix',
-  '--pretty-print',
-  '--restricted',
-  '--verbose',
-  '--version',
-]);
-const SHELL_OPTIONS_WITH_VALUES = new Set(['--init-file', '--rcfile', '-O', '+O', '-o', '+o']);
 
 function shellExecutableName(word: string | undefined): string {
   return path.basename(canonicalizeCommand(word ?? '').command);
@@ -135,6 +119,25 @@ function findShellWrapperIndex(words: string[]): number {
       while (['-p', '--'].includes(canonicalizeCommand(words[index] ?? '').command)) index += 1;
       continue;
     }
+    if (executable === 'nohup') {
+      index += 1;
+      while (canonicalizeCommand(words[index] ?? '').command.startsWith('-')) index += 1;
+      continue;
+    }
+    if (executable === 'timeout') {
+      index += 1;
+      while (canonicalizeCommand(words[index] ?? '').command.startsWith('-')) index += 1;
+      if (index < words.length) index += 1;
+      continue;
+    }
+    if (executable === 'nice') {
+      index += 1;
+      while (
+        canonicalizeCommand(words[index] ?? '').command.startsWith('-')
+        || /^[+-]?\d+$/.test(canonicalizeCommand(words[index] ?? '').command)
+      ) index += 1;
+      continue;
+    }
     return -1;
   }
   return -1;
@@ -145,38 +148,24 @@ function findShellScriptIndex(
   wrapperIndex: number,
 ): { index?: number; uncertain: boolean } {
   let index = wrapperIndex + 1;
+  let uncertain = false;
   while (index < words.length) {
     const option = canonicalizeCommand(words[index]).command;
     if (/^-[A-Za-z]*c[A-Za-z]*$/.test(option)) {
       let scriptIndex = index + 1;
       if (canonicalizeCommand(words[scriptIndex] ?? '').command === '--') scriptIndex += 1;
-      return { index: scriptIndex < words.length ? scriptIndex : undefined, uncertain: false };
+      return scriptIndex < words.length
+        ? { index: scriptIndex, uncertain }
+        : { uncertain: true };
     }
-    if (option === '--') return { uncertain: false };
-    if (SHELL_OPTIONS_WITH_VALUES.has(option)) {
-      index += 2;
-      continue;
-    }
-    if (/^(?:--init-file|--rcfile)=/.test(option) || SHELL_OPTIONS_WITHOUT_VALUES.has(option)) {
+    if (option.startsWith('-') || option.startsWith('+')) {
       index += 1;
       continue;
     }
-    if (/^[+-][A-Za-z]+$/.test(option)) {
-      index += 1;
-      continue;
-    }
-    if (option.startsWith('--')) {
-      const unresolved = words.slice(index + 1).some((word) => (
-        word.includes('>')
-        || word.includes('$(')
-        || word.includes('`')
-        || SHELL_PARAMETER_EXPANSION.test(word)
-      ));
-      return { uncertain: unresolved };
-    }
-    return { uncertain: false };
+    uncertain = true;
+    index += 1;
   }
-  return { uncertain: false };
+  return { uncertain: true };
 }
 
 function splitShellSegments(command: string): string[] {
@@ -298,9 +287,9 @@ function shellRedirectTargets(command: string, depth = 0): ShellRedirectScan {
       const script = findShellScriptIndex(words, wrapperIndex);
       if (script.uncertain) {
         uncertain.push(`uncertain-redirection:${wrapper}`);
-        continue;
       }
-      scriptWords = script.index === undefined ? [] : words.slice(script.index, script.index + 1);
+      if (script.index === undefined) continue;
+      scriptWords = words.slice(script.index, script.index + 1);
     } else {
       scriptWords = words.slice(wrapperIndex + 1);
     }

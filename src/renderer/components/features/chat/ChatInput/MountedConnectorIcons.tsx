@@ -18,6 +18,7 @@ import { AlertCircle, Plug, Server, X } from 'lucide-react';
 import { CLI_CONNECTOR_DESCRIPTORS } from '@shared/constants/cliConnectorDescriptors';
 import { findRecommendedMcpServer } from '@shared/constants/mcpCatalog';
 import { useWorkbenchCapabilityRegistry } from '../../../../hooks/useWorkbenchCapabilityRegistry';
+import { useConnectorOAuthStatuses } from '../../../../hooks/useConnectorOAuthStatuses';
 import { useI18n } from '../../../../hooks/useI18n';
 import { useAppStore } from '../../../../stores/appStore';
 import { useComposerStore } from '../../../../stores/composerStore';
@@ -47,16 +48,21 @@ export const MountedConnectorIcons: React.FC = () => {
   const { t } = useI18n();
   const text = t.chatInput.connectorSource;
   const hubText = t.expert.roleSkills;
-  // 状态必须看**全量** serverStates（registry hook 同实例透出的那份，不另挂一份
-  // useMcpStatus）：注册表的 mcpServers 只合了「已连接 ∪ 手选」，装好了但 lazy 待连、
-  // 或被能力中心关掉的 server 不在里面——从 filtered 列表取状态会把健康配置误报成
-  // 「未连接」，hub_off 那一支也永远到不了（被关的必然不在列表里）。
-  const { connectors, mcpServers, mcpServerStates } = useWorkbenchCapabilityRegistry();
+  // MCP 状态看注册表的 mcpServers——它是**全量**（withMissingMcpServers 补齐了没进
+  // 「已连接 ∪ 手选」的 server，带 status + enabled），lazy 待连 / 被关掉的都在里面。
+  // CLI / SaaS 连接器（feishu/tmeet）的登录态不在连接器注册表，要走另一条
+  // oauthStatus 通道——只看注册表会把连好的飞书恒判成「未连接」（与宿主
+  // isConnectorReadyForTurnScope 读的 cliConnectorStatusCache 直接打架）。
+  const { connectors, mcpServers } = useWorkbenchCapabilityRegistry();
   const activeAgentId = useAppStore((state) => state.activeAgentId);
   const openCapabilitySettingsTarget = useAppStore((state) => state.openCapabilitySettingsTarget);
   const agentEntries = useAgentRegistryStore((state) => state.entries);
   const selectedConnectorIds = useComposerStore((state) => state.selectedConnectorIds);
   const selectedMcpServerIds = useComposerStore((state) => state.selectedMcpServerIds);
+  const oauthStatuses = useConnectorOAuthStatuses([...selectedConnectorIds].sort().join(','));
+  const oauthConnectedById = new Map(
+    oauthStatuses.map((status) => [status.id, status.connected && status.stale !== true]),
+  );
 
   // 同一个 id 在底栏两处出现时必须同名：CLI 连接器走 SaaS 词表，其余走连接器目录，都查不到退回 id
   const connectorDisplayName = useCallback(
@@ -72,17 +78,25 @@ export const MountedConnectorIcons: React.FC = () => {
 
   const expertSource = useMemo(() => {
     const installed = new Map<string, ExpertConnectorInstalledState>();
-    for (const server of mcpServerStates) {
-      installed.set(server.config.name, {
+    for (const server of mcpServers) {
+      installed.set(server.id, {
         kind: 'mcp',
         status: server.status,
-        enabled: server.config.enabled !== false,
+        enabled: server.enabled !== false,
       });
     }
     for (const connector of connectors) {
       installed.set(connector.id, {
         kind: 'connector',
         status: connector.connected ? 'connected' : 'disconnected',
+        enabled: true,
+      });
+    }
+    // CLI / SaaS 那支注册表里没有，用 oauthStatus 的登录态覆盖（连好的飞书不能再判「未连接」）
+    for (const status of oauthStatuses) {
+      installed.set(status.id, {
+        kind: 'connector',
+        status: status.connected && status.stale !== true ? 'connected' : 'disconnected',
         enabled: true,
       });
     }
@@ -93,7 +107,7 @@ export const MountedConnectorIcons: React.FC = () => {
       installed,
       resolveLabel: connectorDisplayName,
     });
-  }, [connectors, mcpServerStates, expert?.connectors, selectedConnectorIds, selectedMcpServerIds, connectorDisplayName]);
+  }, [connectors, mcpServers, oauthStatuses, expert?.connectors, selectedConnectorIds, selectedMcpServerIds, connectorDisplayName]);
 
   if (manual.length === 0 && !expertSource) return null;
 
@@ -134,15 +148,18 @@ export const MountedConnectorIcons: React.FC = () => {
         const logo = capability.kind === 'mcp'
           ? catalogEntry?.logo
           : CLI_CONNECTOR_DESCRIPTORS.find((descriptor) => descriptor.id === capability.id)?.logo;
-        // 手选的 MCP 状态与专家那颗同一份全量 serverStates、同一套口径：
-        // 先判 hub_off（被关掉的 stdio 状态恒 lazy，不看 enabled 会误写成「已装好」），
-        // 再 lazy（装好了、用到才连），都不误报「未连接」
+        // 手选状态与专家那颗同口径：MCP 查注册表全量项（先 hub_off——被关掉的 stdio
+        // 恒 lazy，不看 enabled 会误写成「已装好」——再 lazy，都不误报「未连接」）；
+        // CLI / SaaS 连接器看 oauthStatus 的登录态，原生连接器看注册表的 available
         const serverState = capability.kind === 'mcp'
-          ? mcpServerStates.find((server) => server.config.name === capability.id)
+          ? mcpServers.find((server) => server.id === capability.id)
           : undefined;
-        const manualStatus: ExpertConnectorStatus = serverState?.config.enabled === false
+        const connectedNow = capability.kind === 'connector'
+          ? (oauthConnectedById.get(capability.id) ?? capability.available)
+          : capability.available;
+        const manualStatus: ExpertConnectorStatus = serverState?.enabled === false
           ? 'hub_off'
-          : capability.available
+          : connectedNow
             ? 'connected'
             : serverState && (serverState.status === 'lazy' || serverState.status === 'connecting')
               ? 'lazy'

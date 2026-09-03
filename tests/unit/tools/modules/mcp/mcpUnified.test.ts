@@ -436,7 +436,7 @@ describe('mcpUnifiedModule (native)', () => {
       }
     });
 
-    it('turn scope 范围内没有已连接 server 时明说收窄，不谎称「没有已连接」', async () => {
+    it('turn scope 范围内没有已连接 server 时明说收窄并点名（lazy 的用到会自连），不谎称「没有已连接」', async () => {
       const client = makeMockClient({
         getStatus: vi.fn().mockReturnValue({
           connectedServers: ['github'],
@@ -453,7 +453,8 @@ describe('mcpUnifiedModule (native)', () => {
       const scopedCtx = makeCtx({ toolScope: { allowedMcpServerIds: ['lark'] } } as Partial<ToolContext>);
       const result = await run({ action: 'list_tools' }, scopedCtx);
       if (result.ok) {
-        expect(result.output).toContain('本轮会话的工具范围已收窄');
+        expect(result.output).toContain('本轮会话的工具范围已收窄到：lark');
+        expect(result.output).toContain('自动连接');
         expect(result.output).not.toContain('github');
       }
     });

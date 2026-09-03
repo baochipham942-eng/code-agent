@@ -171,7 +171,8 @@ function actionListTools(args: Record<string, unknown>, ctx: ToolContext): ToolR
   }
 
   if (scopeIds && visibleServers.length === 0) {
-    const output = '本轮会话的工具范围已收窄，范围内没有已连接的 MCP 服务器。';
+    // 点名范围内的 server——它们多半是 lazy（用到才连），不报名字模型就不知道目标存在
+    const output = `本轮会话的工具范围已收窄到：${scopeIds.join('、')}；这些 server 当前未连接，首次调用其工具时会自动连接。`;
     return {
       ok: true,
       output,

@@ -23,6 +23,7 @@ import type {
 import { getToolSearchService } from '../../../services/toolSearch/toolSearchService';
 import { getMCPClient } from '../../../mcp/mcpClient';
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
+import { normalizeWorkbenchToolScope } from '../../workbenchToolScope';
 import { toolSearchSchema as schema } from './toolSearch.schema';
 import { getCapabilityRecommender } from '../../../services/capability';
 import { renderGaps } from '../planning/recommendCapability';
@@ -80,6 +81,15 @@ export async function executeToolSearch(
       includeMCP: true,
       ...(ctx.deniedToolNames?.length ? { deniedToolNames: ctx.deniedToolNames } : {}),
     });
+
+    // 与 mcpUnified 同一份口径：本轮 MCP 收窄生效时，不把范围外 server 的工具搜出来——
+    // 搜出来模型照单点名、调用在 dispatch 门挨挡，「看见却调不动」比看不见更误导
+    const scopedMcpServerIds = normalizeWorkbenchToolScope(ctx.toolScope)?.allowedMcpServerIds;
+    if (scopedMcpServerIds?.length) {
+      result.tools = result.tools.filter((tool) =>
+        tool.source !== 'mcp' || !tool.mcpServer || scopedMcpServerIds.includes(tool.mcpServer));
+      mcpDiscovery = mcpDiscovery.filter((entry) => scopedMcpServerIds.includes(entry.serverName));
+    }
 
     // ToolSearch 返回的蒸馏 skill 是本轮真实进入候选集的技能。先记 selected，
     // turn 收尾时若没有后续 Skill 激活就形成 skipped -1；若激活则同 turn 覆盖为 adopted +1。

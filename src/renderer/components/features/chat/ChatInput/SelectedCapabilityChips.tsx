@@ -47,7 +47,7 @@ export function SelectedCapabilityChips() {
         // 来源用挂载来源（怎么挂上的），不是 source（出自哪个库）——用户问的是「谁放的」。
         // recommended 不是「默认带的」：它是系统推荐挂上的，不会在新会话自动挂
         const sourceLine = capability.mountSource === 'auto'
-          ? `${sourceText.onByDefault}：${sourceText.skillRemovable}`
+          ? sourceText.autoMounted
           : capability.mountSource === 'recommended'
             ? sourceText.recommendedMounted
             : sourceText.addedByYou;

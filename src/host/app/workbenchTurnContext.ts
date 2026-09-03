@@ -570,6 +570,15 @@ export function withWorkbenchTurnSystemContext(
     allowedConnectorIds,
     allowedMcpServerIds,
   });
+  // 收窄进 MCP 名单时必须让模型看得见名单——范围内的 server 可能是 lazy（工具定义
+  // 还没注册、list_tools 也是空的），不点名的话这一轮模型既丢了其他 MCP 工具，
+  // 也不知道目标 server 存在，比不收窄更糟。名字的权威来源是最终 toolScope，
+  // 不问它来自用户手选还是专家声明。
+  if (toolScope?.allowedMcpServerIds?.length) {
+    turnSystemContext.push(
+      `本轮 MCP 工具面收窄到这些 server（仅在相关时使用；未连接的首次调用其工具时会自动连接）：${toolScope.allowedMcpServerIds.join('、')}`,
+    );
+  }
   if (
     turnSystemContext.length === 0
     && !toolScope

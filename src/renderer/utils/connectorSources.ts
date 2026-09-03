@@ -80,8 +80,9 @@ export function buildExpertConnectorSource(args: {
     const reason = byId.get(id)?.reason;
     // installed 里查不到时按 id 本身归侧：连接器侧的 id（CLI 的 feishu/tmeet + 原生的
     // mail/calendar…）都在 CONNECTOR_TOOL_NAMES 里有键——与宿主 isConnectorSideId 同一套
-    // 认知。没连上只是不在过滤后的注册表列表里，跳 MCP 侧会标错类、定位不到
-    const kind = state?.kind ?? (id in CONNECTOR_TOOL_NAMES ? 'connector' : 'mcp');
+    // 认知。没连上只是不在过滤后的注册表列表里，跳 MCP 侧会标错类、定位不到。
+    // 用 Object.hasOwn——`in` 走原型链，toString/constructor 这类 id 会被误归侧
+    const kind = state?.kind ?? (Object.hasOwn(CONNECTOR_TOOL_NAMES, id) ? 'connector' : 'mcp');
     return { id, kind, label: args.resolveLabel(id), ...(reason ? { reason } : {}), status };
   });
 

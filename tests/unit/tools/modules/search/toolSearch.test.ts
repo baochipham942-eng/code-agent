@@ -248,6 +248,27 @@ describe('toolSearchModule (native)', () => {
       }
     });
 
+    // 与 mcpUnified 同一份口径：收窄生效时不把范围外 server 的工具搜出来——
+    // 搜出来模型照单点名、调用在 dispatch 门挨挡，「看见却调不动」比看不见更误导
+    it('turn scope 收窄时不搜出范围外 server 的工具', async () => {
+      searchToolsMock.mockResolvedValue({
+        tools: [
+          { name: 'mcp__github__search_code', description: 'Search code', tags: ['mcp'], source: 'mcp', mcpServer: 'github', loadable: true },
+          { name: 'mcp__lark__doc_read', description: 'Read doc', tags: ['mcp'], source: 'mcp', mcpServer: 'lark', loadable: true },
+        ],
+        loadedTools: ['mcp__github__search_code', 'mcp__lark__doc_read'],
+        totalCount: 2,
+        hasMore: false,
+      });
+      const scopedCtx = makeCtx({ toolScope: { allowedMcpServerIds: ['lark'] } } as Partial<ToolContext>);
+      const result = await run({ query: 'read', max_results: 5 }, scopedCtx);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.output).toContain('mcp__lark__doc_read');
+        expect(result.output).not.toContain('mcp__github__search_code');
+      }
+    });
+
     it('formats skill hits with not-callable reason and invocation', async () => {
       searchToolsMock.mockResolvedValue({
         tools: [

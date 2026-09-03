@@ -105,6 +105,16 @@ describe('ADR-052 C：专家连接器的运行时收窄', () => {
     expect(connectorScopeOf(undefined, { preferredAgentId: 'writer' })?.length ?? 0).toBe(0);
   });
 
+  // 收窄进名单的 server 可能是 lazy（工具定义还没注册、list_tools 也列不出），
+  // 必须在 system context 里点名——否则模型既丢了其他 MCP 工具也不知道目标存在
+  it('MCP 收窄生效时 system context 点名范围内的 server', () => {
+    resolveAgentMock.mockReturnValue(expertWithConnectors([{ id: 'lark', level: 'core' }]));
+
+    const merged = withWorkbenchTurnSystemContext(undefined, { preferredAgentId: 'writer' });
+    const line = merged?.turnSystemContext?.find((entry) => entry.includes('本轮 MCP 工具面收窄到'));
+    expect(line).toContain('lark');
+  });
+
   it('连接器侧（CLI 的 feishu + 注册表里的 crm）与 MCP 名各归各位', () => {
     cliConnectorStatus.feishu = { connected: true };
     resolveAgentMock.mockReturnValue(expertWithConnectors([

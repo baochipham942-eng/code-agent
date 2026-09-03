@@ -464,7 +464,7 @@ const DANGEROUS_PATTERNS: DangerousPattern[] = [
   // 磁盘操作
   { pattern: />\s*\/dev\/sd[a-z]/, riskLevel: 'critical', flag: 'disk_overwrite', reason: 'Writing directly to disk device' },
   { pattern: /mkfs\./, riskLevel: 'critical', flag: 'format_disk', reason: 'Formatting disk' },
-  { pattern: /dd\s+if=.*of=\/dev\//, riskLevel: 'critical', flag: 'dd_to_device', reason: 'Direct disk write with dd' },
+  { pattern: /dd\b[^;&|\n]*\bof=\/dev\//, riskLevel: 'critical', flag: 'dd_to_device', reason: 'Direct disk write with dd' },
   // Fork bomb
   { pattern: /:\(\)\s*\{.*\}/, riskLevel: 'critical', flag: 'fork_bomb', reason: 'Potential fork bomb detected' },
   // Git 危险操作

@@ -9,9 +9,11 @@ describe('commandSafety approval decision gaps', () => {
 
   it('only blocks dd when the output points at a device', () => {
     expect(validateCommand('dd if=/dev/zero of=./x.img', 'posix').allowed).toBe(true);
-    expect(validateCommand('dd if=x of=/dev/disk2', 'posix')).toMatchObject({
-      allowed: false,
-      securityFlags: expect.arrayContaining(['dd_to_device']),
-    });
+    for (const command of ['dd if=x of=/dev/disk2', 'dd of=/dev/disk2 if=x']) {
+      expect(validateCommand(command, 'posix')).toMatchObject({
+        allowed: false,
+        securityFlags: expect.arrayContaining(['dd_to_device']),
+      });
+    }
   });
 });

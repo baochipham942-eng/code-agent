@@ -105,4 +105,21 @@ describe('ToolExecutor Bash 安全命令单一判据', () => {
 
     expect(permissionRequests).toHaveLength(0);
   });
+
+  it('lenient 模式仍在执行前拦截参数倒序的 dd 设备写入', async () => {
+    process.env.CODE_AGENT_SHELL_SAFETY_MODE = 'lenient';
+    const executor = buildRejectingExecutor();
+
+    const result = await executor.execute(
+      'Bash',
+      { command: 'dd of=/dev/disk2 if=x' },
+      { sessionId: 'safe-command-dd-device-reordered' },
+    );
+
+    expect(permissionRequests).toHaveLength(0);
+    expect(result).toMatchObject({
+      success: false,
+      error: expect.stringContaining('Security: Command blocked'),
+    });
+  });
 });

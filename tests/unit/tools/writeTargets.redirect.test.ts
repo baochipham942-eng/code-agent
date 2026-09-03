@@ -59,6 +59,8 @@ describe('shell redirect write targets', () => {
 
   it.each([
     ["sh -c 'echo hi > out.txt'", 'out.txt'],
+    ["sh -c 'printf x > \"my file.txt\"'", 'my file.txt'],
+    ['bash -c "printf x > \'my file.txt\'"', 'my file.txt'],
     ['bash -c "echo hi > out.txt"', 'out.txt'],
     ['eval "echo hi > out.txt"', 'out.txt'],
     ["eval 'echo hi' '> out.txt'", 'out.txt'],

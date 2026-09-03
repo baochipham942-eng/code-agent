@@ -333,12 +333,14 @@ function shellRedirectTargets(command: string, depth = 0): ShellRedirectScan {
     }
     const decodedWords = scriptWords.map((word) => canonicalizeCommand(word));
     const decodedScript = decodedWords.map((word) => word.command).join(' ');
-    const decodedAssessment = canonicalizeCommand(decodedScript);
+    // This second parse only validates the decoded script. Recurse over decodedScript itself so
+    // quotes that were literal inside the wrapper word still delimit targets such as "my file.txt".
+    const decodedScriptParsingFailed = canonicalizeCommand(decodedScript).parsingFailed;
     if (
       scriptWords.some((word) => word.includes('$(') || word.includes('`'))
       || scriptWords.some((word) => SHELL_PARAMETER_EXPANSION.test(word))
       || decodedWords.some((word) => word.parsingFailed)
-      || decodedAssessment.parsingFailed
+      || decodedScriptParsingFailed
     ) {
       uncertain.push(`uncertain-redirection:${wrapper}`);
       continue;

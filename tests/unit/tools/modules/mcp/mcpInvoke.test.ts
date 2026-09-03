@@ -56,6 +56,7 @@ const denyAll: CanUseToolFn = async () => ({ allow: false, reason: 'blocked' });
 
 interface MockClient {
   isConnected: ReturnType<typeof vi.fn>;
+  ensureConnected: ReturnType<typeof vi.fn>;
   getStatus: ReturnType<typeof vi.fn>;
   callTool: ReturnType<typeof vi.fn>;
   // Sentinels: must NOT be called by the native tool on abort
@@ -66,6 +67,7 @@ interface MockClient {
 function makeMockClient(overrides: Partial<MockClient> = {}): MockClient {
   return {
     isConnected: vi.fn().mockReturnValue(true),
+    ensureConnected: vi.fn().mockResolvedValue(false),
     getStatus: vi.fn().mockReturnValue({
       connectedServers: ['filesystem', 'github'],
       inProcessServers: [],
@@ -169,6 +171,35 @@ describe('mcpInvokeModule (native)', () => {
         expect(result.error).toContain("MCP 服务器 'filesystem' 未连接");
         expect(result.error).toContain('github, deepwiki');
       }
+    });
+
+    // turn scope 收窄到 lazy server 后，「首次调用会自动连接」必须在 invoke 路径上成立——
+    // 只查 isConnected 会硬短路在 NOT_INITIALIZED，永远走不到会懒加载的 callTool（ai-review 第十五轮 Important）
+    it('server 是 lazy（isConnected=false）：先 ensureConnected 拉起，拉起成功就照常调用', async () => {
+      const client = makeMockClient({
+        isConnected: vi.fn().mockReturnValue(false),
+        ensureConnected: vi.fn().mockResolvedValue(true),
+        callTool: vi.fn().mockResolvedValue({ success: true, output: 'meetings: []' }),
+      });
+      getMCPClientMock.mockReturnValue(client);
+      const result = await run(VALID_ARGS);
+      expect(client.ensureConnected).toHaveBeenCalledWith('filesystem');
+      expect(client.callTool).toHaveBeenCalled();
+      expect(result.ok).toBe(true);
+    });
+
+    it('ensureConnected 也拉不起来：回 NOT_INITIALIZED（没装 / 被关 / 连接失败）', async () => {
+      const client = makeMockClient({
+        isConnected: vi.fn().mockReturnValue(false),
+        ensureConnected: vi.fn().mockResolvedValue(false),
+      });
+      getMCPClientMock.mockReturnValue(client);
+      const result = await run(VALID_ARGS);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe('NOT_INITIALIZED');
+      }
+      expect(client.callTool).not.toHaveBeenCalled();
     });
 
     it('NOT_INITIALIZED message says 无 when no other servers connected', async () => {

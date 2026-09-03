@@ -5,6 +5,7 @@ import { CONNECTOR_TOOL_NAMES } from '../../../src/shared/contract/workbenchTool
 import {
   filterToolDefinitionsByWorkbenchScope,
   isSkillCommandAllowedByWorkbenchScope,
+  isToolCallAllowedByWorkbenchScope,
   isToolNameAllowedByWorkbenchScope,
   normalizeWorkbenchToolScope,
 } from '../../../src/host/tools/workbenchToolScope';
@@ -93,5 +94,40 @@ describe('workbenchToolScope', () => {
     expect(isSkillCommandAllowedByWorkbenchScope('ship-skill', {
       allowedSkillIds: ['review-skill'],
     })).toBe(false);
+  });
+
+  // 元工具（mcp / MCPUnified）把 server 放在参数里，按工具名判不到——dispatch 门要读 args.server，
+  // 否则收窄形同虚设：模型 list_tools 找到被收窄的 server 再 invoke，一路畅通（ai-review 第八轮抓的实病）
+  describe('isToolCallAllowedByWorkbenchScope（dispatch 门，读参数里的 server）', () => {
+    const scope = { allowedMcpServerIds: ['lark'] };
+
+    it('mcp invoke：范围外的 server 挡住，范围内的放行', () => {
+      expect(isToolCallAllowedByWorkbenchScope('mcp', { server: 'github', tool: 'search' }, scope)).toBe(false);
+      expect(isToolCallAllowedByWorkbenchScope('mcp', { server: 'lark', tool: 'doc' }, scope)).toBe(true);
+    });
+
+    it('MCPUnified：invoke / read_resource 按 server 挡，list / status / add_server 不按 server 挡', () => {
+      expect(isToolCallAllowedByWorkbenchScope('MCPUnified', { action: 'invoke', server: 'github', tool: 'x' }, scope)).toBe(false);
+      expect(isToolCallAllowedByWorkbenchScope('MCPUnified', { action: 'invoke', server: 'lark', tool: 'x' }, scope)).toBe(true);
+      expect(isToolCallAllowedByWorkbenchScope('MCPUnified', { action: 'read_resource', server: 'github', uri: 'u' }, scope)).toBe(false);
+      expect(isToolCallAllowedByWorkbenchScope('MCPUnified', { action: 'list_tools' }, scope)).toBe(true);
+      expect(isToolCallAllowedByWorkbenchScope('MCPUnified', { action: 'list_resources' }, scope)).toBe(true);
+      expect(isToolCallAllowedByWorkbenchScope('MCPUnified', { action: 'status' }, scope)).toBe(true);
+      expect(isToolCallAllowedByWorkbenchScope('MCPUnified', { action: 'add_server', name: 'github' }, scope)).toBe(true);
+    });
+
+    it('收窄生效时要碰 server 数据却报不出 server 名：fail-closed', () => {
+      expect(isToolCallAllowedByWorkbenchScope('mcp', { tool: 'x' }, scope)).toBe(false);
+      expect(isToolCallAllowedByWorkbenchScope('MCPUnified', { action: 'invoke' }, scope)).toBe(false);
+    });
+
+    it('mcp_add_server 不被误解析成 server「add」——管理动作不该被名字里的下划线错挡', () => {
+      expect(isToolCallAllowedByWorkbenchScope('mcp_add_server', { name: 'github' }, scope)).toBe(true);
+    });
+
+    it('没有 MCP 收窄时元工具不受这道门管', () => {
+      expect(isToolCallAllowedByWorkbenchScope('mcp', { server: 'github', tool: 'x' }, { allowedConnectorIds: ['mail'] })).toBe(true);
+      expect(isToolCallAllowedByWorkbenchScope('mcp', { server: 'github', tool: 'x' }, undefined)).toBe(true);
+    });
   });
 });

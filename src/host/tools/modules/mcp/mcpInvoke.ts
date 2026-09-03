@@ -157,15 +157,21 @@ export async function executeMcpInvoke(
 
   const mcpClient = getMCPClient();
 
-  // 检查服务器是否连接（行为保真：拼出 connectedServers 列表）
+  // 「没连上」不等于「调不了」：lazy stdio server 的语义就是用到才连——
+  // ensureConnected 会触发懒加载（进程内 server 直接 true）。只查 isConnected 会让
+  // turn scope 收窄后「首次调用会自动连接」那句承诺在唯一可走的调用路径上落空。
+  // 连不上（没装 / 被关 / 连接失败）才回 NOT_INITIALIZED（行为保真：拼出 connectedServers 列表）
   if (!mcpClient.isConnected(server)) {
-    const status = mcpClient.getStatus();
-    return {
-      ok: false,
-      error: `MCP 服务器 '${server}' 未连接。已连接的服务器: ${status.connectedServers.join(', ') || '无'}`,
-      code: 'NOT_INITIALIZED',
-      meta: buildMcpInvokeMeta({ server, tool, errorCode: 'NOT_INITIALIZED' }),
-    };
+    const connected = await mcpClient.ensureConnected(server).catch(() => false);
+    if (!connected) {
+      const status = mcpClient.getStatus();
+      return {
+        ok: false,
+        error: `MCP 服务器 '${server}' 未连接。已连接的服务器: ${status.connectedServers.join(', ') || '无'}`,
+        code: 'NOT_INITIALIZED',
+        meta: buildMcpInvokeMeta({ server, tool, errorCode: 'NOT_INITIALIZED' }),
+      };
+    }
   }
 
   try {

@@ -37,7 +37,7 @@ import type {
   InProcessMCPServerInterface,
 } from './types';
 import { isStdioConfig, isInProcessConfig, isHttpStreamableConfig, CUA_DRIVER_SERVER_NAME } from './types';
-import { isMcpStatusUsableForScope, setMcpConnectionProbe } from './mcpConnectionProbe';
+import { isMcpStatusUsableForScope, setInProcessMcpServerIdsProvider, setMcpConnectionProbe } from './mcpConnectionProbe';
 import { buildCuaAgentCursorCapabilityForToolCall } from './cuaAgentCursor';
 import { CUA_READONLY_TOOLS, gateCuaToolCall } from './cuaSessionLock';
 import { gateCuaBudget } from './cuaTrajectoryBudget';
@@ -1296,7 +1296,7 @@ export async function refreshMCPServersFromCloud(): Promise<void> {
 // 连接态探针接电：turn scope 那条同步路径要判断「专家声明的 MCP 可用吗」，
 // 但不能反向 import 本模块（依赖图 + 行数门）。判据见 mcpConnectionProbe.ts——
 // lazy（装好了、用到就连）算可用，只认 connected 会让收窄在 stdio server 上落空又无声翻转。
-setMcpConnectionProbe((serverName) => {
-  const state = getMCPClient().getServerState(serverName);
-  return isMcpStatusUsableForScope(state?.status, state?.config.enabled !== false);
-});
+const mcpScopeUsabilityOf = (serverName: string) => getMCPClient().getServerState(serverName);
+setMcpConnectionProbe((serverName) => isMcpStatusUsableForScope(mcpScopeUsabilityOf(serverName)?.status, mcpScopeUsabilityOf(serverName)?.config.enabled !== false));
+// 内置进程内 server 名单的反向接电（专家收窄要把基础设施并回来，理由见 mcpConnectionProbe.ts）
+setInProcessMcpServerIdsProvider(() => getMCPClient().getStatus().inProcessServers ?? []);

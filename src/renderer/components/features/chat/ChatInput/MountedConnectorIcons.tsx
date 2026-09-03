@@ -60,10 +60,16 @@ export const MountedConnectorIcons: React.FC = () => {
   const selectedConnectorIds = useComposerStore((state) => state.selectedConnectorIds);
   const selectedMcpServerIds = useComposerStore((state) => state.selectedMcpServerIds);
   // 设置页开合也作 refreshKey：专家声明的 CLI 连接器用户从不手选，
-  // 「去能力中心连好再回来」那一趟必须重拉，否则警示点停在旧值
+  // 「去能力中心连好再回来」那一趟必须重拉，否则警示点停在旧值。
+  // enabled 闸门：没有 CLI/SaaS 连接器在场（手选或专家声明）时不发 IPC——
+  // oauthStatus 冷缓存会起 CLI 子进程做 status()，不能落在每个输入区的渲染路径上
   const showSettings = useAppStore((state) => state.showSettings);
+  const expertForOauth = agentEntries.find((entry) => entry.id === activeAgentId);
+  const cliConnectorInPlay = selectedConnectorIds.some((id) => id === 'feishu' || id === 'tmeet')
+    || Boolean(expertForOauth?.connectors?.some((connector) => connector.id === 'feishu' || connector.id === 'tmeet'));
   const oauthStatuses = useConnectorOAuthStatuses(
     `${[...selectedConnectorIds].sort().join(',')}|${showSettings ? 'open' : 'closed'}`,
+    cliConnectorInPlay,
   );
   const oauthConnectedById = new Map(
     oauthStatuses.map((status) => [status.id, status.connected && status.stale !== true]),

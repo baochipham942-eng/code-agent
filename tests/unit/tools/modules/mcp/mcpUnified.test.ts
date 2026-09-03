@@ -99,6 +99,7 @@ function makeMockClient(overrides: Partial<MockClient> = {}): MockClient {
     }),
     getTools: vi.fn().mockReturnValue([]),
     getResources: vi.fn().mockReturnValue([]),
+    getPrompts: vi.fn().mockReturnValue([]),
     callTool: vi.fn().mockResolvedValue({ toolCallId: 'x', success: true, output: 'ok' }),
     readResource: vi.fn().mockResolvedValue('resource-content'),
     addServer: vi.fn(),
@@ -256,21 +257,32 @@ describe('mcpUnifiedModule (native)', () => {
       const client = makeMockClient({
         getStatus: vi.fn().mockReturnValue({
           connectedServers: ['lark', 'github'],
-          inProcessServers: [],
+          inProcessServers: ['memory-kv'],
           toolCount: 5,
           resourceCount: 2,
           promptCount: 1,
         }),
+        getTools: vi.fn().mockReturnValue([
+          { name: 't1', description: 'Lark tool', serverName: 'lark', inputSchema: {} },
+          { name: 't2', description: 'Lark tool 2', serverName: 'lark', inputSchema: {} },
+          { name: 't3', description: 'Github tool', serverName: 'github', inputSchema: {} },
+        ]),
       });
       getMCPClientMock.mockReturnValue(client);
       const scopedCtx = makeCtx({ toolScope: { allowedMcpServerIds: ['lark'] } } as Partial<ToolContext>);
       const result = await run({ action: 'status' }, scopedCtx);
+      expect(result.ok).toBe(true);
       if (result.ok) {
         expect(result.output).toContain('已连接服务器: lark');
         expect(result.output).not.toContain('github');
+        // 三个计数同过 scope——不能「已连接服务器: lark」配「可用工具: 5」
+        expect(result.output).toContain('可用工具: 2');
+        expect(result.output).not.toContain('可用工具: 5');
         // meta 与 artifact 同口径——UI / 遥测也不该看见范围外的 server
         expect(result.meta?.connectedServers).toEqual(['lark']);
+        expect(result.meta?.inProcessServers).toEqual([]);
         expect(result.meta?.count).toBe(1);
+        expect(result.meta?.toolCount).toBe(2);
       }
     });
 
@@ -289,6 +301,7 @@ describe('mcpUnifiedModule (native)', () => {
       getMCPClientMock.mockReturnValue(client);
       const scopedCtx = makeCtx({ toolScope: { allowedMcpServerIds: ['memory-kv'] } } as Partial<ToolContext>);
       const result = await run({ action: 'status' }, scopedCtx);
+      expect(result.ok).toBe(true);
       if (result.ok) {
         expect(result.output).toContain('已连接服务器: memory-kv');
         expect(result.meta?.connectedServers).toEqual(['memory-kv']);
@@ -454,6 +467,7 @@ describe('mcpUnifiedModule (native)', () => {
       getMCPClientMock.mockReturnValue(client);
       const scopedCtx = makeCtx({ toolScope: { allowedMcpServerIds: ['lark'] } } as Partial<ToolContext>);
       const result = await run({ action: 'list_tools' }, scopedCtx);
+      expect(result.ok).toBe(true);
       if (result.ok) {
         expect(result.output).toContain('### t1');
         expect(result.output).not.toContain('### t2');
@@ -477,6 +491,7 @@ describe('mcpUnifiedModule (native)', () => {
       getMCPClientMock.mockReturnValue(client);
       const scopedCtx = makeCtx({ toolScope: { allowedMcpServerIds: ['lark'] } } as Partial<ToolContext>);
       const result = await run({ action: 'list_tools' }, scopedCtx);
+      expect(result.ok).toBe(true);
       if (result.ok) {
         expect(result.output).toContain('本轮会话的工具范围已收窄到：lark');
         expect(result.output).toContain('自动连接');
@@ -503,6 +518,7 @@ describe('mcpUnifiedModule (native)', () => {
       getMCPClientMock.mockReturnValue(client);
       const scopedCtx = makeCtx({ toolScope: { allowedMcpServerIds: ['memory-kv'] } } as Partial<ToolContext>);
       const result = await run({ action: 'list_tools' }, scopedCtx);
+      expect(result.ok).toBe(true);
       if (result.ok) {
         expect(result.output).not.toContain('未连接');
         expect(result.output).not.toContain('当前没有已连接');
@@ -552,6 +568,7 @@ describe('mcpUnifiedModule (native)', () => {
       getMCPClientMock.mockReturnValue(client);
       const scopedCtx = makeCtx({ toolScope: { allowedMcpServerIds: ['lark'] } } as Partial<ToolContext>);
       const result = await run({ action: 'list_resources' }, scopedCtx);
+      expect(result.ok).toBe(true);
       if (result.ok) {
         expect(result.output).toContain('本轮会话的工具范围已收窄到：lark');
         expect(result.output).not.toContain('当前没有可用的 MCP 资源');

@@ -32,7 +32,7 @@ import {
   getCachedCliConnectorConnectionStatus,
   isCliConnectorId,
 } from '../connectors/cli/cliConnectorStatusCache';
-import { isMcpServerConnected } from '../mcp/mcpConnectionProbe';
+import { getBuiltinInProcessMcpServerIds, isMcpServerConnected } from '../mcp/mcpConnectionProbe';
 import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('WorkbenchTurnContext');
@@ -558,9 +558,15 @@ export function withWorkbenchTurnSystemContext(
   // 声明一旦进了 scope，会把**其他所有** MCP 工具挡掉（allowedMcpServerIds 非空即收窄）。
   // 用户手选是他自己的显式决定，专家声明是背后自动生效的，出错代价不该落到用户头上。
   // 全都没连上 ⇒ 空 ⇒ 不收窄，仍是「先宽后收」。
+  // 同一条保护理由的另一半：内置进程内 server（memory-kv/code-index）是基础设施不是
+  // 「连接器」，专家收窄若把它们滤掉，该专家**每一轮**都静默失去记忆与代码索引——
+  // 收窄时并回来（手选那支不并：那是用户当次的显式决定，撤不撤他自己说了算）。
   const allowedMcpServerIds = explicitMcpServerIds.length > 0
     ? explicitMcpServerIds
-    : expertMcpServerIds.filter((serverId) => isMcpServerConnected(serverId));
+    : [
+        ...expertMcpServerIds.filter((serverId) => isMcpServerConnected(serverId)),
+        ...getBuiltinInProcessMcpServerIds(),
+      ];
 
   const toolScope = normalizeWorkbenchToolScope({
     allowedSkillIds: [

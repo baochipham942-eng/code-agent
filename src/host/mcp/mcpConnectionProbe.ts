@@ -38,3 +38,24 @@ export function isMcpStatusUsableForScope(
 export function isMcpServerConnected(serverName: string): boolean {
   return probe?.(serverName) ?? false;
 }
+
+type InProcessServerIdsProvider = () => string[];
+
+let inProcessProvider: InProcessServerIdsProvider | undefined;
+
+export function setInProcessMcpServerIdsProvider(next: InProcessServerIdsProvider | undefined): void {
+  inProcessProvider = next;
+}
+
+/**
+ * 内置进程内 server（memory-kv / code-index）的名单。
+ *
+ * 它们是基础设施不是「连接器」：专家声明的 MCP 收窄是背后自动生效的，若把整个
+ * MCP 面一刀切，这些 server 会在该专家的**每一轮**里被静默滤掉——用户看到的是
+ * 「这个专家突然不会用记忆和代码索引了」，界面无任何提示。收窄时要把它们并回来
+ * （与「没连上就不收窄」同一条保护理由：自动生效的东西，代价不该落到用户头上）。
+ * 没人注册过就答空表——落到「不并」的保守侧，与探针未注册不收窄同向。
+ */
+export function getBuiltinInProcessMcpServerIds(): string[] {
+  return inProcessProvider?.() ?? [];
+}

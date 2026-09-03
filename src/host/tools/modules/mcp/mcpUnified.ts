@@ -296,8 +296,9 @@ function actionListResources(args: Record<string, unknown>, ctx: ToolContext): T
     && (!scopeIds || scopeIds.includes(r.serverName)));
 
   if (filtered.length === 0) {
-    // 被 scope 滤空的要点名收窄范围（与 list_tools 同口径），不谎称「没有可用资源」
-    const output = filterServer
+    // 被 scope 滤空的要点名收窄范围（与 list_tools 同口径），不谎称「没有可用资源」；
+    // filterServer 本身就在范围外时也一样——那不是「没提供」，是「本轮不让碰」
+    const output = filterServer && !(scopeIds && !scopeIds.includes(filterServer))
       ? `服务器 '${filterServer}' 没有提供资源。`
       : scopeIds
         ? `本轮会话的工具范围已收窄到：${scopeIds.join('、')}；这些 server 没有提供资源（未连接的首次调用其工具时会自动连接）。`
@@ -534,13 +535,24 @@ function actionStatus(ctx: ToolContext): ToolResult<string> {
     ? reachableServers.filter((serverName) => scopeIds.includes(serverName))
     : reachableServers;
 
+  // 三个计数同过 scope——「已连接服务器: lark」配「可用工具: 47」是自打脸
+  const visibleToolCount = scopeIds
+    ? mcpClient.getTools().filter((tool) => scopeIds.includes(tool.serverName)).length
+    : status.toolCount;
+  const visibleResourceCount = scopeIds
+    ? mcpClient.getResources().filter((resource) => scopeIds.includes(resource.serverName)).length
+    : status.resourceCount;
+  const visiblePromptCount = scopeIds
+    ? mcpClient.getPrompts().filter((prompt) => scopeIds.includes(prompt.serverName)).length
+    : status.promptCount;
+
   const output = [
     '# MCP 连接状态',
     '',
     `已连接服务器: ${visibleServers.length > 0 ? visibleServers.join(', ') : '无'}`,
-    `可用工具: ${status.toolCount}`,
-    `可用资源: ${status.resourceCount}`,
-    `可用提示: ${status.promptCount}`,
+    `可用工具: ${visibleToolCount}`,
+    `可用资源: ${visibleResourceCount}`,
+    `可用提示: ${visiblePromptCount}`,
   ].join('\n');
 
   return {
@@ -550,6 +562,14 @@ function actionStatus(ctx: ToolContext): ToolResult<string> {
       ...status,
       // meta 与 output 同口径：消费方（UI / 遥测）也不该看见范围外的 server
       connectedServers: visibleServers,
+      ...(scopeIds
+        ? {
+            inProcessServers: (status.inProcessServers ?? []).filter((serverName) => scopeIds.includes(serverName)),
+            toolCount: visibleToolCount,
+            resourceCount: visibleResourceCount,
+            promptCount: visiblePromptCount,
+          }
+        : {}),
       action: 'status',
       resultKind: 'text',
       count: visibleServers.length,
@@ -569,9 +589,9 @@ function actionStatus(ctx: ToolContext): ToolResult<string> {
           count: visibleServers.length,
           truncated: false,
           connectedServers: visibleServers,
-          toolCount: status.toolCount,
-          resourceCount: status.resourceCount,
-          promptCount: status.promptCount,
+          toolCount: visibleToolCount,
+          resourceCount: visibleResourceCount,
+          promptCount: visiblePromptCount,
         },
       }),
     },

@@ -31,17 +31,20 @@ function parseStatuses(payload: unknown): ConnectorOAuthStatus[] {
   });
 }
 
-export function useConnectorOAuthStatuses(refreshKey?: string): ConnectorOAuthStatus[] {
+export function useConnectorOAuthStatuses(refreshKey: string, enabled = true): ConnectorOAuthStatus[] {
   const [statuses, setStatuses] = useState<ConnectorOAuthStatus[]>([]);
 
   useEffect(() => {
+    // 没有 CLI/SaaS 连接器在场时不拉——oauthStatus 冷缓存会对 feishu/tmeet 起 CLI
+    // 子进程做 status()，不能让它落在每个输入区的渲染路径上
+    if (!enabled) return undefined;
     let cancelled = false;
     void ipcService.invokeDomain<unknown>(IPC_DOMAINS.CONNECTOR, 'oauthStatus')
       .then((payload) => { if (!cancelled) setStatuses(parseStatuses(payload)); })
       // 拉取失败保留旧值——清空会把已连好的连接器瞬间翻成「未连接」并冒出假 CTA
       .catch(() => undefined);
     return () => { cancelled = true; };
-  }, [refreshKey]);
+  }, [refreshKey, enabled]);
 
   return statuses;
 }

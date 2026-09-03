@@ -56,8 +56,12 @@ vi.mock('../../../src/renderer/hooks/useWorkbenchCapabilityRegistry', () => ({
 
 // CLI / SaaS 连接器（feishu/tmeet）的登录态走另一条 oauthStatus 通道
 const oauthStatusesState = [] as { id: string; connected: boolean; stale?: boolean }[];
+const oauthEnabledCapture = vi.hoisted(() => ({ value: undefined as boolean | undefined }));
 vi.mock('../../../src/renderer/hooks/useConnectorOAuthStatuses', () => ({
-  useConnectorOAuthStatuses: () => oauthStatusesState,
+  useConnectorOAuthStatuses: (_key: string, enabled?: boolean) => {
+    oauthEnabledCapture.value = enabled;
+    return oauthStatusesState;
+  },
 }));
 
 const openCapabilitySettingsTarget = vi.fn();
@@ -120,6 +124,23 @@ describe('MountedConnectorIcons（底栏挂载连接器 chip）', () => {
     fireEvent.click(screen.getByRole('button', { name: '取消挂载 腾讯会议' }));
 
     expect(composerState.selectedConnectorIds).toEqual([]);
+  });
+
+  // oauthStatus 冷缓存会对 feishu/tmeet 起 CLI 子进程做 status()——没有 CLI 连接器
+  // 在场时（手选与专家声明都没有）不许发那次 IPC（ai-review 第十三轮 Nit）
+  it('没有 CLI 连接器在场时不拉 oauthStatus（enabled=false）；有 tmeet 手选时才拉', () => {
+    composerState.selectedConnectorIds = [];
+    registryState.connectors = [];
+    appState.activeAgentId = 'weekly';
+    agentRegistryState.entries = [WEEKLY_EXPERT]; // 只声明 tmeet-mcp（MCP 名），没有 CLI
+    render(<MountedConnectorIcons />);
+    expect(oauthEnabledCapture.value).toBe(false);
+
+    cleanup();
+    composerState.selectedConnectorIds = ['tmeet'];
+    registryState.connectors = [makeConnector('tmeet', true, false)];
+    render(<MountedConnectorIcons />);
+    expect(oauthEnabledCapture.value).toBe(true);
   });
 
   it('无挂载、专家也没声明时不渲染', () => {

@@ -31,8 +31,11 @@ vi.mock('../../../src/host/observability/posthogNode', () => ({
 const cliConnectorStatus = vi.hoisted(() => ({} as Record<string, { connected: boolean } | undefined>));
 // 专家声明的 MCP 也要过「连上了没」——没连上的进了 scope 会把其他 MCP 工具全挡掉
 const connectedMcpServers = vi.hoisted(() => new Set<string>());
+// 内置进程内 server（memory-kv/code-index）是基础设施：专家收窄要并回来，手选不并
+const inProcessMcpServers = vi.hoisted(() => new Set<string>());
 vi.mock('../../../src/host/mcp/mcpConnectionProbe', () => ({
   isMcpServerConnected: (name: string) => connectedMcpServers.has(name),
+  getBuiltinInProcessMcpServerIds: () => [...inProcessMcpServers],
 }));
 vi.mock('../../../src/host/connectors/cli/cliConnectorStatusCache', () => ({
   isCliConnectorId: (id: string) => id === 'feishu' || id === 'tmeet',
@@ -84,6 +87,7 @@ describe('ADR-052 C：专家连接器的运行时收窄', () => {
     for (const key of Object.keys(cliConnectorStatus)) delete cliConnectorStatus[key];
     connectedMcpServers.clear();
     connectedMcpServers.add('lark');
+    inProcessMcpServers.clear();
   });
 
   afterEach(() => {
@@ -113,6 +117,20 @@ describe('ADR-052 C：专家连接器的运行时收窄', () => {
     const merged = withWorkbenchTurnSystemContext(undefined, { preferredAgentId: 'writer' });
     const line = merged?.turnSystemContext?.find((entry) => entry.includes('本轮 MCP 工具面收窄到'));
     expect(line).toContain('lark');
+  });
+
+  // 内置进程内 server（memory-kv/code-index）是基础设施不是「连接器」：专家收窄若把它们
+  // 滤掉，该专家每一轮都静默失去记忆与代码索引（ai-review 第十三轮 Important）
+  it('专家收窄时内置进程内 server 并回 scope；用户手选时不并（显式决定）', () => {
+    inProcessMcpServers.add('memory-kv');
+    inProcessMcpServers.add('code-index');
+    resolveAgentMock.mockReturnValue(expertWithConnectors([{ id: 'lark', level: 'core' }]));
+
+    // 专家那支：lark + 基础设施都还在
+    expect(mcpScopeOf(undefined, { preferredAgentId: 'writer' })).toEqual(['lark', 'memory-kv', 'code-index']);
+
+    // 手选那支：用户说「这轮只用 lark」就是只用 lark，不替他把基础设施加回来
+    expect(mcpScopeOf(undefined, { preferredAgentId: 'writer', selectedMcpServerIds: ['lark'] })).toEqual(['lark']);
   });
 
   it('连接器侧（CLI 的 feishu + 注册表里的 crm）与 MCP 名各归各位', () => {

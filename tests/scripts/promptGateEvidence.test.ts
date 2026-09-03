@@ -114,6 +114,17 @@ describe('prompt gate evidence checker', () => {
     expect(result.output).toContain('promptVersion mismatch: evidence=sys-v0 current=sys-v1');
   });
 
+  it('rejects a passed evidence step with zero evaluated targets', () => {
+    const { root, evidenceHead } = createWorkspace();
+    const value = evidence(evidenceHead);
+    (value.steps as Record<string, unknown>).realSmoke = { count: 0, passed: true };
+    writeEvidence(root, value);
+
+    const result = run(root);
+    expect(result.status).not.toBe(0);
+    expect(result.output).toContain('evidence step realSmoke must have passed=true and a positive integer count');
+  });
+
   it('conditional CI/local mode skips unrelated changes but enforces prompt changes', () => {
     const unrelated = createWorkspace();
     write(unrelated.root, 'docs/unrelated.md', '# unrelated\n');

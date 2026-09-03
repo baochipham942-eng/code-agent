@@ -96,4 +96,14 @@ describe('prompt gate evidence producer', () => {
     expect(result.output).toContain('replayEval failed with exit 9');
     expect(fs.existsSync(path.join(root, EVIDENCE))).toBe(false);
   });
+
+  it('returns non-zero and writes no evidence when a passing command evaluates zero targets', () => {
+    const root = createWorkspace();
+    const result = run(root, {
+      PROMPT_GATE_REAL_SMOKE_COMMAND: command("console.log('PROMPT_GATE_COUNT=0')"),
+    });
+    expect(result.status).not.toBe(0);
+    expect(result.output).toContain('realSmoke passed but evaluated zero targets');
+    expect(fs.existsSync(path.join(root, EVIDENCE))).toBe(false);
+  });
 });

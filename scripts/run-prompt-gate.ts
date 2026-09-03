@@ -66,7 +66,9 @@ function runStep(root: string, step: typeof STEPS[number]): number {
   if (result.stderr) process.stderr.write(result.stderr);
   if (result.error) throw result.error;
   if (result.status !== 0) throw new Error(`${step.name} failed with exit ${result.status ?? 1}`);
-  return countFromOutput(step.name, `${result.stdout ?? ''}\n${result.stderr ?? ''}`);
+  const count = countFromOutput(step.name, `${result.stdout ?? ''}\n${result.stderr ?? ''}`);
+  if (count < 1) throw new Error(`${step.name} passed but evaluated zero targets`);
+  return count;
 }
 
 function parseArgs(argv: string[]): { root: string; output: string } {

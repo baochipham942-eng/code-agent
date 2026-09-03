@@ -61,6 +61,8 @@ export const RELEASE_EVIDENCE_PRODUCERS: readonly ReleaseEvidenceProducer[] = [
     scenarios: ['RunRegistry', 'rendererStop'],
   },
   {
+    // Bootstrap is intentionally fail-closed for a full release until main carries its first real
+    // prompt-gate report. PR/local static checks use --base-ref, so unrelated PRs remain unblocked.
     shape: 'prompt-gate',
     evidence: 'docs/eval/prompt-gate-latest.json',
     producer: 'scripts/run-prompt-gate.ts',

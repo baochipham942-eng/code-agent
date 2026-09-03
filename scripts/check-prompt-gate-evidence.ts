@@ -46,8 +46,8 @@ function validateEvidenceShape(value: unknown, errors: string[]): value is Recor
   if (unknownSteps.length > 0) errors.push(`evidence steps have unknown field(s): ${unknownSteps.join(', ')}`);
   for (const name of STEP_NAMES) {
     const step = value.steps[name];
-    if (!isObject(step) || step.passed !== true || !Number.isInteger(step.count) || Number(step.count) < 0) {
-      errors.push(`evidence step ${name} must have passed=true and a non-negative integer count`);
+    if (!isObject(step) || step.passed !== true || !Number.isInteger(step.count) || Number(step.count) < 1) {
+      errors.push(`evidence step ${name} must have passed=true and a positive integer count`);
     }
   }
   return true;

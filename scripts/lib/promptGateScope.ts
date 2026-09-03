@@ -34,6 +34,9 @@ export function loadPromptChangePaths(root: string): PromptChangePaths {
 }
 
 export function isPromptInputPath(relativePath: string, scope: PromptChangePaths): boolean {
+  // Keep this exactly aligned with check-prompt-version-bump.sh. That hook explicitly records
+  // plugins/builtin schemas as an existing blind spot; broadening only this consumer would create
+  // the second path policy that N-EVAL-PROMPTGATE forbids.
   return relativePath.startsWith(scope.promptsDir)
     || (relativePath.startsWith(scope.toolModulesDir) && relativePath.endsWith('.schema.ts'));
 }

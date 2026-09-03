@@ -15,3 +15,24 @@ describe('commandSafety relative recursive delete evidence', () => {
     });
   });
 });
+
+describe('commandSafety force-push flags', () => {
+  it.each([
+    'git push --force origin main',
+    'git push -f origin main',
+    'git push -fu origin main',
+    'git push --force-with-lease origin main',
+  ])('%s is high risk', (command) => {
+    expect(validateCommand(command, 'posix')).toMatchObject({
+      riskLevel: 'high',
+      securityFlags: expect.arrayContaining(['git_force_push']),
+    });
+  });
+
+  it('keeps a regular push at its existing safe risk level', () => {
+    expect(validateCommand('git push origin feature/x', 'posix')).toMatchObject({
+      riskLevel: 'safe',
+      securityFlags: [],
+    });
+  });
+});

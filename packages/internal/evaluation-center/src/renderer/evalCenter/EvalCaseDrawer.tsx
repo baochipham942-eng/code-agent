@@ -96,7 +96,9 @@ export const EvalCaseDrawer: React.FC<EvalCaseDrawerProps> = ({ target, onClose 
     ? ` · ${fill(labels.caseCost, { cost: formatUsd(detail.costUsd) })}`
     : '';
   const conclusion = (detail?.evidence && !excluded
-    ? fill(labels.conclusion, { status: statusLabel, reason })
+    ? (reason === statusLabel
+      ? statusLabel
+      : fill(labels.conclusion, { status: statusLabel, reason }))
     : `${statusLabel}${reason !== statusLabel ? ` · ${reason}` : ''}${excluded ? ` · ${labels.excludedShort}` : ''}`) + costSuffix;
 
   const editCase = () => {

@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -63,6 +64,31 @@ export function resolvePromptVersion(root: string, versionFile: string): string 
 
 export function resolveGitHead(root: string): string {
   return git(root, ['rev-parse', 'HEAD']);
+}
+
+export function resolvePromptInputsHash(root: string, scope: PromptChangePaths): string {
+  const files: string[] = [];
+  const visit = (relativeDirectory: string): void => {
+    const absoluteDirectory = path.join(root, relativeDirectory);
+    if (!fs.existsSync(absoluteDirectory)) return;
+    for (const entry of fs.readdirSync(absoluteDirectory, { withFileTypes: true })) {
+      const relativePath = path.posix.join(relativeDirectory.replace(/\\/g, '/'), entry.name);
+      if (entry.isDirectory()) visit(relativePath);
+      else if (entry.isFile() && isPromptInputPath(relativePath, scope)) files.push(relativePath);
+    }
+  };
+  visit(scope.promptsDir);
+  visit(scope.toolModulesDir);
+  visit(scope.builtinPluginsDir);
+
+  const hash = createHash('sha256');
+  for (const relativePath of files.sort()) {
+    hash.update(relativePath);
+    hash.update('\0');
+    hash.update(fs.readFileSync(path.join(root, relativePath)));
+    hash.update('\0');
+  }
+  return hash.digest('hex');
 }
 
 export function assertAncestor(root: string, ancestor: string): void {

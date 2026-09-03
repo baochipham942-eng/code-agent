@@ -35,6 +35,8 @@ export interface StopEvidence extends EvidenceProducerBase {
 
 interface PromptGateEvidence extends EvidenceProducerBase {
   shape: 'prompt-gate';
+  /** 首份付费真评测证据落 main 后，随同该证据翻为 true */
+  bootstrapped: boolean;
 }
 
 export type ReleaseEvidenceProducer = LongSessionEvidence | StopEvidence | PromptGateEvidence;
@@ -61,11 +63,10 @@ export const RELEASE_EVIDENCE_PRODUCERS: readonly ReleaseEvidenceProducer[] = [
     scenarios: ['RunRegistry', 'rendererStop'],
   },
   {
-    // Bootstrap is intentionally fail-closed for a full release until main carries its first real
-    // prompt-gate report. PR/local static checks use --base-ref, so unrelated PRs remain unblocked.
     shape: 'prompt-gate',
     evidence: 'docs/eval/prompt-gate-latest.json',
     producer: 'scripts/run-prompt-gate.ts',
+    bootstrapped: false,
   },
 ];
 

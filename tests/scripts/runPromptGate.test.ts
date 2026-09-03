@@ -79,6 +79,7 @@ describe('prompt gate evidence producer', () => {
       schemaVersion: 1,
       gitHead: git(root, 'rev-parse', 'HEAD'),
       promptVersion: 'sys-v7',
+      promptInputsHash: expect.stringMatching(/^[0-9a-f]{64}$/),
       passed: true,
       steps: {
         staleScan: { count: 5, passed: true },
@@ -106,5 +107,21 @@ describe('prompt gate evidence producer', () => {
     expect(result.status).not.toBe(0);
     expect(result.output).toContain('realSmoke passed but evaluated zero targets');
     expect(fs.existsSync(path.join(root, EVIDENCE))).toBe(false);
+  });
+
+  it('parses the count formats emitted by the three real command entrypoints', () => {
+    const root = createWorkspace();
+    const result = run(root, {
+      PROMPT_GATE_STALE_SCAN_COMMAND: command("console.log('passed (5 target groups)')"),
+      PROMPT_GATE_REPLAY_EVAL_COMMAND: command("console.log('{\"ok\":true,\"status\":\"passed\"}')"),
+      PROMPT_GATE_REAL_SMOKE_COMMAND: command("console.log('Total: 10')"),
+    });
+    expect(result, result.output).toMatchObject({ status: 0 });
+    const value = JSON.parse(fs.readFileSync(path.join(root, EVIDENCE), 'utf8')) as Record<string, unknown>;
+    expect(value.steps).toEqual({
+      staleScan: { count: 5, passed: true },
+      replayEval: { count: 1, passed: true },
+      realSmoke: { count: 10, passed: true },
+    });
   });
 });

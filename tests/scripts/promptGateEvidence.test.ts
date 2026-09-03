@@ -4,6 +4,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { loadPromptChangePaths, resolvePromptInputsHash } from '../../scripts/lib/promptGateScope.ts';
+
 const REPO_ROOT = path.resolve(import.meta.dirname, '../..');
 const CHECKER = path.join(REPO_ROOT, 'scripts/check-prompt-gate-evidence.ts');
 const TSX = path.join(REPO_ROOT, 'node_modules/tsx/dist/cli.mjs');
@@ -26,6 +28,7 @@ function evidence(gitHead: string, promptVersion = 'sys-v1'): Record<string, unk
     generatedAt: '2026-09-03T00:00:00.000Z',
     gitHead,
     promptVersion,
+    promptInputsHash: 'a'.repeat(64),
     passed: true,
     steps: {
       staleScan: { count: 5, passed: true },
@@ -137,6 +140,24 @@ describe('prompt gate evidence checker', () => {
     const result = run(root);
     expect(result.status).not.toBe(0);
     expect(result.output).toContain('evidence step realSmoke must have passed=true and a positive integer count');
+  });
+
+  it('accepts a squash-unreachable gitHead when the prompt input content hash still matches', () => {
+    const { root } = createWorkspace();
+    const value = evidence('f'.repeat(40));
+    value.promptInputsHash = resolvePromptInputsHash(root, loadPromptChangePaths(root));
+    writeEvidence(root, value);
+
+    expect(run(root)).toMatchObject({ status: 0 });
+  });
+
+  it('rejects a squash-unreachable gitHead when prompt input content changed', () => {
+    const { root } = createWorkspace();
+    writeEvidence(root, evidence('f'.repeat(40)));
+
+    const result = run(root);
+    expect(result.status).not.toBe(0);
+    expect(result.output).toContain('prompt input content hash does not match');
   });
 
   it('conditional CI/local mode skips unrelated changes but enforces prompt changes', () => {

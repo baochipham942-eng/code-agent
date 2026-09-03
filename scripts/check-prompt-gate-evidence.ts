@@ -9,6 +9,7 @@ import {
   changedFiles,
   isPromptInputPath,
   loadPromptChangePaths,
+  resolvePromptInputsHash,
   resolvePromptVersion,
 } from './lib/promptGateScope.ts';
 
@@ -30,13 +31,24 @@ function validateEvidenceShape(value: unknown, errors: string[]): value is Recor
     errors.push('evidence root must be an object');
     return false;
   }
-  const allowed = ['schemaVersion', 'generatedAt', 'gitHead', 'promptVersion', 'passed', 'steps'];
+  const allowed = [
+    'schemaVersion',
+    'generatedAt',
+    'gitHead',
+    'promptVersion',
+    'promptInputsHash',
+    'passed',
+    'steps',
+  ];
   const unknown = Object.keys(value).filter((key) => !allowed.includes(key));
   if (unknown.length > 0) errors.push(`evidence has unknown field(s): ${unknown.join(', ')}`);
   if (value.schemaVersion !== 1) errors.push('evidence has unknown schemaVersion');
   if (value.passed !== true) errors.push('evidence passed must be true');
   if (typeof value.generatedAt !== 'string' || Number.isNaN(new Date(value.generatedAt).valueOf())) {
     errors.push('evidence generatedAt is missing or invalid');
+  }
+  if (typeof value.promptInputsHash !== 'string' || !/^[0-9a-f]{64}$/i.test(value.promptInputsHash)) {
+    errors.push('evidence promptInputsHash is missing or invalid');
   }
   if (!isObject(value.steps)) {
     errors.push('evidence steps are missing');
@@ -83,14 +95,28 @@ export function checkPromptGateEvidence(root: string): string[] {
     errors.push('evidence gitHead is missing or invalid');
     return errors;
   }
+  let isAncestor = false;
   try {
     assertAncestor(root, gitHead);
-    const relevant = changedFiles(root, gitHead).filter((file) => isPromptInputPath(file, scope));
-    if (relevant.length > 0) {
-      errors.push(`evidence is stale after prompt/tool schema changed: ${relevant.join(', ')}`);
-    }
+    isAncestor = true;
   } catch {
-    errors.push('evidence gitHead is not an ancestor of HEAD');
+    // ship merge uses squash, so a feature-branch evidence commit is not reachable from main.
+    // The content hash below proves that the evaluated prompt inputs survived unchanged.
+  }
+  if (isAncestor) {
+    try {
+      const relevant = changedFiles(root, gitHead).filter((file) => isPromptInputPath(file, scope));
+      if (relevant.length > 0) {
+        errors.push(`evidence is stale after prompt/tool schema changed: ${relevant.join(', ')}`);
+      }
+    } catch (error) {
+      errors.push(`cannot inspect prompt changes after evidence gitHead: ${error instanceof Error ? error.message : 'git failed'}`);
+    }
+  } else {
+    const currentHash = resolvePromptInputsHash(root, scope);
+    if (evidence.promptInputsHash !== currentHash) {
+      errors.push('evidence gitHead is not an ancestor of HEAD and prompt input content hash does not match');
+    }
   }
   return errors;
 }

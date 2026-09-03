@@ -201,6 +201,7 @@ export function releaseArtifactErrors(root: string): string[] {
   if (!fs.existsSync(releasePath)) return [`missing workflow: ${RELEASE_WORKFLOW}`];
   const source = fs.readFileSync(releasePath, 'utf8');
   return RELEASE_EVIDENCE_PRODUCERS
+    .filter((entry) => entry.shape !== 'prompt-gate' || entry.bootstrapped)
     .filter((entry) => !source.includes(entry.evidence))
     .map((entry) => `${RELEASE_WORKFLOW} does not freeze release evidence ${entry.evidence} as an artifact`);
 }

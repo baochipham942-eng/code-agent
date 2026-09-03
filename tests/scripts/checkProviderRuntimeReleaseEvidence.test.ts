@@ -154,6 +154,7 @@ export const PROVIDER_RUNTIME_CAPABILITY_MATRIX = [{
     generatedAt: '2026-07-11T00:00:00.000Z',
     gitHead: head,
     promptVersion: 'sys-v1',
+    promptInputsHash: 'a'.repeat(64),
     passed: true,
     steps: {
       staleScan: { count: 5, passed: true },
@@ -190,6 +191,14 @@ afterEach(() => {
 describe('provider runtime release evidence gate', () => {
   it('returns zero for a complete and fresh evidence workspace', () => {
     const result = runChecker(createWorkspace());
+    expect(result, result.output).toMatchObject({ status: 0 });
+  });
+
+  it('does not require prompt evidence in the full release gate before bootstrap is enabled', () => {
+    const root = createWorkspace();
+    fs.rmSync(path.join(root, 'docs/eval/prompt-gate-latest.json'));
+
+    const result = runChecker(root);
     expect(result, result.output).toMatchObject({ status: 0 });
   });
 

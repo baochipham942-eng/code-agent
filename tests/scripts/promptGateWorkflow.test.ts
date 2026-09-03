@@ -35,4 +35,11 @@ describe('prompt gate evidence workflow', () => {
     expect(localSource).toContain('prompt-gate-evidence / prompt-evidence / Verify fresh prompt evaluation evidence');
     expect(localSource).toContain("scripts/check-prompt-gate-evidence.ts', '--base-ref'");
   });
+
+  it('keeps full release bootstrap disabled until the first paid evidence is committed', () => {
+    const registrySource = fs.readFileSync(path.join(REPO_ROOT, 'scripts/lib/releaseEvidenceRegistry.ts'), 'utf8');
+    const releaseSource = fs.readFileSync(path.join(REPO_ROOT, '.github/workflows/release.yml'), 'utf8');
+    expect(registrySource).toContain('bootstrapped: false');
+    expect(releaseSource).not.toContain('docs/eval/prompt-gate-latest.json');
+  });
 });

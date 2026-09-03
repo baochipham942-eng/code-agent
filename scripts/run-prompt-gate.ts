@@ -5,7 +5,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { RELEASE_EVIDENCE_PRODUCERS } from './lib/releaseEvidenceRegistry.ts';
-import { loadPromptChangePaths, resolveGitHead, resolvePromptVersion } from './lib/promptGateScope.ts';
+import {
+  loadPromptChangePaths,
+  resolveGitHead,
+  resolvePromptInputsHash,
+  resolvePromptVersion,
+} from './lib/promptGateScope.ts';
 
 const PROMPT_EVIDENCE = (() => {
   const entry = RELEASE_EVIDENCE_PRODUCERS.find((candidate) => candidate.shape === 'prompt-gate');
@@ -92,6 +97,7 @@ function main(): void {
     generatedAt: new Date().toISOString(),
     gitHead: resolveGitHead(root),
     promptVersion: resolvePromptVersion(root, scope.versionFile),
+    promptInputsHash: resolvePromptInputsHash(root, scope),
     passed: true,
     steps: Object.fromEntries(STEPS.map((step) => [step.name, {
       count: counts[step.name],

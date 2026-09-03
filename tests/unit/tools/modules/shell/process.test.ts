@@ -162,4 +162,66 @@ describe('processModule structured result metadata', () => {
       });
     }
   });
+
+  it('poll appends the sandbox denial path for a failed PTY', async () => {
+    isPtySessionIdMock.mockReturnValue(true);
+    pollPtySessionMock.mockReturnValue({
+      success: true,
+      status: 'failed',
+      data: '',
+      exitCode: 1,
+    });
+    getPtySessionOutputMock.mockResolvedValue({
+      status: 'failed',
+      output: '/bin/sh: /Users/tester/x: Operation not permitted',
+      exitCode: 1,
+      duration: 20,
+    });
+    getAllPtySessionsMock.mockReturnValue([{
+      sessionId: 'pty-1',
+      status: 'failed',
+      command: 'touch ~/x',
+      args: [],
+      cwd: '/tmp/project',
+      sandboxed: true,
+    }]);
+
+    const handler = await processModule.createHandler();
+    const result = await handler.execute(
+      { action: 'poll', session_id: 'pty-1', block: false },
+      makeCtx(),
+      allowAll,
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.output).toContain('沙盒拒绝：/Users/tester/x');
+  });
+
+  it('poll appends the sandbox denial path for a failed background task', async () => {
+    isTaskIdMock.mockReturnValue(true);
+    getTaskOutputMock.mockResolvedValue({
+      status: 'failed',
+      output: '[stderr] /bin/sh: /Users/tester/x: Operation not permitted',
+      exitCode: 1,
+      duration: 20,
+    });
+    getBackgroundTaskMock.mockReturnValue({
+      taskId: 'task-1',
+      status: 'failed',
+      command: 'touch ~/x',
+      cwd: '/tmp/project',
+      sandboxed: true,
+      outputFile,
+    });
+
+    const handler = await processModule.createHandler();
+    const result = await handler.execute(
+      { action: 'poll', session_id: 'task-1', block: true },
+      makeCtx(),
+      allowAll,
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.output).toContain('沙盒拒绝：/Users/tester/x');
+  });
 });

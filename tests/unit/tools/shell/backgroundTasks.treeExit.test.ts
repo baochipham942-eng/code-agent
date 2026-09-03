@@ -4,7 +4,7 @@
 // 证据档位：real-runtime。
 import { mkdtempSync } from 'fs';
 import { tmpdir } from 'os';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   getAllBackgroundTasks,
@@ -40,12 +40,32 @@ posixOnly('后台任务停机收尸', () => {
     }
   });
 
+  it('自然退出后调用一次宿主清理回调', async () => {
+    const cwd = mkdtempSync(`${tmpdir()}/neo-bgtask-`);
+    const onExit = vi.fn();
+    const started = startBackgroundTask('true', cwd, 30_000, { onExit });
+    expect(started.success).toBe(true);
+    startedTaskIds.push(started.taskId!);
+
+    await waitFor(() => getAllBackgroundTasks().some(
+      (task) => task.taskId === started.taskId && task.status === 'completed',
+    ));
+
+    expect(onExit).toHaveBeenCalledOnce();
+  });
+
   it('kill 后台任务时，它 spawn 出来的孙进程一起死干净', async () => {
     const cwd = mkdtempSync(`${tmpdir()}/neo-bgtask-`);
     // 孙进程把自己的 pid 写到文件里——这就是「跑 e2e 脚本的后台任务拉起 Playwright worker」
     // 的最小形状。旧实现只杀 bash，这个 sleep 会被 init 收养继续活着。
     const pidFile = `${cwd}/grandchild.pid`;
-    const started = startBackgroundTask(`sleep 120 & echo $! > ${pidFile}; wait`, cwd);
+    const onExit = vi.fn();
+    const started = startBackgroundTask(
+      `sleep 120 & echo $! > ${pidFile}; wait`,
+      cwd,
+      30_000,
+      { onExit },
+    );
     expect(started.success).toBe(true);
     startedTaskIds.push(started.taskId!);
 
@@ -61,6 +81,7 @@ posixOnly('后台任务停机收尸', () => {
     // 承重断言：killBackgroundTask 返回时孙进程必须已经死了，不能是「信号发出去了」
     expect(pidAlive(grandchildPid)).toBe(false);
     expect(getAllBackgroundTasks().find((t) => t.taskId === started.taskId)?.status).not.toBe('running');
+    expect(onExit).toHaveBeenCalledOnce();
   }, 30000);
 
   it('reapChildProcesses 收掉全部在跑的后台任务（停机属主调的就是它）', async () => {

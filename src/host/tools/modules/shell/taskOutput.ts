@@ -21,6 +21,7 @@ import {
   isTaskId,
   getBackgroundTask,
 } from '../../shell/backgroundTasks';
+import { diagnoseSandboxDenial } from '../../shell/sandboxFailureDiagnostics';
 
 const DEFAULT_TIMEOUT = 30000;
 
@@ -155,6 +156,15 @@ class TaskOutputHandler implements ToolHandler<Record<string, unknown>, string> 
     lines.push('');
     lines.push('--- Output ---');
     lines.push(result.output || '(no output)');
+
+    if (result.status === 'failed') {
+      const diagnostic = diagnoseSandboxDenial({
+        failureText: result.output,
+        sandboxed: task?.sandboxed,
+        workingDirectory: task?.cwd,
+      });
+      if (diagnostic) lines.push('', diagnostic);
+    }
 
     onProgress?.({ stage: 'completing', percent: 100 });
     ctx.logger.info('task_output done', { taskId, status: result.status });

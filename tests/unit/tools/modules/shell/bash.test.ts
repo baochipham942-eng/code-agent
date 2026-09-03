@@ -730,6 +730,32 @@ describe('bash failure diagnostics', () => {
     expect(diagnostics.join('\n')).toMatch(/OOM|内存/);
   });
 
+  it('reports the denied path only for OS-sandbox permission failures', () => {
+    const denied = diagnoseBashFailure({
+      command: 'touch ~/x',
+      stderr: "/bin/sh: /Users/tester/x: Operation not permitted",
+      sandboxed: true,
+      workingDirectory: '/tmp/project',
+    });
+    expect(denied).toContain('沙盒拒绝：/Users/tester/x（沙盒只允许写 /tmp/project 与临时目录）');
+
+    expect(diagnoseBashFailure({
+      command: 'touch ~/x',
+      stderr: "/bin/sh: /Users/tester/x: Operation not permitted",
+      sandboxed: false,
+      workingDirectory: '/tmp/project',
+    })).toEqual([]);
+  });
+
+  it('falls back without inventing a path when a sandbox EPERM has none', () => {
+    expect(diagnoseBashFailure({
+      command: 'npm pack --dry-run',
+      stderr: 'npm error code EPERM',
+      sandboxed: true,
+      workingDirectory: '/tmp/project',
+    })).toContain('沙盒拒绝了工作目录外的写入');
+  });
+
   it('appends diagnostics to the model-visible failure message', () => {
     const message = appendFailureDiagnostics('Command failed with exit code 137', [
       '诊断：exit 137 通常表示进程可能被系统 OOM killer 终止。',
@@ -960,6 +986,145 @@ describe('bashModule OS 沙箱 gating（bypassPermissions）', () => {
     // 跑的是包装后的命令（spy 返回 echo __SANDBOXED__），证明真的走了沙箱包装结果
     if (result.ok) expect(result.output).toContain('__SANDBOXED__');
     expect(cleanupMock).toHaveBeenCalled();
+  });
+
+  it('bypassPermissions 档：后台任务结束时才清理 sandbox 临时状态', async () => {
+    modeMgr.setMode('bypassPermissions', true);
+    startBackgroundTaskMock.mockReturnValue({ success: true, taskId: 'sandbox-bg' });
+    const handler = await bashModule.createHandler();
+
+    const result = await handler.execute(
+      { command: 'exec npm config get userconfig', run_in_background: true },
+      makeCtx(),
+      allowAll,
+    );
+
+    expect(result.ok).toBe(true);
+    expect(cleanupMock).not.toHaveBeenCalled();
+    const options = startBackgroundTaskMock.mock.calls.at(-1)?.[3] as
+      | { onExit?: () => void; sandboxed?: boolean }
+      | undefined;
+    expect(options?.onExit).toBeTypeOf('function');
+    expect(options?.sandboxed).toBe(true);
+    options?.onExit?.();
+    options?.onExit?.();
+    expect(cleanupMock).toHaveBeenCalledOnce();
+  });
+
+  it('bypassPermissions 档：PTY 结束时才清理 sandbox 临时状态', async () => {
+    modeMgr.setMode('bypassPermissions', true);
+    createPtySessionMock.mockReturnValue({ success: true, sessionId: 'sandbox-pty' });
+    const handler = await bashModule.createHandler();
+
+    const result = await handler.execute(
+      { command: 'exec npm config get userconfig', pty: true },
+      makeCtx(),
+      allowAll,
+    );
+
+    expect(result.ok).toBe(true);
+    expect(cleanupMock).not.toHaveBeenCalled();
+    const options = createPtySessionMock.mock.calls.at(-1)?.[0] as
+      | { onExit?: () => void; sandboxed?: boolean }
+      | undefined;
+    expect(options?.onExit).toBeTypeOf('function');
+    expect(options?.sandboxed).toBe(true);
+    options?.onExit?.();
+    options?.onExit?.();
+    expect(cleanupMock).toHaveBeenCalledOnce();
+  });
+
+  it('bypassPermissions 档：PTY 等待失败会把沙盒拒绝路径追加到模型输出', async () => {
+    modeMgr.setMode('bypassPermissions', true);
+    createPtySessionMock.mockReturnValue({ success: true, sessionId: 'sandbox-pty' });
+    getPtySessionOutputMock.mockResolvedValue({
+      status: 'failed',
+      output: '/bin/sh: /Users/tester/x: Operation not permitted',
+      exitCode: 1,
+      duration: 10,
+    });
+    const handler = await bashModule.createHandler();
+
+    const result = await handler.execute(
+      { command: 'touch ~/x', pty: true, wait_for_completion: true },
+      makeCtx({ workingDir: '/tmp/project' }),
+      allowAll,
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toContain('沙盒拒绝：/Users/tester/x');
+      expect(result.error).toContain('/tmp/project');
+    }
+  });
+
+  it('bypassPermissions 档：PTY 或后台任务启动失败时立即清理 sandbox 临时状态', async () => {
+    modeMgr.setMode('bypassPermissions', true);
+    const handler = await bashModule.createHandler();
+    startBackgroundTaskMock.mockReturnValue({ success: false, error: 'background failed' });
+
+    const background = await handler.execute(
+      { command: 'npm config get userconfig', run_in_background: true },
+      makeCtx(),
+      allowAll,
+    );
+
+    expect(background.ok).toBe(false);
+    expect(cleanupMock).toHaveBeenCalledTimes(1);
+
+    createPtySessionMock.mockReturnValue({ success: false, error: 'pty failed' });
+    const pty = await handler.execute(
+      { command: 'npm config get userconfig', pty: true },
+      makeCtx(),
+      allowAll,
+    );
+
+    expect(pty.ok).toBe(false);
+    expect(cleanupMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('bypassPermissions 档：PTY 或后台执行器同步抛错时仍清理 sandbox 临时状态', async () => {
+    modeMgr.setMode('bypassPermissions', true);
+    const handler = await bashModule.createHandler();
+    startBackgroundTaskMock.mockImplementation(() => {
+      throw new Error('background exploded');
+    });
+
+    const background = await handler.execute(
+      { command: 'npm config get userconfig', run_in_background: true },
+      makeCtx(),
+      allowAll,
+    );
+
+    expect(background).toMatchObject({ ok: false, code: 'FS_ERROR' });
+    expect(cleanupMock).toHaveBeenCalledTimes(1);
+
+    createPtySessionMock.mockImplementation(() => {
+      throw new Error('pty exploded');
+    });
+    const pty = await handler.execute(
+      { command: 'npm config get userconfig', pty: true },
+      makeCtx(),
+      allowAll,
+    );
+
+    expect(pty).toMatchObject({ ok: false, code: 'FS_ERROR' });
+    expect(cleanupMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('bypassPermissions 档：越界写失败会把沙盒拒绝路径追加到模型输出', async () => {
+    modeMgr.setMode('bypassPermissions', true);
+    wrapMock.mockReturnValue({
+      command: `/bin/sh -c 'echo "/bin/sh: /Users/tester/x: Operation not permitted" >&2; exit 1'`,
+      cleanup: cleanupMock,
+    });
+    const handler = await bashModule.createHandler();
+    const result = await handler.execute({ command: 'touch ~/x' }, makeCtx(), allowAll);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toContain('沙盒拒绝：/Users/tester/x');
+      expect(result.error).toContain(`${process.cwd()} 与临时目录`);
+    }
   });
 
   it('bypassPermissions 档 + 沙箱不可用：硬报错 SANDBOX_UNAVAILABLE，绝不裸跑', async () => {

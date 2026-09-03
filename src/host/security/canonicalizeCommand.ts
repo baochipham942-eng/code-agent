@@ -17,6 +17,103 @@ const ANSI_C_ESCAPES: Record<string, string> = {
 const ZERO_WIDTH_CHARACTERS = /[\u200B-\u200D\u2060\uFEFF]/g;
 const IFS_EXPANSIONS = /\$\{IFS[^}]*\}|\$IFS\b/g;
 
+function readAnsiCQuoted(source: string, openIndex: number): { value: string; end: number } | undefined {
+  if (source[openIndex] !== '$' || source[openIndex + 1] !== "'") return undefined;
+  let index = openIndex + 2;
+  let value = '';
+  while (index < source.length) {
+    const character = source[index];
+    if (character === "'") return { value, end: index + 1 };
+    if (character !== '\\') {
+      value += character;
+      index += 1;
+      continue;
+    }
+    const escaped = source[index + 1];
+    if (escaped === undefined) return undefined;
+    const namedEscape = ANSI_C_ESCAPES[escaped];
+    if (namedEscape !== undefined) {
+      value += namedEscape;
+      index += 2;
+      continue;
+    }
+    const encoded = escaped === 'x'
+      ? source.slice(index + 2).match(/^[0-9a-fA-F]{1,2}/)?.[0]
+      : escaped === 'u'
+        ? source.slice(index + 2).match(/^[0-9a-fA-F]{1,4}/)?.[0]
+        : escaped === 'U'
+          ? source.slice(index + 2).match(/^[0-9a-fA-F]{1,8}/)?.[0]
+          : source.slice(index + 1).match(/^[0-7]{1,3}/)?.[0];
+    const isUnicodeEscape = escaped === 'u' || escaped === 'U';
+    const radix = escaped === 'x' || isUnicodeEscape ? 16 : 8;
+    if (encoded !== undefined) {
+      const parsed = Number.parseInt(encoded, radix);
+      if (!isUnicodeEscape || parsed <= 0x10ffff) {
+        value += isUnicodeEscape ? String.fromCodePoint(parsed) : String.fromCharCode(parsed);
+        index += encoded.length + (radix === 16 ? 2 : 1);
+        continue;
+      }
+    }
+    value += escaped;
+    index += 2;
+  }
+  return undefined;
+}
+
+function expandWhitespaceOnlyAnsiCQuotes(command: string): string {
+  let result = '';
+  let quote: "'" | '"' | undefined;
+  let escaped = false;
+  for (let index = 0; index < command.length; index += 1) {
+    const character = command[index];
+    if (escaped) {
+      result += character;
+      escaped = false;
+      continue;
+    }
+    if (character === '\\' && quote !== "'") {
+      result += character;
+      escaped = true;
+      continue;
+    }
+    if (quote) {
+      if (character === quote) quote = undefined;
+      result += character;
+      continue;
+    }
+    if (character === "'" || character === '"') {
+      quote = character;
+      result += character;
+      continue;
+    }
+    if (character === '$' && command[index + 1] === "'") {
+      const decoded = readAnsiCQuoted(command, index);
+      if (decoded && /^\s+$/.test(decoded.value)) {
+        result += ' ';
+        index = decoded.end - 1;
+        continue;
+      }
+    }
+    result += character;
+  }
+  return result;
+}
+
+/**
+ * Quote-preserving prefix used by write-target scanning: NFKC, strip zero-width
+ * characters, expand `$IFS` / `${IFS…}` to a space, and expand unquoted ANSI-C
+ * quotes whose decoded value is only whitespace (`$'\x20'`, `$'\t'`). Regular
+ * quotes are left in place so `"my file.txt"` stays one word.
+ */
+export function normalizeShellText(command: string): string {
+  return expandWhitespaceOnlyAnsiCQuotes(
+    command
+      .normalize('NFKC')
+      .replace(ZERO_WIDTH_CHARACTERS, '')
+      .replace(IFS_EXPANSIONS, ' '),
+  );
+}
+
 /**
  * Produce the sole text form used before shell command policy and deny matching.
  * The parser deliberately does not execute substitutions. Dynamic substitutions and
@@ -27,10 +124,7 @@ export function canonicalizeCommand(command: string): {
   parsingFailed: boolean;
   failureReason?: string;
 } {
-  const source = command
-    .normalize('NFKC')
-    .replace(ZERO_WIDTH_CHARACTERS, '')
-    .replace(IFS_EXPANSIONS, ' ');
+  const source = normalizeShellText(command);
   let result = '';
   let mode: 'plain' | 'single' | 'double' | 'ansi' = 'plain';
   let parsingFailed = false;

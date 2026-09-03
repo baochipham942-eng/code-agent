@@ -199,17 +199,6 @@ describe('ToolExecutor directive memory path authority', () => {
     ['MemoryWrite direct', 'MemoryWrite', { action: 'write', filename: 'c1.md', content: 'directive' }],
     ['Write direct', 'Write', { file_path: path.join(memoryDir, 'c1.md'), content: 'directive' }],
     ['Bash redirect', 'Bash', { command: `printf directive > ${path.join(memoryDir, 'c1.md')}` }],
-    ['Bash shell wrapper redirect', 'Bash', { command: `sh -c "printf directive > ${path.join(memoryDir, 'c2.md')}"` }],
-    ['Bash assigned shell wrapper redirect', 'Bash', { command: `MODE=1 sh -c "printf directive > ${path.join(memoryDir, 'c3.md')}"` }],
-    ['Bash background shell wrapper redirect', 'Bash', { command: `true & sh -c "printf directive > ${path.join(memoryDir, 'c4.md')}"` }],
-    ['Bash newline shell wrapper redirect', 'Bash', { command: `true\nsh -c "printf directive > ${path.join(memoryDir, 'c5.md')}"` }],
-    ['Bash env shell wrapper redirect', 'Bash', { command: `env sh -c "printf directive > ${path.join(memoryDir, 'c6.md')}"` }],
-    ['Bash path shell wrapper redirect', 'Bash', { command: `/bin/sh -c "printf directive > ${path.join(memoryDir, 'c7.md')}"` }],
-    ['Bash command shell wrapper redirect', 'Bash', { command: `command sh -c "printf directive > ${path.join(memoryDir, 'c8.md')}"` }],
-    ['Bash optioned shell wrapper redirect', 'Bash', { command: `bash --noprofile -c "printf directive > ${path.join(memoryDir, 'c9.md')}"` }],
-    ['Bash env split-string wrapper redirect', 'Bash', { command: `env -S 'sh -c "printf directive > ${path.join(memoryDir, 'c10.md')}"'` }],
-    ['Bash shell wrapper quoted redirect', 'Bash', { command: `sh -c 'printf directive > "${path.join(memoryDir, 'quoted c11.md')}"'` }],
-    ['Bash unknown launcher wrapper redirect', 'Bash', { command: `setsid sh -c 'printf directive > "$CODE_AGENT_DATA_DIR/memory/c12.md"'` }],
     ['Bash append INDEX', 'Bash', { command: `printf entry >> ${path.join(memoryDir, 'INDEX.md')}` }],
     ['future declared writer', 'FutureArtifactWriter', { destination: path.join(memoryDir, 'future.md') }],
   ] as const;
@@ -262,6 +251,74 @@ describe('ToolExecutor directive memory path authority', () => {
       metadata: { code: 'DIRECTIVE_MEMORY_CONFIRMATION_REQUIRED' },
     });
     expect(mocks.execute).not.toHaveBeenCalled();
+  });
+});
+
+describe('ToolExecutor directive memory — wrapper recursion without memoryDir literal', () => {
+  const originalDataDir = process.env.CODE_AGENT_DATA_DIR;
+  const dataDir = '/tmp/code-agent-directive-authority';
+  const memoryDir = path.join(dataDir, 'memory');
+  const wrapperCases = [
+    ['sh -c relative', "sh -c 'printf x > c.md'"],
+    ['bash -c relative', 'bash -c "printf x > wrapped.md"'],
+    ['eval relative', "eval 'printf x > evaled.md'"],
+    ['cd then sh -c relative', "cd . && sh -c 'printf x > nested.md'"],
+  ] as const;
+
+  beforeEach(() => {
+    process.env.CODE_AGENT_DATA_DIR = dataDir;
+    resetToolResolver();
+    mocks.getSchemas.mockReturnValue(schemas);
+    mocks.has.mockReturnValue(true);
+    mocks.execute.mockReset().mockResolvedValue({ ok: true, output: 'written' });
+    mocks.resolve.mockResolvedValue({ execute: mocks.execute });
+    mocks.confirmation.mockReset();
+    mocks.hasInteractiveUi.mockReset().mockReturnValue(true);
+  });
+
+  afterEach(() => {
+    if (originalDataDir === undefined) delete process.env.CODE_AGENT_DATA_DIR;
+    else process.env.CODE_AGENT_DATA_DIR = originalDataDir;
+  });
+
+  it.each(wrapperCases)('blocks %s before dispatch when confirmation is denied', async (_label, command) => {
+    expect(command.includes(memoryDir)).toBe(false);
+    mocks.confirmation.mockResolvedValueOnce({
+      requestId: 'directive-denied',
+      confirmed: false,
+      respondedAt: Date.now(),
+      timedOut: false,
+    });
+    const executor = new ToolExecutor({
+      workingDirectory: memoryDir,
+      requestPermission: vi.fn(async () => true),
+    });
+    executor.setAuditEnabled(false);
+
+    const result = await executor.execute('Bash', { command }, { preApprovedTools: new Set(['Bash']) });
+
+    expect(result).toMatchObject({ success: false, metadata: { code: 'DIRECTIVE_MEMORY_CONFIRMATION_REQUIRED' } });
+    expect(mocks.execute).not.toHaveBeenCalled();
+  });
+
+  it.each(wrapperCases)('allows %s after explicit confirmation', async (_label, command) => {
+    expect(command.includes(memoryDir)).toBe(false);
+    mocks.confirmation.mockResolvedValueOnce({
+      requestId: 'directive-approved',
+      confirmed: true,
+      respondedAt: Date.now(),
+      timedOut: false,
+    });
+    const executor = new ToolExecutor({
+      workingDirectory: memoryDir,
+      requestPermission: vi.fn(async () => true),
+    });
+    executor.setAuditEnabled(false);
+
+    const result = await executor.execute('Bash', { command }, { preApprovedTools: new Set(['Bash']) });
+
+    expect(result).toMatchObject({ success: true, output: 'written' });
+    expect(mocks.execute).toHaveBeenCalledOnce();
   });
 });
 

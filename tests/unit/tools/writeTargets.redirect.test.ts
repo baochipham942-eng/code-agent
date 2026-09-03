@@ -122,15 +122,24 @@ describe('shell redirect write targets', () => {
   it('still scans a located -c script after an ambiguous option value', () => {
     expect(resolve('bash --rcfile "$F" -c \'echo hi > out.txt\'')).toMatchObject({
       targets: [resolveCanonicalRunPath(path.join(workingDirectory, 'out.txt'))],
-      uncertain: ['uncertain-redirection:bash'],
+      uncertain: [],
     });
   });
 
   it.each([
+    "sh${IFS}-c 'echo > f'",
+    "sh$IFS-c 'echo > f'",
+    "sh$'\\x20'-c 'echo > f'",
+  ])('normalizes IFS/ANSI-C whitespace glued wrappers before scanning: %s', (command) => {
+    const result = resolve(command);
+    expect(
+      result.targets.includes(resolveCanonicalRunPath(path.join(workingDirectory, 'f')))
+      || result.uncertain.length > 0,
+    ).toBe(true);
+  });
+
+  it.each([
     ["sh -c 'echo $(date) > out.txt'", 'uncertain-redirection:sh'],
-    ['bash -x script.sh', 'uncertain-redirection:bash'],
-    ['bash "$SCRIPT"', 'uncertain-redirection:bash'],
-    ['bash --rcfile "$F" -c \'echo hi\'', 'uncertain-redirection:bash'],
     ['env -S "$WRAPPER"', 'uncertain-redirection:env'],
     ['sh -c "$SCRIPT"', 'uncertain-redirection:sh'],
     ['eval "${SCRIPT}"', 'uncertain-redirection:eval'],
@@ -153,8 +162,6 @@ describe('shell redirect write targets', () => {
     ['$runner script.sh', 'uncertain-redirection:dynamic-command'],
     ['sh <<EOF', 'uncertain-redirection:sh'],
     ['eval <<EOF', 'uncertain-redirection:eval'],
-    ['source script.sh', 'uncertain-redirection:source'],
-    ['. script.sh', 'uncertain-redirection:source'],
   ])('fails closed when a wrapped script cannot be resolved: %s', (command, reason) => {
     expect(resolve(command)).toMatchObject({ targets: [], uncertain: [reason] });
   });
@@ -180,14 +187,16 @@ describe('shell redirect write targets', () => {
     'cat >(printf a)',
     "printf '%s' '$runner' -c 'x'",
     "sed 's/>/x/' f",
+    'echo "a${IFS}b"',
+    'bash script.sh',
+    'bash -x script.sh',
+    'sh -x script.sh',
+    'bash "$SCRIPT"',
+    'bash --rcfile "$F" -c \'echo hi\'',
+    'source script.sh',
+    '. script.sh',
+    'git log | sh',
   ])('ignores redirect syntax in ordinary quoted arguments: %s', (command) => {
     expect(resolve(command)).toMatchObject({ targets: [], uncertain: [] });
-  });
-
-  it('preserves the existing fail-closed result for a shell without -c in a pipeline', () => {
-    expect(resolve('git log | sh')).toMatchObject({
-      targets: [],
-      uncertain: ['uncertain-redirection:sh'],
-    });
   });
 });

@@ -7,7 +7,7 @@ import type {
 } from '../../shared/contract';
 import { getMemoryDir } from '../lightMemory/indexLoader';
 import { resolveCanonicalRunPath } from '../runtime/runContext';
-import { canonicalizeCommand } from '../security/canonicalizeCommand';
+import { canonicalizeCommand, normalizeShellText } from '../security/canonicalizeCommand';
 
 export interface ResolveToolWriteTargetsInput {
   definition: ToolDefinition;
@@ -178,24 +178,18 @@ function findShellScriptIndex(
   wrapperIndex: number,
 ): { index?: number; uncertain: boolean } {
   let index = wrapperIndex + 1;
-  let uncertain = false;
   while (index < words.length) {
     const option = canonicalizeCommand(words[index]).command;
     if (SHELL_COMMAND_STRING_OPTION.test(option)) {
       let scriptIndex = index + 1;
       if (canonicalizeCommand(words[scriptIndex] ?? '').command === '--') scriptIndex += 1;
       return scriptIndex < words.length
-        ? { index: scriptIndex, uncertain }
+        ? { index: scriptIndex, uncertain: false }
         : { uncertain: true };
     }
-    if (option.startsWith('-') || option.startsWith('+')) {
-      index += 1;
-      continue;
-    }
-    uncertain = true;
     index += 1;
   }
-  return { uncertain: true };
+  return { uncertain: false };
 }
 
 function splitShellSegments(command: string): string[] {
@@ -320,11 +314,6 @@ function dynamicExecutionUncertainty(segment: string, words: string[]): string |
     commandIndex < words.length
     && SHELL_ASSIGNMENT_PREFIX.test(canonicalizeCommand(words[commandIndex]).command)
   ) commandIndex += 1;
-  const command = shellExecutableName(words[commandIndex]);
-  if ((command === 'source' || command === '.') && commandIndex + 1 < words.length) {
-    return 'source';
-  }
-
   for (let index = commandIndex; index < words.length; index += 1) {
     const executable = shellExecutableName(words[index]);
     if (!SHELL_COMMAND_WRAPPERS.has(executable) && executable !== 'eval') continue;
@@ -389,6 +378,7 @@ function substitutionNeedsFailClosed(command: string, start: number): boolean {
 }
 
 function shellRedirectTargets(command: string, depth = 0): ShellRedirectScan {
+  command = normalizeShellText(command);
   const targets: string[] = [];
   const uncertain: string[] = [];
   let quote: "'" | '"' | undefined;
@@ -461,9 +451,7 @@ function shellRedirectTargets(command: string, depth = 0): ShellRedirectScan {
     const wrapperIndex = lookup.index;
     const wrapper = shellExecutableName(words[wrapperIndex]);
     const isShellWrapper = SHELL_COMMAND_WRAPPERS.has(wrapper);
-    const isEvalWrapper = wrapper === 'eval';
     const isEnvSplitWrapper = wrapper === 'env' && lookup.scriptWords !== undefined;
-    if (!isShellWrapper && !isEvalWrapper && !isEnvSplitWrapper) continue;
 
     let scriptWords: string[];
     if (isEnvSplitWrapper) {

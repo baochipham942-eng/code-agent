@@ -74,6 +74,8 @@ describe('shell redirect write targets', () => {
     ["env -i sh -c 'printf x > out.txt'", 'out.txt'],
     ["env -u MODE sh -c 'printf x > out.txt'", 'out.txt'],
     ["env MODE=1 /bin/bash -c 'printf x > out.txt'", 'out.txt'],
+    ["env -S 'sh -c \"printf x > out.txt\"'", 'out.txt'],
+    ["env --split-string 'bash -c \"printf x > out.txt\"'", 'out.txt'],
     ["nohup sh -c 'printf x > out.txt'", 'out.txt'],
     ["timeout 5 sh -c 'printf x > out.txt'", 'out.txt'],
     ["nice sh -c 'printf x > out.txt'", 'out.txt'],
@@ -95,6 +97,10 @@ describe('shell redirect write targets', () => {
 
   it("keeps descriptor duplication inside a shell command wrapper target-free", () => {
     expect(resolve("sh -c 'echo hi 2>&1'")).toMatchObject({ targets: [], uncertain: [] });
+    expect(resolve("env -S 'sh -c \"echo hi 2>&1\"'")).toMatchObject({
+      targets: [],
+      uncertain: [],
+    });
   });
 
   it('does not feed an outer descriptor duplication back into eval', () => {
@@ -123,6 +129,7 @@ describe('shell redirect write targets', () => {
     ['bash -x script.sh', 'uncertain-redirection:bash'],
     ['bash "$SCRIPT"', 'uncertain-redirection:bash'],
     ['bash --rcfile "$F" -c \'echo hi\'', 'uncertain-redirection:bash'],
+    ['env -S "$WRAPPER"', 'uncertain-redirection:env'],
     ['sh -c "$SCRIPT"', 'uncertain-redirection:sh'],
     ['eval "${SCRIPT}"', 'uncertain-redirection:eval'],
     ["eval 'echo `date` > out.txt'", 'uncertain-redirection:eval'],

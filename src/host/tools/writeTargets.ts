@@ -85,7 +85,13 @@ function shellExecutableName(word: string | undefined): string {
   return path.basename(canonicalizeCommand(word ?? '').command);
 }
 
-function findShellWrapperIndex(words: string[]): number {
+interface ShellWrapperLookup {
+  index: number;
+  scriptWords?: string[];
+  uncertain?: boolean;
+}
+
+function findShellWrapper(words: string[]): ShellWrapperLookup | undefined {
   let index = 0;
   while (index < words.length) {
     while (
@@ -93,11 +99,33 @@ function findShellWrapperIndex(words: string[]): number {
       && SHELL_ASSIGNMENT_PREFIX.test(canonicalizeCommand(words[index]).command)
     ) index += 1;
     const executable = shellExecutableName(words[index]);
-    if (SHELL_COMMAND_WRAPPERS.has(executable) || executable === 'eval') return index;
+    if (SHELL_COMMAND_WRAPPERS.has(executable) || executable === 'eval') return { index };
     if (executable === 'env') {
+      const envIndex = index;
       index += 1;
       while (index < words.length) {
-        const option = canonicalizeCommand(words[index]).command;
+        const rawOption = words[index];
+        const option = canonicalizeCommand(rawOption).command;
+        if (option === '-S' || option === '--split-string') {
+          const scriptIndex = index + 1;
+          return {
+            index: envIndex,
+            scriptWords: scriptIndex < words.length ? words.slice(scriptIndex) : [],
+            uncertain: scriptIndex >= words.length,
+          };
+        }
+        const inlineSplit = rawOption.startsWith('--split-string=')
+          ? rawOption.slice('--split-string='.length)
+          : rawOption.startsWith('-S') && rawOption.length > 2
+            ? rawOption.slice(2)
+            : undefined;
+        if (inlineSplit !== undefined) {
+          return {
+            index: envIndex,
+            scriptWords: [inlineSplit, ...words.slice(index + 1)],
+            uncertain: inlineSplit === '',
+          };
+        }
         if (option === '--' || ENV_OPTIONS_WITHOUT_VALUES.has(option)) {
           index += 1;
           continue;
@@ -138,9 +166,9 @@ function findShellWrapperIndex(words: string[]): number {
       ) index += 1;
       continue;
     }
-    return -1;
+    return undefined;
   }
-  return -1;
+  return undefined;
 }
 
 function findShellScriptIndex(
@@ -275,15 +303,20 @@ function shellRedirectTargets(command: string, depth = 0): ShellRedirectScan {
 
   for (const segment of splitShellSegments(command)) {
     const words = readShellWords(segment);
-    const wrapperIndex = findShellWrapperIndex(words);
-    if (wrapperIndex < 0) continue;
+    const lookup = findShellWrapper(words);
+    if (!lookup) continue;
+    const wrapperIndex = lookup.index;
     const wrapper = shellExecutableName(words[wrapperIndex]);
     const isShellWrapper = SHELL_COMMAND_WRAPPERS.has(wrapper);
     const isEvalWrapper = wrapper === 'eval';
-    if (!isShellWrapper && !isEvalWrapper) continue;
+    const isEnvSplitWrapper = wrapper === 'env' && lookup.scriptWords !== undefined;
+    if (!isShellWrapper && !isEvalWrapper && !isEnvSplitWrapper) continue;
 
     let scriptWords: string[];
-    if (isShellWrapper) {
+    if (isEnvSplitWrapper) {
+      if (lookup.uncertain) uncertain.push('uncertain-redirection:env');
+      scriptWords = lookup.scriptWords ?? [];
+    } else if (isShellWrapper) {
       const script = findShellScriptIndex(words, wrapperIndex);
       if (script.uncertain) {
         uncertain.push(`uncertain-redirection:${wrapper}`);

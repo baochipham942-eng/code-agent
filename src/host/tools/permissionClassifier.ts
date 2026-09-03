@@ -20,7 +20,7 @@ import {
   type HostReasonPayload,
 } from '../../shared/contract/permission';
 import { createTraceStep } from '../security/decisionTraceBuilder';
-import { isKnownSafeCommand } from '../security/commandSafety';
+import { isKnownSafeCommand, splitCompoundCommand } from '../security/commandSafety';
 import { RM_FLAGS_REQUIRED, RM_HEAD } from '../security/rmFlagPattern';
 import { checkCommandPolicy } from './modules/shell/commandPolicy';
 import { isBashToolName, normalizeToolName } from './toolNames';
@@ -548,9 +548,43 @@ export class PermissionClassifier {
       };
     }
 
+    const segments = splitCompoundCommand(trimmed);
+    if (!segments || segments.length === 0) {
+      return null;
+    }
+
+    if (segments.length === 1) {
+      // 拆段器会丢弃尾部空段；只有整串确实等于该段时才允许走单段 cd 快捷判断。
+      if (segments[0] !== trimmed) return null;
+      return this.classifyBashSegment(segments[0], startTime);
+    }
+
+    // cd 只改变后续段的相对路径基准，不降低那些段的风险等级。
+    const executableSegments = segments.filter(segment => !/^cd(?:\s|$)/.test(segment));
+    if (executableSegments.length === 0) {
+      return {
+        decision: 'approve',
+        reason: 'cd 命令',
+        confidence: 1.0,
+        cached: false,
+      };
+    }
+
+    let strictest: ClassificationResult | null = null;
+    for (const segment of executableSegments) {
+      const result = this.classifyBashSegment(segment, startTime) ?? this.createUnknownCompoundAsk(segment, startTime);
+      if (result.decision === 'deny') return result;
+      if (!strictest || result.decision === 'ask') strictest = result;
+    }
+
+    return strictest;
+  }
+
+  /** 对单个 Bash 段按 B1 → B4 分类。 */
+  private classifyBashSegment(command: string, startTime: number): ClassificationResult | null {
     // B1: 危险模式检测
     for (const { pattern, reason, decision } of DANGEROUS_BASH_PATTERNS) {
-      if (pattern.test(trimmed)) {
+      if (pattern.test(command)) {
         const fullReason = `危险命令: ${reason}`;
         const outcome = decision === 'approve' ? 'allow' : decision === 'deny' ? 'deny' : 'ask';
         return {
@@ -566,7 +600,7 @@ export class PermissionClassifier {
     }
 
     // B2: Bash 安全判据统一由 commandSafety 解析重定向、复合命令与危险参数。
-    if (isKnownSafeCommand(trimmed)) {
+    if (isKnownSafeCommand(command)) {
       return {
         decision: 'approve',
         reason: '安全命令',
@@ -577,7 +611,7 @@ export class PermissionClassifier {
 
     // B3: 包管理器命令可能安装依赖、运行任意 package script 或访问网络，默认 ask。
     // 明确只读/验证类命令已在 B2 白名单列出。
-    if (/^(npm|npx|pnpm|yarn)\s/.test(trimmed)) {
+    if (/^(npm|npx|pnpm|yarn)\s/.test(command)) {
       const reason = '包管理器命令可能修改依赖、执行脚本或访问网络';
       return {
         decision: 'ask',
@@ -589,7 +623,7 @@ export class PermissionClassifier {
     }
 
     // B4: cd 命令 → approve
-    if (/^cd\s/.test(trimmed)) {
+    if (/^cd(?:\s|$)/.test(command)) {
       return {
         decision: 'approve',
         reason: 'cd 命令',
@@ -600,6 +634,17 @@ export class PermissionClassifier {
 
     // 无法判断
     return null;
+  }
+
+  private createUnknownCompoundAsk(segment: string, startTime: number): ClassificationResult {
+    const reason = `复合命令包含需确认段: ${segment}`;
+    return {
+      decision: 'ask',
+      reason,
+      confidence: 1.0,
+      cached: false,
+      traceStep: createTraceStep('permission_classifier', 'B4: compound_unknown', 'ask', reason, startTime),
+    };
   }
 
   /**

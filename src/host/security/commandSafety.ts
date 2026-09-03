@@ -191,7 +191,7 @@ const CONDITIONALLY_SAFE: Record<string, SafetyChecker> = {
  * 支持 &&, ||, ;, | 操作符
  * 不支持子 shell ()、命令替换 $()、后台 &
  */
-function splitCompoundCommand(command: string): string[] | null {
+export function splitCompoundCommand(command: string): string[] | null {
   // 检测不安全的 shell 特性
   const unsafePatterns = [
     /\$\(/,     // 命令替换 $(...)
@@ -466,7 +466,7 @@ const DANGEROUS_PATTERNS: DangerousPattern[] = [
   // Fork bomb
   { pattern: /:\(\)\s*\{.*\}/, riskLevel: 'critical', flag: 'fork_bomb', reason: 'Potential fork bomb detected' },
   // Git 危险操作
-  { pattern: /git\s+push\s+.*--force/, riskLevel: 'high', flag: 'git_force_push', reason: 'Force push may overwrite remote history', suggestion: 'Use --force-with-lease for safer force push' },
+  { pattern: /git\s+push\b[^;&|\n]*\s(?:--force\S*|-[A-Za-z]*f[A-Za-z]*)(?=\s|$)/, riskLevel: 'high', flag: 'git_force_push', reason: 'Force push may overwrite remote history', suggestion: 'Use --force-with-lease for safer force push' },
   { pattern: /git\s+reset\s+--hard/, riskLevel: 'high', flag: 'git_hard_reset', reason: 'Hard reset discards uncommitted changes', suggestion: 'Consider git stash before reset' },
   { pattern: /git\s+clean\s+-[dxf]+/, riskLevel: 'medium', flag: 'git_clean', reason: 'Git clean removes untracked files', suggestion: 'Use git clean -n first to preview' },
   // 权限变更

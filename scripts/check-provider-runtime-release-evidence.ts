@@ -6,6 +6,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { RELEASE_EVIDENCE_PRODUCERS } from './lib/releaseEvidenceRegistry.ts';
+import { checkPromptGateEvidence } from './check-prompt-gate-evidence.ts';
 
 type GateMode = 'static' | 'full';
 
@@ -385,8 +386,21 @@ export async function checkProviderRuntimeReleaseEvidence(options: GateOptions):
   if (options.mode === 'full') {
     // 校验目标从登记表派生：新增证据门只改 scripts/lib/releaseEvidenceRegistry.ts 一处
     for (const entry of RELEASE_EVIDENCE_PRODUCERS) {
-      if (entry.shape === 'long-session') validateLongSession(options, entry.evidence, errors);
-      else validateStopReport(options, entry.evidence, entry.smoke, [...entry.scenarios], errors);
+      switch (entry.shape) {
+        case 'long-session':
+          validateLongSession(options, entry.evidence, errors);
+          break;
+        case 'stop':
+          validateStopReport(options, entry.evidence, entry.smoke, [...entry.scenarios], errors);
+          break;
+        case 'prompt-gate':
+          if (entry.bootstrapped) errors.push(...checkPromptGateEvidence(options.root));
+          break;
+        default: {
+          const exhaustive: never = entry;
+          throw new Error(`unsupported release evidence shape: ${String(exhaustive)}`);
+        }
+      }
     }
   }
   return errors;

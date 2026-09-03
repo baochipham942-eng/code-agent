@@ -47,6 +47,16 @@ describe('成本与用量报告', () => {
     }
   });
 
+  it('JSON report exposes top-level gitHead and promptVersion for eval evidence consumers', () => {
+    const run = summary([]);
+    run.gitCommit = '0123456789abcdef0123456789abcdef01234567';
+    run.stamp = { ...run.stamp, promptVersion: 'sys-v-test' };
+    expect(JSON.parse(generateJsonReport(run))).toMatchObject({
+      gitHead: run.gitCommit,
+      promptVersion: 'sys-v-test',
+    });
+  });
+
   it('k>1 概览只展示 k 次全过率，并输出组合聚合与修正后 sigma', () => {
     const run = summary([result('repeated', {
       status: 'failed',

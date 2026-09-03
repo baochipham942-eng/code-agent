@@ -64,7 +64,9 @@ const limits = {
   // 20: long-session-scroll-gate.yml — 每个 PR 都跑的窄浏览器正确性门。故意不设
   // paths：共享状态、样式、依赖和构建配置都能影响 renderer 滚动，按目录收窄会漏检。
   // 性能指标只报告，anchor/search/streaming-follow 三条确定性判据才阻塞。
-  workflows: 20,
+  // 21: prompt-gate-evidence.yml — 只在 prompt/tool schema/证据机制变化时检查评测
+  // 证据新鲜度；不塞进 swarm-ci，避免普通 PR 被付费评测边界或缺失首份证据误伤。
+  workflows: 21,
 };
 
 const navigationFiles = [

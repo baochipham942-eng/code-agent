@@ -67,6 +67,13 @@ describe('shell redirect write targets', () => {
     ["zsh -ec 'printf x > out.txt'", 'out.txt'],
     ["dash -c 'printf x > out.txt'", 'out.txt'],
     ["MODE=1 sh -c 'printf x > out.txt'", 'out.txt'],
+    ["env sh -c 'printf x > out.txt'", 'out.txt'],
+    ["env -i sh -c 'printf x > out.txt'", 'out.txt'],
+    ["env -u MODE sh -c 'printf x > out.txt'", 'out.txt'],
+    ["env MODE=1 /bin/bash -c 'printf x > out.txt'", 'out.txt'],
+    ["/bin/sh -c 'printf x > out.txt'", 'out.txt'],
+    ["command sh -c 'printf x > out.txt'", 'out.txt'],
+    ["command -p sh -c 'printf x > out.txt'", 'out.txt'],
     ["echo ok && sh -c 'echo hi > out.txt'", 'out.txt'],
     ["true & sh -c 'echo hi > out.txt'", 'out.txt'],
     ["true\nsh -c 'echo hi > out.txt'", 'out.txt'],
@@ -110,6 +117,7 @@ describe('shell redirect write targets', () => {
 
   it.each([
     'echo "a > b"',
+    "echo sh -c 'echo hi > out.txt'",
     'grep ">" f',
     "sed 's/>/x/' f",
   ])('ignores redirect syntax in ordinary quoted arguments: %s', (command) => {

@@ -78,6 +78,51 @@ const SHELL_COMMAND_WRAPPERS = new Set(['sh', 'bash', 'zsh', 'dash']);
 const MAX_REDIRECT_WRAPPER_DEPTH = 3;
 const SHELL_PARAMETER_EXPANSION = /\$(?:\{|[A-Za-z_]|[0-9@*#?$!-])/;
 const SHELL_ASSIGNMENT_PREFIX = /^[A-Za-z_][A-Za-z0-9_]*=/;
+const ENV_OPTIONS_WITHOUT_VALUES = new Set(['-i', '--ignore-environment', '-0', '--null', '-v', '--debug']);
+const ENV_OPTIONS_WITH_VALUES = new Set(['-u', '--unset', '-C', '--chdir', '--argv0', '-P']);
+
+function shellExecutableName(word: string | undefined): string {
+  return path.basename(canonicalizeCommand(word ?? '').command);
+}
+
+function findShellWrapperIndex(words: string[]): number {
+  let index = 0;
+  while (index < words.length) {
+    while (
+      index < words.length
+      && SHELL_ASSIGNMENT_PREFIX.test(canonicalizeCommand(words[index]).command)
+    ) index += 1;
+    const executable = shellExecutableName(words[index]);
+    if (SHELL_COMMAND_WRAPPERS.has(executable) || executable === 'eval') return index;
+    if (executable === 'env') {
+      index += 1;
+      while (index < words.length) {
+        const option = canonicalizeCommand(words[index]).command;
+        if (option === '--' || ENV_OPTIONS_WITHOUT_VALUES.has(option)) {
+          index += 1;
+          continue;
+        }
+        if (ENV_OPTIONS_WITH_VALUES.has(option)) {
+          index += 2;
+          continue;
+        }
+        if (/^(?:--unset|--chdir|--argv0)=/.test(option) || /^-[uCP].+/.test(option)) {
+          index += 1;
+          continue;
+        }
+        break;
+      }
+      continue;
+    }
+    if (executable === 'command') {
+      index += 1;
+      while (['-p', '--'].includes(canonicalizeCommand(words[index] ?? '').command)) index += 1;
+      continue;
+    }
+    return -1;
+  }
+  return -1;
+}
 
 function splitShellSegments(command: string): string[] {
   const segments: string[] = [];
@@ -186,12 +231,9 @@ function shellRedirectTargets(command: string, depth = 0): ShellRedirectScan {
 
   for (const segment of splitShellSegments(command)) {
     const words = readShellWords(segment);
-    let wrapperIndex = 0;
-    while (
-      wrapperIndex < words.length
-      && SHELL_ASSIGNMENT_PREFIX.test(canonicalizeCommand(words[wrapperIndex]).command)
-    ) wrapperIndex += 1;
-    const wrapper = canonicalizeCommand(words[wrapperIndex] ?? '').command;
+    const wrapperIndex = findShellWrapperIndex(words);
+    if (wrapperIndex < 0) continue;
+    const wrapper = shellExecutableName(words[wrapperIndex]);
     const isShellWrapper = SHELL_COMMAND_WRAPPERS.has(wrapper);
     const isEvalWrapper = wrapper === 'eval';
     if (!isShellWrapper && !isEvalWrapper) continue;

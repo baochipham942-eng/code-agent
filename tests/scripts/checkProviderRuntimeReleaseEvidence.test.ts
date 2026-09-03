@@ -194,12 +194,15 @@ describe('provider runtime release evidence gate', () => {
     expect(result, result.output).toMatchObject({ status: 0 });
   });
 
-  it('does not require prompt evidence in the full release gate before bootstrap is enabled', () => {
+  // 2026-09-03 首份 prompt-gate 证据已随 registry `bootstrapped: true` 落 main：full 发版闸从此要求这份文件在且新鲜。
+  // （bootstrap 前那条「缺文件也放行」的断言随之退役——它断言的是过渡期行为，不是现行合同。）
+  it('requires prompt evidence in the full release gate once bootstrap is enabled', () => {
     const root = createWorkspace();
     fs.rmSync(path.join(root, 'docs/eval/prompt-gate-latest.json'));
 
     const result = runChecker(root);
-    expect(result, result.output).toMatchObject({ status: 0 });
+    expect(result.status).not.toBe(0);
+    expect(result.output).toContain('prompt-gate-latest.json');
   });
 
   it('rejects a supported cell without a verified live smoke record', () => {

@@ -11,7 +11,18 @@
 
 import { resolveSessionConnectorIds, type ExpertConnector } from '@shared/contract/expertConnectors';
 
-/** connected=这轮真能调；disconnected=声明了但没连上/没装；hub_off=能力中心里被关了 */
+/**
+ * connected = 这个连接器自己连上了，它的工具就在本轮工具表里；
+ * disconnected = 声明了但没连上 / 压根没装；hub_off = 在能力中心里被关掉了。
+ *
+ * 🔴 别把 connected 读成「专家的 core 声明生效了」——那是两件事：
+ * core 声明的本意是「这一轮把工具面**收窄**到这几个」，而宿主的
+ * `isConnectorReadyForTurnScope`（workbenchTurnContext.ts:422）要求 id 在 connector
+ * registry 里存在，专家 id 空间是连接器目录（lark 这类 MCP 名）⇒ 一律判 false ⇒
+ * `allowedConnectorIds` 落空。而空列表在既有口径里是**「不收窄」**（同文件 511-512 行：
+ * 「过滤后为空 = 不收窄……不是把工具集锁成空集」），所以已连接的 MCP 工具照样可调，
+ * 这里说「已连接」不是假话；真正没实现的是「收窄」那一半，见 N-EXPERT-CORE-MCPSCOPE。
+ */
 export type ExpertConnectorStatus = 'connected' | 'disconnected' | 'hub_off';
 
 export interface ExpertConnectorSourceItem {

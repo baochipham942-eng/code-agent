@@ -532,11 +532,14 @@ export function withWorkbenchTurnSystemContext(
   // 「会话覆盖专家」要整支让位：会话在**任一侧**做过显式选择（连接器或 MCP），
   // 专家声明就整批不参与，两侧口径一致——只让一侧让位会出现「你选了连接器、
   // 专家的 MCP 还在悄悄收窄」，和渲染层那句「这轮以你选的连接器为准」打架。
-  // 🔴 只认 context 那侧：options.toolScope 是上游（子代理 / cron / 调用方）传进来的范围，
-  // 不是用户手选；把它当手选，会出现「上游带了 MCP 范围 ⇒ 专家声明的连接器那支被清空、
-  // 那类工具重新全开放」。
-  const sessionPickedScope = (workbenchToolScope?.allowedConnectorIds?.length ?? 0) > 0
-    || (workbenchToolScope?.allowedMcpServerIds?.length ?? 0) > 0;
+  // 🔴 判据取**用户原始的选择**，两个坑各躲一个：
+  //  · 不能用 options.toolScope——那是上游（子代理 / cron / 调用方）传进来的范围，不是手选；
+  //    当成手选会让「上游带了 MCP 范围 ⇒ 专家的连接器那支被清空、那类工具重新全开放」。
+  //  · 也不能用 workbenchToolScope——它已经过了一道 getReadySelectedConnectorIds，
+  //    用户手选了个**没连上**的连接器时会被过滤成空，判据就误判成「他没选过」，
+  //    专家那支又活了，违背「会话显式选择优先」。
+  const sessionPickedScope = (context?.selectedConnectorIds?.length ?? 0) > 0
+    || (context?.selectedMcpServerIds?.length ?? 0) > 0;
   const expertCoreIds = sessionPickedScope ? [] : resolveSessionConnectorIds({ expertConnectors });
   const expertConnectorSideIds = expertCoreIds.filter(isConnectorSideId);
   const expertMcpServerIds = expertCoreIds.filter((id) => !isConnectorSideId(id));

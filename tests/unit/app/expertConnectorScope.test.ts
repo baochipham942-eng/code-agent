@@ -186,6 +186,21 @@ describe('ADR-052 C：专家连接器的运行时收窄', () => {
     expect(mcpScopeOf(undefined, { preferredAgentId: 'writer' })).toEqual(['lark']);
   });
 
+  // 判据若取 workbenchToolScope（已过 ready 过滤），手选了个没连上的连接器会被过滤成空、
+  // 误判成「他没选过」，专家那支就又活了——用户明明选了东西，工具面却被专家收窄。
+  it('手选的连接器没连上时，专家那支仍然让位（会话显式选择优先）', () => {
+    cliConnectorStatus.feishu = { connected: false };
+    connectedMcpServers.add('lark');
+    resolveAgentMock.mockReturnValue(expertWithConnectors([{ id: 'lark', level: 'core' }]));
+    const context = { preferredAgentId: 'writer', selectedConnectorIds: ['feishu'] };
+
+    expect(connectorScopeOf(undefined, context)?.length ?? 0).toBe(0);
+    expect(mcpScopeOf(undefined, context)?.length ?? 0).toBe(0);
+
+    // 正向对照：没手选过时专家那支照常收窄，证明上面两个 0 不是「这条路本来就走不通」
+    expect(mcpScopeOf(undefined, { preferredAgentId: 'writer' })).toEqual(['lark']);
+  });
+
   // 拍板口径：先宽后收。没身份不是"一个都不给"，而是维持现状不收窄。
   it('本轮没有身份时退回不收窄，并打点记漏传', () => {
     expect(connectorScopeOf(undefined, { selectedSkillIds: ['x'] })?.length ?? 0).toBe(0);

@@ -52,6 +52,7 @@ export interface EvalCaseDrawerLabels {
   safetySet: string;
   openReport: string;
   editCase: string;
+  caseCost: string;
 }
 
 export const evalCaseDrawerZh = {
@@ -73,6 +74,7 @@ export const evalCaseDrawerZh = {
     excludedFailure: '错误摘要：{reason}', aiReview: 'AI 评审', aiReviewNote: '并列 · 不进通过率',
     verdict: { yes: '是', no: '否', unavailable: '不可用' }, source: '来源', sourceManual: '手写', sourceSession: '从会话转成题目',
     dailySet: '日常集', heldOutSet: '留出集', safetySet: '安全集', openReport: '打开本轮报告', editCase: '在题库中编辑',
+    caseCost: '本题实付 {cost}',
   } satisfies EvalCaseDrawerLabels,
 };
 
@@ -95,5 +97,6 @@ export const evalCaseDrawerEn = {
     excludedFailure: 'Error summary: {reason}', aiReview: 'AI review', aiReviewNote: 'Parallel result · excluded from pass rate',
     verdict: { yes: 'Yes', no: 'No', unavailable: 'Unavailable' }, source: 'Source', sourceManual: 'Written manually', sourceSession: 'Created from a session',
     dailySet: 'Daily set', heldOutSet: 'Held-out set', safetySet: 'Safety set', openReport: 'Open run report', editCase: 'Edit in case bank',
+    caseCost: 'This case {cost}',
   } satisfies EvalCaseDrawerLabels,
 };

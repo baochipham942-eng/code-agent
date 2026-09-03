@@ -69,5 +69,6 @@ export function buildEvalExperimentCaseDetail(input: {
         source: caseMetadata.source,
       },
     } : {}),
+    ...(typeof data.costUsd === 'number' && Number.isFinite(data.costUsd) ? { costUsd: data.costUsd } : {}),
   };
 }

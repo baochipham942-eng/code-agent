@@ -221,6 +221,16 @@ describe('evaluation run IPC admin gate', () => {
     expect(current.status).toBe('invalid');
     expect(current.evidence.checks).toEqual(evidence.checks);
     expect(current.evidence.trialDetails).toEqual(evidence.trialDetails);
+
+    database.loadExperimentCase.mockReturnValue({
+      case_id: 'case-1', session_id: null, status: 'passed', score: 1, duration_ms: 10,
+      data_json: JSON.stringify({ evidence, costUsd: 0.012 }),
+      config_json: '{}', summary_json: '{}',
+    });
+    const priced = await handlers.get(EVALUATION_CHANNELS.LOAD_CASE)!(null, {
+      experimentId: 'run-1', caseId: 'case-1',
+    }) as { costUsd?: number };
+    expect(priced.costUsd).toBe(0.012);
   });
 
   it('T3：列表默认返回两种 source，显式 eval/compare 各自隔离；详情保留 winner 但裁掉大字段', async () => {
@@ -235,6 +245,51 @@ describe('evaluation run IPC admin gate', () => {
     const loaded = await handlers.get(EVALUATION_CHANNELS.LOAD_EXPERIMENT)!(null, 'compare-1') as any;
     expect(loaded.cases[0].data).toEqual({ winner: 'baseline', excludedReason: 'skill_not_activated' });
     expect(JSON.stringify(loaded)).not.toContain('qualityReport');
+  });
+
+  it('LIST_EXPERIMENTS 透出 caseResults.costUsd，有值求和、全缺保持 undefined', async () => {
+    guard.denied = false;
+    const { handlers } = setup();
+    database.loadExperiment.mockImplementation((id: string) => {
+      if (id === 'eval-1') {
+        return {
+          experiment: { id: 'eval-1' },
+          cases: [
+            { case_id: 'case-1', status: 'passed', score: 1, data_json: JSON.stringify({ costUsd: 0.012 }) },
+            { case_id: 'case-2', status: 'failed', score: 0, data_json: JSON.stringify({ costUsd: 0.008 }) },
+          ],
+        };
+      }
+      return {
+        experiment: { id: 'compare-1' },
+        cases: [
+          { case_id: 'case-1', status: 'failed', score: 0, data_json: JSON.stringify({ winner: 'baseline' }) },
+        ],
+      };
+    });
+
+    const withCost = await handlers.get(EVALUATION_CHANNELS.LIST_EXPERIMENTS)!(null, { source: 'eval' }) as Array<{
+      id: string;
+      caseResults: Record<string, { status: string; score: number; costUsd?: number }>;
+      totalCostUsd?: number;
+    }>;
+    expect(withCost).toHaveLength(1);
+    expect(withCost[0].caseResults['case-1']).toEqual({ status: 'passed', score: 1, costUsd: 0.012 });
+    expect(withCost[0].caseResults['case-2']).toEqual({ status: 'failed', score: 0, costUsd: 0.008 });
+    expect(withCost[0].totalCostUsd).toBeCloseTo(0.02);
+
+    const missing = await handlers.get(EVALUATION_CHANNELS.LIST_EXPERIMENTS)!(null, { source: 'compare' }) as Array<{
+      caseResults: Record<string, { costUsd?: number }>;
+      totalCostUsd?: number;
+    }>;
+    expect(missing).toHaveLength(1);
+    expect(missing[0].caseResults['case-1']).toEqual({ status: 'failed', score: 0 });
+    expect(missing[0].totalCostUsd).toBeUndefined();
+    database.loadExperiment.mockReset();
+    database.loadExperiment.mockImplementation(() => ({
+      experiment: { id: 'compare-1', name: 'compare', timestamp: 2, model: 'm', provider: 'p', scope: 'full', source: 'compare', git_commit: 'b', config_json: '{"compare":{}}', summary_json: '{}' },
+      cases: [{ case_id: 'case-1', status: 'failed', score: 0, duration_ms: 1, data_json: '{"winner":"baseline","excludedReason":"skill_not_activated","qualityReport":{"large":true}}' }],
+    }));
   });
 
   it('T2/T4：标注只接受存在的题，reviewer 始终取 host 身份', async () => {

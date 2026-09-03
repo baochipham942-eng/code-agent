@@ -711,6 +711,46 @@ describe('ExperimentAdapter canonical harness persistence', () => {
     });
   });
 
+  it('report 导入路径：passed 题保留 costUsd，缺值不补 0', async () => {
+    const db = createDbWriter();
+    const adapter = new ExperimentAdapter(db as any);
+    const base = {
+      duration: 1,
+      startTime: 1,
+      endTime: 2,
+      toolExecutions: [],
+      responses: [],
+      errors: [],
+      turnCount: 1,
+      score: 1,
+    };
+    await adapter.persistTestRun({
+      runId: 'cost-run',
+      startTime: 1,
+      endTime: 2,
+      duration: 1,
+      total: 2,
+      passed: 1,
+      failed: 0,
+      skipped: 1,
+      partial: 0,
+      averageScore: 0.5,
+      gitCommit: 'abc',
+      results: [
+        { testId: 'priced', description: 'priced', status: 'passed', costUsd: 0.012, ...base },
+        { testId: 'legacy', description: 'legacy', status: 'passed', ...base },
+      ],
+      environment: { model: 'm', provider: 'p', workingDirectory: '/tmp' },
+      performance: { avgResponseTime: 1, maxResponseTime: 1, totalToolCalls: 0, totalTurns: 1 },
+    } as TestRunSummary);
+
+    const cases = db.insertExperimentCases.mock.calls[0]?.[1] as Array<{ case_id: string; data_json: string }>;
+    const priced = JSON.parse(cases.find((item) => item.case_id === 'priced')!.data_json) as Record<string, unknown>;
+    const legacy = JSON.parse(cases.find((item) => item.case_id === 'legacy')!.data_json) as Record<string, unknown>;
+    expect(priced.costUsd).toBe(0.012);
+    expect(legacy).not.toHaveProperty('costUsd');
+  });
+
   it('ADR-036 F2: pass-rate 分母排除 skipped，与均分口径一致（1 passed + 1 skipped → 100%）', async () => {
     const db = createDbWriter();
     const adapter = new ExperimentAdapter(db as any);

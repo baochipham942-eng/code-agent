@@ -226,6 +226,16 @@ describe('EvalCaseDrawer', () => {
     ));
   });
 
+  it('结论条有 costUsd 时追加本题实付，缺失时不含', async () => {
+    evaluation.invoke.mockResolvedValue(detail({ costUsd: 0.012 }));
+    render(<EvalCaseDrawer target={{ experimentId: 'run-1', caseId: 'case-1' }} onClose={vi.fn()} />);
+    expect((await screen.findByTestId('eval-case-conclusion')).textContent).toContain('本题实付 $0.012');
+    cleanup();
+    evaluation.invoke.mockResolvedValue(detail());
+    render(<EvalCaseDrawer target={{ experimentId: 'run-2', caseId: 'case-1' }} onClose={vi.fn()} />);
+    expect((await screen.findByTestId('eval-case-conclusion')).textContent).not.toContain('本题实付');
+  });
+
   it('T7：有无人工标注时结论条逐字相同', async () => {
     evaluation.invoke.mockImplementation(async (channel: string) => channel === EVALUATION_CHANNELS.LIST_ANNOTATIONS
       ? { annotations: [], latestByReviewer: [] }

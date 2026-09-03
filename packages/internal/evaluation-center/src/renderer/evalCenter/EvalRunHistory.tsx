@@ -373,6 +373,9 @@ export const EvalRunHistory: React.FC<EvalRunHistoryProps> = ({
                           {labels.passRate} {formatPercent(run.summary?.passRate)}
                           {delta !== null && <span className={`ml-1 ${delta < 0 ? 'text-badge-danger' : delta > 0 ? 'text-badge-success' : 'text-zinc-500'}`}>{formatDelta(delta)}</span>}
                         </span>
+                        <span className="w-28 text-right font-mono text-zinc-500">
+                          {run.totalCostUsd !== undefined && replace(labels.runCost, { cost: formatUsd(run.totalCostUsd) })}
+                        </span>
                         <span className="w-28 text-right text-zinc-500">
                           {tag === 'case-bank-updated' && <><span>{labels.caseBankUpdated}</span><small className="block">{labels.compareSharedCases}</small></>}
                           {tag === 'old-rule' && <span>{labels.oldScoringRule}</span>}

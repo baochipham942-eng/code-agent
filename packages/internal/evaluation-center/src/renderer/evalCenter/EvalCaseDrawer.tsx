@@ -23,6 +23,10 @@ function fill(template: string, values: Record<string, string | number>): string
   );
 }
 
+function formatUsd(value: number): string {
+  return `$${value.toFixed(value < 0.1 ? 3 : 2)}`;
+}
+
 type CaseStatus = EvalExperimentCaseDetail['status'];
 
 function excludesCapabilityResult(status: CaseStatus | undefined): boolean {
@@ -88,9 +92,12 @@ export const EvalCaseDrawer: React.FC<EvalCaseDrawerProps> = ({ target, onClose 
 
   const statusLabel = detail ? getEvalStatusLabel(detail.status, labels.status) : labels.status.failed;
   const reason = detail?.failureLabel ?? detail?.failureReason ?? statusLabel;
-  const conclusion = detail?.evidence && !excluded
+  const costSuffix = typeof detail?.costUsd === 'number'
+    ? ` · ${fill(labels.caseCost, { cost: formatUsd(detail.costUsd) })}`
+    : '';
+  const conclusion = (detail?.evidence && !excluded
     ? fill(labels.conclusion, { status: statusLabel, reason })
-    : `${statusLabel}${reason !== statusLabel ? ` · ${reason}` : ''}${excluded ? ` · ${labels.excludedShort}` : ''}`;
+    : `${statusLabel}${reason !== statusLabel ? ` · ${reason}` : ''}${excluded ? ` · ${labels.excludedShort}` : ''}`) + costSuffix;
 
   const editCase = () => {
     useEvalCenterStore.getState().openCase(target.caseId);

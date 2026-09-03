@@ -38,15 +38,17 @@ describe('shell redirect write targets', () => {
   });
 
   it.each([
-    'echo hi > out.txt',
-    'echo hi >> out.txt',
-    'cmd &> out.txt',
-    'cmd >& out.txt',
-    'cmd &>out.txt',
-    'cmd >&out.txt',
-  ])('keeps file output redirects as write targets: %s', (command) => {
+    ['echo hi > out.txt', 'out.txt'],
+    ['echo hi >> out.txt', 'out.txt'],
+    ['cmd &> out.txt', 'out.txt'],
+    ['cmd >& out.txt', 'out.txt'],
+    ['cmd &>out.txt', 'out.txt'],
+    ['cmd >&out.txt', 'out.txt'],
+    ['cmd >&12abc', '12abc'],
+    ['cmd >&-report.log', '-report.log'],
+  ])('keeps file output redirects as write targets: %s', (command, target) => {
     expect(resolve(command)).toMatchObject({
-      targets: [resolveCanonicalRunPath(path.join(workingDirectory, 'out.txt'))],
+      targets: [resolveCanonicalRunPath(path.join(workingDirectory, target))],
       uncertain: [],
     });
   });

@@ -97,7 +97,7 @@ function shellRedirectTargets(command: string): string[] {
     const duplicatesFileDescriptor = command[index + 1] === '&';
     const target = readShellWord(command, index + (duplicatesFileDescriptor ? 2 : 1));
     const normalizedTarget = canonicalizeCommand(target.raw).command;
-    if (duplicatesFileDescriptor && (normalizedTarget === '' || /^[0-9-]/.test(normalizedTarget))) {
+    if (duplicatesFileDescriptor && (normalizedTarget === '' || /^(?:\d+|-)$/.test(normalizedTarget))) {
       index = Math.max(index, target.end - 1);
       continue;
     }

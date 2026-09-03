@@ -45,6 +45,7 @@ interface PtySessionState {
   cols: number;
   rows: number;
   inputBuffer: string[];
+  sandboxed?: boolean;
   onExit?: () => void;
   /**
    * 供 killProcessTree 使用的句柄视图（懒建、随会话长存）。
@@ -68,6 +69,7 @@ export interface PtySessionInfo {
   outputFile: string;
   cols: number;
   rows: number;
+  sandboxed?: boolean;
 }
 
 export interface PtySessionOutput {
@@ -125,6 +127,7 @@ function toPtySessionInfo(session: PtySessionState): PtySessionInfo {
     outputFile: session.outputFile,
     cols: session.cols,
     rows: session.rows,
+    sandboxed: session.sandboxed,
   };
 }
 
@@ -171,6 +174,7 @@ export function createPtySession(options: {
   maxRuntime?: number;
   sessionId?: string;
   toolCallId?: string;
+  sandboxed?: boolean;
   onExit?: () => void;
 }): { success: boolean; sessionId?: string; error?: string; outputFile?: string } {
   // Check session limit
@@ -244,6 +248,7 @@ export function createPtySession(options: {
       cols,
       rows,
       inputBuffer: [],
+      sandboxed: options.sandboxed,
       onExit: options.onExit,
     };
 

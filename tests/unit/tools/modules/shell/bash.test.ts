@@ -1002,9 +1002,10 @@ describe('bashModule OS 沙箱 gating（bypassPermissions）', () => {
     expect(result.ok).toBe(true);
     expect(cleanupMock).not.toHaveBeenCalled();
     const options = startBackgroundTaskMock.mock.calls.at(-1)?.[3] as
-      | { onExit?: () => void }
+      | { onExit?: () => void; sandboxed?: boolean }
       | undefined;
     expect(options?.onExit).toBeTypeOf('function');
+    expect(options?.sandboxed).toBe(true);
     options?.onExit?.();
     options?.onExit?.();
     expect(cleanupMock).toHaveBeenCalledOnce();
@@ -1024,12 +1025,37 @@ describe('bashModule OS 沙箱 gating（bypassPermissions）', () => {
     expect(result.ok).toBe(true);
     expect(cleanupMock).not.toHaveBeenCalled();
     const options = createPtySessionMock.mock.calls.at(-1)?.[0] as
-      | { onExit?: () => void }
+      | { onExit?: () => void; sandboxed?: boolean }
       | undefined;
     expect(options?.onExit).toBeTypeOf('function');
+    expect(options?.sandboxed).toBe(true);
     options?.onExit?.();
     options?.onExit?.();
     expect(cleanupMock).toHaveBeenCalledOnce();
+  });
+
+  it('bypassPermissions 档：PTY 等待失败会把沙盒拒绝路径追加到模型输出', async () => {
+    modeMgr.setMode('bypassPermissions', true);
+    createPtySessionMock.mockReturnValue({ success: true, sessionId: 'sandbox-pty' });
+    getPtySessionOutputMock.mockResolvedValue({
+      status: 'failed',
+      output: '/bin/sh: /Users/tester/x: Operation not permitted',
+      exitCode: 1,
+      duration: 10,
+    });
+    const handler = await bashModule.createHandler();
+
+    const result = await handler.execute(
+      { command: 'touch ~/x', pty: true, wait_for_completion: true },
+      makeCtx({ workingDir: '/tmp/project' }),
+      allowAll,
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toContain('沙盒拒绝：/Users/tester/x');
+      expect(result.error).toContain('/tmp/project');
+    }
   });
 
   it('bypassPermissions 档：PTY 或后台任务启动失败时立即清理 sandbox 临时状态', async () => {

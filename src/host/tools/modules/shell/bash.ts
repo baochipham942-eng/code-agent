@@ -36,6 +36,7 @@ import { startBackgroundTask } from '../../shell/backgroundTasks';
 import { spawnWindowsShell, killProcessTree } from '../../shell/platformShell';
 import { createPtySession, getPtySessionOutput } from '../../shell/ptyExecutor';
 import { generateBashDescription } from '../../shell/dynamicDescription';
+import { diagnoseSandboxDenial } from '../../shell/sandboxFailureDiagnostics';
 import { getShellPathDiagnostics } from '../../../services/infra/shellEnvironment';
 import { extractBashFacts, dataFingerprintStore } from '../../dataFingerprint';
 import { createFileArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
@@ -249,18 +250,6 @@ const SELF_KILL_SIGNALS = new Set<NodeJS.Signals>(['SIGTERM', 'SIGKILL']);
 const KILL_COMMAND_PATTERN = /\b(?:pkill|killall|kill)\b/;
 const NODE_TOOL_PATTERN = /\b(npx|node|npm)\b/;
 const MISSING_COMMAND_PATTERN = /\bENOENT\b|command not found|not found/i;
-const SANDBOX_DENIAL_PATTERN = /\bEPERM\b|Operation not permitted/i;
-
-function extractSandboxDeniedPath(failureText: string): string | undefined {
-  const nodeErrorPath = /\bEPERM\b[^\r\n]*?\b(?:open|mkdir|unlink|rename|scandir|stat|lstat|access|chmod|chown)\s+['"]([^'"\r\n]+)['"]/i.exec(failureText)?.[1];
-  if (nodeErrorPath) return nodeErrorPath;
-
-  const npmErrorPath = /(?:^|\n)(?:npm (?:error|ERR!)\s+)?path\s+([^\r\n]+)/im.exec(failureText)?.[1]?.trim();
-  if (npmErrorPath) return npmErrorPath;
-
-  return /(?:^|\n)[^:\r\n]+:\s+((?:~|\/)[^:\r\n]+):\s+Operation not permitted\b/im.exec(failureText)?.[1]?.trim();
-}
-
 export function diagnoseBashFailure(input: BashFailureDiagnosticsInput): string[] {
   const diagnostics: string[] = [];
   const signal = input.signal ?? undefined;
@@ -280,12 +269,12 @@ export function diagnoseBashFailure(input: BashFailureDiagnosticsInput): string[
   const nodeTool = input.command.match(NODE_TOOL_PATTERN)?.[1];
   const failureText = [input.message, input.stdout, input.stderr].filter(Boolean).join('\n');
 
-  if (input.sandboxed && SANDBOX_DENIAL_PATTERN.test(failureText)) {
-    const deniedPath = extractSandboxDeniedPath(failureText);
-    diagnostics.push(deniedPath
-      ? `沙盒拒绝：${deniedPath}（沙盒只允许写 ${input.workingDirectory ?? '工作目录'} 与临时目录）`
-      : '沙盒拒绝了工作目录外的写入');
-  }
+  const sandboxDenial = diagnoseSandboxDenial({
+    failureText,
+    sandboxed: input.sandboxed,
+    workingDirectory: input.workingDirectory,
+  });
+  if (sandboxDenial) diagnostics.push(sandboxDenial);
 
   if (nodeTool && MISSING_COMMAND_PATTERN.test(failureText)) {
     diagnostics.push(
@@ -700,6 +689,7 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
           // secret vars would leak straight back in (ptyExecutor spreads
           // process.env UNDER the passed env) — so never inherit.
           inheritProcessEnv: false,
+          sandboxed: shouldSandbox,
           ...(sandboxCleanup ? { onExit: cleanupSandbox } : {}),
         });
       } catch (error) {
@@ -753,12 +743,20 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
           onProgress?.({ stage: 'completing', percent: 100 });
           return { ok: true, output: outputText, meta };
         }
+        const failureMessage = outputText
+          ? `Command exited with code ${output.exitCode}\n${outputText}`
+          : `Command exited with code ${output.exitCode}`;
+        const diagnostics = diagnoseBashFailure({
+          command: normalizedCommand,
+          message: failureMessage,
+          code: output.exitCode,
+          sandboxed: shouldSandbox,
+          workingDirectory,
+        });
         return {
           ok: false,
           // 把命令输出折进模型可见的 error（meta.output 不会被 messageProcessor 读到）
-          error: outputText
-            ? `Command exited with code ${output.exitCode}\n${outputText}`
-            : `Command exited with code ${output.exitCode}`,
+          error: appendFailureDiagnostics(failureMessage, diagnostics),
           code: 'FS_ERROR',
           meta: { ...meta, output: outputText },
         };
@@ -806,6 +804,7 @@ Use process_kill to terminate the session.`;
           sessionId: ctx.sessionId,
           toolCallId: ctx.currentToolCallId,
           env: createEvalSafeShellEnv(undefined, workingDirectory, ctx.logger),
+          sandboxed: shouldSandbox,
           ...(sandboxCleanup ? { onExit: cleanupSandbox } : {}),
         });
       } catch (error) {

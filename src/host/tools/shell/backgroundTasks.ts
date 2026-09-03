@@ -42,6 +42,7 @@ export interface TaskState {
   cwd: string;
   sessionId?: string;
   toolCallId?: string;
+  sandboxed?: boolean;
   onExit?: () => void;
 }
 
@@ -71,6 +72,7 @@ export interface StartBackgroundTaskOptions {
   sessionId?: string;
   toolCallId?: string;
   env?: NodeJS.ProcessEnv;
+  sandboxed?: boolean;
   onExit?: () => void;
 }
 
@@ -244,6 +246,7 @@ export function startBackgroundTask(
     cwd,
     sessionId: options.sessionId,
     toolCallId: options.toolCallId,
+    sandboxed: options.sandboxed,
     onExit: options.onExit,
   };
 

@@ -25,6 +25,7 @@ describe('sensitive sandbox paths', () => {
 
       expect(entries).toContainEqual({ kind: 'directory', path: path.join(home, '.ssh') });
       expect(entries).toContainEqual({ kind: 'directory', path: path.join(home, '.config', 'gh') });
+      expect(entries).toContainEqual({ kind: 'file', path: path.join(home, '.npmrc') });
       expect(entries).toContainEqual({ kind: 'file', path: path.join(home, '.env.local') });
       expect(entries).toContainEqual({ kind: 'file', path: path.join(home, 'id_ed25519_agent') });
       expect(isPathDeniedBySensitiveSandboxPath(path.join(home, '.ssh', 'config'), entries)).toBe(true);

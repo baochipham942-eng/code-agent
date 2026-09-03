@@ -241,12 +241,25 @@ export interface BashFailureDiagnosticsInput {
   signal?: NodeJS.Signals | null;
   code?: number | string | null;
   durationMs?: number;
+  sandboxed?: boolean;
+  workingDirectory?: string;
 }
 
 const SELF_KILL_SIGNALS = new Set<NodeJS.Signals>(['SIGTERM', 'SIGKILL']);
 const KILL_COMMAND_PATTERN = /\b(?:pkill|killall|kill)\b/;
 const NODE_TOOL_PATTERN = /\b(npx|node|npm)\b/;
 const MISSING_COMMAND_PATTERN = /\bENOENT\b|command not found|not found/i;
+const SANDBOX_DENIAL_PATTERN = /\bEPERM\b|Operation not permitted/i;
+
+function extractSandboxDeniedPath(failureText: string): string | undefined {
+  const nodeErrorPath = /\bEPERM\b[^\r\n]*?\b(?:open|mkdir|unlink|rename|scandir|stat|lstat|access|chmod|chown)\s+['"]([^'"\r\n]+)['"]/i.exec(failureText)?.[1];
+  if (nodeErrorPath) return nodeErrorPath;
+
+  const npmErrorPath = /(?:^|\n)(?:npm (?:error|ERR!)\s+)?path\s+([^\r\n]+)/im.exec(failureText)?.[1]?.trim();
+  if (npmErrorPath) return npmErrorPath;
+
+  return /(?:^|\n)[^:\r\n]+:\s+((?:~|\/)[^:\r\n]+):\s+Operation not permitted\b/im.exec(failureText)?.[1]?.trim();
+}
 
 export function diagnoseBashFailure(input: BashFailureDiagnosticsInput): string[] {
   const diagnostics: string[] = [];
@@ -266,6 +279,14 @@ export function diagnoseBashFailure(input: BashFailureDiagnosticsInput): string[
 
   const nodeTool = input.command.match(NODE_TOOL_PATTERN)?.[1];
   const failureText = [input.message, input.stdout, input.stderr].filter(Boolean).join('\n');
+
+  if (input.sandboxed && SANDBOX_DENIAL_PATTERN.test(failureText)) {
+    const deniedPath = extractSandboxDeniedPath(failureText);
+    diagnostics.push(deniedPath
+      ? `沙盒拒绝：${deniedPath}（沙盒只允许写 ${input.workingDirectory ?? '工作目录'} 与临时目录）`
+      : '沙盒拒绝了工作目录外的写入');
+  }
+
   if (nodeTool && MISSING_COMMAND_PATTERN.test(failureText)) {
     diagnostics.push(
       `诊断：${nodeTool} 启动失败，可能是 Node.js 依赖或可执行文件缺失（ENOENT / command not found）。建议先确认依赖已安装，并检查 PATH / node_modules。`,
@@ -952,6 +973,8 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
         signal: typeof errObj.signal === 'string' ? errObj.signal as NodeJS.Signals : undefined,
         code: typeof errObj.code === 'number' || typeof errObj.code === 'string' ? errObj.code : undefined,
         durationMs: typeof errObj.durationMs === 'number' ? errObj.durationMs : undefined,
+        sandboxed: shouldSandbox,
+        workingDirectory,
       });
       const withDiagnostics = (msg: string) => appendFailureDiagnostics(msg, diagnostics);
 

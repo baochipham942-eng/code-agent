@@ -45,6 +45,23 @@ suite('bubblewrap wrapCommand 真实隔离', () => {
     if (projectDir) fs.rmSync(projectDir, { recursive: true, force: true });
   });
 
+  it('npm 的配置、缓存与日志目录搬到 TMPDIR 后可 pack', async () => {
+    fs.writeFileSync(path.join(projectDir, 'package.json'), JSON.stringify({
+      name: 'sandbox-npm-pack-fixture',
+      version: '1.0.0',
+      private: true,
+    }));
+    const { command, cleanup } = wrapCommandForSandbox(
+      'npm config get userconfig && npm pack --dry-run',
+      { workingDirectory: projectDir, allowNetwork: false },
+    );
+    const r = await run(command, projectDir);
+    cleanup();
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain(path.join(process.env.TMPDIR || os.tmpdir(), 'neo-npm', 'npmrc'));
+    expect(r.stdout).toContain('sandbox-npm-pack-fixture-1.0.0.tgz');
+  });
+
   it('敏感 home 文件读取被拒，但工作区 .env 仍可读', async () => {
     const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), 'bwrap-home-'));
     const originalHome = process.env.HOME;

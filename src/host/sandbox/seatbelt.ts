@@ -472,8 +472,13 @@ export class Seatbelt {
       this.cleanupProfile(profilePath);
       throw error;
     }
-    // 用 shell-quote 把整个 argv 拼成安全字符串：原命令作为单一 token 交给内层 /bin/sh -c。
-    const wrapped = quote(['sandbox-exec', '-f', profilePath, '/bin/sh', '-c', command]);
+    // 用 env 在 seatbelt 内覆盖定向配置；原命令仍作为单一 token 交给内层 /bin/sh -c。
+    const env = Object.entries(fullConfig.customEnv).map(([key, value]) => `${key}=${value}`);
+    const wrapped = quote([
+      'sandbox-exec', '-f', profilePath,
+      ...(env.length > 0 ? ['/usr/bin/env', ...env] : []),
+      '/bin/sh', '-c', command,
+    ]);
     return { command: wrapped, cleanup: () => this.cleanupProfile(profilePath) };
   }
 

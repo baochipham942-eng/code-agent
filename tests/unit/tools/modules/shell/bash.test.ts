@@ -730,6 +730,32 @@ describe('bash failure diagnostics', () => {
     expect(diagnostics.join('\n')).toMatch(/OOM|内存/);
   });
 
+  it('reports the denied path only for OS-sandbox permission failures', () => {
+    const denied = diagnoseBashFailure({
+      command: 'touch ~/x',
+      stderr: "/bin/sh: /Users/tester/x: Operation not permitted",
+      sandboxed: true,
+      workingDirectory: '/tmp/project',
+    });
+    expect(denied).toContain('沙盒拒绝：/Users/tester/x（沙盒只允许写 /tmp/project 与临时目录）');
+
+    expect(diagnoseBashFailure({
+      command: 'touch ~/x',
+      stderr: "/bin/sh: /Users/tester/x: Operation not permitted",
+      sandboxed: false,
+      workingDirectory: '/tmp/project',
+    })).toEqual([]);
+  });
+
+  it('falls back without inventing a path when a sandbox EPERM has none', () => {
+    expect(diagnoseBashFailure({
+      command: 'npm pack --dry-run',
+      stderr: 'npm error code EPERM',
+      sandboxed: true,
+      workingDirectory: '/tmp/project',
+    })).toContain('沙盒拒绝了工作目录外的写入');
+  });
+
   it('appends diagnostics to the model-visible failure message', () => {
     const message = appendFailureDiagnostics('Command failed with exit code 137', [
       '诊断：exit 137 通常表示进程可能被系统 OOM killer 终止。',
@@ -960,6 +986,21 @@ describe('bashModule OS 沙箱 gating（bypassPermissions）', () => {
     // 跑的是包装后的命令（spy 返回 echo __SANDBOXED__），证明真的走了沙箱包装结果
     if (result.ok) expect(result.output).toContain('__SANDBOXED__');
     expect(cleanupMock).toHaveBeenCalled();
+  });
+
+  it('bypassPermissions 档：越界写失败会把沙盒拒绝路径追加到模型输出', async () => {
+    modeMgr.setMode('bypassPermissions', true);
+    wrapMock.mockReturnValue({
+      command: `/bin/sh -c 'echo "/bin/sh: /Users/tester/x: Operation not permitted" >&2; exit 1'`,
+      cleanup: cleanupMock,
+    });
+    const handler = await bashModule.createHandler();
+    const result = await handler.execute({ command: 'touch ~/x' }, makeCtx(), allowAll);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toContain('沙盒拒绝：/Users/tester/x');
+      expect(result.error).toContain(`${process.cwd()} 与临时目录`);
+    }
   });
 
   it('bypassPermissions 档 + 沙箱不可用：硬报错 SANDBOX_UNAVAILABLE，绝不裸跑', async () => {

@@ -4,6 +4,7 @@
 
 import * as os from 'os';
 import * as path from 'path';
+import * as fs from 'fs';
 import { createLogger } from '../services/infra/logger';
 import { Bubblewrap, getBubblewrap, type BubblewrapConfig, type BubblewrapStatus } from './bubblewrap';
 import { getSeatbelt, type SeatbeltConfig, type SeatbeltStatus } from './seatbelt';
@@ -120,6 +121,24 @@ const DEFAULT_CONFIG: SandboxConfig = {
   envPassthrough: ['PATH', 'HOME', 'USER', 'LANG', 'TERM'],
   customEnv: {},
 };
+
+function prepareNpmSandboxEnvironment(): Record<string, string> {
+  const npmHome = path.join(process.env.TMPDIR || os.tmpdir(), 'neo-npm');
+  const userConfig = path.join(npmHome, 'npmrc');
+  const cache = path.join(npmHome, 'cache');
+  const logs = path.join(npmHome, 'logs');
+
+  fs.mkdirSync(cache, { recursive: true, mode: 0o700 });
+  fs.mkdirSync(logs, { recursive: true, mode: 0o700 });
+  fs.writeFileSync(userConfig, '', { encoding: 'utf8', mode: 0o600 });
+
+  return {
+    npm_config_userconfig: userConfig,
+    npm_config_cache: cache,
+    npm_config_logs_dir: logs,
+    npm_config_update_notifier: 'false',
+  };
+}
 
 // ----------------------------------------------------------------------------
 // Sandbox Manager Class
@@ -296,6 +315,7 @@ export class SandboxManager {
       ...(opts.deniedReadRoots ?? []).map((root) => ({ kind: 'directory' as const, path: root })),
     ];
     const allowNetwork = opts.allowNetwork ?? false;
+    const npmEnvironment = prepareNpmSandboxEnvironment();
 
     switch (this.platform) {
       case 'darwin': {
@@ -307,6 +327,7 @@ export class SandboxManager {
           workingDirectory: resolved,
           allowWorkingDirectoryWrite: false,
           sensitivePaths,
+          customEnv: npmEnvironment,
         });
         return { ...wrapped, platform: 'darwin' };
       }
@@ -320,6 +341,7 @@ export class SandboxManager {
           readWritePaths: readWriteRoots,
           workingDirectory: resolved,
           sensitivePaths,
+          customEnv: npmEnvironment,
         });
         return { ...wrapped, platform: 'linux' };
       }
@@ -452,6 +474,7 @@ export class SandboxManager {
             'PATH', 'HOME', 'USER', 'LANG', 'TERM',
             'NODE_ENV', 'npm_config_cache',
           ],
+          customEnv: prepareNpmSandboxEnvironment(),
         };
 
       case 'network':
@@ -470,6 +493,7 @@ export class SandboxManager {
             'PATH', 'HOME', 'USER', 'LANG', 'TERM',
             'NODE_ENV', 'npm_config_cache', 'SHELL',
           ],
+          customEnv: prepareNpmSandboxEnvironment(),
         };
 
       default:

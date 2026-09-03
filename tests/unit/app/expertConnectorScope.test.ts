@@ -26,6 +26,14 @@ vi.mock('../../../src/host/observability/posthogNode', () => ({
   trackNode: trackNodeMock,
 }));
 
+// CLI 连接器（feishu/tmeet）的「连上了没」走自己的状态缓存，不进 connector registry，
+// 所以要测「声明了但没连上」这一支必须从这里给状态。
+const cliConnectorStatus = vi.hoisted(() => ({} as Record<string, { connected: boolean } | undefined>));
+vi.mock('../../../src/host/connectors/cli/cliConnectorStatusCache', () => ({
+  isCliConnectorId: (id: string) => id === 'feishu' || id === 'tmeet',
+  getCachedCliConnectorConnectionStatus: (id: string) => cliConnectorStatus[id],
+}));
+
 import { withWorkbenchTurnSystemContext } from '../../../src/host/app/workbenchTurnContext';
 
 const registry = getConnectorRegistry();
@@ -52,34 +60,95 @@ function connectorScopeOf(
   return withWorkbenchTurnSystemContext(options, context)?.toolScope?.allowedConnectorIds;
 }
 
+function mcpScopeOf(
+  options: Parameters<typeof withWorkbenchTurnSystemContext>[0],
+  context: Parameters<typeof withWorkbenchTurnSystemContext>[1],
+): string[] | undefined {
+  return withWorkbenchTurnSystemContext(options, context)?.toolScope?.allowedMcpServerIds;
+}
+
 describe('ADR-052 C：专家连接器的运行时收窄', () => {
   beforeEach(() => {
     resolveAgentMock.mockReset();
     trackNodeMock.mockReset();
-    registerConnector('lark', { connected: true });
-    registerConnector('notion', { connected: true });
+    // 🔴 lark / notion 是**连接器目录里的 MCP 名**，真实运行时 connector registry 里根本没有
+    // 它们（那张表只装 CLI 与原生连接器）。原来这里手工把 lark 注册进去，等于伪造了
+    // 「MCP 能通过 connector ready 判定」——ADR-052 C 那道门假绿的来源就在这。
+    // 现在只注册真正属于连接器侧的 crm（原生连接器），MCP 名一律不注册。
+    registerConnector('crm', { connected: true });
+    for (const key of Object.keys(cliConnectorStatus)) delete cliConnectorStatus[key];
   });
 
   afterEach(() => {
-    ['lark', 'notion'].forEach((id) => registry.unregister(id));
+    registry.unregister('crm');
   });
 
-  it('会话没选连接器时，收窄到专家声明的 core（optional 默认不开）', () => {
+  // 2026-09-03 断言落点修正（N-CONNECTOR-INCHAT / ai-review 抓获）：lark 这类是**连接器目录
+  // 里的 MCP 名**，以前整批塞进 allowedConnectorIds——而连接器那侧的过滤
+  // （matchesScopedConnectorTool）对非连接器工具名一律放行，MCP 工具压根不受它约束，
+  // 所以「收窄」从未真正发生，这条门一直是假绿。断言的意图不变（专家 core 要真收窄），
+  // 落点改到真正起作用的字段上。
+  it('会话没选连接器时，收窄到专家声明的 core（optional 默认不开）——MCP 名落 mcp scope', () => {
     resolveAgentMock.mockReturnValue(expertWithConnectors([
       { id: 'lark', level: 'core' },
       { id: 'notion', level: 'optional' },
     ]));
 
-    expect(connectorScopeOf(undefined, { preferredAgentId: 'writer' })).toEqual(['lark']);
+    expect(mcpScopeOf(undefined, { preferredAgentId: 'writer' })).toEqual(['lark']);
+    expect(connectorScopeOf(undefined, { preferredAgentId: 'writer' })?.length ?? 0).toBe(0);
   });
 
-  it('会话里显式选过连接器时以会话为准，专家默认不抢方向盘', () => {
+  it('连接器侧（CLI 的 feishu + 注册表里的 crm）与 MCP 名各归各位', () => {
+    cliConnectorStatus.feishu = { connected: true };
+    resolveAgentMock.mockReturnValue(expertWithConnectors([
+      { id: 'feishu', level: 'core' },
+      { id: 'crm', level: 'core' },
+      { id: 'lark', level: 'core' },
+    ]));
+
+    expect(connectorScopeOf(undefined, { preferredAgentId: 'writer' })).toEqual(['feishu', 'crm']);
+    expect(mcpScopeOf(undefined, { preferredAgentId: 'writer' })).toEqual(['lark']);
+  });
+
+  it('原生连接器没连上时不收窄（与 CLI 那支同口径）', () => {
+    registry.unregister('crm');
+    registerConnector('crm', { connected: false });
+    resolveAgentMock.mockReturnValue(expertWithConnectors([{ id: 'crm', level: 'core' }]));
+
+    expect(connectorScopeOf(undefined, { preferredAgentId: 'writer' })?.length ?? 0).toBe(0);
+  });
+
+  it('会话显式选过 MCP 时以会话为准，专家声明的 MCP 不抢方向盘', () => {
     resolveAgentMock.mockReturnValue(expertWithConnectors([{ id: 'lark', level: 'core' }]));
 
-    expect(connectorScopeOf(undefined, {
+    expect(mcpScopeOf(undefined, {
       preferredAgentId: 'writer',
-      selectedConnectorIds: ['notion'],
+      selectedMcpServerIds: ['notion'],
     })).toEqual(['notion']);
+  });
+
+  it('会话里显式选过连接器时以会话为准，专家那支两侧一起让位', () => {
+    resolveAgentMock.mockReturnValue(expertWithConnectors([{ id: 'lark', level: 'core' }]));
+    const context = { preferredAgentId: 'writer', selectedConnectorIds: ['crm'] };
+
+    expect(connectorScopeOf(undefined, context)).toEqual(['crm']);
+    // 只让连接器侧让位、MCP 侧还偷偷用着专家声明，就和界面上那句
+    // 「这轮以你选的连接器为准」打架了
+    expect(mcpScopeOf(undefined, context)?.length ?? 0).toBe(0);
+  });
+
+  // 只手选 MCP 这条路必须单独覆盖：判据若只看连接器侧，这里会漏——专家的连接器那支
+  // 会继续偷偷收窄，而用户以为「我选的说了算」。
+  it('会话只手选了 MCP 时，专家的连接器那支也一起让位', () => {
+    cliConnectorStatus.feishu = { connected: true };
+    resolveAgentMock.mockReturnValue(expertWithConnectors([
+      { id: 'feishu', level: 'core' },
+      { id: 'lark', level: 'core' },
+    ]));
+    const context = { preferredAgentId: 'writer', selectedMcpServerIds: ['notion'] };
+
+    expect(mcpScopeOf(undefined, context)).toEqual(['notion']);
+    expect(connectorScopeOf(undefined, context)?.length ?? 0).toBe(0);
   });
 
   // 拍板口径：先宽后收。没身份不是"一个都不给"，而是维持现状不收窄。
@@ -97,16 +166,19 @@ describe('ADR-052 C：专家连接器的运行时收窄', () => {
   it('cron 路径的身份走 options.agentOverrideId，同样收窄', () => {
     resolveAgentMock.mockReturnValue(expertWithConnectors([{ id: 'lark', level: 'core' }]));
 
-    expect(connectorScopeOf({ agentOverrideId: 'writer' }, undefined)).toEqual(['lark']);
+    expect(mcpScopeOf({ agentOverrideId: 'writer' }, undefined)).toEqual(['lark']);
     expect(resolveAgentMock).toHaveBeenCalledWith('writer');
   });
 
-  it('专家声明的连接器没连上时不收窄，而不是把它锁成空集', () => {
-    registry.unregister('lark');
-    registerConnector('lark', { connected: false });
-    resolveAgentMock.mockReturnValue(expertWithConnectors([{ id: 'lark', level: 'core' }]));
+  it('专家声明的 CLI 连接器没连上时不收窄，而不是把它锁成空集', () => {
+    cliConnectorStatus.feishu = { connected: false };
+    resolveAgentMock.mockReturnValue(expertWithConnectors([{ id: 'feishu', level: 'core' }]));
 
     expect(connectorScopeOf(undefined, { preferredAgentId: 'writer' })?.length ?? 0).toBe(0);
+
+    // 正向对照：连上了就收窄，证明上面那个 0 不是「这条路本来就走不通」
+    cliConnectorStatus.feishu = { connected: true };
+    expect(connectorScopeOf(undefined, { preferredAgentId: 'writer' })).toEqual(['feishu']);
   });
 
   it('内置 agent（没有 connectors 声明）不受影响', () => {

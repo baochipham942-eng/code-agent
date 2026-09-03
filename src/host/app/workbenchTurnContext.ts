@@ -442,6 +442,15 @@ function isConnectorReadyForTurnScope(connectorId: string): boolean {
   return cachedStatus.connected;
 }
 
+/**
+ * 这个 id 该归 connector scope 还是 mcp scope。判据跟 isConnectorReadyForTurnScope 同一套认知：
+ * CLI 连接器（feishu/tmeet）与连接器注册表认得的原生连接器（mail/crm…）算连接器侧，
+ * 其余是连接器目录里的 MCP 名（lark、tencent-docs…）——注册表里查不到它们。
+ */
+function isConnectorSideId(connectorId: string): boolean {
+  return isCliConnectorId(connectorId) || Boolean(getConnectorRegistry().get(connectorId));
+}
+
 function getReadySelectedConnectorIds(selectedConnectorIds?: string[]): string[] {
   return (selectedConnectorIds || [])
     .map((connectorId) => connectorId.trim())
@@ -507,12 +516,39 @@ export function withWorkbenchTurnSystemContext(
     ...(options?.toolScope?.allowedConnectorIds || []),
     ...(workbenchToolScope?.allowedConnectorIds || []),
   ];
+  const explicitMcpServerIds = [
+    ...(options?.toolScope?.allowedMcpServerIds || []),
+    ...(workbenchToolScope?.allowedMcpServerIds || []),
+  ];
+
+  // 专家 core 的 id 空间横跨两侧：连接器（CLI 的 feishu/tmeet + 注册表里的 mail/crm…）
+  // 归 connector scope，其余是连接器目录里的 MCP 名（lark、tencent-docs…）归 mcp scope。
+  //
+  // 2026-09-03 修：以前整批塞进 connector 那侧，而 isConnectorReadyForTurnScope 对非 CLI id
+  // 要查 connector registry（运行时那张表里没有 MCP）⇒ 一律判 false 被丢光 ⇒ 列表变空又
+  // 按「空 = 不收窄」放行，**专家声明的「这一轮只用这几个」对 MCP 从来没生效过，工具面
+  // 反而全开**。按类型分流后，MCP 那支落进 allowedMcpServerIds 才真收窄。
+  // 「会话覆盖专家」要整支让位：会话在**任一侧**做过显式选择（连接器或 MCP），
+  // 专家声明就整批不参与，两侧口径一致——只让一侧让位会出现「你选了连接器、
+  // 专家的 MCP 还在悄悄收窄」，和渲染层那句「这轮以你选的连接器为准」打架。
+  const sessionPickedScope = explicitConnectorIds.length > 0 || explicitMcpServerIds.length > 0;
+  const expertCoreIds = sessionPickedScope ? [] : resolveSessionConnectorIds({ expertConnectors });
+  const expertConnectorSideIds = expertCoreIds.filter(isConnectorSideId);
+  const expertMcpServerIds = expertCoreIds.filter((id) => !isConnectorSideId(id));
+
   // 会话显式选过 → 以会话为准；没选过才落到专家声明的 core。
-  // 专家那支要过一次「连上了没」——声明了但没连的连接器过滤后为空 = 不收窄，
+  // 连接器那支要过一次「连上了没」——声明了但没连的过滤后为空 = 不收窄，
   // 这是拍板口径「先宽后收」，不是把工具集锁成空集。
   const allowedConnectorIds = explicitConnectorIds.length > 0
     ? explicitConnectorIds
-    : getReadySelectedConnectorIds(resolveSessionConnectorIds({ expertConnectors }));
+    : getReadySelectedConnectorIds(expertConnectorSideIds);
+  // MCP 那支不另做「连上了没」的过滤——和「用户手选 MCP」那条既有路径同口径
+  // （selectedMcpServerIds 直接进 scope，不问连没连）。不在这里发明第二套宽松规则；
+  // 「声明了一个没连上的 MCP 会把 MCP 工具面锁死」是手选路径本来就有的账，
+  // 要治在 N-EXPERT-CORE-MCPSCOPE 里一起治。
+  const allowedMcpServerIds = explicitMcpServerIds.length > 0
+    ? explicitMcpServerIds
+    : expertMcpServerIds;
 
   const toolScope = normalizeWorkbenchToolScope({
     allowedSkillIds: [
@@ -520,10 +556,7 @@ export function withWorkbenchTurnSystemContext(
       ...(workbenchToolScope?.allowedSkillIds || []),
     ],
     allowedConnectorIds,
-    allowedMcpServerIds: [
-      ...(options?.toolScope?.allowedMcpServerIds || []),
-      ...(workbenchToolScope?.allowedMcpServerIds || []),
-    ],
+    allowedMcpServerIds,
   });
   if (
     turnSystemContext.length === 0

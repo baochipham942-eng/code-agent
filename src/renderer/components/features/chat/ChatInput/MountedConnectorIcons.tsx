@@ -50,6 +50,7 @@ export const MountedConnectorIcons: React.FC = () => {
   const openCapabilitySettingsTarget = useAppStore((state) => state.openCapabilitySettingsTarget);
   const agentEntries = useAgentRegistryStore((state) => state.entries);
   const selectedConnectorIds = useComposerStore((state) => state.selectedConnectorIds);
+  const selectedMcpServerIds = useComposerStore((state) => state.selectedMcpServerIds);
 
   // 同一个 id 在底栏两处出现时必须同名：CLI 连接器走 SaaS 词表，其余走连接器目录，都查不到退回 id
   const connectorDisplayName = (id: string): string =>
@@ -71,11 +72,12 @@ export const MountedConnectorIcons: React.FC = () => {
     }
     return buildExpertConnectorSource({
       expertConnectors: expert?.connectors,
-      sessionSelectedIds: selectedConnectorIds,
+      // 让位判据与宿主同口径：会话在任一侧手选过，专家那支就整支让位
+      sessionSelectedIds: [...selectedConnectorIds, ...selectedMcpServerIds],
       installed,
       resolveLabel: connectorDisplayName,
     });
-  }, [connectors, mcpServers, expert?.connectors, selectedConnectorIds]);
+  }, [connectors, mcpServers, expert?.connectors, selectedConnectorIds, selectedMcpServerIds]);
 
   if (manual.length === 0 && !expertSource) return null;
 

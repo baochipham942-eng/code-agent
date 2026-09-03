@@ -73,6 +73,7 @@ const WEEKLY_EXPERT = {
 beforeEach(() => {
   cleanup();
   composerState.selectedConnectorIds = ['tmeet'];
+  composerState.selectedMcpServerIds = [];
   registryState.connectors = [makeConnector('tmeet')];
   registryState.mcpServers = [];
   appState.activeAgentId = null;
@@ -187,6 +188,18 @@ describe('MountedConnectorIcons（底栏挂载连接器 chip）', () => {
 
   it('用户在本会话手选过连接器：专家那颗照露，但卡上说明这轮没用它', () => {
     composerState.selectedConnectorIds = ['tmeet'];
+    registryState.mcpServers = [{ kind: 'mcp', key: 'mcp:tmeet-mcp', id: 'tmeet-mcp', label: 'tmeet-mcp', selected: false, status: 'connected', enabled: true, available: true }];
+    appState.activeAgentId = 'weekly';
+    agentRegistryState.entries = [WEEKLY_EXPERT];
+    render(<MountedConnectorIcons />);
+
+    fireEvent.mouseEnter(screen.getByTestId('expert-connector-badge').parentElement!);
+    expect(screen.getByTestId('expert-connector-source').textContent).toContain('这轮以你选的连接器为准');
+  });
+
+  it('只手选了 MCP（没选连接器）时，专家那颗同样标让位', () => {
+    composerState.selectedConnectorIds = [];
+    composerState.selectedMcpServerIds = ['some-mcp'];
     registryState.mcpServers = [{ kind: 'mcp', key: 'mcp:tmeet-mcp', id: 'tmeet-mcp', label: 'tmeet-mcp', selected: false, status: 'connected', enabled: true, available: true }];
     appState.activeAgentId = 'weekly';
     agentRegistryState.entries = [WEEKLY_EXPERT];

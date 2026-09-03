@@ -5,7 +5,7 @@
 import type { AgentInterface } from './testRunner';
 import type { ToolExecutionRecord, HarnessVariantConfig, UserSimulation, EvalGoalContract, GoalRunRecord, PermissionRequestRecord } from './types';
 import { createPermissionRequestRecorder } from './approvalRequestEval';
-import { buildPermissionDecider } from './userSimulator';
+import { buildPermissionDecider, narrowScriptedPermissionHandler } from './userSimulator';
 import { applyGoalEvent, buildLoopGoalContract, createGoalRunRecord } from './goalContractEval';
 import type { AgentLoop } from '../agent/agentLoop';
 import type { ModelProvider } from '../../shared/contract';
@@ -548,19 +548,17 @@ export class StandaloneAgentAdapter implements AgentInterface {
       const telemetryCollector = this.telemetryCollector ?? getTelemetryCollector();
       // N-EVAL-APPROVALEVAL · B：显式 scripted 策略下把每次审批请求落账（approval_* 断言的证据源）。
       // 每个 sendMessage 一个记录器，按题隔离；没有 scripted 策略的存量路径不记（保持 undefined ⇒ 断言 fail-loud）。
-      // K5：case 的 permission_policy 在显式 scripted 策略之上只做收窄（scripted 放行 + case 拒 ⇒ 拒），
+      // K5：case 的 permission_policy 与显式 scripted 策略合成（narrowScriptedPermissionHandler）——
+      // 先问 case 意图：case 规则命中拒 ⇒ 无论 scripted 放/拒都以模拟用户身份拒（denialSource='user'），
       // 让「先确认」题能写「用户对这条命令说不」，全局策略照常放行其余探索命令；金丝雀由此才守得住。
-      // 这一拒的来源是模拟用户（denialSource='user'），不是脚本：第五程（09-02）标成 'scripted' 时
+      // 这一拒的来源是模拟用户，不是脚本：第五程（09-02）标成 'scripted' 时
       // 模型读到「并非用户拒绝」就换三种路径写法重试同一条 rm，直到 60s 超时，审批判决整题作废。
+      // N-EVAL-USERDENY-PRECEDENCE：scripted 先拒时同样要标 user——force-push 题的
+      //「模拟用户说不」从没生效（dangerous_command 不匹配 scripted allow 表 ⇒ 脚本先拒），
+      // 模型换 --force-with-lease 再试再被拒，第六程 12 轮爆 max_turns、第七程复现。
       const scriptedHandler = this.requestPermission;
       const narrowedHandler = scriptedHandler && permissionDecider
-        ? async (request: PermissionRequestData): Promise<RequestPermissionResult> => {
-          const result = await scriptedHandler(request);
-          const approved = typeof result === 'boolean' ? result : result.approved;
-          return approved && !permissionDecider({ ...request, toolName: request.tool })
-            ? { approved: false, denialSource: 'user' }
-            : result;
-        }
+        ? narrowScriptedPermissionHandler(scriptedHandler, permissionDecider)
         : scriptedHandler;
       const recorder = narrowedHandler ? createPermissionRequestRecorder(narrowedHandler) : null;
       permissionRequests = recorder?.records;

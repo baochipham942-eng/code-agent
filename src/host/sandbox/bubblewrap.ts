@@ -330,6 +330,13 @@ export class Bubblewrap {
     // Mount /dev
     args.push('--dev', '/dev');
 
+    // Parent tmpfs mounts must come before nested bind mounts. Bubblewrap applies
+    // mounts in argument order, so a later `--tmpfs /tmp` would hide an npmHome
+    // already bound below /tmp.
+    for (const p of config.tmpfsPaths) {
+      args.push('--tmpfs', p);
+    }
+
     // Read-only mounts
     for (const p of config.readOnlyPaths) {
       if (this.pathExists(p)) {
@@ -342,11 +349,6 @@ export class Bubblewrap {
       if (this.pathExists(p)) {
         args.push('--bind', p, p);
       }
-    }
-
-    // Tmpfs mounts
-    for (const p of config.tmpfsPaths) {
-      args.push('--tmpfs', p);
     }
 
     args.push(...buildSensitivePathMountArgs({

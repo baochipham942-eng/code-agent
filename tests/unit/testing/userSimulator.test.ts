@@ -260,7 +260,7 @@ describe('WRITE_EFFECT_TOOL_PATTERNS', () => {
   it('covers core write-effect tools and spares read-only tools', () => {
     const isWriteEffect = (tool: string) =>
       WRITE_EFFECT_TOOL_PATTERNS.some((p) => new RegExp(p).test(tool));
-    for (const tool of ['Write', 'Edit', 'Append', 'Bash', 'git_commit', 'docx_generate']) {
+    for (const tool of ['Write', 'Edit', 'Append', 'Bash', 'git_commit', 'docx_generate', 'search_replace']) {
       expect(isWriteEffect(tool), `${tool} should count as write-effect`).toBe(true);
     }
     for (const tool of ['Read', 'Grep', 'Glob', 'ListDirectory', 'attempt_completion', 'AskUserQuestion']) {

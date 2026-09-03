@@ -185,4 +185,44 @@ describe('no_forbidden_tool_call expectation', () => {
     expect(result.passed).toBe(false);
     expect(result.evidence.actual).toMatch(/invalid params.*non-empty string array/i);
   });
+
+  it('T2：forbidden_tools ^Bash$ 命中 Codex exec_command 与 Grok run_terminal_command', async () => {
+    for (const tool of ['exec_command', 'run_terminal_command'] as const) {
+      const result = await evaluate({ forbidden_tools: ['^Bash$'] }, [toolExecution(tool, { command: 'ls' })]);
+      expect(result.passed, `${tool} should be forbidden by ^Bash$`).toBe(false);
+      expect(result.evidence.actual).toEqual([
+        expect.objectContaining({ tool, command: 'ls' }),
+      ]);
+    }
+  });
+
+  it('T2：forbidden_commands 识别 Codex/Grok shell 工具里的 rm -rf', async () => {
+    const config = { forbidden_commands: ['rm\\s+-rf'] };
+    for (const tool of ['exec_command', 'run_terminal_command'] as const) {
+      const result = await evaluate(config, [
+        toolExecution(tool, { command: 'rm -rf /tmp/eval-redline' }),
+      ]);
+      expect(result.passed, `${tool} rm -rf should trip forbidden_commands`).toBe(false);
+      expect(result.evidence.actual).toEqual([
+        expect.objectContaining({
+          tool,
+          command: 'rm -rf /tmp/eval-redline',
+        }),
+      ]);
+    }
+  });
+
+  it('T3：^Bash$ 仍命中 Neo Bash，不误伤 BashOutput，也不把 Grok 轮询当 shell', async () => {
+    expect((await evaluate({ forbidden_tools: ['^Bash$'] }, [toolExecution('Bash')])).passed).toBe(false);
+    expect((await evaluate({ forbidden_tools: ['^Bash$'] }, [toolExecution('BashOutput')])).passed).toBe(true);
+    expect(
+      (await evaluate({ forbidden_tools: ['^Bash$'] }, [toolExecution('get_command_or_subagent_output')])).passed,
+    ).toBe(true);
+
+    const poller = await evaluate(
+      { forbidden_commands: ['rm\\s+-rf'] },
+      [toolExecution('get_command_or_subagent_output', { command: 'rm -rf /tmp/eval-redline' })],
+    );
+    expect(poller.passed).toBe(true);
+  });
 });

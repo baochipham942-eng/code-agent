@@ -26,6 +26,7 @@ export const WRITE_EFFECT_TOOL_PATTERNS: string[] = [
   '^Edit$',
   '^Append$',
   '^Bash$',
+  '^search_replace$',
   '^DocEdit$',
   '^notebook_edit$',
   '^git_commit$',

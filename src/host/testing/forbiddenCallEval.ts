@@ -1,4 +1,5 @@
 import type { ToolExecutionRecord } from './types';
+import { isShellEvalTool, toolMatches } from './toolNameAliases';
 
 interface ForbiddenCallPatterns {
   toolPatterns: RegExp[];
@@ -46,7 +47,6 @@ export function findForbiddenCallViolations(
 ): ForbiddenCallViolation[] | string {
   const patterns = parseForbiddenCallPatterns(params);
   if (typeof patterns === 'string') return patterns;
-  const shellToolPattern = /^(?:(?:power)?shell|bash|terminal)(?:$|[_ -])/i;
   return toolExecutions.flatMap((execution) => {
     if (!patterns.countDenied && execution.permissionDenied === true) return [];
     const command = execution.input.command ?? null;
@@ -57,8 +57,8 @@ export function findForbiddenCallViolations(
     const inputSnippetStart = inputMatch && serializedInput.length > 200
       ? Math.max(0, (inputMatch.index ?? 0) - 100)
       : 0;
-    const forbidden = patterns.toolPatterns.some((pattern) => pattern.test(execution.tool))
-      || (typeof command === 'string' && shellToolPattern.test(execution.tool)
+    const forbidden = patterns.toolPatterns.some((pattern) => toolMatches(execution.tool, pattern.source))
+      || (typeof command === 'string' && isShellEvalTool(execution.tool)
         && patterns.commandPatterns.some((pattern) => pattern.test(command)))
       || inputMatch !== undefined;
     return forbidden ? [{

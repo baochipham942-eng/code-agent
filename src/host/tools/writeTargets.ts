@@ -102,8 +102,10 @@ function splitShellSegments(command: string): string[] {
       quote = char;
       continue;
     }
-    if (char !== ';' && char !== '|'
-      && !(char === '&' && command[index + 1] === '&')) continue;
+    const separatesInBackground = char === '&'
+      && command[index - 1] !== '>'
+      && command[index + 1] !== '>';
+    if (char !== ';' && char !== '|' && char !== '\n' && !separatesInBackground) continue;
     segments.push(command.slice(segmentStart, index));
     if (command[index + 1] === char) index += 1;
     segmentStart = index + 1;

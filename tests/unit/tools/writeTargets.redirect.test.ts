@@ -68,6 +68,8 @@ describe('shell redirect write targets', () => {
     ["dash -c 'printf x > out.txt'", 'out.txt'],
     ["MODE=1 sh -c 'printf x > out.txt'", 'out.txt'],
     ["echo ok && sh -c 'echo hi > out.txt'", 'out.txt'],
+    ["true & sh -c 'echo hi > out.txt'", 'out.txt'],
+    ["true\nsh -c 'echo hi > out.txt'", 'out.txt'],
     ['printf x | eval "echo hi > out.txt"', 'out.txt'],
     ["true; sh -c 'echo hi > out.txt'", 'out.txt'],
     ["false || sh -c 'echo hi > out.txt'", 'out.txt'],

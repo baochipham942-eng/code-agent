@@ -48,7 +48,7 @@ suite('seatbelt wrapCommand 真实隔离', () => {
     });
     const r = await run(command, projectDir);
     cleanup();
-    expect(r.code).toBe(0);
+    expect(r.code, r.stderr).toBe(0);
     expect(r.stdout).toContain('hello-sandbox');
   });
 
@@ -86,9 +86,11 @@ suite('seatbelt wrapCommand 真实隔离', () => {
     );
     const r = await run(command, projectDir);
     cleanup();
-    expect(r.code).toBe(0);
-    expect(r.stdout).toContain(path.join(process.env.TMPDIR || os.tmpdir(), 'neo-npm', 'npmrc'));
+    expect(r.code, r.stderr).toBe(0);
+    const userConfig = r.stdout.trim().split('\n')[0];
+    expect(userConfig).toMatch(new RegExp(`^${path.join(process.env.TMPDIR || os.tmpdir(), 'neo-npm')}/[^/]+/npmrc$`));
     expect(r.stdout).toContain('sandbox-npm-pack-fixture-1.0.0.tgz');
+    expect(fs.existsSync(path.dirname(userConfig))).toBe(false);
   });
 
   it('npm 的 host userconfig 仍不可读', async () => {

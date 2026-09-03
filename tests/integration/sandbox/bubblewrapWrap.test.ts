@@ -51,15 +51,22 @@ suite('bubblewrap wrapCommand 真实隔离', () => {
       version: '1.0.0',
       private: true,
     }));
-    const { command, cleanup } = wrapCommandForSandbox(
-      'npm config get userconfig && npm pack --dry-run',
-      { workingDirectory: projectDir, allowNetwork: false },
-    );
-    const r = await run(command, projectDir);
-    cleanup();
-    expect(r.code).toBe(0);
-    expect(r.stdout).toContain(path.join(process.env.TMPDIR || os.tmpdir(), 'neo-npm', 'npmrc'));
-    expect(r.stdout).toContain('sandbox-npm-pack-fixture-1.0.0.tgz');
+    const originalTmpdir = process.env.TMPDIR;
+    process.env.TMPDIR = '/host-only/custom-tmpdir';
+    try {
+      const { command, cleanup } = wrapCommandForSandbox(
+        'npm config get userconfig && npm pack --dry-run',
+        { workingDirectory: projectDir, allowNetwork: false },
+      );
+      const r = await run(command, projectDir);
+      cleanup();
+      expect(r.code).toBe(0);
+      expect(r.stdout).toMatch(/^\/tmp\/neo-npm\/[^/]+\/npmrc/m);
+      expect(r.stdout).toContain('sandbox-npm-pack-fixture-1.0.0.tgz');
+    } finally {
+      if (originalTmpdir === undefined) delete process.env.TMPDIR;
+      else process.env.TMPDIR = originalTmpdir;
+    }
   });
 
   it('敏感 home 文件读取被拒，但工作区 .env 仍可读', async () => {

@@ -414,12 +414,16 @@ describe('PermissionClassifier', () => {
           workspaceRoot: '/private/tmp/approval-project',
         },
       );
+      const quotedRoot = await classifyPermission('Bash', { command: 'rm -rf "/"' }, context);
+      const quotedHome = await classifyPermission('Bash', { command: 'rm -rf "$HOME"' }, context);
 
       expect(workspaceChild.decision).toBe('ask');
       expect(systemChild.decision).toBe('deny');
       expect(home.decision).toBe('deny');
       expect(workingDirectory.decision).toBe('deny');
       expect(privateWorkspaceChild.decision).toBe('ask');
+      expect(quotedRoot.decision).toBe('deny');
+      expect(quotedHome.decision).toBe('deny');
     });
 
     it('only denies dd when its output targets /dev', async () => {
@@ -433,9 +437,15 @@ describe('PermissionClassifier', () => {
         { command: 'dd if=x of=/dev/disk2' },
         context,
       );
+      const quotedDeviceOutput = await classifyPermission(
+        'Bash',
+        { command: 'dd if=x of="/dev/disk2"' },
+        context,
+      );
 
       expect(fileOutput.decision).toBe('ask');
       expect(deviceOutput.decision).toBe('deny');
+      expect(quotedDeviceOutput.decision).toBe('deny');
     });
 
     it('asks for credential reads through Bash and Read while keeping templates and normal files readable', async () => {
@@ -472,6 +482,11 @@ describe('PermissionClassifier', () => {
         { file_path: '.env' },
         { ...context, permissionLevel: 'read' },
       );
+      const quotedHomeSecret = await classifyPermission(
+        'Bash',
+        { command: 'cat "$HOME/.ssh/id_rsa"' },
+        context,
+      );
 
       for (const result of bashSecrets) {
         expect(result).toMatchObject({
@@ -484,6 +499,10 @@ describe('PermissionClassifier', () => {
       expect(template.decision).toBe('approve');
       expect(readme.decision).toBe('approve');
       expect(projectReadSecret.decision).toBe('ask');
+      expect(quotedHomeSecret).toMatchObject({
+        decision: 'ask',
+        traceStep: { rule: 'B1: sensitive_credential_read' },
+      });
     });
 
     it('asks for git remote and credential configuration writes but allows their read-only forms', async () => {
@@ -505,6 +524,16 @@ describe('PermissionClassifier', () => {
         { command: 'git config --get credential.helper' },
         context,
       );
+      const quotedRemoteWrite = await classifyPermission(
+        'Bash',
+        { command: "git remote 'set-url' origin https://evil.example/x.git" },
+        context,
+      );
+      const quotedCredentialWrite = await classifyPermission(
+        'Bash',
+        { command: "git config 'credential.helper' store" },
+        context,
+      );
 
       for (const result of writes) {
         expect(result).toMatchObject({
@@ -514,6 +543,8 @@ describe('PermissionClassifier', () => {
       }
       expect(remoteRead.decision).toBe('approve');
       expect(configRead.decision).toBe('approve');
+      expect(quotedRemoteWrite.decision).toBe('ask');
+      expect(quotedCredentialWrite.decision).toBe('ask');
     });
 
     it('asks for feature-branch push while keeping npm publish --dry-run approved', async () => {

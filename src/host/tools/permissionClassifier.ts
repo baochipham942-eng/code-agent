@@ -21,6 +21,7 @@ import {
 } from '../../shared/contract/permission';
 import { createTraceStep } from '../security/decisionTraceBuilder';
 import { isKnownSafeCommand, splitCompoundCommand } from '../security/commandSafety';
+import { canonicalizeCommand } from '../security/canonicalizeCommand';
 import { RM_FLAGS_REQUIRED, RM_HEAD } from '../security/rmFlagPattern';
 import { checkCommandPolicy } from './modules/shell/commandPolicy';
 import { isBashToolName, normalizeToolName } from './toolNames';
@@ -245,7 +246,11 @@ function isSensitiveMemoryPath(resolvedPath: string): boolean {
 }
 
 function commandWords(command: string): string[] {
-  return command.trim().split(/\s+/).filter(Boolean);
+  // B1 必须与硬阻断层使用同一份 shell 规范化结果。这里不能直接按原始空白切词：
+  // shell 会在执行前去掉普通引号并展开 $HOME，若分类器保留引号，凭据路径与 git
+  // 配置键就能用 `"..."` 绕过。无法静态解析的命令已由 classifyBash 的 B0
+  // parsingFailed 分支 fail-closed，因此这里消费 canonical form 是安全的。
+  return canonicalizeCommand(command).command.split(/\s+/).filter(Boolean);
 }
 
 function commandProgram(word: string | undefined): string {
@@ -757,6 +762,7 @@ export class PermissionClassifier {
     context: ClassificationContext,
     startTime: number,
   ): ClassificationResult | null {
+    const canonicalCommand = canonicalizeCommand(command).command;
     const rmCriticalTarget = resolvedRmCriticalTarget(command, context);
     if (rmCriticalTarget) {
       const reason = `危险命令: 递归删除关键路径 ${rmCriticalTarget}`;
@@ -797,7 +803,7 @@ export class PermissionClassifier {
 
     // B1: 危险模式检测
     for (const { pattern, reason, decision } of DANGEROUS_BASH_PATTERNS) {
-      if (pattern.test(command)) {
+      if (pattern.test(canonicalCommand)) {
         const fullReason = `危险命令: ${reason}`;
         const outcome = decision === 'approve' ? 'allow' : decision === 'deny' ? 'deny' : 'ask';
         return {

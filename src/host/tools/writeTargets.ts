@@ -77,6 +77,7 @@ interface ShellRedirectScan {
 const SHELL_COMMAND_WRAPPERS = new Set(['sh', 'bash', 'zsh', 'dash']);
 const MAX_REDIRECT_WRAPPER_DEPTH = 3;
 const SHELL_PARAMETER_EXPANSION = /\$(?:\{|[A-Za-z_]|[0-9@*#?$!-])/;
+const SHELL_COMMAND_STRING_OPTION = /^-[A-Za-z]*c[A-Za-z]*$/;
 const SHELL_ASSIGNMENT_PREFIX = /^[A-Za-z_][A-Za-z0-9_]*=/;
 const ENV_OPTIONS_WITHOUT_VALUES = new Set(['-i', '--ignore-environment', '-0', '--null', '-v', '--debug']);
 const ENV_OPTIONS_WITH_VALUES = new Set(['-u', '--unset', '-C', '--chdir', '--argv0', '-P']);
@@ -179,7 +180,7 @@ function findShellScriptIndex(
   let uncertain = false;
   while (index < words.length) {
     const option = canonicalizeCommand(words[index]).command;
-    if (/^-[A-Za-z]*c[A-Za-z]*$/.test(option)) {
+    if (SHELL_COMMAND_STRING_OPTION.test(option)) {
       let scriptIndex = index + 1;
       if (canonicalizeCommand(words[scriptIndex] ?? '').command === '--') scriptIndex += 1;
       return scriptIndex < words.length
@@ -262,6 +263,75 @@ function readShellWords(command: string): string[] {
   return words;
 }
 
+function unresolvedIndirectWrapper(words: string[]): string | undefined {
+  // Unknown launchers are not enumerable. A shell immediately followed by a -c-shaped option,
+  // or any eval word, is enough to fail closed without guessing how the outer command executes it.
+  for (let index = 0; index < words.length; index += 1) {
+    const executable = shellExecutableName(words[index]);
+    if (executable === 'eval') return executable;
+    if (
+      SHELL_COMMAND_WRAPPERS.has(executable)
+      && SHELL_COMMAND_STRING_OPTION.test(canonicalizeCommand(words[index + 1] ?? '').command)
+    ) return executable;
+  }
+  return undefined;
+}
+
+function commandSubstitutionContent(command: string, start: number): string {
+  if (command[start] === '`') {
+    let escaped = false;
+    for (let index = start + 1; index < command.length; index += 1) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (command[index] === '\\') {
+        escaped = true;
+        continue;
+      }
+      if (command[index] === '`') return command.slice(start + 1, index);
+    }
+    return command.slice(start + 1);
+  }
+
+  let depth = 1;
+  let quote: "'" | '"' | undefined;
+  let escaped = false;
+  for (let index = start + 2; index < command.length; index += 1) {
+    const char = command[index];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (char === '\\' && quote !== "'") {
+      escaped = true;
+      continue;
+    }
+    if (quote) {
+      if (char === quote) quote = undefined;
+      continue;
+    }
+    if (char === "'" || char === '"') {
+      quote = char;
+      continue;
+    }
+    if (char === '$' && command[index + 1] === '(') {
+      depth += 1;
+      index += 1;
+      continue;
+    }
+    if (char !== ')') continue;
+    depth -= 1;
+    if (depth === 0) return command.slice(start + 2, index);
+  }
+  return command.slice(start + 2);
+}
+
+function substitutionNeedsFailClosed(command: string, start: number): boolean {
+  const content = commandSubstitutionContent(command, start);
+  return content.includes('>') || /\b(?:sh|bash|eval)\b/.test(content);
+}
+
 function shellRedirectTargets(command: string, depth = 0): ShellRedirectScan {
   const targets: string[] = [];
   const uncertain: string[] = [];
@@ -280,6 +350,7 @@ function shellRedirectTargets(command: string, depth = 0): ShellRedirectScan {
     if (
       quote !== "'"
       && (char === '`' || (char === '$' && command[index + 1] === '('))
+      && substitutionNeedsFailClosed(command, index)
       && !uncertain.includes('uncertain-redirection:command-substitution')
     ) {
       uncertain.push('uncertain-redirection:command-substitution');
@@ -311,7 +382,11 @@ function shellRedirectTargets(command: string, depth = 0): ShellRedirectScan {
   for (const segment of splitShellSegments(command)) {
     const words = readShellWords(segment);
     const lookup = findShellWrapper(words);
-    if (!lookup) continue;
+    if (!lookup) {
+      const fallbackWrapper = unresolvedIndirectWrapper(words);
+      if (fallbackWrapper) uncertain.push(`uncertain-redirection:${fallbackWrapper}`);
+      continue;
+    }
     const wrapperIndex = lookup.index;
     const wrapper = shellExecutableName(words[wrapperIndex]);
     const isShellWrapper = SHELL_COMMAND_WRAPPERS.has(wrapper);

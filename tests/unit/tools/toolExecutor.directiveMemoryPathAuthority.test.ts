@@ -209,6 +209,7 @@ describe('ToolExecutor directive memory path authority', () => {
     ['Bash optioned shell wrapper redirect', 'Bash', { command: `bash --noprofile -c "printf directive > ${path.join(memoryDir, 'c9.md')}"` }],
     ['Bash env split-string wrapper redirect', 'Bash', { command: `env -S 'sh -c "printf directive > ${path.join(memoryDir, 'c10.md')}"'` }],
     ['Bash shell wrapper quoted redirect', 'Bash', { command: `sh -c 'printf directive > "${path.join(memoryDir, 'quoted c11.md')}"'` }],
+    ['Bash unknown launcher wrapper redirect', 'Bash', { command: `setsid sh -c 'printf directive > "$CODE_AGENT_DATA_DIR/memory/c12.md"'` }],
     ['Bash append INDEX', 'Bash', { command: `printf entry >> ${path.join(memoryDir, 'INDEX.md')}` }],
     ['future declared writer', 'FutureArtifactWriter', { destination: path.join(memoryDir, 'future.md') }],
   ] as const;

@@ -130,12 +130,41 @@ describe('shell redirect write targets', () => {
     "sh${IFS}-c 'echo > f'",
     "sh$IFS-c 'echo > f'",
     "sh$'\\x20'-c 'echo > f'",
-  ])('normalizes IFS/ANSI-C whitespace glued wrappers before scanning: %s', (command) => {
+  ])('fails closed for IFS/ANSI-C whitespace glued wrappers: %s', (command) => {
     const result = resolve(command);
     expect(
       result.targets.includes(resolveCanonicalRunPath(path.join(workingDirectory, 'f')))
       || result.uncertain.length > 0,
     ).toBe(true);
+  });
+
+  it.each([
+    "sh$'\\x20'-c 'echo > f'",
+    "sh${IFS}-c 'echo > f'",
+    "s\\h -c 'x'",
+  ])('fails closed when the command word uses dynamic or escaped syntax: %s', (command) => {
+    expect(resolve(command).uncertain).toContain('uncertain-redirection:dynamic-command');
+  });
+
+  it('fails closed instead of resolving a wrapper target against a stale cwd', () => {
+    expect(resolve("cd .. && sh -c 'printf x > memory/c.md'")).toMatchObject({
+      targets: [],
+      uncertain: ['uncertain-redirection:cwd-changed'],
+    });
+  });
+
+  it('keeps absolute wrapper targets after a cwd change', () => {
+    expect(resolve("cd .. && sh -c 'printf x > /abs/p'")).toMatchObject({
+      targets: [resolveCanonicalRunPath('/abs/p')],
+      uncertain: [],
+    });
+  });
+
+  it('keeps resolving relative wrapper targets when the cwd is unchanged', () => {
+    expect(resolve("sh -c 'printf x > memory/c.md'")).toMatchObject({
+      targets: [resolveCanonicalRunPath(path.join(workingDirectory, 'memory/c.md'))],
+      uncertain: [],
+    });
   });
 
   it.each([
@@ -188,6 +217,7 @@ describe('shell redirect write targets', () => {
     "printf '%s' '$runner' -c 'x'",
     "sed 's/>/x/' f",
     'echo "a${IFS}b"',
+    'echo "$\'x\'"',
     'bash script.sh',
     'bash -x script.sh',
     'sh -x script.sh',

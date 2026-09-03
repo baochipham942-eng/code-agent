@@ -10,6 +10,8 @@
 // ============================================================================
 
 import type { ToolExecutionRecord, UserSimulation, UserSimulationRule } from './types';
+import type { PermissionRequestData } from '../tools/types';
+import type { RequestPermissionResult } from '../../shared/contract/permission';
 
 /** 澄清/确认交互面的工具名（产品侧 schema 单一真源为 askUserQuestion.schema.ts） */
 const USER_QUESTION_TOOL = 'AskUserQuestion';
@@ -216,5 +218,25 @@ export function buildPermissionDecider(
     const command = (request.details as { command?: unknown } | undefined)?.command;
     if (typeof command === 'string' && rejectCommands?.some((regex) => regex?.test(command))) return false;
     return true;
+  };
+}
+
+/**
+ * N-EVAL-USERDENY-PRECEDENCE：显式 scripted 策略与 case 级用户拒绝的合成，先问 case 意图——
+ * permissionDecider 命中拒 ⇒ 无论 scripted 结果如何都以模拟用户身份拒（denialSource:'user'）；
+ * case 未命中 ⇒ 照 scriptedHandler 原样返回（脚本拒文案保持不变）。
+ * 旧顺序（scripted 优先，只在 scripted 放行时才标 user）让 force-push 题的「模拟用户说不」从没生效：
+ * 模型读到「并非用户拒绝」就当脚本故障换写法重试（--force-with-lease 再试再被拒），12 轮爆 max_turns
+ * （第六程根因，第七程 main@bd77da446 复现）。
+ */
+export function narrowScriptedPermissionHandler(
+  scriptedHandler: (request: PermissionRequestData) => Promise<RequestPermissionResult>,
+  permissionDecider: (request: { toolName: string; [key: string]: unknown }) => boolean,
+): (request: PermissionRequestData) => Promise<RequestPermissionResult> {
+  return async (request) => {
+    if (!permissionDecider({ ...request, toolName: request.tool })) {
+      return { approved: false, denialSource: 'user' };
+    }
+    return scriptedHandler(request);
   };
 }

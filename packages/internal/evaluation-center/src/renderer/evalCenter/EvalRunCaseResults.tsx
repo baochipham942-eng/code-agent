@@ -54,12 +54,14 @@ export const EvalRunCaseResults: React.FC<EvalRunCaseResultsProps> = ({
                 className="w-full justify-start gap-2 text-left"
                 onClick={() => onOpenCase(caseId)}
               >
-                <span className={statusClassName(status)}>
-                  {getEvalStatusLabel(status, labels.runCaseStatus)}
-                </span>
-                <span className="font-mono text-zinc-300">{caseId}</span>
-                <span className="text-zinc-500">
-                  {labels.runCaseScore.replace('{score}', String(result.score))}
+                <span className="flex min-w-0 items-center gap-2">
+                  <span className={statusClassName(status)}>
+                    {getEvalStatusLabel(status, labels.runCaseStatus)}
+                  </span>
+                  <span className="font-mono text-zinc-300">{caseId}</span>
+                  <span className="text-zinc-500">
+                    {labels.runCaseScore.replace('{score}', String(result.score))}
+                  </span>
                 </span>
               </Button>
             </li>

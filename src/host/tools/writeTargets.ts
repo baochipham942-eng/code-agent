@@ -80,6 +80,7 @@ const SHELL_PARAMETER_EXPANSION = /\$(?:\{|[A-Za-z_]|[0-9@*#?$!-])/;
 const SHELL_COMMAND_STRING_OPTION = /^-[A-Za-z]*c[A-Za-z]*$/;
 const SHELL_ASSIGNMENT_PREFIX = /^[A-Za-z_][A-Za-z0-9_]*=/;
 const DYNAMIC_COMMAND_WORD = /^\$(?:[A-Za-z_][A-Za-z0-9_]*|\{[A-Za-z_][A-Za-z0-9_]*\})$/;
+const SHELL_CWD_MUTATORS = new Set(['cd', 'pushd', 'popd']);
 const ENV_OPTIONS_WITHOUT_VALUES = new Set(['-i', '--ignore-environment', '-0', '--null', '-v', '--debug']);
 const ENV_OPTIONS_WITH_VALUES = new Set(['-u', '--unset', '-C', '--chdir', '--argv0', '-P']);
 
@@ -291,17 +292,44 @@ function isDynamicCommandWord(word: string | undefined): boolean {
   return DYNAMIC_COMMAND_WORD.test(canonicalizeCommand(raw).command);
 }
 
+function hasDynamicCommandConstruction(word: string | undefined): boolean {
+  const raw = word?.trim() ?? '';
+  let quote: "'" | '"' | undefined;
+  for (let index = 0; index < raw.length; index += 1) {
+    const character = raw[index];
+    if (quote === "'") {
+      if (character === "'") quote = undefined;
+      continue;
+    }
+    if (character === '\\') return true;
+    if (character === '$') {
+      const next = raw[index + 1];
+      if (next === '{' || (next === "'" && quote !== '"')) return true;
+    }
+    if (character === '"') {
+      quote = quote === '"' ? undefined : '"';
+    } else if (character === "'" && !quote) {
+      quote = "'";
+    }
+  }
+  return false;
+}
+
+function isUncertainCommandWord(word: string | undefined): boolean {
+  return isDynamicCommandWord(word) || hasDynamicCommandConstruction(word);
+}
+
 function dynamicExecutionUncertainty(segment: string, words: string[]): string | undefined {
   const firstWord = readShellWord(segment, 0);
   if (
-    isDynamicCommandWord(words[0])
+    isUncertainCommandWord(words[0])
     && segment.slice(firstWord.end).trim() !== ''
   ) return 'dynamic-command';
 
   for (let index = 0; index < words.length; index += 1) {
     const previous = canonicalizeCommand(words[index - 1] ?? '').command;
     if (
-      isDynamicCommandWord(words[index])
+      isUncertainCommandWord(words[index])
       && (index === 0 || !previous.startsWith('-'))
       && hasShellCommandStringOption(words, index)
     ) {
@@ -320,6 +348,19 @@ function dynamicExecutionUncertainty(segment: string, words: string[]): string |
     if (words.slice(index + 1).some((word) => /^<<-?/.test(word))) return executable;
   }
   return undefined;
+}
+
+function segmentChangesWorkingDirectory(words: string[]): boolean {
+  let commandIndex = 0;
+  while (
+    commandIndex < words.length
+    && SHELL_ASSIGNMENT_PREFIX.test(canonicalizeCommand(words[commandIndex]).command)
+  ) commandIndex += 1;
+  return SHELL_CWD_MUTATORS.has(shellExecutableName(words[commandIndex]));
+}
+
+function isIndependentOfWorkingDirectory(target: string): boolean {
+  return path.isAbsolute(target) || target === '~' || target.startsWith('~/');
 }
 
 function commandSubstitutionContent(command: string, start: number): string {
@@ -378,9 +419,14 @@ function substitutionNeedsFailClosed(command: string, start: number): boolean {
 }
 
 function shellRedirectTargets(command: string, depth = 0): ShellRedirectScan {
+  const rawCommand = command;
   command = normalizeShellText(command);
   const targets: string[] = [];
   const uncertain: string[] = [];
+  for (const segment of splitShellSegments(rawCommand)) {
+    const rawDynamicUncertainty = dynamicExecutionUncertainty(segment, readShellWords(segment));
+    if (rawDynamicUncertainty) uncertain.push(`uncertain-redirection:${rawDynamicUncertainty}`);
+  }
   let quote: "'" | '"' | undefined;
   let escaped = false;
   for (let index = 0; index < command.length; index += 1) {
@@ -435,8 +481,11 @@ function shellRedirectTargets(command: string, depth = 0): ShellRedirectScan {
     index = Math.max(index, target.end - 1);
   }
 
+  let workingDirectoryMayHaveChanged = false;
   for (const segment of splitShellSegments(command)) {
     const words = readShellWords(segment);
+    const changedBeforeSegment = workingDirectoryMayHaveChanged;
+    workingDirectoryMayHaveChanged ||= segmentChangesWorkingDirectory(words);
     const dynamicUncertainty = dynamicExecutionUncertainty(segment, words);
     if (
       dynamicUncertainty
@@ -487,7 +536,15 @@ function shellRedirectTargets(command: string, depth = 0): ShellRedirectScan {
       continue;
     }
     const nested = shellRedirectTargets(decodedScript, depth + 1);
-    targets.push(...nested.targets);
+    if (changedBeforeSegment) {
+      const stableTargets = nested.targets.filter(isIndependentOfWorkingDirectory);
+      targets.push(...stableTargets);
+      if (stableTargets.length !== nested.targets.length) {
+        uncertain.push('uncertain-redirection:cwd-changed');
+      }
+    } else {
+      targets.push(...nested.targets);
+    }
     uncertain.push(...nested.uncertain);
   }
 

@@ -61,7 +61,7 @@ export const EvalCaseChecks: React.FC<EvalCaseChecksProps> = ({
               <th className="py-1 font-medium">{labels.checkName}</th>
               <th className="py-1 font-medium">{labels.expected}</th>
               <th className="py-1 font-medium">{labels.actual}</th>
-              <th className="py-1 text-right font-medium">score</th>
+              <th className="py-1 text-right font-medium">{labels.scoreColumn}</th>
             </tr>
           </thead>
           <tbody>

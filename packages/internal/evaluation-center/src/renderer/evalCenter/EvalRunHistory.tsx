@@ -287,11 +287,13 @@ export const EvalRunHistory: React.FC<EvalRunHistoryProps> = ({
           {comparison.transitions.map((item) => (
             <li key={item.caseId}>
               <Button variant="ghost" size="sm" className="w-full justify-start gap-2 text-left" onClick={() => setDrawerTarget({ experimentId: comparison.currentExperimentId, caseId: item.caseId })}>
-                <span className={item.kind === 'regressed' ? 'text-badge-danger' : 'text-badge-success'}>
-                  {item.kind === 'regressed' ? labels.caseStatusRegressed : labels.caseStatusFixed}
+                <span className="flex min-w-0 items-center gap-2">
+                  <span className={item.kind === 'regressed' ? 'text-badge-danger' : 'text-badge-success'}>
+                    {item.kind === 'regressed' ? labels.caseStatusRegressed : labels.caseStatusFixed}
+                  </span>
+                  <span className="font-mono text-zinc-300">{item.caseId}</span>
+                  <span className="text-zinc-500">{item.from} → {item.to}</span>
                 </span>
-                <span className="font-mono text-zinc-300">{item.caseId}</span>
-                <span className="text-zinc-500">{item.from} → {item.to}</span>
               </Button>
             </li>
           ))}
@@ -370,6 +372,9 @@ export const EvalRunHistory: React.FC<EvalRunHistoryProps> = ({
                         <span className="w-32 text-right font-mono">
                           {labels.passRate} {formatPercent(run.summary?.passRate)}
                           {delta !== null && <span className={`ml-1 ${delta < 0 ? 'text-badge-danger' : delta > 0 ? 'text-badge-success' : 'text-zinc-500'}`}>{formatDelta(delta)}</span>}
+                        </span>
+                        <span className="w-28 text-right font-mono text-zinc-500">
+                          {run.totalCostUsd !== undefined && replace(labels.runCost, { cost: formatUsd(run.totalCostUsd) })}
                         </span>
                         <span className="w-28 text-right text-zinc-500">
                           {tag === 'case-bank-updated' && <><span>{labels.caseBankUpdated}</span><small className="block">{labels.compareSharedCases}</small></>}

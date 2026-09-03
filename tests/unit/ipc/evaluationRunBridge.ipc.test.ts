@@ -250,20 +250,20 @@ describe('evaluation run IPC admin gate', () => {
   it('LIST_EXPERIMENTS 透出 caseResults.costUsd，有值求和、全缺保持 undefined', async () => {
     guard.denied = false;
     const { handlers } = setup();
-    database.loadExperiment.mockImplementation((id: string) => {
+    database.loadExperiment.mockImplementation((id?: string) => {
       if (id === 'eval-1') {
         return {
-          experiment: { id: 'eval-1' },
+          experiment: { id: 'eval-1', name: 'eval', timestamp: 1, model: 'm', provider: 'p', scope: 'full', source: 'eval', git_commit: 'a', config_json: '{}', summary_json: '{}' },
           cases: [
-            { case_id: 'case-1', status: 'passed', score: 1, data_json: JSON.stringify({ costUsd: 0.012 }) },
-            { case_id: 'case-2', status: 'failed', score: 0, data_json: JSON.stringify({ costUsd: 0.008 }) },
+            { case_id: 'case-1', status: 'passed', score: 1, duration_ms: 1, data_json: JSON.stringify({ costUsd: 0.012 }) },
+            { case_id: 'case-2', status: 'failed', score: 0, duration_ms: 1, data_json: JSON.stringify({ costUsd: 0.008 }) },
           ],
         };
       }
       return {
-        experiment: { id: 'compare-1' },
+        experiment: { id: 'compare-1', name: 'compare', timestamp: 2, model: 'm', provider: 'p', scope: 'full', source: 'compare', git_commit: 'b', config_json: '{"compare":{}}', summary_json: '{}' },
         cases: [
-          { case_id: 'case-1', status: 'failed', score: 0, data_json: JSON.stringify({ winner: 'baseline' }) },
+          { case_id: 'case-1', status: 'failed', score: 0, duration_ms: 1, data_json: JSON.stringify({ winner: 'baseline' }) },
         ],
       };
     });

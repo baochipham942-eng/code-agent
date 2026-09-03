@@ -714,35 +714,42 @@ describe('ExperimentAdapter canonical harness persistence', () => {
   it('report 导入路径：passed 题保留 costUsd，缺值不补 0', async () => {
     const db = createDbWriter();
     const adapter = new ExperimentAdapter(db as any);
-    const base = {
+    const baseResult = {
+      description: 'case',
       duration: 1,
       startTime: 1,
       endTime: 2,
-      toolExecutions: [],
-      responses: [],
-      errors: [],
+      toolExecutions: [] as TestRunSummary['results'][number]['toolExecutions'],
+      responses: [] as string[],
+      errors: [] as string[],
       turnCount: 1,
       score: 1,
     };
-    await adapter.persistTestRun({
+    const summary: TestRunSummary = {
       runId: 'cost-run',
       startTime: 1,
       endTime: 2,
       duration: 1,
       total: 2,
-      passed: 1,
+      plannedCaseIds: ['priced', 'legacy'],
+      completed: true,
+      passed: 2,
       failed: 0,
-      skipped: 1,
+      skipped: 0,
       partial: 0,
-      averageScore: 0.5,
+      notRun: 0,
+      invalidCases: 0,
+      averageScore: 1,
       gitCommit: 'abc',
       results: [
-        { testId: 'priced', description: 'priced', status: 'passed', costUsd: 0.012, ...base },
-        { testId: 'legacy', description: 'legacy', status: 'passed', ...base },
+        { testId: 'priced', status: 'passed', costUsd: 0.012, ...baseResult },
+        { testId: 'legacy', status: 'passed', ...baseResult },
       ],
+      stamp: { ...UNKNOWN_EVAL_RUN_STAMP },
       environment: { model: 'm', provider: 'p', workingDirectory: '/tmp' },
       performance: { avgResponseTime: 1, maxResponseTime: 1, totalToolCalls: 0, totalTurns: 1 },
-    } as TestRunSummary);
+    };
+    await adapter.persistTestRun(summary);
 
     const cases = db.insertExperimentCases.mock.calls[0]?.[1] as Array<{ case_id: string; data_json: string }>;
     const priced = JSON.parse(cases.find((item) => item.case_id === 'priced')!.data_json) as Record<string, unknown>;

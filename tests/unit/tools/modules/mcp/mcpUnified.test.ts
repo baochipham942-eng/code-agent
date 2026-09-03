@@ -77,6 +77,7 @@ interface MockClient {
   getStatus: ReturnType<typeof vi.fn>;
   getTools: ReturnType<typeof vi.fn>;
   getResources: ReturnType<typeof vi.fn>;
+  getPrompts: ReturnType<typeof vi.fn>;
   callTool: ReturnType<typeof vi.fn>;
   readResource: ReturnType<typeof vi.fn>;
   addServer: ReturnType<typeof vi.fn>;

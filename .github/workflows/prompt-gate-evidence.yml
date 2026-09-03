@@ -1,0 +1,68 @@
+name: Prompt Gate Evidence
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/host/prompts/**'
+      - '**/*.schema.ts'
+      - 'src/shared/constants/agent.ts'
+      - 'docs/eval/prompt-gate-latest.json'
+      - 'scripts/check-prompt-gate-evidence.ts'
+      - 'scripts/run-prompt-gate.ts'
+      - 'scripts/lib/prompt-change-paths.sh'
+      - 'scripts/lib/promptGateScope.ts'
+      - 'scripts/lib/releaseEvidenceRegistry.ts'
+      - 'tests/scripts/promptGateEvidence.test.ts'
+      - 'tests/scripts/runPromptGate.test.ts'
+      - 'package.json'
+      - '.github/workflows/prompt-gate-evidence.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'src/host/prompts/**'
+      - '**/*.schema.ts'
+      - 'src/shared/constants/agent.ts'
+      - 'docs/eval/prompt-gate-latest.json'
+      - 'scripts/check-prompt-gate-evidence.ts'
+      - 'scripts/run-prompt-gate.ts'
+      - 'scripts/lib/prompt-change-paths.sh'
+      - 'scripts/lib/promptGateScope.ts'
+      - 'scripts/lib/releaseEvidenceRegistry.ts'
+      - 'tests/scripts/promptGateEvidence.test.ts'
+      - 'tests/scripts/runPromptGate.test.ts'
+      - 'package.json'
+      - '.github/workflows/prompt-gate-evidence.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: prompt-gate-evidence-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  prompt-evidence:
+    name: Verify fresh prompt evaluation evidence
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Prompt gate contracts
+        run: npx vitest run tests/scripts/promptGateEvidence.test.ts tests/scripts/runPromptGate.test.ts
+
+      - name: Verify fresh prompt evaluation evidence
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: npx tsx scripts/check-prompt-gate-evidence.ts --base-ref "$BASE_REF"

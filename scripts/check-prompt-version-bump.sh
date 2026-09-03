@@ -16,14 +16,14 @@
 #      于是 TaskManager 的 description 被整段重写、Grep/Read/Write/Glob 的参数说明被
 #      改写，都一次没触发过 bump 要求。
 #
-# ②的收窄：只有排除注释/import/纯格式行之后仍有实质改动才算。改一行注释、调整 import
-# 顺序不该逼人 bump——那会把门变成噪音，而噪音门的下场是被 --no-verify 绕过。
+# ②覆盖 tools/modules 与 plugins/builtin；只有排除注释/import/纯格式行之后仍有实质改动
+# 才算。改一行注释、调整 import 顺序不该逼人 bump——那会把门变成噪音，而噪音门的
+# 下场是被 --no-verify 绕过。
 #
 # 门的盲区自陈：
 #   1) 只认 *.schema.ts。dynamicDescription 的运行时拼接逻辑住在同目录的 .ts 里
 #      （如 shell/dynamicDescription.ts），改它同样改变下发文本，本门看不见。
-#   2) 只扫 src/host/tools/modules/。plugins/ 下的工具 schema 不在扫描面。
-#   3) 只管「改了要 bump」，不管「bump 的值对不对」（没人拦你从 v9 跳到 v3）。
+#   2) 只管「改了要 bump」，不管「bump 的值对不对」（没人拦你从 v9 跳到 v3）。
 #   已修历史盲区：旧版按 diff 行首把所有 `*` / `//` / `import` 行都当成非实质内容，
 #   会误吞多行模板字符串中的 Markdown 标题、代码示例等模型可见文本。现在先按 TS 字符串/
 #   块注释状态过滤完整的 HEAD 与 staged 源码，再比较模型可见内容。
@@ -39,9 +39,9 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
-PROMPTS_DIR="src/host/prompts/"
-TOOL_MODULES_DIR="src/host/tools/modules/"
-VERSION_FILE="src/shared/constants/agent.ts"
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=scripts/lib/prompt-change-paths.sh
+source "$SCRIPT_DIR/lib/prompt-change-paths.sh"
 
 # staged 文件列表（含增/改/删/改名）
 staged=$(git diff --cached --name-only --diff-filter=ACMRD)
@@ -58,7 +58,7 @@ done <<< "$staged"
 # 判据：staged 的 *.schema.ts diff 里，剔掉 diff 头、注释行、import 行之后仍有增删。
 # 剔注释是为了让「只加一段说明」这类改动不必 bump——本门今天就是被一次纯注释改动触发的，
 # 那次真正该 bump 的原因其实在 tools/modules 下，而它当时根本不在扫描面里。
-schema_files=$(echo "$staged" | grep -E "^${TOOL_MODULES_DIR}.*\.schema\.ts$" || true)
+schema_files=$(echo "$staged" | grep -E "^(${TOOL_MODULES_DIR}|${BUILTIN_PLUGINS_DIR}).*\.schema\.ts$" || true)
 schema_changed=false
 schema_hits=""
 

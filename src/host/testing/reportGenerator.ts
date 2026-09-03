@@ -544,7 +544,11 @@ export function generateMarkdownReport(
  * Generate a JSON report
  */
 export function generateJsonReport(summary: TestRunSummary): string {
-  return JSON.stringify(summary, null, 2);
+  return JSON.stringify({
+    ...summary,
+    gitHead: summary.gitCommit ?? 'unknown',
+    promptVersion: summary.stamp.promptVersion,
+  }, null, 2);
 }
 
 function reportFailureCodebook() {

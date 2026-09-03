@@ -19,7 +19,6 @@ vi.mock('../../../src/renderer/hooks/useWorkbenchCapabilityRegistry', () => ({
 const agentRegistryState = { entries: [] as any[] };
 vi.mock('../../../src/renderer/stores/agentRegistryStore', () => ({
   useAgentRegistryStore: (selector: (state: typeof agentRegistryState) => unknown) => selector(agentRegistryState),
-  isPanelVisibleAgent: () => true,
 }));
 const appState = {
   activeAgentId: null as string | null,
@@ -95,5 +94,24 @@ describe('InputAddMenu 能力入口', () => {
 
     expect(screen.getByText('飞书')).toBeTruthy();
     expect(screen.queryByText(/推荐 · 默认关/)).toBeNull();
+  });
+
+  // 面板隐藏（builtin + PANEL_HIDDEN）不等于没激活：底栏徽标认未过滤 entries，菜单也要认，
+  // 否则同一个 agent 底栏露徽标、菜单里不标推荐
+  it('激活的专家是面板隐藏的内置 agent：菜单里照样标明推荐来源', () => {
+    registryState.mcpServers = [{ kind: 'mcp', id: 'lark', label: '飞书', selected: false, status: 'connected', enabled: true }];
+    appState.activeAgentId = 'coder';
+    agentRegistryState.entries = [{
+      id: 'coder',
+      name: '编程专家',
+      source: 'builtin',
+      connectors: [{ id: 'lark', level: 'optional' }],
+    }];
+
+    render(<InputAddMenu onFileSelect={vi.fn()} onSelectCapability={selectCapability} />);
+    fireEvent.click(screen.getByRole('button', { name: '更多输入选项' }));
+    fireEvent.click(screen.getByRole('button', { name: /连接器/ }));
+
+    expect(screen.getByText('编程专家 推荐 · 默认关')).toBeTruthy();
   });
 });

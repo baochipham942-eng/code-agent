@@ -21,7 +21,7 @@ vi.mock('../../../src/renderer/stores/composerStore', () => ({
   ),
 }));
 
-const skillState = { mountSource: 'manual' as 'manual' | 'auto' };
+const skillState = { mountSource: 'manual' as 'manual' | 'auto' | 'recommended' };
 
 vi.mock('../../../src/renderer/hooks/useWorkbenchCapabilityRegistry', () => ({
   useWorkbenchCapabilityRegistry: () => ({
@@ -106,6 +106,18 @@ describe('SelectedCapabilityChips', () => {
     const card = screen.getByTestId('selected-capability-source-docx');
     expect(card.textContent).toContain('默认带的');
     expect(card.textContent).toContain('点 ✕ 可移除');
+    expect(card.textContent).not.toContain('你在本会话加的');
+  });
+
+  // recommended 不是「默认带的」：系统推荐挂上的不会在新会话自动挂，文案不能串（ai-review 第八轮 Nit）
+  it('悬停胶囊：系统推荐挂上的写「系统推荐挂上的」，不冒充「默认带的」', () => {
+    skillState.mountSource = 'recommended';
+    render(<SelectedCapabilityChips />);
+
+    fireEvent.mouseEnter(screen.getByRole('group', { name: 'Docx' }).parentElement!);
+    const card = screen.getByTestId('selected-capability-source-docx');
+    expect(card.textContent).toContain('系统推荐挂上的');
+    expect(card.textContent).not.toContain('默认带的');
     expect(card.textContent).not.toContain('你在本会话加的');
   });
 });

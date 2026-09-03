@@ -32,9 +32,17 @@ import { getMCPClient } from '../../../mcp/mcpClient';
 import { isCuaStateV2Enabled } from '../../../mcp/cuaStateConfig';
 import { CUA_DRIVER_SERVER_NAME } from '../../../mcp/types';
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
+import { normalizeWorkbenchToolScope } from '../../workbenchToolScope';
 import { mcpUnifiedSchema as schema } from './mcpUnified.schema';
 import { executeMcpInvoke } from './mcpInvoke';
 import { executeMcpAddServer } from './mcpAddServer';
+
+// 本轮 MCP 收窄（turn scope）对 list 类输出同样生效：被收窄掉的 server 不列给模型——
+// 列出来它照单点名、invoke 在 dispatch 门被挡，「看见却调不动」比看不见更误导。
+function scopeAllowedMcpServerIds(ctx: ToolContext): string[] | undefined {
+  const ids = normalizeWorkbenchToolScope(ctx.toolScope)?.allowedMcpServerIds;
+  return ids?.length ? ids : undefined;
+}
 
 type MCPAction =
   | 'invoke'
@@ -142,9 +150,14 @@ function actionListTools(args: Record<string, unknown>, ctx: ToolContext): ToolR
     };
   }
 
+  const scopeIds = scopeAllowedMcpServerIds(ctx);
   const tools = mcpClient.getTools().filter((tool) =>
-    !(isCuaStateV2Enabled() && tool.serverName === CUA_DRIVER_SERVER_NAME));
+    !(isCuaStateV2Enabled() && tool.serverName === CUA_DRIVER_SERVER_NAME)
+    && (!scopeIds || scopeIds.includes(tool.serverName)));
   const visibleToolCount = tools.length;
+  const visibleServers = scopeIds
+    ? status.connectedServers.filter((serverName) => scopeIds.includes(serverName))
+    : status.connectedServers;
 
   const toolsByServer: Record<string, typeof tools> = {};
   for (const tool of tools) {
@@ -157,8 +170,24 @@ function actionListTools(args: Record<string, unknown>, ctx: ToolContext): ToolR
     toolsByServer[tool.serverName].push(tool);
   }
 
+  if (scopeIds && visibleServers.length === 0) {
+    const output = '本轮会话的工具范围已收窄，范围内没有已连接的 MCP 服务器。';
+    return {
+      ok: true,
+      output,
+      meta: {
+        server: filterServer,
+        action: 'list_tools',
+        resultKind: 'text',
+        count: 0,
+        truncated: false,
+        connectedServers: [],
+      },
+    };
+  }
+
   const lines: string[] = [];
-  lines.push(`已连接的 MCP 服务器: ${status.connectedServers.join(', ')}`);
+  lines.push(`已连接的 MCP 服务器: ${visibleServers.join(', ')}`);
   lines.push(`总工具数: ${visibleToolCount}`);
   lines.push('');
 
@@ -207,7 +236,7 @@ function actionListTools(args: Record<string, unknown>, ctx: ToolContext): ToolR
       count: returnedCount,
       totalCount: visibleToolCount,
       truncated: false,
-      connectedServers: status.connectedServers,
+      connectedServers: visibleServers,
       artifact: createVirtualArtifact({
         sourceTool: schema.name,
         kind: 'text',
@@ -238,10 +267,11 @@ function actionListResources(args: Record<string, unknown>, ctx: ToolContext): T
   const filterServer = typeof args.server === 'string' ? args.server : undefined;
   const mcpClient = getMCPClient();
   const resources = mcpClient.getResources();
+  const scopeIds = scopeAllowedMcpServerIds(ctx);
 
-  const filtered = filterServer
-    ? resources.filter((r) => r.serverName === filterServer)
-    : resources;
+  const filtered = resources.filter((r) =>
+    (!filterServer || r.serverName === filterServer)
+    && (!scopeIds || scopeIds.includes(r.serverName)));
 
   if (filtered.length === 0) {
     const output = filterServer

@@ -182,7 +182,8 @@ describe('MountedConnectorIcons（底栏挂载连接器 chip）', () => {
 
   it('专家声明的是 CLI 连接器时：卡上的名字和底栏手选那颗同一套，跳转也走 connector', () => {
     composerState.selectedConnectorIds = [];
-    registryState.connectors = [makeConnector('tmeet', false, false)];
+    // tmeet 没连上也不在手选里 ⇒ 真实管线里注册表查无此条，kind 靠 CLI descriptor 归侧（不靠夹具塞记录）
+    registryState.connectors = [];
     appState.activeAgentId = 'weekly';
     agentRegistryState.entries = [{
       id: 'weekly',

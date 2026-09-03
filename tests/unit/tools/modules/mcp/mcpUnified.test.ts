@@ -389,6 +389,54 @@ describe('mcpUnifiedModule (native)', () => {
         expect(result.output).not.toContain('### t2');
       }
     });
+
+    // turn scope 收窄生效时，list 输出不能把被收窄掉的 server 列给模型——
+    // 列出来它照单点名、invoke 在 dispatch 门被挡，「看见却调不动」比看不见更误导
+    it('turn scope 收窄时只列范围内 server 的工具', async () => {
+      const client = makeMockClient({
+        getStatus: vi.fn().mockReturnValue({
+          connectedServers: ['lark', 'github'],
+          inProcessServers: [],
+          toolCount: 2,
+          resourceCount: 0,
+          promptCount: 0,
+        }),
+        getTools: vi.fn().mockReturnValue([
+          { name: 't1', description: 'Lark tool', serverName: 'lark', inputSchema: {} },
+          { name: 't2', description: 'Github tool', serverName: 'github', inputSchema: {} },
+        ]),
+      });
+      getMCPClientMock.mockReturnValue(client);
+      const scopedCtx = makeCtx({ toolScope: { allowedMcpServerIds: ['lark'] } } as Partial<ToolContext>);
+      const result = await run({ action: 'list_tools' }, scopedCtx);
+      if (result.ok) {
+        expect(result.output).toContain('### t1');
+        expect(result.output).not.toContain('### t2');
+        expect(result.output).not.toContain('github');
+      }
+    });
+
+    it('turn scope 范围内没有已连接 server 时明说收窄，不谎称「没有已连接」', async () => {
+      const client = makeMockClient({
+        getStatus: vi.fn().mockReturnValue({
+          connectedServers: ['github'],
+          inProcessServers: [],
+          toolCount: 1,
+          resourceCount: 0,
+          promptCount: 0,
+        }),
+        getTools: vi.fn().mockReturnValue([
+          { name: 't2', description: 'Github tool', serverName: 'github', inputSchema: {} },
+        ]),
+      });
+      getMCPClientMock.mockReturnValue(client);
+      const scopedCtx = makeCtx({ toolScope: { allowedMcpServerIds: ['lark'] } } as Partial<ToolContext>);
+      const result = await run({ action: 'list_tools' }, scopedCtx);
+      if (result.ok) {
+        expect(result.output).toContain('本轮会话的工具范围已收窄');
+        expect(result.output).not.toContain('github');
+      }
+    });
   });
 
   describe('action: list_resources', () => {

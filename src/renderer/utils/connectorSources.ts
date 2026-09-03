@@ -10,6 +10,7 @@
 // ============================================================================
 
 import { resolveSessionConnectorIds, type ExpertConnector } from '@shared/contract/expertConnectors';
+import { CLI_CONNECTOR_DESCRIPTORS } from '@shared/constants/cliConnectorDescriptors';
 
 /**
  * connected = 这个连接器自己连上了，它的工具就在本轮工具表里；
@@ -34,7 +35,7 @@ export interface ExpertConnectorInstalledState {
 
 export interface ExpertConnectorSourceItem {
   id: string;
-  /** 去能力中心时跳哪一类；没装过的按 mcp 走——专家声明的 id 空间对齐 mcpCatalog */
+  /** 去能力中心时跳哪一类；CLI 连接器 id 是已知常量，没装过也能归侧，其余按 mcp——专家声明的 id 空间对齐 mcpCatalog */
   kind: 'connector' | 'mcp';
   label: string;
   reason?: string;
@@ -77,7 +78,11 @@ export function buildExpertConnectorSource(args: {
             ? 'lazy'
             : 'disconnected';
     const reason = byId.get(id)?.reason;
-    return { id, kind: state?.kind ?? 'mcp', label: args.resolveLabel(id), ...(reason ? { reason } : {}), status };
+    // installed 里查不到时按 id 本身归侧：CLI 连接器（feishu/tmeet）是已知常量，
+    // 没连上只是不在过滤后的注册表列表里，跳 MCP 侧会标错类、定位不到
+    const kind = state?.kind
+      ?? (CLI_CONNECTOR_DESCRIPTORS.some((descriptor) => descriptor.id === id) ? 'connector' : 'mcp');
+    return { id, kind, label: args.resolveLabel(id), ...(reason ? { reason } : {}), status };
   });
 
   const resolved = resolveSessionConnectorIds({

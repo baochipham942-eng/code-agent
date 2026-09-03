@@ -44,8 +44,13 @@ export function SelectedCapabilityChips() {
         const title = capability.blockedReason?.detail || getWorkbenchCapabilityTitle(capability, { locale: 'zh' });
         const dimmed = !capability.available || capability.blocked;
         const removeAria = t.selectedCapabilityChips.removeAria.replace('{name}', capability.label);
-        // 来源用挂载来源（怎么挂上的），不是 source（出自哪个库）——用户问的是「谁放的」
-        const byUser = capability.mountSource !== 'auto' && capability.mountSource !== 'recommended';
+        // 来源用挂载来源（怎么挂上的），不是 source（出自哪个库）——用户问的是「谁放的」。
+        // recommended 不是「默认带的」：它是系统推荐挂上的，不会在新会话自动挂
+        const sourceLine = capability.mountSource === 'auto'
+          ? `${sourceText.onByDefault}：${sourceText.skillRemovable}`
+          : capability.mountSource === 'recommended'
+            ? sourceText.recommendedMounted
+            : sourceText.addedByYou;
         return (
           <CapabilitySourceHover
             key={capability.key}
@@ -54,7 +59,7 @@ export function SelectedCapabilityChips() {
               <>
                 <p className="font-medium text-zinc-100">{capability.label}</p>
                 <p className="mt-1 text-[11px] text-zinc-400">
-                  {byUser ? sourceText.addedByYou : `${sourceText.onByDefault}：${sourceText.skillRemovable}`}
+                  {sourceLine}
                 </p>
                 <p className="mt-0.5 text-[11px] text-zinc-400">
                   {dimmed ? title : `● ${sourceText.turnActive}`}

@@ -452,16 +452,20 @@ function isConnectorSideId(connectorId: string): boolean {
   return isCliConnectorId(connectorId) || Boolean(getConnectorRegistry().get(connectorId));
 }
 
-function getReadySelectedConnectorIds(selectedConnectorIds?: string[]): string[] {
+function getReadySelectedConnectorIds(selectedConnectorIds?: string[], source: 'selected' | 'expert' = 'selected'): string[] {
   return (selectedConnectorIds || [])
     .map((connectorId) => connectorId.trim())
     .filter(Boolean)
     .filter((connectorId) => {
       const ready = isConnectorReadyForTurnScope(connectorId);
       if (!ready) {
-        logger.info('[WorkbenchTurnContext] Selected connector omitted from turn scope', {
-          connectorId,
-        });
+        // 两路的日志要分清：用户手选的 vs 专家声明的——排障时指错方向会白查半天
+        logger.info(
+          source === 'expert'
+            ? '[WorkbenchTurnContext] Expert-declared connector omitted from turn scope'
+            : '[WorkbenchTurnContext] Selected connector omitted from turn scope',
+          { connectorId },
+        );
       }
       return ready;
     });
@@ -549,7 +553,7 @@ export function withWorkbenchTurnSystemContext(
   // 这是拍板口径「先宽后收」，不是把工具集锁成空集。
   const allowedConnectorIds = explicitConnectorIds.length > 0
     ? explicitConnectorIds
-    : getReadySelectedConnectorIds(expertConnectorSideIds);
+    : getReadySelectedConnectorIds(expertConnectorSideIds, 'expert');
   // 专家那支的 MCP 也要过一次「连上了没」，和连接器那支同口径：没装 / 没连 / 名字写错的
   // 声明一旦进了 scope，会把**其他所有** MCP 工具挡掉（allowedMcpServerIds 非空即收窄）。
   // 用户手选是他自己的显式决定，专家声明是背后自动生效的，出错代价不该落到用户头上。

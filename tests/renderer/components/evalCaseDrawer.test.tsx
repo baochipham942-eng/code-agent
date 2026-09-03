@@ -68,6 +68,21 @@ describe('EvalCaseDrawer', () => {
     expect(screen.getByRole('dialog')).toBeTruthy();
   });
 
+  it('判定表列表头走 scoreColumn，中文是分数', async () => {
+    render(<EvalCaseDrawer target={{ experimentId: 'run-1', caseId: 'case-1' }} onClose={vi.fn()} />);
+    expect(await screen.findByRole('columnheader', { name: '分数' })).toBeTruthy();
+  });
+
+  it('结论条只留状态和原因，条判定只出现在判定表尾', async () => {
+    render(<EvalCaseDrawer target={{ experimentId: 'run-1', caseId: 'case-1' }} onClose={vi.fn()} />);
+    const summary = await screen.findByTestId('eval-case-check-summary');
+    const conclusion = screen.getByTestId('eval-case-conclusion');
+    expect(conclusion.textContent).toBe('失败 · 缺少预期产物');
+    expect(conclusion.textContent).not.toContain('条判定');
+    expect(summary.textContent).toContain('条判定');
+    expect(screen.getByRole('dialog').textContent?.match(/条判定/g)).toEqual(['条判定']);
+  });
+
   it.each([
     ['infra_excluded', '环境故障'],
     ['invalid', '判废'],
@@ -288,6 +303,11 @@ describe('EvalRunHistory case drawer entry', () => {
     const caseRow = screen.getByTestId('benchmark-run-case-run-single-case-2');
     const caseButton = caseRow.querySelector('button');
     expect(caseButton).toBeTruthy();
+    const cluster = caseButton!.querySelector('span.flex.min-w-0.items-center.gap-2');
+    expect(cluster).toBeTruthy();
+    expect(cluster!.textContent).toContain('失败');
+    expect(cluster!.textContent).toContain('case-2');
+    expect(cluster!.textContent).toContain('得分 0');
     fireEvent.click(caseButton!);
 
     await waitFor(() => expect(evaluation.invoke).toHaveBeenCalledWith(

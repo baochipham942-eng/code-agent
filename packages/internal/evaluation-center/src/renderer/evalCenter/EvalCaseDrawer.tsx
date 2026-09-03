@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Clock3, X } from 'lucide-react';
 import { IPC_DOMAINS } from '@shared/ipc/domains';
 import type { EvalExperimentCaseDetail } from '@shared/contract/evaluation';
@@ -79,11 +79,6 @@ export const EvalCaseDrawer: React.FC<EvalCaseDrawerProps> = ({ target, onClose 
   }, [target]);
 
   const excluded = excludesCapabilityResult(detail?.status);
-  const counts = useMemo(() => {
-    const checks = detail?.evidence?.checks ?? [];
-    const passed = checks.filter((check) => check.passed).length;
-    return { total: checks.length, passed, failed: checks.length - passed };
-  }, [detail]);
   const trials = detail?.evidence?.trialDetails ?? [];
   const selected = trials.find((trial) => trial.index === selectedTrial);
   const passedTrials = trials.filter((trial) => trial.status === 'passed').length;
@@ -94,7 +89,7 @@ export const EvalCaseDrawer: React.FC<EvalCaseDrawerProps> = ({ target, onClose 
   const statusLabel = detail ? getEvalStatusLabel(detail.status, labels.status) : labels.status.failed;
   const reason = detail?.failureLabel ?? detail?.failureReason ?? statusLabel;
   const conclusion = detail?.evidence && !excluded
-    ? fill(labels.conclusion, { status: statusLabel, reason, ...counts })
+    ? fill(labels.conclusion, { status: statusLabel, reason })
     : `${statusLabel}${reason !== statusLabel ? ` · ${reason}` : ''}${excluded ? ` · ${labels.excludedShort}` : ''}`;
 
   const editCase = () => {

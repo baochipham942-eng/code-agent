@@ -160,12 +160,20 @@ describe('MountedConnectorIcons（底栏挂载连接器 chip）', () => {
     expect(openCapabilitySettingsTarget).toHaveBeenCalledWith({ kind: 'connector', id: 'tmeet' });
   });
 
-  it('手选超过 4 颗折成 +N，不把底栏撑爆', () => {
+  it('手选超过 4 颗折成 +N，不把底栏撑爆；点开 +N 能看到被折的并保留 × 移除入口', () => {
     registryState.connectors = ['a', 'b', 'c', 'd', 'e', 'f'].map((id) => makeConnector(id));
     render(<MountedConnectorIcons />);
 
     expect(screen.getAllByTestId(/^mounted-capability-connector-/)).toHaveLength(4);
     expect(screen.getByTestId('mounted-capability-overflow').textContent).toBe('+2');
+
+    // 被折掉的第 5、6 颗不能丢 × 移除入口（ai-review 第十一轮 Nit）
+    fireEvent.click(screen.getByTestId('mounted-capability-overflow'));
+    expect(screen.getAllByTestId(/^mounted-capability-connector-/)).toHaveLength(6);
+    expect(screen.getByRole('button', { name: '取消挂载 f' })).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId('mounted-capability-overflow'));
+    expect(screen.getAllByTestId(/^mounted-capability-connector-/)).toHaveLength(4);
   });
 
   it('专家声明的 core 连接器：底栏多一颗组合 chip（徽标+条数），没有移除键', () => {

@@ -23,7 +23,7 @@ import type {
 import { getToolSearchService } from '../../../services/toolSearch/toolSearchService';
 import { getMCPClient } from '../../../mcp/mcpClient';
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
-import { normalizeWorkbenchToolScope } from '../../workbenchToolScope';
+import { normalizeWorkbenchToolScope, isToolNameAllowedByWorkbenchScope } from '../../workbenchToolScope';
 import { toolSearchSchema as schema } from './toolSearch.schema';
 import { getCapabilityRecommender } from '../../../services/capability';
 import { renderGaps } from '../planning/recommendCapability';
@@ -83,11 +83,16 @@ export async function executeToolSearch(
     });
 
     // 与 mcpUnified 同一份口径：本轮 MCP 收窄生效时，不把范围外 server 的工具搜出来——
-    // 搜出来模型照单点名、调用在 dispatch 门挨挡，「看见却调不动」比看不见更误导
+    // 搜出来模型照单点名、调用在 dispatch 门挨挡，「看见却调不动」比看不见更误导。
+    // 计数也要对齐过滤后的列表，否则「找到 N 个」与列出的条目对不上
     const scopedMcpServerIds = normalizeWorkbenchToolScope(ctx.toolScope)?.allowedMcpServerIds;
     if (scopedMcpServerIds?.length) {
       result.tools = result.tools.filter((tool) =>
         tool.source !== 'mcp' || !tool.mcpServer || scopedMcpServerIds.includes(tool.mcpServer));
+      result.loadedTools = result.loadedTools.filter((name) =>
+        isToolNameAllowedByWorkbenchScope(name, ctx.toolScope));
+      result.totalCount = result.tools.length;
+      result.hasMore = false;
       mcpDiscovery = mcpDiscovery.filter((entry) => scopedMcpServerIds.includes(entry.serverName));
     }
 

@@ -13,7 +13,7 @@
 // 手选与专家两支都空时不渲染，不占底栏格子。
 // ============================================================================
 
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { AlertCircle, Plug, Server, X } from 'lucide-react';
 import { CLI_CONNECTOR_DESCRIPTORS } from '@shared/constants/cliConnectorDescriptors';
 import { findRecommendedMcpServer } from '@shared/constants/mcpCatalog';
@@ -75,6 +75,8 @@ export const MountedConnectorIcons: React.FC = () => {
 
   const manual = [...connectors, ...mcpServers].filter((capability) => capability.selected);
   const expert = agentEntries.find((entry) => entry.id === activeAgentId);
+  // 折进 +N 的连接器不能丢 × 移除入口——+N 做成可展开/收起的开关
+  const [manualExpanded, setManualExpanded] = useState(false);
 
   const expertSource = useMemo(() => {
     const installed = new Map<string, ExpertConnectorInstalledState>();
@@ -111,8 +113,8 @@ export const MountedConnectorIcons: React.FC = () => {
 
   if (manual.length === 0 && !expertSource) return null;
 
-  const visibleManual = manual.slice(0, MAX_VISIBLE_MANUAL);
-  const overflowCount = manual.length - visibleManual.length;
+  const visibleManual = manualExpanded ? manual : manual.slice(0, MAX_VISIBLE_MANUAL);
+  const overflowCount = manual.length - Math.min(manual.length, MAX_VISIBLE_MANUAL);
   const expertName = expert?.name || expert?.id || '';
 
   const statusLine = (item: Pick<ExpertConnectorSourceItem, 'status'>) => (
@@ -211,14 +213,16 @@ export const MountedConnectorIcons: React.FC = () => {
       })}
 
       {overflowCount > 0 && (
-        <span
+        <button /* ds-allow:button: 溢出折叠的展开开关，纯文本语义，Button primitive 无此尺寸 */
+          type="button"
           data-testid="mounted-capability-overflow"
-          className="shrink-0 text-[11px] text-zinc-500"
-          title={text.overflowMore.replace('{count}', String(overflowCount))}
-          aria-label={text.overflowMore.replace('{count}', String(overflowCount))}
+          onClick={() => setManualExpanded((expanded) => !expanded)}
+          className="shrink-0 text-[11px] text-zinc-500 transition-colors hover:text-zinc-300"
+          title={manualExpanded ? text.overflowCollapse : text.overflowMore.replace('{count}', String(overflowCount))}
+          aria-label={manualExpanded ? text.overflowCollapse : text.overflowMore.replace('{count}', String(overflowCount))}
         >
-          +{overflowCount}
-        </span>
+          {manualExpanded ? '−' : `+${overflowCount}`}
+        </button>
       )}
 
       {expertSource && (

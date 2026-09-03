@@ -268,6 +268,9 @@ describe('mcpUnifiedModule (native)', () => {
       if (result.ok) {
         expect(result.output).toContain('已连接服务器: lark');
         expect(result.output).not.toContain('github');
+        // meta 与 artifact 同口径——UI / 遥测也不该看见范围外的 server
+        expect(result.meta?.connectedServers).toEqual(['lark']);
+        expect(result.meta?.count).toBe(1);
       }
     });
   });
@@ -456,6 +459,34 @@ describe('mcpUnifiedModule (native)', () => {
         expect(result.output).toContain('本轮会话的工具范围已收窄到：lark');
         expect(result.output).toContain('自动连接');
         expect(result.output).not.toContain('github');
+      }
+    });
+
+    // ai-review 第十一轮 Important：connectedServers 不含进程内 server（memory-kv/code-index
+    // 在 inProcessServers 里），收窄到它们时判空逻辑会谎报「未连接」并返回 0 个工具——
+    // 实际其工具就在 getTools() 里且可调用
+    it('收窄到进程内 server：工具照列，不谎报「未连接」', async () => {
+      const client = makeMockClient({
+        getStatus: vi.fn().mockReturnValue({
+          connectedServers: [],
+          inProcessServers: ['memory-kv'],
+          toolCount: 1,
+          resourceCount: 0,
+          promptCount: 0,
+        }),
+        getTools: vi.fn().mockReturnValue([
+          { name: 'kv_get', description: 'Read a key', serverName: 'memory-kv', inputSchema: {} },
+        ]),
+      });
+      getMCPClientMock.mockReturnValue(client);
+      const scopedCtx = makeCtx({ toolScope: { allowedMcpServerIds: ['memory-kv'] } } as Partial<ToolContext>);
+      const result = await run({ action: 'list_tools' }, scopedCtx);
+      if (result.ok) {
+        expect(result.output).not.toContain('未连接');
+        expect(result.output).not.toContain('当前没有已连接');
+        expect(result.output).toContain('### kv_get');
+        // 表头的「已连接」也要算上进程内那张表——空表头配非空工具列表同样是谎报
+        expect(result.output).toContain('已连接的 MCP 服务器: memory-kv');
       }
     });
   });

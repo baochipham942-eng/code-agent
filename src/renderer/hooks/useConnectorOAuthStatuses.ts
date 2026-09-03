@@ -38,7 +38,8 @@ export function useConnectorOAuthStatuses(refreshKey?: string): ConnectorOAuthSt
     let cancelled = false;
     void ipcService.invokeDomain<unknown>(IPC_DOMAINS.CONNECTOR, 'oauthStatus')
       .then((payload) => { if (!cancelled) setStatuses(parseStatuses(payload)); })
-      .catch(() => { if (!cancelled) setStatuses([]); });
+      // 拉取失败保留旧值——清空会把已连好的连接器瞬间翻成「未连接」并冒出假 CTA
+      .catch(() => undefined);
     return () => { cancelled = true; };
   }, [refreshKey]);
 

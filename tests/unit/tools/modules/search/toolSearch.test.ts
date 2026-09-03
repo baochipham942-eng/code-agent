@@ -266,6 +266,9 @@ describe('toolSearchModule (native)', () => {
       if (result.ok) {
         expect(result.output).toContain('mcp__lark__doc_read');
         expect(result.output).not.toContain('mcp__github__search_code');
+        // 计数与列出的条目对齐——不出现「找到 2 个」却只列 1 条、再补「还有 1 个」
+        expect(result.output).toContain('找到 1 个匹配工具');
+        expect(result.output).not.toContain('还有');
       }
     });
 

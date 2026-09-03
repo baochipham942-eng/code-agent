@@ -11,6 +11,7 @@
 
 import { resolveSessionConnectorIds, type ExpertConnector } from '@shared/contract/expertConnectors';
 import { CONNECTOR_TOOL_NAMES } from '@shared/contract/workbenchTools';
+import { NATIVE_CONNECTOR_IDS } from '@shared/constants/misc';
 
 /**
  * connected = 这个连接器自己连上了，它的工具就在本轮工具表里；
@@ -78,11 +79,13 @@ export function buildExpertConnectorSource(args: {
             ? 'lazy'
             : 'disconnected';
     const reason = byId.get(id)?.reason;
-    // installed 里查不到时按 id 本身归侧：连接器侧的 id（CLI 的 feishu/tmeet + 原生的
-    // mail/calendar…）都在 CONNECTOR_TOOL_NAMES 里有键——与宿主 isConnectorSideId 同一套
-    // 认知。没连上只是不在过滤后的注册表列表里，跳 MCP 侧会标错类、定位不到。
-    // 用 Object.hasOwn——`in` 走原型链，toString/constructor 这类 id 会被误归侧
-    const kind = state?.kind ?? (Object.hasOwn(CONNECTOR_TOOL_NAMES, id) ? 'connector' : 'mcp');
+    // installed 里查不到时按 id 本身归侧：连接器侧的 id = CONNECTOR_TOOL_NAMES 的键
+    //（CLI + 有工具的原生）∪ NATIVE_CONNECTOR_IDS（含没工具的 photos）——与宿主
+    // isConnectorSideId 同一套认知。没连上只是不在过滤后的注册表列表里，跳 MCP 侧会
+    // 标错类、定位不到。用 Object.hasOwn——`in` 走原型链，toString/constructor 这类 id 会被误归侧
+    const isConnectorSide = Object.hasOwn(CONNECTOR_TOOL_NAMES, id)
+      || (NATIVE_CONNECTOR_IDS as readonly string[]).includes(id);
+    const kind = state?.kind ?? (isConnectorSide ? 'connector' : 'mcp');
     return { id, kind, label: args.resolveLabel(id), ...(reason ? { reason } : {}), status };
   });
 

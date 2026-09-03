@@ -121,6 +121,15 @@ describe('buildExpertConnectorSource', () => {
     expect(source?.items[0]?.status).toBe('disconnected');
   });
 
+  // photos 没有工具、不在 CONNECTOR_TOOL_NAMES 里，但它是原生连接器（NATIVE_CONNECTOR_IDS）——
+  // 归侧不能只看工具表，否则「去能力中心」跳错到 MCP 页（ai-review 第十一轮 Nit）
+  it('专家声明的是 photos（没工具的原生连接器）：仍归 connector 侧', () => {
+    const source = build({
+      expertConnectors: [{ id: 'photos', level: 'core' }],
+    });
+    expect(source?.items[0]?.kind).toBe('connector');
+  });
+
   it('查不到目录名就退回 id，不让底栏出现空标签', () => {
     const source = build({
       expertConnectors: [{ id: 'unknown-one', level: 'core' }],

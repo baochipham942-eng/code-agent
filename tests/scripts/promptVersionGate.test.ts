@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 
 const repoRoot = resolve(fileURLToPath(new URL('../..', import.meta.url)));
 const gateSource = join(repoRoot, 'scripts', 'check-prompt-version-bump.sh');
+const pathsSource = join(repoRoot, 'scripts', 'lib', 'prompt-change-paths.sh');
 
 let scratch = '';
 let schemaFile = '';
@@ -33,9 +34,11 @@ beforeEach(() => {
   versionFile = join(scratch, 'src/shared/constants/agent.ts');
 
   mkdirSync(join(scratch, 'scripts'), { recursive: true });
+  mkdirSync(join(scratch, 'scripts/lib'), { recursive: true });
   mkdirSync(join(schemaFile, '..'), { recursive: true });
   mkdirSync(join(versionFile, '..'), { recursive: true });
   copyFileSync(gateSource, join(scratch, 'scripts/check-prompt-version-bump.sh'));
+  copyFileSync(pathsSource, join(scratch, 'scripts/lib/prompt-change-paths.sh'));
 
   writeFileSync(
     schemaFile,

@@ -75,6 +75,11 @@ const gates = [
     args: ['--yes', 'tsx', 'scripts/check-provider-runtime-release-evidence.ts', '--mode', 'static'],
   },
   {
+    ci: 'prompt-gate-evidence / prompt-evidence / Verify fresh prompt evaluation evidence',
+    command: 'npx',
+    args: ['--yes', 'tsx', 'scripts/check-prompt-gate-evidence.ts', '--base-ref', process.env.GATES_LOCAL_BASE_REF || 'origin/main'],
+  },
+  {
     ci: 'repository-structure / repository-structure / Check repository structure',
     command: 'node',
     args: ['scripts/ci/check-repository-structure.mjs'],

@@ -54,6 +54,14 @@ export const PROVIDER_RUNTIME_CAPABILITY_MATRIX = [{
 }];
 `);
   writeText(root, 'tests/unit/model/providerRuntimeCapabilities.test.ts', '// synthetic automated evidence\n');
+  writeText(root, 'scripts/lib/prompt-change-paths.sh', [
+    'PROMPTS_DIR="src/host/prompts/"',
+    'TOOL_MODULES_DIR="src/host/tools/modules/"',
+    'VERSION_FILE="src/shared/constants/agent.ts"',
+    '',
+  ].join('\n'));
+  writeText(root, 'src/shared/constants/agent.ts', "export const PROMPT_VERSION = 'sys-v1' as const;\n");
+  writeText(root, 'src/host/prompts/system.ts', "export const prompt = 'fixture';\n");
   writeJson(root, 'docs/capabilities/request-shapes/native-openai.json', {
     schemaVersion: 1,
     runtime: 'native',
@@ -138,6 +146,18 @@ export const PROVIDER_RUNTIME_CAPABILITY_MATRIX = [{
     scenarios: {
       RunRegistry: { passed: true, durationMs: 30, terminalCleanup: true },
       rendererStop: { passed: true, durationMs: 40, terminalCleanup: true },
+    },
+  });
+  writeJson(root, 'docs/eval/prompt-gate-latest.json', {
+    schemaVersion: 1,
+    generatedAt: '2026-07-11T00:00:00.000Z',
+    gitHead: head,
+    promptVersion: 'sys-v1',
+    passed: true,
+    steps: {
+      staleScan: { count: 5, passed: true },
+      replayEval: { count: 1, passed: true },
+      realSmoke: { count: 10, passed: true },
     },
   });
   writeText(root, 'docs/releases/stability-release-template.md', `# Stability Release\n\nProvider capability source: [matrix](../capabilities/provider-runtime-matrix.md) and [ledger](../capabilities/provider-runtime-live-smoke-ledger.json).\n`);

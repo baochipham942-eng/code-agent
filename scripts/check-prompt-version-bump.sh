@@ -39,9 +39,9 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
-PROMPTS_DIR="src/host/prompts/"
-TOOL_MODULES_DIR="src/host/tools/modules/"
-VERSION_FILE="src/shared/constants/agent.ts"
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=scripts/lib/prompt-change-paths.sh
+source "$SCRIPT_DIR/lib/prompt-change-paths.sh"
 
 # staged 文件列表（含增/改/删/改名）
 staged=$(git diff --cached --name-only --diff-filter=ACMRD)

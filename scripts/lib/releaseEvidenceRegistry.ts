@@ -33,7 +33,11 @@ export interface StopEvidence extends EvidenceProducerBase {
   scenarios: readonly string[];
 }
 
-export type ReleaseEvidenceProducer = LongSessionEvidence | StopEvidence;
+interface PromptGateEvidence extends EvidenceProducerBase {
+  shape: 'prompt-gate';
+}
+
+export type ReleaseEvidenceProducer = LongSessionEvidence | StopEvidence | PromptGateEvidence;
 
 /** 发版闸校验、release.yml 冻结 artifact 的那几份证据 */
 export const RELEASE_EVIDENCE_PRODUCERS: readonly ReleaseEvidenceProducer[] = [
@@ -55,6 +59,11 @@ export const RELEASE_EVIDENCE_PRODUCERS: readonly ReleaseEvidenceProducer[] = [
     producer: 'scripts/acceptance/agent-runtime-app-host-smoke.ts',
     smoke: 'agent-runtime-app-host',
     scenarios: ['RunRegistry', 'rendererStop'],
+  },
+  {
+    shape: 'prompt-gate',
+    evidence: 'docs/eval/prompt-gate-latest.json',
+    producer: 'scripts/run-prompt-gate.ts',
   },
 ];
 
@@ -91,7 +100,7 @@ export const NON_RELEASE_EVIDENCE_OUTPUTS: readonly AcknowledgedOutput[] = [
 export const EVIDENCE_SCAN = {
   roots: ['scripts'],
   extensions: ['.ts', '.mts', '.cts', '.js', '.mjs', '.cjs'],
-  evidenceDirs: ['docs/perf', 'docs/stability', 'docs/evidence'],
+  evidenceDirs: ['docs/perf', 'docs/stability', 'docs/evidence', 'docs/eval'],
 } as const;
 
 export const RELEASE_EVIDENCE_GATE_WORKFLOW = '.github/workflows/release-evidence-gate.yml';

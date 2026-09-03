@@ -250,6 +250,26 @@ describe('mcpUnifiedModule (native)', () => {
         expect(result.output).toContain('已连接服务器: 无');
       }
     });
+
+    // 与 list_tools / list_resources 同口径：状态清单也不摆出范围外的 server
+    it('turn scope 收窄时已连接清单只列范围内 server', async () => {
+      const client = makeMockClient({
+        getStatus: vi.fn().mockReturnValue({
+          connectedServers: ['lark', 'github'],
+          inProcessServers: [],
+          toolCount: 5,
+          resourceCount: 2,
+          promptCount: 1,
+        }),
+      });
+      getMCPClientMock.mockReturnValue(client);
+      const scopedCtx = makeCtx({ toolScope: { allowedMcpServerIds: ['lark'] } } as Partial<ToolContext>);
+      const result = await run({ action: 'status' }, scopedCtx);
+      if (result.ok) {
+        expect(result.output).toContain('已连接服务器: lark');
+        expect(result.output).not.toContain('github');
+      }
+    });
   });
 
   describe('action: list_tools', () => {

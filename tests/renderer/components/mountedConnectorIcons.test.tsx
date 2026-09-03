@@ -38,11 +38,8 @@ const registryState = {
   mcpServers: [] as any[],
 };
 
-vi.mock('../../../src/renderer/hooks/useWorkbenchCapabilityRegistry', () => ({
-  useWorkbenchCapabilityRegistry: () => ({ items: [], skills: [], ...registryState }),
-}));
-
-// 专家那颗的状态取自全量 serverStates（含 lazy 待连、含被关掉的），不是注册表过滤后的列表
+// 专家那颗与手选那颗的状态都取自全量 serverStates（含 lazy 待连、含被关掉的）——
+// 由 registry hook 同实例透出（真实管线如此，不再单独 mock 一个 useMcpServerStates）
 const makeServerState = (name: string, status: string, enabled = true) => ({
   config: { name, type: 'stdio', enabled },
   status,
@@ -50,8 +47,8 @@ const makeServerState = (name: string, status: string, enabled = true) => ({
   resourceCount: 0,
 });
 const mcpServerStatesState = [] as any[];
-vi.mock('../../../src/renderer/hooks/useMcpServerStates', () => ({
-  useMcpServerStates: () => mcpServerStatesState,
+vi.mock('../../../src/renderer/hooks/useWorkbenchCapabilityRegistry', () => ({
+  useWorkbenchCapabilityRegistry: () => ({ items: [], skills: [], ...registryState, mcpServerStates: mcpServerStatesState }),
 }));
 
 const openCapabilitySettingsTarget = vi.fn();
@@ -263,6 +260,7 @@ describe('MountedConnectorIcons（底栏挂载连接器 chip）', () => {
     composerState.selectedMcpServerIds = ['lark'];
     registryState.connectors = [makeConnector('tmeet', false)];
     registryState.mcpServers = [{ kind: 'mcp', key: 'mcp:lark', id: 'lark', label: 'lark', selected: true, status: 'lazy', enabled: true, available: false }];
+    mcpServerStatesState.push(makeServerState('lark', 'lazy'));
     render(<MountedConnectorIcons />);
 
     const chip = screen.getByTestId('mounted-capability-mcp-lark');
@@ -273,5 +271,23 @@ describe('MountedConnectorIcons（底栏挂载连接器 chip）', () => {
     const card = screen.getByTestId('mounted-capability-source-mcp-lark');
     expect(card.textContent).toContain('已装好，用到时自动连接');
     expect(screen.queryByRole('button', { name: /去能力中心连接/ })).toBeNull();
+  });
+
+  // ai-review 第九轮 Important：被能力中心关掉的 stdio 状态恒 lazy——手选这颗不看 enabled
+  // 就会误写「已装好」还不给出口，与专家那颗的 hub_off 口径打架
+  it('手选后被能力中心关掉：写「已在能力中心关闭」，给「去能力中心」出口，不冒充「已装好」', () => {
+    composerState.selectedConnectorIds = [];
+    composerState.selectedMcpServerIds = ['lark'];
+    registryState.connectors = [makeConnector('tmeet', false)];
+    registryState.mcpServers = [{ kind: 'mcp', key: 'mcp:lark', id: 'lark', label: 'lark', selected: true, status: 'lazy', enabled: false, available: false }];
+    mcpServerStatesState.push(makeServerState('lark', 'lazy', false));
+    render(<MountedConnectorIcons />);
+
+    fireEvent.mouseEnter(screen.getByTestId('mounted-capability-mcp-lark').parentElement!);
+    const card = screen.getByTestId('mounted-capability-source-mcp-lark');
+    expect(card.textContent).toContain('已在能力中心关闭，本轮不会用');
+    expect(card.textContent).not.toContain('已装好');
+    fireEvent.click(screen.getByRole('button', { name: /去能力中心/ }));
+    expect(openCapabilitySettingsTarget).toHaveBeenCalledWith({ kind: 'mcp', id: 'lark' });
   });
 });

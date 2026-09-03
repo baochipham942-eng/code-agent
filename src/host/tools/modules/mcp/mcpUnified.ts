@@ -182,6 +182,23 @@ function actionListTools(args: Record<string, unknown>, ctx: ToolContext): ToolR
         count: 0,
         truncated: false,
         connectedServers: [],
+        artifact: createVirtualArtifact({
+          sourceTool: schema.name,
+          kind: 'text',
+          sessionId: ctx.sessionId,
+          name: 'MCP tools',
+          mimeType: 'text/plain',
+          contentLength: output.length,
+          preview: output,
+          metadata: {
+            mcpToolList: true,
+            server: filterServer,
+            action: 'list_tools',
+            resultKind: 'text',
+            count: 0,
+            truncated: false,
+          },
+        }),
       },
     };
   }
@@ -499,11 +516,17 @@ async function actionReadResource(
 function actionStatus(ctx: ToolContext): ToolResult<string> {
   const mcpClient = getMCPClient();
   const status = mcpClient.getStatus();
+  // 与 list_tools / list_resources 同口径：收窄生效时不把范围外的 server 摆出来——
+  // 「看见却调不动」对状态清单同样成立
+  const scopeIds = scopeAllowedMcpServerIds(ctx);
+  const visibleServers = scopeIds
+    ? status.connectedServers.filter((serverName) => scopeIds.includes(serverName))
+    : status.connectedServers;
 
   const output = [
     '# MCP 连接状态',
     '',
-    `已连接服务器: ${status.connectedServers.length > 0 ? status.connectedServers.join(', ') : '无'}`,
+    `已连接服务器: ${visibleServers.length > 0 ? visibleServers.join(', ') : '无'}`,
     `可用工具: ${status.toolCount}`,
     `可用资源: ${status.resourceCount}`,
     `可用提示: ${status.promptCount}`,

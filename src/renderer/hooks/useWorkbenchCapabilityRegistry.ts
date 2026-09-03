@@ -3,13 +3,20 @@ import { useComposerStore } from '../stores/composerStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useSkillStore } from '../stores/skillStore';
 import { useConnectorStatuses } from './useConnectorStatuses';
-import { useMcpServerStates } from './useMcpServerStates';
+import { useMcpServerStates, type MCPServerStateSummary } from './useMcpServerStates';
 import {
   buildWorkbenchCapabilityRegistry,
   type WorkbenchCapabilityRegistry,
 } from '../utils/workbenchCapabilityRegistry';
 
-export function useWorkbenchCapabilityRegistry(): WorkbenchCapabilityRegistry {
+// mcpServers 那列是过滤过的（已连接 ∪ 手选）；要看「装好了但 lazy / 被关掉」的全量
+// 状态用这份原始 serverStates——从同一个 hook 实例透出来，免得消费方再挂一份
+// useMcpStatus（两对 IPC + 两个 MCP 事件监听）
+export type WorkbenchCapabilityRegistryWithStates = WorkbenchCapabilityRegistry & {
+  mcpServerStates: MCPServerStateSummary[];
+};
+
+export function useWorkbenchCapabilityRegistry(): WorkbenchCapabilityRegistryWithStates {
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
   const mountedSkills = useSkillStore((state) => state.mountedSkills);
   const availableSkills = useSkillStore((state) => state.availableSkills);
@@ -33,14 +40,17 @@ export function useWorkbenchCapabilityRegistry(): WorkbenchCapabilityRegistry {
     }
   }, [availableSkills.length, fetchAvailableSkills]);
 
-  return useMemo(() => buildWorkbenchCapabilityRegistry({
-    mountedSkills,
-    availableSkills,
-    selectedSkillIds,
-    connectorStatuses,
-    selectedConnectorIds,
+  return useMemo(() => ({
+    ...buildWorkbenchCapabilityRegistry({
+      mountedSkills,
+      availableSkills,
+      selectedSkillIds,
+      connectorStatuses,
+      selectedConnectorIds,
+      mcpServerStates,
+      selectedMcpServerIds,
+    }),
     mcpServerStates,
-    selectedMcpServerIds,
   }), [
     availableSkills,
     connectorStatuses,

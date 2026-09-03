@@ -111,6 +111,16 @@ describe('buildExpertConnectorSource', () => {
     ]);
   });
 
+  // 原生连接器（mail/calendar…）也是连接器侧——宿主 isConnectorSideId 同一套认知；
+  // 没连上时 installed 查不到，kind 靠 CONNECTOR_TOOL_NAMES 的键归侧，不跳错到 MCP 页
+  it('专家声明的是没连上的原生连接器：仍归 connector 侧', () => {
+    const source = build({
+      expertConnectors: [{ id: 'mail', level: 'core' }],
+    });
+    expect(source?.items[0]?.kind).toBe('connector');
+    expect(source?.items[0]?.status).toBe('disconnected');
+  });
+
   it('查不到目录名就退回 id，不让底栏出现空标签', () => {
     const source = build({
       expertConnectors: [{ id: 'unknown-one', level: 'core' }],

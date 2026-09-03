@@ -18,7 +18,6 @@ import { AlertCircle, Plug, Server, X } from 'lucide-react';
 import { CLI_CONNECTOR_DESCRIPTORS } from '@shared/constants/cliConnectorDescriptors';
 import { findRecommendedMcpServer } from '@shared/constants/mcpCatalog';
 import { useWorkbenchCapabilityRegistry } from '../../../../hooks/useWorkbenchCapabilityRegistry';
-import { useMcpServerStates } from '../../../../hooks/useMcpServerStates';
 import { useI18n } from '../../../../hooks/useI18n';
 import { useAppStore } from '../../../../stores/appStore';
 import { useComposerStore } from '../../../../stores/composerStore';
@@ -48,12 +47,11 @@ export const MountedConnectorIcons: React.FC = () => {
   const { t } = useI18n();
   const text = t.chatInput.connectorSource;
   const hubText = t.expert.roleSkills;
-  const { connectors, mcpServers } = useWorkbenchCapabilityRegistry();
-  // 专家那颗的状态必须看**全量** serverStates：注册表的 mcpServers 只合了
-  // 「已连接 ∪ 手选」（useWorkbenchCapabilities.ts 的 mergeVisibleIds），装好了但
-  // lazy 待连的 stdio server 不在里面——从 filtered 列表取状态会把健康配置误报成
+  // 状态必须看**全量** serverStates（registry hook 同实例透出的那份，不另挂一份
+  // useMcpStatus）：注册表的 mcpServers 只合了「已连接 ∪ 手选」，装好了但 lazy 待连、
+  // 或被能力中心关掉的 server 不在里面——从 filtered 列表取状态会把健康配置误报成
   // 「未连接」，hub_off 那一支也永远到不了（被关的必然不在列表里）。
-  const mcpServerStates = useMcpServerStates();
+  const { connectors, mcpServers, mcpServerStates } = useWorkbenchCapabilityRegistry();
   const activeAgentId = useAppStore((state) => state.activeAgentId);
   const openCapabilitySettingsTarget = useAppStore((state) => state.openCapabilitySettingsTarget);
   const agentEntries = useAgentRegistryStore((state) => state.entries);
@@ -136,13 +134,20 @@ export const MountedConnectorIcons: React.FC = () => {
         const logo = capability.kind === 'mcp'
           ? catalogEntry?.logo
           : CLI_CONNECTOR_DESCRIPTORS.find((descriptor) => descriptor.id === capability.id)?.logo;
-        // 手选的 MCP 也可能是 lazy（装好了、用到才连）——和专家那颗同口径，不误报「未连接」
-        const manualStatus: ExpertConnectorStatus = capability.available
-          ? 'connected'
-          : capability.kind === 'mcp' && 'status' in capability && (capability.status === 'lazy' || capability.status === 'connecting')
-            ? 'lazy'
-            : 'disconnected';
-        const needsHub = manualStatus === 'disconnected';
+        // 手选的 MCP 状态与专家那颗同一份全量 serverStates、同一套口径：
+        // 先判 hub_off（被关掉的 stdio 状态恒 lazy，不看 enabled 会误写成「已装好」），
+        // 再 lazy（装好了、用到才连），都不误报「未连接」
+        const serverState = capability.kind === 'mcp'
+          ? mcpServerStates.find((server) => server.config.name === capability.id)
+          : undefined;
+        const manualStatus: ExpertConnectorStatus = serverState?.config.enabled === false
+          ? 'hub_off'
+          : capability.available
+            ? 'connected'
+            : serverState && (serverState.status === 'lazy' || serverState.status === 'connecting')
+              ? 'lazy'
+              : 'disconnected';
+        const needsHub = manualStatus === 'disconnected' || manualStatus === 'hub_off';
         return (
           <CapabilitySourceHover
             key={capability.key}
@@ -158,7 +163,7 @@ export const MountedConnectorIcons: React.FC = () => {
                     onClick={() => goToHub(capability.kind === 'mcp' ? 'mcp' : 'connector', capability.id)}
                     className="mt-1.5 text-[11px] text-badge-accent hover:underline"
                   >
-                    {hubText.connectorGoConnect} →
+                    {manualStatus === 'hub_off' ? text.goHub : hubText.connectorGoConnect} →
                   </button>
                 )}
               </>

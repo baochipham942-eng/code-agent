@@ -36,10 +36,14 @@ describe('prompt gate evidence workflow', () => {
     expect(localSource).toContain("scripts/check-prompt-gate-evidence.ts', '--base-ref'");
   });
 
-  it('keeps full release bootstrap disabled until the first paid evidence is committed', () => {
+  // 2026-09-03 首份付费证据已提交：这条原来钉的是「bootstrap 前」的过渡态（registry false、release 不冻结），
+  // 它自己的名字就写明了失效条件；现在钉现行合同——三样必须同时在：证据文件、registry true、release 冻结。
+  it('keeps full release bootstrap enabled once the first paid evidence is committed', () => {
     const registrySource = fs.readFileSync(path.join(REPO_ROOT, 'scripts/lib/releaseEvidenceRegistry.ts'), 'utf8');
     const releaseSource = fs.readFileSync(path.join(REPO_ROOT, '.github/workflows/release.yml'), 'utf8');
-    expect(registrySource).toContain('bootstrapped: false');
-    expect(releaseSource).not.toContain('docs/eval/prompt-gate-latest.json');
+    expect(fs.existsSync(path.join(REPO_ROOT, 'docs/eval/prompt-gate-latest.json'))).toBe(true);
+    expect(registrySource).toContain('bootstrapped: true');
+    expect(registrySource).not.toContain('bootstrapped: false');
+    expect(releaseSource).toContain('docs/eval/prompt-gate-latest.json');
   });
 });

@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-09-03T05:24:57.250Z",
+  "gitHead": "8b5f524cbb17663fccb71a6d59edfd8e56804af6",
+  "promptVersion": "sys-v45",
+  "promptInputsHash": "82d31b6d887a2d1dd41f49cddcc0ecf2157f54cb84555d76b9e1a2f0e53efc84",
+  "passed": true,
+  "steps": {
+    "staleScan": {
+      "count": 5,
+      "passed": true
+    },
+    "replayEval": {
+      "count": 1,
+      "passed": true
+    },
+    "realSmoke": {
+      "count": 7,
+      "passed": true
+    }
+  }
+}

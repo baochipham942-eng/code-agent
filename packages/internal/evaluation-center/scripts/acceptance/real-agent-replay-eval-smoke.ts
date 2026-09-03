@@ -198,7 +198,12 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((error) => {
+// 同 N-EVAL-CI-NOEXIT（eval-ci.ts）：成功路径靠事件循环自然排空，真跑里数据库/遥测/运行时的常驻句柄
+// 让它排不空——09-03 首份 prompt-gate 证据实付：JSON 汇总已打印，进程挂 80 分钟不退，串它的
+// run-prompt-gate.ts 跟着永远等。活干完就退；先排空 stdout 再退，避免管道场景截断 JSON。
+main().then(() => {
+  process.stdout.write('', () => process.exit(process.exitCode ?? 0));
+}).catch((error) => {
   console.error(error instanceof Error ? error.message : String(error));
   process.exit(1);
 });

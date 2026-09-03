@@ -66,7 +66,8 @@ export const RELEASE_EVIDENCE_PRODUCERS: readonly ReleaseEvidenceProducer[] = [
     shape: 'prompt-gate',
     evidence: 'docs/eval/prompt-gate-latest.json',
     producer: 'scripts/run-prompt-gate.ts',
-    bootstrapped: false,
+    // 2026-09-03 首份付费真评测证据随本提交落 main（主控本机 `npm run eval:prompt-gate`），自此 full release 与冻结 artifact 都消费它
+    bootstrapped: true,
   },
 ];
 

@@ -45,6 +45,7 @@ interface PtySessionState {
   cols: number;
   rows: number;
   inputBuffer: string[];
+  onExit?: () => void;
   /**
    * 供 killProcessTree 使用的句柄视图（懒建、随会话长存）。
    * **不能每次现造**：整树退出边界记在 WeakSet 里、按对象身份认，现造的话防 pid 复用就失效。
@@ -134,6 +135,16 @@ function emitPtySessionLifecycleEvent(type: PtySessionLifecycleEventType, sessio
   } satisfies PtySessionLifecycleEvent);
 }
 
+function runPtySessionExitCallback(session: PtySessionState): void {
+  const onExit = session.onExit;
+  session.onExit = undefined;
+  try {
+    onExit?.();
+  } catch (error) {
+    console.error(`[PTY] Session ${session.sessionId} exit callback failed:`, error);
+  }
+}
+
 export function onPtySessionLifecycleEvent(
   listener: (event: PtySessionLifecycleEvent) => void,
 ): () => void {
@@ -160,6 +171,7 @@ export function createPtySession(options: {
   maxRuntime?: number;
   sessionId?: string;
   toolCallId?: string;
+  onExit?: () => void;
 }): { success: boolean; sessionId?: string; error?: string; outputFile?: string } {
   // Check session limit
   if (ptySessions.size >= MAX_PTY_SESSIONS) {
@@ -232,15 +244,18 @@ export function createPtySession(options: {
       cols,
       rows,
       inputBuffer: [],
+      onExit: options.onExit,
     };
 
     // Set timeout for max runtime
     const timeout = setTimeout(() => {
       if (sessionState.status === 'running') {
         console.warn(`[PTY] Session ${sessionId} exceeded max runtime, terminating...`);
-        void terminatePtyProcess(sessionState).catch((err: unknown) => {
-          console.error(`[PTY] Failed to kill session ${sessionId}:`, err);
-        });
+        void terminatePtyProcess(sessionState)
+          .then(() => runPtySessionExitCallback(sessionState))
+          .catch((err: unknown) => {
+            console.error(`[PTY] Failed to kill session ${sessionId}:`, err);
+          });
       }
     }, sessionState.maxRuntime);
 
@@ -273,6 +288,7 @@ export function createPtySession(options: {
 
       // Close output stream
       sessionState.outputStream?.end();
+      runPtySessionExitCallback(sessionState);
       emitPtySessionLifecycleEvent(sessionState.status === 'completed' ? 'completed' : 'failed', sessionState);
     });
 
@@ -384,6 +400,7 @@ export async function killPtySession(sessionId: string): Promise<{ success: bool
     // Update status
     session.status = 'failed';
     session.endTime = Date.now();
+    runPtySessionExitCallback(session);
 
     if (session.timeout) {
       clearTimeout(session.timeout);

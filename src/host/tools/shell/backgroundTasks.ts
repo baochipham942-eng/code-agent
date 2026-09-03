@@ -42,6 +42,7 @@ export interface TaskState {
   cwd: string;
   sessionId?: string;
   toolCallId?: string;
+  onExit?: () => void;
 }
 
 export interface TaskInfo {
@@ -70,6 +71,7 @@ export interface StartBackgroundTaskOptions {
   sessionId?: string;
   toolCallId?: string;
   env?: NodeJS.ProcessEnv;
+  onExit?: () => void;
 }
 
 export type BackgroundTaskLifecycleEventType = 'started' | 'completed' | 'failed';
@@ -166,6 +168,16 @@ function emitTaskLifecycleEvent(type: BackgroundTaskLifecycleEventType, task: Ta
   } satisfies BackgroundTaskLifecycleEvent);
 }
 
+function runTaskExitCallback(task: TaskState): void {
+  const onExit = task.onExit;
+  task.onExit = undefined;
+  try {
+    onExit?.();
+  } catch (error) {
+    console.error(`[BackgroundTasks] Task ${task.taskId} exit callback failed:`, error);
+  }
+}
+
 export function onBackgroundTaskLifecycleEvent(
   listener: (event: BackgroundTaskLifecycleEvent) => void,
 ): () => void {
@@ -232,6 +244,7 @@ export function startBackgroundTask(
     cwd,
     sessionId: options.sessionId,
     toolCallId: options.toolCallId,
+    onExit: options.onExit,
   };
 
   // Set timeout for max runtime
@@ -240,7 +253,8 @@ export function startBackgroundTask(
       console.warn(`[BackgroundTasks] Task ${taskId} exceeded max runtime, terminating...`);
       // 升级与整树退出确认都在 killProcessTree 内部；这里是定时器回调，没有 await
       // 的位置，交给它自己跑完（内部已吞掉所有信号异常，不会 reject）。
-      void killProcessTree(proc, { posixGroupKill: true });
+      void killProcessTree(proc, { posixGroupKill: true })
+        .then(() => runTaskExitCallback(taskState));
     }
   }, taskState.maxRuntime);
 
@@ -292,6 +306,7 @@ export function startBackgroundTask(
     if (taskState.outputStream && !taskState.outputStream.writableEnded) {
       taskState.outputStream.end();
     }
+    runTaskExitCallback(taskState);
     emitTaskLifecycleEvent(taskState.status === 'completed' ? 'completed' : 'failed', taskState);
   });
 
@@ -311,6 +326,7 @@ export function startBackgroundTask(
     if (taskState.timeout) {
       clearTimeout(taskState.timeout);
     }
+    runTaskExitCallback(taskState);
     emitTaskLifecycleEvent('failed', taskState);
   });
 
@@ -351,6 +367,7 @@ export async function killBackgroundTask(
     // Update status
     task.status = 'failed';
     task.endTime = Date.now();
+    runTaskExitCallback(task);
 
     return {
       success: true,

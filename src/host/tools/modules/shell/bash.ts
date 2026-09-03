@@ -639,6 +639,11 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
         || permissionModeManager.isUnattendedSession(ctx.sessionId)
         || (ctx.workspaceScope?.roots.length ?? 0) > 1);
     let sandboxCleanup: (() => void) | undefined;
+    const cleanupSandbox = () => {
+      const cleanup = sandboxCleanup;
+      sandboxCleanup = undefined;
+      cleanup?.();
+    };
     /** shouldSandbox 时把命令包装成带沙箱前缀的 shell 命令，否则原样返回 */
     const applySandbox = (cmd: string): { ok: true; command: string } | { ok: false; error: string } => {
       if (!shouldSandbox) return { ok: true, command: cmd };
@@ -679,23 +684,35 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
     if (usePty) {
       const sandboxed = applySandbox(normalizedCommand);
       if (!sandboxed.ok) return { ok: false, error: sandboxed.error, code: 'SANDBOX_UNAVAILABLE' };
-      const result = createPtySession({
-        command: sandboxed.command,
-        cwd: workingDirectory,
-        cols,
-        rows,
-        maxRuntime: timeout,
-        sessionId: ctx.sessionId,
-        toolCallId: ctx.currentToolCallId,
-        env: createEvalSafeShellEnv(undefined, workingDirectory, ctx.logger),
-        // The passed env already contains the full sanitized process.env minus
-        // filtered secrets. If we also inherited process.env here, the filtered
-        // secret vars would leak straight back in (ptyExecutor spreads
-        // process.env UNDER the passed env) — so never inherit.
-        inheritProcessEnv: false,
-      });
+      let result: ReturnType<typeof createPtySession>;
+      try {
+        result = createPtySession({
+          command: sandboxed.command,
+          cwd: workingDirectory,
+          cols,
+          rows,
+          maxRuntime: timeout,
+          sessionId: ctx.sessionId,
+          toolCallId: ctx.currentToolCallId,
+          env: createEvalSafeShellEnv(undefined, workingDirectory, ctx.logger),
+          // The passed env already contains the full sanitized process.env minus
+          // filtered secrets. If we also inherited process.env here, the filtered
+          // secret vars would leak straight back in (ptyExecutor spreads
+          // process.env UNDER the passed env) — so never inherit.
+          inheritProcessEnv: false,
+          ...(sandboxCleanup ? { onExit: cleanupSandbox } : {}),
+        });
+      } catch (error) {
+        cleanupSandbox();
+        return {
+          ok: false,
+          error: `Failed to create PTY session: ${error instanceof Error ? error.message : String(error)}`,
+          code: 'FS_ERROR',
+        };
+      }
 
       if (!result.success) {
+        cleanupSandbox();
         return {
           ok: false,
           error: result.error || 'Failed to create PTY session',
@@ -783,12 +800,24 @@ Use process_kill to terminate the session.`;
     if (runInBackground) {
       const sandboxed = applySandbox(normalizedCommand);
       if (!sandboxed.ok) return { ok: false, error: sandboxed.error, code: 'SANDBOX_UNAVAILABLE' };
-      const result = startBackgroundTask(sandboxed.command, workingDirectory, timeout, {
-        sessionId: ctx.sessionId,
-        toolCallId: ctx.currentToolCallId,
-        env: createEvalSafeShellEnv(undefined, workingDirectory, ctx.logger),
-      });
+      let result: ReturnType<typeof startBackgroundTask>;
+      try {
+        result = startBackgroundTask(sandboxed.command, workingDirectory, timeout, {
+          sessionId: ctx.sessionId,
+          toolCallId: ctx.currentToolCallId,
+          env: createEvalSafeShellEnv(undefined, workingDirectory, ctx.logger),
+          ...(sandboxCleanup ? { onExit: cleanupSandbox } : {}),
+        });
+      } catch (error) {
+        cleanupSandbox();
+        return {
+          ok: false,
+          error: `Failed to start background task: ${error instanceof Error ? error.message : String(error)}`,
+          code: 'FS_ERROR',
+        };
+      }
       if (!result.success) {
+        cleanupSandbox();
         const message = result.error || 'Failed to start background task';
         const diagnostics = diagnoseBashFailure({
           command: normalizedCommand,
@@ -1004,9 +1033,8 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
         meta: { ...(errorOutput ? { output: errorOutput } : {}), shellPath: shellPathMeta },
       };
     } finally {
-      // 清理本次前台命令的临时 sandbox profile 与命令级状态（PTY/后台进程异步存活，
-      // 其 profile 由 Seatbelt.cleanupOldProfiles 的 10 个上限自动回收）
-      sandboxCleanup?.();
+      // PTY/后台路径把 cleanup 交给执行器的退出回调；这里只收前台路径。
+      cleanupSandbox();
     }
   }
 }

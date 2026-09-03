@@ -32,17 +32,20 @@ const { createPtySession } = await import('../../../../src/host/tools/shell/ptyE
 describe('ptyExecutor environment isolation', () => {
   it('does not merge process secrets when the caller supplies a complete environment', async () => {
     process.env.AUTO_TEST_API_KEY = 'must-not-reappear';
+    const onExit = vi.fn();
     try {
       const result = createPtySession({
         command: 'true',
         cwd: configDir,
         env: { PATH: '/safe/bin' },
         inheritProcessEnv: false,
+        onExit,
       });
       await Promise.resolve();
 
       expect(result.success).toBe(true);
       expect(state.spawnedEnv).toEqual({ PATH: '/safe/bin', TERM: 'xterm-256color' });
+      expect(onExit).toHaveBeenCalledOnce();
     } finally {
       delete process.env.AUTO_TEST_API_KEY;
     }

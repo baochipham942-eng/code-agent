@@ -67,6 +67,22 @@ suite('bubblewrap wrapCommand 真实隔离', () => {
     expect(fs.existsSync(path.dirname(userConfig))).toBe(false);
   });
 
+  it('exec npm 退出后由宿主 cleanup 删除 bind 进沙箱的 npmHome', async () => {
+    const { command, cleanup } = wrapCommandForSandbox(
+      'exec npm config get userconfig',
+      { workingDirectory: projectDir, allowNetwork: false },
+    );
+    const r = await run(command, projectDir);
+    expect(r.code, r.stderr).toBe(0);
+    const userConfig = r.stdout.trim();
+    const npmHome = path.dirname(userConfig);
+    expect(fs.existsSync(npmHome)).toBe(true);
+
+    cleanup();
+
+    expect(fs.existsSync(npmHome), npmHome).toBe(false);
+  });
+
   it('敏感 home 文件读取被拒，但工作区 .env 仍可读', async () => {
     const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), 'bwrap-home-'));
     const originalHome = process.env.HOME;

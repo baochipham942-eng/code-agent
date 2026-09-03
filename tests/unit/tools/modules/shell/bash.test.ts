@@ -988,6 +988,104 @@ describe('bashModule OS 沙箱 gating（bypassPermissions）', () => {
     expect(cleanupMock).toHaveBeenCalled();
   });
 
+  it('bypassPermissions 档：后台任务结束时才清理 sandbox 临时状态', async () => {
+    modeMgr.setMode('bypassPermissions', true);
+    startBackgroundTaskMock.mockReturnValue({ success: true, taskId: 'sandbox-bg' });
+    const handler = await bashModule.createHandler();
+
+    const result = await handler.execute(
+      { command: 'exec npm config get userconfig', run_in_background: true },
+      makeCtx(),
+      allowAll,
+    );
+
+    expect(result.ok).toBe(true);
+    expect(cleanupMock).not.toHaveBeenCalled();
+    const options = startBackgroundTaskMock.mock.calls.at(-1)?.[3] as
+      | { onExit?: () => void }
+      | undefined;
+    expect(options?.onExit).toBeTypeOf('function');
+    options?.onExit?.();
+    options?.onExit?.();
+    expect(cleanupMock).toHaveBeenCalledOnce();
+  });
+
+  it('bypassPermissions 档：PTY 结束时才清理 sandbox 临时状态', async () => {
+    modeMgr.setMode('bypassPermissions', true);
+    createPtySessionMock.mockReturnValue({ success: true, sessionId: 'sandbox-pty' });
+    const handler = await bashModule.createHandler();
+
+    const result = await handler.execute(
+      { command: 'exec npm config get userconfig', pty: true },
+      makeCtx(),
+      allowAll,
+    );
+
+    expect(result.ok).toBe(true);
+    expect(cleanupMock).not.toHaveBeenCalled();
+    const options = createPtySessionMock.mock.calls.at(-1)?.[0] as
+      | { onExit?: () => void }
+      | undefined;
+    expect(options?.onExit).toBeTypeOf('function');
+    options?.onExit?.();
+    options?.onExit?.();
+    expect(cleanupMock).toHaveBeenCalledOnce();
+  });
+
+  it('bypassPermissions 档：PTY 或后台任务启动失败时立即清理 sandbox 临时状态', async () => {
+    modeMgr.setMode('bypassPermissions', true);
+    const handler = await bashModule.createHandler();
+    startBackgroundTaskMock.mockReturnValue({ success: false, error: 'background failed' });
+
+    const background = await handler.execute(
+      { command: 'npm config get userconfig', run_in_background: true },
+      makeCtx(),
+      allowAll,
+    );
+
+    expect(background.ok).toBe(false);
+    expect(cleanupMock).toHaveBeenCalledTimes(1);
+
+    createPtySessionMock.mockReturnValue({ success: false, error: 'pty failed' });
+    const pty = await handler.execute(
+      { command: 'npm config get userconfig', pty: true },
+      makeCtx(),
+      allowAll,
+    );
+
+    expect(pty.ok).toBe(false);
+    expect(cleanupMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('bypassPermissions 档：PTY 或后台执行器同步抛错时仍清理 sandbox 临时状态', async () => {
+    modeMgr.setMode('bypassPermissions', true);
+    const handler = await bashModule.createHandler();
+    startBackgroundTaskMock.mockImplementation(() => {
+      throw new Error('background exploded');
+    });
+
+    const background = await handler.execute(
+      { command: 'npm config get userconfig', run_in_background: true },
+      makeCtx(),
+      allowAll,
+    );
+
+    expect(background).toMatchObject({ ok: false, code: 'FS_ERROR' });
+    expect(cleanupMock).toHaveBeenCalledTimes(1);
+
+    createPtySessionMock.mockImplementation(() => {
+      throw new Error('pty exploded');
+    });
+    const pty = await handler.execute(
+      { command: 'npm config get userconfig', pty: true },
+      makeCtx(),
+      allowAll,
+    );
+
+    expect(pty).toMatchObject({ ok: false, code: 'FS_ERROR' });
+    expect(cleanupMock).toHaveBeenCalledTimes(2);
+  });
+
   it('bypassPermissions 档：越界写失败会把沙盒拒绝路径追加到模型输出', async () => {
     modeMgr.setMode('bypassPermissions', true);
     wrapMock.mockReturnValue({

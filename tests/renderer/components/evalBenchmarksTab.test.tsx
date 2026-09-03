@@ -398,6 +398,13 @@ describe('EvalBenchmarksTab 跑分闭环', () => {
     fireEvent.click(screen.getByTestId('benchmark-run-b').querySelector('button') as HTMLButtonElement);
     expect(await screen.findByText('50.0% → 50.0%')).toBeTruthy();
     expect(screen.getByText('case-1')).toBeTruthy();
+    const compareButton = screen.getByText('case-1').closest('button');
+    expect(compareButton).toBeTruthy();
+    const cluster = compareButton!.querySelector('span.flex.min-w-0.items-center.gap-2');
+    expect(cluster).toBeTruthy();
+    expect(cluster!.textContent).toMatch(/退步|进步/);
+    expect(cluster!.textContent).toContain('case-1');
+    expect(cluster!.textContent).toMatch(/passed|failed/);
   });
 
   it('T7-T10：基准置顶、变化按 caseId、灰标阻断规则、置灰理由常驻且两次点击才设置', async () => {

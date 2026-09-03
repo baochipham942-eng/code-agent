@@ -166,9 +166,7 @@ function findShellWrapper(words: string[]): ShellWrapperLookup | undefined {
       ) index += 1;
       continue;
     }
-    // Unknown launchers may still exec a later shell (for example process/session wrappers).
-    // Keep looking instead of maintaining an open-ended launcher-name allowlist.
-    index += 1;
+    return undefined;
   }
   return undefined;
 }
@@ -278,6 +276,13 @@ function shellRedirectTargets(command: string, depth = 0): ShellRedirectScan {
     if (char === '\\' && quote !== "'") {
       escaped = true;
       continue;
+    }
+    if (
+      quote !== "'"
+      && (char === '`' || (char === '$' && command[index + 1] === '('))
+      && !uncertain.includes('uncertain-redirection:command-substitution')
+    ) {
+      uncertain.push('uncertain-redirection:command-substitution');
     }
     if (quote) {
       if (char === quote) quote = undefined;

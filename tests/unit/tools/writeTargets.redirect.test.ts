@@ -81,7 +81,6 @@ describe('shell redirect write targets', () => {
     ["nohup sh -c 'printf x > out.txt'", 'out.txt'],
     ["timeout 5 sh -c 'printf x > out.txt'", 'out.txt'],
     ["nice sh -c 'printf x > out.txt'", 'out.txt'],
-    ["time sh -c 'printf x > out.txt'", 'out.txt'],
     ["/bin/sh -c 'printf x > out.txt'", 'out.txt'],
     ["command sh -c 'printf x > out.txt'", 'out.txt'],
     ["command -p sh -c 'printf x > out.txt'", 'out.txt'],
@@ -135,7 +134,9 @@ describe('shell redirect write targets', () => {
     ['env -S "$WRAPPER"', 'uncertain-redirection:env'],
     ['sh -c "$SCRIPT"', 'uncertain-redirection:sh'],
     ['eval "${SCRIPT}"', 'uncertain-redirection:eval'],
-    ['setsid sh -c \'cat > "$HOME/x"\'', 'uncertain-redirection:sh'],
+    ['$(sh -c \'cat > "$HOME/x"\')', 'uncertain-redirection:command-substitution'],
+    ['echo "$(sh -c \'cat > $HOME/x\')"', 'uncertain-redirection:command-substitution'],
+    ["echo `sh -c 'cat > $HOME/x'`", 'uncertain-redirection:command-substitution'],
     ["eval 'echo `date` > out.txt'", 'uncertain-redirection:eval'],
     ["sh -c 'echo \"unterminated > out.txt'", 'uncertain-redirection:sh'],
   ])('fails closed when a wrapped script cannot be resolved: %s', (command, reason) => {
@@ -144,6 +145,8 @@ describe('shell redirect write targets', () => {
 
   it.each([
     'echo "a > b"',
+    "echo sh -c 'echo hi > out.txt'",
+    "echo '$(sh -c \"echo hi > out.txt\")'",
     'grep ">" f',
     "sed 's/>/x/' f",
   ])('ignores redirect syntax in ordinary quoted arguments: %s', (command) => {

@@ -26,10 +26,15 @@ export interface ExpertConnectorSourceItem {
 export interface ExpertConnectorSource {
   items: ExpertConnectorSourceItem[];
   /**
-   * 这一轮专家那支是不是真生效。用户在本会话手选过连接器时整支让位（宿主同款判定），
-   * 图标照露——不露用户就永远不知道专家在用什么——但卡上要说清「这轮以你的选择为准」。
+   * 用户在本会话手选过连接器、把专家那支整支挤掉了（宿主 explicit > 专家 的同款判定）。
+   *
+   * 只表达「谁的选择说了算」，**不表达「这些工具真进了本轮工具面」**——后者由宿主
+   * 的 `isConnectorReadyForTurnScope`（workbenchTurnContext.ts:422）说了算，它要求
+   * id 在 connector registry 里存在，而专家声明的 id 空间是连接器目录（lark 这类 MCP
+   * 名）⇒ MCP 类 core 在宿主侧会被整批过滤掉。那是上游的病（N-EXPERT-CORE-MCPSCOPE），
+   * 渲染层拿不到最终 scope，所以这里也不许替它宣称「生效」。
    */
-  effective: boolean;
+  sessionOverridden: boolean;
   /** 有一条不是「已连接」就够了：组合图标右上角挂警示点 */
   hasIssue: boolean;
 }
@@ -59,11 +64,11 @@ export function buildExpertConnectorSource(args: {
     sessionSelectedIds: args.sessionSelectedIds,
     expertConnectors: args.expertConnectors,
   });
-  const effective = coreIds.every((id) => resolved.includes(id));
+  const sessionOverridden = !coreIds.every((id) => resolved.includes(id));
 
   return {
     items,
-    effective,
+    sessionOverridden,
     hasIssue: items.some((item) => item.status !== 'connected'),
   };
 }

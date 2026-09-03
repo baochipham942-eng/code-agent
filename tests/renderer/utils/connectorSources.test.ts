@@ -31,7 +31,7 @@ describe('buildExpertConnectorSource', () => {
 
   it('用户没手选：专家 core 这一轮生效，逐条带名字、理由、状态', () => {
     const source = build();
-    expect(source?.effective).toBe(true);
+    expect(source?.sessionOverridden).toBe(false);
     expect(source?.items).toEqual([
       { id: 'tmeet', kind: 'connector', label: '腾讯会议', reason: '读取会议纪要，整理进周报', status: 'connected' },
     ]);
@@ -42,7 +42,7 @@ describe('buildExpertConnectorSource', () => {
     const source = build({ sessionSelectedIds: ['feishu'] });
     // 露出（爸拍板：不可移除、要看得见专家在用什么），但不撒谎说它生效
     expect(source?.items.map((item) => item.id)).toEqual(['tmeet']);
-    expect(source?.effective).toBe(false);
+    expect(source?.sessionOverridden).toBe(true);
   });
 
   it('状态三分：已连接 / 未连接 / 已在能力中心关闭；任一条有问题就挂警示点', () => {

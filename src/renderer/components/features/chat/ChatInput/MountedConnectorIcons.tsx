@@ -169,7 +169,7 @@ export const MountedConnectorIcons: React.FC = () => {
           card={
             <>
               <p className="font-medium text-zinc-100">{text.expertGroupLabel.replace('{expert}', expertName)}</p>
-              {!expertSource.effective && (
+              {expertSource.sessionOverridden && (
                 <p className="mt-1 text-[11px] text-badge-warning">{text.expertOverridden}</p>
               )}
               <ul className="mt-1.5 space-y-2">
@@ -203,7 +203,7 @@ export const MountedConnectorIcons: React.FC = () => {
               .replace('{expert}', expertName)
               .replace('{count}', String(expertSource.items.length))}
             className={`relative inline-flex h-[24px] shrink-0 items-center gap-1 rounded-full border border-zinc-700/70 bg-zinc-800/40 px-1.5 text-xs text-zinc-400 ${
-              expertSource.effective ? '' : 'opacity-60'
+              expertSource.sessionOverridden ? 'opacity-60' : ''
             }`}
           >
             <RoleIcon name={expert?.icon} className="h-3 w-3 shrink-0" />

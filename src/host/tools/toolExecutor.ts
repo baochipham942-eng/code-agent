@@ -21,7 +21,12 @@ import { getAuditLogger, maskSensitiveData, isKnownSafeCommand, validateCommand,
 import { createFileCheckpointIfNeeded } from './middleware/fileCheckpointMiddleware';
 import { getFileCheckpointService } from '../services/checkpoint';
 import { getConfirmationGate } from '../agent/confirmationGate';
-import { type ClassificationResult } from './permissionClassifier';
+import {
+  bashCommandRequiresPermission,
+  readArgumentsRequirePermission,
+  recursiveRmIsContainedInWorkspace,
+  type ClassificationResult,
+} from './permissionClassifier';
 import type { SkillToolBoundary } from '../../shared/contract/agentSkill';
 import type { NeoTagRunContext } from '../../shared/contract/tag';
 import type { SwarmRunScope } from '../../shared/contract/swarm';
@@ -939,6 +944,31 @@ export class ToolExecutor {
     if (isBashToolName(policyToolName) && params.command) {
       commandValidation = validateCommand(params.command as string);
 
+      const workspaceContainedSystemDelete = !commandValidation.allowed
+        && commandValidation.securityFlags.some((flag) => (
+          flag === 'system_dir_delete' || flag === 'container_dir_delete'
+        ))
+        && commandValidation.securityFlags.every((flag) => (
+          flag === 'recursive_delete_targeted'
+          || flag === 'system_dir_delete'
+          || flag === 'container_dir_delete'
+        ))
+        && recursiveRmIsContainedInWorkspace(params.command as string, {
+          workingDirectory: resolveCanonicalRunPath(this.executionCwd),
+          workspaceRoot: this.writeWorkspaceRoot,
+        });
+      if (workspaceContainedSystemDelete) {
+        commandValidation = {
+          ...commandValidation,
+          allowed: true,
+          reason: 'Recursive/forced deletion of a specific workspace path',
+          riskLevel: 'high',
+          securityFlags: commandValidation.securityFlags.filter((flag) => (
+            flag !== 'system_dir_delete' && flag !== 'container_dir_delete'
+          )),
+        };
+      }
+
       // Block critical risk commands
       if (!commandValidation.allowed) {
         logger.warn('Command blocked by security', {
@@ -1097,6 +1127,22 @@ export class ToolExecutor {
       executionToolName,
       params,
     );
+    const bashArgumentForcesClassification = isBashToolName(policyToolName)
+      && typeof params.command === 'string'
+      && bashCommandRequiresPermission(params.command, {
+        workingDirectory: resolveCanonicalRunPath(this.executionCwd),
+        workspaceRoot: this.writeWorkspaceRoot,
+      });
+    const readArgumentForcesClassification = readArgumentsRequirePermission(
+      executionToolName,
+      params,
+      {
+        workingDirectory: resolveCanonicalRunPath(this.executionCwd),
+        workspaceRoot: this.writeWorkspaceRoot,
+      },
+    );
+    const argumentForcesClassification = bashArgumentForcesClassification
+      || readArgumentForcesClassification;
 
     // Check permission if required
     // Skill 系统：预授权工具跳过普通权限检查（但不能跳过边界违规或 consequence hard deny）
@@ -1105,6 +1151,7 @@ export class ToolExecutor {
       && !commandAnalysisFailedReason
       && !shellDesktopAutomation
       && !consequenceForcesClassification
+      && !argumentForcesClassification
       && !this.forcePermissionHandler
       && options.preApprovedTools !== undefined
       && options.preApprovedTools.size > 0
@@ -1138,7 +1185,7 @@ export class ToolExecutor {
       }
 
       // 2. 检查安全命令白名单
-      if (!isSafeCommand && isKnownSafeCommand(cmd)) {
+      if (!isSafeCommand && !bashArgumentForcesClassification && isKnownSafeCommand(cmd)) {
         isSafeCommand = true;
         logger.debug('Command is known safe, skipping approval', { command: cmd.substring(0, 80) });
         recordDecision(executionToolName, params, 'auto-approve', 'safe-command', permStartTime, undefined, effectiveSessionId, this.ledgerOrigin);
@@ -1157,7 +1204,7 @@ export class ToolExecutor {
       }
     }
 
-    if (toolDef.requiresPermission && (commandAnalysisFailedReason || this.forcePermissionHandler || writeWithoutWorkspaceAuthority || guardFabricForcesApproval || policyForcesConfirmation || boundaryViolation || readOnlyForcesConfirmation || shellDesktopAutomation || consequenceForcesClassification || (!isPreApproved && !isSafeCommand))) {
+    if ((toolDef.requiresPermission || readArgumentForcesClassification) && (commandAnalysisFailedReason || this.forcePermissionHandler || writeWithoutWorkspaceAuthority || guardFabricForcesApproval || policyForcesConfirmation || boundaryViolation || readOnlyForcesConfirmation || shellDesktopAutomation || consequenceForcesClassification || argumentForcesClassification || (!isPreApproved && !isSafeCommand))) {
       // P1: Auto-approve classifier — 规则+LLM 自动判断安全性
       let needsUserApproval = true;
       // 信任边界 ask（W3 写边界）→ forceConfirm：终审层便利放行必须让路（同 directory_access）。
@@ -1171,6 +1218,9 @@ export class ToolExecutor {
       const traceBuilder = createTraceBuilder(executionToolName);
       /** 分类器抛错（≠ 判 ask）时的错误串；非空表示这次「问用户」其实是故障回退。 */
       let classifierFailedReason: string | undefined;
+      // validateCommand 只描述已命中的危险形态；分类器因无法识别而 ask 时，
+      // `safe` 会误导审批卡。保留分析器本身不变，只在这次审批请求上标 unknown。
+      let commandRiskUnknown = Boolean(commandAnalysisFailedReason);
       if (guardFabricTraceStep) {
         traceBuilder.addStep(
           guardFabricTraceStep.layer,
@@ -1281,6 +1331,13 @@ export class ToolExecutor {
               );
             }
             // 'ask' — collect trace step for permission request
+            if (
+              classification.decision === 'ask'
+              && isBashToolName(policyToolName)
+              && commandValidation?.riskLevel === 'safe'
+            ) {
+              commandRiskUnknown = true;
+            }
             if (classification.trustBoundary) boundaryAskForcesConfirmation = true;
             if (classification.traceStep) {
               traceBuilder.addStep(
@@ -1337,7 +1394,12 @@ export class ToolExecutor {
       }
 
       if (needsUserApproval) {
-      const permissionRequest = this.buildPermissionRequest(toolDef, params, commandValidation);
+      const permissionRequest = this.buildPermissionRequest(
+        toolDef,
+        params,
+        commandValidation,
+        commandRiskUnknown ? 'unknown' : undefined,
+      );
       const deleteTarget = commandValidation && typeof params.command === 'string'
         ? extractDeleteTarget(params.command, commandValidation.securityFlags)
         : undefined;
@@ -1768,6 +1830,7 @@ export class ToolExecutor {
     tool: ToolDefinition,
     params: Record<string, unknown>,
     commandValidation?: ValidationResult,
+    commandRiskOverride?: 'unknown',
   ): PermissionRequestData {
     const sourceAttribution = (rawPath?: unknown): Record<string, unknown> => {
       const workspaceScope = this.runContext?.workspaceScope;
@@ -1798,7 +1861,7 @@ export class ToolExecutor {
           tool: tool.name,
           details: {
             command: params.command,
-            commandRiskLevel: commandValidation?.riskLevel,
+            commandRiskLevel: commandRiskOverride ?? commandValidation?.riskLevel,
             commandSecurityFlags: commandValidation?.securityFlags,
             ...sourceAttribution(params.working_directory),
           },

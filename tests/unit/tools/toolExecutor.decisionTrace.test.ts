@@ -126,6 +126,56 @@ describe('ToolExecutor decision trace history', () => {
     expect(entry.decisionTrace?.steps[0]?.layer).toBe('guard_fabric');
   });
 
+  it.each([
+    'rm -r child',
+    'chmod 755 scripts/run.sh',
+    './bin/kill -9 12345',
+    'f(){ echo hi; }; f',
+  ])('labels unrecognized approval %s as unknown instead of safe', async (command) => {
+    resolverState.getDefinition.mockReturnValue({
+      name: 'bash',
+      description: 'shell test tool',
+      inputSchema: { type: 'object', properties: {}, required: [] },
+      requiresPermission: true,
+      permissionLevel: 'execute',
+    });
+    const requestPermission = vi.fn().mockResolvedValue(false);
+    const executor = new ToolExecutor({ requestPermission, workingDirectory: '/tmp/workbench' });
+
+    await executor.execute('bash', { command }, { sessionId: 's1' });
+
+    expect(requestPermission).toHaveBeenCalledWith(expect.objectContaining({
+      details: expect.objectContaining({ commandRiskLevel: 'unknown' }),
+    }));
+  });
+
+  it('asks instead of blocking a resolved workspace child below /private/tmp', async () => {
+    resolverState.getDefinition.mockReturnValue({
+      name: 'bash',
+      description: 'shell test tool',
+      inputSchema: { type: 'object', properties: {}, required: [] },
+      requiresPermission: true,
+      permissionLevel: 'execute',
+    });
+    const requestPermission = vi.fn().mockResolvedValue(false);
+    const executor = new ToolExecutor({
+      requestPermission,
+      workingDirectory: '/private/tmp/approval-workbench',
+      forcePermissionHandler: true,
+    });
+
+    const result = await executor.execute(
+      'bash',
+      { command: 'rm -rf /private/tmp/approval-workbench/build' },
+      { sessionId: 's1' },
+    );
+
+    expect(result.error ?? '').not.toContain('Security: Command blocked');
+    expect(requestPermission).toHaveBeenCalledWith(expect.objectContaining({
+      details: expect.objectContaining({ commandRiskLevel: 'high' }),
+    }));
+  });
+
   it('denies an external Write ask in the headless handler without executing it', async () => {
     resolverState.getDefinition.mockReturnValue({
       name: 'Write',

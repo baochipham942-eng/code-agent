@@ -27,6 +27,7 @@ import { isBashToolName, normalizeToolName } from './toolNames';
 import { resolveCanonicalRunPath } from '../runtime/runContext';
 import { isPathWithinRoot } from '../runtime/workspaceScope';
 import { connectorExternalWriteReason, isConnectorToolName } from '../../shared/contract/workbenchTools';
+import { isSensitiveCredentialPath } from '../sandbox/sensitivePaths';
 
 const logger = createLogger('PermissionClassifier');
 
@@ -149,12 +150,11 @@ const MCPUNIFIED_READ_ONLY_ACTIONS = new Set(['status', 'list_tools', 'list_reso
 
 // 危险 bash 模式 — 始终拒绝或要求确认
 const DANGEROUS_BASH_PATTERNS: Array<{ pattern: RegExp; reason: string; decision: PermissionDecision }> = [
-  // flag 前缀用共享 RM_FLAGS_REQUIRED（短簇/长选项/=值/任意序）+ RM_HEAD 词边界
-  { pattern: new RegExp(`${RM_HEAD}${RM_FLAGS_REQUIRED}[/~]`), reason: '递归删除系统目录', decision: 'deny' },
+  // rm 的绝对/相对目标先解析为真实路径，再由 classifyResolvedRm 判 critical path。
   { pattern: new RegExp(`${RM_HEAD}${RM_FLAGS_REQUIRED}\\*`), reason: '递归删除通配符', decision: 'deny' },
   { pattern: />\s*\/dev\/sd/, reason: '直接写入块设备', decision: 'deny' },
   { pattern: /mkfs\s/, reason: '格式化文件系统', decision: 'deny' },
-  { pattern: /dd\s+if=/, reason: 'dd 磁盘操作', decision: 'deny' },
+  { pattern: /\bdd\b[^;&|]*\bof=\/dev\//, reason: 'dd 写入设备', decision: 'deny' },
   { pattern: /:\(\)\{.*\}/, reason: 'fork bomb', decision: 'deny' },
   { pattern: /chmod\s+(-R\s+)?777/, reason: '危险权限变更', decision: 'deny' },
   { pattern: /sudo\s+rm/, reason: 'sudo 删除', decision: 'ask' },
@@ -180,10 +180,19 @@ const HOME_DIR = os.homedir();
 const CLAUDE_MEMORY_DIR = path.join(HOME_DIR, '.claude', 'context', 'memory');
 const CLAUDE_PROJECTS_DIR = path.join(HOME_DIR, '.claude', 'projects');
 const CODEX_MEMORIES_DIR = path.join(HOME_DIR, '.codex', 'memories');
+const CREDENTIAL_READ_COMMANDS = new Set([
+  'cat', 'head', 'tail', 'less', 'more', 'bat', 'strings', 'xxd', 'base64', 'cp', 'scp',
+]);
+const SYSTEM_DIRECTORIES = [
+  'System', 'usr', 'bin', 'sbin', 'etc', 'var', 'private', 'opt', 'cores', 'dev', 'Network', 'Library',
+].map((name) => path.join(path.parse(HOME_DIR).root, name));
 
 function expandLeadingTilde(rawPath: string): string {
   if (rawPath === '~') return HOME_DIR;
   if (rawPath.startsWith('~/')) return path.join(HOME_DIR, rawPath.slice(2));
+  if (rawPath === '$HOME' || rawPath === '${HOME}') return HOME_DIR;
+  if (rawPath.startsWith('$HOME/')) return path.join(HOME_DIR, rawPath.slice(6));
+  if (rawPath.startsWith('${HOME}/')) return path.join(HOME_DIR, rawPath.slice(8));
   return rawPath;
 }
 
@@ -233,6 +242,159 @@ function isSensitiveMemoryPath(resolvedPath: string): boolean {
   }
 
   return false;
+}
+
+function commandWords(command: string): string[] {
+  return command.trim().split(/\s+/).filter(Boolean);
+}
+
+function commandProgram(word: string | undefined): string {
+  return word ? path.posix.basename(word) : '';
+}
+
+function gitCommand(command: string): { subcommand: string; args: string[] } | null {
+  const words = commandWords(command);
+  if (commandProgram(words[0]) !== 'git') return null;
+  let index = 1;
+  while (index < words.length && words[index].startsWith('-')) {
+    const option = words[index];
+    if (['-C', '-c', '--git-dir', '--work-tree', '--namespace'].includes(option)) index += 2;
+    else index += 1;
+  }
+  if (index >= words.length) return null;
+  return { subcommand: words[index], args: words.slice(index + 1) };
+}
+
+function gitMutationReason(command: string): string | null {
+  const git = gitCommand(command);
+  if (!git) return null;
+  if (git.subcommand === 'push') return 'git push 会写入远端';
+  if (git.subcommand === 'remote') {
+    const action = git.args.find((arg) => !arg.startsWith('-'));
+    return action && ['set-url', 'add', 'rename'].includes(action)
+      ? '修改 git 远端配置'
+      : null;
+  }
+  if (git.subcommand !== 'config') return null;
+
+  const readFlags = new Set(['--get', '--get-all', '--get-regexp', '--list', '-l', '--show-origin', '--show-scope']);
+  const mutationFlags = new Set(['--add', '--replace-all', '--unset', '--unset-all', '--remove-section', '--rename-section']);
+  const hasReadFlag = git.args.some((arg) => readFlags.has(arg));
+  const hasMutationFlag = git.args.some((arg) => mutationFlags.has(arg));
+  const operands = git.args.filter((arg) => !arg.startsWith('-'));
+  const key = operands[0]?.toLowerCase();
+  if (!key) return null;
+  const protectedKey = /^url\..+\.insteadof$/i.test(key)
+    || /^credential(?:\.|$)/i.test(key)
+    || key === 'core.sshcommand'
+    || key === 'http.proxy';
+  return protectedKey && !hasReadFlag && (hasMutationFlag || operands.length >= 2)
+    ? '修改 git 远端或凭据配置'
+    : null;
+}
+
+function credentialReadTarget(command: string, context: ClassificationContext): string | null {
+  const words = commandWords(command);
+  if (!CREDENTIAL_READ_COMMANDS.has(commandProgram(words[0]))) return null;
+  const projectRoot = context.workspaceRoot ?? context.workingDirectory;
+  for (const word of words.slice(1)) {
+    if (!word || word.startsWith('-')) continue;
+    const resolved = resolveCandidatePath(word, context.workingDirectory);
+    if (isSensitiveCredentialPath(resolved, { homeDir: HOME_DIR, projectRoot })) return resolved;
+  }
+  return null;
+}
+
+function readPathCandidates(args: Record<string, unknown>): string[] {
+  return Object.entries(args)
+    .filter(([key, value]) => {
+      if (typeof value !== 'string' || !value.trim()) return false;
+      return key.includes('path') || key === 'pattern';
+    })
+    .map(([, value]) => value as string);
+}
+
+function resolvedRecursiveRmTargets(command: string, workingDirectory: string): string[] | null {
+  const words = commandWords(command);
+  if (commandProgram(words[0]) !== 'rm') return null;
+  const flags = words.slice(1).filter((word) => word.startsWith('-') && word !== '--');
+  const recursive = flags.some((flag) => flag === '--recursive' || /^-[A-Za-z]*[rR]/.test(flag));
+  if (!recursive) return null;
+
+  return words.slice(1)
+    .filter((word) => !word.startsWith('-'))
+    .map((target) => resolveCandidatePath(target, workingDirectory));
+}
+
+function resolvedRmCriticalTarget(command: string, context: ClassificationContext): string | null {
+  const workdir = path.resolve(context.workingDirectory);
+  const workspace = path.resolve(context.workspaceRoot ?? workdir);
+  const targets = resolvedRecursiveRmTargets(command, workdir);
+  if (!targets) return null;
+
+  for (const resolved of targets) {
+    const root = path.parse(resolved).root;
+    const rootLevel = path.dirname(resolved) === root;
+    const home = resolved === HOME_DIR;
+    const workdirOrParent = isPathInside(workdir, resolved);
+    if (resolved === root || rootLevel || home || workdirOrParent) return resolved;
+
+    // The workspace boundary is authoritative even when macOS places the
+    // checkout below /private/tmp. Its descendants continue through the
+    // normal classifier chain instead of inheriting a lexical system-dir deny.
+    if (isPathInside(resolved, workspace)) continue;
+
+    const systemDirectory = SYSTEM_DIRECTORIES.some((directory) => isPathInside(resolved, directory));
+    if (systemDirectory) return resolved;
+  }
+  return null;
+}
+
+export function recursiveRmIsContainedInWorkspace(
+  command: string,
+  context: Pick<ClassificationContext, 'workingDirectory' | 'workspaceRoot'>,
+): boolean {
+  const workdir = path.resolve(context.workingDirectory);
+  const workspace = path.resolve(context.workspaceRoot ?? workdir);
+  const targets = resolvedRecursiveRmTargets(command, workdir);
+  if (!targets?.length) return false;
+  return targets.every((resolved) => (
+    isPathInside(resolved, workspace)
+    && !isPathInside(workdir, resolved)
+  ));
+}
+
+/**
+ * P0 safe-command bypass must not skip actions whose arguments change the
+ * permission decision. Keep this predicate beside the classifier rules so the
+ * fast path and full classification cannot drift.
+ */
+export function bashCommandRequiresPermission(
+  command: string,
+  context: Pick<ClassificationContext, 'workingDirectory' | 'workspaceRoot'>,
+): boolean {
+  const canonical = checkCommandPolicy(command).canonicalCommand;
+  const segments = splitCompoundCommand(canonical);
+  if (!segments) return false;
+  return segments.some((segment) => (
+    credentialReadTarget(segment, { ...context, permissionLevel: 'execute' }) !== null
+    || gitMutationReason(segment) !== null
+  ));
+}
+
+export function readArgumentsRequirePermission(
+  toolName: string,
+  args: Record<string, unknown>,
+  context: Pick<ClassificationContext, 'workingDirectory' | 'workspaceRoot'>,
+): boolean {
+  if (!READ_ONLY_TOOLS.has(toolName)) return false;
+  return readPathCandidates(args).some((candidate) => {
+    const resolved = resolveCandidatePath(candidate, context.workingDirectory);
+    return isSensitiveCredentialPath(resolved, {
+      homeDir: HOME_DIR,
+      projectRoot: context.workspaceRoot ?? context.workingDirectory,
+    });
+  });
 }
 
 // ----------------------------------------------------------------------------
@@ -477,15 +639,24 @@ export class PermissionClassifier {
       return null;
     }
 
-    const candidates = Object.entries(args)
-      .filter(([key, value]) => {
-        if (typeof value !== 'string' || !value.trim()) return false;
-        return key.includes('path') || key === 'pattern';
-      })
-      .map(([, value]) => value as string);
+    const candidates = readPathCandidates(args);
 
     for (const candidate of candidates) {
       const resolved = resolveCandidatePath(candidate, context.workingDirectory);
+      if (isSensitiveCredentialPath(resolved, {
+        homeDir: HOME_DIR,
+        projectRoot: context.workspaceRoot ?? context.workingDirectory,
+      })) {
+        const reason = `读取凭据路径需要用户确认: ${resolved}`;
+        return {
+          decision: 'ask',
+          reason,
+          confidence: 1,
+          cached: false,
+          traceStep: createTraceStep('permission_classifier', 'R0: sensitive_credential_read', 'ask', reason, startTime),
+          trustBoundary: true,
+        };
+      }
       if (!isSensitiveMemoryPath(resolved)) continue;
 
       const reason = `读取私人记忆目录需要用户确认: ${resolved}`;
@@ -556,7 +727,7 @@ export class PermissionClassifier {
     if (segments.length === 1) {
       // 拆段器会丢弃尾部空段；只有整串确实等于该段时才允许走单段 cd 快捷判断。
       if (segments[0] !== trimmed) return null;
-      return this.classifyBashSegment(segments[0], startTime);
+      return this.classifyBashSegment(segments[0], context, startTime);
     }
 
     // cd 只改变后续段的相对路径基准，不降低那些段的风险等级。
@@ -572,7 +743,7 @@ export class PermissionClassifier {
 
     let strictest: ClassificationResult | null = null;
     for (const segment of executableSegments) {
-      const result = this.classifyBashSegment(segment, startTime) ?? this.createUnknownCompoundAsk(segment, startTime);
+      const result = this.classifyBashSegment(segment, context, startTime) ?? this.createUnknownCompoundAsk(segment, startTime);
       if (result.decision === 'deny') return result;
       if (!strictest || result.decision === 'ask') strictest = result;
     }
@@ -581,7 +752,49 @@ export class PermissionClassifier {
   }
 
   /** 对单个 Bash 段按 B1 → B4 分类。 */
-  private classifyBashSegment(command: string, startTime: number): ClassificationResult | null {
+  private classifyBashSegment(
+    command: string,
+    context: ClassificationContext,
+    startTime: number,
+  ): ClassificationResult | null {
+    const rmCriticalTarget = resolvedRmCriticalTarget(command, context);
+    if (rmCriticalTarget) {
+      const reason = `危险命令: 递归删除关键路径 ${rmCriticalTarget}`;
+      return {
+        decision: 'deny',
+        reason,
+        confidence: 1,
+        cached: false,
+        traceStep: createTraceStep('permission_classifier', 'B1: resolved_rm_critical_path', 'deny', reason, startTime),
+      };
+    }
+
+    const sensitiveTarget = credentialReadTarget(command, context);
+    if (sensitiveTarget) {
+      const reason = `读取凭据路径需要用户确认: ${sensitiveTarget}`;
+      return {
+        decision: 'ask',
+        reason,
+        confidence: 1,
+        cached: false,
+        traceStep: createTraceStep('permission_classifier', 'B1: sensitive_credential_read', 'ask', reason, startTime),
+        trustBoundary: true,
+      };
+    }
+
+    const gitReason = gitMutationReason(command);
+    if (gitReason) {
+      const reason = `${gitReason}，需要用户确认`;
+      return {
+        decision: 'ask',
+        reason,
+        confidence: 1,
+        cached: false,
+        traceStep: createTraceStep('permission_classifier', 'B1: git_remote_or_credential_write', 'ask', reason, startTime),
+        trustBoundary: true,
+      };
+    }
+
     // B1: 危险模式检测
     for (const { pattern, reason, decision } of DANGEROUS_BASH_PATTERNS) {
       if (pattern.test(command)) {
@@ -808,6 +1021,14 @@ export class PermissionClassifier {
       const command = (args.command as string) || '';
       const normalized = command.trim().replace(/\s+/g, ' ');
       return crypto.createHash('md5').update(`${namespace}:bash:${normalized}`).digest('hex');
+    }
+
+    if (READ_ONLY_TOOLS.has(toolName)) {
+      // Credential decisions are file-specific: README.md and .env in the same
+      // directory must never share an approval cache entry.
+      return crypto.createHash('md5').update(
+        `${namespace}:${normalizeToolName(toolName)}:${JSON.stringify(args)}`,
+      ).digest('hex');
     }
 
     // 其他工具：标准化参数后 hash

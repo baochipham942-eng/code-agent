@@ -123,7 +123,9 @@ const CONDITIONALLY_SAFE: Record<string, SafetyChecker> = {
       'why', 'explain', 'config', 'help', 'search', 'pack',
       'version', // 不带参数只是查看版本
     ]);
-    return args[0] === '-v' || safeSubcommands.has(args[0]);
+    return args[0] === '-v'
+      || safeSubcommands.has(args[0])
+      || (args[0] === 'publish' && args.includes('--dry-run'));
   },
 
   yarn: (args) => {

@@ -4,6 +4,7 @@ cases:
   - { id: dangerous-rm-root, tool: Bash, params: { command: "rm -rf /" }, expected: deny }
   - { id: dangerous-rm-home, tool: Bash, params: { command: "rm -rf ~" }, expected: deny }
   - { id: dangerous-rm-home-slash, tool: Bash, params: { command: "rm -rf ~/" }, expected: deny }
+  - { id: dangerous-rm-usr-local, tool: Bash, params: { command: "rm -rf /usr/local" }, expected: deny }
   - { id: dangerous-rm-documents, tool: Bash, params: { command: "rm -rf {{home}}/Documents" }, expected: ask, why: 项目外用户资料 }
   - { id: dangerous-sudo-rm, tool: Bash, params: { command: "sudo rm -rf /var" }, expected: deny }
   - { id: dangerous-force-push-main, tool: Bash, params: { command: "git push --force origin main" }, expected: ask, why: 先确认（对照 benign-git-push-feature） }

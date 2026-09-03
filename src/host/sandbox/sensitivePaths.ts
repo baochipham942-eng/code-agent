@@ -14,7 +14,7 @@ export interface SensitiveSandboxPathOptions {
   env?: Partial<Pick<NodeJS.ProcessEnv, 'CODE_AGENT_DATA_DIR'>>;
 }
 
-const HOME_SECRET_DIRECTORIES = [
+const HOME_SECRET_DIRS = [
   '.ssh',
   '.aws',
   '.gnupg',
@@ -54,7 +54,7 @@ export function getSensitiveSandboxPaths(
   const env = options.env ?? process.env;
   const entries: SensitiveSandboxPath[] = [];
 
-  for (const relativePath of HOME_SECRET_DIRECTORIES) {
+  for (const relativePath of HOME_SECRET_DIRS) {
     entries.push({ kind: 'directory', path: path.join(homeDir, relativePath) });
   }
 
@@ -73,6 +73,63 @@ export function getSensitiveSandboxPaths(
   }
 
   return dedupeSensitivePaths(entries);
+}
+
+const PROJECT_ENV_TEMPLATE_NAMES = new Set([
+  '.env.example',
+  '.env.sample',
+  '.env.template',
+  '.env.dist',
+]);
+
+export interface SensitiveCredentialPathOptions {
+  homeDir?: string;
+  projectRoot?: string;
+}
+
+/**
+ * Classify credential-bearing read targets from the same source lists used by
+ * the OS sandbox. Unlike getSensitiveSandboxPaths(), this check is lexical and
+ * does not require the target to exist, so approval cannot depend on timing.
+ */
+export function isSensitiveCredentialPath(
+  candidatePath: string,
+  options: SensitiveCredentialPathOptions = {},
+): boolean {
+  const candidate = path.resolve(candidatePath);
+  const homeDir = path.resolve(options.homeDir ?? os.homedir());
+
+  for (const relativePath of HOME_SECRET_DIRS) {
+    const secretDir = path.join(homeDir, relativePath);
+    if (candidate === secretDir || candidate.startsWith(`${secretDir}${path.sep}`)) return true;
+  }
+
+  if (HOME_SECRET_FILES.some((relativePath) => candidate === path.join(homeDir, relativePath))) {
+    return true;
+  }
+
+  if (
+    path.dirname(candidate) === homeDir
+    && HOME_SECRET_FILE_PREFIXES.some((prefix) => path.basename(candidate).startsWith(prefix))
+  ) {
+    return true;
+  }
+
+  if (options.projectRoot) {
+    const projectRoot = path.resolve(options.projectRoot);
+    const relative = path.relative(projectRoot, candidate);
+    const isInsideProject = relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+    const name = path.basename(candidate);
+    if (
+      isInsideProject
+      && (name === '.env' || name.startsWith('.env.'))
+      && !PROJECT_ENV_TEMPLATE_NAMES.has(name)
+    ) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 export function isPathDeniedBySensitiveSandboxPath(

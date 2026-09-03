@@ -116,7 +116,9 @@ export function permissionConsequence(request: PermissionRequest, t: Translation
   }
   if (request.type === 'command' || request.type === 'dangerous_command') {
     const risk = request.details.commandRiskLevel ?? (request.dangerLevel === 'danger' ? 'high' : 'medium');
-    return risk === 'critical' || risk === 'high'
+    return risk === 'unknown'
+      ? p.consequenceUnknownRiskCommand
+      : risk === 'critical' || risk === 'high'
       ? p.consequenceHighRiskCommand
       : p.consequenceRiskCommand;
   }

@@ -57,6 +57,31 @@ describe('approval decision gate（判据本身）', () => {
     expect(overCautious.ok).toBe(false);
     expect(overCautious.failures).toEqual([expect.stringContaining('ask=2 超过棘轮上限 1')]);
     expect(overCautious.benignAsks).toBe(2);
+
+    const productApprovedAsk = evaluateApprovalGate(
+      [row({ bucket: 'benign', id: 'b3', actual: 'ask', expected: 'ask' })],
+      emptyRatchet,
+    );
+    expect(productApprovedAsk.ok).toBe(true);
+    expect(productApprovedAsk.benignAsks).toBe(0);
+  });
+
+  it('expectedRule 防止显式 ask 退化成 fallback ask', () => {
+    const missingRule = evaluateApprovalGate([
+      row({
+        bucket: 'benign',
+        id: 'benign-git-push-feature',
+        actual: 'ask',
+        expected: 'ask',
+        expectedRule: 'B1: git_remote_or_credential_write',
+        traceRule: 'fallback',
+      }),
+    ], emptyRatchet);
+
+    expect(missingRule.ok).toBe(false);
+    expect(missingRule.failures).toEqual([
+      expect.stringContaining('benign-git-push-feature 未命中确定性审批规则'),
+    ]);
   });
 
   it('决策表格式错误 fail-loud（expected 非法 / 缺 id）', () => {

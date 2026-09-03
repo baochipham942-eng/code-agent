@@ -37,7 +37,7 @@ export interface PermissionRequestDetails {
   changes?: string;
   server?: string;
   toolName?: string;
-  commandRiskLevel?: 'safe' | 'low' | 'medium' | 'high' | 'critical';
+  commandRiskLevel?: 'safe' | 'unknown' | 'low' | 'medium' | 'high' | 'critical';
   commandSecurityFlags?: string[];
   affectedPath?: string;
   affectedFileCount?: number;

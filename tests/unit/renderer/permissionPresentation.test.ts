@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { PermissionRequest } from '../../../src/renderer/components/PermissionDialog/types';
-import { isSafeDefaultDeny } from '../../../src/renderer/components/PermissionDialog/permissionPresentation';
+import { permissionConsequence, isSafeDefaultDeny } from '../../../src/renderer/components/PermissionDialog/permissionPresentation';
+import { decisionCardZh } from '../../../src/renderer/i18n/decisionCard';
 
 const baseRequest: PermissionRequest = {
   id: 'permission-test',
@@ -117,4 +118,15 @@ describe('isSafeDefaultDeny', () => {
   ])('$name', ({ request, expected }) => {
     expect(isSafeDefaultDeny(request)).toBe(expected);
   });
+});
+
+it('describes unknown command risk without calling it safe', () => {
+  const request: PermissionRequest = {
+    ...baseRequest,
+    tool: 'Bash',
+    type: 'command',
+    details: { command: './bin/kill -9 12345', commandRiskLevel: 'unknown' },
+  };
+
+  expect(permissionConsequence(request, decisionCardZh as never)).toBe('命令风险无法自动判定，需要你确认后才能执行。');
 });

@@ -4,6 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import {
   getSensitiveSandboxPaths,
+  isSensitiveCredentialPath,
   isPathDeniedBySensitiveSandboxPath,
 } from '../../../../src/host/sandbox/sensitivePaths';
 
@@ -53,5 +54,16 @@ describe('sensitive sandbox paths', () => {
       expect(entries).toContainEqual({ kind: 'file', path: path.join(dataDir, '.env') });
       expect(entries).toContainEqual({ kind: 'file', path: path.join(dataDir, 'code-agent.db') });
     }
+  });
+
+  it('classifies credential read targets without depending on file existence', () => {
+    const home = '/Users/tester';
+    const project = '/Users/tester/work/repo';
+
+    expect(isSensitiveCredentialPath('/Users/tester/.aws/credentials', { homeDir: home, projectRoot: project })).toBe(true);
+    expect(isSensitiveCredentialPath('/Users/tester/.npmrc', { homeDir: home, projectRoot: project })).toBe(true);
+    expect(isSensitiveCredentialPath('/Users/tester/work/repo/.env.local', { homeDir: home, projectRoot: project })).toBe(true);
+    expect(isSensitiveCredentialPath('/Users/tester/work/repo/.env.example', { homeDir: home, projectRoot: project })).toBe(false);
+    expect(isSensitiveCredentialPath('/Users/tester/work/repo/README.md', { homeDir: home, projectRoot: project })).toBe(false);
   });
 });

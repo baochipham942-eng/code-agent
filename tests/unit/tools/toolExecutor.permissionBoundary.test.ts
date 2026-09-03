@@ -173,7 +173,7 @@ describe('ToolExecutor permission boundary metadata', () => {
       },
       details: expect.objectContaining({
         command: 'npm install left-pad',
-        commandRiskLevel: 'safe',
+        commandRiskLevel: 'unknown',
         commandSecurityFlags: [],
       }),
     }));

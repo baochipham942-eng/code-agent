@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 
 const composerState = {
   selectedSkillIds: [] as string[],
@@ -21,49 +21,72 @@ vi.mock('../../../src/renderer/stores/composerStore', () => ({
   ),
 }));
 
+const makeConnector = (id: string, selected = true, available = true) => ({
+  kind: 'connector' as const,
+  key: `connector:${id}`,
+  id,
+  label: id,
+  selected,
+  available,
+  connected: available,
+  blocked: false,
+  lifecycle: { installState: 'installed', mountState: 'mounted', connectionState: available ? 'connected' : 'disconnected' },
+});
+
 const registryState = {
-  connectors: [{
-    kind: 'connector' as const,
-    key: 'connector:tmeet',
-    id: 'tmeet',
-    label: 'tmeet',
-    selected: true,
-    available: true,
-    blocked: false,
-    lifecycle: { installState: 'installed', mountState: 'mounted', connectionState: 'connected' },
-  }],
-  mcpServers: [] as unknown[],
+  connectors: [makeConnector('tmeet')],
+  mcpServers: [] as any[],
 };
 
 vi.mock('../../../src/renderer/hooks/useWorkbenchCapabilityRegistry', () => ({
   useWorkbenchCapabilityRegistry: () => ({ items: [], skills: [], ...registryState }),
 }));
 
-vi.mock('../../../src/renderer/hooks/useI18n', () => ({
-  useI18n: () => ({
-    t: {
-      chatInput: { connectorIconRemoveAria: '取消挂载 {name}' },
-      settings: { saasConnectors: { providers: { feishu: '飞书', tmeet: '腾讯会议' } } },
-    },
-  }),
+const openCapabilitySettingsTarget = vi.fn();
+const appState = {
+  activeAgentId: null as string | null,
+  openCapabilitySettingsTarget,
+};
+vi.mock('../../../src/renderer/stores/appStore', () => ({
+  useAppStore: (selector: (state: typeof appState) => unknown) => selector(appState),
 }));
+
+const agentRegistryState = { entries: [] as any[] };
+vi.mock('../../../src/renderer/stores/agentRegistryStore', () => ({
+  useAgentRegistryStore: (selector: (state: typeof agentRegistryState) => unknown) => selector(agentRegistryState),
+}));
+
+vi.mock('../../../src/renderer/hooks/useI18n', async () => {
+  const { zh } = await import('../../../src/renderer/i18n/zh');
+  return { useI18n: () => ({ t: zh }) };
+});
 
 import { MountedConnectorIcons } from '../../../src/renderer/components/features/chat/ChatInput/MountedConnectorIcons';
 
-describe('MountedConnectorIcons（底栏挂载连接器 chip）', () => {
-  beforeEach(() => {
-    composerState.selectedConnectorIds = ['tmeet'];
-    registryState.connectors[0].selected = true;
-    vi.clearAllMocks();
-  });
+const WEEKLY_EXPERT = {
+  id: 'weekly',
+  name: '周报专家',
+  icon: 'FileText',
+  connectors: [{ id: 'tmeet-mcp', level: 'core' as const, reason: '读取会议纪要，整理进周报' }],
+};
 
+beforeEach(() => {
+  cleanup();
+  composerState.selectedConnectorIds = ['tmeet'];
+  registryState.connectors = [makeConnector('tmeet')];
+  registryState.mcpServers = [];
+  appState.activeAgentId = null;
+  agentRegistryState.entries = [];
+  vi.clearAllMocks();
+});
+
+describe('MountedConnectorIcons（底栏挂载连接器 chip）', () => {
   it('常驻显示已挂载 connector 的名称，并提供独立移除动作', () => {
     render(<MountedConnectorIcons />);
 
     const chip = screen.getByTestId('mounted-capability-connector-tmeet');
     expect(chip.textContent).toContain('腾讯会议');
     expect(chip.textContent).not.toContain('tmeet');
-    expect(chip.title).toBe('腾讯会议');
     const logo = screen.getByRole('img', { name: '腾讯会议' });
     expect(logo.parentElement?.className).toContain('h-3');
     expect(logo.parentElement?.className).toContain('w-3');
@@ -79,11 +102,113 @@ describe('MountedConnectorIcons（底栏挂载连接器 chip）', () => {
     expect(composerState.selectedConnectorIds).toEqual([]);
   });
 
-  it('无挂载时不渲染', () => {
-    registryState.connectors[0].selected = false;
+  it('无挂载、专家也没声明时不渲染', () => {
+    registryState.connectors = [makeConnector('tmeet', false)];
     const { container } = render(<MountedConnectorIcons />);
 
     expect(container.firstChild).toBeNull();
     expect(screen.queryByTestId('mounted-connector-icons')).toBeNull();
+  });
+
+  it('悬停手选的那颗：来源写「你在本会话加的」，状态写已连接；移开即走', () => {
+    render(<MountedConnectorIcons />);
+    const hoverId = 'mounted-capability-source-connector-tmeet';
+    expect(screen.queryByTestId(hoverId)).toBeNull();
+
+    const chip = screen.getByTestId('mounted-capability-connector-tmeet');
+    fireEvent.mouseEnter(chip.parentElement!);
+    const card = screen.getByTestId(hoverId);
+    expect(card.textContent).toContain('你在本会话加的');
+    expect(card.textContent).toContain('已连接');
+
+    fireEvent.mouseLeave(chip.parentElement!);
+    expect(screen.queryByTestId(hoverId)).toBeNull();
+  });
+
+  it('手选的那颗没连上：卡里给「去能力中心连接」，点了带 id 跳过去', () => {
+    registryState.connectors = [makeConnector('tmeet', true, false)];
+    render(<MountedConnectorIcons />);
+
+    fireEvent.mouseEnter(screen.getByTestId('mounted-capability-connector-tmeet').parentElement!);
+    const card = screen.getByTestId('mounted-capability-source-connector-tmeet');
+    expect(card.textContent).toContain('未连接');
+    fireEvent.click(screen.getByRole('button', { name: /去能力中心连接/ }));
+
+    expect(openCapabilitySettingsTarget).toHaveBeenCalledWith({ kind: 'connector', id: 'tmeet' });
+  });
+
+  it('手选超过 4 颗折成 +N，不把底栏撑爆', () => {
+    registryState.connectors = ['a', 'b', 'c', 'd', 'e', 'f'].map((id) => makeConnector(id));
+    render(<MountedConnectorIcons />);
+
+    expect(screen.getAllByTestId(/^mounted-capability-connector-/)).toHaveLength(4);
+    expect(screen.getByTestId('mounted-capability-overflow').textContent).toBe('+2');
+  });
+
+  it('专家声明的 core 连接器：底栏多一颗组合 chip（徽标+条数），没有移除键', () => {
+    composerState.selectedConnectorIds = [];
+    registryState.connectors = [makeConnector('tmeet', false)];
+    registryState.mcpServers = [{ kind: 'mcp', key: 'mcp:tmeet-mcp', id: 'tmeet-mcp', label: 'tmeet-mcp', selected: false, status: 'connected', enabled: true, available: true }];
+    appState.activeAgentId = 'weekly';
+    agentRegistryState.entries = [WEEKLY_EXPERT];
+    render(<MountedConnectorIcons />);
+
+    const badge = screen.getByTestId('expert-connector-badge');
+    expect(badge.textContent).toContain('1');
+    expect(badge.getAttribute('aria-label')).toContain('周报专家');
+    expect(screen.queryByRole('button', { name: /取消挂载/ })).toBeNull();
+    expect(screen.queryByTestId('expert-connector-badge-issue')).toBeNull();
+
+    fireEvent.mouseEnter(badge.parentElement!);
+    const card = screen.getByTestId('expert-connector-source');
+    expect(card.textContent).toContain('周报专家 需要它：读取会议纪要，整理进周报');
+    expect(card.textContent).toContain('已连接');
+    expect(card.textContent).not.toContain('这轮以你选的连接器为准');
+  });
+
+  it('专家声明的是 CLI 连接器时：卡上的名字和底栏手选那颗同一套，跳转也走 connector', () => {
+    composerState.selectedConnectorIds = [];
+    registryState.connectors = [makeConnector('tmeet', false, false)];
+    appState.activeAgentId = 'weekly';
+    agentRegistryState.entries = [{
+      id: 'weekly',
+      name: '周报专家',
+      connectors: [{ id: 'tmeet', level: 'core' as const }],
+    }];
+    render(<MountedConnectorIcons />);
+
+    fireEvent.mouseEnter(screen.getByTestId('expert-connector-badge').parentElement!);
+    const card = screen.getByTestId('expert-connector-source');
+    expect(card.textContent).toContain('腾讯会议');
+    expect(card.textContent).not.toContain('tmeet');
+    fireEvent.click(screen.getByRole('button', { name: /去能力中心连接/ }));
+    expect(openCapabilitySettingsTarget).toHaveBeenCalledWith({ kind: 'connector', id: 'tmeet' });
+  });
+
+  it('用户在本会话手选过连接器：专家那颗照露，但卡上说明这轮没用它', () => {
+    composerState.selectedConnectorIds = ['tmeet'];
+    registryState.mcpServers = [{ kind: 'mcp', key: 'mcp:tmeet-mcp', id: 'tmeet-mcp', label: 'tmeet-mcp', selected: false, status: 'connected', enabled: true, available: true }];
+    appState.activeAgentId = 'weekly';
+    agentRegistryState.entries = [WEEKLY_EXPERT];
+    render(<MountedConnectorIcons />);
+
+    fireEvent.mouseEnter(screen.getByTestId('expert-connector-badge').parentElement!);
+    expect(screen.getByTestId('expert-connector-source').textContent).toContain('这轮以你选的连接器为准');
+  });
+
+  it('专家要的连接器在能力中心被关了：组合 chip 挂警示点，卡里写清楚本轮不会用', () => {
+    composerState.selectedConnectorIds = [];
+    registryState.connectors = [makeConnector('tmeet', false)];
+    registryState.mcpServers = [{ kind: 'mcp', key: 'mcp:tmeet-mcp', id: 'tmeet-mcp', label: 'tmeet-mcp', selected: false, status: 'disconnected', enabled: false, available: false }];
+    appState.activeAgentId = 'weekly';
+    agentRegistryState.entries = [WEEKLY_EXPERT];
+    render(<MountedConnectorIcons />);
+
+    expect(screen.getByTestId('expert-connector-badge-issue')).toBeTruthy();
+    fireEvent.mouseEnter(screen.getByTestId('expert-connector-badge').parentElement!);
+    const card = screen.getByTestId('expert-connector-source');
+    expect(card.textContent).toContain('已在能力中心关闭，本轮不会用');
+    fireEvent.click(screen.getByRole('button', { name: /去能力中心/ }));
+    expect(openCapabilitySettingsTarget).toHaveBeenCalledWith({ kind: 'mcp', id: 'tmeet-mcp' });
   });
 });

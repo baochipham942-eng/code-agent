@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 
 const composerState = {
   selectedSkillIds: ['docx'],
@@ -21,6 +21,8 @@ vi.mock('../../../src/renderer/stores/composerStore', () => ({
   ),
 }));
 
+const skillState = { mountSource: 'manual' as 'manual' | 'auto' };
+
 vi.mock('../../../src/renderer/hooks/useWorkbenchCapabilityRegistry', () => ({
   useWorkbenchCapabilityRegistry: () => ({
     items: [],
@@ -33,21 +35,25 @@ vi.mock('../../../src/renderer/hooks/useWorkbenchCapabilityRegistry', () => ({
       available: true,
       blocked: false,
       lifecycle: { installState: 'installed', mountState: 'mounted', connectionState: 'not_applicable' },
+      mountSource: skillState.mountSource,
     }],
     connectors: [],
     mcpServers: [],
   }),
 }));
 
-vi.mock('../../../src/renderer/hooks/useI18n', () => ({
-  useI18n: () => ({ t: { selectedCapabilityChips: { removeAria: '移除能力：{name}' } } }),
-}));
+vi.mock('../../../src/renderer/hooks/useI18n', async () => {
+  const { zh } = await import('../../../src/renderer/i18n/zh');
+  return { useI18n: () => ({ t: zh }) };
+});
 
 import { SelectedCapabilityChips } from '../../../src/renderer/components/features/chat/ChatInput/SelectedCapabilityChips';
 
 describe('SelectedCapabilityChips', () => {
   beforeEach(() => {
+    cleanup();
     composerState.selectedSkillIds = ['docx'];
+    skillState.mountSource = 'manual';
     vi.clearAllMocks();
   });
 
@@ -80,5 +86,26 @@ describe('SelectedCapabilityChips', () => {
     composerState.selectedSkillIds = ['docx'];
     fireEvent.keyDown(chip, { key: 'Backspace' });
     expect(composerState.selectedSkillIds).toEqual([]);
+  });
+
+  it('悬停胶囊：用户自己挂的写「你在本会话加的」，本轮生效', () => {
+    render(<SelectedCapabilityChips />);
+    expect(screen.queryByTestId('selected-capability-source-docx')).toBeNull();
+
+    fireEvent.mouseEnter(screen.getByRole('group', { name: 'Docx' }).parentElement!);
+    const card = screen.getByTestId('selected-capability-source-docx');
+    expect(card.textContent).toContain('你在本会话加的');
+    expect(card.textContent).toContain('本轮生效');
+  });
+
+  it('悬停胶囊：新会话默认挂上的写「默认带的」并说明 ✕ 可移除', () => {
+    skillState.mountSource = 'auto';
+    render(<SelectedCapabilityChips />);
+
+    fireEvent.mouseEnter(screen.getByRole('group', { name: 'Docx' }).parentElement!);
+    const card = screen.getByTestId('selected-capability-source-docx');
+    expect(card.textContent).toContain('默认带的');
+    expect(card.textContent).toContain('点 ✕ 可移除');
+    expect(card.textContent).not.toContain('你在本会话加的');
   });
 });

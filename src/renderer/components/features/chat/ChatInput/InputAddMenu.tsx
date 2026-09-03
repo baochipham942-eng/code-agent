@@ -110,9 +110,17 @@ export const InputAddMenu: React.FC<Props> = ({
   const focusComposer = () => {
     requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('[data-testid="chat-composer-textarea"]')?.focus());
   };
+  // 专家声明的 optional 连接器默认关着、不进底栏；用户主动打开这个菜单时才标明「谁推荐的」
+  const activeExpert = expertEntries.find((entry) => entry.id === activeAgentId);
+  const expertOptionalIds = new Set(
+    (activeExpert?.connectors || []).filter((connector) => connector.level === 'optional').map((connector) => connector.id),
+  );
   const capabilityItems = (items: WorkbenchCapabilityRegistryItem[]): InputAddSubmenuItem[] => items.map((item) => ({
     id: item.id,
     label: item.label,
+    sublabel: item.kind !== 'skill' && expertOptionalIds.has(item.id)
+      ? t.chatInput.connectorSource.menuRecommended.replace('{expert}', activeExpert?.name || activeExpert?.id || '')
+      : undefined,
     description: item.kind === 'skill'
       ? item.description
       : item.kind === 'connector'

@@ -51,22 +51,20 @@ suite('bubblewrap wrapCommand 真实隔离', () => {
       version: '1.0.0',
       private: true,
     }));
-    const originalTmpdir = process.env.TMPDIR;
-    process.env.TMPDIR = '/host-only/custom-tmpdir';
-    try {
-      const { command, cleanup } = wrapCommandForSandbox(
-        'npm config get userconfig && npm pack --dry-run',
-        { workingDirectory: projectDir, allowNetwork: false },
-      );
-      const r = await run(command, projectDir);
-      cleanup();
-      expect(r.code).toBe(0);
-      expect(r.stdout).toMatch(/^\/tmp\/neo-npm\/[^/]+\/npmrc/m);
-      expect(r.stdout).toContain('sandbox-npm-pack-fixture-1.0.0.tgz');
-    } finally {
-      if (originalTmpdir === undefined) delete process.env.TMPDIR;
-      else process.env.TMPDIR = originalTmpdir;
-    }
+    const { command, cleanup } = wrapCommandForSandbox(
+      'npm config get userconfig && npm pack --dry-run',
+      { workingDirectory: projectDir, allowNetwork: false },
+    );
+    const r = await run(command, projectDir);
+    expect(r.code, r.stderr).toBe(0);
+    const userConfig = r.stdout.trim().split('\n')[0];
+    expect(userConfig).toMatch(new RegExp(`^${path.join(os.tmpdir(), 'neo-npm-')}[^/]+/npmrc$`));
+    expect(r.stdout).toContain('sandbox-npm-pack-fixture-1.0.0.tgz');
+    expect(fs.existsSync(path.dirname(userConfig))).toBe(true);
+
+    cleanup();
+
+    expect(fs.existsSync(path.dirname(userConfig))).toBe(false);
   });
 
   it('敏感 home 文件读取被拒，但工作区 .env 仍可读', async () => {

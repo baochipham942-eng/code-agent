@@ -1004,7 +1004,7 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
         meta: { ...(errorOutput ? { output: errorOutput } : {}), shellPath: shellPathMeta },
       };
     } finally {
-      // 清理本次前台命令的临时 sandbox profile（PTY/后台进程异步存活，
+      // 清理本次前台命令的临时 sandbox profile 与命令级状态（PTY/后台进程异步存活，
       // 其 profile 由 Seatbelt.cleanupOldProfiles 的 10 个上限自动回收）
       sandboxCleanup?.();
     }

@@ -4,8 +4,7 @@
 
 import * as os from 'os';
 import * as path from 'path';
-import { randomUUID } from 'crypto';
-import { quote } from 'shell-quote';
+import * as fs from 'fs';
 import { createLogger } from '../services/infra/logger';
 import { Bubblewrap, getBubblewrap, type BubblewrapConfig, type BubblewrapStatus } from './bubblewrap';
 import { getSeatbelt, type SeatbeltConfig, type SeatbeltStatus } from './seatbelt';
@@ -88,7 +87,7 @@ export type SandboxPreset = 'minimal' | 'development' | 'network' | 'full';
 export interface SandboxedCommand {
   /** 包装后的单条 shell 命令字符串 */
   command: string;
-  /** 执行结束后调用，清理临时 profile（bwrap 为 no-op） */
+  /** 执行结束后调用，清理临时 profile 与命令级临时状态 */
   cleanup: () => void;
   /** 实际使用的平台 */
   platform: SandboxPlatform;
@@ -125,23 +124,24 @@ const DEFAULT_CONFIG: SandboxConfig = {
 
 interface NpmSandboxEnvironment {
   customEnv: Record<string, string>;
-  command: string;
+  npmHome: string;
+  cleanup: () => void;
 }
 
-function prepareNpmSandboxEnvironment(
-  platform: SandboxPlatform,
-  command: string,
-): NpmSandboxEnvironment {
-  const tempRoot = platform === 'linux'
-    ? '/tmp'
-    : process.env.TMPDIR || os.tmpdir();
-  const runId = `run-${process.pid}-${Date.now().toString(36)}-${randomUUID().split('-')[0]}`;
-  const npmHome = path.join(tempRoot, 'neo-npm', runId);
+function prepareNpmSandboxEnvironment(): NpmSandboxEnvironment {
+  const npmHome = fs.mkdtempSync(path.join(os.tmpdir(), 'neo-npm-'));
   const userConfig = path.join(npmHome, 'npmrc');
   const cache = path.join(npmHome, 'cache');
   const logs = path.join(npmHome, 'logs');
-  const setup = quote(['/bin/mkdir', '-p', cache, logs]);
-  const cleanup = quote(['/bin/rm', '-rf', '--', npmHome]);
+
+  try {
+    fs.writeFileSync(userConfig, '', { mode: 0o600 });
+    fs.mkdirSync(cache);
+    fs.mkdirSync(logs);
+  } catch (error) {
+    fs.rmSync(npmHome, { recursive: true, force: true });
+    throw error;
+  }
 
   return {
     customEnv: {
@@ -150,7 +150,8 @@ function prepareNpmSandboxEnvironment(
       npm_config_logs_dir: logs,
       npm_config_update_notifier: 'false',
     },
-    command: `trap ${quote([cleanup])} EXIT; ${setup} && : > ${quote([userConfig])} && ${command}`,
+    npmHome,
+    cleanup: () => fs.rmSync(npmHome, { recursive: true, force: true }),
   };
 }
 
@@ -292,25 +293,30 @@ export class SandboxManager {
       return this.executeUnsandboxed(command, fullConfig);
     }
 
-    const npmEnvironment = prepareNpmSandboxEnvironment(this.platform, command);
+    const npmEnvironment = prepareNpmSandboxEnvironment();
     const sandboxConfig: SandboxConfig = {
       ...fullConfig,
+      writePaths: [...fullConfig.writePaths, npmEnvironment.npmHome],
       customEnv: {
         ...fullConfig.customEnv,
         ...npmEnvironment.customEnv,
       },
     };
 
-    // Execute with platform-specific sandbox
-    switch (this.platform) {
-      case 'linux':
-        return this.executeWithBubblewrap(npmEnvironment.command, sandboxConfig);
+    try {
+      // Execute with platform-specific sandbox
+      switch (this.platform) {
+        case 'linux':
+          return await this.executeWithBubblewrap(command, sandboxConfig);
 
-      case 'darwin':
-        return this.executeWithSeatbelt(npmEnvironment.command, sandboxConfig);
+        case 'darwin':
+          return await this.executeWithSeatbelt(command, sandboxConfig);
 
-      default:
-        return this.executeUnsandboxed(command, fullConfig);
+        default:
+          return await this.executeUnsandboxed(command, fullConfig);
+      }
+    } finally {
+      npmEnvironment.cleanup();
     }
   }
 
@@ -338,39 +344,64 @@ export class SandboxManager {
       ...(opts.deniedReadRoots ?? []).map((root) => ({ kind: 'directory' as const, path: root })),
     ];
     const allowNetwork = opts.allowNetwork ?? false;
-    const npmEnvironment = prepareNpmSandboxEnvironment(this.platform, command);
+    const npmEnvironment = prepareNpmSandboxEnvironment();
 
-    switch (this.platform) {
-      case 'darwin': {
-        // seatbelt 读放开，仅锁写：工作目录交给 writePaths（generateProfile 内做 realpath）
-        const wrapped = getSeatbelt().wrapCommand(npmEnvironment.command, {
-          allowNetwork,
-          readPaths: readOnlyRoots,
-          writePaths: readWriteRoots,
-          workingDirectory: resolved,
-          allowWorkingDirectoryWrite: false,
-          sensitivePaths,
-          customEnv: npmEnvironment.customEnv,
-        });
-        return { ...wrapped, platform: 'darwin' };
+    try {
+      switch (this.platform) {
+        case 'darwin': {
+          // seatbelt 读放开，仅锁写：工作目录交给 writePaths（generateProfile 内做 realpath）
+          const wrapped = getSeatbelt().wrapCommand(command, {
+            allowNetwork,
+            readPaths: readOnlyRoots,
+            writePaths: [...readWriteRoots, npmEnvironment.npmHome],
+            workingDirectory: resolved,
+            allowWorkingDirectoryWrite: false,
+            sensitivePaths,
+            customEnv: npmEnvironment.customEnv,
+          });
+          return {
+            command: wrapped.command,
+            cleanup: () => {
+              try {
+                wrapped.cleanup();
+              } finally {
+                npmEnvironment.cleanup();
+              }
+            },
+            platform: 'darwin',
+          };
+        }
+
+        case 'linux': {
+          // bwrap 靠 mount：开发只读基线 + 工作目录可读写挂载
+          const dev = Bubblewrap.createPreset('development');
+          const wrapped = getBubblewrap().wrapCommand(command, {
+            allowNetwork,
+            readOnlyPaths: [...(dev.readOnlyPaths ?? []), ...readOnlyRoots],
+            readWritePaths: [...readWriteRoots, npmEnvironment.npmHome],
+            workingDirectory: resolved,
+            sensitivePaths,
+            customEnv: npmEnvironment.customEnv,
+          });
+          return {
+            command: wrapped.command,
+            cleanup: () => {
+              try {
+                wrapped.cleanup();
+              } finally {
+                npmEnvironment.cleanup();
+              }
+            },
+            platform: 'linux',
+          };
+        }
+
+        default:
+          throw new Error(`Platform ${this.platform} is not supported for sandboxing`);
       }
-
-      case 'linux': {
-        // bwrap 靠 mount：开发只读基线 + 工作目录可读写挂载
-        const dev = Bubblewrap.createPreset('development');
-        const wrapped = getBubblewrap().wrapCommand(npmEnvironment.command, {
-          allowNetwork,
-          readOnlyPaths: [...(dev.readOnlyPaths ?? []), ...readOnlyRoots],
-          readWritePaths: readWriteRoots,
-          workingDirectory: resolved,
-          sensitivePaths,
-          customEnv: npmEnvironment.customEnv,
-        });
-        return { ...wrapped, platform: 'linux' };
-      }
-
-      default:
-        throw new Error(`Platform ${this.platform} is not supported for sandboxing`);
+    } catch (error) {
+      npmEnvironment.cleanup();
+      throw error;
     }
   }
 
@@ -497,10 +528,6 @@ export class SandboxManager {
             'PATH', 'HOME', 'USER', 'LANG', 'TERM',
             'NODE_ENV', 'npm_config_cache',
           ],
-          customEnv: prepareNpmSandboxEnvironment(
-            os.platform() === 'linux' ? 'linux' : 'darwin',
-            '',
-          ).customEnv,
         };
 
       case 'network':
@@ -519,10 +546,6 @@ export class SandboxManager {
             'PATH', 'HOME', 'USER', 'LANG', 'TERM',
             'NODE_ENV', 'npm_config_cache', 'SHELL',
           ],
-          customEnv: prepareNpmSandboxEnvironment(
-            os.platform() === 'linux' ? 'linux' : 'darwin',
-            '',
-          ).customEnv,
         };
 
       default:

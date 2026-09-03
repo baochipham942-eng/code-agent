@@ -88,9 +88,25 @@ suite('seatbelt wrapCommand 真实隔离', () => {
     cleanup();
     expect(r.code, r.stderr).toBe(0);
     const userConfig = r.stdout.trim().split('\n')[0];
-    expect(userConfig).toMatch(new RegExp(`^${path.join(process.env.TMPDIR || os.tmpdir(), 'neo-npm')}/[^/]+/npmrc$`));
+    expect(userConfig).toMatch(new RegExp(`^${path.join(os.tmpdir(), 'neo-npm-')}[^/]+/npmrc$`));
     expect(r.stdout).toContain('sandbox-npm-pack-fixture-1.0.0.tgz');
     expect(fs.existsSync(path.dirname(userConfig))).toBe(false);
+  });
+
+  it('exec npm 退出后由宿主 cleanup 删除 npmHome', async () => {
+    const { command, cleanup } = wrapCommandForSandbox(
+      'exec npm config get userconfig',
+      { workingDirectory: projectDir, allowNetwork: false },
+    );
+    const r = await run(command, projectDir);
+    expect(r.code, r.stderr).toBe(0);
+    const userConfig = r.stdout.trim();
+    const npmHome = path.dirname(userConfig);
+    expect(fs.existsSync(npmHome)).toBe(true);
+
+    cleanup();
+
+    expect(fs.existsSync(npmHome), npmHome).toBe(false);
   });
 
   it('npm 的 host userconfig 仍不可读', async () => {

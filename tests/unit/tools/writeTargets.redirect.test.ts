@@ -90,12 +90,14 @@ describe('shell redirect write targets', () => {
   it('fails closed when a wrapped redirect target is dynamic', () => {
     expect(resolve('bash -c \'cat > "$HOME/x"\'')).toMatchObject({
       targets: [],
-      uncertain: ['uncertain-redirection:$HOME/x'],
+      uncertain: ['uncertain-redirection:bash'],
     });
   });
 
   it.each([
     ["sh -c 'echo $(date) > out.txt'", 'uncertain-redirection:sh'],
+    ['sh -c "$SCRIPT"', 'uncertain-redirection:sh'],
+    ['eval "${SCRIPT}"', 'uncertain-redirection:eval'],
     ["eval 'echo `date` > out.txt'", 'uncertain-redirection:eval'],
     ["sh -c 'echo \"unterminated > out.txt'", 'uncertain-redirection:sh'],
   ])('fails closed when a wrapped script cannot be resolved: %s', (command, reason) => {

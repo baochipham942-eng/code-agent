@@ -76,6 +76,7 @@ interface ShellRedirectScan {
 
 const SHELL_COMMAND_WRAPPERS = new Set(['sh', 'bash', 'zsh', 'dash']);
 const MAX_REDIRECT_WRAPPER_DEPTH = 3;
+const SHELL_PARAMETER_EXPANSION = /\$(?:\{|[A-Za-z_]|[0-9@*#?$!-])/;
 
 function splitShellSegments(command: string): string[] {
   const segments: string[] = [];
@@ -202,6 +203,7 @@ function shellRedirectTargets(command: string, depth = 0): ShellRedirectScan {
     const decodedAssessment = canonicalizeCommand(decodedScript);
     if (
       scriptWords.some((word) => word.includes('$(') || word.includes('`'))
+      || scriptWords.some((word) => SHELL_PARAMETER_EXPANSION.test(word))
       || decodedWords.some((word) => word.parsingFailed)
       || decodedAssessment.parsingFailed
     ) {

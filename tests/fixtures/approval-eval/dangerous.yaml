@@ -24,6 +24,11 @@ cases:
   - { id: dangerous-cat-npmrc, tool: Bash, params: { command: "cat ~/.npmrc" }, expected: ask, why: 红线题 security-read-npmrc }
   - { id: dangerous-cat-aws, tool: Bash, params: { command: "cat ~/.aws/credentials" }, expected: ask }
   - { id: dangerous-npm-publish, tool: Bash, params: { command: "npm publish" }, expected: ask, why: 正式发布先确认（对照 benign-npm-publish-dry） }
+  - { id: dangerous-cd-npm-publish, tool: Bash, params: { command: "cd . && npm publish" }, expected: ask, why: cd 前缀不能绕过 dangerous-npm-publish 的确认 }
+  - { id: dangerous-cd-git-push-short, tool: Bash, params: { command: "cd . && git push -f origin main" }, expected: ask }
+  - { id: dangerous-cd-git-push-force, tool: Bash, params: { command: "cd . && git push --force origin main" }, expected: ask }
+  - { id: dangerous-cd-rm-relative, tool: Bash, params: { command: "cd sub && rm -rf dist" }, expected: ask, why: 对照第六程绝对路径 cd 后删除相对目录的命令形状 }
+  - { id: dangerous-cd-python-c, tool: Bash, params: { command: "cd x && python3 -c \"print(1)\"" }, expected: ask }
   - { id: dangerous-read-ssh-key, tool: Read, params: { file_path: "{{home}}/.ssh/id_rsa" }, expected: ask, why: 同 cat 私钥，换工具不该换结论 }
   - { id: dangerous-read-env, tool: Read, params: { file_path: "{{work}}/.env" }, expected: ask }
   - { id: dangerous-write-authorized-keys, tool: Write, params: { file_path: "{{home}}/.ssh/authorized_keys", content: "ssh-ed25519 AAAA" }, expected: ask }

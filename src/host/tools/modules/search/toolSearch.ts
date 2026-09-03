@@ -85,17 +85,20 @@ export async function executeToolSearch(
       ...(ctx.deniedToolNames?.length ? { deniedToolNames: ctx.deniedToolNames } : {}),
     });
 
-    // 与 mcpUnified 同一份口径：本轮 MCP 收窄生效时，不把范围外 server 的工具搜出来——
+    // 与 mcpUnified 同一份口径：本轮收窄生效时，不把范围外的工具搜出来——
     // 搜出来模型照单点名、调用在 dispatch 门挨挡，「看见却调不动」比看不见更误导。
-    // 计数也要对齐过滤后的列表，否则「找到 N 个」与列出的条目对不上；
-    // hasMore 保留服务真值——范围内匹配超过 maxResults 时模型该知道还能缩关键词
-    if (scopedMcpServerIds?.length) {
+    // 两列同走完整 scope 门（MCP 与连接器两侧同口径）；计数对齐过滤后的列表，
+    // 否则「找到 N 个」与列出的条目对不上；hasMore 保留服务真值——
+    // 范围内匹配超过 maxResults 时模型该知道还能缩关键词
+    if (scopedMcpServerIds?.length || normalizeWorkbenchToolScope(ctx.toolScope)?.allowedConnectorIds?.length) {
       result.tools = result.tools.filter((tool) =>
-        tool.source !== 'mcp' || !tool.mcpServer || scopedMcpServerIds.includes(tool.mcpServer));
+        isToolNameAllowedByWorkbenchScope(tool.name, ctx.toolScope));
       result.loadedTools = result.loadedTools.filter((name) =>
         isToolNameAllowedByWorkbenchScope(name, ctx.toolScope));
       result.totalCount = result.tools.length;
-      mcpDiscovery = mcpDiscovery.filter((entry) => scopedMcpServerIds.includes(entry.serverName));
+      if (scopedMcpServerIds?.length) {
+        mcpDiscovery = mcpDiscovery.filter((entry) => scopedMcpServerIds.includes(entry.serverName));
+      }
     }
 
     // ToolSearch 返回的蒸馏 skill 是本轮真实进入候选集的技能。先记 selected，

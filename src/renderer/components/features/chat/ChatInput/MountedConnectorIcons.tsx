@@ -64,10 +64,10 @@ export const MountedConnectorIcons: React.FC = () => {
   // enabled 闸门：没有 CLI/SaaS 连接器在场（手选或专家声明）时不发 IPC——
   // oauthStatus 冷缓存会起 CLI 子进程做 status()，不能落在每个输入区的渲染路径上
   const showSettings = useAppStore((state) => state.showSettings);
-  const expertForOauth = agentEntries.find((entry) => entry.id === activeAgentId);
+  const expert = agentEntries.find((entry) => entry.id === activeAgentId);
   const isCliConnector = (id: string) => CLI_CONNECTOR_DESCRIPTORS.some((descriptor) => descriptor.id === id);
   const cliConnectorInPlay = selectedConnectorIds.some(isCliConnector)
-    || Boolean(expertForOauth?.connectors?.some((connector) => isCliConnector(connector.id)));
+    || Boolean(expert?.connectors?.some((connector) => isCliConnector(connector.id)));
   const oauthStatuses = useConnectorOAuthStatuses(
     `${[...selectedConnectorIds].sort().join(',')}|${showSettings ? 'open' : 'closed'}`,
     cliConnectorInPlay,
@@ -88,7 +88,6 @@ export const MountedConnectorIcons: React.FC = () => {
   );
 
   const manual = [...connectors, ...mcpServers].filter((capability) => capability.selected);
-  const expert = agentEntries.find((entry) => entry.id === activeAgentId);
   // 折进 +N 的连接器不能丢 × 移除入口——+N 做成可展开/收起的开关
   const [manualExpanded, setManualExpanded] = useState(false);
 

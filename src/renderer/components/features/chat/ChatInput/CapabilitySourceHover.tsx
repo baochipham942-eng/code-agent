@@ -10,7 +10,7 @@
 // 卡半路卸载，卡内出口永远点不到。padding 的空隙在 hover 判定区内，路是通的。
 // ============================================================================
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useId, useRef, useState } from 'react';
 
 const LONG_PRESS_MS = 400;
 
@@ -25,6 +25,8 @@ export const CapabilitySourceHover: React.FC<{
   /** 长按开的卡不受鼠标事件支配：移动端浏览器会合成 mouseleave，跟着关就等于没开过 */
   const openedByTouch = useRef(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  // 卡开着时把触发器和卡关联起来——不然卡里的来源/被拦原因只有鼠标用户拿得到
+  const cardId = useId();
 
   const clearLongPress = () => {
     if (longPressTimer.current) {
@@ -53,6 +55,7 @@ export const CapabilitySourceHover: React.FC<{
     <div
       ref={rootRef}
       className={`relative shrink-0 ${className || ''}`}
+      aria-describedby={open ? cardId : undefined}
       onMouseEnter={() => setOpen(true)}
       onMouseLeave={() => { if (!openedByTouch.current) setOpen(false); }}
       onFocus={() => setOpen(true)}
@@ -73,7 +76,7 @@ export const CapabilitySourceHover: React.FC<{
       {children}
       {open && (
         // 外壳是透明的定位/间距层（pb-2 那段空隙归它，见文件头🔴）；视觉卡是内层
-        <div data-testid={testId} className="absolute bottom-full left-0 z-30 pb-2">
+        <div data-testid={testId} id={cardId} className="absolute bottom-full left-0 z-30 pb-2">
           <div className="w-[260px] rounded-xl border border-border-hover bg-zinc-900/95 px-3 py-2.5 text-left text-xs shadow-md backdrop-blur dark:shadow-2xl">
             {card}
           </div>

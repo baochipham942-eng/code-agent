@@ -370,7 +370,7 @@ function actionListResources(args: Record<string, unknown>, ctx: ToolContext): T
       action: 'list_resources',
       resultKind: 'text',
       count: filtered.length,
-      totalCount: resources.length,
+      totalCount: filtered.length,
       truncated: false,
       resourceUris: filtered.map((resource) => resource.uri),
       artifact: createVirtualArtifact({
@@ -387,7 +387,7 @@ function actionListResources(args: Record<string, unknown>, ctx: ToolContext): T
           action: 'list_resources',
           resultKind: 'text',
           count: filtered.length,
-          totalCount: resources.length,
+          totalCount: filtered.length,
           truncated: false,
           resourceUris: filtered.map((resource) => resource.uri),
         },

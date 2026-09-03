@@ -305,6 +305,27 @@ describe('toolSearchModule (native)', () => {
       expect(discoverLazyServersForSearchMock).toHaveBeenCalledWith('feishu', undefined);
     });
 
+    // 与 loadedTools 同一份完整 scope 门：连接器侧被收窄的工具也不能只滤一半（ai-review 第十五轮 Nit）
+    it('turn scope 收窄到连接器时，范围外的连接器工具也不搜出', async () => {
+      searchToolsMock.mockResolvedValue({
+        tools: [
+          { name: 'mail', description: 'Read mail', tags: ['connector'], source: 'connector', loadable: true },
+          { name: 'calendar_create_event', description: 'Create event', tags: ['connector'], source: 'connector', loadable: true },
+        ],
+        loadedTools: ['mail', 'calendar_create_event'],
+        totalCount: 2,
+        hasMore: false,
+      });
+      const scopedCtx = makeCtx({ toolScope: { allowedConnectorIds: ['mail'] } } as Partial<ToolContext>);
+      const result = await run({ query: 'event' }, scopedCtx);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.output).toContain('• **mail**');
+        expect(result.output).not.toContain('calendar_create_event');
+        expect(result.output).toContain('找到 1 个匹配工具');
+      }
+    });
+
     it('formats skill hits with not-callable reason and invocation', async () => {
       searchToolsMock.mockResolvedValue({
         tools: [

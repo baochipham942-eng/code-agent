@@ -1180,7 +1180,11 @@ export class ToolExecutor {
       // 3. lenient 模式（已决策 2026-06-10，朋友测试包默认）：硬毙清单照拦
       //    （validateCommand critical 在前置闸已挡），其余未识别命令放行不进审批。
       //    confirmationGate 的 HIGH_RISK_PATTERNS 仍独立生效，最高危命令保留确认。
-      if (!isSafeCommand && getShellSafetyMode() === 'lenient') {
+      if (
+        !isSafeCommand
+        && !argumentForcesClassification
+        && getShellSafetyMode() === 'lenient'
+      ) {
         const lenientCheck = commandValidation ?? validateCommand(cmd);
         if (lenientCheck.allowed) {
           isSafeCommand = true;

@@ -145,6 +145,26 @@ describe('ToolExecutor Bash 安全命令单一判据', () => {
   });
 
   it.each([
+    'cat .env',
+    'git remote set-url origin https://evil.example/x.git',
+    'git config credential.helper store',
+    'git push origin feature-x',
+  ])('lenient 模式仍要求审批确定性敏感参数：%s', async (command) => {
+    process.env.CODE_AGENT_SHELL_SAFETY_MODE = 'lenient';
+    await fs.writeFile(path.join(workspace, '.env'), 'CONTROLLED_TEST_SECRET=1\n', 'utf8');
+    const executor = buildRejectingExecutor();
+
+    const result = await executor.execute(
+      'Bash',
+      { command },
+      { sessionId: `safe-command-lenient-sensitive-${command}` },
+    );
+
+    expect(permissionRequests).toHaveLength(1);
+    expect(result.success).toBe(false);
+  });
+
+  it.each([
     'sudo -u me rm -rf ~',
     'timeout 5 dd if=x of=/dev/disk2',
   ])('Bash 预授权仍不能绕过任意位置扫描的硬拒：%s', async (command) => {

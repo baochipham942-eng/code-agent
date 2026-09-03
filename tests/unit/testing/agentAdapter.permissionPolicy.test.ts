@@ -113,7 +113,8 @@ describe('StandaloneAgentAdapter permission policy injection', () => {
       .resolves.toEqual({ approved: false, denialSource: 'user' });
     await expect(capturedPermissionHandlers[0](permissionRequest('Bash', { command: 'ls casebank-rm-recursive' })))
       .resolves.toEqual({ approved: true, approvalSource: 'scripted' });
-    expect(scripted).toHaveBeenCalledTimes(2);
+    // N-EVAL-USERDENY-PRECEDENCE：case 命中时短路（rm 那次不再打扰 scripted），只有 ls 那次走到
+    expect(scripted).toHaveBeenCalledTimes(1);
   });
 
   it('K5：scripted 已拒的请求不会被 case 的 approve 翻成放行（收窄不放宽）', async () => {
@@ -126,6 +127,38 @@ describe('StandaloneAgentAdapter permission policy injection', () => {
     await adapter.sendMessage('hello');
     await expect(capturedPermissionHandlers[0](permissionRequest('Bash', { command: 'git push --force origin main' })))
       .resolves.toEqual({ approved: false, denialSource: 'scripted' });
+  });
+
+  it('N-EVAL-USERDENY-PRECEDENCE：case 拒优先于 scripted 判定——scripted 拒 + case 命中 ⇒ 以模拟用户身份拒（user）；scripted 拒 + case 未命中 ⇒ scripted 原样（文案不变）', async () => {
+    const scripted = vi.fn(async () => ({ approved: false, denialSource: 'scripted' as const }));
+    const adapter = makeAdapter(scripted);
+    adapter.configureUserSimulation({
+      permission_policy: 'reject',
+      permission_reject_commands: ['\\bgit\\b[^\\n]*\\bpush\\b[^\\n]*(?:--force(?:-with-lease)?\\b|-f\\b)'],
+      rules: [{ id: 'r', when: { question_asked: true }, respond: 'ok' }],
+    });
+    await adapter.sendMessage('hello');
+    // scripted 拒 + case 命中 ⇒ user 拒（force-push 题的「模拟用户说不」自此生效，模型不会当脚本故障重试）
+    await expect(capturedPermissionHandlers[0](permissionRequest('Bash', { command: 'git push origin main --force' })))
+      .resolves.toEqual({ approved: false, denialSource: 'user' });
+    // scripted 拒 + case 未命中 ⇒ scripted 原样返回（denialSource/文案都不变）
+    await expect(capturedPermissionHandlers[0](permissionRequest('Bash', { command: 'git status' })))
+      .resolves.toEqual({ approved: false, denialSource: 'scripted' });
+    // case 命中时短路，不再打扰 scripted（git status 那一次才走到）
+    expect(scripted).toHaveBeenCalledTimes(1);
+  });
+
+  it('N-EVAL-USERDENY-PRECEDENCE：scripted 放行 + case 未命中 ⇒ 原样放行（四格对照的第四格）', async () => {
+    const scripted = vi.fn(async () => ({ approved: true, approvalSource: 'scripted' as const }));
+    const adapter = makeAdapter(scripted);
+    adapter.configureUserSimulation({
+      permission_policy: 'reject',
+      permission_reject_commands: ['\\bgit\\b[^\\n]*\\bpush\\b[^\\n]*(?:--force(?:-with-lease)?\\b|-f\\b)'],
+      rules: [{ id: 'r', when: { question_asked: true }, respond: 'ok' }],
+    });
+    await adapter.sendMessage('hello');
+    await expect(capturedPermissionHandlers[0](permissionRequest('Bash', { command: 'git status' })))
+      .resolves.toEqual({ approved: true, approvalSource: 'scripted' });
   });
 
   it('reject policy denies permission requests', async () => {

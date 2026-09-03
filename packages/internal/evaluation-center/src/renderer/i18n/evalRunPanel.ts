@@ -115,6 +115,7 @@ export interface EvalRunPanelLabels {
   incompleteReason: string;
   invalidRunReason: string;
   setReferenceFailed: string;
+  runCost: string;
 }
 
 interface EvalRunPanelDictionary {
@@ -242,6 +243,7 @@ export const evalRunPanelZh: EvalRunPanelDictionary = {
     incompleteReason: '未跑满 · 缺 {n} 题',
     invalidRunReason: '无效轮 · {n} 题判废',
     setReferenceFailed: '设置失败，请刷新后再试',
+    runCost: '本轮实付 {cost}',
   },
 };
 
@@ -366,5 +368,6 @@ export const evalRunPanelEn: EvalRunPanelDictionary = {
     incompleteReason: 'Incomplete · {n} cases missing',
     invalidRunReason: 'Invalid run · {n} cases invalidated',
     setReferenceFailed: 'Could not set comparison reference. Refresh and retry.',
+    runCost: 'This run {cost}',
   },
 };

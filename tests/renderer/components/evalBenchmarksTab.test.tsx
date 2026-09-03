@@ -398,6 +398,25 @@ describe('EvalBenchmarksTab 跑分闭环', () => {
     fireEvent.click(screen.getByTestId('benchmark-run-b').querySelector('button') as HTMLButtonElement);
     expect(await screen.findByText('50.0% → 50.0%')).toBeTruthy();
     expect(screen.getByText('case-1')).toBeTruthy();
+    const compareButton = screen.getByText('case-1').closest('button');
+    expect(compareButton).toBeTruthy();
+    const cluster = compareButton!.querySelector('span.flex.min-w-0.items-center.gap-2');
+    expect(cluster).toBeTruthy();
+    expect(cluster!.textContent).toMatch(/退步|进步/);
+    expect(cluster!.textContent).toContain('case-1');
+    expect(cluster!.textContent).toMatch(/passed|failed/);
+  });
+
+  it('历史行有 totalCostUsd 时显示本轮实付，缺失时不显示', async () => {
+    const priced = experiment('priced', 3_000, { split: 'held-in', k: 1, caseBankSha: 'abcdef0123', mode: 'real' });
+    priced.totalCostUsd = 0.045;
+    const legacy = experiment('legacy', 2_000, { split: 'held-in', k: 1, caseBankSha: 'abcdef0123', mode: 'real' });
+    configureIpc(() => [priced, legacy]);
+    render(<EvalBenchmarksTab />);
+    const pricedRow = await screen.findByTestId('benchmark-run-priced');
+    const legacyRow = screen.getByTestId('benchmark-run-legacy');
+    expect(pricedRow.textContent).toContain('本轮实付 $0.045');
+    expect(legacyRow.textContent).not.toContain('本轮实付');
   });
 
   it('T7-T10：基准置顶、变化按 caseId、灰标阻断规则、置灰理由常驻且两次点击才设置', async () => {

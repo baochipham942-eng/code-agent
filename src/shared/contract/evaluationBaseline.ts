@@ -10,6 +10,7 @@ export type EvalBaselineGroupKey = `${EvalBaselineSplit}::${number}`;
 export interface EvalBaselineCaseResult {
   status: string;
   score: number;
+  costUsd?: number;
 }
 
 export interface EvalBaselineInfo {

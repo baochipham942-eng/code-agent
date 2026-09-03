@@ -57,6 +57,7 @@ export const PROVIDER_RUNTIME_CAPABILITY_MATRIX = [{
   writeText(root, 'scripts/lib/prompt-change-paths.sh', [
     'PROMPTS_DIR="src/host/prompts/"',
     'TOOL_MODULES_DIR="src/host/tools/modules/"',
+    'BUILTIN_PLUGINS_DIR="src/host/plugins/builtin/"',
     'VERSION_FILE="src/shared/constants/agent.ts"',
     '',
   ].join('\n'));

@@ -41,6 +41,7 @@ function createWorkspace(): { root: string; evidenceHead: string } {
   write(root, 'scripts/lib/prompt-change-paths.sh', [
     'PROMPTS_DIR="src/host/prompts/"',
     'TOOL_MODULES_DIR="src/host/tools/modules/"',
+    'BUILTIN_PLUGINS_DIR="src/host/plugins/builtin/"',
     'VERSION_FILE="src/shared/constants/agent.ts"',
     '',
   ].join('\n'));
@@ -103,6 +104,19 @@ describe('prompt gate evidence checker', () => {
     expect(result.status).not.toBe(0);
     expect(result.output).toContain('evidence is stale after prompt/tool schema changed');
     expect(result.output).toContain('src/host/prompts/system.ts');
+  });
+
+  it('rejects evidence whose gitHead predates a builtin plugin schema change', () => {
+    const { root, evidenceHead } = createWorkspace();
+    write(root, 'src/host/plugins/builtin/example/example.schema.ts', "export const description = 'changed';\n");
+    git(root, 'add', '.');
+    git(root, 'commit', '-qm', 'change builtin schema');
+    writeEvidence(root, evidence(evidenceHead));
+
+    const result = run(root);
+    expect(result.status).not.toBe(0);
+    expect(result.output).toContain('evidence is stale after prompt/tool schema changed');
+    expect(result.output).toContain('src/host/plugins/builtin/example/example.schema.ts');
   });
 
   it('rejects evidence from a different PROMPT_VERSION', () => {

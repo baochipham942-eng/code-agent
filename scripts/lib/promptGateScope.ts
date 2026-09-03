@@ -5,6 +5,7 @@ import path from 'node:path';
 interface PromptChangePaths {
   promptsDir: string;
   toolModulesDir: string;
+  builtinPluginsDir: string;
   versionFile: string;
 }
 
@@ -29,16 +30,20 @@ export function loadPromptChangePaths(root: string): PromptChangePaths {
   return {
     promptsDir: assignment(source, 'PROMPTS_DIR'),
     toolModulesDir: assignment(source, 'TOOL_MODULES_DIR'),
+    builtinPluginsDir: assignment(source, 'BUILTIN_PLUGINS_DIR'),
     versionFile: assignment(source, 'VERSION_FILE'),
   };
 }
 
 export function isPromptInputPath(relativePath: string, scope: PromptChangePaths): boolean {
-  // Keep this exactly aligned with check-prompt-version-bump.sh. That hook explicitly records
-  // plugins/builtin schemas as an existing blind spot; broadening only this consumer would create
-  // the second path policy that N-EVAL-PROMPTGATE forbids.
   return relativePath.startsWith(scope.promptsDir)
-    || (relativePath.startsWith(scope.toolModulesDir) && relativePath.endsWith('.schema.ts'));
+    || (
+      relativePath.endsWith('.schema.ts')
+      && (
+        relativePath.startsWith(scope.toolModulesDir)
+        || relativePath.startsWith(scope.builtinPluginsDir)
+      )
+    );
 }
 
 export function changedFiles(root: string, fromRef: string): string[] {

@@ -11,6 +11,7 @@ const pathsSource = join(repoRoot, 'scripts', 'lib', 'prompt-change-paths.sh');
 
 let scratch = '';
 let schemaFile = '';
+let builtinSchemaFile = '';
 let versionFile = '';
 
 function git(...args: string[]): void {
@@ -31,11 +32,13 @@ function runGate(): { status: number; output: string } {
 beforeEach(() => {
   scratch = mkdtempSync(join(tmpdir(), 'prompt-version-gate-'));
   schemaFile = join(scratch, 'src/host/tools/modules/example/example.schema.ts');
+  builtinSchemaFile = join(scratch, 'src/host/plugins/builtin/example/example.schema.ts');
   versionFile = join(scratch, 'src/shared/constants/agent.ts');
 
   mkdirSync(join(scratch, 'scripts'), { recursive: true });
   mkdirSync(join(scratch, 'scripts/lib'), { recursive: true });
   mkdirSync(join(schemaFile, '..'), { recursive: true });
+  mkdirSync(join(builtinSchemaFile, '..'), { recursive: true });
   mkdirSync(join(versionFile, '..'), { recursive: true });
   copyFileSync(gateSource, join(scratch, 'scripts/check-prompt-version-bump.sh'));
   copyFileSync(pathsSource, join(scratch, 'scripts/lib/prompt-change-paths.sh'));
@@ -60,6 +63,7 @@ beforeEach(() => {
     ].join('\n'),
   );
   writeFileSync(versionFile, "export const PROMPT_VERSION = 'sys-v1' as const;\n");
+  writeFileSync(builtinSchemaFile, "export const schema = { description: 'Builtin example' };\n");
 
   git('init');
   git('config', 'user.email', 'prompt-gate-test@example.com');
@@ -109,5 +113,15 @@ describe('check-prompt-version-bump.sh', () => {
 
     expect(result.status).toBe(0);
     expect(result.output).toContain("PROMPT_VERSION 已 bump 到 'sys-v2'");
+  });
+
+  it('builtin plugin schema 实质改动也必须 bump PROMPT_VERSION', () => {
+    writeFileSync(builtinSchemaFile, "export const schema = { description: 'Changed builtin example' };\n");
+    git('add', builtinSchemaFile);
+
+    const result = runGate();
+
+    expect(result.status).toBe(1);
+    expect(result.output).toContain('src/host/plugins/builtin/example/example.schema.ts');
   });
 });

@@ -77,6 +77,7 @@ interface ShellRedirectScan {
 const SHELL_COMMAND_WRAPPERS = new Set(['sh', 'bash', 'zsh', 'dash']);
 const MAX_REDIRECT_WRAPPER_DEPTH = 3;
 const SHELL_PARAMETER_EXPANSION = /\$(?:\{|[A-Za-z_]|[0-9@*#?$!-])/;
+const SHELL_ASSIGNMENT_PREFIX = /^[A-Za-z_][A-Za-z0-9_]*=/;
 
 function splitShellSegments(command: string): string[] {
   const segments: string[] = [];
@@ -183,16 +184,27 @@ function shellRedirectTargets(command: string, depth = 0): ShellRedirectScan {
 
   for (const segment of splitShellSegments(command)) {
     const words = readShellWords(segment);
-    const wrapper = canonicalizeCommand(words[0] ?? '').command;
+    let wrapperIndex = 0;
+    while (
+      wrapperIndex < words.length
+      && SHELL_ASSIGNMENT_PREFIX.test(canonicalizeCommand(words[wrapperIndex]).command)
+    ) wrapperIndex += 1;
+    const wrapper = canonicalizeCommand(words[wrapperIndex] ?? '').command;
     const isShellWrapper = SHELL_COMMAND_WRAPPERS.has(wrapper);
     const isEvalWrapper = wrapper === 'eval';
     if (!isShellWrapper && !isEvalWrapper) continue;
 
-    const scriptWords = isShellWrapper
-      ? (/^-[A-Za-z]*c[A-Za-z]*$/.test(canonicalizeCommand(words[1] ?? '').command)
-          ? words.slice(2, 3)
-          : [])
-      : words.slice(1);
+    let scriptWords: string[];
+    if (isShellWrapper) {
+      const option = canonicalizeCommand(words[wrapperIndex + 1] ?? '').command;
+      let scriptIndex = wrapperIndex + 2;
+      if (canonicalizeCommand(words[scriptIndex] ?? '').command === '--') scriptIndex += 1;
+      scriptWords = /^-[A-Za-z]*c[A-Za-z]*$/.test(option)
+        ? words.slice(scriptIndex, scriptIndex + 1)
+        : [];
+    } else {
+      scriptWords = words.slice(wrapperIndex + 1);
+    }
     if (scriptWords.length === 0) continue;
     if (depth >= MAX_REDIRECT_WRAPPER_DEPTH) {
       uncertain.push(`uncertain-redirection:${wrapper}`);

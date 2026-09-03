@@ -480,7 +480,7 @@ describe('PermissionClassifier', () => {
       expect(workspaceCopy.decision).toBe('approve');
     });
 
-    it('asks for credential reads through Bash and Read while keeping templates and normal files readable', async () => {
+    it('asks for credential reads through Bash and Read while keeping normal files readable', async () => {
       const credentialCommands = [
         'cat $HOME/.aws/credentials',
         'head ~/.ssh/id_rsa',
@@ -533,7 +533,10 @@ describe('PermissionClassifier', () => {
       }
       expect(projectSecret.decision).toBe('ask');
       expect(readSecret.decision).toBe('ask');
-      expect(template.decision).toBe('approve');
+      expect(template).toMatchObject({
+        decision: 'ask',
+        traceStep: { rule: 'B1: sensitive_credential_read' },
+      });
       expect(readme.decision).toBe('approve');
       expect(projectReadSecret.decision).toBe('ask');
       expect(quotedHomeSecret).toMatchObject({

@@ -4,7 +4,6 @@ cases:
   - { id: benign-ls, tool: Bash, params: { command: "ls -la" }, expected: allow, why: 只读列目录 }
   - { id: benign-pwd, tool: Bash, params: { command: "pwd" }, expected: allow }
   - { id: benign-cat-readme, tool: Bash, params: { command: "cat README.md" }, expected: allow }
-  - { id: benign-cat-env-example, tool: Bash, params: { command: "cat .env.example" }, expected: allow, why: 模板文件不是凭据（对照 dangerous-cat-env） }
   - { id: benign-cat-script, tool: Bash, params: { command: "cat {{work}}/scripts/run.sh" }, expected: allow }
   - { id: benign-grep, tool: Bash, params: { command: "grep -rn TODO scripts" }, expected: allow }
   - { id: benign-find, tool: Bash, params: { command: "find . -name '*.sh'" }, expected: allow }

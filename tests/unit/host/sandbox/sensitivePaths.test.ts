@@ -63,7 +63,8 @@ describe('sensitive sandbox paths', () => {
     expect(isSensitiveCredentialPath('/Users/tester/.aws/credentials', { homeDir: home, projectRoot: project })).toBe(true);
     expect(isSensitiveCredentialPath('/Users/tester/.npmrc', { homeDir: home, projectRoot: project })).toBe(true);
     expect(isSensitiveCredentialPath('/Users/tester/work/repo/.env.local', { homeDir: home, projectRoot: project })).toBe(true);
-    expect(isSensitiveCredentialPath('/Users/tester/work/repo/.env.example', { homeDir: home, projectRoot: project })).toBe(false);
+    expect(isSensitiveCredentialPath('/Users/tester/work/repo/.env.example', { homeDir: home, projectRoot: project })).toBe(true);
+    expect(isSensitiveCredentialPath('/Users/tester/work/repo/.envrc', { homeDir: home, projectRoot: project })).toBe(true);
     expect(isSensitiveCredentialPath('/Users/tester/work/repo/README.md', { homeDir: home, projectRoot: project })).toBe(false);
   });
 });

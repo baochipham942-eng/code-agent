@@ -75,13 +75,6 @@ export function getSensitiveSandboxPaths(
   return dedupeSensitivePaths(entries);
 }
 
-const PROJECT_ENV_TEMPLATE_NAMES = new Set([
-  '.env.example',
-  '.env.sample',
-  '.env.template',
-  '.env.dist',
-]);
-
 export interface SensitiveCredentialPathOptions {
   homeDir?: string;
   projectRoot?: string;
@@ -120,11 +113,7 @@ export function isSensitiveCredentialPath(
     const relative = path.relative(projectRoot, candidate);
     const isInsideProject = relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
     const name = path.basename(candidate);
-    if (
-      isInsideProject
-      && (name === '.env' || name.startsWith('.env.'))
-      && !PROJECT_ENV_TEMPLATE_NAMES.has(name)
-    ) {
+    if (isInsideProject && name.startsWith('.env')) {
       return true;
     }
   }

@@ -269,6 +269,14 @@ describe('PermissionClassifier', () => {
       expect(prefixed.decision).toBe('ask');
     });
 
+    it('denies a relative system delete after cd changes the command cwd', async () => {
+      const result = await classifyPermission('bash', { command: 'cd / && rm -rf usr' }, context);
+
+      expect(result.decision).toBe('deny');
+      expect(result.reason).toContain('/usr');
+      expect(result.traceStep?.rule).toBe('B1: resolved_rm_critical_path');
+    });
+
     it('keeps a read-only command after cd approved', async () => {
       const result = await classifyPermission('bash', { command: 'cd x && ls' }, context);
 

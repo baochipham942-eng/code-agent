@@ -424,6 +424,26 @@ export function recursiveRmIsContainedInWorkspace(
   ));
 }
 
+function contextAfterCdSegment(
+  segment: string,
+  context: ClassificationContext,
+): ClassificationContext | null {
+  const words = commandWords(segment);
+  if (commandProgram(words[0]) !== 'cd') return null;
+
+  const args = words.slice(1);
+  const separator = args.indexOf('--');
+  const candidates = (separator >= 0 ? args.slice(separator + 1) : args)
+    .filter((arg) => !arg.startsWith('-'));
+  const target = candidates[0] ?? '~';
+  // `cd -` depends on shell history, so its successor cwd cannot be reconstructed here.
+  if (target === '-') return context;
+  return {
+    ...context,
+    workingDirectory: resolveCandidatePath(target, context.workingDirectory),
+  };
+}
+
 /**
  * P0 safe-command bypass must not skip actions whose arguments change the
  * permission decision. Keep this predicate beside the classifier rules so the
@@ -436,11 +456,17 @@ export function bashCommandRequiresPermission(
   const canonical = checkCommandPolicy(command).canonicalCommand;
   const segments = splitCompoundCommand(canonical);
   if (!segments) return false;
-  return segments.some((segment) => (
-    credentialReadTarget(segment, { ...context, permissionLevel: 'execute' }) !== null
-    || gitMutationReason(segment) !== null
-    || resolvedRmCriticalTarget(segment, { ...context, permissionLevel: 'execute' }) !== null
-  ));
+  let segmentContext: ClassificationContext = { ...context, permissionLevel: 'execute' };
+  return segments.some((segment) => {
+    const advancedContext = contextAfterCdSegment(segment, segmentContext);
+    if (advancedContext) {
+      segmentContext = advancedContext;
+      return false;
+    }
+    return credentialReadTarget(segment, segmentContext) !== null
+      || gitMutationReason(segment) !== null
+      || resolvedRmCriticalTarget(segment, segmentContext) !== null;
+  });
 }
 
 export function readArgumentsRequirePermission(
@@ -791,22 +817,31 @@ export class PermissionClassifier {
       return this.classifyBashSegment(segments[0], context, startTime);
     }
 
-    // cd 只改变后续段的相对路径基准，不降低那些段的风险等级。
-    const executableSegments = segments.filter(segment => !/^cd(?:\s|$)/.test(segment));
-    if (executableSegments.length === 0) {
+    // 沿用 #1609 的逐段风险分类，同时把 cd 的 cwd 影响传给后续段的路径解析。
+    // 不改变 cd 自身或未知段的判决，只修正后续 rm/凭据相对路径的解析基准。
+    let strictest: ClassificationResult | null = null;
+    let segmentContext = context;
+    let executableSegmentCount = 0;
+    for (const segment of segments) {
+      const advancedContext = contextAfterCdSegment(segment, segmentContext);
+      if (advancedContext) {
+        segmentContext = advancedContext;
+        continue;
+      }
+      executableSegmentCount += 1;
+      const result = this.classifyBashSegment(segment, segmentContext, startTime)
+        ?? this.createUnknownCompoundAsk(segment, startTime);
+      if (result.decision === 'deny') return result;
+      if (!strictest || result.decision === 'ask') strictest = result;
+    }
+
+    if (executableSegmentCount === 0) {
       return {
         decision: 'approve',
         reason: 'cd 命令',
         confidence: 1.0,
         cached: false,
       };
-    }
-
-    let strictest: ClassificationResult | null = null;
-    for (const segment of executableSegments) {
-      const result = this.classifyBashSegment(segment, context, startTime) ?? this.createUnknownCompoundAsk(segment, startTime);
-      if (result.decision === 'deny') return result;
-      if (!strictest || result.decision === 'ask') strictest = result;
     }
 
     return strictest;

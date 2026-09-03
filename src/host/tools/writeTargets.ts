@@ -93,8 +93,17 @@ function shellRedirectTargets(command: string): string[] {
     }
     if (char !== '>') continue;
     while (command[index + 1] === '>') index += 1;
-    const target = readShellWord(command, index + 1);
-    targets.push(target.raw);
+
+    const duplicatesFileDescriptor = command[index + 1] === '&';
+    const target = readShellWord(command, index + (duplicatesFileDescriptor ? 2 : 1));
+    const normalizedTarget = canonicalizeCommand(target.raw).command;
+    if (duplicatesFileDescriptor && (normalizedTarget === '' || /^[0-9-]/.test(normalizedTarget))) {
+      index = Math.max(index, target.end - 1);
+      continue;
+    }
+    if (!(command[index - 1] === '&' && normalizedTarget === '')) {
+      targets.push(normalizedTarget);
+    }
     index = Math.max(index, target.end - 1);
   }
   return targets;
@@ -182,7 +191,7 @@ function descriptorAssessment(
   const uncertain: string[] = [];
   const memoryAlias = path.join(path.basename(path.dirname(memoryDir)), path.basename(memoryDir));
   const canonical = canonicalizeCommand(command);
-  const redirectTargets = shellRedirectTargets(canonical.command);
+  const redirectTargets = shellRedirectTargets(command);
   if (canonical.parsingFailed && redirectTargets.length > 0) {
     uncertain.push(`uncertain-command-analysis:${canonical.failureReason ?? 'parse-failure'}`);
   }

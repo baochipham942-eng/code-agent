@@ -79,6 +79,7 @@ const MAX_REDIRECT_WRAPPER_DEPTH = 3;
 const SHELL_PARAMETER_EXPANSION = /\$(?:\{|[A-Za-z_]|[0-9@*#?$!-])/;
 const SHELL_COMMAND_STRING_OPTION = /^-[A-Za-z]*c[A-Za-z]*$/;
 const SHELL_ASSIGNMENT_PREFIX = /^[A-Za-z_][A-Za-z0-9_]*=/;
+const DYNAMIC_COMMAND_WORD = /^\$(?:[A-Za-z_][A-Za-z0-9_]*|\{[A-Za-z_][A-Za-z0-9_]*\})$/;
 const ENV_OPTIONS_WITHOUT_VALUES = new Set(['-i', '--ignore-environment', '-0', '--null', '-v', '--debug']);
 const ENV_OPTIONS_WITH_VALUES = new Set(['-u', '--unset', '-C', '--chdir', '--argv0', '-P']);
 
@@ -280,6 +281,58 @@ function unresolvedIndirectWrapper(words: string[]): string | undefined {
   return undefined;
 }
 
+function hasShellCommandStringOption(words: string[], commandIndex: number): boolean {
+  for (let optionIndex = commandIndex + 1; optionIndex < words.length; optionIndex += 1) {
+    const option = canonicalizeCommand(words[optionIndex]).command;
+    if (SHELL_COMMAND_STRING_OPTION.test(option)) return true;
+    if (!option.startsWith('-')) return false;
+    if (option === '-o') optionIndex += 1;
+  }
+  return false;
+}
+
+function isDynamicCommandWord(word: string | undefined): boolean {
+  const raw = word?.trim() ?? '';
+  if (raw.startsWith("'") && raw.endsWith("'")) return false;
+  return DYNAMIC_COMMAND_WORD.test(canonicalizeCommand(raw).command);
+}
+
+function dynamicExecutionUncertainty(segment: string, words: string[]): string | undefined {
+  const firstWord = readShellWord(segment, 0);
+  if (
+    isDynamicCommandWord(words[0])
+    && segment.slice(firstWord.end).trim() !== ''
+  ) return 'dynamic-command';
+
+  for (let index = 0; index < words.length; index += 1) {
+    const previous = canonicalizeCommand(words[index - 1] ?? '').command;
+    if (
+      isDynamicCommandWord(words[index])
+      && (index === 0 || !previous.startsWith('-'))
+      && hasShellCommandStringOption(words, index)
+    ) {
+      return 'dynamic-command';
+    }
+  }
+
+  let commandIndex = 0;
+  while (
+    commandIndex < words.length
+    && SHELL_ASSIGNMENT_PREFIX.test(canonicalizeCommand(words[commandIndex]).command)
+  ) commandIndex += 1;
+  const command = shellExecutableName(words[commandIndex]);
+  if ((command === 'source' || command === '.') && commandIndex + 1 < words.length) {
+    return 'source';
+  }
+
+  for (let index = commandIndex; index < words.length; index += 1) {
+    const executable = shellExecutableName(words[index]);
+    if (!SHELL_COMMAND_WRAPPERS.has(executable) && executable !== 'eval') continue;
+    if (words.slice(index + 1).some((word) => /^<<-?/.test(word))) return executable;
+  }
+  return undefined;
+}
+
 function commandSubstitutionContent(command: string, start: number): string {
   if (command[start] === '`') {
     let escaped = false;
@@ -332,7 +385,7 @@ function commandSubstitutionContent(command: string, start: number): string {
 
 function substitutionNeedsFailClosed(command: string, start: number): boolean {
   const content = commandSubstitutionContent(command, start);
-  return content.includes('>') || /\b(?:sh|bash|eval)\b/.test(content);
+  return content.includes('>') || /\b(?:sh|bash|zsh|dash|eval)\b/.test(content);
 }
 
 function shellRedirectTargets(command: string, depth = 0): ShellRedirectScan {
@@ -342,6 +395,8 @@ function shellRedirectTargets(command: string, depth = 0): ShellRedirectScan {
   let escaped = false;
   for (let index = 0; index < command.length; index += 1) {
     const char = command[index];
+    const isCommandSubstitution = char === '`' || (char === '$' && command[index + 1] === '(');
+    const isProcessSubstitution = (char === '<' || char === '>') && command[index + 1] === '(';
     if (escaped) {
       escaped = false;
       continue;
@@ -352,11 +407,19 @@ function shellRedirectTargets(command: string, depth = 0): ShellRedirectScan {
     }
     if (
       quote !== "'"
-      && (char === '`' || (char === '$' && command[index + 1] === '('))
+      && isCommandSubstitution
       && substitutionNeedsFailClosed(command, index)
       && !uncertain.includes('uncertain-redirection:command-substitution')
     ) {
       uncertain.push('uncertain-redirection:command-substitution');
+    }
+    if (
+      !quote
+      && isProcessSubstitution
+      && substitutionNeedsFailClosed(command, index)
+      && !uncertain.includes('uncertain-redirection:process-substitution')
+    ) {
+      uncertain.push('uncertain-redirection:process-substitution');
     }
     if (quote) {
       if (char === quote) quote = undefined;
@@ -366,7 +429,7 @@ function shellRedirectTargets(command: string, depth = 0): ShellRedirectScan {
       quote = char;
       continue;
     }
-    if (char !== '>') continue;
+    if (char !== '>' || isProcessSubstitution) continue;
     while (command[index + 1] === '>') index += 1;
 
     const duplicatesFileDescriptor = command[index + 1] === '&';
@@ -384,6 +447,11 @@ function shellRedirectTargets(command: string, depth = 0): ShellRedirectScan {
 
   for (const segment of splitShellSegments(command)) {
     const words = readShellWords(segment);
+    const dynamicUncertainty = dynamicExecutionUncertainty(segment, words);
+    if (
+      dynamicUncertainty
+      && !uncertain.includes(`uncertain-redirection:${dynamicUncertainty}`)
+    ) uncertain.push(`uncertain-redirection:${dynamicUncertainty}`);
     const lookup = findShellWrapper(words);
     if (!lookup) {
       const fallbackWrapper = unresolvedIndirectWrapper(words);

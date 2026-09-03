@@ -145,8 +145,25 @@ describe('shell redirect write targets', () => {
     ["xargs -0 sh -c 'x'", 'uncertain-redirection:sh'],
     ["sudo -u me bash -c 'x'", 'uncertain-redirection:bash'],
     ["printf '%s\\n' sh -c 'x'", 'uncertain-redirection:sh'],
+    [`cat <(sh -c 'printf x > "$HOME/m/c.md"')`, 'uncertain-redirection:process-substitution'],
+    ["cat >(eval 'printf x')", 'uncertain-redirection:process-substitution'],
+    ['"$runner" -c \'printf x\'', 'uncertain-redirection:dynamic-command'],
+    ["$runner -c 'printf x'", 'uncertain-redirection:dynamic-command'],
+    ["${runner} -c 'printf x'", 'uncertain-redirection:dynamic-command'],
+    ['$runner script.sh', 'uncertain-redirection:dynamic-command'],
+    ['sh <<EOF', 'uncertain-redirection:sh'],
+    ['eval <<EOF', 'uncertain-redirection:eval'],
+    ['source script.sh', 'uncertain-redirection:source'],
+    ['. script.sh', 'uncertain-redirection:source'],
   ])('fails closed when a wrapped script cannot be resolved: %s', (command, reason) => {
     expect(resolve(command)).toMatchObject({ targets: [], uncertain: [reason] });
+  });
+
+  it('keeps a direct target while failing closed on a dynamic command word', () => {
+    expect(resolve('$CMD > f')).toMatchObject({
+      targets: [resolveCanonicalRunPath(path.join(workingDirectory, 'f'))],
+      uncertain: ['uncertain-redirection:dynamic-command'],
+    });
   });
 
   it.each([
@@ -159,6 +176,9 @@ describe('shell redirect write targets', () => {
     'grep ">" f',
     'grep sh file',
     "printf '%s' bash --noprofile",
+    'diff <(printf a) <(printf b)',
+    'cat >(printf a)',
+    "printf '%s' '$runner' -c 'x'",
     "sed 's/>/x/' f",
   ])('ignores redirect syntax in ordinary quoted arguments: %s', (command) => {
     expect(resolve(command)).toMatchObject({ targets: [], uncertain: [] });

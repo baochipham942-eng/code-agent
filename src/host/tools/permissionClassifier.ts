@@ -257,8 +257,45 @@ function commandProgram(word: string | undefined): string {
   return word ? path.posix.basename(word) : '';
 }
 
-function gitCommand(command: string): { subcommand: string; args: string[] } | null {
+const SHELL_ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
+
+function effectiveCommandWords(command: string): string[] {
   const words = commandWords(command);
+  let index = 0;
+  while (index < words.length && SHELL_ASSIGNMENT.test(words[index])) index += 1;
+  if (commandProgram(words[index]) !== 'env') return words.slice(index);
+
+  index += 1;
+  while (index < words.length) {
+    const word = words[index];
+    if (word === '--') {
+      index += 1;
+      break;
+    }
+    if (SHELL_ASSIGNMENT.test(word)) {
+      index += 1;
+      continue;
+    }
+    if (['-u', '--unset', '-C', '--chdir'].includes(word)) {
+      index += 2;
+      continue;
+    }
+    if (word.startsWith('--unset=') || word.startsWith('--chdir=')) {
+      index += 1;
+      continue;
+    }
+    if (word.startsWith('-')) {
+      index += 1;
+      continue;
+    }
+    break;
+  }
+  while (index < words.length && SHELL_ASSIGNMENT.test(words[index])) index += 1;
+  return words.slice(index);
+}
+
+function gitCommand(command: string): { subcommand: string; args: string[] } | null {
+  const words = effectiveCommandWords(command);
   if (commandProgram(words[0]) !== 'git') return null;
   let index = 1;
   while (index < words.length && words[index].startsWith('-')) {
@@ -284,9 +321,27 @@ function gitMutationReason(command: string): string | null {
 
   const readFlags = new Set(['--get', '--get-all', '--get-regexp', '--list', '-l', '--show-origin', '--show-scope']);
   const mutationFlags = new Set(['--add', '--replace-all', '--unset', '--unset-all', '--remove-section', '--rename-section']);
-  const hasReadFlag = git.args.some((arg) => readFlags.has(arg));
-  const hasMutationFlag = git.args.some((arg) => mutationFlags.has(arg));
-  const operands = git.args.filter((arg) => !arg.startsWith('-'));
+  const optionsWithValue = new Set(['--file', '-f', '--blob', '--type', '--default']);
+  let hasReadFlag = false;
+  let hasMutationFlag = false;
+  const operands: string[] = [];
+  for (let index = 0; index < git.args.length; index += 1) {
+    const arg = git.args[index];
+    if (readFlags.has(arg)) {
+      hasReadFlag = true;
+      continue;
+    }
+    if (mutationFlags.has(arg)) {
+      hasMutationFlag = true;
+      continue;
+    }
+    if (optionsWithValue.has(arg)) {
+      index += 1;
+      continue;
+    }
+    if (arg.startsWith('-')) continue;
+    operands.push(arg);
+  }
   const key = operands[0]?.toLowerCase();
   if (!key) return null;
   const protectedKey = /^url\..+\.insteadof$/i.test(key)
@@ -299,7 +354,7 @@ function gitMutationReason(command: string): string | null {
 }
 
 function credentialReadTarget(command: string, context: ClassificationContext): string | null {
-  const words = commandWords(command);
+  const words = effectiveCommandWords(command);
   if (!CREDENTIAL_READ_COMMANDS.has(commandProgram(words[0]))) return null;
   const projectRoot = context.workspaceRoot ?? context.workingDirectory;
   for (const word of words.slice(1)) {
@@ -320,7 +375,7 @@ function readPathCandidates(args: Record<string, unknown>): string[] {
 }
 
 function resolvedRecursiveRmTargets(command: string, workingDirectory: string): string[] | null {
-  const words = commandWords(command);
+  const words = effectiveCommandWords(command);
   if (commandProgram(words[0]) !== 'rm') return null;
   const flags = words.slice(1).filter((word) => word.startsWith('-') && word !== '--');
   const recursive = flags.some((flag) => flag === '--recursive' || /^-[A-Za-z]*[rR]/.test(flag));
@@ -384,6 +439,7 @@ export function bashCommandRequiresPermission(
   return segments.some((segment) => (
     credentialReadTarget(segment, { ...context, permissionLevel: 'execute' }) !== null
     || gitMutationReason(segment) !== null
+    || resolvedRmCriticalTarget(segment, { ...context, permissionLevel: 'execute' }) !== null
   ));
 }
 

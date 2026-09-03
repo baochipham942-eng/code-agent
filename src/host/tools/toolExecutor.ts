@@ -601,6 +601,15 @@ export class ToolExecutor {
       params = stripped.params as Record<string, unknown>;
     }
 
+    // Bash 的 working_directory 是命令真实执行基准；所有相对路径安全判断必须复用它。
+    // runContext 下 bindRunScopedParams 已把它约束并规范化到 workspace 内；基座 executor
+    // 仍允许显式 cwd，因此不能继续拿会话 cwd 代替实际 cwd 做 rm/凭据路径分类。
+    const bashWorkingDirectory = isBashToolName(normalizedRequestedToolName)
+      && typeof params.working_directory === 'string'
+      && params.working_directory.trim()
+      ? nodePath.resolve(this.executionCwd, params.working_directory)
+      : this.executionCwd;
+
     // 记忆目录是 directive authority 边界。按 schema 声明的写 effect 判定，
     // 必须先于 Skill 预授权、安全命令和 classifier，任何自动放行都不能越过。
     const directiveMemoryAssessment = assessDirectiveMemoryWrite({
@@ -954,7 +963,7 @@ export class ToolExecutor {
           || flag === 'container_dir_delete'
         ))
         && recursiveRmIsContainedInWorkspace(params.command as string, {
-          workingDirectory: resolveCanonicalRunPath(this.executionCwd),
+          workingDirectory: resolveCanonicalRunPath(bashWorkingDirectory),
           workspaceRoot: this.writeWorkspaceRoot,
         });
       if (workspaceContainedSystemDelete) {
@@ -1130,7 +1139,7 @@ export class ToolExecutor {
     const bashArgumentForcesClassification = isBashToolName(policyToolName)
       && typeof params.command === 'string'
       && bashCommandRequiresPermission(params.command, {
-        workingDirectory: resolveCanonicalRunPath(this.executionCwd),
+        workingDirectory: resolveCanonicalRunPath(bashWorkingDirectory),
         workspaceRoot: this.writeWorkspaceRoot,
       });
     const readArgumentForcesClassification = readArgumentsRequirePermission(
@@ -1246,7 +1255,7 @@ export class ToolExecutor {
             params,
             policyForcesConfirmation,
             boundaryViolation,
-            workingDirectory: resolveCanonicalRunPath(this.executionCwd),
+            workingDirectory: resolveCanonicalRunPath(bashWorkingDirectory),
             workspaceRoot,
             permissionLevel: toolDef.permissionLevel,
             permStartTime,
@@ -1404,12 +1413,9 @@ export class ToolExecutor {
         ? extractDeleteTarget(params.command, commandValidation.securityFlags)
         : undefined;
       if (deleteTarget) {
-        const commandCwd = typeof params.working_directory === 'string'
-          ? nodePath.resolve(this.executionCwd, params.working_directory)
-          : this.executionCwd;
         const affectedPath = nodePath.isAbsolute(deleteTarget)
           ? nodePath.resolve(deleteTarget)
-          : nodePath.resolve(commandCwd, deleteTarget);
+          : nodePath.resolve(bashWorkingDirectory, deleteTarget);
         permissionRequest.details.affectedPath = affectedPath;
         permissionRequest.details.affectedFileCount = await countAffectedFiles(affectedPath);
       }

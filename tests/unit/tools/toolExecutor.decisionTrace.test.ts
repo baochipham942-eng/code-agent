@@ -176,6 +176,39 @@ describe('ToolExecutor decision trace history', () => {
     }));
   });
 
+  it('resolves rm targets against the Bash working_directory before classification', async () => {
+    resolverState.getDefinition.mockReturnValue({
+      name: 'bash',
+      description: 'shell test tool',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          command: { type: 'string' },
+          working_directory: { type: 'string' },
+        },
+        required: ['command'],
+      },
+      requiresPermission: true,
+      permissionLevel: 'execute',
+    });
+    const requestPermission = vi.fn().mockResolvedValue(true);
+    const executor = new ToolExecutor({
+      requestPermission,
+      workingDirectory: '/tmp/workbench',
+    });
+
+    const result = await executor.execute(
+      'bash',
+      { command: 'rm -rf usr', working_directory: '/' },
+      { sessionId: 's1' },
+    );
+
+    expect(requestPermission).not.toHaveBeenCalled();
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('递归删除关键路径 /usr');
+    expect(resolverState.execute).not.toHaveBeenCalled();
+  });
+
   it('denies an external Write ask in the headless handler without executing it', async () => {
     resolverState.getDefinition.mockReturnValue({
       name: 'Write',

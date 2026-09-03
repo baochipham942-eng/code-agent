@@ -166,7 +166,9 @@ function findShellWrapper(words: string[]): ShellWrapperLookup | undefined {
       ) index += 1;
       continue;
     }
-    return undefined;
+    // Unknown launchers may still exec a later shell (for example process/session wrappers).
+    // Keep looking instead of maintaining an open-ended launcher-name allowlist.
+    index += 1;
   }
   return undefined;
 }

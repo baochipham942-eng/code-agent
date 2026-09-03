@@ -13,17 +13,19 @@
 // 手选与专家两支都空时不渲染，不占底栏格子。
 // ============================================================================
 
-import React, { useMemo } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import { AlertCircle, Plug, Server, X } from 'lucide-react';
 import { CLI_CONNECTOR_DESCRIPTORS } from '@shared/constants/cliConnectorDescriptors';
 import { findRecommendedMcpServer } from '@shared/constants/mcpCatalog';
 import { useWorkbenchCapabilityRegistry } from '../../../../hooks/useWorkbenchCapabilityRegistry';
+import { useMcpServerStates } from '../../../../hooks/useMcpServerStates';
 import { useI18n } from '../../../../hooks/useI18n';
 import { useAppStore } from '../../../../stores/appStore';
 import { useComposerStore } from '../../../../stores/composerStore';
 import { useAgentRegistryStore } from '../../../../stores/agentRegistryStore';
 import {
   buildExpertConnectorSource,
+  type ExpertConnectorInstalledState,
   type ExpertConnectorSourceItem,
   type ExpertConnectorStatus,
 } from '../../../../utils/connectorSources';
@@ -37,6 +39,7 @@ const MAX_VISIBLE_MANUAL = 4;
 
 const STATUS_DOT: Record<ExpertConnectorStatus, string> = {
   connected: 'bg-badge-success',
+  lazy: 'bg-badge-info',
   disconnected: 'bg-zinc-500',
   hub_off: 'bg-badge-danger',
 };
@@ -46,6 +49,11 @@ export const MountedConnectorIcons: React.FC = () => {
   const text = t.chatInput.connectorSource;
   const hubText = t.expert.roleSkills;
   const { connectors, mcpServers } = useWorkbenchCapabilityRegistry();
+  // 专家那颗的状态必须看**全量** serverStates：注册表的 mcpServers 只合了
+  // 「已连接 ∪ 手选」（useWorkbenchCapabilities.ts 的 mergeVisibleIds），装好了但
+  // lazy 待连的 stdio server 不在里面——从 filtered 列表取状态会把健康配置误报成
+  // 「未连接」，hub_off 那一支也永远到不了（被关的必然不在列表里）。
+  const mcpServerStates = useMcpServerStates();
   const activeAgentId = useAppStore((state) => state.activeAgentId);
   const openCapabilitySettingsTarget = useAppStore((state) => state.openCapabilitySettingsTarget);
   const agentEntries = useAgentRegistryStore((state) => state.entries);
@@ -53,22 +61,32 @@ export const MountedConnectorIcons: React.FC = () => {
   const selectedMcpServerIds = useComposerStore((state) => state.selectedMcpServerIds);
 
   // 同一个 id 在底栏两处出现时必须同名：CLI 连接器走 SaaS 词表，其余走连接器目录，都查不到退回 id
-  const connectorDisplayName = (id: string): string =>
-    (id === 'feishu' || id === 'tmeet')
-      ? t.settings.saasConnectors.providers[id]
-      : findRecommendedMcpServer(id)?.name || id;
+  const connectorDisplayName = useCallback(
+    (id: string): string =>
+      (id === 'feishu' || id === 'tmeet')
+        ? t.settings.saasConnectors.providers[id]
+        : findRecommendedMcpServer(id)?.name || id,
+    [t],
+  );
 
   const manual = [...connectors, ...mcpServers].filter((capability) => capability.selected);
   const expert = agentEntries.find((entry) => entry.id === activeAgentId);
 
   const expertSource = useMemo(() => {
-    // 已装的那份状态直接取注册表，不另拉一次 hook：注册表本来就合了连接器探测与 MCP 连接态。
-    const installed = new Map<string, { kind: 'connector' | 'mcp'; connected: boolean; enabled: boolean }>();
-    for (const server of mcpServers) {
-      installed.set(server.id, { kind: 'mcp', connected: server.status === 'connected', enabled: server.enabled !== false });
+    const installed = new Map<string, ExpertConnectorInstalledState>();
+    for (const server of mcpServerStates) {
+      installed.set(server.config.name, {
+        kind: 'mcp',
+        status: server.status,
+        enabled: server.config.enabled !== false,
+      });
     }
     for (const connector of connectors) {
-      installed.set(connector.id, { kind: 'connector', connected: connector.connected, enabled: true });
+      installed.set(connector.id, {
+        kind: 'connector',
+        status: connector.connected ? 'connected' : 'disconnected',
+        enabled: true,
+      });
     }
     return buildExpertConnectorSource({
       expertConnectors: expert?.connectors,
@@ -77,7 +95,7 @@ export const MountedConnectorIcons: React.FC = () => {
       installed,
       resolveLabel: connectorDisplayName,
     });
-  }, [connectors, mcpServers, expert?.connectors, selectedConnectorIds, selectedMcpServerIds]);
+  }, [connectors, mcpServerStates, expert?.connectors, selectedConnectorIds, selectedMcpServerIds, connectorDisplayName]);
 
   if (manual.length === 0 && !expertSource) return null;
 
@@ -90,9 +108,11 @@ export const MountedConnectorIcons: React.FC = () => {
       <span className={`inline-block h-1.5 w-1.5 rounded-full ${STATUS_DOT[item.status]}`} aria-hidden />
       {item.status === 'connected'
         ? hubText.connectorConnected
-        : item.status === 'hub_off'
-          ? text.hubOff
-          : hubText.connectorMissing}
+        : item.status === 'lazy'
+          ? text.connectorLazy
+          : item.status === 'hub_off'
+            ? text.hubOff
+            : hubText.connectorMissing}
     </p>
   );
 
@@ -104,16 +124,25 @@ export const MountedConnectorIcons: React.FC = () => {
     <div className="flex items-center gap-1" data-testid="mounted-connector-icons">
       {visibleManual.map((capability) => {
         const TypeIcon = capability.kind === 'mcp' ? Server : Plug;
-        const label = capability.kind === 'connector' && (capability.id === 'feishu' || capability.id === 'tmeet')
-          ? t.settings.saasConnectors.providers[capability.id]
-          : capability.label;
+        // 与专家卡同名的口径（上面 connectorDisplayName 注释）：MCP 那颗不能再用裸 serverId
+        const label = capability.kind === 'mcp'
+          ? connectorDisplayName(capability.id)
+          : (capability.id === 'feishu' || capability.id === 'tmeet')
+            ? t.settings.saasConnectors.providers[capability.id]
+            : capability.label;
         const catalogEntry = capability.kind === 'mcp'
           ? findRecommendedMcpServer(capability.id)
           : undefined;
         const logo = capability.kind === 'mcp'
           ? catalogEntry?.logo
           : CLI_CONNECTOR_DESCRIPTORS.find((descriptor) => descriptor.id === capability.id)?.logo;
-        const connected = capability.available;
+        // 手选的 MCP 也可能是 lazy（装好了、用到才连）——和专家那颗同口径，不误报「未连接」
+        const manualStatus: ExpertConnectorStatus = capability.available
+          ? 'connected'
+          : capability.kind === 'mcp' && 'status' in capability && (capability.status === 'lazy' || capability.status === 'connecting')
+            ? 'lazy'
+            : 'disconnected';
+        const needsHub = manualStatus === 'disconnected';
         return (
           <CapabilitySourceHover
             key={capability.key}
@@ -122,8 +151,8 @@ export const MountedConnectorIcons: React.FC = () => {
               <>
                 <p className="font-medium text-zinc-100">{label}</p>
                 <p className="mt-1 text-[11px] text-zinc-400">{text.addedByYou}</p>
-                {statusLine({ status: connected ? 'connected' : 'disconnected' })}
-                {!connected && (
+                {statusLine({ status: manualStatus })}
+                {needsHub && (
                   <button /* ds-allow:button: 悬停卡里的紧凑出口，Button primitive 会把卡撑高 */
                     type="button"
                     onClick={() => goToHub(capability.kind === 'mcp' ? 'mcp' : 'connector', capability.id)}
@@ -160,7 +189,12 @@ export const MountedConnectorIcons: React.FC = () => {
       })}
 
       {overflowCount > 0 && (
-        <span data-testid="mounted-capability-overflow" className="shrink-0 text-[11px] text-zinc-500">
+        <span
+          data-testid="mounted-capability-overflow"
+          className="shrink-0 text-[11px] text-zinc-500"
+          title={text.overflowMore.replace('{count}', String(overflowCount))}
+          aria-label={text.overflowMore.replace('{count}', String(overflowCount))}
+        >
           +{overflowCount}
         </span>
       )}
@@ -179,11 +213,12 @@ export const MountedConnectorIcons: React.FC = () => {
                   <li key={item.id}>
                     <p className="text-zinc-100">{item.label}</p>
                     <p className="mt-0.5 text-[11px] text-zinc-400">
-                      {text.expertNeeds.replace('{expert}', expertName)}
-                      {item.reason ? `：${item.reason}` : ''}
+                      {item.reason
+                        ? text.expertNeedsReason.replace('{expert}', expertName).replace('{reason}', item.reason)
+                        : text.expertNeeds.replace('{expert}', expertName)}
                     </p>
                     {statusLine(item)}
-                    {item.status !== 'connected' && (
+                    {(item.status === 'disconnected' || item.status === 'hub_off') && (
                       <button /* ds-allow:button: 悬停卡里的紧凑出口，Button primitive 会把卡撑高 */
                         type="button"
                         onClick={() => goToHub(item.kind, item.id)}

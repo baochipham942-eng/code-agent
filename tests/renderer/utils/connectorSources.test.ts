@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { buildExpertConnectorSource } from '../../../src/renderer/utils/connectorSources';
+import {
+  buildExpertConnectorSource,
+  type ExpertConnectorInstalledState,
+} from '../../../src/renderer/utils/connectorSources';
 
-const installed = new Map<string, { kind: 'connector' | 'mcp'; connected: boolean; enabled: boolean }>([
-  ['tmeet', { kind: 'connector', connected: true, enabled: true }],
-  ['lark', { kind: 'mcp', connected: false, enabled: true }],
-  ['notion', { kind: 'mcp', connected: true, enabled: false }],
+const installed = new Map<string, ExpertConnectorInstalledState>([
+  ['tmeet', { kind: 'connector', status: 'connected', enabled: true }],
+  ['lark', { kind: 'mcp', status: 'error', enabled: true }],
+  ['notion', { kind: 'mcp', status: 'disconnected', enabled: false }],
 ]);
 
 const resolveLabel = (id: string) => ({ tmeet: '腾讯会议', lark: '飞书', notion: 'Notion' }[id] ?? id);
@@ -45,7 +48,7 @@ describe('buildExpertConnectorSource', () => {
     expect(source?.sessionOverridden).toBe(true);
   });
 
-  it('状态三分：已连接 / 未连接 / 已在能力中心关闭；任一条有问题就挂警示点', () => {
+  it('状态四分：已连接 / lazy 待连（健康）/ 未连接 / 已在能力中心关闭；只有真问题才挂警示点', () => {
     const source = build({
       expertConnectors: [
         { id: 'tmeet', level: 'core' },
@@ -60,6 +63,36 @@ describe('buildExpertConnectorSource', () => {
       ['notion', 'hub_off'],
       ['unknown-one', 'disconnected'],
     ]);
+    expect(source?.hasIssue).toBe(true);
+  });
+
+  // stdio server 默认 lazyLoad：装好了、enabled、状态停在 lazy 是健康配置，
+  // 误判成「未连接」会挂假警示点、给假「去连接」出口（ai-review 第七轮抓的实病）
+  it('lazy / connecting 是健康待连：不算问题、不挂警示点', () => {
+    const lazyInstalled = new Map<string, ExpertConnectorInstalledState>([
+      ['lark', { kind: 'mcp', status: 'lazy', enabled: true }],
+      ['notion', { kind: 'mcp', status: 'connecting', enabled: true }],
+    ]);
+    const source = build({
+      expertConnectors: [
+        { id: 'lark', level: 'core' },
+        { id: 'notion', level: 'core' },
+      ],
+      installed: lazyInstalled,
+    });
+    expect(source?.items.map((item) => item.status)).toEqual(['lazy', 'lazy']);
+    expect(source?.hasIssue).toBe(false);
+  });
+
+  it('lazy 但被能力中心关掉：仍是 hub_off（关掉的优先级高于待连）', () => {
+    const offInstalled = new Map<string, ExpertConnectorInstalledState>([
+      ['lark', { kind: 'mcp', status: 'lazy', enabled: false }],
+    ]);
+    const source = build({
+      expertConnectors: [{ id: 'lark', level: 'core' }],
+      installed: offInstalled,
+    });
+    expect(source?.items[0]?.status).toBe('hub_off');
     expect(source?.hasIssue).toBe(true);
   });
 

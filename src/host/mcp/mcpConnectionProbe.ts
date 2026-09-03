@@ -18,6 +18,23 @@ export function setMcpConnectionProbe(next: McpConnectionProbe | undefined): voi
   probe = next;
 }
 
+/**
+ * turn scope 收窄要的「这台 server 可用吗」判据。
+ *
+ * 🔴 lazy 要算可用：stdio server 默认 lazyLoad，装好了但状态停在 'lazy' 直到第一次
+ * 真被调用（tool 调用走到时会触发 lazy-load）——它是「装好了、用到就连」，和
+ * 「没装 / 已关 / 名字写错」不同类。只认 'connected' 的话，收窄在 stdio server 上
+ * 一直不生效，又在它被懒加载后的某一轮无声翻转（同一句话两轮工具面不同）。
+ * 安全侧不变：状态不存在（没装 / 拼错）、enabled=false、'error' 一律 false ⇒ 不收窄。
+ */
+export function isMcpStatusUsableForScope(
+  status: 'lazy' | 'disconnected' | 'connecting' | 'connected' | 'error' | undefined,
+  enabled: boolean,
+): boolean {
+  if (!status || !enabled) return false;
+  return status === 'connected' || status === 'lazy' || status === 'connecting';
+}
+
 export function isMcpServerConnected(serverName: string): boolean {
   return probe?.(serverName) ?? false;
 }

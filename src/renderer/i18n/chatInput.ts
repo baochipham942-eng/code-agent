@@ -28,6 +28,8 @@ export const chatInputZh = {
     // 状态词（已连接 / 未连接 / 去能力中心连接）逐字复用 expert.roleSkills，不给用户第二套说法。
     connectorSource: {
       expertNeeds: '{expert} 需要它',
+      expertNeedsReason: '{expert} 需要它：{reason}',
+      connectorLazy: '已装好，用到时自动连接',
       addedByYou: '你在本会话加的',
       onByDefault: '默认带的',
       skillRemovable: '新会话自动挂上，点 ✕ 可移除',
@@ -410,6 +412,8 @@ export const chatInputEn: typeof chatInputZh = {
     connectorIconRemoveAria: 'Unmount {name}',
     connectorSource: {
       expertNeeds: 'Needed by {expert}',
+      expertNeedsReason: 'Needed by {expert}: {reason}',
+      connectorLazy: 'Installed — connects on first use',
       addedByYou: 'Added by you in this session',
       onByDefault: 'On by default',
       skillRemovable: 'Mounted automatically in new sessions; click ✕ to remove',

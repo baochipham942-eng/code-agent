@@ -42,6 +42,18 @@ vi.mock('../../../src/renderer/hooks/useWorkbenchCapabilityRegistry', () => ({
   useWorkbenchCapabilityRegistry: () => ({ items: [], skills: [], ...registryState }),
 }));
 
+// 专家那颗的状态取自全量 serverStates（含 lazy 待连、含被关掉的），不是注册表过滤后的列表
+const makeServerState = (name: string, status: string, enabled = true) => ({
+  config: { name, type: 'stdio', enabled },
+  status,
+  toolCount: 0,
+  resourceCount: 0,
+});
+const mcpServerStatesState = [] as any[];
+vi.mock('../../../src/renderer/hooks/useMcpServerStates', () => ({
+  useMcpServerStates: () => mcpServerStatesState,
+}));
+
 const openCapabilitySettingsTarget = vi.fn();
 const appState = {
   activeAgentId: null as string | null,
@@ -76,6 +88,7 @@ beforeEach(() => {
   composerState.selectedMcpServerIds = [];
   registryState.connectors = [makeConnector('tmeet')];
   registryState.mcpServers = [];
+  mcpServerStatesState.length = 0;
   appState.activeAgentId = null;
   agentRegistryState.entries = [];
   vi.clearAllMocks();
@@ -149,7 +162,7 @@ describe('MountedConnectorIcons（底栏挂载连接器 chip）', () => {
   it('专家声明的 core 连接器：底栏多一颗组合 chip（徽标+条数），没有移除键', () => {
     composerState.selectedConnectorIds = [];
     registryState.connectors = [makeConnector('tmeet', false)];
-    registryState.mcpServers = [{ kind: 'mcp', key: 'mcp:tmeet-mcp', id: 'tmeet-mcp', label: 'tmeet-mcp', selected: false, status: 'connected', enabled: true, available: true }];
+    mcpServerStatesState.push(makeServerState('tmeet-mcp', 'connected'));
     appState.activeAgentId = 'weekly';
     agentRegistryState.entries = [WEEKLY_EXPERT];
     render(<MountedConnectorIcons />);
@@ -188,7 +201,7 @@ describe('MountedConnectorIcons（底栏挂载连接器 chip）', () => {
 
   it('用户在本会话手选过连接器：专家那颗照露，但卡上说明这轮没用它', () => {
     composerState.selectedConnectorIds = ['tmeet'];
-    registryState.mcpServers = [{ kind: 'mcp', key: 'mcp:tmeet-mcp', id: 'tmeet-mcp', label: 'tmeet-mcp', selected: false, status: 'connected', enabled: true, available: true }];
+    mcpServerStatesState.push(makeServerState('tmeet-mcp', 'connected'));
     appState.activeAgentId = 'weekly';
     agentRegistryState.entries = [WEEKLY_EXPERT];
     render(<MountedConnectorIcons />);
@@ -200,7 +213,7 @@ describe('MountedConnectorIcons（底栏挂载连接器 chip）', () => {
   it('只手选了 MCP（没选连接器）时，专家那颗同样标让位', () => {
     composerState.selectedConnectorIds = [];
     composerState.selectedMcpServerIds = ['some-mcp'];
-    registryState.mcpServers = [{ kind: 'mcp', key: 'mcp:tmeet-mcp', id: 'tmeet-mcp', label: 'tmeet-mcp', selected: false, status: 'connected', enabled: true, available: true }];
+    mcpServerStatesState.push(makeServerState('tmeet-mcp', 'connected'));
     appState.activeAgentId = 'weekly';
     agentRegistryState.entries = [WEEKLY_EXPERT];
     render(<MountedConnectorIcons />);
@@ -212,7 +225,8 @@ describe('MountedConnectorIcons（底栏挂载连接器 chip）', () => {
   it('专家要的连接器在能力中心被关了：组合 chip 挂警示点，卡里写清楚本轮不会用', () => {
     composerState.selectedConnectorIds = [];
     registryState.connectors = [makeConnector('tmeet', false)];
-    registryState.mcpServers = [{ kind: 'mcp', key: 'mcp:tmeet-mcp', id: 'tmeet-mcp', label: 'tmeet-mcp', selected: false, status: 'disconnected', enabled: false, available: false }];
+    // 真实管线产得出的形状：被关的 server 没连上也没被手选，只出现在全量 serverStates 里
+    mcpServerStatesState.push(makeServerState('tmeet-mcp', 'disconnected', false));
     appState.activeAgentId = 'weekly';
     agentRegistryState.entries = [WEEKLY_EXPERT];
     render(<MountedConnectorIcons />);
@@ -223,5 +237,40 @@ describe('MountedConnectorIcons（底栏挂载连接器 chip）', () => {
     expect(card.textContent).toContain('已在能力中心关闭，本轮不会用');
     fireEvent.click(screen.getByRole('button', { name: /去能力中心/ }));
     expect(openCapabilitySettingsTarget).toHaveBeenCalledWith({ kind: 'mcp', id: 'tmeet-mcp' });
+  });
+
+  // ai-review 第七轮 Important 1：stdio 默认 lazyLoad，装好且 enabled 的 server 停在 lazy——
+  // 它是健康配置，以前从不进过滤后的注册表列表，被稳定误报成「未连接」+ 假警示点
+  it('专家要的 MCP 是 lazy（装好了、用到才连）：不挂警示点，卡里写「已装好」，不给「去连接」出口', () => {
+    composerState.selectedConnectorIds = [];
+    registryState.connectors = [makeConnector('tmeet', false)];
+    mcpServerStatesState.push(makeServerState('tmeet-mcp', 'lazy'));
+    appState.activeAgentId = 'weekly';
+    agentRegistryState.entries = [WEEKLY_EXPERT];
+    render(<MountedConnectorIcons />);
+
+    expect(screen.queryByTestId('expert-connector-badge-issue')).toBeNull();
+    fireEvent.mouseEnter(screen.getByTestId('expert-connector-badge').parentElement!);
+    const card = screen.getByTestId('expert-connector-source');
+    expect(card.textContent).toContain('已装好，用到时自动连接');
+    expect(card.textContent).not.toContain('未连接');
+    expect(screen.queryByRole('button', { name: /去能力中心/ })).toBeNull();
+  });
+
+  it('手选的 MCP 是 lazy：同样不误报「未连接」，且名字走目录（与专家卡同一套）', () => {
+    composerState.selectedConnectorIds = [];
+    composerState.selectedMcpServerIds = ['lark'];
+    registryState.connectors = [makeConnector('tmeet', false)];
+    registryState.mcpServers = [{ kind: 'mcp', key: 'mcp:lark', id: 'lark', label: 'lark', selected: true, status: 'lazy', enabled: true, available: false }];
+    render(<MountedConnectorIcons />);
+
+    const chip = screen.getByTestId('mounted-capability-mcp-lark');
+    expect(chip.textContent).toContain('飞书');
+    expect(chip.textContent).not.toContain('lark');
+
+    fireEvent.mouseEnter(chip.parentElement!);
+    const card = screen.getByTestId('mounted-capability-source-mcp-lark');
+    expect(card.textContent).toContain('已装好，用到时自动连接');
+    expect(screen.queryByRole('button', { name: /去能力中心连接/ })).toBeNull();
   });
 });

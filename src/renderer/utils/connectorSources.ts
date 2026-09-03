@@ -13,15 +13,24 @@ import { resolveSessionConnectorIds, type ExpertConnector } from '@shared/contra
 
 /**
  * connected = 这个连接器自己连上了，它的工具就在本轮工具表里；
- * disconnected = 声明了但没连上 / 压根没装；hub_off = 在能力中心里被关掉了。
+ * lazy = 装好了、enabled，stdio 默认 lazyLoad 停在待连状态，第一次用到时自动连——
+ *        这是健康配置，不是故障：不挂警示点、不给「去连接」出口；
+ * disconnected = 声明了但没连上 / 压根没装 / 连接出错；hub_off = 在能力中心里被关掉了。
  *
  * 🔴 别把 connected 读成「专家的 core 声明这一轮生效了」——那是两件事。connected 只说
  * 「这个连接器自己连上了、它的工具在本轮工具表里」；至于专家声明有没有把工具面**收窄**
  * 到这几个，由宿主 `withWorkbenchTurnSystemContext` 按类型分流后决定（连接器那支进
- * allowedConnectorIds、MCP 那支进 allowedMcpServerIds，各自过一次「连上了没」，
- * 都没连上就不收窄）。渲染层拿不到最终 scope，所以这里不替它宣称「生效」。
+ * allowedConnectorIds、MCP 那支进 allowedMcpServerIds，各自过一次「可用了没」，
+ * 都不可用就不收窄）。渲染层拿不到最终 scope，所以这里不替它宣称「生效」。
  */
-export type ExpertConnectorStatus = 'connected' | 'disconnected' | 'hub_off';
+export type ExpertConnectorStatus = 'connected' | 'lazy' | 'disconnected' | 'hub_off';
+
+/** 已装那条记录带给三态解析的最小事实；status 对齐宿主 MCPServerStatus */
+export interface ExpertConnectorInstalledState {
+  kind: 'connector' | 'mcp';
+  status: 'connected' | 'lazy' | 'connecting' | 'disconnected' | 'error';
+  enabled: boolean;
+}
 
 export interface ExpertConnectorSourceItem {
   id: string;
@@ -38,20 +47,18 @@ export interface ExpertConnectorSource {
    * 用户在本会话手选过连接器、把专家那支整支挤掉了（宿主 explicit > 专家 的同款判定）。
    *
    * 只表达「谁的选择说了算」，**不表达「这些工具真进了本轮工具面」**——后者由宿主
-   * 的 `isConnectorReadyForTurnScope`（workbenchTurnContext.ts:422）说了算，它要求
-   * id 在 connector registry 里存在，而专家声明的 id 空间是连接器目录（lark 这类 MCP
-   * 名）⇒ MCP 类 core 在宿主侧会被整批过滤掉。那是上游的病（N-EXPERT-CORE-MCPSCOPE），
-   * 渲染层拿不到最终 scope，所以这里也不许替它宣称「生效」。
+   * `withWorkbenchTurnSystemContext` 按类型分流 + 可用性过滤后决定，渲染层拿不到
+   * 最终 scope，所以这里也不许替它宣称「生效」。
    */
   sessionOverridden: boolean;
-  /** 有一条不是「已连接」就够了：组合图标右上角挂警示点 */
+  /** 有一条出了状况就够了：组合图标右上角挂警示点（lazy 是健康态，不算） */
   hasIssue: boolean;
 }
 
 export function buildExpertConnectorSource(args: {
   expertConnectors?: readonly ExpertConnector[];
   sessionSelectedIds: readonly string[];
-  installed: ReadonlyMap<string, { kind: 'connector' | 'mcp'; connected: boolean; enabled: boolean }>;
+  installed: ReadonlyMap<string, ExpertConnectorInstalledState>;
   resolveLabel: (id: string) => string;
 }): ExpertConnectorSource | null {
   const coreIds = resolveSessionConnectorIds({ expertConnectors: args.expertConnectors });
@@ -64,7 +71,11 @@ export function buildExpertConnectorSource(args: {
       ? 'disconnected'
       : !state.enabled
         ? 'hub_off'
-        : state.connected ? 'connected' : 'disconnected';
+        : state.status === 'connected'
+          ? 'connected'
+          : state.status === 'lazy' || state.status === 'connecting'
+            ? 'lazy'
+            : 'disconnected';
     const reason = byId.get(id)?.reason;
     return { id, kind: state?.kind ?? 'mcp', label: args.resolveLabel(id), ...(reason ? { reason } : {}), status };
   });
@@ -78,6 +89,6 @@ export function buildExpertConnectorSource(args: {
   return {
     items,
     sessionOverridden,
-    hasIssue: items.some((item) => item.status !== 'connected'),
+    hasIssue: items.some((item) => item.status !== 'connected' && item.status !== 'lazy'),
   };
 }

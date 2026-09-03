@@ -73,4 +73,33 @@ describe('CapabilitySourceHover', () => {
     fireEvent.pointerDown(screen.getByTestId('outside'));
     expect(screen.queryByTestId('source-card')).toBeNull();
   });
+
+  // ai-review 第七轮 Important 2：卡与触发器之间的 8px 间距如果用 margin 做，
+  // 鼠标从 chip 移进卡先经过空隙 → 根 div mouseleave → 卡半路卸载，出口永远点不到。
+  // 间距必须是外壳的 padding（在 hover 判定区内）。jsdom 没有真指针轨迹，
+  // 用结构断言咬住：外壳带 pb-*、整条类串里没有 mb-*。
+  it('卡与触发器之间的间距是外壳 padding 不是 margin——margin 的空隙会让鼠标路径上的卡提前关掉', () => {
+    const { container } = renderHover();
+    const root = container.querySelector('.relative')!;
+
+    fireEvent.mouseEnter(root);
+    const shell = screen.getByTestId('source-card');
+    expect(shell.className).toContain('pb-');
+    expect(shell.className).not.toContain('mb-');
+  });
+
+  // 键盘路径：focus 从 chip 移进卡内按钮不算失焦（relatedTarget 还在根内），
+  // 否则键盘用户永远到不了卡里的出口
+  it('焦点在根内移动（chip → 卡内按钮）不收卡，移出根才收', () => {
+    const { container } = renderHover();
+    const root = container.querySelector('.relative')!;
+
+    fireEvent.focus(root);
+    const button = screen.getByRole('button', { name: '去能力中心连接' });
+    fireEvent.blur(root, { relatedTarget: button });
+    expect(screen.getByTestId('source-card')).toBeTruthy();
+
+    fireEvent.blur(root, { relatedTarget: screen.getByTestId('outside') });
+    expect(screen.queryByTestId('source-card')).toBeNull();
+  });
 });

@@ -1,6 +1,10 @@
 // MCP 连接态探针：给同步路径（每轮组装 toolScope）读的轻量真相源
 import { afterEach, describe, expect, it } from 'vitest';
-import { isMcpServerConnected, setMcpConnectionProbe } from '../../../src/host/mcp/mcpConnectionProbe';
+import {
+  isMcpServerConnected,
+  isMcpStatusUsableForScope,
+  setMcpConnectionProbe,
+} from '../../../src/host/mcp/mcpConnectionProbe';
 
 afterEach(() => setMcpConnectionProbe(undefined));
 
@@ -14,5 +18,21 @@ describe('mcpConnectionProbe', () => {
 
     expect(isMcpServerConnected('lark')).toBe(true);
     expect(isMcpServerConnected('notion')).toBe(false);
+  });
+});
+
+describe('isMcpStatusUsableForScope（turn scope 收窄的可用判据）', () => {
+  it('lazy / connecting / connected 都算可用——lazy 是「装好了、用到就连」，只认 connected 会让收窄在 stdio server 上落空又无声翻转', () => {
+    expect(isMcpStatusUsableForScope('connected', true)).toBe(true);
+    expect(isMcpStatusUsableForScope('lazy', true)).toBe(true);
+    expect(isMcpStatusUsableForScope('connecting', true)).toBe(true);
+  });
+
+  it('安全侧：没状态（没装/拼错）/ 已关闭 / error / disconnected 一律不可用 ⇒ 不收窄', () => {
+    expect(isMcpStatusUsableForScope(undefined, true)).toBe(false);
+    expect(isMcpStatusUsableForScope('lazy', false)).toBe(false);
+    expect(isMcpStatusUsableForScope('connected', false)).toBe(false);
+    expect(isMcpStatusUsableForScope('error', true)).toBe(false);
+    expect(isMcpStatusUsableForScope('disconnected', true)).toBe(false);
   });
 });

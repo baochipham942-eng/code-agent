@@ -264,15 +264,18 @@ function readShellWords(command: string): string[] {
 }
 
 function unresolvedIndirectWrapper(words: string[]): string | undefined {
-  // Unknown launchers are not enumerable. A shell immediately followed by a -c-shaped option,
-  // or any eval word, is enough to fail closed without guessing how the outer command executes it.
+  // Unknown launchers are not enumerable. A shell followed only by options before a -c-shaped
+  // option, or any eval word, is enough to fail closed without guessing how the outer command runs it.
   for (let index = 0; index < words.length; index += 1) {
     const executable = shellExecutableName(words[index]);
     if (executable === 'eval') return executable;
-    if (
-      SHELL_COMMAND_WRAPPERS.has(executable)
-      && SHELL_COMMAND_STRING_OPTION.test(canonicalizeCommand(words[index + 1] ?? '').command)
-    ) return executable;
+    if (!SHELL_COMMAND_WRAPPERS.has(executable)) continue;
+    for (let optionIndex = index + 1; optionIndex < words.length; optionIndex += 1) {
+      const option = canonicalizeCommand(words[optionIndex]).command;
+      if (SHELL_COMMAND_STRING_OPTION.test(option)) return executable;
+      if (!option.startsWith('-')) break;
+      if (option === '-o') optionIndex += 1;
+    }
   }
   return undefined;
 }

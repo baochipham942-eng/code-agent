@@ -141,6 +141,7 @@ describe('shell redirect write targets', () => {
     ["sh -c 'echo \"unterminated > out.txt'", 'uncertain-redirection:sh'],
     ["setsid sh -c 'echo > out.txt'", 'uncertain-redirection:sh'],
     ['time bash -c "echo > out.txt"', 'uncertain-redirection:bash'],
+    ["setsid bash --noprofile -c 'echo > out.txt'", 'uncertain-redirection:bash'],
     ["xargs -0 sh -c 'x'", 'uncertain-redirection:sh'],
     ["sudo -u me bash -c 'x'", 'uncertain-redirection:bash'],
     ["printf '%s\\n' sh -c 'x'", 'uncertain-redirection:sh'],
@@ -157,6 +158,7 @@ describe('shell redirect write targets', () => {
     'echo bash',
     'grep ">" f',
     'grep sh file',
+    "printf '%s' bash --noprofile",
     "sed 's/>/x/' f",
   ])('ignores redirect syntax in ordinary quoted arguments: %s', (command) => {
     expect(resolve(command)).toMatchObject({ targets: [], uncertain: [] });

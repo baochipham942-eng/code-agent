@@ -273,6 +273,28 @@ describe('mcpUnifiedModule (native)', () => {
         expect(result.meta?.count).toBe(1);
       }
     });
+
+    // 与同文件 list_tools 一个口径：「已连接」两表合算——收窄到进程内 server 时
+    // 不能输出「已连接服务器: 无」而可用工具非零（ai-review 第十二轮 Important）
+    it('收窄到进程内 server：status 不谎报「已连接服务器: 无」', async () => {
+      const client = makeMockClient({
+        getStatus: vi.fn().mockReturnValue({
+          connectedServers: [],
+          inProcessServers: ['memory-kv'],
+          toolCount: 1,
+          resourceCount: 0,
+          promptCount: 0,
+        }),
+      });
+      getMCPClientMock.mockReturnValue(client);
+      const scopedCtx = makeCtx({ toolScope: { allowedMcpServerIds: ['memory-kv'] } } as Partial<ToolContext>);
+      const result = await run({ action: 'status' }, scopedCtx);
+      if (result.ok) {
+        expect(result.output).toContain('已连接服务器: memory-kv');
+        expect(result.meta?.connectedServers).toEqual(['memory-kv']);
+        expect(result.meta?.count).toBe(1);
+      }
+    });
   });
 
   describe('action: list_tools', () => {
@@ -517,6 +539,23 @@ describe('mcpUnifiedModule (native)', () => {
       const result = await run({ action: 'list_resources', server: 'foo' });
       if (result.ok) {
         expect(result.output).toBe("服务器 'foo' 没有提供资源。");
+      }
+    });
+
+    // 与 list_tools 同口径：被 scope 滤空时点名收窄范围，不谎称「没有可用资源」
+    it('turn scope 滤空资源时点名收窄范围', async () => {
+      const client = makeMockClient({
+        getResources: vi.fn().mockReturnValue([
+          { uri: 'file:///a', name: 'a', serverName: 'github' },
+        ]),
+      });
+      getMCPClientMock.mockReturnValue(client);
+      const scopedCtx = makeCtx({ toolScope: { allowedMcpServerIds: ['lark'] } } as Partial<ToolContext>);
+      const result = await run({ action: 'list_resources' }, scopedCtx);
+      if (result.ok) {
+        expect(result.output).toContain('本轮会话的工具范围已收窄到：lark');
+        expect(result.output).not.toContain('当前没有可用的 MCP 资源');
+        expect(result.output).not.toContain('file:///a');
       }
     });
 

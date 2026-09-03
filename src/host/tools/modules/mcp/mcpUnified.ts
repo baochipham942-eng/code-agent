@@ -296,9 +296,12 @@ function actionListResources(args: Record<string, unknown>, ctx: ToolContext): T
     && (!scopeIds || scopeIds.includes(r.serverName)));
 
   if (filtered.length === 0) {
+    // 被 scope 滤空的要点名收窄范围（与 list_tools 同口径），不谎称「没有可用资源」
     const output = filterServer
       ? `服务器 '${filterServer}' 没有提供资源。`
-      : '当前没有可用的 MCP 资源。';
+      : scopeIds
+        ? `本轮会话的工具范围已收窄到：${scopeIds.join('、')}；这些 server 没有提供资源（未连接的首次调用其工具时会自动连接）。`
+        : '当前没有可用的 MCP 资源。';
     return {
       ok: true,
       output,
@@ -522,11 +525,14 @@ function actionStatus(ctx: ToolContext): ToolResult<string> {
   const mcpClient = getMCPClient();
   const status = mcpClient.getStatus();
   // 与 list_tools / list_resources 同口径：收窄生效时不把范围外的 server 摆出来——
-  // 「看见却调不动」对状态清单同样成立
+  // 「看见却调不动」对状态清单同样成立。「已连接」要两表合算：connectedServers
+  // 不含进程内 server（memory-kv/code-index 在 inProcessServers），漏了会输出
+  // 「已连接服务器: 无」而可用工具非零——与同文件 list_tools 的判空一个口径
   const scopeIds = scopeAllowedMcpServerIds(ctx);
+  const reachableServers = [...status.connectedServers, ...(status.inProcessServers ?? [])];
   const visibleServers = scopeIds
-    ? status.connectedServers.filter((serverName) => scopeIds.includes(serverName))
-    : status.connectedServers;
+    ? reachableServers.filter((serverName) => scopeIds.includes(serverName))
+    : reachableServers;
 
   const output = [
     '# MCP 连接状态',

@@ -89,11 +89,9 @@ export function buildExpertConnectorSource(args: {
     return { id, kind, label: args.resolveLabel(id), ...(reason ? { reason } : {}), status };
   });
 
-  const resolved = resolveSessionConnectorIds({
-    sessionSelectedIds: args.sessionSelectedIds,
-    expertConnectors: args.expertConnectors,
-  });
-  const sessionOverridden = !coreIds.every((id) => resolved.includes(id));
+  // 与宿主 withWorkbenchTurnSystemContext 同一条判据：会话在任一侧手选过，专家那支
+  // 整支让位。不用再绕 resolveSessionConnectorIds 反推——两处判据不同源，迟早漂
+  const sessionOverridden = args.sessionSelectedIds.length > 0;
 
   return {
     items,

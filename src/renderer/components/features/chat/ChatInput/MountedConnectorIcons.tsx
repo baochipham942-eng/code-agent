@@ -59,18 +59,25 @@ export const MountedConnectorIcons: React.FC = () => {
   const agentEntries = useAgentRegistryStore((state) => state.entries);
   const selectedConnectorIds = useComposerStore((state) => state.selectedConnectorIds);
   const selectedMcpServerIds = useComposerStore((state) => state.selectedMcpServerIds);
-  const oauthStatuses = useConnectorOAuthStatuses([...selectedConnectorIds].sort().join(','));
+  // 设置页开合也作 refreshKey：专家声明的 CLI 连接器用户从不手选，
+  // 「去能力中心连好再回来」那一趟必须重拉，否则警示点停在旧值
+  const showSettings = useAppStore((state) => state.showSettings);
+  const oauthStatuses = useConnectorOAuthStatuses(
+    `${[...selectedConnectorIds].sort().join(',')}|${showSettings ? 'open' : 'closed'}`,
+  );
   const oauthConnectedById = new Map(
     oauthStatuses.map((status) => [status.id, status.connected && status.stale !== true]),
   );
 
-  // 同一个 id 在底栏两处出现时必须同名：CLI 连接器走 SaaS 词表，其余走连接器目录，都查不到退回 id
+  // 同一个 id 在底栏两处出现时必须同名：CLI 连接器走 SaaS 词表，原生连接器走注册表
+  // 本地化名（mail →「邮件」，和手选 chip 的 capability.label 同一份），其余走连接器目录，都查不到退回 id
   const connectorDisplayName = useCallback(
     (id: string): string =>
       (id === 'feishu' || id === 'tmeet')
         ? t.settings.saasConnectors.providers[id]
-        : findRecommendedMcpServer(id)?.name || id,
-    [t],
+        : connectors.find((connector) => connector.id === id)?.label
+          || findRecommendedMcpServer(id)?.name || id,
+    [t, connectors],
   );
 
   const manual = [...connectors, ...mcpServers].filter((capability) => capability.selected);

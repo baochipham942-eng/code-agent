@@ -21,11 +21,11 @@ vi.mock('../../../src/renderer/stores/composerStore', () => ({
   ),
 }));
 
-const makeConnector = (id: string, selected = true, available = true) => ({
+const makeConnector = (id: string, selected = true, available = true, label?: string) => ({
   kind: 'connector' as const,
   key: `connector:${id}`,
   id,
-  label: id,
+  label: label ?? id,
   selected,
   available,
   connected: available,
@@ -341,5 +341,24 @@ describe('MountedConnectorIcons（底栏挂载连接器 chip）', () => {
     const card = screen.getByTestId('expert-connector-source');
     expect(card.textContent).toContain('已连接');
     expect(screen.queryByRole('button', { name: /去能力中心/ })).toBeNull();
+  });
+
+  // 原生连接器的名字走注册表本地化名——和手选 chip 的 capability.label 同一份，
+  // 专家卡不能退回裸 id（ai-review 第十二轮 Nit：两处显示「mail」vs「邮件」）
+  it('专家声明的是原生连接器：卡上的名字与手选那颗同一份（注册表本地化名）', () => {
+    composerState.selectedConnectorIds = [];
+    registryState.connectors = [makeConnector('mail', false, false, '邮件')];
+    appState.activeAgentId = 'weekly';
+    agentRegistryState.entries = [{
+      id: 'weekly',
+      name: '周报专家',
+      connectors: [{ id: 'mail', level: 'core' as const }],
+    }];
+    render(<MountedConnectorIcons />);
+
+    fireEvent.mouseEnter(screen.getByTestId('expert-connector-badge').parentElement!);
+    const card = screen.getByTestId('expert-connector-source');
+    expect(card.textContent).toContain('邮件');
+    expect(card.textContent).not.toContain('mail');
   });
 });

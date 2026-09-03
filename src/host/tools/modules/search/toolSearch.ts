@@ -84,7 +84,8 @@ export async function executeToolSearch(
 
     // 与 mcpUnified 同一份口径：本轮 MCP 收窄生效时，不把范围外 server 的工具搜出来——
     // 搜出来模型照单点名、调用在 dispatch 门挨挡，「看见却调不动」比看不见更误导。
-    // 计数也要对齐过滤后的列表，否则「找到 N 个」与列出的条目对不上
+    // 计数也要对齐过滤后的列表，否则「找到 N 个」与列出的条目对不上；
+    // hasMore 保留服务真值——范围内匹配超过 maxResults 时模型该知道还能缩关键词
     const scopedMcpServerIds = normalizeWorkbenchToolScope(ctx.toolScope)?.allowedMcpServerIds;
     if (scopedMcpServerIds?.length) {
       result.tools = result.tools.filter((tool) =>
@@ -92,7 +93,6 @@ export async function executeToolSearch(
       result.loadedTools = result.loadedTools.filter((name) =>
         isToolNameAllowedByWorkbenchScope(name, ctx.toolScope));
       result.totalCount = result.tools.length;
-      result.hasMore = false;
       mcpDiscovery = mcpDiscovery.filter((entry) => scopedMcpServerIds.includes(entry.serverName));
     }
 
@@ -181,7 +181,12 @@ export async function executeToolSearch(
     }
 
     if (result.hasMore) {
-      lines.push(`还有 ${result.totalCount - result.tools.length} 个匹配结果，使用更具体的关键字缩小范围。`);
+      const remaining = result.totalCount - result.tools.length;
+      // scope 过滤后 totalCount 与列出数对齐（remaining 为 0），但服务说还有更多——
+      // 范围内也可能有，给个不带假计数的提示
+      lines.push(remaining > 0
+        ? `还有 ${remaining} 个匹配结果，使用更具体的关键词缩小范围。`
+        : '范围内可能还有更多匹配结果，使用更具体的关键词缩小范围。');
     }
 
     lines.push('');

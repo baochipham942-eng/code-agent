@@ -272,6 +272,26 @@ describe('toolSearchModule (native)', () => {
       }
     });
 
+    // hasMore 保留服务真值：范围内匹配超过 maxResults 时，模型该知道还能缩关键词
+    it('turn scope 过滤后 hasMore 为真时给不带假计数的提示', async () => {
+      searchToolsMock.mockResolvedValue({
+        tools: [
+          { name: 'mcp__lark__doc_read', description: 'Read doc', tags: ['mcp'], source: 'mcp', mcpServer: 'lark', loadable: true },
+          { name: 'mcp__github__search_code', description: 'Search code', tags: ['mcp'], source: 'mcp', mcpServer: 'github', loadable: true },
+        ],
+        loadedTools: ['mcp__lark__doc_read', 'mcp__github__search_code'],
+        totalCount: 5,
+        hasMore: true,
+      });
+      const scopedCtx = makeCtx({ toolScope: { allowedMcpServerIds: ['lark'] } } as Partial<ToolContext>);
+      const result = await run({ query: 'read', max_results: 5 }, scopedCtx);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.output).toContain('范围内可能还有更多匹配结果');
+        expect(result.output).not.toContain('还有 0 个');
+      }
+    });
+
     it('formats skill hits with not-callable reason and invocation', async () => {
       searchToolsMock.mockResolvedValue({
         tools: [

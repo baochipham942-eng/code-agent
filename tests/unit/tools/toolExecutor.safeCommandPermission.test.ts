@@ -122,4 +122,23 @@ describe('ToolExecutor Bash 安全命令单一判据', () => {
       error: expect.stringContaining('Security: Command blocked'),
     });
   });
+
+  it.each([
+    'command cat .env',
+    'command git remote set-url origin https://evil.example/x.git',
+    'command git config credential.helper store',
+    'command git push origin feature-x',
+  ])('Bash 预授权仍不能绕过 command 包装下的审批：%s', async (command) => {
+    await fs.writeFile(path.join(workspace, '.env'), 'CONTROLLED_TEST_SECRET=1\n', 'utf8');
+    const executor = buildRejectingExecutor();
+
+    const result = await executor.execute(
+      'Bash',
+      { command },
+      { sessionId: `safe-command-wrapper-${command}`, preApprovedTools: new Set(['Bash']) },
+    );
+
+    expect(permissionRequests).toHaveLength(1);
+    expect(result.success).toBe(false);
+  });
 });

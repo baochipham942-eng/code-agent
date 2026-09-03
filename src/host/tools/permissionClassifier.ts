@@ -262,35 +262,54 @@ const SHELL_ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
 function effectiveCommandWords(command: string): string[] {
   const words = commandWords(command);
   let index = 0;
-  while (index < words.length && SHELL_ASSIGNMENT.test(words[index])) index += 1;
-  if (commandProgram(words[index]) !== 'env') return words.slice(index);
-
-  index += 1;
   while (index < words.length) {
-    const word = words[index];
-    if (word === '--') {
+    while (index < words.length && SHELL_ASSIGNMENT.test(words[index])) index += 1;
+    const wrapperStart = index;
+    const program = commandProgram(words[index]);
+
+    if (program === 'command') {
       index += 1;
+      while (index < words.length && words[index].startsWith('-')) {
+        const option = words[index];
+        if (option === '--') {
+          index += 1;
+          break;
+        }
+        // `command -v/-V` only inspects names; it does not execute the following word.
+        if (/^-[p]*[vV]/.test(option)) return words.slice(wrapperStart);
+        if (!/^-p+$/.test(option)) return words.slice(wrapperStart);
+        index += 1;
+      }
+      continue;
+    }
+
+    if (program !== 'env') return words.slice(index);
+    index += 1;
+    while (index < words.length) {
+      const word = words[index];
+      if (word === '--') {
+        index += 1;
+        break;
+      }
+      if (SHELL_ASSIGNMENT.test(word)) {
+        index += 1;
+        continue;
+      }
+      if (['-u', '--unset', '-C', '--chdir'].includes(word)) {
+        index += 2;
+        continue;
+      }
+      if (word.startsWith('--unset=') || word.startsWith('--chdir=')) {
+        index += 1;
+        continue;
+      }
+      if (word.startsWith('-')) {
+        index += 1;
+        continue;
+      }
       break;
     }
-    if (SHELL_ASSIGNMENT.test(word)) {
-      index += 1;
-      continue;
-    }
-    if (['-u', '--unset', '-C', '--chdir'].includes(word)) {
-      index += 2;
-      continue;
-    }
-    if (word.startsWith('--unset=') || word.startsWith('--chdir=')) {
-      index += 1;
-      continue;
-    }
-    if (word.startsWith('-')) {
-      index += 1;
-      continue;
-    }
-    break;
   }
-  while (index < words.length && SHELL_ASSIGNMENT.test(words[index])) index += 1;
   return words.slice(index);
 }
 

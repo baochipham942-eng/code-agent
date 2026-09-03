@@ -127,4 +127,29 @@ describe('taskOutputModule', () => {
       expect(result.meta?.outputFile).toBe(outputFile);
     }
   });
+
+  it('appends the sandbox denial path for failed background output', async () => {
+    isTaskIdMock.mockReturnValue(true);
+    getTaskOutputMock.mockResolvedValue({
+      taskId: 'task-1',
+      status: 'failed',
+      output: '[stderr] /bin/sh: /Users/tester/x: Operation not permitted',
+      exitCode: 1,
+      duration: 20,
+    });
+    getBackgroundTaskMock.mockReturnValue({
+      taskId: 'task-1',
+      status: 'failed',
+      command: 'touch ~/x',
+      cwd: '/tmp/project',
+      sandboxed: true,
+      outputFile,
+    });
+
+    const handler = await taskOutputModule.createHandler();
+    const result = await handler.execute({ task_id: 'task-1' }, makeCtx(), allowAll);
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.output).toContain('沙盒拒绝：/Users/tester/x');
+  });
 });

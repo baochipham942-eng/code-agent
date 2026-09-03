@@ -36,6 +36,7 @@ import { startBackgroundTask } from '../../shell/backgroundTasks';
 import { spawnWindowsShell, killProcessTree } from '../../shell/platformShell';
 import { createPtySession, getPtySessionOutput } from '../../shell/ptyExecutor';
 import { generateBashDescription } from '../../shell/dynamicDescription';
+import { diagnoseSandboxDenial } from '../../shell/sandboxFailureDiagnostics';
 import { getShellPathDiagnostics } from '../../../services/infra/shellEnvironment';
 import { extractBashFacts, dataFingerprintStore } from '../../dataFingerprint';
 import { createFileArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
@@ -241,13 +242,14 @@ export interface BashFailureDiagnosticsInput {
   signal?: NodeJS.Signals | null;
   code?: number | string | null;
   durationMs?: number;
+  sandboxed?: boolean;
+  workingDirectory?: string;
 }
 
 const SELF_KILL_SIGNALS = new Set<NodeJS.Signals>(['SIGTERM', 'SIGKILL']);
 const KILL_COMMAND_PATTERN = /\b(?:pkill|killall|kill)\b/;
 const NODE_TOOL_PATTERN = /\b(npx|node|npm)\b/;
 const MISSING_COMMAND_PATTERN = /\bENOENT\b|command not found|not found/i;
-
 export function diagnoseBashFailure(input: BashFailureDiagnosticsInput): string[] {
   const diagnostics: string[] = [];
   const signal = input.signal ?? undefined;
@@ -266,6 +268,14 @@ export function diagnoseBashFailure(input: BashFailureDiagnosticsInput): string[
 
   const nodeTool = input.command.match(NODE_TOOL_PATTERN)?.[1];
   const failureText = [input.message, input.stdout, input.stderr].filter(Boolean).join('\n');
+
+  const sandboxDenial = diagnoseSandboxDenial({
+    failureText,
+    sandboxed: input.sandboxed,
+    workingDirectory: input.workingDirectory,
+  });
+  if (sandboxDenial) diagnostics.push(sandboxDenial);
+
   if (nodeTool && MISSING_COMMAND_PATTERN.test(failureText)) {
     diagnostics.push(
       `诊断：${nodeTool} 启动失败，可能是 Node.js 依赖或可执行文件缺失（ENOENT / command not found）。建议先确认依赖已安装，并检查 PATH / node_modules。`,
@@ -618,6 +628,11 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
         || permissionModeManager.isUnattendedSession(ctx.sessionId)
         || (ctx.workspaceScope?.roots.length ?? 0) > 1);
     let sandboxCleanup: (() => void) | undefined;
+    const cleanupSandbox = () => {
+      const cleanup = sandboxCleanup;
+      sandboxCleanup = undefined;
+      cleanup?.();
+    };
     /** shouldSandbox 时把命令包装成带沙箱前缀的 shell 命令，否则原样返回 */
     const applySandbox = (cmd: string): { ok: true; command: string } | { ok: false; error: string } => {
       if (!shouldSandbox) return { ok: true, command: cmd };
@@ -658,23 +673,36 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
     if (usePty) {
       const sandboxed = applySandbox(normalizedCommand);
       if (!sandboxed.ok) return { ok: false, error: sandboxed.error, code: 'SANDBOX_UNAVAILABLE' };
-      const result = createPtySession({
-        command: sandboxed.command,
-        cwd: workingDirectory,
-        cols,
-        rows,
-        maxRuntime: timeout,
-        sessionId: ctx.sessionId,
-        toolCallId: ctx.currentToolCallId,
-        env: createEvalSafeShellEnv(undefined, workingDirectory, ctx.logger),
-        // The passed env already contains the full sanitized process.env minus
-        // filtered secrets. If we also inherited process.env here, the filtered
-        // secret vars would leak straight back in (ptyExecutor spreads
-        // process.env UNDER the passed env) — so never inherit.
-        inheritProcessEnv: false,
-      });
+      let result: ReturnType<typeof createPtySession>;
+      try {
+        result = createPtySession({
+          command: sandboxed.command,
+          cwd: workingDirectory,
+          cols,
+          rows,
+          maxRuntime: timeout,
+          sessionId: ctx.sessionId,
+          toolCallId: ctx.currentToolCallId,
+          env: createEvalSafeShellEnv(undefined, workingDirectory, ctx.logger),
+          // The passed env already contains the full sanitized process.env minus
+          // filtered secrets. If we also inherited process.env here, the filtered
+          // secret vars would leak straight back in (ptyExecutor spreads
+          // process.env UNDER the passed env) — so never inherit.
+          inheritProcessEnv: false,
+          sandboxed: shouldSandbox,
+          ...(sandboxCleanup ? { onExit: cleanupSandbox } : {}),
+        });
+      } catch (error) {
+        cleanupSandbox();
+        return {
+          ok: false,
+          error: `Failed to create PTY session: ${error instanceof Error ? error.message : String(error)}`,
+          code: 'FS_ERROR',
+        };
+      }
 
       if (!result.success) {
+        cleanupSandbox();
         return {
           ok: false,
           error: result.error || 'Failed to create PTY session',
@@ -715,12 +743,20 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
           onProgress?.({ stage: 'completing', percent: 100 });
           return { ok: true, output: outputText, meta };
         }
+        const failureMessage = outputText
+          ? `Command exited with code ${output.exitCode}\n${outputText}`
+          : `Command exited with code ${output.exitCode}`;
+        const diagnostics = diagnoseBashFailure({
+          command: normalizedCommand,
+          message: failureMessage,
+          code: output.exitCode,
+          sandboxed: shouldSandbox,
+          workingDirectory,
+        });
         return {
           ok: false,
           // 把命令输出折进模型可见的 error（meta.output 不会被 messageProcessor 读到）
-          error: outputText
-            ? `Command exited with code ${output.exitCode}\n${outputText}`
-            : `Command exited with code ${output.exitCode}`,
+          error: appendFailureDiagnostics(failureMessage, diagnostics),
           code: 'FS_ERROR',
           meta: { ...meta, output: outputText },
         };
@@ -762,12 +798,25 @@ Use process_kill to terminate the session.`;
     if (runInBackground) {
       const sandboxed = applySandbox(normalizedCommand);
       if (!sandboxed.ok) return { ok: false, error: sandboxed.error, code: 'SANDBOX_UNAVAILABLE' };
-      const result = startBackgroundTask(sandboxed.command, workingDirectory, timeout, {
-        sessionId: ctx.sessionId,
-        toolCallId: ctx.currentToolCallId,
-        env: createEvalSafeShellEnv(undefined, workingDirectory, ctx.logger),
-      });
+      let result: ReturnType<typeof startBackgroundTask>;
+      try {
+        result = startBackgroundTask(sandboxed.command, workingDirectory, timeout, {
+          sessionId: ctx.sessionId,
+          toolCallId: ctx.currentToolCallId,
+          env: createEvalSafeShellEnv(undefined, workingDirectory, ctx.logger),
+          sandboxed: shouldSandbox,
+          ...(sandboxCleanup ? { onExit: cleanupSandbox } : {}),
+        });
+      } catch (error) {
+        cleanupSandbox();
+        return {
+          ok: false,
+          error: `Failed to start background task: ${error instanceof Error ? error.message : String(error)}`,
+          code: 'FS_ERROR',
+        };
+      }
       if (!result.success) {
+        cleanupSandbox();
         const message = result.error || 'Failed to start background task';
         const diagnostics = diagnoseBashFailure({
           command: normalizedCommand,
@@ -952,6 +1001,8 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
         signal: typeof errObj.signal === 'string' ? errObj.signal as NodeJS.Signals : undefined,
         code: typeof errObj.code === 'number' || typeof errObj.code === 'string' ? errObj.code : undefined,
         durationMs: typeof errObj.durationMs === 'number' ? errObj.durationMs : undefined,
+        sandboxed: shouldSandbox,
+        workingDirectory,
       });
       const withDiagnostics = (msg: string) => appendFailureDiagnostics(msg, diagnostics);
 
@@ -981,9 +1032,8 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
         meta: { ...(errorOutput ? { output: errorOutput } : {}), shellPath: shellPathMeta },
       };
     } finally {
-      // 清理本次前台命令的临时 sandbox profile（PTY/后台进程异步存活，
-      // 其 profile 由 Seatbelt.cleanupOldProfiles 的 10 个上限自动回收）
-      sandboxCleanup?.();
+      // PTY/后台路径把 cleanup 交给执行器的退出回调；这里只收前台路径。
+      cleanupSandbox();
     }
   }
 }

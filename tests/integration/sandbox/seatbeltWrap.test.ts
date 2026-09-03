@@ -48,7 +48,7 @@ suite('seatbelt wrapCommand 真实隔离', () => {
     });
     const r = await run(command, projectDir);
     cleanup();
-    expect(r.code).toBe(0);
+    expect(r.code, r.stderr).toBe(0);
     expect(r.stdout).toContain('hello-sandbox');
   });
 
@@ -72,6 +72,53 @@ suite('seatbelt wrapCommand 真实隔离', () => {
     cleanup();
     expect(r.code).toBe(0);
     expect(fs.existsSync(path.join(projectDir, 'in-project.txt'))).toBe(true);
+  });
+
+  it('npm 的配置、缓存与日志目录搬到 TMPDIR 后可 pack', async () => {
+    fs.writeFileSync(path.join(projectDir, 'package.json'), JSON.stringify({
+      name: 'sandbox-npm-pack-fixture',
+      version: '1.0.0',
+      private: true,
+    }));
+    const { command, cleanup } = wrapCommandForSandbox(
+      'npm config get userconfig && npm pack --dry-run',
+      { workingDirectory: projectDir, allowNetwork: false },
+    );
+    const r = await run(command, projectDir);
+    cleanup();
+    expect(r.code, r.stderr).toBe(0);
+    const userConfig = r.stdout.trim().split('\n')[0];
+    expect(userConfig).toMatch(new RegExp(`^${path.join(os.tmpdir(), 'neo-npm-')}[^/]+/npmrc$`));
+    expect(r.stdout).toContain('sandbox-npm-pack-fixture-1.0.0.tgz');
+    expect(fs.existsSync(path.dirname(userConfig))).toBe(false);
+  });
+
+  it('exec npm 退出后由宿主 cleanup 删除 npmHome', async () => {
+    const { command, cleanup } = wrapCommandForSandbox(
+      'exec npm config get userconfig',
+      { workingDirectory: projectDir, allowNetwork: false },
+    );
+    const r = await run(command, projectDir);
+    expect(r.code, r.stderr).toBe(0);
+    const userConfig = r.stdout.trim();
+    const npmHome = path.dirname(userConfig);
+    expect(fs.existsSync(npmHome)).toBe(true);
+
+    cleanup();
+
+    expect(fs.existsSync(npmHome), npmHome).toBe(false);
+  });
+
+  it('npm 的 host userconfig 仍不可读', async () => {
+    const hostNpmrc = path.join(os.homedir(), '.npmrc');
+    const { command, cleanup } = wrapCommandForSandbox(
+      `cat ${JSON.stringify(hostNpmrc)}`,
+      { workingDirectory: projectDir, allowNetwork: false },
+    );
+    const r = await run(command, projectDir);
+    cleanup();
+    expect(r.code).not.toBe(0);
+    expect(r.stderr).toMatch(/Operation not permitted/);
   });
 
   it('多根矩阵：Additional 只读可读不可写，显式读写根可写', async () => {

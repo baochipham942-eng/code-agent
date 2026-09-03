@@ -39,6 +39,7 @@ import {
   killPtySession,
   isPtySessionId,
 } from '../../shell/ptyExecutor';
+import { diagnoseSandboxDenial } from '../../shell/sandboxFailureDiagnostics';
 
 const DEFAULT_POLL_TIMEOUT = 30000;
 export type ProcessActionPermissionClass = 'observe' | 'control';
@@ -67,6 +68,19 @@ function processArtifact(
     preview: output.slice(0, 500),
     metadata: { action, ...metadata },
   });
+}
+
+function appendSandboxDenial(
+  output: string,
+  failureText: string,
+  processInfo: { sandboxed?: boolean; cwd?: string } | undefined,
+): string {
+  const diagnostic = diagnoseSandboxDenial({
+    failureText,
+    sandboxed: processInfo?.sandboxed,
+    workingDirectory: processInfo?.cwd,
+  });
+  return diagnostic ? `${output}\n\n${diagnostic}` : output;
 }
 
 // ----------------------------------------------------------------------------
@@ -181,7 +195,11 @@ async function handlePoll(args: Record<string, unknown>, ctx: ToolContext): Prom
       if (!output) {
         return { ok: false, error: `PTY session not found: ${sessionId}`, code: 'NOT_FOUND' };
       }
-      const text = `Status: ${output.status}\nExit Code: ${output.exitCode ?? 'N/A'}\nDuration: ${output.duration}ms\n\nOutput:\n${output.output}`;
+      const baseText = `Status: ${output.status}\nExit Code: ${output.exitCode ?? 'N/A'}\nDuration: ${output.duration}ms\n\nOutput:\n${output.output}`;
+      const pty = getAllPtySessions().find((session) => session.sessionId === sessionId);
+      const text = output.status === 'failed'
+        ? appendSandboxDenial(baseText, output.output, pty)
+        : baseText;
       return {
         ok: true,
         output: text,
@@ -203,7 +221,14 @@ async function handlePoll(args: Record<string, unknown>, ctx: ToolContext): Prom
       return { ok: false, error: result.error ?? 'poll failed', code: 'POLL_FAILED' };
     }
     const hasNewData = result.data && result.data.length > 0;
-    const text = `Status: ${result.status}\nExit Code: ${result.exitCode ?? 'N/A'}\nNew Output: ${hasNewData ? 'Yes' : 'No'}\n\n${hasNewData ? result.data : '(no new output)'}`;
+    const baseText = `Status: ${result.status}\nExit Code: ${result.exitCode ?? 'N/A'}\nNew Output: ${hasNewData ? 'Yes' : 'No'}\n\n${hasNewData ? result.data : '(no new output)'}`;
+    const pty = getAllPtySessions().find((session) => session.sessionId === sessionId);
+    const fullOutput = result.status === 'failed'
+      ? await getPtySessionOutput(sessionId, false, timeout)
+      : undefined;
+    const text = result.status === 'failed'
+      ? appendSandboxDenial(baseText, fullOutput?.output ?? result.data ?? '', pty)
+      : baseText;
     return {
       ok: true,
       output: text,
@@ -226,8 +251,11 @@ async function handlePoll(args: Record<string, unknown>, ctx: ToolContext): Prom
     if (!output) {
       return { ok: false, error: `Task not found: ${sessionId}`, code: 'NOT_FOUND' };
     }
-    const text = `Status: ${output.status}\nExit Code: ${output.exitCode ?? 'N/A'}\nDuration: ${output.duration}ms\n\nOutput:\n${output.output}`;
     const task = getBackgroundTask(sessionId);
+    const baseText = `Status: ${output.status}\nExit Code: ${output.exitCode ?? 'N/A'}\nDuration: ${output.duration}ms\n\nOutput:\n${output.output}`;
+    const text = output.status === 'failed'
+      ? appendSandboxDenial(baseText, output.output, task)
+      : baseText;
     return {
       ok: true,
       output: text,
@@ -267,7 +295,11 @@ async function handleLog(args: Record<string, unknown>, ctx: ToolContext): Promi
   const ptyResult = getPtySessionLog(sessionId, tail);
   if (ptyResult.success) {
     const log = ptyResult.log ?? '';
-    const output = `Log for PTY session ${sessionId}:\n\n${log}`;
+    const pty = getAllPtySessions().find((session) => session.sessionId === sessionId);
+    const baseOutput = `Log for PTY session ${sessionId}:\n\n${log}`;
+    const output = pty?.status === 'failed'
+      ? appendSandboxDenial(baseOutput, log, pty)
+      : baseOutput;
     return {
       ok: true,
       output,
@@ -293,8 +325,11 @@ async function handleLog(args: Record<string, unknown>, ctx: ToolContext): Promi
       const lines = log.split('\n');
       log = lines.slice(-tail).join('\n');
     }
-    const output = `Log for background task ${sessionId}:\nStatus: ${taskOutput.status}\nExit Code: ${taskOutput.exitCode ?? 'N/A'}\n\n${log}`;
     const task = getBackgroundTask(sessionId);
+    const baseOutput = `Log for background task ${sessionId}:\nStatus: ${taskOutput.status}\nExit Code: ${taskOutput.exitCode ?? 'N/A'}\n\n${log}`;
+    const output = taskOutput.status === 'failed'
+      ? appendSandboxDenial(baseOutput, log, task)
+      : baseOutput;
     return {
       ok: true,
       output,
@@ -535,8 +570,11 @@ async function handleOutput(args: Record<string, unknown>, ctx: ToolContext): Pr
   lines.push('--- Output ---');
   lines.push(result.output || '(no output)');
 
-  const output = lines.join('\n');
   const task = getBackgroundTask(id);
+  const baseOutput = lines.join('\n');
+  const output = result.status === 'failed'
+    ? appendSandboxDenial(baseOutput, result.output, task)
+    : baseOutput;
   return {
     ok: true,
     output,

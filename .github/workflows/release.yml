@@ -75,6 +75,7 @@ jobs:
             docs/perf/long-session-gold-latest.json
             docs/stability/tool-cancel-smoke-latest.json
             docs/stability/agent-runtime-app-host-smoke-latest.json
+            docs/eval/prompt-gate-latest.json
             docs/capabilities/provider-runtime-live-smoke-ledger.json
 
       # 用预编译二进制装 tauri-cli，避免 `cargo install` 从源码编译（实测 ~9m40s）。

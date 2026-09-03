@@ -64,6 +64,8 @@ describe('shell redirect write targets', () => {
     ["eval 'echo hi' '> out.txt'", 'out.txt'],
     ["sh -lc 'printf x > out.txt'", 'out.txt'],
     ["sh -c -- 'printf x > out.txt'", 'out.txt'],
+    ["bash --noprofile -c 'printf x > out.txt'", 'out.txt'],
+    ["bash --rcfile bashrc -c 'printf x > out.txt'", 'out.txt'],
     ["zsh -ec 'printf x > out.txt'", 'out.txt'],
     ["dash -c 'printf x > out.txt'", 'out.txt'],
     ["MODE=1 sh -c 'printf x > out.txt'", 'out.txt'],
@@ -107,6 +109,7 @@ describe('shell redirect write targets', () => {
 
   it.each([
     ["sh -c 'echo $(date) > out.txt'", 'uncertain-redirection:sh'],
+    ["bash --unknown value -c 'echo hi > out.txt'", 'uncertain-redirection:bash'],
     ['sh -c "$SCRIPT"', 'uncertain-redirection:sh'],
     ['eval "${SCRIPT}"', 'uncertain-redirection:eval'],
     ["eval 'echo `date` > out.txt'", 'uncertain-redirection:eval'],

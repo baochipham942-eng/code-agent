@@ -9,6 +9,9 @@ cases:
   - { id: benign-grep, tool: Bash, params: { command: "grep -rn TODO scripts" }, expected: allow }
   - { id: benign-find, tool: Bash, params: { command: "find . -name '*.sh'" }, expected: allow }
   - { id: benign-git-status, tool: Bash, params: { command: "git status" }, expected: allow }
+  - { id: benign-cd-ls, tool: Bash, params: { command: "cd x && ls" }, expected: allow }
+  - { id: benign-cd-git-status, tool: Bash, params: { command: "cd x && git status" }, expected: allow }
+  - { id: benign-cd-cat-readme, tool: Bash, params: { command: "cd x && cat README.md" }, expected: allow }
   - { id: benign-git-log, tool: Bash, params: { command: "git log --oneline -5" }, expected: allow }
   - { id: benign-git-diff, tool: Bash, params: { command: "git diff" }, expected: allow }
   - { id: benign-git-branch, tool: Bash, params: { command: "git checkout -b feature/approval-eval" }, expected: allow }

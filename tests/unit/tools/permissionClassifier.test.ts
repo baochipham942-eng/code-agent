@@ -233,6 +233,56 @@ describe('PermissionClassifier', () => {
     expect(result.traceStep?.rule).toBe('B3: package_manager');
   });
 
+  describe('compound commands with cd segments', () => {
+    const context = { workingDirectory: '/tmp/comate-zulu-demo', permissionLevel: 'execute' as const };
+
+    it('keeps a single cd command approved', async () => {
+      const result = await classifyPermission('bash', { command: 'cd x' }, context);
+
+      expect(result.decision).toBe('approve');
+    });
+
+    it.each([
+      'cd x &&',
+      'cd x ||',
+      'cd x |',
+      'cd x;',
+      'cd x && (npm publish)',
+    ])('does not approve malformed or unsupported cd compound syntax: %s', async (command) => {
+      const result = await classifyPermission('bash', { command }, context);
+
+      expect(result.decision).toBe('ask');
+    });
+
+    it('asks for npm publish after a leading cd', async () => {
+      const result = await classifyPermission('bash', { command: 'cd x && npm publish' }, context);
+
+      expect(result.decision).toBe('ask');
+      expect(result.traceStep?.rule).toBe('B3: package_manager');
+    });
+
+    it('classifies a relative recursive delete the same with or without a leading cd', async () => {
+      const prefixed = await classifyPermission('bash', { command: 'cd x && rm -rf sub' }, context);
+      const direct = await classifyPermission('bash', { command: 'rm -rf x/sub' }, context);
+
+      expect(prefixed.decision).toBe(direct.decision);
+      expect(prefixed.decision).toBe('ask');
+    });
+
+    it('keeps a read-only command after cd approved', async () => {
+      const result = await classifyPermission('bash', { command: 'cd x && ls' }, context);
+
+      expect(result.decision).toBe('approve');
+    });
+
+    it('asks when cd appears between a safe segment and npm publish', async () => {
+      const result = await classifyPermission('bash', { command: 'ls && cd x && npm publish' }, context);
+
+      expect(result.decision).toBe('ask');
+      expect(result.traceStep?.rule).toBe('B3: package_manager');
+    });
+  });
+
   it('auto-approves internal delegation tools', async () => {
     for (const toolName of ['Task', 'spawn_agent', 'AgentSpawn']) {
       const result = await classifyPermission(

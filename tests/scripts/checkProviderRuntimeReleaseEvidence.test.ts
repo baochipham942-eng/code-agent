@@ -54,6 +54,15 @@ export const PROVIDER_RUNTIME_CAPABILITY_MATRIX = [{
 }];
 `);
   writeText(root, 'tests/unit/model/providerRuntimeCapabilities.test.ts', '// synthetic automated evidence\n');
+  writeText(root, 'scripts/lib/prompt-change-paths.sh', [
+    'PROMPTS_DIR="src/host/prompts/"',
+    'TOOL_MODULES_DIR="src/host/tools/modules/"',
+    'BUILTIN_PLUGINS_DIR="src/host/plugins/builtin/"',
+    'VERSION_FILE="src/shared/constants/agent.ts"',
+    '',
+  ].join('\n'));
+  writeText(root, 'src/shared/constants/agent.ts', "export const PROMPT_VERSION = 'sys-v1' as const;\n");
+  writeText(root, 'src/host/prompts/system.ts', "export const prompt = 'fixture';\n");
   writeJson(root, 'docs/capabilities/request-shapes/native-openai.json', {
     schemaVersion: 1,
     runtime: 'native',
@@ -140,6 +149,19 @@ export const PROVIDER_RUNTIME_CAPABILITY_MATRIX = [{
       rendererStop: { passed: true, durationMs: 40, terminalCleanup: true },
     },
   });
+  writeJson(root, 'docs/eval/prompt-gate-latest.json', {
+    schemaVersion: 1,
+    generatedAt: '2026-07-11T00:00:00.000Z',
+    gitHead: head,
+    promptVersion: 'sys-v1',
+    promptInputsHash: 'a'.repeat(64),
+    passed: true,
+    steps: {
+      staleScan: { count: 5, passed: true },
+      replayEval: { count: 1, passed: true },
+      realSmoke: { count: 10, passed: true },
+    },
+  });
   writeText(root, 'docs/releases/stability-release-template.md', `# Stability Release\n\nProvider capability source: [matrix](../capabilities/provider-runtime-matrix.md) and [ledger](../capabilities/provider-runtime-live-smoke-ledger.json).\n`);
   git(root, 'add', '.');
   git(root, 'commit', '-qm', 'fresh evidence');
@@ -170,6 +192,17 @@ describe('provider runtime release evidence gate', () => {
   it('returns zero for a complete and fresh evidence workspace', () => {
     const result = runChecker(createWorkspace());
     expect(result, result.output).toMatchObject({ status: 0 });
+  });
+
+  // 2026-09-03 首份 prompt-gate 证据已随 registry `bootstrapped: true` 落 main：full 发版闸从此要求这份文件在且新鲜。
+  // （bootstrap 前那条「缺文件也放行」的断言随之退役——它断言的是过渡期行为，不是现行合同。）
+  it('requires prompt evidence in the full release gate once bootstrap is enabled', () => {
+    const root = createWorkspace();
+    fs.rmSync(path.join(root, 'docs/eval/prompt-gate-latest.json'));
+
+    const result = runChecker(root);
+    expect(result.status).not.toBe(0);
+    expect(result.output).toContain('prompt-gate-latest.json');
   });
 
   it('rejects a supported cell without a verified live smoke record', () => {

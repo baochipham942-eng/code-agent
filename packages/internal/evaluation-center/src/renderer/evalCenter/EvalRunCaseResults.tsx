@@ -58,7 +58,7 @@ export const EvalRunCaseResults: React.FC<EvalRunCaseResultsProps> = ({
                   <span className={statusClassName(status)}>
                     {getEvalStatusLabel(status, labels.runCaseStatus)}
                   </span>
-                  <span className="font-mono text-zinc-300">{caseId}</span>
+                  <span className="truncate font-mono text-zinc-300">{caseId}</span>
                   <span className="text-zinc-500">
                     {labels.runCaseScore.replace('{score}', String(result.score))}
                   </span>

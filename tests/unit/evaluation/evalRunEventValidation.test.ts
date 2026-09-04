@@ -89,6 +89,10 @@ describe('evaluation run event validation', () => {
     expect(parseEvalRunEvent(pairEnd)).toMatchObject({ subagentSpawns: { candidate: 2 } });
     // 摘掉 pair_end 的 subagentSpawns 校验这条立刻绿——所以它是本字段的咬合点。
     expect(() => parseEvalRunEvent({ ...pairEnd, subagentSpawns: undefined })).toThrow(/subagentSpawns/);
+    // 负数 / 小数落库会显示不可能的次数并绕过「未出场」提示：pair_end 的计数同样只认非负整数。
+    expect(() => parseEvalRunEvent({ ...pairEnd, subagentSpawns: { baseline: 0, candidate: -1 } })).toThrow(/subagentSpawns/);
+    expect(() => parseEvalRunEvent({ ...pairEnd, subagentSpawns: { baseline: 0.5, candidate: 0 } })).toThrow(/subagentSpawns/);
+    expect(() => parseEvalRunEvent({ ...pairEnd, skillActivations: { baseline: -2, candidate: 0 } })).toThrow(/skillActivations/);
 
     const caseEnd = {
       schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION, type: 'case_end', ts: 1, runId: 'run-1', testId: 'case-1',

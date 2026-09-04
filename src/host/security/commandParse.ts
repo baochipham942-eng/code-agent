@@ -413,15 +413,35 @@ function expandExecutions(
 
   const execution = { program, args, originalProgram, wrappers };
   const dynamicProgram = /[$`*?{}]/.test(program);
-  const unknownLauncher = args.some((arg, index) => SHELL_PROGRAMS.has(basename(arg))
+  // An unknown launcher (chronic, doas, a project wrapper…) can hide a whole shell script behind
+  // itself. Marking it uncertain is not enough: the path policy only consults extracted targets, so
+  // `chronic bash -c 'echo x > src/x.ts'` would write through an Edit(src/**) deny. Keep scanning
+  // from the shell word so the real target reaches the policy, and keep the uncertain marker too —
+  // we still cannot know what the launcher itself does.
+  const shellLauncherIndex = args.findIndex((arg, index) => SHELL_PROGRAMS.has(basename(arg))
     && args.slice(index + 1).some((candidate) => candidate === '-c' || /^-[^-]*c[^-]*$/.test(candidate)));
+  const launcherUncertain = [
+    ...(dynamicProgram ? [`dynamic-command-position:${program}`] : []),
+    ...(shellLauncherIndex >= 0 ? [`unknown-shell-launcher:${program}`] : []),
+  ];
+  if (shellLauncherIndex >= 0) {
+    const nested = expandExecutions(
+      args.slice(shellLauncherIndex),
+      originalProgram,
+      [...wrappers, program],
+      depth + 1,
+    );
+    return {
+      executions: [execution, ...nested.executions],
+      targets: [...commandWriteTargets(execution), ...nested.targets],
+      uncertain: [...launcherUncertain, ...nested.uncertain],
+      ...(nested.failed ? { failed: nested.failed } : {}),
+    };
+  }
   return {
     executions: [execution],
     targets: commandWriteTargets(execution),
-    uncertain: [
-      ...(dynamicProgram ? [`dynamic-command-position:${program}`] : []),
-      ...(unknownLauncher ? [`unknown-shell-launcher:${program}`] : []),
-    ],
+    uncertain: launcherUncertain,
   };
 }
 

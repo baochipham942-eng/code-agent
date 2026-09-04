@@ -85,4 +85,26 @@ describe('shared shell command parser', () => {
       failureReason: 'env --split-string contains a non-literal word',
     });
   });
+
+  it.each([
+    "chronic bash -c 'echo x > src/x.ts'",
+    "pueue add sh -c 'echo x > src/x.ts'",
+    "some-wrapper --flag bash -lc 'echo x > src/x.ts'",
+  ])('keeps extracting write targets hidden behind an unknown launcher: %s', (command) => {
+    const parsed = parseShellCommand(command);
+    // The target has to reach the path policy, or Edit(src/**) / denied_paths never fire.
+    expect(parsed.writeTargets).toEqual([expect.objectContaining({ path: 'src/x.ts' })]);
+    // Still uncertain: we cannot know what the launcher itself does beyond running the shell.
+    expect(parsed.uncertain.some((reason) => reason.startsWith('unknown-shell-launcher:'))).toBe(true);
+  });
+
+  it('a known wrapper reaches the same target without the unknown-launcher marker', () => {
+    const parsed = parseShellCommand("doas -u me sh -c 'echo x > src/x.ts'");
+    expect(parsed.writeTargets).toEqual([expect.objectContaining({ path: 'src/x.ts' })]);
+    expect(parsed.uncertain.some((reason) => reason.startsWith('unknown-shell-launcher:'))).toBe(false);
+  });
+
+  it('does not treat a shell name used as a plain argument as a launcher', () => {
+    expect(parseShellCommand('grep sh file')).toMatchObject({ writeTargets: [], uncertain: [] });
+  });
 });

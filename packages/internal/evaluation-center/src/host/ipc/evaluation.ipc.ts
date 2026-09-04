@@ -17,11 +17,13 @@ import type {
   EvalAnnotation,
   EvalCaseListEntry,
   EvalExperimentCaseDetail,
+  HarvestPreviewRequest,
   ListEvalAnnotationsResult,
   SaveEvalAnnotationRequest,
   SaveEvalAnnotationResult,
   SaveEvalCaseRequest,
 } from '@shared/contract/evaluation';
+import { buildHarvestPreview } from '../evaluation/harvestPreview';
 import { getEvalRunBridge, type EvalRunBridge } from '../evaluation/evalRunBridge';
 import { inspectEvalEnvironment } from '../evaluation/evalEnvironment';
 import { inspectEvalRunPanel } from '../evaluation/evalRunPanelProbe';
@@ -114,6 +116,12 @@ export function registerEvaluationHandlers(
     const denied = getChannelAccessIpcError(EVALUATION_CHANNELS.SAVE_CASE, 'Evaluation case bank write');
     if (denied) return denied;
     return saveCaseBank(requireRepositoryRoot(), payload);
+  });
+
+  ipcMain.handle(EVALUATION_CHANNELS.HARVEST_PREVIEW, async (_event, payload: HarvestPreviewRequest) => {
+    const denied = getChannelAccessIpcError(EVALUATION_CHANNELS.HARVEST_PREVIEW, 'Evaluation harvest preview');
+    if (denied) return denied;
+    return buildHarvestPreview(payload);
   });
 
   ipcMain.handle(EVALUATION_CHANNELS.SAVE_ANNOTATION, async (_event, payload: SaveEvalAnnotationRequest) => {

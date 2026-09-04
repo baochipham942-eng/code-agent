@@ -13,6 +13,7 @@ import * as path from 'path';
 import { createLogger } from '../services/infra/logger';
 import { getProjectConfigDir, getUserConfigDir } from '../config/configPaths';
 import { canonicalizeCommand } from './canonicalizeCommand';
+import { resolvedExecutable } from './commandParse';
 
 const logger = createLogger('ExecPolicy');
 
@@ -134,6 +135,15 @@ export class ExecPolicyStore {
   learnFromApproval(command: string): boolean {
     const tokens = tokenizePolicyCommand(command);
     if (tokens.length === 0) return false;
+
+    const execution = resolvedExecutable(command);
+    if (!execution || execution.program !== execution.originalProgram) {
+      logger.debug('Skipping wrapped or uncertain command prefix', {
+        originalProgram: execution?.originalProgram,
+        resolvedProgram: execution?.program,
+      });
+      return false;
+    }
 
     // 取前 1-2 个 token 作为 prefix（避免过于宽泛或过于具体）
     const program = tokens[0];

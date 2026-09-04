@@ -128,6 +128,21 @@ describe('ExecPolicyStore', () => {
       expect(store.learnFromApproval('node script.js')).toBe(false);
     });
 
+    it.each([
+      'env npm install lodash',
+      'nohup npm install lodash',
+      'timeout 5 npm install lodash',
+      'command npm install lodash',
+    ])('does not learn a wrapper prefix: %s', (command) => {
+      expect(store.learnFromApproval(command)).toBe(false);
+      expect(store.getRules()).toEqual([]);
+    });
+
+    it('does not learn a variable command prefix', () => {
+      expect(store.learnFromApproval('$RUNNER --version')).toBe(false);
+      expect(store.getRules()).toEqual([]);
+    });
+
     it('does not learn duplicate rules', () => {
       store.learnFromApproval('npm install lodash');
       const secondLearn = store.learnFromApproval('npm install express');

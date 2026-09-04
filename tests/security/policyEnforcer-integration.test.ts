@@ -16,6 +16,8 @@ import * as path from 'path';
 import { ToolExecutor } from '../../src/host/tools/toolExecutor';
 import { resetPolicyEnforcer } from '../../src/host/security/policyEnforcer';
 import { getDecisionHistory, resetDecisionHistory } from '../../src/host/security/decisionHistory';
+import { getPolicyEngine, resetPolicyEngine } from '../../src/host/permissions/policyEngine';
+import { resolveCanonicalRunPath } from '../../src/host/runtime/runContext';
 
 // Mock tool resolver — bash + write_file 两个工具
 vi.mock('../../src/host/tools/dispatch/toolResolver', () => {
@@ -143,11 +145,13 @@ describe('PolicyEnforcer integration (GAP-002)', () => {
 
   beforeEach(() => {
     resetPolicyEnforcer();
+    resetPolicyEngine();
     resetDecisionHistory();
   });
 
   afterEach(() => {
     resetPolicyEnforcer();
+    resetPolicyEngine();
     for (const dir of tempDirs.splice(0)) {
       fs.rmSync(dir, { recursive: true, force: true });
     }
@@ -245,6 +249,60 @@ denied_paths = ["/opt/secret/**"]
 
       expect(result.success).toBe(false);
       expect(result.error).toContain('Blocked by policy');
+    });
+
+    it('applies denied_paths to a Bash redirection target', async () => {
+      const dir = project();
+      fs.writeFileSync(path.join(dir, 'code-agent-policy.toml'), `
+[filesystem]
+denied_paths = ["${path.join(resolveCanonicalRunPath(dir), 'src')}/**"]
+`, 'utf-8');
+      const executor = makeExecutor(dir);
+      const result = await executor.execute('bash', { command: 'cat > src/x.ts' }, {
+        preApprovedTools: new Set(['Bash(cat:*)']),
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Blocked by path policy');
+    });
+
+    it('applies denied_paths to a sed in-place target', async () => {
+      const dir = project();
+      fs.writeFileSync(path.join(dir, 'code-agent-policy.toml'), `
+[filesystem]
+denied_paths = ["${path.join(resolveCanonicalRunPath(dir), 'src')}/**"]
+`, 'utf-8');
+      const executor = makeExecutor(dir);
+      const result = await executor.execute('bash', {
+        command: "sed -i 's/x/y/' src/host/permissions/modes.ts",
+      }, { preApprovedTools: new Set(['Bash(sed:*)']) });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Blocked by path policy');
+    });
+
+    it('treats user Edit(path) deny as a write-path deny for Bash', async () => {
+      const dir = project();
+      getPolicyEngine().loadUserRules({ deny: ['Edit(src/**)'] });
+      const executor = makeExecutor(dir);
+      const result = await executor.execute('bash', { command: 'cat > src/x.ts' }, {
+        preApprovedTools: new Set(['Bash(cat:*)']),
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('User deny: Edit(src/**)');
+    });
+
+    it('blocks an append redirect to a user-denied SSH path before execution', async () => {
+      const dir = project();
+      getPolicyEngine().loadUserRules({ deny: ['Edit(~/.ssh/**)'] });
+      const executor = makeExecutor(dir);
+      const result = await executor.execute('bash', {
+        command: 'echo x >> ~/.ssh/authorized_keys',
+      }, { preApprovedTools: new Set(['Bash(echo:*)']) });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('User deny: Edit(~/.ssh/**)');
     });
   });
 

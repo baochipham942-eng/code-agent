@@ -28,6 +28,7 @@ import {
 import { canonicalizeCommand } from '../security/canonicalizeCommand';
 import { RM_FLAGS_REQUIRED, RM_HEAD } from '../security/rmFlagPattern';
 import { checkCommandPolicy } from './modules/shell/commandPolicy';
+import { inspectPermissionCommand } from './permissionCommandParse';
 import { isBashToolName, normalizeToolName } from './toolNames';
 import { resolveCanonicalRunPath } from '../runtime/runContext';
 import { isPathWithinRoot } from '../runtime/workspaceScope';
@@ -824,17 +825,17 @@ export class PermissionClassifier {
       };
     }
 
-    // Keep raw quote boundaries for word parsing. Policy and dangerous-pattern
-    // checks still consume canonical text inside each segment.
+    // The shared parser reconstructs each segment with shell-safe quoting, so text
+    // arguments remain one word while policy checks still consume canonical text.
     const rawTrimmed = command.trim();
+    const rawInspection = inspectPermissionCommand(rawTrimmed, startTime);
+    if (rawInspection.outputRedirectionAsk) return rawInspection.outputRedirectionAsk;
     const segments = splitCompoundCommand(rawTrimmed);
     if (!segments || segments.length === 0) {
       return null;
     }
 
     if (segments.length === 1) {
-      // 拆段器会丢弃尾部空段；只有整串确实等于该段时才允许走单段 cd 快捷判断。
-      if (segments[0] !== rawTrimmed) return null;
       return this.classifyBashSegment(segments[0], context, startTime);
     }
 
@@ -875,6 +876,8 @@ export class PermissionClassifier {
     startTime: number,
   ): ClassificationResult | null {
     const canonicalCommand = canonicalizeCommand(command).command;
+    const commandInspection = inspectPermissionCommand(command, startTime);
+    if (commandInspection.parseFailureAsk) return commandInspection.parseFailureAsk;
     const rmCriticalTarget = resolvedRmCriticalTarget(command, context);
     if (rmCriticalTarget) {
       const reason = `危险命令: 递归删除关键路径 ${rmCriticalTarget}`;
@@ -963,7 +966,7 @@ export class PermissionClassifier {
 
     // B3: 包管理器命令可能安装依赖、运行任意 package script 或访问网络，默认 ask。
     // 明确只读/验证类命令已在 B2 白名单列出。
-    if (/^(npm|npx|pnpm|yarn)\s/.test(command)) {
+    if (commandInspection.packageManager) {
       const reason = '包管理器命令可能修改依赖、执行脚本或访问网络';
       return {
         decision: 'ask',
@@ -975,7 +978,7 @@ export class PermissionClassifier {
     }
 
     // B4: cd 命令 → approve
-    if (/^cd(?:\s|$)/.test(command)) {
+    if (commandInspection.changeDirectory) {
       return {
         decision: 'approve',
         reason: 'cd 命令',

@@ -115,6 +115,9 @@ export function permissionConsequence(request: PermissionRequest, t: Translation
       .replace('{count}', fileCountText(count, t));
   }
   if (request.type === 'command' || request.type === 'dangerous_command') {
+    const classifierRules = request.decisionTrace?.steps.map((step) => step.rule) ?? [];
+    if (classifierRules.includes('B1: sensitive_credential_read')) return p.consequenceCredentialReadCommand;
+    if (classifierRules.includes('B1: git_remote_or_credential_write')) return p.consequenceGitRemoteWriteCommand;
     const risk = request.details.commandRiskLevel ?? (request.dangerLevel === 'danger' ? 'high' : 'medium');
     return risk === 'unknown'
       ? p.consequenceUnknownRiskCommand

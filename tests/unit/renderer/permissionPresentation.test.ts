@@ -130,3 +130,28 @@ it('describes unknown command risk without calling it safe', () => {
 
   expect(permissionConsequence(request, decisionCardZh as never)).toBe('命令风险无法自动判定，需要你确认后才能执行。');
 });
+
+it('shows the deterministic command guard reason instead of generic local-risk copy', () => {
+  const request: PermissionRequest = {
+    ...baseRequest,
+    tool: 'Bash',
+    type: 'command',
+    reason: 'git push 会写入远端，需要用户确认',
+    details: { command: 'git push origin feature-x', commandRiskLevel: 'safe' },
+    decisionTrace: {
+      toolName: 'Bash',
+      finalOutcome: 'ask',
+      steps: [{
+        timestamp: Date.now(),
+        layer: 'permission_classifier',
+        rule: 'B1: git_remote_or_credential_write',
+        result: 'ask',
+        reason: 'git push 会写入远端，需要用户确认',
+        durationMs: 0,
+      }],
+      totalDurationMs: 0,
+    },
+  };
+
+  expect(permissionConsequence(request, decisionCardZh as never)).toBe('命令将写入 Git 远端或远端/凭据配置，需要你确认。');
+});

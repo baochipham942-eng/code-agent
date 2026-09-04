@@ -63,6 +63,8 @@ export interface ClassificationResult {
    * devModeAutoApprove 自动放行，文件真写进 $HOME）。
    */
   trustBoundary?: boolean;
+  /** The classifier asked because no rule could determine the command risk. */
+  riskUnknown?: boolean;
 }
 
 function classificationHostReason(
@@ -156,7 +158,7 @@ const DANGEROUS_BASH_PATTERNS: Array<{ pattern: RegExp; reason: string; decision
   { pattern: new RegExp(`${RM_HEAD}${RM_FLAGS_REQUIRED}\\*`), reason: '递归删除通配符', decision: 'deny' },
   { pattern: />\s*\/dev\/sd/, reason: '直接写入块设备', decision: 'deny' },
   { pattern: /mkfs\s/, reason: '格式化文件系统', decision: 'deny' },
-  { pattern: /\bdd\b[^;&|]*\bof=\/dev\//, reason: 'dd 写入设备', decision: 'deny' },
+  { pattern: /\bdd\b[^;&|\n]*\bof=\/dev\//, reason: 'dd 写入设备', decision: 'deny' },
   { pattern: /:\(\)\{.*\}/, reason: 'fork bomb', decision: 'deny' },
   { pattern: /chmod\s+(-R\s+)?777/, reason: '危险权限变更', decision: 'deny' },
   { pattern: /sudo\s+rm/, reason: 'sudo 删除', decision: 'ask' },
@@ -305,10 +307,11 @@ function gitMutationReason(command: string): string | null {
   }
   const key = operands[0]?.toLowerCase();
   if (!key) return null;
-  const protectedKey = /^url\..+\.insteadof$/i.test(key)
+  const protectedKey = /^url\..+\.(?:push)?insteadof$/i.test(key)
     || /^credential(?:\.|$)/i.test(key)
     || key === 'core.sshcommand'
-    || key === 'http.proxy';
+    || key === 'http.proxy'
+    || key === 'https.proxy';
   return protectedKey && !hasReadFlag && (hasMutationFlag || operands.length >= 2)
     ? '修改 git 远端或凭据配置'
     : null;
@@ -344,7 +347,7 @@ function readPathCandidates(args: Record<string, unknown>): string[] {
   return Object.entries(args)
     .filter(([key, value]) => {
       if (typeof value !== 'string' || !value.trim()) return false;
-      return key.includes('path') || key === 'pattern';
+      return key.includes('path');
     })
     .map(([, value]) => value as string);
 }
@@ -380,7 +383,7 @@ export function bashCommandRequiresPermission(
 ): boolean {
   const canonical = checkCommandPolicy(command).canonicalCommand;
   const segments = splitCompoundCommand(canonical);
-  if (!segments) return false;
+  if (!segments) return true;
   let segmentContext: ClassificationContext = { ...context, permissionLevel: 'execute' };
   return segments.some((segment) => {
     const advancedContext = contextAfterCdSegment(segment, segmentContext);
@@ -480,6 +483,7 @@ export class PermissionClassifier {
       confidence: 0,
       cached: false,
       traceStep: createTraceStep('permission_classifier', 'fallback', 'ask', reason, startTime),
+      riskUnknown: true,
     };
     return classificationHostReason(fallback, toolName);
   }
@@ -879,6 +883,7 @@ export class PermissionClassifier {
       confidence: 1.0,
       cached: false,
       traceStep: createTraceStep('permission_classifier', 'B4: compound_unknown', 'ask', reason, startTime),
+      riskUnknown: true,
     };
   }
 

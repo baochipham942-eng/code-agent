@@ -1113,20 +1113,51 @@ export class ToolExecutor {
       executionToolName,
       params,
     );
-    const bashArgumentForcesClassification = isBashToolName(policyToolName)
-      && typeof params.command === 'string'
-      && bashCommandRequiresPermission(params.command, {
-        workingDirectory: resolveCanonicalRunPath(bashWorkingDirectory),
-        workspaceRoot: this.writeWorkspaceRoot,
+    let canonicalBashWorkingDirectory: string;
+    let bashArgumentForcesClassification: boolean;
+    let readArgumentForcesClassification: boolean;
+    try {
+      canonicalBashWorkingDirectory = resolveCanonicalRunPath(bashWorkingDirectory);
+      bashArgumentForcesClassification = isBashToolName(policyToolName)
+        && typeof params.command === 'string'
+        && bashCommandRequiresPermission(params.command, {
+          workingDirectory: canonicalBashWorkingDirectory,
+          workspaceRoot: this.writeWorkspaceRoot,
+        });
+      readArgumentForcesClassification = readArgumentsRequirePermission(
+        executionToolName,
+        params,
+        {
+          workingDirectory: resolveCanonicalRunPath(this.executionCwd),
+          workspaceRoot: this.writeWorkspaceRoot,
+        },
+      );
+    } catch (pathAnalysisError) {
+      const failure = permissionDenialError(executionToolName, 'fail-closed');
+      logger.warn('Permission path analysis failed, denying tool call', {
+        tool: executionToolName,
+        error: pathAnalysisError instanceof Error ? pathAnalysisError.message : String(pathAnalysisError),
       });
-    const readArgumentForcesClassification = readArgumentsRequirePermission(
-      executionToolName,
-      params,
-      {
-        workingDirectory: resolveCanonicalRunPath(this.executionCwd),
-        workspaceRoot: this.writeWorkspaceRoot,
-      },
-    );
+      recordDecision(
+        executionToolName,
+        params,
+        'policy-deny',
+        'permission_path_analysis_failed',
+        permStartTime,
+        undefined,
+        effectiveSessionId,
+        this.ledgerOrigin,
+      );
+      return {
+        success: false,
+        error: failure.modelText,
+        metadata: {
+          code: 'PERMISSION_PATH_ANALYSIS_FAILED',
+          failureCode: AgentFailureCode.PermissionDenied,
+          hostReason: failure,
+        },
+      };
+    }
     const argumentForcesClassification = bashArgumentForcesClassification
       || readArgumentForcesClassification;
 
@@ -1208,9 +1239,13 @@ export class ToolExecutor {
       const traceBuilder = createTraceBuilder(executionToolName);
       /** 分类器抛错（≠ 判 ask）时的错误串；非空表示这次「问用户」其实是故障回退。 */
       let classifierFailedReason: string | undefined;
-      // validateCommand 只描述已命中的危险形态；分类器因无法识别而 ask 时，
-      // `safe` 会误导审批卡。保留分析器本身不变，只在这次审批请求上标 unknown。
-      let commandRiskUnknown = Boolean(commandAnalysisFailedReason);
+      // validateCommand 只描述已命中的危险形态：未识别 ask 才标 unknown；命中确定规则
+      // 的 ask 提升为 medium，避免审批卡同时出现 ask + safe 的冲突标签。
+      let commandRiskUnknown = Boolean(
+        commandAnalysisFailedReason && commandValidation?.riskLevel === 'safe',
+      );
+      let deterministicAskReason: string | undefined;
+      let knownAskCommandRisk: 'medium' | undefined;
       if (guardFabricTraceStep) {
         traceBuilder.addStep(
           guardFabricTraceStep.layer,
@@ -1236,7 +1271,7 @@ export class ToolExecutor {
             params,
             policyForcesConfirmation,
             boundaryViolation,
-            workingDirectory: resolveCanonicalRunPath(bashWorkingDirectory),
+            workingDirectory: canonicalBashWorkingDirectory,
             workspaceRoot,
             permissionLevel: toolDef.permissionLevel,
             permStartTime,
@@ -1321,12 +1356,16 @@ export class ToolExecutor {
               );
             }
             // 'ask' — collect trace step for permission request
-            if (
-              classification.decision === 'ask'
-              && isBashToolName(policyToolName)
-              && commandValidation?.riskLevel === 'safe'
-            ) {
-              commandRiskUnknown = true;
+            if (classification.decision === 'ask' && isBashToolName(policyToolName)) {
+              const safeRisk = commandValidation?.riskLevel === 'safe';
+              commandRiskUnknown = safeRisk && classification.riskUnknown === true;
+              if (safeRisk && classification.riskUnknown !== true) knownAskCommandRisk = 'medium';
+              if (
+                classification.traceStep?.rule === 'B1: sensitive_credential_read'
+                || classification.traceStep?.rule === 'B1: git_remote_or_credential_write'
+              ) {
+                deterministicAskReason = classification.reason;
+              }
             }
             if (classification.trustBoundary) boundaryAskForcesConfirmation = true;
             if (classification.traceStep) {
@@ -1359,6 +1398,7 @@ export class ToolExecutor {
             tool: executionToolName,
             error: classifierFailedReason,
           });
+          if (commandValidation?.riskLevel === 'safe') commandRiskUnknown = true;
         }
       }
 
@@ -1388,8 +1428,9 @@ export class ToolExecutor {
         toolDef,
         params,
         commandValidation,
-        commandRiskUnknown ? 'unknown' : undefined,
+        commandRiskUnknown ? 'unknown' : knownAskCommandRisk,
       );
+      if (deterministicAskReason) permissionRequest.reason = deterministicAskReason;
       const deleteTarget = commandValidation && typeof params.command === 'string'
         ? extractDeleteTarget(params.command, commandValidation.securityFlags)
         : undefined;
@@ -1817,7 +1858,7 @@ export class ToolExecutor {
     tool: ToolDefinition,
     params: Record<string, unknown>,
     commandValidation?: ValidationResult,
-    commandRiskOverride?: 'unknown',
+    commandRiskOverride?: ValidationResult['riskLevel'] | 'unknown',
   ): PermissionRequestData {
     const sourceAttribution = (rawPath?: unknown): Record<string, unknown> => {
       const workspaceScope = this.runContext?.workspaceScope;

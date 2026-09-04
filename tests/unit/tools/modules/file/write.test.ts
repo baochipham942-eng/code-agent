@@ -547,4 +547,43 @@ describe('writeModule (native)', () => {
       expect(events).toContain('completing');
     });
   });
+
+  // 2026-09-04 N-SELFVALIDATE-NUDGE：提示必须真的接在 Write 的返回值上。
+  // 只测 buildSelfValidationHint 纯函数抓不到接线——删掉那行 output += … 纯函数测试照样全绿。
+  describe('交付前自验提示接在返回值上', () => {
+    it('写出带交互元素的 HTML 时，output 里带上验证指引', async () => {
+      const handler = await writeModule.createHandler();
+      const filePath = path.join(tmpDir, 'ui.html');
+      const result = await handler.execute(
+        { file_path: filePath, content: '<button id="go">发送</button><input type="text">' },
+        makeCtx(),
+        allowAll,
+      );
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.output).toContain('2 interactive element(s)');
+      expect(result.output).toContain('select:validate_html_in_app');
+      expect(result.output).toContain(`htmlPath="${filePath}"`);
+    });
+
+    it('纯展示 HTML 与非 HTML 文件都不加提示', async () => {
+      const handler = await writeModule.createHandler();
+
+      const staticHtml = await handler.execute(
+        { file_path: path.join(tmpDir, 'readme.html'), content: '<h1>标题</h1><p>正文</p>' },
+        makeCtx(),
+        allowAll,
+      );
+      const css = await handler.execute(
+        { file_path: path.join(tmpDir, 'site.css'), content: 'button { color: red }' },
+        makeCtx(),
+        allowAll,
+      );
+
+      expect(staticHtml.ok && staticHtml.output).not.toContain('validate_html_in_app');
+      expect(css.ok && css.output).not.toContain('validate_html_in_app');
+    });
+  });
+
 });

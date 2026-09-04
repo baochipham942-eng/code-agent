@@ -382,6 +382,9 @@ export class StandaloneAgentAdapter implements AgentInterface {
   // goal 观测事件（goal_gate / goal_complete）的行为落账，断言锚点数据
   private goalRun?: GoalRunRecord;
   private sandboxPolicy?: { redline: boolean };
+  private readonly orchestration?: { allowSwarm?: boolean; spawnMaxDepth?: number };
+  /** 每题子代理拉起次数（subagent_activity kind='started' 计数）。 */
+  private readonly subagentSpawns = new Map<string, number>();
   private requestPermission?: (request: PermissionRequestData) => Promise<RequestPermissionResult>;
 
   constructor(config: {
@@ -412,6 +415,12 @@ export class StandaloneAgentAdapter implements AgentInterface {
     skills?: readonly string[];
     /** Whether the explicit skill set may resolve names from Claude legacy directories. */
     includeClaudeLegacySkills?: boolean;
+    /**
+     * ORCHARM 实验臂的编排结构：要不要扇出子代理、最深几层。
+     * allowSwarm 只影响 goal 契约 case（首轮编排引导 + workflow 预加载）；
+     * spawnMaxDepth 直接进 ToolExecutor，0 = task/spawn_agent 一律 DEPTH_LIMIT。
+     */
+    orchestration?: { allowSwarm?: boolean; spawnMaxDepth?: number };
     sessionType?: SessionType;
     onEvaluationSignal?: (signal: EvaluationSignal) => void;
     database?: DatabaseService;
@@ -432,6 +441,7 @@ export class StandaloneAgentAdapter implements AgentInterface {
     this.maxSystemPromptTokens = config.maxSystemPromptTokens ?? 12_000;
     this.skills = config.skills ?? EVAL_AGENT_DEFAULTS.skills;
     this.includeClaudeLegacySkills = config.includeClaudeLegacySkills ?? false;
+    this.orchestration = config.orchestration;
     this.sessionType = config.sessionType ?? 'chat';
     this.onEvaluationSignal = config.onEvaluationSignal;
     this.database = config.database;
@@ -503,6 +513,12 @@ export class StandaloneAgentAdapter implements AgentInterface {
     return { ...activations };
   }
 
+  consumeSubagentSpawns(testId: string): number {
+    const count = this.subagentSpawns.get(testId) ?? 0;
+    this.subagentSpawns.delete(testId);
+    return count;
+  }
+
   async getStructuredReplay(sessionId: string) {
     const { TelemetryQueryService, getTelemetryQueryService } = await import('../telemetry/replay/telemetryQueryService');
     return this.database
@@ -571,6 +587,11 @@ export class StandaloneAgentAdapter implements AgentInterface {
         workingDirectory: this.workingDirectory,
         ledgerOrigin: 'eval',
         telemetryCollector,
+        // ORCHARM：run 级 spawn 深度上限。缺省 undefined ⇒ SpawnGuard 生产默认；
+        // 0 ⇒ 子代理工具一律 DEPTH_LIMIT（不扇出对照组）。
+        ...(this.orchestration?.spawnMaxDepth !== undefined
+          ? { spawnMaxDepth: this.orchestration.spawnMaxDepth }
+          : {}),
       });
 
       // 3. Shared messages array — persisted on the adapter instance so follow-up
@@ -600,9 +621,13 @@ export class StandaloneAgentAdapter implements AgentInterface {
       // ——超时后 testRunner 已进下个 case（reset + 重建），孤儿 loop 的残余事件若走
       // this 引用会污染新 case 的落账（不可复现的假红/假绿）。
       const loopGoalContract = this.goalContract
-        ? buildLoopGoalContract(this.goalContract, prompt)
+        ? buildLoopGoalContract(this.goalContract, prompt, this.orchestration?.allowSwarm)
         : undefined;
       const goalRunForThisRun = loopGoalContract ? createGoalRunRecord() : undefined;
+      // 审计 R2-H1 同款：评测信号（skill / 记忆 / 子代理）也绑定本次 run 的 testId。
+      // 超时后 testRunner 已切到下一题并改了 this.evaluationTestId，孤儿 loop 迟到的
+      // subagent started / skill_activated 若读 this，会把 A 题的触发记到 B 题头上。
+      const testIdForThisRun = this.evaluationTestId;
       if (goalRunForThisRun) {
         this.goalRun = goalRunForThisRun;
       }
@@ -667,16 +692,20 @@ export class StandaloneAgentAdapter implements AgentInterface {
             if (goalRunForThisRun) {
               applyGoalEvent(goalRunForThisRun, event);
             }
-            if (this.evaluationTestId) {
+            if (testIdForThisRun) {
               if (event.type === 'skill_activated') {
-                const current = this.skillActivations.get(this.evaluationTestId) ?? {};
+                const current = this.skillActivations.get(testIdForThisRun) ?? {};
                 current[event.data.name] = (current[event.data.name] ?? 0) + 1;
-                this.skillActivations.set(this.evaluationTestId, current);
-                this.onEvaluationSignal?.({ type: 'skill_activated', testId: this.evaluationTestId, name: event.data.name });
+                this.skillActivations.set(testIdForThisRun, current);
+                this.onEvaluationSignal?.({ type: 'skill_activated', testId: testIdForThisRun, name: event.data.name });
               } else if (event.type === 'memory_injected') {
-                this.onEvaluationSignal?.({ type: 'memory_injected', testId: this.evaluationTestId, id: event.data.id });
+                this.onEvaluationSignal?.({ type: 'memory_injected', testId: testIdForThisRun, id: event.data.id });
               } else if (event.type === 'subagent_activity' && event.data.kind === 'started') {
-                this.onEvaluationSignal?.({ type: 'subagent_spawned', testId: this.evaluationTestId, id: event.data.agentId });
+                this.subagentSpawns.set(
+                  testIdForThisRun,
+                  (this.subagentSpawns.get(testIdForThisRun) ?? 0) + 1,
+                );
+                this.onEvaluationSignal?.({ type: 'subagent_spawned', testId: testIdForThisRun, id: event.data.agentId });
               }
             }
             switch (event.type) {

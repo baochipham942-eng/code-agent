@@ -107,6 +107,36 @@ describe('Task schema', () => {
   });
 });
 
+describe('Task 深度闸（N-EVAL-ORCHARM 的「不扇出」机制）', () => {
+  it('spawnMaxDepth=0 时第一层 Task 就被 DEPTH_LIMIT 拒，子代理执行器不被调用', async () => {
+    executorExecuteMock.mockResolvedValue({ success: true, output: 'ok', iterations: 1, toolsUsed: [] });
+    const handler = await taskModule.createHandler();
+    const result = await handler.execute(
+      { prompt: 'hi', subagent_type: 'coder' },
+      makeCtx({ spawnMaxDepth: 0 } as Partial<ToolContext>),
+      allowAll,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toContain('DEPTH_LIMIT');
+      expect(result.meta?.cancellationReason).toBe('depth-limit');
+      expect(result.meta?.maxDepth).toBe(0);
+    }
+    // 真的没扇出，而不是「拒了但还是跑了」
+    expect(executorExecuteMock).not.toHaveBeenCalled();
+  });
+
+  it('spawnMaxDepth=1 与不传时第一层照常放行（不误伤存量路径）', async () => {
+    executorExecuteMock.mockResolvedValue({ success: true, output: 'ok', iterations: 1, toolsUsed: [] });
+    const handler = await taskModule.createHandler();
+    for (const ctx of [makeCtx({ spawnMaxDepth: 1 } as Partial<ToolContext>), makeCtx()]) {
+      const result = await handler.execute({ prompt: 'hi', subagent_type: 'coder' }, ctx, allowAll);
+      expect(result.ok).toBe(true);
+    }
+    expect(executorExecuteMock).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe('Task validation', () => {
   it('缺 subagent_type → INVALID_ARGS', async () => {
     const handler = await taskModule.createHandler();

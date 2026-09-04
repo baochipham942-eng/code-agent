@@ -155,6 +155,14 @@ describe('EvalRunBridge', () => {
             },
             {
               schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION,
+              type: 'subagent_spawned',
+              ts: started + 4,
+              runId,
+              testId: 'case-1',
+              id: 'agent-1',
+            },
+            {
+              schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION,
               type: 'case_end',
               ts: started + 4,
               runId,
@@ -202,13 +210,15 @@ describe('EvalRunBridge', () => {
     await waitFor(() => !bridge.subscribe(runId).running);
 
     expect(published.map((event) => event.type)).toEqual([
-      'run_start', 'memory_injected', 'skill_activated', 'skill_activated', 'case_end', 'run_end',
+      'run_start', 'memory_injected', 'skill_activated', 'skill_activated', 'subagent_spawned', 'case_end', 'run_end',
     ]);
     expect(db.insertExperiment).toHaveBeenCalledTimes(1);
     expect(db.insertExperimentCases).toHaveBeenCalledTimes(1);
     expect(JSON.parse(db.insertExperimentCases.mock.calls[0][1][0].data_json).memoryInjections).toBe(1);
     expect(JSON.parse(db.insertExperimentCases.mock.calls[0][1][0].data_json).skillActivations)
       .toEqual({ x: 2 });
+    // 摘掉 evalRunBridge 里的 recordSubagentSpawn 分支这条立刻红（会落 0）。
+    expect(JSON.parse(db.insertExperimentCases.mock.calls[0][1][0].data_json).subagentSpawns).toBe(1);
     expect(db.updateExperimentSummary).toHaveBeenCalledTimes(1);
     expect(JSON.parse(db.updateExperimentSummary.mock.calls[0][1])).toMatchObject({
       completed: true,

@@ -5,7 +5,10 @@ import { describe, expect, it, vi } from 'vitest';
 import type { DatabaseService } from '../../../src/host/services/core/databaseService';
 import { EVAL_RUN_EVENT_SCHEMA_VERSION, UNKNOWN_EVAL_RUN_STAMP } from '../../../src/shared/contract/evaluation';
 import { EvalRunBridge } from '@internal-evaluation/host/evaluation/evalRunBridge';
-import { describeEvalCompareDiff } from '@internal-evaluation/host/evaluation/evalCompareRequest';
+import {
+  describeEvalCompareDiff,
+  validateEvalCompareArm,
+} from '@internal-evaluation/host/evaluation/evalCompareRequest';
 
 async function waitFor(predicate: () => boolean): Promise<void> {
   const deadline = Date.now() + 5_000;
@@ -21,6 +24,30 @@ describe('compare request through EvalRunBridge', () => {
     const candidate = { name: 'candidate', harness: { name: 'candidate', contextCompression: true }, systemPrompt: 'new' };
     expect(describeEvalCompareDiff(baseline, candidate)).toEqual(['systemPrompt: sys-v45 → candidate']);
   });
+  it('「子代理」维度的差异是一句人话，不是 JSON', () => {
+    const baseline = { name: 'production', orchestration: { allowSwarm: true } };
+    expect(describeEvalCompareDiff(baseline, {
+      name: 'candidate', orchestration: { allowSwarm: false, spawnMaxDepth: 0 },
+    })).toEqual(['子代理：编排引导开，最深 3 层（默认） → 编排引导关，一层都不扇出']);
+    expect(describeEvalCompareDiff(baseline, {
+      name: 'candidate', orchestration: { allowSwarm: true, spawnMaxDepth: 2 },
+    })).toEqual(['子代理：编排引导开，最深 3 层（默认） → 编排引导开，最深 2 层']);
+    // 两臂编排一致时不该冒出一行噪音
+    expect(describeEvalCompareDiff(baseline, { name: 'candidate', systemPrompt: 'new' }))
+      .toEqual(['systemPrompt: sys-v45 → candidate']);
+  });
+
+  it('spawnMaxDepth 非法值给的是人话，不是 schema 报错', () => {
+    for (const bad of [-1, 1.5, 99, '2']) {
+      expect(() => validateEvalCompareArm({ name: 'c', orchestration: { spawnMaxDepth: bad } }))
+        .toThrow(/子代理最深层数要填 0 到 5 之间的整数（0 = 不扇出）。/);
+    }
+    expect(validateEvalCompareArm({ name: 'c', orchestration: { allowSwarm: true, spawnMaxDepth: 0 } }))
+      .toMatchObject({ orchestration: { allowSwarm: true, spawnMaxDepth: 0 } });
+    // orchestration 现在是被消费字段，不能再被当成未知字段拒掉
+    expect(() => validateEvalCompareArm({ name: 'c', orchestration: { allowSwarm: true } })).not.toThrow();
+  });
+
   it('T1：写 candidate YAML，透传 --compare + --json-events，并允许显式 mock 管线自检', async () => {
     let argsSeen: readonly string[] = [];
     let yamlSeen = '';

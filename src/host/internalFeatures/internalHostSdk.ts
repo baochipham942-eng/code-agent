@@ -23,6 +23,7 @@ import * as m22 from '../model/quickModel';
 import * as m23 from '../lightMemory/failureJournal';
 import * as m24 from '../context/compressionPipeline';
 import * as m25 from '../security/sensitiveDataGuard';
+import * as m26 from '../security/commandSafety';
 import { INTERNAL_SDK_VERSION } from './internalSdkVersion';
 
 export const INTERNAL_HOST_SDK = Object.freeze({
@@ -53,5 +54,6 @@ export const INTERNAL_HOST_SDK = Object.freeze({
     '@host/lightMemory/failureJournal': m23,
     '@host/context/compressionPipeline': m24,
     '@host/security/sensitiveDataGuard': m25,
+    '@host/security/commandSafety': m26,
   }),
 });

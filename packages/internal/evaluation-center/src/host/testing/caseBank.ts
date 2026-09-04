@@ -17,6 +17,7 @@ import {
   HARVEST_EXPECTATION_TYPES,
 } from '@shared/contract/evaluation';
 import { guardSensitiveText } from '@host/security/sensitiveDataGuard';
+import { validateCommand } from '@host/security/commandSafety';
 import { loadEvalSplits } from '@host/testing/ci/sampleSplits';
 import { loadTestSuite } from '@host/testing/testCaseLoader';
 import { resolveCaseLayer } from '@host/testing/caseLayer';
@@ -215,6 +216,25 @@ function normalizeExpectations(expectations: HarvestCandidate[] | undefined): Ha
         throw new Error(`判定标准「${type}」缺少参数 ${key}`);
       }
       params[key] = value.trim();
+    }
+    // 命令参数（点踩轮原样带回的 Bash）硬化后会由判定引擎 execSync 执行：先过产品同一套
+    // 命令安全校验，被拒 / 解析失败 / 高危一律不许存——不另写一份黑名单。
+    if (params.command !== undefined) {
+      const verdict = validateCommand(params.command);
+      if (!verdict.allowed || verdict.parsingFailed || verdict.riskLevel === 'high' || verdict.riskLevel === 'critical') {
+        throw new Error(
+          `判定标准「${type}」的 command 没过命令安全校验（${verdict.reason ?? verdict.parsingFailureReason ?? verdict.riskLevel}），先人工处理后再保存`,
+        );
+      }
+    }
+    // 路径参数只许工作目录内的相对路径：绝对路径 / ../ 穿越会让判定读到工作区外的文件，
+    // 失败详情还会把内容摘录进结果（例如 ../../.ssh/id_rsa）。
+    if (params.path !== undefined) {
+      const normalized = path.posix.normalize(params.path.split(path.sep).join('/'));
+      if (path.isAbsolute(params.path) || normalized === '..' || normalized.startsWith('../')) {
+        throw new Error(`判定标准「${type}」的 path 必须是工作目录内的相对路径：${params.path}`);
+      }
+      params.path = normalized;
     }
     const extra = Object.keys(expectation.params ?? {}).filter((key) => !allowedKeys.includes(key));
     if (extra.length > 0) throw new Error(`判定标准「${type}」有多余参数：${extra.join('、')}`);

@@ -5,8 +5,8 @@ import { describe, expect, it } from 'vitest';
 import { isKnownSafeCommand, validateCommand } from '../../../src/host/security/commandSafety';
 
 describe('commandSafety approval decision gaps', () => {
-  it('keeps npm publish --dry-run read-only without allowing a real publish', () => {
-    expect(isKnownSafeCommand('npm publish --dry-run', 'posix')).toBe(true);
+  it('does not put npm publish --dry-run in the execution-layer safe bypass', () => {
+    expect(isKnownSafeCommand('npm publish --dry-run', 'posix')).toBe(false);
     expect(isKnownSafeCommand('npm publish', 'posix')).toBe(false);
   });
 
@@ -22,6 +22,7 @@ describe('commandSafety approval decision gaps', () => {
         securityFlags: expect.arrayContaining(['dd_to_device']),
       });
     }
+    expect(validateCommand('add of=/dev/null', 'posix').allowed).toBe(true);
   });
 
   it('uses resolved workspace paths for system-directory rm while failing closed without context', () => {
@@ -44,6 +45,9 @@ describe('commandSafety approval decision gaps', () => {
 
       expect(validateCommand('rm -rf /var/folders/approval-eval/build', 'posix').allowed).toBe(false);
       expect(validateCommand('rm -rf /private/var/folders/approval-eval/build', 'posix').allowed).toBe(false);
+      expect(validateCommand('rm -rf /usr/local/lib', 'posix', {
+        workingDirectory: '/usr/local',
+      }).allowed).toBe(false);
 
       for (const target of [
         '/var/folders',

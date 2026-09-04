@@ -1430,7 +1430,12 @@ export class ToolExecutor {
         commandValidation,
         commandRiskUnknown ? 'unknown' : knownAskCommandRisk,
       );
-      if (deterministicAskReason) permissionRequest.reason = deterministicAskReason;
+      if (deterministicAskReason) {
+        const risk = permissionRequest.details.commandRiskLevel;
+        permissionRequest.reason = risk === 'high' || risk === 'critical'
+          ? [permissionRequest.reason, deterministicAskReason].filter(Boolean).join('；')
+          : deterministicAskReason;
+      }
       const deleteTarget = commandValidation && typeof params.command === 'string'
         ? extractDeleteTarget(params.command, commandValidation.securityFlags)
         : undefined;
@@ -1893,7 +1898,7 @@ export class ToolExecutor {
             commandSecurityFlags: commandValidation?.securityFlags,
             ...sourceAttribution(params.working_directory),
           },
-          reason: 'Execute shell command',
+          reason: commandValidation?.reason ?? 'Execute shell command',
           reasonCode: PermissionRequestReason.ShellHighRisk,
           boundary: {
             id: 'command.shell',

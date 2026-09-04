@@ -20,7 +20,11 @@ import {
   type HostReasonPayload,
 } from '../../shared/contract/permission';
 import { createTraceStep } from '../security/decisionTraceBuilder';
-import { isKnownSafeCommand, splitCompoundCommand } from '../security/commandSafety';
+import {
+  commandWords as tokenizeCommandWords,
+  isKnownSafeCommand,
+  splitCompoundCommand,
+} from '../security/commandSafety';
 import { canonicalizeCommand } from '../security/canonicalizeCommand';
 import { RM_FLAGS_REQUIRED, RM_HEAD } from '../security/rmFlagPattern';
 import { checkCommandPolicy } from './modules/shell/commandPolicy';
@@ -98,6 +102,8 @@ interface ClassificationContext {
   /** Authoritative write boundary. Absent means no write target is inside a workspace. */
   workspaceRoot?: string;
   permissionLevel?: string;
+  /** Per-classification cache only; never survives symlink or filesystem changes. */
+  pathResolutionCache?: Map<string, string>;
 }
 
 interface CacheEntry {
@@ -211,13 +217,19 @@ function stripInlineReadParams(rawPath: string): string {
   return trimmed;
 }
 
-function resolveCandidatePath(rawPath: string, workingDirectory: string): string {
+function resolveCandidatePath(rawPath: string, workingDirectory: string, cache?: Map<string, string>): string {
+  if (rawPath.includes('\0')) throw new Error('NUL byte cannot be resolved as a filesystem path');
+  const cacheKey = `${workingDirectory}\u0000${rawPath}`;
+  const cached = cache?.get(cacheKey);
+  if (cached) return cached;
   const sanitized = stripInlineReadParams(rawPath);
   const expanded = expandLeadingTilde(sanitized);
   const resolved = path.isAbsolute(expanded)
     ? path.resolve(expanded)
     : path.resolve(workingDirectory, expanded);
-  return resolveCanonicalRunPath(resolved);
+  const canonical = resolveCanonicalRunPath(resolved);
+  cache?.set(cacheKey, canonical);
+  return canonical;
 }
 
 function isPathInside(candidate: string, boundary: string): boolean {
@@ -245,11 +257,10 @@ function isSensitiveMemoryPath(resolvedPath: string): boolean {
 }
 
 function commandWords(command: string): string[] {
-  // B1 必须与硬阻断层使用同一份 shell 规范化结果。这里不能直接按原始空白切词：
-  // shell 会在执行前去掉普通引号并展开 $HOME，若分类器保留引号，凭据路径与 git
-  // 配置键就能用 `"..."` 绕过。无法静态解析的命令已由 classifyBash 的 B0
-  // parsingFailed 分支 fail-closed，因此这里消费 canonical form 是安全的。
-  return canonicalizeCommand(command).command.split(/\s+/).filter(Boolean);
+  // Keep quoted text as one shell word. This preserves quoted paths and quoted
+  // subcommands while preventing text arguments such as `echo "git push …"`
+  // from being re-split into executable-looking words.
+  return tokenizeCommandWords(command) ?? [];
 }
 
 function commandProgram(word: string | undefined): string {
@@ -320,12 +331,49 @@ function gitMutationReason(command: string): string | null {
 function credentialReadTarget(command: string, context: ClassificationContext): string | null {
   const words = commandWords(command);
   const projectRoot = resolveCanonicalRunPath(context.workspaceRoot ?? context.workingDirectory);
-  for (const word of words) {
+  const ignoredIndexes = new Set<number>();
+  const grepIndex = words.findIndex((word) => ['grep', 'egrep', 'fgrep', 'rg'].includes(commandProgram(word)));
+  if (grepIndex >= 0) {
+    let patternProvidedByOption = false;
+    for (let index = grepIndex + 1; index < words.length; index += 1) {
+      const word = words[index];
+      if (word === '-e' || word === '--regexp') {
+        if (index + 1 < words.length) ignoredIndexes.add(index + 1);
+        patternProvidedByOption = true;
+        index += 1;
+        continue;
+      }
+      if (word.startsWith('--regexp=')) {
+        patternProvidedByOption = true;
+        continue;
+      }
+      if (!word.startsWith('-') && !patternProvidedByOption) {
+        ignoredIndexes.add(index);
+        break;
+      }
+    }
+  }
+  for (const [index, word] of words.entries()) {
+    if (ignoredIndexes.has(index)) continue;
     if (!word) continue;
-    const resolved = resolveCandidatePath(word, context.workingDirectory);
+    const resolved = resolveCandidatePath(word, context.workingDirectory, context.pathResolutionCache);
     if (isSensitiveCredentialPath(resolved, { homeDir: CANONICAL_HOME_DIR, projectRoot })) return resolved;
   }
   return null;
+}
+
+function recursivelyRemovesPath(command: string): boolean {
+  const words = commandWords(command);
+  const rmIndex = words.findIndex((word) => commandProgram(word) === 'rm');
+  return rmIndex >= 0 && words.slice(rmIndex + 1)
+    .some((arg) => arg === '--recursive' || /^-[A-Za-z]*[rR]/.test(arg));
+}
+
+function isNpmPublishDryRun(command: string): boolean {
+  const words = commandWords(command);
+  const npmIndex = words.findIndex((word) => commandProgram(word) === 'npm');
+  return npmIndex >= 0 && words[npmIndex + 1] === 'publish'
+    && words.slice(npmIndex + 2).includes('--dry-run');
 }
 
 function ddCopiesWorkspaceFile(command: string, context: ClassificationContext): boolean {
@@ -338,16 +386,16 @@ function ddCopiesWorkspaceFile(command: string, context: ClassificationContext):
   if (!input || !output) return false;
 
   const workspace = resolveCanonicalRunPath(context.workspaceRoot ?? context.workingDirectory);
-  const resolvedInput = resolveCanonicalRunPath(resolveCandidatePath(input, context.workingDirectory));
-  const resolvedOutput = resolveCanonicalRunPath(resolveCandidatePath(output, context.workingDirectory));
+  const resolvedInput = resolveCandidatePath(input, context.workingDirectory, context.pathResolutionCache);
+  const resolvedOutput = resolveCandidatePath(output, context.workingDirectory, context.pathResolutionCache);
   return isPathInside(resolvedInput, workspace) && isPathInside(resolvedOutput, workspace);
 }
 
-function readPathCandidates(args: Record<string, unknown>): string[] {
+function readPathCandidates(toolName: string, args: Record<string, unknown>): string[] {
   return Object.entries(args)
     .filter(([key, value]) => {
-      if (typeof value !== 'string' || !value.trim()) return false;
-      return key.includes('path');
+      if (typeof value !== 'string' || (!value.trim() && !value.includes('\0'))) return false;
+      return key.includes('path') || (normalizeToolName(toolName).toLowerCase() === 'glob' && key === 'pattern');
     })
     .map(([, value]) => value as string);
 }
@@ -368,7 +416,7 @@ function contextAfterCdSegment(
   if (target === '-') return context;
   return {
     ...context,
-    workingDirectory: resolveCandidatePath(target, context.workingDirectory),
+    workingDirectory: resolveCandidatePath(target, context.workingDirectory, context.pathResolutionCache),
   };
 }
 
@@ -381,20 +429,28 @@ export function bashCommandRequiresPermission(
   command: string,
   context: Pick<ClassificationContext, 'workingDirectory' | 'workspaceRoot'>,
 ): boolean {
-  const canonical = checkCommandPolicy(command).canonicalCommand;
-  const segments = splitCompoundCommand(canonical);
-  if (!segments) return true;
-  let segmentContext: ClassificationContext = { ...context, permissionLevel: 'execute' };
-  return segments.some((segment) => {
-    const advancedContext = contextAfterCdSegment(segment, segmentContext);
-    if (advancedContext) {
-      segmentContext = advancedContext;
-      return false;
-    }
-    return credentialReadTarget(segment, segmentContext) !== null
-      || gitMutationReason(segment) !== null
-      || resolvedRmCriticalTarget(segment, segmentContext) !== null;
-  });
+  try {
+    const canonical = checkCommandPolicy(command).canonicalCommand;
+    const segments = splitCompoundCommand(canonical);
+    if (!segments) return true;
+    let segmentContext: ClassificationContext = {
+      ...context,
+      permissionLevel: 'execute',
+      pathResolutionCache: new Map(),
+    };
+    return segments.some((segment) => {
+      const advancedContext = contextAfterCdSegment(segment, segmentContext);
+      if (advancedContext) {
+        segmentContext = advancedContext;
+        return false;
+      }
+      return credentialReadTarget(segment, segmentContext) !== null
+        || gitMutationReason(segment) !== null
+        || resolvedRmCriticalTarget(segment, segmentContext) !== null;
+    });
+  } catch {
+    return true;
+  }
 }
 
 export function readArgumentsRequirePermission(
@@ -403,13 +459,22 @@ export function readArgumentsRequirePermission(
   context: Pick<ClassificationContext, 'workingDirectory' | 'workspaceRoot'>,
 ): boolean {
   if (!READ_ONLY_TOOLS.has(toolName)) return false;
-  return readPathCandidates(args).some((candidate) => {
-    const resolved = resolveCandidatePath(candidate, context.workingDirectory);
-    return isSensitiveCredentialPath(resolved, {
-      homeDir: CANONICAL_HOME_DIR,
-      projectRoot: resolveCanonicalRunPath(context.workspaceRoot ?? context.workingDirectory),
+  try {
+    const classificationContext: ClassificationContext = { ...context, pathResolutionCache: new Map() };
+    return readPathCandidates(toolName, args).some((candidate) => {
+      const resolved = resolveCandidatePath(
+        candidate,
+        context.workingDirectory,
+        classificationContext.pathResolutionCache,
+      );
+      return isSensitiveCredentialPath(resolved, {
+        homeDir: CANONICAL_HOME_DIR,
+        projectRoot: resolveCanonicalRunPath(context.workspaceRoot ?? context.workingDirectory),
+      });
     });
-  });
+  } catch {
+    return true;
+  }
 }
 
 // ----------------------------------------------------------------------------
@@ -451,7 +516,20 @@ export class PermissionClassifier {
     }
 
     // 2. Rule-based fast path
-    const ruleResult = this.classifyByRules(toolName, args, context, startTime);
+    const classificationContext: ClassificationContext = {
+      ...context,
+      pathResolutionCache: new Map(),
+    };
+    let ruleResult: ClassificationResult | null;
+    try {
+      ruleResult = this.classifyByRules(toolName, args, classificationContext, startTime);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      const reason = `路径安全分析失败，已拒绝执行: ${detail}`;
+      ruleResult = { decision: 'deny', reason, confidence: 1, cached: false,
+        errorCode: 'PERMISSION_PATH_ANALYSIS_FAILED',
+        traceStep: createTraceStep('permission_classifier', 'B0: path_analysis_failed', 'deny', reason, startTime) };
+    }
     if (ruleResult) {
       const structured = classificationHostReason(ruleResult, toolName);
       this.setCache(cacheKey, structured);
@@ -655,10 +733,10 @@ export class PermissionClassifier {
       return null;
     }
 
-    const candidates = readPathCandidates(args);
+    const candidates = readPathCandidates(toolName, args);
 
     for (const candidate of candidates) {
-      const resolved = resolveCandidatePath(candidate, context.workingDirectory);
+      const resolved = resolveCandidatePath(candidate, context.workingDirectory, context.pathResolutionCache);
       if (isSensitiveCredentialPath(resolved, {
         homeDir: CANONICAL_HOME_DIR,
         projectRoot: resolveCanonicalRunPath(context.workspaceRoot ?? context.workingDirectory),
@@ -697,7 +775,6 @@ export class PermissionClassifier {
     startTime: number
   ): ClassificationResult | null {
     const policyDecision = checkCommandPolicy(command);
-    const trimmed = policyDecision.canonicalCommand;
     if (!policyDecision.allowed) {
       const reason = `命令策略拒绝: ${policyDecision.reason ?? 'blocked'}`;
       return {
@@ -735,14 +812,17 @@ export class PermissionClassifier {
       };
     }
 
-    const segments = splitCompoundCommand(trimmed);
+    // Keep raw quote boundaries for word parsing. Policy and dangerous-pattern
+    // checks still consume canonical text inside each segment.
+    const rawTrimmed = command.trim();
+    const segments = splitCompoundCommand(rawTrimmed);
     if (!segments || segments.length === 0) {
       return null;
     }
 
     if (segments.length === 1) {
       // 拆段器会丢弃尾部空段；只有整串确实等于该段时才允许走单段 cd 快捷判断。
-      if (segments[0] !== trimmed) return null;
+      if (segments[0] !== rawTrimmed) return null;
       return this.classifyBashSegment(segments[0], context, startTime);
     }
 
@@ -795,15 +875,41 @@ export class PermissionClassifier {
       };
     }
 
+    // B1: 危险模式检测
+    for (const { pattern, reason, decision } of DANGEROUS_BASH_PATTERNS) {
+      if (pattern.test(canonicalCommand)) {
+        const fullReason = `危险命令: ${reason}`;
+        const outcome = decision === 'approve' ? 'allow' : decision === 'deny' ? 'deny' : 'ask';
+        return {
+          decision,
+          reason: fullReason,
+          confidence: 1.0,
+          cached: false,
+          traceStep: outcome !== 'allow'
+            ? createTraceStep('permission_classifier', `B1: ${reason}`, outcome, fullReason, startTime)
+            : undefined,
+        };
+      }
+    }
+
     const sensitiveTarget = credentialReadTarget(command, context);
     if (sensitiveTarget) {
-      const reason = `读取凭据路径需要用户确认: ${sensitiveTarget}`;
+      const sensitiveDelete = recursivelyRemovesPath(command);
+      const reason = sensitiveDelete
+        ? `危险命令: 递归删除凭据路径 ${sensitiveTarget}`
+        : `读取凭据路径需要用户确认: ${sensitiveTarget}`;
       return {
-        decision: 'ask',
+        decision: sensitiveDelete ? 'deny' : 'ask',
         reason,
         confidence: 1,
         cached: false,
-        traceStep: createTraceStep('permission_classifier', 'B1: sensitive_credential_read', 'ask', reason, startTime),
+        traceStep: createTraceStep(
+          'permission_classifier',
+          sensitiveDelete ? 'B1: sensitive_credential_delete' : 'B1: sensitive_credential_read',
+          sensitiveDelete ? 'deny' : 'ask',
+          reason,
+          startTime,
+        ),
         trustBoundary: true,
       };
     }
@@ -821,21 +927,15 @@ export class PermissionClassifier {
       };
     }
 
-    // B1: 危险模式检测
-    for (const { pattern, reason, decision } of DANGEROUS_BASH_PATTERNS) {
-      if (pattern.test(canonicalCommand)) {
-        const fullReason = `危险命令: ${reason}`;
-        const outcome = decision === 'approve' ? 'allow' : decision === 'deny' ? 'deny' : 'ask';
-        return {
-          decision,
-          reason: fullReason,
-          confidence: 1.0,
-          cached: false,
-          traceStep: outcome !== 'allow'
-            ? createTraceStep('permission_classifier', `B1: ${reason}`, outcome, fullReason, startTime)
-            : undefined,
-        };
-      }
+    // Product-level allow only. This deliberately does not enter the execution
+    // safe-command whitelist because npm lifecycle scripts still run in dry-run.
+    if (isNpmPublishDryRun(command)) {
+      return {
+        decision: 'approve',
+        reason: 'npm publish dry-run 预览',
+        confidence: 0.95,
+        cached: false,
+      };
     }
 
     // B2: Bash 安全判据统一由 commandSafety 解析重定向、复合命令与危险参数。

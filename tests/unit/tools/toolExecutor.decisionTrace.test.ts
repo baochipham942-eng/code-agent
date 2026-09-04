@@ -194,6 +194,25 @@ describe('ToolExecutor decision trace history', () => {
     }));
   });
 
+  it('keeps high-risk force-push reason primary and appends the deterministic remote-write reason', async () => {
+    resolverState.getDefinition.mockReturnValue({
+      name: 'bash',
+      description: 'shell test tool',
+      inputSchema: { type: 'object', properties: {}, required: [] },
+      requiresPermission: true,
+      permissionLevel: 'execute',
+    });
+    const requestPermission = vi.fn().mockResolvedValue(false);
+    const executor = new ToolExecutor({ requestPermission, workingDirectory: '/tmp/workbench' });
+
+    await executor.execute('bash', { command: 'git push -f origin main' }, { sessionId: 'force-push-reason' });
+
+    expect(requestPermission).toHaveBeenCalledWith(expect.objectContaining({
+      reason: expect.stringMatching(/Force push may overwrite remote history.*git push 会写入远端/u),
+      details: expect.objectContaining({ commandRiskLevel: 'high' }),
+    }));
+  });
+
   it('labels a known package-manager ask as medium instead of safe or unknown', async () => {
     resolverState.getDefinition.mockReturnValue({
       name: 'bash',

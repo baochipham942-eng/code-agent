@@ -128,8 +128,7 @@ const CONDITIONALLY_SAFE: Record<string, SafetyChecker> = {
       'version', // 不带参数只是查看版本
     ]);
     return args[0] === '-v'
-      || safeSubcommands.has(args[0])
-      || (args[0] === 'publish' && args.includes('--dry-run'));
+      || safeSubcommands.has(args[0]);
   },
 
   yarn: (args) => {
@@ -269,34 +268,58 @@ export function splitCompoundCommand(command: string): string[] | null {
  * 解析单个命令为 (程序名, 参数列表)
  * 处理 bash -c "..." 和 bash -lc "..." 包裹
  */
-function parseCommand(command: string): { program: string; args: string[] } | null {
+export function commandWords(command: string): string[] | null {
   const trimmed = command.trim();
   if (!trimmed) return null;
 
-  // 简单分词（尊重引号）
+  // Respect shell word boundaries so quoted text stays one argument. Each raw
+  // word still goes through the shared canonicalizer, preserving quote removal,
+  // ANSI-C escapes and fail-closed handling in one place.
   const tokens: string[] = [];
   let current = '';
+  let tokenStarted = false;
   let inSingleQuote = false;
   let inDoubleQuote = false;
 
   for (let i = 0; i < trimmed.length; i++) {
     const ch = trimmed[i];
 
-    if (ch === "'" && !inDoubleQuote) {
+    if (ch === '\\') {
+      tokenStarted = true;
+      current += ch;
+      if (i + 1 < trimmed.length) current += trimmed[++i];
+    } else if (ch === "'" && !inDoubleQuote) {
+      tokenStarted = true;
       inSingleQuote = !inSingleQuote;
+      current += ch;
     } else if (ch === '"' && !inSingleQuote) {
+      tokenStarted = true;
       inDoubleQuote = !inDoubleQuote;
+      current += ch;
     } else if ((ch === ' ' || ch === '\t') && !inSingleQuote && !inDoubleQuote) {
-      if (current) {
-        tokens.push(current);
+      if (tokenStarted) {
+        const canonical = canonicalizeCommand(current);
+        if (canonical.parsingFailed) return null;
+        tokens.push(canonical.command);
         current = '';
+        tokenStarted = false;
       }
     } else {
+      tokenStarted = true;
       current += ch;
     }
   }
-  if (current) tokens.push(current);
-  if (tokens.length === 0) return null;
+  if (tokenStarted) {
+    const canonical = canonicalizeCommand(current);
+    if (canonical.parsingFailed) return null;
+    tokens.push(canonical.command);
+  }
+  return tokens.length > 0 ? tokens : null;
+}
+
+function parseCommand(command: string): { program: string; args: string[] } | null {
+  const tokens = commandWords(command);
+  if (!tokens) return null;
 
   const program = tokens[0];
   const args = tokens.slice(1);
@@ -468,7 +491,7 @@ const DANGEROUS_PATTERNS: DangerousPattern[] = [
   // 磁盘操作
   { pattern: />\s*\/dev\/sd[a-z]/, riskLevel: 'critical', flag: 'disk_overwrite', reason: 'Writing directly to disk device' },
   { pattern: /mkfs\./, riskLevel: 'critical', flag: 'format_disk', reason: 'Formatting disk' },
-  { pattern: /dd\b[^;&|\n]*\bof=\/dev\//, riskLevel: 'critical', flag: 'dd_to_device', reason: 'Direct disk write with dd' },
+  { pattern: /\bdd\b[^;&|\n]*\bof=\/dev\//, riskLevel: 'critical', flag: 'dd_to_device', reason: 'Direct disk write with dd' },
   // Fork bomb
   { pattern: /:\(\)\s*\{.*\}/, riskLevel: 'critical', flag: 'fork_bomb', reason: 'Potential fork bomb detected' },
   // Git 危险操作

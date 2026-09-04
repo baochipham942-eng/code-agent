@@ -239,7 +239,11 @@ describe('PermissionClassifier', () => {
   });
 
   describe('compound commands with cd segments', () => {
-    const context = { workingDirectory: '/tmp/comate-zulu-demo', permissionLevel: 'execute' as const };
+    const context = {
+      workingDirectory: '/tmp/comate-zulu-demo',
+      workspaceRoot: '/tmp/comate-zulu-demo',
+      permissionLevel: 'execute' as const,
+    };
 
     it('keeps a single cd command approved', async () => {
       const result = await classifyPermission('bash', { command: 'cd x' }, context);
@@ -534,6 +538,11 @@ describe('PermissionClassifier', () => {
         { pattern: 'SECRET', path: '.env' },
         { ...context, permissionLevel: 'read' },
       );
+      const globSensitivePattern = await classifyPermission(
+        'Glob',
+        { pattern: '~/.ssh/*' },
+        { ...context, permissionLevel: 'read' },
+      );
       const quotedHomeSecret = await classifyPermission(
         'Bash',
         { command: 'cat "$HOME/.ssh/id_rsa"' },
@@ -556,9 +565,66 @@ describe('PermissionClassifier', () => {
       expect(projectReadSecret.decision).toBe('ask');
       expect(grepPatternOnly.decision).toBe('approve');
       expect(grepSensitivePath.decision).toBe('ask');
+      expect(globSensitivePattern).toMatchObject({
+        decision: 'ask',
+        traceStep: { rule: 'R0: sensitive_credential_read' },
+      });
       expect(quotedHomeSecret).toMatchObject({
         decision: 'ask',
         traceStep: { rule: 'B1: sensitive_credential_read' },
+      });
+    });
+
+    it('keeps dangerous mutations ahead of credential-read asks', async () => {
+      const chmod = await classifyPermission('Bash', { command: 'chmod -R 777 ~/.ssh' }, context);
+      const rm = await classifyPermission('Bash', { command: 'rm -rf ~/.ssh' }, context);
+      const cat = await classifyPermission('Bash', { command: 'cat ~/.ssh/id_rsa' }, context);
+
+      expect(chmod).toMatchObject({ decision: 'deny', traceStep: { rule: 'B1: 危险权限变更' } });
+      expect(rm).toMatchObject({ decision: 'deny', traceStep: { rule: 'B1: sensitive_credential_delete' } });
+      expect(cat).toMatchObject({ decision: 'ask', traceStep: { rule: 'B1: sensitive_credential_read' } });
+    });
+
+    it('does not treat quoted text or grep patterns as executable/path words', async () => {
+      const quotedGitText = await classifyPermission(
+        'Bash',
+        { command: 'echo "git push origin main"' },
+        context,
+      );
+      const grepPattern = await classifyPermission(
+        'Bash',
+        { command: 'grep -rn .env src' },
+        context,
+      );
+
+      expect(quotedGitText.decision).toBe('approve');
+      expect(grepPattern.decision).toBe('approve');
+    });
+
+    it('denies system rm when no authoritative workspace can grant containment', async () => {
+      const result = await classifyPermission(
+        'Bash',
+        { command: 'rm -rf /usr/local/lib' },
+        { workingDirectory: '/usr/local', permissionLevel: 'execute' },
+      );
+
+      expect(result).toMatchObject({
+        decision: 'deny',
+        traceStep: { rule: 'B1: resolved_rm_critical_path' },
+      });
+    });
+
+    it('turns path-resolution errors into a structured deny', async () => {
+      const result = await classifyPermission(
+        'Read',
+        { file_path: '\0' },
+        { ...context, permissionLevel: 'read' },
+      );
+
+      expect(result).toMatchObject({
+        decision: 'deny',
+        errorCode: 'PERMISSION_PATH_ANALYSIS_FAILED',
+        traceStep: { rule: 'B0: path_analysis_failed' },
       });
     });
 

@@ -66,7 +66,7 @@ export function resolvedRmCriticalTarget(
   context: RecursiveRmPathContext,
 ): string | null {
   const workdir = canonicalPath(context.workingDirectory);
-  const workspace = canonicalPath(context.workspaceRoot ?? workdir);
+  const workspace = context.workspaceRoot ? canonicalPath(context.workspaceRoot) : undefined;
   const targets = resolvedRecursiveRmTargets(command, workdir);
   if (!targets) return null;
 
@@ -78,7 +78,7 @@ export function resolvedRmCriticalTarget(
 
     // A workspace may legitimately live below a lexical system directory such
     // as macOS /var/folders (whose real path is /private/var/folders).
-    if (isPathInside(resolved, workspace)) continue;
+    if (workspace && isPathInside(resolved, workspace)) continue;
 
     if (SYSTEM_DIRECTORIES.some((directory) => isPathInside(resolved, directory))) return resolved;
   }
@@ -89,8 +89,9 @@ export function rmIsContainedInWorkspace(
   command: string,
   context: RecursiveRmPathContext,
 ): boolean {
+  if (!context.workspaceRoot) return false;
   const workdir = canonicalPath(context.workingDirectory);
-  const workspace = canonicalPath(context.workspaceRoot ?? workdir);
+  const workspace = canonicalPath(context.workspaceRoot);
   const analysis = resolvedRmTargets(command, workdir);
   if (!analysis?.targets.length) return false;
   return analysis.targets.every((resolved) => (

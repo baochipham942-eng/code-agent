@@ -814,7 +814,13 @@ export class TestRunner {
 
       result.responses = agentResult.responses;
       result.toolExecutions = agentResult.toolExecutions;
-      if (agentResult.permissionRequests) result.permissionRequests = agentResult.permissionRequests;
+      // N-EVAL-WOULDASK-BLIND：审批记录按 sendMessage 分账（adapter 每轮新建一个记录器，
+      // agentAdapter.ts:563-564），所以模拟用户轮 / follow-up 轮的那几份必须并进来（见下）。
+      // 只取首轮 ⇒「先确认」类题的证据必然丢：那类题的设计就是「模型先问 → 模拟用户答 →
+      // 危险命令发生在第二轮」，判决却只看第一轮，于是审批卡真弹过也数成 0
+      // （09-04 L3 第八程实付：3 条命令只数到 2 条、产品会弹卡 0 次）。
+      // 三处都保持「没有记录就不建数组」⇒ 全程缺席时仍是 undefined，approval_* 照常 fail-loud。
+      if (agentResult.permissionRequests) (result.permissionRequests ??= []).push(...agentResult.permissionRequests);
       result.turnCount = agentResult.turnCount;
       result.errors = agentResult.errors;
       result.sessionId = agent.getSessionId?.();
@@ -864,6 +870,7 @@ export class TestRunner {
           );
           result.responses.push(...simResult.responses);
           result.toolExecutions.push(...simResult.toolExecutions);
+          if (simResult.permissionRequests) (result.permissionRequests ??= []).push(...simResult.permissionRequests);
           result.turnCount += simResult.turnCount;
           result.errors.push(...simResult.errors);
           lastTurn = {
@@ -900,6 +907,7 @@ export class TestRunner {
 
           result.responses.push(...followUpResult.responses);
           result.toolExecutions.push(...followUpResult.toolExecutions);
+          if (followUpResult.permissionRequests) (result.permissionRequests ??= []).push(...followUpResult.permissionRequests);
           result.turnCount += followUpResult.turnCount;
           result.errors.push(...followUpResult.errors);
         }

@@ -94,10 +94,28 @@ export function injectPrefixByte(messages: TraceMessage[]): TraceMessage[] {
   ];
 }
 
+function lastAssistant(messages: TraceMessage[]): TraceMessage | undefined {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index].role === 'assistant') return messages[index];
+  }
+  return undefined;
+}
+
+function followUpRequestHasHistory(messages: TraceMessage[]): boolean {
+  if (messages.some((message) => message.role === 'tool')) return true;
+  return countAssistants(messages) >= 2;
+}
+
 /**
- * Model inspect_ai `_track_state` adoption (types.py, read-only).
- * Fresh bridge: first generation is adopted unconditionally.
- * Shared bridge: continuation must be a byte-level prefix of the in-flight thread;
+ * Model inspect_ai `_track_state` plus the solver follow-up stitch.
+ * Fresh bridge first invocation: the first observed generation replaces
+ * `state.messages`. Follow-up: if the CLI request carried history (tool
+ * result or ≥2 assistants), append only the new assistant onto the
+ * forwarded first-turn trace — Neo restore merges tool-call+answer into
+ * one assistant, so replacing would drop turn_count 3→2. Follow-up
+ * without history still replaces, so 2→1 stays fail-closed. Empty
+ * generation means no model call; seeded state stays. Shared bridge:
+ * continuation must be a byte-level prefix of the in-flight thread;
  * otherwise the generation is parked and never promoted.
  */
 function adoptInvocation(options: {
@@ -105,9 +123,21 @@ function adoptInvocation(options: {
   state: TraceMessage[];
   generation: TraceMessage[];
   reconstructedPrefix?: TraceMessage[];
+  invocationIndex?: number;
 }): TraceMessage[] {
   if (options.mode === 'fresh-per-invocation') {
-    return [...options.state, ...options.generation];
+    if (options.generation.length === 0) return options.state;
+    const isFollowUp = (options.invocationIndex ?? 0) > 0 || countAssistants(options.state) > 0;
+    if (!isFollowUp) return options.generation;
+    const last = lastAssistant(options.generation);
+    const previous = lastAssistant(options.state);
+    if (!last || (previous && (last.text ?? '').trim() === (previous.text ?? '').trim())) {
+      return options.generation;
+    }
+    if (followUpRequestHasHistory(options.generation)) {
+      return [...options.state, last];
+    }
+    return options.generation;
   }
   const reconstructed = options.reconstructedPrefix ?? options.state;
   if (prefixEquals(options.state, reconstructed)) {
@@ -133,6 +163,7 @@ export function forwardInvocations(options: {
       state,
       generation: options.invocations[index],
       reconstructedPrefix: options.reconstructedPrefixes?.[index],
+      invocationIndex: index,
     });
     if (!options.skipHealthAssertion) {
       assertInvocationGrew(before, countAssistants(state), index);

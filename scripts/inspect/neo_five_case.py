@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import uuid
 from pathlib import Path
 from typing import Any, Awaitable, Callable
@@ -175,6 +176,24 @@ def _assistant_count(messages: list[Any]) -> int:
     return sum(1 for message in messages if isinstance(message, ChatMessageAssistant))
 
 
+def _last_assistant(messages: list[Any]) -> ChatMessageAssistant | None:
+    for message in reversed(messages):
+        if isinstance(message, ChatMessageAssistant):
+            return message
+    return None
+
+
+def _follow_up_request_has_history(messages: list[Any]) -> bool:
+    """True when the CLI follow-up request carried first-turn context.
+
+    Neo restore merges the first-turn tool-call assistant and answer into one
+    message, so assistant count alone is not enough; a tool result is.
+    """
+    if any(isinstance(message, ChatMessageTool) for message in messages):
+        return True
+    return _assistant_count(messages) >= 2
+
+
 def _assert_invocation_grew(*, before: int, after: int, invocation: int) -> None:
     if after <= before:
         raise RuntimeError(
@@ -191,6 +210,65 @@ def _assert_follow_up_complete(*, final: int, baseline: int, follow_ups: list[st
             f"assistant count {final} < {required} "
             f"(baseline {baseline} + {len(follow_ups)} follow-ups)"
         )
+
+
+# `run --output-format text` prints this after a successful turn. ANSI-safe:
+# stop at whitespace or an escape so chalk wrapping cannot leak into the id.
+_CLI_SESSION_ID_RE = re.compile(r"会话 ID:\s*([^\s\x1b]+)")
+
+
+def parse_cli_session_id(*chunks: str) -> str | None:
+    """Extract the session id Neo CLI prints after `run` (text mode)."""
+    text = "\n".join(chunk for chunk in chunks if chunk)
+    match = _CLI_SESSION_ID_RE.search(text)
+    return match.group(1) if match else None
+
+
+async def read_persisted_neo_session_id(neo_home: str) -> str:
+    """Read the session the first Neo process actually created.
+
+    `--session <id>` is restore-only. If the id is missing, `run` creates a
+    new `cli_session_*` row and ignores the requested id. Follow-up processes
+    must resume that persisted id, not the inspect-side uuid.
+    """
+    db_path = f"{neo_home}/code-agent.db"
+    script = (
+        "const Database = require('better-sqlite3');"
+        f"const db = new Database({json.dumps(db_path)}, {{ readonly: true, fileMustExist: true }});"
+        "const row = db.prepare("
+        "'SELECT id FROM sessions ORDER BY updated_at DESC LIMIT 1'"
+        ").get();"
+        "if (!row || typeof row.id !== 'string' || !row.id) {"
+        "  throw new Error('no persisted neo session');"
+        "}"
+        "const count = db.prepare("
+        "'SELECT COUNT(*) AS n FROM messages WHERE session_id = ?'"
+        ").get(row.id);"
+        "if (!count || Number(count.n) < 1) {"
+        "  throw new Error('persisted neo session has no messages');"
+        "}"
+        "const branch = db.prepare("
+        "'SELECT 1 AS ok FROM conversation_branches WHERE session_id = ? LIMIT 1'"
+        ").get(row.id);"
+        "if (!branch) {"
+        "  throw new Error('persisted neo session has no conversation ledger');"
+        "}"
+        "process.stdout.write(row.id);"
+    )
+    result = await sandbox().exec(
+        cmd=["node", "-e", script],
+        cwd=CONTAINER_REPO_ROOT,
+        timeout=30,
+    )
+    if not result.success:
+        raise RuntimeError(
+            "failed to read persisted neo session: "
+            f"{result.stderr}\n{result.stdout}"
+        )
+    session_id = result.stdout.strip()
+    if not session_id:
+        raise RuntimeError("persisted neo session id was empty")
+    return session_id
 
 
 def scorer_trace_health(
@@ -228,10 +306,29 @@ async def _forward_bridged_invocations(
     for index, prompt in enumerate(prompts):
         if index > 0:
             current.messages.append(ChatMessageUser(content=prompt))
-        before = _assistant_count(current.messages)
+        forwarded = list(current.messages)
+        before = _assistant_count(forwarded)
+        previous = _last_assistant(forwarded)
+        previous_text = _message_text(previous).strip() if previous else ""
         async with sandbox_agent_bridge(current, sandbox="default") as bridge:
             await invoke(bridge, prompt, index)
-            current = bridge.state
+            adopted = bridge.state
+        if index == 0:
+            current = adopted
+        else:
+            last = _last_assistant(adopted.messages)
+            last_text = _message_text(last).strip() if last else ""
+            if last is None or last_text == previous_text:
+                current = adopted
+            elif _follow_up_request_has_history(adopted.messages):
+                # Fresh-bridge `_adopt_thread` replaces state in place.
+                # Neo resume merges the first-turn tool-call+answer into one
+                # assistant, which would drop turn_count 3→2. Keep the
+                # forwarded first-turn trace and append the new answer.
+                adopted.messages = forwarded + [last]
+                current = adopted
+            else:
+                current = adopted
         after = _assistant_count(current.messages)
         _assert_invocation_grew(before=before, after=after, invocation=index)
         if index == 0:
@@ -315,16 +412,27 @@ def neo_cli_agent() -> Agent:
             state.messages[-1].text,
             *(store().get("harness_case", {}).get("follow_up_prompts", []) or []),
         ]
-        session_id = f"inspect-{uuid.uuid4()}"
+        # Neo `--session` restores an existing row; it does not pin a new
+        # session to this id. First process creates `cli_session_*`; later
+        # processes resume that persisted id (Grok's --session-id / --resume).
+        session_id: str | None = None
 
-        async def invoke(bridge: Any, prompt: str, _index: int) -> None:
+        async def invoke(bridge: Any, prompt: str, index: int) -> None:
+            nonlocal session_id
+            cmd = [
+                "node", NEO_CLI, "--project", workspace,
+                "--provider", "openai", "--model", "inspect",
+                "--output-format", "text", "run", prompt,
+                "--dangerously-skip-permissions",
+            ]
+            if index > 0:
+                if not session_id:
+                    raise RuntimeError(
+                        "neo follow-up has no persisted session id to resume"
+                    )
+                cmd.extend(["--session", session_id])
             result = await sandbox().exec(
-                cmd=[
-                    "node", NEO_CLI, "--project", workspace,
-                    "--provider", "openai", "--model", "inspect",
-                    "--output-format", "text", "run", prompt,
-                    "--session", session_id, "--dangerously-skip-permissions",
-                ],
+                cmd=cmd,
                 cwd=workspace,
                 env={
                     "HOME": isolated_home,
@@ -338,6 +446,10 @@ def neo_cli_agent() -> Agent:
             )
             if not result.success:
                 raise RuntimeError(f"Neo CLI failed: {result.stderr}\n{result.stdout}")
+            if index == 0:
+                session_id = parse_cli_session_id(result.stdout, result.stderr)
+                if not session_id:
+                    session_id = await read_persisted_neo_session_id(neo_home)
 
         current, follow_ups, first_after = await _forward_bridged_invocations(
             state, prompts, invoke

@@ -22,8 +22,13 @@ const toolResult: TraceMessage = {
 };
 const answer1: TraceMessage = { role: 'assistant', text: 'The package name is code-agent.' };
 const answer2: TraceMessage = { role: 'assistant', text: 'The version is 0.33.0.' };
+const followUpUser: TraceMessage = { role: 'user', text: 'what is the version?' };
 
 const turn1State: TraceMessage[] = [user, assistantCall, toolResult, answer1];
+/** Real resume shape: second CLI process re-sends history + follow-up + new answer. */
+const followUpWithHistory: TraceMessage[] = [...turn1State, followUpUser, answer2];
+/** 09-04 failure shape: second process sent only the follow-up, no turn-1 history. */
+const followUpWithoutHistory: TraceMessage[] = [followUpUser, answer2];
 
 const SINGLE_TURN_TRACE_BYTES = '{"toolExecutions":[{"tool":"ListDirectory","input":{"path":"."},"output":"package.json","success":true,"duration":0,"timestamp":0}],"responses":["package.json is present"],"errors":[],"turnCount":2,"trace":[{"step":1,"kind":"assistant","turn":1,"text":"","tool_calls":[{"id":"c1","tool":"ListDirectory","input":{"path":"."}}]},{"step":2,"kind":"tool","tool":"ListDirectory","input":{"path":"."},"output":"package.json","success":true,"duration":0,"timestamp":0},{"step":3,"kind":"assistant","turn":2,"text":"package.json is present","tool_calls":[]}]}';
 
@@ -42,11 +47,11 @@ const singleTurnTool: TraceMessage = {
 const singleTurnAnswer: TraceMessage = { role: 'assistant', text: 'package.json is present' };
 
 describe('Inspect multi-turn trace health', () => {
-  it('T1: fresh bridge forwards the follow-up assistant into trace', () => {
+  it('T1: fresh bridge adopts a follow-up request that carries full history', () => {
     const state = forwardInvocations({
       mode: 'fresh-per-invocation',
       initial: turn1State,
-      invocations: [[answer2]],
+      invocations: [followUpWithHistory],
       followUpPromptsSent: ['what is the version?'],
     });
 
@@ -61,6 +66,43 @@ describe('Inspect multi-turn trace health', () => {
       'The package name is code-agent.',
       'The version is 0.33.0.',
     ]);
+  });
+
+  it('T5: Neo merged tool-call+answer resume still stitches a third assistant', () => {
+    const mergedFirstTurn: TraceMessage = {
+      role: 'assistant',
+      text: answer1.text,
+      toolCalls: [{ id: 'c1', function: 'Read', arguments: { path: 'package.json' } }],
+    };
+    const neoResumeGeneration: TraceMessage[] = [
+      user,
+      mergedFirstTurn,
+      toolResult,
+      followUpUser,
+      answer2,
+    ];
+    const state = forwardInvocations({
+      mode: 'fresh-per-invocation',
+      initial: turn1State,
+      invocations: [neoResumeGeneration],
+      followUpPromptsSent: ['what is the version?'],
+    });
+    expect(countAssistants(state)).toBe(3);
+    expect(extractAssertionContext(state).responses).toEqual([
+      'The package name is code-agent.',
+      'The version is 0.33.0.',
+    ]);
+  });
+
+  it('T4: follow-up request without history fails closed 2 -> 1', () => {
+    expect(() => forwardInvocations({
+      mode: 'fresh-per-invocation',
+      initial: turn1State,
+      invocations: [followUpWithoutHistory],
+      followUpPromptsSent: ['what is the version?'],
+    })).toThrowError(
+      /inspect trace health failed at invocation 0: assistant count 2 -> 1 \(expected strict growth\)/,
+    );
   });
 
   it('T2: missing follow-up answer fails closed with RuntimeError', () => {
@@ -120,6 +162,23 @@ describe('Inspect multi-turn trace health', () => {
         text: answer2.text,
       });
     }).toThrowError(/expected 2 to be 3|expected 3 to be 2/i);
+  });
+
+  it('M2: appending a full-history generation onto seeded state duplicates assistants so T1 goes red', () => {
+    const appended = [...turn1State, ...followUpWithHistory];
+    expect(countAssistants(appended)).toBe(5);
+    expect(extractAssertionContext(appended).responses).toEqual([
+      answer1.text,
+      answer1.text,
+      answer2.text,
+    ]);
+    expect(() => {
+      expect(countAssistants(appended)).toBe(3);
+      expect(extractAssertionContext(appended).responses).toEqual([
+        'The package name is code-agent.',
+        'The version is 0.33.0.',
+      ]);
+    }).toThrowError(/expected 5 to be 3|expected 3 to be 5/i);
   });
 
   it('scorer metadata labels broken traces only when first-invocation count is known', () => {

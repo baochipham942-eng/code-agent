@@ -82,6 +82,9 @@ function experiment(
   summary: EvalExperimentListItem['summary'],
   caseResults: Record<string, EvalBaselineCaseResult>,
 ): EvalBaselineExperimentListItem {
+  const costs = Object.values(caseResults)
+    .map((result) => result.costUsd)
+    .filter((value): value is number => typeof value === 'number');
   return {
     id,
     name: `run-${id}`,
@@ -94,21 +97,22 @@ function experiment(
     config,
     summary,
     caseResults,
+    ...(costs.length > 0 ? { totalCostUsd: costs.reduce((sum, value) => sum + value, 0) } : {}),
   };
 }
 
 const visualIds = Array.from({ length: 10 }, (_, index) => `TC-${String(index + 1).padStart(3, '0')}`);
 const referenceCases = Object.fromEntries(visualIds.map((id, index) => [
-  id, { status: index < 8 ? 'passed' : 'failed', score: index < 8 ? 1 : 0 },
+  id, { status: index < 8 ? 'passed' : 'failed', score: index < 8 ? 1 : 0, costUsd: Number((0.011 + index * 0.001).toFixed(3)) },
 ]));
 const candidateCases = {
   ...referenceCases,
-  'TC-001': { status: 'failed', score: 0 },
-  'TC-002': { status: 'failed', score: 0 },
-  'TC-003': { status: 'failed', score: 0 },
-  'TC-009': { status: 'passed', score: 1 },
-  'TC-NEW-1': { status: 'passed', score: 1 },
-  'TC-NEW-2': { status: 'failed', score: 0 },
+  'TC-001': { status: 'failed', score: 0, costUsd: 0.012 },
+  'TC-002': { status: 'failed', score: 0, costUsd: 0.013 },
+  'TC-003': { status: 'failed', score: 0, costUsd: 0.014 },
+  'TC-009': { status: 'passed', score: 1, costUsd: 0.019 },
+  'TC-NEW-1': { status: 'passed', score: 1, costUsd: 0.020 },
+  'TC-NEW-2': { status: 'failed', score: 0, costUsd: 0.021 },
 };
 const completeSummary = (passRate: number, version = 4) => ({
   passRate, passed: Math.round(passRate * 10), total: 10, completed: true, notRun: 0,
@@ -123,7 +127,9 @@ const historyRuns: EvalBaselineExperimentListItem[] = [
   }, completeSummary(0.9, 3), referenceCases),
   experiment('incomplete', Date.UTC(2026, 7, 29, 3, 5), {
     split: 'held-in', k: 1, caseBankSha: 'bank-old', mode: 'real', aggregationRuleVersion: 4,
-  }, { ...completeSummary(0.8), completed: false, notRun: 2 }, Object.fromEntries(Object.entries(referenceCases).slice(0, 8))),
+  }, { ...completeSummary(0.8), completed: false, notRun: 2 }, Object.fromEntries(
+    Object.entries(referenceCases).slice(0, 8).map(([id, result]) => [id, { status: result.status, score: result.score }]),
+  )),
   experiment('reference', Date.UTC(2026, 7, 28, 9, 41), {
     split: 'held-in', k: 1, caseBankSha: 'bank-old', mode: 'real', aggregationRuleVersion: 4,
   }, completeSummary(0.8), referenceCases),

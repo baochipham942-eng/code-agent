@@ -38,6 +38,14 @@ if (process.env.NEO_SLOT !== 'runpanel') {
   throw new Error('Run with NEO_SLOT=runpanel so this visual proof never shares dev/dev2/chatprobe.');
 }
 
+async function assertContains(page: Page, testId: string, needle: string, present: boolean): Promise<void> {
+  const text = await page.getByTestId(testId).textContent();
+  const has = text?.includes(needle) === true;
+  if (has !== present) {
+    throw new Error(`expected ${testId} ${present ? 'to contain' : 'not to contain'} ${JSON.stringify(needle)}, got ${JSON.stringify(text)}`);
+  }
+}
+
 function baseResult(testId: string): TestResult {
   return {
     testId, description: testId, prompt: '请读取 sales.csv，按区域生成 out/summary.html，并打开确认渲染正常。',
@@ -99,7 +107,7 @@ async function writeCaseDrawerFixture(): Promise<{ fixturePath: string; annotati
   multi.trials = undefined;
 
   const rows: Array<{ result: TestResult; event: Partial<Extract<EvalRunEvent, { type: 'case_end' }>> }> = [
-    { result: failing, event: { status: 'failed', failureReason: 'Expected file out/summary.html to exist', failure: { code: 'missing_artifact', dispositions: ['needs_human'], symptoms: ['missing_artifact'] }, trials: 3 } },
+    { result: failing, event: { status: 'failed', failureReason: 'Expected file out/summary.html to exist', failure: { code: 'missing_artifact', dispositions: ['needs_human'], symptoms: ['missing_artifact'] }, trials: 3, costUsd: 0.012 } },
     { result: infra, event: { status: 'infra_excluded', failureReason: 'HTTP 429 rate limit', trials: 3 } },
     { result: multi, event: { status: 'failed', failureReason: '输出内容不符合预期', failure: { code: 'wrong_output', dispositions: ['needs_human'], symptoms: ['wrong_output'] } } },
   ];
@@ -180,8 +188,12 @@ async function prepareScenario(page: Page, scenario: Scenario, theme: Theme): Pr
     return;
   }
   if (scenario.startsWith('a13')) {
-    await page.getByText('日常集 · 每题 1 次 · 题库 abcdef0').waitFor();
+    await page.getByText('日常集 · k=1').waitFor();
     await page.getByRole('dialog').waitFor();
+    await page.getByTestId('eval-case-conclusion').waitFor();
+    if (scenario === 'a13a') {
+      await assertContains(page, 'eval-case-conclusion', '本题实付 $0.012', true);
+    }
     if (scenario.startsWith('a13-annotation')) {
       await page.getByTestId('eval-case-annotation').scrollIntoViewIfNeeded();
     }
@@ -201,6 +213,12 @@ async function prepareScenario(page: Page, scenario: Scenario, theme: Theme): Pr
   }
   if (scenario === 'a12') {
     await page.getByText('日常集 · k=1').waitFor();
+    await page.getByTestId('benchmark-run-expand-candidate').click();
+    await page.getByTestId('benchmark-run-case-candidate-TC-001').waitFor();
+    await assertContains(page, 'benchmark-run-candidate', '本轮实付', true);
+    await assertContains(page, 'benchmark-run-reference', '本轮实付', true);
+    await assertContains(page, 'benchmark-run-old-rule', '本轮实付', true);
+    await assertContains(page, 'benchmark-run-incomplete', '本轮实付', false);
   }
   if (scenario === 'a12-regressions') {
     await page.getByText('日常集 · k=1').waitFor();
@@ -218,7 +236,7 @@ async function captureScenario(page: Page, scenario: Scenario, theme: Theme): Pr
       ? `N-EVAL-ANNOTQUEUE-2026-08-30-${scenario.replace('a13-annotation-', '')}-${theme}.png`
       : `N-EVAL-CASEDRAWER-2026-08-30-${scenario}-${theme}.png`
     : `${scenario}-${theme}.png`;
-  await page.screenshot({ path: path.join(outputDir, filename), fullPage: scenario === 'c2' });
+  await page.screenshot({ path: path.join(outputDir, filename), fullPage: scenario === 'c2' || scenario === 'a12' });
 }
 
 async function captureReference(page: Page, scenario: Scenario): Promise<void> {

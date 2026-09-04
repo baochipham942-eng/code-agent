@@ -404,7 +404,9 @@ describe('EvalBenchmarksTab 跑分闭环', () => {
     expect(cluster).toBeTruthy();
     expect(cluster!.textContent).toMatch(/退步|进步/);
     expect(cluster!.textContent).toContain('case-1');
-    expect(cluster!.textContent).toMatch(/passed|failed/);
+    expect(cluster!.textContent).toMatch(/通过\s*→\s*失败|失败\s*→\s*通过/);
+    expect(cluster!.textContent).not.toMatch(/\bpassed\b|\bfailed\b/);
+    expect(cluster!.querySelector('span.truncate.font-mono')).toBeTruthy();
   });
 
   it('历史行有 totalCostUsd 时显示本轮实付，缺失时不显示', async () => {

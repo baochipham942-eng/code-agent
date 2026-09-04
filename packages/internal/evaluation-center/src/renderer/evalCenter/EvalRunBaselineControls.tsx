@@ -46,9 +46,9 @@ export const EvalRunBaselineControls: React.FC<{
   onSet(): void;
 }> = ({ current, disabledReason, labels, onSet }) => {
   const confirmation = useRunConfirmation(onSet);
-  if (current) return <span className="w-32 text-right text-zinc-500">{labels.currentComparisonReference}</span>;
+  if (current) return <span className="w-48 shrink-0 text-right text-zinc-500">{labels.currentComparisonReference}</span>;
   return (
-    <span className="flex w-48 flex-col items-end gap-0.5">
+    <span className="flex w-48 shrink-0 flex-col items-end gap-0.5">
       <Button
         variant="ghost"
         size="sm"

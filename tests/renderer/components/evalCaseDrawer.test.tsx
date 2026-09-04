@@ -226,6 +226,27 @@ describe('EvalCaseDrawer', () => {
     ));
   });
 
+  it('通过题无 failure 字段时结论条只显示状态，不重复，实付仍拼得上', async () => {
+    evaluation.invoke.mockResolvedValue(detail({
+      status: 'passed',
+      score: 1,
+      failureReason: undefined,
+      failureLabel: undefined,
+    }));
+    render(<EvalCaseDrawer target={{ experimentId: 'run-1', caseId: 'case-1' }} onClose={vi.fn()} />);
+    expect((await screen.findByTestId('eval-case-conclusion')).textContent).toBe('通过');
+    cleanup();
+    evaluation.invoke.mockResolvedValue(detail({
+      status: 'passed',
+      score: 1,
+      failureReason: undefined,
+      failureLabel: undefined,
+      costUsd: 0.012,
+    }));
+    render(<EvalCaseDrawer target={{ experimentId: 'run-2', caseId: 'case-1' }} onClose={vi.fn()} />);
+    expect((await screen.findByTestId('eval-case-conclusion')).textContent).toBe('通过 · 本题实付 $0.012');
+  });
+
   it('结论条有 costUsd 时追加本题实付，缺失时不含', async () => {
     evaluation.invoke.mockResolvedValue(detail({ costUsd: 0.012 }));
     render(<EvalCaseDrawer target={{ experimentId: 'run-1', caseId: 'case-1' }} onClose={vi.fn()} />);
@@ -285,6 +306,22 @@ describe('EvalCaseDrawer', () => {
     expect(screen.getByText('太长了，压到 2000 字内')).toBeTruthy();
     expect((screen.getByRole('button', { name: '保存' }) as HTMLButtonElement).disabled).toBe(true);
   });
+
+  it('k>1 时对话区用人话说清只展示代表性一次尝试', async () => {
+    evaluation.invoke.mockResolvedValue(detail({
+      evidence: {
+        ...detail().evidence!,
+        trialDetails: [
+          { index: 1, status: 'passed', score: 1, durationMs: 1 },
+          { index: 2, status: 'failed', score: 0, durationMs: 1 },
+        ],
+      },
+    }));
+    render(<EvalCaseDrawer target={{ experimentId: 'run-k2', caseId: 'case-1' }} onClose={vi.fn()} />);
+    expect(await screen.findByText('以下对话来自代表性的一次尝试')).toBeTruthy();
+    expect(screen.queryByText('按代表尝试')).toBeNull();
+    expect(screen.queryByText('Representative attempt')).toBeNull();
+  });
 });
 
 describe('EvalRunHistory case drawer entry', () => {
@@ -318,6 +355,7 @@ describe('EvalRunHistory case drawer entry', () => {
     expect(cluster!.textContent).toContain('失败');
     expect(cluster!.textContent).toContain('case-2');
     expect(cluster!.textContent).toContain('得分 0');
+    expect(cluster!.querySelector('span.truncate.font-mono')).toBeTruthy();
     fireEvent.click(caseButton!);
 
     await waitFor(() => expect(evaluation.invoke).toHaveBeenCalledWith(
@@ -326,6 +364,28 @@ describe('EvalRunHistory case drawer entry', () => {
     ));
     expect(evaluation.invoke).not.toHaveBeenCalledWith(EVALUATION_CHANNELS.LOAD_EXPERIMENT, expect.anything());
     expect(screen.getByRole('dialog')).toBeTruthy();
+  });
+
+  it('长题号 span 带 truncate，min-w-0 才有消费方', async () => {
+    const longId = 'held-in/core-path/very-long-case-id-that-would-otherwise-stretch-the-row';
+    const runs: EvalBaselineExperimentListItem[] = [
+      { id: 'run-long', name: 'eval-daily-2026-08-31', timestamp: 3, model: 'm', provider: 'p', scope: 'full', source: 'eval', gitCommit: 'c', config: { mode: 'real', k: 1, caseBankSha: 'sha', aggregationRuleVersion: 4, evalSet: { split: 'held-in' } }, summary: { completed: true, notRun: 0, passRate: 1, plannedCaseIds: [longId], invalidCases: 0, aggregationRuleVersion: 4 }, caseResults: { [longId]: { status: 'passed', score: 1 } } },
+    ];
+    evaluation.invoke.mockImplementation(async (channel: string) => (
+      channel === EVALUATION_CHANNELS.BASELINE_INFO ? { groups: {} } : null
+    ));
+    render(
+      <EvalRunHistory
+        experiments={runs} loadState="ready" loadError={null} hasActiveRun={false} probe={null}
+        labels={evalRunPanelZh.runPanel} language="zh" loadingText="加载" onRefresh={vi.fn()} onOpenWizard={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByTestId('benchmark-run-expand-run-long'));
+    const caseRow = screen.getByTestId(`benchmark-run-case-run-long-${longId}`);
+    const caseIdSpan = caseRow.querySelector('span.truncate.font-mono');
+    expect(caseIdSpan).toBeTruthy();
+    expect(caseIdSpan?.textContent).toBe(longId);
+    expect(caseIdSpan?.className).toContain('truncate');
   });
 
   it('T-A2：本轮没有逐题结果时展开显示空态', async () => {
@@ -380,5 +440,88 @@ describe('EvalRunHistory case drawer entry', () => {
     expect(screen.getByRole('dialog')).toBeTruthy();
     fireEvent.keyDown(window, { key: 'Escape' });
     expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('历史行列宽固定、通过率不换行、超出可横向滑；有无 Δ 的本轮实付列同宽', async () => {
+    const baseRun: EvalBaselineExperimentListItem = {
+      id: 'run-base', name: 'eval-daily-2026-08-31', timestamp: 1, model: 'm', provider: 'p',
+      scope: 'full', source: 'eval', gitCommit: 'c',
+      config: { mode: 'real', k: 1, caseBankSha: 'sha', aggregationRuleVersion: 4, evalSet: { split: 'held-in' } },
+      summary: { completed: true, notRun: 0, passRate: 1, plannedCaseIds: ['case-1'], invalidCases: 0, aggregationRuleVersion: 4 },
+      caseResults: { 'case-1': { status: 'passed', score: 1 } },
+      totalCostUsd: 0.01,
+    };
+    const deltaRun: EvalBaselineExperimentListItem = {
+      ...baseRun,
+      id: 'run-delta',
+      timestamp: 2,
+      summary: { completed: true, notRun: 0, passRate: 0.5, plannedCaseIds: ['case-1'], invalidCases: 0, aggregationRuleVersion: 4 },
+      caseResults: { 'case-1': { status: 'failed', score: 0 } },
+      totalCostUsd: 0.02,
+    };
+    const taggedRun: EvalBaselineExperimentListItem = {
+      ...baseRun,
+      id: 'run-tagged',
+      timestamp: 3,
+      config: { mode: 'real', k: 1, caseBankSha: 'sha-new', aggregationRuleVersion: 4, evalSet: { split: 'held-in' } },
+      summary: { completed: true, notRun: 0, passRate: 0.7, plannedCaseIds: ['case-1'], invalidCases: 0, aggregationRuleVersion: 4 },
+      totalCostUsd: undefined,
+    };
+    const incompleteRun: EvalBaselineExperimentListItem = {
+      ...baseRun,
+      id: 'run-incomplete',
+      timestamp: 4,
+      summary: { completed: false, notRun: 1, passRate: 0.5, plannedCaseIds: ['case-1', 'case-2'], invalidCases: 0, aggregationRuleVersion: 4 },
+      caseResults: { 'case-1': { status: 'passed', score: 1 } },
+      totalCostUsd: undefined,
+    };
+    evaluation.invoke.mockImplementation(async (channel: string) => (
+      channel === EVALUATION_CHANNELS.BASELINE_INFO
+        ? {
+          groups: {
+            'held-in::1': {
+              experimentId: 'run-base', updatedAt: 1, updatedBy: 'r', commit: 'c',
+              caseBankSha: 'sha', aggregationRuleVersion: 4, denominatorVersion: 4,
+              divergesFromProduction: false, productionDifferences: [],
+              plannedCaseIds: ['case-1'], caseResults: { 'case-1': { status: 'passed', score: 1 } },
+            },
+          },
+        }
+        : null
+    ));
+    render(
+      <EvalRunHistory
+        experiments={[baseRun, deltaRun, taggedRun, incompleteRun]}
+        loadState="ready" loadError={null} hasActiveRun={false} probe={null}
+        labels={evalRunPanelZh.runPanel} language="zh" loadingText="加载" onRefresh={vi.fn()} onOpenWizard={vi.fn()}
+      />,
+    );
+
+    const deltaRow = await screen.findByTestId('benchmark-run-run-delta');
+    await waitFor(() => expect(deltaRow.textContent).toContain('pp'));
+    const table = screen.getByRole('table');
+    expect(table.className).toContain('overflow-x-auto');
+
+    const baseRow = screen.getByTestId('benchmark-run-run-base');
+    const taggedRow = screen.getByTestId('benchmark-run-run-tagged');
+    const incompleteRow = screen.getByTestId('benchmark-run-run-incomplete');
+    for (const row of [baseRow, deltaRow, taggedRow, incompleteRow]) {
+      expect(row.className).toContain('min-w-[90rem]');
+      const timestamp = row.querySelector('[data-col="timestamp"]');
+      expect(timestamp?.className).toMatch(/\bw-40\b/);
+      expect(timestamp?.className).toContain('shrink-0');
+      const passRate = row.querySelector('[data-col="pass-rate"]');
+      expect(passRate?.className).toContain('whitespace-nowrap');
+      expect(passRate?.className).toMatch(/\bw-32\b/);
+      expect(passRate?.className).toContain('shrink-0');
+    }
+
+    const costWithoutDelta = baseRow.querySelector('[data-col="run-cost"]')?.className;
+    const costWithDelta = deltaRow.querySelector('[data-col="run-cost"]')?.className;
+    expect(costWithDelta).toBe(costWithoutDelta);
+    expect(costWithDelta).toMatch(/\bw-28\b/);
+    expect(costWithDelta).toContain('shrink-0');
+    expect(taggedRow.querySelector('[data-col="run-cost"]')?.className).toBe(costWithoutDelta);
+    expect(incompleteRow.querySelector('[data-col="run-cost"]')?.className).toBe(costWithoutDelta);
   });
 });

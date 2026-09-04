@@ -67,6 +67,14 @@ function toUint8Readable(readable: Readable): Readable {
       transform.destroy(new Error('AI SDK response stream closed prematurely'));
     }
   });
+  // 消费方提前停读（abort / 出错）时 Readable.toWeb 只销毁这个 Transform，不会顺着 pipe
+  // 销毁 axios 的源响应流——IncomingMessage + zlib 解压流 + keep-alive socket 就此常驻
+  // 事件循环（N-EVAL-CI-NOEXIT 持有者点名的 STREAM_END_OF_STREAM / ZLIB / TLSWRAP）。
+  transform.once('close', () => {
+    if (!readable.destroyed && !readable.readableEnded) {
+      readable.destroy();
+    }
+  });
   return readable.pipe(transform);
 }
 

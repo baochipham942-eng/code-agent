@@ -51,7 +51,8 @@ function normalizeWord(word: string): { word: string; failed: boolean } {
     ? `$'${word.slice(3)}'`
     : word.startsWith('$\\')
       ? `$'${word.slice(1)}'`
-      : word;
+      : null;
+  if (source === null) return { word, failed: false };
   const canonical = canonicalizeCommand(source);
   return { word: canonical.command, failed: canonical.parsingFailed };
 }
@@ -125,6 +126,73 @@ function optionCommandIndex(
   }
   if (options?.skipDuration) index += 1;
   return index < args.length ? index : null;
+}
+
+function parseEnvSplitWords(value: string): { words: string[]; failed?: string } {
+  let entries: ShellEntry[];
+  try {
+    entries = parse(removeShellLineContinuations(value), (key) => `\${${key}}`) as ShellEntry[];
+  } catch (error) {
+    return { words: [], failed: error instanceof Error ? error.message : String(error) };
+  }
+
+  const words: string[] = [];
+  for (const entry of entries) {
+    const word = entryWord(entry);
+    if (!word || word.uncertain) {
+      return { words: [], failed: 'env --split-string contains a non-literal word' };
+    }
+    words.push(word.word);
+  }
+  return words.length > 0
+    ? { words }
+    : { words: [], failed: 'env --split-string is empty' };
+}
+
+function expandEnvSplitStrings(args: string[]): { args: string[]; failed?: string } {
+  const expanded = [...args];
+  for (let expansion = 0; expansion <= MAX_WRAPPER_DEPTH; expansion += 1) {
+    let splitIndex = -1;
+    let splitValue: string | undefined;
+    let consumed = 1;
+
+    for (let index = 0; index < expanded.length; index += 1) {
+      const arg = expanded[index];
+      if (arg === '--') break;
+      if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(arg)) continue;
+      if (arg === '-S' || arg === '--split-string') {
+        splitIndex = index;
+        splitValue = expanded[index + 1];
+        consumed = 2;
+        break;
+      }
+      if (arg.startsWith('--split-string=')) {
+        splitIndex = index;
+        splitValue = arg.slice('--split-string='.length);
+        break;
+      }
+      if (arg.startsWith('-S') && arg.length > 2) {
+        splitIndex = index;
+        splitValue = arg.slice(2);
+        break;
+      }
+      if (arg === '-u' || arg === '--unset' || arg === '-C' || arg === '--chdir') {
+        index += 1;
+        continue;
+      }
+      if (arg.startsWith('-')) continue;
+      break;
+    }
+
+    if (splitIndex < 0) return { args: expanded };
+    if (splitValue === undefined) {
+      return { args: expanded, failed: 'env --split-string requires a value' };
+    }
+    const parsed = parseEnvSplitWords(splitValue);
+    if (parsed.failed) return { args: expanded, failed: parsed.failed };
+    expanded.splice(splitIndex, consumed, ...parsed.words);
+  }
+  return { args: expanded, failed: 'env --split-string expansion exceeds 4 levels' };
 }
 
 function wrapperCommandIndex(program: string, args: string[]): number | null {
@@ -313,7 +381,14 @@ function expandExecutions(
   }
 
   const program = basename(words[0]);
-  const args = words.slice(1);
+  let args = words.slice(1);
+  if (program === 'env') {
+    const split = expandEnvSplitStrings(args);
+    if (split.failed) {
+      return { executions: [], targets: [], uncertain: [], failed: split.failed };
+    }
+    args = split.args;
+  }
   if (SHELL_PROGRAMS.has(program)) {
     const script = shellScript(args);
     if (!script) {

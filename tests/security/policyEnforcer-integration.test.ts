@@ -293,6 +293,18 @@ denied_paths = ["${path.join(resolveCanonicalRunPath(dir), 'src')}/**"]
       expect(result.error).toContain('User deny: Edit(src/**)');
     });
 
+    it('applies a user path deny through env split-string and a shell wrapper', async () => {
+      const dir = project();
+      getPolicyEngine().loadUserRules({ deny: ['Edit(src/**)'] });
+      const executor = makeExecutor(dir);
+      const result = await executor.execute('bash', {
+        command: `env -S "bash -c 'echo x > src/x.ts'"`,
+      }, { preApprovedTools: new Set(['Bash(env:*)']) });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('User deny: Edit(src/**)');
+    });
+
     it('blocks an append redirect to a user-denied SSH path before execution', async () => {
       const dir = project();
       getPolicyEngine().loadUserRules({ deny: ['Edit(~/.ssh/**)'] });

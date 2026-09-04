@@ -110,15 +110,23 @@ suite('seatbelt wrapCommand 真实隔离', () => {
   });
 
   it('npm 的 host userconfig 仍不可读', async () => {
+    // CI runner 的 HOME 没有 .npmrc：cat 会先报 No such file 而不是被 seatbelt 拒，
+    // 断言就测不到「被拒」。缺席时补一个占位文件，跑完删掉（只删自己建的）。
     const hostNpmrc = path.join(os.homedir(), '.npmrc');
-    const { command, cleanup } = wrapCommandForSandbox(
-      `cat ${JSON.stringify(hostNpmrc)}`,
-      { workingDirectory: projectDir, allowNetwork: false },
-    );
-    const r = await run(command, projectDir);
-    cleanup();
-    expect(r.code).not.toBe(0);
-    expect(r.stderr).toMatch(/Operation not permitted/);
+    const created = !fs.existsSync(hostNpmrc);
+    if (created) fs.writeFileSync(hostNpmrc, '# seatbeltWrap.test placeholder\n', { flag: 'wx' });
+    try {
+      const { command, cleanup } = wrapCommandForSandbox(
+        `cat ${JSON.stringify(hostNpmrc)}`,
+        { workingDirectory: projectDir, allowNetwork: false },
+      );
+      const r = await run(command, projectDir);
+      cleanup();
+      expect(r.code).not.toBe(0);
+      expect(r.stderr).toMatch(/Operation not permitted/);
+    } finally {
+      if (created) fs.rmSync(hostNpmrc, { force: true });
+    }
   });
 
   it('多根矩阵：Additional 只读可读不可写，显式读写根可写', async () => {

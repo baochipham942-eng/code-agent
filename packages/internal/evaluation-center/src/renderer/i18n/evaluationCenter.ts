@@ -6,6 +6,7 @@
 //   （两词典经 spread 合入顶层，并行改动窗口期避免撞文件）。
 // ============================================================================
 import { evalCaseListEn, evalCaseListZh } from './evalCaseList';
+import { evalHarvestEn, evalHarvestZh } from './evalHarvest';
 import { evalRunPanelEn, evalRunPanelZh } from './evalRunPanel';
 import { evalScorersEn, evalScorersZh } from './evalScorers';
 import { evalCaseDrawerEn, evalCaseDrawerZh } from './evalCaseDrawer';
@@ -15,6 +16,7 @@ import { evalExperimentsEn, evalExperimentsZh } from './evalExperiments';
 export const evalCenterZh = {
   evalCenter: {
     ...evalCaseListZh,
+    ...evalHarvestZh,
     ...evalRunPanelZh,
     ...evalScorersZh,
     ...evalCaseDrawerZh,
@@ -186,6 +188,7 @@ export const evalCenterZh = {
 export const evalCenterEn = {
   evalCenter: {
     ...evalCaseListEn,
+    ...evalHarvestEn,
     ...evalRunPanelEn,
     ...evalScorersEn,
     ...evalCaseDrawerEn,

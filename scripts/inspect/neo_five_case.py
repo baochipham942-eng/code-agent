@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import json
+import re
 import uuid
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Awaitable, Callable
 
 from inspect_ai import Task, task
 from inspect_ai.agent import Agent, AgentState, agent, sandbox_agent_bridge
@@ -171,6 +172,244 @@ def _lifecycle_agent(harness: str, build_agent: Callable[[str, str], Agent]) -> 
     return lifecycle()
 
 
+def _assistant_count(messages: list[Any]) -> int:
+    return sum(1 for message in messages if isinstance(message, ChatMessageAssistant))
+
+
+def _last_assistant(messages: list[Any]) -> ChatMessageAssistant | None:
+    for message in reversed(messages):
+        if isinstance(message, ChatMessageAssistant):
+            return message
+    return None
+
+
+def _follow_up_request_has_history(messages: list[Any]) -> bool:
+    """True when the CLI follow-up *request* carried first-turn context.
+
+    Inspect the prefix before the last user (the follow-up prompt). This
+    turn's own tool calls sit after that user and must not count as history.
+    Neo restore may merge first-turn tool-call+answer into one assistant, so
+    a tool result in the prefix is enough; assistant count on the whole
+    generation is not.
+    """
+    last_user = -1
+    for index, message in enumerate(messages):
+        if getattr(message, "role", None) == "user":
+            last_user = index
+    prefix = messages[:last_user] if last_user >= 0 else []
+    if any(isinstance(message, ChatMessageTool) for message in prefix):
+        return True
+    return _assistant_count(prefix) >= 1
+
+
+def _message_fingerprint(message: Any) -> tuple[str, str]:
+    """(role, text) identity. Same cut as inspect_ai (role, mm3(text))."""
+    role = getattr(message, "role", "") or ""
+    return (str(role), _message_text(message).strip())
+
+
+def _invocation_tail(adopted: list[Any], forwarded: list[Any]) -> list[Any]:
+    """New messages from this invocation: adopted after the shared prefix.
+
+    Bridge may return `forwarded + tail`, or a full replace whose first-turn
+    shape differs (Neo merges tool-call+answer into one assistant). Cut by
+    fingerprint prefix, not `len(forwarded)`. When the prefix does not cover
+    forwarded, take messages after the last user (the follow-up prompt).
+    Mirrored by `invocationTail` in traceHealth.ts — change both.
+    """
+    forwarded_fps = [_message_fingerprint(message) for message in forwarded]
+    adopted_fps = [_message_fingerprint(message) for message in adopted]
+    lcp = 0
+    for left, right in zip(forwarded_fps, adopted_fps):
+        if left != right:
+            break
+        lcp += 1
+    if lcp == len(forwarded):
+        return list(adopted[lcp:])
+    last_user = -1
+    for index, fingerprint in enumerate(adopted_fps):
+        if fingerprint[0] == "user":
+            last_user = index
+    if last_user >= 0:
+        return list(adopted[last_user + 1 :])
+    return list(adopted[lcp:])
+
+
+def _assert_invocation_grew(*, before: int, after: int, invocation: int) -> None:
+    if after <= before:
+        raise RuntimeError(
+            "inspect trace health failed at invocation "
+            f"{invocation}: assistant count {before} -> {after} (expected strict growth)"
+        )
+
+
+def _assert_follow_up_carried_history(*, messages: list[Any], invocation: int) -> None:
+    """Fail closed when a follow-up CLI request omitted first-turn context.
+
+    Inspect this invocation's generation (`bridge.state` after `_adopt_thread`,
+    whose prefix-before-last-user is the model-event input), not the stitched
+    state. Assistant-count growth cannot catch a 1-assistant first turn plus a
+    2-assistant tool follow-up after a full replace (2>1 still grows).
+    """
+    if not _follow_up_request_has_history(messages):
+        raise RuntimeError(
+            "inspect trace health failed at invocation "
+            f"{invocation}: follow-up request did not carry first-turn history"
+        )
+
+
+def _assert_follow_up_complete(*, final: int, baseline: int, follow_ups: list[str]) -> None:
+    # Defensive redundancy: per-invocation strict growth already implies
+    # final >= baseline + len(prompts) > baseline + len(follow_ups). Kept so a
+    # later weakening of the per-invocation assert still cannot ship a short
+    # trace to the scorer. Unreachable on the current Python path.
+    required = baseline + len(follow_ups)
+    if final < required:
+        raise RuntimeError(
+            "inspect trace health failed after follow-ups: "
+            f"assistant count {final} < {required} "
+            f"(baseline {baseline} + {len(follow_ups)} follow-ups)"
+        )
+
+
+# `run --output-format text` prints this after a successful turn. ANSI-safe:
+# stop at whitespace or an escape so chalk wrapping cannot leak into the id.
+_CLI_SESSION_ID_RE = re.compile(r"会话 ID:\s*([^\s\x1b]+)")
+
+
+def parse_cli_session_id(*chunks: str) -> str | None:
+    """Extract the session id Neo CLI prints after `run` (text mode)."""
+    text = "\n".join(chunk for chunk in chunks if chunk)
+    match = _CLI_SESSION_ID_RE.search(text)
+    return match.group(1) if match else None
+
+
+async def read_persisted_neo_session_id(neo_home: str) -> str:
+    """Read the session the first Neo process actually created.
+
+    `--session <id>` is restore-only. If the id is missing, `run` creates a
+    new `cli_session_*` row and ignores the requested id. Follow-up processes
+    must resume that persisted id, not the inspect-side uuid.
+    """
+    db_path = f"{neo_home}/code-agent.db"
+    script = (
+        "const Database = require('better-sqlite3');"
+        f"const db = new Database({json.dumps(db_path)}, {{ readonly: true, fileMustExist: true }});"
+        "const row = db.prepare("
+        "'SELECT id FROM sessions WHERE id LIKE ? ORDER BY updated_at DESC LIMIT 1'"
+        ").get('cli_session_%');"
+        "if (!row || typeof row.id !== 'string' || !row.id) {"
+        "  throw new Error('no persisted neo session');"
+        "}"
+        "const count = db.prepare("
+        "'SELECT COUNT(*) AS n FROM messages WHERE session_id = ?'"
+        ").get(row.id);"
+        "if (!count || Number(count.n) < 1) {"
+        "  throw new Error('persisted neo session has no messages');"
+        "}"
+        "const branch = db.prepare("
+        "'SELECT 1 AS ok FROM conversation_branches WHERE session_id = ? LIMIT 1'"
+        ").get(row.id);"
+        "if (!branch) {"
+        "  throw new Error('persisted neo session has no conversation ledger');"
+        "}"
+        "process.stdout.write(row.id);"
+    )
+    result = await sandbox().exec(
+        cmd=["node", "-e", script],
+        cwd=CONTAINER_REPO_ROOT,
+        timeout=30,
+    )
+    if not result.success:
+        raise RuntimeError(
+            "failed to read persisted neo session: "
+            f"{result.stderr}\n{result.stdout}"
+        )
+    session_id = result.stdout.strip()
+    if not session_id:
+        raise RuntimeError("persisted neo session id was empty")
+    return session_id
+
+
+def scorer_trace_health(
+    follow_up_prompts_sent: list[str],
+    turn_count: int,
+    first_invocation_assistant_count: Any = None,
+) -> str:
+    """Soft label for scorer metadata. Missing first-invocation count stays ok.
+
+    Codex/Kimi lifecycle and historical logs do not set the field; do not
+    mislabel them. Neo/Grok store the count after the first CLI process.
+    """
+    if not follow_up_prompts_sent:
+        return "ok"
+    if not isinstance(first_invocation_assistant_count, int):
+        return "ok"
+    required = first_invocation_assistant_count + len(follow_up_prompts_sent)
+    return "broken" if turn_count < required else "ok"
+
+
+async def _forward_bridged_invocations(
+    state: AgentState,
+    prompts: list[str],
+    invoke: Callable[[Any, str, int], Awaitable[None]],
+) -> tuple[AgentState, list[str], int]:
+    """One fresh sandbox_agent_bridge per CLI process, forwarding state.
+
+    inspect_ai adopts the first generation of a fresh bridge unconditionally.
+    A shared bridge parks Neo follow-ups when SQLite re-render breaks the
+    byte-level prefix used by `_track_state`.
+    """
+    current = state
+    baseline = _assistant_count(current.messages)
+    first_after = baseline
+    for index, prompt in enumerate(prompts):
+        if index > 0:
+            current.messages.append(ChatMessageUser(content=prompt))
+        forwarded = list(current.messages)
+        before = _assistant_count(forwarded)
+        previous = _last_assistant(forwarded)
+        previous_text = _message_text(previous).strip() if previous else ""
+        async with sandbox_agent_bridge(current, sandbox="default") as bridge:
+            await invoke(bridge, prompt, index)
+            adopted = bridge.state
+        if index == 0:
+            current = adopted
+        else:
+            # Check the generation (this round's model-event input), never the
+            # stitched state. Missing history raises before stitch/growth, so
+            # a 1-assistant first turn + 2-assistant tool follow-up cannot
+            # pass on 2>1 after a full replace.
+            _assert_follow_up_carried_history(
+                messages=adopted.messages, invocation=index
+            )
+            last = _last_assistant(adopted.messages)
+            last_text = _message_text(last).strip() if last else ""
+            if last is None or last_text == previous_text:
+                current = adopted
+            else:
+                # Fresh-bridge `_adopt_thread` replaces state in place.
+                # Neo resume may merge first-turn tool-call+answer into one
+                # assistant. Keep the forwarded first-turn trace and append
+                # this invocation's full new tail (tool-call assistant + tool
+                # + answer), not only the last assistant.
+                adopted.messages = forwarded + _invocation_tail(
+                    adopted.messages, forwarded
+                )
+                current = adopted
+        after = _assistant_count(current.messages)
+        _assert_invocation_grew(before=before, after=after, invocation=index)
+        if index == 0:
+            first_after = after
+    follow_ups = prompts[1:]
+    _assert_follow_up_complete(
+        final=_assistant_count(current.messages),
+        baseline=baseline,
+        follow_ups=follow_ups,
+    )
+    return current, follow_ups, first_after
+
+
 def _codex_agent(workspace: str, isolated_home: str) -> Agent:
     codex_home = f"{isolated_home}/codex"
     return codex_cli(
@@ -241,32 +480,52 @@ def neo_cli_agent() -> Agent:
             state.messages[-1].text,
             *(store().get("harness_case", {}).get("follow_up_prompts", []) or []),
         ]
-        session_id = f"inspect-{uuid.uuid4()}"
-        async with sandbox_agent_bridge(state, sandbox="default") as bridge:
-            for prompt in prompts:
-                result = await sandbox().exec(
-                    cmd=[
-                        "node", NEO_CLI, "--project", workspace,
-                        "--provider", "openai", "--model", "inspect",
-                        "--output-format", "text", "run", prompt,
-                        "--session", session_id, "--dangerously-skip-permissions",
-                    ],
-                    cwd=workspace,
-                    env={
-                        "HOME": isolated_home,
-                        "CODE_AGENT_DATA_DIR": neo_home,
-                        "CODE_AGENT_CLI_MODE": "1",
-                        "EVAL_DISABLED": "true",
-                        "OPENAI_BASE_URL": f"http://localhost:{bridge.port}/v1",
-                        "OPENAI_API_KEY": "inspect-bridge-placeholder",
-                    },
-                    timeout=300,
-                )
-                if not result.success:
-                    raise RuntimeError(f"Neo CLI failed: {result.stderr}\n{result.stdout}")
-            runtime["follow_up_prompts_sent"] = prompts[1:]
-            store().set("harness_runtime", runtime)
-            return bridge.state
+        # Neo `--session` restores an existing row; it does not pin a new
+        # session to this id. First process creates `cli_session_*`; later
+        # processes resume that persisted id (Grok's --session-id / --resume).
+        session_id: str | None = None
+
+        async def invoke(bridge: Any, prompt: str, index: int) -> None:
+            nonlocal session_id
+            cmd = [
+                "node", NEO_CLI, "--project", workspace,
+                "--provider", "openai", "--model", "inspect",
+                "--output-format", "text", "run", prompt,
+                "--dangerously-skip-permissions",
+            ]
+            if index > 0:
+                if not session_id:
+                    raise RuntimeError(
+                        "neo follow-up has no persisted session id to resume"
+                    )
+                cmd.extend(["--session", session_id])
+            result = await sandbox().exec(
+                cmd=cmd,
+                cwd=workspace,
+                env={
+                    "HOME": isolated_home,
+                    "CODE_AGENT_DATA_DIR": neo_home,
+                    "CODE_AGENT_CLI_MODE": "1",
+                    "EVAL_DISABLED": "true",
+                    "OPENAI_BASE_URL": f"http://localhost:{bridge.port}/v1",
+                    "OPENAI_API_KEY": "inspect-bridge-placeholder",
+                },
+                timeout=300,
+            )
+            if not result.success:
+                raise RuntimeError(f"Neo CLI failed: {result.stderr}\n{result.stdout}")
+            if index == 0:
+                session_id = parse_cli_session_id(result.stdout, result.stderr)
+                if not session_id:
+                    session_id = await read_persisted_neo_session_id(neo_home)
+
+        current, follow_ups, first_after = await _forward_bridged_invocations(
+            state, prompts, invoke
+        )
+        runtime["follow_up_prompts_sent"] = follow_ups
+        runtime["first_invocation_assistant_count"] = first_after
+        store().set("harness_runtime", runtime)
+        return current
 
     return execute
 
@@ -289,7 +548,8 @@ def grok_cli_agent() -> Agent:
             *(store().get("harness_case", {}).get("follow_up_prompts", []) or []),
         ]
         session_id = str(uuid.uuid4())
-        async with sandbox_agent_bridge(state, sandbox="default") as bridge:
+
+        async def invoke(bridge: Any, prompt: str, index: int) -> None:
             config = "\n".join([
                 "[models]", 'default = "inspect"', "", "[model.inspect]",
                 'model = "inspect"',
@@ -299,30 +559,34 @@ def grok_cli_agent() -> Agent:
                 "context_window = 1000000", "max_completion_tokens = 32768", "",
             ])
             await sandbox().write_file(f"{grok_home}/config.toml", config)
-            for index, prompt in enumerate(prompts):
-                cmd = [
-                    "grok", "--cwd", workspace, "--model", "inspect",
-                    "--output-format", "plain", "--permission-mode", "bypassPermissions",
-                    "--sandbox", "off", "--no-plan", "--no-subagents",
-                    "--disable-web-search", "--verbatim",
-                ]
-                cmd.extend(["--session-id", session_id] if index == 0 else ["--resume", session_id])
-                cmd.extend(["--single", prompt])
-                result = await sandbox().exec(
-                    cmd=cmd,
-                    cwd=workspace,
-                    env={
-                        "HOME": isolated_home,
-                        "GROK_HOME": grok_home,
-                        "XAI_API_KEY": "inspect-bridge-placeholder",
-                    },
-                    timeout=300,
-                )
-                if not result.success:
-                    raise RuntimeError(f"Grok CLI failed: {result.stderr}\n{result.stdout}")
-            runtime["follow_up_prompts_sent"] = prompts[1:]
-            store().set("harness_runtime", runtime)
-            return bridge.state
+            cmd = [
+                "grok", "--cwd", workspace, "--model", "inspect",
+                "--output-format", "plain", "--permission-mode", "bypassPermissions",
+                "--sandbox", "off", "--no-plan", "--no-subagents",
+                "--disable-web-search", "--verbatim",
+            ]
+            cmd.extend(["--session-id", session_id] if index == 0 else ["--resume", session_id])
+            cmd.extend(["--single", prompt])
+            result = await sandbox().exec(
+                cmd=cmd,
+                cwd=workspace,
+                env={
+                    "HOME": isolated_home,
+                    "GROK_HOME": grok_home,
+                    "XAI_API_KEY": "inspect-bridge-placeholder",
+                },
+                timeout=300,
+            )
+            if not result.success:
+                raise RuntimeError(f"Grok CLI failed: {result.stderr}\n{result.stdout}")
+
+        current, follow_ups, first_after = await _forward_bridged_invocations(
+            state, prompts, invoke
+        )
+        runtime["follow_up_prompts_sent"] = follow_ups
+        runtime["first_invocation_assistant_count"] = first_after
+        store().set("harness_runtime", runtime)
+        return current
 
     return execute
 
@@ -349,6 +613,7 @@ def neo_assertion_scorer() -> Scorer:
         if not result.success:
             raise RuntimeError(f"Neo assertion scorer failed: {result.stderr}")
         scored = json.loads(result.stdout)
+        follow_up_prompts_sent = list(state.metadata.get("follow_up_prompts_sent") or [])
         return Score(
             value=float(scored["score"]),
             answer="\n".join(context["responses"]),
@@ -360,7 +625,12 @@ def neo_assertion_scorer() -> Scorer:
                 "trace": context["trace"],
                 "turn_count": context["turnCount"],
                 "config_isolation": state.metadata.get("config_isolation"),
-                "follow_up_prompts_sent": state.metadata.get("follow_up_prompts_sent", []),
+                "follow_up_prompts_sent": follow_up_prompts_sent,
+                "trace_health": scorer_trace_health(
+                    follow_up_prompts_sent,
+                    context["turnCount"],
+                    state.metadata.get("first_invocation_assistant_count"),
+                ),
                 "assertion_result": scored,
             },
         )

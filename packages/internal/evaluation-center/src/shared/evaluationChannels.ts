@@ -8,6 +8,7 @@ export const EVALUATION_CHANNELS = {
   LOAD_CASE: 'evaluation:load-case',
   LIST_CASES: 'evaluation:list-cases',
   SAVE_CASE: 'evaluation:save-case',
+  HARVEST_PREVIEW: 'evaluation:harvest-preview',
   SAVE_ANNOTATION: 'evaluation:save-annotation',
   LIST_ANNOTATIONS: 'evaluation:list-annotations',
   SET_BASELINE: 'evaluation:set-baseline',

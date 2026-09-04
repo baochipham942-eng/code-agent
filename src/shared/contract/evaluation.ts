@@ -2,16 +2,16 @@
 // Evaluation Types - 会话评测类型定义
 // ============================================================================
 
-import type { UnifiedTraceIdentity, UnifiedTraceSource } from './reviewQueue';
-import type { AgentPointerEvent } from './desktop';
-import type {
-  AgentQualityScorecard,
-  TurnQualityMemorySummary,
-  TurnQualityScoreSummary,
-} from './turnQuality';
+import type { TelemetryCompleteness } from './evaluationReplay';
 
-export const EVAL_RUN_EVENT_SCHEMA_VERSION = 3 as const;
+export const EVAL_RUN_EVENT_SCHEMA_VERSION = 4 as const;
 export const EVAL_REPEAT_MAX = 10;
+
+/**
+ * 评测默认无人值守不扇出：allowSwarm 缺省 false（与 goalContractEval 的历史硬编码同值）。
+ * spawnMaxDepth 缺省 null，表示不覆盖 SpawnGuard 的生产默认深度。
+ */
+export const EVAL_DEFAULT_ALLOW_SWARM = false;
 
 export interface EvalCompareHarness {
   name: string;
@@ -35,6 +35,16 @@ export interface EvalCompareArm {
     routingModel?: string;
   };
   reasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh';
+  /**
+   * 编排结构（ORCHARM）：要不要扇出子代理，以及最深几层。
+   * - allowSwarm：goal run 首轮是否注入编排引导 + 预加载 workflow（评测默认 false）。
+   * - spawnMaxDepth：spawn 嵌套深度上限；0 = 一层都不许扇出（SpawnGuard 直接 DEPTH_LIMIT），
+   *   省略 = 跟随 SpawnGuard 生产默认。
+   */
+  orchestration?: {
+    allowSwarm?: boolean;
+    spawnMaxDepth?: number;
+  };
   skills?: string[];
   enabledTools?: string[];
   temperature?: number;
@@ -48,6 +58,7 @@ export const CONSUMED_COMPARE_FIELDS = [
   'harness',
   'memory',
   'reasoningEffort',
+  'orchestration',
   'skills',
 ] as const satisfies readonly (keyof EvalCompareArm)[];
 
@@ -79,6 +90,7 @@ export function resolveEffectiveEvalCompareArm(
   harness: EvalCompareHarness | null;
   memory: { longTerm: boolean; routingModel: string | null };
   reasoningEffort: EvalCompareArm['reasoningEffort'] | null;
+  orchestration: { allowSwarm: boolean; spawnMaxDepth: number | null };
   skills: string[];
 } {
   const sourceHarness = config.harness ?? baseline.harness;
@@ -93,6 +105,14 @@ export function resolveEffectiveEvalCompareArm(
       routingModel: config.memory?.routingModel ?? baseline.memory?.routingModel ?? null,
     },
     reasoningEffort: config.reasoningEffort ?? baseline.reasoningEffort ?? null,
+    orchestration: {
+      allowSwarm: config.orchestration?.allowSwarm
+        ?? baseline.orchestration?.allowSwarm
+        ?? EVAL_DEFAULT_ALLOW_SWARM,
+      spawnMaxDepth: config.orchestration?.spawnMaxDepth
+        ?? baseline.orchestration?.spawnMaxDepth
+        ?? null,
+    },
     skills: normalizeCompareSkills(config.skills ?? baseline.skills),
   };
 }
@@ -115,6 +135,7 @@ export function effectiveArmSignature(config: EvalCompareArm, baseline: EvalComp
       : null,
     memory: arm.memory,
     reasoningEffort: arm.reasoningEffort,
+    orchestration: arm.orchestration,
     skills: arm.skills,
   } satisfies Record<(typeof CONSUMED_COMPARE_FIELDS)[number], unknown>;
   return JSON.stringify(Object.fromEntries(
@@ -455,7 +476,7 @@ export type EvalRunEventSummary = {
  */
 export type EvalRunEvent =
   | {
-      schemaVersion: 3;
+      schemaVersion: 4;
       type: 'run_start';
       ts: number;
       runId: string;
@@ -463,7 +484,7 @@ export type EvalRunEvent =
       config: EvalRunStartConfig;
     }
   | {
-      schemaVersion: 3;
+      schemaVersion: 4;
       type: 'case_start';
       ts: number;
       runId: string;
@@ -471,7 +492,7 @@ export type EvalRunEvent =
       description: string;
     }
   | {
-      schemaVersion: 3;
+      schemaVersion: 4;
       type: 'case_end';
       ts: number;
       runId: string;
@@ -491,6 +512,8 @@ export type EvalRunEvent =
       sessionId?: string;
       scoreAuthority?: 'deterministic_assertion' | 'llm_judge' | 'self_check';
       skillActivations?: Record<string, number>;
+      /** 本题内子代理被真正拉起的次数（subagent_spawned 事件计数）；0/缺省 = 未出场。 */
+      subagentSpawns?: number;
       aiReview?: Partial<Record<AiReviewDimension, AiReviewVerdict>>;
       evidence?: EvalCaseEvidence;
       trialAggregate?: {
@@ -503,7 +526,7 @@ export type EvalRunEvent =
       arm?: 'baseline' | 'candidate';
     }
   | {
-      schemaVersion: 3;
+      schemaVersion: 4;
       type: 'pair_end';
       ts: number;
       runId: string;
@@ -518,9 +541,10 @@ export type EvalRunEvent =
       assertionPassB: number;
       assertionCount: number;
       skillActivations: { baseline: number; candidate: number };
+      subagentSpawns: { baseline: number; candidate: number };
     }
   | {
-      schemaVersion: 3;
+      schemaVersion: 4;
       type: 'tool_call';
       ts: number;
       runId: string;
@@ -529,7 +553,7 @@ export type EvalRunEvent =
       input: unknown;
     }
   | {
-      schemaVersion: 3;
+      schemaVersion: 4;
       type: 'tool_result';
       ts: number;
       runId: string;
@@ -538,7 +562,7 @@ export type EvalRunEvent =
       success: boolean;
     }
   | {
-      schemaVersion: 3;
+      schemaVersion: 4;
       type: 'error';
       ts: number;
       runId: string;
@@ -546,7 +570,7 @@ export type EvalRunEvent =
       error: string;
     }
   | {
-      schemaVersion: 3;
+      schemaVersion: 4;
       type: 'run_end';
       ts: number;
       runId: string;
@@ -558,7 +582,7 @@ export type EvalRunEvent =
       error?: string;
     }
   | {
-      schemaVersion: 3;
+      schemaVersion: 4;
       type: 'skill_activated';
       ts: number;
       runId: string;
@@ -566,7 +590,7 @@ export type EvalRunEvent =
       name: string;
     }
   | {
-      schemaVersion: 3;
+      schemaVersion: 4;
       type: 'memory_injected';
       ts: number;
       runId: string;
@@ -574,7 +598,7 @@ export type EvalRunEvent =
       id: string;
     }
   | {
-      schemaVersion: 3;
+      schemaVersion: 4;
       type: 'subagent_spawned';
       ts: number;
       runId: string;
@@ -767,6 +791,7 @@ interface EvalExperimentCaseItem {
     assertionPassB?: number;
     assertionCount?: number;
     skillActivations?: { baseline: number; candidate: number };
+    subagentSpawns?: { baseline: number; candidate: number };
   } | null;
 }
 export interface EvalExperimentDetail {
@@ -839,8 +864,30 @@ interface EvalCaseListParseError {
 
 export type EvalCaseListItem = EvalCaseListEntry | EvalCaseListParseError;
 
+// 「从会话转成题目」的契约拆在 evaluationHarvest.ts，消费方仍从本文件取。
+export * from './evaluationHarvest';
+
+import type { EvalDraftCaseType as EvalDraftCaseTypeRef, HarvestCandidate as HarvestCandidateRef } from './evaluationHarvest';
+
+interface CreateEvalDraftRequest {
+  action: 'create-draft';
+  id: string;
+  prompt: string;
+  tags: string[];
+  /** 草稿描述；省略时沿用 prompt。 */
+  description?: string;
+  /** 题目类型；省略时 task。 */
+  type?: EvalDraftCaseTypeRef;
+  /** 来源会话（从会话转成题目时必带）。 */
+  sourceSessionId?: string;
+  /** 人已确认的判定标准；空数组等价于没有。 */
+  expectations?: HarvestCandidateRef[];
+  /** 存为待办：不写判定标准，题库页标「还没有判定标准」。 */
+  pending?: boolean;
+}
+
 export type SaveEvalCaseRequest =
-  | { action: 'create-draft'; id: string; prompt: string; tags: string[] }
+  | CreateEvalDraftRequest
   | { action: 'archive'; id: string };
 
 export interface SaveEvalCaseResult {
@@ -849,254 +896,4 @@ export interface SaveEvalCaseResult {
   file: string;
 }
 
-// ============================================================================
-// Structured Replay - shared contract for telemetry/replay consumers
-// ============================================================================
-
-export type ReplayToolCategory = 'Read' | 'Edit' | 'Write' | 'Bash' | 'Search' | 'Web' | 'Agent' | 'Skill' | 'Other';
-
-export type ReplayDataSource = 'telemetry' | 'transcript_fallback';
-export type ReplayMetricSource = 'telemetry' | 'transcript' | 'partial' | 'unavailable';
-
-export type ReplayMetricAvailability = {
-  dataSource: ReplayDataSource;
-  /** @deprecated Use dataSource. */
-  replaySource?: ReplayDataSource;
-  toolDistribution: ReplayMetricSource;
-  selfRepair: ReplayMetricSource;
-  actualArgs: ReplayMetricSource;
-};
-
-export type RealAgentRunGateFailure = 'missing_session_id' | 'missing_replay_key' | 'missing_telemetry_completeness' | 'missing_telemetry_data_source' | 'transcript_fallback_replay' | 'missing_real_agent_trace' | 'missing_turns' | 'missing_model_decisions' | 'missing_tool_calls' | 'missing_event_trace' | 'missing_tool_schemas' | 'missing_replay_explanation' | 'missing_tool_args' | 'missing_tool_result';
-
-export interface ReplayCompletenessGateInput {
-  sessionId?: string | null;
-  replayKey?: string | null;
-  dataSource?: ReplayDataSource | string | null;
-  turnCount?: number | null;
-  modelCallCount?: number | null;
-  toolCallCount?: number | null;
-  eventCount?: number | null;
-  hasModelDecisions?: boolean | null;
-  hasToolSchemas?: boolean | null;
-  hasReplayExplanation?: boolean | null;
-  hasToolArgs?: boolean | null;
-  hasToolResult?: boolean | null;
-}
-
-export function getReplayCompletenessReasons(input: ReplayCompletenessGateInput): RealAgentRunGateFailure[] {
-  const failures: RealAgentRunGateFailure[] = [];
-
-  if (!input.sessionId) failures.push('missing_session_id');
-  if (!input.replayKey) failures.push('missing_replay_key');
-
-  if (!input.dataSource) {
-    failures.push('missing_telemetry_data_source');
-  } else if (input.dataSource !== 'telemetry') {
-    failures.push(input.dataSource === 'transcript_fallback' ? 'transcript_fallback_replay' : 'missing_telemetry_data_source');
-  }
-
-  if ((input.turnCount ?? 0) <= 0) failures.push('missing_turns');
-  if ((input.modelCallCount ?? 0) <= 0 || input.hasModelDecisions !== true) {
-    failures.push('missing_model_decisions');
-  }
-  if ((input.toolCallCount ?? 0) <= 0) failures.push('missing_tool_calls');
-  if ((input.eventCount ?? 0) <= 0) failures.push('missing_event_trace');
-  if (input.hasToolSchemas !== true) failures.push('missing_tool_schemas');
-  if (input.hasReplayExplanation === false) failures.push('missing_replay_explanation');
-  if (input.hasToolArgs === false) failures.push('missing_tool_args');
-  if (input.hasToolResult === false) failures.push('missing_tool_result');
-
-  return Array.from(new Set(failures));
-}
-
-export interface TelemetryCompleteness {
-  sessionId?: string;
-  replayKey?: string;
-  turnCount: number;
-  modelCallCount: number;
-  toolCallCount: number;
-  eventCount: number;
-  hasSessionId?: boolean;
-  hasModelDecisions: boolean;
-  hasToolSchemas: boolean;
-  hasPermissionTrace: boolean;
-  hasContextCompressionEvents: boolean;
-  hasSubagentTelemetry: boolean;
-  hasRealAgentTrace?: boolean;
-  dataSource?: ReplayDataSource;
-  incompleteReasons?: RealAgentRunGateFailure[];
-  /** @deprecated Use dataSource. */
-  source?: string;
-}
-
-export interface ReplayToolSchema {
-  name: string;
-  inputSchema?: Record<string, unknown>;
-  requiresPermission?: boolean;
-  permissionLevel?: string;
-}
-
-export interface ReplayPermissionTrace {
-  eventType: string;
-  summary: string;
-  data?: Record<string, unknown> | string;
-  timestamp: number;
-}
-
-export interface ReplayModelDecision {
-  id: string;
-  provider: string;
-  model: string;
-  requestedProvider?: string;
-  requestedModel?: string;
-  resolvedProvider?: string;
-  resolvedModel?: string;
-  reason?: string;
-  billingMode?: string;
-  fallbackFrom?: string | null;
-  responseType?: string;
-  toolCallCount: number;
-  inputTokens: number;
-  outputTokens: number;
-  latencyMs: number;
-  prompt?: string;
-  completion?: string;
-  toolSchemas?: ReplayToolSchema[];
-}
-
-export interface ReplayMemoryAudit {
-  mode: TurnQualityMemorySummary['mode'];
-  blocks: TurnQualityMemorySummary['blocks'];
-  suppressedEntryIds?: string[];
-  offReason?: string;
-  score?: TurnQualityScoreSummary;
-  agentScorecard?: AgentQualityScorecard;
-}
-
-export interface ReplayTimelineEvent {
-  eventType: string;
-  summary: string;
-  data?: Record<string, unknown> | string;
-  durationMs?: number;
-}
-
-export interface ReplayToolCall {
-  id: string;
-  name: string;
-  args: Record<string, unknown>;
-  actualArgs?: Record<string, unknown>;
-  argsSource?: 'telemetry_sanitized' | 'telemetry_actual' | 'transcript';
-  toolSchema?: ReplayToolSchema;
-  permissionTrace?: ReplayPermissionTrace[];
-  result?: string;
-  resultMetadata?: Record<string, unknown>;
-  agentPointerEvent?: AgentPointerEvent | null;
-  agentPointerTimeline?: AgentPointerEvent[];
-  success: boolean;
-  successKnown?: boolean;
-  duration: number;
-  category: ReplayToolCategory;
-}
-
-export interface ReplayBlock {
-  type: 'user' | 'thinking' | 'text' | 'tool_call' | 'tool_result' | 'error' | 'model_call' | 'memory_audit' | 'event' | 'context_event';
-  content: string;
-  toolCall?: ReplayToolCall;
-  modelDecision?: ReplayModelDecision;
-  memoryAudit?: ReplayMemoryAudit;
-  event?: ReplayTimelineEvent;
-  timestamp: number;
-}
-
-export interface ReplayTurn {
-  turnNumber: number;
-  agentId?: string;
-  turnType?: 'user' | 'iteration';
-  parentTurnId?: string;
-  blocks: ReplayBlock[];
-  inputTokens: number;
-  outputTokens: number;
-  durationMs: number;
-  startTime: number;
-}
-
-export interface ReplayFailureAttribution {
-  rootCause?: {
-    stepIndex: number;
-    category: string;
-    summary: string;
-    evidence: number[];
-    confidence: number;
-  };
-  causalChain: Array<{ stepIndex: number; role: string; note: string }>;
-  relatedRegressionCases: string[];
-  llmUsed: boolean;
-  durationMs: number;
-}
-
-export interface BrowserComputerProofTimelineEntry {
-  turnNumber: number;
-  toolCallId: string;
-  toolName: string;
-  status: string;
-  summary: string;
-  evidenceRefIds: string[];
-  timestamp: number;
-  traceId?: string | null;
-  visualSource?: string | null;
-  manualTakeoverStatus?: string | null;
-}
-
-export type EvidenceControlProjectionTrustLevel = 'strong' | 'partial' | 'weak';
-
-export type EvidenceControlProjectionSource =
-  | 'verification'
-  | 'browser_computer'
-  | 'trajectory'
-  | 'background_recovery';
-
-export interface EvidenceControlSummaryProjection {
-  schemaVersion: 1;
-  trustLevel: EvidenceControlProjectionTrustLevel;
-  generatedAt: number;
-  totalItems: number;
-  totalEvidenceRefs: number;
-  exportSafeItems: number;
-  blockedItems: number;
-  staleItems: number;
-  conflictItems: number;
-  bySource: Record<EvidenceControlProjectionSource, number>;
-  byStatus: Record<string, number>;
-  gaps: string[];
-  conflicts: string[];
-}
-
-export interface StructuredReplay {
-  sessionId: string;
-  traceIdentity: UnifiedTraceIdentity;
-  traceSource: UnifiedTraceSource;
-  dataSource: ReplayDataSource;
-  turns: ReplayTurn[];
-  summary: {
-    totalTurns: number;
-    toolDistribution: Record<ReplayToolCategory, number>;
-    thinkingRatio: number;
-    selfRepairChains: number;
-    totalDurationMs: number;
-    qualityScore?: TurnQualityScoreSummary;
-    agentScorecards?: AgentQualityScorecard[];
-    metricAvailability?: ReplayMetricAvailability;
-    telemetryCompleteness?: TelemetryCompleteness;
-    browserComputerProofTimeline?: BrowserComputerProofTimelineEntry[];
-    evidenceControl?: EvidenceControlSummaryProjection;
-    deviations?: Array<{
-      stepIndex: number;
-      type: string;
-      description: string;
-      severity: string;
-      suggestedFix?: string;
-    }>;
-    failureAttribution?: ReplayFailureAttribution;
-  };
-}
+export * from './evaluationReplay';

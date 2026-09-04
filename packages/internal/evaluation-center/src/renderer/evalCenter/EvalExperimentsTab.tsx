@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Beaker, RefreshCw } from 'lucide-react';
+import { EVAL_RUN_EVENT_SCHEMA_VERSION } from '@shared/contract/evaluation';
 import type { EvalExperimentDetail, EvalExperimentListItem, EvalRunEvent, EvalRunPanelProbe, EvalRunRequest } from '@shared/contract/evaluation';
 import { EVALUATION_CHANNELS } from '../../shared/evaluationChannels';
 import { Badge } from '@renderer/components/primitives/Badge';
@@ -56,7 +57,7 @@ export const EvalExperimentsTab: React.FC = () => {
   }, [load]);
 
   const consumeEvent = useCallback((event: EvalRunEvent) => {
-    if (event.schemaVersion !== 3 || event.type === 'error') {
+    if (event.schemaVersion !== EVAL_RUN_EVENT_SCHEMA_VERSION || event.type === 'error') {
       setNotice(event.type === 'error' ? event.error : runLabels.quietDegraded);
       setActiveRun(null);
       unsubscribeRef.current?.();

@@ -36,6 +36,7 @@ import { projectSpaceEn } from './projectSpace';
 import { inAppValidationEn } from './inAppValidation';
 import { localOpsEn } from './localOps';
 import { onboardingEn } from './onboarding';
+import { folderTrustEn } from './folderTrust';
 import { workbenchTabsEn } from './workbenchTabs';
 import { activityPanelEn, canvasActorEn } from './domains';
 import { imageNarrationEn } from './imageNarration';
@@ -57,6 +58,7 @@ export const en: Translations = {
   ...inAppValidationEn,
   ...localOpsEn,
   ...onboardingEn,
+  ...folderTrustEn,
   ...generativeUIEn,
   ...workbenchTabsEn,
   ...receiptPresentationEn,
@@ -132,29 +134,6 @@ export const en: Translations = {
     estimateDisclaimer: 'List-price estimate, not your bill',
   },
 
-  folderTrust: {
-    title: 'Trust this project folder?',
-    directory: 'Project directory',
-    realpath: 'Real path',
-    detected: 'Detected project configuration',
-    identityChanged: 'This path was trusted before, but its folder identity changed. Confirm again before loading project configuration.',
-    emptyDangerNote: 'No dangerous configuration needs item-by-item review, but this folder is not trusted yet (or its trust has expired). Project configuration loads only after you confirm.',
-    trust: 'Trust and load',
-    block: 'Block project config',
-    openSettings: 'Open settings',
-    saving: 'Saving...',
-    saveFailed: 'Could not save your decision',
-    risks: {
-      execution: 'Command execution',
-      mcp: 'MCP servers',
-      agent: 'Agent definitions',
-      skill: 'Skill definitions',
-      prompt: 'Prompts',
-      policy: 'Security policy',
-      preference: 'Preferences',
-      diagnostic: 'Other config',
-    },
-  },
 
   // Design Workspace (borrowed from Kun: design tab)
   design: {

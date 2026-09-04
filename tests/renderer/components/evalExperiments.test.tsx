@@ -126,6 +126,80 @@ describe('实验页四态与新建守卫', () => {
     }
   });
 
+  it('向导的「子代理」组：开关 + 层数进 candidate，本轮配置一行跟着变', () => {
+    const onStart = vi.fn();
+    render(<EvalExperimentWizard open probe={probe()} starting={false} onClose={vi.fn()} onStart={onStart} />);
+    // 对照组只读行显示生产默认
+    expect(screen.getByTestId('baseline-orchestration').textContent).toBe('子代理: 编排引导关 · 最深 3 层（默认）');
+    const line = () => screen.getByTestId('candidate-orchestration-line').textContent;
+    expect(line()).toBe('编排引导关 · 最深 3 层（默认）');
+
+    fireEvent.click(screen.getByLabelText('目标任务里注入编排引导'));
+    expect(line()).toBe('编排引导开 · 最深 3 层（默认）');
+
+    fireEvent.change(screen.getByLabelText('最深层数'), { target: { value: '0' } });
+    expect(line()).toBe('编排引导开 · 一层都不扇出');
+
+    // 只改编排就足以发车（签名里有这一维）
+    const button = screen.getByTestId('experiment-run-confirm') as HTMLButtonElement;
+    expect(button.disabled).toBe(false);
+    fireEvent.click(button);
+    fireEvent.click(button);
+    expect(onStart).toHaveBeenCalledWith(expect.objectContaining({
+      compare: { candidate: expect.objectContaining({
+        orchestration: { allowSwarm: true, spawnMaxDepth: 0 },
+      }) },
+    }));
+  });
+
+  it('结果页有子代理次数列；候选臂开了扇出却零触发就打「未出场」', () => {
+    const withSpawns = detail('candidate_better');
+    withSpawns.cases = [{
+      caseId: 'case-1', status: 'passed', score: 100, durationMs: 10,
+      data: {
+        assignment: { A: 'candidate', B: 'baseline' }, statusA: 'passed', statusB: 'failed',
+        winner: 'candidate', referenceWinner: 'A',
+        skillActivations: { baseline: 0, candidate: 2 },
+        subagentSpawns: { baseline: 0, candidate: 4 },
+      },
+    }];
+    (withSpawns.experiment.config as Record<string, unknown>).compare = {
+      baseline: { name: 'production', model: 'm', provider: 'p' },
+      candidate: { name: 'candidate-v3', model: 'm', provider: 'p', orchestration: { allowSwarm: true } },
+      diff: ['子代理：不扇出，最深 3 层（默认） → 允许扇出，最深 3 层（默认）'],
+    };
+    const { unmount } = render(<EvalExperimentResult detail={withSpawns} onBack={vi.fn()} />);
+    expect(screen.getByText('子代理次数 A/B')).toBeTruthy();
+    expect(screen.getByTestId('experiment-pair-case-1').textContent).toContain('4/0');
+    expect(screen.queryByTestId('experiment-subagent-not-used')).toBeNull();
+    unmount();
+
+    const quiet = detail('candidate_better');
+    quiet.cases = [{
+      caseId: 'case-1', status: 'passed', score: 100, durationMs: 10,
+      data: {
+        assignment: { A: 'candidate', B: 'baseline' }, statusA: 'passed', statusB: 'failed',
+        winner: 'candidate', referenceWinner: 'A',
+        subagentSpawns: { baseline: 0, candidate: 0 },
+      },
+    }];
+    (quiet.experiment.config as Record<string, unknown>).compare = {
+      baseline: { name: 'production', model: 'm', provider: 'p' },
+      candidate: { name: 'candidate-v3', model: 'm', provider: 'p', orchestration: { allowSwarm: true } },
+      diff: ['子代理：不扇出，最深 3 层（默认） → 允许扇出，最深 3 层（默认）'],
+    };
+    const { unmount: unmountQuiet } = render(<EvalExperimentResult detail={quiet} onBack={vi.fn()} />);
+    expect(screen.getByTestId('experiment-subagent-not-used').textContent)
+      .toBe('子代理未出场，结论不说明它的效果');
+    unmountQuiet();
+
+    // 候选臂根本没配编排（比如只改 systemPrompt）时不该冒这句噪音
+    const unrelated = detail('candidate_better');
+    unrelated.cases = quiet.cases;
+    render(<EvalExperimentResult detail={unrelated} onBack={vi.fn()} />);
+    expect(screen.queryByTestId('experiment-subagent-not-used')).toBeNull();
+  });
+
   it('两个向导复用同一评测集选择组件', () => {
     const root = path.join(process.cwd(), 'packages/internal/evaluation-center/src/renderer/evalCenter');
     for (const file of ['EvalRunWizard.tsx', 'EvalExperimentWizard.tsx']) {

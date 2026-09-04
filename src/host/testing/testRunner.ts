@@ -133,6 +133,7 @@ export interface AgentInterface {
   configureEvaluationCase?(testId: string | undefined): void;
   /** Read and clear the real skill activations accumulated for one case. */
   consumeSkillActivations?(testId: string): Record<string, number>;
+  consumeSubagentSpawns?(testId: string): number;
   getStructuredReplay?(sessionId: string): Promise<StructuredReplay | null>;
 }
 
@@ -605,26 +606,29 @@ export class TestRunner {
     if (completedTrials.length === 0) {
       return createNotRunResult(testCase, this.abortReason);
     }
-    const trialResults = completedTrials.map((result) => this.toTrialSummary(result));
-    const skillActivations = mergeSkillActivations(completedTrials);
+    // 逐题聚合量（trial 明细 / skill 触发 / 子代理触发）四条返回路径口径必须一致，
+    // 所以一次算完一起挂上：漏挂一条路径 = 那类结局的信号静默丢失。
+    // 子代理次数按 trial 累加，语义同 skillActivations：本题一共拉起几次，0 = 未出场。
+    const aggregates = {
+      trials: completedTrials.map((result) => this.toTrialSummary(result)),
+      skillActivations: mergeSkillActivations(completedTrials),
+      subagentSpawns: completedTrials.reduce((total, trial) => total + (trial.subagentSpawns ?? 0), 0),
+    };
     const costExceeded = completedTrials.find((result) => result.status === 'cost_exceeded');
     if (costExceeded) {
-      costExceeded.trials = trialResults;
-      costExceeded.skillActivations = skillActivations;
+      Object.assign(costExceeded, aggregates);
       this.emit({ type: 'case_end', result: costExceeded });
       return costExceeded;
     }
     if (this.aborted && completedTrials.length < trialsPerCase) {
       const interrupted = completedTrials[completedTrials.length - 1];
-      interrupted.trials = trialResults;
-      interrupted.skillActivations = skillActivations;
+      Object.assign(interrupted, aggregates);
       this.emit({ type: 'case_end', result: interrupted });
       return interrupted;
     }
     if (completedTrials.every((result) => result.status === 'skipped')) {
       const skipped = completedTrials[0];
-      skipped.trials = trialResults;
-      skipped.skillActivations = skillActivations;
+      Object.assign(skipped, aggregates);
       this.emit({ type: 'case_end', result: skipped });
       return skipped;
     }
@@ -643,8 +647,7 @@ export class TestRunner {
       representative.status = aggregate.status;
       representative.score = aggregate.passCaretK;
     }
-    representative.trials = trialResults;
-    representative.skillActivations = skillActivations;
+    Object.assign(representative, aggregates);
     representative.trialAggregate = {
       n: aggregate.trialCount,
       c: aggregate.passCount,
@@ -1093,6 +1096,7 @@ export class TestRunner {
       result.endTime = Date.now();
       result.duration = result.endTime - result.startTime;
       result.skillActivations = agent.consumeSkillActivations?.(testCase.id) ?? {};
+      result.subagentSpawns = agent.consumeSubagentSpawns?.(testCase.id) ?? 0;
       const usage = costTracker.getUsage();
       if (usage) {
         result.usage = usage;

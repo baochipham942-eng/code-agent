@@ -7,6 +7,7 @@
 // ============================================================================
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { EVALUATION_CHANNELS } from '../../shared/evaluationChannels';
+import { EVAL_RUN_EVENT_SCHEMA_VERSION } from '@shared/contract/evaluation';
 import type {
   EvalRunEvent,
   EvalRunPanelProbe,
@@ -137,7 +138,7 @@ export const EvalBenchmarksTab: React.FC = () => {
   }, [confirmation, starting]);
 
   const updateActiveRunFromEvent = useCallback((event: EvalRunEvent) => {
-    if (event.schemaVersion !== 3) {
+    if (event.schemaVersion !== EVAL_RUN_EVENT_SCHEMA_VERSION) {
       setQuietNotice(labels.quietDegraded);
       setActiveRun(null);
       void loadExperiments();

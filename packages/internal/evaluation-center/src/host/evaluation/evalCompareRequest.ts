@@ -1,5 +1,5 @@
 import * as yaml from 'js-yaml';
-import { PROMPT_VERSION } from '@shared/constants/agent';
+import { PROMPT_VERSION, SPAWN_GUARD } from '@shared/constants/agent';
 import {
   CONSUMED_COMPARE_FIELDS,
   UNCONSUMED_COMPARE_FIELDS,
@@ -50,6 +50,21 @@ export function validateEvalCompareArm(value: unknown): EvalCompareArm {
     !Array.isArray(value.skills)
     || value.skills.some((item) => typeof item !== 'string' || item.trim() === '')
   )) throw new Error('compare.candidate.skills 必须是非空字符串数组。');
+  const orchestrationValue = value.orchestration;
+  if (orchestrationValue !== undefined && !isRecord(orchestrationValue)) {
+    throw new Error('compare.candidate.orchestration 必须是对象。');
+  }
+  const spawnMaxDepth = orchestrationValue?.spawnMaxDepth;
+  if (spawnMaxDepth !== undefined && (
+    typeof spawnMaxDepth !== 'number'
+    || !Number.isInteger(spawnMaxDepth)
+    || spawnMaxDepth < 0
+    || spawnMaxDepth > SPAWN_GUARD.HARD_MAX_SPAWN_DEPTH
+  )) {
+    throw new Error(
+      `子代理最深层数要填 0 到 ${SPAWN_GUARD.HARD_MAX_SPAWN_DEPTH} 之间的整数（0 = 不扇出）。`,
+    );
+  }
   return {
     name,
     model: optionalString(value, 'model'),
@@ -69,6 +84,10 @@ export function validateEvalCompareArm(value: unknown): EvalCompareArm {
       routingModel: optionalString(memoryValue, 'routingModel'),
     } : undefined,
     reasoningEffort: reasoningEffort as EvalCompareArm['reasoningEffort'],
+    orchestration: orchestrationValue ? {
+      allowSwarm: optionalBoolean(orchestrationValue, 'allowSwarm'),
+      ...(spawnMaxDepth !== undefined ? { spawnMaxDepth: spawnMaxDepth as number } : {}),
+    } : undefined,
     skills: Array.isArray(value.skills) ? value.skills.map((item) => String(item).trim()) : undefined,
   };
 }
@@ -85,6 +104,10 @@ export function buildProductionCompareArm(input: {
     provider: input.provider,
     harness: shape.harness ?? undefined,
     memory: { longTerm: shape.memory },
+    // 编排维度刻意不在这里取生产默认：产品 goal run 默认允许扇出（DEFAULT_GOAL_ALLOW_SWARM=true），
+    // 但评测是无人值守 harness，默认不扇出（EVAL_DEFAULT_ALLOW_SWARM=false），深度跟随 SpawnGuard 默认。
+    // 对照组照抄生产的 true 会让每一次存量 compare 的基线臂突然开始扇出——改了成本也改了确定性，
+    // 而那不是本实验要测的东西。要测扇出就在候选臂显式打开它。
     skills: shape.skills,
   };
 }
@@ -95,12 +118,27 @@ export function assertEvalCompareDistinct(baseline: EvalCompareArm, candidate: E
   }
 }
 
+/**
+ * 「子代理」维度的人话。allowSwarm 只管 goal run 首轮的编排引导（注入引导 + 预加载 workflow），
+ * 真正决定子代理能不能被拉起的是深度：0 = 一层都不扇出。措辞上不能把 allowSwarm 说成「不扇出」。
+ */
+function describeOrchestration(
+  orchestration: { allowSwarm: boolean; spawnMaxDepth: number | null },
+): string {
+  const depth = orchestration.spawnMaxDepth === null
+    ? `最深 ${SPAWN_GUARD.DEFAULT_SPAWN_DEPTH} 层（默认）`
+    : orchestration.spawnMaxDepth === 0
+      ? '一层都不扇出'
+      : `最深 ${orchestration.spawnMaxDepth} 层`;
+  return `${orchestration.allowSwarm ? '编排引导开' : '编排引导关'}，${depth}`;
+}
+
 export function describeEvalCompareDiff(baseline: EvalCompareArm, candidate: EvalCompareArm): string[] {
   const before = resolveEffectiveEvalCompareArm(baseline, baseline);
   const after = resolveEffectiveEvalCompareArm(candidate, baseline);
   const labels: Record<(typeof CONSUMED_COMPARE_FIELDS)[number], string> = {
     model: 'model', provider: 'provider', systemPrompt: 'systemPrompt', harness: 'harness',
-    memory: 'memory', reasoningEffort: 'reasoningEffort', skills: 'skill',
+    memory: 'memory', reasoningEffort: 'reasoningEffort', skills: 'skill', orchestration: '子代理',
   };
   const value = (arm: typeof before, key: (typeof CONSUMED_COMPARE_FIELDS)[number]): unknown => {
     if (key !== 'harness') return arm[key];
@@ -114,6 +152,9 @@ export function describeEvalCompareDiff(baseline: EvalCompareArm, candidate: Eva
     if (left === right) return [];
     if (key === 'systemPrompt') {
       return [`systemPrompt: ${PROMPT_VERSION} → ${candidate.systemPrompt ? candidate.name : '相同'}`];
+    }
+    if (key === 'orchestration') {
+      return [`子代理：${describeOrchestration(before.orchestration)} → ${describeOrchestration(after.orchestration)}`];
     }
     return [`${labels[key]}: ${left ?? '默认'} → ${right ?? '默认'}`];
   });

@@ -65,6 +65,7 @@ describe('失败原因报告', () => {
         failureB: { code: 'timeout', dispositions: ['retryable'], symptoms: ['timeout'] },
         durationA: 1, durationB: 1,
         skillActivationsA: {}, skillActivationsB: {},
+        subagentSpawnsA: 0, subagentSpawnsB: 0,
       }],
       summary: {
         totalCases: 1, baselineWins: 0, candidateWins: 0, ties: 1,

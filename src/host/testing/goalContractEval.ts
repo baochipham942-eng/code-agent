@@ -4,16 +4,19 @@
 // 三件事，全部无 App/IPC 依赖（可独立单测，对齐批 6 userSimulator 形态）：
 // 1. validateGoalContract：case 配置错误在花任何 agent 调用之前显式失败（fail-loud）
 // 2. buildLoopGoalContract：YAML snake_case → AgentLoop GoalContract（allowSwarm
-//    强制 false —— eval 无人值守不扇出，对齐主动性 advance 路径）
+//    默认 false —— eval 无人值守不扇出，对齐主动性 advance 路径；ORCHARM 实验臂
+//    可以显式传 true 把「扇出」做成可比变量）
 // 3. createGoalRunRecord / applyGoalEvent：goal_gate / goal_complete 事件 →
 //    GoalRunRecord 行为落账（断言只 pin 枚举/极性，不 pin 文案）
 // ============================================================================
 
 import { hostReasonModelText, type AgentEvent } from '../../shared/contract';
+import { EVAL_DEFAULT_ALLOW_SWARM } from '../../shared/contract/evaluation';
 import { buildGoalContract, type GoalContract } from '../agent/goalModeController';
 import type { EvalGoalContract, GoalRunRecord, TestCase } from './types';
 
-export const EVAL_GOAL_ALLOW_SWARM = false;
+/** 评测 goal run 的 allowSwarm 缺省值（与臂契约同源，避免两处各写一个 false）。 */
+export const EVAL_GOAL_ALLOW_SWARM = EVAL_DEFAULT_ALLOW_SWARM;
 
 function isPositiveNumber(value: unknown): boolean {
   return typeof value === 'number' && Number.isFinite(value) && value > 0;
@@ -53,7 +56,11 @@ export function validateGoalContract(testCase: TestCase): string | null {
  * YAML 契约 → AgentLoop GoalContract。缺省预算走产品默认（buildGoalContract 内
  * 的 GOAL_MODE 常量），保证 eval 回归的就是产线闸链参数。
  */
-export function buildLoopGoalContract(contract: EvalGoalContract, fallbackGoal: string): GoalContract {
+export function buildLoopGoalContract(
+  contract: EvalGoalContract,
+  fallbackGoal: string,
+  allowSwarm: boolean = EVAL_GOAL_ALLOW_SWARM,
+): GoalContract {
   return buildGoalContract({
     goal: contract.goal?.trim() || fallbackGoal,
     verifyCommand: contract.verify_command,
@@ -61,8 +68,9 @@ export function buildLoopGoalContract(contract: EvalGoalContract, fallbackGoal: 
     tokenBudget: contract.token_budget,
     maxTurns: contract.max_turns,
     wallClockBudgetMs: contract.wall_clock_budget_ms,
-    // eval 无人值守：不扇出 swarm 子 agent（确定性 + 成本护栏）
-    allowSwarm: EVAL_GOAL_ALLOW_SWARM,
+    // eval 默认无人值守：不扇出 swarm 子 agent（确定性 + 成本护栏）。
+    // ORCHARM 实验臂显式开时，goal run 首轮才注入编排引导 + 预加载 workflow。
+    allowSwarm,
   });
 }
 

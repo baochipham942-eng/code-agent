@@ -165,7 +165,7 @@ export function getBuiltinAgent(id: string): RegisteredAgent | undefined {
  * 顺序：builtin 在前，自定义在后，自定义按 source 排序（user → project）。
  */
 function toListEntry(
-  agent: Pick<CoreAgentConfig, 'id' | 'name' | 'description' | 'model' | 'readonly' | 'tools' | 'inputs' | 'outputs' | 'visual'>,
+  agent: Pick<CoreAgentConfig, 'id' | 'name' | 'description' | 'model' | 'readonly' | 'tools' | 'inputs' | 'outputs' | 'visual' | 'connectors'>,
   source: AgentSource,
 ): AgentListEntry {
   return {
@@ -182,6 +182,8 @@ function toListEntry(
     // 自定义角色写在 frontmatter 由 agentMdLoader 解析进 visual
     profession: agent.visual?.profession ?? getBuiltinRoleVisual(agent.id)?.profession,
     icon: agent.visual?.icon ?? getBuiltinRoleVisual(agent.id)?.icon,
+    // 底栏「专家带的连接器」要用；没声明就不带字段，list payload 不变胖
+    ...(agent.connectors?.length ? { connectors: agent.connectors } : {}),
   };
 }
 

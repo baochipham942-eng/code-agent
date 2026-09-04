@@ -248,6 +248,84 @@ describe('toolSearchModule (native)', () => {
       }
     });
 
+    // 与 mcpUnified 同一份口径：收窄生效时不把范围外 server 的工具搜出来——
+    // 搜出来模型照单点名、调用在 dispatch 门挨挡，「看见却调不动」比看不见更误导
+    it('turn scope 收窄时不搜出范围外 server 的工具', async () => {
+      searchToolsMock.mockResolvedValue({
+        tools: [
+          { name: 'mcp__github__search_code', description: 'Search code', tags: ['mcp'], source: 'mcp', mcpServer: 'github', loadable: true },
+          { name: 'mcp__lark__doc_read', description: 'Read doc', tags: ['mcp'], source: 'mcp', mcpServer: 'lark', loadable: true },
+        ],
+        loadedTools: ['mcp__github__search_code', 'mcp__lark__doc_read'],
+        totalCount: 2,
+        hasMore: false,
+      });
+      const scopedCtx = makeCtx({ toolScope: { allowedMcpServerIds: ['lark'] } } as Partial<ToolContext>);
+      const result = await run({ query: 'read', max_results: 5 }, scopedCtx);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.output).toContain('mcp__lark__doc_read');
+        expect(result.output).not.toContain('mcp__github__search_code');
+        // 计数与列出的条目对齐——不出现「找到 2 个」却只列 1 条、再补「还有 1 个」
+        expect(result.output).toContain('找到 1 个匹配工具');
+        expect(result.output).not.toContain('还有');
+      }
+    });
+
+    // hasMore 保留服务真值：范围内匹配超过 maxResults 时，模型该知道还能缩关键词
+    it('turn scope 过滤后 hasMore 为真时给不带假计数的提示', async () => {
+      searchToolsMock.mockResolvedValue({
+        tools: [
+          { name: 'mcp__lark__doc_read', description: 'Read doc', tags: ['mcp'], source: 'mcp', mcpServer: 'lark', loadable: true },
+          { name: 'mcp__github__search_code', description: 'Search code', tags: ['mcp'], source: 'mcp', mcpServer: 'github', loadable: true },
+        ],
+        loadedTools: ['mcp__lark__doc_read', 'mcp__github__search_code'],
+        totalCount: 5,
+        hasMore: true,
+      });
+      const scopedCtx = makeCtx({ toolScope: { allowedMcpServerIds: ['lark'] } } as Partial<ToolContext>);
+      const result = await run({ query: 'read', max_results: 5 }, scopedCtx);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.output).toContain('范围内可能还有更多匹配结果');
+        expect(result.output).not.toContain('还有 0 个');
+      }
+    });
+
+    // discovery 会真的把 lazy stdio server 拉起子进程——范围外的拉起来结果也会被丢掉，
+    // scope 判据必须前置到 discovery 调用上（ai-review 第十四轮 Nit）
+    it('turn scope 收窄时 lazy discovery 只拉起范围内的 server', async () => {
+      searchToolsMock.mockResolvedValue({ tools: [], loadedTools: [], totalCount: 0, hasMore: false });
+      const scopedCtx = makeCtx({ toolScope: { allowedMcpServerIds: ['lark'] } } as Partial<ToolContext>);
+      await run({ query: 'feishu' }, scopedCtx);
+      expect(discoverLazyServersForSearchMock).toHaveBeenCalledWith('feishu', ['lark']);
+
+      discoverLazyServersForSearchMock.mockClear();
+      await run({ query: 'feishu' });
+      expect(discoverLazyServersForSearchMock).toHaveBeenCalledWith('feishu', undefined);
+    });
+
+    // 与 loadedTools 同一份完整 scope 门：连接器侧被收窄的工具也不能只滤一半（ai-review 第十五轮 Nit）
+    it('turn scope 收窄到连接器时，范围外的连接器工具也不搜出', async () => {
+      searchToolsMock.mockResolvedValue({
+        tools: [
+          { name: 'mail', description: 'Read mail', tags: ['connector'], source: 'connector', loadable: true },
+          { name: 'calendar_create_event', description: 'Create event', tags: ['connector'], source: 'connector', loadable: true },
+        ],
+        loadedTools: ['mail', 'calendar_create_event'],
+        totalCount: 2,
+        hasMore: false,
+      });
+      const scopedCtx = makeCtx({ toolScope: { allowedConnectorIds: ['mail'] } } as Partial<ToolContext>);
+      const result = await run({ query: 'event' }, scopedCtx);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.output).toContain('• **mail**');
+        expect(result.output).not.toContain('calendar_create_event');
+        expect(result.output).toContain('找到 1 个匹配工具');
+      }
+    });
+
     it('formats skill hits with not-callable reason and invocation', async () => {
       searchToolsMock.mockResolvedValue({
         tools: [

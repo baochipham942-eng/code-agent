@@ -10,6 +10,7 @@ import type {
   EvalBaselineSetError,
 } from '@shared/contract/evaluationBaseline';
 import type { EvalRunPanelLabels } from '../i18n/evalRunPanel';
+import { getEvalStatusLabel, type EvalDisplayStatus } from '../i18n/evalStatusLabels';
 import { invokeEvaluation } from '../evaluationRunIpc';
 import { Button } from '@renderer/components/primitives/Button';
 import { EmptyState } from '@renderer/components/primitives/EmptyState';
@@ -113,6 +114,11 @@ export function getLatestEvalRun(
 ): EvalBaselineExperimentListItem | undefined {
   return groupRuns(experiments).flatMap((group) => group.runs)
     .sort((a, b) => b.timestamp - a.timestamp)[0];
+}
+
+function transitionStatus(status: string): EvalDisplayStatus {
+  if (status === 'passed' || status === 'failed' || status === 'error') return status;
+  return 'error';
 }
 
 function disabledReason(run: EvalBaselineExperimentListItem, labels: EvalRunPanelLabels): string | undefined {
@@ -287,11 +293,13 @@ export const EvalRunHistory: React.FC<EvalRunHistoryProps> = ({
           {comparison.transitions.map((item) => (
             <li key={item.caseId}>
               <Button variant="ghost" size="sm" className="w-full justify-start gap-2 text-left" onClick={() => setDrawerTarget({ experimentId: comparison.currentExperimentId, caseId: item.caseId })}>
-                <span className={item.kind === 'regressed' ? 'text-badge-danger' : 'text-badge-success'}>
-                  {item.kind === 'regressed' ? labels.caseStatusRegressed : labels.caseStatusFixed}
+                <span className="flex min-w-0 items-center gap-2">
+                  <span className={item.kind === 'regressed' ? 'text-badge-danger' : 'text-badge-success'}>
+                    {item.kind === 'regressed' ? labels.caseStatusRegressed : labels.caseStatusFixed}
+                  </span>
+                  <span className="truncate font-mono text-zinc-300">{item.caseId}</span>
+                  <span className="text-zinc-500">{getEvalStatusLabel(transitionStatus(item.from), labels.runCaseStatus)} → {getEvalStatusLabel(transitionStatus(item.to), labels.runCaseStatus)}</span>
                 </span>
-                <span className="font-mono text-zinc-300">{item.caseId}</span>
-                <span className="text-zinc-500">{item.from} → {item.to}</span>
               </Button>
             </li>
           ))}
@@ -340,7 +348,7 @@ export const EvalRunHistory: React.FC<EvalRunHistoryProps> = ({
           return (
             <section key={group.key} className="mx-3 mb-3 overflow-hidden rounded-lg bg-zinc-900 shadow-sm" data-testid={`benchmark-group-${group.key}`}>
               <EvalRunBaselineHeader title={`${splitLabel(group.split, labels)} · k=${group.k}`} runCount={group.runs.length} baseline={baseline} labels={labels} language={language} />
-              <div role="table">
+              <div role="table" className="overflow-x-auto">
                 {orderedRuns.map((run) => {
                   const config = getEvalRunConfig(run);
                   const current = baseline?.experimentId === run.id;
@@ -360,30 +368,33 @@ export const EvalRunHistory: React.FC<EvalRunHistoryProps> = ({
                   const expanded = expandedRunIds.has(run.id);
                   return (
                     <React.Fragment key={run.id}>
-                      <div role="row" className={`flex items-center gap-3 border-t border-zinc-800 px-3 py-2 text-xs ${current ? 'bg-zinc-800/40' : 'text-zinc-300'}`} data-testid={`benchmark-run-${run.id}`}>
+                      <div role="row" className={`flex min-w-[90rem] items-center gap-3 border-t border-zinc-800 px-3 py-2 text-xs ${current ? 'bg-zinc-800/40' : 'text-zinc-300'}`} data-testid={`benchmark-run-${run.id}`}>
                         <button /* ds-allow:button: 历史行对比勾选框，原生 checkbox 视觉无法表达组内最多两轮 */ type="button" aria-label={reason || tag === 'old-rule' ? labels.incompleteCannotCompare : labels.selectForCompare} aria-pressed={selected} disabled={Boolean(reason) || tag === 'old-rule'} onClick={() => toggleSelected(group, run)} className="flex h-4 w-4 shrink-0 items-center justify-center rounded border border-zinc-600 disabled:border-zinc-800">
                           {selected && <Check className="h-3 w-3" />}
                         </button>
                         <span className="min-w-0 flex-1 truncate">{normalizeDatasetName(run.name)}</span>
-                        <span className="text-zinc-500">{new Date(run.timestamp).toLocaleString(language === 'zh' ? 'zh-CN' : 'en-US')}</span>
-                        <span className="w-24 truncate text-zinc-500">{run.model ?? 'unknown'}</span>
-                        <span className="w-32 text-right font-mono">
+                        <span data-col="timestamp" className="w-40 shrink-0 truncate whitespace-nowrap text-zinc-500">{new Date(run.timestamp).toLocaleString(language === 'zh' ? 'zh-CN' : 'en-US')}</span>
+                        <span className="w-24 shrink-0 truncate text-zinc-500">{run.model ?? 'unknown'}</span>
+                        <span data-col="pass-rate" className="w-32 shrink-0 truncate whitespace-nowrap text-right font-mono">
                           {labels.passRate} {formatPercent(run.summary?.passRate)}
                           {delta !== null && <span className={`ml-1 ${delta < 0 ? 'text-badge-danger' : delta > 0 ? 'text-badge-success' : 'text-zinc-500'}`}>{formatDelta(delta)}</span>}
                         </span>
-                        <span className="w-28 text-right text-zinc-500">
-                          {tag === 'case-bank-updated' && <><span>{labels.caseBankUpdated}</span><small className="block">{labels.compareSharedCases}</small></>}
+                        <span data-col="run-cost" className="w-28 shrink-0 truncate text-right font-mono text-zinc-500">
+                          {run.totalCostUsd !== undefined && replace(labels.runCost, { cost: formatUsd(run.totalCostUsd) })}
+                        </span>
+                        <span className="w-28 shrink-0 overflow-hidden text-right text-zinc-500">
+                          {tag === 'case-bank-updated' && <><span>{labels.caseBankUpdated}</span><small className="block truncate">{labels.compareSharedCases}</small></>}
                           {tag === 'old-rule' && <span>{labels.oldScoringRule}</span>}
                         </span>
-                        <span className="w-20 text-right">
+                        <span className="w-20 shrink-0 text-right">
                           {regression && <button /* ds-allow:button: 退步计数直接展开组内逐题变化 */ type="button" className={regressedCount > 0 ? 'text-badge-danger' : 'text-zinc-500'} onClick={() => baseline && compareAgainstBaseline(group, run, baseline)}>{replace(labels.regressed, { n: regressedCount })}</button>}
                         </span>
-                        <span className="w-24 text-right">
+                        <span className="w-24 shrink-0 text-right">
                           <button /* ds-allow:button: 跑分历史行逐题结果在原地展开 */ type="button" aria-expanded={expanded} data-testid={`benchmark-run-expand-${run.id}`} className="text-zinc-500" onClick={() => toggleRunExpanded(run.id)}>
                             {expanded ? labels.hideRunCases : labels.showRunCases}
                           </button>
                         </span>
-                        <span className={`w-14 text-right ${run.summary?.completed === false ? 'text-zinc-500' : 'text-badge-success'}`}>
+                        <span className={`w-14 shrink-0 text-right ${run.summary?.completed === false ? 'text-zinc-500' : 'text-badge-success'}`}>
                           {run.summary?.completed === false ? labels.incomplete : labels.complete}
                         </span>
                         <EvalRunBaselineControls current={current} disabledReason={reason} labels={labels} onSet={() => void setBaseline(group, run.id)} />

@@ -55,11 +55,25 @@ outputs:
 你是自定义 agent。
 `;
 
+const WEEKLY_MD = `---
+name: 周报专家
+description: 写周报
+tools: [Read]
+model: balanced
+connectors:
+  - tmeet-mcp|core|读取会议纪要，整理进周报
+  - lark|optional|把周报发到群里
+---
+
+你是周报专家。
+`;
+
 describe('listAllAgentsWithRoleFlag', () => {
   beforeEach(async () => {
     mockDirs.agents = await fs.mkdtemp(path.join(os.tmpdir(), 'agents-md-'));
     await fs.writeFile(path.join(mockDirs.agents, '研究员.md'), ROLE_MD);
     await fs.writeFile(path.join(mockDirs.agents, 'my-agent.md'), CUSTOM_MD);
+    await fs.writeFile(path.join(mockDirs.agents, '周报专家.md'), WEEKLY_MD);
     await initAgentRegistry(undefined);
   });
 
@@ -81,6 +95,17 @@ describe('listAllAgentsWithRoleFlag', () => {
       inputs: ['目标文件路径'],
       outputs: ['markdown 报告'],
     });
+  });
+
+  // 底栏「专家带的连接器」靠 list 这条已有缓存拿数据，不另开 roles detail 往返；
+  // 字段掉了底栏那颗组合图标就整个消失，所以在投影这一层咬住。
+  it('listAllAgents 投影透出专家声明的推荐连接器；没声明的不带字段', async () => {
+    const entries = await listAllAgentsWithRoleFlag();
+    expect(entries.find((e) => e.id === '周报专家')?.connectors).toEqual([
+      { id: 'tmeet-mcp', level: 'core', reason: '读取会议纪要，整理进周报' },
+      { id: 'lark', level: 'optional', reason: '把周报发到群里' },
+    ]);
+    expect(entries.find((e) => e.id === 'my-agent')?.connectors).toBeUndefined();
   });
 
   it('Task/spawn_agent 动态描述列出 registry 里的自定义 agent 和 I/O 契约', () => {

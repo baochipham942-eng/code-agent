@@ -747,6 +747,8 @@ export interface EvalExperimentListItem {
   /** RUNSTAMP 尚未落齐时允许字段缺失，消费方必须回落 unknown。 */
   config?: Record<string, unknown> | null;
   summary: EvalExperimentSummary | null;
+  /** 本轮实付：有真实归集才给，全缺时不要写成 0。 */
+  totalCostUsd?: number;
 }
 interface EvalExperimentCaseItem {
   caseId: string;
@@ -801,6 +803,8 @@ export interface EvalExperimentCaseDetail {
     splits: EvalCaseSplitBucket[];
     source: 'manual' | 'session';
   };
+  /** 本题实付：有真实归集才给，缺字段不补 0。 */
+  costUsd?: number;
 }
 
 export type EvalCaseSplitBucket = 'held-in' | 'held-out' | 'control' | 'safety';

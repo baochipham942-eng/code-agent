@@ -9,6 +9,9 @@ import {
   type WorkbenchCapabilityRegistry,
 } from '../utils/workbenchCapabilityRegistry';
 
+// 返回的 mcpServers 是**全量**（buildWorkbenchCapabilityRegistry 的 withMissingMcpServers
+// 会把 mcpServerStates 里没进「已连接 ∪ 手选」的也补齐，带 status + enabled）——
+// 消费方要看 lazy / 被关掉的 server，直接用这份，别再单挂 useMcpServerStates。
 export function useWorkbenchCapabilityRegistry(): WorkbenchCapabilityRegistry {
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
   const mountedSkills = useSkillStore((state) => state.mountedSkills);

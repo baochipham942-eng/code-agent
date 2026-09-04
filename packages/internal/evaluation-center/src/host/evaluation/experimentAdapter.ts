@@ -345,6 +345,7 @@ export class ExperimentAdapter {
 
   private buildCaseDataJson(run: CanonicalEvalRun, c: CanonicalEvalCase): string {
     const qualityReport = this.buildCaseQualityReport(run, c);
+    const costUsd = c.metadata?.costUsd;
     return JSON.stringify({
       ...(c.metadata || {}),
       sessionId: c.sessionId,
@@ -360,6 +361,7 @@ export class ExperimentAdapter {
       ...(c.scoreAuthority ? { scoreAuthority: c.scoreAuthority } : {}),
       ...(c.trials ? { trials: c.trials } : {}),
       ...(c.metadata?.evidence ? { evidence: c.metadata.evidence } : {}),
+      ...(typeof costUsd === 'number' && Number.isFinite(costUsd) ? { costUsd } : {}),
     });
   }
 
@@ -621,10 +623,10 @@ export class ExperimentAdapter {
           ...(r.status === 'cost_exceeded'
             ? {
                 costExceeded: true,
-                costUsd: r.costUsd,
                 costLimitUsd: r.costLimitUsd,
               }
             : {}),
+          ...(typeof r.costUsd === 'number' && Number.isFinite(r.costUsd) ? { costUsd: r.costUsd } : {}),
           ...(r.variance !== undefined ? { variance: r.variance, stdDev: r.stdDev, unstable: r.unstable } : {}),
           ...(r.trialAggregate ? { trialAggregate: r.trialAggregate } : {}),
         },

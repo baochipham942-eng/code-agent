@@ -182,16 +182,33 @@ export function registerEvaluationHandlers(
       const experiments = db.listExperiments(payload?.limit ?? 50)
         .filter((experiment) => payload?.source === undefined
           || (payload.source === 'compare' ? experiment.source === 'compare' : experiment.source !== 'compare'));
-      return experiments.map((experiment) => ({
-        ...experiment,
-        // 契约字段（EvalExperimentListItem）：camelCase + 解析后的 summary
-        gitCommit: experiment.git_commit,
-        // 解析 config_json 方便调用方直接读 harness 维度
-        config: safeParseJsonRecord(experiment.config_json),
-        summary: safeParseJson(experiment.summary_json),
-        caseResults: Object.fromEntries((db.loadExperiment(experiment.id)?.cases ?? [])
-          .map((item) => [item.case_id, { status: item.status, score: item.score }])),
-      }));
+      return experiments.map((experiment) => {
+        const caseResults: Record<string, { status: string; score: number; costUsd?: number }> = Object.fromEntries(
+          (db.loadExperiment(experiment.id)?.cases ?? []).map((item) => {
+            const costUsd = finiteCostUsd(safeParseJsonRecord(item.data_json)?.costUsd);
+            return [item.case_id, {
+              status: item.status,
+              score: item.score,
+              ...(costUsd !== undefined ? { costUsd } : {}),
+            }];
+          }),
+        );
+        const costs = Object.values(caseResults)
+          .map((result) => result.costUsd)
+          .filter((value): value is number => typeof value === 'number');
+        return {
+          ...experiment,
+          // 契约字段（EvalExperimentListItem）：camelCase + 解析后的 summary
+          gitCommit: experiment.git_commit,
+          // 解析 config_json 方便调用方直接读 harness 维度
+          config: safeParseJsonRecord(experiment.config_json),
+          summary: safeParseJson(experiment.summary_json),
+          caseResults,
+          ...(costs.length > 0
+            ? { totalCostUsd: costs.reduce((sum, value) => sum + value, 0) }
+            : {}),
+        };
+      });
     },
   );
 
@@ -356,4 +373,8 @@ function safeParseJsonRecord(raw: string | null): Record<string, unknown> | null
   return value && typeof value === 'object' && !Array.isArray(value)
     ? value as Record<string, unknown>
     : null;
+}
+
+function finiteCostUsd(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }

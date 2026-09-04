@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from 'react';
-import type { SessionSkillMount } from '@shared/contract/skillRepository';
+import type { SessionSkillMount, SkillMountSource } from '@shared/contract/skillRepository';
 import type { ParsedSkill, SkillSource } from '@shared/contract/agentSkill';
 import type { ToolCall } from '@shared/contract/tool';
 import type { ConnectorLifecycleAction, ConnectorStatusSummary } from '@shared/ipc';
@@ -22,6 +22,9 @@ export interface WorkbenchSkillCapability {
   installState: 'mounted' | 'available' | 'missing';
   description?: string;
   source?: SkillSource;
+  /** 怎么挂上的（auto=新会话默认带、manual=用户自己挂、recommended=系统推荐后挂上）；
+   *  和 source（技能出自哪个库）不是一回事，胶囊悬停卡要答的是这个。 */
+  mountSource?: SkillMountSource;
   libraryId?: string;
 }
 
@@ -183,6 +186,7 @@ export function buildWorkbenchCapabilities(args: {
       installState: (mounted ? 'mounted' : availableSkill ? 'available' : 'missing') as WorkbenchSkillCapability['installState'],
       description: availableSkill?.description,
       source: availableSkill?.source,
+      mountSource: mountedSkill?.source,
       libraryId: mountedSkill?.libraryId || (availableSkill ? deriveSkillLibraryId(availableSkill) : undefined),
     };
   });

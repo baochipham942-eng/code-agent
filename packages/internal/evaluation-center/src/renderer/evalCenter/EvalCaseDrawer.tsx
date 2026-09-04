@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Clock3, X } from 'lucide-react';
 import { IPC_DOMAINS } from '@shared/ipc/domains';
 import type { EvalExperimentCaseDetail } from '@shared/contract/evaluation';
@@ -21,6 +21,10 @@ function fill(template: string, values: Record<string, string | number>): string
     (text, [key, value]) => text.replaceAll(`{${key}}`, String(value)),
     template,
   );
+}
+
+function formatUsd(value: number): string {
+  return `$${value.toFixed(value < 0.1 ? 3 : 2)}`;
 }
 
 type CaseStatus = EvalExperimentCaseDetail['status'];
@@ -79,11 +83,6 @@ export const EvalCaseDrawer: React.FC<EvalCaseDrawerProps> = ({ target, onClose 
   }, [target]);
 
   const excluded = excludesCapabilityResult(detail?.status);
-  const counts = useMemo(() => {
-    const checks = detail?.evidence?.checks ?? [];
-    const passed = checks.filter((check) => check.passed).length;
-    return { total: checks.length, passed, failed: checks.length - passed };
-  }, [detail]);
   const trials = detail?.evidence?.trialDetails ?? [];
   const selected = trials.find((trial) => trial.index === selectedTrial);
   const passedTrials = trials.filter((trial) => trial.status === 'passed').length;
@@ -93,9 +92,14 @@ export const EvalCaseDrawer: React.FC<EvalCaseDrawerProps> = ({ target, onClose 
 
   const statusLabel = detail ? getEvalStatusLabel(detail.status, labels.status) : labels.status.failed;
   const reason = detail?.failureLabel ?? detail?.failureReason ?? statusLabel;
-  const conclusion = detail?.evidence && !excluded
-    ? fill(labels.conclusion, { status: statusLabel, reason, ...counts })
-    : `${statusLabel}${reason !== statusLabel ? ` · ${reason}` : ''}${excluded ? ` · ${labels.excludedShort}` : ''}`;
+  const costSuffix = typeof detail?.costUsd === 'number'
+    ? ` · ${fill(labels.caseCost, { cost: formatUsd(detail.costUsd) })}`
+    : '';
+  const conclusion = (detail?.evidence && !excluded
+    ? (reason === statusLabel
+      ? statusLabel
+      : fill(labels.conclusion, { status: statusLabel, reason }))
+    : `${statusLabel}${reason !== statusLabel ? ` · ${reason}` : ''}${excluded ? ` · ${labels.excludedShort}` : ''}`) + costSuffix;
 
   const editCase = () => {
     useEvalCenterStore.getState().openCase(target.caseId);
@@ -180,7 +184,9 @@ export const EvalCaseDrawer: React.FC<EvalCaseDrawerProps> = ({ target, onClose 
 
           <section className="border-b border-zinc-800 px-4 py-4">
             <h3 className="mb-1 text-xs font-medium text-zinc-300">{labels.conversation}</h3>
-            <p className="mb-3 text-[10px] text-zinc-600">{labels.representativeAttempt}</p>
+            {trials.length > 1 && (
+              <p className="mb-3 text-[10px] text-zinc-600">{labels.representativeAttempt}</p>
+            )}
             <EvalCaseTranscript evidence={detail.evidence} promptVersion={detail.promptVersion} labels={labels} />
           </section>
 

@@ -601,6 +601,22 @@ describe('PermissionClassifier', () => {
       expect(grepPattern.decision).toBe('approve');
     });
 
+    it('does not extend direct-command allow proofs through execution wrappers', async () => {
+      const sudoDryRun = await classifyPermission(
+        'Bash',
+        { command: 'sudo npm publish --dry-run' },
+        context,
+      );
+      const sudoDdCopy = await classifyPermission(
+        'Bash',
+        { command: `sudo dd if=${context.workingDirectory}/README.md of=${context.workingDirectory}/out.img` },
+        context,
+      );
+
+      expect(sudoDryRun.decision).toBe('deny');
+      expect(sudoDdCopy.decision).toBe('deny');
+    });
+
     it('denies system rm when no authoritative workspace can grant containment', async () => {
       const result = await classifyPermission(
         'Bash',

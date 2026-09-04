@@ -372,14 +372,16 @@ function recursivelyRemovesPath(command: string): boolean {
 function isNpmPublishDryRun(command: string): boolean {
   const words = commandWords(command);
   const npmIndex = words.findIndex((word) => commandProgram(word) === 'npm');
-  return npmIndex >= 0 && words[npmIndex + 1] === 'publish'
+  // Positive allow proofs are intentionally narrower than deny/ask scans:
+  // a wrapper may change identity, environment or execution semantics.
+  return npmIndex === 0 && words[npmIndex + 1] === 'publish'
     && words.slice(npmIndex + 2).includes('--dry-run');
 }
 
 function ddCopiesWorkspaceFile(command: string, context: ClassificationContext): boolean {
   const words = commandWords(command);
   const ddIndex = words.findIndex((word) => commandProgram(word) === 'dd');
-  if (ddIndex < 0) return false;
+  if (ddIndex !== 0) return false;
 
   const input = words.slice(ddIndex + 1).find((word) => word.startsWith('if='))?.slice(3);
   const output = words.slice(ddIndex + 1).find((word) => word.startsWith('of='))?.slice(3);

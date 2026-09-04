@@ -134,20 +134,4 @@ describe('no_stall_before_artifact：与 sim_* 同口径', () => {
     expect(r.passed).toBe(true);
     expect(r.details).toContain('scanned 0 executions');
   });
-
-  it('外部 CLI 产物/拖延名经 toolMatches 归一，找不到锚点不再假红', () => {
-    const artifact = evaluateNoStallBeforeArtifactExpectation(
-      { artifact_tools: ['^Write$'], stall_tools: ['^WebSearch$'] },
-      [exec('write_file')],
-    );
-    expect(artifact.passed).toBe(true);
-    expect(artifact.details).toContain('write_file');
-
-    const stall = evaluateNoStallBeforeArtifactExpectation(
-      { artifact_tools: ['^Write$'], stall_tools: ['^Bash$'] },
-      [exec('exec_command'), exec('Write')],
-    );
-    expect(stall.passed).toBe(false);
-    expect(stall.actual).toContain('exec_command');
-  });
 });

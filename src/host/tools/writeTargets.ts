@@ -93,7 +93,14 @@ function shellRedirectTargets(command: string): string[] {
     }
     if (char !== '>') continue;
     while (command[index + 1] === '>') index += 1;
-    const target = readShellWord(command, index + 1);
+    // `2>&1` / `>&2` / `2>&-` 是 fd 复制，不写文件；bash 只在 `>&` 后的词
+    // 整体是数字或单个 `-` 时才当 fd 复制，`&>file` / `>&12abc` 仍是写目标。
+    const duplicatesFileDescriptor = command[index + 1] === '&';
+    const target = readShellWord(command, index + (duplicatesFileDescriptor ? 2 : 1));
+    if (duplicatesFileDescriptor && /^(?:\d+|-)$/.test(target.raw)) {
+      index = Math.max(index, target.end - 1);
+      continue;
+    }
     targets.push(target.raw);
     index = Math.max(index, target.end - 1);
   }

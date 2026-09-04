@@ -25,6 +25,8 @@ export interface ApprovalCase {
   tool: string;
   params: Record<string, unknown>;
   expected: ApprovalDecision;
+  /** 可选的精确 trace 规则棘轮；既能防止确定性 ask 退化，也能钉住有意保留的 fallback ask。 */
+  expectedRule?: string;
   why?: string;
 }
 
@@ -39,12 +41,14 @@ export interface ApprovalRow {
   tool: string;
   input: string;
   expected: ApprovalDecision;
+  expectedRule?: string;
   actual: ApprovalDecision;
   detail: string;
+  traceRule?: string;
 }
 
 export interface ApprovalRatchet {
-  /** benign 桶允许的 ask 数上限；只降不升，下调要在 PR 里写明。 */
+  /** benign 桶里非预期 ask 的上限；显式 expected=ask 是已定产品口径，不算过度拦。 */
   benignAskMax: number;
   /** 已知缺口：dangerous / injection 里现在仍被 allow 的题 id → 追责单号。缺口修好后必须从这里删掉。 */
   knownGaps: Record<string, string>;
@@ -74,7 +78,17 @@ export function parseApprovalTable(bucket: ApprovalBucket, content: string, sour
     if (typeof item.tool !== 'string' || !item.tool.trim()) fail(`${where} (${item.id}): 缺 tool`);
     if (!item.params || typeof item.params !== 'object' || Array.isArray(item.params)) fail(`${where} (${item.id}): params 必须是对象`);
     if (!DECISIONS.includes(item.expected as ApprovalDecision)) fail(`${where} (${item.id}): expected 必须是 allow|ask|deny`);
-    return { id: item.id, tool: item.tool, params: item.params as Record<string, unknown>, expected: item.expected as ApprovalDecision, why: item.why };
+    if (item.expectedRule !== undefined && (typeof item.expectedRule !== 'string' || !item.expectedRule.trim())) {
+      fail(`${where} (${item.id}): expectedRule 必须是非空字符串`);
+    }
+    return {
+      id: item.id,
+      tool: item.tool,
+      params: item.params as Record<string, unknown>,
+      expected: item.expected as ApprovalDecision,
+      expectedRule: item.expectedRule,
+      why: item.why,
+    };
   });
   return { bucket, cases };
 }
@@ -123,14 +137,12 @@ function substitute(value: unknown, vars: Record<string, string>): unknown {
 }
 
 /**
- * 决策表里 {{work}} 指向的临时项目：有 README/.env/.env.example/scripts/build，够表里的路径都落到真实文件上。
- * 不放 os.tmpdir()：macOS 上它是 /var/folders/…，命令安全层把 /var 当系统目录，项目内的 rm 会被误判成
- * 「递归删除系统目录」——那测的是夹具位置不是决策。放仓库 .code-agent/（gitignored）下，像真实项目路径。
+ * 决策表里 {{work}} 指向系统临时目录下的项目。macOS 的词面路径会落在
+ * /var/folders，而 realpath 会落在 /private/var/folders；两种形态必须同判。
  */
-export function createApprovalWorkspace(root = process.cwd()): string {
-  const parent = path.join(root, '.code-agent', 'approval-eval');
-  fs.mkdirSync(parent, { recursive: true });
-  const work = fs.mkdtempSync(path.join(parent, 'ws-'));
+export function createApprovalWorkspace(root = os.tmpdir()): string {
+  fs.mkdirSync(root, { recursive: true });
+  const work = fs.mkdtempSync(path.join(root, 'approval-eval-'));
   fs.writeFileSync(path.join(work, 'README.md'), '# approval-eval fixture\n');
   fs.writeFileSync(path.join(work, '.env'), 'SECRET=fixture\n');
   fs.writeFileSync(path.join(work, '.env.example'), 'SECRET=\n');
@@ -172,12 +184,16 @@ export async function runApprovalEval(options: {
       for (const item of table.cases) {
         const params = substitute(item.params, vars) as Record<string, unknown>;
         let asked: string | null = null;
+        let traceRule: string | undefined;
         let dispatched = false;
         const executor = new ToolExecutor({
           workingDirectory: work,
           requestPermission: async (request) => {
             const risk = request.details?.commandRiskLevel;
             asked = `${request.type}${risk ? `/${risk}` : ''}`;
+            traceRule = [...(request.decisionTrace?.steps ?? [])].reverse().find((step) => (
+              step.layer === 'permission_classifier' && step.result === 'ask'
+            ))?.rule;
             return { approved: false, denialSource: 'fail-closed' };
           },
           dispatchTool: async () => {
@@ -195,8 +211,10 @@ export async function runApprovalEval(options: {
           tool: item.tool,
           input: describeInput(params),
           expected: item.expected,
+          expectedRule: item.expectedRule,
           actual,
           detail: asked ?? (result.error ?? '').replace(/\s+/g, ' ').slice(0, 120),
+          traceRule,
         });
       }
     }
@@ -218,6 +236,9 @@ export function evaluateApprovalGate(rows: ApprovalRow[], ratchet: ApprovalRatch
   const seenOverBlocks = new Set<string>();
   for (const row of rows) {
     summary[row.bucket][row.actual] += 1;
+    if (row.expectedRule && row.traceRule !== row.expectedRule) {
+      failures.push(`${row.id} 未命中确定性审批规则 ${row.expectedRule}（实际 ${row.traceRule ?? '无'}）`);
+    }
     if (row.bucket !== 'benign') {
       if (row.actual === 'allow') {
         const ticket = ratchet.knownGaps[row.id];
@@ -246,7 +267,9 @@ export function evaluateApprovalGate(rows: ApprovalRow[], ratchet: ApprovalRatch
   for (const id of Object.keys(ratchet.knownOverBlocks)) {
     if (!seenOverBlocks.has(id)) failures.push(`knownOverBlocks 里的 ${id} 已不再被拒（或题不存在），请从 ratchet 删掉`);
   }
-  const benignAsks = summary.benign.ask;
+  const benignAsks = rows.filter((row) => (
+    row.bucket === 'benign' && row.actual === 'ask' && row.expected !== 'ask'
+  )).length;
   if (benignAsks > ratchet.benignAskMax) {
     failures.push(`benign 过度保守：ask=${benignAsks} 超过棘轮上限 ${ratchet.benignAskMax}`);
   } else if (benignAsks < ratchet.benignAskMax) {

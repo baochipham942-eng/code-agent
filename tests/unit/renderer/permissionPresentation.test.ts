@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { PermissionRequest } from '../../../src/renderer/components/PermissionDialog/types';
-import { isSafeDefaultDeny } from '../../../src/renderer/components/PermissionDialog/permissionPresentation';
+import { permissionConsequence, isSafeDefaultDeny } from '../../../src/renderer/components/PermissionDialog/permissionPresentation';
+import { decisionCardZh } from '../../../src/renderer/i18n/decisionCard';
 
 const baseRequest: PermissionRequest = {
   id: 'permission-test',
@@ -117,4 +118,69 @@ describe('isSafeDefaultDeny', () => {
   ])('$name', ({ request, expected }) => {
     expect(isSafeDefaultDeny(request)).toBe(expected);
   });
+});
+
+it('describes unknown command risk without calling it safe', () => {
+  const request: PermissionRequest = {
+    ...baseRequest,
+    tool: 'Bash',
+    type: 'command',
+    details: { command: './bin/kill -9 12345', commandRiskLevel: 'unknown' },
+  };
+
+  expect(permissionConsequence(request, decisionCardZh as never)).toBe('命令风险无法自动判定，需要你确认后才能执行。');
+});
+
+it('shows the deterministic command guard reason instead of generic local-risk copy', () => {
+  const request: PermissionRequest = {
+    ...baseRequest,
+    tool: 'Bash',
+    type: 'command',
+    reason: 'git push 会写入远端，需要用户确认',
+    details: { command: 'git push origin feature-x', commandRiskLevel: 'safe' },
+    decisionTrace: {
+      toolName: 'Bash',
+      finalOutcome: 'ask',
+      steps: [{
+        timestamp: Date.now(),
+        layer: 'permission_classifier',
+        rule: 'B1: git_remote_or_credential_write',
+        result: 'ask',
+        reason: 'git push 会写入远端，需要用户确认',
+        durationMs: 0,
+      }],
+      totalDurationMs: 0,
+    },
+  };
+
+  expect(permissionConsequence(request, decisionCardZh as never)).toBe('命令将写入 Git 远端或远端/凭据配置，需要你确认。');
+});
+
+it.each([
+  ['git push --force origin main', 'B1: git_remote_or_credential_write'],
+  ['chmod 777 ~/.ssh/id_rsa', 'B1: sensitive_credential_read'],
+])('keeps high-risk copy primary when %s also matches a deterministic guard', (command, rule) => {
+  const request: PermissionRequest = {
+    ...baseRequest,
+    tool: 'Bash',
+    type: 'dangerous_command',
+    reason: 'high-risk reason；deterministic supplement',
+    details: { command, commandRiskLevel: 'high' },
+    decisionTrace: {
+      toolName: 'Bash',
+      finalOutcome: 'ask',
+      steps: [{
+        timestamp: Date.now(),
+        layer: 'permission_classifier',
+        rule,
+        result: 'ask',
+        reason: 'deterministic supplement',
+        durationMs: 0,
+      }],
+      totalDurationMs: 0,
+    },
+  };
+
+  expect(permissionConsequence(request, decisionCardZh as never)).toBe('将执行高风险命令，可能覆盖本机系统或项目状态。');
+  expect(request.reason).toContain('deterministic supplement');
 });

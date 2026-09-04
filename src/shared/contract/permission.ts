@@ -128,8 +128,8 @@ export interface PermissionRequest {
     newContent?: string;
     server?: string;
     toolName?: string;
-    /** commandSafety.validateCommand 的确定性结果，供审批卡生成人话后果。 */
-    commandRiskLevel?: 'safe' | 'low' | 'medium' | 'high' | 'critical';
+    /** commandSafety 结果；未识别却需确认时由执行层覆写为 unknown，供审批卡生成人话后果。 */
+    commandRiskLevel?: 'safe' | 'unknown' | 'low' | 'medium' | 'high' | 'critical';
     commandSecurityFlags?: string[];
     /** 删除类命令在 host 侧解析并盘点出的目标证据。 */
     affectedPath?: string;

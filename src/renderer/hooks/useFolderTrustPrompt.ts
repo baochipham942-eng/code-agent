@@ -20,20 +20,19 @@ const logger = createLogger('FolderTrustPrompt');
  */
 export function useFolderTrustPrompt(workingDirectory: string | null | undefined) {
   const { t } = useI18n();
-  const [evaluation, setEvaluation] = useState<FolderTrustEvaluationView | null>(null);
+  // 弹窗展示的目录与提交决定的目录绑在一起：切目录时确认框还开着，点「启用」不能写到新目录上（ai-review #1636 第 2 轮）。
+  const [prompt, setPrompt] = useState<{ directory: string; evaluation: FolderTrustEvaluationView } | null>(null);
   const [isBusy, setIsBusy] = useState(false);
 
   useEffect(() => {
-    if (!workingDirectory) {
-      setEvaluation(null);
-      return;
-    }
+    setPrompt(null);
+    if (!workingDirectory) return;
     let cancelled = false;
     // 显式传目录（host resolveWorkingDirectory 的第一优先级）；只传 sessionId 的话，目录为空的会话
     // 会被 host 回退到 <dataDir>/work，等于又回去问「Neo 自己建的目录信不信任」（ai-review #1636 抓出）。
     invokeDomain<FolderTrustEvaluationView>(IPC_DOMAINS.FOLDER_TRUST, 'get', { workingDirectory })
       .then((next) => {
-        if (!cancelled) setEvaluation(needsFolderTrustDecision(next) ? next : null);
+        if (!cancelled && needsFolderTrustDecision(next)) setPrompt({ directory: workingDirectory, evaluation: next });
       })
       .catch((error: unknown) => {
         logger.warn('Failed to evaluate folder trust', { error });
@@ -44,14 +43,21 @@ export function useFolderTrustPrompt(workingDirectory: string | null | undefined
   }, [workingDirectory]);
 
   const decide = useCallback(async (state: 'trusted' | 'blocked') => {
+    const target = prompt;
+    if (!target) return;
     setIsBusy(true);
     try {
       const next = await invokeDomain<FolderTrustEvaluationView>(IPC_DOMAINS.FOLDER_TRUST, 'set', {
         state,
-        workingDirectory,
+        workingDirectory: target.directory,
       });
       // 决定已生效（trusted 或 blocked）就关窗；只有 host 回报仍是未决定态才继续问。
-      setEvaluation(needsFolderTrustDecision(next) ? next : null);
+      // 等待期间目录已切走的话，prompt 早被 effect 清掉，这里不再把旧目录的结果塞回去。
+      setPrompt((current) => (
+        current?.directory === target.directory && needsFolderTrustDecision(next)
+          ? { directory: target.directory, evaluation: next }
+          : current?.directory === target.directory ? null : current
+      ));
     } catch (error) {
       // 只写日志的话按钮看起来「点了没反应」，用户无从知道决定没保存上。
       logger.warn('Failed to update folder trust', { error });
@@ -59,7 +65,7 @@ export function useFolderTrustPrompt(workingDirectory: string | null | undefined
     } finally {
       setIsBusy(false);
     }
-  }, [workingDirectory, t]);
+  }, [prompt, t]);
 
-  return { evaluation, isBusy, decide };
+  return { evaluation: prompt?.evaluation ?? null, isBusy, decide };
 }

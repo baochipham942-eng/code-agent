@@ -110,9 +110,10 @@ jobs:
   smoke:
     name: Swarm smoke (unit + integration)
     runs-on: ubuntu-latest
-    # 15 而非 10：主链路子集 ~200s + 新增的 playwright 浏览器安装 ~1-2min，
-    # 原上限对满载 runner 已经偏紧（实测单轮跑到失败就用了 5m25s）。
-    timeout-minutes: 25
+    # 25→40（2026-09-04 N-CI-SWARM-TIMEOUT）：main 常态已跑到 24m17s，25 只剩 43s 余量，
+    # PR 满载时连续两轮 25m 整被 cancel（#1616 两次、toolname-norm/ci-noexit 同病）。
+    # 再超 40 就别再加了——那是该拆 job/瘦身的时候了。
+    timeout-minutes: 40
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -400,7 +401,8 @@ jobs:
     # tests/** 等代码 PR，docs-only PR 不会触发整条 workflow，CI 成本可控；workflow_dispatch 仍可
     # 手动跑。full 仍受 `needs: smoke` 门控——smoke 失败则跳过。
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    # 与 smoke 同步 25→40（N-CI-SWARM-TIMEOUT），它 needs: smoke 起得晚、更容易被撞线
+    timeout-minutes: 40
     outputs:
       status: ${{ steps.result.outputs.status }}
     steps:

@@ -168,3 +168,37 @@ describe('TestRunner case-level memory wiring', () => {
     expect(agent.calls).toBe(1); // 只有 without-memory 那题跑了
   });
 });
+
+describe('记忆信号在全部轮次跑完后才消费（审查 #1638）', () => {
+  it('follow_up_prompts 场景：consumeMemorySignals 在最后一轮之后调用，不在首轮后', async () => {
+    let callsAtConsume = -1;
+    const base = fakeAgent();
+    const agent = {
+      ...base,
+      consumeMemorySignals: () => {
+        callsAtConsume = base.calls;
+        return { memoryWrites: 2 } as MemorySignals;
+      },
+    } as unknown as AgentInterface;
+    const results = await runSuite([
+      'name: multi-turn-memory',
+      'cases:',
+      '  - id: two-follow-ups',
+      '    type: task',
+      '    description: 第二轮才落盘的记忆题',
+      '    prompt: 记住 Orchid 的主视觉色是墨绿',
+      '    follow_up_prompts:',
+      '      - 再记一条：辅色是浅金',
+      '      - 现在复述两条',
+      '    expectations:',
+      '      - type: response_contains',
+      '        description: 跑得起来即可',
+      '        params:',
+      '          text: ok',
+    ], agent);
+    // 首轮 + 两条 follow-up = 3 次 sendMessage；首轮后就消费会把 callsAtConsume 卡在 1
+    expect(base.calls).toBe(3);
+    expect(callsAtConsume).toBe(3);
+    expect(results.results[0]?.memoryWrites).toBe(2);
+  });
+});

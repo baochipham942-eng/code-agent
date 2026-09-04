@@ -827,10 +827,6 @@ export class TestRunner {
       result.errors = agentResult.errors;
       result.sessionId = agent.getSessionId?.();
 
-      // N-EVAL-MEMORY：记忆落账同理必须在断言求值之前就位，否则 memory_recalled /
-      // memory_written 会因为"证据源缺席"把真召回/真落盘判成红（fail-loud 反噬）。
-      Object.assign(result, agent.consumeMemorySignals?.(testCase.id) ?? {});
-
       // B6b-①：goal run 行为落账必须在断言求值之前就位（runAssertions/runExpectations
       // 都在本 try 内），否则 goal_status/goal_evidence_gate 会 fail-loud 把真达成判红。
       // 超时/异常路径的兜底捕获见 finally（审计 R1-M2）。
@@ -938,6 +934,11 @@ export class TestRunner {
       }
 
       // Run assertions
+      // N-EVAL-MEMORY：记忆落账必须在断言求值之前、且在**全部轮次**（首轮 + user_simulation /
+      // follow_up_prompts）跑完之后才消费——首轮后就取会漏掉后续轮的写入与快照，
+      // 把「第二轮才落盘」判成未写入、把「第二轮泄露」判成干净（审查 #1638）。
+      Object.assign(result, agent.consumeMemorySignals?.(testCase.id) ?? {});
+
       const assertionResult = await runAssertions(testCase.expect ?? {}, {
         toolExecutions: result.toolExecutions,
         responses: result.responses,

@@ -394,9 +394,11 @@ test('真插件装、出项、打开、卸载，并复验 HTTP 安全边界', as
   const evalPage = page.getByTestId('eval-center-page');
   await expect(evalPage).toBeVisible({ timeout: 30_000 });
   await expect(evalPage).toHaveAttribute('data-page-variant', 'inline');
-  for (const tab of ['telemetry', 'replay', 'cases', 'scorers', 'experiments', 'benchmarks', 'validation']) {
+  for (const tab of ['telemetry', 'replay', 'cases', 'scorers', 'experiments', 'benchmarks']) {
     await expect(page.getByTestId(`eval-center-tab-${tab}`)).toBeVisible();
   }
+  // 验证 tab 2026-09-04 撤出 tab 条（结果本来就在 trace 里）；内容页只留深链排障。
+  await expect(page.getByTestId('eval-center-tab-validation')).toHaveCount(0);
   await expect(page.getByText('LIVE', { exact: true })).toHaveCount(0);
   expect(await page.evaluate(() => typeof (window as unknown as Record<string, { Page?: unknown }>).__neoInternalFeature_evaluation_center?.Page)).toBe('function');
   const layout = await evalPage.evaluate((node) => {
@@ -410,6 +412,30 @@ test('真插件装、出项、打开、卸载，并复验 HTTP 安全边界', as
     };
   });
   expect(layout.pageWidth).toBeGreaterThanOrEqual(layout.viewportWidth - layout.sidebarWidth - 2);
+
+  // 2026-09-04（N-EVAL-UX-SCROLL）：宿主 HostSurface 若不是 flex 容器，插件页根节点的
+  // flex-1 + min-h-0 全部失效 —— 页高退化成内容高度（题库 165 行把它撑到 10490px），
+  // 页内每一个 overflow-y-auto 面板都永远滚不动。真机逮到的病，断言落在「页高被宿主那格框住
+  // 且长列表真能滚」上；去掉 HostSurface 的 flex flex-col 这两条必红。
+  await page.getByTestId('eval-center-tab-cases').click();
+  await expect(page.getByTestId('eval-case-list-tab')).toBeVisible({ timeout: 20_000 });
+  const scrollLayout = await evalPage.evaluate((node) => {
+    const element = node as HTMLElement;
+    const host = element.parentElement;
+    const hostStyle = host ? getComputedStyle(host) : null;
+    return {
+      pageHeight: element.clientHeight,
+      hostHeight: host?.clientHeight ?? 0,
+      hostDisplay: hostStyle?.display ?? '',
+      hostFlexDirection: hostStyle?.flexDirection ?? '',
+    };
+  });
+  // 判据落在宿主那层的 computed style 上，不落在「列表是否溢出」上：e2e 数据目录读不到
+  // .claude/test-cases，题库是 0 题，用内容量当判据会永远假绿（2026-09-04 实测 0 溢出）。
+  expect(scrollLayout.hostDisplay).toBe('flex');
+  expect(scrollLayout.hostFlexDirection).toBe('column');
+  expect(scrollLayout.pageHeight).toBeLessThanOrEqual(scrollLayout.hostHeight);
+
   await page.screenshot({ path: screenshots.rendered, fullPage: true });
 
   const e2eDataDir = process.env.CODE_AGENT_E2E_DATA_DIR;

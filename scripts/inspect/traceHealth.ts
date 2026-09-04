@@ -1,7 +1,7 @@
 /**
  * In-repo testable copy of the Neo/Grok inspect follow-up stitch.
- * Mirrors `scripts/inspect/neo_five_case.py` `_invocation_tail` (line 203)
- * and `_forward_bridged_invocations` (line 325). Change one, change the other.
+ * Mirrors `scripts/inspect/neo_five_case.py` `_invocation_tail` (line 211)
+ * and `_forward_bridged_invocations` (line 333). Change one, change the other.
  */
 export type BridgeMode = 'fresh-per-invocation' | 'shared-bridge';
 
@@ -107,8 +107,13 @@ function lastAssistant(messages: TraceMessage[]): TraceMessage | undefined {
 }
 
 function followUpRequestHasHistory(messages: TraceMessage[]): boolean {
-  if (messages.some((message) => message.role === 'tool')) return true;
-  return countAssistants(messages) >= 2;
+  let lastUser = -1;
+  for (let index = 0; index < messages.length; index += 1) {
+    if (messages[index].role === 'user') lastUser = index;
+  }
+  const prefix = lastUser >= 0 ? messages.slice(0, lastUser) : [];
+  if (prefix.some((message) => message.role === 'tool')) return true;
+  return countAssistants(prefix) >= 1;
 }
 
 function messageFingerprint(message: TraceMessage): string {

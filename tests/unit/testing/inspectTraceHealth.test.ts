@@ -121,6 +121,17 @@ describe('Inspect multi-turn trace health', () => {
     );
   });
 
+  it('T8: follow-up without history that calls a tool fails closed 2 -> 2', () => {
+    expect(() => forwardInvocations({
+      mode: 'fresh-per-invocation',
+      initial: turn1State,
+      invocations: [[followUpUser, followUpCall, followUpTool, answer2]],
+      followUpPromptsSent: ['what is the version?'],
+    })).toThrowError(
+      /inspect trace health failed at invocation 0: assistant count 2 -> 2 \(expected strict growth\)/,
+    );
+  });
+
   it('T2: missing follow-up answer fails closed with RuntimeError', () => {
     expect(() => forwardInvocations({
       mode: 'fresh-per-invocation',

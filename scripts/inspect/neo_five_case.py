@@ -184,14 +184,22 @@ def _last_assistant(messages: list[Any]) -> ChatMessageAssistant | None:
 
 
 def _follow_up_request_has_history(messages: list[Any]) -> bool:
-    """True when the CLI follow-up request carried first-turn context.
+    """True when the CLI follow-up *request* carried first-turn context.
 
-    Neo restore merges the first-turn tool-call assistant and answer into one
-    message, so assistant count alone is not enough; a tool result is.
+    Inspect the prefix before the last user (the follow-up prompt). This
+    turn's own tool calls sit after that user and must not count as history.
+    Neo restore may merge first-turn tool-call+answer into one assistant, so
+    a tool result in the prefix is enough; assistant count on the whole
+    generation is not.
     """
-    if any(isinstance(message, ChatMessageTool) for message in messages):
+    last_user = -1
+    for index, message in enumerate(messages):
+        if getattr(message, "role", None) == "user":
+            last_user = index
+    prefix = messages[:last_user] if last_user >= 0 else []
+    if any(isinstance(message, ChatMessageTool) for message in prefix):
         return True
-    return _assistant_count(messages) >= 2
+    return _assistant_count(prefix) >= 1
 
 
 def _message_fingerprint(message: Any) -> tuple[str, str]:

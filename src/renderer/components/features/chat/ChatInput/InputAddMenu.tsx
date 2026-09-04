@@ -44,7 +44,8 @@ export const InputAddMenu: React.FC<Props> = ({
   const { skills, connectors, mcpServers } = useWorkbenchCapabilityRegistry();
   const connectorEntries: WorkbenchCapabilityRegistryItem[] = [...mcpServers, ...connectors];
   // 用户只与专家交互：传统内置 agent（coder/reviewer/…）与系统型 agent 不进选择列表
-  const expertEntries = useAgentRegistryStore((s) => s.entries).filter(isPanelVisibleAgent);
+  const allExpertEntries = useAgentRegistryStore((s) => s.entries);
+  const expertEntries = allExpertEntries.filter(isPanelVisibleAgent);
   const activeAgentId = useAppStore((s) => s.activeAgentId);
   const setActiveAgentId = useAppStore((s) => s.setActiveAgentId);
   const openCapabilityHub = useAppStore((s) => s.openCapabilityHub);
@@ -110,9 +111,18 @@ export const InputAddMenu: React.FC<Props> = ({
   const focusComposer = () => {
     requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('[data-testid="chat-composer-textarea"]')?.focus());
   };
+  // 专家声明的 optional 连接器默认关着、不进底栏；用户主动打开这个菜单时才标明「谁推荐的」。
+  // 查找要用未过滤的 entries：面板隐藏不等于没激活，底栏徽标（MountedConnectorIcons）也认未过滤的
+  const activeExpert = allExpertEntries.find((entry) => entry.id === activeAgentId);
+  const expertOptionalIds = new Set(
+    (activeExpert?.connectors || []).filter((connector) => connector.level === 'optional').map((connector) => connector.id),
+  );
   const capabilityItems = (items: WorkbenchCapabilityRegistryItem[]): InputAddSubmenuItem[] => items.map((item) => ({
     id: item.id,
     label: item.label,
+    sublabel: item.kind !== 'skill' && expertOptionalIds.has(item.id)
+      ? t.chatInput.connectorSource.menuRecommended.replace('{expert}', activeExpert?.name || activeExpert?.id || '')
+      : undefined,
     description: item.kind === 'skill'
       ? item.description
       : item.kind === 'connector'

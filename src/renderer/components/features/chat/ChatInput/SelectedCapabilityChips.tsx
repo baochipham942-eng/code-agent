@@ -4,6 +4,7 @@ import { useComposerStore } from '../../../../stores/composerStore';
 import { getWorkbenchCapabilityTitle } from '../../../../utils/workbenchPresentation';
 import type { WorkbenchCapabilityRegistryItem } from '../../../../utils/workbenchCapabilityRegistry';
 import { useI18n } from '../../../../hooks/useI18n';
+import { CapabilitySourceHover } from './CapabilitySourceHover';
 
 const MAX_VISIBLE_CAPABILITIES = 8;
 
@@ -27,6 +28,7 @@ function isChipRemoveKey(event: React.KeyboardEvent): boolean {
 
 export function SelectedCapabilityChips() {
   const { t } = useI18n();
+  const sourceText = t.chatInput.connectorSource;
   const { skills } = useWorkbenchCapabilityRegistry();
   // 只展示当轮 skill：连接器/MCP 是会话级挂载，归底栏 MountedConnectorIcons（权限徽章旁），
   // 不进输入框内的 chip 区（2026-07-29 拍板：框内 chip = 单轮生效，框外 = 会话级）。
@@ -42,14 +44,34 @@ export function SelectedCapabilityChips() {
         const title = capability.blockedReason?.detail || getWorkbenchCapabilityTitle(capability, { locale: 'zh' });
         const dimmed = !capability.available || capability.blocked;
         const removeAria = t.selectedCapabilityChips.removeAria.replace('{name}', capability.label);
+        // 来源用挂载来源（怎么挂上的），不是 source（出自哪个库）——用户问的是「谁放的」。
+        // recommended 不是「默认带的」：它是系统推荐挂上的，不会在新会话自动挂
+        const sourceLine = capability.mountSource === 'auto'
+          ? sourceText.autoMounted
+          : capability.mountSource === 'recommended'
+            ? sourceText.recommendedMounted
+            : sourceText.addedByYou;
         return (
-          // chip 本体只承载展示与焦点：整颗点击即删有误点风险（2026-07-29 统一 chip 交互），
-          // 删除收敛到 hover 浮现的 × 按钮与键盘 Delete/Backspace。
-          <div
+          <CapabilitySourceHover
             key={capability.key}
+            testId={`selected-capability-source-${capability.id}`}
+            card={
+              <>
+                <p className="font-medium text-zinc-100">{capability.label}</p>
+                <p className="mt-1 text-[11px] text-zinc-400">
+                  {sourceLine}
+                </p>
+                <p className="mt-0.5 text-[11px] text-zinc-400">
+                  {dimmed ? title : `● ${sourceText.turnActive}`}
+                </p>
+              </>
+            }
+          >
+          {/* chip 本体只承载展示与焦点：整颗点击即删有误点风险（2026-07-29 统一 chip 交互），
+              删除收敛到 hover 浮现的 × 按钮与键盘 Delete/Backspace。 */}
+          <div
             role="group"
             tabIndex={0}
-            title={title}
             aria-label={capability.label}
             onKeyDown={(event) => {
               if (!isChipRemoveKey(event)) return;
@@ -75,6 +97,7 @@ export function SelectedCapabilityChips() {
               <X className="h-3 w-3" aria-hidden />
             </button>
           </div>
+          </CapabilitySourceHover>
         );
       })}
       {overflowCount > 0 && <span className="text-[11px] text-zinc-500">+{overflowCount}</span>}

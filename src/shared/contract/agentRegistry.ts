@@ -5,6 +5,8 @@
 // 主进程 src/host/agent/agentRegistry.ts 是单一真理源（builtin + user + project）。
 // 这里只暴露跨进程序列化后的列表条目类型，供 IPC + 渲染端 store 共用。
 
+import type { ExpertConnector } from './expertConnectors';
+
 export type AgentSource = 'builtin' | 'user' | 'project';
 
 export interface AgentListEntry {
@@ -32,6 +34,12 @@ export interface AgentListEntry {
    * 成员条头像三级回落的中间档：真人头像资产 → icon → 首字。
    */
   icon?: string;
+  /**
+   * 专家声明的推荐连接器（agent.md frontmatter `connectors`）。
+   * 会话输入区底栏要显示「这位专家这一轮带着谁」，走 list 这条已有缓存 + 变更推送的路，
+   * 不为一颗图标另开一次 roles detail 往返。三态解析仍走 resolveSessionConnectorIds 同一口径。
+   */
+  connectors?: ExpertConnector[];
 }
 
 /**

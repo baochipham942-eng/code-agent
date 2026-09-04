@@ -23,6 +23,7 @@ import type {
 import { getToolSearchService } from '../../../services/toolSearch/toolSearchService';
 import { getMCPClient } from '../../../mcp/mcpClient';
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
+import { normalizeWorkbenchToolScope, isToolNameAllowedByWorkbenchScope } from '../../workbenchToolScope';
 import { toolSearchSchema as schema } from './toolSearch.schema';
 import { getCapabilityRecommender } from '../../../services/capability';
 import { renderGaps } from '../planning/recommendCapability';
@@ -66,9 +67,12 @@ export async function executeToolSearch(
 
   try {
     const service = getToolSearchService();
+    // scope 判据前置：discovery 会真的把 lazy stdio server 拉起来（起子进程），
+    // 范围外的拉起来结果也会被丢掉，白起——收窄生效时只发现范围内的
+    const scopedMcpServerIds = normalizeWorkbenchToolScope(ctx.toolScope)?.allowedMcpServerIds;
     let mcpDiscovery: McpDiscoveryEntry[] = [];
     try {
-      mcpDiscovery = await getMCPClient().discoverLazyServersForSearch(query);
+      mcpDiscovery = await getMCPClient().discoverLazyServersForSearch(query, scopedMcpServerIds);
     } catch (discoveryError) {
       ctx.logger.warn('Lazy MCP discovery during tool search failed', {
         error: discoveryError instanceof Error ? discoveryError.message : String(discoveryError),
@@ -80,6 +84,22 @@ export async function executeToolSearch(
       includeMCP: true,
       ...(ctx.deniedToolNames?.length ? { deniedToolNames: ctx.deniedToolNames } : {}),
     });
+
+    // 与 mcpUnified 同一份口径：本轮收窄生效时，不把范围外的工具搜出来——
+    // 搜出来模型照单点名、调用在 dispatch 门挨挡，「看见却调不动」比看不见更误导。
+    // 两列同走完整 scope 门（MCP 与连接器两侧同口径）；计数对齐过滤后的列表，
+    // 否则「找到 N 个」与列出的条目对不上；hasMore 保留服务真值——
+    // 范围内匹配超过 maxResults 时模型该知道还能缩关键词
+    if (scopedMcpServerIds?.length || normalizeWorkbenchToolScope(ctx.toolScope)?.allowedConnectorIds?.length) {
+      result.tools = result.tools.filter((tool) =>
+        isToolNameAllowedByWorkbenchScope(tool.name, ctx.toolScope));
+      result.loadedTools = result.loadedTools.filter((name) =>
+        isToolNameAllowedByWorkbenchScope(name, ctx.toolScope));
+      result.totalCount = result.tools.length;
+      if (scopedMcpServerIds?.length) {
+        mcpDiscovery = mcpDiscovery.filter((entry) => scopedMcpServerIds.includes(entry.serverName));
+      }
+    }
 
     // ToolSearch 返回的蒸馏 skill 是本轮真实进入候选集的技能。先记 selected，
     // turn 收尾时若没有后续 Skill 激活就形成 skipped -1；若激活则同 turn 覆盖为 adopted +1。
@@ -166,7 +186,12 @@ export async function executeToolSearch(
     }
 
     if (result.hasMore) {
-      lines.push(`还有 ${result.totalCount - result.tools.length} 个匹配结果，使用更具体的关键字缩小范围。`);
+      const remaining = result.totalCount - result.tools.length;
+      // scope 过滤后 totalCount 与列出数对齐（remaining 为 0），但服务说还有更多——
+      // 范围内也可能有，给个不带假计数的提示
+      lines.push(remaining > 0
+        ? `还有 ${remaining} 个匹配结果，使用更具体的关键词缩小范围。`
+        : '范围内可能还有更多匹配结果，使用更具体的关键词缩小范围。');
     }
 
     lines.push('');

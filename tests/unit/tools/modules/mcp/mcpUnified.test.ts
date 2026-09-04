@@ -77,6 +77,7 @@ interface MockClient {
   getStatus: ReturnType<typeof vi.fn>;
   getTools: ReturnType<typeof vi.fn>;
   getResources: ReturnType<typeof vi.fn>;
+  getPrompts: ReturnType<typeof vi.fn>;
   callTool: ReturnType<typeof vi.fn>;
   readResource: ReturnType<typeof vi.fn>;
   addServer: ReturnType<typeof vi.fn>;
@@ -99,6 +100,7 @@ function makeMockClient(overrides: Partial<MockClient> = {}): MockClient {
     }),
     getTools: vi.fn().mockReturnValue([]),
     getResources: vi.fn().mockReturnValue([]),
+    getPrompts: vi.fn().mockReturnValue([]),
     callTool: vi.fn().mockResolvedValue({ toolCallId: 'x', success: true, output: 'ok' }),
     readResource: vi.fn().mockResolvedValue('resource-content'),
     addServer: vi.fn(),
@@ -250,6 +252,63 @@ describe('mcpUnifiedModule (native)', () => {
         expect(result.output).toContain('已连接服务器: 无');
       }
     });
+
+    // 与 list_tools / list_resources 同口径：状态清单也不摆出范围外的 server
+    it('turn scope 收窄时已连接清单只列范围内 server', async () => {
+      const client = makeMockClient({
+        getStatus: vi.fn().mockReturnValue({
+          connectedServers: ['lark', 'github'],
+          inProcessServers: ['memory-kv'],
+          toolCount: 5,
+          resourceCount: 2,
+          promptCount: 1,
+        }),
+        getTools: vi.fn().mockReturnValue([
+          { name: 't1', description: 'Lark tool', serverName: 'lark', inputSchema: {} },
+          { name: 't2', description: 'Lark tool 2', serverName: 'lark', inputSchema: {} },
+          { name: 't3', description: 'Github tool', serverName: 'github', inputSchema: {} },
+        ]),
+      });
+      getMCPClientMock.mockReturnValue(client);
+      const scopedCtx = makeCtx({ toolScope: { allowedMcpServerIds: ['lark'] } } as Partial<ToolContext>);
+      const result = await run({ action: 'status' }, scopedCtx);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.output).toContain('已连接服务器: lark');
+        expect(result.output).not.toContain('github');
+        // 三个计数同过 scope——不能「已连接服务器: lark」配「可用工具: 5」
+        expect(result.output).toContain('可用工具: 2');
+        expect(result.output).not.toContain('可用工具: 5');
+        // meta 与 artifact 同口径——UI / 遥测也不该看见范围外的 server
+        expect(result.meta?.connectedServers).toEqual(['lark']);
+        expect(result.meta?.inProcessServers).toEqual([]);
+        expect(result.meta?.count).toBe(1);
+        expect(result.meta?.toolCount).toBe(2);
+      }
+    });
+
+    // 与同文件 list_tools 一个口径：「已连接」两表合算——收窄到进程内 server 时
+    // 不能输出「已连接服务器: 无」而可用工具非零（ai-review 第十二轮 Important）
+    it('收窄到进程内 server：status 不谎报「已连接服务器: 无」', async () => {
+      const client = makeMockClient({
+        getStatus: vi.fn().mockReturnValue({
+          connectedServers: [],
+          inProcessServers: ['memory-kv'],
+          toolCount: 1,
+          resourceCount: 0,
+          promptCount: 0,
+        }),
+      });
+      getMCPClientMock.mockReturnValue(client);
+      const scopedCtx = makeCtx({ toolScope: { allowedMcpServerIds: ['memory-kv'] } } as Partial<ToolContext>);
+      const result = await run({ action: 'status' }, scopedCtx);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.output).toContain('已连接服务器: memory-kv');
+        expect(result.meta?.connectedServers).toEqual(['memory-kv']);
+        expect(result.meta?.count).toBe(1);
+      }
+    });
   });
 
   describe('action: list_tools', () => {
@@ -389,6 +448,86 @@ describe('mcpUnifiedModule (native)', () => {
         expect(result.output).not.toContain('### t2');
       }
     });
+
+    // turn scope 收窄生效时，list 输出不能把被收窄掉的 server 列给模型——
+    // 列出来它照单点名、invoke 在 dispatch 门被挡，「看见却调不动」比看不见更误导
+    it('turn scope 收窄时只列范围内 server 的工具', async () => {
+      const client = makeMockClient({
+        getStatus: vi.fn().mockReturnValue({
+          connectedServers: ['lark', 'github'],
+          inProcessServers: [],
+          toolCount: 2,
+          resourceCount: 0,
+          promptCount: 0,
+        }),
+        getTools: vi.fn().mockReturnValue([
+          { name: 't1', description: 'Lark tool', serverName: 'lark', inputSchema: {} },
+          { name: 't2', description: 'Github tool', serverName: 'github', inputSchema: {} },
+        ]),
+      });
+      getMCPClientMock.mockReturnValue(client);
+      const scopedCtx = makeCtx({ toolScope: { allowedMcpServerIds: ['lark'] } } as Partial<ToolContext>);
+      const result = await run({ action: 'list_tools' }, scopedCtx);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.output).toContain('### t1');
+        expect(result.output).not.toContain('### t2');
+        expect(result.output).not.toContain('github');
+      }
+    });
+
+    it('turn scope 范围内没有已连接 server 时明说收窄并点名（lazy 的用到会自连），不谎称「没有已连接」', async () => {
+      const client = makeMockClient({
+        getStatus: vi.fn().mockReturnValue({
+          connectedServers: ['github'],
+          inProcessServers: [],
+          toolCount: 1,
+          resourceCount: 0,
+          promptCount: 0,
+        }),
+        getTools: vi.fn().mockReturnValue([
+          { name: 't2', description: 'Github tool', serverName: 'github', inputSchema: {} },
+        ]),
+      });
+      getMCPClientMock.mockReturnValue(client);
+      const scopedCtx = makeCtx({ toolScope: { allowedMcpServerIds: ['lark'] } } as Partial<ToolContext>);
+      const result = await run({ action: 'list_tools' }, scopedCtx);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.output).toContain('本轮会话的工具范围已收窄到：lark');
+        expect(result.output).toContain('自动连接');
+        expect(result.output).not.toContain('github');
+      }
+    });
+
+    // ai-review 第十一轮 Important：connectedServers 不含进程内 server（memory-kv/code-index
+    // 在 inProcessServers 里），收窄到它们时判空逻辑会谎报「未连接」并返回 0 个工具——
+    // 实际其工具就在 getTools() 里且可调用
+    it('收窄到进程内 server：工具照列，不谎报「未连接」', async () => {
+      const client = makeMockClient({
+        getStatus: vi.fn().mockReturnValue({
+          connectedServers: [],
+          inProcessServers: ['memory-kv'],
+          toolCount: 1,
+          resourceCount: 0,
+          promptCount: 0,
+        }),
+        getTools: vi.fn().mockReturnValue([
+          { name: 'kv_get', description: 'Read a key', serverName: 'memory-kv', inputSchema: {} },
+        ]),
+      });
+      getMCPClientMock.mockReturnValue(client);
+      const scopedCtx = makeCtx({ toolScope: { allowedMcpServerIds: ['memory-kv'] } } as Partial<ToolContext>);
+      const result = await run({ action: 'list_tools' }, scopedCtx);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.output).not.toContain('未连接');
+        expect(result.output).not.toContain('当前没有已连接');
+        expect(result.output).toContain('### kv_get');
+        // 表头的「已连接」也要算上进程内那张表——空表头配非空工具列表同样是谎报
+        expect(result.output).toContain('已连接的 MCP 服务器: memory-kv');
+      }
+    });
   });
 
   describe('action: list_resources', () => {
@@ -417,6 +556,24 @@ describe('mcpUnifiedModule (native)', () => {
       const result = await run({ action: 'list_resources', server: 'foo' });
       if (result.ok) {
         expect(result.output).toBe("服务器 'foo' 没有提供资源。");
+      }
+    });
+
+    // 与 list_tools 同口径：被 scope 滤空时点名收窄范围，不谎称「没有可用资源」
+    it('turn scope 滤空资源时点名收窄范围', async () => {
+      const client = makeMockClient({
+        getResources: vi.fn().mockReturnValue([
+          { uri: 'file:///a', name: 'a', serverName: 'github' },
+        ]),
+      });
+      getMCPClientMock.mockReturnValue(client);
+      const scopedCtx = makeCtx({ toolScope: { allowedMcpServerIds: ['lark'] } } as Partial<ToolContext>);
+      const result = await run({ action: 'list_resources' }, scopedCtx);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.output).toContain('本轮会话的工具范围已收窄到：lark');
+        expect(result.output).not.toContain('当前没有可用的 MCP 资源');
+        expect(result.output).not.toContain('file:///a');
       }
     });
 

@@ -36,6 +36,7 @@ import { projectSpaceZh } from './projectSpace';
 import { inAppValidationZh } from './inAppValidation';
 import { localOpsZh } from './localOps';
 import { onboardingZh } from './onboarding';
+import { folderTrustZh } from './folderTrust';
 import { workbenchTabsZh } from './workbenchTabs';
 import { activityPanelZh, canvasActorZh } from './domains';
 import { imageNarrationZh } from './imageNarration';
@@ -58,6 +59,7 @@ export const zh = {
   ...inAppValidationZh,
   ...localOpsZh,
   ...onboardingZh,
+  ...folderTrustZh,
   ...generativeUIZh,
   ...workbenchTabsZh,
   ...receiptPresentationZh,
@@ -135,29 +137,6 @@ export const zh = {
     estimateDisclaimer: '刊例估算，非实际账单',
   },
 
-  folderTrust: {
-    title: '信任这个项目文件夹？',
-    directory: '项目目录',
-    realpath: '真实路径',
-    detected: '发现的项目级配置',
-    identityChanged: '这个路径曾被信任，但目录身份已经变化，需要重新确认。',
-    emptyDangerNote: '未发现需要逐项确认的危险配置，但该目录尚未被信任（或信任已失效）。确认后才会加载项目级配置。',
-    trust: '信任并加载',
-    block: '阻止项目配置',
-    openSettings: '打开设置',
-    saving: '保存中…',
-    saveFailed: '保存失败，决定没有生效',
-    risks: {
-      execution: '命令执行',
-      mcp: 'MCP 服务',
-      agent: 'Agent 定义',
-      skill: 'Skill 定义',
-      prompt: '提示词',
-      policy: '安全策略',
-      preference: '偏好设置',
-      diagnostic: '其他配置',
-    },
-  },
 
   // Design Workspace（Kun 借鉴：设计 tab）
   design: {

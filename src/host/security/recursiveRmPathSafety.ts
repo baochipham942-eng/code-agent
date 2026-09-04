@@ -74,6 +74,9 @@ export function resolvedRmCriticalTarget(
     const root = path.parse(resolved).root;
     const rootLevel = path.dirname(resolved) === root;
     const workdirOrParent = isPathInside(workdir, resolved);
+    // Claude's critical-path boundary protects the home directory itself, not
+    // every descendant. A non-workspace child such as ~/zz remains high-risk
+    // and requires approval, while `rm -rf ~` is denied outright.
     if (resolved === root || rootLevel || resolved === HOME_DIR || workdirOrParent) return resolved;
 
     // A workspace may legitimately live below a lexical system directory such

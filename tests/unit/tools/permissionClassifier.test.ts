@@ -400,11 +400,11 @@ describe('PermissionClassifier', () => {
   it('asks instead of denying recursive deletion of a non-critical home child', async () => {
     const result = await classifyPermission(
       'bash',
-      { command: 'rm --recursive ~/Library' },
+      { command: 'rm -rf ~/zz' },
       { workingDirectory: '/tmp/comate-zulu-demo', permissionLevel: 'execute' },
     );
 
-    expect(result.decision).toBe('ask');
+    expect(result).toMatchObject({ decision: 'ask', traceStep: { rule: 'fallback' } });
   });
 
   describe('approval decision gap guards', () => {

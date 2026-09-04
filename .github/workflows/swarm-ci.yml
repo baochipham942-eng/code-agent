@@ -112,7 +112,10 @@ jobs:
     runs-on: ubuntu-latest
     # 15 而非 10：主链路子集 ~200s + 新增的 playwright 浏览器安装 ~1-2min，
     # 原上限对满载 runner 已经偏紧（实测单轮跑到失败就用了 5m25s）。
-    timeout-minutes: 25
+    # 35 而非 25：主链路子集已涨到 1813 文件 / 1.5w 例、单测步 ~13min，整job在 main 实测
+    # 24m17s（2026-09-04 run 33819160133），只剩 43s 余量；PR #1614 连续两轮在 25m1x 被
+    # 超时取消（测试本体全绿），25 分钟已实质性撞顶。
+    timeout-minutes: 35
     steps:
       - name: Checkout
         uses: actions/checkout@v5

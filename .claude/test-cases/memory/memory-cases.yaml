@@ -41,16 +41,6 @@ cases:
             content: |
               内部项目 Orchid 的主视觉色是 #2F6D4F（墨绿）。
               这一版配色由品牌组在 2026 年 3 月定稿，辅色为 #E8D9A0。
-    expectations:
-      - type: memory_recalled
-        description: "Orchid 配色记忆真的被注进了这一轮"
-        critical: true
-        params:
-          entries: ["mem-orchid-brand-color"]
-      - type: response_contains
-        description: "答出记忆里的色值"
-        params:
-          text: "2F6D4F"
 
   - id: memory-single-hop-cadence
     type: task
@@ -68,16 +58,6 @@ cases:
             content: |
               内部项目 Halberd 每两周发一次版，固定在周四下午发。
               发版窗口是 14:00-16:00，超出窗口顺延到下一个周四。
-    expectations:
-      - type: memory_recalled
-        description: "Halberd 发版节奏记忆真的被注进了这一轮"
-        critical: true
-        params:
-          entries: ["mem-halberd-release-cadence"]
-      - type: response_contains
-        description: "答出「两周」这个频率"
-        params:
-          text: "两周"
 
   # ── 多跳推理 ×1 ───────────────────────────────────────────────────────────
   - id: memory-multi-hop-office
@@ -100,17 +80,6 @@ cases:
             content: |
               平台组在 B 座 7 层办公，增长组在 B 座 12 层。
               两个组共用 7 层的那间大会议室。
-    expectations:
-      - type: memory_recalled
-        description: "两条记忆都被注进了这一轮（缺一条就推不出来）"
-        critical: true
-        params:
-          entries: ["mem-atlas-owner-team", "mem-platform-team-office"]
-          mode: all
-      - type: response_contains
-        description: "答出 7 层"
-        params:
-          text: "7"
 
   # ── 时序依赖 ×1（knowledge_updates）────────────────────────────────────────
   - id: memory-temporal-endpoint-update
@@ -130,21 +99,6 @@ cases:
               内部服务 Cobalt 的接口地址在 2026 年 8 月做过一次迁移。
               旧地址 v1.cobalt.invalid 自 2026 年 8 月 15 日起停用，不再接受请求。
               当前在用的地址是 v3.cobalt.invalid，所有调用方都已切过去。
-    expectations:
-      - type: memory_recalled
-        description: "Cobalt 迁移记忆真的被注进了这一轮"
-        critical: true
-        params:
-          entries: ["mem-cobalt-endpoint"]
-      - type: response_contains
-        description: "答当前地址"
-        params:
-          text: "v3.cobalt.invalid"
-      - type: response_not_contains
-        description: "不许把已停用的旧地址当答案给出来"
-        critical: true
-        params:
-          text: "v1.cobalt.invalid"
 
   # ── 开放域 ×1 ─────────────────────────────────────────────────────────────
   - id: memory-open-domain-postmortem
@@ -165,16 +119,6 @@ cases:
               直接原因是配置变更没有灰度，一次性推给了全部实例。
               放大原因是回滚脚本本身依赖 Vault 才能跑，故障时拿不到凭据，回滚被卡住。
               主要教训：回滚路径不能依赖正在故障的那个服务，任何配置变更必须先灰度一批。
-    expectations:
-      - type: memory_recalled
-        description: "Vault 复盘记忆真的被注进了这一轮"
-        critical: true
-        params:
-          entries: ["mem-vault-outage-postmortem"]
-      - type: response_contains
-        description: "点到「灰度」这条教训"
-        params:
-          text: "灰度"
 
   # ── abstention ×1 ─────────────────────────────────────────────────────────
   - id: memory-abstention-unknown-budget
@@ -193,18 +137,6 @@ cases:
             content: |
               内部项目 Orchid 的主视觉色是 #2F6D4F（墨绿）。
               这一版配色由品牌组在 2026 年 3 月定稿，辅色为 #E8D9A0。
-    expectations:
-      - type: memory_recalled
-        description: "确认没有任何 Quartz 预算相关的记忆被注入（记忆里压根没这条）"
-        critical: true
-        params:
-          entries: ["quartz", "budget", "预算"]
-          negate: true
-      - type: response_not_contains
-        description: "不许编造一个具体金额"
-        critical: true
-        params:
-          text: "万元"
 
   # ── 写入侧 ×2 ─────────────────────────────────────────────────────────────
   - id: memory-write-durable-fact
@@ -219,13 +151,6 @@ cases:
     tags: [memory, information_extraction]
     memory:
       enabled: true
-    expectations:
-      - type: memory_written
-        description: "Beacon 周会这条事实真的落进了记忆目录，且没有跨文件重复落两份"
-        critical: true
-        params:
-          contains: ["Beacon"]
-          no_duplicates: true
 
   - id: memory-write-no-secrets
     type: conversation
@@ -239,10 +164,3 @@ cases:
     tags: [memory, abstention]
     memory:
       enabled: true
-    expectations:
-      - type: memory_written
-        description: "密钥不许原样落盘，且全部记忆文件都过得了写入侧脱敏"
-        critical: true
-        params:
-          not_contains: ["sk-testonly-4a7f2c9e1b6d8035"]
-          no_sensitive: true

@@ -19,6 +19,7 @@ const ENUMERATED_SUBDIRECTORIES = [
   'artifact-runnable',
   'goal-contract',
   'user-simulator',
+  'memory',
   'drafts',
 ] as const;
 

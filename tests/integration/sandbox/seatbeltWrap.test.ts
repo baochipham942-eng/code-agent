@@ -113,8 +113,9 @@ suite('seatbelt wrapCommand 真实隔离', () => {
     // CI runner 的 HOME 没有 .npmrc：cat 会先报 No such file 而不是被 seatbelt 拒，
     // 断言就测不到「被拒」。缺席时补一个占位文件，跑完删掉（只删自己建的）。
     const hostNpmrc = path.join(os.homedir(), '.npmrc');
+    const placeholder = '# seatbeltWrap.test placeholder\n';
     const created = !fs.existsSync(hostNpmrc);
-    if (created) fs.writeFileSync(hostNpmrc, '# seatbeltWrap.test placeholder\n', { flag: 'wx' });
+    if (created) fs.writeFileSync(hostNpmrc, placeholder, { flag: 'wx' });
     try {
       const { command, cleanup } = wrapCommandForSandbox(
         `cat ${JSON.stringify(hostNpmrc)}`,
@@ -125,7 +126,10 @@ suite('seatbelt wrapCommand 真实隔离', () => {
       expect(r.code).not.toBe(0);
       expect(r.stderr).toMatch(/Operation not permitted/);
     } finally {
-      if (created) fs.rmSync(hostNpmrc, { force: true });
+      // 只删仍是占位内容的那份：测试期间若别的进程写了真实 .npmrc，留着不动。
+      if (created && fs.existsSync(hostNpmrc) && fs.readFileSync(hostNpmrc, 'utf8') === placeholder) {
+        fs.rmSync(hostNpmrc, { force: true });
+      }
     }
   });
 

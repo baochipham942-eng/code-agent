@@ -80,4 +80,71 @@ describe('Inspect assertion scorer bridge', () => {
     expect(result.score).toBe(0);
     expect(result.hasCriticalFailure).toBe(true);
   });
+
+  it('T1：bash-ls 期望对 Codex/Grok/Kimi/Neo 工具名同分 1.0', async () => {
+    const bashLsCase: TestCase = {
+      id: 'bash-ls',
+      type: 'tool',
+      description: 'bash 工具 - 列出目录',
+      prompt: '列出当前目录的文件',
+      expect: {
+        tool: 'bash|list_directory|glob',
+        response_contains: ['package.json'],
+      },
+      expectations: [
+        {
+          type: 'tool_output_contains',
+          description: '工具输出应包含 package.json',
+          weight: 1,
+          critical: true,
+          params: { text: ['package.json'] },
+        },
+        {
+          type: 'tool_called',
+          description: '应调用 bash、list_directory 或 glob 工具来列出目录',
+          weight: 0.8,
+          params: { tool: 'bash|list_directory|glob' },
+        },
+        {
+          type: 'no_crash',
+          description: '不应崩溃',
+          weight: 0.5,
+          params: {},
+        },
+        {
+          type: 'max_turns',
+          description: '简单任务应在 10 轮内完成',
+          weight: 0.3,
+          params: { max: 10 },
+        },
+      ],
+    };
+
+    const scores: Record<string, number> = {};
+    for (const tool of ['exec_command', 'run_terminal_command', 'Bash', 'ListDirectory'] as const) {
+      const result = await scoreInspectCase(bashLsCase, {
+        ...context,
+        toolExecutions: [{
+          tool,
+          input: { command: 'ls' },
+          output: 'package.json\nsrc',
+          success: true,
+          duration: 0,
+          timestamp: 0,
+        }],
+      });
+      scores[tool] = result.score;
+      expect(result.status, `${tool} status`).toBe('passed');
+      expect(result.score, `${tool} score`).toBe(1);
+      expect(result.legacy.passed, `${tool} legacy expect.tool`).toBe(true);
+      expect(result.legacy.failures).toEqual([]);
+    }
+
+    expect(scores).toEqual({
+      exec_command: 1,
+      run_terminal_command: 1,
+      Bash: 1,
+      ListDirectory: 1,
+    });
+  });
 });

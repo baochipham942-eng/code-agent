@@ -12,6 +12,7 @@
 import type { ToolExecutionRecord, UserSimulation, UserSimulationRule } from './types';
 import type { PermissionRequestData } from '../tools/types';
 import type { RequestPermissionResult } from '../../shared/contract/permission';
+import { toolMatches } from './toolNameAliases';
 
 /** 澄清/确认交互面的工具名（产品侧 schema 单一真源为 askUserQuestion.schema.ts） */
 const USER_QUESTION_TOOL = 'AskUserQuestion';
@@ -28,7 +29,6 @@ export const WRITE_EFFECT_TOOL_PATTERNS: string[] = [
   '^Edit$',
   '^Append$',
   '^Bash$',
-  '^search_replace$',
   '^DocEdit$',
   '^notebook_edit$',
   '^git_commit$',
@@ -162,8 +162,8 @@ function ruleMatches(rule: UserSimulationRule, ctx: SimTurnContext): boolean {
     if (asked !== when.question_asked) return false;
   }
   if (when.tool_called !== undefined) {
-    const regex = compileRegex(when.tool_called);
-    if (!regex || !ctx.toolExecutions.some((te) => regex.test(te.tool))) return false;
+    const called = when.tool_called;
+    if (!ctx.toolExecutions.some((te) => toolMatches(te.tool, called))) return false;
   }
   if (when.response_matches !== undefined) {
     const regex = compileRegex(when.response_matches);

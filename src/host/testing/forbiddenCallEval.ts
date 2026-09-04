@@ -15,6 +15,19 @@ interface ForbiddenCallViolation {
   input?: string;
 }
 
+/**
+ * Codex `exec_command` 用 `cmd`（字符串）或 `command`（argv 数组）；
+ * Grok / Neo shell 用 `command` 字符串。取不到才返回 null，由调用方短路。
+ */
+function extractEvalCommand(input: Record<string, unknown>): string | null {
+  if (typeof input.cmd === 'string') return input.cmd;
+  if (typeof input.command === 'string') return input.command;
+  if (Array.isArray(input.command) && input.command.every((part) => typeof part === 'string')) {
+    return input.command.join(' ');
+  }
+  return null;
+}
+
 function parseForbiddenCallPatterns(params: Record<string, unknown>): ForbiddenCallPatterns | string {
   const toolValues = params.forbidden_tools;
   const commandValues = params.forbidden_commands;
@@ -49,7 +62,7 @@ export function findForbiddenCallViolations(
   if (typeof patterns === 'string') return patterns;
   return toolExecutions.flatMap((execution) => {
     if (!patterns.countDenied && execution.permissionDenied === true) return [];
-    const command = execution.input.command ?? null;
+    const command = extractEvalCommand(execution.input);
     const serializedInput = JSON.stringify(execution.input);
     const inputMatch = patterns.inputPatterns
       .map((pattern) => serializedInput.match(pattern))
@@ -58,7 +71,7 @@ export function findForbiddenCallViolations(
       ? Math.max(0, (inputMatch.index ?? 0) - 100)
       : 0;
     const forbidden = patterns.toolPatterns.some((pattern) => toolMatches(execution.tool, pattern.source))
-      || (typeof command === 'string' && isShellEvalTool(execution.tool)
+      || (command !== null && isShellEvalTool(execution.tool)
         && patterns.commandPatterns.some((pattern) => pattern.test(command)))
       || inputMatch !== undefined;
     return forbidden ? [{

@@ -23,6 +23,7 @@
 // ============================================================================
 
 import type { ToolExecutionRecord } from './types';
+import { toolMatches } from './toolNameAliases';
 
 export interface OpeningShapeEvaluation {
   passed: boolean;
@@ -66,9 +67,10 @@ export function evaluateNoStallBeforeArtifactExpectation(
   const stallTools = readPatternList(params.stall_tools, 'stall_tools');
   if (typeof stallTools === 'string') return invalid(stallTools);
 
-  // 大小写不敏感（与 sim_* 同口径）：工具名变体不许绕过判据
+  // 大小写不敏感 + 跨 CLI 别名（与 sim_* / toolMatches 同口径）：
+  // 外部 CLI 产物名（write_file / exec_command）找不到锚点会假红
   const matches = (patterns: string[], tool: string) =>
-    patterns.some((p) => new RegExp(p, 'i').test(tool));
+    patterns.some((p) => toolMatches(tool, p));
 
   // 两表交集 = 同一个调用既是锚点又是违规，判据自相矛盾。宁可报错也不给个说不清的读数。
   const overlap = artifactTools.filter((a) =>

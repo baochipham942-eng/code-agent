@@ -13,6 +13,7 @@ import {
   validateUserSimulation,
   WRITE_EFFECT_TOOL_PATTERNS,
 } from '../../../src/host/testing/userSimulator';
+import { toolMatches } from '../../../src/host/testing/toolNameAliases';
 import type { ToolExecutionRecord, UserSimulation } from '../../../src/host/testing/types';
 
 function toolExec(tool: string, overrides: Partial<ToolExecutionRecord> = {}): ToolExecutionRecord {
@@ -131,6 +132,15 @@ describe('evaluateSimRules', () => {
       new Map(),
     );
     expect(match?.rule.id).toBe('t');
+  });
+
+  it('matches tool_called via toolMatches aliases (search_replace hits ^Edit$)', () => {
+    const match = evaluateSimRules(
+      { rules: [{ id: 'edit', when: { tool_called: '^Edit$' }, respond: 'ok' }] },
+      { responses: [], toolExecutions: [toolExec('search_replace')] },
+      new Map(),
+    );
+    expect(match?.rule.id).toBe('edit');
   });
 
   it('requires ALL given conditions (AND semantics)', () => {
@@ -259,12 +269,18 @@ describe('buildPermissionDecider', () => {
 describe('WRITE_EFFECT_TOOL_PATTERNS', () => {
   it('covers core write-effect tools and spares read-only tools', () => {
     const isWriteEffect = (tool: string) =>
-      WRITE_EFFECT_TOOL_PATTERNS.some((p) => new RegExp(p).test(tool));
+      WRITE_EFFECT_TOOL_PATTERNS.some((p) => toolMatches(tool, p));
     for (const tool of ['Write', 'Edit', 'Append', 'Bash', 'git_commit', 'docx_generate', 'search_replace']) {
       expect(isWriteEffect(tool), `${tool} should count as write-effect`).toBe(true);
     }
     for (const tool of ['Read', 'Grep', 'Glob', 'ListDirectory', 'attempt_completion', 'AskUserQuestion']) {
       expect(isWriteEffect(tool), `${tool} should NOT count as write-effect`).toBe(false);
     }
+  });
+
+  it('search_replace 经归一被 ^Edit$ 命中，不必再单列 ^search_replace$', () => {
+    expect(WRITE_EFFECT_TOOL_PATTERNS).not.toContain('^search_replace$');
+    expect(toolMatches('search_replace', '^Edit$')).toBe(true);
+    expect(WRITE_EFFECT_TOOL_PATTERNS.some((p) => toolMatches('search_replace', p))).toBe(true);
   });
 });

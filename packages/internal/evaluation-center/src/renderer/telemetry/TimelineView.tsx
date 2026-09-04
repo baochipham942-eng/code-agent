@@ -62,7 +62,9 @@ const PLACEHOLDER_SUMMARIES: Record<string, string> = {
   'Streaming response...': 'message_delta',
 };
 
-export function collapseTimelineEvents(events: TelemetryTimelineEvent[]): TimelineRow[] {
+// 不 export：生产侧只有本组件消费它，导出去就是一个只给测试用的 dead export
+// （knip production 棘轮会红）。折叠行为由组件级渲染断言覆盖。
+function collapseTimelineEvents(events: TelemetryTimelineEvent[]): TimelineRow[] {
   const rows: TimelineRow[] = [];
   for (const event of events) {
     const last = rows[rows.length - 1];

@@ -5,10 +5,7 @@ import { describe, expect, it, afterEach, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import React from 'react';
 import type { TelemetryTimelineEvent } from '../../../src/shared/contract/telemetry';
-import {
-  TimelineView,
-  collapseTimelineEvents,
-} from '@internal-evaluation/renderer/telemetry/TimelineView';
+import { TimelineView } from '@internal-evaluation/renderer/telemetry/TimelineView';
 
 vi.mock('@internal-evaluation/renderer/i18n/useEvaluationI18n', () => ({
   useEvaluationI18n: () => ({
@@ -39,40 +36,48 @@ function event(partial: Partial<TelemetryTimelineEvent> & { id: string; timestam
 
 afterEach(cleanup);
 
-describe('collapseTimelineEvents', () => {
-  it('把连续同类同摘要的事件折叠成一条，并记住条数与时间跨度', () => {
-    const rows = collapseTimelineEvents([
+function rowTexts(container: HTMLElement): string[] {
+  return [...container.querySelectorAll('.space-y-0\\.5 > div')].map((row) => (row.textContent ?? '').trim());
+}
+
+describe('时间线折叠', () => {
+  it('把连续同类同摘要的事件折叠成一条，并显示条数与时间跨度', () => {
+    const { container } = render(<TimelineView events={[
       event({ id: 'a', timestamp: 1_000 }),
       event({ id: 'b', timestamp: 3_500 }),
       event({ id: 'c', timestamp: 6_000 }),
       event({ id: 'd', timestamp: 7_000, eventType: 'tool_call_start', summary: 'Tool: Read started' }),
-    ]);
+    ]} />);
 
+    const rows = rowTexts(container);
     expect(rows).toHaveLength(2);
-    expect(rows[0]).toMatchObject({ count: 3, spanMs: 5_000 });
-    expect(rows[0].event.id).toBe('a');
-    expect(rows[1]).toMatchObject({ count: 1, spanMs: 0 });
+    expect(rows[0]).toContain('× 3');
+    expect(rows[0]).toContain('5.0s');
+    expect(rows[1]).toContain('Tool: Read started');
+    expect(rows[1]).not.toContain('×');
   });
 
   it('摘要不同就不折叠——同类事件里有真内容的那条不能被吃掉', () => {
-    const rows = collapseTimelineEvents([
+    const { container } = render(<TimelineView events={[
       event({ id: 'a', timestamp: 1_000 }),
       event({ id: 'b', timestamp: 2_000, summary: 'Streaming response...' }),
       event({ id: 'c', timestamp: 3_000 }),
-    ]);
+    ]} />);
 
-    expect(rows.map((row) => row.count)).toEqual([1, 1, 1]);
+    expect(rowTexts(container)).toHaveLength(3);
   });
 
   it('中间隔了别的事件就分成两组，不跨组合并', () => {
-    const rows = collapseTimelineEvents([
+    const { container } = render(<TimelineView events={[
       event({ id: 'a', timestamp: 1_000 }),
       event({ id: 'b', timestamp: 2_000, eventType: 'message', summary: 'Message: hi' }),
       event({ id: 'c', timestamp: 3_000 }),
       event({ id: 'd', timestamp: 4_000 }),
-    ]);
+    ]} />);
 
-    expect(rows.map((row) => row.count)).toEqual([1, 1, 2]);
+    const rows = rowTexts(container);
+    expect(rows).toHaveLength(3);
+    expect(rows[2]).toContain('× 2');
   });
 });
 

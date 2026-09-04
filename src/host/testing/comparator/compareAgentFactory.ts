@@ -19,6 +19,7 @@ export interface EffectiveCompareArm {
   harness: HarnessVariantConfig | null;
   memory: { longTerm: boolean; routingModel: string | null };
   reasoningEffort: CompareConfiguration['reasoningEffort'] | null;
+  orchestration: { allowSwarm: boolean; spawnMaxDepth: number | null };
   skills: string[];
 }
 
@@ -32,13 +33,14 @@ export function resolveEffectiveCompareArm(
 export function buildCompareArmShape(
   config: CompareConfiguration,
   baseline: CompareConfiguration,
-  swarm: boolean,
 ): EvalRunStamp['shape'] {
   const arm = resolveEffectiveCompareArm(config, baseline);
   return {
     skills: [...arm.skills],
     memory: arm.memory.longTerm,
-    swarm,
+    // 运行戳记的 swarm 取本臂生效值，不再由调用方另传一个常量——
+    // 臂开了扇出而戳记写 false，事后没人能从报告里看出跑的是哪一档。
+    swarm: arm.orchestration.allowSwarm,
     harness: arm.harness,
   };
 }
@@ -89,5 +91,11 @@ export function createCompareAgent(
     },
     ...(arm.systemPrompt ? { systemPromptOverride: arm.systemPrompt } : {}),
     ...(arm.harness ? { harness: arm.harness } : {}),
+    orchestration: {
+      allowSwarm: arm.orchestration.allowSwarm,
+      ...(arm.orchestration.spawnMaxDepth !== null
+        ? { spawnMaxDepth: arm.orchestration.spawnMaxDepth }
+        : {}),
+    },
   });
 }

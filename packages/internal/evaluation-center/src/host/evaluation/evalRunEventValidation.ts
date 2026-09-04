@@ -67,6 +67,16 @@ function validateCompareArm(value: unknown): void {
   if (value.skills !== undefined && !isStringArray(value.skills)) {
     throw new Error('实验配置 skills 必须是字符串数组。');
   }
+  if (value.orchestration !== undefined) {
+    if (!isRecord(value.orchestration)) throw new Error('实验配置 orchestration 必须是对象。');
+    const { allowSwarm, spawnMaxDepth } = value.orchestration;
+    if (allowSwarm !== undefined && typeof allowSwarm !== 'boolean') {
+      throw new Error('实验配置 orchestration.allowSwarm 必须是布尔值。');
+    }
+    if (spawnMaxDepth !== undefined && (!Number.isInteger(spawnMaxDepth) || (spawnMaxDepth as number) < 0)) {
+      throw new Error('实验配置 orchestration.spawnMaxDepth 必须是非负整数。');
+    }
+  }
 }
 
 function validateShipGate(value: unknown): void {
@@ -186,6 +196,10 @@ export function parseEvalRunEvent(value: unknown): EvalRunEvent {
           }
         }
       }
+      if (value.subagentSpawns !== undefined
+        && (!Number.isInteger(value.subagentSpawns) || (value.subagentSpawns as number) < 0)) {
+        throw new Error('评测用例 subagentSpawns 必须是非负整数。');
+      }
       if (value.aiReview !== undefined) validateAiReview(value.aiReview);
       if (value.evidence !== undefined) validateEvidence(value.evidence);
       if (value.invalid !== undefined) {
@@ -223,6 +237,9 @@ export function parseEvalRunEvent(value: unknown): EvalRunEvent {
       if (!isRecord(value.skillActivations)) throw new Error('成对结果缺少 skillActivations。');
       requireNumber(value.skillActivations, 'baseline');
       requireNumber(value.skillActivations, 'candidate');
+      if (!isRecord(value.subagentSpawns)) throw new Error('成对结果缺少 subagentSpawns。');
+      requireNumber(value.subagentSpawns, 'baseline');
+      requireNumber(value.subagentSpawns, 'candidate');
       break;
     }
     case 'tool_call':

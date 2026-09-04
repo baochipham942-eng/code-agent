@@ -25,6 +25,8 @@ export class EvalRunEventStream {
     Array<Extract<TestEvent, { type: 'tool_result' }>>
   >();
   private readonly skillActivations = new Map<string, Record<string, number>>();
+  /** subagent_spawned 事件按题计数，case_end 一起报——「挂了 ≠ 用了」的触发次数列。 */
+  private readonly subagentSpawns = new Map<string, number>();
   private readonly onProcessExit = (exitCode: number) => {
     this.finish(exitCode);
   };
@@ -68,6 +70,13 @@ export class EvalRunEventStream {
           ...(this.skillActivations.get(event.result.testId) ?? {}),
         };
         this.skillActivations.delete(event.result.testId);
+        // 同一数字两条路径必须一致：结果对象自带的计数与事件流自己数的取大者
+        // （mock/单臂路径只有其中一条会有值）。
+        event.result.subagentSpawns = Math.max(
+          event.result.subagentSpawns ?? 0,
+          this.subagentSpawns.get(event.result.testId) ?? 0,
+        );
+        this.subagentSpawns.delete(event.result.testId);
         for (const toolExecution of event.result.toolExecutions) {
           this.forward({
             type: 'tool_call',
@@ -103,6 +112,7 @@ export class EvalRunEventStream {
           ...(event.result.sessionId ? { sessionId: event.result.sessionId } : {}),
           ...(event.result.scoreAuthority ? { scoreAuthority: event.result.scoreAuthority } : {}),
           skillActivations: event.result.skillActivations,
+          subagentSpawns: event.result.subagentSpawns,
           ...(event.result.aiReview ? { aiReview: event.result.aiReview } : {}),
           evidence: buildCaseEvidence(event.result),
           ...(event.result.trialAggregate ? { trialAggregate: event.result.trialAggregate } : {}),
@@ -119,7 +129,10 @@ export class EvalRunEventStream {
         break;
       case 'error':
       case 'memory_injected':
+        this.write({ schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION, ts: Date.now(), runId: this.runId, ...event });
+        break;
       case 'subagent_spawned':
+        this.subagentSpawns.set(event.testId, (this.subagentSpawns.get(event.testId) ?? 0) + 1);
         this.write({ schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION, ts: Date.now(), runId: this.runId, ...event });
         break;
       case 'skill_activated': {
@@ -162,6 +175,7 @@ export class EvalRunEventStream {
           status,
           score,
           durationMs,
+          subagentSpawns: isA ? comparison.subagentSpawnsA : comparison.subagentSpawnsB,
           arm,
         });
         if (arm === 'candidate') candidateStatuses.push(status);
@@ -186,6 +200,10 @@ export class EvalRunEventStream {
         skillActivations: {
           baseline: sum(candidateIsA ? comparison.skillActivationsB : comparison.skillActivationsA),
           candidate: sum(candidateIsA ? comparison.skillActivationsA : comparison.skillActivationsB),
+        },
+        subagentSpawns: {
+          baseline: candidateIsA ? comparison.subagentSpawnsB : comparison.subagentSpawnsA,
+          candidate: candidateIsA ? comparison.subagentSpawnsA : comparison.subagentSpawnsB,
         },
       });
     }

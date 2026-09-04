@@ -162,16 +162,16 @@ describe('统一实验臂 schema', () => {
       memory: { longTerm: true },
       harness: { name: 'candidate', hooksEnabled: true, toolMode: 'all' },
     };
-    expect(buildCompareArmShape(BASELINE, BASELINE, false)).toMatchObject({
+    expect(buildCompareArmShape(BASELINE, BASELINE)).toMatchObject({
       memory: false,
       harness: null,
     });
-    expect(buildCompareArmShape(candidate, BASELINE, false)).toMatchObject({
+    expect(buildCompareArmShape(candidate, BASELINE)).toMatchObject({
       memory: true,
       skills: [],
       harness: { name: 'candidate', hooksEnabled: true, toolMode: 'all' },
     });
-    expect(buildCompareArmShape({ ...candidate, skills: ['z', 'a', 'z'] }, BASELINE, false).skills)
+    expect(buildCompareArmShape({ ...candidate, skills: ['z', 'a', 'z'] }, BASELINE).skills)
       .toEqual(['a', 'z']);
   });
 });
@@ -235,6 +235,61 @@ describe('skill 出场门', () => {
       expect(comparison.summary.candidateSkillActivations).toEqual({ x: 2 });
       expect(comparison.summary.baselineSkillActivations).toEqual({});
     }
+  });
+});
+
+describe('子代理触发次数从跑测一路到 pair_end', () => {
+  async function runSpawnComparison(candidateSpawns: number, orientation: 0 | 1) {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'compare-spawn-'));
+    const testCase: TestCase = {
+      id: 'spawn-case',
+      type: 'task',
+      description: 'subagent spawns',
+      prompt: 'run',
+      expect: { response_contains: ['done'] },
+    };
+    const candidate: CompareConfiguration = {
+      name: 'candidate',
+      orchestration: { allowSwarm: true },
+    };
+    const makeAgent = (config: CompareConfiguration): AgentInterface => ({
+      sendMessage: async () => ({ responses: ['done'], toolExecutions: [], turnCount: 1, errors: [] }),
+      reset: async () => undefined,
+      getAgentInfo: () => ({ name: 'mock', model: 'm', provider: 'mock' }),
+      consumeSubagentSpawns: () => (config.name === 'candidate' ? candidateSpawns : 0),
+    });
+    const runnerConfig: TestRunnerConfig = {
+      testCaseDir: root,
+      resultsDir: path.join(root, 'results'),
+      workingDirectory: root,
+      defaultTimeout: 1000,
+      stopOnFailure: false,
+      verbose: false,
+      parallel: false,
+      maxParallel: 1,
+    };
+    const spy = vi.spyOn(crypto, 'randomInt').mockReturnValue(orientation as never);
+    try {
+      return await runCompare({ testCases: [testCase], baseline: BASELINE, candidate, makeAgent, runnerConfig });
+    } finally {
+      spy.mockRestore();
+    }
+  }
+
+  it('两种盲分配朝向都把计数挂在正确的臂上', async () => {
+    for (const orientation of [0, 1] as const) {
+      const comparison = await runSpawnComparison(3, orientation);
+      const candidateIsA = comparison.cases[0].assignment.A === 'candidate';
+      // 摘掉 testRunner 的 consumeSubagentSpawns 或 comparator 的 subagentSpawnsA/B，这条立刻红。
+      expect(comparison.cases[0].subagentSpawnsA, `orientation=${orientation}`).toBe(candidateIsA ? 3 : 0);
+      expect(comparison.cases[0].subagentSpawnsB, `orientation=${orientation}`).toBe(candidateIsA ? 0 : 3);
+    }
+  });
+
+  it('候选臂零触发时两臂都记 0（结果页据此打「未出场」）', async () => {
+    const comparison = await runSpawnComparison(0, 0);
+    expect(comparison.cases[0].subagentSpawnsA).toBe(0);
+    expect(comparison.cases[0].subagentSpawnsB).toBe(0);
   });
 });
 

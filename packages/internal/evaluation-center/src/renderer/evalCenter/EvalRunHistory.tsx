@@ -10,6 +10,7 @@ import type {
   EvalBaselineSetError,
 } from '@shared/contract/evaluationBaseline';
 import type { EvalRunPanelLabels } from '../i18n/evalRunPanel';
+import { getEvalStatusLabel, type EvalDisplayStatus } from '../i18n/evalStatusLabels';
 import { invokeEvaluation } from '../evaluationRunIpc';
 import { Button } from '@renderer/components/primitives/Button';
 import { EmptyState } from '@renderer/components/primitives/EmptyState';
@@ -113,6 +114,11 @@ export function getLatestEvalRun(
 ): EvalBaselineExperimentListItem | undefined {
   return groupRuns(experiments).flatMap((group) => group.runs)
     .sort((a, b) => b.timestamp - a.timestamp)[0];
+}
+
+function transitionStatus(status: string): EvalDisplayStatus {
+  if (status === 'passed' || status === 'failed' || status === 'error') return status;
+  return 'error';
 }
 
 function disabledReason(run: EvalBaselineExperimentListItem, labels: EvalRunPanelLabels): string | undefined {
@@ -291,8 +297,8 @@ export const EvalRunHistory: React.FC<EvalRunHistoryProps> = ({
                   <span className={item.kind === 'regressed' ? 'text-badge-danger' : 'text-badge-success'}>
                     {item.kind === 'regressed' ? labels.caseStatusRegressed : labels.caseStatusFixed}
                   </span>
-                  <span className="font-mono text-zinc-300">{item.caseId}</span>
-                  <span className="text-zinc-500">{item.from} → {item.to}</span>
+                  <span className="truncate font-mono text-zinc-300">{item.caseId}</span>
+                  <span className="text-zinc-500">{getEvalStatusLabel(transitionStatus(item.from), labels.runCaseStatus)} → {getEvalStatusLabel(transitionStatus(item.to), labels.runCaseStatus)}</span>
                 </span>
               </Button>
             </li>

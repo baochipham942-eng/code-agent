@@ -226,6 +226,27 @@ describe('EvalCaseDrawer', () => {
     ));
   });
 
+  it('通过题无 failure 字段时结论条只显示状态，不重复，实付仍拼得上', async () => {
+    evaluation.invoke.mockResolvedValue(detail({
+      status: 'passed',
+      score: 1,
+      failureReason: undefined,
+      failureLabel: undefined,
+    }));
+    render(<EvalCaseDrawer target={{ experimentId: 'run-1', caseId: 'case-1' }} onClose={vi.fn()} />);
+    expect((await screen.findByTestId('eval-case-conclusion')).textContent).toBe('通过');
+    cleanup();
+    evaluation.invoke.mockResolvedValue(detail({
+      status: 'passed',
+      score: 1,
+      failureReason: undefined,
+      failureLabel: undefined,
+      costUsd: 0.012,
+    }));
+    render(<EvalCaseDrawer target={{ experimentId: 'run-2', caseId: 'case-1' }} onClose={vi.fn()} />);
+    expect((await screen.findByTestId('eval-case-conclusion')).textContent).toBe('通过 · 本题实付 $0.012');
+  });
+
   it('结论条有 costUsd 时追加本题实付，缺失时不含', async () => {
     evaluation.invoke.mockResolvedValue(detail({ costUsd: 0.012 }));
     render(<EvalCaseDrawer target={{ experimentId: 'run-1', caseId: 'case-1' }} onClose={vi.fn()} />);
@@ -318,6 +339,7 @@ describe('EvalRunHistory case drawer entry', () => {
     expect(cluster!.textContent).toContain('失败');
     expect(cluster!.textContent).toContain('case-2');
     expect(cluster!.textContent).toContain('得分 0');
+    expect(cluster!.querySelector('span.truncate.font-mono')).toBeTruthy();
     fireEvent.click(caseButton!);
 
     await waitFor(() => expect(evaluation.invoke).toHaveBeenCalledWith(
@@ -326,6 +348,28 @@ describe('EvalRunHistory case drawer entry', () => {
     ));
     expect(evaluation.invoke).not.toHaveBeenCalledWith(EVALUATION_CHANNELS.LOAD_EXPERIMENT, expect.anything());
     expect(screen.getByRole('dialog')).toBeTruthy();
+  });
+
+  it('长题号 span 带 truncate，min-w-0 才有消费方', async () => {
+    const longId = 'held-in/core-path/very-long-case-id-that-would-otherwise-stretch-the-row';
+    const runs: EvalBaselineExperimentListItem[] = [
+      { id: 'run-long', name: 'eval-daily-2026-08-31', timestamp: 3, model: 'm', provider: 'p', scope: 'full', source: 'eval', gitCommit: 'c', config: { mode: 'real', k: 1, caseBankSha: 'sha', aggregationRuleVersion: 4, evalSet: { split: 'held-in' } }, summary: { completed: true, notRun: 0, passRate: 1, plannedCaseIds: [longId], invalidCases: 0, aggregationRuleVersion: 4 }, caseResults: { [longId]: { status: 'passed', score: 1 } } },
+    ];
+    evaluation.invoke.mockImplementation(async (channel: string) => (
+      channel === EVALUATION_CHANNELS.BASELINE_INFO ? { groups: {} } : null
+    ));
+    render(
+      <EvalRunHistory
+        experiments={runs} loadState="ready" loadError={null} hasActiveRun={false} probe={null}
+        labels={evalRunPanelZh.runPanel} language="zh" loadingText="加载" onRefresh={vi.fn()} onOpenWizard={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByTestId('benchmark-run-expand-run-long'));
+    const caseRow = screen.getByTestId(`benchmark-run-case-run-long-${longId}`);
+    const caseIdSpan = caseRow.querySelector('span.truncate.font-mono');
+    expect(caseIdSpan).toBeTruthy();
+    expect(caseIdSpan?.textContent).toBe(longId);
+    expect(caseIdSpan?.className).toContain('truncate');
   });
 
   it('T-A2：本轮没有逐题结果时展开显示空态', async () => {

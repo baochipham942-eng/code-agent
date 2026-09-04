@@ -17,8 +17,8 @@ const db = vi.hoisted(() => ({
 
 // 宿主取数走真实入口 buildHarvestPreview，只把数据库与回放服务换成夹具
 // （与 tests/unit/ipc/evaluationRunBridge.ipc.test.ts 同一套 mock 写法）。
-vi.mock('@host/telemetry/replay/replayService', () => ({
-  extractStructuredReplay: db.replay,
+vi.mock('@host/telemetry/replay/telemetryQueryService', () => ({
+  getTelemetryQueryService: () => ({ getStructuredReplay: db.replay }),
 }));
 
 vi.mock('@host/services/core/databaseService', () => ({

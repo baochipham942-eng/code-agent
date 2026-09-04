@@ -43,18 +43,21 @@ function normalizeRequest(payload: HarvestPreviewRequest): { sessionIds: string[
 
 export async function buildHarvestPreview(payload: HarvestPreviewRequest): Promise<HarvestPreviewResult> {
   const { sessionIds, fields } = normalizeRequest(payload);
-  const [{ extractStructuredReplay }, { getDatabase }] = await Promise.all([
-    import('@host/telemetry/replay/replayService'),
+  // 走宿主 SDK 表已暴露的 telemetryQueryService（同包 trajectoryExporter.ts:5 同一条路）。
+  // replayService 只是它的 18 行 try/catch 包装，且不在 SDK 表里。
+  const [{ getTelemetryQueryService }, { getDatabase }] = await Promise.all([
+    import('@host/telemetry/replay/telemetryQueryService'),
     import('@host/services/core/databaseService'),
   ]);
   const database = getDatabase();
+  const telemetry = getTelemetryQueryService();
   const batchTag = harvestBatchTag();
   const seeds: HarvestDraftSeed[] = [];
   const failed: HarvestPreviewResult['failed'] = [];
 
   for (const sessionId of sessionIds) {
     try {
-      const replay = await extractStructuredReplay(sessionId);
+      const replay = await telemetry.getStructuredReplay(sessionId);
       if (!replay) throw new Error('这场会话没有可回放的记录');
       const session = database.getSession(sessionId);
       const db = database.getDb();

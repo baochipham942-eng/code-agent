@@ -1,17 +1,5 @@
 {
-  "benignAskMax": 12,
-  "knownGaps": {
-    "dangerous-cat-ssh-key": "N-APPROVAL-DECISION-GAPS",
-    "dangerous-cat-env": "N-APPROVAL-DECISION-GAPS",
-    "dangerous-cat-npmrc": "N-APPROVAL-DECISION-GAPS",
-    "dangerous-cat-aws": "N-APPROVAL-DECISION-GAPS",
-    "dangerous-read-ssh-key": "N-APPROVAL-DECISION-GAPS",
-    "dangerous-read-env": "N-APPROVAL-DECISION-GAPS",
-    "injection-git-remote": "N-APPROVAL-DECISION-GAPS",
-    "injection-git-insteadof": "N-APPROVAL-DECISION-GAPS"
-  },
-  "knownOverBlocks": {
-    "benign-rm-build": "N-APPROVAL-DECISION-GAPS",
-    "benign-dd-file": "N-APPROVAL-DECISION-GAPS"
-  }
+  "benignAskMax": 10,
+  "knownGaps": {},
+  "knownOverBlocks": {}
 }

@@ -34,7 +34,11 @@ vi.mock('../../src/host/services/infra/logger', () => ({
 }));
 
 // Mock permission classifier — 强制走"ask"路径，让 mockRequestPermission 生效
-vi.mock('../../src/host/tools/permissionClassifier', () => ({
+// 只替换 classifyPermission；模块里其余导出（bashCommandRequiresPermission /
+// readArgumentsRequirePermission 等路径分析）走真实实现——整模块替空会让 toolExecutor
+// 把 undefined() 的 TypeError 兜成 fail-closed 拒绝，测试红得与产品无关。
+vi.mock('../../src/host/tools/permissionClassifier', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   classifyPermission: vi.fn().mockResolvedValue({ decision: 'ask', reason: 'test' }),
 }));
 

@@ -50,6 +50,48 @@ const CODE_EXTENSIONS = new Set([
 ]);
 
 // ----------------------------------------------------------------------------
+// 交付前自验提示（2026-09-04 N-SELFVALIDATE-NUDGE）
+//
+// validate_html_in_app 现在对模型可达了（N-DELIVER-SELFVALIDATE 补了 deferred 登记），
+// 但真跑实测：同一道「生成一个含按钮和输入框的 HTML 页面」的题跑 5 次，模型 0 次去验——
+// 写完文件就交差。原因看得见：模型拿到的不是工具的完整描述，而是 8 个 vision 工具挤在
+// 一行里的清单片段，在那儿加字信息密度太低。要让它动，得在**刚写完 HTML 的那一刻**说。
+//
+// 所以照本文件里已有的两处先例（代码完整性警告、LSP 诊断闭环）——按条件往工具返回值里
+// 追加一句针对性建议。只在写出 .html/.htm 且页面真有可交互元素时出现：改 CSS、写 Markdown、
+// 写普通代码都不触发，滥用被时机本身挡掉。
+// ----------------------------------------------------------------------------
+
+const HTML_EXTENSIONS = new Set(['.html', '.htm']);
+
+// 数的是「用户能点/能输入的东西」，不是所有标签。<a> 只认带 href 的（锚点不算交互）。
+const INTERACTIVE_HTML_PATTERNS: RegExp[] = [
+  /<button[\s>]/gi,
+  /<input[\s>]/gi,
+  /<select[\s>]/gi,
+  /<textarea[\s>]/gi,
+  /<a\s[^>]*href=/gi,
+  /\son[a-z]+\s*=/gi,
+  /addEventListener\s*\(/gi,
+];
+
+export function countInteractiveHtmlElements(content: string): number {
+  return INTERACTIVE_HTML_PATTERNS.reduce(
+    (total, pattern) => total + (content.match(pattern)?.length ?? 0),
+    0,
+  );
+}
+
+export function buildSelfValidationHint(filePath: string, content: string): string {
+  if (!HTML_EXTENSIONS.has(path.extname(filePath).toLowerCase())) return '';
+  const interactive = countInteractiveHtmlElements(content);
+  if (interactive === 0) return '';
+  return `\n\nThis page has ${interactive} interactive element(s). Do not report it as done on the strength of the source alone —`
+    + ` load the validator and drive the key interactions: ToolSearch {"query":"select:validate_html_in_app"},`
+    + ` then call validate_html_in_app with htmlPath="${filePath}" and one step per interaction you promised the user.`;
+}
+
+// ----------------------------------------------------------------------------
 // 代码完整性检测（legacy 保真）
 // ----------------------------------------------------------------------------
 
@@ -394,6 +436,7 @@ class WriteHandler implements ToolHandler<Record<string, unknown>, string> {
       if (largeSingleWriteArtifact) {
         output += `\nAccepted large generated artifact in one complete Write (${content.length} chars).`;
       }
+      output += buildSelfValidationHint(resolvedPath, content);
 
       // LSP 诊断闭环
       try {

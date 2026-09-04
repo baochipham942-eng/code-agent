@@ -390,9 +390,14 @@ class SpawnGuard {
     return this.clampDepth(overrideMaxDepth ?? this.maxDepth);
   }
 
+  // 下界是 0 而不是 1：0 = 「一层都不许扇出」，是显式可表达的编排选择
+  // （评测 ORCHARM 实验臂用它做「不扇出」对照组；childDepth 最小为 1，1 <= 0 为假
+  // ⇒ task/spawn_agent 一律 DEPTH_LIMIT）。此前下界写死 1 会把 0 静默抬成 1，
+  // 于是「关掉扇出」的配置照样放行第一层子代理——挂了等于没挂。
+  // 负数同样落到 0（fail-closed：无意义的输入宁可不扇出，也不要偷偷放行一层）。
   private clampDepth(depth: number): number {
     if (!Number.isFinite(depth)) return DEFAULT_MAX_DEPTH;
-    return Math.min(Math.max(1, Math.floor(depth)), HARD_MAX_DEPTH);
+    return Math.min(Math.max(0, Math.floor(depth)), HARD_MAX_DEPTH);
   }
 
   private normalizeTreeId(treeId: string | undefined): string {

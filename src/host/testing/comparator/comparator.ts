@@ -159,6 +159,8 @@ export class ABComparator {
       : assertionDecision.passRateB;
     const skillActivationsA = { ...(resultA.skillActivations ?? {}) };
     const skillActivationsB = { ...(resultB.skillActivations ?? {}) };
+    const subagentSpawnsA = resultA.subagentSpawns ?? 0;
+    const subagentSpawnsB = resultB.subagentSpawns ?? 0;
 
     // Step 2.5（WP1-3b）：任一侧没跑成 → 本 pair 不进胜负统计，只标注
     const invalidA = invalidRunReason(resultA);
@@ -191,6 +193,8 @@ export class ABComparator {
         durationB,
         skillActivationsA,
         skillActivationsB,
+        subagentSpawnsA,
+        subagentSpawnsB,
         excludedReason: reasons,
       };
     }
@@ -219,6 +223,8 @@ export class ABComparator {
         durationB,
         skillActivationsA,
         skillActivationsB,
+        subagentSpawnsA,
+        subagentSpawnsB,
         excludedReason: 'skill_not_activated',
       };
     }
@@ -260,6 +266,8 @@ export class ABComparator {
       durationB,
       skillActivationsA,
       skillActivationsB,
+      subagentSpawnsA,
+      subagentSpawnsB,
     };
   }
 

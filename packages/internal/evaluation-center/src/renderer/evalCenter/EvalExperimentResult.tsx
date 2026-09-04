@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { ArrowLeft, Copy, ThumbsDown, ThumbsUp } from 'lucide-react';
 import { resolveEffectiveEvalCompareArm, type EvalExperimentDetail } from '@shared/contract/evaluation';
+import { SPAWN_GUARD } from '@shared/constants/agent';
 import { Button } from '@renderer/components/primitives/Button';
 import { getEvalStatusLabel } from '../i18n/evalStatusLabels';
 import { useEvaluationI18n } from '../i18n/useEvaluationI18n';
@@ -21,6 +22,21 @@ function replace(template: string, values: Record<string, string | number>): str
 
 function formatUsd(value: number | undefined): string {
   return value === undefined ? '—' : `$${value.toFixed(value < 0.1 ? 3 : 2)}`;
+}
+
+type ExperimentLabels = ReturnType<typeof useEvaluationI18n>['t']['evalCenter']['experiments'];
+
+/** 「子代理」维度的人话，与 host 侧 describeEvalCompareDiff 同口径。 */
+function formatOrchestration(
+  orchestration: { allowSwarm: boolean; spawnMaxDepth: number | null },
+  labels: ExperimentLabels,
+): string {
+  const depth = orchestration.spawnMaxDepth === null
+    ? replace(labels.depthDefault, { n: SPAWN_GUARD.DEFAULT_SPAWN_DEPTH })
+    : orchestration.spawnMaxDepth === 0
+      ? labels.depthNone
+      : replace(labels.depthN, { n: orchestration.spawnMaxDepth });
+  return `${orchestration.allowSwarm ? labels.swarmOn : labels.swarmOff} · ${depth}`;
 }
 
 function displayValue(value: unknown): string {
@@ -59,6 +75,7 @@ export const EvalExperimentResult: React.FC<{
       [labels.skill, baseline.skills, candidate.skills],
       [labels.memory, baseline.memory.longTerm ? labels.enabled : labels.disabled, candidate.memory.longTerm ? labels.enabled : labels.disabled],
       [labels.reasoning, baseline.reasoningEffort, candidate.reasoningEffort],
+      [labels.orchestration, formatOrchestration(baseline.orchestration, labels), formatOrchestration(candidate.orchestration, labels)],
     ] as const;
     return values.map(([label, left, right]) => {
       const before = displayValue(left); const after = displayValue(right);
@@ -82,6 +99,19 @@ export const EvalExperimentResult: React.FC<{
   }
 
   const failCount = failingSafetyCount(verdict);
+  // 「挂了 ≠ 用了」：候选臂**显式**配了编排且允许扇出，却全程零次子代理
+  //  ⇒ 结论不说明扇出的效果。判据要的是「这次实验是冲着扇出去的」，
+  // 不是「理论上允许扇出」——后者对每个实验都成立，那句提示就成了噪音。
+  const candidateOrchestration = config?.candidate.orchestration
+    ? resolveEffectiveEvalCompareArm(config.candidate, config.baseline).orchestration
+    : null;
+  const candidateSpawnTotal = detail.cases.reduce(
+    (total, item) => total + (item.data?.subagentSpawns?.candidate ?? 0),
+    0,
+  );
+  const subagentNotUsed = candidateOrchestration !== null
+    && candidateOrchestration.spawnMaxDepth !== 0
+    && candidateSpawnTotal === 0;
   const notMeasured = verdict.hardGate.items.filter((item) => item.status === 'not_measured').map((item) => item.key);
   return (
     <div className="min-h-0 flex-1 overflow-y-auto bg-zinc-950 p-4" data-testid="eval-experiment-result">
@@ -106,6 +136,11 @@ export const EvalExperimentResult: React.FC<{
         })}</div>
       </div>
       <div className="mt-3 rounded-lg bg-zinc-900 px-3 py-2 text-xs text-zinc-400">{labels.blindHint}</div>
+      {subagentNotUsed && (
+        <div className="mt-2 rounded-lg bg-zinc-900 px-3 py-2 text-xs text-zinc-400" data-testid="experiment-subagent-not-used">
+          {labels.subagentNotUsed}
+        </div>
+      )}
 
       <div className="mt-3 flex flex-wrap gap-2" aria-label="pair filters">
         {(Object.keys(labels.filters) as PairFilter[]).map((key) => (
@@ -123,6 +158,7 @@ export const EvalExperimentResult: React.FC<{
             <th className="px-3 py-2">{labels.columns.caseId}</th><th className="px-3 py-2">{labels.columns.a}</th>
             <th className="px-3 py-2">{labels.columns.b}</th><th className="px-3 py-2">{labels.columns.winner}</th>
             <th className="px-3 py-2">{labels.columns.skills}</th>
+            <th className="px-3 py-2">{labels.columns.subagents}</th>
           </tr></thead>
           <tbody className="divide-y divide-zinc-800">
             {rows.map((item) => {
@@ -133,12 +169,16 @@ export const EvalExperimentResult: React.FC<{
               const activations = item.data?.skillActivations;
               const activationsA = assignment?.A === 'candidate' ? activations?.candidate : activations?.baseline;
               const activationsB = assignment?.B === 'candidate' ? activations?.candidate : activations?.baseline;
+              const spawns = item.data?.subagentSpawns;
+              const spawnsA = (assignment?.A === 'candidate' ? spawns?.candidate : spawns?.baseline) ?? 0;
+              const spawnsB = (assignment?.B === 'candidate' ? spawns?.candidate : spawns?.baseline) ?? 0;
               return <tr key={item.caseId} data-testid={`experiment-pair-${item.caseId}`}>
                 <td className="px-3 py-2 font-mono text-zinc-300">{item.caseId}</td>
                 <td className="px-3 py-2 text-zinc-300">{item.data?.statusA ? getEvalStatusLabel(item.data.statusA, statusLabels) : '—'}<div className="text-[10px] text-zinc-500">A={assignment?.A === 'candidate' ? labels.candidateName : labels.baselineName}</div></td>
                 <td className="px-3 py-2 text-zinc-300">{item.data?.statusB ? getEvalStatusLabel(item.data.statusB, statusLabels) : '—'}<div className="text-[10px] text-zinc-500">B={assignment?.B === 'candidate' ? labels.candidateName : labels.baselineName}</div></td>
                 <td className="px-3 py-2 text-zinc-300">{winner}</td>
                 <td className="px-3 py-2 text-zinc-400">{activationsA ?? 0}/{activationsB ?? 0}</td>
+                <td className="px-3 py-2 text-zinc-400">{spawnsA}/{spawnsB}</td>
               </tr>;
             })}
           </tbody>

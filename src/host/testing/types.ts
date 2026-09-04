@@ -178,7 +178,8 @@ export interface UserSimulation {
 /**
  * eval case 侧的 goal 契约声明（YAML snake_case，loader 鸭子类型直通）。
  * 与产品侧 GoalContract 的映射见 goalContractEval.buildLoopGoalContract：
- * eval 无人值守，allowSwarm 强制 false，不在此暴露。
+ * eval 无人值守，allowSwarm 默认 false 且不在 case 里暴露——它是实验臂维度
+ * （EvalCompareArm.orchestration.allowSwarm），由 adapter 逐 run 传入。
  */
 export interface EvalGoalContract {
   /** 自然语言目标；缺省 = 用 case 的 prompt 作为目标文本 */
@@ -427,6 +428,8 @@ export interface TestResult {
   score: number;
   /** 本 case 内每个 skill 的真实激活次数；缺省/空对象均表示未触发。 */
   skillActivations?: Record<string, number>;
+  /** 本 case 内子代理被真正拉起的次数；缺省/0 均表示未出场。 */
+  subagentSpawns?: number;
   /** 本 case 由 BudgetService usage 实际归集的美元成本 */
   costUsd?: number;
   /** provider response usage；缺失或混入本地估算时，usageStatus 固定为 usage_unavailable。 */
@@ -889,6 +892,9 @@ export interface CaseComparison {
   durationB: number;
   skillActivationsA: Record<string, number>;
   skillActivationsB: Record<string, number>;
+  /** 每臂子代理拉起次数；0 = 该臂本题没扇出（结论不说明扇出的效果）。 */
+  subagentSpawnsA: number;
+  subagentSpawnsB: number;
   /** WP1-3b：任一侧没跑成（infra_excluded / 零产出带错误）→ 本 pair 不进胜负统计 */
   excludedReason?: string;
 }

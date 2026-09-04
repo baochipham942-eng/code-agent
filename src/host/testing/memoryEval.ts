@@ -119,6 +119,11 @@ export async function applyCaseMemory(
 ): Promise<string | null> {
   const configError = validateCaseMemory(testCase);
   if (configError) return configError;
+  // 记忆题只能跑在会按题开关/隔离记忆的 adapter 上：没有 configureCaseMemory 的旧 adapter
+  // 若默认开着长期记忆，会直接在用户真实记忆目录读写——静默继续等于拿污染换跑分（审查 #1638）。
+  if (testCase.memory?.enabled === true && configure === undefined) {
+    return 'adapter 没有 configureCaseMemory，记忆题不能在它上面跑（无法按题开关与隔离记忆，会污染真实记忆目录）';
+  }
   try {
     await configure?.(testCase.memory);
     return null;

@@ -25,7 +25,14 @@ function caseWith(memory: TestCase['memory']): TestCase {
 }
 
 // 校验走产线入口 applyCaseMemory（不给 configure 就是纯校验），不另开一个只给测试用的导出
-const validateCaseMemory = (testCase: TestCase) => applyCaseMemory(testCase, undefined);
+const validateCaseMemory = (testCase: TestCase) => applyCaseMemory(testCase, async () => undefined);
+
+describe('applyCaseMemory：adapter 没有 configureCaseMemory', () => {
+  it('记忆题 fail-loud，不静默跑在真实记忆目录上；非记忆题不受影响', async () => {
+    expect(await applyCaseMemory(caseWith({ enabled: true, seed: { files: [{ name: 'mem-a.md', content: 'x' }] } }), undefined)).toContain('configureCaseMemory');
+    expect(await applyCaseMemory(caseWith(undefined), undefined)).toBeNull();
+  });
+});
 
 describe('validateCaseMemory', () => {
   it('未声明 memory 的 case 不受影响', async () => {

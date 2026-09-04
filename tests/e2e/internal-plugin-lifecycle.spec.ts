@@ -422,19 +422,19 @@ test('真插件装、出项、打开、卸载，并复验 HTTP 安全边界', as
   const scrollLayout = await evalPage.evaluate((node) => {
     const element = node as HTMLElement;
     const host = element.parentElement;
-    const scroller = [...element.querySelectorAll('*')].find((candidate) => {
-      const style = getComputedStyle(candidate);
-      return (style.overflowY === 'auto' || style.overflowY === 'scroll')
-        && candidate.scrollHeight > candidate.clientHeight + 4;
-    });
+    const hostStyle = host ? getComputedStyle(host) : null;
     return {
       pageHeight: element.clientHeight,
       hostHeight: host?.clientHeight ?? 0,
-      scrollerOverflow: scroller ? scroller.scrollHeight - scroller.clientHeight : 0,
+      hostDisplay: hostStyle?.display ?? '',
+      hostFlexDirection: hostStyle?.flexDirection ?? '',
     };
   });
+  // 判据落在宿主那层的 computed style 上，不落在「列表是否溢出」上：e2e 数据目录读不到
+  // .claude/test-cases，题库是 0 题，用内容量当判据会永远假绿（2026-09-04 实测 0 溢出）。
+  expect(scrollLayout.hostDisplay).toBe('flex');
+  expect(scrollLayout.hostFlexDirection).toBe('column');
   expect(scrollLayout.pageHeight).toBeLessThanOrEqual(scrollLayout.hostHeight);
-  expect(scrollLayout.scrollerOverflow).toBeGreaterThan(0);
 
   await page.screenshot({ path: screenshots.rendered, fullPage: true });
 

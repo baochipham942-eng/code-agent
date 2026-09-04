@@ -839,8 +839,30 @@ interface EvalCaseListParseError {
 
 export type EvalCaseListItem = EvalCaseListEntry | EvalCaseListParseError;
 
+// 「从会话转成题目」的契约拆在 evaluationHarvest.ts，消费方仍从本文件取。
+export * from './evaluationHarvest';
+
+import type { EvalDraftCaseType as EvalDraftCaseTypeRef, HarvestCandidate as HarvestCandidateRef } from './evaluationHarvest';
+
+export interface CreateEvalDraftRequest {
+  action: 'create-draft';
+  id: string;
+  prompt: string;
+  tags: string[];
+  /** 草稿描述；省略时沿用 prompt。 */
+  description?: string;
+  /** 题目类型；省略时 task。 */
+  type?: EvalDraftCaseTypeRef;
+  /** 来源会话（从会话转成题目时必带）。 */
+  sourceSessionId?: string;
+  /** 人已确认的判定标准；空数组等价于没有。 */
+  expectations?: HarvestCandidateRef[];
+  /** 存为待办：不写判定标准，题库页标「还没有判定标准」。 */
+  pending?: boolean;
+}
+
 export type SaveEvalCaseRequest =
-  | { action: 'create-draft'; id: string; prompt: string; tags: string[] }
+  | CreateEvalDraftRequest
   | { action: 'archive'; id: string };
 
 export interface SaveEvalCaseResult {
@@ -848,6 +870,7 @@ export interface SaveEvalCaseResult {
   id: string;
   file: string;
 }
+
 
 // ============================================================================
 // Structured Replay - shared contract for telemetry/replay consumers

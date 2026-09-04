@@ -5,13 +5,22 @@ import type {
   EvalCaseListEntry,
   EvalCaseListItem,
   EvalCaseSplitBucket,
+  EvalDraftCaseType,
+  HarvestCandidate,
+  HarvestExpectationType,
   SaveEvalCaseRequest,
   SaveEvalCaseResult,
 } from '@shared/contract/evaluation';
+import {
+  EVAL_DRAFT_CASE_TYPES,
+  HARVEST_EXPECTATION_PARAM_KEYS,
+  HARVEST_EXPECTATION_TYPES,
+} from '@shared/contract/evaluation';
+import { guardSensitiveText } from '@host/security/sensitiveDataGuard';
 import { loadEvalSplits } from '@host/testing/ci/sampleSplits';
 import { loadTestSuite } from '@host/testing/testCaseLoader';
 import { resolveCaseLayer } from '@host/testing/caseLayer';
-import type { TestCase } from '@host/testing/types';
+import type { ExpectationType, TestCase, TestCaseType } from '@host/testing/types';
 import { expectationExists, isCaseHardened } from '@host/testing/caseHardening';
 
 const CASE_BANK_RELATIVE_PATH = path.join('.claude', 'test-cases');
@@ -165,6 +174,54 @@ function normalizeTags(tags: unknown): string[] {
   return [...new Set(stringTags.map((tag) => tag.trim()).filter(Boolean))];
 }
 
+// 契约里的白名单必须是宿主断言类型/题型的真子集——写错一个字，草稿会带着
+// 永远跑不起来的断言进题库，而 YAML 本身合法、没有任何门会红。
+const _harvestTypesAreRealExpectations: HarvestExpectationType extends ExpectationType ? true : never = true;
+const _draftTypesAreRealCaseTypes: EvalDraftCaseType extends TestCaseType ? true : never = true;
+void _harvestTypesAreRealExpectations;
+void _draftTypesAreRealCaseTypes;
+
+/**
+ * 敏感内容闸：命中即拒存，无绕过。guardSensitiveText 返回脱敏后的文本，
+ * 与原文不同就说明里面有需要人工处理的东西（密钥、家目录、邮箱、身份证号…）。
+ * maxLength 按原文长度给，避免长题面被默认截断后误判成「命中」。
+ */
+function assertNotSensitive(label: string, text: string): void {
+  if (!text) return;
+  const guarded = guardSensitiveText(text, {
+    surface: 'export',
+    mode: 'share',
+    maxLength: text.length + 1,
+  });
+  if (guarded !== text) {
+    throw new Error(`${label}含敏感内容，先人工处理后再保存`);
+  }
+}
+
+function normalizeExpectations(expectations: HarvestCandidate[] | undefined): HarvestCandidate[] {
+  if (expectations === undefined) return [];
+  if (!Array.isArray(expectations)) throw new Error('判定标准必须是数组');
+  return expectations.map((expectation) => {
+    if (!expectation || typeof expectation !== 'object') throw new Error('判定标准格式不正确');
+    const type = expectation.type;
+    if (!HARVEST_EXPECTATION_TYPES.includes(type)) {
+      throw new Error(`不支持的判定标准类型「${String(type)}」`);
+    }
+    const allowedKeys = HARVEST_EXPECTATION_PARAM_KEYS[type];
+    const params: Record<string, string> = {};
+    for (const key of allowedKeys) {
+      const value = (expectation.params ?? {})[key];
+      if (typeof value !== 'string' || !value.trim()) {
+        throw new Error(`判定标准「${type}」缺少参数 ${key}`);
+      }
+      params[key] = value.trim();
+    }
+    const extra = Object.keys(expectation.params ?? {}).filter((key) => !allowedKeys.includes(key));
+    if (extra.length > 0) throw new Error(`判定标准「${type}」有多余参数：${extra.join('、')}`);
+    return { type, params, reason: String(expectation.reason ?? '').trim() };
+  });
+}
+
 async function createDraft(
   caseBankRoot: string,
   request: Extract<SaveEvalCaseRequest, { action: 'create-draft' }>,
@@ -175,6 +232,14 @@ async function createDraft(
   assertSafeDraftId(id);
   if (!prompt) throw new Error('题目输入不能为空');
   const tags = normalizeTags(request.tags);
+  const description = (request.description ?? prompt).trim() || prompt;
+  const caseType: EvalDraftCaseType = request.type ?? 'task';
+  if (!EVAL_DRAFT_CASE_TYPES.includes(caseType)) throw new Error(`不支持的题目类型「${String(caseType)}」`);
+  const sourceSessionId = request.sourceSessionId?.trim();
+  // 存为待办 = 明确不带判定标准，题库页照旧标「还没有判定标准」。
+  const expectations = request.pending ? [] : normalizeExpectations(request.expectations);
+  assertNotSensitive('题目输入', prompt);
+  assertNotSensitive('题目描述', description);
   for (const filePath of await caseBankYamlFiles(caseBankRoot)) {
     try {
       const suite = await loadTestSuite(filePath);
@@ -195,12 +260,23 @@ async function createDraft(
     name: `${id} draft`,
     cases: [{
       id,
-      type: 'task',
-      description: prompt,
+      type: caseType,
+      description,
       prompt,
       ...(tags.length > 0 ? { tags } : {}),
+      ...(sourceSessionId ? { sourceSessionId } : {}),
+      // 人确认过判定标准也仍是 pending：硬化 = 人把文件移出 drafts/ 并改 reviewed。
       reviewStatus: 'pending',
       expect: {},
+      ...(expectations.length > 0
+        ? {
+          expectations: expectations.map((expectation) => ({
+            type: expectation.type,
+            description: expectation.reason || expectation.type,
+            params: expectation.params,
+          })),
+        }
+        : {}),
       rotation: { introduced: today },
     }],
   });

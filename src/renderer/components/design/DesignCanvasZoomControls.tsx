@@ -78,7 +78,7 @@ export const DesignCanvasZoomControls: React.FC<DesignCanvasZoomControlsProps> =
         aria-label={t.design.zoomLevel}
         aria-expanded={menuOpen}
         title={t.design.zoomLevel}
-        rightIcon={<ChevronDown />}
+        rightIcon={<ChevronDown className="h-3.5 w-3.5" />}
         onClick={() => setMenuOpen((v) => !v)}
         className="px-1.5 py-1 tabular-nums"
       >

@@ -410,6 +410,30 @@ test('真插件装、出项、打开、卸载，并复验 HTTP 安全边界', as
     };
   });
   expect(layout.pageWidth).toBeGreaterThanOrEqual(layout.viewportWidth - layout.sidebarWidth - 2);
+
+  // 2026-09-04（N-EVAL-UX-SCROLL）：宿主 HostSurface 若不是 flex 容器，插件页根节点的
+  // flex-1 + min-h-0 全部失效 —— 页高退化成内容高度（题库 165 行把它撑到 10490px），
+  // 页内每一个 overflow-y-auto 面板都永远滚不动。真机逮到的病，断言落在「页高被宿主那格框住
+  // 且长列表真能滚」上；去掉 HostSurface 的 flex flex-col 这两条必红。
+  await page.getByTestId('eval-center-tab-cases').click();
+  await expect(page.getByTestId('eval-case-list-tab')).toBeVisible({ timeout: 20_000 });
+  const scrollLayout = await evalPage.evaluate((node) => {
+    const element = node as HTMLElement;
+    const host = element.parentElement;
+    const scroller = [...element.querySelectorAll('*')].find((candidate) => {
+      const style = getComputedStyle(candidate);
+      return (style.overflowY === 'auto' || style.overflowY === 'scroll')
+        && candidate.scrollHeight > candidate.clientHeight + 4;
+    });
+    return {
+      pageHeight: element.clientHeight,
+      hostHeight: host?.clientHeight ?? 0,
+      scrollerOverflow: scroller ? scroller.scrollHeight - scroller.clientHeight : 0,
+    };
+  });
+  expect(scrollLayout.pageHeight).toBeLessThanOrEqual(scrollLayout.hostHeight);
+  expect(scrollLayout.scrollerOverflow).toBeGreaterThan(0);
+
   await page.screenshot({ path: screenshots.rendered, fullPage: true });
 
   const e2eDataDir = process.env.CODE_AGENT_E2E_DATA_DIR;

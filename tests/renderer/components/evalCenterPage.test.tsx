@@ -75,12 +75,28 @@ describe('EvalCenterPage', () => {
     expect(screen.queryByText('评测中心', { selector: 'h1,h2' })).toBeNull();
   });
 
-  it('深链到验证（tab 条已无入口）仍渲染验证工作台，供排障用', async () => {
+  it('深链到验证：渲染工作台，并临时把验证 tab 补进 tab 条（否则用户站在没有任何高亮的页上）', async () => {
     useAuthStore.setState({ user: user(true) });
     useEvalCenterStore.setState({ tab: 'validation' });
     render(<EvalCenterPage />);
 
     expect(await screen.findByTestId('in-app-validation-workspace-mock')).toBeTruthy();
+    const validationTab = screen.getByTestId('eval-center-tab-validation');
+    expect(validationTab.getAttribute('aria-selected')).toBe('true');
+    // 补进来的是末位，其余 6 个照旧，随时可以点走
+    expect(screen.getAllByRole('tab').map((tab) => tab.getAttribute('data-testid'))).toEqual([
+      'eval-center-tab-telemetry',
+      'eval-center-tab-replay',
+      'eval-center-tab-cases',
+      'eval-center-tab-scorers',
+      'eval-center-tab-experiments',
+      'eval-center-tab-benchmarks',
+      'eval-center-tab-validation',
+    ]);
+
+    fireEvent.click(screen.getByTestId('eval-center-tab-cases'));
+    expect(useEvalCenterStore.getState().tab).toBe('cases');
+    expect(screen.queryByTestId('eval-center-tab-validation')).toBeNull();
   });
 
   it('切到遥测 / 基准 tab 渲染对应内容', async () => {

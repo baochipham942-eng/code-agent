@@ -49,6 +49,14 @@ const EVAL_TABS: Array<{ key: EvalCenterTab; label: (t: ReturnType<typeof useEva
   { key: 'benchmarks', label: (t) => t.evalCenter.tabBenchmarks },
 ];
 
+// 深链（openEvalCenter('validation')）进来时才临时补进 tab 条：不给它常驻座位，但也不能让
+// 用户站在一个没有任何 tab 高亮的页面上——不知道自己在哪，也不知道这页是怎么来的。
+// 点走之后它自动消失（tab 状态已经不是 validation 了）。
+const VALIDATION_TAB: (typeof EVAL_TABS)[number] = {
+  key: 'validation',
+  label: (t) => t.evalCenter.tabValidation,
+};
+
 const EVAL_TAB_CONTENT: Record<EvalCenterTab, React.ReactNode> = {
   replay: <EvalReplayExplorer />,
   validation: <InAppValidationWorkspace />,
@@ -70,6 +78,10 @@ export const EvalCenterPage: React.FC = () => {
   const canAccess = canAccessFeature('capability.internal', accessSubject);
   const evalCenterTab = useEvalCenterStore((s) => s.tab);
   const setEvalCenterTab = useEvalCenterStore((s) => s.setTab);
+  const visibleTabs = useMemo(
+    () => (evalCenterTab === 'validation' ? [...EVAL_TABS, VALIDATION_TAB] : EVAL_TABS),
+    [evalCenterTab],
+  );
 
   if (!canAccess) {
     return (
@@ -90,7 +102,7 @@ export const EvalCenterPage: React.FC = () => {
         description={pageLabels.description}
         actions={(
           <div className="flex rounded-md border border-zinc-700 p-0.5" role="tablist">
-            {EVAL_TABS.map(({ key, label }) => (
+            {visibleTabs.map(({ key, label }) => (
               <button /* ds-allow:button: 评测中心 tab 切换胶囊（role=tab 分段控件），Button primitive 无 tab 语义变体 */
                 key={key}
                 type="button"

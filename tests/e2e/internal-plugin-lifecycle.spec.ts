@@ -394,9 +394,11 @@ test('真插件装、出项、打开、卸载，并复验 HTTP 安全边界', as
   const evalPage = page.getByTestId('eval-center-page');
   await expect(evalPage).toBeVisible({ timeout: 30_000 });
   await expect(evalPage).toHaveAttribute('data-page-variant', 'inline');
-  for (const tab of ['telemetry', 'replay', 'cases', 'scorers', 'experiments', 'benchmarks', 'validation']) {
+  for (const tab of ['telemetry', 'replay', 'cases', 'scorers', 'experiments', 'benchmarks']) {
     await expect(page.getByTestId(`eval-center-tab-${tab}`)).toBeVisible();
   }
+  // 验证 tab 2026-09-04 撤出 tab 条（结果本来就在 trace 里）；内容页只留深链排障。
+  await expect(page.getByTestId('eval-center-tab-validation')).toHaveCount(0);
   await expect(page.getByText('LIVE', { exact: true })).toHaveCount(0);
   expect(await page.evaluate(() => typeof (window as unknown as Record<string, { Page?: unknown }>).__neoInternalFeature_evaluation_center?.Page)).toBe('function');
   const layout = await evalPage.evaluate((node) => {

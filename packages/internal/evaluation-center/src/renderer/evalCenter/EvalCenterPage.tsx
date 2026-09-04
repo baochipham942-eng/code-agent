@@ -6,10 +6,13 @@
 //   分段 tab 模式照 CapabilityHubPage；tab 状态存 appStore.evalCenterTab，页内
 //   切换走 setEvalCenterTab（不动互斥表、不重置回放深链）。
 // - 入口：用户菜单（admin-only，canAccessFeature('eval.center')）、会话行 hover 眼睛
-//   图标（openEvalCenter('replay', sessionId) 深链）、useInAppValidationBridge（IPC
-//   请求且本页未打开时 openEvalCenter('validation')）。
-// - 不抢占：本页已打开时 bridge 只写 pendingInAppValidationRequest，由这里给「验证」
-//   tab 上角标提示，不打断用户当前 tab。
+//   图标（openEvalCenter('replay', sessionId) 深链）。
+// - 「验证」不在 tab 条里（2026-09-04 爸拍板撤）：它的三件事各有归属——跑脚本是
+//   validate_html_in_app 工具、结果本来就是 trace 里的一条工具调用（回放 tab 看得见）、
+//   产物画面属于产物预览，没有一件需要占评测中心一等 tab；唯一独有的「实时盯着 iframe
+//   点击」自 2026-05 上线零使用（真机 4171 次工具调用里 validate_html_in_app 0 次）。
+//   工具回路不走这里——bridge 打开的是主干 App.tsx 的 showInAppValidation 分支，
+//   与本页无关；排障要手工进仍可 openEvalCenter('validation') 深链（内容保留在下表）。
 // - v2 新增：「遥测」tab 内嵌去外壳化的会话遥测查看器（EvalTelemetryTab，复用
 //   features/telemetry 子组件）；「基准」tab 为 eval-harness 跑分结果只读视图
 //   （EvalBenchmarksTab，experiments 表 + aily 五关卡分组分层）。
@@ -44,7 +47,6 @@ const EVAL_TABS: Array<{ key: EvalCenterTab; label: (t: ReturnType<typeof useEva
   { key: 'scorers', label: (t) => t.evalCenter.tabScorers },
   { key: 'experiments', label: (t) => t.evalCenter.tabExperiments },
   { key: 'benchmarks', label: (t) => t.evalCenter.tabBenchmarks },
-  { key: 'validation', label: (t) => t.evalCenter.tabValidation },
 ];
 
 const EVAL_TAB_CONTENT: Record<EvalCenterTab, React.ReactNode> = {
@@ -62,15 +64,12 @@ export const EvalCenterPage: React.FC = () => {
   const currentUser = useAuthStore((s) => s.user);
   const language = useAppStore((s) => s.language);
   const pageLabels = language === 'zh'
-    ? { title: '评测中心', description: '遥测 · 会话回放 · 题库 · 跑分 · 应用内验证', adminOnly: '评测中心需要管理员权限' }
-    : { title: 'Eval Center', description: 'Telemetry · Session replay · Case bank · Benchmark runs · In-app validation', adminOnly: 'The eval center requires administrator access' };
+    ? { title: '评测中心', description: '遥测 · 会话回放 · 题库 · 跑分', adminOnly: '评测中心需要管理员权限' }
+    : { title: 'Eval Center', description: 'Telemetry · Session replay · Case bank · Benchmark runs', adminOnly: 'The eval center requires administrator access' };
   const accessSubject = useMemo(() => createAccessSubject(currentUser), [currentUser]);
   const canAccess = canAccessFeature('capability.internal', accessSubject);
   const evalCenterTab = useEvalCenterStore((s) => s.tab);
   const setEvalCenterTab = useEvalCenterStore((s) => s.setTab);
-  const hasPendingValidationRequest = useAppStore((s) => Boolean(s.pendingInAppValidationRequest));
-  // bridge 不抢占语义的可视化：验证请求 pending 而用户停在别的 tab 时，给角标。
-  const showValidationBadge = hasPendingValidationRequest && evalCenterTab !== 'validation';
 
   if (!canAccess) {
     return (
@@ -99,17 +98,9 @@ export const EvalCenterPage: React.FC = () => {
                 aria-selected={evalCenterTab === key}
                 data-testid={`eval-center-tab-${key}`}
                 onClick={() => setEvalCenterTab(key)}
-                className={`relative rounded border-b-2 px-2.5 py-1 text-xs transition-colors ${evalCenterTab === key ? 'border-brand text-zinc-100' : 'border-transparent text-zinc-400 hover:text-zinc-200'}`}
+                className={`rounded border-b-2 px-2.5 py-1 text-xs transition-colors ${evalCenterTab === key ? 'border-brand text-zinc-100' : 'border-transparent text-zinc-400 hover:text-zinc-200'}`}
               >
                 {label(t)}
-                {key === 'validation' && showValidationBadge && (
-                  <span
-                    data-testid="eval-center-validation-badge"
-                    className="absolute -right-1 -top-1 rounded-full border border-badge-info/40 bg-sky-500/20 px-1 text-[9px] leading-3 text-badge-info"
-                  >
-                    {t.evalCenter.newRequestBadge}
-                  </span>
-                )}
               </button>
             ))}
           </div>

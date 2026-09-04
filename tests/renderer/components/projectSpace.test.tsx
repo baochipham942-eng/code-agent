@@ -669,7 +669,7 @@ describe('ProjectConfigRail 项目配置（四卡竖排形态，第四波①回�
       ), { timeout: 3000 },
     );
     // 弹的是既有完整信任框（无 testid，按其真实按钮文案定位）
-    const trustButton = await screen.findByText('信任并加载', undefined, { timeout: 3000 });
+    const trustButton = await screen.findByText('启用', undefined, { timeout: 3000 });
     fireEvent.click(trustButton);
 
     // 授权走空间目录 + 自动重放刚才的 SET

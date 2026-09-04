@@ -29,11 +29,13 @@ beforeEach(async () => {
   const rendererDir = path.join(internalPluginRoot, 'dist', 'renderer');
   await fs.mkdir(rendererDir, { recursive: true });
   await fs.writeFile(path.join(rendererDir, 'index.js'), 'window.TEST_PLUGIN = true;', 'utf8');
+  await fs.writeFile(path.join(rendererDir, '.env'), 'INTERNAL_SECRET=1', 'utf8');
   await fs.writeFile(path.join(internalPluginRoot, 'dist', 'secret.js'), 'DO-NOT-SERVE', 'utf8');
   const uiRendererDir = path.join(pluginsDir, 'test-ui', 'dist', 'renderer');
   await fs.mkdir(uiRendererDir, { recursive: true });
   await fs.writeFile(path.join(uiRendererDir, 'index.js'), 'window.TEST_THIRD_PARTY_UI = true;', 'utf8');
   await fs.writeFile(path.join(uiRendererDir, 'index.css'), '.test-third-party-ui {}', 'utf8');
+  await fs.writeFile(path.join(uiRendererDir, '.env'), 'UI_SECRET=1', 'utf8');
   await fs.writeFile(path.join(pluginsDir, 'test-ui', 'dist', 'secret.js'), 'DO-NOT-SERVE-UI', 'utf8');
   loaded = true;
   uiTrusted = true;
@@ -131,6 +133,16 @@ describe('createInternalFeaturesRouter', () => {
     const ui = await fetch(`${baseUrl}/plugin-ui/test-ui/index.js`);
     expect(ui.status).toBe(200);
     expect(await ui.text()).toBe(uiExpected);
+  });
+
+  it('does not serve hidden files inside the renderer directory', async () => {
+    const internalHidden = await fetch(`${baseUrl}/internal-features/evaluation-center/.env`);
+    expect(internalHidden.status).toBe(404);
+    expect(await internalHidden.text()).not.toContain('INTERNAL_SECRET');
+
+    const uiHidden = await fetch(`${baseUrl}/plugin-ui/test-ui/.env`);
+    expect(uiHidden.status).toBe(404);
+    expect(await uiHidden.text()).not.toContain('UI_SECRET');
   });
 
   it('serves only loaded admin plugin files and blocks traversal without existence leaks', async () => {

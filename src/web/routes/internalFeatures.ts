@@ -20,6 +20,15 @@ function wildcardPath(value: unknown): string {
   return typeof value === 'string' ? value : '';
 }
 
+function sendPluginAsset(res: Response, base: string, requestedFile: string): void {
+  res.setHeader('Cache-Control', 'no-cache');
+  // send 默认 ignore 点目录段。res.sendFile(absPath) 会把 ~/.code-agent 算进去静默 404。
+  // 以 renderer 目录为 root、只传相对路径，父级点目录不再参与判断；目录内 .env 仍 404。
+  res.sendFile(path.relative(base, requestedFile), { root: base }, (error) => {
+    if (error && !res.headersSent) res.sendStatus(404);
+  });
+}
+
 export function createInternalFeaturesRouter(deps: InternalFeaturesRouterDeps): Router {
   const router = Router();
   const verifyPluginTrust = deps.verifyPluginTrust ?? verifyInstalledPluginTrust;
@@ -49,13 +58,7 @@ export function createInternalFeaturesRouter(deps: InternalFeaturesRouterDeps): 
       return;
     }
 
-    res.setHeader('Cache-Control', 'no-cache');
-    // send 默认 dotfiles:'ignore'：绝对路径里任何点开头目录段都会 404。
-    // web 数据目录是 ~/.code-agent 或 ~/.code-agent-dev，必须显式放行。
-    // 路径逃逸仍由上方 startsWith(base + sep) 包含检查拦下。
-    res.sendFile(requestedFile, { dotfiles: 'allow' }, (error) => {
-      if (error && !res.headersSent) res.sendStatus(404);
-    });
+    sendPluginAsset(res, base, requestedFile);
   });
 
   router.get('/plugin-ui/:id/{*path}', async (req: Request, res: Response) => {
@@ -85,10 +88,7 @@ export function createInternalFeaturesRouter(deps: InternalFeaturesRouterDeps): 
       return;
     }
 
-    res.setHeader('Cache-Control', 'no-cache');
-    res.sendFile(requestedFile, { dotfiles: 'allow' }, (error) => {
-      if (error && !res.headersSent) res.sendStatus(404);
-    });
+    sendPluginAsset(res, base, requestedFile);
   });
 
   return router;

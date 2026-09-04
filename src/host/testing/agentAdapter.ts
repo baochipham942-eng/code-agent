@@ -624,6 +624,10 @@ export class StandaloneAgentAdapter implements AgentInterface {
         ? buildLoopGoalContract(this.goalContract, prompt, this.orchestration?.allowSwarm)
         : undefined;
       const goalRunForThisRun = loopGoalContract ? createGoalRunRecord() : undefined;
+      // 审计 R2-H1 同款：评测信号（skill / 记忆 / 子代理）也绑定本次 run 的 testId。
+      // 超时后 testRunner 已切到下一题并改了 this.evaluationTestId，孤儿 loop 迟到的
+      // subagent started / skill_activated 若读 this，会把 A 题的触发记到 B 题头上。
+      const testIdForThisRun = this.evaluationTestId;
       if (goalRunForThisRun) {
         this.goalRun = goalRunForThisRun;
       }
@@ -688,20 +692,20 @@ export class StandaloneAgentAdapter implements AgentInterface {
             if (goalRunForThisRun) {
               applyGoalEvent(goalRunForThisRun, event);
             }
-            if (this.evaluationTestId) {
+            if (testIdForThisRun) {
               if (event.type === 'skill_activated') {
-                const current = this.skillActivations.get(this.evaluationTestId) ?? {};
+                const current = this.skillActivations.get(testIdForThisRun) ?? {};
                 current[event.data.name] = (current[event.data.name] ?? 0) + 1;
-                this.skillActivations.set(this.evaluationTestId, current);
-                this.onEvaluationSignal?.({ type: 'skill_activated', testId: this.evaluationTestId, name: event.data.name });
+                this.skillActivations.set(testIdForThisRun, current);
+                this.onEvaluationSignal?.({ type: 'skill_activated', testId: testIdForThisRun, name: event.data.name });
               } else if (event.type === 'memory_injected') {
-                this.onEvaluationSignal?.({ type: 'memory_injected', testId: this.evaluationTestId, id: event.data.id });
+                this.onEvaluationSignal?.({ type: 'memory_injected', testId: testIdForThisRun, id: event.data.id });
               } else if (event.type === 'subagent_activity' && event.data.kind === 'started') {
                 this.subagentSpawns.set(
-                  this.evaluationTestId,
-                  (this.subagentSpawns.get(this.evaluationTestId) ?? 0) + 1,
+                  testIdForThisRun,
+                  (this.subagentSpawns.get(testIdForThisRun) ?? 0) + 1,
                 );
-                this.onEvaluationSignal?.({ type: 'subagent_spawned', testId: this.evaluationTestId, id: event.data.agentId });
+                this.onEvaluationSignal?.({ type: 'subagent_spawned', testId: testIdForThisRun, id: event.data.agentId });
               }
             }
             switch (event.type) {

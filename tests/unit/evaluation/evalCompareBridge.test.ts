@@ -28,10 +28,10 @@ describe('compare request through EvalRunBridge', () => {
     const baseline = { name: 'production', orchestration: { allowSwarm: true } };
     expect(describeEvalCompareDiff(baseline, {
       name: 'candidate', orchestration: { allowSwarm: false, spawnMaxDepth: 0 },
-    })).toEqual(['子代理：允许扇出，最深 3 层（默认） → 不扇出，一层都不扇出']);
+    })).toEqual(['子代理：编排引导开，最深 3 层（默认） → 编排引导关，一层都不扇出']);
     expect(describeEvalCompareDiff(baseline, {
       name: 'candidate', orchestration: { allowSwarm: true, spawnMaxDepth: 2 },
-    })).toEqual(['子代理：允许扇出，最深 3 层（默认） → 允许扇出，最深 2 层']);
+    })).toEqual(['子代理：编排引导开，最深 3 层（默认） → 编排引导开，最深 2 层']);
     // 两臂编排一致时不该冒出一行噪音
     expect(describeEvalCompareDiff(baseline, { name: 'candidate', systemPrompt: 'new' }))
       .toEqual(['systemPrompt: sys-v45 → candidate']);

@@ -118,7 +118,10 @@ export function assertEvalCompareDistinct(baseline: EvalCompareArm, candidate: E
   }
 }
 
-/** 「子代理」维度的人话：先说扇不扇出，再说最深几层。 */
+/**
+ * 「子代理」维度的人话。allowSwarm 只管 goal run 首轮的编排引导（注入引导 + 预加载 workflow），
+ * 真正决定子代理能不能被拉起的是深度：0 = 一层都不扇出。措辞上不能把 allowSwarm 说成「不扇出」。
+ */
 function describeOrchestration(
   orchestration: { allowSwarm: boolean; spawnMaxDepth: number | null },
 ): string {
@@ -127,7 +130,7 @@ function describeOrchestration(
     : orchestration.spawnMaxDepth === 0
       ? '一层都不扇出'
       : `最深 ${orchestration.spawnMaxDepth} 层`;
-  return `${orchestration.allowSwarm ? '允许扇出' : '不扇出'}，${depth}`;
+  return `${orchestration.allowSwarm ? '编排引导开' : '编排引导关'}，${depth}`;
 }
 
 export function describeEvalCompareDiff(baseline: EvalCompareArm, candidate: EvalCompareArm): string[] {

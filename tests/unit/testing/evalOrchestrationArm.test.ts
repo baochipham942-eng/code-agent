@@ -218,6 +218,22 @@ describe('子代理触发次数：装好要接电', () => {
     expect(adapter.consumeSubagentSpawns('case-1')).toBe(2);
     expect(adapter.consumeSubagentSpawns('case-1')).toBe(0);
   });
+
+  it('超时孤儿 loop 迟到的 started 记在它自己那题，不记到下一题头上（审计 R2-H1 同款）', async () => {
+    const adapter = new StandaloneAgentAdapter({
+      workingDirectory: '/tmp',
+      modelConfig: { provider: 'mock', model: 'mock-model' },
+    });
+    adapter.configureEvaluationCase('case-a');
+    scriptedEvents = [];
+    await adapter.sendMessage('run');
+    const orphanOnEvent = capturedLoopConfigs[0].onEvent;
+    // testRunner 超时后切到下一题——A 题的 loop 还活着并迟到发了 started
+    adapter.configureEvaluationCase('case-b');
+    orphanOnEvent({ type: 'subagent_activity', data: { kind: 'started', agentId: 'late' } } as unknown as AgentEvent);
+    expect(adapter.consumeSubagentSpawns('case-b')).toBe(0);
+    expect(adapter.consumeSubagentSpawns('case-a')).toBe(1);
+  });
 });
 
 describe('评测里子代理工具到底在不在工具面上（as-built 事实，别猜）', () => {

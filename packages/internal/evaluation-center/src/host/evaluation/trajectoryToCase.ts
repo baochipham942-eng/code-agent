@@ -35,20 +35,20 @@ export interface DraftSeed {
   note?: string;
 }
 
-/** 只读查询点踩反馈（rating=-1），时间倒序。 */
+/** 只读查询点踩反馈（rating=-1），时间倒序；给了 sessionId 就只查那一场。 */
 export function queryNegativeFeedback(
   db: SQLiteDatabase,
-  options: { limit: number },
+  options: { limit: number; sessionId?: string },
 ): NegativeFeedbackRow[] {
   const rows = db
     .prepare(
       `SELECT id, session_id, turn_id, message_id, comment, created_at
        FROM telemetry_feedback
-       WHERE rating = -1
+       WHERE rating = -1${options.sessionId ? ' AND session_id = ?' : ''}
        ORDER BY created_at DESC
        LIMIT ?`,
     )
-    .all(options.limit) as Array<Record<string, unknown>>;
+    .all(...(options.sessionId ? [options.sessionId] : []), options.limit) as Array<Record<string, unknown>>;
 
   return rows.map((row) => ({
     id: String(row.id),

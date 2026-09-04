@@ -191,6 +191,14 @@ describe('shell redirect write targets', () => {
     ['$runner script.sh', 'uncertain-redirection:dynamic-command'],
     ['sh <<EOF', 'uncertain-redirection:sh'],
     ['eval <<EOF', 'uncertain-redirection:eval'],
+    ['bash script.sh', 'uncertain-redirection:bash'],
+    ['bash -x script.sh', 'uncertain-redirection:bash'],
+    ['sh script.sh', 'uncertain-redirection:sh'],
+    ['sh -x script.sh', 'uncertain-redirection:sh'],
+    ['bash "$SCRIPT"', 'uncertain-redirection:bash'],
+    ['source script.sh', 'uncertain-redirection:source'],
+    ['. script.sh', 'uncertain-redirection:source'],
+    ['git log | sh', 'uncertain-redirection:sh'],
   ])('fails closed when a wrapped script cannot be resolved: %s', (command, reason) => {
     expect(resolve(command)).toMatchObject({ targets: [], uncertain: [reason] });
   });
@@ -218,14 +226,7 @@ describe('shell redirect write targets', () => {
     "sed 's/>/x/' f",
     'echo "a${IFS}b"',
     'echo "$\'x\'"',
-    'bash script.sh',
-    'bash -x script.sh',
-    'sh -x script.sh',
-    'bash "$SCRIPT"',
     'bash --rcfile "$F" -c \'echo hi\'',
-    'source script.sh',
-    '. script.sh',
-    'git log | sh',
   ])('ignores redirect syntax in ordinary quoted arguments: %s', (command) => {
     expect(resolve(command)).toMatchObject({ targets: [], uncertain: [] });
   });

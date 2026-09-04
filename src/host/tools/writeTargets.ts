@@ -190,7 +190,7 @@ function findShellScriptIndex(
     }
     index += 1;
   }
-  return { uncertain: false };
+  return { uncertain: true };
 }
 
 function splitShellSegments(command: string): string[] {
@@ -342,6 +342,10 @@ function dynamicExecutionUncertainty(segment: string, words: string[]): string |
     commandIndex < words.length
     && SHELL_ASSIGNMENT_PREFIX.test(canonicalizeCommand(words[commandIndex]).command)
   ) commandIndex += 1;
+  const command = shellExecutableName(words[commandIndex]);
+  if ((command === 'source' || command === '.') && commandIndex + 1 < words.length) {
+    return 'source';
+  }
   for (let index = commandIndex; index < words.length; index += 1) {
     const executable = shellExecutableName(words[index]);
     if (!SHELL_COMMAND_WRAPPERS.has(executable) && executable !== 'eval') continue;

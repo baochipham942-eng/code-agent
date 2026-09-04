@@ -170,7 +170,7 @@ const permissionRequestSchema = typed<PermissionRequest>(z.object({
     newContent: z.string().optional(),
     server: z.string().optional(),
     toolName: z.string().optional(),
-    commandRiskLevel: z.enum(['safe', 'low', 'medium', 'high', 'critical']).optional(),
+    commandRiskLevel: z.enum(['safe', 'unknown', 'low', 'medium', 'high', 'critical']).optional(),
     commandSecurityFlags: z.array(z.string()).optional(),
     affectedPath: z.string().optional(),
     affectedFileCount: z.number().int().nonnegative().optional(),

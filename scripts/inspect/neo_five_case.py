@@ -243,7 +243,26 @@ def _assert_invocation_grew(*, before: int, after: int, invocation: int) -> None
         )
 
 
+def _assert_follow_up_carried_history(*, messages: list[Any], invocation: int) -> None:
+    """Fail closed when a follow-up CLI request omitted first-turn context.
+
+    Inspect this invocation's generation (`bridge.state` after `_adopt_thread`,
+    whose prefix-before-last-user is the model-event input), not the stitched
+    state. Assistant-count growth cannot catch a 1-assistant first turn plus a
+    2-assistant tool follow-up after a full replace (2>1 still grows).
+    """
+    if not _follow_up_request_has_history(messages):
+        raise RuntimeError(
+            "inspect trace health failed at invocation "
+            f"{invocation}: follow-up request did not carry first-turn history"
+        )
+
+
 def _assert_follow_up_complete(*, final: int, baseline: int, follow_ups: list[str]) -> None:
+    # Defensive redundancy: per-invocation strict growth already implies
+    # final >= baseline + len(prompts) > baseline + len(follow_ups). Kept so a
+    # later weakening of the per-invocation assert still cannot ship a short
+    # trace to the scorer. Unreachable on the current Python path.
     required = baseline + len(follow_ups)
     if final < required:
         raise RuntimeError(
@@ -357,11 +376,18 @@ async def _forward_bridged_invocations(
         if index == 0:
             current = adopted
         else:
+            # Check the generation (this round's model-event input), never the
+            # stitched state. Missing history raises before stitch/growth, so
+            # a 1-assistant first turn + 2-assistant tool follow-up cannot
+            # pass on 2>1 after a full replace.
+            _assert_follow_up_carried_history(
+                messages=adopted.messages, invocation=index
+            )
             last = _last_assistant(adopted.messages)
             last_text = _message_text(last).strip() if last else ""
             if last is None or last_text == previous_text:
                 current = adopted
-            elif _follow_up_request_has_history(adopted.messages):
+            else:
                 # Fresh-bridge `_adopt_thread` replaces state in place.
                 # Neo resume may merge first-turn tool-call+answer into one
                 # assistant. Keep the forwarded first-turn trace and append
@@ -370,8 +396,6 @@ async def _forward_bridged_invocations(
                 adopted.messages = forwarded + _invocation_tail(
                     adopted.messages, forwarded
                 )
-                current = adopted
-            else:
                 current = adopted
         after = _assistant_count(current.messages)
         _assert_invocation_grew(before=before, after=after, invocation=index)

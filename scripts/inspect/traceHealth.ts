@@ -1,7 +1,20 @@
 /**
  * In-repo testable copy of the Neo/Grok inspect follow-up stitch.
  * Mirrors `scripts/inspect/neo_five_case.py` `_invocation_tail` (line 211)
- * and `_forward_bridged_invocations` (line 333). Change one, change the other.
+ * and `_forward_bridged_invocations` (line 352). Change one, change the other.
+ *
+ * Intentional shape differences vs Python (not bugs):
+ * 1. Empty generation returns the seeded state. Python's no-model-call leaves
+ *    the forwarded AgentState (history still present). The TS fixture uses []
+ *    for that case; treating [] as "no history" would mis-fire the history gate.
+ * 2. isFollowUp is `index>0 || countAssistants(state)>0`. Python only uses
+ *    `index>0`. Tests seed turn-1 as `initial` and pass the follow-up as
+ *    invocations[0]; the assistant-count disjunct walks them into the
+ *    follow-up branch.
+ * 3. Same-tail equality is skipped when there is no previous assistant
+ *    (`previous && ...`). Python compares against previous_text="" and can
+ *    enter that branch. Follow-up with empty state is not a production path
+ *    (index>0 implies the first invocation already ran).
  */
 export type BridgeMode = 'fresh-per-invocation' | 'shared-bridge';
 
@@ -116,6 +129,17 @@ function followUpRequestHasHistory(messages: TraceMessage[]): boolean {
   return countAssistants(prefix) >= 1;
 }
 
+function assertFollowUpCarriedHistory(
+  messages: TraceMessage[],
+  invocation: number,
+): void {
+  if (!followUpRequestHasHistory(messages)) {
+    throw new TraceHealthError(
+      `inspect trace health failed at invocation ${invocation}: follow-up request did not carry first-turn history`,
+    );
+  }
+}
+
 function messageFingerprint(message: TraceMessage): string {
   return JSON.stringify([message.role, (message.text ?? '').trim()]);
 }
@@ -144,16 +168,17 @@ function invocationTail(
 /**
  * Model inspect_ai `_track_state` plus the solver follow-up stitch.
  * Fresh bridge first invocation: the first observed generation replaces
- * `state.messages`. Follow-up: if the CLI request carried history (tool
- * result or ≥2 assistants), append this invocation's full new tail
- * (tool-call assistant + tool + answer) onto the forwarded first-turn
- * trace — Neo restore merges tool-call+answer into one assistant, so
- * replacing would drop turn_count. Same-tail (no new answer) still
- * replaces, then the health assertion fails closed. Follow-up without
- * history still replaces, so 2→1 stays fail-closed. Empty generation
- * means no model call; seeded state stays. Shared bridge: continuation
- * must be a byte-level prefix of the in-flight thread; otherwise the
- * generation is parked and never promoted.
+ * `state.messages`. Follow-up: the generation (this round's model-event
+ * input) must carry first-turn history or we raise before stitch — a
+ * 1-assistant first turn plus a 2-assistant tool follow-up cannot pass
+ * on count growth after a full replace. With history, append this
+ * invocation's full new tail (tool-call assistant + tool + answer) onto
+ * the forwarded first-turn trace — Neo restore merges tool-call+answer
+ * into one assistant, so replacing would drop turn_count. Same-tail (no
+ * new answer) still replaces, then the health assertion fails closed.
+ * Empty generation means no model call; seeded state stays. Shared
+ * bridge: continuation must be a byte-level prefix of the in-flight
+ * thread; otherwise the generation is parked and never promoted.
  */
 function adoptInvocation(options: {
   mode: BridgeMode;
@@ -166,15 +191,13 @@ function adoptInvocation(options: {
     if (options.generation.length === 0) return options.state;
     const isFollowUp = (options.invocationIndex ?? 0) > 0 || countAssistants(options.state) > 0;
     if (!isFollowUp) return options.generation;
+    assertFollowUpCarriedHistory(options.generation, options.invocationIndex ?? 0);
     const last = lastAssistant(options.generation);
     const previous = lastAssistant(options.state);
     if (!last || (previous && (last.text ?? '').trim() === (previous.text ?? '').trim())) {
       return options.generation;
     }
-    if (followUpRequestHasHistory(options.generation)) {
-      return [...options.state, ...invocationTail(options.generation, options.state)];
-    }
-    return options.generation;
+    return [...options.state, ...invocationTail(options.generation, options.state)];
   }
   const reconstructed = options.reconstructedPrefix ?? options.state;
   if (prefixEquals(options.state, reconstructed)) {

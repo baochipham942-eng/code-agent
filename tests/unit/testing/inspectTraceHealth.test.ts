@@ -45,6 +45,20 @@ const turn1State: TraceMessage[] = [user, assistantCall, toolResult, answer1];
 const followUpWithHistory: TraceMessage[] = [...turn1State, followUpUser, answer2];
 /** 09-04 failure shape: second process sent only the follow-up, no turn-1 history. */
 const followUpWithoutHistory: TraceMessage[] = [followUpUser, answer2];
+/** Reviewer 09-04 v3: first turn is one plain-text assistant. */
+const firstTurnPlain: TraceMessage[] = [user, answer1];
+/** Follow-up that called a tool without first-turn history (1 -> 2 would pass growth). */
+const followUpToolNoHistory: TraceMessage[] = [
+  followUpUser,
+  followUpCall,
+  followUpTool,
+  answer2,
+];
+const followUpPlainWithHistory: TraceMessage[] = [
+  ...firstTurnPlain,
+  followUpUser,
+  answer2,
+];
 
 const SINGLE_TURN_TRACE_BYTES = '{"toolExecutions":[{"tool":"ListDirectory","input":{"path":"."},"output":"package.json","success":true,"duration":0,"timestamp":0}],"responses":["package.json is present"],"errors":[],"turnCount":2,"trace":[{"step":1,"kind":"assistant","turn":1,"text":"","tool_calls":[{"id":"c1","tool":"ListDirectory","input":{"path":"."}}]},{"step":2,"kind":"tool","tool":"ListDirectory","input":{"path":"."},"output":"package.json","success":true,"duration":0,"timestamp":0},{"step":3,"kind":"assistant","turn":2,"text":"package.json is present","tool_calls":[]}]}';
 
@@ -117,7 +131,7 @@ describe('Inspect multi-turn trace health', () => {
       invocations: [followUpWithoutHistory],
       followUpPromptsSent: ['what is the version?'],
     })).toThrowError(
-      /inspect trace health failed at invocation 0: assistant count 2 -> 1 \(expected strict growth\)/,
+      /inspect trace health failed at invocation 0: follow-up request did not carry first-turn history/,
     );
   });
 
@@ -128,7 +142,7 @@ describe('Inspect multi-turn trace health', () => {
       invocations: [[followUpUser, followUpCall, followUpTool, answer2]],
       followUpPromptsSent: ['what is the version?'],
     })).toThrowError(
-      /inspect trace health failed at invocation 0: assistant count 2 -> 2 \(expected strict growth\)/,
+      /inspect trace health failed at invocation 0: follow-up request did not carry first-turn history/,
     );
   });
 
@@ -274,6 +288,41 @@ describe('Inspect multi-turn trace health', () => {
       expect(lastOnly.slice(-3)).toEqual([followUpCall, followUpTool, answer2]);
       expect(extractAssertionContext(lastOnly).toolExecutions).toHaveLength(2);
       expect(extractAssertionContext(lastOnly).turnCount).toBe(4);
+    }).toThrowError(/expected/);
+  });
+
+  it('T9: follow-up without history that grew 1 -> 2 still fails closed', () => {
+    expect(() => forwardInvocations({
+      mode: 'fresh-per-invocation',
+      initial: [user],
+      invocations: [firstTurnPlain, followUpToolNoHistory],
+      followUpPromptsSent: ['what is the version?'],
+    })).toThrowError(
+      /inspect trace health failed at invocation 1: follow-up request did not carry first-turn history/,
+    );
+  });
+
+  it('T10: follow-up with full history and a normal answer is not blocked', () => {
+    const state = forwardInvocations({
+      mode: 'fresh-per-invocation',
+      initial: [user],
+      invocations: [firstTurnPlain, followUpPlainWithHistory],
+      followUpPromptsSent: ['what is the version?'],
+    });
+    expect(countAssistants(state)).toBe(2);
+    expect(extractAssertionContext(state).responses).toEqual([
+      'The package name is code-agent.',
+      'The version is 0.33.0.',
+    ]);
+  });
+
+  it('M4: replacing a no-history 1->2 follow-up drops the first turn so T9 goes red', () => {
+    expect(countAssistants(followUpToolNoHistory)).toBeGreaterThan(
+      countAssistants(firstTurnPlain),
+    );
+    expect(() => {
+      expect(followUpToolNoHistory.some((message) => message.text === answer1.text)).toBe(true);
+      expect(extractAssertionContext(followUpToolNoHistory).responses).toContain(answer1.text);
     }).toThrowError(/expected/);
   });
 

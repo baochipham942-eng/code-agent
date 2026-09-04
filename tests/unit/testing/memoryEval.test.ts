@@ -8,11 +8,11 @@ import * as path from 'node:path';
 
 import { getMemoryDir } from '../../../src/host/lightMemory/indexLoader';
 import {
+  applyCaseMemory,
   evaluateMemoryRecalledExpectation,
   evaluateMemoryWrittenExpectation,
   seedCaseMemory,
   snapshotMemoryDir,
-  validateCaseMemory,
 } from '../../../src/host/testing/memoryEval';
 import type { MemoryFileSnapshot, TestCase } from '../../../src/host/testing/types';
 
@@ -24,42 +24,42 @@ function caseWith(memory: TestCase['memory']): TestCase {
   };
 }
 
+// 校验走产线入口 applyCaseMemory（不给 configure 就是纯校验），不另开一个只给测试用的导出
+const validateCaseMemory = (testCase: TestCase) => applyCaseMemory(testCase, undefined);
+
 describe('validateCaseMemory', () => {
-  it('未声明 memory 的 case 不受影响', () => {
-    expect(validateCaseMemory(caseWith(undefined))).toBeNull();
+  it('未声明 memory 的 case 不受影响', async () => {
+    await expect(validateCaseMemory(caseWith(undefined))).resolves.toBeNull();
   });
 
-  it('合法声明通过', () => {
-    expect(validateCaseMemory(caseWith({
+  it('合法声明通过', async () => {
+    await expect(validateCaseMemory(caseWith({
       enabled: true,
       seed: { files: [{ name: 'mem-a.md', content: '事实一' }] },
-    }))).toBeNull();
+    }))).resolves.toBeNull();
   });
 
-  it('enabled 不是 true 时报人话', () => {
-    const message = validateCaseMemory(caseWith({ enabled: false as unknown as true }));
-    expect(message).toContain('memory.enabled');
+  it('enabled 不是 true 时报人话', async () => {
+    expect(await validateCaseMemory(caseWith({ enabled: false as unknown as true }))).toContain('memory.enabled');
   });
 
-  it('拒绝带路径的 seed 文件名', () => {
-    const message = validateCaseMemory(caseWith({
+  it('拒绝带路径的 seed 文件名', async () => {
+    expect(await validateCaseMemory(caseWith({
       enabled: true,
       seed: { files: [{ name: '../escape.md', content: 'x' }] },
-    }));
-    expect(message).toContain('不合法');
+    }))).toContain('不合法');
   });
 
-  it('拒绝非 .md 的 seed 文件名', () => {
-    const message = validateCaseMemory(caseWith({
+  it('拒绝非 .md 的 seed 文件名', async () => {
+    expect(await validateCaseMemory(caseWith({
       enabled: true,
       seed: { files: [{ name: 'mem-a.txt', content: 'x' }] },
-    }));
-    expect(message).toContain('不合法');
+    }))).toContain('不合法');
   });
 
-  it('拒绝空 seed 列表与重名文件', () => {
-    expect(validateCaseMemory(caseWith({ enabled: true, seed: { files: [] } }))).toContain('非空数组');
-    expect(validateCaseMemory(caseWith({
+  it('拒绝空 seed 列表与重名文件', async () => {
+    expect(await validateCaseMemory(caseWith({ enabled: true, seed: { files: [] } }))).toContain('非空数组');
+    expect(await validateCaseMemory(caseWith({
       enabled: true,
       seed: { files: [{ name: 'mem-a.md', content: 'x' }, { name: 'mem-a.md', content: 'y' }] },
     }))).toContain('出现了两次');

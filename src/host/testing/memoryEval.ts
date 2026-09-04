@@ -36,7 +36,7 @@ const SAFE_MEMORY_FILENAME = /^[A-Za-z0-9][A-Za-z0-9._-]*\.md$/;
  * case 的 memory 声明校验：返回错误描述，合法（或没配）时返回 null。
  * 用户面报错要说清「哪个题、哪个文件名、为什么不行」——这些是写题的人当场要改的东西。
  */
-export function validateCaseMemory(testCase: TestCase): string | null {
+function validateCaseMemory(testCase: TestCase): string | null {
   const memory = testCase.memory;
   if (memory === undefined) return null;
   if (memory.enabled !== true) {

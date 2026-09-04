@@ -219,8 +219,8 @@ export const EvalCaseListTab: React.FC = () => {
           </Select>
         </label>
         <span className="ml-auto text-[10px] text-zinc-600">{c.total.replace('{visible}', String(filteredItems.length)).replace('{total}', String(items.length))}</span>
-        <Button variant="ghost" size="sm" leftIcon={<RefreshCw />} onClick={() => void loadCases()}>{c.refresh}</Button>
-        <Button size="sm" leftIcon={<FilePlus2 />} onClick={() => setDraftOpen(true)}>{c.newDraft}</Button>
+        <Button variant="ghost" size="sm" leftIcon={<RefreshCw className="h-3.5 w-3.5" />} onClick={() => void loadCases()}>{c.refresh}</Button>
+        <Button size="sm" leftIcon={<FilePlus2 className="h-3.5 w-3.5" />} onClick={() => setDraftOpen(true)}>{c.newDraft}</Button>
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto px-3 py-2">
@@ -287,7 +287,7 @@ export const EvalCaseListTab: React.FC = () => {
                     <td className="border-b border-zinc-900 px-2 py-2">
                       <div className="flex items-center gap-1">
                         <Button size="sm" variant="ghost" onClick={() => void copyPath(item.file)}>{c.copyPath}</Button>
-                        {status !== 'archived' && <Button size="sm" variant="ghost" leftIcon={<Archive />} onClick={() => setArchiveItem(item)}>{c.archive}</Button>}
+                        {status !== 'archived' && <Button size="sm" variant="ghost" leftIcon={<Archive className="h-3.5 w-3.5" />} onClick={() => setArchiveItem(item)}>{c.archive}</Button>}
                       </div>
                     </td>
                   </tr>

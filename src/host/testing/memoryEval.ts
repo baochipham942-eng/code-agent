@@ -216,7 +216,9 @@ export function evaluateMemoryRecalledExpectation(
   const injected = record.entries;
   const hits = patterns.filter((pattern) => injected.some((entry) => pattern.test(entry)));
   const matched = rawMode === 'all' ? hits.length === patterns.length : hits.length > 0;
-  const passed = negate ? !matched : matched;
+  // negate = 「一条都不许被注入」，与 mode 无关：mode=all 下若取 !matched，只命中一部分禁用
+  // 条目也会判过——泄露/错误召回被放行（审查 #1638）。
+  const passed = negate ? hits.length === 0 : matched;
   return {
     passed,
     actual: injected.length === 0 ? 'no memory entries injected' : injected,

@@ -159,6 +159,16 @@ describe('memory_recalled', () => {
     ).passed).toBe(false);
   });
 
+  it('negate + mode=all：禁用条目只命中一部分也必须红（不是「没全中就算没中」）', () => {
+    const partial = { injections: 1, entries: ['secret-a', 'mem-orchid'] };
+    expect(evaluateMemoryRecalledExpectation(
+      { entries: ['secret-a', 'secret-b'], negate: true, mode: 'all' }, partial,
+    ).passed).toBe(false);
+    expect(evaluateMemoryRecalledExpectation(
+      { entries: ['secret-x', 'secret-y'], negate: true, mode: 'all' }, partial,
+    ).passed).toBe(true);
+  });
+
   it('缺记录来源时 fail-loud，不静默算过（negate 也不许）', () => {
     const positive = evaluateMemoryRecalledExpectation({ entries: ['mem-orchid'] }, undefined);
     expect(positive.passed).toBe(false);

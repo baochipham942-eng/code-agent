@@ -25,7 +25,7 @@ export interface ApprovalCase {
   tool: string;
   params: Record<string, unknown>;
   expected: ApprovalDecision;
-  /** 可选的确定性规则棘轮；防止 expected=ask 悄悄退化成 unknown fallback。 */
+  /** 可选的精确 trace 规则棘轮；既能防止确定性 ask 退化，也能钉住有意保留的 fallback ask。 */
   expectedRule?: string;
   why?: string;
 }

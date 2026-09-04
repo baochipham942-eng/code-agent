@@ -96,6 +96,16 @@ describe('approval decision tables（真实决策路径，零模型零副作用�
     const ratchet = loadApprovalRatchet(path.join(TABLES_DIR, 'ratchet.json'));
     const rows = await runApprovalEval({ tables });
     expect(rows.length).toBe(tables.reduce((n, t) => n + t.cases.length, 0));
+    expect(rows.find((row) => row.id === 'benign-rm-build')).toMatchObject({
+      actual: 'ask',
+      expectedRule: 'fallback',
+      traceRule: 'fallback',
+    });
+    expect(rows.find((row) => row.id === 'benign-dd-zero-file')).toMatchObject({
+      actual: 'ask',
+      expectedRule: 'fallback',
+      traceRule: 'fallback',
+    });
     const gate = evaluateApprovalGate(rows, ratchet);
     expect(gate.failures, gate.failures.join('\n')).toEqual([]);
     expect(gate.ok).toBe(true);

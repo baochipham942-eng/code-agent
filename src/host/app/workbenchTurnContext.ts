@@ -32,6 +32,7 @@ import {
   getCachedCliConnectorConnectionStatus,
   isCliConnectorId,
 } from '../connectors/cli/cliConnectorStatusCache';
+import { getBuiltinInProcessMcpServerIds, isMcpServerConnected } from '../mcp/mcpConnectionProbe';
 import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('WorkbenchTurnContext');
@@ -442,16 +443,29 @@ function isConnectorReadyForTurnScope(connectorId: string): boolean {
   return cachedStatus.connected;
 }
 
-function getReadySelectedConnectorIds(selectedConnectorIds?: string[]): string[] {
+/**
+ * 这个 id 该归 connector scope 还是 mcp scope。判据跟 isConnectorReadyForTurnScope 同一套认知：
+ * CLI 连接器（feishu/tmeet）与连接器注册表认得的原生连接器（mail/crm…）算连接器侧，
+ * 其余是连接器目录里的 MCP 名（lark、tencent-docs…）——注册表里查不到它们。
+ */
+function isConnectorSideId(connectorId: string): boolean {
+  return isCliConnectorId(connectorId) || Boolean(getConnectorRegistry().get(connectorId));
+}
+
+function getReadySelectedConnectorIds(selectedConnectorIds?: string[], source: 'selected' | 'expert' = 'selected'): string[] {
   return (selectedConnectorIds || [])
     .map((connectorId) => connectorId.trim())
     .filter(Boolean)
     .filter((connectorId) => {
       const ready = isConnectorReadyForTurnScope(connectorId);
       if (!ready) {
-        logger.info('[WorkbenchTurnContext] Selected connector omitted from turn scope', {
-          connectorId,
-        });
+        // 两路的日志要分清：用户手选的 vs 专家声明的——排障时指错方向会白查半天
+        logger.info(
+          source === 'expert'
+            ? '[WorkbenchTurnContext] Expert-declared connector omitted from turn scope'
+            : '[WorkbenchTurnContext] Selected connector omitted from turn scope',
+          { connectorId },
+        );
       }
       return ready;
     });
@@ -507,12 +521,53 @@ export function withWorkbenchTurnSystemContext(
     ...(options?.toolScope?.allowedConnectorIds || []),
     ...(workbenchToolScope?.allowedConnectorIds || []),
   ];
+  const explicitMcpServerIds = [
+    ...(options?.toolScope?.allowedMcpServerIds || []),
+    ...(workbenchToolScope?.allowedMcpServerIds || []),
+  ];
+
+  // 专家 core 的 id 空间横跨两侧：连接器（CLI 的 feishu/tmeet + 注册表里的 mail/crm…）
+  // 归 connector scope，其余是连接器目录里的 MCP 名（lark、tencent-docs…）归 mcp scope。
+  //
+  // 2026-09-03 修：以前整批塞进 connector 那侧，而 isConnectorReadyForTurnScope 对非 CLI id
+  // 要查 connector registry（运行时那张表里没有 MCP）⇒ 一律判 false 被丢光 ⇒ 列表变空又
+  // 按「空 = 不收窄」放行，**专家声明的「这一轮只用这几个」对 MCP 从来没生效过，工具面
+  // 反而全开**。按类型分流后，MCP 那支落进 allowedMcpServerIds 才真收窄。
+  // 「会话覆盖专家」要整支让位：会话在**任一侧**做过显式选择（连接器或 MCP），
+  // 专家声明就整批不参与，两侧口径一致——只让一侧让位会出现「你选了连接器、
+  // 专家的 MCP 还在悄悄收窄」，和渲染层那句「这轮以你选的连接器为准」打架。
+  // 🔴 判据取**用户原始的选择**，两个坑各躲一个：
+  //  · 不能用 options.toolScope——那是上游（子代理 / cron / 调用方）传进来的范围，不是手选；
+  //    当成手选会让「上游带了 MCP 范围 ⇒ 专家的连接器那支被清空、那类工具重新全开放」。
+  //  · 也不能用 workbenchToolScope——它已经过了一道 getReadySelectedConnectorIds，
+  //    用户手选了个**没连上**的连接器时会被过滤成空，判据就误判成「他没选过」，
+  //    专家那支又活了，违背「会话显式选择优先」。
+  const sessionPickedScope = (context?.selectedConnectorIds?.length ?? 0) > 0
+    || (context?.selectedMcpServerIds?.length ?? 0) > 0;
+  const expertCoreIds = sessionPickedScope ? [] : resolveSessionConnectorIds({ expertConnectors });
+  const expertConnectorSideIds = expertCoreIds.filter(isConnectorSideId);
+  const expertMcpServerIds = expertCoreIds.filter((id) => !isConnectorSideId(id));
+
   // 会话显式选过 → 以会话为准；没选过才落到专家声明的 core。
-  // 专家那支要过一次「连上了没」——声明了但没连的连接器过滤后为空 = 不收窄，
+  // 连接器那支要过一次「连上了没」——声明了但没连的过滤后为空 = 不收窄，
   // 这是拍板口径「先宽后收」，不是把工具集锁成空集。
   const allowedConnectorIds = explicitConnectorIds.length > 0
     ? explicitConnectorIds
-    : getReadySelectedConnectorIds(resolveSessionConnectorIds({ expertConnectors }));
+    : getReadySelectedConnectorIds(expertConnectorSideIds, 'expert');
+  // 专家那支的 MCP 也要过一次「连上了没」，和连接器那支同口径：没装 / 没连 / 名字写错的
+  // 声明一旦进了 scope，会把**其他所有** MCP 工具挡掉（allowedMcpServerIds 非空即收窄）。
+  // 用户手选是他自己的显式决定，专家声明是背后自动生效的，出错代价不该落到用户头上。
+  // 全都没连上 ⇒ 空 ⇒ 不收窄，仍是「先宽后收」。
+  // 同一条保护理由的另一半：内置进程内 server（memory-kv/code-index）是基础设施不是
+  // 「连接器」，专家收窄若把它们滤掉，该专家**每一轮**都静默失去记忆与代码索引——
+  // 但**只在专家确实要收窄时**才并回来：它们在生产恒存在，无条件并会把普通会话
+  // （没专家也没手选）的每一轮都收窄成只剩这两个（ai-review 第十四轮抓的实回归）。
+  const expertScopedMcpServerIds = expertMcpServerIds.filter((serverId) => isMcpServerConnected(serverId));
+  const allowedMcpServerIds = explicitMcpServerIds.length > 0
+    ? explicitMcpServerIds
+    : expertScopedMcpServerIds.length > 0
+      ? [...expertScopedMcpServerIds, ...getBuiltinInProcessMcpServerIds()]
+      : [];
 
   const toolScope = normalizeWorkbenchToolScope({
     allowedSkillIds: [
@@ -520,11 +575,17 @@ export function withWorkbenchTurnSystemContext(
       ...(workbenchToolScope?.allowedSkillIds || []),
     ],
     allowedConnectorIds,
-    allowedMcpServerIds: [
-      ...(options?.toolScope?.allowedMcpServerIds || []),
-      ...(workbenchToolScope?.allowedMcpServerIds || []),
-    ],
+    allowedMcpServerIds,
   });
+  // 收窄进 MCP 名单时必须让模型看得见名单——范围内的 server 可能是 lazy（工具定义
+  // 还没注册、list_tools 也是空的），不点名的话这一轮模型既丢了其他 MCP 工具，
+  // 也不知道目标 server 存在，比不收窄更糟。名字的权威来源是最终 toolScope，
+  // 不问它来自用户手选还是专家声明。
+  if (toolScope?.allowedMcpServerIds?.length) {
+    turnSystemContext.push(
+      `本轮 MCP 工具面收窄到这些 server（仅在相关时使用；未连接的首次调用其工具时会自动连接）：${toolScope.allowedMcpServerIds.join('、')}`,
+    );
+  }
   if (
     turnSystemContext.length === 0
     && !toolScope

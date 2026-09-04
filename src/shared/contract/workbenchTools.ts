@@ -98,7 +98,19 @@ export function isMcpToolName(toolName: string): boolean {
   return toolName.startsWith('mcp__') || toolName.startsWith('mcp_');
 }
 
+/**
+ * 始终注册的 MCP 元工具：server 在**参数**里而不是工具名里，
+ * 按工具名的 scope 判据（extractMcpServerIdFromToolName）管不到它们，
+ * dispatch 侧要额外读 args.server（workbenchToolScope.isToolCallAllowedByWorkbenchScope）。
+ */
+export const MCP_META_TOOL_NAMES: ReadonlySet<string> = new Set(['mcp', 'MCPUnified', 'mcp_add_server']);
+
 export function extractMcpServerIdFromToolName(toolName: string): string | undefined {
+  // 元工具名里没有 server——不挡这一刀，mcp_add_server 会被误解析成 server 'add'
+  if (MCP_META_TOOL_NAMES.has(toolName)) {
+    return undefined;
+  }
+
   if (toolName.startsWith('mcp__')) {
     const match = toolName.match(/^mcp__(.+?)__/);
     return match?.[1];

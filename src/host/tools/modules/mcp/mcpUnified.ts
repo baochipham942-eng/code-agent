@@ -32,9 +32,17 @@ import { getMCPClient } from '../../../mcp/mcpClient';
 import { isCuaStateV2Enabled } from '../../../mcp/cuaStateConfig';
 import { CUA_DRIVER_SERVER_NAME } from '../../../mcp/types';
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
+import { normalizeWorkbenchToolScope } from '../../workbenchToolScope';
 import { mcpUnifiedSchema as schema } from './mcpUnified.schema';
 import { executeMcpInvoke } from './mcpInvoke';
 import { executeMcpAddServer } from './mcpAddServer';
+
+// 本轮 MCP 收窄（turn scope）对 list 类输出同样生效：被收窄掉的 server 不列给模型——
+// 列出来它照单点名、invoke 在 dispatch 门被挡，「看见却调不动」比看不见更误导。
+function scopeAllowedMcpServerIds(ctx: ToolContext): string[] | undefined {
+  const ids = normalizeWorkbenchToolScope(ctx.toolScope)?.allowedMcpServerIds;
+  return ids?.length ? ids : undefined;
+}
 
 type MCPAction =
   | 'invoke'
@@ -109,7 +117,7 @@ function actionListTools(args: Record<string, unknown>, ctx: ToolContext): ToolR
   const mcpClient = getMCPClient();
   const status = mcpClient.getStatus();
 
-  if (status.connectedServers.length === 0) {
+  if (status.connectedServers.length === 0 && (status.inProcessServers ?? []).length === 0) {
     const output = '当前没有已连接的 MCP 服务器。';
     return {
       ok: true,
@@ -142,9 +150,18 @@ function actionListTools(args: Record<string, unknown>, ctx: ToolContext): ToolR
     };
   }
 
+  const scopeIds = scopeAllowedMcpServerIds(ctx);
   const tools = mcpClient.getTools().filter((tool) =>
-    !(isCuaStateV2Enabled() && tool.serverName === CUA_DRIVER_SERVER_NAME));
+    !(isCuaStateV2Enabled() && tool.serverName === CUA_DRIVER_SERVER_NAME)
+    && (!scopeIds || scopeIds.includes(tool.serverName)));
   const visibleToolCount = tools.length;
+  // connectedServers 不含进程内 server（memory-kv/code-index 在 inProcessServers 里），
+  // 而它们的工具就在 getTools() 里且可调用——「已连接」要两张表合起来算，
+  // 否则收窄到进程内 server 时会谎报「未连接」并返回 0 个工具
+  const reachableServers = [...status.connectedServers, ...(status.inProcessServers ?? [])];
+  const visibleServers = scopeIds
+    ? reachableServers.filter((serverName) => scopeIds.includes(serverName))
+    : reachableServers;
 
   const toolsByServer: Record<string, typeof tools> = {};
   for (const tool of tools) {
@@ -157,8 +174,42 @@ function actionListTools(args: Record<string, unknown>, ctx: ToolContext): ToolR
     toolsByServer[tool.serverName].push(tool);
   }
 
+  if (scopeIds && visibleServers.length === 0 && tools.length === 0) {
+    // 点名范围内的 server——它们多半是 lazy（用到才连），不报名字模型就不知道目标存在
+    const output = `本轮会话的工具范围已收窄到：${scopeIds.join('、')}；这些 server 当前未连接，首次调用其工具时会自动连接。`;
+    return {
+      ok: true,
+      output,
+      meta: {
+        server: filterServer,
+        action: 'list_tools',
+        resultKind: 'text',
+        count: 0,
+        truncated: false,
+        connectedServers: [],
+        artifact: createVirtualArtifact({
+          sourceTool: schema.name,
+          kind: 'text',
+          sessionId: ctx.sessionId,
+          name: 'MCP tools',
+          mimeType: 'text/plain',
+          contentLength: output.length,
+          preview: output,
+          metadata: {
+            mcpToolList: true,
+            server: filterServer,
+            action: 'list_tools',
+            resultKind: 'text',
+            count: 0,
+            truncated: false,
+          },
+        }),
+      },
+    };
+  }
+
   const lines: string[] = [];
-  lines.push(`已连接的 MCP 服务器: ${status.connectedServers.join(', ')}`);
+  lines.push(`已连接的 MCP 服务器: ${visibleServers.join(', ')}`);
   lines.push(`总工具数: ${visibleToolCount}`);
   lines.push('');
 
@@ -207,7 +258,7 @@ function actionListTools(args: Record<string, unknown>, ctx: ToolContext): ToolR
       count: returnedCount,
       totalCount: visibleToolCount,
       truncated: false,
-      connectedServers: status.connectedServers,
+      connectedServers: visibleServers,
       artifact: createVirtualArtifact({
         sourceTool: schema.name,
         kind: 'text',
@@ -238,15 +289,20 @@ function actionListResources(args: Record<string, unknown>, ctx: ToolContext): T
   const filterServer = typeof args.server === 'string' ? args.server : undefined;
   const mcpClient = getMCPClient();
   const resources = mcpClient.getResources();
+  const scopeIds = scopeAllowedMcpServerIds(ctx);
 
-  const filtered = filterServer
-    ? resources.filter((r) => r.serverName === filterServer)
-    : resources;
+  const filtered = resources.filter((r) =>
+    (!filterServer || r.serverName === filterServer)
+    && (!scopeIds || scopeIds.includes(r.serverName)));
 
   if (filtered.length === 0) {
-    const output = filterServer
+    // 被 scope 滤空的要点名收窄范围（与 list_tools 同口径），不谎称「没有可用资源」；
+    // filterServer 本身就在范围外时也一样——那不是「没提供」，是「本轮不让碰」
+    const output = filterServer && !(scopeIds && !scopeIds.includes(filterServer))
       ? `服务器 '${filterServer}' 没有提供资源。`
-      : '当前没有可用的 MCP 资源。';
+      : scopeIds
+        ? `本轮会话的工具范围已收窄到：${scopeIds.join('、')}；这些 server 没有提供资源（未连接的首次调用其工具时会自动连接）。`
+        : '当前没有可用的 MCP 资源。';
     return {
       ok: true,
       output,
@@ -314,7 +370,7 @@ function actionListResources(args: Record<string, unknown>, ctx: ToolContext): T
       action: 'list_resources',
       resultKind: 'text',
       count: filtered.length,
-      totalCount: resources.length,
+      totalCount: filtered.length,
       truncated: false,
       resourceUris: filtered.map((resource) => resource.uri),
       artifact: createVirtualArtifact({
@@ -331,7 +387,7 @@ function actionListResources(args: Record<string, unknown>, ctx: ToolContext): T
           action: 'list_resources',
           resultKind: 'text',
           count: filtered.length,
-          totalCount: resources.length,
+          totalCount: filtered.length,
           truncated: false,
           resourceUris: filtered.map((resource) => resource.uri),
         },
@@ -469,14 +525,34 @@ async function actionReadResource(
 function actionStatus(ctx: ToolContext): ToolResult<string> {
   const mcpClient = getMCPClient();
   const status = mcpClient.getStatus();
+  // 与 list_tools / list_resources 同口径：收窄生效时不把范围外的 server 摆出来——
+  // 「看见却调不动」对状态清单同样成立。「已连接」要两表合算：connectedServers
+  // 不含进程内 server（memory-kv/code-index 在 inProcessServers），漏了会输出
+  // 「已连接服务器: 无」而可用工具非零——与同文件 list_tools 的判空一个口径
+  const scopeIds = scopeAllowedMcpServerIds(ctx);
+  const reachableServers = [...status.connectedServers, ...(status.inProcessServers ?? [])];
+  const visibleServers = scopeIds
+    ? reachableServers.filter((serverName) => scopeIds.includes(serverName))
+    : reachableServers;
+
+  // 三个计数同过 scope——「已连接服务器: lark」配「可用工具: 47」是自打脸
+  const visibleToolCount = scopeIds
+    ? mcpClient.getTools().filter((tool) => scopeIds.includes(tool.serverName)).length
+    : status.toolCount;
+  const visibleResourceCount = scopeIds
+    ? mcpClient.getResources().filter((resource) => scopeIds.includes(resource.serverName)).length
+    : status.resourceCount;
+  const visiblePromptCount = scopeIds
+    ? mcpClient.getPrompts().filter((prompt) => scopeIds.includes(prompt.serverName)).length
+    : status.promptCount;
 
   const output = [
     '# MCP 连接状态',
     '',
-    `已连接服务器: ${status.connectedServers.length > 0 ? status.connectedServers.join(', ') : '无'}`,
-    `可用工具: ${status.toolCount}`,
-    `可用资源: ${status.resourceCount}`,
-    `可用提示: ${status.promptCount}`,
+    `已连接服务器: ${visibleServers.length > 0 ? visibleServers.join(', ') : '无'}`,
+    `可用工具: ${visibleToolCount}`,
+    `可用资源: ${visibleResourceCount}`,
+    `可用提示: ${visiblePromptCount}`,
   ].join('\n');
 
   return {
@@ -484,9 +560,19 @@ function actionStatus(ctx: ToolContext): ToolResult<string> {
     output,
     meta: {
       ...status,
+      // meta 与 output 同口径：消费方（UI / 遥测）也不该看见范围外的 server
+      connectedServers: visibleServers,
+      ...(scopeIds
+        ? {
+            inProcessServers: (status.inProcessServers ?? []).filter((serverName) => scopeIds.includes(serverName)),
+            toolCount: visibleToolCount,
+            resourceCount: visibleResourceCount,
+            promptCount: visiblePromptCount,
+          }
+        : {}),
       action: 'status',
       resultKind: 'text',
-      count: status.connectedServers.length,
+      count: visibleServers.length,
       truncated: false,
       artifact: createVirtualArtifact({
         sourceTool: schema.name,
@@ -500,12 +586,12 @@ function actionStatus(ctx: ToolContext): ToolResult<string> {
           mcpStatus: true,
           action: 'status',
           resultKind: 'text',
-          count: status.connectedServers.length,
+          count: visibleServers.length,
           truncated: false,
-          connectedServers: status.connectedServers,
-          toolCount: status.toolCount,
-          resourceCount: status.resourceCount,
-          promptCount: status.promptCount,
+          connectedServers: visibleServers,
+          toolCount: visibleToolCount,
+          resourceCount: visibleResourceCount,
+          promptCount: visiblePromptCount,
         },
       }),
     },

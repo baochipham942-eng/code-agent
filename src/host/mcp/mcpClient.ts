@@ -37,6 +37,7 @@ import type {
   InProcessMCPServerInterface,
 } from './types';
 import { isStdioConfig, isInProcessConfig, isHttpStreamableConfig, CUA_DRIVER_SERVER_NAME } from './types';
+import { isMcpStatusUsableForScope, setInProcessMcpServerIdsProvider, setMcpConnectionProbe } from './mcpConnectionProbe';
 import { buildCuaAgentCursorCapabilityForToolCall } from './cuaAgentCursor';
 import { CUA_READONLY_TOOLS, gateCuaToolCall } from './cuaSessionLock';
 import { gateCuaBudget } from './cuaTrajectoryBudget';
@@ -767,7 +768,7 @@ export class MCPClient extends EventEmitter {
    * This avoids starting every lazy server while making enabled servers like
    * sequential-thinking searchable before their first direct tool call.
    */
-  async discoverLazyServersForSearch(query: string): Promise<Array<{
+  async discoverLazyServersForSearch(query: string, serverNameAllowlist?: string[]): Promise<Array<{
     serverName: string;
     connected: boolean;
     toolCount: number;
@@ -778,7 +779,8 @@ export class MCPClient extends EventEmitter {
 
     const candidates = Array.from(this.serverConfigs.values()).filter((config) => {
       if (!config.enabled) return false;
-      if (!isStdioConfig(config) || config.lazyLoad === false) return false;
+      // turn scope 收窄（serverNameAllowlist）时范围外的 lazy server 不拉起——拉起来结果也会被丢掉
+      if (!isStdioConfig(config) || config.lazyLoad === false || (serverNameAllowlist !== undefined && !serverNameAllowlist.includes(config.name))) return false;
 
       const state = this.serverStates.get(config.name);
       if (!state || !['lazy', 'disconnected', 'error'].includes(state.status)) return false;
@@ -1291,3 +1293,11 @@ export async function initMCPClient(
 export async function refreshMCPServersFromCloud(): Promise<void> {
   return _refreshMCPServersFromCloud(getMCPClient);
 }
+
+// 连接态探针接电：turn scope 那条同步路径要判断「专家声明的 MCP 可用吗」，
+// 但不能反向 import 本模块（依赖图 + 行数门）。判据见 mcpConnectionProbe.ts——
+// lazy（装好了、用到就连）算可用，只认 connected 会让收窄在 stdio server 上落空又无声翻转。
+const mcpScopeUsabilityOf = (serverName: string) => getMCPClient().getServerState(serverName);
+setMcpConnectionProbe((serverName) => { const state = mcpScopeUsabilityOf(serverName); return isMcpStatusUsableForScope(state?.status, state?.config.enabled !== false); });
+// 内置进程内 server 名单的反向接电（专家收窄要把基础设施并回来，理由见 mcpConnectionProbe.ts）
+setInProcessMcpServerIdsProvider(() => getMCPClient().getStatus().inProcessServers ?? []);

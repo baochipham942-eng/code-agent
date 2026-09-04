@@ -516,6 +516,8 @@ describe('workbenchTurnContext', () => {
       mode: 'normal',
       turnSystemContext: [
         expect.stringContaining('review-skill'),
+        // MCP 收窄生效就要点名名单（含 lazy 的「用到会自连」说明）——不点名模型不知道目标存在
+        expect.stringContaining('本轮 MCP 工具面收窄到这些 server'),
       ],
       toolScope: {
         allowedSkillIds: ['baseline-skill', 'review-skill'],

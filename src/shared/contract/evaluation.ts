@@ -10,8 +10,14 @@ import type {
   TurnQualityScoreSummary,
 } from './turnQuality';
 
-export const EVAL_RUN_EVENT_SCHEMA_VERSION = 3 as const;
+export const EVAL_RUN_EVENT_SCHEMA_VERSION = 4 as const;
 export const EVAL_REPEAT_MAX = 10;
+
+/**
+ * 评测默认无人值守不扇出：allowSwarm 缺省 false（与 goalContractEval 的历史硬编码同值）。
+ * spawnMaxDepth 缺省 null，表示不覆盖 SpawnGuard 的生产默认深度。
+ */
+export const EVAL_DEFAULT_ALLOW_SWARM = false;
 
 export interface EvalCompareHarness {
   name: string;
@@ -35,6 +41,16 @@ export interface EvalCompareArm {
     routingModel?: string;
   };
   reasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh';
+  /**
+   * 编排结构（ORCHARM）：要不要扇出子代理，以及最深几层。
+   * - allowSwarm：goal run 首轮是否注入编排引导 + 预加载 workflow（评测默认 false）。
+   * - spawnMaxDepth：spawn 嵌套深度上限；0 = 一层都不许扇出（SpawnGuard 直接 DEPTH_LIMIT），
+   *   省略 = 跟随 SpawnGuard 生产默认。
+   */
+  orchestration?: {
+    allowSwarm?: boolean;
+    spawnMaxDepth?: number;
+  };
   skills?: string[];
   enabledTools?: string[];
   temperature?: number;
@@ -48,6 +64,7 @@ export const CONSUMED_COMPARE_FIELDS = [
   'harness',
   'memory',
   'reasoningEffort',
+  'orchestration',
   'skills',
 ] as const satisfies readonly (keyof EvalCompareArm)[];
 
@@ -79,6 +96,7 @@ export function resolveEffectiveEvalCompareArm(
   harness: EvalCompareHarness | null;
   memory: { longTerm: boolean; routingModel: string | null };
   reasoningEffort: EvalCompareArm['reasoningEffort'] | null;
+  orchestration: { allowSwarm: boolean; spawnMaxDepth: number | null };
   skills: string[];
 } {
   const sourceHarness = config.harness ?? baseline.harness;
@@ -93,6 +111,14 @@ export function resolveEffectiveEvalCompareArm(
       routingModel: config.memory?.routingModel ?? baseline.memory?.routingModel ?? null,
     },
     reasoningEffort: config.reasoningEffort ?? baseline.reasoningEffort ?? null,
+    orchestration: {
+      allowSwarm: config.orchestration?.allowSwarm
+        ?? baseline.orchestration?.allowSwarm
+        ?? EVAL_DEFAULT_ALLOW_SWARM,
+      spawnMaxDepth: config.orchestration?.spawnMaxDepth
+        ?? baseline.orchestration?.spawnMaxDepth
+        ?? null,
+    },
     skills: normalizeCompareSkills(config.skills ?? baseline.skills),
   };
 }
@@ -115,6 +141,7 @@ export function effectiveArmSignature(config: EvalCompareArm, baseline: EvalComp
       : null,
     memory: arm.memory,
     reasoningEffort: arm.reasoningEffort,
+    orchestration: arm.orchestration,
     skills: arm.skills,
   } satisfies Record<(typeof CONSUMED_COMPARE_FIELDS)[number], unknown>;
   return JSON.stringify(Object.fromEntries(
@@ -455,7 +482,7 @@ export type EvalRunEventSummary = {
  */
 export type EvalRunEvent =
   | {
-      schemaVersion: 3;
+      schemaVersion: 4;
       type: 'run_start';
       ts: number;
       runId: string;
@@ -463,7 +490,7 @@ export type EvalRunEvent =
       config: EvalRunStartConfig;
     }
   | {
-      schemaVersion: 3;
+      schemaVersion: 4;
       type: 'case_start';
       ts: number;
       runId: string;
@@ -471,7 +498,7 @@ export type EvalRunEvent =
       description: string;
     }
   | {
-      schemaVersion: 3;
+      schemaVersion: 4;
       type: 'case_end';
       ts: number;
       runId: string;
@@ -491,6 +518,8 @@ export type EvalRunEvent =
       sessionId?: string;
       scoreAuthority?: 'deterministic_assertion' | 'llm_judge' | 'self_check';
       skillActivations?: Record<string, number>;
+      /** 本题内子代理被真正拉起的次数（subagent_spawned 事件计数）；0/缺省 = 未出场。 */
+      subagentSpawns?: number;
       aiReview?: Partial<Record<AiReviewDimension, AiReviewVerdict>>;
       evidence?: EvalCaseEvidence;
       trialAggregate?: {
@@ -503,7 +532,7 @@ export type EvalRunEvent =
       arm?: 'baseline' | 'candidate';
     }
   | {
-      schemaVersion: 3;
+      schemaVersion: 4;
       type: 'pair_end';
       ts: number;
       runId: string;
@@ -518,9 +547,10 @@ export type EvalRunEvent =
       assertionPassB: number;
       assertionCount: number;
       skillActivations: { baseline: number; candidate: number };
+      subagentSpawns: { baseline: number; candidate: number };
     }
   | {
-      schemaVersion: 3;
+      schemaVersion: 4;
       type: 'tool_call';
       ts: number;
       runId: string;
@@ -529,7 +559,7 @@ export type EvalRunEvent =
       input: unknown;
     }
   | {
-      schemaVersion: 3;
+      schemaVersion: 4;
       type: 'tool_result';
       ts: number;
       runId: string;
@@ -538,7 +568,7 @@ export type EvalRunEvent =
       success: boolean;
     }
   | {
-      schemaVersion: 3;
+      schemaVersion: 4;
       type: 'error';
       ts: number;
       runId: string;
@@ -546,7 +576,7 @@ export type EvalRunEvent =
       error: string;
     }
   | {
-      schemaVersion: 3;
+      schemaVersion: 4;
       type: 'run_end';
       ts: number;
       runId: string;
@@ -558,7 +588,7 @@ export type EvalRunEvent =
       error?: string;
     }
   | {
-      schemaVersion: 3;
+      schemaVersion: 4;
       type: 'skill_activated';
       ts: number;
       runId: string;
@@ -566,7 +596,7 @@ export type EvalRunEvent =
       name: string;
     }
   | {
-      schemaVersion: 3;
+      schemaVersion: 4;
       type: 'memory_injected';
       ts: number;
       runId: string;
@@ -574,7 +604,7 @@ export type EvalRunEvent =
       id: string;
     }
   | {
-      schemaVersion: 3;
+      schemaVersion: 4;
       type: 'subagent_spawned';
       ts: number;
       runId: string;
@@ -767,6 +797,7 @@ interface EvalExperimentCaseItem {
     assertionPassB?: number;
     assertionCount?: number;
     skillActivations?: { baseline: number; candidate: number };
+    subagentSpawns?: { baseline: number; candidate: number };
   } | null;
 }
 export interface EvalExperimentDetail {

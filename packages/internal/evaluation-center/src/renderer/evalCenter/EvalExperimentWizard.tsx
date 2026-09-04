@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import type { EvalCompareArm, EvalRunPanelProbe, EvalRunRequest } from '@shared/contract/evaluation';
-import { effectiveArmSignature } from '@shared/contract/evaluation';
+import { effectiveArmSignature, resolveEffectiveEvalCompareArm } from '@shared/contract/evaluation';
+import { SPAWN_GUARD } from '@shared/constants/agent';
 import { Button } from '@renderer/components/primitives/Button';
 import { Modal } from '@renderer/components/primitives/Modal';
 import { Select } from '@renderer/components/primitives/Select';
@@ -60,6 +61,41 @@ export const EvalExperimentWizard: React.FC<{
   }), [candidate, maxCases, repeat, split, tags]);
   const confirmation = useRunConfirmation(() => onStart(request));
 
+  // 「本轮配置一行」：把 allowSwarm + spawnMaxDepth 折成一句人话，跟报告里的
+  // describeEvalCompareDiff 同口径（不扇出 / 最深 N 层）。
+  const describeOrchestration = (arm: EvalCompareArm, base: EvalCompareArm): string => {
+    const { orchestration } = resolveEffectiveEvalCompareArm(arm, base);
+    const depth = orchestration.spawnMaxDepth === null
+      ? replace(labels.depthDefault, { n: SPAWN_GUARD.DEFAULT_SPAWN_DEPTH })
+      : orchestration.spawnMaxDepth === 0
+        ? labels.depthNone
+        : replace(labels.depthN, { n: orchestration.spawnMaxDepth });
+    return `${orchestration.allowSwarm ? labels.swarmOn : labels.swarmOff} · ${depth}`;
+  };
+  const baselineOrchestrationText = describeOrchestration(baseline, baseline);
+  const candidateOrchestrationText = describeOrchestration(candidate, baseline);
+
+  const setAllowSwarm = (value: boolean) => {
+    setCandidate((current) => ({ ...current, orchestration: { ...current.orchestration, allowSwarm: value } }));
+    confirmation.reset();
+  };
+  const setSpawnMaxDepth = (raw: string) => {
+    // 空串 = 不覆盖（跟随生产默认）；其余 clamp 到 [0, 硬上限]，与 host 校验同界。
+    const next = raw.trim() === ''
+      ? undefined
+      : Math.max(0, Math.min(SPAWN_GUARD.HARD_MAX_SPAWN_DEPTH, Math.floor(Number(raw) || 0)));
+    setCandidate((current) => {
+      const orchestration = { ...current.orchestration };
+      if (next === undefined) delete orchestration.spawnMaxDepth;
+      else orchestration.spawnMaxDepth = next;
+      return {
+        ...current,
+        orchestration: Object.keys(orchestration).length > 0 ? orchestration : undefined,
+      };
+    });
+    confirmation.reset();
+  };
+
   const setHarness = (key: BooleanHarnessDimension, value: boolean) => {
     setCandidate((current) => ({
       ...current,
@@ -108,6 +144,7 @@ export const EvalExperimentWizard: React.FC<{
           })}
           <div className="min-w-0 break-words">{labels.skill}: {(baseline.skills ?? []).join(', ') || '—'}</div>
           <div className="min-w-0 break-words">{labels.memory}: {baseline.memory?.longTerm ? labels.enabled : labels.disabled}</div>
+          <div className="min-w-0 break-words" data-testid="baseline-orchestration">{labels.orchestration}: {baselineOrchestrationText}</div>
         </dl>
       </section>
       <section className="min-w-0 rounded-lg bg-zinc-900 p-4">
@@ -139,6 +176,28 @@ export const EvalExperimentWizard: React.FC<{
         <label className="mt-2 flex min-w-0 items-center justify-between gap-2 rounded bg-zinc-800 px-2 py-1.5 text-xs text-zinc-400"><span className="shrink-0 whitespace-nowrap">{labels.harnessDimensions.toolMode}</span><span className="min-w-0 flex-1"><Select selectSize="sm" value={candidate.harness?.toolMode ?? 'all'} options={[{ value: 'all', label: labels.toolModes.all }, { value: 'deferred', label: labels.toolModes.deferred }]} onChange={(event) => { setCandidate({ ...candidate, harness: { name: candidate.name, ...(candidate.harness ?? {}), toolMode: event.target.value as 'all' | 'deferred' } }); confirmation.reset(); }} /></span></label>
         <label className="mt-3 block text-xs text-zinc-400">{labels.reasoning}<Select selectSize="sm" value={candidate.reasoningEffort ?? ''} options={[{ value: '', label: labels.same }, ...['low', 'medium', 'high', 'xhigh'].map((value) => ({ value, label: value }))]} onChange={(event) => { setCandidate({ ...candidate, reasoningEffort: (event.target.value || undefined) as EvalCompareArm['reasoningEffort'] }); confirmation.reset(); }} /></label>
         <div className="mt-3 text-xs text-zinc-400">{labels.skill}<div className="mt-1 flex flex-wrap gap-1">{probe.skills.map((name) => <button type="button" key={name} aria-pressed={(candidate.skills ?? []).includes(name)} onClick={() => toggleSkill(name)} className={`rounded-full px-2 py-1 ${(candidate.skills ?? []).includes(name) ? 'bg-zinc-600 text-zinc-100' : 'bg-zinc-800 text-zinc-500'}`}>{name}</button>)}</div><p className="mt-1 text-[10px] text-zinc-500">{labels.chooseSkill}</p></div>
+        <div className="mt-3 rounded bg-zinc-800 px-2 py-1.5 text-xs text-zinc-400" data-testid="candidate-orchestration">
+          <div className="font-medium text-zinc-300">{labels.orchestration}</div>
+          <label className="mt-2 flex min-w-0 items-center justify-between gap-2">
+            <span className="min-w-0 break-words">{labels.allowSwarm}</span>
+            <Toggle checked={candidate.orchestration?.allowSwarm ?? false} onChange={setAllowSwarm} aria-label={labels.allowSwarm} />
+          </label>
+          <label className="mt-2 flex min-w-0 items-center justify-between gap-2">
+            <span className="min-w-0 break-words">{labels.spawnMaxDepth}</span>
+            <input
+              type="number"
+              min={0}
+              max={SPAWN_GUARD.HARD_MAX_SPAWN_DEPTH}
+              aria-label={labels.spawnMaxDepth}
+              placeholder={labels.same}
+              className="w-20 rounded-lg bg-zinc-700 px-2 py-1 text-zinc-200"
+              value={candidate.orchestration?.spawnMaxDepth ?? ''}
+              onChange={(event) => setSpawnMaxDepth(event.target.value)}
+            />
+          </label>
+          <p className="mt-1 text-[10px] text-zinc-500">{labels.spawnMaxDepthHint}</p>
+          <p className="mt-1 text-[10px] text-zinc-500" data-testid="candidate-orchestration-line">{candidateOrchestrationText}</p>
+        </div>
       </section>
     </div>
   </Modal>;

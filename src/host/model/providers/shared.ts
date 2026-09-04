@@ -13,6 +13,7 @@ export {
   parseOpenAIResponse,
 } from './providerResponseParsers';
 export {
+  destroySharedHttpsAgent,
   electronFetch,
   getHttpsAgent,
   httpsAgent,

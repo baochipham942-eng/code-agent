@@ -130,15 +130,15 @@ describe('实验页四态与新建守卫', () => {
     const onStart = vi.fn();
     render(<EvalExperimentWizard open probe={probe()} starting={false} onClose={vi.fn()} onStart={onStart} />);
     // 对照组只读行显示生产默认
-    expect(screen.getByTestId('baseline-orchestration').textContent).toBe('子代理: 不扇出 · 最深 3 层（默认）');
+    expect(screen.getByTestId('baseline-orchestration').textContent).toBe('子代理: 编排引导关 · 最深 3 层（默认）');
     const line = () => screen.getByTestId('candidate-orchestration-line').textContent;
-    expect(line()).toBe('不扇出 · 最深 3 层（默认）');
+    expect(line()).toBe('编排引导关 · 最深 3 层（默认）');
 
-    fireEvent.click(screen.getByLabelText('允许扇出子代理'));
-    expect(line()).toBe('允许扇出 · 最深 3 层（默认）');
+    fireEvent.click(screen.getByLabelText('目标任务里注入编排引导'));
+    expect(line()).toBe('编排引导开 · 最深 3 层（默认）');
 
     fireEvent.change(screen.getByLabelText('最深层数'), { target: { value: '0' } });
-    expect(line()).toBe('允许扇出 · 一层都不扇出');
+    expect(line()).toBe('编排引导开 · 一层都不扇出');
 
     // 只改编排就足以发车（签名里有这一维）
     const button = screen.getByTestId('experiment-run-confirm') as HTMLButtonElement;

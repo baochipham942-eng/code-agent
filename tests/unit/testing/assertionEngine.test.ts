@@ -251,6 +251,21 @@ describe('tools_any_of 断言', () => {
 
     expect(result.passed).toBe(false);
   });
+
+  it('T1/M2：exec_command 与 run_terminal_command 命中 bash|list_directory|glob', async () => {
+    const expectations: TestExpectations = {
+      tool: 'bash|list_directory|glob',
+      tools_any_of: ['bash|list_directory|glob'],
+    };
+
+    for (const tool of ['exec_command', 'run_terminal_command', 'Bash', 'ListDirectory'] as const) {
+      const result = await runAssertions(expectations, makeContext({
+        toolExecutions: [makeTool({ tool })],
+      }));
+      expect(result.passed, `${tool} should match legacy tool / tools_any_of`).toBe(true);
+      expect(result.failures).toHaveLength(0);
+    }
+  });
 });
 
 // ============================================================================

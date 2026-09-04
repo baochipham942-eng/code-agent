@@ -34,6 +34,7 @@ import { isPathWithinRoot } from '../runtime/workspaceScope';
 import { connectorExternalWriteReason, isConnectorToolName } from '../../shared/contract/workbenchTools';
 import { isSensitiveCredentialPath } from '../sandbox/sensitivePaths';
 import { resolvedRmCriticalTarget } from '../security/recursiveRmPathSafety';
+import { anchoredAllowCommandWords } from '../security/commandAllowProof';
 
 const logger = createLogger('PermissionClassifier');
 
@@ -370,27 +371,35 @@ function recursivelyRemovesPath(command: string): boolean {
 }
 
 function isNpmPublishDryRun(command: string): boolean {
-  const words = commandWords(command);
-  const npmIndex = words.findIndex((word) => commandProgram(word) === 'npm');
-  // Positive allow proofs are intentionally narrower than deny/ask scans:
-  // a wrapper may change identity, environment or execution semantics.
-  return npmIndex === 0 && words[npmIndex + 1] === 'publish'
-    && words.slice(npmIndex + 2).includes('--dry-run');
+  const words = anchoredAllowCommandWords(command, 'npm');
+  return words !== null && words[1] === 'publish'
+    && words.slice(2).includes('--dry-run');
 }
 
 function ddCopiesWorkspaceFile(command: string, context: ClassificationContext): boolean {
-  const words = commandWords(command);
-  const ddIndex = words.findIndex((word) => commandProgram(word) === 'dd');
-  if (ddIndex !== 0) return false;
+  const words = anchoredAllowCommandWords(command, 'dd');
+  if (!words) return false;
 
-  const input = words.slice(ddIndex + 1).find((word) => word.startsWith('if='))?.slice(3);
-  const output = words.slice(ddIndex + 1).find((word) => word.startsWith('of='))?.slice(3);
+  const input = words.slice(1).find((word) => word.startsWith('if='))?.slice(3);
+  const output = words.slice(1).find((word) => word.startsWith('of='))?.slice(3);
   if (!input || !output) return false;
 
   const workspace = resolveCanonicalRunPath(context.workspaceRoot ?? context.workingDirectory);
   const resolvedInput = resolveCandidatePath(input, context.workingDirectory, context.pathResolutionCache);
   const resolvedOutput = resolveCandidatePath(output, context.workingDirectory, context.pathResolutionCache);
   return isPathInside(resolvedInput, workspace) && isPathInside(resolvedOutput, workspace);
+}
+
+function hasPositiveAllowCandidate(command: string): boolean {
+  const words = commandWords(command);
+  const npmIndex = words.findIndex((word) => commandProgram(word) === 'npm');
+  if (npmIndex >= 0 && words[npmIndex + 1] === 'publish'
+    && words.slice(npmIndex + 2).includes('--dry-run')) return true;
+
+  const ddIndex = words.findIndex((word) => commandProgram(word) === 'dd');
+  return ddIndex >= 0
+    && words.slice(ddIndex + 1).some((word) => word.startsWith('if='))
+    && words.slice(ddIndex + 1).some((word) => word.startsWith('of='));
 }
 
 function readPathCandidates(toolName: string, args: Record<string, unknown>): string[] {
@@ -448,7 +457,8 @@ export function bashCommandRequiresPermission(
       }
       return credentialReadTarget(segment, segmentContext) !== null
         || gitMutationReason(segment) !== null
-        || resolvedRmCriticalTarget(segment, segmentContext) !== null;
+        || resolvedRmCriticalTarget(segment, segmentContext) !== null
+        || hasPositiveAllowCandidate(segment);
     });
   } catch {
     return true;
@@ -941,7 +951,8 @@ export class PermissionClassifier {
     }
 
     // B2: Bash 安全判据统一由 commandSafety 解析重定向、复合命令与危险参数。
-    if (isKnownSafeCommand(command) || ddCopiesWorkspaceFile(command, context)) {
+    if ((!hasPositiveAllowCandidate(command) && isKnownSafeCommand(command))
+      || ddCopiesWorkspaceFile(command, context)) {
       return {
         decision: 'approve',
         reason: '安全命令',

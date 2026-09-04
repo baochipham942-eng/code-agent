@@ -18,6 +18,7 @@ import {
   getPermissionClassifier,
   PermissionClassifier,
 } from '../../../src/host/tools/permissionClassifier';
+import { anchoredAllowCommandWords } from '../../../src/host/security/commandAllowProof';
 import { setCommandPolicyRulesForTest } from '../../../src/host/tools/modules/shell/commandPolicy';
 
 describe('PermissionClassifier', () => {
@@ -601,10 +602,35 @@ describe('PermissionClassifier', () => {
       expect(grepPattern.decision).toBe('approve');
     });
 
-    it('does not extend direct-command allow proofs through execution wrappers', async () => {
+    it('anchors allow proofs after harmless wrappers and rejects privilege or environment changes', async () => {
+      const directDryRun = await classifyPermission(
+        'Bash',
+        { command: 'npm publish --dry-run' },
+        context,
+      );
+      const nohupDryRun = await classifyPermission(
+        'Bash',
+        { command: 'nohup npm publish --dry-run' },
+        context,
+      );
       const sudoDryRun = await classifyPermission(
         'Bash',
         { command: 'sudo npm publish --dry-run' },
+        context,
+      );
+      const changedEnvDryRun = await classifyPermission(
+        'Bash',
+        { command: 'env NODE_OPTIONS=--require=/tmp/hook.cjs npm publish --dry-run' },
+        context,
+      );
+      const directDdCopy = await classifyPermission(
+        'Bash',
+        { command: `dd if=${context.workingDirectory}/README.md of=${context.workingDirectory}/out.img` },
+        context,
+      );
+      const nohupDdCopy = await classifyPermission(
+        'Bash',
+        { command: `nohup dd if=${context.workingDirectory}/README.md of=${context.workingDirectory}/out.img` },
         context,
       );
       const sudoDdCopy = await classifyPermission(
@@ -612,9 +638,25 @@ describe('PermissionClassifier', () => {
         { command: `sudo dd if=${context.workingDirectory}/README.md of=${context.workingDirectory}/out.img` },
         context,
       );
+      const quotedDryRun = await classifyPermission(
+        'Bash',
+        { command: 'echo "npm publish --dry-run"' },
+        context,
+      );
 
-      expect(sudoDryRun.decision).toBe('deny');
-      expect(sudoDdCopy.decision).toBe('deny');
+      expect(anchoredAllowCommandWords('sudo npm publish --dry-run', 'npm')).toBeNull();
+      expect(bashCommandRequiresPermission(
+        'env NODE_OPTIONS=--require=/tmp/hook.cjs npm publish --dry-run',
+        context,
+      )).toBe(true);
+      expect(directDryRun.decision).toBe('approve');
+      expect(nohupDryRun.decision).toBe('approve');
+      expect(sudoDryRun.decision).not.toBe('approve');
+      expect(changedEnvDryRun.decision).not.toBe('approve');
+      expect(directDdCopy.decision).toBe('approve');
+      expect(nohupDdCopy.decision).toBe('approve');
+      expect(sudoDdCopy.decision).not.toBe('approve');
+      expect(quotedDryRun.reason).not.toBe('npm publish dry-run 预览');
     });
 
     it('denies system rm when no authoritative workspace can grant containment', async () => {

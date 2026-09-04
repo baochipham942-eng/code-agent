@@ -87,7 +87,7 @@ async function writeCaseDrawerFixture(): Promise<{ fixturePath: string; annotati
     promptVersion: 'sys-v44', mode: 'real' as const, model: 'deepseek-chat', provider: 'deepseek',
     scope: 'full' as const, maxCases: 3, concurrency: 1, gitCommit: 'be7ea7617', testCaseDir: '.claude/test-cases',
   };
-  adapter.beginEventRun({ schemaVersion: 3, type: 'run_start', ts: 1, runId, plannedCaseIds: ['TC-026', 'TC-041', 'TC-058'], config });
+  adapter.beginEventRun({ schemaVersion: 4, type: 'run_start', ts: 1, runId, plannedCaseIds: ['TC-026', 'TC-041', 'TC-058'], config });
 
   const failing = baseResult('TC-026');
   const infra = baseResult('TC-041');
@@ -113,7 +113,7 @@ async function writeCaseDrawerFixture(): Promise<{ fixturePath: string; annotati
   ];
   for (const [index, item] of rows.entries()) {
     adapter.persistEventCase({
-      schemaVersion: 3, type: 'case_end', ts: index + 2, runId, testId: item.result.testId,
+      schemaVersion: 4, type: 'case_end', ts: index + 2, runId, testId: item.result.testId,
       status: item.event.status ?? item.result.status, score: item.result.score, durationMs: item.result.duration,
       ...item.event, evidence: buildCaseEvidence(item.result),
     });

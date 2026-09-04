@@ -37,7 +37,7 @@ describe('ExperimentAdapter canonical harness persistence', () => {
     const db = { ...createDbWriter(), updateExperimentSummary: vi.fn() };
     const adapter = new ExperimentAdapter(db as any);
     adapter.beginEventRun({
-      schemaVersion: 3, type: 'run_start', ts: 1, runId: 'compare-run', plannedCaseIds: ['case-a'],
+      schemaVersion: 4, type: 'run_start', ts: 1, runId: 'compare-run', plannedCaseIds: ['case-a'],
       config: {
         ...UNKNOWN_EVAL_RUN_STAMP, mode: 'real', model: 'm', provider: 'p', scope: 'full', maxCases: 1,
         concurrency: 1, gitCommit: 'abc', testCaseDir: 'cases',
@@ -45,18 +45,18 @@ describe('ExperimentAdapter canonical harness persistence', () => {
       },
     });
     adapter.persistEventCase({
-      schemaVersion: 3, type: 'case_end', ts: 2, runId: 'compare-run', testId: 'case-a', arm: 'baseline',
+      schemaVersion: 4, type: 'case_end', ts: 2, runId: 'compare-run', testId: 'case-a', arm: 'baseline',
       status: 'passed', score: 1, durationMs: 1,
     });
     adapter.persistEventCase({
-      schemaVersion: 3, type: 'case_end', ts: 3, runId: 'compare-run', testId: 'case-a', arm: 'candidate',
+      schemaVersion: 4, type: 'case_end', ts: 3, runId: 'compare-run', testId: 'case-a', arm: 'candidate',
       status: 'failed', score: 0, durationMs: 1,
     });
     adapter.persistPairEnd({
-      schemaVersion: 3, type: 'pair_end', ts: 4, runId: 'compare-run', testId: 'case-a',
+      schemaVersion: 4, type: 'pair_end', ts: 4, runId: 'compare-run', testId: 'case-a',
       statusA: 'passed', statusB: 'failed', assignment: { A: 'baseline', B: 'candidate' },
       assertionWinner: 'baseline', referenceWinner: 'A', excludedReason: 'skill_not_activated',
-      assertionPassA: 1, assertionPassB: 0, assertionCount: 2, skillActivations: { baseline: 1, candidate: 0 },
+      assertionPassA: 1, assertionPassB: 0, assertionCount: 2, skillActivations: { baseline: 1, candidate: 0 }, memoryInjections: { baseline: 0, candidate: 0 },
     });
     const row = db.insertExperimentCases.mock.calls[0][1][0];
     expect(db.insertExperimentCases).toHaveBeenCalledTimes(1);
@@ -71,10 +71,10 @@ describe('ExperimentAdapter canonical harness persistence', () => {
     const db = createDbWriter();
     const adapter = new ExperimentAdapter(db as any);
     adapter.persistPairEnd({
-      schemaVersion: 3, type: 'pair_end', ts: 1, runId: 'compare-run', testId: 'candidate-passed',
+      schemaVersion: 4, type: 'pair_end', ts: 1, runId: 'compare-run', testId: 'candidate-passed',
       statusA: 'passed', statusB: 'failed', assignment: { A: 'candidate', B: 'baseline' },
       assertionWinner: 'baseline', referenceWinner: 'B', assertionPassA: 1, assertionPassB: 0,
-      assertionCount: 1, skillActivations: { baseline: 0, candidate: 0 },
+      assertionCount: 1, skillActivations: { baseline: 0, candidate: 0 }, memoryInjections: { baseline: 0, candidate: 0 },
     });
 
     const row = db.insertExperimentCases.mock.calls[0][1][0];
@@ -87,10 +87,10 @@ describe('ExperimentAdapter canonical harness persistence', () => {
     const adapter = new ExperimentAdapter(db as any);
     for (const [index, candidateStatus] of (['failed', 'partial'] as const).entries()) {
       adapter.persistPairEnd({
-        schemaVersion: 3, type: 'pair_end', ts: index + 1, runId: 'compare-run', testId: `candidate-${candidateStatus}`,
+        schemaVersion: 4, type: 'pair_end', ts: index + 1, runId: 'compare-run', testId: `candidate-${candidateStatus}`,
         statusA: 'passed', statusB: candidateStatus, assignment: { A: 'baseline', B: 'candidate' },
         assertionWinner: 'candidate', referenceWinner: 'B', assertionPassA: 0, assertionPassB: 1,
-        assertionCount: 1, skillActivations: { baseline: 0, candidate: 0 },
+        assertionCount: 1, skillActivations: { baseline: 0, candidate: 0 }, memoryInjections: { baseline: 0, candidate: 0 },
       });
     }
 
@@ -104,10 +104,10 @@ describe('ExperimentAdapter canonical harness persistence', () => {
     const db = createDbWriter();
     const adapter = new ExperimentAdapter(db as any);
     const activate = (ts: number, testId: string, name: string) => adapter.recordSkillActivation({
-      schemaVersion: 3, type: 'skill_activated', ts, runId: 'event-run', testId, name,
+      schemaVersion: 4, type: 'skill_activated', ts, runId: 'event-run', testId, name,
     });
     const end = (ts: number, testId: string) => adapter.persistEventCase({
-      schemaVersion: 3, type: 'case_end', ts, runId: 'event-run', testId, status: 'passed', score: 1, durationMs: 1, skillActivations: {},
+      schemaVersion: 4, type: 'case_end', ts, runId: 'event-run', testId, status: 'passed', score: 1, durationMs: 1, skillActivations: {},
     });
     activate(1, 'case-a', 'x');
     activate(2, 'case-b', 'y');
@@ -125,7 +125,7 @@ describe('ExperimentAdapter canonical harness persistence', () => {
     const db = createDbWriter();
     const adapter = new ExperimentAdapter(db as any);
     adapter.recordMemoryInjection({
-      schemaVersion: 3,
+      schemaVersion: 4,
       type: 'memory_injected',
       ts: 1,
       runId: 'event-run',
@@ -133,7 +133,7 @@ describe('ExperimentAdapter canonical harness persistence', () => {
       id: 'memory-a',
     });
     adapter.recordMemoryInjection({
-      schemaVersion: 3,
+      schemaVersion: 4,
       type: 'memory_injected',
       ts: 2,
       runId: 'event-run',
@@ -142,7 +142,7 @@ describe('ExperimentAdapter canonical harness persistence', () => {
     });
     for (const ts of [3, 4]) {
       adapter.recordSkillActivation({
-        schemaVersion: 3,
+        schemaVersion: 4,
         type: 'skill_activated',
         ts,
         runId: 'event-run',
@@ -151,7 +151,7 @@ describe('ExperimentAdapter canonical harness persistence', () => {
       });
     }
     adapter.persistEventCase({
-      schemaVersion: 3,
+      schemaVersion: 4,
       type: 'case_end',
       ts: 5,
       runId: 'event-run',
@@ -168,6 +168,39 @@ describe('ExperimentAdapter canonical harness persistence', () => {
       .toEqual({ x: 2 });
   });
 
+  // N-EVAL-MEMORY：写入侧计数与 case_end 自带计数的优先级
+  it('counts memory writes and lets case_end counters win over per-event accumulation', () => {
+    const db = createDbWriter();
+    const adapter = new ExperimentAdapter(db as any);
+    adapter.recordMemoryWrite({
+      schemaVersion: 4, type: 'memory_written', ts: 1, runId: 'event-run', testId: 'event-case',
+      files: ['mem-a.md'], written: 1,
+    });
+    adapter.recordMemoryWrite({
+      schemaVersion: 4, type: 'memory_written', ts: 2, runId: 'event-run', testId: 'event-case',
+      files: ['mem-b.md', 'mem-c.md'], written: 2,
+    });
+    adapter.persistEventCase({
+      schemaVersion: 4, type: 'case_end', ts: 3, runId: 'event-run', testId: 'event-case',
+      status: 'passed', score: 1, durationMs: 5, skillActivations: {},
+    });
+    expect(JSON.parse(db.insertExperimentCases.mock.calls[0]?.[1][0].data_json).memoryWrites).toBe(3);
+
+    // case_end 带了自己的计数就以它为准（runner 落账是权威，逐事件累加只是兜底）
+    const db2 = createDbWriter();
+    const adapter2 = new ExperimentAdapter(db2 as any);
+    adapter2.recordMemoryInjection({
+      schemaVersion: 4, type: 'memory_injected', ts: 1, runId: 'event-run', testId: 'event-case', id: 'memory_index',
+    });
+    adapter2.persistEventCase({
+      schemaVersion: 4, type: 'case_end', ts: 2, runId: 'event-run', testId: 'event-case',
+      status: 'passed', score: 1, durationMs: 5, skillActivations: {}, memoryInjections: 7, memoryWrites: 4,
+    });
+    const data = JSON.parse(db2.insertExperimentCases.mock.calls[0]?.[1][0].data_json);
+    expect(data.memoryInjections).toBe(7);
+    expect(data.memoryWrites).toBe(4);
+  });
+
   it('T2：事件证据原样落库，旧事件不增加 evidence 键', () => {
     const db = createDbWriter();
     const adapter = new ExperimentAdapter(db as any);
@@ -176,11 +209,11 @@ describe('ExperimentAdapter canonical harness persistence', () => {
       toolCalls: [], responseExcerpt: '完成', responseTotalChars: 2,
     };
     adapter.persistEventCase({
-      schemaVersion: 3, type: 'case_end', ts: 1, runId: 'event-run', testId: 'with-evidence',
+      schemaVersion: 4, type: 'case_end', ts: 1, runId: 'event-run', testId: 'with-evidence',
       status: 'passed', score: 1, durationMs: 2, evidence, invalid: { reason: 'usage_unavailable' },
     });
     adapter.persistEventCase({
-      schemaVersion: 3, type: 'case_end', ts: 2, runId: 'event-run', testId: 'legacy',
+      schemaVersion: 4, type: 'case_end', ts: 2, runId: 'event-run', testId: 'legacy',
       status: 'failed', score: 0, durationMs: 2,
     });
     const first = JSON.parse(db.insertExperimentCases.mock.calls[0][1][0].data_json);
@@ -200,7 +233,7 @@ describe('ExperimentAdapter canonical harness persistence', () => {
       symptoms: ['timeout', 'loop_suspect'],
     };
     adapter.persistEventCase({
-      schemaVersion: 3,
+      schemaVersion: 4,
       type: 'case_end',
       ts: 1,
       runId: 'event-run',

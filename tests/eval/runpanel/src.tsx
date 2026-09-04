@@ -188,7 +188,7 @@ function emit(event: EvalRunEvent): void {
 }
 
 function emitActiveRun(): void {
-  const base = { schemaVersion: 3 as const, runId: 'visual-run' };
+  const base = { schemaVersion: 4 as const, runId: 'visual-run' };
   emit({
     ...base,
     type: 'run_start',

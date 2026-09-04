@@ -65,6 +65,14 @@ export const EvalExperimentResult: React.FC<{
       return `${label}: ${before === after ? labels.same : `${before} → ${after}`}`;
     });
   }, [config, labels]);
+  // N-EVAL-MEMORY「挂了≠用了」：实验组开了长期记忆、但候选臂一次都没注入过 ⇒
+  // 这一轮的胜负跟记忆无关，摘要行必须自己说出来（§6：只提示，不排除 pair）。
+  const memoryNotUsed = useMemo(() => {
+    if (!config) return false;
+    const candidate = resolveEffectiveEvalCompareArm(config.candidate, config.baseline);
+    if (!candidate.memory.longTerm) return false;
+    return detail.cases.every((item) => (item.data?.memoryInjections?.candidate ?? 0) === 0);
+  }, [config, detail.cases]);
   const rows = useMemo(() => detail.cases.filter((item) => {
     if (filter === 'all') return true;
     if (filter === 'excluded') return Boolean(item.data?.excludedReason);
@@ -106,6 +114,11 @@ export const EvalExperimentResult: React.FC<{
         })}</div>
       </div>
       <div className="mt-3 rounded-lg bg-zinc-900 px-3 py-2 text-xs text-zinc-400">{labels.blindHint}</div>
+      {memoryNotUsed && (
+        <div className="mt-3 rounded-lg bg-zinc-900 px-3 py-2 text-xs text-zinc-400" data-testid="experiment-memory-not-used">
+          {labels.memoryNotUsed}
+        </div>
+      )}
 
       <div className="mt-3 flex flex-wrap gap-2" aria-label="pair filters">
         {(Object.keys(labels.filters) as PairFilter[]).map((key) => (
@@ -123,6 +136,7 @@ export const EvalExperimentResult: React.FC<{
             <th className="px-3 py-2">{labels.columns.caseId}</th><th className="px-3 py-2">{labels.columns.a}</th>
             <th className="px-3 py-2">{labels.columns.b}</th><th className="px-3 py-2">{labels.columns.winner}</th>
             <th className="px-3 py-2">{labels.columns.skills}</th>
+            <th className="px-3 py-2">{labels.columns.memory}</th>
           </tr></thead>
           <tbody className="divide-y divide-zinc-800">
             {rows.map((item) => {
@@ -133,12 +147,16 @@ export const EvalExperimentResult: React.FC<{
               const activations = item.data?.skillActivations;
               const activationsA = assignment?.A === 'candidate' ? activations?.candidate : activations?.baseline;
               const activationsB = assignment?.B === 'candidate' ? activations?.candidate : activations?.baseline;
+              const injections = item.data?.memoryInjections;
+              const injectionsA = assignment?.A === 'candidate' ? injections?.candidate : injections?.baseline;
+              const injectionsB = assignment?.B === 'candidate' ? injections?.candidate : injections?.baseline;
               return <tr key={item.caseId} data-testid={`experiment-pair-${item.caseId}`}>
                 <td className="px-3 py-2 font-mono text-zinc-300">{item.caseId}</td>
                 <td className="px-3 py-2 text-zinc-300">{item.data?.statusA ? getEvalStatusLabel(item.data.statusA, statusLabels) : '—'}<div className="text-[10px] text-zinc-500">A={assignment?.A === 'candidate' ? labels.candidateName : labels.baselineName}</div></td>
                 <td className="px-3 py-2 text-zinc-300">{item.data?.statusB ? getEvalStatusLabel(item.data.statusB, statusLabels) : '—'}<div className="text-[10px] text-zinc-500">B={assignment?.B === 'candidate' ? labels.candidateName : labels.baselineName}</div></td>
                 <td className="px-3 py-2 text-zinc-300">{winner}</td>
                 <td className="px-3 py-2 text-zinc-400">{activationsA ?? 0}/{activationsB ?? 0}</td>
+                <td className="px-3 py-2 text-zinc-400">{injectionsA ?? 0}/{injectionsB ?? 0}</td>
               </tr>;
             })}
           </tbody>

@@ -294,6 +294,45 @@ export interface TestCase {
   goal_contract?: EvalGoalContract;
   /** 附件注入（GAIA 等外部基准）：跑前从 source 拷进工作目录 dest（相对路径，默认 source 的 basename），跑后清理 */
   files?: CaseFileInjection[];
+  /**
+   * N-EVAL-MEMORY：本题按 case 开记忆（评测默认两向都关）。
+   * 声明即开：adapter 该题 persistLongTermMemory=true，seed 在起跑前落进**该题隔离的**
+   * 记忆目录并重建索引。未声明的 case 行为零变化。
+   */
+  memory?: EvalCaseMemory;
+}
+
+/** 单个 case 的记忆声明（见 memoryEval.validateCaseMemory 的校验口径） */
+export interface EvalCaseMemory {
+  /** 只有 true 一档：要么不写这个段，要么显式开。 */
+  enabled: true;
+  /**
+   * 起跑前预置进本题记忆目录的文件；不给就是「开着记忆但从空目录起跑」。
+   * content 只写记忆正文——frontmatter（name/description/type）由写入器生成，
+   * 自带 frontmatter 会被拒（写重了索引认不出这份文件，seed 就永远进不了提示词）。
+   */
+  seed?: { files: Array<{ name: string; content: string }> };
+}
+
+/** 一次 run 里记忆注入的落账（memory_recalled 判定的证据源） */
+export interface MemoryRecallRecord {
+  /** memory_injected 事件次数 */
+  injections: number;
+  /** 各次注入块报出的条目名去重合并；注入了但没报条目时为空 */
+  entries: string[];
+}
+
+/** 跑完、cleanup 之前的记忆目录正文快照（memory_written 判定的证据源） */
+export interface MemoryFileSnapshot {
+  name: string;
+  content: string;
+}
+
+/** adapter 每题交回给 runner 的记忆落账（字段名与 TestResult 同名，直接并进结果） */
+export interface CaseMemorySignals {
+  memoryRecall?: MemoryRecallRecord;
+  memorySnapshot?: MemoryFileSnapshot[];
+  memoryWrites: number;
 }
 
 /** 单个附件注入声明 */
@@ -427,6 +466,12 @@ export interface TestResult {
   score: number;
   /** 本 case 内每个 skill 的真实激活次数；缺省/空对象均表示未触发。 */
   skillActivations?: Record<string, number>;
+  /** N-EVAL-MEMORY：本 case 的记忆注入落账（memory_recalled 的证据源；adapter 没接记录器时缺席）。 */
+  memoryRecall?: MemoryRecallRecord;
+  /** N-EVAL-MEMORY：跑完、cleanup 之前的记忆目录快照（memory_written 的证据源；同上缺席语义）。 */
+  memorySnapshot?: MemoryFileSnapshot[];
+  /** N-EVAL-MEMORY：本 case 的 durable facts 落盘次数。 */
+  memoryWrites?: number;
   /** 本 case 由 BudgetService usage 实际归集的美元成本 */
   costUsd?: number;
   /** provider response usage；缺失或混入本地估算时，usageStatus 固定为 usage_unavailable。 */
@@ -696,7 +741,8 @@ export type TestEvent =
   | { type: 'tool_call'; testId: string; tool: string; input: unknown }
   | { type: 'tool_result'; testId: string; tool: string; success: boolean }
   | { type: 'skill_activated'; testId: string; name: string }
-  | { type: 'memory_injected'; testId: string; id: string }
+  | { type: 'memory_injected'; testId: string; id: string; entries?: string[] }
+  | { type: 'memory_written'; testId: string; files: string[]; written: number }
   | { type: 'subagent_spawned'; testId: string; id: string }
   | { type: 'error'; testId?: string; error: string };
 
@@ -832,7 +878,19 @@ export type ExpectationType =
   // 「压根没产出」会让窗口为空而真空通过，是最危险的假绿）。
   // 刻意无默认工具表：同一个 WebSearch/Read 在「介绍我司项目的 PPT」是对的、在
   // 「Q3 营销方案 PPT」是拖延，极性按用例定，全局默认必在一边造假红。
-  | 'no_stall_before_artifact';
+  | 'no_stall_before_artifact'
+  // N-EVAL-MEMORY：记忆子系统判定（实现在 memoryEval，保持本文件与 assertionEngine 在债务门内）。
+  // memory_recalled —— params: entries（必填 regex 列表，匹配注入块报出的条目名）、
+  //   mode（'any' 默认 / 'all'）、negate（可选布尔；abstention 题用：这些条目不该被注入）。
+  //   证据源 = adapter 记录的 memory_injected 事件的 entries。注意「注了但没报条目」等同没有证据。
+  // memory_written —— params 至少给一个：contains / not_contains（regex，对跑完后记忆目录
+  //   全部文件正文）、no_duplicates（同一条事实不许跨文件落两份，归一化口径见 memoryEval）、
+  //   no_sensitive（全部正文过 guardSensitiveText，脱敏后有变化 = 有内容绕过了写入侧的脱敏）。
+  //   证据源 = adapter 在 run 结束、cleanup 之前对记忆目录做的快照。
+  // 两者 deterministic 桶；非法参数、以及没有证据源（mock / 旧 adapter）一律 fail-loud，
+  // 绝不静默算过——「没记录」和「记录里没有」混起来就是假绿。
+  | 'memory_recalled'
+  | 'memory_written';
 
 export interface Expectation {
   type: ExpectationType;
@@ -889,6 +947,9 @@ export interface CaseComparison {
   durationB: number;
   skillActivationsA: Record<string, number>;
   skillActivationsB: Record<string, number>;
+  /** N-EVAL-MEMORY：两臂记忆注入次数（「挂了≠用了」：候选臂为 0 时结论不说明记忆效果） */
+  memoryInjectionsA: number;
+  memoryInjectionsB: number;
   /** WP1-3b：任一侧没跑成（infra_excluded / 零产出带错误）→ 本 pair 不进胜负统计 */
   excludedReason?: string;
 }

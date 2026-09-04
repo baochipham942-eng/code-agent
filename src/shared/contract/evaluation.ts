@@ -10,7 +10,7 @@ import type {
   TurnQualityScoreSummary,
 } from './turnQuality';
 
-export const EVAL_RUN_EVENT_SCHEMA_VERSION = 3 as const;
+export const EVAL_RUN_EVENT_SCHEMA_VERSION = 4 as const;
 export const EVAL_REPEAT_MAX = 10;
 
 export interface EvalCompareHarness {
@@ -455,7 +455,7 @@ export type EvalRunEventSummary = {
  */
 export type EvalRunEvent =
   | {
-      schemaVersion: 3;
+      schemaVersion: 4;
       type: 'run_start';
       ts: number;
       runId: string;
@@ -463,7 +463,7 @@ export type EvalRunEvent =
       config: EvalRunStartConfig;
     }
   | {
-      schemaVersion: 3;
+      schemaVersion: 4;
       type: 'case_start';
       ts: number;
       runId: string;
@@ -471,7 +471,7 @@ export type EvalRunEvent =
       description: string;
     }
   | {
-      schemaVersion: 3;
+      schemaVersion: 4;
       type: 'case_end';
       ts: number;
       runId: string;
@@ -491,6 +491,10 @@ export type EvalRunEvent =
       sessionId?: string;
       scoreAuthority?: 'deterministic_assertion' | 'llm_judge' | 'self_check';
       skillActivations?: Record<string, number>;
+      /** N-EVAL-MEMORY：本题记忆注入次数（0 = 记忆未出场，结论不说明记忆效果）。 */
+      memoryInjections?: number;
+      /** N-EVAL-MEMORY：本题 durable facts 落盘次数。 */
+      memoryWrites?: number;
       aiReview?: Partial<Record<AiReviewDimension, AiReviewVerdict>>;
       evidence?: EvalCaseEvidence;
       trialAggregate?: {
@@ -503,7 +507,7 @@ export type EvalRunEvent =
       arm?: 'baseline' | 'candidate';
     }
   | {
-      schemaVersion: 3;
+      schemaVersion: 4;
       type: 'pair_end';
       ts: number;
       runId: string;
@@ -518,9 +522,11 @@ export type EvalRunEvent =
       assertionPassB: number;
       assertionCount: number;
       skillActivations: { baseline: number; candidate: number };
+      /** N-EVAL-MEMORY：两臂记忆注入次数；候选臂为 0 时结果页提示「记忆未出场」。 */
+      memoryInjections: { baseline: number; candidate: number };
     }
   | {
-      schemaVersion: 3;
+      schemaVersion: 4;
       type: 'tool_call';
       ts: number;
       runId: string;
@@ -529,7 +535,7 @@ export type EvalRunEvent =
       input: unknown;
     }
   | {
-      schemaVersion: 3;
+      schemaVersion: 4;
       type: 'tool_result';
       ts: number;
       runId: string;
@@ -538,7 +544,7 @@ export type EvalRunEvent =
       success: boolean;
     }
   | {
-      schemaVersion: 3;
+      schemaVersion: 4;
       type: 'error';
       ts: number;
       runId: string;
@@ -546,7 +552,7 @@ export type EvalRunEvent =
       error: string;
     }
   | {
-      schemaVersion: 3;
+      schemaVersion: 4;
       type: 'run_end';
       ts: number;
       runId: string;
@@ -558,7 +564,7 @@ export type EvalRunEvent =
       error?: string;
     }
   | {
-      schemaVersion: 3;
+      schemaVersion: 4;
       type: 'skill_activated';
       ts: number;
       runId: string;
@@ -566,15 +572,28 @@ export type EvalRunEvent =
       name: string;
     }
   | {
-      schemaVersion: 3;
+      schemaVersion: 4;
       type: 'memory_injected';
       ts: number;
       runId: string;
       testId: string;
       id: string;
+      /** 注入块里实际包含的条目名（light memory 文件名 / packed 条目 id）。旧发射方缺省。 */
+      entries?: string[];
     }
   | {
-      schemaVersion: 3;
+      schemaVersion: 4;
+      type: 'memory_written';
+      ts: number;
+      runId: string;
+      testId: string;
+      /** 本次落盘的 light memory 文件名。 */
+      files: string[];
+      /** durableFactWriter 报告的成功写入条数（files.length 的权威来源是写入器本身）。 */
+      written: number;
+    }
+  | {
+      schemaVersion: 4;
       type: 'subagent_spawned';
       ts: number;
       runId: string;
@@ -767,6 +786,8 @@ interface EvalExperimentCaseItem {
     assertionPassB?: number;
     assertionCount?: number;
     skillActivations?: { baseline: number; candidate: number };
+    /** N-EVAL-MEMORY：两臂记忆注入次数（候选臂全 0 ⇒ 结果页提示「记忆未出场」）。 */
+    memoryInjections?: { baseline: number; candidate: number };
   } | null;
 }
 export interface EvalExperimentDetail {

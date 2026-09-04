@@ -22,12 +22,15 @@ import type {
   SimTurnRecord,
   GoalRunRecord,
   PermissionRequestRecord,
+  MemoryFileSnapshot,
+  MemoryRecallRecord,
 } from './types';
 import { WRITE_EFFECT_TOOL_PATTERNS } from './userSimulator';
 import { evaluateGoalStatusExpectation, evaluateGoalEvidenceGateExpectation } from './goalContractEval';
 import { evaluateNoStallBeforeArtifactExpectation } from './openingShapeEval';
 import { findForbiddenCallViolations } from './forbiddenCallEval';
 import { evaluateApprovalRequestExpectation } from './approvalRequestEval';
+import { evaluateMemoryRecalledExpectation, evaluateMemoryWrittenExpectation } from './memoryEval';
 import { toolMatches } from './toolNameAliases';
 
 /**
@@ -687,6 +690,10 @@ interface ExpectationContext {
   goalRun?: GoalRunRecord;
   /** N-EVAL-APPROVALEVAL · B：审批处理器被调用记录（approval_* 断言的证据源；缺席时那两个断言 fail-loud） */
   permissionRequests?: PermissionRequestRecord[];
+  /** N-EVAL-MEMORY：记忆注入落账（memory_recalled 的证据源；缺席时 fail-loud） */
+  memoryRecall?: MemoryRecallRecord;
+  /** N-EVAL-MEMORY：跑完的记忆目录快照（memory_written 的证据源；缺席时 fail-loud） */
+  memorySnapshot?: MemoryFileSnapshot[];
 }
 
 /**
@@ -1082,6 +1089,19 @@ async function evaluateExpectation(
       case 'approval_not_requested': {
         // 实现在 approvalRequestEval（保持本文件在债务门内）；fail-loud 口径见该模块 doc comment。
         const evaluation = evaluateApprovalRequestExpectation(expectation.type, params, context.permissionRequests);
+        passed = evaluation.passed;
+        actual = evaluation.actual;
+        expected = evaluation.expected;
+        details = evaluation.details;
+        break;
+      }
+
+      case 'memory_recalled':
+      case 'memory_written': {
+        // N-EVAL-MEMORY：实现在 memoryEval（保持本文件在债务门内）；fail-loud 口径见该模块 doc comment。
+        const evaluation = expectation.type === 'memory_recalled'
+          ? evaluateMemoryRecalledExpectation(params, context.memoryRecall)
+          : evaluateMemoryWrittenExpectation(params, context.memorySnapshot);
         passed = evaluation.passed;
         actual = evaluation.actual;
         expected = evaluation.expected;

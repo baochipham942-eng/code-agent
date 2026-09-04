@@ -5,10 +5,11 @@ import { EVAL_RUN_EVENT_SCHEMA_VERSION } from '../../../src/shared/contract/eval
 describe('evaluation run event validation', () => {
   it('接受 pair_end 与 SHIPGATE compare 汇总，拒绝缺失四态对象', () => {
     expect(parseEvalRunEvent({
-      schemaVersion: 3, type: 'pair_end', ts: 1, runId: 'run-1', testId: 'case-1',
+      schemaVersion: 4, type: 'pair_end', ts: 1, runId: 'run-1', testId: 'case-1',
       statusA: 'passed', statusB: 'failed', assignment: { A: 'baseline', B: 'candidate' },
       assertionWinner: 'baseline', referenceWinner: 'A', assertionPassA: 1, assertionPassB: 0,
       assertionCount: 2, skillActivations: { baseline: 1, candidate: 0 },
+      memoryInjections: { baseline: 2, candidate: 0 },
     })).toMatchObject({ type: 'pair_end', assertionWinner: 'baseline' });
     const summary = {
       runId: 'run-1', startTime: 1, endTime: 2, duration: 1, total: 1, passed: 0, failed: 1,
@@ -23,10 +24,10 @@ describe('evaluation run event validation', () => {
       },
     };
     expect(parseEvalRunEvent({
-      schemaVersion: 3, type: 'run_end', ts: 2, runId: 'run-1', summary, reportFiles: [], exitCode: 0, aborted: false,
+      schemaVersion: 4, type: 'run_end', ts: 2, runId: 'run-1', summary, reportFiles: [], exitCode: 0, aborted: false,
     })).toMatchObject({ summary: { compare: { shipGate: { state: 'insufficient' } } } });
     expect(() => parseEvalRunEvent({
-      schemaVersion: 3, type: 'run_end', ts: 2, runId: 'run-1',
+      schemaVersion: 4, type: 'run_end', ts: 2, runId: 'run-1',
       summary: { ...summary, compare: { ...summary.compare, shipGate: undefined } }, reportFiles: [], exitCode: 0, aborted: false,
     })).toThrow(/shipGate/);
   });
@@ -49,10 +50,10 @@ describe('evaluation run event validation', () => {
   it('rejects old versions, unknown event types, and incomplete terminal summaries', () => {
     expect(() => parseEvalRunEvent({ schemaVersion: 1, type: 'error', ts: 1, runId: 'run-1', error: 'x' }))
       .toThrow(/版本/);
-    expect(() => parseEvalRunEvent({ schemaVersion: 3, type: 'mystery', ts: 1, runId: 'run-1' }))
+    expect(() => parseEvalRunEvent({ schemaVersion: 4, type: 'mystery', ts: 1, runId: 'run-1' }))
       .toThrow(/类型/);
     expect(() => parseEvalRunEvent({
-      schemaVersion: 3,
+      schemaVersion: 4,
       type: 'run_end',
       ts: 1,
       runId: 'run-1',
@@ -62,7 +63,7 @@ describe('evaluation run event validation', () => {
       aborted: false,
     })).toThrow(/runId/);
     expect(() => parseEvalRunEvent({
-      schemaVersion: 3,
+      schemaVersion: 4,
       type: 'case_end',
       ts: 1,
       runId: 'run-1',
@@ -76,7 +77,7 @@ describe('evaluation run event validation', () => {
 
   it('T4：接受合法 aiReview，拒绝未知维度和无效 verdict', () => {
     const base = {
-      schemaVersion: 3, type: 'case_end', ts: 1, runId: 'run-1', testId: 'case-1',
+      schemaVersion: 4, type: 'case_end', ts: 1, runId: 'run-1', testId: 'case-1',
       status: 'passed', score: 1, durationMs: 1,
     } as const;
     expect(parseEvalRunEvent({
@@ -117,5 +118,48 @@ describe('evaluation run event validation', () => {
       .toMatchObject({ invalid: { reason: 'usage_unavailable' } });
     expect(() => parseEvalRunEvent({ ...base, invalid: { reason: 'unknown' } }))
       .toThrow(/invalid.reason/);
+  });
+
+  // N-EVAL-MEMORY：v4 新增字段的正反两向
+  it('accepts memory_injected with entries and memory_written', () => {
+    expect(parseEvalRunEvent({
+      schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION, type: 'memory_injected', ts: 1, runId: 'run-1',
+      testId: 'case-1', id: 'memory_index', entries: ['mem-orchid.md'],
+    })).toMatchObject({ type: 'memory_injected', entries: ['mem-orchid.md'] });
+    expect(parseEvalRunEvent({
+      schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION, type: 'memory_written', ts: 1, runId: 'run-1',
+      testId: 'case-1', files: ['mem-fact.md'], written: 1,
+    })).toMatchObject({ type: 'memory_written', written: 1 });
+  });
+
+  it('rejects malformed memory events and pair_end without memoryInjections', () => {
+    expect(() => parseEvalRunEvent({
+      schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION, type: 'memory_injected', ts: 1, runId: 'run-1',
+      testId: 'case-1', id: 'memory_index', entries: 'mem-orchid.md',
+    })).toThrow(/entries/);
+    expect(() => parseEvalRunEvent({
+      schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION, type: 'memory_written', ts: 1, runId: 'run-1',
+      testId: 'case-1', written: 1,
+    })).toThrow(/files/);
+    expect(() => parseEvalRunEvent({
+      schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION, type: 'pair_end', ts: 1, runId: 'run-1', testId: 'case-1',
+      statusA: 'passed', statusB: 'failed', assignment: { A: 'baseline', B: 'candidate' },
+      assertionWinner: 'baseline', referenceWinner: 'A', assertionPassA: 1, assertionPassB: 0,
+      assertionCount: 2, skillActivations: { baseline: 1, candidate: 0 },
+    })).toThrow(/memoryInjections/);
+  });
+
+  it('rejects case_end with a negative memory counter', () => {
+    expect(() => parseEvalRunEvent({
+      schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION, type: 'case_end', ts: 1, runId: 'run-1',
+      testId: 'case-1', status: 'passed', score: 1, durationMs: 1, memoryInjections: -1,
+    })).toThrow(/memoryInjections/);
+  });
+
+  // v3 事件在 v4 上一律硬拒（版本策略是严格相等，没有向后兼容窗口）
+  it('rejects the previous schema version outright', () => {
+    expect(() => parseEvalRunEvent({
+      schemaVersion: 3, type: 'memory_injected', ts: 1, runId: 'run-1', testId: 'case-1', id: 'user-memory',
+    })).toThrow(/版本/);
   });
 });

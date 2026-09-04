@@ -14,6 +14,7 @@ import type {
   EvalRunSubscriptionResult,
   AiReviewDimension,
 } from '@shared/contract/evaluation';
+import { EVAL_RUN_EVENT_SCHEMA_VERSION } from '@shared/contract/evaluation';
 import type { EvalBaselineExperimentListItem } from '@shared/contract/evaluationBaseline';
 import {
   evalRunPanelEn,
@@ -137,7 +138,7 @@ export const EvalBenchmarksTab: React.FC = () => {
   }, [confirmation, starting]);
 
   const updateActiveRunFromEvent = useCallback((event: EvalRunEvent) => {
-    if (event.schemaVersion !== 3) {
+    if (event.schemaVersion !== EVAL_RUN_EVENT_SCHEMA_VERSION) {
       setQuietNotice(labels.quietDegraded);
       setActiveRun(null);
       void loadExperiments();

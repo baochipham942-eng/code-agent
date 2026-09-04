@@ -103,6 +103,9 @@ export class EvalRunEventStream {
           ...(event.result.sessionId ? { sessionId: event.result.sessionId } : {}),
           ...(event.result.scoreAuthority ? { scoreAuthority: event.result.scoreAuthority } : {}),
           skillActivations: event.result.skillActivations,
+          // N-EVAL-MEMORY：case_end 自带计数，桥优先用它（与 data_json 的同名字段同源）
+          ...(event.result.memoryRecall ? { memoryInjections: event.result.memoryRecall.injections } : {}),
+          ...(event.result.memoryWrites !== undefined ? { memoryWrites: event.result.memoryWrites } : {}),
           ...(event.result.aiReview ? { aiReview: event.result.aiReview } : {}),
           evidence: buildCaseEvidence(event.result),
           ...(event.result.trialAggregate ? { trialAggregate: event.result.trialAggregate } : {}),
@@ -119,6 +122,7 @@ export class EvalRunEventStream {
         break;
       case 'error':
       case 'memory_injected':
+      case 'memory_written':
       case 'subagent_spawned':
         this.write({ schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION, ts: Date.now(), runId: this.runId, ...event });
         break;
@@ -186,6 +190,10 @@ export class EvalRunEventStream {
         skillActivations: {
           baseline: sum(candidateIsA ? comparison.skillActivationsB : comparison.skillActivationsA),
           candidate: sum(candidateIsA ? comparison.skillActivationsA : comparison.skillActivationsB),
+        },
+        memoryInjections: {
+          baseline: candidateIsA ? comparison.memoryInjectionsB : comparison.memoryInjectionsA,
+          candidate: candidateIsA ? comparison.memoryInjectionsA : comparison.memoryInjectionsB,
         },
       });
     }

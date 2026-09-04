@@ -489,5 +489,3 @@ export const EvalHarvestDialog: React.FC<EvalHarvestDialogProps> = ({
     );
   }
 };
-
-export default EvalHarvestDialog;

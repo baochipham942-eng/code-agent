@@ -13,6 +13,7 @@
 // ============================================================================
 
 import path from 'node:path';
+import { shortSessionIdForFileName } from '@shared/utils/id';
 import type {
   HarvestCandidate,
   HarvestDraftSeed,
@@ -153,14 +154,8 @@ export function deriveExpectationCandidates(input: {
   return { candidates: deduped, notes };
 }
 
-/** 会话短 id：草稿 id 用它拼，够区分又不至于把整条 uuid 摊在界面上。 */
-export function shortSessionId(sessionId: string): string {
-  const cleaned = sessionId.replace(/[^A-Za-z0-9]+/g, '');
-  return (cleaned.slice(-8) || 'session').toLowerCase();
-}
-
 /** 会话首轮用户原话（题面来源）——只取 user 块，助手回复不进题目。 */
-export function firstUserPrompt(replay: StructuredReplay): string | null {
+function firstUserPrompt(replay: StructuredReplay): string | null {
   for (const turn of replay.turns ?? []) {
     for (const block of turn.blocks ?? []) {
       if (block.type === 'user' && block.content.trim()) return block.content.trim();
@@ -197,7 +192,7 @@ export function deriveHarvestSeed(input: HarvestDeriveInput): HarvestDraftSeed {
   return {
     sessionId: replay.sessionId,
     sessionTitle,
-    id: `draft-${shortSessionId(replay.sessionId)}`,
+    id: `draft-${shortSessionIdForFileName(replay.sessionId)}`,
     prompt,
     description,
     tags,

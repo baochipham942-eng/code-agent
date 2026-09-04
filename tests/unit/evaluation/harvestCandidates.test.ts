@@ -172,7 +172,7 @@ describe('草稿预填', () => {
       negativeFeedbackAt: [],
     });
     expect(withQuality.tags).toEqual(['harvest-0904', 'quality-risk']);
-    expect(withQuality.id).toBe('draft-fake0001');
+    expect(withQuality.id).toBe('draft-ake-0001');
     expect(withQuality.prompt).toBe('在工作目录里读 sales.csv，生成 out/summary.html');
     expect(withQuality.description).toBe('生成销售报告');
 

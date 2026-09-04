@@ -17,7 +17,7 @@ import { deriveHarvestSeed } from './harvestCandidates';
 import { queryNegativeFeedback } from './trajectoryToCase';
 
 /** 一次最多收多少场：模态本来就是人手选的量级，超出直接拒，不做分页。 */
-export const HARVEST_MAX_SESSIONS = 20;
+const HARVEST_MAX_SESSIONS = 20;
 /** 单场会话读多少条点踩：反向候选只需要少量锚点。 */
 const NEGATIVE_FEEDBACK_LIMIT = 10;
 

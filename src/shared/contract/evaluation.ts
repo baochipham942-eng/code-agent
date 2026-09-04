@@ -844,7 +844,7 @@ export * from './evaluationHarvest';
 
 import type { EvalDraftCaseType as EvalDraftCaseTypeRef, HarvestCandidate as HarvestCandidateRef } from './evaluationHarvest';
 
-export interface CreateEvalDraftRequest {
+interface CreateEvalDraftRequest {
   action: 'create-draft';
   id: string;
   prompt: string;

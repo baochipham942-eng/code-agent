@@ -100,6 +100,8 @@ describe('SkillDiscoveryService discovery', () => {
     projectDir = path.join(tmpRoot, 'project');
     await fs.mkdir(projectDir, { recursive: true });
     vi.stubEnv('HOME', homeDir);
+    // 本测试验的是「未设 CODE_AGENT_DATA_DIR ⇒ 回落 $HOME/.code-agent」；globalSetup 已把它指进 run 根，这里显式清空。
+    vi.stubEnv('CODE_AGENT_DATA_DIR', '');
     vi.stubEnv('CODE_AGENT_INCLUDE_CLAUDE_LEGACY_SKILLS', '');
   });
 

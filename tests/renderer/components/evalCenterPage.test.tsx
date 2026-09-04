@@ -42,15 +42,17 @@ afterEach(() => {
 });
 
 describe('EvalCenterPage', () => {
-  it('按遥测 → 回放 → 题库 → 打分器 → 实验 → 跑分 → 验证渲染，默认回放', async () => {
+  it('按遥测 → 回放 → 题库 → 打分器 → 实验 → 跑分渲染，默认回放；验证不在 tab 条里', async () => {
     useAuthStore.setState({ user: user(true) });
     render(<EvalCenterPage />);
 
     expect(screen.getByTestId('eval-center-tab-replay')).toBeTruthy();
     expect(screen.getByTestId('eval-center-tab-cases')).toBeTruthy();
-    expect(screen.getByTestId('eval-center-tab-validation')).toBeTruthy();
     expect(screen.getByTestId('eval-center-tab-telemetry')).toBeTruthy();
     expect(screen.getByTestId('eval-center-tab-benchmarks')).toBeTruthy();
+    // 2026-09-04 爸拍板撤：验证的结果本来就是 trace 里的一条工具调用，回放 tab 看得见，
+    // 不需要第二个展示面；内容页仍保留给深链排障，但不占 tab 条一等位置。
+    expect(screen.queryByTestId('eval-center-tab-validation')).toBeNull();
     const tabs = screen.getAllByRole('tab');
     expect(tabs.map((tab) => tab.getAttribute('data-testid'))).toEqual([
       'eval-center-tab-telemetry',
@@ -59,9 +61,8 @@ describe('EvalCenterPage', () => {
       'eval-center-tab-scorers',
       'eval-center-tab-experiments',
       'eval-center-tab-benchmarks',
-      'eval-center-tab-validation',
     ]);
-    expect(tabs.map((tab) => tab.textContent)).toEqual(['遥测', '回放', '题库', '打分器', '实验', '跑分', '验证']);
+    expect(tabs.map((tab) => tab.textContent)).toEqual(['遥测', '回放', '题库', '打分器', '实验', '跑分']);
     expect(await screen.findByTestId('eval-replay-explorer-mock')).toBeTruthy();
   });
 
@@ -74,14 +75,28 @@ describe('EvalCenterPage', () => {
     expect(screen.queryByText('评测中心', { selector: 'h1,h2' })).toBeNull();
   });
 
-  it('切到验证 tab 渲染验证工作台', async () => {
+  it('深链到验证：渲染工作台，并临时把验证 tab 补进 tab 条（否则用户站在没有任何高亮的页上）', async () => {
     useAuthStore.setState({ user: user(true) });
+    useEvalCenterStore.setState({ tab: 'validation' });
     render(<EvalCenterPage />);
 
-    fireEvent.click(screen.getByTestId('eval-center-tab-validation'));
-
-    expect(useEvalCenterStore.getState().tab).toBe('validation');
     expect(await screen.findByTestId('in-app-validation-workspace-mock')).toBeTruthy();
+    const validationTab = screen.getByTestId('eval-center-tab-validation');
+    expect(validationTab.getAttribute('aria-selected')).toBe('true');
+    // 补进来的是末位，其余 6 个照旧，随时可以点走
+    expect(screen.getAllByRole('tab').map((tab) => tab.getAttribute('data-testid'))).toEqual([
+      'eval-center-tab-telemetry',
+      'eval-center-tab-replay',
+      'eval-center-tab-cases',
+      'eval-center-tab-scorers',
+      'eval-center-tab-experiments',
+      'eval-center-tab-benchmarks',
+      'eval-center-tab-validation',
+    ]);
+
+    fireEvent.click(screen.getByTestId('eval-center-tab-cases'));
+    expect(useEvalCenterStore.getState().tab).toBe('cases');
+    expect(screen.queryByTestId('eval-center-tab-validation')).toBeNull();
   });
 
   it('切到遥测 / 基准 tab 渲染对应内容', async () => {
@@ -104,18 +119,5 @@ describe('EvalCenterPage', () => {
     fireEvent.click(screen.getByTestId('eval-center-tab-cases'));
     expect(useEvalCenterStore.getState().tab).toBe('cases');
     expect(await screen.findByTestId('eval-case-list-tab-mock')).toBeTruthy();
-  });
-
-  it('有 pending 验证请求且用户停在别的 tab 时显示角标，切入后消失', async () => {
-    useAuthStore.setState({ user: user(true) });
-    useAppStore.setState({
-      pendingInAppValidationRequest: { requestId: 'r1', html: '<html/>', steps: [], timeoutMs: 1000 },
-    });
-    render(<EvalCenterPage />);
-
-    expect(screen.getByTestId('eval-center-validation-badge')).toBeTruthy();
-
-    fireEvent.click(screen.getByTestId('eval-center-tab-validation'));
-    expect(screen.queryByTestId('eval-center-validation-badge')).toBeNull();
   });
 });

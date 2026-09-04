@@ -95,8 +95,11 @@ const FailureCard: React.FC<{
   </div>
 );
 
+// flex flex-col 是承重的：插件页根节点（FullScreenPage inline）靠 flex-1 + min-h-0 拿高度，
+// 宿主这层若是 block 容器，那两个类在子元素上全部失效 —— 插件页高度退化成内容高度，
+// 页内所有 overflow-y-auto 面板永远不会滚（2026-09-04 评测中心三 tab 滚不动的共因）。
 const HostSurface: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <div className="h-full min-h-0 min-w-0 flex-1 overflow-hidden bg-zinc-900">
+  <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-zinc-900">
     {children}
   </div>
 );

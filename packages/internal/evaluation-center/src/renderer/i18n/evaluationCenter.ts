@@ -26,7 +26,6 @@ export const evalCenterZh = {
     tabBenchmarks: '跑分',
     tabScorers: '打分器',
     tabExperiments: '实验',
-    newRequestBadge: '新请求',
     validation: {
       loadDemo: '载入 Demo',
       reload: '重载',
@@ -198,7 +197,6 @@ export const evalCenterEn = {
     tabBenchmarks: 'Run',
     tabScorers: 'Scorers',
     tabExperiments: 'Experiments',
-    newRequestBadge: 'New request',
     validation: {
       loadDemo: 'Load demo',
       reload: 'Reload',

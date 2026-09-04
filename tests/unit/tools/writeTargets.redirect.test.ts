@@ -119,10 +119,14 @@ describe('shell redirect write targets', () => {
     });
   });
 
-  it('still scans a located -c script after an ambiguous option value', () => {
-    expect(resolve('bash --rcfile "$F" -c \'echo hi > out.txt\'')).toMatchObject({
-      targets: [resolveCanonicalRunPath(path.join(workingDirectory, 'out.txt'))],
-      uncertain: [],
+  it.each([
+    'bash --rcfile foo -c \'echo > f\'',
+    'bash --rcfile "$F" -c \'echo hi > out.txt\'',
+    'bash -o pipefail -c \'echo > f\'',
+  ])('fails closed when an option value prevents static script location: %s', (command) => {
+    expect(resolve(command)).toMatchObject({
+      targets: [],
+      uncertain: ['uncertain-redirection:bash'],
     });
   });
 
@@ -199,6 +203,10 @@ describe('shell redirect write targets', () => {
     ['source script.sh', 'uncertain-redirection:source'],
     ['. script.sh', 'uncertain-redirection:source'],
     ['git log | sh', 'uncertain-redirection:sh'],
+    ["printf '%s' bash", 'uncertain-redirection:bash'],
+    ['echo bash', 'uncertain-redirection:bash'],
+    ['grep sh file', 'uncertain-redirection:sh'],
+    ['echo eval', 'uncertain-redirection:eval'],
   ])('fails closed when a wrapped script cannot be resolved: %s', (command, reason) => {
     expect(resolve(command)).toMatchObject({ targets: [], uncertain: [reason] });
   });
@@ -216,17 +224,13 @@ describe('shell redirect write targets', () => {
     'echo $(date)',
     'echo "$(date)"',
     'echo `date`',
-    'echo bash',
     'grep ">" f',
-    'grep sh file',
-    "printf '%s' bash --noprofile",
     'diff <(printf a) <(printf b)',
     'cat >(printf a)',
     "printf '%s' '$runner' -c 'x'",
     "sed 's/>/x/' f",
     'echo "a${IFS}b"',
     'echo "$\'x\'"',
-    'bash --rcfile "$F" -c \'echo hi\'',
   ])('ignores redirect syntax in ordinary quoted arguments: %s', (command) => {
     expect(resolve(command)).toMatchObject({ targets: [], uncertain: [] });
   });

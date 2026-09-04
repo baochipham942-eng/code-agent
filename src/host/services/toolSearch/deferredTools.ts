@@ -337,6 +337,15 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     source: 'builtin',
   },
   {
+    // 2026-09-04 N-DELIVER-SELFVALIDATE：2026-05 上线却漏登记，真机 0 次调用——
+    // 不在 CORE 也不在这张表 = 对模型物理上不可见。shortDescription 兼作引导。
+    name: 'validate_html_in_app',
+    shortDescription: '交付网页类产物前自己点一遍：把生成的 HTML 放进沙箱 iframe 跑交互脚本并断言结果',
+    tags: ['vision'],
+    aliases: ['validate html', 'verify html', 'test html', 'in-app validation', '验证网页', '自验'],
+    source: 'builtin',
+  },
+  {
     name: 'Computer',
     shortDescription: '计算机控制（截图/鼠标/键盘）',
     tags: ['vision'],

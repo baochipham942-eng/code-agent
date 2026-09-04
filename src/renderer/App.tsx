@@ -238,6 +238,8 @@ export const App: React.FC = () => {
   const sentryUserId = useAuthStore((state) => state.user?.id ?? null);
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
   useSurfaceExecutionEffects(currentSessionId);
+  const currentSessionWorkingDirectory = useSessionStore((state) =>
+    state.sessions.find((item) => item.id === state.currentSessionId)?.workingDirectory ?? null);
   const currentProjectId = useSessionStore((state) => {
     const session = state.sessions.find((item) => item.id === state.currentSessionId);
     return session?.projectId && session.projectId !== UNSORTED_PROJECT_ID ? session.projectId : null;
@@ -509,7 +511,7 @@ export const App: React.FC = () => {
     loadSettings();
   }, [setLanguage, setModelConfig, setDisclosureLevel, setTheme]);
 
-  const folderTrust = useFolderTrustPrompt(currentSessionId);
+  const folderTrust = useFolderTrustPrompt(currentSessionWorkingDirectory);
 
   // 应用启动时检查更新（强制更新检查）
   useEffect(() => {

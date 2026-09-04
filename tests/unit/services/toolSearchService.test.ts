@@ -28,7 +28,7 @@ vi.mock('../../../src/host/mcp/mcpClient', () => ({
   getMCPClient: () => mcpClientMocks,
 }));
 
-function registerProtocolToolForSearch(name: 'Browser' | 'Computer'): void {
+function registerProtocolToolForSearch(name: 'Browser' | 'Computer' | 'validate_html_in_app'): void {
   const schema: ToolSchema = {
     name,
     description: `${name} test schema`,
@@ -451,5 +451,51 @@ describe('ToolSearchService loadable results', () => {
       expect(second).toEqual([]);
       expect(service.getLoadedDeferredTools().filter((n) => n === 'Task')).toHaveLength(1);
     });
+  });
+});
+
+
+// 2026-09-04 N-DELIVER-SELFVALIDATE：这个工具 2026-05 就上线并在 browserControl 插件里
+// 注册了，却既不在 CORE_TOOLS 也没登记进 DEFERRED_TOOLS_META——而 ToolSearch 的索引源
+// 就是这张表，于是它对模型物理上不可见（真机 4171 次工具调用里 0 次）。
+describe('validate_html_in_app 对模型可达', () => {
+  beforeEach(() => {
+    resetProtocolRegistry();
+    registerProtocolToolForSearch('validate_html_in_app');
+    resetToolSearchService();
+    mcpClientMocks.discoverLazyServersForSearch.mockReset();
+    mcpClientMocks.discoverLazyServersForSearch.mockResolvedValue([]);
+  });
+
+  it('登记在 deferred 名字索引里（不登记就搜不到，模型永远够不着）', () => {
+    const meta = DEFERRED_TOOLS_META.find((entry) => entry.name === 'validate_html_in_app');
+    expect(meta).toBeDefined();
+    expect(meta?.source).toBe('builtin');
+  });
+
+  it('按用途关键字能搜到，且是可加载的真工具而不是 search-only 元数据', async () => {
+    const service = new ToolSearchService();
+    const result = await service.searchTools('validate html', { maxResults: 5, includeMCP: false });
+
+    const hit = result.tools.find((tool) => tool.name === 'validate_html_in_app');
+    expect(hit).toBeDefined();
+    expect(hit?.loadable).toBe(true);
+    expect(hit?.notCallableReason).toBeUndefined();
+    expect(result.loadedTools).toContain('validate_html_in_app');
+  });
+
+  it('select:<name> 直取也能加载', () => {
+    const service = new ToolSearchService();
+    const result = service.selectTool('validate_html_in_app');
+
+    expect(result.loadedTools).toContain('validate_html_in_app');
+    expect(result.tools[0]?.loadable).toBe(true);
+  });
+
+  it('中文用途词也能命中——用户说「验证网页」时模型该搜得到', async () => {
+    const service = new ToolSearchService();
+    const result = await service.searchTools('验证网页', { maxResults: 5, includeMCP: false });
+
+    expect(result.tools.map((tool) => tool.name)).toContain('validate_html_in_app');
   });
 });

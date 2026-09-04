@@ -184,7 +184,9 @@ export const EvalCaseDrawer: React.FC<EvalCaseDrawerProps> = ({ target, onClose 
 
           <section className="border-b border-zinc-800 px-4 py-4">
             <h3 className="mb-1 text-xs font-medium text-zinc-300">{labels.conversation}</h3>
-            <p className="mb-3 text-[10px] text-zinc-600">{labels.representativeAttempt}</p>
+            {trials.length > 1 && (
+              <p className="mb-3 text-[10px] text-zinc-600">{labels.representativeAttempt}</p>
+            )}
             <EvalCaseTranscript evidence={detail.evidence} promptVersion={detail.promptVersion} labels={labels} />
           </section>
 

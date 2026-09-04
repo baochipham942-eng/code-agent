@@ -1,3 +1,8 @@
+/**
+ * In-repo testable copy of the Neo/Grok inspect follow-up stitch.
+ * Mirrors `scripts/inspect/neo_five_case.py` `_invocation_tail` (line 203)
+ * and `_forward_bridged_invocations` (line 325). Change one, change the other.
+ */
 export type BridgeMode = 'fresh-per-invocation' | 'shared-bridge';
 
 export interface TraceToolCall {
@@ -106,17 +111,44 @@ function followUpRequestHasHistory(messages: TraceMessage[]): boolean {
   return countAssistants(messages) >= 2;
 }
 
+function messageFingerprint(message: TraceMessage): string {
+  return JSON.stringify([message.role, (message.text ?? '').trim()]);
+}
+
+/** New messages from this invocation. Mirrors neo_five_case.py:_invocation_tail. */
+function invocationTail(
+  adopted: TraceMessage[],
+  forwarded: TraceMessage[],
+): TraceMessage[] {
+  const forwardedFps = forwarded.map(messageFingerprint);
+  const adoptedFps = adopted.map(messageFingerprint);
+  let lcp = 0;
+  const limit = Math.min(forwardedFps.length, adoptedFps.length);
+  while (lcp < limit && forwardedFps[lcp] === adoptedFps[lcp]) {
+    lcp += 1;
+  }
+  if (lcp === forwarded.length) return adopted.slice(lcp);
+  let lastUser = -1;
+  for (let index = 0; index < adopted.length; index += 1) {
+    if (adopted[index].role === 'user') lastUser = index;
+  }
+  if (lastUser >= 0) return adopted.slice(lastUser + 1);
+  return adopted.slice(lcp);
+}
+
 /**
  * Model inspect_ai `_track_state` plus the solver follow-up stitch.
  * Fresh bridge first invocation: the first observed generation replaces
  * `state.messages`. Follow-up: if the CLI request carried history (tool
- * result or ≥2 assistants), append only the new assistant onto the
- * forwarded first-turn trace — Neo restore merges tool-call+answer into
- * one assistant, so replacing would drop turn_count 3→2. Follow-up
- * without history still replaces, so 2→1 stays fail-closed. Empty
- * generation means no model call; seeded state stays. Shared bridge:
- * continuation must be a byte-level prefix of the in-flight thread;
- * otherwise the generation is parked and never promoted.
+ * result or ≥2 assistants), append this invocation's full new tail
+ * (tool-call assistant + tool + answer) onto the forwarded first-turn
+ * trace — Neo restore merges tool-call+answer into one assistant, so
+ * replacing would drop turn_count. Same-tail (no new answer) still
+ * replaces, then the health assertion fails closed. Follow-up without
+ * history still replaces, so 2→1 stays fail-closed. Empty generation
+ * means no model call; seeded state stays. Shared bridge: continuation
+ * must be a byte-level prefix of the in-flight thread; otherwise the
+ * generation is parked and never promoted.
  */
 function adoptInvocation(options: {
   mode: BridgeMode;
@@ -135,7 +167,7 @@ function adoptInvocation(options: {
       return options.generation;
     }
     if (followUpRequestHasHistory(options.generation)) {
-      return [...options.state, last];
+      return [...options.state, ...invocationTail(options.generation, options.state)];
     }
     return options.generation;
   }

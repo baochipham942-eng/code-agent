@@ -194,6 +194,39 @@ def _follow_up_request_has_history(messages: list[Any]) -> bool:
     return _assistant_count(messages) >= 2
 
 
+def _message_fingerprint(message: Any) -> tuple[str, str]:
+    """(role, text) identity. Same cut as inspect_ai (role, mm3(text))."""
+    role = getattr(message, "role", "") or ""
+    return (str(role), _message_text(message).strip())
+
+
+def _invocation_tail(adopted: list[Any], forwarded: list[Any]) -> list[Any]:
+    """New messages from this invocation: adopted after the shared prefix.
+
+    Bridge may return `forwarded + tail`, or a full replace whose first-turn
+    shape differs (Neo merges tool-call+answer into one assistant). Cut by
+    fingerprint prefix, not `len(forwarded)`. When the prefix does not cover
+    forwarded, take messages after the last user (the follow-up prompt).
+    Mirrored by `invocationTail` in traceHealth.ts — change both.
+    """
+    forwarded_fps = [_message_fingerprint(message) for message in forwarded]
+    adopted_fps = [_message_fingerprint(message) for message in adopted]
+    lcp = 0
+    for left, right in zip(forwarded_fps, adopted_fps):
+        if left != right:
+            break
+        lcp += 1
+    if lcp == len(forwarded):
+        return list(adopted[lcp:])
+    last_user = -1
+    for index, fingerprint in enumerate(adopted_fps):
+        if fingerprint[0] == "user":
+            last_user = index
+    if last_user >= 0:
+        return list(adopted[last_user + 1 :])
+    return list(adopted[lcp:])
+
+
 def _assert_invocation_grew(*, before: int, after: int, invocation: int) -> None:
     if after <= before:
         raise RuntimeError(
@@ -236,8 +269,8 @@ async def read_persisted_neo_session_id(neo_home: str) -> str:
         "const Database = require('better-sqlite3');"
         f"const db = new Database({json.dumps(db_path)}, {{ readonly: true, fileMustExist: true }});"
         "const row = db.prepare("
-        "'SELECT id FROM sessions ORDER BY updated_at DESC LIMIT 1'"
-        ").get();"
+        "'SELECT id FROM sessions WHERE id LIKE ? ORDER BY updated_at DESC LIMIT 1'"
+        ").get('cli_session_%');"
         "if (!row || typeof row.id !== 'string' || !row.id) {"
         "  throw new Error('no persisted neo session');"
         "}"
@@ -322,10 +355,13 @@ async def _forward_bridged_invocations(
                 current = adopted
             elif _follow_up_request_has_history(adopted.messages):
                 # Fresh-bridge `_adopt_thread` replaces state in place.
-                # Neo resume merges the first-turn tool-call+answer into one
-                # assistant, which would drop turn_count 3→2. Keep the
-                # forwarded first-turn trace and append the new answer.
-                adopted.messages = forwarded + [last]
+                # Neo resume may merge first-turn tool-call+answer into one
+                # assistant. Keep the forwarded first-turn trace and append
+                # this invocation's full new tail (tool-call assistant + tool
+                # + answer), not only the last assistant.
+                adopted.messages = forwarded + _invocation_tail(
+                    adopted.messages, forwarded
+                )
                 current = adopted
             else:
                 current = adopted

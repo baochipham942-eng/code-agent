@@ -1,3 +1,8 @@
+/**
+ * injectPrefixByte is the standing M1 mutation fixture: one-byte prefix
+ * drift that parks a shared-bridge follow-up. It is regression protection,
+ * not dead code.
+ */
 import { describe, expect, it } from 'vitest';
 import {
   countAssistants,
@@ -23,6 +28,17 @@ const toolResult: TraceMessage = {
 const answer1: TraceMessage = { role: 'assistant', text: 'The package name is code-agent.' };
 const answer2: TraceMessage = { role: 'assistant', text: 'The version is 0.33.0.' };
 const followUpUser: TraceMessage = { role: 'user', text: 'what is the version?' };
+const followUpCall: TraceMessage = {
+  role: 'assistant',
+  text: '',
+  toolCalls: [{ id: 'c2', function: 'Read', arguments: { path: 'package.json' } }],
+};
+const followUpTool: TraceMessage = {
+  role: 'tool',
+  toolCallId: 'c2',
+  function: 'Read',
+  text: '{"name":"code-agent","version":"0.33.0"}',
+};
 
 const turn1State: TraceMessage[] = [user, assistantCall, toolResult, answer1];
 /** Real resume shape: second CLI process re-sends history + follow-up + new answer. */
@@ -161,7 +177,7 @@ describe('Inspect multi-turn trace health', () => {
       expect(extractAssertionContext(state).trace.at(-1)).toMatchObject({
         text: answer2.text,
       });
-    }).toThrowError(/expected 2 to be 3|expected 3 to be 2/i);
+    }).toThrowError(/expected[\s\S]*\b2\b[\s\S]*\b3\b|expected[\s\S]*\b3\b[\s\S]*\b2\b/);
   });
 
   it('M2: appending a full-history generation onto seeded state duplicates assistants so T1 goes red', () => {
@@ -178,7 +194,76 @@ describe('Inspect multi-turn trace health', () => {
         'The package name is code-agent.',
         'The version is 0.33.0.',
       ]);
-    }).toThrowError(/expected 5 to be 3|expected 3 to be 5/i);
+    }).toThrowError(/expected[\s\S]*\b5\b[\s\S]*\b3\b|expected[\s\S]*\b3\b[\s\S]*\b5\b/);
+  });
+
+  it('T6: follow-up tool call + tool + answer all land at the tail', () => {
+    const generation: TraceMessage[] = [
+      ...turn1State,
+      followUpUser,
+      followUpCall,
+      followUpTool,
+      answer2,
+    ];
+    const state = forwardInvocations({
+      mode: 'fresh-per-invocation',
+      initial: turn1State,
+      invocations: [generation],
+      followUpPromptsSent: ['what is the version?'],
+    });
+
+    expect(state.slice(-3)).toEqual([followUpCall, followUpTool, answer2]);
+    const context = extractAssertionContext(state);
+    expect(context.toolExecutions).toHaveLength(2);
+    expect(context.toolExecutions[1]).toMatchObject({
+      tool: 'Read',
+      output: followUpTool.text,
+    });
+    expect(context.turnCount).toBe(4);
+    expect(countAssistants(state)).toBe(4);
+  });
+
+  it('T7: full-replace generation stitches new tail without duplicating first turn', () => {
+    const mergedFirstTurn: TraceMessage = {
+      role: 'assistant',
+      text: answer1.text,
+      toolCalls: [{ id: 'c1', function: 'Read', arguments: { path: 'package.json' } }],
+    };
+    const generation: TraceMessage[] = [
+      user,
+      mergedFirstTurn,
+      toolResult,
+      followUpUser,
+      followUpCall,
+      followUpTool,
+      answer2,
+    ];
+    const state = forwardInvocations({
+      mode: 'fresh-per-invocation',
+      initial: turn1State,
+      invocations: [generation],
+      followUpPromptsSent: ['what is the version?'],
+    });
+
+    expect(state.slice(-3)).toEqual([followUpCall, followUpTool, answer2]);
+    const context = extractAssertionContext(state);
+    expect(context.responses).toEqual([
+      'The package name is code-agent.',
+      'The version is 0.33.0.',
+    ]);
+    expect(context.responses.filter((text) => text === answer1.text)).toHaveLength(1);
+    expect(context.toolExecutions).toHaveLength(2);
+    expect(countAssistants(state)).toBe(4);
+    expect(context.turnCount).toBe(4);
+  });
+
+  it('M3: stitching only the last assistant drops follow-up tool evidence so T6 goes red', () => {
+    const lastOnly = [...turn1State, answer2];
+    expect(() => {
+      expect(lastOnly.slice(-3)).toEqual([followUpCall, followUpTool, answer2]);
+      expect(extractAssertionContext(lastOnly).toolExecutions).toHaveLength(2);
+      expect(extractAssertionContext(lastOnly).turnCount).toBe(4);
+    }).toThrowError(/expected/);
   });
 
   it('scorer metadata labels broken traces only when first-invocation count is known', () => {

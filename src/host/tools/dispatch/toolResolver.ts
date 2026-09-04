@@ -20,7 +20,7 @@ import type { ToolContext, ToolExecutionResult } from '../types';
 import { hasProtocolTool, resolveProtocolTool } from '../protocolToolRegistration';
 import { getToolDefinitionWithCloudMeta, getAllToolDefinitions } from './toolDefinitions';
 import { buildProtocolContext, buildCanUseToolFromLegacy } from './shadowAdapter';
-import { isToolNameAllowedByWorkbenchScope } from '../workbenchToolScope';
+import { isToolCallAllowedByWorkbenchScope } from '../workbenchToolScope';
 import { getMCPClient } from '../../mcp';
 import { ensureFailedToolResultError } from '../toolResultError';
 import {
@@ -112,7 +112,8 @@ class ProtocolToolResolver implements ToolResolver {
       };
     }
 
-    if (!isToolNameAllowedByWorkbenchScope(dispatchName, ctx.toolScope)) {
+    // args 也要过：mcp / MCPUnified 这类元工具把 server 放在参数里，名字那道判不到
+    if (!isToolCallAllowedByWorkbenchScope(dispatchName, args, ctx.toolScope)) {
       return {
         success: false,
         error: `tool blocked by current workbench scope: ${dispatchName}`,

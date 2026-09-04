@@ -101,6 +101,8 @@ describe('buildWorkbenchCapabilities', () => {
         installState: 'mounted',
         description: 'Review code changes',
         source: 'library',
+        // source=技能出自哪个库；mountSource=怎么挂上的（胶囊悬停卡答「谁放的」用它）
+        mountSource: 'manual',
         libraryId: 'core',
       },
       {

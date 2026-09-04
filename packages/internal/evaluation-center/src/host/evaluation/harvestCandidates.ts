@@ -54,7 +54,7 @@ function firstString(args: Record<string, unknown> | undefined, keys: readonly s
  * 绝对路径转成相对会话工作目录的路径；越出工作区的一律返回 null（不出候选）。
  * 相对路径原样保留——断言引擎本来就按 workingDirectory 拼。
  */
-export function toWorkspaceRelativePath(rawPath: string, workingDirectory: string): string | null {
+function toWorkspaceRelativePath(rawPath: string, workingDirectory: string): string | null {
   if (!rawPath.trim()) return null;
   let candidate = rawPath.trim();
   if (path.isAbsolute(candidate)) {
@@ -69,7 +69,7 @@ export function toWorkspaceRelativePath(rawPath: string, workingDirectory: strin
 }
 
 /** 时间锚定位点踩那一轮：startTime 不晚于点踩时刻的最后一轮，都不满足取第一轮。 */
-export function resolveFeedbackTurn(turns: ReplayTurn[], anchorTimestamp: number): ReplayTurn | null {
+function resolveFeedbackTurn(turns: ReplayTurn[], anchorTimestamp: number): ReplayTurn | null {
   if (turns.length === 0) return null;
   let matched: ReplayTurn | null = null;
   for (const turn of turns) {
@@ -86,7 +86,7 @@ function candidateKey(candidate: HarvestCandidate): string {
  * 推候选判定标准。顺序 = 对齐页 B8 的顺序：写文件 → 调过的工具 → 点踩轮反向候选。
  * 推不出任何一条时返回空数组，调用方给「需手动补一条」的提示——不编造。
  */
-export function deriveExpectationCandidates(input: {
+function deriveExpectationCandidates(input: {
   replay: StructuredReplay;
   workingDirectory: string;
   negativeFeedbackAt: number[];

@@ -100,7 +100,7 @@ export function matchPolicyRule(
  * 前缀是否装下了整条命令的风险：前缀自己是已知安全命令、整条却不是 ⇒ 风险在前缀外（false）。
  * 两者同安全（cat x）或前缀自身就不安全（git push / npm install）⇒ true。
  */
-export function prefixCarriesTheRisk(pattern: readonly string[], command: string): boolean {
+function prefixCarriesTheRisk(pattern: readonly string[], command: string): boolean {
   return !(isKnownSafeCommand(pattern.join(' ')) && !isKnownSafeCommand(command));
 }
 

@@ -62,6 +62,7 @@ export const FolderTrustDialog: React.FC<FolderTrustDialogProps> = ({
   const copy = t.folderTrust;
   const message = (
     <div className="space-y-4 text-sm text-zinc-300">
+      <p>{copy.intro}</p>
       <div className="space-y-1">
         <p className="text-zinc-400">{copy.directory}</p>
         <p className="font-mono text-xs text-zinc-100 break-all">{evaluation.displayPath}</p>

@@ -44,7 +44,9 @@ import { ProviderStatusNotice } from './components/ProviderStatusNotice';
 import { SessionExpiredNotice } from './components/SessionExpiredNotice';
 import { BudgetAlertNotice } from './components/BudgetAlertNotice';
 import { RuntimeNotices } from './components/RuntimeNotices';
-import { FolderTrustDialog, needsFolderTrustDecision, type FolderTrustEvaluationView } from './components/FolderTrustDialog';
+import { FolderTrustDialog } from './components/FolderTrustDialog';
+import { useFolderTrustPrompt } from './hooks/useFolderTrustPrompt';
+import { ModelSetupPendingBanner } from './components/onboarding/ModelSetupPendingBanner';
 import { useTheme } from './hooks/useTheme';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useTaskSync } from './hooks/useTaskSync';
@@ -60,8 +62,6 @@ import { useSurfaceExecutionPip } from './hooks/useSurfaceExecutionPip';
 import { useSurfaceExecutionEffects } from './hooks/agent/effects/useSurfaceExecutionEffects';
 import { useAgentHalo } from './hooks/useAgentHalo';
 import { useRendererBundleAutoReload } from './hooks/useRendererBundleAutoReload';
-import { useI18n } from './hooks/useI18n';
-import { toast } from './hooks/useToast';
 import { IPC_CHANNELS, IPC_DOMAINS, type NotificationClickedEvent, type NotificationShowEvent, type ToolCreateRequestEvent, type ConfirmActionRequest, type ContextHealthUpdateEvent } from '@shared/ipc';
 import { postOsNotification, registerNotificationClick } from './utils/osNotification';
 import type { AppSettings, ModelConfig, ModelProvider, UserQuestionRequest, MCPElicitationRequest, MCPOAuthConsentRequest, UpdateInfo, Message } from '@shared/contract';
@@ -143,7 +143,6 @@ function useWindowWidth(): number {
 }
 
 export const App: React.FC = () => {
-  const { t } = useI18n();
   useAppshots(); // 挂载 Appshots 事件监听（热键截图 → composer）
   useSurfaceExecutionPip(); // 当前会话 Browser / Computer 共享的可信实时 PiP
   useAgentHalo(); // CUA 原生驱动时的系统级光晕跟随（单指针共驾聚光灯）
@@ -219,16 +218,20 @@ export const App: React.FC = () => {
 
   // 新手模型配置引导
   const [showModelOnboarding, setShowModelOnboarding] = useState(false);
+  // 首启引导被「跳过」后的降级提示条（N-FIRSTRUN-SKIP）：不再把设置页糊在脸上。
+  const [modelSetupPending, setModelSetupPending] = useState(false);
   const [authInitialMode, setAuthInitialMode] = useState<'signin' | 'signup'>('signin');
   const modelOnboardingCompletedRef = useRef(false);
+  const onModelConfiguredLater = useCallback(() => {
+    modelOnboardingCompletedRef.current = true;
+    setModelSetupPending(false);
+  }, []);
 
   // 工具创建确认弹窗
   const [toolCreateRequest, setToolCreateRequest] = useState<ToolCreateRequest | null>(null);
 
   // confirm_action 弹窗确认
   const [confirmActionRequest, setConfirmActionRequest] = useState<ConfirmActionRequest | null>(null);
-  const [folderTrustEvaluation, setFolderTrustEvaluation] = useState<FolderTrustEvaluationView | null>(null);
-  const [folderTrustBusy, setFolderTrustBusy] = useState(false);
 
   // Auth store
   const { showAuthModal, showPasswordResetModal, isLoading: isAuthLoading } = useAuthStore();
@@ -428,6 +431,7 @@ export const App: React.FC = () => {
     };
   }, [showModelOnboarding, loadActiveModelConfig]);
 
+
   // 窄屏自动收起 ↔ 回宽屏自动还原：进窄屏时若侧栏开着就帮忙收起，并记住「是我们收的」；
   // 回宽屏时只有仍处在我们自动收的状态才展开还原。期间用户手动 toggle 过（无论收还是放）
   // 都以用户为准——不还原，否则会把用户的选择覆盖掉。
@@ -505,46 +509,7 @@ export const App: React.FC = () => {
     loadSettings();
   }, [setLanguage, setModelConfig, setDisclosureLevel, setTheme]);
 
-  const refreshFolderTrust = useCallback(async () => {
-    try {
-      // 带上当前会话 id：host 侧按会话绑定 workingDirectory 做信任评估
-      // （桌面 WEB_MODE 恒 true，不传 sessionId 会永远评到 <dataDir>/work）。
-      const evaluation = await invokeDomain<FolderTrustEvaluationView>(
-        IPC_DOMAINS.FOLDER_TRUST,
-        'get',
-        currentSessionId ? { sessionId: currentSessionId } : undefined,
-      );
-      setFolderTrustEvaluation(needsFolderTrustDecision(evaluation) ? evaluation : null);
-    } catch (error) {
-      logger.warn('Failed to evaluate folder trust', { error });
-    }
-  }, [currentSessionId]);
-
-  useEffect(() => {
-    void refreshFolderTrust();
-  }, [refreshFolderTrust]);
-
-  const setFolderTrustDecision = useCallback(async (state: 'trusted' | 'blocked') => {
-    setFolderTrustBusy(true);
-    try {
-      const evaluation = await invokeDomain<FolderTrustEvaluationView>(
-        IPC_DOMAINS.FOLDER_TRUST,
-        'set',
-        {
-          state,
-          ...(currentSessionId ? { sessionId: currentSessionId } : {}),
-        },
-      );
-      // 决定已生效（trusted 或 blocked）就关窗；只有 host 回报仍是未决定态才继续问。
-      setFolderTrustEvaluation(needsFolderTrustDecision(evaluation) ? evaluation : null);
-    } catch (error) {
-      // 只写日志的话按钮看起来「点了没反应」，用户无从知道决定没保存上。
-      logger.warn('Failed to update folder trust', { error });
-      toast.error(t.folderTrust.saveFailed + (error instanceof Error ? `: ${error.message}` : ''));
-    } finally {
-      setFolderTrustBusy(false);
-    }
-  }, [currentSessionId, t]);
+  const folderTrust = useFolderTrustPrompt(currentSessionId);
 
   // 应用启动时检查更新（强制更新检查）
   useEffect(() => {
@@ -1021,6 +986,14 @@ export const App: React.FC = () => {
                             通顶、tab 条贴窗口最顶（WorkBuddy）；右栏开关仍在顶栏右端那组，
                             两态同一行同一槽位（2026-07-27 房规：纵向不跳、顶栏单点可达）。 */}
                         <TitleBar />
+                        {modelSetupPending && (
+                          <ModelSetupPendingBanner
+                            settingsOpen={showSettings}
+                            onOpenSettings={() => setShowSettings(true)}
+                            onDismiss={() => setModelSetupPending(false)}
+                            onConfigured={onModelConfiguredLater}
+                          />
+                        )}
                         {showNarrowWorkbench ? renderWorkbenchContent() : <ChatView />}
                       </div>
                     </Panel>
@@ -1118,10 +1091,12 @@ export const App: React.FC = () => {
             setShowSettings(false);
           }}
           onSkip={() => {
-            // 跳过不算完成：不置 completedRef，下次冷启动仍会提示，避免用户忘配后续无入口；
-            // 同时直接带用户去设置页，让"稍后配置"有明确入口（#193）
+            // 跳过不算完成：不置 completedRef，下次冷启动仍会提示，避免用户忘配后续无入口。
+            // 「跳过」= 用户要先进主界面（爸 09-04 真机连撞三次），不再直接甩到设置页（原 #193 做法）；
+            // "稍后配置"的入口降级成聊天列顶部一条可关闭提示条（VS Code 新版 Workspace Trust 也是
+            // 「进受限模式 + 横幅」而不是先弹窗拦住；Claude Code 文档里没有「跳过后甩到设置页」的先例）。
             setShowModelOnboarding(false);
-            setShowSettings(true);
+            setModelSetupPending(true);
           }}
         />
       )}
@@ -1158,10 +1133,10 @@ export const App: React.FC = () => {
       )}
 
       <FolderTrustDialog
-        evaluation={folderTrustEvaluation}
-        isBusy={folderTrustBusy}
-        onTrust={() => { void setFolderTrustDecision('trusted'); }}
-        onBlock={() => { void setFolderTrustDecision('blocked'); }}
+        evaluation={folderTrust.evaluation}
+        isBusy={folderTrust.isBusy}
+        onTrust={() => { void folderTrust.decide('trusted'); }}
+        onBlock={() => { void folderTrust.decide('blocked'); }}
         onOpenSettings={() => setShowSettings(true)}
       />
 

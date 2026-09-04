@@ -28,6 +28,7 @@ import { evaluateGoalStatusExpectation, evaluateGoalEvidenceGateExpectation } fr
 import { evaluateNoStallBeforeArtifactExpectation } from './openingShapeEval';
 import { findForbiddenCallViolations } from './forbiddenCallEval';
 import { evaluateApprovalRequestExpectation } from './approvalRequestEval';
+import { toolMatches } from './toolNameAliases';
 
 /**
  * Assertion failure details
@@ -49,34 +50,6 @@ export interface AssertionResult {
   totalAssertions: number;
   passedAssertions: number;
   hasCriticalFailure: boolean;
-}
-
-// ── 工具名归一 ───────────────────────────────────────────────────────────
-// 测试用例的 tool 期望沿用早期小写/snake_case 词表（grep / read_file / list_directory），
-// 实际工具注册名是 PascalCase（Grep / Read / ListDirectory）。两套词表对不上会让
-// "调对了工具却判失败"。归一策略：lowercase + 去分隔符后用别名表收敛同义词。
-const TOOL_NAME_ALIASES: Record<string, string> = {
-  readfile: 'read',
-  writefile: 'write',
-  editfile: 'edit',
-  todo: 'todowrite',
-};
-
-function normalizeToolName(name: string): string {
-  const key = name.toLowerCase().replace(/[_\-\s]/g, '');
-  return TOOL_NAME_ALIASES[key] ?? key;
-}
-
-// 工具是否匹配期望：先按原 pattern 做大小写不敏感正则匹配，再退回别名归一比较，
-// 兼顾 `grep|bash` 这类 alternation 写法与 `write_file` ↔ `Write` 这类词表差异。
-function toolMatches(actualTool: string, expectPattern: string): boolean {
-  try {
-    if (new RegExp(expectPattern, 'i').test(actualTool)) return true;
-  } catch {
-    // expectPattern 不是合法正则时忽略，落到下面的别名比较
-  }
-  const actualKey = normalizeToolName(actualTool);
-  return expectPattern.split('|').some((alt) => normalizeToolName(alt) === actualKey);
 }
 
 // ── 文本归一（response_contains / not_contains）────────────────────────────
@@ -106,8 +79,8 @@ function assertToolExpectations(
 
   // Check expected tool was called
   if (expect.tool) {
-    const toolRegex = new RegExp(expect.tool);
-    const matchingCalls = toolExecutions.filter((te) => toolRegex.test(te.tool));
+    const expectedTool = expect.tool;
+    const matchingCalls = toolExecutions.filter((te) => toolMatches(te.tool, expectedTool));
 
     if (matchingCalls.length === 0) {
       failures.push({
@@ -182,10 +155,9 @@ function assertToolExpectations(
   // Check tools_any_of - any of these tools being called counts as pass
   if (expect.tools_any_of && expect.tools_any_of.length > 0) {
     const allTools = toolExecutions.map((te) => te.tool);
-    const anyMatch = expect.tools_any_of.some((pattern) => {
-      const regex = new RegExp(pattern);
-      return allTools.some((tool) => regex.test(tool));
-    });
+    const anyMatch = expect.tools_any_of.some((pattern) =>
+      allTools.some((tool) => toolMatches(tool, pattern)),
+    );
     if (!anyMatch) {
       failures.push({
         assertion: 'tools_any_of',
@@ -1079,8 +1051,9 @@ async function evaluateExpectation(
         const windowExecs = isAfter
           ? context.toolExecutions.slice(anchor.toolExecutionsBefore)
           : context.toolExecutions.slice(0, anchor.toolExecutionsBefore);
-        // 大小写不敏感（审计 R1-M1）：工具名变体不许绕过写效应表
-        const violations = windowExecs.filter((te) => forbidden.some((p) => new RegExp(p, 'i').test(te.tool)));
+        // 大小写不敏感 + 跨 CLI 别名（审计 R1-M1 / N-EVAL-TOOLNAME-NORM）：
+        // 工具名变体与外部 CLI 写工具不许绕过写效应表
+        const violations = windowExecs.filter((te) => forbidden.some((p) => toolMatches(te.tool, p)));
         passed = violations.length === 0;
         actual = passed
           ? (isAfter ? 'no write-effect tool call after rejection' : 'no write-effect tool call before approval')

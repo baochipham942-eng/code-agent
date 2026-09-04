@@ -13,6 +13,7 @@ import * as path from 'path';
 import { createLogger } from '../services/infra/logger';
 import { getProjectConfigDir, getUserConfigDir } from '../config/configPaths';
 import { canonicalizeCommand } from './canonicalizeCommand';
+import { isKnownSafeCommand } from './commandSafety';
 
 const logger = createLogger('ExecPolicy');
 
@@ -95,6 +96,14 @@ export function matchPolicyRule(
   return bestMatch;
 }
 
+/**
+ * 前缀是否装下了整条命令的风险：前缀自己是已知安全命令、整条却不是 ⇒ 风险在前缀外（false）。
+ * 两者同安全（cat x）或前缀自身就不安全（git push / npm install）⇒ true。
+ */
+export function prefixCarriesTheRisk(pattern: readonly string[], command: string): boolean {
+  return !(isKnownSafeCommand(pattern.join(' ')) && !isKnownSafeCommand(command));
+}
+
 // ----------------------------------------------------------------------------
 // ExecPolicyStore
 // ----------------------------------------------------------------------------
@@ -119,7 +128,20 @@ export class ExecPolicyStore {
    * @returns 匹配的决策，或 null 表示未匹配
    */
   match(command: string): PolicyDecision | null {
-    return matchPolicyRule(this.rules, command)?.decision ?? null;
+    const rule = matchPolicyRule(this.rules, command);
+    if (!rule) return null;
+    // 学来的前缀只放行「前缀本身就带着风险」的命令：`find .` 这种前缀单独看是安全命令，
+    // 用户当初批的其实是 `-delete` 那部分，前缀没把风险装进去，就不能拿它放行
+    // `find . -delete`（2026-09-05 真机学到 ['find','.'] 让 -delete 免审批）。
+    // `git push` / `npm install` 前缀自身就不安全，照旧放行。
+    if (rule.decision === 'allow' && rule.source === 'user' && !prefixCarriesTheRisk(rule.pattern, command)) {
+      return null;
+    }
+    // 学来的前缀只放行「前缀本身就带着风险」的命令：`find .` 这种前缀单独看是安全命令，
+    // 用户当初批的其实是 `-delete` 那部分，前缀没把风险装进去，就不能拿它放行
+    // `find . -delete`（2026-09-05 真机学到 ['find','.'] 让 -delete 免审批）。
+    // `git push` / `npm install` 前缀自身就不安全，照旧放行。
+    return rule.decision;
   }
 
   /**
@@ -147,6 +169,12 @@ export class ExecPolicyStore {
     // 取前缀：程序名 + 第一个子命令
     const prefixLength = Math.min(2, tokens.length);
     const pattern = tokens.slice(0, prefixLength);
+
+    // 前缀单独看是安全命令而整条不是 ⇒ 风险在前缀之外的参数里（find . -delete），学出来的规则会比批的宽，不学。
+    if (!prefixCarriesTheRisk(pattern, command)) {
+      logger.debug('Skipping prefix that does not carry the approved risk', { pattern, from: command.substring(0, 80) });
+      return false;
+    }
 
     // 检查是否已存在相同规则
     const exists = this.rules.some(r =>

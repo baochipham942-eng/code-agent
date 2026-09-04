@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -8,6 +8,13 @@ import path from 'node:path';
 export default function setup() {
   const runRoot = mkdtempSync(path.join(os.tmpdir(), 'code-agent-vitest-run-'));
   process.env.TMPDIR = runRoot;
+  // 用户级配置目录也指进 run 根：exec-policy.json / auth token / background-tasks 等走
+  // getUserConfigDir 的子系统，不设的话读的是真实 ~/.code-agent——本机真机用 Neo 学到一条
+  // 「find .」放行规则，safeCommandPermission 的「find -delete 必须审批」就在所有工作树里一起转红
+  // （2026-09-05 N-EXECPOLICY-TEST-ISOLATION）。单测想验「未设 env 回落 home」的，自己 stubEnv('') 即可。
+  const dataDir = path.join(runRoot, 'user-config-dir');
+  mkdirSync(dataDir, { recursive: true });
+  process.env.CODE_AGENT_DATA_DIR = dataDir;
 
   return () => {
     rmSync(runRoot, { recursive: true, force: true });

@@ -1,15 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { parseEvalRunEvent } from '@internal-evaluation/host/evaluation/evalRunEventValidation';
-import { EVAL_RUN_EVENT_SCHEMA_VERSION } from '../../../src/shared/contract/evaluation';
+import { EVAL_RUN_EVENT_SCHEMA_VERSION, UNKNOWN_EVAL_RUN_STAMP } from '../../../src/shared/contract/evaluation';
 
 describe('evaluation run event validation', () => {
   it('接受 pair_end 与 SHIPGATE compare 汇总，拒绝缺失四态对象', () => {
     expect(parseEvalRunEvent({
-      schemaVersion: 4, type: 'pair_end', ts: 1, runId: 'run-1', testId: 'case-1',
+      schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION, type: 'pair_end', ts: 1, runId: 'run-1', testId: 'case-1',
       statusA: 'passed', statusB: 'failed', assignment: { A: 'baseline', B: 'candidate' },
       assertionWinner: 'baseline', referenceWinner: 'A', assertionPassA: 1, assertionPassB: 0,
       assertionCount: 2, skillActivations: { baseline: 1, candidate: 0 },
       memoryInjections: { baseline: 2, candidate: 0 },
+      subagentSpawns: { baseline: 0, candidate: 2 },
     })).toMatchObject({ type: 'pair_end', assertionWinner: 'baseline' });
     const summary = {
       runId: 'run-1', startTime: 1, endTime: 2, duration: 1, total: 1, passed: 0, failed: 1,
@@ -24,10 +25,10 @@ describe('evaluation run event validation', () => {
       },
     };
     expect(parseEvalRunEvent({
-      schemaVersion: 4, type: 'run_end', ts: 2, runId: 'run-1', summary, reportFiles: [], exitCode: 0, aborted: false,
+      schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION, type: 'run_end', ts: 2, runId: 'run-1', summary, reportFiles: [], exitCode: 0, aborted: false,
     })).toMatchObject({ summary: { compare: { shipGate: { state: 'insufficient' } } } });
     expect(() => parseEvalRunEvent({
-      schemaVersion: 4, type: 'run_end', ts: 2, runId: 'run-1',
+      schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION, type: 'run_end', ts: 2, runId: 'run-1',
       summary: { ...summary, compare: { ...summary.compare, shipGate: undefined } }, reportFiles: [], exitCode: 0, aborted: false,
     })).toThrow(/shipGate/);
   });
@@ -50,10 +51,13 @@ describe('evaluation run event validation', () => {
   it('rejects old versions, unknown event types, and incomplete terminal summaries', () => {
     expect(() => parseEvalRunEvent({ schemaVersion: 1, type: 'error', ts: 1, runId: 'run-1', error: 'x' }))
       .toThrow(/版本/);
-    expect(() => parseEvalRunEvent({ schemaVersion: 4, type: 'mystery', ts: 1, runId: 'run-1' }))
+    // v3 是上一版协议：加了 orchestration / subagentSpawns 之后必须显式拒收。
+    expect(() => parseEvalRunEvent({ schemaVersion: 3, type: 'error', ts: 1, runId: 'run-1', error: 'x' }))
+      .toThrow(/版本/);
+    expect(() => parseEvalRunEvent({ schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION, type: 'mystery', ts: 1, runId: 'run-1' }))
       .toThrow(/类型/);
     expect(() => parseEvalRunEvent({
-      schemaVersion: 4,
+      schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION,
       type: 'run_end',
       ts: 1,
       runId: 'run-1',
@@ -63,7 +67,7 @@ describe('evaluation run event validation', () => {
       aborted: false,
     })).toThrow(/runId/);
     expect(() => parseEvalRunEvent({
-      schemaVersion: 4,
+      schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION,
       type: 'case_end',
       ts: 1,
       runId: 'run-1',
@@ -75,9 +79,58 @@ describe('evaluation run event validation', () => {
     })).toThrow(/skillActivations/);
   });
 
+  it('v4：pair_end 必须带 subagentSpawns，case_end 的计数必须是非负整数', () => {
+    const pairEnd = {
+      schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION, type: 'pair_end', ts: 1, runId: 'run-1', testId: 'case-1',
+      statusA: 'passed', statusB: 'failed', assignment: { A: 'baseline', B: 'candidate' },
+      assertionWinner: 'baseline', referenceWinner: 'A', assertionPassA: 1, assertionPassB: 0,
+      assertionCount: 2, skillActivations: { baseline: 1, candidate: 0 },
+      memoryInjections: { baseline: 2, candidate: 0 },
+      subagentSpawns: { baseline: 0, candidate: 2 },
+    };
+    expect(parseEvalRunEvent(pairEnd)).toMatchObject({ subagentSpawns: { candidate: 2 } });
+    // 摘掉 pair_end 的 subagentSpawns 校验这条立刻绿——所以它是本字段的咬合点。
+    expect(() => parseEvalRunEvent({ ...pairEnd, subagentSpawns: undefined })).toThrow(/subagentSpawns/);
+    // 负数 / 小数落库会显示不可能的次数并绕过「未出场」提示：pair_end 的计数同样只认非负整数。
+    expect(() => parseEvalRunEvent({ ...pairEnd, subagentSpawns: { baseline: 0, candidate: -1 } })).toThrow(/subagentSpawns/);
+    expect(() => parseEvalRunEvent({ ...pairEnd, subagentSpawns: { baseline: 0.5, candidate: 0 } })).toThrow(/subagentSpawns/);
+    expect(() => parseEvalRunEvent({ ...pairEnd, skillActivations: { baseline: -2, candidate: 0 } })).toThrow(/skillActivations/);
+
+    const caseEnd = {
+      schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION, type: 'case_end', ts: 1, runId: 'run-1', testId: 'case-1',
+      status: 'passed', score: 1, durationMs: 1,
+    };
+    expect(parseEvalRunEvent({ ...caseEnd, subagentSpawns: 3 })).toMatchObject({ subagentSpawns: 3 });
+    expect(parseEvalRunEvent(caseEnd)).toMatchObject({ type: 'case_end' });
+    expect(() => parseEvalRunEvent({ ...caseEnd, subagentSpawns: -1 })).toThrow(/subagentSpawns/);
+    expect(() => parseEvalRunEvent({ ...caseEnd, subagentSpawns: 1.5 })).toThrow(/subagentSpawns/);
+  });
+
+  it('v4：run_start 的实验臂带 orchestration 时逐项校验', () => {
+    const runStart = (orchestration: unknown) => ({
+      schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION, type: 'run_start', ts: 1, runId: 'run-1',
+      plannedCaseIds: ['case-1'],
+      config: {
+        ...UNKNOWN_EVAL_RUN_STAMP, mode: 'mock', model: 'm', provider: 'openai', scope: 'smoke',
+        maxCases: 1, concurrency: 1, gitCommit: 'abc', testCaseDir: 'cases',
+        compare: {
+          baseline: { name: 'production', model: 'm', provider: 'openai' },
+          candidate: { name: 'candidate', orchestration },
+          diff: ['子代理：不扇出，最深 3 层（默认） → 不扇出，一层都不扇出'],
+        },
+      },
+    });
+    expect(parseEvalRunEvent(runStart({ allowSwarm: true, spawnMaxDepth: 0 })))
+      .toMatchObject({ type: 'run_start' });
+    expect(() => parseEvalRunEvent(runStart({ allowSwarm: 'yes' }))).toThrow(/allowSwarm/);
+    expect(() => parseEvalRunEvent(runStart({ spawnMaxDepth: -1 }))).toThrow(/spawnMaxDepth/);
+    expect(() => parseEvalRunEvent(runStart({ spawnMaxDepth: 1.5 }))).toThrow(/spawnMaxDepth/);
+    expect(() => parseEvalRunEvent(runStart('deep'))).toThrow(/orchestration/);
+  });
+
   it('T4：接受合法 aiReview，拒绝未知维度和无效 verdict', () => {
     const base = {
-      schemaVersion: 4, type: 'case_end', ts: 1, runId: 'run-1', testId: 'case-1',
+      schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION, type: 'case_end', ts: 1, runId: 'run-1', testId: 'case-1',
       status: 'passed', score: 1, durationMs: 1,
     } as const;
     expect(parseEvalRunEvent({

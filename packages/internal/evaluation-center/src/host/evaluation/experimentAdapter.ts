@@ -103,6 +103,7 @@ export class ExperimentAdapter {
   private memoryInjections = new Map<string, number>();
   private memoryWrites = new Map<string, number>();
   private skillActivations = new Map<string, Record<string, number>>();
+  private subagentSpawns = new Map<string, number>();
   private compareRun = false;
 
   constructor(private db: ExperimentDbWriter) {}
@@ -115,6 +116,11 @@ export class ExperimentAdapter {
   recordMemoryWrite(event: Extract<EvalRunEvent, { type: 'memory_written' }>): void {
     const key = `${event.runId}:${event.testId}`;
     this.memoryWrites.set(key, (this.memoryWrites.get(key) ?? 0) + event.written);
+  }
+
+  recordSubagentSpawn(event: Extract<EvalRunEvent, { type: 'subagent_spawned' }>): void {
+    const key = `${event.runId}:${event.testId}`;
+    this.subagentSpawns.set(key, (this.subagentSpawns.get(key) ?? 0) + 1);
   }
 
   recordSkillActivation(event: Extract<EvalRunEvent, { type: 'skill_activated' }>): void {
@@ -170,9 +176,15 @@ export class ExperimentAdapter {
     const skillActivations = Object.keys(eventSkillActivations).length > 0
       ? eventSkillActivations
       : this.skillActivations.get(signalKey) ?? {};
+    // case_end 自带的计数与桥自己数的事件必须同源：两边取大者，缺一条时另一条兜底。
+    const subagentSpawns = Math.max(
+      event.subagentSpawns ?? 0,
+      this.subagentSpawns.get(signalKey) ?? 0,
+    );
     this.memoryInjections.delete(signalKey);
     this.memoryWrites.delete(signalKey);
     this.skillActivations.delete(signalKey);
+    this.subagentSpawns.delete(signalKey);
     if (this.compareRun) return;
     this.db.insertExperimentCases(event.runId, [{
       id: `${event.runId}:${event.testId}`,
@@ -198,6 +210,7 @@ export class ExperimentAdapter {
         memoryInjections,
         memoryWrites,
         skillActivations,
+        subagentSpawns,
         source: 'eval',
       }),
     }]);
@@ -225,6 +238,7 @@ export class ExperimentAdapter {
         assertionCount: event.assertionCount,
         skillActivations: event.skillActivations,
         memoryInjections: event.memoryInjections,
+        subagentSpawns: event.subagentSpawns,
         source: 'compare',
       }),
     }]);

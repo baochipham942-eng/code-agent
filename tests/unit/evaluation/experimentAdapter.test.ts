@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { ExperimentAdapter, type EvalHarnessExperimentResultLike } from '@internal-evaluation/host/evaluation/experimentAdapter';
 import type { TestRunSummary } from '../../../src/host/testing/types';
 import {
+  EVAL_RUN_EVENT_SCHEMA_VERSION,
   EVAL_RUN_STAMP_KEYS,
   UNKNOWN_EVAL_RUN_STAMP,
 } from '../../../src/shared/contract/evaluation';
@@ -37,7 +38,7 @@ describe('ExperimentAdapter canonical harness persistence', () => {
     const db = { ...createDbWriter(), updateExperimentSummary: vi.fn() };
     const adapter = new ExperimentAdapter(db as any);
     adapter.beginEventRun({
-      schemaVersion: 4, type: 'run_start', ts: 1, runId: 'compare-run', plannedCaseIds: ['case-a'],
+      schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION, type: 'run_start', ts: 1, runId: 'compare-run', plannedCaseIds: ['case-a'],
       config: {
         ...UNKNOWN_EVAL_RUN_STAMP, mode: 'real', model: 'm', provider: 'p', scope: 'full', maxCases: 1,
         concurrency: 1, gitCommit: 'abc', testCaseDir: 'cases',
@@ -45,24 +46,27 @@ describe('ExperimentAdapter canonical harness persistence', () => {
       },
     });
     adapter.persistEventCase({
-      schemaVersion: 4, type: 'case_end', ts: 2, runId: 'compare-run', testId: 'case-a', arm: 'baseline',
+      schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION, type: 'case_end', ts: 2, runId: 'compare-run', testId: 'case-a', arm: 'baseline',
       status: 'passed', score: 1, durationMs: 1,
     });
     adapter.persistEventCase({
-      schemaVersion: 4, type: 'case_end', ts: 3, runId: 'compare-run', testId: 'case-a', arm: 'candidate',
+      schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION, type: 'case_end', ts: 3, runId: 'compare-run', testId: 'case-a', arm: 'candidate',
       status: 'failed', score: 0, durationMs: 1,
     });
     adapter.persistPairEnd({
-      schemaVersion: 4, type: 'pair_end', ts: 4, runId: 'compare-run', testId: 'case-a',
+      schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION, type: 'pair_end', ts: 4, runId: 'compare-run', testId: 'case-a',
       statusA: 'passed', statusB: 'failed', assignment: { A: 'baseline', B: 'candidate' },
       assertionWinner: 'baseline', referenceWinner: 'A', excludedReason: 'skill_not_activated',
-      assertionPassA: 1, assertionPassB: 0, assertionCount: 2, skillActivations: { baseline: 1, candidate: 0 }, memoryInjections: { baseline: 0, candidate: 0 },
+      assertionPassA: 1, assertionPassB: 0, assertionCount: 2, skillActivations: { baseline: 1, candidate: 0 },
+      memoryInjections: { baseline: 0, candidate: 0 },
+      subagentSpawns: { baseline: 0, candidate: 0 },
     });
     const row = db.insertExperimentCases.mock.calls[0][1][0];
     expect(db.insertExperimentCases).toHaveBeenCalledTimes(1);
     expect(row).toMatchObject({ id: 'compare-run:case-a', status: 'failed', score: 0 });
     expect(JSON.parse(row.data_json)).toMatchObject({
       winner: 'baseline', excludedReason: 'skill_not_activated', skillActivations: { baseline: 1, candidate: 0 },
+      subagentSpawns: { baseline: 0, candidate: 0 },
     });
     expect(db.insertExperiment.mock.calls[0][0]).toMatchObject({ source: 'compare' });
   });
@@ -71,10 +75,12 @@ describe('ExperimentAdapter canonical harness persistence', () => {
     const db = createDbWriter();
     const adapter = new ExperimentAdapter(db as any);
     adapter.persistPairEnd({
-      schemaVersion: 4, type: 'pair_end', ts: 1, runId: 'compare-run', testId: 'candidate-passed',
+      schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION, type: 'pair_end', ts: 1, runId: 'compare-run', testId: 'candidate-passed',
       statusA: 'passed', statusB: 'failed', assignment: { A: 'candidate', B: 'baseline' },
       assertionWinner: 'baseline', referenceWinner: 'B', assertionPassA: 1, assertionPassB: 0,
-      assertionCount: 1, skillActivations: { baseline: 0, candidate: 0 }, memoryInjections: { baseline: 0, candidate: 0 },
+      assertionCount: 1, skillActivations: { baseline: 0, candidate: 0 },
+      memoryInjections: { baseline: 0, candidate: 0 },
+      subagentSpawns: { baseline: 0, candidate: 0 },
     });
 
     const row = db.insertExperimentCases.mock.calls[0][1][0];
@@ -87,10 +93,12 @@ describe('ExperimentAdapter canonical harness persistence', () => {
     const adapter = new ExperimentAdapter(db as any);
     for (const [index, candidateStatus] of (['failed', 'partial'] as const).entries()) {
       adapter.persistPairEnd({
-        schemaVersion: 4, type: 'pair_end', ts: index + 1, runId: 'compare-run', testId: `candidate-${candidateStatus}`,
+        schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION, type: 'pair_end', ts: index + 1, runId: 'compare-run', testId: `candidate-${candidateStatus}`,
         statusA: 'passed', statusB: candidateStatus, assignment: { A: 'baseline', B: 'candidate' },
         assertionWinner: 'candidate', referenceWinner: 'B', assertionPassA: 0, assertionPassB: 1,
-        assertionCount: 1, skillActivations: { baseline: 0, candidate: 0 }, memoryInjections: { baseline: 0, candidate: 0 },
+        assertionCount: 1, skillActivations: { baseline: 0, candidate: 0 },
+        memoryInjections: { baseline: 0, candidate: 0 },
+        subagentSpawns: { baseline: 0, candidate: 0 },
       });
     }
 
@@ -104,10 +112,10 @@ describe('ExperimentAdapter canonical harness persistence', () => {
     const db = createDbWriter();
     const adapter = new ExperimentAdapter(db as any);
     const activate = (ts: number, testId: string, name: string) => adapter.recordSkillActivation({
-      schemaVersion: 4, type: 'skill_activated', ts, runId: 'event-run', testId, name,
+      schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION, type: 'skill_activated', ts, runId: 'event-run', testId, name,
     });
     const end = (ts: number, testId: string) => adapter.persistEventCase({
-      schemaVersion: 4, type: 'case_end', ts, runId: 'event-run', testId, status: 'passed', score: 1, durationMs: 1, skillActivations: {},
+      schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION, type: 'case_end', ts, runId: 'event-run', testId, status: 'passed', score: 1, durationMs: 1, skillActivations: {},
     });
     activate(1, 'case-a', 'x');
     activate(2, 'case-b', 'y');
@@ -125,7 +133,7 @@ describe('ExperimentAdapter canonical harness persistence', () => {
     const db = createDbWriter();
     const adapter = new ExperimentAdapter(db as any);
     adapter.recordMemoryInjection({
-      schemaVersion: 4,
+      schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION,
       type: 'memory_injected',
       ts: 1,
       runId: 'event-run',
@@ -133,7 +141,7 @@ describe('ExperimentAdapter canonical harness persistence', () => {
       id: 'memory-a',
     });
     adapter.recordMemoryInjection({
-      schemaVersion: 4,
+      schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION,
       type: 'memory_injected',
       ts: 2,
       runId: 'event-run',
@@ -142,7 +150,7 @@ describe('ExperimentAdapter canonical harness persistence', () => {
     });
     for (const ts of [3, 4]) {
       adapter.recordSkillActivation({
-        schemaVersion: 4,
+        schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION,
         type: 'skill_activated',
         ts,
         runId: 'event-run',
@@ -151,7 +159,7 @@ describe('ExperimentAdapter canonical harness persistence', () => {
       });
     }
     adapter.persistEventCase({
-      schemaVersion: 4,
+      schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION,
       type: 'case_end',
       ts: 5,
       runId: 'event-run',
@@ -173,15 +181,15 @@ describe('ExperimentAdapter canonical harness persistence', () => {
     const db = createDbWriter();
     const adapter = new ExperimentAdapter(db as any);
     adapter.recordMemoryWrite({
-      schemaVersion: 4, type: 'memory_written', ts: 1, runId: 'event-run', testId: 'event-case',
+      schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION, type: 'memory_written', ts: 1, runId: 'event-run', testId: 'event-case',
       files: ['mem-a.md'], written: 1,
     });
     adapter.recordMemoryWrite({
-      schemaVersion: 4, type: 'memory_written', ts: 2, runId: 'event-run', testId: 'event-case',
+      schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION, type: 'memory_written', ts: 2, runId: 'event-run', testId: 'event-case',
       files: ['mem-b.md', 'mem-c.md'], written: 2,
     });
     adapter.persistEventCase({
-      schemaVersion: 4, type: 'case_end', ts: 3, runId: 'event-run', testId: 'event-case',
+      schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION, type: 'case_end', ts: 3, runId: 'event-run', testId: 'event-case',
       status: 'passed', score: 1, durationMs: 5, skillActivations: {},
     });
     expect(JSON.parse(db.insertExperimentCases.mock.calls[0]?.[1][0].data_json).memoryWrites).toBe(3);
@@ -190,15 +198,81 @@ describe('ExperimentAdapter canonical harness persistence', () => {
     const db2 = createDbWriter();
     const adapter2 = new ExperimentAdapter(db2 as any);
     adapter2.recordMemoryInjection({
-      schemaVersion: 4, type: 'memory_injected', ts: 1, runId: 'event-run', testId: 'event-case', id: 'memory_index',
+      schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION, type: 'memory_injected', ts: 1, runId: 'event-run', testId: 'event-case', id: 'memory_index',
     });
     adapter2.persistEventCase({
-      schemaVersion: 4, type: 'case_end', ts: 2, runId: 'event-run', testId: 'event-case',
+      schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION, type: 'case_end', ts: 2, runId: 'event-run', testId: 'event-case',
       status: 'passed', score: 1, durationMs: 5, skillActivations: {}, memoryInjections: 7, memoryWrites: 4,
     });
     const data = JSON.parse(db2.insertExperimentCases.mock.calls[0]?.[1][0].data_json);
     expect(data.memoryInjections).toBe(7);
     expect(data.memoryWrites).toBe(4);
+  });
+
+  // N-EVAL-ORCHARM：subagent_spawned 从桥数到 data_json —— 摘掉 recordSubagentSpawn
+  // 或 persistEventCase 里的 subagentSpawns 字段，这条立刻红。
+  it('counts subagent_spawned per case into data_json, isolated across interleaved cases', () => {
+    const db = createDbWriter();
+    const adapter = new ExperimentAdapter(db as any);
+    const spawn = (ts: number, testId: string, id: string) => adapter.recordSubagentSpawn({
+      schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION, type: 'subagent_spawned', ts, runId: 'event-run', testId, id,
+    });
+    const end = (ts: number, testId: string) => adapter.persistEventCase({
+      schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION, type: 'case_end', ts, runId: 'event-run', testId,
+      status: 'passed', score: 1, durationMs: 1,
+    });
+    spawn(1, 'case-a', 'agent-1');
+    spawn(2, 'case-b', 'agent-2');
+    spawn(3, 'case-a', 'agent-3');
+    end(4, 'case-b');
+    end(5, 'case-a');
+    end(6, 'case-c');
+    const rows = db.insertExperimentCases.mock.calls
+      .map((call) => [call[1][0].case_id, JSON.parse(call[1][0].data_json).subagentSpawns]);
+    expect(rows).toEqual([
+      ['case-b', 1],
+      ['case-a', 2],
+      // 零触发要落成 0，不是缺字段——结果页据此打「未出场」。
+      ['case-c', 0],
+    ]);
+  });
+
+  it('case_end 自带的 subagentSpawns 与桥计数取一致的那个（同一数字两条路径）', () => {
+    const db = createDbWriter();
+    const adapter = new ExperimentAdapter(db as any);
+    adapter.persistEventCase({
+      schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION, type: 'case_end', ts: 1, runId: 'event-run',
+      testId: 'from-event', status: 'passed', score: 1, durationMs: 1, subagentSpawns: 3,
+    });
+    expect(JSON.parse(db.insertExperimentCases.mock.calls[0][1][0].data_json).subagentSpawns).toBe(3);
+  });
+
+  it('pair_end 的两臂子代理次数原样落 data_json', () => {
+    const db = createDbWriter();
+    const adapter = new ExperimentAdapter(db as any);
+    adapter.beginEventRun({
+      schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION, type: 'run_start', ts: 1, runId: 'compare-run',
+      plannedCaseIds: ['case-a'],
+      config: {
+        ...UNKNOWN_EVAL_RUN_STAMP, mode: 'mock', model: 'm', provider: 'openai', scope: 'smoke',
+        maxCases: 1, concurrency: 1, gitCommit: 'abc', testCaseDir: 'cases',
+        compare: {
+          baseline: { name: 'production' },
+          candidate: { name: 'candidate', orchestration: { allowSwarm: true } },
+          diff: ['子代理：不扇出 → 允许扇出'],
+        },
+      } as any,
+    });
+    adapter.persistPairEnd({
+      schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION, type: 'pair_end', ts: 2, runId: 'compare-run', testId: 'case-a',
+      statusA: 'passed', statusB: 'passed', assignment: { A: 'baseline', B: 'candidate' },
+      assertionWinner: 'tie', referenceWinner: 'tie', assertionPassA: 1, assertionPassB: 1, assertionCount: 1,
+      skillActivations: { baseline: 0, candidate: 0 },
+      memoryInjections: { baseline: 0, candidate: 0 },
+      subagentSpawns: { baseline: 0, candidate: 4 },
+    });
+    const row = JSON.parse(db.insertExperimentCases.mock.calls.at(-1)![1][0].data_json);
+    expect(row.subagentSpawns).toEqual({ baseline: 0, candidate: 4 });
   });
 
   it('T2：事件证据原样落库，旧事件不增加 evidence 键', () => {
@@ -209,11 +283,11 @@ describe('ExperimentAdapter canonical harness persistence', () => {
       toolCalls: [], responseExcerpt: '完成', responseTotalChars: 2,
     };
     adapter.persistEventCase({
-      schemaVersion: 4, type: 'case_end', ts: 1, runId: 'event-run', testId: 'with-evidence',
+      schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION, type: 'case_end', ts: 1, runId: 'event-run', testId: 'with-evidence',
       status: 'passed', score: 1, durationMs: 2, evidence, invalid: { reason: 'usage_unavailable' },
     });
     adapter.persistEventCase({
-      schemaVersion: 4, type: 'case_end', ts: 2, runId: 'event-run', testId: 'legacy',
+      schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION, type: 'case_end', ts: 2, runId: 'event-run', testId: 'legacy',
       status: 'failed', score: 0, durationMs: 2,
     });
     const first = JSON.parse(db.insertExperimentCases.mock.calls[0][1][0].data_json);
@@ -233,7 +307,7 @@ describe('ExperimentAdapter canonical harness persistence', () => {
       symptoms: ['timeout', 'loop_suspect'],
     };
     adapter.persistEventCase({
-      schemaVersion: 4,
+      schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION,
       type: 'case_end',
       ts: 1,
       runId: 'event-run',

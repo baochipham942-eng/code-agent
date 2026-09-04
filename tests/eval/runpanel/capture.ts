@@ -12,7 +12,7 @@ import { applyAnnotationsSchema } from '../../../src/host/services/core/database
 import { buildEvalExperimentCaseDetail } from '@internal-evaluation/host/evaluation/evalCaseDetail';
 import { buildCaseEvidence } from '@internal-evaluation-scripts/lib/eval-case-evidence';
 import { EXPECTATION_TYPE_CATALOG } from '../../../src/host/testing/expectationCatalog';
-import { UNKNOWN_EVAL_RUN_STAMP, type EvalRunEvent, type EvalExperimentCaseDetail, type ListEvalAnnotationsResult } from '../../../src/shared/contract/evaluation';
+import { EVAL_RUN_EVENT_SCHEMA_VERSION, UNKNOWN_EVAL_RUN_STAMP, type EvalRunEvent, type EvalExperimentCaseDetail, type ListEvalAnnotationsResult } from '../../../src/shared/contract/evaluation';
 import type { TestResult } from '../../../src/host/testing/types';
 
 type Scenario = 'a1' | 'a2' | 'a8' | 'a12' | 'a12-regressions' | 'c2' | 'a13a' | 'a13b' | 'a13c'
@@ -87,7 +87,7 @@ async function writeCaseDrawerFixture(): Promise<{ fixturePath: string; annotati
     promptVersion: 'sys-v44', mode: 'real' as const, model: 'deepseek-chat', provider: 'deepseek',
     scope: 'full' as const, maxCases: 3, concurrency: 1, gitCommit: 'be7ea7617', testCaseDir: '.claude/test-cases',
   };
-  adapter.beginEventRun({ schemaVersion: 4, type: 'run_start', ts: 1, runId, plannedCaseIds: ['TC-026', 'TC-041', 'TC-058'], config });
+  adapter.beginEventRun({ schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION, type: 'run_start', ts: 1, runId, plannedCaseIds: ['TC-026', 'TC-041', 'TC-058'], config });
 
   const failing = baseResult('TC-026');
   const infra = baseResult('TC-041');
@@ -113,7 +113,7 @@ async function writeCaseDrawerFixture(): Promise<{ fixturePath: string; annotati
   ];
   for (const [index, item] of rows.entries()) {
     adapter.persistEventCase({
-      schemaVersion: 4, type: 'case_end', ts: index + 2, runId, testId: item.result.testId,
+      schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION, type: 'case_end', ts: index + 2, runId, testId: item.result.testId,
       status: item.event.status ?? item.result.status, score: item.result.score, durationMs: item.result.duration,
       ...item.event, evidence: buildCaseEvidence(item.result),
     });

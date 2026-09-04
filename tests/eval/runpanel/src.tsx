@@ -2,7 +2,7 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import type { ElectronAPI } from '@shared/ipc';
 import { EVALUATION_CHANNELS } from '@internal-evaluation/shared/evaluationChannels';
-import { UNKNOWN_EVAL_RUN_STAMP } from '@shared/contract/evaluation';
+import { EVAL_RUN_EVENT_SCHEMA_VERSION, UNKNOWN_EVAL_RUN_STAMP } from '@shared/contract/evaluation';
 import type {
   EvalExperimentCaseDetail,
   EvalExperimentDetail,
@@ -188,7 +188,7 @@ function emit(event: EvalRunEvent): void {
 }
 
 function emitActiveRun(): void {
-  const base = { schemaVersion: 4 as const, runId: 'visual-run' };
+  const base = { schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION, runId: 'visual-run' };
   emit({
     ...base,
     type: 'run_start',

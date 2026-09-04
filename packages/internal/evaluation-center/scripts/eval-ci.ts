@@ -861,7 +861,7 @@ async function runCompareCommand(
       judge: opts.judge,
       trialsPerCase: opts.repeat,
       ...(opts.caseCostLimit !== undefined ? { caseCostLimitUsd: opts.caseCostLimit } : {}),
-      shape: buildCompareArmShape(config, baseline, EVAL_GOAL_ALLOW_SWARM),
+      shape: buildCompareArmShape(config, baseline),
       estimatedCases: casesToRun * opts.repeat,
     });
   };

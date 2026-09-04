@@ -2,6 +2,7 @@
 import fs from 'fs/promises';
 import * as yaml from 'js-yaml';
 import type { CompareConfiguration } from '../types';
+import { SPAWN_GUARD } from '../../../shared/constants/agent';
 import { validateDiscoverableSkills } from '../skillSelection';
 
 function optionalString(value: unknown, field: string, filePath: string): string | undefined {
@@ -35,6 +36,21 @@ function optionalEnum<T extends string>(
   return value as T;
 }
 
+function optionalSpawnDepth(value: unknown, field: string, filePath: string): number | undefined {
+  if (value === undefined) return undefined;
+  if (
+    typeof value !== 'number'
+    || !Number.isInteger(value)
+    || value < 0
+    || value > SPAWN_GUARD.HARD_MAX_SPAWN_DEPTH
+  ) {
+    throw new Error(
+      `Invalid compare config in ${filePath}: "${field}" must be an integer between 0 and ${SPAWN_GUARD.HARD_MAX_SPAWN_DEPTH} (0 = no fan-out)`,
+    );
+  }
+  return value;
+}
+
 /**
  * Load a CompareConfiguration from a YAML file.
  */
@@ -64,6 +80,12 @@ export async function loadCompareConfig(
     : undefined;
   if (parsed.memory !== undefined && !parsedMemory) {
     throw new Error(`Invalid compare config in ${filePath}: "memory" must be an object`);
+  }
+  const parsedOrchestration = parsed.orchestration && typeof parsed.orchestration === 'object'
+    ? parsed.orchestration as Record<string, unknown>
+    : undefined;
+  if (parsed.orchestration !== undefined && !parsedOrchestration) {
+    throw new Error(`Invalid compare config in ${filePath}: "orchestration" must be an object`);
   }
 
   let skills: string[] | undefined;
@@ -109,6 +131,12 @@ export async function loadCompareConfig(
       'reasoningEffort',
       filePath,
     ),
+    orchestration: parsedOrchestration
+      ? {
+          allowSwarm: optionalBoolean(parsedOrchestration.allowSwarm, 'orchestration.allowSwarm', filePath),
+          spawnMaxDepth: optionalSpawnDepth(parsedOrchestration.spawnMaxDepth, 'orchestration.spawnMaxDepth', filePath),
+        }
+      : undefined,
     skills,
     enabledTools: parsed.enabledTools as string[] | undefined,
     temperature: parsed.temperature as number | undefined,

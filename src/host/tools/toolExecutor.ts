@@ -184,6 +184,13 @@ export interface ToolExecutorConfig {
   ledgerOrigin?: ToolLedgerOrigin;
   /** Run-scoped telemetry owner propagated through subagent tools. */
   telemetryCollector?: TelemetryCollector;
+  /**
+   * Run 级 spawn 深度上限，作为每次 execute 的缺省值（0 = 不许扇出）。
+   * 主 agent 路径从来没人给 ExecuteOptions.spawnMaxDepth 赋值——它只在 subagent
+   * 上下文里逐层透传，所以「会话级覆盖」在主 agent 上一直是死的。构造期声明一次，
+   * 整个 run 的工具调用都吃得到。
+   */
+  spawnMaxDepth?: number;
 }
 
 export type ToolExecutionDelegate = (toolName: string, params: Record<string, unknown>, context: ToolContext, options: ExecuteOptions) => Promise<ToolExecutionResult | null>;
@@ -318,6 +325,7 @@ export class ToolExecutor {
   private readonly forcePermissionHandler: boolean;
   private readonly ledgerOrigin: ToolLedgerOrigin;
   private readonly telemetryCollector?: TelemetryCollector;
+  private readonly spawnMaxDepth?: number;
 
   constructor(config: ToolExecutorConfig) {
     this.requestPermission = config.requestPermission;
@@ -332,6 +340,7 @@ export class ToolExecutor {
     this.executionTopology = config.executionTopology ?? 'main';
     this.ledgerOrigin = config.ledgerOrigin ?? 'desktop';
     this.telemetryCollector = config.telemetryCollector;
+    this.spawnMaxDepth = config.spawnMaxDepth;
     if (this.runContext && this.workingDirectory !== this.runContext.cwd) {
       throw new Error(
         `Run-scoped ToolExecutor cwd mismatch for ${this.runContext.runId}: ${this.workingDirectory}`,
@@ -371,6 +380,7 @@ export class ToolExecutor {
       runContext,
       dispatchTool: dispatchTool ?? this.dispatchTool,
       ledgerOrigin: this.ledgerOrigin,
+      spawnMaxDepth: this.spawnMaxDepth,
     });
     executor.setAuditEnabled(this.auditEnabled);
     return executor;
@@ -903,7 +913,7 @@ export class ToolExecutor {
       // Per-agent BrowserPool / ComputerSurface isolation
       agentId: contextAgentId,
       spawnDepth: options.spawnDepth,
-      spawnMaxDepth: options.spawnMaxDepth,
+      spawnMaxDepth: options.spawnMaxDepth ?? this.spawnMaxDepth,
       spawnTreeId: options.spawnTreeId,
       swarmRunScope: options.swarmRunScope,
       spawnQueueTimeoutMs: options.spawnQueueTimeoutMs,

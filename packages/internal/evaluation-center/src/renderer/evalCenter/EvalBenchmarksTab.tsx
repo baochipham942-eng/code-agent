@@ -7,6 +7,7 @@
 // ============================================================================
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { EVALUATION_CHANNELS } from '../../shared/evaluationChannels';
+import { EVAL_RUN_EVENT_SCHEMA_VERSION } from '@shared/contract/evaluation';
 import type {
   EvalRunEvent,
   EvalRunPanelProbe,
@@ -14,7 +15,6 @@ import type {
   EvalRunSubscriptionResult,
   AiReviewDimension,
 } from '@shared/contract/evaluation';
-import { EVAL_RUN_EVENT_SCHEMA_VERSION } from '@shared/contract/evaluation';
 import type { EvalBaselineExperimentListItem } from '@shared/contract/evaluationBaseline';
 import {
   evalRunPanelEn,

@@ -162,6 +162,8 @@ export class ABComparator {
     // N-EVAL-MEMORY：「挂了≠用了」——记忆注入次数按臂进 pair，候选臂为 0 时结果页提示未出场。
     const memoryInjectionsA = resultA.memoryRecall?.injections ?? 0;
     const memoryInjectionsB = resultB.memoryRecall?.injections ?? 0;
+    const subagentSpawnsA = resultA.subagentSpawns ?? 0;
+    const subagentSpawnsB = resultB.subagentSpawns ?? 0;
 
     // Step 2.5（WP1-3b）：任一侧没跑成 → 本 pair 不进胜负统计，只标注
     const invalidA = invalidRunReason(resultA);
@@ -196,6 +198,8 @@ export class ABComparator {
         skillActivationsB,
         memoryInjectionsA,
         memoryInjectionsB,
+        subagentSpawnsA,
+        subagentSpawnsB,
         excludedReason: reasons,
       };
     }
@@ -226,6 +230,8 @@ export class ABComparator {
         skillActivationsB,
         memoryInjectionsA,
         memoryInjectionsB,
+        subagentSpawnsA,
+        subagentSpawnsB,
         excludedReason: 'skill_not_activated',
       };
     }
@@ -269,6 +275,8 @@ export class ABComparator {
       skillActivationsB,
       memoryInjectionsA,
       memoryInjectionsB,
+      subagentSpawnsA,
+      subagentSpawnsB,
     };
   }
 

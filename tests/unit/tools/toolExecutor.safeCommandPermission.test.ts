@@ -105,4 +105,118 @@ describe('ToolExecutor Bash 安全命令单一判据', () => {
 
     expect(permissionRequests).toHaveLength(0);
   });
+
+  it('lenient 模式仍在执行前拦截参数倒序的 dd 设备写入', async () => {
+    process.env.CODE_AGENT_SHELL_SAFETY_MODE = 'lenient';
+    const executor = buildRejectingExecutor();
+
+    const result = await executor.execute(
+      'Bash',
+      { command: 'dd of=/dev/disk2 if=x' },
+      { sessionId: 'safe-command-dd-device-reordered' },
+    );
+
+    expect(permissionRequests).toHaveLength(0);
+    expect(result).toMatchObject({
+      success: false,
+      error: expect.stringContaining('Security: Command blocked'),
+    });
+  });
+
+  it.each([
+    'command cat .env',
+    'command git remote set-url origin https://evil.example/x.git',
+    'command git config credential.helper store',
+    'command git push origin feature-x',
+    'exec git push origin feature-x',
+    'nice -n 5 git remote set-url origin https://evil.example/x.git',
+  ])('Bash 预授权仍不能绕过 command 包装下的审批：%s', async (command) => {
+    await fs.writeFile(path.join(workspace, '.env'), 'CONTROLLED_TEST_SECRET=1\n', 'utf8');
+    const executor = buildRejectingExecutor();
+
+    const result = await executor.execute(
+      'Bash',
+      { command },
+      { sessionId: `safe-command-wrapper-${command}`, preApprovedTools: new Set(['Bash']) },
+    );
+
+    expect(permissionRequests).toHaveLength(1);
+    expect(result.success).toBe(false);
+  });
+
+  it.each([
+    'cat .env;',
+    '(cat .env)',
+    'git remote set-url origin https://evil.example/x.git;',
+  ])('拆不出完整命令段时预授权也必须 fail-closed 请求审批：%s', async (command) => {
+    await fs.writeFile(path.join(workspace, '.env'), 'CONTROLLED_TEST_SECRET=1\n', 'utf8');
+    const executor = buildRejectingExecutor();
+
+    const result = await executor.execute(
+      'Bash',
+      { command },
+      { sessionId: `safe-command-unsegmented-${command}`, preApprovedTools: new Set(['Bash']) },
+    );
+
+    expect(permissionRequests).toHaveLength(1);
+    expect(result.success).toBe(false);
+  });
+
+  it('路径规范化异常会结构化 fail-closed，不让 execute promise reject', async () => {
+    const executor = buildRejectingExecutor();
+
+    const result = await executor.execute(
+      'Read',
+      { file_path: '\0' },
+      { sessionId: 'path-analysis-nul' },
+    );
+
+    expect(result).toMatchObject({
+      success: false,
+      metadata: {
+        code: 'PERMISSION_PATH_ANALYSIS_FAILED',
+        failureCode: 'permission-denied',
+      },
+    });
+    expect(permissionRequests).toHaveLength(0);
+  });
+
+  it.each([
+    'cat .env',
+    'git remote set-url origin https://evil.example/x.git',
+    'git config credential.helper store',
+    'git push origin feature-x',
+  ])('lenient 模式仍要求审批确定性敏感参数：%s', async (command) => {
+    process.env.CODE_AGENT_SHELL_SAFETY_MODE = 'lenient';
+    await fs.writeFile(path.join(workspace, '.env'), 'CONTROLLED_TEST_SECRET=1\n', 'utf8');
+    const executor = buildRejectingExecutor();
+
+    const result = await executor.execute(
+      'Bash',
+      { command },
+      { sessionId: `safe-command-lenient-sensitive-${command}` },
+    );
+
+    expect(permissionRequests).toHaveLength(1);
+    expect(result.success).toBe(false);
+  });
+
+  it.each([
+    'sudo -u me rm -rf ~',
+    'timeout 5 dd if=x of=/dev/disk2',
+  ])('Bash 预授权仍不能绕过任意位置扫描的硬拒：%s', async (command) => {
+    const executor = buildRejectingExecutor();
+
+    const result = await executor.execute(
+      'Bash',
+      { command },
+      { sessionId: `safe-command-hard-wrapper-${command}`, preApprovedTools: new Set(['Bash']) },
+    );
+
+    expect(permissionRequests).toHaveLength(0);
+    expect(result).toMatchObject({
+      success: false,
+      error: expect.stringContaining('Security: Command blocked'),
+    });
+  });
 });

@@ -50,7 +50,10 @@ export function createInternalFeaturesRouter(deps: InternalFeaturesRouterDeps): 
     }
 
     res.setHeader('Cache-Control', 'no-cache');
-    res.sendFile(requestedFile, (error) => {
+    // send 默认 dotfiles:'ignore'：绝对路径里任何点开头目录段都会 404。
+    // web 数据目录是 ~/.code-agent 或 ~/.code-agent-dev，必须显式放行。
+    // 路径逃逸仍由上方 startsWith(base + sep) 包含检查拦下。
+    res.sendFile(requestedFile, { dotfiles: 'allow' }, (error) => {
       if (error && !res.headersSent) res.sendStatus(404);
     });
   });
@@ -83,7 +86,7 @@ export function createInternalFeaturesRouter(deps: InternalFeaturesRouterDeps): 
     }
 
     res.setHeader('Cache-Control', 'no-cache');
-    res.sendFile(requestedFile, (error) => {
+    res.sendFile(requestedFile, { dotfiles: 'allow' }, (error) => {
       if (error && !res.headersSent) res.sendStatus(404);
     });
   });

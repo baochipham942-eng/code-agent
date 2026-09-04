@@ -8,6 +8,7 @@ import { createInternalFeaturesRouter } from '../../../src/web/routes/internalFe
 import { INTERNAL_SDK_VERSION } from '../../../src/host/internalFeatures/internalSdkVersion';
 import type { LoadedPlugin } from '../../../src/host/plugins/types';
 
+let tmpRoot: string;
 let pluginsDir: string;
 let server: http.Server;
 let baseUrl: string;
@@ -16,7 +17,9 @@ let uiTrusted: boolean;
 let originalEnv: Record<string, string | undefined>;
 
 beforeEach(async () => {
-  pluginsDir = await fs.mkdtemp(path.join(os.tmpdir(), 'neo-internal-route-'));
+  tmpRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'neo-internal-route-'));
+  // send 默认 ignore 点目录段；真实 web 数据目录是 ~/.code-agent[-dev]。
+  pluginsDir = path.join(tmpRoot, '.data-dir', 'plugins');
   const internalPluginRoot = path.join(
     pluginsDir,
     'evaluation-center',
@@ -108,7 +111,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
-  await fs.rm(pluginsDir, { recursive: true, force: true });
+  await fs.rm(tmpRoot, { recursive: true, force: true });
   for (const [key, value] of Object.entries(originalEnv)) {
     if (value === undefined) delete process.env[key];
     else process.env[key] = value;
@@ -116,6 +119,20 @@ afterEach(async () => {
 });
 
 describe('createInternalFeaturesRouter', () => {
+  it('serves renderer bytes when the plugin lives under a dotted data-dir segment', async () => {
+    expect(pluginsDir.includes(`${path.sep}.data-dir${path.sep}`)).toBe(true);
+
+    const internalExpected = 'window.TEST_PLUGIN = true;';
+    const internal = await fetch(`${baseUrl}/internal-features/evaluation-center/index.js`);
+    expect(internal.status).toBe(200);
+    expect(await internal.text()).toBe(internalExpected);
+
+    const uiExpected = 'window.TEST_THIRD_PARTY_UI = true;';
+    const ui = await fetch(`${baseUrl}/plugin-ui/test-ui/index.js`);
+    expect(ui.status).toBe(200);
+    expect(await ui.text()).toBe(uiExpected);
+  });
+
   it('serves only loaded admin plugin files and blocks traversal without existence leaks', async () => {
     const ok = await fetch(`${baseUrl}/internal-features/evaluation-center/index.js?v=fixture`);
     expect(ok.status).toBe(200);

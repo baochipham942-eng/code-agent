@@ -1,0 +1,4 @@
+artifacts/
+.generated-casedrawer.json
+.generated-annotations.json
+.generated-casedrawer-report.md

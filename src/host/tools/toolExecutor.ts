@@ -21,7 +21,11 @@ import { getAuditLogger, maskSensitiveData, isKnownSafeCommand, validateCommand,
 import { createFileCheckpointIfNeeded } from './middleware/fileCheckpointMiddleware';
 import { getFileCheckpointService } from '../services/checkpoint';
 import { getConfirmationGate } from '../agent/confirmationGate';
-import { type ClassificationResult } from './permissionClassifier';
+import {
+  bashCommandRequiresPermission,
+  readArgumentsRequirePermission,
+  type ClassificationResult,
+} from './permissionClassifier';
 import type { SkillToolBoundary } from '../../shared/contract/agentSkill';
 import type { NeoTagRunContext } from '../../shared/contract/tag';
 import type { SwarmRunScope } from '../../shared/contract/swarm';
@@ -596,6 +600,15 @@ export class ToolExecutor {
       params = stripped.params as Record<string, unknown>;
     }
 
+    // Bash 的 working_directory 是命令真实执行基准；所有相对路径安全判断必须复用它。
+    // runContext 下 bindRunScopedParams 已把它约束并规范化到 workspace 内；基座 executor
+    // 仍允许显式 cwd，因此不能继续拿会话 cwd 代替实际 cwd 做 rm/凭据路径分类。
+    const bashWorkingDirectory = isBashToolName(normalizedRequestedToolName)
+      && typeof params.working_directory === 'string'
+      && params.working_directory.trim()
+      ? nodePath.resolve(this.executionCwd, params.working_directory)
+      : this.executionCwd;
+
     // 记忆目录是 directive authority 边界。按 schema 声明的写 effect 判定，
     // 必须先于 Skill 预授权、安全命令和 classifier，任何自动放行都不能越过。
     const directiveMemoryAssessment = assessDirectiveMemoryWrite({
@@ -937,7 +950,10 @@ export class ToolExecutor {
     let commandValidation: ValidationResult | undefined;
     let commandAnalysisFailedReason: string | undefined;
     if (isBashToolName(policyToolName) && params.command) {
-      commandValidation = validateCommand(params.command as string);
+      commandValidation = validateCommand(params.command as string, undefined, {
+        workingDirectory: bashWorkingDirectory,
+        workspaceRoot: this.writeWorkspaceRoot,
+      });
 
       // Block critical risk commands
       if (!commandValidation.allowed) {
@@ -1097,6 +1113,53 @@ export class ToolExecutor {
       executionToolName,
       params,
     );
+    let canonicalBashWorkingDirectory: string;
+    let bashArgumentForcesClassification: boolean;
+    let readArgumentForcesClassification: boolean;
+    try {
+      canonicalBashWorkingDirectory = resolveCanonicalRunPath(bashWorkingDirectory);
+      bashArgumentForcesClassification = isBashToolName(policyToolName)
+        && typeof params.command === 'string'
+        && bashCommandRequiresPermission(params.command, {
+          workingDirectory: canonicalBashWorkingDirectory,
+          workspaceRoot: this.writeWorkspaceRoot,
+        });
+      readArgumentForcesClassification = readArgumentsRequirePermission(
+        executionToolName,
+        params,
+        {
+          workingDirectory: resolveCanonicalRunPath(this.executionCwd),
+          workspaceRoot: this.writeWorkspaceRoot,
+        },
+      );
+    } catch (pathAnalysisError) {
+      const failure = permissionDenialError(executionToolName, 'fail-closed');
+      logger.warn('Permission path analysis failed, denying tool call', {
+        tool: executionToolName,
+        error: pathAnalysisError instanceof Error ? pathAnalysisError.message : String(pathAnalysisError),
+      });
+      recordDecision(
+        executionToolName,
+        params,
+        'policy-deny',
+        'permission_path_analysis_failed',
+        permStartTime,
+        undefined,
+        effectiveSessionId,
+        this.ledgerOrigin,
+      );
+      return {
+        success: false,
+        error: failure.modelText,
+        metadata: {
+          code: 'PERMISSION_PATH_ANALYSIS_FAILED',
+          failureCode: AgentFailureCode.PermissionDenied,
+          hostReason: failure,
+        },
+      };
+    }
+    const argumentForcesClassification = bashArgumentForcesClassification
+      || readArgumentForcesClassification;
 
     // Check permission if required
     // Skill 系统：预授权工具跳过普通权限检查（但不能跳过边界违规或 consequence hard deny）
@@ -1105,6 +1168,7 @@ export class ToolExecutor {
       && !commandAnalysisFailedReason
       && !shellDesktopAutomation
       && !consequenceForcesClassification
+      && !argumentForcesClassification
       && !this.forcePermissionHandler
       && options.preApprovedTools !== undefined
       && options.preApprovedTools.size > 0
@@ -1138,7 +1202,7 @@ export class ToolExecutor {
       }
 
       // 2. 检查安全命令白名单
-      if (!isSafeCommand && isKnownSafeCommand(cmd)) {
+      if (!isSafeCommand && !bashArgumentForcesClassification && isKnownSafeCommand(cmd)) {
         isSafeCommand = true;
         logger.debug('Command is known safe, skipping approval', { command: cmd.substring(0, 80) });
         recordDecision(executionToolName, params, 'auto-approve', 'safe-command', permStartTime, undefined, effectiveSessionId, this.ledgerOrigin);
@@ -1147,7 +1211,11 @@ export class ToolExecutor {
       // 3. lenient 模式（已决策 2026-06-10，朋友测试包默认）：硬毙清单照拦
       //    （validateCommand critical 在前置闸已挡），其余未识别命令放行不进审批。
       //    confirmationGate 的 HIGH_RISK_PATTERNS 仍独立生效，最高危命令保留确认。
-      if (!isSafeCommand && getShellSafetyMode() === 'lenient') {
+      if (
+        !isSafeCommand
+        && !argumentForcesClassification
+        && getShellSafetyMode() === 'lenient'
+      ) {
         const lenientCheck = commandValidation ?? validateCommand(cmd);
         if (lenientCheck.allowed) {
           isSafeCommand = true;
@@ -1157,7 +1225,7 @@ export class ToolExecutor {
       }
     }
 
-    if (toolDef.requiresPermission && (commandAnalysisFailedReason || this.forcePermissionHandler || writeWithoutWorkspaceAuthority || guardFabricForcesApproval || policyForcesConfirmation || boundaryViolation || readOnlyForcesConfirmation || shellDesktopAutomation || consequenceForcesClassification || (!isPreApproved && !isSafeCommand))) {
+    if ((toolDef.requiresPermission || readArgumentForcesClassification) && (commandAnalysisFailedReason || this.forcePermissionHandler || writeWithoutWorkspaceAuthority || guardFabricForcesApproval || policyForcesConfirmation || boundaryViolation || readOnlyForcesConfirmation || shellDesktopAutomation || consequenceForcesClassification || argumentForcesClassification || (!isPreApproved && !isSafeCommand))) {
       // P1: Auto-approve classifier — 规则+LLM 自动判断安全性
       let needsUserApproval = true;
       // 信任边界 ask（W3 写边界）→ forceConfirm：终审层便利放行必须让路（同 directory_access）。
@@ -1171,6 +1239,13 @@ export class ToolExecutor {
       const traceBuilder = createTraceBuilder(executionToolName);
       /** 分类器抛错（≠ 判 ask）时的错误串；非空表示这次「问用户」其实是故障回退。 */
       let classifierFailedReason: string | undefined;
+      // validateCommand 只描述已命中的危险形态：未识别 ask 才标 unknown；命中确定规则
+      // 的 ask 提升为 medium，避免审批卡同时出现 ask + safe 的冲突标签。
+      let commandRiskUnknown = Boolean(
+        commandAnalysisFailedReason && commandValidation?.riskLevel === 'safe',
+      );
+      let deterministicAskReason: string | undefined;
+      let knownAskCommandRisk: 'medium' | undefined;
       if (guardFabricTraceStep) {
         traceBuilder.addStep(
           guardFabricTraceStep.layer,
@@ -1196,7 +1271,7 @@ export class ToolExecutor {
             params,
             policyForcesConfirmation,
             boundaryViolation,
-            workingDirectory: resolveCanonicalRunPath(this.executionCwd),
+            workingDirectory: canonicalBashWorkingDirectory,
             workspaceRoot,
             permissionLevel: toolDef.permissionLevel,
             permStartTime,
@@ -1281,6 +1356,17 @@ export class ToolExecutor {
               );
             }
             // 'ask' — collect trace step for permission request
+            if (classification.decision === 'ask' && isBashToolName(policyToolName)) {
+              const safeRisk = commandValidation?.riskLevel === 'safe';
+              commandRiskUnknown = safeRisk && classification.riskUnknown === true;
+              if (safeRisk && classification.riskUnknown !== true) knownAskCommandRisk = 'medium';
+              if (
+                classification.traceStep?.rule === 'B1: sensitive_credential_read'
+                || classification.traceStep?.rule === 'B1: git_remote_or_credential_write'
+              ) {
+                deterministicAskReason = classification.reason;
+              }
+            }
             if (classification.trustBoundary) boundaryAskForcesConfirmation = true;
             if (classification.traceStep) {
               traceBuilder.addStep(
@@ -1312,6 +1398,7 @@ export class ToolExecutor {
             tool: executionToolName,
             error: classifierFailedReason,
           });
+          if (commandValidation?.riskLevel === 'safe') commandRiskUnknown = true;
         }
       }
 
@@ -1337,17 +1424,25 @@ export class ToolExecutor {
       }
 
       if (needsUserApproval) {
-      const permissionRequest = this.buildPermissionRequest(toolDef, params, commandValidation);
+      const permissionRequest = this.buildPermissionRequest(
+        toolDef,
+        params,
+        commandValidation,
+        commandRiskUnknown ? 'unknown' : knownAskCommandRisk,
+      );
+      if (deterministicAskReason) {
+        const risk = permissionRequest.details.commandRiskLevel;
+        permissionRequest.reason = risk === 'high' || risk === 'critical'
+          ? [permissionRequest.reason, deterministicAskReason].filter(Boolean).join('；')
+          : deterministicAskReason;
+      }
       const deleteTarget = commandValidation && typeof params.command === 'string'
         ? extractDeleteTarget(params.command, commandValidation.securityFlags)
         : undefined;
       if (deleteTarget) {
-        const commandCwd = typeof params.working_directory === 'string'
-          ? nodePath.resolve(this.executionCwd, params.working_directory)
-          : this.executionCwd;
         const affectedPath = nodePath.isAbsolute(deleteTarget)
           ? nodePath.resolve(deleteTarget)
-          : nodePath.resolve(commandCwd, deleteTarget);
+          : nodePath.resolve(bashWorkingDirectory, deleteTarget);
         permissionRequest.details.affectedPath = affectedPath;
         permissionRequest.details.affectedFileCount = await countAffectedFiles(affectedPath);
       }
@@ -1768,6 +1863,7 @@ export class ToolExecutor {
     tool: ToolDefinition,
     params: Record<string, unknown>,
     commandValidation?: ValidationResult,
+    commandRiskOverride?: ValidationResult['riskLevel'] | 'unknown',
   ): PermissionRequestData {
     const sourceAttribution = (rawPath?: unknown): Record<string, unknown> => {
       const workspaceScope = this.runContext?.workspaceScope;
@@ -1798,11 +1894,11 @@ export class ToolExecutor {
           tool: tool.name,
           details: {
             command: params.command,
-            commandRiskLevel: commandValidation?.riskLevel,
+            commandRiskLevel: commandRiskOverride ?? commandValidation?.riskLevel,
             commandSecurityFlags: commandValidation?.securityFlags,
             ...sourceAttribution(params.working_directory),
           },
-          reason: 'Execute shell command',
+          reason: commandValidation?.reason ?? 'Execute shell command',
           reasonCode: PermissionRequestReason.ShellHighRisk,
           boundary: {
             id: 'command.shell',

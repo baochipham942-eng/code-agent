@@ -1114,6 +1114,7 @@
               "type": "string",
               "enum": [
                 "safe",
+                "unknown",
                 "low",
                 "medium",
                 "high",

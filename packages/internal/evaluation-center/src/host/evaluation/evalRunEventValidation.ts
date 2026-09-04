@@ -25,6 +25,14 @@ function requireNumber(record: Record<string, unknown>, key: string): void {
   }
 }
 
+/** 触发次数：只认非负整数——负数/小数落库会让结果页显示不可能的次数、还绕过「未出场」提示。 */
+function requireCount(record: Record<string, unknown>, key: string, label: string): void {
+  const value = record[key];
+  if (!Number.isInteger(value) || (value as number) < 0) {
+    throw new Error(`成对结果 ${label}.${key} 必须是非负整数。`);
+  }
+}
+
 function requireTestIdentity(record: Record<string, unknown>): void {
   requireString(record, 'testId');
 }
@@ -66,6 +74,16 @@ function validateCompareArm(value: unknown): void {
   }
   if (value.skills !== undefined && !isStringArray(value.skills)) {
     throw new Error('实验配置 skills 必须是字符串数组。');
+  }
+  if (value.orchestration !== undefined) {
+    if (!isRecord(value.orchestration)) throw new Error('实验配置 orchestration 必须是对象。');
+    const { allowSwarm, spawnMaxDepth } = value.orchestration;
+    if (allowSwarm !== undefined && typeof allowSwarm !== 'boolean') {
+      throw new Error('实验配置 orchestration.allowSwarm 必须是布尔值。');
+    }
+    if (spawnMaxDepth !== undefined && (!Number.isInteger(spawnMaxDepth) || (spawnMaxDepth as number) < 0)) {
+      throw new Error('实验配置 orchestration.spawnMaxDepth 必须是非负整数。');
+    }
   }
 }
 
@@ -186,6 +204,10 @@ export function parseEvalRunEvent(value: unknown): EvalRunEvent {
           }
         }
       }
+      if (value.subagentSpawns !== undefined
+        && (!Number.isInteger(value.subagentSpawns) || (value.subagentSpawns as number) < 0)) {
+        throw new Error('评测用例 subagentSpawns 必须是非负整数。');
+      }
       if (value.aiReview !== undefined) validateAiReview(value.aiReview);
       if (value.evidence !== undefined) validateEvidence(value.evidence);
       if (value.invalid !== undefined) {
@@ -221,8 +243,11 @@ export function parseEvalRunEvent(value: unknown): EvalRunEvent {
       }
       for (const key of ['assertionPassA', 'assertionPassB', 'assertionCount']) requireNumber(value, key);
       if (!isRecord(value.skillActivations)) throw new Error('成对结果缺少 skillActivations。');
-      requireNumber(value.skillActivations, 'baseline');
-      requireNumber(value.skillActivations, 'candidate');
+      requireCount(value.skillActivations, 'baseline', 'skillActivations');
+      requireCount(value.skillActivations, 'candidate', 'skillActivations');
+      if (!isRecord(value.subagentSpawns)) throw new Error('成对结果缺少 subagentSpawns。');
+      requireCount(value.subagentSpawns, 'baseline', 'subagentSpawns');
+      requireCount(value.subagentSpawns, 'candidate', 'subagentSpawns');
       break;
     }
     case 'tool_call':

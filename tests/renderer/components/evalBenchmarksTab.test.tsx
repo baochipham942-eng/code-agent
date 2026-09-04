@@ -3,7 +3,7 @@ import React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EVALUATION_CHANNELS } from '@internal-evaluation/shared/evaluationChannels';
-import { UNKNOWN_EVAL_RUN_STAMP } from '../../../src/shared/contract/evaluation';
+import { EVAL_RUN_EVENT_SCHEMA_VERSION, UNKNOWN_EVAL_RUN_STAMP } from '../../../src/shared/contract/evaluation';
 import type {
   EvalExperimentDetail,
   EvalExperimentListItem,
@@ -284,7 +284,7 @@ describe('EvalBenchmarksTab 跑分闭环', () => {
   });
 
   it('T2：先监听再 subscribe，事件流驱动三行步骤并把工具调用折成一行', async () => {
-    const base = { schemaVersion: 3 as const, runId: 'run-live' };
+    const base = { schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION, runId: 'run-live' };
     const synchronousEvents: EvalRunEvent[] = [
       {
         ...base,
@@ -325,7 +325,7 @@ describe('EvalBenchmarksTab 跑分闭环', () => {
 
     act(() => {
       mocks.eventHandler?.({
-        schemaVersion: 3,
+        schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION,
         type: 'run_start',
         ts: 1_000,
         runId: 'run-live',
@@ -346,7 +346,7 @@ describe('EvalBenchmarksTab 跑分闭环', () => {
     })];
     act(() => {
       mocks.eventHandler?.({
-        schemaVersion: 3,
+        schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION,
         type: 'run_end',
         ts: 2_000,
         runId: 'run-live',
@@ -368,7 +368,7 @@ describe('EvalBenchmarksTab 跑分闭环', () => {
     render(<EvalBenchmarksTab />);
     await startRun();
     act(() => {
-      mocks.eventHandler?.({ schemaVersion: 3, type: 'error', ts: 3_000, runId: 'run-live', error: 'boom' });
+      mocks.eventHandler?.({ schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION, type: 'error', ts: 3_000, runId: 'run-live', error: 'boom' });
     });
     expect(await screen.findByText('这轮没有正常结束，已按已跑完的题记录')).toBeTruthy();
   });

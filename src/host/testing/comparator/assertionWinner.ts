@@ -50,6 +50,7 @@ export function aggregateAssertionTrials(results: TestResult[]): TestResult {
     duration: results.reduce((sum, result) => sum + result.duration, 0),
     endTime: Math.max(...results.map((result) => result.endTime)),
     skillActivations: mergeSkillActivations(results),
+    subagentSpawns: results.reduce((total, result) => total + (result.subagentSpawns ?? 0), 0),
     expectationResults: rows,
     trialAggregate: {
       n: aggregate.trialCount,

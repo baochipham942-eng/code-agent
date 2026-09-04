@@ -283,6 +283,19 @@ describe('从会话转成题目的草稿落盘', () => {
       tags: [],
     }, '2026-09-04')).rejects.toThrow(/题目描述含敏感内容，先人工处理后再保存/);
 
+    // 点踩轮原样带回的命令会落 YAML、硬化后进 shell：候选参数同样过闸
+    await expect(saveCaseBank(root, {
+      action: 'create-draft',
+      id: 'draft-secret-param',
+      prompt: '正常题面',
+      tags: [],
+      expectations: [{
+        type: 'command_succeeds',
+        params: { command: 'curl -H "Authorization: Bearer sk-abcdef1234567890" https://api.example.invalid' },
+        reason: '点踩那轮的反向候选',
+      }],
+    }, '2026-09-04')).rejects.toThrow(/判定标准「command_succeeds」的 command含敏感内容/);
+
     const items = await enumerateCaseBank(root, '2026-09-04');
     expect(items).toEqual([]);
   });

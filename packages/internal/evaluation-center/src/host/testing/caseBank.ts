@@ -240,6 +240,16 @@ async function createDraft(
   const expectations = request.pending ? [] : normalizeExpectations(request.expectations);
   assertNotSensitive('题目输入', prompt);
   assertNotSensitive('题目描述', description);
+  // 候选判定标准的参数（尤其点踩轮原样带回的 Bash 命令）、理由、标签、来源 id 同样会落 YAML
+  // 并在硬化后进 shell——一条都不能绕过敏感闸。
+  for (const expectation of expectations) {
+    for (const [key, value] of Object.entries(expectation.params)) {
+      assertNotSensitive(`判定标准「${expectation.type}」的 ${key}`, value);
+    }
+    assertNotSensitive(`判定标准「${expectation.type}」的说明`, expectation.reason);
+  }
+  assertNotSensitive('标签', tags.join(' '));
+  if (sourceSessionId) assertNotSensitive('来源会话 id', sourceSessionId);
   for (const filePath of await caseBankYamlFiles(caseBankRoot)) {
     try {
       const suite = await loadTestSuite(filePath);

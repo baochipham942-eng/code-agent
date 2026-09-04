@@ -82,6 +82,7 @@ import {
   PRICING_TABLE_VERSION,
 } from './lib/eval-cost-estimate';
 import { EVAL_AGENT_DEFAULTS } from '@host/testing/agentAdapter';
+import { destroySharedHttpsAgent } from '@host/model/providers/shared';
 import { EVAL_GOAL_ALLOW_SWARM } from '@host/testing/goalContractEval';
 import { EVAL_REPEAT_MAX, type AiReviewDimension } from '@shared/contract/evaluation';
 import { validateDiscoverableSkills } from '@host/testing/skillSelection';
@@ -1557,6 +1558,9 @@ export async function main(argv = process.argv, cwd = process.cwd()): Promise<vo
     if (jsonEvents) {
       globalThis.console = originalConsole;
     }
+    // N-EVAL-CI-NOEXIT：收尾销毁共享 keep-alive agent（TLSWRAP 持有者），
+    // 让成功路径的事件循环能自然排空；getHttpsAgent 下次按需重建，长跑进程不受影响。
+    destroySharedHttpsAgent();
   }
 }
 

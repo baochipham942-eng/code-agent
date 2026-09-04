@@ -103,6 +103,8 @@ export class ResourceLockManager {
     this.cleanupInterval = setInterval(() => {
       this.cleanupExpiredLocks();
     }, 10000); // 每 10 秒检查一次
+    // 不拖住进程退出：清理是兜底，宿主退出时无需等它
+    this.cleanupInterval.unref();
   }
 
   /**

@@ -44,6 +44,19 @@ export function getHttpsAgent(targetUrl?: string, provider?: string): HttpsProxy
 /** @deprecated 模块加载时快照，运行时改 env 不生效。请用 `getHttpsAgent()`。 */
 export const httpsAgent = getHttpsAgent();
 
+/**
+ * 销毁共享 keep-alive agent 并清缓存（下一次 getHttpsAgent 会按需重建）。
+ * 长跑进程收尾时调用：agent 持有的空闲 TLS socket 会 ref 住事件循环，
+ * 不销毁进程退不掉（N-EVAL-CI-NOEXIT 持有者点名的 TLSWRAP）。
+ */
+export function destroySharedHttpsAgent(): void {
+  if (_cachedAgent) {
+    _cachedAgent.destroy();
+    _cachedAgent = undefined;
+    _cachedProxyUrl = undefined;
+  }
+}
+
 export function normalizeClaudeBaseUrl(url: string): string {
   const trimmed = url.replace(/\/+$/, '');
   return /\/v\d+$/.test(trimmed) ? trimmed : `${trimmed}/v1`;

@@ -414,6 +414,8 @@ export class EvalRunBridge {
         state.adapter.beginEventRun(event);
       } else if (event.type === 'memory_injected') {
         state.adapter.recordMemoryInjection(event);
+      } else if (event.type === 'memory_written') {
+        state.adapter.recordMemoryWrite(event);
       } else if (event.type === 'skill_activated') {
         state.adapter.recordSkillActivation(event);
       } else if (event.type === 'subagent_spawned') {

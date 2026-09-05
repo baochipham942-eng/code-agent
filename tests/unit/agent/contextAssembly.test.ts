@@ -105,7 +105,10 @@ vi.mock('../../../src/host/lightMemory/recentConversations', () => ({
   buildRecentConversationsBlock: vi.fn().mockResolvedValue(''),
 }));
 
-vi.mock('../../../src/host/lightMemory/indexLoader', () => ({
+vi.mock('../../../src/host/lightMemory/indexLoader', async (importOriginal) => ({
+  // listMemoryIndexTargets 用真实实现：memory_injected 的 entries 由它算出，替身会把被测对象也 mock 掉
+  listMemoryIndexTargets: (await importOriginal<typeof import('../../../src/host/lightMemory/indexLoader')>())
+    .listMemoryIndexTargets,
   loadMemoryIndex: vi.fn().mockResolvedValue(null),
 }));
 

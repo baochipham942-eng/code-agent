@@ -204,9 +204,11 @@ export function parseEvalRunEvent(value: unknown): EvalRunEvent {
           }
         }
       }
-      if (value.subagentSpawns !== undefined
-        && (!Number.isInteger(value.subagentSpawns) || (value.subagentSpawns as number) < 0)) {
-        throw new Error('评测用例 subagentSpawns 必须是非负整数。');
+      for (const key of ['memoryInjections', 'memoryWrites', 'subagentSpawns']) {
+        if (value[key] === undefined) continue;
+        if (!Number.isInteger(value[key]) || (value[key] as number) < 0) {
+          throw new Error(`评测用例 ${key} 必须是非负整数。`);
+        }
       }
       if (value.aiReview !== undefined) validateAiReview(value.aiReview);
       if (value.evidence !== undefined) validateEvidence(value.evidence);
@@ -245,6 +247,9 @@ export function parseEvalRunEvent(value: unknown): EvalRunEvent {
       if (!isRecord(value.skillActivations)) throw new Error('成对结果缺少 skillActivations。');
       requireCount(value.skillActivations, 'baseline', 'skillActivations');
       requireCount(value.skillActivations, 'candidate', 'skillActivations');
+      if (!isRecord(value.memoryInjections)) throw new Error('成对结果缺少 memoryInjections。');
+      requireCount(value.memoryInjections, 'baseline', 'memoryInjections');
+      requireCount(value.memoryInjections, 'candidate', 'memoryInjections');
       if (!isRecord(value.subagentSpawns)) throw new Error('成对结果缺少 subagentSpawns。');
       requireCount(value.subagentSpawns, 'baseline', 'subagentSpawns');
       requireCount(value.subagentSpawns, 'candidate', 'subagentSpawns');
@@ -275,6 +280,18 @@ export function parseEvalRunEvent(value: unknown): EvalRunEvent {
       requireString(value, 'name');
       break;
     case 'memory_injected':
+      requireTestIdentity(value);
+      requireString(value, 'id');
+      // entries 可省（database-seed 路径没有条目粒度），给了就必须是字符串数组
+      if (value.entries !== undefined && !isStringArray(value.entries)) {
+        throw new Error('记忆注入事件 entries 必须是字符串数组。');
+      }
+      break;
+    case 'memory_written':
+      requireTestIdentity(value);
+      if (!isStringArray(value.files)) throw new Error('记忆写入事件缺少 files。');
+      requireNumber(value, 'written');
+      break;
     case 'subagent_spawned':
       requireTestIdentity(value);
       requireString(value, 'id');

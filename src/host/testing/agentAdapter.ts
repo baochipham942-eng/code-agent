@@ -3,7 +3,8 @@
 // ============================================================================
 
 import type { AgentInterface } from './testRunner';
-import type { ToolExecutionRecord, HarnessVariantConfig, UserSimulation, EvalGoalContract, GoalRunRecord, PermissionRequestRecord } from './types';
+import type { ToolExecutionRecord, HarnessVariantConfig, UserSimulation, EvalGoalContract, GoalRunRecord, PermissionRequestRecord, EvalCaseMemory, MemoryFileSnapshot, MemoryRecallRecord } from './types';
+import { seedCaseMemory, snapshotMemoryDir } from './memoryEval';
 import { createPermissionRequestRecorder } from './approvalRequestEval';
 import { buildPermissionDecider, narrowScriptedPermissionHandler } from './userSimulator';
 import { applyGoalEvent, buildLoopGoalContract, createGoalRunRecord } from './goalContractEval';
@@ -40,7 +41,8 @@ export const EVAL_AGENT_DEFAULTS = {
 
 type EvaluationSignal =
   | { type: 'skill_activated'; testId: string; name: string }
-  | { type: 'memory_injected'; testId: string; id: string }
+  | { type: 'memory_injected'; testId: string; id: string; entries?: string[] }
+  | { type: 'memory_written'; testId: string; files: string[]; written: number }
   | { type: 'subagent_spawned'; testId: string; id: string };
 
 type AgentLoopStateView = {
@@ -366,6 +368,14 @@ export class StandaloneAgentAdapter implements AgentInterface {
   /** N-EVAL-L3-HARNESS：当前在跑的 loop，题超时时 runner 调 cancelActiveRun 真的掐掉它 */
   private activeLoop?: { cancel(reason?: 'user' | 'session-switch'): Promise<void> };
   private readonly skillActivations = new Map<string, Record<string, number>>();
+  /** N-EVAL-MEMORY：本题记忆注入落账（memory_recalled 的证据源）。configureCaseMemory 每题重置。 */
+  private memoryRecall?: MemoryRecallRecord;
+  /** N-EVAL-MEMORY：本题 durable facts 落盘次数（case_end 的「记忆写入」列）。 */
+  private memoryWrites = 0;
+  /** N-EVAL-MEMORY：跑完、cleanup 之前的记忆目录快照（memory_written 的证据源）。 */
+  private memorySnapshot?: MemoryFileSnapshot[];
+  /** N-EVAL-MEMORY：本题的记忆声明；未声明的 case 保持 EVAL_AGENT_DEFAULTS（两向都关）。 */
+  private caseMemory?: EvalCaseMemory;
 
   // Persisted across sendMessage() calls so multi-turn follow-ups share conversation history.
   // Cleared by reset() between cases (testRunner calls reset before each case's first prompt).
@@ -674,8 +684,10 @@ export class StandaloneAgentAdapter implements AgentInterface {
             : undefined,
           executionIntent,
           goalContract: loopGoalContract,
-          persistLongTermMemory: this.persistLongTermMemory,
-          includeRecentConversations: this.includeRecentConversations,
+          // N-EVAL-MEMORY：case 级开关优先于 adapter 级默认。开了记忆的题两向都要开——
+          // 只开读会让写入侧的题永远零写入，只开写会让召回题永远召不回。
+          persistLongTermMemory: this.caseMemory?.enabled === true ? true : this.persistLongTermMemory,
+          includeRecentConversations: this.caseMemory?.enabled === true ? true : this.includeRecentConversations,
           maxSystemPromptTokens: this.maxSystemPromptTokens,
           skillDiscoveryService,
           persistMessage: runtimeDatabase
@@ -699,7 +711,27 @@ export class StandaloneAgentAdapter implements AgentInterface {
                 this.skillActivations.set(testIdForThisRun, current);
                 this.onEvaluationSignal?.({ type: 'skill_activated', testId: testIdForThisRun, name: event.data.name });
               } else if (event.type === 'memory_injected') {
-                this.onEvaluationSignal?.({ type: 'memory_injected', testId: testIdForThisRun, id: event.data.id });
+                const entries = event.data.entries ?? [];
+                const recall = this.memoryRecall ?? { injections: 0, entries: [] };
+                recall.injections += 1;
+                for (const entry of entries) {
+                  if (!recall.entries.includes(entry)) recall.entries.push(entry);
+                }
+                this.memoryRecall = recall;
+                this.onEvaluationSignal?.({
+                  type: 'memory_injected',
+                  testId: testIdForThisRun,
+                  id: event.data.id,
+                  ...(entries.length > 0 ? { entries } : {}),
+                });
+              } else if (event.type === 'memory_written') {
+                this.memoryWrites += event.data.written;
+                this.onEvaluationSignal?.({
+                  type: 'memory_written',
+                  testId: testIdForThisRun,
+                  files: event.data.files,
+                  written: event.data.written,
+                });
               } else if (event.type === 'subagent_activity' && event.data.kind === 'started') {
                 this.subagentSpawns.set(
                   testIdForThisRun,
@@ -784,6 +816,13 @@ export class StandaloneAgentAdapter implements AgentInterface {
         } finally {
           restoreProbe();
           if (this.activeLoop === loop) this.activeLoop = undefined;
+          // N-EVAL-MEMORY：只有开了记忆的题才快照。没开的题快照 undefined ⇒ memory_written
+          // 判定 fail-loud，而不是拿一个空目录假装"检查过了没有敏感内容"。
+          // 先等会话末尾的记忆落盘settle：那条路产线是 fire-and-forget，不等就是拍写之前的目录。
+          if (this.caseMemory?.enabled === true) {
+            await loop.whenSessionEndMemoryWorkSettled();
+            this.memorySnapshot = await snapshotMemoryDir();
+          }
         }
         }),
       );
@@ -804,6 +843,37 @@ export class StandaloneAgentAdapter implements AgentInterface {
   /** 批 6：testRunner 每 case 注入 user_simulation（无模拟的 case 传 undefined 清除） */
   configureUserSimulation(sim: UserSimulation | undefined): void {
     this.simConfig = sim;
+  }
+
+  /**
+   * N-EVAL-MEMORY：testRunner 每 case 注入记忆声明（无声明的 case 传 undefined 清除）。
+   * seed 必须在这里落盘——调用点在 agent 起跑之前，且此时 CODE_AGENT_DATA_DIR 已经指向
+   * 本题的隔离数据目录（事件桥的 IsolatedTestExecutionFactory 设的），记忆目录跟着它走。
+   */
+  async configureCaseMemory(memory: EvalCaseMemory | undefined): Promise<void> {
+    this.caseMemory = memory;
+    this.memoryRecall = undefined;
+    this.memoryWrites = 0;
+    this.memorySnapshot = undefined;
+    if (memory?.enabled === true) await seedCaseMemory(memory);
+  }
+
+  /** 读走并清空本题的记忆落账（形态同 consumeSkillActivations）。 */
+  consumeMemorySignals(testId: string): {
+    memoryRecall?: MemoryRecallRecord;
+    memorySnapshot?: MemoryFileSnapshot[];
+    memoryWrites: number;
+  } {
+    void testId;
+    const signals = {
+      ...(this.memoryRecall ? { memoryRecall: { injections: this.memoryRecall.injections, entries: [...this.memoryRecall.entries] } } : {}),
+      ...(this.memorySnapshot ? { memorySnapshot: this.memorySnapshot } : {}),
+      memoryWrites: this.memoryWrites,
+    };
+    this.memoryRecall = undefined;
+    this.memorySnapshot = undefined;
+    this.memoryWrites = 0;
+    return signals;
   }
 
   /** B6b-①：testRunner 每 case 注入 goal 契约（无契约的 case 传 undefined 清除） */

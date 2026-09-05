@@ -200,6 +200,12 @@ export class RunFinalizer {
   learningPipeline!: LearningPipeline;
   /** 2d: budget warning 是否已发出（原 RuntimeContext 字段，ADR-038 批2d 下沉） */
   private budgetWarningEmitted = false;
+  /**
+   * N-EVAL-MEMORY：会话末尾的记忆落盘是 fire-and-forget（不阻塞 run 结束），
+   * 但评测要对「跑完之后记忆目录里躺着什么」下判定，必须等得到它。
+   * 这里只留一个句柄，产线路径一行都不改：没人 await 就是原来的行为。
+   */
+  private sessionEndMemoryWork: Promise<void> = Promise.resolve();
 
   constructor(protected ctx: RuntimeContext) {}
 
@@ -209,6 +215,31 @@ export class RunFinalizer {
   ): void {
     this.messageWriter = messageWriter;
     this.learningPipeline = learningPipeline;
+  }
+
+  /**
+   * 会话末尾的长期记忆落盘。评测默认 persistLongTermMemory=false，这一闸把
+   * recordSessionEnd 与 writeDurableFacts（在 extractAndSaveConversationSummary 里）
+   * **同时**关掉——只关一边就会让评测跑过的会话往用户真实记忆库里写。
+   * 单独成方法是为了让这条不变量可被单测直接调用（N-EVAL-MEMORY）。
+   */
+  protected persistSessionEndMemory(): void {
+    if (this.ctx.persistLongTermMemory === false) return;
+    recordSessionEnd(
+      this.ctx.messages.length,
+      this.ctx.modelConfig.model,
+      this.ctx.sessionId,
+      this.ctx.modelConfig.provider,
+    ).catch(() => { /* non-critical */ });
+
+    this.sessionEndMemoryWork = this.extractAndSaveConversationSummary().catch((err) => {
+      logger.error('[RunFinalizer] Conversation summary extraction failed:', err);
+    });
+  }
+
+  /** 等本轮会话末尾的记忆落盘跑完（失败也算跑完；产线不调用它）。 */
+  whenSessionEndMemoryWorkSettled(): Promise<void> {
+    return this.sessionEndMemoryWork;
   }
 
   // Convenience: emit event through context
@@ -494,21 +525,7 @@ export class RunFinalizer {
     }
 
     // Light Memory: Record session stats + conversation summary
-    if (this.ctx.persistLongTermMemory !== false) {
-      const messageCount = this.ctx.messages.length;
-      recordSessionEnd(
-        messageCount,
-        this.ctx.modelConfig.model,
-        this.ctx.sessionId,
-        this.ctx.modelConfig.provider,
-      )
-        .catch(() => { /* non-critical */ });
-
-      // Extract conversation summary from user messages
-      this.extractAndSaveConversationSummary().catch((err) => {
-        logger.error('[RunFinalizer] Conversation summary extraction failed:', err);
-      });
-    }
+    this.persistSessionEndMemory();
 
     // 角色主动性：长任务跑完 → 参与过的持久化角色 event 醒来总结 + 提 next steps
     // （fire-and-forget；门槛/防递归/预算护栏都在 triggerEventWakes 内部，内部文档 §2.2）
@@ -900,8 +917,16 @@ export class RunFinalizer {
       && judgment.durableFacts.length > 0
     ) {
       try {
-        const { written, skipped } = await writeDurableFacts(judgment.durableFacts);
+        const { written, skipped, files } = await writeDurableFacts(judgment.durableFacts);
         logger.info('[RunFinalizer] Durable facts persisted', { written, skipped });
+        // N-EVAL-MEMORY：写入侧信号。只在真写进去(written>0)时发——发一条 written:0 的事件
+        // 会让「记忆写入次数」这一列把「判断器决定不写」记成一次写入。
+        if (written > 0) {
+          this.ctx.onEvent({
+            type: 'memory_written',
+            data: { files, written },
+          });
+        }
       } catch (error) {
         logger.warn('[RunFinalizer] Durable fact persistence failed', {
           error: error instanceof Error ? error.message : String(error),

@@ -12,6 +12,21 @@ import { LIGHT_MEMORY } from '../../shared/constants';
 
 const logger = createLogger('LightMemory');
 
+/**
+ * N-EVAL-MEMORY：索引块里实际列出的记忆文件名。
+ * memory_injected 事件用它当 entries——「注入块里到底有哪几条」必须来自块本身，
+ * 不能拿目录里有哪些文件冒充（目录有 ≠ 进了提示词）。
+ */
+export function listMemoryIndexTargets(content: string | null | undefined): string[] {
+  if (!content) return [];
+  const targets: string[] = [];
+  for (const line of content.split('\n')) {
+    const target = indexTarget(line);
+    if (target) targets.push(target);
+  }
+  return targets;
+}
+
 function indexTarget(line: string): string | null {
   const match = line.match(/^- \[[^\]]+\]\(([^)]+)\) — .*$/);
   if (!match) return null;

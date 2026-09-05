@@ -66,6 +66,8 @@ const MOCK_REAL_ONLY_IDS = [
   'multi-turn-misunderstand-fix',
   'multiagent-cross-file-analysis',
   'multiagent-workflow-analysis',
+  'plugin-browser-local-page',
+  'plugin-validate-html-selfcheck',
   'ppt-from-outline',
   'prompt-smoke-read-package',
   'recovery-binary-file',

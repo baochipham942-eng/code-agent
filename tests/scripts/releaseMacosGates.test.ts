@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
@@ -735,6 +735,12 @@ describe('macOS release fail-closed gates', () => {
     expect(subsetStep?.run).toContain('tests/renderer');
     // 整目录参数包含 design、根级和未来新增目录；子目录点名不能冒充整目录覆盖。
     expect(subsetStep?.run).toMatch(/npx vitest run tests\/unit\s+tests\/renderer(?:\s|$)/);
+    // 一侧目录搬走/清空时，另一侧仍能让 Vitest 非零；分别查真实目录，不能只守参数字面量。
+    for (const directory of ['tests/unit', 'tests/renderer']) {
+      const hasTests = readdirSync(resolve(repoRoot, directory), { recursive: true, withFileTypes: true })
+        .some((entry) => entry.isFile() && /\.test\.tsx?$/.test(entry.name));
+      expect(hasTests, `${directory} 必须有真实测试文件，不能靠另一侧目录掩盖空转`).toBe(true);
+    }
   });
 
   it('keeps Vercel control-plane deployment automated and smoke-checked', () => {

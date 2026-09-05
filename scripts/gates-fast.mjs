@@ -129,11 +129,14 @@ try {
     const { resolveAnswerSideRoot } = await tsImport(path.join(root, 'src/host/testing/answerSide.ts'), import.meta.url);
     privateRoot = resolveAnswerSideRoot(root);
     if (!privateRoot) throw new Error('FAIL: private inputs missing');
+    // Freeze head/base before anything reads the diff: a commit landing between diff and
+    // snapshot must fail the run, never get a receipt bound to a HEAD it was not selected for.
+    receipt.headSha = git('rev-parse', 'HEAD^{commit}'); receipt.treeSha = git('rev-parse', 'HEAD^{tree}');
     receipt.baseSha = git('rev-parse', `${options.base}^{commit}`);
-    receipt.mergeBaseSha = git('merge-base', 'HEAD', receipt.baseSha);
+    receipt.mergeBaseSha = git('merge-base', receipt.headSha, receipt.baseSha);
     if (receipt.baseSha !== receipt.mergeBaseSha) throw new Error('FAIL: HEAD is behind base; rebase before fast gates');
     // Disabling rename detection deliberately exposes old AND new names.
-    const diff = git('diff', '--no-renames', '--name-status', '-z', receipt.baseSha, 'HEAD').split('\0').filter(Boolean);
+    const diff = git('diff', '--no-renames', '--name-status', '-z', receipt.baseSha, receipt.headSha).split('\0').filter(Boolean);
     receipt.changedFiles = diff.filter((_value, index) => index % 2 === 1);
     receipt.deletedFiles = receipt.changedFiles.filter((_file, index) => diff[index * 2] === 'D');
     const selected = selectTests(policy, receipt.changedFiles, regressions, receipt.deletedFiles);
@@ -145,7 +148,9 @@ try {
     receipt.testsTypecheck = selected.testsTypecheck;
     checkDependencies();
     if (selected.packages.includes('vercel-api')) checkDependencies('vercel-api');
-    initial = snapshot(); Object.assign(receipt, initial);
+    initial = snapshot();
+    if (initial.headSha !== receipt.headSha || initial.treeSha !== receipt.treeSha) throw new Error('FAIL: HEAD moved during test selection; receipt invalid');
+    Object.assign(receipt, initial);
     receipt.repo = git('config', '--get', 'remote.origin.url');
     receipt.workorder = options.workorder ?? null;
     receipt.packageManager = { name: 'npm', version: execFileSync('npm', ['--version'], { encoding: 'utf8', timeout: 5000 }).trim() };

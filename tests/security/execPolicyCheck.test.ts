@@ -174,3 +174,24 @@ describe('tokenizePolicyCommand', () => {
     expect(tokenizePolicyCommand('')).toEqual([]);
   });
 });
+
+// 离线 policy check / explain 与运行时 match 共用学来前缀守卫（ai-review #1640）。
+describe('learned-prefix guard is shared with the offline checker', () => {
+  const rules: PrefixRule[] = [{ pattern: ['find', '.'], decision: 'allow', createdAt: 1, source: 'user' }];
+
+  it('checkPolicyExamples reports find . -delete as not allowed', () => {
+    const results = checkPolicyExamples(rules, [
+      { command: 'find . -name x', expect: 'allow' },
+      { command: 'find . -delete', expect: 'allow' },
+    ]);
+    expect(results.map((r) => [r.actual, r.pass])).toEqual([['allow', true], [null, false]]);
+  });
+
+  it('explainPolicyCommand says why the matched rule does not apply', () => {
+    const explanation = explainPolicyCommand(rules, 'find . -delete');
+    expect(explanation.matched?.pattern).toEqual(['find', '.']);
+    expect(explanation.decision).toBeNull();
+    expect(explanation.reason).toContain('风险在前缀之外');
+  });
+});
+

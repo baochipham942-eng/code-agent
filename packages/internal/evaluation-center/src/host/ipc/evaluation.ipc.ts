@@ -357,6 +357,9 @@ function pickExperimentCaseData(value: Record<string, unknown> | null): Record<s
   const keys = [
     'assignment', 'statusA', 'statusB', 'winner', 'referenceWinner', 'excludedReason',
     'assertionPassA', 'assertionPassB', 'assertionCount', 'skillActivations',
+    // 「挂了≠用了」的触发次数：桥落进 data_json 后必须经这里投影到结果页，
+    // 漏掉任一键 ⇒ 真 App 里该列恒 0、对应「未出场」提示恒亮（09-05 截图核出）。
+    'memoryInjections', 'memoryWrites', 'subagentSpawns',
   ];
   return Object.fromEntries(keys.filter((key) => key in value).map((key) => [key, value[key]]));
 }

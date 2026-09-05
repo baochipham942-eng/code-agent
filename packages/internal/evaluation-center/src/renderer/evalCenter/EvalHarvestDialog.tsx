@@ -250,7 +250,7 @@ export const EvalHarvestDialog: React.FC<EvalHarvestDialogProps> = ({
                     aria-label={h[row.labelKey as keyof typeof h]}
                   />
                   <span className="w-28 shrink-0 text-zinc-200">{h[row.labelKey as keyof typeof h]}</span>
-                  <span className="min-w-0 flex-1 truncate text-zinc-500">{h[row.noteKey as keyof typeof h]}</span>
+                  <span className="min-w-0 flex-1 whitespace-normal break-words text-zinc-500">{h[row.noteKey as keyof typeof h]}</span>
                   <span className="shrink-0 text-zinc-600">→</span>
                   <span className="w-40 shrink-0 truncate text-right text-zinc-400">{h[row.targetKey as keyof typeof h]}</span>
                 </label>

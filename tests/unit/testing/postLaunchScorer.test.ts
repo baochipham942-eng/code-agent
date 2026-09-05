@@ -590,6 +590,34 @@ describe('上线后打分编排', () => {
     legacy.close();
   });
 
+  it('②报告侧也剔分母：升级前已落的 cli_ 探针分数行不进比率，但它花的钱照算（ai-review #1650 第 2 轮②）', () => {
+    // 打分器只管新写入；这两行是 K2 之前就躺在表里的（爸真库里那 48 行大半是这批）。
+    insertSession(database, 'chat-manual', 'chat', NOW - HOUR, 'manual');
+    insertSession(database, 'cli_session_1788581520765_10a7e1aa', 'chat', NOW - HOUR, null);
+    const day = localDay(NOW);
+    const insertScore = database.prepare(`
+      INSERT INTO telemetry_turn_scores (turn_id, session_id, scored_at, scored_day, turn_started_at,
+        app_version, prompt_version, judge_version, rubric_version, judge_model,
+        dim_goal, dim_safety, dim_artifact, signals, cost_usd, budget_cost_usd, sampled_by)
+      VALUES (?, ?, ?, ?, ?, '0.33.0', 'p7', ?, 'postlaunch-rubric-v1', ?, ?, 1, 1, '[]', 0.1, 0.1, 'sample')
+    `);
+    insertScore.run('t-manual', 'chat-manual', NOW, day, NOW - HOUR, POST_LAUNCH_JUDGE_VERSION, 'deepseek/x', 1);
+    insertScore.run('t-probe', 'cli_session_1788581520765_10a7e1aa', NOW, day, NOW - HOUR, POST_LAUNCH_JUDGE_VERSION, 'unavailable', 0);
+
+    const report = buildPostLaunchReport(database, { now: NOW });
+
+    // 比率只算真实用户会话那一行：goal 判了 1 轮、过了 1 轮（探针那行 goal=0 不该把它拉下来）
+    expect(report.scoredTurns).toBe(1);
+    const [group] = report.groups;
+    expect(group.rows.find((row) => row.scope === 'sample')!.dims.goal).toEqual({ judged: 1, passed: 1 });
+    expect(group.sessionIds).toEqual(['chat-manual']);
+    // 探针那行的 judge_model='unavailable' 也不该拿去吓用户
+    expect(report.judgeUnavailableTurns).toBe(0);
+    // 但钱是真花了：两行的成本都留在账上，预算也两行都算
+    expect(group.costUsd).toBeCloseTo(0.2);
+    expect(report.budget.spentUsd).toBeCloseTo(0.2);
+  });
+
   it('子迭代的块并进它的 user 父轮：agentic loop 不把一轮拆成多轮', async () => {
     insertSession(database, 'chat-1', 'chat', NOW - HOUR);
     insertTurn(database, 'chat-1', 'chat-turn-1', 1, NOW - HOUR);

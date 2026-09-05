@@ -90,6 +90,21 @@ describe('cp / mv / tee 的写目标', () => {
     expect(resolve('grep -rn cp /etc').targets).toEqual([]);
   });
 
+  it('紧贴重定向符的 fd 前缀不算操作数：带 stderr 重定向时真目标不能丢（ai-review #1650 第 2 轮①）', () => {
+    // 修之前：`2` 被当成 cp 的最后一个操作数 ⇒ 真目标 /tmp/report.txt 整个漏掉，
+    // 而 `2` 解析到工作目录内 ⇒ 越权写信号也不响。是漏判，不是保守。
+    expect(resolve('cp ./a /tmp/report.txt 2>&1').targets)
+      .toEqual([resolveCanonicalRunPath('/tmp/report.txt')]);
+    expect(resolve('mv ./a /tmp/report.txt 2>&1').targets)
+      .toEqual([resolveCanonicalRunPath('/tmp/report.txt')]);
+    // tee 那边是多出一个假目标 `2`，也一并没了
+    expect(resolve('tee /tmp/log 2>&1').targets)
+      .toEqual([resolveCanonicalRunPath('/tmp/log')]);
+    // 真阴：数字与 `>` 之间有空格时，按 bash 它就是普通操作数，仍要当写目标
+    expect(resolve('cp a b 2 > /tmp/x').targets)
+      .toContain(resolveCanonicalRunPath(path.join(workingDirectory, '2')));
+  });
+
   it('tee 的每个文件参数都是写目标；cp / mv 只有最后一个', () => {
     expect(resolve('tee /etc/a /etc/b').targets)
       .toEqual(expect.arrayContaining([resolveCanonicalRunPath('/etc/a'), resolveCanonicalRunPath('/etc/b')]));

@@ -13,6 +13,7 @@ import {
   POST_LAUNCH_JUDGE_VERSION,
   POST_LAUNCH_RUBRIC_VERSION,
   JUDGE_MODEL_UNAVAILABLE,
+  isPostLaunchScorableSession,
   type PostLaunchBudgetState,
   type PostLaunchDimension,
   type PostLaunchDimRate,
@@ -169,6 +170,9 @@ interface ScoreRow {
   cost_usd: number;
   judge_model: string | null;
   sampled_by: 'signal' | 'sample';
+  /** 关联会话的来源，用来在报告侧复用同一套分母判定（LEFT JOIN，会话被删了就是 null）。 */
+  session_type: string | null;
+  origin_kind: string | null;
 }
 
 const DIM_COLUMN: Record<PostLaunchDimension, keyof ScoreRow> = {
@@ -218,6 +222,11 @@ export interface PostLaunchReportOptions {
 /**
  * 本机上线后报告：周 × app 版本分组，信号轮 / 抽样轮两行不合并。
  * 与本地表读的是同一批行（同一数据只有这一条路径），卡片不另算。
+ *
+ * 分母判定复用 `isPostLaunchScorableSession`——与打分器同一个函数、同一套口径。
+ * 光在打分时剔不够：K2 之前落的探针分数行（`cli_session_*`）已经在表里，
+ * 只在写入侧把关，读出来的报告照样被它们污染（ai-review PR #1650 第 2 轮②）。
+ * **成本不过滤**：那些轮的钱是真花出去的，从账上抹掉才是假数。
  */
 export function buildPostLaunchReport(
   db: BetterSqlite3.Database,
@@ -229,12 +238,14 @@ export function buildPostLaunchReport(
   const judgeVersion = options.judgeVersion ?? POST_LAUNCH_JUDGE_VERSION;
   const rows = db
     .prepare(`
-      SELECT turn_id, session_id, turn_started_at, app_version, prompt_version,
-             dim_goal, dim_orchestration, dim_tools, dim_permission, dim_safety, dim_artifact,
-             failure_class, signals, cost_usd, judge_model, sampled_by
-      FROM telemetry_turn_scores
-      WHERE judge_version = ? AND turn_started_at >= ?
-      ORDER BY turn_started_at DESC
+      SELECT s.turn_id, s.session_id, s.turn_started_at, s.app_version, s.prompt_version,
+             s.dim_goal, s.dim_orchestration, s.dim_tools, s.dim_permission, s.dim_safety, s.dim_artifact,
+             s.failure_class, s.signals, s.cost_usd, s.judge_model, s.sampled_by,
+             sessions.session_type, sessions.origin_kind
+      FROM telemetry_turn_scores AS s
+      LEFT JOIN telemetry_sessions AS sessions ON sessions.id = s.session_id
+      WHERE s.judge_version = ? AND s.turn_started_at >= ?
+      ORDER BY s.turn_started_at DESC
     `)
     .all(judgeVersion, since) as ScoreRow[];
 
@@ -244,7 +255,14 @@ export function buildPostLaunchReport(
     sessionSet: Set<string>;
   }>();
 
+  let scorableTurns = 0;
+  let judgeUnavailableTurns = 0;
   for (const row of rows) {
+    const scorable = isPostLaunchScorableSession({
+      id: row.session_id,
+      sessionType: row.session_type,
+      originKind: row.origin_kind,
+    });
     const week = weekStart(row.turn_started_at);
     const appVersion = row.app_version ?? 'unknown';
     const key = `${week}|${appVersion}|${row.prompt_version ?? ''}`;
@@ -268,9 +286,13 @@ export function buildPostLaunchReport(
       };
       groups.set(key, group);
     }
+    // 成本先记：不进分母的轮也真花了钱，账上不能抹。
+    group.costUsd += row.cost_usd;
+    if (!scorable) continue;
+    scorableTurns += 1;
+    if (row.judge_model === JUDGE_MODEL_UNAVAILABLE) judgeUnavailableTurns += 1;
     // rows 固定两行：[0] 信号轮、[1] 抽样轮（建组时就是这个顺序）。
     accumulate(group.rows[row.sampled_by === 'signal' ? 0 : 1], row);
-    group.costUsd += row.cost_usd;
     group.sessionSet.add(row.session_id);
     if (row.failure_class) {
       group.failureTally.set(row.failure_class, (group.failureTally.get(row.failure_class) ?? 0) + 1);
@@ -302,9 +324,9 @@ export function buildPostLaunchReport(
     days,
     judgeVersion,
     rubricVersion: POST_LAUNCH_RUBRIC_VERSION,
-    scoredTurns: rows.length,
+    scoredTurns: scorableTurns,
     groups: reportGroups,
-    judgeUnavailableTurns: rows.filter((row) => row.judge_model === JUDGE_MODEL_UNAVAILABLE).length,
+    judgeUnavailableTurns,
     calibration: options.calibration ?? { state: 'insufficient', reason: 'no_record' },
     budget: getBudgetState(db, localDay(now), {
       limitUsd: options.dailyBudgetUsd ?? POST_LAUNCH_DEFAULTS.dailyBudgetUsd,

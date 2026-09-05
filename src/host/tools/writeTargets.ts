@@ -130,6 +130,11 @@ function tokenizeShellCommand(command: string): ShellToken[] {
       continue;
     }
     index = word.end;
+    // `2>&1` / `1>file` 里紧贴重定向符的 fd 前缀是重定向语法，不是操作数。
+    // 留在词里会让 cp / mv 的「最后一个操作数」取到那个数字，真正的写目标反而漏掉
+    // （ai-review PR #1650 第 2 轮①）。判据同 bash：数字与 `>`/`<` 之间不能有空格，
+    // `cp a b 2 > x` 里的 `2` 仍是操作数。
+    if (/^\d+$/.test(word.raw) && (command[index] === '>' || command[index] === '<')) continue;
     if (word.raw) tokens.push({ kind: 'word', raw: word.raw });
   }
   return tokens;

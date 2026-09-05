@@ -14,12 +14,10 @@ import os from 'node:os';
 import path from 'node:path';
 import Database from 'better-sqlite3';
 import { CONFIG_DIR_NEW } from '../src/shared/constants/configDir';
-import { getSettingsPath } from '../src/host/config/configPaths';
 import {
   DRY_RUN_JUDGE_VERSION,
   POST_LAUNCH_DEFAULTS,
   POST_LAUNCH_DISABLED_MESSAGE,
-  resolvePostLaunchScoringEnabled,
 } from '../src/shared/contract/postLaunchScore';
 import { resolveModelPrice } from '../src/shared/pricing/resolveModelPrice';
 import { getQuickModelRuntimeInfo, quickTask } from '../src/host/model/quickModel';
@@ -28,7 +26,9 @@ import { TelemetryQueryService } from '../src/host/telemetry/replay/telemetryQue
 import { applyTelemetrySchema } from '../src/host/services/core/database/schemaTelemetry';
 import { createLogger } from '../src/host/services/infra/logger';
 import { getDatabase } from '../src/host/services/core/databaseService';
+import { getConfigService } from '../src/host/services/core/configService';
 import { estimateJudgeCost } from '../src/host/testing/postlaunch/postLaunchCost';
+import { isPostLaunchScoringEnabled } from '../src/host/testing/postlaunch/postLaunchScorerRuntime';
 import { runPostLaunchScoring, type PostLaunchSessionRow } from '../src/host/testing/postlaunch/postLaunchScorer';
 import { buildPostLaunchReport } from '../src/host/testing/postlaunch/postLaunchScoreStore';
 
@@ -50,17 +50,6 @@ function resolveDataDir(): string {
   return process.env.CODE_AGENT_DATA_DIR?.trim() || path.join(os.homedir(), CONFIG_DIR_NEW);
 }
 
-/** 直接读 settings.json：CLI 不起 ConfigService（那条路要 Electron 的 app 路径）。 */
-function readScoringSwitch(): 'on' | 'off' | undefined {
-  try {
-    const raw = fs.readFileSync(getSettingsPath().user.new, 'utf-8');
-    const value = (JSON.parse(raw) as { privacy?: { postLaunchScoring?: unknown } }).privacy?.postLaunchScoring;
-    return value === 'on' || value === 'off' ? value : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 function costUsd(provider: string, model: string, inputTokens: number, outputTokens: number): number {
   const price = resolveModelPrice(provider, model);
   if (price.inputPerMTok === undefined || price.outputPerMTok === undefined) return 0;
@@ -69,10 +58,13 @@ function costUsd(provider: string, model: string, inputTokens: number, outputTok
 
 async function main(): Promise<void> {
   const options = parseArgs();
-  // 开关三态先判：关着就一步都别走——不开库、不建表、不初始化服务，更不叫模型。
-  // CLI 起不了插件运行时，判不了「内部槽」，所以按最保守的 false 算默认；
-  // 想在 CLI 上评就必须在设置里显式打开（settings.json 的 privacy.postLaunchScoring）。
-  if (!options.dryRun && !resolvePostLaunchScoringEnabled(readScoringSwitch(), false)) {
+  // 开关三态先判：关着就一步都别走——不开库、不建表，更不叫模型。
+  // 读的是宿主真正用的那份配置：界面经 ConfigService 存的是 <数据目录>/config.json，
+  // 不是 settings.json——两端读不同文件的话，用户按提示在界面开了、CLI 仍会拒
+  // （ai-review PR #1650 Important②）。这里复用 ConfigService 自己的读取路径，
+  // reloadFromDisk 刻意不做 keychain / migrate / save，不会回写用户配置。
+  await getConfigService().reloadFromDisk();
+  if (!options.dryRun && !isPostLaunchScoringEnabled()) {
     console.error(POST_LAUNCH_DISABLED_MESSAGE);
     process.exit(1);
   }

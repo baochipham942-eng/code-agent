@@ -56,6 +56,23 @@ describe('PrivacySettings 上线后质量评分开关', () => {
     });
   });
 
+  it("「开 → 跟随默认」发的是显式 'auto'，不是 undefined（undefined 会被宿主 merge 吞掉）", async () => {
+    mockIpc({ privacy: { postLaunchScoring: 'on' } });
+    render(<PrivacySettings />);
+
+    const select = await screen.findByTestId('postlaunch-scoring-switch');
+    await waitFor(() => expect((select as HTMLSelectElement).value).toBe('on'));
+
+    fireEvent.change(select, { target: { value: 'auto' } });
+    await waitFor(() => {
+      expect(invokeDomain).toHaveBeenCalledWith(
+        IPC_DOMAINS.SETTINGS,
+        'set',
+        { privacy: { postLaunchScoring: 'auto' } },
+      );
+    });
+  });
+
   it('已显式打开时回显「开」，且文案写明花谁的额度、每天上限多少', async () => {
     mockIpc({ privacy: { postLaunchScoring: 'on' } });
     render(<PrivacySettings />);

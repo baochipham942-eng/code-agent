@@ -108,16 +108,24 @@ export const JUDGE_MODEL_NOT_JUDGED = 'not-judged';
 export const POST_LAUNCH_RUBRIC_VERSION = 'postlaunch-rubric-v1';
 
 /**
- * 开关三态：'on' / 'off' 是用户显式选择；不设置 = 按槽算默认
+ * 开关三态：'on' / 'off' 是用户显式选择，'auto' = 跟随槽默认
  * （内部 dogfood 槽开、外部关，ADR-063 §3）。
+ *
+ * 「跟随默认」必须是一个**能跨 IPC 传输的值**，不能用 undefined：
+ * JSON 序列化会整个丢掉 undefined 的键，宿主 `ConfigService.mergeSettings` 也明确
+ * 跳过 undefined 保留旧值（`configService.ts:1236`）——那样「开 → 跟随默认」会静默失败，
+ * 界面显示默认关、实际还在外发会话花额度（ai-review PR #1650 Important①）。
+ * 老配置里没有这个键时按 'auto' 处理。
  */
-export type PostLaunchScoringSwitch = 'on' | 'off';
+export type PostLaunchScoringSwitch = 'on' | 'off' | 'auto';
 
 export function resolvePostLaunchScoringEnabled(
   setting: PostLaunchScoringSwitch | undefined,
   internalSlot: boolean,
 ): boolean {
-  return setting ? setting === 'on' : internalSlot;
+  if (setting === 'on') return true;
+  if (setting === 'off') return false;
+  return internalSlot;
 }
 
 /** 关着的时候 IPC 与 CLI 都拒评，给的是人话与开法，不是错误码。 */

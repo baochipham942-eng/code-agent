@@ -108,8 +108,10 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
   // 隐私两档开关（使用数据 / 崩溃报告）。写 settings.privacy.*，host 侧 privacyGate 统一接线。
   const [usageDataEnabled, setUsageDataEnabled] = useState(true);
   const [crashReportingEnabled, setCrashReportingEnabled] = useState(true);
-  // 三态：undefined = 跟随默认（内部 dogfood 槽开、外部关，由 host 侧算），'on' / 'off' 是显式选择。
-  const [postLaunchScoring, setPostLaunchScoring] = useState<'on' | 'off' | undefined>(undefined);
+  // 三态：'auto' = 跟随槽默认（由 host 侧算），'on' / 'off' 是显式选择。
+  // 「跟随默认」发的是显式 'auto'——发 undefined 会被 JSON 与 mergeSettings 一起吞掉，
+  // 从「开」切回来等于没切（ai-review PR #1650 Important①）。
+  const [postLaunchScoring, setPostLaunchScoring] = useState<'on' | 'off' | 'auto'>('auto');
   const [thirdPartyUiEnabled, setThirdPartyUiEnabled] = useState(false);
   const [privacySaving, setPrivacySaving] = useState(false);
   const privacyCfgRef = useRef<NonNullable<AppSettings['privacy']> | undefined>(undefined);
@@ -161,7 +163,7 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
         const flags = resolvePrivacyFlags(s);
         setUsageDataEnabled(flags.usageData);
         setCrashReportingEnabled(flags.crashReporting);
-        setPostLaunchScoring(s?.privacy?.postLaunchScoring);
+        setPostLaunchScoring(s?.privacy?.postLaunchScoring ?? 'auto');
         setThirdPartyUiEnabled(isThirdPartyPluginUiEnabled(s));
       } catch {
         // ignore — 保持各项产品默认值
@@ -191,7 +193,7 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
     }
   }, [thirdPartyUiEnabled]);
 
-  const handlePostLaunchScoringChange = useCallback(async (next: 'on' | 'off' | undefined) => {
+  const handlePostLaunchScoringChange = useCallback(async (next: 'on' | 'off' | 'auto') => {
     const previous = postLaunchScoring;
     setPrivacySaving(true);
     setPostLaunchScoring(next);
@@ -447,12 +449,11 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
               </div>
               <select
                 className="h-7 shrink-0 rounded-md border border-zinc-700 bg-zinc-900 px-2 text-xs text-zinc-300"
-                value={postLaunchScoring ?? 'auto'}
+                value={postLaunchScoring}
                 disabled={privacySaving}
                 data-testid="postlaunch-scoring-switch"
                 onChange={(event) => {
-                  const value = event.target.value;
-                  void handlePostLaunchScoringChange(value === 'auto' ? undefined : (value as 'on' | 'off'));
+                  void handlePostLaunchScoringChange(event.target.value as 'on' | 'off' | 'auto');
                 }}
               >
                 <option value="auto">{privacyText.telemetry.postLaunchScoring.auto}</option>

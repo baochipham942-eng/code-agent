@@ -13,10 +13,10 @@ import { applyTelemetrySchema } from '../../../src/host/services/core/database/s
 import type { ReplayBlock, StructuredReplay } from '../../../src/shared/contract/evaluationReplay';
 import type { FailureCodebook } from '../../../src/host/testing/failureCodes';
 import { runPostLaunchScoring, type PostLaunchScorerDeps } from '../../../src/host/testing/postlaunch/postLaunchScorer';
-import { clampPostLaunchScoringRequest } from '../../../src/shared/contract/postLaunchScore';
+import { POST_LAUNCH_JUDGE_VERSION, clampPostLaunchScoringRequest } from '../../../src/shared/contract/postLaunchScore';
 import { estimateJudgeCost } from '../../../src/host/testing/postlaunch/postLaunchCost';
 import { resolveModelPrice } from '../../../src/shared/pricing/resolveModelPrice';
-import { acquireScoringLock, buildPostLaunchReport, releaseScoringLock, renewScoringLock } from '../../../src/host/testing/postlaunch/postLaunchScoreStore';
+import { acquireScoringLock, buildPostLaunchReport, getBudgetState, localDay, releaseScoringLock, renewScoringLock } from '../../../src/host/testing/postlaunch/postLaunchScoreStore';
 
 const NOW = new Date('2026-09-05T12:00:00+08:00').getTime();
 const HOUR = 60 * 60 * 1000;
@@ -551,6 +551,43 @@ describe('上线后打分编排', () => {
     expect(models).toEqual(['not-judged', 'unavailable']);
     const report = buildPostLaunchReport(database, { now: NOW });
     expect(report.judgeUnavailableTurns).toBe(1);
+  });
+
+  it('③升级回填：K2 之前落的行，budget_cost_usd 从 cost_usd 补上，今天已花的预算不归零', () => {
+    // 造 K2 之前的表：没有 budget_cost_usd 这一列。
+    const legacy = new Database(':memory:');
+    legacy.exec(`
+      CREATE TABLE telemetry_turn_scores (
+        turn_id TEXT PRIMARY KEY, session_id TEXT NOT NULL, scored_at INTEGER NOT NULL,
+        scored_day TEXT NOT NULL, turn_started_at INTEGER NOT NULL,
+        app_version TEXT, prompt_version TEXT, judge_version TEXT NOT NULL, rubric_version TEXT NOT NULL,
+        judge_model TEXT, prompt_hash TEXT,
+        dim_goal INTEGER, dim_orchestration INTEGER, dim_tools INTEGER,
+        dim_permission INTEGER, dim_safety INTEGER, dim_artifact INTEGER,
+        failure_class TEXT, reason_redacted TEXT, redacted INTEGER NOT NULL DEFAULT 0,
+        signals TEXT NOT NULL DEFAULT '[]', cost_usd REAL NOT NULL DEFAULT 0, sampled_by TEXT NOT NULL
+      )
+    `);
+    const day = localDay(NOW);
+    legacy.prepare(`
+      INSERT INTO telemetry_turn_scores (turn_id, session_id, scored_at, scored_day, turn_started_at,
+        judge_version, rubric_version, cost_usd, sampled_by)
+      VALUES ('old-turn', 'chat-1', ?, ?, ?, ?, 'postlaunch-rubric-v1', 0.3, 'sample')
+    `).run(NOW, day, NOW - HOUR, POST_LAUNCH_JUDGE_VERSION);
+
+    // 升级
+    applyTelemetrySchema(legacy, LOGGER);
+
+    // 预算查询只累计 budget_cost_usd：不回填的话这里是 0，用户当天能把上限再花满一遍。
+    const budget = getBudgetState(legacy, day, { limitUsd: 0.5, sampleLimit: 20 });
+    expect(budget.spentUsd).toBeCloseTo(0.3);
+    // 回填的钱是真刊例，不是兜底估算 ⇒ assumedUsd 仍是 0
+    expect(budget.assumedUsd).toBeCloseTo(0);
+
+    // 幂等：再升一次不会把已经对上的行改坏
+    applyTelemetrySchema(legacy, LOGGER);
+    expect(getBudgetState(legacy, day, { limitUsd: 0.5, sampleLimit: 20 }).spentUsd).toBeCloseTo(0.3);
+    legacy.close();
   });
 
   it('子迭代的块并进它的 user 父轮：agentic loop 不把一轮拆成多轮', async () => {

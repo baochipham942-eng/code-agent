@@ -251,6 +251,10 @@ export function applyTelemetrySchema(db: BetterSqlite3.Database, logger: Logger)
   // cost_usd = 刊例估算（未知价按 0，不编造）；budget_cost_usd = 记进日预算的那笔，
   // 未知价时是保守默认价的估算——两个数不是一回事，别合成一列（N-EVAL-POSTLAUNCH-K2）。
   safeAlter(db, `ALTER TABLE telemetry_turn_scores ADD COLUMN budget_cost_usd REAL NOT NULL DEFAULT 0`, logger);
+  // 存量行回填：日预算只累计 budget_cost_usd，新列默认 0 会让升级当天已经花掉的额度归零，
+  // 用户当天能把上限再花满一遍（ai-review PR #1650 Important③）。
+  // 幂等：K2 之后写的行里，有刊例的两列相等、按兜底价估的行 cost_usd 恒 0，都不会被这句命中。
+  db.exec('UPDATE telemetry_turn_scores SET budget_cost_usd = cost_usd WHERE budget_cost_usd = 0 AND cost_usd > 0');
   db.exec('CREATE INDEX IF NOT EXISTS idx_turn_scores_session ON telemetry_turn_scores(session_id)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_turn_scores_day ON telemetry_turn_scores(scored_day)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_turn_scores_started ON telemetry_turn_scores(turn_started_at)');

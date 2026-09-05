@@ -16,7 +16,8 @@ import {
   type PostLaunchScoringRequest,
   type PostLaunchScoringResult,
 } from '../../../shared/contract/postLaunchScore';
-import { getInternalFeatureHostRuntime } from '../../internalFeatures/internalFeatureHostRuntime';
+import { devSlotFromDataDirName } from '../../../shared/devSlot';
+import { getUserDataPath } from '../../platform';
 import { getConfigService } from '../../services/core/configService';
 import { getDatabase } from '../../services/core/databaseService';
 import { createLogger } from '../../services/infra/logger';
@@ -93,21 +94,22 @@ function createPostLaunchScorerDeps(): PostLaunchScorerDeps {
 }
 
 /**
- * 内部 dogfood 槽判据：本机装着并激活了第一方内部插件（评测中心）。
- * 全仓没有别的「内部/dev 槽」标记（packagedDevModeGuard / NEO_CHANNEL / isDevSlot 都不存在，
- * 已核），这是唯一现成、且语义就是「admin 装的内部产品面」的判据。
+ * 内部 dogfood 槽判据：数据目录名带 Rust `dev_slot()` 注入的槽身份。
+ * 复用产品自己已有的那把尺（`devSlot.ts:99`），它也是 `devModeAutoApprove`
+ * 「只在内部槽放行」用的同一个判据（`configService.ts:66`）——同一类决定不该有第二套口径。
+ * 它只看数据目录名，所以 CLI 与 Electron 主进程算出来一样。
  */
 function isInternalSlot(): boolean {
   try {
-    return getInternalFeatureHostRuntime().isLoaded('evaluation-center');
+    return devSlotFromDataDirName(path.basename(getUserDataPath())) !== null;
   } catch {
     return false;
   }
 }
 
-/** 开关三态：显式 on/off 说了算；没设置就按槽算（内部开、外部关）。 */
-function isPostLaunchScoringEnabled(): boolean {
-  let setting: 'on' | 'off' | undefined;
+/** 开关三态：显式 on/off 说了算；'auto'（或老配置里没这个键）按槽算。 */
+export function isPostLaunchScoringEnabled(): boolean {
+  let setting: 'on' | 'off' | 'auto' | undefined;
   try {
     setting = getConfigService().getSettings().privacy?.postLaunchScoring;
   } catch {

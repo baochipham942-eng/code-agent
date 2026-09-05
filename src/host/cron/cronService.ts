@@ -4,8 +4,6 @@
 
 import { Cron } from 'croner';
 import { v4 as uuidv4 } from 'uuid';
-import { exec } from 'child_process';
-import { promisify } from 'util';
 import {
   CRON_AGENT_SNAPSHOT,
   CRON_GUARDRAILS,
@@ -66,9 +64,8 @@ import {
   upsertCronExecutionInMemory,
 } from './cronPersistence';
 import { pushCronResult } from './cronResultDelivery';
+import { execAsync, preferUnattendedPermissionFailure, structuredErrorCode, throwIfUnattendedPermissionFailed } from './cronPermissionFailure';
 export { computeCronFireJitterMs } from './cronExecutionPolicy';
-
-const execAsync = promisify(exec);
 
 // ============================================================================
 // Types
@@ -656,6 +653,7 @@ export class CronService implements Disposable {
     } catch (error) {
       execution.status = 'failed';
       execution.error = error instanceof Error ? error.message : String(error);
+      execution.errorCode = structuredErrorCode(error);
 
       // Handle retries
       if (definition.runsOn === 'local' && definition.maxRetries && execution.retryAttempt < definition.maxRetries) {
@@ -800,15 +798,18 @@ export class CronService implements Disposable {
         if (!orchestrator) {
           throw new Error(`AgentOrchestrator not available for cron session ${cronSession.id}`);
         }
-        // cron/heartbeat 无人值守会话标 async_agent（2026-07-13 拍板）：bash 走
-        // ask+forceConfirm，无人应答由 requestPermission 60s 超时 deny 兜底，
-        // 与 readOnly 会话档双保险。必须在 sendMessage 前标注。
+        // cron/heartbeat 标 async_agent，供拓扑硬 deny 与失败时 fail-closed 使用。
+        // 普通写入/执行由会话来源派生的 unattended 档与 OS 沙箱共同裁决。
+        // 必须在 sendMessage 前标注。
         orchestrator.setExecutionTopology('async_agent');
         if (cronSession.workingDirectory) {
           tm.setWorkingDirectory(cronSession.id, cronSession.workingDirectory);
         }
         const agentRunOptions: AgentRunOptions = {
           mode: 'normal',
+          // cron 已经占用独立 unattended 执行槽；再扇出 AutoAgent 会换一套子代理权限配置，
+          // 绕开由 cron session 来源派生的统一权限档与终态回收链。
+          disableAutoAgent: true,
           ...await buildCronAgentRunOptions(action.roleId, cronSession.workingDirectory),
           eventFilter: BACKGROUND_AGENT_EVENT_FILTER,
         };
@@ -831,6 +832,7 @@ export class CronService implements Disposable {
               agentRunOptions,
             );
             result = await runWithCronJobBudget(definition.maxRunBudget, sendMessage);
+            throwIfUnattendedPermissionFailed(orchestrator);
 
             const messages = orchestrator.getMessages();
             const lastAssistant = [...messages].reverse().find((message) => message.role === 'assistant');
@@ -885,7 +887,7 @@ export class CronService implements Disposable {
             }
           } catch (error) {
             runFailed = true;
-            runError = error;
+            runError = preferUnattendedPermissionFailure(orchestrator, error);
             try {
               const lastAssistant = [...orchestrator.getMessages()]
                 .reverse()
@@ -1076,6 +1078,7 @@ export class CronService implements Disposable {
     } catch (error) {
       execution.status = 'failed';
       execution.error = error instanceof Error ? error.message : String(error);
+      execution.errorCode = structuredErrorCode(error);
 
       // Continue retrying if we haven't reached the limit
       if (execution.retryAttempt < (definition.maxRetries || 0)) {

@@ -3,7 +3,12 @@
 // ============================================================================
 
 import type { AgentEvent, AppSettings, PermissionRequest, PermissionResponse } from '../../shared/contract';
-import type { PermissionAskResult, PermissionDeliveryOutcome, PermissionDenialSource } from '../../shared/contract/permission';
+import {
+  HostReasonCode,
+  type PermissionAskResult,
+  type PermissionDeliveryOutcome,
+  type PermissionDenialSource,
+} from '../../shared/contract/permission';
 import type { ToolApprovalPayload, PendingApprovalKind } from '../../shared/contract/pendingApproval';
 import { INTERACTION_TIMEOUTS } from '../../shared/constants/timeouts';
 import { generatePermissionRequestId } from '../../shared/utils/id';
@@ -26,6 +31,14 @@ const logger = createLogger('AgentOrchestrator');
 const INTERACTIVE_PERMISSION_REMINDER_MS = 30 * 60_000;
 
 type OrchestratorPermissionRequest = Omit<PermissionRequest, 'id' | 'timestamp'>;
+
+export interface UnattendedPermissionTerminalFailure {
+  code: HostReasonCode.PermissionDeniedTimeout;
+  requestId: string;
+  sessionId: string | null;
+  tool: string;
+  message: string;
+}
 
 /** 归一化审批响应为「放行/拒绝」。allow_standing（B4 铸权）在放行语义上等价 allow。 */
 function isApproveResponse(response: PermissionResponse): boolean {
@@ -58,11 +71,12 @@ export class OrchestratorPermissionIsland {
   private pendingPermissions: Map<string, {
     resolve: (response: PermissionResponse, machineDenial?: PermissionDenialSource, updatedArgs?: Record<string, unknown>) => void;
     request: PermissionRequest;
-    /** B2: 无人值守停车挂起的审批（有 pending_approvals 行）。resolve 走 repo-changes 裁决口。 */
+    /** 停车挂起的审批（有 pending_approvals 行）。resolve 走 repo-changes 裁决口。 */
     parked?: boolean;
   }> = new Map();
   private readonly injectedPendingApprovalRepo?: PendingApprovalRepository;
   private cachedPendingApprovalRepo: PendingApprovalRepository | null = null;
+  private unattendedTerminalFailure: UnattendedPermissionTerminalFailure | null = null;
 
   constructor({
     getSettings,
@@ -136,6 +150,13 @@ export class OrchestratorPermissionIsland {
       ...request,
       details: request.details ? { ...request.details } : request.details,
     }));
+  }
+
+  /** cron/heartbeat 在 agent turn 返回后消费；消费一次即清空，避免污染下一轮。 */
+  consumeUnattendedTerminalFailure(): UnattendedPermissionTerminalFailure | null {
+    const failure = this.unattendedTerminalFailure;
+    this.unattendedTerminalFailure = null;
+    return failure;
   }
 
   /**
@@ -238,7 +259,7 @@ export class OrchestratorPermissionIsland {
     logger.info(`Drained ${count} pending permission(s)`, { response });
   }
 
-  /** B2: 懒取停车审批持久化仓库。注入优先（测试），否则回退 DB 单例（生产）。 */
+  /** 懒取停车审批持久化仓库。注入优先（测试），否则回退 DB 单例（生产）。 */
   private getPendingApprovalRepo(): PendingApprovalRepository | null {
     if (this.injectedPendingApprovalRepo) return this.injectedPendingApprovalRepo;
     if (this.cachedPendingApprovalRepo) return this.cachedPendingApprovalRepo;
@@ -293,24 +314,21 @@ export class OrchestratorPermissionIsland {
       return { approved: true };
     }
 
-    // 无人值守会话（cron/heartbeat/channel）与语音派：审批先于任何自动批准判定，改为「停车挂起」，
-    // 写 pending_approvals 等收件箱/会话卡任一入口应答（B2）。判据与权限档钳制同源
-    // （markUnattendedSession）。repo 不可用时（DB 未就绪/测试）回退内联审批：有 UI 就等
-    // 真人裁决，无 UI 仍按短超时 deny；两种情况都不能继续触发 devMode/autoApprove 自动放行。
-    //
-    // 语音派的 run 走同一条路（2026-07-26 真机）：D4 抬严的立论就是「用户在通话里
+    // 语音派的 run 继续走停车审批（2026-07-26 真机）：D4 抬严的立论就是「用户在通话里
     // 手不在键盘上、眼睛不在 diff 上，这姿态等于无人值守」——既然这么判定，审批就不能
     // 要求他 60 秒内点一下。实测通话结束后 run 才请求审批，60s 必然超时自动拒绝，
     // 而迟到的点击又落进静默丢弃分支，用户只看到「失败」且毫无线索。
     // 判据与抬严同源（isLiveVoiceSession = 通话中 或 语音派的 run 还在飞）。
-    const needsParking = getPermissionModeManager().isUnattendedSession(fullRequest.sessionId)
-      || getPermissionModeManager().isLiveVoiceSession(fullRequest.sessionId);
+    const permissionModeManager = getPermissionModeManager();
+    const unattendedSession = permissionModeManager.isUnattendedSession(fullRequest.sessionId);
+    const unattended = unattendedSession || fullRequest.unattended === true;
+    const needsParking = permissionModeManager.isLiveVoiceSession(fullRequest.sessionId);
     if (needsParking) {
       const parkRepo = this.getPendingApprovalRepo();
       if (parkRepo) {
         return this.parkApproval(fullRequest, permissionLevel, parkRepo);
       }
-    } else {
+    } else if (!unattended) {
       if (!forceConfirm && this.isDevModeAutoApproveEnabled()) {
         logger.info(
           `[Permission] Machine-approved via devModeAutoApprove: ${request.type} for ${request.tool}`,
@@ -328,7 +346,9 @@ export class OrchestratorPermissionIsland {
     // fail-closed，和 createCLIPermissionHandler 的 no-approval-ui 判据保持同一环境边界。
     // 交互路径的 30min 计时器只留泄漏诊断，不删除请求、不发 timeout 终态。
     const PERMISSION_TIMEOUT = isEditableTool(request.tool) ? EDITABLE_PERMISSION_TIMEOUT_MS : 60000;
-    const approvalUiAvailable = this.hasApprovalUi();
+    // 进程有 renderer 不代表 cron turn 有人在盯。无人值守残余 ask 必须走有限超时，
+    // 不能因为桌面窗口存在就继承交互会话的无限等待语义。
+    const approvalUiAvailable = this.hasApprovalUi() && !unattended;
 
     return new Promise((resolve) => {
       const timeoutId = approvalUiAvailable
@@ -341,6 +361,15 @@ export class OrchestratorPermissionIsland {
         : setTimeout(() => {
           this.pendingPermissions.delete(fullRequest.id);
           logger.warn(`Timeout for ${request.type} on ${request.tool}, denying`);
+          if (unattendedSession) {
+            this.unattendedTerminalFailure ??= {
+              code: HostReasonCode.PermissionDeniedTimeout,
+              requestId: fullRequest.id,
+              sessionId: fullRequest.sessionId ?? null,
+              tool: fullRequest.tool,
+              message: `Unattended approval timed out for ${fullRequest.tool}`,
+            };
+          }
           // 同一稳定 permission_request 事件做加法回传终态；renderer 以 host 结果为准，
           // 不复制 60s 计时器，也就不会把后台节流/切会话误判为已过期。
           this.onEvent({
@@ -366,8 +395,8 @@ export class OrchestratorPermissionIsland {
   }
 
   /**
-   * B2 停车挂起：无人值守会话的审批请求写入 pending_approvals，内存仍登记 Promise 但
-   * 不设 60s 超时（改 24h 兜底防泄漏）。批准/拒绝走 resolveParkedApproval 裁决口。
+   * 停车挂起：语音态工具审批与目录扩权写入 pending_approvals，内存仍登记 Promise，
+   * 24h 兜底防泄漏。批准/拒绝走 resolveParkedApproval 裁决口。
    */
   private parkApproval(
     fullRequest: PermissionRequest,

@@ -677,6 +677,7 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
       duration INTEGER,
       result TEXT,
       error TEXT,
+      error_code TEXT,
       retry_attempt INTEGER NOT NULL DEFAULT 0,
       exit_code INTEGER,
       FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE SET NULL,
@@ -685,6 +686,7 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
   `);
 
   safeAlter(db, 'ALTER TABLE cron_executions ADD COLUMN session_id TEXT', logger);
+  safeAlter(db, 'ALTER TABLE cron_executions ADD COLUMN error_code TEXT', logger);
 
   // Session Automations 表：把 cron / heartbeat / loop / role wake 按 source session 串回原会话
   db.exec(`

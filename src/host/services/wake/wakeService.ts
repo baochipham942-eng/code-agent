@@ -44,7 +44,7 @@ async function defaultDeliver(record: AgentWakeRecord): Promise<void> {
   if (!orchestrator) {
     throw new Error(`AgentOrchestrator not available for wake session ${record.sessionId}`);
   }
-  // 醒来是无人值守的续跑：与 cron agent 会话同档，审批走停车挂起而不是卡死在这里。
+  // 醒来是无人值守的续跑：与 cron agent 会话同档，普通操作免逐次审批，残余 ask 有限超时终止。
   orchestrator.setExecutionTopology('async_agent');
   await orchestrator.sendMessage(buildWakeResumePrompt(record));
 }

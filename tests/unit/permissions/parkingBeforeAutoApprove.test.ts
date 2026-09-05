@@ -13,6 +13,7 @@ vi.mock('../../../src/host/services/infra/notificationService', () => ({
 
 import { OrchestratorPermissionIsland } from '../../../src/host/agent/orchestratorPermissions';
 import { getPermissionModeManager, resetPermissionModeManager } from '../../../src/host/permissions/modes';
+import { HostReasonCode } from '../../../src/shared/contract/permission';
 
 const settings = (overrides: Partial<AppSettings['permissions']> = {}): AppSettings => ({
   permissions: {
@@ -74,16 +75,66 @@ describe('停车判定先于自动批准', () => {
     expect(repo.insert).toHaveBeenCalledOnce();
   });
 
-  it('unattended + autoApprove.write 写请求仍停车，不秒批', async () => {
+  it('unattended 残余 ask 不停车，60 秒后留下可消费的结构化终态', async () => {
+    vi.useFakeTimers();
     const repo = makeRepo();
     const sessionId = 'unattended-autoapprove-write';
     getPermissionModeManager().markUnattendedSession(sessionId);
-    const island = makeIsland({ autoApprove: { read: false, write: true, execute: false, network: false } }, repo);
+    const island = new OrchestratorPermissionIsland({
+      getSettings: () => settings({ autoApprove: { read: false, write: true, execute: false, network: false } }),
+      isDevModeAutoApproveEnabled: () => true,
+      getExecutionTopology: () => 'async_agent',
+      // 即使应用进程有 renderer，cron turn 也不能冒充交互会话无限等。
+      hasApprovalUi: () => true,
+      onEvent: vi.fn(),
+      injectedPendingApprovalRepo: repo,
+    });
 
-    const result = island.requestPermission({ type: 'file_write', tool: 'write_file', details: { path: '/Users/linchen/probe.txt' }, sessionId });
+    const result = island.requestPermission({
+      type: 'file_write',
+      tool: 'write_file',
+      details: { path: '/Users/linchen/probe.txt' },
+      sessionId,
+      forceConfirm: true,
+    });
 
     expect(await isStillPending(result)).toBe(true);
-    expect(repo.insert).toHaveBeenCalledOnce();
+    expect(repo.insert).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(60_000);
+    await expect(result).resolves.toEqual({ approved: false, denialSource: 'timeout' });
+    expect(island.consumeUnattendedTerminalFailure()).toMatchObject({
+      code: HostReasonCode.PermissionDeniedTimeout,
+      sessionId,
+      tool: 'write_file',
+    });
+    expect(island.consumeUnattendedTerminalFailure()).toBeNull();
+  });
+
+  it('交互 session 内的后台 unattended run 也走有限超时，不改变该 session 的交互档', async () => {
+    vi.useFakeTimers();
+    const sessionId = 'attended-parent-background-run';
+    const island = new OrchestratorPermissionIsland({
+      getSettings: () => settings({}),
+      isDevModeAutoApproveEnabled: () => false,
+      getExecutionTopology: () => 'async_agent',
+      hasApprovalUi: () => true,
+      onEvent: vi.fn(),
+      injectedPendingApprovalRepo: makeRepo(),
+    });
+
+    const result = island.requestPermission({
+      type: 'command',
+      tool: 'Bash',
+      details: { command: 'unknown-command' },
+      sessionId,
+      unattended: true,
+      forceConfirm: true,
+    });
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    await expect(result).resolves.toEqual({ approved: false, denialSource: 'timeout' });
+    expect(getPermissionModeManager().getModeForSession(sessionId)).toBe('default');
+    expect(island.consumeUnattendedTerminalFailure()).toBeNull();
   });
 
   it('普通有人值守 + devModeAutoApprove 仍直接放行', async () => {

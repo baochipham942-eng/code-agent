@@ -749,7 +749,7 @@ export class ToolExecutionEngine {
     const timeoutThreshold = TOOL_TIMEOUT_THRESHOLDS[toolCall.name] ?? TOOL_PROGRESS.DEFAULT_THRESHOLD;
     let timeoutEmitted = false;
     const progressInterval = setInterval(() => {
-      // 卡在人身上的时间不算工具耗时：语音态/无人值守的审批是「停车挂起」（不限时），
+      // 卡在人身上的时间不算工具耗时：语音态审批会停车，交互审批也可长期待决；
       // 把等人那段算进来的话，用户还在看审批卡就先被告知「工具执行超时」（2026-07-26 真机）。
       const now = Date.now();
       const elapsed = now - startTime - getApprovalWaitMs(toolCall.id, now);

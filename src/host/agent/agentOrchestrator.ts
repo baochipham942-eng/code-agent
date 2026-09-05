@@ -48,7 +48,10 @@ import { startRunPreferringDurable } from './orchestrator/durableRunStart';
 import { getUserPresenceToolNames } from '../tools/dispatch/toolDefinitions';
 import { OrchestratorRunSettings } from './orchestratorRunSettings';
 import { OrchestratorMessageHistory } from './orchestratorMessageHistory';
-import { OrchestratorPermissionIsland } from './orchestratorPermissions';
+import {
+  OrchestratorPermissionIsland,
+  type UnattendedPermissionTerminalFailure,
+} from './orchestratorPermissions';
 import { applyTurnSystemContext, buildLiveVoicePermissionNotice } from './orchestratorTurnContext';
 import {
   resolveExplicitAgentRouting,
@@ -192,6 +195,10 @@ export class AgentOrchestrator {
    */
   setExecutionTopology(topology: ExecutionTopology): void {
     this.toolExecutor.setExecutionTopology(topology);
+  }
+
+  consumeUnattendedPermissionFailure(): UnattendedPermissionTerminalFailure | null {
+    return this.permissions.consumeUnattendedTerminalFailure();
   }
 
   async sendMessage(

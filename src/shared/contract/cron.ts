@@ -257,6 +257,8 @@ export interface CronJobExecution {
   result?: unknown;
   /** Error message if failed */
   error?: string;
+  /** Stable machine-readable terminal reason (for example PERMISSION_DENIED_TIMEOUT). */
+  errorCode?: string;
   /** Retry attempt number (0 = first attempt) */
   retryAttempt: number;
   /** Exit code for shell commands */

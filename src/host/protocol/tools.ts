@@ -148,6 +148,8 @@ export interface ToolContext {
   /** Stable user message that originated this native turn. */
   readonly sourceMessageId?: string;
   readonly sessionId: string;
+  /** 当前工具运行采用内部无人值守权限档。 */
+  readonly unattended?: boolean;
   /** Immutable authorization/artifact boundary for this run. */
   readonly workspace?: string;
   readonly workspaceScope?: WorkspaceScope;
@@ -316,6 +318,8 @@ export interface ToolDecision {
 
 export interface CanUseToolRequestHint {
   readonly sessionId?: string;
+  /** 请求来自无人值守 run；最终审批层据此采用有限等待与结构化终态。 */
+  readonly unattended?: boolean;
   readonly agentId?: string;
   readonly runId?: string;
   readonly parentToolUseId?: string;

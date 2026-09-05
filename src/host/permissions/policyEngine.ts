@@ -13,6 +13,7 @@ import {
   MODE_CONFIGS,
 } from './modes';
 import { parseToolSpecifier, matchSpecifier, type ParsedSpecifier } from './specifierParser';
+import { canonicalToolName } from '../tools/toolNames';
 
 const logger = createLogger('PolicyEngine');
 
@@ -96,6 +97,11 @@ export interface PolicyResult {
   audited: boolean;
   /** Evaluation timestamp */
   timestamp: number;
+}
+
+export interface UserPermissionRuleResult {
+  action: PermissionAction;
+  matchedRule: PolicyRule;
 }
 
 /**
@@ -383,6 +389,8 @@ export class PolicyEngine {
    * Creates PolicyRules with specifier parsing from Tool(glob) syntax.
    */
   loadUserRules(rules: { allow?: string[]; deny?: string[]; ask?: string[] }): void {
+    // reload 是替换语义；否则每次设置热重载都会把同一批规则重复追加。
+    this.rules = this.rules.filter((rule) => !rule.id.startsWith('user-'));
     const ruleEntries: Array<{ ruleStr: string; action: PermissionAction; priority: number }> = [];
 
     // deny rules get highest user priority
@@ -423,6 +431,21 @@ export class PolicyEngine {
   }
 
   /**
+   * 主工具链消费用户显式 allow/ask/deny 的唯一入口。只返回命中的用户规则，
+   * 不掺 mode fallback；deny > ask > allow，同档按 priority 排序后的首条为准。
+   */
+  evaluateUserRules(request: PolicyRequest): UserPermissionRuleResult | null {
+    const matching = this.rules.filter((rule) =>
+      rule.id.startsWith('user-') && this.matchesRule(request, rule),
+    );
+    for (const action of ['deny', 'prompt', 'allow'] as const) {
+      const matchedRule = matching.find((rule) => rule.action === action);
+      if (matchedRule) return { action, matchedRule };
+    }
+    return null;
+  }
+
+  /**
    * Check if a request matches a rule
    */
   private matchesRule(request: PolicyRequest, rule: PolicyRule): boolean {
@@ -431,7 +454,7 @@ export class PolicyEngine {
     // Tool matching
     if (matcher.tool) {
       if (typeof matcher.tool === 'string') {
-        if (request.tool !== matcher.tool) return false;
+        if (canonicalToolName(request.tool).toLowerCase() !== canonicalToolName(matcher.tool).toLowerCase()) return false;
       } else {
         if (!matcher.tool.test(request.tool)) return false;
       }

@@ -78,7 +78,7 @@ export const runCommand = new Command('run')
   )
   .option(
     '--permission-mode <mode>',
-    '颗粒度权限档（目前仅支持 auto）：分类器判安全的操作自动批准并入账，其余 fail-closed 拒绝。与 --dangerously-skip-permissions 互斥',
+    '颗粒度权限档（默认 auto）：分类器判安全的操作自动批准并入账，其余 fail-closed 拒绝。与 --dangerously-skip-permissions 互斥',
   )
   .option(
     '--tools <list>',
@@ -111,6 +111,9 @@ export const runCommand = new Command('run')
     let permissionMode: CLIPermissionMode | undefined;
     try {
       permissionMode = resolveCLIPermissionModeFlag(options.permissionMode, options.dangerouslySkipPermissions);
+      if (!options.dangerouslySkipPermissions && permissionMode === undefined) {
+        permissionMode = 'auto';
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (isJson) {

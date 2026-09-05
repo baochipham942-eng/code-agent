@@ -57,13 +57,18 @@ vi.mock('../../src/host/services/infra/logger', () => ({
 
 import { resetDecisionHistory, getDecisionHistory } from '../../src/host/security/decisionHistory';
 import { getGuardFabric, resetGuardFabric } from '../../src/host/permissions';
+import { getPolicyEngine, resetPolicyEngine } from '../../src/host/permissions/policyEngine';
+import { getPermissionModeManager, resetPermissionModeManager } from '../../src/host/permissions/modes';
 import { ToolExecutor } from '../../src/host/tools/toolExecutor';
 import type { PermissionRequestData } from '../../src/host/tools/types';
+import { createRunContext } from '../../src/host/runtime/runContext';
 
 describe('ToolExecutor GuardFabric topology wiring', () => {
   beforeEach(() => {
     resetDecisionHistory();
     resetGuardFabric();
+    resetPolicyEngine();
+    resetPermissionModeManager();
     resolverState.getDefinition.mockReset();
     resolverState.execute.mockReset();
     classificationState.resolveToolPermissionClassification.mockReset();
@@ -149,9 +154,9 @@ describe('ToolExecutor GuardFabric topology wiring', () => {
     });
   }
 
-  it('forces confirmation for PascalCase Bash in async_agent topology (ask rule + alias normalization)', async () => {
+  it('does not add a topology approval for PascalCase Bash in async_agent; unattended profile owns the decision', async () => {
     defineBash();
-    const requestPermission = vi.fn(async (request: { forceConfirm?: boolean }) => request.forceConfirm === true);
+    const requestPermission = vi.fn(async () => true);
     const executor = makeExecutor(requestPermission as any);
 
     const result = await executor.execute(
@@ -160,12 +165,42 @@ describe('ToolExecutor GuardFabric topology wiring', () => {
       { sessionId: 's1', executionTopology: 'async_agent' } as any,
     );
 
-    // ask 规则命中（经 PascalCase 归一化）→ forceConfirm 强确认，用户批准后正常执行
-    expect(requestPermission).toHaveBeenCalledWith(expect.objectContaining({
-      forceConfirm: true,
-    }));
+    expect(requestPermission).not.toHaveBeenCalled();
     expect(result.success).toBe(true);
     expect(resolverState.execute).toHaveBeenCalledTimes(1);
+  });
+
+  it('native runContext 的 session identity 驱动 unattended 档，不回退 UI default', async () => {
+    defineWrite();
+    const sessionId = 'cron-native-run-session';
+    getPermissionModeManager().markUnattendedSession(sessionId);
+    const requestPermission = vi.fn(async () => true);
+    const runContext = createRunContext({
+      runId: 'cron-native-run',
+      sessionId,
+      workspace: '/tmp/workbench',
+    });
+    const executor = new ToolExecutor({
+      requestPermission,
+      workingDirectory: runContext.cwd,
+      runContext,
+      executionTopology: 'async_agent',
+    });
+    executor.setAuditEnabled(false);
+
+    const result = await executor.execute(
+      'Write',
+      { file_path: '/tmp/workbench/native.txt', content: 'hello' },
+      { runId: 'cron-native-run', executionTopology: 'async_agent' },
+    );
+
+    expect(result.success).toBe(true);
+    expect(classificationState.resolveToolPermissionClassification).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionPermissionMode: 'unattended' }),
+    );
+    // 本文件把 classifier mock 成固定 ask；真实 auto-approve 语义由 unattendedClamp 锁定。
+    expect(requestPermission).toHaveBeenCalledOnce();
+    expect(resolverState.execute).toHaveBeenCalledOnce();
   });
 
   it('denies AgentSpawn in teammate topology before requestPermission', async () => {
@@ -231,6 +266,58 @@ describe('ToolExecutor GuardFabric topology wiring', () => {
     expect(resolverState.execute).toHaveBeenCalledTimes(1);
   });
 
+  it('permissions.allow 的 Tool(path) 规则在 ToolExecutor 主链真正预授权', async () => {
+    defineWrite();
+    getPolicyEngine().loadUserRules({ allow: ['Write(/tmp/workbench/**)'] });
+    const requestPermission = vi.fn(async () => true);
+    const executor = makeExecutor(requestPermission);
+
+    const result = await executor.execute(
+      'Write',
+      { file_path: '/tmp/workbench/allowed.txt', content: 'hello' },
+      { sessionId: 's-user-allow' },
+    );
+
+    expect(result.success).toBe(true);
+    expect(requestPermission).not.toHaveBeenCalled();
+    expect(resolverState.execute).toHaveBeenCalledOnce();
+  });
+
+  it('permissions.ask 压过无人值守档的普通免审，仍交给有限审批终态', async () => {
+    defineWrite();
+    getPolicyEngine().loadUserRules({ ask: ['Write(/tmp/workbench/**)'] });
+    getPermissionModeManager().markUnattendedSession('s-user-ask');
+    const requestPermission = vi.fn(async (request: { forceConfirm?: boolean }) => request.forceConfirm === true);
+    const executor = makeExecutor(requestPermission as any);
+
+    const result = await executor.execute(
+      'Write',
+      { file_path: '/tmp/workbench/ask.txt', content: 'hello' },
+      { sessionId: 's-user-ask' },
+    );
+
+    expect(requestPermission).toHaveBeenCalledWith(expect.objectContaining({ forceConfirm: true }));
+    expect(result.success).toBe(true);
+  });
+
+  it('permissions.deny 在主链先于 classifier 与审批生效', async () => {
+    defineWrite();
+    getPolicyEngine().loadUserRules({ deny: ['Write(/tmp/workbench/**)'] });
+    const requestPermission = vi.fn(async () => true);
+    const executor = makeExecutor(requestPermission);
+
+    const result = await executor.execute(
+      'Write',
+      { file_path: '/tmp/workbench/denied.txt', content: 'hello' },
+      { sessionId: 's-user-deny' },
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Denied by user permission rule');
+    expect(requestPermission).not.toHaveBeenCalled();
+    expect(resolverState.execute).not.toHaveBeenCalled();
+  });
+
   it('does not force confirmation for non-topology verdicts (sources 与主权限链重复评估，gate 只认 topology 规则)', async () => {
     defineWrite();
     const requestPermission = vi.fn(async (_request: { forceConfirm?: boolean }) => true);
@@ -252,9 +339,9 @@ describe('ToolExecutor GuardFabric topology wiring', () => {
     expect(resolverState.execute).toHaveBeenCalledTimes(1);
   });
 
-  it('setExecutionTopology 事后标注生效（cron 路径：orchestrator 先建 executor 后知拓扑）', async () => {
+  it('setExecutionTopology 事后标注不再把 cron 的安全 Bash 强制改成 ask', async () => {
     defineBash();
-    const requestPermission = vi.fn(async (request: { forceConfirm?: boolean }) => request.forceConfirm === true);
+    const requestPermission = vi.fn(async () => true);
     const executor = makeExecutor(requestPermission as any);
 
     executor.setExecutionTopology('async_agent');
@@ -264,9 +351,7 @@ describe('ToolExecutor GuardFabric topology wiring', () => {
       { sessionId: 's1' },
     );
 
-    expect(requestPermission).toHaveBeenCalledWith(expect.objectContaining({
-      forceConfirm: true,
-    }));
+    expect(requestPermission).not.toHaveBeenCalled();
     expect(result.success).toBe(true);
   });
 

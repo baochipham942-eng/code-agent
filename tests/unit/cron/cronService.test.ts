@@ -658,10 +658,10 @@ describe('N-CRON-ACTIONGATE unsupported actions', () => {
       const job = await service.createJob({
         name: `unsupported ${action.type}`, runsOn: 'local', enabled: false,
         scheduleType: 'every', schedule: { type: 'every', interval: 1, unit: 'hours' },
-        action, maxRetries: 0,
+        action, maxRetries: 3, retryDelay: 1,
       });
       const execution = await service.triggerJob(job.id);
-      expect(execution).toMatchObject({ status: 'failed', error: 'unsupported_action' });
+      expect(execution).toMatchObject({ status: 'failed', error: 'unsupported_action', retryAttempt: 0 });
       if (!execution) throw new Error('Expected an execution record');
       expect(execution.result).toBeUndefined();
       const stored = dbState.savedRows.filter((row) => row[0] === execution.id).at(-1);

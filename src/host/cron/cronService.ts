@@ -658,7 +658,7 @@ export class CronService implements Disposable {
       execution.error = error instanceof Error ? error.message : String(error);
 
       // Handle retries
-      if (definition.runsOn === 'local' && definition.maxRetries && execution.retryAttempt < definition.maxRetries) {
+      if (execution.error !== 'unsupported_action' && definition.runsOn === 'local' && definition.maxRetries && execution.retryAttempt < definition.maxRetries) {
         await this.retryExecution(definition, execution);
       }
     } finally {
@@ -1073,7 +1073,7 @@ export class CronService implements Disposable {
       execution.error = error instanceof Error ? error.message : String(error);
 
       // Continue retrying if we haven't reached the limit
-      if (execution.retryAttempt < (definition.maxRetries || 0)) {
+      if (execution.error !== 'unsupported_action' && execution.retryAttempt < (definition.maxRetries || 0)) {
         await this.retryExecution(definition, execution);
       }
     }

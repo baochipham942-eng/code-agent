@@ -914,6 +914,7 @@ export class ToolExecutor {
       agentId: contextAgentId,
       spawnDepth: options.spawnDepth,
       spawnMaxDepth: options.spawnMaxDepth ?? this.spawnMaxDepth,
+      forcePermissionHandler: this.forcePermissionHandler,
       spawnTreeId: options.spawnTreeId,
       swarmRunScope: options.swarmRunScope,
       spawnQueueTimeoutMs: options.spawnQueueTimeoutMs,
@@ -1573,7 +1574,7 @@ export class ToolExecutor {
       const approved = ask.approved;
 
       if (approved) {
-        const approvalSource = ask.approvalSource ?? 'user';
+        const approvalSource = ask.approvalSource ?? 'unspecified';
         traceBuilder.addStep('plan_approval', 'ask_approved', 'allow', `审批放行（来源：${approvalSource}）`);
         recordDecision(executionToolName, params, 'ask-approved', approvalSource, permStartTime, traceBuilder.build('allow'), effectiveSessionId, this.ledgerOrigin, getApprovalWaitMs(options.currentToolCallId, Date.now()));
       }

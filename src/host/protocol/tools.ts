@@ -172,6 +172,11 @@ export interface ToolContext {
   readonly spawnDepth?: number;
   /** 会话级 spawn 深度覆盖；执行层会 clamp 到硬上限。 */
   readonly spawnMaxDepth?: number;
+  /**
+   * 父执行器的「一律走审批 handler」契约。true = 分类器判 approve 也不许自动放行。
+   * 委派工具必须原样透传给子代理执行器，否则子代理里分类器自动放行的工具不进审批链。
+   */
+  readonly forcePermissionHandler?: boolean;
   /** 根 agent / 根 session 的 spawn tree id，整棵树共享同一并发槽位池。 */
   readonly spawnTreeId?: string;
   /** Agent Team 的不可变 run/tree scope；不得覆盖 Native runId，嵌套 spawn 必须原样透传。 */

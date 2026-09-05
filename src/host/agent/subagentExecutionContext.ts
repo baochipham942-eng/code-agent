@@ -99,6 +99,7 @@ export function createProtocolSubagentExecutionContext(
     attachments: ctx.subagent?.attachments as SubagentExecutionContext['attachments'],
     spawnDepth: overrides.spawnDepth ?? ctx.spawnDepth,
     spawnMaxDepth: overrides.spawnMaxDepth ?? ctx.spawnMaxDepth,
+    forcePermissionHandler: ctx.forcePermissionHandler,
     spawnTreeId: overrides.spawnTreeId ?? ctx.spawnTreeId,
     swarmRunScope: ctx.swarmRunScope,
     parentNativeRunId: ctx.swarmRunScope?.parentNativeRunId ?? ctx.runId,

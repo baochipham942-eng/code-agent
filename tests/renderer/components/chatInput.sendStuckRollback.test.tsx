@@ -30,6 +30,7 @@ import {
   type UseChatInputSubmitParams,
 } from '../../../src/renderer/components/features/chat/ChatInput/useChatInputSubmit';
 import { zh } from '../../../src/renderer/i18n/zh';
+import { DRAFT_SCOPE_KEY, useComposerStore } from '../../../src/renderer/stores/composerStore';
 
 const DRAFT = '这条消息不许被吞掉';
 
@@ -76,24 +77,128 @@ function makeParams(overrides: Partial<UseChatInputSubmitParams>): UseChatInputS
 }
 
 // 只关心「草稿有没有回来 / 有没有出声」，不需要挂真的 InputArea（它在 jsdom 里 focus 会抛）。
-function Harness({ onSend }: { onSend: (envelope: ConversationEnvelope) => Promise<boolean> }) {
+function Harness({ onSend, goal = false, currentSessionId = 'session-stuck' }: { onSend: (envelope: ConversationEnvelope) => Promise<boolean>; goal?: boolean; currentSessionId?: string | null }) {
   const [value, setValue] = useState(DRAFT);
-  const { handleSubmit } = useChatInputSubmit(makeParams({ value, setValue, onSend }));
+  const { handleSubmit, startGoalRun } = useChatInputSubmit(makeParams({ value, setValue, onSend, currentSessionId }));
   return (
     <div>
       <span data-testid="draft">{value}</span>
-      <button type="button" onClick={() => void handleSubmit()}>send</button>
+      <button type="button" onClick={() => void (goal ? startGoalRun({ goal: DRAFT }, DRAFT) : handleSubmit())}>send</button>
     </div>
   );
 }
 
 afterEach(() => {
   cleanup();
+  useComposerStore.getState().resetForSuccessfulSend();
   vi.clearAllMocks();
   vi.useRealTimers();
 });
 
 describe('发送挂住不返回时的兜底', () => {
+  it.each([true, false])('发送结果 %s 只在成功后清空单轮能力', async (sent) => {
+    const store = useComposerStore.getState();
+    store.setSelectedSkillIds(['review']);
+    store.setSelectedConnectorIds(['mail']);
+    store.setSelectedMcpServerIds(['github']);
+    render(<Harness onSend={vi.fn().mockResolvedValue(sent)} />);
+    await act(async () => { screen.getByText('send').click(); });
+    expect(useComposerStore.getState()).toMatchObject({
+      selectedSkillIds: sent ? [] : ['review'],
+      selectedConnectorIds: sent ? [] : ['mail'],
+      selectedMcpServerIds: sent ? [] : ['github'],
+      turnCapabilityScopeMode: sent ? 'auto' : 'manual',
+    });
+  });
+
+  it.each([false, true])('延迟发送（goal=%s）不清空等待期间为下一句选的新能力', async (goal) => {
+    const store = useComposerStore.getState();
+    store.setSelectedSkillIds(['old']);
+    let finish!: (sent: boolean) => void;
+    const onSend = vi.fn(() => new Promise<boolean>((resolve) => { finish = resolve; }));
+    render(<Harness onSend={onSend} goal={goal} />);
+    await act(async () => { screen.getByText('send').click(); });
+    store.setSelectedSkillIds(['next-skill']);
+    store.setSelectedConnectorIds(['next-connector']);
+    store.setSelectedMcpServerIds(['next-mcp']);
+    await act(async () => { finish(true); });
+    expect(useComposerStore.getState()).toMatchObject({
+      selectedSkillIds: ['next-skill'], selectedConnectorIds: ['next-connector'],
+      selectedMcpServerIds: ['next-mcp'], turnCapabilityScopeMode: 'manual',
+    });
+  });
+
+  it.each([false, true])('延迟发送（goal=%s）不清空切换会话后加载的预设', async (goal) => {
+    let finish!: (sent: boolean) => void;
+    render(<Harness onSend={() => new Promise<boolean>((resolve) => { finish = resolve; })} goal={goal} />);
+    await act(async () => { screen.getByText('send').click(); });
+    const store = useComposerStore.getState();
+    store.hydrateFromSession('next-session', '/tmp/next-session');
+    store.applyWorkbenchPreset({
+      routingMode: 'auto', targetAgentIds: [], browserSessionMode: 'none',
+      selectedSkillIds: ['preset-skill'], selectedConnectorIds: ['preset-connector'],
+      selectedMcpServerIds: ['preset-mcp'], turnCapabilityScopeMode: 'manual',
+    });
+    await act(async () => { finish(true); });
+    expect(useComposerStore.getState()).toMatchObject({
+      selectedSkillIds: ['preset-skill'], selectedConnectorIds: ['preset-connector'],
+      selectedMcpServerIds: ['preset-mcp'], turnCapabilityScopeMode: 'manual',
+    });
+  });
+
+  it.each([false, true])('草稿移交新会话（goal=%s）成功后仍清空同一轮能力', async (goal) => {
+    const store = useComposerStore.getState();
+    store.activateScope(DRAFT_SCOPE_KEY);
+    store.setSelectedSkillIds(['sent-skill']);
+    store.setSelectedConnectorIds(['sent-connector']);
+    store.setSelectedMcpServerIds(['sent-mcp']);
+    let finish!: (sent: boolean) => void;
+    render(<Harness goal={goal} currentSessionId={null}
+      onSend={() => new Promise<boolean>((resolve) => { finish = resolve; })} />);
+    await act(async () => { screen.getByText('send').click(); });
+    await act(async () => {
+      await store.handoffActiveScopeToSession('created-session');
+      store.hydrateFromSession('created-session', '/tmp/created-session');
+    });
+    expect(useComposerStore.getState().selectedSkillIds).toEqual(['sent-skill']);
+    await act(async () => { finish(true); });
+    expect(useComposerStore.getState()).toMatchObject({
+      hydratedSessionId: 'created-session', selectedSkillIds: [], selectedConnectorIds: [],
+      selectedMcpServerIds: [], turnCapabilityScopeMode: 'auto',
+    });
+  });
+
+  it.each([false, true])('切走再切回原会话（goal=%s）不让旧发送清掉恢复的选择', async (goal) => {
+    const store = useComposerStore.getState();
+    store.hydrateFromSession('roundtrip-session', '/tmp/roundtrip');
+    store.setSelectedSkillIds(['roundtrip-skill']);
+    store.setSelectedConnectorIds(['roundtrip-connector']);
+    store.setSelectedMcpServerIds(['roundtrip-mcp']);
+    let finish!: (sent: boolean) => void;
+    render(<Harness goal={goal} currentSessionId="roundtrip-session"
+      onSend={() => new Promise<boolean>((resolve) => { finish = resolve; })} />);
+    await act(async () => { screen.getByText('send').click(); });
+    store.hydrateFromSession('away-session', '/tmp/away');
+    store.hydrateFromSession('roundtrip-session', '/tmp/roundtrip');
+    await act(async () => { finish(true); });
+    expect(useComposerStore.getState()).toMatchObject({
+      hydratedSessionId: 'roundtrip-session',
+      selectedSkillIds: ['roundtrip-skill'], selectedConnectorIds: ['roundtrip-connector'],
+      selectedMcpServerIds: ['roundtrip-mcp'], turnCapabilityScopeMode: 'manual',
+    });
+  });
+
+  it.each([false, true])('重新选择相同能力（goal=%s）也是下一轮意图', async (goal) => {
+    const store = useComposerStore.getState();
+    store.setSelectedSkillIds(['same-skill']);
+    let finish!: (sent: boolean) => void;
+    render(<Harness goal={goal} onSend={() => new Promise<boolean>((resolve) => { finish = resolve; })} />);
+    await act(async () => { screen.getByText('send').click(); });
+    store.setSelectedSkillIds(['same-skill']);
+    await act(async () => { finish(true); });
+    expect(useComposerStore.getState().selectedSkillIds).toEqual(['same-skill']);
+  });
+
   it('超时后草稿退回输入框并出声，不留「输入框空了但哪儿都没有」的状态', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     // 永不 settle：模拟发送链路上任意一处挂死

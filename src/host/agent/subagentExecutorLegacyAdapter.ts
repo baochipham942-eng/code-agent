@@ -58,6 +58,7 @@ export function projectLegacySubagentContext(input: LegacySubagentContextInput):
     attachments: input.attachments ?? toolContext.currentAttachments,
     spawnDepth: toolContext.spawnDepth,
     spawnMaxDepth: toolContext.spawnMaxDepth,
+    forcePermissionHandler: toolContext.forcePermissionHandler,
     spawnTreeId: toolContext.spawnTreeId,
     swarmRunScope: toolContext.swarmRunScope,
     parentNativeRunId: toolContext.swarmRunScope?.parentNativeRunId ?? toolContext.runId,

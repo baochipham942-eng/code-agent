@@ -178,6 +178,12 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
     setActiveAgentId,
   } = params;
 
+  // 版本同时绑定能力选择和会话；handoff 保留同一轮版本，切槽或再选择都会失效。
+  const captureSuccessfulSendReset = useCallback(() => {
+    const revision = useComposerStore.getState().selectionRevision;
+    return () => useComposerStore.getState().resetForSuccessfulSend(revision);
+  }, []);
+
   // 定时任务创建统一入口：内联 /schedule 和对话式卡片都走这里（cron:generateFromPrompt → createJob）。
   const runScheduleCreation = useCallback(async (
     description: string,
@@ -272,18 +278,20 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
     setValue('');
     setAttachments([]);
     closeGoalConfirm();
+    const resetSentSelection = captureSuccessfulSendReset();
     try {
       const sent = await onSend(goalEnvelope);
       if (sent === false) {
         if (currentSessionId) useAppStore.getState().clearGoalRun(currentSessionId);
         return false;
       }
+      resetSentSelection();
       return true;
     } catch {
       if (currentSessionId) useAppStore.getState().clearGoalRun(currentSessionId);
       return false;
     }
-  }, [addToInputHistory, attachments, buildEnvelope, closeGoalConfirm, currentSessionId, onSend, setAttachments, setValue]);
+  }, [addToInputHistory, attachments, buildEnvelope, captureSuccessfulSendReset, closeGoalConfirm, currentSessionId, onSend, setAttachments, setValue]);
 
   // 处理提交
   // 运行中允许提交，把新输入排到当前回复结束后发送。
@@ -553,6 +561,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
       if (typeof setArtifactReferences === 'function') setArtifactReferences([]);
       clearPendingCommand();
       clearAppshot();
+      const resetSentSelection = captureSuccessfulSendReset();
 
       // 发送没走完（返回 false / 抛错 / 超时不返回）都走同一条回滚：草稿还回输入框。
       // 只有超时那一档额外出声——另外两档调用方自己已经给了用户可见反馈。
@@ -625,6 +634,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
           return;
         }
       }
+      resetSentSelection();
     }
   };
 

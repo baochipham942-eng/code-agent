@@ -1080,6 +1080,27 @@ describe('createAgentRouter', () => {
       });
     });
 
+    it('目标轮次不继承文字前台的任务工具例外', async () => {
+      const controller = new AbortController();
+      const response = await fetch(`${baseUrl}/api/run`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          prompt: '完成目标', sessionId: 'session-goal-tool-boundary',
+          goal: { review: '检查结果', allowSwarm: false },
+        }),
+        signal: controller.signal,
+      });
+      expect(response.ok).toBe(true);
+      await waitForAssertion(() => expect(mockCreateAgentLoop).toHaveBeenCalled());
+      const config = mockCreateAgentLoop.mock.calls.at(-1)![0] as {
+        taskManagerToolsEnabled?: boolean; goalContract?: { allowSwarm?: boolean };
+      };
+      expect(config.taskManagerToolsEnabled).not.toBe(true);
+      expect(config.goalContract?.allowSwarm).toBe(false);
+      controller.abort();
+      await waitForAssertion(() => expect(mockCancel).toHaveBeenCalled());
+    });
+
     it('自然语言轮次按 schema 声明装配文字前台工具面', async () => {
       const controller = new AbortController();
       const response = await fetch(`${baseUrl}/api/run`, {
@@ -1098,7 +1119,9 @@ describe('createAgentRouter', () => {
       const config = mockCreateAgentLoop.mock.calls.at(-1)![0] as {
         allowedToolNames?: string[];
         maxIterations?: number;
+        taskManagerToolsEnabled?: boolean;
       };
+      expect(config.taskManagerToolsEnabled).toBe(true);
       expect(config.allowedToolNames).toEqual(expect.arrayContaining(['Read', 'Edit', 'Write']));
       expect(config.allowedToolNames).not.toEqual(expect.arrayContaining(['Append', 'Bash']));
       expect(config.maxIterations).toBe(8);

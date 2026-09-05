@@ -17,7 +17,7 @@ import type {
   BrowserInteractionStep,
   BrowserInteractionStepResult,
 } from '../../../../shared/contract/browserInteraction';
-import { runInAppValidation } from '../../../services/inAppValidationService';
+import { IN_APP_VALIDATION_UNAVAILABLE, runInAppValidation } from '../../../services/inAppValidationService';
 import { validateHtmlInAppSchema as schema } from './validateHtmlInApp.schema';
 
 const VALID_ACTION_TYPES = new Set([
@@ -125,11 +125,13 @@ export async function executeValidateHtmlInApp(
       ...(passedAll ? {} : { warnings: results.filter((r) => !r.passed).flatMap((r) => r.failures) }),
     };
   } catch (error) {
-    return {
-      ok: false,
-      error: `in-app validation failed: ${error instanceof Error ? error.message : String(error)}`,
-      code: 'DOMAIN_ERROR',
-    };
+    const message = error instanceof Error ? error.message : String(error);
+    // 环境不具备和「验证跑了但没过」是两回事：给个专门的码，模型看到后可以直接说明
+    // 并继续答，不必反复重试一个这台机器上永远起不来的面板。
+    if (message === IN_APP_VALIDATION_UNAVAILABLE) {
+      return { ok: false, error: message, code: 'PANEL_UNAVAILABLE' };
+    }
+    return { ok: false, error: `in-app validation failed: ${message}`, code: 'DOMAIN_ERROR' };
   }
 }
 

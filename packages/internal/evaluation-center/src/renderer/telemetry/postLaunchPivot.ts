@@ -47,7 +47,7 @@ export interface PostLaunchPivotColumn {
   failureClasses: PostLaunchReportGroup['failureClasses'];
   signals: PostLaunchReportGroup['signals'];
   costUsd: number;
-  sessionIds: string[];
+  sessions: PostLaunchReportGroup['sessions'];
 }
 
 export interface PostLaunchPivot {
@@ -117,7 +117,7 @@ export function pivotPostLaunchReport(
       failureClasses: group.failureClasses ?? [],
       signals: group.signals ?? [],
       costUsd: group.costUsd,
-      sessionIds: group.sessionIds ?? [],
+      sessions: group.sessions ?? [],
       cells,
     });
   }

@@ -10,7 +10,7 @@
 // ============================================================================
 import React, { useMemo, useState } from 'react';
 import { AlertTriangle, Play, Loader2 } from 'lucide-react';
-import type { PostLaunchDimension, PostLaunchReport, PostLaunchScopeRow } from '@shared/contract/postLaunchScore';
+import type { PostLaunchDimension, PostLaunchReport, PostLaunchReportSession, PostLaunchScopeRow } from '@shared/contract/postLaunchScore';
 import { POST_LAUNCH_DIMENSIONS } from '@shared/contract/postLaunchScore';
 import { Modal } from '@renderer/components/primitives/Modal';
 import { useEvaluationI18n } from '../i18n/useEvaluationI18n';
@@ -29,6 +29,23 @@ interface PostLaunchCardProps {
 
 function formatUsd(value: number): string {
   return value.toFixed(4);
+}
+
+/**
+ * 芯片上给人看的那行字。原来是 `id.slice(0, 8)`——真机上 CLI 会话全长成 `cli_sess`、
+ * App 会话是 8 位随机 hex，一排芯片彼此认不出来（09-05 shot-4 爸原话「怎么都一样的」）。
+ * 标题在入库时已脱敏，这里直接用；没标题（会话被删或旧行）才回落到 id 前缀。
+ */
+function sessionChipLabel(session: PostLaunchReportSession): string {
+  const name = session.title.trim() || session.id.slice(0, 8);
+  return session.startedAt > 0 ? `${name} · ${shortStamp(session.startedAt)}` : name;
+}
+
+/** MM-DD HH:mm。刻意不走 toLocaleString：那串随宿主 locale 变，芯片这么窄放不下。 */
+function shortStamp(timestamp: number): string {
+  const at = new Date(timestamp);
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${pad(at.getMonth() + 1)}-${pad(at.getDate())} ${pad(at.getHours())}:${pad(at.getMinutes())}`;
 }
 
 function columnLabel(column: PostLaunchPivotColumn): string {
@@ -263,14 +280,14 @@ export const PostLaunchCard: React.FC<PostLaunchCardProps> = ({
               ))}
               {renderMetaRow('postlaunch-cost', p.cost, (column) => `$${formatUsd(column.costUsd)}`)}
               {renderMetaRow('postlaunch-sessions', p.sessions, (column, index) => (
-                column.sessionIds.length > 0 ? (
+                column.sessions.length > 0 ? (
                   <button /* ds-allow:button: 遥测卡内 10px 微尺寸行内动作，Button primitive 无对应变体 */
                     type="button"
                     onClick={() => setOpenColumn(index)}
                     data-testid={`postlaunch-sessions-${index}`}
                     className="rounded bg-zinc-700/50 px-1.5 py-0.5 text-zinc-400 hover:text-zinc-200"
                   >
-                    {p.sessionsCount.replace('{n}', String(column.sessionIds.length))}
+                    {p.sessionsCount.replace('{n}', String(column.sessions.length))}
                   </button>
                 ) : p.noVerdict
               ))}
@@ -290,19 +307,19 @@ export const PostLaunchCard: React.FC<PostLaunchCardProps> = ({
           size="lg"
           title={p.sessionsTitle
             .replace('{group}', columnLabel(sessionColumn))
-            .replace('{n}', String(sessionColumn.sessionIds.length))}
+            .replace('{n}', String(sessionColumn.sessions.length))}
         >
           <div className="flex flex-wrap gap-1">
-            {sessionColumn.sessionIds.map((sessionId) => (
+            {sessionColumn.sessions.map((session) => (
               <button /* ds-allow:button: 下钻芯片，10px 微尺寸，Button primitive 无 chip 变体 */
-                key={sessionId}
+                key={session.id}
                 type="button"
-                onClick={() => onOpenSession(sessionId)}
+                onClick={() => onOpenSession(session.id)}
                 title={p.openSession}
-                data-testid={`postlaunch-session-${sessionId}`}
-                className="rounded bg-zinc-700/50 px-1.5 py-0.5 text-[10px] text-zinc-400 hover:text-zinc-200"
+                data-testid={`postlaunch-session-${session.id}`}
+                className="max-w-[16rem] truncate rounded bg-zinc-700/50 px-1.5 py-0.5 text-[10px] text-zinc-400 hover:text-zinc-200"
               >
-                {sessionId.slice(0, 8)}
+                {sessionChipLabel(session)}
               </button>
             ))}
           </div>

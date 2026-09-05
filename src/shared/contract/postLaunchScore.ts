@@ -189,6 +189,23 @@ export interface PostLaunchScopeRow {
   dims: Record<PostLaunchDimension, PostLaunchDimRate>;
 }
 
+/**
+ * 下钻用的一条会话。**必须带名字**：只给 id 的话卡上一排芯片全长一个样——
+ * CLI 会话前 8 位都是 `cli_sess`，App 会话是 8 位随机 hex，用户认不出点哪条
+ * （09-05 真机截图 shot-4 实付）。
+ */
+export interface PostLaunchReportSession {
+  id: string;
+  /**
+   * 会话标题。落 telemetry_sessions 时已过 guardTelemetryText（内含 guardSensitiveText），
+   * 读出来不再脱敏一遍——重复脱敏只会把已掩码的串再啃一次。
+   * 会话被删（LEFT JOIN 落空）或旧行没标题时是空串，展示侧回落 id 前缀。
+   */
+  title: string;
+  /** telemetry_sessions.start_time；会话被删时是 0。 */
+  startedAt: number;
+}
+
 export interface PostLaunchReportGroup {
   /** 该组所在自然周的周一，YYYY-MM-DD。 */
   weekStart: string;
@@ -198,8 +215,8 @@ export interface PostLaunchReportGroup {
   failureClasses: Array<{ code: string; count: number }>;
   signals: Array<{ kind: PostLaunchSignalKind; count: number }>;
   costUsd: number;
-  /** 下钻用：该组涉及的会话 id（点行 → 现有会话回放）。 */
-  sessionIds: string[];
+  /** 下钻用：该组涉及的会话（点芯片 → 现有会话回放）。 */
+  sessions: PostLaunchReportSession[];
 }
 
 type PostLaunchCalibrationReason = 'no_record' | 'below_threshold' | 'judge_changed';

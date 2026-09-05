@@ -19,6 +19,7 @@ import {
   type PostLaunchDimRate,
   type PostLaunchReport,
   type PostLaunchReportGroup,
+  type PostLaunchReportSession,
   type PostLaunchScopeRow,
   type PostLaunchSignalKind,
   type PostLaunchTurnScore,
@@ -178,6 +179,9 @@ interface ScoreRow {
   /** 关联会话的来源，用来在报告侧复用同一套分母判定（LEFT JOIN，会话被删了就是 null）。 */
   session_type: string | null;
   origin_kind: string | null;
+  /** 芯片上给人看的名字与时间；同样是 LEFT JOIN，会话被删了就是 null。 */
+  session_title: string | null;
+  session_start_time: number | null;
 }
 
 const DIM_COLUMN: Record<PostLaunchDimension, keyof ScoreRow> = {
@@ -248,7 +252,8 @@ export function buildPostLaunchReport(
       SELECT s.turn_id, s.session_id, s.turn_started_at, s.app_version, s.prompt_version,
              s.dim_goal, s.dim_orchestration, s.dim_tools, s.dim_permission, s.dim_safety, s.dim_artifact,
              s.failure_class, s.signals, s.cost_usd, s.judge_model, s.sampled_by,
-             sessions.session_type, sessions.origin_kind
+             sessions.session_type, sessions.origin_kind,
+             sessions.title AS session_title, sessions.start_time AS session_start_time
       FROM telemetry_turn_scores AS s
       LEFT JOIN telemetry_sessions AS sessions ON sessions.id = s.session_id
       WHERE s.judge_version = ? AND s.turn_started_at >= ?
@@ -259,7 +264,7 @@ export function buildPostLaunchReport(
   const groups = new Map<string, PostLaunchReportGroup & {
     failureTally: Map<string, number>;
     signalTally: Map<PostLaunchSignalKind, number>;
-    sessionSet: Set<string>;
+    sessionMap: Map<string, PostLaunchReportSession>;
   }>();
 
   let scorableTurns = 0;
@@ -286,10 +291,10 @@ export function buildPostLaunchReport(
         failureClasses: [],
         signals: [],
         costUsd: 0,
-        sessionIds: [],
+        sessions: [],
         failureTally: new Map(),
         signalTally: new Map(),
-        sessionSet: new Set(),
+        sessionMap: new Map(),
       };
       groups.set(key, group);
     }
@@ -300,7 +305,13 @@ export function buildPostLaunchReport(
     if (row.judge_model === JUDGE_MODEL_UNAVAILABLE) judgeUnavailableTurns += 1;
     // rows 固定两行：[0] 信号轮、[1] 抽样轮（建组时就是这个顺序）。
     accumulate(group.rows[row.sampled_by === 'signal' ? 0 : 1], row);
-    group.sessionSet.add(row.session_id);
+    if (!group.sessionMap.has(row.session_id)) {
+      group.sessionMap.set(row.session_id, {
+        id: row.session_id,
+        title: row.session_title ?? '',
+        startedAt: row.session_start_time ?? 0,
+      });
+    }
     if (row.failure_class) {
       group.failureTally.set(row.failure_class, (group.failureTally.get(row.failure_class) ?? 0) + 1);
     }
@@ -322,7 +333,7 @@ export function buildPostLaunchReport(
         .map(([kind, count]) => ({ kind, count }))
         .sort((left, right) => right.count - left.count),
       costUsd: group.costUsd,
-      sessionIds: [...group.sessionSet],
+      sessions: [...group.sessionMap.values()],
     }))
     .sort((left, right) => right.weekStart.localeCompare(left.weekStart));
 

@@ -49,11 +49,12 @@ function insertSession(
   sessionType: string | null,
   startTime: number,
   originKind: string | null = null,
+  title: string = id,
 ): void {
   database.prepare(`
     INSERT INTO telemetry_sessions (id, title, model_provider, model_name, working_directory, start_time, session_type, origin_kind, agent_version, prompt_version)
     VALUES (?, ?, 'deepseek', 'deepseek-chat', '/ws', ?, ?, ?, '0.33.0', 'p7')
-  `).run(id, id, startTime, sessionType, originKind);
+  `).run(id, title, startTime, sessionType, originKind);
 }
 
 function insertTurn(
@@ -392,7 +393,7 @@ describe('上线后打分编排', () => {
   });
 
   it('报告：信号轮与抽样轮分两行，不合并；null 不进分母', async () => {
-    insertSession(database, 'chat-1', 'chat', NOW - HOUR);
+    insertSession(database, 'chat-1', 'chat', NOW - HOUR, null, '给券组加灰度开关');
     insertTurn(database, 'chat-1', 'chat-turn-1', 1, NOW - HOUR);
     insertTurn(database, 'chat-1', 'chat-turn-2', 2, NOW - HOUR + 1);
     const replays = {
@@ -422,7 +423,9 @@ describe('上线后打分编排', () => {
     expect(signalRow.dims.goal).toEqual({ judged: 1, passed: 0 });
     expect(sampleRow.dims.goal).toEqual({ judged: 1, passed: 1 });
     expect(group.appVersion).toBe('0.33.0');
-    expect(group.sessionIds).toEqual(['chat-1']);
+    // ⑦下钻要带名字：只给 id 的话卡上一排芯片全长一个样（09-05 shot-4）。
+    // title 与 startedAt 取自 telemetry_sessions，不是拿 id 凑的——所以标题特意跟 id 不同。
+    expect(group.sessions).toEqual([{ id: 'chat-1', title: '给券组加灰度开关', startedAt: NOW - HOUR }]);
     // κ 缺失 ⇒ 报告顶上必须挂校准不足，不能默认当已校准。
     expect(report.calibration).toEqual({ state: 'insufficient', reason: 'no_record' });
   });
@@ -610,12 +613,27 @@ describe('上线后打分编排', () => {
     expect(report.scoredTurns).toBe(1);
     const [group] = report.groups;
     expect(group.rows.find((row) => row.scope === 'sample')!.dims.goal).toEqual({ judged: 1, passed: 1 });
-    expect(group.sessionIds).toEqual(['chat-manual']);
+    expect(group.sessions.map((session) => session.id)).toEqual(['chat-manual']);
     // 探针那行的 judge_model='unavailable' 也不该拿去吓用户
     expect(report.judgeUnavailableTurns).toBe(0);
     // 但钱是真花了：两行的成本都留在账上，预算也两行都算
     expect(group.costUsd).toBeCloseTo(0.2);
     expect(report.budget.spentUsd).toBeCloseTo(0.2);
+  });
+
+  it('⑦会话已被删（LEFT JOIN 落空）时标题与时间给空值，不是 null 也不是 1970', () => {
+    // 分数行还在、telemetry_sessions 那行没了：session_type 为 null ⇒ 仍进分母，
+    // 于是 title / start_time 两列会是 SQL NULL。契约里它们不可空，读出来必须已归一。
+    const day = localDay(NOW);
+    database.prepare(`
+      INSERT INTO telemetry_turn_scores (turn_id, session_id, scored_at, scored_day, turn_started_at,
+        app_version, prompt_version, judge_version, rubric_version, judge_model,
+        dim_goal, signals, cost_usd, budget_cost_usd, sampled_by)
+      VALUES ('t-orphan', 'chat-deleted', ?, ?, ?, '0.33.0', 'p7', ?, 'postlaunch-rubric-v1', 'deepseek/x', 1, '[]', 0, 0, 'sample')
+    `).run(NOW, day, NOW - HOUR, POST_LAUNCH_JUDGE_VERSION);
+
+    const [group] = buildPostLaunchReport(database, { now: NOW }).groups;
+    expect(group.sessions).toEqual([{ id: 'chat-deleted', title: '', startedAt: 0 }]);
   });
 
   it('Nit②预留不足的停评要传到报告：spent 没到上限、但塞不下一次调用时也算停评', () => {

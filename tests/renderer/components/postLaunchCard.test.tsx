@@ -15,6 +15,9 @@ import type { PostLaunchReport } from '../../../src/shared/contract/postLaunchSc
 
 afterEach(cleanup);
 
+// 用本地时区构造，断言字符串才不随跑测机器的 TZ 漂
+const STARTED_AT = new Date(2026, 8, 5, 12, 12).getTime();
+
 function report(overrides: Partial<PostLaunchReport> = {}): PostLaunchReport {
   return {
     generatedAt: 0,
@@ -55,7 +58,7 @@ function report(overrides: Partial<PostLaunchReport> = {}): PostLaunchReport {
       failureClasses: [{ code: 'timeout', count: 1 }],
       signals: [{ kind: 'timeout', count: 1 }],
       costUsd: 0.0123,
-      sessionIds: ['session-abcdef123'],
+      sessions: [{ id: 'session-abcdef123', title: '给券组加灰度开关', startedAt: STARTED_AT }],
     }],
     judgeUnavailableTurns: 0,
     calibration: { state: 'insufficient', reason: 'no_record' },
@@ -236,7 +239,11 @@ function multi(): PostLaunchReport {
           { scope: 'signal', turns: 0, dims: dims(none) },
           { scope: 'sample', turns: 19, dims: dims([[18, 6], [18, 17], [18, 14], [19, 19], [19, 19], [19, 19]]) },
         ],
-        failureClasses: [{ code: 'unknown', count: 12 }], signals: [], costUsd: 0, sessionIds: ['s1', 's2'],
+        failureClasses: [{ code: 'unknown', count: 12 }], signals: [], costUsd: 0,
+        sessions: [
+          { id: 's1', title: '排查卡券核销超时', startedAt: STARTED_AT },
+          { id: 's2', title: '', startedAt: STARTED_AT },
+        ],
       },
       {
         weekStart: '2026-08-24', appVersion: '0.33.0', promptVersion: 'sys-v45',
@@ -244,7 +251,8 @@ function multi(): PostLaunchReport {
           { scope: 'signal', turns: 15, dims: dims([[14, 2], [15, 15], [14, 12], [15, 14], [15, 14], [15, 15]]) },
           { scope: 'sample', turns: 13, dims: dims([[12, 6], [13, 13], [13, 13], [13, 13], [13, 13], [13, 13]]) },
         ],
-        failureClasses: [], signals: [{ kind: 'error_terminated', count: 12 }], costUsd: 0, sessionIds: ['s3'],
+        failureClasses: [], signals: [{ kind: 'error_terminated', count: 12 }], costUsd: 0,
+        sessions: [{ id: 's3', title: '改遥测页布局', startedAt: 0 }],
       },
       {
         weekStart: '2026-08-24', appVersion: '0.33.0', promptVersion: 'sys-v44',
@@ -252,7 +260,8 @@ function multi(): PostLaunchReport {
           { scope: 'signal', turns: 1, dims: dims([[1, 0], [1, 1], [1, 1], [1, 1], [1, 1], [1, 1]]) },
           { scope: 'sample', turns: 1, dims: dims([[0, 0], [0, 0], [0, 0], [0, 0], [1, 1], [1, 1]]) },
         ],
-        failureClasses: [], signals: [], costUsd: 0, sessionIds: ['s4'],
+        failureClasses: [], signals: [], costUsd: 0,
+        sessions: [{ id: 's4', title: '写周报', startedAt: STARTED_AT }],
       },
     ],
   });
@@ -348,7 +357,7 @@ describe('上线后质量卡 · 透视与环比', () => {
           { scope: 'signal' as const, turns: 6, dims: report().groups[0].rows[0].dims },
           { scope: 'sample' as const, turns: 6, dims: report().groups[0].rows[1].dims },
         ],
-        failureClasses: [], signals: [], costUsd: 0, sessionIds: [],
+        failureClasses: [], signals: [], costUsd: 0, sessions: [],
       })),
     });
     render(<PostLaunchCard report={many} running={false} error={null} days={7} onRun={noop} onOpenSession={noop} />);
@@ -363,5 +372,35 @@ describe('上线后质量卡 · 透视与环比', () => {
   it('⑤只有 3 列时不出「更早」按钮', () => {
     render(<PostLaunchCard report={multi()} running={false} error={null} days={7} onRun={noop} onOpenSession={noop} />);
     expect(screen.queryByTestId('postlaunch-earlier')).toBeNull();
+  });
+
+  // ⑦芯片得认得出是哪条会话。原来是 id.slice(0, 8)：真机上 CLI 会话全长成 cli_sess、
+  // App 会话是 8 位随机 hex，一排看下来完全一样（09-05 shot-4 实付）。
+  it('⑦有标题的会话芯片显示标题 + 开始时间，不是 id 前 8 位', () => {
+    render(<PostLaunchCard report={multi()} running={false} error={null} days={7} onRun={noop} onOpenSession={noop} />);
+    fireEvent.click(screen.getByTestId('postlaunch-sessions-2'));
+    const chip = screen.getByTestId('postlaunch-session-s1');
+    expect(chip.textContent).toBe('排查卡券核销超时 · 09-05 12:12');
+    // 真阴：不能再是 id 前缀
+    expect(chip.textContent).not.toContain('s1');
+  });
+
+  it('⑦没标题才回落 id 前 8 位；没开始时间就只剩名字', () => {
+    render(<PostLaunchCard report={multi()} running={false} error={null} days={7} onRun={noop} onOpenSession={noop} />);
+    fireEvent.click(screen.getByTestId('postlaunch-sessions-2'));
+    // s2 标题是空串 ⇒ 回落 id 前缀，时间照挂
+    expect(screen.getByTestId('postlaunch-session-s2').textContent).toBe('s2 · 09-05 12:12');
+    fireEvent.keyDown(document, { key: 'Escape' });
+    // s3 有标题但 startedAt=0（会话已删，JOIN 落空）⇒ 只出名字，不出 1970
+    fireEvent.click(screen.getByTestId('postlaunch-sessions-1'));
+    expect(screen.getByTestId('postlaunch-session-s3').textContent).toBe('改遥测页布局');
+  });
+
+  it('⑦芯片文字换了，testid 与跳转行为没换', () => {
+    const onOpenSession = vi.fn();
+    render(<PostLaunchCard report={multi()} running={false} error={null} days={7} onRun={noop} onOpenSession={onOpenSession} />);
+    fireEvent.click(screen.getByTestId('postlaunch-sessions-2'));
+    fireEvent.click(screen.getByTestId('postlaunch-session-s1'));
+    expect(onOpenSession).toHaveBeenCalledWith('s1');
   });
 });

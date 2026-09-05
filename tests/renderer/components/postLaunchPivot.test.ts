@@ -47,7 +47,7 @@ function group(
     failureClasses: [],
     signals: [],
     costUsd: 0,
-    sessionIds: [],
+    sessions: [],
     ...extra,
   };
 }
@@ -72,7 +72,7 @@ const v44 = group(
   '2026-08-24', 'sys-v44',
   { turns: 1, rates: { goal: [1, 0], orchestration: [1, 1], tools: [1, 1], permission: [1, 1], safety: [1, 1], artifact: [1, 1] } },
   { turns: 1, rates: { safety: [1, 1], artifact: [1, 1] } },
-  { failureClasses: [{ code: 'missing_artifact', count: 1 }], signals: [{ kind: 'error_terminated', count: 1 }], costUsd: 0, sessionIds: ['web-sess-1', 'web-sess-2'] },
+  { failureClasses: [{ code: 'missing_artifact', count: 1 }], signals: [{ kind: 'error_terminated', count: 1 }], costUsd: 0, sessions: [{ id: 'web-sess-1', title: '看券组', startedAt: 1 }, { id: 'web-sess-2', title: '', startedAt: 0 }] },
 );
 const v45Week1 = group(
   '2026-08-24', 'sys-v45',
@@ -174,7 +174,7 @@ describe('pivotPostLaunchReport', () => {
     expect(sample.columns[1].cells.goal.rate).toBe(50);
     // 整组明细两套一样：报告里就只有整组口径，不按轮类型分拆
     expect(signal.columns[0].failureClasses).toEqual(sample.columns[0].failureClasses);
-    expect(signal.columns[0].sessionIds).toEqual(sample.columns[0].sessionIds);
+    expect(signal.columns[0].sessions).toEqual(sample.columns[0].sessions);
   });
 
   it('⑤超过 4 列时默认只留最近 3 列，可见首列不引用被折起来的基线', () => {

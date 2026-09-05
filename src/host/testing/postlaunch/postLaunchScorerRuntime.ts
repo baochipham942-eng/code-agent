@@ -11,14 +11,10 @@ import { CONFIG_DIR_NEW } from '../../../shared/constants/configDir';
 import { resolveModelPrice } from '../../../shared/pricing/resolveModelPrice';
 import {
   POST_LAUNCH_DISABLED_MESSAGE,
-  resolvePostLaunchScoringEnabled,
   type PostLaunchReport,
   type PostLaunchScoringRequest,
   type PostLaunchScoringResult,
 } from '../../../shared/contract/postLaunchScore';
-import { devSlotFromDataDirName } from '../../../shared/devSlot';
-import { getUserDataPath } from '../../platform';
-import { getConfigService } from '../../services/core/configService';
 import { getDatabase } from '../../services/core/databaseService';
 import { createLogger } from '../../services/infra/logger';
 import { getQuickModelRuntimeInfo, quickTask } from '../../model/quickModel';
@@ -26,6 +22,7 @@ import { isTrustedCalibration, loadCalibrationRecordSync } from '../calibration/
 import { loadProjectFailureCodebook } from '../failureCodes';
 import { getPostLaunchPromptHash } from '../judge/postLaunchJudge';
 import { JUDGE_MAX_TOKENS, estimateJudgeCost } from './postLaunchCost';
+import { isPostLaunchScoringEnabled } from './postLaunchGate';
 import { buildPostLaunchReport, type PostLaunchReportOptions } from './postLaunchScoreStore';
 import { runPostLaunchScoring, type PostLaunchScorerDeps, type PostLaunchSessionRow } from './postLaunchScorer';
 
@@ -91,31 +88,6 @@ function createPostLaunchScorerDeps(): PostLaunchScorerDeps {
     failureCodebook: loadProjectFailureCodebook(),
     onWarn: (message, error) => logger.warn(message, error),
   };
-}
-
-/**
- * 内部 dogfood 槽判据：数据目录名带 Rust `dev_slot()` 注入的槽身份。
- * 复用产品自己已有的那把尺（`devSlot.ts:99`），它也是 `devModeAutoApprove`
- * 「只在内部槽放行」用的同一个判据（`configService.ts:66`）——同一类决定不该有第二套口径。
- * 它只看数据目录名，所以 CLI 与 Electron 主进程算出来一样。
- */
-function isInternalSlot(): boolean {
-  try {
-    return devSlotFromDataDirName(path.basename(getUserDataPath())) !== null;
-  } catch {
-    return false;
-  }
-}
-
-/** 开关三态：显式 on/off 说了算；'auto'（或老配置里没这个键）按槽算。 */
-export function isPostLaunchScoringEnabled(): boolean {
-  let setting: 'on' | 'off' | 'auto' | undefined;
-  try {
-    setting = getConfigService().getSettings().privacy?.postLaunchScoring;
-  } catch {
-    setting = undefined;
-  }
-  return resolvePostLaunchScoringEnabled(setting, isInternalSlot());
 }
 
 export async function runPostLaunchScoringOnHost(

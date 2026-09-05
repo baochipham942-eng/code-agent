@@ -28,7 +28,7 @@ import { createLogger } from '../src/host/services/infra/logger';
 import { getDatabase } from '../src/host/services/core/databaseService';
 import { getConfigService } from '../src/host/services/core/configService';
 import { estimateJudgeCost } from '../src/host/testing/postlaunch/postLaunchCost';
-import { isPostLaunchScoringEnabled } from '../src/host/testing/postlaunch/postLaunchScorerRuntime';
+import { isPostLaunchScoringEnabled } from '../src/host/testing/postlaunch/postLaunchGate';
 import { runPostLaunchScoring, type PostLaunchSessionRow } from '../src/host/testing/postlaunch/postLaunchScorer';
 import { buildPostLaunchReport } from '../src/host/testing/postlaunch/postLaunchScoreStore';
 

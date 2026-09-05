@@ -247,6 +247,26 @@ describe('evaluation run IPC admin gate', () => {
     expect(JSON.stringify(loaded)).not.toContain('qualityReport');
   });
 
+  it('LOAD_EXPERIMENT 投影保留触发次数（memoryInjections / memoryWrites / subagentSpawns），否则结果页两列恒 0、「未出场」恒亮', async () => {
+    guard.denied = false;
+    const { handlers } = setup();
+    database.loadExperiment.mockImplementationOnce(() => ({
+      experiment: { id: 'compare-2', name: 'compare', timestamp: 3, model: 'm', provider: 'p', scope: 'full', source: 'compare', git_commit: 'c', config_json: '{"compare":{}}', summary_json: '{}' },
+      cases: [{ case_id: 'case-1', status: 'passed', score: 1, duration_ms: 1, data_json: JSON.stringify({
+        winner: 'candidate', assignment: { A: 'candidate', B: 'baseline' },
+        skillActivations: { baseline: 0, candidate: 1 },
+        memoryInjections: { baseline: 0, candidate: 2 }, memoryWrites: 1, subagentSpawns: { baseline: 0, candidate: 3 },
+        qualityReport: { large: true },
+      }) }],
+    }));
+    const loaded = await handlers.get(EVALUATION_CHANNELS.LOAD_EXPERIMENT)!(null, 'compare-2') as any;
+    // 摘掉投影白名单里任一键，这里立刻红——桥落库 ≠ 页面拿得到
+    expect(loaded.cases[0].data).toMatchObject({
+      memoryInjections: { baseline: 0, candidate: 2 }, memoryWrites: 1, subagentSpawns: { baseline: 0, candidate: 3 },
+    });
+    expect(loaded.cases[0].data).not.toHaveProperty('qualityReport');
+  });
+
   it('LIST_EXPERIMENTS 透出 caseResults.costUsd，有值求和、全缺保持 undefined', async () => {
     guard.denied = false;
     const { handlers } = setup();

@@ -62,12 +62,14 @@ interface FolderTrustRow {
   decided_by: string;
   dev: string | null;
   ino: string | null;
+  birthtime_ns: string | null;
   gated_digest: string | null;
 }
 
 interface FolderIdentity {
   dev: string;
   ino: string;
+  birthtimeNs: string | null;
 }
 
 type SqliteDatabase = Database.Database;
@@ -113,6 +115,7 @@ const TRUST_TABLE_SQL = `
     decided_by TEXT NOT NULL,
     dev TEXT,
     ino TEXT,
+    birthtime_ns TEXT,
     gated_digest TEXT
   )
 `;
@@ -499,6 +502,11 @@ export class FolderTrustService {
     } catch {
       // 列已存在
     }
+    const columns = this.db.prepare('PRAGMA table_info(folder_trust)').all() as { name: string }[];
+    if (!columns.some((column) => column.name === 'birthtime_ns')) {
+      // Existing decisions have no incarnation snapshot: require explicit confirmation once.
+      this.db.exec('ALTER TABLE folder_trust ADD COLUMN birthtime_ns TEXT');
+    }
     return this.db;
   }
 
@@ -527,8 +535,9 @@ export class FolderTrustService {
         decided_by,
         dev,
         ino,
+        birthtime_ns,
         gated_digest
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(canonical_realpath) DO UPDATE SET
         display_path = excluded.display_path,
         state = excluded.state,
@@ -536,6 +545,7 @@ export class FolderTrustService {
         decided_by = excluded.decided_by,
         dev = excluded.dev,
         ino = excluded.ino,
+        birthtime_ns = excluded.birthtime_ns,
         gated_digest = excluded.gated_digest
     `).run(
       canonicalRealpath,
@@ -546,33 +556,42 @@ export class FolderTrustService {
       decidedBy,
       identity.dev,
       identity.ino,
+      identity.birthtimeNs,
       gatedDigest,
     );
   }
 
   private async readIdentity(canonicalRealpath: string): Promise<FolderIdentity> {
-    const stat = await fsp.stat(canonicalRealpath);
-    return { dev: String(stat.dev), ino: String(stat.ino) };
+    const stat = await fsp.stat(canonicalRealpath, { bigint: true });
+    return {
+      dev: String(stat.dev),
+      ino: String(stat.ino),
+      birthtimeNs: stat.birthtimeNs > 0n ? String(stat.birthtimeNs) : null,
+    };
   }
 
   private readIdentitySync(canonicalRealpath: string): FolderIdentity {
-    const stat = fs.statSync(canonicalRealpath);
-    return { dev: String(stat.dev), ino: String(stat.ino) };
+    const stat = fs.statSync(canonicalRealpath, { bigint: true });
+    return {
+      dev: String(stat.dev),
+      ino: String(stat.ino),
+      birthtimeNs: stat.birthtimeNs > 0n ? String(stat.birthtimeNs) : null,
+    };
   }
 
   /**
-   * 目录身份是否真的变了。
-   *
-   * 判据只认 **inode**，不认 dev。原因（2026-07-30 产品负责人真机撞到，实测取证）：
-   * macOS APFS 的 `st_dev` 是挂载期分配的卷设备号，**重启/重新挂载后会变**——
-   * 实测同一目录 ino 恒为 280299404、dev 从 16777229 变成 16777232，于是每次重启后
-   * 全部已信任目录集体「身份已变化」要求重新确认，确认完下次重启再来一遍（用户视角=永远修不好）。
-   * 行键已经是 canonical_realpath（真实路径），路径 + inode 相同即同一目录；
-   * dev 单独变化按「卷重新挂载」处理：静默重绑（见 buildEvaluation），不打扰用户。
+   * inode can be recycled after deletion. Bind the decision to its creation time too,
+   * preserving stat's full precision (Date/Number milliseconds can hide a replacement).
+   * Unlike ctime/mtime or a content digest, birthtime stays stable during ordinary edits.
+   * Missing snapshots fail closed; never seed an old grant from the current directory.
+   * dev alone is not identity: APFS reassigns it on remount/reboot.
    */
   private identityChanged(row: FolderTrustRow | undefined, identity: FolderIdentity): boolean {
     if (!row) return false;
-    return row.ino !== identity.ino;
+    return row.ino !== identity.ino
+      || !row.birthtime_ns
+      || !identity.birthtimeNs
+      || row.birthtime_ns !== identity.birthtimeNs;
   }
 
   /** dev 单独变化（卷重挂载/重启）：把新 dev 写回，保持记录与现实一致，不改 state/decidedBy。 */
@@ -590,7 +609,7 @@ export class FolderTrustService {
   ): FolderTrustEvaluation {
     const row = this.getRow(canonicalRealpath);
     const identityChanged = this.identityChanged(row, identity);
-    // 同一 inode 但 dev 变了 = 卷重新挂载：就地重绑，不降级信任状态
+    // inode 与出生时间都一致，只有 dev 变了：按卷重挂载就地重绑。
     if (row && !identityChanged && row.dev !== identity.dev) {
       this.rebindDevice(canonicalRealpath, identity.dev);
     }

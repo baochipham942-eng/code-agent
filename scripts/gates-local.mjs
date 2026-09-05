@@ -254,8 +254,6 @@ const gates = [
       // 真 bug 欠条；修复后与 CI 同时摘除。
       '--exclude',
       'tests/unit/runtime/runtimeAssetInstaller.test.ts', // N-RUNTIME-ASSET-RETENTION-ORDER-0905
-      '--exclude',
-      'tests/unit/security/folderTrustService.test.ts', // N-FOLDER-TRUST-INODE-REUSE-0905
     ],
   },
   {

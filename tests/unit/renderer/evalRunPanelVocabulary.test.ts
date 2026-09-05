@@ -16,7 +16,7 @@ function strings(value: unknown): string[] {
 }
 
 describe('跑分面板用户词表', () => {
-  it('四个挂载面都不出现 §7.3 左列与 H4 禁用主文案', () => {
+  it('所有挂载面都不出现 §7.3 左列与 H4 禁用主文案', () => {
     const zhSurfaces = [
       evalRunPanelZh.runPanel,
       evalCenterZh.evalCenter.runPanel,
@@ -50,13 +50,17 @@ describe('跑分面板用户词表', () => {
       'infra_excluded', 'pass^k', 'Δ', 'mock', 'real', '失败码', '题面',
       'spawn', 'NDJSON', '沙箱', '分母', 'p 值',
     ];
-    for (const surface of zhSurfaces) {
+    for (const [index, surface] of zhSurfaces.entries()) {
       const copy = strings(surface).join('\n');
-      for (const word of forbiddenZh) expect(copy).not.toContain(word);
+      for (const word of forbiddenZh) {
+        expect(copy, `中文挂载面 ${index} 含禁词「${word}」`).not.toContain(word);
+      }
     }
-    for (const surface of enSurfaces) {
+    for (const [index, surface] of enSurfaces.entries()) {
       const copy = strings(surface).join('\n').toLowerCase();
-      for (const word of ['ndjson', 'spawn', 'decisive', 'pass^k']) expect(copy).not.toContain(word);
+      for (const word of ['ndjson', 'spawn', 'decisive', 'pass^k']) {
+        expect(copy, `英文挂载面 ${index} 含禁词「${word}」`).not.toContain(word);
+      }
     }
   });
 

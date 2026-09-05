@@ -1471,6 +1471,19 @@ describe('ConversationRuntime', () => {
       expect((runtime as any).messageProcessor.handleToolResponse).not.toHaveBeenCalled();
     });
 
+    it('still runs the single final inference when budget exhaustion and goal anti-spin pause coincide', async () => {
+      ctx.goalMode = new GoalModeController({ goal: 'finish', verifyCommand: 'true', tokenBudget: 100000, maxTurns: 20 });
+      vi.spyOn(ctx.goalMode, 'evaluateFallback').mockReturnValue({ pause: true, reason: 'anti_spin' } as any);
+      const markPaused = vi.spyOn(ctx.goalMode, 'markPaused');
+      modules.runFinalizer.checkAndEmitBudgetStatus.mockReturnValue(true);
+      modules.contextAssembly.inference.mockResolvedValue({ type: 'text', content: 'Completed: partial. Remaining: rest. Next: resume.' });
+      await runtime.run('budget task under anti-spin');
+      // 收尾轮不再过 goal 闸3：不暂停、不 continue 跳过收尾推理
+      expect(markPaused).not.toHaveBeenCalled();
+      expect(modules.contextAssembly.inference).toHaveBeenCalledTimes(1);
+      expect((runtime as any).messageProcessor.handleTextResponse).toHaveBeenCalled();
+    });
+
     it('does not run a tool returned in defiance of budget finalization', async () => {
       modules.runFinalizer.checkAndEmitBudgetStatus.mockReturnValue(true);
       modules.contextAssembly.inference.mockResolvedValue({ type: 'tool_use', toolCalls: [{ id: 'x', name: 'Bash', arguments: { command: 'touch nope' } }] });

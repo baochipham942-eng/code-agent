@@ -393,7 +393,9 @@ export class ConversationRuntime {
 
         // Goal mode 闸3（兜底，每轮先跑）：轮次/预算触发 aborted；anti-spin 触发可恢复暂停。
         // 放在 loop 顶而非收尾点——否则 handleToolResponse 返回 'continue' 的轮次会跳过闸3。
-        if (this.ctx.goalMode?.isPending()) {
+        // 资源耗尽已转入收尾轮时不再过闸3：同轮再被 anti-spin 暂停会 continue 跳过收尾推理，
+        // 下一轮因 resourceFinalAttempted 直接退出，用户拿不到交付摘要（ai-review 09-06）。
+        if (!resourceFinalAttempted && this.ctx.goalMode?.isPending()) {
           // toolsUsedInTurn 此刻尚未被 setupIteration 重置，仍是上一轮的工具。
           // 任意工具调用都算进展；写工具/Bash 继续单独提供文件变更信号。
           if (iterations > 1) {

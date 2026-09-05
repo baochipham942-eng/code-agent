@@ -2,7 +2,7 @@ import * as path from 'node:path';
 import { parse } from 'shell-quote';
 import { canonicalizeCommand } from './canonicalizeCommand';
 
-const COMMAND_SEPARATORS = new Set(['&&', '||', ';', '|', '|&', '&']);
+const COMMAND_SEPARATORS = new Set(['&&', '||', ';', '|', '|&', '&', '\n']);
 const OUTPUT_REDIRECTS = new Set(['>', '>>', '>&']);
 const SHELL_PROGRAMS = new Set(['bash', 'sh', 'zsh', 'dash']);
 const PRIVILEGE_WRAPPERS = new Set(['sudo', 'doas']);
@@ -75,11 +75,27 @@ function basename(program: string): string {
   return path.posix.basename(program.replaceAll('\\', '/'));
 }
 
-function removeShellLineContinuations(command: string): string {
+function shellLines(command: string): string[] {
+  const lines: string[] = [];
   let result = '';
   let quoteMode: 'plain' | 'single' | 'double' | 'ansi' = 'plain';
+  let inComment = false;
   for (let index = 0; index < command.length; index += 1) {
     const character = command[index];
+    if (inComment) {
+      if (character === '\n') {
+        lines.push(result);
+        result = '';
+        inComment = false;
+      } else result += character;
+      continue;
+    }
+    if (quoteMode === 'plain' && character === '#'
+      && (index === 0 || /[\s;&|()<>]/.test(command[index - 1]))) {
+      inComment = true;
+      result += character;
+      continue;
+    }
     if (character === '\\' && quoteMode !== 'single' && quoteMode !== 'ansi') {
       if (command[index + 1] === '\n') {
         index += 1;
@@ -91,6 +107,16 @@ function removeShellLineContinuations(command: string): string {
       }
       result += character;
       if (command[index + 1] !== undefined) result += command[++index];
+      continue;
+    }
+    if (quoteMode === 'ansi' && character === '\\') {
+      result += character;
+      if (command[index + 1] !== undefined) result += command[++index];
+      continue;
+    }
+    if (quoteMode === 'plain' && character === '\n') {
+      lines.push(result);
+      result = '';
       continue;
     }
     if (quoteMode === 'plain' && character === '$' && command[index + 1] === "'") {
@@ -107,7 +133,8 @@ function removeShellLineContinuations(command: string): string {
     }
     result += character;
   }
-  return result;
+  lines.push(result);
+  return lines;
 }
 
 /**
@@ -149,7 +176,7 @@ function optionCommandIndex(
 function parseEnvSplitWords(value: string): { words: string[]; failed?: string } {
   let entries: ShellEntry[];
   try {
-    entries = parse(removeShellLineContinuations(value), (key) => `\${${key}}`) as ShellEntry[];
+    entries = parse(shellLines(value).join('\n'), (key) => `\${${key}}`) as ShellEntry[];
   } catch (error) {
     return { words: [], failed: error instanceof Error ? error.message : String(error) };
   }
@@ -267,11 +294,22 @@ function wrapperCommandIndex(program: string, args: string[]): number | null | '
   return null;
 }
 
-function shellScript(args: string[]): string | null {
+function shellScript(args: string[]): { command: string } | { scriptIndex: number } | null {
   for (let index = 0; index < args.length; index += 1) {
-    if (args[index] === '-c' || /^-[^-]*c[^-]*$/.test(args[index])) {
-      return args[index + 1] ?? null;
+    const arg = args[index];
+    if (arg === '--') return index + 1 < args.length ? { scriptIndex: index + 1 } : null;
+    if (!arg.startsWith('-') && !arg.startsWith('+')) return { scriptIndex: index };
+    if (arg === '-') return null;
+    // Startup options consume their values before the command string or script operand.
+    if (['--rcfile', '--init-file', '-o', '+o', '-O', '+O'].includes(arg)) {
+      index += 1;
+      continue;
     }
+    if (arg === '-c' || /^-[^-]*c[^-]*$/.test(arg)) {
+      return args[index + 1] === undefined ? null : { command: args[index + 1] };
+    }
+    if (!['--norc', '--noprofile', '--posix', '--restricted', '--verbose', '--login'].includes(arg)
+      && !/^[-+][abefhiklmnprstuvxBCEHPT]+$/.test(arg)) return null;
   }
   return null;
 }
@@ -324,16 +362,17 @@ function sedTargets(words: string[]): ShellWriteTarget[] {
 }
 
 function commandWriteTargets(execution: ShellExecution): ShellWriteTarget[] {
-  const words = [execution.program, ...execution.args];
-  if (execution.program === 'sed') return sedTargets(words);
-  if (execution.program === 'tee') {
+  const program = basename(execution.program);
+  const words = [program, ...execution.args];
+  if (program === 'sed') return sedTargets(words);
+  if (program === 'tee') {
     return execution.args.filter((arg) => arg !== '--' && !arg.startsWith('-')).map((target) => ({
       path: target,
       source: 'tee' as const,
       uncertain: /[$`*?{}]/.test(target),
     }));
   }
-  if (execution.program !== 'cp' && execution.program !== 'mv') return [];
+  if (program !== 'cp' && program !== 'mv') return [];
 
   const targetDirectoryIndex = execution.args.findIndex((arg) => arg === '-t' || arg === '--target-directory');
   const attachedTargetDirectory = execution.args.find((arg) => arg.startsWith('--target-directory='))
@@ -343,7 +382,7 @@ function commandWriteTargets(execution: ShellExecution): ShellWriteTarget[] {
     : execution.args.filter((arg) => arg === '-' || !arg.startsWith('-')).at(-1));
   return target ? [{
     path: target,
-    source: execution.program === 'cp' ? 'copy' : 'move',
+    source: program === 'cp' ? 'copy' : 'move',
     uncertain: /[$`*?{}]/.test(target),
   }] : [];
 }
@@ -358,7 +397,12 @@ function parseEntries(command: string): {
   const canonical = canonicalizeCommand(command);
   let entries: ShellEntry[];
   try {
-    entries = parse(removeShellLineContinuations(command), (key) => `\${${key}}`) as ShellEntry[];
+    // shell-quote discards bare newlines; parse each unquoted line separately so
+    // comments end at the line boundary too. Quoted newlines stay inside a word.
+    entries = shellLines(command).flatMap((line, index) => [
+      ...(index > 0 ? [{ op: '\n' }] : []),
+      ...parse(line, (key) => `\${${key}}`) as ShellEntry[],
+    ]);
   } catch (error) {
     return {
       segments: [], redirects: [], failed: true,
@@ -404,7 +448,7 @@ function parseEntries(command: string): {
         continue;
       }
       flush();
-      trailingOperator = index === entries.length - 1;
+      trailingOperator = entry.op !== '\n' && index === entries.length - 1;
       continue;
     }
     if (isOperator(entry)) {
@@ -438,29 +482,38 @@ function expandExecutions(
   if (start >= words.length) return { executions: [], targets: [], uncertain: [] };
   words = words.slice(start);
 
-  const program = basename(words[0]);
+  const program = words[0];
+  const programName = basename(program);
   let args = words.slice(1);
-  if (program === 'env') {
+  if (programName === 'env') {
     const split = expandEnvSplitStrings(args);
     if (split.failed) {
       return { executions: [], targets: [], uncertain: [], failed: split.failed };
     }
     args = split.args;
   }
-  if (SHELL_PROGRAMS.has(program)) {
+  if (SHELL_PROGRAMS.has(programName)) {
     const script = shellScript(args);
     if (!script) {
       return { executions: [{ program, args, originalProgram, wrappers }], targets: [], uncertain: [] };
     }
-    return expandCommand(script, originalProgram, [...wrappers, program], depth + 1);
+    if ('scriptIndex' in script) {
+      return {
+        executions: [{ program: args[script.scriptIndex], args: args.slice(script.scriptIndex + 1),
+          originalProgram, wrappers: [...wrappers, programName] }],
+        targets: [],
+        uncertain: ['shell-script-operand'],
+      };
+    }
+    return expandCommand(script.command, originalProgram, [...wrappers, programName], depth + 1);
   }
-  if (program === 'eval') {
+  if (programName === 'eval') {
     return args.length === 0
       ? { executions: [{ program, args, originalProgram, wrappers }], targets: [], uncertain: [] }
-      : expandCommand(args.join(' '), originalProgram, [...wrappers, program], depth + 1);
+      : expandCommand(args.join(' '), originalProgram, [...wrappers, programName], depth + 1);
   }
 
-  const commandIndex = wrapperCommandIndex(program, args);
+  const commandIndex = wrapperCommandIndex(programName, args);
   if (commandIndex === 'unresolved') {
     // We cannot tell where the wrapped command starts, so we must not guess a program: any write
     // target after the option we failed to read would silently skip the path policy.
@@ -476,7 +529,7 @@ function expandExecutions(
     if (nested.length === 0) {
       return { executions: [], targets: [], uncertain: [`wrapper-without-command:${program}`] };
     }
-    return expandExecutions(nested, originalProgram, [...wrappers, program], depth + 1);
+    return expandExecutions(nested, originalProgram, [...wrappers, programName], depth + 1);
   }
 
   const execution = { program, args, originalProgram, wrappers };
@@ -536,7 +589,7 @@ function expandCommand(
 export function parseShellCommand(command: string): ParsedShellCommand {
   const parsed = parseEntries(command);
   const expanded = parsed.segments.map((segment) => {
-    const originalProgram = basename(segment.words[0] ?? '');
+    const originalProgram = segment.words[0] ?? '';
     return expandExecutions(segment.words, originalProgram, [], 0);
   });
   const failed = parsed.failureReason ?? expanded.find((item) => item.failed)?.failed;

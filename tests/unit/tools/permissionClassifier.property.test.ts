@@ -1,67 +1,86 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import fc from 'fast-check';
-import { validateCommand } from '../../../src/host/security/commandSafety';
+import { bashCommandRequiresPermission, PermissionClassifier } from '../../../src/host/tools/permissionClassifier';
+import { setCommandPolicyRulesForTest } from '../../../src/host/tools/modules/shell/commandPolicy';
 
-const ENV_NAME_CHARACTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_'.split('');
+const WORD_CHARACTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_'.split('');
+const styles = ['plain', 'single', 'double', 'ansi', 'split', 'mixed', 'fullwidth'] as const;
+
+function respell(token: string, style: typeof styles[number]): string {
+  switch (style) {
+    case 'single': return `'${token}'`;
+    case 'double': return `"${token}"`;
+    case 'ansi': return `$'${[...token].map((c) => `\\x${c.charCodeAt(0).toString(16)}`).join('')}'`;
+    case 'split': return `${token[0]}''${token.slice(1)}`;
+    case 'mixed': return `'${token[0]}'"${token.slice(1)}"`;
+    case 'fullwidth': return [...token].map((c) => String.fromCharCode(c.charCodeAt(0) + 0xfee0)).join('');
+    default: return token;
+  }
+}
+
+// Fresh instances avoid cached decisions, and empty user policy forces the real B1 regex path.
+const classify = (command: string) => new PermissionClassifier({ enableLlm: false }).classify(
+  'Bash', { command }, { workingDirectory: '/tmp', permissionLevel: 'write' },
+);
 
 describe('permission classifier regex properties', () => {
-  it('detects sensitive environment names containing digits in either case', () => {
-    fc.assert(fc.property(
-      fc.array(fc.constantFrom(...ENV_NAME_CHARACTERS), { maxLength: 8 }),
-      fc.constantFrom('KEY', 'SECRET', 'TOKEN', 'PASSWORD', 'CREDENTIAL'),
-      fc.array(fc.constantFrom(...ENV_NAME_CHARACTERS), { maxLength: 8 }),
-      fc.boolean(),
-      (prefix, marker, suffix, braces) => {
-        const variable = `${prefix.join('')}${marker}${suffix.join('')}`;
-        const spelling = braces ? `\${${variable}}` : `$${variable}`;
-        expect(validateCommand(`printf '%s' ${spelling}`).securityFlags).toContain('env_access');
-      },
-    ), { numRuns: 300 });
-  });
-
-  it('keeps the Grok counterexample API2_TOKEN under the env-access guard', () => {
-    expect(validateCommand('echo $API2_TOKEN').securityFlags).toContain('env_access');
-  });
-
-  // 任务书阶段 2：正则只看字面量，而 shell 有一堆写法拼出同一条命令。凡是 shell 会解析成同一
-  // 个 program 的拼法，分类结果必须一致——存活的反例就是「正则不够用」的证据。
-  const respell = (token: string, style: string): string => {
-    switch (style) {
-      case 'single': return `'${token}'`;
-      case 'double': return `"${token}"`;
-      case 'ansic': return `$'${[...token].map((c) => `\\x${c.charCodeAt(0).toString(16)}`).join('')}'`;
-      case 'split': return `${token[0]}''${token.slice(1)}`;
-      case 'mixed': return `'${token[0]}'"${token.slice(1)}"`;
-      default: return token;
-    }
-  };
+  beforeEach(() => setCommandPolicyRulesForTest([]));
 
   it.each([
-    'rm -rf /',
-    'chmod -R 777 /etc',
-    'git push --force origin main',
-    'npm publish',
-  ])('quote and ANSI-C spellings of the program classify identically: %s', (command) => {
-    const [program, ...rest] = command.split(' ');
-    const baseline = [...validateCommand(command).securityFlags].sort();
-    fc.assert(fc.property(
-      fc.constantFrom('single', 'double', 'ansic', 'split', 'mixed'),
-      (style) => {
-        const respelled = [respell(program, style), ...rest].join(' ');
-        expect([...validateCommand(respelled).securityFlags].sort()).toEqual(baseline);
-      },
-    ), { numRuns: 60 });
+    ['node -e "document.querySelector(\'#b\').click()"', false],
+    ['python3 -c "btn.press()"', false],
+    ['echo "a\nb"', false],
+    ['git status\ncat ~/.ssh/id_rsa', true],
+    ['git push origin main', true],
+    ['"git" push origin main', true],
+  ] as const)('preserves shell quoting and boundaries in the preapproval guard: %s', (command, required) => {
+    expect(bashCommandRequiresPermission(command, { workingDirectory: '/tmp' })).toBe(required);
   });
 
-  it('quoted spellings of a sensitive env name stay under the env-access guard', () => {
-    fc.assert(fc.property(
-      fc.constantFrom('API_KEY', 'MY_SECRET', 'GH_TOKEN', 'DB_PASSWORD'),
-      fc.constantFrom('single', 'double', 'split', 'mixed'),
-      (variable, style) => {
-        // `printf '%s' "$API_KEY"` and `printf '%s' $API_KEY` read the same variable.
-        const spelled = style === 'double' ? `"$${variable}"` : `$${variable}`;
-        expect(validateCommand(`printf '%s' ${spelled}`).securityFlags).toContain('env_access');
+  it.each([
+    ['chmod', ['-R', '777'], 'deny', '危险权限变更'],
+    ['kill', ['-9', '-1'], 'deny', '杀死所有进程'],
+    ['git', ['push', '--force'], 'ask', 'git force push'],
+    ['git', ['reset', '--hard'], 'ask', 'git hard reset'],
+  ] as const)('dangerous regex family remains decisive through generated spelling: %s %s',
+    async (program, args, decision, reason) => {
+      await fc.assert(fc.asyncProperty(
+        fc.array(fc.constantFrom(...WORD_CHARACTERS), { minLength: 1, maxLength: 12 }),
+        fc.array(fc.constantFrom(...styles), { minLength: args.length + 1, maxLength: args.length + 1 }),
+        fc.integer({ min: 0, max: 9999 }),
+        async (suffix, spellings, number) => {
+          const words = [program, ...args].map((word, index) => respell(word, spellings[index]));
+          const command = [...words, `file${number}_${suffix.join('')}`].join(' ');
+          const result = await classify(command);
+          expect(result.decision).toBe(decision);
+          // A fallback ask or a different guard is not proof that this regex was exercised.
+          expect(result.reason).toBe(`危险命令: ${reason}`);
+        },
+      ), { numRuns: 150, seed: 1637 });
+    },
+  );
+
+  it('pairs dangerous chmod with ordinary permission changes and safe reads', async () => {
+    await fc.assert(fc.asyncProperty(
+      fc.constantFrom('644', '755', '600'),
+      fc.constantFrom(...styles),
+      async (mode, style) => {
+        const normal = await classify(`${respell('chmod', style)} ${mode} file2_Aa`);
+        expect(normal.decision).toBe('ask');
+        expect(normal.reason).not.toContain('危险权限变更');
+        expect((await classify(`${respell('ls', style)} file2_Aa`)).decision)
+          .toBe(style === 'fullwidth' ? 'ask' : 'approve');
       },
-    ), { numRuns: 60 });
+    ), { numRuns: 60, seed: 1637 });
+  });
+
+  it('does not approve case variants or Cyrillic lookalikes as known safe executables', async () => {
+    await fc.assert(fc.asyncProperty(
+      fc.constantFrom('LS', 'Ls', 'lS', 'lѕ', 'сat', 'echо'),
+      fc.constantFrom(...styles.filter((style) => style !== 'ansi' && style !== 'fullwidth')),
+      async (program, style) => {
+        expect((await classify(`${respell(program, style)} file2_Aa`)).decision).toBe('ask');
+      },
+    ), { numRuns: 60, seed: 1637 });
   });
 });

@@ -442,8 +442,8 @@ export function bashCommandRequiresPermission(
   context: Pick<ClassificationContext, 'workingDirectory' | 'workspaceRoot'>,
 ): boolean {
   try {
-    const canonical = checkCommandPolicy(command).canonicalCommand;
-    const segments = splitCompoundCommand(canonical);
+    // Segmentation needs the original quotes: code arguments may contain shell operators.
+    const segments = splitCompoundCommand(command);
     if (!segments) return true;
     let segmentContext: ClassificationContext = {
       ...context,

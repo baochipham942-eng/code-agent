@@ -24,6 +24,8 @@ describe('fast gate fail-closed contracts', () => {
   it('requires semantic manual registration for unmapped business paths', () => {
     const changed = ['src/host/agent/newBehavior.ts'];
     expect(() => selectTests(policy, changed)).toThrow('unregistered PR paths');
+    expect(() => selectTests(policy, ['packages/eval-harness/src/graders/ForbiddenPatterns.ts'])).toThrow('unregistered PR paths');
+    expect(() => selectTests(policy, ['src/host/testing/gaiaScorer.ts'])).toThrow('unregistered PR paths');
     const selected = selectTests(policy, changed, [{ paths: changed, files: [policy.baseline[0]], reason: 'Validates emitted event contract' }]);
     expect(selected.files).toEqual([...policy.baseline].sort());
     expect(() => selectTests(policy, changed, [{ paths: changed, files: [policy.baseline[0]], reason: '' }])).toThrow();

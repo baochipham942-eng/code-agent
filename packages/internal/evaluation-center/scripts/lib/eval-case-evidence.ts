@@ -19,6 +19,15 @@ function stringify(value: unknown, maxChars: number): string {
   }
 }
 
+/**
+ * 判定依据的期望/实际：已经是字符串就原样（只截断）。抽屉的「判定表」把这两列
+ * 直接当人话渲染，再走一遍 JSON.stringify 会包上引号并转义，读出来是
+ * `"at least one matching approval request"`。非字符串（数组/对象/数字）照旧 JSON。
+ */
+function stringifyCheckValue(value: unknown, maxChars: number): string {
+  return typeof value === 'string' ? truncate(value, maxChars) : stringify(value, maxChars);
+}
+
 function evidenceBytes(evidence: EvalCaseEvidence): number {
   return Buffer.byteLength(JSON.stringify(evidence), 'utf8');
 }
@@ -49,8 +58,8 @@ export function buildCaseEvidence(result: TestResult): EvalCaseEvidence {
     checks: (result.expectationResults ?? []).map((check) => ({
       type: check.expectation.type,
       passed: check.passed,
-      expected: stringify(check.evidence.expected, MAX_CHECK_VALUE_CHARS),
-      actual: stringify(check.evidence.actual, MAX_CHECK_VALUE_CHARS),
+      expected: stringifyCheckValue(check.evidence.expected, MAX_CHECK_VALUE_CHARS),
+      actual: stringifyCheckValue(check.evidence.actual, MAX_CHECK_VALUE_CHARS),
       ...(check.evidence.details
         ? { details: truncate(check.evidence.details, MAX_CHECK_VALUE_CHARS) }
         : {}),

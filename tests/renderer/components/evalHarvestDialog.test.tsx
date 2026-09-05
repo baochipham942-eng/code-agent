@@ -144,3 +144,23 @@ describe('B8 草稿表单的保存门槛', () => {
     expect(screen.getByTestId('eval-harvest-save-reason').textContent).toBe('至少确认 1 条才能保存');
   });
 });
+
+describe('N-EVAL-RESULT-HINT-TIERS：B7→B8 切换不复用 DOM', () => {
+  // 两段共用一个父节点、各自返回无 key 的 fragment ⇒ React 按下标复用兄弟节点：
+  // B7 第 3 个孩子是琥珀色「常驻提示」，B8 第 3 个孩子是「归属集：草稿区」，
+  // 同为 div ⇒ 同一个 DOM 节点被改 class 复用，切换时闪一下琥珀色。
+  it('B7 的琥珀提示节点在进 B8 时被卸载，不会变成「归属集」行', async () => {
+    renderDialog();
+    const amberHint = screen.getByTestId('eval-harvest-standing-hint');
+    const bodyBefore = screen.getByTestId('eval-harvest-dialog');
+    expect(bodyBefore.children[2]).toBe(amberHint);
+
+    fireEvent.click(screen.getByTestId('eval-harvest-generate'));
+    await screen.findByTestId('eval-harvest-save');
+
+    expect(amberHint.isConnected).toBe(false);
+    const bucketRow = screen.getByTestId('eval-harvest-dialog').children[2];
+    expect(bucketRow.textContent).toContain('归属集');
+    expect(bucketRow.className).not.toContain('badge-warning');
+  });
+});

@@ -173,8 +173,12 @@ export async function loadMcpConfigFiles(workingDirectory?: string): Promise<MCP
   if (paths.project && projectTrusted) {
     result.push(...(await readScopeFile(paths.project, 'project')));
   }
+  // 每个 scope 各过各的门：project 放行不能顺带放行 local。
+  // folder trust 按 risk 分级后（N-FOLDERTRUST-RISKTIER），未启用目录里纯远端的 project mcp.json
+  // 也会返回 trusted（不起本机进程 ⇒ 不拦），旧的 `projectTrusted ||` 短路会让带 command 的
+  // mcp.local.json 搭这趟车被加载、在本机起进程——整个 stdio 门形同虚设。
   const localTrusted = workingDirectory
-    ? projectTrusted || await isProjectConfigTrusted(workingDirectory, 'project-mcp-local')
+    ? await isProjectConfigTrusted(workingDirectory, 'project-mcp-local')
     : false;
   if (paths.local && localTrusted) {
     result.push(...(await readScopeFile(paths.local, 'local')));

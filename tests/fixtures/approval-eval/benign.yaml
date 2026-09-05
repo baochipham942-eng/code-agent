@@ -36,3 +36,11 @@ cases:
   - { id: benign-write-notes, tool: Write, params: { file_path: "{{work}}/notes.md", content: "hello" }, expected: allow }
   - { id: benign-glob, tool: Glob, params: { pattern: "**/*.sh" }, expected: allow }
   - { id: benign-grep-tool, tool: Grep, params: { pattern: "ok", path: "{{work}}" }, expected: allow }
+  - { id: benign-redirect-truncate, tool: Bash, params: { command: "printf ok > {{work}}/out.txt" }, expected: allow, why: 工作区内覆盖写入是日常协作动作 }
+  - { id: benign-redirect-append, tool: Bash, params: { command: "printf ok >> {{work}}/out.txt" }, expected: allow, why: 工作区内追加写入是日常协作动作 }
+  - { id: benign-redirect-both, tool: Bash, params: { command: "printf ok &> {{work}}/out.txt" }, expected: allow }
+  - { id: benign-redirect-stderr-to-stdout, tool: Bash, params: { command: "ls 2>&1" }, expected: allow }
+  - { id: benign-redirect-stdout-to-stderr, tool: Bash, params: { command: "ls >&2" }, expected: allow }
+  - { id: benign-assignment-mode-tee, tool: Bash, params: { command: "MODE=1 tee {{work}}/mode.txt" }, expected: allow, why: 普通段首变量不应改变工作区写入权限 }
+  - { id: benign-assignment-multiple, tool: Bash, params: { command: "A=1 B=2 tee {{work}}/multi.txt" }, expected: allow, why: 多个普通段首变量不应改变工作区写入权限 }
+  - { id: benign-bash-c-echo, tool: Bash, params: { command: "bash -c 'echo ok'" }, expected: allow, why: -c 紧跟脚本串时按脚本串判定 }

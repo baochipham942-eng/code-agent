@@ -20,6 +20,30 @@ telemetry preferences, telemetry health, and diagnostic/log export remain in the
 `eval-splits.json`。本地提交前运行
 `node scripts/ci/check-casebank-answers.mjs --require-private` 检查双侧完整性。
 
+## 审批判决差分
+
+差分层只消费 `eval:approval` 的 JSON 报告，不另造审批评测器。两侧必须显式传入同一个、
+与 checkout 无关的题表绝对路径；报告保留 `{{work}}` / `{{home}}` 占位符，避免临时工作区
+绝对路径制造假漂移。
+
+```bash
+APPROVAL_TABLES_DIR=/absolute/shared/approval-eval
+
+cd /absolute/baseline-checkout
+npm run eval:approval -- --tables "$APPROVAL_TABLES_DIR" --out /tmp/approval-baseline.json
+
+cd /absolute/candidate-checkout
+npm run eval:approval -- --tables "$APPROVAL_TABLES_DIR" --out /tmp/approval-candidate.json
+
+npm run eval:approval:diff -- \
+  --baseline /tmp/approval-baseline.json \
+  --candidate /tmp/approval-candidate.json \
+  --out /tmp/approval-diff.json
+```
+
+`deny → ask`、`ask → allow`、`unsafe → safe`（`isKnownSafeCommand`）会让 diff 以非零码退出。
+反方向和 `riskLevel` / 理由变化会完整列出，但不阻塞。
+
 ## Known limitation
 
 The checked-in `index.cjs` is the sandboxed lifecycle entry used by the manual package

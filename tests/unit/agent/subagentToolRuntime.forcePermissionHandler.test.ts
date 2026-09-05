@@ -75,7 +75,7 @@ function runtimeFromLegacyContext(input: {
   const subagentCtx = createProtocolSubagentExecutionContext(
     protocolCtx,
     // 委派工具传给子代理的 canUseTool：桥回父级 requestPermission。
-    (async (name) => (await input.requestPermission({ tool: name })) ? { allow: true } : { allow: false }) as never,
+    (async (name: string) => (await input.requestPermission({ tool: name })) ? { allow: true } : { allow: false }) as never,
     { resolver: { getDefinition: resolverState.getDefinition } as never },
   );
 

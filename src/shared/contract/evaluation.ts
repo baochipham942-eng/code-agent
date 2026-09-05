@@ -486,17 +486,13 @@ export type EvalRunEvent =
   | {
       schemaVersion: 4;
       type: 'case_start';
-      ts: number;
-      runId: string;
-      testId: string;
+      ts: number; runId: string; testId: string;
       description: string;
     }
   | {
       schemaVersion: 4;
       type: 'case_end';
-      ts: number;
-      runId: string;
-      testId: string;
+      ts: number; runId: string; testId: string;
       status: EvalRunEventStatus;
       score: number;
       durationMs: number;
@@ -512,6 +508,10 @@ export type EvalRunEvent =
       sessionId?: string;
       scoreAuthority?: 'deterministic_assertion' | 'llm_judge' | 'self_check';
       skillActivations?: Record<string, number>;
+      /** N-EVAL-MEMORY：本题记忆注入次数（0 = 记忆未出场，结论不说明记忆效果）。 */
+      memoryInjections?: number;
+      /** N-EVAL-MEMORY：本题 durable facts 落盘次数。 */
+      memoryWrites?: number;
       /** 本题内子代理被真正拉起的次数（subagent_spawned 事件计数）；0/缺省 = 未出场。 */
       subagentSpawns?: number;
       aiReview?: Partial<Record<AiReviewDimension, AiReviewVerdict>>;
@@ -528,9 +528,7 @@ export type EvalRunEvent =
   | {
       schemaVersion: 4;
       type: 'pair_end';
-      ts: number;
-      runId: string;
-      testId: string;
+      ts: number; runId: string; testId: string;
       statusA: EvalRunEventStatus;
       statusB: EvalRunEventStatus;
       assignment: { A: 'baseline' | 'candidate'; B: 'baseline' | 'candidate' };
@@ -541,23 +539,21 @@ export type EvalRunEvent =
       assertionPassB: number;
       assertionCount: number;
       skillActivations: { baseline: number; candidate: number };
+      /** N-EVAL-MEMORY：两臂记忆注入次数；候选臂为 0 时结果页提示「记忆未出场」。 */
+      memoryInjections: { baseline: number; candidate: number };
       subagentSpawns: { baseline: number; candidate: number };
     }
   | {
       schemaVersion: 4;
       type: 'tool_call';
-      ts: number;
-      runId: string;
-      testId: string;
+      ts: number; runId: string; testId: string;
       tool: string;
       input: unknown;
     }
   | {
       schemaVersion: 4;
       type: 'tool_result';
-      ts: number;
-      runId: string;
-      testId: string;
+      ts: number; runId: string; testId: string;
       tool: string;
       success: boolean;
     }
@@ -584,25 +580,30 @@ export type EvalRunEvent =
   | {
       schemaVersion: 4;
       type: 'skill_activated';
-      ts: number;
-      runId: string;
-      testId: string;
+      ts: number; runId: string; testId: string;
       name: string;
     }
   | {
       schemaVersion: 4;
       type: 'memory_injected';
-      ts: number;
-      runId: string;
-      testId: string;
+      ts: number; runId: string; testId: string;
       id: string;
+      /** 注入块里实际包含的条目名（light memory 文件名 / packed 条目 id）。旧发射方缺省。 */
+      entries?: string[];
+    }
+  | {
+      schemaVersion: 4;
+      type: 'memory_written';
+      ts: number; runId: string; testId: string;
+      /** 本次落盘的 light memory 文件名。 */
+      files: string[];
+      /** durableFactWriter 报告的成功写入条数（files.length 的权威来源是写入器本身）。 */
+      written: number;
     }
   | {
       schemaVersion: 4;
       type: 'subagent_spawned';
-      ts: number;
-      runId: string;
-      testId: string;
+      ts: number; runId: string; testId: string;
       id: string;
     };
 
@@ -791,6 +792,8 @@ interface EvalExperimentCaseItem {
     assertionPassB?: number;
     assertionCount?: number;
     skillActivations?: { baseline: number; candidate: number };
+    /** N-EVAL-MEMORY：两臂记忆注入次数（候选臂全 0 ⇒ 结果页提示「记忆未出场」）。 */
+    memoryInjections?: { baseline: number; candidate: number };
     subagentSpawns?: { baseline: number; candidate: number };
   } | null;
 }

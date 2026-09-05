@@ -267,7 +267,15 @@ export async function injectSeedMemory(
           });
         }
         logger.info('[AgentLoop] User memory injected at session start');
-        ctx.onEvent({ type: 'memory_injected', data: { id: 'user-memory' } });
+        // N-EVAL-MEMORY：packed 路径能报出真实条目 id；database-seed 路径没有条目粒度，
+        // 宁可不给 entries 也不编——memory_recalled 判定见到空 entries 会显式红。
+        ctx.onEvent({
+          type: 'memory_injected',
+          data: {
+            id: 'user-memory',
+            ...(packedSeedMemory ? { entries: packedSeedMemory.packed.items.map((item) => item.entryId) } : {}),
+          },
+        });
       } else {
         recordEmptyAuthorityBlock('user-memory', 'session_start', memorySource);
       }

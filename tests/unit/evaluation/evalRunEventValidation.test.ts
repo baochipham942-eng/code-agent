@@ -9,6 +9,7 @@ describe('evaluation run event validation', () => {
       statusA: 'passed', statusB: 'failed', assignment: { A: 'baseline', B: 'candidate' },
       assertionWinner: 'baseline', referenceWinner: 'A', assertionPassA: 1, assertionPassB: 0,
       assertionCount: 2, skillActivations: { baseline: 1, candidate: 0 },
+      memoryInjections: { baseline: 2, candidate: 0 },
       subagentSpawns: { baseline: 0, candidate: 2 },
     })).toMatchObject({ type: 'pair_end', assertionWinner: 'baseline' });
     const summary = {
@@ -84,6 +85,7 @@ describe('evaluation run event validation', () => {
       statusA: 'passed', statusB: 'failed', assignment: { A: 'baseline', B: 'candidate' },
       assertionWinner: 'baseline', referenceWinner: 'A', assertionPassA: 1, assertionPassB: 0,
       assertionCount: 2, skillActivations: { baseline: 1, candidate: 0 },
+      memoryInjections: { baseline: 2, candidate: 0 },
       subagentSpawns: { baseline: 0, candidate: 2 },
     };
     expect(parseEvalRunEvent(pairEnd)).toMatchObject({ subagentSpawns: { candidate: 2 } });
@@ -169,5 +171,48 @@ describe('evaluation run event validation', () => {
       .toMatchObject({ invalid: { reason: 'usage_unavailable' } });
     expect(() => parseEvalRunEvent({ ...base, invalid: { reason: 'unknown' } }))
       .toThrow(/invalid.reason/);
+  });
+
+  // N-EVAL-MEMORY：v4 新增字段的正反两向
+  it('accepts memory_injected with entries and memory_written', () => {
+    expect(parseEvalRunEvent({
+      schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION, type: 'memory_injected', ts: 1, runId: 'run-1',
+      testId: 'case-1', id: 'memory_index', entries: ['mem-orchid.md'],
+    })).toMatchObject({ type: 'memory_injected', entries: ['mem-orchid.md'] });
+    expect(parseEvalRunEvent({
+      schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION, type: 'memory_written', ts: 1, runId: 'run-1',
+      testId: 'case-1', files: ['mem-fact.md'], written: 1,
+    })).toMatchObject({ type: 'memory_written', written: 1 });
+  });
+
+  it('rejects malformed memory events and pair_end without memoryInjections', () => {
+    expect(() => parseEvalRunEvent({
+      schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION, type: 'memory_injected', ts: 1, runId: 'run-1',
+      testId: 'case-1', id: 'memory_index', entries: 'mem-orchid.md',
+    })).toThrow(/entries/);
+    expect(() => parseEvalRunEvent({
+      schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION, type: 'memory_written', ts: 1, runId: 'run-1',
+      testId: 'case-1', written: 1,
+    })).toThrow(/files/);
+    expect(() => parseEvalRunEvent({
+      schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION, type: 'pair_end', ts: 1, runId: 'run-1', testId: 'case-1',
+      statusA: 'passed', statusB: 'failed', assignment: { A: 'baseline', B: 'candidate' },
+      assertionWinner: 'baseline', referenceWinner: 'A', assertionPassA: 1, assertionPassB: 0,
+      assertionCount: 2, skillActivations: { baseline: 1, candidate: 0 },
+    })).toThrow(/memoryInjections/);
+  });
+
+  it('rejects case_end with a negative memory counter', () => {
+    expect(() => parseEvalRunEvent({
+      schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION, type: 'case_end', ts: 1, runId: 'run-1',
+      testId: 'case-1', status: 'passed', score: 1, durationMs: 1, memoryInjections: -1,
+    })).toThrow(/memoryInjections/);
+  });
+
+  // v3 事件在 v4 上一律硬拒（版本策略是严格相等，没有向后兼容窗口）
+  it('rejects the previous schema version outright', () => {
+    expect(() => parseEvalRunEvent({
+      schemaVersion: 3, type: 'memory_injected', ts: 1, runId: 'run-1', testId: 'case-1', id: 'user-memory',
+    })).toThrow(/版本/);
   });
 });

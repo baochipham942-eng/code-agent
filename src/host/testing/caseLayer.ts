@@ -27,6 +27,7 @@ const LAYER_BY_DIRECTORY: Record<string, string> = {
   'artifact-runnable': '专项：产物可运行',
   'goal-contract': '专项：目标契约',
   'user-simulator': '专项：用户模拟器',
+  memory: '专项：跨会话记忆',
   drafts: '草稿',
 };
 

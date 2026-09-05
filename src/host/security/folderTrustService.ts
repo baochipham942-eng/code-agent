@@ -96,13 +96,10 @@ const SKIP_DISCOVERY_DIRS = new Set([
   '.vscode',
 ]);
 const MAX_AGENT_INSTRUCTION_DEPTH = 5;
-/** 判「技能/专家设定里有没有会跑起来的东西」时认的后缀；无后缀的文件退回看可执行位。 */
-const EXECUTABLE_EXTENSIONS = new Set([
-  '.sh', '.bash', '.zsh', '.command', '.py', '.rb', '.pl', '.php',
-  '.js', '.mjs', '.cjs', '.ts', '.ps1', '.bat', '.cmd', '.exe',
-]);
-const EXECUTABLE_SCAN_DEPTH = 3;
-const MAX_EXECUTABLE_SCAN_ENTRIES = 200;
+const PAYLOAD_SCAN_DEPTH = 3;
+const MAX_PAYLOAD_SCAN_ENTRIES = 200;
+/** Finder 自己撒的元数据，不是谁放进来的附件。 */
+const IGNORED_PAYLOAD_FILES = new Set(['.DS_Store']);
 const MAX_AGENT_INSTRUCTION_FILES = 32;
 const TRUST_TABLE_SQL = `
   CREATE TABLE IF NOT EXISTS folder_trust (
@@ -252,11 +249,18 @@ function isGatedRisk(risk: DangerousConfigRisk): boolean {
   return risk === 'execution' || risk === 'mcp' || risk === 'policy';
 }
 
-/** 目录里有没有会跑起来的东西。扫不完（超过上限）按「有」算 —— 这一格必须 fail-closed。 */
-async function hasExecutablePayload(rootDir: string): Promise<boolean> {
+/**
+ * 技能 / 专家设定目录里除了 .md 还有没有别的东西。有 ⇒ 按「会跑起来」处理。
+ *
+ * 不按后缀白名单认脚本：白名单永远漏一类——`SKILL.md` 只要写一句「跑 scripts/payload.txt」，
+ * 一个 `.txt` 就是脚本（ai-review PR#1644 第二轮抓的就是这个），何况按名字枚举的拒绝清单
+ * 本来就是漏洞制造机。这里只认「全是 .md」这一种安全形状，其余一律拦。
+ * 扫不完（超过上限）同样按「有」算 —— 这一格必须 fail-closed。
+ */
+async function hasNonMarkdownPayload(rootDir: string): Promise<boolean> {
   let scanned = 0;
   async function walk(dir: string, depth: number): Promise<boolean> {
-    if (depth > EXECUTABLE_SCAN_DEPTH) return false;
+    if (depth > PAYLOAD_SCAN_DEPTH) return true; // 深到扫不下去了，同样不敢说「里面全是说明文字」
     let entries: fs.Dirent[];
     try {
       entries = await fsp.readdir(dir, { withFileTypes: true });
@@ -264,31 +268,23 @@ async function hasExecutablePayload(rootDir: string): Promise<boolean> {
       return false;
     }
     for (const entry of entries) {
-      if (++scanned > MAX_EXECUTABLE_SCAN_ENTRIES) return true;
-      const full = path.join(dir, entry.name);
+      if (++scanned > MAX_PAYLOAD_SCAN_ENTRIES) return true;
       if (entry.isDirectory()) {
-        if (await walk(full, depth + 1)) return true;
+        if (await walk(path.join(dir, entry.name), depth + 1)) return true;
         continue;
       }
-      if (!entry.isFile()) continue;
-      const ext = path.extname(entry.name).toLowerCase();
-      if (EXECUTABLE_EXTENSIONS.has(ext)) return true;
-      if (ext !== '') continue;
-      try {
-        if (((await fsp.stat(full)).mode & 0o111) !== 0) return true;
-      } catch {
-        // 读不到就当没有：文件本来也跑不起来
-      }
+      if (IGNORED_PAYLOAD_FILES.has(entry.name)) continue;
+      if (path.extname(entry.name).toLowerCase() !== '.md') return true;
     }
     return false;
   }
   return walk(rootDir, 0);
 }
 
-function hasExecutablePayloadSync(rootDir: string): boolean {
+function hasNonMarkdownPayloadSync(rootDir: string): boolean {
   let scanned = 0;
   function walk(dir: string, depth: number): boolean {
-    if (depth > EXECUTABLE_SCAN_DEPTH) return false;
+    if (depth > PAYLOAD_SCAN_DEPTH) return true;
     let entries: fs.Dirent[];
     try {
       entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -296,21 +292,13 @@ function hasExecutablePayloadSync(rootDir: string): boolean {
       return false;
     }
     for (const entry of entries) {
-      if (++scanned > MAX_EXECUTABLE_SCAN_ENTRIES) return true;
-      const full = path.join(dir, entry.name);
+      if (++scanned > MAX_PAYLOAD_SCAN_ENTRIES) return true;
       if (entry.isDirectory()) {
-        if (walk(full, depth + 1)) return true;
+        if (walk(path.join(dir, entry.name), depth + 1)) return true;
         continue;
       }
-      if (!entry.isFile()) continue;
-      const ext = path.extname(entry.name).toLowerCase();
-      if (EXECUTABLE_EXTENSIONS.has(ext)) return true;
-      if (ext !== '') continue;
-      try {
-        if ((fs.statSync(full).mode & 0o111) !== 0) return true;
-      } catch {
-        // 同上
-      }
+      if (IGNORED_PAYLOAD_FILES.has(entry.name)) continue;
+      if (path.extname(entry.name).toLowerCase() !== '.md') return true;
     }
     return false;
   }
@@ -653,7 +641,7 @@ export class FolderTrustService {
     const agentsDir = path.join(codeAgentDir, 'agents');
     const agentCount = await countDirectoryEntries(agentsDir, (entry) => entry.isFile() && entry.name.endsWith('.md'));
     if (agentCount > 0) {
-      const executable = await hasExecutablePayload(agentsDir);
+      const executable = await hasNonMarkdownPayload(agentsDir);
       pushItem(items, workingDirectory, 'project-agents', agentsDir, executable ? 'execution' : 'prompt', {
         count: agentCount,
       });
@@ -662,7 +650,7 @@ export class FolderTrustService {
     for (const skillsDir of [path.join(codeAgentDir, 'skills'), path.join(claudeDir, 'skills')]) {
       const skillCount = await countDirectoryEntries(skillsDir, (entry) => entry.isDirectory());
       if (skillCount === 0) continue;
-      const executable = await hasExecutablePayload(skillsDir);
+      const executable = await hasNonMarkdownPayload(skillsDir);
       pushItem(items, workingDirectory, 'project-skills', skillsDir, executable ? 'execution' : 'prompt', {
         count: skillCount,
       });
@@ -738,7 +726,7 @@ export class FolderTrustService {
     const agentsDir = path.join(codeAgentDir, 'agents');
     const agentCount = countDirectoryEntriesSync(agentsDir, (entry) => entry.isFile() && entry.name.endsWith('.md'));
     if (agentCount > 0) {
-      const executable = hasExecutablePayloadSync(agentsDir);
+      const executable = hasNonMarkdownPayloadSync(agentsDir);
       pushItem(items, workingDirectory, 'project-agents', agentsDir, executable ? 'execution' : 'prompt', {
         count: agentCount,
       });
@@ -747,7 +735,7 @@ export class FolderTrustService {
     for (const skillsDir of [path.join(codeAgentDir, 'skills'), path.join(claudeDir, 'skills')]) {
       const skillCount = countDirectoryEntriesSync(skillsDir, (entry) => entry.isDirectory());
       if (skillCount === 0) continue;
-      const executable = hasExecutablePayloadSync(skillsDir);
+      const executable = hasNonMarkdownPayloadSync(skillsDir);
       pushItem(items, workingDirectory, 'project-skills', skillsDir, executable ? 'execution' : 'prompt', {
         count: skillCount,
       });

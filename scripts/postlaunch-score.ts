@@ -14,7 +14,7 @@ import os from 'node:os';
 import path from 'node:path';
 import Database from 'better-sqlite3';
 import { CONFIG_DIR_NEW } from '../src/shared/constants/configDir';
-import { POST_LAUNCH_DEFAULTS } from '../src/shared/contract/postLaunchScore';
+import { DRY_RUN_JUDGE_VERSION, POST_LAUNCH_DEFAULTS } from '../src/shared/contract/postLaunchScore';
 import { resolveModelPrice } from '../src/shared/pricing/resolveModelPrice';
 import { estimateTokens } from '../src/host/context/tokenEstimator';
 import { getQuickModelRuntimeInfo, quickTask } from '../src/host/model/quickModel';
@@ -22,6 +22,7 @@ import { loadProjectFailureCodebook } from '../src/host/testing/failureCodes';
 import { TelemetryQueryService } from '../src/host/telemetry/replay/telemetryQueryService';
 import { applyTelemetrySchema } from '../src/host/services/core/database/schemaTelemetry';
 import { createLogger } from '../src/host/services/infra/logger';
+import { getDatabase } from '../src/host/services/core/databaseService';
 import { runPostLaunchScoring, type PostLaunchSessionRow } from '../src/host/testing/postlaunch/postLaunchScorer';
 import { buildPostLaunchReport } from '../src/host/testing/postlaunch/postLaunchScoreStore';
 
@@ -60,6 +61,8 @@ async function main(): Promise<void> {
   const db = new Database(dbPath);
   // 已有的库没有本单新表：应用内建表在 schema.ts 启动路径，CLI 直接开库得自己补（IF NOT EXISTS，幂等）
   applyTelemetrySchema(db, createLogger('postlaunch-score'));
+  // 回放的证据投影会走 DatabaseService 单例（telemetryReplayEvidence.ts:32），不初始化就每会话报一次「Database not initialized」
+  await getDatabase().initialize();
   const judge = getQuickModelRuntimeInfo();
   console.log(`库：${dbPath}`);
   console.log(`打分模型：${judge ? `${judge.provider}/${judge.model}` : '未配置'}${options.dryRun ? '（--dry-run，不会调用）' : ''}`);
@@ -95,7 +98,7 @@ async function main(): Promise<void> {
   console.log(`信号轮 ${result.signalTurns}，抽样轮 ${result.sampledTurns}，只记信号 ${result.signalOnlyTurns}，已有分数跳过 ${result.skippedTurns}`);
   console.log(`本次打分刊例估算 $${result.costUsd.toFixed(4)}${result.budgetStopped ? '（已触日预算上限，当天停评）' : ''}`);
 
-  const report = buildPostLaunchReport(db, { days: options.days, dailyBudgetUsd: options.budget, dailySampleLimit: options.sampleLimit });
+  const report = buildPostLaunchReport(db, { judgeVersion: options.dryRun ? DRY_RUN_JUDGE_VERSION : undefined, days: options.days, dailyBudgetUsd: options.budget, dailySampleLimit: options.sampleLimit });
   for (const group of report.groups) {
     console.log(`\n${group.weekStart} · ${group.appVersion}${group.promptVersion ? ` · ${group.promptVersion}` : ''}`);
     for (const row of group.rows) {

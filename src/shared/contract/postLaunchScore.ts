@@ -70,6 +70,8 @@ export function isPostLaunchScorableSessionType(sessionType: string | null | und
 
 /** judge 提示词或维度定义变了就要 +1；不同版本的分数不可相比（ADR-063 §2）。 */
 export const POST_LAUNCH_JUDGE_VERSION = 'postlaunch-judge-v1';
+/** dry-run 落表用的版本号：真评按 POST_LAUNCH_JUDGE_VERSION 查跳过时看不到它 */
+export const DRY_RUN_JUDGE_VERSION = 'dry-run';
 /** 六维口径版本；与 judge 版本分开，改评分口径而不改提示词时只动这个。 */
 export const POST_LAUNCH_RUBRIC_VERSION = 'postlaunch-rubric-v1';
 

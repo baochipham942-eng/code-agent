@@ -74,12 +74,12 @@ export function insertTurnScore(db: BetterSqlite3.Database, score: PostLaunchTur
   );
 }
 
-export function getScoredTurnIds(db: BetterSqlite3.Database, turnIds: string[]): Set<string> {
+export function getScoredTurnIds(db: BetterSqlite3.Database, turnIds: string[], judgeVersion: string = POST_LAUNCH_JUDGE_VERSION): Set<string> {
   if (turnIds.length === 0) return new Set();
   const placeholders = turnIds.map(() => '?').join(', ');
   const rows = db
     .prepare(`SELECT turn_id FROM telemetry_turn_scores WHERE judge_version = ? AND turn_id IN (${placeholders})`)
-    .all(POST_LAUNCH_JUDGE_VERSION, ...turnIds) as Array<{ turn_id: string }>;
+    .all(judgeVersion, ...turnIds) as Array<{ turn_id: string }>;
   return new Set(rows.map((row) => row.turn_id));
 }
 
@@ -158,6 +158,8 @@ function parseSignals(raw: string): PostLaunchSignalKind[] {
 }
 
 export interface PostLaunchReportOptions {
+  /** 报告读哪个版本的分数行；dry-run 写的是 'dry-run' 版本，不与真评混 */
+  judgeVersion?: string;
   days?: number;
   now?: number;
   dailyBudgetUsd?: number;
@@ -176,6 +178,7 @@ export function buildPostLaunchReport(
   const now = options.now ?? Date.now();
   const days = options.days ?? POST_LAUNCH_DEFAULTS.days;
   const since = now - days * 24 * 60 * 60 * 1000;
+  const judgeVersion = options.judgeVersion ?? POST_LAUNCH_JUDGE_VERSION;
   const rows = db
     .prepare(`
       SELECT turn_id, session_id, turn_started_at, app_version, prompt_version,
@@ -185,7 +188,7 @@ export function buildPostLaunchReport(
       WHERE judge_version = ? AND turn_started_at >= ?
       ORDER BY turn_started_at DESC
     `)
-    .all(POST_LAUNCH_JUDGE_VERSION, since) as ScoreRow[];
+    .all(judgeVersion, since) as ScoreRow[];
 
   const groups = new Map<string, PostLaunchReportGroup & {
     failureTally: Map<string, number>;
@@ -249,7 +252,7 @@ export function buildPostLaunchReport(
   return {
     generatedAt: now,
     days,
-    judgeVersion: POST_LAUNCH_JUDGE_VERSION,
+    judgeVersion,
     rubricVersion: POST_LAUNCH_RUBRIC_VERSION,
     scoredTurns: rows.length,
     groups: reportGroups,

@@ -269,6 +269,27 @@ describe('上线后打分编排', () => {
     expect(JSON.parse(row.signals as string)).toContain('error_terminated');
   });
 
+  it('--dry-run 落的行不挡之后的真评：真评照调模型并覆盖 dry-run 行（真库副本 09-05 实付抓出）', async () => {
+    insertSession(database, 'chat-1', 'chat', NOW - HOUR);
+    insertTurn(database, 'chat-1', 'chat-turn-1', 1, NOW - HOUR);
+    const replays = {
+      'chat-1': replay('chat-1', [{ turnNumber: 1, startTime: NOW - HOUR, blocks: [{ type: 'error', content: 'boom', timestamp: NOW - HOUR }] }]),
+    };
+    const llmCall = vi.fn(async () => ALL_PASS);
+    await runPostLaunchScoring(deps(database, replays, llmCall), { dryRun: true });
+    expect(scoreRows(database)).toHaveLength(1);
+    expect(scoreRows(database)[0].judge_version).toBe('dry-run');
+
+    const real = await runPostLaunchScoring(deps(database, replays, llmCall));
+
+    expect(llmCall).toHaveBeenCalledTimes(1);
+    expect(real.skippedTurns).toBe(0);
+    const rows = scoreRows(database);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].judge_version).not.toBe('dry-run');
+    expect(rows[0].dim_goal).toBe(1);
+  });
+
   it('已评过的轮不重复花钱', async () => {
     insertSession(database, 'chat-1', 'chat', NOW - HOUR);
     insertTurn(database, 'chat-1', 'chat-turn-1', 1, NOW - HOUR);

@@ -69,7 +69,8 @@ function readShellWord(command: string, start: number): { raw: string; end: numb
   return { raw: command.slice(wordStart, index), end: index };
 }
 
-function shellRedirectTargets(command: string): string[] {
+/** shell 命令里 `>` / `>>` 重定向的写目标（fd 复制不算）。上线后评测的越权写信号也用它，别再造一份。 */
+export function shellRedirectTargets(command: string): string[] {
   const targets: string[] = [];
   let quote: "'" | '"' | undefined;
   let escaped = false;

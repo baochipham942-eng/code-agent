@@ -18,6 +18,14 @@ import process from 'node:process';
 
 export const defaultLockPath = path.join(os.homedir(), '.ship', 'locks', 'gates-local.lock');
 
+/**
+ * POSIX 单引号引用——错误提示里的清锁命令是给人复制粘贴的，锁路径可由 GATES_LOCAL_LOCK_PATH
+ * 指定，裸拼进 `rm` 后面等于把 `;` / `$()` 直接递到人的 shell 里（09-05 ai-review 抓出）。
+ */
+function shellQuote(value) {
+  return `'${String(value).replace(/'/g, `'\\''`)}'`;
+}
+
 function sleepSync(ms) {
   // 同步睡眠：调用方通篇 spawnSync，不为等锁引入 async，也不为它起子进程。
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
@@ -168,7 +176,7 @@ export function acquireLock({
         throw new Error(
           `[gates:local] 锁被一个已经不在的进程占着（pid ${holder.pid ?? '?'}${holder.corrupt ? '，且锁文件内容已损坏' : ''}）\n`
           + `  确认机器上确实没有门在跑（pgrep -f 'scripts/gates-local.mjs'），然后清掉它：\n`
-          + `    rm ${lockPath}\n`
+          + `    rm ${shellQuote(lockPath)}\n`
           + '  或者用 GATES_LOCAL_FORCE_UNLOCK=1 重跑本命令（等于你替它签字：确实没人在跑）。\n'
           + '  🔴 不自动清是有意的：确认陈旧与删除之间没有原子操作，自动清会误删别人刚建的有效锁。',
         );
@@ -178,7 +186,8 @@ export function acquireLock({
         throw new Error(
           `[gates:local] 排队 ${(waitMs / 60_000).toFixed(0)}m 仍拿不到锁，退出（不静默放行）\n`
           + `  持锁者：pid ${holder.pid} · ${holder.cwd} · 已跑 ${heldFor(holder)}\n`
-          + '  它卡住了就去看那条；确认已死就 kill 掉，锁会被下一条自动回收。',
+          + `  它卡住了就去看那条。确认那个进程确实已经死了，就手动清锁：rm ${shellQuote(lockPath)}\n`
+          + '  （不会自动回收——确认陈旧与删除之间没有原子操作，自动清会误删别人刚建的有效锁。）',
         );
       }
 

@@ -76,7 +76,26 @@ describe('gates:local 单机互斥锁', () => {
     // 锁必须原样留着，且指引里要带真实路径
     expect(JSON.parse(fs.readFileSync(lockPath, 'utf8')).pid).toBe(stale.pid);
     expect(() => acquireLock({ lockPath, waitMs: 1_000, pollMs: 10, ownerPattern: 'node', log: () => {} }))
-      .toThrow(new RegExp(`rm ${lockPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+      .toThrow(new RegExp(`rm '${lockPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}'`));
+  });
+
+  it('清锁命令做 shell 引用：路径里的分号不会被人复制粘贴执行', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gates-lock-quote-'));
+    tempDirs.push(dir);
+    const lockPath = path.join(dir, "evil; touch pwned.lock");
+    fs.writeFileSync(lockPath, JSON.stringify({
+      pid: deadPid(), cwd: '/tmp/死了', startedAt: new Date().toISOString(),
+    }));
+
+    let message = '';
+    try {
+      acquireLock({ lockPath, waitMs: 200, pollMs: 10, ownerPattern: 'node', log: () => {} });
+    } catch (error) {
+      message = (error as Error).message;
+    }
+    // 整条路径必须被单引号裹住，分号不能裸露在 rm 后面
+    expect(message).toContain(`rm '${lockPath}'`);
+    expect(message).not.toContain(`rm ${lockPath}`);
   });
 
   it('人工授权 GATES_LOCAL_FORCE_UNLOCK=1 时才清陈旧锁', () => {

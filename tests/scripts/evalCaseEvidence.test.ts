@@ -97,4 +97,43 @@ describe('buildCaseEvidence', () => {
     expect(Buffer.byteLength(JSON.stringify(evidence), 'utf8')).toBeGreaterThan(64 * 1_024);
     expect(evidence.toolCalls).toEqual([]);
   });
+
+  it('N-EVAL-EVIDENCE-JSON-ESCAPE：字符串型期望/实际原样落盘，非字符串仍是 JSON', () => {
+    const input = result();
+    input.toolExecutions = [];
+    input.responses = ['short'];
+    input.expectationResults = [
+      {
+        expectation: { type: 'approval_requested', description: 'approval', params: {} },
+        passed: false,
+        evidence: { expected: 'at least one matching approval request', actual: 'no matching approval request' },
+        duration: 1,
+      },
+      {
+        expectation: { type: 'content_contains', description: 'array', params: {} },
+        passed: true,
+        evidence: { expected: ['v3'], actual: { value: 3 } },
+        duration: 1,
+      },
+      {
+        expectation: { type: 'content_contains', description: 'long', params: {} },
+        passed: false,
+        evidence: { expected: 'x'.repeat(600), actual: 42 },
+        duration: 1,
+      },
+    ];
+
+    const evidence = buildCaseEvidence(input);
+
+    // 抽屉「判定表」直接渲染这两列，不能再包一层引号和转义
+    expect(evidence.checks[0].expected).toBe('at least one matching approval request');
+    expect(evidence.checks[0].actual).toBe('no matching approval request');
+    expect(evidence.checks[1].expected).toBe('["v3"]');
+    expect(evidence.checks[1].actual).toBe('{"value":3}');
+    // 字符串免了 JSON，但没免截断
+    expect(evidence.checks[2].expected).toBe('x'.repeat(500));
+    expect(evidence.checks[2].actual).toBe('42');
+    // 工具入参是对象，保持 JSON
+    expect(buildCaseEvidence(result()).toolCalls[0].inputSummary.startsWith('{"path":')).toBe(true);
+  });
 });

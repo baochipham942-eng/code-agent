@@ -224,8 +224,10 @@ export const EvalHarvestDialog: React.FC<EvalHarvestDialogProps> = ({
   );
 
   function renderMapping() {
+    // 两段共用一个父节点：不给 fragment key，React 会按下标复用兄弟节点
+    // （B7 第 3 个孩子是琥珀色常驻提示，B8 同位是「归属集」行 ⇒ 切换时闪琥珀）。
     return (
-      <>
+      <React.Fragment key="harvest-mapping">
         <div className="text-xs text-zinc-400">{h.selectedCount.replace('{n}', String(sessionIds.length))}</div>
         <div>
           <div className="mb-2 text-xs font-medium text-zinc-400">{h.mappingTitle}</div>
@@ -268,14 +270,14 @@ export const EvalHarvestDialog: React.FC<EvalHarvestDialogProps> = ({
           <span className="text-zinc-500">{h.bucketLabel}：</span>
           {h.bucketValue.replace('{tag}', batchTagPreview())}
         </div>
-      </>
+      </React.Fragment>
     );
   }
 
   function renderDraft() {
     if (!current) return null;
     return (
-      <>
+      <React.Fragment key="harvest-drafts">
         <div className="flex items-center gap-2 text-xs text-zinc-400">
           <span className="text-zinc-500">{h.sourceLabel}</span>
           <Button
@@ -425,7 +427,7 @@ export const EvalHarvestDialog: React.FC<EvalHarvestDialogProps> = ({
             </Select>
           </div>
         </div>
-      </>
+      </React.Fragment>
     );
   }
 

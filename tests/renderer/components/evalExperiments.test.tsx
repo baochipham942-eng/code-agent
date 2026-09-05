@@ -209,3 +209,53 @@ describe('实验页四态与新建守卫', () => {
     }
   });
 });
+
+describe('N-EVAL-RESULT-HINT-TIERS：说明与「未出场」分层', () => {
+  /** 候选臂开了长期记忆 + 允许扇出，但两样都零次出场 ⇒ 两条提示同时在场。 */
+  function bothHints(): EvalExperimentDetail {
+    const d = detail('candidate_better');
+    d.cases = [{
+      caseId: 'case-1', status: 'passed', score: 100, durationMs: 10,
+      data: {
+        assignment: { A: 'candidate', B: 'baseline' }, statusA: 'passed', statusB: 'failed',
+        winner: 'candidate', referenceWinner: 'A',
+        memoryInjections: { baseline: 0, candidate: 0 },
+        subagentSpawns: { baseline: 0, candidate: 0 },
+      },
+    }];
+    (d.experiment.config as Record<string, unknown>).compare = {
+      baseline: { name: 'production', model: 'm', provider: 'p' },
+      candidate: {
+        name: 'candidate-v3', model: 'm', provider: 'p',
+        memory: { longTerm: true }, orchestration: { allowSwarm: true },
+      },
+      diff: ['记忆：关 → 开'],
+    };
+    return d;
+  }
+
+  it('盲测说明留在灰条，两条「未出场」用可区分的提示样式且各自 testid 不变', () => {
+    render(<EvalExperimentResult detail={bothHints()} onBack={vi.fn()} />);
+
+    const blind = screen.getByTestId('experiment-blind-hint');
+    const memory = screen.getByTestId('experiment-memory-not-used');
+    const subagent = screen.getByTestId('experiment-subagent-not-used');
+
+    // 说明档：灰，不带任何 badge 语义色
+    expect(blind.className).toContain('text-zinc-400');
+    expect(blind.className).not.toContain('badge');
+
+    // 提示档：与说明不同色，且是包内既有的 badge token，不是新造的 zinc 灰
+    for (const hint of [memory, subagent]) {
+      expect(hint.className).toContain('text-badge-warning');
+      expect(hint.className).toContain('bg-badge-warning');
+      expect(hint.className).not.toContain('text-zinc-400');
+      expect(hint.getAttribute('role')).toBe('status');
+    }
+    expect(memory.className).not.toBe(blind.className);
+
+    // 文案本身没动（既有断言按整串比对）
+    expect(memory.textContent).toBe('记忆未出场，结论不说明它的效果');
+    expect(subagent.textContent).toBe('子代理未出场，结论不说明它的效果');
+  });
+});

@@ -24,6 +24,13 @@ function formatUsd(value: number | undefined): string {
   return value === undefined ? '—' : `$${value.toFixed(value < 0.1 ? 3 : 2)}`;
 }
 
+/**
+ * 「未出场」提示的样式档：盲测说明是常驻的「说明」（灰条），这两条是「本轮结论有个洞」
+ * 的真信号，得跟说明分开看得见。复用包内既有的琥珀提示（同 EvalCaseDrawer 的 token 三件套），
+ * 不新造一套样式。
+ */
+const NOT_USED_HINT_CLASS = 'mt-2 rounded-lg border border-badge-warning/30 bg-badge-warning px-3 py-2 text-xs text-badge-warning';
+
 type ExperimentLabels = ReturnType<typeof useEvaluationI18n>['t']['evalCenter']['experiments'];
 
 /** 「子代理」维度的人话，与 host 侧 describeEvalCompareDiff 同口径。 */
@@ -143,14 +150,14 @@ export const EvalExperimentResult: React.FC<{
           cost: formatUsd(getExperimentCost(detail.experiment)),
         })}</div>
       </div>
-      <div className="mt-3 rounded-lg bg-zinc-900 px-3 py-2 text-xs text-zinc-400">{labels.blindHint}</div>
+      <div className="mt-3 rounded-lg bg-zinc-900 px-3 py-2 text-xs text-zinc-400" data-testid="experiment-blind-hint">{labels.blindHint}</div>
       {memoryNotUsed && (
-        <div className="mt-3 rounded-lg bg-zinc-900 px-3 py-2 text-xs text-zinc-400" data-testid="experiment-memory-not-used">
+        <div className={NOT_USED_HINT_CLASS} role="status" data-testid="experiment-memory-not-used">
           {labels.memoryNotUsed}
         </div>
       )}
       {subagentNotUsed && (
-        <div className="mt-2 rounded-lg bg-zinc-900 px-3 py-2 text-xs text-zinc-400" data-testid="experiment-subagent-not-used">
+        <div className={NOT_USED_HINT_CLASS} role="status" data-testid="experiment-subagent-not-used">
           {labels.subagentNotUsed}
         </div>
       )}

@@ -19,7 +19,7 @@ type Row = {
 
 export default async function UsersPage() {
   const supabase = await createSupabaseServerClient();
-  const [{ data }, qualityRows] = await Promise.all([
+  const [{ data }, quality] = await Promise.all([
     supabase
       .from('admin_per_user_telemetry')
       .select('*')
@@ -28,13 +28,18 @@ export default async function UsersPage() {
       .returns<Row[]>(),
     fetchQualityRows(supabase, POST_LAUNCH_WINDOW_DAYS),
   ]);
-  const qualityByUser = rollupByUser(qualityRows);
+  const qualityByUser = rollupByUser(quality.rows);
 
   return (
     <main className="min-h-screen bg-zinc-950 text-zinc-100 p-8 max-w-5xl mx-auto">
       <Link href="/" className="text-sm text-zinc-500 hover:text-zinc-300">
         ← 返回 dashboard
       </Link>
+      {quality.truncated ? (
+        <p className="mt-4 px-3 py-2 rounded border border-amber-500/40 bg-amber-500/10 text-amber-300 text-xs">
+          上线后过率的数据量超过单次读取上限，那一列只覆盖了窗口的一部分用户。
+        </p>
+      ) : null}
       <header className="mt-4 mb-6">
         <h1 className="text-2xl font-semibold">Users</h1>
         <p className="text-xs text-zinc-500 mt-1">
@@ -104,7 +109,7 @@ function PostLaunchCell({ bucket }: { bucket: QualityBucket | undefined }) {
   return (
     <td
       className={`px-3 py-2 text-right tabular-nums ${rate !== null && rate < 0.8 ? 'text-red-400' : ''}`}
-      title={`${bucket.turns} 轮进分母`}
+      title={`${bucket.turns} 轮进分母 · judge ${bucket.judgeVersion}`}
     >
       {formatRate(rate)}
       <span className="text-zinc-600 text-xs"> / {bucket.turns} 轮</span>

@@ -483,7 +483,11 @@ describe('TelemetryUploaderService', () => {
         }),
       ]);
       // 上传成功才标记；这是「分数行上传后 synced_at 非空」那条断言的落点
-      expect(mocks.markTurnScoresSynced).toHaveBeenCalledWith(expect.anything(), ['turn-1']);
+            // 传的是整条快照（带 scored_at），不是只有 turn_id：上传在飞时被重评的行要匹配不上
+      expect(mocks.markTurnScoresSynced).toHaveBeenCalledWith(
+        expect.anything(),
+        [expect.objectContaining({ turnId: 'turn-1', scoredAt: 1_780_000_000_000 })],
+      );
     });
 
     it('只传元数据：本机去重键与本地预算账不出机器，正文一列都没有', async () => {
@@ -519,6 +523,18 @@ describe('TelemetryUploaderService', () => {
       expect(row?.reason_redacted).toBe('');
       expect(row?.redacted).toBe(true);
       expect(String(row?.reason_redacted)).not.toContain('sk-abc123def456ghi789');
+    });
+
+    it('取数按当前登录账号过滤：换过账号的机器不会把上一个人的待传行混进这批', async () => {
+      mocks.getUnsyncedTurnScores.mockReturnValue([score]);
+      captureUpserts();
+
+      const { TelemetryUploaderService } = await import('../../../src/host/telemetry/telemetryUploaderService');
+      await new TelemetryUploaderService().upload();
+
+      // 归属过滤必须发生在取数那一层（SQL 里、LIMIT 之前），不是取回来再筛：
+      // 否则一批 200 行可能全被别人的行占满，本人的行永远排不上队。
+      expect(mocks.getUnsyncedTurnScores).toHaveBeenCalledWith(expect.anything(), 'user-1', 200);
     });
 
     it('会话先于分数：分数段排在 markSessionsSynced 之后，本轮上传的会话其分数同轮跟着走', async () => {

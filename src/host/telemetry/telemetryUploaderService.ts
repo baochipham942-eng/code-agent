@@ -365,7 +365,7 @@ export class TelemetryUploaderService implements Disposable {
       // 分数上传失败不回退前面几段已经打好的标记——分数是独立可重试的一段。
       // 分数表的每一条 SQL 都住在 postLaunchScoreStore（这张表的家），这里只借它的 db handle。
       const scoreDb = getDatabase().getDb();
-      const turnScores = scoreDb ? getUnsyncedTurnScores(scoreDb, BATCH_SIZE) : [];
+      const turnScores = scoreDb ? getUnsyncedTurnScores(scoreDb, user.id, BATCH_SIZE) : [];
       if (scoreDb && turnScores.length > 0) {
         const { error: scoreError } = await supabase
           .from('telemetry_turn_scores')
@@ -377,7 +377,9 @@ export class TelemetryUploaderService implements Disposable {
           this.recordUploadFailure('telemetry_turn_scores', scoreError);
           uploadFailed = true;
         } else {
-          markTurnScoresSynced(scoreDb, turnScores.map((score) => score.turnId));
+          // 传整条快照而不是只传 turn_id：上传在飞时被重评的那一行 scored_at 已经变了，
+          // 匹配不上就继续留在待传队列，不会被标成「已同步」而丢掉新判决。
+          markTurnScoresSynced(scoreDb, turnScores);
         }
       }
 

@@ -114,7 +114,13 @@ CREATE INDEX IF NOT EXISTS idx_turn_scores_session
 --   return !session.id.startsWith('cli_session_');                    // 存量行过渡判据
 -- 所以 SQL 里 origin_kind 的空串必须和 NULL 一样落到前缀判据上（COALESCE(...,'') <> ''），
 -- 否则同一条会话两边算出不同的分母。
-CREATE OR REPLACE VIEW public.admin_postlaunch_quality
+-- 先 DROP 再 CREATE，不用 CREATE OR REPLACE：后者不允许改列顺序或在中间插列
+-- （`cannot change name of view column "user_id" to "judge_version"`，本地沙箱实测）。
+-- 这张视图以后还要加维度，用 DROP + CREATE 才是真幂等。
+-- 视图上没有自己的 policy（security_invoker 直接用底表 RLS），重建不会丢策略；
+-- 表级 GRANT 由 20260515000000_explicit_grants.sql 的 ALTER DEFAULT PRIVILEGES 自动补回。
+DROP VIEW IF EXISTS public.admin_postlaunch_quality;
+CREATE VIEW public.admin_postlaunch_quality
 WITH (security_invoker = true) AS
 --
 -- 粒度是**天**，不是周：周块（首页「近 4 周 × 版本」）和「近 7 天」（用户页那一列）
@@ -126,6 +132,8 @@ WITH scorable AS (
     date_trunc('day', to_timestamp(sc.turn_started_at / 1000.0))             AS day_start,
     sc.app_version,
     sc.prompt_version,
+    sc.judge_version,
+    sc.rubric_version,
     sc.user_id,
     sc.sampled_by,
     sc.dim_goal, sc.dim_orchestration, sc.dim_tools,
@@ -136,7 +144,12 @@ WITH scorable AS (
     sc.session_id
   FROM public.telemetry_turn_scores sc
   JOIN public.telemetry_sessions s ON s.id = sc.session_id
-  WHERE (s.session_type IS NULL
+  -- CLI --dry-run 的演练行（judge_version='dry-run'）不进正式分母：它没真叫过打分模型，
+  -- 本机正式报告也是按 judge_version 筛掉它的（buildPostLaunchReport 默认只读
+  -- POST_LAUNCH_JUDGE_VERSION）。云端同口径，两边不会一个算一个不算。
+  -- 上传器那边也不传这类行，这里是第二道：旧版客户端传上来的照样不该进统计。
+  WHERE sc.judge_version <> 'dry-run'
+    AND (s.session_type IS NULL
          OR s.session_type NOT IN ('eval', 'subagent', 'schedule', 'heartbeat'))
     AND (CASE WHEN COALESCE(s.origin_kind, '') <> ''
               THEN s.origin_kind <> 'headless'
@@ -148,6 +161,10 @@ SELECT
   day_start,
   app_version,
   prompt_version,
+  -- judge / rubric 版本进分组键：换了打分提示词或口径，分数不可跨版本相比（ADR-063 §2）。
+  -- 不分组就会把两版判决合成一个过率，看着连续其实是两把尺子量出来的。
+  judge_version,
+  rubric_version,
   user_id,
   sampled_by,
   count(*)::int                                    AS turns,
@@ -176,4 +193,4 @@ SELECT
     ) f
   ), '{}'::jsonb)                                  AS failure_classes
 FROM scorable
-GROUP BY week_start, day_start, app_version, prompt_version, user_id, sampled_by;
+GROUP BY week_start, day_start, app_version, prompt_version, judge_version, rubric_version, user_id, sampled_by;

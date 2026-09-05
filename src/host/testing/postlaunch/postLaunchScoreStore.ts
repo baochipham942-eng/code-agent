@@ -11,6 +11,7 @@ import {
   POST_LAUNCH_DEFAULTS,
   POST_LAUNCH_DIMENSIONS,
   POST_LAUNCH_JUDGE_VERSION,
+  DRY_RUN_JUDGE_VERSION,
   POST_LAUNCH_RUBRIC_VERSION,
   JUDGE_MODEL_UNAVAILABLE,
   isPostLaunchScorableSession,
@@ -104,15 +105,25 @@ export function insertTurnScore(db: BetterSqlite3.Database, score: PostLaunchTur
  * 每一条 SQL 都在这里，上传器不自己拼；telemetryStorage.ts 已经顶到 god-file 上限（999/1000
  * 有效行），往那儿加等于逼下一个人去拆它。
  *
- * 两道额外的门都是为了云端外键（telemetry_turn_scores.session_id → telemetry_sessions.id）：
- *   - `s.synced_at IS NOT NULL`：会话没上过云，分数行上去必挂外键，白 burn 一次重试；
+ * 四道门，缺一条就会拖挂整批：
+ *   - `userId` 归属：一台机器换过账号时，A 留下的待传行会跟 B 的行同批 upsert，
+ *     云端 `owns_telemetry_session` 直接拒整条语句，B 自己的合法行跟着挂，而且下轮
+ *     重试恒命中同一批——归属判据抄 `getUnsyncedFeedback` 那条（会话表为准，回落 sessions 表），
+ *     且必须在 LIMIT **之前**过滤，否则一批全被别人的行占满。
+ *   - `s.synced_at IS NOT NULL`：会话没上过云，分数行上去必挂外键，白 burn 一次重试。
  *   - `session_type <> 'eval'`：eval 会话在上传器里是**本地标记已同步但从不上传**的
  *     （upload() 的 excludedEvalSessions），synced_at 也非空，光看它会被骗。
+ *   - `judge_version <> 'dry-run'`：CLI --dry-run 的演练行没真叫过打分模型，
+ *     本机正式报告按 judge 版本筛掉它，云端不该收。
  *
  * SELECT 列表就是允许出机器的那一份（TelemetryTurnScoreRecord）：本机去重键 prompt_hash
  * 与本地预算账 budget_cost_usd 压根不读出来，上传器也就无从传起。
  */
-export function getUnsyncedTurnScores(db: BetterSqlite3.Database, limit = 200): TelemetryTurnScoreRecord[] {
+export function getUnsyncedTurnScores(
+  db: BetterSqlite3.Database,
+  userId: string,
+  limit = 200,
+): TelemetryTurnScoreRecord[] {
   const rows = db
     .prepare(`
       SELECT sc.turn_id, sc.session_id, sc.scored_at, sc.scored_day, sc.turn_started_at,
@@ -123,13 +134,16 @@ export function getUnsyncedTurnScores(db: BetterSqlite3.Database, limit = 200): 
              sc.cost_usd, sc.sampled_by
       FROM telemetry_turn_scores AS sc
       JOIN telemetry_sessions AS s ON s.id = sc.session_id
+      LEFT JOIN sessions AS chat ON chat.id = sc.session_id
       WHERE sc.synced_at IS NULL
+        AND sc.judge_version <> ?
         AND s.synced_at IS NOT NULL
         AND (s.session_type IS NULL OR s.session_type <> 'eval')
+        AND COALESCE(s.user_id, chat.user_id) = ?
       ORDER BY sc.scored_at ASC
       LIMIT ?
     `)
-    .all(limit) as Array<Record<string, unknown>>;
+    .all(DRY_RUN_JUDGE_VERSION, userId, limit) as Array<Record<string, unknown>>;
   return rows.map((r) => ({
     turnId: r.turn_id as string,
     sessionId: r.session_id as string,
@@ -156,16 +170,23 @@ export function getUnsyncedTurnScores(db: BetterSqlite3.Database, limit = 200): 
   }));
 }
 
-/** 标记一批分数行已回传。重新评分走 INSERT OR REPLACE，synced_at 自动归 NULL 重传。 */
+/**
+ * 标记一批分数行已回传。
+ *
+ * 匹配 turn_id **加 scored_at**，不是只认 turn_id：上传在飞的时候这一轮可能被重新评分
+ * （insertTurnScore 走 INSERT OR REPLACE，整行换掉、scored_at 变新、synced_at 归 NULL）。
+ * 只按 turn_id 回标，会把这条**还没上传过的新行**标成已同步，云端从此永远停在旧判决上。
+ * 带上快照里的 scored_at，被替换掉的那一行就匹配不上，老老实实留在待传队列里。
+ */
 export function markTurnScoresSynced(
   db: BetterSqlite3.Database,
-  turnIds: string[],
+  uploaded: ReadonlyArray<{ turnId: string; scoredAt: number }>,
   syncedAt: number = Date.now(),
 ): void {
-  if (turnIds.length === 0) return;
-  const stmt = db.prepare('UPDATE telemetry_turn_scores SET synced_at = ? WHERE turn_id = ?');
+  if (uploaded.length === 0) return;
+  const stmt = db.prepare('UPDATE telemetry_turn_scores SET synced_at = ? WHERE turn_id = ? AND scored_at = ?');
   db.transaction(() => {
-    for (const turnId of turnIds) stmt.run(syncedAt, turnId);
+    for (const row of uploaded) stmt.run(syncedAt, row.turnId, row.scoredAt);
   })();
 }
 

@@ -30,7 +30,7 @@ type SessionListRow = {
 export default async function Dashboard() {
   const supabase = await createSupabaseServerClient();
 
-  const [{ count: totalSessions }, { count: errorSessions }, { data: recent }, qualityRows] = await Promise.all([
+  const [{ count: totalSessions }, { count: errorSessions }, { data: recent }, quality] = await Promise.all([
     supabase.from('telemetry_sessions').select('*', { count: 'exact', head: true }),
     supabase
       .from('telemetry_sessions')
@@ -47,7 +47,7 @@ export default async function Dashboard() {
     fetchQualityRows(supabase, POST_LAUNCH_WINDOW_DAYS),
   ]);
 
-  const qualityBuckets = rollupByWeek(qualityRows);
+  const qualityBuckets = rollupByWeek(quality.rows);
 
   const errorRate =
     totalSessions && totalSessions > 0
@@ -80,7 +80,7 @@ export default async function Dashboard() {
         <Stat label="错误率" value={errorRate} />
       </section>
 
-      <PostLaunchQuality buckets={qualityBuckets} />
+      <PostLaunchQuality buckets={qualityBuckets} truncated={quality.truncated} />
 
       <section className="mb-8">
         <h2 className="text-xs uppercase tracking-wide text-zinc-500 mb-3">按 sessionId 查根因</h2>
@@ -182,7 +182,7 @@ function Pill({ status }: { status: string | null }) {
   return <span className={`px-2 py-0.5 rounded text-xs ${color}`}>{status ?? '—'}</span>;
 }
 
-function PostLaunchQuality({ buckets }: { buckets: QualityBucket[] }) {
+function PostLaunchQuality({ buckets, truncated }: { buckets: QualityBucket[]; truncated: boolean }) {
   return (
     <section className="mb-8">
       <div className="flex items-baseline justify-between gap-3 mb-3">
@@ -191,6 +191,11 @@ function PostLaunchQuality({ buckets }: { buckets: QualityBucket[] }) {
           近 {POST_LAUNCH_WINDOW_DAYS / 7} 周 · 已剔除脚本与评测会话 · 信号轮与抽样轮分开看
         </span>
       </div>
+      {truncated ? (
+        <p className="mb-3 px-3 py-2 rounded border border-amber-500/40 bg-amber-500/10 text-amber-300 text-xs">
+          数据量超过单次读取上限，下面只是这个窗口的一部分，不是全部。缩短窗口或按用户下钻再看。
+        </p>
+      ) : null}
       {buckets.length === 0 ? (
         <p className="text-zinc-500 text-sm py-4">
           暂无上线后评分 — 用户在「隐私防线 → 数据共享」里打开「上线后质量评分」并跑过一次评分后出现在这里。
@@ -223,6 +228,7 @@ function PostLaunchQuality({ buckets }: { buckets: QualityBucket[] }) {
                     {bucket.promptVersion ? (
                       <span className="text-zinc-600"> · {bucket.promptVersion}</span>
                     ) : null}
+                    <span className="block text-zinc-600">{bucket.judgeVersion}</span>
                   </td>
                   <td className="px-3 py-2 text-xs">
                     <span

@@ -14,7 +14,7 @@ import { applyTelemetrySchema } from '../../../src/host/services/core/database/s
 import type { ReplayBlock, StructuredReplay } from '../../../src/shared/contract/evaluationReplay';
 import type { FailureCodebook } from '../../../src/host/testing/failureCodes';
 import { runPostLaunchScoring, type PostLaunchScorerDeps } from '../../../src/host/testing/postlaunch/postLaunchScorer';
-import { POST_LAUNCH_JUDGE_VERSION, clampPostLaunchScoringRequest } from '../../../src/shared/contract/postLaunchScore';
+import { DRY_RUN_JUDGE_VERSION, POST_LAUNCH_JUDGE_VERSION, clampPostLaunchScoringRequest } from '../../../src/shared/contract/postLaunchScore';
 import { estimateJudgeCost } from '../../../src/host/testing/postlaunch/postLaunchCost';
 import { resolveModelPrice } from '../../../src/shared/pricing/resolveModelPrice';
 import { acquireScoringLock, buildPostLaunchReport, getBudgetState, getUnsyncedTurnScores, localDay, markTurnScoresSynced, releaseScoringLock, renewScoringLock } from '../../../src/host/testing/postlaunch/postLaunchScoreStore';
@@ -740,7 +740,13 @@ describe('分数行上云取数（N-EVAL-POSTLAUNCH-K3）', () => {
     return database;
   }
 
-  function insertScore(id: string, sessionId: string): void {
+  const ME = 'user-me';
+
+  function insertScore(
+    id: string,
+    sessionId: string,
+    options: { judgeVersion?: string; scoredAt?: number } = {},
+  ): void {
     database.prepare(`
       INSERT OR REPLACE INTO telemetry_turn_scores (turn_id, session_id, scored_at, scored_day, turn_started_at,
         app_version, prompt_version, judge_version, rubric_version, judge_model, prompt_hash,
@@ -748,11 +754,12 @@ describe('分数行上云取数（N-EVAL-POSTLAUNCH-K3）', () => {
         cost_usd, budget_cost_usd, sampled_by)
       VALUES (?, ?, ?, ?, ?, '0.33.0', 'p7', ?, 'postlaunch-rubric-v1', 'deepseek/x', 'hash-abc',
         1, 1, 1, '一行理由', 0, '["repeat_loop"]', 0.02, 0.05, 'sample')
-    `).run(id, sessionId, NOW, localDay(NOW), NOW - HOUR, POST_LAUNCH_JUDGE_VERSION);
+    `).run(id, sessionId, options.scoredAt ?? NOW, localDay(NOW), NOW - HOUR, options.judgeVersion ?? POST_LAUNCH_JUDGE_VERSION);
   }
 
-  function markSessionSynced(sessionId: string): void {
-    database.prepare('UPDATE telemetry_sessions SET synced_at = ? WHERE id = ?').run(NOW, sessionId);
+  /** 已上云 + 归属某个账号（默认是当前登录的这个）。 */
+  function markSessionSynced(sessionId: string, userId: string = ME): void {
+    database.prepare('UPDATE telemetry_sessions SET synced_at = ?, user_id = ? WHERE id = ?').run(NOW, userId, sessionId);
   }
 
   beforeEach(() => {
@@ -766,7 +773,7 @@ describe('分数行上云取数（N-EVAL-POSTLAUNCH-K3）', () => {
     insertScore('t-pending', 'chat-pending');
     markSessionSynced('chat-synced');
 
-    expect(getUnsyncedTurnScores(database).map((row) => row.turnId)).toEqual(['t-synced']);
+    expect(getUnsyncedTurnScores(database, ME).map((row) => row.turnId)).toEqual(['t-synced']);
   });
 
   it('eval 会话的分数不取：它本地被标记已同步却从来没上传过，光看 synced_at 会被骗', () => {
@@ -774,7 +781,7 @@ describe('分数行上云取数（N-EVAL-POSTLAUNCH-K3）', () => {
     insertScore('t-eval', 'eval-1');
     markSessionSynced('eval-1');
 
-    expect(getUnsyncedTurnScores(database)).toEqual([]);
+    expect(getUnsyncedTurnScores(database, ME)).toEqual([]);
   });
 
   it('本机去重键与本地预算账不出机器：取出来的记录里根本没有这两样', () => {
@@ -782,7 +789,7 @@ describe('分数行上云取数（N-EVAL-POSTLAUNCH-K3）', () => {
     insertScore('t-1', 'chat-1');
     markSessionSynced('chat-1');
 
-    const [record] = getUnsyncedTurnScores(database);
+    const [record] = getUnsyncedTurnScores(database, ME);
     expect(Object.keys(record).sort()).toEqual([
       'appVersion', 'costUsd', 'dimArtifact', 'dimGoal', 'dimOrchestration', 'dimPermission',
       'dimSafety', 'dimTools', 'failureClass', 'judgeModel', 'judgeVersion', 'promptVersion',
@@ -792,15 +799,64 @@ describe('分数行上云取数（N-EVAL-POSTLAUNCH-K3）', () => {
     expect(record.costUsd).toBeCloseTo(0.02); // 刊例估算，不是本地预算账里那 0.05
   });
 
+  it('只取当前账号的行：换过账号的机器上，上一个人的待传行不混进这批（否则云端归属 RLS 拒整批）', () => {
+    insertSession(database, 'mine', 'chat', NOW - HOUR);
+    insertSession(database, 'theirs', 'chat', NOW - HOUR);
+    insertScore('t-mine', 'mine');
+    insertScore('t-theirs', 'theirs');
+    markSessionSynced('mine', ME);
+    markSessionSynced('theirs', 'user-someone-else');
+
+    expect(getUnsyncedTurnScores(database, ME).map((row) => row.turnId)).toEqual(['t-mine']);
+  });
+
+  it('归属过滤发生在 LIMIT 之前：别人的行再多也占不满这一批', () => {
+    insertSession(database, 'theirs', 'chat', NOW - HOUR);
+    insertSession(database, 'mine', 'chat', NOW - HOUR);
+    markSessionSynced('theirs', 'user-someone-else');
+    markSessionSynced('mine', ME);
+    // 别人的行 scored_at 更早，按 ORDER BY 排在前面；先过滤再 LIMIT 才轮得到我这条。
+    for (let i = 0; i < 5; i += 1) insertScore(`t-theirs-${i}`, 'theirs', { scoredAt: NOW - 10_000 + i });
+    insertScore('t-mine', 'mine');
+
+    expect(getUnsyncedTurnScores(database, ME, 3).map((row) => row.turnId)).toEqual(['t-mine']);
+  });
+
+  it('dry-run 演练行不上云：它没真叫过打分模型，本机正式报告也不认它', () => {
+    insertSession(database, 'chat-1', 'chat', NOW - HOUR);
+    insertScore('t-dry', 'chat-1', { judgeVersion: DRY_RUN_JUDGE_VERSION });
+    insertScore('t-real', 'chat-1');
+    markSessionSynced('chat-1');
+
+    expect(getUnsyncedTurnScores(database, ME).map((row) => row.turnId)).toEqual(['t-real']);
+  });
+
+  it('上传途中被重评：回标只认上传快照的 scored_at，新判决继续排队而不是被标成已同步', () => {
+    insertSession(database, 'chat-1', 'chat', NOW - HOUR);
+    insertScore('t-1', 'chat-1', { scoredAt: NOW });
+    markSessionSynced('chat-1');
+
+    const snapshot = getUnsyncedTurnScores(database, ME); // 上传器手里的那一批
+    // 上传在飞的时候这一轮被重新评分：整行替换，scored_at 变新，synced_at 归 NULL
+    insertScore('t-1', 'chat-1', { scoredAt: NOW + 60_000 });
+    // 上传回调拿着旧快照回标
+    markTurnScoresSynced(database, snapshot, NOW);
+
+    // 新判决还没上传过，必须仍在待传队列里；只按 turn_id 回标的话这里会是空数组
+    const pending = getUnsyncedTurnScores(database, ME);
+    expect(pending.map((row) => row.turnId)).toEqual(['t-1']);
+    expect(pending[0].scoredAt).toBe(NOW + 60_000);
+  });
+
   it('标记已回传后不再取；重新评分（INSERT OR REPLACE）会让它重新排队', () => {
     insertSession(database, 'chat-1', 'chat', NOW - HOUR);
     insertScore('t-1', 'chat-1');
     markSessionSynced('chat-1');
 
-    markTurnScoresSynced(database, ['t-1'], NOW);
-    expect(getUnsyncedTurnScores(database)).toEqual([]);
+    markTurnScoresSynced(database, [{ turnId: 't-1', scoredAt: NOW }], NOW);
+    expect(getUnsyncedTurnScores(database, ME)).toEqual([]);
 
-    insertScore('t-1', 'chat-1'); // 换了 judge 版本重评，整行被替换，synced_at 归 NULL
-    expect(getUnsyncedTurnScores(database).map((row) => row.turnId)).toEqual(['t-1']);
+    insertScore('t-1', 'chat-1'); // 重评：整行被替换，synced_at 归 NULL
+    expect(getUnsyncedTurnScores(database, ME).map((row) => row.turnId)).toEqual(['t-1']);
   });
 });

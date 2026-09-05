@@ -30,6 +30,8 @@ export type QualityRow = {
   day_start: string;
   app_version: string | null;
   prompt_version: string | null;
+  judge_version: string;
+  rubric_version: string;
   user_id: string;
   sampled_by: 'signal' | 'sample';
   turns: number;
@@ -50,8 +52,11 @@ export type DimTally = { judged: number; passed: number };
 export type QualityBucket = {
   key: string;
   weekStart: string;
+  /** 该桶里最新一天，用户页用它挑「这个人当前那版 judge」。 */
+  latestDay: string;
   appVersion: string | null;
   promptVersion: string | null;
+  judgeVersion: string;
   sampledBy: 'signal' | 'sample';
   turns: number;
   judgeUnavailableTurns: number;
@@ -71,44 +76,67 @@ function emptyDims(): Record<PostLaunchDimension, DimTally> {
   };
 }
 
+/** 一次最多取这么多行；取满了就说明窗口没读全，页面要明说。 */
+const ROW_LIMIT = 2000;
+
+export type QualityFetch = {
+  rows: QualityRow[];
+  /** 命中上限：展示的是窗口的一部分，不是全部。页面必须把这件事说出来。 */
+  truncated: boolean;
+};
+
 /**
  * 拉视图。`sinceDays` 之前的天不要（视图粒度是天，按 day_start 切）。
- * 视图是 security_invoker：非 admin 读到的是空集，页面不用自己判权。
+ * 可见性完全由底表 RLS 决定，页面不用自己判权。
+ *
+ * ponytail: 单次取 ROW_LIMIT + 1 行来探测截断，不做分页循环——服务端渲染里
+ * 无上限地翻页是更糟的失败模式。真到了常态截断，把这里换成按 day_start 游标分页。
+ * 关键是**不静默**：截断了就让页面挂出来，别把半个窗口当整个窗口给人看。
  */
 export async function fetchQualityRows(
   supabase: SupabaseClient,
   sinceDays: number,
-): Promise<QualityRow[]> {
+): Promise<QualityFetch> {
   const since = new Date(Date.now() - sinceDays * 24 * 60 * 60 * 1000).toISOString();
   const { data } = await supabase
     .from('admin_postlaunch_quality')
     .select('*')
     .gte('day_start', since)
     .order('day_start', { ascending: false })
-    .limit(2000)
+    .limit(ROW_LIMIT + 1)
     .returns<QualityRow[]>();
-  return data ?? [];
+  const rows = data ?? [];
+  return { rows: rows.slice(0, ROW_LIMIT), truncated: rows.length > ROW_LIMIT };
 }
 
-/** 按周 × 版本 × 采样来源卷起来（跨用户合并）。信号轮与抽样轮**不合并**：两行分开。 */
+function newBucket(key: string, row: QualityRow): QualityBucket {
+  return {
+    key,
+    weekStart: row.week_start,
+    latestDay: row.day_start,
+    appVersion: row.app_version,
+    promptVersion: row.prompt_version,
+    judgeVersion: row.judge_version,
+    sampledBy: row.sampled_by,
+    turns: 0,
+    judgeUnavailableTurns: 0,
+    costUsd: 0,
+    dims: emptyDims(),
+    failureClasses: {},
+  };
+}
+
+/**
+ * 按周 × 版本 × judge 版本 × 采样来源卷起来（跨用户合并）。
+ * 信号轮与抽样轮**不合并**；judge 版本也进 key——换了打分提示词，两版分数不可相比（ADR-063 §2）。
+ */
 export function rollupByWeek(rows: QualityRow[]): QualityBucket[] {
   const buckets = new Map<string, QualityBucket>();
   for (const row of rows) {
-    const key = `${row.week_start}|${row.app_version ?? ''}|${row.prompt_version ?? ''}|${row.sampled_by}`;
+    const key = `${row.week_start}|${row.app_version ?? ''}|${row.prompt_version ?? ''}|${row.judge_version}|${row.sampled_by}`;
     let bucket = buckets.get(key);
     if (!bucket) {
-      bucket = {
-        key,
-        weekStart: row.week_start,
-        appVersion: row.app_version,
-        promptVersion: row.prompt_version,
-        sampledBy: row.sampled_by,
-        turns: 0,
-        judgeUnavailableTurns: 0,
-        costUsd: 0,
-        dims: emptyDims(),
-        failureClasses: {},
-      };
+      bucket = newBucket(key, row);
       buckets.set(key, bucket);
     }
     addRow(bucket, row);
@@ -121,24 +149,27 @@ export function rollupByWeek(rows: QualityRow[]): QualityBucket[] {
   );
 }
 
-/** 按 user_id 卷起来，用于用户页那一列。 */
+/**
+ * 按 user_id 卷起来，用于用户页那一列。
+ *
+ * 一个人窗口内可能横跨两版 judge（升级那几天）。把两版加在一起会得出一个
+ * 两把尺子量出来的过率，所以先挑出这个人**最近一天用的那版**，只卷那一版的行。
+ */
 export function rollupByUser(rows: QualityRow[]): Map<string, QualityBucket> {
+  const latestJudge = new Map<string, { day: string; judgeVersion: string }>();
+  for (const row of rows) {
+    const seen = latestJudge.get(row.user_id);
+    if (!seen || row.day_start > seen.day) {
+      latestJudge.set(row.user_id, { day: row.day_start, judgeVersion: row.judge_version });
+    }
+  }
+
   const buckets = new Map<string, QualityBucket>();
   for (const row of rows) {
+    if (row.judge_version !== latestJudge.get(row.user_id)?.judgeVersion) continue;
     let bucket = buckets.get(row.user_id);
     if (!bucket) {
-      bucket = {
-        key: row.user_id,
-        weekStart: row.week_start,
-        appVersion: null,
-        promptVersion: null,
-        sampledBy: row.sampled_by,
-        turns: 0,
-        judgeUnavailableTurns: 0,
-        costUsd: 0,
-        dims: emptyDims(),
-        failureClasses: {},
-      };
+      bucket = { ...newBucket(row.user_id, row), appVersion: null, promptVersion: null };
       buckets.set(row.user_id, bucket);
     }
     addRow(bucket, row);

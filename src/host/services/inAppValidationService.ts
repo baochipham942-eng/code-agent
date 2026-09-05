@@ -6,7 +6,7 @@
 // ============================================================================
 
 import { randomUUID } from 'crypto';
-import { broadcastToRenderer } from '../platform/windowBridge';
+import { broadcastToRenderer, hasRendererPushListener } from '../platform/windowBridge';
 import { IPC_CHANNELS } from '../../shared/ipc';
 import type {
   BrowserInteractionStep,
@@ -15,6 +15,16 @@ import type {
 } from '../../shared/contract/browserInteraction';
 
 const DEFAULT_IN_APP_VALIDATION_TIMEOUT_MS = 30000;
+
+/**
+ * 没有渲染进程时的固定错误文案。
+ *
+ * 无头跑法（评测 CLI / 脚本）里没人收 IN_APP_VALIDATION_REQUEST，等下去只能等到超时，
+ * 把「环境缺渲染进程」这件事拖成 30s 的沉默，再混进能力评测的时间预算里。
+ * 立刻失败，让调用方（和模型）当场知道是环境不具备，而不是自己做错了什么。
+ */
+export const IN_APP_VALIDATION_UNAVAILABLE =
+  'in-app validation panel is unavailable: no renderer attached (headless or eval run)';
 
 interface PendingEntry {
   resolve: (results: BrowserInteractionStepResult[]) => void;
@@ -35,6 +45,9 @@ export function runInAppValidation(
   steps: BrowserInteractionStep[],
   timeoutMs: number = DEFAULT_IN_APP_VALIDATION_TIMEOUT_MS,
 ): Promise<BrowserInteractionStepResult[]> {
+  if (!hasRendererPushListener()) {
+    return Promise.reject(new Error(IN_APP_VALIDATION_UNAVAILABLE));
+  }
   const requestId = randomUUID();
   return new Promise<BrowserInteractionStepResult[]>((resolve, reject) => {
     const timer = setTimeout(() => {

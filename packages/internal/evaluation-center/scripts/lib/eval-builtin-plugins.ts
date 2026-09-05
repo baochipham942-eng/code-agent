@@ -13,6 +13,12 @@
 //
 // 为什么不写安装状态文件：显式子集用 PluginRegistry 的 install/remove 走内存态即可，
 // 不碰 `<dataDir>/capabilities/*.json`——评测不该在用户真实数据目录里留安装痕迹。
+//
+// 为什么不用 initPluginSystem()：它起的是**完整**插件系统——除了 builtin 还会
+// discoverPlugins 扫 `<dataDir>/plugins` 装第三方插件、再 loadInstalled() 拉内部功能插件。
+// 那些插件注册的工具照样进 protocol registry，而本开关只按 builtin 过滤、stamp 也只记 builtin
+// ⇒ 数据目录里有第三方工具插件时，实际工具面比声明的大，两臂对比的结论就被污染了。
+// 「调用者记得用 mktemp 数据目录」不算隔离——开关自己得只装它声明的那些。
 // ============================================================================
 
 import chalk from 'chalk';
@@ -64,10 +70,14 @@ export interface BuiltinPluginActivation {
   failures: Array<{ id: string; reason: string }>;
 }
 
-let started = false;
+/** 本进程已装上的 builtin，退出时对称卸掉 */
+let installed: BuiltinCapabilityId[] = [];
 
 /**
- * 按开关起插件系统。`none` 直接返回空结果且**不 import 插件系统**，保证缺省跑法与 main 一致。
+ * 按开关装 builtin 插件。`none` 直接返回空结果且**不 import 插件系统**，保证缺省跑法与 main 一致。
+ *
+ * 只走 `installBuiltinCapability`（单个激活、不扫磁盘），不碰 `initPluginSystem`——
+ * 见文件头「为什么不用 initPluginSystem()」。重复调用是幂等的：已 active 的直接返回 true。
  */
 export async function activateEvalBuiltinPlugins(
   selection: BuiltinPluginSelection,
@@ -75,57 +85,44 @@ export async function activateEvalBuiltinPlugins(
   if (selection === 'none') return { active: [], failures: [] };
 
   // 顺序不能反：protocol registry 的注册端口是 protocolRegistry 模块的 import 副作用，
-  // 先起插件系统会让每个 builtin 在 activate 时撞
-  // 「Protocol tool registry is not initialized」而全部转 error——报告上写着请求了 all，
-  // 工具面却一个没多。web 入口 initializeWebPluginSystem 也是先 protocolRegistry 再 init。
+  // 先激活插件会让每个 builtin 撞「Protocol tool registry is not initialized」而全部转 error
+  // ——报告上写着请求了 all，工具面却一个没多。
   const { getProtocolRegistry } = await import('@host/tools/protocolRegistry');
   getProtocolRegistry();
 
-  const {
-    initPluginSystem,
-    getPluginRegistry,
-    getActiveBuiltinPluginIds,
-  } = await import('@host/plugins/pluginRegistry');
+  const { getPluginRegistry, getActiveBuiltinPluginIds } = await import('@host/plugins/pluginRegistry');
+  const { getDefaultInstalledBuiltinPluginIds } = await import('@host/agent/agentRuntimeDefaults');
 
-  // 只起一次：第二次 initialize() 会用全新的 inactive 记录覆盖 plugins 表，
-  // 而 capabilitySurface 还认为它们已加载 ⇒ activateAll 全部转 error，工具面反而清空。
-  if (!started) {
-    await initPluginSystem();
-    started = true;
-  }
+  // `all` = 所有默认已装的（computerUse 的安装状态判定要求显式点名，所以它不在里面）；
+  // 显式子集则以点名为准，安装状态不再过滤——点名就是要它。
+  const defaultInstalled = new Set(getDefaultInstalledBuiltinPluginIds());
+  const requested: readonly BuiltinCapabilityId[] = selection === 'all'
+    ? BUILTIN_PLUGIN_IDS.filter((id) => defaultInstalled.has(id))
+    : selection;
 
-  if (selection !== 'all') {
-    const wanted = new Set<string>(selection);
-    const registry = getPluginRegistry();
-    for (const id of BUILTIN_PLUGIN_IDS) {
-      const loaded = registry.getPlugin(id);
-      if (wanted.has(id)) {
-        if (!loaded || loaded.state !== 'active') await registry.installBuiltinCapability(id);
-      } else if (loaded) {
-        await registry.removeBuiltinCapability(id);
-      }
-    }
+  const wanted = new Set<string>(requested);
+  const registry = getPluginRegistry();
+  for (const id of BUILTIN_PLUGIN_IDS) {
+    if (wanted.has(id)) await registry.installBuiltinCapability(id);
+    else if (registry.getPlugin(id)) await registry.removeBuiltinCapability(id);
   }
+  installed = [...requested];
 
   const active = getActiveBuiltinPluginIds();
   const activeSet = new Set(active);
-  const requested = selection === 'all' ? BUILTIN_PLUGIN_IDS : selection;
   const failures = requested
     .filter((id) => !activeSet.has(id))
-    .map((id) => ({
-      id,
-      reason: getPluginRegistry().getPlugin(id)?.error
-        ?? (selection === 'all' ? '未安装（安装状态为 removed，或 computerUse 需显式点名）' : '激活失败'),
-    }));
+    .map((id) => ({ id, reason: registry.getPlugin(id)?.error ?? '激活失败' }));
   return { active, failures };
 }
 
 export async function shutdownEvalBuiltinPlugins(): Promise<void> {
-  if (!started) return;
-  started = false;
-  const { shutdownPluginSystem } = await import('@host/plugins/pluginRegistry');
-  // startWatching 起了文件监听，进程退出前必须收；不收就是又给 N-EVAL-CI-NOEXIT 添一个句柄。
-  await shutdownPluginSystem();
+  if (installed.length === 0) return;
+  const targets = installed;
+  installed = [];
+  const { getPluginRegistry } = await import('@host/plugins/pluginRegistry');
+  const registry = getPluginRegistry();
+  for (const id of targets) await registry.removeBuiltinCapability(id);
 }
 
 /** stderr 一行人话：谁装上了、谁没装上、为什么。 */

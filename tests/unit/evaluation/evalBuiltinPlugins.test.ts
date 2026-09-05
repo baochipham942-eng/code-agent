@@ -12,7 +12,15 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+
+// 第三方插件发现走 pluginLoader.discoverPlugins。开关只该装点名的 builtin，
+// 绝不该顺手把 <dataDir>/plugins 里的第三方插件也激活——那些工具照样进 protocol registry，
+// 而 stamp 只记 builtin，两臂对比就被污染了。这里直接盯「有没有去扫」。
+vi.mock('../../../src/host/plugins/pluginLoader', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../src/host/plugins/pluginLoader')>();
+  return { ...actual, discoverPlugins: vi.fn(actual.discoverPlugins) };
+});
 
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'eval-builtin-plugins-'));
 process.env.CODE_AGENT_DATA_DIR = dataDir;
@@ -88,6 +96,16 @@ describe('插件面开关', () => {
       expect(registry.getPluginRegistry().getPlugin(id)?.state).toBe('active');
     }
   }, 60_000);
+
+  it('all：只装 builtin，从不扫磁盘找第三方插件（真阴）', async () => {
+    const { discoverPlugins } = await import('../../../src/host/plugins/pluginLoader');
+    expect(vi.mocked(discoverPlugins)).not.toHaveBeenCalled();
+
+    // registry 里除了 builtin 不该有别人
+    for (const plugin of registry.getPluginRegistry().getPlugins()) {
+      expect(plugin.rootPath.startsWith('builtin:'), plugin.manifest.id).toBe(true);
+    }
+  });
 
   it('all：验收③——validate_html_in_app 在评测环境里可加载、可被 tool_called 记到', async () => {
     const protocol = await protocolRegistry();

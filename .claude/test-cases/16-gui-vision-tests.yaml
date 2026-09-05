@@ -103,6 +103,10 @@ cases:
   # 这两题在「不装插件」的评测进程里必红——ToolSearch 对这些工具只会返回
   # 「searchable metadata has no registered protocol tool」。装/不装的分差就落在这里。
   # --------------------------------------------------------------------------
+  # 这题量的是「会不会去调 validate_html_in_app」，不是「验证跑没跑通」：
+  # 该工具靠评测中心「验证」tab 执行，无头跑法里没有渲染进程，工具会立刻返回
+  # PANEL_UNAVAILABLE（快速失败，不占题的时间预算）。所以断言只有 tool_called，
+  # 装/不装的分差就落在这一格上。
   - id: plugin-validate-html-selfcheck
     type: task
     description: "用 in-app 验证工具自检生成的页面"

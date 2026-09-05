@@ -305,6 +305,7 @@
     "eslint": "^10.4.0",
     "exceljs": "^4.4.0",
     "express": "^5.2.1",
+    "fast-check": "^4.9.0",
     "glob": "^13.0.6",
     "gpt-tokenizer": "^3.4.0",
     "grammy": "^1.43.0",

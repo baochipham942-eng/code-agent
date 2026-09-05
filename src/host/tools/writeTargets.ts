@@ -8,6 +8,7 @@ import type {
 import { getMemoryDir } from '../lightMemory/indexLoader';
 import { resolveCanonicalRunPath } from '../runtime/runContext';
 import { canonicalizeCommand } from '../security/canonicalizeCommand';
+import { parseShellCommand } from '../security/commandParse';
 
 export interface ResolveToolWriteTargetsInput {
   definition: ToolDefinition;
@@ -38,74 +39,6 @@ function resolveToolPath(rawPath: string, workingDirectory: string): string {
   return resolveCanonicalRunPath(
     path.isAbsolute(expanded) ? expanded : path.resolve(workingDirectory, expanded),
   );
-}
-
-function readShellWord(command: string, start: number): { raw: string; end: number } {
-  let index = start;
-  while (index < command.length && /\s/.test(command[index])) index += 1;
-  const wordStart = index;
-  let quote: "'" | '"' | undefined;
-  let escaped = false;
-  for (; index < command.length; index += 1) {
-    const char = command[index];
-    if (escaped) {
-      escaped = false;
-      continue;
-    }
-    if (char === '\\' && quote !== "'") {
-      escaped = true;
-      continue;
-    }
-    if (quote) {
-      if (char === quote) quote = undefined;
-      continue;
-    }
-    if (char === "'" || char === '"') {
-      quote = char;
-      continue;
-    }
-    if (/\s/.test(char) || char === ';' || char === '|' || char === '&') break;
-  }
-  return { raw: command.slice(wordStart, index), end: index };
-}
-
-/** shell 命令里 `>` / `>>` 重定向的写目标（fd 复制不算）。上线后评测的越权写信号也用它，别再造一份。 */
-export function shellRedirectTargets(command: string): string[] {
-  const targets: string[] = [];
-  let quote: "'" | '"' | undefined;
-  let escaped = false;
-  for (let index = 0; index < command.length; index += 1) {
-    const char = command[index];
-    if (escaped) {
-      escaped = false;
-      continue;
-    }
-    if (char === '\\' && quote !== "'") {
-      escaped = true;
-      continue;
-    }
-    if (quote) {
-      if (char === quote) quote = undefined;
-      continue;
-    }
-    if (char === "'" || char === '"') {
-      quote = char;
-      continue;
-    }
-    if (char !== '>') continue;
-    while (command[index + 1] === '>') index += 1;
-    // `2>&1` / `>&2` / `2>&-` 是 fd 复制，不写文件；bash 只在 `>&` 后的词
-    // 整体是数字或单个 `-` 时才当 fd 复制，`&>file` / `>&12abc` 仍是写目标。
-    const duplicatesFileDescriptor = command[index + 1] === '&';
-    const target = readShellWord(command, index + (duplicatesFileDescriptor ? 2 : 1));
-    if (duplicatesFileDescriptor && /^(?:\d+|-)$/.test(target.raw)) {
-      index = Math.max(index, target.end - 1);
-      continue;
-    }
-    targets.push(target.raw);
-    index = Math.max(index, target.end - 1);
-  }
-  return targets;
 }
 
 function genericPathAssessment(
@@ -190,15 +123,16 @@ function descriptorAssessment(
   const uncertain: string[] = [];
   const memoryAlias = path.join(path.basename(path.dirname(memoryDir)), path.basename(memoryDir));
   const canonical = canonicalizeCommand(command);
-  const redirectTargets = shellRedirectTargets(canonical.command);
-  if (canonical.parsingFailed && redirectTargets.length > 0) {
-    uncertain.push(`uncertain-command-analysis:${canonical.failureReason ?? 'parse-failure'}`);
+  const parsed = parseShellCommand(command);
+  if (parsed.parsingFailed && parsed.writeTargets.length > 0) {
+    uncertain.push(`uncertain-command-analysis:${parsed.failureReason ?? 'parse-failure'}`);
   }
+  uncertain.push(...parsed.uncertain.map((reason) => `uncertain-command-analysis:${reason}`));
   if (canonical.command.includes(memoryDir) || canonical.command.includes(memoryAlias)) targets.push(memoryDir);
-  for (const rawTarget of redirectTargets) {
-    const target = rawTarget;
-    if (!target || /[$`*?{}]/.test(target)) {
-      uncertain.push(`uncertain-redirection:${rawTarget || '<missing>'}`);
+  for (const writeTarget of parsed.writeTargets) {
+    const target = writeTarget.path;
+    if (!target || writeTarget.uncertain) {
+      uncertain.push(`uncertain-redirection:${target || '<missing>'}`);
     } else {
       targets.push(resolveToolPath(target, input.workingDirectory));
     }

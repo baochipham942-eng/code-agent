@@ -4,6 +4,7 @@
 
 import type { ToolContext, ToolExecutionResult, PermissionRequestData } from './types';
 import * as nodePath from 'path';
+import * as nodeOs from 'node:os';
 import * as nodeFs from 'node:fs/promises';
 import { createHash, randomUUID } from 'node:crypto';
 import { AgentFailureCode, type ToolDefinition } from '../../shared/contract';
@@ -29,7 +30,7 @@ import {
 import type { SkillToolBoundary } from '../../shared/contract/agentSkill';
 import type { NeoTagRunContext } from '../../shared/contract/tag';
 import type { SwarmRunScope } from '../../shared/contract/swarm';
-import { createTraceBuilder } from '../security/decisionTraceBuilder';
+import { createTraceBuilder, createTraceStep } from '../security/decisionTraceBuilder';
 import { getWriteIsolationManager, getWriteIsolationScope, type WriteIsolationMetadata } from '../security/writeIsolation';
 import type { HookManager } from '../hooks/hookManager';
 import { getToolResolver } from '../tools/dispatch/toolResolver';
@@ -87,6 +88,8 @@ import {
   createDirectiveMemoryWriteGrant,
 } from '../memory/directiveMemoryPathAuthority';
 import { resolveToolWriteTargets } from './writeTargets';
+import { parseShellCommand } from '../security/commandParse';
+import { getPolicyEngine } from '../permissions/policyEngine';
 import {
   createFileOwnershipActor,
   getFileOwnershipRegistry,
@@ -107,6 +110,71 @@ import type { TelemetryCollector } from '../telemetry/telemetryCollector';
 const logger = createLogger('ToolExecutor');
 const FILE_MUTATION_LOCK_HOLD_TIMEOUT_MS = 60_000;
 const FILE_MUTATION_LOCK_WAIT_TIMEOUT_MS = 10_000;
+
+// $HOME / $PWD are the two variables the host itself sets and knows the value of, so a target
+// written as "$HOME/.ssh/authorized_keys" can be resolved exactly rather than waved through as
+// dynamic. Without this the parser marks it uncertain and the deny check below skips it entirely.
+// ponytail: only these two — a target built from an arbitrary variable ($SSHDIR/...) stays
+// unresolvable and is still skipped. Closing that needs a product call (skip / ask / deny when a
+// write target cannot be resolved and a path deny is configured); raised with the ticket, not
+// decided here.
+function expandControlledShellVars(rawPath: string, workingDirectory: string): string | null {
+  const expanded = rawPath
+    .replaceAll(/\$\{HOME\}|\$HOME\b/g, nodeOs.homedir())
+    .replaceAll(/\$\{PWD\}|\$PWD\b/g, workingDirectory);
+  return /[$`*?{}]/.test(expanded) ? null : expanded;
+}
+
+function resolveShellTarget(rawPath: string, workingDirectory: string): string {
+  const expanded = rawPath === '~'
+    ? nodeOs.homedir()
+    : rawPath.startsWith('~/')
+      ? nodePath.join(nodeOs.homedir(), rawPath.slice(2))
+      : rawPath;
+  return resolveCanonicalRunPath(nodePath.isAbsolute(expanded)
+    ? expanded
+    : nodePath.resolve(workingDirectory, expanded));
+}
+
+function shellWritePathPolicyCheck(
+  command: string,
+  workingDirectory: string,
+  policyEnforcer: PolicyEnforcer | null | undefined,
+): PolicyCheckResult {
+  const parsed = parseShellCommand(command);
+  for (const target of parsed.writeTargets) {
+    if (!target.path) continue;
+    let targetPath = target.path;
+    if (target.uncertain) {
+      const expanded = expandControlledShellVars(target.path, workingDirectory);
+      if (!expanded) continue;
+      targetPath = expanded;
+    }
+    const resolved = resolveShellTarget(targetPath, workingDirectory);
+    if (policyEnforcer?.isActive) {
+      const policyCheck = policyEnforcer.checkFilePath(resolved, 'write');
+      if (!policyCheck.allowed) return policyCheck;
+    }
+
+    const relative = nodePath.relative(workingDirectory, resolved) || '.';
+    const homeRelative = nodePath.relative(nodeOs.homedir(), resolved);
+    const candidates = [target.path, targetPath, resolved, relative];
+    if (homeRelative && !homeRelative.startsWith('..') && !nodePath.isAbsolute(homeRelative)) {
+      candidates.push(`~/${homeRelative}`);
+    }
+    const matchedRule = getPolicyEngine().matchUserPathDeny(candidates);
+    if (matchedRule) {
+      const reason = `Shell write target "${target.path}" is denied by ${matchedRule.name}`;
+      return {
+        allowed: false,
+        reason,
+        section: 'user-permissions',
+        traceStep: createTraceStep('policy_enforcer', matchedRule.id, 'deny', reason, Date.now()),
+      };
+    }
+  }
+  return { allowed: true };
+}
 
 async function fileExists(filePath: string): Promise<boolean> {
   try {
@@ -1055,6 +1123,39 @@ export class ToolExecutor {
     // deny 不可被任何后续层推翻（skill 预授权 / 安全命令白名单 / classifier / 用户审批）。
     // 无 policy 文件时 getPolicyEnforcer 返回 null，零开销。
     const policyEnforcer = getPolicyEnforcer(resolveCanonicalRunPath(this.runtimeWorkspace));
+    const shellPathCheck = isBashToolName(policyToolName) && typeof params.command === 'string'
+      ? shellWritePathPolicyCheck(params.command, bashWorkingDirectory, policyEnforcer)
+      : { allowed: true };
+    if (!shellPathCheck.allowed) {
+      logger.warn('Blocked shell write target by path policy', {
+        toolName: executionToolName,
+        section: shellPathCheck.section,
+        reason: shellPathCheck.reason,
+      });
+      policyEnforcer?.logToolCall(executionToolName, params, 'blocked', shellPathCheck.reason);
+      options.hookManager?.triggerPermissionDenied(
+        executionToolName, shellPathCheck.reason || 'path policy', 'policy',
+        effectiveSessionId || 'unknown',
+      ).catch(() => {});
+      const trace = shellPathCheck.traceStep
+        ? createTraceBuilder(executionToolName)
+          .addStep(
+            shellPathCheck.traceStep.layer,
+            shellPathCheck.traceStep.rule,
+            shellPathCheck.traceStep.result,
+            shellPathCheck.traceStep.reason,
+          )
+          .build('deny')
+        : undefined;
+      recordDecision(
+        executionToolName, params, 'policy-deny', shellPathCheck.reason || 'path policy',
+        permStartTime, trace, effectiveSessionId, this.ledgerOrigin,
+      );
+      return {
+        success: false,
+        error: `Blocked by path policy: ${shellPathCheck.reason}`,
+      };
+    }
     if (policyEnforcer?.isActive) {
       const policyCheck = this.checkAgainstPolicy(policyEnforcer, executionToolName, policyToolName, params, toolDef);
       if (!policyCheck.allowed) {

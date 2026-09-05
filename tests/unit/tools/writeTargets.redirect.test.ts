@@ -53,4 +53,31 @@ describe('shell redirect write targets', () => {
     expect(resolve('cmd >&12abc').targets)
       .toContain(resolveCanonicalRunPath(path.join(workingDirectory, '12abc')));
   });
+
+  it.each(["printf x >'&1'", 'printf x >\\&1'])(
+    '引号或转义后的 &1 是文件名：%s',
+    (command) => {
+      expect(resolve(command).targets)
+        .toContain(resolveCanonicalRunPath(path.join(workingDirectory, '&1')));
+    },
+  );
+
+  it.each([
+    ["sudo bash -c 'echo > f'", 'f'],
+    ["setsid bash --rcfile /dev/null -c 'printf x > c.md'", 'c.md'],
+    ["sed -i 's/x/y/' src/host/permissions/modes.ts", 'src/host/permissions/modes.ts'],
+    ['printf x | tee report.txt', 'report.txt'],
+    ['cp source.txt copied.txt', 'copied.txt'],
+    ['mv source.txt moved.txt', 'moved.txt'],
+  ])('共享解析器提取包装器与写工具目标：%s', (command, target) => {
+    expect(resolve(command).targets)
+      .toContain(resolveCanonicalRunPath(path.join(workingDirectory, target)));
+  });
+
+  it.each(['grep sh file', "printf '%s' bash", 'man sh', 'which bash zsh'])(
+    'shell 名作为普通参数不制造 uncertain：%s',
+    (command) => {
+      expect(resolve(command)).toMatchObject({ targets: [], uncertain: [] });
+    },
+  );
 });

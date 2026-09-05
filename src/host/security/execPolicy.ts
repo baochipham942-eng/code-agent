@@ -1,7 +1,5 @@
-// ============================================================================
-// Exec Policy - 命令执行策略持久化
-// ============================================================================
-//
+// =====================================================================// Exec Policy - 命令执行策略持久化
+// =====================================================================//
 // 借鉴 Codex CLI 的 prefix_rule 设计：
 // 用户批准一次命令后，生成持久化规则，后续匹配的命令自动跳过审批。
 //
@@ -13,6 +11,7 @@ import * as path from 'path';
 import { createLogger } from '../services/infra/logger';
 import { getProjectConfigDir, getUserConfigDir } from '../config/configPaths';
 import { canonicalizeCommand } from './canonicalizeCommand';
+import { resolvedExecutable } from './commandParse';
 import { isKnownSafeCommand } from './commandSafety';
 
 const logger = createLogger('ExecPolicy');
@@ -162,6 +161,15 @@ export class ExecPolicyStore {
   learnFromApproval(command: string): boolean {
     const tokens = tokenizePolicyCommand(command);
     if (tokens.length === 0) return false;
+
+    const execution = resolvedExecutable(command);
+    if (!execution || execution.program !== execution.originalProgram) {
+      logger.debug('Skipping wrapped or uncertain command prefix', {
+        originalProgram: execution?.originalProgram,
+        resolvedProgram: execution?.program,
+      });
+      return false;
+    }
 
     // 取前 1-2 个 token 作为 prefix（避免过于宽泛或过于具体）
     const program = tokens[0];

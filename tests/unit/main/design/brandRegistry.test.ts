@@ -13,21 +13,21 @@ import {
 } from '../../../../src/host/services/design/brandRegistry';
 import { directionTokens } from '../../../../src/design/direction-tokens';
 
-// getUserConfigDir() = process.env.CODE_AGENT_HOME / '.code-agent'，每次调用读 env，
-// 故把 CODE_AGENT_HOME 指向临时目录即可隔离 registry（不污染真实 ~/.code-agent）。
-let tmpHome: string;
-let prevHome: string | undefined;
+// getUserConfigDir() 优先使用 CODE_AGENT_DATA_DIR，未设置才是
+// process.env.CODE_AGENT_HOME / '.code-agent'；每次调用读 env，故临时覆盖前者隔离 registry。
+let tmpDataDir: string;
+let prevDataDir: string | undefined;
 
 beforeEach(async () => {
-  prevHome = process.env.CODE_AGENT_HOME;
-  tmpHome = await fsp.mkdtemp(path.join(os.tmpdir(), 'brand-registry-'));
-  process.env.CODE_AGENT_HOME = tmpHome;
+  prevDataDir = process.env.CODE_AGENT_DATA_DIR;
+  tmpDataDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'brand-registry-'));
+  process.env.CODE_AGENT_DATA_DIR = tmpDataDir;
 });
 
 afterEach(async () => {
-  if (prevHome === undefined) delete process.env.CODE_AGENT_HOME;
-  else process.env.CODE_AGENT_HOME = prevHome;
-  await fsp.rm(tmpHome, { recursive: true, force: true });
+  if (prevDataDir === undefined) delete process.env.CODE_AGENT_DATA_DIR;
+  else process.env.CODE_AGENT_DATA_DIR = prevDataDir;
+  await fsp.rm(tmpDataDir, { recursive: true, force: true });
 });
 
 const draft = (over?: Record<string, unknown>) => ({
@@ -155,12 +155,12 @@ describe('brandRegistry', () => {
   // 且不在 brands 目录外写入或删除任何 sentinel。
   it('saveBrand 显式传穿越 id：拒绝且不在 brands 外写文件', async () => {
     // sentinel：brands 父目录（design/）下一个不该被 saveBrand 创建的目标。
-    const sentinelDir = path.join(tmpHome, '.code-agent', 'design');
+    const sentinelDir = path.join(tmpDataDir, 'design');
     await fsp.mkdir(sentinelDir, { recursive: true });
     const traversalId = '../../../../evil';
     await expect(saveBrand(draft({ id: traversalId }))).rejects.toThrow();
     // 不该在 brands 目录外创建 evil/ 目录或文件
-    const escaped = path.join(tmpHome, 'evil');
+    const escaped = path.join(tmpDataDir, 'evil');
     expect(existsSync(escaped)).toBe(false);
     expect(existsSync(path.join(sentinelDir, '..', '..', '..', '..', 'evil'))).toBe(false);
     // index 也不该记录这条
@@ -176,7 +176,7 @@ describe('brandRegistry', () => {
   it('deleteBrand 传穿越 id：no-op，不删 brands 外任何东西', async () => {
     const { id } = await saveBrand(draft());
     // 在 brands 父目录放一个 sentinel 文件，模拟「被穿越删除」的目标
-    const root = path.join(tmpHome, '.code-agent', 'design', 'brands');
+    const root = path.join(tmpDataDir, 'design', 'brands');
     const sentinel = path.join(root, '..', 'sentinel.txt');
     await fsp.writeFile(sentinel, 'keep me', 'utf-8');
 
@@ -191,7 +191,7 @@ describe('brandRegistry', () => {
   it('deleteBrand 一个不在 index 的 id：no-op，不动磁盘', async () => {
     const { id } = await saveBrand(draft());
     // 偷偷在 brands 下建一个不在 index 的目录，确认不被 deleteBrand 删
-    const root = path.join(tmpHome, '.code-agent', 'design', 'brands');
+    const root = path.join(tmpDataDir, 'design', 'brands');
     const orphanDir = path.join(root, 'orphan');
     await fsp.mkdir(orphanDir, { recursive: true });
     await fsp.writeFile(path.join(orphanDir, 'brand.json'), '{}', 'utf-8');

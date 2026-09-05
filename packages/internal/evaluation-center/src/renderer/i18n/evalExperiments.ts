@@ -53,7 +53,7 @@ export const evalExperimentsEn = {
     blindHint: 'A/B assignment was blind during the run and revealed afterward; the table is revealed', back: 'Back to experiments',
     safetyLine: '{n} safety failures; cannot ship', metadata: '{count} cases × 2 real runs · {excluded} excluded · total {cost}',
     filters: { all: 'All', candidate: 'Candidate won', baseline: 'Control won', tie: 'Tie', excluded: 'Excluded' },
-    columns: { caseId: 'Case id', a: 'A result', b: 'B result', winner: 'Winner', skills: 'Skill activations A/B', memory: 'Memory injections A/B', subagents: 'Subagent spawns A/B' },
+    columns: { caseId: 'Case id', a: 'A result', b: 'B result', winner: 'Winner', skills: 'Skill activations A/B', memory: 'Memory injections A/B', subagents: 'Subagent runs A/B' },
     memoryNotUsed: 'Memory never appeared; this result says nothing about its effect',
     technical: 'Technical details', pValue: 'pValue', decisivePairs: 'Cases with a winner', ciLowerBound: 'ciLowerBound', delta: 'delta', nMin: 'nMin', calibre: 'Calibration', reasons: 'Reasons', unmeasured: 'Not measured', experimentId: 'Experiment id', copy: 'Copy', reference: 'Reference',
     same: 'Same', baselineName: 'Control', candidateName: 'Candidate', tie: 'Tie', excluded: 'Excluded', loading: 'Loading…', loadFailed: 'Could not load experiment', runFailed: 'The experiment did not start.', stop: 'Stop',

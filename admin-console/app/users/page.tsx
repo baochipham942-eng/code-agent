@@ -35,7 +35,11 @@ export default async function UsersPage() {
       <Link href="/" className="text-sm text-zinc-500 hover:text-zinc-300">
         ← 返回 dashboard
       </Link>
-      {quality.truncated ? (
+      {quality.error ? (
+        <p className="mt-4 px-3 py-2 rounded border border-red-500/40 bg-red-500/10 text-red-300 text-xs">
+          上线后过率读取失败：{quality.error}。下面两列显示的「—」是没读到，不是没评过。
+        </p>
+      ) : quality.truncated ? (
         <p className="mt-4 px-3 py-2 rounded border border-amber-500/40 bg-amber-500/10 text-amber-300 text-xs">
           上线后过率的数据量超过单次读取上限，那一列只覆盖了窗口的一部分用户。
         </p>

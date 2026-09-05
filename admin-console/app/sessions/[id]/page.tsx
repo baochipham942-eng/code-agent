@@ -2,7 +2,7 @@
 // 把"Q: 用户某个 session 效果不好/出错，我能不能查到根因?"包成 UI。
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { getSentryIssuesForSession, type SentrySessionLookup } from '@/lib/sentry';
-import { DIMENSION_LABELS, POST_LAUNCH_DIMENSIONS, type PostLaunchDimension } from '@/lib/postlaunch';
+import { DIMENSION_LABELS, POST_LAUNCH_DIMENSIONS, readRows, type PostLaunchDimension } from '@/lib/postlaunch';
 import Link from 'next/link';
 
 type Params = Promise<{ id: string }>;
@@ -91,7 +91,7 @@ export default async function SessionDetail({ params }: { params: Params }) {
     );
   }
 
-  const [{ data: turns }, { data: feedback }, { data: turnScores }, sentry] = await Promise.all([
+  const [{ data: turns }, { data: feedback }, scoresResult, sentry] = await Promise.all([
     supabase
       .from('telemetry_turns')
       .select('*')
@@ -103,15 +103,19 @@ export default async function SessionDetail({ params }: { params: Params }) {
       .eq('session_id', id)
       .order('uploaded_at', { ascending: false })
       .returns<FeedbackRow[]>(),
+    // 与 fetchQualityRows 同一套规矩：count 判截断（不靠客户端 limit，PostgREST 自己有
+    // db-max-rows 上限），error 不吞成空态。
     supabase
       .from('telemetry_turn_scores')
-      .select('*')
+      .select('*', { count: 'exact' })
       .eq('session_id', id)
       .order('turn_started_at', { ascending: true })
+      .limit(TURN_SCORE_LIMIT)
       .returns<TurnScoreRow[]>(),
     getSentryIssuesForSession(id),
   ]);
-  const scoresByTurn = new Map((turnScores ?? []).map((score) => [score.turn_id, score]));
+  const scores = readRows<TurnScoreRow>(scoresResult);
+  const scoresByTurn = new Map(scores.rows.map((score) => [score.turn_id, score]));
   const feedbackRows = feedback ?? [];
   const negativeFeedbackCount = feedbackRows.filter((item) => item.rating === -1).length;
   const feedbackByTurn = new Map<string, FeedbackRow[]>();
@@ -188,7 +192,7 @@ export default async function SessionDetail({ params }: { params: Params }) {
         </dl>
       </section>
 
-      <PostLaunchScores scores={turnScores ?? []} />
+      <PostLaunchScores scores={scores.rows} truncated={scores.truncated} error={scores.error} />
 
       <section>
         <h2 className="text-xs uppercase tracking-wide text-zinc-500 mb-3">
@@ -492,8 +496,29 @@ const DIM_COLUMN: Record<PostLaunchDimension, keyof TurnScoreRow> = {
   artifact: 'dim_artifact',
 };
 
-/** 会话级的分数汇总区：没有分数行时整块不出现（大多数会话没被抽中评）。 */
-function PostLaunchScores({ scores }: { scores: TurnScoreRow[] }) {
+/** 单次最多读这么多轮分数；命中就明说截断，不静默。 */
+const TURN_SCORE_LIMIT = 500;
+
+/** 会话级的分数汇总区：查成功且没有分数行时整块不出现（大多数会话没被抽中评）。 */
+function PostLaunchScores({
+  scores,
+  truncated,
+  error,
+}: {
+  scores: TurnScoreRow[];
+  truncated: boolean;
+  error: string | null;
+}) {
+  if (error) {
+    return (
+      <section className="mb-8">
+        <h2 className="text-xs uppercase tracking-wide text-zinc-500 mb-3">上线后评分</h2>
+        <p className="px-3 py-2 rounded border border-red-500/40 bg-red-500/10 text-red-300 text-sm">
+          读取失败：{error}。这不代表这条会话没被评过。
+        </p>
+      </section>
+    );
+  }
   if (scores.length === 0) return null;
   const cost = scores.reduce((sum, score) => sum + Number(score.cost_usd ?? 0), 0);
   return (
@@ -501,7 +526,7 @@ function PostLaunchScores({ scores }: { scores: TurnScoreRow[] }) {
       <div className="flex items-baseline justify-between gap-3 mb-3">
         <h2 className="text-xs uppercase tracking-wide text-zinc-500">上线后评分</h2>
         <span className="text-xs text-zinc-600">
-          {scores.length} 轮已评 · ${cost.toFixed(4)} · judge {scores[0].judge_version ?? '—'}
+          {scores.length} 轮已评{truncated ? '（只读到前 500 轮）' : ''} · ${cost.toFixed(4)} · judge {scores[0].judge_version ?? '—'}
         </span>
       </div>
       <div className="space-y-2">

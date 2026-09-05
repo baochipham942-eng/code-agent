@@ -81,7 +81,7 @@ export default async function Dashboard() {
         <Stat label="错误率" value={errorRate} />
       </section>
 
-      <PostLaunchQuality buckets={qualityBuckets} truncated={quality.truncated} />
+      <PostLaunchQuality buckets={qualityBuckets} truncated={quality.truncated} error={quality.error} />
 
       <section className="mb-8">
         <h2 className="text-xs uppercase tracking-wide text-zinc-500 mb-3">按 sessionId 查根因</h2>
@@ -183,7 +183,15 @@ function Pill({ status }: { status: string | null }) {
   return <span className={`px-2 py-0.5 rounded text-xs ${color}`}>{status ?? '—'}</span>;
 }
 
-function PostLaunchQuality({ buckets, truncated }: { buckets: QualityBucket[]; truncated: boolean }) {
+function PostLaunchQuality({
+  buckets,
+  truncated,
+  error,
+}: {
+  buckets: QualityBucket[];
+  truncated: boolean;
+  error: string | null;
+}) {
   return (
     <section className="mb-8">
       <div className="flex items-baseline justify-between gap-3 mb-3">
@@ -197,7 +205,12 @@ function PostLaunchQuality({ buckets, truncated }: { buckets: QualityBucket[]; t
           数据量超过单次读取上限，下面只是这个窗口的一部分，不是全部。缩短窗口或按用户下钻再看。
         </p>
       ) : null}
-      {buckets.length === 0 ? (
+      {error ? (
+        // 读取失败绝不能显示成「暂无评分」——那会让人以为没人评过，还引导去开一个已经开着的开关。
+        <p className="px-3 py-2 rounded border border-red-500/40 bg-red-500/10 text-red-300 text-sm">
+          读取失败：{error}
+        </p>
+      ) : buckets.length === 0 ? (
         <p className="text-zinc-500 text-sm py-4">
           暂无上线后评分 — 用户在「隐私防线 → 数据共享」里打开「上线后质量评分」并跑过一次评分后出现在这里。
         </p>

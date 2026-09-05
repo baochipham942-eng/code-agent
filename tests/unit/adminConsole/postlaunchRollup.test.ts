@@ -2,8 +2,10 @@
 // 纯函数，不碰 supabase、不碰网络、不碰数据目录。
 import { describe, expect, it } from 'vitest';
 import {
+  fetchQualityRows,
   isNewerRubric,
   overallPassRate,
+  readRows,
   rollupByUser,
   rollupByWeek,
   type QualityRow,
@@ -102,5 +104,62 @@ describe('rollupByWeek 的口径纪律', () => {
   it('信号轮与抽样轮各自成桶', () => {
     const buckets = rollupByWeek([row({ sampled_by: 'signal' }), row({ sampled_by: 'sample' })]);
     expect(buckets.map((b) => b.sampledBy).sort()).toEqual(['sample', 'signal']);
+  });
+});
+
+describe('readRows：截断判据与错误分支', () => {
+  it('截断看服务端 count，不看返回条数是否达到客户端 limit', () => {
+    // 真实形状：客户端要了 2000 行，PostgREST 自己的 db-max-rows（Supabase 默认 1000）
+    // 只给 1000 行。靠「返回数 > 我要的数」探测的写法在这里会安静地判成没截断。
+    const out = readRows({ data: new Array(1000).fill({}), error: null, count: 1500 });
+    expect(out.truncated).toBe(true);
+    expect(out.rows).toHaveLength(1000);
+    expect(out.error).toBeNull();
+  });
+
+  it('count 等于返回条数就是读全了', () => {
+    expect(readRows({ data: [{}, {}], error: null, count: 2 }).truncated).toBe(false);
+  });
+
+  it('查询出错不返回空数组当结果：error 非空，truncated 不误报', () => {
+    const out = readRows({ data: null, error: { message: 'statement timeout' }, count: null });
+    expect(out.error).toBe('statement timeout');
+    expect(out.rows).toEqual([]);
+    expect(out.truncated).toBe(false);
+  });
+
+  it('查成功且真的没有数据时 error 才是 null——空态与失败态分得开', () => {
+    const out = readRows({ data: [], error: null, count: 0 });
+    expect(out.error).toBeNull();
+    expect(out.rows).toEqual([]);
+  });
+});
+
+/** 只实现 fetchQualityRows 用到的那几步链式调用。 */
+function fakeSupabase(result: { data: unknown; error: { message: string } | null; count: number | null }) {
+  const builder = {
+    select: () => builder,
+    gte: () => builder,
+    order: () => builder,
+    limit: () => builder,
+    returns: () => Promise.resolve(result),
+  };
+  return { from: () => builder } as never;
+}
+
+describe('fetchQualityRows', () => {
+  it('视图读失败时把错误带出来，不伪装成「暂无上线后评分」', async () => {
+    const out = await fetchQualityRows(
+      fakeSupabase({ data: null, error: { message: 'relation "admin_postlaunch_quality" does not exist' }, count: null }),
+      28,
+    );
+    expect(out.error).toContain('admin_postlaunch_quality');
+    expect(out.rows).toEqual([]);
+  });
+
+  it('服务端还有更多行时报截断', async () => {
+    const out = await fetchQualityRows(fakeSupabase({ data: [BASE], error: null, count: 42 }), 28);
+    expect(out.truncated).toBe(true);
+    expect(out.error).toBeNull();
   });
 });

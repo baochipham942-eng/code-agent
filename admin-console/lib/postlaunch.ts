@@ -93,37 +93,63 @@ function emptyDims(): Record<PostLaunchDimension, DimTally> {
   };
 }
 
-/** 一次最多取这么多行；取满了就说明窗口没读全，页面要明说。 */
+/** 单次最多取这么多行。服务端还有自己的上限（PostgREST db-max-rows，Supabase 默认 1000），
+ *  所以这个数字只决定「最多要多少」，判不判截断得看 count。 */
 const ROW_LIMIT = 2000;
 
-export type QualityFetch = {
-  rows: QualityRow[];
-  /** 命中上限：展示的是窗口的一部分，不是全部。页面必须把这件事说出来。 */
+export type FetchOutcome<T> = {
+  rows: T[];
+  /** 服务端还有更多行没给：展示的是一部分，不是全部。页面必须把这件事说出来。 */
   truncated: boolean;
+  /** 查询本身失败了。null 才代表「查成功了」，空 rows 这时才等于「真没有数据」。 */
+  error: string | null;
 };
+
+/**
+ * 把一次 supabase 查询读成「行 + 是否截断 + 是否出错」。两条规矩写在这一处，别在调用点各写一遍：
+ *
+ * 1. **截断看 count，不看客户端 limit**。PostgREST 自己有 `db-max-rows` 上限
+ *    （Supabase 默认 1000），要 2001 行它也只给 1000——靠「返回数 > 我要的数」探测，
+ *    在窗口 1500 行时会安静地判成「没截断」，把三分之二的数据丢掉还显示成全部。
+ *    `count: 'exact'` 是服务端按过滤条件算出来的总数，不受任何 limit 影响，
+ *    拿它和实际返回条数比才判得准。
+ * 2. **error 不许吞成空态**。视图超时、迁移还没落地、RLS 拒绝，`data` 都是 null；
+ *    当成「暂无数据」会让页面理直气壮地说「还没有人评分」并引导用户去开开关，
+ *    而真相是这次根本没读到。
+ */
+export function readRows<T>(result: {
+  data: T[] | null;
+  error: { message: string } | null;
+  count: number | null;
+}): FetchOutcome<T> {
+  if (result.error) return { rows: [], truncated: false, error: result.error.message };
+  const rows = result.data ?? [];
+  return { rows, truncated: (result.count ?? rows.length) > rows.length, error: null };
+}
+
+export type QualityFetch = FetchOutcome<QualityRow>;
 
 /**
  * 拉视图。`sinceDays` 之前的天不要（视图粒度是天，按 day_start 切）。
  * 可见性完全由底表 RLS 决定，页面不用自己判权。
  *
- * ponytail: 单次取 ROW_LIMIT + 1 行来探测截断，不做分页循环——服务端渲染里
- * 无上限地翻页是更糟的失败模式。真到了常态截断，把这里换成按 day_start 游标分页。
- * 关键是**不静默**：截断了就让页面挂出来，别把半个窗口当整个窗口给人看。
+ * ponytail: 一次取 ROW_LIMIT 行 + count 判截断，不做分页循环——服务端渲染里
+ * 无上限地翻页是更糟的失败模式。真到了常态截断，换成按 day_start 游标的有界分页。
  */
 export async function fetchQualityRows(
   supabase: SupabaseClient,
   sinceDays: number,
 ): Promise<QualityFetch> {
   const since = new Date(Date.now() - sinceDays * 24 * 60 * 60 * 1000).toISOString();
-  const { data } = await supabase
-    .from('admin_postlaunch_quality')
-    .select('*')
-    .gte('day_start', since)
-    .order('day_start', { ascending: false })
-    .limit(ROW_LIMIT + 1)
-    .returns<QualityRow[]>();
-  const rows = data ?? [];
-  return { rows: rows.slice(0, ROW_LIMIT), truncated: rows.length > ROW_LIMIT };
+  return readRows<QualityRow>(
+    await supabase
+      .from('admin_postlaunch_quality')
+      .select('*', { count: 'exact' })
+      .gte('day_start', since)
+      .order('day_start', { ascending: false })
+      .limit(ROW_LIMIT)
+      .returns<QualityRow[]>(),
+  );
 }
 
 function newBucket(key: string, row: QualityRow): QualityBucket {

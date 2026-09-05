@@ -502,11 +502,14 @@ export class FolderTrustService {
     } catch {
       // 列已存在
     }
-    const columns = this.db.prepare('PRAGMA table_info(folder_trust)').all() as { name: string }[];
-    if (!columns.some((column) => column.name === 'birthtime_ns')) {
-      // Existing decisions have no incarnation snapshot: require explicit confirmation once.
-      this.db.exec('ALTER TABLE folder_trust ADD COLUMN birthtime_ns TEXT');
-    }
+    const db = this.db;
+    db.transaction(() => {
+      const columns = db.prepare('PRAGMA table_info(folder_trust)').all() as { name: string }[];
+      if (!columns.some((column) => column.name === 'birthtime_ns')) {
+        // Old grants require confirmation; old denials remain blocked.
+        db.exec('ALTER TABLE folder_trust ADD COLUMN birthtime_ns TEXT');
+      }
+    }).immediate();
     return this.db;
   }
 
@@ -524,6 +527,10 @@ export class FolderTrustService {
     identity: FolderIdentity,
     gatedDigest: string,
   ): void {
+    if (state === 'trusted' && !identity.birthtimeNs) {
+      // The existing IPC error/toast path must explain why an explicit grant failed.
+      throw new Error('This filesystem does not provide folder creation time. Folder trust cannot be saved. Choose a folder on a filesystem that supports creation times.');
+    }
     const now = Date.now();
     this.getDb().prepare(`
       INSERT INTO folder_trust (
@@ -582,7 +589,8 @@ export class FolderTrustService {
   /**
    * inode can be recycled after deletion. Bind the decision to its creation time too,
    * preserving stat's full precision (Date/Number milliseconds can hide a replacement).
-   * Unlike ctime/mtime or a content digest, birthtime stays stable during ordinary edits.
+   * On filesystems with real birthtime (not Node's ctime fallback), ordinary edits
+   * leave it stable; ctime/mtime and content digests do not identify an incarnation.
    * Missing snapshots fail closed; never seed an old grant from the current directory.
    * dev alone is not identity: APFS reassigns it on remount/reboot.
    */
@@ -619,7 +627,10 @@ export class FolderTrustService {
       && row.state === 'trusted'
       && !identityChanged
       && hasNewGatedItems(row.gated_digest, dangerousItems);
-    const state: FolderTrustState = row && !identityChanged && !contentChanged ? row.state : 'untrusted';
+    // Losing identity evidence can revoke a grant, but must never relax an explicit denial.
+    const state: FolderTrustState = row?.state === 'blocked'
+      ? 'blocked'
+      : row && !identityChanged && !contentChanged ? row.state : 'untrusted';
     const blockedItems = state === 'trusted' ? [] : dangerousItems.filter((item) => item.gated);
     return {
       state,

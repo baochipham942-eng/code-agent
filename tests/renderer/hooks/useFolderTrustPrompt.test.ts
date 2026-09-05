@@ -8,6 +8,7 @@ vi.mock('../../../src/renderer/services/ipcService', () => ({
 }));
 vi.mock('../../../src/renderer/hooks/useToast', () => ({ toast: { error: vi.fn() } }));
 
+import { toast } from '../../../src/renderer/hooks/useToast';
 import { useFolderTrustPrompt } from '../../../src/renderer/hooks/useFolderTrustPrompt';
 
 const untrusted = (dir: string) => ({
@@ -49,4 +50,22 @@ describe('useFolderTrustPrompt', () => {
     expect(setCalls).toEqual([['domain:folderTrust', 'set', { state: 'trusted', workingDirectory: '/b' }]]);
     expect(result.current.evaluation).toBeNull();
   });
+
+  it('shows why folder trust cannot be saved and lets the user choose blocked', async () => {
+    const reason = 'This filesystem does not provide folder creation time. Folder trust cannot be saved.';
+    invokeDomain.mockImplementation(async (_domain: string, action: string, payload: { workingDirectory: string; state?: string }) => {
+      if (action === 'get') return untrusted(payload.workingDirectory);
+      if (payload.state === 'trusted') throw new Error(reason);
+      return { ...untrusted(payload.workingDirectory), state: 'blocked' };
+    });
+    const { result } = renderHook(() => useFolderTrustPrompt('/project'));
+    await waitFor(() => expect(result.current.evaluation).not.toBeNull());
+    await act(async () => { await result.current.decide('trusted'); });
+    expect(toast.error).toHaveBeenCalledWith(expect.stringContaining(reason));
+    expect(result.current.isBusy).toBe(false);
+    expect(result.current.evaluation?.state).toBe('untrusted');
+    await act(async () => { await result.current.decide('blocked'); });
+    expect(result.current.evaluation).toBeNull();
+  });
+
 });

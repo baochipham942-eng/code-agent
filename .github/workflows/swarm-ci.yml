@@ -269,7 +269,119 @@ jobs:
         # chromium_headless_shell。键加 -v2 甩掉毒缓存（N-CI-XYFLOW-DEPOPT）。
         run: npx playwright install --with-deps chromium
 
-      - name: Main-chain vitest subset (agent / tools / ipc / services / design / renderer)
+
+      - name: MCP protocol compatibility (unit + integration)
+        run: node scripts/ci/vitest-with-flake-ledger.mjs --job "MCP protocol compatibility" -- npx vitest run tests/unit/mcp tests/integration/mcp --retry=1
+
+      - name: Knip dead-export ratchet
+        # dead exports+types 集合棘轮（基线见 scripts/knip-ratchet-baseline.json）。
+        # knip 版本锁在脚本内（npx knip@<pin>），未入 devDependencies；本地实测 ~12s，
+        # CI 走 setup-node 的 npm 缓存。独立 step 便于失败归因。
+        run: node scripts/knip-ratchet.mjs
+
+      - name: Knip production dead-export ratchet
+        # 只用发行版入口的 strict profile 查 export/type；测试消费不再把生产死导出
+        # 算作可达。独立 step 保留与普通 dead-export 门各自的失败归因。
+        run: node scripts/knip-ratchet.mjs --profile production
+
+      - name: Knip production-reachability ratchet
+        # legacy profile 锁存量文件集合；strict profile 关闭自动测试/plugin 入口，只拦相对 main
+        # 新增且从发行版入口完全走不到的源码。完整历史用于解析真实 merge-base。
+        run: node scripts/knip-production-ratchet.mjs
+
+      - name: Knip dependency dimension gate
+        # 依赖维度**零容忍**（不是棘轮）：unlisted / unused / unresolved 必须为 0。
+        # knip.json 的 `ignoreDependencies: [".*"]` 把依赖维度整个关掉了，这道门补上。
+        # 未声明依赖靠 transitive hoisting 活着，上游一变就是运行时 MODULE_NOT_FOUND，
+        # 且只在打包后的 app 里炸——开发树永远有它，本地跑不出来。
+        run: node scripts/knip-dependency-gate.mjs
+
+      - name: ESLint error/warning ratchet
+        # errors / warnings 双独立基线棘轮；任一超基线即阻塞，清理后只能下调。
+        run: node scripts/eslint-ratchet.mjs
+
+      - name: Architecture effective-line gate
+        # 只阻断非 God File 历史白名单的 effective 超限文件；报告里的 ESLint 热点在 CI 不重复扫。
+        run: node scripts/architecture-debt-report.mjs --gate --skip-eslint
+
+      - name: Run swarm smoke suite
+        run: node scripts/ci/vitest-with-flake-ledger.mjs --job "Run swarm smoke suite" -- npm run test:swarm:smoke -- --retry=1
+
+      - name: Upload smoke failure logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: swarm-smoke-logs-${{ github.run_id }}
+          path: |
+            coverage/
+            ${{ runner.temp }}/vitest-report*.json
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # Full: merge gate，smoke + Playwright e2e（含 webServer 构建）
+  # ---------------------------------------------------------------------------
+  # ---------------------------------------------------------------------------
+  # Unit: 主链路 vitest 子集，4 路分片并行
+  #
+  # 2026-09-05 从 smoke job 里拆出来。动机是实测账：smoke job 一轮 1134s，其中这一步
+  # 独占 782s（69%），整条 PR 门 wall clock 22min 大半卡在它一个人身上，且它跟前面
+  # 三十道静态门之间没有任何依赖关系，纯粹是被串在同一个 job 里。
+  #
+  # vitest 原生 --shard 按测试文件均分，四路各约 196s。**覆盖面与拆分前完全一致**：
+  # 同一组路径、同一组 exclude，shard 只切分不筛选。分片数改了必须同步 --shard=N/M
+  # 的分母，否则会静默漏跑（M 写小了 = 后面的文件没人跑，且不报错）。
+  # fail-fast: false —— 一个分片红不能取消其他分片，否则只看得到第一个失败面。
+  # ---------------------------------------------------------------------------
+  unit:
+    name: Main-chain vitest (shard ${{ matrix.shard }}/4)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: 'npm'
+
+      - name: Install dependencies
+        # 同 smoke job：只许 npm ci（理由见 smoke job 同名步骤）
+        run: npm ci --ignore-scripts
+
+      - name: Verify better-sqlite3 Node-API binding
+        # v13 随包携带 N-API 平台二进制；即使 npm ci --ignore-scripts，也必须真实加载，
+        # 防止持久化测试静默退回 in-memory。
+        run: |
+          test -f node_modules/better-sqlite3/prebuilds/linux-x64.node
+          node -e "const Database=require('better-sqlite3'); const db=new Database(':memory:'); db.prepare('SELECT 1').get(); db.close()"
+
+      - name: Read Playwright version
+        id: playwright-version
+        run: |
+          version="$(node -p "require('./package-lock.json').packages['node_modules/playwright'].version")"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Restore Playwright browser cache
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ steps.playwright-version.outputs.version }}-v2
+
+      - name: Install Playwright browsers
+        # 子集里有真跑交互 smoke 的用例（gameArtifactValidator 等，走 playwright 启浏览器）。
+        # 🔴 无条件装（浏览器已在时是空操作）——缓存命中就跳过曾在 08-25 实付：缓存是无锁重
+        # 解析时代按错版本 playwright-core 填的，键却写着锁里的版本 ⇒ 命中即缺 headless shell。
+        run: npx playwright install --with-deps chromium
+
+      - name: Main-chain vitest subset (shard ${{ matrix.shard }}/4)
         # 2026-07-25 建门。动机：全量 vitest 只在 push main 后的检测门里跑，PR 阶段完全
         # 看不见——`main-full-gate` 因此从 #636 起连红 15 个合并没人管（5 套件：partial
         # vi.mock 一加新导出就断 ×3、权限链上新增 DB 读未加守卫 ×1、人话改造后断言过期 ×1）。
@@ -339,69 +451,22 @@ jobs:
             exit 1
           fi
           echo "根级单测文件 ${#ROOT_UNIT_TESTS[@]} 个进门"
-          node scripts/ci/vitest-with-flake-ledger.mjs --job "Main-chain vitest subset" -- npx vitest run tests/unit/agent tests/unit/host tests/unit/ipc tests/unit/tools tests/unit/services tests/unit/design tests/unit/shared tests/renderer "${ROOT_UNIT_TESTS[@]}" tests/unit/web/agentRunControllerBroadcast.test.ts --retry=1 \
+          node scripts/ci/vitest-with-flake-ledger.mjs --job "Main-chain vitest subset shard ${{ matrix.shard }}" -- npx vitest run tests/unit/agent tests/unit/host tests/unit/ipc tests/unit/tools tests/unit/services tests/unit/design tests/unit/shared tests/renderer "${ROOT_UNIT_TESTS[@]}" tests/unit/web/agentRunControllerBroadcast.test.ts \
+            --shard=${{ matrix.shard }}/4 --retry=1 \
             --exclude 'tests/unit/tools/modules/network/webSearch.test.ts' \
             --exclude 'tests/unit/agent/goalVerifyGate.test.ts'
 
-      - name: MCP protocol compatibility (unit + integration)
-        run: node scripts/ci/vitest-with-flake-ledger.mjs --job "MCP protocol compatibility" -- npx vitest run tests/unit/mcp tests/integration/mcp --retry=1
-
-      - name: Knip dead-export ratchet
-        # dead exports+types 集合棘轮（基线见 scripts/knip-ratchet-baseline.json）。
-        # knip 版本锁在脚本内（npx knip@<pin>），未入 devDependencies；本地实测 ~12s，
-        # CI 走 setup-node 的 npm 缓存。独立 step 便于失败归因。
-        run: node scripts/knip-ratchet.mjs
-
-      - name: Knip production dead-export ratchet
-        # 只用发行版入口的 strict profile 查 export/type；测试消费不再把生产死导出
-        # 算作可达。独立 step 保留与普通 dead-export 门各自的失败归因。
-        run: node scripts/knip-ratchet.mjs --profile production
-
-      - name: Knip production-reachability ratchet
-        # legacy profile 锁存量文件集合；strict profile 关闭自动测试/plugin 入口，只拦相对 main
-        # 新增且从发行版入口完全走不到的源码。完整历史用于解析真实 merge-base。
-        run: node scripts/knip-production-ratchet.mjs
-
-      - name: Knip dependency dimension gate
-        # 依赖维度**零容忍**（不是棘轮）：unlisted / unused / unresolved 必须为 0。
-        # knip.json 的 `ignoreDependencies: [".*"]` 把依赖维度整个关掉了，这道门补上。
-        # 未声明依赖靠 transitive hoisting 活着，上游一变就是运行时 MODULE_NOT_FOUND，
-        # 且只在打包后的 app 里炸——开发树永远有它，本地跑不出来。
-        run: node scripts/knip-dependency-gate.mjs
-
-      - name: ESLint error/warning ratchet
-        # errors / warnings 双独立基线棘轮；任一超基线即阻塞，清理后只能下调。
-        run: node scripts/eslint-ratchet.mjs
-
-      - name: Architecture effective-line gate
-        # 只阻断非 God File 历史白名单的 effective 超限文件；报告里的 ESLint 热点在 CI 不重复扫。
-        run: node scripts/architecture-debt-report.mjs --gate --skip-eslint
-
-      - name: Run swarm smoke suite
-        run: node scripts/ci/vitest-with-flake-ledger.mjs --job "Run swarm smoke suite" -- npm run test:swarm:smoke -- --retry=1
-
-      - name: Upload smoke failure logs
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: swarm-smoke-logs-${{ github.run_id }}
-          path: |
-            coverage/
-            ${{ runner.temp }}/vitest-report*.json
-          if-no-files-found: ignore
-          retention-days: 7
-
-  # ---------------------------------------------------------------------------
-  # Full: merge gate，smoke + Playwright e2e（含 webServer 构建）
-  # ---------------------------------------------------------------------------
   full:
     name: Swarm full (smoke + e2e)
-    needs: smoke
     # full/e2e 现在 PR 也跑（删掉了原来限定 push/workflow_dispatch 的 if）：merge gate 只在合并后
     # 才跑会造成"PR 绿、main 红"——只在 full 暴露的基建缺陷（如 e2e webServer 的原生模块缺失）在
     # PR 阶段测不到，合进 main 必红（见 #166）。on.pull_request.paths 已把触发限定在 src/** /
     # tests/** 等代码 PR，docs-only PR 不会触发整条 workflow，CI 成本可控；workflow_dispatch 仍可
-    # 手动跑。full 仍受 `needs: smoke` 门控——smoke 失败则跳过。
+    # 手动跑。
+    #
+    # 2026-09-05 去掉 `needs: smoke`：full 不复用 smoke 的任何产物（自己 checkout、自己
+    # npm ci、自己再跑一遍 smoke suite），串在后面只是把它那 3min 加在 smoke 的 19min 后面。
+    # 代价是 smoke 注定要红的 PR 也会白跑一轮 e2e——公有仓 runner 免费，换 3min wall clock 值。
     runs-on: ubuntu-latest
     timeout-minutes: 25
     outputs:

@@ -13,7 +13,7 @@ import { applyTelemetrySchema } from '../../../src/host/services/core/database/s
 import type { ReplayBlock, StructuredReplay } from '../../../src/shared/contract/evaluationReplay';
 import type { FailureCodebook } from '../../../src/host/testing/failureCodes';
 import { runPostLaunchScoring, type PostLaunchScorerDeps } from '../../../src/host/testing/postlaunch/postLaunchScorer';
-import { buildPostLaunchReport } from '../../../src/host/testing/postlaunch/postLaunchScoreStore';
+import { acquireScoringLock, buildPostLaunchReport, releaseScoringLock } from '../../../src/host/testing/postlaunch/postLaunchScoreStore';
 
 const NOW = new Date('2026-09-05T12:00:00+08:00').getTime();
 const HOUR = 60 * 60 * 1000;
@@ -307,6 +307,48 @@ describe('上线后打分编排', () => {
 
     expect(llmCall).toHaveBeenCalledTimes(2);
     expect(real.sampledTurns).toBe(2);
+  });
+
+  it('--dry-run 不覆盖已有真评：真评过的轮 dry-run 跳过，六维原样（ai-review #1645 第二轮①）', async () => {
+    insertSession(database, 'chat-1', 'chat', NOW - HOUR);
+    insertTurn(database, 'chat-1', 'chat-turn-1', 1, NOW - HOUR);
+    const replays = {
+      'chat-1': replay('chat-1', [{ turnNumber: 1, startTime: NOW - HOUR, blocks: [{ type: 'text', content: '好了', timestamp: NOW - HOUR }] }]),
+    };
+    await runPostLaunchScoring(deps(database, replays, async () => ALL_PASS));
+    const dry = await runPostLaunchScoring(deps(database, replays, async () => ALL_PASS), { dryRun: true });
+
+    expect(dry.skippedTurns).toBe(1);
+    const [row] = scoreRows(database);
+    expect(row.judge_version).not.toBe('dry-run');
+    expect(row.dim_goal).toBe(1);
+  });
+
+  it('互斥：同一个库上已有评分在跑时，第二次一轮不评、一分不扣，结果标 locked（ai-review #1645 第二轮②）', async () => {
+    insertSession(database, 'chat-1', 'chat', NOW - HOUR);
+    insertTurn(database, 'chat-1', 'chat-turn-1', 1, NOW - HOUR);
+    const replays = {
+      'chat-1': replay('chat-1', [{ turnNumber: 1, startTime: NOW - HOUR, blocks: [{ type: 'text', content: '好了', timestamp: NOW - HOUR }] }]),
+    };
+    const llmCall = vi.fn(async () => ALL_PASS);
+    expect(acquireScoringLock(database, 'someone-else', NOW)).toBe(true);
+    const blocked = await runPostLaunchScoring(deps(database, replays, llmCall));
+    expect(blocked.locked).toBe(true);
+    expect(llmCall).not.toHaveBeenCalled();
+    expect(scoreRows(database)).toHaveLength(0);
+
+    releaseScoringLock(database, 'someone-else');
+    const normal = await runPostLaunchScoring(deps(database, replays, llmCall));
+    expect(normal.locked).toBe(false);
+    expect(llmCall).toHaveBeenCalledTimes(1);
+    // 跑完锁已释放：别人能立刻拿到
+    expect(acquireScoringLock(database, 'next', NOW + 1)).toBe(true);
+  });
+
+  it('互斥：持有者 30 分钟没释放视为崩了，可接管', () => {
+    expect(acquireScoringLock(database, 'crashed', NOW)).toBe(true);
+    expect(acquireScoringLock(database, 'newcomer', NOW + 5 * 60 * 1000)).toBe(false);
+    expect(acquireScoringLock(database, 'newcomer', NOW + 31 * 60 * 1000)).toBe(true);
   });
 
   it('已评过的轮不重复花钱', async () => {

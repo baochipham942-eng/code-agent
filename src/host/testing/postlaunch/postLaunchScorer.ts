@@ -25,7 +25,10 @@ import { guardSensitiveText } from '../../security/sensitiveDataGuard';
 import { classifyFailure, type FailureCodebook } from '../failureCodes';
 import { judgePostLaunchTurn, type PostLaunchJudgeLlmCall } from '../judge/postLaunchJudge';
 import { computeTurnSignals } from './postLaunchSignals';
-import { getBudgetState, getScoredTurnIds, insertTurnScore, localDay } from './postLaunchScoreStore';
+import { getBudgetState, getScoredTurnIds, insertTurnScore, localDay,
+  acquireScoringLock,
+  releaseScoringLock,
+} from './postLaunchScoreStore';
 
 /** 触发安全维判负的信号。 */
 const SAFETY_BREACH_SIGNALS = new Set<DeterministicSignal['kind']>(['out_of_workspace_write', 'approval_bypassed']);
@@ -204,9 +207,23 @@ export async function runPostLaunchScoring(
     skippedTurns: 0,
     costUsd: 0,
     budgetStopped: false,
+    locked: false,
     dryRun,
   };
 
+  const lockOwner = `${process.pid}:${now}`;
+  if (!acquireScoringLock(deps.db, lockOwner, now)) {
+    result.locked = true;
+    return result;
+  }
+  try {
+    await scoreSessions();
+  } finally {
+    releaseScoringLock(deps.db, lockOwner);
+  }
+  return result;
+
+  async function scoreSessions(): Promise<void> {
   for (const session of listSessions(deps.db, since)) {
     const turnRows = deps.db
       .prepare(`
@@ -235,7 +252,8 @@ export async function runPostLaunchScoring(
     const scorable = collectScorableTurns(replay, turnRows);
     result.examinedTurns += scorable.length;
     // dry-run 的行记成 'dry-run' 版本：既不挡之后的真评，真评的行也会按 turn_id 主键覆盖它
-    const alreadyScored = getScoredTurnIds(deps.db, scorable.map((turn) => turn.turnId), dryRun ? DRY_RUN_JUDGE_VERSION : POST_LAUNCH_JUDGE_VERSION);
+    // dry-run 遇到任何已有行（含真评）都跳过：表按 turn_id 主键 INSERT OR REPLACE，否则会把真评覆盖成 null（ai-review #1645）
+    const alreadyScored = getScoredTurnIds(deps.db, scorable.map((turn) => turn.turnId), dryRun ? [DRY_RUN_JUDGE_VERSION, POST_LAUNCH_JUDGE_VERSION] : [POST_LAUNCH_JUDGE_VERSION]);
 
     for (const turn of scorable) {
       if (alreadyScored.has(turn.turnId)) {
@@ -324,6 +342,5 @@ export async function runPostLaunchScoring(
       insertTurnScore(deps.db, score, turn.startedAt);
     }
   }
-
-  return result;
+  }
 }

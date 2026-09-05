@@ -188,5 +188,7 @@ export interface PostLaunchScoringResult {
   costUsd: number;
   /** 因日预算或抽样上限提前停评。 */
   budgetStopped: boolean;
+  /** 同一个库上已有一次评分在跑（CLI 与应用内按钮并发），本次一轮没评、一分没扣。 */
+  locked: boolean;
   dryRun: boolean;
 }

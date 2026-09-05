@@ -74,13 +74,48 @@ export function insertTurnScore(db: BetterSqlite3.Database, score: PostLaunchTur
   );
 }
 
-export function getScoredTurnIds(db: BetterSqlite3.Database, turnIds: string[], judgeVersion: string = POST_LAUNCH_JUDGE_VERSION): Set<string> {
-  if (turnIds.length === 0) return new Set();
+export function getScoredTurnIds(db: BetterSqlite3.Database, turnIds: string[], judgeVersions: string[] = [POST_LAUNCH_JUDGE_VERSION]): Set<string> {
+  if (turnIds.length === 0 || judgeVersions.length === 0) return new Set();
   const placeholders = turnIds.map(() => '?').join(', ');
+  const versionPlaceholders = judgeVersions.map(() => '?').join(', ');
   const rows = db
-    .prepare(`SELECT turn_id FROM telemetry_turn_scores WHERE judge_version = ? AND turn_id IN (${placeholders})`)
-    .all(judgeVersion, ...turnIds) as Array<{ turn_id: string }>;
+    .prepare(`SELECT turn_id FROM telemetry_turn_scores WHERE judge_version IN (${versionPlaceholders}) AND turn_id IN (${placeholders})`)
+    .all(...judgeVersions, ...turnIds) as Array<{ turn_id: string }>;
   return new Set(rows.map((row) => row.turn_id));
+}
+
+// ----------------------------------------------------------------------------
+// 评分互斥锁：CLI 与应用内按钮可能同时对同一个库跑评分，两边都会读到同一份预算与未评轮，
+// 各自调 judge 各自扣费（ai-review #1645 Important）。锁落在库里而不是进程里，跨进程有效。
+// ----------------------------------------------------------------------------
+const SCORING_LOCK_STALE_MS = 30 * 60 * 1000;
+
+function ensureScoringLockTable(db: BetterSqlite3.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS telemetry_turn_scores_lock (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      owner TEXT NOT NULL,
+      acquired_at INTEGER NOT NULL
+    )
+  `);
+}
+
+/** 拿到锁返回 true；别人持有且未过期返回 false。过期（持有者崩了没释放）视为无主，直接接管。 */
+export function acquireScoringLock(db: BetterSqlite3.Database, owner: string, now: number, staleMs: number = SCORING_LOCK_STALE_MS): boolean {
+  ensureScoringLockTable(db);
+  return db.transaction(() => {
+    const current = db.prepare('SELECT owner, acquired_at FROM telemetry_turn_scores_lock WHERE id = 1').get() as
+      | { owner: string; acquired_at: number }
+      | undefined;
+    if (current && current.owner !== owner && now - current.acquired_at < staleMs) return false;
+    db.prepare('INSERT OR REPLACE INTO telemetry_turn_scores_lock (id, owner, acquired_at) VALUES (1, ?, ?)').run(owner, now);
+    return true;
+  })();
+}
+
+export function releaseScoringLock(db: BetterSqlite3.Database, owner: string): void {
+  ensureScoringLockTable(db);
+  db.prepare('DELETE FROM telemetry_turn_scores_lock WHERE id = 1 AND owner = ?').run(owner);
 }
 
 export function getBudgetState(

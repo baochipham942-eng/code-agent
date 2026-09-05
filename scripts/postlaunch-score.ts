@@ -96,6 +96,7 @@ async function main(): Promise<void> {
 
   console.log(`扫到 ${result.examinedTurns} 轮；剔除 ${result.excludedTurns} 轮（eval/子代理/定时/心跳）`);
   console.log(`信号轮 ${result.signalTurns}，抽样轮 ${result.sampledTurns}，只记信号 ${result.signalOnlyTurns}，已有分数跳过 ${result.skippedTurns}`);
+  if (result.locked) console.log('这个库上另有一次评分正在跑（30 分钟内的锁），本次一轮没评、一分没扣；等它跑完再来。');
   console.log(`本次打分刊例估算 $${result.costUsd.toFixed(4)}${result.budgetStopped ? '（已触日预算上限，当天停评）' : ''}`);
 
   const report = buildPostLaunchReport(db, { judgeVersion: options.dryRun ? DRY_RUN_JUDGE_VERSION : undefined, days: options.days, dailyBudgetUsd: options.budget, dailySampleLimit: options.sampleLimit });

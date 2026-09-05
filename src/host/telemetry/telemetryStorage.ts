@@ -100,12 +100,12 @@ export class TelemetryStorage {
             working_directory, start_time, end_time, duration_ms,
             turn_count, total_input_tokens, total_output_tokens, total_tokens,
             estimated_cost, total_tool_calls, tool_success_rate,
-            total_errors, session_type, status,
+            total_errors, session_type, origin_kind, status,
             agent_version, prompt_version, tool_schema_version
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `
       );
-      stmt.run(session.id, session.userId ?? null, guardTelemetryText(session.title, 2_000), session.modelProvider, session.modelName, guardTelemetryText(session.workingDirectory, 4_000), session.startTime, session.endTime ?? null, session.durationMs ?? null, session.turnCount, session.totalInputTokens, session.totalOutputTokens, session.totalTokens, session.estimatedCost, session.totalToolCalls, session.toolSuccessRate, session.totalErrors, session.sessionType ?? null, session.status, session.agentVersion ?? null, session.promptVersion ?? null, session.toolSchemaVersion ?? null);
+      stmt.run(session.id, session.userId ?? null, guardTelemetryText(session.title, 2_000), session.modelProvider, session.modelName, guardTelemetryText(session.workingDirectory, 4_000), session.startTime, session.endTime ?? null, session.durationMs ?? null, session.turnCount, session.totalInputTokens, session.totalOutputTokens, session.totalTokens, session.estimatedCost, session.totalToolCalls, session.toolSuccessRate, session.totalErrors, session.sessionType ?? null, session.originKind ?? null, session.status, session.agentVersion ?? null, session.promptVersion ?? null, session.toolSchemaVersion ?? null);
     } catch (error) {
       logger.error('Failed to insert telemetry session:', error);
     }
@@ -131,6 +131,7 @@ export class TelemetryStorage {
         toolSuccessRate: 'tool_success_rate',
         totalErrors: 'total_errors',
         sessionType: 'session_type',
+        originKind: 'origin_kind',
         status: 'status',
         agentVersion: 'agent_version',
         promptVersion: 'prompt_version',

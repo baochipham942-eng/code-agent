@@ -14,6 +14,8 @@ import type { ReplayBlock, StructuredReplay } from '../../../src/shared/contract
 import type { FailureCodebook } from '../../../src/host/testing/failureCodes';
 import { runPostLaunchScoring, type PostLaunchScorerDeps } from '../../../src/host/testing/postlaunch/postLaunchScorer';
 import { clampPostLaunchScoringRequest } from '../../../src/shared/contract/postLaunchScore';
+import { estimateJudgeCost } from '../../../src/host/testing/postlaunch/postLaunchCost';
+import { resolveModelPrice } from '../../../src/shared/pricing/resolveModelPrice';
 import { acquireScoringLock, buildPostLaunchReport, releaseScoringLock, renewScoringLock } from '../../../src/host/testing/postlaunch/postLaunchScoreStore';
 
 const NOW = new Date('2026-09-05T12:00:00+08:00').getTime();
@@ -46,11 +48,12 @@ function insertSession(
   id: string,
   sessionType: string | null,
   startTime: number,
+  originKind: string | null = null,
 ): void {
   database.prepare(`
-    INSERT INTO telemetry_sessions (id, title, model_provider, model_name, working_directory, start_time, session_type, agent_version, prompt_version)
-    VALUES (?, ?, 'deepseek', 'deepseek-chat', '/ws', ?, ?, '0.33.0', 'p7')
-  `).run(id, id, startTime, sessionType);
+    INSERT INTO telemetry_sessions (id, title, model_provider, model_name, working_directory, start_time, session_type, origin_kind, agent_version, prompt_version)
+    VALUES (?, ?, 'deepseek', 'deepseek-chat', '/ws', ?, ?, ?, '0.33.0', 'p7')
+  `).run(id, id, startTime, sessionType, originKind);
 }
 
 function insertTurn(
@@ -92,7 +95,7 @@ function deps(
     db: database,
     getStructuredReplay: async (sessionId) => replays[sessionId] ?? null,
     llmCall,
-    estimateJudgeCostUsd: () => 0.1,
+    estimateJudgeCostUsd: () => ({ usd: 0.1, assumed: false }),
     estimateTurnCostUsd: () => 0.001,
     fileExists: () => true,
     now: () => NOW,
@@ -215,7 +218,7 @@ describe('上线后打分编排', () => {
     expect(row.reason_redacted).toContain('声称的结果在轨迹里找不到来源');
   });
 
-  it('⑤成本封顶：日预算用完当天停评，只记信号不再调模型', async () => {
+  it('④预算预留：已花 + 下一次调用的估算越线就停，不再发那一次（K1 是发完才停）', async () => {
     insertSession(database, 'chat-1', 'chat', NOW - HOUR);
     for (let index = 1; index <= 4; index += 1) {
       insertTurn(database, 'chat-1', `chat-turn-${index}`, index, NOW - HOUR + index);
@@ -228,20 +231,24 @@ describe('上线后打分编排', () => {
       }))),
     };
     const llmCall = vi.fn(async () => ALL_PASS);
-    // 每次 judge 记 0.1，上限 0.25 ⇒ 只该调两次（0.1、0.2），第三次时 spent 已 0.2 < 0.25 仍可调，第四次 0.3 停。
+    // 每次 judge 估 0.1、上限 0.25。判据是「已花 + 这次要花的 ≤ 上限」：
+    // 0+0.1 ✓、0.1+0.1 ✓、0.2+0.1=0.3 ✗ ⇒ 第 3 次就不发了，总花费 0.2 不越线。
+    // K1 是「已花 < 上限」⇒ 第 3 次照发、花到 0.3 才停，超支整整一次调用（刀 2 验收④）。
     const result = await runPostLaunchScoring(
       deps(database, replays, llmCall),
       { dailyBudgetUsd: 0.25 },
     );
 
-    expect(llmCall).toHaveBeenCalledTimes(3);
+    expect(llmCall).toHaveBeenCalledTimes(2);
+    expect(result.costUsd).toBeCloseTo(0.2);
+    expect(result.costUsd).toBeLessThanOrEqual(0.25);
     expect(result.budgetStopped).toBe(true);
-    expect(result.signalOnlyTurns).toBe(1);
+    expect(result.signalOnlyTurns).toBe(2);
     const rows = scoreRows(database);
     expect(rows).toHaveLength(4);
-    // 停评那一轮仍然留了信号行，只是四个语义维没有判决。
+    // 停评那些轮仍然留了信号行，只是四个语义维没有判决。
     const unjudged = rows.filter((row) => row.dim_goal === null);
-    expect(unjudged).toHaveLength(1);
+    expect(unjudged).toHaveLength(2);
     expect(JSON.parse(unjudged[0].signals as string)).toContain('error_terminated');
   });
 
@@ -418,6 +425,132 @@ describe('上线后打分编排', () => {
     expect(group.sessionIds).toEqual(['chat-1']);
     // κ 缺失 ⇒ 报告顶上必须挂校准不足，不能默认当已校准。
     expect(report.calibration).toEqual({ state: 'insufficient', reason: 'no_record' });
+  });
+
+  it('①来源标记：headless / 存量 cli_ 前缀的会话不进分母，manual 与普通 id 照评', async () => {
+    // 四条都是 session_type='chat'——只有来源标记能把脚本发起的那两条分出来。
+    const sessions: Array<[string, string | null]> = [
+      ['chat-manual', 'manual'],
+      ['chat-headless', 'headless'],
+      ['cli_session_1788581520765_10a7e1aa', null], // 存量行：origin 为 NULL，靠 id 前缀兜底
+      ['chat-legacy-plain', null],
+    ];
+    const replays: Record<string, ReturnType<typeof replay>> = {};
+    for (const [index, [id, originKind]] of sessions.entries()) {
+      insertSession(database, id, 'chat', NOW - HOUR, originKind);
+      insertTurn(database, id, `turn-${index}`, 1, NOW - HOUR);
+      replays[id] = replay(id, [{ turnNumber: 1, startTime: NOW - HOUR, blocks: [{ type: 'text', content: '好了', timestamp: NOW - HOUR }] }]);
+    }
+
+    const result = await runPostLaunchScoring(deps(database, replays, async () => ALL_PASS));
+
+    expect(scoreRows(database).map((row) => row.session_id).sort()).toEqual(['chat-legacy-plain', 'chat-manual']);
+    expect(result.excludedTurns).toBe(2);
+  });
+
+  it('②未知价模型也能触发预算门：没有刊例时按保守默认价记进预算，但不落 cost_usd', async () => {
+    insertSession(database, 'chat-1', 'chat', NOW - HOUR);
+    for (let index = 1; index <= 3; index += 1) {
+      insertTurn(database, 'chat-1', `chat-turn-${index}`, index, NOW - HOUR + index);
+    }
+    const replays = {
+      'chat-1': replay('chat-1', [1, 2, 3].map((turnNumber) => ({
+        turnNumber,
+        startTime: NOW - HOUR + turnNumber,
+        blocks: [{ type: 'error', content: 'boom', timestamp: NOW - HOUR + turnNumber } as ReplayBlock],
+      }))),
+    };
+    // 真正的估价函数 + 一个价目表里查不到的自定义 provider（K1 时这里恒返 0 ⇒ 预算门永不触发）。
+    const unknownJudge = { provider: 'custom-glm-coding', model: 'glm-5.3' };
+    expect(resolveModelPrice(unknownJudge.provider, unknownJudge.model).source).toBe('unknown');
+    const llmCall = vi.fn(async () => ALL_PASS);
+    const result = await runPostLaunchScoring(
+      deps(database, replays, llmCall, {
+        estimateJudgeCostUsd: (prompt, completion) => estimateJudgeCost(unknownJudge, prompt, completion),
+      }),
+      { dailyBudgetUsd: 0.002 },
+    );
+
+    expect(result.budgetStopped).toBe(true);
+    expect(llmCall.mock.calls.length).toBeLessThan(3);
+    // 展示与落库仍然守「未知价不编造」：cost_usd 是 0，钱记在 budget_cost_usd 上。
+    const judged = scoreRows(database).filter((row) => row.dim_goal !== null);
+    expect(judged.length).toBeGreaterThan(0);
+    for (const row of judged) {
+      expect(row.cost_usd).toBe(0);
+      expect(row.budget_cost_usd as number).toBeGreaterThan(0);
+    }
+    const budget = buildPostLaunchReport(database, { now: NOW }).budget;
+    expect(budget.spentUsd).toBeGreaterThan(0);
+    expect(budget.assumedUsd).toBeCloseTo(budget.spentUsd);
+  });
+
+  it('③窗口按轮：10 天前开的会话，只评落在窗口里的那一轮', async () => {
+    const tenDaysAgo = NOW - 10 * 24 * HOUR;
+    const yesterday = NOW - 24 * HOUR;
+    insertSession(database, 'chat-long', 'chat', tenDaysAgo);
+    insertTurn(database, 'chat-long', 'turn-old', 1, tenDaysAgo);
+    insertTurn(database, 'chat-long', 'turn-new', 2, yesterday);
+    const replays = {
+      'chat-long': replay('chat-long', [
+        { turnNumber: 1, startTime: tenDaysAgo, blocks: [{ type: 'text', content: '十天前那轮', timestamp: tenDaysAgo }] },
+        { turnNumber: 2, startTime: yesterday, blocks: [{ type: 'text', content: '昨天那轮', timestamp: yesterday }] },
+      ]),
+    };
+    const result = await runPostLaunchScoring(deps(database, replays, async () => ALL_PASS), { days: 7 });
+
+    // K1 按 sessions.start_time 切窗口 ⇒ 这条会话整条落在窗口外，一轮都评不到。
+    expect(scoreRows(database).map((row) => row.turn_id)).toEqual(['turn-new']);
+    expect(result.examinedTurns).toBe(1);
+  });
+
+  it('④每轮续租：锁被别人接管后当场停手，不再评也不再写', async () => {
+    insertSession(database, 'chat-1', 'chat', NOW - HOUR);
+    for (let index = 1; index <= 3; index += 1) {
+      insertTurn(database, 'chat-1', `chat-turn-${index}`, index, NOW - HOUR + index);
+    }
+    const replays = {
+      'chat-1': replay('chat-1', [1, 2, 3].map((turnNumber) => ({
+        turnNumber,
+        startTime: NOW - HOUR + turnNumber,
+        blocks: [{ type: 'text', content: '好了', timestamp: NOW - HOUR + turnNumber } as ReplayBlock],
+      }))),
+    };
+    // 第一轮评完就把锁抢走：续租发生在每一轮开头，第二轮应当立刻停（K1 只在每个会话开头续租，
+    // 单会话内被接管察觉不到，会一路评到底）。
+    const llmCall = vi.fn(async () => {
+      acquireScoringLock(database, 'someone-else', NOW + 40 * 60 * 1000);
+      return ALL_PASS;
+    });
+    const result = await runPostLaunchScoring(deps(database, replays, llmCall));
+
+    expect(llmCall).toHaveBeenCalledTimes(1);
+    expect(result.locked).toBe(true);
+    expect(scoreRows(database)).toHaveLength(1);
+  });
+
+  it('⑦judge 不可用与「压根没叫模型」分开记：只有前者算 judgeUnavailableTurns', async () => {
+    insertSession(database, 'chat-1', 'chat', NOW - HOUR);
+    insertTurn(database, 'chat-1', 'chat-turn-1', 1, NOW - HOUR);
+    insertTurn(database, 'chat-1', 'chat-turn-2', 2, NOW - HOUR + 1);
+    const replays = {
+      'chat-1': replay('chat-1', [1, 2].map((turnNumber) => ({
+        turnNumber,
+        startTime: NOW - HOUR + turnNumber - 1,
+        blocks: [{ type: 'text', content: '好了', timestamp: NOW - HOUR + turnNumber - 1 } as ReplayBlock],
+      }))),
+    };
+    // 抽样额度只给 1：第一轮叫了模型但模型报错，第二轮压根没叫。
+    const result = await runPostLaunchScoring(
+      deps(database, replays, async () => { throw new Error('打分模型没有返回内容'); }),
+      { dailySampleLimit: 1 },
+    );
+
+    expect(result.judgeUnavailableTurns).toBe(1);
+    const models = scoreRows(database).map((row) => row.judge_model).sort();
+    expect(models).toEqual(['not-judged', 'unavailable']);
+    const report = buildPostLaunchReport(database, { now: NOW });
+    expect(report.judgeUnavailableTurns).toBe(1);
   });
 
   it('子迭代的块并进它的 user 父轮：agentic loop 不把一轮拆成多轮', async () => {

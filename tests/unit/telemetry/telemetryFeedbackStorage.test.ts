@@ -63,6 +63,7 @@ describe('TelemetryStorage feedback', () => {
         tool_success_rate REAL DEFAULT 0,
         total_errors INTEGER DEFAULT 0,
         session_type TEXT,
+        origin_kind TEXT,
         status TEXT DEFAULT 'recording',
         agent_version TEXT,
         prompt_version TEXT,

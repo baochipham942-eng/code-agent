@@ -63,17 +63,66 @@ const POST_LAUNCH_EXCLUDED_SESSION_TYPES: readonly SessionType[] = [
 ];
 
 /** session_type 为空按 chat 处理（历史行没写这一列，它们确实是真实用户会话）。 */
-export function isPostLaunchScorableSessionType(sessionType: string | null | undefined): boolean {
+function isScorableSessionType(sessionType: string | null | undefined): boolean {
   if (!sessionType) return true;
   return !POST_LAUNCH_EXCLUDED_SESSION_TYPES.includes(sessionType as SessionType);
+}
+
+/**
+ * 存量行（K2 之前建的会话）没有 origin_kind，靠 CLI 自己的 id 前缀兜底剔。
+ * 这是过渡判据：标记落地后新会话一律走 origin_kind，本前缀只管旧数据。
+ */
+const LEGACY_HEADLESS_ID_PREFIX = 'cli_session_';
+
+export interface PostLaunchSessionDenominatorInput {
+  id: string;
+  sessionType: string | null | undefined;
+  originKind: string | null | undefined;
+}
+
+/**
+ * 进不进上线后分母。一处判、两处用（打分器与 CLI 报告），别在别处再写一份口径。
+ * 剔两类：① session_type ∈ {eval, subagent, schedule, heartbeat}；
+ * ② 脚本/无头发起的会话（neo CLI、评测真跑桥）——它们 session_type 也是 'chat'，
+ *    从 session_type 一个字都看不出来（ADR-063 §3 + K1 留给刀 2 第 1 条）。
+ */
+export function isPostLaunchScorableSession(session: PostLaunchSessionDenominatorInput): boolean {
+  if (!isScorableSessionType(session.sessionType)) return false;
+  if (session.originKind) return session.originKind !== 'headless';
+  return !session.id.startsWith(LEGACY_HEADLESS_ID_PREFIX);
 }
 
 /** judge 提示词或维度定义变了就要 +1；不同版本的分数不可相比（ADR-063 §2）。 */
 export const POST_LAUNCH_JUDGE_VERSION = 'postlaunch-judge-v1';
 /** dry-run 落表用的版本号：真评按 POST_LAUNCH_JUDGE_VERSION 查跳过时看不到它 */
 export const DRY_RUN_JUDGE_VERSION = 'dry-run';
+/** judge_model 哨兵：叫了打分模型但它没给出判决（没配好 / 报错 / 返回解析不了）。 */
+export const JUDGE_MODEL_UNAVAILABLE = 'unavailable';
+/**
+ * judge_model 哨兵：这一轮压根没叫打分模型（dry-run / 预算停 / 抽样额度用完）。
+ * K1 把两种情况都写成 'unavailable'，于是 09-05 真机截图把「抽样额度用完」误读成
+ * 「打分模型没配好」——两个原因必须分得开，否则提示会指错方向。
+ */
+export const JUDGE_MODEL_NOT_JUDGED = 'not-judged';
 /** 六维口径版本；与 judge 版本分开，改评分口径而不改提示词时只动这个。 */
 export const POST_LAUNCH_RUBRIC_VERSION = 'postlaunch-rubric-v1';
+
+/**
+ * 开关三态：'on' / 'off' 是用户显式选择；不设置 = 按槽算默认
+ * （内部 dogfood 槽开、外部关，ADR-063 §3）。
+ */
+export type PostLaunchScoringSwitch = 'on' | 'off';
+
+export function resolvePostLaunchScoringEnabled(
+  setting: PostLaunchScoringSwitch | undefined,
+  internalSlot: boolean,
+): boolean {
+  return setting ? setting === 'on' : internalSlot;
+}
+
+/** 关着的时候 IPC 与 CLI 都拒评，给的是人话与开法，不是错误码。 */
+export const POST_LAUNCH_DISABLED_MESSAGE
+  = '上线后评分没开。它会把会话正文发给你自己配置的评分模型、花你自己的额度，所以默认不开；去「设置 → 隐私防线」页的「数据共享」里把「上线后质量评分」选成「开」再来。';
 
 export const POST_LAUNCH_DEFAULTS = {
   /** 默认回看天数。 */
@@ -108,7 +157,13 @@ export interface PostLaunchTurnScore {
   reasonRedacted: string;
   redacted: boolean;
   signals: PostLaunchSignalKind[];
+  /** 刊例估算成本；模型没有公开刊例时是 0——展示与落库都不用兜底价（resolveModelPrice §2）。 */
   costUsd: number;
+  /**
+   * 记进日预算的那笔钱。有刊例时 = costUsd；没刊例时是按保守默认价的估算，
+   * 让预算门对未知价模型也能触发（K1 时 costUsd 恒 0 ⇒ 预算门永远不响）。
+   */
+  budgetCostUsd: number;
   sampledBy: 'signal' | 'sample';
 }
 
@@ -149,6 +204,8 @@ export interface PostLaunchReport {
   /** 进分母的轮数（已剔 eval/subagent/schedule/heartbeat）。 */
   scoredTurns: number;
   groups: PostLaunchReportGroup[];
+  /** 窗口内「叫了打分模型但它没给出判决」的轮数；> 0 时卡片与 CLI 都要出一行人话。 */
+  judgeUnavailableTurns: number;
   /** κ 缺失或未达标时报告顶部挂「校准不足」（ADR-063 §「风险」）。 */
   calibration: { state: 'calibrated' | 'insufficient'; reason?: PostLaunchCalibrationReason };
   budget: PostLaunchBudgetState;
@@ -160,6 +217,8 @@ export interface PostLaunchBudgetState {
   limitUsd: number;
   sampledCount: number;
   sampleLimit: number;
+  /** spentUsd 里按保守默认价估出来的部分（这些模型没有公开刊例）。 */
+  assumedUsd: number;
   /** 今日已停评（只记信号不调模型）。 */
   stopped: boolean;
 }
@@ -186,6 +245,8 @@ export interface PostLaunchScoringResult {
   /** 已有分数、本轮跳过的轮。 */
   skippedTurns: number;
   costUsd: number;
+  /** 叫了打分模型但它没给出判决的轮数（没配好 / 报错 / 返回格式解析不了）。 */
+  judgeUnavailableTurns: number;
   /** 因日预算或抽样上限提前停评。 */
   budgetStopped: boolean;
   /** 同一个库上已有一次评分在跑（CLI 与应用内按钮并发），本次一轮没评、一分没扣。 */

@@ -12,6 +12,7 @@ import {
   POST_LAUNCH_DIMENSIONS,
   POST_LAUNCH_JUDGE_VERSION,
   POST_LAUNCH_RUBRIC_VERSION,
+  JUDGE_MODEL_UNAVAILABLE,
   type PostLaunchBudgetState,
   type PostLaunchDimension,
   type PostLaunchDimRate,
@@ -45,8 +46,8 @@ export function insertTurnScore(db: BetterSqlite3.Database, score: PostLaunchTur
       turn_id, session_id, scored_at, scored_day, turn_started_at,
       app_version, prompt_version, judge_version, rubric_version, judge_model, prompt_hash,
       dim_goal, dim_orchestration, dim_tools, dim_permission, dim_safety, dim_artifact,
-      failure_class, reason_redacted, redacted, signals, cost_usd, sampled_by
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      failure_class, reason_redacted, redacted, signals, cost_usd, budget_cost_usd, sampled_by
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     score.turnId,
     score.sessionId,
@@ -70,6 +71,7 @@ export function insertTurnScore(db: BetterSqlite3.Database, score: PostLaunchTur
     score.redacted ? 1 : 0,
     JSON.stringify(score.signals),
     score.costUsd,
+    score.budgetCostUsd,
     score.sampledBy,
   );
 }
@@ -125,6 +127,7 @@ export function releaseScoringLock(db: BetterSqlite3.Database, owner: string): v
   db.prepare('DELETE FROM telemetry_turn_scores_lock WHERE id = 1 AND owner = ?').run(owner);
 }
 
+/** 日预算看的是 budget_cost_usd（含未知价的保守估算），不是展示用的刊例 cost_usd。 */
 export function getBudgetState(
   db: BetterSqlite3.Database,
   day: string,
@@ -132,17 +135,19 @@ export function getBudgetState(
 ): PostLaunchBudgetState {
   const row = db
     .prepare(`
-      SELECT COALESCE(SUM(cost_usd), 0) AS spent,
+      SELECT COALESCE(SUM(budget_cost_usd), 0) AS spent,
+             COALESCE(SUM(budget_cost_usd - cost_usd), 0) AS assumed,
              COALESCE(SUM(CASE WHEN sampled_by = 'sample' THEN 1 ELSE 0 END), 0) AS sampled
       FROM telemetry_turn_scores WHERE scored_day = ? AND judge_version = ?
     `)
-    .get(day, POST_LAUNCH_JUDGE_VERSION) as { spent: number; sampled: number };
+    .get(day, POST_LAUNCH_JUDGE_VERSION) as { spent: number; assumed: number; sampled: number };
   return {
     day,
     spentUsd: row.spent,
     limitUsd: limits.limitUsd,
     sampledCount: row.sampled,
     sampleLimit: limits.sampleLimit,
+    assumedUsd: row.assumed,
     stopped: row.spent >= limits.limitUsd,
   };
 }
@@ -162,6 +167,7 @@ interface ScoreRow {
   failure_class: string | null;
   signals: string;
   cost_usd: number;
+  judge_model: string | null;
   sampled_by: 'signal' | 'sample';
 }
 
@@ -225,7 +231,7 @@ export function buildPostLaunchReport(
     .prepare(`
       SELECT turn_id, session_id, turn_started_at, app_version, prompt_version,
              dim_goal, dim_orchestration, dim_tools, dim_permission, dim_safety, dim_artifact,
-             failure_class, signals, cost_usd, sampled_by
+             failure_class, signals, cost_usd, judge_model, sampled_by
       FROM telemetry_turn_scores
       WHERE judge_version = ? AND turn_started_at >= ?
       ORDER BY turn_started_at DESC
@@ -298,6 +304,7 @@ export function buildPostLaunchReport(
     rubricVersion: POST_LAUNCH_RUBRIC_VERSION,
     scoredTurns: rows.length,
     groups: reportGroups,
+    judgeUnavailableTurns: rows.filter((row) => row.judge_model === JUDGE_MODEL_UNAVAILABLE).length,
     calibration: options.calibration ?? { state: 'insufficient', reason: 'no_record' },
     budget: getBudgetState(db, localDay(now), {
       limitUsd: options.dailyBudgetUsd ?? POST_LAUNCH_DEFAULTS.dailyBudgetUsd,

@@ -6,7 +6,7 @@
 
 import type { TelemetryModelCall, TelemetryToolCall, ErrorCategory } from '../../shared/contract/telemetry';
 import type { AgentEvent } from '../../shared/contract';
-import type { SessionType } from '../../shared/contract/session';
+import type { SessionOriginKind, SessionType } from '../../shared/contract/session';
 import { TELEMETRY_TRUNCATION } from '../../shared/constants';
 import { sanitizeBrowserComputerToolArguments } from '../../shared/utils/browserComputerRedaction';
 import { projectSurfaceExecutionMetadataForExport } from '../../shared/utils/surfaceExecutionExportProjection';
@@ -97,6 +97,8 @@ export interface SessionConfig {
   modelName: string;
   workingDirectory: string;
   sessionType?: SessionType;
+  /** 触发来源；CLI / 评测桥传 'headless'，界面会话不传（= manual）。 */
+  originKind?: SessionOriginKind;
   agentVersion?: string;
   promptVersion?: string;
   toolSchemaVersion?: string;

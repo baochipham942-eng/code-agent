@@ -10,22 +10,25 @@ import type BetterSqlite3 from 'better-sqlite3';
 import { CONFIG_DIR_NEW } from '../../../shared/constants/configDir';
 import { resolveModelPrice } from '../../../shared/pricing/resolveModelPrice';
 import {
+  POST_LAUNCH_DISABLED_MESSAGE,
+  resolvePostLaunchScoringEnabled,
   type PostLaunchReport,
   type PostLaunchScoringRequest,
   type PostLaunchScoringResult,
 } from '../../../shared/contract/postLaunchScore';
+import { getInternalFeatureHostRuntime } from '../../internalFeatures/internalFeatureHostRuntime';
+import { getConfigService } from '../../services/core/configService';
 import { getDatabase } from '../../services/core/databaseService';
 import { createLogger } from '../../services/infra/logger';
-import { estimateTokens } from '../../context/tokenEstimator';
 import { getQuickModelRuntimeInfo, quickTask } from '../../model/quickModel';
 import { isTrustedCalibration, loadCalibrationRecordSync } from '../calibration/calibrationRegistry';
 import { loadProjectFailureCodebook } from '../failureCodes';
 import { getPostLaunchPromptHash } from '../judge/postLaunchJudge';
+import { JUDGE_MAX_TOKENS, estimateJudgeCost } from './postLaunchCost';
 import { buildPostLaunchReport, type PostLaunchReportOptions } from './postLaunchScoreStore';
 import { runPostLaunchScoring, type PostLaunchScorerDeps, type PostLaunchSessionRow } from './postLaunchScorer';
 
 const logger = createLogger('PostLaunchScorer');
-const JUDGE_MAX_TOKENS = 400;
 
 function costUsd(provider: string, model: string, inputTokens: number, outputTokens: number): number {
   const price = resolveModelPrice(provider, model);
@@ -73,9 +76,7 @@ function createPostLaunchScorerDeps(): PostLaunchScorerDeps {
         judgeModel: `${response.provider ?? 'unknown'}/${response.model ?? 'unknown'}`,
       };
     },
-    estimateJudgeCostUsd: (prompt: string, completion: string) => (
-      judge ? costUsd(judge.provider, judge.model, estimateTokens(prompt), estimateTokens(completion)) : 0
-    ),
+    estimateJudgeCostUsd: (prompt: string, completion?: string) => estimateJudgeCost(judge, prompt, completion),
     estimateTurnCostUsd: (session: PostLaunchSessionRow, inputTokens: number, outputTokens: number) =>
       costUsd(session.modelProvider, session.modelName, inputTokens, outputTokens),
     fileExists: (absolutePath: string) => {
@@ -91,9 +92,36 @@ function createPostLaunchScorerDeps(): PostLaunchScorerDeps {
   };
 }
 
+/**
+ * 内部 dogfood 槽判据：本机装着并激活了第一方内部插件（评测中心）。
+ * 全仓没有别的「内部/dev 槽」标记（packagedDevModeGuard / NEO_CHANNEL / isDevSlot 都不存在，
+ * 已核），这是唯一现成、且语义就是「admin 装的内部产品面」的判据。
+ */
+function isInternalSlot(): boolean {
+  try {
+    return getInternalFeatureHostRuntime().isLoaded('evaluation-center');
+  } catch {
+    return false;
+  }
+}
+
+/** 开关三态：显式 on/off 说了算；没设置就按槽算（内部开、外部关）。 */
+function isPostLaunchScoringEnabled(): boolean {
+  let setting: 'on' | 'off' | undefined;
+  try {
+    setting = getConfigService().getSettings().privacy?.postLaunchScoring;
+  } catch {
+    setting = undefined;
+  }
+  return resolvePostLaunchScoringEnabled(setting, isInternalSlot());
+}
+
 export async function runPostLaunchScoringOnHost(
   request: PostLaunchScoringRequest = {},
 ): Promise<PostLaunchScoringResult> {
+  // 关着就不评：这条路会把会话正文发给用户自己配的模型并花他的额度。
+  // 已落库的分数照读照显示（getPostLaunchReportOnHost 不受这道门管）。
+  if (!isPostLaunchScoringEnabled()) throw new Error(POST_LAUNCH_DISABLED_MESSAGE);
   return runPostLaunchScoring(createPostLaunchScorerDeps(), request);
 }
 

@@ -14,15 +14,21 @@ import os from 'node:os';
 import path from 'node:path';
 import Database from 'better-sqlite3';
 import { CONFIG_DIR_NEW } from '../src/shared/constants/configDir';
-import { DRY_RUN_JUDGE_VERSION, POST_LAUNCH_DEFAULTS } from '../src/shared/contract/postLaunchScore';
+import { getSettingsPath } from '../src/host/config/configPaths';
+import {
+  DRY_RUN_JUDGE_VERSION,
+  POST_LAUNCH_DEFAULTS,
+  POST_LAUNCH_DISABLED_MESSAGE,
+  resolvePostLaunchScoringEnabled,
+} from '../src/shared/contract/postLaunchScore';
 import { resolveModelPrice } from '../src/shared/pricing/resolveModelPrice';
-import { estimateTokens } from '../src/host/context/tokenEstimator';
 import { getQuickModelRuntimeInfo, quickTask } from '../src/host/model/quickModel';
 import { loadProjectFailureCodebook } from '../src/host/testing/failureCodes';
 import { TelemetryQueryService } from '../src/host/telemetry/replay/telemetryQueryService';
 import { applyTelemetrySchema } from '../src/host/services/core/database/schemaTelemetry';
 import { createLogger } from '../src/host/services/infra/logger';
 import { getDatabase } from '../src/host/services/core/databaseService';
+import { estimateJudgeCost } from '../src/host/testing/postlaunch/postLaunchCost';
 import { runPostLaunchScoring, type PostLaunchSessionRow } from '../src/host/testing/postlaunch/postLaunchScorer';
 import { buildPostLaunchReport } from '../src/host/testing/postlaunch/postLaunchScoreStore';
 
@@ -40,9 +46,19 @@ function parseArgs(): { days: number; budget: number; sampleLimit: number; dryRu
   };
 }
 
-function resolveDbPath(): string {
-  const dataDir = process.env.CODE_AGENT_DATA_DIR?.trim() || path.join(os.homedir(), CONFIG_DIR_NEW);
-  return path.join(dataDir, 'code-agent.db');
+function resolveDataDir(): string {
+  return process.env.CODE_AGENT_DATA_DIR?.trim() || path.join(os.homedir(), CONFIG_DIR_NEW);
+}
+
+/** 直接读 settings.json：CLI 不起 ConfigService（那条路要 Electron 的 app 路径）。 */
+function readScoringSwitch(): 'on' | 'off' | undefined {
+  try {
+    const raw = fs.readFileSync(getSettingsPath().user.new, 'utf-8');
+    const value = (JSON.parse(raw) as { privacy?: { postLaunchScoring?: unknown } }).privacy?.postLaunchScoring;
+    return value === 'on' || value === 'off' ? value : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function costUsd(provider: string, model: string, inputTokens: number, outputTokens: number): number {
@@ -53,7 +69,8 @@ function costUsd(provider: string, model: string, inputTokens: number, outputTok
 
 async function main(): Promise<void> {
   const options = parseArgs();
-  const dbPath = resolveDbPath();
+  const dataDir = resolveDataDir();
+  const dbPath = path.join(dataDir, 'code-agent.db');
   if (!fs.existsSync(dbPath)) {
     console.error(`找不到数据库 ${dbPath}；设 CODE_AGENT_DATA_DIR 指到要评的那份数据目录。`);
     process.exit(1);
@@ -63,6 +80,12 @@ async function main(): Promise<void> {
   applyTelemetrySchema(db, createLogger('postlaunch-score'));
   // 回放的证据投影会走 DatabaseService 单例（telemetryReplayEvidence.ts:32），不初始化就每会话报一次「Database not initialized」
   await getDatabase().initialize();
+  // 开关三态：CLI 起不了插件运行时，判不了「内部槽」，所以这里按最保守的 false 算默认——
+  // 想在 CLI 上评就必须在设置里显式打开（settings.json 的 privacy.postLaunchScoring）。
+  if (!options.dryRun && !resolvePostLaunchScoringEnabled(readScoringSwitch(), false)) {
+    console.error(POST_LAUNCH_DISABLED_MESSAGE);
+    process.exit(1);
+  }
   const judge = getQuickModelRuntimeInfo();
   console.log(`库：${dbPath}`);
   console.log(`打分模型：${judge ? `${judge.provider}/${judge.model}` : '未配置'}${options.dryRun ? '（--dry-run，不会调用）' : ''}`);
@@ -76,9 +99,7 @@ async function main(): Promise<void> {
       if (!response.success || !response.content) throw new Error(response.error ?? '打分模型没有返回内容');
       return { content: response.content, judgeModel: `${response.provider ?? 'unknown'}/${response.model ?? 'unknown'}` };
     },
-    estimateJudgeCostUsd: (prompt, completion) => (
-      judge ? costUsd(judge.provider, judge.model, estimateTokens(prompt), estimateTokens(completion)) : 0
-    ),
+    estimateJudgeCostUsd: (prompt, completion) => estimateJudgeCost(judge, prompt, completion),
     estimateTurnCostUsd: (session: PostLaunchSessionRow, inputTokens, outputTokens) =>
       costUsd(session.modelProvider, session.modelName, inputTokens, outputTokens),
     fileExists: (absolutePath) => {
@@ -94,10 +115,17 @@ async function main(): Promise<void> {
     dryRun: options.dryRun,
   });
 
-  console.log(`扫到 ${result.examinedTurns} 轮；剔除 ${result.excludedTurns} 轮（eval/子代理/定时/心跳）`);
-  console.log(`信号轮 ${result.signalTurns}，抽样轮 ${result.sampledTurns}，只记信号 ${result.signalOnlyTurns}，已有分数跳过 ${result.skippedTurns}`);
+  console.log(`扫到 ${result.examinedTurns} 轮；剔除 ${result.excludedTurns} 轮（eval/子代理/定时/心跳/脚本发起）`);
+  // 这一行说的是「这次叫了几次 judge」，与卡片按周分组那张表的「信号轮 N 轮」不是一回事
+  // （后者是那一周落过分数的轮数）。措辞必须自带这个限定，别让两处同名不同义（K1 留给刀 2 第 6 条）。
+  console.log(result.dryRun
+    ? `dry-run 未调 judge：本可全评的信号轮 ${result.signalTurns}、抽样轮 ${result.sampledTurns}；只记信号 ${result.signalOnlyTurns}；已有分数跳过 ${result.skippedTurns}`
+    : `本次调了 judge：信号轮 ${result.signalTurns} / 抽样轮 ${result.sampledTurns}；只记信号（没调 judge）${result.signalOnlyTurns}；已有分数跳过 ${result.skippedTurns}`);
   if (result.locked) console.log('这个库上另有一次评分正在跑（30 分钟内的锁），本次一轮没评、一分没扣；等它跑完再来。');
-  console.log(`本次打分刊例估算 $${result.costUsd.toFixed(4)}${result.budgetStopped ? '（已触日预算上限，当天停评）' : ''}`);
+  if (result.judgeUnavailableTurns > 0) {
+    console.log(`⚠️ 打分模型没给出判决的有 ${result.judgeUnavailableTurns} 轮（没配好 / 报错 / 返回读不了），这些轮只记了信号；去设置里配好评分模型再跑。`);
+  }
+  console.log(`本次打分刊例估算 $${result.costUsd.toFixed(4)}${result.budgetStopped ? '（预算不够下一次调用，当天停评）' : ''}`);
 
   const report = buildPostLaunchReport(db, { judgeVersion: options.dryRun ? DRY_RUN_JUDGE_VERSION : undefined, days: options.days, dailyBudgetUsd: options.budget, dailySampleLimit: options.sampleLimit });
   for (const group of report.groups) {

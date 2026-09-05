@@ -1,7 +1,7 @@
 // ============================================================================
 // 上线后打分编排（ADR-063 刀 1 · N-EVAL-POSTLAUNCH-K1）
 // ----------------------------------------------------------------------------
-// 取近 N 天会话 → 按 session_type 剔分母 → 每轮算确定性信号 → 决定全评/抽样/只记信号
+// 取近 N 天有轮次的会话 → 按 session_type + 来源标记剔分母 → 每轮算确定性信号 → 决定全评/抽样/只记信号
 // → 调无题 judge → 一行理由过脱敏 → 写 telemetry_turn_scores。
 //
 // 全部外部依赖走 deps 注入（db / 回放 / LLM / 磁盘存在性 / 时钟），单测一个都不碰真机：
@@ -14,7 +14,9 @@ import {
   POST_LAUNCH_JUDGE_VERSION,
   DRY_RUN_JUDGE_VERSION,
   POST_LAUNCH_RUBRIC_VERSION,
-  isPostLaunchScorableSessionType,
+  JUDGE_MODEL_NOT_JUDGED,
+  JUDGE_MODEL_UNAVAILABLE,
+  isPostLaunchScorableSession,
   type DeterministicSignal,
   type PostLaunchDims,
   type PostLaunchScoringRequest,
@@ -23,7 +25,7 @@ import {
 } from '../../../shared/contract/postLaunchScore';
 import { guardSensitiveText } from '../../security/sensitiveDataGuard';
 import { classifyFailure, type FailureCodebook } from '../failureCodes';
-import { judgePostLaunchTurn, type PostLaunchJudgeLlmCall } from '../judge/postLaunchJudge';
+import { buildPostLaunchJudgePrompt, judgePostLaunchTurn, type PostLaunchJudgeLlmCall } from '../judge/postLaunchJudge';
 import { computeTurnSignals } from './postLaunchSignals';
 import { getBudgetState, getScoredTurnIds, insertTurnScore, localDay,
   acquireScoringLock,
@@ -46,6 +48,8 @@ const SIGNAL_FAILURE_HINT: Partial<Record<DeterministicSignal['kind'], string>> 
 export interface PostLaunchSessionRow {
   id: string;
   sessionType: string | null;
+  /** 触发来源；'headless' = 脚本/CLI 起的会话，不进分母。存量行为 null。 */
+  originKind: string | null;
   workingDirectory: string | null;
   modelProvider: string;
   modelName: string;
@@ -57,8 +61,13 @@ export interface PostLaunchScorerDeps {
   db: BetterSqlite3.Database;
   getStructuredReplay: (sessionId: string) => Promise<StructuredReplay | null>;
   llmCall: PostLaunchJudgeLlmCall;
-  /** judge 这一次调用的刊例估算成本（USD）。 */
-  estimateJudgeCostUsd: (prompt: string, completion: string) => number;
+  /**
+   * judge 一次调用的成本估算（USD）。`completion` 省略 = 调用还没发生，
+   * 按输出上限估——预算预留用这一档。
+   * `assumed=true` 表示这个模型没有公开刊例、用的是保守默认价：这笔钱照记日预算
+   * （否则预算门对未知价模型永远不触发），但不进落库与展示的 cost_usd。
+   */
+  estimateJudgeCostUsd: (prompt: string, completion?: string) => { usd: number; assumed: boolean };
   /** 一轮 agent 侧的刊例估算成本（USD），用于 cost_anomaly 信号。 */
   estimateTurnCostUsd: (session: PostLaunchSessionRow, inputTokens: number, outputTokens: number) => number;
   fileExists: (absolutePath: string) => boolean;
@@ -87,18 +96,25 @@ interface ScorableTurn {
   turn: ReplayTurn;
 }
 
+/**
+ * 窗口按**轮**切，不按会话开始时间：10 天前开、昨天还在用的长会话，
+ * 它昨天那几轮属于本窗口（K1 按 sessions.start_time 会整条漏掉）。
+ * telemetry_turns 里轮的开始时间列名是 `start_time`（不是任务书写的 turn_started_at，
+ * 后者是分数表 telemetry_turn_scores 的列名）。
+ */
 function listSessions(db: BetterSqlite3.Database, since: number): PostLaunchSessionRow[] {
   const rows = db
     .prepare(`
-      SELECT id, session_type, working_directory, model_provider, model_name, agent_version, prompt_version
+      SELECT id, session_type, origin_kind, working_directory, model_provider, model_name, agent_version, prompt_version
       FROM telemetry_sessions
-      WHERE start_time >= ?
+      WHERE EXISTS (SELECT 1 FROM telemetry_turns WHERE telemetry_turns.session_id = telemetry_sessions.id AND telemetry_turns.start_time >= ?)
       ORDER BY start_time DESC
     `)
     .all(since) as Array<Record<string, unknown>>;
   return rows.map((row) => ({
     id: row.id as string,
     sessionType: (row.session_type as string | null) ?? null,
+    originKind: (row.origin_kind as string | null) ?? null,
     workingDirectory: (row.working_directory as string | null) ?? null,
     modelProvider: (row.model_provider as string) ?? 'unknown',
     modelName: (row.model_name as string) ?? 'unknown',
@@ -207,6 +223,7 @@ export async function runPostLaunchScoring(
     signalOnlyTurns: 0,
     skippedTurns: 0,
     costUsd: 0,
+    judgeUnavailableTurns: 0,
     budgetStopped: false,
     locked: false,
     dryRun,
@@ -226,11 +243,6 @@ export async function runPostLaunchScoring(
 
   async function scoreSessions(): Promise<void> {
   for (const session of listSessions(deps.db, since)) {
-    // 长任务续租；被别人按过期接管了就立刻停，不再评、不再写（ai-review #1645 第三轮）
-    if (!renewScoringLock(deps.db, lockOwner, deps.now())) {
-      result.locked = true;
-      return;
-    }
     const turnRows = deps.db
       .prepare(`
         SELECT id, turn_number, start_time, turn_type, parent_turn_id, total_input_tokens, total_output_tokens
@@ -239,10 +251,11 @@ export async function runPostLaunchScoring(
       .all(session.id) as TurnRow[];
     if (turnRows.length === 0) continue;
 
-    if (!isPostLaunchScorableSessionType(session.sessionType)) {
+    if (!isPostLaunchScorableSession(session)) {
       // 剔出分母的轮只计数，一行分数都不落——它们不是真实用户会话。
-      result.examinedTurns += turnRows.length;
-      result.excludedTurns += turnRows.filter((row) => row.turn_type !== 'iteration').length;
+      const inWindow = turnRows.filter((row) => row.start_time >= since);
+      result.examinedTurns += inWindow.length;
+      result.excludedTurns += inWindow.filter((row) => row.turn_type !== 'iteration').length;
       continue;
     }
 
@@ -255,13 +268,20 @@ export async function runPostLaunchScoring(
     }
     if (!replay) continue;
 
-    const scorable = collectScorableTurns(replay, turnRows);
+    // 窗口外的轮不评（同一条会话里，窗口内的轮照评）。
+    const scorable = collectScorableTurns(replay, turnRows).filter((turn) => turn.startedAt >= since);
     result.examinedTurns += scorable.length;
     // dry-run 的行记成 'dry-run' 版本：既不挡之后的真评，真评的行也会按 turn_id 主键覆盖它
     // dry-run 遇到任何已有行（含真评）都跳过：表按 turn_id 主键 INSERT OR REPLACE，否则会把真评覆盖成 null（ai-review #1645）
     const alreadyScored = getScoredTurnIds(deps.db, scorable.map((turn) => turn.turnId), dryRun ? [DRY_RUN_JUDGE_VERSION, POST_LAUNCH_JUDGE_VERSION] : [POST_LAUNCH_JUDGE_VERSION]);
 
     for (const turn of scorable) {
+      // 续租细到每一轮：一条几百轮的会话评完可能远超 30 分钟锁龄，
+      // 按会话续租时中间那段会被别人当过期接管（ai-review #1645 第五轮③）。
+      if (!renewScoringLock(deps.db, lockOwner, deps.now())) {
+        result.locked = true;
+        return;
+      }
       if (alreadyScored.has(turn.turnId)) {
         result.skippedTurns += 1;
         continue;
@@ -275,9 +295,13 @@ export async function runPostLaunchScoring(
       });
 
       const hasSignal = signals.length > 0;
-      const budgetLeft = spentUsd < budgetLimitUsd;
+      // 预算给下一次调用留余量：判据是「已花 + 这次要花的估算 ≤ 上限」，
+      // 不是「已花 < 上限」——后者总会让最后一次调用把上限冲破（K1 实测超支一次调用）。
+      const judgePrompt = dryRun ? '' : buildPostLaunchJudgePrompt(turn.turn, signals);
+      const nextCallUsd = dryRun ? 0 : deps.estimateJudgeCostUsd(judgePrompt).usd;
+      const budgetLeft = spentUsd + nextCallUsd <= budgetLimitUsd;
       const sampleLeft = sampledToday < sampleLimit;
-      // 信号命中的轮全评；其余按日抽样。预算用完当天停评，只记信号。
+      // 信号命中的轮全评；其余按日抽样。预算不够下一次调用就当天停评，只记信号。
       const shouldJudge = !dryRun && budgetLeft && (hasSignal || sampleLeft);
       if (!dryRun && !budgetLeft) result.budgetStopped = true;
 
@@ -290,29 +314,33 @@ export async function runPostLaunchScoring(
         ...deterministic,
       };
       let reasoning = hasSignal ? signals.map((signal) => signal.detail ?? signal.kind).join('；') : '';
-      let judgeModel = 'unavailable';
+      // 没叫模型和叫了没结果是两件事，落库分开记：前者的修法是调预算/抽样，后者是去配评分模型。
+      let judgeModel = JUDGE_MODEL_NOT_JUDGED;
       let promptHash = '';
       let judgeVersion = dryRun ? DRY_RUN_JUDGE_VERSION : POST_LAUNCH_JUDGE_VERSION;
       let rubricVersion = POST_LAUNCH_RUBRIC_VERSION;
       let judgeCostUsd = 0;
+      let budgetCostUsd = 0;
 
       if (shouldJudge) {
-        let judgePrompt = '';
         let judgeCompletion = '';
         const verdict = await judgePostLaunchTurn({ turn: turn.turn, signals }, async (prompt) => {
-          judgePrompt = prompt;
           const response = await deps.llmCall(prompt);
           judgeCompletion = typeof response === 'string' ? response : response.content;
           return response;
         });
         dims = { ...dims, ...verdict.dims };
         reasoning = verdict.reasoning || reasoning;
-        judgeModel = verdict.judgeModel;
+        judgeModel = verdict.unavailableReason ? JUDGE_MODEL_UNAVAILABLE : verdict.judgeModel;
+        if (verdict.unavailableReason) result.judgeUnavailableTurns += 1;
         promptHash = verdict.promptHash;
         judgeVersion = verdict.judgeVersion;
         rubricVersion = verdict.rubricVersion;
-        judgeCostUsd = deps.estimateJudgeCostUsd(judgePrompt, judgeCompletion);
-        spentUsd += judgeCostUsd;
+        const estimate = deps.estimateJudgeCostUsd(judgePrompt, judgeCompletion);
+        // 未知价的估算只用来守预算，不冒充刊例落库（resolveModelPrice §2「未知价不编造」）。
+        judgeCostUsd = estimate.assumed ? 0 : estimate.usd;
+        budgetCostUsd = estimate.usd;
+        spentUsd += estimate.usd;
         result.costUsd += judgeCostUsd;
         if (hasSignal) result.signalTurns += 1;
         else {
@@ -343,6 +371,7 @@ export async function runPostLaunchScoring(
         redacted: reason.redacted,
         signals: signals.map((signal) => signal.kind),
         costUsd: judgeCostUsd,
+        budgetCostUsd,
         sampledBy: hasSignal ? 'signal' : 'sample',
       };
       insertTurnScore(deps.db, score, turn.startedAt);

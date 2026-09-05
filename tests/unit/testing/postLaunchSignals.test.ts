@@ -126,6 +126,17 @@ describe('确定性信号 · 九类各一真阳一真阴', () => {
     expect(kinds([fdDup], { workspaceDir: WORKSPACE })).not.toContain('out_of_workspace_write');
   });
 
+  it('⑨越出工作区写入：cp / mv / tee 的目标位也算写入（刀 2 验收⑤，K1 只认重定向）', () => {
+    const copyOut = toolBlock({ name: 'Bash', category: 'Bash', args: { command: 'cp ./report.html /etc/report.html' } });
+    expect(kinds([copyOut], { workspaceDir: WORKSPACE })).toContain('out_of_workspace_write');
+
+    const teeOut = toolBlock({ name: 'Bash', category: 'Bash', args: { command: 'echo x | tee -a /tmp/log' } });
+    expect(kinds([teeOut], { workspaceDir: WORKSPACE })).toContain('out_of_workspace_write');
+
+    const copyIn = toolBlock({ name: 'Bash', category: 'Bash', args: { command: 'cp ./a.ts ./b.ts' } });
+    expect(kinds([copyIn], { workspaceDir: WORKSPACE })).not.toContain('out_of_workspace_write');
+  });
+
   it('一条错误文本只归一类：被拒不会同时算成泛错误', () => {
     const result = kinds([errorBlock('Permission denied by user')]);
     expect(result).toContain('approval_denied');

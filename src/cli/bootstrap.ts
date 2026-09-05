@@ -585,6 +585,8 @@ export function createAgentLoop(
         modelProvider: config.modelConfig.provider,
         modelName: config.modelConfig.model,
         workingDirectory: config.workingDirectory,
+        // CLI 会话的 session_type 也是 'chat'，与真实用户对话分不开；上线后评测按这一列剔分母。
+        originKind: 'headless',
       });
       telemetryAdapter = collector.createAdapter(effectiveSessionId, 'cli');
       currentTelemetrySessionId = effectiveSessionId;

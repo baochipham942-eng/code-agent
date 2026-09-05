@@ -620,6 +620,8 @@ export class StandaloneAgentAdapter implements AgentInterface {
           modelName: this.modelConfig.model,
           workingDirectory: this.workingDirectory,
           sessionType: this.sessionType,
+          // 评测真跑桥的 sessionType 缺省回落 'chat'（:455），只有来源标记能把它挡在上线后分母外。
+          originKind: 'headless',
         });
         this.telemetrySessionActive = true;
       }

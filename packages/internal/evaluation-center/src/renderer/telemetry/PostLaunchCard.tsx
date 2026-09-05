@@ -69,6 +69,16 @@ export const PostLaunchCard: React.FC<PostLaunchCardProps> = ({
         </div>
       )}
 
+      {typeof safe?.judgeUnavailableTurns === 'number' && safe.judgeUnavailableTurns > 0 && (
+        <div
+          className="mb-2 flex items-start gap-1.5 rounded bg-amber-500/10 px-2 py-1.5 text-[10px] text-badge-warning"
+          data-testid="postlaunch-judge-unavailable"
+        >
+          <AlertTriangle className="mt-px h-3 w-3 shrink-0" />
+          <span>{p.judgeUnavailable.replace('{n}', String(safe.judgeUnavailableTurns))}</span>
+        </div>
+      )}
+
       {safe?.budget.stopped && (
         <div className="mb-2 rounded bg-zinc-700/40 px-2 py-1.5 text-[10px] text-zinc-400" data-testid="postlaunch-budget-stopped">
           {p.budgetStopped}
@@ -88,6 +98,11 @@ export const PostLaunchCard: React.FC<PostLaunchCardProps> = ({
             .replace('{limit}', formatUsd(safe.budget.limitUsd))
             .replace('{sampled}', String(safe.budget.sampledCount))
             .replace('{sampleLimit}', String(safe.budget.sampleLimit))}
+          {safe.budget.assumedUsd > 0 && (
+            <span className="ml-1 text-zinc-600" data-testid="postlaunch-budget-assumed">
+              {p.budgetAssumed.replace('{assumed}', formatUsd(safe.budget.assumedUsd))}
+            </span>
+          )}
         </p>
       )}
 

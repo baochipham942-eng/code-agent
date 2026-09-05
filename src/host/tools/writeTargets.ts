@@ -64,48 +64,111 @@ function readShellWord(command: string, start: number): { raw: string; end: numb
       quote = char;
       continue;
     }
-    if (/\s/.test(char) || char === ';' || char === '|' || char === '&') break;
+    if (/\s/.test(char) || char === ';' || char === '|' || char === '&' || char === '>' || char === '<') break;
   }
   return { raw: command.slice(wordStart, index), end: index };
 }
 
-/** shell 命令里 `>` / `>>` 重定向的写目标（fd 复制不算）。上线后评测的越权写信号也用它，别再造一份。 */
-export function shellRedirectTargets(command: string): string[] {
-  const targets: string[] = [];
-  let quote: "'" | '"' | undefined;
-  let escaped = false;
-  for (let index = 0; index < command.length; index += 1) {
-    const char = command[index];
-    if (escaped) {
-      escaped = false;
-      continue;
-    }
-    if (char === '\\' && quote !== "'") {
-      escaped = true;
-      continue;
-    }
-    if (quote) {
-      if (char === quote) quote = undefined;
-      continue;
-    }
-    if (char === "'" || char === '"') {
-      quote = char;
-      continue;
-    }
-    if (char !== '>') continue;
-    while (command[index + 1] === '>') index += 1;
-    // `2>&1` / `>&2` / `2>&-` 是 fd 复制，不写文件；bash 只在 `>&` 后的词
-    // 整体是数字或单个 `-` 时才当 fd 复制，`&>file` / `>&12abc` 仍是写目标。
-    const duplicatesFileDescriptor = command[index + 1] === '&';
-    const target = readShellWord(command, index + (duplicatesFileDescriptor ? 2 : 1));
-    if (duplicatesFileDescriptor && /^(?:\d+|-)$/.test(target.raw)) {
-      index = Math.max(index, target.end - 1);
-      continue;
-    }
-    targets.push(target.raw);
-    index = Math.max(index, target.end - 1);
+/** 去掉整词两端的同类引号：`cp a "/etc/x"` 的目标是 /etc/x，不是带引号的字面量。 */
+function unquote(word: string): string {
+  const first = word[0];
+  if ((first === "'" || first === '"') && word.length >= 2 && word.at(-1) === first) {
+    return word.slice(1, -1);
   }
-  return targets;
+  return word;
+}
+
+interface ShellToken {
+  kind: 'word' | 'redirect' | 'separator';
+  raw: string;
+}
+
+/**
+ * 把 shell 命令切成词 / 重定向目标 / 命令分隔符，引号与转义感知。
+ * 两类写入载体共用这一个解析：`>`/`>>` 重定向，和 cp / mv / tee 的目标位。
+ */
+function tokenizeShellCommand(command: string): ShellToken[] {
+  const tokens: ShellToken[] = [];
+  let index = 0;
+  while (index < command.length) {
+    const char = command[index];
+    if (/\s/.test(char)) {
+      index += 1;
+      continue;
+    }
+    if (char === ';' || char === '\n') {
+      tokens.push({ kind: 'separator', raw: char });
+      index += 1;
+      continue;
+    }
+    // `&>` / `&>>` 是重定向，其余的 `&` 与 `|` 都是命令边界。
+    if ((char === '|') || (char === '&' && command[index + 1] !== '>')) {
+      tokens.push({ kind: 'separator', raw: char });
+      index += 1;
+      continue;
+    }
+    if (char === '<') {
+      const consumed = readShellWord(command, index + 1);
+      index = Math.max(index + 1, consumed.end);
+      continue;
+    }
+    if (char === '>' || char === '&') {
+      if (char === '&') index += 1; // `&>` 的 `&`
+      while (command[index + 1] === '>') index += 1;
+      // `2>&1` / `>&2` / `2>&-` 是 fd 复制，不写文件；bash 只在 `>&` 后的词
+      // 整体是数字或单个 `-` 时才当 fd 复制，`&>file` / `>&12abc` 仍是写目标。
+      const duplicatesFileDescriptor = command[index + 1] === '&';
+      const target = readShellWord(command, index + (duplicatesFileDescriptor ? 2 : 1));
+      index = Math.max(index + 1, target.end);
+      if (duplicatesFileDescriptor && /^(?:\d+|-)$/.test(target.raw)) continue;
+      tokens.push({ kind: 'redirect', raw: target.raw });
+      continue;
+    }
+    const word = readShellWord(command, index);
+    if (word.end <= index) {
+      index += 1;
+      continue;
+    }
+    index = word.end;
+    if (word.raw) tokens.push({ kind: 'word', raw: word.raw });
+  }
+  return tokens;
+}
+
+/** 写目标在参数位上的命令：cp / mv 写最后一个参数，tee 写每一个文件参数。 */
+const ARGUMENT_WRITE_COMMANDS: Record<string, 'last' | 'all'> = { cp: 'last', mv: 'last', tee: 'all' };
+
+function argumentWriteTargets(words: string[]): string[] {
+  if (words.length < 2) return [];
+  const rule = ARGUMENT_WRITE_COMMANDS[path.basename(unquote(words[0]))];
+  if (!rule) return [];
+  // `-r` / `-a` / `--append` 一律是开关不是路径；`--` 之后才是纯路径，但这里不需要区分。
+  const operands = words.slice(1).filter((word) => !word.startsWith('-'));
+  if (rule === 'all') return operands;
+  return operands.length >= 2 ? [operands[operands.length - 1]] : [];
+}
+
+/**
+ * shell 命令里的写目标：`>` / `>>` 重定向 + cp / mv / tee 的目标位（fd 复制不算）。
+ * 上线后评测的越权写信号也用它，别再造一份。
+ * ponytail: 只认这三个命令名，不做「哪些命令会写盘」的全量枚举——
+ * 按名字枚举永远漏，真正的兜底是沙盒本身，这里只补最常见的三条。
+ */
+export function shellWriteTargets(command: string): string[] {
+  const tokens = tokenizeShellCommand(command);
+  const targets: string[] = [];
+  let words: string[] = [];
+  const flushSegment = (): void => {
+    targets.push(...argumentWriteTargets(words));
+    words = [];
+  };
+  for (const token of tokens) {
+    if (token.kind === 'separator') flushSegment();
+    else if (token.kind === 'word') words.push(token.raw);
+    else targets.push(token.raw);
+  }
+  flushSegment();
+  return targets.map(unquote);
 }
 
 function genericPathAssessment(
@@ -190,7 +253,7 @@ function descriptorAssessment(
   const uncertain: string[] = [];
   const memoryAlias = path.join(path.basename(path.dirname(memoryDir)), path.basename(memoryDir));
   const canonical = canonicalizeCommand(command);
-  const redirectTargets = shellRedirectTargets(canonical.command);
+  const redirectTargets = shellWriteTargets(canonical.command);
   if (canonical.parsingFailed && redirectTargets.length > 0) {
     uncertain.push(`uncertain-command-analysis:${canonical.failureReason ?? 'parse-failure'}`);
   }

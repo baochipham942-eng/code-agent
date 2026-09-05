@@ -846,6 +846,13 @@ export const enSettingsWork = {
           label: 'Send crash reports',
           body: 'Crash and error reports (scrubbed before upload — never contain source code, prompts or secrets). Helps us fix crashes you hit.',
         },
+        postLaunchScoring: {
+          label: 'Post-launch quality scoring',
+          body: 'Let a judge model score the real sessions on this machine; the scores stay local. Transcripts go to the judge model you configured (never to Neo cloud) and spend your own model quota, at most ${limit} per day.',
+          auto: 'Follow the default (on for internal builds, off otherwise)',
+          on: 'On',
+          off: 'Off',
+        },
       },
       status: {
         title: 'Status',

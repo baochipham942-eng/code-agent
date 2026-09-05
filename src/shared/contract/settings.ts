@@ -409,6 +409,11 @@ export interface AppSettings {
     usageDataEnabled?: boolean;
     /** 崩溃报告：Sentry node + renderer。缺省 = 开 */
     crashReportingEnabled?: boolean;
+    /**
+     * 上线后质量评分：把本机真实会话的正文发给用户自己配置的评分模型打分（ADR-063 §3）。
+     * 三态——'on' / 'off' 是用户显式选择；缺省按槽算（内部 dogfood 槽开、外部关）。
+     */
+    postLaunchScoring?: 'on' | 'off';
   };
   /** 第三方界面插件总开关。缺省与默认配置均为关闭。 */
   pluginUi?: {

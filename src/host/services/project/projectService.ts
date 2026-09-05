@@ -514,7 +514,7 @@ export class ProjectService {
 
   /**
    * 创建即信任（批P 第六波①a）：用户亲手选目录 = 信任授权，走既有 folder-trust 通道落库。
-   * 目录含危险项且未知情确认 → 抛 coded 错（不落库、不创建）；干净目录静默授权、已信任幂等；
+   * 目录含会自动运行的配置且未知情确认 → 抛 coded 错（不落库、不创建）；干净目录静默授权、已信任幂等；
    * 授权落库失败 warn-and-continue，不阻断创建（对齐 linkProjectIdToMeta 的失败语义）。
    */
   private async ensureFolderTrustForSpaceCreation(
@@ -527,7 +527,9 @@ export class ProjectService {
       return undefined;
     });
     if (!evaluation) return;
-    if (evaluation.state !== 'trusted' && evaluation.dangerousItems.length > 0 && !trustAcknowledged) {
+    // 只有会自己动起来的项（blockedItems = 未信任时的 gated 项）才需要用户知情确认：
+    // 空目录、或只带 CLAUDE.md 的目录，静默授权即可（N-FOLDERTRUST-RISKTIER ③）。
+    if (evaluation.state !== 'trusted' && evaluation.blockedItems.length > 0 && !trustAcknowledged) {
       throw new Error(
         `${FOLDER_TRUST_CONFIRM_REQUIRED_PREFIX} The folder contains project configuration that needs your review before it can be trusted: ${workspacePath}`,
       );

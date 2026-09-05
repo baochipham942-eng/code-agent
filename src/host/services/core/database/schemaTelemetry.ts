@@ -213,6 +213,40 @@ export function applyTelemetrySchema(db: BetterSqlite3.Database, logger: Logger)
     )
   `);
 
+  // Telemetry Turn Scores - 上线后评分（ADR-063 刀 1）。一行/轮次。
+  // 只存分数、维度、失败类别、一行脱敏理由和信号名——**没有 prompt / 回复 / 工具入参出参**，
+  // 属 ADR-040 的「元数据」档。正文永远留在 telemetry_turns / telemetry_raw_payloads 里不出机器。
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS telemetry_turn_scores (
+      turn_id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      scored_at INTEGER NOT NULL,
+      scored_day TEXT NOT NULL,
+      turn_started_at INTEGER NOT NULL,
+      app_version TEXT,
+      prompt_version TEXT,
+      judge_version TEXT NOT NULL,
+      rubric_version TEXT NOT NULL,
+      judge_model TEXT,
+      prompt_hash TEXT,
+      dim_goal INTEGER,
+      dim_orchestration INTEGER,
+      dim_tools INTEGER,
+      dim_permission INTEGER,
+      dim_safety INTEGER,
+      dim_artifact INTEGER,
+      failure_class TEXT,
+      reason_redacted TEXT,
+      redacted INTEGER NOT NULL DEFAULT 0,
+      signals TEXT NOT NULL DEFAULT '[]',
+      cost_usd REAL NOT NULL DEFAULT 0,
+      sampled_by TEXT NOT NULL
+    )
+  `);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_turn_scores_session ON telemetry_turn_scores(session_id)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_turn_scores_day ON telemetry_turn_scores(scored_day)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_turn_scores_started ON telemetry_turn_scores(turn_started_at)');
+
   // Renderer bundle hot-update attempts - 系统级热更状态上报，不混入 chat turn
   db.exec(`
     CREATE TABLE IF NOT EXISTS telemetry_renderer_bundle_attempts (

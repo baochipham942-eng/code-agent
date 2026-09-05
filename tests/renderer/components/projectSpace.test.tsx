@@ -122,7 +122,6 @@ const dangerousTrustEvaluation = {
     {
       kind: 'project-hooks',
       displayPath: '.code-agent/hooks/hooks.json',
-      label: 'Project hooks',
       risk: 'execution',
       gated: true,
     },

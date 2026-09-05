@@ -177,7 +177,7 @@ describe('vitest flake ledger wrapper', () => {
     const full = readFileSync('.github/workflows/main-full-gate.yml', 'utf8');
     for (const step of [
       'Script gates (vitest tests/scripts)',
-      'Main-chain vitest subset (agent / tools / ipc / services / design / renderer)',
+      'Main-chain vitest subset (shard ${{ matrix.shard }}/4)',
       'MCP protocol compatibility (unit + integration)',
       'Run swarm smoke suite',
       'Run smoke suite',
@@ -189,13 +189,30 @@ describe('vitest flake ledger wrapper', () => {
     expect(full.slice(full.indexOf('- name: Full vitest'))).toContain('scripts/ci/vitest-with-flake-ledger.mjs');
     for (const anchor of [
       'tests/scripts --retry=1',
-      'tests/renderer "${ROOT_UNIT_TESTS[@]}" tests/unit/web/agentRunControllerBroadcast.test.ts --retry=1',
+      'tests/renderer "${ROOT_UNIT_TESTS[@]}" tests/unit/web/agentRunControllerBroadcast.test.ts',
+      '--shard=${{ matrix.shard }}/4 --retry=1',
       "--exclude 'tests/unit/tools/modules/network/webSearch.test.ts'",
       "--exclude 'tests/unit/agent/goalVerifyGate.test.ts'",
       'tests/unit/mcp tests/integration/mcp --retry=1',
       'npm run test:swarm:smoke -- --retry=1',
     ]) expect(swarm).toContain(anchor);
     expect(full).toContain('npx vitest run --retry=1');
+  });
+
+  it('keeps the shard denominator in step with the matrix list', () => {
+    // `--shard=N/M` 的 M 写小了 = 后面的测试文件没人跑，而且不报错——这是分片化唯一的
+    // 静默失败模式，所以把「分母 == matrix 列表长度」做成门，别靠改的人自己记得同步。
+    const swarm = readFileSync('.github/workflows/swarm-ci.yml', 'utf8');
+    const shards = swarm.match(/shard: \[([^\]]+)\]/);
+    expect(shards, 'unit job 的 matrix.shard 列表').not.toBeNull();
+    const count = shards![1].split(',').length;
+    expect(count).toBeGreaterThan(1);
+    const denominators = [...swarm.matchAll(/--shard=\$\{\{ matrix\.shard \}\}\/(\d+)/g)]
+      .map((match) => Number(match[1]));
+    expect(denominators.length).toBeGreaterThan(0);
+    for (const denominator of denominators) expect(denominator).toBe(count);
+    // 分片数改了，步骤名里的 /N 也要跟着改，否则失败归因看的是过期的数字
+    expect(swarm).toContain(`Main-chain vitest subset (shard \${{ matrix.shard }}/${count})`);
   });
 
   it('keeps all three local retry mirrors behind the wrapper', () => {

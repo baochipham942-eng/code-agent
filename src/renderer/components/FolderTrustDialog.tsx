@@ -13,6 +13,7 @@ export interface FolderTrustEvaluationView {
   dangerousItems: FolderTrustDangerousItem[];
   blockedItems: FolderTrustDangerousItem[];
   identityChanged: boolean;
+  contentChanged?: boolean;
 }
 
 interface FolderTrustDialogProps {
@@ -36,6 +37,9 @@ interface FolderTrustDialogProps {
  *
  * 2026-07-27 修：此前三处调用点都写成 `state !== 'trusted'`，把「已阻止」也当成
  * 未决定，导致 ① 点「阻止项目配置」后弹窗永不消失；② 阻止过的目录每次启动都再问一遍。
+ *
+ * 2026-09-05（N-FOLDERTRUST-RISKTIER）：只有 gated 项才值得问。只放了一个 CLAUDE.md 的目录
+ * 和塞了自动执行脚本的目录，此前在弹窗眼里是一回事——而前者恰恰最常见。
  */
 export function needsFolderTrustDecision(
   evaluation: FolderTrustEvaluationView | null,
@@ -43,7 +47,12 @@ export function needsFolderTrustDecision(
 ): evaluation is FolderTrustEvaluationView {
   return !!evaluation
     && evaluation.state === 'untrusted'
-    && (!requireDangerousItems || evaluation.dangerousItems.length > 0);
+    && (!requireDangerousItems || gatedItemsOf(evaluation).length > 0);
+}
+
+/** 会自己动起来、需要用户点头的那些项。IPC 回来的评估是弱类型，缺字段按空处理。 */
+export function gatedItemsOf(evaluation: FolderTrustEvaluationView): FolderTrustDangerousItem[] {
+  return (evaluation.dangerousItems ?? []).filter((item) => item.gated);
 }
 
 export const FolderTrustDialog: React.FC<FolderTrustDialogProps> = ({
@@ -60,6 +69,7 @@ export const FolderTrustDialog: React.FC<FolderTrustDialogProps> = ({
   }
 
   const copy = t.folderTrust;
+  const gatedItems = gatedItemsOf(evaluation);
   const message = (
     <div className="space-y-4 text-sm text-zinc-300">
       <p>{copy.intro}</p>
@@ -76,8 +86,17 @@ export const FolderTrustDialog: React.FC<FolderTrustDialogProps> = ({
         </div>
       )}
 
-      {evaluation.dangerousItems.length > 0 ? (
-        <FolderTrustDangerList items={evaluation.dangerousItems} />
+      {evaluation.contentChanged && (
+        <div className="rounded border border-badge-warning/30 bg-amber-500/10 px-3 py-2 text-badge-warning">
+          {copy.contentChanged}
+        </div>
+      )}
+
+      {gatedItems.length > 0 ? (
+        <>
+          <FolderTrustDangerList items={gatedItems} />
+          <p className="text-zinc-500">{copy.costNote}</p>
+        </>
       ) : (
         <p className="text-zinc-400">{copy.emptyDangerNote}</p>
       )}

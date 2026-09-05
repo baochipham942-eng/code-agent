@@ -1,7 +1,5 @@
-// ============================================================================
-// Exec Policy - 命令执行策略持久化
-// ============================================================================
-//
+// =====================================================================// Exec Policy - 命令执行策略持久化
+// =====================================================================//
 // 借鉴 Codex CLI 的 prefix_rule 设计：
 // 用户批准一次命令后，生成持久化规则，后续匹配的命令自动跳过审批。
 //
@@ -14,6 +12,7 @@ import { createLogger } from '../services/infra/logger';
 import { getProjectConfigDir, getUserConfigDir } from '../config/configPaths';
 import { canonicalizeCommand } from './canonicalizeCommand';
 import { resolvedExecutable } from './commandParse';
+import { isKnownSafeCommand } from './commandSafety';
 
 const logger = createLogger('ExecPolicy');
 
@@ -96,6 +95,29 @@ export function matchPolicyRule(
   return bestMatch;
 }
 
+/**
+ * 前缀是否装下了整条命令的风险：前缀自己是已知安全命令、整条却不是 ⇒ 风险在前缀外（false）。
+ * 两者同安全（cat x）或前缀自身就不安全（git push / npm install）⇒ true。
+ */
+function prefixCarriesTheRisk(pattern: readonly string[], command: string): boolean {
+  return !(isKnownSafeCommand(pattern.join(' ')) && !isKnownSafeCommand(command));
+}
+
+/**
+ * 学来的 allow 规则是否真能放行这条命令。builtin 规则是产品自己声明的不受此约束；
+ * 其余（source 为 user，或旧文件里根本没写 source——离线 schema 也把缺省归为 user）都要过 prefixCarriesTheRisk。
+ * 运行时 match 与离线 `neo policy check/explain` 共用，避免验收看到 allow 而真机要审批。
+ */
+export function learnedRuleCovers(rule: PrefixRule, command: string): boolean {
+  return rule.decision !== 'allow' || rule.source === 'builtin' || prefixCarriesTheRisk(rule.pattern, command);
+}
+
+/** 最长前缀命中 + 学来前缀守卫，一步给出最终决策（null = 不命中/被守卫拦下，走常规权限流程）。 */
+export function resolvePolicyDecision(rules: readonly PrefixRule[], command: string): PolicyDecision | null {
+  const rule = matchPolicyRule(rules, command);
+  return rule && learnedRuleCovers(rule, command) ? rule.decision : null;
+}
+
 // ----------------------------------------------------------------------------
 // ExecPolicyStore
 // ----------------------------------------------------------------------------
@@ -120,7 +142,11 @@ export class ExecPolicyStore {
    * @returns 匹配的决策，或 null 表示未匹配
    */
   match(command: string): PolicyDecision | null {
-    return matchPolicyRule(this.rules, command)?.decision ?? null;
+    // 学来的前缀只放行「前缀本身就带着风险」的命令：`find .` 这种前缀单独看是安全命令，
+    // 用户当初批的其实是 `-delete` 那部分，前缀没把风险装进去，就不能拿它放行
+    // `find . -delete`（2026-09-05 真机学到 ['find','.'] 让 -delete 免审批）。
+    // `git push` / `npm install` 前缀自身就不安全，照旧放行。
+    return resolvePolicyDecision(this.rules, command);
   }
 
   /**
@@ -157,6 +183,12 @@ export class ExecPolicyStore {
     // 取前缀：程序名 + 第一个子命令
     const prefixLength = Math.min(2, tokens.length);
     const pattern = tokens.slice(0, prefixLength);
+
+    // 前缀单独看是安全命令而整条不是 ⇒ 风险在前缀之外的参数里（find . -delete），学出来的规则会比批的宽，不学。
+    if (!prefixCarriesTheRisk(pattern, command)) {
+      logger.debug('Skipping prefix that does not carry the approved risk', { pattern, from: command.substring(0, 80) });
+      return false;
+    }
 
     // 检查是否已存在相同规则
     const exists = this.rules.some(r =>

@@ -724,7 +724,11 @@ describe('macOS release fail-closed gates', () => {
     // （#663 棘轮 / #671 组件崩 / #681 i18n 断言过期），三次 PR 门都是绿的。
     // 这条断言防的是"下次有人为了省 CI 时长把它悄悄摘掉"——摘可以，但要摘得见光。
     const parsed = readWorkflow('.github/workflows/swarm-ci.yml');
-    const subsetStep = (parsed.jobs?.smoke?.steps ?? [])
+    // 2026-09-05：这一步已从 smoke 搬到分片的 unit job（N-CI-SHARD）。门守的是「renderer /
+    // design 在 PR 门的 vitest 子集里」，不是「它待在哪个 job」——所以跨 job 找，
+    // 别让一次合理的搬家把这条断言变成假红（或更糟：被人顺手删掉）。
+    const subsetStep = Object.values(parsed.jobs ?? {})
+      .flatMap((job) => job?.steps ?? [])
       .find((step) => step.name?.startsWith('Main-chain vitest subset'));
 
     expect(subsetStep, 'Main-chain vitest subset step 不见了').toBeTruthy();

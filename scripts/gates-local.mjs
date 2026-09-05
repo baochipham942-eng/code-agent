@@ -7,6 +7,8 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
+import { acquireLock } from './lib/gates-local-lock.mjs';
+
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDir, '..');
 const npmCache = process.env.npm_config_cache || path.join(os.tmpdir(), 'code-agent-npm-cache');
@@ -243,7 +245,7 @@ const gates = [
     args: ['--prefix', 'packages/internal/evaluation-center', 'run', 'build'],
   },
   {
-    ci: 'swarm-ci / smoke / Main-chain vitest subset',
+    ci: 'swarm-ci / unit / Main-chain vitest subset (4 shards)',
     command: 'node',
     // ⚠️ 目标清单必须与 swarm-ci.yml 同名步骤**逐项一致**。
     // 2026-08-14 踩到：本地这里少了 host / shared / **根级 tests/unit/*.test.ts** /
@@ -410,6 +412,23 @@ function runRendererCapabilityDiff() {
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }
+}
+
+// 起手就排队：同机只许一条门在跑（见 scripts/lib/gates-local-lock.mjs 的原因）。
+// 拿不到锁抛错 ⇒ 这里 fail-loud 退出，绝不「等不到就照跑」。
+let releaseLock;
+try {
+  releaseLock = acquireLock();
+} catch (error) {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exit(1);
+}
+process.on('exit', releaseLock);
+for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
+  process.on(signal, () => {
+    releaseLock();
+    process.exit(130);
+  });
 }
 
 console.log('gates:local CI mapping');

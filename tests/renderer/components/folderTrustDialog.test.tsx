@@ -18,7 +18,6 @@ const dangerousEvaluation = {
     {
       kind: 'project-hooks',
       displayPath: '.code-agent/hooks/hooks.json',
-      label: 'Project hooks',
       risk: 'execution',
       gated: true,
     },
@@ -44,14 +43,12 @@ describe('FolderTrustDialog', () => {
             {
               kind: 'project-hooks',
               displayPath: '.code-agent/hooks/hooks.json',
-              label: 'Project hooks',
               risk: 'execution',
               gated: true,
             },
             {
               kind: 'project-mcp-local',
               displayPath: '.code-agent/mcp.local.json',
-              label: 'Local project MCP servers',
               risk: 'mcp',
               gated: true,
             },
@@ -134,7 +131,6 @@ describe('FolderTrustDialog', () => {
         {
           kind: 'project-hooks',
           displayPath: '.code-agent/hooks/hooks.json',
-          label: 'Project hooks',
           risk: 'execution',
           gated: true,
         },
@@ -161,6 +157,63 @@ describe('FolderTrustDialog', () => {
   it('keeps zh/en folder trust keys aligned', () => {
     expect(Object.keys(en.folderTrust).sort()).toEqual(Object.keys(zh.folderTrust).sort());
     expect(Object.keys(en.folderTrust.risks).sort()).toEqual(Object.keys(zh.folderTrust.risks).sort());
+    expect(Object.keys(en.folderTrust.items).sort()).toEqual(Object.keys(zh.folderTrust.items).sort());
+  });
+
+  // N-FOLDERTRUST-RISKTIER ①：只放了一个 CLAUDE.md 的目录不再打扰用户
+  it('只有不拦的项（说明文件/快捷指令）时不弹窗', () => {
+    const evaluation = {
+      state: 'untrusted' as const,
+      canonicalRealpath: '/real/project',
+      displayPath: '/real/project',
+      identityChanged: false,
+      dangerousItems: [
+        { kind: 'agent-instructions', displayPath: 'CLAUDE.md', risk: 'prompt', gated: false },
+        { kind: 'project-commands', displayPath: '.code-agent/commands', risk: 'prompt', gated: false, count: 3 },
+      ],
+      blockedItems: [],
+    };
+    expect(needsFolderTrustDecision(evaluation)).toBe(false);
+    expect(
+      renderToStaticMarkup(
+        <FolderTrustDialog evaluation={evaluation} onTrust={noop} onBlock={noop} onOpenSettings={noop} />,
+      ),
+    ).toBe('');
+  });
+
+  // N-FOLDERTRUST-RISKTIER ②：每项说清「会发生什么」，且不出现工程词
+  it('弹窗只列会自动生效的项，用人话说明后果与代价', () => {
+    const html = renderToStaticMarkup(
+      <FolderTrustDialog
+        evaluation={{
+          state: 'untrusted',
+          canonicalRealpath: '/real/project',
+          displayPath: '/real/project',
+          identityChanged: false,
+          contentChanged: true,
+          dangerousItems: [
+            { kind: 'project-hooks', displayPath: '.code-agent/hooks/hooks.json', risk: 'execution', gated: true, count: 3 },
+            { kind: 'project-mcp', displayPath: '.code-agent/mcp.json', risk: 'mcp', gated: true, count: 1 },
+            { kind: 'agent-instructions', displayPath: 'CLAUDE.md', risk: 'prompt', gated: false },
+          ],
+          blockedItems: [],
+        }}
+        onTrust={noop}
+        onBlock={noop}
+        onOpenSettings={noop}
+      />,
+    );
+
+    expect(html).toContain(zh.folderTrust.items['project-hooks'].replace('{count}', '3'));
+    expect(html).toContain(zh.folderTrust.items['project-mcp'].replace('{count}', '1'));
+    expect(html).toContain(zh.folderTrust.costNote);
+    expect(html).toContain(zh.folderTrust.contentChanged);
+    // 不拦的项不进清单（它们本来就会加载，问了也没有可决定的东西）
+    expect(html).not.toContain('CLAUDE.md');
+    // 工程词不出现在用户面（路径里的小写 mcp/hooks 是文件名，不是给人读的标签）
+    for (const jargon of ['MCP', 'Agent 定义', 'Skill 定义', '命令执行', 'hook 脚本']) {
+      expect(html).not.toContain(jargon);
+    }
   });
 
   it('阻止是聚焦的主按钮，信任是弱按钮，关闭与 Esc 也落到阻止侧', () => {

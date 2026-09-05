@@ -50,6 +50,7 @@ export class OrchestratorMessageHistory {
   }
 
   addMessage(message: Message): void {
+    if (message.role === 'user' && this.messages.some((existing) => existing.id === message.id)) return;
     this.messages.push(message);
     if (this.messages.length > MAX_MESSAGES_IN_MEMORY) {
       const trimCount = this.messages.length - MAX_MESSAGES_IN_MEMORY;

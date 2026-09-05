@@ -275,7 +275,7 @@ vi.mock('../../../src/host/services/citation/citationService', () => ({
 }));
 
 vi.mock('../../../src/host/tools/fileReadTracker', () => ({
-  fileReadTracker: { getRecentFiles: vi.fn().mockReturnValue([]) },
+  fileReadTracker: { clear: vi.fn(), getRecentFiles: vi.fn().mockReturnValue([]) },
 }));
 
 vi.mock('../../../src/host/tools/dataFingerprint', () => ({

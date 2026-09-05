@@ -43,7 +43,7 @@ vi.mock('../../../src/host/tools/dataFingerprint', () => ({
 }));
 
 vi.mock('../../../src/host/tools/fileReadTracker', () => ({
-  fileReadTracker: { getRecentFiles: vi.fn(() => []) },
+  fileReadTracker: { clear: vi.fn(), getRecentFiles: vi.fn(() => []) },
 }));
 
 import { initCLIDatabase } from '../../../src/cli/database';

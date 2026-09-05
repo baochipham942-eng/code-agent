@@ -204,6 +204,8 @@ class FileReadTracker {
       ? this.scopedReadFiles.get(filePath)?.get(actorId)
       : this.readFiles.get(filePath);
     if (record) {
+      // Edit output does not establish a new visible Read range.
+      record.shownRange = undefined;
       record.mtime = newMtime;
       record.size = newSize;
       if (newDigest) {

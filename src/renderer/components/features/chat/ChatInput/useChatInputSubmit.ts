@@ -278,6 +278,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
         if (currentSessionId) useAppStore.getState().clearGoalRun(currentSessionId);
         return false;
       }
+      useComposerStore.getState().resetForSuccessfulSend();
       return true;
     } catch {
       if (currentSessionId) useAppStore.getState().clearGoalRun(currentSessionId);
@@ -625,6 +626,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
           return;
         }
       }
+      useComposerStore.getState().resetForSuccessfulSend();
     }
   };
 

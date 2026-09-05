@@ -86,6 +86,12 @@ describe('停车判定先于自动批准', () => {
     expect(repo.insert).toHaveBeenCalledOnce();
   });
 
+  it('权限档自动批准自报来源', async () => {
+    const island = makeIsland({ autoApprove: { read: true, write: false, execute: false, network: false } }, makeRepo());
+    await expect(island.requestPermission({ type: 'file_read', tool: 'read_file', details: {}, sessionId: 'attended-level' }))
+      .resolves.toEqual({ approved: true, approvalSource: 'auto-approve-level' });
+  });
+
   it('普通有人值守 + devModeAutoApprove 仍直接放行', async () => {
     const island = makeIsland({ devModeAutoApprove: true }, makeRepo());
 
@@ -201,7 +207,7 @@ describe('停车判定先于自动批准', () => {
       tool: 'mcp__lark__calendar_v4_calendarEvent_list',
       details: {},
       sessionId,
-    })).resolves.toEqual({ approved: true });
+    })).resolves.toEqual({ approved: true, approvalSource: 'unattended-readonly' });
     expect(repo.insert).not.toHaveBeenCalled();
   });
 

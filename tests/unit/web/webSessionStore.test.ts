@@ -516,6 +516,23 @@ describe('WebSessionStore', () => {
     ]);
   });
 
+  it('重投三次的内存投影仍只有一条用户气泡，重载不会复现重复', async () => {
+    const store = createWebSessionStore({ tryGetSessionManager: async () => null, logger,
+      getDatabase: async () => createDatabaseStub() as unknown as DatabaseService });
+    for (let attempt = 0; attempt <= 3; attempt += 1) {
+      await store.commitTurn({
+        sessionId: 'queued-retry', title: '重投', modelConfig: { provider: 'claude', model: 'test' },
+        historyLength: 0, userMessagePrePersistedDb: false,
+        userMessage: { id: 'queued-1', role: 'user', content: '继续', timestamp: attempt },
+        turn: { assistantText: '', assistantThinking: '', assistantMetadata: undefined,
+          lastLoopAssistantMessageId: undefined, assistantToolCalls: [], contentParts: [],
+          runCancelled: false, hasAssistantOutput: () => false, hasInterleaving: () => false },
+      });
+    }
+    const messages = await store.loadSessionHistoryForRun('queued-retry');
+    expect(messages.filter((message) => message.role === 'user')).toHaveLength(1);
+  });
+
   it('commitTurn falls back to the collector projection when the DB read-back fails', async () => {
     setDbAvailable(true);
     const db = createDatabaseStub();

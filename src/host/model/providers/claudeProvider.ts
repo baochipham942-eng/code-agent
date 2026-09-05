@@ -119,7 +119,10 @@ function claudeSSEStream(options: {
         buffer = lines.pop() || '';
 
         for (const line of lines) {
-          if (!line.trim()) continue;
+          if (!line.trim()) {
+            currentEvent = '';
+            continue;
+          }
 
           if (line.startsWith('event:')) {
             currentEvent = line.slice(6).trim();
@@ -159,6 +162,12 @@ function claudeSSEStream(options: {
                     ? block.type
                     : null;
                 currentTextBuffer = '';
+                if (block.type === 'text' && block.text) {
+                  content += block.text;
+                  currentTextBuffer = block.text;
+                  charCount += block.text.length;
+                  onStream?.({ type: 'text', content: block.text });
+                }
                 if (block.type === 'tool_use') {
                   toolCalls.set(blockIndex, {
                     id: block.id || `call_${blockIndex}`,

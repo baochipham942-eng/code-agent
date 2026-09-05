@@ -82,6 +82,8 @@ describe('项目级 skill 覆盖解析（项目 > 全局）', () => {
     // 用户级 skill，两个项目共享同一个 skill 定义
     await writeSkill(path.join(homeDir, '.code-agent', 'skills'), 'shared-skill');
     vi.stubEnv('HOME', homeDir);
+    // 本测试验的是「未设 CODE_AGENT_DATA_DIR ⇒ 回落 $HOME/.code-agent」；globalSetup 已把它指进 run 根，这里显式清空。
+    vi.stubEnv('CODE_AGENT_DATA_DIR', '');
     vi.stubEnv('CODE_AGENT_INCLUDE_CLAUDE_LEGACY_SKILLS', '');
   });
 

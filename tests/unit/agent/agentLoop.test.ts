@@ -11,52 +11,8 @@ import { describe, it, expect } from 'vitest';
 // These test the parallel execution logic without needing full AgentLoop setup
 // ----------------------------------------------------------------------------
 
-/**
- * Tools that are safe to execute in parallel (stateless, read-only)
- */
-const PARALLEL_SAFE_TOOLS = new Set([
-  'read_file',
-  'glob',
-  'grep',
-  'list_directory',
-  'web_fetch',
-  'web_search',
-  'memory_search',
-  'mcp_list_tools',
-  'mcp_list_resources',
-  'mcp_read_resource',
-  'mcp_get_status',
-]);
-
-/**
- * Tools that modify state and must be executed sequentially
- */
-const SEQUENTIAL_TOOLS = new Set([
-  'write_file',
-  'edit_file',
-  'bash',
-  'memory_store',
-  'ask_user_question',
-  'todo_write',
-  'task',
-  'spawn_agent',
-]);
-
-/**
- * Maximum number of tools to execute in parallel
- */
-const MAX_PARALLEL_TOOLS = 4;
-
-/**
- * Check if a tool is safe for parallel execution
- */
-function isParallelSafeTool(toolName: string): boolean {
-  // MCP tools that are read-only
-  if (toolName.startsWith('mcp_') && !toolName.includes('write') && !toolName.includes('create')) {
-    return true;
-  }
-  return PARALLEL_SAFE_TOOLS.has(toolName);
-}
+import { isParallelSafeTool } from '../../../src/host/agent/toolExecution/parallelStrategy';
+import { SEQUENTIAL_TOOLS, MAX_PARALLEL_TOOLS } from '../../../src/host/agent/loopTypes';
 
 /**
  * Check if any tool in the list requires sequential execution
@@ -84,11 +40,11 @@ function determineExecutionStrategy(toolNames: string[]): 'parallel' | 'sequenti
 describe('Parallel Tool Safety Detection', () => {
   describe('isParallelSafeTool', () => {
     it('should identify read-only tools as parallel safe', () => {
-      expect(isParallelSafeTool('read_file')).toBe(true);
-      expect(isParallelSafeTool('glob')).toBe(true);
-      expect(isParallelSafeTool('grep')).toBe(true);
-      expect(isParallelSafeTool('list_directory')).toBe(true);
-      expect(isParallelSafeTool('web_search')).toBe(true);
+      expect(isParallelSafeTool('Read')).toBe(true);
+      expect(isParallelSafeTool('Glob')).toBe(true);
+      expect(isParallelSafeTool('Grep')).toBe(true);
+      expect(isParallelSafeTool('ListDirectory')).toBe(true);
+      expect(isParallelSafeTool('WebSearch')).toBe(true);
       expect(isParallelSafeTool('memory_search')).toBe(true);
     });
 
@@ -99,11 +55,11 @@ describe('Parallel Tool Safety Detection', () => {
       expect(isParallelSafeTool('memory_store')).toBe(false);
     });
 
-    it('should handle MCP read tools as parallel safe', () => {
-      expect(isParallelSafeTool('mcp_read_resource')).toBe(true);
-      expect(isParallelSafeTool('mcp_list_tools')).toBe(true);
-      expect(isParallelSafeTool('mcp_list_resources')).toBe(true);
-      expect(isParallelSafeTool('mcp_get_status')).toBe(true);
+    it('should keep MCP tools without annotations sequential', () => {
+      expect(isParallelSafeTool('mcp_read_resource')).toBe(false);
+      expect(isParallelSafeTool('mcp_list_tools')).toBe(false);
+      expect(isParallelSafeTool('mcp_list_resources')).toBe(false);
+      expect(isParallelSafeTool('mcp_get_status')).toBe(false);
     });
 
     it('should handle MCP write tools as sequential', () => {
@@ -119,11 +75,11 @@ describe('Parallel Tool Safety Detection', () => {
 
   describe('hasSequentialTool', () => {
     it('should return false for all-parallel tools', () => {
-      expect(hasSequentialTool(['read_file', 'glob', 'grep'])).toBe(false);
+      expect(hasSequentialTool(['Read', 'Glob', 'Grep'])).toBe(false);
     });
 
     it('should return true if any sequential tool exists', () => {
-      expect(hasSequentialTool(['read_file', 'write_file', 'glob'])).toBe(true);
+      expect(hasSequentialTool(['Read', 'write_file', 'Glob'])).toBe(true);
       expect(hasSequentialTool(['bash'])).toBe(true);
       expect(hasSequentialTool(['edit_file'])).toBe(true);
     });
@@ -135,8 +91,8 @@ describe('Parallel Tool Safety Detection', () => {
 
   describe('determineExecutionStrategy', () => {
     it('should return parallel for all safe tools within limit', () => {
-      expect(determineExecutionStrategy(['read_file', 'glob'])).toBe('parallel');
-      expect(determineExecutionStrategy(['read_file', 'glob', 'grep', 'list_directory'])).toBe('parallel');
+      expect(determineExecutionStrategy(['Read', 'Glob'])).toBe('parallel');
+      expect(determineExecutionStrategy(['Read', 'Glob', 'Grep', 'ListDirectory'])).toBe('parallel');
     });
 
     it('should return sequential for all unsafe tools', () => {
@@ -145,12 +101,12 @@ describe('Parallel Tool Safety Detection', () => {
     });
 
     it('should return mixed for combination of safe and unsafe', () => {
-      expect(determineExecutionStrategy(['read_file', 'write_file'])).toBe('mixed');
-      expect(determineExecutionStrategy(['glob', 'bash', 'grep'])).toBe('mixed');
+      expect(determineExecutionStrategy(['Read', 'write_file'])).toBe('mixed');
+      expect(determineExecutionStrategy(['Glob', 'bash', 'Grep'])).toBe('mixed');
     });
 
     it('should return mixed if exceeds MAX_PARALLEL_TOOLS', () => {
-      const manyReadOps = ['read_file', 'glob', 'grep', 'list_directory', 'web_search'];
+      const manyReadOps = ['Read', 'Glob', 'Grep', 'ListDirectory', 'WebSearch'];
       expect(determineExecutionStrategy(manyReadOps)).toBe('mixed');
     });
   });
@@ -166,7 +122,7 @@ describe('Anti-Pattern Detection', () => {
    * Detect consecutive read operations that might indicate a loop
    */
   function detectConsecutiveReads(toolHistory: string[], threshold: number = 5): boolean {
-    const readTools = ['read_file', 'glob', 'grep', 'list_directory'];
+    const readTools = ['Read', 'Glob', 'Grep', 'ListDirectory'];
     let consecutiveReads = 0;
 
     for (let i = toolHistory.length - 1; i >= 0; i--) {
@@ -204,23 +160,23 @@ describe('Anti-Pattern Detection', () => {
 
   describe('detectConsecutiveReads', () => {
     it('should detect excessive consecutive reads', () => {
-      const history = ['read_file', 'read_file', 'read_file', 'read_file', 'read_file'];
+      const history = ['Read', 'Read', 'Read', 'Read', 'Read'];
       expect(detectConsecutiveReads(history)).toBe(true);
     });
 
     it('should not flag normal read patterns', () => {
-      const history = ['read_file', 'write_file', 'read_file', 'read_file'];
+      const history = ['Read', 'write_file', 'Read', 'Read'];
       expect(detectConsecutiveReads(history)).toBe(false);
     });
 
     it('should respect custom threshold', () => {
-      const history = ['read_file', 'read_file', 'read_file'];
+      const history = ['Read', 'Read', 'Read'];
       expect(detectConsecutiveReads(history, 3)).toBe(true);
       expect(detectConsecutiveReads(history, 4)).toBe(false);
     });
 
     it('should count from end of history', () => {
-      const history = ['read_file', 'read_file', 'write_file', 'read_file', 'read_file'];
+      const history = ['Read', 'Read', 'write_file', 'Read', 'Read'];
       expect(detectConsecutiveReads(history, 3)).toBe(false);
     });
   });
@@ -228,35 +184,35 @@ describe('Anti-Pattern Detection', () => {
   describe('detectDuplicateCalls', () => {
     it('should detect repeated identical calls', () => {
       const history = [
-        { name: 'read_file', args: '/path/to/file.txt' },
-        { name: 'read_file', args: '/path/to/file.txt' },
-        { name: 'read_file', args: '/path/to/file.txt' },
+        { name: 'Read', args: '/path/to/file.txt' },
+        { name: 'Read', args: '/path/to/file.txt' },
+        { name: 'Read', args: '/path/to/file.txt' },
       ];
       expect(detectDuplicateCalls(history)).toBe(true);
     });
 
     it('should not flag different arguments', () => {
       const history = [
-        { name: 'read_file', args: '/path/to/file1.txt' },
-        { name: 'read_file', args: '/path/to/file2.txt' },
-        { name: 'read_file', args: '/path/to/file3.txt' },
+        { name: 'Read', args: '/path/to/file1.txt' },
+        { name: 'Read', args: '/path/to/file2.txt' },
+        { name: 'Read', args: '/path/to/file3.txt' },
       ];
       expect(detectDuplicateCalls(history)).toBe(false);
     });
 
     it('should not flag different tools', () => {
       const history = [
-        { name: 'read_file', args: '/path' },
-        { name: 'glob', args: '/path' },
-        { name: 'grep', args: '/path' },
+        { name: 'Read', args: '/path' },
+        { name: 'Glob', args: '/path' },
+        { name: 'Grep', args: '/path' },
       ];
       expect(detectDuplicateCalls(history)).toBe(false);
     });
 
     it('should respect custom max duplicates', () => {
       const history = [
-        { name: 'read_file', args: '/path' },
-        { name: 'read_file', args: '/path' },
+        { name: 'Read', args: '/path' },
+        { name: 'Read', args: '/path' },
       ];
       expect(detectDuplicateCalls(history, 2)).toBe(true);
       expect(detectDuplicateCalls(history, 3)).toBe(false);
@@ -316,9 +272,9 @@ describe('Tool Failure Tracking', () => {
     it('should trip after too many same-tool failures', () => {
       const breaker = new ToolCircuitBreaker(3, 10);
 
-      expect(breaker.recordFailure('read_file').tripped).toBe(false);
-      expect(breaker.recordFailure('read_file').tripped).toBe(false);
-      expect(breaker.recordFailure('read_file').tripped).toBe(true);
+      expect(breaker.recordFailure('Read').tripped).toBe(false);
+      expect(breaker.recordFailure('Read').tripped).toBe(false);
+      expect(breaker.recordFailure('Read').tripped).toBe(true);
     });
 
     it('should trip after too many consecutive failures', () => {

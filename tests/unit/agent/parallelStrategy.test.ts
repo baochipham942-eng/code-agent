@@ -15,3 +15,10 @@ describe('MCP parallel safety', () => {
     expect(isParallelSafeTool('mcp__x__read', { readOnlyHint: true, destructiveHint: true })).toBe(false);
   });
 });
+
+
+it('classifies three registered Read calls as parallel', () => {
+  const calls = [1, 2, 3].map(id => ({ id: String(id), name: 'Read', arguments: { file_path: `${id}.txt` } }));
+  expect(classifyToolCalls(calls).parallelGroup).toHaveLength(3);
+  expect(classifyToolCalls(calls).sequentialGroup).toEqual([]);
+});

@@ -400,9 +400,6 @@ jobs:
         #   system_dir_delete，Linux 的 /tmp 只评为 high；同路径只读判定探针已复现差异。
         #
         # 真 bug 欠条（同一 Ubuntu run，修复后必须摘除；不算平台豁免）：
-        # - runtime/runtimeAssetInstaller.test.ts：`expected [ …(2) ] to include
-        #   'a84d89f31285cadf4ac994d6e252628d2f0bf…'`；归档 mtime 排序丢掉上一安装版。
-        #   排除理由=真 bug，见 N-RUNTIME-ASSET-RETENTION-ORDER-0905。
         # - security/folderTrustService.test.ts：`expected 'trusted' to be 'untrusted'`；
         #   删除重建目录后 inode 复用，旧信任未失效。
         #   排除理由=真 bug，见 N-FOLDER-TRUST-INODE-REUSE-0905。
@@ -417,7 +414,6 @@ jobs:
             --exclude 'tests/unit/permissions/writebackEdit.test.ts' \
             --exclude 'tests/unit/runtime/runtimeAssetStatus.test.ts' \
             --exclude 'tests/unit/security/commandSafety.approvalDecisionGaps.test.ts' \
-            --exclude 'tests/unit/runtime/runtimeAssetInstaller.test.ts' \
             --exclude 'tests/unit/security/folderTrustService.test.ts'
 
   full:

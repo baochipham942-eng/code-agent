@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -52,15 +53,37 @@ function readHolder(lockPath) {
   }
 }
 
-function holderAlive(pid) {
+/**
+ * 持锁者还活着吗。
+ *
+ * 只看 `process.kill(pid, 0)` 不够：pid 会被系统复用，一个被 SIGKILL 的门留下的锁，
+ * 等 pid 轮回给某个无关进程之后就会被当成「还在跑」，于是所有人白等到超时
+ * （09-05 ai-review 第四轮抓出）。所以再核一次那个 pid 的命令行是不是门本身。
+ *
+ * ponytail: 判据放宽到「命令行里出现 ownerPattern」，不做精确 argv 比对——门可能被
+ * npm / node / rtk 包一层，精确匹配反而会把真持锁者判死，那是更坏的方向（会去删有效锁）。
+ */
+function holderAlive(pid, ownerPattern) {
   if (!Number.isInteger(pid)) return false;
   try {
     process.kill(pid, 0);
-    return true;
   } catch (error) {
     // EPERM = 进程还在，只是不归当前用户管
-    return error.code === 'EPERM';
+    if (error.code !== 'EPERM') return false;
   }
+  const ps = spawnSync('ps', ['-o', 'command=', '-p', String(pid)], { encoding: 'utf8' });
+  if (ps.status !== 0 || typeof ps.stdout !== 'string') return false;
+  return ps.stdout.includes(ownerPattern);
+}
+
+/** 配置值必须是正数——非数字会让 deadline 变 NaN，超时判断永远为 false ⇒ 无限排队。 */
+function positiveMinutes(raw, fallback) {
+  if (raw === undefined || raw === null || String(raw).trim() === '') return fallback;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new Error(`[gates:local] GATES_LOCAL_LOCK_WAIT_MINUTES 必须是正数，收到 ${JSON.stringify(raw)}`);
+  }
+  return value;
 }
 
 function heldFor(holder) {
@@ -74,8 +97,9 @@ function heldFor(holder) {
  */
 export function acquireLock({
   lockPath = process.env.GATES_LOCAL_LOCK_PATH || defaultLockPath,
-  waitMs = Number(process.env.GATES_LOCAL_LOCK_WAIT_MINUTES || 90) * 60_000,
+  waitMs = positiveMinutes(process.env.GATES_LOCAL_LOCK_WAIT_MINUTES, 90) * 60_000,
   pollMs = 5_000,
+  ownerPattern = 'gates-local.mjs',
   log = console.log,
 } = {}) {
   fs.mkdirSync(path.dirname(lockPath), { recursive: true });
@@ -121,7 +145,7 @@ export function acquireLock({
       const holder = readHolder(lockPath);
       if (!holder) continue; // 锁刚被释放，直接回去抢
 
-      if (holder.corrupt || !holderAlive(holder.pid)) {
+      if (holder.corrupt || !holderAlive(holder.pid, ownerPattern)) {
         // 陈旧锁（持锁进程已死，或文件损坏）。
         //
         // 🔴 这里**故意不自动回收**。自动回收要做的是「确认它陈旧」和「删掉它」两步，而

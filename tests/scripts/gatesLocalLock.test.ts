@@ -32,7 +32,7 @@ afterEach(() => {
 describe('gates:local 单机互斥锁', () => {
   it('拿到锁后写入持锁者身份，release 后锁文件消失', () => {
     const lockPath = tempLockPath();
-    const release = acquireLock({ lockPath, waitMs: 1_000, pollMs: 10, log: () => {} });
+    const release = acquireLock({ lockPath, waitMs: 1_000, pollMs: 10, ownerPattern: 'node', log: () => {} });
 
     const holder = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
     expect(holder.pid).toBe(process.pid);
@@ -45,11 +45,11 @@ describe('gates:local 单机互斥锁', () => {
 
   it('锁被活着的进程占着时排队等待，等到超时抛错——绝不放行', () => {
     const lockPath = tempLockPath();
-    const release = acquireLock({ lockPath, waitMs: 1_000, pollMs: 10, log: () => {} });
+    const release = acquireLock({ lockPath, waitMs: 1_000, pollMs: 10, ownerPattern: 'node', log: () => {} });
 
     // 持锁者是本进程（必然活着），第二次进来只能排队，直到 waitMs 用尽。
     const startedAt = Date.now();
-    expect(() => acquireLock({ lockPath, waitMs: 200, pollMs: 10, log: () => {} }))
+    expect(() => acquireLock({ lockPath, waitMs: 200, pollMs: 10, ownerPattern: 'node', log: () => {} }))
       .toThrow(/拿不到锁/);
     // 真的等过，不是立刻返回
     expect(Date.now() - startedAt).toBeGreaterThanOrEqual(150);
@@ -71,11 +71,11 @@ describe('gates:local 单机互斥锁', () => {
     };
     fs.writeFileSync(lockPath, JSON.stringify(stale));
 
-    expect(() => acquireLock({ lockPath, waitMs: 1_000, pollMs: 10, log: () => {} }))
+    expect(() => acquireLock({ lockPath, waitMs: 1_000, pollMs: 10, ownerPattern: 'node', log: () => {} }))
       .toThrow(/已经不在的进程占着/);
     // 锁必须原样留着，且指引里要带真实路径
     expect(JSON.parse(fs.readFileSync(lockPath, 'utf8')).pid).toBe(stale.pid);
-    expect(() => acquireLock({ lockPath, waitMs: 1_000, pollMs: 10, log: () => {} }))
+    expect(() => acquireLock({ lockPath, waitMs: 1_000, pollMs: 10, ownerPattern: 'node', log: () => {} }))
       .toThrow(new RegExp(`rm ${lockPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
   });
 
@@ -89,7 +89,7 @@ describe('gates:local 单机互斥锁', () => {
     const prev = process.env.GATES_LOCAL_FORCE_UNLOCK;
     process.env.GATES_LOCAL_FORCE_UNLOCK = '1';
     try {
-      const release = acquireLock({ lockPath, waitMs: 1_000, pollMs: 10, log: () => {} });
+      const release = acquireLock({ lockPath, waitMs: 1_000, pollMs: 10, ownerPattern: 'node', log: () => {} });
       expect(JSON.parse(fs.readFileSync(lockPath, 'utf8')).pid).toBe(process.pid);
       release();
     } finally {
@@ -103,7 +103,7 @@ describe('gates:local 单机互斥锁', () => {
     fs.mkdirSync(path.dirname(lockPath), { recursive: true });
     fs.writeFileSync(lockPath, '这不是 JSON');
 
-    expect(() => acquireLock({ lockPath, waitMs: 1_000, pollMs: 10, log: () => {} }))
+    expect(() => acquireLock({ lockPath, waitMs: 1_000, pollMs: 10, ownerPattern: 'node', log: () => {} }))
       .toThrow(/锁文件内容已损坏/);
     expect(fs.readFileSync(lockPath, 'utf8')).toBe('这不是 JSON');
   });
@@ -116,7 +116,7 @@ describe('gates:local 单机互斥锁', () => {
     // 原子性来自 link（目标已存在即 EEXIST），所以直接咬住它：改回 openSync(lockPath,'wx')
     // 那种「先建空文件再写」的实现，这条断言立刻红。
     const link = vi.spyOn(fs, 'linkSync');
-    const release = acquireLock({ lockPath, waitMs: 1_000, pollMs: 10, log: () => {} });
+    const release = acquireLock({ lockPath, waitMs: 1_000, pollMs: 10, ownerPattern: 'node', log: () => {} });
     expect(link).toHaveBeenCalledWith(expect.stringContaining('staging'), lockPath);
     link.mockRestore();
 
@@ -129,9 +129,44 @@ describe('gates:local 单机互斥锁', () => {
     release();
   });
 
+  it('活性判据自验：pid 活着但不是门进程，按陈旧处理（防 pid 复用）', () => {
+    // 只看 process.kill(pid,0) 的实现，会把「pid 被无关进程复用」当成门还在跑，
+    // 于是所有人白等到超时。真阳=当前进程命令行含 node；真阴=同一个 pid 换个匹配串。
+    const lockPath = tempLockPath();
+    fs.mkdirSync(path.dirname(lockPath), { recursive: true });
+    fs.writeFileSync(lockPath, JSON.stringify({
+      pid: process.pid, cwd: process.cwd(), startedAt: new Date().toISOString(),
+    }));
+
+    // 真阳：命令行匹配得上 ⇒ 认作还活着 ⇒ 排队到超时
+    expect(() => acquireLock({ lockPath, waitMs: 150, pollMs: 10, ownerPattern: 'node', log: () => {} }))
+      .toThrow(/拿不到锁/);
+    // 真阴：同一个活 pid，但命令行对不上门 ⇒ 判陈旧 ⇒ fail-loud 给清锁指引
+    expect(() => acquireLock({ lockPath, waitMs: 150, pollMs: 10, ownerPattern: '绝不会出现在命令行里的串', log: () => {} }))
+      .toThrow(/已经不在的进程占着/);
+  });
+
+  it('GATES_LOCAL_LOCK_WAIT_MINUTES 非正数直接报错，不让 deadline 变 NaN', () => {
+    const prev = process.env.GATES_LOCAL_LOCK_WAIT_MINUTES;
+    try {
+      for (const bad of ['abc', '0', '-5']) {
+        process.env.GATES_LOCAL_LOCK_WAIT_MINUTES = bad;
+        expect(() => acquireLock({ lockPath: tempLockPath(), pollMs: 10, ownerPattern: 'node', log: () => {} }))
+          .toThrow(/必须是正数/);
+      }
+      // 空串走默认值，不报错
+      process.env.GATES_LOCAL_LOCK_WAIT_MINUTES = '';
+      const release = acquireLock({ lockPath: tempLockPath(), pollMs: 10, ownerPattern: 'node', log: () => {} });
+      release();
+    } finally {
+      if (prev === undefined) delete process.env.GATES_LOCAL_LOCK_WAIT_MINUTES;
+      else process.env.GATES_LOCAL_LOCK_WAIT_MINUTES = prev;
+    }
+  });
+
   it('release 只删自己的锁：锁已被别人接管时不误删', () => {
     const lockPath = tempLockPath();
-    const release = acquireLock({ lockPath, waitMs: 1_000, pollMs: 10, log: () => {} });
+    const release = acquireLock({ lockPath, waitMs: 1_000, pollMs: 10, ownerPattern: 'node', log: () => {} });
 
     // 模拟陈旧回收后锁易主
     fs.writeFileSync(lockPath, JSON.stringify({ pid: process.pid + 1, cwd: '/tmp/别人', startedAt: new Date().toISOString() }));

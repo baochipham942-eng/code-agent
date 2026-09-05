@@ -13,6 +13,7 @@ import { applyTelemetrySchema } from '../../../src/host/services/core/database/s
 import type { ReplayBlock, StructuredReplay } from '../../../src/shared/contract/evaluationReplay';
 import type { FailureCodebook } from '../../../src/host/testing/failureCodes';
 import { runPostLaunchScoring, type PostLaunchScorerDeps } from '../../../src/host/testing/postlaunch/postLaunchScorer';
+import { clampPostLaunchScoringRequest } from '../../../src/shared/contract/postLaunchScore';
 import { acquireScoringLock, buildPostLaunchReport, releaseScoringLock, renewScoringLock } from '../../../src/host/testing/postlaunch/postLaunchScoreStore';
 
 const NOW = new Date('2026-09-05T12:00:00+08:00').getTime();
@@ -103,6 +104,16 @@ function deps(
 function scoreRows(database: Database.Database): Array<Record<string, unknown>> {
   return database.prepare('SELECT * FROM telemetry_turn_scores ORDER BY turn_id').all() as Array<Record<string, unknown>>;
 }
+
+describe('IPC 评分请求钳位（花钱的信任边界）', () => {
+  it('只认 days 且钳到 1–30；预算、抽样、dry-run 丢弃', () => {
+    expect(clampPostLaunchScoringRequest({ days: 365, dailyBudgetUsd: 100000, dailySampleLimit: 100000, dryRun: false })).toEqual({ days: 30 });
+    expect(clampPostLaunchScoringRequest({ days: 0 })).toEqual({ days: 1 });
+    expect(clampPostLaunchScoringRequest({ days: 7.9 })).toEqual({ days: 7 });
+    expect(clampPostLaunchScoringRequest({ days: 'x' })).toEqual({});
+    expect(clampPostLaunchScoringRequest(undefined)).toEqual({});
+  });
+});
 
 describe('上线后打分编排', () => {
   let database: Database.Database;

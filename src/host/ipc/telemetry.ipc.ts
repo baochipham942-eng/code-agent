@@ -24,7 +24,7 @@ import {
   resolveAgentTrajectoryCollectionMetadata,
   writeAgentTrajectoryCollectionMetadata,
 } from '../../shared/contract/agentTrajectory';
-import type { PostLaunchScoringRequest } from '../../shared/contract/postLaunchScore';
+import { clampPostLaunchScoringRequest } from '../../shared/contract/postLaunchScore';
 import type {
   TelemetryFeedbackSubmitRequest,
   TelemetryFeedbackSubmitResult,
@@ -108,6 +108,8 @@ async function buildTrajectoryQualitySummary(
 /**
  * 注册遥测相关的 IPC handlers
  */
+
+
 export function registerTelemetryHandlers(getMainWindow: () => AppWindow | null): void {
   const storage = getTelemetryStorage();
 
@@ -183,11 +185,12 @@ export function registerTelemetryHandlers(getMainWindow: () => AppWindow | null)
     return getPostLaunchReportOnHost({ days: payload?.days });
   });
 
-  // 触发上线后评分：会真调 judge 模型、花用户自己的额度，所以日预算与抽样上限在编排里硬卡。
-  ipcHost.handle(TELEMETRY_CHANNELS.RUN_POSTLAUNCH_SCORING, async (_event, payload?: PostLaunchScoringRequest) => {
+  // 触发上线后评分：会真调 judge 模型、花用户自己的额度。渲染层只能给 days（钳到 1–30），
+  // 日预算与抽样上限一律用 host 默认——这是花钱的信任边界，不接受渲染层改上限（ai-review #1645 第四轮）。
+  ipcHost.handle(TELEMETRY_CHANNELS.RUN_POSTLAUNCH_SCORING, async (_event, payload?: { days?: number }) => {
     assertAdminAccess('Telemetry');
     const { runPostLaunchScoringOnHost } = await import('../testing/postlaunch/postLaunchScorerRuntime');
-    return runPostLaunchScoringOnHost(payload ?? {});
+    return runPostLaunchScoringOnHost(clampPostLaunchScoringRequest(payload));
   });
 
   // 获取结构化回放数据

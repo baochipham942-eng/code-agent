@@ -192,3 +192,11 @@ export interface PostLaunchScoringResult {
   locked: boolean;
   dryRun: boolean;
 }
+
+/** 渲染层（IPC）的评分请求只认 days，钳到 [1, 30]；预算、抽样、dry-run 一律丢弃走 host 默认——花钱的信任边界不接受渲染层改上限。 */
+const POST_LAUNCH_MAX_DAYS = 30;
+export function clampPostLaunchScoringRequest(payload: unknown): PostLaunchScoringRequest {
+  const days = (payload as { days?: unknown } | undefined)?.days;
+  if (typeof days !== 'number' || !Number.isFinite(days)) return {};
+  return { days: Math.min(POST_LAUNCH_MAX_DAYS, Math.max(1, Math.floor(days))) };
+}

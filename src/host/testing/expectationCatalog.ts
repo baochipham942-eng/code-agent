@@ -30,6 +30,8 @@ const EXPECTATION_SUMMARIES = {
   goal_status: '目标达到预期终态',
   goal_evidence_gate: '目标证据闸符合预期',
   no_stall_before_artifact: '产物动作前没有拖延',
+  memory_recalled: '该被想起来的记忆真的被注进了这一轮',
+  memory_written: '跑完之后记忆目录里躺着该躺的内容',
 } as const satisfies Record<ExpectationType, string>;
 
 type MissingExpectationType = Exclude<ExpectationType, keyof typeof EXPECTATION_SUMMARIES>;

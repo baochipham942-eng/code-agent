@@ -10,7 +10,7 @@ import {
   buildRuntimeModeBlock,
   buildGitStatusBlock,
 } from '../../../agent/messageHandling/contextBuilder';
-import { loadMemoryIndex } from '../../../lightMemory/indexLoader';
+import { listMemoryIndexTargets, loadMemoryIndex } from '../../../lightMemory/indexLoader';
 import { withMemoryBackgroundGuidance } from '../../../memory/memoryContextGuidance';
 import { buildFailureJournalBlock } from '../../../lightMemory/failureJournal';
 import { loadRelevantSkills, buildSkillInjectionBlock } from '../../../lightMemory/skillLoader';
@@ -490,6 +490,14 @@ ${deferredToolsSummary}
         count: countTraceEntries(memoryIndex),
         sessionId: ctx.runtime.sessionId,
       });
+      // N-EVAL-MEMORY：File-as-Memory 的注入走这里，不走 injectSeedMemory 的 <user-memory> 块。
+      // 只在真的进了提示词（预算没把它挤掉）时才发事件——「读到了索引」不等于「模型看得见」。
+      if (systemPrompt !== beforeMemoryIndex) {
+        ctx.runtime.onEvent({
+          type: 'memory_injected',
+          data: { id: 'memory_index', entries: listMemoryIndexTargets(memoryIndex) },
+        });
+      }
       recordTurnMemoryBlock(ctx.runtime, {
         blockType: 'memory_index',
         trigger: 'memory_index_available',

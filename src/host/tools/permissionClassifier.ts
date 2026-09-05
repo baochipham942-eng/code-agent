@@ -58,7 +58,7 @@ export interface ClassificationResult {
   /**
    * EXTERNAL 风险类标记（B1）：工具是否产生对外可见副作用（发出去收不回，如发邮件/IM 消息）。
    * 与 decision 正交、不改变审批结果——由 resolveToolPermissionClassification 统一打标，
-   * 供 B2 无人值守停车 / B4 target 授权与审计消费。判据见 tools/externalSideEffect.ts。
+   * 供停车审批 / B4 target 授权与审计消费。判据见 tools/externalSideEffect.ts。
    */
   external?: boolean;
   /**

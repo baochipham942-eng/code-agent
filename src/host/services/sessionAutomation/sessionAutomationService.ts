@@ -432,7 +432,7 @@ export class SessionAutomationService {
   }
 
   /**
-   * 收件箱「等待批准的操作」分组数据（B2）：无人值守停车挂起的工具审批。
+   * 收件箱「等待批准的操作」分组数据：停车挂起的工具审批。
    * pending 可操作，orphaned（应用重启后过期）灰态展示。id=requestId，
    * 收件箱回传 permissionResponse 用同一 id 命中内存 pending。
    */

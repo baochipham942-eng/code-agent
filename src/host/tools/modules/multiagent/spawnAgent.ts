@@ -149,7 +149,7 @@ async function runSpawnAgent(
       const bgResult = await executeSpawnAgent(normalizedArgs, {
         ...executionContext,
         abortSignal: bgController.signal,
-        // 后台子 agent 标 async_agent（2026-07-13 拍板）：bash 走 ask+forceConfirm
+        // 后台子 agent 标 async_agent：拓扑保留 coordinator 硬拒，普通 Bash 交给权限档与沙箱裁决。
         executionTopology: 'async_agent',
       });
       const failureCode = bgResult.success ? undefined : inferAgentFailureCode({

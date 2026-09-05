@@ -10,8 +10,8 @@
 // 不变量：
 //   1. cronService 拿到 orchestrator 后立即标 async_agent（在 sendMessage 之前）。
 //   2. AgentOrchestrator.setExecutionTopology 委托给 toolExecutor。
-//   3. cron 无人值守语义：async_agent 的 bash ask → requestPermission 60s 超时 deny，
-//      不挂死（orchestratorPermissions PERMISSION_TIMEOUT 既有机制）。
+//   3. cron 无人值守语义：普通 Bash 交给 unattended 档 + OS 沙箱；真正仍需审批的
+//      请求 60s 超时进入终态，不挂死。
 // ============================================================================
 
 import { describe, it, expect } from 'vitest';
@@ -43,7 +43,7 @@ describe('cron agent 会话拓扑标注接线', () => {
     );
   });
 
-  it('requestPermission 保留超时 deny 机制（无人值守 ask 不挂死）', () => {
+  it('requestPermission 保留超时 deny 机制（无人值守残余 ask 不挂死）', () => {
     expect(permissionsSource).toMatch(/PERMISSION_TIMEOUT\s*=[^;]*\b60000\b/);
   });
 });

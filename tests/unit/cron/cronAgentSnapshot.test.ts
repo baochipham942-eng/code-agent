@@ -7,6 +7,9 @@ import type {
 import { CRON_AGENT_SNAPSHOT, EXTERNAL_WATCH } from '../../../src/shared/constants';
 import { shouldDeliverAgentEvent } from '../../../src/host/protocol/events/eventFilter';
 import { recordScopedCost } from '../../../src/host/services/core/scopedCostLimit';
+import { HostReasonCode } from '../../../src/shared/contract/permission';
+import { OrchestratorPermissionIsland } from '../../../src/host/agent/orchestratorPermissions';
+import { getPermissionModeManager, resetPermissionModeManager } from '../../../src/host/permissions/modes';
 
 const dbState = vi.hoisted(() => ({
   savedRows: [] as unknown[][],
@@ -23,6 +26,7 @@ const agentState = vi.hoisted(() => ({
   setWorkingDirectory: vi.fn(),
   cleanup: vi.fn(),
   createSession: vi.fn(),
+  consumeUnattendedPermissionFailure: vi.fn(),
 }));
 
 vi.mock('../../../src/host/services/core/databaseService', () => ({
@@ -65,6 +69,7 @@ vi.mock('../../../src/host/task', () => ({
       sendMessage: agentState.sendMessage,
       getMessages: agentState.getMessages,
       setExecutionTopology: agentState.setExecutionTopology,
+      consumeUnattendedPermissionFailure: agentState.consumeUnattendedPermissionFailure,
     }),
     setWorkingDirectory: agentState.setWorkingDirectory,
     cleanup: agentState.cleanup,
@@ -81,6 +86,7 @@ interface CronServiceHarness {
     timeout?: number,
     executionId?: string,
   ): Promise<unknown>;
+  executeJob(definition: CronJobDefinition): Promise<import('../../../src/shared/contract/cron').CronJobExecution>;
 }
 
 function makeDefinition(context?: Record<string, unknown>): CronJobDefinition {
@@ -137,9 +143,82 @@ beforeEach(() => {
     id: 'cron-session-1',
     workingDirectory: undefined,
   });
+  agentState.consumeUnattendedPermissionFailure.mockReturnValue(null);
 });
 
 describe('CronService agent run snapshot wiring', () => {
+  it('无人值守审批超时后执行记录进入 failed，并持久化结构化原因码', async () => {
+    vi.useFakeTimers();
+    resetPermissionModeManager();
+    const sessionId = 'cron-session-1';
+    getPermissionModeManager().markUnattendedSession(sessionId);
+    const repo = {
+      insert: vi.fn(),
+      resolve: vi.fn(() => 1),
+    } as unknown as import('../../../src/host/services/core/repositories/PendingApprovalRepository').PendingApprovalRepository;
+    const island = new OrchestratorPermissionIsland({
+      getSettings: () => ({
+        permissions: {
+          autoApprove: { read: false, write: false, execute: false, network: false },
+          blockedCommands: [],
+          devModeAutoApprove: false,
+        },
+      } as import('../../../src/shared/contract').AppSettings),
+      isDevModeAutoApproveEnabled: () => false,
+      getExecutionTopology: () => 'async_agent',
+      hasApprovalUi: () => true,
+      onEvent: vi.fn(),
+      injectedPendingApprovalRepo: repo,
+    });
+    agentState.sendMessage.mockImplementation(async () => {
+      await island.requestPermission({
+        type: 'file_write',
+        tool: 'Write',
+        details: { path: '/Users/linchen/probe.txt' },
+        sessionId,
+        forceConfirm: true,
+      });
+      return 'permission request resolved';
+    });
+    agentState.consumeUnattendedPermissionFailure.mockImplementation(
+      () => island.consumeUnattendedTerminalFailure(),
+    );
+
+    const service = new CronService();
+    const definition = makeDefinition();
+    const harness = service as unknown as CronServiceHarness;
+    harness.jobs.set(definition.id, { definition });
+
+    try {
+      const run = harness.executeJob(definition);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(service.getJobExecutions(definition.id)[0]?.status).toBe('running');
+
+      await vi.advanceTimersByTimeAsync(60_000);
+      const statusAtDeadline = service.getJobExecutions(definition.id)[0]?.status;
+      // 变异版若把 unattended 重新送去 24h 停车，这里仍是 running；先解除 Promise，
+      // 再断言捕获到的边界状态，让失败既稳定又不泄漏挂起任务。
+      island.drainPendingPermissions();
+      const execution = await run;
+
+      expect(statusAtDeadline).toBe('failed');
+      expect(execution).toMatchObject({
+        status: 'failed',
+        error: 'Unattended approval timed out for Write',
+        errorCode: HostReasonCode.PermissionDeniedTimeout,
+      });
+      expect(execution.completedAt).toEqual(expect.any(Number));
+      expect(execution.duration).toEqual(expect.any(Number));
+      const terminalWrite = dbState.savedRows.at(-1);
+      expect(terminalWrite).toContain('failed');
+      expect(terminalWrite).toContain(HostReasonCode.PermissionDeniedTimeout);
+    } finally {
+      island.drainPendingPermissions();
+      resetPermissionModeManager();
+      vi.useRealTimers();
+    }
+  });
+
   it('layers the per-job run budget over the unattended pool and reports an English error', async () => {
     const service = new CronService();
     const definition = { ...makeDefinition(), maxRunBudget: 0.01 };
@@ -161,7 +240,9 @@ describe('CronService agent run snapshot wiring', () => {
 
     const [, , options] = agentState.sendMessage.mock.calls[0] as [string, unknown, {
       eventFilter?: import('../../../src/host/protocol/events/eventFilter').AgentEventFilter;
+      disableAutoAgent?: boolean;
     }];
+    expect(options.disableAutoAgent).toBe(true);
     expect(shouldDeliverAgentEvent('message_delta', options.eventFilter)).toBe(false);
     expect(shouldDeliverAgentEvent('stream_chunk', options.eventFilter)).toBe(false);
     expect(shouldDeliverAgentEvent('permission_request', options.eventFilter)).toBe(true);

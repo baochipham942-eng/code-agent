@@ -2,7 +2,11 @@ import { createRunContext } from '../runtime/runContext';
 import { resolveBackgroundWorkspaceAuthority } from '../runtime/workspaceAuthority';
 import { ToolExecutor } from '../tools/toolExecutor';
 import { getPermissionLevel } from './orchestrator/modelConfigResolver';
-import { permissionModeAutoApproves, type PermissionMode } from '../permissions/modes';
+import {
+  clampUnattendedPermissionMode,
+  permissionModeAutoApproves,
+  type PermissionMode,
+} from '../permissions/modes';
 import { isAgentWorktreePath } from './agentWorktreePath';
 import type { ToolExecutionRequest } from './subagentPipeline';
 import type { SubagentExecutionContext } from './subagentExecutorTypes';
@@ -17,6 +21,9 @@ export function createSubagentToolRuntime(input: {
   checkToolExecution(request: ToolExecutionRequest): boolean;
 }) {
   const { context } = input;
+  const effectiveMode = context.executionTopology === 'async_agent'
+    ? clampUnattendedPermissionMode(input.effectiveMode as PermissionMode)
+    : input.effectiveMode;
   const worktreeWorkspace = isAgentWorktreePath(context.cwd) ? context.cwd : undefined;
   const runWorkspace = worktreeWorkspace ?? context.workspace;
   const runWorkspaceScope = worktreeWorkspace
@@ -34,7 +41,7 @@ export function createSubagentToolRuntime(input: {
   const executor = new ToolExecutor({
     workingDirectory: nativeRunContext?.cwd ?? context.cwd,
     runContext: nativeRunContext,
-    permissionModeOverride: input.effectiveMode as PermissionMode,
+    permissionModeOverride: effectiveMode as PermissionMode,
     // 拓扑由构造点显式标注（SubagentExecutionContext.executionTopology），缺省 main：
     // 未标注的子 agent 路径不受 TOPOLOGY_RULES 约束（Option A 保守默认）。
     executionTopology: context.executionTopology ?? 'main',
@@ -45,8 +52,8 @@ export function createSubagentToolRuntime(input: {
       if (
         !forceConfirm
         && (
-          input.effectiveMode === 'bypassPermissions'
-          || permissionModeAutoApproves(input.effectiveMode, getPermissionLevel(request.type))
+          effectiveMode === 'bypassPermissions'
+          || permissionModeAutoApproves(effectiveMode, getPermissionLevel(request.type))
         )
       ) return true;
       return context.permission.request({ ...request, ...input.identity });

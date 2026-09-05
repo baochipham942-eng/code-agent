@@ -247,7 +247,7 @@ export class SessionManager implements Disposable {
     db.createSession(session);
 
     // B1 权限档收口（单点）：新会话按「新会话默认权限档」快照建档；
-    // cron/heartbeat/channel（IM 桥接）等无人值守来源先标记 unattended，权限解析时强制钳到不高于 acceptEdits。
+    // cron/heartbeat/channel（IM 桥接）等无人值守来源先标记 unattended，权限解析时切到独立内部档。
     try {
       const { getPermissionModeManager } = await import('../../permissions/modes');
       const permissionManager = getPermissionModeManager();

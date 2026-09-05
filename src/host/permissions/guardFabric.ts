@@ -54,9 +54,9 @@ export interface GuardDecision {
 // ----------------------------------------------------------------------------
 
 const TOPOLOGY_RULES: Record<string, Partial<Record<ExecutionTopology, GuardVerdict>>> = {
-  // async_agent 的 bash 是 ask 不是 deny（2026-07-13 产品拍板）：后台 coder 现役跑 Bash，
-  // ask+forceConfirm 让在场用户批一下；无人应答链路走 requestPermission 60s 超时自然 deny。
-  bash: { async_agent: 'ask', coordinator: 'deny' },
+  // async_agent 的 Bash 由 unattended 权限档 + OS 沙箱共同裁决。这里再强制 ask 会让
+  // mode/rules 的 allow 永远赢不了 GuardFabric 的 ask，重新制造无人值守死锁。
+  bash: { coordinator: 'deny' },
   write: { coordinator: 'deny' },
   edit: { coordinator: 'deny' },
   spawn_agent: { teammate: 'deny' },

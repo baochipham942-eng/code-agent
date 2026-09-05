@@ -10,6 +10,7 @@ const toolExecutorState = vi.hoisted(() => ({
       details: Record<string, unknown>;
     }) => Promise<boolean>;
     telemetryCollector?: unknown;
+    permissionModeOverride?: PermissionMode;
   },
 }));
 
@@ -102,6 +103,40 @@ describe('createSubagentToolRuntime permission forwarding', () => {
 
     expect(approved).toBe(true);
     expect(permissionRequest).not.toHaveBeenCalled();
+  });
+
+  it('async_agent 后台路径切到 unattended 档，并保留 forceConfirm 人工闸', async () => {
+    const permissionRequest = vi.fn(async () => false);
+    createSubagentToolRuntime({
+      context: {
+        sessionId: 'session-background',
+        cwd: '/tmp/workbench',
+        executionTopology: 'async_agent',
+        resolver: { getDefinition: vi.fn() },
+        permission: { request: permissionRequest },
+        events: { emit: vi.fn() },
+        abortSignal: new AbortController().signal,
+      } as any,
+      sessionId: 'session-background',
+      effectiveMode: 'default',
+      identity: { agentId: 'agent-background', runId: 'run-background' },
+      allowedToolNames: new Set(['Bash']),
+      checkToolExecution: vi.fn(() => true),
+    });
+
+    expect(toolExecutorState.config?.permissionModeOverride).toBe('unattended');
+    await expect(toolExecutorState.config!.requestPermission({
+      type: 'command',
+      tool: 'Bash',
+      details: {},
+    })).resolves.toBe(true);
+    await expect(toolExecutorState.config!.requestPermission({
+      type: 'command',
+      tool: 'Bash',
+      details: {},
+      forceConfirm: true,
+    })).resolves.toBe(false);
+    expect(permissionRequest).toHaveBeenCalledOnce();
   });
 
   it('passes the case-local telemetry owner into nested subagent tool execution', () => {

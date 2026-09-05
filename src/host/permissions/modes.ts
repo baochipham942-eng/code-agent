@@ -24,6 +24,7 @@ export type PermissionMode =
   | 'default'           // Standard interactive prompting
   | 'readOnly'          // Read-only explore - reads pass, every write/exec prompts (no auto-approve shortcuts)
   | 'acceptEdits'       // Auto-accept file edits, prompt for others
+  | 'unattended'        // Internal automation profile: sandboxed work may proceed without a human approver
   | 'dontAsk'           // Auto-deny risky operations, allow safe ones
   | 'bypassPermissions' // Skip all permission checks (dangerous)
   | 'plan'              // Planning mode - read-only, no execution
@@ -138,6 +139,23 @@ export const MODE_CONFIGS: Record<PermissionMode, ModeConfig> = {
     riskLevel: 'medium',
   },
 
+  unattended: {
+    name: 'unattended',
+    description: 'Internal unattended mode - sandboxed workspace work proceeds without interactive approval',
+    defaults: {
+      read: 'allow',
+      write: 'allow',
+      execute: 'allow',
+      network: 'allow',
+      dangerous: 'deny',
+      admin: 'deny',
+    },
+    allowsExecution: true,
+    allowsWrites: true,
+    requiresApproval: false,
+    riskLevel: 'medium',
+  },
+
   dontAsk: {
     name: 'dontAsk',
     description: 'Minimal permissions - auto-deny risky operations',
@@ -230,7 +248,7 @@ export class PermissionModeManager {
   // 单独记录显式选档的来源：创建期快照只存在 sessionModes，不能被旁边的持久化带上磁盘。
   private explicitSessionModes: Map<string, PermissionMode> = new Map();
   private sessionModesLoaded = false;
-  // 无人值守会话（cron/heartbeat 等 automation 来源）：权限档读取时强制钳到不高于 acceptEdits。
+  // 无人值守会话（cron/heartbeat 等 automation 来源）：权限档读取时切到内部 unattended 档。
   private unattendedSessions: Set<string> = new Set();
   /**
    * 云货架专家的首跑会话：本轮一律最严档，不看会话自己选的档。
@@ -240,7 +258,7 @@ export class PermissionModeManager {
   /**
    * 本轮跑的专家自带的审批档（详情页「安全」页 / agent.md 的 permission-override）。
    * 「为这位专家单独设置」比会话档更具体，所以它取代会话档当 base——包括放宽方向
-   * （放手档 → bypassPermissions）；首跑 / 无人值守两处钳制仍压在它之上，只收紧不放宽。
+   * （放手档 → bypassPermissions）；首跑仍可收紧它，无人值守则切换到独立内部档。
    */
   private rolePresetSessions: Map<string, PermissionMode> = new Map();
   // 运行时会话粘性：无法可靠解析的命令按 canonical hash 记账。只活在当前进程，
@@ -291,6 +309,8 @@ export class PermissionModeManager {
    * @returns Whether mode was changed
    */
   setMode(mode: PermissionMode, approved = false): boolean {
+    // unattended 是运行来源推导出的内部档，不允许 UI/配置把交互会话切进去。
+    if (mode === 'unattended') return false;
     const config = MODE_CONFIGS[mode];
 
     // Check if mode requires approval
@@ -315,8 +335,8 @@ export class PermissionModeManager {
   /**
    * 解析某个会话的有效权限档：会话级覆盖优先，无覆盖回退全局档。
    * 判定链（toolExecutor / subagent / bash 沙箱）统一走这里取档。
-   * 无人值守会话在此单点钳制（B1 ③）：bypassPermissions 强制降到 acceptEdits，
-   * 杜绝「用户开着 bypass 时定时任务也 bypass 跑」。
+   * 无人值守会话在此单点切到独立 unattended 档。它不继承 UI 当前档，也不等价于
+   * bypassPermissions：硬 deny、危险命令、目录扩权、外部副作用与 OS 沙箱仍在。
    */
   getModeForSession(sessionId?: string): PermissionMode {
     this.ensureSessionModesLoaded();
@@ -435,6 +455,8 @@ export class PermissionModeManager {
    * 设置会话级权限档（会话内切换器入口）。与全局 setMode 同一审批语义。
    */
   setSessionMode(sessionId: string, mode: PermissionMode, approved = false): boolean {
+    // unattended 只能由 markUnattendedSession 派生，不能成为人工可选的持久会话档。
+    if (mode === 'unattended') return false;
     const config = MODE_CONFIGS[mode];
     if (!config) return false;
     if (config.requiresApproval && !approved) {
@@ -630,7 +652,7 @@ export class PermissionModeManager {
     description: string;
     riskLevel: string;
   }> {
-    return Object.values(MODE_CONFIGS).map((config) => ({
+    return Object.values(MODE_CONFIGS).filter((config) => config.name !== 'unattended').map((config) => ({
       mode: config.name,
       description: config.description,
       riskLevel: config.riskLevel,
@@ -691,11 +713,11 @@ export function setPermissionMode(mode: PermissionMode, approved = false): boole
 }
 
 /**
- * 无人值守权限档钳制：不得高于 acceptEdits。
- * 目前只有 bypassPermissions 高于 acceptEdits，其余档位原样返回。
+ * 无人值守权限档解析：运行来源一旦确定为无人值守，就使用独立内部档。
+ * 参数保留是为了让调用点继续明确表达「从交互档切出」，返回值不再受 UI 档影响。
  */
-export function clampUnattendedPermissionMode(mode: PermissionMode): PermissionMode {
-  return mode === 'bypassPermissions' ? 'acceptEdits' : mode;
+export function clampUnattendedPermissionMode(_mode: PermissionMode): PermissionMode {
+  return 'unattended';
 }
 
 /**
@@ -706,7 +728,8 @@ export function clampUnattendedPermissionMode(mode: PermissionMode): PermissionM
  * 专家审批档 → 主 agent 档位。详情页三档承诺的行为逐条对上：
  * - strict「每一步都先问过你」→ readOnly（读通过，写/执行一律确认，免确认捷径全失效）
  * - development「工作目录内自己来，目录外先问」→ default（classifier 的 W1/R3 即此语义）
- * - ci「不管在哪儿都自己动手」→ bypassPermissions（硬毙清单与危险命令二次确认照常）
+ * - ci「不管在哪儿都自己动手」→ bypassPermissions（这是有人显式选择的专家交互预设，
+ *   不承担 cron/headless 的无人值守语义；无人值守统一由 unattended 档承接）
  */
 export function rolePermissionPresetToMode(preset: 'strict' | 'development' | 'ci'): PermissionMode {
   return preset === 'strict' ? 'readOnly' : preset === 'ci' ? 'bypassPermissions' : 'default';
@@ -761,11 +784,13 @@ export function clampFirstRunPermissionMode(mode: PermissionMode): PermissionMod
 
 /**
  * 档位免确认语义（单一真源，主 agent 判定链与 subagent requestPermission 共用）：
- * bypassPermissions = 写入 + 执行免确认；acceptEdits = 仅写入免确认；其余档一律不免。
+ * bypassPermissions = 写入 + 执行免确认；acceptEdits = 仅写入免确认；
+ * unattended = 沙箱工作区写入、受约束执行、网络读取免确认；其余档一律不免。
  * 只覆盖「本来要问用户」的 ask —— deny / 硬毙 / 策略强确认不经此放宽。
  */
 export function permissionModeAutoApproves(mode: string, level: string): boolean {
   if (mode === 'bypassPermissions') return level === 'write' || level === 'execute';
   if (mode === 'acceptEdits') return level === 'write';
+  if (mode === 'unattended') return level === 'write' || level === 'execute' || level === 'network';
   return false;
 }

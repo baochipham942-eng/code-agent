@@ -27,6 +27,7 @@ export function mapCronExecutionRows(rows: unknown[]): CronJobExecution[] {
     duration: row.duration ?? undefined,
     result: parseJsonValue(row.result),
     error: row.error || undefined,
+    errorCode: row.error_code || undefined,
     retryAttempt: row.retry_attempt,
     exitCode: row.exit_code ?? undefined,
   }));
@@ -94,14 +95,14 @@ export async function saveCronExecution(execution: CronJobExecution): Promise<vo
     if (!db) return;
     db.prepare(`
       INSERT OR REPLACE INTO cron_executions
-      (id, job_id, session_id, status, scheduled_at, started_at, completed_at, duration, result, error, retry_attempt, exit_code)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (id, job_id, session_id, status, scheduled_at, started_at, completed_at, duration, result, error, error_code, retry_attempt, exit_code)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       execution.id, execution.jobId, execution.sessionId || null, execution.status,
       execution.scheduledAt, execution.startedAt || null,
       execution.completedAt || null, execution.duration || null,
       execution.result ? JSON.stringify(execution.result) : null,
-      execution.error || null, execution.retryAttempt,
+      execution.error || null, execution.errorCode || null, execution.retryAttempt,
       execution.exitCode || null,
     );
   } catch (error) {

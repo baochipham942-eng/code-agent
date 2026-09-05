@@ -486,6 +486,9 @@ describe('CLI command entrypoints', () => {
     ]);
 
     expect(mocks.initializeCLIServices).toHaveBeenCalledTimes(1);
+    expect(mocks.initializeCLIServices).toHaveBeenCalledWith(
+      expect.objectContaining({ permissionMode: 'auto' }),
+    );
     expect(mocks.createCLIAgent).toHaveBeenCalledWith({
       project: '/workspace',
       model: 'gpt-test',

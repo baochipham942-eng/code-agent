@@ -148,6 +148,8 @@ export interface ToolContext {
   /** Stable user message that originated this native turn. */
   readonly sourceMessageId?: string;
   readonly sessionId: string;
+  /** 当前工具运行采用内部无人值守权限档。 */
+  readonly unattended?: boolean;
   /** Immutable authorization/artifact boundary for this run. */
   readonly workspace?: string;
   readonly workspaceScope?: WorkspaceScope;

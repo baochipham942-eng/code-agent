@@ -73,6 +73,6 @@ export function createAgentRuntime(configService: ConfigService, runRegistry?: R
       logger.error('Channel Agent Bridge failed to initialize (non-blocking)', error);
     });
 
-  // B3: 无人值守审批停车 → 飞书卡片镜像 + 按钮回批。订阅进程内事件，没配飞书零影响。
+  // B3: 停车审批 → 飞书卡片镜像 + 按钮回批。订阅进程内事件，没配飞书零影响。
   initApprovalFeishuRelay();
 }

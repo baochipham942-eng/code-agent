@@ -902,7 +902,7 @@ describe('bashModule 设计画布会话硬控（designCanvasActive）', () => {
   });
 });
 
-describe('bashModule OS 沙箱 gating（bypassPermissions）', () => {
+describe('bashModule OS 沙箱 gating（bypassPermissions / unattended）', () => {
   const modeMgr = getPermissionModeManager();
 
   beforeEach(() => {
@@ -924,6 +924,22 @@ describe('bashModule OS 沙箱 gating（bypassPermissions）', () => {
     expect(wrapMock).not.toHaveBeenCalled();
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.output).toContain('plain-output');
+  });
+
+  it('后台子 agent 的 unattended 上下文即使复用交互 session，也强制包装命令', async () => {
+    const handler = await bashModule.createHandler();
+    const result = await handler.execute(
+      { command: 'echo background-output' },
+      makeCtx({ unattended: true }),
+      allowAll,
+    );
+
+    expect(wrapMock).toHaveBeenCalledWith(
+      'echo background-output',
+      expect.objectContaining({ allowNetwork: false }),
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.output).toContain('__SANDBOXED__');
   });
 
   it('real eval denies the source repository and removes its path from every shell child env', async () => {

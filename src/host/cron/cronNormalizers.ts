@@ -31,6 +31,7 @@ export interface CronExecutionRow {
   duration?: number | null;
   result?: string | null;
   error?: string | null;
+  error_code?: string | null;
   retry_attempt: number;
   exit_code?: number | null;
 }

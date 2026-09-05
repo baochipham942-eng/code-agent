@@ -4,7 +4,7 @@
 // 「对外可见副作用」= 产生离开本机、发出去收不回效果的工具调用（发邮件、发 IM 消息）。
 // 与 permissionLevel（read/write/execute/network）正交：一个工具可以同时是 network + external
 // （如 IM 类 MCP）。本判据不改变任何审批/放行行为（B1），只打标；下游消费：
-//   - B2 无人值守停车挂起：EXTERNAL 工具在无人值守下停车挂起等待人工审批
+//   - 停车审批：语音态等长期待决路径可挂起等待人工审批
 //   - B4 target 粒度长期授权：EXTERNAL 工具按 target（收件人/频道）授权
 //
 // 标注面按 Neo 显式清单（native 工具白名单 + IM MCP server 白名单），不信第三方 MCP 自报。
@@ -16,7 +16,7 @@ import { normalizeToolName } from './toolNames';
 /** decisionTrace 里 EXTERNAL 打标步骤的 rule / reason（供 toolExecutor 复用，B2/B4/审计读取）。 */
 export const EXTERNAL_SIDE_EFFECT_TRACE_RULE = 'external_side_effect';
 export const EXTERNAL_SIDE_EFFECT_TRACE_REASON =
-  '对外可见副作用工具（EXTERNAL 风险类；B2 无人值守停车 / B4 target 授权判据）';
+  '对外可见副作用工具（EXTERNAL 风险类；停车审批 / B4 target 授权判据）';
 
 /**
  * Native 工具白名单：产生对外可见副作用的内置工具。
@@ -62,7 +62,7 @@ function parseMcpToolName(fullName: string): { server: string; tool: string } | 
 /**
  * 判定一个工具是否为「对外可见副作用」（EXTERNAL 风险类）。
  *
- * 这是 B2（无人值守停车挂起）/ B4（target 粒度长期授权）与审计的统一判据。
+ * 这是停车审批 / B4（target 粒度长期授权）与审计的统一判据。
  * 只依赖工具名（Neo 显式清单），不改变任何审批/放行行为。
  */
 export function isExternalSideEffectTool(toolName: string): boolean {

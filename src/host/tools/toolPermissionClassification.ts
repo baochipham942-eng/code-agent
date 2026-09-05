@@ -346,9 +346,23 @@ export async function resolveToolPermissionClassification(input: {
       traceStep: createTraceStep('permission_classifier', 'readonly_explore_mode', 'ask', reason, input.permStartTime),
     };
   }
+  const unattendedMayAutoApprove = input.sessionPermissionMode !== 'unattended'
+    || (
+      !input.policyForcesConfirmation
+      && !input.boundaryViolation
+      && !shellDesktopAutomation
+      && !external
+      && !classification.external
+      && classification.traceStep?.rule !== BROWSER_COMPUTER_CONSEQUENCE_TRACE_RULE
+      && !classification.trustBoundary
+    );
   if (classification.decision === 'ask'
+    && unattendedMayAutoApprove
     && permissionModeAutoApproves(input.sessionPermissionMode, input.permissionLevel)) {
-    const reason = `权限档 ${input.sessionPermissionMode}：${input.permissionLevel === 'write' ? '写入' : '执行'}操作免确认`;
+    const operation = input.permissionLevel === 'write' ? '写入'
+      : input.permissionLevel === 'network' ? '联网'
+      : '执行';
+    const reason = `权限档 ${input.sessionPermissionMode}：${operation}操作免确认`;
     classification = {
       decision: 'approve',
       reason,

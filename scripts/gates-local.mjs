@@ -243,7 +243,7 @@ const gates = [
     args: ['--prefix', 'packages/internal/evaluation-center', 'run', 'build'],
   },
   {
-    ci: 'swarm-ci / smoke / Main-chain vitest subset',
+    ci: 'swarm-ci / unit / Main-chain vitest subset (4 shards)',
     command: 'node',
     // ⚠️ 目标清单必须与 swarm-ci.yml 同名步骤**逐项一致**。
     // 2026-08-14 踩到：本地这里少了 host / shared / **根级 tests/unit/*.test.ts** /

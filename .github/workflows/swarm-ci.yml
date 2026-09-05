@@ -322,19 +322,18 @@ jobs:
   # Full: merge gate，smoke + Playwright e2e（含 webServer 构建）
   # ---------------------------------------------------------------------------
   # ---------------------------------------------------------------------------
-  # Unit: 主链路 vitest 子集，4 路分片并行
+  # Unit: 全部 unit + renderer，4 路分片并行
   #
   # 2026-09-05 从 smoke job 里拆出来。动机是实测账：smoke job 一轮 1134s，其中这一步
   # 独占 782s（69%），整条 PR 门 wall clock 22min 大半卡在它一个人身上，且它跟前面
   # 三十道静态门之间没有任何依赖关系，纯粹是被串在同一个 job 里。
   #
-  # vitest 原生 --shard 按测试文件均分，四路各约 196s。**覆盖面与拆分前完全一致**：
-  # 同一组路径、同一组 exclude，shard 只切分不筛选。分片数改了必须同步 --shard=N/M
-  # 的分母，否则会静默漏跑（M 写小了 = 后面的文件没人跑，且不报错）。
+  # vitest 原生 --shard 按测试文件均分，shard 只切分不筛选。扩围后的耗时以 CI 实测为准。
+  # 分片数改了必须同步 --shard=N/M 的分母与步骤名，tests/scripts 会校验分母一致性。
   # fail-fast: false —— 一个分片红不能取消其他分片，否则只看得到第一个失败面。
   # ---------------------------------------------------------------------------
   unit:
-    name: Main-chain vitest (shard ${{ matrix.shard }}/4)
+    name: Unit + renderer vitest (shard ${{ matrix.shard }}/4)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
@@ -381,77 +380,20 @@ jobs:
         # 解析时代按错版本 playwright-core 填的，键却写着锁里的版本 ⇒ 命中即缺 headless shell。
         run: npx playwright install --with-deps chromium
 
-      - name: Main-chain vitest subset (shard ${{ matrix.shard }}/4)
-        # 2026-07-25 建门。动机：全量 vitest 只在 push main 后的检测门里跑，PR 阶段完全
-        # 看不见——`main-full-gate` 因此从 #636 起连红 15 个合并没人管（5 套件：partial
-        # vi.mock 一加新导出就断 ×3、权限链上新增 DB 读未加守卫 ×1、人话改造后断言过期 ×1）。
+      - name: Unit + renderer vitest (shard ${{ matrix.shard }}/4)
+        # 2026-09-05 N-GATE-SUBSET-EXPAND：全收 tests/unit + tests/renderer。
+        # main-full-gate 是合入后检测门，红了不挡合并（#668）；不能让未点名目录继续漏门。
+        # Vitest 位置参数是路径子串，tests/unit 会递归包含根级及所有子目录。
+        # ROOT_UNIT_TESTS 的 glob 展开及空展开自检因此移除：已没有可能空展开的 glob；
+        # tests/scripts 的目标合同要求两个整目录参数，防退回点名子集；Vitest 零目标默认报错。
         #
-        # 这一步把**主链路**（agent 运行时 / 工具执行 / IPC / host services）纳入 PR 门：
-        # 618 文件 5892 用例，本机 ~186s。
-        #
-        # 2026-07-25 第三轮扩围：**tests/renderer 纳入**。原本的覆盖边界（"renderer 与其余
-        # 长尾留给检测门兜底"）在建门当天就被连撞三次——#663 手搓主操作色撞 primaryAction
-        # 棘轮、#671 ExpertPanel 因 useMcpStatus 订阅 MCP_EVENT 而 mock 缺 on 直接崩、
-        # #681 文案迁 i18n 后 mainTaskModelCopy 断言仍查源码字面量。三次 PR 门都是绿的，
-        # 三次都把 main 弄红，靠 push 后的检测门事后发现。
-        # 成本实测（本机 darwin）：tests/renderer 468 文件 2954 用例 89.9s，同机主链路子集
-        # 187.9s、CI 上 199s（比例 1.06）→ 推算 CI 上约 +95s。本 job 原 7m44s → 约 9m20s，
-        # 注：此处余量数字是 2026-07 写的，与 08-06 观测（13.5min/15min）不符，没人在盯真实时长。
-        # 2026-08-07 起 timeout 抬到 25min，先解除假红压力，真实时长另行观测。
-        # 其余长尾（tests/scripts 之外的 unit 子目录、security、integration 等）仍留给
-        # 检测门兜底——这依然是明说的覆盖边界，不是以为跑全了。
-        #
-        # 三处 exclude 是**平台性**排除，不是给业务代码开豁免。本 job 跑 ubuntu，而全量套件的
-        # 绿色档案建立在 darwin（见 main-full-gate.yml 的 runs-on 注释：首跑 ubuntu 实测 10 个
-        # 文件环境性红）。首跑本步实测正是这三类落在子集里（4 文件）：
-        #   webSearch.test.ts             需要真 API key
-        #   goalVerifyGate.test.ts        断言 shell 文案 'command not found'，dash 说的是 'not found'
-        # 两者的业务覆盖没有丢，仍由 macos 上的 main-full-gate 全量门看着。
-        #
-        # 2026-07-25 第二轮试摘（真 CI 验证，PR #691）：原本排的是整个 modules/network/**，
-        # 理由写「需要真 API key，无 key 时 401」。真摘掉跑一轮后发现**范围写大了**——
-        # 该目录下只有 webSearch.test.ts 挂（12 条里 1 条，`401 Unauthorized: invalid API key`），
-        # 其余 network 用例在 ubuntu 无 key 环境下照常绿。故排除收窄到单文件，
-        # 让子集多覆盖回一批真实用例，而不是整目录一刀切。
-        #
-        # 2026-07-25：runtime/browser/** 的排除已摘除。原因（当初写的"ubuntu 上退化成
-        # self-started-chrome"）在 #672 给本 job 补装 Playwright chromium（见上一步）后不再成立——
-        # gameArtifactValidator 就是靠那次补装变绿的，且它从未被排除。排除列表越长，
-        # "主链路子集"这个名字越名不副实，所以逐条试摘、用真 CI 验，而不是留着好看。
+        # 平台性排除（保留既有两条，逐文件）：
+        # - webSearch.test.ts：PR #691 Ubuntu 真跑 `401 Unauthorized: invalid API key`，需要真 key。
+        # - goalVerifyGate.test.ts：Ubuntu dash 输出 `not found`，断言要求 `command not found`。
+        # PR #691 曾误排整个 modules/network，摘掉后 12 文件仅 webSearch 一条挂；
+        # 排除必须绑定实测失败文件，不能用平台理由整目录一刀切。
         run: |
-          # tests/unit 根目录文件（语音全套等）此前不在任何 PR 门里——#809 曾带着
-          # 根目录一条红测绿灯合入（批 X 实撞）。glob 只取根级 *.test.ts，子目录仍由
-          # 上面的显式列表覆盖，不重复跑。
-          #
-          # 2026-08-01 实测更正：**vitest 的位置参数是子串匹配，不是 glob**。上一版这里
-          # 写的是加引号的 'tests/unit/*.test.ts'——引号挡住 shell 展开，vitest 拿到的是
-          # 带 `*` 的字面量，而 `*` 永远不出现在真实路径里，于是这条门从加进来那天起
-          # **匹配 0 个文件**：注释写着"根级已覆盖"，实际 28 个根级文件（语音全套 17 个）
-          # 一条都没跑过，#809 那个洞根本没被堵上。同款写法还骗过一次 tests/unit/host/**。
-          #
-          # 修法：不加引号，让 shell 展开成真实路径列表再交给 vitest。
-          # 展开为空时**必须报红**——空转正是上一版的失败模式，静默通过等于门自己失明。
-          #
-          # tests/unit/web 整目录仍在门外（43 个文件，多数拉 supertest 起服务，没在
-          # ubuntu 上验过，不敢一次性拉进来）。但 agentRunControllerBroadcast 是纯类单测、
-          # 零平台依赖，且它守的正是「事件到不到得了 renderer」这条反复出事的线
-          # （2026-08-01 C3 宿主自起轮次、2026-08-02 取消后 surface 不收敛），显式点名接门。
-          #
-          # 2026-08-02 第三次复发：**tests/unit/shared 整目录 0 个文件进门**。上一版把
-          # 根级 glob 修对之后，注释和施工方都把它读成了"tests/unit 都覆盖了"——但
-          # `tests/unit/*.test.ts` 展开只出**直接子级**，而 vitest 的位置参数是子串匹配，
-          # 显式列表里又没有 shared 这一项，于是三层深的 tests/unit/shared/** 谁也没接住
-          # （实测 37 文件 254 用例，全绿，从没进过门）。#809 的洞第三次换地方复发。
-          #
-          # 判据别再用"根级 glob 覆盖到了"这类推断——**接门与否要跑一遍门的真实参数、
-          # 用精确路径核**（vitest --reporter=json 拿文件清单，endswith 精确比对）。
-          ROOT_UNIT_TESTS=(tests/unit/*.test.ts)
-          if [ ! -e "${ROOT_UNIT_TESTS[0]}" ]; then
-            echo "::error::根级 tests/unit/*.test.ts 展开为空，这条门又空转了——修它，别绕过"
-            exit 1
-          fi
-          echo "根级单测文件 ${#ROOT_UNIT_TESTS[@]} 个进门"
-          node scripts/ci/vitest-with-flake-ledger.mjs --job "Main-chain vitest subset shard ${{ matrix.shard }}" -- npx vitest run tests/unit/agent tests/unit/host tests/unit/ipc tests/unit/tools tests/unit/services tests/unit/design tests/unit/shared tests/renderer "${ROOT_UNIT_TESTS[@]}" tests/unit/web/agentRunControllerBroadcast.test.ts \
+          node scripts/ci/vitest-with-flake-ledger.mjs --job "Unit + renderer vitest shard ${{ matrix.shard }}" -- npx vitest run tests/unit tests/renderer \
             --shard=${{ matrix.shard }}/4 --retry=1 \
             --exclude 'tests/unit/tools/modules/network/webSearch.test.ts' \
             --exclude 'tests/unit/agent/goalVerifyGate.test.ts'

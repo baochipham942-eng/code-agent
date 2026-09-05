@@ -719,7 +719,7 @@ describe('macOS release fail-closed gates', () => {
     expect(workflow).not.toContain('\t');
   });
 
-  it('keeps renderer and design tests inside the PR-gate vitest subset', () => {
+  it('keeps all unit and renderer tests inside the PR gate', () => {
     // 2026-07-25：tests/renderer 此前不在 PR 门里，当天被三个 PR 连撞三次弄红 main
     // （#663 棘轮 / #671 组件崩 / #681 i18n 断言过期），三次 PR 门都是绿的。
     // 这条断言防的是"下次有人为了省 CI 时长把它悄悄摘掉"——摘可以，但要摘得见光。
@@ -729,11 +729,12 @@ describe('macOS release fail-closed gates', () => {
     // 别让一次合理的搬家把这条断言变成假红（或更糟：被人顺手删掉）。
     const subsetStep = Object.values(parsed.jobs ?? {})
       .flatMap((job) => job?.steps ?? [])
-      .find((step) => step.name?.startsWith('Main-chain vitest subset'));
+      .find((step) => step.name?.startsWith('Unit + renderer vitest'));
 
-    expect(subsetStep, 'Main-chain vitest subset step 不见了').toBeTruthy();
+    expect(subsetStep, 'Unit + renderer vitest step 不见了').toBeTruthy();
     expect(subsetStep?.run).toContain('tests/renderer');
-    expect(subsetStep?.run).toContain('tests/unit/design');
+    // 整目录参数包含 design、根级和未来新增目录；子目录点名不能冒充整目录覆盖。
+    expect(subsetStep?.run).toMatch(/npx vitest run tests\/unit\s+tests\/renderer(?:\s|$)/);
   });
 
   it('keeps Vercel control-plane deployment automated and smoke-checked', () => {

@@ -85,7 +85,7 @@ describe('有审批 UI 的交互请求不因超时自动拒绝', () => {
     }));
 
     expect(island.handlePermissionResponse(request.id, 'allow')).toBe('delivered');
-    await expect(promise).resolves.toEqual({ approved: true });
+    await expect(promise).resolves.toEqual({ approved: true, approvalSource: 'user' });
   });
 
   it('30 分钟长闸只告警，仍不删除请求或拒绝', async () => {

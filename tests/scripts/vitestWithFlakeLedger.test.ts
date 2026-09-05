@@ -177,7 +177,7 @@ describe('vitest flake ledger wrapper', () => {
     const full = readFileSync('.github/workflows/main-full-gate.yml', 'utf8');
     for (const step of [
       'Script gates (vitest tests/scripts)',
-      'Main-chain vitest subset (shard ${{ matrix.shard }}/4)',
+      'Unit + renderer vitest (shard ${{ matrix.shard }}/4)',
       'MCP protocol compatibility (unit + integration)',
       'Run swarm smoke suite',
       'Run smoke suite',
@@ -189,7 +189,7 @@ describe('vitest flake ledger wrapper', () => {
     expect(full.slice(full.indexOf('- name: Full vitest'))).toContain('scripts/ci/vitest-with-flake-ledger.mjs');
     for (const anchor of [
       'tests/scripts --retry=1',
-      'tests/renderer "${ROOT_UNIT_TESTS[@]}" tests/unit/web/agentRunControllerBroadcast.test.ts',
+      'npx vitest run tests/unit tests/renderer',
       '--shard=${{ matrix.shard }}/4 --retry=1',
       "--exclude 'tests/unit/tools/modules/network/webSearch.test.ts'",
       "--exclude 'tests/unit/agent/goalVerifyGate.test.ts'",
@@ -212,7 +212,7 @@ describe('vitest flake ledger wrapper', () => {
     expect(denominators.length).toBeGreaterThan(0);
     for (const denominator of denominators) expect(denominator).toBe(count);
     // 分片数改了，步骤名里的 /N 也要跟着改，否则失败归因看的是过期的数字
-    expect(swarm).toContain(`Main-chain vitest subset (shard \${{ matrix.shard }}/${count})`);
+    expect(swarm).toContain(`Unit + renderer vitest (shard \${{ matrix.shard }}/${count})`);
   });
 
   it('keeps all three local retry mirrors behind the wrapper', () => {

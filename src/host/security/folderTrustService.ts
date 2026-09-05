@@ -96,6 +96,8 @@ const SKIP_DISCOVERY_DIRS = new Set([
   '.vscode',
 ]);
 const MAX_AGENT_INSTRUCTION_DEPTH = 5;
+/** 同步路径目录扫描缓存的保质期。见 syncDangerousItemsCache 的注释。 */
+const SYNC_SCAN_CACHE_TTL_MS = 5_000;
 const PAYLOAD_SCAN_DEPTH = 3;
 const MAX_PAYLOAD_SCAN_ENTRIES = 200;
 /** Finder 自己撒的元数据，不是谁放进来的附件。 */
@@ -397,16 +399,19 @@ export class FolderTrustService {
   private db: SqliteDatabase | null = null;
   readonly defaultProjectConfigTrust: boolean | undefined;
   /**
-   * discoverDangerousItemsSync 的进程级缓存（key = canonical realpath）。
+   * discoverDangerousItemsSync 的进程级缓存（key = canonical realpath，带 SYNC_SCAN_CACHE_TTL_MS 保质期）。
    * 技能发现等热点路径会对同一目录反复评估（每个 skill 一次），而单次发现要
    * 深度 5 递归扫描整个工作目录（实测 266 skill × ~18ms ≈ 5s 纯同步 IO，
    * 把 CLI 首屏饿死）。只缓存目录扫描产物，不缓存评估结论——trust 决策
-   * （folder_trust 表）与 identity 每次现读（DB/stat，廉价），决策变更即时
-   * 生效；目录内容（新落盘的危险配置）在进程内变化不再即时反映——
-   * 这是用进程内一致性换启动性能，与 defaultProjectConfigTrust 短路同属
-   * "跳过一次评估"的合法语义。
+   * （folder_trust 表）与 identity 每次现读（DB/stat，廉价），决策变更即时生效。
+   *
+   * 目录内容变化只在 TTL 内看不见：内容变化是要重新问用户的
+   * （contentChanged，N-FOLDERTRUST-RISKTIER ③），而 policy/soul 走的正是这条同步路径——
+   * 缓存不过期的话，已信任目录里新落盘的 code-agent-policy.toml 会在本进程内一直不被发现、
+   * 未经确认就生效（ai-review PR#1644 第三轮抓出）。TTL 取几秒：技能发现那种一次性突发
+   * （266 skill × ~18ms）仍然只扫一两次，运行期真出现新配置最多迟几秒被看见。
    */
-  private readonly syncDangerousItemsCache = new Map<string, DangerousConfigItem[]>();
+  private readonly syncDangerousItemsCache = new Map<string, { items: DangerousConfigItem[]; scannedAt: number }>();
 
   constructor(options: { defaultProjectConfigTrust?: boolean } = {}) {
     this.defaultProjectConfigTrust = options.defaultProjectConfigTrust;
@@ -431,12 +436,11 @@ export class FolderTrustService {
   }
 
   private cachedDangerousItemsSync(canonicalRealpath: string): DangerousConfigItem[] {
-    let dangerousItems = this.syncDangerousItemsCache.get(canonicalRealpath);
-    if (!dangerousItems) {
-      dangerousItems = this.discoverDangerousItemsSync(canonicalRealpath);
-      this.syncDangerousItemsCache.set(canonicalRealpath, dangerousItems);
-    }
-    return dangerousItems;
+    const cached = this.syncDangerousItemsCache.get(canonicalRealpath);
+    if (cached && Date.now() - cached.scannedAt < SYNC_SCAN_CACHE_TTL_MS) return cached.items;
+    const items = this.discoverDangerousItemsSync(canonicalRealpath);
+    this.syncDangerousItemsCache.set(canonicalRealpath, { items, scannedAt: Date.now() });
+    return items;
   }
 
   async set(
@@ -449,7 +453,7 @@ export class FolderTrustService {
     const dangerousItems = await this.discoverDangerousItems(canonicalRealpath);
     // 决定与快照都出自这一次扫描：同步缓存要是还留着更旧的一份，下一次 evaluateSync 会拿
     // 缓存里多出来的 gated 项跟新快照比，误判成「内容变了」。用刚扫到的这份覆盖掉。
-    this.syncDangerousItemsCache.set(canonicalRealpath, dangerousItems);
+    this.syncDangerousItemsCache.set(canonicalRealpath, { items: dangerousItems, scannedAt: Date.now() });
     this.upsertDecision(canonicalRealpath, workingDirectory, state, decidedBy, identity, gatedDigestOf(dangerousItems));
     return this.buildEvaluation(canonicalRealpath, workingDirectory, identity, dangerousItems);
   }

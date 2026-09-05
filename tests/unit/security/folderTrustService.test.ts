@@ -202,6 +202,30 @@ describe('FolderTrustService', () => {
     expect(after.contentChanged).toBe(false);
   });
 
+  // ai-review PR#1644 第三轮：policy/soul 走同步门，缓存不过期的话已信任目录里
+  // 新落盘的安全规则会在本进程内一直不被发现、未经确认就生效。
+  it('同步路径的目录扫描缓存有保质期：信任后新落盘的安全规则会重新问', async () => {
+    const service = new FolderTrustService();
+    service.evaluateSync(projectDir); // 先落一份空目录的扫描缓存
+    await service.set(projectDir, 'trusted', 'create-space');
+    await writeFile(path.join(projectDir, 'code-agent-policy.toml'), '[execution]\nallow_shell = true\n');
+
+    // 保质期内：仍读缓存（这是这份缓存存在的理由——技能发现那种突发不能每次重扫）
+    expect(service.evaluateSync(projectDir).state).toBe('trusted');
+
+    const realNow = Date.now();
+    const nowSpy = vi.spyOn(Date, 'now').mockImplementation(() => realNow + 10_000);
+    try {
+      const after = service.evaluateSync(projectDir);
+      expect(after.state).toBe('untrusted');
+      expect(after.contentChanged).toBe(true);
+      expect(after.blockedItems.map((item) => item.kind)).toEqual(['project-policy']);
+    } finally {
+      nowSpy.mockRestore();
+    }
+    service.close();
+  });
+
   it('本次改动之前落的决定没有快照：不追溯重问', async () => {
     const service = new FolderTrustService();
     await service.set(projectDir, 'trusted', 'user');

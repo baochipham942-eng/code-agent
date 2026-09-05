@@ -20,6 +20,8 @@ import { estimateTokens } from '../src/host/context/tokenEstimator';
 import { getQuickModelRuntimeInfo, quickTask } from '../src/host/model/quickModel';
 import { loadProjectFailureCodebook } from '../src/host/testing/failureCodes';
 import { TelemetryQueryService } from '../src/host/telemetry/replay/telemetryQueryService';
+import { applyTelemetrySchema } from '../src/host/services/core/database/schemaTelemetry';
+import { createLogger } from '../src/host/services/infra/logger';
 import { runPostLaunchScoring, type PostLaunchSessionRow } from '../src/host/testing/postlaunch/postLaunchScorer';
 import { buildPostLaunchReport } from '../src/host/testing/postlaunch/postLaunchScoreStore';
 
@@ -56,6 +58,8 @@ async function main(): Promise<void> {
     process.exit(1);
   }
   const db = new Database(dbPath);
+  // 已有的库没有本单新表：应用内建表在 schema.ts 启动路径，CLI 直接开库得自己补（IF NOT EXISTS，幂等）
+  applyTelemetrySchema(db, createLogger('postlaunch-score'));
   const judge = getQuickModelRuntimeInfo();
   console.log(`库：${dbPath}`);
   console.log(`打分模型：${judge ? `${judge.provider}/${judge.model}` : '未配置'}${options.dryRun ? '（--dry-run，不会调用）' : ''}`);

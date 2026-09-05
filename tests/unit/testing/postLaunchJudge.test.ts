@@ -43,9 +43,9 @@ const ALL_PASS = JSON.stringify({
 
 /** 提示词只能从真实调用路径上取：build 函数不对外导出，避免造一个生产没人用的导出。 */
 async function capturePrompt(signals: DeterministicSignal[] = []): Promise<string> {
-  const llmCall = vi.fn(async () => ALL_PASS);
+  const llmCall = vi.fn<(prompt: string) => Promise<string>>(async () => ALL_PASS);
   await judgePostLaunchTurn({ turn: TURN, signals }, llmCall);
-  return llmCall.mock.calls[0][0] as string;
+  return llmCall.mock.calls[0][0];
 }
 
 describe('postLaunchJudge · 无题契约', () => {

@@ -64,13 +64,22 @@ export function acquireLock({
 
   for (;;) {
     try {
-      const fd = fs.openSync(lockPath, 'wx');
-      fs.writeFileSync(fd, JSON.stringify({
+      // 🔴 不能用 openSync(lockPath,'wx') 再 writeFileSync：那样锁文件会有一段「已存在但还是
+      // 空的」中间态，另一个进程正好在这一刻读到空内容 ⇒ 判成陈旧锁 ⇒ 把一把有效的锁删掉，
+      // 两条门同时开跑（09-05 ai-review 抓出，正是本单要消灭的那个形状）。
+      // 改成：先把带身份的内容写进临时文件，再用 link 原子地挂到锁路径上——link 在目标已存在
+      // 时失败（EEXIST），所以「锁文件出现」与「锁文件有内容」是同一个瞬间，没有中间态。
+      const stagingPath = `${lockPath}.${process.pid}.staging`;
+      fs.writeFileSync(stagingPath, JSON.stringify({
         pid: process.pid,
         cwd: process.cwd(),
         startedAt: new Date().toISOString(),
       }));
-      fs.closeSync(fd);
+      try {
+        fs.linkSync(stagingPath, lockPath);
+      } finally {
+        fs.unlinkSync(stagingPath);
+      }
 
       if (announced) {
         log(`[gates:local] 拿到锁，开跑（排队 ${((Date.now() - waitStartedAt) / 60_000).toFixed(1)}m）`);
@@ -89,7 +98,8 @@ export function acquireLock({
 
       const holder = readHolder(lockPath);
       if (!holder || !holderAlive(holder.pid)) {
-        // ponytail: 判定陈旧与 unlink 之间有竞态窗口，但后果只是两边都回到 openSync('wx')，
+        // 走到这里只可能是真的损坏（link 保证了不存在「已建但未写入」的中间态）。
+        // ponytail: 判定陈旧与 unlink 之间仍有竞态窗口，但后果只是两边都回到 linkSync，
         // 仍然只有一个能成功——不值得为它再加一层协调。
         log(`[gates:local] 回收陈旧锁（持有者 pid ${holder?.pid ?? '?'} 已不在）`);
         try {

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 // @ts-expect-error -- gate tooling is intentionally implemented as dependency-free ESM.
 import { acquireLock } from '../../scripts/lib/gates-local-lock.mjs';
 
@@ -83,6 +83,27 @@ describe('gates:local 单机互斥锁', () => {
 
     const release = acquireLock({ lockPath, waitMs: 1_000, pollMs: 10, log: () => {} });
     expect(JSON.parse(fs.readFileSync(lockPath, 'utf8')).pid).toBe(process.pid);
+    release();
+  });
+
+  it('锁文件一出现就带完整身份，且不留临时文件', () => {
+    // 防回归到「先 openSync(wx) 建空文件、再 writeFileSync 写内容」：那个中间态会被并发进程
+    // 读成空内容 ⇒ 当陈旧锁删掉一把有效的锁 ⇒ 两条门同时开跑（09-05 ai-review 抓出）。
+    const lockPath = tempLockPath();
+
+    // 原子性来自 link（目标已存在即 EEXIST），所以直接咬住它：改回 openSync(lockPath,'wx')
+    // 那种「先建空文件再写」的实现，这条断言立刻红。
+    const link = vi.spyOn(fs, 'linkSync');
+    const release = acquireLock({ lockPath, waitMs: 1_000, pollMs: 10, log: () => {} });
+    expect(link).toHaveBeenCalledWith(expect.stringContaining('staging'), lockPath);
+    link.mockRestore();
+
+    const holder = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
+    expect(holder.pid).toBe(process.pid);
+    // staging 文件必须已经清掉，否则锁目录会随失败次数堆垃圾
+    const leftovers = fs.readdirSync(path.dirname(lockPath)).filter((name) => name.includes('staging'));
+    expect(leftovers).toEqual([]);
+
     release();
   });
 

@@ -141,6 +141,24 @@ describe('folder trust loader gates', () => {
 
   // N-FOLDERTRUST-RISKTIER ①：说明文字类不再拦。弹窗已经不为它们打扰用户，
   // 这里再拦就是「既不问、也永远不加载」的静默失效——用户只会觉得说明文件没生效。
+  // ai-review PR#1644 抓出：分级后 project mcp「不拦」不能顺带把 local 那份也放行
+  it('未启用的目录：远端 project MCP 放行，但带 command 的 mcp.local.json 仍然拦住', async () => {
+    await writeFile(path.join(projectDir, '.code-agent', 'mcp.json'), JSON.stringify({
+      mcpServers: { 'project-remote': { url: 'https://example.com/mcp' } },
+    }));
+    await writeFile(path.join(projectDir, '.code-agent', 'mcp.local.json'), JSON.stringify({
+      servers: [{ name: 'local-stdio', command: 'node', args: ['local.js'] }],
+    }));
+
+    expect((await loadMcpConfigFiles(projectDir)).map((server) => server.name)).toEqual(['project-remote']);
+
+    await trustService.set(projectDir, 'trusted', 'test');
+    expect((await loadMcpConfigFiles(projectDir)).map((server) => server.name)).toEqual([
+      'project-remote',
+      'local-stdio',
+    ]);
+  });
+
   it('未启用的目录：说明文字类照常加载，安全规则照旧拦下', async () => {
     await writeFile(path.join(projectDir, '.code-agent', 'agents', 'rogue.md'), '---\nname: rogue\n---\nRogue');
     await writeFile(path.join(projectDir, '.code-agent', 'skills', 'rogue-skill', 'SKILL.md'), '---\nname: rogue-skill\ndescription: Rogue\ndepends: []\nprovides: [skill:rogue-skill]\n---\nBody');

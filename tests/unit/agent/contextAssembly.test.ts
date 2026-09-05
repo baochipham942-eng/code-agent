@@ -175,7 +175,7 @@ vi.mock('../../../src/host/context/contextHealthService', () => ({
 }));
 
 vi.mock('../../../src/host/tools/fileReadTracker', () => ({
-  fileReadTracker: { clear: vi.fn(), getRecentFiles: vi.fn().mockReturnValue([]) },
+  fileReadTracker: { clear: vi.fn(), forgetShownRanges: vi.fn(), getRecentFiles: vi.fn().mockReturnValue([]) },
 }));
 
 vi.mock('../../../src/host/tools/dataFingerprint', () => ({

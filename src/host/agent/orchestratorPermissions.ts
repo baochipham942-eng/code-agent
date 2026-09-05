@@ -43,13 +43,13 @@ function toAskResult(
   updatedArgs?: Record<string, unknown>,
 ): PermissionAskResult {
   if (isApproveResponse(response)) {
-    if (!updatedArgs) return { approved: true };
+    if (!updatedArgs) return { approved: true, approvalSource: 'user' };
     // N-WRITEBACK-EDIT：改过的参数只配一次性放行。配会话/长期授权 = 把改过的内容当成
     // 同类操作的记忆，语义不成立，fail-closed 拒。
     if (response !== 'allow') {
       return { approved: false, denialSource: 'fail-closed', message: 'edited arguments require a one-time allow' };
     }
-    return { approved: true, updatedArgs };
+    return { approved: true, approvalSource: 'user', updatedArgs };
   }
   return { approved: false, denialSource: machineDenial ?? 'user' };
 }

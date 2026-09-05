@@ -610,7 +610,7 @@ export function App({ agent, options, onExit }: {
         }
         resolve(choice === 'reject'
           ? { approved: false, denialSource: 'user' }
-          : { approved: true });
+          : { approved: true, approvalSource: 'user' });
       };
       // 附反馈输入模式：Enter 提交拒绝（反馈回传 agent），Esc 返回选项。
       // 合批 chunk（如 'y\r'）里 \r 也算提交，前面的可打印字符并入反馈。

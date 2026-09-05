@@ -285,17 +285,33 @@ export class ExecPolicyStore {
 // ----------------------------------------------------------------------------
 
 let instance: ExecPolicyStore | null = null;
+/** 非 null ⇒ 当前实例是按用户级配置目录建的，要跟着 CODE_AGENT_DATA_DIR 走。 */
+let instanceUserDataDir: string | null = null;
 
+/**
+ * N-EVAL-EXECPOLICY-LEAK：单例建立时把 filePath 定死，而评测是**每题**才切
+ * CODE_AGENT_DATA_DIR（eval-ci.ts 的 case 级 dataDir）。只要有任何一次
+ * getExecPolicyStore() 发生在第一次切换之前（预热 / IPC / 上一题残留），整场评测学到的
+ * 规则就全写回上一个目录——在没带 --data-dir 的跑法里那就是真实 ~/.code-agent。
+ * 让单例自己比对当前 getUserConfigDir()，比要求每个切目录的调用方记得 reset 更难漏：
+ * 按名字枚举调用方的清单每加一个新调用方就漏一次。
+ * 带 projectDir 建的实例是项目级策略，不跟用户级目录走。
+ */
 export function getExecPolicyStore(projectDir?: string): ExecPolicyStore {
   if (!instance && projectDir) {
     instance = new ExecPolicyStore(projectDir);
+    instanceUserDataDir = null;
+    return instance;
   }
-  if (!instance) {
-    instance = new ExecPolicyStore({ dataDir: getUserConfigDir() });
+  const dataDir = getUserConfigDir();
+  if (!instance || (instanceUserDataDir !== null && instanceUserDataDir !== dataDir)) {
+    instance = new ExecPolicyStore({ dataDir });
+    instanceUserDataDir = dataDir;
   }
   return instance;
 }
 
 export function resetExecPolicyStore(): void {
   instance = null;
+  instanceUserDataDir = null;
 }

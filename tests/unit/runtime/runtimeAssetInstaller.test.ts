@@ -1,5 +1,7 @@
 import crypto from 'crypto';
-import { execFileSync } from 'child_process';
+import { execFileSync, spawnSync } from 'child_process';
+import { createRequire } from 'module';
+import Database from 'better-sqlite3';
 import fs from 'fs';
 import fsPromises from 'fs/promises';
 import os from 'os';
@@ -11,6 +13,8 @@ import {
   validateRuntimeArchiveEntries,
   type RuntimeAssetsManifest,
 } from '../../../src/host/runtime/runtimeAssetInstaller';
+
+vi.unmock('better-sqlite3');
 
 const tempRoots: string[] = [];
 
@@ -214,16 +218,42 @@ describe('runtimeAssetInstaller', () => {
     ].sort());
   });
 
-  it('fails closed on an existing install lock without removing it', async () => {
+  it('fails closed while another connection holds the install lock without releasing its reservation', async () => {
     const root = makeTempRoot();
     const runtimeBaseDir = path.join(root, 'runtime');
-    const lockPath = mkdirp(path.join(runtimeBaseDir, '.install-lock'));
+    mkdirp(runtimeBaseDir);
+    const lock = new Database(path.join(runtimeBaseDir, '.install-lock.sqlite'));
+    lock.exec('BEGIN IMMEDIATE');
     const asset = createRuntimeAssetPackage(root, 'v1');
-    await expect(installRuntimeAssetFromManifest({
-      manifestPath: writeManifest(root, asset), assetId: 'onnxruntime-vad', runtimeBaseDir,
-    })).rejects.toMatchObject({ code: 'EEXIST' });
+    try {
+      await expect(installRuntimeAssetFromManifest({
+        manifestPath: writeManifest(root, asset), assetId: 'onnxruntime-vad', runtimeBaseDir,
+      })).rejects.toMatchObject({ code: 'SQLITE_BUSY' });
+      expect(lock.inTransaction).toBe(true);
+      expect(await readActiveRuntimeAssets(runtimeBaseDir)).toBeNull();
+    } finally {
+      lock.close();
+    }
+  });
+
+  it('can install after a lock holder is killed without deleting the lock database', async () => {
+    const root = makeTempRoot();
+    const runtimeBaseDir = mkdirp(path.join(root, 'runtime'));
+    const lockPath = path.join(runtimeBaseDir, '.install-lock.sqlite');
+    const child = spawnSync(process.execPath, ['-e', `
+      const Database = require(process.argv[1]);
+      const lock = new Database(process.argv[2]);
+      lock.exec('BEGIN IMMEDIATE');
+      process.kill(process.pid, 'SIGKILL');
+    `, createRequire(import.meta.url).resolve('better-sqlite3'), lockPath]);
+    expect(child.signal).toBe('SIGKILL');
     expect(fs.existsSync(lockPath)).toBe(true);
-    expect(await readActiveRuntimeAssets(runtimeBaseDir)).toBeNull();
+    const asset = createRuntimeAssetPackage(root, 'v1');
+    const result = await installRuntimeAssetFromManifest({
+      manifestPath: writeManifest(root, asset), assetId: 'onnxruntime-vad', runtimeBaseDir,
+    });
+    expect(fs.existsSync(result.root)).toBe(true);
+    expect((await readActiveRuntimeAssets(runtimeBaseDir))?.assets['onnxruntime-vad'].installationOrder?.lastSequence).toBe(1);
   });
 
   it('installs a verified runtime asset and writes active state atomically', async () => {

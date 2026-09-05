@@ -4,6 +4,7 @@ import fs from 'fs/promises';
 import fsSync from 'fs';
 import path from 'path';
 import { promisify } from 'util';
+import Database from 'better-sqlite3';
 import { getUserDataPath } from '../platform/appPaths';
 
 const execFileAsync = promisify(execFile);
@@ -306,16 +307,6 @@ async function writeActiveRuntimeAsset(
     assets: {},
   };
 
-  const next: RuntimeAssetsActiveState = {
-    schemaVersion: 1,
-    kind: RUNTIME_ASSETS_ACTIVE_KIND,
-    updatedAt: record.installedAt,
-    assets: {
-      ...current.assets,
-      [record.assetId]: record,
-    },
-  };
-
   const previousOrder = current.assets[record.assetId]?.installationOrder;
   if (previousOrder && (
     !Number.isSafeInteger(previousOrder.lastSequence)
@@ -336,9 +327,19 @@ async function writeActiveRuntimeAsset(
     throw new Error(`Runtime asset installation sequence exhausted for ${record.assetId}`);
   }
   // The install lock serializes this increment; commit order and active state together.
-  record.installationOrder = {
+  const installationOrder = {
     lastSequence: sequence,
     versions: { ...previousOrder?.versions, [record.expandedSha256]: sequence },
+  };
+
+  const next: RuntimeAssetsActiveState = {
+    schemaVersion: 1,
+    kind: RUNTIME_ASSETS_ACTIVE_KIND,
+    updatedAt: record.installedAt,
+    assets: {
+      ...current.assets,
+      [record.assetId]: { ...record, installationOrder },
+    },
   };
 
   const activePath = getActiveManifestPath(runtimeBaseDir);
@@ -424,10 +425,15 @@ export async function installRuntimeAssetFromManifest(
   let reusedExistingInstall = false;
 
   await fs.mkdir(runtimeBaseDir, { recursive: true });
-  const lockPath = path.join(runtimeBaseDir, '.install-lock');
-  // Exclusive creation works across processes. Never infer stale ownership from PID/time.
-  // A lock left by a crashed installer requires explicit recovery before another install.
-  await fs.mkdir(lockPath);
+  // SQLite's write reservation serializes installers across processes. The kernel
+  // releases it on process death; no PID/time-based stale-lock recovery is needed.
+  const installLock = new Database(path.join(runtimeBaseDir, '.install-lock.sqlite'), { timeout: 0 });
+  try {
+    installLock.exec('BEGIN IMMEDIATE');
+  } catch (error) {
+    installLock.close();
+    throw error;
+  }
 
   try {
     await fs.mkdir(tempBaseDir, { recursive: true });
@@ -482,7 +488,7 @@ export async function installRuntimeAssetFromManifest(
     try {
       await fs.rm(tempDir, { recursive: true, force: true });
     } finally {
-      await fs.rmdir(lockPath);
+      installLock.close();
     }
   }
 }

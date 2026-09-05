@@ -59,31 +59,53 @@ describe('gates:local 单机互斥锁', () => {
     release();
   });
 
-  it('持锁进程已死的陈旧锁被回收，不会把机器永久锁死', () => {
+  it('持锁进程已死时 fail-loud 并给出清锁命令，绝不自动删别人的锁', () => {
+    // 自动回收要「确认陈旧」+「删除」两步，POSIX 没有 compare-and-delete，两步之间
+    // 那把锁可能已被别人回收并建好新锁 —— 自动删就是砍在有效锁上。所以这里只报不删。
     const lockPath = tempLockPath();
     fs.mkdirSync(path.dirname(lockPath), { recursive: true });
-    fs.writeFileSync(lockPath, JSON.stringify({
+    const stale = {
       pid: deadPid(),
       cwd: '/tmp/wt-已经不在了',
       startedAt: new Date(Date.now() - 3_600_000).toISOString(),
-    }));
+    };
+    fs.writeFileSync(lockPath, JSON.stringify(stale));
 
-    const notices: string[] = [];
-    const release = acquireLock({ lockPath, waitMs: 1_000, pollMs: 10, log: (m: string) => notices.push(m) });
-
-    expect(notices.join('\n')).toMatch(/回收陈旧锁/);
-    expect(JSON.parse(fs.readFileSync(lockPath, 'utf8')).pid).toBe(process.pid);
-    release();
+    expect(() => acquireLock({ lockPath, waitMs: 1_000, pollMs: 10, log: () => {} }))
+      .toThrow(/已经不在的进程占着/);
+    // 锁必须原样留着，且指引里要带真实路径
+    expect(JSON.parse(fs.readFileSync(lockPath, 'utf8')).pid).toBe(stale.pid);
+    expect(() => acquireLock({ lockPath, waitMs: 1_000, pollMs: 10, log: () => {} }))
+      .toThrow(new RegExp(`rm ${lockPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
   });
 
-  it('锁文件内容损坏时同样按陈旧处理，不是崩在 JSON.parse 上', () => {
+  it('人工授权 GATES_LOCAL_FORCE_UNLOCK=1 时才清陈旧锁', () => {
+    const lockPath = tempLockPath();
+    fs.mkdirSync(path.dirname(lockPath), { recursive: true });
+    fs.writeFileSync(lockPath, JSON.stringify({
+      pid: deadPid(), cwd: '/tmp/死了', startedAt: new Date().toISOString(),
+    }));
+
+    const prev = process.env.GATES_LOCAL_FORCE_UNLOCK;
+    process.env.GATES_LOCAL_FORCE_UNLOCK = '1';
+    try {
+      const release = acquireLock({ lockPath, waitMs: 1_000, pollMs: 10, log: () => {} });
+      expect(JSON.parse(fs.readFileSync(lockPath, 'utf8')).pid).toBe(process.pid);
+      release();
+    } finally {
+      if (prev === undefined) delete process.env.GATES_LOCAL_FORCE_UNLOCK;
+      else process.env.GATES_LOCAL_FORCE_UNLOCK = prev;
+    }
+  });
+
+  it('锁文件内容损坏时也走 fail-loud，不是崩在 JSON.parse 上、也不自动删', () => {
     const lockPath = tempLockPath();
     fs.mkdirSync(path.dirname(lockPath), { recursive: true });
     fs.writeFileSync(lockPath, '这不是 JSON');
 
-    const release = acquireLock({ lockPath, waitMs: 1_000, pollMs: 10, log: () => {} });
-    expect(JSON.parse(fs.readFileSync(lockPath, 'utf8')).pid).toBe(process.pid);
-    release();
+    expect(() => acquireLock({ lockPath, waitMs: 1_000, pollMs: 10, log: () => {} }))
+      .toThrow(/锁文件内容已损坏/);
+    expect(fs.readFileSync(lockPath, 'utf8')).toBe('这不是 JSON');
   });
 
   it('锁文件一出现就带完整身份，且不留临时文件', () => {
@@ -105,40 +127,6 @@ describe('gates:local 单机互斥锁', () => {
     expect(leftovers).toEqual([]);
 
     release();
-  });
-
-  it('回收陈旧锁时校验身份：不会误删别人在这中间建好的有效锁', () => {
-    // 竞态序列：本进程判定锁陈旧 → 另一个进程抢先回收并建了自己的新锁 → 本进程这一刀
-    // 不能砍在那把新锁上。无校验的实现（直接 unlink 锁路径）会砍中，然后两条门同时开跑。
-    const lockPath = tempLockPath();
-    fs.mkdirSync(path.dirname(lockPath), { recursive: true });
-    fs.writeFileSync(lockPath, JSON.stringify({
-      pid: deadPid(),
-      cwd: '/tmp/已经死了',
-      startedAt: new Date(Date.now() - 3_600_000).toISOString(),
-    }));
-
-    const freshHolder = { pid: process.pid, cwd: '/tmp/别人刚拿到的锁', startedAt: new Date().toISOString() };
-    const realRename = fs.renameSync.bind(fs);
-    let injected = false;
-    const rename = vi.spyOn(fs, 'renameSync').mockImplementation((from, to) => {
-      if (!injected && from === lockPath) {
-        injected = true;
-        // 就在我们动手之前，别人回收了旧锁并建好了自己的新锁
-        fs.unlinkSync(lockPath);
-        fs.writeFileSync(lockPath, JSON.stringify(freshHolder));
-      }
-      realRename(from as string, to as string);
-    });
-
-    try {
-      expect(() => acquireLock({ lockPath, waitMs: 300, pollMs: 10, log: () => {} }))
-        .toThrow(/拿不到锁/);
-      // 别人那把锁必须完好无损
-      expect(JSON.parse(fs.readFileSync(lockPath, 'utf8')).cwd).toBe('/tmp/别人刚拿到的锁');
-    } finally {
-      rename.mockRestore();
-    }
   });
 
   it('release 只删自己的锁：锁已被别人接管时不误删', () => {

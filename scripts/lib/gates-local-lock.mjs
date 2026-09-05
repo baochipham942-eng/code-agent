@@ -52,51 +52,6 @@ function readHolder(lockPath) {
   }
 }
 
-/**
- * 回收陈旧锁。
- *
- * 🔴 不能直接 `unlinkSync(lockPath)`：判定陈旧到删除之间，那把锁可能已经被别人回收、
- * 并且别人已经建了自己的新锁——这一刀就把一把**有效的锁**删了，两条门同时开跑
- * （09-05 ai-review 第二次抓出，我在注释里第二次断言「没问题」，第二次判错）。
- *
- * POSIX 没有 compare-and-delete，但 rename 是原子的：先把锁 rename 到只有本进程知道的
- * 墓碑路径（只有一个进程能移走同一个 inode），再核对移走的 inode 是不是当初判定为陈旧的
- * 那一个。不是就用 link 原样挂回去（link 不覆盖，已有新锁时会 EEXIST，那就直接丢弃墓碑）。
- *
- * ponytail: 还原窗口里仍有一个三方竞态残留——A 判陈旧 → C 抢先回收并建锁 → A 移走了 C 的锁
- * → 在 A 挂回去之前 D 又建了锁，此时 C 与 D 会同时跑。需要四步精确交错，且每步都在微秒级窗口内；
- * 真要根除得换 flock（进程死了内核自动释放，没有回收这回事），Node 无内置绑定、要引依赖。
- * 这里明说残留，不再声称「没问题」。
- */
-function reclaimStale(lockPath, expectedIno, log) {
-  const tombstone = `${lockPath}.dead.${process.pid}`;
-  try {
-    fs.renameSync(lockPath, tombstone);
-  } catch {
-    return; // 别人先动了，回主循环重来
-  }
-  let movedIno;
-  try {
-    movedIno = fs.statSync(tombstone).ino;
-  } catch {
-    movedIno = undefined;
-  }
-  if (movedIno !== expectedIno) {
-    // 移走的不是当初判定为陈旧的那把（有人在这中间重建了锁）——原样挂回去
-    log('[gates:local] 回收时发现锁已易主，原样放回');
-    try {
-      fs.linkSync(tombstone, lockPath);
-    } catch {
-      /* 已经有更新的锁了，丢弃墓碑即可 */
-    }
-  }
-  try {
-    fs.unlinkSync(tombstone);
-  } catch {
-    /* 墓碑已不在 */
-  }
-}
-
 function holderAlive(pid) {
   if (!Number.isInteger(pid)) return false;
   try {
@@ -165,11 +120,34 @@ export function acquireLock({
 
       const holder = readHolder(lockPath);
       if (!holder) continue; // 锁刚被释放，直接回去抢
+
       if (holder.corrupt || !holderAlive(holder.pid)) {
-        // 内容读不出来只可能是真的损坏（link 保证了不存在「已建但未写入」的中间态）。
-        log(`[gates:local] 回收陈旧锁（持有者 pid ${holder?.pid ?? '?'} 已不在）`);
-        reclaimStale(lockPath, holder?.ino, log);
-        continue;
+        // 陈旧锁（持锁进程已死，或文件损坏）。
+        //
+        // 🔴 这里**故意不自动回收**。自动回收要做的是「确认它陈旧」和「删掉它」两步，而
+        // POSIX 没有 compare-and-delete —— 两步之间那把锁可能已被别人回收、别人已建好新锁，
+        // 这一刀就砍在有效锁上。09-05 试过两版补救（inode 校验 + rename 墓碑 + link 还原），
+        // 每版都被 ai-review 抓出新的竞态形态，最后一版还剩一个三方窗口搬不走。
+        //
+        // 账很清楚：自动回收换来的全部收益，是「进程被 kill 之后省一次手动 rm」；
+        // 代价是这把锁的核心承诺（同机只有一条门）带一个静默失效的洞。所以砍掉它。
+        // 死进程不会自己释放锁，等下去没有意义 —— 直接 fail-loud，把命令给人。
+        if (process.env.GATES_LOCAL_FORCE_UNLOCK === '1') {
+          log('[gates:local] GATES_LOCAL_FORCE_UNLOCK=1，按人工授权强行清锁');
+          try {
+            fs.unlinkSync(lockPath);
+          } catch {
+            /* 别人先清了 */
+          }
+          continue;
+        }
+        throw new Error(
+          `[gates:local] 锁被一个已经不在的进程占着（pid ${holder.pid ?? '?'}${holder.corrupt ? '，且锁文件内容已损坏' : ''}）\n`
+          + `  确认机器上确实没有门在跑（pgrep -f 'scripts/gates-local.mjs'），然后清掉它：\n`
+          + `    rm ${lockPath}\n`
+          + '  或者用 GATES_LOCAL_FORCE_UNLOCK=1 重跑本命令（等于你替它签字：确实没人在跑）。\n'
+          + '  🔴 不自动清是有意的：确认陈旧与删除之间没有原子操作，自动清会误删别人刚建的有效锁。',
+        );
       }
 
       if (Date.now() > deadline) {

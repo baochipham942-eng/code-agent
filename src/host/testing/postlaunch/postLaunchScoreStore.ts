@@ -92,9 +92,9 @@ export function getBudgetState(
     .prepare(`
       SELECT COALESCE(SUM(cost_usd), 0) AS spent,
              COALESCE(SUM(CASE WHEN sampled_by = 'sample' THEN 1 ELSE 0 END), 0) AS sampled
-      FROM telemetry_turn_scores WHERE scored_day = ?
+      FROM telemetry_turn_scores WHERE scored_day = ? AND judge_version = ?
     `)
-    .get(day) as { spent: number; sampled: number };
+    .get(day, POST_LAUNCH_JUDGE_VERSION) as { spent: number; sampled: number };
   return {
     day,
     spentUsd: row.spent,

@@ -10,6 +10,7 @@
 // ============================================================================
 import { createHash } from 'node:crypto';
 import type { ReplayTurn } from '../../../shared/contract/evaluationReplay';
+import { guardSensitiveText } from '../../security/sensitiveDataGuard';
 import {
   POST_LAUNCH_JUDGE_DIMENSIONS,
   POST_LAUNCH_JUDGE_VERSION,
@@ -49,6 +50,16 @@ function clip(value: string | undefined, max: number): string {
   return value.length > max ? `${value.slice(0, max)}…` : value;
 }
 
+/**
+ * 外发给评分模型前先过脱敏闸（密钥 / token / 邮箱 / 家目录 / 注入中和）。
+ * 「正文不出机器」指不上 Neo 云端；judge 调用走用户自己配置的模型，与会话本身同一出口，
+ * 但评分模型可能不是这条会话用的那只，所以密钥类必须先抹（ai-review #1645 Important①）。
+ */
+function guardForJudge(value: string | undefined, max: number): string {
+  if (!value) return '';
+  return clip(guardSensitiveText(value, { surface: 'telemetry', mode: 'model-context' }), max);
+}
+
 function delimit(value: unknown, closingTag: string): string {
   return JSON.stringify(value, null, 2).replaceAll(`</${closingTag}>`, `<\\/${closingTag}>`);
 }
@@ -63,15 +74,15 @@ function projectTurnForJudge(turn: ReplayTurn, signals: DeterministicSignal[]): 
     .slice(0, MAX_TOOL_CALLS)
     .map((toolCall) => ({
       name: toolCall.name,
-      args: clip(JSON.stringify(toolCall.actualArgs ?? toolCall.args ?? {}), MAX_ARG_CHARS),
+      args: guardForJudge(JSON.stringify(toolCall.actualArgs ?? toolCall.args ?? {}), MAX_ARG_CHARS),
       success: toolCall.success,
-      approvalTrace: (toolCall.permissionTrace ?? []).map((trace) => trace.summary).filter(Boolean),
+      approvalTrace: (toolCall.permissionTrace ?? []).map((trace) => trace.summary).filter(Boolean).map((summary) => guardForJudge(summary, 300)),
     }));
   return {
-    userPrompt: clip(userPrompt, MAX_TEXT_CHARS),
-    assistantResponse: clip(responses.join('\n'), MAX_TEXT_CHARS),
+    userPrompt: guardForJudge(userPrompt, MAX_TEXT_CHARS),
+    assistantResponse: guardForJudge(responses.join('\n'), MAX_TEXT_CHARS),
     toolCalls,
-    errors,
+    errors: errors.map((error) => guardForJudge(error, 300)),
     deterministicSignals: signals.map((signal) => signal.kind),
   };
 }

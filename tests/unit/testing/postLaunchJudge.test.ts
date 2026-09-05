@@ -48,6 +48,24 @@ async function capturePrompt(signals: DeterministicSignal[] = []): Promise<strin
   return llmCall.mock.calls[0][0];
 }
 
+describe('postLaunchJudge · 外发脱敏', () => {
+  it('投影里的密钥先抹掉再发给评分模型', async () => {
+    const leakyTurn: ReplayTurn = {
+      ...TURN,
+      blocks: [
+        { type: 'user', content: '帮我用 api_key=sk-live-abc123 调一下接口', timestamp: TURN.startTime },
+        { type: 'text', content: '好的，已用 token=ghp_zzz999 完成', timestamp: TURN.startTime + 1 },
+      ],
+    };
+    const llmCall = vi.fn<(prompt: string) => Promise<string>>(async () => ALL_PASS);
+    await judgePostLaunchTurn({ turn: leakyTurn, signals: [] }, llmCall);
+    const prompt = llmCall.mock.calls[0][0];
+    expect(prompt).not.toContain('sk-live-abc123');
+    expect(prompt).not.toContain('ghp_zzz999');
+    expect(prompt).toContain('***REDACTED***');
+  });
+});
+
 describe('postLaunchJudge · 无题契约', () => {
   it('没有 TestCase / expectations 也能出四维判决', async () => {
     const verdict = await judgePostLaunchTurn({ turn: TURN, signals: [] }, async () => ALL_PASS);

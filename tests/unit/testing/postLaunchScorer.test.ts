@@ -290,6 +290,25 @@ describe('上线后打分编排', () => {
     expect(rows[0].dim_goal).toBe(1);
   });
 
+  it('--dry-run 的抽样行不占真评的日抽样额度（ai-review #1645 Important②）', async () => {
+    for (const n of [1, 2, 3]) {
+      insertSession(database, `chat-${n}`, 'chat', NOW - HOUR * n);
+      insertTurn(database, `chat-${n}`, `chat-turn-${n}`, 1, NOW - HOUR * n);
+    }
+    const replays = Object.fromEntries([1, 2, 3].map((n) => [
+      `chat-${n}`,
+      replay(`chat-${n}`, [{ turnNumber: 1, startTime: NOW - HOUR * n, blocks: [{ type: 'text', content: '好了', timestamp: NOW - HOUR * n }] }]),
+    ]));
+    const llmCall = vi.fn(async () => ALL_PASS);
+    await runPostLaunchScoring(deps(database, replays, llmCall), { dryRun: true, dailySampleLimit: 2 });
+    expect(llmCall).not.toHaveBeenCalled();
+
+    const real = await runPostLaunchScoring(deps(database, replays, llmCall), { dailySampleLimit: 2 });
+
+    expect(llmCall).toHaveBeenCalledTimes(2);
+    expect(real.sampledTurns).toBe(2);
+  });
+
   it('已评过的轮不重复花钱', async () => {
     insertSession(database, 'chat-1', 'chat', NOW - HOUR);
     insertTurn(database, 'chat-1', 'chat-turn-1', 1, NOW - HOUR);

@@ -115,7 +115,7 @@ export const evalCenterZh = {
     // 上线后质量卡（ADR-063 刀 1）：跨会话，挂在会话列表上方
     postLaunch: {
       title: '上线后质量',
-      subtitle: '本机真实会话打分，正文不出机器',
+      subtitle: '本机真实会话打分；正文只发给你配置的评分模型，不上传 Neo 云端',
       run: '评近 {n} 天',
       running: '评分中…',
       empty: '还没有上线后分数。点右上角跑一次，会用你自己的模型额度。',
@@ -315,7 +315,7 @@ export const evalCenterEn = {
     tabTools: 'Tools',
     postLaunch: {
       title: 'Post-launch quality',
-      subtitle: 'Scored on this machine; transcripts never leave it',
+      subtitle: 'Scored on this machine; transcripts go only to your own judge model, never to Neo cloud',
       run: 'Score last {n} days',
       running: 'Scoring…',
       empty: 'No post-launch scores yet. Run one — it spends your own model quota.',

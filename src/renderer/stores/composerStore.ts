@@ -376,6 +376,10 @@ export const useComposerStore = create<ComposerState>((set, get) => ({
 
   resetForSuccessfulSend: () =>
     set((state) => ({
+      selectedSkillIds: [],
+      selectedConnectorIds: [],
+      selectedMcpServerIds: [],
+      turnCapabilityScopeMode: 'auto',
       targetAgentIds: state.routingMode === 'direct' ? state.targetAgentIds : [],
       // 配方已经启动，预选态就该退场——留着会让下一句话又想启动一次
       selectedTeamRecipeId: null,

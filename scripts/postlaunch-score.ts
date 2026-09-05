@@ -14,15 +14,21 @@ import os from 'node:os';
 import path from 'node:path';
 import Database from 'better-sqlite3';
 import { CONFIG_DIR_NEW } from '../src/shared/constants/configDir';
-import { DRY_RUN_JUDGE_VERSION, POST_LAUNCH_DEFAULTS } from '../src/shared/contract/postLaunchScore';
+import {
+  DRY_RUN_JUDGE_VERSION,
+  POST_LAUNCH_DEFAULTS,
+  POST_LAUNCH_DISABLED_MESSAGE,
+} from '../src/shared/contract/postLaunchScore';
 import { resolveModelPrice } from '../src/shared/pricing/resolveModelPrice';
-import { estimateTokens } from '../src/host/context/tokenEstimator';
 import { getQuickModelRuntimeInfo, quickTask } from '../src/host/model/quickModel';
 import { loadProjectFailureCodebook } from '../src/host/testing/failureCodes';
 import { TelemetryQueryService } from '../src/host/telemetry/replay/telemetryQueryService';
 import { applyTelemetrySchema } from '../src/host/services/core/database/schemaTelemetry';
 import { createLogger } from '../src/host/services/infra/logger';
 import { getDatabase } from '../src/host/services/core/databaseService';
+import { getConfigService } from '../src/host/services/core/configService';
+import { estimateJudgeCost } from '../src/host/testing/postlaunch/postLaunchCost';
+import { isPostLaunchScoringEnabled } from '../src/host/testing/postlaunch/postLaunchGate';
 import { runPostLaunchScoring, type PostLaunchSessionRow } from '../src/host/testing/postlaunch/postLaunchScorer';
 import { buildPostLaunchReport } from '../src/host/testing/postlaunch/postLaunchScoreStore';
 
@@ -40,9 +46,8 @@ function parseArgs(): { days: number; budget: number; sampleLimit: number; dryRu
   };
 }
 
-function resolveDbPath(): string {
-  const dataDir = process.env.CODE_AGENT_DATA_DIR?.trim() || path.join(os.homedir(), CONFIG_DIR_NEW);
-  return path.join(dataDir, 'code-agent.db');
+function resolveDataDir(): string {
+  return process.env.CODE_AGENT_DATA_DIR?.trim() || path.join(os.homedir(), CONFIG_DIR_NEW);
 }
 
 function costUsd(provider: string, model: string, inputTokens: number, outputTokens: number): number {
@@ -53,7 +58,18 @@ function costUsd(provider: string, model: string, inputTokens: number, outputTok
 
 async function main(): Promise<void> {
   const options = parseArgs();
-  const dbPath = resolveDbPath();
+  // 开关三态先判：关着就一步都别走——不开库、不建表，更不叫模型。
+  // 读的是宿主真正用的那份配置：界面经 ConfigService 存的是 <数据目录>/config.json，
+  // 不是 settings.json——两端读不同文件的话，用户按提示在界面开了、CLI 仍会拒
+  // （ai-review PR #1650 Important②）。这里复用 ConfigService 自己的读取路径，
+  // reloadFromDisk 刻意不做 keychain / migrate / save，不会回写用户配置。
+  await getConfigService().reloadFromDisk();
+  if (!options.dryRun && !isPostLaunchScoringEnabled()) {
+    console.error(POST_LAUNCH_DISABLED_MESSAGE);
+    process.exit(1);
+  }
+  const dataDir = resolveDataDir();
+  const dbPath = path.join(dataDir, 'code-agent.db');
   if (!fs.existsSync(dbPath)) {
     console.error(`找不到数据库 ${dbPath}；设 CODE_AGENT_DATA_DIR 指到要评的那份数据目录。`);
     process.exit(1);
@@ -76,9 +92,7 @@ async function main(): Promise<void> {
       if (!response.success || !response.content) throw new Error(response.error ?? '打分模型没有返回内容');
       return { content: response.content, judgeModel: `${response.provider ?? 'unknown'}/${response.model ?? 'unknown'}` };
     },
-    estimateJudgeCostUsd: (prompt, completion) => (
-      judge ? costUsd(judge.provider, judge.model, estimateTokens(prompt), estimateTokens(completion)) : 0
-    ),
+    estimateJudgeCostUsd: (prompt, completion) => estimateJudgeCost(judge, prompt, completion),
     estimateTurnCostUsd: (session: PostLaunchSessionRow, inputTokens, outputTokens) =>
       costUsd(session.modelProvider, session.modelName, inputTokens, outputTokens),
     fileExists: (absolutePath) => {
@@ -94,12 +108,19 @@ async function main(): Promise<void> {
     dryRun: options.dryRun,
   });
 
-  console.log(`扫到 ${result.examinedTurns} 轮；剔除 ${result.excludedTurns} 轮（eval/子代理/定时/心跳）`);
-  console.log(`信号轮 ${result.signalTurns}，抽样轮 ${result.sampledTurns}，只记信号 ${result.signalOnlyTurns}，已有分数跳过 ${result.skippedTurns}`);
+  console.log(`扫到 ${result.examinedTurns} 轮；剔除 ${result.excludedTurns} 轮（eval/子代理/定时/心跳/脚本发起）`);
+  // 这一行说的是「这次叫了几次 judge」，与卡片按周分组那张表的「信号轮 N 轮」不是一回事
+  // （后者是那一周落过分数的轮数）。措辞必须自带这个限定，别让两处同名不同义（K1 留给刀 2 第 6 条）。
+  console.log(result.dryRun
+    ? `dry-run 未调 judge：本可全评的信号轮 ${result.signalTurns}、抽样轮 ${result.sampledTurns}；只记信号 ${result.signalOnlyTurns}；已有分数跳过 ${result.skippedTurns}`
+    : `本次调了 judge：信号轮 ${result.signalTurns} / 抽样轮 ${result.sampledTurns}；只记信号（没调 judge）${result.signalOnlyTurns}；已有分数跳过 ${result.skippedTurns}`);
   if (result.locked) console.log('这个库上另有一次评分正在跑（30 分钟内的锁），本次一轮没评、一分没扣；等它跑完再来。');
-  console.log(`本次打分刊例估算 $${result.costUsd.toFixed(4)}${result.budgetStopped ? '（已触日预算上限，当天停评）' : ''}`);
+  if (result.judgeUnavailableTurns > 0) {
+    console.log(`⚠️ 打分模型没给出判决的有 ${result.judgeUnavailableTurns} 轮（没配好 / 报错 / 返回读不了），这些轮只记了信号；去设置里配好评分模型再跑。`);
+  }
+  console.log(`本次打分刊例估算 $${result.costUsd.toFixed(4)}${result.budgetStopped ? '（预算不够下一次调用，当天停评）' : ''}`);
 
-  const report = buildPostLaunchReport(db, { judgeVersion: options.dryRun ? DRY_RUN_JUDGE_VERSION : undefined, days: options.days, dailyBudgetUsd: options.budget, dailySampleLimit: options.sampleLimit });
+  const report = buildPostLaunchReport(db, { judgeVersion: options.dryRun ? DRY_RUN_JUDGE_VERSION : undefined, days: options.days, dailyBudgetUsd: options.budget, dailySampleLimit: options.sampleLimit, reserveUsd: estimateJudgeCost(judge, '').usd });
   for (const group of report.groups) {
     console.log(`\n${group.weekStart} · ${group.appVersion}${group.promptVersion ? ` · ${group.promptVersion}` : ''}`);
     for (const row of group.rows) {
@@ -111,6 +132,12 @@ async function main(): Promise<void> {
     if (group.failureClasses.length > 0) {
       console.log(`  失败类别：${group.failureClasses.map((entry) => `${entry.code} ${entry.count}`).join(' · ')}`);
     }
+  }
+  // 与卡片的预算行同一口径：预算记的是 budget_cost_usd（含未知价的保守估算），
+  // 上面那行「刊例估算」记的是 cost_usd。两个数不同名不同义，别让人以为其中一个算错了。
+  console.log(`\n今日预算已记 $${report.budget.spentUsd.toFixed(4)} / $${report.budget.limitUsd.toFixed(4)}，抽样 ${report.budget.sampledCount}/${report.budget.sampleLimit} 轮`);
+  if (report.budget.assumedUsd > 0) {
+    console.log(`  其中 $${report.budget.assumedUsd.toFixed(4)} 是按保守默认价估的——评分模型没有公开刊例，为了守住预算才这么算，不是真实账单。`);
   }
   if (report.calibration.state === 'insufficient') {
     console.log('\n⚠️ 校准不足：这套打分还没跟人工判定对过，分数只能当线索，别当结论。');

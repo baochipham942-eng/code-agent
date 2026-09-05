@@ -57,8 +57,9 @@ function report(overrides: Partial<PostLaunchReport> = {}): PostLaunchReport {
       costUsd: 0.0123,
       sessionIds: ['session-abcdef123'],
     }],
+    judgeUnavailableTurns: 0,
     calibration: { state: 'insufficient', reason: 'no_record' },
-    budget: { day: '2026-09-05', spentUsd: 0.12, limitUsd: 0.5, sampledCount: 3, sampleLimit: 20, stopped: false },
+    budget: { day: '2026-09-05', spentUsd: 0.12, limitUsd: 0.5, sampledCount: 3, sampleLimit: 20, assumedUsd: 0, stopped: false },
     ...overrides,
   };
 }
@@ -138,6 +139,47 @@ describe('上线后质量卡', () => {
     render(<PostLaunchCard report={report()} running={false} error={null} days={7} onRun={noop} onOpenSession={onOpenSession} />);
     fireEvent.click(screen.getByTestId('postlaunch-session-session-abcdef123'));
     expect(onOpenSession).toHaveBeenCalledWith('session-abcdef123');
+  });
+
+  it('⑦打分模型没给出判决时卡上出一行人话，不是静默（09-05 真机截图上这里什么都没有）', () => {
+    render(
+      <PostLaunchCard
+        report={report({ judgeUnavailableTurns: 3 })}
+        running={false} error={null} days={7} onRun={noop} onOpenSession={noop}
+      />,
+    );
+    const hint = screen.getByTestId('postlaunch-judge-unavailable').textContent ?? '';
+    expect(hint).toContain('3 轮');
+    expect(hint).toContain('评分模型');
+  });
+
+  it('Nit①judge 不可用的提示要说准：安全/产物仍算，重跑不会重评', () => {
+    render(
+      <PostLaunchCard
+        report={report({ judgeUnavailableTurns: 2 })}
+        running={false} error={null} days={7} onRun={noop} onOpenSession={noop}
+      />,
+    );
+    const hint = screen.getByTestId('postlaunch-judge-unavailable').textContent ?? '';
+    expect(hint).toContain('安全与产物');
+    expect(hint).toContain('跳过');
+    // 别再说「六维都没有」——那是假的
+    expect(hint).not.toContain('六维');
+  });
+
+  it('⑦judge 都正常时不出这行', () => {
+    render(<PostLaunchCard report={report()} running={false} error={null} days={7} onRun={noop} onOpenSession={noop} />);
+    expect(screen.queryByTestId('postlaunch-judge-unavailable')).toBeNull();
+  });
+
+  it('②预算里有按保守默认价估的部分时说明白，别让人以为是真实账单', () => {
+    const assumed = report();
+    assumed.budget = { ...assumed.budget, assumedUsd: 0.08 };
+    render(<PostLaunchCard report={assumed} running={false} error={null} days={7} onRun={noop} onOpenSession={noop} />);
+    expect(screen.getByTestId('postlaunch-budget-assumed').textContent).toContain('保守默认价');
+    // 没有兜底价的那份报告不出这行
+    render(<PostLaunchCard report={report()} running={false} error={null} days={7} onRun={noop} onOpenSession={noop} />);
+    expect(screen.queryAllByTestId('postlaunch-budget-assumed')).toHaveLength(1);
   });
 
   it('失败类别与信号分布都渲染出来', () => {

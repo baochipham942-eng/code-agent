@@ -54,8 +54,9 @@ const postLaunchReport: PostLaunchReport = {
   rubricVersion: 'postlaunch-rubric-v1',
   scoredTurns: 0,
   groups: [],
+  judgeUnavailableTurns: 0,
   calibration: { state: 'insufficient', reason: 'no_record' },
-  budget: { day: '2026-09-05', spentUsd: 0, limitUsd: 0.5, sampledCount: 0, sampleLimit: 20, stopped: false },
+  budget: { day: '2026-09-05', spentUsd: 0, limitUsd: 0.5, sampledCount: 0, sampleLimit: 20, assumedUsd: 0, stopped: false },
 };
 
 describe('EvalTelemetryTab', () => {

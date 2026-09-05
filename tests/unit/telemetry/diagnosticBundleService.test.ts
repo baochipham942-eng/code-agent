@@ -168,7 +168,7 @@ describe('buildDiagnosticBundle', () => {
         end_time INTEGER, duration_ms INTEGER, turn_count INTEGER DEFAULT 0,
         total_input_tokens INTEGER DEFAULT 0, total_output_tokens INTEGER DEFAULT 0,
         total_tokens INTEGER DEFAULT 0, estimated_cost REAL DEFAULT 0, total_tool_calls INTEGER DEFAULT 0,
-        tool_success_rate REAL DEFAULT 0, total_errors INTEGER DEFAULT 0, session_type TEXT,
+        tool_success_rate REAL DEFAULT 0, total_errors INTEGER DEFAULT 0, session_type TEXT, origin_kind TEXT,
         status TEXT DEFAULT 'recording', agent_version TEXT, prompt_version TEXT, tool_schema_version TEXT
       );
       CREATE TABLE telemetry_turns (

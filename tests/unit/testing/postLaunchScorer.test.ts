@@ -13,8 +13,10 @@ import { applyTelemetrySchema } from '../../../src/host/services/core/database/s
 import type { ReplayBlock, StructuredReplay } from '../../../src/shared/contract/evaluationReplay';
 import type { FailureCodebook } from '../../../src/host/testing/failureCodes';
 import { runPostLaunchScoring, type PostLaunchScorerDeps } from '../../../src/host/testing/postlaunch/postLaunchScorer';
-import { clampPostLaunchScoringRequest } from '../../../src/shared/contract/postLaunchScore';
-import { acquireScoringLock, buildPostLaunchReport, releaseScoringLock, renewScoringLock } from '../../../src/host/testing/postlaunch/postLaunchScoreStore';
+import { POST_LAUNCH_JUDGE_VERSION, clampPostLaunchScoringRequest } from '../../../src/shared/contract/postLaunchScore';
+import { estimateJudgeCost } from '../../../src/host/testing/postlaunch/postLaunchCost';
+import { resolveModelPrice } from '../../../src/shared/pricing/resolveModelPrice';
+import { acquireScoringLock, buildPostLaunchReport, getBudgetState, localDay, releaseScoringLock, renewScoringLock } from '../../../src/host/testing/postlaunch/postLaunchScoreStore';
 
 const NOW = new Date('2026-09-05T12:00:00+08:00').getTime();
 const HOUR = 60 * 60 * 1000;
@@ -46,11 +48,12 @@ function insertSession(
   id: string,
   sessionType: string | null,
   startTime: number,
+  originKind: string | null = null,
 ): void {
   database.prepare(`
-    INSERT INTO telemetry_sessions (id, title, model_provider, model_name, working_directory, start_time, session_type, agent_version, prompt_version)
-    VALUES (?, ?, 'deepseek', 'deepseek-chat', '/ws', ?, ?, '0.33.0', 'p7')
-  `).run(id, id, startTime, sessionType);
+    INSERT INTO telemetry_sessions (id, title, model_provider, model_name, working_directory, start_time, session_type, origin_kind, agent_version, prompt_version)
+    VALUES (?, ?, 'deepseek', 'deepseek-chat', '/ws', ?, ?, ?, '0.33.0', 'p7')
+  `).run(id, id, startTime, sessionType, originKind);
 }
 
 function insertTurn(
@@ -92,7 +95,7 @@ function deps(
     db: database,
     getStructuredReplay: async (sessionId) => replays[sessionId] ?? null,
     llmCall,
-    estimateJudgeCostUsd: () => 0.1,
+    estimateJudgeCostUsd: () => ({ usd: 0.1, assumed: false }),
     estimateTurnCostUsd: () => 0.001,
     fileExists: () => true,
     now: () => NOW,
@@ -215,7 +218,7 @@ describe('上线后打分编排', () => {
     expect(row.reason_redacted).toContain('声称的结果在轨迹里找不到来源');
   });
 
-  it('⑤成本封顶：日预算用完当天停评，只记信号不再调模型', async () => {
+  it('④预算预留：已花 + 下一次调用的估算越线就停，不再发那一次（K1 是发完才停）', async () => {
     insertSession(database, 'chat-1', 'chat', NOW - HOUR);
     for (let index = 1; index <= 4; index += 1) {
       insertTurn(database, 'chat-1', `chat-turn-${index}`, index, NOW - HOUR + index);
@@ -228,20 +231,24 @@ describe('上线后打分编排', () => {
       }))),
     };
     const llmCall = vi.fn(async () => ALL_PASS);
-    // 每次 judge 记 0.1，上限 0.25 ⇒ 只该调两次（0.1、0.2），第三次时 spent 已 0.2 < 0.25 仍可调，第四次 0.3 停。
+    // 每次 judge 估 0.1、上限 0.25。判据是「已花 + 这次要花的 ≤ 上限」：
+    // 0+0.1 ✓、0.1+0.1 ✓、0.2+0.1=0.3 ✗ ⇒ 第 3 次就不发了，总花费 0.2 不越线。
+    // K1 是「已花 < 上限」⇒ 第 3 次照发、花到 0.3 才停，超支整整一次调用（刀 2 验收④）。
     const result = await runPostLaunchScoring(
       deps(database, replays, llmCall),
       { dailyBudgetUsd: 0.25 },
     );
 
-    expect(llmCall).toHaveBeenCalledTimes(3);
+    expect(llmCall).toHaveBeenCalledTimes(2);
+    expect(result.costUsd).toBeCloseTo(0.2);
+    expect(result.costUsd).toBeLessThanOrEqual(0.25);
     expect(result.budgetStopped).toBe(true);
-    expect(result.signalOnlyTurns).toBe(1);
+    expect(result.signalOnlyTurns).toBe(2);
     const rows = scoreRows(database);
     expect(rows).toHaveLength(4);
-    // 停评那一轮仍然留了信号行，只是四个语义维没有判决。
+    // 停评那些轮仍然留了信号行，只是四个语义维没有判决。
     const unjudged = rows.filter((row) => row.dim_goal === null);
-    expect(unjudged).toHaveLength(1);
+    expect(unjudged).toHaveLength(2);
     expect(JSON.parse(unjudged[0].signals as string)).toContain('error_terminated');
   });
 
@@ -418,6 +425,214 @@ describe('上线后打分编排', () => {
     expect(group.sessionIds).toEqual(['chat-1']);
     // κ 缺失 ⇒ 报告顶上必须挂校准不足，不能默认当已校准。
     expect(report.calibration).toEqual({ state: 'insufficient', reason: 'no_record' });
+  });
+
+  it('①来源标记：headless / 存量 cli_ 前缀的会话不进分母，manual 与普通 id 照评', async () => {
+    // 四条都是 session_type='chat'——只有来源标记能把脚本发起的那两条分出来。
+    const sessions: Array<[string, string | null]> = [
+      ['chat-manual', 'manual'],
+      ['chat-headless', 'headless'],
+      ['cli_session_1788581520765_10a7e1aa', null], // 存量行：origin 为 NULL，靠 id 前缀兜底
+      ['chat-legacy-plain', null],
+    ];
+    const replays: Record<string, ReturnType<typeof replay>> = {};
+    for (const [index, [id, originKind]] of sessions.entries()) {
+      insertSession(database, id, 'chat', NOW - HOUR, originKind);
+      insertTurn(database, id, `turn-${index}`, 1, NOW - HOUR);
+      replays[id] = replay(id, [{ turnNumber: 1, startTime: NOW - HOUR, blocks: [{ type: 'text', content: '好了', timestamp: NOW - HOUR }] }]);
+    }
+
+    const result = await runPostLaunchScoring(deps(database, replays, async () => ALL_PASS));
+
+    expect(scoreRows(database).map((row) => row.session_id).sort()).toEqual(['chat-legacy-plain', 'chat-manual']);
+    expect(result.excludedTurns).toBe(2);
+  });
+
+  it('②未知价模型也能触发预算门：没有刊例时按保守默认价记进预算，但不落 cost_usd', async () => {
+    insertSession(database, 'chat-1', 'chat', NOW - HOUR);
+    for (let index = 1; index <= 3; index += 1) {
+      insertTurn(database, 'chat-1', `chat-turn-${index}`, index, NOW - HOUR + index);
+    }
+    const replays = {
+      'chat-1': replay('chat-1', [1, 2, 3].map((turnNumber) => ({
+        turnNumber,
+        startTime: NOW - HOUR + turnNumber,
+        blocks: [{ type: 'error', content: 'boom', timestamp: NOW - HOUR + turnNumber } as ReplayBlock],
+      }))),
+    };
+    // 真正的估价函数 + 一个价目表里查不到的自定义 provider（K1 时这里恒返 0 ⇒ 预算门永不触发）。
+    const unknownJudge = { provider: 'custom-glm-coding', model: 'glm-5.3' };
+    expect(resolveModelPrice(unknownJudge.provider, unknownJudge.model).source).toBe('unknown');
+    const llmCall = vi.fn(async () => ALL_PASS);
+    const result = await runPostLaunchScoring(
+      deps(database, replays, llmCall, {
+        estimateJudgeCostUsd: (prompt, completion) => estimateJudgeCost(unknownJudge, prompt, completion),
+      }),
+      { dailyBudgetUsd: 0.002 },
+    );
+
+    expect(result.budgetStopped).toBe(true);
+    expect(llmCall.mock.calls.length).toBeLessThan(3);
+    // 展示与落库仍然守「未知价不编造」：cost_usd 是 0，钱记在 budget_cost_usd 上。
+    const judged = scoreRows(database).filter((row) => row.dim_goal !== null);
+    expect(judged.length).toBeGreaterThan(0);
+    for (const row of judged) {
+      expect(row.cost_usd).toBe(0);
+      expect(row.budget_cost_usd as number).toBeGreaterThan(0);
+    }
+    const budget = buildPostLaunchReport(database, { now: NOW }).budget;
+    expect(budget.spentUsd).toBeGreaterThan(0);
+    expect(budget.assumedUsd).toBeCloseTo(budget.spentUsd);
+  });
+
+  it('③窗口按轮：10 天前开的会话，只评落在窗口里的那一轮', async () => {
+    const tenDaysAgo = NOW - 10 * 24 * HOUR;
+    const yesterday = NOW - 24 * HOUR;
+    insertSession(database, 'chat-long', 'chat', tenDaysAgo);
+    insertTurn(database, 'chat-long', 'turn-old', 1, tenDaysAgo);
+    insertTurn(database, 'chat-long', 'turn-new', 2, yesterday);
+    const replays = {
+      'chat-long': replay('chat-long', [
+        { turnNumber: 1, startTime: tenDaysAgo, blocks: [{ type: 'text', content: '十天前那轮', timestamp: tenDaysAgo }] },
+        { turnNumber: 2, startTime: yesterday, blocks: [{ type: 'text', content: '昨天那轮', timestamp: yesterday }] },
+      ]),
+    };
+    const result = await runPostLaunchScoring(deps(database, replays, async () => ALL_PASS), { days: 7 });
+
+    // K1 按 sessions.start_time 切窗口 ⇒ 这条会话整条落在窗口外，一轮都评不到。
+    expect(scoreRows(database).map((row) => row.turn_id)).toEqual(['turn-new']);
+    expect(result.examinedTurns).toBe(1);
+  });
+
+  it('④每轮续租：锁被别人接管后当场停手，不再评也不再写', async () => {
+    insertSession(database, 'chat-1', 'chat', NOW - HOUR);
+    for (let index = 1; index <= 3; index += 1) {
+      insertTurn(database, 'chat-1', `chat-turn-${index}`, index, NOW - HOUR + index);
+    }
+    const replays = {
+      'chat-1': replay('chat-1', [1, 2, 3].map((turnNumber) => ({
+        turnNumber,
+        startTime: NOW - HOUR + turnNumber,
+        blocks: [{ type: 'text', content: '好了', timestamp: NOW - HOUR + turnNumber } as ReplayBlock],
+      }))),
+    };
+    // 第一轮评完就把锁抢走：续租发生在每一轮开头，第二轮应当立刻停（K1 只在每个会话开头续租，
+    // 单会话内被接管察觉不到，会一路评到底）。
+    const llmCall = vi.fn(async () => {
+      acquireScoringLock(database, 'someone-else', NOW + 40 * 60 * 1000);
+      return ALL_PASS;
+    });
+    const result = await runPostLaunchScoring(deps(database, replays, llmCall));
+
+    expect(llmCall).toHaveBeenCalledTimes(1);
+    expect(result.locked).toBe(true);
+    expect(scoreRows(database)).toHaveLength(1);
+  });
+
+  it('⑦judge 不可用与「压根没叫模型」分开记：只有前者算 judgeUnavailableTurns', async () => {
+    insertSession(database, 'chat-1', 'chat', NOW - HOUR);
+    insertTurn(database, 'chat-1', 'chat-turn-1', 1, NOW - HOUR);
+    insertTurn(database, 'chat-1', 'chat-turn-2', 2, NOW - HOUR + 1);
+    const replays = {
+      'chat-1': replay('chat-1', [1, 2].map((turnNumber) => ({
+        turnNumber,
+        startTime: NOW - HOUR + turnNumber - 1,
+        blocks: [{ type: 'text', content: '好了', timestamp: NOW - HOUR + turnNumber - 1 } as ReplayBlock],
+      }))),
+    };
+    // 抽样额度只给 1：第一轮叫了模型但模型报错，第二轮压根没叫。
+    const result = await runPostLaunchScoring(
+      deps(database, replays, async () => { throw new Error('打分模型没有返回内容'); }),
+      { dailySampleLimit: 1 },
+    );
+
+    expect(result.judgeUnavailableTurns).toBe(1);
+    const models = scoreRows(database).map((row) => row.judge_model).sort();
+    expect(models).toEqual(['not-judged', 'unavailable']);
+    const report = buildPostLaunchReport(database, { now: NOW });
+    expect(report.judgeUnavailableTurns).toBe(1);
+  });
+
+  it('③升级回填：K2 之前落的行，budget_cost_usd 从 cost_usd 补上，今天已花的预算不归零', () => {
+    // 造 K2 之前的表：没有 budget_cost_usd 这一列。
+    const legacy = new Database(':memory:');
+    legacy.exec(`
+      CREATE TABLE telemetry_turn_scores (
+        turn_id TEXT PRIMARY KEY, session_id TEXT NOT NULL, scored_at INTEGER NOT NULL,
+        scored_day TEXT NOT NULL, turn_started_at INTEGER NOT NULL,
+        app_version TEXT, prompt_version TEXT, judge_version TEXT NOT NULL, rubric_version TEXT NOT NULL,
+        judge_model TEXT, prompt_hash TEXT,
+        dim_goal INTEGER, dim_orchestration INTEGER, dim_tools INTEGER,
+        dim_permission INTEGER, dim_safety INTEGER, dim_artifact INTEGER,
+        failure_class TEXT, reason_redacted TEXT, redacted INTEGER NOT NULL DEFAULT 0,
+        signals TEXT NOT NULL DEFAULT '[]', cost_usd REAL NOT NULL DEFAULT 0, sampled_by TEXT NOT NULL
+      )
+    `);
+    const day = localDay(NOW);
+    legacy.prepare(`
+      INSERT INTO telemetry_turn_scores (turn_id, session_id, scored_at, scored_day, turn_started_at,
+        judge_version, rubric_version, cost_usd, sampled_by)
+      VALUES ('old-turn', 'chat-1', ?, ?, ?, ?, 'postlaunch-rubric-v1', 0.3, 'sample')
+    `).run(NOW, day, NOW - HOUR, POST_LAUNCH_JUDGE_VERSION);
+
+    // 升级
+    applyTelemetrySchema(legacy, LOGGER);
+
+    // 预算查询只累计 budget_cost_usd：不回填的话这里是 0，用户当天能把上限再花满一遍。
+    const budget = getBudgetState(legacy, day, { limitUsd: 0.5, sampleLimit: 20 });
+    expect(budget.spentUsd).toBeCloseTo(0.3);
+    // 回填的钱是真刊例，不是兜底估算 ⇒ assumedUsd 仍是 0
+    expect(budget.assumedUsd).toBeCloseTo(0);
+
+    // 幂等：再升一次不会把已经对上的行改坏
+    applyTelemetrySchema(legacy, LOGGER);
+    expect(getBudgetState(legacy, day, { limitUsd: 0.5, sampleLimit: 20 }).spentUsd).toBeCloseTo(0.3);
+    legacy.close();
+  });
+
+  it('②报告侧也剔分母：升级前已落的 cli_ 探针分数行不进比率，但它花的钱照算（ai-review #1650 第 2 轮②）', () => {
+    // 打分器只管新写入；这两行是 K2 之前就躺在表里的（爸真库里那 48 行大半是这批）。
+    insertSession(database, 'chat-manual', 'chat', NOW - HOUR, 'manual');
+    insertSession(database, 'cli_session_1788581520765_10a7e1aa', 'chat', NOW - HOUR, null);
+    const day = localDay(NOW);
+    const insertScore = database.prepare(`
+      INSERT INTO telemetry_turn_scores (turn_id, session_id, scored_at, scored_day, turn_started_at,
+        app_version, prompt_version, judge_version, rubric_version, judge_model,
+        dim_goal, dim_safety, dim_artifact, signals, cost_usd, budget_cost_usd, sampled_by)
+      VALUES (?, ?, ?, ?, ?, '0.33.0', 'p7', ?, 'postlaunch-rubric-v1', ?, ?, 1, 1, '[]', 0.1, 0.1, 'sample')
+    `);
+    insertScore.run('t-manual', 'chat-manual', NOW, day, NOW - HOUR, POST_LAUNCH_JUDGE_VERSION, 'deepseek/x', 1);
+    insertScore.run('t-probe', 'cli_session_1788581520765_10a7e1aa', NOW, day, NOW - HOUR, POST_LAUNCH_JUDGE_VERSION, 'unavailable', 0);
+
+    const report = buildPostLaunchReport(database, { now: NOW });
+
+    // 比率只算真实用户会话那一行：goal 判了 1 轮、过了 1 轮（探针那行 goal=0 不该把它拉下来）
+    expect(report.scoredTurns).toBe(1);
+    const [group] = report.groups;
+    expect(group.rows.find((row) => row.scope === 'sample')!.dims.goal).toEqual({ judged: 1, passed: 1 });
+    expect(group.sessionIds).toEqual(['chat-manual']);
+    // 探针那行的 judge_model='unavailable' 也不该拿去吓用户
+    expect(report.judgeUnavailableTurns).toBe(0);
+    // 但钱是真花了：两行的成本都留在账上，预算也两行都算
+    expect(group.costUsd).toBeCloseTo(0.2);
+    expect(report.budget.spentUsd).toBeCloseTo(0.2);
+  });
+
+  it('Nit②预留不足的停评要传到报告：spent 没到上限、但塞不下一次调用时也算停评', () => {
+    insertSession(database, 'chat-1', 'chat', NOW - HOUR, 'manual');
+    const day = localDay(NOW);
+    database.prepare(`
+      INSERT INTO telemetry_turn_scores (turn_id, session_id, scored_at, scored_day, turn_started_at,
+        judge_version, rubric_version, judge_model, dim_goal, signals, cost_usd, budget_cost_usd, sampled_by)
+      VALUES ('t1', 'chat-1', ?, ?, ?, ?, 'postlaunch-rubric-v1', 'deepseek/x', 1, '[]', 0.2, 0.2, 'sample')
+    `).run(NOW, day, NOW - HOUR, POST_LAUNCH_JUDGE_VERSION);
+
+    // 已花 0.2 / 上限 0.25：老判据 spent >= limit 是 false ⇒ 卡片显示「还能评」，
+    // 可下一次调用估 0.1，实际早就停了。
+    expect(buildPostLaunchReport(database, { now: NOW, dailyBudgetUsd: 0.25 }).budget.stopped).toBe(false);
+    expect(buildPostLaunchReport(database, { now: NOW, dailyBudgetUsd: 0.25, reserveUsd: 0.1 }).budget.stopped).toBe(true);
+    // 预留塞得下就仍然不算停评
+    expect(buildPostLaunchReport(database, { now: NOW, dailyBudgetUsd: 0.5, reserveUsd: 0.1 }).budget.stopped).toBe(false);
   });
 
   it('子迭代的块并进它的 user 父轮：agentic loop 不把一轮拆成多轮', async () => {

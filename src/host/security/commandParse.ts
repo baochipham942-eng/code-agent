@@ -420,15 +420,23 @@ function parseEntries(command: string): {
 }
 
 function expandExecutions(
-  words: string[],
+  wordsInput: string[],
   originalProgram: string,
   wrappers: string[],
   depth: number,
 ): { executions: ShellExecution[]; targets: ShellWriteTarget[]; uncertain: string[]; failed?: string } {
+  let words = wordsInput;
   if (words.length === 0) return { executions: [], targets: [], uncertain: [] };
   if (depth > MAX_WRAPPER_DEPTH) {
     return { executions: [], targets: [], uncertain: [], failed: 'shell wrapper depth exceeds 4' };
   }
+
+  // `MODE=1 tee src/x.ts` — a segment may start with env assignments. Reading the first word as the
+  // program makes `MODE=1` the program and tee's write target never reaches the path deny check.
+  let start = 0;
+  while (start < words.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(words[start])) start += 1;
+  if (start >= words.length) return { executions: [], targets: [], uncertain: [] };
+  words = words.slice(start);
 
   const program = basename(words[0]);
   let args = words.slice(1);

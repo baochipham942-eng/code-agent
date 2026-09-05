@@ -151,6 +151,19 @@ describe('shared shell command parser', () => {
       .toEqual(['allowed.txt']);
   });
 
+  it.each([
+    'MODE=1 tee src/x.ts',
+    'A=1 B=2 tee src/x.ts',
+    "MODE=1 sed -i 's/a/b/' src/x.ts",
+  ])('strips leading env assignments so the real write target survives: %s', (command) => {
+    // Reading MODE=1 as the program loses tee/sed's target and the path deny never fires.
+    expect(parseShellCommand(command).writeTargets.map((t) => t.path)).toContain('src/x.ts');
+  });
+
+  it('a segment that is only assignments has no program and no target', () => {
+    expect(parseShellCommand('MODE=1')).toMatchObject({ writeTargets: [] });
+  });
+
   it('does not treat a shell name used as a plain argument as a launcher', () => {
     expect(parseShellCommand('grep sh file')).toMatchObject({ writeTargets: [], uncertain: [] });
   });

@@ -275,6 +275,10 @@ const MOCK_REAL_ONLY_CASE_IDS = Object.freeze([
   'multi-turn-misunderstand-fix',
   'multiagent-cross-file-analysis',
   'multiagent-workflow-analysis',
+  // 插件面两题：mock adapter 不调工具，做不出「插件工具被调到」这个唯一有效信号；
+  // 造个 fixture 假装调过 = 把本单要测的那格判成永远通过。
+  'plugin-browser-local-page',
+  'plugin-validate-html-selfcheck',
   'ppt-from-outline',
   'prompt-smoke-read-package',
   'recovery-binary-file',

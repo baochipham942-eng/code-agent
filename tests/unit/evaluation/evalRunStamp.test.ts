@@ -54,6 +54,7 @@ function stampOptions(
   caseDir: string,
   shape: EvalRunStamp['shape'] = {
     skills: [...EVAL_AGENT_DEFAULTS.skills],
+    plugins: [],
     memory: EVAL_AGENT_DEFAULTS.persistLongTermMemory,
     swarm: EVAL_GOAL_ALLOW_SWARM,
     harness: null,
@@ -116,13 +117,19 @@ describe('eval run stamp', () => {
     const evalStamp = buildRunStamp(stampOptions(root, caseDir));
     expect(evalStamp.divergesFromProduction).toContain('memory');
 
+    // eval 默认不起插件系统 ⇒ 插件面与生产默认不同，这是本轮形态的真实读数
+    expect(evalStamp.divergesFromProduction).toContain('plugins');
+    expect(production.plugins.length).toBeGreaterThan(0);
+
     const memoryAligned = buildRunStamp(stampOptions(root, caseDir, {
       skills: [],
+      plugins: [...production.plugins],
       memory: production.memory,
       swarm: false,
       harness: null,
     }));
     expect(memoryAligned.divergesFromProduction).not.toContain('memory');
+    expect(memoryAligned.divergesFromProduction).not.toContain('plugins');
   });
 
   it('records only the API-key source for env, project file, and home file', async () => {

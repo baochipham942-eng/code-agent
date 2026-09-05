@@ -1,6 +1,6 @@
 import type { EvalRunStamp } from '@shared/contract/evaluation';
 import { SCAFFOLD_PROFILE } from '@shared/constants/agent';
-import { AGENT_RUNTIME_DEFAULTS } from '@host/agent/agentRuntimeDefaults';
+import { AGENT_RUNTIME_DEFAULTS, getDefaultInstalledBuiltinPluginIds } from '@host/agent/agentRuntimeDefaults';
 import { DEFAULT_GOAL_ALLOW_SWARM } from '@host/agent/goalModeController';
 import { resolveScaffoldProfileForModel } from '@host/agent/runtime/scaffoldProfile';
 import { DEFAULT_COMPRESSION_PIPELINE_ENABLED } from '@host/context/compressionPipeline';
@@ -16,8 +16,11 @@ export function resolveProductionShape(model: string): RunShape {
   const skills = Object.values(DEFAULT_ENABLED_SKILLS).flat();
   const scaffold = resolveScaffoldProfileForModel(model);
 
+  const plugins = getDefaultInstalledBuiltinPluginIds();
+
   return {
     skills,
+    plugins,
     memory: AGENT_RUNTIME_DEFAULTS.persistLongTermMemory,
     swarm: DEFAULT_GOAL_ALLOW_SWARM,
     harness: {

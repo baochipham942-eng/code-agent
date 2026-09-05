@@ -203,7 +203,7 @@ function divergentShapeKeys(
   actual: EvalRunStamp['shape'],
   production: EvalRunStamp['shape'],
 ): string[] {
-  return (['skills', 'memory', 'swarm', 'harness'] as const)
+  return (['skills', 'plugins', 'memory', 'swarm', 'harness'] as const)
     .filter((key) => stableJson(actual[key]) !== stableJson(production[key]));
 }
 

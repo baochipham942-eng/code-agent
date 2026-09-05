@@ -10,6 +10,7 @@ const SPLIT_LABELS: Record<EvalRunStamp['evalSet']['split'], string> = {
 
 const DIFFERENCE_LABELS: Record<string, string> = {
   skills: '可用技能',
+  plugins: '插件面',
   memory: '长期记忆',
   swarm: '多智能体',
   harness: '运行配置',
@@ -54,6 +55,7 @@ function formatShape(stamp: EvalRunStamp): string {
     : '未单独指定';
   return [
     `技能：${stamp.shape.skills.length ? stamp.shape.skills.join('、') : '无'}`,
+    `插件：${stamp.shape.plugins?.length ? stamp.shape.plugins.join('、') : '无'}`,
     `长期记忆：${stamp.shape.memory ? '开' : '关'}`,
     `多智能体：${stamp.shape.swarm ? '开' : '关'}`,
     `运行配置：${harnessSummary}`,

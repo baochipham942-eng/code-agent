@@ -150,7 +150,7 @@ async function setBaseline(experimentId: string): Promise<EvalBaselineSetResult>
     },
     stamp: {
       caseBankSha: config.caseBankSha as string,
-      shape: shape ?? { skills: [], memory: false, swarm: false, harness: null },
+      shape: shape ?? { skills: [], plugins: [], memory: false, swarm: false, harness: null },
       divergesFromProduction: differences,
     },
     aggregationRule: storedSummary.aggregationRule,

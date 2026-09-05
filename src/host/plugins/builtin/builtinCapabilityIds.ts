@@ -1,4 +1,4 @@
-const BUILTIN_CAPABILITY_IDS = [
+export const BUILTIN_CAPABILITY_IDS = [
   'builtin.imageProcess',
   'builtin.audioProcessing',
   'builtin.videoGeneration',

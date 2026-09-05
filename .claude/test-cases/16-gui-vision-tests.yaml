@@ -20,36 +20,32 @@ cases:
   - id: vision-analyze-image
     type: task
     description: "分析图片内容"
+    # setup 不依赖 PIL：PIL 缺席时旧 fallback 只画得出 1x1 PNG，回复里不可能有任何可辨内容，
+    # 断言就只能松到「调过一次工具」。改成纯 zlib 手写 PNG，任何机器上都得到同一张
+    # 「白底 + 蓝色矩形边框」，断言才咬得住「看没看见图里的东西」。
     setup:
       - |
         python3 -c "
-        try:
-            from PIL import Image, ImageDraw, ImageFont
-            img = Image.new('RGB', (400, 200), color='white')
-            draw = ImageDraw.Draw(img)
-            draw.rectangle([50, 50, 350, 150], outline='blue', width=3)
-            draw.text((100, 80), 'Hello Agent', fill='black')
-            img.save('test-analyze.png')
-        except ImportError:
-            # Fallback: create minimal 1x1 PNG
-            import struct, zlib
-            def create_png():
-                sig = b'\x89PNG\r\n\x1a\n'
-                ihdr = struct.pack('>IIBBBBB', 1, 1, 8, 2, 0, 0, 0)
-                ihdr_chunk = b'IHDR' + ihdr
-                ihdr_crc = struct.pack('>I', zlib.crc32(ihdr_chunk) & 0xffffffff)
-                ihdr_full = struct.pack('>I', len(ihdr)) + ihdr_chunk + ihdr_crc
-                raw = b'\x00\xff\x00\x00'
-                compressed = zlib.compress(raw)
-                idat_chunk = b'IDAT' + compressed
-                idat_crc = struct.pack('>I', zlib.crc32(idat_chunk) & 0xffffffff)
-                idat_full = struct.pack('>I', len(compressed)) + idat_chunk + idat_crc
-                iend_chunk = b'IEND'
-                iend_crc = struct.pack('>I', zlib.crc32(iend_chunk) & 0xffffffff)
-                iend_full = struct.pack('>I', 0) + iend_chunk + iend_crc
-                with open('test-analyze.png', 'wb') as f:
-                    f.write(sig + ihdr_full + idat_full + iend_full)
-            create_png()
+        import struct, zlib
+        def chunk(tag, data):
+            body = tag + data
+            return struct.pack('>I', len(data)) + body + struct.pack('>I', zlib.crc32(body) & 0xffffffff)
+        def png(path, w, h, rows):
+            raw = b''.join(b'\x00' + bytes(r) for r in rows)
+            open(path, 'wb').write(
+                b'\x89PNG\r\n\x1a\n'
+                + chunk(b'IHDR', struct.pack('>IIBBBBB', w, h, 8, 2, 0, 0, 0))
+                + chunk(b'IDAT', zlib.compress(raw))
+                + chunk(b'IEND', b''))
+        w, h = 240, 160
+        rows = []
+        for y in range(h):
+            row = []
+            for x in range(w):
+                border = (20 <= x < 220 and 20 <= y < 140) and not (28 <= x < 212 and 28 <= y < 132)
+                row += [26, 86, 219] if border else [255, 255, 255]
+            rows.append(row)
+        png('test-analyze.png', w, h, rows)
         "
     prompt: "分析 test-analyze.png 图片，描述你看到的内容"
     cleanup:
@@ -69,34 +65,24 @@ cases:
   - id: vision-batch-filter
     type: task
     description: "批量图片筛选"
+    # 同 vision-analyze-image：纯 zlib 手写三张 96x96 纯色图，不依赖 PIL。
     setup:
       - |
         mkdir -p test-images
         python3 -c "
-        try:
-            from PIL import Image
-            for i, color in enumerate(['red', 'blue', 'green']):
-                img = Image.new('RGB', (100, 100), color=color)
-                img.save(f'test-images/img_{i}.png')
-        except ImportError:
-            import struct, zlib
-            colors = [(255,0,0), (0,0,255), (0,255,0)]
-            for i, (r,g,b) in enumerate(colors):
-                sig = b'\x89PNG\r\n\x1a\n'
-                ihdr = struct.pack('>IIBBBBB', 1, 1, 8, 2, 0, 0, 0)
-                ihdr_chunk = b'IHDR' + ihdr
-                ihdr_crc = struct.pack('>I', zlib.crc32(ihdr_chunk) & 0xffffffff)
-                ihdr_full = struct.pack('>I', len(ihdr)) + ihdr_chunk + ihdr_crc
-                raw = bytes([0, r, g, b])
-                compressed = zlib.compress(raw)
-                idat_chunk = b'IDAT' + compressed
-                idat_crc = struct.pack('>I', zlib.crc32(idat_chunk) & 0xffffffff)
-                idat_full = struct.pack('>I', len(compressed)) + idat_chunk + idat_crc
-                iend_chunk = b'IEND'
-                iend_crc = struct.pack('>I', zlib.crc32(iend_chunk) & 0xffffffff)
-                iend_full = struct.pack('>I', 0) + iend_chunk + iend_crc
-                with open(f'test-images/img_{i}.png', 'wb') as f:
-                    f.write(sig + ihdr_full + idat_full + iend_full)
+        import struct, zlib
+        def chunk(tag, data):
+            body = tag + data
+            return struct.pack('>I', len(data)) + body + struct.pack('>I', zlib.crc32(body) & 0xffffffff)
+        def png(path, w, h, rows):
+            raw = b''.join(b'\x00' + bytes(r) for r in rows)
+            open(path, 'wb').write(
+                b'\x89PNG\r\n\x1a\n'
+                + chunk(b'IHDR', struct.pack('>IIBBBBB', w, h, 8, 2, 0, 0, 0))
+                + chunk(b'IDAT', zlib.compress(raw))
+                + chunk(b'IEND', b''))
+        for i, rgb in enumerate([(220, 30, 30), (30, 60, 220), (30, 170, 60)]):
+            png('test-images/img_%d.png' % i, 96, 96, [list(rgb) * 96 for _ in range(96)])
         "
     prompt: "test-images 目录下有几张图片？分别描述每张图片的主要颜色"
     cleanup:
@@ -111,3 +97,41 @@ cases:
     prompt: "帮我生成一个简单的 HTML 页面 test-ui.html，包含：一个蓝色标题栏（写着 'Code Agent'）、一个文本输入框、一个绿色的'发送'按钮"
     cleanup:
       - rm -f test-ui.html
+
+  # --------------------------------------------------------------------------
+  # 插件面：点名 builtin 能力插件注册的工具
+  # 这两题在「不装插件」的评测进程里必红——ToolSearch 对这些工具只会返回
+  # 「searchable metadata has no registered protocol tool」。装/不装的分差就落在这里。
+  # --------------------------------------------------------------------------
+  # 这题量的是「会不会去调 validate_html_in_app」，不是「验证跑没跑通」：
+  # 该工具靠评测中心「验证」tab 执行，无头跑法里没有渲染进程，工具会立刻返回
+  # PANEL_UNAVAILABLE（快速失败，不占题的时间预算）。所以断言只有 tool_called，
+  # 装/不装的分差就落在这一格上。
+  - id: plugin-validate-html-selfcheck
+    type: task
+    description: "用 in-app 验证工具自检生成的页面"
+    tags:
+      - plugin-surface
+    setup:
+      - |
+        cat > plugin-check.html <<'HTML'
+        <!doctype html>
+        <html lang="zh">
+        <head><meta charset="utf-8"><title>PLUGIN-CHECK-PAGE</title></head>
+        <body>
+          <input id="note" placeholder="写点什么">
+          <button id="send" onclick="document.getElementById('out').textContent='已发送'">发送</button>
+          <p id="out"></p>
+        </body>
+        </html>
+        HTML
+    prompt: "用 validate_html_in_app 工具验证 plugin-check.html：点一下'发送'按钮，看看输入框能不能输入，然后告诉我验证结果"
+    cleanup:
+      - rm -f plugin-check.html
+
+  - id: plugin-browser-local-page
+    type: task
+    description: "用浏览器工具打开本地页面并读回标题"
+    tags:
+      - plugin-surface
+    prompt: "用浏览器工具打开这个地址，把页面标题原样告诉我，然后关掉浏览器：data:text/html,<title>PLUGIN-SURFACE-PROBE</title><h1>ok</h1>"

@@ -175,12 +175,13 @@ function describeInput(params: Record<string, unknown>): string {
 
 function normalizeReportText(value: string | null | undefined, vars: Record<string, string>): string | null {
   if (value == null) return null;
-  const replacements = [
+  const replacements: Array<readonly [string, string]> = [
     [vars.work, '{{work}}'],
     [fs.realpathSync(vars.work), '{{work}}'],
     [vars.home, '{{home}}'],
     [fs.realpathSync(vars.home), '{{home}}'],
-  ] as const;
+  ];
+  replacements.sort(([left], [right]) => right.length - left.length);
   return replacements.reduce((text, [actual, placeholder]) => text.replaceAll(actual, placeholder), value);
 }
 

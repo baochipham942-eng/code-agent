@@ -146,6 +146,9 @@ export function buildProtocolContext(input: ProtocolContextInput): ProtocolToolC
     currentToolCallId: legacy?.currentToolCallId as string | undefined,
     spawnDepth: legacy?.spawnDepth as number | undefined,
     spawnMaxDepth: legacy?.spawnMaxDepth as number | undefined,
+    // 漏搬 = 委派链上「一律走审批 handler」的契约断在这里，子代理照旧自动放行，
+    // 而单测里直接注入子代理上下文又永远是通的（同 executeTool 那条的教训）。
+    forcePermissionHandler: legacy?.forcePermissionHandler as boolean | undefined,
     spawnTreeId: legacy?.spawnTreeId as string | undefined,
     swarmRunScope: legacy?.swarmRunScope as ProtocolToolContext['swarmRunScope'],
     spawnQueueTimeoutMs: legacy?.spawnQueueTimeoutMs as number | undefined,

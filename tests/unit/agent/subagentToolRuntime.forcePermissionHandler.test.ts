@@ -1,16 +1,21 @@
 // ============================================================================
-// N-EVAL-ORCHARM-REALCASE · ai-review 第 1 轮 Important
+// N-EVAL-ORCHARM-REALCASE · ai-review 第 1、2 轮 Important
 // ============================================================================
 // 病：评测放行 Task 之后，子代理成了绕开 scripted 审批策略的新通道。
 // 父级评测 adapter 装的是 forcePermissionHandler=true（分类器判 approve 也要落到
-// handler），但 createSubagentToolRuntime 建子执行器时没继承它 ⇒ 子代理里凡是分类器
-// 自动放行的工具（WebFetch 等网络只读）压根不进 context.permission.request，
-// 父级策略对它们是瞎的。explore 子代理的工具面就含 WebFetch/WebSearch。
+// handler），但这个契约在委派链上断过两处：
+//   第 1 轮 —— createSubagentToolRuntime 建子执行器时没继承它；
+//   第 2 轮 —— shadowAdapter.buildProtocolContext 逐字段抄 legacy ToolContext 时漏抄，
+//              于是子代理上下文读到 undefined，第 1 轮的修等于没生效。
+// 后果一样：子代理里凡是分类器自动放行的工具（WebFetch 等网络只读）压根不进
+// context.permission.request，父级策略对它们是瞎的。explore 子代理工具面就含 WebFetch。
 //
-// 本文件走**真实** ToolExecutor（只 mock tool resolver 造一个假工具定义），
-// 不是直调 handler，也不是断言构造参数。
-// 反向变异锚点：摘掉 subagentToolRuntime 里 forcePermissionHandler 的透传
-// （或 subagentExecutionContext / ToolContext 那两段），第一个用例立刻红。
+// 所以本文件从**宿主 legacy ToolContext** 起跑完整条真实转换链：
+//   buildProtocolContext → createProtocolSubagentExecutionContext
+//   → createSubagentToolRuntime → 真实 ToolExecutor.execute
+// 只 mock tool resolver（造一个分类器会自动放行的假工具定义），不注入中间上下文。
+// 反向变异锚点：链上任意一段的透传被摘掉（shadowAdapter / subagentExecutionContext /
+// subagentToolRuntime），第一个用例立刻红。
 // ============================================================================
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -32,6 +37,8 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
 }));
 
+import { buildProtocolContext } from '../../../src/host/tools/dispatch/shadowAdapter';
+import { createProtocolSubagentExecutionContext } from '../../../src/host/agent/subagentExecutionContext';
 import { createSubagentToolRuntime } from '../../../src/host/agent/subagentToolRuntime';
 
 /** 评测里父级装的那种 handler：策略没登记的工具一律拒（缺覆盖即拒）。 */
@@ -39,17 +46,41 @@ function scriptedDenyingParent() {
   return vi.fn(async () => false);
 }
 
-function makeRuntime(forcePermissionHandler: boolean | undefined, permissionRequest: ReturnType<typeof scriptedDenyingParent>) {
+/**
+ * 从宿主 legacy ToolContext 起，走真实转换链造出子代理工具执行器。
+ * forcePermissionHandler 只在这一处设，之后每一跳都得自己把它带过去。
+ */
+function runtimeFromLegacyContext(input: {
+  forcePermissionHandler?: boolean;
+  requestPermission: (request: { tool: string }) => Promise<boolean>;
+}) {
+  const legacyCtx = {
+    workingDirectory: '/tmp/workbench',
+    sessionId: 'session-1',
+    abortSignal: new AbortController().signal,
+    requestPermission: input.requestPermission,
+    modelConfig: { provider: 'mock', model: 'mock-model' },
+    resolver: { getDefinition: resolverState.getDefinition },
+    ...(input.forcePermissionHandler !== undefined
+      ? { forcePermissionHandler: input.forcePermissionHandler }
+      : {}),
+  };
+
+  const protocolCtx = buildProtocolContext({
+    workingDirectory: '/tmp/workbench',
+    sessionId: 'session-1',
+    legacyCtx: legacyCtx as never,
+  });
+
+  const subagentCtx = createProtocolSubagentExecutionContext(
+    protocolCtx,
+    // 委派工具传给子代理的 canUseTool：桥回父级 requestPermission。
+    (async (name) => (await input.requestPermission({ tool: name })) ? { allow: true } : { allow: false }) as never,
+    { resolver: { getDefinition: resolverState.getDefinition } as never },
+  );
+
   return createSubagentToolRuntime({
-    context: {
-      sessionId: 'session-1',
-      cwd: '/tmp/workbench',
-      resolver: { getDefinition: resolverState.getDefinition },
-      permission: { request: permissionRequest },
-      events: { emit: vi.fn() },
-      abortSignal: new AbortController().signal,
-      ...(forcePermissionHandler !== undefined ? { forcePermissionHandler } : {}),
-    } as never,
+    context: subagentCtx,
     sessionId: 'session-1',
     effectiveMode: 'default',
     identity: { agentId: 'agent-1', runId: 'run-1' },
@@ -58,7 +89,7 @@ function makeRuntime(forcePermissionHandler: boolean | undefined, permissionRequ
   });
 }
 
-describe('子代理执行器继承父级 forcePermissionHandler', () => {
+describe('委派链原样透传父级 forcePermissionHandler', () => {
   beforeEach(() => {
     resolverState.getDefinition.mockReset();
     resolverState.execute.mockReset();
@@ -74,25 +105,36 @@ describe('子代理执行器继承父级 forcePermissionHandler', () => {
     });
   });
 
-  it('父级 forcePermissionHandler=true 时，分类器自动放行的工具仍要过父级审批，且拒绝生效', async () => {
-    const permissionRequest = scriptedDenyingParent();
-    const { executor } = makeRuntime(true, permissionRequest);
+  it('宿主上下文 forcePermissionHandler=true 时，分类器自动放行的工具经真实转换链后仍要过父级审批', async () => {
+    const requestPermission = scriptedDenyingParent();
+    const { executor } = runtimeFromLegacyContext({
+      forcePermissionHandler: true,
+      requestPermission,
+    });
 
-    const result = await executor.execute('WebFetch', { url: 'https://example.com' }, { sessionId: 'session-1' });
+    const result = await executor.execute(
+      'WebFetch',
+      { url: 'https://example.com' },
+      { sessionId: 'session-1' },
+    );
 
-    expect(permissionRequest).toHaveBeenCalledTimes(1);
-    expect(permissionRequest).toHaveBeenCalledWith(expect.objectContaining({ tool: 'WebFetch' }));
+    expect(requestPermission).toHaveBeenCalledTimes(1);
+    expect(requestPermission).toHaveBeenCalledWith(expect.objectContaining({ tool: 'WebFetch' }));
     expect(result.success).toBe(false);
     expect(resolverState.execute).not.toHaveBeenCalled();
   });
 
   it('缺省（生产路径）行为零变化：分类器自动放行，不打扰父级', async () => {
-    const permissionRequest = scriptedDenyingParent();
-    const { executor } = makeRuntime(undefined, permissionRequest);
+    const requestPermission = scriptedDenyingParent();
+    const { executor } = runtimeFromLegacyContext({ requestPermission });
 
-    const result = await executor.execute('WebFetch', { url: 'https://example.com' }, { sessionId: 'session-1' });
+    const result = await executor.execute(
+      'WebFetch',
+      { url: 'https://example.com' },
+      { sessionId: 'session-1' },
+    );
 
-    expect(permissionRequest).not.toHaveBeenCalled();
+    expect(requestPermission).not.toHaveBeenCalled();
     expect(result.success).toBe(true);
   });
 });

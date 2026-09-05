@@ -26,15 +26,26 @@ telemetry preferences, telemetry health, and diagnostic/log export remain in the
 与 checkout 无关的题表绝对路径；报告保留 `{{work}}` / `{{home}}` 占位符，避免临时工作区
 绝对路径制造假漂移。
 
+旧 checkout 里的 `eval:approval` 可能还没有当前报告 schema，不能让两侧各用自己的 runner。
+固定从一个包含本工具的 harness checkout 取同一份 runner，再用 `--tsconfig` 分别绑定两侧源码；
+这样报告生产器一致，真实 `ToolExecutor` / 审批模块来自各自 checkout。
+
 ```bash
+HARNESS_CHECKOUT=/absolute/checkout-containing-this-harness
+BASELINE_CHECKOUT=/absolute/baseline-checkout
+CANDIDATE_CHECKOUT=/absolute/candidate-checkout
 APPROVAL_TABLES_DIR=/absolute/shared/approval-eval
+APPROVAL_RUNNER="$HARNESS_CHECKOUT/packages/internal/evaluation-center/scripts/approval-eval.ts"
 
-cd /absolute/baseline-checkout
-npm run eval:approval -- --tables "$APPROVAL_TABLES_DIR" --out /tmp/approval-baseline.json
+cd "$BASELINE_CHECKOUT"
+npx tsx --tsconfig "$BASELINE_CHECKOUT/tsconfig.json" "$APPROVAL_RUNNER" \
+  --tables "$APPROVAL_TABLES_DIR" --out /tmp/approval-baseline.json
 
-cd /absolute/candidate-checkout
-npm run eval:approval -- --tables "$APPROVAL_TABLES_DIR" --out /tmp/approval-candidate.json
+cd "$CANDIDATE_CHECKOUT"
+npx tsx --tsconfig "$CANDIDATE_CHECKOUT/tsconfig.json" "$APPROVAL_RUNNER" \
+  --tables "$APPROVAL_TABLES_DIR" --out /tmp/approval-candidate.json
 
+cd "$HARNESS_CHECKOUT"
 npm run eval:approval:diff -- \
   --baseline /tmp/approval-baseline.json \
   --candidate /tmp/approval-candidate.json \

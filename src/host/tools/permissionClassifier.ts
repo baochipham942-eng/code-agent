@@ -829,19 +829,19 @@ export class PermissionClassifier {
     // arguments remain one word while policy checks still consume canonical text.
     const rawTrimmed = command.trim();
     const rawInspection = inspectPermissionCommand(rawTrimmed, startTime);
-    if (rawInspection.outputRedirectionAsk) return rawInspection.outputRedirectionAsk;
     const segments = splitCompoundCommand(rawTrimmed);
     if (!segments || segments.length === 0) {
       return null;
     }
 
     if (segments.length === 1) {
-      return this.classifyBashSegment(segments[0], context, startTime);
+      const result = this.classifyBashSegment(segments[0], context, startTime);
+      return result?.decision === 'deny' ? result : rawInspection.outputRedirectionAsk ?? result;
     }
 
     // 沿用 #1609 的逐段风险分类，同时把 cd 的 cwd 影响传给后续段的路径解析。
     // 不改变 cd 自身或未知段的判决，只修正后续 rm/凭据相对路径的解析基准。
-    let strictest: ClassificationResult | null = null;
+    let strictest: ClassificationResult | null = rawInspection.outputRedirectionAsk ?? null;
     let segmentContext = context;
     let executableSegmentCount = 0;
     for (const segment of segments) {
@@ -858,6 +858,7 @@ export class PermissionClassifier {
     }
 
     if (executableSegmentCount === 0) {
+      if (rawInspection.outputRedirectionAsk) return rawInspection.outputRedirectionAsk;
       return {
         decision: 'approve',
         reason: 'cd 命令',

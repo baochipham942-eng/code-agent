@@ -132,7 +132,10 @@ function descriptorAssessment(
   if (parsed.parsingFailed && parsed.writeTargets.length > 0) {
     uncertain.push(`uncertain-command-analysis:${parsed.failureReason ?? 'parse-failure'}`);
   }
-  uncertain.push(...parsed.uncertain.map((reason) => `uncertain-command-analysis:${reason}`));
+  // A script operand is an unknown executable, not an unresolved write target. The command
+  // approval path still rejects its safe shortcut; do not invent a global-memory write here.
+  uncertain.push(...parsed.uncertain.filter((reason) => reason !== 'shell-script-operand')
+    .map((reason) => `uncertain-command-analysis:${reason}`));
   if (canonical.command.includes(memoryDir) || canonical.command.includes(memoryAlias)) targets.push(memoryDir);
   for (const writeTarget of parsed.writeTargets) {
     const target = writeTarget.path;

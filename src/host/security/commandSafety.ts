@@ -270,6 +270,10 @@ export function isKnownSafeCommand(command: string, shell: ShellKind = defaultSh
   for (const execution of parsed.executions) {
     const { program, args } = execution;
     if (hasPrivilegedOrEvalWrapper(execution)) return false;
+    if (execution.environmentAssignments?.length) return false;
+    // Unwrapping recovers write targets, but must not grant a new automatic-approval identity.
+    // Only the shell/env wrappers already admitted by the baseline retain this shortcut.
+    if (execution.wrappers.some((wrapper) => !['bash', 'sh', 'zsh', 'dash', 'env'].includes(wrapper))) return false;
 
     // 无条件安全
     if (UNCONDITIONALLY_SAFE.has(program)) continue;

@@ -48,6 +48,18 @@ describe('shared parser automatic approval regressions', () => {
     },
   );
 
+  it('distinguishes attached IO numbers from quoted, escaped and separated numeric operands', () => {
+    for (const command of ['cp a b 2>&1', 'mv a b 2>&1', 'tee b 2>&1']) {
+      expect(parseShellCommand(command).writeTargets.map((target) => target.path)).toEqual(['b']);
+    }
+    for (const command of ['cp a b 2 > log', "cp a b '2'>log", 'cp a b "2">log',
+      'cp a b \\2>log', "cp a b 2''>log"]) {
+      expect(parseShellCommand(command).writeTargets.map((target) => target.path)).toContain('2');
+    }
+    expect(parseShellCommand('cp a b word\\ 2>log').writeTargets.map((target) => target.path))
+      .toContain('word 2');
+  });
+
   it('bare newline separates the unsafe second command', () => {
     const command = 'git status\n./cleanup';
     expect(isKnownSafeCommand(command)).toBe(false);

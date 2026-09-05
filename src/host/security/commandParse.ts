@@ -24,6 +24,8 @@ export interface ShellExecution {
   args: string[];
   originalProgram: string;
   wrappers: string[];
+  /** Assignment values can change lookup, loader behavior or shell startup. Never discard them. */
+  environmentAssignments?: string[];
 }
 
 export interface ParsedShellCommand {
@@ -80,6 +82,7 @@ function shellLines(command: string): string[] {
   let result = '';
   let quoteMode: 'plain' | 'single' | 'double' | 'ansi' = 'plain';
   let inComment = false;
+  let atWordStart = true;
   for (let index = 0; index < command.length; index += 1) {
     const character = command[index];
     if (inComment) {
@@ -87,8 +90,18 @@ function shellLines(command: string): string[] {
         lines.push(result);
         result = '';
         inComment = false;
+        atWordStart = true;
       } else result += character;
       continue;
+    }
+    // shell-quote does not distinguish IO numbers from operands. Drop only a plain,
+    // whole numeric word attached to a redirect; quoted/escaped digits and `2 > f` stay data.
+    if (quoteMode === 'plain' && atWordStart && /[0-9]/.test(character)) {
+      const ioNumber = command.slice(index).match(/^[0-9]+(?=[<>])/);
+      if (ioNumber) {
+        index += ioNumber[0].length - 1;
+        continue;
+      }
     }
     if (quoteMode === 'plain' && character === '#'
       && (index === 0 || /[\s;&|()<>]/.test(command[index - 1]))) {
@@ -107,20 +120,24 @@ function shellLines(command: string): string[] {
       }
       result += character;
       if (command[index + 1] !== undefined) result += command[++index];
+      atWordStart = false;
       continue;
     }
     if (quoteMode === 'ansi' && character === '\\') {
       result += character;
       if (command[index + 1] !== undefined) result += command[++index];
+      atWordStart = false;
       continue;
     }
     if (quoteMode === 'plain' && character === '\n') {
       lines.push(result);
       result = '';
+      atWordStart = true;
       continue;
     }
     if (quoteMode === 'plain' && character === '$' && command[index + 1] === "'") {
       quoteMode = 'ansi';
+      atWordStart = false;
       result += `${character}${command[++index]}`;
       continue;
     }
@@ -131,6 +148,8 @@ function shellLines(command: string): string[] {
     } else if (character === "'" && quoteMode === 'ansi') {
       quoteMode = 'plain';
     }
+    atWordStart = quoteMode === 'plain' && /[\s;|&()]/.test(character)
+      && !(character === '&' && /[<>]/.test(command[index - 1] ?? ''));
     result += character;
   }
   lines.push(result);
@@ -469,7 +488,7 @@ function expandExecutions(
   wrappers: string[],
   depth: number,
 ): { executions: ShellExecution[]; targets: ShellWriteTarget[]; uncertain: string[]; failed?: string } {
-  let words = wordsInput;
+  const words = wordsInput;
   if (words.length === 0) return { executions: [], targets: [], uncertain: [] };
   if (depth > MAX_WRAPPER_DEPTH) {
     return { executions: [], targets: [], uncertain: [], failed: 'shell wrapper depth exceeds 4' };
@@ -480,7 +499,13 @@ function expandExecutions(
   let start = 0;
   while (start < words.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(words[start])) start += 1;
   if (start >= words.length) return { executions: [], targets: [], uncertain: [] };
-  words = words.slice(start);
+  if (start > 0) {
+    const nested = expandExecutions(words.slice(start), originalProgram, wrappers, depth);
+    for (const execution of nested.executions) {
+      execution.environmentAssignments = [...words.slice(0, start), ...(execution.environmentAssignments ?? [])];
+    }
+    return nested;
+  }
 
   const program = words[0];
   const programName = basename(program);
@@ -529,7 +554,16 @@ function expandExecutions(
     if (nested.length === 0) {
       return { executions: [], targets: [], uncertain: [`wrapper-without-command:${program}`] };
     }
-    return expandExecutions(nested, originalProgram, [...wrappers, programName], depth + 1);
+    const expanded = expandExecutions(nested, originalProgram, [...wrappers, programName], depth + 1);
+    if (programName === 'env') {
+      const assignments = args.slice(0, commandIndex).filter((arg) => /^[A-Za-z_][A-Za-z0-9_]*=/.test(arg));
+      if (assignments.length > 0) {
+        for (const execution of expanded.executions) {
+          execution.environmentAssignments = [...assignments, ...(execution.environmentAssignments ?? [])];
+        }
+      }
+    }
+    return expanded;
   }
 
   const execution = { program, args, originalProgram, wrappers };

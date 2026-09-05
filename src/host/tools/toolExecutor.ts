@@ -687,6 +687,103 @@ export class ToolExecutor {
       ? nodePath.resolve(this.executionCwd, params.working_directory)
       : this.executionCwd;
 
+    // Hard command denials precede every approval request, including uncertain memory writes.
+    const permStartTime = Date.now();
+    // Security: Pre-execution validation for bash commands
+    let commandValidation: ValidationResult | undefined;
+    let commandAnalysisFailedReason: string | undefined;
+    if (isBashToolName(policyToolName) && params.command) {
+      commandValidation = validateCommand(params.command as string, undefined, {
+        workingDirectory: bashWorkingDirectory,
+        workspaceRoot: this.writeWorkspaceRoot,
+      });
+
+      // Block critical risk commands
+      if (!commandValidation.allowed) {
+        logger.warn('Command blocked by security', {
+          command: maskSensitiveData((params.command as string).substring(0, 100)),
+          reason: commandValidation.reason,
+          flags: commandValidation.securityFlags,
+        });
+
+        // Log security incident
+        if (this.auditEnabled) {
+          const auditLogger = getAuditLogger();
+          auditLogger.logSecurityIncident({
+            sessionId: effectiveSessionId || 'unknown',
+            toolName: executionToolName,
+            incident: `Blocked command: ${commandValidation.reason}`,
+            details: {
+              command: maskSensitiveData((params.command as string).substring(0, 200)),
+              securityFlags: commandValidation.securityFlags,
+            },
+            riskLevel: commandValidation.riskLevel,
+          });
+        }
+
+        // Fire-and-forget: emit PermissionDenied hook
+        options.hookManager?.triggerPermissionDenied(
+          executionToolName, commandValidation.reason || 'security policy', 'policy',
+          effectiveSessionId || 'unknown',
+        ).catch(() => {});
+        recordDecision(executionToolName, params, 'monitor-blocked', commandValidation.reason || 'security', permStartTime, undefined, effectiveSessionId, this.ledgerOrigin);
+
+        return {
+          success: false,
+          error: `Security: Command blocked - ${commandValidation.reason}`,
+        };
+      }
+
+      if (commandValidation.parsingFailed) {
+        commandAnalysisFailedReason = commandValidation.parsingFailureReason ?? 'command tokenization failed';
+        const fingerprint = createHash('sha256')
+          .update(commandValidation.canonicalCommand)
+          .digest('hex');
+        const repeated = effectiveSessionId
+          ? getPermissionModeManager().rememberCommandAnalysisFailure(effectiveSessionId, fingerprint)
+          : false;
+        if (repeated) {
+          const hostReason = commandAnalysisDenialError(executionToolName);
+          const error = hostReason.modelText;
+          logger.warn('Repeated unanalyzable command denied before permission request', {
+            tool: executionToolName,
+            sessionId: effectiveSessionId,
+            fingerprint,
+          });
+          options.hookManager?.triggerPermissionDenied(
+            executionToolName, error, 'runtime', effectiveSessionId || 'unknown',
+          ).catch(() => {});
+          recordDecision(
+            executionToolName,
+            params,
+            'policy-deny',
+            'command_analysis_sticky',
+            permStartTime,
+            undefined,
+            effectiveSessionId,
+            this.ledgerOrigin,
+          );
+          return {
+            success: false,
+            error,
+            metadata: {
+              code: 'COMMAND_ANALYSIS_STICKY_DENY',
+              failureCode: AgentFailureCode.PermissionDenied,
+              hostReason,
+            },
+          };
+        }
+      }
+
+      // Warn about high-risk commands but allow them
+      if (commandValidation.riskLevel === 'high') {
+        logger.warn('High-risk command detected', {
+          command: maskSensitiveData((params.command as string).substring(0, 100)),
+          flags: commandValidation.securityFlags,
+        });
+      }
+    }
+
     // 记忆目录是 directive authority 边界。按 schema 声明的写 effect 判定，
     // 必须先于 Skill 预授权、安全命令和 classifier，任何自动放行都不能越过。
     const directiveMemoryAssessment = assessDirectiveMemoryWrite({
@@ -902,7 +999,6 @@ export class ToolExecutor {
       }
       }
 
-    const permStartTime = Date.now();
     const executionTopology = options.executionTopology ?? this.executionTopology;
     let guardFabricForcesApproval = false;
     let guardFabricTraceStep: import('../../shared/contract/decisionTrace').DecisionStep | undefined;
@@ -1022,101 +1118,6 @@ export class ToolExecutor {
           success: false,
           error: neoTagGuard.reason,
         };
-      }
-    }
-
-    // Security: Pre-execution validation for bash commands
-    let commandValidation: ValidationResult | undefined;
-    let commandAnalysisFailedReason: string | undefined;
-    if (isBashToolName(policyToolName) && params.command) {
-      commandValidation = validateCommand(params.command as string, undefined, {
-        workingDirectory: bashWorkingDirectory,
-        workspaceRoot: this.writeWorkspaceRoot,
-      });
-
-      // Block critical risk commands
-      if (!commandValidation.allowed) {
-        logger.warn('Command blocked by security', {
-          command: maskSensitiveData((params.command as string).substring(0, 100)),
-          reason: commandValidation.reason,
-          flags: commandValidation.securityFlags,
-        });
-
-        // Log security incident
-        if (this.auditEnabled) {
-          const auditLogger = getAuditLogger();
-          auditLogger.logSecurityIncident({
-            sessionId: effectiveSessionId || 'unknown',
-            toolName: executionToolName,
-            incident: `Blocked command: ${commandValidation.reason}`,
-            details: {
-              command: maskSensitiveData((params.command as string).substring(0, 200)),
-              securityFlags: commandValidation.securityFlags,
-            },
-            riskLevel: commandValidation.riskLevel,
-          });
-        }
-
-        // Fire-and-forget: emit PermissionDenied hook
-        options.hookManager?.triggerPermissionDenied(
-          executionToolName, commandValidation.reason || 'security policy', 'policy',
-          effectiveSessionId || 'unknown',
-        ).catch(() => {});
-        recordDecision(executionToolName, params, 'monitor-blocked', commandValidation.reason || 'security', permStartTime, undefined, effectiveSessionId, this.ledgerOrigin);
-
-        return {
-          success: false,
-          error: `Security: Command blocked - ${commandValidation.reason}`,
-        };
-      }
-
-      if (commandValidation.parsingFailed) {
-        commandAnalysisFailedReason = commandValidation.parsingFailureReason ?? 'command tokenization failed';
-        const fingerprint = createHash('sha256')
-          .update(commandValidation.canonicalCommand)
-          .digest('hex');
-        const repeated = effectiveSessionId
-          ? getPermissionModeManager().rememberCommandAnalysisFailure(effectiveSessionId, fingerprint)
-          : false;
-        if (repeated) {
-          const hostReason = commandAnalysisDenialError(executionToolName);
-          const error = hostReason.modelText;
-          logger.warn('Repeated unanalyzable command denied before permission request', {
-            tool: executionToolName,
-            sessionId: effectiveSessionId,
-            fingerprint,
-          });
-          options.hookManager?.triggerPermissionDenied(
-            executionToolName, error, 'runtime', effectiveSessionId || 'unknown',
-          ).catch(() => {});
-          recordDecision(
-            executionToolName,
-            params,
-            'policy-deny',
-            'command_analysis_sticky',
-            permStartTime,
-            undefined,
-            effectiveSessionId,
-            this.ledgerOrigin,
-          );
-          return {
-            success: false,
-            error,
-            metadata: {
-              code: 'COMMAND_ANALYSIS_STICKY_DENY',
-              failureCode: AgentFailureCode.PermissionDenied,
-              hostReason,
-            },
-          };
-        }
-      }
-
-      // Warn about high-risk commands but allow them
-      if (commandValidation.riskLevel === 'high') {
-        logger.warn('High-risk command detected', {
-          command: maskSensitiveData((params.command as string).substring(0, 100)),
-          flags: commandValidation.securityFlags,
-        });
       }
     }
 

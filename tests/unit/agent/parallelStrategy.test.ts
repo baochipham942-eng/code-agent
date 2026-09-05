@@ -35,3 +35,14 @@ it('keeps reads after a write in order instead of hoisting them into the paralle
   expect(prefix.parallelGroup.map((entry) => entry.index)).toEqual([0, 1]);
   expect(prefix.sequentialGroup.map((entry) => entry.index)).toEqual([2, 3]);
 });
+
+it('treats a write-capable Task as a write boundary for later reads while keeping Task fan-out parallel', () => {
+  const call = (id: string, name: string, args: Record<string, unknown>) => ({ id, name, arguments: args });
+  const taskThenRead = classifyToolCalls([call('1', 'Task', { subagent_type: 'coder' }), call('2', 'Read', { file_path: 'a.txt' })]);
+  expect(taskThenRead.parallelGroup.map((entry) => entry.toolCall.name)).toEqual(['Task']);
+  expect(taskThenRead.sequentialGroup.map((entry) => entry.toolCall.name)).toEqual(['Read']);
+
+  const fanout = classifyToolCalls([call('1', 'Task', { subagent_type: 'coder' }), call('2', 'Task', { subagent_type: 'reviewer' })]);
+  expect(fanout.parallelGroup).toHaveLength(2);
+  expect(fanout.sequentialGroup).toEqual([]);
+});

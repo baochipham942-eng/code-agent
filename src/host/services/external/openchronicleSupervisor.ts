@@ -29,7 +29,9 @@ import {
 
 const logger = createLogger('OpenchronicleSupervisor');
 
-const SETTINGS_PATH = join(getUserConfigDir(), 'openchronicle-settings.json');
+function getSettingsPath(): string {
+  return join(getUserConfigDir(), 'openchronicle-settings.json');
+}
 const SHIM_PATHS = [
   join(homedir(), '.local', 'bin', 'openchronicle'),
   '/opt/homebrew/bin/openchronicle',
@@ -90,7 +92,7 @@ async function resolveShim(): Promise<string | null> {
 
 export async function loadSettings(): Promise<OpenchronicleSettings> {
   try {
-    const raw = await fs.readFile(SETTINGS_PATH, 'utf-8');
+    const raw = await fs.readFile(getSettingsPath(), 'utf-8');
     const parsed: unknown = JSON.parse(raw);
     return parseSettings(parsed);
   } catch {
@@ -99,8 +101,9 @@ export async function loadSettings(): Promise<OpenchronicleSettings> {
 }
 
 export async function saveSettings(settings: OpenchronicleSettings): Promise<void> {
+  const settingsPath = getSettingsPath();
   await fs.mkdir(getUserConfigDir(), { recursive: true });
-  await fs.writeFile(SETTINGS_PATH, JSON.stringify(settings, null, 2), 'utf-8');
+  await fs.writeFile(settingsPath, JSON.stringify(settings, null, 2), 'utf-8');
 }
 
 // ---------------------------------------------------------------------------

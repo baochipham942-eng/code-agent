@@ -33,7 +33,9 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({ execut
   }
 
   const statusMeta = getExecutionStatusMeta(execution.status);
-  const displayError = execution.error === 'Cloud execution is not wired yet (N-L3-MINLOOP-SRV).'
+  const displayError = execution.error === 'unsupported_action'
+    ? cc.unsupportedAction
+    : execution.error === 'Cloud execution is not wired yet (N-L3-MINLOOP-SRV).'
     ? cc.cloudExecutionNotWired
     : execution.error?.replace(
       /Cron job run exceeded its \$(\d+(?:\.\d+)?) budget limit\./,

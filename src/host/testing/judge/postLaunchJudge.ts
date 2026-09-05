@@ -87,7 +87,8 @@ function projectTurnForJudge(turn: ReplayTurn, signals: DeterministicSignal[]): 
   };
 }
 
-function buildPostLaunchJudgePrompt(turn: ReplayTurn, signals: DeterministicSignal[]): string {
+/** 编排层要在发调用之前拿到提示词来估这次调用的花费（预算预留），所以是导出的。 */
+export function buildPostLaunchJudgePrompt(turn: ReplayTurn, signals: DeterministicSignal[]): string {
   return [
     POST_LAUNCH_JUDGE_PROMPT,
     '<turn_trace>',

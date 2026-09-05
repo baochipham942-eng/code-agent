@@ -65,6 +65,8 @@ export interface CLIConfig {
   maxIterations?: number;
   /** 当前 run 可见的原生工具白名单；会话指挥台前台脑据此保持窄工具面。 */
   allowedToolNames?: string[];
+  /** 任务宿主启用指挥工具；CLI 默认关闭，web 启用后仍受显式 deny 与工具执行权限约束。 */
+  taskManagerToolsEnabled?: boolean;
   /** 当前 run 的工具禁用名单（CLI --disallowed-tools；与 allowedToolNames 同层语义）。 */
   deniedToolNames?: string[];
   /** 当前 turn 的显式工具作用域；web HTTP 路径据此预载已选连接器/MCP 工具。 */

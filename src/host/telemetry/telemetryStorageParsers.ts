@@ -188,6 +188,7 @@ export function rowToSession(row: Record<string, unknown>): TelemetrySession {
     toolSuccessRate: row.tool_success_rate as number,
     totalErrors: row.total_errors as number,
     sessionType: (row.session_type as TelemetrySession['sessionType']) ?? undefined,
+    originKind: (row.origin_kind as TelemetrySession['originKind']) ?? undefined,
     status: row.status as TelemetrySession['status'],
     agentVersion: (row.agent_version as string | null) ?? undefined,
     promptVersion: (row.prompt_version as string | null) ?? undefined,

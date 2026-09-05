@@ -4,6 +4,7 @@ import fs from 'fs/promises';
 import fsSync from 'fs';
 import path from 'path';
 import { promisify } from 'util';
+import Database from 'better-sqlite3';
 import { getUserDataPath } from '../platform/appPaths';
 
 const execFileAsync = promisify(execFile);
@@ -53,6 +54,10 @@ export interface RuntimeAssetInstallRecord {
   groups: string[];
   nodeModules: string[];
   installedAt: string;
+  installationOrder?: {
+    lastSequence: number;
+    versions: Record<string, number>;
+  };
 }
 
 export interface RuntimeAssetsActiveState {
@@ -302,13 +307,38 @@ async function writeActiveRuntimeAsset(
     assets: {},
   };
 
+  const previousOrder = current.assets[record.assetId]?.installationOrder;
+  if (previousOrder && (
+    !Number.isSafeInteger(previousOrder.lastSequence)
+    || previousOrder.lastSequence < 1
+    || !previousOrder.versions
+    || Object.entries(previousOrder.versions).some(([hash, sequence]) => (
+      !/^[a-f0-9]{64}$/.test(hash)
+      || !Number.isSafeInteger(sequence)
+      || sequence < 1
+      || sequence > previousOrder.lastSequence
+    ))
+    || new Set(Object.values(previousOrder.versions)).size !== Object.keys(previousOrder.versions).length
+  )) {
+    throw new Error(`Invalid runtime asset installation order for ${record.assetId}`);
+  }
+  const sequence = (previousOrder?.lastSequence ?? 0) + 1;
+  if (!Number.isSafeInteger(sequence)) {
+    throw new Error(`Runtime asset installation sequence exhausted for ${record.assetId}`);
+  }
+  // The install lock serializes this increment; commit order and active state together.
+  const installationOrder = {
+    lastSequence: sequence,
+    versions: { ...previousOrder?.versions, [record.expandedSha256]: sequence },
+  };
+
   const next: RuntimeAssetsActiveState = {
     schemaVersion: 1,
     kind: RUNTIME_ASSETS_ACTIVE_KIND,
     updatedAt: record.installedAt,
     assets: {
       ...current.assets,
-      [record.assetId]: record,
+      [record.assetId]: { ...record, installationOrder },
     },
   };
 
@@ -325,6 +355,9 @@ async function cleanupPreviousAssetVersions(
 ): Promise<void> {
   if (keepPrevious < 0) return;
 
+  const order = (await readActiveRuntimeAssets(runtimeBaseDir))?.assets[assetId]?.installationOrder;
+  if (!order) return;
+
   const assetBaseDir = path.join(runtimeBaseDir, assetId);
   let entries: fsSync.Dirent[];
   try {
@@ -334,17 +367,15 @@ async function cleanupPreviousAssetVersions(
     throw error;
   }
 
-  const previous = await Promise.all(
-    entries
-      .filter((entry) => entry.isDirectory() && entry.name !== activeHash)
-      .map(async (entry) => {
-        const fullPath = path.join(assetBaseDir, entry.name);
-        const stat = await fs.stat(fullPath);
-        return { fullPath, mtimeMs: stat.mtimeMs };
-      }),
-  );
+  // Legacy/unrecorded directories have no known order: preserve them, never guess.
+  const previous = entries
+    .filter((entry) => entry.isDirectory() && entry.name !== activeHash && Object.hasOwn(order.versions, entry.name))
+    .map((entry) => ({
+      fullPath: path.join(assetBaseDir, entry.name),
+      sequence: order.versions[entry.name]!,
+    }));
 
-  previous.sort((left, right) => right.mtimeMs - left.mtimeMs);
+  previous.sort((left, right) => right.sequence - left.sequence);
   for (const stale of previous.slice(keepPrevious)) {
     await fs.rm(stale.fullPath, { recursive: true, force: true });
   }
@@ -393,10 +424,20 @@ export async function installRuntimeAssetFromManifest(
   const extractDir = path.join(tempDir, 'extract');
   let reusedExistingInstall = false;
 
-  await fs.mkdir(tempBaseDir, { recursive: true });
-  await fs.rm(tempDir, { recursive: true, force: true });
+  await fs.mkdir(runtimeBaseDir, { recursive: true });
+  // SQLite's write reservation serializes installers across processes. The kernel
+  // releases it on process death; no PID/time-based stale-lock recovery is needed.
+  const installLock = new Database(path.join(runtimeBaseDir, '.install-lock.sqlite'), { timeout: 0 });
+  try {
+    installLock.exec('BEGIN IMMEDIATE');
+  } catch (error) {
+    installLock.close();
+    throw error;
+  }
 
   try {
+    await fs.mkdir(tempBaseDir, { recursive: true });
+    await fs.rm(tempDir, { recursive: true, force: true });
     await extractArchive(archivePath, extractDir);
     const actualExpandedSha256 = await treeHash(extractDir);
     const expandedVerdict = verifyDigestMatch(actualExpandedSha256, expectedExpandedSha256);
@@ -444,6 +485,10 @@ export async function installRuntimeAssetFromManifest(
       reusedExistingInstall,
     };
   } finally {
-    await fs.rm(tempDir, { recursive: true, force: true });
+    try {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    } finally {
+      installLock.close();
+    }
   }
 }

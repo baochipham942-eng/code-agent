@@ -18,6 +18,7 @@ import fs from 'fs';
 import path from 'path';
 import type { CLIConfig, CLIRunResult, CLIGlobalOptions } from './types';
 import type { Message, AgentEvent, PRLink, ModelConfig } from '../shared/contract';
+import { getCompactionCommandMessages } from '../shared/i18n/compactionCommand';
 import { getModelMaxOutputTokens } from '../shared/constants';
 import { createLogger } from '../host/services/infra/logger';
 import { getSessionSkillService } from '../host/services/skills/sessionSkillService';
@@ -51,6 +52,7 @@ export class CLIAgent {
   private config: CLIConfig;
   private messages: Message[] = [];
   private isRunning: boolean = false;
+  private isCompacting = false;
   private currentResult: CLIRunResult | null = null;
   private resolveRun: ((result: CLIRunResult) => void) | null = null;
   private startTime: number = 0;
@@ -150,10 +152,12 @@ export class CLIAgent {
    * 运行单次任务
    */
   async run(prompt: string): Promise<CLIRunResult> {
-    if (this.isRunning) {
+    if (this.isRunning || this.isCompacting) {
       return {
         success: false,
-        error: 'Agent is already running',
+        error: this.isCompacting
+          ? getCompactionCommandMessages(getConfigService().getSettings().ui.language).compacting
+          : 'Agent is already running',
       };
     }
 
@@ -576,6 +580,71 @@ export class CLIAgent {
    */
   getHistory(): Message[] {
     return [...this.messages];
+  }
+
+  /** 手动压缩与自动压缩共用摘要服务，写回后下一轮直接使用压缩后的历史。 */
+  async compactHistory(focusText?: string): Promise<Pick<
+    import('../host/context/compactionService').CompactionServiceResult,
+    'success' | 'reason' | 'beforeTokens' | 'afterTokens' | 'savedTokens'
+  >> {
+    const { estimateTokens } = await import('../host/context/tokenEstimator');
+    const beforeTokens = this.messages.reduce((sum, message) => sum + estimateTokens(message.content), 0);
+    const unchanged = (reason: string) => ({
+      success: false, reason, beforeTokens, afterTokens: beforeTokens, savedTokens: 0,
+    });
+    if (this.isCompacting) return unchanged('compaction_active');
+    if (this.isRunning) return unchanged('run_active');
+    const sessionId = this.sessionId;
+    if (!sessionId) return unchanged('session_unavailable');
+    const history = this.messages;
+    const snapshot = [...history];
+    const historyChanged = () => this.sessionId !== sessionId
+      || this.messages !== history || history.length !== snapshot.length;
+    this.isCompacting = true;
+    try {
+      // replaceMessages replaces the entire projection, so never compact only the loaded window.
+      const session = await getSessionManager().getSession(sessionId, Number.MAX_SAFE_INTEGER);
+      if (!session) return unchanged('session_unavailable');
+      if (historyChanged()) return unchanged('history_changed');
+      // injectContext (and an unpersisted local message) can exist only in memory.
+      // Keep those entries in their live order, anchored before the next persisted ID.
+      const messages = [...session.messages];
+      let insertionIndex = messages.length;
+      for (let index = snapshot.length - 1; index >= 0; index--) {
+        const message = snapshot[index];
+        const persistedIndex = messages.findIndex(({ id }) => id === message.id);
+        if (persistedIndex >= 0) insertionIndex = persistedIndex;
+        else messages.splice(insertionIndex, 0, message);
+      }
+      const { compactMessagesWithSummary } = await import('../host/context/compactionService');
+      const settings = getConfigService().getSettings();
+      const result = await compactMessagesWithSummary({
+        sessionId,
+        source: 'manual_current',
+        messages,
+        preserveRecentCount: settings.contextCompression?.preserveRecentCount,
+        systemPrompt: this.systemPrompt,
+        modelConfig: this.config.modelConfig,
+        hookManager: this.getHookManager() as import('../host/context/compactionHooks').CompactionHookManagerLike | undefined,
+        skipAudit: settings.contextCompression?.auditEnabled === false,
+        focusText,
+      });
+      const outcome = {
+        success: result.success, reason: result.reason,
+        beforeTokens: result.beforeTokens, afterTokens: result.afterTokens, savedTokens: result.savedTokens,
+      };
+      if (!result.success || !result.newMessages) return outcome;
+      if (historyChanged()) return unchanged('history_changed');
+      await getSessionManager().replaceMessages(sessionId, result.newMessages);
+      // The target session has committed successfully, even if the user switched away.
+      // Retain any context injected while persistence was awaiting completion.
+      if (this.sessionId === sessionId && this.messages === history) {
+        this.messages = [...result.newMessages, ...history.slice(snapshot.length)];
+      }
+      return outcome;
+    } finally {
+      this.isCompacting = false;
+    }
   }
 
   /**

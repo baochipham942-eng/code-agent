@@ -1,3 +1,4 @@
+import { applyTestTelemetrySchema } from '../../utils/telemetrySchema';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.unmock('better-sqlite3');
@@ -25,13 +26,7 @@ describe('TelemetryStorage diagnostic bundle queue', () => {
 
   beforeEach(() => {
     dbState.sqlite = new Database(':memory:');
-    dbState.sqlite.exec(`
-      CREATE TABLE telemetry_diagnostic_bundles (
-        id TEXT PRIMARY KEY, session_id TEXT NOT NULL, agent_version TEXT, prompt_version TEXT,
-        tool_schema_version TEXT, trigger_reason TEXT NOT NULL, bundle_version INTEGER NOT NULL DEFAULT 1,
-        built_at INTEGER NOT NULL, bundle TEXT NOT NULL, created_at INTEGER NOT NULL, synced_at INTEGER
-      );
-    `);
+    applyTestTelemetrySchema(dbState.sqlite);
     database = getDatabase();
     originalGetDb = database.getDb.bind(database);
     isReadySpy = vi.spyOn(database, 'isReady', 'get').mockReturnValue(true);

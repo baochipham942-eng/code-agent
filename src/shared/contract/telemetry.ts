@@ -3,7 +3,7 @@
 // ============================================================================
 
 import type { RendererBundleAttemptOutcome } from './update';
-import type { SessionType } from './session';
+import type { SessionOriginKind, SessionType } from './session';
 
 // ----------------------------------------------------------------------------
 // Intent Classification
@@ -243,6 +243,8 @@ export interface TelemetrySession {
   toolSuccessRate: number;
   totalErrors: number;
   sessionType?: SessionType;
+  /** 触发来源。headless = 脚本/CLI 起的会话，不进上线后评测分母（ADR-063 §3）。 */
+  originKind?: SessionOriginKind;
   status: 'recording' | 'completed' | 'error';
 
   // 版本指纹（诊断归因用）：知道这条会话跑的是哪版构建/提示词/工具集

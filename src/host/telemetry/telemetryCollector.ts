@@ -155,6 +155,7 @@ export class TelemetryCollector {
       modelName: config.modelName,
       workingDirectory: config.workingDirectory,
       sessionType: config.sessionType,
+      originKind: config.originKind,
       startTime: Date.now(),
       turnCount: 0,
       totalInputTokens: 0,

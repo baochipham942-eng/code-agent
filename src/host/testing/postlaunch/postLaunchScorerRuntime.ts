@@ -10,22 +10,23 @@ import type BetterSqlite3 from 'better-sqlite3';
 import { CONFIG_DIR_NEW } from '../../../shared/constants/configDir';
 import { resolveModelPrice } from '../../../shared/pricing/resolveModelPrice';
 import {
+  POST_LAUNCH_DISABLED_MESSAGE,
   type PostLaunchReport,
   type PostLaunchScoringRequest,
   type PostLaunchScoringResult,
 } from '../../../shared/contract/postLaunchScore';
 import { getDatabase } from '../../services/core/databaseService';
 import { createLogger } from '../../services/infra/logger';
-import { estimateTokens } from '../../context/tokenEstimator';
 import { getQuickModelRuntimeInfo, quickTask } from '../../model/quickModel';
 import { isTrustedCalibration, loadCalibrationRecordSync } from '../calibration/calibrationRegistry';
 import { loadProjectFailureCodebook } from '../failureCodes';
 import { getPostLaunchPromptHash } from '../judge/postLaunchJudge';
+import { JUDGE_MAX_TOKENS, estimateJudgeCost } from './postLaunchCost';
+import { isPostLaunchScoringEnabled } from './postLaunchGate';
 import { buildPostLaunchReport, type PostLaunchReportOptions } from './postLaunchScoreStore';
 import { runPostLaunchScoring, type PostLaunchScorerDeps, type PostLaunchSessionRow } from './postLaunchScorer';
 
 const logger = createLogger('PostLaunchScorer');
-const JUDGE_MAX_TOKENS = 400;
 
 function costUsd(provider: string, model: string, inputTokens: number, outputTokens: number): number {
   const price = resolveModelPrice(provider, model);
@@ -73,9 +74,7 @@ function createPostLaunchScorerDeps(): PostLaunchScorerDeps {
         judgeModel: `${response.provider ?? 'unknown'}/${response.model ?? 'unknown'}`,
       };
     },
-    estimateJudgeCostUsd: (prompt: string, completion: string) => (
-      judge ? costUsd(judge.provider, judge.model, estimateTokens(prompt), estimateTokens(completion)) : 0
-    ),
+    estimateJudgeCostUsd: (prompt: string, completion?: string) => estimateJudgeCost(judge, prompt, completion),
     estimateTurnCostUsd: (session: PostLaunchSessionRow, inputTokens: number, outputTokens: number) =>
       costUsd(session.modelProvider, session.modelName, inputTokens, outputTokens),
     fileExists: (absolutePath: string) => {
@@ -94,12 +93,17 @@ function createPostLaunchScorerDeps(): PostLaunchScorerDeps {
 export async function runPostLaunchScoringOnHost(
   request: PostLaunchScoringRequest = {},
 ): Promise<PostLaunchScoringResult> {
+  // 关着就不评：这条路会把会话正文发给用户自己配的模型并花他的额度。
+  // 已落库的分数照读照显示（getPostLaunchReportOnHost 不受这道门管）。
+  if (!isPostLaunchScoringEnabled()) throw new Error(POST_LAUNCH_DISABLED_MESSAGE);
   return runPostLaunchScoring(createPostLaunchScorerDeps(), request);
 }
 
 export function getPostLaunchReportOnHost(options: PostLaunchReportOptions = {}): PostLaunchReport {
   return buildPostLaunchReport(requireDb(), {
     ...options,
+    // 空提示词 = 一次 judge 调用的成本下限；连它都塞不进上限就是真的停评了。
+    reserveUsd: options.reserveUsd ?? estimateJudgeCost(getQuickModelRuntimeInfo(), '').usd,
     calibration: options.calibration ?? inspectPostLaunchCalibration(path.join(process.cwd(), CONFIG_DIR_NEW)),
   });
 }

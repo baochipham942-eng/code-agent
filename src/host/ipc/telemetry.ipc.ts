@@ -187,6 +187,7 @@ export function registerTelemetryHandlers(getMainWindow: () => AppWindow | null)
 
   // 触发上线后评分：会真调 judge 模型、花用户自己的额度。渲染层只能给 days（钳到 1–30），
   // 日预算与抽样上限一律用 host 默认——这是花钱的信任边界，不接受渲染层改上限（ai-review #1645 第四轮）。
+  // 关着的时候这条通道直接拒（runPostLaunchScoringOnHost 里那道门），报错文案是人话不是错误码。
   ipcHost.handle(TELEMETRY_CHANNELS.RUN_POSTLAUNCH_SCORING, async (_event, payload?: { days?: number }) => {
     assertAdminAccess('Telemetry');
     const { runPostLaunchScoringOnHost } = await import('../testing/postlaunch/postLaunchScorerRuntime');

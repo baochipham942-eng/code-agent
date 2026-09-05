@@ -89,6 +89,7 @@ export function buildLegacyCtxFromProtocol(
     agentRole: ctx.subagent?.agentRole,
     spawnDepth: ctx.spawnDepth,
     spawnMaxDepth: ctx.spawnMaxDepth,
+    forcePermissionHandler: ctx.forcePermissionHandler,
     spawnTreeId: ctx.spawnTreeId,
     swarmRunScope: ctx.swarmRunScope,
     spawnQueueTimeoutMs: ctx.spawnQueueTimeoutMs,

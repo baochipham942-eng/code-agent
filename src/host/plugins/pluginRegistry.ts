@@ -854,6 +854,20 @@ export function getPluginRegistry(): PluginRegistry {
   return pluginRegistry;
 }
 
+/**
+ * 本进程此刻真正激活的 builtin 插件 id。
+ *
+ * run stamp 的 `shape.plugins` 取这里而不取「请求装哪些」——请求值不等于结果：
+ * 平台不匹配 / 依赖缺席 / activate 抛错都会让插件停在 error 态，而戳记若抄请求值，
+ * 报告上就会写着装了、实际工具面空着（本单要测的正是这一格）。
+ */
+export function getActiveBuiltinPluginIds(): string[] {
+  return pluginRegistry.getPlugins()
+    .filter((plugin) => plugin.state === 'active' && plugin.rootPath.startsWith('builtin:'))
+    .map((plugin) => plugin.manifest.id)
+    .sort();
+}
+
 export async function initPluginSystem(): Promise<void> {
   const { getRemoteCapabilityRegistryService } = await import('../services/capabilities/remoteCapabilityRegistryService');
   await getRemoteCapabilityRegistryService().readRegistry();

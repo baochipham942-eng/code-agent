@@ -10,7 +10,7 @@
 //   - 越权写入：sandboxFailureDiagnostics.ts 的「沙盒拒绝了工作目录外的写入」
 // ============================================================================
 import path from 'node:path';
-import { parseShellCommand } from '../../security/commandParse';
+import { shellWriteTargets } from '../../tools/writeTargets';
 import type { ReplayBlock, ReplayTurn, ReplayToolCall } from '../../../shared/contract/evaluationReplay';
 import {
   POST_LAUNCH_DEFAULTS,
@@ -88,13 +88,11 @@ function toolCallPaths(toolCall: ReplayToolCall): string[] {
   const fromArgs = PATH_ARG_KEYS
     .map((key) => args[key])
     .filter((value): value is string => typeof value === 'string' && value.length > 0);
-  // Bash 的写入载体是 command 里的重定向（`echo x > /tmp/out`），不在路径入参里（ai-review #1645 第三轮）。
-  // 只认 > / >>；cp / mv / tee 之类的写目标没解析，是已知盲区，证据档记着。
+  // Bash 的写入载体是 command 里的重定向（`echo x > /tmp/out`）与 cp / mv / tee 的目标位，
+  // 都不在路径入参里。解析的家在 writeTargets.ts，这里只调（ai-review #1645 第三轮 + 刀 2 第 5 条）。
   const command = args.command;
-  const fromRedirects = typeof command === 'string'
-    ? parseShellCommand(command).writeTargets.filter((target) => target.source === 'redirect').map((target) => target.path)
-    : [];
-  return [...fromArgs, ...fromRedirects];
+  const fromCommand = typeof command === 'string' ? shellWriteTargets(command) : [];
+  return [...fromArgs, ...fromCommand];
 }
 
 /**

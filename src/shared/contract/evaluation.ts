@@ -245,6 +245,12 @@ export interface EvalRunStamp {
   promptVersion: string;
   shape: {
     skills: string[];
+    /**
+     * 本轮真正激活的 builtin 插件 id（`--builtin-plugins` 的结果，非请求值）。
+     * eval 进程默认不起插件系统，所以这里默认是 []——而生产默认装着 7 个 builtin，
+     * 差异会进 divergesFromProduction。空数组是「插件面空着」的真实读数，不是缺省占位。
+     */
+    plugins: string[];
     memory: boolean;
     swarm: boolean;
     harness: {
@@ -300,7 +306,7 @@ export const UNKNOWN_EVAL_RUN_STAMP: EvalRunStamp = {
   k: 1,
   aggregationRuleVersion: 0,
   promptVersion: 'unknown',
-  shape: { skills: [], memory: false, swarm: false, harness: null },
+  shape: { skills: [], plugins: [], memory: false, swarm: false, harness: null },
   divergesFromProduction: ['unknown'],
   keySource: 'none',
   priceTableVersion: 0,

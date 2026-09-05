@@ -12,15 +12,19 @@ import {
   POST_LAUNCH_DIMENSIONS,
   POST_LAUNCH_JUDGE_VERSION,
   POST_LAUNCH_RUBRIC_VERSION,
+  JUDGE_MODEL_UNAVAILABLE,
+  isPostLaunchScorableSession,
   type PostLaunchBudgetState,
   type PostLaunchDimension,
   type PostLaunchDimRate,
   type PostLaunchReport,
   type PostLaunchReportGroup,
+  type PostLaunchReportSession,
   type PostLaunchScopeRow,
   type PostLaunchSignalKind,
   type PostLaunchTurnScore,
 } from '../../../shared/contract/postLaunchScore';
+import { guardTelemetryText } from '../../telemetry/telemetryStorageParsers';
 
 /** 本地日历日（不是 UTC）：日预算按用户看到的「今天」切。 */
 export function localDay(timestamp: number): string {
@@ -45,8 +49,8 @@ export function insertTurnScore(db: BetterSqlite3.Database, score: PostLaunchTur
       turn_id, session_id, scored_at, scored_day, turn_started_at,
       app_version, prompt_version, judge_version, rubric_version, judge_model, prompt_hash,
       dim_goal, dim_orchestration, dim_tools, dim_permission, dim_safety, dim_artifact,
-      failure_class, reason_redacted, redacted, signals, cost_usd, sampled_by
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      failure_class, reason_redacted, redacted, signals, cost_usd, budget_cost_usd, sampled_by
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     score.turnId,
     score.sessionId,
@@ -70,6 +74,7 @@ export function insertTurnScore(db: BetterSqlite3.Database, score: PostLaunchTur
     score.redacted ? 1 : 0,
     JSON.stringify(score.signals),
     score.costUsd,
+    score.budgetCostUsd,
     score.sampledBy,
   );
 }
@@ -125,25 +130,33 @@ export function releaseScoringLock(db: BetterSqlite3.Database, owner: string): v
   db.prepare('DELETE FROM telemetry_turn_scores_lock WHERE id = 1 AND owner = ?').run(owner);
 }
 
+/**
+ * 日预算看的是 budget_cost_usd（含未知价的保守估算），不是展示用的刊例 cost_usd。
+ * `reserveUsd` = 下一次 judge 调用的最低估算：停评判据与打分器一致，是
+ * 「已花 + 下一次要花的 ≥ 上限」而不是「已花 ≥ 上限」，否则预留导致的停评
+ * 卡片上根本显示不出来（ai-review PR #1650 第 3 轮 Nit②）。
+ */
 export function getBudgetState(
   db: BetterSqlite3.Database,
   day: string,
-  limits: { limitUsd: number; sampleLimit: number },
+  limits: { limitUsd: number; sampleLimit: number; reserveUsd?: number },
 ): PostLaunchBudgetState {
   const row = db
     .prepare(`
-      SELECT COALESCE(SUM(cost_usd), 0) AS spent,
+      SELECT COALESCE(SUM(budget_cost_usd), 0) AS spent,
+             COALESCE(SUM(budget_cost_usd - cost_usd), 0) AS assumed,
              COALESCE(SUM(CASE WHEN sampled_by = 'sample' THEN 1 ELSE 0 END), 0) AS sampled
       FROM telemetry_turn_scores WHERE scored_day = ? AND judge_version = ?
     `)
-    .get(day, POST_LAUNCH_JUDGE_VERSION) as { spent: number; sampled: number };
+    .get(day, POST_LAUNCH_JUDGE_VERSION) as { spent: number; assumed: number; sampled: number };
   return {
     day,
     spentUsd: row.spent,
     limitUsd: limits.limitUsd,
     sampledCount: row.sampled,
     sampleLimit: limits.sampleLimit,
-    stopped: row.spent >= limits.limitUsd,
+    assumedUsd: row.assumed,
+    stopped: row.spent + (limits.reserveUsd ?? 0) >= limits.limitUsd,
   };
 }
 
@@ -162,7 +175,16 @@ interface ScoreRow {
   failure_class: string | null;
   signals: string;
   cost_usd: number;
+  judge_model: string | null;
   sampled_by: 'signal' | 'sample';
+  /** 关联会话的来源，用来在报告侧复用同一套分母判定（LEFT JOIN，会话被删了就是 null）。 */
+  session_type: string | null;
+  origin_kind: string | null;
+  /** 芯片上给人看的名字与时间；同样是 LEFT JOIN，会话被删了就是 null。 */
+  session_title: string | null;
+  session_start_time: number | null;
+  /** sessions.title——模型自动起的真标题。遥测那份是开会话那刻的占位快照，之后不回写。 */
+  chat_title: string | null;
 }
 
 const DIM_COLUMN: Record<PostLaunchDimension, keyof ScoreRow> = {
@@ -206,13 +228,39 @@ export interface PostLaunchReportOptions {
   now?: number;
   dailyBudgetUsd?: number;
   dailySampleLimit?: number;
+  /** 下一次 judge 调用的最低估算，用来算「预留不足已停评」。 */
+  reserveUsd?: number;
   calibration?: PostLaunchReport['calibration'];
 }
 
 /**
  * 本机上线后报告：周 × app 版本分组，信号轮 / 抽样轮两行不合并。
  * 与本地表读的是同一批行（同一数据只有这一条路径），卡片不另算。
+ *
+ * 分母判定复用 `isPostLaunchScorableSession`——与打分器同一个函数、同一套口径。
+ * 光在打分时剔不够：K2 之前落的探针分数行（`cli_session_*`）已经在表里，
+ * 只在写入侧把关，读出来的报告照样被它们污染（ai-review PR #1650 第 2 轮②）。
+ * **成本不过滤**：那些轮的钱是真花出去的，从账上抹掉才是假数。
  */
+/**
+ * 芯片标题：优先 sessions.title（模型自动起的真标题），回落 telemetry_sessions.title
+ * （开会话那一刻的占位快照 "CLI Session" / "New Session"——之后模型改标题只写 sessions，
+ * 遥测表不回写，副本 846 条里 567 条两表不一致）。都空则给空串，展示侧回落 id 前 8 位。
+ *
+ * sessions.title 是**裸存**的（SessionRepository.createSession 直接 stmt.run(session.title)，
+ * updateSession 也是 COALESCE(?, title)，两条路径都不脱敏），而 telemetry_sessions.title
+ * 写入时过了 guardTelemetryText。所以这里对 sessions.title 补同一道 guard，
+ * 让两个来源在同一条口径上出报告。
+ *
+ * ponytail: 用 guard 的输出而不是「命中就丢弃」——掩码后的串本来就是可展示的
+ * （遥测那列存的就是掩码结果），而丢弃会让「标题里带了个路径」的会话退回 "CLI Session"，
+ * 正好是本刀要修的病。要改成命中即丢，改这一个函数即可。
+ */
+function sessionTitle(row: Pick<ScoreRow, 'session_title' | 'chat_title'>): string {
+  const live = guardTelemetryText(row.chat_title, 2_000)?.trim();
+  return live || row.session_title?.trim() || '';
+}
+
 export function buildPostLaunchReport(
   db: BetterSqlite3.Database,
   options: PostLaunchReportOptions = {},
@@ -223,22 +271,34 @@ export function buildPostLaunchReport(
   const judgeVersion = options.judgeVersion ?? POST_LAUNCH_JUDGE_VERSION;
   const rows = db
     .prepare(`
-      SELECT turn_id, session_id, turn_started_at, app_version, prompt_version,
-             dim_goal, dim_orchestration, dim_tools, dim_permission, dim_safety, dim_artifact,
-             failure_class, signals, cost_usd, sampled_by
-      FROM telemetry_turn_scores
-      WHERE judge_version = ? AND turn_started_at >= ?
-      ORDER BY turn_started_at DESC
+      SELECT s.turn_id, s.session_id, s.turn_started_at, s.app_version, s.prompt_version,
+             s.dim_goal, s.dim_orchestration, s.dim_tools, s.dim_permission, s.dim_safety, s.dim_artifact,
+             s.failure_class, s.signals, s.cost_usd, s.judge_model, s.sampled_by,
+             sessions.session_type, sessions.origin_kind,
+             sessions.title AS session_title, sessions.start_time AS session_start_time,
+             chat.title AS chat_title
+      FROM telemetry_turn_scores AS s
+      LEFT JOIN telemetry_sessions AS sessions ON sessions.id = s.session_id
+      LEFT JOIN sessions AS chat ON chat.id = s.session_id
+      WHERE s.judge_version = ? AND s.turn_started_at >= ?
+      ORDER BY s.turn_started_at DESC
     `)
     .all(judgeVersion, since) as ScoreRow[];
 
   const groups = new Map<string, PostLaunchReportGroup & {
     failureTally: Map<string, number>;
     signalTally: Map<PostLaunchSignalKind, number>;
-    sessionSet: Set<string>;
+    sessionMap: Map<string, PostLaunchReportSession>;
   }>();
 
+  let scorableTurns = 0;
+  let judgeUnavailableTurns = 0;
   for (const row of rows) {
+    const scorable = isPostLaunchScorableSession({
+      id: row.session_id,
+      sessionType: row.session_type,
+      originKind: row.origin_kind,
+    });
     const week = weekStart(row.turn_started_at);
     const appVersion = row.app_version ?? 'unknown';
     const key = `${week}|${appVersion}|${row.prompt_version ?? ''}`;
@@ -255,17 +315,27 @@ export function buildPostLaunchReport(
         failureClasses: [],
         signals: [],
         costUsd: 0,
-        sessionIds: [],
+        sessions: [],
         failureTally: new Map(),
         signalTally: new Map(),
-        sessionSet: new Set(),
+        sessionMap: new Map(),
       };
       groups.set(key, group);
     }
+    // 成本先记：不进分母的轮也真花了钱，账上不能抹。
+    group.costUsd += row.cost_usd;
+    if (!scorable) continue;
+    scorableTurns += 1;
+    if (row.judge_model === JUDGE_MODEL_UNAVAILABLE) judgeUnavailableTurns += 1;
     // rows 固定两行：[0] 信号轮、[1] 抽样轮（建组时就是这个顺序）。
     accumulate(group.rows[row.sampled_by === 'signal' ? 0 : 1], row);
-    group.costUsd += row.cost_usd;
-    group.sessionSet.add(row.session_id);
+    if (!group.sessionMap.has(row.session_id)) {
+      group.sessionMap.set(row.session_id, {
+        id: row.session_id,
+        title: sessionTitle(row),
+        startedAt: row.session_start_time ?? 0,
+      });
+    }
     if (row.failure_class) {
       group.failureTally.set(row.failure_class, (group.failureTally.get(row.failure_class) ?? 0) + 1);
     }
@@ -287,7 +357,7 @@ export function buildPostLaunchReport(
         .map(([kind, count]) => ({ kind, count }))
         .sort((left, right) => right.count - left.count),
       costUsd: group.costUsd,
-      sessionIds: [...group.sessionSet],
+      sessions: [...group.sessionMap.values()],
     }))
     .sort((left, right) => right.weekStart.localeCompare(left.weekStart));
 
@@ -296,12 +366,14 @@ export function buildPostLaunchReport(
     days,
     judgeVersion,
     rubricVersion: POST_LAUNCH_RUBRIC_VERSION,
-    scoredTurns: rows.length,
+    scoredTurns: scorableTurns,
     groups: reportGroups,
+    judgeUnavailableTurns,
     calibration: options.calibration ?? { state: 'insufficient', reason: 'no_record' },
     budget: getBudgetState(db, localDay(now), {
       limitUsd: options.dailyBudgetUsd ?? POST_LAUNCH_DEFAULTS.dailyBudgetUsd,
       sampleLimit: options.dailySampleLimit ?? POST_LAUNCH_DEFAULTS.dailySampleLimit,
+      reserveUsd: options.reserveUsd,
     }),
   };
 }

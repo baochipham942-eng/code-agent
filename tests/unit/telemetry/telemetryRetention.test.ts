@@ -1,3 +1,4 @@
+import { applyTestTelemetrySchema } from '../../utils/telemetrySchema';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.unmock('better-sqlite3');
@@ -25,47 +26,7 @@ describe('TelemetryStorage.pruneAgedTelemetry', () => {
 
   beforeEach(() => {
     dbState.sqlite = new Database(':memory:');
-    dbState.sqlite.exec(`
-      CREATE TABLE telemetry_sessions (
-        id TEXT PRIMARY KEY, user_id TEXT, title TEXT NOT NULL, model_provider TEXT NOT NULL,
-        model_name TEXT NOT NULL, working_directory TEXT NOT NULL, start_time INTEGER NOT NULL,
-        end_time INTEGER, duration_ms INTEGER, turn_count INTEGER DEFAULT 0,
-        total_input_tokens INTEGER DEFAULT 0, total_output_tokens INTEGER DEFAULT 0,
-        total_tokens INTEGER DEFAULT 0, estimated_cost REAL DEFAULT 0, total_tool_calls INTEGER DEFAULT 0,
-        tool_success_rate REAL DEFAULT 0, total_errors INTEGER DEFAULT 0, session_type TEXT, status TEXT,
-        synced_at INTEGER
-      );
-      CREATE TABLE telemetry_turns (
-        id TEXT PRIMARY KEY, session_id TEXT NOT NULL, turn_number INTEGER NOT NULL,
-        start_time INTEGER NOT NULL, end_time INTEGER NOT NULL, duration_ms INTEGER NOT NULL
-      );
-      CREATE TABLE telemetry_events (
-        id TEXT PRIMARY KEY, turn_id TEXT NOT NULL, session_id TEXT NOT NULL,
-        timestamp INTEGER NOT NULL, event_type TEXT NOT NULL, summary TEXT, data TEXT, duration_ms INTEGER
-      );
-      CREATE TABLE telemetry_model_calls (
-        id TEXT PRIMARY KEY, turn_id TEXT NOT NULL, session_id TEXT NOT NULL,
-        timestamp INTEGER NOT NULL, provider TEXT NOT NULL, model TEXT NOT NULL
-      );
-      CREATE TABLE telemetry_tool_calls (
-        id TEXT PRIMARY KEY, turn_id TEXT NOT NULL, session_id TEXT NOT NULL,
-        tool_call_id TEXT NOT NULL, name TEXT NOT NULL, timestamp INTEGER NOT NULL
-      );
-      CREATE TABLE telemetry_diagnostic_bundles (
-        id TEXT PRIMARY KEY, session_id TEXT NOT NULL, trigger_reason TEXT NOT NULL,
-        bundle_version INTEGER NOT NULL DEFAULT 1, built_at INTEGER NOT NULL, bundle TEXT NOT NULL,
-        created_at INTEGER NOT NULL, synced_at INTEGER
-      );
-      CREATE TABLE system_prompt_cache (
-        hash TEXT PRIMARY KEY, content TEXT NOT NULL, tokens INTEGER, created_at INTEGER NOT NULL
-      );
-      CREATE TABLE tool_schema_cache (
-        hash TEXT PRIMARY KEY, content TEXT NOT NULL, created_at INTEGER NOT NULL
-      );
-      CREATE TABLE content_cache (
-        hash TEXT PRIMARY KEY, content TEXT NOT NULL, created_at INTEGER NOT NULL
-      );
-    `);
+    applyTestTelemetrySchema(dbState.sqlite);
     // 每张重量表塞一条过期 + 一条新鲜
     dbState.sqlite.exec(`
       INSERT INTO telemetry_sessions (id, title, model_provider, model_name, working_directory, start_time, synced_at)

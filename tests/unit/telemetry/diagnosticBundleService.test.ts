@@ -1,3 +1,4 @@
+import { applyTestTelemetrySchema } from '../../utils/telemetrySchema';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import os from 'os';
 import fs from 'fs';
@@ -160,46 +161,12 @@ describe('buildDiagnosticBundle', () => {
 
   beforeEach(() => {
     dbState.sqlite = new Database(':memory:');
+    applyTestTelemetrySchema(dbState.sqlite);
     dbState.sqlite.exec(`
       CREATE TABLE sessions (id TEXT PRIMARY KEY, user_id TEXT, metadata TEXT);
-      CREATE TABLE telemetry_sessions (
-        id TEXT PRIMARY KEY, user_id TEXT, title TEXT NOT NULL, model_provider TEXT NOT NULL,
-        model_name TEXT NOT NULL, working_directory TEXT NOT NULL, start_time INTEGER NOT NULL,
-        end_time INTEGER, duration_ms INTEGER, turn_count INTEGER DEFAULT 0,
-        total_input_tokens INTEGER DEFAULT 0, total_output_tokens INTEGER DEFAULT 0,
-        total_tokens INTEGER DEFAULT 0, estimated_cost REAL DEFAULT 0, total_tool_calls INTEGER DEFAULT 0,
-        tool_success_rate REAL DEFAULT 0, total_errors INTEGER DEFAULT 0, session_type TEXT,
-        status TEXT DEFAULT 'recording', agent_version TEXT, prompt_version TEXT, tool_schema_version TEXT
-      );
-      CREATE TABLE telemetry_turns (
-        id TEXT PRIMARY KEY, session_id TEXT NOT NULL, turn_number INTEGER, start_time INTEGER,
-        end_time INTEGER, duration_ms INTEGER, agent_id TEXT, turn_type TEXT DEFAULT 'user', parent_turn_id TEXT
-      );
-      CREATE TABLE telemetry_model_calls (
-        id TEXT PRIMARY KEY, turn_id TEXT NOT NULL, session_id TEXT NOT NULL, timestamp INTEGER NOT NULL,
-        provider TEXT NOT NULL, model TEXT NOT NULL, temperature REAL, max_tokens INTEGER,
-        input_tokens INTEGER DEFAULT 0, output_tokens INTEGER DEFAULT 0, latency_ms INTEGER DEFAULT 0,
-        response_type TEXT, tool_call_count INTEGER DEFAULT 0, truncated INTEGER DEFAULT 0, error TEXT,
-        fallback_info TEXT, prompt TEXT, completion TEXT,
-        cache_read_tokens INTEGER DEFAULT 0, cache_creation_tokens INTEGER DEFAULT 0
-      );
-      CREATE TABLE telemetry_tool_calls (
-        id TEXT PRIMARY KEY, turn_id TEXT NOT NULL, session_id TEXT NOT NULL, tool_call_id TEXT NOT NULL,
-        name TEXT NOT NULL, arguments TEXT, actual_arguments TEXT, result_summary TEXT, success INTEGER DEFAULT 0,
-        error TEXT, error_category TEXT, computer_surface_failure_kind TEXT, computer_surface_mode TEXT,
-        computer_surface_target_app TEXT, computer_surface_action TEXT, computer_surface_ax_quality_score REAL,
-        computer_surface_ax_quality_grade TEXT, duration_ms INTEGER DEFAULT 0, timestamp INTEGER NOT NULL,
-        idx INTEGER DEFAULT 0, parallel INTEGER DEFAULT 0
-      );
-      CREATE TABLE telemetry_events (
-        id TEXT PRIMARY KEY, turn_id TEXT NOT NULL, session_id TEXT NOT NULL, timestamp INTEGER NOT NULL,
-        event_type TEXT NOT NULL, summary TEXT, data TEXT, duration_ms INTEGER
-      );
-      CREATE TABLE telemetry_raw_payloads (
-        id TEXT PRIMARY KEY, session_id TEXT NOT NULL, turn_id TEXT, ref_kind TEXT NOT NULL,
-        ref_id TEXT NOT NULL, field TEXT NOT NULL, content TEXT, byte_len INTEGER NOT NULL,
-        truncated INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL
-      );
+      
+      
+      
     `);
     database = getDatabase();
     originalGetDb = database.getDb.bind(database);

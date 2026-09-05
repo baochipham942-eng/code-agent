@@ -514,12 +514,15 @@ interface PersistedTask {
   status: 'running' | 'completed' | 'failed';
 }
 
-const PERSISTENCE_FILE = path.join(getUserConfigDir(), 'background-tasks.json');
+function getPersistenceFile(): string {
+  return path.join(getUserConfigDir(), 'background-tasks.json');
+}
 
 /**
  * Save running tasks for recovery
  */
 export function persistRunningTasks(): void {
+  const persistenceFile = getPersistenceFile();
   const tasks: PersistedTask[] = [];
 
   for (const [, task] of backgroundTasks) {
@@ -536,11 +539,11 @@ export function persistRunningTasks(): void {
   }
 
   try {
-    const dir = path.dirname(PERSISTENCE_FILE);
+    const dir = path.dirname(persistenceFile);
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
-    fs.writeFileSync(PERSISTENCE_FILE, JSON.stringify(tasks, null, 2));
+    fs.writeFileSync(persistenceFile, JSON.stringify(tasks, null, 2));
   } catch (err) {
     console.error('[BackgroundTasks] Failed to persist tasks:', err);
   }
@@ -551,9 +554,10 @@ export function persistRunningTasks(): void {
  * Note: These tasks are marked as 'failed' since the original process is gone
  */
 export function loadPersistedTasks(): PersistedTask[] {
+  const persistenceFile = getPersistenceFile();
   try {
-    if (fs.existsSync(PERSISTENCE_FILE)) {
-      const data = fs.readFileSync(PERSISTENCE_FILE, 'utf-8');
+    if (fs.existsSync(persistenceFile)) {
+      const data = fs.readFileSync(persistenceFile, 'utf-8');
       const tasks = parsePersistedTasks(JSON.parse(data) as unknown);
 
       // Mark all as failed since the process is gone
@@ -569,9 +573,10 @@ export function loadPersistedTasks(): PersistedTask[] {
  * Clear persistence file
  */
 export function clearPersistedTasks(): void {
+  const persistenceFile = getPersistenceFile();
   try {
-    if (fs.existsSync(PERSISTENCE_FILE)) {
-      fs.unlinkSync(PERSISTENCE_FILE);
+    if (fs.existsSync(persistenceFile)) {
+      fs.unlinkSync(persistenceFile);
     }
   } catch (err) {
     console.error('[BackgroundTasks] Failed to clear persisted tasks:', err);

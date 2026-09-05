@@ -1,3 +1,4 @@
+import { applyTestTelemetrySchema } from '../../utils/telemetrySchema';
 import { execFile } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -72,14 +73,8 @@ describe('session correlation join', () => {
     const appLogger = createLogger('BashTool');
     const auditLogger = new AuditLogger(auditDir);
     const db = new Database(join(tempRoot, 'join.db'));
+    applyTestTelemetrySchema(db);
     db.exec(`
-      CREATE TABLE telemetry_tool_calls (
-        session_id TEXT NOT NULL,
-        turn_id TEXT NOT NULL,
-        tool_call_id TEXT NOT NULL,
-        name TEXT NOT NULL,
-        success INTEGER NOT NULL
-      );
       CREATE TABLE messages (
         id TEXT PRIMARY KEY,
         session_id TEXT NOT NULL,
@@ -102,8 +97,7 @@ describe('session correlation join', () => {
         success: true,
       });
       db.prepare(`
-        INSERT INTO telemetry_tool_calls (session_id, turn_id, tool_call_id, name, success)
-        VALUES (?, ?, ?, 'Bash', 1)
+        INSERT INTO telemetry_tool_calls (session_id, turn_id, tool_call_id, name, success, timestamp) VALUES (?, ?, ?, 'Bash', 1, 0)
       `).run(sessionId, turnId, toolCallId);
       db.prepare(`
         INSERT INTO messages (id, session_id, role, content, tool_results, metadata)

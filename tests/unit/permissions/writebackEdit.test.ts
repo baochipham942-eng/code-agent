@@ -141,7 +141,7 @@ describe('审批岛：改过的参数只配一次性放行 + 无 UI 时可编辑
     const { island, promise, id } = ask('mail_send');
     expect(island.handlePermissionResponse(id, 'allow', { to: ['b@x'] })).toBe('delivered');
     const result = (await promise) as PermissionAskResult;
-    expect(result).toEqual({ approved: true, updatedArgs: { to: ['b@x'] } });
+    expect(result).toEqual({ approved: true, approvalSource: 'user', updatedArgs: { to: ['b@x'] } });
   });
 
   it("'allow_session' + updatedArgs → fail-closed 拒（改过的内容不能当授权记忆）", async () => {

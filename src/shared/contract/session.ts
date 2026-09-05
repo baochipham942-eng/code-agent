@@ -30,7 +30,9 @@ export type SessionOriginKind =
   | 'channel'
   | 'import'
   | 'retry'
-  | 'agent_session_manager';
+  | 'agent_session_manager'
+  /** 脚本/无头发起：neo CLI、评测真跑桥等非人触发的会话。上线后评测按它剔分母（ADR-063 §3）。 */
+  | 'headless';
 
 export interface SessionOrigin {
   kind: SessionOriginKind;

@@ -248,8 +248,9 @@ export function App({ agent, options, onExit }: {
           message: 'User chose "never allow" for this action earlier in the session.',
         });
       }
-      if (allowListRef.current.has(request)) {
-        return Promise.resolve({ approved: true });
+      const sessionApproval = allowListRef.current.approvalFor(request);
+      if (sessionApproval) {
+        return Promise.resolve(sessionApproval);
       }
       notify(`需要审批: ${request.tool}`);
       return new Promise<PermissionAskResult>((resolve) => {
@@ -610,7 +611,7 @@ export function App({ agent, options, onExit }: {
         }
         resolve(choice === 'reject'
           ? { approved: false, denialSource: 'user' }
-          : { approved: true });
+          : { approved: true, approvalSource: 'user' });
       };
       // 附反馈输入模式：Enter 提交拒绝（反馈回传 agent），Esc 返回选项。
       // 合批 chunk（如 'y\r'）里 \r 也算提交，前面的可打印字符并入反馈。
@@ -1103,5 +1104,4 @@ export function App({ agent, options, onExit }: {
     </Box>
   );
 }
-
 

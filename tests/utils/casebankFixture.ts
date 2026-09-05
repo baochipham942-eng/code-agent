@@ -27,6 +27,7 @@ const MOCK_FIXTURE_IDS = [
   'prompt-smoke-toolsearch-json-arguments',
   'prompt-smoke-task-single-delegate',
   'prompt-smoke-git-status-no-commit',
+  'multiagent-fanout-parallel-audit',
 ] as const;
 
 const MOCK_REAL_ONLY_IDS = [
@@ -65,6 +66,8 @@ const MOCK_REAL_ONLY_IDS = [
   'multi-turn-misunderstand-fix',
   'multiagent-cross-file-analysis',
   'multiagent-workflow-analysis',
+  'plugin-browser-local-page',
+  'plugin-validate-html-selfcheck',
   'ppt-from-outline',
   'prompt-smoke-read-package',
   'recovery-binary-file',

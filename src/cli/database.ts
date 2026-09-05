@@ -580,6 +580,11 @@ export class CLIDatabaseService {
     this.sessionRepository.addMessage(sessionId, message);
   }
 
+  replaceMessages(sessionId: string, messages: Message[]): void {
+    if (!this.sessionRepository) throw new Error('Conversation ledger repository not initialized');
+    this.sessionRepository.replaceMessages(sessionId, messages);
+  }
+
   updateMessage(messageId: string, updates: Partial<Message>, sessionId?: string): void {
     if (!this.db) throw new Error('Database not initialized');
     if (!this.sessionRepository) throw new Error('Conversation ledger repository not initialized');

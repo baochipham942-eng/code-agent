@@ -458,6 +458,27 @@ describe('N-L10S3 机器批准来源可审计', () => {
     resolverState.getDefinition.mockReturnValue(WRITE_TOOL_DEF);
   });
 
+  it.each(['unattended-readonly', 'auto-approve-level', 'skip-permissions', 'noninteractive', 'session-allowlist', undefined])(
+    '机器批准 %s 在账本保留来源，缺省不归因给 user', async (approvalSource) => {
+      const previousSink = getToolLedgerSink();
+      const appendPermissionDecision = vi.fn();
+      setToolLedgerSink({ appendPermissionDecision, appendToolExecutionBegin: vi.fn(), appendToolExecutionComplete: vi.fn() });
+      try {
+        const executor = new ToolExecutor({
+          requestPermission: approvalSource === 'skip-permissions'
+            ? createCLIPermissionHandler({ dangerouslySkipPermissions: true, warn: vi.fn() })
+            : vi.fn().mockResolvedValue({ approved: true, approvalSource }),
+          workingDirectory: '/tmp/workbench',
+        });
+        await expect(executor.execute('Write', EXTERNAL_WRITE_PARAMS, { sessionId: 'machine-source' }))
+          .resolves.toMatchObject({ success: true });
+        expect(appendPermissionDecision).toHaveBeenCalledWith(expect.objectContaining({
+          reason: approvalSource ?? 'unspecified', historyOutcome: 'ask-approved',
+        }));
+      } finally { setToolLedgerSink(previousSink); }
+    },
+  );
+
   it('dev 自动批准与真人批准能按账本 reason 直接过滤', async () => {
     const previousSink = getToolLedgerSink();
     const appendPermissionDecision = vi.fn();
@@ -478,7 +499,7 @@ describe('N-L10S3 机器批准来源可审计', () => {
         .resolves.toMatchObject({ success: true });
 
       const userExecutor = new ToolExecutor({
-        requestPermission: vi.fn().mockResolvedValue(true),
+        requestPermission: vi.fn().mockResolvedValue({ approved: true, approvalSource: 'user' }),
         workingDirectory: '/tmp/workbench',
       });
       await expect(userExecutor.execute('Write', EXTERNAL_WRITE_PARAMS, { sessionId: 'user' }))

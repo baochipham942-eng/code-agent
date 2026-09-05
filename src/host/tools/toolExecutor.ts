@@ -982,6 +982,7 @@ export class ToolExecutor {
       agentId: contextAgentId,
       spawnDepth: options.spawnDepth,
       spawnMaxDepth: options.spawnMaxDepth ?? this.spawnMaxDepth,
+      forcePermissionHandler: this.forcePermissionHandler,
       spawnTreeId: options.spawnTreeId,
       swarmRunScope: options.swarmRunScope,
       spawnQueueTimeoutMs: options.spawnQueueTimeoutMs,
@@ -1674,15 +1675,23 @@ export class ToolExecutor {
       const approved = ask.approved;
 
       if (approved) {
-        const approvalSource = ask.approvalSource ?? 'user';
+        const approvalSource = ask.approvalSource ?? 'unspecified';
         traceBuilder.addStep('plan_approval', 'ask_approved', 'allow', `审批放行（来源：${approvalSource}）`);
         recordDecision(executionToolName, params, 'ask-approved', approvalSource, permStartTime, traceBuilder.build('allow'), effectiveSessionId, this.ledgerOrigin, getApprovalWaitMs(options.currentToolCallId, Date.now()));
       }
 
-      // P0: prefix_rule 学习 — 用户批准后生成持久化规则
+      // P0: prefix_rule 学习 — 只有真人在审批界面点了允许才生成持久化规则。
+      // N-EVAL-EXECPOLICY-LEAK：原判据把「没自报来源」也当真人批准（兼容裸 boolean），
+      // 于是每一个 blanket 放行处理器（评测存量 auto-approve `async () => true`、恢复宿主、
+      // MCP server、--dangerously-skip-permissions、自动档设置）批的命令都被学成
+      // source=user 写进用户级 exec-policy.json——2026-09-05 真机清出 41 条，pattern 里全是
+      // 沙箱临时路径（open/mv/cp/xxd/tesseract + /var/folders/.../code-agent-eval-*）。
+      // 机器批准必须显式自报（见 PermissionApprovalSource），缺省一律不学；
+      // 评测账本来源无论自报什么都不学——评测跑动不许改用户的常驻放行策略。
       if (
         approved
-        && (ask.approvalSource === undefined || ask.approvalSource === 'user')
+        && ask.approvalSource === 'user'
+        && this.ledgerOrigin !== 'eval'
         && isBashToolName(policyToolName)
         && params.command
       ) {

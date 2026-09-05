@@ -1,3 +1,4 @@
+import { applyTestTelemetrySchema } from '../../utils/telemetrySchema';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.unmock('better-sqlite3');
@@ -62,36 +63,7 @@ describe('TelemetryStorage computer surface fields', () => {
 
   beforeEach(() => {
     dbState.sqlite = new Database(':memory:');
-    dbState.sqlite.exec(`
-      CREATE TABLE telemetry_tool_calls (
-        id TEXT PRIMARY KEY,
-        turn_id TEXT NOT NULL,
-        session_id TEXT NOT NULL,
-        tool_call_id TEXT NOT NULL,
-        name TEXT NOT NULL,
-        arguments TEXT,
-        actual_arguments TEXT,
-        result_summary TEXT,
-        success INTEGER DEFAULT 0,
-        error TEXT,
-        error_category TEXT,
-        computer_surface_failure_kind TEXT,
-        computer_surface_mode TEXT,
-        computer_surface_target_app TEXT,
-        computer_surface_action TEXT,
-        computer_surface_ax_quality_score REAL,
-        computer_surface_ax_quality_grade TEXT,
-        duration_ms INTEGER DEFAULT 0,
-        timestamp INTEGER NOT NULL,
-        idx INTEGER DEFAULT 0,
-        parallel INTEGER DEFAULT 0
-      );
-      CREATE TABLE telemetry_raw_payloads (
-        id TEXT PRIMARY KEY, session_id TEXT NOT NULL, turn_id TEXT, ref_kind TEXT NOT NULL,
-        ref_id TEXT NOT NULL, field TEXT NOT NULL, content TEXT, byte_len INTEGER NOT NULL,
-        truncated INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL
-      );
-    `);
+    applyTestTelemetrySchema(dbState.sqlite);
     database = getDatabase();
     originalGetDb = database.getDb.bind(database);
     isReadySpy = vi.spyOn(database, 'isReady', 'get').mockReturnValue(true);
@@ -106,34 +78,11 @@ describe('TelemetryStorage computer surface fields', () => {
   });
 
   it('filters telemetry sessions by explicit or inherited user owner', () => {
+    applyTestTelemetrySchema(dbState.sqlite!);
     dbState.sqlite!.exec(`
         CREATE TABLE sessions (
           id TEXT PRIMARY KEY,
           user_id TEXT
-        );
-        CREATE TABLE telemetry_sessions (
-          id TEXT PRIMARY KEY,
-          user_id TEXT,
-          title TEXT NOT NULL,
-          model_provider TEXT NOT NULL,
-          model_name TEXT NOT NULL,
-          working_directory TEXT NOT NULL,
-          start_time INTEGER NOT NULL,
-          end_time INTEGER,
-          duration_ms INTEGER,
-          turn_count INTEGER DEFAULT 0,
-          total_input_tokens INTEGER DEFAULT 0,
-          total_output_tokens INTEGER DEFAULT 0,
-          total_tokens INTEGER DEFAULT 0,
-          estimated_cost REAL DEFAULT 0,
-          total_tool_calls INTEGER DEFAULT 0,
-          tool_success_rate REAL DEFAULT 0,
-          total_errors INTEGER DEFAULT 0,
-          session_type TEXT,
-          status TEXT DEFAULT 'recording',
-          agent_version TEXT,
-          prompt_version TEXT,
-          tool_schema_version TEXT
         );
       `);
     dbState.sqlite!.prepare('INSERT INTO sessions (id, user_id) VALUES (?, ?)').run('session-inherited', 'user-1');

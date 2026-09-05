@@ -41,6 +41,11 @@ function resolveToolPath(rawPath: string, workingDirectory: string): string {
   );
 }
 
+/** Shared parser adapter for post-launch write signals. */
+export function shellWriteTargets(command: string): string[] {
+  return parseShellCommand(command).writeTargets.map((target) => target.path);
+}
+
 function genericPathAssessment(
   value: unknown,
   workingDirectory: string,

@@ -1,3 +1,4 @@
+import { applyTestTelemetrySchema } from '../../utils/telemetrySchema';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const loggerMock = vi.hoisted(() => ({
@@ -28,19 +29,7 @@ describe('TelemetryStorage tool_schema_snapshot persistence', () => {
 
   beforeEach(() => {
     dbState.sqlite = new Database(':memory:');
-    dbState.sqlite.exec(`
-      CREATE TABLE telemetry_events (
-        id TEXT PRIMARY KEY, turn_id TEXT NOT NULL, session_id TEXT NOT NULL,
-        timestamp INTEGER NOT NULL, event_type TEXT NOT NULL, summary TEXT,
-        data TEXT, duration_ms INTEGER
-      );
-      CREATE TABLE telemetry_raw_payloads (
-        id TEXT PRIMARY KEY, session_id TEXT NOT NULL, turn_id TEXT,
-        ref_kind TEXT NOT NULL, ref_id TEXT NOT NULL, field TEXT NOT NULL,
-        content TEXT, byte_len INTEGER NOT NULL, truncated INTEGER NOT NULL DEFAULT 0,
-        created_at INTEGER NOT NULL
-      );
-    `);
+    applyTestTelemetrySchema(dbState.sqlite);
     database = getDatabase();
     originalGetDb = database.getDb.bind(database);
     isReadySpy = vi.spyOn(database, 'isReady', 'get').mockReturnValue(true);

@@ -43,13 +43,13 @@ function toAskResult(
   updatedArgs?: Record<string, unknown>,
 ): PermissionAskResult {
   if (isApproveResponse(response)) {
-    if (!updatedArgs) return { approved: true };
+    if (!updatedArgs) return { approved: true, approvalSource: 'user' };
     // N-WRITEBACK-EDIT：改过的参数只配一次性放行。配会话/长期授权 = 把改过的内容当成
     // 同类操作的记忆，语义不成立，fail-closed 拒。
     if (response !== 'allow') {
       return { approved: false, denialSource: 'fail-closed', message: 'edited arguments require a one-time allow' };
     }
-    return { approved: true, updatedArgs };
+    return { approved: true, approvalSource: 'user', updatedArgs };
   }
   return { approved: false, denialSource: machineDenial ?? 'user' };
 }
@@ -290,7 +290,7 @@ export class OrchestratorPermissionIsland {
       && isUnattendedAllowedReadOnlyTool(request.tool)
     ) {
       logger.info(`[Unattended] Auto-approving declared read-only MCP tool: ${request.tool}`);
-      return { approved: true };
+      return { approved: true, approvalSource: 'unattended-readonly' };
     }
 
     // 无人值守会话（cron/heartbeat/channel）与语音派：审批先于任何自动批准判定，改为「停车挂起」，
@@ -320,7 +320,7 @@ export class OrchestratorPermissionIsland {
       }
 
       if (!forceConfirm && settings.permissions.autoApprove[permissionLevel]) {
-        return { approved: true };
+        return { approved: true, approvalSource: 'auto-approve-level' };
       }
     }
 

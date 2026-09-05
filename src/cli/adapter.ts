@@ -18,6 +18,7 @@ import fs from 'fs';
 import path from 'path';
 import type { CLIConfig, CLIRunResult, CLIGlobalOptions } from './types';
 import type { Message, AgentEvent, PRLink, ModelConfig } from '../shared/contract';
+import { getCompactionCommandMessages } from '../shared/i18n/compactionCommand';
 import { getModelMaxOutputTokens } from '../shared/constants';
 import { createLogger } from '../host/services/infra/logger';
 import { getSessionSkillService } from '../host/services/skills/sessionSkillService';
@@ -154,7 +155,9 @@ export class CLIAgent {
     if (this.isRunning || this.isCompacting) {
       return {
         success: false,
-        error: 'Agent is already running',
+        error: this.isCompacting
+          ? getCompactionCommandMessages(getConfigService().getSettings().ui.language).compacting
+          : 'Agent is already running',
       };
     }
 
@@ -591,19 +594,23 @@ export class CLIAgent {
     });
     if (this.isRunning || this.isCompacting) return unchanged('run_active');
     const sessionId = this.sessionId;
-    if (!sessionId) return unchanged('too_few_messages');
+    if (!sessionId) return unchanged('session_unavailable');
     const history = this.messages;
     const snapshot = [...history];
     const historyChanged = () => this.sessionId !== sessionId
       || this.messages !== history || history.length !== snapshot.length;
     this.isCompacting = true;
     try {
+      // replaceMessages replaces the entire projection, so never compact only the loaded window.
+      const session = await getSessionManager().getSession(sessionId, Number.MAX_SAFE_INTEGER);
+      if (!session) return unchanged('session_unavailable');
+      if (historyChanged()) return unchanged('history_changed');
       const { compactMessagesWithSummary } = await import('../host/context/compactionService');
       const settings = getConfigService().getSettings();
       const result = await compactMessagesWithSummary({
         sessionId,
         source: 'manual_current',
-        messages: snapshot,
+        messages: session.messages,
         preserveRecentCount: settings.contextCompression?.preserveRecentCount,
         systemPrompt: this.systemPrompt,
         modelConfig: this.config.modelConfig,

@@ -21,12 +21,14 @@ export const compactCommand: CommandDefinition = {
     } | undefined;
     if (!agent?.compactHistory) {
       ctx.output.error(text.unavailable);
-      return { success: false, message: text.unavailable };
+      return { success: false };
     }
     try {
       const result = await agent.compactHistory(args.join(' ').trim() || undefined);
       if (!result.success) {
-        const message = result.reason === 'run_active'
+        const message = result.reason === 'session_unavailable'
+          ? text.sessionUnavailable
+          : result.reason === 'run_active'
           ? text.busy
           : result.reason === 'history_changed'
             ? text.changed
@@ -38,7 +40,7 @@ export const compactCommand: CommandDefinition = {
                   ? text.notSmaller
                   : text.failed;
         ctx.output.warn(message);
-        return { success: false, message, data: result };
+        return { success: false, data: result };
       }
       const message = text.completed(result.beforeTokens, result.afterTokens);
       ctx.output.success(message);
@@ -48,7 +50,7 @@ export const compactCommand: CommandDefinition = {
       const message = detail === 'session_database_unavailable'
         ? text.databaseUnavailable : `${text.failed} ${detail}`;
       ctx.output.error(message);
-      return { success: false, message };
+      return { success: false };
     }
   },
 };

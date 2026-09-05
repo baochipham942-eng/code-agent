@@ -149,8 +149,8 @@ export class CLISessionManager {
    * 获取会话（带消息）
    */
   async getSession(sessionId: string, messageLimit: number = 100): Promise<SessionWithMessages | null> {
-    // 检查缓存
-    if (this.sessionCache.has(sessionId)) {
+    // 全量读取用于整会话压缩，不能复用默认 100 条的恢复窗口。
+    if (messageLimit !== Number.MAX_SAFE_INTEGER && this.sessionCache.has(sessionId)) {
       return this.sessionCache.get(sessionId)!;
     }
 

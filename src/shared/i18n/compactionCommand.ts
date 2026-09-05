@@ -1,6 +1,8 @@
 const messages = {
   zh: {
+    compacting: '上下文正在压缩，请稍后再发送。',
     unavailable: '当前无法压缩上下文。',
+    sessionUnavailable: '当前会话不可用，无法压缩上下文。',
     busy: '任务运行中，请结束后再压缩。',
     databaseUnavailable: '会话存储暂不可用，原有历史已保留。',
     unchanged: '当前没有可压缩的历史上下文。',
@@ -11,7 +13,9 @@ const messages = {
     completed: (before: number, after: number) => `上下文已压缩：${before} → ${after} tokens。`,
   },
   en: {
+    compacting: 'Context compaction is in progress. Please wait before sending.',
     unavailable: 'Context compaction is unavailable.',
+    sessionUnavailable: 'The current session is unavailable for compaction.',
     busy: 'Wait for the current task to finish before compacting.',
     databaseUnavailable: 'Session storage is unavailable. The original history was kept.',
     unchanged: 'There is no history that can be compacted yet.',

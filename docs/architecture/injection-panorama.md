@@ -1,6 +1,6 @@
 # 系统提示注入全景表
 
-更新：2026-08-20。盘点范围是 `src/host` 中实际把内容送入模型上下文的运行时注入：`injectSystemMessage(...)` 的直接调用，以及虽不经过该函数、但会在轮首拼入模型消息的 `live_voice_permission_notice`。`rg -l 'injectSystemMessage|system_reminder' src/host` 当前命中 20 个文件；其中 `contextAssembly.ts` 是门面定义，5 处是回调转发（nudge/artifact 系 4 处的实际内容已按被调方列行；swarm 引导转发的内容独有，单列一行），故表中是 **100 个实际注入点**（98 个 direct call + 1 个轮首拼接 + 1 个经转发的 swarm 引导）。
+更新：2026-09-06。盘点范围是 `src/host` 中实际把内容送入模型上下文的运行时注入：`injectSystemMessage(...)` 的直接调用，以及虽不经过该函数、但会在轮首拼入模型消息的 `live_voice_permission_notice`。`rg -l 'injectSystemMessage|system_reminder' src/host` 当前命中 20 个文件；AST 精确计数 104 个调用，本表精确计数 102 个文件行号锚点。两种计数分别包含门面/回调转发与轮首拼接，均按各自口径登记；单纯行号漂移不改变计数。
 
 口径：token 取静态文案字符数 ÷ 3 并四舍五入；标签和固定标点计入，文件名、错误文本、schema、hook 返回、模型回复、用户内容等动态载荷不计入，标为“+动态”。“全模型”表示本仓没有 provider/model 分支；仍受对应功能、模式、Hook 或工具事件开关约束。`injectSystemMessage` 追加的是运行时 system message，Provider 会在适配边界转成 transient `<system-reminder>`；它不是静态系统提示的重复定义。
 
@@ -27,6 +27,7 @@
 | `src/host/agent/runtime/conversationRuntime.ts:233 <plan-mode>`                        | 进入计划模式，禁用工具并要求等待批准     | `setPlanMode(true)`                    | 模式切换一次         |            ~70 | 前提：模式仍由此方法开启；降频：切换一次；模型：全模型。                                                                     |
 | `src/host/agent/runtime/conversationRuntime.ts:280 （format correction）`              | 把结构化输出校验错误和 schema 回灌       | structuredOutput 校验失败且未超重试    | 条件触发             |      ~0 + 动态 | 前提：仍调用 `generateFormatCorrectionPrompt`；降频：失败才注入；模型：全模型。                                              |
 | `src/host/agent/runtime/conversationRuntime.ts:299 <step-by-step-mode>`                | 给多步骤任务列步骤及逐步验证要求         | stepByStepMode 且识别为多步骤          | 一次/步骤执行        | ~75 + 动态步骤 | 前提：自动分步逻辑仍调用 `runStepByStep`；降频：模式一次；模型：全模型。                                                     |
+| `src/host/agent/runtime/conversationRuntime.ts:352 （resource budget nudge）` | 提醒资源即将耗尽并准备完成/未完成/下一步摘要 | 费用、goal token 或时间预算达到 80%，本 run 未提醒且未进入强制收尾 | 每 run 至多一次 | 34（cl100k_base 实测） | 前提：资源耗尽前需要保留部分交付；降频：已单次；模型：全模型。 |
 | `src/host/agent/runtime/conversationRuntime.ts:467 <goal-swarm-guidance>`              | goal 首轮告知可用 workflow 扇出并行子 agent 及四条使用边界 | goal 首轮且 `allowsSwarm`（内容在 `goalModeController.ts:319`，经回调转发注入） | goal 会话一次        |            ~85 | 前提：workflow 工具在 goal 模式可用；降频：已是一次性；模型：全模型。                                                        |
 | `src/host/agent/runtime/conversationRuntime.ts:474 <goal-progress>`                    | goal 审计提示，要求按证据检查完成度      | goalMode 的 checkpoint 命中            | 检查点               |      ~0 + 动态 | 前提：`shouldInjectAudit` 决定；降频：不是每轮，已按 interval；模型：全模型。                                                |
 | `src/host/agent/runtime/conversationRuntime.ts:613 （runtime-auto-continuation）`      | 空输出后要求继续生成                     | DoomLoopGuard 给出 continue+nudge      | 条件触发             |           动态 | 前提：空输出仍是有效异常；降频：有次数上限；模型：全模型。                                                                   |

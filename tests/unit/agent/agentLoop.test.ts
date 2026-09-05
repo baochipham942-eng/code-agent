@@ -25,7 +25,7 @@ function hasSequentialTool(toolNames: string[]): boolean {
  * Determine execution strategy for a list of tools
  */
 function determineExecutionStrategy(toolNames: string[]): 'parallel' | 'sequential' | 'mixed' {
-  const safeCount = toolNames.filter(isParallelSafeTool).length;
+  const safeCount = toolNames.filter(name => isParallelSafeTool(name)).length;
   const unsafeCount = toolNames.length - safeCount;
 
   if (safeCount === toolNames.length && toolNames.length <= MAX_PARALLEL_TOOLS) {

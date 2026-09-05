@@ -1,15 +1,20 @@
 import crypto from 'crypto';
-import { execFileSync } from 'child_process';
+import { execFileSync, spawnSync } from 'child_process';
+import { createRequire } from 'module';
+import Database from 'better-sqlite3';
 import fs from 'fs';
+import fsPromises from 'fs/promises';
 import os from 'os';
 import path from 'path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   installRuntimeAssetFromManifest,
   readActiveRuntimeAssets,
   validateRuntimeArchiveEntries,
   type RuntimeAssetsManifest,
 } from '../../../src/host/runtime/runtimeAssetInstaller';
+
+vi.unmock('better-sqlite3');
 
 const tempRoots: string[] = [];
 
@@ -146,6 +151,111 @@ afterEach(() => {
 });
 
 describe('runtimeAssetInstaller', () => {
+  it.each(['equal', 'reversed'] as const)('retains installation order with %s directory mtimes and a backwards clock', async (mtimeOrder) => {
+    const root = makeTempRoot();
+    const runtimeBaseDir = path.join(root, 'runtime');
+    const assets = ['v1', 'v2', 'v3'].map((content) => createRuntimeAssetPackage(path.join(root, content), content));
+    const rename = fsPromises.rename.bind(fsPromises);
+    const promotionMtimes: number[] = [];
+    const renameSpy = vi.spyOn(fsPromises, 'rename').mockImplementation(async (from, to) => {
+      await rename(from, to);
+      const index = assets.findIndex((asset) => String(to) === path.join(runtimeBaseDir, 'onnxruntime-vad', asset.expandedSha256));
+      if (index < 0) return;
+      const time = new Date(mtimeOrder === 'equal' ? 100000 : 300000 - index * 100000);
+      fs.utimesSync(to, time, time);
+      promotionMtimes.push(fs.statSync(to).mtimeMs);
+    });
+    try {
+      for (const [index, asset] of assets.entries()) {
+        await installRuntimeAssetFromManifest({
+          manifestPath: writeManifest(path.dirname(path.dirname(asset.archivePath)), asset),
+          assetId: 'onnxruntime-vad',
+          runtimeBaseDir,
+          now: () => new Date(300000 - index * 100000),
+        });
+      }
+    } finally {
+      renameSpy.mockRestore();
+    }
+    expect(promotionMtimes).toEqual(mtimeOrder === 'equal' ? [100000, 100000, 100000] : [300000, 200000, 100000]);
+    expect(fs.readdirSync(path.join(runtimeBaseDir, 'onnxruntime-vad')).sort()).toEqual([
+      assets[1]!.expandedSha256, assets[2]!.expandedSha256,
+    ].sort());
+    const active = await readActiveRuntimeAssets(runtimeBaseDir);
+    expect(active?.assets['onnxruntime-vad'].installationOrder?.lastSequence).toBe(3);
+  });
+
+  it('preserves legacy directories without order records even with keepPrevious zero', async () => {
+    const root = makeTempRoot();
+    const runtimeBaseDir = path.join(root, 'runtime');
+    const legacy = createRuntimeAssetPackage(path.join(root, 'legacy'), 'legacy');
+    const legacyRoot = mkdirp(path.join(runtimeBaseDir, 'onnxruntime-vad', legacy.expandedSha256));
+    execFileSync('tar', ['-xzf', legacy.archivePath, '-C', legacyRoot]);
+    for (const content of ['v1', 'v2']) {
+      const asset = createRuntimeAssetPackage(path.join(root, content), content);
+      await installRuntimeAssetFromManifest({
+        manifestPath: writeManifest(path.join(root, content), asset),
+        assetId: 'onnxruntime-vad', runtimeBaseDir, keepPrevious: 0,
+      });
+    }
+    expect(fs.existsSync(legacyRoot)).toBe(true);
+    expect(fs.readdirSync(path.join(runtimeBaseDir, 'onnxruntime-vad'))).toHaveLength(2);
+  });
+
+  it('records reactivation of an existing version as the newest installation', async () => {
+    const root = makeTempRoot();
+    const runtimeBaseDir = path.join(root, 'runtime');
+    const assets = ['v1', 'v2', 'v3'].map((content) => createRuntimeAssetPackage(path.join(root, content), content));
+    for (const index of [0, 1, 0, 2]) {
+      const asset = assets[index]!;
+      await installRuntimeAssetFromManifest({
+        manifestPath: writeManifest(path.dirname(path.dirname(asset.archivePath)), asset),
+        assetId: 'onnxruntime-vad', runtimeBaseDir,
+      });
+    }
+    expect(fs.readdirSync(path.join(runtimeBaseDir, 'onnxruntime-vad')).sort()).toEqual([
+      assets[0]!.expandedSha256, assets[2]!.expandedSha256,
+    ].sort());
+  });
+
+  it('fails closed while another connection holds the install lock without releasing its reservation', async () => {
+    const root = makeTempRoot();
+    const runtimeBaseDir = path.join(root, 'runtime');
+    mkdirp(runtimeBaseDir);
+    const lock = new Database(path.join(runtimeBaseDir, '.install-lock.sqlite'));
+    lock.exec('BEGIN IMMEDIATE');
+    const asset = createRuntimeAssetPackage(root, 'v1');
+    try {
+      await expect(installRuntimeAssetFromManifest({
+        manifestPath: writeManifest(root, asset), assetId: 'onnxruntime-vad', runtimeBaseDir,
+      })).rejects.toMatchObject({ code: 'SQLITE_BUSY' });
+      expect(lock.inTransaction).toBe(true);
+      expect(await readActiveRuntimeAssets(runtimeBaseDir)).toBeNull();
+    } finally {
+      lock.close();
+    }
+  });
+
+  it('can install after a lock holder is killed without deleting the lock database', async () => {
+    const root = makeTempRoot();
+    const runtimeBaseDir = mkdirp(path.join(root, 'runtime'));
+    const lockPath = path.join(runtimeBaseDir, '.install-lock.sqlite');
+    const child = spawnSync(process.execPath, ['-e', `
+      const Database = require(process.argv[1]);
+      const lock = new Database(process.argv[2]);
+      lock.exec('BEGIN IMMEDIATE');
+      process.kill(process.pid, 'SIGKILL');
+    `, createRequire(import.meta.url).resolve('better-sqlite3'), lockPath]);
+    expect(child.signal).toBe('SIGKILL');
+    expect(fs.existsSync(lockPath)).toBe(true);
+    const asset = createRuntimeAssetPackage(root, 'v1');
+    const result = await installRuntimeAssetFromManifest({
+      manifestPath: writeManifest(root, asset), assetId: 'onnxruntime-vad', runtimeBaseDir,
+    });
+    expect(fs.existsSync(result.root)).toBe(true);
+    expect((await readActiveRuntimeAssets(runtimeBaseDir))?.assets['onnxruntime-vad'].installationOrder?.lastSequence).toBe(1);
+  });
+
   it('installs a verified runtime asset and writes active state atomically', async () => {
     const root = makeTempRoot();
     const runtimeBaseDir = path.join(root, 'runtime');

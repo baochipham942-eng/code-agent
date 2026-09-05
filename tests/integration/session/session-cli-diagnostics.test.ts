@@ -1,3 +1,4 @@
+import { applyTestTelemetrySchema } from '../../utils/telemetrySchema';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -17,6 +18,7 @@ describe('session diagnostics CLI projections', () => {
     dbPath = path.join(root, 'code-agent.db');
     process.env.CODE_AGENT_DATA_DIR = root;
     const db = new NativeDatabase(dbPath);
+    applyTestTelemetrySchema(db);
     db.exec(`
       CREATE TABLE sessions (
         id TEXT PRIMARY KEY, title TEXT, model_provider TEXT, model_name TEXT,
@@ -45,18 +47,7 @@ describe('session diagnostics CLI projections', () => {
         id INTEGER PRIMARY KEY, run_id TEXT, seq INTEGER, timestamp INTEGER, event_type TEXT,
         agent_id TEXT, level TEXT, title TEXT, summary TEXT, payload_json TEXT
       );
-      CREATE TABLE telemetry_sessions (
-        id TEXT PRIMARY KEY, estimated_cost REAL, total_input_tokens INTEGER, total_output_tokens INTEGER,
-        agent_version TEXT, prompt_version TEXT, tool_schema_version TEXT
-      );
-      CREATE TABLE telemetry_turns (
-        id TEXT PRIMARY KEY, session_id TEXT, turn_number INTEGER, start_time INTEGER,
-        end_time INTEGER, duration_ms INTEGER, outcome_status TEXT, agent_id TEXT, turn_type TEXT
-      );
-      CREATE TABLE telemetry_tool_calls (
-        id TEXT PRIMARY KEY, session_id TEXT, turn_id TEXT, tool_call_id TEXT, name TEXT,
-        success INTEGER, error TEXT, duration_ms INTEGER, timestamp INTEGER, idx INTEGER
-      );
+      
     `);
     db.prepare(`INSERT INTO sessions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
       'session-1', 'CLI diagnostics', 'openai', 'gpt-test', '/work/project', null, 'idle', 1_000, 2_000,
@@ -76,13 +67,13 @@ describe('session diagnostics CLI projections', () => {
     db.prepare(`INSERT INTO tool_execution_events VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
       1, 'exec-1', 'session-1', 'Bash', 'run command', '{}', 'complete', 'error', 'command failed', 1_600,
     );
-    db.prepare(`INSERT INTO telemetry_sessions VALUES (?, ?, ?, ?, ?, ?, ?)`).run(
+    db.prepare(`INSERT INTO telemetry_sessions (id, estimated_cost, total_input_tokens, total_output_tokens, agent_version, prompt_version, tool_schema_version, title, model_provider, model_name, working_directory, start_time) VALUES (?, ?, ?, ?, ?, ?, ?, 'Fixture', 'openai', 'fixture-model', '/tmp/project', 0)`).run(
       'session-1', 0.01, 12, 8, '0.30.0', 'p1', 't1',
     );
-    db.prepare(`INSERT INTO telemetry_turns VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+    db.prepare(`INSERT INTO telemetry_turns (id, session_id, turn_number, start_time, end_time, duration_ms, outcome_status, agent_id, turn_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
       'turn-1', 'session-1', 1, 1_000, 1_800, 800, 'error', 'main', 'user',
     );
-    db.prepare(`INSERT INTO telemetry_tool_calls VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+    db.prepare(`INSERT INTO telemetry_tool_calls (id, session_id, turn_id, tool_call_id, name, success, error, duration_ms, timestamp, idx) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
       'telemetry-tool-1', 'session-1', 'turn-1', 'tool-1', 'Bash', 0, 'command failed', 100, 1_600, 0,
     );
     db.close();

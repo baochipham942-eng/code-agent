@@ -1,3 +1,4 @@
+import { applyTestTelemetrySchema } from '../../utils/telemetrySchema';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.unmock('better-sqlite3');
@@ -39,48 +40,13 @@ describe('TelemetryStorage feedback', () => {
 
   beforeEach(() => {
     dbState.sqlite = new Database(':memory:');
+    applyTestTelemetrySchema(dbState.sqlite);
     dbState.sqlite.exec(`
       CREATE TABLE sessions (
         id TEXT PRIMARY KEY,
         user_id TEXT
       );
-      CREATE TABLE telemetry_sessions (
-        id TEXT PRIMARY KEY,
-        user_id TEXT,
-        title TEXT NOT NULL,
-        model_provider TEXT NOT NULL,
-        model_name TEXT NOT NULL,
-        working_directory TEXT NOT NULL,
-        start_time INTEGER NOT NULL,
-        end_time INTEGER,
-        duration_ms INTEGER,
-        turn_count INTEGER DEFAULT 0,
-        total_input_tokens INTEGER DEFAULT 0,
-        total_output_tokens INTEGER DEFAULT 0,
-        total_tokens INTEGER DEFAULT 0,
-        estimated_cost REAL DEFAULT 0,
-        total_tool_calls INTEGER DEFAULT 0,
-        tool_success_rate REAL DEFAULT 0,
-        total_errors INTEGER DEFAULT 0,
-        session_type TEXT,
-        origin_kind TEXT,
-        status TEXT DEFAULT 'recording',
-        agent_version TEXT,
-        prompt_version TEXT,
-        tool_schema_version TEXT,
-        synced_at INTEGER
-      );
-      CREATE TABLE telemetry_feedback (
-        id TEXT PRIMARY KEY,
-        session_id TEXT NOT NULL,
-        turn_id TEXT,
-        message_id TEXT,
-        rating INTEGER NOT NULL CHECK (rating IN (-1, 1)),
-        comment TEXT,
-        full_content TEXT,
-        created_at INTEGER NOT NULL,
-        synced_at INTEGER
-      );
+      
     `);
     database = getDatabase();
     originalGetDb = database.getDb.bind(database);

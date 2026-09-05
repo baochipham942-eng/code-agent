@@ -19,10 +19,12 @@ import {
   type PostLaunchDimRate,
   type PostLaunchReport,
   type PostLaunchReportGroup,
+  type PostLaunchReportSession,
   type PostLaunchScopeRow,
   type PostLaunchSignalKind,
   type PostLaunchTurnScore,
 } from '../../../shared/contract/postLaunchScore';
+import { guardTelemetryText } from '../../telemetry/telemetryStorageParsers';
 
 /** 本地日历日（不是 UTC）：日预算按用户看到的「今天」切。 */
 export function localDay(timestamp: number): string {
@@ -178,6 +180,11 @@ interface ScoreRow {
   /** 关联会话的来源，用来在报告侧复用同一套分母判定（LEFT JOIN，会话被删了就是 null）。 */
   session_type: string | null;
   origin_kind: string | null;
+  /** 芯片上给人看的名字与时间；同样是 LEFT JOIN，会话被删了就是 null。 */
+  session_title: string | null;
+  session_start_time: number | null;
+  /** sessions.title——模型自动起的真标题。遥测那份是开会话那刻的占位快照，之后不回写。 */
+  chat_title: string | null;
 }
 
 const DIM_COLUMN: Record<PostLaunchDimension, keyof ScoreRow> = {
@@ -235,6 +242,25 @@ export interface PostLaunchReportOptions {
  * 只在写入侧把关，读出来的报告照样被它们污染（ai-review PR #1650 第 2 轮②）。
  * **成本不过滤**：那些轮的钱是真花出去的，从账上抹掉才是假数。
  */
+/**
+ * 芯片标题：优先 sessions.title（模型自动起的真标题），回落 telemetry_sessions.title
+ * （开会话那一刻的占位快照 "CLI Session" / "New Session"——之后模型改标题只写 sessions，
+ * 遥测表不回写，副本 846 条里 567 条两表不一致）。都空则给空串，展示侧回落 id 前 8 位。
+ *
+ * sessions.title 是**裸存**的（SessionRepository.createSession 直接 stmt.run(session.title)，
+ * updateSession 也是 COALESCE(?, title)，两条路径都不脱敏），而 telemetry_sessions.title
+ * 写入时过了 guardTelemetryText。所以这里对 sessions.title 补同一道 guard，
+ * 让两个来源在同一条口径上出报告。
+ *
+ * ponytail: 用 guard 的输出而不是「命中就丢弃」——掩码后的串本来就是可展示的
+ * （遥测那列存的就是掩码结果），而丢弃会让「标题里带了个路径」的会话退回 "CLI Session"，
+ * 正好是本刀要修的病。要改成命中即丢，改这一个函数即可。
+ */
+function sessionTitle(row: Pick<ScoreRow, 'session_title' | 'chat_title'>): string {
+  const live = guardTelemetryText(row.chat_title, 2_000)?.trim();
+  return live || row.session_title?.trim() || '';
+}
+
 export function buildPostLaunchReport(
   db: BetterSqlite3.Database,
   options: PostLaunchReportOptions = {},
@@ -248,9 +274,12 @@ export function buildPostLaunchReport(
       SELECT s.turn_id, s.session_id, s.turn_started_at, s.app_version, s.prompt_version,
              s.dim_goal, s.dim_orchestration, s.dim_tools, s.dim_permission, s.dim_safety, s.dim_artifact,
              s.failure_class, s.signals, s.cost_usd, s.judge_model, s.sampled_by,
-             sessions.session_type, sessions.origin_kind
+             sessions.session_type, sessions.origin_kind,
+             sessions.title AS session_title, sessions.start_time AS session_start_time,
+             chat.title AS chat_title
       FROM telemetry_turn_scores AS s
       LEFT JOIN telemetry_sessions AS sessions ON sessions.id = s.session_id
+      LEFT JOIN sessions AS chat ON chat.id = s.session_id
       WHERE s.judge_version = ? AND s.turn_started_at >= ?
       ORDER BY s.turn_started_at DESC
     `)
@@ -259,7 +288,7 @@ export function buildPostLaunchReport(
   const groups = new Map<string, PostLaunchReportGroup & {
     failureTally: Map<string, number>;
     signalTally: Map<PostLaunchSignalKind, number>;
-    sessionSet: Set<string>;
+    sessionMap: Map<string, PostLaunchReportSession>;
   }>();
 
   let scorableTurns = 0;
@@ -286,10 +315,10 @@ export function buildPostLaunchReport(
         failureClasses: [],
         signals: [],
         costUsd: 0,
-        sessionIds: [],
+        sessions: [],
         failureTally: new Map(),
         signalTally: new Map(),
-        sessionSet: new Set(),
+        sessionMap: new Map(),
       };
       groups.set(key, group);
     }
@@ -300,7 +329,13 @@ export function buildPostLaunchReport(
     if (row.judge_model === JUDGE_MODEL_UNAVAILABLE) judgeUnavailableTurns += 1;
     // rows 固定两行：[0] 信号轮、[1] 抽样轮（建组时就是这个顺序）。
     accumulate(group.rows[row.sampled_by === 'signal' ? 0 : 1], row);
-    group.sessionSet.add(row.session_id);
+    if (!group.sessionMap.has(row.session_id)) {
+      group.sessionMap.set(row.session_id, {
+        id: row.session_id,
+        title: sessionTitle(row),
+        startedAt: row.session_start_time ?? 0,
+      });
+    }
     if (row.failure_class) {
       group.failureTally.set(row.failure_class, (group.failureTally.get(row.failure_class) ?? 0) + 1);
     }
@@ -322,7 +357,7 @@ export function buildPostLaunchReport(
         .map(([kind, count]) => ({ kind, count }))
         .sort((left, right) => right.count - left.count),
       costUsd: group.costUsd,
-      sessionIds: [...group.sessionSet],
+      sessions: [...group.sessionMap.values()],
     }))
     .sort((left, right) => right.weekStart.localeCompare(left.weekStart));
 

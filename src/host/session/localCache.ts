@@ -16,9 +16,6 @@ import { getUserConfigDir } from '../config/configPaths';
 
 const logger = createLogger('SessionLocalCache');
 
-// Default cache directory
-const CACHE_DIR = path.join(getUserConfigDir(), 'cache', 'sessions');
-
 /**
  * Cache entry with metadata
  */
@@ -273,12 +270,12 @@ export class LRUCache<T> {
  */
 export class SessionLocalCache {
   private sessionCache: LRUCache<CachedSession>;
-  private persistPath: string | null;
+  private persistPath: string | (() => string) | null;
 
   constructor(options: {
     maxSize?: number;
     maxSessions?: number;
-    persistPath?: string;
+    persistPath?: string | (() => string);
   } = {}) {
     this.sessionCache = new LRUCache({
       maxSize: options.maxSize || 100 * 1024 * 1024, // 100MB
@@ -413,10 +410,11 @@ export class SessionLocalCache {
    * Persist cache to disk
    */
   async persist(): Promise<void> {
-    if (!this.persistPath) return;
+    const persistPath = typeof this.persistPath === 'function' ? this.persistPath() : this.persistPath;
+    if (!persistPath) return;
 
     try {
-      await fs.mkdir(path.dirname(this.persistPath), { recursive: true });
+      await fs.mkdir(path.dirname(persistPath), { recursive: true });
 
       const data: Record<string, CachedSession> = {};
       for (const sessionId of this.sessionCache.keys()) {
@@ -426,8 +424,8 @@ export class SessionLocalCache {
         }
       }
 
-      await fs.writeFile(this.persistPath, JSON.stringify(data), 'utf-8');
-      logger.debug('Cache persisted', { path: this.persistPath });
+      await fs.writeFile(persistPath, JSON.stringify(data), 'utf-8');
+      logger.debug('Cache persisted', { path: persistPath });
     } catch (error) {
       logger.error('Failed to persist cache', { error });
     }
@@ -437,10 +435,11 @@ export class SessionLocalCache {
    * Load cache from disk
    */
   async load(): Promise<void> {
-    if (!this.persistPath) return;
+    const persistPath = typeof this.persistPath === 'function' ? this.persistPath() : this.persistPath;
+    if (!persistPath) return;
 
     try {
-      const content = await fs.readFile(this.persistPath, 'utf-8');
+      const content = await fs.readFile(persistPath, 'utf-8');
       const data = JSON.parse(content) as Record<string, CachedSession>;
 
       for (const [sessionId, session] of Object.entries(data)) {
@@ -448,7 +447,7 @@ export class SessionLocalCache {
       }
 
       logger.debug('Cache loaded', {
-        path: this.persistPath,
+        path: persistPath,
         sessions: Object.keys(data).length,
       });
     } catch (error: unknown) {
@@ -465,7 +464,7 @@ let defaultCache: SessionLocalCache | null = null;
 export function getDefaultCache(): SessionLocalCache {
   if (!defaultCache) {
     defaultCache = new SessionLocalCache({
-      persistPath: path.join(CACHE_DIR, 'sessions.json'),
+      persistPath: () => path.join(getUserConfigDir(), 'cache', 'sessions', 'sessions.json'),
     });
   }
   return defaultCache;

@@ -15,6 +15,8 @@ import type { RuntimeAssetsManifest } from '../../src/host/runtime/runtimeAssetI
 import { verifyControlPlaneEnvelope } from '../../src/host/services/cloud/controlPlaneTrust';
 import { createControlPlaneEnvelope } from '../../vercel-api/lib/controlPlaneEnvelope';
 
+vi.unmock('better-sqlite3');
+
 const tempRoots: string[] = [];
 
 function createKeyPair() {

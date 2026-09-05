@@ -31,6 +31,8 @@ type UpdateServiceRuntimeHarness = {
   getRuntimeAssetPreparationStatus: UpdateService['getRuntimeAssetPreparationStatus'];
 };
 
+vi.unmock('better-sqlite3');
+
 const tempRoots: string[] = [];
 
 const TEST_CONTROL_PLANE_KEY_ID = 'runtime-assets-test-key';

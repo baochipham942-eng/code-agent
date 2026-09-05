@@ -399,10 +399,8 @@ jobs:
         #   （:58）；夹具把 os.tmpdir() 下的根当作系统目录。darwin 的 /var/folders 命中
         #   system_dir_delete，Linux 的 /tmp 只评为 high；同路径只读判定探针已复现差异。
         #
-        # 真 bug 欠条（同一 Ubuntu run，修复后必须摘除；不算平台豁免）：
-        # - runtime/runtimeAssetInstaller.test.ts：`expected [ …(2) ] to include
-        #   'a84d89f31285cadf4ac994d6e252628d2f0bf…'`；归档 mtime 排序丢掉上一安装版。
-        #   排除理由=真 bug，见 N-RUNTIME-ASSET-RETENTION-ORDER-0905。
+        # 真 bug 欠条（同一 Ubuntu run，修复后必须摘除；不算平台豁免）：当前无。
+        #   已偿还：folderTrustService（#1657）、runtimeAssetInstaller（N-RUNTIME-ASSET-RETENTION-ORDER-0905）。
         #
         # PR #691 曾误排整个 modules/network，摘掉后 12 文件仅 webSearch 一条挂；
         # 排除必须绑定实测失败文件，不能用平台理由整目录一刀切。
@@ -413,8 +411,7 @@ jobs:
             --exclude 'tests/unit/agent/goalVerifyGate.test.ts' \
             --exclude 'tests/unit/permissions/writebackEdit.test.ts' \
             --exclude 'tests/unit/runtime/runtimeAssetStatus.test.ts' \
-            --exclude 'tests/unit/security/commandSafety.approvalDecisionGaps.test.ts' \
-            --exclude 'tests/unit/runtime/runtimeAssetInstaller.test.ts'
+            --exclude 'tests/unit/security/commandSafety.approvalDecisionGaps.test.ts'
 
   full:
     name: Swarm full (smoke + e2e)

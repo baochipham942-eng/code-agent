@@ -107,6 +107,38 @@ describe('ExecPolicyStore', () => {
       store.addRule(['rm', '-rf'], 'forbidden');
       expect(store.match('rm -rf /')).toBe('forbidden');
     });
+
+    // 2026-09-05 真机：学到 ['find','.'] 后 `find . -delete` 被前缀放行免审批。
+    it('a learned prefix that is itself a safe command does not cover the dangerous flags outside it', () => {
+      store.addRule(['find', '.'], 'allow');
+      expect(store.match('find . -name "*.ts"')).toBe('allow');
+      expect(store.match('find . -delete')).toBeNull();
+      expect(store.match('find . -exec rm {} \\;')).toBeNull();
+    });
+
+    it('a learned prefix that carries the risk itself keeps allowing', () => {
+      store.addRule(['git', 'push'], 'allow');
+      expect(store.match('git push origin main')).toBe('allow');
+      store.addRule(['npm', 'install'], 'allow');
+      expect(store.match('npm install lodash')).toBe('allow');
+    });
+
+    it('rules loaded from a file without source are treated as learned and still guarded', () => {
+      const dir = path.join(tmpDir, '.code-agent');
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, 'exec-policy.json'), JSON.stringify({
+        version: 1,
+        rules: [{ pattern: ['find', '.'], decision: 'allow', createdAt: 1 }],
+      }));
+      const loaded = new ExecPolicyStore(tmpDir);
+      expect(loaded.match('find . -name x')).toBe('allow');
+      expect(loaded.match('find . -delete')).toBeNull();
+    });
+
+    it('builtin rules are not subject to the learned-prefix guard', () => {
+      store.addRule(['find', '.'], 'allow', 'builtin');
+      expect(store.match('find . -delete')).toBe('allow');
+    });
   });
 
   // ========================================================================
@@ -126,6 +158,14 @@ describe('ExecPolicyStore', () => {
       expect(store.learnFromApproval('bash -c "ls"')).toBe(false);
       expect(store.learnFromApproval('sudo rm -rf /')).toBe(false);
       expect(store.learnFromApproval('node script.js')).toBe(false);
+    });
+
+    it('does not learn a prefix that leaves the approved risk outside it', () => {
+      expect(store.learnFromApproval('find . -delete')).toBe(false);
+      expect(store.learnFromApproval('find /tmp -exec rm {} \\;')).toBe(false);
+      expect(store.getRules()).toHaveLength(0);
+      // 风险在前缀里的照学
+      expect(store.learnFromApproval('git push origin main')).toBe(true);
     });
 
     it('does not learn duplicate rules', () => {

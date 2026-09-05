@@ -150,6 +150,7 @@ try {
     if (selected.packages.includes('vercel-api')) checkDependencies('vercel-api');
     initial = snapshot();
     if (initial.headSha !== receipt.headSha || initial.treeSha !== receipt.treeSha) throw new Error('FAIL: HEAD moved during test selection; receipt invalid');
+    if (initial.baseSha !== receipt.baseSha) throw new Error('FAIL: base moved during test selection (concurrent fetch?); receipt invalid');
     Object.assign(receipt, initial);
     receipt.repo = git('config', '--get', 'remote.origin.url');
     receipt.workorder = options.workorder ?? null;

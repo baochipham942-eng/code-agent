@@ -346,9 +346,22 @@ export class CLISessionManager {
     }
   }
 
-  /**
-   * 获取会话消息
-   */
+  /** 替换压缩后的会话投影，同时更新内存缓存。 */
+  async replaceMessages(sessionId: string, messages: Message[]): Promise<void> {
+    const db = this.getDb();
+    if (db) {
+      if (!(await this.ensureDbReady())) throw new Error('session_database_unavailable');
+      db.replaceMessages(sessionId, messages);
+    }
+    const cached = this.sessionCache.get(sessionId);
+    if (cached) {
+      cached.messages = [...messages];
+      cached.messageCount = messages.length;
+      cached.updatedAt = Date.now();
+    }
+  }
+
+  /** 获取会话消息。 */
   async getMessages(sessionId: string, limit?: number): Promise<Message[]> {
     if (!(await this.ensureDbReady())) {
       return [];

@@ -59,7 +59,7 @@ function snapshot() {
     lockHash: hashFiles(git('ls-files').split('\n').filter((file) => /(^|\/)package-lock\.json$/.test(file))),
     privateInputsHash: hashPrivate(),
     installedHash: hashFiles(['node_modules/.package-lock.json', ...receipt.packageChecks.flatMap((pkg) => pkg === 'vercel-api' ? ['vercel-api/node_modules/.package-lock.json'] : [])]),
-    regressionsHash: digest(JSON.stringify(regressions)),
+    regressionsHash: digest(options.regressions ? fs.readFileSync(options.regressions) : JSON.stringify(regressions)),
   };
 }
 function checkDependencies(prefix = '') {
@@ -119,6 +119,11 @@ try {
     options[key.slice(2)] = value;
   }
   if (options.receipt) output = path.resolve(options.receipt);
+  if (output.startsWith(`${root}${path.sep}`) && !output.startsWith(`${path.join(root, '.reports/gates-fast')}${path.sep}`)) {
+    output = path.join(root, '.reports/gates-fast', `${receipt.receiptId}.json`);
+    throw new Error('FAIL: receipt must be outside source or under .reports/gates-fast');
+  }
+  if (policy.budgetMs !== 60000 || policy.maxFiles !== 12) throw new Error('FAIL: first-version policy requires 60000ms and 12-file maximum');
   if (options.regressions) regressions = JSON.parse(fs.readFileSync(options.regressions, 'utf8'));
   await gate('inputs', true, async () => {
     const { resolveAnswerSideRoot } = await tsImport(path.join(root, 'src/host/testing/answerSide.ts'), import.meta.url);

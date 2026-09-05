@@ -774,10 +774,7 @@ export class CronService implements Disposable {
       }
 
       case 'tool': {
-        // Tool execution would need to be integrated with the tool executor
-        // For now, return a placeholder
-        console.error(`[CronService] Would execute tool: ${action.toolName}`);
-        return { toolName: action.toolName, parameters: action.parameters };
+        throw new Error('unsupported_action');
       }
 
       case 'agent': {
@@ -946,9 +943,7 @@ export class CronService implements Disposable {
       }
 
       case 'ipc': {
-        // IPC would need to be integrated with the IPC system
-        console.error(`[CronService] Would send IPC: ${action.channel}`);
-        return { channel: action.channel, payload: action.payload };
+        throw new Error('unsupported_action');
       }
 
       case 'memory-consolidation': {

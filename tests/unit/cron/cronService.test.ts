@@ -646,3 +646,26 @@ describe('CronService every schedule units', () => {
     await service.shutdown();
   });
 });
+
+
+describe('N-CRON-ACTIONGATE unsupported actions', () => {
+  it.each([
+    { type: 'tool', toolName: 'Read', parameters: { file_path: '/tmp/cron-test' } },
+    { type: 'ipc', channel: 'session:list', payload: {} },
+  ] satisfies import('../../../src/shared/contract/cron').CronJobAction[])(
+    '$type 不执行占位任务，也不能留下 completed 记录', async (action) => {
+      const service = new CronService();
+      const job = await service.createJob({
+        name: `unsupported ${action.type}`, runsOn: 'local', enabled: false,
+        scheduleType: 'every', schedule: { type: 'every', interval: 1, unit: 'hours' },
+        action, maxRetries: 0,
+      });
+      const execution = await service.triggerJob(job.id);
+      expect(execution).toMatchObject({ status: 'failed', error: 'unsupported_action' });
+      if (!execution) throw new Error('Expected an execution record');
+      expect(execution.result).toBeUndefined();
+      const stored = dbState.savedRows.filter((row) => row[0] === execution.id).at(-1);
+      expect(stored).toEqual(expect.arrayContaining([execution.id, job.id, 'failed', 'unsupported_action']));
+    },
+  );
+});

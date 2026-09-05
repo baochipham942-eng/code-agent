@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import type React from 'react';
 import type { MessageAttachment } from '@shared/contract';
 import type { QueuedInput } from '@shared/contract/queuedInput';
@@ -178,6 +178,34 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
     setActiveAgentId,
   } = params;
 
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
+
+  // 只清本次发送仍拥有的选择；等待期间的编辑或预设加载会替换这些引用。
+  const captureSuccessfulSendReset = useCallback(() => {
+    const snapshot = useComposerStore.getState();
+    return () => {
+      const current = useComposerStore.getState();
+      const unchanged = mounted.current
+        && current.activeScopeKey === snapshot.activeScopeKey
+        && current.hydratedSessionId === snapshot.hydratedSessionId
+        && current.selectedSkillIds === snapshot.selectedSkillIds
+        && current.selectedConnectorIds === snapshot.selectedConnectorIds
+        && current.selectedMcpServerIds === snapshot.selectedMcpServerIds
+        && current.turnCapabilityScopeMode === snapshot.turnCapabilityScopeMode
+        && current.selectedTeamRecipeId === snapshot.selectedTeamRecipeId
+        && current.standbyExcludedMemberKeys === snapshot.standbyExcludedMemberKeys
+        && current.pendingCommand === snapshot.pendingCommand
+        && current.routingMode === snapshot.routingMode
+        && current.targetAgentIds === snapshot.targetAgentIds
+        && current.workingDirectory === snapshot.workingDirectory;
+      if (unchanged) current.resetForSuccessfulSend();
+    };
+  }, []);
+
   // 定时任务创建统一入口：内联 /schedule 和对话式卡片都走这里（cron:generateFromPrompt → createJob）。
   const runScheduleCreation = useCallback(async (
     description: string,
@@ -272,19 +300,20 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
     setValue('');
     setAttachments([]);
     closeGoalConfirm();
+    const resetSentSelection = captureSuccessfulSendReset();
     try {
       const sent = await onSend(goalEnvelope);
       if (sent === false) {
         if (currentSessionId) useAppStore.getState().clearGoalRun(currentSessionId);
         return false;
       }
-      useComposerStore.getState().resetForSuccessfulSend();
+      resetSentSelection();
       return true;
     } catch {
       if (currentSessionId) useAppStore.getState().clearGoalRun(currentSessionId);
       return false;
     }
-  }, [addToInputHistory, attachments, buildEnvelope, closeGoalConfirm, currentSessionId, onSend, setAttachments, setValue]);
+  }, [addToInputHistory, attachments, buildEnvelope, captureSuccessfulSendReset, closeGoalConfirm, currentSessionId, onSend, setAttachments, setValue]);
 
   // 处理提交
   // 运行中允许提交，把新输入排到当前回复结束后发送。
@@ -554,6 +583,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
       if (typeof setArtifactReferences === 'function') setArtifactReferences([]);
       clearPendingCommand();
       clearAppshot();
+      const resetSentSelection = captureSuccessfulSendReset();
 
       // 发送没走完（返回 false / 抛错 / 超时不返回）都走同一条回滚：草稿还回输入框。
       // 只有超时那一档额外出声——另外两档调用方自己已经给了用户可见反馈。
@@ -626,7 +656,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
           return;
         }
       }
-      useComposerStore.getState().resetForSuccessfulSend();
+      resetSentSelection();
     }
   };
 

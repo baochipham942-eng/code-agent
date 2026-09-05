@@ -77,13 +77,13 @@ function makeParams(overrides: Partial<UseChatInputSubmitParams>): UseChatInputS
 }
 
 // 只关心「草稿有没有回来 / 有没有出声」，不需要挂真的 InputArea（它在 jsdom 里 focus 会抛）。
-function Harness({ onSend }: { onSend: (envelope: ConversationEnvelope) => Promise<boolean> }) {
+function Harness({ onSend, goal = false }: { onSend: (envelope: ConversationEnvelope) => Promise<boolean>; goal?: boolean }) {
   const [value, setValue] = useState(DRAFT);
-  const { handleSubmit } = useChatInputSubmit(makeParams({ value, setValue, onSend }));
+  const { handleSubmit, startGoalRun } = useChatInputSubmit(makeParams({ value, setValue, onSend }));
   return (
     <div>
       <span data-testid="draft">{value}</span>
-      <button type="button" onClick={() => void handleSubmit()}>send</button>
+      <button type="button" onClick={() => void (goal ? startGoalRun({ goal: DRAFT }, DRAFT) : handleSubmit())}>send</button>
     </div>
   );
 }
@@ -108,6 +108,41 @@ describe('发送挂住不返回时的兜底', () => {
       selectedConnectorIds: sent ? [] : ['mail'],
       selectedMcpServerIds: sent ? [] : ['github'],
       turnCapabilityScopeMode: sent ? 'auto' : 'manual',
+    });
+  });
+
+  it.each([false, true])('延迟发送（goal=%s）不清空等待期间为下一句选的新能力', async (goal) => {
+    const store = useComposerStore.getState();
+    store.setSelectedSkillIds(['old']);
+    let finish!: (sent: boolean) => void;
+    const onSend = vi.fn(() => new Promise<boolean>((resolve) => { finish = resolve; }));
+    render(<Harness onSend={onSend} goal={goal} />);
+    await act(async () => { screen.getByText('send').click(); });
+    store.setSelectedSkillIds(['next-skill']);
+    store.setSelectedConnectorIds(['next-connector']);
+    store.setSelectedMcpServerIds(['next-mcp']);
+    await act(async () => { finish(true); });
+    expect(useComposerStore.getState()).toMatchObject({
+      selectedSkillIds: ['next-skill'], selectedConnectorIds: ['next-connector'],
+      selectedMcpServerIds: ['next-mcp'], turnCapabilityScopeMode: 'manual',
+    });
+  });
+
+  it.each([false, true])('延迟发送（goal=%s）不清空切换会话后加载的预设', async (goal) => {
+    let finish!: (sent: boolean) => void;
+    render(<Harness onSend={() => new Promise<boolean>((resolve) => { finish = resolve; })} goal={goal} />);
+    await act(async () => { screen.getByText('send').click(); });
+    const store = useComposerStore.getState();
+    store.hydrateFromSession('next-session', '/tmp/next-session');
+    store.applyWorkbenchPreset({
+      routingMode: 'auto', targetAgentIds: [], browserSessionMode: 'none',
+      selectedSkillIds: ['preset-skill'], selectedConnectorIds: ['preset-connector'],
+      selectedMcpServerIds: ['preset-mcp'], turnCapabilityScopeMode: 'manual',
+    });
+    await act(async () => { finish(true); });
+    expect(useComposerStore.getState()).toMatchObject({
+      selectedSkillIds: ['preset-skill'], selectedConnectorIds: ['preset-connector'],
+      selectedMcpServerIds: ['preset-mcp'], turnCapabilityScopeMode: 'manual',
     });
   });
 

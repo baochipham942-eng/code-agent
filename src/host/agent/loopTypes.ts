@@ -342,21 +342,16 @@ export interface TurnProgressState {
  * Tools that are safe to execute in parallel (stateless, read-only)
  */
 export const PARALLEL_SAFE_TOOLS = new Set([
-  'read_file',
-  'glob',
-  'grep',
-  'list_directory',
+  'Read',
+  'Glob',
+  'Grep',
+  'ListDirectory',
   'web_fetch',
-  'web_search',
+  'WebFetch',
+  'WebSearch',
   'memory_search',
-  'mcp_list_tools',
-  'mcp_list_resources',
-  'mcp_read_resource',
-  'mcp_get_status',
-  // P5: 子代理任务可并行（只读子代理如 explore, reviewer, plan）
   'Explore',
-  'task',
-  'Task',  // SDK 版本
+  'Task',
 ]);
 
 /**

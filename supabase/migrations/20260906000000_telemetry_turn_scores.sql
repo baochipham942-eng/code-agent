@@ -8,7 +8,7 @@
 -- 本文件三件事，全是纯新增，不改不删任何现有表 / 列 / 策略：
 --   1. telemetry_sessions 补 origin_kind 列（K2 在本机落了这个标记，云端还没有这一列）
 --   2. 新表 telemetry_turn_scores + RLS 四条（抄遥测五表形态）
---   3. admin 聚合视图 admin_postlaunch_quality（security_invoker，admin-only 由底表 RLS 生效）
+--   3. 聚合视图 admin_postlaunch_quality（security_invoker=on，可见性完全由底表 RLS 决定）
 -- ============================================================================
 
 -- ----------------------------------------------------------------------------
@@ -100,8 +100,13 @@ CREATE INDEX IF NOT EXISTS idx_turn_scores_session
   ON public.telemetry_turn_scores(session_id);
 
 -- ----------------------------------------------------------------------------
--- 3) admin_postlaunch_quality —— 周 × 版本 × 用户 × 采样来源的过率
+-- 3) admin_postlaunch_quality —— 周 × 天 × 版本 × 用户 × 采样来源的过率
 -- ----------------------------------------------------------------------------
+-- security_invoker=on ⇒ 可见性就是底表 telemetry_turn_scores 的 RLS：admin 看全部，
+-- 普通用户看得见**自己那几行**（2026-08-08 加 select own 之后就是这样，读回的是他本来
+-- 就存在自己机器上的那份数据，不是跨用户泄露）。控制台不靠这层挡人——middleware 的
+-- is_code_agent_admin() 已经把非 admin 拦在页面外。
+-- 本地沙箱实测：alice 在视图里看到自己 1 行、别人 0 行；admin（自己零数据）看到 2 行。
 -- WHERE 段与本机 isPostLaunchScorableSession（src/shared/contract/postLaunchScore.ts:89）
 -- **字面对齐**，一处判两处用。TS 那边逐行是：
 --   if (!isScorableSessionType(session.sessionType)) return false;   // 空 session_type 按 chat 算，进分母

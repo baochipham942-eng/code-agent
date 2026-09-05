@@ -9,7 +9,7 @@ export function structuredErrorCode(error: unknown): string | undefined {
   return typeof code === 'string' && code.length > 0 ? code : undefined;
 }
 
-export function unattendedPermissionFailureError(
+function unattendedPermissionFailureError(
   failure: { code: string; message: string; requestId: string; tool: string },
 ): Error {
   return Object.assign(new Error(failure.message), {

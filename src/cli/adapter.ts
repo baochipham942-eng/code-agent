@@ -592,7 +592,8 @@ export class CLIAgent {
     const unchanged = (reason: string) => ({
       success: false, reason, beforeTokens, afterTokens: beforeTokens, savedTokens: 0,
     });
-    if (this.isRunning || this.isCompacting) return unchanged('run_active');
+    if (this.isCompacting) return unchanged('compaction_active');
+    if (this.isRunning) return unchanged('run_active');
     const sessionId = this.sessionId;
     if (!sessionId) return unchanged('session_unavailable');
     const history = this.messages;
@@ -605,12 +606,22 @@ export class CLIAgent {
       const session = await getSessionManager().getSession(sessionId, Number.MAX_SAFE_INTEGER);
       if (!session) return unchanged('session_unavailable');
       if (historyChanged()) return unchanged('history_changed');
+      // injectContext (and an unpersisted local message) can exist only in memory.
+      // Keep those entries in their live order, anchored before the next persisted ID.
+      const messages = [...session.messages];
+      let insertionIndex = messages.length;
+      for (let index = snapshot.length - 1; index >= 0; index--) {
+        const message = snapshot[index];
+        const persistedIndex = messages.findIndex(({ id }) => id === message.id);
+        if (persistedIndex >= 0) insertionIndex = persistedIndex;
+        else messages.splice(insertionIndex, 0, message);
+      }
       const { compactMessagesWithSummary } = await import('../host/context/compactionService');
       const settings = getConfigService().getSettings();
       const result = await compactMessagesWithSummary({
         sessionId,
         source: 'manual_current',
-        messages: session.messages,
+        messages,
         preserveRecentCount: settings.contextCompression?.preserveRecentCount,
         systemPrompt: this.systemPrompt,
         modelConfig: this.config.modelConfig,
@@ -625,8 +636,11 @@ export class CLIAgent {
       if (!result.success || !result.newMessages) return outcome;
       if (historyChanged()) return unchanged('history_changed');
       await getSessionManager().replaceMessages(sessionId, result.newMessages);
-      if (historyChanged()) return unchanged('history_changed');
-      this.messages = result.newMessages;
+      // The target session has committed successfully, even if the user switched away.
+      // Retain any context injected while persistence was awaiting completion.
+      if (this.sessionId === sessionId && this.messages === history) {
+        this.messages = [...result.newMessages, ...history.slice(snapshot.length)];
+      }
       return outcome;
     } finally {
       this.isCompacting = false;

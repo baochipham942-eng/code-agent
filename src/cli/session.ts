@@ -174,7 +174,9 @@ export class CLISessionManager {
     };
 
     // 缓存
-    this.sessionCache.set(sessionId, sessionWithMessages);
+    if (messageLimit !== Number.MAX_SAFE_INTEGER) {
+      this.sessionCache.set(sessionId, sessionWithMessages);
+    }
 
     return sessionWithMessages;
   }

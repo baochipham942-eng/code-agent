@@ -903,6 +903,38 @@ describe('N-COMPACT-CMD-NOOP CLI 下一 run 上下文', () => {
     }
   });
 
+  it('压缩保留仅在内存的 PR 注入上下文，并交给下一 run', async () => {
+    const agent = new CLIAgent();
+    await agent.restoreSession('sess-1');
+    const context = 'PR context: the response must retain this branch diff.';
+    agent.injectContext(context);
+    const injected = agent.getHistory().at(-1)!;
+    expect(stored.some(({ id }) => id === injected.id)).toBe(false);
+    await expect(agent.compactHistory()).resolves.toMatchObject({ success: true });
+    expect(stored).toContainEqual(injected);
+    await agent.run('Continue the conversation.');
+    const nextMessages = mocks.createAgentLoop.mock.calls.at(-1)![2] as Message[];
+    expect(nextMessages).toContainEqual(injected);
+  });
+
+  it('持久化期间注入上下文不会被覆盖，已写回的压缩返回成功', async () => {
+    let finish!: () => void;
+    replaceMessages.mockImplementation(async (_id: string, messages: Message[]) => {
+      await new Promise<void>((resolve) => { finish = resolve; });
+      stored = structuredClone(messages);
+    });
+    const agent = new CLIAgent();
+    await agent.restoreSession('sess-1');
+    const pending = agent.compactHistory();
+    await vi.waitFor(() => expect(replaceMessages).toHaveBeenCalled());
+    agent.injectContext('Keep the newly injected context too.');
+    const injected = agent.getHistory().at(-1)!;
+    finish();
+    await expect(pending).resolves.toMatchObject({ success: true });
+    expect(agent.getHistory()).toContainEqual(injected);
+    expect(agent.getHistory()[0].compaction?.source).toBe('manual_current');
+  });
+
   it('无会话时返回独立原因码，失败提示只输出一次', async () => {
     const agent = new CLIAgent();
     const output = { info: vi.fn(), success: vi.fn(), warn: vi.fn(), error: vi.fn() };
@@ -943,6 +975,7 @@ describe('N-COMPACT-CMD-NOOP CLI 下一 run 上下文', () => {
     await agent.restoreSession('sess-1');
     const pending = agent.compactHistory();
     await vi.waitFor(() => expect(mocks.compactSummary).toHaveBeenCalled());
+    await expect(agent.compactHistory()).resolves.toMatchObject({ success: false, reason: 'compaction_active' });
     await expect(agent.run('too early')).resolves.toMatchObject({ success: false, error: '上下文正在压缩，请稍后再发送。' });
     expect(mocks.createAgentLoop).not.toHaveBeenCalled();
     finish(summaryResult);

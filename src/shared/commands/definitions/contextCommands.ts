@@ -26,7 +26,9 @@ export const compactCommand: CommandDefinition = {
     try {
       const result = await agent.compactHistory(args.join(' ').trim() || undefined);
       if (!result.success) {
-        const message = result.reason === 'session_unavailable'
+        const message = result.reason === 'compaction_active'
+          ? text.compacting
+          : result.reason === 'session_unavailable'
           ? text.sessionUnavailable
           : result.reason === 'run_active'
           ? text.busy

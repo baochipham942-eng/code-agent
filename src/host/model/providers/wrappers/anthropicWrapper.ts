@@ -283,7 +283,7 @@ export function parseClaudeSSEEvent(eventType: string, rawData: unknown): Claude
   // 兜底：以 eventType 为准注入 type
   const candidate =
     typeof rawData === 'object' && rawData !== null
-      ? { ...(rawData as Record<string, unknown>), type: eventType }
+      ? { ...(rawData as Record<string, unknown>), type: eventType || (rawData as Record<string, unknown>).type }
       : { type: eventType };
 
   const parsed = ClaudeSSEEventSchema.safeParse(candidate);

@@ -386,15 +386,42 @@ describe('FolderTrustService', () => {
     const asyncStat = vi.spyOn(fs, 'stat').mockResolvedValue(unavailable);
     const syncStat = vi.spyOn(nativeFs, 'statSync').mockReturnValue(unavailable);
     try {
-      expect((await service.set(projectDir, 'trusted', 'test')).state).toBe('untrusted');
-      expect(service.setSync(projectDir, 'trusted', 'test').state).toBe('untrusted');
-      expect((await service.evaluate(projectDir)).identityChanged).toBe(true);
-      expect(service.evaluateSync(projectDir).identityChanged).toBe(true);
+      await expect(service.set(projectDir, 'trusted', 'test'))
+        .rejects.toThrow('This filesystem does not provide folder creation time');
+      expect(() => service.setSync(projectDir, 'trusted', 'test'))
+        .toThrow('This filesystem does not provide folder creation time');
+      expect((await service.evaluate(projectDir)).state).toBe('untrusted');
+      const db = new Database(path.join(getUserConfigDir(), 'code-agent.db'));
+      expect(db.prepare('SELECT state FROM folder_trust').get()).toBeUndefined();
+      db.close();
+      expect((await service.set(projectDir, 'blocked', 'test')).state).toBe('blocked');
+      expect(service.setSync(projectDir, 'blocked', 'test').state).toBe('blocked');
+      await expect(service.set(projectDir, 'trusted', 'test')).rejects.toThrow('Folder trust cannot be saved');
+      expect(service.evaluateSync(projectDir).state).toBe('blocked');
     } finally {
       asyncStat.mockRestore();
       syncStat.mockRestore();
       service.close();
     }
+  });
+
+  it('preserves an explicit block when migrating decisions without a birthtime snapshot', async () => {
+    await writeFile(path.join(projectDir, 'CLAUDE.md'), '# project instructions');
+    await writeFile(path.join(projectDir, '.code-agent', 'commands', 'ship.md'), 'Ship');
+    await setFolderTrust(projectDir, 'blocked', 'test');
+    closeFolderTrustService();
+    const db = new Database(path.join(getUserConfigDir(), 'code-agent.db'));
+    db.exec('ALTER TABLE folder_trust DROP COLUMN birthtime_ns');
+    db.close();
+    const service = new FolderTrustService();
+    for (const result of [service.evaluateSync(projectDir), await service.evaluate(projectDir)]) {
+      expect(result.identityChanged).toBe(true);
+      expect(result.state).toBe('blocked');
+    }
+    expect(await isProjectConfigTrusted(projectDir, 'agent-instructions')).toBe(false);
+    expect(await isProjectConfigTrusted(projectDir, 'project-commands')).toBe(false);
+    expect((await service.set(projectDir, 'trusted', 'user')).state).toBe('trusted');
+    service.close();
   });
 
 });

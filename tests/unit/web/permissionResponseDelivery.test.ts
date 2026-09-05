@@ -107,7 +107,7 @@ describe('审批响应投递链路（web 路径）', () => {
     const result = await invoke(requestId, 'allow', sessionId);
     expect(result.success).toBe(true);
     // 真实行为判据：工具那一侧真的被放行了，而不是「handler 被调用过」
-    await expect(approval).resolves.toEqual({ approved: true });
+    await expect(approval).resolves.toEqual({ approved: true, approvalSource: 'user' });
   });
 
   it('拒绝也真的传到了工具那一侧', async () => {
@@ -169,7 +169,7 @@ describe('审批响应投递链路（web 路径）', () => {
 
     const [requestId] = pendingIds(orchestrator);
     await expect(invoke(requestId, 'allow', sessionId)).resolves.toMatchObject({ success: true });
-    await expect(approval).resolves.toEqual({ approved: true });
+    await expect(approval).resolves.toEqual({ approved: true, approvalSource: 'user' });
   });
 
   it('dev 审批（/api/dev 真审批）仍走原来的 pendingDevPermissions 出口', async () => {
@@ -208,7 +208,7 @@ describe('审批响应投递链路（web 路径）', () => {
         success: true,
         data: { source: 'foreground-permission-island' },
       });
-      await expect(approval).resolves.toEqual({ approved: true });
+      await expect(approval).resolves.toEqual({ approved: true, approvalSource: 'user' });
     } finally {
       island.drainPendingPermissions();
       unregisterForegroundPermissionIsland(sessionId, island);
@@ -237,7 +237,7 @@ describe('审批响应投递链路（web 路径）', () => {
       const result = await invoke(requestId, 'allow', sessionId);
       // 必须穿过前台岛落到 TaskManager，而不是被岛的 unknown_request 短路成失败
       expect(result).toMatchObject({ success: true, data: { source: 'task-manager' } });
-      await expect(approval).resolves.toEqual({ approved: true });
+      await expect(approval).resolves.toEqual({ approved: true, approvalSource: 'user' });
     } finally {
       island.drainPendingPermissions();
       unregisterForegroundPermissionIsland(sessionId, island);

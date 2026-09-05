@@ -26,6 +26,7 @@
     "lint:host-esm-cjs": "node scripts/ci/host-esm-cjs-lint.mjs",
     "lint:shell-fail-loud": "node scripts/shell-fail-loud-lint.mjs",
     "debt:report": "node scripts/architecture-debt-report.mjs",
+    "gates:fast": "node scripts/gates-fast.mjs",
     "gates:local": "node scripts/gates-local.mjs",
     "check:agent-event-schema": "node scripts/ci/agent-event-schema-gate.mjs",
     "check:visual-shotbase-baselines": "node scripts/ci/visual-shotbase-baseline-gate.mjs",

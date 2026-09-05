@@ -110,19 +110,37 @@ function removeShellLineContinuations(command: string): string {
   return result;
 }
 
+/**
+ * Where the wrapped command starts, or 'unresolved' when an option we do not know appears.
+ *
+ * Treating an unknown option as a boolean flag is a bypass, not a guess: `sudo -D all@debug tee
+ * ~/.ssh/authorized_keys` would make `all@debug` the program and `tee`'s target would never reach
+ * the path policy. Both tables below are therefore allowlists — forgetting an option costs an extra
+ * approval card (fail closed), never a silent write through an Edit(...) / denied_paths deny.
+ */
 function optionCommandIndex(
   args: string[],
   valueOptions: ReadonlySet<string>,
-  options?: { assignments?: boolean; skipDuration?: boolean },
-): number | null {
+  booleanOptions: ReadonlySet<string>,
+  options?: { assignments?: boolean; skipDuration?: boolean; numericFlags?: boolean },
+): number | null | 'unresolved' {
   let index = 0;
   for (; index < args.length; index += 1) {
     const arg = args[index];
     if (arg === '--') return index + 1 < args.length ? index + 1 : null;
     if (options?.assignments && /^[A-Za-z_][A-Za-z0-9_]*=/.test(arg)) continue;
     if (!arg.startsWith('-') || arg === '-') break;
+    if (options?.numericFlags && /^-\d+$/.test(arg)) continue;
     const optionName = arg.split('=', 1)[0];
-    if (valueOptions.has(optionName) && !arg.includes('=')) index += 1;
+    if (valueOptions.has(optionName)) {
+      if (!arg.includes('=')) index += 1;
+      continue;
+    }
+    if (booleanOptions.has(optionName)) continue;
+    // A cluster of short boolean flags (`sudo -En`) is still fully understood.
+    if (/^-[A-Za-z0-9]+$/.test(arg)
+      && [...arg.slice(1)].every((letter) => booleanOptions.has(`-${letter}`))) continue;
+    return 'unresolved';
   }
   if (options?.skipDuration) index += 1;
   return index < args.length ? index : null;
@@ -195,36 +213,57 @@ function expandEnvSplitStrings(args: string[]): { args: string[]; failed?: strin
   return { args: expanded, failed: 'env --split-string expansion exceeds 4 levels' };
 }
 
-function wrapperCommandIndex(program: string, args: string[]): number | null {
+function wrapperCommandIndex(program: string, args: string[]): number | null | 'unresolved' {
   if (PRIVILEGE_WRAPPERS.has(program)) {
     return optionCommandIndex(args, new Set([
       '-u', '--user', '-g', '--group', '-h', '--host', '-p', '--prompt',
       '-C', '--close-from', '-R', '--chroot', '-T', '--command-timeout',
+      '-D', '--chdir', '-U', '--other-user', '-r', '--role', '-t', '--type',
+      '-a', '--auth-type',
+    ]), new Set([
+      '-A', '--askpass', '-b', '--background', '-E', '--preserve-env', '-H', '--set-home',
+      '-i', '--login', '-K', '--remove-timestamp', '-k', '--reset-timestamp', '-l', '--list',
+      '-n', '--non-interactive', '-P', '--preserve-groups', '-S', '--stdin', '-s', '--shell',
+      '-V', '--version', '-v', '--validate', '-L', '--help',
     ]));
   }
   if (program === 'env') {
     return optionCommandIndex(args, new Set([
       '-u', '--unset', '-C', '--chdir', '-S', '--split-string',
+    ]), new Set([
+      '-i', '--ignore-environment', '-0', '--null', '-v', '--debug', '--help', '--version',
     ]), { assignments: true });
   }
   if (SIMPLE_WRAPPERS.has(program)) {
-    return optionCommandIndex(args, new Set(program === 'exec' ? ['-a'] : []));
+    return optionCommandIndex(
+      args,
+      new Set(program === 'exec' ? ['-a'] : []),
+      new Set(program === 'exec' ? ['-c', '-l'] : ['-p']),
+    );
   }
   if (program === 'nice') {
-    return optionCommandIndex(args, new Set(['-n', '--adjustment']));
+    return optionCommandIndex(args, new Set(['-n', '--adjustment']), new Set(['--help', '--version']), {
+      numericFlags: true,
+    });
   }
   if (program === 'timeout') {
-    return optionCommandIndex(args, new Set(['-k', '--kill-after', '-s', '--signal']), {
-      skipDuration: true,
-    });
+    return optionCommandIndex(
+      args,
+      new Set(['-k', '--kill-after', '-s', '--signal']),
+      new Set(['--foreground', '--preserve-status', '-v', '--verbose', '--help', '--version']),
+      { skipDuration: true },
+    );
   }
   if (program === 'xargs') {
     return optionCommandIndex(args, new Set([
       '-E', '--eof', '-I', '--replace', '-L', '--max-lines', '-n', '--max-args',
-      '-P', '--max-procs', '-s', '--max-chars', '-a', '--arg-file',
+      '-P', '--max-procs', '-s', '--max-chars', '-a', '--arg-file', '-d', '--delimiter',
+    ]), new Set([
+      '-0', '--null', '-r', '--no-run-if-empty', '-t', '--verbose', '-p', '--interactive',
+      '-x', '--exit', '--help', '--version',
     ]));
   }
-  if (program === 'busybox') return optionCommandIndex(args, new Set([]));
+  if (program === 'busybox') return optionCommandIndex(args, new Set([]), new Set([]));
   return null;
 }
 
@@ -403,6 +442,16 @@ function expandExecutions(
   }
 
   const commandIndex = wrapperCommandIndex(program, args);
+  if (commandIndex === 'unresolved') {
+    // We cannot tell where the wrapped command starts, so we must not guess a program: any write
+    // target after the option we failed to read would silently skip the path policy.
+    return {
+      executions: [],
+      targets: [],
+      uncertain: [],
+      failed: `${program} option arity is not known`,
+    };
+  }
   if (commandIndex !== null) {
     const nested = args.slice(commandIndex);
     if (nested.length === 0) {

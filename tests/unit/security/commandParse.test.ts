@@ -104,6 +104,39 @@ describe('shared shell command parser', () => {
     expect(parsed.uncertain.some((reason) => reason.startsWith('unknown-shell-launcher:'))).toBe(false);
   });
 
+  it("reads sudo's value-taking options so the wrapped write target survives", () => {
+    // -D takes a value; reading it as a boolean flag made `all@debug` the program and lost tee's
+    // target entirely — the shape that slipped past Edit(~/.ssh/**).
+    expect(parseShellCommand('sudo -D all@debug tee ~/.ssh/authorized_keys')).toMatchObject({
+      parsingFailed: false,
+      writeTargets: [expect.objectContaining({ path: expect.stringContaining('authorized_keys') })],
+    });
+  });
+
+  it.each([
+    'sudo --not-a-real-option tee ~/.ssh/authorized_keys',
+    'sudo -Q tee ~/.ssh/authorized_keys',
+    'xargs --unknown-opt tee out.txt',
+  ])('fails closed when a wrapper option arity is unknown: %s', (command) => {
+    // Guessing "unknown option = boolean flag" is a bypass, not a guess: the next word becomes the
+    // program and every write target after it disappears from the path policy.
+    expect(parseShellCommand(command)).toMatchObject({ parsingFailed: true });
+  });
+
+  it.each([
+    ['sudo -D /tmp tee out.txt', 'out.txt'],
+    ['sudo -u me tee out.txt', 'out.txt'],
+    ['sudo -En tee out.txt', 'out.txt'],
+    ['sudo --preserve-env=PATH tee out.txt', 'out.txt'],
+    ['nice -5 tee out.txt', 'out.txt'],
+    ['xargs -0 tee out.txt', 'out.txt'],
+  ])('still reads the wrapped write target for known options: %s', (command, target) => {
+    expect(parseShellCommand(command)).toMatchObject({
+      parsingFailed: false,
+      writeTargets: [expect.objectContaining({ path: target })],
+    });
+  });
+
   it('does not treat a shell name used as a plain argument as a launcher', () => {
     expect(parseShellCommand('grep sh file')).toMatchObject({ writeTargets: [], uncertain: [] });
   });

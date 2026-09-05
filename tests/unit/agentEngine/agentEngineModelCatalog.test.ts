@@ -1,5 +1,5 @@
 import * as crypto from 'crypto';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   discoverLocalAgentEngineModels,
   mergeAgentEngineModelCatalogWithDiscovery,
@@ -339,6 +339,7 @@ describe('bundled Agent Engine model catalog', () => {
 });
 
 describe('RemoteAgentEngineModelCatalogService', () => {
+  afterEach(() => vi.useRealTimers());
   it('coalesces concurrent cold readers into one local discovery round', async () => {
     let releaseDiscovery: (() => void) | undefined;
     let markDiscoveryStarted!: () => void;
@@ -397,6 +398,7 @@ describe('RemoteAgentEngineModelCatalogService', () => {
   });
 
   it('serves stale catalog immediately while an expired entry revalidates in background', async () => {
+    vi.useFakeTimers();
     let nowMs = 0;
     let discoveryRound = 0;
     let releaseRefresh: (() => void) | undefined;
@@ -418,16 +420,17 @@ describe('RemoteAgentEngineModelCatalogService', () => {
     const stale = await service.readCatalog();
 
     expect(stale).toBe(first);
-    await vi.waitFor(() => expect(localDiscoveryProvider).toHaveBeenCalledTimes(2));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(localDiscoveryProvider).toHaveBeenCalledTimes(2);
     releaseRefresh?.();
-    await vi.waitFor(async () => {
-      const refreshed = await service.readCatalog();
-      expect(refreshed.catalog.engines.find((engine) => engine.kind === 'codex_cli')?.defaultModel)
-        .toBe('model-2');
-    });
+    await vi.advanceTimersByTimeAsync(0);
+    const refreshed = await service.readCatalog();
+    expect(refreshed.catalog.engines.find((engine) => engine.kind === 'codex_cli')?.defaultModel)
+      .toBe('model-2');
   });
 
   it('waits for fresh catalog after explicit invalidation', async () => {
+    vi.useFakeTimers();
     let discoveryRound = 0;
     let releaseRefresh: (() => void) | undefined;
     const localDiscoveryProvider = vi.fn(async () => {
@@ -443,7 +446,8 @@ describe('RemoteAgentEngineModelCatalogService', () => {
     service.invalidate();
     let settled = false;
     const refreshed = service.readCatalog().finally(() => { settled = true; });
-    await vi.waitFor(() => expect(localDiscoveryProvider).toHaveBeenCalledTimes(2));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(localDiscoveryProvider).toHaveBeenCalledTimes(2);
     expect(settled).toBe(false);
     releaseRefresh?.();
 

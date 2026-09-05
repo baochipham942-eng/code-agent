@@ -9,6 +9,7 @@ process.env.CODE_AGENT_DATA_DIR = path.join(os.tmpdir(), `postlaunch-scorer-${pr
 
 vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
+import { applySchema } from '../../../src/host/services/core/database/schema';
 import { applyTelemetrySchema } from '../../../src/host/services/core/database/schemaTelemetry';
 import type { ReplayBlock, StructuredReplay } from '../../../src/shared/contract/evaluationReplay';
 import type { FailureCodebook } from '../../../src/host/testing/failureCodes';
@@ -39,6 +40,8 @@ const ALL_PASS = JSON.stringify({
 
 function db(): Database.Database {
   const database = new Database(':memory:');
+  // 真机上两套表同库：报告要 LEFT JOIN sessions 拿模型起的真标题，只建遥测表会漏掉那条路径。
+  applySchema(database, LOGGER);
   applyTelemetrySchema(database, LOGGER);
   return database;
 }
@@ -55,6 +58,14 @@ function insertSession(
     INSERT INTO telemetry_sessions (id, title, model_provider, model_name, working_directory, start_time, session_type, origin_kind, agent_version, prompt_version)
     VALUES (?, ?, 'deepseek', 'deepseek-chat', '/ws', ?, ?, ?, '0.33.0', 'p7')
   `).run(id, title, startTime, sessionType, originKind);
+}
+
+/** 会话主表那一行（模型自动起的标题写在这里，遥测表不回写）。 */
+function insertChatSession(database: Database.Database, id: string, title: string): void {
+  database.prepare(`
+    INSERT INTO sessions (id, title, model_provider, model_name, session_type, created_at, updated_at)
+    VALUES (?, ?, 'deepseek', 'deepseek-chat', 'chat', 0, 0)
+  `).run(id, title);
 }
 
 function insertTurn(
@@ -424,7 +435,8 @@ describe('上线后打分编排', () => {
     expect(sampleRow.dims.goal).toEqual({ judged: 1, passed: 1 });
     expect(group.appVersion).toBe('0.33.0');
     // ⑦下钻要带名字：只给 id 的话卡上一排芯片全长一个样（09-05 shot-4）。
-    // title 与 startedAt 取自 telemetry_sessions，不是拿 id 凑的——所以标题特意跟 id 不同。
+    // 这条会话没有 sessions 行 ⇒ 回落遥测快照，title/startedAt 取自 telemetry_sessions，
+    // 不是拿 id 凑的——所以快照标题特意跟 id 不同。
     expect(group.sessions).toEqual([{ id: 'chat-1', title: '给券组加灰度开关', startedAt: NOW - HOUR }]);
     // κ 缺失 ⇒ 报告顶上必须挂校准不足，不能默认当已校准。
     expect(report.calibration).toEqual({ state: 'insufficient', reason: 'no_record' });
@@ -619,6 +631,56 @@ describe('上线后打分编排', () => {
     // 但钱是真花了：两行的成本都留在账上，预算也两行都算
     expect(group.costUsd).toBeCloseTo(0.2);
     expect(report.budget.spentUsd).toBeCloseTo(0.2);
+  });
+
+  it('⑦芯片标题优先取 sessions 的真标题，遥测表那份只是开会话那刻的占位快照', () => {
+    // 真机副本 846 条里 567 条两表不一致：遥测表停在 "CLI Session"，
+    // 模型后来起的真标题只写进了 sessions。芯片要显示后者。
+    insertSession(database, 'chat-1', 'chat', NOW - HOUR, null, 'CLI Session');
+    insertChatSession(database, 'chat-1', '帮我做一个 3 页 PPT，主题：AI Agent');
+    const day = localDay(NOW);
+    database.prepare(`
+      INSERT INTO telemetry_turn_scores (turn_id, session_id, scored_at, scored_day, turn_started_at,
+        app_version, prompt_version, judge_version, rubric_version, judge_model,
+        dim_goal, signals, cost_usd, budget_cost_usd, sampled_by)
+      VALUES ('t1', 'chat-1', ?, ?, ?, '0.33.0', 'p7', ?, 'postlaunch-rubric-v1', 'deepseek/x', 1, '[]', 0, 0, 'sample')
+    `).run(NOW, day, NOW - HOUR, POST_LAUNCH_JUDGE_VERSION);
+
+    const [group] = buildPostLaunchReport(database, { now: NOW }).groups;
+    expect(group.sessions[0].title).toBe('帮我做一个 3 页 PPT，主题：AI Agent');
+    // 真阴：占位快照没被选中
+    expect(group.sessions[0].title).not.toBe('CLI Session');
+  });
+
+  it('⑦sessions 的标题是空串时回落遥测快照，不是显示空白', () => {
+    insertSession(database, 'chat-1', 'chat', NOW - HOUR, null, 'CLI Session');
+    insertChatSession(database, 'chat-1', '   ');
+    const day = localDay(NOW);
+    database.prepare(`
+      INSERT INTO telemetry_turn_scores (turn_id, session_id, scored_at, scored_day, turn_started_at,
+        judge_version, rubric_version, judge_model, dim_goal, signals, cost_usd, budget_cost_usd, sampled_by)
+      VALUES ('t1', 'chat-1', ?, ?, ?, ?, 'postlaunch-rubric-v1', 'deepseek/x', 1, '[]', 0, 0, 'sample')
+    `).run(NOW, day, NOW - HOUR, POST_LAUNCH_JUDGE_VERSION);
+
+    expect(buildPostLaunchReport(database, { now: NOW }).groups[0].sessions[0].title).toBe('CLI Session');
+  });
+
+  it('⑦sessions.title 是裸存的，报告侧补脱敏后再出（遥测那列写入时已脱敏，两个来源同口径）', () => {
+    insertSession(database, 'chat-1', 'chat', NOW - HOUR, null, 'CLI Session');
+    // SessionRepository.createSession 直接把 title 塞进去，一个字都不过 guard
+    insertChatSession(database, 'chat-1', '修 /Users/someone/secret-repo/a.ts 的登录');
+    const day = localDay(NOW);
+    database.prepare(`
+      INSERT INTO telemetry_turn_scores (turn_id, session_id, scored_at, scored_day, turn_started_at,
+        judge_version, rubric_version, judge_model, dim_goal, signals, cost_usd, budget_cost_usd, sampled_by)
+      VALUES ('t1', 'chat-1', ?, ?, ?, ?, 'postlaunch-rubric-v1', 'deepseek/x', 1, '[]', 0, 0, 'sample')
+    `).run(NOW, day, NOW - HOUR, POST_LAUNCH_JUDGE_VERSION);
+
+    const title = buildPostLaunchReport(database, { now: NOW }).groups[0].sessions[0].title;
+    expect(title).not.toContain('/Users/someone/secret-repo');
+    // 掩码后仍是这条会话自己的名字，没退回占位快照——退回去就等于这一刀白做
+    expect(title).not.toBe('CLI Session');
+    expect(title).toContain('登录');
   });
 
   it('⑦会话已被删（LEFT JOIN 落空）时标题与时间给空值，不是 null 也不是 1970', () => {

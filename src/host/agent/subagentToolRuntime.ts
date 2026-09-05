@@ -51,6 +51,7 @@ export function createSubagentToolRuntime(input: {
       const forceConfirm = request.forceConfirm === true;
       if (
         !forceConfirm
+        && effectiveMode !== 'unattended'
         && (
           effectiveMode === 'bypassPermissions'
           || permissionModeAutoApproves(effectiveMode, getPermissionLevel(request.type))

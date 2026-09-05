@@ -223,6 +223,11 @@ const gates = [
     args: ['scripts/knip-production-ratchet.mjs'],
   },
   {
+    ci: 'swarm-ci / smoke / Knip dependency dimension gate',
+    command: 'node',
+    args: ['scripts/knip-dependency-gate.mjs'],
+  },
+  {
     ci: 'swarm-ci / smoke / ESLint error-warning ratchet',
     command: 'node',
     args: ['scripts/eslint-ratchet.mjs'],

@@ -210,6 +210,7 @@ export function buildCanUseToolFromLegacy(
     try {
       const allowed = await legacyCtx.requestPermission({
         sessionId: requestHint?.sessionId,
+        unattended: requestHint?.unattended,
         agentId: requestHint?.agentId,
         runId: requestHint?.runId,
         parentToolUseId: requestHint?.parentToolUseId,

@@ -403,9 +403,6 @@ jobs:
         # - runtime/runtimeAssetInstaller.test.ts：`expected [ …(2) ] to include
         #   'a84d89f31285cadf4ac994d6e252628d2f0bf…'`；归档 mtime 排序丢掉上一安装版。
         #   排除理由=真 bug，见 N-RUNTIME-ASSET-RETENTION-ORDER-0905。
-        # - security/folderTrustService.test.ts：`expected 'trusted' to be 'untrusted'`；
-        #   删除重建目录后 inode 复用，旧信任未失效。
-        #   排除理由=真 bug，见 N-FOLDER-TRUST-INODE-REUSE-0905。
         #
         # PR #691 曾误排整个 modules/network，摘掉后 12 文件仅 webSearch 一条挂；
         # 排除必须绑定实测失败文件，不能用平台理由整目录一刀切。
@@ -417,8 +414,7 @@ jobs:
             --exclude 'tests/unit/permissions/writebackEdit.test.ts' \
             --exclude 'tests/unit/runtime/runtimeAssetStatus.test.ts' \
             --exclude 'tests/unit/security/commandSafety.approvalDecisionGaps.test.ts' \
-            --exclude 'tests/unit/runtime/runtimeAssetInstaller.test.ts' \
-            --exclude 'tests/unit/security/folderTrustService.test.ts'
+            --exclude 'tests/unit/runtime/runtimeAssetInstaller.test.ts'
 
   full:
     name: Swarm full (smoke + e2e)

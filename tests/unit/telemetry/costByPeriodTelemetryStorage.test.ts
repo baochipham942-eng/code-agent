@@ -1,3 +1,4 @@
+import { applyTestTelemetrySchema } from '../../utils/telemetrySchema';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.unmock('better-sqlite3');
@@ -17,7 +18,7 @@ const THREE_DAYS = 3 * 24 * 3600 * 1000;
 function insertSession(id: string, startTime: number, cost: number, tokens: number, userId: string | null = null): void {
   dbState.sqlite!
     .prepare(
-      `INSERT INTO telemetry_sessions (id, user_id, start_time, estimated_cost, total_tokens) VALUES (?, ?, ?, ?, ?)`,
+      `INSERT INTO telemetry_sessions (id, user_id, start_time, estimated_cost, total_tokens, title, model_provider, model_name, working_directory) VALUES (?, ?, ?, ?, ?, 'Fixture', 'openai', 'fixture-model', '/tmp/project')`,
     )
     .run(id, userId, startTime, cost, tokens);
 }
@@ -30,14 +31,8 @@ describe('TelemetryStorage.getCostByPeriod 成本日历聚合（#16）', () => {
 
   beforeEach(() => {
     dbState.sqlite = new Database(':memory:');
+    applyTestTelemetrySchema(dbState.sqlite);
     dbState.sqlite.exec(`
-      CREATE TABLE telemetry_sessions (
-        id TEXT PRIMARY KEY,
-        user_id TEXT,
-        start_time INTEGER NOT NULL,
-        estimated_cost REAL DEFAULT 0,
-        total_tokens INTEGER DEFAULT 0
-      );
       CREATE TABLE sessions (
         id TEXT PRIMARY KEY,
         user_id TEXT

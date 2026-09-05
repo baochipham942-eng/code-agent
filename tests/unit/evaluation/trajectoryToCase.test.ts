@@ -1,3 +1,4 @@
+import { applyTestTelemetrySchema } from '../../utils/telemetrySchema';
 // ---------------------------------------------------------------------------
 // 批 1 回流桥核心逻辑：三入口抽取 + prompt 回溯 + YAML 草稿构建 + 幂等命名
 // ---------------------------------------------------------------------------
@@ -19,19 +20,7 @@ import type { Message } from '../../../src/shared/contract';
 
 function makeDb(): InstanceType<typeof Database> {
   const db = new Database(':memory:');
-  db.exec(`
-    CREATE TABLE telemetry_feedback (
-      id TEXT PRIMARY KEY,
-      session_id TEXT NOT NULL,
-      turn_id TEXT,
-      message_id TEXT,
-      rating INTEGER NOT NULL,
-      comment TEXT,
-      full_content TEXT,
-      created_at INTEGER NOT NULL,
-      synced_at INTEGER
-    );
-  `);
+  applyTestTelemetrySchema(db);
   return db;
 }
 
@@ -174,11 +163,8 @@ describe('draftFileName（幂等=稳定判别符，不是位置序号）', () =>
 describe('resolveTurnPrompt（telemetry_turns 优先级）', () => {
   function makeTurnsDb() {
     const db = new Database(':memory:');
-    db.exec(`CREATE TABLE telemetry_turns (
-      id TEXT PRIMARY KEY, session_id TEXT NOT NULL, turn_number INTEGER,
-      start_time INTEGER NOT NULL, user_prompt TEXT
-    );`);
-    const ins = db.prepare('INSERT INTO telemetry_turns (id, session_id, turn_number, start_time, user_prompt) VALUES (?,?,?,?,?)');
+    applyTestTelemetrySchema(db);
+    const ins = db.prepare('INSERT INTO telemetry_turns (id, session_id, turn_number, start_time, user_prompt, end_time, duration_ms) VALUES (?,?,?,?,?, 0, 0)');
     ins.run('t1', 's1', 1, 100, '做一个平台跳跃小游戏');
     ins.run('t2', 's1', 2, 200, null);
     ins.run('t3', 's1', 3, 300, '加个存档');
@@ -210,8 +196,8 @@ describe('Gemini 审计 R1 修复', () => {
   it('HIGH1: anchorTimestamp 早于全部 turns → null（不得回落最新 prompt）', async () => {
     const { resolveTurnPrompt } = await import('@internal-evaluation/host/evaluation/trajectoryToCase');
     const db = new Database(':memory:');
-    db.exec(`CREATE TABLE telemetry_turns (id TEXT PRIMARY KEY, session_id TEXT, turn_number INTEGER, start_time INTEGER, user_prompt TEXT);`);
-    db.prepare('INSERT INTO telemetry_turns VALUES (?,?,?,?,?)').run('t1', 's1', 1, 100, '晚于反馈的原话');
+    applyTestTelemetrySchema(db);
+    db.prepare('INSERT INTO telemetry_turns (id, session_id, turn_number, start_time, user_prompt, end_time, duration_ms) VALUES (?,?,?,?,?, 0, 0)').run('t1', 's1', 1, 100, '晚于反馈的原话');
     expect(resolveTurnPrompt(db, 's1', { turnId: null, anchorTimestamp: 50 })).toBeNull();
   });
 

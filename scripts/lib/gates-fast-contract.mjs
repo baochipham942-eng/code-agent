@@ -3,6 +3,15 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { minimatch } from 'minimatch';
 
+// These tests need explicit native/desktop execution or are deliberately broken
+// benchmark fixtures. Keep the main Vitest exclusion boundary in the fast gate.
+const excludedTests = ['**/node_modules/**', '**/graphStore.test.ts', '**/e2e/claude-e2e/fixtures/**', '**/tests/smoke/**'];
+function assertFastExecutable(file) {
+  if (excludedTests.some((pattern) => minimatch(file, pattern, { dot: true }))) {
+    throw new Error(`FAIL: test path is excluded from fast execution: ${file}`);
+  }
+}
+
 export function digest(value) {
   return createHash('sha256').update(value).digest('hex');
 }
@@ -22,12 +31,14 @@ export function validateFiles(root, files, maxFiles) {
         || /[\\*?[\]{}!\n\r]/.test(file) || file.split('/').includes('..')) {
       throw new Error(`FAIL: not an exact repository test path: ${file}`);
     }
+    assertFastExecutable(file);
     let target;
     try { target = fs.realpathSync(path.join(root, file)); }
     catch (error) { throw new Error(`FAIL: selected test missing or unreadable: ${file}`, { cause: error }); }
     if (!target.startsWith(`${fs.realpathSync(root)}${path.sep}`) || !fs.statSync(target).isFile()) {
       throw new Error(`FAIL: test outside repository: ${file}`);
     }
+    assertFastExecutable(path.relative(fs.realpathSync(root), target).split(path.sep).join('/'));
   }
 }
 

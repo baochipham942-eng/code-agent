@@ -30,6 +30,17 @@ describe('fast gate fail-closed contracts', () => {
     expect(selected.files).toEqual([...policy.baseline].sort());
     expect(() => selectTests(policy, changed, [{ paths: changed, files: [policy.baseline[0]], reason: '' }])).toThrow();
   });
+  it('rejects desktop smoke, broken fixtures and native tests before execution', () => {
+    for (const file of [
+      'tests/smoke/multiAgentBrowserIsolation.smoke.test.ts',
+      'tests/e2e/claude-e2e/fixtures/bug-logic-array/src/utils/array.test.ts',
+      'tests/unit/graphStore.test.ts',
+      'tests/node_modules/example/example.test.ts',
+    ]) {
+      const selected = selectTests(policy, [file]);
+      expect(() => validateFiles(root, selected.files, 12)).toThrow(`FAIL: test path is excluded from fast execution: ${file}`);
+    }
+  });
   it('unions explicit rules, both rename paths and changed tests', () => {
     const changed = ['src/host/prompts/old.ts', 'src/renderer/slots/new.ts', 'tests/unit/newBehavior.test.ts'];
     const selected = selectTests(policy, changed);

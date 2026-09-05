@@ -15,7 +15,6 @@ export default defineConfig({
   test: {
     ...base.test,
     include: files,
-    exclude: [],
     maxWorkers: 1,
     retry: 0,
     passWithNoTests: false,

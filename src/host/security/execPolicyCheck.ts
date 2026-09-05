@@ -22,6 +22,8 @@
 import {
   BANNED_PREFIXES,
   matchPolicyRule,
+  learnedRuleCovers,
+  resolvePolicyDecision,
   tokenizePolicyCommand,
   type PolicyDecision,
   type PrefixRule,
@@ -288,7 +290,7 @@ export function checkPolicyExamples(
   examples: readonly PolicyExample[],
 ): PolicyExampleResult[] {
   return examples.map((example) => {
-    const actual = matchPolicyRule(rules, example.command)?.decision ?? null;
+    const actual = resolvePolicyDecision(rules, example.command);
     return { ...example, actual, pass: actual === example.expect };
   });
 }
@@ -313,6 +315,15 @@ export function explainPolicyCommand(rules: readonly PrefixRule[], command: stri
       matched: null,
       decision: null,
       reason: '没有规则匹配 → match() 返回 null，走常规权限流程',
+    };
+  }
+  if (!learnedRuleCovers(matched, command)) {
+    return {
+      command,
+      tokens,
+      matched,
+      decision: null,
+      reason: `最长前缀命中规则 ${formatPattern(matched.pattern)}，但该前缀单独是安全命令而整条不是（风险在前缀之外，如 find … -delete）→ 学来的 allow 不放行，走常规权限流程`,
     };
   }
   return {

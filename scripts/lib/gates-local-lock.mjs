@@ -22,11 +22,78 @@ function sleepSync(ms) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
 
+/**
+ * 从同一个 fd 读内容和 inode——分别 readFileSync + statSync 的话，两次调用之间锁文件可能
+ * 已经被换掉，拿到的身份和 inode 就不是同一把锁的了。
+ */
 function readHolder(lockPath) {
+  let fd;
   try {
-    return JSON.parse(fs.readFileSync(lockPath, 'utf8'));
+    fd = fs.openSync(lockPath, 'r');
+    const ino = fs.fstatSync(fd).ino;
+    const raw = fs.readFileSync(fd, 'utf8');
+    try {
+      return { ...JSON.parse(raw), ino };
+    } catch {
+      // 文件在、内容坏。必须把 inode 带出去，否则回收时拿不到比对基准，
+      // 会在「挂回去 → 仍然坏 → 再回收」之间空转（09-05 首版实测把测试跑成死循环）。
+      return { ino, corrupt: true };
+    }
   } catch {
-    return null;
+    return null; // 文件根本不在
+  } finally {
+    if (fd !== undefined) {
+      try {
+        fs.closeSync(fd);
+      } catch {
+        /* 已关或已删，无所谓 */
+      }
+    }
+  }
+}
+
+/**
+ * 回收陈旧锁。
+ *
+ * 🔴 不能直接 `unlinkSync(lockPath)`：判定陈旧到删除之间，那把锁可能已经被别人回收、
+ * 并且别人已经建了自己的新锁——这一刀就把一把**有效的锁**删了，两条门同时开跑
+ * （09-05 ai-review 第二次抓出，我在注释里第二次断言「没问题」，第二次判错）。
+ *
+ * POSIX 没有 compare-and-delete，但 rename 是原子的：先把锁 rename 到只有本进程知道的
+ * 墓碑路径（只有一个进程能移走同一个 inode），再核对移走的 inode 是不是当初判定为陈旧的
+ * 那一个。不是就用 link 原样挂回去（link 不覆盖，已有新锁时会 EEXIST，那就直接丢弃墓碑）。
+ *
+ * ponytail: 还原窗口里仍有一个三方竞态残留——A 判陈旧 → C 抢先回收并建锁 → A 移走了 C 的锁
+ * → 在 A 挂回去之前 D 又建了锁，此时 C 与 D 会同时跑。需要四步精确交错，且每步都在微秒级窗口内；
+ * 真要根除得换 flock（进程死了内核自动释放，没有回收这回事），Node 无内置绑定、要引依赖。
+ * 这里明说残留，不再声称「没问题」。
+ */
+function reclaimStale(lockPath, expectedIno, log) {
+  const tombstone = `${lockPath}.dead.${process.pid}`;
+  try {
+    fs.renameSync(lockPath, tombstone);
+  } catch {
+    return; // 别人先动了，回主循环重来
+  }
+  let movedIno;
+  try {
+    movedIno = fs.statSync(tombstone).ino;
+  } catch {
+    movedIno = undefined;
+  }
+  if (movedIno !== expectedIno) {
+    // 移走的不是当初判定为陈旧的那把（有人在这中间重建了锁）——原样挂回去
+    log('[gates:local] 回收时发现锁已易主，原样放回');
+    try {
+      fs.linkSync(tombstone, lockPath);
+    } catch {
+      /* 已经有更新的锁了，丢弃墓碑即可 */
+    }
+  }
+  try {
+    fs.unlinkSync(tombstone);
+  } catch {
+    /* 墓碑已不在 */
   }
 }
 
@@ -97,16 +164,11 @@ export function acquireLock({
       if (error.code !== 'EEXIST') throw error;
 
       const holder = readHolder(lockPath);
-      if (!holder || !holderAlive(holder.pid)) {
-        // 走到这里只可能是真的损坏（link 保证了不存在「已建但未写入」的中间态）。
-        // ponytail: 判定陈旧与 unlink 之间仍有竞态窗口，但后果只是两边都回到 linkSync，
-        // 仍然只有一个能成功——不值得为它再加一层协调。
+      if (!holder) continue; // 锁刚被释放，直接回去抢
+      if (holder.corrupt || !holderAlive(holder.pid)) {
+        // 内容读不出来只可能是真的损坏（link 保证了不存在「已建但未写入」的中间态）。
         log(`[gates:local] 回收陈旧锁（持有者 pid ${holder?.pid ?? '?'} 已不在）`);
-        try {
-          fs.unlinkSync(lockPath);
-        } catch {
-          /* 别人先回收了，下一轮重试 */
-        }
+        reclaimStale(lockPath, holder?.ino, log);
         continue;
       }
 

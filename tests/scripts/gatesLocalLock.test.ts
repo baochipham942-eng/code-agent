@@ -107,6 +107,40 @@ describe('gates:local 单机互斥锁', () => {
     release();
   });
 
+  it('回收陈旧锁时校验身份：不会误删别人在这中间建好的有效锁', () => {
+    // 竞态序列：本进程判定锁陈旧 → 另一个进程抢先回收并建了自己的新锁 → 本进程这一刀
+    // 不能砍在那把新锁上。无校验的实现（直接 unlink 锁路径）会砍中，然后两条门同时开跑。
+    const lockPath = tempLockPath();
+    fs.mkdirSync(path.dirname(lockPath), { recursive: true });
+    fs.writeFileSync(lockPath, JSON.stringify({
+      pid: deadPid(),
+      cwd: '/tmp/已经死了',
+      startedAt: new Date(Date.now() - 3_600_000).toISOString(),
+    }));
+
+    const freshHolder = { pid: process.pid, cwd: '/tmp/别人刚拿到的锁', startedAt: new Date().toISOString() };
+    const realRename = fs.renameSync.bind(fs);
+    let injected = false;
+    const rename = vi.spyOn(fs, 'renameSync').mockImplementation((from, to) => {
+      if (!injected && from === lockPath) {
+        injected = true;
+        // 就在我们动手之前，别人回收了旧锁并建好了自己的新锁
+        fs.unlinkSync(lockPath);
+        fs.writeFileSync(lockPath, JSON.stringify(freshHolder));
+      }
+      realRename(from as string, to as string);
+    });
+
+    try {
+      expect(() => acquireLock({ lockPath, waitMs: 300, pollMs: 10, log: () => {} }))
+        .toThrow(/拿不到锁/);
+      // 别人那把锁必须完好无损
+      expect(JSON.parse(fs.readFileSync(lockPath, 'utf8')).cwd).toBe('/tmp/别人刚拿到的锁');
+    } finally {
+      rename.mockRestore();
+    }
+  });
+
   it('release 只删自己的锁：锁已被别人接管时不误删', () => {
     const lockPath = tempLockPath();
     const release = acquireLock({ lockPath, waitMs: 1_000, pollMs: 10, log: () => {} });

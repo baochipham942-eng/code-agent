@@ -5,13 +5,19 @@ import { useI18n } from '../hooks/useI18n';
 export interface FolderTrustDangerousItem {
   kind: string;
   displayPath: string;
-  label: string;
   risk: string;
   gated: boolean;
+  count?: number;
 }
 
 function riskText(risk: string, labels: Record<string, string>): string {
   return labels[risk] ?? risk;
+}
+
+/** 每项说清「会发生什么」。host 只给 kind/count，人话在 i18n 里（不出现 hook/MCP/Agent 这类工程词）。 */
+function itemText(item: FolderTrustDangerousItem, texts: Record<string, string>): string {
+  const template = texts[item.kind] ?? texts['other-project-config'];
+  return template.replace('{count}', String(item.count ?? 1));
 }
 
 /** 目录危险项清单展示：FolderTrustDialog 与新建空间确认步共用同一份（禁复制两份） */
@@ -48,7 +54,7 @@ export const FolderTrustDangerList: React.FC<{ items: FolderTrustDangerousItem[]
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="text-zinc-100">{item.label}</p>
+                  <p className="text-zinc-100">{itemText(item, copy.items)}</p>
                   <p className="mt-1 font-mono text-xs text-zinc-500 break-all">{item.displayPath}</p>
                 </div>
                 <span className="shrink-0 rounded border border-zinc-700 px-2 py-0.5 text-xs text-zinc-300">

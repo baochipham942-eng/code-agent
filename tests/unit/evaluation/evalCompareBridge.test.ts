@@ -1,3 +1,4 @@
+import { PROMPT_VERSION } from '../../../src/shared/constants/agent';
 import { spawn, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -22,7 +23,7 @@ describe('compare request through EvalRunBridge', () => {
   it('差异带忽略仅用于展示的 harness 名称', () => {
     const baseline = { name: 'production', harness: { name: 'production', contextCompression: true } };
     const candidate = { name: 'candidate', harness: { name: 'candidate', contextCompression: true }, systemPrompt: 'new' };
-    expect(describeEvalCompareDiff(baseline, candidate)).toEqual(['systemPrompt: sys-v45 → candidate']);
+    expect(describeEvalCompareDiff(baseline, candidate)).toEqual([`systemPrompt: ${PROMPT_VERSION} → candidate`]);
   });
   it('「子代理」维度的差异是一句人话，不是 JSON', () => {
     const baseline = { name: 'production', orchestration: { allowSwarm: true } };
@@ -34,7 +35,7 @@ describe('compare request through EvalRunBridge', () => {
     })).toEqual(['子代理：编排引导开，最深 3 层（默认） → 编排引导开，最深 2 层']);
     // 两臂编排一致时不该冒出一行噪音
     expect(describeEvalCompareDiff(baseline, { name: 'candidate', systemPrompt: 'new' }))
-      .toEqual(['systemPrompt: sys-v45 → candidate']);
+      .toEqual([`systemPrompt: ${PROMPT_VERSION} → candidate`]);
   });
 
   it('spawnMaxDepth 非法值给的是人话，不是 schema 报错', () => {
@@ -72,7 +73,7 @@ describe('compare request through EvalRunBridge', () => {
         const compare = {
           baseline: { name: 'production', model: 'm', provider: 'openai' },
           candidate: { name: 'candidate', systemPrompt: 'candidate prompt' },
-          diff: ['systemPrompt: sys-v45 → candidate'],
+          diff: [`systemPrompt: ${PROMPT_VERSION} → candidate`],
         };
         const events = [
           { schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION, type: 'run_start', ts: started, runId, plannedCaseIds: [], config: {

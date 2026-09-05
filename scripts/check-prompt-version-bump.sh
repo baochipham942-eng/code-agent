@@ -43,8 +43,21 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=scripts/lib/prompt-change-paths.sh
 source "$SCRIPT_DIR/lib/prompt-change-paths.sh"
 
-# staged 文件列表（含增/改/删/改名）
-staged=$(git diff --cached --name-only --diff-filter=ACMRD)
+# 默认保持 pre-commit staged 语义；快门只读复核完整 PR 范围。
+diff_args=(--cached)
+before_ref=HEAD
+after_ref=""
+if [[ $# -ne 0 ]]; then
+  if [[ $# -ne 4 || "$1" != --base || "$3" != --head ]]; then
+    echo "FAIL: expected --base <sha> --head <sha>" >&2
+    exit 1
+  fi
+  before_ref=$(git rev-parse --verify "${2}^{commit}")
+  after_ref=$(git rev-parse --verify "${4}^{commit}")
+  diff_args=("$before_ref" "$after_ref" --no-renames)
+fi
+# Range mode exposes both rename paths; default staged mode keeps hook semantics.
+staged=$(git diff "${diff_args[@]}" --name-only --diff-filter=ACMRD)
 
 # ── ① 是否动了 prompt 目录 ──
 prompt_changed=false
@@ -151,8 +164,8 @@ if [ -n "$schema_files" ]; then
   while IFS= read -r f; do
     [ -z "$f" ] && continue
     if ! cmp -s \
-      <(schema_blob "HEAD:${f}" | filter_schema_model_visible_source) \
-      <(schema_blob ":${f}" | filter_schema_model_visible_source); then
+      <(schema_blob "${before_ref}:${f}" | filter_schema_model_visible_source) \
+      <(schema_blob "${after_ref}:${f}" | filter_schema_model_visible_source); then
       schema_changed=true
       schema_hits="${schema_hits}${f}"$'\n'
     fi
@@ -167,13 +180,13 @@ fi
 # 条件：agent.ts 的 staged diff 里出现新增的 PROMPT_VERSION 行
 version_bumped=false
 if echo "$staged" | grep -q "^${VERSION_FILE}$"; then
-  if git diff --cached -- "$VERSION_FILE" | grep -qE '^\+export const PROMPT_VERSION'; then
+  if git diff "${diff_args[@]}" -- "$VERSION_FILE" | grep -qE '^\+export const PROMPT_VERSION'; then
     version_bumped=true
   fi
 fi
 
 if [ "$version_bumped" = true ]; then
-  new_version=$(git diff --cached -- "$VERSION_FILE" | grep -E '^\+export const PROMPT_VERSION' | grep -oE "'[^']+'" | head -1)
+  new_version=$(git diff "${diff_args[@]}" -- "$VERSION_FILE" | grep -E '^\+export const PROMPT_VERSION' | grep -oE "'[^']+'" | head -1)
   echo -e "${GREEN}✓ 检测到 prompt 改动，PROMPT_VERSION 已 bump 到 ${new_version}${NC}"
   exit 0
 fi

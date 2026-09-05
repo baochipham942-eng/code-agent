@@ -571,18 +571,8 @@ describe('上线后打分编排', () => {
   it('③升级回填：K2 之前落的行，budget_cost_usd 从 cost_usd 补上，今天已花的预算不归零', () => {
     // 造 K2 之前的表：没有 budget_cost_usd 这一列。
     const legacy = new Database(':memory:');
-    legacy.exec(`
-      CREATE TABLE telemetry_turn_scores (
-        turn_id TEXT PRIMARY KEY, session_id TEXT NOT NULL, scored_at INTEGER NOT NULL,
-        scored_day TEXT NOT NULL, turn_started_at INTEGER NOT NULL,
-        app_version TEXT, prompt_version TEXT, judge_version TEXT NOT NULL, rubric_version TEXT NOT NULL,
-        judge_model TEXT, prompt_hash TEXT,
-        dim_goal INTEGER, dim_orchestration INTEGER, dim_tools INTEGER,
-        dim_permission INTEGER, dim_safety INTEGER, dim_artifact INTEGER,
-        failure_class TEXT, reason_redacted TEXT, redacted INTEGER NOT NULL DEFAULT 0,
-        signals TEXT NOT NULL DEFAULT '[]', cost_usd REAL NOT NULL DEFAULT 0, sampled_by TEXT NOT NULL
-      )
-    `);
+    applyTelemetrySchema(legacy, LOGGER);
+    legacy.exec('ALTER TABLE telemetry_turn_scores DROP COLUMN budget_cost_usd');
     const day = localDay(NOW);
     legacy.prepare(`
       INSERT INTO telemetry_turn_scores (turn_id, session_id, scored_at, scored_day, turn_started_at,

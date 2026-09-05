@@ -1,0 +1,133 @@
+{
+  "version": 1,
+  "budgetMs": 60000,
+  "maxFiles": 12,
+  "baseline": [
+    "tests/unit/agentEventSchemas.test.ts",
+    "tests/unit/security/commandSafety.relativeDelete.test.ts",
+    "tests/renderer/stores/swarmStore.test.ts"
+  ],
+  "rules": [
+    {
+      "id": "contracts",
+      "paths": [
+        "src/shared/contract/**",
+        "scripts/*schema*",
+        "scripts/ci/*schema*"
+      ],
+      "files": [
+        "tests/unit/agentEventSchemas.test.ts"
+      ]
+    },
+    {
+      "id": "sdk",
+      "paths": [
+        "scripts/internal-sdk-hash.ts",
+        "src/host/internalFeatures/internalHostSdk.ts",
+        "src/host/internalFeatures/internalSdkVersion.ts",
+        "src/renderer/internalFeatures/internalSdk.ts",
+        "src/renderer/internalFeatures/internalSdkVersion.ts"
+      ],
+      "files": [
+        "tests/scripts/internalSdkHash.test.ts"
+      ]
+    },
+    {
+      "id": "prompt",
+      "paths": [
+        "src/host/prompts/**",
+        "src/**/*.schema.ts",
+        "scripts/*prompt*",
+        "scripts/lib/prompt*",
+        "src/shared/constants/agent.ts"
+      ],
+      "files": [
+        "tests/scripts/promptGateEvidence.test.ts"
+      ]
+    },
+    {
+      "id": "casebank",
+      "paths": [
+        ".claude/test-cases/**",
+        "src/host/testing/answerSide.ts",
+        "src/host/testing/testCaseLoader.ts",
+        "src/host/testing/mockEvalPolicy.ts",
+        "src/host/testing/caseLayer.ts",
+        "src/host/testing/testCaseClassification.ts",
+        "src/host/testing/ci/sampleSplits.ts",
+        "scripts/ci/check-casebank-answers.mjs"
+      ],
+      "files": [
+        "tests/scripts/checkCasebankAnswers.test.ts"
+      ]
+    },
+    {
+      "id": "slots",
+      "paths": [
+        "src/renderer/**/slot*/**",
+        "src/renderer/**/*[Pp]lugin*",
+        "src/renderer/**/plugin*/**"
+      ],
+      "files": [
+        "tests/renderer/slots/slotRegistry.test.tsx",
+        "tests/renderer/slots/pluginUiActivationPolicy.test.tsx"
+      ]
+    },
+    {
+      "id": "quality",
+      "paths": [
+        "scripts/*gate*",
+        "scripts/lib/gates*",
+        "scripts/ci/**",
+        "bin/ship*",
+        ".github/**",
+        "vitest*.ts",
+        "package.json",
+        "package-lock.json",
+        "lint-staged.config.mjs",
+        ".husky/**",
+        "scripts/check-*.sh"
+      ],
+      "files": [
+        "tests/scripts/gatesFast.test.ts"
+      ]
+    },
+    {
+      "id": "full-lock",
+      "paths": [
+        "scripts/gates-local.mjs",
+        "scripts/lib/gates-local-lock.mjs"
+      ],
+      "files": [
+        "tests/scripts/gatesLocalLock.test.ts"
+      ]
+    }
+  ],
+  "sharedPackageInputs": [
+    "src/shared/**",
+    "tsconfig*.json",
+    "package.json",
+    "package-lock.json"
+  ],
+  "packages": [
+    "packages/eval-harness",
+    "packages/internal/evaluation-center",
+    "vercel-api"
+  ],
+  "testsTypecheckInputs": [
+    "tests/**",
+    "scripts/**",
+    "tsconfig*.json"
+  ],
+  "budgetsMs": {
+    "inputs": 1000,
+    "provider": 1000,
+    "private": 10000,
+    "src-typecheck": 10000,
+    "shell": 1000,
+    "commit-checks": 8000,
+    "vitest": 15000,
+    "package-typechecks": 5000,
+    "tests-typecheck": 9000
+  }
+}

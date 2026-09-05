@@ -181,7 +181,6 @@ class ReadHandler implements ToolHandler<Record<string, unknown>, string> {
 
       // 记录到 fileReadTracker（供 Edit/Write 做外改检测）
       const resolvedAbs = path.resolve(filePath);
-      const actorId = getFileMutationActorId(ctx);
       // N-READ-DEDUPE 的「已读范围短路」已从本 PR 撤出（09-06 ai-review 三轮各抓到一个消费方：
       // 跨会话 tracker、子代理压缩、PTC 程序化调用拿到回执而非内容）。去重要做在面向模型的
       // 消息展示层，不在工具返回值上——归 N-READ-DEDUPE 中卡重做。

@@ -248,8 +248,9 @@ export function App({ agent, options, onExit }: {
           message: 'User chose "never allow" for this action earlier in the session.',
         });
       }
-      if (allowListRef.current.has(request)) {
-        return Promise.resolve({ approved: true });
+      const sessionApproval = allowListRef.current.approvalFor(request);
+      if (sessionApproval) {
+        return Promise.resolve(sessionApproval);
       }
       notify(`需要审批: ${request.tool}`);
       return new Promise<PermissionAskResult>((resolve) => {
@@ -1103,5 +1104,4 @@ export function App({ agent, options, onExit }: {
     </Box>
   );
 }
-
 

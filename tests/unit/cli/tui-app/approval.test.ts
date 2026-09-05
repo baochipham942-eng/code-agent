@@ -148,3 +148,14 @@ describe('SessionAllowList', () => {
     expect(allow.has(req())).toBe(false);
   });
 });
+
+
+it('会话白名单批准自报来源，拒绝优先', () => {
+  const allow = new SessionAllowList();
+  const request = { type: 'file_write' as const, tool: 'write_file', details: {} };
+  expect(allow.approvalFor(request)).toBeUndefined();
+  allow.addAllEdits();
+  expect(allow.approvalFor(request)).toEqual({ approved: true, approvalSource: 'session-allowlist' });
+  allow.deny(request);
+  expect(allow.approvalFor(request)).toBeUndefined();
+});

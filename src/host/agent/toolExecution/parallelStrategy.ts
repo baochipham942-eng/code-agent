@@ -40,12 +40,17 @@ export function classifyToolCalls(
   const parallelGroup: Array<{ index: number; toolCall: ToolCall }> = [];
   const sequentialGroup: Array<{ index: number; toolCall: ToolCall }> = [];
 
+  // 引擎先跑整个并行组、再按序跑串行组。只有「第一个非并行安全调用之前」的读才能安全提前：
+  // 一旦越过一次写（Write/Edit/Bash…），后面的 Read/Grep/Glob 必须留在原位，否则同批
+  // [Write(a.txt), Read(a.txt)] 会先读后写（ai-review 09-06）。保序分段的完整方案归 N-TOOL-RESOURCE-ADR。
+  let crossedWriteBoundary = false;
   for (let i = 0; i < toolCalls.length; i++) {
     const toolCall = toolCalls[i];
     const annotations = toolAnnotations?.get(toolCall.name);
-    if (isParallelSafeTool(toolCall.name, annotations)) {
+    if (!crossedWriteBoundary && isParallelSafeTool(toolCall.name, annotations)) {
       parallelGroup.push({ index: i, toolCall });
     } else {
+      crossedWriteBoundary = true;
       sequentialGroup.push({ index: i, toolCall });
     }
   }

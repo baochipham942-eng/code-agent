@@ -22,3 +22,16 @@ it('classifies three registered Read calls as parallel', () => {
   expect(classifyToolCalls(calls).parallelGroup).toHaveLength(3);
   expect(classifyToolCalls(calls).sequentialGroup).toEqual([]);
 });
+
+it('keeps reads after a write in order instead of hoisting them into the parallel group', () => {
+  const call = (id: string, name: string, file_path: string) => ({ id, name, arguments: { file_path } });
+  const mixed = classifyToolCalls([call('1', 'Write', 'a.txt'), call('2', 'Read', 'a.txt')]);
+  expect(mixed.parallelGroup).toEqual([]);
+  expect(mixed.sequentialGroup.map((entry) => entry.toolCall.name)).toEqual(['Write', 'Read']);
+
+  const prefix = classifyToolCalls([
+    call('1', 'Read', 'a.txt'), call('2', 'Read', 'b.txt'), call('3', 'Write', 'a.txt'), call('4', 'Read', 'a.txt'),
+  ]);
+  expect(prefix.parallelGroup.map((entry) => entry.index)).toEqual([0, 1]);
+  expect(prefix.sequentialGroup.map((entry) => entry.index)).toEqual([2, 3]);
+});

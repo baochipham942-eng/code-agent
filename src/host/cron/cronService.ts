@@ -658,7 +658,7 @@ export class CronService implements Disposable {
       execution.error = error instanceof Error ? error.message : String(error);
 
       // Handle retries
-      if (definition.runsOn === 'local' && definition.maxRetries && execution.retryAttempt < definition.maxRetries) {
+      if (execution.error !== 'unsupported_action' && definition.runsOn === 'local' && definition.maxRetries && execution.retryAttempt < definition.maxRetries) {
         await this.retryExecution(definition, execution);
       }
     } finally {
@@ -774,10 +774,7 @@ export class CronService implements Disposable {
       }
 
       case 'tool': {
-        // Tool execution would need to be integrated with the tool executor
-        // For now, return a placeholder
-        console.error(`[CronService] Would execute tool: ${action.toolName}`);
-        return { toolName: action.toolName, parameters: action.parameters };
+        throw new Error('unsupported_action');
       }
 
       case 'agent': {
@@ -946,9 +943,7 @@ export class CronService implements Disposable {
       }
 
       case 'ipc': {
-        // IPC would need to be integrated with the IPC system
-        console.error(`[CronService] Would send IPC: ${action.channel}`);
-        return { channel: action.channel, payload: action.payload };
+        throw new Error('unsupported_action');
       }
 
       case 'memory-consolidation': {
@@ -1078,7 +1073,7 @@ export class CronService implements Disposable {
       execution.error = error instanceof Error ? error.message : String(error);
 
       // Continue retrying if we haven't reached the limit
-      if (execution.retryAttempt < (definition.maxRetries || 0)) {
+      if (execution.error !== 'unsupported_action' && execution.retryAttempt < (definition.maxRetries || 0)) {
         await this.retryExecution(definition, execution);
       }
     }

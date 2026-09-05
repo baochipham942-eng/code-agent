@@ -134,3 +134,34 @@ describe('CLISessionManager.addMessageToSession', () => {
     expect(fakeDb.initialize).toHaveBeenCalledTimes(1);
   });
 });
+
+
+describe('CLISessionManager.replaceMessages', () => {
+  it.each([true, false])('存储可用=%s 时只在写回成功后替换缓存', async (available) => {
+    const manager = new CLISessionManager();
+    const original: Message = { id: 'original', role: 'assistant', content: 'History', timestamp: 1 };
+    const summary: Message = { id: 'summary', role: 'system', content: 'Summary', timestamp: 2 };
+    const cache = Reflect.get(manager, 'sessionCache') as Map<string, SessionWithMessages>;
+    cache.set('compact-session', {
+      id: 'compact-session', title: 'Compact', modelConfig: { provider: 'openai', model: 'test-model' },
+      createdAt: 1, updatedAt: 1, messages: [original], todos: [], messageCount: 1,
+    });
+    const replaceMessages = vi.fn();
+    Object.assign(manager as unknown as Record<string, unknown>, {
+      _dbChecked: true,
+      _db: {
+        isInitialized: available, replaceMessages,
+        initialize: vi.fn(async () => { throw new Error('disk unavailable'); }),
+      },
+    });
+    if (available) {
+      await manager.replaceMessages('compact-session', [summary]);
+      expect(replaceMessages).toHaveBeenCalledWith('compact-session', [summary]);
+      expect((await manager.getSession('compact-session'))?.messages).toEqual([summary]);
+    } else {
+      await expect(manager.replaceMessages('compact-session', [summary])).rejects.toThrow('session_database_unavailable');
+      expect(replaceMessages).not.toHaveBeenCalled();
+      expect((await manager.getSession('compact-session'))?.messages).toEqual([original]);
+    }
+  });
+});

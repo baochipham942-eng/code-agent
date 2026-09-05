@@ -44,8 +44,34 @@ describe('ExternalEngineSubagentExecutor', () => {
   });
 
   afterEach(async () => {
+    vi.useRealTimers();
     await fs.rm(worktreePath, { recursive: true, force: true });
     await fs.rm(outsidePath, { recursive: true, force: true });
+  });
+
+  it('uses the in-tool idle grade on the actual adapter and cleans up timers', async () => {
+    vi.useFakeTimers();
+    mocks.adapterRun.mockImplementation(({ abortSignal }) => new Promise(resolve => {
+      abortSignal.addEventListener('abort', () => resolve({ status: 'cancelled' }), { once: true });
+    }));
+    const run = new ExternalEngineSubagentExecutor().execute(makeRequest('codex_cli', outsidePath));
+    await vi.advanceTimersByTimeAsync(130_000);
+    const signal = mocks.adapterRun.mock.calls[0][0].abortSignal;
+    expect(signal.aborted).toBe(false);
+    await vi.advanceTimersByTimeAsync(480_000);
+    expect(await run).toMatchObject({ success: false, cancellationReason: 'idle-timeout' });
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('preserves cancellation when the adapter rejects after abort', async () => {
+    vi.useFakeTimers();
+    mocks.adapterRun.mockImplementation(({ abortSignal }) => new Promise((_, reject) => {
+      abortSignal.addEventListener('abort', () => reject(new Error('aborted')), { once: true });
+    }));
+    const run = new ExternalEngineSubagentExecutor().execute(makeRequest('codex_cli', outsidePath));
+    await vi.advanceTimersByTimeAsync(610_000);
+    expect(await run).toMatchObject({ success: false, cancellationReason: 'idle-timeout' });
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it('passes workspace_write to Codex inside a Neo-managed worktree', async () => {

@@ -54,6 +54,41 @@ describe('subagent idle watchdog while a model request is in flight', () => {
     lifecycle.stopIdleWatchdog();
   });
 
+  it('gives in-flight tools a wider threshold and one grace nudge, cancelled by progress', () => {
+    vi.useFakeTimers();
+    const nudge = vi.fn();
+    const lifecycle = createSubagentCancellationLifecycle({ agentName: 'tool test', timeoutMs: TEST_TIMEOUT_MS, onIdleNudge: nudge });
+    lifecycle.markToolStart();
+    vi.advanceTimersByTime(130000);
+    expect(lifecycle.effectiveSignal.aborted).toBe(false);
+    expect(nudge).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(475000);
+    expect(nudge).toHaveBeenCalledTimes(1);
+    expect(lifecycle.effectiveSignal.aborted).toBe(false);
+    lifecycle.markProgress();
+    vi.advanceTimersByTime(5000);
+    expect(lifecycle.effectiveSignal.aborted).toBe(false);
+    lifecycle.markToolEnd();
+    vi.advanceTimersByTime(125000);
+    expect(nudge).toHaveBeenCalledTimes(2);
+    expect(lifecycle.effectiveSignal.aborted).toBe(false);
+    vi.advanceTimersByTime(5000);
+    expect(lifecycle.effectiveSignal.reason).toBe('idle-timeout');
+    lifecycle.cleanupTimer();
+    lifecycle.stopIdleWatchdog();
+  });
+
+  it('defaults external work to the in-tool grade', () => {
+    vi.useFakeTimers();
+    const lifecycle = createSubagentCancellationLifecycle({ agentName: 'external', timeoutMs: TEST_TIMEOUT_MS, initiallyInTool: true });
+    vi.advanceTimersByTime(130000);
+    expect(lifecycle.effectiveSignal.aborted).toBe(false);
+    vi.advanceTimersByTime(480000);
+    expect(lifecycle.effectiveSignal.reason).toBe('idle-timeout');
+    lifecycle.cleanupTimer();
+    lifecycle.stopIdleWatchdog();
+  });
+
   it('still aborts at the total execution budget while a request is in flight', () => {
     vi.useFakeTimers();
     const lifecycle = createLifecycle();

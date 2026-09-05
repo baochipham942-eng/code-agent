@@ -395,6 +395,14 @@ export class AgentLoop {
     return this.conversationRuntime.getStructuredOutput();
   }
 
+  /**
+   * N-EVAL-MEMORY：等本轮会话末尾的记忆落盘跑完。产线不用（那条路是 fire-and-forget，
+   * 不该阻塞 run 结束）；评测要对记忆目录做快照，必须先等它落地，否则快照拍的是写之前。
+   */
+  whenSessionEndMemoryWorkSettled(): Promise<void> {
+    return this.runFinalizer.whenSessionEndMemoryWorkSettled();
+  }
+
   async cancel(reason?: 'user' | 'session-switch'): Promise<void> {
     await this.conversationRuntime.cancel(reason);
   }

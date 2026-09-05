@@ -22,10 +22,13 @@ import type {
   EvalGoalContract,
   GoalRunRecord,
   PermissionRequestRecord,
+  EvalCaseMemory,
+  CaseMemorySignals,
 } from './types';
 import { loadAllTestSuites, filterTestCases, sortByDependencies } from './testCaseLoader';
 import { validateUserSimulation, evaluateSimRules, DEFAULT_SIM_MAX_TURNS } from './userSimulator';
 import { validateGoalContract } from './goalContractEval';
+import { applyCaseMemory } from './memoryEval';
 import { withTimeout } from '../services/infra/timeoutController';
 import { runAssertions, runExpectations, countDeclaredAssertions } from './assertionEngine';
 import { execSync } from 'child_process';
@@ -121,6 +124,11 @@ export interface AgentInterface {
    * runner 每个 case 都会调用（无契约时传 undefined 清除上个 case 的配置）。
    */
   configureGoalContract?(contract: EvalGoalContract | undefined): void;
+  /**
+   * N-EVAL-MEMORY：接收当前 case 的记忆声明（无声明的 case 传 undefined 清除上一题）。
+   * 实现方负责在这一刻把 seed 落进本题的记忆目录——调用点在 agent 起跑之前。
+   */
+  configureCaseMemory?(memory: EvalCaseMemory | undefined): Promise<void>;
   /** Inject per-case sandbox policy, currently used to force redline cases offline. */
   configureSandboxPolicy?(policy: { redline: boolean } | undefined): void;
   /** mock adapter 接收 evaluator 侧已分类的 fixture case。 */
@@ -133,6 +141,8 @@ export interface AgentInterface {
   configureEvaluationCase?(testId: string | undefined): void;
   /** Read and clear the real skill activations accumulated for one case. */
   consumeSkillActivations?(testId: string): Record<string, number>;
+  /** N-EVAL-MEMORY：读走并清空本题的记忆落账（memory_recalled / memory_written 的证据源）。 */
+  consumeMemorySignals?(testId: string): CaseMemorySignals;
   consumeSubagentSpawns?(testId: string): number;
   getStructuredReplay?(sessionId: string): Promise<StructuredReplay | null>;
 }
@@ -250,6 +260,15 @@ export class TestRunner {
    */
   abort(): void {
     this.aborted = true;
+  }
+
+  /** case 配置写错的统一出口：判红 + 留原因 + 发事件，调用方直接 return 它。 */
+  private failCaseConfig(result: TestResult, testId: string, message: string): TestResult {
+    result.status = 'failed';
+    result.failureReason = message;
+    result.errors.push(message);
+    this.emit({ type: 'error', testId, error: message });
+    return result;
   }
 
   private toTrialSummary(result: TestResult): NonNullable<TestResult['trials']>[number] {
@@ -737,34 +756,15 @@ export class TestRunner {
         return result;
       }
 
-      // 批 6 fail-loud：user_simulation 配置错误在花任何 agent 调用之前显式失败，
-      // 绝不静默降级成单轮跑（那会把"模拟没生效"伪装成能力数据）。
-      if (testCase.user_simulation) {
-        const configError = testCase.follow_up_prompts && testCase.follow_up_prompts.length > 0
+      // fail-loud：case 配置写错的一律在花任何 agent 调用之前显式失败——静默降级会把
+      // 「机制压根没开」伪装成能力数据。记忆 / user_simulation / goal_contract 同一口径。
+      const simError = !testCase.user_simulation ? null
+        : testCase.follow_up_prompts?.length
           ? 'user_simulation cannot be combined with follow_up_prompts (ambiguous multi-turn semantics)'
           : validateUserSimulation(testCase.user_simulation);
-        if (configError) {
-          result.status = 'failed';
-          result.failureReason = configError;
-          result.errors.push(configError);
-          this.emit({ type: 'error', testId: testCase.id, error: configError });
-          return result;
-        }
-        result.simTurns = [];
-      }
-
-      // B6b-① fail-loud：goal_contract 配置错误（无完成判据 / 与 user_simulation·
-      // follow_up_prompts 互斥）同样在花任何 agent 调用之前显式失败。
-      if (testCase.goal_contract) {
-        const goalConfigError = validateGoalContract(testCase);
-        if (goalConfigError) {
-          result.status = 'failed';
-          result.failureReason = goalConfigError;
-          result.errors.push(goalConfigError);
-          this.emit({ type: 'error', testId: testCase.id, error: goalConfigError });
-          return result;
-        }
-      }
+      const configError = simError ?? (testCase.goal_contract ? validateGoalContract(testCase) : null);
+      if (configError) return this.failCaseConfig(result, testCase.id, configError);
+      if (testCase.user_simulation) result.simTurns = [];
 
       // Run setup commands
       if (testCase.setup && testCase.setup.length > 0) {
@@ -794,6 +794,11 @@ export class TestRunner {
 
       // B6b-①：goal 契约注入（无契约的 case 传 undefined，清掉上个 case 的配置）
       agent.configureGoalContract?.(testCase.goal_contract);
+
+      // N-EVAL-MEMORY：记忆声明校验 + seed 落盘（无声明的 case 传 undefined，清掉上一题）。
+      // 声明写错或 seed 落盘失败（比如没有隔离数据目录）都必须显式红：静默跑下去会去写用户真实记忆库。
+      const memoryError = await applyCaseMemory(testCase, agent.configureCaseMemory?.bind(agent));
+      if (memoryError) return this.failCaseConfig(result, testCase.id, memoryError);
 
       // Set up timeout — CODE_AGENT_FORCE_TIMEOUT overrides per-case timeout (for slow local models)
       const forceTimeout = process.env.CODE_AGENT_FORCE_TIMEOUT
@@ -937,6 +942,11 @@ export class TestRunner {
       }
 
       // Run assertions
+      // N-EVAL-MEMORY：记忆落账必须在断言求值之前、且在**全部轮次**（首轮 + user_simulation /
+      // follow_up_prompts）跑完之后才消费——首轮后就取会漏掉后续轮的写入与快照，
+      // 把「第二轮才落盘」判成未写入、把「第二轮泄露」判成干净（审查 #1638）。
+      Object.assign(result, agent.consumeMemorySignals?.(testCase.id) ?? {});
+
       const assertionResult = await runAssertions(testCase.expect ?? {}, {
         toolExecutions: result.toolExecutions,
         responses: result.responses,
@@ -985,6 +995,8 @@ export class TestRunner {
           simTurns: result.simTurns,
           goalRun: result.goalRun,
           permissionRequests: result.permissionRequests,
+          memoryRecall: result.memoryRecall,
+          memorySnapshot: result.memorySnapshot,
         });
         result.expectationResults = expResult.results;
         result.score = expResult.overallScore;

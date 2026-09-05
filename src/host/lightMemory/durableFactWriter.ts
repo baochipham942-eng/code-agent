@@ -20,7 +20,10 @@ function guardFactText(value: string, maxLength?: number): string {
 
 export async function writeDurableFacts(
   facts: DurableFact[],
-): Promise<{ written: number; skipped: number }> {
+): Promise<{ written: number; skipped: number; files: string[] }> {
+  // N-EVAL-MEMORY：files 只收真写成的那几份——skipped 的文件名不能混进来，
+  // 否则 memory_written 事件会把「写失败」报成「写进去了」。
+  const files: string[] = [];
   let written = 0;
   let skipped = 0;
 
@@ -41,6 +44,7 @@ export async function writeDurableFacts(
         content,
       });
       written += 1;
+      files.push(fact.filename);
     } catch (error) {
       skipped += 1;
       logger.warn('写入长期事实失败，已跳过该条', {
@@ -60,5 +64,5 @@ export async function writeDurableFacts(
     }
   }
 
-  return { written, skipped };
+  return { written, skipped, files };
 }

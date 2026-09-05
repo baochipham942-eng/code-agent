@@ -58,6 +58,7 @@ describe('ExperimentAdapter canonical harness persistence', () => {
       statusA: 'passed', statusB: 'failed', assignment: { A: 'baseline', B: 'candidate' },
       assertionWinner: 'baseline', referenceWinner: 'A', excludedReason: 'skill_not_activated',
       assertionPassA: 1, assertionPassB: 0, assertionCount: 2, skillActivations: { baseline: 1, candidate: 0 },
+      memoryInjections: { baseline: 0, candidate: 0 },
       subagentSpawns: { baseline: 0, candidate: 0 },
     });
     const row = db.insertExperimentCases.mock.calls[0][1][0];
@@ -78,6 +79,7 @@ describe('ExperimentAdapter canonical harness persistence', () => {
       statusA: 'passed', statusB: 'failed', assignment: { A: 'candidate', B: 'baseline' },
       assertionWinner: 'baseline', referenceWinner: 'B', assertionPassA: 1, assertionPassB: 0,
       assertionCount: 1, skillActivations: { baseline: 0, candidate: 0 },
+      memoryInjections: { baseline: 0, candidate: 0 },
       subagentSpawns: { baseline: 0, candidate: 0 },
     });
 
@@ -95,7 +97,8 @@ describe('ExperimentAdapter canonical harness persistence', () => {
         statusA: 'passed', statusB: candidateStatus, assignment: { A: 'baseline', B: 'candidate' },
         assertionWinner: 'candidate', referenceWinner: 'B', assertionPassA: 0, assertionPassB: 1,
         assertionCount: 1, skillActivations: { baseline: 0, candidate: 0 },
-      subagentSpawns: { baseline: 0, candidate: 0 },
+        memoryInjections: { baseline: 0, candidate: 0 },
+        subagentSpawns: { baseline: 0, candidate: 0 },
       });
     }
 
@@ -173,6 +176,39 @@ describe('ExperimentAdapter canonical harness persistence', () => {
       .toEqual({ x: 2 });
   });
 
+  // N-EVAL-MEMORY：写入侧计数与 case_end 自带计数的优先级
+  it('counts memory writes and lets case_end counters win over per-event accumulation', () => {
+    const db = createDbWriter();
+    const adapter = new ExperimentAdapter(db as any);
+    adapter.recordMemoryWrite({
+      schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION, type: 'memory_written', ts: 1, runId: 'event-run', testId: 'event-case',
+      files: ['mem-a.md'], written: 1,
+    });
+    adapter.recordMemoryWrite({
+      schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION, type: 'memory_written', ts: 2, runId: 'event-run', testId: 'event-case',
+      files: ['mem-b.md', 'mem-c.md'], written: 2,
+    });
+    adapter.persistEventCase({
+      schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION, type: 'case_end', ts: 3, runId: 'event-run', testId: 'event-case',
+      status: 'passed', score: 1, durationMs: 5, skillActivations: {},
+    });
+    expect(JSON.parse(db.insertExperimentCases.mock.calls[0]?.[1][0].data_json).memoryWrites).toBe(3);
+
+    // case_end 带了自己的计数就以它为准（runner 落账是权威，逐事件累加只是兜底）
+    const db2 = createDbWriter();
+    const adapter2 = new ExperimentAdapter(db2 as any);
+    adapter2.recordMemoryInjection({
+      schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION, type: 'memory_injected', ts: 1, runId: 'event-run', testId: 'event-case', id: 'memory_index',
+    });
+    adapter2.persistEventCase({
+      schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION, type: 'case_end', ts: 2, runId: 'event-run', testId: 'event-case',
+      status: 'passed', score: 1, durationMs: 5, skillActivations: {}, memoryInjections: 7, memoryWrites: 4,
+    });
+    const data = JSON.parse(db2.insertExperimentCases.mock.calls[0]?.[1][0].data_json);
+    expect(data.memoryInjections).toBe(7);
+    expect(data.memoryWrites).toBe(4);
+  });
+
   // N-EVAL-ORCHARM：subagent_spawned 从桥数到 data_json —— 摘掉 recordSubagentSpawn
   // 或 persistEventCase 里的 subagentSpawns 字段，这条立刻红。
   it('counts subagent_spawned per case into data_json, isolated across interleaved cases', () => {
@@ -232,6 +268,7 @@ describe('ExperimentAdapter canonical harness persistence', () => {
       statusA: 'passed', statusB: 'passed', assignment: { A: 'baseline', B: 'candidate' },
       assertionWinner: 'tie', referenceWinner: 'tie', assertionPassA: 1, assertionPassB: 1, assertionCount: 1,
       skillActivations: { baseline: 0, candidate: 0 },
+      memoryInjections: { baseline: 0, candidate: 0 },
       subagentSpawns: { baseline: 0, candidate: 4 },
     });
     const row = JSON.parse(db.insertExperimentCases.mock.calls.at(-1)![1][0].data_json);

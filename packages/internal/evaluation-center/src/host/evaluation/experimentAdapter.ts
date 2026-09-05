@@ -101,6 +101,7 @@ export interface RegressionReportLike {
 
 export class ExperimentAdapter {
   private memoryInjections = new Map<string, number>();
+  private memoryWrites = new Map<string, number>();
   private skillActivations = new Map<string, Record<string, number>>();
   private subagentSpawns = new Map<string, number>();
   private compareRun = false;
@@ -110,6 +111,11 @@ export class ExperimentAdapter {
   recordMemoryInjection(event: Extract<EvalRunEvent, { type: 'memory_injected' }>): void {
     const key = `${event.runId}:${event.testId}`;
     this.memoryInjections.set(key, (this.memoryInjections.get(key) ?? 0) + 1);
+  }
+
+  recordMemoryWrite(event: Extract<EvalRunEvent, { type: 'memory_written' }>): void {
+    const key = `${event.runId}:${event.testId}`;
+    this.memoryWrites.set(key, (this.memoryWrites.get(key) ?? 0) + event.written);
   }
 
   recordSubagentSpawn(event: Extract<EvalRunEvent, { type: 'subagent_spawned' }>): void {
@@ -162,7 +168,10 @@ export class ExperimentAdapter {
 
   persistEventCase(event: Extract<EvalRunEvent, { type: 'case_end' }>): void {
     const signalKey = `${event.runId}:${event.testId}`;
-    const memoryInjections = this.memoryInjections.get(signalKey) ?? 0;
+    // case_end 自带计数时以它为准（同一数据的两条路径必须同源：runner 的落账是权威，
+    // 逐事件累加只是没有 case_end 字段的旧发射方的兜底）。
+    const memoryInjections = event.memoryInjections ?? this.memoryInjections.get(signalKey) ?? 0;
+    const memoryWrites = event.memoryWrites ?? this.memoryWrites.get(signalKey) ?? 0;
     const eventSkillActivations = event.skillActivations ?? {};
     const skillActivations = Object.keys(eventSkillActivations).length > 0
       ? eventSkillActivations
@@ -173,6 +182,7 @@ export class ExperimentAdapter {
       this.subagentSpawns.get(signalKey) ?? 0,
     );
     this.memoryInjections.delete(signalKey);
+    this.memoryWrites.delete(signalKey);
     this.skillActivations.delete(signalKey);
     this.subagentSpawns.delete(signalKey);
     if (this.compareRun) return;
@@ -198,6 +208,7 @@ export class ExperimentAdapter {
         ...(event.evidence ? { evidence: event.evidence } : {}),
         scoreAuthority: event.scoreAuthority,
         memoryInjections,
+        memoryWrites,
         skillActivations,
         subagentSpawns,
         source: 'eval',
@@ -226,6 +237,7 @@ export class ExperimentAdapter {
         assertionPassB: event.assertionPassB,
         assertionCount: event.assertionCount,
         skillActivations: event.skillActivations,
+        memoryInjections: event.memoryInjections,
         subagentSpawns: event.subagentSpawns,
         source: 'compare',
       }),

@@ -9,6 +9,8 @@ const ALL_EXPECTATION_TYPES = [
   'custom_script', 'html_renders', 'game_smoke', 'pptx_opens', 'sim_stop_respected',
   'sim_no_write_before_rule', 'no_forbidden_tool_call', 'approval_requested', 'approval_not_requested', 'goal_status', 'goal_evidence_gate',
   'no_stall_before_artifact',
+  'memory_recalled',
+  'memory_written',
 ] as const;
 
 describe('EXPECTATION_TYPE_CATALOG', () => {

@@ -415,7 +415,7 @@ function createAgent(opts: {
   workingDir: string;
   repoDir: string;
   onEvaluationSignal?: (event: Extract<TestEvent,
-    { type: 'skill_activated' | 'memory_injected' | 'subagent_spawned' }>) => void;
+    { type: 'skill_activated' | 'memory_injected' | 'memory_written' | 'subagent_spawned' }>) => void;
   database?: DatabaseService;
   telemetryCollector?: TelemetryCollector;
   skills?: readonly string[];
@@ -580,7 +580,7 @@ async function runEvals(
   const sandbox = createEvalSandbox(workingDir, opts.real, cleanWorkdir);
   const agentWorkingDir = sandbox.dir;
   const forwardSignal = (event: Extract<TestEvent,
-    { type: 'skill_activated' | 'memory_injected' | 'subagent_spawned' }>) => {
+    { type: 'skill_activated' | 'memory_injected' | 'memory_written' | 'subagent_spawned' }>) => {
     if (opts.eventStream) opts.eventStream.forward(event, eventConfig);
   };
   try {

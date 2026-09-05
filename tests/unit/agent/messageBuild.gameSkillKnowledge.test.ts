@@ -68,8 +68,14 @@ vi.mock('../../../src/host/lightMemory/recentConversations', () => ({
   buildRecentConversationsBlock: vi.fn(async () => ''),
 }));
 
-vi.mock('../../../src/host/lightMemory/indexLoader', () => ({
-  loadMemoryIndex: vi.fn(async () => null),
+const memoryIndexMock = vi.hoisted(() => ({ content: null as string | null }));
+
+vi.mock('../../../src/host/lightMemory/indexLoader', async (importOriginal) => ({
+  // listMemoryIndexTargets 用真实实现：memory_injected 的 entries 就是它算出来的，
+  // 换成假的等于把被测对象也 mock 掉了。
+  listMemoryIndexTargets: (await importOriginal<typeof import('../../../src/host/lightMemory/indexLoader')>())
+    .listMemoryIndexTargets,
+  loadMemoryIndex: vi.fn(async () => memoryIndexMock.content),
 }));
 
 vi.mock('../../../src/host/lightMemory/failureJournal', () => ({
@@ -178,7 +184,10 @@ function toTranscriptEntry(message: Message, index: number): ContextTranscriptEn
   };
 }
 
-function makeCtx(userMessage: string): ContextAssemblyCtx {
+function makeCtx(
+  userMessage: string,
+  runtimeOverrides: Record<string, unknown> = {},
+): ContextAssemblyCtx {
   const messages = [buildMessage(userMessage)];
   return {
     runtime: {
@@ -214,6 +223,7 @@ function makeCtx(userMessage: string): ContextAssemblyCtx {
       turnTrace: {
         record: vi.fn(),
       },
+      ...runtimeOverrides,
     },
     taskProgress: {},
     recordTokenUsage: vi.fn(),
@@ -308,5 +318,43 @@ describe('messageBuild game skill knowledge injection', () => {
         }),
       ]),
     );
+  });
+});
+
+// N-EVAL-MEMORY：File-as-Memory 的注入走 memory_index 块（不走 injectSeedMemory 的
+// <user-memory> 块），这里原本一个事件都不发 —— 评测拿不到「注了哪几条」就无从判召回。
+describe('messageBuild memory_index injection signal', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    memoryIndexMock.content = null;
+  });
+
+  it('索引真的进了提示词时发 memory_injected，entries 是索引里列出的记忆文件', async () => {
+    memoryIndexMock.content = [
+      '# Memory Index',
+      '',
+      '- [mem-orchid.md](mem-orchid.md) — 内部项目 Orchid 的主视觉色',
+      '- [mem-halberd.md](mem-halberd.md) — 内部项目 Halberd 的发版节奏',
+    ].join('\n');
+    const onEvent = vi.fn();
+    await buildModelMessages(makeCtx('Orchid 的主视觉色是什么', { memoryMode: 'auto', onEvent, turnQualityState: {} }));
+
+    expect(onEvent).toHaveBeenCalledWith({
+      type: 'memory_injected',
+      data: { id: 'memory_index', entries: ['mem-orchid.md', 'mem-halberd.md'] },
+    });
+  });
+
+  it('没有索引可注入时不发事件（零注入才是「记忆未出场」的真信号）', async () => {
+    const onEvent = vi.fn();
+    await buildModelMessages(makeCtx('Orchid 的主视觉色是什么', { memoryMode: 'auto', onEvent, turnQualityState: {} }));
+    expect(onEvent.mock.calls.filter(([event]) => event.type === 'memory_injected')).toHaveLength(0);
+  });
+
+  it('记忆关档（memoryMode=off）时不发事件', async () => {
+    memoryIndexMock.content = '# Memory Index\n\n- [mem-orchid.md](mem-orchid.md) — x';
+    const onEvent = vi.fn();
+    await buildModelMessages(makeCtx('Orchid 的主视觉色是什么', { memoryMode: 'off', onEvent, turnQualityState: {} }));
+    expect(onEvent.mock.calls.filter(([event]) => event.type === 'memory_injected')).toHaveLength(0);
   });
 });

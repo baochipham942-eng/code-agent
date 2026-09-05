@@ -70,6 +70,19 @@ const UNSTABLE_STDDEV_THRESHOLD = 0.2;
  * 当前 host 是否有会真正包住 bash 执行的 OS 级 jail。
  * 对齐 bash.ts 的 shouldSandbox：OS_SANDBOX.ENABLED + 平台沙箱（bwrap/seatbelt）可用。
  */
+/**
+ * 把模拟用户轮 / follow-up 轮的结果并进 TestResult。审批记录必须一起并：
+ * 「先确认」类题的危险命令发生在第二轮，只取首轮会把真弹过的审批卡数成 0
+ * （09-04 L3 第八程：3 条命令只数到 2 条、产品会弹卡 0 次）。没有记录就不建数组。
+ */
+function appendRound(result: TestResult, round: Pick<TestResult, 'responses' | 'toolExecutions' | 'turnCount' | 'errors' | 'permissionRequests'>): void {
+  result.responses.push(...round.responses);
+  result.toolExecutions.push(...round.toolExecutions);
+  if (round.permissionRequests) (result.permissionRequests ??= []).push(...round.permissionRequests);
+  result.turnCount += round.turnCount;
+  result.errors.push(...round.errors);
+}
+
 function isOsJailActive(): boolean {
   return OS_SANDBOX.ENABLED && getSandboxManager().isAvailable();
 }
@@ -822,12 +835,8 @@ export class TestRunner {
 
       result.responses = agentResult.responses;
       result.toolExecutions = agentResult.toolExecutions;
-      // N-EVAL-WOULDASK-BLIND：审批记录按 sendMessage 分账（adapter 每轮新建一个记录器，
-      // agentAdapter.ts:563-564），所以模拟用户轮 / follow-up 轮的那几份必须并进来（见下）。
-      // 只取首轮 ⇒「先确认」类题的证据必然丢：那类题的设计就是「模型先问 → 模拟用户答 →
-      // 危险命令发生在第二轮」，判决却只看第一轮，于是审批卡真弹过也数成 0
-      // （09-04 L3 第八程实付：3 条命令只数到 2 条、产品会弹卡 0 次）。
-      // 三处都保持「没有记录就不建数组」⇒ 全程缺席时仍是 undefined，approval_* 照常 fail-loud。
+      // 审批记录按 sendMessage 分账（adapter 每轮新建记录器），后续轮由 appendRound 并入；
+      // 没有记录就不建数组，全程缺席仍是 undefined，approval_* 照常 fail-loud。
       if (agentResult.permissionRequests) (result.permissionRequests ??= []).push(...agentResult.permissionRequests);
       result.turnCount = agentResult.turnCount;
       result.errors = agentResult.errors;
@@ -876,11 +885,7 @@ export class TestRunner {
             remainingTime,
             `Simulated user turn timeout after ${timeout}ms`,
           );
-          result.responses.push(...simResult.responses);
-          result.toolExecutions.push(...simResult.toolExecutions);
-          if (simResult.permissionRequests) (result.permissionRequests ??= []).push(...simResult.permissionRequests);
-          result.turnCount += simResult.turnCount;
-          result.errors.push(...simResult.errors);
+          appendRound(result, simResult);
           lastTurn = {
             responses: simResult.responses,
             toolExecutions: simResult.toolExecutions,
@@ -913,11 +918,7 @@ export class TestRunner {
             `Follow-up timeout after ${timeout}ms`,
           );
 
-          result.responses.push(...followUpResult.responses);
-          result.toolExecutions.push(...followUpResult.toolExecutions);
-          if (followUpResult.permissionRequests) (result.permissionRequests ??= []).push(...followUpResult.permissionRequests);
-          result.turnCount += followUpResult.turnCount;
-          result.errors.push(...followUpResult.errors);
+          appendRound(result, followUpResult);
         }
       }
 

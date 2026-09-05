@@ -39,6 +39,19 @@ describe('fast gate fail-closed contracts', () => {
     expect(selected.testsTypecheck).toBe(true);
     expect(selectTests(policy, ['package.json']).packages).toEqual(policy.packages);
   });
+  it('matches deleted/renamed paths but only executes surviving test files', () => {
+    const oldFile = 'tests/unit/oldBehavior.test.ts';
+    const newFile = 'tests/unit/newBehavior.test.ts';
+    const renamed = selectTests(policy, [oldFile, newFile], [], [oldFile]);
+    expect(renamed.files).not.toContain(oldFile);
+    expect(renamed.files).toContain(newFile);
+    expect(selectTests(policy, [oldFile], [], [oldFile]).files).toEqual([...policy.baseline].sort());
+    const oldPromptTest = 'src/host/prompts/old.test.ts';
+    expect(selectTests(policy, [oldPromptTest], [], [oldPromptTest]).files).toContain('tests/scripts/promptGateEvidence.test.ts');
+    // Missing files without a Git deletion must never silently fall out of selection.
+    const missing = selectTests(policy, [oldFile]);
+    expect(() => validateFiles(root, missing.files, 12)).toThrow('FAIL: selected test missing or unreadable');
+  });
   it('distinguishes fast-policy changes from full-lock changes', () => {
     expect(selectTests(policy, ['scripts/gates-fast.mjs']).files).not.toContain('tests/scripts/gatesLocalLock.test.ts');
     expect(selectTests(policy, ['scripts/lib/gates-local-lock.mjs']).files).toContain('tests/scripts/gatesLocalLock.test.ts');

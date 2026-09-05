@@ -23,7 +23,7 @@ interface FastReport {
 export function digest(value: string | Uint8Array): string;
 export function assertExactFiles(expected: string[], actual: string[], phase: string): void;
 export function validateFiles(root: string, files: string[], maxFiles: number): void;
-export function selectTests(policy: FastPolicy, changed: string[], regressions?: Regression[]): {
+export function selectTests(policy: FastPolicy, changed: string[], regressions?: Regression[], deletedFiles?: string[]): {
   files: string[]; matchedRules: string[]; packages: string[]; testsTypecheck: boolean;
 };
 export function validateReport(expected: string[], report: FastReport, root: string): {

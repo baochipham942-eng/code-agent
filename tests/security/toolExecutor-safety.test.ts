@@ -161,10 +161,14 @@ describe('ToolExecutor safety integration', () => {
       expect(learnFromApproval).toHaveBeenCalledOnce();
     });
 
-    it('keeps learning persistent rules from legacy boolean approval', async () => {
+    // 2026-09-05 #1651（N-EVAL-EXECPOLICY-LEAK）反转了 2026-08-18 #1239 立的「裸布尔放行仍学规则」：
+    // 真人放行路径（桌面审批卡、CLI TUI）已全部自报 approvalSource='user'，不自报来源的裸 true
+    // 只剩机器放行（blanket 处理器/恢复宿主/MCP/自动档），学成用户级规则就是 09-05 真机 41 条泄漏的来源。
+    // 爸 09-05 拍板按 #1651 口径改断言（N-SECTEST-LEGACYBOOL-REVERSED-0905）。
+    it('does not learn persistent rules from legacy boolean approval without a self-reported source', async () => {
       await executor.execute('bash', { command: 'npm install lodash' }, execOptions);
 
-      expect(learnFromApproval).toHaveBeenCalledOnce();
+      expect(learnFromApproval).not.toHaveBeenCalled();
     });
 
     it('npm install requests permission', async () => {

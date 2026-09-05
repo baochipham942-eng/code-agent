@@ -74,14 +74,25 @@ export async function activateEvalBuiltinPlugins(
 ): Promise<BuiltinPluginActivation> {
   if (selection === 'none') return { active: [], failures: [] };
 
+  // 顺序不能反：protocol registry 的注册端口是 protocolRegistry 模块的 import 副作用，
+  // 先起插件系统会让每个 builtin 在 activate 时撞
+  // 「Protocol tool registry is not initialized」而全部转 error——报告上写着请求了 all，
+  // 工具面却一个没多。web 入口 initializeWebPluginSystem 也是先 protocolRegistry 再 init。
+  const { getProtocolRegistry } = await import('@host/tools/protocolRegistry');
+  getProtocolRegistry();
+
   const {
     initPluginSystem,
     getPluginRegistry,
     getActiveBuiltinPluginIds,
   } = await import('@host/plugins/pluginRegistry');
 
-  await initPluginSystem();
-  started = true;
+  // 只起一次：第二次 initialize() 会用全新的 inactive 记录覆盖 plugins 表，
+  // 而 capabilitySurface 还认为它们已加载 ⇒ activateAll 全部转 error，工具面反而清空。
+  if (!started) {
+    await initPluginSystem();
+    started = true;
+  }
 
   if (selection !== 'all') {
     const wanted = new Set<string>(selection);

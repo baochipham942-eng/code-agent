@@ -44,7 +44,7 @@ function summary(ids: string[], resultIds = ids, invalidId?: string): TestRunSum
     environment: { model: 'model', provider: 'provider', workingDirectory: '/tmp' },
     stamp: {
       caseBankSha: 'bank-sha',
-      shape: { skills: [], memory: false, swarm: false, harness: null },
+      shape: { skills: [], plugins: [], memory: false, swarm: false, harness: null },
       divergesFromProduction: [],
     },
     aggregationRule: 'pass_rate_k1',

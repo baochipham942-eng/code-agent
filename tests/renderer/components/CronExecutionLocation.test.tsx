@@ -4,6 +4,7 @@ import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { CronJobExecution } from '../../../src/shared/contract/cron';
 import { CronExecutionList } from '../../../src/renderer/components/features/cron/CronExecutionList';
+import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { CronExecutionDetail } from '../../../src/renderer/components/features/cron/CronExecutionDetail';
 
 const execution: CronJobExecution = {
@@ -19,7 +20,7 @@ const execution: CronJobExecution = {
   error: 'Cloud execution is not wired yet (N-L3-MINLOOP-SRV).',
 };
 
-afterEach(cleanup);
+afterEach(() => { cleanup(); useAppStore.setState({ language: 'zh' }); });
 
 describe('cron execution location presentation', () => {
   it('adds the location column without merging run timelines', () => {
@@ -43,5 +44,18 @@ describe('cron execution location presentation', () => {
     expect(screen.getByText('执行位置')).toBeTruthy();
     expect(screen.getByTestId('cron-runs-on-pill-cloud').textContent).toContain('云端');
     expect(screen.getByText('云端执行尚未接线（N-L3-MINLOOP-SRV）')).toBeTruthy();
+  });
+});
+
+
+describe('N-CRON-ACTIONGATE unsupported action message', () => {
+  it.each([
+    ['zh', '该类任务暂不支持'],
+    ['en', 'This task type is not supported yet.'],
+  ] as const)('%s 展示不支持原因', (language, message) => {
+    useAppStore.setState({ language });
+    render(<CronExecutionDetail execution={{ ...execution, runsOn: 'local', error: 'unsupported_action' }} />);
+    expect(screen.getByText(message)).toBeTruthy();
+    expect(screen.queryByText('unsupported_action')).toBeNull();
   });
 });

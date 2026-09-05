@@ -198,4 +198,26 @@ describe('CLIDatabaseService/core DatabaseService message parity', () => {
       { event_type: 'message_revision' },
     ]);
   });
+
+  it('手动压缩替换经过账本，关闭重开后仍加载摘要与保留尾部', async () => {
+    const old: Message = { id: 'old-context', role: 'assistant', content: 'Long background. '.repeat(100), timestamp: 10 };
+    const recent: Message = { id: 'recent', role: 'user', content: 'Continue.', timestamp: 20 };
+    cliDb.addMessage(session.id, old);
+    cliDb.addMessage(session.id, recent);
+    const summary: Message = {
+      id: 'manual-summary', role: 'system', content: 'Condensed background.', timestamp: 19,
+      compaction: {
+        type: 'compaction', content: 'Condensed background.', timestamp: 30,
+        compactedMessageCount: 1, compactedTokenCount: 100, source: 'manual_current',
+      },
+    };
+    cliDb.replaceMessages(session.id, [summary, recent]);
+    cliDb.close();
+    cliDb = new CLIDatabaseService();
+    await cliDb.initialize();
+    const loaded = cliDb.getMessagesForLoad(session.id, 100);
+    expect(loaded.map((message) => message.id)).toEqual(['manual-summary', 'recent']);
+    expect(loaded[0].compaction).toMatchObject({ source: 'manual_current', compactedMessageCount: 1 });
+  });
+
 });

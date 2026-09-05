@@ -32,7 +32,7 @@ describe('AI review run stamp', () => {
     const stamp = buildRunStamp({
       workingDir: root, testCaseDir: caseDir, mode: 'real', provider: 'tested', model: 'tested-model',
       split: 'held-in', judge: 'rules', aiReview: ['task_completed'], estimatedCases: 2,
-      shape: { skills: [], memory: false, swarm: false, harness: null },
+      shape: { skills: [], plugins: [], memory: false, swarm: false, harness: null },
     });
     expect(stamp.scorers.aiReview).toEqual(['task_completed']);
     expect(stamp.scorers.aiReviewCalibration.task_completed).toBe(expected);

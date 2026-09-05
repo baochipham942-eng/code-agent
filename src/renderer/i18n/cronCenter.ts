@@ -71,6 +71,7 @@ export const cronCenterZh = {
     localIntervalHint: '本地任务最小间隔 5 分钟',
     cloudIntervalHint: '云端任务最小间隔 1 小时',
     cloudExecutionNotWired: '云端执行尚未接线（N-L3-MINLOOP-SRV）',
+    unsupportedAction: '该类任务暂不支持',
     runBudgetExceeded: '本次执行超过了任务的 {amount} 美元预算上限',
     // 触发源 chip（键 = utils/cronHumanize 的 CronTriggerKind，语义对齐 SessionAutomationType）
     triggerKind: {
@@ -277,6 +278,7 @@ export const cronCenterEn: typeof cronCenterZh = {
     localIntervalHint: 'Local tasks have a minimum interval of 5 minutes',
     cloudIntervalHint: 'Cloud tasks have a minimum interval of 1 hour',
     cloudExecutionNotWired: 'Cloud execution is not wired yet (N-L3-MINLOOP-SRV)',
+    unsupportedAction: 'This task type is not supported yet.',
     runBudgetExceeded: 'This run exceeded the task budget limit of ${amount}',
     triggerKind: {
       cron: 'Scheduled',

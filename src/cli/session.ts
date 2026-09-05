@@ -149,8 +149,8 @@ export class CLISessionManager {
    * 获取会话（带消息）
    */
   async getSession(sessionId: string, messageLimit: number = 100): Promise<SessionWithMessages | null> {
-    // 检查缓存
-    if (this.sessionCache.has(sessionId)) {
+    // 全量读取用于整会话压缩，不能复用默认 100 条的恢复窗口。
+    if (messageLimit !== Number.MAX_SAFE_INTEGER && this.sessionCache.has(sessionId)) {
       return this.sessionCache.get(sessionId)!;
     }
 
@@ -174,7 +174,9 @@ export class CLISessionManager {
     };
 
     // 缓存
-    this.sessionCache.set(sessionId, sessionWithMessages);
+    if (messageLimit !== Number.MAX_SAFE_INTEGER) {
+      this.sessionCache.set(sessionId, sessionWithMessages);
+    }
 
     return sessionWithMessages;
   }
@@ -346,9 +348,22 @@ export class CLISessionManager {
     }
   }
 
-  /**
-   * 获取会话消息
-   */
+  /** 替换压缩后的会话投影，同时更新内存缓存。 */
+  async replaceMessages(sessionId: string, messages: Message[]): Promise<void> {
+    const db = this.getDb();
+    if (db) {
+      if (!(await this.ensureDbReady())) throw new Error('session_database_unavailable');
+      db.replaceMessages(sessionId, messages);
+    }
+    const cached = this.sessionCache.get(sessionId);
+    if (cached) {
+      cached.messages = [...messages];
+      cached.messageCount = messages.length;
+      cached.updatedAt = Date.now();
+    }
+  }
+
+  /** 获取会话消息。 */
   async getMessages(sessionId: string, limit?: number): Promise<Message[]> {
     if (!(await this.ensureDbReady())) {
       return [];

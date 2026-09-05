@@ -7,7 +7,7 @@ import * as readline from 'readline';
 import chalk from 'chalk';
 import { createCLIAgent, CLIAgent } from '../adapter';
 import { terminalOutput } from '../output';
-import { cleanup, initializeCLIServices, getSessionManager, getDatabaseService } from '../bootstrap';
+import { cleanup, initializeCLIServices, getSessionManager, getDatabaseService, getConfigService } from '../bootstrap';
 import type { CLIGlobalOptions } from '../types';
 import { version } from '../../../package.json';
 import * as fs from 'fs';
@@ -504,6 +504,7 @@ async function handleCommand(
       };
       const ctx: CommandContext = {
         surface: 'cli',
+        getLocale: () => getConfigService().getSettings().ui.language,
         output: cliOutput,
         agent,
         getSessionManager: () => getSessionManager(),
@@ -757,24 +758,6 @@ async function handleCommand(
         }
       } catch {
         terminalOutput.error('Failed to list skills');
-      }
-      return false;
-    }
-
-    // ────────────────────────────────────────────────────
-    // /compact — 手动触发上下文压缩
-    // ────────────────────────────────────────────────────
-    case 'compact': {
-      const history = agent.getHistory();
-      const msgCount = history.length;
-      if (msgCount < 4) {
-        terminalOutput.info('Too few messages to compact');
-      } else {
-        // Simple compaction: keep last N messages, notify user
-        terminalOutput.info(`Context has ${msgCount} messages. Compaction will be applied on next run.`);
-        // Actual compaction happens inside AgentLoop's auto-compressor
-        // This is a hint to the user
-        terminalOutput.success('Compaction scheduled');
       }
       return false;
     }

@@ -10,6 +10,7 @@ import type { DatabaseService } from '../../services/core/databaseService';
 import type { TelemetryCollector } from '../../telemetry/telemetryCollector';
 import { EVAL_AGENT_DEFAULTS, StandaloneAgentAdapter } from '../agentAdapter';
 import type { CompareConfiguration, HarnessVariantConfig } from '../types';
+import { getActiveBuiltinPluginIds } from '../../plugins/pluginRegistry';
 
 export interface EffectiveCompareArm {
   name: string;
@@ -37,6 +38,9 @@ export function buildCompareArmShape(
   const arm = resolveEffectiveCompareArm(config, baseline);
   return {
     skills: [...arm.skills],
+    // 插件面是进程级单例（protocol registry / PluginRegistry），两臂共用同一份，
+    // 所以这里读实际激活集而不是把它做成臂维度——臂间对比不了的东西别假装能对比。
+    plugins: getActiveBuiltinPluginIds(),
     memory: arm.memory.longTerm,
     // 运行戳记的 swarm 取本臂生效值，不再由调用方另传一个常量——
     // 臂开了扇出而戳记写 false，事后没人能从报告里看出跑的是哪一档。

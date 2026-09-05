@@ -49,9 +49,13 @@
       "id": "casebank",
       "paths": [
         ".claude/test-cases/**",
-        "src/host/testing/**",
-        "scripts/ci/check-casebank-answers.mjs",
-        "packages/eval-harness/**"
+        "src/host/testing/answerSide.ts",
+        "src/host/testing/testCaseLoader.ts",
+        "src/host/testing/mockEvalPolicy.ts",
+        "src/host/testing/caseLayer.ts",
+        "src/host/testing/testCaseClassification.ts",
+        "src/host/testing/ci/sampleSplits.ts",
+        "scripts/ci/check-casebank-answers.mjs"
       ],
       "files": [
         "tests/scripts/checkCasebankAnswers.test.ts"

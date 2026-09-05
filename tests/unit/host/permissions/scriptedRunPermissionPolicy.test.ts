@@ -80,6 +80,28 @@ describe('scripted run permission policy', () => {
       .resolves.toMatchObject({ approved: false });
   });
 
+  // N-EVAL-ORCHARM-REALCASE：扇出实验臂的第三道闸。Task/spawn_agent 的 permissionLevel
+  // 是 'execute' ⇒ requestType 'command'，但策略按 tool 精确匹配，Bash 的 command 规则
+  // 盖不到它们；缺覆盖即拒 ⇒ 两臂模型都拉到了 Task 却一次也扇不出去，
+  // subagentSpawns 恒 0，编排维度的实验臂等于没接线。
+  // 摘掉这两条规则本用例立刻红。
+  it('lets the repository policy delegate to subagents so the fan-out arm has a signal', async () => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'scripted-approval-policy-'));
+    process.env.NEO_SCRIPTED_APPROVAL_POLICY = path.resolve('.claude/eval-approval-policy.json');
+    process.env.CODE_AGENT_DATA_DIR = path.join(tempDir, 'isolated-data');
+    process.env.CODE_AGENT_EVAL_BRIDGE = '1';
+    const handler = requireScriptedRunPermissionHandler();
+
+    await expect(handler({ type: 'command', tool: 'Task', details: { subagent_type: 'reviewer', prompt: 'audit dir' } }))
+      .resolves.toMatchObject({ approved: true, approvalSource: 'scripted' });
+    await expect(handler({ type: 'command', tool: 'spawn_agent', details: { agentType: 'explore' } }))
+      .resolves.toMatchObject({ approved: true, approvalSource: 'scripted' });
+    // 放行的只是「派子代理」这一下：子代理自己的工具调用回到同一个 handler 重判，
+    // 没有 allow 规则的工具面照旧拒。
+    await expect(handler({ type: 'network', tool: 'WebFetch', details: { url: 'https://example.com' } }))
+      .resolves.toMatchObject({ approved: false });
+  });
+
   it('allows a matching tool and path with scripted attribution', async () => {
     installPolicy({
       version: 1,

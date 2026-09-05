@@ -167,6 +167,8 @@ export interface SubagentExecutionContext {
   }>;
   spawnDepth?: number;
   spawnMaxDepth?: number;
+  /** 父执行器的「一律走审批 handler」契约，见 ToolContext.forcePermissionHandler。 */
+  forcePermissionHandler?: boolean;
   spawnTreeId?: string;
   swarmRunScope?: SwarmRunScope;
   parentNativeRunId?: string;

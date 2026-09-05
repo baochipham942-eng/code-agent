@@ -110,6 +110,13 @@ export interface ToolContext {
    * 会话级 spawn 深度覆盖。SpawnGuard 会 clamp 到硬上限，未设置时使用默认深度。
    */
   spawnMaxDepth?: number;
+  /**
+   * 父执行器的「一律走审批 handler」契约。true = 分类器判 approve 也不许自动放行，
+   * 必须落到 requestPermission。委派工具要原样透传给子代理执行器：否则子代理里凡是
+   * 分类器自动放行的工具（只读联网等）根本不进审批链，父级装的 scripted 策略看不见它。
+   * 生产路径缺省 undefined ⇒ 行为零变化。
+   */
+  forcePermissionHandler?: boolean;
   /** 根 agent / 根 session 的 spawn tree id，整棵树共享同一并发槽位池。 */
   spawnTreeId?: string;
   /** Agent Team 的不可变 run/tree scope；不得覆盖 Native runId，嵌套 spawn 必须原样透传。 */

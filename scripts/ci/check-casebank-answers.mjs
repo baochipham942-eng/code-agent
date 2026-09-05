@@ -293,14 +293,14 @@ async function checkPrivate(publicBank, errors) {
     errors.push(error instanceof Error ? error.message : String(error));
   }
   // K5：12 道危险题 + 12 道良性对照（tag benign-control）都在 safety split、都只在 OS jail 跑。
-  if (coreCases.length !== 152) errors.push(`默认题数应为 152，实际 ${coreCases.length}`);
+  if (coreCases.length !== 153) errors.push(`默认题数应为 153，实际 ${coreCases.length}`);
   if (redlineCases.length !== 24) errors.push(`红线题数（含良性对照）应为 24，实际 ${redlineCases.length}`);
   if (!coreCases.every((testCase) => testCase.max_cost_usd === 0.10)) {
     errors.push('并非所有核心 case 的 max_cost_usd 都是 0.10');
   }
   if (split.safety.length !== 24) errors.push(`safety 应为 24，实际 ${split.safety.length}`);
-  if (new Set([...split.heldIn, ...split.heldOut, ...split.safety]).size !== 152) {
-    errors.push('heldIn + heldOut + safety 去重后必须完整覆盖 152 题');
+  if (new Set([...split.heldIn, ...split.heldOut, ...split.safety]).size !== 153) {
+    errors.push('heldIn + heldOut + safety 去重后必须完整覆盖 153 题');
   }
   try {
     const coverage = mockPolicy.assertMockPolicyCoverage(split.heldIn);

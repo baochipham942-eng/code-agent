@@ -77,3 +77,88 @@ cases:
       3. 把处理结果写入 test-processed.json（包含 action 和 count）
     cleanup:
       - rm -f test-raw-data.txt test-processed.json
+
+  # --------------------------------------------------------------------------
+  # L3: 子代理扇出（ORCHARM 实验臂的 held-in 对照题）
+  # --------------------------------------------------------------------------
+  # 题面明写「派 Task 子代理并行」，让 spawnMaxDepth 这个实验臂维度在真跑里
+  # 有信号可看：baseline（深度默认）应扇出，candidate（深度 0）被 DEPTH_LIMIT
+  # 拒后走自审兜底。工作量有界（自造 6 个小文件），不碰真仓依赖、不联网。
+  - id: multiagent-fanout-parallel-audit
+    type: task
+    description: "派子代理并行审查三个目录并汇总报告"
+    setup:
+      - mkdir -p fanout-audit/billing fanout-audit/notify fanout-audit/digest
+      - |
+        cat > fanout-audit/billing/invoice.ts << 'EOF'
+        export interface InvoiceLine {
+          amount: number;
+        }
+
+        export function totalAmount(lines: InvoiceLine[]): number {
+          let total = 0;
+          for (let index = 0; index <= lines.length; index += 1) {
+            total += lines[index].amount;
+          }
+          return total;
+        }
+        EOF
+      - |
+        cat > fanout-audit/billing/tax.ts << 'EOF'
+        export function withTax(amount: number, rate: number): number {
+          return Math.round(amount * (1 + rate) * 100) / 100;
+        }
+        EOF
+      - |
+        cat > fanout-audit/notify/mailer.ts << 'EOF'
+        const AUTH_TOKEN = 'placeholder-mailer-token-0001';
+
+        export function buildHeaders(): Record<string, string> {
+          return {
+            'content-type': 'application/json',
+            authorization: `Bearer ${AUTH_TOKEN}`,
+          };
+        }
+        EOF
+      - |
+        cat > fanout-audit/notify/queue.ts << 'EOF'
+        export function enqueue(queue: string[], item: string): string[] {
+          return [...queue, item];
+        }
+        EOF
+      - |
+        cat > fanout-audit/digest/summary.ts << 'EOF'
+        export function buildDigest(items: string[]): string {
+          return items.join('\n');
+        }
+
+        export function unusedLegacyDigest(items: string[]): string {
+          return items.join(', ');
+        }
+        EOF
+      - |
+        cat > fanout-audit/digest/format.ts << 'EOF'
+        import { buildDigest } from './summary';
+
+        export function formatDigest(items: string[]): string {
+          return `# Digest\n${buildDigest(items)}`;
+        }
+        EOF
+    prompt: |
+      fanout-audit/ 下有三个互不相关的目录：billing、notify、digest，每个目录里放着两个待审查的小模块。
+
+      请用 Task 子代理并行审查：给 billing、notify、digest 各派一个 Task 子代理（至少两个并行发起），
+      每个子代理只看自己那一个目录，找出该目录里的问题并回报给你。
+      注意 Task 子代理工具默认不在当前工具面上，需要先检索加载才调得到。
+
+      等子代理回报后，由你汇总写出 fanout-audit-report.md：每个目录一节，节标题就用目录名
+      （billing / notify / digest），每节写清楚该目录里发现的问题。
+      如果子代理派不出去（被深度限制拒绝），就自己逐个目录审查，照样写出同样结构的报告。
+    timeout: 600000
+    tags:
+      - multiagent
+      - orchestration
+      - fanout
+    cleanup:
+      - rm -rf fanout-audit
+      - rm -f fanout-audit-report.md

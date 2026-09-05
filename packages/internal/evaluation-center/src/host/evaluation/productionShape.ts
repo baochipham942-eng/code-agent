@@ -1,14 +1,12 @@
 import type { EvalRunStamp } from '@shared/contract/evaluation';
 import { SCAFFOLD_PROFILE } from '@shared/constants/agent';
-import { AGENT_RUNTIME_DEFAULTS } from '@host/agent/agentRuntimeDefaults';
+import { AGENT_RUNTIME_DEFAULTS, getDefaultInstalledBuiltinPluginIds } from '@host/agent/agentRuntimeDefaults';
 import { DEFAULT_GOAL_ALLOW_SWARM } from '@host/agent/goalModeController';
 import { resolveScaffoldProfileForModel } from '@host/agent/runtime/scaffoldProfile';
 import { DEFAULT_COMPRESSION_PIPELINE_ENABLED } from '@host/context/compressionPipeline';
 import { getConfigService } from '@host/services/core/configService';
 import { DEFAULT_SETTINGS } from '@host/services/core/configDefaults';
 import { DEFAULT_ENABLED_SKILLS } from '@host/services/skills/skillRepositories';
-import { BUILTIN_PLUGIN_CATALOG } from '@host/plugins/builtin/catalog';
-import { isBuiltinCapabilityInstalledSync } from '@host/plugins/builtin/computerUse/installState';
 
 type RunShape = EvalRunStamp['shape'];
 
@@ -18,11 +16,7 @@ export function resolveProductionShape(model: string): RunShape {
   const skills = Object.values(DEFAULT_ENABLED_SKILLS).flat();
   const scaffold = resolveScaffoldProfileForModel(model);
 
-  // 生产默认的插件面：状态文件缺席即「已安装」，所以这就是用户开箱看到的那一套。
-  const plugins = BUILTIN_PLUGIN_CATALOG
-    .filter(({ manifest }) => isBuiltinCapabilityInstalledSync(manifest.id))
-    .map(({ manifest }) => manifest.id)
-    .sort();
+  const plugins = getDefaultInstalledBuiltinPluginIds();
 
   return {
     skills,

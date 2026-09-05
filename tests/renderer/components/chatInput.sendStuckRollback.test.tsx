@@ -30,7 +30,7 @@ import {
   type UseChatInputSubmitParams,
 } from '../../../src/renderer/components/features/chat/ChatInput/useChatInputSubmit';
 import { zh } from '../../../src/renderer/i18n/zh';
-import { useComposerStore } from '../../../src/renderer/stores/composerStore';
+import { DRAFT_SCOPE_KEY, useComposerStore } from '../../../src/renderer/stores/composerStore';
 
 const DRAFT = '这条消息不许被吞掉';
 
@@ -77,9 +77,9 @@ function makeParams(overrides: Partial<UseChatInputSubmitParams>): UseChatInputS
 }
 
 // 只关心「草稿有没有回来 / 有没有出声」，不需要挂真的 InputArea（它在 jsdom 里 focus 会抛）。
-function Harness({ onSend, goal = false }: { onSend: (envelope: ConversationEnvelope) => Promise<boolean>; goal?: boolean }) {
+function Harness({ onSend, goal = false, currentSessionId = 'session-stuck' }: { onSend: (envelope: ConversationEnvelope) => Promise<boolean>; goal?: boolean; currentSessionId?: string | null }) {
   const [value, setValue] = useState(DRAFT);
-  const { handleSubmit, startGoalRun } = useChatInputSubmit(makeParams({ value, setValue, onSend }));
+  const { handleSubmit, startGoalRun } = useChatInputSubmit(makeParams({ value, setValue, onSend, currentSessionId }));
   return (
     <div>
       <span data-testid="draft">{value}</span>
@@ -144,6 +144,59 @@ describe('发送挂住不返回时的兜底', () => {
       selectedSkillIds: ['preset-skill'], selectedConnectorIds: ['preset-connector'],
       selectedMcpServerIds: ['preset-mcp'], turnCapabilityScopeMode: 'manual',
     });
+  });
+
+  it.each([false, true])('草稿移交新会话（goal=%s）成功后仍清空同一轮能力', async (goal) => {
+    const store = useComposerStore.getState();
+    store.activateScope(DRAFT_SCOPE_KEY);
+    store.setSelectedSkillIds(['sent-skill']);
+    store.setSelectedConnectorIds(['sent-connector']);
+    store.setSelectedMcpServerIds(['sent-mcp']);
+    let finish!: (sent: boolean) => void;
+    render(<Harness goal={goal} currentSessionId={null}
+      onSend={() => new Promise<boolean>((resolve) => { finish = resolve; })} />);
+    await act(async () => { screen.getByText('send').click(); });
+    await act(async () => {
+      await store.handoffActiveScopeToSession('created-session');
+      store.hydrateFromSession('created-session', '/tmp/created-session');
+    });
+    expect(useComposerStore.getState().selectedSkillIds).toEqual(['sent-skill']);
+    await act(async () => { finish(true); });
+    expect(useComposerStore.getState()).toMatchObject({
+      hydratedSessionId: 'created-session', selectedSkillIds: [], selectedConnectorIds: [],
+      selectedMcpServerIds: [], turnCapabilityScopeMode: 'auto',
+    });
+  });
+
+  it.each([false, true])('切走再切回原会话（goal=%s）不让旧发送清掉恢复的选择', async (goal) => {
+    const store = useComposerStore.getState();
+    store.hydrateFromSession('roundtrip-session', '/tmp/roundtrip');
+    store.setSelectedSkillIds(['roundtrip-skill']);
+    store.setSelectedConnectorIds(['roundtrip-connector']);
+    store.setSelectedMcpServerIds(['roundtrip-mcp']);
+    let finish!: (sent: boolean) => void;
+    render(<Harness goal={goal} currentSessionId="roundtrip-session"
+      onSend={() => new Promise<boolean>((resolve) => { finish = resolve; })} />);
+    await act(async () => { screen.getByText('send').click(); });
+    store.hydrateFromSession('away-session', '/tmp/away');
+    store.hydrateFromSession('roundtrip-session', '/tmp/roundtrip');
+    await act(async () => { finish(true); });
+    expect(useComposerStore.getState()).toMatchObject({
+      hydratedSessionId: 'roundtrip-session',
+      selectedSkillIds: ['roundtrip-skill'], selectedConnectorIds: ['roundtrip-connector'],
+      selectedMcpServerIds: ['roundtrip-mcp'], turnCapabilityScopeMode: 'manual',
+    });
+  });
+
+  it.each([false, true])('重新选择相同能力（goal=%s）也是下一轮意图', async (goal) => {
+    const store = useComposerStore.getState();
+    store.setSelectedSkillIds(['same-skill']);
+    let finish!: (sent: boolean) => void;
+    render(<Harness goal={goal} onSend={() => new Promise<boolean>((resolve) => { finish = resolve; })} />);
+    await act(async () => { screen.getByText('send').click(); });
+    store.setSelectedSkillIds(['same-skill']);
+    await act(async () => { finish(true); });
+    expect(useComposerStore.getState().selectedSkillIds).toEqual(['same-skill']);
   });
 
   it('超时后草稿退回输入框并出声，不留「输入框空了但哪儿都没有」的状态', async () => {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback } from 'react';
 import type React from 'react';
 import type { MessageAttachment } from '@shared/contract';
 import type { QueuedInput } from '@shared/contract/queuedInput';
@@ -178,32 +178,10 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
     setActiveAgentId,
   } = params;
 
-  const mounted = useRef(true);
-  useEffect(() => {
-    mounted.current = true;
-    return () => { mounted.current = false; };
-  }, []);
-
-  // 只清本次发送仍拥有的选择；等待期间的编辑或预设加载会替换这些引用。
+  // 版本同时绑定能力选择和会话；handoff 保留同一轮版本，切槽或再选择都会失效。
   const captureSuccessfulSendReset = useCallback(() => {
-    const snapshot = useComposerStore.getState();
-    return () => {
-      const current = useComposerStore.getState();
-      const unchanged = mounted.current
-        && current.activeScopeKey === snapshot.activeScopeKey
-        && current.hydratedSessionId === snapshot.hydratedSessionId
-        && current.selectedSkillIds === snapshot.selectedSkillIds
-        && current.selectedConnectorIds === snapshot.selectedConnectorIds
-        && current.selectedMcpServerIds === snapshot.selectedMcpServerIds
-        && current.turnCapabilityScopeMode === snapshot.turnCapabilityScopeMode
-        && current.selectedTeamRecipeId === snapshot.selectedTeamRecipeId
-        && current.standbyExcludedMemberKeys === snapshot.standbyExcludedMemberKeys
-        && current.pendingCommand === snapshot.pendingCommand
-        && current.routingMode === snapshot.routingMode
-        && current.targetAgentIds === snapshot.targetAgentIds
-        && current.workingDirectory === snapshot.workingDirectory;
-      if (unchanged) current.resetForSuccessfulSend();
-    };
+    const revision = useComposerStore.getState().selectionRevision;
+    return () => useComposerStore.getState().resetForSuccessfulSend(revision);
   }, []);
 
   // 定时任务创建统一入口：内联 /schedule 和对话式卡片都走这里（cron:generateFromPrompt → createJob）。

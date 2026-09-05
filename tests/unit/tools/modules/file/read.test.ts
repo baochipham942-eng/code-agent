@@ -268,6 +268,13 @@ describe('readModule (native)', () => {
     expect(await read()).toMatchObject({ output: expect.stringContaining('ALPHA') });
     fileReadTracker.updateAfterEdit(file, stat.mtimeMs, stat.size, undefined, 'test-session:test-agent');
     expect(await read()).toMatchObject({ output: expect.stringContaining('ALPHA') });
+    // 压缩后只忘掉「已展示范围」：Read 不再短路，但 Edit/Write 的外改证据（digest/mtime）必须还在
+    expect(await read()).toMatchObject({ meta: { deduplicated: true } });
+    fileReadTracker.forgetShownRanges();
+    const kept = fileReadTracker.getReadRecord(file, 'test-session:test-agent');
+    expect(kept?.digest).toBeDefined();
+    expect(kept?.shownRange).toBeUndefined();
+    expect(await read()).toMatchObject({ output: expect.stringContaining('ALPHA') });
     fileReadTracker.clear();
     expect(await read()).toMatchObject({ output: expect.stringContaining('ALPHA') });
   });

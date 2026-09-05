@@ -333,6 +333,20 @@ describe('inference Max Mode wiring', () => {
     expect(ctx.recordTokenUsage).toHaveBeenCalledWith(12, 0);
   });
 
+  it('开关开但收尾轮（forceFinalResponse 生效）→ 只调一次引擎，不扇出候选与 judge', async () => {
+    const ctx = buildCtx({ maxMode: true, maxModeCandidates: 3 } as any);
+    ctx.runtime.control.forceFinalResponse('resource-limit-reached', '请只做一次收尾总结');
+    ctx.runtime.modelRouter.inference = vi.fn().mockResolvedValue({
+      type: 'text', content: '收尾总结', finishReason: 'stop', usage: { inputTokens: 50, outputTokens: 5 },
+    });
+
+    const response = await inference(ctx);
+
+    // 资源耗尽后的收尾只许一次推理：N 候选 + judge 会把已超支的预算再放大 N+1 倍
+    expect(ctx.runtime.modelRouter.inference).toHaveBeenCalledTimes(1);
+    expect(response.runtimeDiagnostics?.maxMode).toBeUndefined();
+  });
+
   it('开关开 → N 候选（无流式回调）+ judge（无工具），返回赢家并附 maxMode 诊断', async () => {
     const ctx = buildCtx({ maxMode: true, maxModeCandidates: 3 } as any);
     let candidateCount = 0;

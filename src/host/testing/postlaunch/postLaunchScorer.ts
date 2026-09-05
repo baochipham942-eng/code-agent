@@ -12,6 +12,7 @@ import type { ReplayBlock, ReplayTurn, StructuredReplay } from '../../../shared/
 import {
   POST_LAUNCH_DEFAULTS,
   POST_LAUNCH_JUDGE_VERSION,
+  DRY_RUN_JUDGE_VERSION,
   POST_LAUNCH_RUBRIC_VERSION,
   isPostLaunchScorableSessionType,
   type DeterministicSignal,
@@ -233,7 +234,8 @@ export async function runPostLaunchScoring(
 
     const scorable = collectScorableTurns(replay, turnRows);
     result.examinedTurns += scorable.length;
-    const alreadyScored = getScoredTurnIds(deps.db, scorable.map((turn) => turn.turnId));
+    // dry-run 的行记成 'dry-run' 版本：既不挡之后的真评，真评的行也会按 turn_id 主键覆盖它
+    const alreadyScored = getScoredTurnIds(deps.db, scorable.map((turn) => turn.turnId), dryRun ? DRY_RUN_JUDGE_VERSION : POST_LAUNCH_JUDGE_VERSION);
 
     for (const turn of scorable) {
       if (alreadyScored.has(turn.turnId)) {
@@ -266,7 +268,7 @@ export async function runPostLaunchScoring(
       let reasoning = hasSignal ? signals.map((signal) => signal.detail ?? signal.kind).join('；') : '';
       let judgeModel = 'unavailable';
       let promptHash = '';
-      let judgeVersion = POST_LAUNCH_JUDGE_VERSION;
+      let judgeVersion = dryRun ? DRY_RUN_JUDGE_VERSION : POST_LAUNCH_JUDGE_VERSION;
       let rubricVersion = POST_LAUNCH_RUBRIC_VERSION;
       let judgeCostUsd = 0;
 

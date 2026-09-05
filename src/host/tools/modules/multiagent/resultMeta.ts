@@ -156,7 +156,11 @@ export function withMultiagentMeta(
   const nested = isRecord(meta.result) ? meta.result : undefined;
   const failureCode = meta.failureCode ?? result.meta?.failureCode ?? nested?.failureCode;
   if (isAgentFailureCode(failureCode)) {
-    const agentId = meta.agentId ?? result.meta?.agentId ?? nested?.agentId;
+    // Task 的 meta.agentId 装的是 subagentType（agent 种类），不是可查询的执行 id；
+    // 续聊提示只认真实执行 id，否则模型照着提示去 status 会得到「找不到代理」。
+    const agentId = sourceTool === 'Task'
+      ? (result.meta?.agentId ?? nested?.agentId)
+      : (meta.agentId ?? result.meta?.agentId ?? nested?.agentId);
     const hint = `Next step: ${NEXT_STEP[failureCode]}`;
     // These tools can inspect/resupply live agents; they cannot resurrect a terminal agent.
     const resume = typeof agentId === 'string'

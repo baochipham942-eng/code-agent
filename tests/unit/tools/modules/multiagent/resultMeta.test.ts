@@ -22,6 +22,19 @@ describe('subagent failure guidance', () => {
     expect(result).toMatchObject({ output: expect.stringContaining('maxBudget') });
   });
 
+  it('does not build a resume hint from Task meta.agentId (that field is the subagent type)', () => {
+    const result = withMultiagentMeta(
+      { ok: false, error: 'failed', meta: { failureCode: AgentFailureCode.BudgetExhausted } },
+      ctx, 'Task', { agentId: 'explore', failureCode: AgentFailureCode.BudgetExhausted },
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toContain('Next step:');
+      expect(result.error).not.toContain('agent_message');
+      expect(result.error).not.toContain('explore');
+    }
+  });
+
   it('keeps successful child output unchanged', () => {
     expect(withMultiagentMeta({ ok: true, output: 'done' }, ctx, 'Task', {})).toMatchObject({ output: 'done' });
   });

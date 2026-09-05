@@ -1,3 +1,4 @@
+import { applyTestTelemetrySchema } from '../../../utils/telemetrySchema';
 import { describe, expect, it, vi } from 'vitest';
 
 vi.unmock('better-sqlite3');
@@ -21,13 +22,7 @@ describe('database migrations', () => {
     const db = new Database(':memory:');
     const logger = createLogger();
 
-    db.exec(`
-      CREATE TABLE telemetry_sessions (
-        id TEXT PRIMARY KEY,
-        session_id TEXT NOT NULL,
-        started_at INTEGER NOT NULL
-      )
-    `);
+    applyTestTelemetrySchema(db);
 
     applyTelemetryTurnsMigrations(db, logger);
 
@@ -41,7 +36,10 @@ describe('database migrations', () => {
   it('adds prompt-cache usage columns to telemetry model calls', () => {
     const db = new Database(':memory:');
     const logger = createLogger();
-    db.exec('CREATE TABLE telemetry_model_calls (id TEXT PRIMARY KEY)');
+    applyTestTelemetrySchema(db);
+    // Recreate the pre-migration state using the production table shape.
+    db.exec('ALTER TABLE telemetry_model_calls DROP COLUMN cache_read_tokens');
+    db.exec('ALTER TABLE telemetry_model_calls DROP COLUMN cache_creation_tokens');
 
     applyTelemetryTurnsMigrations(db, logger);
 

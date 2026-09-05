@@ -22,6 +22,8 @@ beforeEach(async () => {
   prevDataDir = process.env.CODE_AGENT_DATA_DIR;
   tmpDataDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'brand-registry-'));
   process.env.CODE_AGENT_DATA_DIR = tmpDataDir;
+  // 每例在独立的空目录开始，不依赖前一例创建 design/brands。
+  expect(await fsp.readdir(tmpDataDir)).toEqual([]);
 });
 
 afterEach(async () => {
@@ -178,6 +180,7 @@ describe('brandRegistry', () => {
     // 在 brands 父目录放一个 sentinel 文件，模拟「被穿越删除」的目标
     const root = path.join(tmpDataDir, 'design', 'brands');
     const sentinel = path.join(root, '..', 'sentinel.txt');
+    await fsp.mkdir(path.dirname(sentinel), { recursive: true });
     await fsp.writeFile(sentinel, 'keep me', 'utf-8');
 
     await deleteBrand('../sentinel');

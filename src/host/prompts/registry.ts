@@ -31,20 +31,17 @@ export interface PromptDetail extends PromptDescriptor {
 const overrides = new Map<string, string>();
 const descriptors = new Map<string, PromptDescriptor & { defaultText: string }>();
 
-let initialized = false;
-let cachedOverrideDir: string | null = null;
+let initializedDir: string | null = null;
 
 function getOverrideDir(): string {
-  if (!cachedOverrideDir) {
-    cachedOverrideDir = path.join(getUserConfigDir(), 'prompts-overrides');
-  }
-  return cachedOverrideDir;
+  return path.join(getUserConfigDir(), 'prompts-overrides');
 }
 
 function ensureInitialized(): void {
-  if (initialized) return;
-  initialized = true;
   const dir = getOverrideDir();
+  if (initializedDir === dir) return;
+  initializedDir = dir;
+  overrides.clear();
   try {
     if (!fs.existsSync(dir)) return;
     for (const file of fs.readdirSync(dir)) {
@@ -75,7 +72,10 @@ function ensureInitialized(): void {
  *   prompt 文本 consumer 几乎不会做这两类检查，可接受。
  */
 function makeLivePrompt(id: string, defaultText: string): string {
-  const live = (): string => overrides.get(id) ?? defaultText;
+  const live = (): string => {
+    ensureInitialized();
+    return overrides.get(id) ?? defaultText;
+  };
 
   const handler: ProxyHandler<object> = {
     get(_target, prop) {
@@ -138,6 +138,7 @@ export function dynamic(build: () => string): string {
  * 列出所有已注册的 prompt 元数据 + override 状态（不含 defaultText 全文，节省传输量）。
  */
 export function listPrompts(): PromptDescriptor[] & { overridden?: boolean }[] {
+  ensureInitialized();
   return Array.from(descriptors.values())
     .map(({ id, category, name, description }) => ({
       id,
@@ -155,6 +156,7 @@ export function listPrompts(): PromptDescriptor[] & { overridden?: boolean }[] {
  * 取单个 prompt 详情：默认文本 + 当前 override（如有）。
  */
 export function getPromptDetail(id: string): PromptDetail | null {
+  ensureInitialized();
   const d = descriptors.get(id);
   if (!d) return null;
   const override = overrides.get(id) ?? null;
@@ -174,6 +176,7 @@ export function getPromptDetail(id: string): PromptDetail | null {
  * 常量（applyOverride 返回的 Proxy）都会拿到最新文本。
  */
 export function setPromptOverride(id: string, text: string): void {
+  ensureInitialized();
   if (!descriptors.has(id)) throw new Error(`Unknown prompt id: ${id}`);
   const dir = getOverrideDir();
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
@@ -185,6 +188,7 @@ export function setPromptOverride(id: string, text: string): void {
  * 删除 override：恢复使用默认文本。
  */
 export function resetPromptOverride(id: string): void {
+  ensureInitialized();
   if (!descriptors.has(id)) throw new Error(`Unknown prompt id: ${id}`);
   const dir = getOverrideDir();
   const file = path.join(dir, `${id}.md`);
@@ -199,6 +203,7 @@ export function resetPromptOverride(id: string): void {
  * 与 applyOverride 不同 —— applyOverride 在模块加载时取一次值固化下来。
  */
 export function lookupPromptText(id: string): string | null {
+  ensureInitialized();
   const d = descriptors.get(id);
   if (!d) return null;
   return overrides.get(id) ?? d.defaultText;

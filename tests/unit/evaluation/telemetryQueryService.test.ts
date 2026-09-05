@@ -1,3 +1,4 @@
+import { applyTestTelemetrySchema } from '../../utils/telemetrySchema';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../../src/host/services/infra/logger', () => ({
@@ -69,74 +70,10 @@ describe('TelemetryQueryService transcript replay fallback', () => {
   });
 
   function createTelemetryReplayTables() {
+    applyTestTelemetrySchema(dbState.sqlite!);
     dbState.sqlite!.exec(`
-      CREATE TABLE telemetry_sessions (
-        id TEXT PRIMARY KEY
-      );
-      CREATE TABLE telemetry_turns (
-        id TEXT PRIMARY KEY,
-        session_id TEXT NOT NULL,
-        turn_number INTEGER NOT NULL,
-        agent_id TEXT DEFAULT 'main',
-        turn_type TEXT DEFAULT 'user',
-        parent_turn_id TEXT,
-        user_prompt TEXT,
-        assistant_response TEXT,
-        thinking_content TEXT,
-        start_time INTEGER NOT NULL,
-        end_time INTEGER,
-        duration_ms INTEGER DEFAULT 0,
-        total_input_tokens INTEGER DEFAULT 0,
-        total_output_tokens INTEGER DEFAULT 0,
-        compaction_occurred INTEGER DEFAULT 0,
-        compaction_saved_tokens INTEGER
-      );
-      CREATE TABLE telemetry_model_calls (
-        id TEXT PRIMARY KEY,
-        turn_id TEXT NOT NULL,
-        session_id TEXT NOT NULL,
-        timestamp INTEGER NOT NULL,
-        provider TEXT NOT NULL,
-        model TEXT NOT NULL,
-        temperature REAL,
-        max_tokens INTEGER,
-        input_tokens INTEGER DEFAULT 0,
-        output_tokens INTEGER DEFAULT 0,
-        latency_ms INTEGER DEFAULT 0,
-        response_type TEXT,
-        tool_call_count INTEGER DEFAULT 0,
-        truncated INTEGER DEFAULT 0,
-        error TEXT,
-        fallback_info TEXT,
-        prompt TEXT,
-        completion TEXT
-      );
-      CREATE TABLE telemetry_tool_calls (
-        id TEXT PRIMARY KEY,
-        turn_id TEXT NOT NULL,
-        session_id TEXT NOT NULL,
-        tool_call_id TEXT NOT NULL,
-        name TEXT NOT NULL,
-        arguments TEXT,
-        actual_arguments TEXT,
-        result_summary TEXT,
-        success INTEGER DEFAULT 0,
-        error TEXT,
-        duration_ms INTEGER DEFAULT 0,
-        timestamp INTEGER NOT NULL,
-        idx INTEGER DEFAULT 0,
-        parallel INTEGER DEFAULT 0
-      );
-	      CREATE TABLE telemetry_events (
-	        id TEXT PRIMARY KEY,
-	        turn_id TEXT NOT NULL,
-	        session_id TEXT NOT NULL,
-        timestamp INTEGER NOT NULL,
-        event_type TEXT NOT NULL,
-        summary TEXT,
-	        data TEXT,
-	        duration_ms INTEGER
-	      );
+      
+      
 	      CREATE TABLE session_rewinds (
 	        id TEXT PRIMARY KEY,
 	        session_id TEXT NOT NULL,
@@ -360,7 +297,7 @@ describe('TelemetryQueryService transcript replay fallback', () => {
 
   it('uses telemetry actual arguments when all tool call rows provide them', async () => {
     createTelemetryReplayTables();
-    dbState.sqlite!.prepare('INSERT INTO telemetry_sessions (id) VALUES (?)').run('session-telemetry-args');
+    dbState.sqlite!.prepare(`INSERT INTO telemetry_sessions (id, title, model_provider, model_name, working_directory, start_time) VALUES (?, 'Fixture', 'openai', 'fixture-model', '/tmp/project', 0)`).run('session-telemetry-args');
     dbState.sqlite!.prepare(`
       INSERT INTO telemetry_turns (
         id, session_id, turn_number, user_prompt, assistant_response, start_time, end_time,
@@ -407,7 +344,7 @@ describe('TelemetryQueryService transcript replay fallback', () => {
 
   it('marks telemetry actual arguments as partial when only some rows provide them', async () => {
     createTelemetryReplayTables();
-    dbState.sqlite!.prepare('INSERT INTO telemetry_sessions (id) VALUES (?)').run('session-partial-args');
+    dbState.sqlite!.prepare(`INSERT INTO telemetry_sessions (id, title, model_provider, model_name, working_directory, start_time) VALUES (?, 'Fixture', 'openai', 'fixture-model', '/tmp/project', 0)`).run('session-partial-args');
     dbState.sqlite!.prepare(`
       INSERT INTO telemetry_turns (
         id, session_id, turn_number, user_prompt, assistant_response, start_time, end_time,
@@ -459,7 +396,7 @@ describe('TelemetryQueryService transcript replay fallback', () => {
 
 	  it('exposes incomplete reasons when telemetry lacks model decisions or tool schemas', async () => {
     createTelemetryReplayTables();
-    dbState.sqlite!.prepare('INSERT INTO telemetry_sessions (id) VALUES (?)').run('session-incomplete-gate');
+    dbState.sqlite!.prepare(`INSERT INTO telemetry_sessions (id, title, model_provider, model_name, working_directory, start_time) VALUES (?, 'Fixture', 'openai', 'fixture-model', '/tmp/project', 0)`).run('session-incomplete-gate');
     dbState.sqlite!.prepare(`
       INSERT INTO telemetry_turns (
         id, session_id, turn_number, user_prompt, assistant_response, start_time, end_time,
@@ -523,7 +460,7 @@ describe('TelemetryQueryService transcript replay fallback', () => {
 
   it('excludes rewound telemetry turns from default structured replay', async () => {
     createTelemetryReplayTables();
-    dbState.sqlite!.prepare('INSERT INTO telemetry_sessions (id) VALUES (?)').run('session-rewound-telemetry');
+    dbState.sqlite!.prepare(`INSERT INTO telemetry_sessions (id, title, model_provider, model_name, working_directory, start_time) VALUES (?, 'Fixture', 'openai', 'fixture-model', '/tmp/project', 0)`).run('session-rewound-telemetry');
     const insertTurn = dbState.sqlite!.prepare(`
       INSERT INTO telemetry_turns (
         id, session_id, turn_number, user_prompt, assistant_response, start_time, end_time,
@@ -595,7 +532,7 @@ describe('TelemetryQueryService transcript replay fallback', () => {
 
   it('joins model decisions, events, permission trace, and subagent telemetry in structured replay', async () => {
     createTelemetryReplayTables();
-    dbState.sqlite!.prepare('INSERT INTO telemetry_sessions (id) VALUES (?)').run('session-replay-join');
+    dbState.sqlite!.prepare(`INSERT INTO telemetry_sessions (id, title, model_provider, model_name, working_directory, start_time) VALUES (?, 'Fixture', 'openai', 'fixture-model', '/tmp/project', 0)`).run('session-replay-join');
     dbState.sqlite!.prepare(`
       INSERT INTO telemetry_turns (
         id, session_id, turn_number, agent_id, turn_type, parent_turn_id,

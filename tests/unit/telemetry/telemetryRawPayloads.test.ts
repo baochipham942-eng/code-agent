@@ -1,3 +1,4 @@
+import { applyTestTelemetrySchema } from '../../utils/telemetrySchema';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.unmock('better-sqlite3');
@@ -36,35 +37,7 @@ describe('TelemetryStorage raw payloads', () => {
 
   beforeEach(() => {
     dbState.sqlite = new Database(':memory:');
-    dbState.sqlite.exec(`
-      CREATE TABLE telemetry_model_calls (
-        id TEXT PRIMARY KEY, turn_id TEXT NOT NULL, session_id TEXT NOT NULL,
-        timestamp INTEGER NOT NULL, provider TEXT NOT NULL, model TEXT NOT NULL,
-        temperature REAL, max_tokens INTEGER, input_tokens INTEGER DEFAULT 0,
-        output_tokens INTEGER DEFAULT 0, latency_ms INTEGER DEFAULT 0, response_type TEXT,
-        tool_call_count INTEGER DEFAULT 0, truncated INTEGER DEFAULT 0, error TEXT,
-        fallback_info TEXT, prompt TEXT, completion TEXT,
-        cache_read_tokens INTEGER DEFAULT 0, cache_creation_tokens INTEGER DEFAULT 0
-      );
-      CREATE TABLE telemetry_tool_calls (
-        id TEXT PRIMARY KEY, turn_id TEXT NOT NULL, session_id TEXT NOT NULL,
-        tool_call_id TEXT NOT NULL, name TEXT NOT NULL, arguments TEXT, actual_arguments TEXT,
-        result_summary TEXT, success INTEGER DEFAULT 0, error TEXT, error_category TEXT,
-        computer_surface_failure_kind TEXT, computer_surface_mode TEXT,
-        computer_surface_target_app TEXT, computer_surface_action TEXT,
-        computer_surface_ax_quality_score REAL, computer_surface_ax_quality_grade TEXT,
-        duration_ms INTEGER DEFAULT 0, timestamp INTEGER NOT NULL, idx INTEGER DEFAULT 0, parallel INTEGER DEFAULT 0
-      );
-      CREATE TABLE telemetry_events (
-        id TEXT PRIMARY KEY, turn_id TEXT NOT NULL, session_id TEXT NOT NULL,
-        timestamp INTEGER NOT NULL, event_type TEXT NOT NULL, summary TEXT, data TEXT, duration_ms INTEGER
-      );
-      CREATE TABLE telemetry_raw_payloads (
-        id TEXT PRIMARY KEY, session_id TEXT NOT NULL, turn_id TEXT, ref_kind TEXT NOT NULL,
-        ref_id TEXT NOT NULL, field TEXT NOT NULL, content TEXT, byte_len INTEGER NOT NULL,
-        truncated INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL
-      );
-    `);
+    applyTestTelemetrySchema(dbState.sqlite);
     database = getDatabase();
     originalGetDb = database.getDb.bind(database);
     isReadySpy = vi.spyOn(database, 'isReady', 'get').mockReturnValue(true);

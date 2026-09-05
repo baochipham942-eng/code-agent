@@ -206,6 +206,35 @@ const FIXTURES: ReadonlyMap<string, MockFixturePolicy['run']> = new Map<string, 
     ['Changes not staged for commit.'],
     [execution('Bash', { command: 'git -C prompt-smoke-git status' }, 'Changes not staged for commit:\n modified: file.txt')],
   )],
+  // ORCHARM 对照题：mock 侧只证明题面/答案侧/断言器这条链自洽（三节报告 + Task 调用记录），
+  // 真扇不扇得出去是 --compare --real 两臂的事，mock 不伪造子代理执行。
+  ['multiagent-fanout-parallel-audit', async (workingDirectory) => {
+    const report = [
+      '# fanout-audit 审查报告',
+      '',
+      '## billing',
+      '- invoice.ts 的 totalAmount 用 <= lines.length 收尾，最后一轮读越界。',
+      '',
+      '## notify',
+      '- mailer.ts 把 AUTH_TOKEN 写死在源码里。',
+      '',
+      '## digest',
+      '- summary.ts 导出的 unusedLegacyDigest 没有任何消费方。',
+      '',
+    ].join('\n');
+    const target = path.join(workingDirectory, 'fanout-audit-report.md');
+    await fs.writeFile(target, report, 'utf8');
+    return result(
+      ['三个目录已分别派子代理审查，汇总报告见 fanout-audit-report.md'],
+      [
+        execution('ToolSearch', { query: 'Task subagent' }, 'Task'),
+        execution('Task', { prompt: 'audit fanout-audit/billing', subagent_type: 'reviewer' }, 'billing: totalAmount 读越界'),
+        execution('Task', { prompt: 'audit fanout-audit/notify', subagent_type: 'reviewer' }, 'notify: AUTH_TOKEN 写死'),
+        execution('Task', { prompt: 'audit fanout-audit/digest', subagent_type: 'reviewer' }, 'digest: unusedLegacyDigest 无消费方'),
+        execution('Write', { file_path: target, content: report }, `Wrote ${report.length} bytes to fanout-audit-report.md`),
+      ],
+    );
+  }],
 ]);
 
 const MOCK_FIXTURE_CASE_IDS = Object.freeze([...FIXTURES.keys()]);

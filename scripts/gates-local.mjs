@@ -7,6 +7,8 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
+import { acquireLock } from './lib/gates-local-lock.mjs';
+
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDir, '..');
 const npmCache = process.env.npm_config_cache || path.join(os.tmpdir(), 'code-agent-npm-cache');
@@ -410,6 +412,23 @@ function runRendererCapabilityDiff() {
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }
+}
+
+// 起手就排队：同机只许一条门在跑（见 scripts/lib/gates-local-lock.mjs 的原因）。
+// 拿不到锁抛错 ⇒ 这里 fail-loud 退出，绝不「等不到就照跑」。
+let releaseLock;
+try {
+  releaseLock = acquireLock();
+} catch (error) {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exit(1);
+}
+process.on('exit', releaseLock);
+for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
+  process.on(signal, () => {
+    releaseLock();
+    process.exit(130);
+  });
 }
 
 console.log('gates:local CI mapping');

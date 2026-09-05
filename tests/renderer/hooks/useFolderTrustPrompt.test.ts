@@ -14,7 +14,7 @@ const untrusted = (dir: string) => ({
   state: 'untrusted' as const,
   canonicalRealpath: dir,
   displayPath: dir,
-  dangerousItems: [{ kind: 'project-hooks', path: `${dir}/.code-agent/hooks/hooks.json`, label: 'hooks', risk: 'execution' as const, gated: true }],
+  dangerousItems: [{ kind: 'project-hooks', path: `${dir}/.code-agent/hooks/hooks.json`, risk: 'execution' as const, gated: true }],
   blockedItems: [],
   identityChanged: false,
 });

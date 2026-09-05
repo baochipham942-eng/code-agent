@@ -20,7 +20,7 @@ import {
   setProjectDescription,
 } from '../../../services/projectClient';
 import ipcService from '../../../services/ipcService';
-import type { FolderTrustEvaluationView } from '../../FolderTrustDialog';
+import { gatedItemsOf, type FolderTrustEvaluationView } from '../../FolderTrustDialog';
 import { FolderTrustDangerList } from '../../FolderTrustDangerList';
 import { pickNativeDirectory } from '../../../services/tauriPluginFacade';
 import { toast } from '../../../hooks/useToast';
@@ -115,7 +115,7 @@ export const ProjectListView = React.forwardRef<ProjectListViewHandle, ProjectLi
     if (picked) setCreateWorkspacePath(picked);
   };
 
-  // 预检：目录未信任且含危险项 → 同一 Modal 切确认步并拦截提交；预检失败不拦，host 信任门是最终兜底
+  // 预检：目录未信任且含要拦的项 → 同一 Modal 切确认步并拦截提交；预检失败不拦，host 信任门是最终兜底
   const requestTrustConfirmIfNeeded = async (workspacePath: string): Promise<boolean> => {
     try {
       const evaluation = await ipcService.invokeDomain<FolderTrustEvaluationView>(
@@ -123,7 +123,7 @@ export const ProjectListView = React.forwardRef<ProjectListViewHandle, ProjectLi
         'get',
         { workingDirectory: workspacePath },
       );
-      if (evaluation && evaluation.state !== 'trusted' && (evaluation.dangerousItems?.length ?? 0) > 0) {
+      if (evaluation && evaluation.state !== 'trusted' && gatedItemsOf(evaluation).length > 0) {
         setTrustConfirm(evaluation);
         return true;
       }
@@ -329,7 +329,7 @@ export const ProjectListView = React.forwardRef<ProjectListViewHandle, ProjectLi
           <div className="grid gap-3" data-testid="project-space-create-trust-confirm">
             <p className="text-sm leading-6 text-zinc-400">{ps.trustConfirmHint}</p>
             <p className="font-mono text-xs text-zinc-100 break-all">{trustConfirm.displayPath}</p>
-            <FolderTrustDangerList items={trustConfirm.dangerousItems} />
+            <FolderTrustDangerList items={gatedItemsOf(trustConfirm)} />
           </div>
         ) : (
         <div className="grid gap-3" data-testid="project-space-create-modal">

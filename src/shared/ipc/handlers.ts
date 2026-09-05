@@ -63,6 +63,7 @@ import type { NeoTagEvent } from '../contract/tag';
 import { IPC_CHANNELS } from './legacy-channels';
 
 import type { AgentMessageRequest, AgentCancelRequest, SessionExport, SearchResult, MemoryContextResult, MemoryStats, MCPStatus, MCPTool, MCPResource, ConnectorStatusSummary, CacheStats, DataStats, TaskItemIpc, TaskListStateIpc, TaskListEventIpc, CrossSessionSearchOptions, CrossSessionSearchResults, SessionReviewItemsRequest, AgentTrajectoryQualitySummariesRequest, AgentTrajectoryCollectionUpdateRequest } from './types';
+import type { PostLaunchReport, PostLaunchScoringRequest, PostLaunchScoringResult } from '../contract/postLaunchScore';
 import type { AdminReviewQueueItem } from '../contract/productClosure';
 import type { AgentTrajectorySessionQualitySummary } from '../contract/agentTrajectory';
 
@@ -532,6 +533,8 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.TELEMETRY_DELETE_SESSION]: (sessionId: string) => Promise<boolean>;
 	  [IPC_CHANNELS.TELEMETRY_SUBMIT_FEEDBACK]: (payload: TelemetryFeedbackSubmitRequest) => Promise<TelemetryFeedbackSubmitResult>;
 	  [IPC_CHANNELS.TELEMETRY_GET_SESSION_FEEDBACK]: (sessionId: string) => Promise<TelemetryFeedbackRating[]>;
+  [IPC_CHANNELS.TELEMETRY_GET_POSTLAUNCH_REPORT]: (payload?: { days?: number }) => Promise<PostLaunchReport>;
+  [IPC_CHANNELS.TELEMETRY_RUN_POSTLAUNCH_SCORING]: (payload?: PostLaunchScoringRequest) => Promise<PostLaunchScoringResult>;
 	  [IPC_CHANNELS.REPLAY_GET_STRUCTURED_DATA]: (sessionId: string) => Promise<unknown>;
 	  [IPC_CHANNELS.REPLAY_GET_TRAJECTORY_QUALITY]: (payload: AgentTrajectoryQualitySummariesRequest) => Promise<Record<string, AgentTrajectorySessionQualitySummary>>;
 	  [IPC_CHANNELS.REPLAY_UPDATE_TRAJECTORY_COLLECTION]: (payload: AgentTrajectoryCollectionUpdateRequest) => Promise<AgentTrajectorySessionQualitySummary>;

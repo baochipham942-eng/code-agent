@@ -24,6 +24,7 @@ import {
   resolveAgentTrajectoryCollectionMetadata,
   writeAgentTrajectoryCollectionMetadata,
 } from '../../shared/contract/agentTrajectory';
+import type { PostLaunchScoringRequest } from '../../shared/contract/postLaunchScore';
 import type {
   TelemetryFeedbackSubmitRequest,
   TelemetryFeedbackSubmitResult,
@@ -173,6 +174,20 @@ export function registerTelemetryHandlers(getMainWindow: () => AppWindow | null)
     } catch {
       return null;
     }
+  });
+
+  // 上线后评分报告（只读本机 telemetry_turn_scores，不调模型）
+  ipcHost.handle(TELEMETRY_CHANNELS.GET_POSTLAUNCH_REPORT, async (_event, payload?: { days?: number }) => {
+    assertAdminAccess('Telemetry');
+    const { getPostLaunchReportOnHost } = await import('../testing/postlaunch/postLaunchScorerRuntime');
+    return getPostLaunchReportOnHost({ days: payload?.days });
+  });
+
+  // 触发上线后评分：会真调 judge 模型、花用户自己的额度，所以日预算与抽样上限在编排里硬卡。
+  ipcHost.handle(TELEMETRY_CHANNELS.RUN_POSTLAUNCH_SCORING, async (_event, payload?: PostLaunchScoringRequest) => {
+    assertAdminAccess('Telemetry');
+    const { runPostLaunchScoringOnHost } = await import('../testing/postlaunch/postLaunchScorerRuntime');
+    return runPostLaunchScoringOnHost(payload ?? {});
   });
 
   // 获取结构化回放数据

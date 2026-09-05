@@ -340,6 +340,10 @@ export const TELEMETRY_CHANNELS = {
   SUBMIT_FEEDBACK: 'telemetry:submit-feedback',
   /** 读回会话内已存的轮次评价（好评/差评高亮回填） */
   GET_SESSION_FEEDBACK: 'telemetry:get-session-feedback',
+  /** 上线后评分报告（本机，ADR-063 刀 1） */
+  GET_POSTLAUNCH_REPORT: 'telemetry:get-postlaunch-report',
+  /** 触发上线后评分（本机跑 judge，花用户自己的模型额度） */
+  RUN_POSTLAUNCH_SCORING: 'telemetry:run-postlaunch-scoring',
   /** 获取结构化回放数据 */
   GET_STRUCTURED_REPLAY: 'replay:get-structured-data',
 	  /** 获取 Agent Trajectory 质量摘要 */

@@ -23,6 +23,8 @@ import { TurnDetail } from '../telemetry/TurnDetail';
 import { TimelineView } from '../telemetry/TimelineView';
 import { ToolStats } from '../telemetry/ToolStats';
 import { OverviewTab } from '../telemetry/OverviewTab';
+import { PostLaunchCard } from '../telemetry/PostLaunchCard';
+import { POST_LAUNCH_DEFAULTS } from '@shared/contract/postLaunchScore';
 import type { TelemetryPushEvent } from '@shared/contract/telemetry';
 
 type SubTabId = 'overview' | 'turns' | 'timeline' | 'tools';
@@ -35,7 +37,9 @@ export const EvalTelemetryTab: React.FC = () => {
 
   const {
     sessions, currentSession, turns, events, selectedTurnDetail, toolStats, intentDistribution, isLive,
+    postLaunchReport, postLaunchRunning, postLaunchError,
     loadSessions, loadSession, loadTurns, loadEvents, loadTurnDetail, loadToolStats, loadIntentDistribution,
+    loadPostLaunchReport, runPostLaunchScoring,
     setLive, handlePushEvent,
   } = useTelemetryStore();
 
@@ -65,8 +69,9 @@ export const EvalTelemetryTab: React.FC = () => {
       loadIntentDistribution(currentSession.id);
     } else {
       loadSessions();
+      loadPostLaunchReport(POST_LAUNCH_DEFAULTS.days);
     }
-  }, [currentSession, loadSessions, loadTurns, loadEvents, loadToolStats, loadIntentDistribution]);
+  }, [currentSession, loadSessions, loadTurns, loadEvents, loadToolStats, loadIntentDistribution, loadPostLaunchReport]);
 
   useEffect(() => {
     if (selectedTurnId) {
@@ -91,6 +96,14 @@ export const EvalTelemetryTab: React.FC = () => {
         </div>
 
         <div className="flex-1 space-y-1 overflow-y-auto p-2">
+          <PostLaunchCard
+            report={postLaunchReport}
+            running={postLaunchRunning}
+            error={postLaunchError}
+            days={POST_LAUNCH_DEFAULTS.days}
+            onRun={() => runPostLaunchScoring(POST_LAUNCH_DEFAULTS.days)}
+            onOpenSession={loadSession}
+          />
           {sessions.map((session) => (
             <button /* ds-allow:button: 遥测会话行（整块可点卡片），Button primitive 无行卡片变体 */
               key={session.id}

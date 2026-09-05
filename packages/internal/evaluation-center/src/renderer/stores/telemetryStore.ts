@@ -4,6 +4,7 @@
 
 import { create } from 'zustand';
 import ipcService from '@renderer/services/ipcService';
+import type { PostLaunchReport } from '@shared/contract/postLaunchScore';
 import type { TelemetrySession, TelemetryTurn, TelemetryModelCall, TelemetryToolCall, TelemetryTimelineEvent, TelemetrySessionListItem, TelemetrySessionListOptions, TelemetryToolStat, TelemetryIntentStat, TelemetryPushEvent, TelemetryCostBucket, TelemetryCostByPeriodOptions } from '@shared/contract/telemetry';
 
 interface TurnDetailData {
@@ -24,6 +25,11 @@ interface TelemetryStore {
   toolStats: TelemetryToolStat[];
   intentDistribution: TelemetryIntentStat[];
   costBuckets: TelemetryCostBucket[];
+  /** 上线后评分报告（ADR-063 刀 1，只读本机 telemetry_turn_scores） */
+  postLaunchReport: PostLaunchReport | null;
+  postLaunchRunning: boolean;
+  /** 评分失败时给人看的一句话，不是给机器看的报错。 */
+  postLaunchError: string | null;
   isLive: boolean;
   isLoading: boolean;
 
@@ -37,6 +43,8 @@ interface TelemetryStore {
   loadToolStats: (sessionId: string) => Promise<void>;
   loadIntentDistribution: (sessionId: string) => Promise<void>;
   deleteSession: (sessionId: string) => Promise<void>;
+  loadPostLaunchReport: (days?: number) => Promise<void>;
+  runPostLaunchScoring: (days?: number) => Promise<void>;
   handlePushEvent: (event: TelemetryPushEvent) => void;
   setLive: (live: boolean) => void;
   reset: () => void;
@@ -52,6 +60,9 @@ const initialState = {
   toolStats: [] as TelemetryToolStat[],
   intentDistribution: [] as TelemetryIntentStat[],
   costBuckets: [] as TelemetryCostBucket[],
+  postLaunchReport: null as PostLaunchReport | null,
+  postLaunchRunning: false,
+  postLaunchError: null as string | null,
   isLive: true,
   isLoading: false
 };
@@ -149,6 +160,30 @@ export const useTelemetryStore = create<TelemetryStore>((set, get) => ({
       }));
     } catch (error) {
       console.error('Failed to delete telemetry session:', error);
+    }
+  },
+
+  loadPostLaunchReport: async (days?: number) => {
+    try {
+      const report = await ipcService.invoke('telemetry:get-postlaunch-report', { days });
+      if (report) set({ postLaunchReport: report, postLaunchError: null });
+    } catch (error) {
+      console.error('Failed to load post-launch report:', error);
+      set({ postLaunchError: String(error) });
+    }
+  },
+
+  runPostLaunchScoring: async (days?: number) => {
+    if (get().postLaunchRunning) return;
+    set({ postLaunchRunning: true, postLaunchError: null });
+    try {
+      await ipcService.invoke('telemetry:run-postlaunch-scoring', { days });
+      await get().loadPostLaunchReport(days);
+    } catch (error) {
+      console.error('Failed to run post-launch scoring:', error);
+      set({ postLaunchError: String(error) });
+    } finally {
+      set({ postLaunchRunning: false });
     }
   },
 

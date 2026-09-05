@@ -17,16 +17,11 @@ const logger = createLogger('ParallelStrategy');
  * A tool is parallel-safe if:
  * 1. It's in the PARALLEL_SAFE_TOOLS set (built-in tools)
  * 2. It's an MCP tool classified via annotations (readOnlyHint=true, destructiveHint!=true)
- * 3. Fallback: MCP tool name heuristic (no write/create in name)
+ * Missing MCP annotations are sequential (fail closed).
  */
 export function isParallelSafeTool(toolName: string, toolAnnotations?: MCPToolAnnotations): boolean {
-  // MCP tools: prefer annotation-based classification
   if (toolName.startsWith('mcp_')) {
-    if (toolAnnotations) {
-      return isMcpToolReadOnly(toolAnnotations);
-    }
-    // Fallback to name-based heuristic if no annotations
-    return !toolName.includes('write') && !toolName.includes('create');
+    return isMcpToolReadOnly(toolAnnotations);
   }
   return PARALLEL_SAFE_TOOLS.has(toolName);
 }

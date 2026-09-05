@@ -1,4 +1,4 @@
-import { promises as fs } from 'fs';
+import nativeFs, { promises as fs } from 'fs';
 import os from 'os';
 import path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -311,9 +311,139 @@ describe('FolderTrustService', () => {
     await fs.mkdir(projectDir, { recursive: true });
     await writeFile(path.join(projectDir, '.code-agent', 'hooks', 'hooks.json'), '{"PreToolUse":[]}');
 
+    // Make allocator reuse deterministic on APFS as well as Linux: the recorded inode
+    // equals the replacement's inode. Keep the original incarnation snapshot untouched.
+    const db = new Database(path.join(getUserConfigDir(), 'code-agent.db'));
+    db.prepare('UPDATE folder_trust SET ino = ? WHERE canonical_realpath = ?')
+      .run(String((await fs.stat(projectDir, { bigint: true })).ino), await fs.realpath(projectDir));
+    db.close();
+
     const result = await service.evaluate(projectDir);
     expect(result.state).toBe('untrusted');
     expect(result.identityChanged).toBe(true);
     expect(result.blockedItems.map((item) => item.kind)).toContain('project-hooks');
   });
+
+  it('keeps the same directory trusted across ordinary file edits and service restarts', async () => {
+    const service = new FolderTrustService();
+    await service.set(projectDir, 'trusted', 'test');
+    const before = await fs.stat(projectDir, { bigint: true });
+    await writeFile(path.join(projectDir, 'source.ts'), 'export const answer = 1;');
+    await writeFile(path.join(projectDir, 'source.ts'), 'export const answer = 2;');
+    await writeFile(path.join(projectDir, 'notes.md'), 'ordinary notes');
+    await fs.rename(path.join(projectDir, 'notes.md'), path.join(projectDir, 'renamed.md'));
+    await fs.rm(path.join(projectDir, 'renamed.md'));
+    const after = await fs.stat(projectDir, { bigint: true });
+    expect(after.ino).toBe(before.ino);
+    expect(after.birthtimeNs).toBe(before.birthtimeNs);
+    expect(after.ctimeNs).not.toBe(before.ctimeNs);
+    service.close();
+    for (const result of [service.evaluateSync(projectDir), await service.evaluate(projectDir)]) {
+      expect(result.state).toBe('trusted');
+      expect(result.identityChanged).toBe(false);
+      expect(result.contentChanged).toBe(false);
+    }
+    service.close();
+  });
+
+  it('detects a reused inode even when birthtimes differ by only one nanosecond', async () => {
+    const service = new FolderTrustService();
+    service.setSync(projectDir, 'trusted', 'test');
+    const db = new Database(path.join(getUserConfigDir(), 'code-agent.db'));
+    const stat = await fs.stat(projectDir, { bigint: true });
+    db.prepare('UPDATE folder_trust SET birthtime_ns = ? WHERE canonical_realpath = ?')
+      .run(String(stat.birthtimeNs + 1n), await fs.realpath(projectDir));
+    db.close();
+    service.close();
+    for (const result of [service.evaluateSync(projectDir), await service.evaluate(projectDir)]) {
+      expect(result.state).toBe('untrusted');
+      expect(result.identityChanged).toBe(true);
+    }
+    service.close();
+  });
+
+  it('requires confirmation for pre-snapshot grants instead of adopting the current incarnation', async () => {
+    const service = new FolderTrustService();
+    await service.set(projectDir, 'trusted', 'test');
+    service.close();
+    const db = new Database(path.join(getUserConfigDir(), 'code-agent.db'));
+    db.exec('ALTER TABLE folder_trust DROP COLUMN birthtime_ns');
+    db.close();
+    for (const result of [service.evaluateSync(projectDir), await service.evaluate(projectDir)]) {
+      expect(result.state).toBe('untrusted');
+      expect(result.identityChanged).toBe(true);
+    }
+    expect((await service.set(projectDir, 'trusted', 'user')).state).toBe('trusted');
+    expect(service.evaluateSync(projectDir).state).toBe('trusted');
+    service.close();
+  });
+
+
+  it('does not persist reusable trust when the filesystem has no birthtime', async () => {
+    const service = new FolderTrustService();
+    const stat = await fs.stat(projectDir, { bigint: true });
+    const unavailable = { ...stat, birthtimeNs: 0n };
+    const asyncStat = vi.spyOn(fs, 'stat').mockResolvedValue(unavailable);
+    const syncStat = vi.spyOn(nativeFs, 'statSync').mockReturnValue(unavailable);
+    try {
+      await expect(service.set(projectDir, 'trusted', 'test'))
+        .rejects.toThrow('This filesystem does not provide folder creation time');
+      expect(() => service.setSync(projectDir, 'trusted', 'test'))
+        .toThrow('This filesystem does not provide folder creation time');
+      expect((await service.evaluate(projectDir)).state).toBe('untrusted');
+      const db = new Database(path.join(getUserConfigDir(), 'code-agent.db'));
+      expect(db.prepare('SELECT state FROM folder_trust').get()).toBeUndefined();
+      db.close();
+      expect((await service.set(projectDir, 'blocked', 'test')).state).toBe('blocked');
+      expect(service.setSync(projectDir, 'blocked', 'test').state).toBe('blocked');
+      await expect(service.set(projectDir, 'trusted', 'test')).rejects.toThrow('Folder trust cannot be saved');
+      expect(service.evaluateSync(projectDir).state).toBe('blocked');
+    } finally {
+      asyncStat.mockRestore();
+      syncStat.mockRestore();
+      service.close();
+    }
+  });
+
+  it('preserves an explicit block when migrating decisions without a birthtime snapshot', async () => {
+    await writeFile(path.join(projectDir, 'CLAUDE.md'), '# project instructions');
+    await writeFile(path.join(projectDir, '.code-agent', 'commands', 'ship.md'), 'Ship');
+    await setFolderTrust(projectDir, 'blocked', 'test');
+    closeFolderTrustService();
+    const db = new Database(path.join(getUserConfigDir(), 'code-agent.db'));
+    db.exec('ALTER TABLE folder_trust DROP COLUMN birthtime_ns');
+    db.close();
+    const service = new FolderTrustService();
+    for (const result of [service.evaluateSync(projectDir), await service.evaluate(projectDir)]) {
+      expect(result.identityChanged).toBe(true);
+      expect(result.state).toBe('blocked');
+    }
+    expect(await isProjectConfigTrusted(projectDir, 'agent-instructions')).toBe(false);
+    expect(await isProjectConfigTrusted(projectDir, 'project-commands')).toBe(false);
+    expect((await service.set(projectDir, 'trusted', 'user')).state).toBe('trusted');
+    service.close();
+  });
+
+  it('can grant trust after a transient migration failure without restarting the service', async () => {
+    const service = new FolderTrustService();
+    await service.set(projectDir, 'trusted', 'test');
+    service.close();
+    const db = new Database(path.join(getUserConfigDir(), 'code-agent.db'));
+    db.exec('ALTER TABLE folder_trust DROP COLUMN birthtime_ns');
+    db.close();
+    const migration = vi.spyOn(Database.prototype, 'transaction').mockImplementationOnce(() => {
+      throw new Error('SQLITE_BUSY during migration');
+    });
+    try {
+      expect(() => service.evaluateSync(projectDir)).toThrow('SQLITE_BUSY during migration');
+      migration.mockRestore();
+      // The same service must reopen/migrate, not reuse a connection missing birthtime_ns.
+      expect(service.setSync(projectDir, 'trusted', 'user').state).toBe('trusted');
+      expect((await service.evaluate(projectDir)).state).toBe('trusted');
+    } finally {
+      migration.mockRestore();
+      service.close();
+    }
+  });
+
 });

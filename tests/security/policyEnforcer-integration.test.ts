@@ -266,6 +266,39 @@ denied_paths = ["${path.join(resolveCanonicalRunPath(dir), 'src')}/**"]
       expect(result.error).toContain('Blocked by path policy');
     });
 
+    it('applies denied_paths to a $HOME-relative redirection target', async () => {
+      const dir = project();
+      fs.writeFileSync(path.join(dir, 'code-agent-policy.toml'), `
+[filesystem]
+denied_paths = ["${path.join(resolveCanonicalRunPath(os.homedir()), '.ssh')}/**"]
+`, 'utf-8');
+      const executor = makeExecutor(dir);
+      // The parser marks "$HOME/..." dynamic; if the check skips uncertain targets the write goes
+      // through and the deny never fires.
+      const result = await executor.execute('bash', {
+        command: 'echo x > "$HOME/.ssh/authorized_keys"',
+      }, { preApprovedTools: new Set(['Bash(echo:*)']) });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Blocked by path policy');
+    });
+
+    it('applies denied_paths to the backup file sed -i creates', async () => {
+      const dir = project();
+      fs.writeFileSync(path.join(dir, 'code-agent-policy.toml'), `
+[filesystem]
+denied_paths = ["**/*.pem"]
+`, 'utf-8');
+      const executor = makeExecutor(dir);
+      // allowed.txt is fine; allowed.txt.pem is the file sed actually creates.
+      const result = await executor.execute('bash', {
+        command: "sed -i.pem 's/x/y/' allowed.txt",
+      }, { preApprovedTools: new Set(['Bash(sed:*)']) });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Blocked by path policy');
+    });
+
     it('applies denied_paths to a sed in-place target', async () => {
       const dir = project();
       fs.writeFileSync(path.join(dir, 'code-agent-policy.toml'), `

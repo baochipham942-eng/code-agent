@@ -111,6 +111,20 @@ const logger = createLogger('ToolExecutor');
 const FILE_MUTATION_LOCK_HOLD_TIMEOUT_MS = 60_000;
 const FILE_MUTATION_LOCK_WAIT_TIMEOUT_MS = 10_000;
 
+// $HOME / $PWD are the two variables the host itself sets and knows the value of, so a target
+// written as "$HOME/.ssh/authorized_keys" can be resolved exactly rather than waved through as
+// dynamic. Without this the parser marks it uncertain and the deny check below skips it entirely.
+// ponytail: only these two — a target built from an arbitrary variable ($SSHDIR/...) stays
+// unresolvable and is still skipped. Closing that needs a product call (skip / ask / deny when a
+// write target cannot be resolved and a path deny is configured); raised with the ticket, not
+// decided here.
+function expandControlledShellVars(rawPath: string, workingDirectory: string): string | null {
+  const expanded = rawPath
+    .replaceAll(/\$\{HOME\}|\$HOME\b/g, nodeOs.homedir())
+    .replaceAll(/\$\{PWD\}|\$PWD\b/g, workingDirectory);
+  return /[$`*?{}]/.test(expanded) ? null : expanded;
+}
+
 function resolveShellTarget(rawPath: string, workingDirectory: string): string {
   const expanded = rawPath === '~'
     ? nodeOs.homedir()
@@ -129,8 +143,14 @@ function shellWritePathPolicyCheck(
 ): PolicyCheckResult {
   const parsed = parseShellCommand(command);
   for (const target of parsed.writeTargets) {
-    if (!target.path || target.uncertain) continue;
-    const resolved = resolveShellTarget(target.path, workingDirectory);
+    if (!target.path) continue;
+    let targetPath = target.path;
+    if (target.uncertain) {
+      const expanded = expandControlledShellVars(target.path, workingDirectory);
+      if (!expanded) continue;
+      targetPath = expanded;
+    }
+    const resolved = resolveShellTarget(targetPath, workingDirectory);
     if (policyEnforcer?.isActive) {
       const policyCheck = policyEnforcer.checkFilePath(resolved, 'write');
       if (!policyCheck.allowed) return policyCheck;
@@ -138,7 +158,7 @@ function shellWritePathPolicyCheck(
 
     const relative = nodePath.relative(workingDirectory, resolved) || '.';
     const homeRelative = nodePath.relative(nodeOs.homedir(), resolved);
-    const candidates = [target.path, resolved, relative];
+    const candidates = [target.path, targetPath, resolved, relative];
     if (homeRelative && !homeRelative.startsWith('..') && !nodePath.isAbsolute(homeRelative)) {
       candidates.push(`~/${homeRelative}`);
     }

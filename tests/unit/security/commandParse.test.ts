@@ -137,6 +137,20 @@ describe('shared shell command parser', () => {
     });
   });
 
+  it.each([
+    ['sed -i.pem -e s/a/b/ allowed.txt', 'allowed.txt.pem'],
+    ['sed --in-place=.bak -e s/a/b/ allowed.txt', 'allowed.txt.bak'],
+  ])('counts the backup file sed -i actually creates: %s', (command, backup) => {
+    // A filesystem deny on *.pem has to see allowed.txt.pem, not just allowed.txt.
+    expect(parseShellCommand(command).writeTargets.map((t) => t.path))
+      .toEqual(['allowed.txt', backup]);
+  });
+
+  it('a suffix-less sed -i still yields exactly one target', () => {
+    expect(parseShellCommand('sed -i -e s/a/b/ allowed.txt').writeTargets.map((t) => t.path))
+      .toEqual(['allowed.txt']);
+  });
+
   it('does not treat a shell name used as a plain argument as a launcher', () => {
     expect(parseShellCommand('grep sh file')).toMatchObject({ writeTargets: [], uncertain: [] });
   });

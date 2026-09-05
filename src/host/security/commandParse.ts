@@ -278,9 +278,13 @@ function shellScript(args: string[]): string | null {
 
 function sedTargets(words: string[]): ShellWriteTarget[] {
   const args = words.slice(1);
-  const inPlace = args.some((arg) => arg === '-i' || arg.startsWith('-i')
+  const inPlaceArg = args.find((arg) => arg === '-i' || arg.startsWith('-i')
     || arg === '--in-place' || arg.startsWith('--in-place='));
-  if (!inPlace) return [];
+  if (inPlaceArg === undefined) return [];
+  // `sed -i.bak f` also creates `f.bak`; a deny on the suffix pattern (*.pem) has to see it.
+  const backupSuffix = inPlaceArg.startsWith('--in-place=')
+    ? inPlaceArg.slice('--in-place='.length)
+    : inPlaceArg.startsWith('-i') ? inPlaceArg.slice(2) : '';
 
   let scriptSeen = false;
   let optionConsumesValue = false;
@@ -305,11 +309,18 @@ function sedTargets(words: string[]): ShellWriteTarget[] {
     }
     files.push(arg);
   }
-  return files.map((target) => ({
-    path: target,
-    source: 'sed-in-place',
-    uncertain: /[$`*?{}]/.test(target),
-  }));
+  return files.flatMap((target) => {
+    const uncertain = /[$`*?{}]/.test(target);
+    const entries: ShellWriteTarget[] = [{ path: target, source: 'sed-in-place', uncertain }];
+    if (backupSuffix) {
+      entries.push({
+        path: `${target}${backupSuffix}`,
+        source: 'sed-in-place',
+        uncertain: uncertain || /[$`*?{}]/.test(backupSuffix),
+      });
+    }
+    return entries;
+  });
 }
 
 function commandWriteTargets(execution: ShellExecution): ShellWriteTarget[] {

@@ -13,7 +13,7 @@ import { applyTelemetrySchema } from '../../../src/host/services/core/database/s
 import type { ReplayBlock, StructuredReplay } from '../../../src/shared/contract/evaluationReplay';
 import type { FailureCodebook } from '../../../src/host/testing/failureCodes';
 import { runPostLaunchScoring, type PostLaunchScorerDeps } from '../../../src/host/testing/postlaunch/postLaunchScorer';
-import { acquireScoringLock, buildPostLaunchReport, releaseScoringLock } from '../../../src/host/testing/postlaunch/postLaunchScoreStore';
+import { acquireScoringLock, buildPostLaunchReport, releaseScoringLock, renewScoringLock } from '../../../src/host/testing/postlaunch/postLaunchScoreStore';
 
 const NOW = new Date('2026-09-05T12:00:00+08:00').getTime();
 const HOUR = 60 * 60 * 1000;
@@ -349,6 +349,14 @@ describe('上线后打分编排', () => {
     expect(acquireScoringLock(database, 'crashed', NOW)).toBe(true);
     expect(acquireScoringLock(database, 'newcomer', NOW + 5 * 60 * 1000)).toBe(false);
     expect(acquireScoringLock(database, 'newcomer', NOW + 31 * 60 * 1000)).toBe(true);
+  });
+
+  it('互斥：持有者续租后不会被按过期接管；续租失败说明锁已易主', () => {
+    expect(acquireScoringLock(database, 'holder', NOW)).toBe(true);
+    expect(renewScoringLock(database, 'holder', NOW + 25 * 60 * 1000)).toBe(true);
+    expect(acquireScoringLock(database, 'newcomer', NOW + 35 * 60 * 1000)).toBe(false);
+    expect(acquireScoringLock(database, 'newcomer', NOW + 56 * 60 * 1000)).toBe(true);
+    expect(renewScoringLock(database, 'holder', NOW + 57 * 60 * 1000)).toBe(false);
   });
 
   it('已评过的轮不重复花钱', async () => {

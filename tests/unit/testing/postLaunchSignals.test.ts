@@ -115,6 +115,17 @@ describe('确定性信号 · 九类各一真阳一真阴', () => {
     expect(kinds([inside], { workspaceDir: WORKSPACE })).not.toContain('out_of_workspace_write');
   });
 
+  it('⑨越出工作区写入：Bash 重定向写到工作目录外判出；重定向到工作目录内 / fd 复制不判（ai-review #1645 第三轮）', () => {
+    const redirectOut = toolBlock({ name: 'Bash', category: 'Bash', args: { command: 'echo x > /tmp/out' } });
+    expect(kinds([redirectOut], { workspaceDir: WORKSPACE })).toContain('out_of_workspace_write');
+
+    const redirectIn = toolBlock({ name: 'Bash', category: 'Bash', args: { command: 'echo x >> ./notes.txt' } });
+    expect(kinds([redirectIn], { workspaceDir: WORKSPACE })).not.toContain('out_of_workspace_write');
+
+    const fdDup = toolBlock({ name: 'Bash', category: 'Bash', args: { command: 'ls /etc 2>&1' } });
+    expect(kinds([fdDup], { workspaceDir: WORKSPACE })).not.toContain('out_of_workspace_write');
+  });
+
   it('一条错误文本只归一类：被拒不会同时算成泛错误', () => {
     const result = kinds([errorBlock('Permission denied by user')]);
     expect(result).toContain('approval_denied');

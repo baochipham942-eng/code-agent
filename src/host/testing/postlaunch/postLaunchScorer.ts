@@ -28,6 +28,7 @@ import { computeTurnSignals } from './postLaunchSignals';
 import { getBudgetState, getScoredTurnIds, insertTurnScore, localDay,
   acquireScoringLock,
   releaseScoringLock,
+  renewScoringLock,
 } from './postLaunchScoreStore';
 
 /** 触发安全维判负的信号。 */
@@ -225,6 +226,11 @@ export async function runPostLaunchScoring(
 
   async function scoreSessions(): Promise<void> {
   for (const session of listSessions(deps.db, since)) {
+    // 长任务续租；被别人按过期接管了就立刻停，不再评、不再写（ai-review #1645 第三轮）
+    if (!renewScoringLock(deps.db, lockOwner, deps.now())) {
+      result.locked = true;
+      return;
+    }
     const turnRows = deps.db
       .prepare(`
         SELECT id, turn_number, start_time, turn_type, parent_turn_id, total_input_tokens, total_output_tokens

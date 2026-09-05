@@ -113,6 +113,13 @@ export function acquireScoringLock(db: BetterSqlite3.Database, owner: string, no
   })();
 }
 
+/** 续租：评分是长任务，每处理完一个会话把 acquired_at 推到现在；返回 false 表示锁已被别人接管，持有者必须停。 */
+export function renewScoringLock(db: BetterSqlite3.Database, owner: string, now: number): boolean {
+  ensureScoringLockTable(db);
+  const info = db.prepare('UPDATE telemetry_turn_scores_lock SET acquired_at = ? WHERE id = 1 AND owner = ?').run(now, owner);
+  return info.changes > 0;
+}
+
 export function releaseScoringLock(db: BetterSqlite3.Database, owner: string): void {
   ensureScoringLockTable(db);
   db.prepare('DELETE FROM telemetry_turn_scores_lock WHERE id = 1 AND owner = ?').run(owner);

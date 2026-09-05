@@ -62,6 +62,18 @@
       "match": { "requestType": "file_write" }
     },
     {
+      "id": "allow-task-delegation-in-eval-workspace",
+      "effect": "allow",
+      "tool": "Task",
+      "match": { "requestType": "command" }
+    },
+    {
+      "id": "allow-spawn-agent-delegation-in-eval-workspace",
+      "effect": "allow",
+      "tool": "spawn_agent",
+      "match": { "requestType": "command" }
+    },
+    {
       "id": "allow-bash-directive-memory-probe-in-eval",
       "effect": "allow",
       "tool": "Bash",

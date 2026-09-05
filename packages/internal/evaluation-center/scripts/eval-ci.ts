@@ -82,6 +82,14 @@ import {
   PRICING_TABLE_VERSION,
 } from './lib/eval-cost-estimate';
 import { EVAL_AGENT_DEFAULTS } from '@host/testing/agentAdapter';
+import {
+  activateEvalBuiltinPlugins,
+  describeBuiltinPluginActivation,
+  parseBuiltinPluginsArg,
+  shutdownEvalBuiltinPlugins,
+  type BuiltinPluginSelection,
+} from './lib/eval-builtin-plugins';
+import { getActiveBuiltinPluginIds } from '@host/plugins/pluginRegistry';
 import { destroySharedHttpsAgent } from '@host/model/providers/shared';
 import { EVAL_GOAL_ALLOW_SWARM } from '@host/testing/goalContractEval';
 import { EVAL_REPEAT_MAX, type AiReviewDimension } from '@shared/contract/evaluation';
@@ -128,6 +136,7 @@ function parseArgs(argv: string[]) {
   let runId: string | undefined;
   let repeat = 1;
   let skills: string[] | undefined;
+  let builtinPlugins: BuiltinPluginSelection = 'none';
   let aiReview: AiReviewDimension[] = [];
 
   for (let i = 0; i < args.length; i++) {
@@ -190,6 +199,13 @@ function parseArgs(argv: string[]) {
       repeat = Number(args[++i]);
     } else if (arg === '--skills' && i + 1 < args.length) {
       skills = args[++i].split(',').map((name) => name.trim()).filter(Boolean);
+    } else if (arg === '--builtin-plugins' && i + 1 < args.length) {
+      try {
+        builtinPlugins = parseBuiltinPluginsArg(args[++i]);
+      } catch (error) {
+        console.error(chalk.red(`  ${error instanceof Error ? error.message : String(error)}`));
+        process.exit(1);
+      }
     } else if (arg === '--ai-review' && i + 1 < args.length) {
       aiReview = parseAiReviewList(args[++i]);
     } else if (arg === '--predicted-fixes' && i + 1 < args.length) {
@@ -241,7 +257,7 @@ function parseArgs(argv: string[]) {
     process.exit(1);
   }
 
-  return { scope, promote, promoteMockHarness, baselineInfo, trend, base, real, model, provider, concurrency, maxCases, caseCostLimit, force, includeRetired, tags, ids, compare, judge, predictedFixes, riskTasks, caseDir, split, dataDir, runId, repeat, skills, aiReview };
+  return { scope, promote, promoteMockHarness, baselineInfo, trend, base, real, model, provider, concurrency, maxCases, caseCostLimit, force, includeRetired, tags, ids, compare, judge, predictedFixes, riskTasks, caseDir, split, dataDir, runId, repeat, skills, builtinPlugins, aiReview };
 }
 function printUsage() {
   console.log(`
@@ -259,6 +275,7 @@ ${chalk.dim('Usage:')}
   npx tsx scripts/eval-ci.ts --case-cost-limit <usd>  Per-case cost cap override (beats suite/case max_cost_usd; custom providers are priced at the conservative default)
   npx tsx scripts/eval-ci.ts --repeat <k>        Run every case k times (default: 1)
   npx tsx scripts/eval-ci.ts --skills <a,b>      Expose exactly these discoverable skills to a normal eval run
+  npx tsx scripts/eval-ci.ts --builtin-plugins <all|none|id1,id2>  Activate builtin capability plugins for this run (default none = 存量行为；all = 所有默认已装的 builtin，computerUse 需显式点名)
   npx tsx scripts/eval-ci.ts --ai-review <a,b>   Add independent yes/no AI review dimensions
   npx tsx scripts/eval-ci.ts --tags <a,b>       Filter test cases by tags
   npx tsx scripts/eval-ci.ts --ids <a,b>        Filter test cases by IDs
@@ -1058,6 +1075,8 @@ function createRunStartConfig(opts: {
     trialsPerCase: opts.repeat,
     shape: {
       skills: [...(opts.skills ?? EVAL_AGENT_DEFAULTS.skills)],
+      // 实际激活集，不是 --builtin-plugins 的请求值（见 getActiveBuiltinPluginIds 注释）
+      plugins: getActiveBuiltinPluginIds(),
       memory: EVAL_AGENT_DEFAULTS.persistLongTermMemory,
       swarm: EVAL_GOAL_ALLOW_SWARM,
       harness: null,
@@ -1086,12 +1105,15 @@ async function mainImpl(
   cwd: string,
   eventStream?: EvalRunEventStream,
 ): Promise<void> {
-  const { scope, promote, promoteMockHarness, baselineInfo, trend, base, real, model, provider, concurrency, maxCases, caseCostLimit, force, includeRetired, tags, ids: rawIds, compare, judge, predictedFixes, riskTasks, caseDir, split, dataDir, repeat, skills, aiReview } = parseArgs(argv);
+  const { scope, promote, promoteMockHarness, baselineInfo, trend, base, real, model, provider, concurrency, maxCases, caseCostLimit, force, includeRetired, tags, ids: rawIds, compare, judge, predictedFixes, riskTasks, caseDir, split, dataDir, repeat, skills, builtinPlugins, aiReview } = parseArgs(argv);
   const workingDir = cwd;
   if (dataDir) {
     process.env.CODE_AGENT_DATA_DIR = path.resolve(cwd, dataDir);
   }
   const selectedSkills = await validateDiscoverableSkills(skills, workingDir);
+  // 插件面必须在建 run stamp 之前立起来：戳记读的是「此刻真的 active 的是谁」。
+  const pluginActivation = await activateEvalBuiltinPlugins(builtinPlugins);
+  console.error(describeBuiltinPluginActivation(builtinPlugins, pluginActivation));
   const effectiveReal = real || !!model;
   const manager = createEvalBaselineManager(workingDir, {
     kind: baselineInfo || promote || effectiveReal ? 'agent' : 'mock-harness',
@@ -1558,6 +1580,8 @@ export async function main(argv = process.argv, cwd = process.cwd()): Promise<vo
     if (jsonEvents) {
       globalThis.console = originalConsole;
     }
+    // 插件系统的 startWatching 起了 fs 监听，跟下面的 keep-alive agent 一样必须收。
+    await shutdownEvalBuiltinPlugins();
     // N-EVAL-CI-NOEXIT：收尾销毁共享 keep-alive agent（TLSWRAP 持有者），
     // 让成功路径的事件循环能自然排空；getHttpsAgent 下次按需重建，长跑进程不受影响。
     destroySharedHttpsAgent();

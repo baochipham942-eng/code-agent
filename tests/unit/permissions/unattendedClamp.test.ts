@@ -115,7 +115,7 @@ describe('无人值守会话独立权限档', () => {
     const result = await resolveToolPermissionClassification({
       executionToolName: 'Write',
       policyToolName: 'Write',
-      params: { file_path: '/Users/linchen/outside/note.txt', content: 'blocked' },
+      params: { file_path: '/Users/example-user/outside/note.txt', content: 'blocked' },
       policyForcesConfirmation: false,
       boundaryViolation: undefined,
       workingDirectory: '/tmp/workspace',
@@ -150,5 +150,29 @@ describe('无人值守会话独立权限档', () => {
 
     expect(result.external).toBe(true);
     expect(result.decision).toBe('ask');
+  });
+
+  it.each([
+    { method: 'GET', expected: 'approve' },
+    { method: 'HEAD', expected: 'approve' },
+    { method: 'DELETE', expected: 'ask' },
+    { method: 'POST', expected: 'ask' },
+  ] as const)('unattended 的 http_request $method 只在只读方法下免审', async ({ method, expected }) => {
+    const result = await resolveToolPermissionClassification({
+      executionToolName: 'http_request',
+      policyToolName: 'http_request',
+      params: { url: 'https://api.example.test/items/1', method },
+      policyForcesConfirmation: false,
+      boundaryViolation: undefined,
+      workingDirectory: '/tmp/workspace',
+      workspaceRoot: '/tmp/workspace',
+      permissionLevel: 'network',
+      permStartTime: 0,
+      readOnlyForcesConfirmation: false,
+      sessionPermissionMode: 'unattended',
+      toolReadOnly: false,
+    });
+
+    expect(result.decision).toBe(expected);
   });
 });

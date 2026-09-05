@@ -21,7 +21,7 @@ export function createSubagentToolRuntime(input: {
   checkToolExecution(request: ToolExecutionRequest): boolean;
 }) {
   const { context } = input;
-  const effectiveMode = context.executionTopology === 'async_agent'
+  const effectiveMode = context.executionTopology === 'async_agent' && input.effectiveMode !== 'readOnly'
     ? clampUnattendedPermissionMode(input.effectiveMode as PermissionMode)
     : input.effectiveMode;
   const worktreeWorkspace = isAgentWorktreePath(context.cwd) ? context.cwd : undefined;

@@ -21,6 +21,22 @@ import { isBashToolName } from './toolNames';
 
 type ToolPermissionLevel = Parameters<typeof permissionModeAutoApproves>[1];
 
+const UNATTENDED_READ_ONLY_HTTP_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+
+function unattendedNetworkOperationIsReadOnly(input: {
+  executionToolName: string;
+  params: Record<string, unknown>;
+  toolReadOnly?: boolean;
+}): boolean {
+  if (input.toolReadOnly === true) return true;
+  if (input.executionToolName.toLowerCase() !== 'http_request') return false;
+  if (input.params.action === 'guide') return true;
+  const method = typeof input.params.method === 'string'
+    ? input.params.method.trim().toUpperCase()
+    : 'GET';
+  return UNATTENDED_READ_ONLY_HTTP_METHODS.has(method);
+}
+
 interface PermissionedToolShape {
   requiresPermission: boolean;
   permissionLevel: ToolPermissionLevel;
@@ -248,6 +264,7 @@ export async function resolveToolPermissionClassification(input: {
   permStartTime: number;
   readOnlyForcesConfirmation: boolean;
   sessionPermissionMode: PermissionMode;
+  toolReadOnly?: boolean;
 }): Promise<ClassificationResult> {
   // B1: EXTERNAL 风险类打标，与三分支决策正交、不改变审批结果。所有出口都带上，供 B2/B4/审计消费。
   const external = isExternalSideEffectTool(input.executionToolName);
@@ -355,6 +372,10 @@ export async function resolveToolPermissionClassification(input: {
       && !classification.external
       && classification.traceStep?.rule !== BROWSER_COMPUTER_CONSEQUENCE_TRACE_RULE
       && !classification.trustBoundary
+      && (
+        input.permissionLevel !== 'network'
+        || unattendedNetworkOperationIsReadOnly(input)
+      )
     );
   if (classification.decision === 'ask'
     && unattendedMayAutoApprove

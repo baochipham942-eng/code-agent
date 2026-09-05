@@ -1311,7 +1311,7 @@ export class ToolExecutor {
           'ask',
           `命令无法可靠拆词，审批结果不能放行：${commandAnalysisFailedReason}`,
         );
-      } else if (!guardFabricForcesApproval) {
+      } else if (!guardFabricForcesApproval || consequenceForcesClassification) {
         try {
           // 三分支解析 + readOnly/档位改写规则见 toolPermissionClassification.ts
           const workspaceRoot = this.writeWorkspaceRoot;
@@ -1327,6 +1327,7 @@ export class ToolExecutor {
             permStartTime,
             readOnlyForcesConfirmation,
             sessionPermissionMode,
+            toolReadOnly: toolDef.readOnly,
           });
           // B1: EXTERNAL 风险类打标进 decisionTrace（result='allow'，不改变审批结果，仅供
           // 停车审批 / B4 target 授权与审计消费）。此处入 traceBuilder 覆盖 deny/ask 路径；

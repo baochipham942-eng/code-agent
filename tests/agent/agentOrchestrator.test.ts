@@ -350,6 +350,7 @@ interface OrchestratorInternals {
   resolveParkedApproval(id: string, response: string, feedbackOverride?: string): void;
   getPendingApprovalRepo(): unknown;
   drainPendingPermissions(response?: string): void;
+  consumeUnattendedTerminalFailure(): unknown;
   applyTurnSystemContext(content: string, options?: AgentRunOptions, sessionId?: string | null): string;
 }
 function internals(o: AgentOrchestrator): OrchestratorInternals {
@@ -360,6 +361,7 @@ function internals(o: AgentOrchestrator): OrchestratorInternals {
 type PermissionInternals = Pick<
   OrchestratorInternals,
   'pendingPermissions' | 'listPendingRequests' | 'requestPermission' | 'getPendingApprovalRepo' | 'drainPendingPermissions'
+    | 'consumeUnattendedTerminalFailure'
 >;
 function perm(o: AgentOrchestrator): PermissionInternals {
   return (o as unknown as { permissions: PermissionInternals }).permissions;
@@ -1106,9 +1108,9 @@ describe('AgentOrchestrator', () => {
   });
 
   // --------------------------------------------------------------------------
-  // B2: 无人值守审批停车挂起
+  // B2: 语音态停车 + 无人值守有限终态
   // --------------------------------------------------------------------------
-  describe('B2 无人值守审批停车挂起', () => {
+  describe('B2 语音态停车与无人值守审批终态', () => {
     // WHERE status='pending' 守卫 + changes 语义的内存版 fake，忠实映射真 repo 裁决口。
     // 真 SQL 语义另在 PendingApprovalRepository.test.ts 覆盖。
     function makeFakeRepo() {
@@ -1140,6 +1142,7 @@ describe('AgentOrchestrator', () => {
     let fake: ReturnType<typeof makeFakeRepo>;
     let parkedOrch: AgentOrchestrator;
     let unattendedSid: string;
+    let voiceSid: string;
 
     beforeEach(() => {
       fake = makeFakeRepo();
@@ -1151,6 +1154,8 @@ describe('AgentOrchestrator', () => {
       });
       unattendedSid = `unattended-${Math.random().toString(36).slice(2)}`;
       getPermissionModeManager().markUnattendedSession(unattendedSid);
+      voiceSid = `voice-${Math.random().toString(36).slice(2)}`;
+      getPermissionModeManager().markLiveVoiceSession(voiceSid, 'run:voice-parked');
     });
 
     const parkRequest = (sessionId: string) =>
@@ -1168,17 +1173,25 @@ describe('AgentOrchestrator', () => {
       return race === sentinel;
     };
 
-    it('无人值守：审批停车挂起而非 60s deny（写 pending_approvals + 内存登记 parked）', async () => {
-      const promise = parkRequest(unattendedSid);
-      expect(await isStillPending(promise)).toBe(true);
-      expect(fake.insert).toHaveBeenCalledTimes(1);
-      expect(fake.insert.mock.calls[0][0]).toMatchObject({ kind: 'tool_approval' });
-      const requestId = fake.insert.mock.calls[0][0].id as string;
-      const entry = perm(parkedOrch).pendingPermissions.get(requestId);
-      expect(entry?.parked).toBe(true);
-      // 收尾避免悬挂 promise
-      internals(parkedOrch).resolveParkedApproval(requestId, 'deny');
-      expect((await promise).approved).toBe(false);
+    it('无人值守：残余审批不停车，60s 后进入结构化 timeout 终态', async () => {
+      vi.useFakeTimers();
+      try {
+        const promise = parkRequest(unattendedSid);
+        expect(fake.insert).not.toHaveBeenCalled();
+        const requestId = [...perm(parkedOrch).pendingPermissions.keys()][0];
+        expect(perm(parkedOrch).pendingPermissions.get(requestId)?.parked).toBeFalsy();
+
+        vi.advanceTimersByTime(60_000);
+        expect(await promise).toEqual({ approved: false, denialSource: 'timeout' });
+        expect(perm(parkedOrch).consumeUnattendedTerminalFailure()).toMatchObject({
+          code: 'PERMISSION_DENIED_TIMEOUT',
+          requestId,
+          sessionId: unattendedSid,
+          tool: 'bash',
+        });
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     // 2026-07-26 真机：语音派的 run 在通话结束后才请求审批 → 60s 必然超时自动拒绝，
@@ -1236,7 +1249,7 @@ describe('AgentOrchestrator', () => {
     });
 
     it('双口竞态：以 repo changes 为唯一裁决，第二口静默 no-op（不二次 resolve）', async () => {
-      const promise = parkRequest(unattendedSid);
+      const promise = parkRequest(voiceSid);
       await isStillPending(promise);
       const requestId = fake.insert.mock.calls[0][0].id as string;
 
@@ -1250,7 +1263,7 @@ describe('AgentOrchestrator', () => {
       perm(parkedOrch).pendingPermissions.set(requestId, {
         resolve: secondResolve,
         parked: true,
-        request: { sessionId: unattendedSid },
+        request: { sessionId: voiceSid },
       });
       internals(parkedOrch).resolveParkedApproval(requestId, 'deny');
       expect(secondResolve).not.toHaveBeenCalled();
@@ -1258,7 +1271,7 @@ describe('AgentOrchestrator', () => {
     });
 
     it('取消收尾：drainPendingPermissions 同步 repo resolve(rejected) 不留孤儿', async () => {
-      const promise = parkRequest(unattendedSid);
+      const promise = parkRequest(voiceSid);
       await isStillPending(promise);
       const requestId = fake.insert.mock.calls[0][0].id as string;
       expect(fake.rows.get(requestId)?.status).toBe('pending');
@@ -1271,10 +1284,10 @@ describe('AgentOrchestrator', () => {
       expect(perm(parkedOrch).pendingPermissions.has(requestId)).toBe(false);
     });
 
-    it('24h 兜底：无人应答超时 deny + repo rejected', async () => {
+    it('24h 兜底：语音停车无人应答后 deny + repo rejected', async () => {
       vi.useFakeTimers();
       try {
-        const promise = parkRequest(unattendedSid);
+        const promise = parkRequest(voiceSid);
         const requestId = fake.insert.mock.calls[0][0].id as string;
         vi.advanceTimersByTime(86_400_000);
         expect(await promise).toEqual({ approved: false, denialSource: 'timeout' });
@@ -1285,7 +1298,7 @@ describe('AgentOrchestrator', () => {
     });
 
     it('停车不阻塞他人：A 会话停车挂起时 B 会话审批照常完成', async () => {
-      const promiseA = parkRequest(unattendedSid);
+      const promiseA = parkRequest(voiceSid);
       await isStillPending(promiseA);
 
       const attendedSid = `attended-${Math.random().toString(36).slice(2)}`;
@@ -1311,10 +1324,10 @@ describe('AgentOrchestrator', () => {
       const parkedSpy = vi.fn();
       approvalParkEvents.on('parked', parkedSpy);
       try {
-        const promise = parkRequest(unattendedSid);
+        const promise = parkRequest(voiceSid);
         await isStillPending(promise);
         expect(parkedSpy).toHaveBeenCalledTimes(1);
-        expect(parkedSpy.mock.calls[0][0]).toMatchObject({ tool: 'bash', sessionId: unattendedSid });
+        expect(parkedSpy.mock.calls[0][0]).toMatchObject({ tool: 'bash', sessionId: voiceSid });
         const requestId = fake.insert.mock.calls[0][0].id as string;
         internals(parkedOrch).resolveParkedApproval(requestId, 'deny');
         await promise;

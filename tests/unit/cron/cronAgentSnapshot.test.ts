@@ -177,7 +177,7 @@ describe('CronService agent run snapshot wiring', () => {
       await island.requestPermission({
         type: 'file_write',
         tool: 'Write',
-        details: { path: '/Users/linchen/probe.txt' },
+        details: { path: '/Users/example-user/probe.txt' },
         sessionId,
         forceConfirm: true,
       });

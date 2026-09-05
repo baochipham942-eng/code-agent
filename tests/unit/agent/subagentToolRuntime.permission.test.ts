@@ -139,6 +139,34 @@ describe('createSubagentToolRuntime permission forwarding', () => {
     expect(permissionRequest).toHaveBeenCalledOnce();
   });
 
+  it('async_agent 保留父子收缩后的 readOnly，不把后台拓扑变成写权限', async () => {
+    const permissionRequest = vi.fn(async () => false);
+    createSubagentToolRuntime({
+      context: {
+        sessionId: 'session-readonly-background',
+        cwd: '/tmp/workbench',
+        executionTopology: 'async_agent',
+        resolver: { getDefinition: vi.fn() },
+        permission: { request: permissionRequest },
+        events: { emit: vi.fn() },
+        abortSignal: new AbortController().signal,
+      } as any,
+      sessionId: 'session-readonly-background',
+      effectiveMode: 'readOnly',
+      identity: { agentId: 'agent-readonly-background', runId: 'run-readonly-background' },
+      allowedToolNames: new Set(['Write']),
+      checkToolExecution: vi.fn(() => true),
+    });
+
+    expect(toolExecutorState.config?.permissionModeOverride).toBe('readOnly');
+    await expect(toolExecutorState.config!.requestPermission({
+      type: 'file_write',
+      tool: 'Write',
+      details: {},
+    })).resolves.toBe(false);
+    expect(permissionRequest).toHaveBeenCalledOnce();
+  });
+
   it('passes the case-local telemetry owner into nested subagent tool execution', () => {
     const telemetryCollector = { marker: 'case-local' };
     createSubagentToolRuntime({

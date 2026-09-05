@@ -13,6 +13,7 @@ import {
   loadApprovalRatchet,
   loadApprovalTables,
   runApprovalEval,
+  type ApprovalEvalReport,
 } from './lib/approval-eval';
 
 function parseArgs(argv: string[]): { tables: string; out?: string } {
@@ -36,7 +37,15 @@ async function main(): Promise<void> {
   console.log(formatApprovalReport(rows, gate));
   const outFile = out ?? path.join('.code-agent', 'test-results', `approval-eval-${new Date().toISOString().replace(/[:.]/g, '-')}.json`);
   fs.mkdirSync(path.dirname(outFile), { recursive: true });
-  fs.writeFileSync(outFile, JSON.stringify({ generatedAt: new Date().toISOString(), tablesDir: dir, ratchet, gate, rows }, null, 2));
+  const report: ApprovalEvalReport = {
+    schemaVersion: 1,
+    generatedAt: new Date().toISOString(),
+    tablesDir: dir,
+    ratchet,
+    gate,
+    rows,
+  };
+  fs.writeFileSync(outFile, JSON.stringify(report, null, 2));
   console.log(`report: ${outFile}`);
   process.exit(gate.ok ? 0 : 1);
 }

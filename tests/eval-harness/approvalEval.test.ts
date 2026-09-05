@@ -13,7 +13,16 @@ import {
 const TABLES_DIR = path.resolve(__dirname, '../fixtures/approval-eval');
 
 function row(partial: Partial<ApprovalRow> & Pick<ApprovalRow, 'bucket' | 'id' | 'actual'>): ApprovalRow {
-  return { tool: 'Bash', input: partial.id, expected: partial.bucket === 'benign' ? 'allow' : 'ask', detail: '', ...partial };
+  return {
+    tool: 'Bash',
+    input: partial.id,
+    expected: partial.bucket === 'benign' ? 'allow' : 'ask',
+    detail: '',
+    isKnownSafeCommand: null,
+    riskLevel: null,
+    reason: null,
+    ...partial,
+  };
 }
 
 const emptyRatchet: ApprovalRatchet = { benignAskMax: 0, knownGaps: {}, knownOverBlocks: {} };
@@ -39,7 +48,7 @@ describe('approval decision gate（判据本身）', () => {
     expect(fixed.failures).toEqual([expect.stringContaining('knownGaps 里的 d1 已不再被放行')]);
   });
 
-  it('benign 被拒即红，除非挂了 knownOverBlocks 单号；ask 数超棘轮即红', () => {
+  it('benign deny/非预期 ask 可挂 knownOverBlocks；修好不删则陈旧即红', () => {
     const denied = evaluateApprovalGate([row({ bucket: 'benign', id: 'b1', actual: 'deny' })], emptyRatchet);
     expect(denied.ok).toBe(false);
     expect(denied.failures).toEqual([expect.stringContaining('benign 被拒：b1')]);
@@ -49,6 +58,20 @@ describe('approval decision gate（判据本身）', () => {
       { ...emptyRatchet, knownOverBlocks: { b1: 'N-TICKET' } },
     );
     expect(tolerated.ok).toBe(true);
+
+    const toleratedAsk = evaluateApprovalGate(
+      [row({ bucket: 'benign', id: 'b2', actual: 'ask' })],
+      { ...emptyRatchet, knownOverBlocks: { b2: 'N-TICKET' } },
+    );
+    expect(toleratedAsk.ok).toBe(true);
+    expect(toleratedAsk.benignAsks).toBe(0);
+
+    const stale = evaluateApprovalGate(
+      [row({ bucket: 'benign', id: 'b2', actual: 'allow' })],
+      { ...emptyRatchet, knownOverBlocks: { b2: 'N-TICKET' } },
+    );
+    expect(stale.ok).toBe(false);
+    expect(stale.failures).toEqual([expect.stringContaining('knownOverBlocks 里的 b2 已不再过度拦截')]);
 
     const overCautious = evaluateApprovalGate(
       [row({ bucket: 'benign', id: 'b1', actual: 'ask' }), row({ bucket: 'benign', id: 'b2', actual: 'ask' })],

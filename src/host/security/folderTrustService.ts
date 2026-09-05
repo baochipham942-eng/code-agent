@@ -493,24 +493,30 @@ export class FolderTrustService {
     if (this.db) return this.db;
     const dbPath = path.join(getUserConfigDir(), 'code-agent.db');
     fs.mkdirSync(path.dirname(dbPath), { recursive: true });
-    this.db = new Database(dbPath);
-    this.db.pragma('journal_mode = WAL');
-    this.db.exec(TRUST_TABLE_SQL);
-    // CREATE TABLE IF NOT EXISTS 不会给既有表补列：老库在这里加上，加过就抛、忽略即可。
+    const db = new Database(dbPath);
     try {
-      this.db.exec('ALTER TABLE folder_trust ADD COLUMN gated_digest TEXT');
-    } catch {
-      // 列已存在
-    }
-    const db = this.db;
-    db.transaction(() => {
-      const columns = db.prepare('PRAGMA table_info(folder_trust)').all() as { name: string }[];
-      if (!columns.some((column) => column.name === 'birthtime_ns')) {
-        // Old grants require confirmation; old denials remain blocked.
-        db.exec('ALTER TABLE folder_trust ADD COLUMN birthtime_ns TEXT');
+      db.pragma('journal_mode = WAL');
+      db.exec(TRUST_TABLE_SQL);
+      // CREATE TABLE IF NOT EXISTS 不会给既有表补列：老库在这里加上，加过就抛、忽略即可。
+      try {
+        db.exec('ALTER TABLE folder_trust ADD COLUMN gated_digest TEXT');
+      } catch {
+        // 列已存在
       }
-    }).immediate();
-    return this.db;
+      db.transaction(() => {
+        const columns = db.prepare('PRAGMA table_info(folder_trust)').all() as { name: string }[];
+        if (!columns.some((column) => column.name === 'birthtime_ns')) {
+          // Old grants require confirmation; old denials remain blocked.
+          db.exec('ALTER TABLE folder_trust ADD COLUMN birthtime_ns TEXT');
+        }
+      }).immediate();
+      // Publish only a fully initialized connection, so transient migration errors can retry.
+      this.db = db;
+      return db;
+    } catch (error) {
+      db.close();
+      throw error;
+    }
   }
 
   private getRow(canonicalRealpath: string): FolderTrustRow | undefined {

@@ -424,4 +424,26 @@ describe('FolderTrustService', () => {
     service.close();
   });
 
+  it('can grant trust after a transient migration failure without restarting the service', async () => {
+    const service = new FolderTrustService();
+    await service.set(projectDir, 'trusted', 'test');
+    service.close();
+    const db = new Database(path.join(getUserConfigDir(), 'code-agent.db'));
+    db.exec('ALTER TABLE folder_trust DROP COLUMN birthtime_ns');
+    db.close();
+    const migration = vi.spyOn(Database.prototype, 'transaction').mockImplementationOnce(() => {
+      throw new Error('SQLITE_BUSY during migration');
+    });
+    try {
+      expect(() => service.evaluateSync(projectDir)).toThrow('SQLITE_BUSY during migration');
+      migration.mockRestore();
+      // The same service must reopen/migrate, not reuse a connection missing birthtime_ns.
+      expect(service.setSync(projectDir, 'trusted', 'user').state).toBe('trusted');
+      expect((await service.evaluate(projectDir)).state).toBe('trusted');
+    } finally {
+      migration.mockRestore();
+      service.close();
+    }
+  });
+
 });

@@ -10,6 +10,7 @@ import { recordScopedCost } from '../../../src/host/services/core/scopedCostLimi
 import { HostReasonCode } from '../../../src/shared/contract/permission';
 import { OrchestratorPermissionIsland } from '../../../src/host/agent/orchestratorPermissions';
 import { getPermissionModeManager, resetPermissionModeManager } from '../../../src/host/permissions/modes';
+import { DEFAULT_SETTINGS } from '../../../src/host/services/core/configDefaults';
 
 const dbState = vi.hoisted(() => ({
   savedRows: [] as unknown[][],
@@ -158,12 +159,14 @@ describe('CronService agent run snapshot wiring', () => {
     } as unknown as import('../../../src/host/services/core/repositories/PendingApprovalRepository').PendingApprovalRepository;
     const island = new OrchestratorPermissionIsland({
       getSettings: () => ({
+        ...DEFAULT_SETTINGS,
         permissions: {
+          ...DEFAULT_SETTINGS.permissions,
           autoApprove: { read: false, write: false, execute: false, network: false },
           blockedCommands: [],
           devModeAutoApprove: false,
         },
-      } as import('../../../src/shared/contract').AppSettings),
+      }),
       isDevModeAutoApproveEnabled: () => false,
       getExecutionTopology: () => 'async_agent',
       hasApprovalUi: () => true,

@@ -215,19 +215,25 @@ export type PermissionDenialSource =
 
 /** 「这次审批是谁批准的」；机器批准必须显式自报，不能沿用真人批准的默认值。 */
 type PermissionApprovalSource =
-  /** 真人在审批界面上点了允许；也是旧 boolean true 的兼容语义 */
+  /** 真人在审批界面上点了允许 */
   | 'user'
   /** dev 槽里的 devModeAutoApprove 机器放行 */
   | 'dev-auto-approve'
   /** 评测脚本按预设策略批准 */
   | 'scripted'
   /** CLI --permission-mode auto：分类器判安全后由审批处理器机器放行（见 src/cli/permissionPolicy.ts） */
-  | 'cli-auto-approve';
+  | 'cli-auto-approve'
+  | 'unattended-readonly'
+  | 'auto-approve-level'
+  | 'skip-permissions'
+  | 'noninteractive'
+  | 'session-allowlist'
+  | 'unspecified';
 
-/** 审批处理器的富返回值。裸 boolean 仍然合法（等价 `user` 语义），旧实现无需改动。 */
+/** 审批处理器的富返回值。裸 boolean 仍然合法，批准来源未知时不归因给真人。 */
 export interface PermissionAskResult {
   approved: boolean;
-  /** 仅 approved=true 时有意义；缺省按 `'user'` 解释。 */
+  /** 仅 approved=true 时有意义；缺省按 `'unspecified'` 解释。 */
   approvalSource?: PermissionApprovalSource;
   /** 仅 approved=false 时有意义；缺省按 `'user'` 解释。 */
   denialSource?: PermissionDenialSource;

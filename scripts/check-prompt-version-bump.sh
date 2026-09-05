@@ -54,10 +54,10 @@ if [[ $# -ne 0 ]]; then
   fi
   before_ref=$(git rev-parse --verify "${2}^{commit}")
   after_ref=$(git rev-parse --verify "${4}^{commit}")
-  diff_args=("$before_ref" "$after_ref")
+  diff_args=("$before_ref" "$after_ref" --no-renames)
 fi
-# --no-renames exposes both sides of a rename to the path checks.
-staged=$(git diff "${diff_args[@]}" --no-renames --name-only --diff-filter=ACMRD)
+# Range mode exposes both rename paths; default staged mode keeps hook semantics.
+staged=$(git diff "${diff_args[@]}" --name-only --diff-filter=ACMRD)
 
 # ── ① 是否动了 prompt 目录 ──
 prompt_changed=false

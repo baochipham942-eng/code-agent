@@ -123,6 +123,18 @@ describe('ExecPolicyStore', () => {
       expect(store.match('npm install lodash')).toBe('allow');
     });
 
+    it('rules loaded from a file without source are treated as learned and still guarded', () => {
+      const dir = path.join(tmpDir, '.code-agent');
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, 'exec-policy.json'), JSON.stringify({
+        version: 1,
+        rules: [{ pattern: ['find', '.'], decision: 'allow', createdAt: 1 }],
+      }));
+      const loaded = new ExecPolicyStore(tmpDir);
+      expect(loaded.match('find . -name x')).toBe('allow');
+      expect(loaded.match('find . -delete')).toBeNull();
+    });
+
     it('builtin rules are not subject to the learned-prefix guard', () => {
       store.addRule(['find', '.'], 'allow', 'builtin');
       expect(store.match('find . -delete')).toBe('allow');

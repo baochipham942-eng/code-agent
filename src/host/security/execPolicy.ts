@@ -104,6 +104,21 @@ function prefixCarriesTheRisk(pattern: readonly string[], command: string): bool
   return !(isKnownSafeCommand(pattern.join(' ')) && !isKnownSafeCommand(command));
 }
 
+/**
+ * 学来的 allow 规则是否真能放行这条命令。builtin 规则是产品自己声明的不受此约束；
+ * 其余（source 为 user，或旧文件里根本没写 source——离线 schema 也把缺省归为 user）都要过 prefixCarriesTheRisk。
+ * 运行时 match 与离线 `neo policy check/explain` 共用，避免验收看到 allow 而真机要审批。
+ */
+export function learnedRuleCovers(rule: PrefixRule, command: string): boolean {
+  return rule.decision !== 'allow' || rule.source === 'builtin' || prefixCarriesTheRisk(rule.pattern, command);
+}
+
+/** 最长前缀命中 + 学来前缀守卫，一步给出最终决策（null = 不命中/被守卫拦下，走常规权限流程）。 */
+export function resolvePolicyDecision(rules: readonly PrefixRule[], command: string): PolicyDecision | null {
+  const rule = matchPolicyRule(rules, command);
+  return rule && learnedRuleCovers(rule, command) ? rule.decision : null;
+}
+
 // ----------------------------------------------------------------------------
 // ExecPolicyStore
 // ----------------------------------------------------------------------------
@@ -128,20 +143,11 @@ export class ExecPolicyStore {
    * @returns 匹配的决策，或 null 表示未匹配
    */
   match(command: string): PolicyDecision | null {
-    const rule = matchPolicyRule(this.rules, command);
-    if (!rule) return null;
     // 学来的前缀只放行「前缀本身就带着风险」的命令：`find .` 这种前缀单独看是安全命令，
     // 用户当初批的其实是 `-delete` 那部分，前缀没把风险装进去，就不能拿它放行
     // `find . -delete`（2026-09-05 真机学到 ['find','.'] 让 -delete 免审批）。
     // `git push` / `npm install` 前缀自身就不安全，照旧放行。
-    if (rule.decision === 'allow' && rule.source === 'user' && !prefixCarriesTheRisk(rule.pattern, command)) {
-      return null;
-    }
-    // 学来的前缀只放行「前缀本身就带着风险」的命令：`find .` 这种前缀单独看是安全命令，
-    // 用户当初批的其实是 `-delete` 那部分，前缀没把风险装进去，就不能拿它放行
-    // `find . -delete`（2026-09-05 真机学到 ['find','.'] 让 -delete 免审批）。
-    // `git push` / `npm install` 前缀自身就不安全，照旧放行。
-    return rule.decision;
+    return resolvePolicyDecision(this.rules, command);
   }
 
   /**

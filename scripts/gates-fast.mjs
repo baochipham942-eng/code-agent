@@ -133,8 +133,10 @@ try {
     receipt.mergeBaseSha = git('merge-base', 'HEAD', receipt.baseSha);
     if (receipt.baseSha !== receipt.mergeBaseSha) throw new Error('FAIL: HEAD is behind base; rebase before fast gates');
     // Disabling rename detection deliberately exposes old AND new names.
-    receipt.changedFiles = git('diff', '--no-renames', '--name-only', receipt.baseSha, 'HEAD').split('\n').filter(Boolean);
-    const selected = selectTests(policy, receipt.changedFiles, regressions);
+    const diff = git('diff', '--no-renames', '--name-status', '-z', receipt.baseSha, 'HEAD').split('\0').filter(Boolean);
+    receipt.changedFiles = diff.filter((_value, index) => index % 2 === 1);
+    receipt.deletedFiles = receipt.changedFiles.filter((_file, index) => diff[index * 2] === 'D');
+    const selected = selectTests(policy, receipt.changedFiles, regressions, receipt.deletedFiles);
     validateFiles(root, selected.files, policy.maxFiles);
     receipt.selectedFiles = selected.files;
     receipt.matchedRules = selected.matchedRules;

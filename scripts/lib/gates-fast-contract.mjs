@@ -22,14 +22,17 @@ export function validateFiles(root, files, maxFiles) {
         || /[\\*?[\]{}!\n\r]/.test(file) || file.split('/').includes('..')) {
       throw new Error(`FAIL: not an exact repository test path: ${file}`);
     }
-    const target = fs.realpathSync(path.join(root, file));
+    let target;
+    try { target = fs.realpathSync(path.join(root, file)); }
+    catch (error) { throw new Error(`FAIL: selected test missing or unreadable: ${file}`, { cause: error }); }
     if (!target.startsWith(`${fs.realpathSync(root)}${path.sep}`) || !fs.statSync(target).isFile()) {
       throw new Error(`FAIL: test outside repository: ${file}`);
     }
   }
 }
 
-export function selectTests(policy, changed, regressions = []) {
+export function selectTests(policy, changed, regressions = [], deletedFiles = []) {
+  const deleted = new Set(deletedFiles);
   const files = new Set(policy.baseline);
   const covered = new Set();
   const matchedRules = [];
@@ -53,7 +56,12 @@ export function selectTests(policy, changed, regressions = []) {
     entry.files.forEach((file) => files.add(file));
   }
   for (const file of changed) {
-    if (/\.test\.tsx?$/.test(file)) { files.add(file); covered.add(file); }
+    if (/\.test\.tsx?$/.test(file)) {
+      // Keep old names above for policy matching; only Git-confirmed deletions
+      // are omitted. An unexpectedly missing added/modified test still fails.
+      if (!deleted.has(file)) files.add(file);
+      covered.add(file);
+    }
     // Documentation is the sole explicit non-code classification.
     if (/\.md$/.test(file)) covered.add(file);
   }

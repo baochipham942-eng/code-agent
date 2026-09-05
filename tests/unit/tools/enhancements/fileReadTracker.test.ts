@@ -131,7 +131,7 @@ describe('FileReadTracker', () => {
   describe('forgetShownRanges', () => {
     it('drops only the shown ranges and keeps mtime/size/digest for stale-edit checks', () => {
       const file = path.join(os.tmpdir(), 'forget-a.txt');
-      const range = { startLine: 1, endLine: 10 };
+      const range = { startLine: 1, endLine: 10, totalLines: 10 };
       tracker.recordRead(file, 1000, 42, { digest: 'abcd1234abcd1234', shownRange: range });
       tracker.recordRead(file, 1000, 42, { digest: 'abcd1234abcd1234', shownRange: range, actorId: 's1:agent-a' });
       tracker.forgetShownRanges();

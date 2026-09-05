@@ -62,12 +62,14 @@ interface FolderTrustRow {
   decided_by: string;
   dev: string | null;
   ino: string | null;
+  birthtime_ns: string | null;
   gated_digest: string | null;
 }
 
 interface FolderIdentity {
   dev: string;
   ino: string;
+  birthtimeNs: string | null;
 }
 
 type SqliteDatabase = Database.Database;
@@ -113,6 +115,7 @@ const TRUST_TABLE_SQL = `
     decided_by TEXT NOT NULL,
     dev TEXT,
     ino TEXT,
+    birthtime_ns TEXT,
     gated_digest TEXT
   )
 `;
@@ -490,16 +493,30 @@ export class FolderTrustService {
     if (this.db) return this.db;
     const dbPath = path.join(getUserConfigDir(), 'code-agent.db');
     fs.mkdirSync(path.dirname(dbPath), { recursive: true });
-    this.db = new Database(dbPath);
-    this.db.pragma('journal_mode = WAL');
-    this.db.exec(TRUST_TABLE_SQL);
-    // CREATE TABLE IF NOT EXISTS 不会给既有表补列：老库在这里加上，加过就抛、忽略即可。
+    const db = new Database(dbPath);
     try {
-      this.db.exec('ALTER TABLE folder_trust ADD COLUMN gated_digest TEXT');
-    } catch {
-      // 列已存在
+      db.pragma('journal_mode = WAL');
+      db.exec(TRUST_TABLE_SQL);
+      // CREATE TABLE IF NOT EXISTS 不会给既有表补列：老库在这里加上，加过就抛、忽略即可。
+      try {
+        db.exec('ALTER TABLE folder_trust ADD COLUMN gated_digest TEXT');
+      } catch {
+        // 列已存在
+      }
+      db.transaction(() => {
+        const columns = db.prepare('PRAGMA table_info(folder_trust)').all() as { name: string }[];
+        if (!columns.some((column) => column.name === 'birthtime_ns')) {
+          // Old grants require confirmation; old denials remain blocked.
+          db.exec('ALTER TABLE folder_trust ADD COLUMN birthtime_ns TEXT');
+        }
+      }).immediate();
+      // Publish only a fully initialized connection, so transient migration errors can retry.
+      this.db = db;
+      return db;
+    } catch (error) {
+      db.close();
+      throw error;
     }
-    return this.db;
   }
 
   private getRow(canonicalRealpath: string): FolderTrustRow | undefined {
@@ -516,6 +533,10 @@ export class FolderTrustService {
     identity: FolderIdentity,
     gatedDigest: string,
   ): void {
+    if (state === 'trusted' && !identity.birthtimeNs) {
+      // The existing IPC error/toast path must explain why an explicit grant failed.
+      throw new Error('This filesystem does not provide folder creation time. Folder trust cannot be saved. Choose a folder on a filesystem that supports creation times.');
+    }
     const now = Date.now();
     this.getDb().prepare(`
       INSERT INTO folder_trust (
@@ -527,8 +548,9 @@ export class FolderTrustService {
         decided_by,
         dev,
         ino,
+        birthtime_ns,
         gated_digest
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(canonical_realpath) DO UPDATE SET
         display_path = excluded.display_path,
         state = excluded.state,
@@ -536,6 +558,7 @@ export class FolderTrustService {
         decided_by = excluded.decided_by,
         dev = excluded.dev,
         ino = excluded.ino,
+        birthtime_ns = excluded.birthtime_ns,
         gated_digest = excluded.gated_digest
     `).run(
       canonicalRealpath,
@@ -546,33 +569,43 @@ export class FolderTrustService {
       decidedBy,
       identity.dev,
       identity.ino,
+      identity.birthtimeNs,
       gatedDigest,
     );
   }
 
   private async readIdentity(canonicalRealpath: string): Promise<FolderIdentity> {
-    const stat = await fsp.stat(canonicalRealpath);
-    return { dev: String(stat.dev), ino: String(stat.ino) };
+    const stat = await fsp.stat(canonicalRealpath, { bigint: true });
+    return {
+      dev: String(stat.dev),
+      ino: String(stat.ino),
+      birthtimeNs: stat.birthtimeNs > 0n ? String(stat.birthtimeNs) : null,
+    };
   }
 
   private readIdentitySync(canonicalRealpath: string): FolderIdentity {
-    const stat = fs.statSync(canonicalRealpath);
-    return { dev: String(stat.dev), ino: String(stat.ino) };
+    const stat = fs.statSync(canonicalRealpath, { bigint: true });
+    return {
+      dev: String(stat.dev),
+      ino: String(stat.ino),
+      birthtimeNs: stat.birthtimeNs > 0n ? String(stat.birthtimeNs) : null,
+    };
   }
 
   /**
-   * 目录身份是否真的变了。
-   *
-   * 判据只认 **inode**，不认 dev。原因（2026-07-30 产品负责人真机撞到，实测取证）：
-   * macOS APFS 的 `st_dev` 是挂载期分配的卷设备号，**重启/重新挂载后会变**——
-   * 实测同一目录 ino 恒为 280299404、dev 从 16777229 变成 16777232，于是每次重启后
-   * 全部已信任目录集体「身份已变化」要求重新确认，确认完下次重启再来一遍（用户视角=永远修不好）。
-   * 行键已经是 canonical_realpath（真实路径），路径 + inode 相同即同一目录；
-   * dev 单独变化按「卷重新挂载」处理：静默重绑（见 buildEvaluation），不打扰用户。
+   * inode can be recycled after deletion. Bind the decision to its creation time too,
+   * preserving stat's full precision (Date/Number milliseconds can hide a replacement).
+   * On filesystems with real birthtime (not Node's ctime fallback), ordinary edits
+   * leave it stable; ctime/mtime and content digests do not identify an incarnation.
+   * Missing snapshots fail closed; never seed an old grant from the current directory.
+   * dev alone is not identity: APFS reassigns it on remount/reboot.
    */
   private identityChanged(row: FolderTrustRow | undefined, identity: FolderIdentity): boolean {
     if (!row) return false;
-    return row.ino !== identity.ino;
+    return row.ino !== identity.ino
+      || !row.birthtime_ns
+      || !identity.birthtimeNs
+      || row.birthtime_ns !== identity.birthtimeNs;
   }
 
   /** dev 单独变化（卷重挂载/重启）：把新 dev 写回，保持记录与现实一致，不改 state/decidedBy。 */
@@ -590,7 +623,7 @@ export class FolderTrustService {
   ): FolderTrustEvaluation {
     const row = this.getRow(canonicalRealpath);
     const identityChanged = this.identityChanged(row, identity);
-    // 同一 inode 但 dev 变了 = 卷重新挂载：就地重绑，不降级信任状态
+    // inode 与出生时间都一致，只有 dev 变了：按卷重挂载就地重绑。
     if (row && !identityChanged && row.dev !== identity.dev) {
       this.rebindDevice(canonicalRealpath, identity.dev);
     }
@@ -600,7 +633,10 @@ export class FolderTrustService {
       && row.state === 'trusted'
       && !identityChanged
       && hasNewGatedItems(row.gated_digest, dangerousItems);
-    const state: FolderTrustState = row && !identityChanged && !contentChanged ? row.state : 'untrusted';
+    // Losing identity evidence can revoke a grant, but must never relax an explicit denial.
+    const state: FolderTrustState = row?.state === 'blocked'
+      ? 'blocked'
+      : row && !identityChanged && !contentChanged ? row.state : 'untrusted';
     const blockedItems = state === 'trusted' ? [] : dangerousItems.filter((item) => item.gated);
     return {
       state,

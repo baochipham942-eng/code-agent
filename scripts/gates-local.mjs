@@ -251,9 +251,7 @@ const gates = [
       'tests/unit/runtime/runtimeAssetStatus.test.ts',
       '--exclude',
       'tests/unit/security/commandSafety.approvalDecisionGaps.test.ts',
-      // 真 bug 欠条；修复后与 CI 同时摘除。
-      '--exclude',
-      'tests/unit/security/folderTrustService.test.ts', // N-FOLDER-TRUST-INODE-REUSE-0905
+      // 真 bug 欠条；修复后与 CI 同时摘除。当前无。
     ],
   },
   {

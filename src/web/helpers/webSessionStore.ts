@@ -330,7 +330,8 @@ function fallbackToCollectorSessionProjection(
 ): void {
   // !dbAvailable 时内存仍是主存储；DB 读回失败时也用批 2 前的 collector
   // 投影兜底，避免缓存停在半旧状态并丢掉本轮消息。
-  const cached = [...(getSessionMessagesProjection(sessionId) || []), userMessage];
+  const cached = [...(getSessionMessagesProjection(sessionId) || [])];
+  if (!cached.some((message) => message.id === userMessage.id)) cached.push(userMessage);
   if (!turn.runCancelled && turn.hasAssistantOutput()) {
     cached.push({
       id: assistantMsgId,

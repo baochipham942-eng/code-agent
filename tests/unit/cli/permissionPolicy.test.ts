@@ -24,6 +24,10 @@ function makeRequest(overrides: Partial<PermissionRequestData> = {}): Permission
 }
 
 describe('createCLIPermissionHandler', () => {
+  it('非交互只读 ask 仍 fail-closed，不能为了来源测试打开原有拒绝门', async () => {
+    await expect(createCLIPermissionHandler()(makeRequest({ type: 'file_read', tool: 'read_file' })))
+      .resolves.toEqual(DENIED_BY_ENV);
+  });
   it('denies every ask by default because CLI mode has no approval surface', async () => {
     const handler = createCLIPermissionHandler();
     await expect(handler(makeRequest({ type: 'file_write' }))).resolves.toEqual(DENIED_BY_ENV);
@@ -64,9 +68,9 @@ describe('createCLIPermissionHandler', () => {
 
   it('approves everything when dangerouslySkipPermissions is set', async () => {
     const handler = createCLIPermissionHandler({ dangerouslySkipPermissions: true });
-    await expect(handler(makeRequest({ type: 'dangerous_command' }))).resolves.toEqual({ approved: true });
-    await expect(handler(makeRequest({ forceConfirm: true }))).resolves.toEqual({ approved: true });
-    await expect(handler(makeRequest({ dangerLevel: 'danger' }))).resolves.toEqual({ approved: true });
+    await expect(handler(makeRequest({ type: 'dangerous_command' }))).resolves.toEqual({ approved: true, approvalSource: 'skip-permissions' });
+    await expect(handler(makeRequest({ forceConfirm: true }))).resolves.toEqual({ approved: true, approvalSource: 'skip-permissions' });
+    await expect(handler(makeRequest({ dangerLevel: 'danger' }))).resolves.toEqual({ approved: true, approvalSource: 'skip-permissions' });
   });
 
   it('emits a warning explaining the deny and the escape hatch', async () => {
@@ -101,7 +105,7 @@ describe('交互审批注册点（P4 Ink TUI）', () => {
     const handler = createCLIPermissionHandler({ dangerouslySkipPermissions: true });
     try {
       setInteractiveApprovalProvider(async () => ({ approved: false, denialSource: 'user' }));
-      await expect(handler(makeRequest())).resolves.toEqual({ approved: true });
+      await expect(handler(makeRequest())).resolves.toEqual({ approved: true, approvalSource: 'skip-permissions' });
     } finally {
       setInteractiveApprovalProvider(null);
     }

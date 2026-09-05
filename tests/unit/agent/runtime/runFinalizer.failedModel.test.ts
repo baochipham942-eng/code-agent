@@ -41,6 +41,7 @@ vi.mock('../../../../src/host/services/surfaceExecution/SurfaceExecutionRuntime'
   getConfiguredSurfaceExecutionRuntime: () => null,
 }));
 
+import { buildCompletionSummaryRecord } from '../../../../src/host/session/completionSummaryService';
 import { RunFinalizer } from '../../../../src/host/agent/runtime/runFinalizer';
 import { buildGoalContract, GoalModeController } from '../../../../src/host/agent/goalModeController';
 import { appendConversationSummary } from '../../../../src/host/lightMemory/recentConversations';
@@ -52,6 +53,29 @@ import { HostReasonCode } from '../../../../src/shared/contract';
 describe('RunFinalizer 失败事件', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  it('零正文不能把本轮落成 completed', async () => {
+    const events: AgentEvent[] = [];
+    const finalizer = new RunFinalizer({
+      sessionId: 'empty-response', persistLongTermMemory: false,
+      nudgeManager: { getModifiedFiles: () => new Set() },
+      onEvent: (event: AgentEvent) => events.push(event),
+      modelConfig: { provider: 'claude', model: 'test' },
+      messages: [{ id: 'u1', role: 'user', content: 'hello', timestamp: 1 }],
+      maxIterations: 10,
+      stats: { traceId: 'empty', totalInputTokens: 0, totalOutputTokens: 0, queueDiagnostic: vi.fn() },
+      control: { isCancelled: false, isInterrupted: false },
+      circuitBreaker: { isTripped: () => false, reset: vi.fn() },
+      turn: { currentTurnId: null },
+    } as never);
+    finalizer.setModules({ generateId: () => 'a1', addAndPersistMessage: vi.fn() } as never,
+      { runPostRun: vi.fn(), runSessionEndLearning: vi.fn() } as never);
+    await finalizer.finalizeRun(1, 'hello', { endTrace: vi.fn(), flush: vi.fn(async () => undefined) } as never, 1, { status: 'completed' });
+    expect(events).toContainEqual(expect.objectContaining({
+      type: 'error', data: expect.objectContaining({ code: 'RUN_FAILED' }),
+    }));
+    expect(buildCompletionSummaryRecord).toHaveBeenCalledWith(expect.objectContaining({ status: 'failed' }));
   });
 
   it('RUN_FAILED 带上这一轮真正跑的 provider/model', async () => {

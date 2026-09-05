@@ -103,3 +103,51 @@ describe('ClaudeProvider tool-call streaming order', () => {
     expect(toolDeltaAt).toBeGreaterThan(preambleAt);
   });
 });
+
+
+describe('ClaudeProvider thinking + text blocks', () => {
+  it('非流式取所有 text block 正文', async () => {
+    mockElectronFetch.mockResolvedValue({ ok: true, json: async () => ({
+      content: [{ type: 'thinking', thinking: '思考' }, { type: 'text', text: '连通' }, { type: 'text', text: '成功' }],
+      stop_reason: 'end_turn',
+    }) } as never);
+    const result = await new ClaudeProvider().inference([{ role: 'user', content: 'hello' }], [], BASE_CONFIG);
+    expect(result.content).toBe('连通\n成功');
+  });
+
+  it.each([true, false])('流式 thinking 后多 text block，event header=%s', async (withHeader) => {
+    const server = http.createServer((_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'text/event-stream', Connection: 'close' });
+      const send = (type: string, data: Record<string, unknown>) => res.write(
+        (withHeader ? `event: ${type}\n` : '') + `data: ${JSON.stringify({ type, ...data })}\n\n`,
+      );
+      send('message_start', { message: { content: [], usage: { input_tokens: 1, output_tokens: 0 } } });
+      send('content_block_start', { index: 0, content_block: { type: 'thinking', thinking: '' } });
+      send('content_block_delta', { index: 0, delta: { type: 'thinking_delta', thinking: '思考' } });
+      send('content_block_stop', { index: 0 });
+      send('content_block_start', { index: 1, content_block: { type: 'text', text: '连' } });
+      send('content_block_delta', { index: 1, delta: { type: 'text_delta', text: '通' } });
+      send('content_block_stop', { index: 1 });
+      send('content_block_start', { index: 2, content_block: { type: 'text', text: '' } });
+      send('content_block_delta', { index: 2, delta: { type: 'text_delta', text: '成功' } });
+      send('content_block_stop', { index: 2 });
+      send('message_delta', { delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 4 } });
+      send('message_stop', {});
+      res.end();
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('unexpected address');
+    const chunks: string[] = [];
+    try {
+      const result = await new ClaudeProvider().inference([{ role: 'user', content: 'hello' }], [], {
+        ...BASE_CONFIG, baseUrl: `http://127.0.0.1:${address.port}`,
+      }, (event) => { if (typeof event !== 'string' && event.type === 'text') chunks.push(event.content ?? ''); });
+      expect(result.content).toBe('连通成功');
+      expect(chunks.join('')).toBe('连通成功');
+      expect(result.thinking).toBe('思考');
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+});

@@ -290,7 +290,7 @@ export class OrchestratorPermissionIsland {
       && isUnattendedAllowedReadOnlyTool(request.tool)
     ) {
       logger.info(`[Unattended] Auto-approving declared read-only MCP tool: ${request.tool}`);
-      return { approved: true };
+      return { approved: true, approvalSource: 'unattended-readonly' };
     }
 
     // 无人值守会话（cron/heartbeat/channel）与语音派：审批先于任何自动批准判定，改为「停车挂起」，
@@ -320,7 +320,7 @@ export class OrchestratorPermissionIsland {
       }
 
       if (!forceConfirm && settings.permissions.autoApprove[permissionLevel]) {
-        return { approved: true };
+        return { approved: true, approvalSource: 'auto-approve-level' };
       }
     }
 

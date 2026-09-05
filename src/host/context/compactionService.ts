@@ -732,5 +732,7 @@ export async function compactMessagesWithSummary(
     warnings,
   };
   recordAudit(result, options);
+  // Earlier Read results may have been replaced by the admitted summary.
+  fileReadTracker.clear();
   return result;
 }

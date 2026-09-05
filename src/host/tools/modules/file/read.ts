@@ -181,6 +181,19 @@ class ReadHandler implements ToolHandler<Record<string, unknown>, string> {
 
       // 记录到 fileReadTracker（供 Edit/Write 做外改检测）
       const resolvedAbs = path.resolve(filePath);
+      const actorId = getFileMutationActorId(ctx);
+      const previous = actorId ? fileReadTracker.getReadRecord(resolvedAbs, actorId) : undefined;
+      if (args.force !== true && previous?.shownRange
+        && previous.mtime === stats.mtimeMs && previous.size === stats.size && previous.digest === digest
+        && previous.shownRange.startLine <= shownRange.startLine
+        && previous.shownRange.endLine >= shownRange.endLine) {
+        onProgress?.({ stage: 'completing', percent: 100 });
+        return {
+          ok: true,
+          output: 'This file range was already read in this session and is unchanged on disk. See the previous Read result; pass force: true to read it again.',
+          meta: { deduplicated: true, digest, shownRange, evidenceRef: previous.evidenceRef },
+        };
+      }
       const evidenceRef = makeEvidenceRef({
         kind: 'read',
         ref: `${resolvedAbs}#L${shownRange.startLine}-L${shownRange.endLine}`,

@@ -92,12 +92,14 @@ function tokenizeShellCommand(command: string): ShellToken[] {
   let index = 0;
   while (index < command.length) {
     const char = command[index];
-    if (/\s/.test(char)) {
+    // 换行必须先于空白判断：`/\s/` 认得 '\n'，先走空白分支就把命令边界吞掉了，
+    // 多行脚本的第 2 行起会跟第 1 行粘成一条命令（ai-review PR #1650 第 3 轮）。
+    if (char === '\n' || char === '\r' || char === ';') {
+      tokens.push({ kind: 'separator', raw: char });
       index += 1;
       continue;
     }
-    if (char === ';' || char === '\n') {
-      tokens.push({ kind: 'separator', raw: char });
+    if (/\s/.test(char)) {
       index += 1;
       continue;
     }
@@ -174,6 +176,15 @@ export function shellWriteTargets(command: string): string[] {
   }
   flushSegment();
   return targets.map(unquote);
+}
+
+/**
+ * 没被反斜杠转义的换行 → `;`。词中续行（`\` + 换行）原样留着，交给 canonicalizeCommand 折。
+ * ponytail: 单引号里跨行的字面量也会被换成 `;`，代价是多出一个不成命令的片段
+ * （几乎不可能以 cp/mv/tee 开头），方向保守，不为它写引号状态机。
+ */
+function splitUnescapedNewlines(command: string): string {
+  return command.replace(/(?<!\\)\r?\n/g, ' ; ');
 }
 
 function genericPathAssessment(
@@ -258,7 +269,13 @@ function descriptorAssessment(
   const uncertain: string[] = [];
   const memoryAlias = path.join(path.basename(path.dirname(memoryDir)), path.basename(memoryDir));
   const canonical = canonicalizeCommand(command);
-  const redirectTargets = shellWriteTargets(canonical.command);
+  // canonicalizeCommand 把所有空白压成单空格（:163），多行脚本到这里就只剩一行、
+  // 第 2 行起的命令会跟第 1 行粘住。它有十几个安全消费方靠这个形状做匹配，不能动，
+  // 所以在喂给它之前先把**没被反斜杠转义的**换行换成 `;`——`;` 本来就是命令分隔符，
+  // canonicalizeCommand 原样保留，下面的分词器也认（ai-review PR #1650 第 3 轮）。
+  // 转义过的换行（`rep\<换行>ort.txt` 这种词中续行）留给 canonicalizeCommand 自己折，
+  // 那是它已经做对的事，别抢。
+  const redirectTargets = shellWriteTargets(canonicalizeCommand(splitUnescapedNewlines(command)).command);
   if (canonical.parsingFailed && redirectTargets.length > 0) {
     uncertain.push(`uncertain-command-analysis:${canonical.failureReason ?? 'parse-failure'}`);
   }

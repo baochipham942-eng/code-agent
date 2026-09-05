@@ -102,6 +102,8 @@ export async function runPostLaunchScoringOnHost(
 export function getPostLaunchReportOnHost(options: PostLaunchReportOptions = {}): PostLaunchReport {
   return buildPostLaunchReport(requireDb(), {
     ...options,
+    // 空提示词 = 一次 judge 调用的成本下限；连它都塞不进上限就是真的停评了。
+    reserveUsd: options.reserveUsd ?? estimateJudgeCost(getQuickModelRuntimeInfo(), '').usd,
     calibration: options.calibration ?? inspectPostLaunchCalibration(path.join(process.cwd(), CONFIG_DIR_NEW)),
   });
 }

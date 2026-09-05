@@ -137,6 +137,14 @@ describe('确定性信号 · 九类各一真阳一真阴', () => {
     expect(kinds([copyIn], { workspaceDir: WORKSPACE })).not.toContain('out_of_workspace_write');
   });
 
+  it('⑨越出工作区写入：多行 Bash 的第 2 行也要判（ai-review #1650 第 3 轮）', () => {
+    const multiline = toolBlock({ name: 'Bash', category: 'Bash', args: { command: 'printf ready\ncp ./report.html /etc/report.html' } });
+    expect(kinds([multiline], { workspaceDir: WORKSPACE })).toContain('out_of_workspace_write');
+
+    const multilineInside = toolBlock({ name: 'Bash', category: 'Bash', args: { command: 'printf ready\ncp ./a ./b' } });
+    expect(kinds([multilineInside], { workspaceDir: WORKSPACE })).not.toContain('out_of_workspace_write');
+  });
+
   it('一条错误文本只归一类：被拒不会同时算成泛错误', () => {
     const result = kinds([errorBlock('Permission denied by user')]);
     expect(result).toContain('approval_denied');

@@ -618,6 +618,23 @@ describe('上线后打分编排', () => {
     expect(report.budget.spentUsd).toBeCloseTo(0.2);
   });
 
+  it('Nit②预留不足的停评要传到报告：spent 没到上限、但塞不下一次调用时也算停评', () => {
+    insertSession(database, 'chat-1', 'chat', NOW - HOUR, 'manual');
+    const day = localDay(NOW);
+    database.prepare(`
+      INSERT INTO telemetry_turn_scores (turn_id, session_id, scored_at, scored_day, turn_started_at,
+        judge_version, rubric_version, judge_model, dim_goal, signals, cost_usd, budget_cost_usd, sampled_by)
+      VALUES ('t1', 'chat-1', ?, ?, ?, ?, 'postlaunch-rubric-v1', 'deepseek/x', 1, '[]', 0.2, 0.2, 'sample')
+    `).run(NOW, day, NOW - HOUR, POST_LAUNCH_JUDGE_VERSION);
+
+    // 已花 0.2 / 上限 0.25：老判据 spent >= limit 是 false ⇒ 卡片显示「还能评」，
+    // 可下一次调用估 0.1，实际早就停了。
+    expect(buildPostLaunchReport(database, { now: NOW, dailyBudgetUsd: 0.25 }).budget.stopped).toBe(false);
+    expect(buildPostLaunchReport(database, { now: NOW, dailyBudgetUsd: 0.25, reserveUsd: 0.1 }).budget.stopped).toBe(true);
+    // 预留塞得下就仍然不算停评
+    expect(buildPostLaunchReport(database, { now: NOW, dailyBudgetUsd: 0.5, reserveUsd: 0.1 }).budget.stopped).toBe(false);
+  });
+
   it('子迭代的块并进它的 user 父轮：agentic loop 不把一轮拆成多轮', async () => {
     insertSession(database, 'chat-1', 'chat', NOW - HOUR);
     insertTurn(database, 'chat-1', 'chat-turn-1', 1, NOW - HOUR);

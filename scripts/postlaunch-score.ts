@@ -120,7 +120,7 @@ async function main(): Promise<void> {
   }
   console.log(`本次打分刊例估算 $${result.costUsd.toFixed(4)}${result.budgetStopped ? '（预算不够下一次调用，当天停评）' : ''}`);
 
-  const report = buildPostLaunchReport(db, { judgeVersion: options.dryRun ? DRY_RUN_JUDGE_VERSION : undefined, days: options.days, dailyBudgetUsd: options.budget, dailySampleLimit: options.sampleLimit });
+  const report = buildPostLaunchReport(db, { judgeVersion: options.dryRun ? DRY_RUN_JUDGE_VERSION : undefined, days: options.days, dailyBudgetUsd: options.budget, dailySampleLimit: options.sampleLimit, reserveUsd: estimateJudgeCost(judge, '').usd });
   for (const group of report.groups) {
     console.log(`\n${group.weekStart} · ${group.appVersion}${group.promptVersion ? ` · ${group.promptVersion}` : ''}`);
     for (const row of group.rows) {

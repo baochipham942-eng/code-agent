@@ -128,11 +128,16 @@ export function releaseScoringLock(db: BetterSqlite3.Database, owner: string): v
   db.prepare('DELETE FROM telemetry_turn_scores_lock WHERE id = 1 AND owner = ?').run(owner);
 }
 
-/** 日预算看的是 budget_cost_usd（含未知价的保守估算），不是展示用的刊例 cost_usd。 */
+/**
+ * 日预算看的是 budget_cost_usd（含未知价的保守估算），不是展示用的刊例 cost_usd。
+ * `reserveUsd` = 下一次 judge 调用的最低估算：停评判据与打分器一致，是
+ * 「已花 + 下一次要花的 ≥ 上限」而不是「已花 ≥ 上限」，否则预留导致的停评
+ * 卡片上根本显示不出来（ai-review PR #1650 第 3 轮 Nit②）。
+ */
 export function getBudgetState(
   db: BetterSqlite3.Database,
   day: string,
-  limits: { limitUsd: number; sampleLimit: number },
+  limits: { limitUsd: number; sampleLimit: number; reserveUsd?: number },
 ): PostLaunchBudgetState {
   const row = db
     .prepare(`
@@ -149,7 +154,7 @@ export function getBudgetState(
     sampledCount: row.sampled,
     sampleLimit: limits.sampleLimit,
     assumedUsd: row.assumed,
-    stopped: row.spent >= limits.limitUsd,
+    stopped: row.spent + (limits.reserveUsd ?? 0) >= limits.limitUsd,
   };
 }
 
@@ -216,6 +221,8 @@ export interface PostLaunchReportOptions {
   now?: number;
   dailyBudgetUsd?: number;
   dailySampleLimit?: number;
+  /** 下一次 judge 调用的最低估算，用来算「预留不足已停评」。 */
+  reserveUsd?: number;
   calibration?: PostLaunchReport['calibration'];
 }
 
@@ -331,6 +338,7 @@ export function buildPostLaunchReport(
     budget: getBudgetState(db, localDay(now), {
       limitUsd: options.dailyBudgetUsd ?? POST_LAUNCH_DEFAULTS.dailyBudgetUsd,
       sampleLimit: options.dailySampleLimit ?? POST_LAUNCH_DEFAULTS.dailySampleLimit,
+      reserveUsd: options.reserveUsd,
     }),
   };
 }

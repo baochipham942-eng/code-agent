@@ -105,6 +105,32 @@ describe('cp / mv / tee 的写目标', () => {
       .toContain(resolveCanonicalRunPath(path.join(workingDirectory, '2')));
   });
 
+  it('多行命令：换行是命令边界，第 2 行起的写目标不能丢（ai-review #1650 第 3 轮）', () => {
+    // 修之前：canonicalizeCommand 把换行压成空格，tokenizer 又把 '\n' 当普通空白，
+    // 整段粘成一条 `printf ready cp ./a /tmp/report.txt`，首词是 printf ⇒ 零写目标，
+    // 越权写信号不响、安全维照过。
+    expect(resolve('printf ready\ncp ./a /tmp/report.txt').targets)
+      .toEqual([resolveCanonicalRunPath('/tmp/report.txt')]);
+    expect(resolve('echo one\necho two\nmv ./x /tmp/y').targets)
+      .toEqual([resolveCanonicalRunPath('/tmp/y')]);
+    // 同一段里重定向与 cp 各在一行，两个都要拿到
+    expect(resolve('echo hi > /tmp/r1\ncp ./a /tmp/r2').targets)
+      .toEqual([resolveCanonicalRunPath('/tmp/r1'), resolveCanonicalRunPath('/tmp/r2')].sort());
+    // 真阴：反斜杠续行仍是一条命令，目标照旧解析得出（别把续行当成命令边界）
+    expect(resolve('cp ./a \\\n/tmp/cont.txt').targets)
+      .toEqual([resolveCanonicalRunPath('/tmp/cont.txt')]);
+    // 真阴：第 2 行写在工作区内，不该被当成越权
+    expect(resolve('printf ready\ncp ./a ./b').targets)
+      .toEqual([resolveCanonicalRunPath(path.join(workingDirectory, 'b'))]);
+  });
+
+  it('已知边界：heredoc 正文里的命令仍会被当成命令（保守多判，不漏判）', () => {
+    // ponytail: 不做 heredoc 体追踪。多判的代价是多一次审批 / 多一条信号，
+    // 漏判的代价是真写到工作区外没人看见——两边不对称，选保守那边。
+    expect(resolve('cat <<EOF\ncp ./a /tmp/evil\nEOF').targets)
+      .toContain(resolveCanonicalRunPath('/tmp/evil'));
+  });
+
   it('tee 的每个文件参数都是写目标；cp / mv 只有最后一个', () => {
     expect(resolve('tee /etc/a /etc/b').targets)
       .toEqual(expect.arrayContaining([resolveCanonicalRunPath('/etc/a'), resolveCanonicalRunPath('/etc/b')]));

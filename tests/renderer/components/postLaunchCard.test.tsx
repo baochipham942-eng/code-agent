@@ -153,6 +153,20 @@ describe('上线后质量卡', () => {
     expect(hint).toContain('评分模型');
   });
 
+  it('Nit①judge 不可用的提示要说准：安全/产物仍算，重跑不会重评', () => {
+    render(
+      <PostLaunchCard
+        report={report({ judgeUnavailableTurns: 2 })}
+        running={false} error={null} days={7} onRun={noop} onOpenSession={noop}
+      />,
+    );
+    const hint = screen.getByTestId('postlaunch-judge-unavailable').textContent ?? '';
+    expect(hint).toContain('安全与产物');
+    expect(hint).toContain('跳过');
+    // 别再说「六维都没有」——那是假的
+    expect(hint).not.toContain('六维');
+  });
+
   it('⑦judge 都正常时不出这行', () => {
     render(<PostLaunchCard report={report()} running={false} error={null} days={7} onRun={noop} onOpenSession={noop} />);
     expect(screen.queryByTestId('postlaunch-judge-unavailable')).toBeNull();

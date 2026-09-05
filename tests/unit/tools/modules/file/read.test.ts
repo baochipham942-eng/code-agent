@@ -250,6 +250,44 @@ describe('readModule (native)', () => {
     });
   });
 
+  it('deduplicates covered unchanged ranges, but force, another actor, edits and clear re-read', async () => {
+    const file = path.join(tmpDir, 'dedupe.txt');
+    await fs.writeFile(file, 'alpha\nbeta\ngamma');
+    const handler = await readModule.createHandler();
+    const read = (extra: Record<string, unknown> = {}, ctx = makeCtx()) =>
+      handler.execute({ file_path: file, ...extra }, ctx, allowAll);
+    await read();
+    const repeated = await read({ offset: 2, limit: 1 });
+    expect(repeated).toMatchObject({ ok: true, meta: { deduplicated: true } });
+    if (repeated.ok) expect(repeated.output).not.toContain('beta');
+    expect(await read({ force: true })).toMatchObject({ output: expect.stringContaining('alpha') });
+    expect(await read({}, makeCtx({ sessionId: 'other' }))).toMatchObject({ output: expect.stringContaining('alpha') });
+    const stat = await fs.stat(file);
+    await fs.writeFile(file, 'ALPHA\nbeta\ngamma');
+    await fs.utimes(file, stat.atime, stat.mtime);
+    expect(await read()).toMatchObject({ output: expect.stringContaining('ALPHA') });
+    fileReadTracker.updateAfterEdit(file, stat.mtimeMs, stat.size, undefined, 'test-session:test-agent');
+    expect(await read()).toMatchObject({ output: expect.stringContaining('ALPHA') });
+    // 压缩后只忘掉「已展示范围」：Read 不再短路，但 Edit/Write 的外改证据（digest/mtime）必须还在
+    expect(await read()).toMatchObject({ meta: { deduplicated: true } });
+    fileReadTracker.forgetShownRanges();
+    const kept = fileReadTracker.getReadRecord(file, 'test-session:test-agent');
+    expect(kept?.digest).toBeDefined();
+    expect(kept?.shownRange).toBeUndefined();
+    expect(await read()).toMatchObject({ output: expect.stringContaining('ALPHA') });
+    fileReadTracker.clear();
+    expect(await read()).toMatchObject({ output: expect.stringContaining('ALPHA') });
+  });
+
+  it('does not deduplicate a range extending beyond the previously shown lines', async () => {
+    const file = path.join(tmpDir, 'ranges.txt');
+    await fs.writeFile(file, 'one\ntwo\nthree');
+    const handler = await readModule.createHandler();
+    await handler.execute({ file_path: file, limit: 1 }, makeCtx(), allowAll);
+    expect(await handler.execute({ file_path: file, limit: 2 }, makeCtx(), allowAll))
+      .toMatchObject({ output: expect.stringContaining('two') });
+  });
+
   describe('embedded param compatibility', () => {
     it('parses "file offset=N limit=N" format', async () => {
       const file = path.join(tmpDir, 'embed.txt');

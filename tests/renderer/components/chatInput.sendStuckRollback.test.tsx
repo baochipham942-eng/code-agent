@@ -30,6 +30,7 @@ import {
   type UseChatInputSubmitParams,
 } from '../../../src/renderer/components/features/chat/ChatInput/useChatInputSubmit';
 import { zh } from '../../../src/renderer/i18n/zh';
+import { useComposerStore } from '../../../src/renderer/stores/composerStore';
 
 const DRAFT = '这条消息不许被吞掉';
 
@@ -89,11 +90,27 @@ function Harness({ onSend }: { onSend: (envelope: ConversationEnvelope) => Promi
 
 afterEach(() => {
   cleanup();
+  useComposerStore.getState().resetForSuccessfulSend();
   vi.clearAllMocks();
   vi.useRealTimers();
 });
 
 describe('发送挂住不返回时的兜底', () => {
+  it.each([true, false])('发送结果 %s 只在成功后清空单轮能力', async (sent) => {
+    const store = useComposerStore.getState();
+    store.setSelectedSkillIds(['review']);
+    store.setSelectedConnectorIds(['mail']);
+    store.setSelectedMcpServerIds(['github']);
+    render(<Harness onSend={vi.fn().mockResolvedValue(sent)} />);
+    await act(async () => { screen.getByText('send').click(); });
+    expect(useComposerStore.getState()).toMatchObject({
+      selectedSkillIds: sent ? [] : ['review'],
+      selectedConnectorIds: sent ? [] : ['mail'],
+      selectedMcpServerIds: sent ? [] : ['github'],
+      turnCapabilityScopeMode: sent ? 'auto' : 'manual',
+    });
+  });
+
   it('超时后草稿退回输入框并出声，不留「输入框空了但哪儿都没有」的状态', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     // 永不 settle：模拟发送链路上任意一处挂死

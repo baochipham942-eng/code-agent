@@ -7,6 +7,7 @@ import {
   POST_LAUNCH_DIMENSIONS,
   fetchQualityRows,
   formatRate,
+  formatRubricKey,
   passRate,
   rollupByWeek,
   type QualityBucket,
@@ -228,7 +229,9 @@ function PostLaunchQuality({ buckets, truncated }: { buckets: QualityBucket[]; t
                     {bucket.promptVersion ? (
                       <span className="text-zinc-600"> · {bucket.promptVersion}</span>
                     ) : null}
-                    <span className="block text-zinc-600">{bucket.judgeVersion}</span>
+                    <span className="block text-zinc-600">
+                      {formatRubricKey({ judgeVersion: bucket.judgeVersion, rubricVersion: bucket.rubricVersion })}
+                    </span>
                   </td>
                   <td className="px-3 py-2 text-xs">
                     <span

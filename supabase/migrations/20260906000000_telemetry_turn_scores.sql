@@ -134,6 +134,7 @@ WITH scorable AS (
     sc.prompt_version,
     sc.judge_version,
     sc.rubric_version,
+    sc.scored_at,
     sc.user_id,
     sc.sampled_by,
     sc.dim_goal, sc.dim_orchestration, sc.dim_tools,
@@ -167,6 +168,8 @@ SELECT
   rubric_version,
   user_id,
   sampled_by,
+  -- 口径新旧的确定排序键：同一天可能同时有两版 judge/rubric 的行，只比天会靠返回顺序定胜负。
+  max(scored_at)::bigint                           AS last_scored_at,
   count(*)::int                                    AS turns,
   count(DISTINCT session_id)::int                  AS sessions,
   -- 六维各自「有判决的轮数 / 判过的轮数」：NULL 不进分母，所以 count(col) 就是分母。

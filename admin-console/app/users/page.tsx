@@ -1,7 +1,7 @@
 // /users — per-user 用量与成本聚合（admin 控制台 P2.2）
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import Link from 'next/link';
-import { fetchQualityRows, formatRate, overallPassRate, rollupByUser, type QualityBucket } from '@/lib/postlaunch';
+import { fetchQualityRows, formatRate, formatRubricKey, overallPassRate, rollupByUser, type QualityBucket, type UserQuality } from '@/lib/postlaunch';
 
 /** 「上线后过率」那一列的回看窗口。视图粒度是天，所以这里能精确切到 7 天。 */
 const POST_LAUNCH_WINDOW_DAYS = 7;
@@ -59,7 +59,11 @@ export default async function UsersPage() {
                 <th className="text-right px-3 py-2 font-normal">$</th>
                 <th className="text-right px-3 py-2 font-normal">工具</th>
                 <th className="text-right px-3 py-2 font-normal">
-                  上线后过率
+                  信号轮过率
+                  <span className="block text-zinc-600 font-normal">近 {POST_LAUNCH_WINDOW_DAYS} 天</span>
+                </th>
+                <th className="text-right px-3 py-2 font-normal">
+                  抽样轮过率
                   <span className="block text-zinc-600 font-normal">近 {POST_LAUNCH_WINDOW_DAYS} 天</span>
                 </th>
                 <th className="text-right px-3 py-2 font-normal">最近活跃</th>
@@ -84,7 +88,7 @@ export default async function UsersPage() {
                     {Number(u.total_cost).toFixed(4)}
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums">{u.total_tool_calls}</td>
-                  <PostLaunchCell bucket={qualityByUser.get(u.user_id)} />
+                  <PostLaunchCells quality={qualityByUser.get(u.user_id)} />
                   <td className="px-3 py-2 text-right text-zinc-400 text-xs">
                     {new Date(u.last_seen).toLocaleString()}
                   </td>
@@ -100,16 +104,36 @@ export default async function UsersPage() {
   );
 }
 
-/** 该用户近 7 天的六维总过率。没评过就是「—」，不是 0%。 */
-function PostLaunchCell({ bucket }: { bucket: QualityBucket | undefined }) {
-  if (!bucket) {
-    return <td className="px-3 py-2 text-right text-zinc-600 text-xs">—</td>;
+/**
+ * 该用户近 7 天的六维总过率，信号轮与抽样轮**两列分开**——信号轮是命中问题信号才评的，
+ * 天然偏低，和抽样轮加在一起得到的数字什么都不代表（ADR-063 §4）。
+ * 没评过是「—」，不是 0%。两列都取该用户最近那套 (judge, rubric) 口径。
+ */
+function PostLaunchCells({ quality }: { quality: UserQuality | undefined }) {
+  if (!quality) {
+    return (
+      <>
+        <td className="px-3 py-2 text-right text-zinc-600 text-xs">—</td>
+        <td className="px-3 py-2 text-right text-zinc-600 text-xs">—</td>
+      </>
+    );
   }
+  const rubric = formatRubricKey(quality.rubric);
+  return (
+    <>
+      <ScopeCell bucket={quality.signal} rubric={rubric} />
+      <ScopeCell bucket={quality.sample} rubric={rubric} />
+    </>
+  );
+}
+
+function ScopeCell({ bucket, rubric }: { bucket: QualityBucket | null; rubric: string }) {
+  if (!bucket) return <td className="px-3 py-2 text-right text-zinc-600 text-xs">—</td>;
   const rate = overallPassRate(bucket);
   return (
     <td
       className={`px-3 py-2 text-right tabular-nums ${rate !== null && rate < 0.8 ? 'text-red-400' : ''}`}
-      title={`${bucket.turns} 轮进分母 · judge ${bucket.judgeVersion}`}
+      title={`${bucket.turns} 轮进分母 · 口径 ${rubric}`}
     >
       {formatRate(rate)}
       <span className="text-zinc-600 text-xs"> / {bucket.turns} 轮</span>

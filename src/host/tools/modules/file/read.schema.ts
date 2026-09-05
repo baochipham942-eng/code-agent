@@ -17,10 +17,6 @@ export const readSchema: ToolSchema = {
         description:
           'Absolute path to the file; ~ is expanded. Put only the path here — offset/limit are separate parameters.',
       },
-      force: {
-        type: 'boolean',
-        description: 'Re-read unchanged content already shown this session.',
-      },
       offset: {
         type: 'number',
         description: 'First line to read, 1-indexed. Default 1. Past the end of the file returns empty content.',

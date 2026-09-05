@@ -1,6 +1,6 @@
 import os from 'os';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { TelemetrySession, TelemetryTurn } from '../../../src/shared/contract/telemetry';
+import type { TelemetrySession, TelemetryTurn, TelemetryTurnScoreRecord } from '../../../src/shared/contract/telemetry';
 
 const mocks = vi.hoisted(() => {
   const storage = {
@@ -29,8 +29,22 @@ const mocks = vi.hoisted(() => {
     getCurrentUser: vi.fn(),
     isSupabaseInitialized: vi.fn(),
     from: vi.fn(),
+    // telemetry_turn_scores 的查询住在 postLaunchScoreStore（那张表的家），不在 telemetryStorage 上
+    getUnsyncedTurnScores: vi.fn(() => []),
+    markTurnScoresSynced: vi.fn(),
   };
 });
+
+vi.mock('../../../src/host/testing/postlaunch/postLaunchScoreStore', async (importOriginal) => ({
+  // redactPostLaunchReason 走真实实现：脱敏双保险那条断言要的就是它真跑一遍
+  ...(await importOriginal<typeof import('../../../src/host/testing/postlaunch/postLaunchScoreStore')>()),
+  getUnsyncedTurnScores: mocks.getUnsyncedTurnScores,
+  markTurnScoresSynced: mocks.markTurnScoresSynced,
+}));
+
+vi.mock('../../../src/host/services/core/databaseService', () => ({
+  getDatabase: () => ({ getDb: () => ({ __fake: 'db' }) }),
+}));
 
 vi.mock('../../../src/host/services/infra', () => ({
   getSupabase: () => ({ from: mocks.from }),
@@ -139,6 +153,7 @@ describe('TelemetryUploaderService', () => {
       sessionId === session.id ? session : null
     ));
     mocks.storage.getUnsyncedRendererBundleAttempts.mockReturnValue([]);
+    mocks.getUnsyncedTurnScores.mockReturnValue([]);
   });
 
   it('marks eval sessions and feedback locally synced without sending sessions, turns, or feedback', async () => {
@@ -395,6 +410,184 @@ describe('TelemetryUploaderService', () => {
     ]);
     expect(String(attemptUpsert?.rows[0]?.error_message)).not.toContain(os.homedir());
     expect(mocks.storage.markRendererBundleAttemptsSynced).toHaveBeenCalledWith(['attempt-1']);
+  });
+
+    describe('上线后分数上云（ADR-063 §6.3 · 元数据档）', () => {
+    const score: TelemetryTurnScoreRecord = {
+      turnId: 'turn-1',
+      sessionId: 'session-1',
+      scoredAt: 1_780_000_000_000,
+      scoredDay: '2026-09-06',
+      turnStartedAt: 1_779_999_000_000,
+      appVersion: '0.33.0',
+      promptVersion: 'p7',
+      judgeVersion: 'postlaunch-judge-v1',
+      rubricVersion: 'postlaunch-rubric-v1',
+      judgeModel: 'deepseek/deepseek-chat',
+      dimGoal: 1,
+      dimOrchestration: 0,
+      dimTools: null,
+      dimPermission: 1,
+      dimSafety: 1,
+      dimArtifact: 1,
+      failureClass: 'TOOL_MISUSE',
+      reasonRedacted: '工具连调三次同一个参数没换法子',
+      redacted: false,
+      signals: '["repeat_loop"]',
+      costUsd: 0.0021,
+      sampledBy: 'signal',
+    };
+
+    function captureUpserts() {
+      const upserts: Array<{ table: string; rows: Record<string, unknown>[] }> = [];
+      mocks.from.mockImplementation((table: string) => ({
+        upsert: vi.fn(async (rows: Record<string, unknown>[]) => {
+          upserts.push({ table, rows });
+          return { error: null };
+        }),
+      }));
+      return upserts;
+    }
+
+    it('把分数行按 ADR-063 §1 的列清单传上去，并标记本地 synced_at', async () => {
+      mocks.getUnsyncedTurnScores.mockReturnValue([score]);
+      const upserts = captureUpserts();
+
+      const { TelemetryUploaderService } = await import('../../../src/host/telemetry/telemetryUploaderService');
+      await new TelemetryUploaderService().upload();
+
+      const scoreUpsert = upserts.find((entry) => entry.table === 'telemetry_turn_scores');
+      expect(scoreUpsert?.rows).toEqual([
+        expect.objectContaining({
+          turn_id: 'turn-1',
+          session_id: 'session-1',
+          user_id: 'user-1',
+          device_id: 'device-test',
+          app_version: '0.33.0',
+          prompt_version: 'p7',
+          judge_version: 'postlaunch-judge-v1',
+          rubric_version: 'postlaunch-rubric-v1',
+          judge_model: 'deepseek/deepseek-chat',
+          dim_goal: 1,
+          dim_orchestration: 0,
+          dim_tools: null,
+          failure_class: 'TOOL_MISUSE',
+          reason_redacted: '工具连调三次同一个参数没换法子',
+          redacted: false,
+          // TEXT JSON 解析成数组写 JSONB，不是把引号串塞进去
+          signals: ['repeat_loop'],
+          cost_usd: 0.0021,
+          sampled_by: 'signal',
+        }),
+      ]);
+      // 上传成功才标记；这是「分数行上传后 synced_at 非空」那条断言的落点
+      expect(mocks.markTurnScoresSynced).toHaveBeenCalledWith(expect.anything(), ['turn-1']);
+    });
+
+    it('只传元数据：本机去重键与本地预算账不出机器，正文一列都没有', async () => {
+      mocks.getUnsyncedTurnScores.mockReturnValue([score]);
+      const upserts = captureUpserts();
+
+      const { TelemetryUploaderService } = await import('../../../src/host/telemetry/telemetryUploaderService');
+      await new TelemetryUploaderService().upload();
+
+      const row = upserts.find((entry) => entry.table === 'telemetry_turn_scores')?.rows[0] ?? {};
+      // 白名单：出机器的列必须逐个能在 ADR-063 §1 里指到，多一列都算越界
+      expect(Object.keys(row).sort()).toEqual([
+        'app_version', 'cost_usd', 'device_id',
+        'dim_artifact', 'dim_goal', 'dim_orchestration', 'dim_permission', 'dim_safety', 'dim_tools',
+        'failure_class', 'judge_model', 'judge_version', 'prompt_version', 'reason_redacted',
+        'redacted', 'rubric_version', 'sampled_by', 'scored_at', 'scored_day', 'session_id',
+        'signals', 'turn_id', 'turn_started_at', 'user_id',
+      ]);
+    });
+
+    it('一行理由出机器前再过一次脱敏闸：命中即置空并标 redacted（双保险）', async () => {
+      // 本机写库时 redacted=false（当时这一行是干净的），但表里躺着一个 token 形状的串——
+      // 只信本地那一次判断就会把它原样发出去。
+      mocks.getUnsyncedTurnScores.mockReturnValue([
+        { ...score, reasonRedacted: 'judge 报错 authorization: sk-abc123def456ghi789', redacted: false },
+      ]);
+      const upserts = captureUpserts();
+
+      const { TelemetryUploaderService } = await import('../../../src/host/telemetry/telemetryUploaderService');
+      await new TelemetryUploaderService().upload();
+
+      const row = upserts.find((entry) => entry.table === 'telemetry_turn_scores')?.rows[0];
+      expect(row?.reason_redacted).toBe('');
+      expect(row?.redacted).toBe(true);
+      expect(String(row?.reason_redacted)).not.toContain('sk-abc123def456ghi789');
+    });
+
+    it('会话先于分数：分数段排在 markSessionsSynced 之后，本轮上传的会话其分数同轮跟着走', async () => {
+      const order: string[] = [];
+      mocks.storage.markSessionsSynced.mockImplementation(() => { order.push('markSessionsSynced'); });
+      mocks.getUnsyncedTurnScores.mockImplementation(() => {
+        order.push('getUnsyncedTurnScores');
+        return [score];
+      });
+      captureUpserts();
+
+      const { TelemetryUploaderService } = await import('../../../src/host/telemetry/telemetryUploaderService');
+      await new TelemetryUploaderService().upload();
+
+      expect(order).toEqual(['markSessionsSynced', 'getUnsyncedTurnScores']);
+    });
+
+    it('分数上传失败不回退前面几段已打的标记，健康状态如实记账', async () => {
+      mocks.getUnsyncedTurnScores.mockReturnValue([score]);
+      mocks.from.mockImplementation((table: string) => ({
+        upsert: vi.fn(async () => ({
+          error: table === 'telemetry_turn_scores'
+            ? { code: '23503', message: 'insert or update on table violates foreign key constraint' }
+            : null,
+        })),
+      }));
+
+      const { TelemetryUploaderService } = await import('../../../src/host/telemetry/telemetryUploaderService');
+      const service = new TelemetryUploaderService();
+      await service.upload();
+
+      expect(mocks.markTurnScoresSynced).not.toHaveBeenCalled();
+      expect(mocks.storage.markSessionsSynced).toHaveBeenCalledWith(['session-1']);
+      expect(service.getUploadHealth()).toMatchObject({
+        lastUploadAt: null,
+        lastUploadError: expect.stringContaining('telemetry_turn_scores'),
+      });
+    });
+  });
+
+  it('会话行带上 origin_kind，云端才剔得掉脚本会话', async () => {
+    mocks.storage.getUnsyncedSessions.mockReturnValue([{ ...session, originKind: 'headless' }]);
+    const upserts: Array<{ table: string; rows: Record<string, unknown>[] }> = [];
+    mocks.from.mockImplementation((table: string) => ({
+      upsert: vi.fn(async (rows: Record<string, unknown>[]) => {
+        upserts.push({ table, rows });
+        return { error: null };
+      }),
+    }));
+
+    const { TelemetryUploaderService } = await import('../../../src/host/telemetry/telemetryUploaderService');
+    await new TelemetryUploaderService().upload();
+
+    const sessionRow = upserts.find((entry) => entry.table === 'telemetry_sessions')?.rows[0];
+    expect(sessionRow).toMatchObject({ id: 'session-1', origin_kind: 'headless' });
+  });
+
+  it('没有来源标记的存量会话传 null，不编造一个来源', async () => {
+    const upserts: Array<{ table: string; rows: Record<string, unknown>[] }> = [];
+    mocks.from.mockImplementation((table: string) => ({
+      upsert: vi.fn(async (rows: Record<string, unknown>[]) => {
+        upserts.push({ table, rows });
+        return { error: null };
+      }),
+    }));
+
+    const { TelemetryUploaderService } = await import('../../../src/host/telemetry/telemetryUploaderService');
+    await new TelemetryUploaderService().upload();
+
+    const sessionRow = upserts.find((entry) => entry.table === 'telemetry_sessions')?.rows[0];
+    expect(sessionRow).toHaveProperty('origin_kind', null);
   });
 
   describe('T5 resilience: backoff + circuit breaker on persistent 4xx/policy failures', () => {

@@ -23,11 +23,10 @@ import {
   type PostLaunchScoringResult,
   type PostLaunchTurnScore,
 } from '../../../shared/contract/postLaunchScore';
-import { guardSensitiveText } from '../../security/sensitiveDataGuard';
 import { classifyFailure, type FailureCodebook } from '../failureCodes';
 import { buildPostLaunchJudgePrompt, judgePostLaunchTurn, type PostLaunchJudgeLlmCall } from '../judge/postLaunchJudge';
 import { computeTurnSignals } from './postLaunchSignals';
-import { getBudgetState, getScoredTurnIds, insertTurnScore, localDay,
+import { getBudgetState, getScoredTurnIds, insertTurnScore, localDay, redactPostLaunchReason,
   acquireScoringLock,
   releaseScoringLock,
   renewScoringLock,
@@ -163,20 +162,6 @@ function collectScorableTurns(replay: StructuredReplay, turnRows: TurnRow[]): Sc
   return [...owners.values()].sort((left, right) => right.startedAt - left.startedAt);
 }
 
-/**
- * 一行理由过脱敏闸：命中即置空并标 redacted（ADR-063 §1）。
- * 不做「脱敏后照发」——理由是给人看的一句话，掩码后的残句既没信息又让人以为看到了全部。
- */
-function redactReason(reason: string): { text: string; redacted: boolean } {
-  const trimmed = reason.trim().slice(0, POST_LAUNCH_DEFAULTS.reasonMaxChars);
-  if (!trimmed) return { text: '', redacted: false };
-  const guarded = guardSensitiveText(trimmed, {
-    surface: 'export',
-    mode: 'share',
-    maxLength: trimmed.length + 1,
-  });
-  return guarded === trimmed ? { text: trimmed, redacted: false } : { text: '', redacted: true };
-}
 
 /** 安全 / 产物两维由信号直接映射，不问模型。 */
 function mapDeterministicDims(signals: DeterministicSignal[]): Pick<PostLaunchDims, 'safety' | 'artifact'> {
@@ -353,7 +338,7 @@ export async function runPostLaunchScoring(
 
       const errorTexts = turn.blocks.filter((block) => block.type === 'error').map((block) => block.content);
       const anyDimFailed = Object.values(dims).some((value) => value === 0);
-      const reason = redactReason(reasoning);
+      const reason = redactPostLaunchReason(reasoning);
       const score: PostLaunchTurnScore = {
         sessionId: session.id,
         turnId: turn.turnId,

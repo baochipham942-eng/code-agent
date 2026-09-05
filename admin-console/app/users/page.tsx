@@ -1,6 +1,10 @@
 // /users — per-user 用量与成本聚合（admin 控制台 P2.2）
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import Link from 'next/link';
+import { fetchQualityRows, formatRate, overallPassRate, rollupByUser, type QualityBucket } from '@/lib/postlaunch';
+
+/** 「上线后过率」那一列的回看窗口。视图粒度是天，所以这里能精确切到 7 天。 */
+const POST_LAUNCH_WINDOW_DAYS = 7;
 
 type Row = {
   user_id: string;
@@ -15,12 +19,16 @@ type Row = {
 
 export default async function UsersPage() {
   const supabase = await createSupabaseServerClient();
-  const { data } = await supabase
-    .from('admin_per_user_telemetry')
-    .select('*')
-    .order('last_seen', { ascending: false })
-    .limit(200)
-    .returns<Row[]>();
+  const [{ data }, qualityRows] = await Promise.all([
+    supabase
+      .from('admin_per_user_telemetry')
+      .select('*')
+      .order('last_seen', { ascending: false })
+      .limit(200)
+      .returns<Row[]>(),
+    fetchQualityRows(supabase, POST_LAUNCH_WINDOW_DAYS),
+  ]);
+  const qualityByUser = rollupByUser(qualityRows);
 
   return (
     <main className="min-h-screen bg-zinc-950 text-zinc-100 p-8 max-w-5xl mx-auto">
@@ -45,6 +53,10 @@ export default async function UsersPage() {
                 <th className="text-right px-3 py-2 font-normal">tokens</th>
                 <th className="text-right px-3 py-2 font-normal">$</th>
                 <th className="text-right px-3 py-2 font-normal">工具</th>
+                <th className="text-right px-3 py-2 font-normal">
+                  上线后过率
+                  <span className="block text-zinc-600 font-normal">近 {POST_LAUNCH_WINDOW_DAYS} 天</span>
+                </th>
                 <th className="text-right px-3 py-2 font-normal">最近活跃</th>
               </tr>
             </thead>
@@ -67,6 +79,7 @@ export default async function UsersPage() {
                     {Number(u.total_cost).toFixed(4)}
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums">{u.total_tool_calls}</td>
+                  <PostLaunchCell bucket={qualityByUser.get(u.user_id)} />
                   <td className="px-3 py-2 text-right text-zinc-400 text-xs">
                     {new Date(u.last_seen).toLocaleString()}
                   </td>
@@ -79,5 +92,22 @@ export default async function UsersPage() {
         <p className="text-zinc-500 text-sm py-4">暂无用户聚合数据。</p>
       )}
     </main>
+  );
+}
+
+/** 该用户近 7 天的六维总过率。没评过就是「—」，不是 0%。 */
+function PostLaunchCell({ bucket }: { bucket: QualityBucket | undefined }) {
+  if (!bucket) {
+    return <td className="px-3 py-2 text-right text-zinc-600 text-xs">—</td>;
+  }
+  const rate = overallPassRate(bucket);
+  return (
+    <td
+      className={`px-3 py-2 text-right tabular-nums ${rate !== null && rate < 0.8 ? 'text-red-400' : ''}`}
+      title={`${bucket.turns} 轮进分母`}
+    >
+      {formatRate(rate)}
+      <span className="text-zinc-600 text-xs"> / {bucket.turns} 轮</span>
+    </td>
   );
 }

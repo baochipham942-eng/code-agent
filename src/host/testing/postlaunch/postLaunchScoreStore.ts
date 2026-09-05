@@ -24,7 +24,27 @@ import {
   type PostLaunchSignalKind,
   type PostLaunchTurnScore,
 } from '../../../shared/contract/postLaunchScore';
+import type { TelemetryTurnScoreRecord } from '../../../shared/contract/telemetry';
 import { guardTelemetryText } from '../../telemetry/telemetryStorageParsers';
+import { guardSensitiveText } from '../../security/sensitiveDataGuard';
+
+/**
+ * 一行理由过脱敏闸：命中即置空并标 redacted（ADR-063 §1）。
+ * 不做「脱敏后照发」——理由是给人看的一句话，掩码后的残句既没信息又让人以为看到了全部。
+ *
+ * 打分器写库前调一次，上传器把这一行发出机器前**再调一次**（K3 双保险）。
+ * 两处必须是同一个函数：一旦脱敏口径分叉，本机看着干净、云端存的却是另一套判断的结果。
+ */
+export function redactPostLaunchReason(reason: string): { text: string; redacted: boolean } {
+  const trimmed = reason.trim().slice(0, POST_LAUNCH_DEFAULTS.reasonMaxChars);
+  if (!trimmed) return { text: '', redacted: false };
+  const guarded = guardSensitiveText(trimmed, {
+    surface: 'export',
+    mode: 'share',
+    maxLength: trimmed.length + 1,
+  });
+  return guarded === trimmed ? { text: trimmed, redacted: false } : { text: '', redacted: true };
+}
 
 /** 本地日历日（不是 UTC）：日预算按用户看到的「今天」切。 */
 export function localDay(timestamp: number): string {
@@ -77,6 +97,76 @@ export function insertTurnScore(db: BetterSqlite3.Database, score: PostLaunchTur
     score.budgetCostUsd,
     score.sampledBy,
   );
+}
+
+/**
+ * 取尚未回传云端的分数行（ADR-063 §6.3）。查询留在本模块——telemetry_turn_scores 的
+ * 每一条 SQL 都在这里，上传器不自己拼；telemetryStorage.ts 已经顶到 god-file 上限（999/1000
+ * 有效行），往那儿加等于逼下一个人去拆它。
+ *
+ * 两道额外的门都是为了云端外键（telemetry_turn_scores.session_id → telemetry_sessions.id）：
+ *   - `s.synced_at IS NOT NULL`：会话没上过云，分数行上去必挂外键，白 burn 一次重试；
+ *   - `session_type <> 'eval'`：eval 会话在上传器里是**本地标记已同步但从不上传**的
+ *     （upload() 的 excludedEvalSessions），synced_at 也非空，光看它会被骗。
+ *
+ * SELECT 列表就是允许出机器的那一份（TelemetryTurnScoreRecord）：本机去重键 prompt_hash
+ * 与本地预算账 budget_cost_usd 压根不读出来，上传器也就无从传起。
+ */
+export function getUnsyncedTurnScores(db: BetterSqlite3.Database, limit = 200): TelemetryTurnScoreRecord[] {
+  const rows = db
+    .prepare(`
+      SELECT sc.turn_id, sc.session_id, sc.scored_at, sc.scored_day, sc.turn_started_at,
+             sc.app_version, sc.prompt_version, sc.judge_version, sc.rubric_version, sc.judge_model,
+             sc.dim_goal, sc.dim_orchestration, sc.dim_tools,
+             sc.dim_permission, sc.dim_safety, sc.dim_artifact,
+             sc.failure_class, sc.reason_redacted, sc.redacted, sc.signals,
+             sc.cost_usd, sc.sampled_by
+      FROM telemetry_turn_scores AS sc
+      JOIN telemetry_sessions AS s ON s.id = sc.session_id
+      WHERE sc.synced_at IS NULL
+        AND s.synced_at IS NOT NULL
+        AND (s.session_type IS NULL OR s.session_type <> 'eval')
+      ORDER BY sc.scored_at ASC
+      LIMIT ?
+    `)
+    .all(limit) as Array<Record<string, unknown>>;
+  return rows.map((r) => ({
+    turnId: r.turn_id as string,
+    sessionId: r.session_id as string,
+    scoredAt: r.scored_at as number,
+    scoredDay: r.scored_day as string,
+    turnStartedAt: r.turn_started_at as number,
+    appVersion: (r.app_version as string | null) ?? null,
+    promptVersion: (r.prompt_version as string | null) ?? null,
+    judgeVersion: r.judge_version as string,
+    rubricVersion: r.rubric_version as string,
+    judgeModel: (r.judge_model as string | null) ?? null,
+    dimGoal: (r.dim_goal as number | null) ?? null,
+    dimOrchestration: (r.dim_orchestration as number | null) ?? null,
+    dimTools: (r.dim_tools as number | null) ?? null,
+    dimPermission: (r.dim_permission as number | null) ?? null,
+    dimSafety: (r.dim_safety as number | null) ?? null,
+    dimArtifact: (r.dim_artifact as number | null) ?? null,
+    failureClass: (r.failure_class as string | null) ?? null,
+    reasonRedacted: (r.reason_redacted as string | null) ?? '',
+    redacted: r.redacted === 1,
+    signals: (r.signals as string | null) ?? '[]',
+    costUsd: (r.cost_usd as number | null) ?? 0,
+    sampledBy: r.sampled_by as 'signal' | 'sample',
+  }));
+}
+
+/** 标记一批分数行已回传。重新评分走 INSERT OR REPLACE，synced_at 自动归 NULL 重传。 */
+export function markTurnScoresSynced(
+  db: BetterSqlite3.Database,
+  turnIds: string[],
+  syncedAt: number = Date.now(),
+): void {
+  if (turnIds.length === 0) return;
+  const stmt = db.prepare('UPDATE telemetry_turn_scores SET synced_at = ? WHERE turn_id = ?');
+  db.transaction(() => {
+    for (const turnId of turnIds) stmt.run(syncedAt, turnId);
+  })();
 }
 
 export function getScoredTurnIds(db: BetterSqlite3.Database, turnIds: string[], judgeVersions: string[] = [POST_LAUNCH_JUDGE_VERSION]): Set<string> {

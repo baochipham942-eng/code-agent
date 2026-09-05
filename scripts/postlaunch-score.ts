@@ -69,6 +69,13 @@ function costUsd(provider: string, model: string, inputTokens: number, outputTok
 
 async function main(): Promise<void> {
   const options = parseArgs();
+  // 开关三态先判：关着就一步都别走——不开库、不建表、不初始化服务，更不叫模型。
+  // CLI 起不了插件运行时，判不了「内部槽」，所以按最保守的 false 算默认；
+  // 想在 CLI 上评就必须在设置里显式打开（settings.json 的 privacy.postLaunchScoring）。
+  if (!options.dryRun && !resolvePostLaunchScoringEnabled(readScoringSwitch(), false)) {
+    console.error(POST_LAUNCH_DISABLED_MESSAGE);
+    process.exit(1);
+  }
   const dataDir = resolveDataDir();
   const dbPath = path.join(dataDir, 'code-agent.db');
   if (!fs.existsSync(dbPath)) {
@@ -80,12 +87,6 @@ async function main(): Promise<void> {
   applyTelemetrySchema(db, createLogger('postlaunch-score'));
   // 回放的证据投影会走 DatabaseService 单例（telemetryReplayEvidence.ts:32），不初始化就每会话报一次「Database not initialized」
   await getDatabase().initialize();
-  // 开关三态：CLI 起不了插件运行时，判不了「内部槽」，所以这里按最保守的 false 算默认——
-  // 想在 CLI 上评就必须在设置里显式打开（settings.json 的 privacy.postLaunchScoring）。
-  if (!options.dryRun && !resolvePostLaunchScoringEnabled(readScoringSwitch(), false)) {
-    console.error(POST_LAUNCH_DISABLED_MESSAGE);
-    process.exit(1);
-  }
   const judge = getQuickModelRuntimeInfo();
   console.log(`库：${dbPath}`);
   console.log(`打分模型：${judge ? `${judge.provider}/${judge.model}` : '未配置'}${options.dryRun ? '（--dry-run，不会调用）' : ''}`);
@@ -139,6 +140,12 @@ async function main(): Promise<void> {
     if (group.failureClasses.length > 0) {
       console.log(`  失败类别：${group.failureClasses.map((entry) => `${entry.code} ${entry.count}`).join(' · ')}`);
     }
+  }
+  // 与卡片的预算行同一口径：预算记的是 budget_cost_usd（含未知价的保守估算），
+  // 上面那行「刊例估算」记的是 cost_usd。两个数不同名不同义，别让人以为其中一个算错了。
+  console.log(`\n今日预算已记 $${report.budget.spentUsd.toFixed(4)} / $${report.budget.limitUsd.toFixed(4)}，抽样 ${report.budget.sampledCount}/${report.budget.sampleLimit} 轮`);
+  if (report.budget.assumedUsd > 0) {
+    console.log(`  其中 $${report.budget.assumedUsd.toFixed(4)} 是按保守默认价估的——评分模型没有公开刊例，为了守住预算才这么算，不是真实账单。`);
   }
   if (report.calibration.state === 'insufficient') {
     console.log('\n⚠️ 校准不足：这套打分还没跟人工判定对过，分数只能当线索，别当结论。');

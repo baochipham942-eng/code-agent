@@ -173,6 +173,26 @@ describe('initializeCLIServices durable wiring', () => {
     }));
   });
 
+  it.each([false, true])('任务宿主 enabled=%s 时保持 CLI 边界和显式 deny', async (enabled) => {
+    const { createAgentLoop, initializeCLIServices } = await import('../../../src/cli/bootstrap');
+    const { filterToolsByRunPolicy } = await import('../../../src/host/agent/runtime/toolRunPolicy');
+    const names = ['delegate_task', 'steer_task', 'cancel_task', 'task_status'];
+    const tools = names.map((name): ToolDefinition => ({
+      name, description: name, inputSchema: { type: 'object', properties: {} },
+      outputSchema: { type: 'string' }, permissionLevel: 'read', requiresPermission: false,
+    }));
+    await initializeCLIServices();
+    createAgentLoop({
+      workingDirectory: process.cwd(), modelConfig: { provider: 'openai', model: 'test-model' },
+      outputFormat: 'text', enablePlanning: false, enableHooks: false, debug: false,
+      taskManagerToolsEnabled: enabled, allowedToolNames: names, deniedToolNames: ['cancel_task'],
+    }, vi.fn());
+    const runtimeConfig = mocks.agentLoopConfigs.at(-1) as Parameters<typeof filterToolsByRunPolicy>[1];
+    expect(filterToolsByRunPolicy(tools, runtimeConfig).map((tool) => tool.name))
+      .toEqual(enabled ? ['delegate_task', 'steer_task', 'task_status'] : []);
+    expect(runtimeConfig.deniedToolNames).toContain('cancel_task');
+  });
+
   it('warns visibly without failing CLI startup when the database is unavailable', async () => {
     vi.resetModules();
     mocks.initCLIDatabase.mockRejectedValueOnce(new Error('sqlite unavailable'));

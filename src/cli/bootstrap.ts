@@ -663,7 +663,7 @@ export function createAgentLoop(
     agentName: config.agentOverride?.name ?? 'default',
     requestedAgentId: config.requestedAgentId,
     deniedToolNames: Array.from(new Set([
-      ...CLI_TASK_MANAGER_TOOL_DENYLIST,
+      ...(config.taskManagerToolsEnabled ? [] : CLI_TASK_MANAGER_TOOL_DENYLIST),
       ...(config.deniedToolNames ?? []),
       ...(config.agentOverride?.deniedToolNames ?? []),
     ])),

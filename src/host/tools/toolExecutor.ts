@@ -914,6 +914,7 @@ export class ToolExecutor {
       agentId: contextAgentId,
       spawnDepth: options.spawnDepth,
       spawnMaxDepth: options.spawnMaxDepth ?? this.spawnMaxDepth,
+      forcePermissionHandler: this.forcePermissionHandler,
       spawnTreeId: options.spawnTreeId,
       swarmRunScope: options.swarmRunScope,
       spawnQueueTimeoutMs: options.spawnQueueTimeoutMs,

@@ -39,6 +39,9 @@ export function createSubagentToolRuntime(input: {
     // 未标注的子 agent 路径不受 TOPOLOGY_RULES 约束（Option A 保守默认）。
     executionTopology: context.executionTopology ?? 'main',
     ledgerOrigin: 'subagent',
+    // 继承父执行器的契约：父级强制走 handler 时，子代理里分类器自动放行的工具
+    // 也必须落到 context.permission.request，否则父级的 scripted 策略对它们是瞎的。
+    forcePermissionHandler: context.forcePermissionHandler,
     telemetryCollector: context.telemetryCollector,
     requestPermission: async (request) => {
       const forceConfirm = request.forceConfirm === true;

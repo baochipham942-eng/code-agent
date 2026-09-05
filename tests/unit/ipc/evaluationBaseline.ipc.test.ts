@@ -60,7 +60,7 @@ function loadedExperiment(id: string, split = 'held-in', k = 1) {
         mode: 'real',
         caseBankSha: `bank-${split}`,
         aggregationRuleVersion: 4,
-        shape: { skills: [], memory: false, swarm: false, harness: null },
+        shape: { skills: [], plugins: [], memory: false, swarm: false, harness: null },
         divergesFromProduction: ['memory'],
       }),
       summary_json: JSON.stringify({

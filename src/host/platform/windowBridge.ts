@@ -70,6 +70,19 @@ export function broadcastToRenderer(channel: string, data: unknown): void {
 }
 
 /**
+ * 此刻有没有人在收 renderer 推送。
+ *
+ * 判据就是 bus 上的订阅数：SSE/WebSocket 层经 onRendererPush 订阅，没有订阅者
+ * 就是没有渲染进程会收到广播——broadcastToRenderer 本身是 emit，静默丢弃。
+ * 比 hasInteractiveUi() 精确：那个答的是「有没有人能在 UI 回答」，评测跑题时会被
+ * 显式压成 false（agentAdapter 的 overrideBrowserWindowInteractionProbe），
+ * 但从评测中心 UI 发起的跑法其实渲染进程健在、面板跑得动。
+ */
+export function hasRendererPushListener(): boolean {
+  return rendererBus.listenerCount('push') > 0;
+}
+
+/**
  * 监听所有推送事件（供 SSE/WebSocket 层订阅）
  */
 export function onRendererPush(listener: (channel: string, data: unknown) => void): () => void {

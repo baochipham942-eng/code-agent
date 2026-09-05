@@ -30,7 +30,9 @@ const mocks = vi.hoisted(() => {
     isSupabaseInitialized: vi.fn(),
     from: vi.fn(),
     // telemetry_turn_scores 的查询住在 postLaunchScoreStore（那张表的家），不在 telemetryStorage 上
-    getUnsyncedTurnScores: vi.fn(() => []),
+    // 返回类型要显式写：typescript7 会把 `vi.fn(() => [])` 的空数组推成 never[]，
+    // 后面 mockReturnValue([score]) 就全成了 TS2322（普通 tsc 不报，11/43 那格报）。
+    getUnsyncedTurnScores: vi.fn((): TelemetryTurnScoreRecord[] => []),
     markTurnScoresSynced: vi.fn(),
   };
 });

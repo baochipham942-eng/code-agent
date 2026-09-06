@@ -17,13 +17,6 @@ export const REPAIR_PROMPT_LIMITS = {
 // When either reaches this value the repair turn is force-stopped.
 export const ARTIFACT_REPAIR_MAX_ATTEMPTS = 4;
 
-// Trailing-message window for cold-start guard seeding. Count is messages, not
-// failures: ordinary turns and successful validations must age a stale failure
-// out. 24 = 3× the historical 8-message window, covering one full repair
-// episode (MAX_ATTEMPTS=4 × ~5 messages for fail envelope + assistant + tools
-// + extras) without unbounded lookback across later unrelated turns.
-export const ARTIFACT_REPAIR_GUARD_SEED_MESSAGE_WINDOW = 24;
-
 // ============================================================
 // 修复策略裁决（patience + 修复/重写双信号，maka 借鉴批 WP3）
 // 行业对齐：OpenHands StuckDetector（重复模式 4 次硬停）、

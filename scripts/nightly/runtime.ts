@@ -123,6 +123,13 @@ export async function runEmptyCase(spec: Case, state: Resident, dir: string, run
       const locator = page.locator('[data-testid="context-health-detail"]').getByText(text, { exact: true });
       criteria.push({ scope: 'context-health-detail', locator: `getByText(${JSON.stringify(text)}, exact=true)`, text, visible: await locator.isVisible(), disabled: await locator.count() ? await locator.isDisabled() : null });
     }
+    if (name === 'first-snapshot') {
+      const detail = page.locator('[data-testid="context-health-detail"]');
+      const visible = await detail.isVisible();
+      const text = visible ? await detail.innerText() : '';
+      criteria.push({ scope: 'context-health-detail', locator: '[data-testid="context-health-detail"]', text,
+        visible: visible && observations.responses.at(-1)?.tokenSource === 'provider' && /\d+(?:\.\d+)?%/.test(text) && !/还没有健康度信息|等待统计上下文容量/.test(text), disabled: null });
+    }
     await page.screenshot({ path: path.join(dir, `screens/${index}.png`) });
     save(path.join(dir, `screens/${index}.dom.json`), { event: name, timestamp: new Date().toISOString(), sessionId, snapshot: observations.responses.at(-1), criteria, body: await page.locator('body').innerText() });
     row.frames.push(index);
@@ -200,6 +207,7 @@ export async function runEmptyCase(spec: Case, state: Resident, dir: string, run
       await delay(500);
     }
     observations.responses.push(await api<Health | null>(state, 'context/health/get', [sessionId]));
+    if (!await page.locator('[data-testid="context-health-detail"]').isVisible() && await pill.isVisible()) await pill.click();
     await frame('first-snapshot', []);
   } catch (error) { observations.error = scrub(String(error)); await frame('error', []).catch(e => { observations.captureError = scrub(String(e)); }); }
   finally { await browser.close(); }
@@ -242,7 +250,7 @@ export async function runEmptyCase(spec: Case, state: Resident, dir: string, run
   row.checks = [
     check(!observations.error && (initial === null || initial?.lastUpdated === 0) && messages.filter(m => m.role === 'user').length === expectedUserCount && audit.length === 0 && finalSnapshot?.tokenSource === 'provider', `初始空快照、user=${expectedUserCount}（实得 ${messages.filter(m => m.role === 'user').length}）、无压缩快照；见 result/messages/audit`),
     check(terminal && observations.process.steps <= 8 && observations.process.subagents.length === 0 && audit.length === 0 && modelCalls === 1 && tools === 0 && approvals === 0 && cost.length > 0 && cost.reduce((a, b) => a + b, 0) <= 0.05, `终态=${terminal}，主模型响应=${modelCalls || '未知'}，工具=${tools}，审批=${approvals}，费用=${cost.length ? cost.join('+') : '未知'}；费用≤$0.05，缺遥测不推定为零`),
-    check(row.frames.length === 3 && row.frames.slice(0, 2).every(f => JSON.parse(readFileSync(path.join(dir, `screens/${f}.dom.json`), 'utf8')).criteria.every((c: { visible: boolean }) => c.visible)), '空态/等待态精确文本与三帧截图；稿 S-30/S-47/S-31')
+    check(row.frames.length === 3 && row.frames.every(f => JSON.parse(readFileSync(path.join(dir, `screens/${f}.dom.json`), 'utf8')).criteria.every((c: { visible: boolean }) => c.visible)), '空态/等待态精确文本与三帧截图；稿 S-30/S-47/S-31')
   ];
   row.endedAt = new Date().toISOString();
   row.status = row.checks.every(c => c.status === '通过') ? '通过' : '失败';

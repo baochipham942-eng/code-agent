@@ -9,6 +9,8 @@ import type { CapabilityCenterItem } from '../../../../src/shared/contract/capab
 import type { ControlPlaneEnvelope } from '../../../../src/shared/contract/controlPlane';
 
 const agentEngineList = vi.hoisted(() => vi.fn());
+/** 落到真实远程注册表单例的次数；任何一次都说明有用例漏传 opt-out（见下方 vi.mock 注释）。 */
+const remoteSingletonHits = vi.hoisted(() => ({ count: 0 }));
 
 // 本文件几条用例原先没传 remoteCapabilityRegistryService，于是落到真实单例
 // getRemoteCapabilityRegistryService()。实测（去掉下面的 opt-out 反复对拍三次）：走真实
@@ -252,6 +254,25 @@ vi.mock('../../../../src/host/services/agentEngine', () => ({
   }),
 }));
 
+// 漏传 remoteCapabilityRegistryService 的用例会落到真实单例：本机上它没有控制面公钥、
+// 早退得很快，看不出问题；换台机器（远程工人机 zj032）同一条用例确定性 30s 超时打红整道门
+// —— 2026-09-06 实测同一条用例本机 8ms / 远程 30.01s，补上 opt-out 后远程 8ms。
+//
+// 光让单例入口抛错不够：readRemoteCapabilityRegistry 有 try/catch 兜底，抛出来会被吞成
+// 一条 warn，"漏传"于是变成静默通过——快了，但仍然看不见。所以抛错只负责"别慢"，
+// 另加计数 + afterEach 断言负责"别静默"：谁漏传，收尾当场红，并点名这个文件。
+// 类本体保持真实（下面几条用例要 new 它造 stub），只换 getter。
+vi.mock('../../../../src/host/services/capabilities/remoteCapabilityRegistryService', async (importActual) => ({
+  ...await importActual<typeof import('../../../../src/host/services/capabilities/remoteCapabilityRegistryService')>(),
+  getRemoteCapabilityRegistryService: () => {
+    remoteSingletonHits.count += 1;
+    throw new Error(
+      '单测不许落到真实 RemoteCapabilityRegistryService 单例：'
+      + '调用处显式传 remoteCapabilityRegistryService（null = 跳过远程注册表，或注入 stub）',
+    );
+  },
+}));
+
 import { CapabilityCenterService } from '../../../../src/host/services/capabilities/capabilityCenterService';
 import { RemoteCapabilityRegistryService } from '../../../../src/host/services/capabilities/remoteCapabilityRegistryService';
 import {
@@ -369,6 +390,10 @@ describe('CapabilityCenterService', () => {
   });
 
   afterEach(() => {
+    // 漏传 opt-out 会在这里当场红（而不是换台机器才慢成 30s 超时）——见文件头 vi.mock 那段。
+    const hits = remoteSingletonHits.count;
+    remoteSingletonHits.count = 0;
+    expect(hits, '本条用例落到了真实 RemoteCapabilityRegistryService 单例：给 listCapabilities/setEnabled 的 options 补 remoteCapabilityRegistryService（null 或 stub）').toBe(0);
     mcpStates = [];
     vi.restoreAllMocks();
     vi.resetAllMocks();
@@ -1210,15 +1235,15 @@ describe('CapabilityCenterService', () => {
 
     await expect(service.setEnabled(
       { id: 'tool-bundle:core-tools', kind: 'tool_bundle', enabled: false },
-      { configService },
+      { configService, remoteCapabilityRegistryService: null },
     )).rejects.toThrow('内置工具包');
     await expect(service.setEnabled(
       { id: 'channel-template:feishu', kind: 'channel_adapter', enabled: true },
-      { configService },
+      { configService, remoteCapabilityRegistryService: null },
     )).rejects.toThrow('Channels 设置');
     await expect(service.setEnabled(
       { id: 'curated:mcp_template%3Amcp-filesystem-readonly', kind: 'mcp_template', enabled: true },
-      { configService },
+      { configService, remoteCapabilityRegistryService: null },
     )).rejects.toThrow('disabled MCP');
 
     expect(channelUpdateAccount).not.toHaveBeenCalled();

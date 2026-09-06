@@ -79,4 +79,12 @@ describe('代码块紧邻 !copy 去重', () => {
     expect(iactCopyButtons(container)).toHaveLength(0);
     expect(container.textContent).toContain('[x](!copy)');
   });
+
+  it('引用内的代码块 + !copy 段同样去重：块头「复制」在、第二个按钮消失', async () => {
+    const { container } = await renderAssistant('> ```bash\n> ls -la\n> ```\n>\n> [复制命令](!copy)');
+
+    expect(iactCopyButtons(container)).toHaveLength(0);
+    const codeBlock = container.querySelector('[data-code-block-lines]');
+    expect(codeBlock).toBeTruthy();
+  });
 });

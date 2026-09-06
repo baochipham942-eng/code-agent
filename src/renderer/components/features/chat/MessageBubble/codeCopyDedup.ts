@@ -8,23 +8,29 @@
 // 「复制」改写成「复制命令」，零信息增量）。句中/正文中间的 !copy 是行内功能，
 // 必须保留，因此判据收窄到「整段只有 !copy 链接 + 紧贴围栏块」。
 //
-// 实现要点（ai-review PR#1677 三条 Important 的修正）：
+// 实现要点（ai-review PR#1677 两轮共 6 条 Important 的修正）：
 // - 围栏识别用 CommonMark 口径的行级扫描（同字符围栏、关栏长度 ≥ 开栏、
 //   反引号围栏 info 不含反引号），不是「见到三个反引号就切」——否则四反引号
 //   围栏内嵌的三反引号示例会被误当边界，示例里的字面 !copy 会被当正文删掉。
-// - 只有「渲染时真的带块头复制按钮」的围栏才构成紧邻：带语言的围栏走
-//   CodeBlock/Mermaid/Chart/GenerativeUI/Document/Spreadsheet（块头均有复制），
-//   无语言围栏内容 ≥2 行才走 CodeBlock；无语言单行内容实际渲染为 InlineCode、
-//   没有块头按钮，不让它吃掉可能是唯一复制入口的相邻链接（MessageContent
-//   code 覆写的分发条件与此处保持一致）。
-// - 删除整段后若两侧都是围栏块，至少保留一个换行，否则两个围栏会被拼到
-//   同一行、合并解析成一个块。
+// - 只有「渲染时真的带块头复制按钮」的围栏才构成紧邻，判定与 MessageContent
+//   code 覆写的分发逐一对应：无语言围栏内容 ≥2 行才走 CodeBlock（单行内容走
+//   InlineCode，无块头按钮）；chart 用与 ChartBlock 同源的 parseChartSpecSource
+//   判定（解析失败整块渲染 null）；neo_ui（GenerativeUIHost 无复制按钮）、
+//   spreadsheet / document（解析失败渲染 null）一律不让其吃掉相邻链接；
+//   generative_ui 空内容渲染 null，非空才有块头复制。
+// - 删空段跳过 + 段间 join('\n')，相邻围栏天然分行，不会被拼成一块。
+// - 引用（> 前缀，单层）内的围栏与复制段同样参与去重；4 空格/Tab 起头的
+//   缩进代码块不当作复制段；含行内 code 的段落不算纯复制段。
 // ============================================================================
+
+import { parseChartSpecSource } from '@shared/chartSpec';
 
 /** 围栏开行：≤3 空格缩进 + 3 个以上 ` 或 ~，其后为 info 字符串 */
 const FENCE_OPEN = /^ {0,3}(`{3,}|~{3,})(.*)$/;
 /** 围栏关行：≤3 空格缩进 + 同字符 ≥ 开栏长度，整行除空白外无它物（关栏不带 info） */
 const FENCE_CLOSE = /^ {0,3}(`{3,}|~{3,})[ \t]*$/;
+/** 引用行前缀（单层）：剥掉后围栏/复制段判定与顶层同构 */
+const BLOCKQUOTE_PREFIX = /^ {0,3}> ?/;
 
 /**
  * 「纯复制段」判据：整段（trim 后）只由一个或多个 [text](!copy) 链接与空白构成。
@@ -42,7 +48,7 @@ interface OpenFence {
 }
 
 function parseOpenFence(line: string): OpenFence | null {
-  const match = line.match(FENCE_OPEN);
+  const match = line.replace(BLOCKQUOTE_PREFIX, '').match(FENCE_OPEN);
   if (!match) return null;
   const info = match[2].trim();
   // 反引号围栏的 info 串不允许再含反引号（CommonMark），含则整行不是围栏
@@ -51,7 +57,7 @@ function parseOpenFence(line: string): OpenFence | null {
 }
 
 function isCloseFence(line: string, open: OpenFence): boolean {
-  const match = line.match(FENCE_CLOSE);
+  const match = line.replace(BLOCKQUOTE_PREFIX, '').match(FENCE_CLOSE);
   return Boolean(match?.[1][0] === open.char && match[1].length >= open.length);
 }
 
@@ -94,21 +100,42 @@ function splitCodeSegments(text: string): CodeSegment[] {
 }
 
 /**
+ * 语言 → 块头复制按钮**不可能**确定存在的围栏（与 MessageContent code 覆写分发对应）：
+ * - neo_ui → GenerativeUIHost，无块头复制按钮；
+ * - spreadsheet / document → 解析失败整块渲染 null，无法静态保证有复制入口。
+ * 这些围栏旁的 !copy 一律保留（宁冗勿失唯一入口）。
+ */
+const NEVER_CONFERS_LANGUAGES = new Set(['neo_ui', 'spreadsheet', 'document']);
+
+/**
  * 该围栏块渲染时是否带「块头复制按钮」（与 MessageContent code 覆写的分发一致）：
- * - 带 info（语言）→ CodeBlock / Mermaid / Chart / GenerativeUI / Document / Spreadsheet；
- * - 无 info → 内容 ≥2 行才分发成 CodeBlock；单行内容渲染为 InlineCode，无块头按钮。
+ * - 无 info → 内容 ≥2 行才分发成 CodeBlock；单行内容渲染为 InlineCode，无块头按钮；
+ * - chart → ChartBlock，与渲染同源的 parseChartSpecSource 判定，解析失败渲染 null；
+ * - generative_ui → GenerativeUIBlock，空内容渲染 null，非空必有块头复制；
+ * - json → spec 合法走 ChartBlock、否则 CodeBlock 兜底，两条路都有复制按钮；
+ * - 其余语言（含 mermaid）→ CodeBlock / MermaidDiagram，块头必有复制按钮。
  */
 function fenceRendersWithHeaderCopy(fenceText: string): boolean {
   const lines = fenceText.split('\n');
   const open = parseOpenFence(lines[0]);
   if (!open) return false;
-  if (open.info) return true;
   const closed = isCloseFence(lines[lines.length - 1], open);
-  return lines.slice(1, closed ? -1 : undefined).length >= 2;
+  const body = lines.slice(1, closed ? -1 : undefined);
+  const language = open.info.split(/\s+/)[0] ?? '';
+  if (!language) return body.length >= 2;
+  if (NEVER_CONFERS_LANGUAGES.has(language)) return false;
+  if (language === 'chart') return parseChartSpecSource(body.join('\n')) !== null;
+  if (language === 'generative_ui') return body.join('\n').trim() !== '';
+  return true;
 }
 
 function isCopyOnlyParagraph(paragraph: string): boolean {
-  return !paragraph.includes('`') && COPY_ONLY_PARAGRAPH.test(paragraph.trim());
+  if (paragraph.includes('`')) return false; // 行内 code 里的字面链接不算
+  const bareLines = paragraph.split('\n').map((line) => line.replace(BLOCKQUOTE_PREFIX, ''));
+  const firstNonBlank = bareLines.find((line) => line.trim() !== '');
+  // 4 空格/Tab 起头是缩进代码块（渲染为代码内容，不是链接），不能当复制段删
+  if (!firstNonBlank || /^(?: {4}|\t)/.test(firstNonBlank)) return false;
+  return COPY_ONLY_PARAGRAPH.test(bareLines.join('\n').trim());
 }
 
 function dropAdjacentCopyParagraphs(segment: string, prevConfers: boolean, nextConfers: boolean): string {

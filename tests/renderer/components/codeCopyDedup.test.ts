@@ -121,4 +121,38 @@ describe('dropCodeAdjacentCopyLinks — 围栏边界与渲染分发（ai-review 
     const text = '```bash\nls\n-la\n```\n`[x](!copy)`';
     expect(dropCodeAdjacentCopyLinks(text)).toBe(text);
   });
+
+  it('4 空格缩进的 [literal](!copy) 是缩进代码块内容，不是复制段，保留', () => {
+    const text = '```bash\nls\n```\n\n    [literal](!copy)';
+    expect(dropCodeAdjacentCopyLinks(text)).toBe(text);
+  });
+
+  it('neo_ui / spreadsheet / document 围栏无确定块头复制按钮，相邻 !copy 保留', () => {
+    expect(dropCodeAdjacentCopyLinks('```neo_ui\n{"a":1}\n```\n[abc](!copy)'))
+      .toBe('```neo_ui\n{"a":1}\n```\n[abc](!copy)');
+    expect(dropCodeAdjacentCopyLinks('```document\n{"a":1}\n```\n[abc](!copy)'))
+      .toBe('```document\n{"a":1}\n```\n[abc](!copy)');
+  });
+
+  it('chart 围栏按同源 spec 判定：合法 spec 去重、解析失败（渲染 null）保留', () => {
+    expect(dropCodeAdjacentCopyLinks('```chart\n{"type":"bar","data":[{"name":"a","value":1}]}\n```\n[c](!copy)'))
+      .toBe('```chart\n{"type":"bar","data":[{"name":"a","value":1}]}\n```');
+    expect(dropCodeAdjacentCopyLinks('```chart\nnot-json\n```\n[c](!copy)'))
+      .toBe('```chart\nnot-json\n```\n[c](!copy)');
+  });
+
+  it('generative_ui 空内容渲染 null，相邻 !copy 保留；非空去重', () => {
+    expect(dropCodeAdjacentCopyLinks('```generative_ui\n\n```\n[x](!copy)'))
+      .toBe('```generative_ui\n\n```\n[x](!copy)');
+    expect(dropCodeAdjacentCopyLinks('```generative_ui\n<button>hi</button>\n```\n[x](!copy)'))
+      .toBe('```generative_ui\n<button>hi</button>\n```');
+  });
+
+  it('引用（> 前缀）内的围栏与纯复制段同样参与去重', () => {
+    expect(dropCodeAdjacentCopyLinks('> ```bash\n> ls\n> ```\n>\n> [复制命令](!copy)'))
+      .toBe('> ```bash\n> ls\n> ```');
+    // 引用外的独立 !copy（无围栏背景）仍保留
+    expect(dropCodeAdjacentCopyLinks('> 引用一句话\n\n[复制命令](!copy)'))
+      .toBe('> 引用一句话\n\n[复制命令](!copy)');
+  });
 });

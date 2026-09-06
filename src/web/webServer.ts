@@ -550,9 +550,10 @@ async function initializeServices(): Promise<void> {
   }
   bootMark('database');
 
-  // 4.5 Loop 启动收口（N-LOOP-DURABLE 刀1）：上次进程退出时仍在跑的 loop 在
-  // session_automations 里永远停在 running，侧栏徽标继续谎报「运行中」。
-  // 在 renderer 连上来之前把残留收成终态并发一条人话通知；只收口，不恢复续跑。
+  // 4.5 Loop 启动收口（N-LOOP-DURABLE 刀1 + 修复棒）：归属进程已确认消失的 loop 残留
+  // 在 session_automations 里永远停在 running，侧栏徽标继续谎报「运行中」。
+  // 在 renderer 连上来之前把残留收成终态并发一条人话通知（判据 = loopOwnership
+  // 进程归属戳，别的进程还在跑的不动）；只收口，不恢复续跑。
   try {
     const { markInterruptedLoops } = await import('../host/loop/loopStartupRecovery');
     const lost = await markInterruptedLoops();

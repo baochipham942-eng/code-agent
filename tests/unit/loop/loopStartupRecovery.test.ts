@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { spawnSync } from 'node:child_process';
 
 vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
@@ -31,6 +32,7 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
 }));
 
 import { markInterruptedLoops } from '../../../src/host/loop/loopStartupRecovery';
+import { captureLoopOwnerStamp } from '../../../src/host/loop/loopOwnership';
 import {
   createBackgroundTaskLedger,
   getBackgroundTaskLedger,
@@ -44,6 +46,10 @@ interface GhostLoopInput {
   title: string;
   sourceRefId?: string;
   status?: string;
+  /** 归属戳（写进 config_json.ownerProcess）；缺省 = 无戳（旧版本残留行）。 */
+  owner?: { pid: number; processStartAtMs?: number; stampedAt?: number };
+  /** 直接写坏的 config_json（优先于 owner）。 */
+  configJson?: string;
 }
 
 function createGhostDb(): Database.Database {
@@ -68,17 +74,34 @@ function createGhostDb(): Database.Database {
   return db;
 }
 
+/** 真死的 pid：spawnSync 等待退出并收尸，返回的 pid 已确认不存在。 */
+function deadOwnerPid(): number {
+  const child = spawnSync(process.execPath, ['-e', ''], { timeout: 10_000 });
+  if (!child.pid) throw new Error('failed to spawn a short-lived child for a dead pid');
+  return child.pid;
+}
+
 function insertAutomation(db: Database.Database, input: GhostLoopInput): void {
+  const configJson = input.configJson ?? (input.owner
+    ? JSON.stringify({
+      ownerProcess: {
+        pid: input.owner.pid,
+        ...(input.owner.processStartAtMs !== undefined ? { processStartAtMs: input.owner.processStartAtMs } : {}),
+        stampedAt: input.owner.stampedAt ?? 1_000,
+      },
+    })
+    : null);
   db.prepare(`
     INSERT INTO session_automations
-      (id, source_session_id, type, status, title, source_ref_id, created_at, updated_at)
-    VALUES (?, ?, 'loop', ?, ?, ?, ?, ?)
+      (id, source_session_id, type, status, title, source_ref_id, config_json, created_at, updated_at)
+    VALUES (?, ?, 'loop', ?, ?, ?, ?, ?, ?)
   `).run(
     input.id,
     input.sessionId,
     input.status ?? 'running',
     input.title,
     input.sourceRefId ?? null,
+    configJson,
     1_000,
     1_000,
   );
@@ -99,13 +122,14 @@ describe('markInterruptedLoops（N-LOOP-DURABLE 刀1：启动时把残留 runnin
     automationState.recordEvent.mockResolvedValue({ id: 'loop:loop_abc' });
   });
 
-  it('把残留 running loop 收成 failed，台账标 orphaned，并留下跨重启可取的人话通知', async () => {
+  it('把归属进程已消失的 running loop 收成 failed，台账标 orphaned，并留下跨重启可取的人话通知', async () => {
     const db = createGhostDb();
     insertAutomation(db, {
       id: 'loop:loop_abc',
       sessionId: 'session-1',
       title: '循环 · 盯构建',
       sourceRefId: 'loop_abc',
+      owner: { pid: deadOwnerPid() },
     });
     // 已终态的历史 loop 不许被扫到。
     insertAutomation(db, {
@@ -151,6 +175,7 @@ describe('markInterruptedLoops（N-LOOP-DURABLE 刀1：启动时把残留 runnin
       sessionId: 'session-1',
       title: '循环 · 盯构建',
       sourceRefId: 'loop_abc',
+      owner: { pid: deadOwnerPid() },
     });
 
     expect(await markInterruptedLoops(db)).toBe(1);
@@ -175,6 +200,7 @@ describe('markInterruptedLoops（N-LOOP-DURABLE 刀1：启动时把残留 runnin
       sessionId: 'session-1',
       title: '循环 · 盯构建',
       sourceRefId: 'loop_abc',
+      owner: { pid: deadOwnerPid() },
     });
 
     const marked = await markInterruptedLoops(db);
@@ -196,5 +222,64 @@ describe('markInterruptedLoops（N-LOOP-DURABLE 刀1：启动时把残留 runnin
 
     const emptyDb = new Database(':memory:');
     expect(await markInterruptedLoops(emptyDb)).toBe(0);
+  });
+
+  // -------------------------------------------------------------------------
+  // 修复棒 Important 1：归属判活——误杀 = 当着用户面把还在跑的 loop 谎报成失败
+  // -------------------------------------------------------------------------
+
+  it('归属进程还活着（如桌面正在跑）时：不收口、不发通知，行保持 running', async () => {
+    const db = createGhostDb();
+    // 本测试进程就是「还活着的归属进程」——CLI 入口看到的就是这种行。
+    const liveOwner = captureLoopOwnerStamp();
+    insertAutomation(db, {
+      id: 'loop:loop_live',
+      sessionId: 'session-1',
+      title: '循环 · 桌面在跑',
+      sourceRefId: 'loop_live',
+      owner: { pid: liveOwner.pid, ...(liveOwner.processStartAtMs !== undefined ? { processStartAtMs: liveOwner.processStartAtMs } : {}) },
+    });
+
+    const marked = await markInterruptedLoops(db);
+
+    expect(marked).toBe(0);
+    expect(automationStatus(db, 'loop:loop_live')).toBe('running');
+
+    const revived = createBackgroundTaskLedger();
+    revived.setStore(new SqliteBackgroundTaskStore(db));
+    expect(revived.drainNotifications('session-1')).toHaveLength(0);
+  });
+
+  it('无归属戳（旧版本残留行）判不出归属：保持原样不动（宁可漏收，不可误杀）', async () => {
+    const db = createGhostDb();
+    insertAutomation(db, {
+      id: 'loop:loop_legacy',
+      sessionId: 'session-1',
+      title: '循环 · 无戳',
+      sourceRefId: 'loop_legacy',
+    });
+
+    expect(await markInterruptedLoops(db)).toBe(0);
+    expect(automationStatus(db, 'loop:loop_legacy')).toBe('running');
+  });
+
+  it('归属戳不合法（pid 非整数/坏 JSON）同样判不出归属：不动手', async () => {
+    const db = createGhostDb();
+    insertAutomation(db, {
+      id: 'loop:loop_bad1',
+      sessionId: 'session-1',
+      title: '循环 · 坏戳',
+      configJson: '{"ownerProcess":{"pid":"not-a-number"}}',
+    });
+    insertAutomation(db, {
+      id: 'loop:loop_bad2',
+      sessionId: 'session-1',
+      title: '循环 · 坏 JSON',
+      configJson: '{not json',
+    });
+
+    expect(await markInterruptedLoops(db)).toBe(0);
+    expect(automationStatus(db, 'loop:loop_bad1')).toBe('running');
+    expect(automationStatus(db, 'loop:loop_bad2')).toBe('running');
   });
 });

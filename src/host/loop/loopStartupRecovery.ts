@@ -1,5 +1,5 @@
 // ============================================================================
-// LoopStartupRecovery — 启动时把上次进程退出时仍在跑的 loop 收口成终态（N-LOOP-DURABLE 刀1）
+// LoopStartupRecovery — 启动时把残留 running loop 收口成终态（N-LOOP-DURABLE 刀1）
 //
 // LoopController 的 loops 是内存 Map，App 更新 / 崩溃 / 关机后循环直接蒸发；
 // 而 session_automations 里那条 status='running' 的记录还躺在 SQLite 里
@@ -11,7 +11,15 @@
 //   2. 台账补一条 orphaned 终态任务（复用 shell/pty/cron 重启恢复的同一终态，
 //      不新造枚举），并经 queueNotification 发一条人话通知。
 // 只收口、不恢复续跑（恢复是刀2 的 loop_runs 表的事）。轮次不落库，取不到就不编。
-// 与 cron 的 markInterruptedExecutions 同款前提：同一数据目录同时只有一个进程实例。
+//
+// 修复棒 Important 1：CLI 与桌面共用同一个 code-agent.db 且会并发运行，
+// 「本进程启动 = 上一个进程死了」这个前提不成立（cron 的 markInterruptedExecutions
+// 同款前提在 loop 这里必须收紧）。因此只收口**归属进程已确认消失**的记录：
+// loop 进入 running 时盖的进程归属戳（pid + 进程启动时间，见 loopOwnership.ts），
+// 收口时逐条判活——pid 不在（或已被复用）才动手；判不出归属（无戳/戳不合法）
+// 保持原样不动，宁可漏收，不可误杀（误杀 = 当着用户面把还在跑的 loop 谎报成失败）。
+// 判据修在本函数内部，调用方（webServer / initializeCLIServices 的任何 CLI 入口）
+// 无需也不会再靠「挑对启动时机」来保安全。
 // ============================================================================
 
 import type BetterSqlite3 from 'better-sqlite3';
@@ -21,6 +29,7 @@ import { SqliteBackgroundTaskStore } from '../task/backgroundTaskStore';
 import { getDatabase } from '../services/core/databaseService';
 import { getSessionAutomationService } from '../services/sessionAutomation';
 import { createLogger } from '../services/infra/logger';
+import { parseLoopOwnerStamp, resolveLoopOwnerLiveness, stripLoopOwnerStamp } from './loopOwnership';
 
 const logger = createLogger('LoopStartupRecovery');
 
@@ -31,6 +40,7 @@ interface InterruptedLoopRow {
   source_session_id: string | null;
   title: string;
   source_ref_id?: string | null;
+  config_json?: string | null;
   created_at: number;
   last_run_at?: number | null;
 }
@@ -44,8 +54,9 @@ function hasSessionAutomationsTable(db: BetterSqlite3.Database): boolean {
 
 /**
  * 把残留的 running loop 收口成终态并通知。幂等：已收口的行不再命中 status='running'。
+ * 只收口归属进程已确认消失的行（Important 1）。
  * @param db 数据库句柄；缺省用桌面 DatabaseService 单例（CLI serve 等无该单例的面显式传入）。
- * @returns 本次收口的 loop 条数（0 = 无残留或库不可用，均不算错误）。
+ * @returns 本次收口的 loop 条数（0 = 无残留 / 归属还在 / 库不可用，均不算错误）。
  */
 export async function markInterruptedLoops(db?: BetterSqlite3.Database | null): Promise<number> {
   try {
@@ -53,7 +64,7 @@ export async function markInterruptedLoops(db?: BetterSqlite3.Database | null): 
     if (!handle || !hasSessionAutomationsTable(handle)) return 0;
 
     const rows = handle.prepare(`
-      SELECT id, source_session_id, title, source_ref_id, created_at, last_run_at
+      SELECT id, source_session_id, title, source_ref_id, config_json, created_at, last_run_at
       FROM session_automations
       WHERE type = 'loop' AND status = 'running'
       ORDER BY created_at ASC
@@ -67,10 +78,21 @@ export async function markInterruptedLoops(db?: BetterSqlite3.Database | null): 
 
     const now = Date.now();
     let marked = 0;
+    let skippedAlive = 0;
+    let skippedUnowned = 0;
     for (const row of rows) {
+      const liveness = resolveLoopOwnerLiveness(parseLoopOwnerStamp(row.config_json));
+      if (liveness !== 'dead') {
+        if (liveness === 'alive') skippedAlive += 1;
+        else skippedUnowned += 1;
+        continue;
+      }
       if (await finalizeInterruptedLoop(handle, row, now)) marked += 1;
     }
-    logger.info(`Marked ${marked} interrupted loop(s) as lost at startup`);
+    logger.info(
+      `Marked ${marked} interrupted loop(s) as lost at startup`
+      + ` (skipped: ${skippedAlive} live-owner, ${skippedUnowned} unowned/legacy)`,
+    );
     return marked;
   } catch (error) {
     logger.warn('markInterruptedLoops failed:', error);
@@ -103,8 +125,11 @@ async function finalizeInterruptedLoop(
     finalized = recorded !== null;
   }
   if (!finalized) {
-    db.prepare(`UPDATE session_automations SET status = 'failed', updated_at = ? WHERE id = ?`)
-      .run(now, row.id);
+    db.prepare(`
+      UPDATE session_automations
+      SET status = 'failed', config_json = ?, updated_at = ?
+      WHERE id = ?
+    `).run(stripLoopOwnerStamp(row.config_json), now, row.id);
   }
 
   const taskId = row.source_ref_id || row.id.replace(/^loop:/, '');

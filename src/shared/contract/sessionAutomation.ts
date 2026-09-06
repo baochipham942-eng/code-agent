@@ -48,10 +48,26 @@ export interface StandingGrant {
   grantedAt: number;
 }
 
+/**
+ * 记录的进程归属戳（N-LOOP-DURABLE）：进入 running 时由执行进程写入 config_json。
+ * 启动收口只对「归属进程已确认消失」的残留动手；判不出归属（无戳/不合法）保持原样
+ * 不动——宁可漏收，不可误杀。
+ */
+export interface SessionAutomationOwnerStamp {
+  /** 归属进程 pid。 */
+  pid: number;
+  /** 归属进程启动时间（epoch ms），用于排除 pid 复用；取不到时缺省（退化为存在性检查）。 */
+  processStartAtMs?: number;
+  /** 盖戳时间（epoch ms）。 */
+  stampedAt: number;
+}
+
 export interface SessionAutomationConfig extends Record<string, unknown> {
   createdVia?: string;
   /** Execution location snapshot for review-inbox presentation. */
   runsOn?: 'local' | 'cloud';
+  /** 进程归属戳（见 SessionAutomationOwnerStamp）；进入终态时清除。 */
+  ownerProcess?: SessionAutomationOwnerStamp;
   sourceMessageId?: string;
   handoffPrompt?: string;
   nextStage?: SessionAutomationNextStageConfig;

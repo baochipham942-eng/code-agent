@@ -21,6 +21,12 @@ const mocks = vi.hoisted(() => {
   });
   const nativeRecoveryPorts = { continuationExecutor: 'available' };
   const autoAgentRecoveryHost = { recover: vi.fn() };
+  const startSession = vi.fn();
+  const telemetryCollector = {
+    startSession,
+    createAdapter: vi.fn(() => ({})),
+    endSession: vi.fn(),
+  };
 
   return {
     rawDb,
@@ -31,6 +37,8 @@ const mocks = vi.hoisted(() => {
     initializeDurableRun,
     nativeRecoveryPorts,
     autoAgentRecoveryHost,
+    startSession,
+    telemetryCollector,
     initCLIDatabase: vi.fn().mockResolvedValue(databaseService),
     createApplicationNativeRecoveryPorts: vi.fn(() => nativeRecoveryPorts),
     createApplicationAutoAgentRecoveryHost: vi.fn(() => autoAgentRecoveryHost),
@@ -83,7 +91,9 @@ vi.mock('../../../src/host/tools/protocolRegistry', () => ({ getProtocolRegistry
 vi.mock('../../../src/host/services/skills', () => ({
   getSkillDiscoveryService: () => ({ initialize: vi.fn(), ensureInitialized: vi.fn() }),
 }));
-vi.mock('../../../src/host/telemetry', () => ({ getTelemetryCollector: vi.fn() }));
+vi.mock('../../../src/host/telemetry', () => ({
+  getTelemetryCollector: vi.fn(() => mocks.telemetryCollector),
+}));
 
 describe('initializeCLIServices durable wiring', () => {
   beforeEach(() => {
@@ -163,6 +173,32 @@ describe('initializeCLIServices durable wiring', () => {
     expect(runtimeConfig.deniedToolNames).toEqual(expect.arrayContaining(
       commandCenterTools.map((tool) => tool.name),
     ));
+  });
+
+  // createAgentLoop 是 neo CLI / neo serve / 角色醒来 / 界面 /api/run 的公共路径。
+  // 它曾把 telemetry 的 originKind 写死成 'headless'，导致桌面真人会话被整体剔出
+  // 上线后评测分母（2026-09-06 真机实测）。来源只能由入口在 config 里声明。
+  it.each([
+    ['无头入口声明 headless', 'headless' as const, 'headless'],
+    ['界面入口不声明 → 落 NULL', undefined, undefined],
+  ])('telemetry originKind 由入口声明：%s', async (_name, declared, expected) => {
+    const { createAgentLoop, initializeCLIServices } = await import('../../../src/cli/bootstrap');
+
+    await initializeCLIServices();
+    createAgentLoop({
+      workingDirectory: process.cwd(),
+      modelConfig: { provider: 'openai', model: 'test-model' },
+      outputFormat: 'text',
+      enablePlanning: false,
+      enableHooks: false,
+      debug: false,
+      ...(declared ? { originKind: declared } : {}),
+    }, vi.fn(), [], `session-origin-${declared ?? 'none'}`);
+
+    expect(mocks.startSession).toHaveBeenCalledWith(
+      `session-origin-${declared ?? 'none'}`,
+      expect.objectContaining({ originKind: expected }),
+    );
   });
 
   it('passes the web workbench tool scope through the CLI bootstrap adapter', async () => {

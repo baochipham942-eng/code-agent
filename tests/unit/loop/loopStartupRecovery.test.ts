@@ -439,4 +439,48 @@ describe('markInterruptedLoops（N-LOOP-DURABLE 刀1：启动时把残留 runnin
     revived.setStore(new SqliteBackgroundTaskStore(db));
     expect(revived.drainNotifications('session-1')).toHaveLength(0);
   });
+
+  // -------------------------------------------------------------------------
+  // 第三棒 Important 2：通知写入失败后内存缓存没回滚——同进程重试命中缓存
+  // 跳过入库，却把 failed 终态提交掉，通知永久丢失。
+  // -------------------------------------------------------------------------
+
+  it('通知存储抛错 → 回滚并撤缓存：同进程重试（不重置 ledger 单例）把通知真的落库', async () => {
+    const db = createGhostDb();
+    insertAutomation(db, {
+      id: 'loop:loop_abc',
+      sessionId: 'session-1',
+      title: '循环 · 盯构建',
+      sourceRefId: 'loop_abc',
+      owner: { pid: deadOwnerPid() },
+    });
+
+    // 第一拍：通知存储写入炸（瞬态故障）。整体回滚，行保持 running。
+    const queueSpy = vi
+      .spyOn(SqliteBackgroundTaskStore.prototype, 'queueNotification')
+      .mockImplementationOnce(() => {
+        throw new Error('notification store exploded');
+      });
+    expect(await markInterruptedLoops(db)).toBe(0);
+    expect(automationStatus(db, 'loop:loop_abc')).toBe('running');
+    queueSpy.mockRestore();
+
+    // 第二拍：同一进程再触发（桌面启动恢复后，dev 路由 initializeCLIServices
+    // 再入 markInterruptedLoops）——不重置 ledger 单例，缓存必须已被回滚撤掉，
+    // 重试才会真的再走一遍入库。修复前：这里命中缓存跳过入库，行变 failed
+    // 而通知从未落库，重启后行不再是 running，通知永久丢失。
+    expect(await markInterruptedLoops(db)).toBe(1);
+    expect(automationStatus(db, 'loop:loop_abc')).toBe('failed');
+
+    const stored = db.prepare(`
+      SELECT delivered_at FROM background_task_notifications WHERE id = 'loop_abc:lost'
+    `).get() as { delivered_at: number | null } | undefined;
+    expect(stored).toBeDefined();
+    expect(stored?.delivered_at).toBeNull();
+
+    // 新进程视角能 drain 到这条通知。
+    const revived = createBackgroundTaskLedger();
+    revived.setStore(new SqliteBackgroundTaskStore(db));
+    expect(revived.drainNotifications('session-1')).toHaveLength(1);
+  });
 });

@@ -31,6 +31,11 @@
 // WHERE 收紧为 status='running' + 归属快照（config_json IS 快照值，null 安全），
 // changes=0 的一方说明行已被并发入口收口（或被新归属重新盖戳），直接退出，
 // 不再写台账/通知/回流。
+//
+// 第三棒 Important 2：queueNotification 先写内存缓存再落库，事务回滚不会带走缓存
+// ——同进程重试会命中缓存跳过入库、却把 failed 终态提交掉，通知永久丢失。回滚
+// 路径把本事务排队的通知从 ledger 缓存撤掉（revokeQueuedNotification），重试才会
+// 真的再走一遍入库。
 // ============================================================================
 
 import type BetterSqlite3 from 'better-sqlite3';
@@ -166,6 +171,13 @@ async function finalizeInterruptedLoop(
       return false;
     }
   } catch (error) {
+    // 第三棒 Important 2：queueNotification 先写内存缓存再落库，事务回滚不会带走
+    // 那份缓存——同进程重试（桌面启动恢复后，dev 路由再走 initializeCLIServices）
+    // 会命中缓存直接返回、跳过入库，却把 failed 终态提交掉，通知从此永久丢失。
+    // 回滚时把本事务排队的通知从 ledger 缓存摘掉，重试才会真的再走一遍入库。
+    if (row.source_session_id) {
+      ledger.revokeQueuedNotification(`${taskId}:lost`);
+    }
     logger.warn(
       `finalize interrupted loop ${row.id} rolled back (row stays running, retry on next startup):`,
       error,

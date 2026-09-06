@@ -1,3 +1,6 @@
+import { promises as fs } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 // ============================================================================
 // Tool Executor Tests
 // ============================================================================
@@ -107,6 +110,48 @@ describe('ToolExecutor', () => {
 
   afterEach(() => {
     vi.clearAllMocks();
+  });
+
+  describe('ESTOP', () => {
+    let dataDir: string;
+    beforeEach(async () => {
+      dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'estop-'));
+      vi.stubEnv('CODE_AGENT_DATA_DIR', dataDir);
+    });
+    afterEach(async () => {
+      vi.unstubAllEnvs();
+      await fs.rm(dataDir, { recursive: true, force: true });
+    });
+    it('does not interrupt a call already awaiting its permission result', async () => {
+      let release!: (approved: boolean) => void;
+      let entered!: () => void;
+      const awaitingPermission = new Promise<void>(resolve => { entered = resolve; });
+      const runningExecutor = new ToolExecutor({ workingDirectory: dataDir,
+        requestPermission: () => { entered(); return new Promise<boolean>(resolve => { release = resolve; }); },
+      });
+      setMockTool({ requiresPermission: true, permissionLevel: 'write' });
+      const running = runningExecutor.execute('test_tool', {}, {});
+      await awaitingPermission;
+      await fs.writeFile(path.join(dataDir, 'ESTOP'), '');
+      release(true);
+      expect((await running).success).toBe(true);
+      expect((await runningExecutor.execute('test_tool', {}, {})).metadata?.code).toBe('ESTOP');
+      expect(mockExecuteCalls).toBe(1);
+    });
+
+    it('blocks new permissioned calls, allows read-only calls, and resumes after removal', async () => {
+      await fs.writeFile(path.join(dataDir, 'ESTOP'), '');
+      setMockTool({ requiresPermission: true, permissionLevel: 'write' });
+      const stopped = await executor.execute('test_tool', {}, {});
+      expect(stopped.metadata?.code).toBe('ESTOP');
+      expect(mockExecuteCalls).toBe(0);
+      expect(permissionCalls).toHaveLength(0);
+      setMockTool({ requiresPermission: false, permissionLevel: 'read' });
+      expect((await executor.execute('test_tool', {}, {})).success).toBe(true);
+      await fs.unlink(path.join(dataDir, 'ESTOP'));
+      setMockTool({ requiresPermission: true, permissionLevel: 'write' });
+      expect((await executor.execute('test_tool', {}, {})).success).toBe(true);
+    });
   });
 
   describe('基本执行', () => {

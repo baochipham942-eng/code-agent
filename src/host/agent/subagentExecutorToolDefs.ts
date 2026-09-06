@@ -127,27 +127,45 @@ export interface SubagentToolAssemblyAbort {
   runPolicy?: RunToolPolicy;
 }
 
+/** 通配展开结果：可进工具表的名字 + 策略允许但未展开成的通配（失败账）。 */
+interface ExpandedSubagentMcpToolNames {
+  /** 非通配声明名 + 展开成的具体 MCP 工具名（保序去重）；不含未解析的通配名。 */
+  names: string[];
+  /**
+   * run 策略允许（server 粒度预判放行）但没拿到工具的通配（server 连不上 / 连后无匹配）。
+   * 失败账不走白名单过滤：未解析的通配名不是可执行工具、绝不进工具表，但必须进
+   * 缺失清单——否则「声明是通配、白名单是精确名」的形态不匹配会把装配失败滤成
+   * 零工具静默成功（R4 回归）。run 策略整体排除的 server 不在此列（策略性排除 ≠ 装配失败）。
+   */
+  unresolvedGlobs: string[];
+}
+
 /**
  * 把声明的 `mcp__<server>__*` 通配展开成具体工具名（保序去重）。
- * server 未连接时先触发按需连接再取列表；连不上或连后没有匹配工具的通配原样保留，
- * 让后续解析把它记进缺失清单（而不是无声吞掉整组工具）。
- * 连接前先按 run 策略做 server 粒度预判：本轮确定会被全部丢掉的 server 不连。
+ * server 未连接时先触发按需连接再取列表。连接前先按 run 策略做 server 粒度预判：
+ * 本轮确定会被全部丢掉的 server 不连，其通配整组丢弃（策略性排除不算缺失）；
+ * 预判放行但连不上 / 连后没有匹配工具的通配进 unresolvedGlobs 失败账，
+ * 由 resolveSubagentToolAccess 并入缺失清单（而不是无声吞掉整组工具）。
  */
 async function expandSubagentMcpToolGlobs(
   declaredToolNames: readonly string[],
   options?: SubagentToolAssemblyAbort,
-): Promise<string[]> {
+): Promise<ExpandedSubagentMcpToolNames> {
   const globServers = new Map<string, string>();
   for (const name of declaredToolNames) {
     const reference = parseMcpToolReference(name);
     if (reference?.glob) globServers.set(name, reference.serverName);
   }
-  if (globServers.size === 0) return [...declaredToolNames];
+  if (globServers.size === 0) {
+    return { names: [...declaredToolNames], unresolvedGlobs: [] };
+  }
 
   const connectedServers = new Set<string>();
+  const policyExcludedServers = new Set<string>();
   for (const serverName of new Set(globServers.values())) {
     if (options?.signal?.aborted) break;
     if (options?.runPolicy && !couldMcpServerToolsSurviveRunPolicy(serverName, options.runPolicy)) {
+      policyExcludedServers.add(serverName);
       continue;
     }
     if (await ensureMcpServerConnected(serverName, options?.signal)) {
@@ -163,22 +181,35 @@ async function expandSubagentMcpToolGlobs(
     logger.warn('expandSubagentMcpToolGlobs: failed to list MCP tool definitions', error);
   }
 
-  const expanded: string[] = [];
+  const names: string[] = [];
+  const unresolvedGlobs: string[] = [];
   const seen = new Set<string>();
   for (const name of declaredToolNames) {
     const serverName = globServers.get(name);
-    const prefix = serverName ? `mcp__${serverName}__` : '';
-    const matches = serverName && connectedServers.has(serverName)
+    if (!serverName) {
+      if (!seen.has(name)) {
+        seen.add(name);
+        names.push(name);
+      }
+      continue;
+    }
+    if (policyExcludedServers.has(serverName)) continue;
+    const prefix = `mcp__${serverName}__`;
+    const matches = connectedServers.has(serverName)
       ? serverToolNames.filter((toolName) => toolName.startsWith(prefix))
       : [];
-    for (const candidate of matches.length > 0 ? matches : [name]) {
-      if (!seen.has(candidate)) {
-        seen.add(candidate);
-        expanded.push(candidate);
+    if (matches.length > 0) {
+      for (const candidate of matches) {
+        if (!seen.has(candidate)) {
+          seen.add(candidate);
+          names.push(candidate);
+        }
       }
+    } else {
+      unresolvedGlobs.push(name);
     }
   }
-  return expanded;
+  return { names, unresolvedGlobs };
 }
 
 interface SubagentToolResolution {
@@ -239,7 +270,7 @@ export interface SubagentToolAccess {
   effectiveToolNames: string[];
   /** 注册表解析到的工具定义（给模型的工具表）。 */
   allowedToolDefs: ToolDefinition[];
-  /** 声明了但（触发按需连接后仍）解析不到的工具名。 */
+  /** 声明了但（触发按需连接后仍）解析不到的工具名，含策略允许但未展开成的 MCP 通配。 */
   missingToolNames: string[];
 }
 
@@ -247,7 +278,8 @@ export interface SubagentToolAccess {
  * 子代理工具面收口（原 executeInternal 内联的三步，收口为可单测的纯装配）：
  *   1. 父子交集（tools 交集是核心约束，永不扩张；parent.availableTools 为空时退化为
  *      child 声明，避免无害 caller 拿不到任何工具）
- *   2. mcp__<server>__* 通配展开（只为 run 策略过滤后仍可能保留的 lazy 服务器连）
+ *   2. mcp__<server>__* 通配展开（只为 run 策略过滤后仍可能保留的 lazy 服务器连；
+ *      展开失败的通配单独记失败账，不进工具表）
  *   3. run 级工具面硬边界收窄 + 注册表解析（MCP 形态缺失先连再取一次）
  */
 export async function resolveSubagentToolAccess(
@@ -268,9 +300,13 @@ export async function resolveSubagentToolAccess(
       toolScope: context.toolScope,
     },
   });
-  const effectiveToolNames = applyRunToolPolicyToSubagentTools(expanded, context);
+  // 可执行工具与失败账分两条路（R4）：工具名过 run 白名单收窄（子代理只收窄）；
+  // 通配装配失败信息不过白名单——否则声明 `mcp__<server>__*` 而白名单只写精确名时，
+  // 形态不匹配会把「要的东西没拿到」滤掉，装配失败变成零工具静默成功。
+  const effectiveToolNames = applyRunToolPolicyToSubagentTools(expanded.names, context);
   const { defs, missing } = await resolveSubagentToolDefs(effectiveToolNames, context.resolver, options);
-  return { effectiveToolNames, allowedToolDefs: defs, missingToolNames: missing };
+  const missingToolNames = [...new Set([...missing, ...expanded.unresolvedGlobs])];
+  return { effectiveToolNames, allowedToolDefs: defs, missingToolNames };
 }
 
 /** 模型工具表条目：发给推理层的 ToolDefinition 投影（与 inference 侧入参同形）。 */

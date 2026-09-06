@@ -570,3 +570,64 @@ describe('装配期 MCP 通配连接服从 run 策略（N-SUBAGENT-ZEROTOOLS R3�
     );
   });
 });
+
+describe('策略允许的通配装配失败不许静默成功（N-SUBAGENT-ZEROTOOLS R4 回归）', () => {
+  // R3 的 server 粒度预判认得「声明通配 + 白名单精确名」是同一个 server ⇒ 照常连接；
+  // 连接失败后旧代码把原样保留的通配名也丢进精确白名单过滤 ⇒ 请求集与缺失清单双空
+  // ⇒ 零工具判据失明 ⇒ 子代理零工具跑完还报成功。这里钉死父模型收到的失败不变量。
+  it('🔴 声明 mcp__slow__* + 白名单允许精确名 mcp__slow__work + 连接失败 ⇒ 结构化失败 + 缺失清单', async () => {
+    // 旧缺陷路径下模型会拿这句敷衍输出 completed——它在任何迭代里都不该被消费。
+    mocks.responses.push(textResponse('假装干完了。'));
+    mcpState.ensureConnected.mockImplementation(async () => false);
+    const { request } = createHarness({
+      availableTools: ['mcp__slow__*'],
+      allowedToolNames: ['mcp__slow__work'],
+      getDefinition: () => undefined,
+    });
+
+    const result = await new SubagentExecutor().execute(request);
+
+    // 预判确实放行了该 server（形态不匹配 ≠ 无关名字），连接确实尝试过
+    expect(mcpState.ensureConnected).toHaveBeenCalledWith('slow', expect.any(AbortSignal));
+    expect(result.success).toBe(false);
+    expect(result.failureCode).toBe('tool-unavailable');
+    expect(result.missingTools).toEqual(['mcp__slow__*']);
+    expect(result.error).toContain('mcp__slow__*');
+    expect(result.iterations).toBe(0);
+    expect(mocks.inference).not.toHaveBeenCalled();
+  });
+
+  it('混装：其余声明被白名单策略性滤掉 + 通配装配失败 ⇒ 仍失败，被滤掉的名字不算缺失', async () => {
+    mcpState.ensureConnected.mockImplementation(async () => false);
+    const { request } = createHarness({
+      availableTools: ['Read', 'mcp__slow__*'],
+      allowedToolNames: ['mcp__slow__work'],
+      getDefinition: () => undefined,
+    });
+
+    const result = await new SubagentExecutor().execute(request);
+
+    // Read 是被 run 策略排除（策略性排除 ≠ 装配失败）⇒ 不进缺失清单；通配失败进
+    expect(result.success).toBe(false);
+    expect(result.failureCode).toBe('tool-unavailable');
+    expect(result.missingTools).toEqual(['mcp__slow__*']);
+    expect(mocks.inference).not.toHaveBeenCalled();
+  });
+
+  it('通配装配失败 + 其余工具照常 ⇒ 部分缺失上报：成功带回 missingTools，通配绝不进模型工具表', async () => {
+    mocks.responses.push(textResponse('读完了，MCP 没连上。'));
+    mcpState.ensureConnected.mockImplementation(async () => false);
+    const resolverDefs = new Map([['Read', makeDefinition('Read')]]);
+    const { request } = createHarness({
+      availableTools: ['Read', 'mcp__slow__*'],
+      allowedToolNames: ['Read', 'mcp__slow__work'],
+      getDefinition: (name) => resolverDefs.get(name),
+    });
+
+    const result = await new SubagentExecutor().execute(request);
+
+    expect(result.success).toBe(true);
+    expect(result.missingTools).toEqual(['mcp__slow__*']);
+    expect(mocks.toolDefinitionSnapshots[0].map((tool) => tool.name)).toEqual(['Read']);
+  });
+});

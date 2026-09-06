@@ -453,9 +453,14 @@ export class SubagentExecutor {
       // 返修 Important 1：装配等待可能被取消打断（连接循环让位 signal），已取消时
       // 「没装配上」的第一性原因是取消——让位给下方迭代循环的 abort 收口，不误报
       // tool-unavailable。
-      if (effectiveToolNames.length > 0 && allowedToolDefs.length === 0 && !effectiveSignal.aborted) {
+      // R4：声明通配而 run 白名单只写精确名时，post-filter 请求集可为空、装配失败账
+      //（missingToolNames）非空——判据补这条臂；失败账不过白名单过滤（见 helper）。
+      if (
+        (effectiveToolNames.length > 0 || missingToolNames.length > 0)
+        && allowedToolDefs.length === 0 && !effectiveSignal.aborted
+      ) {
         return earlyFailure(
-          `声明的 ${effectiveToolNames.length} 个工具全部未装配（注册表解析为 0）：` +
+          `声明的 ${missingToolNames.length} 个工具全部未装配（白名单收窄 + 注册表解析后为 0）：` +
           `${missingToolNames.join(', ')}。子代理未执行任何迭代即失败：` +
           `请修正工具名，或确认对应 MCP 服务器可连接后重试。`,
           {

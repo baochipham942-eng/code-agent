@@ -4,6 +4,15 @@ import type { ArtifactRepairGuard, ArtifactRepairGuardPhase } from './artifactSt
 import { inferArtifactRepairIssueCodesFromText } from './artifactRepairSpec';
 import { getUserConfigDir } from '../../config/configPaths';
 import { isPathWithinRoot } from '../../runtime/workspaceScope';
+import { ARTIFACT_REPAIR_MAX_ATTEMPTS } from '../../../shared/constants/repair';
+import type { Message, ToolResult } from '../../../shared/contract';
+
+// Trailing-message window for cold-start guard seeding. Count is messages, not
+// failures: ordinary turns and successful validations must age a stale failure
+// out. 24 = 3× the historical 8-message window, covering one full repair
+// episode (MAX_ATTEMPTS × ~5 messages for fail envelope + assistant + tools
+// + extras) without unbounded lookback across later unrelated turns.
+export const ARTIFACT_REPAIR_GUARD_SEED_MESSAGE_WINDOW = ARTIFACT_REPAIR_MAX_ATTEMPTS * 6;
 
 export type { ArtifactRepairGuard };
 
@@ -68,11 +77,18 @@ export interface ArtifactRepairToolPolicy {
   mutationOnly: boolean;
 }
 
-const EXPLICIT_ARTIFACT_REPAIR_INTENT_PATTERN =
-  /artifact[-_\s]*(?:validation\s*failed|repair)|<artifact[-_\s]*(?:repair|validation)|\b(?:repair|fix|patch|correct|restore)\b|修复|修正|改好|补丁|继续修/i;
+// Guard seed is source-gated, not wording-gated. Only our validator's
+// delimited envelopes (and tool-result metadata.artifactValidation.failed)
+// may plant repair mode. Generic words like 修复/错误/失败 in a Read document
+// are noise even when they sit next to an .html path.
+const ARTIFACT_VALIDATOR_FAILURE_ENVELOPE_PATTERN =
+  /<artifact-(validation-failed(?:-history)?|playability-failed)\b[^>]*>([\s\S]*?)<\/artifact-\1>/gi;
 
-const ARTIFACT_REPAIR_VALIDATION_CONTEXT_PATTERN =
-  /artifact validation failed|game artifact validation failed|validator\s*(?:失败|failed)|validation\s*(?:failed|failure)|(?:校验|验证|验收)\s*(?:失败|未通过|不通过)|runSmokeTest|__GAME_TEST__|__INTERACTIVE_TEST__|\b(?:missing|malformed)\b|报错|错误|缺少|no longer exposes|丢失|不能证明|无法证明|对象存在|机制注册|覆盖声明|直接授予|直接修改|宽松距离|测试模式修改|真实流程里获得|真实输入完成|玩不通|不能玩|不好玩|上不去|拿不到|触发不了/i;
+const ARTIFACT_VALIDATOR_PASSED_ENVELOPE_PATTERN =
+  /<artifact-validation-passed\b[^>]*>([\s\S]*?)<\/artifact-validation-passed>/gi;
+
+const ARTIFACT_REPAIR_ENDED_ENVELOPE_PATTERN =
+  /<(artifact-repair-degraded-release|force-final-response)\b[^>]*>([\s\S]*?)<\/\1>/gi;
 
 // Branch 2 (no "target file:" prefix) must only match a real path prefix
 // (`/`, `~/`, `./`, `../`) at a token boundary. The negative lookbehind stops it
@@ -80,9 +96,6 @@ const ARTIFACT_REPAIR_VALIDATION_CONTEXT_PATTERN =
 // bare relative path `games/foo.html`, which seeded the guard with a wrong path.
 const ARTIFACT_TARGET_FILE_PATTERN =
   /(?:(?:target file|目标文件)\s*:\s*((?:(?:\/|~\/|\.{1,2}\/)[^\s"'`<>]+?|[A-Za-z0-9_.@-]+(?:\/[A-Za-z0-9_.@-]+)*)\.html?)|((?<![A-Za-z0-9_.@/~:-])(?:\/|~\/|\.{1,2}\/)[^\s"'`<>]+?\.html?))(?=$|[\s"'`<>),;.，。])/gi;
-
-const RUNTIME_ARTIFACT_REPAIR_CONTEXT_PATTERN =
-  /<artifact[-_\s]*(?:repair|validation)|artifact validation failed|game artifact validation failed|artifact repair mode is active/i;
 
 function normalizeCandidatePath(rawPath: string): string {
   return rawPath.trim().replace(/[),;，。]+$/g, '');
@@ -98,16 +111,17 @@ export function isSameArtifactRepairPath(ctx: RuntimeContext, candidate: string,
   return resolveArtifactRepairPath(ctx, candidate) === target;
 }
 
-function extractArtifactRepairTargetFromText(ctx: RuntimeContext, text: string): string | null {
-  const issueCodes = inferArtifactRepairIssueCodesFromText(text);
-  const hasRepairIntent = EXPLICIT_ARTIFACT_REPAIR_INTENT_PATTERN.test(text);
-  const hasValidationContext =
-    ARTIFACT_REPAIR_VALIDATION_CONTEXT_PATTERN.test(text)
-    || issueCodes.length > 0;
-  if (!hasRepairIntent || !hasValidationContext) {
-    return null;
-  }
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
 
+function extractValidatorFailureEnvelopes(text: string): string[] {
+  return [...text.matchAll(new RegExp(ARTIFACT_VALIDATOR_FAILURE_ENVELOPE_PATTERN, 'gi'))]
+    .map((match) => match[0])
+    .filter(Boolean);
+}
+
+function extractHtmlArtifactPathFromTrustedText(ctx: RuntimeContext, text: string): string | null {
   ARTIFACT_TARGET_FILE_PATTERN.lastIndex = 0;
   const matches = [...text.matchAll(ARTIFACT_TARGET_FILE_PATTERN)]
     .map((match) => normalizeCandidatePath(match[1] || match[2] || ''))
@@ -124,18 +138,196 @@ function extractArtifactRepairTargetFromText(ctx: RuntimeContext, text: string):
   return resolveArtifactRepairPath(ctx, matches[0]);
 }
 
-function isRuntimeArtifactRepairContext(text: string): boolean {
-  return RUNTIME_ARTIFACT_REPAIR_CONTEXT_PATTERN.test(text);
+function extractArtifactRepairTargetFromText(ctx: RuntimeContext, text: string): string | null {
+  const envelopes = extractValidatorFailureEnvelopes(text);
+  for (const envelope of envelopes) {
+    const targetFile = extractHtmlArtifactPathFromTrustedText(ctx, envelope);
+    if (targetFile) return targetFile;
+  }
+  return null;
+}
+
+function extractTargetFromValidatorFailedToolResult(
+  ctx: RuntimeContext,
+  result: { metadata?: Record<string, unknown>; error?: string; output?: string },
+): string | null {
+  const metadata = result.metadata;
+  if (!isRecord(metadata)) return null;
+  const validation = metadata.artifactValidation;
+  if (!isRecord(validation) || validation.failed !== true) return null;
+
+  const rollback = metadata.artifactRepairRollback;
+  if (isRecord(rollback) && typeof rollback.targetFile === 'string' && rollback.targetFile.length > 0) {
+    return resolveArtifactRepairPath(ctx, rollback.targetFile);
+  }
+
+  const trustedText = [result.error, result.output]
+    .filter((value): value is string => typeof value === 'string')
+    .join('\n');
+  return extractArtifactRepairTargetFromText(ctx, trustedText)
+    ?? extractHtmlArtifactPathFromTrustedText(ctx, trustedText);
+}
+
+function extractDelimitedEnvelopes(text: string, pattern: RegExp): string[] {
+  return [...text.matchAll(new RegExp(pattern, 'gi'))]
+    .map((match) => match[0])
+    .filter(Boolean);
+}
+
+function extractValidatorPassedEnvelopes(text: string): string[] {
+  return extractDelimitedEnvelopes(text, ARTIFACT_VALIDATOR_PASSED_ENVELOPE_PATTERN);
+}
+
+function extractRepairEndedEnvelopes(text: string): string[] {
+  return extractDelimitedEnvelopes(text, ARTIFACT_REPAIR_ENDED_ENVELOPE_PATTERN)
+    .filter((envelope) => (
+      /reason="artifact-repair-tool-admission"/i.test(envelope)
+      || /<artifact-repair-degraded-release\b/i.test(envelope)
+    ));
+}
+
+function extractTargetFromValidatorPassedToolResult(
+  ctx: RuntimeContext,
+  result: { metadata?: Record<string, unknown>; error?: string; output?: string },
+): string | null {
+  const metadata = result.metadata;
+  if (!isRecord(metadata)) return null;
+  const validation = metadata.artifactValidation;
+  if (!isRecord(validation) || validation.failed !== false || validation.crashed === true) {
+    return null;
+  }
+
+  // 首选 lifecycle 成功分支落库的显式 targetFile（tool result 随消息持久化，
+  // 是跨会话唯一真实存在的"通过"记录）。旧形态（rollback 元数据 / 文本抽取）
+  // 保留作 in-run 信封之外的历史兜底。
+  if (typeof validation.targetFile === 'string' && validation.targetFile.length > 0) {
+    return resolveArtifactRepairPath(ctx, validation.targetFile);
+  }
+
+  const rollback = metadata.artifactRepairRollback;
+  if (isRecord(rollback) && typeof rollback.targetFile === 'string' && rollback.targetFile.length > 0) {
+    return resolveArtifactRepairPath(ctx, rollback.targetFile);
+  }
+
+  const trustedText = [result.error, result.output]
+    .filter((value): value is string => typeof value === 'string')
+    .join('\n');
+  return extractHtmlArtifactPathFromTrustedText(ctx, trustedText);
+}
+
+type LiveRepairFailure = { targetFile: string; sourceText: string };
+
+function joinToolResultSourceText(
+  result: { error?: string; output?: string },
+  messageContent: unknown,
+): string {
+  return [result.error, result.output, messageContent]
+    .filter((value): value is string => typeof value === 'string')
+    .join('\n');
+}
+
+function collectLiveArtifactRepairFailures(
+  ctx: RuntimeContext,
+  items: Array<Pick<Message, 'role'> & { content?: unknown; toolResults?: ToolResult[] }>,
+): LiveRepairFailure[] {
+  const live = new Map<string, LiveRepairFailure>();
+  const recency: string[] = [];
+
+  const recordFailure = (targetFile: string, sourceText: string): void => {
+    live.set(targetFile, { targetFile, sourceText });
+    const existing = recency.indexOf(targetFile);
+    if (existing >= 0) recency.splice(existing, 1);
+    recency.push(targetFile);
+  };
+
+  const resolveTarget = (targetFile: string): void => {
+    live.delete(targetFile);
+    const existing = recency.indexOf(targetFile);
+    if (existing >= 0) recency.splice(existing, 1);
+  };
+
+  const resolveLatestOpenFailure = (): void => {
+    const latest = recency.pop();
+    if (latest) live.delete(latest);
+  };
+
+  const resolveFromTrustedText = (text: string): void => {
+    const envelopes = [
+      ...extractValidatorPassedEnvelopes(text),
+      ...extractRepairEndedEnvelopes(text),
+    ];
+    if (envelopes.length === 0) return;
+    for (const envelope of envelopes) {
+      const targetFile = extractHtmlArtifactPathFromTrustedText(ctx, envelope);
+      if (targetFile) resolveTarget(targetFile);
+      else resolveLatestOpenFailure();
+    }
+  };
+
+  for (const item of items) {
+    if (item.role === 'tool') {
+      for (const result of item.toolResults ?? []) {
+        const failedTarget = extractTargetFromValidatorFailedToolResult(ctx, result);
+        if (failedTarget) {
+          recordFailure(failedTarget, joinToolResultSourceText(result, item.content));
+          continue;
+        }
+        const passedTarget = extractTargetFromValidatorPassedToolResult(ctx, result);
+        if (passedTarget) resolveTarget(passedTarget);
+      }
+      continue;
+    }
+
+    if (item.role !== 'system' || typeof item.content !== 'string') continue;
+
+    if (extractValidatorFailureEnvelopes(item.content).length > 0) {
+      const targetFile = extractArtifactRepairTargetFromText(ctx, item.content);
+      if (targetFile) recordFailure(targetFile, item.content);
+    }
+    resolveFromTrustedText(item.content);
+  }
+
+  return recency
+    .slice()
+    .reverse()
+    .map((targetFile) => live.get(targetFile))
+    .filter((entry): entry is LiveRepairFailure => entry != null);
 }
 
 function inferArtifactRepairPhase(text: string): ArtifactRepairGuardPhase {
   if (/<artifact-playability-failed\b/i.test(text)) {
     return 'playability_repair';
   }
+  if (/repair phase:\s*playability_repair\b/i.test(text)) {
+    return 'playability_repair';
+  }
   if (/\b(playability|playable|interaction|interactive|feel|controls?|visual)\b|体验|可玩性|不好玩|不能玩|玩不通|没法|无法|不能|上不去|拿不到|触发不了|手感|视觉|交互/i.test(text)) {
     return 'playability_repair';
   }
   return 'initial_repair';
+}
+
+function trySeedArtifactRepairGuard(
+  ctx: RuntimeContext,
+  targetFile: string,
+  sourceText: string,
+  activeIssueCodes: string[],
+): boolean {
+  if (
+    ctx.artifact.validationPassedTargetFile
+    && isSameArtifactRepairPath(ctx, targetFile, ctx.artifact.validationPassedTargetFile)
+  ) {
+    return false;
+  }
+  const issueCodes = inferArtifactRepairIssueCodesFromText(sourceText);
+  ctx.artifact.setRepairGuard({
+    targetFile,
+    attempts: 0,
+    phase: issueCodes.length > 0 ? 'initial_repair' : inferArtifactRepairPhase(sourceText),
+    patched: false,
+    ...(activeIssueCodes.length > 0 ? { activeIssueCodes } : {}),
+  });
+  return true;
 }
 
 export function seedArtifactRepairGuardFromContext(ctx: RuntimeContext): void {
@@ -147,48 +339,27 @@ export function seedArtifactRepairGuardFromContext(ctx: RuntimeContext): void {
   }
   if (ctx.artifact.repairGuard) return;
 
-  const messageTextBlocks: string[] = [];
-  const messages = ctx.messages || [];
-  for (let index = messages.length - 1; index >= 0 && messageTextBlocks.length < 8; index -= 1) {
-    const message = messages[index];
-    if (typeof message?.content === 'string') {
-      messageTextBlocks.push(message.content);
-    }
-  }
-
-  const textBlocks = [...messageTextBlocks];
-  const persistentSystemContext = ctx.contextHealth.persistentSystemContext || [];
-  for (let index = persistentSystemContext.length - 1; index >= 0 && textBlocks.length < 16; index -= 1) {
-    const block = persistentSystemContext[index];
-    if (typeof block !== 'string' || !isRuntimeArtifactRepairContext(block)) continue;
-    textBlocks.push(block);
-  }
+  const windowSize = ARTIFACT_REPAIR_GUARD_SEED_MESSAGE_WINDOW;
+  const windowedMessages = (ctx.messages || []).slice(-windowSize);
+  const windowedPersistent = (ctx.contextHealth?.persistentSystemContext || [])
+    .filter((block): block is string => typeof block === 'string')
+    .slice(-windowSize)
+    .map((content) => ({ role: 'system' as const, content }));
+  // Persistent blocks are older than the trailing message window. A later
+  // pass/end envelope in messages must be able to retire those failures.
+  const liveFailures = collectLiveArtifactRepairFailures(ctx, [
+    ...windowedPersistent,
+    ...windowedMessages,
+  ]);
 
   const activeIssueCodes = [
-    ...new Set(textBlocks.flatMap((text) => inferArtifactRepairIssueCodesFromText(text))),
+    ...new Set(liveFailures.flatMap((entry) => inferArtifactRepairIssueCodesFromText(entry.sourceText))),
   ];
 
-  for (const text of textBlocks) {
-    const targetFile = extractArtifactRepairTargetFromText(ctx, text);
-    if (!targetFile) continue;
-    // 该目标本次 run 已通过 artifact validation：禁止再凭历史文本重新种 guard，
-    // 否则验收通过后的下一轮会进入幻影修复模式（无修复发生却显示"正在写入修复补丁"，
-    // 且 write-priority 会白白抬高 maxTokens）。
-    if (
-      ctx.artifact.validationPassedTargetFile
-      && isSameArtifactRepairPath(ctx, targetFile, ctx.artifact.validationPassedTargetFile)
-    ) {
-      continue;
+  for (const entry of liveFailures) {
+    if (trySeedArtifactRepairGuard(ctx, entry.targetFile, entry.sourceText, activeIssueCodes)) {
+      return;
     }
-    const issueCodes = inferArtifactRepairIssueCodesFromText(text);
-    ctx.artifact.setRepairGuard({
-      targetFile,
-      attempts: 0,
-      phase: issueCodes.length > 0 ? 'initial_repair' : inferArtifactRepairPhase(text),
-      patched: false,
-      ...(activeIssueCodes.length > 0 ? { activeIssueCodes } : {}),
-    });
-    return;
   }
 }
 

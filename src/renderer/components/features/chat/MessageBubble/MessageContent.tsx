@@ -10,6 +10,7 @@ import type { MessageContentProps } from './types';
 import { useAppStore } from '../../../../stores/appStore';
 import { useSessionStore } from '../../../../stores/sessionStore';
 import { wrapFilePathsInBackticks, wrapTicketsAsLinks } from './filePathProcessor';
+import { dedupeCodeCopyLinks } from './dedupeCodeCopyLinks';
 import { parseLeadingTriggerToken } from './triggerTokenHighlight';
 import { isWebMode, copyPathToClipboard, openExternalLink } from '../../../../utils/platform';
 import { isPreviewable } from '../../../../utils/previewable';
@@ -163,7 +164,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
     const cleaned = filterSystemTags(markdownSource);
     const noRawHtml = stripRawHtmlOutsideCode(cleaned);
     const withTickets = wrapTicketsAsLinks(noRawHtml);
-    return wrapFilePathsInBackticks(withTickets);
+    return dedupeCodeCopyLinks(wrapFilePathsInBackticks(withTickets));
   }, [markdownSource]);
   const filteredContent = useMemo(
     () => isStreaming ? preparedContent : remend(preparedContent),
@@ -229,7 +230,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
         }
 
         // For inline code that doesn't have a language class
-        if (!className && codeContent.includes('\n')) {
+        if (!className && isCodeBlock) {
           return <CodeBlock language="" code={codeContent} deferOffscreenLayout={!isStreaming} />;
         }
 

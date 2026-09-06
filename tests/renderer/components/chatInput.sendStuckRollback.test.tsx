@@ -8,7 +8,7 @@
 // 刷新也不恢复，用户完全无感（全库搜索确认那句话不存在于任何会话）。
 // 那条根因已单独修掉，本测试钉的是兜底：链路上任何一处挂住都不能再变成零痕迹。
 import React, { useState } from 'react';
-import { act, cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ConversationEnvelope } from '../../../src/shared/contract/conversationEnvelope';
 
@@ -234,5 +234,49 @@ describe('发送挂住不返回时的兜底', () => {
 
     expect(screen.getByTestId('draft').textContent).toBe('');
     expect(toastSpy.warning).not.toHaveBeenCalled();
+  });
+});
+
+// ai-review #1694：把 `send` 的返回值从恒 true 改成真实投递结果后，「失败回滚」这条路
+// 第一次真的会走到。乐观清空之后用户可以继续输入，回滚不许把新内容覆盖掉。
+describe('失败回滚不覆盖用户在这期间新打的内容', () => {
+  function TypingHarness({ onSend }: { onSend: (envelope: ConversationEnvelope) => Promise<boolean> }) {
+    const [value, setValue] = useState(DRAFT);
+    const { handleSubmit } = useChatInputSubmit(
+      makeParams({ value, setValue, onSend, currentSessionId: 'session-typing' }),
+    );
+    return (
+      <div>
+        <span data-testid="draft">{value}</span>
+        <button type="button" onClick={() => void handleSubmit()}>send</button>
+        <button type="button" onClick={() => setValue('用户后打的新内容')}>type</button>
+      </div>
+    );
+  }
+
+  it('发送失败回执到达时输入框已有新内容 ⇒ 保留新内容，不还原旧草稿', async () => {
+    let resolveSend: ((sent: boolean) => void) | undefined;
+    const onSend = vi.fn(() => new Promise<boolean>((resolve) => { resolveSend = resolve; }));
+
+    render(<TypingHarness onSend={onSend} />);
+    fireEvent.click(screen.getByText('send'));
+    await waitFor(() => expect(onSend).toHaveBeenCalled());
+    // 乐观清空后用户接着打字
+    fireEvent.click(screen.getByText('type'));
+    await waitFor(() => expect(screen.getByTestId('draft').textContent).toBe('用户后打的新内容'));
+
+    await act(async () => { resolveSend?.(false); });
+
+    expect(screen.getByTestId('draft').textContent).toBe('用户后打的新内容');
+    expect(screen.getByTestId('draft').textContent).not.toBe(DRAFT);
+  });
+
+  it('输入框仍是空的（用户没打字）⇒ 照常把草稿还回去', async () => {
+    const onSend = vi.fn(async () => false);
+
+    render(<TypingHarness onSend={onSend} />);
+    fireEvent.click(screen.getByText('send'));
+
+    await waitFor(() => expect(screen.getByTestId('draft').textContent).toBe(DRAFT));
   });
 });

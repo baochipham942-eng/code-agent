@@ -532,14 +532,26 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
         pendingAgentSelection,
         sessionReferences,
         artifactReferences,
+        sessionId: currentSessionId,
       };
         const restoreDraft = () => {
-          setValue(draftSnapshot.value);
-          setAttachments(draftSnapshot.attachments);
-          setPendingPromptCommand(draftSnapshot.pendingPromptCommand);
-          setPendingAgentSelection(draftSnapshot.pendingAgentSelection);
-          if (typeof setSessionReferences === 'function') setSessionReferences(draftSnapshot.sessionReferences);
-          if (typeof setArtifactReferences === 'function') setArtifactReferences(draftSnapshot.artifactReferences);
+          // 🔴 回滚不许覆盖用户在这期间新打的内容。乐观清空之后用户可以继续输入（B），
+          // 而上一条（A）的失败回执可能几秒后才回来；无条件写回就把 B 换成 A 的旧草稿，
+          // 未提交内容静默丢失（ai-review #1694）。切了会话同理，草稿不能跨会话落回去。
+          // 判据：只在「输入框仍是我们清空后的样子」时才还原。
+          // 每个 setter 各自函数式守卫：state updater 不保证同步执行，靠一个外层布尔
+          // 串起来是不可靠的（读到的可能是旧值）。守卫口径统一为「这一项还是清空后的样子」。
+          if (draftSnapshot.sessionId !== currentSessionId) return;
+          setValue((current) => (current.trim() ? current : draftSnapshot.value));
+          setAttachments((current) => (current.length ? current : draftSnapshot.attachments));
+          setPendingPromptCommand((current) => current ?? draftSnapshot.pendingPromptCommand);
+          setPendingAgentSelection((current) => current ?? draftSnapshot.pendingAgentSelection);
+          if (typeof setSessionReferences === 'function') {
+            setSessionReferences((current) => (current.length ? current : draftSnapshot.sessionReferences));
+          }
+          if (typeof setArtifactReferences === 'function') {
+            setArtifactReferences((current) => (current.length ? current : draftSnapshot.artifactReferences));
+          }
           setVoiceInputContext(draftSnapshot.voiceInputContext);
           // 命令 chip 也随草稿一起还回来，跟文本输入框的回滚口径一致
           if (pendingCommand) useComposerStore.getState().setPendingCommand(pendingCommand);

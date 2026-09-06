@@ -621,6 +621,12 @@ describe('ClaudeCodeAdapter.run', () => {
   });
 
   it('inherits Claude auth from the captured login shell when the desktop process env is missing it', async () => {
+    // 宿主凭据 sandbox：用例前提是「desktop process env 缺这些键」，但上一用例的
+    // afterEach 会把模块加载时捕获的真实登录态还原回 process.env（本机真有
+    // ANTHROPIC_AUTH_TOKEN，CI 上是 delete）。先摘掉，buildSafeEnv 才会走 mock 的
+    // 登录壳值；本用例结束由既有 afterEach save/restore 兜底还原，CI 行为不变。
+    delete process.env.ANTHROPIC_AUTH_TOKEN;
+    delete process.env.CLAUDE_CODE_OAUTH_TOKEN;
     mocks.shellEnv.ANTHROPIC_AUTH_TOKEN = 'shell-auth-secret-value';
     mocks.shellEnv.CLAUDE_CODE_OAUTH_TOKEN = 'shell-oauth-secret-value';
     mocks.spawn.mockImplementation(() => createMockChild([

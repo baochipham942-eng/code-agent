@@ -3,6 +3,7 @@
 // ============================================================================
 
 import { CANCELLATION_TIMEOUTS, SUBAGENT_EXECUTION_TIMEOUTS } from '../../shared/constants';
+import { SUBAGENT_IDLE } from '../../shared/constants/agent';
 import { createChildAbortController, createTimedAbortController } from './shutdownProtocol';
 
 const DEFAULT_TIMEOUT_MS = SUBAGENT_EXECUTION_TIMEOUTS.ROLE_EXECUTION_MINIMUM;
@@ -14,6 +15,8 @@ export interface SubagentCancellationLifecycle {
   markProgress: () => void;
   markRequestStart: () => void;
   markRequestEnd: () => void;
+  markToolStart: () => void;
+  markToolEnd: () => void;
   stopIdleWatchdog: () => void;
 }
 
@@ -50,8 +53,8 @@ export function getChildSubagentExecutionTimeout(
 // idle 阈值必须 < 总执行预算，否则 idle 看门狗永远来不及在总超时前触发（旧 bug：IDLE_TIMEOUT=120s >
 // 默认子代理预算 90s = 死配置，一次推理挂死必跑满总预算）。取 min(IDLE_TIMEOUT, budget*0.9)：既低于
 // 总预算成为有意义的"长时间无进展"兜底，又给 per-request 超时+重试（约 budget/2 + 一次重发）留出完成空间。
-export function getSubagentIdleTimeout(timeoutMs: number): number {
-  return Math.min(CANCELLATION_TIMEOUTS.IDLE_TIMEOUT, Math.floor(timeoutMs * 0.9));
+export function getSubagentIdleTimeout(timeoutMs: number, inTool = false): number {
+  return Math.min(inTool ? SUBAGENT_IDLE.IN_TOOL_MS : SUBAGENT_IDLE.IDLE_MS, Math.floor(timeoutMs * 0.9));
 }
 
 export function createSubagentCancellationLifecycle(options: {
@@ -59,6 +62,8 @@ export function createSubagentCancellationLifecycle(options: {
   timeoutMs: number;
   parentSignal?: AbortSignal;
   onIdleTimeout?: (idleMs: number) => void;
+  onIdleNudge?: () => void;
+  initiallyInTool?: boolean;
 }): SubagentCancellationLifecycle {
   const { agentName, timeoutMs, parentSignal, onIdleTimeout } = options;
   const { controller: timeoutController, cleanup: cleanupTimer } = createTimedAbortController(
@@ -66,24 +71,19 @@ export function createSubagentCancellationLifecycle(options: {
     { label: agentName },
   );
 
-  const effectiveController = parentSignal
-    ? (() => {
-        const parentController = new AbortController();
-        parentSignal.addEventListener('abort', () => {
-          parentController.abort(parentSignal.reason);
-        }, { once: true });
-        timeoutController.signal.addEventListener('abort', () => {
-          parentController.abort(timeoutController.signal.reason);
-        }, { once: true });
-        return createChildAbortController(parentController);
-      })()
-    : timeoutController;
+  const effectiveController = createChildAbortController(timeoutController);
+  const onParentAbort = () => effectiveController.abort(parentSignal?.reason);
+  parentSignal?.addEventListener('abort', onParentAbort, { once: true });
+  if (parentSignal?.aborted) onParentAbort();
   const effectiveSignal = effectiveController.signal;
 
   let lastProgressAt = Date.now();
   let requestInFlight = false;
+  let toolsInFlight = options.initiallyInTool ? 1 : 0;
+  let graceStartedAt: number | undefined;
   const markProgress = (): void => {
     lastProgressAt = Date.now();
+    graceStartedAt = undefined;
   };
   const markRequestStart = (): void => {
     requestInFlight = true;
@@ -92,13 +92,20 @@ export function createSubagentCancellationLifecycle(options: {
     requestInFlight = false;
     markProgress();
   };
-  const idleThreshold = getSubagentIdleTimeout(timeoutMs);
+  const markToolStart = (): void => { toolsInFlight++; markProgress(); };
+  const markToolEnd = (): void => { toolsInFlight = Math.max(0, toolsInFlight - 1); markProgress(); };
   const idleWatchdog = setInterval(() => {
     if (effectiveSignal.aborted) return;
     // 请求在途 ≠ idle：在途另有 per-request 超时与总预算兜底
     if (requestInFlight) return;
     const idle = Date.now() - lastProgressAt;
-    if (idle > idleThreshold) {
+    if (idle > getSubagentIdleTimeout(timeoutMs, toolsInFlight > 0)) {
+      if (graceStartedAt === undefined) {
+        graceStartedAt = Date.now();
+        options.onIdleNudge?.();
+        return;
+      }
+      if (Date.now() - graceStartedAt < SUBAGENT_IDLE.GRACE_MS) return;
       onIdleTimeout?.(idle);
       effectiveController.abort('idle-timeout');
     }
@@ -108,10 +115,15 @@ export function createSubagentCancellationLifecycle(options: {
   return {
     effectiveController,
     effectiveSignal,
-    cleanupTimer,
+    cleanupTimer: () => {
+      cleanupTimer();
+      parentSignal?.removeEventListener('abort', onParentAbort);
+    },
     markProgress,
     markRequestStart,
     markRequestEnd,
+    markToolStart,
+    markToolEnd,
     stopIdleWatchdog: () => clearInterval(idleWatchdog),
   };
 }

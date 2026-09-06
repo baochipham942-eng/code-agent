@@ -732,5 +732,10 @@ export async function compactMessagesWithSummary(
     warnings,
   };
   recordAudit(result, options);
+  // Earlier Read results may have been replaced by the admitted summary, so Read must not
+  // short-circuit on them any more. Only the shown ranges are dropped: the tracker is a
+  // process-wide singleton and its mtime/digest records still guard Edit/Write stale checks
+  // for every session (ai-review 09-06: a global clear() let a stale notebook_edit through).
+  fileReadTracker.forgetShownRanges();
   return result;
 }

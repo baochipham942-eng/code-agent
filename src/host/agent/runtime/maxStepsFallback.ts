@@ -7,7 +7,10 @@
 // 并附加 system 提示），让模型输出"已完成 / 未完成 / 建议下一步"三段式总结，
 // 避免步数耗尽时无收尾直接断流。
 
+import { getBudgetService } from '../../services';
+import { goalTokensUsedWithSwarm } from './swarmGoalIntegration';
 import type { RuntimeContext } from './runtimeContext';
+import type { ContextInjectionSource } from '../../../shared/contract/contextView';
 
 export const MAX_STEPS_REASON = 'max-steps-reached';
 
@@ -35,7 +38,27 @@ export function buildMaxStepsPrompt(): string {
 }
 
 /** 进入最后一轮时激活 max-steps 兜底；已有其他 forceFinal 原因时不覆盖 */
-export function activateMaxStepsFinalResponse(ctx: RuntimeContext): void {
+export function activateMaxStepsFinalResponse(ctx: RuntimeContext, limitReason?: string): void {
   if (ctx.control.forceFinalResponseReason) return;
-  ctx.control.forceFinalResponse(MAX_STEPS_REASON, buildMaxStepsPrompt());
+  ctx.control.forceFinalResponse(limitReason ? 'resource-limit-reached' : MAX_STEPS_REASON, limitReason
+    ? buildMaxStepsPrompt().replaceAll('MAXIMUM STEPS REACHED', 'RESOURCE LIMIT REACHED')
+      .replaceAll('maximum number of steps allowed for this task', 'resource allowance for this task')
+      .replaceAll('maximum steps for this agent', 'resource limit for this agent') + `\nLimit reached: ${limitReason}`
+    : buildMaxStepsPrompt());
+}
+
+
+export function createResourceWarning(ctx: RuntimeContext, inject: (text: string, source: ContextInjectionSource) => void): () => void {
+  let emitted = false;
+  return () => {
+    if (emitted || ctx.control.forceFinalResponseReason) return;
+    const goal = ctx.goalMode;
+    const wallBudget = goal?.getWallClockBudgetMs();
+    const nearLimit = getBudgetService(ctx.budgetScope).checkBudget().usagePercentage >= 0.8
+      || (goal && goalTokensUsedWithSwarm(ctx) >= goal.getTokenBudget() * 0.8)
+      || (wallBudget && Date.now() - ctx.stats.runStartTime >= wallBudget * 0.8);
+    if (!nearLimit) return;
+    inject('Resource budget is at least 80% used. Wrap up current work, preserve partial results, and prepare a summary of completed work, remaining work, and next steps.', 'nudge');
+    emitted = true;
+  };
 }

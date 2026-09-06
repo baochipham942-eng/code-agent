@@ -861,7 +861,9 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
       // 收在一处：没跑完也必须给终态，否则轮次收尾时 Durable Run 会因为「留着未了结
       // 的操作」把一次成功的轮次报成运行失败。
       response = await withNativeModelOperation(ctx, requestConfig, inferenceAbortController.signal, () => (
-        ctx.runtime.maxMode && maxModeBudgetHeadroomOk(ctx)
+        // 收尾轮（步数/预算/墙钟耗尽后的 forceFinalResponse）只许一次推理：
+        // Max Mode 的 N 候选 + judge 会把已经超支的资源再放大 N+1 倍。
+        ctx.runtime.maxMode && !ctx.runtime.control.forceFinalResponseReason && maxModeBudgetHeadroomOk(ctx)
           ? runMaxModeInference(ctx, modelMessages, effectiveTools, requestConfig, streamCallback, engineOptions)
           : runEngineInference(ctx, modelMessages, effectiveTools, requestConfig, streamCallback, inferenceAbortController.signal, engineOptions)
       ));

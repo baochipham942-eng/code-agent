@@ -250,6 +250,24 @@ describe('readModule (native)', () => {
     });
   });
 
+  it('always returns file content on repeated reads and keeps stale-edit evidence across forgetShownRanges', async () => {
+    const file = path.join(tmpDir, 'repeat.txt');
+    await fs.writeFile(file, 'alpha\nbeta\ngamma');
+    const handler = await readModule.createHandler();
+    const read = (extra: Record<string, unknown> = {}) => handler.execute({ file_path: file, ...extra }, makeCtx(), allowAll);
+    await read();
+    // 同范围重复读必须仍返回正文（PTC 程序化调用直接消费返回值，不能拿到回执）
+    const repeated = await read({ offset: 2, limit: 1 });
+    expect(repeated).toMatchObject({ ok: true, output: expect.stringContaining('beta') });
+    expect(repeated.meta).not.toMatchObject({ deduplicated: true });
+    fileReadTracker.forgetShownRanges();
+    const kept = fileReadTracker.getReadRecord(file, 'test-session:test-agent');
+    expect(kept?.digest).toBeDefined();
+    expect(kept?.shownRange).toBeUndefined();
+    expect(await read()).toMatchObject({ output: expect.stringContaining('alpha') });
+  });
+
+
   describe('embedded param compatibility', () => {
     it('parses "file offset=N limit=N" format', async () => {
       const file = path.join(tmpDir, 'embed.txt');

@@ -128,6 +128,24 @@ describe('FileReadTracker', () => {
   // --------------------------------------------------------------------------
   // Checking Read Status
   // --------------------------------------------------------------------------
+  describe('forgetShownRanges', () => {
+    it('drops only the shown ranges and keeps mtime/size/digest for stale-edit checks', () => {
+      const file = path.join(os.tmpdir(), 'forget-a.txt');
+      const range = { startLine: 1, endLine: 10, totalLines: 10 };
+      tracker.recordRead(file, 1000, 42, { digest: 'abcd1234abcd1234', shownRange: range });
+      tracker.recordRead(file, 1000, 42, { digest: 'abcd1234abcd1234', shownRange: range, actorId: 's1:agent-a' });
+      tracker.forgetShownRanges();
+      for (const record of [tracker.getReadRecord(file), tracker.getReadRecord(file, 's1:agent-a')]) {
+        expect(record).toBeDefined();
+        expect(record?.shownRange).toBeUndefined();
+        expect(record?.digest).toBe('abcd1234abcd1234');
+        expect(record?.mtime).toBe(1000);
+        expect(record?.size).toBe(42);
+      }
+      expect(tracker.hasBeenRead(file)).toBe(true);
+    });
+  });
+
   describe('Checking Read Status', () => {
     it('should return false for unread files', () => {
       expect(tracker.hasBeenRead('/unread/file.ts')).toBe(false);

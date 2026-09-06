@@ -1209,6 +1209,52 @@ describe('applyConversationStreamEvent contentParts adoption', () => {
   });
 });
 
+describe('applyConversationStreamEvent turn_start replay', () => {
+  it('does not create a second assistant bubble when the same turnId is replayed', () => {
+    let messages: Message[] = [];
+    const state = {
+      currentTurnMessageId: null as string | null,
+      committedAssistantMessageIds: new Set<string>(),
+    };
+    const actions = {
+      addMessage: (message: Message) => {
+        messages = [...messages, message];
+      },
+      updateMessage: () => {},
+      setMessages: (next: Message[]) => {
+        messages = next;
+      },
+      getMessages: () => messages,
+      queueUpdate: () => {},
+    };
+
+    applyConversationStreamEvent(
+      { type: 'turn_start', data: { turnId: 'turn-1' } },
+      state,
+      actions,
+    );
+    applyConversationStreamEvent(
+      { type: 'stream_chunk', data: { turnId: 'turn-1', content: 'hello' } },
+      state,
+      { ...actions, appendStreamingMessageDelta: (messageId, delta) => {
+        messages = messages.map((message) => (
+          message.id === messageId
+            ? { ...message, content: `${message.content}${delta.content ?? ''}` }
+            : message
+        ));
+      } },
+    );
+    applyConversationStreamEvent(
+      { type: 'turn_start', data: { turnId: 'turn-1' } },
+      state,
+      actions,
+    );
+
+    expect(messages.filter((message) => message.id === 'turn-1')).toHaveLength(1);
+    expect(messages[0]?.content).toBe('hello');
+  });
+});
+
 describe('applyConversationStreamEvent streaming accumulator', () => {
   it('routes stream chunks to the local accumulator when available', () => {
     const appendStreamingMessageDelta = vi.fn();

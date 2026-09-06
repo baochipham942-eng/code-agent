@@ -37,6 +37,7 @@ import {
 } from './agent/useAgentIPC';
 import { useAgentState } from './agent/useAgentState';
 import { applyToolCallArgumentDelta } from '../utils/toolCallStreaming';
+import { remainingAssistantStreamDelta } from '../utils/assistantStreamDelta';
 import { recordStreamingPerformanceCounter } from '../utils/streamingPerformanceMetrics';
 import ipcService from '../services/ipcService';
 import { IPC_CHANNELS } from '@shared/ipc';
@@ -54,10 +55,12 @@ function buildStreamingDeltaChanges(
 ): Partial<Message> | null {
   const changes: Partial<Message> = {};
   if (entry.contentDelta) {
-    changes.content = (message.content || '') + entry.contentDelta;
+    const remaining = remainingAssistantStreamDelta(message.content || '', entry.contentDelta);
+    if (remaining) changes.content = (message.content || '') + remaining;
   }
   if (entry.reasoningDelta) {
-    changes.reasoning = (message.reasoning || '') + entry.reasoningDelta;
+    const remaining = remainingAssistantStreamDelta(message.reasoning || '', entry.reasoningDelta);
+    if (remaining) changes.reasoning = (message.reasoning || '') + remaining;
   }
   return Object.keys(changes).length > 0 ? changes : null;
 }
@@ -167,7 +170,21 @@ export const useAgent = () => {
   }, [updateMessage]);
 
   const appendStreamingMessageDelta = useCallback((messageId: string, delta: { content?: string; reasoning?: string }) => {
-    useStreamingMessageAccumulatorStore.getState().appendDelta(messageId, delta);
+    const message = useSessionStore.getState().messages.find((item) => item.id === messageId);
+    const accumulated = useStreamingMessageAccumulatorStore.getState().entries[messageId];
+    const content = remainingAssistantStreamDelta(
+      `${message?.content ?? ''}${accumulated?.contentDelta ?? ''}`,
+      delta.content || '',
+    );
+    const reasoning = remainingAssistantStreamDelta(
+      `${message?.reasoning ?? ''}${accumulated?.reasoningDelta ?? ''}`,
+      delta.reasoning || '',
+    );
+    if (!content && !reasoning) return;
+    useStreamingMessageAccumulatorStore.getState().appendDelta(messageId, {
+      ...(content ? { content } : {}),
+      ...(reasoning ? { reasoning } : {}),
+    });
     if (streamingFlushTimersRef.current.has(messageId)) {
       return;
     }

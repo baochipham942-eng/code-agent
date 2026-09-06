@@ -15,6 +15,7 @@ import {
   projectGoalCompletePresentation,
   type GoalCompletePresentationData,
 } from '../../../utils/goalCompletePresentation';
+import { remainingAssistantStreamDelta } from '../../../utils/assistantStreamDelta';
 
 /**
  * 这些 agent 事件不构成「宿主还在跑」的证据：终态由各自分支负责把运行态放下，
@@ -148,6 +149,12 @@ export function applyConversationStreamEvent(
           state.committedAssistantMessageIds.delete(turnId);
           break;
         }
+        const existing = getFreshMessages().find((message) => message.id === turnId);
+        if (existing?.role === 'assistant') {
+          state.currentTurnMessageId = turnId;
+          state.committedAssistantMessageIds.delete(turnId);
+          break;
+        }
         const newMessage: Message = {
           id: turnId,
           role: 'assistant',
@@ -173,8 +180,10 @@ export function applyConversationStreamEvent(
           : freshMsgs[freshMsgs.length - 1];
 
         if (targetMessage?.role === 'assistant') {
+          const remaining = remainingAssistantStreamDelta(targetMessage.content || '', chunkData.content);
+          if (!remaining) break;
           appendAssistantStreamDelta(actions, targetMessage.id, {
-            content: chunkData.content,
+            content: remaining,
           });
         } else if (targetMessageId) {
           break;
@@ -196,8 +205,10 @@ export function applyConversationStreamEvent(
               state.currentTurnMessageId = newMessage.id;
               state.committedAssistantMessageIds.delete(newMessage.id);
             } else {
+              const remaining = remainingAssistantStreamDelta(lastMessage.content || '', chunkData.content);
+              if (!remaining) break;
               appendAssistantStreamDelta(actions, lastMessage.id, {
-                content: chunkData.content,
+                content: remaining,
               });
             }
           }
@@ -223,9 +234,14 @@ export function applyConversationStreamEvent(
               ? { reasoning: deltaData.text }
               : { content: deltaData.text });
           } else {
+            const existing = field === 'reasoning'
+              ? (targetMessage.reasoning || '')
+              : (targetMessage.content || '');
+            const remaining = remainingAssistantStreamDelta(existing, deltaData.text);
+            if (!remaining) break;
             appendAssistantStreamDelta(actions, targetMessage.id, field === 'reasoning'
-              ? { reasoning: deltaData.text }
-              : { content: deltaData.text });
+              ? { reasoning: remaining }
+              : { content: remaining });
           }
         }
       }
@@ -400,8 +416,13 @@ export function applyConversationStreamEvent(
           : getFreshMessages()[getFreshMessages().length - 1];
 
         if (targetMessage?.role === 'assistant') {
+          const remaining = remainingAssistantStreamDelta(
+            targetMessage.reasoning || '',
+            reasoningData.content,
+          );
+          if (!remaining) break;
           appendAssistantStreamDelta(actions, targetMessage.id, {
-            reasoning: reasoningData.content,
+            reasoning: remaining,
           });
         }
       }

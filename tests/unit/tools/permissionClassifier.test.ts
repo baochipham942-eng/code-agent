@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -408,11 +408,27 @@ describe('PermissionClassifier', () => {
   });
 
   describe('approval decision gap guards', () => {
+    const approvalWorkspace = '/tmp/approval-project';
+    let createdApprovalWorkspace = false;
     const context = {
-      workingDirectory: '/tmp/approval-project',
-      workspaceRoot: '/tmp/approval-project',
+      workingDirectory: approvalWorkspace,
+      workspaceRoot: approvalWorkspace,
       permissionLevel: 'execute' as const,
     };
+
+    beforeAll(async () => {
+      try {
+        await fs.stat(approvalWorkspace);
+      } catch (error) {
+        if (!error || typeof error !== 'object' || !('code' in error) || error.code !== 'ENOENT') throw error;
+        await fs.mkdir(approvalWorkspace, { recursive: true });
+        createdApprovalWorkspace = true;
+      }
+    });
+
+    afterAll(async () => {
+      if (createdApprovalWorkspace) await fs.rm(approvalWorkspace, { recursive: true, force: true });
+    });
 
     it.each([
       'printf ok > /tmp/approval-project/out.txt',
@@ -452,6 +468,54 @@ describe('PermissionClassifier', () => {
         traceStep: { rule: 'W3: outside_project' },
         trustBoundary: true,
       });
+    });
+
+    it('resolves symlinks before dot segments when proving workspace writes', async () => {
+      const root = await fs.mkdtemp(path.join(os.tmpdir(), 'approval-write-proof-'));
+      const workspace = path.join(root, 'work');
+      const external = path.join(root, 'external');
+      const externalChild = path.join(external, 'child');
+      await fs.mkdir(path.join(workspace, 'sub'), { recursive: true });
+      await fs.mkdir(externalChild, { recursive: true });
+      await fs.symlink(
+        externalChild,
+        path.join(workspace, 'link'),
+        process.platform === 'win32' ? 'junction' : 'dir',
+      );
+      const writeContext = {
+        workingDirectory: workspace,
+        workspaceRoot: workspace,
+        permissionLevel: 'execute' as const,
+      };
+
+      try {
+        const symlinkEscape = await classifyPermission(
+          'Bash',
+          { command: `printf ok > ${workspace}${path.sep}link${path.sep}..${path.sep}out.txt` },
+          writeContext,
+        );
+        const ordinaryParent = await classifyPermission(
+          'Bash',
+          { command: `printf ok > ${workspace}${path.sep}sub${path.sep}..${path.sep}out.txt` },
+          writeContext,
+        );
+        const missingTail = await classifyPermission(
+          'Bash',
+          { command: `printf ok > ${workspace}${path.sep}newfile.txt` },
+          writeContext,
+        );
+
+        expect(symlinkEscape).toMatchObject({
+          decision: 'ask',
+          traceStep: { rule: 'W3: outside_project' },
+          trustBoundary: true,
+        });
+        expect(symlinkEscape.reason).toContain(path.join(external, 'out.txt'));
+        expect(ordinaryParent).toMatchObject({ decision: 'approve', reason: '写入项目目录内' });
+        expect(missingTail).toMatchObject({ decision: 'approve', reason: '写入项目目录内' });
+      } finally {
+        await fs.rm(root, { recursive: true, force: true });
+      }
     });
 
     it.each([

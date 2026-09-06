@@ -1,5 +1,6 @@
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { lstatSync, realpathSync } from 'node:fs';
 import {
   createHostReason,
   HostReasonCode,
@@ -52,8 +53,8 @@ function hasUnsupportedShellControl(command: string): boolean {
   return quote !== undefined || escaped;
 }
 
-function resolveCandidatePath(rawPath: string, context: WorkspaceWriteContext): string {
-  const cacheKey = `${context.workingDirectory}\u0000${rawPath}`;
+function resolveCandidatePath(rawPath: string, context: WorkspaceWriteContext): string | null {
+  const cacheKey = `workspace-write\u0000${context.workingDirectory}\u0000${rawPath}`;
   const cached = context.pathResolutionCache?.get(cacheKey);
   if (cached) return cached;
   const expanded = rawPath === '~'
@@ -61,11 +62,43 @@ function resolveCandidatePath(rawPath: string, context: WorkspaceWriteContext): 
     : rawPath.startsWith('~/')
       ? path.join(os.homedir(), rawPath.slice(2))
       : rawPath;
-  const resolved = resolveCanonicalRunPath(
-    path.isAbsolute(expanded) ? path.resolve(expanded) : path.resolve(context.workingDirectory, expanded),
-  );
-  context.pathResolutionCache?.set(cacheKey, resolved);
-  return resolved;
+  const absolute = path.isAbsolute(expanded)
+    ? expanded
+    : `${resolveCanonicalRunPath(context.workingDirectory)}${path.sep}${expanded}`;
+  const root = path.parse(absolute).root;
+  const parts = absolute.slice(root.length).split(path.sep).filter(Boolean);
+  let cursor = root;
+
+  for (let index = 0; index < parts.length; index += 1) {
+    const part = parts[index];
+    if (part === '.') continue;
+    if (part === '..') {
+      cursor = path.dirname(cursor);
+      continue;
+    }
+
+    const next = path.join(cursor, part);
+    try {
+      lstatSync(next);
+    } catch (error) {
+      const code = error && typeof error === 'object' && 'code' in error
+        ? String(error.code)
+        : undefined;
+      const hasUnresolvedSuffix = parts.slice(index + 1).some((suffix) => suffix !== '.');
+      if (code !== 'ENOENT' || hasUnresolvedSuffix) return null;
+      context.pathResolutionCache?.set(cacheKey, next);
+      return next;
+    }
+
+    try {
+      cursor = realpathSync.native(next);
+    } catch {
+      return null;
+    }
+  }
+
+  context.pathResolutionCache?.set(cacheKey, cursor);
+  return cursor;
 }
 
 function isPathInside(candidate: string, boundary: string): boolean {
@@ -126,7 +159,12 @@ export function classifyProvenWorkspaceWrite(
   if (!context.workspaceRoot) return outsideWorkspace('缺少工作区写入边界', startTime);
 
   const workspace = resolveCanonicalRunPath(context.workspaceRoot);
-  const resolvedTargets = rawTargets.map((target) => resolveCandidatePath(target, context));
+  const resolvedTargets: string[] = [];
+  for (const target of rawTargets) {
+    const resolved = resolveCandidatePath(target, context);
+    if (!resolved) return outsideWorkspace(`写入目标无法按真实文件系统确认: ${target}`, startTime);
+    resolvedTargets.push(resolved);
+  }
   const externalTarget = resolvedTargets.find((target) => !isPathInside(target, workspace));
   if (externalTarget) return outsideWorkspace(`写入项目目录外: ${externalTarget}`, startTime, externalTarget);
 

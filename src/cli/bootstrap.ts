@@ -599,7 +599,10 @@ export function createAgentLoop(
         modelName: config.modelConfig.model,
         workingDirectory: config.workingDirectory,
         // CLI 会话的 session_type 也是 'chat'，与真实用户对话分不开；上线后评测按这一列剔分母。
-        originKind: 'headless',
+        // 但**来源由入口声明，这里绝不能写死**：桌面 renderer 的每一次发送都走
+        // /api/run → createAgentLoop（不经过 AgentOrchestrator），写死 'headless'
+        // 会把真人界面会话全标成脚本发起，上线后评分分母恒空（2026-09-06 真机实测）。
+        originKind: config.originKind,
       });
       telemetryAdapter = collector.createAdapter(effectiveSessionId, 'cli');
       currentTelemetrySessionId = effectiveSessionId;

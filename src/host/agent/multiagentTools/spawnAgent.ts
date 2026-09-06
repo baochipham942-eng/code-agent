@@ -519,6 +519,11 @@ export async function executeSpawnAgent(
         const worktreeNote = finalizedWorktree.worktreeNote;
 
         if (result.success) {
+          // N-SUBAGENT-ZEROTOOLS：部分声明的工具没装配上时清单带回父模型（能力可能不完整，
+          // 让父模型自行裁量结果可信度），不静默吞掉。
+          const missingToolsNote = result.missingTools?.length
+            ? `\n- Missing tools: ${result.missingTools.join(', ')}（声明的工具未全部装配，该子代理能力可能不完整）`
+            : '';
           return {
             success: true,
             output: `Agent [${agentName}] completed task:
@@ -532,11 +537,12 @@ Stats:
 - Iterations: ${result.iterations}
 - Tools used: ${result.toolsUsed.join(', ') || 'none'}
 - Agent ID: ${agentId}
-- Pipeline ID: ${result.agentId || 'N/A'}${result.cost !== undefined ? `\n- Cost: $${result.cost.toFixed(4)}` : ''}${worktreeNote}`,
+- Pipeline ID: ${result.agentId || 'N/A'}${result.cost !== undefined ? `\n- Cost: $${result.cost.toFixed(4)}` : ''}${missingToolsNote}${worktreeNote}`,
             metadata: {
               agentId,
               cost: result.cost,
               tokensUsed: result.tokensUsed,
+              ...(result.missingTools?.length ? { missingTools: result.missingTools } : {}),
               ...(context.swarmRunScope ?? {}),
             },
           };
@@ -549,6 +555,7 @@ Stats:
               agentId,
               cost: result.cost,
               tokensUsed: result.tokensUsed,
+              ...(result.missingTools?.length ? { missingTools: result.missingTools } : {}),
               ...(context.swarmRunScope ?? {}),
               cancellationReason: result.cancellationReason,
               failureCode: result.failureCode

@@ -72,6 +72,12 @@ export interface SubagentResult {
    */
   cancellationReason?: CancellationReason;
   failureCode?: AgentFailureCode;
+  /**
+   * N-SUBAGENT-ZEROTOOLS：声明了但（触发按需连接后仍）未装配上的工具名。
+   * 全部未装配时配合 failureCode: ToolUnavailable 结构化失败；
+   * 部分未装配时随成功结果带回，由父模型决定怎么处理。
+   */
+  missingTools?: string[];
 }
 
 export interface SubagentToolResolverPort {

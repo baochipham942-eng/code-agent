@@ -3,6 +3,7 @@
 // ============================================================================
 
 import type { TelemetryCompleteness } from './evaluationReplay';
+import type { PostLaunchConsentScope, PostLaunchSignalKind, PostLaunchDimension } from './postLaunchScore';
 
 export const EVAL_RUN_EVENT_SCHEMA_VERSION = 4 as const;
 export const EVAL_REPEAT_MAX = 10;
@@ -893,6 +894,14 @@ interface CreateEvalDraftRequest {
   expectations?: HarvestCandidateRef[];
   /** 存为待办：不写判定标准，题库页标「还没有判定标准」。 */
   pending?: boolean;
+  /** 由上线后候选入口传入；host 会重新核对候选与同意档，不信任 renderer 声明。 */
+  postLaunchReflow?: {
+    turnId?: string | null;
+    sources: Array<'judge' | 'signal' | 'feedback'>;
+    redDimensions?: PostLaunchDimension[];
+    signals?: PostLaunchSignalKind[];
+    consentScope?: PostLaunchConsentScope;
+  };
 }
 
 export type SaveEvalCaseRequest =

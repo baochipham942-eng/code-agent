@@ -27,10 +27,12 @@ import type {
   HarvestExpectationType,
   HarvestFieldKey,
 } from '@shared/contract/evaluation';
+import type { PostLaunchConsentScope } from '@shared/contract/postLaunchScore';
 import { EVALUATION_CHANNELS } from '../../shared/evaluationChannels';
 import { invokeEvaluation } from '../evaluationRunIpc';
 import { useEvaluationI18n } from '../i18n/useEvaluationI18n';
 import { toast } from '@renderer/hooks/useToast';
+import ipcService from '@renderer/services/ipcService';
 import { Button } from '@renderer/components/primitives/Button';
 import { Modal } from '@renderer/components/primitives/Modal';
 import { Select } from '@renderer/components/primitives/Select';
@@ -81,6 +83,8 @@ function toForm(seed: HarvestDraftSeed): DraftForm {
 
 export interface EvalHarvestDialogProps {
   sessionIds: string[];
+  /** 从上线后候选进入时开启，保存前由 host 重新执行四道闸。 */
+  postLaunchReflow?: boolean;
   onClose: () => void;
   /** 头部「来源会话 ↗」点击：回到回放视图看当时发生了什么。 */
   onOpenSession: (sessionId: string) => void;
@@ -89,7 +93,7 @@ export interface EvalHarvestDialogProps {
 }
 
 export const EvalHarvestDialog: React.FC<EvalHarvestDialogProps> = ({
-  sessionIds,
+  sessionIds, postLaunchReflow = false,
   onClose,
   onOpenSession,
   onFinished,
@@ -103,6 +107,7 @@ export const EvalHarvestDialog: React.FC<EvalHarvestDialogProps> = ({
   const [saving, setSaving] = useState(false);
   const [tagDraft, setTagDraft] = useState('');
   const [manualType, setManualType] = useState<HarvestExpectationType>(HARVEST_EXPECTATION_TYPES[0]);
+  const [consentScope, setConsentScope] = useState<PostLaunchConsentScope>('metadata');
 
   const batchTag = forms[0]?.seed.tags[0] ?? '';
   const current = forms[index];
@@ -126,7 +131,15 @@ export const EvalHarvestDialog: React.FC<EvalHarvestDialogProps> = ({
   const generate = async () => {
     setPhase('loading');
     try {
-      const result = await invokeEvaluation(EVALUATION_CHANNELS.HARVEST_PREVIEW, { sessionIds, fields });
+      if (postLaunchReflow) {
+        for (const sessionId of sessionIds) {
+          await (ipcService.invoke as unknown as (channel: string, payload: unknown) => Promise<unknown>)(
+            'telemetry:set-postlaunch-reflow-consent',
+            { sessionId, scope: consentScope },
+          );
+        }
+      }
+      const result = await invokeEvaluation(EVALUATION_CHANNELS.HARVEST_PREVIEW, { sessionIds, fields, postLaunchReflow });
       if (result.failed.length > 0) {
         const detail = result.failed.map((row) => `${row.sessionId}：${row.error}`).join('；');
         const template = result.seeds.length === 0 ? h.allFailed : h.partialFailed;
@@ -178,6 +191,7 @@ export const EvalHarvestDialog: React.FC<EvalHarvestDialogProps> = ({
         type: current.caseType,
         tags: current.tags,
         sourceSessionId: current.seed.sessionId,
+        ...(current.seed.postLaunchReflow ? { postLaunchReflow: current.seed.postLaunchReflow } : {}),
         pending,
         expectations: pending
           ? []
@@ -229,6 +243,21 @@ export const EvalHarvestDialog: React.FC<EvalHarvestDialogProps> = ({
     return (
       <React.Fragment key="harvest-mapping">
         <div className="text-xs text-zinc-400">{h.selectedCount.replace('{n}', String(sessionIds.length))}</div>
+        {postLaunchReflow && (
+          <label className="flex items-center gap-2 text-xs text-zinc-400">
+            <span>{h.consentLabel}</span>
+            <select
+              className="rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-xs text-zinc-300"
+              value={consentScope}
+              onChange={(event) => setConsentScope(event.target.value as PostLaunchConsentScope)}
+              data-testid="eval-harvest-consent"
+            >
+              <option value="metadata">{h.consentMetadata}</option>
+              <option value="turn_excerpt">{h.consentExcerpt}</option>
+              <option value="full_session">{h.consentFull}</option>
+            </select>
+          </label>
+        )}
         <div>
           <div className="mb-2 text-xs font-medium text-zinc-400">{h.mappingTitle}</div>
           <div className="space-y-1.5">

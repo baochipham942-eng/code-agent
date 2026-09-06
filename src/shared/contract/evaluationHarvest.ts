@@ -4,6 +4,7 @@
 // 从 evaluation.ts 拆出来单独成文件（那份已顶到 max-lines 上限）；
 // 消费方仍从 '@shared/contract/evaluation' 取，那边整体再导出。
 // ============================================================================
+import type { PostLaunchDimension, PostLaunchSignalKind } from './postLaunchScore';
 /** 候选判定标准允许的类型白名单——只用现有断言类型，不发明新的。 */
 export const HARVEST_EXPECTATION_TYPES = [
   'file_exists',
@@ -55,6 +56,13 @@ export interface HarvestDraftSeed {
   candidates: HarvestCandidate[];
   /** 推不出候选时给人的提示（渲染侧查词典翻成人话）。 */
   notes: HarvestSeedNote[];
+  /** 上线后回流候选的结构化溯源；正文仍由 HARVEST 按同意档决定是否带入。 */
+  postLaunchReflow?: {
+    turnId: string | null;
+    sources: Array<'judge' | 'signal' | 'feedback'>;
+    redDimensions: PostLaunchDimension[];
+    signals: PostLaunchSignalKind[];
+  };
 }
 
 export type HarvestSeedNote = 'noCandidates' | 'negativeFeedbackNeedsManual';
@@ -62,6 +70,8 @@ export type HarvestSeedNote = 'noCandidates' | 'negativeFeedbackNeedsManual';
 export interface HarvestPreviewRequest {
   sessionIds: string[];
   fields: HarvestFieldKey[];
+  /** 由上线后卡片点选时开启，宿主重新读取候选并预填溯源。 */
+  postLaunchReflow?: boolean;
 }
 
 export interface HarvestPreviewResult {

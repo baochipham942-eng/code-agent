@@ -855,6 +855,13 @@ export const zhSettingsWork = {
           on: '开',
           off: '关',
         },
+        postLaunchReflow: {
+          label: '坏案例回流',
+          body: '允许从上线后评分、确定性信号或点踩会话收为回归题目；默认只保留元数据，保存草稿前还需要这一轮摘录或完整会话同意。',
+          auto: '跟随默认（内部机器开，其他关）',
+          on: '开',
+          off: '关',
+        },
       },
       status: {
         title: '状态',

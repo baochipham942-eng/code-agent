@@ -853,6 +853,13 @@ export const enSettingsWork = {
           on: 'On',
           off: 'Off',
         },
+        postLaunchReflow: {
+          label: 'Bad-case reflow',
+          body: 'Allow post-launch scores, deterministic signals or negative feedback to become regression drafts. Saving requires turn-excerpt or full-session consent.',
+          auto: 'Follow the default (on for internal builds, off otherwise)',
+          on: 'On',
+          off: 'Off',
+        },
       },
       status: {
         title: 'Status',

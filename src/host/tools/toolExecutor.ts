@@ -3,6 +3,7 @@
 // ============================================================================
 
 import type { ToolContext, ToolExecutionResult, PermissionRequestData } from './types';
+import { permissionRequestTypeForLevel } from './permissionRequestType';
 import * as nodePath from 'path';
 import * as nodeFs from 'node:fs/promises';
 import { createHash, randomUUID } from 'node:crypto';
@@ -2046,13 +2047,7 @@ export class ToolExecutor {
           };
         }
         // Map permission level to permission request type
-        const typeMap: Record<string, PermissionRequestData['type']> = {
-          read: 'file_read',
-          write: 'file_write',
-          execute: 'command',
-          network: 'network',
-        };
-        const requestType = typeMap[tool.permissionLevel] || 'file_read';
+        const requestType = permissionRequestTypeForLevel(tool.permissionLevel);
         return {
           type: requestType,
           tool: tool.name,

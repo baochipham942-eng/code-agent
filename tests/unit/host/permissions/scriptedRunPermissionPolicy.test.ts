@@ -292,9 +292,16 @@ describe('builtin plugin request chain', () => {
     process.env.CODE_AGENT_DATA_DIR = path.join(tempDir, 'isolated-data');
     process.env.CODE_AGENT_EVAL_BRIDGE = '1';
     const handler = requireScriptedRunPermissionHandler()!;
-    for (const tool of ['browser_action', 'Browser', 'image_process'] as const) {
+    // 请求类型必须跟产品真实映射一致（permissionLevel → requestType），否则规则改成 allow
+    // 也匹配不上、测试照样绿——这条断言就成了摆设（#1670 第四轮 ai-review Nit）。
+    const cases = [
+      { tool: 'browser_action', level: 'execute', details: { action: 'screenshot', analyze: true } },
+      { tool: 'Browser', level: 'execute', details: { action: 'screenshot', analyze: true } },
+      { tool: 'image_process', level: 'write', details: { output_path: '/tmp/outside-sandbox.png' } },
+    ] as const;
+    for (const { tool, level, details } of cases) {
       await expect(handler({
-        type: 'command', tool, details: { action: 'screenshot', analyze: true },
+        type: permissionRequestTypeForLevel(level), tool, details,
       } as never)).resolves.toMatchObject({ approved: false, denialSource: 'scripted' });
     }
   });

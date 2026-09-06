@@ -16,6 +16,7 @@ import type {
 } from '../shared/contract/conversationEnvelope';
 import type { ExplicitAgentOverride } from '../host/agent/explicitAgentOverride';
 import type { GoalContract } from '../host/agent/goalModeController';
+import type { SessionOriginKind } from '../shared/contract/session';
 
 export interface CLIGlobalOptions {
   project: string;
@@ -84,6 +85,15 @@ export interface CLIConfig {
   agentOverride?: ExplicitAgentOverride;
   /** 用户显式请求的 agent id（含解析失败场景）；进 AgentLoop ctx 供 turnQuality 徽标降级判定。 */
   requestedAgentId?: string;
+  /**
+   * 这条 run 是谁发起的，写进 telemetry_sessions.origin_kind，上线后评测按它剔分母。
+   *
+   * createAgentLoop 是**所有入口的公共路径**（neo CLI / neo serve / 角色醒来 / 桌面与 Web UI
+   * 的 /api/run 全走它），所以来源只能由入口自己声明，公共路径不许替谁猜：
+   *   - 脚本/无头入口显式传 'headless'；
+   *   - 界面会话不传（= 真人手动，落 NULL）——与 SessionConfig.originKind 的口径一致。
+   */
+  originKind?: SessionOriginKind;
 }
 
 /**

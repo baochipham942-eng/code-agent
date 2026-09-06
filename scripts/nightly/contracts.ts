@@ -79,3 +79,9 @@ export function validateReport(cases: Case[], rows: Row[], summary: ReturnType<t
   }
   return errors;
 }
+
+/** Product failures are report data; infrastructure failures must still fail the scheduler. */
+export function pipelineExitCode(input: { executed: number; failed: number; mechanismFailed: boolean; notificationDelivered: boolean; scheduled: boolean }): number {
+  if (input.mechanismFailed || input.executed === 0 || !input.notificationDelivered) return 1;
+  return input.failed > 0 && !input.scheduled ? 1 : 0;
+}

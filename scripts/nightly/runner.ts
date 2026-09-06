@@ -1,7 +1,7 @@
 #!/usr/bin/env -S npx tsx
 import { readFileSync, existsSync, mkdirSync, cpSync, unlinkSync } from 'node:fs';
 import path from 'node:path';
-import { inspectEvidence, parseCases, validateReport, type Row } from './contracts';
+import { pipelineExitCode, inspectEvidence, parseCases, validateReport, type Row } from './contracts';
 import { api, repo, expand, loadResident, runEmptyCase, save, schedulerProbe, scrub, startResident, stopResident } from './runtime';
 import { designReferences, directory, feedback, renderReport, sendSummary } from './report';
 
@@ -19,7 +19,7 @@ async function main() {
     const config = option('--notify-config');
     if (!config) throw new Error('FAIL schedule requires --notify-config');
     const quote = (value: string) => "'" + value.replaceAll("'", "'\"'\"'") + "'";
-    const argv = [process.execPath, path.join(repo, 'node_modules/tsx/dist/cli.mjs'), path.join(repo, 'scripts/nightly/runner.ts'), 'run', '--resident', state.dataDir, '--notify-config', expand(config)];
+    const argv = [process.execPath, path.join(repo, 'node_modules/tsx/dist/cli.mjs'), path.join(repo, 'scripts/nightly/runner.ts'), 'run', '--scheduled', '--resident', state.dataDir, '--notify-config', expand(config)];
     const previousFile = path.join(state.dataDir, 'nightly-schedule.json');
     if (existsSync(previousFile)) throw new Error('FAIL nightly schedule already recorded; remove owned job before replacing');
     const job = await api(state, 'domain/cron/createJob', { payload: { name: 'nightly-acceptance', runsOn: 'local', enabled: true, scheduleType: 'cron', schedule: { type: 'cron', expression: option('--cron') ?? '0 3 * * *', timezone: 'Asia/Shanghai' }, action: { type: 'shell', command: argv.map(quote).join(' '), cwd: repo }, maxRetries: 0 } });
@@ -97,6 +97,8 @@ async function main() {
   if (config) save(path.join(path.dirname(report.html), `${date}-${runId}.notification.json`), sendSummary(config, text, runId));
   else save(path.join(path.dirname(report.html), `${date}-${runId}.notification.json`), { status: '未发送', reason: '未配置已授权早报收件会话/profile/identity', text });
   console.log(text); console.log(`MANIFEST ${scrub(report.jsonFile)}`);
-  if (mechanism || report.summary.failed || report.summary.executed === 0 || !config) process.exitCode = 1;
+  const scheduled = args.includes('--scheduled');
+  process.exitCode = pipelineExitCode({ executed: report.summary.executed, failed: report.summary.failed, mechanismFailed: !!mechanism, notificationDelivered: !!config, scheduled });
+  if (scheduled && process.exitCode === 0) console.log(`PIPELINE_COMPLETED acceptance=${report.summary.failed ? 'FAILED' : 'PARTIAL'} failed=${report.summary.failed} unexecuted=${report.summary.skipped}`);
 }
 main().catch(error => { console.error(scrub(String(error))); process.exitCode = 1; });

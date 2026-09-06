@@ -2,7 +2,7 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, unlinkSync
 import os from 'node:os';
 import path from 'node:path';
 import { describe, it, expect, afterEach } from 'vitest';
-import { counts, digest, inspectEvidence, parseCases, validateReport, type Case, type Row } from '../../scripts/nightly/contracts';
+import { pipelineExitCode, counts, digest, inspectEvidence, parseCases, validateReport, type Case, type Row } from '../../scripts/nightly/contracts';
 
 const temporary: string[] = [];
 afterEach(() => { temporary.splice(0).forEach(p => rmSync(p, { recursive: true, force: true })); });
@@ -25,6 +25,14 @@ function evidence(spec: Case, row: Row) {
   return dir;
 }
 describe('nightly acceptance fail-closed evidence', () => {
+  it('keeps scheduled defect reporting alive while manual acceptance stays red', () => {
+    const completed = { executed: 1, failed: 1, mechanismFailed: false, notificationDelivered: true, scheduled: true };
+    expect(Array.from({ length: 6 }, () => pipelineExitCode(completed))).toEqual([0, 0, 0, 0, 0, 0]);
+    expect(pipelineExitCode({ ...completed, scheduled: false })).toBe(1);
+    expect(pipelineExitCode({ ...completed, mechanismFailed: true })).toBe(1);
+    expect(pipelineExitCode({ ...completed, executed: 0 })).toBe(1);
+    expect(pipelineExitCode({ ...completed, notificationDelivered: false })).toBe(1);
+  });
   it('rejects incomplete inventories', () => expect(() => parseCases('### TC-M1-01 · partial\n')).toThrow('FAIL'));
   it('keeps all 55 unexecuted rows and zero runtime claims', () => { const cases = inventory(); const rows = rowsFor(cases); expect(counts(rows)).toEqual({ executed: 0, skipped: 55, failed: 0, passed: 0, total: 55 }); expect(validateReport(cases, rows, counts(rows), () => '')).toEqual([]); });
   it('mutation 1 rejects blocked promotion independently of forged summary', () => { const cases = inventory(); const rows = rowsFor(cases); const top = counts(rows); rows[1].status = '通过'; expect(validateReport(cases, rows, top, () => '')).toContain('FAIL COUNTS top summary differs from case table'); expect(validateReport(cases, rows, counts(rows), () => '').some(e => e.includes('blocked case'))).toBe(true); });

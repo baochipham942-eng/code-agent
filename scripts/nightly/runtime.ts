@@ -188,7 +188,14 @@ export async function runEmptyCase(spec: Case, state: Resident, dir: string, run
     await page.locator(`[data-session-id="${sessionId}"]`).click();
     observations.responses.push(await api<Health | null>(state, 'context/health/get', [sessionId]));
     const pill = page.getByRole('button', { name: /上下文.*使用|上下文.*健康/ }).first();
-    if (await pill.isVisible()) await pill.click();
+    const openDetail = async () => {
+      const detail = page.locator('[data-testid="context-health-detail"]');
+      try {
+        if (!await detail.isVisible()) await pill.click();
+        await detail.waitFor({ state: 'visible' });
+      } catch (error) { throw new Error('CAPTURE_PRECONDITION: context health detail could not be opened', { cause: error }); }
+    };
+    await openDetail();
     await frame('empty', ['暂无上下文数据。', '还没有健康度信息']);
     await page.keyboard.press('Escape');
     let release!: () => void;
@@ -200,6 +207,7 @@ export async function runEmptyCase(spec: Case, state: Resident, dir: string, run
       await page.locator('[data-testid="chat-composer-textarea"]').fill('请只回复 NIGHTLY_OK，不调用工具。');
       await page.locator('[data-testid="chat-composer-textarea"]').press('Enter');
       await Promise.race([arrived, delay(15000).then(() => { throw new Error('FAIL first message did not reach run endpoint'); })]);
+      await openDetail();
       await frame('first-message-pending-provider', ['等待统计上下文容量']);
     } finally { release(); }
     for (let i = 0; i < 90; i++) {
@@ -207,9 +215,9 @@ export async function runEmptyCase(spec: Case, state: Resident, dir: string, run
       await delay(500);
     }
     observations.responses.push(await api<Health | null>(state, 'context/health/get', [sessionId]));
-    if (!await page.locator('[data-testid="context-health-detail"]').isVisible() && await pill.isVisible()) await pill.click();
+    await openDetail();
     await frame('first-snapshot', []);
-  } catch (error) { observations.error = scrub(String(error)); await frame('error', []).catch(e => { observations.captureError = scrub(String(e)); }); }
+  } catch (error) { observations.error = scrub(String(error)); if (observations.error.includes('CAPTURE_PRECONDITION')) observations.captureError = observations.error; await frame('error', []).catch(e => { observations.captureError = scrub(String(e)); }); }
   finally { await browser.close(); }
   const db = new Database(path.join(state.dataDir, 'code-agent.db'), { readonly: true });
   const messages = sessionId ? db.prepare('SELECT * FROM messages WHERE session_id = ? ORDER BY timestamp').all(sessionId) as Array<{ role: string }> : [];
@@ -250,7 +258,7 @@ export async function runEmptyCase(spec: Case, state: Resident, dir: string, run
   row.checks = [
     check(!observations.error && (initial === null || initial?.lastUpdated === 0) && messages.filter(m => m.role === 'user').length === expectedUserCount && audit.length === 0 && finalSnapshot?.tokenSource === 'provider', `初始空快照、user=${expectedUserCount}（实得 ${messages.filter(m => m.role === 'user').length}）、无压缩快照；见 result/messages/audit`),
     check(terminal && observations.process.steps <= 8 && observations.process.subagents.length === 0 && audit.length === 0 && modelCalls === 1 && tools === 0 && approvals === 0 && cost.length > 0 && cost.reduce((a, b) => a + b, 0) <= 0.05, `终态=${terminal}，主模型响应=${modelCalls || '未知'}，工具=${tools}，审批=${approvals}，费用=${cost.length ? cost.join('+') : '未知'}；费用≤$0.05，缺遥测不推定为零`),
-    check(row.frames.length === 3 && row.frames.every(f => { const dom = JSON.parse(readFileSync(path.join(dir, `screens/${f}.dom.json`), 'utf8')); return dom.criteria.length > 0 && dom.criteria.every((c: { visible: boolean }) => c.visible); }), '空态/等待态精确文本与三帧截图；稿 S-30/S-47/S-31')
+    observations.captureError ? { status: '未执行', detail: observations.captureError } : check(row.frames.length === 3 && row.frames.every(f => { const dom = JSON.parse(readFileSync(path.join(dir, `screens/${f}.dom.json`), 'utf8')); return dom.criteria.length > 0 && dom.criteria.every((c: { visible: boolean }) => c.visible); }), '空态/等待态精确文本与三帧截图；稿 S-30/S-47/S-31')
   ];
   row.endedAt = new Date().toISOString();
   row.status = row.checks.every(c => c.status === '通过') ? '通过' : '失败';

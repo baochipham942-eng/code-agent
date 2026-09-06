@@ -18,6 +18,8 @@ const SHELL_VARIABLE_MARKER_END = '\u0001';
 
 interface ParsedShellSegment {
   words: string[];
+  /** Parallel to `words`: the word was spelled by gluing quoting styles (`$'l'"\x73"`). */
+  mixedIdentity: boolean[];
 }
 
 interface ShellWriteTarget {
@@ -53,7 +55,7 @@ function isOperator(entry: ShellEntry): entry is ShellOperator {
   return typeof entry === 'object' && entry !== null && 'op' in entry;
 }
 
-function normalizeWord(word: string): { word: string; failed: boolean } {
+function normalizeWord(word: string): { word: string; failed: boolean; mixedIdentity: boolean } {
   // Give shell-quote a private marker so an ANSI-C word (`$'ls'`) cannot be
   // confused with an ordinary single-quoted literal (`'${}ls'`). Variable
   // expansions are restored as `${NAME}` and remain uncertain downstream.
@@ -62,35 +64,38 @@ function normalizeWord(word: string): { word: string; failed: boolean } {
     if (end >= 0) {
       const key = word.slice(SHELL_VARIABLE_MARKER_START.length, end);
       const body = word.slice(end + SHELL_VARIABLE_MARKER_END.length);
-      // shell-quote has already erased adjacent quote boundaries.  A body such
-      // as `l\\x73` may be `$'l'"\\x73"`, not ANSI-C `ls`; do not decode a
-      // mixed literal/escape word into a different executable identity.
-      if (key.length === 0 && /\\/.test(body)
-        && !/^(?:\\(?:x[0-9A-Fa-f]{2}|u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8}|[0-7]{1,3}|.))*$/.test(body)) {
-        return { word: body, failed: true };
-      }
+      // shell-quote has already erased adjacent quote boundaries, so a body such as `l\\x73`
+      // may be `$'l'"\\x73"` rather than ANSI-C `ls`. Decode it either way — a redirection target
+      // spelled that way still has to resolve to one concrete path — and only report the
+      // ambiguity, so the qualification side can refuse the identity on its own. Refusing here
+      // would fuse approval and write-target extraction back together.
+      const mixedIdentity = key.length === 0 && /\\/.test(body)
+        && !/^(?:\\(?:x[0-9A-Fa-f]{2}|u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8}|[0-7]{1,3}|.))*$/.test(body);
       const source = key.length === 0 ? `$'${body}'` : null;
-      if (source === null) return { word: '$' + `{${key}}` + body, failed: false };
+      if (source === null) return { word: '$' + `{${key}}` + body, failed: false, mixedIdentity: false };
       const canonical = canonicalizeCommand(source);
-      return { word: canonical.command, failed: canonical.parsingFailed };
+      return { word: canonical.command, failed: canonical.parsingFailed, mixedIdentity };
     }
   }
   const source = word.startsWith('$\\') ? `$'${word.slice(1)}'` : null;
-  if (source === null) return { word, failed: false };
+  if (source === null) return { word, failed: false, mixedIdentity: false };
   const canonical = canonicalizeCommand(source);
-  return { word: canonical.command, failed: canonical.parsingFailed };
+  return { word: canonical.command, failed: canonical.parsingFailed, mixedIdentity: false };
 }
 
-function entryWord(entry: ShellEntry): { word: string; uncertain: boolean } | null {
+function entryWord(entry: ShellEntry): { word: string; uncertain: boolean; mixedIdentity: boolean } | null {
   if (typeof entry === 'string') {
     const normalized = normalizeWord(entry);
     return {
       word: normalized.word,
+      // Deliberately not folded into `uncertain`: that would make the redirection target uncertain
+      // too, and canonicalization requires one concrete path for every spelling of it.
+      mixedIdentity: normalized.mixedIdentity,
       uncertain: normalized.failed || /[$`*?{}]/.test(normalized.word),
     };
   }
   if (isOperator(entry) && entry.op === 'glob' && 'pattern' in entry) {
-    return { word: String((entry as ShellGlob).pattern), uncertain: true };
+    return { word: String((entry as ShellGlob).pattern), uncertain: true, mixedIdentity: false };
   }
   return null;
 }
@@ -464,19 +469,22 @@ function parseEntries(command: string): {
   const segments: ParsedShellSegment[] = [];
   const redirects: ShellWriteTarget[] = [];
   let words: string[] = [];
+  let wordsMixed: boolean[] = [];
   let trailingOperator = false;
   let failed = canonical.parsingFailed;
   let failureReason = canonical.failureReason;
 
   const flush = (): void => {
-    if (words.length > 0) segments.push({ words });
+    if (words.length > 0) segments.push({ words, mixedIdentity: wordsMixed });
     words = [];
+    wordsMixed = [];
   };
 
   for (let index = 0; index < entries.length; index += 1) {
     const entry = entries[index];
     if (isOperator(entry) && entry.op === 'glob' && 'pattern' in entry) {
       words.push(String((entry as ShellGlob).pattern));
+      wordsMixed.push(false);
       continue;
     }
     if (isOperator(entry) && OUTPUT_REDIRECTS.has(entry.op)) {
@@ -507,7 +515,10 @@ function parseEntries(command: string): {
       continue;
     }
     const word = entryWord(entry);
-    if (word) words.push(word.word);
+    if (word) {
+      words.push(word.word);
+      wordsMixed.push(word.mixedIdentity);
+    }
   }
   flush();
   return { segments, redirects, failed, failureReason, trailingOperator };
@@ -715,6 +726,9 @@ function qualifySegments(command: string): ShellExecution[] | null {
   for (const segment of parsed.segments) {
     const [program, ...args] = segment.words;
     if (!program) continue;
+    // `$'l'"\x73"` decodes to `ls`, but shell-quote already erased the quote boundaries, so the
+    // identity cannot be verified. Write-target extraction keeps using the decoded value.
+    if (segment.mixedIdentity[0]) return null;
 
     // This is the only qualification-time unwrapping.  Do not use basename:
     // ./bash and /usr/bin/bash are executable identities chosen by the caller.

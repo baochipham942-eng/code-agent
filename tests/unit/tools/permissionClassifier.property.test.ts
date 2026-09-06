@@ -172,12 +172,31 @@ async function baselineDecisions(commands: string[]): Promise<Array<'approve' | 
   }
 }
 
+// Random sampling alone cannot be trusted to reach a specific spelling: the six dimensions span
+// ~221k combinations and we draw 140. Every shape a reviewer has already found is therefore pinned
+// here and compared against the baseline on every run; the sampled shapes stay as a coarse net for
+// shapes nobody has thought of yet.
+const KNOWN_SHAPES = [
+  './ls',
+  'PATH=./bin ls',
+  "./bash -c 'ls'",
+  'PATH=./bin; ls',
+  "./bash -c 'cd .'",
+  "bash --rcfile ./startup.sh -ic 'ls'",
+  'echo ok#tag; ./cleanup',
+  `$'l'"\\x73"`,
+  './env ls',
+  `bash -c './bash -c "ls"'`,
+  "bash --init-file ./startup.sh -i 'ls'",
+  'echo ok#tag; echo x > out.txt',
+];
+
 describe('final decision is never looser than the detached origin/main baseline', () => {
   beforeEach(() => setCommandPolicyRulesForTest([]));
 
   it('covers wrapper, path, assignment, shell-option, delimiter and inner-command dimensions', async () => {
     const shapes = fc.sample(generatedShapeArbitrary, { numRuns: 140, seed: 1637 });
-    const commands = shapes.map(renderGeneratedShape);
+    const commands = [...KNOWN_SHAPES, ...shapes.map(renderGeneratedShape)];
     const baseline = await baselineDecisions(commands);
     await fc.assert(fc.asyncProperty(
       fc.integer({ min: 0, max: commands.length - 1 }),

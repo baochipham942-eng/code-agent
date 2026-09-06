@@ -11,7 +11,7 @@ import * as path from 'path';
 import { createLogger } from '../services/infra/logger';
 import { getProjectConfigDir, getUserConfigDir } from '../config/configPaths';
 import { canonicalizeCommand } from './canonicalizeCommand';
-import { commandWordsFromParse, qualificationExecutable } from './commandParse';
+import { commandWordsFromParse, parseShellCommand, qualificationExecutable } from './commandParse';
 import { classifyCommand, isKnownSafeCommand } from './commandSafety';
 
 const logger = createLogger('ExecPolicy');
@@ -167,6 +167,15 @@ export class ExecPolicyStore {
   learnFromApproval(command: string): boolean {
     const tokens = tokenizePolicyCommand(command);
     if (tokens.length === 0) return false;
+
+    // Qualification deliberately stops unwrapping at the written identity, so for `nohup npm …`
+    // its program *is* `nohup` and the equality guard below can no longer see the wrapper.
+    // Consult the full-unwrap view for that one question. It is only ever used to refuse: learning
+    // a wrapper prefix would let it carry any later command.
+    if (parseShellCommand(command).executions.some(({ wrappers }) => wrappers.length > 0)) {
+      logger.debug('Skipping wrapper prefix', { command });
+      return false;
+    }
 
     const execution = qualificationExecutable(command);
     const writtenWords = commandWordsFromParse(command);

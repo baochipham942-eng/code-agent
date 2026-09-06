@@ -231,6 +231,10 @@ const CONDITIONALLY_SAFE: Record<string, SafetyChecker> = {
 export function splitCompoundCommand(command: string): string[] | null {
   const parsed = parseShellCommand(command);
   if (parsed.parsingFailed || parsed.trailingOperator) return null;
+  // Rebuilding from decoded words erases how the command was spelled: `$'l'"\x73"` comes back as a
+  // clean `ls`, and every identity check downstream then judges a command the user never wrote.
+  // Refuse to rebuild instead — both callers treat a null split as "needs approval".
+  if (parsed.segments.some((segment) => segment.mixedIdentity.some(Boolean))) return null;
   return parsed.segments.map((segment) => quote(segment.words));
 }
 

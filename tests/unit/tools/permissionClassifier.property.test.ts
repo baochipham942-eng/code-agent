@@ -172,6 +172,11 @@ async function baselineDecisions(commands: string[]): Promise<Array<'approve' | 
   }
 }
 
+// approve < ask < deny. The invariant is "never looser than baseline" on the whole order, not just
+// on approve: a baseline `deny` decaying into an approvable `ask` is a loosening too, and round 7
+// (outputRedirectionAsk) plus round 13 (parseFailureAsk) were both exactly that shape.
+const STRICTNESS = { approve: 0, ask: 1, deny: 2 } as const;
+
 // Random sampling alone cannot be trusted to reach a specific spelling: the six dimensions span
 // ~221k combinations and we draw 140. Every shape a reviewer has already found is therefore pinned
 // here and compared against the baseline on every run; the sampled shapes stay as a coarse net for
@@ -189,14 +194,26 @@ const KNOWN_SHAPES = [
   `bash -c './bash -c "ls"'`,
   "bash --init-file ./startup.sh -i 'ls'",
   'echo ok#tag; echo x > out.txt',
+  'echo foo\\ #tag; ./cleanup',
+  "chronic bash -c 'chmod -R 777 ./data'",
 ];
 
 describe('final decision is never looser than the detached origin/main baseline', () => {
   beforeEach(() => setCommandPolicyRulesForTest([]));
 
+  // Sampling indices with replacement does not guarantee every known shape is compared, and these
+  // are exactly the shapes we already know can regress. Walk them one by one.
+  it.each(KNOWN_SHAPES)('never loosens the baseline for a known shape: %s', async (command) => {
+    const [baseline] = await baselineDecisions([command]);
+    const result = await new PermissionClassifier({ enableLlm: false }).classify(
+      'Bash', { command }, { workingDirectory: '/tmp', permissionLevel: 'execute' },
+    );
+    expect(STRICTNESS[result.decision]).toBeGreaterThanOrEqual(STRICTNESS[baseline]);
+  }, 120_000);
+
   it('covers wrapper, path, assignment, shell-option, delimiter and inner-command dimensions', async () => {
     const shapes = fc.sample(generatedShapeArbitrary, { numRuns: 140, seed: 1637 });
-    const commands = [...KNOWN_SHAPES, ...shapes.map(renderGeneratedShape)];
+    const commands = shapes.map(renderGeneratedShape);
     const baseline = await baselineDecisions(commands);
     await fc.assert(fc.asyncProperty(
       fc.integer({ min: 0, max: commands.length - 1 }),
@@ -204,8 +221,7 @@ describe('final decision is never looser than the detached origin/main baseline'
         const result = await new PermissionClassifier({ enableLlm: false }).classify(
           'Bash', { command: commands[index] }, { workingDirectory: '/tmp', permissionLevel: 'execute' },
         );
-        // The only forbidden direction is baseline ask/deny becoming approve.
-        if (result.decision === 'approve') expect(baseline[index]).toBe('approve');
+        expect(STRICTNESS[result.decision]).toBeGreaterThanOrEqual(STRICTNESS[baseline[index]]);
       },
     ), { numRuns: commands.length, seed: 1637 });
   });

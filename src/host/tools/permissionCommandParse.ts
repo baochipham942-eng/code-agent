@@ -21,6 +21,15 @@ interface PermissionCommandInspection {
 
 const PACKAGE_MANAGER_PROGRAMS = new Set(['npm', 'npx', 'pnpm', 'yarn']);
 
+/**
+ * Failing to understand a command is not evidence that it is safe. Only a `deny` may pass through
+ * such a gap; anything weaker falls back to the caller's ask, which must never silently replace a
+ * refusal (rounds 7 and 13 were both that shape).
+ */
+export function onlyDeny<T extends { decision: string }>(result: T | null): T | null {
+  return result?.decision === 'deny' ? result : null;
+}
+
 export function inspectPermissionCommand(command: string, startTime: number): PermissionCommandInspection {
   const parsed = parseShellCommand(command);
   // Approval gates must inspect the command identity as written (with only the

@@ -28,7 +28,7 @@ import {
 import { canonicalizeCommand } from '../security/canonicalizeCommand';
 import { RM_FLAGS_REQUIRED, RM_HEAD } from '../security/rmFlagPattern';
 import { checkCommandPolicy } from './modules/shell/commandPolicy';
-import { inspectPermissionCommand } from './permissionCommandParse';
+import { inspectPermissionCommand, onlyDeny } from './permissionCommandParse';
 import { isBashToolName, normalizeToolName } from './toolNames';
 import { resolveCanonicalRunPath } from '../runtime/runContext';
 import { isPathWithinRoot } from '../runtime/workspaceScope';
@@ -831,7 +831,11 @@ export class PermissionClassifier {
     const rawInspection = inspectPermissionCommand(rawTrimmed, startTime);
     const segments = splitCompoundCommand(rawTrimmed);
     if (!segments || segments.length === 0) {
-      return null;
+      // Failing to split is not evidence of safety. Returning null here hands the command to the
+      // caller's fallback ask, which silently downgrades a dangerous-command deny — the same shape
+      // as outputRedirectionAsk (round 7) and parseFailureAsk (round 13). Let the deny rules read
+      // the whole command first; anything short of deny still falls through to the fallback.
+      return onlyDeny(this.classifyBashSegment(rawTrimmed, context, startTime));
     }
 
     if (segments.length === 1) {
@@ -878,7 +882,11 @@ export class PermissionClassifier {
   ): ClassificationResult | null {
     const canonicalCommand = canonicalizeCommand(command).command;
     const commandInspection = inspectPermissionCommand(command, startTime);
-    if (commandInspection.parseFailureAsk) return commandInspection.parseFailureAsk;
+    // Deliberately not returned here. Round 7 fixed exactly this shape for outputRedirectionAsk:
+    // an early ask hides the dangerous-command deny below, so `chronic bash -c 'chmod -R 777 …'`
+    // would drop from a hard refusal to something a user can approve. Hold it until every deny
+    // has had its say, and still refuse before any approve path.
+
     const rmCriticalTarget = resolvedRmCriticalTarget(command, context);
     if (rmCriticalTarget) {
       const reason = `危险命令: 递归删除关键路径 ${rmCriticalTarget}`;
@@ -942,6 +950,9 @@ export class PermissionClassifier {
         trustBoundary: true,
       };
     }
+
+    // Every deny has been considered by now; an unparsable command must never reach an approve.
+    if (commandInspection.parseFailureAsk) return commandInspection.parseFailureAsk;
 
     // Product-level allow only. This deliberately does not enter the execution
     // safe-command whitelist because npm lifecycle scripts still run in dry-run.

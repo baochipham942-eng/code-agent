@@ -105,6 +105,13 @@ function basename(program: string): string {
 }
 
 function shellLines(command: string): string[] {
+  // `echo foo\ #tag` — the space before `#` is escaped, so it is not a word boundary and the `#`
+  // stays inside the word. Count the backslashes: an odd run escapes the character that follows.
+  const isEscaped = (position: number): boolean => {
+    let backslashes = 0;
+    for (let cursor = position - 1; cursor >= 0 && command[cursor] === '\\'; cursor -= 1) backslashes += 1;
+    return backslashes % 2 === 1;
+  };
   const lines: string[] = [];
   let result = '';
   let quoteMode: 'plain' | 'single' | 'double' | 'ansi' = 'plain';
@@ -131,7 +138,7 @@ function shellLines(command: string): string[] {
       }
     }
     if (quoteMode === 'plain' && character === '#'
-      && (index === 0 || /[\s;&|()<>]/.test(command[index - 1]))) {
+      && (index === 0 || (/[\s;&|()<>]/.test(command[index - 1]) && !isEscaped(index - 1)))) {
       inComment = true;
       result += character;
       continue;

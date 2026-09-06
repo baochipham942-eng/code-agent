@@ -257,4 +257,37 @@ describe('contentDelta 尾置（2026-07-21 追加：思考流之后同款修复�
     expect(nodes[nodes.length - 1]).toMatchObject({ id: 'assistant-1-text-2', content: 'segment two continues' });
     expect(nodes.some((n) => n.id === 'assistant-1-content-live')).toBe(false);
   });
+
+  it('does not insert a live text node after a tool when the leftover delta is already on screen', () => {
+    const answer = '腾讯会议的目录在用户数据文件夹下，常见路径包括 Documents 与 Application Support。';
+    const projection: TraceProjection = {
+      sessionId: 'session-1',
+      activeTurnIndex: 0,
+      turns: [
+        {
+          turnNumber: 1,
+          turnId: 'turn-1',
+          status: 'streaming',
+          startTime: 100,
+          nodes: [
+            { id: 'user-1', type: 'user', content: 'q', timestamp: 100 },
+            { id: 'assistant-1-text', messageId: 'assistant-1', type: 'assistant_text', content: answer, timestamp: 120 },
+            { id: 'assistant-1-tc-1', type: 'tool_call', content: '', timestamp: 130, toolCall: { id: 'tc-1', name: 'WebSearch', args: {} } },
+          ],
+        },
+      ],
+    };
+
+    const next = applyStreamingMessageDeltasToProjection(
+      projection,
+      [],
+      { 'assistant-1': { contentDelta: answer, reasoningDelta: '', updatedAt: 200 } },
+    );
+    const bodies = next.turns[0].nodes
+      .filter((node) => node.type === 'assistant_text' && node.content.trim())
+      .map((node) => node.content);
+
+    expect(bodies).toEqual([answer]);
+    expect(next.turns[0].nodes.some((node) => node.id === 'assistant-1-content-live')).toBe(false);
+  });
 });

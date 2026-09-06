@@ -49,7 +49,11 @@ import {
   materializeObservedMessages,
   type RuntimeMessage,
 } from './subagentExecutorProjection';
-import { buildSubagentToolTable, resolveSubagentToolAccess } from './subagentExecutorToolDefs';
+import {
+  applySubagentToolExitGate,
+  buildSubagentToolTable,
+  resolveSubagentToolAccess,
+} from './subagentExecutorToolDefs';
 import {
   buildSubagentModelCall,
   drainSubagentMessages,
@@ -287,13 +291,12 @@ export class SubagentExecutor {
       { inheritance },
     );
 
-    // N-SUBAGENT-ZEROTOOLS：工具面收口（helper 见 subagentExecutorToolDefs）——
+    // N-SUBAGENT-ZEROTOOLS：工具面装配（helper 见 subagentExecutorToolDefs）——
     // 父子交集（永不扩张）→ mcp__<server>__* 通配展开（run 策略确定会丢掉的
-    // server 不连）→ run 级硬边界收窄 → 注册表解析，返回缺失清单供 fail-loud /
-    // 部分缺失上报。
+    // server 不连）→ run 级硬边界收窄 → 注册表解析。装配只产生候选与账目。
     // 返修 Important 1：装配等待接入 effectiveSignal（父 abort + 内部 timeout 桥接），
     // 取消后不再傻等连接 / 不再发起后续服务器连接。
-    const { effectiveToolNames, allowedToolDefs, missingToolNames } = await resolveSubagentToolAccess(
+    const assembly = await resolveSubagentToolAccess(
       config,
       context,
       effectiveParentContext,
@@ -301,17 +304,32 @@ export class SubagentExecutor {
       { signal: effectiveSignal },
     );
 
+    // N-SUBAGENT-ZEROTOOLS R5 出口闸：「谁能进模型工具表」唯一裁定点。全部约束
+    // （run 策略重放、角色硬边界——含 disallowExternalSending，对通配展开后的
+    // 具体名重判、fail-loud 判定）集中在这里应用一次；装配链不管中间经历几次
+    // 展开/过滤，产物到模型只有这一条路（buildSubagentToolTable 只收闸产物）。
+    const surface = applySubagentToolExitGate(assembly, {
+      runPolicy: {
+        allowedToolNames: context.allowedToolNames,
+        deniedToolNames: context.deniedToolNames,
+        toolScope: context.toolScope,
+      },
+      roleId: config.roleId,
+      signal: effectiveSignal,
+    });
+
     logger.info(`[${config.name}] childContext applied`, {
       inheritance,
       parentTools: effectiveParentContext.availableTools.length,
       childDeclared: config.availableTools.length,
-      toolPool: effectiveToolNames.length,
+      toolPool: assembly.effectiveToolNames.length,
+      exitGateKept: surface.toolNames.length,
       denyMerged: childCtx.permissions.deny.length,
       effectiveMode: childCtx.permissions.effectiveMode,
       explicitParent: !!context.parentContext,
     });
 
-    const allowedNames = new Set(allowedToolDefs.map((d) => d.name));
+    const allowedNames = new Set(surface.toolNames);
 
     // P0(G18): 把 buildChildContext 算出的父→子收缩结果真正应用到 pipeline 的
     // permissionConfig。此前 childCtx.permissions 只被 log、从未生效，导致
@@ -344,7 +362,7 @@ export class SubagentExecutor {
     const subagentPolicy = toolRuntime.policy;
 
     // 模型工具表投影（supportsTool 判定 + inference 入参映射）：helper 见 subagentExecutorToolDefs
-    const { toolDefinitions, supportsTool } = buildSubagentToolTable(config.name, context.modelConfig, allowedToolDefs);
+    const { toolDefinitions, supportsTool } = buildSubagentToolTable(config.name, context.modelConfig, surface);
 
     const subagentContextStore = getSubagentContextStore();
     // Parallel/Team callers provide a stable composite execution identity.
@@ -445,27 +463,22 @@ export class SubagentExecutor {
         });
       }
 
-      // N-SUBAGENT-ZEROTOOLS ①：声明了工具（请求集非空）但一个都没装配上（解析为 0）
-      // ⇒ fail-loud，不许静默跑一个无工具可用的子代理、再拿一句敷衍输出回报 completed。
-      // 判据刻意不是「0 工具」：纯推理/纯总结角色声明 0 工具是合法形态（请求集为空时
-      // 不触发）；也不是 supportsTool=false（那是模型能力问题，上方已有独立 warn）。
+      // N-SUBAGENT-ZEROTOOLS ①（R5 收口进出口闸）：声明了工具（请求集非空）但出口
+      // 闸后工具表为空 ⇒ fail-loud，不许静默跑一个无工具可用的子代理、再拿一句敷衍
+      // 输出回报 completed。判据在闸里集中应用（见 applySubagentToolExitGate）：
+      // 刻意不是「0 工具」（纯推理/纯总结角色声明 0 工具合法），也不是 supportsTool=false
+      //（那是模型能力问题，上方已有独立 warn）；取消打断让位 abort 收口；R4 的
+      // 失败账臂（声明通配 + 白名单精确名形态不匹配）同样在闸里裁定。
       // 部分缺失（声明 5 拿到 2）不在此失败，missingTools 随结果带回父模型自行裁量。
-      // 返修 Important 1：装配等待可能被取消打断（连接循环让位 signal），已取消时
-      // 「没装配上」的第一性原因是取消——让位给下方迭代循环的 abort 收口，不误报
-      // tool-unavailable。
-      // R4：声明通配而 run 白名单只写精确名时，post-filter 请求集可为空、装配失败账
-      //（missingToolNames）非空——判据补这条臂；失败账不过白名单过滤（见 helper）。
-      if (
-        (effectiveToolNames.length > 0 || missingToolNames.length > 0)
-        && allowedToolDefs.length === 0 && !effectiveSignal.aborted
-      ) {
+      if (surface.assemblyFailure) {
+        const { missingTools } = surface.assemblyFailure;
         return earlyFailure(
-          `声明的 ${missingToolNames.length} 个工具全部未装配（白名单收窄 + 注册表解析后为 0）：` +
-          `${missingToolNames.join(', ')}。子代理未执行任何迭代即失败：` +
+          `声明的 ${missingTools.length} 个工具全部未装配（白名单收窄 + 注册表解析后为 0）：` +
+          `${missingTools.join(', ')}。子代理未执行任何迭代即失败：` +
           `请修正工具名，或确认对应 MCP 服务器可连接后重试。`,
           {
             failureCode: AgentFailureCode.ToolUnavailable,
-            missingTools: [...missingToolNames],
+            missingTools: [...missingTools],
           },
         );
       }
@@ -1106,7 +1119,7 @@ export class SubagentExecutor {
         contextSnapshot: latestContextSnapshot,
         // N-SUBAGENT-ZEROTOOLS：部分声明的工具没装配上时不失败，但清单必须带回
         // 父模型（由调用方透传），让父模型自行裁量这结果可信到什么程度。
-        ...(missingToolNames.length > 0 ? { missingTools: [...missingToolNames] } : {}),
+        ...(surface.missingToolNames.length > 0 ? { missingTools: [...surface.missingToolNames] } : {}),
       };
     } catch (error) {
       if (effectiveSignal.aborted || error instanceof SubagentDoomLoopStopError) {

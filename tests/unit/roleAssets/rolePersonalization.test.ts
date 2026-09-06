@@ -32,7 +32,10 @@ import {
   toRoleBoundaryRunAllowlist,
 } from '../../../src/host/services/roleAssets/rolePersonalization';
 import { ensureRoleAssetDirs } from '../../../src/host/services/roleAssets/roleAssetService';
-import { resolveSubagentToolAccess } from '../../../src/host/agent/subagentExecutorToolDefs';
+import {
+  applySubagentToolExitGate,
+  resolveSubagentToolAccess,
+} from '../../../src/host/agent/subagentExecutorToolDefs';
 
 const ROLE = '数据分析师';
 const BASE_PROMPT = '你是一位数据分析师。';
@@ -134,10 +137,11 @@ describe('专家个性化正文', () => {
       ['mail_draft', { name: 'mail_draft' }],
       ['mail_send', { name: 'mail_send' }],
     ]);
-    // 与生产接线同构（agentOrchestrator.ts:908-919 → subagentExecutor.ts:296）：
+    // 与生产接线同构（agentOrchestrator.ts:908-919 → subagentExecutor.ts 装配+出口闸）：
     // policy.allowedTools 先过 toRoleBoundaryRunAllowlist 变 run 白名单，再由
-    // resolveSubagentToolAccess 收口（父子交集→通配展开→白名单收窄→注册表解析）。
-    const { allowedToolDefs } = await resolveSubagentToolAccess(
+    // resolveSubagentToolAccess 装配（父子交集→通配展开→白名单收窄→注册表解析），
+    // 最后过 applySubagentToolExitGate（模型工具表的唯一出口）。
+    const assembly = await resolveSubagentToolAccess(
       { availableTools: ['mail_draft', 'mail_send'] },
       {
         allowedToolNames: toRoleBoundaryRunAllowlist(policy?.allowedTools ?? []),
@@ -146,8 +150,33 @@ describe('专家个性化正文', () => {
       { availableTools: [] },
       { toolPool: ['mail_draft', 'mail_send'] },
     );
+    const surface = applySubagentToolExitGate(assembly, {
+      runPolicy: { allowedToolNames: toRoleBoundaryRunAllowlist(policy?.allowedTools ?? []) },
+      roleId: ROLE,
+    });
 
-    expect(allowedToolDefs.map((tool) => tool.name)).toEqual(['mail_draft']);
+    expect(surface.toolDefs.map((tool) => tool.name)).toEqual(['mail_draft']);
+  });
+
+  it('R5：通配展开后的具体发送工具也过不了出口闸（真实边界文件 + 真实闸 + 真实分类器）', async () => {
+    writeRolePersonalization(ROLE, { boundaries: { disallowExternalSending: true } });
+    // 模拟装配产物：mcp__lark__* 已展开成具体名（读 + 发送），父 run 未限制
+    const names = ['mcp__lark__im.v1.message.list', 'mcp__lark__im.v1.message.create'];
+    const assembly = {
+      effectiveToolNames: names,
+      resolvedToolEntries: names.map((name) => ({
+        requestedName: name,
+        def: { name } as never,
+      })),
+      missingToolNames: [],
+    };
+    const surface = applySubagentToolExitGate(assembly, { runPolicy: {}, roleId: ROLE });
+
+    expect(surface.toolDefs.map((entry) => entry.name)).toEqual(['mcp__lark__im.v1.message.list']);
+    expect(surface.removedToolNames).toEqual([
+      { tool: 'mcp__lark__im.v1.message.create', reason: 'role-boundary' },
+    ]);
+    expect(surface.assemblyFailure).toBeNull();
   });
 
   it('自由文本写了“只起草不发送”但没有勾选时，工具表不收窄', () => {

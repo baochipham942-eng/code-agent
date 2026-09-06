@@ -218,9 +218,21 @@ vi.mock('../../../src/host/services/planning/taskStore', () => ({
 
 vi.mock('../../../src/host/services/roleAssets', () => ({
   buildRoleContextBlock: vi.fn(),
-  runRoleWriteBack: vi.fn(),
+  // runRoleWriteBack 被接 .catch（fire-and-forget），mock 必须返回 promise
+  runRoleWriteBack: vi.fn(async () => {}),
   recordRoleParticipation: vi.fn(),
   applyRoleBoundaryToSubagentRequest: vi.fn((request: unknown) => request),
+}));
+
+// R5 出口闸的角色硬边界：只 mock 边界开关的落盘读（本机没有受控角色目录），
+// 「具体工具名算不算对外发送」由闸直接依赖的 isExternalSideEffectTool 真身裁定——
+// 「展开出的发送工具被闸掉」必须被真实分类器咬住，不是 mock 替它说的。
+const roleBoundaryState = vi.hoisted(() => ({ disallowExternalSending: false }));
+vi.mock('../../../src/host/services/roleAssets/rolePersonalization', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../src/host/services/roleAssets/rolePersonalization')>()),
+  isExternalSendingBlockedForRole: (roleId: string) => (
+    roleBoundaryState.disallowExternalSending && roleId === '外联专员'
+  ),
 }));
 
 vi.mock('../../../src/host/agent/spawnGuard', () => ({
@@ -293,6 +305,7 @@ function setupRealEnsureConnected(serverNames: string[]): {
 function createHarness(options: {
   availableTools: string[];
   getDefinition: (name: string) => ToolDefinition | undefined;
+  roleId?: string;
   allowedToolNames?: readonly string[];
   deniedToolNames?: readonly string[];
   toolScope?: { allowedMcpServerIds?: string[] };
@@ -321,6 +334,7 @@ function createHarness(options: {
     name: 'Tool Assembly Test Agent',
     systemPrompt: 'Test tool assembly boundaries.',
     availableTools: options.availableTools,
+    ...(options.roleId ? { roleId: options.roleId } : {}),
     maxIterations: 5,
   };
   return { events, request: { prompt: 'Run the test', config, context } };
@@ -335,6 +349,7 @@ beforeEach(() => {
   mcpState.toolDefinitionNames = [];
   mcpState.ensureConnected.mockReset();
   mcpState.ensureConnected.mockImplementation(async () => false);
+  roleBoundaryState.disallowExternalSending = false;
 });
 
 describe('SubagentExecutor 工具装配 fail-loud（N-SUBAGENT-ZEROTOOLS）', () => {
@@ -629,5 +644,87 @@ describe('策略允许的通配装配失败不许静默成功（N-SUBAGENT-ZEROT
     expect(result.success).toBe(true);
     expect(result.missingTools).toEqual(['mcp__slow__*']);
     expect(mocks.toolDefinitionSnapshots[0].map((tool) => tool.name)).toEqual(['Read']);
+  });
+});
+
+describe('出口闸：角色硬边界对通配展开后的具体名收口（N-SUBAGENT-ZEROTOOLS R5）', () => {
+  // R5 击穿形状：applyRoleBoundaryToSubagentRequest 只滤声明名，`mcp__lark__*`
+  // 不是具体工具名、声明期认不出里面的发送工具；通配展开成
+  // mcp__lark__im.v1.message.create 后若无人重判角色硬边界，边界角色照样能对外
+  // 发送。断言落在推理层实际收到的工具表（toolDefinitionSnapshots）上。
+  it('🔴 disallowExternalSending 角色 + 声明 mcp__lark__* + 父 run 未限制 ⇒ 展开出的发送工具不进最终模型工具表', async () => {
+    mocks.responses.push(textResponse('消息列表读完了。'));
+    roleBoundaryState.disallowExternalSending = true;
+    mcpState.toolDefinitionNames = [
+      'mcp__lark__im.v1.message.list', // 读消息：允许
+      'mcp__lark__im.v1.message.create', // 出站发送：闸掉
+    ];
+    mcpState.ensureConnected.mockImplementation(async () => true);
+    const resolverDefs = new Map([
+      ['mcp__lark__im.v1.message.list', makeDefinition('mcp__lark__im.v1.message.list')],
+      ['mcp__lark__im.v1.message.create', makeDefinition('mcp__lark__im.v1.message.create')],
+    ]);
+    const { request } = createHarness({
+      roleId: '外联专员',
+      availableTools: ['mcp__lark__*'],
+      // 不设 allowedToolNames / deniedToolNames——父 run 未限制该工具（审查击穿前提）
+      getDefinition: (name) => resolverDefs.get(name),
+    });
+
+    const result = await new SubagentExecutor().execute(request);
+
+    expect(result.success).toBe(true);
+    expect(mcpState.ensureConnected).toHaveBeenCalledWith('lark', expect.any(AbortSignal));
+    const modelToolTable = mocks.toolDefinitionSnapshots[0].map((tool) => tool.name);
+    expect(modelToolTable).toContain('mcp__lark__im.v1.message.list');
+    expect(modelToolTable).not.toContain('mcp__lark__im.v1.message.create');
+  });
+
+  it('真阴：同一角色未开启硬边界时，发送工具照常进工具表（闸只按边界裁，不无差别删）', async () => {
+    mocks.responses.push(textResponse('消息发出去了。'));
+    mcpState.toolDefinitionNames = [
+      'mcp__lark__im.v1.message.list',
+      'mcp__lark__im.v1.message.create',
+    ];
+    mcpState.ensureConnected.mockImplementation(async () => true);
+    const resolverDefs = new Map([
+      ['mcp__lark__im.v1.message.list', makeDefinition('mcp__lark__im.v1.message.list')],
+      ['mcp__lark__im.v1.message.create', makeDefinition('mcp__lark__im.v1.message.create')],
+    ]);
+    const { request } = createHarness({
+      roleId: '外联专员',
+      availableTools: ['mcp__lark__*'],
+      getDefinition: (name) => resolverDefs.get(name),
+    });
+
+    const result = await new SubagentExecutor().execute(request);
+
+    expect(result.success).toBe(true);
+    expect(mocks.toolDefinitionSnapshots[0].map((tool) => tool.name).sort()).toEqual(
+      ['mcp__lark__im.v1.message.create', 'mcp__lark__im.v1.message.list'],
+    );
+  });
+
+  it('边界拿光全部候选（server 只有发送工具）⇒ 策略性排除：0 工具照常成功，不误报 fail-loud', async () => {
+    mocks.responses.push(textResponse('没有可用的发送工具，只能总结。'));
+    roleBoundaryState.disallowExternalSending = true;
+    mcpState.toolDefinitionNames = ['mcp__lark__im.v1.message.create'];
+    mcpState.ensureConnected.mockImplementation(async () => true);
+    const resolverDefs = new Map([
+      ['mcp__lark__im.v1.message.create', makeDefinition('mcp__lark__im.v1.message.create')],
+    ]);
+    const { request } = createHarness({
+      roleId: '外联专员',
+      availableTools: ['mcp__lark__*'],
+      getDefinition: (name) => resolverDefs.get(name),
+    });
+
+    const result = await new SubagentExecutor().execute(request);
+
+    expect(result.success).toBe(true);
+    expect(result.missingTools).toBeUndefined(); // 策略性排除 ≠ 装配失败
+    expect(result.failureCode).toBeUndefined();
+    expect(mocks.toolDefinitionSnapshots[0]).toEqual([]);
+    expect(mocks.inference).toHaveBeenCalledTimes(1); // 真的跑了，不是 fail-loud 早退
   });
 });

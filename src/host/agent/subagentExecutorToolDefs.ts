@@ -12,9 +12,12 @@ import type {
 import { resolveToolAlias } from '../services/toolSearch/deferredTools';
 import {
   couldMcpServerToolsSurviveRunPolicy,
+  isToolDeniedByRunPolicy,
   narrowToolNamesByRunPolicy,
   type RunToolPolicy,
 } from '../tools/runToolPolicy';
+import { isExternalSendingBlockedForRole } from '../services/roleAssets/rolePersonalization';
+import { isExternalSideEffectTool } from '../tools/externalSideEffect';
 import { createLogger } from '../services/infra/logger';
 import { PROVIDER_REGISTRY } from '../model/modelRouter';
 
@@ -43,12 +46,18 @@ function applyRunToolPolicyToSubagentTools(
   });
 }
 
-/** 解析一轮：返回装配到的定义与注册表里找不到的名字。 */
+/** 装配到的候选：请求名（声明/展开词汇，run 策略与角色边界同词汇表）与注册表定义配对。 */
+interface ResolvedToolEntry {
+  requestedName: string;
+  def: ToolDefinition;
+}
+
+/** 解析一轮：返回装配到的候选与注册表里找不到的名字。 */
 function resolveToolNamesOnce(
   allowedToolNames: readonly string[],
   resolver: SubagentToolResolverPort,
-): { defs: ToolDefinition[]; missing: string[] } {
-  const defs: ToolDefinition[] = [];
+): { entries: ResolvedToolEntry[]; missing: string[] } {
+  const entries: ResolvedToolEntry[] = [];
   const missing: string[] = [];
   for (const name of allowedToolNames) {
     // agent 定义里仍用 legacy snake_case 工具名（glob/grep/read_file/list_directory/
@@ -58,12 +67,12 @@ function resolveToolNamesOnce(
     const canonical = resolveToolAlias(name);
     const def = resolver.getDefinition(canonical) ?? resolver.getDefinition(name);
     if (def) {
-      defs.push(def);
+      entries.push({ requestedName: name, def });
     } else {
       missing.push(name);
     }
   }
-  return { defs, missing };
+  return { entries, missing };
 }
 
 function warnMissingTools(missing: string[]): void {
@@ -202,7 +211,7 @@ async function expandSubagentMcpToolGlobs(
 }
 
 interface SubagentToolResolution {
-  defs: ToolDefinition[];
+  entries: ResolvedToolEntry[];
   /** 声明了但（触发按需连接后仍）解析不到的工具名。 */
   missing: string[];
 }
@@ -234,13 +243,13 @@ async function resolveSubagentToolDefs(
     await ensureMcpServerConnected(serverName, options?.signal);
   }
 
-  const defs = [...first.defs];
+  const entries = [...first.entries];
   const missing: string[] = [];
   for (const name of first.missing) {
     const canonical = resolveToolAlias(name);
     const def = resolver.getDefinition(canonical) ?? resolver.getDefinition(name);
     if (def) {
-      defs.push(def);
+      entries.push({ requestedName: name, def });
     } else {
       missing.push(name);
     }
@@ -250,25 +259,30 @@ async function resolveSubagentToolDefs(
       `filterToolDefs: ${missing.length} tools still not found after lazy MCP connect: ${missing.join(', ')}`,
     );
   }
-  return { defs, missing };
+  return { entries, missing };
 }
 
 export interface SubagentToolAccess {
   /** 收窄/展开后的有效工具名（run 级硬边界内，保序去重）。 */
   effectiveToolNames: string[];
-  /** 注册表解析到的工具定义（给模型的工具表）。 */
-  allowedToolDefs: ToolDefinition[];
+  /** 注册表解析到的候选（请求名↔定义配对）。只是候选——去留由出口闸裁定。 */
+  resolvedToolEntries: ResolvedToolEntry[];
   /** 声明了但（触发按需连接后仍）解析不到的工具名，含策略允许但未展开成的 MCP 通配。 */
   missingToolNames: string[];
 }
 
 /**
- * 子代理工具面收口（原 executeInternal 内联的三步，收口为可单测的纯装配）：
+ * 子代理工具面装配（原 executeInternal 内联的三步，收口为可单测的纯装配）：
  *   1. 父子交集（tools 交集是核心约束，永不扩张；parent.availableTools 为空时退化为
  *      child 声明，避免无害 caller 拿不到任何工具）
  *   2. mcp__<server>__* 通配展开（只为 run 策略过滤后仍可能保留的 lazy 服务器连；
  *      展开失败的通配单独记失败账，不进工具表）
  *   3. run 级工具面硬边界收窄 + 注册表解析（MCP 形态缺失先连再取一次）
+ *
+ * 只产生候选与账目，不裁定「谁能进模型工具表」——那是出口闸
+ * （applySubagentToolExitGate）的唯一职责。收窄留在装配期是为了：省掉注定被
+ * run 策略丢弃的 MCP server 连接（R3），并让「策略性排除 ≠ 装配失败」的缺失
+ * 记账成立（R4）。
  */
 export async function resolveSubagentToolAccess(
   config: Pick<SubagentConfig, 'availableTools'>,
@@ -292,9 +306,118 @@ export async function resolveSubagentToolAccess(
   // 通配装配失败信息不过白名单——否则声明 `mcp__<server>__*` 而白名单只写精确名时，
   // 形态不匹配会把「要的东西没拿到」滤掉，装配失败变成零工具静默成功。
   const effectiveToolNames = applyRunToolPolicyToSubagentTools(expanded.names, context);
-  const { defs, missing } = await resolveSubagentToolDefs(effectiveToolNames, context.resolver, options);
+  const { entries, missing } = await resolveSubagentToolDefs(effectiveToolNames, context.resolver, options);
   const missingToolNames = [...new Set([...missing, ...expanded.unresolvedGlobs])];
-  return { effectiveToolNames, allowedToolDefs: defs, missingToolNames };
+  return { effectiveToolNames, resolvedToolEntries: entries, missingToolNames };
+}
+
+// ----------------------------------------------------------------------------
+// 出口闸（N-SUBAGENT-ZEROTOOLS R5）——最终工具表的唯一裁定点
+// ----------------------------------------------------------------------------
+// 教训（R3/R4/R5 三轮同形）：约束散在「展开/过滤」链的某一侧，每加一个展开/过滤
+// 步骤就可能漏掉某个约束。收口方式：装配链不管经历几次展开、过滤、重解析，产物要
+// 交给模型必须过这一道闸，全部约束（run 策略、角色硬边界、fail-loud 判定）在这里
+// 集中应用一次。展开只负责把通配变成具体名字，不负责决定谁能留下。
+
+/** 闸产物 brand：只在 applySubagentToolExitGate 内构造，结构上不经闸到不了模型。 */
+const subagentToolSurfaceBrand = Symbol('subagentToolSurface');
+
+/**
+ * 出口闸唯一产物：最终交给模型的工具面。buildSubagentToolTable 只收这个类型——
+ * 装配链里任何新展开/过滤步骤拿到的都是裸候选，要变成模型可见工具表必须过闸
+ * （brand 字段在模块外无法构造），不存在旁路。
+ */
+export interface SubagentToolSurface {
+  readonly [subagentToolSurfaceBrand]: true;
+  /** 最终工具定义（全约束过滤后，模型工具表的唯一合法来源）。 */
+  readonly toolDefs: readonly ToolDefinition[];
+  /** 最终工具名（运行时执行白名单与它同源）。 */
+  readonly toolNames: readonly string[];
+  /** 失败账：声明了但解析不到 / 策略允许但未展开的通配（不随闸收窄变化）。 */
+  readonly missingToolNames: readonly string[];
+  /** 闸收窄留痕：被哪条约束拿掉了什么（warn 审计 + 测试）。 */
+  readonly removedToolNames: readonly { tool: string; reason: 'run-policy' | 'role-boundary' }[];
+  /** fail-loud 判定（R1/R4）：非 null ⇒ 装配失败，调用方必须结构化失败返回。 */
+  readonly assemblyFailure: { missingTools: readonly string[] } | null;
+}
+
+/** 出口闸约束集：闸从这里取全部约束，调用方无法漏传某一条。 */
+export interface SubagentToolExitGateConstraints {
+  /** run 级硬边界（CLI --tools / 工作台 toolScope / 角色边界转 run 白名单）。 */
+  runPolicy: RunToolPolicy;
+  /** 持久化角色 id：有硬边界（如「不允许对外发送」）时对最终名单收口。 */
+  roleId?: string;
+  /** 装配取消信号：已取消时 fail-loud 让位 abort 收口，不误报 tool-unavailable。 */
+  signal?: AbortSignal;
+}
+
+/**
+ * 出口闸：装配候选 → 最终工具表。
+ *
+ * 集中应用的约束：
+ *   - 角色硬边界（R5）：`isExternalSideEffectTool` 只认具体工具名，声明期预滤
+ *     （applyRoleBoundaryToSubagentRequest）认不出 `mcp__lark__*` 通配里的发送
+ *     工具——通配展开成具体名后必须在这里重判，否则边界角色仍可对外发送。
+ *   - run 策略重放：装配期已收窄过（R3 连接预算 / R4 记账），这里权威重放一次，
+ *     中间任何步骤放进来的漏网之名在此裁掉。
+ *   - fail-loud（R1/R4）：请求集或失败账非空而最终表为空 ⇒ 装配失败。
+ *
+ * 策略性排除（run 策略/角色边界拿掉的名字）不是装配失败：不进失败账、不触发
+ * fail-loud（与 R4「被滤掉的名字不算缺失」同一语义）。
+ */
+export function applySubagentToolExitGate(
+  assembly: SubagentToolAccess,
+  constraints: SubagentToolExitGateConstraints,
+): SubagentToolSurface {
+  // 角色硬边界开关（单一真源 isExternalSendingBlockedForRole）；具体名是否算
+  // 「对外发送」由 isExternalSideEffectTool 裁定——两个都是闸的直接依赖
+  const boundaryOn = constraints.roleId
+    ? isExternalSendingBlockedForRole(constraints.roleId)
+    : false;
+
+  const kept: ResolvedToolEntry[] = [];
+  const removed: Array<{ tool: string; reason: 'run-policy' | 'role-boundary' }> = [];
+  const droppedRequested = new Set<string>();
+  for (const entry of assembly.resolvedToolEntries) {
+    if (isToolDeniedByRunPolicy(constraints.runPolicy, entry.requestedName)) {
+      droppedRequested.add(entry.requestedName);
+      removed.push({ tool: entry.requestedName, reason: 'run-policy' });
+      continue;
+    }
+    // 声明名与注册表规范名两套词汇都判：通配展开出的具体名（如
+    // mcp__lark__im.v1.message.create）在这里被真实分类器拦下（R5）
+    if (
+      boundaryOn
+      && (isExternalSideEffectTool(entry.requestedName) || isExternalSideEffectTool(entry.def.name))
+    ) {
+      droppedRequested.add(entry.requestedName);
+      removed.push({ tool: entry.def.name, reason: 'role-boundary' });
+      continue;
+    }
+    kept.push(entry);
+  }
+  if (removed.length > 0) {
+    logger.warn(`exitGate: ${removed.length} 个候选工具被出口闸收窄：${
+      removed.map(({ tool, reason }) => `${tool}(${reason})`).join(', ')
+    }`);
+  }
+
+  // 策略性排除从请求集剔除（不是装配失败）；失败账原样透传（R4：不过滤）
+  const effectiveRequested = assembly.effectiveToolNames.filter((name) => !droppedRequested.has(name));
+  const assemblyFailure = !constraints.signal?.aborted
+    && kept.length === 0
+    && (effectiveRequested.length > 0 || assembly.missingToolNames.length > 0)
+    ? { missingTools: [...assembly.missingToolNames] }
+    : null;
+
+  return {
+    [subagentToolSurfaceBrand]: true,
+    toolDefs: kept.map((entry) => entry.def),
+    toolNames: kept.map((entry) => entry.def.name),
+    missingToolNames: [...assembly.missingToolNames],
+    removedToolNames: removed,
+    assemblyFailure,
+  };
 }
 
 /** 模型工具表条目：发给推理层的 ToolDefinition 投影（与 inference 侧入参同形）。 */
@@ -305,12 +428,13 @@ export type SubagentToolTableEntry = Pick<
 
 /**
  * 模型工具表投影：模型不支持工具调用（registry supportsTool=false）时给空表并 warn，
- * 支持时把装配到的定义映射成 inference 入参。是否支持未知（模型不在 registry）按支持处理。
+ * 支持时把闸后定义映射成 inference 入参。是否支持未知（模型不在 registry）按支持处理。
+ * 只收出口闸产物（SubagentToolSurface）——装配链的裸候选在类型上进不了模型工具表。
  */
 export function buildSubagentToolTable(
   agentName: string,
   modelConfig: Pick<ModelConfig, 'provider' | 'model'>,
-  allowedToolDefs: readonly ToolDefinition[],
+  surface: SubagentToolSurface,
 ): { toolDefinitions: SubagentToolTableEntry[]; supportsTool: boolean } {
   const providerConfig = PROVIDER_REGISTRY[modelConfig.provider];
   const modelInfo = providerConfig?.models.find(
@@ -318,13 +442,13 @@ export function buildSubagentToolTable(
   );
   const supportsTool = modelInfo?.supportsTool ?? true; // Default to true if unknown
   if (!supportsTool) {
-    if (allowedToolDefs.length > 0) {
+    if (surface.toolDefs.length > 0) {
       logger.warn(`[${agentName}] Model ${modelConfig.model} does not support tool calls, tools will be ignored`);
     }
     return { toolDefinitions: [], supportsTool };
   }
   return {
-    toolDefinitions: allowedToolDefs.map((tool) => ({
+    toolDefinitions: surface.toolDefs.map((tool) => ({
       name: tool.name,
       description: tool.description,
       inputSchema: tool.inputSchema,

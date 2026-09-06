@@ -72,7 +72,12 @@ export async function renderReport(cases: Case[], rows: Row[], state: Resident |
     const spec = cases.find(c => c.id === row.id)!;
     const dir = directory(spec, row);
     details += `<details id="${row.id}"><summary>${row.id} ${escape(spec.title)} — ${label(row.status)}</summary><p>${escape(row.reasons.join('；'))}</p>`;
-    row.checks.forEach((c, i) => { details += `<p>${i + 1} ${label(c.status)} ${escape(c.detail)}</p><details><summary>用例断言原文</summary><pre>${escape(spec.fields[['①结果断言', '②过程断言', '③渲染断言'][i]])}</pre></details>`; });
+    const shownReasons = new Set([row.reasons.join('；')]);
+    row.checks.forEach((c, i) => {
+      const detail = row.status === '未执行' && shownReasons.has(c.detail) ? '' : c.detail;
+      shownReasons.add(c.detail);
+      details += `<p>${i + 1} ${label(c.status)} ${escape(detail)}</p><details><summary>用例断言原文</summary><pre>${escape(spec.fields[['①结果断言', '②过程断言', '③渲染断言'][i]])}</pre></details>`;
+    });
     if (row.status !== '未执行') {
       details += `<p>运行 ${escape(row.runId)}，${escape(row.startedAt)} 至 ${escape(row.endedAt)}。下列是原始响应、事件和记录；未知字段没有补零。</p>`;
       for (const file of ['result.json', 'trace.jsonl', 'timeline.json', 'audit.json', 'messages.json', 'stdout.json', 'host.log', 'files.sha256', 'delivery.json']) {
@@ -88,10 +93,20 @@ export async function renderReport(cases: Case[], rows: Row[], state: Resident |
     }
     details += '</details>';
   }
-  const lead = `<style>pre{white-space:pre-wrap;overflow-wrap:anywhere}.pair{display:flex;gap:12px}.pair img{width:49%;object-fit:contain;align-self:start}td{vertical-align:top}details{margin:12px 0}img{max-width:100%}</style><section><h1 id="nightly-counts" data-executed="${summary.executed}" data-skipped="${summary.skipped}">${title}</h1><p>通过 ${summary.passed} / 失败 ${summary.failed}。${escape(mechanism ?? '部分执行，未执行项目仍待补齐。')}</p><h2>门汇总原始行</h2><pre>${escape(gates.join('\n'))}</pre><table id="case-table"><thead><tr><th>用例</th><th>结论</th><th>①结果</th><th>②过程</th><th>③渲染</th><th>说明</th><th>缺陷</th></tr></thead><tbody>${table}</tbody></table>${details}<h2>证据声明</h2><p>${escape(scrub(JSON.stringify({ machine: `${process.platform}/${process.arch}`, data: state?.dataDir, keySlot: '~/.code-agent-chatprobe', date, head: state?.head, build: state?.build, fixture: '合成 F0；真实 webServer/renderer/CLI；未执行项目没有运行时证据。采集器不代表产品断言通过。', evidence: ['static-contract', 'fault-injection', 'real-runtime'] })))}</p></section>`;
+  const value = (s: string | undefined) => escape(scrub(s ?? '未采集'));
+  const hash = (s: string) => `<code title="${value(s)}">${value(s.slice(0, 12))}</code>`;
+  const declaration = [
+    ['machine', '运行机器', value(`${process.platform}/${process.arch}`)],
+    ['data', '数据目录', value(state?.dataDir)],
+    ['keySlot', '密钥槽', value('~/.code-agent-chatprobe')],
+    ['date', '验收日期', value(date)],
+    ['head', '源码版本', state?.head ? hash(state.head) : '未采集'],
+    ['build', '构建指纹', state?.build && Object.keys(state.build).length ? Object.entries(state.build).map(([file, sha]) => `<div>${value(file)}：${hash(sha)}</div>`).join('') : '未采集'],
+  ].map(([key, name, content]) => `<tr data-field="${key}"><th scope="row">${name} <code>${key}</code></th><td>${content}</td></tr>`).join('');
+  const lead = `<style>pre{white-space:pre-wrap;overflow-wrap:anywhere}.pair{display:flex;gap:12px}.pair img{width:49%;object-fit:contain;align-self:start}td{vertical-align:top}details{margin:12px 0}img{max-width:100%}#nightly-counts{margin-top:0}#evidence-declaration{width:100%;table-layout:fixed;overflow-wrap:anywhere}#evidence-declaration th{width:190px;white-space:normal}</style><section><h1 id="夜跑验收包">夜跑验收包</h1><h2 id="nightly-counts" data-executed="${summary.executed}" data-skipped="${summary.skipped}">${title}</h2><p>通过 ${summary.passed} / 失败 ${summary.failed}。${escape(mechanism ?? '部分执行，未执行项目仍待补齐。')}</p><h2>门汇总原始行</h2><pre>${escape(gates.join('\n'))}</pre><table id="case-table"><thead><tr><th>用例</th><th>结论</th><th>①结果</th><th>②过程</th><th>③渲染</th><th>说明</th><th>缺陷</th></tr></thead><tbody>${table}</tbody></table>${details}<h2>证据声明</h2><table id="evidence-declaration"><tbody>${declaration}</tbody></table><p>合成 F0；真实 webServer/renderer/CLI；未执行项目没有运行时证据。采集器不代表产品断言通过。</p><p>证据档位：static-contract / fault-injection / real-runtime</p></section>`;
   const leadFile = path.join(out, `${date}-${runId}.lead.html`);
   const mdFile = path.join(out, `${date}-${runId}.md`);
-  writeFileSync(leadFile, lead); writeFileSync(mdFile, '# 夜跑验收包\n\n原始证据已内嵌，可断网打开。各用例状态由原始证据及阻塞清单共同核定。\n');
+  writeFileSync(leadFile, lead); writeFileSync(mdFile, '原始证据已内嵌，可断网打开。各用例状态由原始证据及阻塞清单共同核定。\n');
   const html = path.join(out, `${date}.html`);
   execFileSync('python3', [path.join(archive, 'tools/md2html.py'), mdFile, html, '--title', 'Neo 夜跑验收包', '--lead', leadFile]);
   const browser = await chromium.launch({ headless: true });
@@ -99,7 +114,14 @@ export async function renderReport(cases: Case[], rows: Row[], state: Resident |
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
     await page.route('http://**/*', route => route.abort()); await page.route('https://**/*', route => route.abort());
     await page.goto(`file://${html}`);
+    if (await page.locator('h1').count() !== 1 || await page.locator('main h1, main h2').first().innerText() !== '夜跑验收包') throw new Error('FAIL HTML 文档标题不在首位/存在两个 h1');
+    const countBox = await page.locator('#nightly-counts').boundingBox();
+    if (!countBox || countBox.y < 0 || countBox.y + countBox.height > 1000) throw new Error('FAIL HTML 计数不在第一屏');
     if (await page.locator('#case-table tbody tr').count() !== 55 || await page.locator('#nightly-counts').innerText() !== title) throw new Error('FAIL HTML counts/table drift');
+    for (const field of ['machine', 'data', 'keySlot', 'date', 'head', 'build']) {
+      const entry = page.locator(`#evidence-declaration [data-field="${field}"]`);
+      if (await entry.count() !== 1 || !(await entry.locator('td').innerText()).trim()) throw new Error(`FAIL HTML 证据声明缺字段 ${field}`);
+    }
     if (summary.skipped && (await page.locator('body').innerText()).includes('全部通过')) throw new Error('FAIL HTML false all-pass');
     await page.screenshot({ path: path.join(out, `${date}.png`) });
   } finally { await browser.close(); }

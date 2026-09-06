@@ -62,6 +62,13 @@ function normalizeWord(word: string): { word: string; failed: boolean } {
     if (end >= 0) {
       const key = word.slice(SHELL_VARIABLE_MARKER_START.length, end);
       const body = word.slice(end + SHELL_VARIABLE_MARKER_END.length);
+      // shell-quote has already erased adjacent quote boundaries.  A body such
+      // as `l\\x73` may be `$'l'"\\x73"`, not ANSI-C `ls`; do not decode a
+      // mixed literal/escape word into a different executable identity.
+      if (key.length === 0 && /\\/.test(body)
+        && !/^(?:\\(?:x[0-9A-Fa-f]{2}|u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8}|[0-7]{1,3}|.))*$/.test(body)) {
+        return { word: body, failed: true };
+      }
       const source = key.length === 0 ? `$'${body}'` : null;
       if (source === null) return { word: '$' + `{${key}}` + body, failed: false };
       const canonical = canonicalizeCommand(source);
@@ -122,6 +129,13 @@ function shellLines(command: string): string[] {
       && (index === 0 || /[\s;&|()<>]/.test(command[index - 1]))) {
       inComment = true;
       result += character;
+      continue;
+    }
+    if (quoteMode === 'plain' && character === '#') {
+      // shell-quote treats any # as a comment start; POSIX only does so at a
+      // word boundary. Escape an in-word literal before handing it over.
+      result += '\\#';
+      atWordStart = false;
       continue;
     }
     if (character === '\\' && quoteMode !== 'single' && quoteMode !== 'ansi') {

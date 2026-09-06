@@ -94,7 +94,7 @@ type GeneratedShape = {
   assignment: '' | 'PATH=./bin' | 'LD_PRELOAD=/tmp/evil.so' | 'MODE=1' | 'A=1 B=2';
   shellOption: '' | '-c' | '-lc' | '-ic' | '-i' | '--rcfile ./startup.sh' | '--init-file ./startup.sh' | '-o posix' | '--';
   delimiter: '' | ';' | '&&' | '||' | '\n' | '|' | '# comment\n';
-  inner: 'ls' | 'git status' | 'chmod -R 777 ./data' | 'mystery-command' | 'rm -rf /' | "'${}ls'" | "$'ls'";
+  inner: 'ls' | 'git status' | 'chmod -R 777 ./data' | 'mystery-command' | 'rm -rf /' | "'${}ls'" | "$'ls'" | `$'l'"\\x73"` | 'echo ok#tag';
 };
 
 const generatedShapeArbitrary: fc.Arbitrary<GeneratedShape> = fc.record({
@@ -108,7 +108,7 @@ const generatedShapeArbitrary: fc.Arbitrary<GeneratedShape> = fc.record({
   ),
   delimiter: fc.constantFrom<GeneratedShape['delimiter']>('', ';', '&&', '||', '\n', '|', '# comment\n'),
   inner: fc.constantFrom<GeneratedShape['inner']>(
-    'ls', 'git status', 'chmod -R 777 ./data', 'mystery-command', 'rm -rf /', "'${}ls'", "$'ls'",
+    'ls', 'git status', 'chmod -R 777 ./data', 'mystery-command', 'rm -rf /', "'${}ls'", "$'ls'", `$'l'"\\x73"`, 'echo ok#tag',
   ),
 });
 

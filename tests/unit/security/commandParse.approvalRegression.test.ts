@@ -19,7 +19,16 @@ describe('shared parser automatic approval regressions', () => {
   it('distinguishes an ANSI-C command name from a single-quoted literal', () => {
     expect(isKnownSafeCommand("'${}ls'")).toBe(false);
     expect(isKnownSafeCommand("$'ls'")).toBe(true);
+    expect(isKnownSafeCommand(`$'l'"\\x73"`)).toBe(false);
     expect(parseShellCommand("'${}ls'").executions[0].program).toBe('${}ls');
+  });
+
+  it('keeps an in-word # literal from swallowing a later command', () => {
+    const parsed = parseShellCommand('echo ok#tag; ./cleanup');
+    expect(parsed.executions.map(({ program }) => program)).toEqual(['echo', './cleanup']);
+    expect(isKnownSafeCommand('echo ok#tag; ./cleanup')).toBe(false);
+    expect(parseShellCommand('echo ok#tag; echo x > out.txt').writeTargets)
+      .toEqual([expect.objectContaining({ path: 'out.txt' })]);
   });
 
   // main 的 CONDITIONALLY_SAFE.env 把带操作数的 env 判为 delegated，解包后按内层程序放行会把这条

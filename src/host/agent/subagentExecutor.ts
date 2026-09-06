@@ -203,16 +203,15 @@ export class SubagentExecutor {
       markProgress,
       markRequestStart,
       markRequestEnd,
+      markToolStart,
+      markToolEnd,
       stopIdleWatchdog,
     } = createSubagentCancellationLifecycle({
       agentName: config.name,
       timeoutMs: timeout,
       parentSignal: context.abortSignal,
-      onIdleTimeout: (idle) => {
-        logger.warn(
-          `[${config.name}] idle ${idle}ms exceeded ${getSubagentIdleTimeout(timeout)}ms (≤90% of ${timeout}ms budget), triggering idle-timeout`,
-        );
-      },
+      onIdleNudge: () => doomLoopGuard.queueIdleNudge(),
+      onIdleTimeout: (idle) => logger.warn(`[${config.name}] idle ${idle}ms exceeded the active watchdog grade; cancelling`),
     });
 
     // GAP-011（课程"方向 A"）：skills 全文预注入子代理 system prompt。
@@ -915,6 +914,7 @@ export class SubagentExecutor {
 
             const toolStartTime = Date.now();
             const workspaceMutationSnapshot = await turnObservability.beginTool(toolCall.name);
+            markToolStart();
             try {
               const result = await subagentToolExecutor.execute(
                 toolCall.name,
@@ -946,7 +946,7 @@ export class SubagentExecutor {
                   modelConfig: context.modelConfig,
                   subagentPolicy,
                 },
-              );
+              ).finally(markToolEnd);
               descendantUsage = addSubagentUsage(descendantUsage, result.metadata);
               const toolDuration = Date.now() - toolStartTime;
               toolResults.push(

@@ -110,7 +110,7 @@ vi.mock('../../../src/host/context/compactModel', () => ({
 }));
 vi.mock('../../../src/host/context/compactionAuditRecorder', () => ({ recordCompactionAuditSnapshot: vi.fn() }));
 vi.mock('../../../src/host/tools/dataFingerprint', () => ({ dataFingerprintStore: { toSummary: () => '' } }));
-vi.mock('../../../src/host/tools/fileReadTracker', () => ({ fileReadTracker: { getRecentFiles: () => [] } }));
+vi.mock('../../../src/host/tools/fileReadTracker', () => ({ fileReadTracker: { getRecentFiles: () => [], forgetShownRanges: () => {} } }));
 import { compactCommand } from '../../../src/shared/commands/definitions/contextCommands';
 import { estimateTokens } from '../../../src/host/context/tokenEstimator';
 import { CLIAgent, createCLIAgent } from '../../../src/cli/adapter';

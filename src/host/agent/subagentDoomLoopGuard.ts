@@ -85,6 +85,10 @@ export class SubagentDoomLoopGuard {
     if (check.nudge) logger.warn(`${check.level} detected; queued doom-loop nudge`);
   }
 
+  queueIdleNudge(): void {
+    this.pendingNudge = "Are you still working? Report progress or wrap up the current task.";
+  }
+
   injectPendingNudge(messages: RuntimeMessage[]): void {
     if (!this.pendingNudge) return;
     messages.push(createRuntimeMessage({ role: 'system', content: this.pendingNudge }));

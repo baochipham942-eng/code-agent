@@ -12,6 +12,7 @@ import {
   assertExternalSubagentProfile,
 } from '../services/agentEngine/agentEngineGuards';
 import { getExternalEngineAdapter } from '../services/agentEngine/agentEngineAdapterRegistry';
+import { createSubagentCancellationLifecycle, getChildSubagentExecutionTimeout } from './subagentExecutorCancellation';
 import { isAgentWorktreePath } from './agentWorktreePath';
 import { getSubagentModelOverride } from './agentDefinition';
 import type { SubagentExecutorPort } from './subagentExecutorPort';
@@ -27,6 +28,14 @@ export class ExternalEngineSubagentExecutor implements SubagentExecutorPort {
       return failedResult('外部子代理执行器收到 native 引擎，已拒绝错误路由。', agentId);
     }
 
+    const lifecycle = createSubagentCancellationLifecycle({
+      agentName: request.config.name,
+      timeoutMs: getChildSubagentExecutionTimeout(request.config.name, request.config.maxExecutionTimeMs, {
+        parentStartedAt: request.context.spawnParentStartedAt, parentTimeoutMs: request.context.spawnParentTimeoutMs,
+      }),
+      parentSignal: request.context.abortSignal,
+      initiallyInTool: true,
+    });
     try {
       assertAgentEngineManifestCapability(engine, 'execute');
       const permissionProfile = resolveSubagentPermissionProfile(engine, request.context.cwd);
@@ -48,28 +57,37 @@ export class ExternalEngineSubagentExecutor implements SubagentExecutorPort {
         model,
         permissionProfile,
         executionOrigin: 'subagent',
-        abortSignal: request.context.abortSignal,
+        abortSignal: lifecycle.effectiveSignal,
         emitEvent: (event) => {
+          lifecycle.markProgress();
           logger.debug('external subagent event', { engine, agentId, type: event.type });
         },
       });
 
-      const cancelled = request.context.abortSignal.aborted || result.status === 'cancelled';
+      const cancelled = lifecycle.effectiveSignal.aborted || result.status === 'cancelled';
       return {
-        success: result.status === 'completed',
+        success: result.status === 'completed' && !cancelled,
         output: result.outputText ?? '',
-        ...(result.status === 'completed'
+        ...(result.status === 'completed' && !cancelled
           ? {}
           : { error: humanizeExternalFailure(engine, result.failure?.suggestion, cancelled) }),
         toolsUsed: [],
         iterations: 1,
         ...(agentId ? { agentId } : {}),
         ...(cancelled
-          ? { cancellationReason: normalizeCancellationReason(request.context.abortSignal.reason, 'parent-cancel') }
+          ? { cancellationReason: normalizeCancellationReason(lifecycle.effectiveSignal.reason, 'parent-cancel') }
           : {}),
       };
     } catch (error) {
-      return failedResult(humanizeCaughtError(engine, error), agentId);
+      return {
+        ...failedResult(humanizeCaughtError(engine, error), agentId),
+        ...(lifecycle.effectiveSignal.aborted ? {
+          cancellationReason: normalizeCancellationReason(lifecycle.effectiveSignal.reason, 'parent-cancel'),
+        } : {}),
+      };
+    } finally {
+      lifecycle.cleanupTimer();
+      lifecycle.stopIdleWatchdog();
     }
   }
 }

@@ -36,7 +36,7 @@ import {
 
 import { writeTurnSnapshot } from './turnSnapshotWriter';
 import { maybePauseForStep } from './stepPause';
-import { activateMaxStepsFinalResponse } from './maxStepsFallback';
+import { activateMaxStepsFinalResponse, createResourceWarning } from './maxStepsFallback';
 import { DoomLoopGuard } from './doomLoopGuard';
 import { generateAutoContinuationPrompt as buildAutoContinuationPrompt } from './truncationPrompts';
 
@@ -348,6 +348,8 @@ export class ConversationRuntime {
 
     let iterations = 0;
     let softValidationRetries = 0;
+    let resourceFinalAttempted = false;
+    const warnResources = createResourceWarning(this.ctx, (text, source) => this.contextAssembly.injectSystemMessage(text, source));
     let userTurnId: string | undefined;
     let terminal: RunTerminalInfo = { status: 'completed' };
     let runError: unknown;
@@ -356,6 +358,7 @@ export class ConversationRuntime {
 
     try {
       while (!this.ctx.control.isCancelled && !this.ctx.control.isInterrupted && !this.ctx.circuitBreaker.isTripped() && iterations < this.ctx.maxIterations) {
+        if (resourceFinalAttempted) break;
         if (baseRunTraceContext) enterRunTraceContext(baseRunTraceContext);
         await this.waitWhilePaused();
         if (this.ctx.control.isCancelled || this.ctx.control.isInterrupted) break;
@@ -375,30 +378,24 @@ export class ConversationRuntime {
         }
 
         // Budget check
-        const budgetBlocked = this.runFinalizer.checkAndEmitBudgetStatus();
-        if (budgetBlocked) {
-          logger.warn('[AgentLoop] Budget exceeded, stopping execution');
-          logCollector.agent('WARN', 'Budget exceeded, execution blocked');
-          this.ctx.onEvent({
-            type: 'error',
-            data: { message: 'Budget exceeded. Please increase budget or wait for reset.', code: 'BUDGET_EXCEEDED' },
-          });
-          break;
+        if (this.runFinalizer.checkAndEmitBudgetStatus()) {
+          terminal = { status: 'aborted' };
+          activateMaxStepsFinalResponse(this.ctx, 'Budget exhausted');
+          resourceFinalAttempted = true;
         }
+        warnResources();
 
         // Max-steps 兜底（借鉴 MiMoCode max-steps.txt）：进入最后一轮时禁用工具，
         // 强制纯文本三段式总结（已完成/未完成/建议下一步），避免步数耗尽无收尾直接断流。
         if (iterations >= this.ctx.maxIterations && this.ctx.maxIterations > 1) {
           activateMaxStepsFinalResponse(this.ctx);
-          logger.warn('[AgentLoop] Max iterations reached; forcing tool-free final summary', {
-            iterations,
-            maxIterations: this.ctx.maxIterations,
-          });
         }
 
         // Goal mode 闸3（兜底，每轮先跑）：轮次/预算触发 aborted；anti-spin 触发可恢复暂停。
         // 放在 loop 顶而非收尾点——否则 handleToolResponse 返回 'continue' 的轮次会跳过闸3。
-        if (this.ctx.goalMode?.isPending()) {
+        // 资源耗尽已转入收尾轮时不再过闸3：同轮再被 anti-spin 暂停会 continue 跳过收尾推理，
+        // 下一轮因 resourceFinalAttempted 直接退出，用户拿不到交付摘要（ai-review 09-06）。
+        if (!resourceFinalAttempted && this.ctx.goalMode?.isPending()) {
           // toolsUsedInTurn 此刻尚未被 setupIteration 重置，仍是上一轮的工具。
           // 任意工具调用都算进展；写工具/Bash 继续单独提供文件变更信号。
           if (iterations > 1) {
@@ -480,7 +477,8 @@ export class ConversationRuntime {
             const code = fallback.reasonCode ?? HostReasonCode.GoalAbortRepeatedAction;
             emitGoalAbort(this.ctx, { code, modelText: reason, turns: iterations, tokensUsed: tokensUsedWithSwarm });
             terminal = { status: 'aborted' };
-            break;
+            activateMaxStepsFinalResponse(this.ctx, reason);
+            resourceFinalAttempted = true;
           }
 
           // Swarm goal（P4）：allowSwarm 时首轮注入一次编排引导
@@ -628,6 +626,12 @@ export class ConversationRuntime {
               ? Math.round((loopState.tokenUsage.input / loopState.maxTokens) * 100) / 100
               : 0,
           });
+        }
+
+        // Exactly one final inference is allowed after resource exhaustion; no tool execution or reinference.
+        if (resourceFinalAttempted) {
+          if (response.type === 'text' && response.content) await this.messageProcessor.handleTextResponse(response, isSimpleTask, iterations, true, langfuse);
+          break;
         }
 
         // 2. Handle text response - check for text-described tool calls

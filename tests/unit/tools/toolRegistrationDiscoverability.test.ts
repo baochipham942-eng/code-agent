@@ -25,6 +25,7 @@
 // ============================================================================
 
 import { describe, expect, it } from 'vitest';
+import { PARALLEL_SAFE_TOOLS } from '../../../src/host/agent/loopTypes';
 import type { ToolSchema } from '../../../src/host/protocol/tools';
 import { registerMigratedTools } from '../../../src/host/tools/modules';
 import { CORE_TOOLS } from '../../../src/host/services/toolSearch/deferredTools';
@@ -159,5 +160,16 @@ describe('注册即可发现（registry → 模型到达路径）', () => {
     );
     const orphaned = [...STRICT_SKILL_INJECTED].filter((name) => !strictSkillTools.has(name));
     expect(orphaned).toEqual([]);
+  });
+});
+
+
+describe('并行白名单注册名棘轮', () => {
+  it('每个名字都是真实注册名，禁止残留旧名', () => {
+    const registered = new Set(collectRegisteredSchemas().map(schema => schema.name));
+    expect([...PARALLEL_SAFE_TOOLS].filter(name => !registered.has(name))).toEqual([]);
+    for (const name of ['Read', 'Glob', 'Grep', 'ListDirectory', 'WebFetch', 'WebSearch', 'memory_search', 'Explore', 'Task']) {
+      expect(PARALLEL_SAFE_TOOLS.has(name), name).toBe(true);
+    }
   });
 });

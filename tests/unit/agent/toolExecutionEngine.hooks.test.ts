@@ -514,7 +514,7 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
         maxActiveExecutions = Math.max(maxActiveExecutions, activeExecutions);
         await new Promise(resolve => setTimeout(resolve, 5));
         activeExecutions -= 1;
-        return { toolCallId: '', success: true, output: `read ${String(args.path)}` };
+        return { toolCallId: '', success: true, output: `read ${String(args.file_path)}` };
       }),
     };
 
@@ -523,7 +523,7 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
         const input = JSON.parse(toolInput) as Record<string, unknown>;
         return {
           shouldProceed: true,
-          modifiedInput: JSON.stringify({ ...input, path: `${String(input.path)}.hooked` }),
+          modifiedInput: JSON.stringify({ ...input, file_path: `${String(input.file_path)}.hooked` }),
           results: [],
           totalDuration: 1,
         };
@@ -558,27 +558,27 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     engine.setModules(contextAssembly as never, runFinalizer as never, conversationRuntime as never);
 
     await engine.executeToolsWithHooks([
-      makeToolCall('tool-1', 'a.txt'),
-      makeToolCall('tool-2', 'b.txt'),
+      { id: 'tool-1', name: 'Read', arguments: { file_path: 'a.txt' } },
+      { id: 'tool-2', name: 'Read', arguments: { file_path: 'b.txt' } },
     ]);
 
     expect(hookManager.triggerPreToolUse).toHaveBeenCalledTimes(2);
     expect(planningService.hooks.preToolUse).toHaveBeenCalledTimes(2);
     expect(planningService.hooks.preToolUse).toHaveBeenNthCalledWith(1, {
-      toolName: 'read_file',
-      toolParams: { path: 'a.txt.hooked' },
+      toolName: 'Read',
+      toolParams: { file_path: 'a.txt.hooked' },
     });
     expect(executedArgs).toEqual([
-      { path: 'a.txt.hooked' },
-      { path: 'b.txt.hooked' },
+      { file_path: 'a.txt.hooked' },
+      { file_path: 'b.txt.hooked' },
     ]);
     expect(maxActiveExecutions).toBe(2);
     expect(ctx.telemetryAdapter?.onToolCallStart).toHaveBeenNthCalledWith(
       1,
       'turn-1',
       'tool-1',
-      'read_file',
-      { path: 'a.txt.hooked' },
+      'Read',
+      { file_path: 'a.txt.hooked' },
       0,
       true,
     );
@@ -586,8 +586,8 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
       2,
       'turn-1',
       'tool-2',
-      'read_file',
-      { path: 'b.txt.hooked' },
+      'Read',
+      { file_path: 'b.txt.hooked' },
       1,
       true,
     );
@@ -595,8 +595,8 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
       .map(([event]) => event)
       .filter(event => event.type === 'tool_call_start');
     expect(startEvents.map(event => event.data)).toEqual([
-      expect.objectContaining({ id: 'tool-1', arguments: { path: 'a.txt.hooked' }, _index: 0 }),
-      expect.objectContaining({ id: 'tool-2', arguments: { path: 'b.txt.hooked' }, _index: 1 }),
+      expect.objectContaining({ id: 'tool-1', arguments: { file_path: 'a.txt.hooked' }, _index: 0 }),
+      expect.objectContaining({ id: 'tool-2', arguments: { file_path: 'b.txt.hooked' }, _index: 1 }),
     ]);
   });
 

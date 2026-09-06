@@ -275,7 +275,7 @@ vi.mock('../../../src/host/services/citation/citationService', () => ({
 }));
 
 vi.mock('../../../src/host/tools/fileReadTracker', () => ({
-  fileReadTracker: { getRecentFiles: vi.fn().mockReturnValue([]) },
+  fileReadTracker: { clear: vi.fn(), forgetShownRanges: vi.fn(), getRecentFiles: vi.fn().mockReturnValue([]) },
 }));
 
 vi.mock('../../../src/host/tools/dataFingerprint', () => ({
@@ -1436,6 +1436,63 @@ describe('ConversationRuntime', () => {
       expect(onTurnStart.mock.calls[0][2]).toBe('plain prompt');
     });
 
+    it.each([HostReasonCode.GoalAbortTokenBudget, HostReasonCode.GoalAbortTimeBudget])('summarizes a goal stopped by %s', async (reasonCode) => {
+      ctx.goalMode = new GoalModeController({ goal: 'finish', verifyCommand: 'true', tokenBudget: 100000, maxTurns: 20 });
+      vi.spyOn(ctx.goalMode, 'evaluateFallback').mockReturnValue({ stop: true, reason: 'resource exhausted', reasonCode });
+      modules.contextAssembly.inference.mockImplementation(async () => {
+        expect(ctx.control.forceFinalResponsePrompt).toContain('resource exhausted');
+        return { type: 'text', content: 'Completed / Remaining / Next steps' };
+      });
+      await runtime.run('goal budget');
+      expect(modules.contextAssembly.inference).toHaveBeenCalledTimes(1);
+      expect((runtime as any).messageProcessor.handleToolResponse).not.toHaveBeenCalled();
+    });
+
+    it('injects the 80 percent resource warning once across repeated iterations', async () => {
+      ctx.goalMode = new GoalModeController({ goal: 'finish', verifyCommand: 'true', tokenBudget: 100000, maxTurns: 3 });
+      vi.spyOn(ctx.stats, 'totalInputTokens', 'get').mockReturnValue(80000);
+      modules.contextAssembly.inference.mockResolvedValue({ type: 'text', content: 'partial' });
+      await runtime.run('almost exhausted');
+      const warnings = modules.contextAssembly.injectSystemMessage.mock.calls.filter((call: unknown[]) => call[1] === 'nudge' && String(call[0]).includes('Resource budget'));
+      expect(warnings).toHaveLength(1);
+      expect(warnings[0][0]).toContain('80%');
+    });
+
+    it('spends only one tool-free inference on budget exhaustion and preserves partial delivery', async () => {
+      modules.runFinalizer.checkAndEmitBudgetStatus.mockReturnValue(true);
+      modules.contextAssembly.inference.mockImplementation(async () => {
+        expect(ctx.control.forceFinalResponsePrompt).toContain('RESOURCE LIMIT REACHED');
+        expect(ctx.control.forceFinalResponsePrompt).toContain('remaining tasks');
+        return { type: 'text', content: 'Completed: partial work. Remaining: verification. Next: resume later.' };
+      });
+      await runtime.run('budget task');
+      expect(modules.contextAssembly.inference).toHaveBeenCalledTimes(1);
+      expect((runtime as any).messageProcessor.handleTextResponse).toHaveBeenCalled();
+      expect((runtime as any).messageProcessor.handleToolResponse).not.toHaveBeenCalled();
+    });
+
+    it('still runs the single final inference when budget exhaustion and goal anti-spin pause coincide', async () => {
+      ctx.goalMode = new GoalModeController({ goal: 'finish', verifyCommand: 'true', tokenBudget: 100000, maxTurns: 20 });
+      vi.spyOn(ctx.goalMode, 'evaluateFallback').mockReturnValue({ pause: true, reason: 'anti_spin' } as any);
+      const markPaused = vi.spyOn(ctx.goalMode, 'markPaused');
+      modules.runFinalizer.checkAndEmitBudgetStatus.mockReturnValue(true);
+      modules.contextAssembly.inference.mockResolvedValue({ type: 'text', content: 'Completed: partial. Remaining: rest. Next: resume.' });
+      await runtime.run('budget task under anti-spin');
+      // 收尾轮不再过 goal 闸3：不暂停、不 continue 跳过收尾推理
+      expect(markPaused).not.toHaveBeenCalled();
+      expect(modules.contextAssembly.inference).toHaveBeenCalledTimes(1);
+      expect((runtime as any).messageProcessor.handleTextResponse).toHaveBeenCalled();
+    });
+
+    it('does not run a tool returned in defiance of budget finalization', async () => {
+      modules.runFinalizer.checkAndEmitBudgetStatus.mockReturnValue(true);
+      modules.contextAssembly.inference.mockResolvedValue({ type: 'tool_use', toolCalls: [{ id: 'x', name: 'Bash', arguments: { command: 'touch nope' } }] });
+      await runtime.run('budget task');
+      expect(modules.contextAssembly.inference).toHaveBeenCalledTimes(1);
+      expect((runtime as any).messageProcessor.handleToolResponse).not.toHaveBeenCalled();
+      expect((runtime as any).messageProcessor.detectAndForceExecuteTextToolCall).not.toHaveBeenCalled();
+    });
+
     it('forces a tool-free three-part summary when max iterations is reached (roadmap 1.6)', async () => {
       ctx.maxIterations = 2;
       // 第一轮：steer 触发 re-inference，让循环进入第二轮（最后一轮）
@@ -1604,6 +1661,9 @@ describe('ConversationRuntime', () => {
       ctx.goalMode = {
         isPending: vi.fn().mockReturnValue(false),
         getStatus: vi.fn().mockReturnValue('aborted'),
+        getWallClockBudgetMs: () => undefined,
+        getTokenBudget: () => 100000,
+        getSwarmTokensUsed: () => 0,
       } as any;
       modules.contextAssembly.inference.mockResolvedValue({ type: 'text', content: 'Explained why impossible.' });
 
@@ -1633,7 +1693,7 @@ describe('ConversationRuntime', () => {
 
       await runtime.run('finish');
 
-      expect(modules.contextAssembly.inference).toHaveBeenCalledTimes(1);
+      expect(modules.contextAssembly.inference).toHaveBeenCalledTimes(2);
       expect(modules.contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
         expect.stringContaining('<goal-continuation>'),
         'goal-progress',

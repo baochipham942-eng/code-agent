@@ -1,3 +1,4 @@
+import { executeHooks } from '../../../src/host/hooks/hookExecutionEngine';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { setProtocolToolRegistryPort } from '../../../src/host/tools/protocolToolRegistration';
 import type { ToolCall, ToolResult } from '../../../src/shared/contract';
@@ -500,6 +501,31 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     expect(action).toBe('continue');
     expect(deps.injected.some((msg) => msg.includes('<artifact-file-write-required>'))).toBe(true);
     expect(deps.injected.some((msg) => msg.includes('/private/tmp/corgi-platformer.html'))).toBe(true);
+  });
+
+  it.each([0, 2])('PreToolUse exit %s controls real tool dispatch', async (code) => {
+    const execute = vi.fn(async () => ({ success: true, output: 'read complete' }));
+    const ctx = makeRuntimeContext({
+      toolExecutor: { execute } as never,
+      hookManager: {
+        triggerPostToolUse: async () => ({ shouldProceed: true, results: [], totalDuration: 0 }),
+        triggerPreToolUse: (toolName: string, toolInput: string) => executeHooks([
+          { hooks: [{ type: 'command', command: `echo policy-denied >&2; exit ${code}` }] },
+        ] as Parameters<typeof executeHooks>[0], {
+          event: 'PreToolUse', toolName, toolInput,
+          sessionId: 'test', timestamp: Date.now(), workingDirectory: process.cwd(),
+        }, { workingDirectory: process.cwd(), executedOnceHooks: new Set() }),
+      } as never,
+    });
+    const engine = new ToolExecutionEngine(ctx);
+    engine.setModules({ injectSystemMessage: vi.fn(), pushPersistentSystemContext: vi.fn(),
+      getCurrentAttachments: () => [] } as never,
+    { emitTaskProgress: vi.fn() } as never, { isPlanMode: () => false, setPlanMode: vi.fn() } as never);
+    const results = await engine.executeToolsWithHooks([
+      { id: 'blocked', name: 'Read', arguments: { file_path: 'a.txt' } },
+    ]);
+    expect(execute).toHaveBeenCalledTimes(code === 2 ? 0 : 1);
+    if (code === 2) expect(JSON.stringify(results)).toContain('policy-denied');
   });
 
   it('runs pre-hooks for parallel-safe tools and records hook-modified args without serializing execution', async () => {

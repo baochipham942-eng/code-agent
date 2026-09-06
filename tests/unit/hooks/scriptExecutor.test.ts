@@ -90,14 +90,30 @@ describe('executeScript output parsing', () => {
     expect(result.message).toBe('3 lint errors found');
   });
 
-  it('treats exit code 2 with stdout as continue with message', async () => {
+  it('blocks exit code 2 using stderr instead of stdout', async () => {
     const result = await executeScript(
-      { command: `bash -c 'echo "proceed with caution"; exit 2'` },
+      { command: `bash -c 'echo "stdout is not the reason"; echo "blocked by policy" >&2; exit 2'` },
       buildPostToolContext(),
     );
 
+    expect(result.action).toBe('block');
+    expect(result.message).toBe('blocked by policy');
+  });
+
+  it.each([1, 2, 3])('keeps explicit JSON decisions above exit %s', async (code) => {
+    const result = await executeScript(
+      { command: `echo '{"action":"continue","modifiedInput":"safe"}'; exit ${code}` },
+      buildPostToolContext(),
+    );
     expect(result.action).toBe('continue');
-    expect(result.message).toBe('proceed with caution');
+    expect(result.modifiedInput).toBe('safe');
+  });
+
+  it('does not let arbitrary JSON allow a failing script', async () => {
+    const result = await executeScript(
+      { command: `echo '{"message":"diagnostic"}'; exit 3` }, buildPostToolContext(),
+    );
+    expect(result.action).toBe('error');
   });
 
   it('returns allow with no message for empty stdout', async () => {

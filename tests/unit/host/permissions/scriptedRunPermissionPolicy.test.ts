@@ -252,9 +252,11 @@ describe('builtin plugin scripted policy coverage', () => {
     for (const tool of tools) {
       const rule = rulesByTool.get(tool.name);
       expect(rule, `missing scripted policy rule for ${tool.name}`).toBeDefined();
-      if (rule?.effect === 'allow') {
-        expect(rule.match?.requestType).toBe(permissionRequestTypeForLevel(tool.permissionLevel));
-      }
+      // allow 与 deny 都要核 requestType：deny 写错类型今天不影响结果（兜底也是拒），
+      // 但哪天有人把它翻成 allow，那条规则就静默匹配不上、变成"写着放行其实没放行"。
+      // 这道门要保证的是"规则真的命中这个工具"，不是"结果碰巧对"（#1670 第五轮 ai-review Nit）。
+      expect(rule?.match?.requestType, `wrong requestType on ${rule?.effect} rule for ${tool.name}`)
+        .toBe(permissionRequestTypeForLevel(tool.permissionLevel));
     }
   });
 });

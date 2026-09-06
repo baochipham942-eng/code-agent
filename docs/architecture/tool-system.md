@@ -838,3 +838,13 @@ src/host/services/skills/
 | `write` | 文件写入 | 需要确认 (开发模式可自动) |
 | `execute` | 命令执行 | 需要确认 |
 | `network` | 网络请求 | 需要确认 |
+
+### Command hook exit status
+
+Command hooks use 0 = allow, 2 = block (reason from stderr), and 1 = block for existing scripts. Other nonzero statuses produce an error handled by the existing hook error policy. An explicit JSON action or decision takes precedence over the exit status; arbitrary diagnostic JSON does not authorize a failed script.
+
+```sh
+# PreToolUse decision hook: explain the refusal on stderr.
+echo "This operation needs approval" >&2
+exit 2
+```

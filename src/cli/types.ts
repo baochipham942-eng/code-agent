@@ -55,6 +55,7 @@ export interface CLIConfig {
   autoApprovePlan?: boolean;
   /** Custom system prompt to inject */
   systemPrompt?: string;
+  systemInstructions?: string[];
   /** Path to write session metrics JSON (enables MetricsCollector) */
   metricsPath?: string;
   /** Path to write run-status heartbeat JSON snapshot (enables StatusFileWriter + MetricsCollector) */

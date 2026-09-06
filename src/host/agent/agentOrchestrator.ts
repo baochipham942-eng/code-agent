@@ -1,3 +1,4 @@
+import { cancelTimeWakesOnUserReturn } from '../services/wake/userReturn';
 // ============================================================================
 // Agent Orchestrator - Main controller for the AI agent
 // ============================================================================
@@ -194,6 +195,14 @@ export class AgentOrchestrator {
     this.toolExecutor.setExecutionTopology(topology);
   }
 
+  /**
+   * delegate 模式把普通回合改道进自动委派；但无人值守入口（wake/cron/role-wake）显式
+   * disableAutoAgent——它们的无人值守声明与审批停车都挂在标准循环上，不得被改道（ai-review 09-06）。
+   */
+  private shouldForceDelegateAutoAgent(needsAutoAgent: boolean, options?: AgentRunOptions): boolean {
+    return this.runSettings.isDelegateMode() && !needsAutoAgent && !options?.disableAutoAgent;
+  }
+
   async sendMessage(
     content: string,
     attachments?: unknown[],
@@ -208,6 +217,7 @@ export class AgentOrchestrator {
     const settings = this.configService.getSettings();
     const sessionManager = getSessionManager();
     const sessionId = await this.resolveSessionId();
+    if (sessionId) await cancelTimeWakesOnUserReturn(sessionId, options);
 
     const userMessage: Message = {
       id: clientMessageId ?? this.generateId(),
@@ -678,7 +688,7 @@ export class AgentOrchestrator {
         requirements.executionStrategy = 'sequential';
       }
 
-      if (this.runSettings.isDelegateMode() && !requirements.needsAutoAgent) {
+      if (this.shouldForceDelegateAutoAgent(requirements.needsAutoAgent, options)) {
         logger.info('[DelegateMode] Forcing auto agent mode — orchestrator will not execute tools directly');
         requirements.needsAutoAgent = true;
         requirements.executionStrategy = requirements.executionStrategy || 'parallel';
@@ -982,6 +992,7 @@ export class AgentOrchestrator {
       // provider 变体（roadmap 2.4）：默认主提示词按 provider 家族追加纪律段落
       // （Claude 系 Git 安全 / GPT 国产系自治坚持）；agent 路由自带 prompt 时不动
       systemPrompt,
+      systemInstructions: options?.systemInstructions,
       modelConfig: effectiveModelConfig,
       toolExecutor: runContext ? this.toolExecutor.forRun(runContext) : this.toolExecutor,
       messages: this.messageHistory.getMessagesForRun(),

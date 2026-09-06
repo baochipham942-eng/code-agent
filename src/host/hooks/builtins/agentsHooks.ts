@@ -48,6 +48,7 @@ export async function sessionStartAgentsInjectHook(
     // 使用缓存的发现服务。把 hook 配置的 maxDepth 真正传到扫描层，避免先全量扫再过滤。
     const result = await discoverAgentFilesCached(workingDirectory, {
       maxDepth,
+      includeParents,
       maxFiles: MAX_AGENT_FILES_TO_INJECT,
     });
 
@@ -64,35 +65,9 @@ export async function sessionStartAgentsInjectHook(
     // 构建注入内容
     const sections: string[] = [];
 
-    // 按优先级排序：根目录的文件优先，AGENTS.md 优先于 CLAUDE.md
-    const sortedFiles = [...result.files].sort((a, b) => {
-      // 根目录优先
-      const aIsRoot = a.directory === '.';
-      const bIsRoot = b.directory === '.';
-      if (aIsRoot !== bIsRoot) return aIsRoot ? -1 : 1;
-
-      // AGENTS.md 优先于 CLAUDE.md
-      const aIsAgents = a.relativePath.toLowerCase().includes('agents');
-      const bIsAgents = b.relativePath.toLowerCase().includes('agents');
-      if (aIsAgents !== bIsAgents) return aIsAgents ? -1 : 1;
-
-      // 按路径深度排序
-      const aDepth = a.relativePath.split('/').length;
-      const bDepth = b.relativePath.split('/').length;
-      return aDepth - bDepth;
-    });
-
-    // 根据深度和父目录设置过滤
-    const filteredFiles = sortedFiles.filter((file) => {
-      const depth = file.relativePath.split('/').length - 1;
-      if (depth > maxDepth) return false;
-
-      // 检查是否是父目录
-      const isParent = !isPathWithinRoot(file.absolutePath, workingDirectory);
-      if (isParent && !includeParents) return false;
-
-      return true;
-    });
+    // Discovery already orders ancestors before their descendants.
+    const filteredFiles = result.files.filter((file) =>
+      includeParents || isPathWithinRoot(file.absolutePath, workingDirectory));
 
     let injectedChars = 0;
     let truncated = result.truncated || filteredFiles.length > MAX_AGENT_FILES_TO_INJECT;

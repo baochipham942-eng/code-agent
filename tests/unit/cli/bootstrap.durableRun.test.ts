@@ -111,6 +111,17 @@ describe('initializeCLIServices durable wiring', () => {
     expect(mocks.createApplicationAutoAgentRecoveryHost).toHaveBeenCalledWith(mocks.registry);
   });
 
+  it('passes runtime system instructions to the CLI loop independently of the base prompt', async () => {
+    const { createAgentLoop, initializeCLIServices } = await import('../../../src/cli/bootstrap');
+    await initializeCLIServices();
+    createAgentLoop({
+      workingDirectory: process.cwd(), modelConfig: { provider: 'openai', model: 'test-model' },
+      outputFormat: 'text', enablePlanning: false, enableHooks: false, debug: false,
+      systemInstructions: ['unattended-cli-system'],
+    }, vi.fn());
+    expect(mocks.agentLoopConfigs.at(-1)).toMatchObject({ systemInstructions: ['unattended-cli-system'] });
+  });
+
   it('removes TaskManager-backed command-center tools from the CLI model tool table', async () => {
     const { createAgentLoop, initializeCLIServices } = await import('../../../src/cli/bootstrap');
     const { filterToolsByRunPolicy } = await import('../../../src/host/agent/runtime/toolRunPolicy');

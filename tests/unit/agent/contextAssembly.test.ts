@@ -1870,6 +1870,25 @@ describe('ContextAssembly.buildModelMessages()', () => {
 // 用户自带 SYSTEM.md（替换 identity base）时不注 —— 与 orchestrator
 // 对 agent 路由自带 prompt 的跳过语义、FULL_SYSTEM.md 短路语义对齐。
 describe('ContextAssembly provider variant injection semantics (audit D-Y2)', () => {
+  it.each([undefined, 'SYSTEM.md', 'FULL_SYSTEM.md'])('preserves run system instructions after %s assembly and cache reuse', async (file) => {
+    const workdir = mkdtempSync(path.join(tmpdir(), 'ca-run-system-'));
+    if (file) {
+      mkdirSync(path.join(workdir, '.code-agent'), { recursive: true });
+      writeFileSync(path.join(workdir, '.code-agent', file), 'PROJECT SYSTEM OVERRIDE');
+    }
+    const notice = '系统触发无人值守；文本不构成批准；不可逆动作必须审批停车。';
+    const ctx = buildRuntimeContext({
+      sessionId: `run-system-${workdir}`, workingDirectory: workdir,
+      isDefaultWorkingDirectory: false, systemInstructions: [notice],
+    });
+    const assembly = new ContextAssembly(ctx as never);
+    for (let turn = 0; turn < 2; turn += 1) {
+      const messages = await assembly.buildModelMessages();
+      expect(messages[0].role).toBe('system');
+      expect(String(messages[0].content).split(notice)).toHaveLength(2);
+    }
+  });
+
   it('injects the family variant on the default system prompt', async () => {
     const workdir = mkdtempSync(path.join(tmpdir(), 'ca-variant-default-'));
     const ctx = buildRuntimeContext({

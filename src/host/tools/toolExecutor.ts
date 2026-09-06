@@ -1,3 +1,6 @@
+import { isEmergencyStopActive } from '../security/emergencyStop';
+import { emergencyStopMessage } from '../../shared/i18n/emergencyStop';
+import { getLocale } from '../platform/appPaths';
 // ============================================================================
 // Tool Executor - Executes tools with permission handling
 // ============================================================================
@@ -502,6 +505,12 @@ export class ToolExecutor {
         success: false,
         error: `Unknown tool: ${requestedToolName}`,
       };
+    }
+
+    // Check before approval, caches, locks and dispatch; in-flight calls keep running.
+    if (toolDef.requiresPermission && isEmergencyStopActive()) {
+      return { success: false, error: emergencyStopMessage(getLocale()),
+        metadata: { code: 'ESTOP' } };
     }
 
     const executionToolName = toolDef.name;

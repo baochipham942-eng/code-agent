@@ -39,6 +39,7 @@ import type { ScopedCostRecorder } from '../services/core/scopedCostLimit';
  */
 export interface AgentLoopConfig {
   systemPrompt?: string;
+  systemInstructions?: string[];
   modelConfig: ModelConfig;
   toolExecutor: ToolExecutor;
   messages: Message[];

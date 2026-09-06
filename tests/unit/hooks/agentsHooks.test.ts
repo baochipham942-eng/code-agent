@@ -58,6 +58,7 @@ describe('sessionStartAgentsInjectHook', () => {
 
     expect(discoverAgentFilesCached).toHaveBeenCalledWith('/tmp/comate-zulu-demo', {
       maxDepth: 3,
+      includeParents: true,
       maxFiles: 12,
     });
   });

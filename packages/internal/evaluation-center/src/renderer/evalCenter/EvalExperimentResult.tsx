@@ -114,7 +114,7 @@ export const EvalExperimentResult: React.FC<{
   if (!verdict || !compare) {
     return (
       <div className="p-4">
-        <Button variant="ghost" size="sm" onClick={onBack}><ArrowLeft className="mr-1 h-4 w-4" />{labels.back}</Button>
+        <Button variant="ghost" size="sm" onClick={onBack} leftIcon={<ArrowLeft className="h-4 w-4" />}>{labels.back}</Button>
         <div className="mt-4 rounded-lg bg-zinc-900 p-4 text-sm text-zinc-400">{labels.noPairs}</div>
       </div>
     );
@@ -141,7 +141,7 @@ export const EvalExperimentResult: React.FC<{
   const notMeasured = verdict.hardGate.items.filter((item) => item.status === 'not_measured').map((item) => item.key);
   return (
     <div className="min-h-0 flex-1 overflow-y-auto bg-zinc-950 p-4" data-testid="eval-experiment-result">
-      <Button variant="ghost" size="sm" onClick={onBack}><ArrowLeft className="mr-1 h-4 w-4" />{labels.back}</Button>
+      <Button variant="ghost" size="sm" onClick={onBack} leftIcon={<ArrowLeft className="h-4 w-4" />}>{labels.back}</Button>
       {failCount > 0 && (
         <div className="mt-3 rounded-lg bg-badge-danger px-4 py-2 text-sm text-badge-danger" role="alert">
           {replace(labels.safetyLine, { n: failCount })}
@@ -175,9 +175,15 @@ export const EvalExperimentResult: React.FC<{
 
       <div className="mt-3 flex flex-wrap gap-2" aria-label="pair filters">
         {(Object.keys(labels.filters) as PairFilter[]).map((key) => (
-          <Button key={key} variant={filter === key ? 'secondary' : 'ghost'} size="sm" onClick={() => setFilter(key)} data-testid={`experiment-filter-${key}`}>
-            {key === 'candidate' && <ThumbsUp className="mr-1 h-3.5 w-3.5" />}
-            {key === 'baseline' && <ThumbsDown className="mr-1 h-3.5 w-3.5" />}
+          <Button
+            key={key} variant={filter === key ? 'secondary' : 'ghost'} size="sm"
+            onClick={() => setFilter(key)} data-testid={`experiment-filter-${key}`}
+            // 图标必须走 leftIcon：Button 把 children 整个塞进一个普通 <span>
+            // （primitives/Button.tsx:132），图标当 children 传就跟文字挤在同一个非 flex 容器里，
+            // 而 preflight 给 svg 设了 display:block ⇒ 图标掉到文字上一行，按钮变成上下布局。
+            leftIcon={key === 'candidate' ? <ThumbsUp className="h-3.5 w-3.5" />
+              : key === 'baseline' ? <ThumbsDown className="h-3.5 w-3.5" /> : undefined}
+          >
             {labels.filters[key]}
           </Button>
         ))}

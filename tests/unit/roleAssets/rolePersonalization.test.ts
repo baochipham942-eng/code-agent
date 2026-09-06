@@ -32,7 +32,7 @@ import {
   toRoleBoundaryRunAllowlist,
 } from '../../../src/host/services/roleAssets/rolePersonalization';
 import { ensureRoleAssetDirs } from '../../../src/host/services/roleAssets/roleAssetService';
-import { filterSubagentToolDefs } from '../../../src/host/agent/subagentExecutorToolDefs';
+import { resolveSubagentToolAccess } from '../../../src/host/agent/subagentExecutorToolDefs';
 
 const ROLE = '数据分析师';
 const BASE_PROMPT = '你是一位数据分析师。';
@@ -127,19 +127,27 @@ describe('专家个性化正文', () => {
     expect(policy?.blockedTools).toEqual(['mail_send', 'mcp__lark__im.v1.message.create']);
   });
 
-  it('勾选的硬边界进入子代理实际模型工具表', () => {
+  it('勾选的硬边界进入子代理实际模型工具表', async () => {
     writeRolePersonalization(ROLE, { boundaries: { disallowExternalSending: true } });
     const policy = resolveRoleToolBoundary(ROLE, ['mail_draft', 'mail_send']);
     const definitions = new Map([
       ['mail_draft', { name: 'mail_draft' }],
       ['mail_send', { name: 'mail_send' }],
     ]);
-    const actualToolTable = filterSubagentToolDefs(
-      policy?.allowedTools ?? [],
-      { getDefinition: (name) => definitions.get(name) as never },
+    // 与生产接线同构（agentOrchestrator.ts:908-919 → subagentExecutor.ts:296）：
+    // policy.allowedTools 先过 toRoleBoundaryRunAllowlist 变 run 白名单，再由
+    // resolveSubagentToolAccess 收口（父子交集→通配展开→白名单收窄→注册表解析）。
+    const { allowedToolDefs } = await resolveSubagentToolAccess(
+      { availableTools: ['mail_draft', 'mail_send'] },
+      {
+        allowedToolNames: toRoleBoundaryRunAllowlist(policy?.allowedTools ?? []),
+        resolver: { getDefinition: (name) => definitions.get(name) as never },
+      },
+      { availableTools: [] },
+      { toolPool: ['mail_draft', 'mail_send'] },
     );
 
-    expect(actualToolTable.map((tool) => tool.name)).toEqual(['mail_draft']);
+    expect(allowedToolDefs.map((tool) => tool.name)).toEqual(['mail_draft']);
   });
 
   it('自由文本写了“只起草不发送”但没有勾选时，工具表不收窄', () => {

@@ -70,17 +70,6 @@ function warnMissingTools(missing: string[]): void {
   logger.warn(`filterToolDefs: ${missing.length} tools not found in registry: ${missing.join(', ')}`);
 }
 
-export function filterSubagentToolDefs(
-  allowedToolNames: string[],
-  resolver: SubagentToolResolverPort,
-): ToolDefinition[] {
-  const { defs, missing } = resolveToolNamesOnce(allowedToolNames, resolver);
-  if (missing.length > 0) {
-    warnMissingTools(missing);
-  }
-  return defs;
-}
-
 // ----------------------------------------------------------------------------
 // MCP 工具装配补取（N-SUBAGENT-ZEROTOOLS）
 // ----------------------------------------------------------------------------
@@ -219,9 +208,8 @@ interface SubagentToolResolution {
 }
 
 /**
- * 子代理工具装配（filterSubagentToolDefs 的完整形态）：
- * 首轮解析后，对 MCP 形态的缺失先触发对应 server 的按需连接再解析一次，仍取不到才
- * 计入缺失。内置工具的缺失不触发任何连接，warn 行为与 filterSubagentToolDefs 一致。
+ * 子代理工具装配：首轮解析后，对 MCP 形态的缺失先触发对应 server 的按需连接再
+ * 解析一次，仍取不到才计入缺失。内置工具的缺失不触发任何连接，只 warn 记入缺失清单。
  */
 async function resolveSubagentToolDefs(
   allowedToolNames: readonly string[],

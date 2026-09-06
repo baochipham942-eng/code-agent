@@ -16,7 +16,7 @@
 //   任一命中别人的槽就拒；realpath 仍要做（防 ~/x/../.code-agent）。
 // ============================================================================
 
-import { readdirSync } from 'node:fs';
+import { readdirSync, realpathSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { getHomeDir, getUserConfigDir } from '../config/configPaths';
@@ -76,11 +76,28 @@ function lexicalPath(input: string): string {
 }
 
 function canonicalize(input: string): string {
+  const kernelStyle = resolveKernelStyle(input);
+  if (kernelStyle) return kernelStyle;
   const resolved = path.resolve(input);
   try {
     return resolveCanonicalRunPath(resolved);
   } catch {
     return resolved;
+  }
+}
+
+/**
+ * 内核打开文件的语义是「逐组件解析软链，`..` 作用于已解析前缀」；path.resolve
+ * 先把 `..` 词法塌缩掉，`<软链>/../x` 会被算进软链的词法父目录、恰好躲开真身
+ * 所在的槽（R3①）。含 `..` 的路径改用 realpath 按内核语义定身；解析不了
+ * （路径不存在等）返回 null，调用方退回词法解析——读不到的路径没有泄露面。
+ */
+function resolveKernelStyle(candidate: string): string | null {
+  if (!/(^|\/)\.\.(\/|$)/.test(candidate)) return null;
+  try {
+    return realpathSync.native(candidate);
+  } catch {
+    return null;
   }
 }
 
@@ -264,8 +281,12 @@ function collectTraversalRoots(
 
 function resolveCandidate(raw: string, workingDirectory: string, homeDir: string): string {
   const expanded = expandHomePrefix(unquote(raw), homeDir);
-  if (path.isAbsolute(expanded)) return lexicalPath(expanded);
-  return lexicalPath(path.resolve(workingDirectory, expanded));
+  // join 不塌缩 ..，先把内核序的定身机会留给 resolveKernelStyle（R3①），
+  // 解析不了再退回词法 resolve（与旧行为一致）。
+  const joined = path.isAbsolute(expanded)
+    ? expanded
+    : path.join(workingDirectory, expanded);
+  return resolveKernelStyle(joined) ?? lexicalPath(joined);
 }
 
 function extractEmbeddedFamilyMentions(text: string): string[] {
@@ -288,7 +309,8 @@ function extractEmbeddedFamilyMentions(text: string): string[] {
 const CWD_COMMANDS = new Set(['cd', 'pushd', 'popd']);
 
 function skipCommandWrapper(words: string[]): number {
-  if (words[0] === 'builtin' || words[0] === 'command') return 1;
+  // '{' 是保留字分组前缀（`{ cd X; }`），不剥离会让段首 cd/遍历命令识别不到。
+  if (words[0] === 'builtin' || words[0] === 'command' || words[0] === '{') return 1;
   return 0;
 }
 
@@ -320,6 +342,8 @@ interface ShellSegment {
   text: string;
   /** 段所在子 shell 深度：圆括号一层加一。花括号分组不建子 shell，不改深度。 */
   depth: number;
+  /** 段是否跟在 && / || 后面：是否执行取决于前段退出码，静态不可知。 */
+  conditional: boolean;
 }
 
 /**
@@ -333,14 +357,19 @@ function splitShellSegments(command: string): ShellSegment[] {
   let current = '';
   let runDepth = 0;
   let depth = 0;
+  let segmentConditional = false;
   let inSingleQuote = false;
   let inDoubleQuote = false;
   let index = 0;
 
   const push = (): void => {
     const trimmed = current.trim();
-    if (trimmed) parts.push({ text: trimmed, depth: runDepth });
+    if (trimmed) parts.push({ text: trimmed, depth: runDepth, conditional: segmentConditional });
     current = '';
+  };
+  /** 段间分隔符出现后，下一段的条件性归零；&&/|| 分支另行置起。 */
+  const markUnconditional = (): void => {
+    segmentConditional = false;
   };
 
   while (index < command.length) {
@@ -360,25 +389,35 @@ function splitShellSegments(command: string): ShellSegment[] {
     if (!inSingleQuote && !inDoubleQuote) {
       if (char === '&' && command[index + 1] === '&') {
         push();
+        segmentConditional = true;
         runDepth = depth;
         index += 2;
         continue;
       }
       if (char === '|' && command[index + 1] === '|') {
         push();
+        segmentConditional = true;
         runDepth = depth;
         index += 2;
         continue;
       }
       if (char === '(' || char === ')') {
         push();
+        markUnconditional();
         depth = char === '(' ? depth + 1 : Math.max(0, depth - 1);
         runDepth = depth;
         index += 1;
         continue;
       }
-      if (char === ';' || char === '|' || char === '\n' || char === '{' || char === '}') {
+      // 花括号只在保留字分组位置（`{ cmd; }`：{ 后跟空白、} 前是分隔符）才是段
+      // 分隔符。词内花括号——${VAR} 展开、{a,b} 展开、find 的 {} 占位——拆开
+      // 会把 token 撕碎、丢掉真实路径（R3②：${HOME} 被拆成 `cat $` + `HOME}/…`）。
+      const braceOpensGroup = char === '{' && /\s/.test(command[index + 1] ?? ' ');
+      const braceClosesGroup = char === '}'
+        && (index === 0 || /[\s;&|()]/.test(command[index - 1]));
+      if (char === ';' || char === '|' || char === '\n' || braceOpensGroup || braceClosesGroup) {
         push();
+        markUnconditional();
         runDepth = depth;
         index += 1;
         continue;
@@ -449,6 +488,16 @@ function collectBashCandidates(
       const nextCwd = resolveCdTarget(words, state.cwd, homeDir);
       if (nextCwd) {
         candidates.push(nextCwd);
+        if (segment.conditional) {
+          // &&/|| 后面的 cd 是否执行取决于前段退出码，静态不可知（R3③：
+          // `true || cd /tmp; cat f` 按未生效一侧检查才能咬住真实 cwd）。
+          // 不能确定性地推进 cwd，改为「cwd 未知 + 基准并集」，后续命令
+          // 按出现过的所有可能基准逐一检查。
+          state.cwdKnown = false;
+          state.cwdBases.add(nextCwd);
+          allBases.add(nextCwd);
+          continue;
+        }
         state.cwd = nextCwd;
         state.cwdBases.add(nextCwd);
         allBases.add(nextCwd);

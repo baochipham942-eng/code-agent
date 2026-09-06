@@ -408,6 +408,86 @@ describe('槽数据目录读隔离', () => {
     expect(result.error ?? '').not.toContain('另一个槽');
   });
 
+  // ------------------------------------------------------------------------
+  // 第三轮（R3 三条）：字符串分析与真实 shell 语义的三个盲区
+  // ------------------------------------------------------------------------
+
+  it('R3① 软链+..：cat <指向生产槽memory的软链>/../config.json 被拒（内核先解软链再走 ..）', async () => {
+    symlinkSync(path.join(prodSlot, 'memory'), path.join(devSlot, 'prodmem'));
+    try {
+      // 不能用 path.join 拼：它会把 .. 词法塌缩掉，攻击串里就没剩 .. 了。
+      const attack = [devSlot, 'prodmem', '..', 'config.json'].join('/');
+      const result = await buildExecutor().execute(
+        'Bash',
+        { command: `cat ${JSON.stringify(attack)}` },
+        { sessionId: 'slot-isolation-r3-symlink-dotdot' },
+      );
+      expectForeignDenied(result, '.code-agent', PROD_SENTINEL);
+      expectNoForeignLeak(result, PROD_SENTINEL, prodFile);
+    } finally {
+      rmSync(path.join(devSlot, 'prodmem'), { force: true });
+    }
+  });
+
+  it('R3① 真阴：软链指向当前槽 + .. 照常读到自己的文件', async () => {
+    symlinkSync(path.join(devSlot, 'memory'), path.join(devSlot, 'ownmem'));
+    try {
+      const attack = [devSlot, 'ownmem', '..', 'memory', 'notes.md'].join('/');
+      const result = await buildExecutor().execute(
+        'Bash',
+        { command: `cat ${JSON.stringify(attack)}` },
+        { sessionId: 'slot-isolation-r3-symlink-dotdot-own' },
+      );
+      expect(result.success).toBe(true);
+      expect(leakedText(result)).toContain(OWN_SENTINEL);
+      expect(result.error ?? '').not.toContain('另一个槽');
+    } finally {
+      rmSync(path.join(devSlot, 'ownmem'), { force: true });
+    }
+  });
+
+  it('R3② ${HOME} 参数展开不被当成花括号分组拆碎：cat ${HOME}/.code-agent/config.json 被拒', async () => {
+    const result = await buildExecutor().execute(
+      'Bash',
+      { command: 'cat ${HOME}/.code-agent/config.json' },
+      { sessionId: 'slot-isolation-r3-home-brace-expansion' },
+    );
+    expectForeignDenied(result, '.code-agent', PROD_SENTINEL);
+    expectNoForeignLeak(result, PROD_SENTINEL, prodFile);
+  });
+
+  it('R3② 真阴：${HOME} 展开后读当前槽文件照常成功', async () => {
+    const result = await buildExecutor().execute(
+      'Bash',
+      { command: 'cat ${HOME}/.code-agent-dev/memory/notes.md' },
+      { sessionId: 'slot-isolation-r3-home-brace-expansion-own' },
+    );
+    expect(result.success).toBe(true);
+    expect(leakedText(result)).toContain(OWN_SENTINEL);
+    expect(result.error ?? '').not.toContain('另一个槽');
+  });
+
+  it('R3③ 条件分支里的 cd 不算数：cd "$HOME"; true || cd /tmp; cat .code-agent/config.json 被拒', async () => {
+    const result = await buildExecutor().execute(
+      'Bash',
+      { command: 'cd "$HOME"; true || cd /tmp; cat .code-agent/config.json' },
+      { sessionId: 'slot-isolation-r3-dead-branch-cd' },
+    );
+    expectForeignDenied(result, '.code-agent', PROD_SENTINEL);
+    expectNoForeignLeak(result, PROD_SENTINEL, prodFile);
+  });
+
+  it('R3③ 真阴：条件分支 cd 不算数时读当前槽相对路径照常成功', async () => {
+    const result = await buildExecutor().execute(
+      'Bash',
+      { command: 'cd "$HOME"; true || cd /tmp; cat .code-agent-dev/memory/notes.md' },
+      { sessionId: 'slot-isolation-r3-dead-branch-cd-own' },
+    );
+    expect(result.success).toBe(true);
+    expect(leakedText(result)).toContain(OWN_SENTINEL);
+    expect(result.error ?? '').not.toContain('另一个槽');
+  });
+
   it('R2④ rg 不可用时从 home 父目录搜：普通项目匹配照常返回，槽内容被排除', async () => {
     // 同一个哨兵串既写进生产槽文件也写进普通项目文件：排除项只能按路径区分，
     // 修好前系统 grep 会把整个 home 目录名当排除项，普通项目的匹配一起被静默丢掉。

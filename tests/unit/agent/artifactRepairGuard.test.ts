@@ -5,6 +5,7 @@ import {
   seedArtifactRepairGuardFromContext,
 } from '../../../src/host/agent/runtime/artifactRepairGuard';
 import { ArtifactState } from '../../../src/host/agent/runtime/artifactState';
+import { ARTIFACT_REPAIR_GUARD_SEED_MESSAGE_WINDOW } from '../../../src/shared/constants/repair';
 import type { Message, ToolResult } from '../../../src/shared/contract';
 
 function validatorFailureEnvelope(targetFile: string, extra = ''): string {
@@ -16,6 +17,33 @@ function validatorFailureEnvelope(targetFile: string, extra = ''): string {
     extra,
     '</artifact-validation-failed>',
   ].join('\n');
+}
+
+function validatorPassedEnvelope(extra = ''): string {
+  // Production pass envelopes often omit `target file:`. The cross-run
+  // exclusion must still retire the most recent open failure.
+  return [
+    '<artifact-validation-passed kind="interactive_artifact">',
+    'The artifact already passed validation. Do not rewrite it again.',
+    extra,
+    '1. runSmokeTest passed',
+    '</artifact-validation-passed>',
+  ].join('\n');
+}
+
+function ordinaryMessage(id: string, role: Message['role'], content: string): Message {
+  return { id, role, content, timestamp: Date.now() };
+}
+
+function makeFreshRunFromHistory(messages: Message[]): any {
+  return {
+    workingDirectory: '/tmp/code-agent',
+    messages,
+    contextHealth: ContextHealthState.forTest({
+      persistentSystemContext: [],
+    } as never),
+    artifact: ArtifactState.forTest(),
+  };
 }
 
 function makeRuntimeContext(
@@ -317,5 +345,76 @@ describe('artifactRepairGuard', () => {
     const postPatch = getArtifactRepairToolPolicy(ctx.artifact.repairGuard);
     expect(postPatch?.allowedToolNames).toEqual(['Read', 'Edit', 'Write', 'Append', 'Bash']);
     expect(postPatch?.bashAllowed).toBe(true);
+  });
+
+  it('does not re-seed a repaired target on a later run that only reads a document', () => {
+    // Cross-run shape: each agentLoop constructs a new ArtifactState, but
+    // session messages are preserved. this-run validationPassedTargetFile
+    // is empty, so exclusion must come from history, not ArtifactState.
+    const targetFile = '/tmp/code-agent/games/breakout.html';
+    const ctx = makeFreshRunFromHistory([
+      ordinaryMessage('fail-1', 'system', validatorFailureEnvelope(targetFile, 'runSmokeTest 未通过')),
+      ordinaryMessage('pass-1', 'system', validatorPassedEnvelope()),
+      ordinaryMessage('user-chat-1', 'user', '好了，游戏能玩了。'),
+      ordinaryMessage('asst-chat-1', 'assistant', '好的，有需要再叫我。'),
+      ordinaryMessage('user-chat-2', 'user', '帮我查一下这个腾讯会议链接怎么加入，会议号在聊天记录里。'),
+      ordinaryMessage('asst-read', 'assistant', '我先读一下相关笔记。'),
+      {
+        id: 'tool-read',
+        role: 'tool',
+        content: GENERIC_FAILURE_JOURNAL,
+        timestamp: Date.now(),
+      },
+    ]);
+
+    seedArtifactRepairGuardFromContext(ctx);
+
+    expectToolSurfaceUnnarrowed(ctx);
+  });
+
+  it('does not seed a validator failure that has aged out of the message window', () => {
+    const targetFile = '/tmp/code-agent/games/game.html';
+    const fillers = Array.from(
+      { length: ARTIFACT_REPAIR_GUARD_SEED_MESSAGE_WINDOW },
+      (_, index) => ordinaryMessage(`filler-${index}`, 'user', `普通追问 ${index}`),
+    );
+    const ctx = makeFreshRunFromHistory([
+      ordinaryMessage('stale-fail', 'system', validatorFailureEnvelope(targetFile, 'runSmokeTest 未通过')),
+      ...fillers,
+    ]);
+
+    seedArtifactRepairGuardFromContext(ctx);
+
+    expectToolSurfaceUnnarrowed(ctx);
+  });
+
+  it('still seeds a validator failure that remains inside the message window', () => {
+    const targetFile = '/tmp/code-agent/games/game.html';
+    const fillers = Array.from(
+      { length: ARTIFACT_REPAIR_GUARD_SEED_MESSAGE_WINDOW - 1 },
+      (_, index) => ordinaryMessage(`filler-${index}`, 'user', `普通追问 ${index}`),
+    );
+    const ctx = makeFreshRunFromHistory([
+      ordinaryMessage('recent-fail', 'system', validatorFailureEnvelope(targetFile, 'runSmokeTest 未通过')),
+      ...fillers,
+    ]);
+
+    seedArtifactRepairGuardFromContext(ctx);
+
+    expect(ctx.artifact.repairGuard).toMatchObject({ targetFile });
+    expect(getArtifactRepairToolPolicy(ctx.artifact.repairGuard)).not.toBeNull();
+  });
+
+  it('still seeds a later validator failure after an earlier pass for the same target', () => {
+    const targetFile = '/tmp/code-agent/games/game.html';
+    const ctx = makeFreshRunFromHistory([
+      ordinaryMessage('fail-old', 'system', validatorFailureEnvelope(targetFile, 'runSmokeTest 未通过')),
+      ordinaryMessage('pass-old', 'system', validatorPassedEnvelope()),
+      ordinaryMessage('fail-new', 'system', validatorFailureEnvelope(targetFile, 'Please fix the missing runSmokeTest evidence.')),
+    ]);
+
+    seedArtifactRepairGuardFromContext(ctx);
+
+    expect(ctx.artifact.repairGuard).toMatchObject({ targetFile });
   });
 });

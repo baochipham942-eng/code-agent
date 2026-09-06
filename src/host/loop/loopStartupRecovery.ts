@@ -20,11 +20,15 @@
 // 保持原样不动，宁可漏收，不可误杀（误杀 = 当着用户面把还在跑的 loop 谎报成失败）。
 // 判据修在本函数内部，调用方（webServer / initializeCLIServices 的任何 CLI 入口）
 // 无需也不会再靠「挑对启动时机」来保安全。
+//
+// 修复棒 Important 2：automation 终态、台账 orphaned 终态、中断通知三处写入放进
+// 同一个事务，任何一步抛错整体回滚，行保持 running 留给下次启动重试；全部持久化
+// 成功才计入返回的成功数。
 // ============================================================================
 
 import type BetterSqlite3 from 'better-sqlite3';
 import { LOOP_TASK_KIND } from '../../shared/contract/loop';
-import { getBackgroundTaskLedger } from '../task/backgroundTaskLedger';
+import { getBackgroundTaskLedger, type BackgroundTaskLedger } from '../task/backgroundTaskLedger';
 import { SqliteBackgroundTaskStore } from '../task/backgroundTaskStore';
 import { getDatabase } from '../services/core/databaseService';
 import { getSessionAutomationService } from '../services/sessionAutomation';
@@ -54,7 +58,7 @@ function hasSessionAutomationsTable(db: BetterSqlite3.Database): boolean {
 
 /**
  * 把残留的 running loop 收口成终态并通知。幂等：已收口的行不再命中 status='running'。
- * 只收口归属进程已确认消失的行（Important 1）。
+ * 只收口归属进程已确认消失的行（Important 1）；三处持久化写入同事务（Important 2）。
  * @param db 数据库句柄；缺省用桌面 DatabaseService 单例（CLI serve 等无该单例的面显式传入）。
  * @returns 本次收口的 loop 条数（0 = 无残留 / 归属还在 / 库不可用，均不算错误）。
  */
@@ -87,7 +91,7 @@ export async function markInterruptedLoops(db?: BetterSqlite3.Database | null): 
         else skippedUnowned += 1;
         continue;
       }
-      if (await finalizeInterruptedLoop(handle, row, now)) marked += 1;
+      if (await finalizeInterruptedLoop(handle, ledger, row, now)) marked += 1;
     }
     logger.info(
       `Marked ${marked} interrupted loop(s) as lost at startup`
@@ -102,39 +106,22 @@ export async function markInterruptedLoops(db?: BetterSqlite3.Database | null): 
 
 async function finalizeInterruptedLoop(
   db: BetterSqlite3.Database,
+  ledger: BackgroundTaskLedger,
   row: InterruptedLoopRow,
   now: number,
 ): Promise<boolean> {
-  // 桌面路径：recordEvent 收口记录 + 把中断写成源会话里的 isMeta 回流消息。
-  // CLI serve 没有 host DatabaseService 单例，getById 查不到 → 回落为只改行。
-  const automation = getSessionAutomationService().getById(row.id);
-  let finalized = false;
-  if (automation) {
-    const recorded = await getSessionAutomationService().recordEvent({
-      automationId: row.id,
-      event: 'failed',
-      status: 'failed',
-      recordStatus: 'failed',
-      summary: LOST_SUMMARY,
-      eventId: `lost:${row.id}:${now}`,
-      lastRunAt: row.last_run_at ?? undefined,
-    }).catch((error: unknown) => {
-      logger.warn(`recordEvent failed for ${row.id}:`, error);
-      return null;
-    });
-    finalized = recorded !== null;
-  }
-  if (!finalized) {
+  const taskId = row.source_ref_id || row.id.replace(/^loop:/, '');
+
+  // 三处写入同一事务（Important 2）：automation 收终态（顺带摘归属戳）、台账 orphaned
+  // 终态、中断通知。ledger 的 store 与本事务共用同一个 db 句柄，同步写会加入事务。
+  // 任何一步抛错 → 整体回滚 → 行保持 running，下次启动重扫重试，且不计入成功数。
+  const commitFinalize = db.transaction(() => {
     db.prepare(`
       UPDATE session_automations
       SET status = 'failed', config_json = ?, updated_at = ?
       WHERE id = ?
     `).run(stripLoopOwnerStamp(row.config_json), now, row.id);
-  }
 
-  const taskId = row.source_ref_id || row.id.replace(/^loop:/, '');
-  const ledger = getBackgroundTaskLedger();
-  try {
     ledger.upsertTask({
       id: taskId,
       kind: LOOP_TASK_KIND,
@@ -160,8 +147,34 @@ async function finalizeInterruptedLoop(
         message: `${row.title} 在应用关闭时中断，未能继续`,
       });
     }
+  });
+
+  try {
+    commitFinalize();
   } catch (error) {
-    logger.warn(`finalize ledger task failed for ${taskId}:`, error);
+    logger.warn(
+      `finalize interrupted loop ${row.id} rolled back (row stays running, retry on next startup):`,
+      error,
+    );
+    return false;
+  }
+
+  // 桌面路径的源会话回流消息：事务已提交后的尽力而为层——失败只损失这条 meta 消息，
+  // 上面三处持久化（状态/台账/通知）不受影响。CLI serve 没有 host DatabaseService
+  // 单例，getById 查不到 → 静默跳过（行本身已在事务里收口）。
+  const automation = getSessionAutomationService().getById(row.id);
+  if (automation) {
+    await getSessionAutomationService().recordEvent({
+      automationId: row.id,
+      event: 'failed',
+      status: 'failed',
+      recordStatus: 'failed',
+      summary: LOST_SUMMARY,
+      eventId: `lost:${row.id}:${now}`,
+      lastRunAt: row.last_run_at ?? undefined,
+    }).catch((error: unknown) => {
+      logger.warn(`recordEvent failed for ${row.id}:`, error);
+    });
   }
   return true;
 }

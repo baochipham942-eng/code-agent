@@ -282,4 +282,43 @@ describe('markInterruptedLoops（N-LOOP-DURABLE 刀1：启动时把残留 runnin
     expect(automationStatus(db, 'loop:loop_bad1')).toBe('running');
     expect(automationStatus(db, 'loop:loop_bad2')).toBe('running');
   });
+
+  // -------------------------------------------------------------------------
+  // 修复棒 Important 2：三处写入同事务——写失败整体回滚、不计成功、下次启动重试
+  // -------------------------------------------------------------------------
+
+  it('台账终态写入抛错 → 整体回滚：行保持 running、返回 0；下次启动重试能补齐', async () => {
+    const db = createGhostDb();
+    insertAutomation(db, {
+      id: 'loop:loop_abc',
+      sessionId: 'session-1',
+      title: '循环 · 盯构建',
+      sourceRefId: 'loop_abc',
+      owner: { pid: deadOwnerPid() },
+    });
+
+    const upsertSpy = vi
+      .spyOn(SqliteBackgroundTaskStore.prototype, 'upsertTask')
+      .mockImplementation(() => {
+        throw new Error('ledger terminal write exploded');
+      });
+
+    // 修复前（三写各自独立提交）：状态已改 failed、函数报成功 1、通知永久丢失。
+    const failedMarked = await markInterruptedLoops(db);
+    expect(failedMarked).toBe(0);
+    expect(automationStatus(db, 'loop:loop_abc')).toBe('running');
+
+    upsertSpy.mockRestore();
+    resetBackgroundTaskLedgerForTest();
+
+    // 行还在 running → 下次启动重扫，健康路径补齐全部三处写入。
+    expect(await markInterruptedLoops(db)).toBe(1);
+    expect(automationStatus(db, 'loop:loop_abc')).toBe('failed');
+
+    const revived = createBackgroundTaskLedger();
+    revived.setStore(new SqliteBackgroundTaskStore(db));
+    const drained = revived.drainNotifications('session-1');
+    expect(drained).toHaveLength(1);
+    expect(drained[0]).toMatchObject({ id: 'loop_abc:lost', type: 'task_failed' });
+  });
 });

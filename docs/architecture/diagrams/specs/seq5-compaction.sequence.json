@@ -1,0 +1,264 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "participants": [
+    {
+      "id": "u",
+      "type": "external",
+      "label": "用户"
+    },
+    {
+      "id": "p",
+      "type": "frontend",
+      "label": "页面/组件"
+    },
+    {
+      "id": "s",
+      "type": "frontend",
+      "label": "store"
+    },
+    {
+      "id": "i",
+      "type": "messagebus",
+      "label": "IPC / HTTP"
+    },
+    {
+      "id": "h",
+      "type": "backend",
+      "label": "host"
+    },
+    {
+      "id": "e",
+      "type": "database",
+      "label": "引擎或数据库"
+    }
+  ],
+  "meta": {
+    "title": "运行时时序 ⑤ · 上下文压缩触发到会话继续",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "column_fit": "spread",
+    "viewBox": [
+      1340,
+      630
+    ],
+    "views": [
+      {
+        "id": "manual",
+        "label": "手动触发",
+        "focus": [
+          "u",
+          "p",
+          "s"
+        ],
+        "note": "store 先置 active 阻止重复提交，页面状态回路在这一支才完整。"
+      },
+      {
+        "id": "compact",
+        "label": "压缩执行",
+        "focus": [
+          "p",
+          "i",
+          "h",
+          "e"
+        ],
+        "note": "压缩服务读会话生成摘要或投影，原始会话仍留着供查证。"
+      },
+      {
+        "id": "after",
+        "label": "压缩后继续",
+        "focus": [
+          "h",
+          "e",
+          "s",
+          "p"
+        ],
+        "note": "后续推理用的是压缩后的 API 视图，不是原始会话全文。"
+      }
+    ]
+  },
+  "segments": [
+    {
+      "from": 150,
+      "to": 232,
+      "label": "手动触发并上锁"
+    },
+    {
+      "from": 244,
+      "to": 352,
+      "label": "压缩执行"
+    },
+    {
+      "from": 364,
+      "to": 502,
+      "label": "成功后会话继续"
+    },
+    {
+      "from": 514,
+      "to": 562,
+      "label": "失败出口"
+    }
+  ],
+  "messages": [
+    {
+      "id": "click",
+      "from": "u",
+      "to": "p",
+      "label": "在上下文明细点击压缩",
+      "variant": "emphasis",
+      "y": 185
+    },
+    {
+      "id": "start",
+      "from": "p",
+      "to": "s",
+      "label": "contextCompactionStore.start",
+      "y": 215,
+      "note": "阻止重复提交；store 置 active，页面显示压缩中"
+    },
+    {
+      "id": "request",
+      "from": "p",
+      "to": "i",
+      "label": "CONTEXT_COMPACT_CURRENT 带 sessionId",
+      "note": "store 置 active，页面显示压缩中",
+      "y": 245
+    },
+    {
+      "id": "to-host",
+      "from": "i",
+      "to": "h",
+      "label": "会话压缩请求",
+      "y": 275
+    },
+    {
+      "id": "compact",
+      "from": "h",
+      "to": "e",
+      "label": "压缩服务读会话，生成摘要或投影",
+      "note": "原始会话仍留着供查证；压缩降低的是本轮模型实际能看到的占用",
+      "y": 305
+    },
+    {
+      "id": "result",
+      "from": "e",
+      "to": "h",
+      "label": "压缩结果",
+      "variant": "return",
+      "y": 335
+    },
+    {
+      "id": "success",
+      "from": "h",
+      "to": "i",
+      "label": "CompactResult success",
+      "variant": "return",
+      "y": 365
+    },
+    {
+      "id": "succeed",
+      "from": "s",
+      "to": "p",
+      "label": "succeed：刷新 context health",
+      "variant": "return",
+      "y": 395,
+      "note": "并显示最新占用"
+    },
+    {
+      "id": "next-ask",
+      "from": "u",
+      "to": "p",
+      "label": "发送后续问题",
+      "y": 425
+    },
+    {
+      "id": "next-send",
+      "from": "p",
+      "to": "i",
+      "label": "agent:send-message",
+      "y": 455
+    },
+    {
+      "id": "next-infer",
+      "from": "h",
+      "to": "e",
+      "label": "以压缩后的 API 视图继续推理",
+      "y": 485
+    },
+    {
+      "id": "next-answer",
+      "from": "h",
+      "to": "i",
+      "label": "后续答案与终态",
+      "variant": "return",
+      "y": 515
+    },
+    {
+      "id": "fail",
+      "from": "s",
+      "to": "p",
+      "label": "失败出口：success=false → fail",
+      "variant": "emphasis",
+      "y": 545,
+      "note": "store 置 fail，页面给 error 与失败提示，可再次点击压缩"
+    }
+  ],
+  "activations": [
+    {
+      "participant": "p",
+      "from": 180,
+      "to": 550,
+      "type": "frontend"
+    },
+    {
+      "participant": "s",
+      "from": 210,
+      "to": 549,
+      "type": "frontend"
+    },
+    {
+      "participant": "i",
+      "from": 240,
+      "to": 519,
+      "type": "messagebus"
+    },
+    {
+      "participant": "h",
+      "from": 270,
+      "to": 519,
+      "type": "backend"
+    },
+    {
+      "participant": "e",
+      "from": 300,
+      "to": 489,
+      "type": "database"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "事实链",
+      "items": [
+        "ContextHealthPanel · useContextHealthActions · contextCompactionStore",
+        "contextHealth.ipc · compactionService · compressionState"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "为什么画手动这一支",
+      "items": [
+        "手动压缩有完整的页面状态回路，成功失败都落 store",
+        "自动压缩在执行轮首由压力策略触发，不走这条链"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "链路未闭合",
+      "items": [
+        "手动请求没有独立取消链：hook 未传 AbortSignal",
+        "运行中取消仍沿图 ① 的 run 取消链"
+      ]
+    }
+  ]
+}

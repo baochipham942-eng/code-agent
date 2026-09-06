@@ -761,6 +761,33 @@ describe('createAgentRouter', () => {
         expect(mockCancel).toHaveBeenCalledWith('user');
       });
     });
+
+    it('/api/run 不声明 originKind —— 界面会话必须落 NULL 才进上线后评测分母', async () => {
+      const controller = new AbortController();
+      const response = await fetch(`${baseUrl}/api/run`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          prompt: 'hello',
+          sessionId: 'session-origin-kind',
+        }),
+        signal: controller.signal,
+      });
+      expect(response.ok).toBe(true);
+
+      await waitForAssertion(() => {
+        expect(mockCreateAgentLoop).toHaveBeenCalled();
+      });
+      // 桌面 renderer 的每一次发送都走这条路（不经过 AgentOrchestrator）。cli/bootstrap
+      // 曾把 originKind 写死成 'headless'，真人会话因此全被剔出分母（2026-09-06 真机）。
+      const config = mockCreateAgentLoop.mock.calls.at(-1)![0] as { originKind?: string };
+      expect(config.originKind).toBeUndefined();
+
+      controller.abort();
+      await waitForAssertion(() => {
+        expect(mockCancel).toHaveBeenCalledWith('user');
+      });
+    });
   });
 
   it('cancels the active agent loop when the /api/run SSE client disconnects', async () => {

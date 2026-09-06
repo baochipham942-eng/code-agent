@@ -115,6 +115,8 @@ function withAgentIntentForSnapshot(
 }
 
 interface ComposerState extends ComposerSlotSnapshot {
+  /** 能力选择与所属会话的单调版本；同一轮草稿移交到新会话时保持不变。 */
+  selectionRevision: number;
   /**
    * 当前激活的上下文槽。切换时先快照再恢复；会话残留不得漏进空间/草稿。
    */
@@ -152,7 +154,7 @@ interface ComposerState extends ComposerSlotSnapshot {
   setSelectedTeamRecipeId: (id: string | null) => void;
   setStandbyExcludedMemberKeys: (keys: string[]) => void;
   setPendingCommand: (command: PendingCommandSelection | null) => void;
-  resetForSuccessfulSend: () => void;
+  resetForSuccessfulSend: (expectedRevision?: number) => void;
   buildContext: () => ConversationEnvelopeContext | undefined;
 }
 
@@ -193,6 +195,7 @@ function applyWorkbenchPresetContext(
 
 export const useComposerStore = create<ComposerState>((set, get) => ({
   ...initialComposerState,
+  selectionRevision: 0,
 
   activateScope: (key, options) => {
     const state = get();
@@ -227,6 +230,7 @@ export const useComposerStore = create<ComposerState>((set, get) => ({
 
     set({
       ...incoming,
+      selectionRevision: state.selectionRevision + 1,
       activeScopeKey: key,
       slots: nextSlots,
       hydratedSessionId: sessionIdFromScopeKey(key),
@@ -252,6 +256,7 @@ export const useComposerStore = create<ComposerState>((set, get) => ({
       newSessionId,
     });
 
+    // 同一份选择移交到新会话，selectionRevision 保持不变，成功发送仍可消费它。
     // 先落 live = 会话槽，避免后续 hydrate 看到空槽再清空
     set({
       ...plan.sessionSlot,
@@ -297,6 +302,7 @@ export const useComposerStore = create<ComposerState>((set, get) => ({
   applySessionWorkbenchPreset: (source) =>
     set((state) => ({
       ...state,
+      selectionRevision: state.selectionRevision + 1,
       ...applyWorkbenchPresetContext(
         state,
         createWorkbenchPresetContextFromSession(source),
@@ -306,12 +312,14 @@ export const useComposerStore = create<ComposerState>((set, get) => ({
   applyWorkbenchPreset: (preset) =>
     set((state) => ({
       ...state,
+      selectionRevision: state.selectionRevision + 1,
       ...applyWorkbenchPresetContext(state, getWorkbenchPresetContext(preset)),
     })),
 
   applyWorkbenchRecipe: (recipe) =>
     set((state) => ({
       ...state,
+      selectionRevision: state.selectionRevision + 1,
       ...applyWorkbenchPresetContext(
         state,
         createWorkbenchRecipeMergedContext(recipe),
@@ -322,37 +330,43 @@ export const useComposerStore = create<ComposerState>((set, get) => ({
 
   setRoutingMode: (mode) =>
     set((state) => ({
+      selectionRevision: state.selectionRevision + 1,
       routingMode: mode,
       targetAgentIds: mode === 'direct' ? state.targetAgentIds : [],
     })),
 
   setTargetAgentIds: (ids) =>
     set((state) => ({
+      selectionRevision: state.selectionRevision + 1,
       targetAgentIds: state.routingMode === 'direct' ? dedupeWorkbenchIds(ids) : [],
     })),
 
   setBrowserSessionMode: (mode) => set({ browserSessionMode: mode }),
 
   setSelectedSkillIds: (ids) =>
-    set({
+    set((state) => ({
+      selectionRevision: state.selectionRevision + 1,
       selectedSkillIds: dedupeWorkbenchIds(ids),
       turnCapabilityScopeMode: 'manual',
-    }),
+    })),
 
   setSelectedConnectorIds: (ids) =>
-    set({
+    set((state) => ({
+      selectionRevision: state.selectionRevision + 1,
       selectedConnectorIds: dedupeWorkbenchIds(ids),
       turnCapabilityScopeMode: 'manual',
-    }),
+    })),
 
   setSelectedMcpServerIds: (ids) =>
-    set({
+    set((state) => ({
+      selectionRevision: state.selectionRevision + 1,
       selectedMcpServerIds: dedupeWorkbenchIds(ids),
       turnCapabilityScopeMode: 'manual',
-    }),
+    })),
 
   setTurnCapabilityScopeMode: (mode) =>
     set((state) => ({
+      selectionRevision: state.selectionRevision + 1,
       turnCapabilityScopeMode: mode,
       ...(mode === 'auto'
         ? {
@@ -368,20 +382,38 @@ export const useComposerStore = create<ComposerState>((set, get) => ({
     })),
 
   // 换配方（或取消预选）时旧的排除标记一并作废——排除只隶属于当前这次预选
-  setSelectedTeamRecipeId: (id) => set({ selectedTeamRecipeId: id, standbyExcludedMemberKeys: [] }),
+  setSelectedTeamRecipeId: (id) => set((state) => ({
+    selectionRevision: state.selectionRevision + 1,
+    selectedTeamRecipeId: id,
+    standbyExcludedMemberKeys: [],
+  })),
 
-  setStandbyExcludedMemberKeys: (keys) => set({ standbyExcludedMemberKeys: keys }),
+  setStandbyExcludedMemberKeys: (keys) => set((state) => ({
+    selectionRevision: state.selectionRevision + 1,
+    standbyExcludedMemberKeys: keys,
+  })),
 
-  setPendingCommand: (command) => set({ pendingCommand: command }),
+  setPendingCommand: (command) => set((state) => ({
+    selectionRevision: state.selectionRevision + 1,
+    pendingCommand: command,
+  })),
 
-  resetForSuccessfulSend: () =>
-    set((state) => ({
-      targetAgentIds: state.routingMode === 'direct' ? state.targetAgentIds : [],
-      // 配方已经启动，预选态就该退场——留着会让下一句话又想启动一次
-      selectedTeamRecipeId: null,
-      standbyExcludedMemberKeys: [],
-      pendingCommand: null,
-    })),
+  resetForSuccessfulSend: (expectedRevision) =>
+    set((state) => {
+      if (expectedRevision !== undefined && state.selectionRevision !== expectedRevision) return state;
+      return {
+        selectionRevision: state.selectionRevision + 1,
+        selectedSkillIds: [],
+        selectedConnectorIds: [],
+        selectedMcpServerIds: [],
+        turnCapabilityScopeMode: 'auto',
+        targetAgentIds: state.routingMode === 'direct' ? state.targetAgentIds : [],
+        // 配方已经启动，预选态就该退场——留着会让下一句话又想启动一次
+        selectedTeamRecipeId: null,
+        standbyExcludedMemberKeys: [],
+        pendingCommand: null,
+      };
+    }),
 
   buildContext: () => {
     const state = get();

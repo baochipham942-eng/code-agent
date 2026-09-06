@@ -621,6 +621,8 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     },
 
     addMessage: (message: Message) => {
+      // 排队重投沿用 clientMessageId；同一用户消息只计数、渲染一次。
+      if (message.role === 'user' && get().messages.some((existing) => existing.id === message.id)) return;
       if (message.isMeta && !isRenderableMetaMessage(message)) {
         set({ streamSnapshot: null });
         return;

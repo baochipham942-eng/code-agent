@@ -6,6 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentEvent, Message } from '../../../src/shared/contract';
 import type { CLIConfig } from '../../../src/cli/types';
 
+vi.unmock('better-sqlite3');
+
 const mocks = vi.hoisted(() => {
   const buildCLIConfig = vi.fn();
   const createAgentLoop = vi.fn();
@@ -25,6 +27,7 @@ const mocks = vi.hoisted(() => {
   const resolveExplicitAgentOverride = vi.fn();
 
   return {
+    compactSummary: vi.fn(),
     buildCLIConfig,
     createAgentLoop,
     initializeCLIServices,
@@ -102,6 +105,14 @@ vi.mock('../../../src/host/agent/explicitAgentOverride', () => ({
   resolveExplicitAgentOverride: mocks.resolveExplicitAgentOverride,
 }));
 
+vi.mock('../../../src/host/context/compactModel', () => ({
+  compactModelSummarizeWithMetadata: mocks.compactSummary,
+}));
+vi.mock('../../../src/host/context/compactionAuditRecorder', () => ({ recordCompactionAuditSnapshot: vi.fn() }));
+vi.mock('../../../src/host/tools/dataFingerprint', () => ({ dataFingerprintStore: { toSummary: () => '' } }));
+vi.mock('../../../src/host/tools/fileReadTracker', () => ({ fileReadTracker: { getRecentFiles: () => [] } }));
+import { compactCommand } from '../../../src/shared/commands/definitions/contextCommands';
+import { estimateTokens } from '../../../src/host/context/tokenEstimator';
 import { CLIAgent, createCLIAgent } from '../../../src/cli/adapter';
 
 const baseConfig: CLIConfig = {
@@ -785,5 +796,189 @@ describe('CLIAgent concurrent guard (isolated)', () => {
     release?.();
     const firstResult = await first;
     expect(firstResult.success).toBe(true);
+  });
+});
+
+
+describe('N-COMPACT-CMD-NOOP CLI 下一 run 上下文', () => {
+  const summaryResult = {
+    summary: 'Background observations were condensed. Continue the conversation.',
+    metadata: { provider: 'openai', model: 'test-model', useMainModel: false },
+  };
+  const countTokens = (messages: Message[]) => messages.reduce((sum, message) => sum + estimateTokens(message.content), 0);
+  let manager: ReturnType<typeof makeSessionManager>;
+  let stored: Message[];
+  let replaceMessages: ReturnType<typeof vi.fn>;
+  let history: Message[];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    history = Array.from({ length: 24 }, (_, index) => ({
+      id: `history-${index}`, role: index === 22 ? 'user' : 'assistant',
+      content: index < 22 ? 'Background observations from earlier discussion. '.repeat(200) : 'Continue the conversation.',
+      timestamp: index + 1,
+    }));
+    stored = structuredClone(history);
+    replaceMessages = vi.fn(async (_sessionId: string, messages: Message[]) => { stored = structuredClone(messages); });
+    manager = makeSessionManager({ replaceMessages, getSession: vi.fn(async () => ({ id: 'sess-1', messages: stored })) });
+    manager.restoreSession.mockResolvedValue({ id: 'sess-1', messages: history });
+    mocks.buildCLIConfig.mockReturnValue({ ...baseConfig });
+    mocks.getSessionManager.mockReturnValue(manager);
+    mocks.getSessionSkillService.mockReturnValue({ autoMountDefaultSkills: vi.fn() });
+    mocks.getConfigService.mockReturnValue({
+      getApiKey: vi.fn(),
+      getSettings: () => ({ ui: { language: 'zh' }, contextCompression: { preserveRecentCount: 2, auditEnabled: false } }),
+    });
+    mocks.resolveExplicitAgentOverride.mockReturnValue(null);
+    mocks.addSwarmEventListener.mockReturnValue(() => {});
+    mocks.compactSummary.mockReset().mockResolvedValue(summaryResult);
+    installLoop(async (ctl) => { ctl.onEvent({ type: 'agent_complete' } as AgentEvent); });
+  });
+
+  it.each(['zh', 'en'] as const)('/compact %s 后下一 run 的真实消息 token 下降并写回历史', async (locale) => {
+    const agent = new CLIAgent();
+    await agent.restoreSession('sess-1');
+    const before = countTokens(agent.getHistory());
+    const output = { info: vi.fn(), success: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const result = await compactCommand.handler({ surface: 'cli', output, agent, getLocale: () => locale }, []);
+    await agent.run('Continue the conversation.');
+    const nextRunMessages = mocks.createAgentLoop.mock.calls.at(-1)![2] as Message[];
+    expect(countTokens(nextRunMessages)).toBeLessThan(before);
+    expect(result.success).toBe(true);
+    expect(nextRunMessages[0].compaction?.source).toBe('manual_current');
+    expect(stored[0].compaction?.source).toBe('manual_current');
+    expect(countTokens(stored)).toBeLessThan(before);
+    expect(output.success).toHaveBeenCalledWith(expect.stringContaining(locale === 'zh' ? '上下文已压缩' : 'Context compacted'));
+  });
+
+  it('150 条会话仅加载 100 条后压缩，全量进入摘要且最早 50 条原文仍在账本', async () => {
+    const { mkdtempSync, rmSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const { CLIDatabaseService } = await import('../../../src/cli/database');
+    const { CLISessionManager } = await import('../../../src/cli/session');
+    const { ConversationBranchRepository } = await import('../../../src/host/services/core/repositories/ConversationBranchRepository');
+    const dataDir = mkdtempSync(join(tmpdir(), 'compact-full-history-'));
+    const previousDataDir = process.env.CODE_AGENT_DATA_DIR;
+    process.env.CODE_AGENT_DATA_DIR = dataDir;
+    const db = new CLIDatabaseService();
+    try {
+      await db.initialize();
+      db.createSession({ id: 'sess-1', title: 'Long history', modelConfig: baseConfig.modelConfig, createdAt: 1, updatedAt: 1 });
+      const fullHistory: Message[] = Array.from({ length: 150 }, (_, index) => ({
+        id: `full-${index}`, role: index === 148 ? 'user' : 'assistant',
+        content: index < 148 ? `Observation ${index}. `.repeat(100).trim() : 'Continue the conversation.',
+        timestamp: index + 1,
+      }));
+      for (const message of fullHistory) db.addMessage('sess-1', message);
+      const realManager = new CLISessionManager();
+      Object.assign(realManager, { _dbChecked: true, _db: db });
+      mocks.getSessionManager.mockReturnValue(realManager);
+      const agent = new CLIAgent();
+      await agent.restoreSession('sess-1');
+      expect(agent.getHistory()).toHaveLength(100);
+      expect(agent.getHistory()[0].id).toBe('full-50');
+      const result = await compactCommand.handler({ surface: 'cli', agent,
+        output: { info: vi.fn(), success: vi.fn(), warn: vi.fn(), error: vi.fn() },
+      }, []);
+      expect(result.success).toBe(true);
+      const persisted = db.getMessagesForLoad('sess-1', Number.MAX_SAFE_INTEGER);
+      expect(persisted[0].compaction?.compactedMessageCount).toBe(148);
+      expect(persisted[0].compaction?.compactedMessageIds?.slice(0, 50)).toEqual(fullHistory.slice(0, 50).map(({ id }) => id));
+      expect(persisted.slice(1).map(({ id }) => id)).toEqual(['full-148', 'full-149']);
+      const replay = new ConversationBranchRepository(db.getDb()!).replay('sess-1', { ownerUserId: null, projectId: null });
+      expect(replay.messages[0].message.compaction).toMatchObject({
+        compactedMessageIds: fullHistory.slice(0, 148).map(({ id }) => id),
+      });
+      const entries = db.getDb()!.prepare('SELECT message_json FROM conversation_entries').all() as { message_json: string }[];
+      const originals = entries.map(({ message_json }) => JSON.parse(message_json) as Message);
+      for (const early of fullHistory.slice(0, 50)) {
+        expect(originals).toContainEqual(expect.objectContaining({ content: early.content, timestamp: early.timestamp }));
+      }
+    } finally {
+      db.close();
+      if (previousDataDir === undefined) delete process.env.CODE_AGENT_DATA_DIR;
+      else process.env.CODE_AGENT_DATA_DIR = previousDataDir;
+      rmSync(dataDir, { recursive: true, force: true });
+    }
+  });
+
+  it('压缩保留仅在内存的 PR 注入上下文，并交给下一 run', async () => {
+    const agent = new CLIAgent();
+    await agent.restoreSession('sess-1');
+    const context = 'PR context: the response must retain this branch diff.';
+    agent.injectContext(context);
+    const injected = agent.getHistory().at(-1)!;
+    expect(stored.some(({ id }) => id === injected.id)).toBe(false);
+    await expect(agent.compactHistory()).resolves.toMatchObject({ success: true });
+    expect(stored).toContainEqual(injected);
+    await agent.run('Continue the conversation.');
+    const nextMessages = mocks.createAgentLoop.mock.calls.at(-1)![2] as Message[];
+    expect(nextMessages).toContainEqual(injected);
+  });
+
+  it('持久化期间注入上下文不会被覆盖，已写回的压缩返回成功', async () => {
+    let finish!: () => void;
+    replaceMessages.mockImplementation(async (_id: string, messages: Message[]) => {
+      await new Promise<void>((resolve) => { finish = resolve; });
+      stored = structuredClone(messages);
+    });
+    const agent = new CLIAgent();
+    await agent.restoreSession('sess-1');
+    const pending = agent.compactHistory();
+    await vi.waitFor(() => expect(replaceMessages).toHaveBeenCalled());
+    agent.injectContext('Keep the newly injected context too.');
+    const injected = agent.getHistory().at(-1)!;
+    finish();
+    await expect(pending).resolves.toMatchObject({ success: true });
+    expect(agent.getHistory()).toContainEqual(injected);
+    expect(agent.getHistory()[0].compaction?.source).toBe('manual_current');
+  });
+
+  it('无会话时返回独立原因码，失败提示只输出一次', async () => {
+    const agent = new CLIAgent();
+    const output = { info: vi.fn(), success: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const result = await compactCommand.handler({ surface: 'cli', output, agent }, []);
+    expect(result.data).toMatchObject({ reason: 'session_unavailable' });
+    expect(output.warn).toHaveBeenCalledExactlyOnceWith('当前会话不可用，无法压缩上下文。');
+    // chat prints result.message on failures; an already rendered error must not be returned again.
+    expect(result.message).toBeUndefined();
+  });
+
+  it('摘要失败时保留原历史，不报告 scheduled 或成功', async () => {
+    mocks.compactSummary.mockResolvedValue({ ...summaryResult, summary: '' });
+    const agent = new CLIAgent();
+    await agent.restoreSession('sess-1');
+    const output = { info: vi.fn(), success: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const result = await compactCommand.handler({ surface: 'cli', output, agent }, []);
+    expect(result.success).toBe(false);
+    expect(agent.getHistory()).toEqual(history);
+    expect(replaceMessages).not.toHaveBeenCalled();
+    expect(output.success).not.toHaveBeenCalled();
+  });
+
+  it('写回失败时保留当前 run 历史并返回失败', async () => {
+    replaceMessages.mockRejectedValueOnce(new Error('database unavailable'));
+    const agent = new CLIAgent();
+    await agent.restoreSession('sess-1');
+    const output = { info: vi.fn(), success: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const result = await compactCommand.handler({ surface: 'cli', output, agent }, []);
+    expect(result.success).toBe(false);
+    expect(agent.getHistory()).toEqual(history);
+    expect(output.error).toHaveBeenCalledWith(expect.stringContaining('database unavailable'));
+  });
+
+  it('压缩等待摘要时阻止新 run 抢写', async () => {
+    let finish!: (result: typeof summaryResult) => void;
+    mocks.compactSummary.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+    const agent = new CLIAgent();
+    await agent.restoreSession('sess-1');
+    const pending = agent.compactHistory();
+    await vi.waitFor(() => expect(mocks.compactSummary).toHaveBeenCalled());
+    await expect(agent.compactHistory()).resolves.toMatchObject({ success: false, reason: 'compaction_active' });
+    await expect(agent.run('too early')).resolves.toMatchObject({ success: false, error: '上下文正在压缩，请稍后再发送。' });
+    expect(mocks.createAgentLoop).not.toHaveBeenCalled();
+    finish(summaryResult);
+    await expect(pending).resolves.toMatchObject({ success: true });
   });
 });

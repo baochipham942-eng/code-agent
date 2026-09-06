@@ -78,7 +78,7 @@ export function createCLIPermissionHandler(
 
   return async (request: PermissionRequestData): Promise<PermissionAskResult> => {
     if (options.dangerouslySkipPermissions) {
-      return { approved: true };
+      return { approved: true, approvalSource: 'skip-permissions' };
     }
     const provider = interactiveApprovalProvider;
     if (options.permissionMode === 'auto') {
@@ -104,7 +104,7 @@ export function createCLIPermissionHandler(
       // 拒的是这条路的**环境**（没有审批 UI），不是用户——账本/模型文案都不许再写成 user。
       return { approved: false, denialSource: 'no-approval-ui' };
     }
-    return { approved: true };
+    return { approved: true, approvalSource: 'noninteractive' };
   };
 }
 
@@ -188,4 +188,3 @@ async function decideAutoMode(
     return deny(`分类器故障，按安全侧默认拒绝：${error instanceof Error ? error.message : String(error)}`);
   }
 }
-

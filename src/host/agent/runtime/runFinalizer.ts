@@ -352,6 +352,17 @@ export class RunFinalizer {
       terminalError = terminalError || error;
     }
 
+    if (
+      terminalStatus === 'completed'
+      && !hasVisibleAssistantTextAfterLastUser(this.ctx.messages)
+      && !hasTerminalWakeNoopAfterLastUser(this.ctx.messages)
+      && !this.ctx.circuitBreaker.isTripped()
+      && iterations < this.ctx.maxIterations
+    ) {
+      terminalStatus = 'failed';
+      terminalError = new Error('任务已结束，执行记录和产物已保留。这一轮没有生成最终说明，请直接查看上面的工具结果。');
+    }
+
     const runEvent = getRunTerminalPostHogEvent(terminalStatus);
     trackNode(runEvent, {
       sessionId: this.ctx.sessionId,
@@ -454,19 +465,6 @@ export class RunFinalizer {
 
       langfuse.endTrace(this.ctx.stats.traceId, `Max iterations (${this.ctx.maxIterations}) reached`, 'WARNING');
     } else {
-      if (
-        !hasVisibleAssistantTextAfterLastUser(this.ctx.messages)
-        && !hasTerminalWakeNoopAfterLastUser(this.ctx.messages)
-      ) {
-        const fallbackMessage: Message = {
-          id: this.messageWriter.generateId(),
-          role: 'assistant',
-          content: '任务已结束，执行记录和产物已保留。这一轮没有生成最终说明，请直接查看上面的工具结果。',
-          timestamp: Date.now(),
-        };
-        await this.persistTerminalMessage(fallbackMessage);
-        this.ctx.onEvent({ type: 'message', data: fallbackMessage });
-      }
       langfuse.endTrace(this.ctx.stats.traceId, `Completed in ${iterations} iterations`);
     }
 

@@ -6,6 +6,7 @@
 // ============================================================================
 
 import type { PermissionRequestData } from '../../host/tools/types';
+import type { PermissionAskResult } from '../../shared/contract/permission';
 
 /** 审批卡选项（数字键直选 + ↑↓+Enter） */
 export type ApprovalChoice =
@@ -145,6 +146,12 @@ export class SessionAllowList {
   has(request: PermissionRequestData): boolean {
     if (this.allEdits && isEditClassRequest(request)) return true;
     return this.keys.has(approvalKey(request));
+  }
+
+  approvalFor(request: PermissionRequestData): PermissionAskResult | undefined {
+    return !this.isDenied(request) && this.has(request)
+      ? { approved: true, approvalSource: 'session-allowlist' }
+      : undefined;
   }
 
   /** never allow 命中：后续同 key 请求直接拒，不再询问 */

@@ -9,6 +9,7 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import { UNSORTED_PROJECT_ID } from '../../shared/contract/project';
 import { ensureMemoryDir, getMemoryDir } from './indexLoader';
+import { guardSensitiveText } from '../security/sensitiveDataGuard';
 import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('RecentConversations');
@@ -135,7 +136,7 @@ export async function appendConversationSummary(
 ): Promise<void> {
   if (options.enabled === false) return;
   if (isLoopAutomationSummary(summary)) {
-    logger.debug(`Skipping loop automation summary: "${summary.title}"`);
+    logger.debug('Skipping loop automation summary');
     return;
   }
 
@@ -167,9 +168,10 @@ export async function appendConversationSummary(
     }
 
     const content = `# Recent Conversations\n\n${formatSummaries(summaries)}\n`;
-    await fs.writeFile(getSummaryPath(), content, 'utf-8');
+    const guardedContent = guardSensitiveText(content, { surface: 'memory', mode: 'local-persist' });
+    await fs.writeFile(getSummaryPath(), guardedContent, 'utf-8');
 
-    logger.info(`Conversation summary saved: "${summary.title}" (${summaries.length} total)`);
+    logger.info(`Conversation summary saved (${summaries.length} total)`);
   } catch (err) {
     logger.error('Failed to append conversation summary:', err);
   }

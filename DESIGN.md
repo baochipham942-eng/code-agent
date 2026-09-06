@@ -350,6 +350,57 @@ The linked community `DESIGN.md` files are **unofficial analyses of public produ
 - Brand expression concentrates in four showcases — welcome page, empty states, realtime voice, and the call summary card ("勘测报告 · 近地轨道"). Workbench surfaces stay neutral zinc.
 - Waiting copy uses the signal lexicon (回响/编队/巡航) from `src/renderer/i18n/chatTranscript.ts`; do not invent new waiting metaphors or add anxiety timers.
 
+## Copy Rules
+
+### Shared foundation
+
+- All user-visible renderer copy lives in the i18n dictionaries under `src/renderer/i18n/` (per-domain zh/en files, aggregated by `src/renderer/i18n/index.ts`), not in inline string literals inside components. zh and en blocks of the same domain stay adjacent in one file (`src/renderer/i18n/chatTranscript.ts` keeps `chatTranscriptZh` and its English counterpart side by side).
+- Pressure marketing words (轻松 / 一键 / 只需 / 立即体验) are banned at a zero baseline (`scripts/check-copy.mjs:34-41`); state what the product does instead of pushing the user to act.
+- Chinese copy uses the ellipsis character `…`, never three ASCII dots (`scripts/check-copy.mjs:35,47`). Both rules are hard gates; an exemption needs an inline `// copy-allow: <reason>` (`scripts/check-copy.mjs:37`).
+- Engineering jargon exposed to users (幂等 / 序列化 / 单一真源 / 落库, `scripts/check-copy.mjs:44`) is a warning-listed smell. Evaluation and ledger vocabulary (oracle, casebank, ledger line) belongs to diagnostic surfaces, not the product workbench; where a diagnostic surface must speak of ledger records it uses user language —「会话消息」(`src/renderer/i18n/sessionInspector.ts:79`), not「台账行」.
+
+### Product-family pattern
+
+- Host code does not author user-facing Chinese error strings. Host emits stable reason codes and the renderer translates them: `src/renderer/i18n/agentError.ts:5-38` maps `HostReasonCode` to human Chinese and `src/renderer/i18n/agentError.ts:40-73` to English. The ratchet `scripts/host-chinese-error-ratchet.mjs` fails any new Chinese `error:` literal (`scripts/host-chinese-error-ratchet.mjs:190`) and names the required fix: stable code + renderer i18n.
+- One error string never serves both the model and the human. Machine-facing detail (provider, HTTP status, trace id) stays behind「查看技术详情」(`src/renderer/i18n/agentError.ts:128-134`); the human sees a title that says what happened in one sentence plus a suggested next action (`src/renderer/i18n/agentError.ts:74-77`).
+- Do not write mutually exclusive causes as certain conclusions. A 401 cannot distinguish a wrong key from an exhausted quota, so the auth category says「可能是密钥填错、过期，或这个账号已经没有额度了」— guessed conclusions send users chasing the wrong fix (`src/renderer/i18n/agentError.ts:85-88`).
+- Waiting copy uses the signal lexicon (回响 / 编队 / 巡航) from `src/renderer/i18n/chatTranscript.ts:18,23,35`; do not invent new waiting metaphors or anxiety timers (also bound by the brand layer below).
+
+### Project-specific rule
+
+- Call the capability「插件」in user-facing copy, never「能力包」(`src/renderer/i18n/capabilityHub.ts:9,14`). Host-side legacy strings still say 能力包 (`src/host/plugins/pluginRegistry.ts:189` onward); that is debt awaiting cleanup, not precedent — new copy must not follow it.
+- A core action area carries at most two prominent operations: one primary and, when needed, one destructive outline. `DecisionCard` exposes exactly one `primaryActionId` and one `dangerActionId` (`src/renderer/components/DecisionCard.tsx:79-82`), and `PermissionCard` selects a single primary (`once`, or `deny` under default-deny, `src/renderer/components/PermissionDialog/PermissionCard.tsx:507`). Additional actions (retry / switch model / new session / copy report) render as a compact secondary row, never as peer primary buttons (`src/renderer/components/features/chat/AgentErrorCard.tsx:215-263`).
+
+## Interaction Patterns
+
+### Shared foundation
+
+- Every data surface defines its empty, loading, failure, and permission-denied states, and disabled controls keep their reason discoverable (Components, Shared foundation). The shared `EmptyState` primitive owns the empty role with four variants — `box`, `panel`, `plain`, `inline` (`src/renderer/components/primitives/EmptyState.tsx:12`); do not add a fifth shape.
+- Offline is expressed quietly and locally where the feature actually degrades: the cron inbox marks「错过 {time} · 应用离线」(`src/renderer/i18n/cronCenter.ts:175`), the plugin market falls back with「官方市场暂时不可用（离线或签名校验未通过）」(`src/renderer/i18n/zhSettingsModels.ts:493`), and web persistence surfaces「历史未持久化」only when `durable=false`, never when healthy (`docs/designs/session-console-workbench.md`, §5). A global offline banner is not implemented; do not claim one.
+- Never render a control that appears operable when the native bridge is absent: web mode disables or explains native-only actions (Components, Project-specific rule: shell and Web fallback).
+
+### Product-family pattern
+
+- A successful connect/enable state must carry ready-to-send example tasks — a connection the user cannot exercise equals no connection. Live pattern: connector settings show「试试这样用」with concrete prompts per connector (feishu / googleCalendar / tmeet / customOAuth, `src/renderer/i18n/zhSettingsSystem.ts:448`), and the MCP catalog grid does the same (`src/renderer/i18n/zhSettingsModels.ts:707-710`). New connector and enable flows follow this pattern.
+- One interruption, one signal per screen. Terminal and interrupt vocabulary has a single source — the same outcome/audience pair always resolves to one label and one reason phrase (`src/renderer/i18n/outcomeWords.ts:1-7`), projected per audience (timeline / badge / detail / notification, `src/renderer/i18n/outcomeWords.ts:30`). Interrupt notices are a single plain-text line (「任务在等你确认，请处理审批卡…」, `src/renderer/i18n/chatTranscript.ts:19`); do not fan one interruption out into toasts, rails, badges, and dialogs at once. The single vocabulary is live; per-screen single-signal is review discipline without a dedicated gate.
+- Every agent process state has a visible, named state — never collapse active states into one spinner (Components, Product-family pattern: session workbench). Live vocabulary:
+  - thinking:「正在思考…」(`src/renderer/i18n/chatTranscript.ts:16`)
+  - tool running:「执行中… / 调用工具…」(`src/renderer/i18n/chatTranscript.ts:294-295`)
+  - waiting approval:「任务在等你确认，请处理审批卡…」(`src/renderer/i18n/chatTranscript.ts:19`)
+  - subagents parallel:「{count} 个代理并行中」(`src/renderer/i18n/chatTranscript.ts:23`)
+  - compressing:「压缩中…」(`src/renderer/i18n/taskStatusPanels.ts:306`), after compaction「已压缩 {count} 条消息」(`src/renderer/i18n/chatTranscript.ts:46`)
+  - interrupt recovery:「恢复中…」(`src/renderer/i18n/taskStatusPanels.ts:21`)
+  - retrying after failure:「重试中…」(`src/renderer/i18n/taskStatusPanels.ts:117,206`)
+  - artifact generating:「生成中… / 正在生成网页…」(`src/renderer/i18n/zh.ts:218,220`); live preview follow「生成中 · 内容跟随刷新」(`src/renderer/i18n/previewWorkspace.ts:23`)
+  - long tool run cruise:「深空巡航中 · 已航行 {elapsed} · 链路正常」(`src/renderer/i18n/chatTranscript.ts:35`)
+- Stop stays reachable while running and is a hard boundary: the cruise signal carries the stop control (`src/renderer/i18n/chatTranscript.ts:37`), and after a stop, late mutations must not overwrite the next round (`docs/designs/session-console-workbench.md`, §4).
+- Approvals happen in the flow next to the action they gate (Layout, Product-family pattern); the permission card picks one primary and default-deny flips it (`src/renderer/components/PermissionDialog/PermissionCard.tsx:507`).
+
+### Project-specific rule
+
+- Adding a new process state means extending the vocabulary tables (outcomeWords / chatTranscript / taskStatusPanels under `src/renderer/i18n/`), not inventing one-off strings inside components; centralized vocabulary is what keeps「one screen, one signal」reviewable.
+- State-coverage gaps are recorded, not papered over: touch/mobile is unresolved (Implementation status above), and a complete modal focus loop plus a global offline contract remain open — do not describe them as live.
+
 ## Do's and Don'ts
 
 ### Do

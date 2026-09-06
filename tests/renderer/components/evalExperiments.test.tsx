@@ -258,4 +258,56 @@ describe('N-EVAL-RESULT-HINT-TIERS：说明与「未出场」分层', () => {
     expect(memory.textContent).toBe('记忆未出场，结论不说明它的效果');
     expect(subagent.textContent).toBe('子代理未出场，结论不说明它的效果');
   });
+
+  it('只在记忆或编排确实是实验变量时提示未出场', () => {
+    const sameMemory = bothHints();
+    const sameMemoryCompare = sameMemory.experiment.config as Record<string, unknown>;
+    (sameMemoryCompare.compare as Record<string, unknown>).baseline = {
+      name: 'production', model: 'm', provider: 'p', memory: { longTerm: true },
+    };
+    render(<EvalExperimentResult detail={sameMemory} onBack={vi.fn()} />);
+    expect(screen.queryByTestId('experiment-memory-not-used')).toBeNull();
+    cleanup();
+
+    const changedMemory = bothHints();
+    render(<EvalExperimentResult detail={changedMemory} onBack={vi.fn()} />);
+    expect(screen.getByTestId('experiment-memory-not-used')).toBeTruthy();
+    cleanup();
+
+    const sameOrchestration = bothHints();
+    const sameOrchestrationCompare = sameOrchestration.experiment.config as Record<string, unknown>;
+    (sameOrchestrationCompare.compare as Record<string, unknown>).baseline = {
+      name: 'production', model: 'm', provider: 'p', orchestration: { allowSwarm: true, spawnMaxDepth: 3 },
+    };
+    ((sameOrchestrationCompare.compare as Record<string, unknown>).candidate as Record<string, unknown>).orchestration = {
+      allowSwarm: true, spawnMaxDepth: 3,
+    };
+    render(<EvalExperimentResult detail={sameOrchestration} onBack={vi.fn()} />);
+    expect(screen.queryByTestId('experiment-subagent-not-used')).toBeNull();
+    cleanup();
+
+    const inheritedOrchestration = bothHints();
+    const inheritedCompare = inheritedOrchestration.experiment.config as Record<string, unknown>;
+    (inheritedCompare.compare as Record<string, unknown>).baseline = {
+      name: 'production', model: 'm', provider: 'p', orchestration: { allowSwarm: true, spawnMaxDepth: 3 },
+    };
+    ((inheritedCompare.compare as Record<string, unknown>).candidate as Record<string, unknown>).orchestration = {
+      allowSwarm: true,
+    };
+    render(<EvalExperimentResult detail={inheritedOrchestration} onBack={vi.fn()} />);
+    expect(screen.queryByTestId('experiment-subagent-not-used')).toBeNull();
+    cleanup();
+
+    const changedOrchestration = bothHints();
+    const changedOrchestrationCompare = changedOrchestration.experiment.config as Record<string, unknown>;
+    (changedOrchestrationCompare.compare as Record<string, unknown>).baseline = {
+      name: 'production', model: 'm', provider: 'p', orchestration: { allowSwarm: false, spawnMaxDepth: 0 },
+    };
+    ((changedOrchestrationCompare.compare as Record<string, unknown>).candidate as Record<string, unknown>).orchestration = {
+      allowSwarm: true, spawnMaxDepth: 3,
+    };
+    ((changedOrchestrationCompare.compare as Record<string, unknown>).candidate as Record<string, unknown>).memory = undefined;
+    render(<EvalExperimentResult detail={changedOrchestration} onBack={vi.fn()} />);
+    expect(screen.getByTestId('experiment-subagent-not-used')).toBeTruthy();
+  });
 });

@@ -200,3 +200,48 @@ describe('scripted run permission policy', () => {
     })).resolves.toEqual({ approved: false, denialSource: 'scripted' });
   });
 });
+
+import { getBuiltinPluginToolDefinitions } from '../../../../src/host/plugins/builtin/catalog';
+import { permissionRequestTypeForLevel } from '../../../../src/host/tools/permissionRequestType';
+
+describe('builtin plugin scripted policy coverage', () => {
+  it('has a matching allow or deny rule for every registered builtin tool', async () => {
+    const policy = JSON.parse(fs.readFileSync('.claude/eval-approval-policy.json', 'utf8')) as {
+      rules: Array<{ effect: string; tool: string; match?: { requestType?: string } }>;
+    };
+    const rulesByTool = new Map(policy.rules.map((rule) => [rule.tool, rule]));
+    const tools = await getBuiltinPluginToolDefinitions();
+    expect(tools.length).toBeGreaterThan(0);
+    for (const tool of tools) {
+      const rule = rulesByTool.get(tool.name);
+      expect(rule, `missing scripted policy rule for ${tool.name}`).toBeDefined();
+      if (rule?.effect === 'allow') {
+        expect(rule.match?.requestType).toBe(permissionRequestTypeForLevel(tool.permissionLevel));
+      }
+    }
+  });
+});
+
+import { ToolExecutor } from '../../../../src/host/tools/toolExecutor';
+import { validateHtmlInAppModule } from '../../../../src/host/plugins/builtin/browserControl/validateHtmlInApp';
+
+describe('builtin plugin request chain', () => {
+  it('builds validate_html_in_app permission data through ToolExecutor and scripted policy', async () => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'scripted-approval-policy-'));
+    process.env.NEO_SCRIPTED_APPROVAL_POLICY = path.resolve('.claude/eval-approval-policy.json');
+    process.env.CODE_AGENT_DATA_DIR = path.join(tempDir, 'isolated-data');
+    process.env.CODE_AGENT_EVAL_BRIDGE = '1';
+    const handler = requireScriptedRunPermissionHandler()!;
+    const executor = new ToolExecutor({
+      requestPermission: handler,
+      workingDirectory: process.cwd(),
+      forcePermissionHandler: true,
+    });
+    const request = (executor as unknown as { buildPermissionRequest: (...args: any[]) => any }).buildPermissionRequest(
+      { name: validateHtmlInAppModule.schema.name, permissionLevel: validateHtmlInAppModule.schema.permissionLevel },
+      { url: 'http://localhost:3000' },
+    );
+    expect(request).toMatchObject({ type: 'command', tool: 'validate_html_in_app' });
+    await expect(handler(request)).resolves.toMatchObject({ approved: true, approvalSource: 'scripted' });
+  });
+});

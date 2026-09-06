@@ -5,85 +5,225 @@
       "id": "allow-bash-in-eval-workspace",
       "effect": "allow",
       "tool": "Bash",
-      "match": { "requestType": "command" }
+      "match": {
+        "requestType": "command"
+      }
     },
     {
       "id": "allow-lowercase-bash-in-eval-workspace",
       "effect": "allow",
       "tool": "bash",
-      "match": { "requestType": "command" }
+      "match": {
+        "requestType": "command"
+      }
     },
     {
       "id": "allow-read-in-eval-workspace",
       "effect": "allow",
       "tool": "Read",
-      "match": { "requestType": "file_read" }
+      "match": {
+        "requestType": "file_read"
+      }
     },
     {
       "id": "allow-lowercase-read-in-eval-workspace",
       "effect": "allow",
       "tool": "read_file",
-      "match": { "requestType": "file_read" }
+      "match": {
+        "requestType": "file_read"
+      }
     },
     {
       "id": "allow-write-in-eval-workspace",
       "effect": "allow",
       "tool": "Write",
-      "match": { "requestType": "file_write" }
+      "match": {
+        "requestType": "file_write"
+      }
     },
     {
       "id": "allow-edit-in-eval-workspace",
       "effect": "allow",
       "tool": "Edit",
-      "match": { "requestType": "file_edit" }
+      "match": {
+        "requestType": "file_edit"
+      }
     },
     {
       "id": "allow-lowercase-write-in-eval-workspace",
       "effect": "allow",
       "tool": "write_file",
-      "match": { "requestType": "file_write" }
+      "match": {
+        "requestType": "file_write"
+      }
     },
     {
       "id": "allow-lowercase-edit-in-eval-workspace",
       "effect": "allow",
       "tool": "edit_file",
-      "match": { "requestType": "file_edit" }
+      "match": {
+        "requestType": "file_edit"
+      }
     },
     {
       "id": "allow-append-in-eval-workspace",
       "effect": "allow",
       "tool": "Append",
-      "match": { "requestType": "file_write" }
+      "match": {
+        "requestType": "file_write"
+      }
     },
     {
       "id": "allow-lowercase-append-in-eval-workspace",
       "effect": "allow",
       "tool": "append_file",
-      "match": { "requestType": "file_write" }
+      "match": {
+        "requestType": "file_write"
+      }
     },
     {
       "id": "allow-task-delegation-in-eval-workspace",
       "effect": "allow",
       "tool": "Task",
-      "match": { "requestType": "command" }
+      "match": {
+        "requestType": "command"
+      }
     },
     {
       "id": "allow-spawn-agent-delegation-in-eval-workspace",
       "effect": "allow",
       "tool": "spawn_agent",
-      "match": { "requestType": "command" }
+      "match": {
+        "requestType": "command"
+      }
     },
     {
       "id": "allow-bash-directive-memory-probe-in-eval",
       "effect": "allow",
       "tool": "Bash",
-      "match": { "requestType": "file_write" }
+      "match": {
+        "requestType": "file_write"
+      }
     },
     {
       "id": "allow-lowercase-bash-directive-memory-probe-in-eval",
       "effect": "allow",
       "tool": "bash",
-      "match": { "requestType": "file_write" }
+      "match": {
+        "requestType": "file_write"
+      }
+    },
+    {
+      "id": "allow-image_process-in-eval-workspace",
+      "effect": "allow",
+      "tool": "image_process",
+      "match": {
+        "requestType": "file_write"
+      }
+    },
+    {
+      "id": "deny-text_to_speech-in-eval-workspace",
+      "effect": "deny",
+      "tool": "text_to_speech",
+      "match": {
+        "requestType": "network"
+      }
+    },
+    {
+      "id": "deny-video_generate-in-eval-workspace",
+      "effect": "deny",
+      "tool": "video_generate",
+      "match": {
+        "requestType": "network"
+      }
+    },
+    {
+      "id": "deny-image_generate-in-eval-workspace",
+      "effect": "deny",
+      "tool": "image_generate",
+      "match": {
+        "requestType": "network"
+      }
+    },
+    {
+      "id": "allow-image_annotate-in-eval-workspace",
+      "effect": "allow",
+      "tool": "image_annotate",
+      "match": {
+        "requestType": "file_write"
+      }
+    },
+    {
+      "id": "deny-music_generate-in-eval-workspace",
+      "effect": "deny",
+      "tool": "music_generate",
+      "match": {
+        "requestType": "network"
+      }
+    },
+    {
+      "id": "allow-Browser-in-eval-workspace",
+      "effect": "allow",
+      "tool": "Browser",
+      "match": {
+        "requestType": "command"
+      }
+    },
+    {
+      "id": "allow-browser_action-in-eval-workspace",
+      "effect": "allow",
+      "tool": "browser_action",
+      "match": {
+        "requestType": "command"
+      }
+    },
+    {
+      "id": "allow-browser_navigate-in-eval-workspace",
+      "effect": "allow",
+      "tool": "browser_navigate",
+      "match": {
+        "requestType": "command"
+      }
+    },
+    {
+      "id": "allow-validate_html_in_app-in-eval-workspace",
+      "effect": "allow",
+      "tool": "validate_html_in_app",
+      "match": {
+        "requestType": "command"
+      }
+    },
+    {
+      "id": "allow-cua-driver-in-eval-workspace",
+      "effect": "allow",
+      "tool": "cua-driver",
+      "match": {
+        "requestType": "command"
+      }
+    },
+    {
+      "id": "allow-screenshot-in-eval-workspace",
+      "effect": "allow",
+      "tool": "screenshot",
+      "match": {
+        "requestType": "file_read"
+      }
+    },
+    {
+      "id": "allow-ocr_search-in-eval-workspace",
+      "effect": "allow",
+      "tool": "ocr_search",
+      "match": {
+        "requestType": "file_read"
+      }
+    },
+    {
+      "id": "allow-photo_archive-in-eval-workspace",
+      "effect": "allow",
+      "tool": "photo_archive",
+      "match": {
+        "requestType": "file_write"
+      }
     }
   ]
 }

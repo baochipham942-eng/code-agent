@@ -39,6 +39,14 @@ export function inspectEvidence(row: Row, dir: string): string[] {
     if (!existsSync(full)) errors.push(`FAIL ${row.id} missing evidence ${file}`);
     else if (row.files[file] !== digest(readFileSync(full))) errors.push(`FAIL ${row.id} evidence hash mismatch ${file}`);
   }
+  for (const frame of row.frames) {
+    const file = path.join(dir, `screens/${frame}.dom.json`);
+    if (!existsSync(file)) continue;
+    try {
+      const dom = JSON.parse(readFileSync(file, 'utf8'));
+      if (!Array.isArray(dom.criteria) || dom.criteria.length === 0 || dom.criteria.some((c: { visible?: boolean }) => c.visible !== true)) errors.push(`FAIL ${row.id} unsatisfied DOM criteria screens/${frame}.dom.json`);
+    } catch { errors.push(`FAIL ${row.id} invalid DOM evidence screens/${frame}.dom.json`); }
+  }
   if (row.frames.length < 3) errors.push(`FAIL ${row.id} render requires initial/pending/snapshot frames`);
   return errors;
 }

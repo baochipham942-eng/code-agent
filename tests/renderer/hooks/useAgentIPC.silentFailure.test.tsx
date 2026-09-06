@@ -20,6 +20,7 @@ import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
 import { useSwarmStore } from '../../../src/renderer/stores/swarmStore';
 import { useTaskStore } from '../../../src/renderer/stores/taskStore';
+import { resetChatSendInflightForTests } from '../../../src/renderer/utils/chatSendState';
 
 const envelope: ConversationEnvelope = {
   content: '运行中补充要求',
@@ -60,6 +61,7 @@ describe('useAgentIPC sendMessage silentFailure', () => {
   afterEach(() => {
     vi.useRealTimers();
     globalThis.fetch = originalFetch;
+    resetChatSendInflightForTests();
   });
 
   it('rejects without adding an assistant error or leaving the session busy', async () => {
@@ -92,10 +94,63 @@ describe('useAgentIPC sendMessage silentFailure', () => {
     );
     expect(assistantMessages).toHaveLength(1);
     expect(assistantMessages[0]?.content).toBe('Error: session already running');
+    expect(useSessionStore.getState().messages.filter((message) => message.role === 'user')).toEqual([]);
     expect(useTaskStore.getState().sessionStates['session-queued']).toEqual({
       status: 'error',
       error: 'Error: session already running',
     });
+  });
+
+  it('同 clientMessageId 并发重发只打一次 host，时间线只有一条用户消息', async () => {
+    let release!: () => void;
+    invokeMock.mockImplementationOnce(() => new Promise<void>((resolve) => {
+      release = resolve;
+    }));
+    const hook = renderSendHook();
+    const sameEnvelope: ConversationEnvelope = {
+      ...envelope,
+      clientMessageId: 'same-client-message',
+    };
+
+    let first!: Promise<unknown>;
+    let second!: Promise<unknown>;
+    await act(async () => {
+      first = hook.result.current.sendMessage(sameEnvelope);
+      second = hook.result.current.sendMessage(sameEnvelope);
+      await Promise.resolve();
+    });
+    expect(invokeMock).toHaveBeenCalledTimes(1);
+    expect(useSessionStore.getState().messages.filter((message) => message.role === 'user')).toHaveLength(1);
+
+    release();
+    const deliveries = await Promise.all([first, second]);
+    expect(deliveries).toEqual([{ outcome: 'sent' }, { outcome: 'sent' }]);
+  });
+
+  it('可见失败返回 failed，释放 pending 后同一键可以再发', async () => {
+    invokeMock
+      .mockRejectedValueOnce(new Error('network down'))
+      .mockResolvedValueOnce(undefined);
+    const hook = renderSendHook();
+    const retryEnvelope: ConversationEnvelope = {
+      ...envelope,
+      clientMessageId: 'retry-same-key',
+    };
+
+    let first: Awaited<ReturnType<typeof hook.result.current.sendMessage>> | undefined;
+    await act(async () => {
+      first = await hook.result.current.sendMessage(retryEnvelope);
+    });
+    expect(first).toEqual({ outcome: 'failed' });
+    expect(useAppStore.getState().isSessionProcessing('session-queued')).toBe(false);
+
+    let second: Awaited<ReturnType<typeof hook.result.current.sendMessage>> | undefined;
+    await act(async () => {
+      second = await hook.result.current.sendMessage(retryEnvelope);
+    });
+    expect(second).toEqual({ outcome: 'sent' });
+    expect(invokeMock).toHaveBeenCalledTimes(2);
+    expect(useSessionStore.getState().messages.filter((message) => message.role === 'user')).toHaveLength(1);
   });
 
   it('delivers to the foreground brain when the host says the session still has an active run', async () => {

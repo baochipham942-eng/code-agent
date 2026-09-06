@@ -27,13 +27,13 @@ interface WebQueuedInputDrainDependencies {
   ) => Promise<void>;
   emitAgentEvent: (sessionId: string, event: AgentEvent) => void;
   /**
-   * 一条排队消息在宿主侧走完（消费/失败）后通知前端。
+   * 排队条目可见性变化时通知前端。
    * 前端的排队卡片是本地 React state，只有「立即发送」那条路会自己清；
-   * 宿主自动抽干时前端完全不知情，卡片就永远留着，点撤回还会被如实告知
-   * 「已经开始发送」——用户看到的就是「没发出去又删不掉」。
+   * 宿主自动抽干时必须在 queued→sending 那一刻就广播，否则回答已经在出、
+   * 「排队中 · 1」还挂着同一条。
    */
   notifyQueuedInputSettled: (
-    settled: { sessionId: string; id: string; status: 'consumed' | 'failed' },
+    settled: { sessionId: string; id: string; status: 'consumed' | 'failed' | 'sending' | 'queued' },
   ) => void;
   notifyQueuedInputActivated: (activated: QueuedInputActivatedEvent) => void;
   logger: WebRouteLogger;
@@ -111,6 +111,7 @@ export function createWebQueuedInputDrain({
     }
 
     if (requeued.retryCount <= QUEUED_INPUT_RETRY.MAX_RESEND_ATTEMPTS) {
+      notifyQueuedInputSettled({ sessionId, id, status: 'queued' });
       return;
     }
 
@@ -149,6 +150,7 @@ export function createWebQueuedInputDrain({
       if (!record || !repository.markSending(record.id)) {
         return;
       }
+      notifyQueuedInputSettled({ sessionId, id: record.id, status: 'sending' });
 
       let envelope: ConversationEnvelope;
       try {

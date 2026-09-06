@@ -44,8 +44,9 @@ export async function resolveAgentWorktreeIsolation(input: {
   role?: string;
   explicit?: string;
   /**
-   * 子 agent 的工作目录；非 git 仓库或零提交仓库（HEAD 无法解析）时隔离
-   * 没有意义且必然失败，直接判 none。
+   * 子 agent 的工作目录；探测**确认**非 git 仓库或零提交仓库（HEAD 无法解析）时
+   * 隔离没有意义且必然失败，直接判 none。探测本身失败（git 不可执行/超时/仓库
+   * 读取失败）不算「确认」，不降级——见 probeWorktreeBase。
    */
   cwd?: string;
   /**
@@ -54,14 +55,25 @@ export async function resolveAgentWorktreeIsolation(input: {
    */
   forceWorktree?: boolean;
 }): Promise<'worktree' | 'none'> {
-  if (input.forceWorktree) return 'worktree';
-  if (input.cwd !== undefined && !(await gitHeadResolves(input.cwd))) {
-    logger.warn(
-      `${input.cwd} 无法创建 worktree（不在 git 仓库内，或仓库还没有任何提交），子 agent 降级为无 worktree 隔离`,
-    );
-    return 'none';
+  // 显式要求 worktree 的两个来源（外部引擎 / 调用方显式传参）同级，都在探测之前：
+  // 显式要的隔离不允许被探测结果静默压掉，宁可照常 worktree 在创建处显式失败。
+  if (input.forceWorktree || input.explicit === 'worktree') return 'worktree';
+  if (input.cwd !== undefined) {
+    const probe = await probeWorktreeBase(input.cwd);
+    if (probe.kind === 'no-repo' || probe.kind === 'unborn') {
+      logger.warn(
+        `${input.cwd} 无法创建 worktree（不在 git 仓库内，或仓库还没有任何提交），子 agent 降级为无 worktree 隔离`,
+      );
+      return 'none';
+    }
+    if (probe.kind === 'unknown') {
+      // fail-closed：只有「确认建不了」才允许降级。探测没结论时保持 worktree，
+      // 否则可写子代理会在父工作目录里直接写文件（并发互相覆盖）。
+      logger.warn(
+        `${input.cwd} git 探测失败（${probe.reason}），不降级为无隔离；若仓库确实不可建 worktree，将在创建处失败并给出原因`,
+      );
+    }
   }
-  if (input.explicit === 'worktree') return 'worktree';
   if (input.tools.some((tool) => ['Write', 'Edit', 'Bash'].includes(tool))) {
     return 'worktree';
   }
@@ -71,45 +83,76 @@ export async function resolveAgentWorktreeIsolation(input: {
 }
 
 /**
- * 目录是否在 git 仓库里（向上找 .git，worktree 里 .git 是文件不是目录）。
- * worktree 隔离在非 git 目录下没有意义且必然失败——Neo 的协作者多数不是程序员，
- * 默认工作目录就是家目录，硬起隔离会让「派个会写文件的成员」整条路不可用。
- * 「git init 过但还没有任何提交」的仓库同样建不了 worktree（HEAD 解析不出来），
- * 与非 git 目录同属这一档，见 gitHeadResolves。
+ * `git rev-parse --verify --quiet HEAD` 的探测结论。
+ * - `resolves`：HEAD 能解析为 commit，worktree 一定有 base 可指
+ * - `no-repo`：**确认**不在 git 仓库内
+ * - `unborn`：**确认**在 git 仓库内但还没有任何提交（HEAD 指向尚不出生的分支）
+ * - `unknown`：探测本身失败（git 不可执行、超时、仓库读取失败等），没有结论
+ *
+ * 只有前三种「确认」档才允许据此降级无隔离；`unknown` 不许降级（fail-closed）。
  */
-function isInsideGitRepo(dir: string): boolean {
-  let current = path.resolve(dir);
-  for (;;) {
-    if (fs.existsSync(path.join(current, '.git'))) return true;
-    const parent = path.dirname(current);
-    if (parent === current) return false;
-    current = parent;
-  }
-}
+type GitWorktreeBaseProbe =
+  | { kind: 'resolves' }
+  | { kind: 'no-repo' }
+  | { kind: 'unborn' }
+  | { kind: 'unknown'; reason: string };
 
 /**
- * git 自己的判据：HEAD 能否解析为 commit（`git worktree add` 需要 base）。
- * 零提交仓库 HEAD 指向尚不存在的分支，rev-parse 失败；非 git 目录同样失败——
- * 一条命令覆盖两档。不手写解析 .git/HEAD：worktree 里 .git 是文件不是目录，手写解析会漏 case。
+ * 用 git 自己的判据探测 worktree 能否有 base（`git worktree add` 需要可解析的 HEAD）。
+ * worktree 隔离在非 git 目录下没有意义且必然失败——Neo 的协作者多数不是程序员，
+ * 默认工作目录就是家目录，硬起隔离会让「派个会写文件的成员」整条路不可用；
+ * 「git init 过但还没有任何提交」的仓库同属这一档。不手写解析 .git/HEAD：
+ * worktree 里 .git 是文件不是目录，手写解析会漏 case。
+ *
+ * 判据按**退出码 + stderr 语义**区分（实测 git 2.x，`--quiet` 抑制 ref 错误输出）：
+ * - 退出 0 → resolves
+ * - 退出 1 → unborn（`--verify --quiet` 下 ref 解析不出，且必然已在仓库内）
+ * - 退出 128 且 stderr 是 `fatal: not a git repository` → no-repo
+ *   （其余 128 fatal——cwd 不存在、仓库损坏、权限——都是探测失败，不是确认）
+ * - 退出 127（sh 找不到 git）、被 kill（超时）、无退出码的异常 → unknown
  */
-async function gitHeadResolves(dir: string): Promise<boolean> {
+async function probeWorktreeBase(dir: string): Promise<GitWorktreeBaseProbe> {
   try {
     await execAsync(
       `git -C ${shellQuote(dir)} rev-parse --verify --quiet HEAD`,
       { timeout: WORKTREE_TIMEOUT },
     );
-    return true;
-  } catch {
-    return false;
+    return { kind: 'resolves' };
+  } catch (err) {
+    const e = err as {
+      code?: number | string;
+      killed?: boolean;
+      stderr?: string;
+      message?: string;
+    };
+    if (e.killed) {
+      return { kind: 'unknown', reason: `git 探测超时（>${WORKTREE_TIMEOUT}ms 被杀）` };
+    }
+    if (e.code === 1) return { kind: 'unborn' };
+    if (e.code === 128) {
+      const fatalText = (e.stderr ?? e.message ?? '').toString();
+      if (/not a git repository/i.test(fatalText)) return { kind: 'no-repo' };
+      return {
+        kind: 'unknown',
+        reason: fatalText.trim() || 'git 退出 128 且无 stderr',
+      };
+    }
+    return {
+      kind: 'unknown',
+      reason: e.code === 127
+        ? 'git 不可执行（command not found）'
+        : (e.message ?? `git 探测异常（code=${String(e.code)}）`),
+    };
   }
 }
 
 /**
  * worktree 创建失败时的人话提示：区分「不在 git 仓库」和「在 git 仓库但还没有
  * 任何提交」。后者 git 原生报 "ambiguous argument 'HEAD'"，对用户没有指向性。
+ * 探测无结论（unknown）时退回通用提示——创建失败的原始 stderr 已在错误信息里。
  */
 export async function worktreeFailureHint(cwd: string): Promise<string> {
-  if (isInsideGitRepo(cwd) && !(await gitHeadResolves(cwd))) {
+  if ((await probeWorktreeBase(cwd)).kind === 'unborn') {
     return '仓库还没有任何提交（HEAD 无法解析），无法创建 worktree；请先在仓库里做一次初始提交，或换 native 引擎的子代理。';
   }
   return 'Ensure you are in a git repository.';

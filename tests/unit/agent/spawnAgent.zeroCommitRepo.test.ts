@@ -12,6 +12,8 @@
 //   ② 有提交的 git 仓库：spawn 成功，executor 在 worktree 里跑（正常隔离不变）
 //   ③ 零提交仓库：spawn 成功，executor 在原 cwd 跑（本单修复）
 //   ④ 零提交 + 外部引擎（forceWorktree 不允许降级）：显式失败，错误给可读原因
+//   ⑤ 有提交仓库 + git 探测失败（不可执行）：spawn 显式失败，可写子代理不在父
+//     目录跑起来（返修：探测失败不降级，fail-closed）
 // ============================================================================
 
 import * as fs from 'node:fs/promises';
@@ -56,6 +58,20 @@ async function makeRepoWithCommit(): Promise<string> {
     + '-c commit.gpgsign=false commit --allow-empty --quiet -m init',
   );
   return dir;
+}
+
+/**
+ * 模拟「git 探测失败」：把 PATH 摘掉，被测链路里真实跑的 /bin/sh 找不到 git
+ * （退出 127），而不是 mock 内部判据函数——断言要落在 executor 行为不变量上。
+ */
+async function withoutGitOnPath<T>(fn: () => Promise<T>): Promise<T> {
+  const originalPath = process.env.PATH;
+  process.env.PATH = '/nonexistent-bin-for-probe-failure';
+  try {
+    return await fn();
+  } finally {
+    process.env.PATH = originalPath;
+  }
 }
 
 function makeContext(cwd: string): SubagentExecutionContext {
@@ -162,6 +178,22 @@ describe('spawn_agent 在三类工作目录里的不变量', () => {
 
     expect(result.success).toBe(false);
     expect(result.error).toContain('初始提交');
+    expect(result.metadata?.failureCode).toBe(AgentFailureCode.WorktreeCreateFailed);
+    expect(executeSpy).not.toHaveBeenCalled();
+  });
+
+  it('⑤ 有提交仓库 + git 探测失败（不可执行）：spawn 显式失败，可写子代理不在父目录跑', async () => {
+    const repo = await makeRepoWithCommit();
+    scratchDirs.push(repo);
+
+    const result = await withoutGitOnPath(() => executeSpawnAgent(
+      { role: 'coder', task: '写一个 hello.txt' },
+      makeContext(repo),
+    ));
+
+    // 不变量：探测失败不许降级无隔离——可写子代理没有在父工作目录里跑起来，
+    // 而是照常 worktree 在创建处显式失败（fail-closed）。
+    expect(result.success).toBe(false);
     expect(result.metadata?.failureCode).toBe(AgentFailureCode.WorktreeCreateFailed);
     expect(executeSpy).not.toHaveBeenCalled();
   });

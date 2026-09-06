@@ -3,9 +3,13 @@
 //
 //   ① 非 git 目录           → 降级 none（既有行为）
 //   ② git 仓库且有提交       → worktree（既有行为）
-//   ③ git 仓库但零提交       → 降级 none（N-SPAWN-NOHEAD 新增：HEAD 解析不出来，
+//   ③ git 仓库但零提交       → 降级 none（N-SPAWN-NOHEAD：HEAD 解析不出来，
 //                             `git worktree add` 必然失败）
-// forceWorktree（外部写执行器）三档都不降级，照常 worktree，在创建处给可读原因。
+//   ④ 探测本身失败           → 不降级，照常 worktree（返修：fail-closed。git 不可
+//                             执行/超时/仓库读取失败 ≠ 确认建不了；降级会让可写
+//                             子代理直接写父工作目录）
+// forceWorktree / 显式 isolation: 'worktree' 与探测之前同级，探测结果（无论哪档）
+// 都压不掉显式要求，照常 worktree，在创建处给可读原因。
 // ============================================================================
 
 import * as fs from 'node:fs/promises';
@@ -28,6 +32,20 @@ function quote(value: string): string {
 
 async function runGit(cmd: string): Promise<void> {
   await execReal(cmd, { timeout: GIT_TIMEOUT });
+}
+
+/**
+ * 模拟「探测本身失败」：把 PATH 摘掉，被测代码里真实跑的 /bin/sh 找不到 git
+ * （退出 127），而不是 mock 一个假返回值——探测的判据就是真 git 的退出码/stderr。
+ */
+async function withoutGitOnPath<T>(fn: () => Promise<T>): Promise<T> {
+  const originalPath = process.env.PATH;
+  process.env.PATH = '/nonexistent-bin-for-probe-failure';
+  try {
+    return await fn();
+  } finally {
+    process.env.PATH = originalPath;
+  }
 }
 
 /** git init 过但从未 commit：.git 在、HEAD 解析不出来（病灶现场） */
@@ -81,12 +99,12 @@ describe('external subagent worktree isolation', () => {
 });
 
 describe('worktree 隔离判据三档（真 git）', () => {
-  it('① 非 git 目录降级为 none，即使显式要求 worktree', async () => {
+  it('① 非 git 目录默认降级为 none（真阴对照）；显式 worktree 不被压掉', async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'not-a-repo-'));
     scratchDirs.push(dir);
 
     expect(await resolveAgentWorktreeIsolation({ tools: ['Read', 'Write'], cwd: dir })).toBe('none');
-    expect(await resolveAgentWorktreeIsolation({ tools: ['Read'], explicit: 'worktree', cwd: dir })).toBe('none');
+    expect(await resolveAgentWorktreeIsolation({ tools: ['Read'], explicit: 'worktree', cwd: dir })).toBe('worktree');
   });
 
   it('② 有提交的 git 仓库照常 worktree（含子目录，git 自己向上找仓库）', async () => {
@@ -100,14 +118,14 @@ describe('worktree 隔离判据三档（真 git）', () => {
     expect(await resolveAgentWorktreeIsolation({ tools: ['Read'], explicit: 'worktree', cwd: repo })).toBe('worktree');
   });
 
-  it('③ 零提交仓库（有 .git 无 HEAD）降级为 none，即使显式要求 worktree', async () => {
+  it('③ 零提交仓库（有 .git 无 HEAD）默认降级为 none（真阴对照）；显式 worktree 不被压掉', async () => {
     const repo = await makeZeroCommitRepo();
     scratchDirs.push(repo);
     const nested = path.join(repo, 'nested');
     await fs.mkdir(nested);
 
     expect(await resolveAgentWorktreeIsolation({ tools: ['Read', 'Write'], cwd: repo })).toBe('none');
-    expect(await resolveAgentWorktreeIsolation({ tools: ['Read'], explicit: 'worktree', cwd: repo })).toBe('none');
+    expect(await resolveAgentWorktreeIsolation({ tools: ['Read'], explicit: 'worktree', cwd: repo })).toBe('worktree');
     expect(await resolveAgentWorktreeIsolation({ tools: ['Read', 'Write'], cwd: nested })).toBe('none');
   });
 
@@ -120,6 +138,32 @@ describe('worktree 隔离判据三档（真 git）', () => {
       cwd: repo,
       forceWorktree: true,
     })).toBe('worktree');
+  });
+});
+
+describe('④ 探测失败不降级（真 git 不可执行，fail-closed）', () => {
+  // 探测失败 ≠ 确认建不了。有提交的仓库里 git 探测挂掉（不可执行/超时/仓库读取
+  // 失败）时若降级 none，可写子代理会直接写父工作目录——必须保持 worktree。
+  it('git 不可执行：有提交的仓库也不返回 none，保持 worktree', async () => {
+    const repo = await makeRepoWithCommit();
+    scratchDirs.push(repo);
+
+    await withoutGitOnPath(async () => {
+      expect(
+        await resolveAgentWorktreeIsolation({ tools: ['Read', 'Write'], cwd: repo }),
+      ).toBe('worktree');
+    });
+  });
+
+  it('git 不可执行：显式 worktree 不被探测失败覆盖', async () => {
+    const repo = await makeRepoWithCommit();
+    scratchDirs.push(repo);
+
+    await withoutGitOnPath(async () => {
+      expect(
+        await resolveAgentWorktreeIsolation({ tools: ['Read'], explicit: 'worktree', cwd: repo }),
+      ).toBe('worktree');
+    });
   });
 });
 

@@ -5,7 +5,7 @@
 // 断言咬在「拿不到另一个槽的文件内容」上，不咬内部函数返回值。
 // ============================================================================
 
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -25,6 +25,7 @@ import { getToolCache } from '../../src/host/services/infra/toolCache';
 import { fileReadTracker } from '../../src/host/tools/fileReadTracker';
 import { getProtocolRegistry } from '../../src/host/tools/protocolRegistry';
 import { ToolExecutor } from '../../src/host/tools/toolExecutor';
+import { __setRgBinaryPathForTest } from '../../src/host/tools/modules/shell/grep';
 import type { ToolExecutionResult } from '../../src/host/tools/types';
 import { resetPermissionModeManager } from '../../src/host/permissions/modes';
 
@@ -184,6 +185,135 @@ describe('槽数据目录读隔离', () => {
     );
     expect(result.success).toBe(true);
     expect(leakedText(result)).toContain(PROD_SENTINEL);
+  });
+
+  function discoveryLeakText(result: ToolExecutionResult): string {
+    const metadata = result.metadata ?? {};
+    return [
+      result.error,
+      result.output,
+      JSON.stringify(metadata.matches ?? []),
+      JSON.stringify(metadata.artifact && typeof metadata.artifact === 'object'
+        ? (metadata.artifact as { preview?: string }).preview
+        : ''),
+    ].join('\n');
+  }
+
+  function expectNoForeignLeak(result: ToolExecutionResult, sentinel: string, foreignPath: string): void {
+    const text = discoveryLeakText(result);
+    expect(text, '跨槽文件内容不能到达调用方').not.toContain(sentinel);
+    expect(text, '跨槽文件路径不能到达调用方').not.toContain(foreignPath);
+    expect(text, '相对路径也不能泄漏生产槽').not.toContain('.code-agent/memory');
+    expect(text).not.toContain('.code-agent/config.json');
+    expect(text).not.toContain(`${path.sep}.code-agent${path.sep}memory`);
+  }
+
+  it('Bash 中途 cd 后按新目录检查：cd "$HOME" && cat 生产槽配置被拒', async () => {
+    const result = await buildExecutor().execute(
+      'Bash',
+      { command: 'cd "$HOME" && cat .code-agent/config.json' },
+      { sessionId: 'slot-isolation-bash-cd-and' },
+    );
+    expectForeignDenied(result, '.code-agent', PROD_SENTINEL);
+    expectNoForeignLeak(result, PROD_SENTINEL, prodFile);
+  });
+
+  it('Bash 连续切目录：cd A; cd B; cat 生产槽配置被拒', async () => {
+    const result = await buildExecutor().execute(
+      'Bash',
+      { command: `cd ${JSON.stringify(projectDir)}; cd "$HOME"; cat .code-agent/config.json` },
+      { sessionId: 'slot-isolation-bash-cd-seq' },
+    );
+    expectForeignDenied(result, '.code-agent', PROD_SENTINEL);
+    expectNoForeignLeak(result, PROD_SENTINEL, prodFile);
+  });
+
+  it('Bash 子 shell 切目录：(cd HOME; cat 生产槽配置) 被拒', async () => {
+    const result = await buildExecutor().execute(
+      'Bash',
+      { command: '(cd "$HOME"; cat .code-agent/config.json)' },
+      { sessionId: 'slot-isolation-bash-cd-subshell' },
+    );
+    expectForeignDenied(result, '.code-agent', PROD_SENTINEL);
+    expectNoForeignLeak(result, PROD_SENTINEL, prodFile);
+  });
+
+  it('从 home 递归 Glob 结果不含生产槽内容或路径', async () => {
+    for (const pattern of ['**/*', '**/.code-agent/**']) {
+      const result = await buildExecutor().execute(
+        'Glob',
+        { pattern, path: fakeHome },
+        { sessionId: `slot-isolation-glob-home-${pattern}` },
+      );
+      expectNoForeignLeak(result, PROD_SENTINEL, prodFile);
+      expect(result.error ?? '').not.toContain('另一个槽');
+    }
+  });
+
+  it('从 home 递归 Grep 结果不含生产槽内容或路径', async () => {
+    const result = await buildExecutor().execute(
+      'Grep',
+      { pattern: PROD_SENTINEL, path: fakeHome },
+      { sessionId: 'slot-isolation-grep-home' },
+    );
+    expectNoForeignLeak(result, PROD_SENTINEL, prodFile);
+    expect(result.error ?? '').not.toContain('另一个槽');
+  });
+
+  it('从 home 走系统 grep -r 结果不含生产槽内容或路径', async () => {
+    __setRgBinaryPathForTest(null);
+    try {
+      const result = await buildExecutor().execute(
+        'Grep',
+        { pattern: PROD_SENTINEL, path: fakeHome },
+        { sessionId: 'slot-isolation-grep-system' },
+      );
+      expectNoForeignLeak(result, PROD_SENTINEL, prodFile);
+      expect(result.error ?? '').not.toContain('另一个槽');
+    } finally {
+      __setRgBinaryPathForTest(undefined);
+    }
+  });
+
+  it('兄弟槽做成指向别处的软链，读它仍被拒', async () => {
+    const elsewhere = mkdtempSync(path.join(os.tmpdir(), 'slot-isolation-elsewhere-'));
+    try {
+      mkdirSync(path.join(elsewhere, 'memory'), { recursive: true });
+      writeFileSync(path.join(elsewhere, 'memory', 'notes.md'), PROD_SENTINEL);
+      writeFileSync(path.join(elsewhere, 'config.json'), `{"secret":"${PROD_SENTINEL}"}`);
+      rmSync(prodSlot, { recursive: true, force: true });
+      symlinkSync(elsewhere, prodSlot);
+
+      const result = await buildExecutor().execute(
+        'Read',
+        { file_path: path.join(prodSlot, 'memory', 'notes.md') },
+        { sessionId: 'slot-isolation-symlink' },
+      );
+      expectForeignDenied(result, '.code-agent', PROD_SENTINEL);
+      expectNoForeignLeak(result, PROD_SENTINEL, path.join(prodSlot, 'memory', 'notes.md'));
+    } finally {
+      rmSync(elsewhere, { recursive: true, force: true });
+    }
+  });
+
+  it('真阴：当前槽递归 Glob/Grep 自己仍成功', async () => {
+    const globResult = await buildExecutor().execute(
+      'Glob',
+      { pattern: '**/*', path: devSlot },
+      { sessionId: 'slot-isolation-own-glob' },
+    );
+    expect(globResult.success).toBe(true);
+    expect(leakedText(globResult)).toContain('memory/notes.md');
+    expect(globResult.error ?? '').not.toContain('另一个槽');
+
+    const grepResult = await buildExecutor().execute(
+      'Grep',
+      { pattern: OWN_SENTINEL, path: devSlot },
+      { sessionId: 'slot-isolation-own-grep' },
+    );
+    expect(grepResult.success).toBe(true);
+    expect(leakedText(grepResult)).toContain(OWN_SENTINEL);
+    expect(grepResult.error ?? '').not.toContain('另一个槽');
   });
 
   it('前缀陷阱：.code-agent 不是 .code-agent-dev 的父槽', () => {

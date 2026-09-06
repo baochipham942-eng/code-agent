@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useRef } from 'react';
 import type React from 'react';
 import type { MessageAttachment } from '@shared/contract';
 import type { QueuedInput } from '@shared/contract/queuedInput';
@@ -177,6 +177,13 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
     openSeedComposer,
     setActiveAgentId,
   } = params;
+
+  // 失败回执可能几秒后才回来，那时闭包里的 value / attachments / currentSessionId 都是
+  // 发送那一刻的旧值，拿它们判「用户动没动过」「还在不在同一个会话」必然判错
+  // （ai-review #1694 第三轮）。这个 ref 每次渲染刷新，回滚时读的是**当下**的真值。
+  const latestComposerRef = useRef({ value, attachments, currentSessionId });
+  latestComposerRef.current = { value, attachments, currentSessionId };
+
 
   // 版本同时绑定能力选择和会话；handoff 保留同一轮版本，切槽或再选择都会失效。
   const captureSuccessfulSendReset = useCallback(() => {
@@ -539,19 +546,19 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
           // 而上一条（A）的失败回执可能几秒后才回来；无条件写回就把 B 换成 A 的旧草稿，
           // 未提交内容静默丢失（ai-review #1694）。切了会话同理，草稿不能跨会话落回去。
           // 判据：只在「输入框仍是我们清空后的样子」时才还原。
-          // 每个 setter 各自函数式守卫：state updater 不保证同步执行，靠一个外层布尔
-          // 串起来是不可靠的（读到的可能是旧值）。守卫口径统一为「这一项还是清空后的样子」。
-          if (draftSnapshot.sessionId !== currentSessionId) return;
-          setValue((current) => (current.trim() ? current : draftSnapshot.value));
-          setAttachments((current) => (current.length ? current : draftSnapshot.attachments));
-          setPendingPromptCommand((current) => current ?? draftSnapshot.pendingPromptCommand);
-          setPendingAgentSelection((current) => current ?? draftSnapshot.pendingAgentSelection);
-          if (typeof setSessionReferences === 'function') {
-            setSessionReferences((current) => (current.length ? current : draftSnapshot.sessionReferences));
-          }
-          if (typeof setArtifactReferences === 'function') {
-            setArtifactReferences((current) => (current.length ? current : draftSnapshot.artifactReferences));
-          }
+          // 回滚是**整份、要么全还要么全不还**：逐字段各判各的会把两份草稿混起来
+          // （发带附件的 A → 接着打纯文本 B → A 失败 ⇒ 留着 B 的文本却把 A 的附件塞回来，
+          // 用户下一次发送就带上了无关文件，ai-review #1694 第三轮）。
+          // 判据取**当下**的真值，不取闭包里发送那一刻的旧值。
+          const latest = latestComposerRef.current;
+          if (latest.currentSessionId !== draftSnapshot.sessionId) return;
+          if (latest.value.trim() || latest.attachments.length) return;
+          setValue(draftSnapshot.value);
+          setAttachments(draftSnapshot.attachments);
+          setPendingPromptCommand(draftSnapshot.pendingPromptCommand);
+          setPendingAgentSelection(draftSnapshot.pendingAgentSelection);
+          if (typeof setSessionReferences === 'function') setSessionReferences(draftSnapshot.sessionReferences);
+          if (typeof setArtifactReferences === 'function') setArtifactReferences(draftSnapshot.artifactReferences);
           setVoiceInputContext(draftSnapshot.voiceInputContext);
           // 命令 chip 也随草稿一起还回来，跟文本输入框的回滚口径一致
           if (pendingCommand) useComposerStore.getState().setPendingCommand(pendingCommand);

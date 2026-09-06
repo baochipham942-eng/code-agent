@@ -303,6 +303,12 @@ export interface InputRedirectReceiptMetadata {
 }
 
 export interface MessageMetadata {
+  /**
+   * 发送失败时的重试锚点：乐观用户消息会从时间线撤掉（避免重发变重复提交），
+   * 失败内容改挂在那条错误 assistant 消息上。重试入口优先读它——否则往回找
+   * 最近的 user 消息会命中**上一轮**，把已经答完的问题重发一遍（ai-review #1694）。
+   */
+  retryPrompt?: string;
   /** Structured verification evidence carried by message-level projections. */
   evidenceRefs?: EvidenceRef[];
   /** Stable join keys for reconstructing a persisted message's runtime turn. */

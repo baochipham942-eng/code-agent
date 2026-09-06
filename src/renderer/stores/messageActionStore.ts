@@ -74,6 +74,14 @@ export const useMessageActionStore = create<MessageActionState>((set, get) => ({
     const idx = messages.findIndex((m) => m.id === messageId);
     if (idx < 0) return;
 
+    // 发送失败时乐观用户消息会被撤掉，失败内容改挂在错误消息的 metadata.retryPrompt 上。
+    // 有锚点就用锚点——否则往回找会命中**上一轮**的提问，把已经答完的问题重发一遍。
+    const retryPrompt = (messages[idx].metadata as { retryPrompt?: unknown } | undefined)?.retryPrompt;
+    if (typeof retryPrompt === 'string' && retryPrompt.trim()) {
+      _send(retryPrompt);
+      return;
+    }
+
     for (let i = idx - 1; i >= 0; i--) {
       if (messages[i].role === 'user' && messages[i].content?.trim()) {
         _send(messages[i].content!);

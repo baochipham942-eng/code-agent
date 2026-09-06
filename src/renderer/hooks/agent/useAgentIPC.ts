@@ -1113,6 +1113,12 @@ export function useAgentIPC({
             ? t.common.durableRunStartupTimeout
             : getAgentSendFailureMessage(sendFailure),
           timestamp: Date.now(),
+          // 乐观用户消息被撤了，重试锚点必须跟着走：regenerateMessage 默认往回找最近的
+          // user 消息，撤掉这条之后它会找到**上一轮**并把上一轮重发一遍；首条消息失败时
+          // 则一条都找不到、重试变哑（ai-review #1694）。把失败内容挂在错误消息上当锚点。
+          ...(addedOptimisticUser && userMessage.content?.trim()
+            ? { metadata: { retryPrompt: userMessage.content } }
+            : {}),
         };
         addMessage(errorMessage);
         // 按会话清除处理状态

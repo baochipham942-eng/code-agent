@@ -11,7 +11,7 @@ import * as path from 'path';
 import { createLogger } from '../services/infra/logger';
 import { getProjectConfigDir, getUserConfigDir } from '../config/configPaths';
 import { canonicalizeCommand } from './canonicalizeCommand';
-import { resolvedExecutable } from './commandParse';
+import { commandWordsFromParse, qualificationExecutable } from './commandParse';
 import { classifyCommand, isKnownSafeCommand } from './commandSafety';
 
 const logger = createLogger('ExecPolicy');
@@ -168,10 +168,11 @@ export class ExecPolicyStore {
     const tokens = tokenizePolicyCommand(command);
     if (tokens.length === 0) return false;
 
-    const execution = resolvedExecutable(command);
-    if (!execution || execution.program !== execution.originalProgram) {
+    const execution = qualificationExecutable(command);
+    const writtenWords = commandWordsFromParse(command);
+    if (execution?.program !== writtenWords?.[0] || execution == null || writtenWords == null) {
       logger.debug('Skipping wrapped or uncertain command prefix', {
-        originalProgram: execution?.originalProgram,
+        originalProgram: writtenWords?.[0],
         resolvedProgram: execution?.program,
       });
       return false;

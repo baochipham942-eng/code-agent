@@ -836,7 +836,7 @@ export class PermissionClassifier {
 
     if (segments.length === 1) {
       const result = this.classifyBashSegment(segments[0], context, startTime);
-      return result?.decision === 'deny' ? result : rawInspection.outputRedirectionAsk ?? result;
+      if (result?.decision === 'deny') return result; return rawInspection.outputRedirectionAsk ?? result;
     }
 
     // 沿用 #1609 的逐段风险分类，同时把 cd 的 cwd 影响传给后续段的路径解析。

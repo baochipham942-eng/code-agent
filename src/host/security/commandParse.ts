@@ -5,6 +5,11 @@ import { canonicalizeCommand } from './canonicalizeCommand';
 const COMMAND_SEPARATORS = new Set(['&&', '||', ';', '|', '|&', '&', '\n']);
 const OUTPUT_REDIRECTS = new Set(['>', '>>', '>&']);
 const SHELL_PROGRAMS = new Set(['bash', 'sh', 'zsh', 'dash']);
+// Approval qualification intentionally mirrors the pre-parser baseline.  Only a
+// bare bash/sh/zsh whose first argument is exactly -c/-lc may lend its inner
+// command an approval identity.  The full parser above remains broader for
+// write-target extraction.
+const QUALIFICATION_SHELLS = new Set(['bash', 'sh', 'zsh']);
 const PRIVILEGE_WRAPPERS = new Set(['sudo', 'doas']);
 const SIMPLE_WRAPPERS = new Set(['command', 'exec', 'nohup', 'setsid']);
 const MAX_WRAPPER_DEPTH = 4;
@@ -676,17 +681,46 @@ export function commandWordsFromParse(command: string): string[] | null {
     : parsed.segments[0].words;
 }
 
-export function resolvedExecutable(command: string): ShellExecution | null {
+function qualifySegments(command: string): ShellExecution[] | null {
   const parsed = parseShellCommand(command);
-  return parsed.parsingFailed || parsed.uncertain.length > 0 || parsed.executions.length !== 1
-    ? null
-    : parsed.executions[0];
+  if (parsed.parsingFailed || parsed.trailingOperator || parsed.uncertain.length > 0) return null;
+
+  const executions: ShellExecution[] = [];
+  for (const segment of parsed.segments) {
+    const [program, ...args] = segment.words;
+    if (!program) continue;
+
+    // This is the only qualification-time unwrapping.  Do not use basename:
+    // ./bash and /usr/bin/bash are executable identities chosen by the caller.
+    if (QUALIFICATION_SHELLS.has(program) && (args[0] === '-c' || args[0] === '-lc')) {
+      const script = args[1];
+      if (script === undefined) return null;
+      const nested = qualifySegments(script);
+      if (!nested) return null;
+      executions.push(...nested);
+      continue;
+    }
+
+    executions.push({ program, args, originalProgram: program, wrappers: [] });
+  }
+  return executions;
 }
 
-export function hasPrivilegedOrEvalWrapper(execution: ShellExecution): boolean {
-  // Wrappers keep the path they were written with, so match the role by basename: `/usr/bin/sudo`
-  // escalates exactly like `sudo`.
-  return execution.wrappers
-    .map((wrapper) => basename(wrapper))
-    .some((wrapper) => PRIVILEGE_WRAPPERS.has(wrapper) || wrapper === 'eval');
+/**
+ * Executions used for automatic-approval qualification.
+ *
+ * Unlike parseShellCommand().executions, this preserves the command identity
+ * as written and only applies the baseline's narrow bash/sh/zsh -c/-lc unwrap.
+ * Consumers deciding whether a command may skip approval must use this view;
+ * write-target consumers must continue using parseShellCommand().executions.
+ */
+export function qualificationExecutions(command: string): ShellExecution[] | null {
+  return qualifySegments(command);
+}
+
+export function qualificationExecutable(command: string): ShellExecution | null {
+  const executions = qualificationExecutions(command);
+  return executions?.length !== 1
+    ? null
+    : executions[0];
 }

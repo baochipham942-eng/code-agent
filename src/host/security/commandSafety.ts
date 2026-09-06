@@ -20,9 +20,9 @@ import { RM_FLAGS, RM_FLAGS_REQUIRED, RM_HEAD } from './rmFlagPattern';
 import { canonicalizeCommand } from './canonicalizeCommand';
 import {
   commandWordsFromParse,
-  hasPrivilegedOrEvalWrapper,
   parseShellCommand,
-  resolvedExecutable,
+  qualificationExecutions,
+  qualificationExecutable,
 } from './commandParse';
 import {
   rmIsContainedInWorkspace,
@@ -284,25 +284,16 @@ export function isKnownSafeCommand(command: string, shell: ShellKind = defaultSh
     return isKnownSafeWindowsCommand(command, UNCONDITIONALLY_SAFE);
   }
 
-  // 2. 一次解析复合命令与包装器，未知启动器和深度溢出 fail-closed。
-  const parsed = parseShellCommand(command);
-  if (parsed.parsingFailed || parsed.trailingOperator || parsed.uncertain.length > 0
-      || parsed.executions.length === 0) {
+  // 2. Qualification uses the command identity as written.  The shared parser's
+  // broader execution view is intentionally reserved for write-target extraction.
+  const executions = qualificationExecutions(command);
+  if (!executions || executions.length === 0) {
     return false;
   }
 
-  // 3. 每个解包后的真实命令都必须安全；提权与 eval 外壳不能获得免审批。
-  for (const execution of parsed.executions) {
+  // 3. Every written/explicitly baseline-unwrapped command must be safe.
+  for (const execution of executions) {
     const { program, args } = execution;
-    if (hasPrivilegedOrEvalWrapper(execution)) return false;
-    if (execution.environmentAssignments?.length) return false;
-    // Unwrapping recovers write targets, but must not grant a new automatic-approval identity.
-    // Only the shell wrappers already admitted by the baseline retain this shortcut, and the
-    // comparison is against the word as written on purpose: `./bash -c 'ls'` runs a workspace file,
-    // so a path-qualified wrapper never inherits the bare name's shortcut. `env` is not on the list:
-    // its operand is a delegated execution (CONDITIONALLY_SAFE.env), and unwrapping it would answer
-    // for a program the approval prefix never named.
-    if (execution.wrappers.some((wrapper) => !['bash', 'sh', 'zsh', 'dash'].includes(wrapper))) return false;
 
     // 无条件安全
     if (UNCONDITIONALLY_SAFE.has(program)) continue;
@@ -333,7 +324,7 @@ export function classifyCommand(command: string, shell: ShellKind = defaultShell
   const words = commandWordsFromParse(command.trim());
   if (words && CONDITIONALLY_SAFE[words[0]]?.(words.slice(1)) === 'delegated') return 'delegated';
 
-  const execution = resolvedExecutable(command.trim());
+  const execution = qualificationExecutable(command.trim());
   if (execution && CONDITIONALLY_SAFE[execution.program]?.(execution.args) === 'delegated') return 'delegated';
   if (execution && CONDITIONALLY_SAFE[execution.program]) return 'conditional';
 

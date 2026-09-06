@@ -1,6 +1,6 @@
 import type { DecisionStep } from '../../shared/contract/decisionTrace';
 import { createTraceStep } from '../security/decisionTraceBuilder';
-import { parseShellCommand, type ShellExecution } from '../security/commandParse';
+import { parseShellCommand, qualificationExecutions, type ShellExecution } from '../security/commandParse';
 
 interface ImmediateAsk {
   decision: 'ask';
@@ -23,7 +23,11 @@ const PACKAGE_MANAGER_PROGRAMS = new Set(['npm', 'npx', 'pnpm', 'yarn']);
 
 export function inspectPermissionCommand(command: string, startTime: number): PermissionCommandInspection {
   const parsed = parseShellCommand(command);
-  const execution = parsed.executions.length === 1 ? parsed.executions[0] : undefined;
+  // Approval gates must inspect the command identity as written (with only the
+  // baseline bash/sh/zsh -c/-lc unwrap).  The broader parsed executions remain
+  // available to write-target extraction and must not grant B3/B4 shortcuts.
+  const qualified = qualificationExecutions(command);
+  const execution = qualified?.length === 1 ? qualified[0] : undefined;
   const parseDetail = parsed.parsingFailed || parsed.uncertain.length > 0
     ? parsed.failureReason ?? parsed.uncertain.join(', ')
     : undefined;

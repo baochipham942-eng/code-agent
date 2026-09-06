@@ -71,13 +71,19 @@ describe('shared parser automatic approval regressions', () => {
     expect(isKnownSafeCommand('bash ls -c "echo ok"')).toBe(false);
   });
 
-  it.each(['bash -c "echo ok"', 'bash -lc "echo ok"',
-    'bash --rcfile /dev/null -c "echo ok"', 'bash -o posix -c "echo ok"'])(
-    'unwraps command strings before any script operand: %s', (command) => {
+  it.each(['bash -c "echo ok"', 'bash -lc "echo ok"'])(
+    'unwraps only the baseline command-string forms: %s', (command) => {
       expect(parseShellCommand(command).executions).toEqual([
         expect.objectContaining({ program: 'echo', args: ['ok'] }),
       ]);
       expect(isKnownSafeCommand(command)).toBe(true);
+    },
+  );
+
+  it.each(['bash --rcfile /dev/null -c "echo ok"', 'bash -o posix -c "echo ok"',
+    'bash -ic "echo ok"', 'dash -c "echo ok"'])(
+    'does not grant approval through startup or non-baseline shell options: %s', (command) => {
+      expect(isKnownSafeCommand(command)).toBe(false);
     },
   );
 

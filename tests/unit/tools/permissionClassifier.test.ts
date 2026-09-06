@@ -301,6 +301,17 @@ describe('PermissionClassifier', () => {
     });
   });
 
+  it.each(["./bash -c 'cd .'", "bash --rcfile ./startup.sh -ic 'ls'"]) (
+    'does not let an unqualified shell identity inherit an approval shortcut: %s', async (command) => {
+      const result = await classifyPermission(
+        'bash',
+        { command },
+        { workingDirectory: '/tmp', permissionLevel: 'execute' },
+      );
+      expect(result.decision).toBe('ask');
+    },
+  );
+
   it('auto-approves internal delegation tools', async () => {
     for (const toolName of ['Task', 'spawn_agent', 'AgentSpawn']) {
       const result = await classifyPermission(

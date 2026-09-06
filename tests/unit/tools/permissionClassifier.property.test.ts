@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import fc from 'fast-check';
+import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
 import { bashCommandRequiresPermission, PermissionClassifier } from '../../../src/host/tools/permissionClassifier';
 import { setCommandPolicyRulesForTest } from '../../../src/host/tools/modules/shell/commandPolicy';
 
@@ -82,5 +85,100 @@ describe('permission classifier regex properties', () => {
         expect((await classify(`${respell(program, style)} file2_Aa`)).decision).toBe('ask');
       },
     ), { numRuns: 60, seed: 1637 });
+  });
+});
+
+type GeneratedShape = {
+  wrapper: 'none' | 'bash' | 'sh' | 'zsh' | 'dash' | 'env' | 'sudo' | 'xargs' | 'command' | 'exec' | 'nohup' | 'setsid' | 'custom';
+  pathPrefix: '' | './' | '../' | 'bin/' | '/tmp/' | '/usr/bin/';
+  assignment: '' | 'PATH=./bin' | 'LD_PRELOAD=/tmp/evil.so' | 'MODE=1' | 'A=1 B=2';
+  shellOption: '' | '-c' | '-lc' | '-ic' | '-i' | '--rcfile ./startup.sh' | '--init-file ./startup.sh' | '-o posix' | '--';
+  delimiter: '' | ';' | '&&' | '||' | '\n' | '|' | '# comment\n';
+  inner: 'ls' | 'git status' | 'chmod -R 777 ./data' | 'mystery-command' | 'rm -rf /';
+};
+
+const generatedShapeArbitrary: fc.Arbitrary<GeneratedShape> = fc.record({
+  wrapper: fc.constantFrom<GeneratedShape['wrapper']>(
+    'none', 'bash', 'sh', 'zsh', 'dash', 'env', 'sudo', 'xargs', 'command', 'exec', 'nohup', 'setsid', 'custom',
+  ),
+  pathPrefix: fc.constantFrom<GeneratedShape['pathPrefix']>('', './', '../', 'bin/', '/tmp/', '/usr/bin/'),
+  assignment: fc.constantFrom<GeneratedShape['assignment']>('', 'PATH=./bin', 'LD_PRELOAD=/tmp/evil.so', 'MODE=1', 'A=1 B=2'),
+  shellOption: fc.constantFrom<GeneratedShape['shellOption']>(
+    '', '-c', '-lc', '-ic', '-i', '--rcfile ./startup.sh', '--init-file ./startup.sh', '-o posix', '--',
+  ),
+  delimiter: fc.constantFrom<GeneratedShape['delimiter']>('', ';', '&&', '||', '\n', '|', '# comment\n'),
+  inner: fc.constantFrom<GeneratedShape['inner']>(
+    'ls', 'git status', 'chmod -R 777 ./data', 'mystery-command', 'rm -rf /',
+  ),
+});
+
+function quoteInner(inner: string): string {
+  return `'${inner.replaceAll("'", "'\\''")}'`;
+}
+
+function renderGeneratedShape(shape: GeneratedShape): string {
+  const executable = `${shape.pathPrefix}${shape.wrapper === 'custom' ? 'custom-launcher' : shape.wrapper}`;
+  let command: string;
+  if (shape.wrapper === 'none') {
+    command = `${shape.assignment ? `${shape.assignment} ` : ''}${shape.pathPrefix}${shape.inner}`;
+  } else if (shape.wrapper === 'bash' || shape.wrapper === 'sh' || shape.wrapper === 'zsh' || shape.wrapper === 'dash') {
+    const option = shape.shellOption || '-c';
+    command = `${shape.assignment ? `${shape.assignment} ` : ''}${executable} ${option} ${quoteInner(shape.inner)}`;
+  } else {
+    command = `${shape.assignment ? `${shape.assignment} ` : ''}${executable}${shape.shellOption ? ` ${shape.shellOption}` : ''} ${shape.inner}`;
+  }
+  if (!shape.delimiter) return command;
+  const suffix = shape.delimiter === '# comment\n' ? 'ls' : 'ls';
+  return `${command} ${shape.delimiter}${suffix}`;
+}
+
+function fallbackBaselineDecision(command: string): 'approve' | 'deny' | 'ask' {
+  if (/rm\s+-rf\s+\/$/.test(command) || /chmod\s+-R\s+777/.test(command)) return 'deny';
+  if (command === 'ls' || command === 'git status' || command === 'bash -c \'ls\''
+    || command === 'sh -c \'ls\'' || command === 'zsh -c \'ls\'') return 'approve';
+  return 'ask';
+}
+
+async function baselineDecisions(commands: string[]): Promise<Array<'approve' | 'deny' | 'ask'>> {
+  const baseline = process.env.N_BASHAST_BASELINE ?? '/private/tmp/n-bashast-r9-baseline';
+  if (!fs.existsSync(path.join(baseline, 'src/host/tools/permissionClassifier.ts'))) {
+    return commands.map(fallbackBaselineDecision);
+  }
+  const runner = [
+    "import fs from 'node:fs';",
+    "import { PermissionClassifier } from './src/host/tools/permissionClassifier.ts';",
+    "import { setCommandPolicyRulesForTest } from './src/host/tools/modules/shell/commandPolicy.ts';",
+    "const commands = JSON.parse(fs.readFileSync(0, 'utf8'));",
+    'setCommandPolicyRulesForTest([]);',
+    'const classifier = new PermissionClassifier({ enableLlm: false });',
+    "Promise.all(commands.map((command) => classifier.classify('Bash', { command }, { workingDirectory: '/tmp', permissionLevel: 'execute' }))).then((results) => process.stdout.write(JSON.stringify(results.map(({ decision }) => decision))));",
+  ].join('\n');
+  const result = spawnSync('npx', ['tsx', '-e', runner], {
+    cwd: baseline,
+    input: JSON.stringify(commands),
+    encoding: 'utf8',
+    timeout: 120_000,
+  });
+  if (result.status !== 0) throw new Error(`baseline property runner failed: ${result.stderr}`);
+  return JSON.parse(result.stdout) as Array<'approve' | 'deny' | 'ask'>;
+}
+
+describe('final decision is never looser than the detached origin/main baseline', () => {
+  beforeEach(() => setCommandPolicyRulesForTest([]));
+
+  it('covers wrapper, path, assignment, shell-option, delimiter and inner-command dimensions', async () => {
+    const shapes = fc.sample(generatedShapeArbitrary, { numRuns: 140, seed: 1637 });
+    const commands = shapes.map(renderGeneratedShape);
+    const baseline = await baselineDecisions(commands);
+    await fc.assert(fc.asyncProperty(
+      fc.integer({ min: 0, max: commands.length - 1 }),
+      async (index) => {
+        const result = await new PermissionClassifier({ enableLlm: false }).classify(
+          'Bash', { command: commands[index] }, { workingDirectory: '/tmp', permissionLevel: 'execute' },
+        );
+        // The only forbidden direction is baseline ask/deny becoming approve.
+        if (result.decision === 'approve') expect(baseline[index]).toBe('approve');
+      },
+    ), { numRuns: commands.length, seed: 1637 });
   });
 });

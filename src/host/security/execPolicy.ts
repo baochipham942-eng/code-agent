@@ -13,7 +13,7 @@ import * as path from 'path';
 import { createLogger } from '../services/infra/logger';
 import { getProjectConfigDir, getUserConfigDir } from '../config/configPaths';
 import { canonicalizeCommand } from './canonicalizeCommand';
-import { isKnownSafeCommand } from './commandSafety';
+import { classifyCommand, isKnownSafeCommand } from './commandSafety';
 
 const logger = createLogger('ExecPolicy');
 
@@ -101,6 +101,12 @@ export function matchPolicyRule(
  * 两者同安全（cat x）或前缀自身就不安全（git push / npm install）⇒ true。
  */
 function prefixCarriesTheRisk(pattern: readonly string[], command: string): boolean {
+  // Use the command analyzer's execution semantics, not a second wrapper-name
+  // blacklist. Delegating the operation to later argv/stdin cannot carry its risk,
+  // including when an older policy file already contains this prefix.
+  if (classifyCommand(pattern.join(' ')) === 'delegated' || classifyCommand(command) === 'delegated') {
+    return false;
+  }
   return !(isKnownSafeCommand(pattern.join(' ')) && !isKnownSafeCommand(command));
 }
 

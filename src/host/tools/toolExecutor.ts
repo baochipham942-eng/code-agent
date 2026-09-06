@@ -23,6 +23,7 @@ import { getToolCache } from '../services/infra/toolCache';
 import { getSessionAutomationService } from '../services/sessionAutomation/sessionAutomationService';
 import { createLogger } from '../services/infra/logger';
 import { getAuditLogger, maskSensitiveData, isKnownSafeCommand, validateCommand, getShellSafetyMode, getExecPolicyStore, getPolicyEnforcer, type PolicyEnforcer, type PolicyCheckResult, type ValidationResult } from '../security';
+import { evaluateToolSlotDataDirAccess, FOREIGN_SLOT_DATA_DIR_CODE } from '../security/slotDataDirGuard';
 import { createFileCheckpointIfNeeded } from './middleware/fileCheckpointMiddleware';
 import { getFileCheckpointService } from '../services/checkpoint';
 import { getConfirmationGate } from '../agent/confirmationGate';
@@ -785,6 +786,41 @@ export class ToolExecutor {
       && params.working_directory.trim()
       ? nodePath.resolve(this.executionCwd, params.working_directory)
       : this.executionCwd;
+
+    // 槽隔离：默认拒读其它 CODE_AGENT_HOME / 数据目录槽。folder-trust 不管这件事。
+    // 放在审批之前，避免先弹确认再硬拒；Read/Glob/Grep/LS/Bash 都走这一处。
+    const slotAccess = evaluateToolSlotDataDirAccess(
+      executionToolName,
+      params,
+      isBashToolName(policyToolName) ? bashWorkingDirectory : this.executionCwd,
+    );
+    if (!slotAccess.allowed) {
+      logger.warn('Blocked by slot data dir isolation', {
+        toolName: executionToolName,
+        slotName: slotAccess.slotName,
+        slotRoot: slotAccess.slotRoot,
+      });
+      recordDecision(
+        executionToolName,
+        params,
+        'policy-deny',
+        slotAccess.reason,
+        Date.now(),
+        undefined,
+        effectiveSessionId,
+        this.ledgerOrigin,
+      );
+      return {
+        success: false,
+        error: slotAccess.reason,
+        metadata: {
+          code: FOREIGN_SLOT_DATA_DIR_CODE,
+          failureCode: AgentFailureCode.PermissionDenied,
+          slotName: slotAccess.slotName,
+          slotRoot: slotAccess.slotRoot,
+        },
+      };
+    }
 
     // Hard command denials precede every approval request, including uncertain memory writes.
     const permStartTime = Date.now();

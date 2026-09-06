@@ -542,24 +542,28 @@ export class ToolExecutor {
       // 🔴 逐个查，不是只查 targets[0]：targets 是**排序去重**后的数组，取第 0 个等于
       // 「按字母序挑一个」——同一次调用带两个路径参数时（一个在工作区内、一个在工作区外），
       // 排在前面的那个能把真正的越界目标遮住（#1686 ai-review）。
-      const candidates = resolvedTargets.length > 0 ? resolvedTargets : [this.executionCwd];
       const scope = this.runContext.workspaceScope;
-      const offending = candidates
-        .map((candidate) => ({ candidate, match: resolveWorkspacePath(scope, candidate, 'read') }))
-        .find(({ match }) => (this.restrictWritesToWorkspace && !match)
-          || (match && match.root.access !== 'read_write'));
-      const target = offending?.candidate ?? candidates[0];
-      const readableMatch = offending?.match;
-      if (offending) {
+      // 只读源判定**维持存量语义**（只看 targets[0]）：targets 里混着只读的*输入*路径，
+      // 逐个查会把「从只读源读、写到可写源」的正常操作判成写只读源
+      // （pdf_compress 那类，#1686 第四轮实测生产回归）。
+      const target = resolvedTargets[0] ?? this.executionCwd;
+      const readableMatch = resolveWorkspacePath(scope, target, 'read');
+      // 「落在工作区外」这一条才逐个查——它是严格档专有的判定，
+      // 且只有逐个查才挡得住「靠前的合法路径遮住靠后的越界目标」。
+      const outsideTarget = this.restrictWritesToWorkspace
+        ? (resolvedTargets.length > 0 ? resolvedTargets : [this.executionCwd])
+          .find((candidate) => !resolveWorkspacePath(scope, candidate, 'read'))
+        : undefined;
+      if (outsideTarget !== undefined || (readableMatch && readableMatch.root.access !== 'read_write')) {
         return {
           success: false,
-          error: readableMatch
-            ? `Project Source is read-only: ${readableMatch.root.path}`
-            : 'Write target is outside the writable workspace of this run.',
+          error: outsideTarget !== undefined
+            ? `Write target is outside the writable workspace of this run: ${outsideTarget}`
+            : `Project Source is read-only: ${readableMatch?.root.path}`,
           metadata: {
-            code: readableMatch ? 'PROJECT_SOURCE_READ_ONLY' : 'PROJECT_SOURCE_OUTSIDE_WORKSPACE',
+            code: outsideTarget !== undefined ? 'PROJECT_SOURCE_OUTSIDE_WORKSPACE' : 'PROJECT_SOURCE_READ_ONLY',
             projectId: this.runContext.workspaceScope.projectId,
-            ...(readableMatch ? {
+            ...(outsideTarget === undefined && readableMatch ? {
               sourceId: readableMatch.root.sourceId,
               sourceRole: readableMatch.root.role,
               sourceAccess: readableMatch.root.access,

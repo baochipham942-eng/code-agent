@@ -171,7 +171,9 @@ describe('条件①：makeAgent 真读真传到 ToolExecutor 与 goal 契约', (
     });
     await adapter.sendMessage('run');
     const config = capturedToolExecutorConfigs.at(-1);
-    expect(config?.restrictWritesToWorkspace).toBe(true);
+    // 分段上线：机制已接、评测侧暂不打开（见 agentAdapter 注释与 N-EVAL-POLICY-WRITE-BOUNDARY-ENABLE）。
+    // 这条断言钉的是「现在是关的」——哪天改成 true，它会红，逼改的人回去读那张单的前置条件。
+    expect(config?.restrictWritesToWorkspace).toBe(false);
     // AgentLoop 不给 runId 会自己造一个，传到 executor 撞 RUN_CONTEXT_MISMATCH
     // ⇒ 评测里每次工具调用都被拒（#1686 ai-review）。两端必须同值。
     expect(capturedLoopConfigs.at(-1)?.runId).toBe(config?.runContext?.runId);

@@ -641,9 +641,15 @@ export class StandaloneAgentAdapter implements AgentInterface {
         forcePermissionHandler: this.requestPermission !== undefined,
         workingDirectory: evaluationRunContext.cwd,
         runContext: evaluationRunContext,
-        // 沙箱是这轮唯一该被写的地方：写目标落不进 scope 就拒，不靠 scripted 策略
-        // （策略只按 (tool, requestType) 裁决，表达不了路径）。
-        restrictWritesToWorkspace: true,
+        // 🔴 分段上线：机制先合，评测侧**暂不打开**（N-EVAL-POLICY-WRITE-BOUNDARY-ENABLE）。
+        // #1686 四轮 ai-review 一共照出 8 处，最后两轮说明它还没到能打开的程度：
+        //   ① 真实子代理走 subagentToolRuntime.ts:34 自己 new ToolExecutor，不经 forRun ⇒
+        //      父代理开了边界、子调用照样绕过。全仓 7 个构造点，逐个接上前，
+        //      这道边界给的是「以为拦住了」的假安全，比不开更坏。
+        //   ② 合法写入目的地还没枚举完（记忆目录是第二轮才发现的；产物、日志、缓存未核）。
+        //      漏一个就把产品正常能力记成评测失败——评测自造假阴性。
+        // 打开的前置条件写在那张单里；这里改成 true 之前先跑一遍全 held-in 真跑对照。
+        restrictWritesToWorkspace: false,
         ledgerOrigin: 'eval',
         telemetryCollector,
         // ORCHARM：run 级 spawn 深度上限。缺省 undefined ⇒ SpawnGuard 生产默认；

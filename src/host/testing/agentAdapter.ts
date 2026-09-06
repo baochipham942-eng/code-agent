@@ -32,6 +32,7 @@ import type { ScopedCostRecorder } from '../services/core/scopedCostLimit';
 import path from 'node:path';
 import { createRunContext } from '../runtime/runContext';
 import { createWorkspaceScope } from '../runtime/workspaceScope';
+import { getMemoryDir } from '../lightMemory/indexLoader';
 
 const logger = createLogger('AgentAdapter');
 
@@ -594,12 +595,27 @@ export class StandaloneAgentAdapter implements AgentInterface {
       // Evaluation sandboxes are the sole writable Project Source for the run.
       // Supplying the run context here turns on ToolExecutor's existing
       // path-aware write boundary (including ../ and symlink canonicalization).
-      const evaluationScope = createWorkspaceScope('eval-sandbox', [{
-        sourceId: 'eval-sandbox-root',
-        path: this.workingDirectory,
-        access: 'read_write',
-        role: 'primary',
-      }]);
+      // 两个可写根，缺一不可：
+      // ① 工作沙箱——题目产物落这里；
+      // ② 隔离数据目录下的记忆目录——MemoryWrite 的目标由 writeTargets.ts:252 解析成
+      //    `<CODE_AGENT_DATA_DIR>/memory/<file>`，不在沙箱里。少了它，开着记忆的评测题
+      //    正常的 MemoryWrite 会被判 PROJECT_SOURCE_OUTSIDE_WORKSPACE，
+      //    把「产品能力正常」记成一次失败（#1686 ai-review 第二轮）。
+      // 只放记忆目录、不放整个数据目录：边界该多窄就多窄。
+      const evaluationScope = createWorkspaceScope('eval-sandbox', [
+        {
+          sourceId: 'eval-sandbox-root',
+          path: this.workingDirectory,
+          access: 'read_write',
+          role: 'primary',
+        },
+        {
+          sourceId: 'eval-memory-root',
+          path: getMemoryDir(),
+          access: 'read_write',
+          role: 'additional',
+        },
+      ]);
       // createRunContext 会 canonicalize cwd（macOS 上 /tmp → /private/tmp）。
       // ToolExecutor 构造期会校验 workingDirectory 与 runContext.cwd 一致（toolExecutor.ts:361），
       // 所以下面两处都必须用它算出来的那一份，不能一个用原始路径一个用规范化路径。

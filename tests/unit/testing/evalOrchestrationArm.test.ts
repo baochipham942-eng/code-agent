@@ -26,6 +26,9 @@ import {
   createCompareAgent,
 } from '../../../src/host/testing/comparator/compareAgentFactory';
 import { realpathSync } from 'node:fs';
+import path from 'node:path';
+import { getMemoryDir } from '../../../src/host/lightMemory/indexLoader';
+import { resolveCanonicalRunPath } from '../../../src/host/runtime/runContext';
 import { StandaloneAgentAdapter } from '../../../src/host/testing/agentAdapter';
 import type { AgentEvent } from '../../../src/shared/contract';
 import type { CompareConfiguration } from '../../../src/host/testing/types';
@@ -175,8 +178,16 @@ describe('条件①：makeAgent 真读真传到 ToolExecutor 与 goal 契约', (
     const roots = config?.runContext?.workspaceScope?.roots;
     // scope 根会被 canonicalize（/tmp → /private/tmp），比对时同样取 realpath，
     // 否则这条断言在 macOS 上恒红、在 Linux 上恒绿——两边都不是在测它想测的东西。
-    expect(roots?.map((root) => ({ path: root.path, access: root.access })))
-      .toEqual([{ path: realpathSync('/tmp'), access: 'read_write' }]);
+    // 两个可写根：工作沙箱 + 记忆目录（MemoryWrite 的目标不在沙箱里，
+    // 少了第二个，开着记忆的评测题正常写记忆会被判越界 —— #1686 第二轮）。
+    // 记忆目录在单测环境里可能还不存在，所以只断「是第二个可写根 + 落在 memory 目录」，
+    // 不 realpath 它（realpathSync 对不存在的路径会抛，那是环境噪音不是被测行为）。
+    expect(roots).toHaveLength(2);
+    expect(roots?.[0]).toMatchObject({ path: realpathSync('/tmp'), access: 'read_write' });
+    expect(roots?.[1]?.access).toBe('read_write');
+    // createWorkspaceScope 会 canonicalize（/var → /private/var），这里用同一把尺子比：
+    // 断言它就是「记忆目录规范化后的那个路径」，而不是原始字面量。
+    expect(roots?.[1]?.path).toBe(resolveCanonicalRunPath(getMemoryDir()));
   });
 
   it('没配 orchestration 时不给 ToolExecutor 传 spawnMaxDepth（存量行为零变化）', async () => {

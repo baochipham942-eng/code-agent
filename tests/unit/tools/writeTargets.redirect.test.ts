@@ -7,7 +7,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import path from 'path';
-import { resolveToolWriteTargets } from '../../../src/host/tools/writeTargets';
+import { resolveToolWriteTargets, staticShellCommandShape } from '../../../src/host/tools/writeTargets';
 import { resolveCanonicalRunPath } from '../../../src/host/runtime/runContext';
 import type { ToolDefinition } from '../../../src/shared/contract/tool';
 
@@ -30,6 +30,22 @@ function resolve(command: string) {
 const outTxt = resolveCanonicalRunPath(path.join(workingDirectory, 'out.txt'));
 
 describe('shell redirect write targets', () => {
+  it('静态词形保留 Unicode 可执行名，不做命令匹配用的 NFKC/零宽折叠', () => {
+    expect(staticShellCommandShape('MODE=1 t​ee /tmp/outside.txt')).toEqual({
+      words: ['MODE=1', 't​ee', '/tmp/outside.txt'],
+      leadingAssignmentCount: 1,
+    });
+    expect(staticShellCommandShape('M""ODE=1 tee /tmp/outside.txt')).toEqual({
+      words: ['MODE=1', 'tee', '/tmp/outside.txt'],
+      leadingAssignmentCount: 0,
+    });
+  });
+
+  it('ANSI-C 路径转义只解码转义，不规范化相邻 Unicode', () => {
+    expect(resolve("printf ok > /tmp/$'\\x72'ｅport.txt").targets)
+      .toContain(resolveCanonicalRunPath('/tmp/rｅport.txt'));
+  });
+
   it.each([
     'echo hi 2>&1',
     'git status 2>&1',
@@ -53,6 +69,15 @@ describe('shell redirect write targets', () => {
     expect(resolve('cmd >&12abc').targets)
       .toContain(resolveCanonicalRunPath(path.join(workingDirectory, '12abc')));
   });
+
+  it('按 shell 词语义解码部分引号与转义后的重定向目标', () => {
+    expect(resolve('echo hi > "/tmp"/outside.txt').targets)
+      .toContain(resolveCanonicalRunPath('/tmp/outside.txt'));
+    expect(resolve('echo hi > /tmp/outside\\ file.txt').targets)
+      .toContain(resolveCanonicalRunPath('/tmp/outside file.txt'));
+    expect(resolve('echo hi > /tmp/ｗork/out.txt').targets)
+      .toContain(resolveCanonicalRunPath('/tmp/ｗork/out.txt'));
+  });
 });
 
 /**
@@ -68,6 +93,11 @@ describe('cp / mv / tee 的写目标', () => {
     ['tee -a /etc/x', '/etc/x'],
     ['MODE=1 tee /etc/x', '/etc/x'],
     ['A=1 B=2 tee /etc/x', '/etc/x'],
+    ['MODE=1 t""ee /etc/x', '/etc/x'],
+    ['tee "/etc"/x', '/etc/x'],
+    ['tee /etc/escaped\\ file', '/etc/escaped file'],
+    ['tee \'/tmp/"work"/out.txt\'', '/tmp/"work"/out.txt'],
+    ['tee -- -/../../outside.txt', '/tmp/outside.txt'],
     ['echo hi | tee /etc/x', '/etc/x'],
     ['cp a "/etc/x"', '/etc/x'],
     ['cd /tmp && cp a /etc/x', '/etc/x'],

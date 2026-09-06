@@ -5,10 +5,10 @@ import {
   HostReasonCode,
 } from '../../shared/contract/permission';
 import { resolveCanonicalRunPath } from '../runtime/runContext';
-import { commandWords, splitCompoundCommand } from '../security/commandSafety';
+import { splitCompoundCommand } from '../security/commandSafety';
 import { createTraceStep } from '../security/decisionTraceBuilder';
 import type { ClassificationResult } from './permissionClassifier';
-import { shellWriteTargets } from './writeTargets';
+import { shellWriteTargets, staticShellCommandShape } from './writeTargets';
 
 interface WorkspaceWriteContext {
   workingDirectory: string;
@@ -16,7 +16,6 @@ interface WorkspaceWriteContext {
   pathResolutionCache?: Map<string, string>;
 }
 
-const ORDINARY_SHELL_ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
 const EXECUTION_SENSITIVE_ASSIGNMENT = /^(?:PATH|IFS|ENV|BASH_ENV|SHELLOPTS|LD_[A-Za-z0-9_]*|DYLD_[A-Za-z0-9_]*)=/;
 
 function commandProgram(word: string | undefined): string {
@@ -104,9 +103,9 @@ export function classifyProvenWorkspaceWrite(
   startTime: number,
 ): ClassificationResult | null {
   if (hasUnsupportedShellControl(command)) return null;
-  const words = commandWords(command) ?? [];
-  let programIndex = 0;
-  while (ORDINARY_SHELL_ASSIGNMENT.test(words[programIndex] ?? '')) programIndex += 1;
+  const shape = staticShellCommandShape(command);
+  const words = shape?.words ?? [];
+  const programIndex = shape?.leadingAssignmentCount ?? 0;
   const assignments = words.slice(0, programIndex);
   const program = commandProgram(words[programIndex]);
   const supportedShape = (program === 'printf' && assignments.length === 0)
@@ -117,7 +116,12 @@ export function classifyProvenWorkspaceWrite(
 
   const rawTargets = shellWriteTargets(command);
   if (rawTargets.length === 0) return null;
-  const dynamicTarget = rawTargets.find((target) => !target || /[$`*?{}]/.test(target));
+  const dynamicTarget = rawTargets.find((target) => (
+    !target
+    || /[$`*?{}[\]()!^#<>]/.test(target)
+    || target.includes('~')
+    || target.startsWith('=')
+  ));
   if (dynamicTarget) return outsideWorkspace(`写入目标无法静态确认: ${dynamicTarget}`, startTime);
   if (!context.workspaceRoot) return outsideWorkspace('缺少工作区写入边界', startTime);
 

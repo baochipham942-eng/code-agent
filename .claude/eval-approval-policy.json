@@ -114,8 +114,8 @@
       }
     },
     {
-      "id": "allow-image_process-in-eval-workspace",
-      "effect": "allow",
+      "id": "deny-image_process-in-eval-workspace",
+      "effect": "deny",
       "tool": "image_process",
       "match": {
         "requestType": "file_write"

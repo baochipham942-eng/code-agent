@@ -282,7 +282,8 @@ describe('builtin plugin request chain', () => {
     await expect(handler(request)).resolves.toMatchObject({ approved: true, approvalSource: 'scripted' });
   });
 
-  // #1670 ai-review：browser_action / Browser 的参数面里有 analyze:true —— 截图会被上传到云端视觉模型
+  // #1670 ai-review：browser_action / Browser 的参数面里有 analyze:true（截图上传云端视觉模型），
+  // image_process 的 output_path 直接进 sharp.toFile() 没有工作区边界（能覆盖沙箱外的真实文件）——
   // （browserAction.ts 的 analyzeImageWithVision）。策略只按 (tool, requestType) 裁决、表达不了参数级，
   // 所以整条 deny；这条断言钉住"别哪天顺手把它放回 allow"。
   it('denies browser_action: its parameter surface reaches cloud vision (analyze:true)', async () => {
@@ -291,7 +292,7 @@ describe('builtin plugin request chain', () => {
     process.env.CODE_AGENT_DATA_DIR = path.join(tempDir, 'isolated-data');
     process.env.CODE_AGENT_EVAL_BRIDGE = '1';
     const handler = requireScriptedRunPermissionHandler()!;
-    for (const tool of ['browser_action', 'Browser'] as const) {
+    for (const tool of ['browser_action', 'Browser', 'image_process'] as const) {
       await expect(handler({
         type: 'command', tool, details: { action: 'screenshot', analyze: true },
       } as never)).resolves.toMatchObject({ approved: false, denialSource: 'scripted' });

@@ -548,7 +548,7 @@ ContextAssembly 每轮推理前注入两类子代理信息：
 
 ## 模型路由决策（ADR-019，2026-06-03）
 
-ContextAssembly 每轮推理前要决定"这一轮用哪个模型"。此前存在两套互不感知的选择系统 + 两条引擎行为不一致 + adaptive 标志泄漏，[ADR-019](../decisions/019-auto-mode-scope.md) 把它收口成单一决策入口。
+ContextAssembly 每轮推理前要决定"这一轮用哪个模型"。此前存在两套互不感知的选择系统 + 两条引擎行为不一致 + adaptive 标志泄漏，[ADR-019](../ARCHITECTURE.md#19-adr-索引) 把它收口成单一决策入口。
 
 ### 单一决策入口 resolveModelDecision
 
@@ -564,7 +564,7 @@ ContextAssembly 每轮推理前要决定"这一轮用哪个模型"。此前存�
 
 ### 计费语义四分类
 
-替代不可维护的"价格感知路由"。`BillingMode` = `free` / `plan` / `payg` / `unknown`，区分"市场价"（全局常量）与"用户的计费方式"（用户配置）。`resolveProviderBillingMode()` 优先读用户设置，缺省时普通 provider 取 `payg`、动态 custom provider 取 `unknown`。详见 [模型配置指南](../guides/model-config.md#计费语义四分类adr-019-决策-42026-06-03)。
+替代不可维护的"价格感知路由"。`BillingMode` = `free` / `plan` / `payg` / `unknown`，区分"市场价"（全局常量）与"用户的计费方式"（用户配置）。`resolveProviderBillingMode()` 优先读用户设置，缺省时普通 provider 取 `payg`、动态 custom provider 取 `unknown`。详见 [模型适配边界](../ARCHITECTURE.md#11-模型适配层)。
 
 ### 角色档位去硬编码
 
@@ -578,7 +578,7 @@ subagent 角色映射到抽象档位（`fast` / `balanced` / `powerful`），`re
 
 ## 上下文组装加固（极客时间差距修复，2026-06-02）
 
-这一轮把 ContextAssembly 的"注入什么、注入多少、超额怎么办"补成可解释的闭环。详见 [极客时间差距修复 spec](../specs/2026-06-02-geektime-gap-remediation.md)。
+这一轮把 ContextAssembly 的"注入什么、注入多少、超额怎么办"补成可解释的闭环。详见 [极客时间差距修复历史批次](../releases/architecture-changelog.md)。
 
 ### Git 上下文 env block（GAP-010，PR #194）
 
@@ -844,7 +844,7 @@ GAP-009 的"落盘后截断"进一步升级为**可寻址归档 + 按需回水**
 
 ## Turn-Based 消息流架构
 
-> 详见 ADR: [001-turn-based-messaging.md](../decisions/001-turn-based-messaging.md)
+> 详见 ADR: [ADR-001 历史索引](../ARCHITECTURE.md#19-adr-索引)
 
 **设计来源**: 借鉴 Vercel AI SDK 和 LangGraph 的最佳实践
 
@@ -948,7 +948,7 @@ planning/
 
 **Stop hook 完成闸 + PostToolUse 自修复**（GAP-006+014，PR #196）：
 
-对齐 Claude Code 的 hook 协议，让 hook 不只是观察，还能驱动 agent 继续工作和自修复。详见 [极客时间差距修复 spec](../specs/2026-06-02-geektime-gap-remediation.md)。
+对齐 Claude Code 的 hook 协议，让 hook 不只是观察，还能驱动 agent 继续工作和自修复。详见 [极客时间差距修复历史批次](../releases/architecture-changelog.md)。
 
 - **Stop hook 完成闸**：Stop hook 返回 block 时 agent 不直接停，而是继续工作（把 block 的 reason 当作未完成信号回灌）。`stopHookActive` 标记防止重入死循环，`STOP_HOOK.USER_MAX_RETRIES` 作为安全阀限制强制继续的次数。
 - **CC 兼容协议**：`scriptExecutor` 解析 hook 脚本 JSON 输出的 `decision`（`block`）/ `reason` 以及 `additionalContext`（兼容顶层字段与 CC 的 `hookSpecificOutput.additionalContext` 嵌套格式）。
@@ -963,7 +963,7 @@ planning/
 
 **位置**: `src/host/agent/antiPattern/detector.ts`
 
-**功能**: 检测 AI 陷入无限只读循环的情况，是[反循环防御三层](../ARCHITECTURE.md)（见「2026-06-06 ~ 06-07 新增模块」章节）中的 **L2**。
+**功能**: 检测 AI 陷入无限只读循环的情况，是[反循环防御三层](../ARCHITECTURE.md#12-prompt--agent--工具契约)（历史批次见 [架构流水](../releases/architecture-changelog.md#2026-06-06--06-07-新增模块--反循环防御三层补全--发行更新基建--配置热重载)）中的 **L2**。
 
 **检测规则**（连续**只读操作**计数，写工具 / Bash / `markSemanticProgress` 清零）：
 
@@ -974,7 +974,7 @@ planning/
 | **HARD_LIMIT** | 15 次 | 连续 15 次只读 | preflight 阻断该工具 + `activateForceFinalResponse`，把"基于已有证据直接输出结论"作为工具结果回灌，强制模型收尾 |
 
 **只读工具范围**（`loopTypes.ts` 的 `READ_ONLY_TOOLS`）：`read_file`/`Read`、`glob`、`grep`、`list_directory`，以及联网读取 `web_fetch`/`WebFetch`/`web_search`/`WebSearch`。
-> ⚠️ 2026-06-07 修复：`WebSearch`/`WebFetch` 之前漏在集合外（模型实发 PascalCase），导致弱模型反复联网重搜时 L2 完全不计数，run 被中断后 0 条 assistant 落库 → 空白"待处理"会话。新增无界只读工具时务必同步登记（PascalCase + snake_case 别名都加）。详见 [troubleshooting.md「普通对话里反复 WebSearch 不收敛」](../guides/troubleshooting.md)。
+> ⚠️ 2026-06-07 修复：`WebSearch`/`WebFetch` 之前漏在集合外（模型实发 PascalCase），导致弱模型反复联网重搜时 L2 完全不计数，run 被中断后 0 条 assistant 落库 → 空白"待处理"会话。新增无界只读工具时务必同步登记（PascalCase + snake_case 别名都加）。详见 [排障地图](./debugging-map.md)。
 
 **L3 — 语义重搜检测**（`src/host/agent/runtime/stagnationDetector.ts` 的 `pushAndDetectToolSpam`）：L2 按"只读 op 数"计数抓不住"换关键词重搜同一意图"（args 变→旧 fingerprint 变），L3 改按**工具名**计数——同一检索类工具（WebSearch/WebFetch/ToolSearch）在 6 次窗口内 ≥4 次即注入一次软提示，引导用现有结果作答或如实说明限制。L2（防"读不停"）与 L3（防"换词重搜"）正交互补。
 

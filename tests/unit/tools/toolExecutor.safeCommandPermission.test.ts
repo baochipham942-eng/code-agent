@@ -80,7 +80,7 @@ describe('ToolExecutor Bash 安全命令单一判据', () => {
     expect(existsSync(target)).toBe(true);
   });
 
-  it('printf 重定向必须请求一次审批，拒绝后命令失败且文件不存在', async () => {
+  it('带引号的工作区重定向请求审批，拒绝后不写入', async () => {
     const target = path.join(workspace, 'printf-output.txt');
     const command = `printf 'x' > ${JSON.stringify(target)}`;
     const executor = buildRejectingExecutor();

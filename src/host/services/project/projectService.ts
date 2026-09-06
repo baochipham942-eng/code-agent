@@ -59,7 +59,7 @@ import { getProjectSourceGitStates } from '../git/gitStatusService';
 const logger = createLogger('ProjectService');
 
 function sourceTrustFailureKind(
-  source: Pick<ProjectSource, 'trustState' | 'identityDev' | 'identityIno'>,
+  source: Pick<ProjectSource, 'trustState' | 'identityDev' | 'identityIno' | 'identityBirthtimeNs'>,
   identity: ReturnType<typeof workspacePathIdentity>,
 ): ProjectSourceTrustFailureKind | undefined {
   if (identity.dev === null || identity.ino === null) return 'source_missing';
@@ -390,6 +390,7 @@ function buildSource(
     trustState: input.trustState ?? existing?.trustState ?? 'blocked',
     identityDev: identity.dev,
     identityIno: identity.ino,
+    identityBirthtimeNs: identity.birthtimeNs,
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
   };
@@ -670,6 +671,7 @@ export class ProjectService {
       access: source.access,
       identityDev: source.identityDev,
       identityIno: source.identityIno,
+      identityBirthtimeNs: source.identityBirthtimeNs,
     })));
     // 存量数据库可能已含 #1075 前静默铸造的 $HOME 项目。派生 scope 时重新走同一份
     // 宽度校验，保证这些行即便还在库中也绝不会成为 run 的写边界。
@@ -699,10 +701,10 @@ export class ProjectService {
       const isUnchangedTrustedSource = !!existing
         && existing.canonicalPath === source.canonicalPath
         && existing.trustState === 'trusted'
-        && existing.identityDev !== null
-        && existing.identityIno !== null
-        && existing.identityDev === source.identityDev
-        && existing.identityIno === source.identityIno;
+        && workspaceIdentityMatches(existing, {
+          dev: source.identityDev ?? null, ino: source.identityIno ?? null,
+          birthtimeNs: source.identityBirthtimeNs ?? null,
+        });
       if (!isUnchangedTrustedSource) {
         const trust = await evaluateFolderTrust(source.canonicalPath);
         if (trust.state !== 'trusted' || trust.identityChanged) {

@@ -1,3 +1,4 @@
+import { folderIdentityMatches } from '../security/folderIdentity';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { lstatSync, readlinkSync, realpathSync, statSync } from 'node:fs';
@@ -45,27 +46,23 @@ export function canonicalizeWorkspacePath(input: string, depth = 0): string {
   return realpathSync.native(cursor);
 }
 
-export function workspacePathIdentity(input: string): { dev: string | null; ino: string | null } {
+export function workspacePathIdentity(input: string): { dev: string | null; ino: string | null; birthtimeNs: string | null } {
   try {
-    const stat = statSync(canonicalizeWorkspacePath(input));
-    return { dev: String(stat.dev), ino: String(stat.ino) };
+    const stat = statSync(canonicalizeWorkspacePath(input), { bigint: true });
+    return { dev: String(stat.dev), ino: String(stat.ino),
+      birthtimeNs: stat.birthtimeNs > 0n ? String(stat.birthtimeNs) : null };
   } catch {
-    return { dev: null, ino: null };
+    return { dev: null, ino: null, birthtimeNs: null };
   }
 }
 
-/**
- * 项目源身份只比较 inode，不比较 dev。2026-07-26 在 macOS 上实测同一 inode、同一 APFS 卷的
- * dev 从 16777233 变为 16777229；dev minor 会随挂载顺序重编，参与门禁会让用户重启后首次运行项目作用域任务全部失败。
- */
+/** Reuse Folder Trust's incarnation predicate, including fail-closed missing snapshots. */
 export function workspaceIdentityMatches(
-  storedIdentity: Pick<WorkspaceRoot, 'identityDev' | 'identityIno'>,
+  storedIdentity: Pick<WorkspaceRoot, 'identityDev' | 'identityIno' | 'identityBirthtimeNs'>,
   currentIdentity: ReturnType<typeof workspacePathIdentity>,
 ): boolean {
-  const storedIno = storedIdentity.identityIno ?? null;
-  return storedIno !== null
-    && currentIdentity.ino !== null
-    && storedIno === currentIdentity.ino;
+  return folderIdentityMatches({ ino: storedIdentity.identityIno,
+    birthtimeNs: storedIdentity.identityBirthtimeNs }, currentIdentity);
 }
 
 export function isPathWithinRoot(candidate: string, root: string): boolean {
@@ -114,6 +111,7 @@ export function createWorkspaceScope(projectId: string, inputRoots: readonly Wor
       root.access,
       root.identityDev ?? '',
       root.identityIno ?? '',
+      root.identityBirthtimeNs ?? '',
     ].join('\u0000'))
     .join('\u0001');
   const version = createHash('sha256').update(versionPayload).digest('hex');

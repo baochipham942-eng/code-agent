@@ -1383,6 +1383,7 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
       UNIQUE(project_id, canonical_path)
     )
   `);
+  safeAlter(db, `ALTER TABLE project_sources ADD COLUMN identity_birthtime_ns TEXT`, logger);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_project_sources_project ON project_sources(project_id)`);
   db.exec(`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_project_sources_single_primary

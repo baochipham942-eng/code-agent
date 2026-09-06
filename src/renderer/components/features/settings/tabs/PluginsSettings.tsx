@@ -664,14 +664,12 @@ export const PluginsSettings: React.FC = () => {
                           >
                             {pluginsText.marketplace.cancelInstall}
                           </Button>
-                          <Button variant="secondary" size="sm" disabled>
-                            <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                          <Button variant="secondary" size="sm" loading>
                             {pluginsText.marketplace.installing}
                           </Button>
                         </div>
                       ) : installStates[spec] === 'cancelling' ? (
-                        <Button variant="secondary" size="sm" disabled>
-                          <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                        <Button variant="secondary" size="sm" loading>
                           {pluginsText.marketplace.cancelling}
                         </Button>
                       ) : (

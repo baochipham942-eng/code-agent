@@ -63,10 +63,17 @@ export const EvalExperimentResult: React.FC<{
   const compare = getExperimentCompareSummary(detail.experiment);
   const config = getExperimentCompareConfig(detail.experiment);
   const verdict = compare?.shipGate;
+  const effectiveArms = useMemo(() => {
+    if (!config) return null;
+    return {
+      baseline: resolveEffectiveEvalCompareArm(config.baseline, config.baseline),
+      candidate: resolveEffectiveEvalCompareArm(config.candidate, config.baseline),
+    };
+  }, [config]);
   const dimensions = useMemo(() => {
     if (!config) return [];
-    const baseline = resolveEffectiveEvalCompareArm(config.baseline, config.baseline);
-    const candidate = resolveEffectiveEvalCompareArm(config.candidate, config.baseline);
+    const baseline = effectiveArms!.baseline;
+    const candidate = effectiveArms!.candidate;
     const formatHarnessValue = (arm: typeof baseline, key: (typeof EVAL_HARNESS_DIMENSIONS)[number]) => {
       if (key === 'toolMode') return labels.toolModes[arm.harness?.toolMode ?? 'all'];
       return arm.harness?.[key] ? labels.enabled : labels.disabled;
@@ -88,15 +95,15 @@ export const EvalExperimentResult: React.FC<{
       const before = displayValue(left); const after = displayValue(right);
       return `${label}: ${before === after ? labels.same : `${before} → ${after}`}`;
     });
-  }, [config, labels]);
+  }, [config, effectiveArms, labels]);
   // N-EVAL-MEMORY「挂了≠用了」：实验组开了长期记忆、但候选臂一次都没注入过 ⇒
   // 这一轮的胜负跟记忆无关，摘要行必须自己说出来（§6：只提示，不排除 pair）。
   const memoryNotUsed = useMemo(() => {
     if (!config) return false;
-    const candidate = resolveEffectiveEvalCompareArm(config.candidate, config.baseline);
-    if (!candidate.memory.longTerm) return false;
+    const { baseline, candidate } = effectiveArms!;
+    if (!candidate.memory.longTerm || baseline.memory.longTerm === candidate.memory.longTerm) return false;
     return detail.cases.every((item) => (item.data?.memoryInjections?.candidate ?? 0) === 0);
-  }, [config, detail.cases]);
+  }, [config, detail.cases, effectiveArms]);
   const rows = useMemo(() => detail.cases.filter((item) => {
     if (filter === 'all') return true;
     if (filter === 'excluded') return Boolean(item.data?.excludedReason);
@@ -107,7 +114,7 @@ export const EvalExperimentResult: React.FC<{
   if (!verdict || !compare) {
     return (
       <div className="p-4">
-        <Button variant="ghost" size="sm" onClick={onBack}><ArrowLeft className="mr-1 h-4 w-4" />{labels.back}</Button>
+        <Button variant="ghost" size="sm" onClick={onBack} leftIcon={<ArrowLeft className="h-4 w-4" />}>{labels.back}</Button>
         <div className="mt-4 rounded-lg bg-zinc-900 p-4 text-sm text-zinc-400">{labels.noPairs}</div>
       </div>
     );
@@ -118,19 +125,23 @@ export const EvalExperimentResult: React.FC<{
   //  ⇒ 结论不说明扇出的效果。判据要的是「这次实验是冲着扇出去的」，
   // 不是「理论上允许扇出」——后者对每个实验都成立，那句提示就成了噪音。
   const candidateOrchestration = config?.candidate.orchestration
-    ? resolveEffectiveEvalCompareArm(config.candidate, config.baseline).orchestration
+    ? effectiveArms?.candidate.orchestration ?? null
     : null;
+  const baselineOrchestration = effectiveArms?.baseline.orchestration;
   const candidateSpawnTotal = detail.cases.reduce(
     (total, item) => total + (item.data?.subagentSpawns?.candidate ?? 0),
     0,
   );
   const subagentNotUsed = candidateOrchestration !== null
+    && baselineOrchestration !== undefined
+    && (candidateOrchestration.allowSwarm !== baselineOrchestration.allowSwarm
+      || candidateOrchestration.spawnMaxDepth !== baselineOrchestration.spawnMaxDepth)
     && candidateOrchestration.spawnMaxDepth !== 0
     && candidateSpawnTotal === 0;
   const notMeasured = verdict.hardGate.items.filter((item) => item.status === 'not_measured').map((item) => item.key);
   return (
     <div className="min-h-0 flex-1 overflow-y-auto bg-zinc-950 p-4" data-testid="eval-experiment-result">
-      <Button variant="ghost" size="sm" onClick={onBack}><ArrowLeft className="mr-1 h-4 w-4" />{labels.back}</Button>
+      <Button variant="ghost" size="sm" onClick={onBack} leftIcon={<ArrowLeft className="h-4 w-4" />}>{labels.back}</Button>
       {failCount > 0 && (
         <div className="mt-3 rounded-lg bg-badge-danger px-4 py-2 text-sm text-badge-danger" role="alert">
           {replace(labels.safetyLine, { n: failCount })}
@@ -164,9 +175,15 @@ export const EvalExperimentResult: React.FC<{
 
       <div className="mt-3 flex flex-wrap gap-2" aria-label="pair filters">
         {(Object.keys(labels.filters) as PairFilter[]).map((key) => (
-          <Button key={key} variant={filter === key ? 'secondary' : 'ghost'} size="sm" onClick={() => setFilter(key)} data-testid={`experiment-filter-${key}`}>
-            {key === 'candidate' && <ThumbsUp className="mr-1 h-3.5 w-3.5" />}
-            {key === 'baseline' && <ThumbsDown className="mr-1 h-3.5 w-3.5" />}
+          <Button
+            key={key} variant={filter === key ? 'secondary' : 'ghost'} size="sm"
+            onClick={() => setFilter(key)} data-testid={`experiment-filter-${key}`}
+            // 图标必须走 leftIcon：Button 把 children 整个塞进一个普通 <span>
+            // （primitives/Button.tsx:132），图标当 children 传就跟文字挤在同一个非 flex 容器里，
+            // 而 preflight 给 svg 设了 display:block ⇒ 图标掉到文字上一行，按钮变成上下布局。
+            leftIcon={key === 'candidate' ? <ThumbsUp className="h-3.5 w-3.5" />
+              : key === 'baseline' ? <ThumbsDown className="h-3.5 w-3.5" /> : undefined}
+          >
             {labels.filters[key]}
           </Button>
         ))}

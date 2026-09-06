@@ -74,6 +74,18 @@
       ]
     },
     {
+      "id": "message-content",
+      "paths": [
+        "src/renderer/components/features/chat/MessageBubble/MessageContent.tsx",
+        "src/renderer/components/features/chat/MessageBubble/dedupeCodeCopyLinks.ts"
+      ],
+      "files": [
+        "tests/renderer/components/messageContent.copyDedup.test.tsx",
+        "tests/renderer/components/messageContent.codeBlock.test.tsx",
+        "tests/renderer/components/messageContent.iactSendChip.test.tsx"
+      ]
+    },
+    {
       "id": "quality",
       "paths": [
         "scripts/*gate*",

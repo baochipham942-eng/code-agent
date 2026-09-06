@@ -146,8 +146,8 @@
       }
     },
     {
-      "id": "allow-image_annotate-in-eval-workspace",
-      "effect": "allow",
+      "id": "deny-image_annotate-in-eval-workspace",
+      "effect": "deny",
       "tool": "image_annotate",
       "match": {
         "requestType": "file_write"
@@ -194,48 +194,48 @@
       }
     },
     {
-      "id": "allow-screenshot-in-eval-workspace",
-      "effect": "allow",
+      "id": "deny-screenshot-in-eval-workspace",
+      "effect": "deny",
       "tool": "screenshot",
       "match": {
         "requestType": "file_read"
       }
     },
     {
-      "id": "allow-ocr_search-in-eval-workspace",
-      "effect": "allow",
+      "id": "deny-ocr_search-in-eval-workspace",
+      "effect": "deny",
       "tool": "ocr_search",
       "match": {
         "requestType": "file_read"
       }
     },
     {
-      "id": "allow-photo_archive-in-eval-workspace",
-      "effect": "allow",
+      "id": "deny-photo_archive-in-eval-workspace",
+      "effect": "deny",
       "tool": "photo_archive",
       "match": {
         "requestType": "file_write"
       }
     },
     {
-      "id": "allow-computer-in-eval-workspace",
-      "effect": "allow",
+      "id": "deny-computer-in-eval-workspace",
+      "effect": "deny",
       "tool": "Computer",
       "match": {
         "requestType": "command"
       }
     },
     {
-      "id": "allow-computer-use-in-eval-workspace",
-      "effect": "allow",
+      "id": "deny-computer-use-in-eval-workspace",
+      "effect": "deny",
       "tool": "computer_use",
       "match": {
         "requestType": "command"
       }
     },
     {
-      "id": "allow-gui-agent-in-eval-workspace",
-      "effect": "allow",
+      "id": "deny-gui-agent-in-eval-workspace",
+      "effect": "deny",
       "tool": "gui_agent",
       "match": {
         "requestType": "command"

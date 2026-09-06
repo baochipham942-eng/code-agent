@@ -30,13 +30,16 @@ function restoreEnv(): void {
   else process.env.CODE_AGENT_EVAL_BRIDGE = previousBridge;
 }
 
+// 文件级清理：本文件里不止一个 describe 会改这三个环境变量并建临时目录，
+// 钩子挂在某一个 describe 里，别的组跑完就把它们留给了后面的测试文件（#1670 ai-review Nit）。
+afterEach(() => {
+  restoreEnv();
+  vi.unstubAllEnvs();
+  if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true });
+  tempDir = undefined;
+});
+
 describe('scripted run permission policy', () => {
-  afterEach(() => {
-    restoreEnv();
-    vi.unstubAllEnvs();
-    if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true });
-    tempDir = undefined;
-  });
 
   it('returns undefined when no eval policy path is configured', () => {
     delete process.env.NEO_SCRIPTED_APPROVAL_POLICY;

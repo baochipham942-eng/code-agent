@@ -74,6 +74,17 @@
       ]
     },
     {
+      "id": "chat-markdown-pipeline",
+      "paths": [
+        "src/renderer/components/features/chat/MessageBubble/MessageContent.tsx",
+        "src/renderer/components/features/chat/MessageBubble/codeCopyDedup.ts"
+      ],
+      "files": [
+        "tests/renderer/components/codeCopyDedup.test.ts",
+        "tests/renderer/components/messageContent.copyDedup.test.tsx"
+      ]
+    },
+    {
       "id": "quality",
       "paths": [
         "scripts/*gate*",

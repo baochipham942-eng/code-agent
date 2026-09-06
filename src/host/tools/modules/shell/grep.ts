@@ -36,6 +36,11 @@ import type {
 } from '../../../protocol/tools';
 import { grepSchema as schema } from './grep.schema';
 import { GREP, BASH } from '../../../../shared/constants';
+import {
+  collectForeignSlotTraversalExcludes,
+  isListedPathInsideForeignSlot,
+  type ForeignSlotTraversalExcludes,
+} from '../../../security/slotDataDirGuard';
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { buildSpillNotice, spillToolResultArchive, type ToolResultArchiveRef } from '../../../utils/toolResultSpill';
 
@@ -165,6 +170,7 @@ async function tryRipgrep(
   fileType: string | undefined,
   include: string | undefined,
   signal: AbortSignal,
+  ignoreGlobs: string[] = [],
 ): Promise<RgResult> {
   const rgPath = findRgBinary();
   if (!rgPath) {
@@ -204,6 +210,9 @@ async function tryRipgrep(
     '--glob',
     '!build',
   );
+  for (const ignoreGlob of ignoreGlobs) {
+    args.push('--glob', `!${ignoreGlob}`);
+  }
   args.push(pattern, searchPath);
 
   try {
@@ -263,6 +272,7 @@ async function runSystemGrep(
   fileType: string | undefined,
   include: string | undefined,
   signal: AbortSignal,
+  excludeDirNames: string[] = [],
 ): Promise<string> {
   const grepArgs: string[] = ['-r', '-n', '-E'];
 
@@ -289,6 +299,9 @@ async function runSystemGrep(
     '--exclude-dir=dist',
     '--exclude-dir=build',
   );
+  for (const dirName of excludeDirNames) {
+    grepArgs.push(`--exclude-dir=${dirName}`);
+  }
 
   grepArgs.push(pattern, searchPath);
 
@@ -391,6 +404,27 @@ function appendArchiveHint(output: string, archiveRef: ToolResultArchiveRef | un
   return `${output}${buildSpillNotice(archiveRef)}${NEXT_READ_HINT}`;
 }
 
+function filterForeignSlotGrepOutput(
+  stdout: string,
+  searchPath: string,
+  slotExcludes: ForeignSlotTraversalExcludes,
+): string {
+  if (slotExcludes.roots.length === 0 || !stdout) return stdout;
+  return stdout
+    .split('\n')
+    .filter((line) => {
+      if (!line || line === '--' || line.startsWith('... (') || line.startsWith('(showing ')) return true;
+      const match = line.match(/^(.*?)([:-])(\d+)([:-])(.*)$/);
+      if (!match) {
+        return !slotExcludes.roots.some((root) => line.includes(root));
+      }
+      const rawFile = match[1];
+      const file = path.isAbsolute(rawFile) ? rawFile : path.resolve(searchPath, rawFile);
+      return !isListedPathInsideForeignSlot(file, slotExcludes.roots);
+    })
+    .join('\n');
+}
+
 function parseMatches(output: string, searchPath: string): GrepMatch[] {
   const matches: GrepMatch[] = [];
   const lines = output.split('\n').filter(Boolean);
@@ -475,6 +509,7 @@ class GrepHandler implements ToolHandler<Record<string, unknown>, string> {
     // 参数解析
     const rawPath = (args.path as string | undefined) ?? ctx.workingDir;
     const searchPath = path.isAbsolute(rawPath) ? rawPath : path.join(ctx.workingDir, rawPath);
+    const slotExcludes = collectForeignSlotTraversalExcludes(searchPath);
     const include = args.include as string | undefined;
     const fileType = args.type as string | undefined;
     const caseInsensitive = Boolean(args.case_insensitive);
@@ -502,10 +537,11 @@ class GrepHandler implements ToolHandler<Record<string, unknown>, string> {
         fileType,
         include,
         ctx.abortSignal,
+        slotExcludes.ignoreGlobs,
       );
 
       if (rgResult.found) {
-        stdout = rgResult.stdout;
+        stdout = filterForeignSlotGrepOutput(rgResult.stdout, searchPath, slotExcludes);
         engine = 'rg';
       } else if (rgResult.noMatches) {
         onProgress?.({ stage: 'completing', percent: 100 });
@@ -517,15 +553,20 @@ class GrepHandler implements ToolHandler<Record<string, unknown>, string> {
       } else {
         // 2) rg 不可用 → 系统 grep 降级
         try {
-          stdout = await runSystemGrep(
-            pattern,
+          stdout = filterForeignSlotGrepOutput(
+            await runSystemGrep(
+              pattern,
+              searchPath,
+              caseInsensitive,
+              ctxBefore,
+              ctxAfter,
+              fileType,
+              include,
+              ctx.abortSignal,
+              slotExcludes.excludeDirNames,
+            ),
             searchPath,
-            caseInsensitive,
-            ctxBefore,
-            ctxAfter,
-            fileType,
-            include,
-            ctx.abortSignal,
+            slotExcludes,
           );
           engine = 'grep';
         } catch (grepErr: unknown) {
@@ -579,7 +620,8 @@ class GrepHandler implements ToolHandler<Record<string, unknown>, string> {
         totalMatches: meta.totalMatches,
       });
       const outputText = output || 'No matches found';
-      const matches = parseMatches(outputText, searchPath);
+      const matches = parseMatches(outputText, searchPath)
+        .filter((match) => !isListedPathInsideForeignSlot(match.file, slotExcludes.roots));
       const archive = (meta.truncated || stdout.length > DISCOVERY_ARCHIVE_CHAR_LIMIT)
         ? spillToolResultArchive({
             content: stdout,

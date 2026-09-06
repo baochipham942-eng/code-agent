@@ -88,7 +88,7 @@ Agent Neo 是本地优先的人机协作（cowork）产品：用户给目标，N
 
 ## 6. 门与提交纪律
 
-- **本机门**：交付前 `npm run gates:local`（`scripts/gates-local.mjs`，按快到慢复现 PR 工作流里本机可跑的门，本版 43 格；平台性排除显式列在输出里，不是静默跳过）。结束行 `✓ gates:local passed all N locally reproducible PR gates.` 是全绿凭据，原样贴进汇报。快检用 `npm run gates:fast`；`npm run typecheck` 每次改动后必过。
+- **本机门**：交付前 `npm run gates:fast`（`scripts/gates-fast.mjs`，30–60 秒人工定义快子集，产出绑定 HEAD/tree 的 JSON 回执落 `.reports/gates-fast/`；`ship pr` 在 push 前会自己再跑一遍并核回执，回执不绑当前 HEAD、有 gate `failed`、超 180 秒都拒）。`npm run typecheck` 每次改动后必过；改动文件的单测 `npx vitest run <文件>` 必跑。全量 43 格 `npm run gates:local`（`scripts/gates-local.mjs`）保留为显式诊断入口，**不再是交付前置**——全量权威门是 PR 上的 CI（ADR-064 过渡，2026-09-06）。汇报贴快门那行「✓ gates:fast passed required local preflight … receipt=<id>」。
 - **PR 门**：GitHub Actions，`.github/workflows/swarm-ci.yml`（smoke + full，merge gate），另有 provider-symmetry、repository-structure 等专项工作流（`.github/workflows/`）。改了代码的 PR 由另一家模型按 `REVIEW.md` 审（ai-review 提交状态，一条 Important 就拒合；分歧走 `--dispute` / `--arbitrate`，不许打地鼠）。纯文档改动 ship 自动标 docs-only 不进审查（`REVIEW.md:42`）。PR 描述必填测试证据与档位勾选（`.github/PULL_REQUEST_TEMPLATE.md`）。
 - **ship 硬规**：推分支、开 PR、合并 main 一律走机器级命令 `ship`（`ship --help` 看全量）。串行合并队列 = 无冲突 + CI 全绿 + 不落后 main（落后自动 update-branch 重验，最多 3 轮）。一切失败 fail-closed：ship 报错就停下如实汇报，禁止手工 `git push origin main`、`gh pr merge`、`--force` 类绕过；同因连挂 2 次转人工。
 - **汇报格式**：测试证词后加一行 `证据档位：<档位组合>`，四档定义在 `docs/testing-evidence-classes.md`；只有 static-contract + hermetic-protocol 时不许说「已验证」。汇报必须带全量测试计数与档位，缺一不可。
@@ -104,5 +104,5 @@ Agent Neo 是本地优先的人机协作（cowork）产品：用户给目标，N
 6. 用户可见文案进 `src/renderer/i18n/`，跑 `node scripts/check-copy.mjs`；host 错误用稳定 code。
 7. 跑 `.claude/rules/typescript.md` 末尾的硬编码 grep 自检清单。
 8. commit 前 `git diff --check`（空白错误/冲突标记）+ `git diff --stat` 逐文件核行数，异常的逐行看。
-9. 每完成一个功能点立即提交不积攒；交付前 `npm run gates:local` 全绿并贴汇总行。
+9. 每完成一个功能点立即提交不积攒；交付前 `npm run gates:fast` 绿并贴回执行，`ship pr` 会复核。
 10. 同一问题 2 次修复失败 → 停下，从头重新分析根因（`CLAUDE.md` 调试指南），不带病硬闯。

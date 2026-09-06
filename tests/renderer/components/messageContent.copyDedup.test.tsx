@@ -57,4 +57,26 @@ describe('代码块紧邻 !copy 去重', () => {
 
     expect(iactCopyButtons(container)).toHaveLength(1);
   });
+
+  it('无语言单行围栏渲染为行内 code（无块头按钮），相邻 !copy 是唯一复制入口，保留', async () => {
+    const { container } = await renderAssistant('```\nls -la ~/backup\n```\n[复制命令](!copy)');
+
+    expect(iactCopyButtons(container)).toHaveLength(1);
+  });
+
+  it('两块之间无空行的 !copy 段去重后，两个代码块仍独立渲染不拼接', async () => {
+    const { container } = await renderAssistant(
+      '```bash\nls\n```\n[复制](!copy)\n```ts\nconst a = 1;\n```',
+    );
+
+    expect(iactCopyButtons(container)).toHaveLength(0);
+    expect(container.querySelectorAll('[data-code-block-lines]')).toHaveLength(2);
+  });
+
+  it('四反引号围栏内的三反引号示例与 !copy 字面量是代码内容，原样展示', async () => {
+    const { container } = await renderAssistant('````\n```\n[x](!copy)\n```\n````\n\n正文说明');
+
+    expect(iactCopyButtons(container)).toHaveLength(0);
+    expect(container.textContent).toContain('[x](!copy)');
+  });
 });

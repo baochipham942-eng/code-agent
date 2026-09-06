@@ -14,7 +14,7 @@ describe('dropCodeAdjacentCopyLinks — 紧邻 ⇒ 去重', () => {
 
   it('隔一个/多个空行仍算紧邻（空行渲染后不产生可见元素）', () => {
     expect(dropCodeAdjacentCopyLinks('```bash\nnpm i\n```\n\n[复制命令](!copy)'))
-      .toBe('```bash\nnpm i\n```\n\n');
+      .toBe('```bash\nnpm i\n```');
     const out = dropCodeAdjacentCopyLinks('```bash\nnpm i\n```\n\n\n[复制命令](!copy)\n\n\n');
     expect(out).not.toContain('!copy');
     expect(out.startsWith('```bash\nnpm i\n```')).toBe(true);
@@ -33,7 +33,12 @@ describe('dropCodeAdjacentCopyLinks — 紧邻 ⇒ 去重', () => {
   });
 
   it('无语言围栏块、同段多个 !copy 链接同样去重', () => {
-    expect(dropCodeAdjacentCopyLinks('```\nls -la\n```\n[a](!copy) [b](!copy)')).toBe('```\nls -la\n```');
+    expect(dropCodeAdjacentCopyLinks('```\nls\n-la\n```\n[a](!copy) [b](!copy)')).toBe('```\nls\n-la\n```');
+  });
+
+  it('带语言单行围栏去重；波浪线围栏同样参与去重', () => {
+    expect(dropCodeAdjacentCopyLinks('```bash\nls\n```\n[c](!copy)')).toBe('```bash\nls\n```');
+    expect(dropCodeAdjacentCopyLinks('~~~bash\nnpm i\n~~~\n[复制命令](!copy)')).toBe('~~~bash\nnpm i\n~~~');
   });
 });
 
@@ -87,6 +92,33 @@ describe('dropCodeAdjacentCopyLinks — 代码内容零改动', () => {
 
   it('无 !copy 的文本恒等返回', () => {
     const text = '```bash\nls\n```\n\n普通正文段落';
+    expect(dropCodeAdjacentCopyLinks(text)).toBe(text);
+  });
+});
+
+// ============================================================================
+// ai-review PR#1677 三条 Important 的回归钉板：
+// 围栏边界识别（四反引号嵌套示例）、渲染分发对齐（无语言单行围栏走 InlineCode）、
+// 删空段的换行保留（两围栏不拼接）
+// ============================================================================
+describe('dropCodeAdjacentCopyLinks — 围栏边界与渲染分发（ai-review 修正）', () => {
+  it('四反引号围栏内的三反引号示例与 !copy 字面量是代码内容，整条恒等', () => {
+    const text = '````\n```\n[x](!copy)\n```\n````\n\n正文说明';
+    expect(dropCodeAdjacentCopyLinks(text)).toBe(text);
+  });
+
+  it('无语言单行围栏渲染为行内 code（无块头按钮），相邻 !copy 保留', () => {
+    const text = '```\nls\n```\n[复制命令](!copy)';
+    expect(dropCodeAdjacentCopyLinks(text)).toBe(text);
+  });
+
+  it('两块之间无空行的复制段删除后保留换行，两个围栏不拼接', () => {
+    expect(dropCodeAdjacentCopyLinks('```bash\nls\n```\n[复制](!copy)\n```ts\nconst a = 1;\n```'))
+      .toBe('```bash\nls\n```\n```ts\nconst a = 1;\n```');
+  });
+
+  it('行内 code 里的 !copy 字面量不构成纯复制段', () => {
+    const text = '```bash\nls\n-la\n```\n`[x](!copy)`';
     expect(dropCodeAdjacentCopyLinks(text)).toBe(text);
   });
 });

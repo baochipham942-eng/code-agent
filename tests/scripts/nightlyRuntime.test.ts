@@ -9,7 +9,7 @@ import { runEmptyCase, type Resident } from '../../scripts/nightly/runtime';
 const mocks = vi.hoisted(() => ({ home: '', exec: vi.fn(), launch: vi.fn() }));
 vi.mock('node:os', async importOriginal => {
   const actual = await importOriginal<typeof import('node:os')>();
-  return { ...actual, default: { ...actual.default, homedir: () => mocks.home || actual.homedir() } };
+  return { ...actual, default: { ...actual, homedir: () => mocks.home || actual.homedir() } };
 });
 vi.mock('node:child_process', async importOriginal => ({ ...await importOriginal<typeof import('node:child_process')>(), execFileSync: mocks.exec }));
 vi.mock('playwright', () => ({ chromium: { launch: mocks.launch } }));

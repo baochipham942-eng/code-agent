@@ -550,6 +550,18 @@ async function initializeServices(): Promise<void> {
   }
   bootMark('database');
 
+  // 4.5 Loop 启动收口（N-LOOP-DURABLE 刀1）：上次进程退出时仍在跑的 loop 在
+  // session_automations 里永远停在 running，侧栏徽标继续谎报「运行中」。
+  // 在 renderer 连上来之前把残留收成终态并发一条人话通知；只收口，不恢复续跑。
+  try {
+    const { markInterruptedLoops } = await import('../host/loop/loopStartupRecovery');
+    const lost = await markInterruptedLoops();
+    if (lost > 0) logger.info(`Loop startup recovery: ${lost} interrupted loop(s) marked as lost`);
+  } catch (error) {
+    logger.warn('Loop startup recovery failed (non-blocking):', (error as Error).message);
+  }
+  bootMark('loop-recovery');
+
   // Capability migration needs initialized settings and message history. Activation still
   // finishes before IPC registration and before the agent runtime can settle a turn.
   try {

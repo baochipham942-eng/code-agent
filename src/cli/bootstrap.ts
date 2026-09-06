@@ -270,6 +270,19 @@ export async function initializeCLIServices(options: InitializeCLIServicesOption
       const msg = error instanceof Error ? error.message.split('\n')[0] : String(error);
       console.warn('Durable Run not available (CLI mode):', msg);
     }
+
+    // Loop 启动收口（N-LOOP-DURABLE 刀1）：上次进程（桌面或本 CLI）退出时仍在跑的
+    // loop 会永远停在 session_automations 的 running 状态。CLI 与桌面共用同一个
+    // code-agent.db，这里显式传 CLI 的 db 句柄把残留收成终态并发通知，别让下一个
+    // 打开该会话的人继续看见「运行中」。只收口，不恢复续跑。
+    try {
+      const { markInterruptedLoops } = await import('../host/loop/loopStartupRecovery');
+      const lost = await markInterruptedLoops(databaseService.getDb());
+      if (lost > 0) console.warn(`[CLI] Loop startup recovery: ${lost} interrupted loop(s) marked as lost`);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message.split('\n')[0] : String(error);
+      console.warn('Loop startup recovery failed (CLI mode):', msg);
+    }
   }
 
   // 初始化会话管理器

@@ -30,9 +30,6 @@ import type { DatabaseService } from '../services/core/databaseService';
 import type { TelemetryCollector } from '../telemetry/telemetryCollector';
 import type { ScopedCostRecorder } from '../services/core/scopedCostLimit';
 import path from 'node:path';
-import { createRunContext, resolveCanonicalRunPath } from '../runtime/runContext';
-import { createWorkspaceScope } from '../runtime/workspaceScope';
-import { getMemoryDir } from '../lightMemory/indexLoader';
 
 const logger = createLogger('AgentAdapter');
 
@@ -591,65 +588,13 @@ export class StandaloneAgentAdapter implements AgentInterface {
         : scriptedHandler;
       const recorder = narrowedHandler ? createPermissionRequestRecorder(narrowedHandler) : null;
       permissionRequests = recorder?.records;
-      if (!this.currentSessionId) this.currentSessionId = `test-${Date.now()}`;
-      // Evaluation sandboxes are the sole writable Project Source for the run.
-      // Supplying the run context here turns on ToolExecutor's existing
-      // path-aware write boundary (including ../ and symlink canonicalization).
-      // 两个可写根，缺一不可：
-      // ① 工作沙箱——题目产物落这里；
-      // ② 隔离数据目录下的记忆目录——MemoryWrite 的目标由 writeTargets.ts:252 解析成
-      //    `<CODE_AGENT_DATA_DIR>/memory/<file>`，不在沙箱里。少了它，开着记忆的评测题
-      //    正常的 MemoryWrite 会被判 PROJECT_SOURCE_OUTSIDE_WORKSPACE，
-      //    把「产品能力正常」记成一次失败（#1686 ai-review 第二轮）。
-      // 只放记忆目录、不放整个数据目录：边界该多窄就多窄。
-      // 记忆目录若本来就落在沙箱里（CODE_AGENT_DATA_DIR 设成沙箱子目录时会这样），
-      // 再单独加一个根会撞 createWorkspaceScope 的「Project sources overlap」直接抛，
-      // 整个评测起不来；这种情况下它已经被沙箱根覆盖，不必也不能再加（#1686 第三轮）。
-      const canonicalWorkdir = resolveCanonicalRunPath(this.workingDirectory);
-      const canonicalMemoryDir = resolveCanonicalRunPath(getMemoryDir());
-      const memoryInsideSandbox = canonicalMemoryDir === canonicalWorkdir
-        || canonicalMemoryDir.startsWith(`${canonicalWorkdir}${path.sep}`)
-        || canonicalWorkdir.startsWith(`${canonicalMemoryDir}${path.sep}`);
-      const evaluationScope = createWorkspaceScope('eval-sandbox', [
-        {
-          sourceId: 'eval-sandbox-root',
-          path: this.workingDirectory,
-          access: 'read_write',
-          role: 'primary',
-        },
-        ...(memoryInsideSandbox ? [] : [{
-          sourceId: 'eval-memory-root',
-          path: canonicalMemoryDir,
-          access: 'read_write' as const,
-          role: 'additional' as const,
-        }]),
-      ]);
-      // createRunContext 会 canonicalize cwd（macOS 上 /tmp → /private/tmp）。
-      // ToolExecutor 构造期会校验 workingDirectory 与 runContext.cwd 一致（toolExecutor.ts:361），
-      // 所以下面两处都必须用它算出来的那一份，不能一个用原始路径一个用规范化路径。
-      const evaluationRunContext = createRunContext({
-        runId: `eval-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-        sessionId: this.currentSessionId,
-        workspaceScope: evaluationScope,
-        cwd: this.workingDirectory,
-      });
       const toolExecutor = new ToolExecutor({
         requestPermission: recorder?.handler
           ?? (permissionDecider
             ? async (request) => permissionDecider({ ...request, toolName: request.tool })
             : async () => true),
         forcePermissionHandler: this.requestPermission !== undefined,
-        workingDirectory: evaluationRunContext.cwd,
-        runContext: evaluationRunContext,
-        // 🔴 分段上线：机制先合，评测侧**暂不打开**（N-EVAL-POLICY-WRITE-BOUNDARY-ENABLE）。
-        // #1686 四轮 ai-review 一共照出 8 处，最后两轮说明它还没到能打开的程度：
-        //   ① 真实子代理走 subagentToolRuntime.ts:34 自己 new ToolExecutor，不经 forRun ⇒
-        //      父代理开了边界、子调用照样绕过。全仓 7 个构造点，逐个接上前，
-        //      这道边界给的是「以为拦住了」的假安全，比不开更坏。
-        //   ② 合法写入目的地还没枚举完（记忆目录是第二轮才发现的；产物、日志、缓存未核）。
-        //      漏一个就把产品正常能力记成评测失败——评测自造假阴性。
-        // 打开的前置条件写在那张单里；这里改成 true 之前先跑一遍全 held-in 真跑对照。
-        restrictWritesToWorkspace: false,
+        workingDirectory: this.workingDirectory,
         ledgerOrigin: 'eval',
         telemetryCollector,
         // ORCHARM：run 级 spawn 深度上限。缺省 undefined ⇒ SpawnGuard 生产默认；
@@ -715,10 +660,6 @@ export class StandaloneAgentAdapter implements AgentInterface {
           ? { redline: true }
           : undefined;
         const loop = new AgentLoop({
-          // 必须与 executor 的 runContext.runId 同值：AgentLoop 不给就自己造一个，
-          // 传到 executor.execute 会撞 RUN_CONTEXT_MISMATCH（toolExecutor.ts:466），
-          // 评测里每一次工具调用都会被拒（#1686 ai-review 抓出）。
-          runId: evaluationRunContext.runId,
           sessionId: this.currentSessionId,
           workingDirectory: this.workingDirectory,
           systemPrompt: this.systemPromptOverride ?? SYSTEM_PROMPT,

@@ -25,28 +25,18 @@ import {
   buildCompareArmShape,
   createCompareAgent,
 } from '../../../src/host/testing/comparator/compareAgentFactory';
-import { realpathSync } from 'node:fs';
-import path from 'node:path';
-import { getMemoryDir } from '../../../src/host/lightMemory/indexLoader';
-import { resolveCanonicalRunPath } from '../../../src/host/runtime/runContext';
 import { StandaloneAgentAdapter } from '../../../src/host/testing/agentAdapter';
 import type { AgentEvent } from '../../../src/shared/contract';
 import type { CompareConfiguration } from '../../../src/host/testing/types';
 
 interface CapturedLoopConfig {
   goalContract?: { goal: string; allowSwarm?: boolean };
-  runId?: string;
-  toolExecutor: { capturedConfig?: CapturedToolExecutorConfig };
+  toolExecutor: { capturedConfig?: { spawnMaxDepth?: number } };
   onEvent: (event: AgentEvent) => void;
 }
 
 const capturedLoopConfigs: CapturedLoopConfig[] = [];
-type CapturedToolExecutorConfig = {
-  spawnMaxDepth?: number;
-  restrictWritesToWorkspace?: boolean;
-  runContext?: { runId?: string; workspaceScope?: { roots: Array<{ path: string; access: string }> } };
-};
-const capturedToolExecutorConfigs: CapturedToolExecutorConfig[] = [];
+const capturedToolExecutorConfigs: Array<{ spawnMaxDepth?: number }> = [];
 let scriptedEvents: AgentEvent[] = [];
 
 vi.mock('../../../src/host/agent/agentLoop', () => ({
@@ -64,7 +54,7 @@ vi.mock('../../../src/host/agent/agentLoop', () => ({
 
 vi.mock('../../../src/host/tools/toolExecutor', () => ({
   ToolExecutor: class {
-    capturedConfig: CapturedToolExecutorConfig;
+    capturedConfig: { spawnMaxDepth?: number };
     constructor(config: { spawnMaxDepth?: number }) {
       this.capturedConfig = config;
       capturedToolExecutorConfigs.push(config);
@@ -159,37 +149,6 @@ describe('条件①：makeAgent 真读真传到 ToolExecutor 与 goal 契约', (
     await adapter.sendMessage('run');
     // 摘掉 agentAdapter 里传给 ToolExecutor 的 spawnMaxDepth 这条立刻红。
     expect(capturedToolExecutorConfigs.at(-1)?.spawnMaxDepth).toBe(0);
-  });
-
-  // N-EVAL-POLICY-WRITE-BOUNDARY：写边界在 ToolExecutor 那侧有行为测试
-  // （toolExecutor.workspaceWriteBoundary.test.ts），这里钉的是「评测这条路真的把它接上了」——
-  // 少了这条，把 agentAdapter 里那两行摘掉，行为测试照样全绿。
-  it('评测 adapter 给 ToolExecutor 开写边界，并把沙箱设成唯一可写根', async () => {
-    const adapter = new StandaloneAgentAdapter({
-      workingDirectory: '/tmp',
-      modelConfig: { provider: 'mock', model: 'mock-model' },
-    });
-    await adapter.sendMessage('run');
-    const config = capturedToolExecutorConfigs.at(-1);
-    // 分段上线：机制已接、评测侧暂不打开（见 agentAdapter 注释与 N-EVAL-POLICY-WRITE-BOUNDARY-ENABLE）。
-    // 这条断言钉的是「现在是关的」——哪天改成 true，它会红，逼改的人回去读那张单的前置条件。
-    expect(config?.restrictWritesToWorkspace).toBe(false);
-    // AgentLoop 不给 runId 会自己造一个，传到 executor 撞 RUN_CONTEXT_MISMATCH
-    // ⇒ 评测里每次工具调用都被拒（#1686 ai-review）。两端必须同值。
-    expect(capturedLoopConfigs.at(-1)?.runId).toBe(config?.runContext?.runId);
-    const roots = config?.runContext?.workspaceScope?.roots;
-    // scope 根会被 canonicalize（/tmp → /private/tmp），比对时同样取 realpath，
-    // 否则这条断言在 macOS 上恒红、在 Linux 上恒绿——两边都不是在测它想测的东西。
-    // 两个可写根：工作沙箱 + 记忆目录（MemoryWrite 的目标不在沙箱里，
-    // 少了第二个，开着记忆的评测题正常写记忆会被判越界 —— #1686 第二轮）。
-    // 记忆目录在单测环境里可能还不存在，所以只断「是第二个可写根 + 落在 memory 目录」，
-    // 不 realpath 它（realpathSync 对不存在的路径会抛，那是环境噪音不是被测行为）。
-    expect(roots).toHaveLength(2);
-    expect(roots?.[0]).toMatchObject({ path: realpathSync('/tmp'), access: 'read_write' });
-    expect(roots?.[1]?.access).toBe('read_write');
-    // createWorkspaceScope 会 canonicalize（/var → /private/var），这里用同一把尺子比：
-    // 断言它就是「记忆目录规范化后的那个路径」，而不是原始字面量。
-    expect(roots?.[1]?.path).toBe(resolveCanonicalRunPath(getMemoryDir()));
   });
 
   it('没配 orchestration 时不给 ToolExecutor 传 spawnMaxDepth（存量行为零变化）', async () => {

@@ -3,7 +3,7 @@ import { readFileSync, existsSync, mkdirSync, cpSync, unlinkSync } from 'node:fs
 import path from 'node:path';
 import { pipelineExitCode, inspectEvidence, parseCases, validateReport, type Row } from './contracts';
 import { api, repo, expand, loadResident, runEmptyCase, save, schedulerProbe, scrub, startResident, stopResident } from './runtime';
-import { designReferences, directory, feedback, renderReport, sendSummary } from './report';
+import { captureReferencesAndFeedback, directory, renderReport, sendSummary } from './report';
 
 async function main() {
   const [command, ...args] = process.argv.slice(2);
@@ -52,7 +52,7 @@ async function main() {
     if (!falseGreen.some(e => e.includes('COUNTS')) || !falseGreen.some(e => e.includes('blocked case'))) throw new Error('FAIL mutation 1 escaped');
     console.log(`MUTATION 1 caught\n${falseGreen.join('\n')}`);
     blocked.status = '未执行';
-    const executed = rows.find(r => r.status !== '未执行' && r.frames.length)!;
+    const executed = rows.find(r => r.status !== '未执行' && r.frames.length);
     if (!executed) throw new Error('FAIL mutation 2 requires real screenshot evidence');
     const dir = path.join(expand(specs[0].root), 'mutations', manifest.runId, 'missing-screen');
     mkdirSync(dir, { recursive: true }); cpSync(dirFor(executed), dir, { recursive: true });
@@ -77,6 +77,7 @@ async function main() {
     probe = await schedulerProbe(state);
   } catch (error) { mechanism = `调度器未运行：${scrub(String(error))}`; console.error(`FAIL ${mechanism}`); }
   const rows: Row[] = [];
+  const deliveryErrors: string[] = [];
   for (const spec of specs) {
     const reasons = [...spec.reasons, ...(mechanism ? [mechanism] : [])];
     if (reasons.length || !state) {
@@ -86,21 +87,25 @@ async function main() {
     const dir = path.join(expand(spec.root), 'runs', spec.id, runId);
     const row = await runEmptyCase(spec, state, dir, runId, Number(option('--fault-user-count') ?? 1));
     save(path.join(dir, 'scheduler.json'), probe);
-    if (row.frames.length) await designReferences(dir, row.frames);
+    const errors = await captureReferencesAndFeedback(row, dir, date, !!option('--fault-user-count'));
+    deliveryErrors.push(...errors.map(error => `${row.id} ${error}`));
+    for (const error of errors) console.error(`FAIL ${row.id} ${error}`);
     if (row.status === '未执行') console.log(`UNEXECUTED ${row.id} ${row.reasons.join('；')}`);
-    if (row.status === '失败') { feedback(row, dir, date, !!option('--fault-user-count')); console.log(`FAIL ${row.id} ${row.checks.map((c, i) => `${i + 1}:${c.status} ${c.detail}`).join(' / ')} ${row.fb}`); }
+    if (row.status === '失败') { console.log(`FAIL ${row.id} ${row.checks.map((c, i) => `${i + 1}:${c.status} ${c.detail}`).join(' / ')} ${row.fb ?? 'FB未写入'}`); }
     rows.push(row);
   }
   const gateFile = option('--gates');
   const gates = gateFile ? readFileSync(expand(gateFile), 'utf8').trim().split('\n') : ['本机门：未附回执', 'PR 门：未运行', 'ai-review：未运行'];
-  const report = await renderReport(specs, rows, state, date, runId, gates, mechanism);
+  const deliveryFailure = deliveryErrors.length ? `流水线异常：${deliveryErrors.join('；')}` : undefined;
+  const report = await renderReport(specs, rows, state, date, runId, gates, [mechanism, deliveryFailure].filter(Boolean).join('；') || undefined);
   const text = `Neo 夜跑：真跑 ${report.summary.executed} / 未执行 ${report.summary.skipped} / 失败 ${report.summary.failed} / 共55。验收包 ${scrub(report.html)}；新增 ${rows.flatMap(r => r.fbCreated ? [r.fb!] : []).join('、') || '无 FB'}；关联 ${rows.flatMap(r => r.fb ? [r.fb] : []).join('、') || '无 FB'}。`;
   const config = option('--notify-config');
-  if (config) save(path.join(path.dirname(report.html), `${date}-${runId}.notification.json`), sendSummary(config, text, runId));
-  else save(path.join(path.dirname(report.html), `${date}-${runId}.notification.json`), { status: '未发送', reason: '未配置已授权早报收件会话/profile/identity', text });
-  console.log(text); console.log(`MANIFEST ${scrub(report.jsonFile)}`);
+  const summaryText = deliveryFailure ? `${text} ${deliveryFailure}` : text;
+  if (config) save(path.join(path.dirname(report.html), `${date}-${runId}.notification.json`), sendSummary(config, summaryText, runId));
+  else save(path.join(path.dirname(report.html), `${date}-${runId}.notification.json`), { status: '未发送', reason: '未配置已授权早报收件会话/profile/identity', text: summaryText });
+  console.log(summaryText); console.log(`MANIFEST ${scrub(report.jsonFile)}`);
   const scheduled = args.includes('--scheduled');
-  process.exitCode = pipelineExitCode({ executed: report.summary.executed, failed: report.summary.failed, mechanismFailed: !!mechanism, notificationDelivered: !!config, scheduled });
+  process.exitCode = pipelineExitCode({ executed: report.summary.executed, failed: report.summary.failed, mechanismFailed: !!mechanism || deliveryErrors.length > 0, notificationDelivered: !!config, scheduled });
   if (scheduled && process.exitCode === 0) console.log(`PIPELINE_COMPLETED acceptance=${report.summary.failed ? 'FAILED' : 'PARTIAL'} failed=${report.summary.failed} unexecuted=${report.summary.skipped}`);
 }
 main().catch(error => { console.error(scrub(String(error))); process.exitCode = 1; });

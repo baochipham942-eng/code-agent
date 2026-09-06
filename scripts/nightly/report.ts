@@ -40,6 +40,21 @@ export function feedback(row: Row, dir: string, date: string, mutation = false):
     return fb;
   } finally { rmdirSync(lock); }
 }
+/** Auxiliary outages stay visible without discarding observations already collected. */
+export async function captureReferencesAndFeedback(row: Row, dir: string, date: string, mutation = false): Promise<string[]> {
+  const errors: string[] = [];
+  if (row.frames.length) {
+    try { await designReferences(dir, row.frames); }
+    catch (error) { errors.push(`设计参照采集失败：${scrub(String(error))}`); }
+  }
+  if (row.status === '失败') {
+    try { feedback(row, dir, date, mutation); }
+    catch (error) { errors.push(`缺陷回写失败：${scrub(String(error))}`); }
+  }
+  row.reasons.push(...errors);
+  save(path.join(dir, 'delivery.json'), { errors, fb: row.fb ?? null, fbCreated: row.fbCreated ?? false });
+  return errors;
+}
 export async function renderReport(cases: Case[], rows: Row[], state: Resident | null, date: string, runId: string, gates: string[], mechanism?: string) {
   const summary = counts(rows);
   const errors = validateReport(cases, rows, summary, row => directory(cases.find(c => c.id === row.id)!, row));
@@ -60,7 +75,7 @@ export async function renderReport(cases: Case[], rows: Row[], state: Resident |
     row.checks.forEach((c, i) => { details += `<p>${i + 1} ${label(c.status)} ${escape(c.detail)}</p><details><summary>用例断言原文</summary><pre>${escape(spec.fields[['①结果断言', '②过程断言', '③渲染断言'][i]])}</pre></details>`; });
     if (row.status !== '未执行') {
       details += `<p>运行 ${escape(row.runId)}，${escape(row.startedAt)} 至 ${escape(row.endedAt)}。下列是原始响应、事件和记录；未知字段没有补零。</p>`;
-      for (const file of ['result.json', 'trace.jsonl', 'timeline.json', 'audit.json', 'messages.json', 'stdout.json', 'host.log', 'files.sha256']) {
+      for (const file of ['result.json', 'trace.jsonl', 'timeline.json', 'audit.json', 'messages.json', 'stdout.json', 'host.log', 'files.sha256', 'delivery.json']) {
         details += `<details><summary>${file} · ${escape(scrub(path.join(dir, file)))}</summary><pre>${escape(existsSync(path.join(dir, file)) ? readFileSync(path.join(dir, file), 'utf8') : '证据缺失')}</pre></details>`;
       }
       details += '<p>真实运行截图按采集时间排列；右侧为原设计稿参照。合成 F0 数据，页面及服务是真实构建。人工仍需判断过程和文案是否可理解。</p>';
@@ -90,7 +105,7 @@ export async function renderReport(cases: Case[], rows: Row[], state: Resident |
   } finally { await browser.close(); }
   return { html, jsonFile, summary };
 }
-export async function designReferences(dir: string, frames: string[]) {
+async function designReferences(dir: string, frames: string[]) {
   const browser = await chromium.launch({ headless: true });
   try {
     const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });

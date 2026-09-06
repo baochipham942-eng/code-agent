@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Case, Row } from '../../scripts/nightly/contracts';
-import { feedback } from '../../scripts/nightly/report';
+import { captureReferencesAndFeedback, feedback } from '../../scripts/nightly/report';
 import { runEmptyCase, type Resident } from '../../scripts/nightly/runtime';
 
 const mocks = vi.hoisted(() => ({ home: '', exec: vi.fn(), launch: vi.fn() }));
@@ -119,5 +119,26 @@ describe('nightly durable feedback deduplication', () => {
   it('refuses feedback for a precondition skip', () => {
     const row: Row = { id: spec.id, runId: 'skip', status: '未执行', reasons: ['environment'], checks: [], files: {}, frames: [] };
     expect(() => feedback(row, home, '2026-09-06')).toThrow('only executed failed'); expect(mocks.exec).not.toHaveBeenCalled();
+  });
+});
+
+describe('nightly auxiliary outages preserve the case for reporting', () => {
+  it.each(['design', 'feedback', 'both'])('%s outage returns explicit errors without discarding the executed row', async fault => {
+    const row: Row = { id: spec.id, runId: 'delivery-fault', status: '失败', reasons: [], checks: [1, 2, 3].map(() => ({ status: '失败', detail: 'observed product assertion' })), files: {}, frames: ['01', '02', '03'] };
+    const dir = path.join(home, 'run'); mkdirSync(dir); writeFileSync(path.join(dir, 'result.json'), JSON.stringify({ caseHash: spec.hash }));
+    mocks.launch.mockImplementation(async () => {
+      if (fault !== 'feedback') throw new Error('design file unavailable');
+      return { newPage: async () => ({ goto: async () => {}, locator: () => ({ count: async () => 0 }) }), close: async () => {} };
+    });
+    mocks.exec.mockImplementation((_command, args: string[]) => {
+      if (fault !== 'design') throw new Error('feedback service unavailable');
+      return JSON.stringify(args[0] === 'list' ? [] : { fb: 'FB-1' });
+    });
+    const errors = await captureReferencesAndFeedback(row, dir, '2026-09-06');
+    expect(errors).toHaveLength(fault === 'both' ? 2 : 1);
+    expect(errors.join(' ')).toContain(fault === 'feedback' ? '缺陷回写失败' : '设计参照采集失败');
+    expect(row.status).toBe('失败'); expect(row.frames).toHaveLength(3); expect(row.reasons).toEqual(errors);
+    expect(JSON.parse(readFileSync(path.join(dir, 'delivery.json'), 'utf8')).errors).toEqual(errors);
+    expect(row.fb).toBe(fault === 'design' ? 'FB-1' : undefined);
   });
 });

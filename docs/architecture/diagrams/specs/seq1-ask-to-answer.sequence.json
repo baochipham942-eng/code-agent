@@ -1,0 +1,266 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "运行时时序 ① · 一次提问到出答案",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "column_fit": "spread",
+    "viewBox": [
+      1340,
+      630
+    ],
+    "views": [
+      {
+        "id": "admission",
+        "label": "准入",
+        "focus": [
+          "u",
+          "p",
+          "i",
+          "h"
+        ],
+        "note": "页面只负责构造与投递，会话身份随 envelope 一起过 HTTP。"
+      },
+      {
+        "id": "streaming",
+        "label": "流式产出",
+        "focus": [
+          "h",
+          "e",
+          "i",
+          "s"
+        ],
+        "note": "SSE 事件经投影进 store，页面显示的是投影不是模型原文。"
+      },
+      {
+        "id": "exits",
+        "label": "三个出口",
+        "focus": [
+          "h",
+          "i",
+          "s",
+          "p"
+        ],
+        "note": "正常终态、失败终态、用户取消，三条都必须落到页面可见状态。"
+      }
+    ]
+  },
+  "participants": [
+    {
+      "id": "u",
+      "type": "external",
+      "label": "用户"
+    },
+    {
+      "id": "p",
+      "type": "frontend",
+      "label": "页面/组件"
+    },
+    {
+      "id": "s",
+      "type": "frontend",
+      "label": "store"
+    },
+    {
+      "id": "i",
+      "type": "messagebus",
+      "label": "IPC / HTTP"
+    },
+    {
+      "id": "h",
+      "type": "backend",
+      "label": "host"
+    },
+    {
+      "id": "e",
+      "type": "database",
+      "label": "引擎或数据库"
+    }
+  ],
+  "segments": [
+    {
+      "from": 150,
+      "to": 262,
+      "label": "发起与准入"
+    },
+    {
+      "from": 274,
+      "to": 412,
+      "label": "流式产出（逐段重复）"
+    },
+    {
+      "from": 424,
+      "to": 472,
+      "label": "正常收尾"
+    },
+    {
+      "from": 484,
+      "to": 562,
+      "label": "失败出口与取消出口"
+    }
+  ],
+  "messages": [
+    {
+      "id": "ask",
+      "from": "u",
+      "to": "p",
+      "y": 185,
+      "label": "发送问题",
+      "variant": "emphasis"
+    },
+    {
+      "id": "send",
+      "from": "p",
+      "to": "i",
+      "y": 215,
+      "label": "agent:send-message",
+      "note": "composer 组上下文、session 登记用户消息后投递；实际由 hook 经 ipcService 发出"
+    },
+    {
+      "id": "post-run",
+      "from": "i",
+      "to": "h",
+      "y": 245,
+      "label": "POST /api/run · envelope 带会话身份",
+      "variant": "emphasis"
+    },
+    {
+      "id": "admit",
+      "from": "h",
+      "to": "e",
+      "y": 275,
+      "label": "落盘消息、登记 run、组装后推理"
+    },
+    {
+      "id": "chunk",
+      "from": "e",
+      "to": "h",
+      "y": 305,
+      "label": "模型输出或工具结果",
+      "variant": "return"
+    },
+    {
+      "id": "sse",
+      "from": "h",
+      "to": "i",
+      "y": 335,
+      "label": "SSE agent:event",
+      "variant": "return"
+    },
+    {
+      "id": "project",
+      "from": "i",
+      "to": "s",
+      "y": 365,
+      "label": "事件投影：消息与任务状态",
+      "variant": "return"
+    },
+    {
+      "id": "paint",
+      "from": "s",
+      "to": "p",
+      "y": 395,
+      "label": "显示正文 · 工具过程 · 产物",
+      "variant": "return"
+    },
+    {
+      "id": "finalize",
+      "from": "h",
+      "to": "e",
+      "y": 425,
+      "label": "finalizer / durable terminal 持久化"
+    },
+    {
+      "id": "answer",
+      "from": "s",
+      "to": "p",
+      "y": 455,
+      "label": "完成事件回投影，本轮 processing 结束",
+      "variant": "return"
+    },
+    {
+      "id": "fail",
+      "from": "h",
+      "to": "i",
+      "y": 485,
+      "label": "失败出口：错误与终态，保留已有内容",
+      "variant": "emphasis"
+    },
+    {
+      "id": "cancel",
+      "from": "p",
+      "to": "i",
+      "y": 515,
+      "label": "取消出口：agent:cancel 指定运行身份",
+      "variant": "security"
+    },
+    {
+      "id": "post-cancel",
+      "from": "i",
+      "to": "h",
+      "y": 545,
+      "label": "POST /api/cancel → abort run",
+      "variant": "security",
+      "note": "abort 对应 run 与其工具；取消后保留现场，store 置 cancelled，用户可再次发送"
+    }
+  ],
+  "activations": [
+    {
+      "participant": "p",
+      "from": 180,
+      "to": 550,
+      "type": "frontend"
+    },
+    {
+      "participant": "s",
+      "from": 360,
+      "to": 460,
+      "type": "frontend"
+    },
+    {
+      "participant": "i",
+      "from": 210,
+      "to": 549,
+      "type": "messagebus"
+    },
+    {
+      "participant": "h",
+      "from": 240,
+      "to": 549,
+      "type": "backend"
+    },
+    {
+      "participant": "e",
+      "from": 270,
+      "to": 430,
+      "type": "database"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "事实链",
+      "items": [
+        "ChatView → composerStore / sessionStore → useAgentIPC",
+        "→ httpTransport → routes/agent.ts → conversationRuntime"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "画的是哪一支",
+      "items": [
+        "Native 普通发送；追加输入由 steerOrQueue 决定",
+        "外部引擎按第 11 章分发；桌面壳也走 HTTP/SSE"
+      ]
+    },
+    {
+      "dot": "orange",
+      "title": "取消之后",
+      "items": [
+        "重发是新 run，沿本图重走准入",
+        "不复用已失效批准，不画自动重试"
+      ]
+    }
+  ]
+}

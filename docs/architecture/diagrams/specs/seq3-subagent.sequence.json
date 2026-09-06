@@ -1,0 +1,267 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "participants": [
+    {
+      "id": "u",
+      "type": "external",
+      "label": "用户"
+    },
+    {
+      "id": "p",
+      "type": "frontend",
+      "label": "页面/组件"
+    },
+    {
+      "id": "s",
+      "type": "frontend",
+      "label": "store"
+    },
+    {
+      "id": "i",
+      "type": "messagebus",
+      "label": "IPC / HTTP"
+    },
+    {
+      "id": "h",
+      "type": "backend",
+      "label": "host"
+    },
+    {
+      "id": "e",
+      "type": "database",
+      "label": "引擎或数据库"
+    }
+  ],
+  "meta": {
+    "title": "运行时时序 ③ · 子代理派发与回收",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "column_fit": "spread",
+    "viewBox": [
+      1340,
+      630
+    ],
+    "views": [
+      {
+        "id": "gate",
+        "label": "准入闸",
+        "focus": [
+          "h",
+          "e"
+        ],
+        "note": "容量、深度、权限、依赖四项都在 host 内查，未过闸的子任务不启动。"
+      },
+      {
+        "id": "monitor",
+        "label": "面板是投影",
+        "focus": [
+          "h",
+          "i",
+          "s",
+          "p"
+        ],
+        "note": "SwarmMonitor 展示的是运行事件投影，不是子代理进程本身。"
+      },
+      {
+        "id": "stop",
+        "label": "停一个不等于停全部",
+        "focus": [
+          "u",
+          "p",
+          "i",
+          "h",
+          "e"
+        ],
+        "note": "停一个子代理只回收那一个执行槽；父任务取消才向下级联。"
+      }
+    ]
+  },
+  "segments": [
+    {
+      "from": 150,
+      "to": 262,
+      "label": "派一次需要分工的活"
+    },
+    {
+      "from": 274,
+      "to": 322,
+      "label": "准入闸：过了才启动"
+    },
+    {
+      "from": 334,
+      "to": 412,
+      "label": "子任务状态与讨论更新"
+    },
+    {
+      "from": 424,
+      "to": 562,
+      "label": "成功、失败与停一个"
+    }
+  ],
+  "messages": [
+    {
+      "id": "task",
+      "from": "u",
+      "to": "p",
+      "label": "发送需要分工的任务",
+      "variant": "emphasis",
+      "y": 185
+    },
+    {
+      "id": "send",
+      "from": "p",
+      "to": "i",
+      "label": "agent:send-message",
+      "note": "页面先保存会话输入再投递",
+      "y": 215
+    },
+    {
+      "id": "exec",
+      "from": "i",
+      "to": "h",
+      "label": "执行请求",
+      "y": 245
+    },
+    {
+      "id": "infer",
+      "from": "h",
+      "to": "e",
+      "label": "主 Agent 推理",
+      "y": 275
+    },
+    {
+      "id": "spawn",
+      "from": "e",
+      "to": "h",
+      "label": "产出 spawn_agent 并行子任务",
+      "variant": "return",
+      "y": 305
+    },
+    {
+      "id": "guard",
+      "from": "h",
+      "to": "e",
+      "label": "过 SpawnGuard 后启动可跑的子任务",
+      "variant": "security",
+      "note": "容量、深度、权限、依赖四项检查都在 host 内完成；依赖成功才启动",
+      "y": 335
+    },
+    {
+      "id": "progress",
+      "from": "e",
+      "to": "h",
+      "label": "progress / finding / result",
+      "variant": "return",
+      "y": 365
+    },
+    {
+      "id": "paint",
+      "from": "s",
+      "to": "p",
+      "label": "SwarmMonitor 展示各子任务",
+      "variant": "return",
+      "note": "swarm 事件经 IPC 进 swarmStore 投影，页面看到的是投影不是子代理进程",
+      "y": 395
+    },
+    {
+      "id": "ok",
+      "from": "e",
+      "to": "h",
+      "label": "completed：聚合结果通知父 Agent",
+      "variant": "return",
+      "y": 425,
+      "note": "子代理执行完毕，结果由 resultAggregator 聚合后回给父 Agent"
+    },
+    {
+      "id": "fail",
+      "from": "e",
+      "to": "h",
+      "label": "failed / timeout：保留部分结果",
+      "variant": "emphasis",
+      "note": "聚合失败与 blocked；失败依赖不启动，兄弟子代理不被拖垮",
+      "y": 455
+    },
+    {
+      "id": "stop",
+      "from": "p",
+      "to": "i",
+      "label": "停一个子代理：swarm:cancel-agent 带 agentId",
+      "y": 485
+    },
+    {
+      "id": "abort",
+      "from": "h",
+      "to": "e",
+      "label": "abort；收尾并回收该执行槽",
+      "variant": "security",
+      "y": 515
+    },
+    {
+      "id": "show",
+      "from": "s",
+      "to": "p",
+      "label": "显示完成、失败或取消，及已有成果",
+      "variant": "return",
+      "y": 545
+    }
+  ],
+  "activations": [
+    {
+      "participant": "p",
+      "from": 180,
+      "to": 550,
+      "type": "frontend"
+    },
+    {
+      "participant": "s",
+      "from": 390,
+      "to": 549,
+      "type": "frontend"
+    },
+    {
+      "participant": "i",
+      "from": 210,
+      "to": 519,
+      "type": "messagebus"
+    },
+    {
+      "participant": "h",
+      "from": 240,
+      "to": 549,
+      "type": "backend"
+    },
+    {
+      "participant": "e",
+      "from": 270,
+      "to": 549,
+      "type": "database"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "事实链",
+      "items": [
+        "spawnAgent · spawnGuard · subagentExecutor · resultAggregator",
+        "swarm.ipc · swarmStore · SwarmMonitor"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "失败与取消口径",
+      "items": [
+        "子代理失败只让依赖它的进 blocked，不拖垮兄弟",
+        "父任务取消才向下级联；分阶段收尾在 shutdownProtocol"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "不画什么",
+      "items": [
+        "不画不存在的自动无限重试，重派沿图 ① 发新任务",
+        "这里画的是 spawn_agent 并行分支"
+      ]
+    }
+  ]
+}

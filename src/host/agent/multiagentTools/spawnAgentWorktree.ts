@@ -1,5 +1,5 @@
 import { AgentFailureCode } from '../../../shared/contract/agentFailure';
-import { createAgentWorktree } from '../agentWorktree';
+import { createAgentWorktree, worktreeFailureHint } from '../agentWorktree';
 import { getParallelAgentCoordinatorRegistry } from '../parallelAgentCoordinator';
 import type { MultiagentExecutionResult } from '../multiagentExecutionTypes';
 import type { SubagentExecutionContext } from '../subagentExecutorTypes';
@@ -31,7 +31,7 @@ export async function prepareSpawnAgentWorktree(
       ok: false,
       failure: {
         success: false,
-        error: `Failed to create worktree for agent: ${errMsg}. Ensure you are in a git repository.`,
+        error: `Failed to create worktree for agent: ${errMsg}. ${await worktreeFailureHint(cwd)}`,
         metadata: { failureCode: AgentFailureCode.WorktreeCreateFailed },
       },
     };

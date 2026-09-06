@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   getScriptedRunPermissionHandler,
@@ -29,13 +30,16 @@ function restoreEnv(): void {
   else process.env.CODE_AGENT_EVAL_BRIDGE = previousBridge;
 }
 
+// 文件级清理：本文件里不止一个 describe 会改这三个环境变量并建临时目录，
+// 钩子挂在某一个 describe 里，别的组跑完就把它们留给了后面的测试文件（#1670 ai-review Nit）。
+afterEach(() => {
+  restoreEnv();
+  vi.unstubAllEnvs();
+  if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true });
+  tempDir = undefined;
+});
+
 describe('scripted run permission policy', () => {
-  afterEach(() => {
-    restoreEnv();
-    vi.unstubAllEnvs();
-    if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true });
-    tempDir = undefined;
-  });
 
   it('returns undefined when no eval policy path is configured', () => {
     delete process.env.NEO_SCRIPTED_APPROVAL_POLICY;
@@ -198,5 +202,109 @@ describe('scripted run permission policy', () => {
       tool: 'Write',
       details: { path: '/tmp/probe.txt' },
     })).resolves.toEqual({ approved: false, denialSource: 'scripted' });
+  });
+});
+
+import { permissionRequestTypeForLevel } from '../../../../src/host/tools/permissionRequestType';
+
+/**
+ * 枚举 builtin 插件**可能注册**的全部工具：直接从磁盘上的 `*.schema.ts` 取，不走 activate()。
+ *
+ * 为什么不走 activate()：computerUse 的注册在 `isCuaStateV2Enabled()` 上分叉，测试环境只会走到
+ * 其中一支 —— 09-06 实测 activate 只枚举到 13 个，摘掉另一支那个工具的规则测试照样绿，
+ * 门对它结构性失明。策略要守的不变量是「任何一支分支下能被注册的工具都得有裁决规则」，
+ * 所以真源取所有分支的并集 = 全部 schema 文件；新增一个 schema 文件这道门自动看得见。
+ */
+async function getBuiltinPluginToolDefinitions(): Promise<readonly { name: string; permissionLevel: string }[]> {
+  const builtinRoot = path.resolve('src/host/plugins/builtin');
+  const schemaFiles: string[] = [];
+  const walk = (dir: string): void => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (entry.name.endsWith('.schema.ts')) schemaFiles.push(full);
+    }
+  };
+  walk(builtinRoot);
+  expect(schemaFiles.length).toBeGreaterThan(0);
+  const byName = new Map<string, { name: string; permissionLevel: string }>();
+  for (const file of schemaFiles.sort()) {
+    const module = await import(pathToFileURL(file).href) as Record<string, unknown>;
+    for (const value of Object.values(module)) {
+      if (!value || typeof value !== 'object') continue;
+      const schema = value as { name?: unknown; permissionLevel?: unknown };
+      if (typeof schema.name === 'string' && typeof schema.permissionLevel === 'string') {
+        byName.set(schema.name, { name: schema.name, permissionLevel: schema.permissionLevel });
+      }
+    }
+  }
+  return [...byName.values()];
+}
+
+describe('builtin plugin scripted policy coverage', () => {
+  it('has a matching allow or deny rule for every registered builtin tool', async () => {
+    const policy = JSON.parse(fs.readFileSync('.claude/eval-approval-policy.json', 'utf8')) as {
+      rules: Array<{ effect: string; tool: string; match?: { requestType?: string } }>;
+    };
+    const rulesByTool = new Map(policy.rules.map((rule) => [rule.tool, rule]));
+    const tools = await getBuiltinPluginToolDefinitions();
+    expect(tools.length).toBeGreaterThan(0);
+    for (const tool of tools) {
+      const rule = rulesByTool.get(tool.name);
+      expect(rule, `missing scripted policy rule for ${tool.name}`).toBeDefined();
+      // allow 与 deny 都要核 requestType：deny 写错类型今天不影响结果（兜底也是拒），
+      // 但哪天有人把它翻成 allow，那条规则就静默匹配不上、变成"写着放行其实没放行"。
+      // 这道门要保证的是"规则真的命中这个工具"，不是"结果碰巧对"（#1670 第五轮 ai-review Nit）。
+      expect(rule?.match?.requestType, `wrong requestType on ${rule?.effect} rule for ${tool.name}`)
+        .toBe(permissionRequestTypeForLevel(tool.permissionLevel));
+    }
+  });
+});
+
+import { ToolExecutor } from '../../../../src/host/tools/toolExecutor';
+import { validateHtmlInAppModule } from '../../../../src/host/plugins/builtin/browserControl/validateHtmlInApp';
+
+describe('builtin plugin request chain', () => {
+  it('builds validate_html_in_app permission data through ToolExecutor and scripted policy', async () => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'scripted-approval-policy-'));
+    process.env.NEO_SCRIPTED_APPROVAL_POLICY = path.resolve('.claude/eval-approval-policy.json');
+    process.env.CODE_AGENT_DATA_DIR = path.join(tempDir, 'isolated-data');
+    process.env.CODE_AGENT_EVAL_BRIDGE = '1';
+    const handler = requireScriptedRunPermissionHandler()!;
+    const executor = new ToolExecutor({
+      requestPermission: handler,
+      workingDirectory: process.cwd(),
+      forcePermissionHandler: true,
+    });
+    const request = (executor as unknown as { buildPermissionRequest: (...args: any[]) => any }).buildPermissionRequest(
+      { name: validateHtmlInAppModule.schema.name, permissionLevel: validateHtmlInAppModule.schema.permissionLevel },
+      { url: 'http://localhost:3000' },
+    );
+    expect(request).toMatchObject({ type: 'command', tool: 'validate_html_in_app' });
+    await expect(handler(request)).resolves.toMatchObject({ approved: true, approvalSource: 'scripted' });
+  });
+
+  // #1670 ai-review：browser_action / Browser 的参数面里有 analyze:true（截图上传云端视觉模型），
+  // image_process 的 output_path 直接进 sharp.toFile() 没有工作区边界（能覆盖沙箱外的真实文件）——
+  // （browserAction.ts 的 analyzeImageWithVision）。策略只按 (tool, requestType) 裁决、表达不了参数级，
+  // 所以整条 deny；这条断言钉住"别哪天顺手把它放回 allow"。
+  it('denies browser_action: its parameter surface reaches cloud vision (analyze:true)', async () => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'scripted-approval-policy-'));
+    process.env.NEO_SCRIPTED_APPROVAL_POLICY = path.resolve('.claude/eval-approval-policy.json');
+    process.env.CODE_AGENT_DATA_DIR = path.join(tempDir, 'isolated-data');
+    process.env.CODE_AGENT_EVAL_BRIDGE = '1';
+    const handler = requireScriptedRunPermissionHandler()!;
+    // 请求类型必须跟产品真实映射一致（permissionLevel → requestType），否则规则改成 allow
+    // 也匹配不上、测试照样绿——这条断言就成了摆设（#1670 第四轮 ai-review Nit）。
+    const cases = [
+      { tool: 'browser_action', level: 'execute', details: { action: 'screenshot', analyze: true } },
+      { tool: 'Browser', level: 'execute', details: { action: 'screenshot', analyze: true } },
+      { tool: 'image_process', level: 'write', details: { output_path: '/tmp/outside-sandbox.png' } },
+    ] as const;
+    for (const { tool, level, details } of cases) {
+      await expect(handler({
+        type: permissionRequestTypeForLevel(level), tool, details,
+      } as never)).resolves.toMatchObject({ approved: false, denialSource: 'scripted' });
+    }
   });
 });

@@ -148,6 +148,9 @@ ${agent.result ? `- Has Result: Yes (use action='result' to retrieve)` : ''}`,
         if (agent.status === 'failed') {
           return { ok: false, error: `Agent [${agentId}] failed: ${agent.error ?? 'unknown'}`, code: 'DOMAIN_ERROR' };
         }
+        const missingToolsNote = agent.missingTools?.length
+          ? `\nMissing tools: ${agent.missingTools.join(', ')}`
+          : '';
         return withMultiagentMeta({
           ok: true,
           output: `Agent [${agentId}] Result:
@@ -155,15 +158,17 @@ ${agent.result ? `- Has Result: Yes (use action='result' to retrieve)` : ''}`,
 Task: ${agent.task}
 
 Output:
-${agent.result || '(no output)'}`,
+${agent.result || '(no output)'}${missingToolsNote}`,
         }, ctx, schema.name, {
           action,
           agentId,
           status: agent.status,
           targets: [agentId],
+          ...(agent.missingTools?.length ? { missingTools: agent.missingTools } : {}),
           result: {
             task: agent.task,
             output: agent.result || '',
+            ...(agent.missingTools?.length ? { missingTools: agent.missingTools } : {}),
           },
         }, `Agent result: ${agentId}`);
       }

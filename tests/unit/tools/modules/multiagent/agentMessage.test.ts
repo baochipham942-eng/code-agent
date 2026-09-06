@@ -200,6 +200,7 @@ describe('agent_message behavior', () => {
       expect(result.output).toContain('Agent [a1] Result:');
       expect(result.output).toContain('Task: do thing');
       expect(result.output).toContain('output text');
+      expect(result.output).not.toContain('Missing tools:');
       expect(result.meta).toMatchObject({
         action: 'result',
         agentId: 'a1',
@@ -213,6 +214,37 @@ describe('agent_message behavior', () => {
           kind: 'text',
           sourceTool: 'agent_message',
         }),
+      });
+      expect(result.meta).not.toHaveProperty('missingTools');
+    }
+  });
+
+  it('result 完成态把 missingTools 写进结果文本和 metadata', async () => {
+    getSpawnedAgentMock.mockReturnValue({
+      id: 'a1',
+      role: 'coder',
+      status: 'completed',
+      task: 'do thing',
+      result: 'output text',
+      missingTools: ['mcp__cua-driver__*'],
+    });
+    const handler = await agentMessageModule.createHandler();
+    const result = await handler.execute(
+      { action: 'result', agentId: 'a1' },
+      makeCtx(),
+      allowAll,
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.output).toContain('Missing tools: mcp__cua-driver__*');
+      expect(result.meta).toMatchObject({
+        action: 'result',
+        missingTools: ['mcp__cua-driver__*'],
+        result: {
+          task: 'do thing',
+          output: 'output text',
+          missingTools: ['mcp__cua-driver__*'],
+        },
       });
     }
   });

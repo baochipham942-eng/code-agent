@@ -10,7 +10,11 @@ import type {
   SubagentToolResolverPort,
 } from './subagentExecutorTypes';
 import { resolveToolAlias } from '../services/toolSearch/deferredTools';
-import { narrowToolNamesByRunPolicy } from '../tools/runToolPolicy';
+import {
+  couldMcpServerToolsSurviveRunPolicy,
+  narrowToolNamesByRunPolicy,
+  type RunToolPolicy,
+} from '../tools/runToolPolicy';
 import { createLogger } from '../services/infra/logger';
 import { PROVIDER_REGISTRY } from '../model/modelRouter';
 
@@ -116,15 +120,18 @@ async function ensureMcpServerConnected(serverName: string, signal?: AbortSignal
 }
 
 /** 装配链取消信号：两个连接循环每次连接前检查并透传给 ensureConnected（中断的是
- * 本次等待，共享连接不受影响），取消后不再发起后续服务器连接。 */
+ * 本次等待，共享连接不受影响），取消后不再发起后续服务器连接。
+ * runPolicy 在通配展开前按 server 粒度丢掉确定会被挡掉的连接。 */
 export interface SubagentToolAssemblyAbort {
   signal?: AbortSignal;
+  runPolicy?: RunToolPolicy;
 }
 
 /**
  * 把声明的 `mcp__<server>__*` 通配展开成具体工具名（保序去重）。
  * server 未连接时先触发按需连接再取列表；连不上或连后没有匹配工具的通配原样保留，
  * 让后续解析把它记进缺失清单（而不是无声吞掉整组工具）。
+ * 连接前先按 run 策略做 server 粒度预判：本轮确定会被全部丢掉的 server 不连。
  */
 export async function expandSubagentMcpToolGlobs(
   declaredToolNames: readonly string[],
@@ -140,6 +147,9 @@ export async function expandSubagentMcpToolGlobs(
   const connectedServers = new Set<string>();
   for (const serverName of new Set(globServers.values())) {
     if (options?.signal?.aborted) break;
+    if (options?.runPolicy && !couldMcpServerToolsSurviveRunPolicy(serverName, options.runPolicy)) {
+      continue;
+    }
     if (await ensureMcpServerConnected(serverName, options?.signal)) {
       connectedServers.add(serverName);
     }
@@ -237,7 +247,7 @@ export interface SubagentToolAccess {
  * 子代理工具面收口（原 executeInternal 内联的三步，收口为可单测的纯装配）：
  *   1. 父子交集（tools 交集是核心约束，永不扩张；parent.availableTools 为空时退化为
  *      child 声明，避免无害 caller 拿不到任何工具）
- *   2. mcp__<server>__* 通配展开（lazy 服务器先触发按需连接）
+ *   2. mcp__<server>__* 通配展开（只为 run 策略过滤后仍可能保留的 lazy 服务器连）
  *   3. run 级工具面硬边界收窄 + 注册表解析（MCP 形态缺失先连再取一次）
  */
 export async function resolveSubagentToolAccess(
@@ -250,7 +260,14 @@ export async function resolveSubagentToolAccess(
   const pooled = effectiveParentContext.availableTools.length === 0
     ? [...config.availableTools]
     : [...childCtx.toolPool];
-  const expanded = await expandSubagentMcpToolGlobs(pooled, options);
+  const expanded = await expandSubagentMcpToolGlobs(pooled, {
+    ...options,
+    runPolicy: {
+      allowedToolNames: context.allowedToolNames,
+      deniedToolNames: context.deniedToolNames,
+      toolScope: context.toolScope,
+    },
+  });
   const effectiveToolNames = applyRunToolPolicyToSubagentTools(expanded, context);
   const { defs, missing } = await resolveSubagentToolDefs(effectiveToolNames, context.resolver, options);
   return { effectiveToolNames, allowedToolDefs: defs, missingToolNames: missing };

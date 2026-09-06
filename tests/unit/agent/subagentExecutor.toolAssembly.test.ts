@@ -293,6 +293,9 @@ function setupRealEnsureConnected(serverNames: string[]): {
 function createHarness(options: {
   availableTools: string[];
   getDefinition: (name: string) => ToolDefinition | undefined;
+  allowedToolNames?: readonly string[];
+  deniedToolNames?: readonly string[];
+  toolScope?: { allowedMcpServerIds?: string[] };
 }) {
   const events: Array<{ type: string; data: Record<string, unknown> }> = [];
   const context = {
@@ -310,6 +313,9 @@ function createHarness(options: {
       }),
     },
     abortSignal: new AbortController().signal,
+    ...(options.allowedToolNames ? { allowedToolNames: options.allowedToolNames } : {}),
+    ...(options.deniedToolNames ? { deniedToolNames: options.deniedToolNames } : {}),
+    ...(options.toolScope ? { toolScope: options.toolScope } : {}),
   };
   const config = {
     name: 'Tool Assembly Test Agent',
@@ -515,5 +521,52 @@ describe('装配等待取消接线（N-SUBAGENT-ZEROTOOLS 返修 Important 1）'
     expect(result.cancellationReason).toBe('parent-cancel');
     expect(result.failureCode).not.toBe('tool-unavailable');
     expect(mocks.inference).not.toHaveBeenCalled();
+  });
+});
+
+describe('装配期 MCP 通配连接服从 run 策略（N-SUBAGENT-ZEROTOOLS R3）', () => {
+  it('声明 Read + mcp__slow__*、run 只允许 Read ⇒ 不连接被排除的 MCP，装配直接完成', async () => {
+    mocks.responses.push(textResponse('读完了。'));
+    const { connectSpy } = setupRealEnsureConnected(['slow']);
+    // 若过滤提前被摘掉，这条 hanging connect 会让装配卡死——断言「没等待」。
+    connectSpy.mockImplementation(() => new Promise<void>(() => {}));
+    const resolverDefs = new Map([['Read', makeDefinition('Read')]]);
+    const { request } = createHarness({
+      availableTools: ['Read', 'mcp__slow__*'],
+      allowedToolNames: ['Read'],
+      getDefinition: (name) => resolverDefs.get(name),
+    });
+
+    const result = await new SubagentExecutor().execute(request);
+
+    expect(connectSpy).not.toHaveBeenCalled();
+    expect(mcpState.ensureConnected).not.toHaveBeenCalled();
+    expect(result.success).toBe(true);
+    expect(result.missingTools).toBeUndefined();
+    expect(mocks.inference).toHaveBeenCalledTimes(1);
+    expect(mocks.toolDefinitionSnapshots[0].map((tool) => tool.name)).toEqual(['Read']);
+  });
+
+  it('真阴：run 策略允许该 MCP 工具时，照常连接并展开', async () => {
+    mocks.responses.push(textResponse('读完并连上了。'));
+    mcpState.toolDefinitionNames = ['mcp__slow__work'];
+    mcpState.ensureConnected.mockImplementation(async () => true);
+    const resolverDefs = new Map([
+      ['Read', makeDefinition('Read')],
+      ['mcp__slow__work', makeDefinition('mcp__slow__work')],
+    ]);
+    const { request } = createHarness({
+      availableTools: ['Read', 'mcp__slow__*'],
+      allowedToolNames: ['Read', 'mcp__slow__work'],
+      getDefinition: (name) => resolverDefs.get(name),
+    });
+
+    const result = await new SubagentExecutor().execute(request);
+
+    expect(mcpState.ensureConnected).toHaveBeenCalledWith('slow', expect.any(AbortSignal));
+    expect(result.success).toBe(true);
+    expect(mocks.toolDefinitionSnapshots[0].map((tool) => tool.name).sort()).toEqual(
+      ['Read', 'mcp__slow__work'],
+    );
   });
 });

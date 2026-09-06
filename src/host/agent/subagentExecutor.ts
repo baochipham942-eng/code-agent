@@ -288,8 +288,9 @@ export class SubagentExecutor {
     );
 
     // N-SUBAGENT-ZEROTOOLS：工具面收口（helper 见 subagentExecutorToolDefs）——
-    // 父子交集（永不扩张）→ mcp__<server>__* 通配展开（lazy 服务器先连再取）→
-    // run 级硬边界收窄 → 注册表解析，返回缺失清单供 fail-loud / 部分缺失上报。
+    // 父子交集（永不扩张）→ mcp__<server>__* 通配展开（run 策略确定会丢掉的
+    // server 不连）→ run 级硬边界收窄 → 注册表解析，返回缺失清单供 fail-loud /
+    // 部分缺失上报。
     // 返修 Important 1：装配等待接入 effectiveSignal（父 abort + 内部 timeout 桥接），
     // 取消后不再傻等连接 / 不再发起后续服务器连接。
     const { effectiveToolNames, allowedToolDefs, missingToolNames } = await resolveSubagentToolAccess(

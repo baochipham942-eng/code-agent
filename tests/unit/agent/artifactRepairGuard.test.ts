@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { ContextHealthState } from '../../../src/host/agent/runtime/contextHealthState';
 import {
+  ARTIFACT_REPAIR_GUARD_SEED_MESSAGE_WINDOW,
   getArtifactRepairToolPolicy,
   seedArtifactRepairGuardFromContext,
 } from '../../../src/host/agent/runtime/artifactRepairGuard';
 import { ArtifactState } from '../../../src/host/agent/runtime/artifactState';
-import { ARTIFACT_REPAIR_GUARD_SEED_MESSAGE_WINDOW } from '../../../src/shared/constants/repair';
 import type { Message, ToolResult } from '../../../src/shared/contract';
 
 function validatorFailureEnvelope(targetFile: string, extra = ''): string {

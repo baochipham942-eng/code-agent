@@ -4,8 +4,15 @@ import type { ArtifactRepairGuard, ArtifactRepairGuardPhase } from './artifactSt
 import { inferArtifactRepairIssueCodesFromText } from './artifactRepairSpec';
 import { getUserConfigDir } from '../../config/configPaths';
 import { isPathWithinRoot } from '../../runtime/workspaceScope';
-import { ARTIFACT_REPAIR_GUARD_SEED_MESSAGE_WINDOW } from '../../../shared/constants/repair';
+import { ARTIFACT_REPAIR_MAX_ATTEMPTS } from '../../../shared/constants/repair';
 import type { Message, ToolResult } from '../../../shared/contract';
+
+// Trailing-message window for cold-start guard seeding. Count is messages, not
+// failures: ordinary turns and successful validations must age a stale failure
+// out. 24 = 3× the historical 8-message window, covering one full repair
+// episode (MAX_ATTEMPTS × ~5 messages for fail envelope + assistant + tools
+// + extras) without unbounded lookback across later unrelated turns.
+export const ARTIFACT_REPAIR_GUARD_SEED_MESSAGE_WINDOW = ARTIFACT_REPAIR_MAX_ATTEMPTS * 6;
 
 export type { ArtifactRepairGuard };
 

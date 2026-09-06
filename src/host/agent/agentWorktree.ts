@@ -39,21 +39,41 @@ const ROLE_DEFAULT_ISOLATION: Record<string, 'worktree' | 'none'> = {
   awaiter: 'none',
 };
 
-export function resolveAgentWorktreeIsolation(input: {
+export async function resolveAgentWorktreeIsolation(input: {
   tools: string[];
   role?: string;
   explicit?: string;
-  /** 子 agent 的工作目录；非 git 仓库时隔离没有意义且必然失败，直接判 none */
+  /**
+   * 子 agent 的工作目录；探测**确认**非 git 仓库或零提交仓库（HEAD 无法解析）时
+   * 隔离没有意义且必然失败，直接判 none。探测本身失败（git 不可执行/超时/仓库
+   * 读取失败）不算「确认」，不降级——见 probeWorktreeBase。
+   */
   cwd?: string;
-  /** 外部写执行器要求 Neo 管理的 worktree；非 git 场景也不允许降级。 */
+  /**
+   * 外部写执行器要求 Neo 管理的 worktree；非 git / 零提交场景也不允许降级，
+   * 照常走 worktree（在创建处失败，worktreeFailureHint 给可读原因）。
+   */
   forceWorktree?: boolean;
-}): 'worktree' | 'none' {
-  if (input.forceWorktree) return 'worktree';
-  if (input.cwd !== undefined && !isInsideGitRepo(input.cwd)) {
-    logger.warn(`${input.cwd} 不在 git 仓库内，子 agent 降级为无 worktree 隔离`);
-    return 'none';
+}): Promise<'worktree' | 'none'> {
+  // 显式要求 worktree 的两个来源（外部引擎 / 调用方显式传参）同级，都在探测之前：
+  // 显式要的隔离不允许被探测结果静默压掉，宁可照常 worktree 在创建处显式失败。
+  if (input.forceWorktree || input.explicit === 'worktree') return 'worktree';
+  if (input.cwd !== undefined) {
+    const probe = await probeWorktreeBase(input.cwd);
+    if (probe.kind === 'no-repo' || probe.kind === 'unborn') {
+      logger.warn(
+        `${input.cwd} 无法创建 worktree（不在 git 仓库内，或仓库还没有任何提交），子 agent 降级为无 worktree 隔离`,
+      );
+      return 'none';
+    }
+    if (probe.kind === 'unknown') {
+      // fail-closed：只有「确认建不了」才允许降级。探测没结论时保持 worktree，
+      // 否则可写子代理会在父工作目录里直接写文件（并发互相覆盖）。
+      logger.warn(
+        `${input.cwd} git 探测失败（${probe.reason}），不降级为无隔离；若仓库确实不可建 worktree，将在创建处失败并给出原因`,
+      );
+    }
   }
-  if (input.explicit === 'worktree') return 'worktree';
   if (input.tools.some((tool) => ['Write', 'Edit', 'Bash'].includes(tool))) {
     return 'worktree';
   }
@@ -63,18 +83,158 @@ export function resolveAgentWorktreeIsolation(input: {
 }
 
 /**
- * 目录是否在 git 仓库里（向上找 .git，worktree 里 .git 是文件不是目录）。
- * worktree 隔离在非 git 目录下没有意义且必然失败——Neo 的协作者多数不是程序员，
- * 默认工作目录就是家目录，硬起隔离会让「派个会写文件的成员」整条路不可用。
+ * worktree base 可用性的探测结论。
+ * - `resolves`：HEAD 能解析为**存在的** commit，worktree 一定有 base 可指
+ * - `no-repo`：**确认**不在 git 仓库内
+ * - `unborn`：**确认**在 git 仓库内但还没有任何提交（HEAD 指向尚不出生的分支）
+ * - `unknown`：探测本身失败（git 不可执行、超时、仓库元数据失效等），没有结论
+ *
+ * 只有前三种「确认」档才允许据此降级无隔离；`unknown` 不许降级（fail-closed）。
  */
-function isInsideGitRepo(dir: string): boolean {
-  let current = path.resolve(dir);
+type GitWorktreeBaseProbe =
+  | { kind: 'resolves' }
+  | { kind: 'no-repo' }
+  | { kind: 'unborn' }
+  | { kind: 'unknown'; reason: string };
+
+/** 单条 git 探测命令的结局：只保留退出码与 stdout，stderr 一律不读（文本随 git 版本/locale 变）。 */
+type GitProbeRun =
+  | { ok: true; stdout: string }
+  | { ok: false; exitCode: number | undefined; timedOut: boolean };
+
+type GitProbeFailure = Extract<GitProbeRun, { ok: false }>;
+
+async function runGitProbe(cwd: string, gitArgs: string): Promise<GitProbeRun> {
+  try {
+    const { stdout } = await execAsync(`git -C ${shellQuote(cwd)} ${gitArgs}`, {
+      timeout: WORKTREE_TIMEOUT,
+    });
+    return { ok: true, stdout };
+  } catch (err) {
+    const e = err as { code?: number | string; killed?: boolean };
+    return {
+      ok: false,
+      exitCode: typeof e.code === 'number' ? e.code : undefined,
+      timedOut: e.killed === true,
+    };
+  }
+}
+
+/** 探测进程本身没跑成（sh 找不到 git=127、不可执行=126、超时被杀、exec 级异常）——不是 git 的结论。只在 `!run.ok` 时有意义。 */
+function isProbeProcessFailure(run: GitProbeFailure): boolean {
+  return run.timedOut || run.exitCode === undefined || run.exitCode === 127 || run.exitCode === 126;
+}
+
+function probeProcessFailureReason(run: GitProbeFailure): string {
+  if (run.timedOut) return `git 探测超时（>${WORKTREE_TIMEOUT}ms 被杀）`;
+  if (run.exitCode === 127 || run.exitCode === 126) {
+    return `git 不可执行（退出码 ${run.exitCode}）`;
+  }
+  return 'git 探测进程异常（无退出码）';
+}
+
+/**
+ * 沿目录树向上找 `.git`（目录或 gitfile 都算），返回出现 `.git` 的那层目录，
+ * 到根都没有则返回 undefined。git 在「向上找不到 .git」与「.git 在场但元数据失效
+ * （gitdir 死引用/HEAD 损坏）」两种情形下退出码同为 128，退出码分不开——用这一
+ * 文件系统结构事实来分：一路无 .git 才是「确认不在仓库里」。
+ */
+function findDotGitUp(startDir: string): string | undefined {
+  let current = path.resolve(startDir);
   for (;;) {
-    if (fs.existsSync(path.join(current, '.git'))) return true;
+    if (fs.existsSync(path.join(current, '.git'))) return current;
     const parent = path.dirname(current);
-    if (parent === current) return false;
+    if (parent === current) return undefined;
     current = parent;
   }
+}
+
+/**
+ * 用 git 自己的判据探测 worktree 能否有 base（`git worktree add` 需要可解析的 HEAD）。
+ * worktree 隔离在非 git 目录下没有意义且必然失败——Neo 的协作者多数不是程序员，
+ * 默认工作目录就是家目录，硬起隔离会让「派个会写文件的成员」整条路不可用；
+ * 「git init 过但还没有任何提交」的仓库同属这一档。
+ *
+ * 判据全部来自**退出码 + 文件系统结构**，stderr 一个字节都不读：按 stderr 文本
+ * 分类 git 失败原因是穷举型（文本随 git 版本、locale、挂载布局变，PR#1685
+ * ai-review R1-R3 每轮都在同一点挖出新形态）。退出码语义 2026-09-06 本机实测
+ * 定型（git 2.50.1，完整矩阵见证据档 N-SPAWN-NOHEAD）：
+ *
+ * 1. `rev-parse --verify --quiet 'HEAD^{commit}'` 退出 0 ⇒ `resolves`。
+ *    peel 到 commit 会查对象库，悬空 sha（ref 指向不存在的对象）也拦在这一步。
+ * 2. 失败时先问「在不在仓库里」（`rev-parse --git-dir`）：git 不认 ⇒ 自己沿
+ *    目录树找 .git 佐证——一路无 .git ⇒ `no-repo`（跨挂载点措辞差异只影响
+ *    stderr，退出码与文件系统结论一致）；.git 在场但 git 不认 ⇒ `unknown`。
+ * 3. 在仓库内但 HEAD 解析不出 ⇒ `symbolic-ref -q HEAD` 问 HEAD 指哪：读不出
+ *    （引用损坏，实测退出 128）⇒ `unknown`；读出目标 ref 后用 `show-ref <目标>`
+ *    （不加 --verify/--quiet：这一形态下 absent=1 / 损坏=128 / 健在=0，实测可分）
+ *    ——目标分支还没出生（退出 1）⇒ `unborn`；其余 ⇒ `unknown`。
+ * 4. 探测进程本身失败（127/126、超时、exec 异常、cwd 不存在）⇒ `unknown`。
+ */
+async function probeWorktreeBase(dir: string): Promise<GitWorktreeBaseProbe> {
+  const head = await runGitProbe(dir, `rev-parse --verify --quiet 'HEAD^{commit}'`);
+  if (head.ok) return { kind: 'resolves' };
+  if (isProbeProcessFailure(head)) {
+    return { kind: 'unknown', reason: probeProcessFailureReason(head) };
+  }
+
+  const inside = await runGitProbe(dir, 'rev-parse --git-dir');
+  if (!inside.ok && isProbeProcessFailure(inside)) {
+    return { kind: 'unknown', reason: probeProcessFailureReason(inside) };
+  }
+  if (!inside.ok) {
+    if (!fs.existsSync(dir)) {
+      return { kind: 'unknown', reason: `工作目录不存在：${dir}` };
+    }
+    const dotGitOwner = findDotGitUp(dir);
+    if (!dotGitOwner) return { kind: 'no-repo' };
+    return {
+      kind: 'unknown',
+      reason: `${dotGitOwner} 下有 .git 但 git 无法识别（仓库元数据失效）`,
+    };
+  }
+
+  const symref = await runGitProbe(dir, 'symbolic-ref -q HEAD');
+  if (!symref.ok && isProbeProcessFailure(symref)) {
+    return { kind: 'unknown', reason: probeProcessFailureReason(symref) };
+  }
+  if (!symref.ok) {
+    return { kind: 'unknown', reason: 'HEAD 不是可读的符号引用（引用损坏或分离头损坏）' };
+  }
+  const targetRef = symref.stdout.trim();
+  if (!targetRef.startsWith('refs/')) {
+    return { kind: 'unknown', reason: `HEAD 指向非法引用：${targetRef || '(空)'}` };
+  }
+  // ref 名对 git 合法但对 shell 未必（$、括号都在 git 允许集内），必须整体加引号
+  const target = await runGitProbe(dir, `show-ref ${shellQuote(targetRef)}`);
+  if (!target.ok && isProbeProcessFailure(target)) {
+    return { kind: 'unknown', reason: probeProcessFailureReason(target) };
+  }
+  if (target.ok) {
+    return {
+      kind: 'unknown',
+      reason: `HEAD 解析不出但目标引用 ${targetRef} 健在（矛盾状态）`,
+    };
+  }
+  if (target.exitCode === 1) {
+    return { kind: 'unborn' };
+  }
+  return {
+    kind: 'unknown',
+    reason: `目标引用 ${targetRef} 损坏或悬空（show-ref 退出 ${target.exitCode}）`,
+  };
+}
+
+/**
+ * worktree 创建失败时的人话提示：区分「不在 git 仓库」和「在 git 仓库但还没有
+ * 任何提交」。后者 git 原生报 "ambiguous argument 'HEAD'"，对用户没有指向性。
+ * 探测无结论（unknown）时退回通用提示——创建失败的原始 stderr 已在错误信息里。
+ */
+export async function worktreeFailureHint(cwd: string): Promise<string> {
+  if ((await probeWorktreeBase(cwd)).kind === 'unborn') {
+    return '仓库还没有任何提交（HEAD 无法解析），无法创建 worktree；请先在仓库里做一次初始提交，或换 native 引擎的子代理。';
+  }
+  return 'Ensure you are in a git repository.';
 }
 
 export interface WorktreeInfo {

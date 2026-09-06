@@ -93,6 +93,21 @@ describe('isKnownSafeCommand', () => {
       expect(isKnownSafeCommand('find . -name "*.tmp" -delete')).toBe(false);
     });
 
+    it('env is safe only while it prints the environment instead of executing a command', () => {
+      expect(isKnownSafeCommand('env')).toBe(true);
+      expect(isKnownSafeCommand('env -u MODE MODE=1')).toBe(true);
+      expect(isKnownSafeCommand('env -u MODE MODE=1 tee /etc/hosts')).toBe(false);
+    });
+
+    it.each([
+      "printf './out.txt' | xargs -n 1 chmod 777",
+      "find . -type f -exec chmod 777 {} \\;",
+      "printf './out.txt' | while read file; do chmod 777 \"$file\"; done",
+      "printf './out.txt' | parallel chmod 777 {}",
+    ])('stdin/iterator command runner is not a safe-command bypass: %s', (command) => {
+      expect(isKnownSafeCommand(command)).toBe(false);
+    });
+
     // npm safe
     it('npm list is safe', () => {
       expect(isKnownSafeCommand('npm list')).toBe(true);
@@ -387,6 +402,13 @@ describe('isKnownSafeCommand', () => {
 });
 
 describe('classifyCommand', () => {
+  it.each(['env -u', 'env -u MODE printf ok', 'env tee out.txt', 'xargs', 'xargs -n 1 chmod 777'])(
+    'distinguishes delegated execution from intrinsic prefix risk: %s', (command) => {
+      expect(classifyCommand(command)).toBe('delegated');
+      expect(isKnownSafeCommand(command)).toBe(false);
+    },
+  );
+
   it('classifies safe commands', () => {
     expect(classifyCommand('ls')).toBe('safe');
     expect(classifyCommand('git status')).toBe('safe');

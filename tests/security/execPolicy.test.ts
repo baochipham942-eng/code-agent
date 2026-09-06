@@ -146,6 +146,55 @@ describe('ExecPolicyStore', () => {
   // ========================================================================
 
   describe('learnFromApproval', () => {
+    it('does not persist executor approval across different write targets', async () => {
+      const approved = 'env -u MODE printf ok > ./out.txt';
+      const subsequent = 'env -u MODE printf overwritten > ./report.csv';
+      const learned = store.learnFromApproval(approved);
+      await store.save();
+      const reloaded = new ExecPolicyStore(tmpDir);
+      const patterns = reloaded.getRules().map(rule => rule.pattern);
+      const decision = reloaded.match(subsequent);
+      console.info('APPROVAL_PREFIX_PROBE', JSON.stringify({ learned, patterns, subsequent, decision }));
+      expect({ learned, patterns, decision }).toEqual({ learned: false, patterns: [], decision: null });
+    });
+
+    it.each([
+      ['env -u MODE', ['env', '-u']],
+      ['env --unset=MODE', ['env', '--unset=MODE']],
+      ['env MODE=1', ['env', 'MODE=1']],
+      ['env', ['env', 'printf']],
+      ['xargs -n 1', ['xargs', '-n']],
+      ['xargs', ['xargs', 'printf']],
+    ])('keeps %s approval local to one command, including previously saved rules', async (wrapper, pattern) => {
+      const approved = `${wrapper} printf ok > ./out.txt`;
+      const subsequent = `${wrapper} printf x > ./other.csv`;
+      expect(store.learnFromApproval(approved)).toBe(false);
+      expect(store.getRules()).toEqual([]);
+      // Simulate a persisted rule learned before the guard was fixed.
+      store.addRule(pattern, 'allow');
+      await store.save();
+      const reloaded = new ExecPolicyStore(tmpDir);
+      expect(reloaded.match(subsequent)).toBeNull();
+      expect(reloaded.match(`${wrapper} tee ./other.csv`)).toBeNull();
+    });
+
+    it('does not learn delegated operations even without shell redirection', () => {
+      expect(store.learnFromApproval('env tee ./out.txt')).toBe(false);
+      expect(store.learnFromApproval('xargs chmod 777')).toBe(false);
+      expect(store.learnFromApproval('xargs')).toBe(false);
+    });
+
+    it('preserves ordinary printf learning and its redirection guard', async () => {
+      expect(store.learnFromApproval('printf ok > ./out.txt')).toBe(false);
+      expect(store.getRules()).toEqual([]);
+      expect(store.learnFromApproval('printf ok')).toBe(true);
+      await store.save();
+      const reloaded = new ExecPolicyStore(tmpDir);
+      expect(reloaded.getRules().map(rule => rule.pattern)).toEqual([['printf', 'ok']]);
+      expect(reloaded.match('printf ok more')).toBe('allow');
+      expect(reloaded.match('printf ok > ./other.csv')).toBeNull();
+    });
+
     it('learns prefix from approved command', () => {
       const learned = store.learnFromApproval('npm install lodash');
       expect(learned).toBe(true);

@@ -1,13 +1,10 @@
 {
   "benignAskMax": 10,
-  "knownGaps": {
-    "dangerous-env-unset-tee-etc": "N-APPROVAL-CORPUS-GAPS",
-    "dangerous-xargs-chmod": "N-APPROVAL-CORPUS-GAPS"
-  },
+  "knownGaps": {},
   "knownOverBlocks": {
-    "benign-redirect-truncate": "N-APPROVAL-CORPUS-GAPS",
-    "benign-redirect-append": "N-APPROVAL-CORPUS-GAPS",
-    "benign-assignment-mode-tee": "N-APPROVAL-CORPUS-GAPS",
-    "benign-assignment-multiple": "N-APPROVAL-CORPUS-GAPS"
+    "benign-redirect-truncate": "N-WRITETARGET-EXECTIME",
+    "benign-redirect-append": "N-WRITETARGET-EXECTIME",
+    "benign-assignment-mode-tee": "N-WRITETARGET-EXECTIME",
+    "benign-assignment-multiple": "N-WRITETARGET-EXECTIME"
   }
 }

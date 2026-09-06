@@ -321,4 +321,122 @@ describe('markInterruptedLoops（N-LOOP-DURABLE 刀1：启动时把残留 runnin
     expect(drained).toHaveLength(1);
     expect(drained[0]).toMatchObject({ id: 'loop_abc:lost', type: 'task_failed' });
   });
+
+  // -------------------------------------------------------------------------
+  // 第三棒 Important 1：并发入口重复收口——running 筛选在事务外，UPDATE 只按
+  // id 匹配挡不住第二方；已投递通知的 delivered_at 会被 INSERT OR REPLACE 重置。
+  // -------------------------------------------------------------------------
+
+  /** 第二入口的 db 代理：SELECT 残留行返回过期快照（读发生在第一方收口前），其余语句照常透传真库。 */
+  function staleSnapshotDb(db: Database.Database, staleRows: unknown[]): Database.Database {
+    return new Proxy(db, {
+      get(target, prop) {
+        if (prop === 'prepare') {
+          return (sql: string) => {
+            if (sql.includes('FROM session_automations')) {
+              return { all: () => staleRows } as unknown as ReturnType<Database.Database['prepare']>;
+            }
+            return target.prepare(sql);
+          };
+        }
+        const value = Reflect.get(target, prop, target);
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    }) as Database.Database;
+  }
+
+  it('并发入口收口同一条记录：第二方 changes=0 直接退出，已投递通知不被重置、不重复投递', async () => {
+    const db = createGhostDb();
+    const configJson = JSON.stringify({ ownerProcess: { pid: deadOwnerPid(), stampedAt: 1_000 } });
+    insertAutomation(db, {
+      id: 'loop:loop_abc',
+      sessionId: 'session-1',
+      title: '循环 · 盯构建',
+      sourceRefId: 'loop_abc',
+      configJson,
+    });
+
+    // 第一方（桌面）先行完成收口，通知落库。
+    expect(await markInterruptedLoops(db)).toBe(1);
+
+    // 用户已经看到这条通知（delivered_at 已落库，不该再被投递一次）。
+    db.prepare(`
+      UPDATE background_task_notifications SET delivered_at = 12345 WHERE id = 'loop_abc:lost'
+    `).run();
+    const updatedAtByFirstParty = (db.prepare(`
+      SELECT updated_at FROM session_automations WHERE id = 'loop:loop_abc'
+    `).get() as { updated_at: number }).updated_at;
+
+    // 第二方（CLI）的 SELECT 发生在第一方收口之前 → 持有 running+带戳 的过期快照；
+    // 它是另一个进程，ledger 单例也是全新的。
+    resetBackgroundTaskLedgerForTest();
+    const secondEntry = staleSnapshotDb(db, [{
+      id: 'loop:loop_abc',
+      source_session_id: 'session-1',
+      title: '循环 · 盯构建',
+      source_ref_id: 'loop_abc',
+      config_json: configJson,
+      created_at: 1_000,
+      last_run_at: null,
+    }]);
+    expect(await markInterruptedLoops(secondEntry)).toBe(0);
+
+    // 修复前：第二方照样写入（返回 1），INSERT OR REPLACE 把 delivered_at 重置回 NULL。
+    const notificationRow = db.prepare(`
+      SELECT delivered_at FROM background_task_notifications WHERE id = 'loop_abc:lost'
+    `).get() as { delivered_at: number | null };
+    expect(notificationRow.delivered_at).toBe(12345);
+
+    // automation 行也没被第二方再碰（updated_at 不变）。
+    expect((db.prepare(`
+      SELECT updated_at FROM session_automations WHERE id = 'loop:loop_abc'
+    `).get() as { updated_at: number }).updated_at).toBe(updatedAtByFirstParty);
+
+    // 新进程视角不会重复投递这条已送达通知。
+    const revived = createBackgroundTaskLedger();
+    revived.setStore(new SqliteBackgroundTaskStore(db));
+    expect(revived.drainNotifications('session-1')).toHaveLength(0);
+  });
+
+  it('并发入口的过期快照遇行被新归属重新盖戳：同样 changes=0 退出，不误杀新归属的 loop', async () => {
+    const db = createGhostDb();
+    const staleConfigJson = JSON.stringify({ ownerProcess: { pid: deadOwnerPid(), stampedAt: 1_000 } });
+    insertAutomation(db, {
+      id: 'loop:loop_reborn',
+      sessionId: 'session-1',
+      title: '循环 · 已被新进程接管',
+      sourceRefId: 'loop_reborn',
+      configJson: staleConfigJson,
+    });
+
+    // 行没被收口，而是被一个新归属进程重新盖戳继续跑（当前 config_json ≠ 过期快照）。
+    const liveOwner = captureLoopOwnerStamp();
+    db.prepare(`
+      UPDATE session_automations
+      SET config_json = ?
+      WHERE id = 'loop:loop_reborn'
+    `).run(JSON.stringify({
+      ownerProcess: {
+        pid: liveOwner.pid,
+        ...(liveOwner.processStartAtMs !== undefined ? { processStartAtMs: liveOwner.processStartAtMs } : {}),
+        stampedAt: 2_000,
+      },
+    }));
+
+    const secondEntry = staleSnapshotDb(db, [{
+      id: 'loop:loop_reborn',
+      source_session_id: 'session-1',
+      title: '循环 · 已被新进程接管',
+      source_ref_id: 'loop_reborn',
+      config_json: staleConfigJson,
+      created_at: 1_000,
+      last_run_at: null,
+    }]);
+    expect(await markInterruptedLoops(secondEntry)).toBe(0);
+    expect(automationStatus(db, 'loop:loop_reborn')).toBe('running');
+
+    const revived = createBackgroundTaskLedger();
+    revived.setStore(new SqliteBackgroundTaskStore(db));
+    expect(revived.drainNotifications('session-1')).toHaveLength(0);
+  });
 });

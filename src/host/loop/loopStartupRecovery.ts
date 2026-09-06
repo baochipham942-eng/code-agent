@@ -24,6 +24,13 @@
 // 修复棒 Important 2：automation 终态、台账 orphaned 终态、中断通知三处写入放进
 // 同一个事务，任何一步抛错整体回滚，行保持 running 留给下次启动重试；全部持久化
 // 成功才计入返回的成功数。
+//
+// 第三棒 Important 1：running 筛选与归属判活都发生在事务外，UPDATE 只按 id 匹配
+// 挡不住桌面与 CLI 并发扫到同一条残留时的重复收口——第二方会把已投递通知的
+// delivered_at 重置（INSERT OR REPLACE），用户重复收到同一条「循环已中断」。
+// WHERE 收紧为 status='running' + 归属快照（config_json IS 快照值，null 安全），
+// changes=0 的一方说明行已被并发入口收口（或被新归属重新盖戳），直接退出，
+// 不再写台账/通知/回流。
 // ============================================================================
 
 import type BetterSqlite3 from 'better-sqlite3';
@@ -115,12 +122,13 @@ async function finalizeInterruptedLoop(
   // 三处写入同一事务（Important 2）：automation 收终态（顺带摘归属戳）、台账 orphaned
   // 终态、中断通知。ledger 的 store 与本事务共用同一个 db 句柄，同步写会加入事务。
   // 任何一步抛错 → 整体回滚 → 行保持 running，下次启动重扫重试，且不计入成功数。
-  const commitFinalize = db.transaction(() => {
-    db.prepare(`
+  const commitFinalize = db.transaction((): boolean => {
+    const grabbed = db.prepare(`
       UPDATE session_automations
       SET status = 'failed', config_json = ?, updated_at = ?
-      WHERE id = ?
-    `).run(stripLoopOwnerStamp(row.config_json), now, row.id);
+      WHERE id = ? AND status = 'running' AND config_json IS ?
+    `).run(stripLoopOwnerStamp(row.config_json), now, row.id, row.config_json ?? null);
+    if (grabbed.changes === 0) return false;
 
     ledger.upsertTask({
       id: taskId,
@@ -147,10 +155,16 @@ async function finalizeInterruptedLoop(
         message: `${row.title} 在应用关闭时中断，未能继续`,
       });
     }
+    return true;
   });
 
   try {
-    commitFinalize();
+    if (!commitFinalize()) {
+      logger.info(
+        `finalize interrupted loop ${row.id}: row already closed by a concurrent entry, skipping ledger/notification/backflow`,
+      );
+      return false;
+    }
   } catch (error) {
     logger.warn(
       `finalize interrupted loop ${row.id} rolled back (row stays running, retry on next startup):`,

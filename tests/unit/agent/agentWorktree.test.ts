@@ -145,17 +145,21 @@ describe('AgentWorktree', () => {
 
     it('非 git 目录默认降级为无隔离；显式要求 worktree 的不降级', async () => {
       // 协作者默认工作目录就是家目录，硬起隔离会让「派个会写文件的成员」整条路不可用
-      // 判据是 git 自己的 rev-parse（非 git 目录 / 零提交仓库都解析失败）
-      // 注意 mock 的失败形状要跟真实 exec 一致：code = git 退出码 + stderr = fatal 串。
-      // 裸 Error（无 code/stderr）会被 probeWorktreeBase 判成「探测失败」而不降级。
-      execState.when(/rev-parse --verify --quiet HEAD/, (cmd) => {
+      // 判据是 git 退出码 + 文件系统佐证（非 git 目录 / 零提交仓库的探测命令都失败）。
+      // mock 的失败形状带 code = git 退出码（stderr 已不读）；tmpdir 的两条探测命令都
+      // 退出 128 后，沿目录树找 .git 用的是真 fs（os.tmpdir() 一路向上确无 .git）→ 判 no-repo。
+      // 裸 Error（无 code）会被 probeWorktreeBase 判成「探测进程异常」而不降级。
+      execState.when(/rev-parse --verify --quiet 'HEAD\^\{commit\}'/, (cmd) => {
         if (cmd.includes(`git -C '${os.tmpdir()}'`)) {
-          throw Object.assign(new Error('Command failed: git rev-parse'), {
-            code: 128,
-            stderr: 'fatal: not a git repository (or any of the parent directories): .git',
-          });
+          throw Object.assign(new Error('Command failed: git rev-parse'), { code: 128 });
         }
         return { stdout: '' };
+      });
+      execState.when(/rev-parse --git-dir/, (cmd) => {
+        if (cmd.includes(`git -C '${os.tmpdir()}'`)) {
+          throw Object.assign(new Error('Command failed: git rev-parse'), { code: 128 });
+        }
+        return { stdout: '.git' };
       });
       expect(await resolveAgentWorktreeIsolation({ tools: ['Read', 'Write'], cwd: os.tmpdir() })).toBe('none');
       // 显式 worktree 同 forceWorktree 同级：不因目录不可建而静默降级，照常 worktree（在创建处失败）

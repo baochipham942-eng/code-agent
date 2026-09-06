@@ -1,5 +1,5 @@
 // ============================================================================
-// worktree 隔离判据三档（真 git，不 mock exec）
+// worktree 隔离判据四态（真 git，不 mock exec）
 //
 //   ① 非 git 目录           → 降级 none（既有行为）
 //   ② git 仓库且有提交       → worktree（既有行为）
@@ -8,6 +8,8 @@
 //   ④ 探测本身失败           → 不降级，照常 worktree（返修：fail-closed。git 不可
 //                             执行/超时/仓库读取失败 ≠ 确认建不了；降级会让可写
 //                             子代理直接写父工作目录）
+//   ⑤ 仓库引用损坏           → 不降级（R3 返修：分支 ref 垃圾字节/悬空 sha、HEAD
+//                             文件损坏都属「仓库在但元数据坏」，不是确认建不了）
 // forceWorktree / 显式 isolation: 'worktree' 与探测之前同级，探测结果（无论哪档）
 // 都压不掉显式要求，照常 worktree，在创建处给可读原因。
 // ============================================================================
@@ -62,6 +64,35 @@ async function makeRepoWithCommit(): Promise<string> {
     + '-c commit.gpgsign=false commit --allow-empty --quiet -m init',
   );
   return dir;
+}
+
+/** 直接改写当前分支的 loose ref 文件（refs/heads/<branch>）——绕过 git，模拟磁盘级损坏 */
+async function writeCurrentBranchRef(repo: string, content: string): Promise<void> {
+  const { stdout } = await execReal(`git -C ${quote(repo)} symbolic-ref HEAD`);
+  const branch = stdout.trim().replace(/^refs\/heads\//, '');
+  await fs.writeFile(path.join(repo, '.git', 'refs', 'heads', branch), content);
+}
+
+/** 有提交的仓库，当前分支 ref 内容是垃圾字节（R3 返修场景：exit 1 不只属于 unborn） */
+async function makeGarbageRefRepo(): Promise<string> {
+  const repo = await makeRepoWithCommit();
+  await writeCurrentBranchRef(repo, 'garbage-not-a-sha\n');
+  return repo;
+}
+
+/** 有提交的仓库，当前分支 ref 指向格式合法但不存在的 sha（悬空，对象库里没有） */
+async function makeDanglingRefRepo(): Promise<string> {
+  const repo = await makeRepoWithCommit();
+  await writeCurrentBranchRef(repo, '1234567890123456789012345678901234567890\n');
+  return repo;
+}
+
+/** 有提交的仓库，.git/HEAD 文件本身损坏——git 对它的报错文案与非 git 目录逐字相同，
+ *  旧 stderr 文本判据会误判成 no-repo（降级）；退出码 + fs 佐证按「.git 在场」判 unknown */
+async function makeBrokenHeadRepo(): Promise<string> {
+  const repo = await makeRepoWithCommit();
+  await fs.writeFile(path.join(repo, '.git', 'HEAD'), 'garbage\n');
+  return repo;
 }
 
 const scratchDirs: string[] = [];
@@ -164,6 +195,40 @@ describe('④ 探测失败不降级（真 git 不可执行，fail-closed）', ()
         await resolveAgentWorktreeIsolation({ tools: ['Read'], explicit: 'worktree', cwd: repo }),
       ).toBe('worktree');
     });
+  });
+});
+
+describe('⑤ 仓库引用损坏不降级（真 git 夹具，R3 返修）', () => {
+  // 「仓库在但引用坏」≠「确认建不了 worktree」：降级会让可写子代理写父工作目录。
+  // 旧判据读 stderr 文本，这几档要么被误归类（HEAD 损坏的文案与非 git 逐字相同），
+  // 要么随 git 版本/locale 漂移；新判据只看退出码 + 文件系统佐证。
+  it('当前分支 ref 是垃圾字节：不返回 none，保持 worktree', async () => {
+    const repo = await makeGarbageRefRepo();
+    scratchDirs.push(repo);
+
+    expect(await resolveAgentWorktreeIsolation({ tools: ['Read', 'Write'], cwd: repo })).toBe('worktree');
+  });
+
+  it('当前分支 ref 指向不存在的 sha（悬空）：不返回 none，保持 worktree', async () => {
+    const repo = await makeDanglingRefRepo();
+    scratchDirs.push(repo);
+
+    expect(await resolveAgentWorktreeIsolation({ tools: ['Read', 'Write'], cwd: repo })).toBe('worktree');
+  });
+
+  it('.git 在场但 HEAD 文件损坏：不返回 none（该形态的 stderr 与非 git 目录逐字相同）', async () => {
+    const repo = await makeBrokenHeadRepo();
+    scratchDirs.push(repo);
+
+    expect(await resolveAgentWorktreeIsolation({ tools: ['Read', 'Write'], cwd: repo })).toBe('worktree');
+  });
+
+  it('显式 worktree / forceWorktree 在引用损坏下同样不被压掉', async () => {
+    const repo = await makeGarbageRefRepo();
+    scratchDirs.push(repo);
+
+    expect(await resolveAgentWorktreeIsolation({ tools: ['Read'], explicit: 'worktree', cwd: repo })).toBe('worktree');
+    expect(await resolveAgentWorktreeIsolation({ tools: ['Read'], forceWorktree: true, cwd: repo })).toBe('worktree');
   });
 });
 

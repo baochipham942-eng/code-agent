@@ -83,11 +83,11 @@ export async function resolveAgentWorktreeIsolation(input: {
 }
 
 /**
- * `git rev-parse --verify --quiet HEAD` 的探测结论。
- * - `resolves`：HEAD 能解析为 commit，worktree 一定有 base 可指
+ * worktree base 可用性的探测结论。
+ * - `resolves`：HEAD 能解析为**存在的** commit，worktree 一定有 base 可指
  * - `no-repo`：**确认**不在 git 仓库内
  * - `unborn`：**确认**在 git 仓库内但还没有任何提交（HEAD 指向尚不出生的分支）
- * - `unknown`：探测本身失败（git 不可执行、超时、仓库读取失败等），没有结论
+ * - `unknown`：探测本身失败（git 不可执行、超时、仓库元数据失效等），没有结论
  *
  * 只有前三种「确认」档才允许据此降级无隔离；`unknown` 不许降级（fail-closed）。
  */
@@ -97,63 +97,132 @@ type GitWorktreeBaseProbe =
   | { kind: 'unborn' }
   | { kind: 'unknown'; reason: string };
 
+/** 单条 git 探测命令的结局：只保留退出码与 stdout，stderr 一律不读（文本随 git 版本/locale 变）。 */
+type GitProbeRun =
+  | { ok: true; stdout: string }
+  | { ok: false; exitCode: number | undefined; timedOut: boolean };
+
+type GitProbeFailure = Extract<GitProbeRun, { ok: false }>;
+
+async function runGitProbe(cwd: string, gitArgs: string): Promise<GitProbeRun> {
+  try {
+    const { stdout } = await execAsync(`git -C ${shellQuote(cwd)} ${gitArgs}`, {
+      timeout: WORKTREE_TIMEOUT,
+    });
+    return { ok: true, stdout };
+  } catch (err) {
+    const e = err as { code?: number | string; killed?: boolean };
+    return {
+      ok: false,
+      exitCode: typeof e.code === 'number' ? e.code : undefined,
+      timedOut: e.killed === true,
+    };
+  }
+}
+
+/** 探测进程本身没跑成（sh 找不到 git=127、不可执行=126、超时被杀、exec 级异常）——不是 git 的结论。只在 `!run.ok` 时有意义。 */
+function isProbeProcessFailure(run: GitProbeFailure): boolean {
+  return run.timedOut || run.exitCode === undefined || run.exitCode === 127 || run.exitCode === 126;
+}
+
+function probeProcessFailureReason(run: GitProbeFailure): string {
+  if (run.timedOut) return `git 探测超时（>${WORKTREE_TIMEOUT}ms 被杀）`;
+  if (run.exitCode === 127 || run.exitCode === 126) {
+    return `git 不可执行（退出码 ${run.exitCode}）`;
+  }
+  return 'git 探测进程异常（无退出码）';
+}
+
+/**
+ * 沿目录树向上找 `.git`（目录或 gitfile 都算），返回出现 `.git` 的那层目录，
+ * 到根都没有则返回 undefined。git 在「向上找不到 .git」与「.git 在场但元数据失效
+ * （gitdir 死引用/HEAD 损坏）」两种情形下退出码同为 128，退出码分不开——用这一
+ * 文件系统结构事实来分：一路无 .git 才是「确认不在仓库里」。
+ */
+function findDotGitUp(startDir: string): string | undefined {
+  let current = path.resolve(startDir);
+  for (;;) {
+    if (fs.existsSync(path.join(current, '.git'))) return current;
+    const parent = path.dirname(current);
+    if (parent === current) return undefined;
+    current = parent;
+  }
+}
+
 /**
  * 用 git 自己的判据探测 worktree 能否有 base（`git worktree add` 需要可解析的 HEAD）。
  * worktree 隔离在非 git 目录下没有意义且必然失败——Neo 的协作者多数不是程序员，
  * 默认工作目录就是家目录，硬起隔离会让「派个会写文件的成员」整条路不可用；
- * 「git init 过但还没有任何提交」的仓库同属这一档。不手写解析 .git/HEAD：
- * worktree 里 .git 是文件不是目录，手写解析会漏 case。
+ * 「git init 过但还没有任何提交」的仓库同属这一档。
  *
- * 判据按**退出码 + stderr 语义**区分（实测 git 2.x，`--quiet` 抑制 ref 错误输出）：
- * - 退出 0 → resolves
- * - 退出 1 → unborn（`--verify --quiet` 下 ref 解析不出，且必然已在仓库内）
- * - 退出 128 且 stderr 是 `fatal: not a git repository (or any of the
- *   parent directories)` → no-repo（向上搜索 .git 一路到根都没有，是唯一能
- *   **确认**「这里不是仓库」的文案）
- * - 退出 128 且 stderr 是 `fatal: not a git repository: <path>`（无括号段）
- *   → unknown：worktree/子模块的 .git 是 gitfile，指向的 gitdir 失效时报这个，
- *   那是仓库元数据坏了，不能确认目录原本不是仓库
- * - 其余 128 fatal（cwd 不存在、仓库损坏、权限）都是探测失败，不是确认
- * - 退出 127（sh 找不到 git）、被 kill（超时）、无退出码的异常 → unknown
+ * 判据全部来自**退出码 + 文件系统结构**，stderr 一个字节都不读：按 stderr 文本
+ * 分类 git 失败原因是穷举型（文本随 git 版本、locale、挂载布局变，PR#1685
+ * ai-review R1-R3 每轮都在同一点挖出新形态）。退出码语义 2026-09-06 本机实测
+ * 定型（git 2.50.1，完整矩阵见证据档 N-SPAWN-NOHEAD）：
+ *
+ * 1. `rev-parse --verify --quiet 'HEAD^{commit}'` 退出 0 ⇒ `resolves`。
+ *    peel 到 commit 会查对象库，悬空 sha（ref 指向不存在的对象）也拦在这一步。
+ * 2. 失败时先问「在不在仓库里」（`rev-parse --git-dir`）：git 不认 ⇒ 自己沿
+ *    目录树找 .git 佐证——一路无 .git ⇒ `no-repo`（跨挂载点措辞差异只影响
+ *    stderr，退出码与文件系统结论一致）；.git 在场但 git 不认 ⇒ `unknown`。
+ * 3. 在仓库内但 HEAD 解析不出 ⇒ `symbolic-ref -q HEAD` 问 HEAD 指哪：读不出
+ *    （引用损坏，实测退出 128）⇒ `unknown`；读出目标 ref 后用 `show-ref <目标>`
+ *    （不加 --verify/--quiet：这一形态下 absent=1 / 损坏=128 / 健在=0，实测可分）
+ *    ——目标分支还没出生（退出 1）⇒ `unborn`；其余 ⇒ `unknown`。
+ * 4. 探测进程本身失败（127/126、超时、exec 异常、cwd 不存在）⇒ `unknown`。
  */
 async function probeWorktreeBase(dir: string): Promise<GitWorktreeBaseProbe> {
-  try {
-    await execAsync(
-      `git -C ${shellQuote(dir)} rev-parse --verify --quiet HEAD`,
-      { timeout: WORKTREE_TIMEOUT },
-    );
-    return { kind: 'resolves' };
-  } catch (err) {
-    const e = err as {
-      code?: number | string;
-      killed?: boolean;
-      stderr?: string;
-      message?: string;
-    };
-    if (e.killed) {
-      return { kind: 'unknown', reason: `git 探测超时（>${WORKTREE_TIMEOUT}ms 被杀）` };
+  const head = await runGitProbe(dir, `rev-parse --verify --quiet 'HEAD^{commit}'`);
+  if (head.ok) return { kind: 'resolves' };
+  if (isProbeProcessFailure(head)) {
+    return { kind: 'unknown', reason: probeProcessFailureReason(head) };
+  }
+
+  const inside = await runGitProbe(dir, 'rev-parse --git-dir');
+  if (!inside.ok && isProbeProcessFailure(inside)) {
+    return { kind: 'unknown', reason: probeProcessFailureReason(inside) };
+  }
+  if (!inside.ok) {
+    if (!fs.existsSync(dir)) {
+      return { kind: 'unknown', reason: `工作目录不存在：${dir}` };
     }
-    if (e.code === 1) return { kind: 'unborn' };
-    if (e.code === 128) {
-      const fatalText = (e.stderr ?? e.message ?? '').toString();
-      // 只认「向上搜索 .git 到根都没有」这一条文案（实测 git 2.50.1）。gitfile
-      // 指向失效 gitdir 时报 `fatal: not a git repository: <path>`——不含括号段，
-      // 属仓库元数据失效，归 unknown 不降级（PR#1685 ai-review R2）。
-      if (/not a git repository \(or any of the parent directories\)/i.test(fatalText)) {
-        return { kind: 'no-repo' };
-      }
-      return {
-        kind: 'unknown',
-        reason: fatalText.trim() || 'git 退出 128 且无 stderr',
-      };
-    }
+    const dotGitOwner = findDotGitUp(dir);
+    if (!dotGitOwner) return { kind: 'no-repo' };
     return {
       kind: 'unknown',
-      reason: e.code === 127
-        ? 'git 不可执行（command not found）'
-        : (e.message ?? `git 探测异常（code=${String(e.code)}）`),
+      reason: `${dotGitOwner} 下有 .git 但 git 无法识别（仓库元数据失效）`,
     };
   }
+
+  const symref = await runGitProbe(dir, 'symbolic-ref -q HEAD');
+  if (!symref.ok && isProbeProcessFailure(symref)) {
+    return { kind: 'unknown', reason: probeProcessFailureReason(symref) };
+  }
+  if (!symref.ok) {
+    return { kind: 'unknown', reason: 'HEAD 不是可读的符号引用（引用损坏或分离头损坏）' };
+  }
+  const targetRef = symref.stdout.trim();
+  if (!targetRef.startsWith('refs/')) {
+    return { kind: 'unknown', reason: `HEAD 指向非法引用：${targetRef || '(空)'}` };
+  }
+  // ref 名对 git 合法但对 shell 未必（$、括号都在 git 允许集内），必须整体加引号
+  const target = await runGitProbe(dir, `show-ref ${shellQuote(targetRef)}`);
+  if (!target.ok && isProbeProcessFailure(target)) {
+    return { kind: 'unknown', reason: probeProcessFailureReason(target) };
+  }
+  if (target.ok) {
+    return {
+      kind: 'unknown',
+      reason: `HEAD 解析不出但目标引用 ${targetRef} 健在（矛盾状态）`,
+    };
+  }
+  if (target.exitCode === 1) {
+    return { kind: 'unborn' };
+  }
+  return {
+    kind: 'unknown',
+    reason: `目标引用 ${targetRef} 损坏或悬空（show-ref 退出 ${target.exitCode}）`,
+  };
 }
 
 /**

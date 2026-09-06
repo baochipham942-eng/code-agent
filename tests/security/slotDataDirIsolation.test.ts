@@ -330,4 +330,122 @@ describe('槽数据目录读隔离', () => {
     });
     expect(asDev.allowed).toBe(true);
   });
+
+  // --------------------------------------------------------------------------
+  // 第二轮返修（R2 四条）：入口判据在执行时失效的漏网
+  // --------------------------------------------------------------------------
+
+  it('R2① 当前槽内的软链指向生产槽：读它被拒，字面路径在当前槽救不了它', async () => {
+    symlinkSync(prodSlot, path.join(devSlot, 'prod'));
+    try {
+      const result = await buildExecutor().execute(
+        'Read',
+        { file_path: path.join(devSlot, 'prod', 'memory', 'notes.md') },
+        { sessionId: 'slot-isolation-r2-symlink-in-own' },
+      );
+      expectForeignDenied(result, '.code-agent', PROD_SENTINEL);
+      expectNoForeignLeak(result, PROD_SENTINEL, prodFile);
+    } finally {
+      rmSync(path.join(devSlot, 'prod'), { force: true });
+    }
+  });
+
+  it('R2③ 子 shell 的 cd 不外溢：(cd /tmp); cat 生产槽相对路径被拒', async () => {
+    const result = await buildExecutor().execute(
+      'Bash',
+      { command: '(cd /tmp); cat .code-agent/memory/notes.md', working_directory: fakeHome },
+      { sessionId: 'slot-isolation-r2-subshell-cd-no-leak' },
+    );
+    expectForeignDenied(result, '.code-agent', PROD_SENTINEL);
+    expectNoForeignLeak(result, PROD_SENTINEL, prodFile);
+  });
+
+  it('R2③ 真阴：子 shell 的 cd 不外溢，外层读当前槽相对路径照常成功', async () => {
+    const result = await buildExecutor().execute(
+      'Bash',
+      { command: '(cd /tmp); cat .code-agent-dev/memory/notes.md', working_directory: fakeHome },
+      { sessionId: 'slot-isolation-r2-subshell-cd-own' },
+    );
+    expect(result.success).toBe(true);
+    expect(leakedText(result)).toContain(OWN_SENTINEL);
+    expect(result.error ?? '').not.toContain('另一个槽');
+  });
+
+  it('R2③ 花括号分组不建子 shell：cd 外溢后按外层语义判，仍拒生产槽', async () => {
+    const result = await buildExecutor().execute(
+      'Bash',
+      { command: '{ cd "$HOME"; }; cat .code-agent/memory/notes.md', working_directory: fakeHome },
+      { sessionId: 'slot-isolation-r2-brace-cd-leaks' },
+    );
+    expectForeignDenied(result, '.code-agent', PROD_SENTINEL);
+  });
+
+  it('R2② Bash 里 grep -r 整个 home：跨槽内容不能到达调用方', async () => {
+    const result = await buildExecutor().execute(
+      'Bash',
+      { command: `grep -r ${PROD_SENTINEL} "$HOME"` },
+      { sessionId: 'slot-isolation-r2-bash-grep-r-home' },
+    );
+    expect(leakedText(result), 'Bash 递归读不能带回生产槽内容').not.toContain(PROD_SENTINEL);
+    expect(result.success).toBe(false);
+    expect(result.error ?? '').toMatch(/这是另一个槽（\.code-agent(-chatprobe)?）的数据目录/);
+    expect(result.metadata?.code).toBe(FOREIGN_SLOT_DATA_DIR_CODE);
+  });
+
+  it('R2② 真阴：Bash 里 grep -r 项目目录（下面没有别人的槽）照常返回匹配', async () => {
+    const projectSentinel = 'SLOT_ISOLATION_PROJECT_MATCH_5d17';
+    const hitDir = path.join(projectDir, 'searchable');
+    mkdirSync(hitDir, { recursive: true });
+    writeFileSync(path.join(hitDir, 'notes.txt'), projectSentinel);
+
+    const result = await buildExecutor().execute(
+      'Bash',
+      { command: `grep -r ${projectSentinel} .` },
+      { sessionId: 'slot-isolation-r2-bash-grep-r-project' },
+    );
+    expect(result.success).toBe(true);
+    expect(leakedText(result)).toContain(projectSentinel);
+    expect(result.error ?? '').not.toContain('另一个槽');
+  });
+
+  it('R2④ rg 不可用时从 home 父目录搜：普通项目匹配照常返回，槽内容被排除', async () => {
+    // 同一个哨兵串既写进生产槽文件也写进普通项目文件：排除项只能按路径区分，
+    // 修好前系统 grep 会把整个 home 目录名当排除项，普通项目的匹配一起被静默丢掉。
+    const shared = 'SLOT_ISOLATION_R2_SHARED_MATCH_8e42';
+    const root = mkdtempSync(path.join(os.tmpdir(), 'slot-isolation-root-'));
+    try {
+      const nestedHome = path.join(root, 'home');
+      const nestedProd = path.join(nestedHome, '.code-agent');
+      const nestedDev = path.join(nestedHome, '.code-agent-dev');
+      const nestedProject = path.join(nestedHome, 'projects', 'demo');
+      mkdirSync(path.join(nestedProd, 'memory'), { recursive: true });
+      mkdirSync(path.join(nestedDev, 'memory'), { recursive: true });
+      mkdirSync(nestedProject, { recursive: true });
+      writeFileSync(path.join(nestedProd, 'memory', 'notes.md'), shared);
+      writeFileSync(path.join(nestedDev, 'memory', 'notes.md'), OWN_SENTINEL);
+      writeFileSync(path.join(nestedProject, 'notes.txt'), shared);
+
+      vi.stubEnv('HOME', nestedHome);
+      vi.stubEnv('CODE_AGENT_HOME', nestedHome);
+      vi.stubEnv('CODE_AGENT_DATA_DIR', nestedDev);
+      __setRgBinaryPathForTest(null);
+      try {
+        const result = await buildExecutor().execute(
+          'Grep',
+          { pattern: shared, path: root },
+          { sessionId: 'slot-isolation-r2-grep-from-home-parent' },
+        );
+        expect(result.success).toBe(true);
+        const text = discoveryLeakText(result);
+        expect(text, '普通项目的匹配不能被槽排除项误伤').toContain('projects/demo');
+        expect(text, '普通项目的匹配要带着哨兵串回来').toContain(shared);
+        expect(text, '生产槽的匹配不能到达调用方').not.toContain('.code-agent/memory');
+        expect(text).not.toContain(`${path.sep}.code-agent${path.sep}`);
+      } finally {
+        __setRgBinaryPathForTest(undefined);
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });

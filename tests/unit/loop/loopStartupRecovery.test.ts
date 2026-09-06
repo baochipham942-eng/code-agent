@@ -33,6 +33,7 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
 
 import { markInterruptedLoops } from '../../../src/host/loop/loopStartupRecovery';
 import { captureLoopOwnerStamp } from '../../../src/host/loop/loopOwnership';
+import type { SessionAutomationOwnerIdentity } from '../../../src/shared/contract/sessionAutomation';
 import {
   createBackgroundTaskLedger,
   getBackgroundTaskLedger,
@@ -47,7 +48,7 @@ interface GhostLoopInput {
   sourceRefId?: string;
   status?: string;
   /** 归属戳（写进 config_json.ownerProcess）；缺省 = 无戳（旧版本残留行）。 */
-  owner?: { pid: number; processStartAtMs?: number; stampedAt?: number };
+  owner?: { pid: number; processIdentity?: SessionAutomationOwnerIdentity; stampedAt?: number };
   /** 直接写坏的 config_json（优先于 owner）。 */
   configJson?: string;
 }
@@ -86,7 +87,7 @@ function insertAutomation(db: Database.Database, input: GhostLoopInput): void {
     ? JSON.stringify({
       ownerProcess: {
         pid: input.owner.pid,
-        ...(input.owner.processStartAtMs !== undefined ? { processStartAtMs: input.owner.processStartAtMs } : {}),
+        ...(input.owner.processIdentity !== undefined ? { processIdentity: input.owner.processIdentity } : {}),
         stampedAt: input.owner.stampedAt ?? 1_000,
       },
     })
@@ -237,7 +238,7 @@ describe('markInterruptedLoops（N-LOOP-DURABLE 刀1：启动时把残留 runnin
       sessionId: 'session-1',
       title: '循环 · 桌面在跑',
       sourceRefId: 'loop_live',
-      owner: { pid: liveOwner.pid, ...(liveOwner.processStartAtMs !== undefined ? { processStartAtMs: liveOwner.processStartAtMs } : {}) },
+      owner: { pid: liveOwner.pid, ...(liveOwner.processIdentity !== undefined ? { processIdentity: liveOwner.processIdentity } : {}) },
     });
 
     const marked = await markInterruptedLoops(db);
@@ -418,7 +419,7 @@ describe('markInterruptedLoops（N-LOOP-DURABLE 刀1：启动时把残留 runnin
     `).run(JSON.stringify({
       ownerProcess: {
         pid: liveOwner.pid,
-        ...(liveOwner.processStartAtMs !== undefined ? { processStartAtMs: liveOwner.processStartAtMs } : {}),
+        ...(liveOwner.processIdentity !== undefined ? { processIdentity: liveOwner.processIdentity } : {}),
         stampedAt: 2_000,
       },
     }));

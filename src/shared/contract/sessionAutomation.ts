@@ -56,10 +56,27 @@ export interface StandingGrant {
 export interface SessionAutomationOwnerStamp {
   /** 归属进程 pid。 */
   pid: number;
-  /** 归属进程启动时间（epoch ms），用于排除 pid 复用；取不到时缺省（退化为存在性检查）。 */
-  processStartAtMs?: number;
+  /** 归属进程启动身份，用于排除 pid 复用；取不到时缺省（退化为存在性检查）。
+   *  旧字段 processStartAtMs（Date.now() - etime 反推的墙钟）已退役：存量行解析后
+   *  无身份字段，判活按「身份确认不了 ⇒ alive」退化处理。 */
+  processIdentity?: SessionAutomationOwnerIdentity;
   /** 盖戳时间（epoch ms）。 */
   stampedAt: number;
+}
+
+/**
+ * 进程启动身份读数：同一进程恒定、不随系统校时漂移，两侧同源做相等比较。
+ * 跨口径数值不可比较 → 判活按「身份确认不了 ⇒ alive」处理。
+ */
+export interface SessionAutomationOwnerIdentity {
+  /**
+   * 读数口径：linux = /proc/<pid>/stat 的 starttime（开机以来 tick，开机时钟域）；
+   * darwin = ps lstart（内核在 exec 时记录的启动墙钟快照，之后校时不回写）。
+   * 数值只在该口径内有意义，禁止跨口径比较或换算成日期时钟。
+   */
+  source: 'linux-proc-stat-starttime' | 'darwin-ps-lstart';
+  /** 该口径下的原始读数（linux = tick 数，darwin = epoch ms）。 */
+  value: number;
 }
 
 export interface SessionAutomationConfig extends Record<string, unknown> {

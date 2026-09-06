@@ -47,17 +47,25 @@ interface OpenFence {
   info: string;
 }
 
-function parseOpenFence(line: string): OpenFence | null {
-  const match = line.replace(BLOCKQUOTE_PREFIX, '').match(FENCE_OPEN);
+interface StartedFence {
+  open: OpenFence;
+  /** 开栏行是否带引用（>）前缀——决定关栏识别与内容判定剥不剥前缀 */
+  inQuote: boolean;
+}
+
+function parseOpenFence(line: string): StartedFence | null {
+  const stripped = line.replace(BLOCKQUOTE_PREFIX, '');
+  const match = stripped.match(FENCE_OPEN);
   if (!match) return null;
   const info = match[2].trim();
   // 反引号围栏的 info 串不允许再含反引号（CommonMark），含则整行不是围栏
   if (match[1][0] === '`' && info.includes('`')) return null;
-  return { char: match[1][0], length: match[1].length, info };
+  return { open: { char: match[1][0], length: match[1].length, info }, inQuote: stripped !== line };
 }
 
-function isCloseFence(line: string, open: OpenFence): boolean {
-  const match = line.replace(BLOCKQUOTE_PREFIX, '').match(FENCE_CLOSE);
+function isCloseFence(line: string, open: OpenFence, inQuote: boolean): boolean {
+  // 只剥与开栏同容器的前缀：顶层围栏内的字面「> ```」行是代码内容，不是关栏
+  const match = (inQuote ? line.replace(BLOCKQUOTE_PREFIX, '') : line).match(FENCE_CLOSE);
   return Boolean(match?.[1][0] === open.char && match[1].length >= open.length);
 }
 
@@ -72,14 +80,28 @@ function splitCodeSegments(text: string): CodeSegment[] {
   let plain: string[] = [];
   let fence: string[] = [];
   let open: OpenFence | null = null;
-  for (const line of text.split('\n')) {
+  let fenceInQuote = false;
+  const lines = text.split('\n');
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
     if (open) {
-      fence.push(line);
-      if (isCloseFence(line, open)) {
+      if (fenceInQuote && !BLOCKQUOTE_PREFIX.test(line)) {
+        // 引用结束 ⇒ 围栏随引用一起结束（围栏不能惰性续行）；本行回顶层重新解析
         segments.push({ text: fence.join('\n'), fenced: true });
         fence = [];
         open = null;
+        fenceInQuote = false;
+        continue; // 不推进 i
       }
+      fence.push(line);
+      if (isCloseFence(line, open, fenceInQuote)) {
+        segments.push({ text: fence.join('\n'), fenced: true });
+        fence = [];
+        open = null;
+        fenceInQuote = false;
+      }
+      i += 1;
       continue;
     }
     const started = parseOpenFence(line);
@@ -88,11 +110,14 @@ function splitCodeSegments(text: string): CodeSegment[] {
         segments.push({ text: plain.join('\n'), fenced: false });
         plain = [];
       }
-      open = started;
+      open = started.open;
+      fenceInQuote = started.inQuote;
       fence.push(line);
+      i += 1;
       continue;
     }
     plain.push(line);
+    i += 1;
   }
   if (open) segments.push({ text: fence.join('\n'), fenced: true });
   if (plain.length) segments.push({ text: plain.join('\n'), fenced: false });
@@ -117,11 +142,14 @@ const NEVER_CONFERS_LANGUAGES = new Set(['neo_ui', 'spreadsheet', 'document']);
  */
 function fenceRendersWithHeaderCopy(fenceText: string): boolean {
   const lines = fenceText.split('\n');
-  const open = parseOpenFence(lines[0]);
-  if (!open) return false;
-  const closed = isCloseFence(lines[lines.length - 1], open);
-  const body = lines.slice(1, closed ? -1 : undefined);
-  const language = open.info.split(/\s+/)[0] ?? '';
+  const started = parseOpenFence(lines[0]);
+  if (!started) return false;
+  const closed = isCloseFence(lines[lines.length - 1], started.open, started.inQuote);
+  // 引用内围栏的正文行剥掉同容器前缀再判内容——渲染时解析器会把前缀剥掉
+  const body = lines
+    .slice(1, closed ? -1 : undefined)
+    .map((line) => (started.inQuote ? line.replace(BLOCKQUOTE_PREFIX, '') : line));
+  const language = started.open.info.split(/\s+/)[0] ?? '';
   if (!language) return body.length >= 2;
   if (NEVER_CONFERS_LANGUAGES.has(language)) return false;
   if (language === 'chart') return parseChartSpecSource(body.join('\n')) !== null;

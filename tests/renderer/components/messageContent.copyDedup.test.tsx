@@ -87,4 +87,11 @@ describe('代码块紧邻 !copy 去重', () => {
     const codeBlock = container.querySelector('[data-code-block-lines]');
     expect(codeBlock).toBeTruthy();
   });
+
+  it('顶层代码块内的字面「> ```」行不构成关栏，块内 [x](!copy) 字面量原样展示', async () => {
+    const { container } = await renderAssistant('```markdown\n> ```\n[x](!copy)\n```');
+
+    expect(iactCopyButtons(container)).toHaveLength(0);
+    expect(container.textContent).toContain('[x](!copy)');
+  });
 });

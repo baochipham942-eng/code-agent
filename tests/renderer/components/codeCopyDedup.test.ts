@@ -155,4 +155,24 @@ describe('dropCodeAdjacentCopyLinks — 围栏边界与渲染分发（ai-review 
     expect(dropCodeAdjacentCopyLinks('> 引用一句话\n\n[复制命令](!copy)'))
       .toBe('> 引用一句话\n\n[复制命令](!copy)');
   });
+
+  it('顶层围栏内的字面「> ```」行是代码内容不是关栏，[x](!copy) 原样保留', () => {
+    const text = '```markdown\n> ```\n[x](!copy)\n```';
+    expect(dropCodeAdjacentCopyLinks(text)).toBe(text);
+  });
+
+  it('引用内围栏的内容判定剥同容器前缀：空 generative_ui 保留链接、合法 chart 参与去重', () => {
+    expect(dropCodeAdjacentCopyLinks('> ```generative_ui\n>\n> ```\n>\n> [复制内容](!copy)'))
+      .toBe('> ```generative_ui\n>\n> ```\n>\n> [复制内容](!copy)');
+    expect(dropCodeAdjacentCopyLinks('> ```chart\n> {"type":"bar","data":[{"name":"a","value":1}]}\n> ```\n>\n> [c](!copy)'))
+      .toBe('> ```chart\n> {"type":"bar","data":[{"name":"a","value":1}]}\n> ```');
+  });
+
+  it('引用结束即围栏结束：无前缀行不并入引用内围栏，后续内容回顶层解析', () => {
+    // "> ls" 后引用结束，```ts 是新的顶层围栏；中间 !copy 段两块相邻，去重但两块保留
+    const out = dropCodeAdjacentCopyLinks('> ```bash\n> ls\n[复制](!copy)\n```ts\nconst a = 1;\n```');
+    expect(out).not.toContain('!copy');
+    expect(out).toContain('> ```bash\n> ls');
+    expect(out).toContain('```ts\nconst a = 1;\n```');
+  });
 });

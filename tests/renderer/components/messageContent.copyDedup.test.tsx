@@ -27,6 +27,18 @@ afterEach(() => {
 });
 
 describe('code block copy deduplication', () => {
+  it('keeps multiline inline code inline', async () => {
+    const result = render(<MessageContent content={'Before `echo\nhello` after.'} isUser={false} />);
+    await waitFor(() => expect(result.getByText('echo hello')).toBeTruthy());
+    expect(result.container.querySelector('[data-code-block-lines]')).toBeNull();
+  });
+
+  it('keeps a copy header for an empty unlabelled fence', async () => {
+    const result = await renderMessage(`\`\`\`\n\`\`\`\n\n${copyLink}`);
+    expect(result.queryByRole('button', { name: 'Copy command' })).toBeNull();
+    expect(result.getAllByRole('button', { name: result.getByTestId('copy-label').textContent! })).toHaveLength(1);
+  });
+
   it.each([
     ['immediately after', `${fence}\n${copyLink}`],
     ['one blank line after', `${fence}\n\n${copyLink}`],

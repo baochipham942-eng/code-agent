@@ -194,14 +194,6 @@
       }
     },
     {
-      "id": "allow-cua-driver-in-eval-workspace",
-      "effect": "allow",
-      "tool": "cua-driver",
-      "match": {
-        "requestType": "command"
-      }
-    },
-    {
       "id": "allow-screenshot-in-eval-workspace",
       "effect": "allow",
       "tool": "screenshot",
@@ -223,6 +215,30 @@
       "tool": "photo_archive",
       "match": {
         "requestType": "file_write"
+      }
+    },
+    {
+      "id": "allow-computer-in-eval-workspace",
+      "effect": "allow",
+      "tool": "Computer",
+      "match": {
+        "requestType": "command"
+      }
+    },
+    {
+      "id": "allow-computer-use-in-eval-workspace",
+      "effect": "allow",
+      "tool": "computer_use",
+      "match": {
+        "requestType": "command"
+      }
+    },
+    {
+      "id": "allow-gui-agent-in-eval-workspace",
+      "effect": "allow",
+      "tool": "gui_agent",
+      "match": {
+        "requestType": "command"
       }
     }
   ]

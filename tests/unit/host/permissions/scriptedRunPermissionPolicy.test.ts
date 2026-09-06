@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   getScriptedRunPermissionHandler,
@@ -201,8 +202,41 @@ describe('scripted run permission policy', () => {
   });
 });
 
-import { getBuiltinPluginToolDefinitions } from '../../../../src/host/plugins/builtin/catalog';
 import { permissionRequestTypeForLevel } from '../../../../src/host/tools/permissionRequestType';
+
+/**
+ * 枚举 builtin 插件**可能注册**的全部工具：直接从磁盘上的 `*.schema.ts` 取，不走 activate()。
+ *
+ * 为什么不走 activate()：computerUse 的注册在 `isCuaStateV2Enabled()` 上分叉，测试环境只会走到
+ * 其中一支 —— 09-06 实测 activate 只枚举到 13 个，摘掉另一支那个工具的规则测试照样绿，
+ * 门对它结构性失明。策略要守的不变量是「任何一支分支下能被注册的工具都得有裁决规则」，
+ * 所以真源取所有分支的并集 = 全部 schema 文件；新增一个 schema 文件这道门自动看得见。
+ */
+async function getBuiltinPluginToolDefinitions(): Promise<readonly { name: string; permissionLevel: string }[]> {
+  const builtinRoot = path.resolve('src/host/plugins/builtin');
+  const schemaFiles: string[] = [];
+  const walk = (dir: string): void => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (entry.name.endsWith('.schema.ts')) schemaFiles.push(full);
+    }
+  };
+  walk(builtinRoot);
+  expect(schemaFiles.length).toBeGreaterThan(0);
+  const byName = new Map<string, { name: string; permissionLevel: string }>();
+  for (const file of schemaFiles.sort()) {
+    const module = await import(pathToFileURL(file).href) as Record<string, unknown>;
+    for (const value of Object.values(module)) {
+      if (!value || typeof value !== 'object') continue;
+      const schema = value as { name?: unknown; permissionLevel?: unknown };
+      if (typeof schema.name === 'string' && typeof schema.permissionLevel === 'string') {
+        byName.set(schema.name, { name: schema.name, permissionLevel: schema.permissionLevel });
+      }
+    }
+  }
+  return [...byName.values()];
+}
 
 describe('builtin plugin scripted policy coverage', () => {
   it('has a matching allow or deny rule for every registered builtin tool', async () => {

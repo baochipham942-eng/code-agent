@@ -73,26 +73,3 @@ export const BUILTIN_PLUGIN_CATALOG: readonly BuiltinPluginDescriptor[] = [
 export function findBuiltinPlugin(pluginId: string): BuiltinPluginDescriptor | undefined {
   return BUILTIN_PLUGIN_CATALOG.find(({ manifest }) => manifest.id === pluginId);
 }
-
-/** Enumerates the tool schemas actually registered by each builtin plugin. */
-export async function getBuiltinPluginToolDefinitions(): Promise<readonly { name: string; permissionLevel: string }[]> {
-  const tools: { name: string; permissionLevel: string }[] = [];
-  for (const descriptor of BUILTIN_PLUGIN_CATALOG) {
-    await descriptor.entry.activate({
-      metadata: descriptor.manifest,
-      registerTool: () => undefined,
-      unregisterTool: () => undefined,
-      log: () => undefined,
-      getStorage: () => ({
-        get: async () => undefined,
-        set: async () => undefined,
-        delete: async () => undefined,
-        clear: async () => undefined,
-      }),
-      registerToolModule: (module) => {
-        tools.push({ name: module.schema.name, permissionLevel: module.schema.permissionLevel });
-      },
-    });
-  }
-  return tools;
-}

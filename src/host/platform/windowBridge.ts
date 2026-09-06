@@ -70,13 +70,14 @@ export function broadcastToRenderer(channel: string, data: unknown): void {
 }
 
 /**
- * 此刻有没有人在收 renderer 推送。
+ * 此刻有没有**转发层**在订阅 renderer 推送。
  *
- * 判据就是 bus 上的订阅数：SSE/WebSocket 层经 onRendererPush 订阅，没有订阅者
- * 就是没有渲染进程会收到广播——broadcastToRenderer 本身是 emit，静默丢弃。
- * 比 hasInteractiveUi() 精确：那个答的是「有没有人能在 UI 回答」，评测跑题时会被
- * 显式压成 false（agentAdapter 的 overrideBrowserWindowInteractionProbe），
- * 但从评测中心 UI 发起的跑法其实渲染进程健在、面板跑得动。
+ * 判据就是 bus 上的订阅数：SSE/WebSocket 层经 onRendererPush 订阅。
+ * 🔴 只保证一个方向：**没有订阅者 ⇒ 广播必然没人收**（broadcastToRenderer 是 emit，静默丢弃）。
+ * 反过来不成立——SSE 转发订阅是常驻的，有订阅者不等于此刻真有 renderer 连着、更不等于它会应答；
+ * 调用方只能拿它做「肯定没人收」的快速失败，不能当成「在线保证」（#1667 ai-review Nit）。
+ * 与 hasInteractiveUi() 的分工：那个答「有没有人能在 UI 回答」，评测跑题时会被显式压成 false
+ * （agentAdapter 的 overrideBrowserWindowInteractionProbe），而从评测中心 UI 发起的跑法转发层健在。
  */
 export function hasRendererPushListener(): boolean {
   return rendererBus.listenerCount('push') > 0;

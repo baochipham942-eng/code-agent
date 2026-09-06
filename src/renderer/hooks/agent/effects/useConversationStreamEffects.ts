@@ -90,9 +90,31 @@ export function mergeCommittedAssistantContent(
   return committedContent;
 }
 
+/** 与 host 的 messageDeltaAccumulator.acceptDelta 同一口径：序号回头即重放，无序号放行。 */
+function acceptDeltaSeq(
+  state: ConversationStreamState,
+  turnKey: string | null | undefined,
+  deltaSeq: unknown,
+): boolean {
+  if (typeof deltaSeq !== 'number' || !turnKey) return true;
+  const seen = (state.lastDeltaSeqByTurn ??= new Map<string, number>());
+  const last = seen.get(turnKey);
+  if (last !== undefined && deltaSeq <= last) return false;
+  seen.set(turnKey, deltaSeq);
+  return true;
+}
+
 export interface ConversationStreamState {
   currentTurnMessageId: string | null;
   committedAssistantMessageIds: Set<string>;
+  /**
+   * 每个 turn 已应用到的最大 deltaSeq。重连/重放会把已经应用过的 chunk 原样再送一遍，
+   * 而**字符串比对判不了重放**：合法的重复正文（连着两段一模一样的长文）与重放长得一样，
+   * 按内容丢就会吞掉真内容（ai-review #1696 两轮各撞一次：前缀裁剪丢字、整段全等吞段）。
+   * 事件本来就带 deltaSeq，host 侧 messageDeltaAccumulator.acceptDelta 早就是这么判的，
+   * 渲染层照抄同一口径：序号回头就是重放，没有序号才回落到内容判定。
+   */
+  lastDeltaSeqByTurn?: Map<string, number>;
 }
 
 function appendAssistantStreamDelta(
@@ -174,13 +196,18 @@ export function applyConversationStreamEvent(
         if (!chunkData?.content) break;
         if (chunkData.isMeta) break;
         const targetMessageId = chunkData.turnId || state.currentTurnMessageId;
+        // 序号回头 = 重连重放，整条丢；有序号时不再看内容（内容判不了重放）。
+        if (!acceptDeltaSeq(state, targetMessageId, (event.data as { deltaSeq?: unknown } | undefined)?.deltaSeq)) break;
+        const hasDeltaSeq = typeof (event.data as { deltaSeq?: unknown } | undefined)?.deltaSeq === 'number';
         const freshMsgs = getFreshMessages();
         const targetMessage = targetMessageId
           ? freshMsgs.find(m => m.id === targetMessageId)
           : freshMsgs[freshMsgs.length - 1];
 
         if (targetMessage?.role === 'assistant') {
-          const remaining = remainingAssistantStreamDelta(targetMessage.content || '', chunkData.content);
+          const remaining = hasDeltaSeq
+            ? chunkData.content
+            : remainingAssistantStreamDelta(targetMessage.content || '', chunkData.content);
           if (!remaining) break;
           appendAssistantStreamDelta(actions, targetMessage.id, {
             content: remaining,
@@ -205,7 +232,9 @@ export function applyConversationStreamEvent(
               state.currentTurnMessageId = newMessage.id;
               state.committedAssistantMessageIds.delete(newMessage.id);
             } else {
-              const remaining = remainingAssistantStreamDelta(lastMessage.content || '', chunkData.content);
+              const remaining = hasDeltaSeq
+                ? chunkData.content
+                : remainingAssistantStreamDelta(lastMessage.content || '', chunkData.content);
               if (!remaining) break;
               appendAssistantStreamDelta(actions, lastMessage.id, {
                 content: remaining,

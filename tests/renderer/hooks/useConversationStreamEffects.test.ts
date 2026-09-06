@@ -1478,3 +1478,54 @@ describe('turn cost stream wiring', () => {
     expect(useStatusStore.getState().lastTurnCost).toBeNull();
   });
 });
+
+// ai-review #1696 两轮各撞一次：字符串比对判不了重放——合法的重复正文与重放长得一样，
+// 按内容丢就吞真内容（前缀裁剪丢字、整段全等吞段）。事件本来就带 deltaSeq，
+// host 的 messageDeltaAccumulator.acceptDelta 早就按它判，渲染层照抄同一口径。
+describe('applyConversationStreamEvent 按 deltaSeq 判重放', () => {
+  const LONG = '这是一段足够长的正文用来越过整段全等的最小长度门槛不少于三十二个字符';
+
+  function harness() {
+    const messagesRef = { current: [] as Message[] };
+    const actions = {
+      addMessage: (message: Message) => { messagesRef.current = [...messagesRef.current, message]; },
+      updateMessage: (id: string, updates: Partial<Message>) => {
+        messagesRef.current = messagesRef.current.map((m) => (m.id === id ? { ...m, ...updates } : m));
+      },
+      appendStreamingMessageDelta: (messageId: string, delta: { content?: string }) => {
+        messagesRef.current = messagesRef.current.map((m) => (
+          m.id === messageId ? { ...m, content: (m.content || '') + (delta.content || '') } : m
+        ));
+      },
+      setMessages: (next: Message[]) => { messagesRef.current = next; },
+      getMessages: () => messagesRef.current,
+      queueUpdate: () => {},
+      now: () => 1,
+    };
+    const state = {
+      currentTurnMessageId: 'turn-seq',
+      committedAssistantMessageIds: new Set<string>(),
+    };
+    messagesRef.current = [{ id: 'turn-seq', role: 'assistant', content: '', timestamp: 1 }];
+    return { messagesRef, actions, state };
+  }
+
+  const chunk = (content: string, deltaSeq: number) => ({
+    type: 'stream_chunk',
+    data: { turnId: 'turn-seq', content, deltaSeq },
+  });
+
+  it('序号递增的两段相同长正文都要留下（不是重放）', () => {
+    const { messagesRef, actions, state } = harness();
+    applyConversationStreamEvent(chunk(LONG, 1), state, actions as never);
+    applyConversationStreamEvent(chunk(LONG, 2), state, actions as never);
+    expect(messagesRef.current[0].content).toBe(LONG + LONG);
+  });
+
+  it('序号回头的同一段只算一次（重放）', () => {
+    const { messagesRef, actions, state } = harness();
+    applyConversationStreamEvent(chunk(LONG, 1), state, actions as never);
+    applyConversationStreamEvent(chunk(LONG, 1), state, actions as never);
+    expect(messagesRef.current[0].content).toBe(LONG);
+  });
+});

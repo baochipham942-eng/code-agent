@@ -30,13 +30,15 @@ export type LoopOwnerLiveness = 'alive' | 'dead' | 'unknown';
 export interface LoopOwnershipProbes {
   /** pid 是否还存在（存在性检查，跨平台）。 */
   isPidAlive(pid: number): boolean;
-  /** pid 的进程启动时间（epoch ms）；取不到返回 null。 */
-  readProcessStartAtMs(pid: number): number | null;
+  /** pid 的 ps etime 原始输出（[[dd-]hh:]mm:ss）；取不到返回 null。
+   *  探针只负责读原始观测；格式解释与换算在 resolveLoopOwnerLiveness 里，
+   *  解析因此可经注入探针直接覆盖（parsePsEtime 不为测试单独导出）。 */
+  readProcessEtime(pid: number): string | null;
 }
 
 /** 盖归属戳：记录本进程的 pid 与启动时间。 */
 export function captureLoopOwnerStamp(): SessionAutomationOwnerStamp {
-  const processStartAtMs = readProcessStartAtMsDefault(process.pid);
+  const processStartAtMs = processStartAtMsFromEtime(readProcessEtimeDefault(process.pid));
   return {
     pid: process.pid,
     ...(processStartAtMs !== null ? { processStartAtMs } : {}),
@@ -87,7 +89,7 @@ export function resolveLoopOwnerLiveness(
   if (!Number.isInteger(owner.pid) || owner.pid <= 0) return 'unknown';
   if (!probes.isPidAlive(owner.pid)) return 'dead';
   if (owner.processStartAtMs === undefined) return 'alive';
-  const observedStart = probes.readProcessStartAtMs(owner.pid);
+  const observedStart = processStartAtMsFromEtime(probes.readProcessEtime(owner.pid));
   if (observedStart === null) return 'alive';
   return Math.abs(observedStart - owner.processStartAtMs) > START_TIME_TOLERANCE_MS
     ? 'dead'
@@ -111,7 +113,7 @@ export function stripLoopOwnerStamp(configJson: string | null | undefined): stri
 }
 
 /** ps etime 输出（[[dd-]hh:]mm:ss）→ 毫秒；不认识的格式返回 null。 */
-export function parsePsEtime(text: string): number | null {
+function parsePsEtime(text: string): number | null {
   const match = /^(?:(\d+)-)?(\d+):(\d{1,2})(?::(\d{1,2}))?$/.exec(text.trim());
   if (!match) return null;
   const [, days, high, mid, sec] = match;
@@ -121,7 +123,14 @@ export function parsePsEtime(text: string): number | null {
   return ((Number(days ?? 0) * 24 + hours) * 60 + minutes) * 60_000 + seconds * 1000;
 }
 
-function readProcessStartAtMsDefault(pid: number): number | null {
+/** etime 原文 → 进程启动时间（epoch ms）；取不到或格式不认识 → null（判不准）。 */
+function processStartAtMsFromEtime(etime: string | null): number | null {
+  if (etime === null) return null;
+  const elapsedMs = parsePsEtime(etime);
+  return elapsedMs === null ? null : Date.now() - elapsedMs;
+}
+
+function readProcessEtimeDefault(pid: number): string | null {
   if (!PS_ETIME_PLATFORMS.has(process.platform)) return null;
   try {
     const result = spawnSync('ps', ['-p', String(pid), '-o', 'etime='], {
@@ -129,8 +138,7 @@ function readProcessStartAtMsDefault(pid: number): number | null {
       encoding: 'utf8',
     });
     if (result.error || result.status !== 0) return null;
-    const elapsedMs = parsePsEtime(result.stdout ?? '');
-    return elapsedMs === null ? null : Date.now() - elapsedMs;
+    return result.stdout ?? '';
   } catch {
     return null;
   }
@@ -146,5 +154,5 @@ const defaultProbes: LoopOwnershipProbes = {
       return (error as NodeJS.ErrnoException).code !== 'ESRCH';
     }
   },
-  readProcessStartAtMs: readProcessStartAtMsDefault,
+  readProcessEtime: readProcessEtimeDefault,
 };

@@ -3,7 +3,6 @@ import { spawnSync } from 'node:child_process';
 import {
   captureLoopOwnerStamp,
   parseLoopOwnerStamp,
-  parsePsEtime,
   resolveLoopOwnerLiveness,
   stripLoopOwnerStamp,
   type LoopOwnershipProbes,
@@ -20,21 +19,39 @@ function deadOwnerPid(): number {
 
 const probes = (overrides: Partial<LoopOwnershipProbes>): LoopOwnershipProbes => ({
   isPidAlive: () => true,
-  readProcessStartAtMs: () => null,
+  readProcessEtime: () => null,
   ...overrides,
 });
 
-describe('parsePsEtime', () => {
-  it('解析 [[dd-]hh:]mm:ss 三种形态', () => {
-    expect(parsePsEtime('90:24')).toBe((90 * 60 + 24) * 1000);
-    expect(parsePsEtime('04:05:06')).toBe(((4 * 60) + 5) * 60_000 + 6_000);
-    expect(parsePsEtime('2-03:04:05')).toBe(((2 * 24 + 3) * 60 + 4) * 60_000 + 5_000);
+describe('ps etime 解析（经 resolveLoopOwnerLiveness 注入探针覆盖；解析器不单独导出）', () => {
+  // parsePsEtime 是模块私有。注入 etime 原文、按「正确换算值」预制 owner 戳：
+  // 解析把该形态读错 ≥1 分钟（如 mm:ss 当 hh:mm、丢天数）就会落出 ±5s 容差变 dead。
+  it('[[dd-]hh:]mm:ss 三种形态换算正确 → alive；按偏 60s 的值预制 → dead', () => {
+    const cases: Array<[etime: string, elapsedMs: number]> = [
+      ['90:24', (90 * 60 + 24) * 1000],
+      ['04:05:06', ((4 * 60) + 5) * 60_000 + 6_000],
+      ['2-03:04:05', (((2 * 24 + 3) * 60) + 4) * 60_000 + 5_000],
+    ];
+    for (const [etime, elapsedMs] of cases) {
+      expect(resolveLoopOwnerLiveness(
+        { pid: 4242, processStartAtMs: Date.now() - elapsedMs, stampedAt: 1 },
+        probes({ readProcessEtime: () => etime }),
+      )).toBe('alive');
+      // 校准：同一解析、戳偏 60s → dead，证明容差窗口真能抓分钟级换算错误
+      expect(resolveLoopOwnerLiveness(
+        { pid: 4242, processStartAtMs: Date.now() - elapsedMs + 60_000, stampedAt: 1 },
+        probes({ readProcessEtime: () => etime }),
+      )).toBe('dead');
+    }
   });
 
-  it('不认识的格式返回 null', () => {
-    expect(parsePsEtime('')).toBeNull();
-    expect(parsePsEtime('yesterday')).toBeNull();
-    expect(parsePsEtime('12:')).toBeNull();
+  it('不认识的格式（空串 / yesterday / 12:）判不准 → alive（不动手，漏收方向）', () => {
+    for (const badEtime of ['', 'yesterday', '12:']) {
+      expect(resolveLoopOwnerLiveness(
+        { pid: 4242, processStartAtMs: 1, stampedAt: 1 },
+        probes({ readProcessEtime: () => badEtime }),
+      )).toBe('alive');
+    }
   });
 });
 
@@ -82,21 +99,21 @@ describe('resolveLoopOwnerLiveness（判据：只对「已确认消失」动手�
   });
 
   it('pid 在 + 启动时间吻合 → alive；对不上（pid 复用）→ dead', () => {
-    const aliveProbes = probes({ isPidAlive: () => true, readProcessStartAtMs: () => 10_000 });
+    const aliveProbes = probes({ isPidAlive: () => true, readProcessEtime: () => '0:00:02' });
     expect(resolveLoopOwnerLiveness(
-      { pid: 4242, processStartAtMs: 12_000, stampedAt: 1 },
+      { pid: 4242, processStartAtMs: Date.now() - 2_000, stampedAt: 1 },
       aliveProbes,
     )).toBe('alive'); // 2s 偏差在容差内
     expect(resolveLoopOwnerLiveness(
       { pid: 4242, processStartAtMs: 60_000, stampedAt: 1 },
       aliveProbes,
-    )).toBe('dead'); // 50s 偏差 = 不是同一个进程
+    )).toBe('dead'); // 1970 年的戳 vs now-2s = 不是同一个进程
   });
 
   it('pid 在 + 当前启动时间读不到 → alive（保守，不误杀）', () => {
     expect(resolveLoopOwnerLiveness(
       { pid: 4242, processStartAtMs: 60_000, stampedAt: 1 },
-      probes({ isPidAlive: () => true, readProcessStartAtMs: () => null }),
+      probes({ isPidAlive: () => true, readProcessEtime: () => null }),
     )).toBe('alive');
   });
 });

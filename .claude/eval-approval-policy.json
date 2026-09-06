@@ -162,16 +162,16 @@
       }
     },
     {
-      "id": "allow-Browser-in-eval-workspace",
-      "effect": "allow",
+      "id": "deny-Browser-in-eval-workspace",
+      "effect": "deny",
       "tool": "Browser",
       "match": {
         "requestType": "command"
       }
     },
     {
-      "id": "allow-browser_action-in-eval-workspace",
-      "effect": "allow",
+      "id": "deny-browser_action-in-eval-workspace",
+      "effect": "deny",
       "tool": "browser_action",
       "match": {
         "requestType": "command"

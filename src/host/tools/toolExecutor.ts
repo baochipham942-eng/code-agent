@@ -526,17 +526,21 @@ export class ToolExecutor {
         definition: toolDef, params, workingDirectory: this.executionCwd,
       }).targets[0] ?? this.executionCwd;
       const readableMatch = resolveWorkspacePath(this.runContext.workspaceScope, target, 'read');
-      if (readableMatch && readableMatch.root.access !== 'read_write') {
+      if (readableMatch?.root.access !== 'read_write') {
         return {
           success: false,
-          error: `Project Source is read-only: ${readableMatch.root.path}`,
+          error: readableMatch
+            ? `Project Source is read-only: ${readableMatch.root.path}`
+            : 'Write target is outside the evaluation workspace.',
           metadata: {
-            code: 'PROJECT_SOURCE_READ_ONLY',
+            code: readableMatch ? 'PROJECT_SOURCE_READ_ONLY' : 'PROJECT_SOURCE_OUTSIDE_WORKSPACE',
             projectId: this.runContext.workspaceScope.projectId,
-            sourceId: readableMatch.root.sourceId,
-            sourceRole: readableMatch.root.role,
-            sourceAccess: readableMatch.root.access,
-            relativePathWithinSource: readableMatch.relativePath,
+            ...(readableMatch ? {
+              sourceId: readableMatch.root.sourceId,
+              sourceRole: readableMatch.root.role,
+              sourceAccess: readableMatch.root.access,
+              relativePathWithinSource: readableMatch.relativePath,
+            } : {}),
             workspaceScopeVersion: this.runContext.workspaceScope.version,
           },
         };

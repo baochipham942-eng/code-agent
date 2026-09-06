@@ -30,6 +30,8 @@ import type { DatabaseService } from '../services/core/databaseService';
 import type { TelemetryCollector } from '../telemetry/telemetryCollector';
 import type { ScopedCostRecorder } from '../services/core/scopedCostLimit';
 import path from 'node:path';
+import { createRunContext } from '../runtime/runContext';
+import { createWorkspaceScope } from '../runtime/workspaceScope';
 
 const logger = createLogger('AgentAdapter');
 
@@ -588,6 +590,22 @@ export class StandaloneAgentAdapter implements AgentInterface {
         : scriptedHandler;
       const recorder = narrowedHandler ? createPermissionRequestRecorder(narrowedHandler) : null;
       permissionRequests = recorder?.records;
+      if (!this.currentSessionId) this.currentSessionId = `test-${Date.now()}`;
+      // Evaluation sandboxes are the sole writable Project Source for the run.
+      // Supplying the run context here turns on ToolExecutor's existing
+      // path-aware write boundary (including ../ and symlink canonicalization).
+      const evaluationScope = createWorkspaceScope('eval-sandbox', [{
+        sourceId: 'eval-sandbox-root',
+        path: this.workingDirectory,
+        access: 'read_write',
+        role: 'primary',
+      }]);
+      const evaluationRunContext = createRunContext({
+        runId: `eval-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        sessionId: this.currentSessionId,
+        workspaceScope: evaluationScope,
+        cwd: this.workingDirectory,
+      });
       const toolExecutor = new ToolExecutor({
         requestPermission: recorder?.handler
           ?? (permissionDecider
@@ -595,6 +613,7 @@ export class StandaloneAgentAdapter implements AgentInterface {
             : async () => true),
         forcePermissionHandler: this.requestPermission !== undefined,
         workingDirectory: this.workingDirectory,
+        runContext: evaluationRunContext,
         ledgerOrigin: 'eval',
         telemetryCollector,
         // ORCHARM：run 级 spawn 深度上限。缺省 undefined ⇒ SpawnGuard 生产默认；

@@ -17,16 +17,11 @@ const logger = createLogger('ParallelStrategy');
  * A tool is parallel-safe if:
  * 1. It's in the PARALLEL_SAFE_TOOLS set (built-in tools)
  * 2. It's an MCP tool classified via annotations (readOnlyHint=true, destructiveHint!=true)
- * 3. Fallback: MCP tool name heuristic (no write/create in name)
+ * Missing MCP annotations are sequential (fail closed).
  */
 export function isParallelSafeTool(toolName: string, toolAnnotations?: MCPToolAnnotations): boolean {
-  // MCP tools: prefer annotation-based classification
   if (toolName.startsWith('mcp_')) {
-    if (toolAnnotations) {
-      return isMcpToolReadOnly(toolAnnotations);
-    }
-    // Fallback to name-based heuristic if no annotations
-    return !toolName.includes('write') && !toolName.includes('create');
+    return isMcpToolReadOnly(toolAnnotations);
   }
   return PARALLEL_SAFE_TOOLS.has(toolName);
 }
@@ -38,6 +33,9 @@ export function isParallelSafeTool(toolName: string, toolAnnotations?: MCPToolAn
  * @param toolAnnotations - Optional MCP tool annotations map (key: full tool name)
  * @returns Classification result with parallel and sequential groups
  */
+/** Parallel-safe tools that may still write through a subagent; they end the read-hoisting prefix. */
+const WRITE_CAPABLE_PARALLEL_TOOLS = new Set(['Task']);
+
 export function classifyToolCalls(
   toolCalls: ToolCall[],
   toolAnnotations?: Map<string, MCPToolAnnotations>,
@@ -45,14 +43,22 @@ export function classifyToolCalls(
   const parallelGroup: Array<{ index: number; toolCall: ToolCall }> = [];
   const sequentialGroup: Array<{ index: number; toolCall: ToolCall }> = [];
 
+  // 引擎先跑整个并行组、再按序跑串行组。只有「第一个非并行安全调用之前」的读才能安全提前：
+  // 一旦越过一次写（Write/Edit/Bash…），后面的 Read/Grep/Glob 必须留在原位，否则同批
+  // [Write(a.txt), Read(a.txt)] 会先读后写（ai-review 09-06）。保序分段的完整方案归 N-TOOL-RESOURCE-ADR。
+  // Task 在白名单里是为了子代理能扇出，但 coder 这类子代理会写文件：它本身可以并行，
+  // 却是后续读的写边界（二裁 09-06：[Task(coder 改 a.txt), Read(a.txt)] 不能同批并发）。
+  let crossedWriteBoundary = false;
   for (let i = 0; i < toolCalls.length; i++) {
     const toolCall = toolCalls[i];
     const annotations = toolAnnotations?.get(toolCall.name);
-    if (isParallelSafeTool(toolCall.name, annotations)) {
+    const writeCapable = WRITE_CAPABLE_PARALLEL_TOOLS.has(toolCall.name);
+    if (isParallelSafeTool(toolCall.name, annotations) && (writeCapable || !crossedWriteBoundary)) {
       parallelGroup.push({ index: i, toolCall });
     } else {
       sequentialGroup.push({ index: i, toolCall });
     }
+    if (writeCapable || !isParallelSafeTool(toolCall.name, annotations)) crossedWriteBoundary = true;
   }
 
   logger.debug(

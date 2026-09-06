@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Message } from '../../../src/shared/contract';
+import { fileReadTracker } from '../../../src/host/tools/fileReadTracker';
 import { estimateTokens } from '../../../src/host/context/tokenEstimator';
 
 const compactionServiceMocks = vi.hoisted(() => ({
@@ -51,7 +52,7 @@ vi.mock('../../../src/host/tools/dataFingerprint', () => ({
 }));
 
 vi.mock('../../../src/host/tools/fileReadTracker', () => ({
-  fileReadTracker: {
+  fileReadTracker: { clear: vi.fn(), forgetShownRanges: vi.fn(),
     getRecentFiles: vi.fn(() => []),
   },
 }));
@@ -387,6 +388,8 @@ describe('compactionService', () => {
     });
 
     expect(result.success).toBe(true);
+    expect(fileReadTracker.forgetShownRanges).toHaveBeenCalledOnce();
+    expect(fileReadTracker.clear).not.toHaveBeenCalled();
     expect(compactionServiceMocks.summarizeWithMetadata.mock.calls[0][0]).toContain(
       "Never claim to know a file's latest contents from a survivor record",
     );
@@ -418,6 +421,8 @@ describe('compactionService', () => {
     });
 
     expect(result.success).toBe(true);
+    expect(fileReadTracker.forgetShownRanges).toHaveBeenCalledOnce();
+    expect(fileReadTracker.clear).not.toHaveBeenCalled();
     expect(result.newMessages?.[0].role).toBe('system');
     expect(result.newMessages?.slice(1).map((item) => item.id)).toEqual(['m4']);
     expect(result.newMessages?.[0].timestamp).toBeLessThan(result.newMessages?.[1].timestamp ?? 0);
@@ -470,6 +475,8 @@ describe('compactionService', () => {
     });
 
     expect(result.success).toBe(true);
+    expect(fileReadTracker.forgetShownRanges).toHaveBeenCalledOnce();
+    expect(fileReadTracker.clear).not.toHaveBeenCalled();
     const compactedContent = result.summaryMessage?.content ?? '';
     for (const { question, answer } of criticalFacts) {
       expect(compactedContent, `membership answer missing for: ${question}`).toContain(answer);
@@ -503,6 +510,8 @@ describe('compactionService', () => {
     });
 
     expect(result.success).toBe(true);
+    expect(fileReadTracker.forgetShownRanges).toHaveBeenCalledOnce();
+    expect(fileReadTracker.clear).not.toHaveBeenCalled();
     const extractClaims = (text: string): Record<string, string> =>
       Object.fromEntries(
         Array.from(text.matchAll(/\b(deployment_region|retry_limit|owner)=([a-z0-9-]+)/g))
@@ -621,6 +630,8 @@ describe('compactionService', () => {
     });
 
     expect(result.success).toBe(true);
+    expect(fileReadTracker.forgetShownRanges).toHaveBeenCalledOnce();
+    expect(fileReadTracker.clear).not.toHaveBeenCalled();
     expect(compactionServiceMocks.summarizeWithMetadata.mock.calls[0][0]).toContain('## Archived Tool Results');
     expect(compactionServiceMocks.summarizeWithMetadata.mock.calls[0][0]).toContain(
       'recover: read_tool_result_archive artifact_id=tool_result:session-archive:Bash:call-1:abc123def456',
@@ -656,6 +667,8 @@ describe('compactionService', () => {
     });
 
     expect(result.success).toBe(true);
+    expect(fileReadTracker.forgetShownRanges).toHaveBeenCalledOnce();
+    expect(fileReadTracker.clear).not.toHaveBeenCalled();
     expect(hookManager.triggerPreCompact).toHaveBeenCalledWith(
       'session-hooks',
       expect.arrayContaining([
@@ -699,6 +712,8 @@ describe('compactionService', () => {
     });
 
     expect(result.success).toBe(true);
+    expect(fileReadTracker.forgetShownRanges).toHaveBeenCalledOnce();
+    expect(fileReadTracker.clear).not.toHaveBeenCalled();
     expect(result.block?.provider).toBe('xiaomi');
     expect(result.block?.model).toBe('mimo-v2.5-pro');
     expect(result.summaryModel).toEqual({

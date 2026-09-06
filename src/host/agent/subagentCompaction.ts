@@ -10,6 +10,7 @@ import { createLogger } from '../services/infra/logger';
 import { estimateTokens } from '../context/tokenEstimator';
 import { SUBAGENT_COMPACTION } from '../../shared/constants';
 import { resolveContextWindow } from '../model/modelLimits';
+import { fileReadTracker } from '../tools/fileReadTracker';
 
 const logger = createLogger('SubagentCompaction');
 
@@ -127,5 +128,8 @@ export function compactSubagentMessages(
       `(model=${model}, window=${contextWindow}, threshold=${Math.round(threshold)})`
   );
 
+  // 旧 Read 结果已被截断，Read 不能再按「已展示范围」短路（否则只回一张回执、内容拿不回来）；
+  // 只忘范围，外改检查用的 mtime/digest 保留。主会话压缩在 compactionService 做同一件事。
+  if (truncatedCount > 0) fileReadTracker.forgetShownRanges();
   return truncatedCount > 0;
 }

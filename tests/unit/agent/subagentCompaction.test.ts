@@ -113,6 +113,16 @@ describe('compactSubagentMessages', () => {
     );
   });
 
+  it('forgets shown Read ranges only when something was actually truncated', async () => {
+    const { fileReadTracker } = await import('../../../src/host/tools/fileReadTracker');
+    const forget = vi.spyOn(fileReadTracker, 'forgetShownRanges');
+    expect(compactSubagentMessages(buildConversation(4, 10), 'deepseek-chat')).toBe(false);
+    expect(forget).not.toHaveBeenCalled();
+    expect(compactSubagentMessages(buildConversation(30, 8000), 'deepseek-chat')).toBe(true);
+    expect(forget).toHaveBeenCalledTimes(1);
+    forget.mockRestore();
+  });
+
   it('should preserve head (system + initial user) and tail messages', () => {
     const messages = buildConversation(30, 8000);
 

@@ -204,6 +204,8 @@ class FileReadTracker {
       ? this.scopedReadFiles.get(filePath)?.get(actorId)
       : this.readFiles.get(filePath);
     if (record) {
+      // Edit output does not establish a new visible Read range.
+      record.shownRange = undefined;
       record.mtime = newMtime;
       record.size = newSize;
       if (newDigest) {
@@ -220,6 +222,20 @@ class FileReadTracker {
   removeTracking(filePath: string): void {
     this.readFiles.delete(filePath);
     this.scopedReadFiles.delete(filePath);
+  }
+
+  /**
+   * Forget only the "already shown to the model" ranges, keeping mtime/size/digest.
+   * Used after compaction: earlier Read output may have been summarized away, so Read
+   * must stop short-circuiting — but Edit/Write external-modification checks must keep
+   * their evidence (a global clear() would let a stale edit in another session slip through).
+   */
+  forgetShownRanges(): void {
+    for (const record of this.readFiles.values()) record.shownRange = undefined;
+    for (const actorRecords of this.scopedReadFiles.values()) {
+      for (const record of actorRecords.values()) record.shownRange = undefined;
+    }
+    logger.debug('Forgot shown ranges for all file read records');
   }
 
   /**

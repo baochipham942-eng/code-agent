@@ -120,6 +120,8 @@ vi.mock('../../../src/host/agent/subagentExecutorCancellation', () => ({
       markProgress: vi.fn(),
       markRequestStart: vi.fn(),
       markRequestEnd: vi.fn(),
+      markToolStart: vi.fn(),
+      markToolEnd: vi.fn(),
       stopIdleWatchdog: vi.fn(),
     };
   },

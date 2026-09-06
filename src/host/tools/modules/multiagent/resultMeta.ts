@@ -1,4 +1,5 @@
 import type { ToolContext, ToolResult } from '../../../protocol/tools';
+import { AgentFailureCode, isAgentFailureCode } from '../../../../shared/contract/agentFailure';
 import type { ToolArtifact } from '../../../../shared/contract/artifactBlob';
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 
@@ -7,6 +8,23 @@ type SuccessResult = Extract<ToolResult<string>, { ok: true }>;
 const SENSITIVE_KEY_PATTERN = /(api[-_]?key|token|secret|password|authorization|cookie|base64)/i;
 const CONTENT_KEY_PATTERN = /(prompt|task|message|content|text|input|output|description)/i;
 const STRING_PREVIEW_LIMIT = 160;
+
+const NEXT_STEP: Record<AgentFailureCode, string> = {
+  [AgentFailureCode.BlockedByParentRole]: 'Use a task within the parent role boundary; do not bypass the role restriction.',
+  [AgentFailureCode.PermissionDenied]: 'Request approval through the permission flow before retrying.',
+  [AgentFailureCode.ToolUnavailable]: 'Check the registered tool and capability requirements before retrying.',
+  [AgentFailureCode.BudgetExhausted]: 'Do not redispatch unchanged. Narrow the task, or explicitly raise maxBudget with a reason.',
+  [AgentFailureCode.Timeout]: 'Split the task into smaller steps, or explicitly increase the execution time allowance.',
+  [AgentFailureCode.ParentGone]: 'The parent run ended. Wait for a new authorized parent task.',
+  [AgentFailureCode.CancelledByUser]: 'Respect the cancellation; do not restart without a new user request.',
+  [AgentFailureCode.CancelledByParent]: 'Respect the parent cancellation; reassess the task before restarting.',
+  [AgentFailureCode.DependencyFailed]: 'Repair the failed prerequisite before retrying the dependent task.',
+  [AgentFailureCode.DependencyMissing]: 'Provide the missing prerequisite before retrying.',
+  [AgentFailureCode.WorkflowStageFailed]: 'Inspect the failed stage and retry only the affected work.',
+  [AgentFailureCode.WorktreeCreateFailed]: 'Inspect worktree setup and resolve its error before retrying.',
+  [AgentFailureCode.ModelError]: 'Inspect the provider error and retry only after resolving it.',
+  [AgentFailureCode.Unknown]: 'Inspect the failure evidence before choosing a smaller next step.',
+};
 
 interface MultiagentMetaOptions {
   artifactName?: string;
@@ -135,6 +153,23 @@ export function withMultiagentMeta(
   meta: Record<string, unknown>,
   artifactNameOrOptions?: string | MultiagentMetaOptions,
 ): ToolResult<string> {
+  const nested = isRecord(meta.result) ? meta.result : undefined;
+  const failureCode = meta.failureCode ?? result.meta?.failureCode ?? nested?.failureCode;
+  if (isAgentFailureCode(failureCode)) {
+    // Task 的 meta.agentId 装的是 subagentType（agent 种类），不是可查询的执行 id；
+    // 续聊提示只认真实执行 id，否则模型照着提示去 status 会得到「找不到代理」。
+    const agentId = sourceTool === 'Task'
+      ? (result.meta?.agentId ?? nested?.agentId)
+      : (meta.agentId ?? result.meta?.agentId ?? nested?.agentId);
+    const hint = `Next step: ${NEXT_STEP[failureCode]}`;
+    // These tools can inspect/resupply live agents; they cannot resurrect a terminal agent.
+    const resume = typeof agentId === 'string'
+      ? `\nAgent ${agentId}: inspect with agent_message {action:"status", agentId:${JSON.stringify(agentId)}}. If still running, reuse its context with send_input {agentId:${JSON.stringify(agentId)}, message:"..."}; terminal agents cannot be resumed with send_input.`
+      : '';
+    result = result.ok
+      ? { ...result, output: `${result.output}\n${hint}${resume}` }
+      : { ...result, error: `${result.error}\n${hint}${resume}` };
+  }
   const options = normalizeOptions(artifactNameOrOptions);
   const targets = normalizeTargets(meta.targets);
   const counts = normalizeCounts(meta.counts);

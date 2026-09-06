@@ -188,6 +188,18 @@ describe('shared shell command parser', () => {
       .toEqual([{ path: 'report.txt', source: 'redirect', uncertain: false }]);
   });
 
+  it('consumes input redirections and keeps `<` operands as reads of the segment', () => {
+    const parsed = parseShellCommand('sort < in.txt > out.txt; cat <<< here; exec 3<&0');
+    expect(parsed.parsingFailed).toBe(false);
+    expect(parsed.segments.map((segment) => segment.words)).toEqual([['sort'], ['cat'], ['exec']]);
+    expect(parsed.segments[0].reads).toEqual([{ path: 'in.txt', uncertain: false }]);
+    expect(parsed.writeTargets.map((target) => target.path)).toEqual(['out.txt']);
+    expect(parseShellCommand('cat < $FILE').segments[0].reads).toEqual([{ path: '${FILE}', uncertain: true }]);
+    // A heredoc delimiter is consumed; its body lines are ordinary lines and only ever add segments.
+    expect(parseShellCommand('cat <<EOF\nrm -rf /\nEOF').segments.map((segment) => segment.words[0]))
+      .toEqual(['cat', 'rm', 'EOF']);
+  });
+
   it('keeps each redirection on its own segment', () => {
     const parsed = parseShellCommand('printf x > out.txt; ls; cat y >> log.txt');
     expect(parsed.segments.map((segment) => segment.redirects.map((target) => target.path)))

@@ -325,6 +325,25 @@ describe('PermissionClassifier', () => {
     expect(result.reason).toContain('NUL byte');
   });
 
+  // Round 16: with `<` reported as an unsupported operator the whole segment vanished and the
+  // credential rules went blind. cwd is a real workspace on purpose — under /tmp the critical-path
+  // rule fires first and hides exactly this regression.
+  it.each([
+    ['rm -rf ~/.ssh/id_rsa < README.md', 'deny', '递归删除凭据路径'],
+    ['rm -rf ~/.ssh/id_rsa <<< x', 'deny', '递归删除凭据路径'],
+    ['rm -rf ~/.ssh/id_rsa <<EOF', 'deny', '递归删除凭据路径'],
+    ['cat < ~/.ssh/id_rsa', 'ask', '读取凭据路径'],
+    ['wc -l < README.md', 'approve', '安全命令'],
+  ] as const)('input redirection keeps the words the deny rules need: %s', async (command, decision, reason) => {
+    const result = await classifyPermission(
+      'bash',
+      { command },
+      { workingDirectory: process.cwd(), permissionLevel: 'execute' },
+    );
+    expect(result.decision).toBe(decision);
+    expect(result.reason).toContain(reason);
+  });
+
   it('keeps the specific credential-path ask ahead of the generic redirection ask', async () => {
     const result = await classifyPermission(
       'bash',

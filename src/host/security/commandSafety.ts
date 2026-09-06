@@ -236,6 +236,7 @@ export function splitCompoundCommand(command: string): string[] | null {
   // (`> $'\0'`) must reach the path analysis instead of vanishing from the rebuilt text.
   return parsed.segments.map((segment) => [
     quote(segment.words),
+    ...segment.reads.map((read) => `< ${quote([read.path])}`),
     ...segment.redirects.map((target) => `> ${quote([target.path])}`),
   ].join(' '));
 }

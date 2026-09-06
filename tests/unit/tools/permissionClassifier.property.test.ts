@@ -163,7 +163,7 @@ afterAll(() => {
   if (ownedBaseline) spawnSync('git', ['worktree', 'remove', '--force', ownedBaseline], { cwd: process.cwd() });
 });
 
-async function baselineDecisions(commands: string[]): Promise<Array<'approve' | 'deny' | 'ask'>> {
+async function baselineDecisions(commands: string[], workingDirectory = '/tmp'): Promise<Array<'approve' | 'deny' | 'ask'>> {
   const runner = [
     "import fs from 'node:fs';",
     "import { PermissionClassifier } from './src/host/tools/permissionClassifier.ts';",
@@ -171,7 +171,7 @@ async function baselineDecisions(commands: string[]): Promise<Array<'approve' | 
     "const commands = JSON.parse(fs.readFileSync(0, 'utf8'));",
     'setCommandPolicyRulesForTest([]);',
     'const classifier = new PermissionClassifier({ enableLlm: false });',
-    "Promise.all(commands.map((command) => classifier.classify('Bash', { command }, { workingDirectory: '/tmp', permissionLevel: 'execute' }))).then((results) => process.stdout.write(JSON.stringify(results.map(({ decision }) => decision))));",
+    `Promise.all(commands.map((command) => classifier.classify('Bash', { command }, { workingDirectory: ${JSON.stringify(workingDirectory)}, permissionLevel: 'execute' }))).then((results) => process.stdout.write(JSON.stringify(results.map(({ decision }) => decision))));`,
   ].join('\n');
   const result = spawnSync('npx', ['tsx', '-e', runner], {
     cwd: baselineCheckout(),
@@ -222,26 +222,40 @@ const KNOWN_SHAPES = [
   'cd . > out.txt',
   'echo x >> ~/.aws/credentials',
   'cd ~/.ssh; echo x > authorized_keys',
+  // Round 16: input plumbing must not erase the words the credential rules read.
+  'rm -rf ~/.ssh/id_rsa < README.md',
+  'rm -rf ~/.ssh/id_rsa <<< x',
+  'rm -rf ~/.ssh/id_rsa <<EOF',
+  'cat < ~/.ssh/id_rsa',
+  'sort < in.txt > out.txt',
+  'wc -l < README.md',
 ];
+
+// Under /tmp the critical-path rm rule fires before anything else and masks weaker rules; a real
+// workspace cwd is where round 16's deny→ask actually showed. Compare known shapes in both.
+const KNOWN_SHAPE_CWDS = ['/tmp', process.cwd()];
 
 describe('final decision is never looser than the detached origin/main baseline', () => {
   const knownBaseline = new Map<string, 'approve' | 'deny' | 'ask'>();
   beforeAll(async () => {
-    const decisions = await baselineDecisions(KNOWN_SHAPES);
-    KNOWN_SHAPES.forEach((command, index) => knownBaseline.set(command, decisions[index]));
-  }, 120_000);
+    for (const cwd of KNOWN_SHAPE_CWDS) {
+      const decisions = await baselineDecisions(KNOWN_SHAPES, cwd);
+      KNOWN_SHAPES.forEach((command, index) => knownBaseline.set(`${cwd}\u0000${command}`, decisions[index]));
+    }
+  }, 240_000);
   beforeEach(() => setCommandPolicyRulesForTest([]));
 
   // Sampling indices with replacement does not guarantee every known shape is compared, and these
   // are exactly the shapes we already know can regress. Walk them one by one.
-  it.each(KNOWN_SHAPES)('never loosens the baseline for a known shape: %s', async (command) => {
-    const baseline = knownBaseline.get(command);
-    if (!baseline) throw new Error(`no baseline decision recorded for ${command}`);
-    const result = await new PermissionClassifier({ enableLlm: false }).classify(
-      'Bash', { command }, { workingDirectory: '/tmp', permissionLevel: 'execute' },
-    );
-    expect(STRICTNESS[result.decision]).toBeGreaterThanOrEqual(STRICTNESS[baseline]);
-  }, 120_000);
+  it.each(KNOWN_SHAPE_CWDS.flatMap((cwd) => KNOWN_SHAPES.map((command) => [command, cwd] as const)))(
+    'never loosens the baseline for a known shape: %s (cwd %s)', async (command, cwd) => {
+      const baseline = knownBaseline.get(`${cwd}\u0000${command}`);
+      if (!baseline) throw new Error(`no baseline decision recorded for ${command} in ${cwd}`);
+      const result = await new PermissionClassifier({ enableLlm: false }).classify(
+        'Bash', { command }, { workingDirectory: cwd, permissionLevel: 'execute' },
+      );
+      expect(STRICTNESS[result.decision]).toBeGreaterThanOrEqual(STRICTNESS[baseline]);
+    }, 120_000);
 
   it('covers wrapper, path, assignment, shell-option, delimiter and inner-command dimensions', async () => {
     const shapes = fc.sample(generatedShapeArbitrary, { numRuns: 140, seed: 1637 });

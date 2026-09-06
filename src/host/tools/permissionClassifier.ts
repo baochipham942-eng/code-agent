@@ -259,12 +259,9 @@ function isSensitiveMemoryPath(resolvedPath: string): boolean {
   return false;
 }
 
-function commandWords(command: string): string[] {
-  // Keep quoted text as one shell word. This preserves quoted paths and quoted
-  // subcommands while preventing text arguments such as `echo "git push …"`
-  // from being re-split into executable-looking words.
-  return tokenizeCommandWords(command) ?? [];
-}
+// Keep quoted text as one shell word: quoted paths and quoted subcommands stay intact, and text
+// arguments such as `echo "git push …"` are not re-split into executable-looking words.
+const commandWords = (command: string): string[] => tokenizeCommandWords(command) ?? [];
 
 function commandProgram(word: string | undefined): string {
   return word ? path.posix.basename(word) : '';
@@ -356,8 +353,11 @@ function credentialReadTarget(command: string, context: ClassificationContext): 
       }
     }
   }
-  // Redirection targets are path candidates too (`> $'\0'` must stay a refusal); uncertain ones stay out.
-  const targets = parseShellCommand(command).writeTargets.filter((t) => !t.uncertain).map((t) => t.path);
+  // Redirection operands (`> f`, `< f`) are path candidates too: `> $'\0'` must stay a refusal and
+  // `cat < ~/.ssh/id_rsa` a credential read. Uncertain operands cannot name one path and stay out.
+  const parsed = parseShellCommand(command);
+  const operands = [...parsed.writeTargets, ...parsed.segments.flatMap((segment) => segment.reads)];
+  const targets = operands.filter((operand) => !operand.uncertain).map((operand) => operand.path);
   for (const candidate of [...words.filter((word, index) => word && !ignoredIndexes.has(index)), ...targets]) {
     const resolved = resolveCandidatePath(candidate, context.workingDirectory, context.pathResolutionCache);
     if (isSensitiveCredentialPath(resolved, { homeDir: CANONICAL_HOME_DIR, projectRoot })) return resolved;

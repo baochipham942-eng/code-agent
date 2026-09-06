@@ -4,6 +4,7 @@ import { canonicalizeCommand } from './canonicalizeCommand';
 
 const COMMAND_SEPARATORS = new Set(['&&', '||', ';', '|', '|&', '&', '\n']);
 const OUTPUT_REDIRECTS = new Set(['>', '>>', '>&']);
+const INPUT_REDIRECTS = new Set(['<', '<<<', '<&']);
 const SHELL_PROGRAMS = new Set(['bash', 'sh', 'zsh', 'dash']);
 // Approval qualification intentionally mirrors the pre-parser baseline.  Only a
 // bare bash/sh/zsh whose first argument is exactly -c/-lc may lend its inner
@@ -18,6 +19,8 @@ interface ParsedShellSegment {
   words: string[];
   /** Output redirections attached to this segment. Also collected into `writeTargets`. */
   redirects: ShellWriteTarget[];
+  /** Files read through `<`. Not writes, but path candidates for the credential scan. */
+  reads: Array<{ path: string; uncertain: boolean }>;
 }
 
 interface ShellWriteTarget {
@@ -445,20 +448,39 @@ function parseEntries(command: string): {
   const redirects: ShellWriteTarget[] = [];
   let words: string[] = [];
   let segmentRedirects: ShellWriteTarget[] = [];
+  let segmentReads: ParsedShellSegment['reads'] = [];
   let trailingOperator = false;
   let failed = canonical.parsingFailed;
   let failureReason = canonical.failureReason;
 
   const flush = (): void => {
-    if (words.length > 0) segments.push({ words, redirects: segmentRedirects });
+    if (words.length > 0) segments.push({ words, redirects: segmentRedirects, reads: segmentReads });
     words = [];
     segmentRedirects = [];
+    segmentReads = [];
   };
 
   for (let index = 0; index < entries.length; index += 1) {
     const entry = entries[index];
     if (isOperator(entry) && entry.op === 'glob' && 'pattern' in entry) {
       words.push(String((entry as ShellGlob).pattern));
+      continue;
+    }
+    if (isOperator(entry) && INPUT_REDIRECTS.has(entry.op)) {
+      // Input plumbing is not a write, but dropping it as "unsupported" erased the whole segment and
+      // blinded the credential rules (`rm -rf ~/.ssh/id_rsa < README.md` decayed from deny to ask).
+      // `<<EOF` arrives from shell-quote as two `<` operators plus the delimiter; the body lines that
+      // follow are parsed like any other line, which can only make the verdict stricter.
+      const next = entries[index + 1];
+      const heredoc = entry.op === '<' && isOperator(next) && next.op === '<';
+      const operand = entryWord(entries[index + (heredoc ? 2 : 1)]);
+      if (!operand) {
+        failed = true;
+        failureReason ??= `missing redirection operand after ${entry.op}`;
+        continue;
+      }
+      index += heredoc ? 2 : 1;
+      if (entry.op === '<' && !heredoc) segmentReads.push({ path: operand.word, uncertain: operand.uncertain });
       continue;
     }
     if (isOperator(entry) && OUTPUT_REDIRECTS.has(entry.op)) {

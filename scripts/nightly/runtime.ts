@@ -29,7 +29,7 @@ function ownedCommand(pid: number, feature: string) {
   return command;
 }
 export async function stopResident(state: Resident) {
-  checkBrake();
+  // The brake forbids new work; disposing recorded owned processes must remain possible.
   for (const [pid, feature] of [[state.caffeinatePid, `caffeinate -i -w ${state.pid}`], [state.pid, path.join(repo, 'dist/web/webServer.cjs')]] as const) {
     try { process.kill(pid, 0); } catch { continue; }
     ownedCommand(pid, feature);
@@ -103,17 +103,16 @@ export async function startResident(): Promise<Resident> {
     return state;
   } catch (error) { await stopResident(state); throw error; }
 }
-export async function runEmptyCase(spec: Case, state: Resident, dir: string, runId: string, expectedUserCount = 1): Promise<Row> {
+async function collectEmptyCase(spec: Case, state: Resident, dir: string, runId: string, expectedUserCount = 1): Promise<Row> {
   mkdirSync(path.join(dir, 'screens'), { recursive: true });
   const row: Row = { id: spec.id, runId, status: '失败', reasons: [], checks: [], files: {}, frames: [], startedAt: new Date().toISOString() };
   type Health = { lastUpdated?: number; tokenSource?: string };
   type Trace = { receivedAt: string; eventName?: string; source?: string; data?: { type?: string; data?: { cost?: number }; [key: string]: unknown }; raw?: string };
   type ProcessEvidence = { source: string; types: Array<string | undefined>; tools: number; approvals: number; modelCalls: number | null; costs: number[] | null; subagents: Trace[]; steps: number };
-  const observations: { caseHash: string; fixture: string; keySlot: string; adapter: string; responses: Array<Health | null>; sessionId?: string; error?: string; captureError?: string; process?: ProcessEvidence; checks?: Check[] } = { caseHash: spec.hash, fixture: 'F0: empty real session; transport request held before model delivery', keySlot: '~/.code-agent-chatprobe', adapter: 'browser send + native SSE JSONL + neo debug readonly', responses: [] };
+  const observations: { caseHash: string; fixture: string; keySlot: string; adapter: string; responses: Array<Health | null>; sessionId?: string; process?: ProcessEvidence; checks?: Check[] } = { caseHash: spec.hash, fixture: 'F0: empty real session; transport request held before model delivery', keySlot: '~/.code-agent-chatprobe', adapter: 'browser send + native SSE JSONL + neo debug readonly', responses: [] };
   const trace: Trace[] = [];
   let browser: Browser | undefined;
   let page: Page;
-  let caseStarted = false;
   let sessionId = '';
   const frame = async (name: string, expected: string[]) => {
     const index = String(row.frames.length + 1).padStart(2, '0');
@@ -198,7 +197,6 @@ export async function runEmptyCase(spec: Case, state: Resident, dir: string, run
       } catch (error) { throw new Error('CAPTURE_PRECONDITION: context health detail could not be opened', { cause: error }); }
     };
     await openDetail();
-    caseStarted = true;
     await frame('empty', ['暂无上下文数据。', '还没有健康度信息']);
     await page.keyboard.press('Escape');
     let release!: () => void;
@@ -214,25 +212,12 @@ export async function runEmptyCase(spec: Case, state: Resident, dir: string, run
       await frame('first-message-pending-provider', ['等待统计上下文容量']);
     } finally { release(); }
     for (let i = 0; i < 90; i++) {
-      if (trace.some(e => JSON.stringify(e.data).includes('agent_complete'))) break;
+      if (trace.some(e => (JSON.stringify(e.data) ?? '').includes('agent_complete'))) break;
       await delay(500);
     }
     observations.responses.push(await api<Health | null>(state, 'context/health/get', [sessionId]));
     await openDetail();
     await frame('first-snapshot', []);
-  } catch (error) {
-    observations.error = scrub(String(error));
-    if (!caseStarted) {
-      const reason = `runner 前置环境不可用：${observations.error}`;
-      row.status = '未执行'; row.reasons = [reason];
-      row.checks = [1, 2, 3].map(() => ({ status: '未执行', detail: reason }));
-      row.endedAt = new Date().toISOString();
-      save(path.join(dir, 'result.json'), { ...observations, checks: row.checks, status: row.status });
-      writeFileSync(path.join(dir, 'host.log'), scopedHostLog('', ''));
-      return row;
-    }
-    if (observations.error.includes('CAPTURE_PRECONDITION')) observations.captureError = observations.error;
-    await frame('error', []).catch(e => { observations.captureError = scrub(String(e)); });
   } finally { await browser?.close(); }
   const db = new Database(path.join(state.dataDir, 'code-agent.db'), { readonly: true });
   const messages = sessionId ? db.prepare('SELECT * FROM messages WHERE session_id = ? ORDER BY timestamp').all(sessionId) as Array<{ role: string }> : [];
@@ -271,9 +256,9 @@ export async function runEmptyCase(spec: Case, state: Resident, dir: string, run
   const initial = observations.responses[0];
   const finalSnapshot = observations.responses.at(-1);
   row.checks = [
-    check(!observations.error && (initial === null || initial?.lastUpdated === 0) && messages.filter(m => m.role === 'user').length === expectedUserCount && audit.length === 0 && finalSnapshot?.tokenSource === 'provider', `初始空快照、user=${expectedUserCount}（实得 ${messages.filter(m => m.role === 'user').length}）、无压缩快照；见 result/messages/audit`),
+    check((initial === null || initial?.lastUpdated === 0) && messages.filter(m => m.role === 'user').length === expectedUserCount && audit.length === 0 && finalSnapshot?.tokenSource === 'provider', `初始空快照、user=${expectedUserCount}（实得 ${messages.filter(m => m.role === 'user').length}）、无压缩快照；见 result/messages/audit`),
     check(terminal && observations.process.steps <= 8 && observations.process.subagents.length === 0 && audit.length === 0 && modelCalls === 1 && tools === 0 && approvals === 0 && cost.length > 0 && cost.reduce((a, b) => a + b, 0) <= 0.05, `终态=${terminal}，主模型响应=${modelCalls || '未知'}，工具=${tools}，审批=${approvals}，费用=${cost.length ? cost.join('+') : '未知'}；费用≤$0.05，缺遥测不推定为零`),
-    observations.captureError ? { status: '未执行', detail: observations.captureError } : check(row.frames.length === 3 && row.frames.every(f => { const dom = JSON.parse(readFileSync(path.join(dir, `screens/${f}.dom.json`), 'utf8')); return dom.criteria.length > 0 && dom.criteria.every((c: { visible: boolean }) => c.visible); }), '空态/等待态精确文本与三帧截图；稿 S-30/S-47/S-31')
+    check(row.frames.length === 3 && row.frames.every(f => { const dom = JSON.parse(readFileSync(path.join(dir, `screens/${f}.dom.json`), 'utf8')); return dom.criteria.length > 0 && dom.criteria.every((c: { visible: boolean }) => c.visible); }), '空态/等待态精确文本与三帧截图；稿 S-30/S-47/S-31')
   ];
   row.endedAt = new Date().toISOString();
   row.status = row.checks.every(c => c.status === '通过') ? '通过' : '失败';
@@ -282,4 +267,17 @@ export async function runEmptyCase(spec: Case, state: Resident, dir: string, run
   for (const name of ['result.json', 'trace.jsonl', 'timeline.json', 'audit.json', 'messages.json', 'stdout.json', 'host.log', ...row.frames.flatMap(f => [`screens/${f}.png`, `screens/${f}.dom.json`])]) row.files[name] = digest(readFileSync(path.join(dir, name)));
   writeFileSync(path.join(dir, 'files.sha256'), Object.entries(row.files).map(([file, hash]) => `${hash}  ${file}`).join('\n') + '\n');
   return row;
+}
+
+/** Only completed observations reach product assertions; every collector exception is unexecuted. */
+export async function runEmptyCase(spec: Case, state: Resident, dir: string, runId: string, expectedUserCount = 1): Promise<Row> {
+  const startedAt = new Date().toISOString();
+  try { return await collectEmptyCase(spec, state, dir, runId, expectedUserCount); }
+  catch (error) {
+    const reason = `runner 前置环境不可用：${scrub(String(error))}`;
+    const row: Row = { id: spec.id, runId, status: '未执行', reasons: [reason], checks: [1, 2, 3].map(() => ({ status: '未执行', detail: reason })), files: {}, frames: [], startedAt, endedAt: new Date().toISOString() };
+    save(path.join(dir, 'result.json'), { caseHash: spec.hash, status: row.status, checks: row.checks, collectorError: reason });
+    writeFileSync(path.join(dir, 'host.log'), scopedHostLog('', ''));
+    return row;
+  }
 }

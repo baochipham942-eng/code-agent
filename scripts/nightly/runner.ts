@@ -6,13 +6,13 @@ import { api, repo, expand, loadResident, runEmptyCase, save, schedulerProbe, sc
 import { designReferences, directory, feedback, renderReport, sendSummary } from './report';
 
 async function main() {
-  if (existsSync(expand('~/.ship/disabled'))) throw new Error('FAIL emergency brake ~/.ship/disabled');
   const [command, ...args] = process.argv.slice(2);
+  if (command === 'stop') { await stopResident(loadResident(expand(args[0]))); console.log('STOPPED owned resident and caffeinate'); return; }
+  if (existsSync(expand('~/.ship/disabled'))) throw new Error('FAIL emergency brake ~/.ship/disabled');
   const option = (name: string) => { const i = args.indexOf(name); return i < 0 ? undefined : args[i + 1]; };
   const casesFile = expand(option('--cases') ?? '~/Downloads/ai/code-agent-private-archive/docs/features/context-health-compaction/cases.md');
   const specs = parseCases(readFileSync(casesFile, 'utf8'));
   if (command === 'start') { const state = await startResident(); console.log(`RESIDENT ${scrub(state.dataDir)} pid=${state.pid} port=${state.port}`); return; }
-  if (command === 'stop') { await stopResident(loadResident(expand(args[0]))); console.log('STOPPED owned resident and caffeinate'); return; }
   if (command === 'schedule') {
     const state = loadResident(expand(args[0]));
     await schedulerProbe(state);
@@ -31,6 +31,7 @@ async function main() {
     if (command === 'report') {
       const gateFile = option('--gates');
       const gates = gateFile ? readFileSync(expand(gateFile), 'utf8').trim().split('\n') : manifest.gates;
+      if (!Array.isArray(gates)) throw new Error('FAIL manifest requires gates array or --gates file');
       const report = await renderReport(specs, rows, manifest.state, manifest.date, manifest.runId, gates, manifest.mechanism);
       const config = option('--notify-config');
       if (config) {

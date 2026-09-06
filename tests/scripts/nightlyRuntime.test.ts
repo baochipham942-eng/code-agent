@@ -18,7 +18,7 @@ const spec: Case = { id: 'TC-M1-01', title: 'fixture', hash: 'frozen-spec', root
 beforeEach(() => {
   vi.clearAllMocks(); home = mkdtempSync(path.join(os.tmpdir(), 'nightly-runtime-')); mocks.home = home;
 });
-afterEach(() => { vi.unstubAllGlobals(); mocks.home = ''; rmSync(home, { recursive: true, force: true }); });
+afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); mocks.home = ''; rmSync(home, { recursive: true, force: true }); });
 function state(): Resident {
   writeFileSync(path.join(home, '.dev-token'), 'fixture-local-token');
   return { dataDir: home, port: 1, pid: 1, caffeinatePid: 2, startedAt: 'fixture', build: {}, head: 'fixture' };
@@ -44,6 +44,55 @@ describe('nightly runtime environment boundary', () => {
     expect(row.frames).toEqual([]); expect(row.fb).toBeUndefined(); expect(mocks.exec).not.toHaveBeenCalled();
     expect(JSON.parse(readFileSync(path.join(dir, 'result.json'), 'utf8')).status).toBe('未执行');
     if (fault !== 'browser') expect(close).toHaveBeenCalledOnce();
+  });
+});
+describe('nightly collector failures after the first observation', () => {
+  it.each(['composer', 'screenshot'])('%s failures do not become product defects', async fault => {
+    credentials();
+    const close = vi.fn();
+    const locator = {
+      waitFor: async () => {}, isVisible: async () => true, click: async () => {},
+      getByText: () => ({ isVisible: async () => true, count: async () => 1, isDisabled: async () => false }),
+      innerText: async () => 'fixture',
+      fill: async () => { throw new Error('collector composer selector timeout'); }
+    };
+    const page = {
+      setDefaultTimeout: vi.fn(), context: () => ({ newCDPSession: async () => ({ send: async () => {}, on: vi.fn() }) }),
+      exposeBinding: async () => {}, addInitScript: async () => {}, goto: async () => {},
+      locator: () => locator, getByRole: () => ({ first: () => locator, last: () => ({ isVisible: async () => false }) }),
+      keyboard: { press: async () => {} }, route: async () => {},
+      screenshot: async ({ path: file }: { path: string }) => { if (fault === 'screenshot') throw new Error('collector screenshot unavailable'); writeFileSync(file, 'hermetic screenshot'); }
+    };
+    mocks.launch.mockResolvedValue({ newPage: async () => page, close });
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => ({ ok: true, status: 200, json: async () => url.endsWith('/sessions') ? { data: { id: 'fixture-session' } } : url.includes('context/health') ? { data: null } : { success: true } })));
+    const row = await runEmptyCase(spec, state(), path.join(home, 'run'), 'mid-collection');
+    expect(row.status).toBe('未执行'); expect(row.checks.every(c => c.status === '未执行')).toBe(true);
+    expect(row.reasons[0]).toContain(`collector ${fault}`); expect(row.fb).toBeUndefined();
+    expect(mocks.exec).not.toHaveBeenCalled(); expect(close).toHaveBeenCalledOnce();
+  });
+});
+describe('nightly emergency stop', () => {
+  it('dispatches stop with the brake set and without reading cases, verifying each owned PID', async () => {
+    const dataDir = path.join(home, '.code-agent-nightly/instance'); mkdirSync(dataDir, { recursive: true });
+    mkdirSync(path.join(home, '.ship')); writeFileSync(path.join(home, '.ship/disabled'), 'brake');
+    const resident = { ...state(), dataDir, pid: 4242, caffeinatePid: 4243 };
+    writeFileSync(path.join(dataDir, 'nightly-resident.json'), JSON.stringify(resident));
+    const alive = new Set([4242, 4243]); const verified = new Set<number>();
+    mocks.exec.mockImplementation((_command, args: string[]) => { const pid = Number(args[1]); verified.add(pid); return pid === 4243 ? 'caffeinate -i -w 4242' : path.resolve('dist/web/webServer.cjs'); });
+    const kill = vi.spyOn(process, 'kill').mockImplementation((pid, signal) => {
+      if (!alive.has(pid)) throw new Error('ESRCH');
+      if (signal !== 0) { expect(verified.has(pid)).toBe(true); alive.delete(pid); }
+      return true;
+    });
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const previous = process.argv;
+    try {
+      process.argv = ['node', 'runner.ts', 'stop', dataDir, '--cases', path.join(home, 'absent-cases.md')];
+      await import('../../scripts/nightly/runner');
+      await vi.waitFor(() => expect(log).toHaveBeenCalledWith('STOPPED owned resident and caffeinate'));
+      expect(alive.size).toBe(0); expect(kill).toHaveBeenCalledWith(4242, 'SIGTERM'); expect(kill).toHaveBeenCalledWith(4243, 'SIGTERM');
+      expect(readFileSync(path.join(home, '.ship/disabled'), 'utf8')).toBe('brake');
+    } finally { process.argv = previous; }
   });
 });
 describe('nightly durable feedback deduplication', () => {

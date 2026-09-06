@@ -396,6 +396,9 @@ export class ToolExecutor {
       dispatchTool: dispatchTool ?? this.dispatchTool,
       ledgerOrigin: this.ledgerOrigin,
       spawnMaxDepth: this.spawnMaxDepth,
+      // 写边界同样必须继承：子代理走 forRun 派生，漏传就等于子调用绕过边界
+      // （#1686 ai-review 第三轮）。与上面的收缩档同理——边界只在主 executor 上生效不算边界。
+      restrictWritesToWorkspace: this.restrictWritesToWorkspace,
     });
     executor.setAuditEnabled(this.auditEnabled);
     return executor;

@@ -30,7 +30,7 @@ import type { DatabaseService } from '../services/core/databaseService';
 import type { TelemetryCollector } from '../telemetry/telemetryCollector';
 import type { ScopedCostRecorder } from '../services/core/scopedCostLimit';
 import path from 'node:path';
-import { createRunContext } from '../runtime/runContext';
+import { createRunContext, resolveCanonicalRunPath } from '../runtime/runContext';
 import { createWorkspaceScope } from '../runtime/workspaceScope';
 import { getMemoryDir } from '../lightMemory/indexLoader';
 
@@ -602,6 +602,14 @@ export class StandaloneAgentAdapter implements AgentInterface {
       //    正常的 MemoryWrite 会被判 PROJECT_SOURCE_OUTSIDE_WORKSPACE，
       //    把「产品能力正常」记成一次失败（#1686 ai-review 第二轮）。
       // 只放记忆目录、不放整个数据目录：边界该多窄就多窄。
+      // 记忆目录若本来就落在沙箱里（CODE_AGENT_DATA_DIR 设成沙箱子目录时会这样），
+      // 再单独加一个根会撞 createWorkspaceScope 的「Project sources overlap」直接抛，
+      // 整个评测起不来；这种情况下它已经被沙箱根覆盖，不必也不能再加（#1686 第三轮）。
+      const canonicalWorkdir = resolveCanonicalRunPath(this.workingDirectory);
+      const canonicalMemoryDir = resolveCanonicalRunPath(getMemoryDir());
+      const memoryInsideSandbox = canonicalMemoryDir === canonicalWorkdir
+        || canonicalMemoryDir.startsWith(`${canonicalWorkdir}${path.sep}`)
+        || canonicalWorkdir.startsWith(`${canonicalMemoryDir}${path.sep}`);
       const evaluationScope = createWorkspaceScope('eval-sandbox', [
         {
           sourceId: 'eval-sandbox-root',
@@ -609,12 +617,12 @@ export class StandaloneAgentAdapter implements AgentInterface {
           access: 'read_write',
           role: 'primary',
         },
-        {
+        ...(memoryInsideSandbox ? [] : [{
           sourceId: 'eval-memory-root',
-          path: getMemoryDir(),
-          access: 'read_write',
-          role: 'additional',
-        },
+          path: canonicalMemoryDir,
+          access: 'read_write' as const,
+          role: 'additional' as const,
+        }]),
       ]);
       // createRunContext 会 canonicalize cwd（macOS 上 /tmp → /private/tmp）。
       // ToolExecutor 构造期会校验 workingDirectory 与 runContext.cwd 一致（toolExecutor.ts:361），

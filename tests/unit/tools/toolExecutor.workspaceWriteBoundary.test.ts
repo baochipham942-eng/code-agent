@@ -118,6 +118,19 @@ describe('restrictWritesToWorkspace 写边界', () => {
     expect(existsSync(escape)).toBe(false);
   });
 
+  it('forRun 派生（子代理走的路）必须继承写边界', async () => {
+    // #1686 第三轮：边界只在主 executor 上生效不算边界——子代理是 forRun 派生出来的。
+    const parentExecutor = buildExecutor(true);
+    const derived = parentExecutor.forRun(
+      (parentExecutor as unknown as { runContext: Parameters<ToolExecutor['forRun']>[0] }).runContext,
+    );
+    derived.setAuditEnabled(false);
+    const escape = path.join(outside, 'derived-escape.txt');
+    const result = await derived.execute('Write', { file_path: escape, content: 'wsb' }, { sessionId: 'wsb-session' });
+    expect(result.success).toBe(false);
+    expect(existsSync(escape)).toBe(false);
+  });
+
   it('开关关闭（生产缺省）时行为不变：scope 外的写不被这道闸拦', async () => {
     // 这条守的是「本单没顺手收紧生产」——生产会话带着 scope 往项目外写是正常路径。
     const target = path.join(outside, 'production-default.txt');

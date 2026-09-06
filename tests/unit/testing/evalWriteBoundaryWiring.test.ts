@@ -58,6 +58,21 @@ describe('评测写边界真接线（不 mock ToolExecutor）', () => {
     expect(result.errors.filter((error) => /cwd mismatch/i.test(error))).toEqual([]);
   });
 
+  it('数据目录落在沙箱里时不因根重叠炸掉（评测起得来）', async () => {
+    // #1686 第三轮：CODE_AGENT_DATA_DIR 设成沙箱子目录时，记忆目录会落进沙箱根内部，
+    // 再单独加一个根会撞 createWorkspaceScope 的「Project sources overlap」直接抛，
+    // 每次 sendMessage 都在建 AgentLoop 之前就失败。
+    const prev = process.env.CODE_AGENT_DATA_DIR;
+    process.env.CODE_AGENT_DATA_DIR = path.join(sandboxLink, 'data');
+    try {
+      const result = await buildAdapter().sendMessage('ping');
+      expect(result.errors.filter((error) => /overlap/i.test(error))).toEqual([]);
+    } finally {
+      if (prev === undefined) delete process.env.CODE_AGENT_DATA_DIR;
+      else process.env.CODE_AGENT_DATA_DIR = prev;
+    }
+  });
+
   // 没有「真跑一次工具调用」的用例：本仓的 mock provider 解析不出 baseURL
   // （`[AiSdkAdapter] 无法解析 provider "mock" 的 baseURL`），AgentLoop 起不到工具那一步。
   // runId 一致性因此由 evalOrchestrationArm.test.ts 的断言 + 反向变异守住，

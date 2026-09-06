@@ -111,6 +111,8 @@ export function hostReasonModelText(reason: HostReasonValue): string {
 export interface PermissionRequest {
   id: string;
   sessionId?: string;
+  /** 请求来自无人值守 run；同一交互 session 内的后台 agent 也可能为 true。 */
+  unattended?: boolean;
   /** Background execution identity for correlating approvals to a subagent slot. */
   agentId?: string;
   runId?: string;

@@ -4,12 +4,14 @@ const toolExecutorState = vi.hoisted(() => ({
   config: undefined as undefined | {
     requestPermission: (request: {
       sessionId?: string;
+      unattended?: boolean;
       forceConfirm?: boolean;
       type: 'file_read' | 'file_write' | 'file_edit' | 'command' | 'network' | 'dangerous_command';
       tool: string;
       details: Record<string, unknown>;
     }) => Promise<boolean>;
     telemetryCollector?: unknown;
+    permissionModeOverride?: PermissionMode;
   },
 }));
 
@@ -22,7 +24,11 @@ vi.mock('../../../src/host/tools/toolExecutor', () => ({
 }));
 
 import { createSubagentToolRuntime } from '../../../src/host/agent/subagentToolRuntime';
+import { createProtocolSubagentExecutionContext } from '../../../src/host/agent/subagentExecutionContext';
 import type { PermissionMode } from '../../../src/host/permissions/modes';
+import type { ToolContext } from '../../../src/host/protocol/tools';
+import { buildCanUseToolFromLegacy } from '../../../src/host/tools/dispatch/shadowAdapter';
+import type { ToolContext as LegacyToolContext } from '../../../src/host/tools/types';
 
 describe('createSubagentToolRuntime permission forwarding', () => {
   beforeEach(() => {
@@ -102,6 +108,125 @@ describe('createSubagentToolRuntime permission forwarding', () => {
 
     expect(approved).toBe(true);
     expect(permissionRequest).not.toHaveBeenCalled();
+  });
+
+  it('async_agent 后台路径切到 unattended 档，分类器留下的 residual ask 一律进入审批层', async () => {
+    const permissionRequest = vi.fn(async () => false);
+    createSubagentToolRuntime({
+      context: {
+        sessionId: 'session-background',
+        cwd: '/tmp/workbench',
+        executionTopology: 'async_agent',
+        resolver: { getDefinition: vi.fn() },
+        permission: { request: permissionRequest },
+        events: { emit: vi.fn() },
+        abortSignal: new AbortController().signal,
+      } as any,
+      sessionId: 'session-background',
+      effectiveMode: 'default',
+      identity: { agentId: 'agent-background', runId: 'run-background' },
+      allowedToolNames: new Set(['Bash']),
+      checkToolExecution: vi.fn(() => true),
+    });
+
+    expect(toolExecutorState.config?.permissionModeOverride).toBe('unattended');
+    await expect(toolExecutorState.config!.requestPermission({
+      sessionId: 'session-background',
+      type: 'network',
+      tool: 'http_request',
+      details: { method: 'DELETE', url: 'https://example.com/resource/1' },
+      unattended: true,
+    })).resolves.toBe(false);
+    await expect(toolExecutorState.config!.requestPermission({
+      type: 'command',
+      tool: 'Bash',
+      details: {},
+      forceConfirm: true,
+      unattended: true,
+    })).resolves.toBe(false);
+    expect(permissionRequest).toHaveBeenCalledTimes(2);
+    expect(permissionRequest).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      agentId: 'agent-background',
+      tool: 'http_request',
+      type: 'network',
+      unattended: true,
+    }));
+  });
+
+  it('把后台 residual ask 的 unattended 标志贯穿 protocol/shadow bridge 到最终审批层', async () => {
+    const finalPermissionRequest = vi.fn(async () => false);
+    const canUseTool = buildCanUseToolFromLegacy({
+      workingDirectory: '/tmp/workbench',
+      requestPermission: finalPermissionRequest,
+    } as unknown as LegacyToolContext, 'http_request');
+    const protocolContext = {
+      runId: 'run-background',
+      sessionId: 'session-interactive-parent',
+      workspace: '/tmp/workbench',
+      workingDir: '/tmp/workbench',
+      abortSignal: new AbortController().signal,
+      logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+      emit: vi.fn(),
+      modelConfig: { provider: 'mock', model: 'model-a' },
+      resolver: { getDefinition: vi.fn() },
+      currentToolCallId: 'parent-tool',
+    } as unknown as ToolContext;
+    const context = createProtocolSubagentExecutionContext(protocolContext, canUseTool);
+    context.executionTopology = 'async_agent';
+
+    createSubagentToolRuntime({
+      context,
+      sessionId: 'session-interactive-parent',
+      effectiveMode: 'default',
+      identity: { agentId: 'agent-background', runId: 'run-background', parentToolUseId: 'parent-tool' },
+      allowedToolNames: new Set(['http_request']),
+      checkToolExecution: vi.fn(() => true),
+    });
+
+    await expect(toolExecutorState.config!.requestPermission({
+      sessionId: 'session-interactive-parent',
+      type: 'network',
+      tool: 'http_request',
+      details: { method: 'DELETE', url: 'https://example.com/resource/1' },
+      unattended: true,
+    })).resolves.toBe(false);
+    expect(finalPermissionRequest).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: 'session-interactive-parent',
+      unattended: true,
+      agentId: 'agent-background',
+      runId: 'run-background',
+      parentToolUseId: 'parent-tool',
+      type: 'network',
+      tool: 'http_request',
+    }));
+  });
+
+  it('async_agent 保留父子收缩后的 readOnly，不把后台拓扑变成写权限', async () => {
+    const permissionRequest = vi.fn(async () => false);
+    createSubagentToolRuntime({
+      context: {
+        sessionId: 'session-readonly-background',
+        cwd: '/tmp/workbench',
+        executionTopology: 'async_agent',
+        resolver: { getDefinition: vi.fn() },
+        permission: { request: permissionRequest },
+        events: { emit: vi.fn() },
+        abortSignal: new AbortController().signal,
+      } as any,
+      sessionId: 'session-readonly-background',
+      effectiveMode: 'readOnly',
+      identity: { agentId: 'agent-readonly-background', runId: 'run-readonly-background' },
+      allowedToolNames: new Set(['Write']),
+      checkToolExecution: vi.fn(() => true),
+    });
+
+    expect(toolExecutorState.config?.permissionModeOverride).toBe('readOnly');
+    await expect(toolExecutorState.config!.requestPermission({
+      type: 'file_write',
+      tool: 'Write',
+      details: {},
+    })).resolves.toBe(false);
+    expect(permissionRequest).toHaveBeenCalledOnce();
   });
 
   it('passes the case-local telemetry owner into nested subagent tool execution', () => {

@@ -23,6 +23,7 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
 import { ToolExecutor } from '../../../src/host/tools/toolExecutor';
 import { AgentFailureCode, HostReasonCode } from '../../../src/shared/contract';
 import { resetPermissionModeManager } from '../../../src/host/permissions/modes';
+import { getPolicyEngine, resetPolicyEngine } from '../../../src/host/permissions/policyEngine';
 
 function setSurfaceTool(name: string): void {
   resolverState.definition = {
@@ -41,6 +42,7 @@ describe('browser/computer consequence approval tier', () => {
 
   beforeEach(() => {
     resetPermissionModeManager();
+    resetPolicyEngine();
     resolverState.definition = undefined;
     resolverState.execute.mockReset().mockResolvedValue({ success: true, output: 'ok' });
     permissionRequests = [];
@@ -85,6 +87,20 @@ describe('browser/computer consequence approval tier', () => {
     expect(result.error).toBe(
       'Denied: High-risk browser/computer action is blocked by policy: browser_action.clear_cookies',
     );
+    expect(permissionRequests).toHaveLength(0);
+    expect(resolverState.execute).not.toHaveBeenCalled();
+  });
+
+  it('permissions.ask 不能把浏览器高风险硬拒绝降级成可审批执行', async () => {
+    setSurfaceTool('browser_action');
+    getPolicyEngine().loadUserRules({ ask: ['browser_action'] });
+
+    const result = await executor.execute('browser_action', { action: 'clear_cookies' }, {});
+
+    expect(result).toMatchObject({
+      success: false,
+      metadata: { code: 'BROWSER_COMPUTER_HIGH_RISK_BLOCKED' },
+    });
     expect(permissionRequests).toHaveLength(0);
     expect(resolverState.execute).not.toHaveBeenCalled();
   });

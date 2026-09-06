@@ -90,12 +90,11 @@ describe('GuardFabric', () => {
   // Topology overrides
   // --------------------------------------------------------------------------
   describe('Topology overrides', () => {
-    it('async_agent + bash → ask (2026-07-13 拍板：用户在场可批，无人应答链路自然超时 deny)', () => {
-      // Even with an allow source, topology wins
+    it('async_agent + bash → 由权限来源裁决，拓扑不再制造 ask', () => {
       fabric.registerSource(makeSource('s1', { verdict: 'allow', confidence: 1, source: 's1', reason: 'ok' }));
       const decision = fabric.evaluate(makeRequest({ tool: 'bash', topology: 'async_agent' }));
-      expect(decision.verdict).toBe('ask');
-      expect(decision.source).toBe('topology');
+      expect(decision.verdict).toBe('allow');
+      expect(decision.source).toBe('s1');
     });
 
     it('coordinator + write → deny', () => {
@@ -139,9 +138,9 @@ describe('GuardFabric', () => {
     });
 
     it('topology reason includes tool and topology name', () => {
-      const decision = fabric.evaluate(makeRequest({ tool: 'bash', topology: 'async_agent' }));
+      const decision = fabric.evaluate(makeRequest({ tool: 'bash', topology: 'coordinator' }));
       expect(decision.reason).toContain('bash');
-      expect(decision.reason).toContain('async_agent');
+      expect(decision.reason).toContain('coordinator');
     });
 
     it('allResults is populated even when topology overrides', () => {

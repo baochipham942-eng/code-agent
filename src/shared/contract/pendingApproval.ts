@@ -5,7 +5,7 @@
 // 用一张 `pending_approvals` 表统一持久化五类 gate 的中途状态：
 //   - kind = 'plan'             → PlanApprovalGate.pendingPlans
 //   - kind = 'launch'           → SwarmLaunchApprovalGate.requests
-//   - kind = 'tool_approval'    → AgentOrchestrator 无人值守停车挂起（B2）
+//   - kind = 'tool_approval'    → AgentOrchestrator 语音态等需长期待决的工具审批
 //   - kind = 'directory_access' → request_directory 工具的目录授权停车挂起
 //   - kind = 'channel_pairing'  → 飞书/Lark 私聊发送者配对
 //     （复用 B2 同一套停车/收件箱/first-responder-wins 机制，payload 复用
@@ -20,8 +20,8 @@
 export type PendingApprovalKind = 'plan' | 'launch' | 'tool_approval' | 'directory_access' | 'channel_pairing';
 
 /**
- * kind='tool_approval' 停车行的 payload（B2）。无人值守会话的工具审批请求超时不再 deny，
- * 改为写入 pending_approvals 挂起，等收件箱/会话卡任一入口应答。
+ * kind='tool_approval' 停车行的 payload。语音态等需长期待决的工具审批写入
+ * pending_approvals，等收件箱/会话卡任一入口应答。
  * displayTool/displayAction 是给收件箱 UI 的人话字段；riskClass 承接 B1 分类供 scopeNote 消费。
  */
 export interface ToolApprovalPayload {

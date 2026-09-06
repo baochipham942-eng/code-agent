@@ -67,6 +67,7 @@ export function createProtocolSubagentExecutionContext(
           permissionReason(request),
           {
             sessionId: request.sessionId,
+            unattended: request.unattended,
             agentId: request.agentId,
             runId: request.runId,
             parentToolUseId: request.parentToolUseId,

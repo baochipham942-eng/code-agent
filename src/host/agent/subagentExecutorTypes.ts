@@ -80,6 +80,8 @@ export interface SubagentToolResolverPort {
 
 export interface SubagentPermissionRequest {
   sessionId?: string;
+  /** 请求来自无人值守 run；协议桥必须原样传到最终审批层。 */
+  unattended?: boolean;
   agentId?: string;
   runId?: string;
   parentToolUseId?: string;

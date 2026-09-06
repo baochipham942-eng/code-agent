@@ -81,6 +81,8 @@ export interface ToolContext {
 
   /** 会话 ID（用于上下文追踪） */
   sessionId?: string;
+  /** 当前工具运行采用内部无人值守权限档；协议工具据此启用对应系统边界。 */
+  unattended?: boolean;
   /** 对话历史（用于 Subagent 上下文注入） */
   messages?: import('../../shared/contract').Message[];
   /** 已修改的文件集合（用于 Subagent 上下文注入） */
@@ -179,6 +181,8 @@ export interface ToolContext {
 
 export interface PermissionRequestData {
   sessionId?: string;
+  /** 请求来自无人值守 run；审批层不得借同 session 的 renderer 进入无限等待。 */
+  unattended?: boolean;
   agentId?: string;
   runId?: string;
   parentToolUseId?: string;

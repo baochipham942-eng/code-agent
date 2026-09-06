@@ -55,6 +55,7 @@ describe('protocol-native SubagentExecutionContext', () => {
 
     await expect(context.permission.request({
       sessionId: 'session-a',
+      unattended: true,
       agentId: 'agent-a',
       runId: 'run-a',
       parentToolUseId: 'call-a',
@@ -69,6 +70,7 @@ describe('protocol-native SubagentExecutionContext', () => {
       'fetch evidence',
       expect.objectContaining({
         sessionId: 'session-a',
+        unattended: true,
         agentId: 'agent-a',
         runId: 'run-a',
         parentToolUseId: 'call-a',

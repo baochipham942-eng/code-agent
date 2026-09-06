@@ -72,6 +72,7 @@ import {
   findConnectorToolMetadata,
 } from '../../shared/contract/workbenchTools';
 import { evaluateGuardFabricGate } from './guardFabricGate';
+import { getPolicyEngine } from '../permissions/policyEngine';
 import { classifyShellDesktopAutomation } from '../permissions/shellDesktopAutomation';
 import { completeArtifactLocatorGuardedWrite } from './artifacts/artifactLocatorHost';
 import { ensureFailedToolResultError } from './toolResultError';
@@ -836,8 +837,33 @@ export class ToolExecutor {
 
     const permStartTime = Date.now();
     const executionTopology = options.executionTopology ?? this.executionTopology;
+    // Native/durable run 把 session identity 放在 runContext；调用点未必重复传 options.sessionId。
+    // 权限档必须与审计、锁和审批请求共用 effectiveSessionId，否则 cron 明明已标 unattended，
+    // ToolExecutor 仍会回退全局 UI default 档。
+    const sessionPermissionMode = resolveSessionPermissionMode(this.permissionModeOverride, effectiveSessionId);
     let guardFabricForcesApproval = false;
     let guardFabricTraceStep: import('../../shared/contract/decisionTrace').DecisionStep | undefined;
+    const userPermissionRule = getPolicyEngine().evaluateUserRules({
+      tool: policyToolName,
+      level: toolDef.permissionLevel,
+      description: toolDef.description,
+      command: typeof params.command === 'string' ? params.command : undefined,
+      filePath: typeof params.file_path === 'string'
+        ? params.file_path
+        : typeof params.path === 'string' ? params.path : undefined,
+      sessionId: effectiveSessionId,
+    });
+    if (userPermissionRule?.action === 'deny') {
+      const reason = userPermissionRule.matchedRule.reason
+        ?? `Denied by user permission rule ${userPermissionRule.matchedRule.id}`;
+      recordDecision(executionToolName, params, 'policy-deny', reason, permStartTime, undefined, effectiveSessionId, this.ledgerOrigin);
+      return {
+        success: false,
+        error: reason,
+        metadata: { failureCode: AgentFailureCode.PermissionDenied },
+      };
+    }
+    const userRulePreApproves = userPermissionRule?.action === 'allow';
     const guardFabricGate = evaluateGuardFabricGate({
       executionToolName,
       policyToolName,
@@ -866,6 +892,17 @@ export class ToolExecutor {
       guardFabricForcesApproval = true;
       guardFabricTraceStep = guardFabricGate.traceStep;
     }
+    if (userPermissionRule?.action === 'prompt') {
+      guardFabricForcesApproval = true;
+      guardFabricTraceStep = {
+        layer: 'guard_fabric',
+        rule: `user-config: ${userPermissionRule.matchedRule.id}`,
+        result: 'ask',
+        reason: userPermissionRule.matchedRule.reason ?? 'User permission rule requires confirmation',
+        durationMs: 0,
+        timestamp: Date.now(),
+      };
+    }
 
     // 嵌套工具再入口（PTC）：绑定 this + 本次 options，让 tools.X() 走回**同一个**
     // executor 的完整 execute()。收缩档靠「同实例 + 原样透传 options」继承，不复制。
@@ -893,6 +930,7 @@ export class ToolExecutor {
       runId: effectiveRunId, turnId: options.turnId,
       sourceMessageId: options.sourceMessageId,
       sessionId: effectiveSessionId,
+      unattended: sessionPermissionMode === 'unattended',
       workspace: this.runtimeWorkspace,
       workspaceScope: this.runContext?.workspaceScope,
       workingDirectory: this.executionCwd,
@@ -1115,7 +1153,6 @@ export class ToolExecutor {
       : undefined;
 
     // B1 第 4 档「只读探索」判定：语义与档位改写规则集中在 toolPermissionClassification.ts
-    const sessionPermissionMode = resolveSessionPermissionMode(this.permissionModeOverride, options.sessionId);
     const readOnlyForcesConfirmation = readOnlyForcesConfirmationFor(sessionPermissionMode, toolDef);
     const shellDesktopAutomation = isBashToolName(policyToolName)
       ? classifyShellDesktopAutomation(params.command)
@@ -1181,12 +1218,15 @@ export class ToolExecutor {
       && !consequenceForcesClassification
       && !argumentForcesClassification
       && !this.forcePermissionHandler
-      && options.preApprovedTools !== undefined
-      && options.preApprovedTools.size > 0
-      && toolMatchesPatternSet(executionToolName, params, options.preApprovedTools);
+      && (userRulePreApproves || (
+        options.preApprovedTools !== undefined
+        && options.preApprovedTools.size > 0
+        && toolMatchesPatternSet(executionToolName, params, options.preApprovedTools)
+      ));
     if (isPreApproved) {
-      logger.debug('Tool pre-approved by Skill system, skipping permission check', { toolName: executionToolName });
-      recordDecision(executionToolName, params, 'auto-approve', 'pre-approved', permStartTime, undefined, effectiveSessionId, this.ledgerOrigin);
+      const preApprovalSource = userRulePreApproves ? 'user-permission-rule' : 'pre-approved';
+      logger.debug('Tool pre-approved, skipping ordinary permission check', { toolName: executionToolName, source: preApprovalSource });
+      recordDecision(executionToolName, params, 'auto-approve', preApprovalSource, permStartTime, undefined, effectiveSessionId, this.ledgerOrigin);
     }
 
     // P0: 安全命令白名单 + exec policy — 已知安全命令跳过审批
@@ -1272,7 +1312,7 @@ export class ToolExecutor {
           'ask',
           `命令无法可靠拆词，审批结果不能放行：${commandAnalysisFailedReason}`,
         );
-      } else if (!guardFabricForcesApproval) {
+      } else if (!guardFabricForcesApproval || consequenceForcesClassification) {
         try {
           // 三分支解析 + readOnly/档位改写规则见 toolPermissionClassification.ts
           const workspaceRoot = this.writeWorkspaceRoot;
@@ -1288,9 +1328,10 @@ export class ToolExecutor {
             permStartTime,
             readOnlyForcesConfirmation,
             sessionPermissionMode,
+            toolReadOnly: toolDef.readOnly,
           });
           // B1: EXTERNAL 风险类打标进 decisionTrace（result='allow'，不改变审批结果，仅供
-          // B2 无人值守停车 / B4 target 授权与审计消费）。此处入 traceBuilder 覆盖 deny/ask 路径；
+          // 停车审批 / B4 target 授权与审计消费）。此处入 traceBuilder 覆盖 deny/ask 路径；
           // approve 路径另建 builder（见下），故其单独补一条。
           if (classification.external) {
             traceBuilder.addStep('permission_classifier', EXTERNAL_SIDE_EFFECT_TRACE_RULE, 'allow', EXTERNAL_SIDE_EFFECT_TRACE_REASON);
@@ -1458,10 +1499,11 @@ export class ToolExecutor {
         permissionRequest.details.affectedFileCount = await countAffectedFiles(affectedPath);
       }
       permissionRequest.sessionId = effectiveSessionId;
+      permissionRequest.unattended = sessionPermissionMode === 'unattended';
       // resolved 审批结果回到 renderer 后，靠现成 tool call id 锚到对应步骤旁展示。
       // 只补关联字段，不复制参数或另建历史存储。
       permissionRequest.parentToolUseId = options.currentToolCallId;
-      // B4：把授权 target 透传给审批层，供无人值守停车审批卡出「每次都允许发 <target>」铸权入口。
+      // B4：把授权 target 透传给审批层，供停车审批卡出「每次都允许发 <target>」铸权入口。
       if (standingGrantTarget) {
         permissionRequest.details.standingGrantTarget = standingGrantTarget;
       }

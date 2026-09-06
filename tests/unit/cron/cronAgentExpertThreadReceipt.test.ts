@@ -41,6 +41,7 @@ const sessionManager = vi.hoisted(() => ({
 
 const orchestrator = vi.hoisted(() => ({
   setExecutionTopology: vi.fn(),
+  consumeUnattendedPermissionFailure: vi.fn(() => null),
   sendMessage: vi.fn(async () => {
     if (state.runError) throw state.runError;
     return { completed: true };

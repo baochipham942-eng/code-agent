@@ -23,7 +23,7 @@ export interface AgentOrchestratorConfig {
   getHomeDir?: () => string;
   broadcastDAGEvent?: (event: DAGVisualizationEvent) => void;
   /**
-   * 无人值守停车审批的持久化仓库（B2）。生产不注入时懒取 getDatabase()；
+   * 停车审批的持久化仓库。生产不注入时懒取 getDatabase()；
    * 测试注入 :memory: repo，避免真库依赖。
    */
   pendingApprovalRepo?: PendingApprovalRepository;

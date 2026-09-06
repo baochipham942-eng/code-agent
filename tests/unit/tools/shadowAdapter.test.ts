@@ -417,6 +417,35 @@ describe('protocolAdapter — buildProtocolContext', () => {
 });
 
 describe('protocolAdapter — buildCanUseToolFromLegacy', () => {
+  it('把 unattended hint 原样传给最终 legacy 审批层', async () => {
+    const requestPermission = vi.fn(async () => false);
+    const ctx = {
+      workingDirectory: '/tmp',
+      requestPermission,
+    } as unknown as LegacyToolContext;
+    const canUseTool = buildCanUseToolFromLegacy(ctx, 'http_request');
+
+    await expect(canUseTool(
+      'http_request',
+      { method: 'DELETE', url: 'https://example.com/resource/1' },
+      'network mutation requires approval',
+      {
+        sessionId: 'session-background',
+        unattended: true,
+        type: 'network',
+        tool: 'http_request',
+        details: { method: 'DELETE', url: 'https://example.com/resource/1' },
+      },
+    )).resolves.toEqual({ allow: false, reason: 'network mutation requires approval' });
+
+    expect(requestPermission).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: 'session-background',
+      unattended: true,
+      type: 'network',
+      tool: 'http_request',
+    }));
+  });
+
   it('legacy requestPermission 返回 true → allow: true', async () => {
     const ctx = {
       workingDirectory: '/tmp',

@@ -618,14 +618,18 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
     // OS 沙箱（bypassPermissions / YOLO 档 + 无人值守会话）
     // 把命令包装成带沙箱前缀的 shell 命令，前台/PTY/后台三条路径统一使用，
     // 复用各自执行器已有的流式 / abort / 错误语义。沙箱不可用时硬报错，绝不静默裸跑。
-    // 审出 MED：无人值守钳制（bypass→acceptEdits）不能顺带撤掉唯一的 OS 级围栏——
-    // unattended 会话不论钳后档位，命令一律带沙箱跑。
+    // unattended 档允许受约束执行，安全边界由 OS 沙箱承担；不能因为无需逐次审批
+    // 就撤掉唯一的系统级围栏。unattended 会话命令一律带沙箱跑。
     // -------------------------------------------------------------------------
     const permissionModeManager = getPermissionModeManager();
-    const shouldSandbox = OS_SANDBOX.ENABLED
+    const unattended = permissionModeManager.isUnattendedSession(ctx.sessionId)
+      || ctx.unattended === true;
+    // unattended 的免审语义以沙箱为前提，所以不受交互路径的 opt-in 开关控制；
+    // 包装器不可用会在下方 fail-closed，绝不退回裸命令。
+    const shouldSandbox = (OS_SANDBOX.ENABLED || unattended)
       && (process.env.CODE_AGENT_EVAL_REAL_ROOT !== undefined
         || permissionModeManager.getModeForSession(ctx.sessionId) === 'bypassPermissions'
-        || permissionModeManager.isUnattendedSession(ctx.sessionId)
+        || unattended
         || (ctx.workspaceScope?.roots.length ?? 0) > 1);
     let sandboxCleanup: (() => void) | undefined;
     const cleanupSandbox = () => {

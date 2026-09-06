@@ -97,19 +97,14 @@ describe('code block copy deduplication', () => {
     expect(within(result.container).queryByRole('button', { name: 'Copy command' })).toBeNull();
   });
 
-  // 这 5 种的渲染器各自都有块头复制按钮（MermaidDiagram / ChartBlock / GenerativeUIBlock /
-  // SpreadsheetBlock / DocumentBlock 都含 handleCopy），所以紧邻的 !copy 是重复入口，应当删掉。
-  it.each(['mermaid', 'chart', 'generative_ui', 'spreadsheet', 'document'])('removes the duplicate action next to %s blocks that own a copy header', (language) => {
+  // 这些块一律不去重：组件里有 handleCopy 只代表「渲染成功时有按钮」，而每一种都带早退分支
+  // （ChartBlock/SpreadsheetBlock/DocumentBlock/GenerativeUIBlock/MermaidDiagram 各有 return null，
+  // neo_ui 走 GenerativeUIHost 根本不渲染按钮）。预处理层无法预判，宁可漏删也不能误删唯一入口。
+  it.each(['mermaid', 'chart', 'generative_ui', 'neo_ui', 'spreadsheet', 'document'])('preserves actions next to special %s renderers', (language) => {
     const content = `\`\`\`${language}\n{}\n\`\`\`\n\n${copyLink}`;
-    expect(dedupeCodeCopyLinks(content)).not.toContain('!copy');
-  });
-
-  // neo_ui 走 GenerativeUIHost（MessageContent.tsx:211），那个组件不渲染复制按钮 ——
-  // 紧邻的链接是用户唯一的复制入口，删掉就是净损失。
-  it('keeps the action next to neo_ui blocks, which have no copy header', () => {
-    const content = `\`\`\`neo_ui\n{}\n\`\`\`\n\n${copyLink}`;
     expect(dedupeCodeCopyLinks(content)).toBe(content);
   });
+
 
   it('preserves standalone copy links without a code block', () => {
     expect(dedupeCodeCopyLinks(copyLink)).toBe(copyLink);

@@ -3,19 +3,26 @@ import remarkParse from 'remark-parse';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import type { Nodes } from 'mdast';
+import { isChartSpecSource } from '@shared/chartSpec';
 
 const parser = unified().use(remarkParse).use(remarkGfm).use(remarkMath);
 
-/** 围栏语言里唯一**没有**块头复制按钮的那种：`neo_ui` 走 `GenerativeUIHost`
- * （MessageContent.tsx:211），该组件不渲染复制按钮，所以紧邻的 `[…](!copy)` 是用户
- * 唯一的复制入口，删掉就是净损失。
+/** 这些语言一律不参与去重：**无法在 markdown 预处理层保证它们真会渲染出块头按钮**。
  *
- * 其余曾被一并排除的语言都**有**自己的块头复制按钮，旁边的 !copy 属重复、该删：
- * mermaid→MermaidDiagram、chart 与 json+chartSpec→ChartBlock、generative_ui→
- * GenerativeUIBlock、spreadsheet→SpreadsheetBlock、document→DocumentBlock，
- * 各自都有 handleCopy（2026-09-06 逐个核实）。
+ * 组件里存在 `handleCopy` 只说明「渲染成功时有按钮」，而每一种都带早退分支——
+ * ChartBlock `if (!parsedSpec) return null`、SpreadsheetBlock `if (!parsedSpec || !sheet)`、
+ * DocumentBlock `if (!parsedSpec || paragraphs.length === 0)`、GenerativeUIBlock
+ * `if (!code.trim())`、MermaidDiagram 同样有一处；`neo_ui` 更是走 GenerativeUIHost
+ * （MessageContent.tsx:211）压根不渲染复制按钮。
+ *
+ * 要判准就得在这一层复刻 5 个组件的解析逻辑，且会随它们漂移。取舍是**宁可漏删一个多余
+ * 按钮，也不能误删唯一的复制入口**——后者是净损失，前者只是没修干净。
+ * （2026-09-06 逐个核实早退分支后收口，见 PR #1682 ai-review 第 2 条。）
  */
-const NO_COPY_HEADER = new Set(['neo_ui']);
+const NO_COPY_HEADER = new Set([
+  'mermaid', 'chart', 'generative_ui', 'neo_ui', 'spreadsheet', 'document',
+]);
+
 
 /** Remove copy-only paragraphs immediately before/after an ordinary fenced block.
  * Blank lines do not break adjacency; prose and container boundaries do.
@@ -29,7 +36,11 @@ export function dedupeCodeCopyLinks(source: string): string {
     if (node?.type !== 'code') return false;
     const start = node.position?.start.offset;
     if (start === undefined || !/^(?:`{3,}|~{3,})/.test(source.slice(start))) return false;
-    return !NO_COPY_HEADER.has(node.lang || '');
+    const language = node.lang || '';
+    // json 且内容是 chart spec 的块同样走 ChartBlock（MessageContent.tsx:197），
+    // 一并排除，理由与上面的清单相同。
+    return !NO_COPY_HEADER.has(language)
+      && !(language === 'json' && isChartSpecSource(node.value));
   };
 
   const visit = (node: Nodes): void => {

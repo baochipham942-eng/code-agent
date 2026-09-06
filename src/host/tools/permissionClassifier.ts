@@ -28,7 +28,7 @@ import {
 import { canonicalizeCommand } from '../security/canonicalizeCommand';
 import { RM_FLAGS_REQUIRED, RM_HEAD } from '../security/rmFlagPattern';
 import { checkCommandPolicy } from './modules/shell/commandPolicy';
-import { inspectPermissionCommand, onlyDeny } from './permissionCommandParse';
+import { inspectPermissionCommand, neverApprove } from './permissionCommandParse';
 import { isBashToolName, normalizeToolName } from './toolNames';
 import { resolveCanonicalRunPath } from '../runtime/runContext';
 import { isPathWithinRoot } from '../runtime/workspaceScope';
@@ -835,7 +835,7 @@ export class PermissionClassifier {
       // caller's fallback ask, which silently downgrades a dangerous-command deny — the same shape
       // as outputRedirectionAsk (round 7) and parseFailureAsk (round 13). Let the deny rules read
       // the whole command first; anything short of deny still falls through to the fallback.
-      return onlyDeny(this.classifyBashSegment(rawTrimmed, context, startTime));
+      return neverApprove(this.classifyBashSegment(rawTrimmed, context, startTime));
     }
 
     if (segments.length === 1) {

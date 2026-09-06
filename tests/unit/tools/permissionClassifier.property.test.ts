@@ -71,8 +71,12 @@ describe('permission classifier regex properties', () => {
         const normal = await classify(`${respell('chmod', style)} ${mode} file2_Aa`);
         expect(normal.decision).toBe('ask');
         expect(normal.reason).not.toContain('危险权限变更');
+        // `ansi` joins `fullwidth` here on purpose: once shell-quote erases the quote boundaries,
+        // `$'\\x6c\\x73'` is indistinguishable from the glued `$'\\x6c'"\\x73"`, so an escaped body can
+        // no longer earn the approval shortcut. One extra prompt for a legitimate escaped spelling
+        // is the price of refusing the forged one.
         expect((await classify(`${respell('ls', style)} file2_Aa`)).decision)
-          .toBe(style === 'fullwidth' ? 'ask' : 'approve');
+          .toBe(style === 'fullwidth' || style === 'ansi' ? 'ask' : 'approve');
       },
     ), { numRuns: 60, seed: 1637 });
   });
@@ -196,6 +200,8 @@ const KNOWN_SHAPES = [
   'echo ok#tag; echo x > out.txt',
   'echo foo\\ #tag; ./cleanup',
   "chronic bash -c 'chmod -R 777 ./data'",
+  `$'\\x6c'"\\x73"`,
+  `$'\\x6c\\x73'`,
 ];
 
 describe('final decision is never looser than the detached origin/main baseline', () => {

@@ -69,8 +69,11 @@ function normalizeWord(word: string): { word: string; failed: boolean; mixedIden
       // spelled that way still has to resolve to one concrete path — and only report the
       // ambiguity, so the qualification side can refuse the identity on its own. Refusing here
       // would fuse approval and write-target extraction back together.
-      const mixedIdentity = key.length === 0 && /\\/.test(body)
-        && !/^(?:\\(?:x[0-9A-Fa-f]{2}|u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8}|[0-7]{1,3}|.))*$/.test(body);
+      // Any backslash is enough. Once shell-quote has erased the quote boundaries, `$'\\x6c\\x73'`
+      // (one real ANSI-C word) and `$'\\x6c'"\\x73"` (two glued fragments) have identical bodies —
+      // the spelling cannot be recovered from the body, so a body carrying escapes is never a
+      // verifiable identity. Losing the shortcut for a genuine escaped spelling is the safe side.
+      const mixedIdentity = key.length === 0 && /\\/.test(body);
       const source = key.length === 0 ? `$'${body}'` : null;
       if (source === null) return { word: '$' + `{${key}}` + body, failed: false, mixedIdentity: false };
       const canonical = canonicalizeCommand(source);

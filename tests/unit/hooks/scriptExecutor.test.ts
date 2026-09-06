@@ -116,6 +116,13 @@ describe('executeScript output parsing', () => {
     expect(result.action).toBe('error');
   });
 
+  it('does not let a non-string action smuggle past a failing exit code', async () => {
+    const result = await executeScript(
+      { command: `echo '{"action":["block"]}'; exit 1` }, buildPostToolContext(),
+    );
+    expect(result.action).toBe('block');
+  });
+
   it('returns allow with no message for empty stdout', async () => {
     const result = await executeScript(
       { command: 'true' },

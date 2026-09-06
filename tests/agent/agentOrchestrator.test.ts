@@ -948,6 +948,22 @@ describe('AgentOrchestrator', () => {
   // Delegate 模式 / Plan 审批开关
   // --------------------------------------------------------------------------
   describe('委托模式与计划审批开关', () => {
+    it('无人值守入口（disableAutoAgent）不被 delegate 模式改道进自动委派', () => {
+      const decide = (needsAutoAgent: boolean, options?: AgentRunOptions) =>
+        (orchestrator as unknown as {
+          shouldForceDelegateAutoAgent(n: boolean, o?: AgentRunOptions): boolean;
+        }).shouldForceDelegateAutoAgent(needsAutoAgent, options);
+      orchestrator.setDelegateMode(true);
+      try {
+        expect(decide(false, { mode: 'normal' } as AgentRunOptions)).toBe(true);
+        expect(decide(false, { mode: 'normal', disableAutoAgent: true } as AgentRunOptions)).toBe(false);
+        expect(decide(true, { mode: 'normal' } as AgentRunOptions)).toBe(false);
+      } finally {
+        orchestrator.setDelegateMode(false);
+      }
+      expect(decide(false, { mode: 'normal' } as AgentRunOptions)).toBe(false);
+    });
+
     it('delegate 模式默认关闭，可切换', () => {
       expect(orchestrator.isDelegateMode()).toBe(false);
       orchestrator.setDelegateMode(true);

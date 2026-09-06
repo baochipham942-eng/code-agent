@@ -167,7 +167,11 @@ export async function discoverAgentFiles(
   optionsOrDepth?: number | AgentsDiscoveryOptions
 ): Promise<AgentsDiscoveryResult> {
   const startTime = Date.now();
-  if (!await isProjectConfigTrusted(workingDirectory, 'agent-instructions')) {
+  const { maxDepth, maxFiles, maxDirectories, includeParents } = normalizeDiscoveryOptions(optionsOrDepth);
+  // 叶目录自己没有信任记录时，只跳过它自己那棵子树；已信任的祖先指令仍要收（ai-review 09-06：
+  // 根目录已信任且有 AGENTS.md、子目录无指令也无独立信任记录时，includeParents 不该返回空）。
+  const leafTrusted = await isProjectConfigTrusted(workingDirectory, 'agent-instructions');
+  if (!leafTrusted && !includeParents) {
     return {
       files: [],
       combinedInstructions: '',
@@ -177,7 +181,6 @@ export async function discoverAgentFiles(
   }
 
   const files: AgentInstructions[] = [];
-  const { maxDepth, maxFiles, maxDirectories, includeParents } = normalizeDiscoveryOptions(optionsOrDepth);
   let visitedDirectories = 0;
   let truncated = false;
 
@@ -272,7 +275,7 @@ export async function discoverAgentFiles(
     }
     for (const parent of parents.reverse()) await searchDirectory(parent, 0, false);
   }
-  await searchDirectory(workingDirectory, 0);
+  if (leafTrusted) await searchDirectory(workingDirectory, 0);
 
   // Sort by path depth (root first, then deeper directories)
   files.sort((a, b) => {

@@ -195,6 +195,14 @@ export class AgentOrchestrator {
     this.toolExecutor.setExecutionTopology(topology);
   }
 
+  /**
+   * delegate 模式把普通回合改道进自动委派；但无人值守入口（wake/cron/role-wake）显式
+   * disableAutoAgent——它们的无人值守声明与审批停车都挂在标准循环上，不得被改道（ai-review 09-06）。
+   */
+  private shouldForceDelegateAutoAgent(needsAutoAgent: boolean, options?: AgentRunOptions): boolean {
+    return this.runSettings.isDelegateMode() && !needsAutoAgent && !options?.disableAutoAgent;
+  }
+
   async sendMessage(
     content: string,
     attachments?: unknown[],
@@ -680,7 +688,7 @@ export class AgentOrchestrator {
         requirements.executionStrategy = 'sequential';
       }
 
-      if (this.runSettings.isDelegateMode() && !requirements.needsAutoAgent) {
+      if (this.shouldForceDelegateAutoAgent(requirements.needsAutoAgent, options)) {
         logger.info('[DelegateMode] Forcing auto agent mode — orchestrator will not execute tools directly');
         requirements.needsAutoAgent = true;
         requirements.executionStrategy = requirements.executionStrategy || 'parallel';

@@ -132,8 +132,10 @@ export async function executeScript(
     const stdout = readString(errorRecord, 'stdout')?.trim() ?? '';
     const json = parseJsonRecord(stdout);
     // Only an explicit JSON decision overrides a nonzero exit status.
+    // action 必须是字符串：{"action":["block"]} 经 String() 会伪装成 'block' 通过检查，
+    // 再被 parseScriptOutput 判成非法动作回落 allow，把非零退出码的阻断绕掉（ai-review 09-06）。
     if (json && (json.decision === 'block'
-      || ['allow', 'block', 'continue', 'error'].includes(String(json.action)))) {
+      || (typeof json.action === 'string' && ['allow', 'block', 'continue', 'error'].includes(json.action)))) {
       return parseScriptOutput(stdout, duration);
     }
     if (errorRecord.code === 1 || errorRecord.code === 2) {

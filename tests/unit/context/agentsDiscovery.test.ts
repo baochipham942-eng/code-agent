@@ -40,6 +40,20 @@ describe('agentsDiscovery', () => {
     expect(noParents.files.map(f => f.content)).toEqual(['# Leaf']);
   });
 
+  it('still inherits a trusted ancestor when the leaf itself has no trust record', async () => {
+    await writeFile(join(rootDir, '.git'), 'gitdir: worktree');
+    await writeFile(join(rootDir, 'AGENTS.md'), '# Root rules');
+    const leaf = join(rootDir, 'child');
+    await mkdir(leaf, { recursive: true });
+    await writeFile(join(leaf, 'AGENTS.md'), '# Untrusted leaf must not load');
+    // 只有根目录有信任记录；叶目录没有（祖先链仍在首个不信任的父目录处停止，见上一例）
+    vi.mocked(isProjectConfigTrusted).mockImplementation(async dir => dir === rootDir);
+    const result = await discoverAgentFilesCached(leaf);
+    expect(result.files.map(f => f.content)).toEqual(['# Root rules']);
+    const noParents = await discoverAgentFilesCached(leaf, { includeParents: false });
+    expect(noParents.files).toEqual([]);
+  });
+
   it('does not collect instructions beyond a denied ancestor', async () => {
     await writeFile(join(rootDir, 'AGENTS.md'), '# Must not enter');
     const leaf = join(rootDir, 'child');

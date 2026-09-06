@@ -982,6 +982,7 @@ export class AgentOrchestrator {
       // provider 变体（roadmap 2.4）：默认主提示词按 provider 家族追加纪律段落
       // （Claude 系 Git 安全 / GPT 国产系自治坚持）；agent 路由自带 prompt 时不动
       systemPrompt,
+      systemInstructions: options?.systemInstructions,
       modelConfig: effectiveModelConfig,
       toolExecutor: runContext ? this.toolExecutor.forRun(runContext) : this.toolExecutor,
       messages: this.messageHistory.getMessagesForRun(),

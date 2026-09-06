@@ -171,6 +171,8 @@ export interface AgentRunOptions {
   reportStyle?: ReportStyle;
   agentOverrideId?: string | null;
   turnSystemContext?: string[];
+  /** Host-authored instructions appended to the actual model system prompt for this run. */
+  systemInstructions?: string[];
   /** 当前 run 写入同一模型历史，但不进入用户可见聊天历史。 */
   historyVisibility?: 'visible' | 'meta';
   /** 只隐藏触发本轮的输入消息；本轮 assistant/tool 输出仍按正常可见语义落库。 */

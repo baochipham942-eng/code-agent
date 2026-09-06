@@ -241,6 +241,8 @@ vi.mock('../../src/host/services/voice/voiceTelemetry', () => ({
 const agentLoopProbe = vi.hoisted(() => ({
   onRun: undefined as undefined | (() => void),
   lastConfig: undefined as undefined | {
+    systemPrompt?: string;
+    systemInstructions?: string[];
     deniedToolNames?: string[];
     allowedToolNames?: string[];
     searchEnabled?: boolean;
@@ -472,10 +474,11 @@ describe('AgentOrchestrator', () => {
         undefined,
         undefined,
         undefined,
-        { mode: 'normal', searchEnabled: false, disableAutoAgent: true },
+        { mode: 'normal', searchEnabled: false, disableAutoAgent: true, systemInstructions: ['unattended-system-test'] },
       );
 
       expect(lastAgentLoopConfig()?.searchEnabled).toBe(false);
+      expect(lastAgentLoopConfig()?.systemInstructions).toContain('unattended-system-test');
     });
 
     it('显式 effort 与 thinking 随本轮 config 进入 AgentLoop，且不被复杂度自动档覆盖', async () => {

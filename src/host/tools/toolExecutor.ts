@@ -195,6 +195,15 @@ export interface ToolExecutorConfig {
    * 整个 run 的工具调用都吃得到。
    */
   spawnMaxDepth?: number;
+  /**
+   * 写目标必须落在 workspaceScope 的可写根内，落不进去就拒（fail-closed）。
+   *
+   * 缺省 false = 存量行为：scope 里找不到这个目标就不管它（只拦「命中了但只读」的源）。
+   * 评测跑显式开成 true——沙箱是这轮唯一该被写的地方，指到沙箱外就是越界。
+   * 🔴 别顺手把它改成默认 true：生产会话带着 scope 往项目外写（临时目录、导出路径）
+   * 是正常路径，全局收紧是产品级决策，不在评测边界这张单的范围里。
+   */
+  restrictWritesToWorkspace?: boolean;
 }
 
 export type ToolExecutionDelegate = (toolName: string, params: Record<string, unknown>, context: ToolContext, options: ExecuteOptions) => Promise<ToolExecutionResult | null>;
@@ -322,6 +331,7 @@ export class ToolExecutor {
   private readonly requestPermissionForTools: (request: PermissionRequestData) => Promise<boolean>;
   private workingDirectory: string;
   private readonly runContext?: RunContext;
+  private readonly restrictWritesToWorkspace: boolean;
   private readonly dispatchTool?: ToolExecutionDelegate;
   private executionTopology: ExecutionTopology;
   private auditEnabled = true;
@@ -332,6 +342,7 @@ export class ToolExecutor {
   private readonly spawnMaxDepth?: number;
 
   constructor(config: ToolExecutorConfig) {
+    this.restrictWritesToWorkspace = config.restrictWritesToWorkspace === true;
     this.requestPermission = config.requestPermission;
     this.requestPermissionForTools = async (request) => normalizePermissionAskResult(
       await this.requestPermission(request),
@@ -526,12 +537,13 @@ export class ToolExecutor {
         definition: toolDef, params, workingDirectory: this.executionCwd,
       }).targets[0] ?? this.executionCwd;
       const readableMatch = resolveWorkspacePath(this.runContext.workspaceScope, target, 'read');
-      if (readableMatch?.root.access !== 'read_write') {
+      const outsideWorkspace = !readableMatch && this.restrictWritesToWorkspace;
+      if (outsideWorkspace || (readableMatch && readableMatch.root.access !== 'read_write')) {
         return {
           success: false,
           error: readableMatch
             ? `Project Source is read-only: ${readableMatch.root.path}`
-            : 'Write target is outside the evaluation workspace.',
+            : 'Write target is outside the writable workspace of this run.',
           metadata: {
             code: readableMatch ? 'PROJECT_SOURCE_READ_ONLY' : 'PROJECT_SOURCE_OUTSIDE_WORKSPACE',
             projectId: this.runContext.workspaceScope.projectId,

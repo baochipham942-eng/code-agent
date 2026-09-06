@@ -25,18 +25,24 @@ import {
   buildCompareArmShape,
   createCompareAgent,
 } from '../../../src/host/testing/comparator/compareAgentFactory';
+import { realpathSync } from 'node:fs';
 import { StandaloneAgentAdapter } from '../../../src/host/testing/agentAdapter';
 import type { AgentEvent } from '../../../src/shared/contract';
 import type { CompareConfiguration } from '../../../src/host/testing/types';
 
 interface CapturedLoopConfig {
   goalContract?: { goal: string; allowSwarm?: boolean };
-  toolExecutor: { capturedConfig?: { spawnMaxDepth?: number } };
+  toolExecutor: { capturedConfig?: CapturedToolExecutorConfig };
   onEvent: (event: AgentEvent) => void;
 }
 
 const capturedLoopConfigs: CapturedLoopConfig[] = [];
-const capturedToolExecutorConfigs: Array<{ spawnMaxDepth?: number }> = [];
+type CapturedToolExecutorConfig = {
+  spawnMaxDepth?: number;
+  restrictWritesToWorkspace?: boolean;
+  runContext?: { workspaceScope?: { roots: Array<{ path: string; access: string }> } };
+};
+const capturedToolExecutorConfigs: CapturedToolExecutorConfig[] = [];
 let scriptedEvents: AgentEvent[] = [];
 
 vi.mock('../../../src/host/agent/agentLoop', () => ({
@@ -54,7 +60,7 @@ vi.mock('../../../src/host/agent/agentLoop', () => ({
 
 vi.mock('../../../src/host/tools/toolExecutor', () => ({
   ToolExecutor: class {
-    capturedConfig: { spawnMaxDepth?: number };
+    capturedConfig: CapturedToolExecutorConfig;
     constructor(config: { spawnMaxDepth?: number }) {
       this.capturedConfig = config;
       capturedToolExecutorConfigs.push(config);
@@ -149,6 +155,24 @@ describe('条件①：makeAgent 真读真传到 ToolExecutor 与 goal 契约', (
     await adapter.sendMessage('run');
     // 摘掉 agentAdapter 里传给 ToolExecutor 的 spawnMaxDepth 这条立刻红。
     expect(capturedToolExecutorConfigs.at(-1)?.spawnMaxDepth).toBe(0);
+  });
+
+  // N-EVAL-POLICY-WRITE-BOUNDARY：写边界在 ToolExecutor 那侧有行为测试
+  // （toolExecutor.workspaceWriteBoundary.test.ts），这里钉的是「评测这条路真的把它接上了」——
+  // 少了这条，把 agentAdapter 里那两行摘掉，行为测试照样全绿。
+  it('评测 adapter 给 ToolExecutor 开写边界，并把沙箱设成唯一可写根', async () => {
+    const adapter = new StandaloneAgentAdapter({
+      workingDirectory: '/tmp',
+      modelConfig: { provider: 'mock', model: 'mock-model' },
+    });
+    await adapter.sendMessage('run');
+    const config = capturedToolExecutorConfigs.at(-1);
+    expect(config?.restrictWritesToWorkspace).toBe(true);
+    const roots = config?.runContext?.workspaceScope?.roots;
+    // scope 根会被 canonicalize（/tmp → /private/tmp），比对时同样取 realpath，
+    // 否则这条断言在 macOS 上恒红、在 Linux 上恒绿——两边都不是在测它想测的东西。
+    expect(roots?.map((root) => ({ path: root.path, access: root.access })))
+      .toEqual([{ path: realpathSync('/tmp'), access: 'read_write' }]);
   });
 
   it('没配 orchestration 时不给 ToolExecutor 传 spawnMaxDepth（存量行为零变化）', async () => {

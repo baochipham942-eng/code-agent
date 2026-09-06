@@ -614,6 +614,9 @@ export class StandaloneAgentAdapter implements AgentInterface {
         forcePermissionHandler: this.requestPermission !== undefined,
         workingDirectory: this.workingDirectory,
         runContext: evaluationRunContext,
+        // 沙箱是这轮唯一该被写的地方：写目标落不进 scope 就拒，不靠 scripted 策略
+        // （策略只按 (tool, requestType) 裁决，表达不了路径）。
+        restrictWritesToWorkspace: true,
         ledgerOrigin: 'eval',
         telemetryCollector,
         // ORCHARM：run 级 spawn 深度上限。缺省 undefined ⇒ SpawnGuard 生产默认；

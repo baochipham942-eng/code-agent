@@ -53,6 +53,14 @@ describe('ToolCallDisplay status labels', () => {
       result: { toolCallId: 'glob-empty', success: true, output: 'No matches found' },
     };
     expect(getToolStatusLabel(empty, 'success', zh)).toBe(zh.toolStatus.grepNoMatches);
+
+    // 真阳：Glob 自己产生的空结果串后面还带词，不能用整行全等（同轮第二次判红）
+    const globEmpty: ToolCall = {
+      ...hit,
+      id: 'glob-empty-real',
+      result: { toolCallId: 'glob-empty-real', success: true, output: 'No files matched the pattern' },
+    };
+    expect(getToolStatusLabel(globEmpty, 'success', zh)).toBe(zh.toolStatus.grepNoMatches);
   });
 
   it('reports spawn completion according to foreground versus background facts', () => {

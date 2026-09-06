@@ -65,13 +65,18 @@ export function getToolStatusLabel(
  * 抽不出东西时返回 null —— 光秃秃的「已完成/已创建」不值得占一个视觉位置。
  */
 /**
- * 「无匹配」必须是**整条输出就是这个标记**，不能用 includes 在正文里找子串：
- * Glob 成功返回一个名叫 `No matches.md` 的文件时，子串判定会把有结果说成无结果，
- * 与旁边的结果摘要自相矛盾，用户据此误判文件不存在（ai-review #1693）。
+ * 「无匹配」判据锚在工具**自己产生的那两条字面量**上，且必须出现在输出首行的开头：
+ *   - Glob 空结果 = `No files matched the pattern`（glob.ts:180）
+ *   - Grep 空结果 = `No matches found`（grep.ts:420 等多处）
+ *
+ * 为什么不用 includes：Glob 找到一个名叫 `No matches.md` 的文件时，子串判定会把有结果
+ * 说成无结果（ai-review #1693 第一轮）。
+ * 为什么不用整行全等：真实输出后面还带着别的词，全等会把真的空结果漏掉
+ * ——第一版就是这么改紧过头的（同一轮第二次判红）。真阳真阴各一条测试一起钉。
  */
 function isEmptyResultMarker(output: string): boolean {
   const first = output.split('\n', 1)[0]?.trim() ?? '';
-  return /^(no matches(\s+found)?|no files matched|0 matches)\.?$/i.test(first);
+  return /^(no matches found|no files matched|0 matches)\b/i.test(first);
 }
 
 function enrichCompletedLabel(toolCall: ToolCall, t: Translations): string | null {

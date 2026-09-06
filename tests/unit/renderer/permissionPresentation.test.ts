@@ -200,8 +200,9 @@ describe('device / special path copy', () => {
     const summary = permissionSummary(request, zh);
     expect(summary).toBe('允许编辑 /dev/null（工作区外）？');
     expect(summary).not.toBe('允许编辑 null（工作区外）？');
-    expect(permissionConsequence(request, zh)).toBe('将向工作区外的设备文件 /dev/null 写入。');
-    expect(permissionConsequence(request, zh)).not.toContain('可能覆盖现有内容');
+    // 收口后本层不再声称设备文件：覆盖警告一律保留（写 /dev/null 多一句无害提示）。
+    expect(permissionConsequence(request, zh)).toContain('可能覆盖现有内容');
+    expect(permissionConsequence(request, zh)).not.toContain('设备文件');
   });
 
   // ai-review #1692：`/dev/` 前缀不能当「设备文件」判据——Linux 上 /dev/shm/<name> 是普通文件。
@@ -226,7 +227,7 @@ describe('device / special path copy', () => {
     expect(consequence).not.toContain('设备文件');
   });
 
-  it('titles /dev/stdout with the full path and skips overwrite wording', () => {
+  it('titles /dev/stdout with the full path（覆盖警告按收口后的口径一律保留）', () => {
     const request: PermissionRequest = {
       ...baseRequest,
       tool: 'Write',
@@ -236,9 +237,27 @@ describe('device / special path copy', () => {
     };
 
     expect(permissionSummary(request, zh)).toBe('允许写入 /dev/stdout（工作区外）？');
-    expect(permissionConsequence(request, zh)).toBe('将向工作区外的设备文件 /dev/stdout 写入。');
-    expect(permissionConsequence(request, zh)).not.toContain('可能覆盖现有内容');
+    expect(permissionConsequence(request, zh)).toContain('可能覆盖现有内容');
+    expect(permissionConsequence(request, zh)).not.toContain('设备文件');
   });
+
+  // 收口断言：这一层不许再出现「设备文件」措辞——它需要 host 侧解析后的路径 + stat
+  // 才判得了，放在渲染层每种判据都能被文件名构造（ai-review #1692 四轮）。
+  it.each(['/dev/null', '/dev/stdout', '/dev/shm/report.md', 'NUL', 'C:/dev/null'])(
+    '%s 一律保留覆盖警告，且不称设备文件',
+    (path) => {
+      const request: PermissionRequest = {
+        ...baseRequest,
+        tool: 'Write',
+        type: 'file_write',
+        details: { path },
+        boundary: { id: 'file.external_write' },
+      };
+      const consequence = permissionConsequence(request, zh);
+      expect(consequence).toContain('可能覆盖现有内容');
+      expect(consequence).not.toContain('设备文件');
+    },
+  );
 
   it('keeps basename titles and overwrite wording for ordinary files', () => {
     const inside: PermissionRequest = {

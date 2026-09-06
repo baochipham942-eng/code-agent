@@ -164,14 +164,15 @@ describe('PermissionCard 紧凑/展开判据', () => {
     });
   });
 
-  it('/dev/null 标题用完整路径，后果不含覆盖措辞', () => {
+  // 本单只解决标题（FB-115 报的就是「允许编辑 null」）。后果文案的设备判定已按
+  // ai-review #1692 四轮收口移出本层，改由 host 侧解析后判定，见 N-APPROVAL-DEVICE-CONSEQUENCE-HOST。
+  it('/dev/null 标题用完整路径（后果一律保留覆盖警告）', () => {
     renderRequest(deviceNullEdit);
 
     expect(screen.getByText('允许编辑 /dev/null（工作区外）？')).toBeTruthy();
     expect(screen.queryByText('允许编辑 null（工作区外）？')).toBeNull();
-    expect(screen.getByTestId('permission-consequence').textContent)
-      .toBe('将向工作区外的设备文件 /dev/null 写入。');
-    expect(screen.getByTestId('permission-consequence').textContent).not.toContain('可能覆盖现有内容');
+    expect(screen.getByTestId('permission-consequence').textContent).toContain('可能覆盖现有内容');
+    expect(screen.getByTestId('permission-consequence').textContent).not.toContain('设备文件');
   });
 
   it('danger 默认展开：规则后果含路径和文件数，Enter 无效，拒绝是右侧蓝色主按钮', () => {

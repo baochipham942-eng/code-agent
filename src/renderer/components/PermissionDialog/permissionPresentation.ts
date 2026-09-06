@@ -18,23 +18,18 @@ function basename(target: string): string {
  * 设备节点与 DOS 保留名用完整路径展示，不当文件名截断。
  */
 /**
- * 只有能**逐字**证明是设备，才关掉「可能覆盖现有内容」的警告。
+ * 这里**故意没有**「是不是设备文件」的判定。
  *
- * 这里刻意**不做任何归一化**（不转反斜杠、不折大小写、不映射 /private/dev、不认裸 NUL）——
- * 归一化每加一条，就多一种"普通文件长得像设备"的构造法，ai-review #1692 连着三轮各找到一个：
- * `/dev/shm/report.md`（前缀）、POSIX 上名为 `NUL` 的文件（裸保留名）、`\dev\null`（反斜杠归一化）。
- * 审批卡拿到的是 host **未解析**的原始 file_path，渲染层没有能力判断它最终指向什么，
- * 所以方向固定 fail-safe：**证不出是设备就保留覆盖警告**（多提示一句，永远比少提示一句安全）。
+ * 审批卡拿到的是 host **未解析**的原始 file_path，渲染层无从知道它最终指向什么：
+ * ai-review #1692 连着四轮各造出一个反例——`/dev/shm/report.md`（前缀）、POSIX 上名为
+ * `NUL` 的文件（裸保留名）、`\dev\null`（反斜杠归一化）、Windows 上 `/dev/null` 解析成
+ * `C:\dev\null`（平台差异）。每补一条判据就多一种构造法，且每一次判错的代价都是
+ * **把「可能覆盖现有内容」的警告从一个真会被覆盖的文件上摘掉**。
+ *
+ * 所以按「穷举转结构性方案」收口：本层不再声称设备文件，一律保留覆盖警告
+ * （写 /dev/null 时多一句无害的提示）。真要区分，得在 host 侧拿解析后的路径 + stat
+ * 判断再传下来 —— 已开 N-APPROVAL-DEVICE-CONSEQUENCE-HOST。
  */
-const KNOWN_CHAR_DEVICES: ReadonlySet<string> = new Set([
-  '/dev/null', '/dev/zero', '/dev/full', '/dev/random', '/dev/urandom',
-  '/dev/tty', '/dev/stdin', '/dev/stdout', '/dev/stderr',
-  '//./NUL', '//./CON', '//./PRN', '//./AUX',
-]);
-
-function isKnownCharDevice(target: string): boolean {
-  return KNOWN_CHAR_DEVICES.has(target) || /^\/dev\/fd\/\d+$/u.test(target);
-}
 
 /** 标题是否保留完整路径。比设备白名单宽是**有意的**：多显示路径无害，少显示才误导。 */
 function isDeviceOrSpecialPath(target: string): boolean {
@@ -137,14 +132,6 @@ export function permissionConsequence(request: PermissionRequest, t: Translation
     return p.consequenceDelete
       .replace('{target}', safeTarget ?? p.targetFallback)
       .replace('{count}', fileCountText(count, t));
-  }
-  if (
-    target
-    && isKnownCharDevice(target)
-    && (request.type === 'file_write' || request.type === 'file_edit')
-  ) {
-    const copy = isOutsideWorkspace(request) ? p.consequenceDeviceOutside : p.consequenceDevice;
-    return copy.replace('{target}', safeTarget ?? p.targetFallback);
   }
   if (isOutsideWorkspace(request)) {
     return p.consequenceOutside

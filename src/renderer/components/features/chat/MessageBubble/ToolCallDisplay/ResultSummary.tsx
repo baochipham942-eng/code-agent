@@ -12,6 +12,7 @@ import {
   resolveToolTerminalOutcomeKey,
 } from '../../../../../utils/toolExecutionPresentation';
 import { isRawToolStdoutNoMatches } from '../../../../../utils/toolStatusLinePresentation';
+import { isEmptyMatchForStatusLine } from './statusLabels';
 
 interface Props {
   toolCall: ToolCall;
@@ -52,8 +53,8 @@ function collapsedSuccessSummary(summary: string | null, toolCall: ToolCall): st
   if (!summary) return null;
   // 只有状态行**真的**接管了这句才隐藏摘要。拿不到 metadata.totalMatches 时状态行什么都不说
   // （不猜），这时再把摘要删掉，折叠行就一个字都没有了（ai-review #1693 Nit）。
-  const total = (toolCall.result?.metadata as { totalMatches?: unknown } | undefined)?.totalMatches;
-  if (total !== 0) return summary;
+  // 与状态行同一判据：只有状态行真的接管了这句才隐藏摘要（含没有计数时的回落档）。
+  if (!isEmptyMatchForStatusLine(toolCall)) return summary;
   const toolName = toolCall.name;
   // grep/glob empty stdout is already the statusLabel (无匹配); keep raw English in details.
   // 🔴 只对这两个工具成立：mcp__github__search_code 之类同样会返回 'No matches found'，

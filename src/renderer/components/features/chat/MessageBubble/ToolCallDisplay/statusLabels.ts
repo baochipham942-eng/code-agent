@@ -73,12 +73,16 @@ export function getToolStatusLabel(
  * 文件名就能构造出来。Glob（glob.ts:184）与 Grep（grep.ts:421）都在 meta 里给了
  * `totalMatches`，那才是真源。
  *
- * 拿不到计数时**什么都不说**（返回 undefined），不猜——宁可少一句状态，
- * 不可把找到的结果说成没找到。
+ * 拿不到计数（旧消息、metadata 丢失）才回落到**首行锚定**匹配：只认输出第一行就以
+ * 工具自产的空结果串开头。它挡得住 `docs/No matches.md`（首行以 docs/ 开头），
+ * 挡不住根目录下正好叫 `No files matched.md` 的文件——那是回落档能做到的极限，
+ * 代价只是一句状态标签说错，没有安全后果。有计数时永远以计数为准。
  */
-function emptyMatchCount(toolCall: ToolCall): boolean | undefined {
+export function isEmptyMatchForStatusLine(toolCall: ToolCall): boolean {
   const total = (toolCall.result?.metadata as { totalMatches?: unknown } | undefined)?.totalMatches;
-  return typeof total === 'number' ? total === 0 : undefined;
+  if (typeof total === 'number') return total === 0;
+  const first = (toolCall.result?.output ?? '').split('\n', 1)[0]?.trim() ?? '';
+  return /^(no matches found|no files matched|0 matches)\b/i.test(first);
 }
 
 function enrichCompletedLabel(toolCall: ToolCall, t: Translations): string | null {
@@ -90,13 +94,13 @@ function enrichCompletedLabel(toolCall: ToolCall, t: Translations): string | nul
   if (name === 'Grep') {
     const match = output.match(/(\d+)\s*match/i);
     if (match) return t.toolStatus.grepMatches.replace('{count}', match[1]);
-    if (emptyMatchCount(toolCall) === true) return t.toolStatus.grepNoMatches;
+    if (isEmptyMatchForStatusLine(toolCall)) return t.toolStatus.grepNoMatches;
   }
 
   if (name === 'Glob') {
     const match = output.match(/(\d+)\s*file/i);
     if (match) return t.toolStatus.globFiles.replace('{count}', match[1]);
-    if (emptyMatchCount(toolCall) === true) return t.toolStatus.grepNoMatches;
+    if (isEmptyMatchForStatusLine(toolCall)) return t.toolStatus.grepNoMatches;
   }
 
   if (name === 'Read') {

@@ -55,8 +55,11 @@ describe('ToolCallDisplay status labels', () => {
       .not.toBe(zh.toolStatus.grepNoMatches);
   });
 
-  it('拿不到 totalMatches 时什么都不说，不猜', () => {
+  it('拿不到 totalMatches 时回落到首行锚定匹配（旧消息/metadata 丢失）', () => {
     expect(getToolStatusLabel(globCall('No files matched the pattern'), 'success', zh))
+      .toBe(zh.toolStatus.grepNoMatches);
+    // 回落档仍然挡得住「文件名含标记但不在首行开头」这一类
+    expect(getToolStatusLabel(globCall('docs/No matches.md\n\nnextOffset: null'), 'success', zh))
       .not.toBe(zh.toolStatus.grepNoMatches);
   });
 
@@ -256,7 +259,9 @@ describe('折叠行摘要的隐藏范围', () => {
     expect(collapsedSuccessSummaryForTest('No matches found', call('Grep', { totalMatches: 0 }))).toBeNull();
     expect(collapsedSuccessSummaryForTest('No matches found', call('mcp__github__search_code', { totalMatches: 0 })))
       .toBe('No matches found');
-    // 状态行没接管（拿不到计数）时不许删摘要，否则折叠行一个字都没有
-    expect(collapsedSuccessSummaryForTest('No matches found', call('Glob'))).toBe('No matches found');
+    // 状态行没接管时不许删摘要，否则折叠行一个字都没有。
+    // 「没接管」= 判据说这不是空结果（有计数且非 0，或回落档不匹配），不是「没有 metadata」。
+    expect(collapsedSuccessSummaryForTest('No matches found', call('Glob', { totalMatches: 3 })))
+      .toBe('No matches found');
   });
 });

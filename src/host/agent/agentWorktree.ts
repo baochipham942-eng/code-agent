@@ -39,18 +39,26 @@ const ROLE_DEFAULT_ISOLATION: Record<string, 'worktree' | 'none'> = {
   awaiter: 'none',
 };
 
-export function resolveAgentWorktreeIsolation(input: {
+export async function resolveAgentWorktreeIsolation(input: {
   tools: string[];
   role?: string;
   explicit?: string;
-  /** 子 agent 的工作目录；非 git 仓库时隔离没有意义且必然失败，直接判 none */
+  /**
+   * 子 agent 的工作目录；非 git 仓库或零提交仓库（HEAD 无法解析）时隔离
+   * 没有意义且必然失败，直接判 none。
+   */
   cwd?: string;
-  /** 外部写执行器要求 Neo 管理的 worktree；非 git 场景也不允许降级。 */
+  /**
+   * 外部写执行器要求 Neo 管理的 worktree；非 git / 零提交场景也不允许降级，
+   * 照常走 worktree（在创建处失败，worktreeFailureHint 给可读原因）。
+   */
   forceWorktree?: boolean;
-}): 'worktree' | 'none' {
+}): Promise<'worktree' | 'none'> {
   if (input.forceWorktree) return 'worktree';
-  if (input.cwd !== undefined && !isInsideGitRepo(input.cwd)) {
-    logger.warn(`${input.cwd} 不在 git 仓库内，子 agent 降级为无 worktree 隔离`);
+  if (input.cwd !== undefined && !(await gitHeadResolves(input.cwd))) {
+    logger.warn(
+      `${input.cwd} 无法创建 worktree（不在 git 仓库内，或仓库还没有任何提交），子 agent 降级为无 worktree 隔离`,
+    );
     return 'none';
   }
   if (input.explicit === 'worktree') return 'worktree';
@@ -66,6 +74,8 @@ export function resolveAgentWorktreeIsolation(input: {
  * 目录是否在 git 仓库里（向上找 .git，worktree 里 .git 是文件不是目录）。
  * worktree 隔离在非 git 目录下没有意义且必然失败——Neo 的协作者多数不是程序员，
  * 默认工作目录就是家目录，硬起隔离会让「派个会写文件的成员」整条路不可用。
+ * 「git init 过但还没有任何提交」的仓库同样建不了 worktree（HEAD 解析不出来），
+ * 与非 git 目录同属这一档，见 gitHeadResolves。
  */
 function isInsideGitRepo(dir: string): boolean {
   let current = path.resolve(dir);
@@ -75,6 +85,34 @@ function isInsideGitRepo(dir: string): boolean {
     if (parent === current) return false;
     current = parent;
   }
+}
+
+/**
+ * git 自己的判据：HEAD 能否解析为 commit（`git worktree add` 需要 base）。
+ * 零提交仓库 HEAD 指向尚不存在的分支，rev-parse 失败；非 git 目录同样失败——
+ * 一条命令覆盖两档。不手写解析 .git/HEAD：worktree 里 .git 是文件不是目录，手写解析会漏 case。
+ */
+async function gitHeadResolves(dir: string): Promise<boolean> {
+  try {
+    await execAsync(
+      `git -C ${shellQuote(dir)} rev-parse --verify --quiet HEAD`,
+      { timeout: WORKTREE_TIMEOUT },
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * worktree 创建失败时的人话提示：区分「不在 git 仓库」和「在 git 仓库但还没有
+ * 任何提交」。后者 git 原生报 "ambiguous argument 'HEAD'"，对用户没有指向性。
+ */
+export async function worktreeFailureHint(cwd: string): Promise<string> {
+  if (isInsideGitRepo(cwd) && !(await gitHeadResolves(cwd))) {
+    return '仓库还没有任何提交（HEAD 无法解析），无法创建 worktree；请先在仓库里做一次初始提交，或换 native 引擎的子代理。';
+  }
+  return 'Ensure you are in a git repository.';
 }
 
 export interface WorktreeInfo {

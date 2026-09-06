@@ -365,7 +365,7 @@ export async function executeSpawnAgent(
       cleanupOrphanedWorktrees(cwd).catch(() => {});
 
       // Worktree isolation: explicit param > role-based default > none
-      const effectiveIsolation = resolveAgentWorktreeIsolation({
+      const effectiveIsolation = await resolveAgentWorktreeIsolation({
         tools, cwd,
         role,
         explicit: params.isolation as string | undefined,

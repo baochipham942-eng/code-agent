@@ -35,7 +35,6 @@ import { connectorExternalWriteReason, isConnectorToolName } from '../../shared/
 import { isSensitiveCredentialPath } from '../sandbox/sensitivePaths';
 import { resolvedRmCriticalTarget } from '../security/recursiveRmPathSafety';
 import { anchoredAllowCommandWords } from '../security/commandAllowProof';
-import { classifyProvenWorkspaceWrite } from './workspaceShellWriteProof';
 
 const logger = createLogger('PermissionClassifier');
 
@@ -904,11 +903,6 @@ export class PermissionClassifier {
         };
       }
     }
-
-    // 对已证明的有限写形态，写目标本身就是授权边界。放在凭据路径扫描前，
-    // 保证同一形态写 ~/.ssh/x 仍由 W3 拦住，也让“忽略路径”的反向变异确实变红。
-    const provenWorkspaceWrite = classifyProvenWorkspaceWrite(command, context, startTime);
-    if (provenWorkspaceWrite) return provenWorkspaceWrite;
 
     const sensitiveTarget = credentialReadTarget(command, context);
     if (sensitiveTarget) {

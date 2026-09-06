@@ -69,101 +69,13 @@ function readShellWord(command: string, start: number): { raw: string; end: numb
   return { raw: command.slice(wordStart, index), end: index };
 }
 
-const ANSI_C_ESCAPES: Record<string, string> = {
-  a: '\x07',
-  b: '\b',
-  e: '\x1b',
-  E: '\x1b',
-  f: '\f',
-  n: '\n',
-  r: '\r',
-  t: '\t',
-  v: '\v',
-  '\\': '\\',
-  "'": "'",
-  '"': '"',
-  '?': '?',
-};
-
-function decodeAnsiCEscape(word: string, start: number): { value: string; end: number } | null {
-  const escaped = word[start + 1];
-  if (escaped === undefined) return null;
-  const namedEscape = ANSI_C_ESCAPES[escaped];
-  if (namedEscape !== undefined) return { value: namedEscape, end: start + 2 };
-
-  const encoded = escaped === 'x'
-    ? word.slice(start + 2).match(/^[0-9a-fA-F]{1,2}/)?.[0]
-    : escaped === 'u'
-      ? word.slice(start + 2).match(/^[0-9a-fA-F]{1,4}/)?.[0]
-      : escaped === 'U'
-        ? word.slice(start + 2).match(/^[0-9a-fA-F]{1,8}/)?.[0]
-        : word.slice(start + 1).match(/^[0-7]{1,3}/)?.[0];
-  const isUnicodeEscape = escaped === 'u' || escaped === 'U';
-  if (encoded === undefined) return { value: escaped, end: start + 2 };
-  const value = Number.parseInt(encoded, escaped === 'x' || isUnicodeEscape ? 16 : 8);
-  if (value === 0 || (isUnicodeEscape && value > 0x10ffff)) return null;
-  return {
-    value: isUnicodeEscape ? String.fromCodePoint(value) : String.fromCharCode(value),
-    end: start + encoded.length + (escaped === 'x' || isUnicodeEscape ? 2 : 1),
-  };
-}
-
-function decodeShellWord(word: string): string | null {
-  let result = '';
-  let quote: "'" | '"' | 'ansi' | undefined;
-  for (let index = 0; index < word.length; index += 1) {
-    const char = word[index];
-    if (!quote) {
-      if (char === '$' && word[index + 1] === "'") {
-        quote = 'ansi';
-        index += 1;
-      } else if (char === "'" || char === '"') {
-        quote = char;
-      } else if (char === '\\') {
-        const escaped = word[++index];
-        if (escaped === undefined) return null;
-        if (escaped !== '\n' && escaped !== '\r') result += escaped;
-      } else if (char === '`' || (char === '$' && word[index + 1] === '(')) {
-        return null;
-      } else if (char === '$' && word[index + 1] === '"') {
-        return null;
-      } else if (char === '\0') {
-        return null;
-      } else {
-        result += char;
-      }
-      continue;
-    }
-
-    if ((quote === 'ansi' && char === "'") || char === quote) {
-      quote = undefined;
-      continue;
-    }
-    if (quote === 'ansi' && char === '\\') {
-      const decoded = decodeAnsiCEscape(word, index);
-      if (!decoded) return null;
-      result += decoded.value;
-      index = decoded.end - 1;
-      continue;
-    }
-    if (quote === '"' && char === '\\') {
-      const escaped = word[index + 1];
-      if (escaped === undefined) return null;
-      if (['$', '`', '"', '\\'].includes(escaped)) {
-        result += escaped;
-        index += 1;
-      } else if (escaped === '\n' || escaped === '\r') {
-        index += escaped === '\r' && word[index + 2] === '\n' ? 2 : 1;
-      } else {
-        result += char;
-      }
-      continue;
-    }
-    if (quote === '"' && (char === '`' || (char === '$' && word[index + 1] === '('))) return null;
-    if (char === '\0') return null;
-    result += char;
+/** 去掉整词两端的同类引号：`cp a "/etc/x"` 的目标是 /etc/x，不是带引号的字面量。 */
+function unquote(word: string): string {
+  const first = word[0];
+  if ((first === "'" || first === '"') && word.length >= 2 && word.at(-1) === first) {
+    return word.slice(1, -1);
   }
-  return quote ? null : result;
+  return word;
 }
 
 interface ShellToken {
@@ -230,56 +142,15 @@ function tokenizeShellCommand(command: string): ShellToken[] {
   return tokens;
 }
 
-interface StaticShellCommandShape {
-  words: string[];
-  leadingAssignmentCount: number;
-}
-
-/** 单段命令的静态词形；赋值身份按 quote removal 前的 shell 语法判断。 */
-export function staticShellCommandShape(command: string): StaticShellCommandShape | null {
-  const words: string[] = [];
-  const rawWords: string[] = [];
-  for (const token of tokenizeShellCommand(command)) {
-    if (token.kind === 'separator') return null;
-    if (token.kind === 'redirect') continue;
-    const word = decodeShellWord(token.raw);
-    if (word === null) return null;
-    rawWords.push(token.raw);
-    words.push(word);
-  }
-  let leadingAssignmentCount = 0;
-  while (/^[A-Za-z_][A-Za-z0-9_]*=/.test(rawWords[leadingAssignmentCount] ?? '')) {
-    leadingAssignmentCount += 1;
-  }
-  return { words, leadingAssignmentCount };
-}
-
 /** 写目标在参数位上的命令：cp / mv 写最后一个参数，tee 写每一个文件参数。 */
 const ARGUMENT_WRITE_COMMANDS: Record<string, 'last' | 'all'> = { cp: 'last', mv: 'last', tee: 'all' };
 
 function argumentWriteTargets(words: string[]): string[] {
-  let programIndex = 0;
-  while (/^[A-Za-z_][A-Za-z0-9_]*=/.test(words[programIndex] ?? '')) {
-    programIndex += 1;
-  }
-  if (words.length - programIndex < 2) return [];
-  const program = decodeShellWord(words[programIndex]);
-  if (!program) return [];
-  const rule = ARGUMENT_WRITE_COMMANDS[path.basename(program)];
+  if (words.length < 2) return [];
+  const rule = ARGUMENT_WRITE_COMMANDS[path.basename(unquote(words[0]))];
   if (!rule) return [];
-  // `--` 之前的横线词是开关；`--` 之后全部是路径，包括 `-/../../outside`。
-  const operands: string[] = [];
-  let optionsEnded = false;
-  for (const rawWord of words.slice(programIndex + 1)) {
-    const word = decodeShellWord(rawWord);
-    if (word === null) return [''];
-    if (!optionsEnded && word === '--') {
-      optionsEnded = true;
-      continue;
-    }
-    if (!optionsEnded && word.startsWith('-')) continue;
-    operands.push(rawWord);
-  }
+  // `-r` / `-a` / `--append` 一律是开关不是路径；`--` 之后才是纯路径，但这里不需要区分。
+  const operands = words.slice(1).filter((word) => !word.startsWith('-'));
   if (rule === 'all') return operands;
   return operands.length >= 2 ? [operands[operands.length - 1]] : [];
 }
@@ -304,7 +175,7 @@ export function shellWriteTargets(command: string): string[] {
     else targets.push(token.raw);
   }
   flushSegment();
-  return targets.map((target) => decodeShellWord(target) ?? '');
+  return targets.map(unquote);
 }
 
 /**
@@ -398,10 +269,13 @@ function descriptorAssessment(
   const uncertain: string[] = [];
   const memoryAlias = path.join(path.basename(path.dirname(memoryDir)), path.basename(memoryDir));
   const canonical = canonicalizeCommand(command);
-  // 先把**没被反斜杠转义的**换行换成 `;`——`;` 本来就是命令分隔符，下面的分词器也认
-  // （ai-review PR #1650 第 3 轮）。保留其余原始引号/转义，让 shellWriteTargets 逐词
-  // 解码；若先整句压空白，会把 `/tmp/escaped\ file` 错拆成两个词。
-  const redirectTargets = shellWriteTargets(splitUnescapedNewlines(command));
+  // canonicalizeCommand 把所有空白压成单空格（:163），多行脚本到这里就只剩一行、
+  // 第 2 行起的命令会跟第 1 行粘住。它有十几个安全消费方靠这个形状做匹配，不能动，
+  // 所以在喂给它之前先把**没被反斜杠转义的**换行换成 `;`——`;` 本来就是命令分隔符，
+  // canonicalizeCommand 原样保留，下面的分词器也认（ai-review PR #1650 第 3 轮）。
+  // 转义过的换行（`rep\<换行>ort.txt` 这种词中续行）留给 canonicalizeCommand 自己折，
+  // 那是它已经做对的事，别抢。
+  const redirectTargets = shellWriteTargets(canonicalizeCommand(splitUnescapedNewlines(command)).command);
   if (canonical.parsingFailed && redirectTargets.length > 0) {
     uncertain.push(`uncertain-command-analysis:${canonical.failureReason ?? 'parse-failure'}`);
   }

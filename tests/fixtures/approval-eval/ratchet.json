@@ -1,5 +1,10 @@
 {
   "benignAskMax": 10,
   "knownGaps": {},
-  "knownOverBlocks": {}
+  "knownOverBlocks": {
+    "benign-redirect-truncate": "N-WRITETARGET-EXECTIME",
+    "benign-redirect-append": "N-WRITETARGET-EXECTIME",
+    "benign-assignment-mode-tee": "N-WRITETARGET-EXECTIME",
+    "benign-assignment-multiple": "N-WRITETARGET-EXECTIME"
+  }
 }

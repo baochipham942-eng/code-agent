@@ -81,6 +81,10 @@ describe('ToolExecutor Bash 安全命令单一判据', () => {
     );
 
     expect(permissionRequests).toHaveLength(1);
+    expect(permissionRequests[0]).toMatchObject({
+      type: 'command',
+      details: { command },
+    });
     expect(result.success).toBe(false);
     expect(existsSync(target)).toBe(false);
   });

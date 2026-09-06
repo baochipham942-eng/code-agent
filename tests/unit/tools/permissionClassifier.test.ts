@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -408,136 +408,11 @@ describe('PermissionClassifier', () => {
   });
 
   describe('approval decision gap guards', () => {
-    const approvalWorkspace = '/tmp/approval-project';
-    let createdApprovalWorkspace = false;
     const context = {
-      workingDirectory: approvalWorkspace,
-      workspaceRoot: approvalWorkspace,
+      workingDirectory: '/tmp/approval-project',
+      workspaceRoot: '/tmp/approval-project',
       permissionLevel: 'execute' as const,
     };
-
-    beforeAll(async () => {
-      try {
-        await fs.stat(approvalWorkspace);
-      } catch (error) {
-        if (!error || typeof error !== 'object' || !('code' in error) || error.code !== 'ENOENT') throw error;
-        await fs.mkdir(approvalWorkspace, { recursive: true });
-        createdApprovalWorkspace = true;
-      }
-    });
-
-    afterAll(async () => {
-      if (createdApprovalWorkspace) await fs.rm(approvalWorkspace, { recursive: true, force: true });
-    });
-
-    it.each([
-      'printf ok > /tmp/approval-project/out.txt',
-      'printf ok >> /tmp/approval-project/out.txt',
-      'printf ok > out.txt',
-      'printf ok >> out.txt',
-      'MODE=1 tee mode.txt',
-      'A=1 B=2 tee multi.txt',
-      'MODE=1 tee /tmp/approval-project/mode.txt',
-      'A=1 B=2 tee /tmp/approval-project/multi.txt',
-    ])('allows proven writes only when every target is inside the workspace: %s', async (command) => {
-      const result = await classifyPermission('Bash', { command }, context);
-
-      expect(result).toMatchObject({ decision: 'approve', reason: '写入项目目录内' });
-    });
-
-    it.each([
-      'printf ok > "/tmp/approval-project"/quoted.txt',
-      'printf ok > /tmp/approval-project/escaped\\ file.txt',
-      'printf ok > /tmp/approval-project/ｗide.txt',
-      'printf ok > \'/tmp/approval-project/"quoted".txt\'',
-      'printf ok > "$HOME/.ssh/x"',
-      'MODE=1 tee -- /tmp/approval-project/out.txt',
-      'printf ok > /tmp/approval-project/d\u00a0/../../outside.txt',
-      'printf ok > ~/.ssh/x',
-      'printf ok >> /etc/hosts',
-      'printf ok > "/tmp"/outside.txt',
-      'printf ok > /tmp/outside\\ file.txt',
-      'printf ok > /tmp/ａｐｐｒｏｖａｌ-project/out.txt',
-      'MODE=1 tee /etc/hosts',
-      'A=1 B=2 tee ~/.ssh/x',
-      'MODE=1 t""ee /tmp/outside.txt > /tmp/approval-project/out.txt',
-      'MODE=1 tee \'/tmp/"approval-project"/out.txt\' > /tmp/approval-project/out.txt',
-      'MODE=1 tee -- -/../../outside.txt > /tmp/approval-project/out.txt',
-      'printf ok > ~root/out.txt',
-      'printf ok >! /tmp/outside.txt',
-      'printf ok > =ls',
-      'printf ok > /tmp/approval-project/lin[k]/out.txt',
-    ])('keeps the same write shape gated outside the workspace: %s', async (command) => {
-      const result = await classifyPermission('Bash', { command }, context);
-
-      expect(result).toMatchObject({
-        decision: 'ask',
-        traceStep: { rule: 'W3: outside_project' },
-        trustBoundary: true,
-      });
-    });
-
-    it('requires confirmation for every parent segment and still allows a missing leaf', async () => {
-      const root = await fs.mkdtemp(path.join(os.tmpdir(), 'approval-write-proof-'));
-      const workspace = path.join(root, 'work');
-      const external = path.join(root, 'external');
-      const externalChild = path.join(external, 'child');
-      await fs.mkdir(path.join(workspace, 'sub'), { recursive: true });
-      await fs.mkdir(externalChild, { recursive: true });
-      await fs.symlink(
-        externalChild,
-        path.join(workspace, 'link'),
-        process.platform === 'win32' ? 'junction' : 'dir',
-      );
-      const writeContext = {
-        workingDirectory: workspace,
-        workspaceRoot: workspace,
-        permissionLevel: 'execute' as const,
-      };
-
-      try {
-        const symlinkEscape = await classifyPermission(
-          'Bash',
-          { command: `printf ok > ${workspace}${path.sep}link${path.sep}..${path.sep}out.txt` },
-          writeContext,
-        );
-        const ordinaryParent = await classifyPermission(
-          'Bash',
-          { command: `printf ok > ${workspace}${path.sep}sub${path.sep}..${path.sep}out.txt` },
-          writeContext,
-        );
-        const missingTail = await classifyPermission(
-          'Bash',
-          { command: `printf ok > ${workspace}${path.sep}newfile.txt` },
-          writeContext,
-        );
-
-        expect(symlinkEscape).toMatchObject({
-          decision: 'ask',
-          traceStep: { rule: 'W3: outside_project' },
-          trustBoundary: true,
-        });
-        expect(ordinaryParent.decision).toBe('ask');
-        expect(missingTail).toMatchObject({ decision: 'approve', reason: '写入项目目录内' });
-      } finally {
-        await fs.rm(root, { recursive: true, force: true });
-      }
-    });
-
-    it.each([
-      'PATH=./bin tee /tmp/approval-project/out.txt',
-      'LD_PRELOAD=/tmp/hook.so tee /tmp/approval-project/out.txt',
-      './printf ok > /tmp/approval-project/out.txt',
-      'printf ok > /tmp/approval-project/out.txt; touch /tmp/approval-project/second.txt',
-      'printf ok < ~/.ssh/id_rsa > /tmp/approval-project/out.txt',
-      'MODE=1 tee /tmp/approval-project/out.txt & touch /tmp/approval-project/second.txt',
-      'MODE=1 t​ee /tmp/outside.txt > /tmp/approval-project/out.txt',
-      'M""ODE=1 tee /tmp/outside.txt > /tmp/approval-project/out.txt',
-    ])('does not grant a workspace-write proof when the command can execute or read beyond it: %s', async (command) => {
-      const result = await classifyPermission('Bash', { command }, context);
-
-      expect(result.decision).toBe('ask');
-    });
 
     it('resolves recursive rm targets before deciding critical path versus workspace child', async () => {
       const workspaceChild = await classifyPermission(

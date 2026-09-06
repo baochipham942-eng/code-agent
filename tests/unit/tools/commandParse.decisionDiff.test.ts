@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { loadApprovalTables, runApprovalEval, type ApprovalRow } from '../../../packages/internal/evaluation-center/scripts/lib/approval-eval';
-import { isKnownSafeCommand } from '../../../src/host/security/commandSafety';
+import { classifyCommand, isKnownSafeCommand } from '../../../src/host/security/commandSafety';
 import { parseShellCommand } from '../../../src/host/security/commandParse';
 import { PermissionClassifier } from '../../../src/host/tools/permissionClassifier';
 
@@ -36,8 +36,14 @@ describe('phase three decision drift regressions', () => {
     if (id === 'dangerous-bash-script-c') expect(row?.riskLevel).toBe('unknown');
   });
 
-  it.each(['ls', 'env ls', 'bash -c "ls"'])('keeps previously safe identity: %s', (command) => {
+  it.each(['ls', 'bash -c "ls"'])('keeps previously safe identity: %s', (command) => {
     expect(isKnownSafeCommand(command)).toBe(true);
+  });
+
+  // 09-06 并 main 时实测：main 上 `env ls` 是 delegated/unsafe，不是本分支原写的「previously safe」。
+  it('keeps the env delegation baseline instead of unwrapping to the operand', () => {
+    expect(isKnownSafeCommand('env ls')).toBe(false);
+    expect(classifyCommand('env ls')).toBe('delegated');
   });
 
   it.each(['PATH=./bin ls', 'LD_PRELOAD=/tmp/evil.so ls', 'env PATH=./bin ls',

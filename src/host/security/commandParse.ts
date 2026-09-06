@@ -482,12 +482,21 @@ function parseEntries(command: string): {
   return { segments, redirects, failed, failureReason, trailingOperator };
 }
 
+type Expansion = {
+  executions: ShellExecution[];
+  targets: ShellWriteTarget[];
+  uncertain: string[];
+  failed?: string;
+  /** Set when the segment is nothing but assignments: it has no command, but it changes the shell. */
+  assignments?: string[];
+};
+
 function expandExecutions(
   wordsInput: string[],
   originalProgram: string,
   wrappers: string[],
   depth: number,
-): { executions: ShellExecution[]; targets: ShellWriteTarget[]; uncertain: string[]; failed?: string } {
+): Expansion {
   const words = wordsInput;
   if (words.length === 0) return { executions: [], targets: [], uncertain: [] };
   if (depth > MAX_WRAPPER_DEPTH) {
@@ -498,7 +507,7 @@ function expandExecutions(
   // program makes `MODE=1` the program and tee's write target never reaches the path deny check.
   let start = 0;
   while (start < words.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(words[start])) start += 1;
-  if (start >= words.length) return { executions: [], targets: [], uncertain: [] };
+  if (start >= words.length) return { executions: [], targets: [], uncertain: [], assignments: words };
   if (start > 0) {
     const nested = expandExecutions(words.slice(start), originalProgram, wrappers, depth);
     for (const execution of nested.executions) {
@@ -525,17 +534,17 @@ function expandExecutions(
     if ('scriptIndex' in script) {
       return {
         executions: [{ program: args[script.scriptIndex], args: args.slice(script.scriptIndex + 1),
-          originalProgram, wrappers: [...wrappers, programName] }],
+          originalProgram, wrappers: [...wrappers, program] }],
         targets: [],
         uncertain: ['shell-script-operand'],
       };
     }
-    return expandCommand(script.command, originalProgram, [...wrappers, programName], depth + 1);
+    return expandCommand(script.command, originalProgram, [...wrappers, program], depth + 1);
   }
   if (programName === 'eval') {
     return args.length === 0
       ? { executions: [{ program, args, originalProgram, wrappers }], targets: [], uncertain: [] }
-      : expandCommand(args.join(' '), originalProgram, [...wrappers, programName], depth + 1);
+      : expandCommand(args.join(' '), originalProgram, [...wrappers, program], depth + 1);
   }
 
   const commandIndex = wrapperCommandIndex(programName, args);
@@ -554,7 +563,7 @@ function expandExecutions(
     if (nested.length === 0) {
       return { executions: [], targets: [], uncertain: [`wrapper-without-command:${program}`] };
     }
-    const expanded = expandExecutions(nested, originalProgram, [...wrappers, programName], depth + 1);
+    const expanded = expandExecutions(nested, originalProgram, [...wrappers, program], depth + 1);
     if (programName === 'env') {
       const assignments = args.slice(0, commandIndex).filter((arg) => /^[A-Za-z_][A-Za-z0-9_]*=/.test(arg));
       if (assignments.length > 0) {
@@ -600,18 +609,43 @@ function expandExecutions(
   };
 }
 
+// `PATH=./bin; ls` — a segment made only of assignments has no command of its own, yet it changes
+// how every later segment of the same shell resolves executables. Carry it onto them so the
+// automatic-approval shortcut sees the same environment change as the `PATH=./bin ls` spelling.
+function expandSegments(
+  segments: ParsedShellSegment[],
+  originalProgram: string | null,
+  wrappers: string[],
+  depth: number,
+): Expansion[] {
+  const carried: string[] = [];
+  return segments.map((segment) => {
+    const expanded = expandExecutions(
+      segment.words, originalProgram ?? segment.words[0] ?? '', wrappers, depth);
+    if (expanded.assignments) {
+      carried.push(...expanded.assignments);
+      return expanded;
+    }
+    if (carried.length > 0) {
+      for (const execution of expanded.executions) {
+        execution.environmentAssignments = [...carried, ...(execution.environmentAssignments ?? [])];
+      }
+    }
+    return expanded;
+  });
+}
+
 function expandCommand(
   command: string,
   originalProgram: string,
   wrappers: string[],
   depth: number,
-): { executions: ShellExecution[]; targets: ShellWriteTarget[]; uncertain: string[]; failed?: string } {
+): Expansion {
   const parsed = parseEntries(command);
   if (parsed.failed) {
     return { executions: [], targets: parsed.redirects, uncertain: [], failed: parsed.failureReason };
   }
-  const expanded = parsed.segments.map((segment) =>
-    expandExecutions(segment.words, originalProgram, wrappers, depth));
+  const expanded = expandSegments(parsed.segments, originalProgram, wrappers, depth);
   return {
     executions: expanded.flatMap((item) => item.executions),
     targets: [...parsed.redirects, ...expanded.flatMap((item) => item.targets)],
@@ -622,10 +656,7 @@ function expandCommand(
 
 export function parseShellCommand(command: string): ParsedShellCommand {
   const parsed = parseEntries(command);
-  const expanded = parsed.segments.map((segment) => {
-    const originalProgram = segment.words[0] ?? '';
-    return expandExecutions(segment.words, originalProgram, [], 0);
-  });
+  const expanded = expandSegments(parsed.segments, null, [], 0);
   const failed = parsed.failureReason ?? expanded.find((item) => item.failed)?.failed;
   return {
     segments: parsed.segments,
@@ -653,5 +684,9 @@ export function resolvedExecutable(command: string): ShellExecution | null {
 }
 
 export function hasPrivilegedOrEvalWrapper(execution: ShellExecution): boolean {
-  return execution.wrappers.some((wrapper) => PRIVILEGE_WRAPPERS.has(wrapper) || wrapper === 'eval');
+  // Wrappers keep the path they were written with, so match the role by basename: `/usr/bin/sudo`
+  // escalates exactly like `sudo`.
+  return execution.wrappers
+    .map((wrapper) => basename(wrapper))
+    .some((wrapper) => PRIVILEGE_WRAPPERS.has(wrapper) || wrapper === 'eval');
 }

@@ -10,18 +10,51 @@ describe('shared parser automatic approval regressions', () => {
     },
   );
 
-  it.each(['ls', 'git status', '/usr/bin/env ls', 'env /bin/bash -c "ls"'])(
-    'keeps bare safe commands and basename wrapper recognition: %s', (command) => {
+  it.each(['ls', 'git status', 'bash -c "ls"', 'sh -c "git status"'])(
+    'keeps bare safe commands and bare shell wrapper recognition: %s', (command) => {
       expect(isKnownSafeCommand(command)).toBe(true);
     },
   );
 
+  // main 的 CONDITIONALLY_SAFE.env 把带操作数的 env 判为 delegated，解包后按内层程序放行会把这条
+  // 基线放宽；写目标提取仍走 basename，两者不共用同一个资格。
+  it.each(['env ls', 'env -u MODE printf ok', 'env tee out.txt', 'env bash -c "ls"'])(
+    'never lets an env wrapper confer the shortcut: %s', (command) => {
+      expect(isKnownSafeCommand(command)).toBe(false);
+    },
+  );
+
+  it.each(["./bash -c 'ls'", './env ls', '/usr/bin/env ls', 'env /bin/bash -c "ls"',
+    './sh -c "ls"', 'bash -c \'./bash -c "ls"\''])(
+    'refuses automatic approval for a path-qualified wrapper: %s', (command) => {
+      expect(isKnownSafeCommand(command)).toBe(false);
+      expect(parseShellCommand(command).executions.flatMap(({ wrappers }) => wrappers))
+        .toEqual(expect.arrayContaining([expect.stringContaining('/')]));
+    },
+  );
+
+  it('keeps every wrapper layer identity as written', () => {
+    expect(parseShellCommand("./bash -c 'ls'").executions[0])
+      .toMatchObject({ program: 'ls', wrappers: ['./bash'] });
+    expect(parseShellCommand('bash -c \'./bash -c "ls"\'').executions[0])
+      .toMatchObject({ program: 'ls', wrappers: ['bash', './bash'] });
+  });
+
   it('keeps absolute sudo recognition and the privilege guard', () => {
     expect(parseShellCommand('/usr/bin/sudo ls').executions[0]).toMatchObject({
-      program: 'ls', wrappers: ['sudo'],
+      program: 'ls', wrappers: ['/usr/bin/sudo'],
     });
     expect(isKnownSafeCommand('/usr/bin/sudo ls')).toBe(false);
   });
+
+  it.each(['PATH=./bin; ls', 'PATH=./bin && ls', 'PATH=./bin\nls', 'A=1; ls',
+    'bash -c \'PATH=./bin; ls\''])(
+    'carries an assignment-only segment onto the later commands: %s', (command) => {
+      expect(parseShellCommand(command).executions.at(-1)?.environmentAssignments)
+        .toEqual(expect.arrayContaining([expect.stringMatching(/^(PATH|A)=/)]));
+      expect(isKnownSafeCommand(command)).toBe(false);
+    },
+  );
 
   it.each(['bash script.sh -c "echo ok"', 'bash -- script.sh -c "echo ok"',
     'bash -l script.sh -c "echo ok"'])(

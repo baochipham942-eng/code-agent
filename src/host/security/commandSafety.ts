@@ -297,8 +297,12 @@ export function isKnownSafeCommand(command: string, shell: ShellKind = defaultSh
     if (hasPrivilegedOrEvalWrapper(execution)) return false;
     if (execution.environmentAssignments?.length) return false;
     // Unwrapping recovers write targets, but must not grant a new automatic-approval identity.
-    // Only the shell/env wrappers already admitted by the baseline retain this shortcut.
-    if (execution.wrappers.some((wrapper) => !['bash', 'sh', 'zsh', 'dash', 'env'].includes(wrapper))) return false;
+    // Only the shell wrappers already admitted by the baseline retain this shortcut, and the
+    // comparison is against the word as written on purpose: `./bash -c 'ls'` runs a workspace file,
+    // so a path-qualified wrapper never inherits the bare name's shortcut. `env` is not on the list:
+    // its operand is a delegated execution (CONDITIONALLY_SAFE.env), and unwrapping it would answer
+    // for a program the approval prefix never named.
+    if (execution.wrappers.some((wrapper) => !['bash', 'sh', 'zsh', 'dash'].includes(wrapper))) return false;
 
     // 无条件安全
     if (UNCONDITIONALLY_SAFE.has(program)) continue;
@@ -323,7 +327,12 @@ export function isKnownSafeCommand(command: string, shell: ShellKind = defaultSh
 export function classifyCommand(command: string, shell: ShellKind = defaultShellKind()): 'safe' | 'conditional' | 'unknown' | 'delegated' {
   if (isKnownSafeCommand(command, shell)) return 'safe';
 
-  // 检查是否可能是条件安全但参数不对
+  // 检查是否可能是条件安全但参数不对。
+  // `env` / `xargs` 把真正的操作交给后续 argv 或 stdin：委托要按写下来的前缀判定，解包到被委托的
+  // 程序，答的就不是「这条前缀规则能不能承载风险」这个问题（execPolicy.prefixCarriesTheRisk）。
+  const words = commandWordsFromParse(command.trim());
+  if (words && CONDITIONALLY_SAFE[words[0]]?.(words.slice(1)) === 'delegated') return 'delegated';
+
   const execution = resolvedExecutable(command.trim());
   if (execution && CONDITIONALLY_SAFE[execution.program]?.(execution.args) === 'delegated') return 'delegated';
   if (execution && CONDITIONALLY_SAFE[execution.program]) return 'conditional';

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { ContextHealthState } from '../../../src/host/agent/runtime/contextHealthState';
 import {
   ARTIFACT_REPAIR_GUARD_SEED_MESSAGE_WINDOW,
@@ -7,6 +7,16 @@ import {
 } from '../../../src/host/agent/runtime/artifactRepairGuard';
 import { ArtifactState } from '../../../src/host/agent/runtime/artifactState';
 import type { Message, ToolResult } from '../../../src/shared/contract';
+
+const gameValidatorState = vi.hoisted(() => ({
+  validateGameArtifact: vi.fn(),
+}));
+
+vi.mock('../../../src/host/agent/runtime/gameArtifactValidator', () => ({
+  validateGameArtifact: gameValidatorState.validateGameArtifact,
+}));
+
+import { handleModifiedArtifactValidation } from '../../../src/host/agent/runtime/toolArtifactValidationLifecycle';
 
 function validatorFailureEnvelope(targetFile: string, extra = ''): string {
   return [
@@ -85,6 +95,84 @@ const GENERIC_FAILURE_JOURNAL = [
   '目标文件: /tmp/code-agent/games/breakout.html',
   '请继续修，把 __GAME_TEST__ / __INTERACTIVE_TEST__ 补上。',
 ].join('\n');
+
+// —— 真实链路构造（R2 返修）——
+// 跨轮用例的历史不允许手写通过信封/手抄 metadata：生产的通过信封走
+// injectSystemMessage 只进内存不落库，跨会话唯一的"通过"记录是 lifecycle
+// 成功分支写进 tool result 的元数据（随 tool message 落库）。这里对失败与
+// 通过两侧都真调生产 handleModifiedArtifactValidation（仅 mock 校验器本体），
+// 产出 messageProcessor 会持久化的 tool result 形态。
+function failingGameValidation(): Record<string, unknown> {
+  return {
+    shouldValidate: true,
+    inferredKind: 'game',
+    isComplete: true,
+    passed: false,
+    failures: ['交互测试合约缺少 start()，验收无法从真实初始状态启动产物。'],
+    checks: ['detected game artifact with interactive delivery surface'],
+  };
+}
+
+function passingGameValidation(): Record<string, unknown> {
+  return {
+    shouldValidate: true,
+    inferredKind: 'game',
+    isComplete: true,
+    passed: true,
+    failures: [],
+    checks: [
+      'detected game artifact with interactive delivery surface',
+      'html document looks complete',
+    ],
+  };
+}
+
+async function runLifecycleValidation(options: {
+  toolCallId: string;
+  toolName: 'Write' | 'Edit';
+  filePath: string;
+  validation: Record<string, unknown>;
+  ctx?: ReturnType<typeof makeLifecycleCtx>;
+}): Promise<{ ctx: ReturnType<typeof makeLifecycleCtx>; toolResult: ToolResult }> {
+  gameValidatorState.validateGameArtifact.mockReset();
+  gameValidatorState.validateGameArtifact.mockResolvedValue(options.validation);
+  const ctx = options.ctx ?? makeLifecycleCtx();
+  const toolResult: ToolResult = { toolCallId: options.toolCallId, success: true, output: 'ok' };
+  await handleModifiedArtifactValidation({
+    ctx,
+    contextAssembly: { injectSystemMessage: vi.fn() } as never,
+    runFinalizer: { emitTaskProgress: vi.fn() } as never,
+    toolCall: {
+      id: options.toolCallId,
+      name: options.toolName,
+      arguments: { file_path: options.filePath, content: '<!doctype html><html></html>' },
+    },
+    normalizedSuccess: true,
+    toolResult,
+    artifactRepairRollbackSnapshot: null,
+  });
+  return { ctx, toolResult };
+}
+
+function makeLifecycleCtx(): any {
+  return {
+    workingDirectory: '/tmp/code-agent',
+    artifact: ArtifactState.forTest(),
+    onEvent: vi.fn(),
+  };
+}
+
+// messageProcessor 落库的 tool message 形态（messageProcessor.ts：content =
+// JSON.stringify(toolResults)，toolResults 原样随消息持久化）。
+function persistedToolMessage(id: string, toolResult: ToolResult): Message {
+  return {
+    id,
+    role: 'tool',
+    content: JSON.stringify([toolResult]),
+    timestamp: Date.now(),
+    toolResults: [toolResult],
+  };
+}
 
 describe('artifactRepairGuard', () => {
   it('does not enter repair mode just because an artifact filename contains fixed', () => {
@@ -347,14 +435,44 @@ describe('artifactRepairGuard', () => {
     expect(postPatch?.bashAllowed).toBe(true);
   });
 
-  it('does not re-seed a repaired target on a later run that only reads a document', () => {
+  it('does not re-seed a repaired target on a later run that only reads a document', async () => {
     // Cross-run shape: each agentLoop constructs a new ArtifactState, but
     // session messages are preserved. this-run validationPassedTargetFile
     // is empty, so exclusion must come from history, not ArtifactState.
+    // R2：历史改由真实生产链路构造——失败与通过两侧都真调
+    // handleModifiedArtifactValidation（仅 mock 校验器），tool result 以
+    // messageProcessor 落库形态进入历史。不手工塞通过信封（生产里它不落库）。
     const targetFile = '/tmp/code-agent/games/breakout.html';
+
+    // 同一 run：Write 校验失败（guard 就地种上）→ Edit 修复后通过（guard 清掉）。
+    const failStage = await runLifecycleValidation({
+      toolCallId: 'call-write-fail',
+      toolName: 'Write',
+      filePath: targetFile,
+      validation: failingGameValidation(),
+    });
+    expect(failStage.toolResult.metadata?.artifactValidation).toMatchObject({ failed: true });
+    expect(failStage.ctx.artifact.repairGuard?.targetFile).toBe(targetFile);
+
+    const passStage = await runLifecycleValidation({
+      toolCallId: 'call-edit-pass',
+      toolName: 'Edit',
+      filePath: targetFile,
+      validation: passingGameValidation(),
+      ctx: failStage.ctx,
+    });
+    // 落库前提：通过状态真的写进了会持久化的 tool result（失败侧同路径落库）。
+    expect(passStage.toolResult.metadata?.artifactValidation).toMatchObject({
+      failed: false,
+      passed: true,
+      targetFile,
+    });
+    expect(passStage.ctx.artifact.repairGuard).toBeUndefined();
+
+    // 新 run：全新 ArtifactState，历史只含真实持久化消息（重开会话从 DB 读回）。
     const ctx = makeFreshRunFromHistory([
-      ordinaryMessage('fail-1', 'system', validatorFailureEnvelope(targetFile, 'runSmokeTest 未通过')),
-      ordinaryMessage('pass-1', 'system', validatorPassedEnvelope()),
+      persistedToolMessage('tool-write-fail', failStage.toolResult),
+      persistedToolMessage('tool-edit-pass', passStage.toolResult),
       ordinaryMessage('user-chat-1', 'user', '好了，游戏能玩了。'),
       ordinaryMessage('asst-chat-1', 'assistant', '好的，有需要再叫我。'),
       ordinaryMessage('user-chat-2', 'user', '帮我查一下这个腾讯会议链接怎么加入，会议号在聊天记录里。'),
@@ -365,6 +483,22 @@ describe('artifactRepairGuard', () => {
         content: GENERIC_FAILURE_JOURNAL,
         timestamp: Date.now(),
       },
+    ]);
+
+    seedArtifactRepairGuardFromContext(ctx);
+
+    expectToolSurfaceUnnarrowed(ctx);
+  });
+
+  it('retires an open failure via an in-run pass envelope in the message window', () => {
+    // in-run 形态（区别于跨轮历史）：lifecycle 的通过信封经 injectSystemMessage 进
+    // 内存消息 / persistentSystemContext 块，当前 run 内的扫描仍要能靠它排除已
+    // 解决目标。跨会话的"通过"记录另走 tool result 落库（见上一用例）。
+    const targetFile = '/tmp/code-agent/games/breakout.html';
+    const ctx = makeFreshRunFromHistory([
+      ordinaryMessage('fail-1', 'system', validatorFailureEnvelope(targetFile, 'runSmokeTest 未通过')),
+      ordinaryMessage('pass-1', 'system', validatorPassedEnvelope()),
+      ordinaryMessage('user-chat-1', 'user', '好了，游戏能玩了。'),
     ]);
 
     seedArtifactRepairGuardFromContext(ctx);
@@ -405,12 +539,34 @@ describe('artifactRepairGuard', () => {
     expect(getArtifactRepairToolPolicy(ctx.artifact.repairGuard)).not.toBeNull();
   });
 
-  it('still seeds a later validator failure after an earlier pass for the same target', () => {
+  it('still seeds a later validator failure after an earlier pass for the same target', async () => {
+    // R2：通过记录用真实落库形态（lifecycle 成功分支写进 tool result 的元数据），
+    // 不再用手工通过信封。通过后同目标再次失败 ⇒ 仍要种 guard。
     const targetFile = '/tmp/code-agent/games/game.html';
+    const failOld = await runLifecycleValidation({
+      toolCallId: 'call-write-fail-old',
+      toolName: 'Write',
+      filePath: targetFile,
+      validation: failingGameValidation(),
+    });
+    const passOld = await runLifecycleValidation({
+      toolCallId: 'call-edit-pass-old',
+      toolName: 'Edit',
+      filePath: targetFile,
+      validation: passingGameValidation(),
+      ctx: failOld.ctx,
+    });
+    const failNew = await runLifecycleValidation({
+      toolCallId: 'call-edit-fail-new',
+      toolName: 'Edit',
+      filePath: targetFile,
+      validation: failingGameValidation(),
+    });
+
     const ctx = makeFreshRunFromHistory([
-      ordinaryMessage('fail-old', 'system', validatorFailureEnvelope(targetFile, 'runSmokeTest 未通过')),
-      ordinaryMessage('pass-old', 'system', validatorPassedEnvelope()),
-      ordinaryMessage('fail-new', 'system', validatorFailureEnvelope(targetFile, 'Please fix the missing runSmokeTest evidence.')),
+      persistedToolMessage('tool-fail-old', failOld.toolResult),
+      persistedToolMessage('tool-pass-old', passOld.toolResult),
+      persistedToolMessage('tool-fail-new', failNew.toolResult),
     ]);
 
     seedArtifactRepairGuardFromContext(ctx);

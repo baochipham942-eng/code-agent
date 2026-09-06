@@ -59,6 +59,12 @@ const mcpState = vi.hoisted(() => ({
   toolDefinitionNames: [] as string[],
 }));
 
+// 取消组测试要能从用例侧触发 effectiveSignal（父 abort / 内部 timeout 的桥接产物），
+// 让 lifecycle mock 的 controller 从这里暴露。
+const cancellationState = vi.hoisted(() => ({
+  controller: new AbortController(),
+}));
+
 vi.mock('../../../src/host/mcp', () => ({
   getMCPClient: () => ({
     ensureConnected: mcpState.ensureConnected,
@@ -149,11 +155,12 @@ vi.mock('../../../src/host/agent/childContext', () => ({
 vi.mock('../../../src/host/agent/subagentExecutorCancellation', () => ({
   getChildSubagentExecutionTimeout: () => 60_000,
   getSubagentIdleTimeout: () => 30_000,
+  flushSubagentCancellation: vi.fn(async () => {}),
   createSubagentCancellationLifecycle: () => {
-    const controller = new AbortController();
+    cancellationState.controller = new AbortController();
     return {
-      effectiveController: controller,
-      effectiveSignal: controller.signal,
+      effectiveController: cancellationState.controller,
+      effectiveSignal: cancellationState.controller.signal,
       cleanupTimer: vi.fn(),
       markProgress: vi.fn(),
       markRequestStart: vi.fn(),
@@ -163,6 +170,19 @@ vi.mock('../../../src/host/agent/subagentExecutorCancellation', () => ({
       stopIdleWatchdog: vi.fn(),
     };
   },
+}));
+
+// 取消收口路径的副作用（磁盘路径 / patch 抢救）mock 掉——flush 本体在
+// subagentExecutorCancellation 里已被 mock，这里兜 turnTrace 的 getPath。
+
+vi.mock('../../../src/host/platform/appPaths', () => ({
+  getUserDataPath: () => '/tmp',
+  // TurnTraceRecorder（executeInternal 经由 turnObservability 使用）也走 getPath
+  getPath: () => '/tmp',
+}));
+
+vi.mock('../../../src/host/services/checkpoint/taskPatchService', () => ({
+  captureWorkspacePatch: vi.fn(async () => undefined),
 }));
 
 vi.mock('../../../src/host/context/subagentContextStore', () => ({
@@ -211,6 +231,7 @@ vi.mock('../../../src/host/agent/spawnGuard', () => ({
 }));
 
 import { SubagentExecutor } from '../../../src/host/agent/subagentExecutor';
+import { MCPClient } from '../../../src/host/mcp/mcpClient';
 
 function makeDefinition(name: string): ToolDefinition {
   return {
@@ -229,6 +250,44 @@ function textResponse(content: string) {
     content,
     usage: { inputTokens: 1, outputTokens: 1 },
   };
+}
+
+/**
+ * 用真 MCPClient.ensureConnected 驱动 mcp mock：私有字段预置 lazy server（stdio 形状），
+ * connect 交由用例 spy 控制（挂起 / 成功）。这样「signal 只中断本次等待、连接继续」
+ * 的 race 语义是被真实现咬住的，而不是 mock 复刻。
+ */
+/** 受控真 ensureConnected 客户端（不能与 MCPClient 交叉——private 字段会推成 never）。 */
+type RealEnsureConnectedClient = {
+  clients: Map<string, unknown>;
+  inProcessServers: Map<string, unknown>;
+  serverConfigs: Map<string, unknown>;
+  serverStates: Map<string, { status: string }>;
+  connectingServers: Map<string, Promise<void>>;
+  connect(config: { name: string }): Promise<void>;
+  ensureConnected(serverName: string, signal?: AbortSignal): Promise<boolean>;
+};
+
+function setupRealEnsureConnected(serverNames: string[]): {
+  client: RealEnsureConnectedClient;
+  connectSpy: ReturnType<typeof vi.spyOn>;
+} {
+  const client = Object.create(MCPClient.prototype) as RealEnsureConnectedClient;
+  Object.assign(client, {
+    clients: new Map(),
+    inProcessServers: new Map(),
+    serverConfigs: new Map(serverNames.map((name) => [
+      name,
+      { name, command: 'sleep', args: ['60'], enabled: true, lazyLoad: true },
+    ])),
+    serverStates: new Map(serverNames.map((name) => [name, { status: 'lazy' }])),
+    connectingServers: new Map(),
+  });
+  const connectSpy = vi.spyOn(client, 'connect');
+  mcpState.ensureConnected.mockImplementation(
+    async (serverName: string, signal?: AbortSignal) => client.ensureConnected(serverName, signal),
+  );
+  return { client, connectSpy };
 }
 
 function createHarness(options: {
@@ -261,16 +320,18 @@ function createHarness(options: {
   return { events, request: { prompt: 'Run the test', config, context } };
 }
 
+// 两个 describe 共用的清理（顶层 beforeEach，避免新增取消组串到上一组的状态）
+beforeEach(() => {
+  mocks.responses.length = 0;
+  mocks.toolDefinitionSnapshots.length = 0;
+  vi.clearAllMocks();
+  process.env.CODE_AGENT_MODEL_ENGINE = 'legacy';
+  mcpState.toolDefinitionNames = [];
+  mcpState.ensureConnected.mockReset();
+  mcpState.ensureConnected.mockImplementation(async () => false);
+});
+
 describe('SubagentExecutor 工具装配 fail-loud（N-SUBAGENT-ZEROTOOLS）', () => {
-  beforeEach(() => {
-    mocks.responses.length = 0;
-    mocks.toolDefinitionSnapshots.length = 0;
-    vi.clearAllMocks();
-    process.env.CODE_AGENT_MODEL_ENGINE = 'legacy';
-    mcpState.toolDefinitionNames = [];
-    mcpState.ensureConnected.mockReset();
-    mcpState.ensureConnected.mockImplementation(async () => false);
-  });
 
   it('声明了工具但一个都没装配上 ⇒ 结构化失败 + 缺失清单，不跑任何迭代', async () => {
     // 旧缺陷路径下模型会敷衍一句就 completed——这条响应在任何迭代里都不该被消费。
@@ -340,7 +401,7 @@ describe('SubagentExecutor 工具装配 fail-loud（N-SUBAGENT-ZEROTOOLS）', ()
 
     const result = await new SubagentExecutor().execute(request);
 
-    expect(mcpState.ensureConnected).toHaveBeenCalledWith('lazy-srv');
+    expect(mcpState.ensureConnected).toHaveBeenCalledWith('lazy-srv', expect.any(AbortSignal));
     expect(result.success).toBe(true);
     expect(mocks.toolDefinitionSnapshots[0].map((tool) => tool.name))
       .toContain('mcp__lazy-srv__do_work');
@@ -364,7 +425,7 @@ describe('SubagentExecutor 工具装配 fail-loud（N-SUBAGENT-ZEROTOOLS）', ()
 
     const result = await new SubagentExecutor().execute(request);
 
-    expect(mcpState.ensureConnected).toHaveBeenCalledWith('cua-driver');
+    expect(mcpState.ensureConnected).toHaveBeenCalledWith('cua-driver', expect.any(AbortSignal));
     expect(result.success).toBe(true);
     expect(mocks.toolDefinitionSnapshots[0].map((tool) => tool.name)).toEqual(
       expect.arrayContaining(['mcp__cua-driver__get_window_state', 'mcp__cua-driver__click']),
@@ -384,5 +445,75 @@ describe('SubagentExecutor 工具装配 fail-loud（N-SUBAGENT-ZEROTOOLS）', ()
     expect(result.success).toBe(true);
     expect(result.missingTools).toEqual(['mcp__gone__nope']);
     expect(mocks.toolDefinitionSnapshots[0].map((tool) => tool.name)).toEqual(['Read']);
+  });
+});
+
+describe('装配等待取消接线（N-SUBAGENT-ZEROTOOLS 返修 Important 1）', () => {
+  it('连接进行中触发取消 ⇒ 装配立即收口为取消，且不再启动后续服务器连接', async () => {
+    // 连接永不 settle：旧形状（装配链不接收 signal）会永远挂在这条等待上。
+    const { connectSpy } = setupRealEnsureConnected(['slow-one', 'slow-two']);
+    connectSpy.mockImplementation(() => new Promise<void>(() => {}));
+    const { request } = createHarness({
+      availableTools: ['mcp__slow-one__x', 'mcp__slow-two__y'],
+      getDefinition: () => undefined,
+    });
+
+    const executing = new SubagentExecutor().execute(request);
+    await vi.waitFor(() => expect(connectSpy).toHaveBeenCalledTimes(1));
+    cancellationState.controller.abort('parent-cancel');
+
+    const result = await executing;
+
+    expect(result.success).toBe(false);
+    // 取消打断的装配按取消收口，不误报 tool-unavailable
+    expect(result.cancellationReason).toBe('parent-cancel');
+    expect(result.failureCode).not.toBe('tool-unavailable');
+    expect(connectSpy).toHaveBeenCalledTimes(1); // slow-two 未被发起
+    expect(mocks.inference).not.toHaveBeenCalled();
+  });
+
+  it('真阴：未取消时两个 lazy server 顺序连完，工具照常装配', async () => {
+    mocks.responses.push(textResponse('两个服务器都连上了。'));
+    const resolverDefs = new Map<string, ToolDefinition>();
+    const { client, connectSpy } = setupRealEnsureConnected(['alpha', 'beta']);
+    connectSpy.mockImplementation(async (config: { name: string }) => {
+      // 连接成功：server 进共享注册表，其工具可被 resolver 解析到（等价模拟）
+      client.clients.set(config.name, { fake: true });
+      resolverDefs.set(`mcp__${config.name}__work`, makeDefinition(`mcp__${config.name}__work`));
+    });
+    const { request } = createHarness({
+      availableTools: ['mcp__alpha__work', 'mcp__beta__work'],
+      getDefinition: (name) => resolverDefs.get(name),
+    });
+
+    const result = await new SubagentExecutor().execute(request);
+
+    expect(result.success).toBe(true);
+    expect(connectSpy).toHaveBeenCalledTimes(2);
+    expect(result.missingTools).toBeUndefined();
+    expect(mocks.toolDefinitionSnapshots[0].map((tool) => tool.name).sort()).toEqual(
+      ['mcp__alpha__work', 'mcp__beta__work'],
+    );
+  });
+
+  it('ensureConnected 不响应 signal 时，装配循环自身也在每次连接前停下（不发起后续连接）', async () => {
+    const seen: string[] = [];
+    mcpState.ensureConnected.mockImplementation(async (serverName: string) => {
+      seen.push(serverName);
+      if (serverName === 'srv-a') cancellationState.controller.abort('parent-cancel');
+      return false; // 模拟旧形状：不接收 signal，也不响应取消
+    });
+    const { request } = createHarness({
+      availableTools: ['mcp__srv-a__x', 'mcp__srv-b__y'],
+      getDefinition: () => undefined,
+    });
+
+    const result = await new SubagentExecutor().execute(request);
+
+    expect(seen).toEqual(['srv-a']); // 循环级检查在 srv-b 连接前停下
+    expect(result.success).toBe(false);
+    expect(result.cancellationReason).toBe('parent-cancel');
+    expect(result.failureCode).not.toBe('tool-unavailable');
+    expect(mocks.inference).not.toHaveBeenCalled();
   });
 });

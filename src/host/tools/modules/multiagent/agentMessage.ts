@@ -6,7 +6,7 @@
 // - 4 参数签名 (args, ctx, canUseTool, onProgress)
 // - 五链 + 错误码：INVALID_ARGS / PERMISSION_DENIED / ABORTED / NOT_FOUND
 // - 行为保真：list/status/result/cancel 四 action 输出 1:1 复刻 legacy
-// - 共享 listSpawnedAgents / getSpawnedAgent helpers（保留在 legacy spawnAgent.ts）
+// - 共享 listSpawnedAgents / getSpawnedAgent helpers（spawnAgentStatus.ts，max-lines 拆分）
 // ============================================================================
 
 import type {
@@ -17,7 +17,7 @@ import type {
   ToolProgressFn,
   ToolResult,
 } from '../../../protocol/tools';
-import { getSpawnedAgent, listSpawnedAgents } from '../../../agent/multiagentTools/spawnAgent';
+import { getSpawnedAgent, listSpawnedAgents } from '../../../agent/multiagentTools/spawnAgentStatus';
 import { getSpawnGuard } from '../../../agent/spawnGuard';
 import { agentMessageSchema as schema } from './agentMessage.schema';
 import { withMultiagentMeta } from './resultMeta';

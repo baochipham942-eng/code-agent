@@ -6,8 +6,8 @@
 // 已删除，protocol 入口在 src/host/tools/modules/multiagent/spawnAgent.ts。
 // 本文件仅保留：
 //   - executeSpawnAgent(params, ctx)  — single + parallel mode 入口
-//   - getSpawnedAgent / listSpawnedAgents / getAvailableAgents — service helpers
-//   - SpawnedAgent type — backward-compat alias
+//   - getSpawnedAgent / listSpawnedAgents / getAvailableAgents / SpawnedAgent
+//     已拆至 ./spawnAgentStatus.ts（N-SUBAGENT-ZEROTOOLS 返修：max-lines 硬限）
 //   - DEFAULT_ISOLATION map
 // ============================================================================
 
@@ -650,53 +650,8 @@ Use wait_agent to block until done, or close_agent to cancel.`,
 
 /**
  * Backward-compatible type for spawned agent status.
+ * 已拆至 ./spawnAgentStatus.ts（max-lines 硬限），消费方直接从该文件 import。
  */
-export interface SpawnedAgent {
-  id: string;
-  role: string;
-  status: 'idle' | 'running' | 'running-recovered' | 'dead-log-only' | 'completed' | 'failed' | 'killed';
-  task?: string;
-  result?: string;
-  error?: string;
-}
-
-// Export function to get agent status (used by agent_message tool)
-export function getSpawnedAgent(
-  agentId: string,
-  scope?: import('../spawnGuard').SpawnGuardScopeFilter,
-): SpawnedAgent | undefined {
-  const guard = getSpawnGuard();
-  const managed = guard.get(agentId, scope);
-  if (!managed) return undefined;
-  return {
-    id: managed.id,
-    role: managed.role,
-    status: managed.status === 'cancelled' ? 'killed' : managed.status,
-    task: managed.task,
-    result: managed.result?.output,
-    error: managed.error,
-  };
-}
-
-// Export function to list all agents
-export function listSpawnedAgents(
-  scope?: import('../spawnGuard').SpawnGuardScopeFilter,
-): SpawnedAgent[] {
-  const guard = getSpawnGuard();
-  return guard.list(scope).map(managed => ({
-    id: managed.id,
-    role: managed.role,
-    status: managed.status === 'cancelled' ? 'killed' as const : managed.status,
-    task: managed.task,
-    result: managed.result?.output,
-    error: managed.error,
-  }));
-}
-
-// Export available agents
-export function getAvailableAgents(): Array<{ id: string; name: string; description: string }> {
-  return listPredefinedAgents();
-}
 
 // AgentSpawn (PascalCase variant) shares execute body with spawn_agent — the
 // schema-level distinction is now in spawnAgent.schema.ts. Both protocol entries

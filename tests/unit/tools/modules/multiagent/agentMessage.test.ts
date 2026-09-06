@@ -9,7 +9,7 @@ const getSpawnedAgentMock = vi.fn();
 const listSpawnedAgentsMock = vi.fn();
 const getSpawnGuardMock = vi.fn();
 
-vi.mock('../../../../../src/host/agent/multiagentTools/spawnAgent', () => ({
+vi.mock('../../../../../src/host/agent/multiagentTools/spawnAgentStatus', () => ({
   getSpawnedAgent: (...args: unknown[]) => getSpawnedAgentMock(...args),
   listSpawnedAgents: (...args: unknown[]) => listSpawnedAgentsMock(...args),
 }));

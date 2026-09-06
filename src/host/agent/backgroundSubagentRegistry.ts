@@ -181,6 +181,7 @@ export class BackgroundSubagentRegistry {
       startedAt: entry.startedAt,
       finishedAt: entry.finishedAt,
       failureCode: entry.failureCode,
+      missingTools: entry.result?.missingTools,
       toolsUsed: entry.result?.toolsUsed,
       iterations: entry.result?.iterations,
       cost: entry.result?.cost,

@@ -77,7 +77,8 @@ import {
 } from './mcpErrors';
 import { classifyMcpToolReplaySafety } from './mcpToolSafety';
 import { resolveServerConfigSecrets } from './mcpSecretResolver';
-import { CUA_SEARCH_KEYWORDS, extractMcpSearchKeywords, processBatched } from './mcpSearchUtils';
+import { processBatched } from './mcpSearchUtils';
+import { discoverLazyMcpServersForSearch, type McpLazySearchClient } from './mcpLazySearch';
 import {
   getDefaultMCPServers as _getDefaultMCPServers,
   DEFAULT_MCP_SERVERS as _DEFAULT_MCP_SERVERS,
@@ -708,11 +709,19 @@ export class MCPClient extends EventEmitter {
   // --------------------------------------------------------------------------
 
   /**
-   * 确保服务器已连接（支持懒加载）
+   * 确保服务器已连接（支持懒加载）。
+   *
+   * signal 只中断「本次等待」：等待方被取消时立即按未连上返回，但底层连接照常
+   * 建立、建成后仍注册进共享注册表——这是进程级共享连接，其他等待者/后续调用
+   * 还要复用，因此 signal 绝不传进 connect() 去掐连接本身。
    */
-  async ensureConnected(serverName: string): Promise<boolean> {
+  async ensureConnected(serverName: string, signal?: AbortSignal): Promise<boolean> {
     if (this.clients.has(serverName) || this.inProcessServers.has(serverName)) {
       return true;
+    }
+
+    if (signal?.aborted) {
+      return false;
     }
 
     const config = this.serverConfigs.get(serverName);
@@ -730,12 +739,7 @@ export class MCPClient extends EventEmitter {
     const existingPromise = this.connectingServers.get(serverName);
     if (existingPromise) {
       logger.debug(`Server ${serverName} is already connecting, waiting...`);
-      try {
-        await existingPromise;
-        return this.clients.has(serverName) || this.inProcessServers.has(serverName);
-      } catch {
-        return false;
-      }
+      return this.settleSharedConnectionWait(existingPromise, serverName, signal);
     }
 
     const state = this.serverStates.get(serverName);
@@ -751,22 +755,56 @@ export class MCPClient extends EventEmitter {
 
       this.connectingServers.set(serverName, connectPromise);
 
-      try {
-        await connectPromise;
-        return this.clients.has(serverName) || this.inProcessServers.has(serverName);
-      } catch (error) {
-        logger.error(`Failed to lazy-load server ${serverName}:`, error);
-        return false;
-      }
+      return this.settleSharedConnectionWait(connectPromise, serverName, signal);
     }
 
     return false;
   }
 
   /**
+   * 等待共享连接 settle；signal 触发时立即按未连上返回（连接继续，见
+   * ensureConnected 注释）。connectPromise 的失败在这里吞掉并按未连上返回。
+   */
+  private async settleSharedConnectionWait(
+    connectPromise: Promise<void>,
+    serverName: string,
+    signal?: AbortSignal,
+  ): Promise<boolean> {
+    if (!signal) {
+      try {
+        await connectPromise;
+      } catch (error) {
+        logger.error(`Failed to lazy-load server ${serverName}:`, error);
+        return false;
+      }
+      return this.clients.has(serverName) || this.inProcessServers.has(serverName);
+    }
+
+    const outcome = await new Promise<'settled' | 'aborted'>((resolve) => {
+      const onAbort = (): void => resolve('aborted');
+      signal.addEventListener('abort', onAbort, { once: true });
+      connectPromise.then(
+        () => {
+          signal.removeEventListener('abort', onAbort);
+          resolve('settled');
+        },
+        (error) => {
+          signal.removeEventListener('abort', onAbort);
+          logger.error(`Failed to lazy-load server ${serverName}:`, error);
+          resolve('settled');
+        },
+      );
+    });
+    if (outcome === 'aborted') {
+      logger.info(`ensureConnected wait for ${serverName} aborted by caller; shared connection continues for other waiters`);
+      return false;
+    }
+    return this.clients.has(serverName) || this.inProcessServers.has(serverName);
+  }
+
+  /**
    * Discover lazy stdio servers that are likely relevant to a ToolSearch query.
-   * This avoids starting every lazy server while making enabled servers like
-   * sequential-thinking searchable before their first direct tool call.
+   * 实现在 mcpLazySearch.ts（max-lines 硬限拆分），此处保留 thin delegate。
    */
   async discoverLazyServersForSearch(query: string, serverNameAllowlist?: string[]): Promise<Array<{
     serverName: string;
@@ -774,52 +812,11 @@ export class MCPClient extends EventEmitter {
     toolCount: number;
     error?: string;
   }>> {
-    const keywords = extractMcpSearchKeywords(query);
-    if (keywords.length === 0) return [];
-
-    const candidates = Array.from(this.serverConfigs.values()).filter((config) => {
-      if (!config.enabled) return false;
-      // turn scope 收窄（serverNameAllowlist）时范围外的 lazy server 不拉起——拉起来结果也会被丢掉
-      if (!isStdioConfig(config) || config.lazyLoad === false || (serverNameAllowlist !== undefined && !serverNameAllowlist.includes(config.name))) return false;
-
-      const state = this.serverStates.get(config.name);
-      if (!state || !['lazy', 'disconnected', 'error'].includes(state.status)) return false;
-
-      const haystack = [
-        config.name,
-        config.command,
-        ...(config.args || []),
-      ].join(' ').toLowerCase();
-
-      if (
-        config.name === CUA_DRIVER_SERVER_NAME &&
-        keywords.some((keyword) => CUA_SEARCH_KEYWORDS.has(keyword))
-      ) {
-        return true;
-      }
-
-      return keywords.some((keyword) => haystack.includes(keyword));
-    });
-
-    const results: Array<{
-      serverName: string;
-      connected: boolean;
-      toolCount: number;
-      error?: string;
-    }> = [];
-
-    for (const config of candidates) {
-      const connected = await this.ensureConnected(config.name);
-      const state = this.serverStates.get(config.name);
-      results.push({
-        serverName: config.name,
-        connected,
-        toolCount: this.registry.getToolCount(config.name),
-        ...(state?.error ? { error: state.error } : {}),
-      });
-    }
-
-    return results;
+    return discoverLazyMcpServersForSearch(
+      this as unknown as McpLazySearchClient,
+      query,
+      serverNameAllowlist,
+    );
   }
 
   // --------------------------------------------------------------------------

@@ -21,7 +21,6 @@ import {
 import { routeExternalSubagentExecution } from './subagentExecutionRouter';
 import { compactSubagentMessages } from './subagentCompaction';
 import { SUBAGENT_COMPACTION } from '../../shared/constants';
-import { initiateShutdown } from './shutdownProtocol';
 import type { CancellationReason } from '../../shared/contract/cancellation';
 import { normalizeCancellationReason } from '../../shared/contract/cancellation';
 import {
@@ -29,10 +28,6 @@ import {
   agentFailureCodeFromCancellationReason,
   inferAgentFailureCode,
 } from '../../shared/contract/agentFailure';
-import { CANCELLATION_TIMEOUTS } from '../../shared/constants';
-import { getUserDataPath } from '../platform/appPaths';
-import { join as pathJoin } from 'path';
-import { captureWorkspacePatch } from '../services/checkpoint/taskPatchService';
 import { getPlanApprovalGate } from './planApproval';
 import { getSpawnGuard } from './spawnGuard';
 import { buildChildContext } from './childContext';
@@ -63,6 +58,7 @@ import {
 } from './subagentExecutorTelemetry';
 import {
   createSubagentCancellationLifecycle,
+  flushSubagentCancellation,
   getChildSubagentExecutionTimeout,
   getSubagentIdleTimeout,
 } from './subagentExecutorCancellation';
@@ -294,11 +290,14 @@ export class SubagentExecutor {
     // N-SUBAGENT-ZEROTOOLS：工具面收口（helper 见 subagentExecutorToolDefs）——
     // 父子交集（永不扩张）→ mcp__<server>__* 通配展开（lazy 服务器先连再取）→
     // run 级硬边界收窄 → 注册表解析，返回缺失清单供 fail-loud / 部分缺失上报。
+    // 返修 Important 1：装配等待接入 effectiveSignal（父 abort + 内部 timeout 桥接），
+    // 取消后不再傻等连接 / 不再发起后续服务器连接。
     const { effectiveToolNames, allowedToolDefs, missingToolNames } = await resolveSubagentToolAccess(
       config,
       context,
       effectiveParentContext,
       childCtx,
+      { signal: effectiveSignal },
     );
 
     logger.info(`[${config.name}] childContext applied`, {
@@ -450,7 +449,10 @@ export class SubagentExecutor {
       // 判据刻意不是「0 工具」：纯推理/纯总结角色声明 0 工具是合法形态（请求集为空时
       // 不触发）；也不是 supportsTool=false（那是模型能力问题，上方已有独立 warn）。
       // 部分缺失（声明 5 拿到 2）不在此失败，missingTools 随结果带回父模型自行裁量。
-      if (effectiveToolNames.length > 0 && allowedToolDefs.length === 0) {
+      // 返修 Important 1：装配等待可能被取消打断（连接循环让位 signal），已取消时
+      // 「没装配上」的第一性原因是取消——让位给下方迭代循环的 abort 收口，不误报
+      // tool-unavailable。
+      if (effectiveToolNames.length > 0 && allowedToolDefs.length === 0 && !effectiveSignal.aborted) {
         return earlyFailure(
           `声明的 ${effectiveToolNames.length} 个工具全部未装配（注册表解析为 0）：` +
           `${missingToolNames.join(', ')}。子代理未执行任何迭代即失败：` +
@@ -503,47 +505,16 @@ export class SubagentExecutor {
           stopIdleWatchdog();
 
           // Phase 3 flush — persist partial transcript + metadata.
-          // sessionDir convention: <userDataPath>/sessions/<sessionId>.
-          // saveToDisk creates the agent subdir itself; we just hand it
-          // the session root.
-          const sessionDir = pathJoin(getUserDataPath(), 'sessions', sessionId);
-          // R5 — agentPromise self-reference: this is the running executor's
-          // own loop. We pass `Promise.resolve()` so the grace phase
-          // doesn't deadlock waiting for ourselves; the abort signal has
-          // already propagated to inference / tools, their cleanup runs
-          // in parallel.
-          try {
-            await initiateShutdown(effectiveController, Promise.resolve(), {
-              gracePeriodMs: CANCELLATION_TIMEOUTS.GRACEFUL_SHUTDOWN_GRACE,
-              label: `${config.name}:${agentTask.id}`,
-              onFlush: async () => {
-                try {
-                  await agentTask.saveToDisk(sessionDir);
-                } catch (err) {
-                  logger.warn(
-                    `[${config.name}] saveToDisk failed during flush`,
-                    err,
-                  );
-                }
-                // 取消时把工作目录的文件改动抢救成 patch（saveToDisk 只存 transcript）。
-                // 有 worktree 用 worktree 路径，否则用会话工作目录。best-effort 不阻塞取消。
-                try {
-                  const patchDir =
-                    context.worktreePath || context.cwd;
-                  if (patchDir) {
-                    await captureWorkspacePatch(patchDir, agentTask.id, 'cancel');
-                  }
-                } catch (err) {
-                  logger.warn(
-                    `[${config.name}] captureWorkspacePatch failed during flush`,
-                    err,
-                  );
-                }
-              },
-            });
-          } catch (err) {
-            logger.warn(`[${config.name}] initiateShutdown threw`, err);
-          }
+          // R5（grace 不等自己）/ sessionDir 约定 / patch 抢救的细节在 helper 里。
+          await flushSubagentCancellation({
+            agentName: config.name,
+            agentTask,
+            controller: effectiveController,
+            sessionId,
+            worktreePath: context.worktreePath,
+            cwd: context.cwd,
+            logger,
+          });
 
           pipeline.completeContext(pipelineContext.agentId, false, cancellationReason);
           const errorMsg = cancellationReason === 'timeout'

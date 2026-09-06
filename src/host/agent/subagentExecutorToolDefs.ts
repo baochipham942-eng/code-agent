@@ -103,15 +103,22 @@ function parseMcpToolReference(name: string): McpToolReference | undefined {
   return undefined;
 }
 
-/** 触发 lazy MCP 服务器按需连接；任何异常都按「没连上」处理，不让装配链崩掉。 */
-async function ensureMcpServerConnected(serverName: string): Promise<boolean> {
+/** 触发 lazy MCP 服务器按需连接；任何异常都按「没连上」处理，不让装配链崩掉。
+ * signal 触发时立即按未连上返回（底层共享连接继续建立，见 MCPClient.ensureConnected）。 */
+async function ensureMcpServerConnected(serverName: string, signal?: AbortSignal): Promise<boolean> {
   try {
     const { getMCPClient } = await import('../mcp');
-    return await getMCPClient().ensureConnected(serverName);
+    return await getMCPClient().ensureConnected(serverName, signal);
   } catch (error) {
     logger.warn(`ensureMcpServerConnected: on-demand connect failed for ${serverName}`, error);
     return false;
   }
+}
+
+/** 装配链取消信号：两个连接循环每次连接前检查并透传给 ensureConnected（中断的是
+ * 本次等待，共享连接不受影响），取消后不再发起后续服务器连接。 */
+export interface SubagentToolAssemblyAbort {
+  signal?: AbortSignal;
 }
 
 /**
@@ -121,6 +128,7 @@ async function ensureMcpServerConnected(serverName: string): Promise<boolean> {
  */
 export async function expandSubagentMcpToolGlobs(
   declaredToolNames: readonly string[],
+  options?: SubagentToolAssemblyAbort,
 ): Promise<string[]> {
   const globServers = new Map<string, string>();
   for (const name of declaredToolNames) {
@@ -131,7 +139,8 @@ export async function expandSubagentMcpToolGlobs(
 
   const connectedServers = new Set<string>();
   for (const serverName of new Set(globServers.values())) {
-    if (await ensureMcpServerConnected(serverName)) {
+    if (options?.signal?.aborted) break;
+    if (await ensureMcpServerConnected(serverName, options?.signal)) {
       connectedServers.add(serverName);
     }
   }
@@ -176,6 +185,7 @@ export interface SubagentToolResolution {
 export async function resolveSubagentToolDefs(
   allowedToolNames: readonly string[],
   resolver: SubagentToolResolverPort,
+  options?: SubagentToolAssemblyAbort,
 ): Promise<SubagentToolResolution> {
   const first = resolveToolNamesOnce(allowedToolNames, resolver);
   if (first.missing.length === 0) return first;
@@ -191,7 +201,8 @@ export async function resolveSubagentToolDefs(
   }
 
   for (const serverName of retryServers) {
-    await ensureMcpServerConnected(serverName);
+    if (options?.signal?.aborted) break;
+    await ensureMcpServerConnected(serverName, options?.signal);
   }
 
   const defs = [...first.defs];
@@ -234,13 +245,14 @@ export async function resolveSubagentToolAccess(
   context: Pick<SubagentExecutionContext, SubagentToolAccessContextKeys>,
   effectiveParentContext: { availableTools: readonly string[] },
   childCtx: { toolPool: readonly string[] },
+  options?: SubagentToolAssemblyAbort,
 ): Promise<SubagentToolAccess> {
   const pooled = effectiveParentContext.availableTools.length === 0
     ? [...config.availableTools]
     : [...childCtx.toolPool];
-  const expanded = await expandSubagentMcpToolGlobs(pooled);
+  const expanded = await expandSubagentMcpToolGlobs(pooled, options);
   const effectiveToolNames = applyRunToolPolicyToSubagentTools(expanded, context);
-  const { defs, missing } = await resolveSubagentToolDefs(effectiveToolNames, context.resolver);
+  const { defs, missing } = await resolveSubagentToolDefs(effectiveToolNames, context.resolver, options);
   return { effectiveToolNames, allowedToolDefs: defs, missingToolNames: missing };
 }
 

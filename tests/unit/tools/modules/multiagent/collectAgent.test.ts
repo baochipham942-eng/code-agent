@@ -52,4 +52,40 @@ describe('collect_agent', () => {
       });
     }
   });
+
+  it('前台超时转后台（adopt）：collect 结果与完成通知都带 missingTools，父模型看得见能力缺口（N-SUBAGENT-ZEROTOOLS 返修）', async () => {
+    const registry = getBackgroundSubagentRegistry();
+    // adopt 的入参是 executor 的原始 SubagentResult（missingTools 已在）
+    const agentId = registry.adopt(
+      Promise.resolve({
+        success: true,
+        output: 'partial completion',
+        toolsUsed: [],
+        iterations: 3,
+        missingTools: ['mcp__cua-driver__*'],
+      }),
+      {
+        agentId: 'fg-to-bg-missing-tools-1',
+        role: 'coder',
+        title: '前台转后台',
+        sessionId: 'sess-collect-fg-bg',
+      },
+    );
+    await registry.await(agentId);
+
+    const result = await executeCollectAgent({ agentId }, makeCtx(), allowAll);
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.output).toContain('Missing tools');
+      expect(result.output).toContain('mcp__cua-driver__*');
+      expect(result.meta).toMatchObject({
+        result: expect.objectContaining({ missingTools: ['mcp__cua-driver__*'] }),
+      });
+    }
+    // 父模型每轮注入的完成通知同样要带缺失清单（统一完成通知链）
+    const notifications = registry.drainCompletionNotifications({ sessionId: 'sess-collect-fg-bg' });
+    const notification = notifications.find((entry) => entry.agentId === agentId);
+    expect(notification?.content).toContain('mcp__cua-driver__*');
+  });
 });

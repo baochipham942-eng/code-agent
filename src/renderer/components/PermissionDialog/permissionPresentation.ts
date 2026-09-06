@@ -13,6 +13,26 @@ function basename(target: string): string {
   return normalized.split('/').pop() || target;
 }
 
+/**
+ * /dev/null 的 basename 是 "null"，进标题会读成空值或普通文件名。
+ * 设备节点与 DOS 保留名用完整路径展示，不当文件名截断。
+ */
+function isDeviceOrSpecialPath(target: string): boolean {
+  const normalized = target.replace(/\\/g, '/').replace(/\/+$/u, '');
+  const lower = normalized.toLowerCase();
+  if (lower === '/dev' || lower.startsWith('/dev/')) return true;
+  if (lower === '/proc' || lower.startsWith('/proc/')) return true;
+  if (lower === '/private/dev' || lower.startsWith('/private/dev/')) return true;
+  if (/^(nul|con|prn|aux|com[1-9]|lpt[1-9])$/i.test(normalized)) return true;
+  if (/^\/\/\.\/(nul|con|prn|aux|com[1-9]|lpt[1-9])$/i.test(normalized)) return true;
+  return false;
+}
+
+function compactFileTarget(target: string): string {
+  const redacted = redactCredentialText(target);
+  return isDeviceOrSpecialPath(redacted) ? redacted : basename(redacted);
+}
+
 function isOutsideWorkspace(request: PermissionRequest): boolean {
   return request.boundary?.id === 'file.external_read' || request.boundary?.id === 'file.external_write';
 }
@@ -48,7 +68,7 @@ export function defaultPermissionViewMode(request: PermissionRequest): DecisionC
 export function permissionSummary(request: PermissionRequest, t: Translations): string {
   const p = t.decisionCard.permission;
   const target = fileTarget(request);
-  const compactTarget = target ? basename(redactCredentialText(target)) : undefined;
+  const compactTarget = target ? compactFileTarget(target) : undefined;
   const qualifier = isOutsideWorkspace(request) ? `（${p.workspaceOutside}）` : '';
   switch (request.type) {
     case 'file_read':
@@ -97,6 +117,14 @@ export function permissionConsequence(request: PermissionRequest, t: Translation
     return p.consequenceDelete
       .replace('{target}', safeTarget ?? p.targetFallback)
       .replace('{count}', fileCountText(count, t));
+  }
+  if (
+    target
+    && isDeviceOrSpecialPath(target)
+    && (request.type === 'file_write' || request.type === 'file_edit')
+  ) {
+    const copy = isOutsideWorkspace(request) ? p.consequenceDeviceOutside : p.consequenceDevice;
+    return copy.replace('{target}', safeTarget ?? p.targetFallback);
   }
   if (isOutsideWorkspace(request)) {
     return p.consequenceOutside

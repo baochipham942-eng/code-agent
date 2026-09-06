@@ -3,7 +3,13 @@ import { createSupabaseServerClient } from '@/lib/supabase/server';
 import Link from 'next/link';
 import { fetchQualityRows, formatRate, formatRubricKey, overallPassRate, rollupByUser, type QualityBucket, type UserQuality } from '@/lib/postlaunch';
 
-/** 「上线后过率」那一列的回看窗口。视图粒度是天，所以这里能精确切到 7 天。 */
+/**
+ * 「上线后过率」那一列的回看窗口。
+ *
+ * 口径写清楚：视图的 day_start 是 `date_trunc('day', ...)`，走库时区（UTC），所以日桶是**自然日**；
+ * 而 fetchQualityRows 的截止是 `now - N×24h` 的滚动值，落到 day_start 上稳定得到 N 个日桶，
+ * 最新那个是当天的半桶。列头因此写「近 7 个自然日（UTC）」而不是「近 7 天」。
+ */
 const POST_LAUNCH_WINDOW_DAYS = 7;
 
 type Row = {
@@ -64,11 +70,11 @@ export default async function UsersPage() {
                 <th className="text-right px-3 py-2 font-normal">工具</th>
                 <th className="text-right px-3 py-2 font-normal">
                   信号轮过率
-                  <span className="block text-zinc-600 font-normal">近 {POST_LAUNCH_WINDOW_DAYS} 天</span>
+                  <span className="block text-zinc-600 font-normal">近 {POST_LAUNCH_WINDOW_DAYS} 个自然日（UTC）</span>
                 </th>
                 <th className="text-right px-3 py-2 font-normal">
                   抽样轮过率
-                  <span className="block text-zinc-600 font-normal">近 {POST_LAUNCH_WINDOW_DAYS} 天</span>
+                  <span className="block text-zinc-600 font-normal">近 {POST_LAUNCH_WINDOW_DAYS} 个自然日（UTC）</span>
                 </th>
                 <th className="text-right px-3 py-2 font-normal">最近活跃</th>
               </tr>

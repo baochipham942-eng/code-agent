@@ -24,7 +24,7 @@ Agent Neo 是本地优先的人机协作（cowork）产品：用户给目标，N
 | 构建 | esbuild 0.28.0（main/web/cli）+ Vite 8.0.13（renderer） | `package.json:306,368`，`esbuild.config.ts`、`vite.config.ts` |
 | 测试 | Vitest 4.1.7 + Playwright 1.60.0 | `package.json:369,226` |
 | 本地库 | SQLite（better-sqlite3 13.0.3），数据目录 `~/.code-agent/` | `package.json:221` |
-| 云端 | Supabase + pgvector（迁移在 `supabase/`） | `docs/ARCHITECTURE.md:169` |
+| 云端 | Supabase + pgvector（迁移在 `supabase/`） | [HLD 数据架构](docs/ARCHITECTURE.md#9-数据架构) |
 | 原生模块 | node-pty 1.1.0 / sharp 0.35.3 / keytar 7.9.0 / onnxruntime-node 1.24.3 / avr-vad 1.0.10 | `package.json:224,228,223,225,220` |
 
 新 provider / 模型 / 超时 / 价格只加在 `src/shared/constants/`，然后引用，见 §5 第 1 条。
@@ -35,7 +35,7 @@ Agent Neo 是本地优先的人机协作（cowork）产品：用户给目标，N
 
 | 目录 | 职责 |
 |---|---|
-| `src/` | TS 主体，分七层（`docs/ARCHITECTURE.md:179-186`） |
+| `src/` | TS 主体，分七层（[HLD 目录结构](docs/ARCHITECTURE.md#目录结构)） |
 | `src/host/` | 后端主进程：Agent 运行时、工具、服务、权限、任务（工程层 core + 技能层 skills） |
 | `src/renderer/` | React 前端（呈现与交互，业务真源在 host） |
 | `src/shared/` | 前后端共享的类型（`contract/`）、常量（`constants/`）、IPC 协议（`ipc/`） |
@@ -44,7 +44,7 @@ Agent Neo 是本地优先的人机协作（cowork）产品：用户给目标，N
 | `src/design/`、`src/artifacts/` | 设计工作区共享逻辑 / 产物类型与处理 |
 | `src-tauri/` | Tauri Rust 桌面外壳 |
 | `admin-console/` | 独立管理后台（Next.js，`admin-console/README.md`） |
-| `packages/` | 复用包：bridge（本地桥接 :9527，`docs/ARCHITECTURE.md:172`）、eval-harness、internal（评测中心） |
+| `packages/` | 复用包：bridge（本地桥接 :9527，[HLD 集成](docs/ARCHITECTURE.md#10-集成)）、eval-harness、internal（评测中心） |
 | `vercel-api/` | 官网、下载与控制面 API |
 | `supabase/` | 数据库迁移与云函数 |
 | `tests/` | unit / renderer / integration / e2e / smoke（约定见 `tests/README.md`） |
@@ -64,7 +64,7 @@ Agent Neo 是本地优先的人机协作（cowork）产品：用户给目标，N
 
 ## 4. 前后端规范
 
-- **边界**：业务逻辑只在 `src/host/`；`src/renderer/` 做呈现与交互；跨端共享的类型、常量、协议一律放 `src/shared/`（`docs/ARCHITECTURE.md:180-182`）。改 `src/shared/**`、`src/web/webServer.ts`、`src/host/platform/**` 这类协议文件时两端必须对称（`REVIEW.md:12`）。
+- **边界**：业务逻辑只在 `src/host/`；`src/renderer/` 做呈现与交互；跨端共享的类型、常量、协议一律放 `src/shared/`（[HLD 目录结构](docs/ARCHITECTURE.md#目录结构)）。改 `src/shared/**`、`src/web/webServer.ts`、`src/host/platform/**` 这类协议文件时两端必须对称（`REVIEW.md:12`）。
 - **IPC 消费**：通道与签名真源是 `src/shared/ipc/handlers.ts`（`IpcInvokeHandlers`）与 `src/shared/ipc/channels.ts`；领域通道「一个领域一个通道、action 参数分发」（`src/shared/ipc/domains.ts:10,13`）。renderer 统一走 `src/renderer/services/ipcService.ts`（window bridge 的类型安全封装）或 `src/renderer/services/typedInvoke.ts`（dev 态带 schema 校验），不各自手拼 fetch。Skill 域的范例是 `src/renderer/services/invokeSkillIPC.ts`：只读路径 `invokeSkillIPC`（失败吞为 undefined）、动作路径 `invokeSkillIPCOrThrow`（必须把真因抛给 UI）。
 - **store**：Zustand，一域一 store，全在 `src/renderer/stores/`（清单 `docs/architecture/frontend.md:380` 起；范例 `src/renderer/stores/appStore.ts`）。跨组件状态进 store，不散落组件；store 里引用常量走 `@shared/constants`（`src/renderer/stores/appStore.ts:21-26` 的 import 是范例）。
 - **i18n（文案不许硬编码）**：renderer 用户可见文案一律进 `src/renderer/i18n/`（按域拆 zh/en 文件，`src/renderer/i18n/index.ts` 聚合），组件里不写裸中文串。文案 lint 门是 `scripts/check-copy.mjs`：营销压力词（轻松/一键/只需/立即体验）与错误省略号基线为 0，工程黑话只警告。host 错误不许新增裸中文文案——用稳定 code，由 renderer i18n 翻译（`scripts/host-chinese-error-ratchet.mjs`）。

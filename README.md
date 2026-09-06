@@ -170,7 +170,7 @@ code-agent/
 
 ## 文档
 
-- **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** — 架构索引入口（系统概览、Agent 核心、工具系统、前端、数据存储、多 Agent、设计工作区、ADR 等）
+- **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** — 高层设计 HLD（19 章、模块分册导航与 ADR 索引）
 - **[docs/architecture/repo-map.md](docs/architecture/repo-map.md)** — 面向第一次浏览仓库的人：根目录、运行面、能力体系、评测目录怎么分
 - **[docs/architecture/source-map.md](docs/architecture/source-map.md)** — `src/host` 源码地图（按逻辑分组）
 - **[docs/architecture/](docs/architecture/)** — 各子系统深入文档（agent-core / tool-system / multiagent-system / data-storage / hot-update / windows-support 等）
@@ -182,4 +182,4 @@ code-agent/
 
 ## 状态
 
-活跃迭代中，主要面向研究与自用 dogfood。架构与能力以 `docs/ARCHITECTURE.md` 的版本演进记录为准。
+活跃迭代中，主要面向研究与自用 dogfood。现行架构以 [HLD](docs/ARCHITECTURE.md) 的源码引用为准；旧版本演进见 [架构历史流水](docs/releases/architecture-changelog.md)。

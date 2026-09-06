@@ -787,7 +787,7 @@ UI exportPackage(shareable)
 
 | 路径 | 说明 |
 |------|------|
-| `docs/ARCHITECTURE.md` | 增 Session Spine 一节 |
+| [HLD 可观测](../ARCHITECTURE.md#16-可观测) | Session Spine 的现行入口；逐日记录已迁入架构历史流水 |
 | `docs/architecture/observability.md` | 与 fleet 边界 |
 | `docs/architecture/data-storage.md` | 镜像与保留 |
 | `docs/api-reference/security.md` | AuditEntryV2 |

@@ -196,6 +196,15 @@ export interface ToolExecutorConfig {
    * 整个 run 的工具调用都吃得到。
    */
   spawnMaxDepth?: number;
+  /**
+   * 写目标必须落在 workspaceScope 的可写根内，落不进去就拒（fail-closed）。
+   *
+   * 缺省 false = 存量行为：scope 里找不到这个目标就不管它（只拦「命中了但只读」的源）。
+   * 评测跑显式开成 true——沙箱是这轮唯一该被写的地方，指到沙箱外就是越界。
+   * 🔴 别顺手把它改成默认 true：生产会话带着 scope 往项目外写（临时目录、导出路径）
+   * 是正常路径，全局收紧是产品级决策，不在评测边界这张单的范围里。
+   */
+  restrictWritesToWorkspace?: boolean;
 }
 
 export type ToolExecutionDelegate = (toolName: string, params: Record<string, unknown>, context: ToolContext, options: ExecuteOptions) => Promise<ToolExecutionResult | null>;
@@ -323,6 +332,7 @@ export class ToolExecutor {
   private readonly requestPermissionForTools: (request: PermissionRequestData) => Promise<boolean>;
   private workingDirectory: string;
   private readonly runContext?: RunContext;
+  private readonly restrictWritesToWorkspace: boolean;
   private readonly dispatchTool?: ToolExecutionDelegate;
   private executionTopology: ExecutionTopology;
   private auditEnabled = true;
@@ -333,6 +343,7 @@ export class ToolExecutor {
   private readonly spawnMaxDepth?: number;
 
   constructor(config: ToolExecutorConfig) {
+    this.restrictWritesToWorkspace = config.restrictWritesToWorkspace === true;
     this.requestPermission = config.requestPermission;
     this.requestPermissionForTools = async (request) => normalizePermissionAskResult(
       await this.requestPermission(request),
@@ -386,6 +397,9 @@ export class ToolExecutor {
       dispatchTool: dispatchTool ?? this.dispatchTool,
       ledgerOrigin: this.ledgerOrigin,
       spawnMaxDepth: this.spawnMaxDepth,
+      // 写边界同样必须继承：子代理走 forRun 派生，漏传就等于子调用绕过边界
+      // （#1686 ai-review 第三轮）。与上面的收缩档同理——边界只在主 executor 上生效不算边界。
+      restrictWritesToWorkspace: this.restrictWritesToWorkspace,
     });
     executor.setAuditEnabled(this.auditEnabled);
     return executor;
@@ -523,21 +537,39 @@ export class ToolExecutor {
     );
 
     if (this.runContext?.workspaceScope && toolDef.permissionLevel === 'write' && !isBashToolName(policyToolName)) {
-      const target = resolveToolWriteTargets({
+      const resolvedTargets = resolveToolWriteTargets({
         definition: toolDef, params, workingDirectory: this.executionCwd,
-      }).targets[0] ?? this.executionCwd;
-      const readableMatch = resolveWorkspacePath(this.runContext.workspaceScope, target, 'read');
-      if (readableMatch && readableMatch.root.access !== 'read_write') {
+      }).targets;
+      // 🔴 逐个查，不是只查 targets[0]：targets 是**排序去重**后的数组，取第 0 个等于
+      // 「按字母序挑一个」——同一次调用带两个路径参数时（一个在工作区内、一个在工作区外），
+      // 排在前面的那个能把真正的越界目标遮住（#1686 ai-review）。
+      const scope = this.runContext.workspaceScope;
+      // 只读源判定**维持存量语义**（只看 targets[0]）：targets 里混着只读的*输入*路径，
+      // 逐个查会把「从只读源读、写到可写源」的正常操作判成写只读源
+      // （pdf_compress 那类，#1686 第四轮实测生产回归）。
+      const target = resolvedTargets[0] ?? this.executionCwd;
+      const readableMatch = resolveWorkspacePath(scope, target, 'read');
+      // 「落在工作区外」这一条才逐个查——它是严格档专有的判定，
+      // 且只有逐个查才挡得住「靠前的合法路径遮住靠后的越界目标」。
+      const outsideTarget = this.restrictWritesToWorkspace
+        ? (resolvedTargets.length > 0 ? resolvedTargets : [this.executionCwd])
+          .find((candidate) => !resolveWorkspacePath(scope, candidate, 'read'))
+        : undefined;
+      if (outsideTarget !== undefined || (readableMatch && readableMatch.root.access !== 'read_write')) {
         return {
           success: false,
-          error: `Project Source is read-only: ${readableMatch.root.path}`,
+          error: outsideTarget !== undefined
+            ? `Write target is outside the writable workspace of this run: ${outsideTarget}`
+            : `Project Source is read-only: ${readableMatch?.root.path}`,
           metadata: {
-            code: 'PROJECT_SOURCE_READ_ONLY',
+            code: outsideTarget !== undefined ? 'PROJECT_SOURCE_OUTSIDE_WORKSPACE' : 'PROJECT_SOURCE_READ_ONLY',
             projectId: this.runContext.workspaceScope.projectId,
-            sourceId: readableMatch.root.sourceId,
-            sourceRole: readableMatch.root.role,
-            sourceAccess: readableMatch.root.access,
-            relativePathWithinSource: readableMatch.relativePath,
+            ...(outsideTarget === undefined && readableMatch ? {
+              sourceId: readableMatch.root.sourceId,
+              sourceRole: readableMatch.root.role,
+              sourceAccess: readableMatch.root.access,
+              relativePathWithinSource: readableMatch.relativePath,
+            } : {}),
             workspaceScopeVersion: this.runContext.workspaceScope.version,
           },
         };

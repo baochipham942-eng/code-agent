@@ -23,6 +23,15 @@ const HARVEST_MAX_SESSIONS = 20;
 /** 单场会话读多少条点踩：反向候选只需要少量锚点。 */
 const NEGATIVE_FEEDBACK_LIMIT = 10;
 
+function scopeReplayToCandidate(replay: import('@shared/contract/evaluation').StructuredReplay, candidates: readonly PostLaunchReflowCandidate[]): import('@shared/contract/evaluation').StructuredReplay {
+  const match = candidates.find((candidate) => candidate.sessionId === replay.sessionId && candidate.turnId);
+  if (!match) return replay;
+  const turns = replay.turns ?? [];
+  const index = turns.findIndex((turn) => String(turn.turnNumber) === String(match.turnId) || turn.parentTurnId === match.turnId);
+  if (index < 0) return replay;
+  return { ...replay, turns: turns.slice(0, index + 1) };
+}
+
 function harvestBatchTag(now = new Date()): string {
   const month = String(now.getMonth() + 1).padStart(2, '0');
   const day = String(now.getDate()).padStart(2, '0');
@@ -98,8 +107,9 @@ export async function buildHarvestPreview(payload: HarvestPreviewRequest): Promi
       if (!replay) throw new Error('这场会话没有可回放的记录');
       const session = database.getSession(sessionId);
       const db = database.getDb();
+      const scopedReplay = postLaunchReflow ? scopeReplayToCandidate(replay, reflowCandidates) : replay;
       let seed = deriveHarvestSeed({
-        replay,
+        replay: scopedReplay,
         sessionTitle: session?.title?.trim() || sessionId,
         workingDirectory: session?.workingDirectory ?? '',
         fields,

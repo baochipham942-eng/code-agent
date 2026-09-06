@@ -23,6 +23,9 @@ import {
   workspacePathIdentity,
 } from '../../../src/host/runtime/workspaceScope';
 
+const evaluateFolderTrust = vi.hoisted(() => vi.fn());
+vi.mock('../../../src/host/security/folderTrustService', () => ({ evaluateFolderTrust }));
+
 const databaseState = vi.hoisted(() => ({
   projectRepo: undefined as unknown,
 }));
@@ -65,12 +68,13 @@ function createFixture() {
     id: 'psrc_identity',
     projectId: project.id,
     path: sourcePath,
-    canonicalPath: sourcePath,
+    canonicalPath: canonicalizeWorkspacePath(sourcePath),
     role: 'primary',
     access: 'read_write',
     trustState: 'trusted',
     identityDev: identity.dev,
     identityIno: identity.ino,
+    identityBirthtimeNs: identity.birthtimeNs,
     createdAt: NOW,
     updatedAt: NOW,
   };
@@ -114,6 +118,30 @@ afterEach(() => {
 });
 
 describe('ProjectService workspace source identity gate', () => {
+  it('re-evaluates folder trust when a deleted and recreated source reuses its inode', async () => {
+    const fixture = createFixture();
+    rmSync(fixture.sourcePath, { recursive: true });
+    mkdirSync(fixture.sourcePath);
+    const replacement = workspacePathIdentity(fixture.sourcePath);
+    fixture.source.identityDev = replacement.dev;
+    fixture.source.identityIno = replacement.ino;
+    // Deterministic incarnation difference even on filesystems with coarse timestamps.
+    fixture.source.identityBirthtimeNs = (BigInt(replacement.birthtimeNs!) - 1n).toString();
+    evaluateFolderTrust.mockResolvedValueOnce({ state: 'untrusted', identityChanged: true });
+    await expect(fixture.service.updateProject({
+      projectId: 'proj_identity', revision: 0, name: 'renamed', sources: [{
+        id: fixture.source.id, path: fixture.sourcePath, role: 'primary', access: 'read_write',
+      }],
+    }, NOW + 1)).rejects.toThrow('Folder Trust is required');
+    expect(evaluateFolderTrust).toHaveBeenCalledWith(canonicalizeWorkspacePath(fixture.sourcePath));
+  });
+
+  it('fails closed for a legacy source without a birthtime snapshot', () => {
+    const fixture = createFixture();
+    delete fixture.source.identityBirthtimeNs;
+    expectBlocked(fixture.service, 'proj_identity', 'identity_changed');
+  });
+
   it('keeps the source trusted when dev changes but ino stays the same', () => {
     const fixture = createFixture();
     fixture.source.identityDev = (BigInt(fixture.identity.dev!) + 1n).toString();
@@ -150,7 +178,7 @@ describe('ProjectService workspace source identity gate', () => {
   it('blocks the source when its path no longer exists', () => {
     const fixture = createFixture();
     rmSync(fixture.sourcePath, { recursive: true });
-    expect(workspacePathIdentity(fixture.sourcePath)).toEqual({ dev: null, ino: null });
+    expect(workspacePathIdentity(fixture.sourcePath)).toEqual({ dev: null, ino: null, birthtimeNs: null });
 
     expectBlocked(fixture.service, 'proj_identity', 'source_missing');
   });

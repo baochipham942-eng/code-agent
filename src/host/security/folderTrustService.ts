@@ -1,3 +1,4 @@
+import { folderIdentityMatches } from './folderIdentity';
 import fs from 'fs';
 import fsp from 'fs/promises';
 import path from 'path';
@@ -602,10 +603,7 @@ export class FolderTrustService {
    */
   private identityChanged(row: FolderTrustRow | undefined, identity: FolderIdentity): boolean {
     if (!row) return false;
-    return row.ino !== identity.ino
-      || !row.birthtime_ns
-      || !identity.birthtimeNs
-      || row.birthtime_ns !== identity.birthtimeNs;
+    return !folderIdentityMatches({ ino: row.ino, birthtimeNs: row.birthtime_ns }, identity);
   }
 
   /** dev 单独变化（卷重挂载/重启）：把新 dev 写回，保持记录与现实一致，不改 state/decidedBy。 */

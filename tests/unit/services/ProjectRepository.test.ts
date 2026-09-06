@@ -7,6 +7,10 @@
 // ============================================================================
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { workspacePathIdentity } from '../../../src/host/runtime/workspaceScope';
 
 vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
@@ -296,6 +300,27 @@ describe('ProjectRepository', () => {
         trustState: 'trusted',
       }),
     ]);
+  });
+
+  it('does not mint a current incarnation for a legacy project during source backfill', () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'legacy-project-identity-'));
+    try {
+      const project = makeRow(workspace, getProjectKey(workspace), NOW);
+      repo.upsertProject(project);
+      repo.backfillProjectSources(NOW);
+      const source = repo.listSources(project.id)[0];
+      expect(source.identityIno).not.toBeNull();
+      const service = new ProjectService(() => repo);
+      expect(() => service.getWorkspaceScope(project.id)).toThrow('Project Source trust identity changed');
+      const identity = workspacePathIdentity(workspace);
+      expect(identity.birthtimeNs).not.toBeNull();
+      repo.upsertSource({ ...source, identityBirthtimeNs: identity.birthtimeNs });
+      expect(service.getWorkspaceScope(project.id)?.primaryRoot).toBe(source.canonicalPath);
+      repo.upsertSource({ ...source, identityBirthtimeNs: String(BigInt(identity.birthtimeNs ?? '0') - 1n) });
+      expect(() => service.getWorkspaceScope(project.id)).toThrow('Project Source trust identity changed');
+    } finally {
+      rmSync(workspace, { recursive: true, force: true });
+    }
   });
 
   it('原子替换 Sources 校验 revision 且数据库约束只允许一个 Primary', () => {

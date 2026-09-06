@@ -2,7 +2,7 @@
 
 > **范围**：执行引擎（执行内核 `AgentEngineKind`）这条特性线——Native + 4 个外部 CLI 引擎（Codex / Claude Code / MiMo-Code / Kimi Code）的接入、Runtime×Model 兼容矩阵 + 计费模式、设置页「执行引擎」section、StatusBar 引擎切换器。
 > **状态**：引擎链（适配器/分发/探测/catalog/权限）+ 兼容矩阵 + 设置页 IA + Durable Run 生命周期均已合 main。MiMo / Kimi 是 2026-06-22 新增的两个引擎，Durable 终态与恢复边界于 2026-07-12~18 收口。
-> **配套**：计划 `docs/plans/engine-expansion-mimo-kimi.md`（意图，非 as-built）；早期 Agent Engine 抽象见 `docs/ARCHITECTURE.md` v9.18 批次（codex/claude 接入、签名 catalog、task ledger）。
+> **配套**：计划 `docs/plans/engine-expansion-mimo-kimi.md`（意图，非 as-built）；早期 Agent Engine 抽象见 [架构历史流水](../releases/architecture-changelog.md) 的 v0.16.75 与 2026-05-22 批次（codex/claude 接入、签名 catalog、task ledger）；现行边界见 [HLD 模型适配层](../ARCHITECTURE.md#11-模型适配层)。
 
 ---
 

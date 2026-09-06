@@ -6,8 +6,8 @@ import { scopedHostLog, pipelineExitCode, counts, digest, inspectEvidence, parse
 
 const temporary: string[] = [];
 afterEach(() => { temporary.splice(0).forEach(p => rmSync(p, { recursive: true, force: true })); });
-function inventory() {
-  const text = Array.from({ length: 55 }, (_, i) => `### TC-M${i + 1}-01 · example\n\n| 夜跑标记 | 是 |\n| 证据落点 | 拟执行：\`~/fixture/runs/TC-M${i + 1}-01/<run-id>/result.json\` |\n| ①结果断言 | result |\n| ②过程断言 | process |\n| ③渲染断言 | render |\n`).join('\n');
+function inventory(count = 55) {
+  const text = Array.from({ length: count }, (_, i) => `### TC-M${i + 1}-01 · example\n\n| 夜跑标记 | 是 |\n| 模块 | 上下文 |\n| 验收面 | api+web |\n| 步骤 | 浏览器打开详情；API 读取 health:get |\n| 证据落点 | 拟执行：\`~/fixture/runs/TC-M${i + 1}-01/<run-id>/result.json\` |\n| ①结果断言 | result |\n| ②过程断言 | process |\n| ③渲染断言 | render |\n`).join('\n');
   const cases = parseCases(text);
   cases[0].reasons = []; // Synthetic unblocked adapter for adversarial report tests.
   return cases;
@@ -51,7 +51,41 @@ describe('nightly acceptance fail-closed evidence', () => {
     expect(inspectEvidence(rows[0], dir)).toContain('FAIL TC-M1-01 files.sha256 missing or inconsistent');
   });
   it('rejects incomplete inventories', () => expect(() => parseCases('### TC-M1-01 · partial\n')).toThrow('FAIL'));
-  it('keeps all 55 unexecuted rows and zero runtime claims', () => { const cases = inventory(); const rows = rowsFor(cases); expect(counts(rows)).toEqual({ executed: 0, skipped: 55, failed: 0, passed: 0, total: 55 }); expect(validateReport(cases, rows, counts(rows), () => '')).toEqual([]); });
+  it('parses 模块/验收面 for a known-good case (判定式真阳)', () => {
+    const cases = inventory(1);
+    expect(cases[0].modules).toEqual(['上下文']);
+    expect(cases[0].surfaces).toEqual(['api', 'web']);
+  });
+  it('rejects 模块 outside the §7 subsystem domain (判定式真阴)', () => {
+    expect(() => parseCases(`### TC-M1-01 · t\n\n| 夜跑标记 | 是 |\n| 模块 | 权限 |\n| 验收面 | api |\n| 步骤 | API 读取 health:get |\n| 证据落点 | 拟执行：\`~/fixture/runs/TC-M1-01/<run-id>/result.json\` |\n| ①结果断言 | result |\n| ②过程断言 | process |\n| ③渲染断言 | render |\n`)).toThrow('模块取值域外');
+  });
+  it('rejects 验收面 that disagrees with the 步骤 route (app without native shell)', () => {
+    expect(() => parseCases(`### TC-M1-01 · t\n\n| 夜跑标记 | 是 |\n| 模块 | 上下文 |\n| 验收面 | api+app |\n| 步骤 | API 读取 health:get，浏览器打开详情 |\n| 证据落点 | 拟执行：\`~/fixture/runs/TC-M1-01/<run-id>/result.json\` |\n| ①结果断言 | result |\n| ②过程断言 | process |\n| ③渲染断言 | render |\n`)).toThrow('验收面与步骤不一致');
+  });
+  it('rejects missing 模块/验收面 rows instead of skipping silently', () => {
+    expect(() => parseCases(`### TC-M1-01 · t\n\n| 夜跑标记 | 是 |\n| 验收面 | api |\n| 步骤 | API 读取 health:get |\n| 证据落点 | 拟执行：\`~/fixture/runs/TC-M1-01/<run-id>/result.json\` |\n| ①结果断言 | result |\n| ②过程断言 | process |\n| ③渲染断言 | render |\n`)).toThrow('missing 模块');
+    expect(() => parseCases(`### TC-M1-01 · t\n\n| 夜跑标记 | 是 |\n| 模块 | 上下文 |\n| 步骤 | API 读取 health:get |\n| 证据落点 | 拟执行：\`~/fixture/runs/TC-M1-01/<run-id>/result.json\` |\n| ①结果断言 | result |\n| ②过程断言 | process |\n| ③渲染断言 | render |\n`)).toThrow('missing 验收面');
+  });
+  it('distinguishes zero matched headings from a genuinely empty doc (判定式边界)', () => {
+    expect(() => parseCases('# 没有用例标题的文档\n\nCASES-2026-09-06\n')).toThrow('case inventory empty');
+  });
+  it('floats the case count instead of pinning 55', () => {
+    const cases = inventory(3);
+    expect(cases).toHaveLength(3);
+    const rows = rowsFor(cases);
+    expect(validateReport(cases, rows, counts(rows), () => '')).toEqual([]);
+    expect(validateReport(cases, [...rows, rows[0]], counts([...rows, rows[0]]), () => '')[0]).toContain('must show all 3 cases exactly once');
+  });
+  it('cross-checks the 场景×状态覆盖矩阵 against the parsed inventory', () => {
+    const one = `### TC-M1-01 · a\n\n| 夜跑标记 | 是 |\n| 模块 | 上下文 |\n| 验收面 | api |\n| 步骤 | API 读取 health:get |\n| 证据落点 | 拟执行：\`~/fixture/runs/TC-M1-01/<run-id>/result.json\` |\n| ①结果断言 | result |\n| ②过程断言 | process |\n| ③渲染断言 | render |\n`;
+    const two = one.replace(/M1-01/g, 'M1-02');
+    const matrix = count => `## 场景 × 状态覆盖矩阵\n\n| 场景 | 用例 | 状态/异常轴 |\n|---|---|---|\n| M1 | ${count} | 覆盖 |\n\n## 逐条用例\n\n`;
+    expect(() => parseCases(matrix('TC-M1-01、TC-M1-02') + one + two)).not.toThrow();
+    expect(() => parseCases(matrix('TC-M1-01') + one + two)).toThrow('覆盖矩阵与逐条用例不一致');
+    // 矩阵标题在但一条用例行都没选中 = 选择器漂移，不能当成"无矩阵"跳过
+    expect(() => parseCases(`## 场景 × 状态覆盖矩阵\n\n| 场景 | 用例 | 状态/异常轴 |\n|---|---|---|\n| 坏行 | 坏 | 坏 |\n\n## 逐条用例\n\n` + one)).toThrow('没有选中任何用例行');
+  });
+  it('keeps all 55 unexecuted rows and zero runtime claims', () => { const cases = inventory(); const rows = rowsFor(cases); expect(counts(rows)).toEqual({ executed: 0, skipped: cases.length, failed: 0, passed: 0, total: cases.length }); expect(validateReport(cases, rows, counts(rows), () => '')).toEqual([]); });
   it('mutation 1 rejects blocked promotion independently of forged summary', () => { const cases = inventory(); const rows = rowsFor(cases); const top = counts(rows); rows[1].status = '通过'; expect(validateReport(cases, rows, top, () => '')).toContain('FAIL COUNTS top summary differs from case table'); expect(validateReport(cases, rows, counts(rows), () => '').some(e => e.includes('blocked case'))).toBe(true); });
   it('rejects hidden or duplicated skipped cases', () => { const cases = inventory(); const rows = rowsFor(cases); rows[54] = rows[0]; expect(validateReport(cases, rows, counts(rows), () => '').some(e => e.includes('INVENTORY'))).toBe(true); });
   it('rejects green assertion cells on unexecuted rows', () => { const cases = inventory(); const rows = rowsFor(cases); rows[0].checks[2].status = '通过'; expect(validateReport(cases, rows, counts(rows), () => '')).toContain('FAIL TC-M1-01 skipped row must not be green'); });

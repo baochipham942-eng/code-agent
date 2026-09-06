@@ -2,15 +2,32 @@ import { createHash } from 'node:crypto';
 import { readFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 
-export type Case = { id: string; title: string; fields: Record<string, string>; hash: string; root: string; reasons: string[] };
+export type Case = { id: string; title: string; modules: string[]; surfaces: string[]; fields: Record<string, string>; hash: string; root: string; reasons: string[] };
+/** 【模块】取值域 = docs/ARCHITECTURE.md §7 子系统职责表的子系统名（含表尾补充职责行），逐字照抄；改 §7 须同步这里。 */
+export const SUBSYSTEM_NAMES = ['会话执行', '会话任务', 'Durable run', '多代理', '脚本编排', '工具', '模型', '外部引擎', '上下文', '记忆与角色', '数据', '平台壳', '前端与 IPC', '浏览器与电脑', '插件与连接器', '设计与产物', '语音与活动', '定时与自动化', '评测与观测', '补充职责'];
+/** 【验收面】取值域；声明值必须与该条【步骤】实际写的路线一致，SURFACE_MARKERS 负责从步骤文本机械推导。 */
+export const SURFACES = ['cli', 'api', 'web', 'app'];
+const SURFACE_MARKERS: Record<string, RegExp> = {
+  cli: /CLI|neo debug/,
+  api: /API|invoke|health:get|响应体|compact-current|compact-from/,
+  web: /浏览器/,
+  app: /Tauri|原生壳|系统权限/,
+};
 export type Check = { status: '通过' | '失败' | '未执行'; detail: string };
 export type Row = { id: string; runId: string; status: Check['status']; reasons: string[]; checks: Check[]; files: Record<string, string>; frames: string[]; fb?: string; fbCreated?: boolean; startedAt?: string; endedAt?: string };
 export const digest = (value: string | Buffer): string => createHash('sha256').update(value).digest('hex');
 export function parseCases(source: string): Case[] {
   const blocks = [...source.matchAll(/^### (TC-M\d+-\d+) · (.+)\n([\s\S]*?)(?=^### |^## |$(?![\s\S]))/gm)];
+  if (!blocks.length) throw new Error('FAIL case inventory empty: 没有 "### TC-M… · …" 标题被选中（cases.md 缺失或格式漂移，与"真的零条"区分）');
   const cases = blocks.map((m) => {
     const fields = Object.fromEntries([...m[3].matchAll(/^\| ([^|]+) \| (.+) \|$/gm)].map(x => [x[1].trim(), x[2].trim()]));
-    for (const key of ['夜跑标记', '证据落点', '①结果断言', '②过程断言', '③渲染断言']) if (!fields[key]) throw new Error(`FAIL ${m[1]} missing ${key}`);
+    for (const key of ['夜跑标记', '证据落点', '模块', '验收面', '①结果断言', '②过程断言', '③渲染断言']) if (!fields[key]) throw new Error(`FAIL ${m[1]} missing ${key}`);
+    const modules = fields['模块'].split('·').map(name => name.trim()).filter(Boolean);
+    if (!modules.length || modules.some(name => !SUBSYSTEM_NAMES.includes(name))) throw new Error(`FAIL ${m[1]} 模块取值域外：${fields['模块']}（取值域=ARCHITECTURE.md §7 子系统名，可多值用 · 分隔）`);
+    const surfaces = fields['验收面'].split('+').map(face => face.trim()).filter(Boolean);
+    if (!surfaces.length || surfaces.some(face => !SURFACES.includes(face)) || new Set(surfaces).size !== surfaces.length) throw new Error(`FAIL ${m[1]} 验收面取值域外：${fields['验收面']}（取值域=cli/api/web/app，可组合用 + 连接）`);
+    const derived = SURFACES.filter(face => SURFACE_MARKERS[face].test(fields['步骤'] ?? ''));
+    if (derived.length !== surfaces.length || surfaces.some(face => !derived.includes(face))) throw new Error(`FAIL ${m[1]} 验收面与步骤不一致：字段=${fields['验收面']}，步骤实际路线=${derived.join('+') || '无'}`);
     const root = fields['证据落点'].match(/`([^`]+)\/runs\/TC-M\d+-\d+\/<run-id>\/result.json`/)?.[1];
     if (!root) throw new Error(`FAIL ${m[1]} evidence path not frozen`);
     const reasons: string[] = [];
@@ -24,9 +41,19 @@ export function parseCases(source: string): Case[] {
     if (fb) reasons.push(`目标态未达成（${[...new Set(fb)].join('/')}）`);
     if (fields['夜跑标记'] !== '是') reasons.push('夜跑标记=否（仅手工）');
     if (m[1] !== 'TC-M1-01') reasons.push('runner 尚未支持这类证据：本条全部参数组的运行时适配器');
-    return { id: m[1], title: m[2], fields, hash: digest(m[0]), root, reasons };
+    return { id: m[1], title: m[2], modules, surfaces, fields, hash: digest(m[0]), root, reasons };
   });
-  if (cases.length !== 55 || new Set(cases.map(c => c.id)).size !== 55) throw new Error(`FAIL case inventory expected 55, got ${cases.length}`);
+  const ids = cases.map(c => c.id);
+  if (new Set(ids).size !== ids.length) throw new Error(`FAIL case ids not unique: 解析 ${ids.length} 条出现重复`);
+  // 总数不写死：用 cases.md 自己的「场景 × 状态覆盖矩阵」作对照清单，增删用例必须连矩阵一起改，否则红。
+  const hasMatrix = /^## 场景 × 状态覆盖矩阵$/m.test(source);
+  const matrixIds = [...source.matchAll(/^\| M\d+ \| ((?:TC-M\d+-\d+、)*TC-M\d+-\d+) \|/gm)].flatMap(m => m[1].split('、'));
+  if (hasMatrix && !matrixIds.length) throw new Error('FAIL 覆盖矩阵标题存在但没有选中任何用例行（选择器漂移，先修解析再谈计数）');
+  if (matrixIds.length) {
+    const onlyMatrix = matrixIds.filter(id => !ids.includes(id));
+    const onlyCases = ids.filter(id => !matrixIds.includes(id));
+    if (onlyMatrix.length || onlyCases.length) throw new Error(`FAIL 覆盖矩阵与逐条用例不一致：矩阵 ${matrixIds.length} 条、实际解析 ${ids.length} 条；仅在矩阵=${onlyMatrix.join('、') || '无'}；仅在实际=${onlyCases.join('、') || '无'}`);
+  }
   return cases;
 }
 export function counts(rows: Row[]) {
@@ -56,7 +83,7 @@ export function inspectEvidence(row: Row, dir: string): string[] {
 export function validateReport(cases: Case[], rows: Row[], summary: ReturnType<typeof counts>, dirFor: (row: Row) => string): string[] {
   const errors: string[] = [];
   if (JSON.stringify(counts(rows)) !== JSON.stringify(summary)) errors.push('FAIL COUNTS top summary differs from case table');
-  if (rows.length !== 55 || new Set(rows.map(r => r.id)).size !== 55 || cases.some(c => !rows.some(r => r.id === c.id))) errors.push('FAIL INVENTORY must show all 55 cases exactly once');
+  if (rows.length !== cases.length || new Set(rows.map(r => r.id)).size !== cases.length || cases.some(c => !rows.some(r => r.id === c.id))) errors.push(`FAIL INVENTORY must show all ${cases.length} cases exactly once`);
   for (const row of rows) {
     const spec = cases.find(c => c.id === row.id);
     if (!spec) { errors.push(`FAIL unknown case ${row.id}`); continue; }

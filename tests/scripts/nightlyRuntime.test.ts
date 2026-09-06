@@ -14,7 +14,7 @@ vi.mock('node:os', async importOriginal => {
 vi.mock('node:child_process', async importOriginal => ({ ...await importOriginal<typeof import('node:child_process')>(), execFileSync: mocks.exec }));
 vi.mock('playwright', () => ({ chromium: { launch: mocks.launch } }));
 let home: string;
-const spec: Case = { id: 'TC-M1-01', title: 'fixture', hash: 'frozen-spec', root: '~/fixture', reasons: [], fields: {} };
+const spec: Case = { id: 'TC-M1-01', title: 'fixture', modules: ['上下文'], surfaces: ['api'], hash: 'frozen-spec', root: '~/fixture', reasons: [], fields: {} };
 beforeEach(() => {
   vi.clearAllMocks(); home = mkdtempSync(path.join(os.tmpdir(), 'nightly-runtime-')); mocks.home = home;
 });

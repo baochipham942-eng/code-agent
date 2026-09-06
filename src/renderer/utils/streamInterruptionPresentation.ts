@@ -88,7 +88,19 @@ export function humanizeInterruptedToolAction(
   );
 }
 
-/** Interrupted action is the intent; the status line already carries the terminal. */
+/**
+ * 中断行只说**做的是什么**，终态由状态行统一给，所以把动作文案里的终态词剥掉。
+ *
+ * 🔴 必须按**分段**剥，不能只看整串的首尾：连接器类动作会在包完 intentWrap 之后再追加
+ * ` · <操作目标>`（browser_action action=click selector=#save ⇒ `操作浏览器未成功 · #save`），
+ * 终态词被顶到中间，整串首尾匹配就剥不掉，一行里于是出现两个终态
+ * （ai-review #1693 第四轮）。
+ *
+ * 不用 'completed' 档取纯动作：那是过去式（「搜索了 weather」），对被中断的动作等于
+ * 谎报它做完了。
+ */
+const ACTION_SEGMENT_SEPARATOR = ' · ';
+
 function stripFailedTerminalFromAction(text: string, t: Translations): string {
   const wrap = t.toolStepHumanize.intentWrap.failed;
   const placeholder = '{action}';
@@ -96,9 +108,11 @@ function stripFailedTerminalFromAction(text: string, t: Translations): string {
   if (idx < 0) return text;
   const prefix = wrap.slice(0, idx);
   const suffix = wrap.slice(idx + placeholder.length);
-  if ((prefix === '' || text.startsWith(prefix)) && (suffix === '' || text.endsWith(suffix))) {
-    const stripped = text.slice(prefix.length, text.length - suffix.length).trim();
-    if (stripped) return stripped;
+  const segments = text.split(ACTION_SEGMENT_SEPARATOR);
+  const head = segments[0] ?? '';
+  if ((prefix === '' || head.startsWith(prefix)) && (suffix === '' || head.endsWith(suffix))) {
+    const stripped = head.slice(prefix.length, head.length - suffix.length).trim();
+    if (stripped) return [stripped, ...segments.slice(1)].join(ACTION_SEGMENT_SEPARATOR);
   }
   return text;
 }

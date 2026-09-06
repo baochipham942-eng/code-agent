@@ -266,6 +266,17 @@ describe('humanizeToolStep — per-category snapshots (zh)', () => {
     expect(humanizeToolStep(name, args, zh, undefined, 'failed')).toBe(expected);
   });
 
+  // ai-review #1693 第四轮：连接器类动作会在包完 intentWrap 之后再追加 ` · <操作目标>`，
+  // 终态词被顶到中间；只看整串首尾就剥不掉，一行里于是出现两个终态。
+  it('带操作目标的中断动作也要剥掉终态词（终态由状态行统一给）', () => {
+    const text = humanizeInterruptedToolAction({
+      name: 'browser_action',
+      arguments: { action: 'click', selector: '#save' },
+    }, zh);
+    expect(text).not.toContain('未成功');
+    expect(text).toContain('#save');
+  });
+
   it('interrupted 连接器和 MCP 复用同一套意图式', () => {
     expect(humanizeInterruptedToolAction({
       name: 'tmeetMeetingCreate',

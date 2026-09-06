@@ -197,6 +197,13 @@ function extractTargetFromValidatorPassedToolResult(
     return null;
   }
 
+  // 首选 lifecycle 成功分支落库的显式 targetFile（tool result 随消息持久化，
+  // 是跨会话唯一真实存在的"通过"记录）。旧形态（rollback 元数据 / 文本抽取）
+  // 保留作 in-run 信封之外的历史兜底。
+  if (typeof validation.targetFile === 'string' && validation.targetFile.length > 0) {
+    return resolveArtifactRepairPath(ctx, validation.targetFile);
+  }
+
   const rollback = metadata.artifactRepairRollback;
   if (isRecord(rollback) && typeof rollback.targetFile === 'string' && rollback.targetFile.length > 0) {
     return resolveArtifactRepairPath(ctx, rollback.targetFile);

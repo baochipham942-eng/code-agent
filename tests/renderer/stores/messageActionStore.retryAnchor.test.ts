@@ -65,6 +65,25 @@ describe('regenerate 的重试锚点', () => {
     expect(send.mock.calls[0][1]).toEqual({ attachments: [attachment] });
   });
 
+  // ai-review #1694 第五轮①：纯附件消息（图片直发无文字）也要留锚点。
+  it('纯附件消息（retryPrompt 为空串）也能重试', () => {
+    const attachment = { id: 'f2', name: 'b.png', type: 'image', size: 1, data: 'y' } as never;
+    install([
+      {
+        id: 'err-only-att',
+        role: 'assistant',
+        content: '发送失败',
+        timestamp: 3,
+        metadata: { retryPrompt: '', retryAttachments: [attachment] },
+      },
+    ]);
+
+    useMessageActionStore.getState().regenerateLast();
+
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0][1]).toEqual({ attachments: [attachment] });
+  });
+
   it('没有锚点时保持原行为：往回找最近的 user 消息', () => {
     install([
       { id: 'u-a', role: 'user', content: '问题 A', timestamp: 1 },

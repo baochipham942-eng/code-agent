@@ -394,6 +394,51 @@ describe('失败回滚不覆盖用户在这期间新打的内容', () => {
     expect(useAppshotsStore.getState().pending).toMatchObject({ requestId: 'new-shot' });
   });
 
+  // ai-review #1694 第五轮②：守卫要覆盖回滚会写回的每一项，会话/产物引用也在其中。
+  it('用户为下一条选了会话引用时不还原（引用也是回滚项）', async () => {
+    let resolveSend: ((sent: boolean) => void) | undefined;
+    const onSend = vi.fn(() => new Promise<boolean>((resolve) => { resolveSend = resolve; }));
+    const setValueSpy = vi.fn();
+
+    function RefHarness() {
+      const [value, setValue] = useState(DRAFT);
+      const [sessionReferences, setSessionReferences] = useState<never[]>([]);
+      const { handleSubmit } = useChatInputSubmit(makeParams({
+        value,
+        setValue: (next: never) => { setValueSpy(next); setValue(next as never); },
+        sessionReferences,
+        setSessionReferences,
+        onSend,
+        currentSessionId: 'session-refs',
+      }));
+      return (
+        <div>
+          <span data-testid="draft">{value}</span>
+          <span data-testid="refs">{sessionReferences.length}</span>
+          <button type="button" onClick={() => void handleSubmit()}>send</button>
+          <button
+            type="button"
+            onClick={() => setSessionReferences([{ sessionId: 'ref-b', title: 'B' } as never])}
+          >pick</button>
+        </div>
+      );
+    }
+
+    render(<RefHarness />);
+    fireEvent.click(screen.getByText('send'));
+    await waitFor(() => expect(onSend).toHaveBeenCalled());
+    await waitFor(() => expect(screen.getByTestId('draft').textContent).toBe(''));
+    fireEvent.click(screen.getByText('pick'));
+    await waitFor(() => expect(screen.getByTestId('refs').textContent).toBe('1'));
+    setValueSpy.mockClear();
+
+    await act(async () => { resolveSend?.(false); });
+
+    // 整份不还：旧草稿不许回来，用户新选的引用也不许被旧引用顶掉
+    expect(screen.getByTestId('draft').textContent).toBe('');
+    expect(screen.getByTestId('refs').textContent).toBe('1');
+  });
+
   it('输入框仍是空的（用户没打字）⇒ 照常把草稿还回去', async () => {
     const onSend = vi.fn(async () => false);
 

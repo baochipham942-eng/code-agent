@@ -1116,11 +1116,13 @@ export function useAgentIPC({
           // 乐观用户消息被撤了，重试锚点必须跟着走：regenerateMessage 默认往回找最近的
           // user 消息，撤掉这条之后它会找到**上一轮**并把上一轮重发一遍；首条消息失败时
           // 则一条都找不到、重试变哑（ai-review #1694）。把失败内容挂在错误消息上当锚点。
-          ...(addedOptimisticUser && userMessage.content?.trim()
+          // 锚点条件锚在「我们撤了一条消息」上，不锚在「它有没有文本」上：
+          // 纯附件消息（图片直发、无文字）content 是空的，按文本判就一点锚点都不留，
+          // 用户既恢复不了草稿也重试不了（ai-review #1694 第五轮）。
+          ...(addedOptimisticUser && (userMessage.content?.trim() || userMessage.attachments?.length)
             ? {
                 metadata: {
-                  retryPrompt: userMessage.content,
-                  // 附件也要进锚点：只带文本，用户点重试就把文件丢了（ai-review #1694 第四轮）
+                  retryPrompt: userMessage.content ?? '',
                   ...(userMessage.attachments?.length
                     ? { retryAttachments: userMessage.attachments }
                     : {}),

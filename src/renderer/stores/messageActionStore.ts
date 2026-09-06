@@ -83,10 +83,11 @@ export const useMessageActionStore = create<MessageActionState>((set, get) => ({
     const anchor = messages[idx].metadata as
       { retryPrompt?: unknown; retryAttachments?: unknown } | undefined;
     const retryPrompt = anchor?.retryPrompt;
-    if (typeof retryPrompt === 'string' && retryPrompt.trim()) {
-      const retryAttachments = Array.isArray(anchor?.retryAttachments)
-        ? (anchor.retryAttachments as MessageAttachment[])
-        : undefined;
+    const retryAttachments = Array.isArray(anchor?.retryAttachments)
+      ? (anchor.retryAttachments as MessageAttachment[])
+      : undefined;
+    // 纯附件消息的 retryPrompt 是空串——有附件就照样能重试，别按文本判。
+    if (typeof retryPrompt === 'string' && (retryPrompt.trim() || retryAttachments?.length)) {
       _send(retryPrompt, retryAttachments?.length ? { attachments: retryAttachments } : undefined);
       return;
     }

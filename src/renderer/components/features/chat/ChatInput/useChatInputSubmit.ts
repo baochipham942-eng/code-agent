@@ -181,8 +181,15 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
   // 失败回执可能几秒后才回来，那时闭包里的 value / attachments / currentSessionId 都是
   // 发送那一刻的旧值，拿它们判「用户动没动过」「还在不在同一个会话」必然判错
   // （ai-review #1694 第三轮）。这个 ref 每次渲染刷新，回滚时读的是**当下**的真值。
-  const latestComposerRef = useRef({ value, attachments, currentSessionId });
-  latestComposerRef.current = { value, attachments, currentSessionId };
+  // 🔴 这里列的字段必须与下面 restoreDraft **写回的字段一一对应**：守卫漏一项，
+  // 那一项就会被旧草稿悄悄覆盖（ai-review #1694 第四/五轮各漏了 appshot 与两种引用）。
+  // 增删回滚项时同步改这里，两处就挨着放，别分开。
+  const latestComposerRef = useRef({
+    value, attachments, currentSessionId, sessionReferences, artifactReferences,
+  });
+  latestComposerRef.current = {
+    value, attachments, currentSessionId, sessionReferences, artifactReferences,
+  };
 
 
   // 版本同时绑定能力选择和会话；handoff 保留同一轮版本，切槽或再选择都会失效。
@@ -552,10 +559,10 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
           // 判据取**当下**的真值，不取闭包里发送那一刻的旧值。
           const latest = latestComposerRef.current;
           if (latest.currentSessionId !== draftSnapshot.sessionId) return;
+          // 「用户动过了吗」= 回滚会写回的每一项现在都还是清空后的样子。
           if (latest.value.trim() || latest.attachments.length) return;
-          // appshot 存在自己的 store 里，不在 value/attachments 这两个 state 上：
-          // 用户在空输入框重新截了一张，守卫看 value/attachments 仍是空的就放行，
-          // 旧截图把新截图顶掉（ai-review #1694 第四轮）。守卫要覆盖**所有会被回滚写回的项**。
+          if (latest.sessionReferences?.length || latest.artifactReferences?.length) return;
+          // appshot 存在自己的 store 里，不在上面那些 state 上（第四轮漏的就是它）。
           if (useAppshotsStore.getState().pending) return;
           setValue(draftSnapshot.value);
           setAttachments(draftSnapshot.attachments);

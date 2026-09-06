@@ -2,6 +2,19 @@
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { signOut } from '@/app/login/actions';
 import Link from 'next/link';
+import {
+  DIMENSION_LABELS,
+  POST_LAUNCH_DIMENSIONS,
+  fetchQualityRows,
+  formatRate,
+  formatRubricKey,
+  passRate,
+  rollupByWeek,
+  type QualityBucket,
+} from '@/lib/postlaunch';
+
+/** 首页「上线后质量」块的回看窗口。 */
+const POST_LAUNCH_WINDOW_DAYS = 28;
 
 type SessionListRow = {
   id: string;
@@ -18,7 +31,7 @@ type SessionListRow = {
 export default async function Dashboard() {
   const supabase = await createSupabaseServerClient();
 
-  const [{ count: totalSessions }, { count: errorSessions }, { data: recent }] = await Promise.all([
+  const [{ count: totalSessions }, { count: errorSessions }, { data: recent }, quality] = await Promise.all([
     supabase.from('telemetry_sessions').select('*', { count: 'exact', head: true }),
     supabase
       .from('telemetry_sessions')
@@ -32,7 +45,10 @@ export default async function Dashboard() {
       .order('uploaded_at', { ascending: false })
       .limit(10)
       .returns<SessionListRow[]>(),
+    fetchQualityRows(supabase, POST_LAUNCH_WINDOW_DAYS),
   ]);
+
+  const qualityBuckets = rollupByWeek(quality.rows);
 
   const errorRate =
     totalSessions && totalSessions > 0
@@ -64,6 +80,8 @@ export default async function Dashboard() {
         <Stat label="错误会话" value={errorSessions ?? 0} accent="red" />
         <Stat label="错误率" value={errorRate} />
       </section>
+
+      <PostLaunchQuality buckets={qualityBuckets} truncated={quality.truncated} error={quality.error} />
 
       <section className="mb-8">
         <h2 className="text-xs uppercase tracking-wide text-zinc-500 mb-3">按 sessionId 查根因</h2>
@@ -163,4 +181,112 @@ function Pill({ status }: { status: string | null }) {
   };
   const color = (status && map[status]) || 'bg-zinc-700/60 text-zinc-300';
   return <span className={`px-2 py-0.5 rounded text-xs ${color}`}>{status ?? '—'}</span>;
+}
+
+function PostLaunchQuality({
+  buckets,
+  truncated,
+  error,
+}: {
+  buckets: QualityBucket[];
+  truncated: boolean;
+  error: string | null;
+}) {
+  return (
+    <section className="mb-8">
+      <div className="flex items-baseline justify-between gap-3 mb-3">
+        <h2 className="text-xs uppercase tracking-wide text-zinc-500">上线后质量</h2>
+        <span className="text-xs text-zinc-600">
+          近 {POST_LAUNCH_WINDOW_DAYS / 7} 周 · 已剔除脚本与评测会话 · 信号轮与抽样轮分开看
+        </span>
+      </div>
+      {truncated ? (
+        <p className="mb-3 px-3 py-2 rounded border border-amber-500/40 bg-amber-500/10 text-amber-300 text-xs">
+          数据量超过单次读取上限，下面只是这个窗口的一部分，不是全部。缩短窗口或按用户下钻再看。
+        </p>
+      ) : null}
+      {error ? (
+        // 读取失败绝不能显示成「暂无评分」——那会让人以为没人评过，还引导去开一个已经开着的开关。
+        <p className="px-3 py-2 rounded border border-red-500/40 bg-red-500/10 text-red-300 text-sm">
+          读取失败：{error}
+        </p>
+      ) : buckets.length === 0 ? (
+        <p className="text-zinc-500 text-sm py-4">
+          暂无上线后评分 — 用户在「隐私防线 → 数据共享」里打开「上线后质量评分」并跑过一次评分后出现在这里。
+        </p>
+      ) : (
+        <div className="rounded-lg border border-zinc-800 overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-zinc-900/60 text-zinc-500 text-xs">
+              <tr>
+                <th className="text-left px-3 py-2 font-normal">周</th>
+                <th className="text-left px-3 py-2 font-normal">版本</th>
+                <th className="text-left px-3 py-2 font-normal">来源</th>
+                <th className="text-right px-3 py-2 font-normal">轮</th>
+                {POST_LAUNCH_DIMENSIONS.map((dimension) => (
+                  <th key={dimension} className="text-right px-3 py-2 font-normal">
+                    {DIMENSION_LABELS[dimension]}
+                  </th>
+                ))}
+                <th className="text-right px-3 py-2 font-normal">$</th>
+              </tr>
+            </thead>
+            <tbody>
+              {buckets.map((bucket) => (
+                <tr key={bucket.key} className="border-t border-zinc-900 hover:bg-zinc-900/40">
+                  <td className="px-3 py-2 text-zinc-400 text-xs whitespace-nowrap">
+                    {bucket.weekStart.slice(0, 10)}
+                  </td>
+                  <td className="px-3 py-2 text-zinc-400 text-xs whitespace-nowrap">
+                    {bucket.appVersion ?? '—'}
+                    {bucket.promptVersion ? (
+                      <span className="text-zinc-600"> · {bucket.promptVersion}</span>
+                    ) : null}
+                    <span className="block text-zinc-600">
+                      {formatRubricKey({ judgeVersion: bucket.judgeVersion, rubricVersion: bucket.rubricVersion })}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 text-xs">
+                    <span
+                      className={
+                        bucket.sampledBy === 'signal'
+                          ? 'px-2 py-0.5 rounded bg-amber-500/20 text-amber-300'
+                          : 'px-2 py-0.5 rounded bg-zinc-700/60 text-zinc-300'
+                      }
+                    >
+                      {bucket.sampledBy === 'signal' ? '信号轮' : '抽样轮'}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums">
+                    {bucket.turns}
+                    {bucket.judgeUnavailableTurns > 0 ? (
+                      <span className="text-amber-400 text-xs"> ·{bucket.judgeUnavailableTurns} 未判</span>
+                    ) : null}
+                  </td>
+                  {POST_LAUNCH_DIMENSIONS.map((dimension) => {
+                    const tally = bucket.dims[dimension];
+                    const rate = passRate(tally);
+                    return (
+                      <td
+                        key={dimension}
+                        className={`px-3 py-2 text-right tabular-nums ${
+                          rate !== null && rate < 0.8 ? 'text-red-400' : ''
+                        }`}
+                        title={`${tally.passed}/${tally.judged} 有判决的轮通过`}
+                      >
+                        {formatRate(rate)}
+                      </td>
+                    );
+                  })}
+                  <td className="px-3 py-2 text-right tabular-nums text-zinc-400 text-xs">
+                    {bucket.costUsd.toFixed(4)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
 }

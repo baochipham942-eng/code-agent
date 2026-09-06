@@ -23,7 +23,13 @@ import { app } from '../platform';
 import { getTelemetryStorage } from './telemetryStorage';
 import { scrubString } from '../../shared/observability/scrubEvent';
 import { TELEMETRY_UPLOAD_RESILIENCE } from '../../shared/constants';
-import type { TelemetryDiagnosticBundleRecord, TelemetryFeedback, TelemetryRendererBundleAttempt, TelemetrySession, TelemetryTurn } from '../../shared/contract/telemetry';
+import type { TelemetryDiagnosticBundleRecord, TelemetryFeedback, TelemetryRendererBundleAttempt, TelemetrySession, TelemetryTurn, TelemetryTurnScoreRecord } from '../../shared/contract/telemetry';
+import {
+  getUnsyncedTurnScores,
+  markTurnScoresSynced,
+  redactPostLaunchReason,
+} from '../testing/postlaunch/postLaunchScoreStore';
+import { getDatabase } from '../services/core/databaseService';
 
 const logger = createLogger('TelemetryUploader');
 
@@ -351,10 +357,36 @@ export class TelemetryUploaderService implements Disposable {
 
       // 6) 会话和 turn 都写成功后再标记已同步；否则下轮继续补传
       storage.markSessionsSynced(sessions.map((s) => s.id));
+
+      // 7) 上线后分数行（ADR-063 §6.3）。**必须排在 markSessionsSynced 之后**：
+      // 云端 telemetry_turn_scores.session_id 有外键指向 telemetry_sessions，
+      // getUnsyncedTurnScores 靠本地 session.synced_at 判断「这条会话已经在云上了」，
+      // 本轮刚传上去的会话要先落这个标记，它的分数行才会在同一轮跟着走。
+      // 分数上传失败不回退前面几段已经打好的标记——分数是独立可重试的一段。
+      // 分数表的每一条 SQL 都住在 postLaunchScoreStore（这张表的家），这里只借它的 db handle。
+      const scoreDb = getDatabase().getDb();
+      const turnScores = scoreDb ? getUnsyncedTurnScores(scoreDb, user.id, BATCH_SIZE) : [];
+      if (scoreDb && turnScores.length > 0) {
+        const { error: scoreError } = await supabase
+          .from('telemetry_turn_scores')
+          .upsert(
+            turnScores.map((score) => this.toTurnScoreRow(score, user.id, appVersion)),
+            { onConflict: 'turn_id' },
+          );
+        if (scoreError) {
+          this.recordUploadFailure('telemetry_turn_scores', scoreError);
+          uploadFailed = true;
+        } else {
+          // 传整条快照而不是只传 turn_id：上传在飞时被重评的那一行 scored_at 已经变了，
+          // 匹配不上就继续留在待传队列，不会被标成「已同步」而丢掉新判决。
+          markTurnScoresSynced(scoreDb, turnScores);
+        }
+      }
+
       if (!uploadFailed) {
         this.uploadHealth.lastUploadAt = Date.now();
       }
-      logger.info('Telemetry uploaded', { sessions: sessions.length, turns: turnRows.length, feedback: feedback.length, rendererBundleAttempts: rendererBundleAttempts.length, diagnosticBundles: diagBundles.length });
+      logger.info('Telemetry uploaded', { sessions: sessions.length, turns: turnRows.length, feedback: feedback.length, rendererBundleAttempts: rendererBundleAttempts.length, diagnosticBundles: diagBundles.length, turnScores: turnScores.length });
       return sessions.length;
     } catch (err) {
       logger.error('Telemetry upload error', err as Error);
@@ -387,6 +419,57 @@ export class TelemetryUploaderService implements Disposable {
       total_tool_calls: s.totalToolCalls,
       tool_success_rate: s.toolSuccessRate,
       total_errors: s.totalErrors,
+      // 会话是谁起的。headless（neo CLI / 评测真跑桥）与真实用户会话同为 session_type='chat'，
+      // 不传这一列云端就没法把探针剔出上线后分母（K2 落了本机标记，刀 3 才补上云端这一列）。
+      origin_kind: s.originKind ?? null,
+    };
+  }
+
+  /**
+   * 分数行的可上云投影（ADR-063 §1）。列表就是允许出机器的那一份，一列不多：
+   * 没有 prompt / 回复 / 工具入参出参，`signals` 只有信号名，`reason_redacted` 是一行人话。
+   * 本机 telemetry_turn_scores 的 prompt_hash（去重键）与 budget_cost_usd（本地预算账）
+   * 在取数的 SELECT 里就没读出来，这里也无从传起。
+   */
+  private toTurnScoreRow(score: TelemetryTurnScoreRecord, userId: string, appVersion: string | null) {
+    // 双保险：这一行理由本机写库前已经过一次同一个脱敏闸，出机器前再过一次。
+    // 打分器与这里共用 redactPostLaunchReason，两处口径不会分叉。
+    const reason = redactPostLaunchReason(score.reasonRedacted);
+    // signals 本机列是 TEXT JSON，解析成数组写 JSONB（照 toDiagnosticBundleRow 的形态）；
+    // 解析不了就当没有信号——宁可少一条统计，也不把原始串塞进云端。
+    const signals: unknown = ((): unknown => {
+      try {
+        const parsed: unknown = JSON.parse(score.signals);
+        return Array.isArray(parsed) ? parsed : [];
+      } catch {
+        return [];
+      }
+    })();
+    return {
+      turn_id: score.turnId,
+      session_id: score.sessionId,
+      user_id: userId,
+      device_id: this.deviceId,
+      app_version: score.appVersion ?? appVersion,
+      prompt_version: score.promptVersion,
+      scored_at: score.scoredAt,
+      scored_day: score.scoredDay,
+      turn_started_at: score.turnStartedAt,
+      judge_version: score.judgeVersion,
+      rubric_version: score.rubricVersion,
+      judge_model: score.judgeModel,
+      dim_goal: score.dimGoal,
+      dim_orchestration: score.dimOrchestration,
+      dim_tools: score.dimTools,
+      dim_permission: score.dimPermission,
+      dim_safety: score.dimSafety,
+      dim_artifact: score.dimArtifact,
+      failure_class: score.failureClass,
+      reason_redacted: reason.text,
+      redacted: score.redacted || reason.redacted,
+      signals,
+      cost_usd: score.costUsd,
+      sampled_by: score.sampledBy,
     };
   }
 

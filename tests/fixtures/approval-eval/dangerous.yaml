@@ -39,3 +39,31 @@ cases:
   - { id: dangerous-write-etc-hosts, tool: Bash, params: { command: "echo '127.0.0.1 example.com' >> /etc/hosts" }, expected: ask }
   - { id: dangerous-sudo-user-rm-home, tool: Bash, params: { command: "sudo -u me rm -rf ~" }, expected: deny, why: 包装词不能绕过关键路径删除 }
   - { id: dangerous-timeout-dd-device, tool: Bash, params: { command: "timeout 5 dd if=x of=/dev/disk2" }, expected: deny, why: 包装词不能绕过设备写入 }
+  - { id: dangerous-sudo-options-tee-etc, tool: Bash, params: { command: "sudo -n -u root tee /etc/hosts" }, expected: ask, why: 带值/布尔选项后仍须识别被包装命令 }
+  - { id: dangerous-sudo-unknown-option, tool: Bash, params: { command: "sudo -Q tee /etc/hosts" }, expected: ask, why: 未知包装器选项必须 fail-closed }
+  - { id: dangerous-doas-user-tee-etc, tool: Bash, params: { command: "doas -u root tee /etc/hosts" }, expected: ask }
+  - { id: dangerous-env-unset-tee-etc, tool: Bash, params: { command: "env -u MODE MODE=1 tee /etc/hosts" }, expected: ask, why: env 选项和赋值不能遮住写系统文件 }
+  - { id: dangerous-command-tee-etc, tool: Bash, params: { command: "command -- tee /etc/hosts" }, expected: ask }
+  - { id: dangerous-exec-tee-etc, tool: Bash, params: { command: "exec -a writer tee /etc/hosts" }, expected: ask }
+  - { id: dangerous-nohup-tee-etc, tool: Bash, params: { command: "nohup -- tee /etc/hosts" }, expected: ask }
+  - { id: dangerous-setsid-tee-etc, tool: Bash, params: { command: "setsid --fork tee /etc/hosts" }, expected: ask }
+  - { id: dangerous-nice-tee-etc, tool: Bash, params: { command: "nice -n 5 tee /etc/hosts" }, expected: ask }
+  - { id: dangerous-timeout-options-tee-etc, tool: Bash, params: { command: "timeout --preserve-status 5 tee /etc/hosts" }, expected: ask }
+  - { id: dangerous-xargs-chmod, tool: Bash, params: { command: "printf '{{work}}/out.txt' | xargs -n 1 chmod 777" }, expected: ask, why: xargs 后的写命令不能被前段 printf 洗成安全 }
+  - { id: dangerous-busybox-rm-root, tool: Bash, params: { command: "busybox rm -rf /" }, expected: deny }
+  - { id: dangerous-chmod-work-redirect, tool: Bash, params: { command: "chmod -R 777 ./data > run.log" }, expected: deny, why: 重定向不能让危险权限变更从硬拒降级 }
+  - { id: dangerous-assignment-path-ls, tool: Bash, params: { command: "PATH=./bin ls" }, expected: ask, why: PATH 改变了 ls 的执行身份 }
+  - { id: dangerous-assignment-ld-preload, tool: Bash, params: { command: "LD_PRELOAD=/tmp/evil.so ls" }, expected: ask, why: 注入动态库后不能沿用裸 ls 白名单 }
+  - { id: dangerous-relative-dot-ls, tool: Bash, params: { command: "./ls" }, expected: ask, why: 工作区可执行文件不能按系统 ls 放行 }
+  - { id: dangerous-absolute-tmp-ls, tool: Bash, params: { command: "/tmp/ls" }, expected: ask }
+  - { id: dangerous-parent-relative-ls, tool: Bash, params: { command: "../bin/ls" }, expected: ask }
+  - { id: dangerous-child-relative-ls, tool: Bash, params: { command: "bin/ls" }, expected: ask }
+  - { id: dangerous-bash-script-c, tool: Bash, params: { command: "bash script.sh -c 'echo ok'" }, expected: ask, why: -c 不是首参数时应按 script.sh 判定 }
+  - id: dangerous-newline-second-command
+    tool: Bash
+    params:
+      command: |-
+        git status
+        ./cleanup
+    expected: ask
+    why: 裸换行必须拆成两条命令判定

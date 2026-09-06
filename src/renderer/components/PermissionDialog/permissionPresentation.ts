@@ -18,20 +18,22 @@ function basename(target: string): string {
  * 设备节点与 DOS 保留名用完整路径展示，不当文件名截断。
  */
 /**
- * 明确的字符设备白名单——写它们不会"覆盖已有内容"。
- * 判据必须是**逐个点名**而不是 `/dev/` 前缀：Linux 上 `/dev/shm/report.md` 是普通文件，
- * 按前缀放行会把「可能覆盖现有内容」的警告从一个真会被覆盖的文件上摘掉（ai-review #1692）。
+ * 只有能**逐字**证明是设备，才关掉「可能覆盖现有内容」的警告。
+ *
+ * 这里刻意**不做任何归一化**（不转反斜杠、不折大小写、不映射 /private/dev、不认裸 NUL）——
+ * 归一化每加一条，就多一种"普通文件长得像设备"的构造法，ai-review #1692 连着三轮各找到一个：
+ * `/dev/shm/report.md`（前缀）、POSIX 上名为 `NUL` 的文件（裸保留名）、`\dev\null`（反斜杠归一化）。
+ * 审批卡拿到的是 host **未解析**的原始 file_path，渲染层没有能力判断它最终指向什么，
+ * 所以方向固定 fail-safe：**证不出是设备就保留覆盖警告**（多提示一句，永远比少提示一句安全）。
  */
+const KNOWN_CHAR_DEVICES: ReadonlySet<string> = new Set([
+  '/dev/null', '/dev/zero', '/dev/full', '/dev/random', '/dev/urandom',
+  '/dev/tty', '/dev/stdin', '/dev/stdout', '/dev/stderr',
+  '//./NUL', '//./CON', '//./PRN', '//./AUX',
+]);
+
 function isKnownCharDevice(target: string): boolean {
-  const normalized = target.replace(/\\/g, '/').replace(/\/+$/u, '');
-  const lower = normalized.toLowerCase().replace(/^\/private\/dev\//u, '/dev/');
-  if (/^\/dev\/(null|zero|full|random|urandom|tty|stdin|stdout|stderr|fd\/\d+)$/u.test(lower)) return true;
-  // 只认 Windows 的设备命名空间形式 `\\.\NUL`——**裸名 `NUL` 不认**：审批卡拿到的是
-  // host 未解析的原始 file_path，在 macOS/Linux 上 `NUL`/`CON` 完全可以是普通文件，
-  // 无平台判断地当设备会把覆盖警告从真文件上摘掉（ai-review #1692 第二轮）。
-  // 方向固定为 fail-safe：**证不出是设备，就保留覆盖警告**；Windows 上裸名至多是多提示一句。
-  if (/^\/\/\.\/(nul|con|prn|aux|com[1-9]|lpt[1-9])$/i.test(normalized)) return true;
-  return false;
+  return KNOWN_CHAR_DEVICES.has(target) || /^\/dev\/fd\/\d+$/u.test(target);
 }
 
 /** 标题是否保留完整路径。比设备白名单宽是**有意的**：多显示路径无害，少显示才误导。 */

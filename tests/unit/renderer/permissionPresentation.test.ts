@@ -205,31 +205,22 @@ describe('device / special path copy', () => {
   });
 
   // ai-review #1692：`/dev/` 前缀不能当「设备文件」判据——Linux 上 /dev/shm/<name> 是普通文件。
-  // 标题保留全路径无害，但「可能覆盖现有内容」的警告绝不能因为前缀命中就被摘掉。
-  it('/dev/shm 下的普通文件：标题可留全路径，但覆盖警告必须保留', () => {
+
+
+  // ai-review #1692 第三轮：反斜杠归一化会把 POSIX 上名为 `\dev\null` 的普通文件当成设备。
+  // 判据已改为逐字精确、零归一化——下面三条是三轮各自的构造法，一起钉住。
+  it.each([
+    ['/dev/shm/report.md', '前缀'],
+    ['NUL', '裸 Windows 保留名'],
+    ['\\dev\\null', '反斜杠归一化'],
+  ])('POSIX 普通文件 %s（%s）必须保留覆盖警告', (path) => {
     const request: PermissionRequest = {
       ...baseRequest,
       tool: 'Write',
       type: 'file_write',
-      details: { path: '/dev/shm/report.md' },
+      details: { path },
       boundary: { id: 'file.external_write' },
     };
-
-    const consequence = permissionConsequence(request, zh);
-    expect(consequence).toContain('可能覆盖现有内容');
-    expect(consequence).not.toContain('设备文件');
-  });
-
-  // ai-review #1692 第二轮：POSIX 上 NUL/CON 可以是普通文件，审批卡拿到的是未解析的原始路径。
-  it('POSIX 上名为 NUL 的普通文件：覆盖警告必须保留（裸 Windows 保留名不认作设备）', () => {
-    const request: PermissionRequest = {
-      ...baseRequest,
-      tool: 'Write',
-      type: 'file_write',
-      details: { path: 'NUL' },
-      boundary: { id: 'file.external_write' },
-    };
-
     const consequence = permissionConsequence(request, zh);
     expect(consequence).toContain('可能覆盖现有内容');
     expect(consequence).not.toContain('设备文件');

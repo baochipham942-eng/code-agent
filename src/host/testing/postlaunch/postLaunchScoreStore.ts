@@ -331,7 +331,9 @@ export function listReflowCandidates(
       feedbackAt: feedback.created_at,
     });
   }
-  return [...candidates.values()].slice(0, limit);
+  return [...candidates.values()]
+    .sort((a, b) => (b.feedbackAt ?? 0) - (a.feedbackAt ?? 0))
+    .slice(0, limit);
 }
 
 export function hasReflowCandidate(

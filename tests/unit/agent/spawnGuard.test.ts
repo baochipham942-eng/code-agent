@@ -15,6 +15,13 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
     error: vi.fn(),
     debug: vi.fn(),
   }),
+  // getSpawnedAgent 的 import 链（serviceRegistry → sessionManager）需要默认 logger 实例
+  logger: {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+  },
 }));
 
 import {
@@ -23,6 +30,7 @@ import {
   createTextMessage,
   createAgentMessage,
 } from '../../../src/host/agent/spawnGuard';
+import { getSpawnedAgent } from '../../../src/host/agent/multiagentTools/spawnAgentStatus';
 import type { SubagentResult } from '../../../src/host/agent/subagentExecutor';
 import { SPAWN_GUARD } from '../../../src/shared/constants/agent';
 import {
@@ -730,6 +738,19 @@ describe('SpawnGuard', () => {
       await registerSettled(guard, 'a1', 'coder', makeResult());
       guard.drainNotifications();
       expect(guard.drainNotifications()).toEqual([]);
+    });
+
+    it('子代理部分装配完成时，完成通知与 getSpawnedAgent 都带 missingTools（N-SUBAGENT-ZEROTOOLS 返修）', async () => {
+      await registerSettled(guard, 'mt1', 'coder', makeResult({
+        missingTools: ['mcp__cua-driver__*'],
+      }));
+
+      const notes = guard.drainNotifications();
+      expect(notes).toHaveLength(1);
+      expect(notes[0]).toContain('mcp__cua-driver__*');
+      expect(notes[0]).toContain('missing_tools');
+
+      expect(getSpawnedAgent('mt1')?.missingTools).toEqual(['mcp__cua-driver__*']);
     });
 
     it('isTaskReady 在 blocker running 时返回 false', () => {

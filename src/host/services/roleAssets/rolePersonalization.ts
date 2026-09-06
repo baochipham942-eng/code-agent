@@ -66,6 +66,15 @@ export function toRoleBoundaryRunAllowlist(tools: readonly string[]): string[] {
   return tools.length > 0 ? [...tools] : [ROLE_BOUNDARY_DENY_ALL_SENTINEL];
 }
 
+/**
+ * 角色「不允许对外发送」硬边界是否开启（出口闸判据的单一真源）。
+ * 子代理出口闸对通配展开后的具体工具名重判时用它读开关；具体某个工具算不算
+ * 「对外发送」由 isExternalSideEffectTool（externalSideEffect.ts）裁定。
+ */
+export function isExternalSendingBlockedForRole(roleId: string): boolean {
+  return readRolePersonalization(roleId).boundaries.disallowExternalSending;
+}
+
 /** 在子代理分流前统一收窄 request，native / external engine 共用。 */
 export function applyRoleBoundaryToSubagentRequest<
   T extends { config: { roleId?: string; availableTools: string[] } },

@@ -4,7 +4,10 @@
 
 import { CANCELLATION_TIMEOUTS, SUBAGENT_EXECUTION_TIMEOUTS } from '../../shared/constants';
 import { SUBAGENT_IDLE } from '../../shared/constants/agent';
-import { createChildAbortController, createTimedAbortController } from './shutdownProtocol';
+import { join as pathJoin } from 'path';
+import { createChildAbortController, createTimedAbortController, initiateShutdown } from './shutdownProtocol';
+import { getUserDataPath } from '../platform/appPaths';
+import { captureWorkspacePatch } from '../services/checkpoint/taskPatchService';
 
 const DEFAULT_TIMEOUT_MS = SUBAGENT_EXECUTION_TIMEOUTS.ROLE_EXECUTION_MINIMUM;
 
@@ -126,4 +129,50 @@ export function createSubagentCancellationLifecycle(options: {
     markToolEnd,
     stopIdleWatchdog: () => clearInterval(idleWatchdog),
   };
+}
+
+/**
+ * 取消收口的 flush 阶段（N-SUBAGENT-ZEROTOOLS 返修：为 max-lines 硬限从
+ * executor 拆出）：four-phase shutdown + partial transcript 落盘 + 工作区 patch 抢救。
+ * R5 — agentPromise 传 Promise.resolve()：这是运行中 executor 自己的循环，grace
+ * 阶段不能等自己；abort 已传播到 inference/tools，它们的清理并行跑。
+ */
+export async function flushSubagentCancellation(options: {
+  agentName: string;
+  agentTask: { id: string; saveToDisk(sessionDir: string): Promise<unknown> };
+  controller: AbortController;
+  sessionId: string;
+  worktreePath?: string;
+  cwd?: string;
+  logger: { warn(message: string, error?: unknown): void };
+}): Promise<void> {
+  const { agentName, agentTask, controller, sessionId, worktreePath, cwd, logger } = options;
+  // sessionDir convention: <userDataPath>/sessions/<sessionId>.
+  // saveToDisk creates the agent subdir itself; we just hand it the session root.
+  const sessionDir = pathJoin(getUserDataPath(), 'sessions', sessionId);
+  try {
+    await initiateShutdown(controller, Promise.resolve(), {
+      gracePeriodMs: CANCELLATION_TIMEOUTS.GRACEFUL_SHUTDOWN_GRACE,
+      label: `${agentName}:${agentTask.id}`,
+      onFlush: async () => {
+        try {
+          await agentTask.saveToDisk(sessionDir);
+        } catch (err) {
+          logger.warn(`[${agentName}] saveToDisk failed during flush`, err);
+        }
+        // 取消时把工作目录的文件改动抢救成 patch（saveToDisk 只存 transcript）。
+        // 有 worktree 用 worktree 路径，否则用会话工作目录。best-effort 不阻塞取消。
+        try {
+          const patchDir = worktreePath || cwd;
+          if (patchDir) {
+            await captureWorkspacePatch(patchDir, agentTask.id, 'cancel');
+          }
+        } catch (err) {
+          logger.warn(`[${agentName}] captureWorkspacePatch failed during flush`, err);
+        }
+      },
+    });
+  } catch (err) {
+    logger.warn(`[${agentName}] initiateShutdown threw`, err);
+  }
 }

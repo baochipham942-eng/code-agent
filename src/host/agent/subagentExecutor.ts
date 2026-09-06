@@ -19,10 +19,8 @@ import {
   getAgentMaxBudget,
 } from './agentDefinition';
 import { routeExternalSubagentExecution } from './subagentExecutionRouter';
-import { PROVIDER_REGISTRY } from '../model/modelRouter';
 import { compactSubagentMessages } from './subagentCompaction';
 import { SUBAGENT_COMPACTION } from '../../shared/constants';
-import { initiateShutdown } from './shutdownProtocol';
 import type { CancellationReason } from '../../shared/contract/cancellation';
 import { normalizeCancellationReason } from '../../shared/contract/cancellation';
 import {
@@ -30,10 +28,6 @@ import {
   agentFailureCodeFromCancellationReason,
   inferAgentFailureCode,
 } from '../../shared/contract/agentFailure';
-import { CANCELLATION_TIMEOUTS } from '../../shared/constants';
-import { getUserDataPath } from '../platform/appPaths';
-import { join as pathJoin } from 'path';
-import { captureWorkspacePatch } from '../services/checkpoint/taskPatchService';
 import { getPlanApprovalGate } from './planApproval';
 import { getSpawnGuard } from './spawnGuard';
 import { buildChildContext } from './childContext';
@@ -46,6 +40,7 @@ import { getContextInterventionState } from '../context/contextInterventionState
 import { getTelemetryCollector } from '../telemetry/telemetryCollector';
 import {
   buildContextSnapshot,
+  buildEffectiveSubagentSystemPrompt,
   buildInferenceMessages,
   buildInitialSubagentMessages,
   buildObservation,
@@ -54,7 +49,11 @@ import {
   materializeObservedMessages,
   type RuntimeMessage,
 } from './subagentExecutorProjection';
-import { applyRunToolPolicyToSubagentTools, filterSubagentToolDefs } from './subagentExecutorToolDefs';
+import {
+  applySubagentToolExitGate,
+  buildSubagentToolTable,
+  resolveSubagentToolAccess,
+} from './subagentExecutorToolDefs';
 import {
   buildSubagentModelCall,
   drainSubagentMessages,
@@ -63,11 +62,11 @@ import {
 } from './subagentExecutorTelemetry';
 import {
   createSubagentCancellationLifecycle,
+  flushSubagentCancellation,
   getChildSubagentExecutionTimeout,
   getSubagentIdleTimeout,
 } from './subagentExecutorCancellation';
-import { buildSubagentSkillsBlock } from '../services/skills/subagentSkillInjection';
-import { applyRoleBoundaryToSubagentRequest, buildRoleContextBlock, runRoleWriteBack, recordRoleParticipation } from '../services/roleAssets';
+import { applyRoleBoundaryToSubagentRequest, runRoleWriteBack, recordRoleParticipation } from '../services/roleAssets';
 import type {
   SubagentConfig,
   SubagentContext,
@@ -215,33 +214,18 @@ export class SubagentExecutor {
     });
 
     // GAP-011（课程"方向 A"）：skills 全文预注入子代理 system prompt。
-    // 只注入知识，不改变 availableTools 权限边界（与 GAP-001 fork 限权正交）。
-    let effectiveSystemPrompt = config.systemPrompt;
-    if (config.skills && config.skills.length > 0) {
-      const { block, loaded, missing } = await buildSubagentSkillsBlock(config.skills);
-      if (block) {
-        effectiveSystemPrompt = `${config.systemPrompt}\n\n${block}`;
-      }
-      logger.info(`[${config.name}] skills preloaded into system prompt`, { loaded, missing });
-    }
-
-    // 持久化角色资产注入（设计 内部文档 §5 步骤 1）：
-    // roles/<roleId>/ 目录存在 → 注入角色记忆索引 + 项目记忆索引 + 最近履历。
-    // 非持久角色返回 null，行为与此功能上线前完全一致。失败不阻塞 spawn。
-    if (config.roleId) {
-      try {
-        const roleBlock = await buildRoleContextBlock(
-          config.roleId,
-          context.cwd,
-        );
-        if (roleBlock) {
-          effectiveSystemPrompt = `${effectiveSystemPrompt}\n\n${roleBlock}`;
-          logger.info(`[${config.name}] role assets injected`, { roleId: config.roleId });
-        }
-      } catch (err) {
-        logger.warn(`[${config.name}] role assets injection failed (non-blocking)`, err);
-      }
-    }
+    // 持久化角色资产注入（设计 内部文档 §5 步骤 1）。两者只注入知识，不改变
+    // availableTools 权限边界；装配细节见 subagentExecutorProjection。
+    const effectiveSystemPrompt = await buildEffectiveSubagentSystemPrompt(
+      {
+        agentName: config.name,
+        systemPrompt: config.systemPrompt,
+        skills: config.skills,
+        roleId: config.roleId,
+        cwd: context.cwd,
+      },
+      logger,
+    );
 
     // Create pipeline context
     const pipeline = getSubagentPipeline();
@@ -277,8 +261,7 @@ export class SubagentExecutor {
       return Math.max(0, ownRemainingBudget - descendantUsage.cost);
     };
 
-    // Filter tools to only those allowed for this subagent（下方 if/else 两档必赋值）
-    let effectiveToolNames: string[];
+    // Filter tools to only those allowed for this subagent
 
     // M2-Task 5 partial: 走 buildChildContext 三档合并算法
     // Compatibility callers may omit the already-projected parent context.
@@ -308,30 +291,45 @@ export class SubagentExecutor {
       { inheritance },
     );
 
-    // tools 交集是核心约束（永不扩张），三档都生效；
-    // 当 parent.availableTools 为空（caller 没显式传）时 intersect 结果为 []，
-    // 此时退化为 child.allowedTools（避免无害 caller 拿不到任何工具）。
-    if (effectiveParentContext.availableTools.length === 0) {
-      effectiveToolNames = config.availableTools;
-    } else {
-      effectiveToolNames = childCtx.toolPool;
-    }
+    // N-SUBAGENT-ZEROTOOLS：工具面装配（helper 见 subagentExecutorToolDefs）——
+    // 父子交集（永不扩张）→ mcp__<server>__* 通配展开（run 策略确定会丢掉的
+    // server 不连）→ run 级硬边界收窄 → 注册表解析。装配只产生候选与账目。
+    // 返修 Important 1：装配等待接入 effectiveSignal（父 abort + 内部 timeout 桥接），
+    // 取消后不再傻等连接 / 不再发起后续服务器连接。
+    const assembly = await resolveSubagentToolAccess(
+      config,
+      context,
+      effectiveParentContext,
+      childCtx,
+      { signal: effectiveSignal },
+    );
 
-    // Run 级工具面硬边界（CLI --tools/--disallowed-tools）：helper 见 subagentExecutorToolDefs
-    effectiveToolNames = applyRunToolPolicyToSubagentTools(effectiveToolNames, context);
+    // N-SUBAGENT-ZEROTOOLS R5 出口闸：「谁能进模型工具表」唯一裁定点。全部约束
+    // （run 策略重放、角色硬边界——含 disallowExternalSending，对通配展开后的
+    // 具体名重判、fail-loud 判定）集中在这里应用一次；装配链不管中间经历几次
+    // 展开/过滤，产物到模型只有这一条路（buildSubagentToolTable 只收闸产物）。
+    const surface = applySubagentToolExitGate(assembly, {
+      runPolicy: {
+        allowedToolNames: context.allowedToolNames,
+        deniedToolNames: context.deniedToolNames,
+        toolScope: context.toolScope,
+      },
+      roleId: config.roleId,
+      signal: effectiveSignal,
+    });
 
     logger.info(`[${config.name}] childContext applied`, {
       inheritance,
       parentTools: effectiveParentContext.availableTools.length,
       childDeclared: config.availableTools.length,
-      toolPool: effectiveToolNames.length,
+      toolPool: assembly.effectiveToolNames.length,
+      exitGateKept: surface.toolNames.length,
       denyMerged: childCtx.permissions.deny.length,
       effectiveMode: childCtx.permissions.effectiveMode,
       explicitParent: !!context.parentContext,
     });
 
-    const allowedToolDefs = filterSubagentToolDefs(effectiveToolNames, context.resolver);
-    const allowedNames = new Set(allowedToolDefs.map((d) => d.name));
+    const allowedNames = new Set(surface.toolNames);
 
     // P0(G18): 把 buildChildContext 算出的父→子收缩结果真正应用到 pipeline 的
     // permissionConfig。此前 childCtx.permissions 只被 log、从未生效，导致
@@ -363,24 +361,8 @@ export class SubagentExecutor {
     const subagentToolExecutor = toolRuntime.executor;
     const subagentPolicy = toolRuntime.policy;
 
-    // Check if the model supports tool calls
-    const providerConfig = PROVIDER_REGISTRY[context.modelConfig.provider];
-    const modelInfo = providerConfig?.models.find((m: { id: string; supportsTool?: boolean }) => m.id === context.modelConfig.model);
-    const supportsTool = modelInfo?.supportsTool ?? true; // Default to true if unknown
-
-    // Only provide tool definitions if the model supports them
-    const toolDefinitions = supportsTool ? allowedToolDefs.map((tool) => ({
-      name: tool.name,
-      description: tool.description,
-      inputSchema: tool.inputSchema,
-      outputSchema: tool.outputSchema,
-      requiresPermission: tool.requiresPermission,
-      permissionLevel: tool.permissionLevel,
-    })) : [];
-
-    if (!supportsTool && allowedToolDefs.length > 0) {
-      logger.warn(`[${config.name}] Model ${context.modelConfig.model} does not support tool calls, tools will be ignored`);
-    }
+    // 模型工具表投影（supportsTool 判定 + inference 入参映射）：helper 见 subagentExecutorToolDefs
+    const { toolDefinitions, supportsTool } = buildSubagentToolTable(config.name, context.modelConfig, surface);
 
     const subagentContextStore = getSubagentContextStore();
     // Parallel/Team callers provide a stable composite execution identity.
@@ -442,32 +424,63 @@ export class SubagentExecutor {
 
     let terminalStatus: SubagentRunEndStatus = 'failed'; let terminalError: string | undefined;
 
+    // 早退失败收口（预算触顶 / 工具装配失败共用）：统一 cleanup + orphan 接管 +
+    // SubagentStop + 结构化失败返回，extra 携带各自的 failureCode/缺失清单等差异化字段。
+    const earlyFailure = (error: string, extra: Partial<SubagentResult>): SubagentResult => {
+      logger.error(`[${config.name}] ${error}`);
+      cleanupTimer();
+      stopIdleWatchdog();
+      terminalError = error;
+      pipeline.completeContext(pipelineContext.agentId, false, error);
+      agentTask.fail(error);
+      // orphan 接管（roadmap 2.6）：subagent 名下未收口任务释放回主会话
+      adoptOrphanTasks(sessionId, pipelineContext.agentId);
+      context.hooks?.triggerSubagentStop(config.name, undefined, sessionId, agentTask.id)
+        .catch(silence(logger, 'triggerSubagentStop:early-failure', 'warn'));
+      return {
+        success: false,
+        output: '',
+        error,
+        toolsUsed: [],
+        iterations: 0,
+        tokensUsed: getTotalTokens(),
+        cost: getTotalCost(),
+        agentId: executionAgentId,
+        contextSnapshot: latestContextSnapshot,
+        ...extra,
+      };
+    };
+
     try {
       // Initial budget check
       const budgetCheck = pipeline.checkBudget(pipelineContext);
       if (!budgetCheck.allowed) {
-        terminalError = budgetCheck.reason || 'Budget exceeded';
-        pipeline.completeContext(pipelineContext.agentId, false, budgetCheck.reason);
-        agentTask.fail(budgetCheck.reason || 'budget exceeded');
-        // orphan 接管（roadmap 2.6）：subagent 名下未收口任务释放回主会话
-        adoptOrphanTasks(sessionId, pipelineContext.agentId);
-        // Fire SubagentStop on early budget failure
-        context.hooks?.triggerSubagentStop(config.name, undefined, sessionId, agentTask.id).catch(silence(logger, 'triggerSubagentStop:budget', 'warn'));
-        return {
-          success: false,
-          output: '',
-          error: budgetCheck.reason,
-          toolsUsed: [],
-          iterations: 0,
-          tokensUsed: getTotalTokens(),
-          cost: getTotalCost(),
-          agentId: executionAgentId,
-          contextSnapshot: latestContextSnapshot,
-          // swarm 护栏 P1-2 #1：子代理触顶自身预算 → 结构化失败码，
-          // 编排层 routeFailureCode 据此降级（'degrade'）而非 parse error 字符串。
+        // swarm 护栏 P1-2 #1：子代理触顶自身预算 → 结构化失败码，
+        // 编排层 routeFailureCode 据此降级（'degrade'）而非 parse error 字符串。
+        return earlyFailure(budgetCheck.reason || 'Budget exceeded', {
           cancellationReason: 'child-max-tokens',
           failureCode: AgentFailureCode.BudgetExhausted,
-        };
+        });
+      }
+
+      // N-SUBAGENT-ZEROTOOLS ①（R5 收口进出口闸）：声明了工具（请求集非空）但出口
+      // 闸后工具表为空 ⇒ fail-loud，不许静默跑一个无工具可用的子代理、再拿一句敷衍
+      // 输出回报 completed。判据在闸里集中应用（见 applySubagentToolExitGate）：
+      // 刻意不是「0 工具」（纯推理/纯总结角色声明 0 工具合法），也不是 supportsTool=false
+      //（那是模型能力问题，上方已有独立 warn）；取消打断让位 abort 收口；R4 的
+      // 失败账臂（声明通配 + 白名单精确名形态不匹配）同样在闸里裁定。
+      // 部分缺失（声明 5 拿到 2）不在此失败，missingTools 随结果带回父模型自行裁量。
+      if (surface.assemblyFailure) {
+        const { missingTools } = surface.assemblyFailure;
+        return earlyFailure(
+          `声明的 ${missingTools.length} 个工具全部未装配（白名单收窄 + 注册表解析后为 0）：` +
+          `${missingTools.join(', ')}。子代理未执行任何迭代即失败：` +
+          `请修正工具名，或确认对应 MCP 服务器可连接后重试。`,
+          {
+            failureCode: AgentFailureCode.ToolUnavailable,
+            missingTools: [...missingTools],
+          },
+        );
       }
 
       // subagent taskGate（roadmap 2.6，衔接 1.3）：想收口但名下还有未收口任务时
@@ -511,47 +524,16 @@ export class SubagentExecutor {
           stopIdleWatchdog();
 
           // Phase 3 flush — persist partial transcript + metadata.
-          // sessionDir convention: <userDataPath>/sessions/<sessionId>.
-          // saveToDisk creates the agent subdir itself; we just hand it
-          // the session root.
-          const sessionDir = pathJoin(getUserDataPath(), 'sessions', sessionId);
-          // R5 — agentPromise self-reference: this is the running executor's
-          // own loop. We pass `Promise.resolve()` so the grace phase
-          // doesn't deadlock waiting for ourselves; the abort signal has
-          // already propagated to inference / tools, their cleanup runs
-          // in parallel.
-          try {
-            await initiateShutdown(effectiveController, Promise.resolve(), {
-              gracePeriodMs: CANCELLATION_TIMEOUTS.GRACEFUL_SHUTDOWN_GRACE,
-              label: `${config.name}:${agentTask.id}`,
-              onFlush: async () => {
-                try {
-                  await agentTask.saveToDisk(sessionDir);
-                } catch (err) {
-                  logger.warn(
-                    `[${config.name}] saveToDisk failed during flush`,
-                    err,
-                  );
-                }
-                // 取消时把工作目录的文件改动抢救成 patch（saveToDisk 只存 transcript）。
-                // 有 worktree 用 worktree 路径，否则用会话工作目录。best-effort 不阻塞取消。
-                try {
-                  const patchDir =
-                    context.worktreePath || context.cwd;
-                  if (patchDir) {
-                    await captureWorkspacePatch(patchDir, agentTask.id, 'cancel');
-                  }
-                } catch (err) {
-                  logger.warn(
-                    `[${config.name}] captureWorkspacePatch failed during flush`,
-                    err,
-                  );
-                }
-              },
-            });
-          } catch (err) {
-            logger.warn(`[${config.name}] initiateShutdown threw`, err);
-          }
+          // R5（grace 不等自己）/ sessionDir 约定 / patch 抢救的细节在 helper 里。
+          await flushSubagentCancellation({
+            agentName: config.name,
+            agentTask,
+            controller: effectiveController,
+            sessionId,
+            worktreePath: context.worktreePath,
+            cwd: context.cwd,
+            logger,
+          });
 
           pipeline.completeContext(pipelineContext.agentId, false, cancellationReason);
           const errorMsg = cancellationReason === 'timeout'
@@ -1135,6 +1117,9 @@ export class SubagentExecutor {
         cost: getTotalCost(),
           agentId: executionAgentId,
         contextSnapshot: latestContextSnapshot,
+        // N-SUBAGENT-ZEROTOOLS：部分声明的工具没装配上时不失败，但清单必须带回
+        // 父模型（由调用方透传），让父模型自行裁量这结果可信到什么程度。
+        ...(surface.missingToolNames.length > 0 ? { missingTools: [...surface.missingToolNames] } : {}),
       };
     } catch (error) {
       if (effectiveSignal.aborted || error instanceof SubagentDoomLoopStopError) {

@@ -25,6 +25,7 @@ import {
   spawnAgentModule,
   agentSpawnModule,
 } from '../../../../../src/host/tools/modules/multiagent/spawnAgent';
+import { getBackgroundSubagentRegistry } from '../../../../../src/host/agent/backgroundSubagentRegistry';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
@@ -254,6 +255,31 @@ describe('spawn_agent dispatch to protocol-native service', () => {
 
     expect(result.ok).toBe(true);
     await vi.waitFor(() => expect(topology).toBe('async_agent'));
+  });
+
+  it('run_in_background（显式后台）：service 层 metadata 里的 missingTools 随后台结果进入 registry，collect 时父模型可见（N-SUBAGENT-ZEROTOOLS 返修）', async () => {
+    executeSpawnAgentMock.mockResolvedValue({
+      success: true,
+      output: 'Agent [coder] completed task: ...\n- Missing tools: mcp__gone__x（声明的工具未全部装配）',
+      metadata: { agentId: 'bg-missing-tools-1', missingTools: ['mcp__gone__x'] },
+    });
+    const handler = await spawnAgentModule.createHandler();
+    const result = await handler.execute(
+      { role: 'coder', task: 'bg work', run_in_background: true },
+      makeCtx(),
+      allowAll,
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const agentId = result.meta?.agentId as string;
+      await vi.waitFor(() => {
+        expect(getBackgroundSubagentRegistry().getStatus(agentId)?.status).toBe('completed');
+      });
+      // 重投影后的 SubagentResult 必须带着缺失清单——完成通知与 collect_agent 都从这里取
+      expect(getBackgroundSubagentRegistry().getStatus(agentId)?.result?.missingTools)
+        .toEqual(['mcp__gone__x']);
+    }
   });
 
   it('前台 spawn 不标拓扑（缺省 main，行为不变）', async () => {

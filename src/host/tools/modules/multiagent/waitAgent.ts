@@ -127,6 +127,10 @@ export async function executeWaitAgent(
     } else if (agent.result) {
       const output = agent.result.output.slice(0, 1200);
       lines.push(`   Result: ${output}${agent.result.output.length > 1200 ? '...' : ''}`);
+      // N-SUBAGENT-ZEROTOOLS 返修 Important 2：后台收集路径把缺失清单带回父模型。
+      if (agent.result.missingTools?.length) {
+        lines.push(`   Missing tools: ${agent.result.missingTools.join(', ')}`);
+      }
       if (agent.result.iterations) {
         lines.push(
           `   Stats: ${agent.result.iterations} iterations, ${agent.result.toolsUsed.length} tools${
@@ -155,6 +159,7 @@ export async function executeWaitAgent(
           iterations: agent.result.iterations,
           toolsUsed: agent.result.toolsUsed,
           cost: agent.result.cost,
+          ...(agent.result.missingTools?.length ? { missingTools: agent.result.missingTools } : {}),
         }
         : undefined,
       error: agent?.error,

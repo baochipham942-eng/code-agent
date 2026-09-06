@@ -175,4 +175,16 @@ describe('dropCodeAdjacentCopyLinks — 围栏边界与渲染分发（ai-review 
     expect(out).toContain('> ```bash\n> ls');
     expect(out).toContain('```ts\nconst a = 1;\n```');
   });
+
+  it('删除跨引用边界的复制段后补空行终止引用，两个引用代码块不被并块', () => {
+    expect(dropCodeAdjacentCopyLinks('> ```bash\n> ls\n[复制](!copy)\n> ```ts\n> const a = 1;\n> ```'))
+      .toBe('> ```bash\n> ls\n\n> ```ts\n> const a = 1;\n> ```');
+  });
+
+  it('引用空行（>）也是段落边界：复制段后接后续说明仍去重，说明保留', () => {
+    const out = dropCodeAdjacentCopyLinks('> ```bash\n> ls\n> ```\n>\n> [复制命令](!copy)\n>\n> 后续说明');
+    expect(out).not.toContain('!copy');
+    expect(out).toContain('> ```bash\n> ls\n> ```');
+    expect(out).toContain('后续说明');
+  });
 });

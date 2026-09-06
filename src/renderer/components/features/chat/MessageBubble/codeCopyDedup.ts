@@ -157,6 +157,16 @@ function fenceRendersWithHeaderCopy(fenceText: string): boolean {
   return true;
 }
 
+/**
+ * 引用内围栏若没有显式关栏行（靠引用结束收口），删除其后的复制段后必须补一个
+ * 无前缀空行终止引用——否则重放时下一引用块的开栏行会被并进这块未闭合的代码。
+ */
+function quoteFenceNeedsTerminator(fenceText: string): boolean {
+  const lines = fenceText.split('\n');
+  const started = parseOpenFence(lines[0]);
+  return Boolean(started?.inQuote && !isCloseFence(lines[lines.length - 1], started.open, true));
+}
+
 function isCopyOnlyParagraph(paragraph: string): boolean {
   if (paragraph.includes('`')) return false; // 行内 code 里的字面链接不算
   const bareLines = paragraph.split('\n').map((line) => line.replace(BLOCKQUOTE_PREFIX, ''));
@@ -167,9 +177,9 @@ function isCopyOnlyParagraph(paragraph: string): boolean {
 }
 
 function dropAdjacentCopyParagraphs(segment: string, prevConfers: boolean, nextConfers: boolean): string {
-  // 空行切段（[ \t]* 容忍空行上的尾随空白）；空行渲染后不产生可见元素，
-  // 所以「隔空行」仍算紧邻；夹任何其它内容就不算。
-  const paragraphs = segment.split(/\n[ \t]*\n/);
+  // 空行切段（含引用内的「>」空行——它在引用容器里就是空行边界）；空行渲染后
+  // 不产生可见元素，所以「隔空行」仍算紧邻；夹任何其它内容就不算。
+  const paragraphs = segment.split(/\n(?:[ \t]*>|[ \t]*)\n/);
   const firstNonBlank = paragraphs.findIndex((p) => p.trim() !== '');
   let lastNonBlank = -1;
   for (let j = paragraphs.length - 1; j >= 0; j--) {
@@ -211,9 +221,13 @@ export function dropCodeAdjacentCopyLinks(text: string): string {
       continue;
     }
     const transformed = dropAdjacentCopyParagraphs(segment.text, prevConfers, nextConfers);
-    // 段被整段删空时跳过：两侧围栏经 join('\n') 自然分行，不会被拼到同一行；
-    // 原本就空的段（如尾随换行产生的空段）原样保留，维持字节级恒等
-    if (transformed !== '' || segment.text === '') out.push(transformed);
+    if (transformed !== '' || segment.text === '') {
+      out.push(transformed);
+    } else if (prevConfers && quoteFenceNeedsTerminator(segments[i - 1].text)) {
+      // 前侧是「引用结束才收口」的未闭合围栏：补空行终止引用容器
+      out.push('');
+    }
+    // 其余情况跳过删空段：join('\n') 的行边界已足够分开相邻顶层围栏
   }
   return out.join('\n');
 }

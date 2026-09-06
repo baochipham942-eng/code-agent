@@ -94,4 +94,22 @@ describe('代码块紧邻 !copy 去重', () => {
     expect(iactCopyButtons(container)).toHaveLength(0);
     expect(container.textContent).toContain('[x](!copy)');
   });
+
+  it('两个引用代码块之间的 !copy 段去重后仍渲染为两个独立代码块', async () => {
+    const { container } = await renderAssistant(
+      '> ```bash\n> ls\n[复制](!copy)\n> ```ts\n> const a = 1;\n> ```',
+    );
+
+    expect(iactCopyButtons(container)).toHaveLength(0);
+    expect(container.querySelectorAll('[data-code-block-lines]')).toHaveLength(2);
+  });
+
+  it('引用内代码块 + !copy + 后续说明：按钮去重、说明文字保留', async () => {
+    const { container } = await renderAssistant(
+      '> ```bash\n> ls\n> ```\n>\n> [复制命令](!copy)\n>\n> 后续说明',
+    );
+
+    expect(iactCopyButtons(container)).toHaveLength(0);
+    expect(container.textContent).toContain('后续说明');
+  });
 });

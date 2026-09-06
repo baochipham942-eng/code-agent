@@ -246,9 +246,17 @@ describe('折叠行摘要的隐藏范围', () => {
     const { collapsedSuccessSummaryForTest } = await import(
       '../../../src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/ResultSummary'
     );
-    expect(collapsedSuccessSummaryForTest('No matches found', 'Glob')).toBeNull();
-    expect(collapsedSuccessSummaryForTest('No matches found', 'Grep')).toBeNull();
-    expect(collapsedSuccessSummaryForTest('No matches found', 'mcp__github__search_code'))
+    const call = (name: string, metadata?: Record<string, unknown>): ToolCall => ({
+      id: `${name}-x`,
+      name,
+      arguments: {},
+      result: { toolCallId: `${name}-x`, success: true, output: 'No matches found', ...(metadata ? { metadata } : {}) },
+    });
+    expect(collapsedSuccessSummaryForTest('No matches found', call('Glob', { totalMatches: 0 }))).toBeNull();
+    expect(collapsedSuccessSummaryForTest('No matches found', call('Grep', { totalMatches: 0 }))).toBeNull();
+    expect(collapsedSuccessSummaryForTest('No matches found', call('mcp__github__search_code', { totalMatches: 0 })))
       .toBe('No matches found');
+    // 状态行没接管（拿不到计数）时不许删摘要，否则折叠行一个字都没有
+    expect(collapsedSuccessSummaryForTest('No matches found', call('Glob'))).toBe('No matches found');
   });
 });

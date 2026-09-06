@@ -32,7 +32,7 @@ export function ResultSummary({ toolCall, inline = false }: Props) {
         ? [humanizedError.detail, humanizedError.summary]
         : [t.systemError.fallbackSummary])
         .find((candidate) => candidate && candidate !== outcome?.label && candidate !== outcome?.reason)
-    : collapsedSuccessSummary(summarizeTool(toolCall), toolCall.name);
+    : collapsedSuccessSummary(summarizeTool(toolCall), toolCall);
 
   if (!summary) return null;
 
@@ -48,8 +48,13 @@ export function ResultSummary({ toolCall, inline = false }: Props) {
 /** 只有 Grep/Glob 的状态行会替它说「无匹配」，别的工具删掉摘要就等于什么都没说。 */
 const SUMMARY_OWNED_BY_STATUS_LINE = new Set(['Grep', 'Glob']);
 
-function collapsedSuccessSummary(summary: string | null, toolName: string): string | null {
+function collapsedSuccessSummary(summary: string | null, toolCall: ToolCall): string | null {
   if (!summary) return null;
+  // 只有状态行**真的**接管了这句才隐藏摘要。拿不到 metadata.totalMatches 时状态行什么都不说
+  // （不猜），这时再把摘要删掉，折叠行就一个字都没有了（ai-review #1693 Nit）。
+  const total = (toolCall.result?.metadata as { totalMatches?: unknown } | undefined)?.totalMatches;
+  if (total !== 0) return summary;
+  const toolName = toolCall.name;
   // grep/glob empty stdout is already the statusLabel (无匹配); keep raw English in details.
   // 🔴 只对这两个工具成立：mcp__github__search_code 之类同样会返回 'No matches found'，
   // 但它们的状态行不产出「无匹配」，删掉摘要后折叠行只剩动作名，用户看不出找没找到

@@ -14,13 +14,15 @@ import path from 'node:path';
 import { getHomeDir, getUserConfigDir } from '../config/configPaths';
 import { resolveCanonicalRunPath } from '../runtime/runContext';
 import { commandWords } from './commandSafety';
-import {
-  CONFIG_DIR_NEW,
-  CROSS_SLOT_READ_ALLOW_ENV,
-  CROSS_SLOT_READ_ALLOWLIST_ENV,
-} from '../../shared/constants/configDir';
+import { CONFIG_DIR_NEW } from '../../shared/constants/configDir';
 
 export const FOREIGN_SLOT_DATA_DIR_CODE = 'FOREIGN_SLOT_DATA_DIR';
+
+/** 显式允许跨槽读取。仅评测/诊断用，取值 `'1'` 才放行。 */
+export const CROSS_SLOT_READ_ALLOW_ENV = 'CODE_AGENT_ALLOW_CROSS_SLOT_READ';
+
+/** 逗号分隔的允许跨槽读取的数据目录绝对路径白名单。 */
+export const CROSS_SLOT_READ_ALLOWLIST_ENV = 'CODE_AGENT_CROSS_SLOT_READ_ALLOWLIST';
 
 export type SlotDataDirAccess =
   | { allowed: true }

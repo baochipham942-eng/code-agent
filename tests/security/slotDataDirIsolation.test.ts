@@ -15,8 +15,12 @@ vi.mock('../../src/host/tools/shell/dynamicDescription', () => ({
 }));
 
 import { getUserConfigDir } from '../../src/host/config/configPaths';
-import { CROSS_SLOT_READ_ALLOW_ENV, CROSS_SLOT_READ_ALLOWLIST_ENV } from '../../src/shared/constants/configDir';
-import { evaluateSlotDataDirAccess, FOREIGN_SLOT_DATA_DIR_CODE } from '../../src/host/security/slotDataDirGuard';
+import {
+  CROSS_SLOT_READ_ALLOW_ENV,
+  CROSS_SLOT_READ_ALLOWLIST_ENV,
+  evaluateSlotDataDirAccess,
+  FOREIGN_SLOT_DATA_DIR_CODE,
+} from '../../src/host/security/slotDataDirGuard';
 import { getToolCache } from '../../src/host/services/infra/toolCache';
 import { fileReadTracker } from '../../src/host/tools/fileReadTracker';
 import { getProtocolRegistry } from '../../src/host/tools/protocolRegistry';

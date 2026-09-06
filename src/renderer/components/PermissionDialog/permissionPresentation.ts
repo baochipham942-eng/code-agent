@@ -17,6 +17,21 @@ function basename(target: string): string {
  * /dev/null 的 basename 是 "null"，进标题会读成空值或普通文件名。
  * 设备节点与 DOS 保留名用完整路径展示，不当文件名截断。
  */
+/**
+ * 明确的字符设备白名单——写它们不会"覆盖已有内容"。
+ * 判据必须是**逐个点名**而不是 `/dev/` 前缀：Linux 上 `/dev/shm/report.md` 是普通文件，
+ * 按前缀放行会把「可能覆盖现有内容」的警告从一个真会被覆盖的文件上摘掉（ai-review #1692）。
+ */
+function isKnownCharDevice(target: string): boolean {
+  const normalized = target.replace(/\\/g, '/').replace(/\/+$/u, '');
+  const lower = normalized.toLowerCase().replace(/^\/private\/dev\//u, '/dev/');
+  if (/^\/dev\/(null|zero|full|random|urandom|tty|stdin|stdout|stderr|fd\/\d+)$/u.test(lower)) return true;
+  if (/^(nul|con|prn|aux|com[1-9]|lpt[1-9])$/i.test(normalized)) return true;
+  if (/^\/\/\.\/(nul|con|prn|aux|com[1-9]|lpt[1-9])$/i.test(normalized)) return true;
+  return false;
+}
+
+/** 标题是否保留完整路径。比设备白名单宽是**有意的**：多显示路径无害，少显示才误导。 */
 function isDeviceOrSpecialPath(target: string): boolean {
   const normalized = target.replace(/\\/g, '/').replace(/\/+$/u, '');
   const lower = normalized.toLowerCase();
@@ -120,7 +135,7 @@ export function permissionConsequence(request: PermissionRequest, t: Translation
   }
   if (
     target
-    && isDeviceOrSpecialPath(target)
+    && isKnownCharDevice(target)
     && (request.type === 'file_write' || request.type === 'file_edit')
   ) {
     const copy = isOutsideWorkspace(request) ? p.consequenceDeviceOutside : p.consequenceDevice;

@@ -204,6 +204,22 @@ describe('device / special path copy', () => {
     expect(permissionConsequence(request, zh)).not.toContain('可能覆盖现有内容');
   });
 
+  // ai-review #1692：`/dev/` 前缀不能当「设备文件」判据——Linux 上 /dev/shm/<name> 是普通文件。
+  // 标题保留全路径无害，但「可能覆盖现有内容」的警告绝不能因为前缀命中就被摘掉。
+  it('/dev/shm 下的普通文件：标题可留全路径，但覆盖警告必须保留', () => {
+    const request: PermissionRequest = {
+      ...baseRequest,
+      tool: 'Write',
+      type: 'file_write',
+      details: { path: '/dev/shm/report.md' },
+      boundary: { id: 'file.external_write' },
+    };
+
+    const consequence = permissionConsequence(request, zh);
+    expect(consequence).toContain('可能覆盖现有内容');
+    expect(consequence).not.toContain('设备文件');
+  });
+
   it('titles /dev/stdout with the full path and skips overwrite wording', () => {
     const request: PermissionRequest = {
       ...baseRequest,

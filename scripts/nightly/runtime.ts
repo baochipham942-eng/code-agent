@@ -6,8 +6,8 @@ import net from 'node:net';
 import { setTimeout as delay } from 'node:timers/promises';
 import Database from 'better-sqlite3';
 import { parse } from 'dotenv';
-import { chromium } from 'playwright';
-import { digest, type Case, type Row, type Check } from './contracts';
+import { chromium, type Browser, type Page } from 'playwright';
+import { scopedHostLog, digest, type Case, type Row, type Check } from './contracts';
 
 export const repo = path.resolve(import.meta.dirname, '../..');
 export const expand = (p: string) => p.startsWith('~/') ? path.join(os.homedir(), p.slice(2)) : path.resolve(p);
@@ -75,7 +75,6 @@ export async function startResident(): Promise<Resident> {
   mkdirSync(dataDir, { recursive: true, mode: 0o700 });
   const source = JSON.parse(readFileSync(expand('~/.code-agent-chatprobe/config.json'), 'utf8'));
   // Only model settings and the probe encryption pair cross the boundary; no production DB, roles or jobs.
-  save(path.join(dataDir, 'config.json'), {});
   writeFileSync(path.join(dataDir, 'config.json'), JSON.stringify({ models: source.models, cloud: { enabled: false, warmupOnInit: false }, connectors: { enabledNative: [] } }), { mode: 0o600 });
   writeFileSync(path.join(dataDir, '.env'), '', { mode: 0o600 });
   for (const file of ['.secure-key', 'secure-storage.json']) copyFileSync(expand(`~/.code-agent-chatprobe/${file}`), path.join(dataDir, file));
@@ -112,9 +111,9 @@ export async function runEmptyCase(spec: Case, state: Resident, dir: string, run
   type ProcessEvidence = { source: string; types: Array<string | undefined>; tools: number; approvals: number; modelCalls: number | null; costs: number[] | null; subagents: Trace[]; steps: number };
   const observations: { caseHash: string; fixture: string; keySlot: string; adapter: string; responses: Array<Health | null>; sessionId?: string; error?: string; captureError?: string; process?: ProcessEvidence; checks?: Check[] } = { caseHash: spec.hash, fixture: 'F0: empty real session; transport request held before model delivery', keySlot: '~/.code-agent-chatprobe', adapter: 'browser send + native SSE JSONL + neo debug readonly', responses: [] };
   const trace: Trace[] = [];
-  const browser = await chromium.launch({ headless: true });
-  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
-  page.setDefaultTimeout(15000);
+  let browser: Browser | undefined;
+  let page: Page;
+  let caseStarted = false;
   let sessionId = '';
   const frame = async (name: string, expected: string[]) => {
     const index = String(row.frames.length + 1).padStart(2, '0');
@@ -136,6 +135,9 @@ export async function runEmptyCase(spec: Case, state: Resident, dir: string, run
     console.log(`FRAME ${spec.id} ${index} ${name}`);
   };
   try {
+    browser = await chromium.launch({ headless: true });
+    page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    page.setDefaultTimeout(15000);
     const credentialFile = expand('~/.ship/secrets/neo-dogfood.env');
     if ((statSync(credentialFile).mode & 0o777) !== 0o600) throw new Error('FAIL dogfood credentials must be mode 600');
     const credentials = parse(readFileSync(credentialFile));
@@ -196,6 +198,7 @@ export async function runEmptyCase(spec: Case, state: Resident, dir: string, run
       } catch (error) { throw new Error('CAPTURE_PRECONDITION: context health detail could not be opened', { cause: error }); }
     };
     await openDetail();
+    caseStarted = true;
     await frame('empty', ['暂无上下文数据。', '还没有健康度信息']);
     await page.keyboard.press('Escape');
     let release!: () => void;
@@ -217,8 +220,20 @@ export async function runEmptyCase(spec: Case, state: Resident, dir: string, run
     observations.responses.push(await api<Health | null>(state, 'context/health/get', [sessionId]));
     await openDetail();
     await frame('first-snapshot', []);
-  } catch (error) { observations.error = scrub(String(error)); if (observations.error.includes('CAPTURE_PRECONDITION')) observations.captureError = observations.error; await frame('error', []).catch(e => { observations.captureError = scrub(String(e)); }); }
-  finally { await browser.close(); }
+  } catch (error) {
+    observations.error = scrub(String(error));
+    if (!caseStarted) {
+      const reason = `runner 前置环境不可用：${observations.error}`;
+      row.status = '未执行'; row.reasons = [reason];
+      row.checks = [1, 2, 3].map(() => ({ status: '未执行', detail: reason }));
+      row.endedAt = new Date().toISOString();
+      save(path.join(dir, 'result.json'), { ...observations, checks: row.checks, status: row.status });
+      writeFileSync(path.join(dir, 'host.log'), scopedHostLog('', ''));
+      return row;
+    }
+    if (observations.error.includes('CAPTURE_PRECONDITION')) observations.captureError = observations.error;
+    await frame('error', []).catch(e => { observations.captureError = scrub(String(e)); });
+  } finally { await browser?.close(); }
   const db = new Database(path.join(state.dataDir, 'code-agent.db'), { readonly: true });
   const messages = sessionId ? db.prepare('SELECT * FROM messages WHERE session_id = ? ORDER BY timestamp').all(sessionId) as Array<{ role: string }> : [];
   const audit = sessionId ? db.prepare('SELECT * FROM compaction_snapshots WHERE session_id = ?').all(sessionId) : [];
@@ -244,7 +259,7 @@ export async function runEmptyCase(spec: Case, state: Resident, dir: string, run
   save(path.join(dir, 'stdout.json'), { command: 'neo debug compact diff <session> --json', stdout: scrub(stdout), stderr: scrub(stderr), exitCode: cliExit, signal: cli.signalCode });
 
   const hostLogs = readdirSync(path.join(state.dataDir, 'logs')).filter(f => f.endsWith('.log')).map(f => readFileSync(path.join(state.dataDir, 'logs', f), 'utf8')).join('\n');
-  writeFileSync(path.join(dir, 'host.log'), scrub((readFileSync(path.join(state.dataDir, 'resident.raw.log'), 'utf8') + '\n' + hostLogs).split('\n').filter(l => l.includes(sessionId) || l.includes('ERROR')).join('\n')));
+  writeFileSync(path.join(dir, 'host.log'), scrub(scopedHostLog(readFileSync(path.join(state.dataDir, 'resident.raw.log'), 'utf8') + '\n' + hostLogs, sessionId)));
   const types = trace.filter(e => e.source === 'api/run SSE').map(e => e.data?.type);
   const terminal = types.includes('agent_complete');
   const tools = types.filter(t => t === 'tool_call_start').length;

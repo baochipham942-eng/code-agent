@@ -4,7 +4,7 @@ import path from 'node:path';
 
 export type Case = { id: string; title: string; fields: Record<string, string>; hash: string; root: string; reasons: string[] };
 export type Check = { status: '通过' | '失败' | '未执行'; detail: string };
-export type Row = { id: string; runId: string; status: Check['status']; reasons: string[]; checks: Check[]; files: Record<string, string>; frames: string[]; fb?: string; startedAt?: string; endedAt?: string };
+export type Row = { id: string; runId: string; status: Check['status']; reasons: string[]; checks: Check[]; files: Record<string, string>; frames: string[]; fb?: string; fbCreated?: boolean; startedAt?: string; endedAt?: string };
 export const digest = (value: string | Buffer): string => createHash('sha256').update(value).digest('hex');
 export function parseCases(source: string): Case[] {
   const blocks = [...source.matchAll(/^### (TC-M\d+-\d+) · (.+)\n([\s\S]*?)(?=^### |^## |$(?![\s\S]))/gm)];
@@ -34,11 +34,14 @@ export function counts(rows: Row[]) {
 }
 export function inspectEvidence(row: Row, dir: string): string[] {
   const errors: string[] = [];
-  for (const file of ['result.json', 'trace.jsonl', 'timeline.json', 'audit.json', 'messages.json', 'host.log', ...row.frames.flatMap(f => [`screens/${f}.png`, `screens/${f}.dom.json`])]) {
+  for (const file of ['result.json', 'trace.jsonl', 'timeline.json', 'audit.json', 'messages.json', 'stdout.json', 'host.log', ...row.frames.flatMap(f => [`screens/${f}.png`, `screens/${f}.dom.json`])]) {
     const full = path.join(dir, file);
     if (!existsSync(full)) errors.push(`FAIL ${row.id} missing evidence ${file}`);
     else if (row.files[file] !== digest(readFileSync(full))) errors.push(`FAIL ${row.id} evidence hash mismatch ${file}`);
   }
+  const hashes = path.join(dir, 'files.sha256');
+  const expectedHashes = Object.entries(row.files).map(([file, hash]) => `${hash}  ${file}`).join('\n') + '\n';
+  if (!existsSync(hashes) || readFileSync(hashes, 'utf8') !== expectedHashes) errors.push(`FAIL ${row.id} files.sha256 missing or inconsistent`);
   for (const frame of row.frames) {
     const file = path.join(dir, `screens/${frame}.dom.json`);
     if (!existsSync(file)) continue;
@@ -57,7 +60,7 @@ export function validateReport(cases: Case[], rows: Row[], summary: ReturnType<t
   for (const row of rows) {
     const spec = cases.find(c => c.id === row.id);
     if (!spec) { errors.push(`FAIL unknown case ${row.id}`); continue; }
-    if (!['通过', '失败', '未执行'].includes(row.status) || row.checks.length !== 3) errors.push(`FAIL ${row.id} invalid tri-state assertions`);
+    if (!['通过', '失败', '未执行'].includes(row.status) || row.checks.length !== 3) { errors.push(`FAIL ${row.id} invalid tri-state assertions`); continue; }
     if (spec.reasons.length && row.status !== '未执行') errors.push(`FAIL ${row.id} blocked case promoted to ${row.status}`);
     if (row.status === '未执行') {
       if (!row.reasons.length || row.checks.some(c => c.status !== '未执行')) errors.push(`FAIL ${row.id} skipped row must not be green`);
@@ -74,7 +77,7 @@ export function validateReport(cases: Case[], rows: Row[], summary: ReturnType<t
         }
       }
       if (row.status === '失败' && row.checks.every(c => c.status === '通过')) errors.push(`FAIL ${row.id} failed row has no failed assertion`);
-      if (evidenceErrors.length && row.checks[2].status === '通过') errors.push(...evidenceErrors);
+      if (row.status !== '通过' && evidenceErrors.length && row.checks[2].status === '通过') errors.push(...evidenceErrors);
     }
   }
   return errors;
@@ -84,4 +87,15 @@ export function validateReport(cases: Case[], rows: Row[], summary: ReturnType<t
 export function pipelineExitCode(input: { executed: number; failed: number; mechanismFailed: boolean; notificationDelivered: boolean; scheduled: boolean }): number {
   if (input.mechanismFailed || input.executed === 0 || !input.notificationDelivered) return 1;
   return input.failed > 0 && !input.scheduled ? 1 : 0;
+}
+
+/** No session scope means no host logs, including unrelated ERROR lines. */
+export function scopedHostLog(log: string, sessionId: string): string {
+  if (!sessionId.trim()) return '未采集：前置环境不可用，没有可限定的会话 ID。\n';
+  return log.split('\n').filter(line => line.includes(sessionId)).join('\n');
+}
+
+/** Same frozen assertion group and failure shape share a defect; numeric observations vary per run. */
+export function feedbackFingerprint(row: Row, caseHash: string, mutation: boolean): string {
+  return digest(JSON.stringify({ id: row.id, caseHash, mutation, checks: row.checks.map(c => ({ status: c.status, detail: c.detail.replace(/\d+(?:\.\d+)?/g, '#') })) }));
 }

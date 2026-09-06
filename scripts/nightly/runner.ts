@@ -34,7 +34,7 @@ async function main() {
       const report = await renderReport(specs, rows, manifest.state, manifest.date, manifest.runId, gates, manifest.mechanism);
       const config = option('--notify-config');
       if (config) {
-        const text = `Neo 夜跑：真跑 ${report.summary.executed} / 未执行 ${report.summary.skipped} / 失败 ${report.summary.failed} / 共55。验收包 ${scrub(report.html)}；新增 ${rows.flatMap(r => r.fb ? [r.fb] : []).join('、') || '无 FB'}。`;
+        const text = `Neo 夜跑：真跑 ${report.summary.executed} / 未执行 ${report.summary.skipped} / 失败 ${report.summary.failed} / 共55。验收包 ${scrub(report.html)}；新增 ${rows.flatMap(r => r.fbCreated ? [r.fb!] : []).join('、') || '无 FB'}；关联 ${rows.flatMap(r => r.fb ? [r.fb] : []).join('、') || '无 FB'}。`;
         save(path.join(path.dirname(report.html), `${manifest.date}-${manifest.runId}.notification.json`), sendSummary(config, text, manifest.runId));
       }
       console.log(`REPORT ${scrub(report.html)}`); return;
@@ -85,14 +85,15 @@ async function main() {
     const dir = path.join(expand(spec.root), 'runs', spec.id, runId);
     const row = await runEmptyCase(spec, state, dir, runId, Number(option('--fault-user-count') ?? 1));
     save(path.join(dir, 'scheduler.json'), probe);
-    await designReferences(dir, row.frames);
+    if (row.frames.length) await designReferences(dir, row.frames);
+    if (row.status === '未执行') console.log(`UNEXECUTED ${row.id} ${row.reasons.join('；')}`);
     if (row.status === '失败') { feedback(row, dir, date, !!option('--fault-user-count')); console.log(`FAIL ${row.id} ${row.checks.map((c, i) => `${i + 1}:${c.status} ${c.detail}`).join(' / ')} ${row.fb}`); }
     rows.push(row);
   }
   const gateFile = option('--gates');
   const gates = gateFile ? readFileSync(expand(gateFile), 'utf8').trim().split('\n') : ['本机门：未附回执', 'PR 门：未运行', 'ai-review：未运行'];
   const report = await renderReport(specs, rows, state, date, runId, gates, mechanism);
-  const text = `Neo 夜跑：真跑 ${report.summary.executed} / 未执行 ${report.summary.skipped} / 失败 ${report.summary.failed} / 共55。验收包 ${scrub(report.html)}；新增 ${rows.flatMap(r => r.fb ? [r.fb] : []).join('、') || '无 FB'}。`;
+  const text = `Neo 夜跑：真跑 ${report.summary.executed} / 未执行 ${report.summary.skipped} / 失败 ${report.summary.failed} / 共55。验收包 ${scrub(report.html)}；新增 ${rows.flatMap(r => r.fbCreated ? [r.fb!] : []).join('、') || '无 FB'}；关联 ${rows.flatMap(r => r.fb ? [r.fb] : []).join('、') || '无 FB'}。`;
   const config = option('--notify-config');
   if (config) save(path.join(path.dirname(report.html), `${date}-${runId}.notification.json`), sendSummary(config, text, runId));
   else save(path.join(path.dirname(report.html), `${date}-${runId}.notification.json`), { status: '未发送', reason: '未配置已授权早报收件会话/profile/identity', text });

@@ -1,25 +1,44 @@
 import { execFileSync } from 'node:child_process';
-import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, cpSync, existsSync, mkdirSync, readFileSync, rmdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { chromium } from 'playwright';
-import { counts, validateReport, type Case, type Row } from './contracts';
+import { feedbackFingerprint, counts, validateReport, type Case, type Row } from './contracts';
 import { expand, save, scrub, type Resident } from './runtime';
 const escape = (s: unknown) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 const archive = expand('~/Downloads/ai/code-agent-private-archive');
 export const directory = (spec: Case, row: Row) => path.join(expand(spec.root), 'runs', row.id, row.runId);
 export function feedback(row: Row, dir: string, date: string, mutation = false): string {
+  if (row.status !== '失败') throw new Error('FAIL only executed failed cases can file feedback');
   if (row.fb) return row.fb;
+  const result = JSON.parse(readFileSync(path.join(dir, 'result.json'), 'utf8'));
+  const fingerprint = feedbackFingerprint(row, result.caseHash, mutation);
   const inbox = expand(`~/.ship/feedback-inbox/${date}-nightly-${row.runId}-${row.id}`);
   mkdirSync(inbox, { recursive: true });
   cpSync(dir, inbox, { recursive: true });
   const note = path.join(inbox, 'defect.md');
   writeFileSync(note, `# 缺陷·${mutation ? '反向变异演练·' : ''}${row.id}\n\n${row.checks.map((c, i) => `${i + 1}. ${c.status}：${c.detail}`).join('\n')}\n\n原始证据在同目录。${mutation ? '人为注入的 runner 检测验收，不是新产品缺陷。' : ''}\n`);
-  const output = execFileSync(expand('~/Downloads/ai/fleet-console/cli/fb'), ['add', '--kind', 'diagnostics', '--title', `缺陷·${mutation ? '反向变异演练·' : ''}${row.id} 夜跑断言失败`, '--source', 'N-NIGHTLY-RUNNER', '--lane', '研发体系线', '--path', note, '--json'], { encoding: 'utf8' });
-  const result = JSON.parse(output);
-  if (!/^FB-\d+$/.test(result.fb)) throw new Error('FAIL feedback receipt has no FB number');
-  row.fb = result.fb;
-  save(path.join(dir, 'feedback.json'), { fb: result.fb, evidence: scrub(note) });
-  return result.fb;
+  save(path.join(inbox, 'feedback-signature.json'), { fingerprint });
+  const cli = expand('~/Downloads/ai/fleet-console/cli/fb');
+  const lock = expand(`~/.code-agent-nightly/feedback-${row.id}.lock`);
+  mkdirSync(path.dirname(lock), { recursive: true });
+  mkdirSync(lock); // Concurrent reporters fail closed; never race two adds for the same assertion.
+  try {
+    const items = JSON.parse(execFileSync(cli, ['list', '--json'], { encoding: 'utf8' })) as Array<{ fb: string; source: string; state: string; path: string | null }>;
+    const existing = items.find(item => {
+      if (item.source !== 'N-NIGHTLY-RUNNER' || !['待分诊', '已立单'].includes(item.state) || !item.path) return false;
+      const signature = path.join(path.dirname(expand(item.path)), 'feedback-signature.json');
+      return existsSync(signature) && JSON.parse(readFileSync(signature, 'utf8')).fingerprint === fingerprint;
+    });
+    const fb = existing?.fb ?? JSON.parse(execFileSync(cli, ['add', '--kind', 'diagnostics', '--title', `缺陷·${mutation ? '反向变异演练·' : ''}${row.id} 夜跑断言失败`, '--source', 'N-NIGHTLY-RUNNER', '--lane', '研发体系线', '--path', note, '--json'], { encoding: 'utf8' })).fb;
+    if (!/^FB-\d+$/.test(fb)) throw new Error('FAIL feedback receipt has no FB number');
+    if (existing) {
+      const originalNote = expand(existing.path!);
+      if (!readFileSync(originalNote, 'utf8').includes(row.runId)) appendFileSync(originalNote, `\n复现 ${row.runId}：${scrub(note)}\n`);
+    }
+    row.fb = fb; row.fbCreated = !existing;
+    save(path.join(dir, 'feedback.json'), { fb, created: row.fbCreated, fingerprint, evidence: scrub(note) });
+    return fb;
+  } finally { rmdirSync(lock); }
 }
 export async function renderReport(cases: Case[], rows: Row[], state: Resident | null, date: string, runId: string, gates: string[], mechanism?: string) {
   const summary = counts(rows);

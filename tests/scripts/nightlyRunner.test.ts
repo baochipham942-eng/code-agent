@@ -2,7 +2,7 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, unlinkSync
 import os from 'node:os';
 import path from 'node:path';
 import { describe, it, expect, afterEach } from 'vitest';
-import { pipelineExitCode, counts, digest, inspectEvidence, parseCases, validateReport, type Case, type Row } from '../../scripts/nightly/contracts';
+import { scopedHostLog, pipelineExitCode, counts, digest, inspectEvidence, parseCases, validateReport, type Case, type Row } from '../../scripts/nightly/contracts';
 
 const temporary: string[] = [];
 afterEach(() => { temporary.splice(0).forEach(p => rmSync(p, { recursive: true, force: true })); });
@@ -20,8 +20,9 @@ function evidence(spec: Case, row: Row) {
   mkdirSync(path.join(dir, 'screens'));
   row.status = '通过'; row.reasons = []; row.startedAt = '2026-09-06T00:00:00Z'; row.endedAt = '2026-09-06T00:00:01Z';
   row.checks = [1, 2, 3].map(() => ({ status: '通过', detail: 'observed' })); row.frames = ['01', '02', '03'];
-  const files = ['result.json', 'trace.jsonl', 'timeline.json', 'audit.json', 'messages.json', 'host.log', ...row.frames.flatMap(f => [`screens/${f}.png`, `screens/${f}.dom.json`])];
+  const files = ['result.json', 'trace.jsonl', 'timeline.json', 'audit.json', 'messages.json', 'stdout.json', 'host.log', ...row.frames.flatMap(f => [`screens/${f}.png`, `screens/${f}.dom.json`])];
   for (const f of files) { writeFileSync(path.join(dir, f), f === 'result.json' ? JSON.stringify({ caseHash: spec.hash, checks: row.checks }) : f.endsWith('.dom.json') ? JSON.stringify({ criteria: [{ visible: true }] }) : 'fixture'); row.files[f] = digest(readFileSync(path.join(dir, f))); }
+  writeFileSync(path.join(dir, 'files.sha256'), Object.entries(row.files).map(([file, hash]) => `${hash}  ${file}`).join('\n') + '\n');
   return dir;
 }
 describe('nightly acceptance fail-closed evidence', () => {
@@ -32,6 +33,22 @@ describe('nightly acceptance fail-closed evidence', () => {
     expect(pipelineExitCode({ ...completed, mechanismFailed: true })).toBe(1);
     expect(pipelineExitCode({ ...completed, executed: 0 })).toBe(1);
     expect(pipelineExitCode({ ...completed, notificationDelivered: false })).toBe(1);
+  });
+  it('withholds logs without a session and excludes unrelated errors', () => {
+    const log = 'session-a observed\nERROR unrelated-sensitive-sentinel\nsession-b observed';
+    expect(scopedHostLog(log, '')).not.toContain('sentinel');
+    expect(scopedHostLog(log, '')).not.toContain('observed');
+    expect(scopedHostLog(log, 'session-a')).toBe('session-a observed');
+  });
+  it('reports malformed assertion arrays without throwing', () => {
+    const cases = inventory(); const rows = rowsFor(cases); rows[0].status = '失败'; rows[0].checks = [];
+    expect(validateReport(cases, rows, counts(rows), () => '')).toContain('FAIL TC-M1-01 invalid tri-state assertions');
+  });
+  it('requires CLI output and a consistent hash manifest', () => {
+    const cases = inventory(); const rows = rowsFor(cases); const dir = evidence(cases[0], rows[0]);
+    unlinkSync(path.join(dir, 'stdout.json')); writeFileSync(path.join(dir, 'files.sha256'), 'tampered');
+    expect(inspectEvidence(rows[0], dir)).toContain('FAIL TC-M1-01 missing evidence stdout.json');
+    expect(inspectEvidence(rows[0], dir)).toContain('FAIL TC-M1-01 files.sha256 missing or inconsistent');
   });
   it('rejects incomplete inventories', () => expect(() => parseCases('### TC-M1-01 · partial\n')).toThrow('FAIL'));
   it('keeps all 55 unexecuted rows and zero runtime claims', () => { const cases = inventory(); const rows = rowsFor(cases); expect(counts(rows)).toEqual({ executed: 0, skipped: 55, failed: 0, passed: 0, total: 55 }); expect(validateReport(cases, rows, counts(rows), () => '')).toEqual([]); });

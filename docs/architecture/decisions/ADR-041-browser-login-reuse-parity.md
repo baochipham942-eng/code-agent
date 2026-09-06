@@ -25,7 +25,7 @@ Neo 要让 Agent 在两类互补场景中复用浏览器登录态：一类是继
 - Desktop IPC 已有 `startBrowserRelay`、`stopBrowserRelay`、`getBrowserRelayState`、`listBrowserRelayTabs`、`openBrowserRelayTab`、`openBrowserRelayExtensionDirectory`。
 - Relay 状态 contract 为 `src/shared/contract/desktop.ts` 中的 `ManagedBrowserExternalBridgeState`，包括 status、显式授权标志、port、token hint、extension path、连接与附着数量等字段。
 - `browser_action` 实现在 `src/host/tools/vision/browserAction.ts`，当前全部动作直接调用 agent-scoped `BrowserService`。Relay 尚未成为 Agent 可选执行引擎。
-- `docs/architecture/workbench.md` 与 `docs/ARCHITECTURE.md` 曾把 external Chrome profile、external CDP attach 和 extension bridge 列为 backlog。本 ADR 以 accepted 决策关闭该产品 backlog；实现完成度继续由本 ADR 的里程碑和验收证据判定。
+- `docs/architecture/workbench.md` 与 [架构历史流水](../../releases/architecture-changelog.md) 曾把 external Chrome profile、external CDP attach 和 extension bridge 列为 backlog。本 ADR 以 accepted 决策关闭该产品 backlog；实现完成度继续由本 ADR 的里程碑和验收证据判定。
 
 ### Alma 0.0.876 对标基线
 

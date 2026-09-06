@@ -600,6 +600,9 @@ export class StandaloneAgentAdapter implements AgentInterface {
         access: 'read_write',
         role: 'primary',
       }]);
+      // createRunContext 会 canonicalize cwd（macOS 上 /tmp → /private/tmp）。
+      // ToolExecutor 构造期会校验 workingDirectory 与 runContext.cwd 一致（toolExecutor.ts:361），
+      // 所以下面两处都必须用它算出来的那一份，不能一个用原始路径一个用规范化路径。
       const evaluationRunContext = createRunContext({
         runId: `eval-${Date.now()}-${Math.random().toString(36).slice(2)}`,
         sessionId: this.currentSessionId,
@@ -612,7 +615,7 @@ export class StandaloneAgentAdapter implements AgentInterface {
             ? async (request) => permissionDecider({ ...request, toolName: request.tool })
             : async () => true),
         forcePermissionHandler: this.requestPermission !== undefined,
-        workingDirectory: this.workingDirectory,
+        workingDirectory: evaluationRunContext.cwd,
         runContext: evaluationRunContext,
         // 沙箱是这轮唯一该被写的地方：写目标落不进 scope 就拒，不靠 scripted 策略
         // （策略只按 (tool, requestType) 裁决，表达不了路径）。
@@ -682,6 +685,10 @@ export class StandaloneAgentAdapter implements AgentInterface {
           ? { redline: true }
           : undefined;
         const loop = new AgentLoop({
+          // 必须与 executor 的 runContext.runId 同值：AgentLoop 不给就自己造一个，
+          // 传到 executor.execute 会撞 RUN_CONTEXT_MISMATCH（toolExecutor.ts:466），
+          // 评测里每一次工具调用都会被拒（#1686 ai-review 抓出）。
+          runId: evaluationRunContext.runId,
           sessionId: this.currentSessionId,
           workingDirectory: this.workingDirectory,
           systemPrompt: this.systemPromptOverride ?? SYSTEM_PROMPT,

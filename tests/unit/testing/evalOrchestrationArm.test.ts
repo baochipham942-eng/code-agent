@@ -32,6 +32,7 @@ import type { CompareConfiguration } from '../../../src/host/testing/types';
 
 interface CapturedLoopConfig {
   goalContract?: { goal: string; allowSwarm?: boolean };
+  runId?: string;
   toolExecutor: { capturedConfig?: CapturedToolExecutorConfig };
   onEvent: (event: AgentEvent) => void;
 }
@@ -40,7 +41,7 @@ const capturedLoopConfigs: CapturedLoopConfig[] = [];
 type CapturedToolExecutorConfig = {
   spawnMaxDepth?: number;
   restrictWritesToWorkspace?: boolean;
-  runContext?: { workspaceScope?: { roots: Array<{ path: string; access: string }> } };
+  runContext?: { runId?: string; workspaceScope?: { roots: Array<{ path: string; access: string }> } };
 };
 const capturedToolExecutorConfigs: CapturedToolExecutorConfig[] = [];
 let scriptedEvents: AgentEvent[] = [];
@@ -168,6 +169,9 @@ describe('条件①：makeAgent 真读真传到 ToolExecutor 与 goal 契约', (
     await adapter.sendMessage('run');
     const config = capturedToolExecutorConfigs.at(-1);
     expect(config?.restrictWritesToWorkspace).toBe(true);
+    // AgentLoop 不给 runId 会自己造一个，传到 executor 撞 RUN_CONTEXT_MISMATCH
+    // ⇒ 评测里每次工具调用都被拒（#1686 ai-review）。两端必须同值。
+    expect(capturedLoopConfigs.at(-1)?.runId).toBe(config?.runContext?.runId);
     const roots = config?.runContext?.workspaceScope?.roots;
     // scope 根会被 canonicalize（/tmp → /private/tmp），比对时同样取 realpath，
     // 否则这条断言在 macOS 上恒红、在 Linux 上恒绿——两边都不是在测它想测的东西。

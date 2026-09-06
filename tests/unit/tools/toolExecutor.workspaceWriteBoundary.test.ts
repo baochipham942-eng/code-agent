@@ -28,14 +28,20 @@ import { createRunContext } from '../../../src/host/runtime/runContext';
 import { createWorkspaceScope } from '../../../src/host/runtime/workspaceScope';
 
 describe('restrictWritesToWorkspace 写边界', () => {
+  let parent: string;
   let sandbox: string;
   let outside: string;
 
   beforeAll(() => { getProtocolRegistry(); });
 
   beforeEach(async () => {
-    sandbox = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'wsb-sandbox-')));
-    outside = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'wsb-outside-')));
+    // 两个目录放同一个父目录下、并让沙箱那个**排序在前**（a- / z-）：
+    // 多路径遮蔽用例要的就是「靠前的是合法路径」，随机 mkdtemp 名字排不出这个条件。
+    parent = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'wsb-')));
+    sandbox = path.join(parent, 'a-sandbox');
+    outside = path.join(parent, 'z-outside');
+    await fs.mkdir(sandbox);
+    await fs.mkdir(outside);
     getToolCache().clear();
     fileReadTracker.clear();
     resetPermissionModeManager();
@@ -43,8 +49,7 @@ describe('restrictWritesToWorkspace 写边界', () => {
 
   afterEach(async () => {
     resetPermissionModeManager();
-    await fs.rm(sandbox, { recursive: true, force: true });
-    await fs.rm(outside, { recursive: true, force: true });
+    await fs.rm(parent, { recursive: true, force: true });
   });
 
   function buildExecutor(restrict: boolean): ToolExecutor {
@@ -100,6 +105,17 @@ describe('restrictWritesToWorkspace 写边界', () => {
     const result = await write(buildExecutor(true), target);
     expect(result.success).toBe(false);
     expect(existsSync(path.join(outside, 'escape-symlink.txt'))).toBe(false);
+  });
+
+  it('多路径参数：排序靠前的沙箱内路径不得遮住排在后面的越界目标', async () => {
+    // #1686 ai-review：targets 是排序去重后的数组，原实现只查 targets[0]（= 按字母序挑一个）。
+    // 这里让「沙箱内」那个排在前面（a- 开头），越界目标排后面，验证它照样被拦。
+    const inside = path.join(sandbox, 'a-inside.txt');
+    const escape = path.join(outside, 'z-escape.txt');
+    const result = await buildExecutor(true)
+      .execute('Write', { file_path: escape, path: inside, content: 'wsb' }, { sessionId: 'wsb-session' });
+    expect(result.success).toBe(false);
+    expect(existsSync(escape)).toBe(false);
   });
 
   it('开关关闭（生产缺省）时行为不变：scope 外的写不被这道闸拦', async () => {

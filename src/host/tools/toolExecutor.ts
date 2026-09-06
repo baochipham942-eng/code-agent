@@ -533,12 +533,21 @@ export class ToolExecutor {
     );
 
     if (this.runContext?.workspaceScope && toolDef.permissionLevel === 'write' && !isBashToolName(policyToolName)) {
-      const target = resolveToolWriteTargets({
+      const resolvedTargets = resolveToolWriteTargets({
         definition: toolDef, params, workingDirectory: this.executionCwd,
-      }).targets[0] ?? this.executionCwd;
-      const readableMatch = resolveWorkspacePath(this.runContext.workspaceScope, target, 'read');
-      const outsideWorkspace = !readableMatch && this.restrictWritesToWorkspace;
-      if (outsideWorkspace || (readableMatch && readableMatch.root.access !== 'read_write')) {
+      }).targets;
+      // 🔴 逐个查，不是只查 targets[0]：targets 是**排序去重**后的数组，取第 0 个等于
+      // 「按字母序挑一个」——同一次调用带两个路径参数时（一个在工作区内、一个在工作区外），
+      // 排在前面的那个能把真正的越界目标遮住（#1686 ai-review）。
+      const candidates = resolvedTargets.length > 0 ? resolvedTargets : [this.executionCwd];
+      const scope = this.runContext.workspaceScope;
+      const offending = candidates
+        .map((candidate) => ({ candidate, match: resolveWorkspacePath(scope, candidate, 'read') }))
+        .find(({ match }) => (this.restrictWritesToWorkspace && !match)
+          || (match && match.root.access !== 'read_write'));
+      const target = offending?.candidate ?? candidates[0];
+      const readableMatch = offending?.match;
+      if (offending) {
         return {
           success: false,
           error: readableMatch

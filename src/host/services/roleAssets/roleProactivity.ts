@@ -733,6 +733,8 @@ async function runWakeViaCliLoop(params: {
   config.systemPrompt = [rolePrompt, params.contextBlock ?? ''].filter((s) => s.trim().length > 0).join('\n\n');
   config.systemInstructions = [UNATTENDED_TRUST_NOTICE];
   config.maxIterations = ROLE_PROACTIVITY.WAKE_MAX_ITERATIONS;
+  // 角色醒来是无人值守发起，不进上线后评测分母。
+  config.originKind = 'headless';
 
   const agentLoop = createAgentLoop(config, () => { /* 醒来是后台运行，无 UI 事件消费方 */ }, [], params.sessionId);
   await agentLoop.run(params.wakePrompt);
@@ -834,6 +836,8 @@ async function launchAdvanceGoalRun(params: {
 
   config.systemPrompt = [rolePrompt, params.contextBlock ?? ''].filter((s) => s.trim().length > 0).join('\n\n');
   config.systemInstructions = [UNATTENDED_TRUST_NOTICE];
+  // goal run 同样是无人值守发起。
+  config.originKind = 'headless';
   config.goalContract = buildGoalContract({
     goal: goalInput.goal,
     verifyCommand: goalInput.verify,

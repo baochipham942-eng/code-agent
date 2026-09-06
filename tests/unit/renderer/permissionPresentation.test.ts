@@ -220,6 +220,21 @@ describe('device / special path copy', () => {
     expect(consequence).not.toContain('设备文件');
   });
 
+  // ai-review #1692 第二轮：POSIX 上 NUL/CON 可以是普通文件，审批卡拿到的是未解析的原始路径。
+  it('POSIX 上名为 NUL 的普通文件：覆盖警告必须保留（裸 Windows 保留名不认作设备）', () => {
+    const request: PermissionRequest = {
+      ...baseRequest,
+      tool: 'Write',
+      type: 'file_write',
+      details: { path: 'NUL' },
+      boundary: { id: 'file.external_write' },
+    };
+
+    const consequence = permissionConsequence(request, zh);
+    expect(consequence).toContain('可能覆盖现有内容');
+    expect(consequence).not.toContain('设备文件');
+  });
+
   it('titles /dev/stdout with the full path and skips overwrite wording', () => {
     const request: PermissionRequest = {
       ...baseRequest,

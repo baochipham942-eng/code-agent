@@ -26,7 +26,10 @@ function isKnownCharDevice(target: string): boolean {
   const normalized = target.replace(/\\/g, '/').replace(/\/+$/u, '');
   const lower = normalized.toLowerCase().replace(/^\/private\/dev\//u, '/dev/');
   if (/^\/dev\/(null|zero|full|random|urandom|tty|stdin|stdout|stderr|fd\/\d+)$/u.test(lower)) return true;
-  if (/^(nul|con|prn|aux|com[1-9]|lpt[1-9])$/i.test(normalized)) return true;
+  // 只认 Windows 的设备命名空间形式 `\\.\NUL`——**裸名 `NUL` 不认**：审批卡拿到的是
+  // host 未解析的原始 file_path，在 macOS/Linux 上 `NUL`/`CON` 完全可以是普通文件，
+  // 无平台判断地当设备会把覆盖警告从真文件上摘掉（ai-review #1692 第二轮）。
+  // 方向固定为 fail-safe：**证不出是设备，就保留覆盖警告**；Windows 上裸名至多是多提示一句。
   if (/^\/\/\.\/(nul|con|prn|aux|com[1-9]|lpt[1-9])$/i.test(normalized)) return true;
   return false;
 }

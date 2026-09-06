@@ -5,85 +5,241 @@
       "id": "allow-bash-in-eval-workspace",
       "effect": "allow",
       "tool": "Bash",
-      "match": { "requestType": "command" }
+      "match": {
+        "requestType": "command"
+      }
     },
     {
       "id": "allow-lowercase-bash-in-eval-workspace",
       "effect": "allow",
       "tool": "bash",
-      "match": { "requestType": "command" }
+      "match": {
+        "requestType": "command"
+      }
     },
     {
       "id": "allow-read-in-eval-workspace",
       "effect": "allow",
       "tool": "Read",
-      "match": { "requestType": "file_read" }
+      "match": {
+        "requestType": "file_read"
+      }
     },
     {
       "id": "allow-lowercase-read-in-eval-workspace",
       "effect": "allow",
       "tool": "read_file",
-      "match": { "requestType": "file_read" }
+      "match": {
+        "requestType": "file_read"
+      }
     },
     {
       "id": "allow-write-in-eval-workspace",
       "effect": "allow",
       "tool": "Write",
-      "match": { "requestType": "file_write" }
+      "match": {
+        "requestType": "file_write"
+      }
     },
     {
       "id": "allow-edit-in-eval-workspace",
       "effect": "allow",
       "tool": "Edit",
-      "match": { "requestType": "file_edit" }
+      "match": {
+        "requestType": "file_edit"
+      }
     },
     {
       "id": "allow-lowercase-write-in-eval-workspace",
       "effect": "allow",
       "tool": "write_file",
-      "match": { "requestType": "file_write" }
+      "match": {
+        "requestType": "file_write"
+      }
     },
     {
       "id": "allow-lowercase-edit-in-eval-workspace",
       "effect": "allow",
       "tool": "edit_file",
-      "match": { "requestType": "file_edit" }
+      "match": {
+        "requestType": "file_edit"
+      }
     },
     {
       "id": "allow-append-in-eval-workspace",
       "effect": "allow",
       "tool": "Append",
-      "match": { "requestType": "file_write" }
+      "match": {
+        "requestType": "file_write"
+      }
     },
     {
       "id": "allow-lowercase-append-in-eval-workspace",
       "effect": "allow",
       "tool": "append_file",
-      "match": { "requestType": "file_write" }
+      "match": {
+        "requestType": "file_write"
+      }
     },
     {
       "id": "allow-task-delegation-in-eval-workspace",
       "effect": "allow",
       "tool": "Task",
-      "match": { "requestType": "command" }
+      "match": {
+        "requestType": "command"
+      }
     },
     {
       "id": "allow-spawn-agent-delegation-in-eval-workspace",
       "effect": "allow",
       "tool": "spawn_agent",
-      "match": { "requestType": "command" }
+      "match": {
+        "requestType": "command"
+      }
     },
     {
       "id": "allow-bash-directive-memory-probe-in-eval",
       "effect": "allow",
       "tool": "Bash",
-      "match": { "requestType": "file_write" }
+      "match": {
+        "requestType": "file_write"
+      }
     },
     {
       "id": "allow-lowercase-bash-directive-memory-probe-in-eval",
       "effect": "allow",
       "tool": "bash",
-      "match": { "requestType": "file_write" }
+      "match": {
+        "requestType": "file_write"
+      }
+    },
+    {
+      "id": "deny-image_process-in-eval-workspace",
+      "effect": "deny",
+      "tool": "image_process",
+      "match": {
+        "requestType": "file_write"
+      }
+    },
+    {
+      "id": "deny-text_to_speech-in-eval-workspace",
+      "effect": "deny",
+      "tool": "text_to_speech",
+      "match": {
+        "requestType": "network"
+      }
+    },
+    {
+      "id": "deny-video_generate-in-eval-workspace",
+      "effect": "deny",
+      "tool": "video_generate",
+      "match": {
+        "requestType": "network"
+      }
+    },
+    {
+      "id": "deny-image_generate-in-eval-workspace",
+      "effect": "deny",
+      "tool": "image_generate",
+      "match": {
+        "requestType": "network"
+      }
+    },
+    {
+      "id": "deny-image_annotate-in-eval-workspace",
+      "effect": "deny",
+      "tool": "image_annotate",
+      "match": {
+        "requestType": "file_write"
+      }
+    },
+    {
+      "id": "deny-music_generate-in-eval-workspace",
+      "effect": "deny",
+      "tool": "music_generate",
+      "match": {
+        "requestType": "network"
+      }
+    },
+    {
+      "id": "deny-Browser-in-eval-workspace",
+      "effect": "deny",
+      "tool": "Browser",
+      "match": {
+        "requestType": "command"
+      }
+    },
+    {
+      "id": "deny-browser_action-in-eval-workspace",
+      "effect": "deny",
+      "tool": "browser_action",
+      "match": {
+        "requestType": "command"
+      }
+    },
+    {
+      "id": "allow-browser_navigate-in-eval-workspace",
+      "effect": "allow",
+      "tool": "browser_navigate",
+      "match": {
+        "requestType": "command"
+      }
+    },
+    {
+      "id": "allow-validate_html_in_app-in-eval-workspace",
+      "effect": "allow",
+      "tool": "validate_html_in_app",
+      "match": {
+        "requestType": "command"
+      }
+    },
+    {
+      "id": "deny-screenshot-in-eval-workspace",
+      "effect": "deny",
+      "tool": "screenshot",
+      "match": {
+        "requestType": "file_read"
+      }
+    },
+    {
+      "id": "deny-ocr_search-in-eval-workspace",
+      "effect": "deny",
+      "tool": "ocr_search",
+      "match": {
+        "requestType": "file_read"
+      }
+    },
+    {
+      "id": "deny-photo_archive-in-eval-workspace",
+      "effect": "deny",
+      "tool": "photo_archive",
+      "match": {
+        "requestType": "file_write"
+      }
+    },
+    {
+      "id": "deny-computer-in-eval-workspace",
+      "effect": "deny",
+      "tool": "Computer",
+      "match": {
+        "requestType": "command"
+      }
+    },
+    {
+      "id": "deny-computer-use-in-eval-workspace",
+      "effect": "deny",
+      "tool": "computer_use",
+      "match": {
+        "requestType": "command"
+      }
+    },
+    {
+      "id": "deny-gui-agent-in-eval-workspace",
+      "effect": "deny",
+      "tool": "gui_agent",
+      "match": {
+        "requestType": "command"
+      }
     }
   ]
 }

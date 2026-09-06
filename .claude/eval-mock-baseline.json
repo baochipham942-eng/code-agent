@@ -1,133 +1,222 @@
 {
   "version": 1,
-  "denominatorVersion": 3,
-  "updatedAt": 1786884181889,
-  "updatedBy": "c95aca575fbf6061c36a106863900b21f65cc3df",
+  "denominatorVersion": 4,
+  "aggregationRule": "pass_rate_k1",
+  "aggregationRuleVersion": 4,
+  "plannedCaseIds": [
+    "bash-pwd",
+    "bash-echo",
+    "read-file-not-exists",
+    "write-file-new",
+    "edit-file-modify",
+    "task-create-json-config",
+    "task-analyze-structure",
+    "task-explain-code",
+    "conv-understand-intent",
+    "conv-understand-context",
+    "conv-ask-clarification",
+    "conv-handle-ambiguous",
+    "error-file-not-found",
+    "error-directory-not-found",
+    "error-command-failed",
+    "error-recovery-retry",
+    "error-graceful-fallback",
+    "debug-syntax-error",
+    "debug-runtime-error",
+    "codegen-typescript",
+    "refactor-extract-function",
+    "refactor-rename-variable",
+    "recovery-tool-fallback",
+    "recovery-path-fallback",
+    "recovery-write-readonly",
+    "recovery-partial-success",
+    "recovery-command-retry",
+    "recovery-binary-file",
+    "data-csv-basic",
+    "data-cleaning",
+    "workflow-read-modify-verify",
+    "workflow-multi-file",
+    "workflow-analyze-and-document",
+    "workflow-e2e-improve",
+    "git-status",
+    "git-log",
+    "git-diff-analysis",
+    "git-branch-create",
+    "git-conflict-awareness",
+    "web-search-basic",
+    "web-search-chinese",
+    "web-fetch-page",
+    "web-fetch-json-api",
+    "longtext-read-large-file",
+    "longtext-scan-directory",
+    "longtext-generate-doc",
+    "ppt-from-outline",
+    "doc-data-to-report",
+    "edge-unicode-filename",
+    "edge-single-word",
+    "edge-emoji-input",
+    "edge-malformed-json",
+    "multi-turn-context-memory",
+    "multi-turn-incremental-task",
+    "multi-turn-correction",
+    "multi-turn-drill-down",
+    "multi-turn-build-on-previous",
+    "multi-turn-misunderstand-fix",
+    "vision-screenshot-describe",
+    "plugin-validate-html-selfcheck",
+    "plugin-browser-local-page",
+    "multiagent-workflow-analysis",
+    "multiagent-cross-file-analysis",
+    "multiagent-fanout-parallel-audit",
+    "excel-bench-59196",
+    "excel-bench-66-1",
+    "excel-bench-46167",
+    "excel-bench-55427",
+    "reread-loop-trap",
+    "modify-verify-modify",
+    "cross-file-consistent-edit",
+    "long-chain-budget-15",
+    "prompt-smoke-read-package",
+    "prompt-smoke-write-file",
+    "prompt-smoke-edit-multiple-replacements",
+    "prompt-smoke-grep-current-name",
+    "prompt-smoke-toolsearch-json-arguments",
+    "prompt-smoke-task-single-delegate",
+    "prompt-smoke-git-status-no-commit"
+  ],
+  "updatedAt": 1788657707913,
+  "updatedBy": "6553a1766b56367cb5d11fa36282f80912072a1d",
   "mode": "mock",
   "globalMetrics": {
     "passRate": 1,
     "averageScore": 1,
-    "totalCases": 20
+    "totalCases": 21
   },
   "caseResults": {
     "bash-pwd": {
       "status": "passed",
       "score": 1,
-      "lastPassedAt": 1786884180648,
+      "lastPassedAt": 1788657706321,
       "model": "mock/mock-model"
     },
     "bash-echo": {
       "status": "passed",
       "score": 1,
-      "lastPassedAt": 1786884180648,
+      "lastPassedAt": 1788657706321,
       "model": "mock/mock-model"
     },
     "read-file-not-exists": {
       "status": "passed",
       "score": 1,
-      "lastPassedAt": 1786884180649,
+      "lastPassedAt": 1788657706322,
       "model": "mock/mock-model"
     },
     "write-file-new": {
       "status": "passed",
       "score": 1,
-      "lastPassedAt": 1786884180661,
+      "lastPassedAt": 1788657706343,
       "model": "mock/mock-model"
     },
     "edit-file-modify": {
       "status": "passed",
       "score": 1,
-      "lastPassedAt": 1786884180672,
+      "lastPassedAt": 1788657706362,
       "model": "mock/mock-model"
     },
     "task-create-json-config": {
       "status": "passed",
       "score": 1,
-      "lastPassedAt": 1786884180681,
+      "lastPassedAt": 1788657706374,
       "model": "mock/mock-model"
     },
     "error-recovery-retry": {
       "status": "passed",
       "score": 1,
-      "lastPassedAt": 1786884180689,
+      "lastPassedAt": 1788657706385,
       "model": "mock/mock-model"
     },
     "codegen-typescript": {
       "status": "passed",
       "score": 1,
-      "lastPassedAt": 1786884180714,
+      "lastPassedAt": 1788657706408,
       "model": "mock/mock-model"
     },
     "data-cleaning": {
       "status": "passed",
       "score": 1,
-      "lastPassedAt": 1786884180772,
+      "lastPassedAt": 1788657706517,
       "model": "mock/mock-model"
     },
     "workflow-multi-file": {
       "status": "passed",
       "score": 1,
-      "lastPassedAt": 1786884180798,
+      "lastPassedAt": 1788657706584,
       "model": "mock/mock-model"
     },
     "git-status": {
       "status": "passed",
       "score": 1,
-      "lastPassedAt": 1786884180887,
+      "lastPassedAt": 1788657706718,
       "model": "mock/mock-model"
     },
     "edge-unicode-filename": {
       "status": "passed",
       "score": 1,
-      "lastPassedAt": 1786884180946,
+      "lastPassedAt": 1788657706809,
       "model": "mock/mock-model"
     },
     "multi-turn-incremental-task": {
       "status": "passed",
       "score": 1,
-      "lastPassedAt": 1786884180960,
+      "lastPassedAt": 1788657706824,
       "model": "mock/mock-model"
     },
     "multi-turn-correction": {
       "status": "passed",
       "score": 1,
-      "lastPassedAt": 1786884180967,
+      "lastPassedAt": 1788657706833,
+      "model": "mock/mock-model"
+    },
+    "multiagent-fanout-parallel-audit": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1788657706935,
       "model": "mock/mock-model"
     },
     "prompt-smoke-write-file": {
       "status": "passed",
       "score": 1,
-      "lastPassedAt": 1786884181049,
+      "lastPassedAt": 1788657707004,
       "model": "mock/mock-model"
     },
     "prompt-smoke-edit-multiple-replacements": {
       "status": "passed",
       "score": 1,
-      "lastPassedAt": 1786884181063,
+      "lastPassedAt": 1788657707020,
       "model": "mock/mock-model"
     },
     "prompt-smoke-grep-current-name": {
       "status": "passed",
       "score": 1,
-      "lastPassedAt": 1786884181064,
+      "lastPassedAt": 1788657707021,
       "model": "mock/mock-model"
     },
     "prompt-smoke-toolsearch-json-arguments": {
       "status": "passed",
       "score": 1,
-      "lastPassedAt": 1786884181064,
+      "lastPassedAt": 1788657707021,
       "model": "mock/mock-model"
     },
     "prompt-smoke-task-single-delegate": {
       "status": "passed",
       "score": 1,
-      "lastPassedAt": 1786884181064,
+      "lastPassedAt": 1788657707021,
       "model": "mock/mock-model"
     },
     "prompt-smoke-git-status-no-commit": {
       "status": "passed",
       "score": 1,
-      "lastPassedAt": 1786884181161,
+      "lastPassedAt": 1788657707146,
       "model": "mock/mock-model"
     }
   },
@@ -177,6 +266,8 @@
     "multi-turn-build-on-previous": "核心断言依赖真实 agent 的语义、策略或产物能力，确定性 mock 没有有效信号",
     "multi-turn-misunderstand-fix": "核心断言依赖真实 agent 的语义、策略或产物能力，确定性 mock 没有有效信号",
     "vision-screenshot-describe": "核心断言依赖真实 agent 的语义、策略或产物能力，确定性 mock 没有有效信号",
+    "plugin-validate-html-selfcheck": "核心断言依赖真实 agent 的语义、策略或产物能力，确定性 mock 没有有效信号",
+    "plugin-browser-local-page": "核心断言依赖真实 agent 的语义、策略或产物能力，确定性 mock 没有有效信号",
     "multiagent-workflow-analysis": "核心断言依赖真实 agent 的语义、策略或产物能力，确定性 mock 没有有效信号",
     "multiagent-cross-file-analysis": "核心断言依赖真实 agent 的语义、策略或产物能力，确定性 mock 没有有效信号",
     "excel-bench-59196": "核心断言依赖真实 agent 的语义、策略或产物能力，确定性 mock 没有有效信号",

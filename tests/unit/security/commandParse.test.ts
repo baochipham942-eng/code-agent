@@ -167,4 +167,31 @@ describe('shared shell command parser', () => {
   it('does not treat a shell name used as a plain argument as a launcher', () => {
     expect(parseShellCommand('grep sh file')).toMatchObject({ writeTargets: [], uncertain: [] });
   });
+
+  it('restores a variable anywhere in a word instead of leaking an internal marker', () => {
+    const parsed = parseShellCommand('printf x > /tmp/report-$USER.txt');
+    expect(parsed.writeTargets).toEqual([
+      { path: '/tmp/report-${USER}.txt', source: 'redirect', uncertain: true },
+    ]);
+    // A path handed to lstatSync must never carry control characters; round 15 crashed on U+0000.
+    for (const target of parsed.writeTargets) expect([...target.path].some((c) => c.charCodeAt(0) < 0x20)).toBe(false);
+    expect(parseShellCommand('echo $HOME').segments[0].words).toEqual(['echo', '${HOME}']);
+  });
+
+  it('decodes ANSI-C quoting before tokenizing so quote boundaries decide identity', () => {
+    expect(parseShellCommand("$'ls'").segments[0].words).toEqual(['ls']);
+    expect(parseShellCommand("$'\\x6c\\x73' -la").segments[0].words).toEqual(['ls', '-la']);
+    expect(parseShellCommand(`$'l'"\\x73"`).segments[0].words).toEqual(['l\\x73']);
+    expect(parseShellCommand("echo $'a\\'b'").segments[0].words).toEqual(['echo', "a'b"]);
+    expect(parseShellCommand('"$"ls').segments[0].words).toEqual(['${}ls']);
+    expect(parseShellCommand(`echo x > $'\\x72'"eport.txt"`).writeTargets)
+      .toEqual([{ path: 'report.txt', source: 'redirect', uncertain: false }]);
+  });
+
+  it('keeps each redirection on its own segment', () => {
+    const parsed = parseShellCommand('printf x > out.txt; ls; cat y >> log.txt');
+    expect(parsed.segments.map((segment) => segment.redirects.map((target) => target.path)))
+      .toEqual([['out.txt'], [], ['log.txt']]);
+    expect(parsed.writeTargets.map((target) => target.path)).toEqual(['out.txt', 'log.txt']);
+  });
 });

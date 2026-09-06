@@ -26,6 +26,7 @@ import {
   splitCompoundCommand,
 } from '../security/commandSafety';
 import { canonicalizeCommand } from '../security/canonicalizeCommand';
+import { parseShellCommand } from '../security/commandParse';
 import { RM_FLAGS_REQUIRED, RM_HEAD } from '../security/rmFlagPattern';
 import { checkCommandPolicy } from './modules/shell/commandPolicy';
 import { inspectPermissionCommand, neverApprove } from './permissionCommandParse';
@@ -355,10 +356,10 @@ function credentialReadTarget(command: string, context: ClassificationContext): 
       }
     }
   }
-  for (const [index, word] of words.entries()) {
-    if (ignoredIndexes.has(index)) continue;
-    if (!word) continue;
-    const resolved = resolveCandidatePath(word, context.workingDirectory, context.pathResolutionCache);
+  // Redirection targets are path candidates too (`> $'\0'` must stay a refusal); uncertain ones stay out.
+  const targets = parseShellCommand(command).writeTargets.filter((t) => !t.uncertain).map((t) => t.path);
+  for (const candidate of [...words.filter((word, index) => word && !ignoredIndexes.has(index)), ...targets]) {
+    const resolved = resolveCandidatePath(candidate, context.workingDirectory, context.pathResolutionCache);
     if (isSensitiveCredentialPath(resolved, { homeDir: CANONICAL_HOME_DIR, projectRoot })) return resolved;
   }
   return null;
@@ -831,16 +832,16 @@ export class PermissionClassifier {
     const rawInspection = inspectPermissionCommand(rawTrimmed, startTime);
     const segments = splitCompoundCommand(rawTrimmed);
     if (!segments || segments.length === 0) {
-      // Failing to split is not evidence of safety. Returning null here hands the command to the
-      // caller's fallback ask, which silently downgrades a dangerous-command deny — the same shape
-      // as outputRedirectionAsk (round 7) and parseFailureAsk (round 13). Let the deny rules read
-      // the whole command first; anything short of deny still falls through to the fallback.
+      // Failing to split is not evidence of safety: a null here hands the command to the caller's
+      // fallback ask and silently downgrades a dangerous-command deny (round 7 / round 13 shape).
+      // Let the deny rules read the whole command first; anything short of deny still falls through.
       return neverApprove(this.classifyBashSegment(rawTrimmed, context, startTime));
     }
 
     if (segments.length === 1) {
+      // A segment's deny or specific ask outranks the generic redirection ask; only an approve yields.
       const result = this.classifyBashSegment(segments[0], context, startTime);
-      if (result?.decision === 'deny') return result; return rawInspection.outputRedirectionAsk ?? result;
+      return neverApprove(result) ?? rawInspection.outputRedirectionAsk ?? result;
     }
 
     // 沿用 #1609 的逐段风险分类，同时把 cd 的 cwd 影响传给后续段的路径解析。

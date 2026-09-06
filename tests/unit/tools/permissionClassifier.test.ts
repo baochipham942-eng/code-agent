@@ -312,6 +312,29 @@ describe('PermissionClassifier', () => {
     },
   );
 
+  // origin/main refused this through the path analysis because the redirection target was still a
+  // word of the segment text. The shared parser moves targets into writeTargets, so the credential
+  // scan reads them from there — an unresolvable target must stay a refusal, not decay into an ask.
+  it('refuses a redirection target that cannot be a filesystem path', async () => {
+    const result = await classifyPermission(
+      'bash',
+      { command: "printf x > $'\\0'" },
+      { workingDirectory: '/tmp', permissionLevel: 'execute' },
+    );
+    expect(result.decision).toBe('deny');
+    expect(result.reason).toContain('NUL byte');
+  });
+
+  it('keeps the specific credential-path ask ahead of the generic redirection ask', async () => {
+    const result = await classifyPermission(
+      'bash',
+      { command: 'echo x >> ~/.aws/credentials' },
+      { workingDirectory: '/tmp', permissionLevel: 'execute' },
+    );
+    expect(result).toMatchObject({ decision: 'ask', trustBoundary: true });
+    expect(result.reason).toContain('凭据路径');
+  });
+
   it('auto-approves internal delegation tools', async () => {
     for (const toolName of ['Task', 'spawn_agent', 'AgentSpawn']) {
       const result = await classifyPermission(

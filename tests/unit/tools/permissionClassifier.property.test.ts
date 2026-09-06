@@ -1,7 +1,8 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import fc from 'fast-check';
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { bashCommandRequiresPermission, PermissionClassifier } from '../../../src/host/tools/permissionClassifier';
 import { setCommandPolicyRulesForTest } from '../../../src/host/tools/modules/shell/commandPolicy';
@@ -71,12 +72,10 @@ describe('permission classifier regex properties', () => {
         const normal = await classify(`${respell('chmod', style)} ${mode} file2_Aa`);
         expect(normal.decision).toBe('ask');
         expect(normal.reason).not.toContain('危险权限变更');
-        // `ansi` joins `fullwidth` here on purpose: once shell-quote erases the quote boundaries,
-        // `$'\\x6c\\x73'` is indistinguishable from the glued `$'\\x6c'"\\x73"`, so an escaped body can
-        // no longer earn the approval shortcut. One extra prompt for a legitimate escaped spelling
-        // is the price of refusing the forged one.
+        // ANSI-C is decoded before shell-quote ever sees it, so `$'\\x6c\\x73'` is the word `ls`
+        // while the glued `$'\\x6c'"\\x73"` stays `l\\x73`. Only fullwidth remains unverifiable.
         expect((await classify(`${respell('ls', style)} file2_Aa`)).decision)
-          .toBe(style === 'fullwidth' || style === 'ansi' ? 'ask' : 'approve');
+          .toBe(style === 'fullwidth' ? 'ask' : 'approve');
       },
     ), { numRuns: 60, seed: 1637 });
   });
@@ -136,21 +135,35 @@ function renderGeneratedShape(shape: GeneratedShape): string {
   return `${command} ${shape.delimiter}${suffix}`;
 }
 
-async function baselineDecisions(commands: string[]): Promise<Array<'approve' | 'deny' | 'ask'>> {
-  const requestedBaseline = process.env.N_BASHAST_BASELINE ?? '/private/tmp/n-bashast-r9-baseline';
-  let baseline = requestedBaseline;
-  let ownedBaseline: string | undefined;
-  if (!fs.existsSync(path.join(baseline, 'src/host/tools/permissionClassifier.ts'))) {
-    ownedBaseline = fs.mkdtempSync(path.join('/tmp', 'n-bashast-baseline-'));
-    const checkout = spawnSync('git', ['worktree', 'add', '--detach', ownedBaseline, 'origin/main'], {
-      cwd: process.cwd(), encoding: 'utf8',
-    });
-    if (checkout.status !== 0) {
-      throw new Error(`detached origin/main baseline checkout failed: ${checkout.stderr}`);
-    }
-    fs.symlinkSync(path.join(process.cwd(), 'node_modules'), path.join(ownedBaseline, 'node_modules'), 'junction');
-    baseline = ownedBaseline;
+// The baseline is a detached checkout of origin/main made once per file. N_BASHAST_BASELINE may
+// name an existing checkout for local iteration; nothing is picked up implicitly, because a cached
+// checkout that is no longer origin/main satisfies an existence check and silently compares against
+// the wrong thing. CI clones are shallow and carry no origin/main ref, so fetch it first.
+let ownedBaseline: string | undefined;
+
+function baselineCheckout(): string {
+  if (process.env.N_BASHAST_BASELINE) return process.env.N_BASHAST_BASELINE;
+  if (ownedBaseline) return ownedBaseline;
+  const git = (...args: string[]) => spawnSync('git', args, { cwd: process.cwd(), encoding: 'utf8' });
+  if (git('rev-parse', '--verify', '--quiet', 'origin/main').status !== 0) {
+    const fetch = git('fetch', '--depth=1', 'origin', '+refs/heads/main:refs/remotes/origin/main');
+    if (fetch.status !== 0) throw new Error(`origin/main is not available for the baseline: ${fetch.stderr}`);
   }
+  const checkoutDir = fs.mkdtempSync(path.join(os.tmpdir(), 'n-bashast-baseline-'));
+  const checkout = git('worktree', 'add', '--detach', checkoutDir, 'origin/main');
+  if (checkout.status !== 0) {
+    throw new Error(`detached origin/main baseline checkout failed: ${checkout.stderr}`);
+  }
+  fs.symlinkSync(path.join(process.cwd(), 'node_modules'), path.join(checkoutDir, 'node_modules'), 'junction');
+  ownedBaseline = checkoutDir;
+  return ownedBaseline;
+}
+
+afterAll(() => {
+  if (ownedBaseline) spawnSync('git', ['worktree', 'remove', '--force', ownedBaseline], { cwd: process.cwd() });
+});
+
+async function baselineDecisions(commands: string[]): Promise<Array<'approve' | 'deny' | 'ask'>> {
   const runner = [
     "import fs from 'node:fs';",
     "import { PermissionClassifier } from './src/host/tools/permissionClassifier.ts';",
@@ -160,20 +173,14 @@ async function baselineDecisions(commands: string[]): Promise<Array<'approve' | 
     'const classifier = new PermissionClassifier({ enableLlm: false });',
     "Promise.all(commands.map((command) => classifier.classify('Bash', { command }, { workingDirectory: '/tmp', permissionLevel: 'execute' }))).then((results) => process.stdout.write(JSON.stringify(results.map(({ decision }) => decision))));",
   ].join('\n');
-  try {
-    const result = spawnSync('npx', ['tsx', '-e', runner], {
-      cwd: baseline,
-      input: JSON.stringify(commands),
-      encoding: 'utf8',
-      timeout: 120_000,
-    });
-    if (result.status !== 0) throw new Error(`baseline property runner failed: ${result.stderr}`);
-    return JSON.parse(result.stdout) as Array<'approve' | 'deny' | 'ask'>;
-  } finally {
-    if (ownedBaseline) {
-      spawnSync('git', ['worktree', 'remove', '--force', ownedBaseline], { cwd: process.cwd() });
-    }
-  }
+  const result = spawnSync('npx', ['tsx', '-e', runner], {
+    cwd: baselineCheckout(),
+    input: JSON.stringify(commands),
+    encoding: 'utf8',
+    timeout: 120_000,
+  });
+  if (result.status !== 0) throw new Error(`baseline property runner failed: ${result.stderr}`);
+  return JSON.parse(result.stdout) as Array<'approve' | 'deny' | 'ask'>;
 }
 
 // approve < ask < deny. The invariant is "never looser than baseline" on the whole order, not just
@@ -202,15 +209,34 @@ const KNOWN_SHAPES = [
   "chronic bash -c 'chmod -R 777 ./data'",
   `$'\\x6c'"\\x73"`,
   `$'\\x6c\\x73'`,
+  // Round 15 and the marker post-mortem: shell-quote reports `$'ls'`, `"$"ls`, `$"ls"` and the lone `$`
+  // through the very same empty-key callback, and a variable in the middle of a word cannot be
+  // restored from a marker. These pin the family that four rounds of heuristics kept re-opening.
+  '"$"ls',
+  '$"ls"',
+  "echo $'a\\'b'",
+  '$\\x6c\\x73',
+  'printf x > /tmp/report-$USER.txt',
+  "printf x > $'\\0'",
+  "$'ls' > out.txt",
+  'cd . > out.txt',
+  'echo x >> ~/.aws/credentials',
+  'cd ~/.ssh; echo x > authorized_keys',
 ];
 
 describe('final decision is never looser than the detached origin/main baseline', () => {
+  const knownBaseline = new Map<string, 'approve' | 'deny' | 'ask'>();
+  beforeAll(async () => {
+    const decisions = await baselineDecisions(KNOWN_SHAPES);
+    KNOWN_SHAPES.forEach((command, index) => knownBaseline.set(command, decisions[index]));
+  }, 120_000);
   beforeEach(() => setCommandPolicyRulesForTest([]));
 
   // Sampling indices with replacement does not guarantee every known shape is compared, and these
   // are exactly the shapes we already know can regress. Walk them one by one.
   it.each(KNOWN_SHAPES)('never loosens the baseline for a known shape: %s', async (command) => {
-    const [baseline] = await baselineDecisions([command]);
+    const baseline = knownBaseline.get(command);
+    if (!baseline) throw new Error(`no baseline decision recorded for ${command}`);
     const result = await new PermissionClassifier({ enableLlm: false }).classify(
       'Bash', { command }, { workingDirectory: '/tmp', permissionLevel: 'execute' },
     );

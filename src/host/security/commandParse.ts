@@ -13,13 +13,11 @@ const QUALIFICATION_SHELLS = new Set(['bash', 'sh', 'zsh']);
 const PRIVILEGE_WRAPPERS = new Set(['sudo', 'doas']);
 const SIMPLE_WRAPPERS = new Set(['command', 'exec', 'nohup', 'setsid']);
 const MAX_WRAPPER_DEPTH = 4;
-const SHELL_VARIABLE_MARKER_START = '\u0000';
-const SHELL_VARIABLE_MARKER_END = '\u0001';
 
 interface ParsedShellSegment {
   words: string[];
-  /** Parallel to `words`: the word was spelled by gluing quoting styles (`$'l'"\x73"`). */
-  mixedIdentity: boolean[];
+  /** Output redirections attached to this segment. Also collected into `writeTargets`. */
+  redirects: ShellWriteTarget[];
 }
 
 interface ShellWriteTarget {
@@ -55,50 +53,10 @@ function isOperator(entry: ShellEntry): entry is ShellOperator {
   return typeof entry === 'object' && entry !== null && 'op' in entry;
 }
 
-function normalizeWord(word: string): { word: string; failed: boolean; mixedIdentity: boolean } {
-  // Give shell-quote a private marker so an ANSI-C word (`$'ls'`) cannot be
-  // confused with an ordinary single-quoted literal (`'${}ls'`). Variable
-  // expansions are restored as `${NAME}` and remain uncertain downstream.
-  if (word.startsWith(SHELL_VARIABLE_MARKER_START)) {
-    const end = word.indexOf(SHELL_VARIABLE_MARKER_END, SHELL_VARIABLE_MARKER_START.length);
-    if (end >= 0) {
-      const key = word.slice(SHELL_VARIABLE_MARKER_START.length, end);
-      const body = word.slice(end + SHELL_VARIABLE_MARKER_END.length);
-      // shell-quote has already erased adjacent quote boundaries, so a body such as `l\\x73`
-      // may be `$'l'"\\x73"` rather than ANSI-C `ls`. Decode it either way — a redirection target
-      // spelled that way still has to resolve to one concrete path — and only report the
-      // ambiguity, so the qualification side can refuse the identity on its own. Refusing here
-      // would fuse approval and write-target extraction back together.
-      // Any backslash is enough. Once shell-quote has erased the quote boundaries, `$'\\x6c\\x73'`
-      // (one real ANSI-C word) and `$'\\x6c'"\\x73"` (two glued fragments) have identical bodies —
-      // the spelling cannot be recovered from the body, so a body carrying escapes is never a
-      // verifiable identity. Losing the shortcut for a genuine escaped spelling is the safe side.
-      const mixedIdentity = key.length === 0 && /\\/.test(body);
-      const source = key.length === 0 ? `$'${body}'` : null;
-      if (source === null) return { word: '$' + `{${key}}` + body, failed: false, mixedIdentity: false };
-      const canonical = canonicalizeCommand(source);
-      return { word: canonical.command, failed: canonical.parsingFailed, mixedIdentity };
-    }
-  }
-  const source = word.startsWith('$\\') ? `$'${word.slice(1)}'` : null;
-  if (source === null) return { word, failed: false, mixedIdentity: false };
-  const canonical = canonicalizeCommand(source);
-  return { word: canonical.command, failed: canonical.parsingFailed, mixedIdentity: false };
-}
-
-function entryWord(entry: ShellEntry): { word: string; uncertain: boolean; mixedIdentity: boolean } | null {
-  if (typeof entry === 'string') {
-    const normalized = normalizeWord(entry);
-    return {
-      word: normalized.word,
-      // Deliberately not folded into `uncertain`: that would make the redirection target uncertain
-      // too, and canonicalization requires one concrete path for every spelling of it.
-      mixedIdentity: normalized.mixedIdentity,
-      uncertain: normalized.failed || /[$`*?{}]/.test(normalized.word),
-    };
-  }
+function entryWord(entry: ShellEntry): { word: string; uncertain: boolean } | null {
+  if (typeof entry === 'string') return { word: entry, uncertain: /[$`*?{}]/.test(entry) };
   if (isOperator(entry) && entry.op === 'glob' && 'pattern' in entry) {
-    return { word: String((entry as ShellGlob).pattern), uncertain: true, mixedIdentity: false };
+    return { word: String((entry as ShellGlob).pattern), uncertain: true };
   }
   return null;
 }
@@ -117,7 +75,7 @@ function shellLines(command: string): string[] {
   };
   const lines: string[] = [];
   let result = '';
-  let quoteMode: 'plain' | 'single' | 'double' | 'ansi' = 'plain';
+  let quoteMode: 'plain' | 'single' | 'double' = 'plain';
   let inComment = false;
   let atWordStart = true;
   for (let index = 0; index < command.length; index += 1) {
@@ -153,7 +111,7 @@ function shellLines(command: string): string[] {
       atWordStart = false;
       continue;
     }
-    if (character === '\\' && quoteMode !== 'single' && quoteMode !== 'ansi') {
+    if (character === '\\' && quoteMode !== 'single') {
       if (command[index + 1] === '\n') {
         index += 1;
         continue;
@@ -167,12 +125,6 @@ function shellLines(command: string): string[] {
       atWordStart = false;
       continue;
     }
-    if (quoteMode === 'ansi' && character === '\\') {
-      result += character;
-      if (command[index + 1] !== undefined) result += command[++index];
-      atWordStart = false;
-      continue;
-    }
     if (quoteMode === 'plain' && character === '\n') {
       lines.push(result);
       result = '';
@@ -180,17 +132,32 @@ function shellLines(command: string): string[] {
       continue;
     }
     if (quoteMode === 'plain' && character === '$' && command[index + 1] === "'") {
-      quoteMode = 'ansi';
+      // shell-quote does not know ANSI-C quoting: it hands `$'ls'` back as a variable callback plus
+      // a single-quoted literal, which is byte-for-byte what `"$"ls` and `'${}ls'` produce too. Decode
+      // the word here, while the quote boundaries are still visible, and hand shell-quote an
+      // ordinary single-quoted literal instead. An unterminated or malformed ANSI-C word is left as
+      // written; canonicalizeCommand() flags the same defect on the whole command.
+      let end = index + 2;
+      while (end < command.length && command[end] !== "'") end += command[end] === '\\' ? 2 : 1;
+      const decoded = end < command.length ? canonicalizeCommand(command.slice(index, end + 1)) : null;
+      if (decoded && !decoded.parsingFailed) {
+        result += `'${decoded.command.replaceAll("'", "'\\''")}'`;
+        index = end;
+        atWordStart = false;
+        continue;
+      }
+    }
+    if (quoteMode === 'plain' && character === '$' && command[index + 1] === '"') {
+      // `$"…"` is a locale-translated string; for parsing it is a plain double-quoted word.
+      quoteMode = 'double';
       atWordStart = false;
-      result += `${character}${command[++index]}`;
+      result += command[++index];
       continue;
     }
     if (character === "'" && (quoteMode === 'plain' || quoteMode === 'single')) {
       quoteMode = quoteMode === 'single' ? 'plain' : 'single';
     } else if (character === '"' && (quoteMode === 'plain' || quoteMode === 'double')) {
       quoteMode = quoteMode === 'double' ? 'plain' : 'double';
-    } else if (character === "'" && quoteMode === 'ansi') {
-      quoteMode = 'plain';
     }
     atWordStart = quoteMode === 'plain' && /[\s;|&()]/.test(character)
       && !(character === '&' && /[<>]/.test(command[index - 1] ?? ''));
@@ -239,8 +206,7 @@ function optionCommandIndex(
 function parseEnvSplitWords(value: string): { words: string[]; failed?: string } {
   let entries: ShellEntry[];
   try {
-    entries = parse(shellLines(value).join('\n'), (key) =>
-      `${SHELL_VARIABLE_MARKER_START}${key}${SHELL_VARIABLE_MARKER_END}`) as ShellEntry[];
+    entries = parse(shellLines(value).join('\n'), (key) => `\${${key}}`) as ShellEntry[];
   } catch (error) {
     return { words: [], failed: error instanceof Error ? error.message : String(error) };
   }
@@ -465,8 +431,7 @@ function parseEntries(command: string): {
     // comments end at the line boundary too. Quoted newlines stay inside a word.
     entries = shellLines(command).flatMap((line, index) => [
       ...(index > 0 ? [{ op: '\n' }] : []),
-      ...parse(line, (key) =>
-        `${SHELL_VARIABLE_MARKER_START}${key}${SHELL_VARIABLE_MARKER_END}`) as ShellEntry[],
+      ...parse(line, (key) => `\${${key}}`) as ShellEntry[],
     ]);
   } catch (error) {
     return {
@@ -479,22 +444,21 @@ function parseEntries(command: string): {
   const segments: ParsedShellSegment[] = [];
   const redirects: ShellWriteTarget[] = [];
   let words: string[] = [];
-  let wordsMixed: boolean[] = [];
+  let segmentRedirects: ShellWriteTarget[] = [];
   let trailingOperator = false;
   let failed = canonical.parsingFailed;
   let failureReason = canonical.failureReason;
 
   const flush = (): void => {
-    if (words.length > 0) segments.push({ words, mixedIdentity: wordsMixed });
+    if (words.length > 0) segments.push({ words, redirects: segmentRedirects });
     words = [];
-    wordsMixed = [];
+    segmentRedirects = [];
   };
 
   for (let index = 0; index < entries.length; index += 1) {
     const entry = entries[index];
     if (isOperator(entry) && entry.op === 'glob' && 'pattern' in entry) {
       words.push(String((entry as ShellGlob).pattern));
-      wordsMixed.push(false);
       continue;
     }
     if (isOperator(entry) && OUTPUT_REDIRECTS.has(entry.op)) {
@@ -506,7 +470,9 @@ function parseEntries(command: string): {
       }
       index += 1;
       if (entry.op === '>&' && /^(?:\d+|-)$/.test(target.word)) continue;
-      redirects.push({ path: target.word, source: 'redirect', uncertain: target.uncertain });
+      const redirect: ShellWriteTarget = { path: target.word, source: 'redirect', uncertain: target.uncertain };
+      redirects.push(redirect);
+      segmentRedirects.push(redirect);
       continue;
     }
     if (isOperator(entry) && COMMAND_SEPARATORS.has(entry.op)) {
@@ -525,10 +491,7 @@ function parseEntries(command: string): {
       continue;
     }
     const word = entryWord(entry);
-    if (word) {
-      words.push(word.word);
-      wordsMixed.push(word.mixedIdentity);
-    }
+    if (word) words.push(word.word);
   }
   flush();
   return { segments, redirects, failed, failureReason, trailingOperator };
@@ -736,9 +699,6 @@ function qualifySegments(command: string): ShellExecution[] | null {
   for (const segment of parsed.segments) {
     const [program, ...args] = segment.words;
     if (!program) continue;
-    // `$'l'"\x73"` decodes to `ls`, but shell-quote already erased the quote boundaries, so the
-    // identity cannot be verified. Write-target extraction keeps using the decoded value.
-    if (segment.mixedIdentity[0]) return null;
 
     // This is the only qualification-time unwrapping.  Do not use basename:
     // ./bash and /usr/bin/bash are executable identities chosen by the caller.

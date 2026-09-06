@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseShellCommand } from '../../../src/host/security/commandParse';
+import { parseShellCommand, qualificationExecutions } from '../../../src/host/security/commandParse';
 import { isKnownSafeCommand } from '../../../src/host/security/commandSafety';
 
 describe('shared parser automatic approval regressions', () => {
@@ -16,11 +16,20 @@ describe('shared parser automatic approval regressions', () => {
     },
   );
 
-  it('distinguishes an ANSI-C command name from a single-quoted literal', () => {
+  // shell-quote reports `$'ls'`, `"$"ls`, `$"ls"` and a lone `$` through one and the same empty-key
+  // callback. The distinction lives in the quote boundaries, so ANSI-C is decoded before shell-quote
+  // runs; whatever still reaches the callback is a real `$` and never an identity.
+  it('distinguishes an ANSI-C command name from a single-quoted literal and a bare dollar', () => {
     expect(isKnownSafeCommand("'${}ls'")).toBe(false);
     expect(isKnownSafeCommand("$'ls'")).toBe(true);
+    expect(isKnownSafeCommand("$'\\x6c\\x73'")).toBe(true);
     expect(isKnownSafeCommand(`$'l'"\\x73"`)).toBe(false);
+    expect(isKnownSafeCommand('"$"ls')).toBe(false);
+    expect(isKnownSafeCommand('$"ls"')).toBe(true);
+    expect(isKnownSafeCommand('$\\x6c\\x73')).toBe(false);
     expect(parseShellCommand("'${}ls'").executions[0].program).toBe('${}ls');
+    expect(parseShellCommand('"$"ls').executions[0].program).toBe('${}ls');
+    expect(qualificationExecutions('"$"ls')).toBeNull();
   });
 
   it('keeps an in-word # literal from swallowing a later command', () => {

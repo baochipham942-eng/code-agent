@@ -317,6 +317,41 @@ export interface TelemetryDiagnosticBundleRecord {
   syncedAt?: number | null;
 }
 
+/**
+ * 上线后分数行的**可上云投影**（N-EVAL-POSTLAUNCH-K3）。
+ *
+ * 字段就是 ADR-063 §1 允许出机器的那一份清单，不多一列：本机表里的 `prompt_hash`
+ * （去重键）和 `budget_cost_usd`（本地日预算账）都不在这里，取数的 SELECT 也不读它们——
+ * 「宁少勿多」这条规矩落在类型和 SQL 两处，而不是靠上传函数自觉少写。
+ * 里面没有 prompt / 回复 / 工具入参出参：`reasonRedacted` 是已过脱敏闸的一行人话，
+ * `signals` 只有信号**名**。
+ */
+export interface TelemetryTurnScoreRecord {
+  turnId: string;
+  sessionId: string;
+  scoredAt: number;
+  scoredDay: string;
+  turnStartedAt: number;
+  appVersion: string | null;
+  promptVersion: string | null;
+  judgeVersion: string;
+  rubricVersion: string;
+  judgeModel: string | null;
+  dimGoal: number | null;
+  dimOrchestration: number | null;
+  dimTools: number | null;
+  dimPermission: number | null;
+  dimSafety: number | null;
+  dimArtifact: number | null;
+  failureClass: string | null;
+  reasonRedacted: string;
+  redacted: boolean;
+  /** 信号名数组的 JSON 串（本机列就是 TEXT，上传前 parse 成 JSONB）。 */
+  signals: string;
+  costUsd: number;
+  sampledBy: 'signal' | 'sample';
+}
+
 export interface TelemetryFeedback {
   id: string;
   sessionId: string;

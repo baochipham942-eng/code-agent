@@ -2,6 +2,7 @@
 // 把"Q: 用户某个 session 效果不好/出错，我能不能查到根因?"包成 UI。
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { getSentryIssuesForSession, type SentrySessionLookup } from '@/lib/sentry';
+import { DIMENSION_LABELS, POST_LAUNCH_DIMENSIONS, readRows, type PostLaunchDimension } from '@/lib/postlaunch';
 import Link from 'next/link';
 
 type Params = Promise<{ id: string }>;
@@ -28,6 +29,29 @@ type ToolCallSummary = {
 type TurnPayload = {
   modelCalls?: ModelCallSummary[];
   toolCalls?: ToolCallSummary[];
+};
+
+/**
+ * 这条会话的每轮分数（ADR-063 §1 的元数据档）。
+ * `reason_redacted` 原样显示：它本来就是给人看的那一行，写库前和上传前各过了一次脱敏闸。
+ */
+type TurnScoreRow = {
+  turn_id: string;
+  turn_started_at: number | null;
+  judge_version: string | null;
+  judge_model: string | null;
+  sampled_by: string | null;
+  failure_class: string | null;
+  reason_redacted: string | null;
+  redacted: boolean | null;
+  signals: string[] | null;
+  cost_usd: number | string | null;
+  dim_goal: number | null;
+  dim_orchestration: number | null;
+  dim_tools: number | null;
+  dim_permission: number | null;
+  dim_safety: number | null;
+  dim_artifact: number | null;
 };
 
 type FeedbackRow = {
@@ -67,7 +91,7 @@ export default async function SessionDetail({ params }: { params: Params }) {
     );
   }
 
-  const [{ data: turns }, { data: feedback }, sentry] = await Promise.all([
+  const [{ data: turns }, { data: feedback }, scoresResult, sentry] = await Promise.all([
     supabase
       .from('telemetry_turns')
       .select('*')
@@ -79,8 +103,19 @@ export default async function SessionDetail({ params }: { params: Params }) {
       .eq('session_id', id)
       .order('uploaded_at', { ascending: false })
       .returns<FeedbackRow[]>(),
+    // 与 fetchQualityRows 同一套规矩：count 判截断（不靠客户端 limit，PostgREST 自己有
+    // db-max-rows 上限），error 不吞成空态。
+    supabase
+      .from('telemetry_turn_scores')
+      .select('*', { count: 'exact' })
+      .eq('session_id', id)
+      .order('turn_started_at', { ascending: true })
+      .limit(TURN_SCORE_LIMIT)
+      .returns<TurnScoreRow[]>(),
     getSentryIssuesForSession(id),
   ]);
+  const scores = readRows<TurnScoreRow>(scoresResult);
+  const scoresByTurn = new Map(scores.rows.map((score) => [score.turn_id, score]));
   const feedbackRows = feedback ?? [];
   const negativeFeedbackCount = feedbackRows.filter((item) => item.rating === -1).length;
   const feedbackByTurn = new Map<string, FeedbackRow[]>();
@@ -157,6 +192,8 @@ export default async function SessionDetail({ params }: { params: Params }) {
         </dl>
       </section>
 
+      <PostLaunchScores scores={scores.rows} truncated={scores.truncated} error={scores.error} />
+
       <section>
         <h2 className="text-xs uppercase tracking-wide text-zinc-500 mb-3">
           Turn 时间线（{turns?.length ?? 0}）
@@ -170,6 +207,7 @@ export default async function SessionDetail({ params }: { params: Params }) {
                 key={t.id}
                 turn={t}
                 feedback={feedbackByTurn.get(String(t.id)) ?? []}
+                score={scoresByTurn.get(String(t.id))}
               />
             ))}
           </div>
@@ -278,9 +316,11 @@ function Pill({ status }: { status?: string | null }) {
 function TurnCard({
   turn,
   feedback,
+  score,
 }: {
   turn: Record<string, unknown>;
   feedback: FeedbackRow[];
+  score?: TurnScoreRow;
 }) {
   const payload = (turn.payload ?? {}) as TurnPayload;
   const toolCalls = payload.toolCalls ?? [];
@@ -351,6 +391,13 @@ function TurnCard({
           （{failedTools.map((t) => t.errorCategory ?? t.name).filter(Boolean).join('，')}）
         </p>
       )}
+
+      {score ? (
+        <div className="mt-4 border-t border-zinc-800 pt-3">
+          <div className="mb-2 text-xs uppercase tracking-wide text-zinc-500">上线后评分</div>
+          <TurnScoreLine score={score} />
+        </div>
+      ) : null}
 
       {feedback.length > 0 ? (
         <div className="mt-4 border-t border-zinc-800 pt-3">
@@ -438,4 +485,104 @@ function formatDate(value: string | number | null | undefined): string {
   const date = typeof value === 'number' ? new Date(value) : new Date(value);
   if (Number.isNaN(date.getTime())) return '—';
   return date.toLocaleString();
+}
+
+const DIM_COLUMN: Record<PostLaunchDimension, keyof TurnScoreRow> = {
+  goal: 'dim_goal',
+  orchestration: 'dim_orchestration',
+  tools: 'dim_tools',
+  permission: 'dim_permission',
+  safety: 'dim_safety',
+  artifact: 'dim_artifact',
+};
+
+/** 单次最多读这么多轮分数；命中就明说截断，不静默。 */
+const TURN_SCORE_LIMIT = 500;
+
+/** 会话级的分数汇总区：查成功且没有分数行时整块不出现（大多数会话没被抽中评）。 */
+function PostLaunchScores({
+  scores,
+  truncated,
+  error,
+}: {
+  scores: TurnScoreRow[];
+  truncated: boolean;
+  error: string | null;
+}) {
+  if (error) {
+    return (
+      <section className="mb-8">
+        <h2 className="text-xs uppercase tracking-wide text-zinc-500 mb-3">上线后评分</h2>
+        <p className="px-3 py-2 rounded border border-red-500/40 bg-red-500/10 text-red-300 text-sm">
+          读取失败：{error}。这不代表这条会话没被评过。
+        </p>
+      </section>
+    );
+  }
+  if (scores.length === 0) return null;
+  const cost = scores.reduce((sum, score) => sum + Number(score.cost_usd ?? 0), 0);
+  return (
+    <section className="mb-8">
+      <div className="flex items-baseline justify-between gap-3 mb-3">
+        <h2 className="text-xs uppercase tracking-wide text-zinc-500">上线后评分</h2>
+        <span className="text-xs text-zinc-600">
+          {scores.length} 轮已评{truncated ? '（只读到前 500 轮）' : ''} · ${cost.toFixed(4)} · judge {scores[0].judge_version ?? '—'}
+        </span>
+      </div>
+      <div className="space-y-2">
+        {scores.map((score) => (
+          <div
+            key={score.turn_id}
+            className="p-3 rounded-lg border border-zinc-800 bg-zinc-900/30"
+          >
+            <div className="flex flex-wrap items-center gap-3 mb-2">
+              <span className="font-mono text-xs text-zinc-500 break-all">{score.turn_id}</span>
+              <span className="text-xs text-zinc-500">
+                {score.sampled_by === 'signal' ? '信号轮' : '抽样轮'}
+              </span>
+              {score.failure_class ? (
+                <span className="px-2 py-0.5 rounded text-xs bg-red-500/20 text-red-300">
+                  {score.failure_class}
+                </span>
+              ) : null}
+            </div>
+            <TurnScoreLine score={score} />
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/** 一轮的六维 + 一行理由。理由是给人看的那一行，原样显示。 */
+function TurnScoreLine({ score }: { score: TurnScoreRow }) {
+  const signals = score.signals ?? [];
+  return (
+    <div className="text-xs">
+      <div className="flex flex-wrap gap-2">
+        {POST_LAUNCH_DIMENSIONS.map((dimension) => {
+          const value = score[DIM_COLUMN[dimension]] as number | null;
+          const color =
+            value === 1
+              ? 'bg-green-500/20 text-green-300'
+              : value === 0
+                ? 'bg-red-500/20 text-red-300'
+                : 'bg-zinc-700/60 text-zinc-400';
+          return (
+            <span key={dimension} className={`px-2 py-0.5 rounded ${color}`}>
+              {DIMENSION_LABELS[dimension]} {value === null ? '—' : value === 1 ? '✓' : '✗'}
+            </span>
+          );
+        })}
+      </div>
+      {signals.length > 0 ? (
+        <p className="mt-2 text-zinc-500">信号：{signals.join('、')}</p>
+      ) : null}
+      {score.redacted ? (
+        <p className="mt-2 text-amber-300">这一行理由命中脱敏闸，未出机器。</p>
+      ) : score.reason_redacted ? (
+        <p className="mt-2 text-zinc-300 break-words">{score.reason_redacted}</p>
+      ) : null}
+    </div>
+  );
 }

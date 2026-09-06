@@ -19,8 +19,11 @@ describe('remainingAssistantStreamDelta', () => {
     expect(remainingAssistantStreamDelta('hello world', 'h')).toBe('h');
   });
 
-  it('keeps only the unread suffix when incoming is a longer snapshot', () => {
-    expect(remainingAssistantStreamDelta('hello', 'hello world')).toBe(' world');
+  // ai-review #1696：前缀相同区分不了「重放」和「合法的重复文本」，而这条链路上
+  // incoming 是纯追加增量，裁剪只会丢字。改为只认整段全等。
+  it('合法的重复文本不许被当成累计快照裁掉', () => {
+    expect(remainingAssistantStreamDelta('ha', 'haha')).toBe('haha');
+    expect(remainingAssistantStreamDelta('hello', 'hello world')).toBe('hello world');
   });
 
   it('keeps a genuinely new continuation', () => {

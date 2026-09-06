@@ -16,6 +16,12 @@ describe('shared parser automatic approval regressions', () => {
     },
   );
 
+  it('distinguishes an ANSI-C command name from a single-quoted literal', () => {
+    expect(isKnownSafeCommand("'${}ls'")).toBe(false);
+    expect(isKnownSafeCommand("$'ls'")).toBe(true);
+    expect(parseShellCommand("'${}ls'").executions[0].program).toBe('${}ls');
+  });
+
   // main 的 CONDITIONALLY_SAFE.env 把带操作数的 env 判为 delegated，解包后按内层程序放行会把这条
   // 基线放宽；写目标提取仍走 basename，两者不共用同一个资格。
   it.each(['env ls', 'env -u MODE printf ok', 'env tee out.txt', 'env bash -c "ls"'])(

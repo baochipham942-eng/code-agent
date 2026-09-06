@@ -13,6 +13,8 @@ const QUALIFICATION_SHELLS = new Set(['bash', 'sh', 'zsh']);
 const PRIVILEGE_WRAPPERS = new Set(['sudo', 'doas']);
 const SIMPLE_WRAPPERS = new Set(['command', 'exec', 'nohup', 'setsid']);
 const MAX_WRAPPER_DEPTH = 4;
+const SHELL_VARIABLE_MARKER_START = '\u0000';
+const SHELL_VARIABLE_MARKER_END = '\u0001';
 
 interface ParsedShellSegment {
   words: string[];
@@ -52,13 +54,21 @@ function isOperator(entry: ShellEntry): entry is ShellOperator {
 }
 
 function normalizeWord(word: string): { word: string; failed: boolean } {
-  // shell-quote treats ANSI-C words as a literal `$` prefix plus escaped content.
-  // Re-wrap that representation before sending it through the existing decoder.
-  const source = word.startsWith('${}')
-    ? `$'${word.slice(3)}'`
-    : word.startsWith('$\\')
-      ? `$'${word.slice(1)}'`
-      : null;
+  // Give shell-quote a private marker so an ANSI-C word (`$'ls'`) cannot be
+  // confused with an ordinary single-quoted literal (`'${}ls'`). Variable
+  // expansions are restored as `${NAME}` and remain uncertain downstream.
+  if (word.startsWith(SHELL_VARIABLE_MARKER_START)) {
+    const end = word.indexOf(SHELL_VARIABLE_MARKER_END, SHELL_VARIABLE_MARKER_START.length);
+    if (end >= 0) {
+      const key = word.slice(SHELL_VARIABLE_MARKER_START.length, end);
+      const body = word.slice(end + SHELL_VARIABLE_MARKER_END.length);
+      const source = key.length === 0 ? `$'${body}'` : null;
+      if (source === null) return { word: '$' + `{${key}}` + body, failed: false };
+      const canonical = canonicalizeCommand(source);
+      return { word: canonical.command, failed: canonical.parsingFailed };
+    }
+  }
+  const source = word.startsWith('$\\') ? `$'${word.slice(1)}'` : null;
   if (source === null) return { word, failed: false };
   const canonical = canonicalizeCommand(source);
   return { word: canonical.command, failed: canonical.parsingFailed };
@@ -200,7 +210,8 @@ function optionCommandIndex(
 function parseEnvSplitWords(value: string): { words: string[]; failed?: string } {
   let entries: ShellEntry[];
   try {
-    entries = parse(shellLines(value).join('\n'), (key) => `\${${key}}`) as ShellEntry[];
+    entries = parse(shellLines(value).join('\n'), (key) =>
+      `${SHELL_VARIABLE_MARKER_START}${key}${SHELL_VARIABLE_MARKER_END}`) as ShellEntry[];
   } catch (error) {
     return { words: [], failed: error instanceof Error ? error.message : String(error) };
   }
@@ -425,7 +436,8 @@ function parseEntries(command: string): {
     // comments end at the line boundary too. Quoted newlines stay inside a word.
     entries = shellLines(command).flatMap((line, index) => [
       ...(index > 0 ? [{ op: '\n' }] : []),
-      ...parse(line, (key) => `\${${key}}`) as ShellEntry[],
+      ...parse(line, (key) =>
+        `${SHELL_VARIABLE_MARKER_START}${key}${SHELL_VARIABLE_MARKER_END}`) as ShellEntry[],
     ]);
   } catch (error) {
     return {

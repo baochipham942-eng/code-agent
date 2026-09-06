@@ -94,7 +94,7 @@ type GeneratedShape = {
   assignment: '' | 'PATH=./bin' | 'LD_PRELOAD=/tmp/evil.so' | 'MODE=1' | 'A=1 B=2';
   shellOption: '' | '-c' | '-lc' | '-ic' | '-i' | '--rcfile ./startup.sh' | '--init-file ./startup.sh' | '-o posix' | '--';
   delimiter: '' | ';' | '&&' | '||' | '\n' | '|' | '# comment\n';
-  inner: 'ls' | 'git status' | 'chmod -R 777 ./data' | 'mystery-command' | 'rm -rf /';
+  inner: 'ls' | 'git status' | 'chmod -R 777 ./data' | 'mystery-command' | 'rm -rf /' | "'${}ls'" | "$'ls'";
 };
 
 const generatedShapeArbitrary: fc.Arbitrary<GeneratedShape> = fc.record({
@@ -108,7 +108,7 @@ const generatedShapeArbitrary: fc.Arbitrary<GeneratedShape> = fc.record({
   ),
   delimiter: fc.constantFrom<GeneratedShape['delimiter']>('', ';', '&&', '||', '\n', '|', '# comment\n'),
   inner: fc.constantFrom<GeneratedShape['inner']>(
-    'ls', 'git status', 'chmod -R 777 ./data', 'mystery-command', 'rm -rf /',
+    'ls', 'git status', 'chmod -R 777 ./data', 'mystery-command', 'rm -rf /', "'${}ls'", "$'ls'",
   ),
 });
 
@@ -132,17 +132,20 @@ function renderGeneratedShape(shape: GeneratedShape): string {
   return `${command} ${shape.delimiter}${suffix}`;
 }
 
-function fallbackBaselineDecision(command: string): 'approve' | 'deny' | 'ask' {
-  if (/rm\s+-rf\s+\/$/.test(command) || /chmod\s+-R\s+777/.test(command)) return 'deny';
-  if (command === 'ls' || command === 'git status' || command === 'bash -c \'ls\''
-    || command === 'sh -c \'ls\'' || command === 'zsh -c \'ls\'') return 'approve';
-  return 'ask';
-}
-
 async function baselineDecisions(commands: string[]): Promise<Array<'approve' | 'deny' | 'ask'>> {
-  const baseline = process.env.N_BASHAST_BASELINE ?? '/private/tmp/n-bashast-r9-baseline';
+  const requestedBaseline = process.env.N_BASHAST_BASELINE ?? '/private/tmp/n-bashast-r9-baseline';
+  let baseline = requestedBaseline;
+  let ownedBaseline: string | undefined;
   if (!fs.existsSync(path.join(baseline, 'src/host/tools/permissionClassifier.ts'))) {
-    return commands.map(fallbackBaselineDecision);
+    ownedBaseline = fs.mkdtempSync(path.join('/tmp', 'n-bashast-baseline-'));
+    const checkout = spawnSync('git', ['worktree', 'add', '--detach', ownedBaseline, 'origin/main'], {
+      cwd: process.cwd(), encoding: 'utf8',
+    });
+    if (checkout.status !== 0) {
+      throw new Error(`detached origin/main baseline checkout failed: ${checkout.stderr}`);
+    }
+    fs.symlinkSync(path.join(process.cwd(), 'node_modules'), path.join(ownedBaseline, 'node_modules'), 'junction');
+    baseline = ownedBaseline;
   }
   const runner = [
     "import fs from 'node:fs';",
@@ -153,14 +156,20 @@ async function baselineDecisions(commands: string[]): Promise<Array<'approve' | 
     'const classifier = new PermissionClassifier({ enableLlm: false });',
     "Promise.all(commands.map((command) => classifier.classify('Bash', { command }, { workingDirectory: '/tmp', permissionLevel: 'execute' }))).then((results) => process.stdout.write(JSON.stringify(results.map(({ decision }) => decision))));",
   ].join('\n');
-  const result = spawnSync('npx', ['tsx', '-e', runner], {
-    cwd: baseline,
-    input: JSON.stringify(commands),
-    encoding: 'utf8',
-    timeout: 120_000,
-  });
-  if (result.status !== 0) throw new Error(`baseline property runner failed: ${result.stderr}`);
-  return JSON.parse(result.stdout) as Array<'approve' | 'deny' | 'ask'>;
+  try {
+    const result = spawnSync('npx', ['tsx', '-e', runner], {
+      cwd: baseline,
+      input: JSON.stringify(commands),
+      encoding: 'utf8',
+      timeout: 120_000,
+    });
+    if (result.status !== 0) throw new Error(`baseline property runner failed: ${result.stderr}`);
+    return JSON.parse(result.stdout) as Array<'approve' | 'deny' | 'ask'>;
+  } finally {
+    if (ownedBaseline) {
+      spawnSync('git', ['worktree', 'remove', '--force', ownedBaseline], { cwd: process.cwd() });
+    }
+  }
 }
 
 describe('final decision is never looser than the detached origin/main baseline', () => {

@@ -433,10 +433,10 @@ describe('PermissionClassifier', () => {
     it.each([
       'printf ok > /tmp/approval-project/out.txt',
       'printf ok >> /tmp/approval-project/out.txt',
-      'printf ok > "/tmp/approval-project"/quoted.txt',
-      'printf ok > /tmp/approval-project/escaped\\ file.txt',
-      'printf ok > /tmp/approval-project/ｗide.txt',
-      'printf ok > \'/tmp/approval-project/"quoted".txt\'',
+      'printf ok > out.txt',
+      'printf ok >> out.txt',
+      'MODE=1 tee mode.txt',
+      'A=1 B=2 tee multi.txt',
       'MODE=1 tee /tmp/approval-project/mode.txt',
       'A=1 B=2 tee /tmp/approval-project/multi.txt',
     ])('allows proven writes only when every target is inside the workspace: %s', async (command) => {
@@ -446,6 +446,13 @@ describe('PermissionClassifier', () => {
     });
 
     it.each([
+      'printf ok > "/tmp/approval-project"/quoted.txt',
+      'printf ok > /tmp/approval-project/escaped\\ file.txt',
+      'printf ok > /tmp/approval-project/ｗide.txt',
+      'printf ok > \'/tmp/approval-project/"quoted".txt\'',
+      'printf ok > "$HOME/.ssh/x"',
+      'MODE=1 tee -- /tmp/approval-project/out.txt',
+      'printf ok > /tmp/approval-project/d\u00a0/../../outside.txt',
       'printf ok > ~/.ssh/x',
       'printf ok >> /etc/hosts',
       'printf ok > "/tmp"/outside.txt',
@@ -470,7 +477,7 @@ describe('PermissionClassifier', () => {
       });
     });
 
-    it('resolves symlinks before dot segments when proving workspace writes', async () => {
+    it('requires confirmation for every parent segment and still allows a missing leaf', async () => {
       const root = await fs.mkdtemp(path.join(os.tmpdir(), 'approval-write-proof-'));
       const workspace = path.join(root, 'work');
       const external = path.join(root, 'external');
@@ -510,8 +517,7 @@ describe('PermissionClassifier', () => {
           traceStep: { rule: 'W3: outside_project' },
           trustBoundary: true,
         });
-        expect(symlinkEscape.reason).toContain(path.join(external, 'out.txt'));
-        expect(ordinaryParent).toMatchObject({ decision: 'approve', reason: '写入项目目录内' });
+        expect(ordinaryParent.decision).toBe('ask');
         expect(missingTail).toMatchObject({ decision: 'approve', reason: '写入项目目录内' });
       } finally {
         await fs.rm(root, { recursive: true, force: true });

@@ -1,11 +1,9 @@
-import * as os from 'node:os';
 import * as path from 'node:path';
 import { lstatSync, realpathSync } from 'node:fs';
 import {
   createHostReason,
   HostReasonCode,
 } from '../../shared/contract/permission';
-import { resolveCanonicalRunPath } from '../runtime/runContext';
 import { splitCompoundCommand } from '../security/commandSafety';
 import { createTraceStep } from '../security/decisionTraceBuilder';
 import type { ClassificationResult } from './permissionClassifier';
@@ -53,52 +51,53 @@ function hasUnsupportedShellControl(command: string): boolean {
   return quote !== undefined || escaped;
 }
 
+/** Resolve filesystem components before comparing with the canonical workspace. */
 function resolveCandidatePath(rawPath: string, context: WorkspaceWriteContext): string | null {
-  const cacheKey = `workspace-write\u0000${context.workingDirectory}\u0000${rawPath}`;
-  const cached = context.pathResolutionCache?.get(cacheKey);
-  if (cached) return cached;
-  const expanded = rawPath === '~'
-    ? os.homedir()
-    : rawPath.startsWith('~/')
-      ? path.join(os.homedir(), rawPath.slice(2))
-      : rawPath;
-  const absolute = path.isAbsolute(expanded)
-    ? expanded
-    : `${resolveCanonicalRunPath(context.workingDirectory)}${path.sep}${expanded}`;
-  const root = path.parse(absolute).root;
-  const parts = absolute.slice(root.length).split(path.sep).filter(Boolean);
-  let cursor = root;
-
+  // Absolute spellings may use a system alias (/var, /tmp) even when the run
+  // anchor is already canonical. Resolve both sides instead of matching prefixes.
+  const absolute = path.isAbsolute(rawPath);
+  let cursor = absolute ? path.parse(rawPath).root : realpathSync.native(context.workingDirectory);
+  const parts = rawPath.slice(absolute ? cursor.length : 0).split(path.sep).filter(Boolean);
   for (let index = 0; index < parts.length; index += 1) {
     const part = parts[index];
     if (part === '.') continue;
-    if (part === '..') {
-      cursor = path.dirname(cursor);
-      continue;
-    }
-
+    if (part === '..') return null;
     const next = path.join(cursor, part);
     try {
-      lstatSync(next);
+      const stat = lstatSync(next);
+      if (index < parts.length - 1 && !stat.isDirectory() && !stat.isSymbolicLink()) return null;
     } catch (error) {
-      const code = error && typeof error === 'object' && 'code' in error
-        ? String(error.code)
-        : undefined;
-      const hasUnresolvedSuffix = parts.slice(index + 1).some((suffix) => suffix !== '.');
-      if (code !== 'ENOENT' || hasUnresolvedSuffix) return null;
-      context.pathResolutionCache?.set(cacheKey, next);
+      const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined;
+      // Only the last component may be absent; its parent has already been checked.
+      if (code !== 'ENOENT' || index !== parts.length - 1) return null;
       return next;
     }
-
-    try {
-      cursor = realpathSync.native(next);
-    } catch {
-      return null;
-    }
+    cursor = realpathSync.native(next);
   }
-
-  context.pathResolutionCache?.set(cacheKey, cursor);
   return cursor;
+}
+
+/** A concession, not a shell interpreter: uncertainty always means no concession. */
+function hasUnambiguousWorkspaceTargets(
+  command: string,
+  targets: string[],
+  context: WorkspaceWriteContext,
+): boolean {
+  // Check the original text BEFORE decoded targets can hide quotes or token boundaries.
+  // Conservatively require the producer and assignments to be literal ASCII too.
+  if (!/^[\x20-\x7e]+$/.test(command) || /['"\\$`*?{}[\]()!^#~]/.test(command)) return false;
+  if (command.split(' ').includes('--') || targets.length === 0 || !context.workspaceRoot) return false;
+  try {
+    const workspace = realpathSync.native(context.workspaceRoot);
+    return targets.every((target) => {
+      if (!/^[A-Za-z0-9_./:@%+,-]+$/.test(target) || target.startsWith('-')) return false;
+      if (target.split('/').includes('..')) return false;
+      const resolved = resolveCandidatePath(target, context);
+      return resolved !== null && isPathInside(resolved, workspace);
+    });
+  } catch {
+    return false;
+  }
 }
 
 function isPathInside(candidate: string, boundary: string): boolean {
@@ -125,10 +124,9 @@ function outsideWorkspace(reason: string, startTime: number, pathValue?: string)
 }
 
 /**
- * Prove the two workspace-write families covered by the approval corpus.
- * The producer must remain known and every canonical target must stay in the
- * authoritative workspace; missing authority, dynamic targets, and external
- * paths all return an ask instead of an allow.
+ * Relax approval only for unambiguous literal workspace writes.
+ * All other supported writes retain confirmation, even if their decoded path
+ * appears to be inside the workspace.
  */
 export function classifyProvenWorkspaceWrite(
   command: string,
@@ -148,25 +146,9 @@ export function classifyProvenWorkspaceWrite(
   if (!supportedShape) return null;
 
   const rawTargets = shellWriteTargets(command);
-  if (rawTargets.length === 0) return null;
-  const dynamicTarget = rawTargets.find((target) => (
-    !target
-    || /[$`*?{}[\]()!^#<>]/.test(target)
-    || target.includes('~')
-    || target.startsWith('=')
-  ));
-  if (dynamicTarget) return outsideWorkspace(`写入目标无法静态确认: ${dynamicTarget}`, startTime);
-  if (!context.workspaceRoot) return outsideWorkspace('缺少工作区写入边界', startTime);
-
-  const workspace = resolveCanonicalRunPath(context.workspaceRoot);
-  const resolvedTargets: string[] = [];
-  for (const target of rawTargets) {
-    const resolved = resolveCandidatePath(target, context);
-    if (!resolved) return outsideWorkspace(`写入目标无法按真实文件系统确认: ${target}`, startTime);
-    resolvedTargets.push(resolved);
+  if (!hasUnambiguousWorkspaceTargets(command, rawTargets, context)) {
+    return outsideWorkspace('Workspace write requires confirmation', startTime);
   }
-  const externalTarget = resolvedTargets.find((target) => !isPathInside(target, workspace));
-  if (externalTarget) return outsideWorkspace(`写入项目目录外: ${externalTarget}`, startTime, externalTarget);
 
   return {
     decision: 'approve',

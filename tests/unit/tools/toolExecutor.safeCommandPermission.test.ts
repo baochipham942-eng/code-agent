@@ -69,7 +69,7 @@ describe('ToolExecutor Bash 安全命令单一判据', () => {
     expect(existsSync(target)).toBe(true);
   });
 
-  it('printf 重定向到工作区内免审批并成功写入', async () => {
+  it('带引号的工作区重定向请求审批，拒绝后不写入', async () => {
     const target = path.join(workspace, 'printf-output.txt');
     const command = `printf 'x' > ${JSON.stringify(target)}`;
     const executor = buildRejectingExecutor();
@@ -80,10 +80,9 @@ describe('ToolExecutor Bash 安全命令单一判据', () => {
       { sessionId: 'safe-command-printf-redirection' },
     );
 
-    expect(permissionRequests).toHaveLength(0);
-    expect(result.success).toBe(true);
-    expect(existsSync(target)).toBe(true);
-    expect(await fs.readFile(target, 'utf8')).toBe('x');
+    expect(permissionRequests).toHaveLength(1);
+    expect(result.success).toBe(false);
+    expect(existsSync(target)).toBe(false);
   });
 
   it.each([

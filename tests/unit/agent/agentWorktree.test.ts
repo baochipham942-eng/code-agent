@@ -130,25 +130,42 @@ import {
 
 describe('AgentWorktree', () => {
   describe('write-capable default isolation', () => {
-    it('defaults any Write/Edit/Bash-capable child to worktree', () => {
-      expect(resolveAgentWorktreeIsolation({ tools: ['Read', 'Write'] })).toBe('worktree');
-      expect(resolveAgentWorktreeIsolation({ tools: ['Read', 'Edit'] })).toBe('worktree');
-      expect(resolveAgentWorktreeIsolation({ tools: ['Read', 'Bash'] })).toBe('worktree');
-      expect(resolveAgentWorktreeIsolation({ tools: ['Read', 'Grep'] })).toBe('none');
+    it('defaults any Write/Edit/Bash-capable child to worktree', async () => {
+      expect(await resolveAgentWorktreeIsolation({ tools: ['Read', 'Write'] })).toBe('worktree');
+      expect(await resolveAgentWorktreeIsolation({ tools: ['Read', 'Edit'] })).toBe('worktree');
+      expect(await resolveAgentWorktreeIsolation({ tools: ['Read', 'Bash'] })).toBe('worktree');
+      expect(await resolveAgentWorktreeIsolation({ tools: ['Read', 'Grep'] })).toBe('none');
     });
 
-    it('keeps explicit readonly roles shared unless worktree is explicitly requested', () => {
-      expect(resolveAgentWorktreeIsolation({ role: 'reviewer', tools: ['Read'] })).toBe('none');
-      expect(resolveAgentWorktreeIsolation({ role: 'reviewer', tools: ['Read'], explicit: 'worktree' })).toBe('worktree');
-      expect(resolveAgentWorktreeIsolation({ role: 'reviewer', tools: ['Read', 'Write'] })).toBe('worktree');
+    it('keeps explicit readonly roles shared unless worktree is explicitly requested', async () => {
+      expect(await resolveAgentWorktreeIsolation({ role: 'reviewer', tools: ['Read'] })).toBe('none');
+      expect(await resolveAgentWorktreeIsolation({ role: 'reviewer', tools: ['Read'], explicit: 'worktree' })).toBe('worktree');
+      expect(await resolveAgentWorktreeIsolation({ role: 'reviewer', tools: ['Read', 'Write'] })).toBe('worktree');
     });
 
-    it('非 git 目录降级为无隔离，即使显式要求 worktree', () => {
+    it('非 git 目录默认降级为无隔离；显式要求 worktree 的不降级', async () => {
       // 协作者默认工作目录就是家目录，硬起隔离会让「派个会写文件的成员」整条路不可用
-      expect(resolveAgentWorktreeIsolation({ tools: ['Read', 'Write'], cwd: os.tmpdir() })).toBe('none');
-      expect(resolveAgentWorktreeIsolation({ tools: ['Read'], explicit: 'worktree', cwd: os.tmpdir() })).toBe('none');
-      // 传了 git 仓库目录时照常隔离
-      expect(resolveAgentWorktreeIsolation({ tools: ['Read', 'Write'], cwd: process.cwd() })).toBe('worktree');
+      // 判据是 git 退出码 + 文件系统佐证（非 git 目录 / 零提交仓库的探测命令都失败）。
+      // mock 的失败形状带 code = git 退出码（stderr 已不读）；tmpdir 的两条探测命令都
+      // 退出 128 后，沿目录树找 .git 用的是真 fs（os.tmpdir() 一路向上确无 .git）→ 判 no-repo。
+      // 裸 Error（无 code）会被 probeWorktreeBase 判成「探测进程异常」而不降级。
+      execState.when(/rev-parse --verify --quiet 'HEAD\^\{commit\}'/, (cmd) => {
+        if (cmd.includes(`git -C '${os.tmpdir()}'`)) {
+          throw Object.assign(new Error('Command failed: git rev-parse'), { code: 128 });
+        }
+        return { stdout: '' };
+      });
+      execState.when(/rev-parse --git-dir/, (cmd) => {
+        if (cmd.includes(`git -C '${os.tmpdir()}'`)) {
+          throw Object.assign(new Error('Command failed: git rev-parse'), { code: 128 });
+        }
+        return { stdout: '.git' };
+      });
+      expect(await resolveAgentWorktreeIsolation({ tools: ['Read', 'Write'], cwd: os.tmpdir() })).toBe('none');
+      // 显式 worktree 同 forceWorktree 同级：不因目录不可建而静默降级，照常 worktree（在创建处失败）
+      expect(await resolveAgentWorktreeIsolation({ tools: ['Read'], explicit: 'worktree', cwd: os.tmpdir() })).toBe('worktree');
+      // 传了 git 仓库目录时照常隔离（exec mock 默认成功 = HEAD 可解析）
+      expect(await resolveAgentWorktreeIsolation({ tools: ['Read', 'Write'], cwd: process.cwd() })).toBe('worktree');
     });
   });
   beforeEach(() => {

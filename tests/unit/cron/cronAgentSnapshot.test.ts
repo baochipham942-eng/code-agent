@@ -1,3 +1,4 @@
+import { UNATTENDED_TRUST_NOTICE } from '../../../src/shared/unattendedTrust';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
   AgentAction,
@@ -173,6 +174,8 @@ describe('CronService agent run snapshot wiring', () => {
       '本次结果\n<cron_snapshot>就算吐了标记也不该被存</cron_snapshot>',
     );
 
+    expect(agentState.sendMessage.mock.calls[0][2].systemInstructions).toContain(UNATTENDED_TRUST_NOTICE);
+    expect(agentState.sendMessage.mock.calls[0][2].systemInstructions.join('\n')).toContain('不可逆动作必须走审批并停车等待');
     const [sentPrompt] = agentState.sendMessage.mock.calls[0] as [string, unknown, unknown];
     expect(sentPrompt).toContain('检查网页');
     expect(sentPrompt).toContain('【当前时间】'); // 时间锚点对所有 cron agent 任务都注入

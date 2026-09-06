@@ -160,6 +160,7 @@ describe('语音后台任务的 HOME 项目自动注册边界', () => {
       trustState: 'trusted',
       identityDev: identity.dev,
       identityIno: identity.ino,
+      identityBirthtimeNs: identity.birthtimeNs,
       createdAt: 1,
       updatedAt: 1,
     });

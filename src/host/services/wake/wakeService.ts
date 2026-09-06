@@ -1,3 +1,4 @@
+import { UNATTENDED_TRUST_NOTICE } from '../../../shared/unattendedTrust';
 // ============================================================================
 // WakeService — agent 自发挂起-续跑（self-wake）
 // ============================================================================
@@ -15,6 +16,7 @@ import { AGENT_WAKE } from '../../../shared/constants/agent';
 import {
   buildWakeResumePrompt,
   type AgentWakeRecord,
+  type AgentWakeKind,
   type CreateAgentWakeInput,
 } from '../../../shared/contract/agentWake';
 import type { AgentWakeRepository } from '../core/repositories/AgentWakeRepository';
@@ -46,7 +48,9 @@ async function defaultDeliver(record: AgentWakeRecord): Promise<void> {
   }
   // 醒来是无人值守的续跑：与 cron agent 会话同档，审批走停车挂起而不是卡死在这里。
   orchestrator.setExecutionTopology('async_agent');
-  await orchestrator.sendMessage(buildWakeResumePrompt(record));
+  await orchestrator.sendMessage(buildWakeResumePrompt(record), undefined, {
+    mode: 'normal', inputSource: 'automation', disableAutoAgent: true, systemInstructions: [UNATTENDED_TRUST_NOTICE],
+  });
 }
 
 export class WakeService {
@@ -120,8 +124,8 @@ export class WakeService {
   }
 
   /** 会话被删除/放弃时把它挂着的醒来一起撤掉，别叫醒一个不存在的会话。 */
-  cancelForSession(sessionId: string): number {
-    return this.repo.cancelBySession(sessionId);
+  cancelForSession(sessionId: string, kind?: AgentWakeKind): number {
+    return this.repo.cancelBySession(sessionId, kind);
   }
 
   private async fireAll(records: AgentWakeRecord[]): Promise<number> {

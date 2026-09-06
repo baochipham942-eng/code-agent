@@ -137,6 +137,7 @@ function forkWorkspaceSourceIdentity(scope: WorkspaceScope): Record<string, unkn
         role: root.role,
         identityDev: root.identityDev ?? null,
         identityIno: root.identityIno ?? null,
+        identityBirthtimeNs: root.identityBirthtimeNs ?? null,
       }))
       .sort((left, right) => left.sourceId.localeCompare(right.sourceId)),
   };

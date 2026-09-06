@@ -7,6 +7,9 @@ import type { ToolExecutionEngine } from '../../../src/host/agent/runtime/toolEx
 import { ArtifactState } from '../../../src/host/agent/runtime/artifactState';
 import { ConversationRuntime } from '../../../src/host/agent/runtime/conversationRuntime';
 
+const cancelTimeWakesOnUserReturn = vi.hoisted(() => vi.fn(async () => undefined));
+vi.mock('../../../src/host/services/wake/userReturn', () => ({ cancelTimeWakesOnUserReturn }));
+
 const sessionManagerState = vi.hoisted(() => ({
   addMessage: vi.fn(),
   addMessageToSession: vi.fn(),
@@ -118,6 +121,7 @@ describe('MessageProcessor persistence', () => {
     const processor = createProcessor(ctx as DeepPartial<RuntimeContext>);
 
     processor.injectSteerMessage('continue with care');
+    expect(cancelTimeWakesOnUserReturn).toHaveBeenCalledWith('runtime-session-1', { historyVisibility: undefined });
 
     expect(ctx.messages).toEqual([{
       id: 'steer-message-1',

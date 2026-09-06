@@ -1,10 +1,11 @@
+import { isProjectConfigTrusted } from '../../../src/host/security/folderTrustService';
 import { mkdtemp, mkdir, rm, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../../src/host/security/folderTrustService', () => ({
-  isProjectConfigTrusted: async () => true,
+  isProjectConfigTrusted: vi.fn(async () => true),
 }));
 
 import {
@@ -18,11 +19,49 @@ describe('agentsDiscovery', () => {
   beforeEach(async () => {
     rootDir = await mkdtemp(join(tmpdir(), 'agents-discovery-'));
     clearAgentsDiscoveryCache();
+    vi.mocked(isProjectConfigTrusted).mockResolvedValue(true);
   });
 
   afterEach(async () => {
     clearAgentsDiscoveryCache();
     await rm(rootDir, { recursive: true, force: true });
+  });
+
+  it('collects trusted ancestors root to leaf, stops at .git, and honors includeParents cache key', async () => {
+    await writeFile(join(rootDir, '.git'), 'gitdir: worktree');
+    await writeFile(join(rootDir, 'AGENTS.md'), '# Ancestor');
+    const leaf = join(rootDir, 'one', 'two');
+    await mkdir(leaf, { recursive: true });
+    await writeFile(join(rootDir, 'one', 'AGENTS.md'), '# Middle');
+    await writeFile(join(leaf, 'AGENTS.md'), '# Leaf');
+    const result = await discoverAgentFilesCached(leaf);
+    expect(result.files.map(f => f.content)).toEqual(['# Ancestor', '# Middle', '# Leaf']);
+    const noParents = await discoverAgentFilesCached(leaf, { includeParents: false });
+    expect(noParents.files.map(f => f.content)).toEqual(['# Leaf']);
+  });
+
+  it('still inherits a trusted ancestor when the leaf itself has no trust record', async () => {
+    await writeFile(join(rootDir, '.git'), 'gitdir: worktree');
+    await writeFile(join(rootDir, 'AGENTS.md'), '# Root rules');
+    const leaf = join(rootDir, 'child');
+    await mkdir(leaf, { recursive: true });
+    await writeFile(join(leaf, 'AGENTS.md'), '# Untrusted leaf must not load');
+    // 只有根目录有信任记录；叶目录没有（祖先链仍在首个不信任的父目录处停止，见上一例）
+    vi.mocked(isProjectConfigTrusted).mockImplementation(async dir => dir === rootDir);
+    const result = await discoverAgentFilesCached(leaf);
+    expect(result.files.map(f => f.content)).toEqual(['# Root rules']);
+    const noParents = await discoverAgentFilesCached(leaf, { includeParents: false });
+    expect(noParents.files).toEqual([]);
+  });
+
+  it('does not collect instructions beyond a denied ancestor', async () => {
+    await writeFile(join(rootDir, 'AGENTS.md'), '# Must not enter');
+    const leaf = join(rootDir, 'child');
+    await mkdir(leaf);
+    await writeFile(join(leaf, 'AGENTS.md'), '# Leaf');
+    vi.mocked(isProjectConfigTrusted).mockImplementation(async dir => dir !== rootDir);
+    const result = await discoverAgentFilesCached(leaf);
+    expect(result.files.map(f => f.content)).toEqual(['# Leaf']);
   });
 
   it('applies maxDepth before traversing nested instruction files', async () => {

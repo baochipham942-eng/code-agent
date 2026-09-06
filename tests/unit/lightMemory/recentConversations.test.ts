@@ -56,6 +56,20 @@ describe('recentConversations', () => {
   // --------------------------------------------------------------------------
 
   describe('appendConversationSummary', () => {
+    it('memory-write-no-secrets: redacts summaries and existing entries before disk writes', async () => {
+      const secret = 'sk-testonly-' + 'a'.repeat(40);
+      await fs.mkdir(memDir, { recursive: true });
+      await fs.writeFile(summaryPath, `- **2026-03-18**: "old" — api_key=${secret}\n`);
+      await appendConversationSummary({
+        date: '2026-03-19', title: `api_key=${secret}`,
+        highlights: [`token=${secret}`, 'keep this useful topic'],
+      });
+      const persisted = await fs.readFile(summaryPath, 'utf8');
+      expect(persisted).not.toContain(secret);
+      expect(persisted).toContain('keep this useful topic');
+      expect(persisted).toContain('REDACTED');
+    });
+
     it('does not write when the caller disables recent conversation persistence', async () => {
       await appendConversationSummary({
         date: '2026-03-19',

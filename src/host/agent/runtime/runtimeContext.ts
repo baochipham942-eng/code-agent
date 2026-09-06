@@ -57,6 +57,7 @@ import type { ScopedCostRecorder } from '../../services/core/scopedCostLimit';
 export interface RuntimeContext {
   // --- Configuration ---
   readonly systemPrompt: string;
+  readonly systemInstructions?: string[];
   modelConfig: ModelConfig;
   readonly toolExecutor: ToolExecutor;
   messages: Message[];

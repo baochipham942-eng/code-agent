@@ -109,6 +109,7 @@ export interface ProjectSource {
   trustState: ProjectSourceTrustState;
   identityDev?: string | null;
   identityIno?: string | null;
+  identityBirthtimeNs?: string | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -120,6 +121,7 @@ export interface WorkspaceRoot {
   role: ProjectSourceRole;
   identityDev?: string | null;
   identityIno?: string | null;
+  identityBirthtimeNs?: string | null;
 }
 
 export interface WorkspaceScope {

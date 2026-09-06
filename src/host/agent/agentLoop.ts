@@ -111,6 +111,7 @@ export class AgentLoop {
 
     this.ctx = {
       systemPrompt: config.systemPrompt || '',
+      systemInstructions: config.systemInstructions,
       modelConfig: config.modelConfig,
       toolExecutor: config.toolExecutor,
       messages: config.messages,

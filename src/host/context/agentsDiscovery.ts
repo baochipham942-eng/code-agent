@@ -113,7 +113,8 @@ export function isProtectedUserFolder(dir: string, homeDir: string = os.homedir(
  * Maximum depth to search
  */
 const MAX_DEPTH = 5;
-const MAX_FILES = 32;
+const MAX_FILES = 24;
+const MAX_PARENT_LEVELS = 5;
 const MAX_DIRECTORIES = 1500;
 
 /**
@@ -124,6 +125,7 @@ const MAX_DIRECTORIES = 1500;
 const SPARSE_AGENTS_FALLBACK_CHARS = 500;
 
 export interface AgentsDiscoveryOptions {
+  includeParents?: boolean;
   maxDepth?: number;
   maxFiles?: number;
   maxDirectories?: number;
@@ -134,6 +136,7 @@ function normalizeDiscoveryOptions(
 ): Required<AgentsDiscoveryOptions> {
   if (typeof optionsOrDepth === 'number') {
     return {
+      includeParents: true,
       maxDepth: optionsOrDepth,
       maxFiles: MAX_FILES,
       maxDirectories: MAX_DIRECTORIES,
@@ -141,6 +144,7 @@ function normalizeDiscoveryOptions(
   }
 
   return {
+    includeParents: optionsOrDepth?.includeParents ?? true,
     maxDepth: optionsOrDepth?.maxDepth ?? MAX_DEPTH,
     maxFiles: optionsOrDepth?.maxFiles ?? MAX_FILES,
     maxDirectories: optionsOrDepth?.maxDirectories ?? MAX_DIRECTORIES,
@@ -163,7 +167,11 @@ export async function discoverAgentFiles(
   optionsOrDepth?: number | AgentsDiscoveryOptions
 ): Promise<AgentsDiscoveryResult> {
   const startTime = Date.now();
-  if (!await isProjectConfigTrusted(workingDirectory, 'agent-instructions')) {
+  const { maxDepth, maxFiles, maxDirectories, includeParents } = normalizeDiscoveryOptions(optionsOrDepth);
+  // 叶目录自己没有信任记录时，只跳过它自己那棵子树；已信任的祖先指令仍要收（ai-review 09-06：
+  // 根目录已信任且有 AGENTS.md、子目录无指令也无独立信任记录时，includeParents 不该返回空）。
+  const leafTrusted = await isProjectConfigTrusted(workingDirectory, 'agent-instructions');
+  if (!leafTrusted && !includeParents) {
     return {
       files: [],
       combinedInstructions: '',
@@ -173,11 +181,10 @@ export async function discoverAgentFiles(
   }
 
   const files: AgentInstructions[] = [];
-  const { maxDepth, maxFiles, maxDirectories } = normalizeDiscoveryOptions(optionsOrDepth);
   let visitedDirectories = 0;
   let truncated = false;
 
-  async function searchDirectory(dir: string, depth: number): Promise<void> {
+  async function searchDirectory(dir: string, depth: number, recurse = true): Promise<void> {
     if (depth > maxDepth) return;
     if (files.length >= maxFiles || visitedDirectories >= maxDirectories) {
       truncated = true;
@@ -224,6 +231,8 @@ export async function discoverAgentFiles(
         break;
       }
 
+      if (!recurse) return;
+
       // 打包态工作目录会 fallback 到家目录(cwd 在 .app 内)。家目录不是项目根,
       // 不该为找 AGENTS.md 递归扫遍它——下钻会触碰 ~/Desktop、~/Documents、
       // ~/Downloads、~/Music、~/Pictures、~/Library 等,逐个触发 macOS TCC 授权弹窗。
@@ -249,12 +258,29 @@ export async function discoverAgentFiles(
     }
   }
 
-  await searchDirectory(workingDirectory, 0);
+  if (includeParents) {
+    const parents: string[] = [];
+    let cursor = path.resolve(workingDirectory);
+    for (let level = 0; level < MAX_PARENT_LEVELS; level += 1) {
+      // A worktree's .git is a file, so existence (not directory type) is the marker.
+      try { await fs.stat(path.join(cursor, '.git')); break; } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') break;
+      }
+      if (cursor === os.homedir() || isProtectedUserFolder(cursor)) break;
+      const parent = path.dirname(cursor);
+      if (parent === cursor || parent === path.parse(parent).root || isProtectedUserFolder(parent)) break;
+      if (!await isProjectConfigTrusted(parent, 'agent-instructions')) break;
+      parents.push(parent);
+      cursor = parent;
+    }
+    for (const parent of parents.reverse()) await searchDirectory(parent, 0, false);
+  }
+  if (leafTrusted) await searchDirectory(workingDirectory, 0);
 
   // Sort by path depth (root first, then deeper directories)
   files.sort((a, b) => {
-    const depthA = a.relativePath.split(path.sep).length;
-    const depthB = b.relativePath.split(path.sep).length;
+    const depthA = a.absolutePath.split(path.sep).length;
+    const depthB = b.absolutePath.split(path.sep).length;
     return depthA - depthB;
   });
 
@@ -291,12 +317,8 @@ export async function getInstructionsForPath(
 
   // Filter to only files that apply to the target path
   const applicableFiles = result.files.filter(file => {
-    // Root-level files apply to everything
-    if (file.directory === '.') return true;
-
-    // Check if target path is within the directory
-    const targetDir = path.dirname(targetPath);
-    return targetDir.startsWith(file.directory) || file.directory === targetDir;
+    const relative = path.relative(path.dirname(file.absolutePath), path.resolve(workingDirectory, targetPath));
+    return relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative));
   });
 
   return combineInstructions(applicableFiles);
@@ -376,6 +398,7 @@ const CACHE_TTL_MS = 60000; // 1 minute
 function getCacheKey(workingDirectory: string, options: Required<AgentsDiscoveryOptions>): string {
   return [
     workingDirectory,
+    options.includeParents,
     options.maxDepth,
     options.maxFiles,
     options.maxDirectories,

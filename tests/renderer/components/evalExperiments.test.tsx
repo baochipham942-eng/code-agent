@@ -309,5 +309,21 @@ describe('N-EVAL-RESULT-HINT-TIERS：说明与「未出场」分层', () => {
     ((changedOrchestrationCompare.compare as Record<string, unknown>).candidate as Record<string, unknown>).memory = undefined;
     render(<EvalExperimentResult detail={changedOrchestration} onBack={vi.fn()} />);
     expect(screen.getByTestId('experiment-subagent-not-used')).toBeTruthy();
+    cleanup();
+
+    // 候选臂**明确禁止**扇出（深度 0）：编排确实是本实验变量（基线 3 层 → 候选 0 层），
+    // 但"没扇出"正是这轮想要的结果，不是结论有洞 ⇒ 不该提示。
+    // 这条钉的是 `spawnMaxDepth !== 0` 那个守卫：#1670/#1671 之前全套用例都没有
+    // 候选深度为 0 的结果页断言，摘掉守卫 13 条照样全绿（ai-review #1671 抓出）。
+    const candidateNoFanout = bothHints();
+    const noFanoutCompare = candidateNoFanout.experiment.config as Record<string, unknown>;
+    (noFanoutCompare.compare as Record<string, unknown>).baseline = {
+      name: 'production', model: 'm', provider: 'p', orchestration: { allowSwarm: true, spawnMaxDepth: 3 },
+    };
+    ((noFanoutCompare.compare as Record<string, unknown>).candidate as Record<string, unknown>).orchestration = {
+      allowSwarm: true, spawnMaxDepth: 0,
+    };
+    render(<EvalExperimentResult detail={candidateNoFanout} onBack={vi.fn()} />);
+    expect(screen.queryByTestId('experiment-subagent-not-used')).toBeNull();
   });
 });

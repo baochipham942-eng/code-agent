@@ -146,10 +146,10 @@ export interface CapabilityListOptions {
   remoteCapabilityRegistryService?: CapabilityRegistryReader | null;
 }
 
-export interface CapabilityToggleOptions {
-  workingDirectory?: string;
-  configService?: ConfigService | null;
-}
+// setEnabled 把 options 原样喂给 listCapabilities，所以两者必须是同一组字段。
+// 此前它少了 remoteCapabilityRegistryService：切换这条路上谁都没法跳过远程注册表，
+// 单测想传都传不进来（TS2353），只能落到真实单例——远程工人机上那 30s 超时就是这么来的。
+export type CapabilityToggleOptions = CapabilityListOptions;
 
 export type CapabilityInstallDraftOptions = CapabilityListOptions;
 

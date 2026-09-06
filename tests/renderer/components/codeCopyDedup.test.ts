@@ -1,0 +1,92 @@
+// ============================================================================
+// 代码块紧邻 !copy 去重（工单 N-CODEBLOCK-DUPCOPY）——纯函数单测。
+// 「紧邻」判据拍板：段与围栏块之间只隔空白（空行算紧邻）；夹任何其它内容不算；
+// 围栏块前后对称处理；只有整段皆为 !copy 链接才去重，句中/混排的行内用法保留。
+// ============================================================================
+import { describe, expect, it } from 'vitest';
+import { dropCodeAdjacentCopyLinks } from '../../../src/renderer/components/features/chat/MessageBubble/codeCopyDedup';
+
+describe('dropCodeAdjacentCopyLinks — 紧邻 ⇒ 去重', () => {
+  it('围栏块之后直接相邻的纯 !copy 段被删除', () => {
+    expect(dropCodeAdjacentCopyLinks('```bash\nnpm install\n```\n[复制命令](!copy)'))
+      .toBe('```bash\nnpm install\n```');
+  });
+
+  it('隔一个/多个空行仍算紧邻（空行渲染后不产生可见元素）', () => {
+    expect(dropCodeAdjacentCopyLinks('```bash\nnpm i\n```\n\n[复制命令](!copy)'))
+      .toBe('```bash\nnpm i\n```\n\n');
+    const out = dropCodeAdjacentCopyLinks('```bash\nnpm i\n```\n\n\n[复制命令](!copy)\n\n\n');
+    expect(out).not.toContain('!copy');
+    expect(out.startsWith('```bash\nnpm i\n```')).toBe(true);
+  });
+
+  it('围栏块之前的纯 !copy 段同样删除（双按钮问题同形，对称处理）', () => {
+    expect(dropCodeAdjacentCopyLinks('[复制命令](!copy)\n```bash\nnpm i\n```'))
+      .toBe('```bash\nnpm i\n```');
+  });
+
+  it('两个围栏块之间的独立 !copy 段删除，两个块原样保留', () => {
+    const out = dropCodeAdjacentCopyLinks('```bash\nls\n```\n\n[复制命令](!copy)\n\n```ts\nconst a = 1;\n```');
+    expect(out).not.toContain('!copy');
+    expect(out).toContain('```bash\nls\n```');
+    expect(out).toContain('```ts\nconst a = 1;\n```');
+  });
+
+  it('无语言围栏块、同段多个 !copy 链接同样去重', () => {
+    expect(dropCodeAdjacentCopyLinks('```\nls -la\n```\n[a](!copy) [b](!copy)')).toBe('```\nls -la\n```');
+  });
+});
+
+describe('dropCodeAdjacentCopyLinks — 不紧邻 ⇒ 保留', () => {
+  it('正文中间、无围栏块的独立 !copy 段原样保留', () => {
+    const text = '前置说明\n\n[sk-abc123](!copy)\n\n后置说明';
+    expect(dropCodeAdjacentCopyLinks(text)).toBe(text);
+  });
+
+  it('围栏块与 !copy 段之间夹了说明文字段 ⇒ 不算紧邻，保留', () => {
+    const text = '```bash\nls\n```\n\n先看这行说明\n\n[复制命令](!copy)';
+    expect(dropCodeAdjacentCopyLinks(text)).toBe(text);
+  });
+
+  it('同段（无空行）与文字混排的 !copy 是句中行内用法，保留', () => {
+    const text = '```bash\nls\n```\n直接 [复制命令](!copy) 即可';
+    expect(dropCodeAdjacentCopyLinks(text)).toBe(text);
+  });
+
+  it('段里混有非 !copy 链接（!open 等）时不整段删除', () => {
+    const text = '```\nls\n```\n[复制](!copy) 和 [打开](!open)';
+    expect(dropCodeAdjacentCopyLinks(text)).toBe(text);
+  });
+
+  it('紧邻行内 code 不构成紧邻围栏块，保留', () => {
+    const text = '```\nls\n```\n`foo`\n[复制命令](!copy)';
+    expect(dropCodeAdjacentCopyLinks(text)).toBe(text);
+  });
+
+  it('列表项里的 !copy 不是纯复制段，保留', () => {
+    const text = '```\nls\n```\n- [复制命令](!copy)';
+    expect(dropCodeAdjacentCopyLinks(text)).toBe(text);
+  });
+});
+
+describe('dropCodeAdjacentCopyLinks — 代码内容零改动', () => {
+  it('围栏块内部的 [x](!copy) 是代码文本，原样保留', () => {
+    const text = '```markdown\n[x](!copy)\n```\n\n正文';
+    expect(dropCodeAdjacentCopyLinks(text)).toBe(text);
+  });
+
+  it('行内 code 里的 [x](!copy) 原样保留', () => {
+    const text = '运行 `[x](!copy)` 命令';
+    expect(dropCodeAdjacentCopyLinks(text)).toBe(text);
+  });
+
+  it('流式未闭合围栏块：块内吞掉的 !copy 文本不动', () => {
+    const text = '```bash\nnpm i\n';
+    expect(dropCodeAdjacentCopyLinks(text)).toBe(text);
+  });
+
+  it('无 !copy 的文本恒等返回', () => {
+    const text = '```bash\nls\n```\n\n普通正文段落';
+    expect(dropCodeAdjacentCopyLinks(text)).toBe(text);
+  });
+});

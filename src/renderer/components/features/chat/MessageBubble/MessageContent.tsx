@@ -10,6 +10,7 @@ import type { MessageContentProps } from './types';
 import { useAppStore } from '../../../../stores/appStore';
 import { useSessionStore } from '../../../../stores/sessionStore';
 import { wrapFilePathsInBackticks, wrapTicketsAsLinks } from './filePathProcessor';
+import { dropCodeAdjacentCopyLinks } from './codeCopyDedup';
 import { parseLeadingTriggerToken } from './triggerTokenHighlight';
 import { isWebMode, copyPathToClipboard, openExternalLink } from '../../../../utils/platform';
 import { isPreviewable } from '../../../../utils/previewable';
@@ -158,11 +159,13 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
   }), [currentSessionId, mediaContext?.sessionId, workingDirectory]);
 
   // Filter out system tags, auto-link ticket IDs, wrap file paths,
+  // dedupe !copy links adjacent to code blocks,
   // then close incomplete markdown tokens for streaming-safe rendering
   const preparedContent = useMemo(() => {
     const cleaned = filterSystemTags(markdownSource);
     const noRawHtml = stripRawHtmlOutsideCode(cleaned);
-    const withTickets = wrapTicketsAsLinks(noRawHtml);
+    const noDupCopy = dropCodeAdjacentCopyLinks(noRawHtml);
+    const withTickets = wrapTicketsAsLinks(noDupCopy);
     return wrapFilePathsInBackticks(withTickets);
   }, [markdownSource]);
   const filteredContent = useMemo(

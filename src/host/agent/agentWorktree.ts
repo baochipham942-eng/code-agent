@@ -107,8 +107,13 @@ type GitWorktreeBaseProbe =
  * 判据按**退出码 + stderr 语义**区分（实测 git 2.x，`--quiet` 抑制 ref 错误输出）：
  * - 退出 0 → resolves
  * - 退出 1 → unborn（`--verify --quiet` 下 ref 解析不出，且必然已在仓库内）
- * - 退出 128 且 stderr 是 `fatal: not a git repository` → no-repo
- *   （其余 128 fatal——cwd 不存在、仓库损坏、权限——都是探测失败，不是确认）
+ * - 退出 128 且 stderr 是 `fatal: not a git repository (or any of the
+ *   parent directories)` → no-repo（向上搜索 .git 一路到根都没有，是唯一能
+ *   **确认**「这里不是仓库」的文案）
+ * - 退出 128 且 stderr 是 `fatal: not a git repository: <path>`（无括号段）
+ *   → unknown：worktree/子模块的 .git 是 gitfile，指向的 gitdir 失效时报这个，
+ *   那是仓库元数据坏了，不能确认目录原本不是仓库
+ * - 其余 128 fatal（cwd 不存在、仓库损坏、权限）都是探测失败，不是确认
  * - 退出 127（sh 找不到 git）、被 kill（超时）、无退出码的异常 → unknown
  */
 async function probeWorktreeBase(dir: string): Promise<GitWorktreeBaseProbe> {
@@ -131,7 +136,12 @@ async function probeWorktreeBase(dir: string): Promise<GitWorktreeBaseProbe> {
     if (e.code === 1) return { kind: 'unborn' };
     if (e.code === 128) {
       const fatalText = (e.stderr ?? e.message ?? '').toString();
-      if (/not a git repository/i.test(fatalText)) return { kind: 'no-repo' };
+      // 只认「向上搜索 .git 到根都没有」这一条文案（实测 git 2.50.1）。gitfile
+      // 指向失效 gitdir 时报 `fatal: not a git repository: <path>`——不含括号段，
+      // 属仓库元数据失效，归 unknown 不降级（PR#1685 ai-review R2）。
+      if (/not a git repository \(or any of the parent directories\)/i.test(fatalText)) {
+        return { kind: 'no-repo' };
+      }
       return {
         kind: 'unknown',
         reason: fatalText.trim() || 'git 退出 128 且无 stderr',

@@ -14,6 +14,8 @@
 //   ④ 零提交 + 外部引擎（forceWorktree 不允许降级）：显式失败，错误给可读原因
 //   ⑤ 有提交仓库 + git 探测失败（不可执行）：spawn 显式失败，可写子代理不在父
 //     目录跑起来（返修：探测失败不降级，fail-closed）
+//   ⑥ worktree 的 .git 指向失效 gitdir：探测落 unknown 不降级，spawn 显式失败，
+//     可写子代理不在父目录跑起来（R2 返修：仓库元数据失效 ≠ 确认非仓库）
 // ============================================================================
 
 import * as fs from 'node:fs/promises';
@@ -58,6 +60,24 @@ async function makeRepoWithCommit(): Promise<string> {
     + '-c commit.gpgsign=false commit --allow-empty --quiet -m init',
   );
   return dir;
+}
+
+/**
+ * 造一个「.git 指向失效 gitdir」的 worktree 目录：git 还能执行，但
+ * `git -C <dir> rev-parse --verify --quiet HEAD` 退出 128，stderr 是
+ * `fatal: not a git repository: <path>`（无 `(or any of the parent directories)`
+ * 括号段）——仓库元数据失效，不是「确认不在仓库内」（实测 git 2.50.1）。
+ * 返回的两个目录都要进 scratchDirs（worktree 不在 repo 目录内）。
+ */
+async function makeBrokenGitdirWorktree(): Promise<{ repo: string; worktreeDir: string }> {
+  const repo = await makeRepoWithCommit();
+  const worktreeDir = await fs.mkdtemp(path.join(os.tmpdir(), 'spawn-broken-wt-'));
+  await runGit(`git -C ${quote(repo)} worktree add ${quote(worktreeDir)} -b broken-wt-probe`);
+  await fs.writeFile(
+    path.join(worktreeDir, '.git'),
+    `gitdir: ${path.join(repo, '.git', 'worktrees', 'GONE')}\n`,
+  );
+  return { repo, worktreeDir };
 }
 
 /**
@@ -193,6 +213,22 @@ describe('spawn_agent 在三类工作目录里的不变量', () => {
 
     // 不变量：探测失败不许降级无隔离——可写子代理没有在父工作目录里跑起来，
     // 而是照常 worktree 在创建处显式失败（fail-closed）。
+    expect(result.success).toBe(false);
+    expect(result.metadata?.failureCode).toBe(AgentFailureCode.WorktreeCreateFailed);
+    expect(executeSpy).not.toHaveBeenCalled();
+  });
+
+  it('⑥ .git 指向失效 gitdir：不降级，可写子代理不在父目录跑起来', async () => {
+    const { repo, worktreeDir } = await makeBrokenGitdirWorktree();
+    scratchDirs.push(repo, worktreeDir);
+
+    const result = await executeSpawnAgent(
+      { role: 'coder', task: '写一个 hello.txt' },
+      makeContext(worktreeDir),
+    );
+
+    // 不变量同⑤：仓库元数据失效只能落 unknown，不许当 no-repo 降级——可写子代理
+    // 没有在父工作目录（失效 worktree）里跑起来，而是在创建处显式失败。
     expect(result.success).toBe(false);
     expect(result.metadata?.failureCode).toBe(AgentFailureCode.WorktreeCreateFailed);
     expect(executeSpy).not.toHaveBeenCalled();

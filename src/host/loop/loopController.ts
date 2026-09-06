@@ -307,6 +307,7 @@ export class LoopController {
         }
 
         await orchestrator.sendMessage(buildTurnPrompt(state), undefined, {
+          inputSource: 'automation',
           mode: 'normal',
           historyVisibility: 'meta',
           deniedToolNames: ['AskUserQuestion', 'ask_user_question'],

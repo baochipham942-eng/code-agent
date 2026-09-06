@@ -32,6 +32,9 @@ beforeAll(() => {
   };
 });
 
+const cancelTimeWakesOnUserReturn = vi.hoisted(() => vi.fn(async () => undefined));
+vi.mock('../../src/host/services/wake/userReturn', () => ({ cancelTimeWakesOnUserReturn }));
+
 beforeEach(() => {
   teardownConsoleProbe.testRunning = true;
 });
@@ -447,6 +450,20 @@ describe('AgentOrchestrator', () => {
       const newDir = '/test/new/directory';
       orchestrator.setWorkingDirectory(newDir);
       expect(orchestrator.getWorkingDirectory()).toBe(newDir);
+    });
+
+    it('ordinary user ingress forwards session and producer identity to wake cancellation', async () => {
+      const ingress = {
+        permissions: { drainPendingPermissions: vi.fn() },
+        configService: { getSettings: () => ({}) },
+        resolveSessionId: async () => 'return-session',
+        generateId: () => 'user-message',
+        applyHistoryVisibility: () => { throw new Error('after user ingress'); },
+      };
+      const options = { mode: 'normal' as const, inputSource: 'user' as const };
+      await expect(AgentOrchestrator.prototype.sendMessage.call(ingress as unknown as AgentOrchestrator,
+        'I am back', undefined, options)).rejects.toThrow('after user ingress');
+      expect(cancelTimeWakesOnUserReturn).toHaveBeenCalledWith('return-session', options);
     });
 
     it('getWorkingDirectory 应该返回当前目录', () => {

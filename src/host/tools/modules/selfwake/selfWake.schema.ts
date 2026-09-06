@@ -12,6 +12,7 @@ export const sleepUntilSchema: ToolSchema = {
   name: 'sleep_until',
   description:
     'Park the current task until a given time, then continue automatically. '
+    + 'If the user returns before then, this time-based wake is cancelled. '
     + 'Use when the next useful step simply cannot happen yet (a deadline, a scheduled export, "check back in 2 hours"). '
     + 'This ends the current turn — you are not blocking or polling, and nothing runs while you wait. '
     + 'You will be woken with your own reason text. For work that should repeat on a schedule, create an automation instead.',

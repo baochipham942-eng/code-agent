@@ -1,3 +1,4 @@
+import { cancelTimeWakesOnUserReturn } from '../services/wake/userReturn';
 // ============================================================================
 // Agent Orchestrator - Main controller for the AI agent
 // ============================================================================
@@ -208,6 +209,7 @@ export class AgentOrchestrator {
     const settings = this.configService.getSettings();
     const sessionManager = getSessionManager();
     const sessionId = await this.resolveSessionId();
+    if (sessionId) await cancelTimeWakesOnUserReturn(sessionId, options);
 
     const userMessage: Message = {
       id: clientMessageId ?? this.generateId(),

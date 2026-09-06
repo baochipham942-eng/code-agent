@@ -187,6 +187,19 @@ describe('条件型醒来', () => {
     expect(await service.onEvent('库存告警')).toBe(1);
   });
 
+  it('user return cancels only pending time wakes and preserves job/event triggers', async () => {
+    const service = makeService();
+    service.park({ sessionId: 's1', kind: 'time', dueAt: clock + 1, reason: 'time' });
+    service.park({ sessionId: 's1', kind: 'job', jobId: 'j1', reason: 'job' });
+    service.park({ sessionId: 's1', kind: 'event', eventName: 'e1', reason: 'event' });
+    expect(service.cancelForSession('s1', 'time')).toBe(1);
+    expect(service.cancelForSession('s1', 'time')).toBe(0);
+    clock += 2;
+    expect(await service.tick()).toBe(0);
+    expect(await service.onJobCompleted('j1')).toBe(1);
+    expect(await service.onEvent('e1')).toBe(1);
+  });
+
   it('会话作废时把它挂着的醒来一起撤掉', async () => {
     const service = makeService();
     service.park({ sessionId: 's1', kind: 'event', eventName: 'e', reason: 'r' });

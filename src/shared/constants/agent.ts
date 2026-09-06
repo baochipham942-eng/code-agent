@@ -10,7 +10,7 @@
 /** 隐藏唤醒回合的「无话可说」出口工具名（N-TASKWAKE）；host 与 renderer 共用，放 shared 以免 runtime 反向依赖 commandCenter 服务图。 */
 export const WAKE_NOOP_TOOL_NAME = 'wake_noop';
 
-export const PROMPT_VERSION = 'sys-v48' as const;
+export const PROMPT_VERSION = 'sys-v49' as const;
 
 /** Explore 角色在正常目录、静态工具描述和动态 fallback 中共享的单一描述。 */
 export const EXPLORE_AGENT_DESCRIPTION =

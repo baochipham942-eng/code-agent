@@ -165,6 +165,8 @@ export interface ResearchProgressData {
  * 运行选项（传递给 AgentLoop）
  */
 export interface AgentRunOptions {
+  /** Host producer identity; automated input must not cancel a user's pending time wake. */
+  inputSource?: 'user' | 'automation';
   mode: 'normal' | 'deep-research';
   /** Optional per-run allow/deny list for externally delivered AgentEvents. */
   eventFilter?: import('../protocol/events/eventFilter').AgentEventFilter;

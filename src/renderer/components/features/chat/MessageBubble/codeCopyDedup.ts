@@ -170,16 +170,19 @@ function quoteFenceNeedsTerminator(fenceText: string): boolean {
 function isCopyOnlyParagraph(paragraph: string): boolean {
   if (paragraph.includes('`')) return false; // 行内 code 里的字面链接不算
   const bareLines = paragraph.split('\n').map((line) => line.replace(BLOCKQUOTE_PREFIX, ''));
+  // 类级保守边界：只删「顶层贴左 / 引用前缀剥后贴左」的复制段。带任何缩进的行
+  // 可能是列表或缩进代码容器的内容（本扫描器不建模列表容器，列表项内的围栏与
+  // 示例会被误切分），宁可不删也不误删代码正文。
+  if (bareLines.some((line) => line !== '' && /^[ \t]/.test(line))) return false;
   const firstNonBlank = bareLines.find((line) => line.trim() !== '');
-  // 4 空格/Tab 起头是缩进代码块（渲染为代码内容，不是链接），不能当复制段删
-  if (!firstNonBlank || /^(?: {4}|\t)/.test(firstNonBlank)) return false;
+  if (!firstNonBlank) return false;
   return COPY_ONLY_PARAGRAPH.test(bareLines.join('\n').trim());
 }
 
 function dropAdjacentCopyParagraphs(segment: string, prevConfers: boolean, nextConfers: boolean): string {
-  // 空行切段（含引用内的「>」空行——它在引用容器里就是空行边界）；空行渲染后
-  // 不产生可见元素，所以「隔空行」仍算紧邻；夹任何其它内容就不算。
-  const paragraphs = segment.split(/\n(?:[ \t]*>|[ \t]*)\n/);
+  // 空行切段（含引用内的「>」空行——含尾随空格/Tab——它就是引用容器里的空行边界）；
+  // 空行渲染后不产生可见元素，所以「隔空行」仍算紧邻；夹任何其它内容就不算。
+  const paragraphs = segment.split(/\n(?:[ \t]*>[ \t]*|[ \t]*)\n/);
   const firstNonBlank = paragraphs.findIndex((p) => p.trim() !== '');
   let lastNonBlank = -1;
   for (let j = paragraphs.length - 1; j >= 0; j--) {

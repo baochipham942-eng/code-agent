@@ -187,4 +187,20 @@ describe('dropCodeAdjacentCopyLinks — 围栏边界与渲染分发（ai-review 
     expect(out).toContain('> ```bash\n> ls\n> ```');
     expect(out).toContain('后续说明');
   });
+
+  it('引用空行带尾随空格（"> "）同样是段落边界，去重不遗漏', () => {
+    const out = dropCodeAdjacentCopyLinks('> ```bash\n> ls\n> ```\n> \n> [复制命令](!copy)\n> \n> 后续说明');
+    expect(out).not.toContain('!copy');
+    expect(out).toContain('后续说明');
+  });
+
+  it('列表项内围栏中的字面 [literal](!copy) 是代码内容，整条恒等（类级保守边界）', () => {
+    const text = '- ````markdown\n  ```bash\n  ls\n  ```\n  [literal](!copy)\n  ````';
+    expect(dropCodeAdjacentCopyLinks(text)).toBe(text);
+  });
+
+  it('顶层带缩进（1-3 空格）的 !copy 段一律保守保留，不参与去重', () => {
+    const text = '```bash\nls\n```\n  [复制命令](!copy)';
+    expect(dropCodeAdjacentCopyLinks(text)).toBe(text);
+  });
 });

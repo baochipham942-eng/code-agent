@@ -112,4 +112,13 @@ describe('代码块紧邻 !copy 去重', () => {
     expect(iactCopyButtons(container)).toHaveLength(0);
     expect(container.textContent).toContain('后续说明');
   });
+
+  it('列表项内四反引号代码块中的 [literal](!copy) 字面量原样展示', async () => {
+    const { container } = await renderAssistant(
+      '- ````markdown\n  ```bash\n  ls\n  ```\n  [literal](!copy)\n  ````',
+    );
+
+    expect(iactCopyButtons(container)).toHaveLength(0);
+    expect(container.textContent).toContain('[literal](!copy)');
+  });
 });

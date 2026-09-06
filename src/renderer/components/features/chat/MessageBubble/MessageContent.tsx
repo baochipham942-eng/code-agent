@@ -10,6 +10,7 @@ import type { MessageContentProps } from './types';
 import { useAppStore } from '../../../../stores/appStore';
 import { useSessionStore } from '../../../../stores/sessionStore';
 import { wrapFilePathsInBackticks, wrapTicketsAsLinks } from './filePathProcessor';
+import { dedupeCodeCopyLinks } from './dedupeCodeCopyLinks';
 import { parseLeadingTriggerToken } from './triggerTokenHighlight';
 import { isWebMode, copyPathToClipboard, openExternalLink } from '../../../../utils/platform';
 import { isPreviewable } from '../../../../utils/previewable';
@@ -163,7 +164,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
     const cleaned = filterSystemTags(markdownSource);
     const noRawHtml = stripRawHtmlOutsideCode(cleaned);
     const withTickets = wrapTicketsAsLinks(noRawHtml);
-    return wrapFilePathsInBackticks(withTickets);
+    return dedupeCodeCopyLinks(wrapFilePathsInBackticks(withTickets));
   }, [markdownSource]);
   const filteredContent = useMemo(
     () => isStreaming ? preparedContent : remend(preparedContent),
@@ -183,7 +184,8 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
           (className?.startsWith('language-'));
 
         // Get the actual code content
-        const codeContent = String(children).replace(/\n$/, '');
+        const codeText = String(children ?? '');
+        const codeContent = codeText.replace(/\n$/, '');
 
         if (isCodeBlock && className) {
           const language = className.replace('language-', '');
@@ -228,8 +230,8 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
           return <CodeBlock language={language} code={codeContent} deferOffscreenLayout={!isStreaming} />;
         }
 
-        // For inline code that doesn't have a language class
-        if (!className && codeContent.includes('\n')) {
+        // Block text retains a trailing newline; inline code normalizes newlines to spaces.
+        if (!className && isCodeBlock && (codeContent === '' || codeText.endsWith('\n'))) {
           return <CodeBlock language="" code={codeContent} deferOffscreenLayout={!isStreaming} />;
         }
 

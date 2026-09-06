@@ -9,10 +9,11 @@
 // 的，就是别人的。
 //
 // 真正读到文件的时刻，路径可以和入口不一样：
-// - Bash 的 cd 会改后续命令的 cwd
-// - Glob ** / Grep -r 会从允许的入口走进别人的槽根
-// - 软链会让字面路径和真实路径分离
-// 字面路径与真实路径任一命中别人的槽就拒；realpath 仍要做（防 ~/x/../.code-agent）。
+// - Bash 的 cd 会改后续命令的 cwd（子 shell 里的 cd 不越出括号）
+// - Glob ** / Grep -r 会从允许的入口走进别人的槽根；Glob/Grep 工具边遍历边排除，
+//   Bash 里的递归命令（grep -r / rg / find / fd）改不了排除项，起点覆盖别人槽根时整条拒
+// - 软链会让字面路径和真实路径分离：放行要求字面与真实路径都属于当前槽，
+//   任一命中别人的槽就拒；realpath 仍要做（防 ~/x/../.code-agent）。
 // ============================================================================
 
 import { readdirSync } from 'node:fs';
@@ -165,6 +166,102 @@ function isListDirectoryTool(toolName: string): boolean {
   return normalized === 'listdirectory' || normalized === 'ls';
 }
 
+// ----------------------------------------------------------------------------
+// Bash 递归遍历命令识别与搜索根提取
+// ----------------------------------------------------------------------------
+
+const GREP_FAMILY_PROGRAMS = new Set(['grep', 'egrep', 'fgrep', 'zgrep']);
+const ALWAYS_RECURSIVE_PROGRAMS = new Set(['rg', 'ripgrep', 'find', 'fd', 'fdfind']);
+
+type RecursiveTraversalKind = 'grep' | 'always';
+
+function programBasename(word: string): string {
+  return word.split('/').pop() ?? '';
+}
+
+/** grep 系要 -r/-R（或 -d recurse）才递归；rg/find/fd 默认就整棵遍历。 */
+function recursiveTraversalKind(words: string[]): RecursiveTraversalKind | null {
+  const start = skipCommandWrapper(words);
+  const program = programBasename(words[start] ?? '');
+  if (GREP_FAMILY_PROGRAMS.has(program)) {
+    const args = words.slice(start + 1);
+    let recursive = args.some((arg) => (
+      arg === '-r'
+      || arg === '-R'
+      || arg === '--recursive'
+      || (/^-[^-]+$/.test(arg) && /[rR]/.test(arg.slice(1)))
+      || /^-d(recurse|dereference)$/.test(arg)
+      || /^--directories=(recurse|dereference)$/.test(arg)
+    ));
+    for (let index = 0; index < args.length - 1; index += 1) {
+      if ((args[index] === '-d' || args[index] === '--directories')
+        && /^(recurse|dereference)$/.test(args[index + 1])) {
+        recursive = true;
+      }
+    }
+    return recursive ? 'grep' : null;
+  }
+  return ALWAYS_RECURSIVE_PROGRAMS.has(program) ? 'always' : null;
+}
+
+/** 这些 flag 的下一个词是值（pattern/文件/排除项），不是搜索根。 */
+const TRAVERSAL_VALUE_FLAGS = new Set([
+  '-e', '-f', '-d', '-m', '--regexp', '--file', '--directories',
+  '--exclude', '--exclude-dir', '--exclude-from', '--include',
+  '-g', '--glob',
+]);
+
+/**
+ * 递归遍历命令的搜索根：位置参数（扣掉 pattern 位）按 cwd 解析成绝对路径；
+ * 一个位置参数都没有就以 cwd 为根（grep -r x / find -name y 都从 cwd 起遍历）。
+ */
+function collectTraversalRoots(
+  words: string[],
+  cwd: string,
+  homeDir: string,
+  kind: RecursiveTraversalKind,
+): string[] {
+  const start = skipCommandWrapper(words);
+  const program = programBasename(words[start] ?? '');
+  const args = words.slice(start + 1);
+  const positionals: string[] = [];
+  let skipNextValue = false;
+  let explicitPattern = false;
+  let filesOnly = false;
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (skipNextValue) {
+      skipNextValue = false;
+      continue;
+    }
+    if (arg === '--') {
+      positionals.push(...args.slice(index + 1));
+      break;
+    }
+    if (arg.startsWith('-') && arg !== '-') {
+      if (program === 'find') {
+        if (arg === '-H' || arg === '-L' || arg === '-P') continue;
+        break; // 进入 find 表达式区，后面不再是路径
+      }
+      if (TRAVERSAL_VALUE_FLAGS.has(arg)) {
+        skipNextValue = true;
+        if (arg === '-e' || arg === '--regexp') explicitPattern = true;
+      }
+      if (arg === '--files') filesOnly = true;
+      continue;
+    }
+    positionals.push(arg);
+  }
+
+  // 第一个位置参数是 pattern（grep/rg/fd），不是搜索根；显式 -e 或 --files 时没有 pattern 位。
+  const dropPattern = (kind === 'grep' || program === 'rg' || program === 'fd')
+    && !explicitPattern && !filesOnly;
+  const rootArgs = dropPattern && positionals.length > 0 ? positionals.slice(1) : positionals;
+  if (rootArgs.length === 0) return [lexicalPath(cwd)];
+  return rootArgs.map((raw) => resolveCandidate(unquote(raw), cwd, homeDir));
+}
+
 function resolveCandidate(raw: string, workingDirectory: string, homeDir: string): string {
   const expanded = expandHomePrefix(unquote(raw), homeDir);
   if (path.isAbsolute(expanded)) return lexicalPath(expanded);
@@ -219,21 +316,30 @@ function resolveCdTarget(words: string[], cwd: string, homeDir: string): string 
   return resolveCandidate(positional[0], cwd, homeDir);
 }
 
+interface ShellSegment {
+  text: string;
+  /** 段所在子 shell 深度：圆括号一层加一。花括号分组不建子 shell，不改深度。 */
+  depth: number;
+}
+
 /**
  * Quote-aware split on && || ; | newline and grouping parens/braces.
  * Unlike commandSafety.splitCompoundCommand, subshells stay analyzable so
- * `(cd X; cat …)` can still advance cwd inside the group.
+ * `(cd X; cat …)` can still advance cwd inside the group — and each segment
+ * carries its subshell depth so the cd does NOT leak past the closing paren.
  */
-function splitShellSegments(command: string): string[] {
-  const parts: string[] = [];
+function splitShellSegments(command: string): ShellSegment[] {
+  const parts: ShellSegment[] = [];
   let current = '';
+  let runDepth = 0;
+  let depth = 0;
   let inSingleQuote = false;
   let inDoubleQuote = false;
   let index = 0;
 
   const push = (): void => {
     const trimmed = current.trim();
-    if (trimmed) parts.push(trimmed);
+    if (trimmed) parts.push({ text: trimmed, depth: runDepth });
     current = '';
   };
 
@@ -254,16 +360,26 @@ function splitShellSegments(command: string): string[] {
     if (!inSingleQuote && !inDoubleQuote) {
       if (char === '&' && command[index + 1] === '&') {
         push();
+        runDepth = depth;
         index += 2;
         continue;
       }
       if (char === '|' && command[index + 1] === '|') {
         push();
+        runDepth = depth;
         index += 2;
         continue;
       }
-      if (char === ';' || char === '|' || char === '\n' || char === '(' || char === ')' || char === '{' || char === '}') {
+      if (char === '(' || char === ')') {
         push();
+        depth = char === '(' ? depth + 1 : Math.max(0, depth - 1);
+        runDepth = depth;
+        index += 1;
+        continue;
+      }
+      if (char === ';' || char === '|' || char === '\n' || char === '{' || char === '}') {
+        push();
+        runDepth = depth;
         index += 1;
         continue;
       }
@@ -293,46 +409,88 @@ function collectPathTokens(command: string, cwd: string, homeDir: string): strin
   return candidates;
 }
 
-function collectBashCandidates(command: string, workingDirectory: string, homeDir: string): string[] {
+function collectBashCandidates(
+  command: string,
+  workingDirectory: string,
+  homeDir: string,
+): { candidates: string[]; traversalRoots: string[] } {
   const candidates: string[] = [];
+  const traversalRoots: string[] = [];
   const segments = splitShellSegments(command);
   const unanalyzable = commandLooksUnanalyzable(command);
-  let cwd = workingDirectory;
-  let cwdKnown = !unanalyzable;
-  const cwdBases = new Set<string>([workingDirectory]);
+  // 子 shell 的 cd 只在括号内生效：进入 ( 时快照 cwd 状态，遇到 ) 弹回快照。
+  // 花括号 { } 只是分组、不建子 shell，cd 照常外溢，所以只有圆括号进出栈。
+  const stack: Array<{ cwd: string; cwdKnown: boolean; cwdBases: Set<string> }> = [];
+  const state = {
+    cwd: workingDirectory,
+    cwdKnown: !unanalyzable,
+    cwdBases: new Set<string>([workingDirectory]),
+  };
+  const allBases = new Set<string>([workingDirectory]);
+  let depth = 0;
 
   for (const segment of segments) {
-    const words = commandWords(segment);
+    while (segment.depth < depth) {
+      depth -= 1;
+      const restored = stack.pop();
+      if (restored) {
+        state.cwd = restored.cwd;
+        state.cwdKnown = restored.cwdKnown;
+        state.cwdBases = restored.cwdBases;
+      }
+    }
+    if (segment.depth > depth) {
+      depth += 1;
+      stack.push({ cwd: state.cwd, cwdKnown: state.cwdKnown, cwdBases: new Set(state.cwdBases) });
+    }
+
+    const words = commandWords(segment.text);
     if (words && isCwdCommand(words)) {
-      const nextCwd = resolveCdTarget(words, cwd, homeDir);
+      const nextCwd = resolveCdTarget(words, state.cwd, homeDir);
       if (nextCwd) {
         candidates.push(nextCwd);
-        cwd = nextCwd;
-        cwdBases.add(nextCwd);
+        state.cwd = nextCwd;
+        state.cwdBases.add(nextCwd);
+        allBases.add(nextCwd);
         continue;
       }
-      cwdKnown = false;
-      cwdBases.add(homeDir);
+      state.cwdKnown = false;
+      state.cwdBases.add(homeDir);
+      allBases.add(homeDir);
       continue;
     }
-    if (cwdKnown) {
-      candidates.push(...collectPathTokens(segment, cwd, homeDir));
+
+    // 递归遍历命令的入口 token 可以全然无害（$HOME），真正读进去的是遍历到的整棵树：
+    // 收集遍历起点，交给 evaluateBashTraversalRoot 判「起点是否覆盖别人的槽根」。
+    if (words) {
+      const kind = recursiveTraversalKind(words);
+      if (kind) {
+        const bases = state.cwdKnown ? [state.cwd] : [...state.cwdBases, homeDir];
+        for (const base of bases) {
+          traversalRoots.push(...collectTraversalRoots(words, base, homeDir, kind));
+        }
+      }
+    }
+
+    if (state.cwdKnown) {
+      candidates.push(...collectPathTokens(segment.text, state.cwd, homeDir));
       continue;
     }
-    for (const base of cwdBases) {
-      candidates.push(...collectPathTokens(segment, base, homeDir));
+    for (const base of state.cwdBases) {
+      candidates.push(...collectPathTokens(segment.text, base, homeDir));
     }
-    candidates.push(...collectPathTokens(segment, homeDir, homeDir));
+    candidates.push(...collectPathTokens(segment.text, homeDir, homeDir));
   }
 
-  if (!cwdKnown || unanalyzable) {
-    for (const base of cwdBases) {
+  // 括号没配平（怪形/语法错）也按未知 cwd 收尾：整条命令按出现过的全部基准再查一遍。
+  if (!state.cwdKnown || unanalyzable || stack.length > 0) {
+    for (const base of allBases) {
       candidates.push(...collectPathTokens(command, base, homeDir));
     }
     candidates.push(...collectPathTokens(command, homeDir, homeDir));
   }
 
-  return candidates;
+  return { candidates, traversalRoots };
 }
 
 function collectToolPathCandidates(
@@ -340,8 +498,9 @@ function collectToolPathCandidates(
   params: Record<string, unknown>,
   workingDirectory: string,
   homeDir: string = os.homedir(),
-): string[] {
+): { candidates: string[]; traversalRoots: string[] } {
   const candidates: string[] = [lexicalPath(workingDirectory)];
+  let traversalRoots: string[] = [];
   const searchPath = typeof params.path === 'string' && params.path.trim()
     ? resolveCandidate(params.path, workingDirectory, homeDir)
     : lexicalPath(workingDirectory);
@@ -367,10 +526,12 @@ function collectToolPathCandidates(
     const bashCwd = typeof params.working_directory === 'string' && params.working_directory.trim()
       ? resolveCandidate(params.working_directory, workingDirectory, homeDir)
       : lexicalPath(workingDirectory);
-    candidates.push(...collectBashCandidates(params.command, bashCwd, homeDir));
+    const bash = collectBashCandidates(params.command, bashCwd, homeDir);
+    candidates.push(...bash.candidates);
+    traversalRoots = bash.traversalRoots;
   }
 
-  return uniqueLexical(candidates);
+  return { candidates: uniqueLexical(candidates), traversalRoots };
 }
 
 function isRecursiveDiscoveryTool(toolName: string, params: Record<string, unknown>): boolean {
@@ -471,12 +632,12 @@ function isCurrentSlot(slot: FamilySlot, ctx: SlotGuardContext): boolean {
     || isSameOrChild(ctx.currentCanonical, slot.canonicalRoot);
 }
 
-function isOwnDataDir(candidateLexical: string, candidateCanonical: string, ctx: SlotGuardContext): boolean {
-  return isSameOrChild(candidateLexical, ctx.currentLexical)
-    || isSameOrChild(candidateCanonical, ctx.currentCanonical);
-}
-
-function matchingFamilySlot(
+/**
+ * 字面或真实路径任一落进去的、**非当前槽**且不在白名单的家族槽（最长根优先）。
+ * 不能让当前槽参与"谁最像"的挑选：字面路径停在当前槽、真实路径经软链落到别人槽时，
+ * 按名字长度选会把别人的槽票投给当前槽，恰好放行最该拒的读取。
+ */
+function matchingForeignFamilySlot(
   candidateLexical: string,
   candidateCanonical: string,
   ctx: SlotGuardContext,
@@ -484,6 +645,10 @@ function matchingFamilySlot(
   let best: FamilySlot | null = null;
   let bestLength = -1;
   for (const slot of ctx.familySlots) {
+    if (isCurrentSlot(slot, ctx)) continue;
+    if (crossSlotReadAllowed(slot.lexicalRoot, ctx.env) || crossSlotReadAllowed(slot.canonicalRoot, ctx.env)) {
+      continue;
+    }
     const hit = isSameOrChild(candidateLexical, slot.lexicalRoot)
       || isSameOrChild(candidateCanonical, slot.canonicalRoot);
     if (!hit) continue;
@@ -492,8 +657,17 @@ function matchingFamilySlot(
       bestLength = slot.lexicalRoot.length;
     }
   }
-  if (best) return best;
-  return inferredFamilySlot(candidateLexical, ctx.homeDirs);
+  return best;
+}
+
+/** 按名字推断的槽也要过同一道"非当前、非白名单"筛；是当前槽就返回 null。 */
+function foreignInferredFamilySlot(candidateLexical: string, ctx: SlotGuardContext): FamilySlot | null {
+  const slot = inferredFamilySlot(candidateLexical, ctx.homeDirs);
+  if (!slot || isCurrentSlot(slot, ctx)) return null;
+  if (crossSlotReadAllowed(slot.lexicalRoot, ctx.env) || crossSlotReadAllowed(slot.canonicalRoot, ctx.env)) {
+    return null;
+  }
+  return slot;
 }
 
 function denyReason(slotName: string): string {
@@ -510,21 +684,17 @@ function denyAccess(slot: FamilySlot, candidatePath: string): SlotDataDirAccess 
   };
 }
 
+/**
+ * 默认放行、命中即拒：任一路径（字面或真实）落进非当前、非白名单的家族槽就拒。
+ * 没有"先验白名单短路"——当前槽的字面路径救不了真实路径指向别人的读取。
+ */
 function evaluateCandidate(candidatePath: string, ctx: SlotGuardContext): SlotDataDirAccess {
   const candidateLexical = lexicalPath(candidatePath);
   const candidateCanonical = canonicalize(candidatePath);
 
-  if (isOwnDataDir(candidateLexical, candidateCanonical, ctx)) {
-    return { allowed: true };
-  }
-
-  const slot = matchingFamilySlot(candidateLexical, candidateCanonical, ctx);
-  if (!slot || isCurrentSlot(slot, ctx)) {
-    return { allowed: true };
-  }
-  if (crossSlotReadAllowed(slot.lexicalRoot, ctx.env) || crossSlotReadAllowed(slot.canonicalRoot, ctx.env)) {
-    return { allowed: true };
-  }
+  const slot = matchingForeignFamilySlot(candidateLexical, candidateCanonical, ctx)
+    ?? foreignInferredFamilySlot(candidateLexical, ctx);
+  if (!slot) return { allowed: true };
   return denyAccess(slot, candidateLexical);
 }
 
@@ -555,6 +725,30 @@ export function evaluateSlotDataDirAccess(
 }
 
 /**
+ * 搜索根覆盖到的、非白名单的别人槽（当前槽不算）。
+ * 工具侧遍历排除与 Bash 递归拒读共用这一份分类，防止两处口径漂移。
+ */
+function foreignSlotsUnderSearchRoot(
+  searchLexical: string,
+  searchCanonical: string,
+  ctx: SlotGuardContext,
+): FamilySlot[] {
+  const result: FamilySlot[] = [];
+  for (const slot of ctx.familySlots) {
+    if (isCurrentSlot(slot, ctx)) continue;
+    if (crossSlotReadAllowed(slot.lexicalRoot, ctx.env) || crossSlotReadAllowed(slot.canonicalRoot, ctx.env)) {
+      continue;
+    }
+    const underSearch = isSameOrChild(slot.lexicalRoot, searchLexical)
+      || isSameOrChild(slot.canonicalRoot, searchCanonical)
+      || isSameOrChild(slot.canonicalRoot, searchLexical)
+      || isSameOrChild(slot.lexicalRoot, searchCanonical);
+    if (underSearch) result.push(slot);
+  }
+  return result;
+}
+
+/**
  * 递归搜索在遍历前要用的别人槽根。只返回落在 searchPath 下面的槽，
  * 当前槽和白名单槽不在内。ignore 是相对搜索根的字面路径，不逐文件 realpath。
  */
@@ -569,25 +763,18 @@ export function collectForeignSlotTraversalExcludes(
   const ignoreGlobs: string[] = [];
   const excludeDirNames: string[] = [];
 
-  for (const slot of ctx.familySlots) {
-    if (isCurrentSlot(slot, ctx)) continue;
-    if (crossSlotReadAllowed(slot.lexicalRoot, ctx.env) || crossSlotReadAllowed(slot.canonicalRoot, ctx.env)) {
-      continue;
-    }
-    const underSearch = isSameOrChild(slot.lexicalRoot, searchLexical)
-      || isSameOrChild(slot.canonicalRoot, searchCanonical)
-      || isSameOrChild(slot.canonicalRoot, searchLexical)
-      || isSameOrChild(slot.lexicalRoot, searchCanonical);
-    if (!underSearch) continue;
-
+  for (const slot of foreignSlotsUnderSearchRoot(searchLexical, searchCanonical, ctx)) {
     roots.push(slot.lexicalRoot, slot.canonicalRoot);
     const relative = toPosixRelative(searchLexical, slot.lexicalRoot)
       ?? toPosixRelative(searchCanonical, slot.canonicalRoot)
       ?? toPosixRelative(searchLexical, slot.canonicalRoot);
     if (relative) {
       ignoreGlobs.push(relative, `${relative}/**`);
+      // --exclude-dir 按目录名匹配，会误伤同名目录：只有槽根是搜索根的直接子目录时
+      // 排除才精确；槽根埋得更深时排除首段名等于删掉整棵子树（普通项目的匹配静默
+      // 丢失），这种情况交给 roots 的结果侧前缀过滤兜底。
       const base = relative.split('/')[0];
-      if (base) excludeDirNames.push(base);
+      if (base && !relative.includes('/')) excludeDirNames.push(base);
     } else {
       excludeDirNames.push(slot.name);
     }
@@ -607,6 +794,25 @@ export function isListedPathInsideForeignSlot(candidatePath: string, foreignRoot
   return foreignRoots.some((root) => isSameOrChild(resolved, root));
 }
 
+/**
+ * Bash 里的递归遍历（grep -r 等）：起点覆盖别人的槽根就整条拒。
+ * 工具侧（Grep/Glob）能边遍历边排除别人的槽根，Bash 命令是黑盒、改不了排除项，
+ * 输出也无法可靠归因到路径，所以按起点 fail-closed。
+ */
+function evaluateBashTraversalRoot(rootPath: string, ctx: SlotGuardContext): SlotDataDirAccess {
+  const rootLexical = lexicalPath(rootPath);
+  const foreign = foreignSlotsUnderSearchRoot(rootLexical, canonicalize(rootPath), ctx);
+  if (foreign.length === 0) return { allowed: true };
+  const slot = foreign[0];
+  return {
+    allowed: false,
+    reason: `递归搜索起点 ${rootLexical} 会遍历到${denyReason(slot.name)}；Bash 命令无法按槽根排除，请收窄搜索根或改用 Grep/Glob 工具`,
+    slotName: slot.name,
+    slotRoot: slot.lexicalRoot,
+    candidatePath: rootLexical,
+  };
+}
+
 export function evaluateToolSlotDataDirAccess(
   toolName: string,
   params: Record<string, unknown>,
@@ -616,9 +822,14 @@ export function evaluateToolSlotDataDirAccess(
   try {
     const ctx = buildGuardContext(options);
     const homeDir = options.homeDirs?.[0] ?? getHomeDir();
-    const candidates = collectToolPathCandidates(toolName, params, workingDirectory, homeDir);
+    const { candidates, traversalRoots } = collectToolPathCandidates(toolName, params, workingDirectory, homeDir);
     for (const candidate of candidates) {
       const verdict = evaluateCandidate(candidate, ctx);
+      if (!verdict.allowed) return verdict;
+    }
+
+    for (const root of traversalRoots) {
+      const verdict = evaluateBashTraversalRoot(root, ctx);
       if (!verdict.allowed) return verdict;
     }
 

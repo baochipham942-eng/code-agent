@@ -64,6 +64,16 @@ export function getToolStatusLabel(
  * 从结果里抽出可报的数据做状态词（Grep → 找到 N 处匹配，Glob → 找到 N 个文件…）。
  * 抽不出东西时返回 null —— 光秃秃的「已完成/已创建」不值得占一个视觉位置。
  */
+/**
+ * 「无匹配」必须是**整条输出就是这个标记**，不能用 includes 在正文里找子串：
+ * Glob 成功返回一个名叫 `No matches.md` 的文件时，子串判定会把有结果说成无结果，
+ * 与旁边的结果摘要自相矛盾，用户据此误判文件不存在（ai-review #1693）。
+ */
+function isEmptyResultMarker(output: string): boolean {
+  const first = output.split('\n', 1)[0]?.trim() ?? '';
+  return /^(no matches(\s+found)?|no files matched|0 matches)\.?$/i.test(first);
+}
+
 function enrichCompletedLabel(toolCall: ToolCall, t: Translations): string | null {
   const output = toolCall.result?.output;
   if (!output || typeof output !== 'string') return null;
@@ -73,15 +83,13 @@ function enrichCompletedLabel(toolCall: ToolCall, t: Translations): string | nul
   if (name === 'Grep') {
     const match = output.match(/(\d+)\s*match/i);
     if (match) return t.toolStatus.grepMatches.replace('{count}', match[1]);
-    if (output.includes('No matches') || output.includes('0 matches')) return t.toolStatus.grepNoMatches;
+    if (isEmptyResultMarker(output)) return t.toolStatus.grepNoMatches;
   }
 
   if (name === 'Glob') {
     const match = output.match(/(\d+)\s*file/i);
     if (match) return t.toolStatus.globFiles.replace('{count}', match[1]);
-    if (output.includes('No matches') || output.includes('No files matched')) {
-      return t.toolStatus.grepNoMatches;
-    }
+    if (isEmptyResultMarker(output)) return t.toolStatus.grepNoMatches;
   }
 
   if (name === 'Read') {

@@ -32,6 +32,29 @@ function makeMutationCall(name: string, overrides: Partial<ToolCall> = {}): Tool
 }
 
 describe('ToolCallDisplay status labels', () => {
+  // ai-review #1693：「无匹配」不能用 includes 在正文里找子串——一个名叫
+  // `No matches.md` 的文件被 Glob 找到时，子串判定会把有结果说成无结果。
+  it('Glob 找到名含 No matches 的文件时不得报「无匹配」', () => {
+    const hit: ToolCall = {
+      id: 'glob-hit',
+      name: 'Glob',
+      arguments: { pattern: 'docs/**' },
+      result: {
+        toolCallId: 'glob-hit',
+        success: true,
+        output: 'docs/No matches.md\n\nnextOffset: null',
+      },
+    };
+    expect(getToolStatusLabel(hit, 'success', zh)).not.toBe(zh.toolStatus.grepNoMatches);
+
+    const empty: ToolCall = {
+      ...hit,
+      id: 'glob-empty',
+      result: { toolCallId: 'glob-empty', success: true, output: 'No matches found' },
+    };
+    expect(getToolStatusLabel(empty, 'success', zh)).toBe(zh.toolStatus.grepNoMatches);
+  });
+
   it('reports spawn completion according to foreground versus background facts', () => {
     const foreground: ToolCall = {
       id: 'spawn-foreground',

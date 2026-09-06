@@ -97,12 +97,40 @@ describe('code block copy deduplication', () => {
     expect(within(result.container).queryByRole('button', { name: 'Copy command' })).toBeNull();
   });
 
-  it.each(['mermaid', 'chart', 'generative_ui', 'neo_ui', 'spreadsheet', 'document'])('preserves actions next to special %s renderers', (language) => {
+  // 这 5 种的渲染器各自都有块头复制按钮（MermaidDiagram / ChartBlock / GenerativeUIBlock /
+  // SpreadsheetBlock / DocumentBlock 都含 handleCopy），所以紧邻的 !copy 是重复入口，应当删掉。
+  it.each(['mermaid', 'chart', 'generative_ui', 'spreadsheet', 'document'])('removes the duplicate action next to %s blocks that own a copy header', (language) => {
     const content = `\`\`\`${language}\n{}\n\`\`\`\n\n${copyLink}`;
+    expect(dedupeCodeCopyLinks(content)).not.toContain('!copy');
+  });
+
+  // neo_ui 走 GenerativeUIHost（MessageContent.tsx:211），那个组件不渲染复制按钮 ——
+  // 紧邻的链接是用户唯一的复制入口，删掉就是净损失。
+  it('keeps the action next to neo_ui blocks, which have no copy header', () => {
+    const content = `\`\`\`neo_ui\n{}\n\`\`\`\n\n${copyLink}`;
     expect(dedupeCodeCopyLinks(content)).toBe(content);
   });
 
   it('preserves standalone copy links without a code block', () => {
     expect(dedupeCodeCopyLinks(copyLink)).toBe(copyLink);
+  });
+
+  // 以下三条来自 PR #1677 的 ai-review：它们是对**正则切分**实现提的 Important，
+  // 本实现走 mdast 天然免疫，钉在这里防止有人把解析退回字符串切分。
+  it('keeps two adjacent fences separate when only a copy link sits between them', () => {
+    const content = `\`\`\`bash\na\n\`\`\`\n${copyLink}\n\`\`\`bash\nb\n\`\`\`\n`;
+    const fenceLines = (text: string) => text.split('\n').filter(line => line.startsWith('```')).length;
+    // 删除若吞掉换行，前块的结束围栏会和后块的开始围栏拼成一行，围栏行数随之减少。
+    expect(fenceLines(dedupeCodeCopyLinks(content))).toBe(fenceLines(content));
+  });
+
+  it('never rewrites a copy link that lives inside a four-backtick fence', () => {
+    const content = `\`\`\`\`md\n\`\`\`bash\nx\n\`\`\`\n${copyLink}\n\`\`\`\`\n`;
+    expect(dedupeCodeCopyLinks(content)).toBe(content);
+  });
+
+  it('removes the duplicate action next to a tilde fence', () => {
+    const content = `~~~bash\nnpm i\n~~~\n\n${copyLink}`;
+    expect(dedupeCodeCopyLinks(content)).not.toContain('!copy');
   });
 });

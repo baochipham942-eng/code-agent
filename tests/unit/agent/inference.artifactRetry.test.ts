@@ -913,13 +913,45 @@ describe('contextAssembly inference artifact retry', () => {
     expect(toolNames).toEqual(['Append', 'Bash', 'Edit', 'Read', 'Write']);
   });
 
-  it('seeds artifact repair guard before the first inference from a repair request', async () => {
+  it('does not seed artifact repair guard from a user repair request without validator output', async () => {
     const ctx = buildCtx({
       messages: [
         {
           id: 'user-repair',
           role: 'user',
           content: '修复 /tmp/game.html 这个 HTML 游戏，当前 validator failed: runSmokeTest reachability progressPlan 未通过。',
+          timestamp: Date.now(),
+        },
+      ],
+    } as any);
+    ctx.runtime.modelRouter.inference = vi.fn().mockResolvedValue({
+      type: 'text',
+      content: 'ok',
+      finishReason: 'stop',
+    });
+
+    await inference(ctx);
+
+    expect(ctx.runtime.artifact.repairGuard).toBeUndefined();
+    const [, tools] = vi.mocked(ctx.runtime.modelRouter.inference).mock.calls[0];
+    const toolNames = tools.map((tool: { name: string }) => tool.name);
+    expect(toolNames).toEqual(['Append', 'Bash', 'Edit', 'Read', 'Task', 'Write']);
+  });
+
+  it('seeds artifact repair guard before the first inference from a validator envelope', async () => {
+    const ctx = buildCtx({
+      messages: [
+        {
+          id: 'validator-failed',
+          role: 'system',
+          content: [
+            '<artifact-validation-failed kind="interactive_artifact">',
+            'attempts: 1',
+            'repair phase: baseline_repair',
+            'target file: /tmp/game.html',
+            'runSmokeTest reachability progressPlan 未通过。',
+            '</artifact-validation-failed>',
+          ].join('\n'),
           timestamp: Date.now(),
         },
       ],
@@ -1008,12 +1040,15 @@ describe('contextAssembly inference artifact retry', () => {
     const ctx = buildCtx({
       messages: [
         {
-          id: 'user-repair-coverage',
-          role: 'user',
+          id: 'validator-repair-coverage',
+          role: 'system',
           content: [
-            '修复 /tmp/game.html 这个 HTML 游戏。',
-            '当前 validator 失败摘要：',
+            '<artifact-validation-failed kind="interactive_artifact">',
+            'attempts: 1',
+            'repair phase: baseline_repair',
+            'target file: /tmp/game.html',
             'runSmokeTest 把对象存在、机制注册或覆盖声明当成通过证据；这不能证明玩家实际触发了奖励、风险或机制。',
+            '</artifact-validation-failed>',
           ].join('\n'),
           timestamp: Date.now(),
         },
@@ -1044,9 +1079,14 @@ describe('contextAssembly inference artifact retry', () => {
     const ctx = buildCtx({
       messages: [
         {
-          id: 'user-playability-repair',
-          role: 'user',
-          content: '修复 /tmp/game.html 这个 HTML 游戏，现在台阶没法上去，能力道具拿不到，交互玩不通。',
+          id: 'validator-playability-repair',
+          role: 'system',
+          content: [
+            '<artifact-playability-failed>',
+            'target file: /tmp/game.html',
+            '现在台阶没法上去，能力道具拿不到，交互玩不通。',
+            '</artifact-playability-failed>',
+          ].join('\n'),
           timestamp: Date.now(),
         },
       ],

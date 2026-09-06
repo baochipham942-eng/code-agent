@@ -146,11 +146,18 @@ function tokenizeShellCommand(command: string): ShellToken[] {
 const ARGUMENT_WRITE_COMMANDS: Record<string, 'last' | 'all'> = { cp: 'last', mv: 'last', tee: 'all' };
 
 function argumentWriteTargets(words: string[]): string[] {
-  if (words.length < 2) return [];
-  const rule = ARGUMENT_WRITE_COMMANDS[path.basename(unquote(words[0]))];
+  let programIndex = 0;
+  while (
+    programIndex < words.length
+    && /^[A-Za-z_][A-Za-z0-9_]*=/.test(words[programIndex])
+  ) {
+    programIndex += 1;
+  }
+  if (words.length - programIndex < 2) return [];
+  const rule = ARGUMENT_WRITE_COMMANDS[path.basename(unquote(words[programIndex]))];
   if (!rule) return [];
   // `-r` / `-a` / `--append` 一律是开关不是路径；`--` 之后才是纯路径，但这里不需要区分。
-  const operands = words.slice(1).filter((word) => !word.startsWith('-'));
+  const operands = words.slice(programIndex + 1).filter((word) => !word.startsWith('-'));
   if (rule === 'all') return operands;
   return operands.length >= 2 ? [operands[operands.length - 1]] : [];
 }

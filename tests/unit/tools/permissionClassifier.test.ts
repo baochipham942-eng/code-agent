@@ -414,6 +414,45 @@ describe('PermissionClassifier', () => {
       permissionLevel: 'execute' as const,
     };
 
+    it.each([
+      'printf ok > /tmp/approval-project/out.txt',
+      'printf ok >> /tmp/approval-project/out.txt',
+      'MODE=1 tee /tmp/approval-project/mode.txt',
+      'A=1 B=2 tee /tmp/approval-project/multi.txt',
+    ])('allows proven writes only when every target is inside the workspace: %s', async (command) => {
+      const result = await classifyPermission('Bash', { command }, context);
+
+      expect(result).toMatchObject({ decision: 'approve', reason: '写入项目目录内' });
+    });
+
+    it.each([
+      'printf ok > ~/.ssh/x',
+      'printf ok >> /etc/hosts',
+      'MODE=1 tee /etc/hosts',
+      'A=1 B=2 tee ~/.ssh/x',
+    ])('keeps the same write shape gated outside the workspace: %s', async (command) => {
+      const result = await classifyPermission('Bash', { command }, context);
+
+      expect(result).toMatchObject({
+        decision: 'ask',
+        traceStep: { rule: 'W3: outside_project' },
+        trustBoundary: true,
+      });
+    });
+
+    it.each([
+      'PATH=./bin tee /tmp/approval-project/out.txt',
+      'LD_PRELOAD=/tmp/hook.so tee /tmp/approval-project/out.txt',
+      './printf ok > /tmp/approval-project/out.txt',
+      'printf ok > /tmp/approval-project/out.txt; touch /tmp/approval-project/second.txt',
+      'printf ok < ~/.ssh/id_rsa > /tmp/approval-project/out.txt',
+      'MODE=1 tee /tmp/approval-project/out.txt & touch /tmp/approval-project/second.txt',
+    ])('does not grant a workspace-write proof when the command can execute or read beyond it: %s', async (command) => {
+      const result = await classifyPermission('Bash', { command }, context);
+
+      expect(result.decision).toBe('ask');
+    });
+
     it('resolves recursive rm targets before deciding critical path versus workspace child', async () => {
       const workspaceChild = await classifyPermission(
         'Bash',

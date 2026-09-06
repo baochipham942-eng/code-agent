@@ -66,6 +66,8 @@ describe('cp / mv / tee 的写目标', () => {
     ['mv a /etc/x', '/etc/x'],
     ['tee /etc/x', '/etc/x'],
     ['tee -a /etc/x', '/etc/x'],
+    ['MODE=1 tee /etc/x', '/etc/x'],
+    ['A=1 B=2 tee /etc/x', '/etc/x'],
     ['echo hi | tee /etc/x', '/etc/x'],
     ['cp a "/etc/x"', '/etc/x'],
     ['cd /tmp && cp a /etc/x', '/etc/x'],

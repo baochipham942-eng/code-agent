@@ -70,8 +70,8 @@ const UNCONDITIONALLY_SAFE = new Set([
   // 系统信息
   'ls', 'pwd', 'which', 'where', 'type', 'whoami', 'id', 'uname',
   'hostname', 'date', 'cal', 'uptime',
-  // 环境
-  'env', 'printenv',
+  // 环境（env 能执行后续命令，不能列入无条件安全集）
+  'printenv',
   // 搜索（只读）
   'grep', 'egrep', 'fgrep', 'rg', 'ag', 'fd',
   // 文件信息（不修改）
@@ -79,7 +79,8 @@ const UNCONDITIONALLY_SAFE = new Set([
   // 路径操作
   'basename', 'dirname', 'realpath', 'readlink',
   // 数据处理
-  'jq', 'yq', 'xargs',
+  // xargs 是 stdin→argv 的命令执行器，不能按数据处理器免审批
+  'jq', 'yq',
   // 差异对比
   'diff', 'colordiff',
   // 序列
@@ -95,6 +96,25 @@ const UNCONDITIONALLY_SAFE = new Set([
 type SafetyChecker = (args: string[]) => boolean;
 
 const CONDITIONALLY_SAFE: Record<string, SafetyChecker> = {
+  // env 只有在最终仍是“打印环境”时才安全。首个非选项、非赋值词会被 env
+  // 当作待执行程序；一旦出现就交回审批层判断，不能让包裹命令继承 env 白名单。
+  env: (args) => {
+    for (let index = 0; index < args.length; index += 1) {
+      const arg = args[index];
+      if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(arg)) continue;
+      if (['-i', '--ignore-environment', '-0', '--null', '-v', '--debug'].includes(arg)) continue;
+      if (arg === '-u' || arg === '--unset') {
+        if (!args[index + 1]) return false;
+        index += 1;
+        continue;
+      }
+      if (arg.startsWith('--unset=') && arg.length > '--unset='.length) continue;
+      if (arg === '--') continue;
+      return false;
+    }
+    return true;
+  },
+
   // find: 安全，除非有副作用操作
   find: (args) => !args.some(a =>
     ['-exec', '-execdir', '-delete', '-fls', '-fprint', '-fprintf'].includes(a)

@@ -311,6 +311,8 @@ export interface MessageMetadata {
   retryPrompt?: string;
   /** 与 retryPrompt 同批：失败那条消息的附件，重试要一起带回去。 */
   retryAttachments?: MessageAttachment[];
+  /** 锚点归属的会话；重试前必须与当前会话一致，否则内容会被重发到别的会话。 */
+  retrySessionId?: string;
   /** Structured verification evidence carried by message-level projections. */
   evidenceRefs?: EvidenceRef[];
   /** Stable join keys for reconstructing a persisted message's runtime turn. */

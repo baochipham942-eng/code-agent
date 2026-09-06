@@ -1126,6 +1126,10 @@ export function useAgentIPC({
                   ...(userMessage.attachments?.length
                     ? { retryAttachments: userMessage.attachments }
                     : {}),
+                  // 锚点必须自带它属于哪个会话：错误消息会落到**当下**的会话上，
+                  // 用户在 A 发完切到 B、A 的失败回执才到时，不绑会话就会把 A 的
+                  // 内容和附件重发进 B，污染 B 的上下文（ai-review #1694 第六轮）。
+                  ...(effectiveSessionId ? { retrySessionId: effectiveSessionId } : {}),
                 },
               }
             : {}),

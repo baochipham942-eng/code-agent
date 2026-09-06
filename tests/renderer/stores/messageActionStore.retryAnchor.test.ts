@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Message } from '../../../src/shared/contract';
 import { useMessageActionStore } from '../../../src/renderer/stores/messageActionStore';
+import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
 
 // ai-review #1694：发送失败会把乐观用户消息从时间线撤掉（防重复提交）。
 // 重试锚点必须跟着走，否则 regenerateMessage 往回找会命中**上一轮**的提问。
@@ -82,6 +83,45 @@ describe('regenerate 的重试锚点', () => {
 
     expect(send).toHaveBeenCalledTimes(1);
     expect(send.mock.calls[0][1]).toEqual({ attachments: [attachment] });
+  });
+
+  // ai-review #1694 第六轮：错误消息会落到**当下**的会话上，锚点不绑会话就会把
+  // A 的内容重发进 B。
+  it('锚点属于别的会话时不用它（回落到往回找）', () => {
+    useSessionStore.setState({ currentSessionId: 'session-B' } as never);
+    install([
+      { id: 'u-b', role: 'user', content: 'B 会话的问题', timestamp: 1 },
+      {
+        id: 'err-cross',
+        role: 'assistant',
+        content: '发送失败',
+        timestamp: 3,
+        metadata: { retryPrompt: 'A 会话的问题', retrySessionId: 'session-A' },
+      },
+    ]);
+
+    useMessageActionStore.getState().regenerateLast();
+
+    expect(send.mock.calls[0][0]).toBe('B 会话的问题');
+    expect(send.mock.calls[0][0]).not.toBe('A 会话的问题');
+  });
+
+  it('锚点会话与当前一致时照常用锚点', () => {
+    useSessionStore.setState({ currentSessionId: 'session-A' } as never);
+    install([
+      { id: 'u-b', role: 'user', content: '上一轮', timestamp: 1 },
+      {
+        id: 'err-same',
+        role: 'assistant',
+        content: '发送失败',
+        timestamp: 3,
+        metadata: { retryPrompt: 'A 会话的问题', retrySessionId: 'session-A' },
+      },
+    ]);
+
+    useMessageActionStore.getState().regenerateLast();
+
+    expect(send.mock.calls[0][0]).toBe('A 会话的问题');
   });
 
   it('没有锚点时保持原行为：往回找最近的 user 消息', () => {

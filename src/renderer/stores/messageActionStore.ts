@@ -81,13 +81,19 @@ export const useMessageActionStore = create<MessageActionState>((set, get) => ({
     // 发送失败时乐观用户消息会被撤掉，失败内容改挂在错误消息的 metadata.retryPrompt 上。
     // 有锚点就用锚点——否则往回找会命中**上一轮**的提问，把已经答完的问题重发一遍。
     const anchor = messages[idx].metadata as
-      { retryPrompt?: unknown; retryAttachments?: unknown } | undefined;
+      { retryPrompt?: unknown; retryAttachments?: unknown; retrySessionId?: unknown } | undefined;
+    // 锚点绑了会话就必须对得上：错误消息会落到**当下**的会话，跨会话重试等于把
+    // A 的内容和附件发进 B，污染 B 的上下文（ai-review #1694 第六轮）。
+    // 对不上就当没有锚点，回落到往回找——那条路本来就只看本会话的消息。
+    const anchorSessionId = typeof anchor?.retrySessionId === 'string' ? anchor.retrySessionId : undefined;
+    const anchorUsable = !anchorSessionId
+      || anchorSessionId === useSessionStore.getState().currentSessionId;
     const retryPrompt = anchor?.retryPrompt;
     const retryAttachments = Array.isArray(anchor?.retryAttachments)
       ? (anchor.retryAttachments as MessageAttachment[])
       : undefined;
     // 纯附件消息的 retryPrompt 是空串——有附件就照样能重试，别按文本判。
-    if (typeof retryPrompt === 'string' && (retryPrompt.trim() || retryAttachments?.length)) {
+    if (anchorUsable && typeof retryPrompt === 'string' && (retryPrompt.trim() || retryAttachments?.length)) {
       _send(retryPrompt, retryAttachments?.length ? { attachments: retryAttachments } : undefined);
       return;
     }

@@ -6,7 +6,7 @@
 // 已删除，protocol 入口在 src/host/tools/modules/multiagent/spawnAgent.ts。
 // 本文件仅保留：
 //   - executeSpawnAgent(params, ctx)  — single + parallel mode 入口
-//   - getSpawnedAgent / listSpawnedAgents / getAvailableAgents / SpawnedAgent
+//   - getSpawnedAgent / listSpawnedAgents / SpawnedAgent
 //     已拆至 ./spawnAgentStatus.ts（N-SUBAGENT-ZEROTOOLS 返修：max-lines 硬限）
 //   - DEFAULT_ISOLATION map
 // ============================================================================

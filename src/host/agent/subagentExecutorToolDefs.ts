@@ -32,7 +32,7 @@ type SubagentToolAccessContextKeys =
  * 在父子交集结果上再收一次，穿透 parentContext 缺省/退化分支——交集为空也
  * 不许回扩到父 run 面之外（子代理只能收窄，永不扩张）。
  */
-export function applyRunToolPolicyToSubagentTools(
+function applyRunToolPolicyToSubagentTools(
   effectiveToolNames: string[],
   context: Pick<SubagentExecutionContext, 'allowedToolNames' | 'deniedToolNames' | 'toolScope'>,
 ): string[] {
@@ -133,7 +133,7 @@ export interface SubagentToolAssemblyAbort {
  * 让后续解析把它记进缺失清单（而不是无声吞掉整组工具）。
  * 连接前先按 run 策略做 server 粒度预判：本轮确定会被全部丢掉的 server 不连。
  */
-export async function expandSubagentMcpToolGlobs(
+async function expandSubagentMcpToolGlobs(
   declaredToolNames: readonly string[],
   options?: SubagentToolAssemblyAbort,
 ): Promise<string[]> {
@@ -181,7 +181,7 @@ export async function expandSubagentMcpToolGlobs(
   return expanded;
 }
 
-export interface SubagentToolResolution {
+interface SubagentToolResolution {
   defs: ToolDefinition[];
   /** 声明了但（触发按需连接后仍）解析不到的工具名。 */
   missing: string[];
@@ -192,7 +192,7 @@ export interface SubagentToolResolution {
  * 首轮解析后，对 MCP 形态的缺失先触发对应 server 的按需连接再解析一次，仍取不到才
  * 计入缺失。内置工具的缺失不触发任何连接，warn 行为与 filterSubagentToolDefs 一致。
  */
-export async function resolveSubagentToolDefs(
+async function resolveSubagentToolDefs(
   allowedToolNames: readonly string[],
   resolver: SubagentToolResolverPort,
   options?: SubagentToolAssemblyAbort,

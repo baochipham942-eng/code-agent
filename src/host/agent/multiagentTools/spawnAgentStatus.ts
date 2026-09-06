@@ -7,7 +7,6 @@
 // ============================================================================
 
 import { getSpawnGuard } from '../spawnGuard';
-import { listPredefinedAgents } from '../agentDefinition';
 
 /**
  * Backward-compatible type for spawned agent status.
@@ -57,9 +56,4 @@ export function listSpawnedAgents(
 ): SpawnedAgent[] {
   const guard = getSpawnGuard();
   return guard.list(scope).map(projectManagedAgent);
-}
-
-// Export available agents
-export function getAvailableAgents(): Array<{ id: string; name: string; description: string }> {
-  return listPredefinedAgents();
 }

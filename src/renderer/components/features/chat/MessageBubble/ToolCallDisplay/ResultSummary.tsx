@@ -32,7 +32,7 @@ export function ResultSummary({ toolCall, inline = false }: Props) {
         ? [humanizedError.detail, humanizedError.summary]
         : [t.systemError.fallbackSummary])
         .find((candidate) => candidate && candidate !== outcome?.label && candidate !== outcome?.reason)
-    : collapsedSuccessSummary(summarizeTool(toolCall));
+    : collapsedSuccessSummary(summarizeTool(toolCall), toolCall.name);
 
   if (!summary) return null;
 
@@ -45,9 +45,18 @@ export function ResultSummary({ toolCall, inline = false }: Props) {
   return inline ? content : <div className="ml-6 text-xs">{content}</div>;
 }
 
-function collapsedSuccessSummary(summary: string | null): string | null {
+/** 只有 Grep/Glob 的状态行会替它说「无匹配」，别的工具删掉摘要就等于什么都没说。 */
+const SUMMARY_OWNED_BY_STATUS_LINE = new Set(['Grep', 'Glob']);
+
+function collapsedSuccessSummary(summary: string | null, toolName: string): string | null {
   if (!summary) return null;
   // grep/glob empty stdout is already the statusLabel (无匹配); keep raw English in details.
-  if (isRawToolStdoutNoMatches(summary)) return null;
+  // 🔴 只对这两个工具成立：mcp__github__search_code 之类同样会返回 'No matches found'，
+  // 但它们的状态行不产出「无匹配」，删掉摘要后折叠行只剩动作名，用户看不出找没找到
+  // （ai-review #1693 第三轮）。
+  if (SUMMARY_OWNED_BY_STATUS_LINE.has(toolName) && isRawToolStdoutNoMatches(summary)) return null;
   return summary;
 }
+
+/** 测试出口：折叠行摘要的隐藏范围是安全边界，值得单独钉住。 */
+export const collapsedSuccessSummaryForTest = collapsedSuccessSummary;

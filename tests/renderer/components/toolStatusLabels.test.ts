@@ -32,35 +32,32 @@ function makeMutationCall(name: string, overrides: Partial<ToolCall> = {}): Tool
 }
 
 describe('ToolCallDisplay status labels', () => {
-  // ai-review #1693：「无匹配」不能用 includes 在正文里找子串——一个名叫
-  // `No matches.md` 的文件被 Glob 找到时，子串判定会把有结果说成无结果。
-  it('Glob 找到名含 No matches 的文件时不得报「无匹配」', () => {
-    const hit: ToolCall = {
-      id: 'glob-hit',
-      name: 'Glob',
-      arguments: { pattern: 'docs/**' },
-      result: {
-        toolCallId: 'glob-hit',
-        success: true,
-        output: 'docs/No matches.md\n\nnextOffset: null',
-      },
-    };
-    expect(getToolStatusLabel(hit, 'success', zh)).not.toBe(zh.toolStatus.grepNoMatches);
+  // ai-review #1693：「有没有匹配」只认结构化 totalMatches，绝不解析正文。
+  // 三轮各造出一个正文反例：docs/No matches.md（子串）、No files matched the pattern
+  // （整行全等漏真阳）、根目录 No files matched.md（首词前缀）。文件名能构造，计数不能。
+  const globCall = (output: string, metadata?: Record<string, unknown>): ToolCall => ({
+    id: 'glob-x',
+    name: 'Glob',
+    arguments: { pattern: '**' },
+    result: { toolCallId: 'glob-x', success: true, output, ...(metadata ? { metadata } : {}) },
+  });
 
-    const empty: ToolCall = {
-      ...hit,
-      id: 'glob-empty',
-      result: { toolCallId: 'glob-empty', success: true, output: 'No matches found' },
-    };
-    expect(getToolStatusLabel(empty, 'success', zh)).toBe(zh.toolStatus.grepNoMatches);
+  it('totalMatches=0 才报「无匹配」', () => {
+    expect(getToolStatusLabel(globCall('No files matched the pattern', { totalMatches: 0 }), 'success', zh))
+      .toBe(zh.toolStatus.grepNoMatches);
+  });
 
-    // 真阳：Glob 自己产生的空结果串后面还带词，不能用整行全等（同轮第二次判红）
-    const globEmpty: ToolCall = {
-      ...hit,
-      id: 'glob-empty-real',
-      result: { toolCallId: 'glob-empty-real', success: true, output: 'No files matched the pattern' },
-    };
-    expect(getToolStatusLabel(globEmpty, 'success', zh)).toBe(zh.toolStatus.grepNoMatches);
+  it.each([
+    ['docs/No matches.md\n\nnextOffset: null'],
+    ['No files matched.md\n\nnextOffset: null'],
+  ])('找到名字长得像空结果标记的文件（%s）不得报「无匹配」', (output) => {
+    expect(getToolStatusLabel(globCall(output, { totalMatches: 1 }), 'success', zh))
+      .not.toBe(zh.toolStatus.grepNoMatches);
+  });
+
+  it('拿不到 totalMatches 时什么都不说，不猜', () => {
+    expect(getToolStatusLabel(globCall('No files matched the pattern'), 'success', zh))
+      .not.toBe(zh.toolStatus.grepNoMatches);
   });
 
   it('reports spawn completion according to foreground versus background facts', () => {
@@ -238,5 +235,20 @@ describe('ToolCallDisplay status labels', () => {
     );
 
     expect(label).toBe('找到 3 处匹配');
+  });
+});
+
+// ai-review #1693 第三轮②：删空匹配摘要只对 Grep/Glob 成立——它们的状态行会替它说
+// 「无匹配」。别的工具（mcp__github__search_code 等）状态行不产出这句，删掉摘要后
+// 折叠行只剩动作名，用户看不出找没找到。
+describe('折叠行摘要的隐藏范围', () => {
+  it('只有 Grep/Glob 的空结果摘要被状态行接管', async () => {
+    const { collapsedSuccessSummaryForTest } = await import(
+      '../../../src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/ResultSummary'
+    );
+    expect(collapsedSuccessSummaryForTest('No matches found', 'Glob')).toBeNull();
+    expect(collapsedSuccessSummaryForTest('No matches found', 'Grep')).toBeNull();
+    expect(collapsedSuccessSummaryForTest('No matches found', 'mcp__github__search_code'))
+      .toBe('No matches found');
   });
 });

@@ -65,18 +65,20 @@ export function getToolStatusLabel(
  * 抽不出东西时返回 null —— 光秃秃的「已完成/已创建」不值得占一个视觉位置。
  */
 /**
- * 「无匹配」判据锚在工具**自己产生的那两条字面量**上，且必须出现在输出首行的开头：
- *   - Glob 空结果 = `No files matched the pattern`（glob.ts:180）
- *   - Grep 空结果 = `No matches found`（grep.ts:420 等多处）
+ * 「有没有匹配」只认工具返回的**结构化计数**，绝不解析正文。
  *
- * 为什么不用 includes：Glob 找到一个名叫 `No matches.md` 的文件时，子串判定会把有结果
- * 说成无结果（ai-review #1693 第一轮）。
- * 为什么不用整行全等：真实输出后面还带着别的词，全等会把真的空结果漏掉
- * ——第一版就是这么改紧过头的（同一轮第二次判红）。真阳真阴各一条测试一起钉。
+ * 正文解析这条路穷举不完：ai-review #1693 连着三轮各造出一个反例——
+ * `docs/No matches.md`（includes 子串）、`No files matched the pattern`（整行全等漏真阳）、
+ * 根目录的 `No files matched.md`（首词前缀）。只要判据落在人类可读文本上，
+ * 文件名就能构造出来。Glob（glob.ts:184）与 Grep（grep.ts:421）都在 meta 里给了
+ * `totalMatches`，那才是真源。
+ *
+ * 拿不到计数时**什么都不说**（返回 undefined），不猜——宁可少一句状态，
+ * 不可把找到的结果说成没找到。
  */
-function isEmptyResultMarker(output: string): boolean {
-  const first = output.split('\n', 1)[0]?.trim() ?? '';
-  return /^(no matches found|no files matched|0 matches)\b/i.test(first);
+function emptyMatchCount(toolCall: ToolCall): boolean | undefined {
+  const total = (toolCall.result?.metadata as { totalMatches?: unknown } | undefined)?.totalMatches;
+  return typeof total === 'number' ? total === 0 : undefined;
 }
 
 function enrichCompletedLabel(toolCall: ToolCall, t: Translations): string | null {
@@ -88,13 +90,13 @@ function enrichCompletedLabel(toolCall: ToolCall, t: Translations): string | nul
   if (name === 'Grep') {
     const match = output.match(/(\d+)\s*match/i);
     if (match) return t.toolStatus.grepMatches.replace('{count}', match[1]);
-    if (isEmptyResultMarker(output)) return t.toolStatus.grepNoMatches;
+    if (emptyMatchCount(toolCall) === true) return t.toolStatus.grepNoMatches;
   }
 
   if (name === 'Glob') {
     const match = output.match(/(\d+)\s*file/i);
     if (match) return t.toolStatus.globFiles.replace('{count}', match[1]);
-    if (isEmptyResultMarker(output)) return t.toolStatus.grepNoMatches;
+    if (emptyMatchCount(toolCall) === true) return t.toolStatus.grepNoMatches;
   }
 
   if (name === 'Read') {

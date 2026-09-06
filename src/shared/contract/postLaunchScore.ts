@@ -119,6 +119,30 @@ export const POST_LAUNCH_RUBRIC_VERSION = 'postlaunch-rubric-v1';
  */
 export type PostLaunchScoringSwitch = 'on' | 'off' | 'auto';
 
+/** 回流闸的本地会话级同意档（ADR-040）。默认 metadata；草稿至少需要 turn_excerpt。 */
+export type PostLaunchConsentScope = 'metadata' | 'turn_excerpt' | 'full_session';
+
+export const POST_LAUNCH_CONSENT_SCOPES: readonly PostLaunchConsentScope[] = [
+  'metadata',
+  'turn_excerpt',
+  'full_session',
+] as const;
+
+/** 回流入口独立于评分开关：三态形状与评分一致，默认关闭（auto 仅内部槽开启）。 */
+export type PostLaunchReflowSwitch = 'on' | 'off' | 'auto';
+
+export function resolvePostLaunchReflowEnabled(
+  setting: PostLaunchReflowSwitch | undefined,
+  internalSlot: boolean,
+): boolean {
+  if (setting === 'on') return true;
+  if (setting === 'off') return false;
+  return internalSlot;
+}
+
+export const POST_LAUNCH_REFLOW_DISABLED_MESSAGE
+  = '上线后坏案例回流没开。去「设置 → 隐私防线」页的「数据共享」里把「坏案例回流」选成「开」再来。';
+
 export function resolvePostLaunchScoringEnabled(
   setting: PostLaunchScoringSwitch | undefined,
   internalSlot: boolean,
@@ -204,6 +228,20 @@ export interface PostLaunchReportSession {
   title: string;
   /** telemetry_sessions.start_time；会话被删时是 0。 */
   startedAt: number;
+}
+
+/** 候选只带结构化分数/信号，不携带会话正文。 */
+export interface PostLaunchReflowCandidate {
+  sessionId: string;
+  turnId: string | null;
+  judgeVersion: string | null;
+  redDimensions: PostLaunchDimension[];
+  signals: PostLaunchSignalKind[];
+  failureClass: string | null;
+  /** 三路来源的稳定标签：judge 红、确定性信号、点踩。 */
+  sources: Array<'judge' | 'signal' | 'feedback'>;
+  feedbackId?: string;
+  feedbackAt?: number;
 }
 
 export interface PostLaunchReportGroup {

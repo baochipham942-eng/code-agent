@@ -9,7 +9,9 @@
 import path from 'node:path';
 import {
   resolvePostLaunchScoringEnabled,
+  resolvePostLaunchReflowEnabled,
   type PostLaunchScoringSwitch,
+  type PostLaunchReflowSwitch,
 } from '../../../shared/contract/postLaunchScore';
 import { devSlotFromDataDirName } from '../../../shared/devSlot';
 import { getUserDataPath } from '../../platform';
@@ -38,4 +40,15 @@ export function isPostLaunchScoringEnabled(): boolean {
     setting = undefined;
   }
   return resolvePostLaunchScoringEnabled(setting, isInternalSlot());
+}
+
+/** 回流候选读取与入口的独立开关；未配置时与评分开关一样按内部槽默认。 */
+export function isPostLaunchReflowEnabled(): boolean {
+  let setting: PostLaunchReflowSwitch | undefined;
+  try {
+    setting = getConfigService().getSettings().privacy?.postLaunchReflow;
+  } catch {
+    setting = undefined;
+  }
+  return resolvePostLaunchReflowEnabled(setting, isInternalSlot());
 }

@@ -11,9 +11,12 @@ import type {
   HarvestPreviewRequest,
   HarvestPreviewResult,
 } from '@shared/contract/evaluation';
+import type { PostLaunchReflowCandidate } from '@shared/contract/postLaunchScore';
 import { HARVEST_LOCKED_FIELDS } from '@shared/contract/evaluation';
 import { deriveHarvestSeed } from './harvestCandidates';
 import { queryNegativeFeedback } from './trajectoryToCase';
+import { isPostLaunchReflowEnabled } from '@host/testing/postlaunch/postLaunchGate';
+import { listReflowCandidates } from '@host/testing/postlaunch/postLaunchScoreStore';
 
 /** 一次最多收多少场：模态本来就是人手选的量级，超出直接拒，不做分页。 */
 const HARVEST_MAX_SESSIONS = 20;
@@ -26,7 +29,7 @@ function harvestBatchTag(now = new Date()): string {
   return `harvest-${month}${day}`;
 }
 
-function normalizeRequest(payload: HarvestPreviewRequest): { sessionIds: string[]; fields: HarvestFieldKey[] } {
+function normalizeRequest(payload: HarvestPreviewRequest): { sessionIds: string[]; fields: HarvestFieldKey[]; postLaunchReflow: boolean } {
   const rawIds = Array.isArray(payload?.sessionIds) ? payload.sessionIds : [];
   const sessionIds = [...new Set(
     rawIds.filter((id): id is string => typeof id === 'string').map((id) => id.trim()).filter(Boolean),
@@ -38,11 +41,42 @@ function normalizeRequest(payload: HarvestPreviewRequest): { sessionIds: string[
   const rawFields = Array.isArray(payload?.fields) ? payload.fields : [];
   // 锁定行（用户原话 / 来源会话 id）无论前端传没传都算勾上——来源必须留。
   const fields = [...new Set([...HARVEST_LOCKED_FIELDS, ...rawFields])] as HarvestFieldKey[];
-  return { sessionIds, fields };
+  return { sessionIds, fields, postLaunchReflow: payload.postLaunchReflow === true };
+}
+
+/** 将候选的结构化触发原因写入 HARVEST 草稿，不带回复/工具正文。 */
+export function applyPostLaunchReflowProvenance(
+  seed: HarvestDraftSeed,
+  candidates: readonly PostLaunchReflowCandidate[],
+): HarvestDraftSeed {
+  const matches = candidates.filter((candidate) => candidate.sessionId === seed.sessionId);
+  if (matches.length === 0) throw new Error('这场会话没有可回流的候选');
+  const sources = [...new Set(matches.flatMap((candidate) => candidate.sources))];
+  const redDimensions = [...new Set(matches.flatMap((candidate) => candidate.redDimensions))];
+  const signals = [...new Set(matches.flatMap((candidate) => candidate.signals))];
+  const trigger = [
+    ...sources.map((source) => `source:${source}`),
+    ...redDimensions.map((dimension) => `red:${dimension}`),
+    ...signals.map((signal) => `signal:${signal}`),
+  ];
+  return {
+    ...seed,
+    tags: [...new Set([...seed.tags, 'postlaunch', ...trigger])],
+    description: `${seed.description}；上线后回流触发：${trigger.join('、')}`,
+    postLaunchReflow: {
+      turnId: matches.find((candidate) => candidate.turnId)?.turnId ?? null,
+      sources,
+      redDimensions,
+      signals,
+    },
+  };
 }
 
 export async function buildHarvestPreview(payload: HarvestPreviewRequest): Promise<HarvestPreviewResult> {
-  const { sessionIds, fields } = normalizeRequest(payload);
+  const { sessionIds, fields, postLaunchReflow } = normalizeRequest(payload);
+  if (postLaunchReflow && !isPostLaunchReflowEnabled()) {
+    throw new Error('上线后坏案例回流没开');
+  }
   // 走宿主 SDK 表已暴露的 telemetryQueryService（同包 trajectoryExporter.ts:5 同一条路）。
   // replayService 只是它的 18 行 try/catch 包装，且不在 SDK 表里。
   const [{ getTelemetryQueryService }, { getDatabase }] = await Promise.all([
@@ -51,6 +85,9 @@ export async function buildHarvestPreview(payload: HarvestPreviewRequest): Promi
   ]);
   const database = getDatabase();
   const telemetry = getTelemetryQueryService();
+  const reflowCandidates = postLaunchReflow && database.getDb()
+    ? listReflowCandidates(database.getDb()!, { limit: 500 })
+    : [];
   const batchTag = harvestBatchTag();
   const seeds: HarvestDraftSeed[] = [];
   const failed: HarvestPreviewResult['failed'] = [];
@@ -61,7 +98,7 @@ export async function buildHarvestPreview(payload: HarvestPreviewRequest): Promi
       if (!replay) throw new Error('这场会话没有可回放的记录');
       const session = database.getSession(sessionId);
       const db = database.getDb();
-      const seed = deriveHarvestSeed({
+      let seed = deriveHarvestSeed({
         replay,
         sessionTitle: session?.title?.trim() || sessionId,
         workingDirectory: session?.workingDirectory ?? '',
@@ -72,6 +109,9 @@ export async function buildHarvestPreview(payload: HarvestPreviewRequest): Promi
           : [],
       });
       if (!seed.prompt) throw new Error('这场会话没有可用的用户原话');
+      if (postLaunchReflow) {
+        seed = applyPostLaunchReflowProvenance(seed, reflowCandidates);
+      }
       seeds.push(seed);
     } catch (error) {
       failed.push({ sessionId, error: error instanceof Error ? error.message : String(error) });

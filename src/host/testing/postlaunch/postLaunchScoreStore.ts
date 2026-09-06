@@ -13,6 +13,7 @@ import {
   POST_LAUNCH_JUDGE_VERSION,
   DRY_RUN_JUDGE_VERSION,
   POST_LAUNCH_RUBRIC_VERSION,
+  POST_LAUNCH_CONSENT_SCOPES,
   JUDGE_MODEL_UNAVAILABLE,
   isPostLaunchScorableSession,
   type PostLaunchBudgetState,
@@ -21,6 +22,8 @@ import {
   type PostLaunchReport,
   type PostLaunchReportGroup,
   type PostLaunchReportSession,
+  type PostLaunchReflowCandidate,
+  type PostLaunchConsentScope,
   type PostLaunchScopeRow,
   type PostLaunchSignalKind,
   type PostLaunchTurnScore,
@@ -198,6 +201,145 @@ export function getScoredTurnIds(db: BetterSqlite3.Database, turnIds: string[], 
     .prepare(`SELECT turn_id FROM telemetry_turn_scores WHERE judge_version IN (${versionPlaceholders}) AND turn_id IN (${placeholders})`)
     .all(...judgeVersions, ...turnIds) as Array<{ turn_id: string }>;
   return new Set(rows.map((row) => row.turn_id));
+}
+
+interface ReflowScoreRow {
+  turn_id: string;
+  session_id: string;
+  judge_version: string;
+  dim_goal: number | null;
+  dim_orchestration: number | null;
+  dim_tools: number | null;
+  dim_permission: number | null;
+  dim_safety: number | null;
+  dim_artifact: number | null;
+  failure_class: string | null;
+  signals: string | null;
+}
+
+function ensureReflowConsentTable(db: BetterSqlite3.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS telemetry_reflow_consent (
+      session_id TEXT PRIMARY KEY,
+      consent_scope TEXT NOT NULL CHECK (consent_scope IN ('metadata', 'turn_excerpt', 'full_session')),
+      updated_at INTEGER NOT NULL
+    )
+  `);
+}
+
+/** 本地会话级同意档；从不上传。没有显式记录时按 ADR-040 默认 metadata。 */
+export function getPostLaunchConsentScope(db: BetterSqlite3.Database, sessionId: string): PostLaunchConsentScope {
+  ensureReflowConsentTable(db);
+  const row = db.prepare('SELECT consent_scope FROM telemetry_reflow_consent WHERE session_id = ?').get(sessionId) as
+    | { consent_scope?: PostLaunchConsentScope }
+    | undefined;
+  return row?.consent_scope ?? 'metadata';
+}
+
+export function setPostLaunchConsentScope(
+  db: BetterSqlite3.Database,
+  sessionId: string,
+  scope: PostLaunchConsentScope,
+  updatedAt: number = Date.now(),
+): void {
+  if (!POST_LAUNCH_CONSENT_SCOPES.includes(scope)) throw new Error('Invalid post-launch consent scope');
+  ensureReflowConsentTable(db);
+  db.prepare(`
+    INSERT INTO telemetry_reflow_consent (session_id, consent_scope, updated_at)
+    VALUES (?, ?, ?)
+    ON CONFLICT(session_id) DO UPDATE SET consent_scope = excluded.consent_scope, updated_at = excluded.updated_at
+  `).run(sessionId, scope, updatedAt);
+}
+
+function candidateSources(row: ReflowScoreRow): Array<'judge' | 'signal'> {
+  const sources: Array<'judge' | 'signal'> = [];
+  if ([row.dim_goal, row.dim_orchestration, row.dim_tools, row.dim_permission, row.dim_safety, row.dim_artifact]
+    .some((value) => value === 0)) sources.push('judge');
+  if (parseSignals(row.signals ?? '[]').length > 0) sources.push('signal');
+  return sources;
+}
+
+/**
+ * 只读回流候选出口：当前 judge 版本中任一维为红 ∪ 确定性信号，
+ * 再并入 telemetry_feedback 的点踩行。正文不从评分表带出。
+ */
+export function listReflowCandidates(
+  db: BetterSqlite3.Database,
+  options: { judgeVersion?: string; limit?: number } = {},
+): PostLaunchReflowCandidate[] {
+  const judgeVersion = options.judgeVersion ?? POST_LAUNCH_JUDGE_VERSION;
+  const limit = Math.max(1, Math.min(options.limit ?? 200, 500));
+  const candidates = new Map<string, PostLaunchReflowCandidate>();
+  const rows = db.prepare(`
+    SELECT turn_id, session_id, judge_version,
+           dim_goal, dim_orchestration, dim_tools, dim_permission, dim_safety, dim_artifact,
+           failure_class, signals
+    FROM telemetry_turn_scores
+    WHERE judge_version = ?
+      AND (
+        dim_goal = 0 OR dim_orchestration = 0 OR dim_tools = 0 OR dim_permission = 0
+        OR dim_safety = 0 OR dim_artifact = 0
+        OR (signals IS NOT NULL AND signals <> '[]')
+      )
+    ORDER BY scored_at DESC
+    LIMIT ?
+  `).all(judgeVersion, limit) as ReflowScoreRow[];
+  for (const row of rows) {
+    const sources = candidateSources(row);
+    candidates.set(`${row.session_id}:${row.turn_id}`, {
+      sessionId: row.session_id,
+      turnId: row.turn_id,
+      judgeVersion: row.judge_version,
+      redDimensions: (['goal', 'orchestration', 'tools', 'permission', 'safety', 'artifact'] as const)
+        .filter((dimension) => row[`dim_${dimension}`] === 0),
+      signals: parseSignals(row.signals ?? '[]'),
+      failureClass: row.failure_class,
+      sources,
+    });
+  }
+
+  let feedbackRows: Array<{ id: string; session_id: string; turn_id: string | null; created_at: number }> = [];
+  try {
+    feedbackRows = db.prepare(`
+      SELECT id, session_id, turn_id, created_at
+      FROM telemetry_feedback
+      WHERE rating = -1
+      ORDER BY created_at DESC
+      LIMIT ?
+    `).all(limit) as Array<{ id: string; session_id: string; turn_id: string | null; created_at: number }>;
+  } catch {
+    // Older/fixture databases may not have the optional feedback table yet.
+  }
+  for (const feedback of feedbackRows) {
+    const key = `${feedback.session_id}:${feedback.turn_id ?? ''}`;
+    const existing = candidates.get(key);
+    if (existing) {
+      if (!existing.sources.includes('feedback')) existing.sources.push('feedback');
+      existing.feedbackId = feedback.id;
+      existing.feedbackAt = feedback.created_at;
+      continue;
+    }
+    candidates.set(key, {
+      sessionId: feedback.session_id,
+      turnId: feedback.turn_id,
+      judgeVersion: null,
+      redDimensions: [],
+      signals: [],
+      failureClass: null,
+      sources: ['feedback'],
+      feedbackId: feedback.id,
+      feedbackAt: feedback.created_at,
+    });
+  }
+  return [...candidates.values()].slice(0, limit);
+}
+
+export function hasReflowCandidate(
+  db: BetterSqlite3.Database,
+  input: { sessionId: string; turnId?: string | null },
+): boolean {
+  return listReflowCandidates(db, { limit: 500 }).some((candidate) =>
+    candidate.sessionId === input.sessionId && (input.turnId === undefined || candidate.turnId === input.turnId));
 }
 
 // ----------------------------------------------------------------------------

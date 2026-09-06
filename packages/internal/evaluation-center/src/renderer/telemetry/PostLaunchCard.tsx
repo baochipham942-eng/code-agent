@@ -10,7 +10,7 @@
 // ============================================================================
 import React, { useMemo, useState } from 'react';
 import { AlertTriangle, Play, Loader2 } from 'lucide-react';
-import type { PostLaunchDimension, PostLaunchReport, PostLaunchReportSession, PostLaunchScopeRow } from '@shared/contract/postLaunchScore';
+import type { PostLaunchDimension, PostLaunchReport, PostLaunchReportSession, PostLaunchScopeRow, PostLaunchReflowCandidate } from '@shared/contract/postLaunchScore';
 import { POST_LAUNCH_DIMENSIONS } from '@shared/contract/postLaunchScore';
 import { Modal } from '@renderer/components/primitives/Modal';
 import { useEvaluationI18n } from '../i18n/useEvaluationI18n';
@@ -25,6 +25,8 @@ interface PostLaunchCardProps {
   days: number;
   onRun: () => void;
   onOpenSession: (sessionId: string) => void;
+  reflowCandidates?: PostLaunchReflowCandidate[];
+  onOpenHarvest?: (sessionIds: string[]) => void;
 }
 
 function formatUsd(value: number): string {
@@ -53,7 +55,7 @@ function columnLabel(column: PostLaunchPivotColumn): string {
 }
 
 export const PostLaunchCard: React.FC<PostLaunchCardProps> = ({
-  report, running, error, days, onRun, onOpenSession,
+  report, running, error, days, onRun, onOpenSession, reflowCandidates = [], onOpenHarvest,
 }) => {
   const { t } = useEvaluationI18n();
   const p = t.telemetry.postLaunch;
@@ -323,6 +325,16 @@ export const PostLaunchCard: React.FC<PostLaunchCardProps> = ({
               </button>
             ))}
           </div>
+          {onOpenHarvest && reflowCandidates.length > 0 && (
+            <button
+              type="button"
+              onClick={() => onOpenHarvest([...new Set(reflowCandidates.map((candidate) => candidate.sessionId))])}
+              data-testid="postlaunch-reflow-open"
+              className="mt-3 rounded bg-badge-info/15 px-2 py-1 text-[10px] text-badge-info hover:bg-badge-info/25"
+            >
+              {p.reflowOpen} ({new Set(reflowCandidates.map((candidate) => candidate.sessionId)).size})
+            </button>
+          )}
           <p className="mt-3 text-[10px] text-zinc-500">{p.sessionsNote}</p>
         </Modal>
       )}

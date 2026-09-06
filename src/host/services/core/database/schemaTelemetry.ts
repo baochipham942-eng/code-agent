@@ -249,6 +249,14 @@ export function applyTelemetrySchema(db: BetterSqlite3.Database, logger: Logger)
       synced_at INTEGER
     )
   `);
+  // 本地会话级回流同意档（ADR-040）；只读写本机，绝不进入遥测上传表。
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS telemetry_reflow_consent (
+      session_id TEXT PRIMARY KEY,
+      consent_scope TEXT NOT NULL CHECK (consent_scope IN ('metadata', 'turn_excerpt', 'full_session')),
+      updated_at INTEGER NOT NULL
+    )
+  `);
   // cost_usd = 刊例估算（未知价按 0，不编造）；budget_cost_usd = 记进日预算的那笔，
   // 未知价时是保守默认价的估算——两个数不是一回事，别合成一列（N-EVAL-POSTLAUNCH-K2）。
   safeAlter(db, `ALTER TABLE telemetry_turn_scores ADD COLUMN budget_cost_usd REAL NOT NULL DEFAULT 0`, logger);

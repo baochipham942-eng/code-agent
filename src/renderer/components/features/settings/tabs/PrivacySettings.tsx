@@ -112,6 +112,7 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
   // 「跟随默认」发的是显式 'auto'——发 undefined 会被 JSON 与 mergeSettings 一起吞掉，
   // 从「开」切回来等于没切（ai-review PR #1650 Important①）。
   const [postLaunchScoring, setPostLaunchScoring] = useState<'on' | 'off' | 'auto'>('auto');
+  const [postLaunchReflow, setPostLaunchReflow] = useState<'on' | 'off' | 'auto'>('auto');
   const [thirdPartyUiEnabled, setThirdPartyUiEnabled] = useState(false);
   const [privacySaving, setPrivacySaving] = useState(false);
   const privacyCfgRef = useRef<NonNullable<AppSettings['privacy']> | undefined>(undefined);
@@ -164,6 +165,7 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
         setUsageDataEnabled(flags.usageData);
         setCrashReportingEnabled(flags.crashReporting);
         setPostLaunchScoring(s?.privacy?.postLaunchScoring ?? 'auto');
+        setPostLaunchReflow(s?.privacy?.postLaunchReflow ?? 'auto');
         setThirdPartyUiEnabled(isThirdPartyPluginUiEnabled(s));
       } catch {
         // ignore — 保持各项产品默认值
@@ -207,6 +209,21 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
       setPrivacySaving(false);
     }
   }, [postLaunchScoring]);
+
+  const handlePostLaunchReflowChange = useCallback(async (next: 'on' | 'off' | 'auto') => {
+    const previous = postLaunchReflow;
+    setPrivacySaving(true);
+    setPostLaunchReflow(next);
+    try {
+      const nextCfg = { ...(privacyCfgRef.current ?? {}), postLaunchReflow: next };
+      await ipcService.invokeDomain(IPC_DOMAINS.SETTINGS, 'set', { privacy: nextCfg } as Partial<AppSettings>);
+      privacyCfgRef.current = nextCfg;
+    } catch {
+      setPostLaunchReflow(previous);
+    } finally {
+      setPrivacySaving(false);
+    }
+  }, [postLaunchReflow]);
 
   const handlePrivacyToggle = useCallback(async (
     key: 'usageDataEnabled' | 'crashReportingEnabled',
@@ -459,6 +476,26 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
                 <option value="auto">{privacyText.telemetry.postLaunchScoring.auto}</option>
                 <option value="on">{privacyText.telemetry.postLaunchScoring.on}</option>
                 <option value="off">{privacyText.telemetry.postLaunchScoring.off}</option>
+              </select>
+            </div>
+          </div>
+          <div className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-3">
+            <div className="flex items-start gap-2 text-sm">
+              <Activity className="mt-0.5 h-4 w-4 shrink-0 text-zinc-400" />
+              <div className="flex-1">
+                <div className="font-medium text-zinc-200">{privacyText.telemetry.postLaunchReflow.label}</div>
+                <div className="mt-0.5 text-xs text-zinc-400">{privacyText.telemetry.postLaunchReflow.body}</div>
+              </div>
+              <select
+                className="h-7 shrink-0 rounded-md border border-zinc-700 bg-zinc-900 px-2 text-xs text-zinc-300"
+                value={postLaunchReflow}
+                disabled={privacySaving}
+                data-testid="postlaunch-reflow-switch"
+                onChange={(event) => { void handlePostLaunchReflowChange(event.target.value as 'on' | 'off' | 'auto'); }}
+              >
+                <option value="auto">{privacyText.telemetry.postLaunchReflow.auto}</option>
+                <option value="on">{privacyText.telemetry.postLaunchReflow.on}</option>
+                <option value="off">{privacyText.telemetry.postLaunchReflow.off}</option>
               </select>
             </div>
           </div>

@@ -11,6 +11,7 @@ import {
   humanizeToolError,
   resolveToolTerminalOutcomeKey,
 } from '../../../../../utils/toolExecutionPresentation';
+import { isRawToolStdoutNoMatches } from '../../../../../utils/toolStatusLinePresentation';
 
 interface Props {
   toolCall: ToolCall;
@@ -31,7 +32,7 @@ export function ResultSummary({ toolCall, inline = false }: Props) {
         ? [humanizedError.detail, humanizedError.summary]
         : [t.systemError.fallbackSummary])
         .find((candidate) => candidate && candidate !== outcome?.label && candidate !== outcome?.reason)
-    : summarizeTool(toolCall);
+    : collapsedSuccessSummary(summarizeTool(toolCall));
 
   if (!summary) return null;
 
@@ -42,4 +43,11 @@ export function ResultSummary({ toolCall, inline = false }: Props) {
   );
 
   return inline ? content : <div className="ml-6 text-xs">{content}</div>;
+}
+
+function collapsedSuccessSummary(summary: string | null): string | null {
+  if (!summary) return null;
+  // grep/glob empty stdout is already the statusLabel (无匹配); keep raw English in details.
+  if (isRawToolStdoutNoMatches(summary)) return null;
+  return summary;
 }

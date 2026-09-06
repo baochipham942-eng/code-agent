@@ -271,11 +271,11 @@ describe('humanizeToolStep — per-category snapshots (zh)', () => {
       name: 'tmeetMeetingCreate',
       arguments: {},
       stepLabel: 'tmeetMeetingCreate',
-    }, zh)).toBe('创建会议未成功');
+    }, zh)).toBe('创建会议');
     expect(humanizeInterruptedToolAction({
       name: 'mcp__github__create_issue',
       arguments: {},
-    }, zh)).toBe('通过 github 创建内容未成功');
+    }, zh)).toBe('通过 github 创建内容');
   });
 });
 

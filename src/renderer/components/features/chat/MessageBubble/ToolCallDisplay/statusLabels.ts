@@ -79,6 +79,9 @@ function enrichCompletedLabel(toolCall: ToolCall, t: Translations): string | nul
   if (name === 'Glob') {
     const match = output.match(/(\d+)\s*file/i);
     if (match) return t.toolStatus.globFiles.replace('{count}', match[1]);
+    if (output.includes('No matches') || output.includes('No files matched')) {
+      return t.toolStatus.grepNoMatches;
+    }
   }
 
   if (name === 'Read') {

@@ -72,12 +72,33 @@ export function humanizeInterruptedToolAction(
       ? t.chat.streamInterruptedWrite.replace('{file}', fileName)
       : t.chat.streamInterruptedWriteFallback;
   }
-  return humanizeToolStep(
-    toolCall.name,
-    args,
+  if (toolCall.stepLabel) {
+    return t.toolStepHumanize.intent[toolCall.stepLabel];
+  }
+  return stripFailedTerminalFromAction(
+    humanizeToolStep(
+      toolCall.name,
+      args,
+      t,
+      toolCall.shortDescription,
+      'failed',
+      toolCall.stepLabel,
+    ),
     t,
-    toolCall.shortDescription,
-    'failed',
-    toolCall.stepLabel,
   );
+}
+
+/** Interrupted action is the intent; the status line already carries the terminal. */
+function stripFailedTerminalFromAction(text: string, t: Translations): string {
+  const wrap = t.toolStepHumanize.intentWrap.failed;
+  const placeholder = '{action}';
+  const idx = wrap.indexOf(placeholder);
+  if (idx < 0) return text;
+  const prefix = wrap.slice(0, idx);
+  const suffix = wrap.slice(idx + placeholder.length);
+  if ((prefix === '' || text.startsWith(prefix)) && (suffix === '' || text.endsWith(suffix))) {
+    const stripped = text.slice(prefix.length, text.length - suffix.length).trim();
+    if (stripped) return stripped;
+  }
+  return text;
 }

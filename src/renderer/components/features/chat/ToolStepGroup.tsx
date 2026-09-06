@@ -15,6 +15,7 @@ import {
   type ToolReceiptPresentation,
 } from './MessageBubble/ToolCallDisplay/index';
 import { summarizeTool } from './MessageBubble/ToolCallDisplay/summarizers';
+import { localizeCollapsedToolSummary } from '../../../utils/toolStatusLinePresentation';
 import { computeBashPreviewLines } from './MessageBubble/ToolCallDisplay/bashOutputPreview';
 import {
   humanizeToolGroupLabel,
@@ -617,7 +618,7 @@ export function buildToolGroupHeadSummary(toolCalls: ToolCall[], t: Translations
   if (toolCalls.length > 1) return summarizeToolGroupResults(toolCalls, t);
   const only = toolCalls[0];
   if (only.result?.success === false) return summarizeSingleFailure(only, t);
-  return summarizeTool(only);
+  return localizeCollapsedToolSummary(summarizeTool(only), t);
 }
 
 /**

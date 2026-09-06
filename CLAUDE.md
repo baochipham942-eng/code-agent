@@ -44,7 +44,7 @@ Agent Neo 是产品名，`code-agent` 是仓库历史名。这个文件主要给
 
 | 文档 | 说明 |
 |------|------|
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 架构索引（入口）+ 决策记录（ADR）表 |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 高层设计 HLD（入口）+ 决策记录（ADR）表 |
 | [docs/architecture/agent-core.md](docs/architecture/agent-core.md) | Agent 核心运行时 |
 | [docs/architecture/tool-system.md](docs/architecture/tool-system.md) | 工具系统 |
 | [docs/architecture/multiagent-system.md](docs/architecture/multiagent-system.md) | 混合多 Agent 架构 |

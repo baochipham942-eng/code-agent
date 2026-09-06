@@ -1,7 +1,7 @@
 # Provider 层迁移到 Vercel AI SDK — 设计文档
 
 > 状态：✅ **全量落地**。引擎接入 + 双引擎可回退于 2026-05-23 合并 main（PR #164 子代理 / #165 主 loop / #168 regression 收尾）；**全部 provider 迁到 AI SDK 于 2026-05-27 收口**（WS1 Phase 1-2，见 §7）。`CODE_AGENT_MODEL_ENGINE=legacy` 仍可一键回退旧 modelRouter。
-> 本文 §1-§6 是迁移前的设计稿（保留问题陈述与方案脉络）；**as-built 以 §7 + [ARCHITECTURE M1](../ARCHITECTURE.md) 为准**。
+> 本文 §1-§6 是迁移前的设计稿（保留问题陈述与方案脉络）；**历史迁移结果见 §7 与 [架构流水 M1](../releases/architecture-changelog.md#m1-provider-层迁移到-vercel-ai-sdk双引擎)，现行边界见 [HLD 模型适配层](../ARCHITECTURE.md#11-模型适配层)**。
 > 对标 alma(yetone) / OpenCode / CodePilot。
 
 ## 1. 为什么（问题陈述）

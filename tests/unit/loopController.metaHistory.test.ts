@@ -92,6 +92,7 @@ describe('LoopController meta history', () => {
       undefined,
       {
         mode: 'normal',
+        inputSource: 'automation',
         historyVisibility: 'meta',
         deniedToolNames: ['AskUserQuestion', 'ask_user_question'],
       },

@@ -64,7 +64,7 @@ export interface ScriptExecutorOptions {
  * Script output format:
  * - Exit code 0: allow (continue normally)
  * - Exit code 1: block (stop the action)
- * - Exit code 2: continue (proceed but with modifications)
+ * - Exit code 2: block (reason from stderr)
  * - Other exit codes: error
  *
  * stdout can contain:
@@ -129,21 +129,20 @@ export async function executeScript(
       };
     }
 
-    // Check exit code for intentional block
-    if (errorRecord.code === 1) {
+    const stdout = readString(errorRecord, 'stdout')?.trim() ?? '';
+    const json = parseJsonRecord(stdout);
+    // Only an explicit JSON decision overrides a nonzero exit status.
+    // action 必须是字符串：{"action":["block"]} 经 String() 会伪装成 'block' 通过检查，
+    // 再被 parseScriptOutput 判成非法动作回落 allow，把非零退出码的阻断绕掉（ai-review 09-06）。
+    if (json && (json.decision === 'block'
+      || (typeof json.action === 'string' && ['allow', 'block', 'continue', 'error'].includes(json.action)))) {
+      return parseScriptOutput(stdout, duration);
+    }
+    if (errorRecord.code === 1 || errorRecord.code === 2) {
       return {
         action: 'block',
-        message: readString(errorRecord, 'stdout')?.trim() || 'Blocked by hook script',
-        duration,
-      };
-    }
-
-    if (errorRecord.code === 2) {
-      const stdout = readString(errorRecord, 'stdout');
-      return {
-        action: 'continue',
-        message: stdout?.trim(),
-        modifiedInput: parseModifiedInput(stdout),
+        message: readString(errorRecord, 'stderr')?.trim()
+          || (errorRecord.code === 1 ? stdout : '') || 'Blocked by hook script',
         duration,
       };
     }
@@ -232,16 +231,6 @@ function validateAction(action: unknown): HookActionResult {
     return action;
   }
   return 'allow';
-}
-
-/**
- * Try to extract modified input from script output
- */
-function parseModifiedInput(output: string | undefined): string | undefined {
-  if (!output) return undefined;
-
-  const json = parseJsonRecord(output.trim());
-  return json ? readString(json, 'modifiedInput') : undefined;
 }
 
 /**

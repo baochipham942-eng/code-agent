@@ -32,6 +32,9 @@ beforeAll(() => {
   };
 });
 
+const cancelTimeWakesOnUserReturn = vi.hoisted(() => vi.fn(async () => undefined));
+vi.mock('../../src/host/services/wake/userReturn', () => ({ cancelTimeWakesOnUserReturn }));
+
 beforeEach(() => {
   teardownConsoleProbe.testRunning = true;
 });
@@ -241,6 +244,8 @@ vi.mock('../../src/host/services/voice/voiceTelemetry', () => ({
 const agentLoopProbe = vi.hoisted(() => ({
   onRun: undefined as undefined | (() => void),
   lastConfig: undefined as undefined | {
+    systemPrompt?: string;
+    systemInstructions?: string[];
     deniedToolNames?: string[];
     allowedToolNames?: string[];
     searchEnabled?: boolean;
@@ -447,6 +452,20 @@ describe('AgentOrchestrator', () => {
       expect(orchestrator.getWorkingDirectory()).toBe(newDir);
     });
 
+    it('ordinary user ingress forwards session and producer identity to wake cancellation', async () => {
+      const ingress = {
+        permissions: { drainPendingPermissions: vi.fn() },
+        configService: { getSettings: () => ({}) },
+        resolveSessionId: async () => 'return-session',
+        generateId: () => 'user-message',
+        applyHistoryVisibility: () => { throw new Error('after user ingress'); },
+      };
+      const options = { mode: 'normal' as const, inputSource: 'user' as const };
+      await expect(AgentOrchestrator.prototype.sendMessage.call(ingress as unknown as AgentOrchestrator,
+        'I am back', undefined, options)).rejects.toThrow('after user ingress');
+      expect(cancelTimeWakesOnUserReturn).toHaveBeenCalledWith('return-session', options);
+    });
+
     it('getWorkingDirectory 应该返回当前目录', () => {
       const dir = orchestrator.getWorkingDirectory();
       expect(dir).toBeTruthy();
@@ -472,10 +491,11 @@ describe('AgentOrchestrator', () => {
         undefined,
         undefined,
         undefined,
-        { mode: 'normal', searchEnabled: false, disableAutoAgent: true },
+        { mode: 'normal', searchEnabled: false, disableAutoAgent: true, systemInstructions: ['unattended-system-test'] },
       );
 
       expect(lastAgentLoopConfig()?.searchEnabled).toBe(false);
+      expect(lastAgentLoopConfig()?.systemInstructions).toContain('unattended-system-test');
     });
 
     it('显式 effort 与 thinking 随本轮 config 进入 AgentLoop，且不被复杂度自动档覆盖', async () => {
@@ -928,6 +948,22 @@ describe('AgentOrchestrator', () => {
   // Delegate 模式 / Plan 审批开关
   // --------------------------------------------------------------------------
   describe('委托模式与计划审批开关', () => {
+    it('无人值守入口（disableAutoAgent）不被 delegate 模式改道进自动委派', () => {
+      const decide = (needsAutoAgent: boolean, options?: AgentRunOptions) =>
+        (orchestrator as unknown as {
+          shouldForceDelegateAutoAgent(n: boolean, o?: AgentRunOptions): boolean;
+        }).shouldForceDelegateAutoAgent(needsAutoAgent, options);
+      orchestrator.setDelegateMode(true);
+      try {
+        expect(decide(false, { mode: 'normal' } as AgentRunOptions)).toBe(true);
+        expect(decide(false, { mode: 'normal', disableAutoAgent: true } as AgentRunOptions)).toBe(false);
+        expect(decide(true, { mode: 'normal' } as AgentRunOptions)).toBe(false);
+      } finally {
+        orchestrator.setDelegateMode(false);
+      }
+      expect(decide(false, { mode: 'normal' } as AgentRunOptions)).toBe(false);
+    });
+
     it('delegate 模式默认关闭，可切换', () => {
       expect(orchestrator.isDelegateMode()).toBe(false);
       orchestrator.setDelegateMode(true);

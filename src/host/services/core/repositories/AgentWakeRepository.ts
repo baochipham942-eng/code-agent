@@ -108,10 +108,10 @@ export class AgentWakeRepository {
       .run(firedAt, id).changes;
   }
 
-  cancelBySession(sessionId: string): number {
+  cancelBySession(sessionId: string, kind?: AgentWakeKind): number {
     return this.db
-      .prepare(`UPDATE agent_wakes SET status = 'cancelled' WHERE session_id = ? AND status = 'pending'`)
-      .run(sessionId).changes;
+      .prepare(`UPDATE agent_wakes SET status = 'cancelled' WHERE session_id = ? AND status = 'pending' AND (? IS NULL OR kind = ?)` )
+      .run(sessionId, kind ?? null, kind ?? null).changes;
   }
 
   get(id: string): AgentWakeRecord | null {

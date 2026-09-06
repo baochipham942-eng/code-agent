@@ -1,3 +1,4 @@
+import { UNATTENDED_TRUST_NOTICE } from '../../shared/unattendedTrust';
 // ============================================================================
 // CronService - Scheduled task execution service
 // ============================================================================
@@ -805,10 +806,13 @@ export class CronService implements Disposable {
           tm.setWorkingDirectory(cronSession.id, cronSession.workingDirectory);
         }
         const agentRunOptions: AgentRunOptions = {
+          inputSource: 'automation',
+          disableAutoAgent: true,
           mode: 'normal',
           ...await buildCronAgentRunOptions(action.roleId, cronSession.workingDirectory),
           eventFilter: BACKGROUND_AGENT_EVENT_FILTER,
         };
+        agentRunOptions.systemInstructions = [UNATTENDED_TRUST_NOTICE];
         const previousSnapshot = ctx?.[CRON_AGENT_SNAPSHOT.CONTEXT_KEY];
         const snapshotTrackingEnabled = ctx?.[CRON_AGENT_SNAPSHOT.ENABLED_KEY] === true;
         // external_event（业务事件监听）任务：无 <cron_alert> = 无新料 = 本次安静。

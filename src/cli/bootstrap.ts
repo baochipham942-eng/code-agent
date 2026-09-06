@@ -618,6 +618,7 @@ export function createAgentLoop(
   // 创建 AgentLoop
   const agentLoop = new AgentLoop({
     systemPrompt,
+    systemInstructions: config.systemInstructions,
     modelConfig: config.modelConfig,
     toolExecutor: runToolExecutor as InstanceType<typeof ToolExecutor>,
     messages,

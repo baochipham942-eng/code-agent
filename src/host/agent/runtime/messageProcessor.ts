@@ -1,3 +1,4 @@
+import { cancelTimeWakesOnUserReturn } from '../../services/wake/userReturn';
 // ============================================================================
 // MessageProcessor — Message building, parsing, and telemetry recording
 // Extracted from ConversationRuntime
@@ -1141,6 +1142,7 @@ export class MessageProcessor {
     metadata?: MessageMetadata,
     displayContent?: string,
   ): Promise<void> {
+    void cancelTimeWakesOnUserReturn(this.ctx.sessionId, { historyVisibility: this.ctx.historyVisibility });
     const id = clientMessageId ?? generateMessageId();
     const timestamp = Date.now();
     const modelContent = buildSteerModelContent(newMessage, metadata, this.ctx.historyVisibility);

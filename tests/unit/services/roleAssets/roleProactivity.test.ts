@@ -1,3 +1,4 @@
+import { UNATTENDED_TRUST_NOTICE } from '../../../../src/shared/unattendedTrust';
 // ============================================================================
 // Role Proactivity Tests — 醒来循环 / 预算护栏 / 空产物守卫 / event 触发链
 // ============================================================================
@@ -335,6 +336,8 @@ describe('roleProactivity', () => {
       expect(mockOrchestrator.sendMessage).toHaveBeenCalledTimes(1);
       // 醒来 prompt 注入了角色上下文（turnSystemContext）+ 迭代数硬上限
       const callOptions = mockOrchestrator.sendMessage.mock.calls[0][2];
+      expect(callOptions.systemInstructions).toContain(UNATTENDED_TRUST_NOTICE);
+      expect(callOptions.systemInstructions.join('\n')).toContain('不可逆动作必须走审批并停车等待');
       const wakePrompt = mockOrchestrator.sendMessage.mock.calls[0][0];
       expect(wakePrompt).toContain('出现 TODO');
       expect(wakePrompt).toContain('必须选择 advance');

@@ -1,3 +1,4 @@
+import { UNATTENDED_TRUST_NOTICE } from '../../../shared/unattendedTrust';
 // ============================================================================
 // Role Proactivity — 角色主动性（cadence 触发器 + 醒来循环）
 // ============================================================================
@@ -398,6 +399,9 @@ export async function wakeRole(
     try {
       await orchestrator.sendMessage(wakePrompt, undefined, {
         mode: 'normal',
+        inputSource: 'automation',
+        systemInstructions: [UNATTENDED_TRUST_NOTICE],
+        disableAutoAgent: true,
         agentOverrideId: roleId,
         turnSystemContext: instantiation.contextBlock ? [instantiation.contextBlock] : undefined,
         maxIterations: ROLE_PROACTIVITY.WAKE_MAX_ITERATIONS,
@@ -727,6 +731,7 @@ async function runWakeViaCliLoop(params: {
   }
 
   config.systemPrompt = [rolePrompt, params.contextBlock ?? ''].filter((s) => s.trim().length > 0).join('\n\n');
+  config.systemInstructions = [UNATTENDED_TRUST_NOTICE];
   config.maxIterations = ROLE_PROACTIVITY.WAKE_MAX_ITERATIONS;
 
   const agentLoop = createAgentLoop(config, () => { /* 醒来是后台运行，无 UI 事件消费方 */ }, [], params.sessionId);
@@ -797,6 +802,9 @@ async function launchAdvanceGoalRun(params: {
     try {
       await params.orchestrator.sendMessage(goalPrompt, undefined, {
         mode: 'normal',
+        inputSource: 'automation',
+        systemInstructions: [UNATTENDED_TRUST_NOTICE],
+        disableAutoAgent: true,
         agentOverrideId: params.roleId,
         turnSystemContext: params.contextBlock ? [params.contextBlock] : undefined,
         goal: goalInput,
@@ -825,6 +833,7 @@ async function launchAdvanceGoalRun(params: {
   } catch { /* registry 不可用 → 只用记忆注入块 */ }
 
   config.systemPrompt = [rolePrompt, params.contextBlock ?? ''].filter((s) => s.trim().length > 0).join('\n\n');
+  config.systemInstructions = [UNATTENDED_TRUST_NOTICE];
   config.goalContract = buildGoalContract({
     goal: goalInput.goal,
     verifyCommand: goalInput.verify,

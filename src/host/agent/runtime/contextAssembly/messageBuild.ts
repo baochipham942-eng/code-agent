@@ -808,7 +808,10 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
 
   // Check prompt length and warn if too long（合并视图口径，与改造前一致）
   const dynamicTailTokens = dynamicTailContent ? estimateTokens(dynamicTailContent) : 0;
-  const systemPrompt = trimPreambleBeforeRequiredArtifactBlock(stableSystemPrompt, ctx, dynamicTailTokens);
+  const instructions = (ctx.runtime.systemInstructions ?? []).join('\n\n');
+  const systemPrompt = [trimPreambleBeforeRequiredArtifactBlock(
+    stableSystemPrompt, ctx, dynamicTailTokens + estimateTokens(instructions),
+  ), instructions].filter(Boolean).join('\n\n');
   const combinedPromptTokens = estimateTokens(systemPrompt) + dynamicTailTokens;
   if (combinedPromptTokens > promptBudget(ctx)) {
     logger.warn(`[AgentLoop] System prompt too long: ${combinedPromptTokens} tokens (limit: ${promptBudget(ctx)})`);

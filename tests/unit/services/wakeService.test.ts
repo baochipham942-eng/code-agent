@@ -1,3 +1,4 @@
+import { UNATTENDED_TRUST_NOTICE } from '../../../src/shared/unattendedTrust';
 // ============================================================================
 // self-wake：挂起台账 + 到点续跑 + 配额 + 重启存活（D-1）
 // ============================================================================
@@ -13,6 +14,13 @@ import { AgentWakeRepository } from '../../../src/host/services/core/repositorie
 import { WakeService } from '../../../src/host/services/wake/wakeService';
 import { AGENT_WAKE } from '../../../src/shared/constants/agent';
 import { buildWakeResumePrompt, type AgentWakeRecord } from '../../../src/shared/contract/agentWake';
+
+const sendMessage = vi.hoisted(() => vi.fn<(...args: unknown[]) => Promise<void>>(async () => undefined));
+vi.mock('../../../src/host/task', () => ({
+  getTaskManager: () => ({ getOrCreateCurrentOrchestrator: () => ({
+    setExecutionTopology: vi.fn(), sendMessage,
+  }) }),
+}));
 
 /** 与 schema.ts 的 agent_wakes 建表语句同形；schema 漂了这里会先红。 */
 function createSchema(db: SQLiteDatabase): void {
@@ -59,6 +67,14 @@ afterEach(() => {
 });
 
 describe('park + tick', () => {
+  it('delivers unattended trust as system context', async () => {
+    const service = new WakeService(repo, { now: () => clock });
+    service.park({ sessionId: 's1', kind: 'time', dueAt: clock, reason: 'continue test' });
+    expect(await service.tick()).toBe(1);
+    expect(sendMessage.mock.calls[0]?.[2]).toMatchObject({ systemInstructions: [UNATTENDED_TRUST_NOTICE] });
+    expect(JSON.stringify(sendMessage.mock.calls[0]?.[2])).toContain('不可逆动作必须走审批并停车等待');
+  });
+
   it('没到点不投递，到点了才续跑', async () => {
     const service = makeService();
     service.park({ sessionId: 's1', kind: 'time', dueAt: clock + 60_000, reason: '等导出跑完' });
@@ -169,6 +185,19 @@ describe('条件型醒来', () => {
 
     expect(await service.onEvent('别的事')).toBe(0);
     expect(await service.onEvent('库存告警')).toBe(1);
+  });
+
+  it('user return cancels only pending time wakes and preserves job/event triggers', async () => {
+    const service = makeService();
+    service.park({ sessionId: 's1', kind: 'time', dueAt: clock + 1, reason: 'time' });
+    service.park({ sessionId: 's1', kind: 'job', jobId: 'j1', reason: 'job' });
+    service.park({ sessionId: 's1', kind: 'event', eventName: 'e1', reason: 'event' });
+    expect(service.cancelForSession('s1', 'time')).toBe(1);
+    expect(service.cancelForSession('s1', 'time')).toBe(0);
+    clock += 2;
+    expect(await service.tick()).toBe(0);
+    expect(await service.onJobCompleted('j1')).toBe(1);
+    expect(await service.onEvent('e1')).toBe(1);
   });
 
   it('会话作废时把它挂着的醒来一起撤掉', async () => {

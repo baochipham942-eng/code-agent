@@ -60,6 +60,7 @@ function rowToSource(row: SQLiteRow): ProjectSource {
     trustState: row.trust_state as ProjectSourceTrustState,
     identityDev: (row.identity_dev as string | null) ?? null,
     identityIno: (row.identity_ino as string | null) ?? null,
+    identityBirthtimeNs: (row.identity_birthtime_ns as string | null) ?? null,
     createdAt: row.created_at as number,
     updatedAt: row.updated_at as number,
   };
@@ -161,10 +162,10 @@ export class ProjectRepository {
     this.db.prepare(`
       INSERT INTO project_sources (
         id, project_id, path, canonical_path, role, access, trust_state,
-        identity_dev, identity_ino, created_at, updated_at
+        identity_dev, identity_ino, identity_birthtime_ns, created_at, updated_at
       ) VALUES (
         @id, @project_id, @path, @canonical_path, @role, @access, @trust_state,
-        @identity_dev, @identity_ino, @created_at, @updated_at
+        @identity_dev, @identity_ino, @identity_birthtime_ns, @created_at, @updated_at
       )
       ON CONFLICT(id) DO UPDATE SET
         path = excluded.path,
@@ -174,6 +175,7 @@ export class ProjectRepository {
         trust_state = excluded.trust_state,
         identity_dev = excluded.identity_dev,
         identity_ino = excluded.identity_ino,
+        identity_birthtime_ns = excluded.identity_birthtime_ns,
         updated_at = excluded.updated_at
     `).run({
       id: source.id,
@@ -185,6 +187,7 @@ export class ProjectRepository {
       trust_state: source.trustState,
       identity_dev: source.identityDev ?? null,
       identity_ino: source.identityIno ?? null,
+      identity_birthtime_ns: source.identityBirthtimeNs ?? null,
       created_at: source.createdAt,
       updated_at: source.updatedAt,
     });
@@ -268,6 +271,8 @@ export class ProjectRepository {
           trustState: 'trusted',
           identityDev: identity.dev,
           identityIno: identity.ino,
+          // Legacy project paths have no saved incarnation: require trust re-evaluation.
+          identityBirthtimeNs: null,
           createdAt: Number(row.created_at ?? now),
           updatedAt: now,
         });

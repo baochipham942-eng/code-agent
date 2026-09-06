@@ -402,6 +402,13 @@ describe('isKnownSafeCommand', () => {
 });
 
 describe('classifyCommand', () => {
+  it.each(['env -u', 'env -u MODE printf ok', 'env tee out.txt', 'xargs', 'xargs -n 1 chmod 777'])(
+    'distinguishes delegated execution from intrinsic prefix risk: %s', (command) => {
+      expect(classifyCommand(command)).toBe('delegated');
+      expect(isKnownSafeCommand(command)).toBe(false);
+    },
+  );
+
   it('classifies safe commands', () => {
     expect(classifyCommand('ls')).toBe('safe');
     expect(classifyCommand('git status')).toBe('safe');

@@ -93,7 +93,9 @@ const UNCONDITIONALLY_SAFE = new Set([
 // 条件安全的命令 — 特定参数组合下安全
 // ----------------------------------------------------------------------------
 
-type SafetyChecker = (args: string[]) => boolean;
+// Delegated execution is not an intrinsic effect of the prefix: later argv/stdin
+// supplies the operation. Keep that distinction for approval-prefix learning.
+type SafetyChecker = (args: string[]) => boolean | 'delegated';
 
 const CONDITIONALLY_SAFE: Record<string, SafetyChecker> = {
   // env 只有在最终仍是“打印环境”时才安全。首个非选项、非赋值词会被 env
@@ -104,16 +106,19 @@ const CONDITIONALLY_SAFE: Record<string, SafetyChecker> = {
       if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(arg)) continue;
       if (['-i', '--ignore-environment', '-0', '--null', '-v', '--debug'].includes(arg)) continue;
       if (arg === '-u' || arg === '--unset') {
-        if (!args[index + 1]) return false;
+        if (!args[index + 1]) return 'delegated';
         index += 1;
         continue;
       }
       if (arg.startsWith('--unset=') && arg.length > '--unset='.length) continue;
       if (arg === '--') continue;
-      return false;
+      return 'delegated';
     }
     return true;
   },
+
+  // The command and additional operands come from argv/stdin, even with no flags.
+  xargs: () => 'delegated',
 
   // find: 安全，除非有副作用操作
   find: (args) => !args.some(a =>
@@ -435,7 +440,7 @@ export function isKnownSafeCommand(command: string, shell: ShellKind = defaultSh
 
     // 条件安全
     const checker = CONDITIONALLY_SAFE[program];
-    if (checker?.(args)) continue;
+    if (checker?.(args) === true) continue;
 
     // 未知命令 — 不安全
     return false;
@@ -447,13 +452,15 @@ export function isKnownSafeCommand(command: string, shell: ShellKind = defaultSh
 /**
  * 获取命令的安全分类
  *
- * @returns 'safe' | 'conditional' | 'unknown' | 'dangerous'
+ * Delegated means the operation is supplied by later arguments or stdin, so a
+ * prefix approval cannot authorize it. Unknown is not a positive risk finding.
  */
-export function classifyCommand(command: string, shell: ShellKind = defaultShellKind()): 'safe' | 'conditional' | 'unknown' {
+export function classifyCommand(command: string, shell: ShellKind = defaultShellKind()): 'safe' | 'conditional' | 'unknown' | 'delegated' {
   if (isKnownSafeCommand(command, shell)) return 'safe';
 
   // 检查是否可能是条件安全但参数不对
   const parsed = parseCommand(command.trim());
+  if (parsed && CONDITIONALLY_SAFE[parsed.program]?.(parsed.args) === 'delegated') return 'delegated';
   if (parsed && CONDITIONALLY_SAFE[parsed.program]) return 'conditional';
 
   return 'unknown';

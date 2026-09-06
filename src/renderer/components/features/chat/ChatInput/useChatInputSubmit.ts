@@ -553,6 +553,10 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
           const latest = latestComposerRef.current;
           if (latest.currentSessionId !== draftSnapshot.sessionId) return;
           if (latest.value.trim() || latest.attachments.length) return;
+          // appshot 存在自己的 store 里，不在 value/attachments 这两个 state 上：
+          // 用户在空输入框重新截了一张，守卫看 value/attachments 仍是空的就放行，
+          // 旧截图把新截图顶掉（ai-review #1694 第四轮）。守卫要覆盖**所有会被回滚写回的项**。
+          if (useAppshotsStore.getState().pending) return;
           setValue(draftSnapshot.value);
           setAttachments(draftSnapshot.attachments);
           setPendingPromptCommand(draftSnapshot.pendingPromptCommand);

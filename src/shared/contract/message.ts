@@ -309,6 +309,8 @@ export interface MessageMetadata {
    * 最近的 user 消息会命中**上一轮**，把已经答完的问题重发一遍（ai-review #1694）。
    */
   retryPrompt?: string;
+  /** 与 retryPrompt 同批：失败那条消息的附件，重试要一起带回去。 */
+  retryAttachments?: MessageAttachment[];
   /** Structured verification evidence carried by message-level projections. */
   evidenceRefs?: EvidenceRef[];
   /** Stable join keys for reconstructing a persisted message's runtime turn. */

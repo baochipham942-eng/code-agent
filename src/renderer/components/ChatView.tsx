@@ -211,8 +211,8 @@ export const ChatView: React.FC = () => {
   messagesRef.current = messages;
   useEffect(() => {
     messageActionRegister(
-      (content: string, context?: Pick<ConversationEnvelopeContext, 'localityAnchor'>) => {
-        const envelope = buildEnvelope(content);
+      (content: string, context?: Pick<ConversationEnvelopeContext, 'localityAnchor'> & { attachments?: MessageAttachment[] }) => {
+        const envelope = buildEnvelope(content, context?.attachments);
         // ADR-040：定点反馈的结构化锚点并进 composer context，host 侧补 revision 后
         // 落 user message metadata，供写前 guard 对账。不带锚点时 envelope 一字不变。
         void sendMessage(

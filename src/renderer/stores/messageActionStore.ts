@@ -10,6 +10,7 @@ import { create } from 'zustand';
 import type { Message } from '@shared/contract';
 import type { CreateSessionForkResult } from '@shared/contract/sessionFork';
 import type { SessionForkWorkspaceMode } from '@shared/contract/sessionFork';
+import type { MessageAttachment } from '@shared/contract';
 import type { ConversationEnvelopeContext } from '@shared/contract/conversationEnvelope';
 import { IPC_DOMAINS } from '@shared/ipc';
 import ipcService from '../services/ipcService';
@@ -21,7 +22,10 @@ import { toast } from '../hooks/useToast';
  * 锚点走 envelope.context（host 补 revision 后落 message metadata），文本仍走 content——
  * 两者内容一致但用途不同：文本给模型读，锚点给写前 guard 对账。
  */
-type SendContext = Pick<ConversationEnvelopeContext, 'localityAnchor'>;
+type SendContext = Pick<ConversationEnvelopeContext, 'localityAnchor'> & {
+  /** 重试时把原消息的附件一起带回去——只带文本等于让用户丢文件（ai-review #1694 第四轮）。 */
+  attachments?: MessageAttachment[];
+};
 type SendFn = (content: string, context?: SendContext) => void | Promise<void>;
 
 interface MessageActionState {
@@ -76,9 +80,14 @@ export const useMessageActionStore = create<MessageActionState>((set, get) => ({
 
     // 发送失败时乐观用户消息会被撤掉，失败内容改挂在错误消息的 metadata.retryPrompt 上。
     // 有锚点就用锚点——否则往回找会命中**上一轮**的提问，把已经答完的问题重发一遍。
-    const retryPrompt = (messages[idx].metadata as { retryPrompt?: unknown } | undefined)?.retryPrompt;
+    const anchor = messages[idx].metadata as
+      { retryPrompt?: unknown; retryAttachments?: unknown } | undefined;
+    const retryPrompt = anchor?.retryPrompt;
     if (typeof retryPrompt === 'string' && retryPrompt.trim()) {
-      _send(retryPrompt);
+      const retryAttachments = Array.isArray(anchor?.retryAttachments)
+        ? (anchor.retryAttachments as MessageAttachment[])
+        : undefined;
+      _send(retryPrompt, retryAttachments?.length ? { attachments: retryAttachments } : undefined);
       return;
     }
 

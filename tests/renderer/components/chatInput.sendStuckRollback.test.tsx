@@ -30,6 +30,7 @@ import {
   type UseChatInputSubmitParams,
 } from '../../../src/renderer/components/features/chat/ChatInput/useChatInputSubmit';
 import { zh } from '../../../src/renderer/i18n/zh';
+import { useAppshotsStore } from '../../../src/renderer/stores/appshotsStore';
 import { DRAFT_SCOPE_KEY, useComposerStore } from '../../../src/renderer/stores/composerStore';
 
 const DRAFT = '这条消息不许被吞掉';
@@ -90,6 +91,9 @@ function Harness({ onSend, goal = false, currentSessionId = 'session-stuck' }: {
 
 afterEach(() => {
   cleanup();
+  // appshot 存在自己的 store 里，不随 cleanup 复位；不清会泄漏到下一条用例
+  // （回滚守卫看到 pending 就跳过还原，下一条测试假红）。
+  useAppshotsStore.getState().setPending(null, null);
   useComposerStore.getState().resetForSuccessfulSend();
   vi.clearAllMocks();
   vi.useRealTimers();
@@ -352,6 +356,42 @@ describe('失败回滚不覆盖用户在这期间新打的内容', () => {
     // 整份不还：旧文本不许回来，用户新加的附件也不许被旧附件顶掉
     expect(screen.getByTestId('draft').textContent).toBe('');
     expect(screen.getByTestId('count').textContent).toBe('1');
+  });
+
+  // ai-review #1694 第四轮②：appshot 在自己的 store 里，不在 value/attachments 上。
+  it('用户重新截了图时不还原（守卫要覆盖所有会被回滚写回的项）', async () => {
+    let resolveSend: ((sent: boolean) => void) | undefined;
+    const onSend = vi.fn(() => new Promise<boolean>((resolve) => { resolveSend = resolve; }));
+
+    function AppshotHarness() {
+      const [value, setValue] = useState(DRAFT);
+      const { handleSubmit } = useChatInputSubmit(makeParams({
+        value, setValue, onSend, currentSessionId: 'session-appshot',
+      }));
+      return (
+        <div>
+          <span data-testid="draft">{value}</span>
+          <button type="button" onClick={() => void handleSubmit()}>send</button>
+        </div>
+      );
+    }
+
+    render(<AppshotHarness />);
+    fireEvent.click(screen.getByText('send'));
+    await waitFor(() => expect(onSend).toHaveBeenCalled());
+    await waitFor(() => expect(screen.getByTestId('draft').textContent).toBe(''));
+    // 空输入框里重新截了一张
+    act(() => {
+      useAppshotsStore.getState().setPending(
+        { requestId: 'new-shot', image: 'data:image/png;base64,bmV3' } as never,
+        'session-appshot',
+      );
+    });
+
+    await act(async () => { resolveSend?.(false); });
+
+    expect(screen.getByTestId('draft').textContent).toBe('');
+    expect(useAppshotsStore.getState().pending).toMatchObject({ requestId: 'new-shot' });
   });
 
   it('输入框仍是空的（用户没打字）⇒ 照常把草稿还回去', async () => {

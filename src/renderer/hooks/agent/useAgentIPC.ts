@@ -1117,7 +1117,15 @@ export function useAgentIPC({
           // user 消息，撤掉这条之后它会找到**上一轮**并把上一轮重发一遍；首条消息失败时
           // 则一条都找不到、重试变哑（ai-review #1694）。把失败内容挂在错误消息上当锚点。
           ...(addedOptimisticUser && userMessage.content?.trim()
-            ? { metadata: { retryPrompt: userMessage.content } }
+            ? {
+                metadata: {
+                  retryPrompt: userMessage.content,
+                  // 附件也要进锚点：只带文本，用户点重试就把文件丢了（ai-review #1694 第四轮）
+                  ...(userMessage.attachments?.length
+                    ? { retryAttachments: userMessage.attachments }
+                    : {}),
+                },
+              }
             : {}),
         };
         addMessage(errorMessage);

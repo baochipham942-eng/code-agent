@@ -487,19 +487,18 @@ export function cleanupTimedOutTasks(): void {
   }
 }
 
-// Start periodic cleanup（捕获 handle + onShutdown 注册 + .unref() 三重保护）
+// Start periodic cleanup（捕获 handle + .unref()；停机清理由活停机序列
+// webShutdownFinalizers 的 cleanupTimers.stop 条目负责——原先挂的 onShutdown
+// 注册表 setupDefaultSignalHandlers 零调用方，挂上去等于没挂，N-SHUTDOWN-DEADLINK 迁走）
 const backgroundTasksCleanupTimer = setInterval(() => {
   cleanupTimedOutTasks();
 }, TASK_CLEANUP_INTERVAL);
 backgroundTasksCleanupTimer.unref();
 
-import('../../services/infra/gracefulShutdown')
-  .then(({ onShutdown }) => {
-    onShutdown('shell/backgroundTasks.cleanup', async () => {
-      clearInterval(backgroundTasksCleanupTimer);
-    });
-  })
-  .catch(() => { /* shutdown infra 不可用就靠 .unref() */ });
+/** 停机清理：释放周期清理定时器（webShutdownFinalizers 调，幂等）。 */
+export function stopBackgroundTaskCleanupTimer(): void {
+  clearInterval(backgroundTasksCleanupTimer);
+}
 
 // ============================================================================
 // Persistence (for recovery after restart)

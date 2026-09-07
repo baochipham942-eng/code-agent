@@ -101,6 +101,23 @@ const FINALIZERS: Finalizer[] = [
       await disposeAgentRegistry();
     },
   },
+  {
+    // 四处周期清理定时器的释放。原先各处把清理挂 gracefulShutdown 的 onShutdown
+    // 注册表——那张表 setupDefaultSignalHandlers 零调用方、从没跑过（N-SHUTDOWN-DEADLINK），
+    // 这里是真正会跑的活停机序列；定时器本身都已 .unref()，清不清都不挡退出，但
+    // 释放 handle 是停机卫生，且各模块从此不再依赖死表。
+    label: 'cleanupTimers.stop',
+    run: async () => {
+      const { stopPtyCleanupTimer } = await import('../host/tools/shell/ptyExecutor');
+      const { stopBackgroundTaskCleanupTimer } = await import('../host/tools/shell/backgroundTasks');
+      const { stopConnectorStatusWatcher } = await import('../host/ipc/connector.ipc');
+      const { stopRateLimitCleanupTimer } = await import('./middleware/auth');
+      stopPtyCleanupTimer();
+      stopBackgroundTaskCleanupTimer();
+      stopConnectorStatusWatcher();
+      stopRateLimitCleanupTimer();
+    },
+  },
 ];
 
 async function runOne(f: Finalizer, capMs: number, now: () => number): Promise<string> {

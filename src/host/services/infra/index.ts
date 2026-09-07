@@ -82,11 +82,6 @@ export {
   createCancellableTimeout,
 } from './timeoutController';
 
-export {
-  onShutdown,
-  removeShutdownHandler,
-  gracefulShutdown,
-  isInShutdown,
-  getShutdownManager,
-  setupDefaultSignalHandlers,
-} from './gracefulShutdown';
+// gracefulShutdown.ts 已删（N-SHUTDOWN-DEADLINK）：那张 onShutdown 注册表的
+// setupDefaultSignalHandlers 自诞生起零调用方，四处注册迁往 webShutdownFinalizers
+// 活停机序列后整文件死透（knip dead-export 抓住）。进程终止权真源是 webServer.shutdown。

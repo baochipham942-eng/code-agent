@@ -275,7 +275,10 @@ describe('shared shell command parser', () => {
 
   it('消除未引号续行后再解析所有前瞻形态', () => {
     expect(parseShellCommand('cp a b 2\\\n2>&1').segments[0].words).toEqual(['cp', 'a', 'b']);
-    expect(parseShellCommand('cp a b 2\\\n>>&1').writeTargets.map((t) => t.path)).toEqual(['b']);
+    // `2\<LF>&1`（探针 02）——上一版这里多打了一个 `>`，测的是 `2>>&1`
+    const opFold = parseShellCommand('cp a b 2\\\n>&1');
+    expect(opFold.parsingFailed).toBe(false);
+    expect(opFold.writeTargets.map((t) => t.path)).toEqual(['b']);
     expect(parseShellCommand('cp a b \\\n2>&1').writeTargets.map((t) => t.path)).toEqual(['b']);
     expect(parseShellCommand('$\\\n\'ls\'').segments[0].words).toEqual(['ls']);
     const ampFold = parseShellCommand('printf x &\\\n> out.txt');

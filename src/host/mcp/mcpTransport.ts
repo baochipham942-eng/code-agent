@@ -150,8 +150,33 @@ export function createRemoteMCPFetch(
         } as Parameters<typeof undiciFetch>[1]) as unknown as Promise<Response>
         : fetch(input, init);
     }
-    return oauthFetch(input as string | URL, init);
+    return invokeMcpOAuthFetch(oauthFetch, input, init);
   }) as typeof globalThis.fetch;
+}
+
+function networkTypeError(error: unknown): TypeError | undefined {
+  let current: unknown = error;
+  for (let depth = 0; depth < 4 && current; depth += 1) {
+    if (current instanceof TypeError) return current;
+    current = current instanceof Error ? current.cause : undefined;
+  }
+  return undefined;
+}
+
+async function invokeMcpOAuthFetch(
+  oauthFetch: FetchLike,
+  input: Parameters<typeof globalThis.fetch>[0],
+  init?: RequestInit,
+): Promise<Response> {
+  try {
+    return await oauthFetch(input as string | URL, init);
+  } catch (error) {
+    // SDK discoverOAuthServerInfo 只把 TypeError 当网络失败往上抛并触发代理重试；
+    // createConnectorOAuthFetch 会把 TypeError 包成普通 Error。这里揭开 cause，别吞掉重试。
+    const typeError = networkTypeError(error);
+    if (typeError) throw typeError;
+    throw error;
+  }
 }
 
 export function isRetryableRemoteMCPConnectionError(error: unknown): boolean {

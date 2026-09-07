@@ -388,4 +388,20 @@ describe('createRemoteMCPFetch OAuth timeout', () => {
       undefined,
     );
   });
+
+  it('preserves wrapped network TypeError so SDK discovery can retry via proxy', async () => {
+    const networkError = new TypeError('fetch failed');
+    Object.assign(networkError, { cause: Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' }) });
+    const oauthFetch = vi.fn(async () => {
+      throw new Error('无法连接 auth.example.com：fetch failed', { cause: networkError });
+    });
+    const remoteFetch = createRemoteMCPFetch(new URL('https://mcp.example.com/mcp'), {
+      useProxy: false,
+      oauthFetch,
+    });
+
+    await expect(remoteFetch('https://auth.example.com/.well-known/oauth-protected-resource'))
+      .rejects.toBe(networkError);
+    expect(isRetryableRemoteMCPConnectionError(networkError)).toBe(true);
+  });
 });

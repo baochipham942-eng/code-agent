@@ -301,6 +301,72 @@ describe('PermissionClassifier', () => {
     });
   });
 
+  it.each(["./bash -c 'cd .'", "bash --rcfile ./startup.sh -ic 'ls'"]) (
+    'does not let an unqualified shell identity inherit an approval shortcut: %s', async (command) => {
+      const result = await classifyPermission(
+        'bash',
+        { command },
+        { workingDirectory: '/tmp', permissionLevel: 'execute' },
+      );
+      expect(result.decision).toBe('ask');
+    },
+  );
+
+  // origin/main refused this through the path analysis because the redirection target was still a
+  // word of the segment text. The shared parser moves targets into writeTargets, so the credential
+  // scan reads them from there — an unresolvable target must stay a refusal, not decay into an ask.
+  it('refuses a redirection target that cannot be a filesystem path', async () => {
+    const result = await classifyPermission(
+      'bash',
+      { command: "printf x > $'\\0'" },
+      { workingDirectory: '/tmp', permissionLevel: 'execute' },
+    );
+    expect(result.decision).toBe('deny');
+    expect(result.reason).toContain('NUL byte');
+  });
+
+  // Round 16: with `<` reported as an unsupported operator the whole segment vanished and the
+  // credential rules went blind. cwd is a real workspace on purpose — under /tmp the critical-path
+  // rule fires first and hides exactly this regression.
+  it.each([
+    ['rm -rf ~/.ssh/id_rsa < README.md', 'deny', '递归删除凭据路径'],
+    ['rm -rf ~/.ssh/id_rsa <<< x', 'deny', '递归删除凭据路径'],
+    ['rm -rf ~/.ssh/id_rsa <<EOF', 'deny', '递归删除凭据路径'],
+    ['cat < ~/.ssh/id_rsa', 'ask', '读取凭据路径'],
+    ['wc -l < README.md', 'approve', '安全命令'],
+    // Round 17: operators the parser does not structure (`>|`, `case … ;;`, subshells) fail the strict
+    // parse; the deny rules then read the lenient token view instead of an empty one.
+    ['rm -rf ~/.ssh/id_rsa >| run.log', 'deny', '递归删除凭据路径'],
+    ['case x in a) rm -rf ~/.ssh/id_rsa;; esac', 'deny', '递归删除凭据路径'],
+    ['rm -rf ~/.ssh/id_rsa; ls >| x', 'deny', '递归删除凭据路径'],
+    ['(rm -rf ~/.ssh/id_rsa)', 'deny', '递归删除凭据路径'],
+    ['ls >| out.txt', 'ask', '命令无法可靠解析'],
+    // Round 18: an operand spelled through $HOME is uncertain to the parser but not to the path
+    // resolver; dropping it from the credential scan let this read through as a safe command.
+    ['cat < "$HOME/.ssh/id_rsa"', 'ask', '读取凭据路径'],
+    ['cat < $HOME/.ssh/id_rsa', 'ask', '读取凭据路径'],
+    ['echo x > "$HOME/.aws/credentials"', 'ask', '读取凭据路径'],
+    ['wc -l < "$HOME/notes.txt"', 'approve', '安全命令'],
+  ] as const)('a failed strict parse never empties the words the deny rules read: %s', async (command, decision, reason) => {
+    const result = await classifyPermission(
+      'bash',
+      { command },
+      { workingDirectory: process.cwd(), permissionLevel: 'execute' },
+    );
+    expect(result.decision).toBe(decision);
+    expect(result.reason).toContain(reason);
+  });
+
+  it('keeps the specific credential-path ask ahead of the generic redirection ask', async () => {
+    const result = await classifyPermission(
+      'bash',
+      { command: 'echo x >> ~/.aws/credentials' },
+      { workingDirectory: '/tmp', permissionLevel: 'execute' },
+    );
+    expect(result).toMatchObject({ decision: 'ask', trustBoundary: true });
+    expect(result.reason).toContain('凭据路径');
+  });
+
   it('auto-approves internal delegation tools', async () => {
     for (const toolName of ['Task', 'spawn_agent', 'AgentSpawn']) {
       const result = await classifyPermission(

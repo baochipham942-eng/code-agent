@@ -26,8 +26,10 @@ import {
   splitCompoundCommand,
 } from '../security/commandSafety';
 import { canonicalizeCommand } from '../security/canonicalizeCommand';
+import { lenientCommandWords, parseShellCommand } from '../security/commandParse';
 import { RM_FLAGS_REQUIRED, RM_HEAD } from '../security/rmFlagPattern';
 import { checkCommandPolicy } from './modules/shell/commandPolicy';
+import { inspectPermissionCommand, neverApprove } from './permissionCommandParse';
 import { isBashToolName, normalizeToolName } from './toolNames';
 import { resolveCanonicalRunPath } from '../runtime/runContext';
 import { isPathWithinRoot } from '../runtime/workspaceScope';
@@ -257,12 +259,12 @@ function isSensitiveMemoryPath(resolvedPath: string): boolean {
   return false;
 }
 
-function commandWords(command: string): string[] {
-  // Keep quoted text as one shell word. This preserves quoted paths and quoted
-  // subcommands while preventing text arguments such as `echo "git push …"`
-  // from being re-split into executable-looking words.
-  return tokenizeCommandWords(command) ?? [];
-}
+// Keep quoted text as one shell word: quoted paths and quoted subcommands stay intact, and text
+// arguments such as `echo "git push …"` are not re-split into executable-looking words. These words
+// feed deny/ask scans only, so a failed strict parse widens the view instead of emptying it (rounds
+// 16/17: `>|`, `<>`, `case … ;;` erased the credential path and a deny decayed into an ask). Approval
+// proofs keep the strict view in commandAllowProof.
+const commandWords = (command: string): string[] => tokenizeCommandWords(command) ?? lenientCommandWords(command);
 
 function commandProgram(word: string | undefined): string {
   return word ? path.posix.basename(word) : '';
@@ -354,10 +356,13 @@ function credentialReadTarget(command: string, context: ClassificationContext): 
       }
     }
   }
-  for (const [index, word] of words.entries()) {
-    if (ignoredIndexes.has(index)) continue;
-    if (!word) continue;
-    const resolved = resolveCandidatePath(word, context.workingDirectory, context.pathResolutionCache);
+  // Redirection operands (`> f`, `< f`) are path candidates too: `> $'\0'` must stay a refusal and
+  // `cat < "$HOME/.ssh/id_rsa"` a credential read. resolveCandidatePath expands $HOME itself, so an
+  // uncertain operand is scanned like any other word — dropping it let that read go unasked (round 18).
+  const parsed = parseShellCommand(command);
+  const targets = [...parsed.writeTargets, ...parsed.segments.flatMap((segment) => segment.reads)].map((o) => o.path);
+  for (const candidate of [...words.filter((word, index) => word && !ignoredIndexes.has(index)), ...targets]) {
+    const resolved = resolveCandidatePath(candidate, context.workingDirectory, context.pathResolutionCache);
     if (isSensitiveCredentialPath(resolved, { homeDir: CANONICAL_HOME_DIR, projectRoot })) return resolved;
   }
   return null;
@@ -441,8 +446,8 @@ export function bashCommandRequiresPermission(
   context: Pick<ClassificationContext, 'workingDirectory' | 'workspaceRoot'>,
 ): boolean {
   try {
-    const canonical = checkCommandPolicy(command).canonicalCommand;
-    const segments = splitCompoundCommand(canonical);
+    // Segmentation needs the original quotes: code arguments may contain shell operators.
+    const segments = splitCompoundCommand(command);
     if (!segments) return true;
     let segmentContext: ClassificationContext = {
       ...context,
@@ -824,23 +829,27 @@ export class PermissionClassifier {
       };
     }
 
-    // Keep raw quote boundaries for word parsing. Policy and dangerous-pattern
-    // checks still consume canonical text inside each segment.
+    // The shared parser reconstructs each segment with shell-safe quoting, so text
+    // arguments remain one word while policy checks still consume canonical text.
     const rawTrimmed = command.trim();
+    const rawInspection = inspectPermissionCommand(rawTrimmed, startTime);
     const segments = splitCompoundCommand(rawTrimmed);
     if (!segments || segments.length === 0) {
-      return null;
+      // Failing to split is not evidence of safety: a null here hands the command to the caller's
+      // fallback ask and silently downgrades a dangerous-command deny (round 7 / round 13 shape).
+      // Let the deny rules read the whole command first; anything short of deny still falls through.
+      return neverApprove(this.classifyBashSegment(rawTrimmed, context, startTime));
     }
 
     if (segments.length === 1) {
-      // 拆段器会丢弃尾部空段；只有整串确实等于该段时才允许走单段 cd 快捷判断。
-      if (segments[0] !== rawTrimmed) return null;
-      return this.classifyBashSegment(segments[0], context, startTime);
+      // A segment's deny or specific ask outranks the generic redirection ask; only an approve yields.
+      const result = this.classifyBashSegment(segments[0], context, startTime);
+      return neverApprove(result) ?? rawInspection.outputRedirectionAsk ?? result;
     }
 
     // 沿用 #1609 的逐段风险分类，同时把 cd 的 cwd 影响传给后续段的路径解析。
     // 不改变 cd 自身或未知段的判决，只修正后续 rm/凭据相对路径的解析基准。
-    let strictest: ClassificationResult | null = null;
+    let strictest: ClassificationResult | null = rawInspection.outputRedirectionAsk ?? null;
     let segmentContext = context;
     let executableSegmentCount = 0;
     for (const segment of segments) {
@@ -857,6 +866,7 @@ export class PermissionClassifier {
     }
 
     if (executableSegmentCount === 0) {
+      if (rawInspection.outputRedirectionAsk) return rawInspection.outputRedirectionAsk;
       return {
         decision: 'approve',
         reason: 'cd 命令',
@@ -875,6 +885,12 @@ export class PermissionClassifier {
     startTime: number,
   ): ClassificationResult | null {
     const canonicalCommand = canonicalizeCommand(command).command;
+    const commandInspection = inspectPermissionCommand(command, startTime);
+    // Deliberately not returned here. Round 7 fixed exactly this shape for outputRedirectionAsk:
+    // an early ask hides the dangerous-command deny below, so `chronic bash -c 'chmod -R 777 …'`
+    // would drop from a hard refusal to something a user can approve. Hold it until every deny
+    // has had its say, and still refuse before any approve path.
+
     const rmCriticalTarget = resolvedRmCriticalTarget(command, context);
     if (rmCriticalTarget) {
       const reason = `危险命令: 递归删除关键路径 ${rmCriticalTarget}`;
@@ -939,6 +955,9 @@ export class PermissionClassifier {
       };
     }
 
+    // Every deny has been considered by now; an unparsable command must never reach an approve.
+    if (commandInspection.parseFailureAsk) return commandInspection.parseFailureAsk;
+
     // Product-level allow only. This deliberately does not enter the execution
     // safe-command whitelist because npm lifecycle scripts still run in dry-run.
     if (isNpmPublishDryRun(command)) {
@@ -963,7 +982,7 @@ export class PermissionClassifier {
 
     // B3: 包管理器命令可能安装依赖、运行任意 package script 或访问网络，默认 ask。
     // 明确只读/验证类命令已在 B2 白名单列出。
-    if (/^(npm|npx|pnpm|yarn)\s/.test(command)) {
+    if (commandInspection.packageManager) {
       const reason = '包管理器命令可能修改依赖、执行脚本或访问网络';
       return {
         decision: 'ask',
@@ -975,7 +994,7 @@ export class PermissionClassifier {
     }
 
     // B4: cd 命令 → approve
-    if (/^cd(?:\s|$)/.test(command)) {
+    if (commandInspection.changeDirectory) {
       return {
         decision: 'approve',
         reason: 'cd 命令',

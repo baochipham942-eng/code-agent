@@ -75,9 +75,11 @@ describe('ExecPolicyStore', () => {
     });
   });
 
-  // ========================================================================
+  // =================================================================    });
+
   // 基础匹配
-  // ========================================================================
+  // =================================================================    });
+
 
   describe('match', () => {
     it('returns null when no rules exist', () => {
@@ -141,9 +143,11 @@ describe('ExecPolicyStore', () => {
     });
   });
 
-  // ========================================================================
+  // =================================================================    });
+
   // 学习
-  // ========================================================================
+  // =================================================================    });
+
 
   describe('learnFromApproval', () => {
     it('does not persist executor approval across different write targets', async () => {
@@ -209,6 +213,21 @@ describe('ExecPolicyStore', () => {
       expect(store.learnFromApproval('node script.js')).toBe(false);
     });
 
+    it.each([
+      'env npm install lodash',
+      'nohup npm install lodash',
+      'timeout 5 npm install lodash',
+      'command npm install lodash',
+    ])('does not learn a wrapper prefix: %s', (command) => {
+      expect(store.learnFromApproval(command)).toBe(false);
+      expect(store.getRules()).toEqual([]);
+    });
+
+    it('does not learn a variable command prefix', () => {
+      expect(store.learnFromApproval('$RUNNER --version')).toBe(false);
+      expect(store.getRules()).toEqual([]);
+    });
+
     it('does not learn a prefix that leaves the approved risk outside it', () => {
       expect(store.learnFromApproval('find . -delete')).toBe(false);
       expect(store.learnFromApproval('find /tmp -exec rm {} \\;')).toBe(false);
@@ -238,9 +257,11 @@ describe('ExecPolicyStore', () => {
     });
   });
 
-  // ========================================================================
+  // =================================================================    });
+
   // 持久化
-  // ========================================================================
+  // =================================================================    });
+
 
   describe('persistence', () => {
     it('saves and loads rules', async () => {
@@ -275,9 +296,11 @@ describe('ExecPolicyStore', () => {
     });
   });
 
-  // ========================================================================
+  // =================================================================    });
+
   // 边界场景
-  // ========================================================================
+  // =================================================================    });
+
 
   describe('edge cases', () => {
     it('handles empty command', () => {

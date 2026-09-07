@@ -10,6 +10,7 @@
 // 原 CommandMonitor 的危险模式已合并到此文件。
 
 import { createLogger } from '../services/infra/logger';
+import { quote } from 'shell-quote';
 import {
   checkWindowsBlockRules,
   evaluateWindowsDanger,
@@ -17,6 +18,12 @@ import {
 } from './shellRules/windowsRules';
 import { RM_FLAGS, RM_FLAGS_REQUIRED, RM_HEAD } from './rmFlagPattern';
 import { canonicalizeCommand } from './canonicalizeCommand';
+import {
+  commandWordsFromParse,
+  parseShellCommand,
+  qualificationExecutions,
+  qualificationExecutable,
+} from './commandParse';
 import {
   rmIsContainedInWorkspace,
   type RecursiveRmPathContext,
@@ -222,71 +229,16 @@ const CONDITIONALLY_SAFE: Record<string, SafetyChecker> = {
  * 不支持子 shell ()、命令替换 $()、后台 &
  */
 export function splitCompoundCommand(command: string): string[] | null {
-  // 检测不安全的 shell 特性
-  const unsafePatterns = [
-    /\$\(/,     // 命令替换 $(...)
-    /`[^`]+`/,  // 反引号命令替换
-    /\(\s*\w/,  // 子 shell
-    /;\s*$/,    // 尾部分号（可能有后续命令未显示）
-  ];
-
-  for (const pattern of unsafePatterns) {
-    if (pattern.test(command)) return null;
-  }
-
-  // 按 &&, ||, ;, | 分割（简化版，不处理引号内的分隔符）
-  // 使用状态机追踪引号
-  const parts: string[] = [];
-  let current = '';
-  let inSingleQuote = false;
-  let inDoubleQuote = false;
-  let i = 0;
-
-  while (i < command.length) {
-    const ch = command[i];
-
-    if (ch === "'" && !inDoubleQuote) {
-      inSingleQuote = !inSingleQuote;
-      current += ch;
-      i++;
-    } else if (ch === '"' && !inSingleQuote) {
-      inDoubleQuote = !inDoubleQuote;
-      current += ch;
-      i++;
-    } else if (!inSingleQuote && !inDoubleQuote) {
-      // 检查分隔符
-      if (command[i] === '&' && command[i + 1] === '&') {
-        parts.push(current.trim());
-        current = '';
-        i += 2;
-      } else if (command[i] === '|' && command[i + 1] === '|') {
-        parts.push(current.trim());
-        current = '';
-        i += 2;
-      } else if (command[i] === ';') {
-        parts.push(current.trim());
-        current = '';
-        i++;
-      } else if (command[i] === '|' && command[i + 1] !== '|') {
-        // 管道 — 左侧可以是任何命令，右侧也需要检查
-        parts.push(current.trim());
-        current = '';
-        i++;
-      } else {
-        current += ch;
-        i++;
-      }
-    } else {
-      current += ch;
-      i++;
-    }
-  }
-
-  if (current.trim()) {
-    parts.push(current.trim());
-  }
-
-  return parts.filter(p => p.length > 0);
+  const parsed = parseShellCommand(command);
+  if (parsed.parsingFailed || parsed.trailingOperator) return null;
+  // A segment keeps its own redirections: per-segment rules resolve write targets against that
+  // segment's cwd (`cd ~/.ssh; echo x > authorized_keys`), and a target that cannot be a path
+  // (`> $'\0'`) must reach the path analysis instead of vanishing from the rebuilt text.
+  return parsed.segments.map((segment) => [
+    quote(segment.words),
+    ...segment.reads.map((read) => `< ${quote([read.path])}`),
+    ...segment.redirects.map((target) => `> ${quote([target.path])}`),
+  ].join(' '));
 }
 
 /**
@@ -294,98 +246,16 @@ export function splitCompoundCommand(command: string): string[] | null {
  * 处理 bash -c "..." 和 bash -lc "..." 包裹
  */
 export function commandWords(command: string): string[] | null {
-  const trimmed = command.trim();
-  if (!trimmed) return null;
-
-  // Respect shell word boundaries so quoted text stays one argument. Each raw
-  // word still goes through the shared canonicalizer, preserving quote removal,
-  // ANSI-C escapes and fail-closed handling in one place.
-  const tokens: string[] = [];
-  let current = '';
-  let tokenStarted = false;
-  let inSingleQuote = false;
-  let inDoubleQuote = false;
-
-  for (let i = 0; i < trimmed.length; i++) {
-    const ch = trimmed[i];
-
-    if (ch === '\\') {
-      tokenStarted = true;
-      current += ch;
-      if (i + 1 < trimmed.length) current += trimmed[++i];
-    } else if (ch === "'" && !inDoubleQuote) {
-      tokenStarted = true;
-      inSingleQuote = !inSingleQuote;
-      current += ch;
-    } else if (ch === '"' && !inSingleQuote) {
-      tokenStarted = true;
-      inDoubleQuote = !inDoubleQuote;
-      current += ch;
-    } else if ((ch === ' ' || ch === '\t') && !inSingleQuote && !inDoubleQuote) {
-      if (tokenStarted) {
-        const canonical = canonicalizeCommand(current);
-        if (canonical.parsingFailed) return null;
-        tokens.push(canonical.command);
-        current = '';
-        tokenStarted = false;
-      }
-    } else {
-      tokenStarted = true;
-      current += ch;
-    }
-  }
-  if (tokenStarted) {
-    const canonical = canonicalizeCommand(current);
-    if (canonical.parsingFailed) return null;
-    tokens.push(canonical.command);
-  }
-  return tokens.length > 0 ? tokens : null;
-}
-
-function parseCommand(command: string): { program: string; args: string[] } | null {
-  const tokens = commandWords(command);
-  if (!tokens) return null;
-
-  const program = tokens[0];
-  const args = tokens.slice(1);
-
-  // 解包 bash -c "..." 和 bash -lc "..."
-  if ((program === 'bash' || program === 'sh' || program === 'zsh') &&
-      args.length >= 2 &&
-      (args[0] === '-c' || args[0] === '-lc')) {
-    // 递归解析内部命令
-    return parseCommand(args[1]);
-  }
-
-  return { program, args };
+  return commandWordsFromParse(command);
 }
 
 /**
  * 检查输出重定向
  */
 function hasOutputRedirection(command: string): boolean {
-  // 检查 > 和 >> 重定向（但排除 2>&1 这种 stderr 重定向）
-  // 简化：检查非引号内的 > 字符（前面不是数字或&）
-  let inSingleQuote = false;
-  let inDoubleQuote = false;
-
-  for (let i = 0; i < command.length; i++) {
-    const ch = command[i];
-    if (ch === "'" && !inDoubleQuote) inSingleQuote = !inSingleQuote;
-    else if (ch === '"' && !inSingleQuote) inDoubleQuote = !inDoubleQuote;
-    else if (ch === '>' && !inSingleQuote && !inDoubleQuote) {
-      // 排除 2>&1, >&2 等 fd 重定向
-      const prev = i > 0 ? command[i - 1] : '';
-      const next = i < command.length - 1 ? command[i + 1] : '';
-      if (prev === '&' || next === '&') continue;
-      // 排除 >> /dev/null（无副作用）
-      const rest = command.substring(i).replace(/^>+\s*/, '');
-      if (rest.startsWith('/dev/null')) continue;
-      return true;
-    }
-  }
-
-  return false;
+  const parsed = parseShellCommand(command);
+  return parsed.parsingFailed
+    || parsed.writeTargets.some((target) => target.source === 'redirect' && target.path !== '/dev/null');
 }
 
 // ----------------------------------------------------------------------------
@@ -421,19 +291,16 @@ export function isKnownSafeCommand(command: string, shell: ShellKind = defaultSh
     return isKnownSafeWindowsCommand(command, UNCONDITIONALLY_SAFE);
   }
 
-  // 2. 拆分复合命令
-  const subCommands = splitCompoundCommand(command);
-  if (!subCommands || subCommands.length === 0) {
-    // 含有不安全 shell 特性（命令替换、子shell）或空命令
+  // 2. Qualification uses the command identity as written.  The shared parser's
+  // broader execution view is intentionally reserved for write-target extraction.
+  const executions = qualificationExecutions(command);
+  if (!executions || executions.length === 0) {
     return false;
   }
 
-  // 3. 每个子命令都必须安全
-  for (const sub of subCommands) {
-    const parsed = parseCommand(sub);
-    if (!parsed) return false;
-
-    const { program, args } = parsed;
+  // 3. Every written/explicitly baseline-unwrapped command must be safe.
+  for (const execution of executions) {
+    const { program, args } = execution;
 
     // 无条件安全
     if (UNCONDITIONALLY_SAFE.has(program)) continue;
@@ -458,10 +325,15 @@ export function isKnownSafeCommand(command: string, shell: ShellKind = defaultSh
 export function classifyCommand(command: string, shell: ShellKind = defaultShellKind()): 'safe' | 'conditional' | 'unknown' | 'delegated' {
   if (isKnownSafeCommand(command, shell)) return 'safe';
 
-  // 检查是否可能是条件安全但参数不对
-  const parsed = parseCommand(command.trim());
-  if (parsed && CONDITIONALLY_SAFE[parsed.program]?.(parsed.args) === 'delegated') return 'delegated';
-  if (parsed && CONDITIONALLY_SAFE[parsed.program]) return 'conditional';
+  // 检查是否可能是条件安全但参数不对。
+  // `env` / `xargs` 把真正的操作交给后续 argv 或 stdin：委托要按写下来的前缀判定，解包到被委托的
+  // 程序，答的就不是「这条前缀规则能不能承载风险」这个问题（execPolicy.prefixCarriesTheRisk）。
+  const words = commandWordsFromParse(command.trim());
+  if (words && CONDITIONALLY_SAFE[words[0]]?.(words.slice(1)) === 'delegated') return 'delegated';
+
+  const execution = qualificationExecutable(command.trim());
+  if (execution && CONDITIONALLY_SAFE[execution.program]?.(execution.args) === 'delegated') return 'delegated';
+  if (execution && CONDITIONALLY_SAFE[execution.program]) return 'conditional';
 
   return 'unknown';
 }
@@ -552,9 +424,9 @@ const DANGEROUS_PATTERNS: DangerousPattern[] = [
 
 // 敏感环境变量访问检测
 const SENSITIVE_ENV_PATTERNS = [
-  /\$\{?[A-Z_]*(?:KEY|SECRET|TOKEN|PASSWORD|CREDENTIAL)[A-Z_]*\}?/i,
-  /env\s+[A-Z_]*(?:KEY|SECRET|TOKEN)/i,
-  /printenv\s+[A-Z_]*(?:KEY|SECRET)/i,
+  /\$\{?[A-Z0-9_]*(?:KEY|SECRET|TOKEN|PASSWORD|CREDENTIAL)[A-Z0-9_]*\}?/i,
+  /env\s+[A-Z0-9_]*(?:KEY|SECRET|TOKEN)/i,
+  /printenv\s+[A-Z0-9_]*(?:KEY|SECRET)/i,
 ];
 
 /**

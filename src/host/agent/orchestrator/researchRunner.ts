@@ -8,6 +8,7 @@ import { DeepResearchMode, SemanticResearchOrchestrator } from '../../research';
 import { ModelRouter } from '../../model/modelRouter';
 import type { ToolExecutor } from '../../tools/toolExecutor';
 import { createLogger } from '../../services/infra/logger';
+import { stampAssistantMessageCorrelation } from '../../session/assistantCorrelation';
 
 const logger = createLogger('ResearchRunner');
 
@@ -50,6 +51,7 @@ export async function runDeepResearch(
         content: result.report.content,
         timestamp: Date.now(),
       };
+      stampAssistantMessageCorrelation(reportMessage);
       deps.addMessage(reportMessage);
 
       onEvent({
@@ -111,6 +113,7 @@ export async function checkAndRunSemanticResearch(
         content: result.report.content,
         timestamp: Date.now(),
       };
+      stampAssistantMessageCorrelation(reportMessage);
       deps.addMessage(reportMessage);
 
       onEvent({

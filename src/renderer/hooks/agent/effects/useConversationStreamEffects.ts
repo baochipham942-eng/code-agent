@@ -182,6 +182,7 @@ export function applyConversationStreamEvent(
           content: '',
           timestamp: now(),
           toolCalls: [],
+          metadata: { correlation: { turnId } },
         };
         actions.addMessage(newMessage);
         state.currentTurnMessageId = turnId;

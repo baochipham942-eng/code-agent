@@ -32,6 +32,17 @@ function isStreamingAssistantCounterpart(left: string | undefined, right: string
   return shorter.length >= STREAMING_COUNTERPART_MIN_PREFIX && longer.startsWith(shorter);
 }
 
+function correlationTurnId(message: Message): string | undefined {
+  const turnId = message.metadata?.correlation?.turnId?.trim();
+  return turnId || undefined;
+}
+
+function liveMatchesTurnId(liveMessage: Message, turnId: string): boolean {
+  const liveKey = correlationTurnId(liveMessage);
+  if (liveKey) return liveKey === turnId;
+  return liveMessage.id === turnId;
+}
+
 function findLiveCounterpart(
   snapshotMessage: Message,
   snapshot: Message[],
@@ -40,6 +51,18 @@ function findLiveCounterpart(
   snapshotById: Map<string, Message>,
 ): Message | undefined {
   if (snapshotMessage.role !== 'assistant') return undefined;
+  const snapshotKey = correlationTurnId(snapshotMessage);
+  if (snapshotKey) {
+    for (const liveMessage of live) {
+      if (!liveById.has(liveMessage.id)) continue;
+      if (snapshotById.has(liveMessage.id)) continue;
+      if (liveMessage.role !== 'assistant') continue;
+      if (!liveMatchesTurnId(liveMessage, snapshotKey)) continue;
+      return liveMessage;
+    }
+    return undefined;
+  }
+
   const snapshotUserId = precedingUserId(snapshot, snapshotMessage);
   for (const liveMessage of live) {
     if (!liveById.has(liveMessage.id)) continue;
@@ -54,14 +77,9 @@ function findLiveCounterpart(
 }
 
 /**
- * 正文相似只是**弱**证据：两轮回答碰巧一样就会被并掉，而 mergeAssistantPair 只保留
- * 工具调用较多的那一边 ⇒ 另一边的工具调用整组消失（ai-review #1696 第三轮）。
- *
- * 这里不做「更聪明的相似度」——那还是猜。只加一条硬约束把误合并的**代价**封住：
- * 两边都有工具调用且互不为子集时，说明它们是两轮不同的工作，拒绝合并。
- * 真正的解法是按结构化关联键（metadata.correlation.turnId）合并，但真库里近期
- * assistant 消息只有约四分之一带 correlation，host 侧先填齐才谈得上 ⇒
- * N-CHAT-MERGE-BY-CORRELATION。
+ * 正文相似只是**弱**证据：两轮回答碰巧一样就会被并掉。
+ * 有 correlation.turnId 时按该键配对，正文相似度只在双方都没有关联键时回落。
+ * 无键回落仍保留工具调用冲突护栏：两边都有工具调用且互不为子集时拒绝合并。
  */
 function hasConflictingToolCalls(a: Message, b: Message): boolean {
   const idsOf = (m: Message) => new Set((m.toolCalls ?? []).map((call) => call.id).filter(Boolean));
@@ -119,11 +137,15 @@ function contentPartsText(parts: ContentPart[]): string {
   return text;
 }
 
-/** 与 mergeAssistantPair 的 content 取舍保持一致：更长的那份，等长留 snapshot。 */
+/** 正文取舍：更长的那份，等长留 snapshot。分叉正文在配对层就已被拒（见下方注释）。 */
+function pickBody(snapshotBody: string | undefined, liveBody: string | undefined): string | undefined {
+  if (snapshotBody == null) return liveBody;
+  if (liveBody == null) return snapshotBody;
+  return liveBody.length > snapshotBody.length ? liveBody : snapshotBody;
+}
+
 function mergedContentOf(snapshotMessage: Message, liveMessage: Message): string {
-  const left = snapshotMessage.content ?? '';
-  const right = liveMessage.content ?? '';
-  return right.length > left.length ? right : left;
+  return pickBody(snapshotMessage.content, liveMessage.content) ?? '';
 }
 
 /**
@@ -168,14 +190,17 @@ function mergeArrayPayloads(snapshotMessage: Message, liveMessage: Message): Par
 }
 
 function mergeAssistantPair(snapshotMessage: Message, liveMessage: Message): Message {
-  const longer = (left: string | undefined, right: string | undefined) => (
-    (right?.length ?? 0) > (left?.length ?? 0) ? right : left
-  );
   return {
     ...snapshotMessage,
     ...liveMessage,
-    content: longer(snapshotMessage.content, liveMessage.content) ?? '',
-    reasoning: longer(snapshotMessage.reasoning, liveMessage.reasoning),
+    content: mergedContentOf(snapshotMessage, liveMessage),
+    reasoning: pickBody(snapshotMessage.reasoning, liveMessage.reasoning),
+    // live 草稿的 metadata 可能只有 correlation 一个键（turn_start 建的草稿就是），
+    // 整体铺开会把 snapshot 落库的 agentError / turnQuality 等键抹掉——按键合并，
+    // live 提供的键赢，snapshot 独有的键保留（ai-review #1706）。
+    metadata: (snapshotMessage.metadata || liveMessage.metadata)
+      ? { ...snapshotMessage.metadata, ...liveMessage.metadata }
+      : undefined,
     // 所有数组载荷统一处理，不逐个点名（见 mergeArrayPayloads 的注释）。
     ...mergeArrayPayloads(snapshotMessage, liveMessage),
   };
@@ -186,9 +211,27 @@ export function mergeSnapshotWithLiveTail(snapshot: Message[], live: Message[]) 
   const hasLiveTail = live.some((message) => liveMessageExtendsSnapshot(snapshotById.get(message.id), message));
   const liveById = new Map(live.map((message) => [message.id, message]));
   const merged = snapshot.map((message) => {
-    const liveMessage = liveById.get(message.id)
+    const sameIdLive = liveById.get(message.id);
+    const liveMessage = sameIdLive
       ?? findLiveCounterpart(message, snapshot, live, liveById, snapshotById);
     if (!liveMessage) return message;
+    // 跨 id 键配对只接前缀相关的正文：同一 turn 可以落多条 assistant（工具回复 A
+    // 在先、最终回复 B 在后，messageProcessor :783 vs :956），分叉正文就是「这两条
+    // 不是同一条」的信号——合并会让较早落库者覆盖用户已看到的最终回复
+    // （ai-review #1706 第三轮），不配对则两条都保留，宁可多一条草稿也不少一条终版。
+    if (!sameIdLive && correlationTurnId(message) !== undefined) {
+      const snapshotBody = message.content ?? '';
+      const liveBody = liveMessage.content ?? '';
+      // 空正文快照（工具消息这类占位落库）不抢非空 live：'' 是任何正文的前缀，
+      // 不挡就会先把 live 终版合并进工具消息，让快照里真正的终版落单再显示一遍
+      // （ai-review #1706 第四轮）。live 为空草稿则照常合并（草稿占位找正文宿主）。
+      if (!snapshotBody && liveBody) {
+        return message;
+      }
+      if (!snapshotBody.startsWith(liveBody) && !liveBody.startsWith(snapshotBody)) {
+        return message;
+      }
+    }
     liveById.delete(liveMessage.id);
     return mergeAssistantPair(message, liveMessage);
   });

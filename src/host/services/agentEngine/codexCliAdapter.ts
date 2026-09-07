@@ -29,6 +29,7 @@ import { extractExternalModelUsage, type ExternalEngineDurableLifecycle } from '
 import { emitExternalAgentEvent } from './agentEngineEventSink';
 import { bindExternalEngineAbort } from './agentEngineAbort';
 import { getAgentEngineSessionSink } from './agentEngineSessionSink';
+import { withTurnCorrelation } from '../../session/assistantCorrelation';
 import type { ExternalEngineResumeLaunch } from './externalEngineResumeBuilders';
 import {
   assertExternalForkContextDispatchLifecycle,
@@ -473,12 +474,12 @@ export class CodexCliAdapter {
         role: 'assistant',
         content: '',
         timestamp: completedAt,
-        metadata: {
+        metadata: withTurnCorrelation({
           workbench: {
             workingDirectory: cwd,
           },
           agentError: buildAgentEngineFailureMetadata(failureDiagnostics),
-        },
+        }, turnId),
       };
       await sessionManager.addMessageToSession(request.sessionId, assistantMessage);
       emit({
@@ -527,11 +528,11 @@ export class CodexCliAdapter {
       content: finalText || 'Codex CLI completed without text output.',
       timestamp: completedAt,
       modelDecision: buildAgentEngineModelDecision(descriptor, model, completedAt),
-      metadata: {
+      metadata: withTurnCorrelation({
         workbench: {
           workingDirectory: cwd,
         },
-      },
+      }, turnId),
     };
     await sessionManager.addMessageToSession(request.sessionId, assistantMessage);
 

@@ -106,6 +106,27 @@ describe('systemContextStack.addAndPersistMessage', () => {
     expect(sessionManagerState.addMessageToSession).toHaveBeenCalledWith('runtime-session-1', message);
   });
 
+  it('fills correlation.turnId from runtime turn when ALS has no turnId', async () => {
+    const ctx = makeCtx('runtime-session-1');
+    ctx.runtime.turn = { currentTurnId: 'turn-from-ctx' };
+    const message: Message = {
+      id: 'message-assistant-1',
+      role: 'assistant',
+      content: 'hello',
+      timestamp: 123,
+    };
+
+    await addAndPersistMessage(ctx, message);
+
+    expect(message.metadata).toMatchObject({
+      correlation: { turnId: 'turn-from-ctx' },
+    });
+    expect(sessionManagerState.addMessageToSession).toHaveBeenCalledWith(
+      'runtime-session-1',
+      expect.objectContaining({ metadata: message.metadata }),
+    );
+  });
+
   it('persists actual turn and trace correlation with tool messages', async () => {
     const ctx = makeCtx('runtime-session-1');
     const message: Message = {

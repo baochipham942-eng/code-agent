@@ -31,6 +31,7 @@ import { migrateCliSessionsTable, createCliTables, createCliIndexes } from './cl
 import { visibleHistoryMessageWhere } from './cliDatabaseSql';
 import { applyConversationBranchSchema } from '../host/services/core/database/schemaConversationBranch';
 import { SessionRepository } from '../host/services/core/repositories/SessionRepository';
+import { stampAssistantMessageCorrelation } from '../host/session/assistantCorrelation';
 import { ConversationBranchRepository } from '../host/services/core/repositories/ConversationBranchRepository';
 
 // ----------------------------------------------------------------------------
@@ -577,6 +578,7 @@ export class CLIDatabaseService {
   addMessage(sessionId: string, message: Message): void {
     if (!this.db) throw new Error('Database not initialized');
     if (!this.sessionRepository) throw new Error('Conversation ledger repository not initialized');
+    stampAssistantMessageCorrelation(message);
     this.sessionRepository.addMessage(sessionId, message);
   }
 

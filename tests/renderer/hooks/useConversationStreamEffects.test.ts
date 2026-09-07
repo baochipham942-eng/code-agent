@@ -168,6 +168,7 @@ describe('removeUncommittedAssistantDraft', () => {
         content: '',
         timestamp: 200,
         toolCalls: [],
+        metadata: { correlation: { turnId: 'turn-2' } },
       },
     ]);
     expect(state.currentTurnMessageId).toBe('turn-2');

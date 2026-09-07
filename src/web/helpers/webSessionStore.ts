@@ -3,6 +3,7 @@ import type { DatabaseService } from '../../host/services/core/databaseService';
 import { extractArtifacts } from '../../host/agent/artifactExtractor';
 import type { SessionCreateOptions } from '../../cli/session';
 import { generateMessageId } from '../../shared/utils/id';
+import { attachAssistantCorrelation, stampAssistantMessageCorrelation } from '../../host/session/assistantCorrelation';
 import type { WebRouteLogger } from '../routes/routeTypes';
 import {
   type CachedContentPart,
@@ -182,6 +183,7 @@ interface CommitTurnInput {
     assistantMetadata: Message['metadata'] | undefined;
     assistantToolCalls: CachedToolCall[];
     lastLoopAssistantMessageId: string | undefined;
+    lastTurnId?: string;
     contentParts: CachedContentPart[];
     runCancelled: boolean;
     hasAssistantOutput: () => boolean;
@@ -235,6 +237,7 @@ async function persistMessageToDb(
   message: Message,
   createOptions?: SessionCreateOptions,
 ): Promise<void> {
+  stampAssistantMessageCorrelation(message);
   if (sessionManager?.addMessageToSession) {
     if (createOptions) {
       await sessionManager.addMessageToSession(sessionId, message, createOptions);
@@ -342,7 +345,7 @@ function fallbackToCollectorSessionProjection(
       thinking: turn.assistantThinking || undefined,
       contentParts: turn.hasInterleaving() ? turn.contentParts : undefined,
       artifacts: assistantArtifacts.length > 0 ? assistantArtifacts : undefined,
-      metadata: turn.assistantMetadata,
+      metadata: attachAssistantCorrelation(turn.assistantMetadata, { turnId: turn.lastTurnId }),
     });
   }
   replaceSessionMessagesProjection(sessionId, cached);
@@ -572,7 +575,7 @@ export function createWebSessionStore(deps: WebSessionStoreDeps) {
               toolCalls: turn.assistantToolCalls.length > 0 ? turn.assistantToolCalls : undefined,
               thinking: turn.assistantThinking || undefined,
               artifacts: assistantArtifacts.length > 0 ? assistantArtifacts : undefined,
-              metadata: turn.assistantMetadata,
+              metadata: attachAssistantCorrelation(turn.assistantMetadata, { turnId: turn.lastTurnId }),
               contentParts: turn.hasInterleaving() ? turn.contentParts : undefined,
             } as Message);
           }

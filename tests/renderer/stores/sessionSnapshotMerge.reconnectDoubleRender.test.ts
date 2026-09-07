@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Message, StreamRecoverySnapshot } from '../../../src/shared/contract';
+import type { ContentPart, Message, StreamRecoverySnapshot } from '../../../src/shared/contract';
 import type { TraceTurn } from '../../../src/shared/contract/trace';
 import { applyConversationStreamEvent } from '../../../src/renderer/hooks/agent/effects/useConversationStreamEffects';
 import { applyToolExecutionEvent } from '../../../src/renderer/hooks/agent/effects/useToolExecutionEffects';
@@ -324,5 +324,97 @@ describe('相似度合并的护栏：工具调用冲突时不合', () => {
     const merged = mergeSnapshotWithLiveTail(snapshot, live).messages;
 
     expect(merged.filter((m) => m.role === 'assistant')).toHaveLength(1);
+  });
+});
+
+// ai-review #1696 第六轮：跨 ID 合并时 contentParts 按「元素个数」选更长那份，
+// 带工具分段的旧快照元素更多、承载正文却更短 ⇒ 投影只渲染旧分段，live 已显示的
+// 新正文整个消失。取舍判据改为「承载正文必须覆盖合并后的 content」，覆盖不了
+// 就整份弃用，回落 content 直渲。
+describe('contentParts 取舍：承载正文覆盖不了合并后 content 就整份弃用', () => {
+  const P = '前半段正文，长度必须超过三十二个字符才能通过流式草稿配对的前缀门槛。';
+  const Q = '后半段新增正文：用户已经在 live 里看到这一段，合并后它不许消失。';
+  const user = (): Message => ({ id: 'u-cp', role: 'user', content: '同一个问题', timestamp: 1 });
+  const toolCall = (id: string, name: string) => ({ id, name, arguments: {} }) as never;
+  const mergedAssistant = (snapshot: Message[], live: Message[]) => (
+    mergeSnapshotWithLiveTail(snapshot, live).messages.find((m) => m.role === 'assistant')
+  );
+  const visibleText = (merged: Message[]): string[] => (
+    projectTurns(merged, SESSION_ID, true).turns.flatMap((turn) => visibleSequence(turn))
+  );
+
+  it('快照分段承载不下 live 正文时弃用 contentParts，合并后正文完整直渲', () => {
+    const snapshot: Message[] = [
+      user(),
+      {
+        id: 'a-snap', role: 'assistant', content: P, timestamp: 2,
+        contentParts: [{ type: 'text', text: P }, { type: 'tool_call', toolCallId: 'call-cp-1' }],
+        toolCalls: [toolCall('call-cp-1', 'WebSearch')],
+      },
+    ];
+    const live: Message[] = [
+      user(),
+      { id: 'a-live', role: 'assistant', content: P + Q, timestamp: 3, toolCalls: [toolCall('call-cp-1', 'WebSearch')] },
+    ];
+
+    const merged = mergeSnapshotWithLiveTail(snapshot, live).messages;
+    const assistant = merged.find((m) => m.role === 'assistant');
+
+    expect(assistant?.content).toBe(P + Q);
+    expect(assistant?.contentParts).toBeUndefined();
+    expect(visibleText(merged)).toEqual([P + Q, 'tool:WebSearch']);
+  });
+
+  it('live 分段能覆盖合并后正文时保留交错顺序（正文—工具—正文）', () => {
+    const liveParts: ContentPart[] = [
+      { type: 'text', text: P },
+      { type: 'tool_call', toolCallId: 'call-cp-1' },
+      { type: 'text', text: Q },
+    ];
+    const snapshot: Message[] = [
+      user(),
+      { id: 'a-snap', role: 'assistant', content: P, timestamp: 2, toolCalls: [toolCall('call-cp-1', 'WebSearch')] },
+    ];
+    const live: Message[] = [
+      user(),
+      {
+        id: 'a-live', role: 'assistant', content: P + Q, timestamp: 3,
+        contentParts: liveParts, toolCalls: [toolCall('call-cp-1', 'WebSearch')],
+      },
+    ];
+
+    const assistant = mergedAssistant(snapshot, live);
+
+    expect(assistant?.contentParts).toBe(liveParts);
+    expect(visibleText(mergeSnapshotWithLiveTail(snapshot, live).messages)).toEqual([P, 'tool:WebSearch', Q]);
+  });
+
+  it('元素更多但承载正文更短的旧分段，输给元素更少但覆盖全的新分段', () => {
+    const liveParts: ContentPart[] = [{ type: 'text', text: P + Q }];
+    const snapshot: Message[] = [
+      user(),
+      {
+        id: 'a-snap', role: 'assistant', content: P, timestamp: 2,
+        contentParts: [
+          { type: 'text', text: P },
+          { type: 'tool_call', toolCallId: 'call-cp-1' },
+          { type: 'tool_call', toolCallId: 'call-cp-2' },
+        ],
+        toolCalls: [toolCall('call-cp-1', 'WebSearch'), toolCall('call-cp-2', 'Bash')],
+      },
+    ];
+    const live: Message[] = [
+      user(),
+      {
+        id: 'a-live', role: 'assistant', content: P + Q, timestamp: 3,
+        contentParts: liveParts,
+        toolCalls: [toolCall('call-cp-1', 'WebSearch'), toolCall('call-cp-2', 'Bash')],
+      },
+    ];
+
+    const assistant = mergedAssistant(snapshot, live);
+
+    expect(assistant?.contentParts).toBe(liveParts);
+    expect(visibleText(mergeSnapshotWithLiveTail(snapshot, live).messages)).toContain(P + Q);
   });
 });

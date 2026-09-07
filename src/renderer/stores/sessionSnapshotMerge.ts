@@ -1,4 +1,4 @@
-import type { Message } from '@shared/contract';
+import type { ContentPart, Message } from '@shared/contract';
 import { hydrateToolCallResults } from '../utils/messageHydration';
 
 /** 短前言（「好的。」）不能当成同一条流式草稿的前缀。 */
@@ -110,6 +110,43 @@ function unionById<T>(
  */
 const ORDER_SENSITIVE_ARRAY_FIELDS = new Set(['contentParts']);
 
+/** contentParts 承载的正文 = 各 text 段拼接（tool_call 段不产正文）。 */
+function contentPartsText(parts: ContentPart[]): string {
+  let text = '';
+  for (const part of parts) {
+    if (part.type === 'text') text += part.text;
+  }
+  return text;
+}
+
+/** 与 mergeAssistantPair 的 content 取舍保持一致：更长的那份，等长留 snapshot。 */
+function mergedContentOf(snapshotMessage: Message, liveMessage: Message): string {
+  const left = snapshotMessage.content ?? '';
+  const right = liveMessage.content ?? '';
+  return right.length > left.length ? right : left;
+}
+
+/**
+ * contentParts 只能整份选一边（交错顺序有语义，取并集会打乱）。判据不是
+ * 「元素更多」——带工具分段的旧快照元素更多、承载的正文却可能更短，选中它
+ * 投影就只渲染旧分段，live 已显示的新正文整个消失（ai-review #1696 第六轮）。
+ * 判据是承载正文必须覆盖合并后的 content；两边都覆盖不了就整份弃用，
+ * 宁可回落到 content 直渲，也不能让已显示的正文消失。同分时 live 赢。
+ */
+function pickContentParts(
+  snapshotParts: ContentPart[] | undefined,
+  liveParts: ContentPart[] | undefined,
+  mergedContent: string,
+): ContentPart[] | undefined {
+  let best: ContentPart[] | undefined;
+  for (const parts of [snapshotParts, liveParts]) {
+    if (!parts?.length) continue;
+    if (!contentPartsText(parts).startsWith(mergedContent)) continue;
+    if (!best || parts.length >= best.length) best = parts;
+  }
+  return best;
+}
+
 function mergeArrayPayloads(snapshotMessage: Message, liveMessage: Message): Partial<Message> {
   const out: Record<string, unknown> = {};
   const keys = new Set([...Object.keys(snapshotMessage), ...Object.keys(liveMessage)]);
@@ -118,8 +155,11 @@ function mergeArrayPayloads(snapshotMessage: Message, liveMessage: Message): Par
     const b = (liveMessage as unknown as Record<string, unknown>)[key];
     if (!Array.isArray(a) && !Array.isArray(b)) continue;
     if (ORDER_SENSITIVE_ARRAY_FIELDS.has(key)) {
-      // 交错顺序有语义，取并集会打乱 ⇒ 取更长的那份。
-      out[key] = ((b as unknown[])?.length ?? 0) >= ((a as unknown[])?.length ?? 0) ? b : a;
+      out[key] = pickContentParts(
+        a as ContentPart[] | undefined,
+        b as ContentPart[] | undefined,
+        mergedContentOf(snapshotMessage, liveMessage),
+      );
       continue;
     }
     out[key] = unionById(a as unknown[] | undefined, b as unknown[] | undefined);

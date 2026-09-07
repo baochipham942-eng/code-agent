@@ -18,13 +18,26 @@ const logger = createLogger('TelemetryBackfill');
  *  cli/session.ts maybeUpdateTitle / webSessionStore.isDefaultSessionTitle，
  * 这里取并集（含 CLI 占位），因为它要同时面对两端写下的行。 */
 function isDefaultChatTitle(title: string | null | undefined): boolean {
-  return !title
-    || title === 'New Chat'
-    || title === 'New Session'
-    || title === '新对话'
-    || title === 'CLI Session'
-    || title.startsWith('Session ')
-    || title.startsWith('CLI Session ');
+  const named = title?.trim();
+  return !named
+    || named === 'New Chat'
+    || named === 'New Session'
+    || named === '新对话'
+    || named === 'CLI Session'
+    || named.startsWith('Session ')
+    || named.startsWith('CLI Session ');
+}
+
+/** 首次建遥测行时读 sessions.title：已命名才返回，占位/空白/无行都当没有。 */
+export function readNamedChatTitle(db: Database.Database, sessionId: string): string | null {
+  try {
+    const row = db.prepare('SELECT title FROM sessions WHERE id = ?').get(sessionId) as { title: string | null } | undefined;
+    const named = row?.title?.trim();
+    if (!named || isDefaultChatTitle(named)) return null;
+    return named;
+  } catch {
+    return null;
+  }
 }
 
 /**

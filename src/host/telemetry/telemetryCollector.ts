@@ -4,8 +4,10 @@
 
 import { createLogger } from '../services/infra/logger';
 import { getServiceRegistry } from '../services/serviceRegistry';
+import { getDatabase } from '../services/core/databaseService';
 import { generateMessageId } from '../../shared/utils/id';
 import { getTelemetryStorage, type TelemetryStorage } from './telemetryStorage';
+import { readNamedChatTitle } from './telemetrySessionTitleBackfill';
 import { getAuthService } from '../services/auth/authService';
 import { trackNode } from '../observability/posthogNode';
 import { POSTHOG_EVENTS } from '../../shared/observability/posthog-events';
@@ -154,7 +156,14 @@ export class TelemetryCollector {
     let title = config.title || 'Untitled';
     try {
       const existing = this.storage.getSession(sessionId);
-      if (existing?.title?.trim()) title = existing.title;
+      if (existing?.title?.trim()) {
+        title = existing.title;
+      } else {
+        // 首次建行：改名发生在遥测行出现之前（UPDATE 是空操作），读 sessions 当前真标题。
+        const db = this.storage.dbOverride ?? getDatabase().getDb();
+        const live = db ? readNamedChatTitle(db, sessionId) : null;
+        if (live) title = live;
+      }
     } catch (error) {
       // 既有行读不到（DB 不可用 / sessions 表未建）按入口占位走，行为与旧版一致但留痕
       logger.debug('Telemetry startSession: existing title unreadable, keeping entry placeholder', {

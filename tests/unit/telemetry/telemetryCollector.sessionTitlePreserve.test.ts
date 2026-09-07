@@ -108,4 +108,37 @@ describe('TelemetryCollector.startSession 标题保真', () => {
 
     expect(storedTitle(db, 's-blank')).toBe('新占位');
   });
+
+  it('首次建行：sessions 已有真标题时用它，不落入口占位', () => {
+    db.prepare(`
+      INSERT INTO sessions (id, title, model_provider, model_name, session_type, created_at, updated_at)
+      VALUES (?, ?, 'deepseek', 'deepseek-chat', 'chat', 0, 0)
+    `).run('s-named', '用户先改的名字');
+
+    collector.startSession('s-named', {
+      title: '第一条消息前 80 字占位',
+      modelProvider: 'deepseek',
+      modelName: 'deepseek-chat',
+      workingDirectory: '/ws',
+    });
+
+    expect(storedTitle(db, 's-named')).toBe('用户先改的名字');
+    expect(collector.getSessionData('s-named')?.title).toBe('用户先改的名字');
+  });
+
+  it('首次建行：sessions 仍是 New Chat 时保留入口快照', () => {
+    db.prepare(`
+      INSERT INTO sessions (id, title, model_provider, model_name, session_type, created_at, updated_at)
+      VALUES (?, ?, 'deepseek', 'deepseek-chat', 'chat', 0, 0)
+    `).run('s-default', 'New Chat');
+
+    collector.startSession('s-default', {
+      title: '第一条消息前 80 字占位',
+      modelProvider: 'deepseek',
+      modelName: 'deepseek-chat',
+      workingDirectory: '/ws',
+    });
+
+    expect(storedTitle(db, 's-default')).toBe('第一条消息前 80 字占位');
+  });
 });

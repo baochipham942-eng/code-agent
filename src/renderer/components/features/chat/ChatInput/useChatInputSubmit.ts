@@ -65,6 +65,26 @@ export function parseCompactCommand(input: string): ParsedCompactCommand | null 
   return focusText ? { focusText } : {};
 }
 
+function queuedRecordMatchesEnvelope(
+  record: QueuedInput,
+  envelope: ConversationEnvelope,
+): boolean {
+  return (record.envelope.content ?? '') === (envelope.content ?? '')
+    && JSON.stringify(record.envelope.attachments ?? []) === JSON.stringify(envelope.attachments ?? []);
+}
+
+async function enqueueQueuedInput(
+  id: string,
+  sessionId: string,
+  envelope: ConversationEnvelope,
+): Promise<QueuedInput> {
+  return ipcService.invokeDomain<QueuedInput>(
+    IPC_DOMAINS.QUEUED_INPUT,
+    'enqueue',
+    { id, sessionId, envelope: { ...envelope, clientMessageId: id } },
+  );
+}
+
 export interface UseChatInputSubmitParams {
   value: string;
   attachments: MessageAttachment[];
@@ -596,15 +616,42 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
             ...stamped,
             sessionId: stamped.sessionId ?? currentSessionId,
           };
-          await ipcService.invokeDomain<QueuedInput>(
-            IPC_DOMAINS.QUEUED_INPUT,
-            'enqueue',
-            { id: clientMessageId, sessionId: currentSessionId, envelope: queuedEnvelope },
+          const record = await enqueueQueuedInput(
+            clientMessageId,
+            currentSessionId,
+            queuedEnvelope,
           );
+          if (record.status === 'queued' && !queuedRecordMatchesEnvelope(record, queuedEnvelope)) {
+            const updated = await ipcService.invokeDomain<{ updated: boolean }>(
+              IPC_DOMAINS.QUEUED_INPUT,
+              'update',
+              { id: clientMessageId, content: queuedEnvelope.content },
+            );
+            if (!updated.updated) {
+              const freshId = generateMessageId();
+              await enqueueQueuedInput(freshId, currentSessionId, queuedEnvelope);
+              onQueuedInputChanged?.();
+              return true;
+            }
+            replaceOptimisticUserMessage({
+              id: clientMessageId,
+              content: queuedEnvelope.content,
+              attachments: queuedEnvelope.attachments,
+            });
+            onQueuedInputChanged?.();
+            return true;
+          }
+          if (record.status !== 'queued' && !queuedRecordMatchesEnvelope(record, queuedEnvelope)) {
+            // 同 id 已 sending/sent：INSERT OR IGNORE 不会改旧行。铸新 id 另排 C，原气泡仍跟已推进的 B。
+            const freshId = generateMessageId();
+            await enqueueQueuedInput(freshId, currentSessionId, queuedEnvelope);
+            onQueuedInputChanged?.();
+            return true;
+          }
           replaceOptimisticUserMessage({
             id: clientMessageId,
-            content: queuedEnvelope.content,
-            attachments: queuedEnvelope.attachments,
+            content: record.envelope.content,
+            attachments: record.envelope.attachments,
           });
           onQueuedInputChanged?.();
           return true;

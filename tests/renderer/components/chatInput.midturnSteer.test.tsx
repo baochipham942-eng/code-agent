@@ -67,17 +67,29 @@ function makeParams(overrides: Partial<UseChatInputSubmitParams> = {}): UseChatI
 const domainInvoke = vi.fn();
 
 beforeEach(() => {
-  domainInvoke.mockResolvedValue({
-    success: true,
-    data: {
-      id: 'queued-input-1',
-      sessionId: 'session-running',
-      envelope: { content: '请改成更简洁的方案' },
-      status: 'queued',
-      retryCount: 0,
-      createdAt: 1,
-      updatedAt: 1,
-    },
+  domainInvoke.mockImplementation(async (_domain: string, action: string, payload: {
+    id?: string;
+    sessionId?: string;
+    envelope?: { content?: string };
+  }) => {
+    if (action === 'enqueue') {
+      return {
+        success: true,
+        data: {
+          id: payload.id,
+          sessionId: payload.sessionId,
+          envelope: payload.envelope,
+          status: 'queued',
+          retryCount: 0,
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      };
+    }
+    if (action === 'interrupt') {
+      return { success: true, data: { outcome: 'steered' } };
+    }
+    return { success: true, data: {} };
   });
   window.codeAgentDomainAPI = { invoke: domainInvoke } as typeof window.codeAgentDomainAPI;
 });
@@ -355,6 +367,114 @@ describe('mid-turn composer submission', () => {
       content: '改过的需求 B',
       clientMessageId: 'failed-bubble-id',
     }));
+  });
+
+  it('同 id 仍 queued 时再入队不同正文：走 update 并把气泡换成新正文', async () => {
+    useSessionStore.setState({
+      currentSessionId: 'session-running',
+      messages: [{
+        id: 'failed-bubble-id',
+        role: 'user',
+        content: '原文 B',
+        timestamp: 1,
+        metadata: { sendFailed: true },
+      }],
+    } as never);
+    domainInvoke.mockReset();
+    domainInvoke
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          id: 'failed-bubble-id',
+          sessionId: 'session-running',
+          envelope: { content: '原文 B' },
+          status: 'queued',
+          retryCount: 0,
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        data: { updated: true },
+      });
+    const pendingResendClientMessageIdRef = { current: 'failed-bubble-id' as string | null };
+    const params = makeParams({
+      value: '改过的需求 C',
+      pendingResendClientMessageIdRef,
+    });
+    const { result } = renderHook(() => useChatInputSubmit(params));
+
+    await act(async () => {
+      await result.current.handleSubmit();
+    });
+
+    expect(domainInvoke.mock.calls[0]?.[1]).toBe('enqueue');
+    expect(domainInvoke.mock.calls[1]?.[1]).toBe('update');
+    expect(domainInvoke.mock.calls[1]?.[2]).toEqual({
+      id: 'failed-bubble-id',
+      content: '改过的需求 C',
+    });
+    const user = useSessionStore.getState().messages.find((message) => message.id === 'failed-bubble-id');
+    expect(user?.content).toBe('改过的需求 C');
+    expect(user?.metadata?.sendFailed).toBeUndefined();
+  });
+
+  it('同 id 已 sending 时再入队不同正文：不覆盖原气泡，另铸新 id', async () => {
+    useSessionStore.setState({
+      currentSessionId: 'session-running',
+      messages: [{
+        id: 'failed-bubble-id',
+        role: 'user',
+        content: '原文 B',
+        timestamp: 1,
+        metadata: { sendFailed: true },
+      }],
+    } as never);
+    domainInvoke.mockReset();
+    domainInvoke
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          id: 'failed-bubble-id',
+          sessionId: 'session-running',
+          envelope: { content: '原文 B' },
+          status: 'sending',
+          retryCount: 0,
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          id: 'fresh-queued-id',
+          sessionId: 'session-running',
+          envelope: { content: '改过的需求 C', clientMessageId: 'fresh-queued-id' },
+          status: 'queued',
+          retryCount: 0,
+          createdAt: 2,
+          updatedAt: 2,
+        },
+      });
+    const pendingResendClientMessageIdRef = { current: 'failed-bubble-id' as string | null };
+    const params = makeParams({
+      value: '改过的需求 C',
+      pendingResendClientMessageIdRef,
+    });
+    const { result } = renderHook(() => useChatInputSubmit(params));
+
+    await act(async () => {
+      await result.current.handleSubmit();
+    });
+
+    expect(domainInvoke).toHaveBeenCalledTimes(2);
+    expect(domainInvoke.mock.calls[0]?.[1]).toBe('enqueue');
+    expect((domainInvoke.mock.calls[0]?.[2] as { id?: string }).id).toBe('failed-bubble-id');
+    expect((domainInvoke.mock.calls[1]?.[2] as { id?: string }).id).not.toBe('failed-bubble-id');
+    const user = useSessionStore.getState().messages.find((message) => message.id === 'failed-bubble-id');
+    expect(user?.content).toBe('原文 B');
+    expect(user?.metadata?.sendFailed).toBe(true);
   });
 
   it('插话成功时把同 id 失败气泡替换成新正文并清失败态', async () => {

@@ -188,10 +188,23 @@ describe('queued input IPC', () => {
       content: 'before',
       context: { runtimeInput: { mode: 'supplement' } },
     });
-    await expect(invoke({
+    const updated = await invoke({
       action: 'update',
       payload: { id: 'editable', content: 'after' },
-    })).resolves.toEqual({ success: true, data: { updated: true } });
+    });
+    expect(updated).toMatchObject({
+      success: true,
+      data: {
+        updated: true,
+        input: {
+          id: 'editable',
+          envelope: {
+            content: 'after',
+            context: { runtimeInput: { mode: 'supplement' } },
+          },
+        },
+      },
+    });
     const listed = await invoke({ action: 'list', payload: { sessionId: 'session-1' } });
     expect((listed.data as QueuedInput[])[0]?.envelope).toEqual({
       content: 'after',
@@ -202,6 +215,96 @@ describe('queued input IPC', () => {
     await expect(invoke({
       action: 'update',
       payload: { id: 'editable', content: 'too late' },
+    })).resolves.toMatchObject({ success: false, error: { code: 'INVALID_STATE' } });
+  });
+
+  it('update 同步附件，省略 attachments 时保留原附件', async () => {
+    const oldAtt = {
+      id: 'a',
+      name: 'a.png',
+      type: 'image' as const,
+      category: 'image' as const,
+      mimeType: 'image/png',
+      size: 1,
+    };
+    const newAtt = {
+      id: 'b',
+      name: 'b.png',
+      type: 'image' as const,
+      category: 'image' as const,
+      mimeType: 'image/png',
+      size: 2,
+    };
+    await enqueue('with-file', { content: 'before', attachments: [oldAtt] });
+
+    await expect(invoke({
+      action: 'update',
+      payload: { id: 'with-file', content: 'after', attachments: [newAtt] },
+    })).resolves.toMatchObject({
+      success: true,
+      data: {
+        updated: true,
+        input: { envelope: { content: 'after', attachments: [newAtt] } },
+      },
+    });
+
+    await enqueue('keep-file', { content: 'keep', attachments: [oldAtt] });
+    await expect(invoke({
+      action: 'update',
+      payload: { id: 'keep-file', content: 'still-keep' },
+    })).resolves.toMatchObject({
+      success: true,
+      data: {
+        updated: true,
+        input: { envelope: { content: 'still-keep', attachments: [oldAtt] } },
+      },
+    });
+  });
+
+  it('requeue 把 failed 恢复为 queued 并写入新 envelope', async () => {
+    await enqueue('failed-input', { content: 'old' });
+    db.prepare(`UPDATE queued_inputs SET status = 'failed', paused_reason = 'send_failed' WHERE id = ?`)
+      .run('failed-input');
+
+    const response = await invoke({
+      action: 'requeue',
+      payload: { id: 'failed-input', envelope: { content: 'old', attachments: [] } },
+    });
+    expect(response).toMatchObject({
+      success: true,
+      data: {
+        id: 'failed-input',
+        status: 'queued',
+        retryCount: 0,
+        envelope: { content: 'old', attachments: [] },
+      },
+    });
+    const queued = await invoke({
+      action: 'list',
+      payload: { sessionId: 'session-1', status: 'queued' },
+    });
+    expect((queued.data as QueuedInput[]).map((item) => item.id)).toEqual(['failed-input']);
+  });
+
+  it('requeue 把 retracted 恢复为 queued', async () => {
+    await enqueue('retracted-input', { content: 'old' });
+    await invoke({ action: 'retract', payload: { id: 'retracted-input' } });
+
+    await expect(invoke({
+      action: 'requeue',
+      payload: { id: 'retracted-input', envelope: { content: 'retry' } },
+    })).resolves.toMatchObject({
+      success: true,
+      data: { id: 'retracted-input', status: 'queued', envelope: { content: 'retry' } },
+    });
+  });
+
+  it('requeue 对 sending 返回 INVALID_STATE', async () => {
+    await enqueue('sending-input', { content: 'old' });
+    await invoke({ action: 'markSending', payload: { id: 'sending-input' } });
+    await expect(invoke({
+      action: 'requeue',
+      payload: { id: 'sending-input', envelope: { content: 'old' } },
     })).resolves.toMatchObject({ success: false, error: { code: 'INVALID_STATE' } });
   });
 

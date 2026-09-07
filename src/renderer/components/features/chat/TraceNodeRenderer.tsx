@@ -38,6 +38,7 @@ import { UI } from '@shared/constants';
 import { humanizeToolError } from '../../../utils/toolExecutionPresentation';
 import { getHumanToolLabel } from '../../../utils/toolHumanLabel';
 import { useI18n } from '../../../hooks/useI18n';
+import { useMessageActionStore } from '../../../stores/messageActionStore';
 import { MemberInputNote } from '../expert/MemberInputNote';
 
 interface TraceNodeRendererProps {
@@ -80,6 +81,7 @@ export const TraceNodeRenderer: React.FC<TraceNodeRendererProps> = ({
           content={node.content}
           attachments={attachments}
           sourceType={node.metadata?.source}
+          sendFailed={node.metadata?.sendFailed === true}
           suppressVoiceBadge={Boolean(inVoiceDispatchCard)}
           isNeoTagMessage={Boolean(node.metadata?.neoTag)}
           onRewind={onRewindUserPrompt}
@@ -152,13 +154,16 @@ const UserNode: React.FC<{
   attachments?: import('@shared/contract').MessageAttachment[];
   /** 输入来源（§8.2）：voice/dictation 的气泡加来源小标 */
   sourceType?: 'voice' | 'dictation' | 'typed';
+  /** 发送失败后留在时间线上的乐观用户气泡 */
+  sendFailed?: boolean;
   /** X5.5-D4：语音任务卡内抑制节点级「语音」小标（轮头已显示一次） */
   suppressVoiceBadge?: boolean;
   isNeoTagMessage?: boolean;
   onRewind?: (messageId: string, content: string) => void;
   rewindDisabled?: boolean;
-}> = ({ messageId, sessionId, content, attachments, sourceType, suppressVoiceBadge, isNeoTagMessage, onRewind, rewindDisabled }) => {
+}> = ({ messageId, sessionId, content, attachments, sourceType, sendFailed, suppressVoiceBadge, isNeoTagMessage, onRewind, rewindDisabled }) => {
   const { t } = useI18n();
+  const editAndResendMessage = useMessageActionStore((state) => state.editAndResendMessage);
   // 展示面还原：带 turnSystemContext 脚手架（<user_request> 包裹）的历史/泄漏消息只显示
   // 用户原话——包装是模型面，用户界面显示原话（UX round2 20f，定义在 shared/utils/turnScaffold）。
   // @neo 落库正文被剥了前缀（它兼任模型 prompt），渲染时补回展示，重启后也能看到带色的 @neo
@@ -169,6 +174,7 @@ const UserNode: React.FC<{
   const displayContent = sourceType === 'voice'
     ? normalizeSpokenFileName(rawDisplayContent)
     : rawDisplayContent;
+  const showUserChrome = Boolean(displayContent) || sendFailed;
 
   return (
     <div>
@@ -182,7 +188,7 @@ const UserNode: React.FC<{
           />
         </div>
       )}
-      {displayContent && (
+      {showUserChrome && (
         <div className="flex justify-end">
           <div className="max-w-[86%]">
             {sourceType === 'voice' && !suppressVoiceBadge && (
@@ -191,30 +197,49 @@ const UserNode: React.FC<{
                 <span>{t.voice.sourceBadge}</span>
               </div>
             )}
-            <div className="group/user-prompt flex items-start gap-1.5">
-              {onRewind && (
+            {sendFailed && (
+              <div
+                data-testid="user-message-send-failed"
+                className="mb-1 flex items-center justify-end gap-2 text-2xs text-badge-danger/90"
+              >
+                <AlertTriangle className="h-3 w-3" />
+                <span>{t.turnCard.sendFailed}</span>
                 <button
                   type="button"
-                  onClick={() => onRewind(messageId, displayContent)}
-                  disabled={rewindDisabled}
-                  className="mt-1 flex h-7 w-7 items-center justify-center rounded-md text-zinc-500 opacity-0 pointer-events-none transition-colors group-hover/user-prompt:opacity-100 group-hover/user-prompt:pointer-events-auto focus-visible:opacity-100 focus-visible:pointer-events-auto focus-visible:outline-hidden hover:text-zinc-200 hover:bg-zinc-800 disabled:cursor-not-allowed disabled:text-zinc-600 disabled:hover:bg-transparent"
-                  title={rewindDisabled ? '会话运行中，暂不能回退' : '回到这条提示词'}
-                  aria-label="回到这条提示词"
+                  data-testid="user-message-edit-resend"
+                  onClick={() => editAndResendMessage(messageId)}
+                  className="rounded-md px-1.5 py-0.5 font-medium text-badge-danger/80 transition-colors hover:bg-red-500/10 hover:text-badge-danger focus:outline-hidden focus-visible:ring-1 focus-visible:ring-[var(--focus-ring)]"
                 >
-                  <RotateCcw className="h-3.5 w-3.5" />
+                  {t.turnCard.editAndResend}
                 </button>
-              )}
-              <div className="rounded-2xl px-4 py-2.5 bg-zinc-800/60 border border-border-muted">
-                <div className="text-zinc-200 leading-relaxed select-text">
-                  <MessageContent
-                    content={displayContent}
-                    isUser={true}
-                    messageId={messageId}
-                    mediaContext={{ sessionId, messageId }}
-                  />
+              </div>
+            )}
+            {displayContent && (
+              <div className="group/user-prompt flex items-start gap-1.5">
+                {onRewind && (
+                  <button
+                    type="button"
+                    onClick={() => onRewind(messageId, displayContent)}
+                    disabled={rewindDisabled}
+                    className="mt-1 flex h-7 w-7 items-center justify-center rounded-md text-zinc-500 opacity-0 pointer-events-none transition-colors group-hover/user-prompt:opacity-100 group-hover/user-prompt:pointer-events-auto focus-visible:opacity-100 focus-visible:pointer-events-auto focus-visible:outline-hidden hover:text-zinc-200 hover:bg-zinc-800 disabled:cursor-not-allowed disabled:text-zinc-600 disabled:hover:bg-transparent"
+                    title={rewindDisabled ? '会话运行中，暂不能回退' : '回到这条提示词'}
+                    aria-label="回到这条提示词"
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" />
+                  </button>
+                )}
+                <div className={`rounded-2xl px-4 py-2.5 bg-zinc-800/60 border ${sendFailed ? 'border-red-500/40' : 'border-border-muted'}`}>
+                  <div className="text-zinc-200 leading-relaxed select-text">
+                    <MessageContent
+                      content={displayContent}
+                      isUser={true}
+                      messageId={messageId}
+                      mediaContext={{ sessionId, messageId }}
+                    />
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
           </div>
         </div>
       )}

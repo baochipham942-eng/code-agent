@@ -22,6 +22,7 @@ export function useChatInputSessionScope(
   setValue: (value: string) => void,
   setAttachments: (attachments: MessageAttachment[]) => void,
   sessionless = false,
+  onSessionDraftReset?: () => void,
 ): ChatInputSessionScope {
   const storeSessionId = useSessionStore((state) => state.currentSessionId);
   const currentSessionId = sessionless ? null : storeSessionId;
@@ -43,7 +44,8 @@ export function useChatInputSessionScope(
     lastSessionIdRef.current = currentSessionId;
     setValue('');
     setAttachments([]);
-  }, [currentSessionId, setValue, setAttachments]);
+    onSessionDraftReset?.();
+  }, [currentSessionId, setValue, setAttachments, onSessionDraftReset]);
 
   return { currentSessionId, sessionEngineKind, sessionEngineFailure };
 }

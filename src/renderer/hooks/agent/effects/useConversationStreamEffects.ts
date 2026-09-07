@@ -4,6 +4,7 @@ import { generateMessageId } from '@shared/utils/id';
 import type { Message, ToolCall } from '@shared/contract';
 import { createLogger } from '../../../utils/logger';
 import { useSessionStore } from '../../../stores/sessionStore';
+import { userMessageReplacement } from '../../../utils/optimisticUserSend';
 import { useStatusStore } from '../../../stores/statusStore';
 import { useTurnExecutionStore } from '../../../stores/turnExecutionStore';
 import { applyRoutingDegradationSignal } from '../../../utils/routingDegradation';
@@ -346,7 +347,16 @@ export function applyConversationStreamEvent(
         // 也不会多出一个气泡。
         const userMessage = normalizeUserMessagePayload(event.data);
         if (userMessage) {
-          if (!getFreshMessages().some((message) => message.id === userMessage.id)) {
+          const existing = getFreshMessages().find((message) => message.id === userMessage.id);
+          if (existing) {
+            // 失败气泡编辑重发后 host 按同 id 回放：更新正文/附件并清 sendFailed，
+            // 不能 skip，否则界面仍停在旧内容 A + 「没发出去」。
+            actions.updateMessage(userMessage.id, userMessageReplacement(existing, {
+              content: userMessage.content,
+              attachments: userMessage.attachments,
+              metadata: userMessage.metadata,
+            }));
+          } else {
             actions.addMessage({
               id: userMessage.id,
               role: 'user',

@@ -92,7 +92,10 @@ describe('useAgentIPC sendMessage silentFailure', () => {
     );
     expect(assistantMessages).toHaveLength(1);
     expect(assistantMessages[0]?.content).toBe('Error: session already running');
-    expect(useSessionStore.getState().messages.filter((message) => message.role === 'user')).toEqual([]);
+    const userMessages = useSessionStore.getState().messages.filter((message) => message.role === 'user');
+    expect(userMessages).toHaveLength(1);
+    expect(userMessages[0]?.metadata?.sendFailed).toBe(true);
+    expect(userMessages[0]?.content).toBe('运行中补充要求');
     expect(useTaskStore.getState().sessionStates['session-queued']).toEqual({
       status: 'error',
       error: 'Error: session already running',

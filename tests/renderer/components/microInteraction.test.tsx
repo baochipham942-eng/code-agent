@@ -52,9 +52,9 @@ describe('浮层入场动画', () => {
 describe('发送乐观上屏不回退', () => {
   it('useAgentIPC 先 addMessage(userMessage) 再发 IPC', () => {
     const src = readSrc('src/renderer/hooks/agent/useAgentIPC.ts');
-    const addIdx = src.indexOf('addMessage(userMessage)');
-    expect(addIdx, '乐观上屏 addMessage 丢失').toBeGreaterThan(-1);
+    const addIdx = src.indexOf('upsertOptimisticUserMessage(userMessage');
+    expect(addIdx, '乐观上屏 upsertOptimisticUserMessage 丢失').toBeGreaterThan(-1);
     const invokeIdx = src.indexOf("invoke(", addIdx);
-    expect(invokeIdx, 'addMessage 之后没有 IPC 调用').toBeGreaterThan(addIdx);
+    expect(invokeIdx, 'upsertOptimisticUserMessage 之后没有 IPC 调用').toBeGreaterThan(addIdx);
   });
 });

@@ -6,6 +6,9 @@ import type BetterSqlite3 from 'better-sqlite3';
 
 import { QueuedInputRepository } from '../../../src/host/services/core/repositories/QueuedInputRepository';
 import { applySchema } from '../../../src/host/services/core/database/schema';
+import { SteerRejectedError } from '../../../src/host/agent/runtime/conversationRuntime';
+import { applySameIdQueuedInput } from '../../../src/host/runtime/applySameIdQueuedInput';
+import { steerOrQueue } from '../../../src/host/runtime/steerQueueFence';
 
 function createSchema(db: BetterSqlite3.Database): void {
   db.exec(`
@@ -199,6 +202,71 @@ describe('QueuedInputRepository', () => {
     expect(repo.getById('input-1')).toMatchObject({ status: 'consumed', updatedAt: 300 });
   });
 
+  it('updateEnvelope 写入正文和附件', () => {
+    repo.enqueue({
+      id: 'input-1',
+      sessionId: 'session-1',
+      envelope: { content: 'old', attachments: [{ id: 'a', name: 'a.png', type: 'image/png', size: 1 }] },
+      now: 100,
+    });
+    expect(repo.updateEnvelope(
+      'input-1',
+      JSON.stringify({
+        content: 'new',
+        attachments: [{ id: 'b', name: 'b.png', type: 'image/png', size: 2 }],
+      }),
+      200,
+    )).toBe(true);
+    expect(JSON.parse(repo.getById('input-1')?.envelopeJson ?? '{}')).toEqual({
+      content: 'new',
+      attachments: [{ id: 'b', name: 'b.png', type: 'image/png', size: 2 }],
+    });
+    expect(repo.getById('input-1')?.updatedAt).toBe(200);
+  });
+
+  it('updateEnvelope 对 sending 行返回 false', () => {
+    repo.enqueue({ id: 'input-1', sessionId: 'session-1', envelope: { content: 'old' }, now: 100 });
+    expect(repo.markSending('input-1', 150)).toBe(true);
+    expect(repo.updateEnvelope('input-1', JSON.stringify({ content: 'new' }), 200)).toBe(false);
+    expect(JSON.parse(repo.getById('input-1')?.envelopeJson ?? '{}')).toEqual({ content: 'old' });
+  });
+
+  it('requeue 把 failed 恢复为 queued 并写入新 envelope、重置 retry', () => {
+    repo.enqueue({ id: 'input-1', sessionId: 'session-1', envelope: { content: 'old' }, now: 100 });
+    expect(repo.markFailed('input-1', 200)).toBe(true);
+    expect(repo.getNextDispatchable('session-1')).toBeNull();
+    expect(repo.requeue('input-1', JSON.stringify({ content: 'old', attachments: [] }), 300)).toBe(true);
+    expect(repo.getById('input-1')).toMatchObject({
+      status: 'queued',
+      retryCount: 0,
+      pausedReason: null,
+      updatedAt: 300,
+    });
+    expect(JSON.parse(repo.getById('input-1')?.envelopeJson ?? '{}')).toEqual({
+      content: 'old',
+      attachments: [],
+    });
+    expect(repo.getNextDispatchable('session-1')?.id).toBe('input-1');
+    expect(repo.markSending('input-1', 400)).toBe(true);
+  });
+
+  it('requeue 把 retracted 恢复为 queued', () => {
+    repo.enqueue({ id: 'input-1', sessionId: 'session-1', envelope: { content: 'old' }, now: 100 });
+    expect(repo.retract('input-1', 200)).toBe(true);
+    expect(repo.getNextDispatchable('session-1')).toBeNull();
+    expect(repo.requeue('input-1', JSON.stringify({ content: 'new' }), 300)).toBe(true);
+    expect(repo.getById('input-1')).toMatchObject({ status: 'queued', updatedAt: 300 });
+    expect(JSON.parse(repo.getById('input-1')?.envelopeJson ?? '{}')).toEqual({ content: 'new' });
+    expect(repo.getNextDispatchable('session-1')?.id).toBe('input-1');
+  });
+
+  it('requeue 对 sending 行返回 false', () => {
+    repo.enqueue({ id: 'input-1', sessionId: 'session-1', envelope: { content: 'old' }, now: 100 });
+    expect(repo.markSending('input-1', 150)).toBe(true);
+    expect(repo.requeue('input-1', JSON.stringify({ content: 'new' }), 200)).toBe(false);
+    expect(repo.getById('input-1')).toMatchObject({ status: 'sending', updatedAt: 150 });
+  });
+
   it('显式传入的固定时间戳会精确写入 updated_at', () => {
     const fixedTimestamp = 1_700_000_000_000;
     repo.enqueue({ id: 'input-1', sessionId: 'session-1', envelope: {}, now: 100 });
@@ -272,5 +340,63 @@ describe('QueuedInputRepository', () => {
     const indexes = legacy.prepare("PRAGMA index_list('queued_inputs')").all() as Array<{ name: string }>;
     expect(indexes.map((index) => index.name)).toContain('idx_queued_inputs_position');
     legacy.close();
+  });
+});
+
+describe('steer 回退入队走同一套同 id 状态机', () => {
+  let db: BetterSqlite3.Database;
+  let repo: QueuedInputRepository;
+
+  beforeEach(() => {
+    db = new Database(':memory:');
+    createSchema(db);
+    repo = new QueuedInputRepository(db);
+  });
+
+  afterEach(() => {
+    db.close();
+  });
+
+  it('同 id 已 queued 时插话回退入队更新为新稿，不被 INSERT OR IGNORE', async () => {
+    repo.enqueue({
+      id: 'same-id',
+      sessionId: 'session-1',
+      envelope: { content: '原文 A', attachments: [] },
+      now: 100,
+    });
+
+    const outcome = await steerOrQueue(
+      { steer: vi.fn().mockRejectedValue(new SteerRejectedError()) },
+      { sessionId: 'session-1', content: '改过的需求 B', clientMessageId: 'same-id' },
+      repo,
+    );
+
+    expect(outcome).toMatchObject({ outcome: 'queued', queuedInputId: 'same-id' });
+    expect(JSON.parse(repo.getById('same-id')?.envelopeJson ?? '{}')).toEqual(
+      expect.objectContaining({ content: '改过的需求 B' }),
+    );
+    expect(repo.listBySession('session-1')).toHaveLength(1);
+    expect(repo.getNextDispatchable('session-1')?.id).toBe('same-id');
+  });
+
+  it('applySameId 对 failed 行 requeue 为可抽干的 queued', () => {
+    repo.enqueue({
+      id: 'same-id',
+      sessionId: 'session-1',
+      envelope: { content: '原文 A' },
+      now: 100,
+    });
+    expect(repo.markFailed('same-id', 200)).toBe(true);
+
+    const accepted = applySameIdQueuedInput(repo, {
+      id: 'same-id',
+      sessionId: 'session-1',
+      envelope: { content: '原文 A', attachments: [] },
+      now: 300,
+    });
+
+    expect(accepted).toMatchObject({ id: 'same-id', action: 'requeue' });
+    expect(repo.getById('same-id')).toMatchObject({ status: 'queued', pausedReason: null });
+    expect(repo.getNextDispatchable('session-1')?.id).toBe('same-id');
   });
 });

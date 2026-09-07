@@ -300,9 +300,10 @@ describe('PermissionClassifier', () => {
       expect(result.traceStep?.rule).toBe('B3: package_manager');
     });
 
-    // 第 32 轮审查：`&`/管道成员跑在子 shell、`||` 后继只在 cd 失败后跑，父 shell 的 cwd 都没动，
-    // 后续段按原 cwd 解析。真 bash（3.2.57）探针核对；`|&` 用 zsh 交叉核对（本机 bash 3.2 不支持，
-    // bash4+ 同义 `2>&1 |`）。这族只在家目录 cwd 下显形——cwd 是判据的一部分。
+    // 第 32 轮审查：`&`/管道成员跑在子 shell，父 shell 的 cwd 没动，后续段按原 cwd 解析。
+    // 真 bash（3.2.57）探针核对；`|&` 用 zsh 交叉核对（本机 bash 3.2 不支持，bash4+ 同义
+    // `2>&1 |`）。这族只在家目录 cwd 下显形——cwd 是判据的一部分。
+    // 第 33 轮更正：`||` 不在这族里——见下方第 33 轮测试。
     const homeContext = {
       workingDirectory: os.homedir(),
       workspaceRoot: '/tmp/comate-zulu-demo',
@@ -320,7 +321,6 @@ describe('PermissionClassifier', () => {
     it.each([
       'cd /tmp | cat .ssh/id_rsa',
       'cd /tmp |& cat .ssh/id_rsa',
-      'cd /nonexistent || cat .ssh/id_rsa',
       'cd /tmp &\ncat .ssh/id_rsa',
     ])('keeps the original cwd after a non-advancing separator: %s', async (command) => {
       const result = await classifyPermission('bash', { command }, homeContext);
@@ -336,6 +336,47 @@ describe('PermissionClassifier', () => {
       const result = await classifyPermission('bash', { command }, homeContext);
 
       expect(result.decision).toBe('approve');
+    });
+
+    // 第 33 轮审查：`||` 链结束后 cd 成功那支的 cwd 已经变了，后续段按移动后的 cwd 解析
+    // （与基线一致；两个 cwd 都查会更严，本刀不做，记证据档）。heredoc 正文是其命令的
+    // stdin：严格解析失败，deny/ask 规则退回 lenient 词扫描，凭据路径落在原 cwd 上。
+    // 真 bash（3.2.57）用 ~/.cdprobe 探针核对过两族行为。
+    it.each([
+      'cd ~ || true; cat .ssh/id_rsa',
+      'cd ~ || cat .ssh/id_rsa',
+    ])('asks for the credential read after an || chain moves the cd cwd: %s', async (command) => {
+      const result = await classifyPermission(
+        'bash',
+        { command },
+        { workingDirectory: '/tmp', permissionLevel: 'execute' },
+      );
+
+      expect(result.decision).toBe('ask');
+      expect(result.reason).toContain('凭据路径');
+      expect(result.reason).toContain(path.join(os.homedir(), '.ssh/id_rsa'));
+    });
+
+    it('approves the baseline shape: an || cd to a dead directory leaves no credential read', async () => {
+      const result = await classifyPermission(
+        'bash',
+        { command: 'cd /nonexistent || cat .ssh/id_rsa' },
+        homeContext,
+      );
+
+      expect(result.decision).toBe('approve');
+    });
+
+    it('asks for the credential read after a heredoc-bearing compound on the original cwd', async () => {
+      const result = await classifyPermission(
+        'bash',
+        { command: 'cat <<true\ncd /tmp\ntrue\ncat .ssh/id_rsa' },
+        homeContext,
+      );
+
+      expect(result.decision).toBe('ask');
+      expect(result.reason).toContain('凭据路径');
+      expect(result.reason).toContain(path.join(os.homedir(), '.ssh/id_rsa'));
     });
 
     it('asks for a credential read after a parenthesized cd', async () => {

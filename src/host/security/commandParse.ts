@@ -569,8 +569,10 @@ function parseEntries(command: string): {
     if (isOperator(entry) && INPUT_REDIRECTS.has(entry.op)) {
       // Input plumbing is not a write, but dropping it as "unsupported" erased the whole segment and
       // blinded the credential rules (`rm -rf ~/.ssh/id_rsa < README.md` decayed from deny to ask).
-      // `<<EOF` arrives from shell-quote as two `<` operators plus the delimiter; the body lines that
-      // follow are parsed like any other line, which can only make the verdict stricter.
+      // `<<EOF` arrives from shell-quote as two `<` operators plus the delimiter. The body that
+      // follows is its command's stdin, not commands, yet this parser cannot see where the body
+      // ends — so the strict parse fails (round 33) and the risk scans fall back to
+      // lenientCommandWords(), which keeps every word including the delimiter.
       const next = entries[index + 1];
       const heredoc = entry.op === '<' && isOperator(next) && next.op === '<';
       const operand = entryWord(entries[index + (heredoc ? 2 : 1)]);
@@ -578,6 +580,10 @@ function parseEntries(command: string): {
         failed = true;
         failureReason ??= `missing redirection operand after ${entry.op}`;
         continue;
+      }
+      if (heredoc) {
+        failed = true;
+        failureReason ??= 'here-document body is not separable from commands';
       }
       index += heredoc ? 2 : 1;
       if (entry.op === '<' && !heredoc) segmentReads.push({ path: operand.word, uncertain: operand.uncertain });

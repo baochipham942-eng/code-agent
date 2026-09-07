@@ -196,9 +196,13 @@ describe('shared shell command parser', () => {
     expect(parsed.segments[0].reads).toEqual([{ path: 'in.txt', uncertain: false }]);
     expect(parsed.writeTargets.map((target) => target.path)).toEqual(['out.txt']);
     expect(parseShellCommand('cat < $FILE').segments[0].reads).toEqual([{ path: '${FILE}', uncertain: true }]);
-    // A heredoc delimiter is consumed; its body lines are ordinary lines and only ever add segments.
-    expect(parseShellCommand('cat <<EOF\nrm -rf /\nEOF').segments.map((segment) => segment.words[0]))
-      .toEqual(['cat', 'rm', 'EOF']);
+    // A heredoc body is its command's stdin and cannot be told apart from commands here: the
+    // strict parse fails (round 33) and risk scans fall back to lenientCommandWords() — the
+    // delimiter is consumed either way, and no word of the body is lost.
+    const heredoc = parseShellCommand('cat <<EOF\nrm -rf /\nEOF');
+    expect(heredoc.parsingFailed).toBe(true);
+    expect(heredoc.failureReason).toBe('here-document body is not separable from commands');
+    expect(lenientCommandWords('cat <<EOF\nrm -rf /\nEOF')).toEqual(expect.arrayContaining(['rm', '-rf', '/']));
   });
 
   it('exposes a lenient token view for risk scans when the strict parse fails', () => {

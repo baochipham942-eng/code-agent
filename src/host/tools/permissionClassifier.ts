@@ -421,10 +421,12 @@ function contextAfterCdSegment(
 ): ClassificationContext | null {
   const words = commandWords(segment);
   if (commandProgram(words[0]) !== 'cd') return null;
-  // `&`/pipeline members run in subshells and the `||` successor only runs after a failed cd:
-  // in all three shapes the parent shell's cwd never moved, so later segments keep the
-  // original cwd. Only `;`, `&&` and a newline let the cd's directory carry forward.
-  if (terminator !== null && ![';', '&&', '\n'].includes(terminator)) return null;
+  // `&`/pipeline members run in subshells: the parent shell's cwd never moved, so later segments
+  // keep the original cwd. `||` does carry: its right side only runs after a failed cd, but once
+  // the chain ends the cd-succeeded outcome has already moved the shell — of the two possible
+  // cwds only the moved one is reconstructable here, and it is the one the baseline resolves
+  // against. Checking both cwds would be stricter still; deliberately not done (round 33).
+  if (terminator !== null && ![';', '&&', '||', '\n'].includes(terminator)) return null;
 
   const args = words.slice(1);
   const separator = args.indexOf('--');

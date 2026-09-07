@@ -268,6 +268,13 @@ const KNOWN_SHAPES = [
   'cd /tmp; cat .ssh/id_rsa',
   'cd /tmp && cat .ssh/id_rsa',
   '(cd /tmp) ; cat .ssh/id_rsa',
+  // Round 33: an `||` chain carries the cd's moved cwd to later segments (the stage-seven cut
+  // wrongly grouped it with the subshell separators), and a heredoc body fails the strict parse
+  // so the risk scans read the lenient words on the original cwd.
+  'cd ~ || true; cat .ssh/id_rsa',
+  'cd ~ || cat .ssh/id_rsa',
+  'cd /nonexistent || cat .ssh/id_rsa',
+  'cat <<true\ncd /tmp\ntrue\ncat .ssh/id_rsa',
 ];
 
 // Under /tmp the critical-path rm rule fires before anything else and masks weaker rules; a real

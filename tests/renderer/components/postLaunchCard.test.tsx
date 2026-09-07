@@ -403,4 +403,204 @@ describe('上线后质量卡 · 透视与环比', () => {
     fireEvent.click(screen.getByTestId('postlaunch-session-s1'));
     expect(onOpenSession).toHaveBeenCalledWith('s1');
   });
+
+  it('200 场候选渲染时回流入口可用，传给预览的 sessionIds 不超过 20', () => {
+    const onOpenHarvest = vi.fn();
+    const reflowCandidates = Array.from({ length: 200 }, (_, index) => ({
+      sessionId: `sess-${String(index).padStart(3, '0')}`,
+      turnId: `t-${index}`,
+      judgeVersion: 'postlaunch-judge-v1',
+      redDimensions: ['goal'] as Array<'goal'>,
+      signals: [],
+      failureClass: null,
+      sources: ['judge'] as Array<'judge'>,
+    }));
+    render(
+      <PostLaunchCard
+        report={report()}
+        running={false}
+        error={null}
+        days={7}
+        onRun={noop}
+        onOpenSession={noop}
+        reflowCandidates={reflowCandidates}
+        onOpenHarvest={onOpenHarvest}
+      />,
+    );
+    expect(screen.getByTestId('postlaunch-reflow-entry')).toBeTruthy();
+    const open = screen.getByTestId('postlaunch-reflow-open') as HTMLButtonElement;
+    expect(open.disabled).toBe(false);
+    fireEvent.click(open);
+    expect(onOpenHarvest).toHaveBeenCalledTimes(1);
+    const sessionIds = onOpenHarvest.mock.calls[0]?.[0] as string[];
+    expect(sessionIds.length).toBeLessThanOrEqual(20);
+    expect(sessionIds).toHaveLength(20);
+    expect(sessionIds.every((id) => /^sess-\d{3}$/.test(id))).toBe(true);
+  });
+
+  it('无评分报告但有点踩候选时，卡面回流入口可见可用，传出 sessionIds ≤20', () => {
+    const onOpenHarvest = vi.fn();
+    const reflowCandidates = Array.from({ length: 25 }, (_, index) => ({
+      sessionId: `down-${String(index).padStart(2, '0')}`,
+      turnId: `aaaaaaaa-bbbb-4ccc-8ddd-${String(index).padStart(12, '0')}`,
+      judgeVersion: null,
+      redDimensions: [] as Array<'goal'>,
+      signals: [],
+      failureClass: null,
+      sources: ['feedback'] as Array<'feedback'>,
+    }));
+    render(
+      <PostLaunchCard
+        report={null}
+        running={false}
+        error={null}
+        days={7}
+        onRun={noop}
+        onOpenSession={noop}
+        reflowCandidates={reflowCandidates}
+        onOpenHarvest={onOpenHarvest}
+      />,
+    );
+    expect(screen.getByTestId('postlaunch-empty')).toBeTruthy();
+    expect(screen.queryByTestId('postlaunch-sessions-0')).toBeNull();
+    expect(screen.getByTestId('postlaunch-reflow-entry')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('postlaunch-reflow-open'));
+    expect(onOpenHarvest).toHaveBeenCalledTimes(1);
+    const sessionIds = onOpenHarvest.mock.calls[0]?.[0] as string[];
+    expect(sessionIds.length).toBeLessThanOrEqual(20);
+    expect(sessionIds).toHaveLength(20);
+    expect(sessionIds.every((id) => /^down-\d{2}$/.test(id))).toBe(true);
+  });
+
+  it('取消最后一项后选择保持空、入口按钮禁用、不回弹默认前 20', () => {
+    const onOpenHarvest = vi.fn();
+    const reflowCandidates = ['sess-a', 'sess-b', 'sess-c'].map((sessionId) => ({
+      sessionId,
+      turnId: `${sessionId}-turn`,
+      judgeVersion: 'postlaunch-judge-v1',
+      redDimensions: ['goal'] as Array<'goal'>,
+      signals: [],
+      failureClass: null,
+      sources: ['judge'] as Array<'judge'>,
+    }));
+    render(
+      <PostLaunchCard
+        report={report()}
+        running={false}
+        error={null}
+        days={7}
+        onRun={noop}
+        onOpenSession={noop}
+        reflowCandidates={reflowCandidates}
+        onOpenHarvest={onOpenHarvest}
+      />,
+    );
+    const boxes = screen.getAllByRole('checkbox') as HTMLInputElement[];
+    expect(boxes).toHaveLength(3);
+    expect(boxes.every((box) => box.checked)).toBe(true);
+
+    for (const box of [...boxes].reverse()) {
+      fireEvent.click(box);
+    }
+
+    const after = screen.getAllByRole('checkbox') as HTMLInputElement[];
+    expect(after.every((box) => !box.checked)).toBe(true);
+    const open = screen.getByTestId('postlaunch-reflow-open') as HTMLButtonElement;
+    expect(open.disabled).toBe(true);
+    expect(open.textContent).toContain('(0/20)');
+    fireEvent.click(open);
+    expect(onOpenHarvest).not.toHaveBeenCalled();
+  });
+
+  function reflowRow(sessionId: string) {
+    return {
+      sessionId,
+      turnId: `${sessionId}-turn`,
+      judgeVersion: 'postlaunch-judge-v1' as const,
+      redDimensions: ['goal'] as Array<'goal'>,
+      signals: [],
+      failureClass: null,
+      sources: ['judge'] as Array<'judge'>,
+    };
+  }
+
+  it('21 场候选已勾满 20 时第 21 个复选框禁用，点它已选集合不变', () => {
+    const onOpenHarvest = vi.fn();
+    const reflowCandidates = Array.from({ length: 21 }, (_, index) => (
+      reflowRow(`sess-${String(index).padStart(2, '0')}`)
+    ));
+    render(
+      <PostLaunchCard
+        report={report()}
+        running={false}
+        error={null}
+        days={7}
+        onRun={noop}
+        onOpenSession={noop}
+        reflowCandidates={reflowCandidates}
+        onOpenHarvest={onOpenHarvest}
+      />,
+    );
+    const boxes = screen.getAllByRole('checkbox') as HTMLInputElement[];
+    expect(boxes).toHaveLength(21);
+    expect(boxes.filter((box) => box.checked)).toHaveLength(20);
+    expect(boxes[20].checked).toBe(false);
+    expect(boxes[20].disabled).toBe(true);
+    expect(screen.getByTestId('postlaunch-reflow-limit').textContent).toContain('已选满 20 场');
+
+    fireEvent.click(boxes[20]);
+    const after = screen.getAllByRole('checkbox') as HTMLInputElement[];
+    expect(after[20].checked).toBe(false);
+    expect(after.filter((box) => box.checked).map((box) => box.getAttribute('data-testid'))).toEqual(
+      reflowCandidates.slice(0, 20).map((candidate) => `postlaunch-reflow-check-${candidate.sessionId}`),
+    );
+
+    fireEvent.click(screen.getByTestId('postlaunch-reflow-open'));
+    expect(onOpenHarvest).toHaveBeenCalledTimes(1);
+    const sessionIds = onOpenHarvest.mock.calls[0]?.[0] as string[];
+    expect(sessionIds).toEqual(reflowCandidates.slice(0, 20).map((candidate) => candidate.sessionId));
+    expect(sessionIds).not.toContain('sess-20');
+  });
+
+  it('候选刷新后掉出列表的会话不进入提交集合，用户清空不被交集复活', () => {
+    const onOpenHarvest = vi.fn();
+    const props = {
+      report: report(),
+      running: false,
+      error: null,
+      days: 7,
+      onRun: noop,
+      onOpenSession: noop,
+      onOpenHarvest,
+    };
+    const { rerender } = render(
+      <PostLaunchCard {...props} reflowCandidates={['keep-a', 'keep-b', 'drop-me'].map(reflowRow)} />,
+    );
+    const initial = screen.getAllByRole('checkbox') as HTMLInputElement[];
+    expect(initial.every((box) => box.checked)).toBe(true);
+    fireEvent.click(initial[0]);
+
+    rerender(
+      <PostLaunchCard {...props} reflowCandidates={['keep-a', 'keep-b', 'new-c'].map(reflowRow)} />,
+    );
+    fireEvent.click(screen.getByTestId('postlaunch-reflow-open'));
+    expect(onOpenHarvest).toHaveBeenCalledTimes(1);
+    expect(onOpenHarvest.mock.calls[0]?.[0]).toEqual(['keep-b']);
+
+    const afterRefresh = screen.getAllByRole('checkbox') as HTMLInputElement[];
+    expect(afterRefresh.map((box) => box.checked)).toEqual([false, true, false]);
+    fireEvent.click(afterRefresh[1]);
+    const open = screen.getByTestId('postlaunch-reflow-open') as HTMLButtonElement;
+    expect(open.disabled).toBe(true);
+    expect(open.textContent).toContain('(0/20)');
+
+    rerender(
+      <PostLaunchCard {...props} reflowCandidates={['keep-a', 'keep-b', 'new-c', 'new-d'].map(reflowRow)} />,
+    );
+    const resurrected = screen.getAllByRole('checkbox') as HTMLInputElement[];
+    expect(resurrected.every((box) => !box.checked)).toBe(true);
+    expect((screen.getByTestId('postlaunch-reflow-open') as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByTestId('postlaunch-reflow-open'));
+    expect(onOpenHarvest).toHaveBeenCalledTimes(1);
+  });
 });

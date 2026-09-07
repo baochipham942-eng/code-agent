@@ -4,7 +4,16 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Case, Row } from '../../scripts/nightly/contracts';
 import { captureReferencesAndFeedback, feedback } from '../../scripts/nightly/report';
-import { runEmptyCase, type Resident } from '../../scripts/nightly/runtime';
+import {
+  evaluateEmptyCaseCheck1,
+  evaluateTurnCostLedger,
+  queryTurnCostLedger,
+  runEmptyCase,
+  type Resident,
+} from '../../scripts/nightly/runtime';
+
+vi.unmock('better-sqlite3');
+import Database from 'better-sqlite3';
 
 const mocks = vi.hoisted(() => ({ home: '', exec: vi.fn(), launch: vi.fn() }));
 vi.mock('node:os', async importOriginal => {
@@ -14,7 +23,7 @@ vi.mock('node:os', async importOriginal => {
 vi.mock('node:child_process', async importOriginal => ({ ...await importOriginal<typeof import('node:child_process')>(), execFileSync: mocks.exec }));
 vi.mock('playwright', () => ({ chromium: { launch: mocks.launch } }));
 let home: string;
-const spec: Case = { id: 'TC-M1-01', title: 'fixture', modules: ['上下文'], surfaces: ['api'], severity: '致命', priority: 'P0', hash: 'frozen-spec', root: '~/fixture', reasons: [], fields: {} };
+const spec: Case = { id: 'TC-M1-01', title: 'fixture', modules: ['上下文'], surfaces: ['api'], severity: '致命', frequency: '每轮', priority: 'P0', hash: 'frozen-spec', root: '~/fixture', reasons: [], fields: {} };
 beforeEach(() => {
   vi.clearAllMocks(); home = mkdtempSync(path.join(os.tmpdir(), 'nightly-runtime-')); mocks.home = home;
 });
@@ -140,5 +149,106 @@ describe('nightly auxiliary outages preserve the case for reporting', () => {
     expect(row.status).toBe('失败'); expect(row.frames).toHaveLength(3); expect(row.reasons).toEqual(errors);
     expect(JSON.parse(readFileSync(path.join(dir, 'delivery.json'), 'utf8')).errors).toEqual(errors);
     expect(row.fb).toBe(fault === 'design' ? 'FB-1' : undefined);
+  });
+});
+
+const TURN_COST_ESTIMATES_SCHEMA = `
+    CREATE TABLE IF NOT EXISTS turn_cost_estimates (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id TEXT NOT NULL,
+      provider TEXT NOT NULL,
+      model_id TEXT NOT NULL,
+      input_tokens INTEGER NOT NULL,
+      output_tokens INTEGER NOT NULL,
+      usd REAL,
+      source TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    )
+`;
+
+function openTurnCostFixture() {
+  const db = new Database(':memory:');
+  db.exec(TURN_COST_ESTIMATES_SCHEMA);
+  return db;
+}
+
+function insertTurnCost(
+  db: InstanceType<typeof Database>,
+  row: { sessionId?: string; usd: number | null; source: string; input: number; output: number; createdAt?: number },
+) {
+  db.prepare(
+    'INSERT INTO turn_cost_estimates (session_id, provider, model_id, input_tokens, output_tokens, usd, source, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+  ).run(row.sessionId ?? 'session-1', 'fixture-provider', 'fixture-model', row.input, row.output, row.usd, row.source, row.createdAt ?? 1);
+}
+
+function ledgerCheck(db: InstanceType<typeof Database>, sessionId = 'session-1') {
+  return evaluateTurnCostLedger(queryTurnCostLedger(db, sessionId));
+}
+
+describe('nightly empty-case cost ledger', () => {
+  let db: InstanceType<typeof Database>;
+  beforeEach(() => { db = openTurnCostFixture(); });
+  afterEach(() => { db.close(); });
+
+  it('usd=0.001 passes the ledger cost assertion', () => {
+    insertTurnCost(db, { usd: 0.001, source: 'catalog', input: 10, output: 10 });
+    const result = ledgerCheck(db);
+    expect(result.ok).toBe(true);
+    expect(result.detail).toBe('费用=$0.001（账本，source=catalog）');
+  });
+
+  it('usd=0.9 fails as overspend', () => {
+    insertTurnCost(db, { usd: 0.9, source: 'catalog', input: 10, output: 10 });
+    const result = ledgerCheck(db);
+    expect(result.ok).toBe(false);
+    expect(result.detail).toBe('费用=$0.9（账本，source=catalog）；费用≤$0.05 或 token 阈值，缺遥测不推定为零');
+  });
+
+  it('null usd within token thresholds degrades to unpriced-channel check', () => {
+    insertTurnCost(db, { usd: null, source: 'unknown', input: 6708, output: 25 });
+    const result = ledgerCheck(db);
+    expect(result.ok).toBe(true);
+    expect(result.detail).toContain('无价渠道');
+    expect(result.detail).toBe('无价渠道按 token 阈值核（in=6708/out=25，阈值 20000/500）');
+  });
+
+  it('null usd with output tokens above the threshold fails', () => {
+    insertTurnCost(db, { usd: null, source: 'unknown', input: 6708, output: 9999 });
+    const result = ledgerCheck(db);
+    expect(result.ok).toBe(false);
+    expect(result.detail).toContain('无价渠道');
+    expect(result.detail).toContain('；费用≤$0.05 或 token 阈值，缺遥测不推定为零');
+  });
+
+  it('missing ledger rows fail instead of assuming zero cost', () => {
+    const result = ledgerCheck(db);
+    expect(result.ok).toBe(false);
+    expect(result.detail).toBe('账本无本轮记录（费用遥测缺失≠通过）；费用≤$0.05 或 token 阈值，缺遥测不推定为零');
+  });
+});
+
+describe('nightly empty-case initial snapshot', () => {
+  const rest = {
+    messages: [{ role: 'user' }],
+    auditLength: 0,
+    finalSnapshot: { tokenSource: 'provider' },
+    expectedUserCount: 1,
+  };
+
+  it('timestamped all-zero snapshot passes check 1', () => {
+    const check = evaluateEmptyCaseCheck1({
+      initial: { currentTokens: 0, usagePercent: 0, compression: { status: 'none' }, lastUpdated: 1_725_000_000_000 },
+      ...rest,
+    });
+    expect(check.status).toBe('通过');
+    expect(check.detail).toContain('初始空快照（无快照或全零快照）');
+  });
+
+  it('initial snapshot with currentTokens>0 fails check 1', () => {
+    const check = evaluateEmptyCaseCheck1({
+      initial: { currentTokens: 128, usagePercent: 0, compression: { status: 'none' }, lastUpdated: 1_725_000_000_000 },
+      ...rest,
+    });
+    expect(check.status).toBe('失败');
   });
 });

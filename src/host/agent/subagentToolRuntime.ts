@@ -1,12 +1,36 @@
 import { createRunContext } from '../runtime/runContext';
 import { resolveBackgroundWorkspaceAuthority } from '../runtime/workspaceAuthority';
+import { createWorkspaceScope, isPathWithinRoot } from '../runtime/workspaceScope';
 import { ToolExecutor } from '../tools/toolExecutor';
+import type { WorkspaceScope } from '../../shared/contract/project';
 import { getPermissionLevel } from './orchestrator/modelConfigResolver';
 import { permissionModeAutoApproves, type PermissionMode } from '../permissions/modes';
 import { isAgentWorktreePath } from './agentWorktreePath';
 import type { ToolExecutionRequest } from './subagentPipeline';
 import type { SubagentExecutionContext } from './subagentExecutorTypes';
 import type { SubagentEventIdentity } from './subagentLifecycleEvents';
+
+/**
+ * N-EVAL-POLICY-WRITE-BOUNDARY-ENABLE 修复轮 2：worktree 子代理重建 scope 时保留
+ * 父级已授权的附加根（eval-memory）。父 run 的 workspaceScope 是权威授权面，重建只换
+ * primary（worktree 根），父级 additional 根原样继承——否则 worktree 子代理的
+ * MemoryWrite(scope="global") 目标 <dataDir>/memory/ 落在 worktree 根外，被判
+ * PROJECT_SOURCE_OUTSIDE_WORKSPACE，合法记忆任务假阴性（#1686 第二轮「记忆根」形状
+ * 往派生链深一层）。与 worktree 根重叠的附加根跳过：createWorkspaceScope 的
+ * assertNonOverlappingRoots 会抛，照 buildEvalRunScoping 的双向检查处理。
+ */
+function inheritParentAdditionalRoots(
+  worktreeScope: WorkspaceScope | undefined,
+  parentScope: WorkspaceScope | undefined,
+): WorkspaceScope | undefined {
+  if (!worktreeScope || !parentScope) return worktreeScope;
+  const inherited = parentScope.roots
+    .filter((root) => root.role !== 'primary')
+    .filter((root) => !worktreeScope.roots.some((existing) =>
+      isPathWithinRoot(root.path, existing.path) || isPathWithinRoot(existing.path, root.path)));
+  if (inherited.length === 0) return worktreeScope;
+  return createWorkspaceScope(worktreeScope.projectId, [...worktreeScope.roots, ...inherited]);
+}
 
 export function createSubagentToolRuntime(input: {
   context: SubagentExecutionContext;
@@ -20,7 +44,10 @@ export function createSubagentToolRuntime(input: {
   const worktreeWorkspace = isAgentWorktreePath(context.cwd) ? context.cwd : undefined;
   const runWorkspace = worktreeWorkspace ?? context.workspace;
   const runWorkspaceScope = worktreeWorkspace
-    ? resolveBackgroundWorkspaceAuthority({ workspace: worktreeWorkspace })
+    ? inheritParentAdditionalRoots(
+      resolveBackgroundWorkspaceAuthority({ workspace: worktreeWorkspace }),
+      context.workspaceScope,
+    )
     : context.workspaceScope;
   const nativeRunContext = context.runId && input.sessionId && runWorkspace
     ? createRunContext({

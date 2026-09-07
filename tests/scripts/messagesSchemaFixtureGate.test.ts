@@ -4,11 +4,15 @@
 // 夹具应从 tests/utils/applyTestSessionSchema.ts 走生产 applySchema，
 // 不要手抄 messages DDL（列集会跟 schema.ts 漂移）。
 //
-// 白名单只覆盖「有正当理由手写旧表」的迁移/兼容测试：
+// 白名单只覆盖「有正当理由手写旧表」的迁移/兼容测试，外加本单拆批未改完的 FTS 夹具：
 // - tests/unit/database/schemaConversationBranchMigration.test.ts
 //   从旧 fork/rewind 投影迁到 conversation branch ledger；CREATE 必须是迁移前形状。
 // - tests/unit/repositories/transcriptFts.test.ts
 //   bare-schema 兼容块用 CLI 最小 messages 表，证明 applyTranscriptFtsSchema 列守卫。
+//   createBaseSchema 仍手抄，跟下面两个 FTS 夹具同一批后续 PR 改走 applyTestSessionSchema。
+// - tests/unit/repositories/sessionRepositoryFts.test.ts
+// - tests/unit/session/searchFts.test.ts
+//   本单第一批为压 gates:fast ≤12 个测试文件暂未改；改完必须从白名单删掉。
 // ============================================================================
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -34,6 +38,8 @@ const repoRoot = join(fileURLToPath(new URL('.', import.meta.url)), '../..');
 const WHITELIST = new Set([
   'tests/unit/database/schemaConversationBranchMigration.test.ts',
   'tests/unit/repositories/transcriptFts.test.ts',
+  'tests/unit/repositories/sessionRepositoryFts.test.ts',
+  'tests/unit/session/searchFts.test.ts',
 ]);
 
 const HANDWRITTEN_MESSAGES_DDL =

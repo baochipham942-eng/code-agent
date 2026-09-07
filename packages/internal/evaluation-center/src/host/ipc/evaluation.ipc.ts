@@ -34,6 +34,10 @@ import { getAuthService } from '@host/services/auth/authService';
 import { assertAiReviewDimensionsComplete, isAiReviewDimension } from '@host/testing/judge/dimensions';
 import type { AnnotationRow } from '@host/services/core/databaseService';
 import { registerEvaluationBaselineHandlers } from './evaluationBaseline.ipc';
+import { isPostLaunchReflowEnabled } from '@host/testing/postlaunch/postLaunchGate';
+import { checkPostLaunchReflowGates, isPostLaunchConsentScope } from '@host/testing/postlaunch/postLaunchReflowGate';
+import { getDatabase } from '@host/services/core/databaseService';
+import { POST_LAUNCH_REFLOW_DISABLED_MESSAGE } from '@shared/contract/postLaunchScore';
 
 const logger = createLogger('EvaluationIPC');
 /**
@@ -115,6 +119,31 @@ export function registerEvaluationHandlers(
   ipcMain.handle(EVALUATION_CHANNELS.SAVE_CASE, async (_event, payload: SaveEvalCaseRequest) => {
     const denied = getChannelAccessIpcError(EVALUATION_CHANNELS.SAVE_CASE, 'Evaluation case bank write');
     if (denied) return denied;
+    if (payload?.action === 'create-draft' && payload.postLaunchReflow) {
+      if (!isPostLaunchReflowEnabled()) throw new Error(POST_LAUNCH_REFLOW_DISABLED_MESSAGE);
+      const sessionId = payload.sourceSessionId?.trim();
+      if (!sessionId) throw new Error('回流草稿缺少来源会话');
+      const db = getDatabase().getDb();
+      if (!db) throw new Error('数据库尚未就绪，无法检查回流闸');
+      const previewConsentScope = payload.postLaunchReflow.consentScope;
+      if (!isPostLaunchConsentScope(previewConsentScope)) {
+        throw new Error('回流草稿未保存：预览同意档缺失，请重新生成');
+      }
+      const decision = checkPostLaunchReflowGates(db, {
+        sessionId,
+        turnId: payload.postLaunchReflow.turnId ?? null,
+        previewConsentScope,
+      });
+      if (!decision.allowed) {
+        if (decision.reason === 'consent_required') {
+          throw new Error(`回流草稿未保存：会话同意档为 ${decision.consentScope}，至少需要 turn_excerpt`);
+        }
+        if (decision.reason === 'consent_stale') {
+          throw new Error(`回流草稿未保存：当前同意档为 ${decision.consentScope}，低于预览所用档，请重新生成`);
+        }
+        throw new Error('回流草稿未保存：候选已不存在或未通过候选闸');
+      }
+    }
     return saveCaseBank(requireRepositoryRoot(), payload);
   });
 

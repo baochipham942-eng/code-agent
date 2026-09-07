@@ -344,6 +344,11 @@ export const TELEMETRY_CHANNELS = {
   GET_POSTLAUNCH_REPORT: 'telemetry:get-postlaunch-report',
   /** 触发上线后评分（本机跑 judge，花用户自己的模型额度） */
   RUN_POSTLAUNCH_SCORING: 'telemetry:run-postlaunch-scoring',
+  /** 上线后坏案例候选（judge 红 ∪ 确定性信号 ∪ 点踩），只读本机。 */
+  GET_POSTLAUNCH_REFLOW_CANDIDATES: 'telemetry:get-postlaunch-reflow-candidates',
+  /** 本地会话级回流同意档，永不上云。 */
+  GET_POSTLAUNCH_REFLOW_CONSENT: 'telemetry:get-postlaunch-reflow-consent',
+  SET_POSTLAUNCH_REFLOW_CONSENT: 'telemetry:set-postlaunch-reflow-consent',
   /** 获取结构化回放数据 */
   GET_STRUCTURED_REPLAY: 'replay:get-structured-data',
 	  /** 获取 Agent Trajectory 质量摘要 */

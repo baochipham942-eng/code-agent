@@ -33,6 +33,10 @@ export const evalHarvestZh = {
     previewFailed: '读取失败：{message}',
     partialFailed: '{n} 场会话取不到内容，已跳过：{detail}',
     allFailed: '选中的会话都取不到可用内容：{detail}',
+    consentLabel: '回流同意档',
+    consentMetadata: '仅元数据（不能保存回流草稿）',
+    consentExcerpt: '这一轮摘录（允许保存结构化题面）',
+    consentFull: '完整会话（允许保存原文题面）',
 
     stepTitle: '草稿 {index}/{total}',
     sourceLabel: '来源会话',
@@ -100,6 +104,10 @@ export const evalHarvestEn = {
     previewFailed: 'Read failed: {message}',
     partialFailed: '{n} sessions had no usable content and were skipped: {detail}',
     allFailed: 'None of the selected sessions had usable content: {detail}',
+    consentLabel: 'Reflow consent scope',
+    consentMetadata: 'Metadata only (cannot save a reflow draft)',
+    consentExcerpt: 'Turn excerpt (allows a structured draft)',
+    consentFull: 'Full session (allows original text)',
 
     stepTitle: 'Draft {index}/{total}',
     sourceLabel: 'Source session',

@@ -13,6 +13,27 @@ const db = vi.hoisted(() => ({
   replay: vi.fn(),
   session: vi.fn(),
   feedback: vi.fn(),
+  turns: vi.fn(() => [] as Array<{
+    id: string;
+    turn_number: number;
+    start_time: number;
+    turn_type: string;
+    parent_turn_id: string | null;
+  }>),
+}));
+
+const reflowStore = vi.hoisted(() => ({
+  list: vi.fn(() => [] as Array<{
+    sessionId: string;
+    turnId: string | null;
+    judgeVersion: string | null;
+    redDimensions: string[];
+    signals: string[];
+    failureClass: string | null;
+    sources: Array<'judge' | 'signal' | 'feedback'>;
+  }>),
+  consent: vi.fn(() => 'turn_excerpt' as 'metadata' | 'turn_excerpt' | 'full_session'),
+  enabled: true,
 }));
 
 // 宿主取数走真实入口 buildHarvestPreview，只把数据库与回放服务换成夹具
@@ -24,8 +45,21 @@ vi.mock('@host/telemetry/replay/telemetryQueryService', () => ({
 vi.mock('@host/services/core/databaseService', () => ({
   getDatabase: () => ({
     getSession: db.session,
-    getDb: () => ({ prepare: () => ({ all: db.feedback }) }),
+    getDb: () => ({
+      prepare: (sql: string) => ({
+        all: () => (String(sql).includes('telemetry_turns') ? db.turns() : db.feedback()),
+      }),
+    }),
   }),
+}));
+
+vi.mock('@host/testing/postlaunch/postLaunchScoreStore', () => ({
+  listReflowCandidates: reflowStore.list,
+  getPostLaunchConsentScope: reflowStore.consent,
+}));
+
+vi.mock('@host/testing/postlaunch/postLaunchGate', () => ({
+  isPostLaunchReflowEnabled: () => reflowStore.enabled,
 }));
 
 import { deriveHarvestSeed } from '@internal-evaluation/host/evaluation/harvestCandidates';
@@ -203,6 +237,7 @@ describe('预览编排', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-09-04T09:00:00'));
     db.feedback.mockReturnValue([]);
+    db.turns.mockReturnValue([]);
     db.session.mockReturnValue({ title: '一场会话', workingDirectory: WORKDIR });
     db.replay.mockImplementation(async (sessionId: string) => (sessionId === 'sess-fake-0001'
       ? replay([turn([userBlock('干点活'), toolBlock('Write', 'Write', { file_path: 'out/a.txt' })])])
@@ -212,6 +247,10 @@ describe('预览编排', () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.clearAllMocks();
+    reflowStore.enabled = true;
+    reflowStore.consent.mockReturnValue('turn_excerpt');
+    reflowStore.list.mockReturnValue([]);
+    db.turns.mockReturnValue([]);
   });
 
   it('取不到内容的会话只进 failed，不炸整批；批次标签按当天日期', async () => {
@@ -241,5 +280,96 @@ describe('预览编排', () => {
       sessionIds: Array.from({ length: 21 }, (_, index) => `sess-fake-${index}`),
       fields: [],
     })).rejects.toThrow('一次最多转换 20 场会话');
+  });
+
+  it('回流预览按同意档裁剪：turn_excerpt 不含首轮原文，full_session 覆盖整会话', async () => {
+    const firstTurnPath = 'first-turn-secret.txt';
+    const triggerPath = 'trigger-turn.txt';
+    const firstTurnId = '6f1a2b3c-4d5e-4f60-8a9b-0c1d2e3f4a5b';
+    const triggerTurnId = '7a8b9c0d-1e2f-4a3b-9c8d-7e6f5a4b3c2d';
+    db.replay.mockResolvedValue(replay([
+      turn([
+        userBlock('FEATURE_A_FIRST_TURN_PROMPT'),
+        toolBlock('Write', 'Write', { file_path: firstTurnPath }, 1),
+      ], 1000, 1),
+      turn([
+        userBlock('FEATURE_B_TRIGGER_TURN_PROMPT'),
+        toolBlock('Write', 'Write', { file_path: triggerPath }, 2),
+      ], 2000, 2),
+    ]));
+    reflowStore.enabled = true;
+    reflowStore.list.mockReturnValue([{
+      sessionId: 'sess-fake-0001',
+      turnId: triggerTurnId,
+      judgeVersion: 'postlaunch-judge-v1',
+      redDimensions: ['goal'],
+      signals: [],
+      failureClass: null,
+      sources: ['judge'],
+    }]);
+    db.turns.mockReturnValue([
+      { id: firstTurnId, turn_number: 1, start_time: 1000, turn_type: 'user', parent_turn_id: null },
+      { id: triggerTurnId, turn_number: 2, start_time: 2000, turn_type: 'user', parent_turn_id: null },
+    ]);
+
+    reflowStore.consent.mockReturnValue('turn_excerpt');
+    const excerpt = await buildHarvestPreview({
+      sessionIds: ['sess-fake-0001'],
+      fields: ['prompt'],
+      postLaunchReflow: true,
+    });
+    expect(excerpt.failed).toEqual([]);
+    expect(excerpt.seeds[0]?.prompt).toContain('FEATURE_B_TRIGGER_TURN_PROMPT');
+    expect(excerpt.seeds[0]?.prompt).not.toContain('FEATURE_A_FIRST_TURN_PROMPT');
+    expect(JSON.stringify(excerpt.seeds[0]?.candidates)).not.toContain(firstTurnPath);
+    expect(JSON.stringify(excerpt.seeds[0]?.candidates)).toContain(triggerPath);
+    expect(excerpt.seeds[0]?.postLaunchReflow).toMatchObject({
+      turnId: triggerTurnId,
+      consentScope: 'turn_excerpt',
+    });
+
+    reflowStore.consent.mockReturnValue('full_session');
+    const full = await buildHarvestPreview({
+      sessionIds: ['sess-fake-0001'],
+      fields: ['prompt'],
+      postLaunchReflow: true,
+    });
+    expect(full.seeds[0]?.prompt).toContain('FEATURE_A_FIRST_TURN_PROMPT');
+    expect(JSON.stringify(full.seeds[0]?.candidates)).toContain(firstTurnPath);
+    expect(JSON.stringify(full.seeds[0]?.candidates)).toContain(triggerPath);
+    expect(full.seeds[0]?.postLaunchReflow?.consentScope).toBe('full_session');
+  });
+
+  it('候选 turnId 是 telemetry_turns 真 id 对不上回放时进 failed，不放行整场会话', async () => {
+    db.replay.mockResolvedValue(replay([
+      turn([userBlock('FEATURE_A_FIRST_TURN_PROMPT')], 1000, 1),
+      turn([userBlock('FEATURE_B_TRIGGER_TURN_PROMPT')], 2000, 2),
+    ]));
+    reflowStore.enabled = true;
+    reflowStore.consent.mockReturnValue('turn_excerpt');
+    reflowStore.list.mockReturnValue([{
+      sessionId: 'sess-fake-0001',
+      turnId: '00000000-0000-4000-8000-000000000099',
+      judgeVersion: 'postlaunch-judge-v1',
+      redDimensions: ['goal'],
+      signals: [],
+      failureClass: null,
+      sources: ['judge'],
+    }]);
+    db.turns.mockReturnValue([
+      { id: '6f1a2b3c-4d5e-4f60-8a9b-0c1d2e3f4a5b', turn_number: 1, start_time: 1000, turn_type: 'user', parent_turn_id: null },
+      { id: '7a8b9c0d-1e2f-4a3b-9c8d-7e6f5a4b3c2d', turn_number: 2, start_time: 2000, turn_type: 'user', parent_turn_id: null },
+    ]);
+
+    const result = await buildHarvestPreview({
+      sessionIds: ['sess-fake-0001'],
+      fields: ['prompt'],
+      postLaunchReflow: true,
+    });
+    expect(result.seeds).toEqual([]);
+    expect(result.failed).toEqual([{
+      sessionId: 'sess-fake-0001',
+      error: '回流触发轮对不上回放记录',
+    }]);
   });
 });

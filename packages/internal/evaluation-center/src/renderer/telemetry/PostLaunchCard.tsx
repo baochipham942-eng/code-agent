@@ -10,7 +10,7 @@
 // ============================================================================
 import React, { useMemo, useState } from 'react';
 import { AlertTriangle, Play, Loader2 } from 'lucide-react';
-import type { PostLaunchDimension, PostLaunchReport, PostLaunchReportSession, PostLaunchScopeRow } from '@shared/contract/postLaunchScore';
+import type { PostLaunchDimension, PostLaunchReport, PostLaunchReportSession, PostLaunchScopeRow, PostLaunchReflowCandidate } from '@shared/contract/postLaunchScore';
 import { POST_LAUNCH_DIMENSIONS } from '@shared/contract/postLaunchScore';
 import { Modal } from '@renderer/components/primitives/Modal';
 import { useEvaluationI18n } from '../i18n/useEvaluationI18n';
@@ -25,6 +25,8 @@ interface PostLaunchCardProps {
   days: number;
   onRun: () => void;
   onOpenSession: (sessionId: string) => void;
+  reflowCandidates?: PostLaunchReflowCandidate[];
+  onOpenHarvest?: (sessionIds: string[]) => void;
 }
 
 function formatUsd(value: number): string {
@@ -53,7 +55,7 @@ function columnLabel(column: PostLaunchPivotColumn): string {
 }
 
 export const PostLaunchCard: React.FC<PostLaunchCardProps> = ({
-  report, running, error, days, onRun, onOpenSession,
+  report, running, error, days, onRun, onOpenSession, reflowCandidates = [], onOpenHarvest,
 }) => {
   const { t } = useEvaluationI18n();
   const p = t.telemetry.postLaunch;
@@ -61,6 +63,9 @@ export const PostLaunchCard: React.FC<PostLaunchCardProps> = ({
   const [expanded, setExpanded] = useState(false);
   // 弹层认的是可见列的下标，切轮类型 / 展开更早都会让下标改指别的组，所以那两处一并关掉弹层。
   const [openColumn, setOpenColumn] = useState<number | null>(null);
+  const candidateSessionIds = useMemo(() => [...new Set(reflowCandidates.map((candidate) => candidate.sessionId))], [reflowCandidates]);
+  const [selectedReflowSessions, setSelectedReflowSessions] = useState<string[]>([]);
+  const selectedIds = selectedReflowSessions.length > 0 ? selectedReflowSessions : candidateSessionIds.slice(0, 20);
   // IPC 回来的东西在信任边界之外：形状不对就当没有报告、渲染空态。
   // 一张卡片把整个遥测页崩掉，比它什么都不显示糟得多。
   const safe = report && Array.isArray(report.groups) && report.calibration && report.budget ? report : null;
@@ -297,6 +302,27 @@ export const PostLaunchCard: React.FC<PostLaunchCardProps> = ({
           <p className="mt-1 text-[10px] text-zinc-600">{scope === 'signal' ? p.scopeNoteSignal : p.scopeNoteSample}</p>
           <p className="text-[10px] text-zinc-600">{p.pivotNote}</p>
           <p className="mt-1 text-[10px] text-zinc-600">{p.readingNote}</p>
+        </div>
+      )}
+
+      {onOpenHarvest && reflowCandidates.length > 0 && (
+        <div className="mt-3" data-testid="postlaunch-reflow-entry">
+          <div className="mb-1 flex flex-wrap gap-1">
+            {candidateSessionIds.map((id) => (
+              <label key={id} className="flex items-center gap-1 text-[10px] text-zinc-400">
+                <input type="checkbox" checked={selectedIds.includes(id)} onChange={(event) => {
+                  setSelectedReflowSessions((current) => {
+                    const base = current.length > 0 ? current : candidateSessionIds.slice(0, 20);
+                    return event.target.checked ? [...new Set([...base, id])].slice(0, 20) : base.filter((value) => value !== id);
+                  });
+                }} />
+                <span className="max-w-[10rem] truncate">{id}</span>
+              </label>
+            ))}
+          </div>
+          <button type="button" onClick={() => onOpenHarvest(selectedIds)} data-testid="postlaunch-reflow-open" className="rounded bg-badge-info/15 px-2 py-1 text-[10px] text-badge-info hover:bg-badge-info/25">
+            {p.reflowOpen} ({selectedIds.length}/20)
+          </button>
         </div>
       )}
 

@@ -24,6 +24,7 @@ import { TimelineView } from '../telemetry/TimelineView';
 import { ToolStats } from '../telemetry/ToolStats';
 import { OverviewTab } from '../telemetry/OverviewTab';
 import { PostLaunchCard } from '../telemetry/PostLaunchCard';
+import { EvalHarvestDialog } from './EvalHarvestDialog';
 import { POST_LAUNCH_DEFAULTS } from '@shared/contract/postLaunchScore';
 import type { TelemetryPushEvent } from '@shared/contract/telemetry';
 
@@ -34,12 +35,13 @@ export const EvalTelemetryTab: React.FC = () => {
   const tm = t.telemetry;
   const [activeTab, setActiveTab] = useState<SubTabId>('overview');
   const [selectedTurnId, setSelectedTurnId] = useState<string | null>(null);
+  const [harvestSessionIds, setHarvestSessionIds] = useState<string[] | null>(null);
 
   const {
     sessions, currentSession, turns, events, selectedTurnDetail, toolStats, intentDistribution, isLive,
     postLaunchReport, postLaunchRunning, postLaunchError,
     loadSessions, loadSession, loadTurns, loadEvents, loadTurnDetail, loadToolStats, loadIntentDistribution,
-    loadPostLaunchReport, runPostLaunchScoring,
+    loadPostLaunchReport, runPostLaunchScoring, reflowCandidates, loadReflowCandidates,
     setLive, handlePushEvent,
   } = useTelemetryStore();
 
@@ -70,8 +72,9 @@ export const EvalTelemetryTab: React.FC = () => {
     } else {
       loadSessions();
       loadPostLaunchReport(POST_LAUNCH_DEFAULTS.days);
+      loadReflowCandidates();
     }
-  }, [currentSession, loadSessions, loadTurns, loadEvents, loadToolStats, loadIntentDistribution, loadPostLaunchReport]);
+  }, [currentSession, loadSessions, loadTurns, loadEvents, loadToolStats, loadIntentDistribution, loadPostLaunchReport, loadReflowCandidates]);
 
   useEffect(() => {
     if (selectedTurnId) {
@@ -82,6 +85,7 @@ export const EvalTelemetryTab: React.FC = () => {
   // 列表视图。
   if (!currentSession) {
     return (
+      <>
       <div className="flex min-h-0 flex-1 flex-col" data-testid="eval-telemetry-tab">
         <div className="flex shrink-0 items-center justify-between border-b border-zinc-800 px-3 py-2">
           <h2 className="text-sm font-medium text-zinc-400">{tm.title}</h2>
@@ -103,6 +107,8 @@ export const EvalTelemetryTab: React.FC = () => {
             days={POST_LAUNCH_DEFAULTS.days}
             onRun={() => runPostLaunchScoring(POST_LAUNCH_DEFAULTS.days)}
             onOpenSession={loadSession}
+            reflowCandidates={reflowCandidates}
+            onOpenHarvest={setHarvestSessionIds}
           />
           {sessions.map((session) => (
             <button /* ds-allow:button: 遥测会话行（整块可点卡片），Button primitive 无行卡片变体 */
@@ -129,6 +135,16 @@ export const EvalTelemetryTab: React.FC = () => {
           )}
         </div>
       </div>
+      {harvestSessionIds && (
+        <EvalHarvestDialog
+          sessionIds={harvestSessionIds}
+          postLaunchReflow
+          onClose={() => setHarvestSessionIds(null)}
+          onOpenSession={loadSession}
+          onFinished={() => { void loadReflowCandidates(); }}
+        />
+      )}
+      </>
     );
   }
 

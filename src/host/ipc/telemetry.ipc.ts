@@ -24,7 +24,11 @@ import {
   resolveAgentTrajectoryCollectionMetadata,
   writeAgentTrajectoryCollectionMetadata,
 } from '../../shared/contract/agentTrajectory';
-import { clampPostLaunchScoringRequest } from '../../shared/contract/postLaunchScore';
+import {
+  clampPostLaunchScoringRequest,
+  POST_LAUNCH_REFLOW_DISABLED_MESSAGE,
+  type PostLaunchConsentScope,
+} from '../../shared/contract/postLaunchScore';
 import type {
   TelemetryFeedbackSubmitRequest,
   TelemetryFeedbackSubmitResult,
@@ -37,6 +41,13 @@ import type {
   AgentTrajectoryQualitySummariesRequest,
 } from '../../shared/ipc/types';
 import { assertAdminAccess, isCurrentUserAdmin } from './adminGuard';
+import { isPostLaunchReflowEnabled } from '../testing/postlaunch/postLaunchGate';
+import {
+  getPostLaunchConsentScope,
+  listReflowCandidates,
+  setPostLaunchConsentScope,
+} from '../testing/postlaunch/postLaunchScoreStore';
+import { isPostLaunchConsentScope } from '../testing/postlaunch/postLaunchReflowGate';
 
 const logger = createLogger('TelemetryIPC');
 const TRAJECTORY_QUALITY_SUMMARY_LIMIT = 250;
@@ -192,6 +203,35 @@ export function registerTelemetryHandlers(getMainWindow: () => AppWindow | null)
     assertAdminAccess('Telemetry');
     const { runPostLaunchScoringOnHost } = await import('../testing/postlaunch/postLaunchScorerRuntime');
     return runPostLaunchScoringOnHost(clampPostLaunchScoringRequest(payload));
+  });
+
+  ipcHost.handle(TELEMETRY_CHANNELS.GET_POSTLAUNCH_REFLOW_CANDIDATES, async (_event, payload?: { limit?: number }) => {
+    assertAdminAccess('Telemetry');
+    if (!isPostLaunchReflowEnabled()) return [];
+    const db = getDatabase().getDb();
+    if (!db) return [];
+    return listReflowCandidates(db, { limit: payload?.limit });
+  });
+
+  ipcHost.handle(TELEMETRY_CHANNELS.GET_POSTLAUNCH_REFLOW_CONSENT, async (_event, payload?: { sessionId?: string }) => {
+    assertAdminAccess('Telemetry');
+    if (!isPostLaunchReflowEnabled()) throw new Error(POST_LAUNCH_REFLOW_DISABLED_MESSAGE);
+    const sessionId = payload?.sessionId?.trim();
+    if (!sessionId) throw new Error('sessionId is required');
+    const db = getDatabase().getDb();
+    if (!db) throw new Error('数据库尚未就绪');
+    return { sessionId, scope: getPostLaunchConsentScope(db, sessionId) };
+  });
+
+  ipcHost.handle(TELEMETRY_CHANNELS.SET_POSTLAUNCH_REFLOW_CONSENT, async (_event, payload?: { sessionId?: string; scope?: PostLaunchConsentScope }) => {
+    assertAdminAccess('Telemetry');
+    if (!isPostLaunchReflowEnabled()) throw new Error(POST_LAUNCH_REFLOW_DISABLED_MESSAGE);
+    const sessionId = payload?.sessionId?.trim();
+    if (!sessionId || !isPostLaunchConsentScope(payload?.scope)) throw new Error('回流同意档参数无效');
+    const db = getDatabase().getDb();
+    if (!db) throw new Error('数据库尚未就绪');
+    setPostLaunchConsentScope(db, sessionId, payload.scope);
+    return { sessionId, scope: payload.scope };
   });
 
   // 获取结构化回放数据

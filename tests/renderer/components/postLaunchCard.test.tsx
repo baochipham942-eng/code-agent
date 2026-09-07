@@ -403,4 +403,72 @@ describe('上线后质量卡 · 透视与环比', () => {
     fireEvent.click(screen.getByTestId('postlaunch-session-s1'));
     expect(onOpenSession).toHaveBeenCalledWith('s1');
   });
+
+  it('200 场候选渲染时回流入口可用，传给预览的 sessionIds 不超过 20', () => {
+    const onOpenHarvest = vi.fn();
+    const reflowCandidates = Array.from({ length: 200 }, (_, index) => ({
+      sessionId: `sess-${String(index).padStart(3, '0')}`,
+      turnId: `t-${index}`,
+      judgeVersion: 'postlaunch-judge-v1',
+      redDimensions: ['goal'] as Array<'goal'>,
+      signals: [],
+      failureClass: null,
+      sources: ['judge'] as Array<'judge'>,
+    }));
+    render(
+      <PostLaunchCard
+        report={report()}
+        running={false}
+        error={null}
+        days={7}
+        onRun={noop}
+        onOpenSession={noop}
+        reflowCandidates={reflowCandidates}
+        onOpenHarvest={onOpenHarvest}
+      />,
+    );
+    expect(screen.getByTestId('postlaunch-reflow-entry')).toBeTruthy();
+    const open = screen.getByTestId('postlaunch-reflow-open') as HTMLButtonElement;
+    expect(open.disabled).toBe(false);
+    fireEvent.click(open);
+    expect(onOpenHarvest).toHaveBeenCalledTimes(1);
+    const sessionIds = onOpenHarvest.mock.calls[0]?.[0] as string[];
+    expect(sessionIds.length).toBeLessThanOrEqual(20);
+    expect(sessionIds).toHaveLength(20);
+    expect(sessionIds.every((id) => /^sess-\d{3}$/.test(id))).toBe(true);
+  });
+
+  it('无评分报告但有点踩候选时，卡面回流入口可见可用，传出 sessionIds ≤20', () => {
+    const onOpenHarvest = vi.fn();
+    const reflowCandidates = Array.from({ length: 25 }, (_, index) => ({
+      sessionId: `down-${String(index).padStart(2, '0')}`,
+      turnId: `aaaaaaaa-bbbb-4ccc-8ddd-${String(index).padStart(12, '0')}`,
+      judgeVersion: null,
+      redDimensions: [] as Array<'goal'>,
+      signals: [],
+      failureClass: null,
+      sources: ['feedback'] as Array<'feedback'>,
+    }));
+    render(
+      <PostLaunchCard
+        report={null}
+        running={false}
+        error={null}
+        days={7}
+        onRun={noop}
+        onOpenSession={noop}
+        reflowCandidates={reflowCandidates}
+        onOpenHarvest={onOpenHarvest}
+      />,
+    );
+    expect(screen.getByTestId('postlaunch-empty')).toBeTruthy();
+    expect(screen.queryByTestId('postlaunch-sessions-0')).toBeNull();
+    expect(screen.getByTestId('postlaunch-reflow-entry')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('postlaunch-reflow-open'));
+    expect(onOpenHarvest).toHaveBeenCalledTimes(1);
+    const sessionIds = onOpenHarvest.mock.calls[0]?.[0] as string[];
+    expect(sessionIds.length).toBeLessThanOrEqual(20);
+    expect(sessionIds).toHaveLength(20);
+    expect(sessionIds.every((id) => /^down-\d{2}$/.test(id))).toBe(true);
+  });
 });

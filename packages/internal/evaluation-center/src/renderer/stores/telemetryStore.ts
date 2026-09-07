@@ -5,6 +5,7 @@
 import { create } from 'zustand';
 import ipcService from '@renderer/services/ipcService';
 import type { PostLaunchReport } from '@shared/contract/postLaunchScore';
+import type { PostLaunchReflowCandidate } from '@shared/contract/postLaunchScore';
 import type { TelemetrySession, TelemetryTurn, TelemetryModelCall, TelemetryToolCall, TelemetryTimelineEvent, TelemetrySessionListItem, TelemetrySessionListOptions, TelemetryToolStat, TelemetryIntentStat, TelemetryPushEvent, TelemetryCostBucket, TelemetryCostByPeriodOptions } from '@shared/contract/telemetry';
 
 interface TurnDetailData {
@@ -30,6 +31,7 @@ interface TelemetryStore {
   postLaunchRunning: boolean;
   /** 评分失败时给人看的一句话，不是给机器看的报错。 */
   postLaunchError: string | null;
+  reflowCandidates: PostLaunchReflowCandidate[];
   isLive: boolean;
   isLoading: boolean;
 
@@ -45,6 +47,7 @@ interface TelemetryStore {
   deleteSession: (sessionId: string) => Promise<void>;
   loadPostLaunchReport: (days?: number) => Promise<void>;
   runPostLaunchScoring: (days?: number) => Promise<void>;
+  loadReflowCandidates: () => Promise<void>;
   handlePushEvent: (event: TelemetryPushEvent) => void;
   setLive: (live: boolean) => void;
   reset: () => void;
@@ -63,6 +66,7 @@ const initialState = {
   postLaunchReport: null as PostLaunchReport | null,
   postLaunchRunning: false,
   postLaunchError: null as string | null,
+  reflowCandidates: [] as PostLaunchReflowCandidate[],
   isLive: true,
   isLoading: false
 };
@@ -184,6 +188,16 @@ export const useTelemetryStore = create<TelemetryStore>((set, get) => ({
       set({ postLaunchError: String(error) });
     } finally {
       set({ postLaunchRunning: false });
+    }
+  },
+
+  loadReflowCandidates: async () => {
+    try {
+      const invokeUnknown = ipcService.invoke as unknown as (channel: string, payload: unknown) => Promise<unknown>;
+      const candidates = await invokeUnknown('telemetry:get-postlaunch-reflow-candidates', { limit: 200 }) as PostLaunchReflowCandidate[];
+      if (Array.isArray(candidates)) set({ reflowCandidates: candidates });
+    } catch (error) {
+      console.error('Failed to load post-launch reflow candidates:', error);
     }
   },
 

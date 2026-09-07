@@ -625,8 +625,13 @@ function collectToolPathCandidates(
   for (const [key, value] of Object.entries(params)) {
     if (typeof value !== 'string' || !value.trim()) continue;
     if (!isPathLikeParamKey(key, toolName)) continue;
-    candidates.push(resolveCandidate(unquote(value), workingDirectory, homeDir));
-    if (normalizeGlobTool(toolName) && key.toLowerCase() === 'pattern') {
+    const isGlobPattern = normalizeGlobTool(toolName) && key.toLowerCase() === 'pattern';
+    // Glob pattern 的匹配基准是搜索根（params.path），不是会话 cwd。
+    // `.code-agent/*.json` 相对 ~ 会变成生产槽路径，先被误拒，后面按 searchPath
+    // 补的正确候选也救不回来（evaluateToolSlotDataDirAccess 遇第一个 deny 就返回）。
+    if (!isGlobPattern) {
+      candidates.push(resolveCandidate(unquote(value), workingDirectory, homeDir));
+    } else {
       const literal = globLiteralPrefix(unquote(value));
       if (literal) {
         const expanded = expandHomePrefix(literal, homeDir);

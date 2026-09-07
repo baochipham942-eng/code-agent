@@ -339,6 +339,19 @@ describe('槽数据目录读隔离', () => {
     expect(asDev.allowed).toBe(true);
   });
 
+  it('Glob 相对 pattern 相对搜索根解析，不把 .code-agent/* 当成家目录槽', () => {
+    const projectRoot = path.join(fakeHome, 'projects', 'demo');
+    mkdirSync(path.join(projectRoot, '.code-agent'), { recursive: true });
+    writeFileSync(path.join(projectRoot, '.code-agent', 'agents.json'), '{}');
+    const verdict = evaluateToolSlotDataDirAccess(
+      'Glob',
+      { path: projectRoot, pattern: '.code-agent/*.json' },
+      fakeHome,
+      { currentDataDir: devSlot, homeDirs: [fakeHome] },
+    );
+    expect(verdict.allowed).toBe(true);
+  });
+
   // --------------------------------------------------------------------------
   // 第二轮返修（R2 四条）：入口判据在执行时失效的漏网
   // --------------------------------------------------------------------------

@@ -314,6 +314,13 @@ describe('shared shell command parser', () => {
     expect(parseShellCommand("echo $'a\\\nb'").segments[0].words).toEqual(['echo', 'a\nb']);
     // `\<CR><LF>` 当续行删是第 24 轮起的房规（真 bash 3.2 判作转义 CR + 分隔符，证据档有记录）
     expect(parseShellCommand('set -- a\\\r\nb').segments[0].words).toEqual(['set', '--', 'ab']);
+    // 第 27 轮：`$\<LF>'` 折叠后才相邻，ANSI-C 开引号要在折叠后的相邻关系上认。
+    // 真 bash 实跑词恰为 [cp source.txt target.txt]（`22>&1` 是 IO 数字），写目标 target.txt。
+    const foldedAnsiOpener = parseShellCommand("echo $\\\n'a\\'b'; cp source.txt target.txt 2\\\n2>&1 # '");
+    expect(foldedAnsiOpener.segments[0].words).toEqual(['echo', "a'b"]);
+    expect(foldedAnsiOpener.writeTargets).toEqual([{ path: 'target.txt', source: 'copy', uncertain: false }]);
+    expect(foldedAnsiOpener.parsingFailed).toBe(false);
+    expect(foldedAnsiOpener.uncertain).toEqual([]);
   });
 
   it('keeps each redirection on its own segment', () => {

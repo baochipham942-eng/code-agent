@@ -117,9 +117,21 @@ function shellLines(command: string): string[] {
         if (character === "'") mode = 'plain';
       } else if (mode === 'double') {
         if (character === '"') mode = 'plain';
-      } else if (character === '$' && source[index + 1] === "'") {
-        output += source[++index];
-        mode = 'ansi';
+      } else if (character === '$') {
+        // The fold itself changes adjacency: `$\<LF>'` is `$'` to bash (round 27). Look past the
+        // continuations this pass is about to remove, or the ANSI-C opener is misread as a plain
+        // single quote and every fold after it drifts.
+        let after = index + 1;
+        while (after < source.length && source[after] === '\\') {
+          if (source[after + 1] === '\n') { after += 2; continue; }
+          if (source[after + 1] === '\r' && source[after + 2] === '\n') { after += 3; continue; }
+          break;
+        }
+        if (source[after] === "'") {
+          output += source[after];
+          index = after;
+          mode = 'ansi';
+        }
       } else if (character === "'") {
         mode = 'single';
       } else if (character === '"') {

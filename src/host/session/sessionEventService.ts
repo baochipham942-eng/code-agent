@@ -323,19 +323,6 @@ export class SessionEventService {
   async dispose(): Promise<void> {
     this.insertStmt = null;
   }
-
-  cleanupOldEvents(olderThanDays: number = 30): number {
-    const db = this.getDb();
-    const cutoff = Date.now() - olderThanDays * 24 * 60 * 60 * 1000;
-
-    const result = db.prepare(`
-      DELETE FROM session_events
-      WHERE timestamp < ?
-    `).run(cutoff);
-
-    logger.info('Cleaned up old events', { deleted: result.changes, olderThanDays });
-    return result.changes;
-  }
 }
 
 // Singleton export

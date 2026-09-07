@@ -504,6 +504,12 @@ function createAgent(opts: {
     onEvaluationSignal: opts.onEvaluationSignal,
     database: opts.database,
     telemetryCollector: opts.telemetryCollector,
+    // N-EVAL-POLICY-WRITE-BOUNDARY-ENABLE 换姿态收口：评测写边界缺省关——派生链缺口
+    // 未清零前不开（证据档「已知派生链缺口」节，续单 N-EVAL-POLICY-WRITE-BOUNDARY-ENABLE2）。
+    // NEO_EVAL_WRITE_BOUNDARY=on 显式开；关着时 adapter 不注入 scope/runContext，链路
+    // 与 #1686 合入前一字不差。注意 compare 入口（createCompareAgent）还没接开关，
+    // 缺口文档记着呢。
+    restrictWritesToWorkspace: process.env.NEO_EVAL_WRITE_BOUNDARY === 'on',
     modelConfig: {
       provider: resolvedProvider,
       model: resolvedModel,

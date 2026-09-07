@@ -938,6 +938,10 @@ export class ToolExecutor {
       sessionId: effectiveSessionId,
       workspace: this.runtimeWorkspace,
       workspaceScope: this.runContext?.workspaceScope,
+      // N-EVAL-POLICY-WRITE-BOUNDARY-ENABLE：写边界开关随 ToolContext 下传给 spawn 链
+      // （subagentToolRuntime 自建 executor 不走 forRun）。只在开着时出现，关着时
+      // context 形状与 main 一字不差。
+      ...(this.restrictWritesToWorkspace ? { restrictWritesToWorkspace: true } : {}),
       workingDirectory: this.executionCwd,
       requestPermission: this.requestPermissionForTools,
       abortSignal: options.abortSignal,

@@ -150,6 +150,12 @@ export interface SubagentExecutionContext {
   sessionId: string;
   workspace?: string;
   workspaceScope?: WorkspaceScope;
+  /**
+   * N-EVAL-POLICY-WRITE-BOUNDARY-ENABLE：父执行器的写边界开关。
+   * 子代理 executor 自建（不走 forRun），必须显式继承，否则父开了边界子调用照样越界写。
+   * 只在开着时出现（true）。
+   */
+  restrictWritesToWorkspace?: boolean;
   cwd: string;
   modelConfig: ModelConfig;
   resolver: SubagentToolResolverPort;

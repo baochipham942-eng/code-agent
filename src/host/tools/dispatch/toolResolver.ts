@@ -161,6 +161,7 @@ class ProtocolToolResolver implements ToolResolver {
         sessionId: (ctx as { sessionId?: string }).sessionId,
         workspace: ctx.workspace,
         workspaceScope: ctx.workspaceScope,
+        restrictWritesToWorkspace: ctx.restrictWritesToWorkspace,
         workingDirectory: ctx.workingDirectory,
         legacyCtx: ctx,
         abortSignal: ctx.abortSignal,

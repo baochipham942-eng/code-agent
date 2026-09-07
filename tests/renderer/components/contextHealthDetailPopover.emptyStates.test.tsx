@@ -187,6 +187,18 @@ describe('ContextHealthDetailPopover — 空态 / 等待态 / 实报态', () => 
     expect(detail.textContent).not.toContain('还没有健康度信息');
   });
 
+  it('回归：只有 assistant 本地诊断消息（如 /context）不算已发首条，仍走空态', () => {
+    popoverMocks.appState.contextHealth = allZeroSnapshot();
+    popoverMocks.sessionState.messages = [
+      { id: 'diag-1', role: 'assistant', content: '上下文诊断输出', timestamp: 1 },
+    ];
+    const detail = renderDetail();
+    expect(detail.textContent).toContain('暂无上下文数据。');
+    expect(detail.textContent).toContain('还没有健康度信息');
+    expect(detail.textContent).not.toContain('等待统计上下文容量');
+    expect(detail.textContent).not.toContain('0% 已用');
+  });
+
   it('实报态：currentTokens=11956 时百分比文案仍是现有格式', () => {
     popoverMocks.appState.contextHealth = reportedSnapshot();
     popoverMocks.sessionState.messages = [

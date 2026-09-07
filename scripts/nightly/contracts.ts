@@ -46,14 +46,14 @@ export function parseCases(source: string): Case[] {
   const ids = cases.map(c => c.id);
   if (new Set(ids).size !== ids.length) throw new Error(`FAIL case ids not unique: 解析 ${ids.length} 条出现重复`);
   // 总数不写死：用 cases.md 自己的「场景 × 状态覆盖矩阵」作对照清单，增删用例必须连矩阵一起改，否则红。
-  const hasMatrix = /^## 场景 × 状态覆盖矩阵$/m.test(source);
+  // 矩阵是必需件：缺矩阵时任一非空用例子集都能静默通过（旧的总数写死至少挡得住"少几条"），
+  // 必须抛错，且「没有矩阵」与「有矩阵但没选中任何用例行」两种情形分开报。
+  if (!/^## 场景 × 状态覆盖矩阵$/m.test(source)) throw new Error('FAIL 覆盖矩阵缺失：没有 "## 场景 × 状态覆盖矩阵" 章节，完整性校验失去对照清单（与"有矩阵但没选中任何用例行"区分）');
   const matrixIds = [...source.matchAll(/^\| M\d+ \| ((?:TC-M\d+-\d+、)*TC-M\d+-\d+) \|/gm)].flatMap(m => m[1].split('、'));
-  if (hasMatrix && !matrixIds.length) throw new Error('FAIL 覆盖矩阵标题存在但没有选中任何用例行（选择器漂移，先修解析再谈计数）');
-  if (matrixIds.length) {
-    const onlyMatrix = matrixIds.filter(id => !ids.includes(id));
-    const onlyCases = ids.filter(id => !matrixIds.includes(id));
-    if (onlyMatrix.length || onlyCases.length) throw new Error(`FAIL 覆盖矩阵与逐条用例不一致：矩阵 ${matrixIds.length} 条、实际解析 ${ids.length} 条；仅在矩阵=${onlyMatrix.join('、') || '无'}；仅在实际=${onlyCases.join('、') || '无'}`);
-  }
+  if (!matrixIds.length) throw new Error('FAIL 覆盖矩阵标题存在但没有选中任何用例行（选择器漂移，先修解析再谈计数）');
+  const onlyMatrix = matrixIds.filter(id => !ids.includes(id));
+  const onlyCases = ids.filter(id => !matrixIds.includes(id));
+  if (onlyMatrix.length || onlyCases.length) throw new Error(`FAIL 覆盖矩阵与逐条用例不一致：矩阵 ${matrixIds.length} 条、实际解析 ${ids.length} 条；仅在矩阵=${onlyMatrix.join('、') || '无'}；仅在实际=${onlyCases.join('、') || '无'}`);
   return cases;
 }
 export function counts(rows: Row[]) {

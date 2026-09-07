@@ -8,7 +8,9 @@ const temporary: string[] = [];
 afterEach(() => { temporary.splice(0).forEach(p => rmSync(p, { recursive: true, force: true })); });
 function inventory(count = 55) {
   const text = Array.from({ length: count }, (_, i) => `### TC-M${i + 1}-01 · example\n\n| 夜跑标记 | 是 |\n| 模块 | 上下文 |\n| 验收面 | api+web |\n| 步骤 | 浏览器打开详情；API 读取 health:get |\n| 证据落点 | 拟执行：\`~/fixture/runs/TC-M${i + 1}-01/<run-id>/result.json\` |\n| ①结果断言 | result |\n| ②过程断言 | process |\n| ③渲染断言 | render |\n`).join('\n');
-  const cases = parseCases(text);
+  // 覆盖矩阵是生产清单的必需件（contracts.parseCases 强制），夹具同步携带。
+  const matrix = `## 场景 × 状态覆盖矩阵\n\n| 场景 | 用例 | 状态/异常轴 |\n|---|---|---|\n${Array.from({ length: count }, (_, i) => `| M${i + 1} | TC-M${i + 1}-01 | 覆盖 |`).join('\n')}\n\n## 逐条用例\n\n`;
+  const cases = parseCases(matrix + text);
   cases[0].reasons = []; // Synthetic unblocked adapter for adversarial report tests.
   return cases;
 }
@@ -84,6 +86,8 @@ describe('nightly acceptance fail-closed evidence', () => {
     expect(() => parseCases(matrix('TC-M1-01') + one + two)).toThrow('覆盖矩阵与逐条用例不一致');
     // 矩阵标题在但一条用例行都没选中 = 选择器漂移，不能当成"无矩阵"跳过
     expect(() => parseCases(`## 场景 × 状态覆盖矩阵\n\n| 场景 | 用例 | 状态/异常轴 |\n|---|---|---|\n| 坏行 | 坏 | 坏 |\n\n## 逐条用例\n\n` + one)).toThrow('没有选中任何用例行');
+    // 矩阵整个缺失 = 完整性校验失去对照清单，任意非空子集不得静默通过（N-CASES-MODULE-SURFACE-R2）
+    expect(() => parseCases(one)).toThrow('覆盖矩阵缺失');
   });
   it('keeps all 55 unexecuted rows and zero runtime claims', () => { const cases = inventory(); const rows = rowsFor(cases); expect(counts(rows)).toEqual({ executed: 0, skipped: cases.length, failed: 0, passed: 0, total: cases.length }); expect(validateReport(cases, rows, counts(rows), () => '')).toEqual([]); });
   it('mutation 1 rejects blocked promotion independently of forged summary', () => { const cases = inventory(); const rows = rowsFor(cases); const top = counts(rows); rows[1].status = '通过'; expect(validateReport(cases, rows, top, () => '')).toContain('FAIL COUNTS top summary differs from case table'); expect(validateReport(cases, rows, counts(rows), () => '').some(e => e.includes('blocked case'))).toBe(true); });

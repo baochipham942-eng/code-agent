@@ -18,7 +18,10 @@ const { parseCases } = await import('../../scripts/nightly/contracts');
 const { renderReport } = await import('../../scripts/nightly/report');
 
 function inventory(count: number) {
-  return parseCases(Array.from({ length: count }, (_, i) => `### TC-M${i + 1}-01 · 样例 ${i + 1}\n\n| 夜跑标记 | 是 |\n| 模块 | 上下文·数据 |\n| 验收面 | api+web |\n| 步骤 | 浏览器打开详情；API 读取 health:get |\n| 证据落点 | 拟执行：\`~/fixture/runs/TC-M${i + 1}-01/<run-id>/result.json\` |\n| ①结果断言 | result |\n| ②过程断言 | process |\n| ③渲染断言 | render |\n`).join('\n'));
+  const text = Array.from({ length: count }, (_, i) => `### TC-M${i + 1}-01 · 样例 ${i + 1}\n\n| 夜跑标记 | 是 |\n| 模块 | 上下文·数据 |\n| 验收面 | api+web |\n| 步骤 | 浏览器打开详情；API 读取 health:get |\n| 证据落点 | 拟执行：\`~/fixture/runs/TC-M${i + 1}-01/<run-id>/result.json\` |\n| ①结果断言 | result |\n| ②过程断言 | process |\n| ③渲染断言 | render |\n`).join('\n');
+  // 覆盖矩阵是生产清单的必需件（contracts.parseCases 强制），夹具同步携带。
+  const matrix = `## 场景 × 状态覆盖矩阵\n\n| 场景 | 用例 | 状态/异常轴 |\n|---|---|---|\n${Array.from({ length: count }, (_, i) => `| M${i + 1} | TC-M${i + 1}-01 | 覆盖 |`).join('\n')}\n\n## 逐条用例\n\n`;
+  return parseCases(matrix + text);
 }
 
 describe('nightly report case-table surface', () => {

@@ -2,11 +2,15 @@ import { createHash } from 'node:crypto';
 import { readFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 
-export type Case = { id: string; title: string; modules: string[]; surfaces: string[]; fields: Record<string, string>; hash: string; root: string; reasons: string[] };
+export type Case = { id: string; title: string; modules: string[]; surfaces: string[]; severity: string; priority: string; fields: Record<string, string>; hash: string; root: string; reasons: string[] };
 /** 【模块】取值域 = docs/ARCHITECTURE.md §7 子系统职责表的子系统名（含表尾补充职责行），逐字照抄；改 §7 须同步这里。 */
 export const SUBSYSTEM_NAMES = ['会话执行', '会话任务', 'Durable run', '多代理', '脚本编排', '工具', '模型', '外部引擎', '上下文', '记忆与角色', '数据', '平台壳', '前端与 IPC', '浏览器与电脑', '插件与连接器', '设计与产物', '语音与活动', '定时与自动化', '评测与观测', '补充职责'];
 /** 【验收面】取值域；声明值必须与该条【步骤】实际写的路线一致，SURFACE_MARKERS 负责从步骤文本机械推导。 */
 export const SURFACES = ['cli', 'api', 'web', 'app'];
+/** 【影响程度】取值域 = 致命/严重/一般/轻微（判据见 cases.md 任务书：数据丢失·会话不可用·安全越界·付费重复 > 主流程受阻有绕行·误导·信号悬空 > 体验受损·信息不准 > 文案观感）。 */
+export const SEVERITY_LEVELS = ['致命', '严重', '一般', '轻微'];
+/** 【优先级】取值域 = P0/P1/P2，与 PRD §6 功能点清单、requirements-pool.md 同口径，不新造档位。 */
+export const PRIORITIES = ['P0', 'P1', 'P2'];
 const SURFACE_MARKERS: Record<string, RegExp> = {
   cli: /CLI|neo debug/,
   api: /API|invoke|health:get|响应体|compact-current|compact-from/,
@@ -21,17 +25,19 @@ export function parseCases(source: string): Case[] {
   if (!blocks.length) throw new Error('FAIL case inventory empty: 没有 "### TC-M… · …" 标题被选中（cases.md 缺失或格式漂移，与"真的零条"区分）');
   const cases = blocks.map((m) => {
     const fields = Object.fromEntries([...m[3].matchAll(/^\| ([^|]+) \| (.+) \|$/gm)].map(x => [x[1].trim(), x[2].trim()]));
-    for (const key of ['夜跑标记', '证据落点', '模块', '验收面', '①结果断言', '②过程断言', '③渲染断言']) if (!fields[key]) throw new Error(`FAIL ${m[1]} missing ${key}`);
+    for (const key of ['夜跑标记', '证据落点', '模块', '验收面', '影响程度', '优先级', '①结果断言', '②过程断言', '③渲染断言']) if (!fields[key]) throw new Error(`FAIL ${m[1]} missing ${key}`);
     const modules = fields['模块'].split('·').map(name => name.trim()).filter(Boolean);
     if (!modules.length || modules.some(name => !SUBSYSTEM_NAMES.includes(name))) throw new Error(`FAIL ${m[1]} 模块取值域外：${fields['模块']}（取值域=ARCHITECTURE.md §7 子系统名，可多值用 · 分隔）`);
     const surfaces = fields['验收面'].split('+').map(face => face.trim()).filter(Boolean);
     if (!surfaces.length || surfaces.some(face => !SURFACES.includes(face)) || new Set(surfaces).size !== surfaces.length) throw new Error(`FAIL ${m[1]} 验收面取值域外：${fields['验收面']}（取值域=cli/api/web/app，可组合用 + 连接）`);
     const derived = SURFACES.filter(face => SURFACE_MARKERS[face].test(fields['步骤'] ?? ''));
     if (derived.length !== surfaces.length || surfaces.some(face => !derived.includes(face))) throw new Error(`FAIL ${m[1]} 验收面与步骤不一致：字段=${fields['验收面']}，步骤实际路线=${derived.join('+') || '无'}`);
+    if (!SEVERITY_LEVELS.includes(fields['影响程度'])) throw new Error(`FAIL ${m[1]} 影响程度取值域外：${fields['影响程度']}（取值域=致命/严重/一般/轻微）`);
+    if (!PRIORITIES.includes(fields['优先级'])) throw new Error(`FAIL ${m[1]} 优先级取值域外：${fields['优先级']}（取值域=P0/P1/P2）`);
     const root = fields['证据落点'].match(/`([^`]+)\/runs\/TC-M\d+-\d+\/<run-id>\/result.json`/)?.[1];
     if (!root) throw new Error(`FAIL ${m[1]} evidence path not frozen`);
     const reasons: string[] = [];
-    if (m[1] === 'TC-M1-01' && digest(m[0]) !== '37f4701f22a10859c37cdfb452f15ead6efcf47894cc93479ff5608d185cbc39') reasons.push('runner 尚未支持这类证据：用例规格已变化，须重新审核适配器');
+    if (m[1] === 'TC-M1-01' && digest(m[0]) !== 'e969efbfc4dc4fe19e2a94c05c7a30444a1e9d82d654c1c50e3c68cbaac9569e') reasons.push('runner 尚未支持这类证据：用例规格已变化，须重新审核适配器');
     const scenario = Number(m[1].match(/M(\d+)/)![1]);
     const gaps: Record<number, string> = { 3: '预警/将满', 5: '容量未知', 11: '取消终态', 19: '经济学拒绝', 20: '五种失败 reason', 23: '预算/额度拒绝' };
     if (gaps[scenario]) reasons.push(`缺稿（align 第3次对齐：${gaps[scenario]}）`);
@@ -41,7 +47,7 @@ export function parseCases(source: string): Case[] {
     if (fb) reasons.push(`目标态未达成（${[...new Set(fb)].join('/')}）`);
     if (fields['夜跑标记'] !== '是') reasons.push('夜跑标记=否（仅手工）');
     if (m[1] !== 'TC-M1-01') reasons.push('runner 尚未支持这类证据：本条全部参数组的运行时适配器');
-    return { id: m[1], title: m[2], modules, surfaces, fields, hash: digest(m[0]), root, reasons };
+    return { id: m[1], title: m[2], modules, surfaces, severity: fields['影响程度'], priority: fields['优先级'], fields, hash: digest(m[0]), root, reasons };
   });
   const ids = cases.map(c => c.id);
   if (new Set(ids).size !== ids.length) throw new Error(`FAIL case ids not unique: 解析 ${ids.length} 条出现重复`);

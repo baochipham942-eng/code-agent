@@ -8,6 +8,17 @@ vi.mock('../../../src/host/tools/shell/dynamicDescription', () => ({
   generateBashDescription: async () => null,
 }));
 
+vi.mock('../../../src/host/security', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../../../src/host/security')>();
+  return {
+    ...original,
+    getExecPolicyStore: () => ({
+      match: () => null,
+      learnFromApproval: () => false,
+    }),
+  };
+});
+
 import { getToolCache } from '../../../src/host/services/infra/toolCache';
 import { getProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
 import { ToolExecutor } from '../../../src/host/tools/toolExecutor';

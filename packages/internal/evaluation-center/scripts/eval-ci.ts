@@ -504,12 +504,11 @@ function createAgent(opts: {
     onEvaluationSignal: opts.onEvaluationSignal,
     database: opts.database,
     telemetryCollector: opts.telemetryCollector,
-    // N-EVAL-POLICY-WRITE-BOUNDARY-ENABLE 换姿态收口：评测写边界缺省关——派生链缺口
-    // 未清零前不开（证据档「已知派生链缺口」节，续单 N-EVAL-POLICY-WRITE-BOUNDARY-ENABLE2）。
-    // NEO_EVAL_WRITE_BOUNDARY=on 显式开；关着时 adapter 不注入 scope/runContext，链路
-    // 与 #1686 合入前一字不差。compare 入口的同款 ON 杆在 makeAgent 的
-    // createCompareAgent 分支（ENABLE2 缺口①清零）。
-    restrictWritesToWorkspace: process.env.NEO_EVAL_WRITE_BOUNDARY === 'on',
+    // N-EVAL-POLICY-WRITE-BOUNDARY-ENABLE3：评测写边界缺省开——派生链三缺口已随
+    // ENABLE2 清零（PR #1709），前置备齐，打开名副其实。
+    // NEO_EVAL_WRITE_BOUNDARY=off 显式关（对照/回退用，链路回到 #1686 合入前一字不差）；
+    // compare 入口的同款 OFF 杆在 makeAgent 的 createCompareAgent 分支。
+    restrictWritesToWorkspace: process.env.NEO_EVAL_WRITE_BOUNDARY !== 'off',
     modelConfig: {
       provider: resolvedProvider,
       model: resolvedModel,
@@ -947,10 +946,10 @@ async function runCompareCommand(
         sessionType: 'eval',
         database: isolatedState?.database,
         telemetryCollector: isolatedState?.telemetryCollector,
-        // N-EVAL-POLICY-WRITE-BOUNDARY-ENABLE2 缺口①：compare 入口补 ON 杆——与
-        // createAgent()（上方 512 行一带）同款口径：NEO_EVAL_WRITE_BOUNDARY=on 显式开，
-        // 缺省/其它值关（关 = 与 #1700 合入前的 compare 链路一字不差）。
-        restrictWritesToWorkspace: process.env.NEO_EVAL_WRITE_BOUNDARY === 'on',
+        // N-EVAL-POLICY-WRITE-BOUNDARY-ENABLE3：compare 入口与 createAgent()（上方
+        // 512 行一带）同款口径——缺省开，NEO_EVAL_WRITE_BOUNDARY=off 显式关
+        //（关 = 与 #1700 合入前的 compare 链路一字不差，对照/回退用）。
+        restrictWritesToWorkspace: process.env.NEO_EVAL_WRITE_BOUNDARY !== 'off',
       });
     };
     let llmCall: ((prompt: string) => Promise<string>) | undefined;

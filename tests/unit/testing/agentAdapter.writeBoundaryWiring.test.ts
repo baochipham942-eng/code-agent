@@ -1,14 +1,15 @@
 // ============================================================================
-// N-EVAL-POLICY-WRITE-BOUNDARY-ENABLE · 验收④：惰性接线钉
+// N-EVAL-POLICY-WRITE-BOUNDARY-ENABLE3 · 接线钉（缺省开翻转后）
 // ============================================================================
-// 钉两件事：
-// ①「开关关着与改前一字不差」——restrictWritesToWorkspace: false 时 adapter 构造的
-//   ToolExecutor 不带 runContext/scope/开关，AgentLoop 不收 runId（loop 自造，改前行为）。
-//   覆盖 #1686 第五轮形状：不注入 scope ⇒ Bash 的 RUN_WORKSPACE_BOUNDARY 不会被点亮
-//   （行为证明在 agentAdapter.writeBoundaryBehavior.test.ts）。
-// ②「打开后接线正确」——显式 true：scope 双根（沙箱 primary + 记忆 additional）、
+// 钉三件事：
+// ①「缺省开着」——restrictWritesToWorkspace 不传时 adapter 构造的 ToolExecutor 带
+//   scope/runContext/开关，AgentLoop 收同源 runId（ENABLE3 起缺省即开，与显式 true 同形）。
+// ②「显式 true 接线正确」——scope 双根（沙箱 primary + 记忆 additional）、
 //   runId 同源（executor 与 AgentLoop 必须同一个，否则每次工具调用撞 RUN_CONTEXT_MISMATCH）、
 //   workingDirectory 用 runContext.cwd（canonicalize 后的，防 cwd 字面量 mismatch 抛）。
+// ③「显式 false 回退与改前一字不差」——不注入 scope/runContext、loop 不收 runId
+//   （对照/回退路径仍受 #1686 第五轮惰性铁律约束；行为证明在
+//   agentAdapter.writeBoundaryBehavior.test.ts）。
 // ============================================================================
 
 import * as fs from 'node:fs/promises';
@@ -93,18 +94,23 @@ describe('评测 adapter 写边界接线（restrictWritesToWorkspace）', () => 
     });
   }
 
-  it('缺省（不传开关）：接线关着——与改前一字不差（换姿态收口：缺口清零前缺省不开）', async () => {
+  it('缺省（不传开关）：接线开着——与显式 true 同形（ENABLE3 缺省开）', async () => {
     await makeAdapter().sendMessage('hello');
     expect(captured.executorConfigs).toHaveLength(1);
     const executorConfig = captured.executorConfigs[0];
     const loopConfig = captured.loopConfigs[0];
     expect(loopConfig).toBeDefined();
 
-    // 缺省关 = 与显式 false 同形：无 scope 注入、无 runContext、loop 不收 runId。
-    expect(executorConfig.runContext).toBeUndefined();
-    expect(executorConfig.workingDirectory).toBe(sandbox);
-    expect('restrictWritesToWorkspace' in executorConfig).toBe(false);
-    expect('runId' in loopConfig).toBe(false);
+    // 缺省开 = 与显式 true 同形：注入 scope/runContext，loop 收同源 runId。
+    expect(executorConfig.restrictWritesToWorkspace).toBe(true);
+    const runContext = executorConfig.runContext as {
+      runId: string; cwd: string;
+      workspaceScope?: { roots: Array<{ role: string }> };
+    };
+    expect(runContext).toBeDefined();
+    expect(executorConfig.workingDirectory).toBe(runContext.cwd);
+    expect(loopConfig.runId).toBe(runContext.runId);
+    expect((runContext.workspaceScope?.roots ?? []).length).toBeGreaterThan(0);
   });
 
   it('开关显式 true：接线打开——scope 双根 + runId 同源 + cwd 对齐', async () => {
@@ -132,7 +138,7 @@ describe('评测 adapter 写边界接线（restrictWritesToWorkspace）', () => 
       .toBe(path.join(dataDir, 'memory'));
   });
 
-  it('开关显式 false：与改前一字不差——无 scope 注入、无 runContext、loop 不收 runId', async () => {
+  it('开关显式 false（回退杆）：与改前一字不差——无 scope 注入、无 runContext、loop 不收 runId', async () => {
     await makeAdapter(false).sendMessage('hello');
     expect(captured.executorConfigs).toHaveLength(1);
     const executorConfig = captured.executorConfigs[0];

@@ -1,8 +1,8 @@
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, chmodSync, readdirSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, chmodSync, readdirSync, existsSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { feedbackFingerprint, type Case, type Row } from '../../scripts/nightly/contracts';
+import { feedbackFingerprint, legacyFeedbackFingerprint, type Case, type Row } from '../../scripts/nightly/contracts';
 import { captureReferencesAndFeedback, feedback } from '../../scripts/nightly/report';
 import {
   evaluateEmptyCaseCheck1,
@@ -140,9 +140,12 @@ describe('nightly durable feedback deduplication', () => {
       feedback(row, dir, '2026-09-06'); return row;
     };
     expect(run('run-1').fbCreated).toBe(true);
+    const poolPath = items[0].path;
     rmSync(path.join(home, '.ship/feedback-inbox'), { recursive: true, force: true }); // 旧条目的 sidecar 只活在带 run-id 的 inbox 里，清扫即失效
     const second = run('run-2');
     expect(second.fb).toBe('FB-1'); expect(second.fbCreated).toBe(false); expect(added).toBe(1);
+    expect(existsSync(poolPath)).toBe(true);
+    expect(readFileSync(poolPath, 'utf8')).toContain('run-2');
     const registryDir = path.join(home, '.code-agent-nightly/feedback-registry');
     const files = readdirSync(registryDir);
     expect(files).toHaveLength(1);
@@ -153,7 +156,7 @@ describe('nightly durable feedback deduplication', () => {
     const shape = { id: spec.id, status: '失败' as const, reasons: [], checks: [{ status: '失败' as const, detail: 'user=1 observed 5' }, { status: '通过' as const, detail: 'trace' }, { status: '通过' as const, detail: 'render' }], files: {}, frames: [] };
     const oldInbox = path.join(home, '.ship/feedback-inbox/2026-09-05-nightly-old-run-TC-M1-01');
     mkdirSync(oldInbox, { recursive: true });
-    writeFileSync(path.join(oldInbox, 'feedback-signature.json'), JSON.stringify({ fingerprint: feedbackFingerprint({ ...shape, runId: 'old-run' } as Row, spec.hash, false) }));
+    writeFileSync(path.join(oldInbox, 'feedback-signature.json'), JSON.stringify({ fingerprint: legacyFeedbackFingerprint({ ...shape, runId: 'old-run' } as Row, spec.hash, false) }));
     const oldNote = path.join(oldInbox, 'defect.md');
     writeFileSync(oldNote, `# 缺陷·${spec.id}\n\n1. 失败：user=1 observed 5\n\n复现 2026-09-05-run：~/.ship/feedback-inbox/2026-09-05-nightly\n`);
     const items = [{ fb: 'FB-9', source: 'N-NIGHTLY-RUNNER', state: '待分诊', path: oldNote }];

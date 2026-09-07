@@ -148,3 +148,7 @@ export function feedbackFingerprint(row: Row, caseHash: string, mutation: boolea
   const failures = row.checks.flatMap((c, i) => c.status === '失败' ? [{ check: i + 1, detail: c.detail.replace(/\d+(?:\.\d+)?/g, '#') }] : []);
   return digest(JSON.stringify({ id: row.id, caseHash, mutation, failures }));
 }
+/** Pre-N-NIGHTLY-FB-DEDUPE sidecar hashed the whole checks array. Keep this to adopt old entries. */
+export function legacyFeedbackFingerprint(row: Row, caseHash: string, mutation: boolean): string {
+  return digest(JSON.stringify({ id: row.id, caseHash, mutation, checks: row.checks.map(c => ({ status: c.status, detail: c.detail.replace(/\d+(?:\.\d+)?/g, '#') })) }));
+}

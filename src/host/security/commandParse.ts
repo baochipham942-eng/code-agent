@@ -584,24 +584,24 @@ const SED_BOOLEAN_OPTIONS: ReadonlySet<string> = new Set([
   '--unbuffered', '-z', '--null-data', '-b', '--binary', '-c', '--copy', '-a', '-H', '--posix',
   '--sandbox', '--debug', '--follow-symlinks', '--help', '--version',
 ]);
-// GNU `-iSUFFIX` and BSD `-i`/`-I` take the backup suffix only attached or bare; the bare form must
-// not consume the next word (that word is the script on GNU: `sed -i 's/x/y/' f`).
+// GNU `-iSUFFIX` takes the backup suffix attached or bare; the bare GNU form does not consume the
+// next word (that word is the script on GNU: `sed -i 's/x/y/' f`).
 const SED_IN_PLACE_OPTIONS: ReadonlySet<string> = new Set(['-i', '-I', '--in-place']);
+// BSD sed has no long options (any `--x` aborts it before a write) and its `-i`/`-I` do consume the
+// next word as the suffix — `sed -i .bak …` creates `f.bak`, and even `sed -i -e …` takes `-e` as
+// the suffix (probe: `sed -i -e 's/x/y/' f` writes `f-e` on macOS). `-l` is a bare flag there.
+const BSD_SED_VALUE_OPTIONS: ReadonlySet<string> = new Set(['-e', '-f', '-i', '-I']);
+const BSD_SED_BOOLEAN_OPTIONS: ReadonlySet<string> = new Set(['-n', '-E', '-a', '-H', '-l', '-r']);
+const BSD_SED_IN_PLACE_OPTIONS: ReadonlySet<string> = new Set(['-i', '-I']);
 
-function sedTargets(args: string[]): WriteTargetExtraction {
-  const scan = scanArgv(args, SED_VALUE_OPTIONS, SED_BOOLEAN_OPTIONS, SED_IN_PLACE_OPTIONS);
-  if (scan.failed) {
-    // A truncated scan cannot prove the absence of in-place editing: `sed -H -i '' …` fails at
-    // `-H` yet still rewrites the file on BSD. Only an argv with no in-place marker anywhere is
-    // certainly write-free — an option sed cannot parse aborts it before any write on GNU and BSD.
-    const hasInPlaceMarker = args.some((arg) => /^--in-place(?:=|$)/.test(arg)
-      || (/^-[^-]/.test(arg) && /[iI]/.test(arg.slice(1))));
-    return hasInPlaceMarker ? { targets: [], failed: `sed ${scan.failed}` } : { targets: [] };
-  }
+function sedTargetsFromScan(
+  scan: { entries: OptionScanEntry[] },
+  inPlaceOptions: ReadonlySet<string>,
+): ShellWriteTarget[] {
   const backupSuffixes = scan.entries.flatMap((entry) => entry.kind === 'value'
-    && SED_IN_PLACE_OPTIONS.has(entry.option) ? [entry.value] : []);
+    && inPlaceOptions.has(entry.option) ? [entry.value] : []);
   // Without in-place editing sed writes only stdout; nothing can hide a write.
-  if (backupSuffixes.length === 0) return { targets: [] };
+  if (backupSuffixes.length === 0) return [];
   const backupSuffix = backupSuffixes.at(-1) ?? '';
 
   let scriptSeen = scan.entries.some((entry) => entry.kind === 'value'
@@ -619,20 +619,40 @@ function sedTargets(args: string[]): WriteTargetExtraction {
     files.push(entry.word);
   }
   // `sed -i.bak f` also creates `f.bak`; a deny on the suffix pattern (*.pem) has to see it.
-  return {
-    targets: files.flatMap((target) => {
-      const uncertain = /[$`*?{}]/.test(target);
-      const entries: ShellWriteTarget[] = [{ path: target, source: 'sed-in-place', uncertain }];
-      if (backupSuffix) {
-        entries.push({
-          path: `${target}${backupSuffix}`,
-          source: 'sed-in-place',
-          uncertain: uncertain || /[$`*?{}]/.test(backupSuffix),
-        });
-      }
-      return entries;
-    }),
-  };
+  return files.flatMap((target) => {
+    const uncertain = /[$`*?{}]/.test(target);
+    const entries: ShellWriteTarget[] = [{ path: target, source: 'sed-in-place', uncertain }];
+    if (backupSuffix) {
+      entries.push({
+        path: `${target}${backupSuffix}`,
+        source: 'sed-in-place',
+        uncertain: uncertain || /[$`*?{}]/.test(backupSuffix),
+      });
+    }
+    return entries;
+  });
+}
+
+function sedTargets(args: string[]): WriteTargetExtraction {
+  const scan = scanArgv(args, SED_VALUE_OPTIONS, SED_BOOLEAN_OPTIONS, SED_IN_PLACE_OPTIONS);
+  if (scan.failed) {
+    // A truncated scan cannot prove the absence of in-place editing: `sed -H -i '' …` fails at
+    // `-H` yet still rewrites the file on BSD. Only an argv with no in-place marker anywhere is
+    // certainly write-free — an option sed cannot parse aborts it before any write on GNU and BSD.
+    const hasInPlaceMarker = args.some((arg) => /^--in-place(?:=|$)/.test(arg)
+      || (/^-[^-]/.test(arg) && /[iI]/.test(arg.slice(1))));
+    return hasInPlaceMarker ? { targets: [], failed: `sed ${scan.failed}` } : { targets: [] };
+  }
+  const gnuTargets = sedTargetsFromScan(scan, SED_IN_PLACE_OPTIONS);
+  // The GNU reading cannot see a BSD bare-suffix write (`sed -i .bak …` creates `f.bak`); run the
+  // BSD reading too and take the union. A long option or an option unknown to BSD aborts BSD sed
+  // before any write, so both of those collapse to the GNU reading alone.
+  if (args.some((arg) => arg.startsWith('--') && arg !== '--')) return { targets: gnuTargets };
+  const bsdScan = scanArgv(args, BSD_SED_VALUE_OPTIONS, BSD_SED_BOOLEAN_OPTIONS, new Set());
+  if (bsdScan.failed) return { targets: gnuTargets };
+  const bsdTargets = sedTargetsFromScan(bsdScan, BSD_SED_IN_PLACE_OPTIONS);
+  const seen = new Set(gnuTargets.map((target) => target.path));
+  return { targets: [...gnuTargets, ...bsdTargets.filter((target) => !seen.has(target.path))] };
 }
 
 function teeTargets(args: string[]): WriteTargetExtraction {
@@ -1033,15 +1053,15 @@ function qualifySegments(command: string): ShellExecution[] | null {
  * write-target consumers must continue using parseShellCommand().executions.
  */
 /**
- * The operator closing the AND/OR list the segment at `index` belongs to. `&` backgrounds the
- * entire list — a `cd` inside `cd /tmp && env & …` runs in the subshell and must not move the
- * parent shell's cwd. `|&` is a pipe (`2>&1 |`), not a background operator: a chain closed by
- * `|&` or `|` pipelines only the last pipeline, so the cd in `a && b |& c` still runs in the
- * parent.
+ * The operator closing the list (pipelines joined by &&/||) the segment at `index` belongs to.
+ * `&` backgrounds the entire list — every pipeline of it — so a `cd` anywhere inside
+ * `cd /tmp && true | env & …` runs in the subshell and must not move the parent shell's cwd.
+ * `|`/`|&` only chain pipelines; without a closing `&` the first pipeline's cd still runs in the
+ * parent (`a && b | c` pipelines just `b | c`).
  */
 export function listTerminatorAfter(terminators: SegmentTerminator[], index: number): SegmentTerminator {
   let chainEnd = index;
-  while (terminators[chainEnd] === '&&' || terminators[chainEnd] === '||') chainEnd += 1;
+  while (['&&', '||', '|', '|&'].includes(terminators[chainEnd] ?? '')) chainEnd += 1;
   return terminators[chainEnd] ?? null;
 }
 

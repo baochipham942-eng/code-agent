@@ -423,6 +423,9 @@ function contextAfterCdSegment(
   // cwds only the moved one is reconstructable here, and it is the one the baseline resolves
   // against. Checking both cwds would be stricter still; deliberately not done (round 33).
   if (![null, ';', '&&', '||', '\n'].includes(terminators[segmentIndex] ?? null)) return null;
+  // A cd that is itself a pipeline member (`true | cd /tmp`) runs in the pipeline's subshell;
+  // the parent cwd never moved. Only the terminator after it was checked above — also look back.
+  if (['|', '|&'].includes(terminators[segmentIndex - 1] ?? '')) return null;
   // Round 35/36: `&` backgrounds the whole AND/OR list, cd included (`cd /tmp && env & …`).
   // `|&` is only a pipe (`2>&1 |`), not a background operator: `cd ~ && true |& cat` still runs
   // the cd in the parent shell, so it must not block propagation.

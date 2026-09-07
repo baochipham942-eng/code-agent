@@ -387,6 +387,28 @@ describe('PermissionClassifier', () => {
       expect(result.reason).toContain(path.join(os.homedir(), '.ssh/id_rsa'));
     });
 
+    // 第 37 轮：`&` 后台化的是整个列表（管道 + AND/OR 链），走查不能停在管道边界
+    // （`cd /tmp && true | env & …` 里 cd 也在后台子 shell；bash 探针父 cwd 不动）。
+    // cd 自身在管道中段（`true | cd /tmp`）同样是子 shell——前置管道检查挡住。
+    it.each([
+      'cd /tmp && true | env & cat .ssh/id_rsa',
+      'true | cd /tmp; cat .ssh/id_rsa',
+    ])('asks for the credential read when the cd sits inside a backgrounded or piped list: %s', async (command) => {
+      const result = await classifyPermission('bash', { command }, homeContext);
+
+      expect(result.decision).toBe('ask');
+      expect(result.reason).toContain('凭据路径');
+      expect(result.reason).toContain(path.join(os.homedir(), '.ssh/id_rsa'));
+    });
+
+    it('still advances the cwd when a pipe-crossed && chain is not backgrounded', async () => {
+      const result = await classifyPermission(
+        'bash', { command: 'cd /tmp && true | env; cat .ssh/id_rsa' }, homeContext,
+      );
+
+      expect(result.decision).toBe('approve');
+    });
+
     // 第 33 轮审查：`||` 链结束后 cd 成功那支的 cwd 已经变了，后续段按移动后的 cwd 解析
     // （与基线一致；两个 cwd 都查会更严，本刀不做，记证据档）。heredoc 正文是其命令的
     // stdin：严格解析失败，deny/ask 规则退回 lenient 词扫描，凭据路径落在原 cwd 上。

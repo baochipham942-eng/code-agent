@@ -290,6 +290,13 @@ const KNOWN_SHAPES = [
   // Round 36: `|&` is a pipe, not a background operator — the cd advances and the credential read
   // resolves against the moved cwd on both sides, ask in every cwd.
   'cd ~ && true |& cat .ssh/id_rsa',
+  // Round 37: a cd inside a pipeline never moves the parent cwd (`true | cd /tmp`); baseline
+  // misses the pipe membership and approves from the moved cwd, so this only tightens. The
+  // `&& … | … &` sibling shape diverges per cwd like round 35 and stays unit-test-only.
+  'true | cd /tmp; cat .ssh/id_rsa',
+  // Round 37: BSD `-i` consumes the next word as the backup suffix — the backup write target is
+  // new on the candidate side, baseline extracts nothing for the spelling, only tightens.
+  "sed -i .bak -e 's/x/y/' ~/.aws/credentials",
 ];
 
 // Under /tmp the critical-path rm rule fires before anything else and masks weaker rules; a real

@@ -147,9 +147,19 @@ describe('shared shell command parser', () => {
       .toEqual(['allowed.txt', backup]);
   });
 
-  it('a suffix-less sed -i still yields exactly one target', () => {
+  it('a suffix-less GNU sed -i gains the BSD suffix reading as an extra target', () => {
+    // GNU reads `sed -i -e s/a/b/ allowed.txt` as in-place with no backup. BSD `-i` consumes the
+    // next word as the suffix — even `-e` (probe on macOS: the command writes `allowed.txt-e`).
+    // The union keeps both: the GNU target and the BSD backup.
     expect(parseShellCommand('sed -i -e s/a/b/ allowed.txt').writeTargets.map((t) => t.path))
-      .toEqual(['allowed.txt']);
+      .toEqual(['allowed.txt', 'allowed.txt-e']);
+  });
+
+  it('sees the backup a BSD separate-suffix sed -i creates', () => {
+    // BSD probe: `sed -i .bak -e 's/x/y/' allowed.txt` rewrites allowed.txt and creates
+    // allowed.txt.bak; GNU reads `.bak` as an in-place file instead — the union covers both.
+    expect(parseShellCommand("sed -i .bak -e 's/x/y/' allowed.txt").writeTargets.map((t) => t.path))
+      .toEqual(['.bak', 'allowed.txt', 'allowed.txt.bak']);
   });
 
   // Round 34: `--` ends the option region, so a `-`-leading word after it is a real write target

@@ -75,8 +75,8 @@ vi.mock('../../../src/renderer/hooks/useToast', () => ({
 
 import {
   ContextHealthDetailPopover,
-  resolveContextHealthDetailMode,
 } from '../../../src/renderer/components/features/chat/ContextHealthDetailPopover';
+import { resolveContextHealthDetailMode } from '../../../src/renderer/components/features/chat/contextHealthDetailMode';
 import { useContextCompactionStore } from '../../../src/renderer/stores/contextCompactionStore';
 
 function renderDetail() {

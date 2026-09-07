@@ -82,6 +82,7 @@ function makeRemountedStreamState() {
   return {
     currentTurnMessageId: null as string | null,
     committedAssistantMessageIds: new Set<string>(),
+    lastDeltaSeqByTurn: new Map<string, number>(),
   };
 }
 

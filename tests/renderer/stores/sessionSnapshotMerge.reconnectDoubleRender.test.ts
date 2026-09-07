@@ -21,6 +21,7 @@ function streamState() {
   return {
     currentTurnMessageId: null as string | null,
     committedAssistantMessageIds: new Set<string>(),
+    lastDeltaSeqByTurn: new Map<string, number>(),
   };
 }
 
@@ -183,6 +184,7 @@ describe('reconnect/replay: assistant body renders once', () => {
     const replayState = {
       currentTurnMessageId: state.currentTurnMessageId,
       committedAssistantMessageIds: new Set(state.committedAssistantMessageIds),
+      lastDeltaSeqByTurn: new Map(state.lastDeltaSeqByTurn),
     };
     let afterReplay = merged;
     applyConversationStreamEvent(
@@ -233,5 +235,37 @@ describe('reconnect/replay: assistant body renders once', () => {
     const merged = mergeSnapshotWithLiveTail(snapshot, live).messages;
     const assistant = merged.filter((message) => message.role === 'assistant');
     expect(assistant.map((message) => message.content)).toEqual(['好的。', ANSWER]);
+  });
+});
+
+// ai-review #1696 第三轮③：正文相似只是弱证据，两轮回答碰巧一样就会被并掉，
+// 而合并只保留工具调用多的那一边 ⇒ 另一边整组工具调用消失。
+describe('相似度合并的护栏：工具调用冲突时不合', () => {
+  const user = (id: string): Message => ({ id, role: 'user', content: '同一个问题', timestamp: 1 });
+  const assistant = (id: string, toolCallIds: string[]): Message => ({
+    id,
+    role: 'assistant',
+    content: '一模一样的回答正文，长度足够触发相似度判定的门槛',
+    timestamp: 2,
+    toolCalls: toolCallIds.map((tid) => ({ id: tid, name: 'Bash', arguments: {} })) as never,
+  });
+
+  it('两边工具调用互不为子集时拒绝合并（各自的工具调用都不许消失）', () => {
+    const snapshot = [user('u-1'), assistant('a-old', ['call-old'])];
+    const live = [user('u-1'), assistant('a-new', ['call-new'])];
+
+    const merged = mergeSnapshotWithLiveTail(snapshot, live).messages;
+
+    const toolIds = merged.flatMap((m) => (m.toolCalls ?? []).map((c) => c.id));
+    expect(toolIds).toContain('call-old');
+  });
+
+  it('一边没有工具调用时照常合并（本单要治的重复渲染不受影响）', () => {
+    const snapshot = [user('u-2'), assistant('a-old2', [])];
+    const live = [user('u-2'), assistant('a-new2', ['call-x'])];
+
+    const merged = mergeSnapshotWithLiveTail(snapshot, live).messages;
+
+    expect(merged.filter((m) => m.role === 'assistant')).toHaveLength(1);
   });
 });

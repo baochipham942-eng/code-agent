@@ -154,8 +154,8 @@ export default {
       },
 
       fontFamily: {
-        sans: ['Inter', 'Source Han Sans', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
-        mono: ['JetBrains Mono', 'SF Mono', 'Fira Code', 'Menlo', 'Monaco', 'monospace'],
+        sans: ['-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+        mono: ['SF Mono', 'Fira Code', 'Menlo', 'Monaco', 'monospace'],
       },
 
       fontSize: {

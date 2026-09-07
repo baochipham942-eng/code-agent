@@ -171,7 +171,6 @@ async function tryRipgrep(
   fileType: string | undefined,
   include: string | undefined,
   signal: AbortSignal,
-  ignoreGlobs: string[] = [],
 ): Promise<RgResult> {
   const rgPath = findRgBinary();
   if (!rgPath) {
@@ -211,9 +210,13 @@ async function tryRipgrep(
     '--glob',
     '!build',
   );
-  for (const ignoreGlob of ignoreGlobs) {
-    args.push('--glob', `!${ignoreGlob}`);
-  }
+  // 别人槽的排除**不在这里做**：rg 走 gitignore 语义，裸目录名（`!.code-agent`）会连带排掉
+  // projects/demo/.code-agent 这类合法的项目配置目录 —— 搜索成功却漏报，调用方据此误判
+  // 「配置不存在」（ai-review 第 6 轮；同形状 09-06 N-SPAWN-NOHEAD 栽过）。而带前导 `/` 的
+  // 锚定写法在「搜索路径是绝对路径」时**一个都不排**（真实调用就是绝对路径），实测四种写法
+  // 见 tests/unit/tools/modules/shell/grep.test.ts 的 "foreign-slot ignore globs" 一节。
+  // ⇒ rg 的 --glob 表达不了「只排除搜索根下的这一个目录」，槽隔离统一由结果侧的
+  //   filterForeignSlotGrepOutput() 按真实路径过滤（与 Glob 工具同一模式），那一层是准确的。
   args.push(pattern, searchPath);
 
   try {
@@ -536,7 +539,6 @@ class GrepHandler implements ToolHandler<Record<string, unknown>, string> {
         fileType,
         include,
         ctx.abortSignal,
-        slotExcludes.ignoreGlobs,
       );
 
       if (rgResult.found) {

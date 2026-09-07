@@ -448,4 +448,57 @@ describe('grepModule (native)', () => {
       }
     });
   });
+
+  describe('foreign-slot ignore globs (ai-review round 6)', () => {
+    // 这条锁的是 grep.ts 给 rg 传排除项时必须用的形式。rg 走 gitignore 语义：
+    // **不含 `/` 的模式匹配任意深度**，裸的 `!.code-agent` 会连带排掉
+    // projects/demo/.code-agent 这类合法的项目配置目录 —— 搜索成功却漏报，
+    // 调用方据此误判「配置不存在」。前导 `/` 才把模式锚定到搜索根。
+    // 同形状 2026-09-06 在 N-SPAWN-NOHEAD 上栽过（排除项用目录名致正常搜索丢结果）。
+    it('rg 的 gitignore 语义：裸目录名匹配任意深度，前导 / 才锚定搜索根', async () => {
+      const { execFile } = await import('child_process');
+      const { promisify } = await import('util');
+      const execFileAsync = promisify(execFile);
+      const rgPath = process.env.RG_PATH_FOR_TEST || 'rg';
+
+      const root = await fs.mkdtemp(path.join(os.tmpdir(), 'grep-slotglob-'));
+      try {
+        await fs.mkdir(path.join(root, '.code-agent'), { recursive: true });
+        await fs.mkdir(path.join(root, 'projects/demo/.code-agent'), { recursive: true });
+        await fs.writeFile(path.join(root, '.code-agent/config.json'), 'needle\n');
+        await fs.writeFile(path.join(root, 'projects/demo/.code-agent/agents.json'), 'needle\n');
+
+        const run = async (glob: string): Promise<string> => {
+          try {
+            const { stdout } = await execFileAsync(
+              rgPath,
+              ['--hidden', '--glob', glob, 'needle', root],
+              { encoding: 'utf8' },
+            );
+            return stdout;
+          } catch (error) {
+            // rg exits 1 on "no matches" — that is a valid outcome here
+            return (error as { stdout?: string }).stdout ?? '';
+          }
+        };
+
+        const bare = await run('!.code-agent');
+        const anchored = await run('!/.code-agent');
+
+        // 裸名字：连合法的项目配置一起排掉了（当前实现的病）
+        expect(bare).not.toContain('agents.json');
+        expect(bare).not.toContain('config.json');
+        // 🔴 前导 `/` 在「搜索路径是绝对路径」时**完全不生效**——两个都保留。
+        // 也就是说 rg 的 --glob 表达不了「只排除搜索根下的这一个目录」：
+        // 裸名字会误伤任意深度的同名目录，锚定形式则一个都不排。
+        // ⇒ 修这个洞不能靠换 glob 写法，只能改成「搜完按真实路径过滤输出行」
+        //   （Glob 工具已经是这个模式：isListedPathInsideForeignSlot）。
+        // 这条测试锁住这个事实，防止有人再拿 glob 形式去试。
+        expect(anchored).toContain('agents.json');
+        expect(anchored).toContain('config.json');
+      } finally {
+        await fs.rm(root, { recursive: true, force: true });
+      }
+    });
+  });
 });

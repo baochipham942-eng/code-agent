@@ -642,7 +642,27 @@ export const ChatView: React.FC = () => {
               sessionId: feedbackSessionId,
             }));
           }
-          return isChatSendAccepted(delivery);
+          if (!isChatSendAccepted(delivery)) {
+            // 投递被拒：显式收掉「正在发送」的反馈（本单症状①要的就是这个）。
+            setPendingAssistantFeedback((current) => transitionAssistantFeedback(current, {
+              type: 'send_failed',
+              clientMessageId,
+              sessionId: feedbackSessionId ?? undefined,
+            }));
+          }
+          // 🔴 这里**照改前一样返回 true**（只要真的调到了 sendMessage）。
+          //
+          // 这个返回值同时被 composer 当作「要不要回滚草稿」的信号。把它改成真实投递
+          // 结果，等于把一条改前根本走不到的回滚路径接通了 —— 于是「回滚会覆盖用户在
+          // 这期间新做的任何操作」变成实际问题，而"用户可能动过的项"是**没有边界的
+          // 枚举**：文本、附件、appshot、会话引用、产物引用、命令 chip、团队预选……
+          // ai-review 连着九轮各点出一项，每轮补一个判据都只是把边界往外挪一格。
+          //
+          // 收口方式：投递失败不回滚草稿，恢复靠错误消息上的重试锚点（retryPrompt /
+          // retryAttachments / retrySessionId，本单已加）。这与改前行为**一字不差**，
+          // 锚点是净增量。真正没发出去的两种情况（未登录、模型没配）仍然返回 false、
+          // 照旧回滚，那条路改前就在，行为不变。
+          return true;
         });
         return didSend === true;
       },

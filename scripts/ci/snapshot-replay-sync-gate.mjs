@@ -75,13 +75,18 @@ function lines(value) {
   return value ? value.split('\n').filter(Boolean) : [];
 }
 
-/** 与 visual 门同口径：merge-base 以来的提交 diff + 工作树未提交改动 + 未跟踪文件。 */
+/**
+ * 与 visual 门同口径：merge-base 以来的提交 diff + 工作树未提交改动 + 未跟踪文件。
+ * diff-filter 含 D：删掉敏感面文件同样是模型可见行为变更（ai-review #1721 Nit 1
+ * 首踩——ACMR 漏 D，删 contextAssembly 文件不触发同步要求）。删除快照目录自身
+ * 不触发敏感面判定（快照路径不在 SENSITIVE_PREFIXES），只受「语料非空」 fail-loud 守。
+ */
 function changedPathsSince(ref) {
-  const changed = new Set(lines(git(['diff', '--name-only', '--diff-filter=ACMR', ref])));
-  for (const pending of lines(git(['diff', '--name-only', '--diff-filter=ACMR', 'HEAD']))) {
+  const changed = new Set(lines(git(['diff', '--name-only', '--diff-filter=ACMRD', ref])));
+  for (const pending of lines(git(['diff', '--name-only', '--diff-filter=ACMRD', 'HEAD']))) {
     changed.add(pending);
   }
-  for (const staged of lines(git(['diff', '--cached', '--name-only', '--diff-filter=ACMR']))) {
+  for (const staged of lines(git(['diff', '--cached', '--name-only', '--diff-filter=ACMRD']))) {
     changed.add(staged);
   }
   for (const untracked of lines(git(['ls-files', '--others', '--exclude-standard']))) {

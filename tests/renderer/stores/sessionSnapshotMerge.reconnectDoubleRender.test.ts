@@ -139,6 +139,7 @@ function hostPersistedSnapshot(live: Message[]): Message[] {
       role: 'assistant',
       content: ANSWER,
       timestamp: 1_700,
+      metadata: { correlation: { turnId: LIVE_TURN_ID } },
     },
   ];
 }
@@ -416,5 +417,156 @@ describe('contentParts 取舍：承载正文覆盖不了合并后 content 就整
 
     expect(assistant?.contentParts).toBe(liveParts);
     expect(visibleText(mergeSnapshotWithLiveTail(snapshot, live).messages)).toContain(P + Q);
+  });
+});
+
+describe('findLiveCounterpart: correlation.turnId pairing', () => {
+  const SAME = '一模一样的回答正文，长度足够触发相似度判定的门槛，两轮碰巧一样也不能并。';
+  const user = (id: string): Message => ({ id, role: 'user', content: '同一个问题', timestamp: 1 });
+  const assistant = (
+    id: string,
+    extras: { turnId?: string; content?: string; toolCallIds?: string[] } = {},
+  ): Message => ({
+    id,
+    role: 'assistant',
+    content: extras.content ?? SAME,
+    timestamp: 2,
+    ...(extras.turnId ? { metadata: { correlation: { turnId: extras.turnId } } } : {}),
+    ...(extras.toolCallIds
+      ? { toolCalls: extras.toolCallIds.map((tid) => ({ id: tid, name: 'Bash', arguments: {} })) as never }
+      : {}),
+  });
+
+  it('pairs across ids by correlation.turnId without requiring body similarity', () => {
+    // 键配对不要求正文相似：空草稿（turn_start 建的占位）与落库正文直接合；
+    // 但分叉正文不合——同轮可以落多条 assistant，见 divergent-bodies 用例。
+    const snapshot = [user('u-key'), assistant('host-1', { turnId: 'turn-1', content: SAME })];
+    const live = [user('u-key'), assistant('turn-1', { turnId: 'turn-1', content: '' })];
+
+    const merged = mergeSnapshotWithLiveTail(snapshot, live).messages;
+    const assistants = merged.filter((message) => message.role === 'assistant');
+
+    expect(assistants).toHaveLength(1);
+    expect(assistants[0]?.content).toBe(SAME);
+    expect(assistants[0]?.metadata?.correlation?.turnId).toBe('turn-1');
+  });
+
+  it('keyed cross-id pair with live extending the snapshot prefix keeps the longer live body', () => {
+    const snapshot = [user('u-pre'), assistant('host-p', { turnId: 'turn-p', content: '回答前半截' })];
+    const live = [user('u-pre'), assistant('turn-p', { turnId: 'turn-p', content: '回答前半截，流式续增的后半截' })];
+
+    const merged = mergeSnapshotWithLiveTail(snapshot, live).messages;
+    const assistants = merged.filter((message) => message.role === 'assistant');
+
+    expect(assistants).toHaveLength(1);
+    expect(assistants[0]?.content).toBe('回答前半截，流式续增的后半截');
+  });
+
+  it('keyed merge keeps snapshot-only metadata keys (agentError) that the live draft lacks', () => {
+    const snapshot = [
+      user('u-meta'),
+      {
+        ...assistant('host-e', { turnId: 'turn-e', content: '失败轮' }),
+        metadata: {
+          correlation: { turnId: 'turn-e' },
+          agentError: { category: 'generic', code: 'RUN_FAILED', timestamp: 3 },
+        } as never,
+      },
+    ];
+    const live = [user('u-meta'), assistant('turn-e', { turnId: 'turn-e', content: '失败轮草稿' })];
+
+    const merged = mergeSnapshotWithLiveTail(snapshot, live).messages;
+    const assistants = merged.filter((message) => message.role === 'assistant');
+
+    expect(assistants).toHaveLength(1);
+    expect((assistants[0]?.metadata as Record<string, unknown>)?.agentError).toBeTruthy();
+    expect(assistants[0]?.metadata?.correlation?.turnId).toBe('turn-e');
+  });
+
+  it('does not fall back to body similarity when both sides have keys that disagree', () => {
+    const snapshot = [user('u-conflict'), assistant('host-a', { turnId: 'turn-a' })];
+    const live = [user('u-conflict'), assistant('turn-b', { turnId: 'turn-b' })];
+
+    const merged = mergeSnapshotWithLiveTail(snapshot, live).messages;
+    const assistants = merged.filter((message) => message.role === 'assistant');
+
+    expect(assistants).toHaveLength(2);
+    expect(assistants.map((message) => message.metadata?.correlation?.turnId)).toEqual(['turn-a', 'turn-b']);
+  });
+
+  it('one snapshot key matching two live messages keeps the first live in list order', () => {
+    const snapshot = [user('u-multi'), assistant('host-m', { turnId: 'turn-shared', content: '正文' })];
+    const live = [
+      user('u-multi'),
+      assistant('live-first', { turnId: 'turn-shared', content: '正文·第一份 live 的流式续增' }),
+      assistant('live-second', { turnId: 'turn-shared', content: '正文·第二份 live 的流式续增' }),
+    ];
+
+    const merged = mergeSnapshotWithLiveTail(snapshot, live).messages;
+    const assistants = merged.filter((message) => message.role === 'assistant');
+
+    expect(assistants).toHaveLength(2);
+    // 前缀相关才合并：消费第一份 live（正文取更长的 live；合并后 id=live id），第二份保持独立。
+    expect(assistants[0]?.id).toBe('live-first');
+    expect(assistants[0]?.content).toBe('正文·第一份 live 的流式续增');
+    expect(assistants[1]?.id).toBe('live-second');
+    expect(assistants[1]?.content).toBe('正文·第二份 live 的流式续增');
+  });
+
+  it('empty-body snapshot tool message does not steal the live final reply pairing', () => {
+    // ai-review #1706 第四轮：同轮先落空正文工具消息 A 再落终版 B；A 的 '' 是 B 的
+    // 「前缀」，不挡则 A 先消费 live B，快照 B 落单 ⇒ 终版显示两遍且一份错位到工具前。
+    const snapshot = [
+      user('u-ab'),
+      assistant('host-a', { turnId: 'turn-ab', content: '' }),
+      assistant('host-b', { turnId: 'turn-ab', content: '最终回复 B' }),
+    ];
+    const live = [user('u-ab'), assistant('turn-ab', { turnId: 'turn-ab', content: '最终回复 B' })];
+
+    const merged = mergeSnapshotWithLiveTail(snapshot, live).messages;
+    const assistants = merged.filter((message) => message.role === 'assistant');
+
+    expect(assistants).toHaveLength(2);
+    expect(assistants.map((message) => [message.id, message.content])).toEqual([
+      ['host-a', ''],
+      ['turn-ab', '最终回复 B'],
+    ]);
+  });
+
+  it('cross-id keyed pair with divergent bodies is not merged (same turn can persist tool reply A then final B)', () => {
+    // ai-review #1706 第三轮：同一 turn 落库工具回复 A 再落最终回复 B；刷新若只拿到 A，
+    // 而 live 已是 B，合并会用 A 覆盖用户已看到的 B。分叉 = 不是同一条消息，各留各的。
+    const snapshot = [user('u-div'), assistant('host-a', { turnId: 'turn-div', content: '工具回复 A 的较早落库正文' })];
+    const live = [user('u-div'), assistant('turn-div', { turnId: 'turn-div', content: '最终回复 B：用户已经看到的完成说明' })];
+
+    const merged = mergeSnapshotWithLiveTail(snapshot, live).messages;
+    const assistants = merged.filter((message) => message.role === 'assistant');
+
+    expect(assistants).toHaveLength(2);
+    expect(assistants.map((message) => message.content)).toEqual([
+      '工具回复 A 的较早落库正文',
+      '最终回复 B：用户已经看到的完成说明',
+    ]);
+  });
+
+  it('falls back to body similarity only when the snapshot has no correlation key', () => {
+    const snapshot = [user('u-old'), assistant('host-old')];
+    const live = [user('u-old'), assistant('turn-old')];
+
+    const merged = mergeSnapshotWithLiveTail(snapshot, live).messages;
+
+    expect(merged.filter((message) => message.role === 'assistant')).toHaveLength(1);
+  });
+
+  it('keyed match still merges when tool-call sets would have conflicted under the similarity guard', () => {
+    const snapshot = [user('u-tools'), assistant('host-tools', { turnId: 'turn-tools', toolCallIds: ['call-old'] })];
+    const live = [user('u-tools'), assistant('turn-tools', { turnId: 'turn-tools', toolCallIds: ['call-new'] })];
+
+    const merged = mergeSnapshotWithLiveTail(snapshot, live).messages;
+    const assistants = merged.filter((message) => message.role === 'assistant');
+    const toolIds = assistants.flatMap((message) => (message.toolCalls ?? []).map((call) => call.id));
+
+    expect(assistants).toHaveLength(1);
+    expect(toolIds).toEqual(expect.arrayContaining(['call-old', 'call-new']));
   });
 });

@@ -299,7 +299,7 @@ describe('WebSessionStore', () => {
       turn: {
         assistantText: '带键回答',
         assistantThinking: '',
-        assistantMetadata: { turnQuality: { score: 1 } } as Message['metadata'],
+        assistantMetadata: { source: 'typed' },
         assistantToolCalls: [],
         lastLoopAssistantMessageId: undefined,
         lastTurnId: 'turn-from-collector',

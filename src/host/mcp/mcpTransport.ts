@@ -8,7 +8,7 @@ import {
   SSEClientTransport,
   StreamableHTTPClientTransport,
 } from '@modelcontextprotocol/client';
-import type { ListChangedHandlers, OAuthClientProvider, Transport } from '@modelcontextprotocol/client';
+import type { FetchLike, ListChangedHandlers, OAuthClientProvider, Transport } from '@modelcontextprotocol/client';
 
 // ============================================================================
 // MCP Transport - 传输层创建和连接管理
@@ -17,6 +17,7 @@ import type { ListChangedHandlers, OAuthClientProvider, Transport } from '@model
 import { fetch as undiciFetch, ProxyAgent } from 'undici';
 import { createLogger } from '../services/infra/logger';
 import { sanitizeEnv } from '../utils/sanitizeEnv';
+import { createConnectorOAuthFetch } from '../connectors/oauth/oauthFetch';
 import { MCP_TIMEOUTS } from '../../shared/constants';
 import type {
   MCPServerConfig,
@@ -117,19 +118,40 @@ export function resolveMCPProxyUrl(
     : env.HTTP_PROXY || env.http_proxy || env.HTTPS_PROXY || env.https_proxy;
 }
 
-function createRemoteMCPFetch(target: URL): typeof globalThis.fetch | undefined {
-  const proxyUrl = resolveMCPProxyUrl(target);
-  if (!proxyUrl) return undefined;
-  let agent = mcpProxyAgents.get(proxyUrl);
-  if (!agent) {
+// MCP OAuth 出站（discovery / 动态注册 / token 交换 / 刷新）由 SDK 经 transport 的 fetch 发出，
+// 且一律不带 AbortSignal；会话流量（initialize POST、Streamable GET 长流、SSE POST/GET）则全部
+// 携带 transport 的 abort signal。以「有没有 signal」区分两类流量：
+// - 无 signal ⇒ OAuth 短请求，交给 connector OAuth fetch（30s + AbortSignal.timeout + 代理感知），
+//   超时会中止底层请求，不留幽灵连接，用户面沿用 oauthFetch.ts 的中文超时句式；
+// - 有 signal ⇒ 会话请求，保持直连 / 代理原语义，绝不叠加响应截止时间——长连接的生死由
+//   signal 和 connectWithTimeout 管。
+const sharedProxyAwareOauthFetch = createConnectorOAuthFetch();
+const sharedDirectOauthFetch = createConnectorOAuthFetch({ env: {} });
+
+export function createRemoteMCPFetch(
+  target: URL,
+  options: { useProxy?: boolean; oauthFetch?: FetchLike } = {},
+): typeof globalThis.fetch {
+  const proxyUrl = options.useProxy ? resolveMCPProxyUrl(target) : undefined;
+  let agent = proxyUrl ? mcpProxyAgents.get(proxyUrl) : undefined;
+  if (proxyUrl && !agent) {
     agent = new ProxyAgent(proxyUrl);
     mcpProxyAgents.set(proxyUrl, agent);
   }
-  return ((input: Parameters<typeof globalThis.fetch>[0], init?: RequestInit) =>
-    undiciFetch(input as Parameters<typeof undiciFetch>[0], {
-      ...init,
-      dispatcher: agent,
-    } as Parameters<typeof undiciFetch>[1]) as unknown as Promise<Response>) as typeof globalThis.fetch;
+  const dispatcher = agent;
+  const oauthFetch = options.oauthFetch
+    ?? (options.useProxy ? sharedProxyAwareOauthFetch : sharedDirectOauthFetch);
+  return ((input: Parameters<typeof globalThis.fetch>[0], init?: RequestInit) => {
+    if (init?.signal) {
+      return dispatcher
+        ? undiciFetch(input as Parameters<typeof undiciFetch>[0], {
+          ...init,
+          dispatcher,
+        } as Parameters<typeof undiciFetch>[1]) as unknown as Promise<Response>
+        : fetch(input, init);
+    }
+    return oauthFetch(input as string | URL, init);
+  }) as typeof globalThis.fetch;
 }
 
 export function isRetryableRemoteMCPConnectionError(error: unknown): boolean {
@@ -267,13 +289,21 @@ export function createStdioMCPEnv(
  */
 export function createTransport(
   config: MCPServerConfig,
-  options: { useProxy?: boolean; authProvider?: OAuthClientProvider } = {},
+  options: {
+    useProxy?: boolean;
+    authProvider?: OAuthClientProvider;
+    oauthFetch?: FetchLike;
+  } = {},
 ): { transport: Transport; connectTimeout: number } {
   if (isHttpStreamableConfig(config)) {
     const url = new URL(config.serverUrl);
     logger.info(`Using HTTP Streamable transport for ${config.name}: ${url.origin}${url.pathname}`);
     const requestInit: RequestInit = {};
-    const proxyFetch = options.useProxy ? createRemoteMCPFetch(url) : undefined;
+    // 远程传输始终注入 fetch：OAuth 出站走带超时的分支，useProxy 只决定走不走代理。
+    const remoteFetch = createRemoteMCPFetch(url, {
+      useProxy: options.useProxy,
+      oauthFetch: options.oauthFetch,
+    });
 
     if (config.headers) {
       const headers = options.authProvider
@@ -286,7 +316,7 @@ export function createTransport(
 
     const transport = new StreamableHTTPClientTransport(url, {
       requestInit,
-      ...(proxyFetch ? { fetch: proxyFetch } : {}),
+      fetch: remoteFetch,
       ...(options.authProvider ? { authProvider: options.authProvider } : {}),
     });
     return { transport, connectTimeout: SSE_CONNECT_TIMEOUT };
@@ -296,7 +326,10 @@ export function createTransport(
     logger.info(`Using SSE transport for ${config.name}: ${url.origin}${url.pathname}`);
     const requestInit: RequestInit = {};
     const eventSourceInit: EventSourceInit = {};
-    const proxyFetch = options.useProxy ? createRemoteMCPFetch(url) : undefined;
+    const remoteFetch = createRemoteMCPFetch(url, {
+      useProxy: options.useProxy,
+      oauthFetch: options.oauthFetch,
+    });
 
     if (config.headers) {
       requestInit.headers = config.headers;
@@ -305,7 +338,7 @@ export function createTransport(
     const transport = new SSEClientTransport(url, {
       ...(config.headers ? { requestInit } : {}),
       eventSourceInit,
-      ...(proxyFetch ? { fetch: proxyFetch } : {}),
+      fetch: remoteFetch,
     });
     return { transport, connectTimeout: SSE_CONNECT_TIMEOUT };
   } else {

@@ -522,7 +522,9 @@ export class StandaloneAgentAdapter implements AgentInterface {
     this.onEvaluationSignal = config.onEvaluationSignal;
     this.database = config.database;
     this.telemetryCollector = config.telemetryCollector;
-    this.restrictWritesToWorkspace = config.restrictWritesToWorkspace ?? true;
+    // 评测写边界缺省关（换姿态收口：派生链缺口未清零前不开，见证据档「已知派生链缺口」节）。
+    // 打开的唯一入口是评测侧显式传 true（eval-ci 的 NEO_EVAL_WRITE_BOUNDARY=on）。
+    this.restrictWritesToWorkspace = config.restrictWritesToWorkspace ?? false;
     // harness.toolMode 优先于顶层 toolMode（对照实验显式控制工具集维度）
     this.toolMode = config.harness?.toolMode ?? config.toolMode ?? 'deferred';
   }

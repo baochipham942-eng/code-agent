@@ -6,7 +6,7 @@
 //   ToolExecutor 不带 runContext/scope/开关，AgentLoop 不收 runId（loop 自造，改前行为）。
 //   覆盖 #1686 第五轮形状：不注入 scope ⇒ Bash 的 RUN_WORKSPACE_BOUNDARY 不会被点亮
 //   （行为证明在 agentAdapter.writeBoundaryBehavior.test.ts）。
-// ②「打开后接线正确」——缺省 true：scope 双根（沙箱 primary + 记忆 additional）、
+// ②「打开后接线正确」——显式 true：scope 双根（沙箱 primary + 记忆 additional）、
 //   runId 同源（executor 与 AgentLoop 必须同一个，否则每次工具调用撞 RUN_CONTEXT_MISMATCH）、
 //   workingDirectory 用 runContext.cwd（canonicalize 后的，防 cwd 字面量 mismatch 抛）。
 // ============================================================================
@@ -93,8 +93,22 @@ describe('评测 adapter 写边界接线（restrictWritesToWorkspace）', () => 
     });
   }
 
-  it('缺省（不传开关）：接线打开——scope 双根 + runId 同源 + cwd 对齐', async () => {
+  it('缺省（不传开关）：接线关着——与改前一字不差（换姿态收口：缺口清零前缺省不开）', async () => {
     await makeAdapter().sendMessage('hello');
+    expect(captured.executorConfigs).toHaveLength(1);
+    const executorConfig = captured.executorConfigs[0];
+    const loopConfig = captured.loopConfigs[0];
+    expect(loopConfig).toBeDefined();
+
+    // 缺省关 = 与显式 false 同形：无 scope 注入、无 runContext、loop 不收 runId。
+    expect(executorConfig.runContext).toBeUndefined();
+    expect(executorConfig.workingDirectory).toBe(sandbox);
+    expect('restrictWritesToWorkspace' in executorConfig).toBe(false);
+    expect('runId' in loopConfig).toBe(false);
+  });
+
+  it('开关显式 true：接线打开——scope 双根 + runId 同源 + cwd 对齐', async () => {
+    await makeAdapter(true).sendMessage('hello');
     expect(captured.executorConfigs).toHaveLength(1);
     const executorConfig = captured.executorConfigs[0];
     const loopConfig = captured.loopConfigs[0];
@@ -143,7 +157,7 @@ describe('评测 adapter 写边界接线（restrictWritesToWorkspace）', () => 
     await fs.mkdir(innerDataDir);
     process.env.CODE_AGENT_DATA_DIR = innerDataDir;
     try {
-      await makeAdapter().sendMessage('hello');
+      await makeAdapter(true).sendMessage('hello');
       const runContext = captured.executorConfigs[0].runContext as {
         workspaceScope?: { roots: Array<{ sourceId: string }> };
       };

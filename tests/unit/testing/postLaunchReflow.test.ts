@@ -580,4 +580,78 @@ describe('post-launch reflow candidates and gates', () => {
     })).toMatchObject({ allowed: false, reason: 'not_candidate' });
     expect(checkPostLaunchReflowGates(db, { sessionId: 's', turnId: 'turn-A' }).allowed).toBe(true);
   });
+
+  it('同一会话两条裸点踩（turn_id 空、message_id 不同）各自成候选，锚点不串', () => {
+    const sessionId = 'a1b2c3d4-e5f6-4789-8abc-def012345678';
+    const messageA = '550e8400-e29b-41d4-a716-4466554400aa';
+    const messageB = '550e8400-e29b-41d4-a716-4466554400bb';
+    const feedbackA = '6ba7b810-9dad-11d1-80b4-00c04fd430aa';
+    const feedbackB = '6ba7b810-9dad-11d1-80b4-00c04fd430bb';
+    db.prepare(`
+      INSERT INTO telemetry_feedback (id, session_id, turn_id, message_id, rating, created_at)
+      VALUES (?, ?, NULL, ?, -1, ?), (?, ?, NULL, ?, -1, ?)
+    `).run(feedbackA, sessionId, messageA, 1_000, feedbackB, sessionId, messageB, 2_000);
+
+    const listed = listReflowCandidates(db, { sessionId });
+    expect(listed).toHaveLength(2);
+    const byMessage = new Map(listed.map((candidate) => [candidate.messageId, candidate]));
+    expect(byMessage.get(messageA)).toMatchObject({
+      sessionId, turnId: null, feedbackId: feedbackA, messageId: messageA, feedbackAt: 1_000, occurredAt: 1_000,
+    });
+    expect(byMessage.get(messageB)).toMatchObject({
+      sessionId, turnId: null, feedbackId: feedbackB, messageId: messageB, feedbackAt: 2_000, occurredAt: 2_000,
+    });
+  });
+
+  it('一条裸点踩 + 一条绑轮点踩互不覆盖', () => {
+    const sessionId = 'b2c3d4e5-f6a7-4890-9bcd-ef0123456789';
+    const bareMessage = '550e8400-e29b-41d4-a716-4466554400cc';
+    const boundTurn = TRIGGER_TURN_ID;
+    const boundMessage = '550e8400-e29b-41d4-a716-4466554400dd';
+    const bareFeedback = '6ba7b810-9dad-11d1-80b4-00c04fd430cc';
+    const boundFeedback = '6ba7b810-9dad-11d1-80b4-00c04fd430dd';
+    db.prepare(`
+      INSERT INTO telemetry_feedback (id, session_id, turn_id, message_id, rating, created_at)
+      VALUES (?, ?, NULL, ?, -1, ?), (?, ?, ?, ?, -1, ?)
+    `).run(bareFeedback, sessionId, bareMessage, 1_000, boundFeedback, sessionId, boundTurn, boundMessage, 2_000);
+
+    const listed = listReflowCandidates(db, { sessionId });
+    expect(listed).toHaveLength(2);
+    const bare = listed.find((candidate) => candidate.feedbackId === bareFeedback);
+    const bound = listed.find((candidate) => candidate.feedbackId === boundFeedback);
+    expect(bare).toMatchObject({
+      sessionId, turnId: null, feedbackId: bareFeedback, messageId: bareMessage, feedbackAt: 1_000, occurredAt: 1_000,
+    });
+    expect(bound).toMatchObject({
+      sessionId, turnId: boundTurn, feedbackId: boundFeedback, messageId: boundMessage, feedbackAt: 2_000, occurredAt: 2_000,
+    });
+  });
+
+  it('同键合并锚点三件套取 created_at 最新那条，乱序插入也不拼字段', () => {
+    const sessionId = 'c3d4e5f6-a7b8-4901-acde-f01234567890';
+    const turnId = TRIGGER_TURN_ID;
+    const oldMessage = '550e8400-e29b-41d4-a716-4466554400ee';
+    const newMessage = '550e8400-e29b-41d4-a716-4466554400ff';
+    const oldFeedback = '6ba7b810-9dad-11d1-80b4-00c04fd430ee';
+    const newFeedback = '6ba7b810-9dad-11d1-80b4-00c04fd430ff';
+    db.prepare(`
+      INSERT INTO telemetry_feedback (id, session_id, turn_id, message_id, rating, created_at)
+      VALUES (?, ?, ?, ?, -1, ?)
+    `).run(newFeedback, sessionId, turnId, newMessage, 5_000);
+    db.prepare(`
+      INSERT INTO telemetry_feedback (id, session_id, turn_id, message_id, rating, created_at)
+      VALUES (?, ?, ?, ?, -1, ?)
+    `).run(oldFeedback, sessionId, turnId, oldMessage, 1_000);
+
+    const listed = listReflowCandidates(db, { sessionId });
+    expect(listed).toHaveLength(1);
+    expect(listed[0]).toMatchObject({
+      sessionId,
+      turnId,
+      feedbackId: newFeedback,
+      messageId: newMessage,
+      feedbackAt: 5_000,
+      occurredAt: 5_000,
+    });
+  });
 });

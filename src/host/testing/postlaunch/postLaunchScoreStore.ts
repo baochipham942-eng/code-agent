@@ -267,6 +267,23 @@ function candidateSources(row: ReflowScoreRow): Array<'judge' | 'signal'> {
 }
 
 /**
+ * 绑轮点踩与评分行共用 session:turn；裸点踩 turn_id 为空时按 message/feedback id 分键，
+ * 避免同一会话多条共一个空键。
+ */
+function reflowFeedbackCandidateKey(feedback: {
+  id: string;
+  session_id: string;
+  turn_id: string | null;
+  message_id: string | null;
+}): string {
+  const turnId = feedback.turn_id?.trim() || null;
+  if (turnId) return `${feedback.session_id}:${turnId}`;
+  const messageId = feedback.message_id?.trim() || null;
+  if (messageId) return `${feedback.session_id}:msg:${messageId}`;
+  return `${feedback.session_id}:fb:${feedback.id}`;
+}
+
+/**
  * 只读回流候选出口：当前 judge 版本中任一维为红 ∪ 确定性信号，
  * 再并入 telemetry_feedback 的点踩行。正文不从评分表带出。
  */
@@ -333,10 +350,12 @@ export function listReflowCandidates(
     // Older/fixture databases may not have the optional feedback table yet.
   }
   for (const feedback of feedbackRows) {
-    const key = `${feedback.session_id}:${feedback.turn_id ?? ''}`;
+    const key = reflowFeedbackCandidateKey(feedback);
     const existing = candidates.get(key);
     if (existing) {
       if (!existing.sources.includes('feedback')) existing.sources.push('feedback');
+      // 锚点三件套与 occurredAt 取 created_at 最新的同一条，禁止跨记录拼字段。
+      if (existing.feedbackAt !== undefined && feedback.created_at <= existing.feedbackAt) continue;
       existing.feedbackId = feedback.id;
       existing.messageId = feedback.message_id;
       existing.feedbackAt = feedback.created_at;

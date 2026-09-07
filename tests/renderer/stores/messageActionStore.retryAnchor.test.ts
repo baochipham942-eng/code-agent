@@ -15,6 +15,10 @@ describe('regenerate 的重试锚点', () => {
   beforeEach(() => {
     send.mockClear();
     useMessageActionStore.getState().unregister();
+    useSessionStore.setState({
+      currentSessionId: null,
+      runningSessionIds: new Set<string>(),
+    } as never);
   });
 
   const errorWithAnchor = (retryPrompt: string): Message => ({
@@ -205,5 +209,48 @@ describe('regenerate 的重试锚点', () => {
 
     expect(send.mock.calls[0][0]).toBe('长段需求');
     expect(send.mock.calls[0][1]).toEqual({ clientMessageId: 'user-failed-2' });
+  });
+
+  it('运行中仍可重试失败消息并带上原 clientMessageId', () => {
+    useSessionStore.setState({
+      currentSessionId: 'session-running',
+      runningSessionIds: new Set(['session-running']),
+    } as never);
+    install([
+      {
+        id: 'user-failed-run',
+        role: 'user',
+        content: '失败的问题',
+        timestamp: 1,
+        metadata: { sendFailed: true },
+      },
+      {
+        id: 'err-run',
+        role: 'assistant',
+        content: '发送失败',
+        timestamp: 2,
+        metadata: { retryPrompt: '失败的问题', retryClientMessageId: 'user-failed-run' },
+      },
+    ]);
+
+    useMessageActionStore.getState().regenerateLast();
+
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0][1]).toEqual({ clientMessageId: 'user-failed-run' });
+  });
+
+  it('运行中 session.retry 不重做已成功轮', () => {
+    useSessionStore.setState({
+      currentSessionId: 'session-running',
+      runningSessionIds: new Set(['session-running']),
+    } as never);
+    install([
+      { id: 'u-ok', role: 'user', content: '已发出去的', timestamp: 1 },
+      { id: 'a-ok', role: 'assistant', content: '回答', timestamp: 2 },
+    ]);
+
+    useMessageActionStore.getState().regenerateLast();
+
+    expect(send).not.toHaveBeenCalled();
   });
 });

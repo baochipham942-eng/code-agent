@@ -49,6 +49,7 @@ import {
 import {
   buildSendFailureRetryAnchor,
   markOptimisticUserSendFailed,
+  replaceOptimisticUserMessage,
   upsertOptimisticUserMessage,
 } from '../../utils/optimisticUserSend';
 
@@ -942,15 +943,19 @@ export function useAgentIPC({
             'interrupt',
             runtimeEnvelope,
           );
-          if (!useSessionStore.getState().messages.some((message) => message.id === messageId)) {
-            addMessage({
-              id: messageId,
-              role: 'user',
-              content: runtimeEnvelope.content,
-              attachments: runtimeEnvelope.attachments,
-              timestamp: Date.now(),
-              metadata: toMessageMetadata(runtimeContext),
-            });
+          const optimisticUser = {
+            id: messageId,
+            role: 'user' as const,
+            content: runtimeEnvelope.content,
+            attachments: runtimeEnvelope.attachments,
+            timestamp: Date.now(),
+            metadata: toMessageMetadata(runtimeContext),
+          };
+          if (
+            !replaceOptimisticUserMessage(optimisticUser)
+            && !useSessionStore.getState().messages.some((message) => message.id === messageId)
+          ) {
+            addMessage(optimisticUser);
           }
           logger.info('sendMessage - foreground input delivery accepted', { outcome: outcome.outcome });
           return outcome;
@@ -976,10 +981,6 @@ export function useAgentIPC({
           && voiceCall.sessionId === effectiveSessionId
           ? effectiveSessionId
           : undefined;
-        const voiceFallbackMessageId = voiceInjectSessionId !== undefined
-          ? (envelope.clientMessageId ?? generateMessageId())
-          : undefined;
-
         if (voiceInjectSessionId !== undefined) {
           try {
             const injection = await typedInvokeDomain(VoiceSchemas.INJECT_USER_TEXT, {
@@ -1010,7 +1011,7 @@ export function useAgentIPC({
             isCurrentSessionProcessing,
           });
         }
-        return deliverToForegroundBrain(voiceFallbackMessageId);
+        return deliverToForegroundBrain(envelope.clientMessageId);
       }
 
       // Add user message with UUID

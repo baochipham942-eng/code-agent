@@ -100,6 +100,10 @@ export const useMessageActionStore = create<MessageActionState>((set, get) => ({
     if (!_send || !_getMessages) return;
 
     const messages = _getMessages();
+    const sessionId = useSessionStore.getState().currentSessionId;
+    const running = Boolean(
+      sessionId && useSessionStore.getState().isSessionRunning(sessionId),
+    );
     // Find the assistant message, then look backward for the preceding user message
     const idx = messages.findIndex((m) => m.id === messageId);
     if (idx < 0) return;
@@ -156,6 +160,7 @@ export const useMessageActionStore = create<MessageActionState>((set, get) => ({
     for (let i = idx - 1; i >= 0; i--) {
       if (messages[i].role === 'user' && (messages[i].content?.trim() || messages[i].attachments?.length)) {
         const failed = messages[i].metadata?.sendFailed === true;
+        if (running && !failed) return;
         const retryContext = {
           ...(messages[i].attachments?.length ? { attachments: messages[i].attachments } : {}),
           ...(failed && messages[i].id ? { clientMessageId: messages[i].id } : {}),

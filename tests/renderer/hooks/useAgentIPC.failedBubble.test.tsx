@@ -241,4 +241,53 @@ describe('useAgentIPC 失败气泡保留 + clientMessageId 幂等', () => {
     });
     expect(messagesRef.current[0]?.metadata?.sendFailed).toBeUndefined();
   });
+
+  it('运行中重试保留原 clientMessageId，并替换同 id 失败气泡', async () => {
+    useSessionStore.setState({
+      currentSessionId: 'session-failed-bubble',
+      messages: [{
+        id: 'client-msg-keep',
+        role: 'user',
+        content: '原文 A',
+        timestamp: 1,
+        metadata: { sendFailed: true },
+      }],
+    });
+    useAppStore.setState({
+      isProcessing: true,
+      processingSessionIds: new Set(['session-failed-bubble']),
+    });
+    useTaskStore.setState({
+      sessionStates: {
+        'session-failed-bubble': { status: 'running' },
+      },
+    });
+    invokeDomainMock.mockResolvedValueOnce({ outcome: 'steered' });
+    const hook = renderSendHook();
+
+    await act(async () => {
+      await hook.result.current.sendMessage({
+        ...envelope,
+        content: '改过的需求 B',
+        clientMessageId: 'client-msg-keep',
+      });
+    });
+
+    expect(invokeDomainMock).toHaveBeenCalledWith(
+      'domain:agent',
+      'interrupt',
+      expect.objectContaining({
+        clientMessageId: 'client-msg-keep',
+        content: '改过的需求 B',
+      }),
+    );
+    expect(invokeMock).not.toHaveBeenCalled();
+    const users = userMessages();
+    expect(users).toHaveLength(1);
+    expect(users[0]).toMatchObject({
+      id: 'client-msg-keep',
+      content: '改过的需求 B',
+    });
+    expect(users[0]?.metadata?.sendFailed).toBeUndefined();
+  });
 });

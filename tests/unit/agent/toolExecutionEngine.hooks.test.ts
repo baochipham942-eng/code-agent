@@ -2891,7 +2891,61 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     );
   });
 
-  it('seeds artifact repair guard from the initial repair request before any write occurs', async () => {
+  it('does not seed artifact repair guard from a user repair request before validator output exists', async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'code-agent-artifact-repair-seed-user-'));
+    const targetFile = path.join(dir, 'game.html');
+    await writeFile(targetFile, '<!doctype html><html><body></body></html>', 'utf-8');
+
+    const userMessage: Message = {
+      id: 'user-repair',
+      role: 'user',
+      content: `修复 ${targetFile} 这个单文件 HTML 游戏。当前 validator 失败摘要：runSmokeTest 未通过，reachability step 没有让 progress 满足 increase。`,
+      timestamp: Date.now(),
+    };
+    const toolExecutor = {
+      execute: vi.fn(async (name: string): Promise<ToolResult> => ({
+        toolCallId: '',
+        success: true,
+        output: `${name} ok`,
+      })),
+    };
+    const ctx = makeRuntimeContext({
+      messages: [userMessage],
+      toolExecutor: toolExecutor as never,
+      workingDirectory: dir,
+      antiPatternDetector: {
+        trackToolFailure: vi.fn(),
+        clearToolFailure: vi.fn(),
+        trackDuplicateCall: vi.fn(),
+        trackFileReread: vi.fn(),
+        trackToolExecution: vi.fn().mockReturnValue(null),
+        trackReadOnlyShellCommand: vi.fn().mockReturnValue(null),
+        generateHardLimitError: vi.fn(),
+      } as never,
+    });
+    const contextAssembly = {
+      injectSystemMessage: vi.fn(),
+      pushPersistentSystemContext: vi.fn(),
+      getCurrentAttachments: vi.fn().mockReturnValue([]),
+    };
+    const runFinalizer = { emitTaskProgress: vi.fn() };
+    const conversationRuntime = {
+      setPlanMode: vi.fn(),
+      isPlanMode: vi.fn().mockReturnValue(false),
+      generateAutoContinuationPrompt: vi.fn().mockReturnValue('continue'),
+    };
+    const engine = new ToolExecutionEngine(ctx);
+    engine.setModules(contextAssembly as never, runFinalizer as never, conversationRuntime as never);
+
+    const [allowedRead] = await engine.executeToolsWithHooks([
+      makeToolCall('initial-repair-read-target', targetFile),
+    ]);
+    expect(allowedRead.success).toBe(true);
+    expect(ctx.artifact.repairGuard).toBeUndefined();
+    expect(toolExecutor.execute).toHaveBeenCalledTimes(1);
+  });
+
+  it('seeds artifact repair guard from a validator failure envelope before any write occurs', async () => {
     const dir = await mkdtemp(path.join(tmpdir(), 'code-agent-artifact-repair-seed-'));
     const targetFile = path.join(dir, 'game.html');
     const validatorFile = path.join(dir, 'gameArtifactValidator.ts');
@@ -2899,9 +2953,16 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     await writeFile(validatorFile, 'validator source', 'utf-8');
 
     const userMessage: Message = {
-      id: 'user-repair',
-      role: 'user',
-      content: `修复 ${targetFile} 这个单文件 HTML 游戏。当前 validator 失败摘要：runSmokeTest 未通过，reachability step 没有让 progress 满足 increase。`,
+      id: 'validator-failed',
+      role: 'system',
+      content: [
+        '<artifact-validation-failed kind="interactive_artifact">',
+        'attempts: 1',
+        'repair phase: baseline_repair',
+        `target file: ${targetFile}`,
+        'runSmokeTest 未通过，reachability step 没有让 progress 满足 increase。',
+        '</artifact-validation-failed>',
+      ].join('\n'),
       timestamp: Date.now(),
     };
     const toolExecutor = {

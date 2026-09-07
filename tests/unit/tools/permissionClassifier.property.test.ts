@@ -297,6 +297,9 @@ const KNOWN_SHAPES = [
   // Round 37: BSD `-i` consumes the next word as the backup suffix — the backup write target is
   // new on the candidate side, baseline extracts nothing for the spelling, only tightens.
   "sed -i .bak -e 's/x/y/' ~/.aws/credentials",
+  // Round 38: a word-free `2>&1` segment hides the background boundary; the candidate fails
+  // closed (ask) where the baseline keeps the compound and asks, same in every cwd.
+  'cd /tmp && 2>&1 & cat .ssh/id_rsa',
 ];
 
 // Under /tmp the critical-path rm rule fires before anything else and masks weaker rules; a real

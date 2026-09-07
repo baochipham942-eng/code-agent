@@ -224,6 +224,26 @@ describe('shared shell command parser', () => {
     });
   });
 
+  // Round 38: a word-free command (bare `2>&1`, redirect-only `> out.txt`) is legal bash and
+  // still carries its list terminator; dropping it would hide a background boundary from the cwd
+  // walk (`cd /tmp && 2>&1 & …` keeps the parent cwd — bash probe). We cannot represent the
+  // boundary, so the parse fails closed instead.
+  it.each([
+    'cd /tmp && 2>&1 & cat .ssh/id_rsa',
+    'cd /tmp && > out.txt & cat .ssh/id_rsa',
+  ])('fails closed when a word-free segment would drop its background terminator: %s', (command) => {
+    expect(parseShellCommand(command)).toMatchObject({ parsingFailed: true });
+  });
+
+  it.each([
+    'echo hi 2>&1',
+    'echo hi; ',
+    '> out.txt',
+    'echo ok\nls',
+  ])('does not fail commands whose dropped empties carry no background boundary: %s', (command) => {
+    expect(parseShellCommand(command)).toMatchObject({ parsingFailed: false });
+  });
+
   it.each([
     'MODE=1 tee src/x.ts',
     'A=1 B=2 tee src/x.ts',

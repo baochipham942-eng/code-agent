@@ -409,6 +409,16 @@ describe('PermissionClassifier', () => {
       expect(result.decision).toBe('approve');
     });
 
+    // 第 38 轮：无词命令（裸 `2>&1`）仍携带它的列表终止符；丢掉它会把后台边界从 cwd 走查里
+    // 抹掉。解析器无法表达这个边界，fail closed，凭据读回到基线的 ask。
+    it('asks when a word-free segment hides the background boundary', async () => {
+      const result = await classifyPermission(
+        'bash', { command: 'cd /tmp && 2>&1 & cat .ssh/id_rsa' }, homeContext,
+      );
+
+      expect(result.decision).toBe('ask');
+    });
+
     // 第 33 轮审查：`||` 链结束后 cd 成功那支的 cwd 已经变了，后续段按移动后的 cwd 解析
     // （与基线一致；两个 cwd 都查会更严，本刀不做，记证据档）。heredoc 正文是其命令的
     // stdin：严格解析失败，deny/ask 规则退回 lenient 词扫描，凭据路径落在原 cwd 上。

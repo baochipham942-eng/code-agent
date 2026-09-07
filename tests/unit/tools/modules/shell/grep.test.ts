@@ -448,4 +448,55 @@ describe('grepModule (native)', () => {
       }
     });
   });
+
+  describe('foreign-slot ignore globs (ai-review round 6)', () => {
+    // 这条锁的是 grep.ts 给 rg 传排除项时必须用的形式。rg 走 gitignore 语义：
+    // **不含 `/` 的模式匹配任意深度**，裸的 `!.code-agent` 会连带排掉
+    // projects/demo/.code-agent 这类合法的项目配置目录 —— 搜索成功却漏报，
+    // 调用方据此误判「配置不存在」。前导 `/` 才把模式锚定到搜索根。
+    // 同形状 2026-09-06 在 N-SPAWN-NOHEAD 上栽过（排除项用目录名致正常搜索丢结果）。
+    it('rg 的 gitignore 语义：裸目录名匹配任意深度，前导 / 才锚定搜索根', async () => {
+      const { execFile } = await import('child_process');
+      const { promisify } = await import('util');
+      const execFileAsync = promisify(execFile);
+      const rgPath = process.env.RG_PATH_FOR_TEST || 'rg';
+
+      const root = await fs.mkdtemp(path.join(os.tmpdir(), 'grep-slotglob-'));
+      try {
+        await fs.mkdir(path.join(root, '.code-agent'), { recursive: true });
+        await fs.mkdir(path.join(root, 'projects/demo/.code-agent'), { recursive: true });
+        await fs.writeFile(path.join(root, '.code-agent/config.json'), 'needle\n');
+        await fs.writeFile(path.join(root, 'projects/demo/.code-agent/agents.json'), 'needle\n');
+
+        const run = async (glob: string): Promise<string> => {
+          try {
+            const { stdout } = await execFileAsync(
+              rgPath,
+              ['--hidden', '--glob', glob, 'needle', root],
+              { encoding: 'utf8' },
+            );
+            return stdout;
+          } catch (error) {
+            // rg exits 1 on "no matches" — that is a valid outcome here
+            return (error as { stdout?: string }).stdout ?? '';
+          }
+        };
+
+        const bare = await run('!.code-agent');
+        const anchored = await run('!/.code-agent');
+
+        // 裸名字：连合法的项目配置一起排掉了（当前实现的病）
+        expect(bare).not.toContain('agents.json');
+        expect(bare).not.toContain('config.json');
+        // 锁的不变量：rg --glob **做不到**「只排除搜索根下那一个目录、保留任意深度同名目录」。
+        // 本机常见形态：绝对搜索路径下 `!/.code-agent` 一个都不排（两个都在）。
+        // CI Ubuntu rg 另一形态：同写法整次搜空。两种都证明 glob 不能当槽排除。
+        // 若某版 rg 真能 nested-kept + root-excluded，这个断言会红——那才该改回 glob。
+        const globCanSelectOnlySearchRoot = anchored.includes('agents.json') && !anchored.includes('config.json');
+        expect(globCanSelectOnlySearchRoot).toBe(false);
+      } finally {
+        await fs.rm(root, { recursive: true, force: true });
+      }
+    });
+  });
 });

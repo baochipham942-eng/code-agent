@@ -36,6 +36,11 @@ import type {
 } from '../../../protocol/tools';
 import { grepSchema as schema } from './grep.schema';
 import { GREP, BASH } from '../../../../shared/constants';
+import {
+  collectForeignSlotTraversalExcludes,
+  isListedPathInsideForeignSlot,
+  type ForeignSlotTraversalExcludes,
+} from '../../../security/slotDataDirGuard';
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { buildSpillNotice, spillToolResultArchive, type ToolResultArchiveRef } from '../../../utils/toolResultSpill';
 
@@ -204,6 +209,13 @@ async function tryRipgrep(
     '--glob',
     '!build',
   );
+  // 别人槽的排除**不在这里做**：rg 走 gitignore 语义，裸目录名（`!.code-agent`）会连带排掉
+  // projects/demo/.code-agent 这类合法的项目配置目录 —— 搜索成功却漏报，调用方据此误判
+  // 「配置不存在」（ai-review 第 6 轮；同形状 09-06 N-SPAWN-NOHEAD 栽过）。而带前导 `/` 的
+  // 锚定写法在「搜索路径是绝对路径」时**一个都不排**（真实调用就是绝对路径），实测四种写法
+  // 见 tests/unit/tools/modules/shell/grep.test.ts 的 "foreign-slot ignore globs" 一节。
+  // ⇒ rg 的 --glob 表达不了「只排除搜索根下的这一个目录」，槽隔离统一由结果侧的
+  //   filterForeignSlotGrepOutput() 按真实路径过滤（与 Glob 工具同一模式），那一层是准确的。
   args.push(pattern, searchPath);
 
   try {
@@ -256,7 +268,7 @@ async function tryRipgrep(
 
 async function runSystemGrep(
   pattern: string,
-  searchPath: string,
+  searchPaths: string[],
   caseInsensitive: boolean,
   ctxBefore: number | undefined,
   ctxAfter: number | undefined,
@@ -264,7 +276,9 @@ async function runSystemGrep(
   include: string | undefined,
   signal: AbortSignal,
 ): Promise<string> {
-  const grepArgs: string[] = ['-r', '-n', '-E'];
+  // -H：剪枝后的搜索根可能是单个文件参数，没有 -H 时 grep 不带路径前缀，
+  // 输出形状（path:line:content）会被破坏，结果侧过滤与分页都靠这个前缀。
+  const grepArgs: string[] = ['-r', '-n', '-E', '-H'];
 
   if (caseInsensitive) grepArgs.push('-i');
 
@@ -290,7 +304,7 @@ async function runSystemGrep(
     '--exclude-dir=build',
   );
 
-  grepArgs.push(pattern, searchPath);
+  grepArgs.push(pattern, ...searchPaths);
 
   const result = await execFileAsync('grep', grepArgs, {
     maxBuffer: BASH.MAX_BUFFER,
@@ -391,6 +405,27 @@ function appendArchiveHint(output: string, archiveRef: ToolResultArchiveRef | un
   return `${output}${buildSpillNotice(archiveRef)}${NEXT_READ_HINT}`;
 }
 
+function filterForeignSlotGrepOutput(
+  stdout: string,
+  searchPath: string,
+  slotExcludes: ForeignSlotTraversalExcludes,
+): string {
+  if (slotExcludes.roots.length === 0 || !stdout) return stdout;
+  return stdout
+    .split('\n')
+    .filter((line) => {
+      if (!line || line === '--' || line.startsWith('... (') || line.startsWith('(showing ')) return true;
+      const match = line.match(/^(.*?)([:-])(\d+)([:-])(.*)$/);
+      if (!match) {
+        return !slotExcludes.roots.some((root) => line.includes(root));
+      }
+      const rawFile = match[1];
+      const file = path.isAbsolute(rawFile) ? rawFile : path.resolve(searchPath, rawFile);
+      return !isListedPathInsideForeignSlot(file, slotExcludes.roots);
+    })
+    .join('\n');
+}
+
 function parseMatches(output: string, searchPath: string): GrepMatch[] {
   const matches: GrepMatch[] = [];
   const lines = output.split('\n').filter(Boolean);
@@ -475,6 +510,7 @@ class GrepHandler implements ToolHandler<Record<string, unknown>, string> {
     // 参数解析
     const rawPath = (args.path as string | undefined) ?? ctx.workingDir;
     const searchPath = path.isAbsolute(rawPath) ? rawPath : path.join(ctx.workingDir, rawPath);
+    const slotExcludes = collectForeignSlotTraversalExcludes(searchPath);
     const include = args.include as string | undefined;
     const fileType = args.type as string | undefined;
     const caseInsensitive = Boolean(args.case_insensitive);
@@ -505,7 +541,7 @@ class GrepHandler implements ToolHandler<Record<string, unknown>, string> {
       );
 
       if (rgResult.found) {
-        stdout = rgResult.stdout;
+        stdout = filterForeignSlotGrepOutput(rgResult.stdout, searchPath, slotExcludes);
         engine = 'rg';
       } else if (rgResult.noMatches) {
         onProgress?.({ stage: 'completing', percent: 100 });
@@ -516,16 +552,24 @@ class GrepHandler implements ToolHandler<Record<string, unknown>, string> {
         };
       } else {
         // 2) rg 不可用 → 系统 grep 降级
+        // 别人槽的排除不在命令行上做：--exclude-dir 只有目录名语义，按基名任意深度
+        // 匹配会误伤项目里同名的合法配置目录；按路径剪枝搜索根属于「从搜索根枚举
+        // 需要检查什么」，同样是枚举面（ai-review 第 8 轮砍线，ADR-065）。
+        // 统一由结果侧 filterForeignSlotGrepOutput() 按真实路径过滤（与 rg 路径同）。
         try {
-          stdout = await runSystemGrep(
-            pattern,
+          stdout = filterForeignSlotGrepOutput(
+            await runSystemGrep(
+              pattern,
+              [searchPath],
+              caseInsensitive,
+              ctxBefore,
+              ctxAfter,
+              fileType,
+              include,
+              ctx.abortSignal,
+            ),
             searchPath,
-            caseInsensitive,
-            ctxBefore,
-            ctxAfter,
-            fileType,
-            include,
-            ctx.abortSignal,
+            slotExcludes,
           );
           engine = 'grep';
         } catch (grepErr: unknown) {
@@ -579,7 +623,8 @@ class GrepHandler implements ToolHandler<Record<string, unknown>, string> {
         totalMatches: meta.totalMatches,
       });
       const outputText = output || 'No matches found';
-      const matches = parseMatches(outputText, searchPath);
+      const matches = parseMatches(outputText, searchPath)
+        .filter((match) => !isListedPathInsideForeignSlot(match.file, slotExcludes.roots));
       const archive = (meta.truncated || stdout.length > DISCOVERY_ARCHIVE_CHAR_LIMIT)
         ? spillToolResultArchive({
             content: stdout,

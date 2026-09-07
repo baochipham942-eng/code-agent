@@ -869,6 +869,12 @@ describe('macOS release fail-closed gates', () => {
     expect(releaseBundle).toContain('hdiutil convert "${rw_dmg_path}"');
     expect(cleanBundleApps).toContain('DMG_VOLUME_NAME="${DMG_VOLUME_NAME:-Install Agent Neo}"');
     expect(tauriInstall).toContain('DMG_VOLUME_NAME="${DMG_VOLUME_NAME:-Install Agent Neo}"');
+    expect(tauriInstall).toContain('APPLICATIONS_DIR="${APPLICATIONS_DIR:-/Applications}"');
+    expect(tauriInstall).toContain('preserve_installed_signing_chain "$INSTALLED_APP"');
+    expect(tauriInstall.indexOf('preserve_installed_signing_chain "$INSTALLED_APP"')).toBeLessThan(
+      tauriInstall.indexOf('rm -rf "$INSTALLED_APP"'),
+    );
+    expect(tauriInstall).not.toContain('skipping re-sign to preserve notarization');
     expect(prepareBundledNode).toContain("execFileSync('xattr', ['-cr', outputRoot]");
     expect(prepareBundledNode).toContain('rewriteFileWithoutExtendedAttributes(outputBin, 0o755)');
     expect(tauriNotarize).toContain('rebuild_dmg_with_stapled_app()');

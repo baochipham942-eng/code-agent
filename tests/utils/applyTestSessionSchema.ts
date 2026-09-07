@@ -10,7 +10,7 @@ const silentLogger = {
   info() {},
   warn() {},
   error() {},
-} as Parameters<typeof applySchema>[1];
+} as unknown as Parameters<typeof applySchema>[1];
 
 /**
  * Apply the production host schema (plus the session/telemetry column

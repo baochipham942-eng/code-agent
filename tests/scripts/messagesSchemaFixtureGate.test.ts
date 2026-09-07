@@ -85,7 +85,7 @@ const silentLogger = {
   info() {},
   warn() {},
   error() {},
-} as Parameters<typeof applySchema>[1];
+} as unknown as Parameters<typeof applySchema>[1];
 
 function messageColumns(db: InstanceType<typeof Database>): string[] {
   return (db.prepare('PRAGMA table_info(messages)').all() as Array<{ name: string }>)

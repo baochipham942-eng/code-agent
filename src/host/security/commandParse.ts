@@ -706,6 +706,26 @@ export function parseShellCommand(command: string): ParsedShellCommand {
   };
 }
 
+/**
+ * Every token shell-quote can still see, structure ignored (operators included, as the baseline's
+ * textual tokenizer kept them). Deny/ask rules read this when the strict parse fails: a command we
+ * cannot structure must widen their view, never empty it — `rm -rf ~/.ssh/id_rsa >| run.log` keeps
+ * its credential path. Never an input to an approval proof; those stay on commandWordsFromParse().
+ */
+export function lenientCommandWords(command: string): string[] {
+  try {
+    return shellLines(command)
+      .flatMap((line) => parse(line, (key) => `\${${key}}`) as ShellEntry[])
+      .flatMap((entry) => {
+        if (typeof entry === 'string') return [entry];
+        if (!isOperator(entry)) return [];
+        return [entry.op === 'glob' && 'pattern' in entry ? String((entry as ShellGlob).pattern) : entry.op];
+      });
+  } catch {
+    return canonicalizeCommand(command).command.split(/\s+/).filter(Boolean);
+  }
+}
+
 export function commandWordsFromParse(command: string): string[] | null {
   const parsed = parseShellCommand(command);
   return parsed.parsingFailed || parsed.segments.length !== 1 || parsed.trailingOperator

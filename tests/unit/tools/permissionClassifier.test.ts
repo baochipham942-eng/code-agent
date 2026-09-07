@@ -334,7 +334,14 @@ describe('PermissionClassifier', () => {
     ['rm -rf ~/.ssh/id_rsa <<EOF', 'deny', '递归删除凭据路径'],
     ['cat < ~/.ssh/id_rsa', 'ask', '读取凭据路径'],
     ['wc -l < README.md', 'approve', '安全命令'],
-  ] as const)('input redirection keeps the words the deny rules need: %s', async (command, decision, reason) => {
+    // Round 17: operators the parser does not structure (`>|`, `case … ;;`, subshells) fail the strict
+    // parse; the deny rules then read the lenient token view instead of an empty one.
+    ['rm -rf ~/.ssh/id_rsa >| run.log', 'deny', '递归删除凭据路径'],
+    ['case x in a) rm -rf ~/.ssh/id_rsa;; esac', 'deny', '递归删除凭据路径'],
+    ['rm -rf ~/.ssh/id_rsa; ls >| x', 'deny', '递归删除凭据路径'],
+    ['(rm -rf ~/.ssh/id_rsa)', 'deny', '递归删除凭据路径'],
+    ['ls >| out.txt', 'ask', '命令无法可靠解析'],
+  ] as const)('a failed strict parse never empties the words the deny rules read: %s', async (command, decision, reason) => {
     const result = await classifyPermission(
       'bash',
       { command },

@@ -26,7 +26,7 @@ import {
   splitCompoundCommand,
 } from '../security/commandSafety';
 import { canonicalizeCommand } from '../security/canonicalizeCommand';
-import { parseShellCommand } from '../security/commandParse';
+import { lenientCommandWords, parseShellCommand } from '../security/commandParse';
 import { RM_FLAGS_REQUIRED, RM_HEAD } from '../security/rmFlagPattern';
 import { checkCommandPolicy } from './modules/shell/commandPolicy';
 import { inspectPermissionCommand, neverApprove } from './permissionCommandParse';
@@ -260,8 +260,11 @@ function isSensitiveMemoryPath(resolvedPath: string): boolean {
 }
 
 // Keep quoted text as one shell word: quoted paths and quoted subcommands stay intact, and text
-// arguments such as `echo "git push …"` are not re-split into executable-looking words.
-const commandWords = (command: string): string[] => tokenizeCommandWords(command) ?? [];
+// arguments such as `echo "git push …"` are not re-split into executable-looking words. These words
+// feed deny/ask scans only, so a failed strict parse widens the view instead of emptying it (rounds
+// 16/17: `>|`, `<>`, `case … ;;` erased the credential path and a deny decayed into an ask). Approval
+// proofs keep the strict view in commandAllowProof.
+const commandWords = (command: string): string[] => tokenizeCommandWords(command) ?? lenientCommandWords(command);
 
 function commandProgram(word: string | undefined): string {
   return word ? path.posix.basename(word) : '';

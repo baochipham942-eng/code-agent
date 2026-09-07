@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseShellCommand } from '../../../src/host/security/commandParse';
+import { lenientCommandWords, parseShellCommand } from '../../../src/host/security/commandParse';
 
 describe('shared shell command parser', () => {
   it.each([
@@ -198,6 +198,16 @@ describe('shared shell command parser', () => {
     // A heredoc delimiter is consumed; its body lines are ordinary lines and only ever add segments.
     expect(parseShellCommand('cat <<EOF\nrm -rf /\nEOF').segments.map((segment) => segment.words[0]))
       .toEqual(['cat', 'rm', 'EOF']);
+  });
+
+  it('exposes a lenient token view for risk scans when the strict parse fails', () => {
+    expect(parseShellCommand('rm -rf ~/.ssh/id_rsa >| run.log').parsingFailed).toBe(true);
+    expect(lenientCommandWords('rm -rf ~/.ssh/id_rsa >| run.log'))
+      .toEqual(['rm', '-rf', '~/.ssh/id_rsa', '>', '|', 'run.log']);
+    expect(lenientCommandWords('case x in a) rm -rf ~/.ssh/id_rsa;; esac')).toContain('~/.ssh/id_rsa');
+    // shell-quote itself throws on `${` — fall back to the canonical whitespace split, still no words lost.
+    expect(lenientCommandWords('ls ${')).toEqual(['ls', '${']);
+    expect(lenientCommandWords('echo "a b" > $HOME/x')).toEqual(['echo', 'a b', '>', '${HOME}/x']);
   });
 
   it('keeps each redirection on its own segment', () => {

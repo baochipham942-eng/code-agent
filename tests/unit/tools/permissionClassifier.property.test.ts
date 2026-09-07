@@ -229,6 +229,13 @@ const KNOWN_SHAPES = [
   'cat < ~/.ssh/id_rsa',
   'sort < in.txt > out.txt',
   'wc -l < README.md',
+  // Round 17: operators the parser leaves unstructured must still hand the deny rules their words.
+  'rm -rf ~/.ssh/id_rsa >| run.log',
+  'case x in a) rm -rf ~/.ssh/id_rsa;; esac',
+  'rm -rf ~/.ssh/id_rsa; ls >| x',
+  '(rm -rf ~/.ssh/id_rsa)',
+  'cat <(rm -rf ~/.ssh/id_rsa)',
+  'ls ${',
 ];
 
 // Under /tmp the critical-path rm rule fires before anything else and masks weaker rules; a real

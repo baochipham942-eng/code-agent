@@ -103,8 +103,8 @@ const DRIVER_SCRIPT = `<script ${IN_APP_VALIDATION_DRIVER_FLAG}="1">
           checks.push('typed ' + String(action.text || '').length + ' char(s)');
         } else {
           var text = String(action.text || '');
-          for (var i = 0; i < text.length; i += 1) {
-            var charInit = { key: text[i], bubbles: true, cancelable: true };
+          for (const char of text) {
+            var charInit = { key: char, bubbles: true, cancelable: true };
             active.dispatchEvent(new KeyboardEvent('keydown', charInit));
             active.dispatchEvent(new KeyboardEvent('keypress', charInit));
             active.dispatchEvent(new KeyboardEvent('keyup', charInit));

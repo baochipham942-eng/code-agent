@@ -39,7 +39,7 @@ describe('inAppValidationSandbox', () => {
     expect(wrapped).toContain('nonblankCanvasCount');
     expect(wrapped).toContain('KeyboardEvent(\'keyup\'');
     expect(wrapped).toContain('waitFor');
-    expect(wrapped).toContain('for (var i = 0; i < text.length');
+    expect(wrapped).toContain('for (const char of text)');
   });
 
   it('不把脚本字符串里的 </body> 当闭合标签', () => {

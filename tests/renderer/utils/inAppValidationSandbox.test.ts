@@ -48,9 +48,9 @@ describe('inAppValidationSandbox', () => {
     expect(wrapped).toContain('const suffix = "</body>";');
     expect(wrapped.match(/data-neo-in-app-driver/g)?.length).toBe(1);
     const driverAt = wrapped.indexOf('data-neo-in-app-driver');
-    const realClose = wrapped.toLowerCase().lastIndexOf('</body>');
-    expect(driverAt).toBeGreaterThan(wrapped.indexOf('const suffix'));
-    expect(driverAt).toBeLessThan(realClose);
+    const scriptAt = wrapped.indexOf('const suffix');
+    expect(driverAt).toBeGreaterThan(0);
+    expect(scriptAt).toBeGreaterThan(driverAt);
   });
 
   it('不把脚本字符串里的 <head> 当真实 head', () => {
@@ -63,13 +63,23 @@ describe('inAppValidationSandbox', () => {
     expect(cspAt).toBeLessThan(scriptAt);
   });
 
+  it('驱动插在工作台 CSP 之后、页面自带 CSP 之前，避免 script-src none 拦掉', () => {
+    const source = '<html><head><meta http-equiv="Content-Security-Policy" content="script-src \'none\'"></head><body><button id="ok">ok</button></body></html>';
+    const wrapped = wrapInAppValidationHtml(source);
+    const ours = wrapped.indexOf(IN_APP_VALIDATION_CSP);
+    const driver = wrapped.indexOf('data-neo-in-app-driver');
+    const theirs = wrapped.indexOf("script-src 'none'");
+    expect(ours).toBeGreaterThanOrEqual(0);
+    expect(driver).toBeGreaterThan(ours);
+    expect(theirs).toBeGreaterThan(driver);
+  });
+
   it('不把注释里的 </body> 当闭合标签', () => {
     const source = '<html><body>ok</body><!-- </body> --></html>';
     const wrapped = wrapInAppValidationHtml(source);
-    const commentAt = wrapped.indexOf('<!--');
-    const driverAt = wrapped.indexOf('data-neo-in-app-driver');
-    expect(driverAt).toBeGreaterThan(0);
-    expect(driverAt).toBeLessThan(commentAt);
-    expect(wrapped.slice(commentAt)).toContain('<!-- </body> -->');
+    expect(wrapped).toContain('<!-- </body> -->');
+    expect(wrapped.match(/data-neo-in-app-driver/g)?.length).toBe(1);
+    const commentInner = wrapped.indexOf('<!--');
+    expect(wrapped.slice(commentInner, wrapped.indexOf('-->', commentInner) + 3)).not.toContain('data-neo-in-app-driver');
   });
 });

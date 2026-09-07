@@ -256,6 +256,13 @@ function lastRealBodyClose(html: string): number {
 
 function injectDriver(html: string): string {
   if (html.includes(IN_APP_VALIDATION_DRIVER_FLAG)) return html;
+  // 多份 CSP 是 AND。驱动必须出现在我们的 meta 之后、被测页自带 CSP 之前，
+  // 否则 script-src 'none' 会把末尾内联脚本直接拦掉。
+  const cspAt = html.indexOf(CSP_META);
+  if (cspAt >= 0) {
+    const end = cspAt + CSP_META.length;
+    return `${html.slice(0, end)}${DRIVER_SCRIPT}${html.slice(end)}`;
+  }
   const close = lastRealBodyClose(html);
   if (close >= 0) {
     return `${html.slice(0, close)}${DRIVER_SCRIPT}${html.slice(close)}`;

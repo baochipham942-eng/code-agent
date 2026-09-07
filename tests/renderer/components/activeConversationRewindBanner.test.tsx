@@ -330,6 +330,79 @@ describe('ActiveConversationRewindBanner', () => {
     expect(screen.getByRole('button', { name: '反悔' })).toBeTruthy();
   });
 
+  it('刷新失败且已切会话时，不把新会话横幅写成已反悔', async () => {
+    let rejectRefresh: ((error: Error) => void) | undefined;
+    mocks.invokeDomain
+      .mockResolvedValueOnce({
+        lineage: {
+          branchId: 'branch-1',
+          sessionId: 'session-1',
+          ownerUserId: null,
+          projectId: null,
+          rootBranchId: 'branch-1',
+          parentBranchId: null,
+          forkId: null,
+          anchorEntryId: null,
+          createdAt: 1,
+        },
+        messages: [],
+        openRewindIds: ['rewind-a'],
+        ledgerEventCount: 1,
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        sessionId: 'session-1',
+        rewindId: 'rewind-a',
+        restoredMessageCount: 1,
+        activeMessages: [],
+        state: 'success',
+        done: ['conversation'],
+        failed: [],
+        skippedFiles: [],
+        restoredFiles: [],
+        deletedFiles: [],
+        staleEvidenceCount: 0,
+        redoAvailable: false,
+        externalSideEffectsWarning: 'Changes caused by external commands are not rolled back.',
+      })
+      .mockImplementationOnce(() => new Promise((_resolve, reject) => {
+        rejectRefresh = reject;
+      }))
+      .mockResolvedValueOnce({
+        lineage: {
+          branchId: 'branch-2',
+          sessionId: 'session-2',
+          ownerUserId: null,
+          projectId: null,
+          rootBranchId: 'branch-2',
+          parentBranchId: null,
+          forkId: null,
+          anchorEntryId: null,
+          createdAt: 2,
+        },
+        messages: [],
+        openRewindIds: ['rewind-b'],
+        ledgerEventCount: 1,
+      });
+
+    const { rerender } = render(
+      <ActiveConversationRewindBanner sessionId="session-1" onRestored={vi.fn()} />,
+    );
+    fireEvent.click(await screen.findByRole('button', { name: '反悔' }));
+    await waitFor(() => expect(mocks.invokeDomain).toHaveBeenCalledTimes(3));
+    rerender(
+      <ActiveConversationRewindBanner sessionId="session-2" onRestored={vi.fn()} />,
+    );
+    await waitFor(() => expect(mocks.invokeDomain).toHaveBeenCalledTimes(4));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    rejectRefresh?.(new Error('replay failed'));
+    await waitFor(() => expect(warn).toHaveBeenCalled());
+    expect(screen.getByRole('status').getAttribute('data-rewind-id')).toBe('rewind-b');
+    expect(screen.getByRole('status').getAttribute('data-rewind-phase')).toBe('open');
+    expect(screen.getByRole('button', { name: '反悔' })).toBeTruthy();
+    warn.mockRestore();
+  });
+
   it('does not leak a late replay result after switching sessions', async () => {
     let resolveFirst: ((value: unknown) => void) | undefined;
     mocks.invokeDomain

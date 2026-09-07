@@ -227,11 +227,15 @@ describe('shared shell command parser', () => {
   // Round 38: a word-free command (bare `2>&1`, redirect-only `> out.txt`) is legal bash and
   // still carries its list terminator; dropping it would hide a background boundary from the cwd
   // walk (`cd /tmp && 2>&1 & …` keeps the parent cwd — bash probe). We cannot represent the
-  // boundary, so the parse fails closed instead.
+  // boundary, so the parse fails closed instead. Round 39 extends this to `|`/`|&`: a dropped
+  // pipe hides the next segment's pipeline membership (`2>&1 | cd /tmp` runs the cd in a
+  // subshell).
   it.each([
     'cd /tmp && 2>&1 & cat .ssh/id_rsa',
     'cd /tmp && > out.txt & cat .ssh/id_rsa',
-  ])('fails closed when a word-free segment would drop its background terminator: %s', (command) => {
+    '2>&1 | cd /tmp; cat .ssh/id_rsa',
+    '> out.txt | cd /tmp; cat .ssh/id_rsa',
+  ])('fails closed when a word-free segment would drop its list terminator: %s', (command) => {
     expect(parseShellCommand(command)).toMatchObject({ parsingFailed: true });
   });
 

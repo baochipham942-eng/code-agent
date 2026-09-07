@@ -411,10 +411,12 @@ describe('PermissionClassifier', () => {
 
     // 第 38 轮：无词命令（裸 `2>&1`）仍携带它的列表终止符；丢掉它会把后台边界从 cwd 走查里
     // 抹掉。解析器无法表达这个边界，fail closed，凭据读回到基线的 ask。
-    it('asks when a word-free segment hides the background boundary', async () => {
-      const result = await classifyPermission(
-        'bash', { command: 'cd /tmp && 2>&1 & cat .ssh/id_rsa' }, homeContext,
-      );
+    // 第 39 轮同族：丢掉的 `|` 会藏掉下一段的管道成员身份（`2>&1 | cd /tmp` 的 cd 在子 shell）。
+    it.each([
+      'cd /tmp && 2>&1 & cat .ssh/id_rsa',
+      '2>&1 | cd /tmp; cat .ssh/id_rsa',
+    ])('asks when a word-free segment hides a control-flow boundary: %s', async (command) => {
+      const result = await classifyPermission('bash', { command }, homeContext);
 
       expect(result.decision).toBe('ask');
     });

@@ -737,15 +737,16 @@ function parseEntries(command: string): {
   const flush = (terminator: SegmentTerminator): void => {
     if (words.length > 0) {
       segments.push({ words, redirects: segmentRedirects, reads: segmentReads, terminator });
-    } else if (terminator === '&') {
+    } else if (terminator === '&' || terminator === '|' || terminator === '|&') {
       // A word-free command (a bare `2>&1`, a redirect-only `> out.txt`) is legal bash and still
-      // carries its list terminator. Dropping it shifts every later terminator off its segment
-      // and hides the background boundary from the cwd walk (`cd /tmp && 2>&1 & cat …` keeps the
-      // parent cwd). The boundary cannot be represented in the segment list, so fail closed
-      // (round 38). Other terminators are safe to drop: `;`/`&&`/`|`/`|&` losses leave the walk's
-      // answer unchanged, and the trailing flush after a final separator is legitimately empty.
+      // carries its list terminator. Dropping it shifts every later terminator off its segment:
+      // a lost `&` hides the background boundary from the cwd walk (`cd /tmp && 2>&1 & cat …`
+      // keeps the parent cwd), and a lost `|`/`|&` hides the next segment's pipeline membership
+      // (`2>&1 | cd /tmp` puts the cd in a subshell). The boundary cannot be represented in the
+      // segment list, so fail closed (rounds 38-39). Dropped `;`/`&&`/`\n` boundaries change no
+      // answer, and the trailing flush after a final separator is legitimately empty.
       failed = true;
-      failureReason ??= 'word-free segment drops its background terminator';
+      failureReason ??= 'word-free segment drops its list terminator';
     }
     words = [];
     segmentRedirects = [];

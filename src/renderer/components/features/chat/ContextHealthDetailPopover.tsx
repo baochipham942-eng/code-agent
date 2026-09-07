@@ -16,6 +16,7 @@
 import React, { useEffect } from 'react';
 import { Loader2, Shrink, X as XIcon } from 'lucide-react';
 import { useI18n } from '../../../hooks/useI18n';
+import { interpolate } from '../../../i18n/interpolate';
 import { useAppStore } from '../../../stores/appStore';
 import { useStatusStore } from '../../../stores/statusStore';
 import { useSessionStore } from '../../../stores/sessionStore';
@@ -68,7 +69,7 @@ function buildBuckets(health: ContextHealthState, ch: Record<string, string>): B
     { key: 'fileReads', name: ch.bkFileReads, tokens: bs?.fileReads ?? 0, color: '#10b981' },
     {
       key: 'summary',
-      name: ch.bkSummary.replace('{count}', String(compressionCount)),
+      name: interpolate(ch.bkSummary, { count: compressionCount }),
       tokens: bs?.summary ?? 0,
       color: '#fb7185',
     },
@@ -164,14 +165,16 @@ export const ContextHealthDetailPopover: React.FC<ContextHealthDetailPopoverProp
             {/* 大数字行 + 分段总条：总量的唯一出口 */}
             <div className="mb-2 flex items-baseline justify-between tabular-nums">
               <span className="text-sm font-semibold text-zinc-50">
-                {ch.usageSummary
-                  .replace('{percent}', formatContextUsagePercent(Math.max(0, Math.min(100, usagePercent))))
-                  .replace('{remaining}', formatContextUsagePercent(Math.max(0, 100 - Math.max(0, Math.min(100, usagePercent)))))}
+                {interpolate(ch.usageSummary, {
+                  percent: formatContextUsagePercent(Math.max(0, Math.min(100, usagePercent))),
+                  remaining: formatContextUsagePercent(Math.max(0, 100 - Math.max(0, Math.min(100, usagePercent)))),
+                })}
               </span>
               <span className="text-[11px] text-zinc-400">
-                {ch.tokensFraction
-                  .replace('{used}', formatTokens(contextHealth.currentTokens))
-                  .replace('{max}', formatTokens(contextHealth.maxTokens))}
+                {interpolate(ch.tokensFraction, {
+                  used: formatTokens(contextHealth.currentTokens),
+                  max: formatTokens(contextHealth.maxTokens),
+                })}
                 {isEstimated && (
                   <span className="ml-1.5 text-zinc-500" data-testid="context-health-estimated-badge">
                     {ch.estimatedBadge}
@@ -183,10 +186,9 @@ export const ContextHealthDetailPopover: React.FC<ContextHealthDetailPopoverProp
                     data-testid="context-health-deviation"
                     title={ch.estimateDeviationTitle}
                   >
-                    {ch.estimateDeviation.replace(
-                      '{percent}',
-                      `${estimateDeviation > 0 ? '+' : ''}${estimateDeviation.toFixed(1)}`,
-                    )}
+                    {interpolate(ch.estimateDeviation, {
+                      percent: `${estimateDeviation > 0 ? '+' : ''}${estimateDeviation.toFixed(1)}`,
+                    })}
                   </span>
                 )}
               </span>
@@ -203,10 +205,11 @@ export const ContextHealthDetailPopover: React.FC<ContextHealthDetailPopoverProp
                       key={bucket.key}
                       className="h-full"
                       style={{ width: `${(bucket.tokens / total) * 100}%`, background: bucket.color }}
-                      title={ch.sourceBucketTitle
-                        .replace('{name}', bucket.name)
-                        .replace('{tokens}', formatTokens(bucket.tokens))
-                        .replace('{percent}', ((bucket.tokens / total) * 100).toFixed(1))}
+                      title={interpolate(ch.sourceBucketTitle, {
+                        name: bucket.name,
+                        tokens: formatTokens(bucket.tokens),
+                        percent: ((bucket.tokens / total) * 100).toFixed(1),
+                      })}
                     />
                   ))}
                 </div>
@@ -248,9 +251,10 @@ export const ContextHealthDetailPopover: React.FC<ContextHealthDetailPopoverProp
                     className="mt-2 rounded-md bg-surface-hover px-2.5 py-2 text-[11px] text-zinc-400"
                     data-testid="context-cost-ranking-status"
                   >
-                    {ch.bucketRanking
-                      .replace('{tokenBucket}', tokenLargestBucket.name)
-                      .replace('{costBucket}', ch.pendingValidation)}
+                    {interpolate(ch.bucketRanking, {
+                      tokenBucket: tokenLargestBucket.name,
+                      costBucket: ch.pendingValidation,
+                    })}
                   </div>
                 )}
               </>
@@ -290,8 +294,8 @@ export const ContextHealthDetailPopover: React.FC<ContextHealthDetailPopoverProp
                   {compactResult && (
                     <div className="mt-1 text-badge-success">
                       {compactResult.totalSavedTokens > 0
-                        ? ch.freedTokens.replace('{tokens}', formatTokens(compactResult.totalSavedTokens))
-                        : ch.compactedCount.replace('{count}', String(compactResult.compressionCount))}
+                        ? interpolate(ch.freedTokens, { tokens: formatTokens(compactResult.totalSavedTokens) })
+                        : interpolate(ch.compactedCount, { count: compactResult.compressionCount })}
                     </div>
                   )}
                   {compactError && (

@@ -603,19 +603,18 @@ export async function reapPtySessions(): Promise<number> {
   return results.filter(Boolean).length;
 }
 
-// Start periodic cleanup（捕获 handle + onShutdown 注册 + .unref() 三重保护）
+// Start periodic cleanup（捕获 handle + .unref()；停机清理由活停机序列
+// webShutdownFinalizers 的 cleanupTimers.stop 条目负责——原先挂的 onShutdown
+// 注册表 setupDefaultSignalHandlers 零调用方，挂上去等于没挂，N-SHUTDOWN-DEADLINK 迁走）
 const ptyCleanupTimer = setInterval(() => {
   void cleanupTimedOutPtySessions();
 }, PTY_CLEANUP_INTERVAL);
 ptyCleanupTimer.unref();
 
-import('../../services/infra/gracefulShutdown')
-  .then(({ onShutdown }) => {
-    onShutdown('shell/ptyExecutor.cleanup', async () => {
-      clearInterval(ptyCleanupTimer);
-    });
-  })
-  .catch(() => { /* shutdown infra 不可用就靠 .unref() */ });
+/** 停机清理：释放周期清理定时器（webShutdownFinalizers 调，幂等）。 */
+export function stopPtyCleanupTimer(): void {
+  clearInterval(ptyCleanupTimer);
+}
 
 // ============================================================================
 // Persistence —— 已删除（2026-08-14，N-DSH-STOP6）

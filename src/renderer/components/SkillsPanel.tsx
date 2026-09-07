@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { useSkillStore } from '../stores/skillStore';
 import { useI18n } from '../hooks/useI18n';
+import { interpolate } from '../i18n/interpolate';
 import { useSessionStore } from '../stores/sessionStore';
 import { useAppStore } from '../stores/appStore';
 import type { SessionSkillMount } from '@shared/contract/skillRepository';
@@ -67,7 +68,7 @@ const MountedSkillItem: React.FC<MountedSkillItemProps> = ({
     <button
       onClick={onUnmount}
       disabled={loading}
-      aria-label={sk.unmountSkillAria.replace('{name}', mount.skillName)}
+      aria-label={interpolate(sk.unmountSkillAria, { name: mount.skillName })}
       className="p-1 text-zinc-500 hover:text-badge-danger opacity-0 group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
       title={sk.unmount}
     >
@@ -99,7 +100,7 @@ const AvailableSkillItem: React.FC<AvailableSkillItemProps> = ({
     <button
       onClick={onMount}
       disabled={loading}
-      aria-label={sk.mountSkillAria.replace('{name}', skill.name)}
+      aria-label={interpolate(sk.mountSkillAria, { name: skill.name })}
       className="p-1 text-zinc-500 hover:text-badge-success opacity-0 group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
       title={sk.mount}
     >
@@ -250,7 +251,7 @@ export const SkillsPanel: React.FC = () => {
       <div className="flex-1 overflow-y-auto">
         <div className="px-3 py-2">
           <h4 className="text-xs font-medium text-zinc-400 mb-2">
-            {sk.mounted.replace('{count}', String(mountedSkills.length))}
+            {interpolate(sk.mounted, { count: mountedSkills.length })}
           </h4>
 
           {mountedSkills.length === 0 ? (
@@ -314,7 +315,7 @@ export const SkillsPanel: React.FC = () => {
               ))}
               {filteredSkills.length > 10 && (
                 <div className="text-xs text-zinc-500 py-1 text-center">
-                  {sk.moreCount.replace('{count}', String(filteredSkills.length - 10))}
+                  {interpolate(sk.moreCount, { count: filteredSkills.length - 10 })}
                 </div>
               )}
             </div>

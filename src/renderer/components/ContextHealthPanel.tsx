@@ -22,6 +22,7 @@ import type {
   SourceTag,
 } from '@shared/contract/contextHealth';
 import { useI18n } from '../hooks/useI18n';
+import { interpolate } from '../i18n/interpolate';
 
 interface ContextHealthPanelProps {
   health: ContextHealthState | null;
@@ -290,7 +291,7 @@ export const ContextHealthPanel: React.FC<ContextHealthPanelProps> = ({
             <Sparkles className="w-3 h-3" />
             <span>
               {ch.estimatedRemaining}{' '}
-              <span className="text-zinc-400">{ch.turnsRemaining.replace('{count}', String(health.estimatedTurnsRemaining))}</span>
+              <span className="text-zinc-400">{interpolate(ch.turnsRemaining, { count: health.estimatedTurnsRemaining })}</span>
             </span>
           </div>
 
@@ -461,7 +462,7 @@ const NestedGroup: React.FC<{
                       <button
                         type="button"
                         onClick={() => onNavigate(source)}
-                        aria-label={ch.jumpToPanelAria.replace('{name}', name)}
+                        aria-label={interpolate(ch.jumpToPanelAria, { name })}
                         className="opacity-0 group-hover:opacity-70 hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 transition-opacity"
                         title={ch.jumpToPanel}
                       >
@@ -472,7 +473,7 @@ const NestedGroup: React.FC<{
                       <button
                         type="button"
                         onClick={() => onUnload(source)}
-                        aria-label={ch.unmountAria.replace('{name}', name)}
+                        aria-label={interpolate(ch.unmountAria, { name })}
                         className="opacity-0 group-hover:opacity-70 hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 transition-opacity"
                         title={ch.unmountDisconnect}
                       >

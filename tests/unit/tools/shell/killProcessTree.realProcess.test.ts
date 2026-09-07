@@ -129,7 +129,8 @@ posixOnly('killProcessTree 整树退出证明', () => {
 describe('信号处理器注册点白名单', () => {
   const ALLOWED = new Set([
     'src/host/mcp/mcp-server-entry.ts',
-    'src/host/services/infra/gracefulShutdown.ts',
+    // gracefulShutdown.ts 已删（N-SHUTDOWN-DEADLINK）：它唯一的信号注册
+    // setupDefaultSignalHandlers 从未被调用，白名单条目随之移除（收紧，不是放宽）。
     'src/web/webServer.ts',
     'src/web/routes/devCancellableToolSmoke.ts',
     'src/cli/commands/chat.ts',

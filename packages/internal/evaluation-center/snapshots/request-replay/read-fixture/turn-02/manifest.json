@@ -1,0 +1,58 @@
+{
+  "requestId": "read-fixture-request-02",
+  "messageRefs": [
+    {
+      "kind": "content",
+      "contentHash": "7032c7a035fb53ed1296f992a10030e1d94f10646163141279bf6342f3fcaa92",
+      "reason": "system_prompt_fallback"
+    },
+    {
+      "kind": "ledger_message",
+      "messageId": "msg-01"
+    },
+    {
+      "kind": "ledger_message",
+      "messageId": "msg-02"
+    },
+    {
+      "kind": "ledger_message",
+      "messageId": "msg-03"
+    }
+  ],
+  "toolSchemaHash": "2b590f5cfec5acfc2be039ff2c36a43be6e72d89be950da4226b7602ff1c0b4c",
+  "toolNames": [
+    "AskUserQuestion",
+    "Bash",
+    "Blob",
+    "Edit",
+    "Glob",
+    "Grep",
+    "ListDirectory",
+    "Read",
+    "Skill",
+    "ToolSearch",
+    "WebSearch",
+    "Write",
+    "delegate_task",
+    "recommend_capability",
+    "task_status"
+  ],
+  "requested": {
+    "provider": "openai",
+    "model": "e2e-local-agent-model",
+    "temperature": 0.3,
+    "maxTokens": 16384,
+    "reasoningEffort": "high",
+    "thinkingBudget": 16384
+  },
+  "actualProvider": "acceptance",
+  "actualModel": "e2e-local-agent-model",
+  "appVersion": "0.33.0",
+  "adapterDefaults": {
+    "engine": "legacy",
+    "temperature": null,
+    "maxTokens": null
+  },
+  "compactionReplacements": [],
+  "degraded": false
+}

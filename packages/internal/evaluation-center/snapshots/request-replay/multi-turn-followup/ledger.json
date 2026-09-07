@@ -1,0 +1,58 @@
+{
+  "messages": [
+    {
+      "id": "msg-01",
+      "role": "user",
+      "content": "请读取工作区里的录制夹具。",
+      "timestamp": 0
+    },
+    {
+      "id": "msg-02",
+      "role": "assistant",
+      "content": "Reading the E2E replay/eval fixture through the real tool executor.",
+      "timestamp": 0,
+      "toolCalls": [
+        {
+          "id": "e2e-real-agent-read-fixture",
+          "name": "Read",
+          "arguments": {
+            "file_path": "<RECORD_DATA_DIR>/workspace/multi-turn-followup/snapshot-read-target.txt",
+            "offset": 1,
+            "limit": 20
+          }
+        }
+      ]
+    },
+    {
+      "id": "msg-03",
+      "role": "tool",
+      "content": "",
+      "timestamp": 0,
+      "toolResults": [
+        {
+          "toolCallId": "e2e-real-agent-read-fixture",
+          "success": true,
+          "output": "Read version digest: 61118334d0e25865\n     1\tE2E_REAL_AGENT_REPLAY_EVAL_FIXTURE=true\n     2\tThis file proves the snapshot corpus session reached the real Read tool executor."
+        }
+      ]
+    },
+    {
+      "id": "msg-04",
+      "role": "assistant",
+      "content": "E2E real agent replay eval smoke completed. E2E_REAL_AGENT_REPLAY_EVAL_FIXTURE observed through a real Read tool result.",
+      "timestamp": 0
+    },
+    {
+      "id": "msg-05",
+      "role": "user",
+      "content": "用一句话总结你刚才读到的 marker。",
+      "timestamp": 0
+    },
+    {
+      "id": "msg-06",
+      "role": "assistant",
+      "content": "E2E real agent replay eval smoke completed. E2E_REAL_AGENT_REPLAY_EVAL_FIXTURE observed through a real Read tool result.",
+      "timestamp": 0
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "type": "text",
+  "content": "E2E snapshot replay single-turn QA answered deterministically.",
+  "finishReason": "stop",
+  "actualProvider": "acceptance",
+  "actualModel": "e2e-local-agent-model",
+  "toolCalls": [],
+  "contentParts": [],
+  "usage": {
+    "inputTokens": 110,
+    "outputTokens": 14
+  }
+}

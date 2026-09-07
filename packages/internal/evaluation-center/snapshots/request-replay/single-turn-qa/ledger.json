@@ -1,0 +1,16 @@
+{
+  "messages": [
+    {
+      "id": "msg-01",
+      "role": "user",
+      "content": "E2E_SNAPSHOT_REPLAY_QA：用一句话说明什么是快照回归。",
+      "timestamp": 0
+    },
+    {
+      "id": "msg-02",
+      "role": "assistant",
+      "content": "E2E snapshot replay single-turn QA answered deterministically.",
+      "timestamp": 0
+    }
+  ]
+}

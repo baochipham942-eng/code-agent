@@ -207,6 +207,7 @@ interface ReflowScoreRow {
   turn_id: string;
   session_id: string;
   judge_version: string;
+  scored_at: number;
   dim_goal: number | null;
   dim_orchestration: number | null;
   dim_tools: number | null;
@@ -216,6 +217,12 @@ interface ReflowScoreRow {
   failure_class: string | null;
   signals: string | null;
 }
+
+const REFLOW_RED_PREDICATE = `(
+        dim_goal = 0 OR dim_orchestration = 0 OR dim_tools = 0 OR dim_permission = 0
+        OR dim_safety = 0 OR dim_artifact = 0
+        OR (signals IS NOT NULL AND signals <> '[]')
+      )`;
 
 function ensureReflowConsentTable(db: BetterSqlite3.Database): void {
   db.exec(`
@@ -265,25 +272,25 @@ function candidateSources(row: ReflowScoreRow): Array<'judge' | 'signal'> {
  */
 export function listReflowCandidates(
   db: BetterSqlite3.Database,
-  options: { judgeVersion?: string; limit?: number } = {},
+  options: { judgeVersion?: string; limit?: number; sessionId?: string } = {},
 ): PostLaunchReflowCandidate[] {
   const judgeVersion = options.judgeVersion ?? POST_LAUNCH_JUDGE_VERSION;
   const limit = Math.max(1, Math.min(options.limit ?? 200, 500));
+  const sessionId = options.sessionId?.trim();
   const candidates = new Map<string, PostLaunchReflowCandidate>();
+  const sessionClause = sessionId ? 'AND session_id = ?' : '';
+  const scoreParams = sessionId ? [judgeVersion, sessionId, limit] : [judgeVersion, limit];
   const rows = db.prepare(`
-    SELECT turn_id, session_id, judge_version,
+    SELECT turn_id, session_id, judge_version, scored_at,
            dim_goal, dim_orchestration, dim_tools, dim_permission, dim_safety, dim_artifact,
            failure_class, signals
     FROM telemetry_turn_scores
     WHERE judge_version = ?
-      AND (
-        dim_goal = 0 OR dim_orchestration = 0 OR dim_tools = 0 OR dim_permission = 0
-        OR dim_safety = 0 OR dim_artifact = 0
-        OR (signals IS NOT NULL AND signals <> '[]')
-      )
+      AND ${REFLOW_RED_PREDICATE}
+      ${sessionClause}
     ORDER BY scored_at DESC
     LIMIT ?
-  `).all(judgeVersion, limit) as ReflowScoreRow[];
+  `).all(...scoreParams) as ReflowScoreRow[];
   for (const row of rows) {
     const sources = candidateSources(row);
     candidates.set(`${row.session_id}:${row.turn_id}`, {
@@ -295,18 +302,21 @@ export function listReflowCandidates(
       signals: parseSignals(row.signals ?? '[]'),
       failureClass: row.failure_class,
       sources,
+      occurredAt: row.scored_at,
     });
   }
 
   let feedbackRows: Array<{ id: string; session_id: string; turn_id: string | null; created_at: number }> = [];
   try {
+    const feedbackParams = sessionId ? [sessionId, limit] : [limit];
     feedbackRows = db.prepare(`
       SELECT id, session_id, turn_id, created_at
       FROM telemetry_feedback
       WHERE rating = -1
+      ${sessionId ? 'AND session_id = ?' : ''}
       ORDER BY created_at DESC
       LIMIT ?
-    `).all(limit) as Array<{ id: string; session_id: string; turn_id: string | null; created_at: number }>;
+    `).all(...feedbackParams) as Array<{ id: string; session_id: string; turn_id: string | null; created_at: number }>;
   } catch {
     // Older/fixture databases may not have the optional feedback table yet.
   }
@@ -317,6 +327,7 @@ export function listReflowCandidates(
       if (!existing.sources.includes('feedback')) existing.sources.push('feedback');
       existing.feedbackId = feedback.id;
       existing.feedbackAt = feedback.created_at;
+      existing.occurredAt = Math.max(existing.occurredAt ?? 0, feedback.created_at);
       continue;
     }
     candidates.set(key, {
@@ -329,19 +340,57 @@ export function listReflowCandidates(
       sources: ['feedback'],
       feedbackId: feedback.id,
       feedbackAt: feedback.created_at,
+      occurredAt: feedback.created_at,
     });
   }
   return [...candidates.values()]
-    .sort((a, b) => (b.feedbackAt ?? 0) - (a.feedbackAt ?? 0))
+    .sort((a, b) => (b.occurredAt ?? 0) - (a.occurredAt ?? 0))
     .slice(0, limit);
 }
 
 export function hasReflowCandidate(
   db: BetterSqlite3.Database,
   input: { sessionId: string; turnId?: string | null },
+  judgeVersion: string = POST_LAUNCH_JUDGE_VERSION,
 ): boolean {
-  return listReflowCandidates(db, { limit: 500 }).some((candidate) =>
-    candidate.sessionId === input.sessionId && (input.turnId === undefined || candidate.turnId === input.turnId));
+  const sessionId = input.sessionId;
+  const turnId = input.turnId;
+  const scoreHit = turnId === undefined
+    ? db.prepare(`
+        SELECT 1 AS ok FROM telemetry_turn_scores
+        WHERE session_id = ? AND judge_version = ? AND ${REFLOW_RED_PREDICATE}
+        LIMIT 1
+      `).get(sessionId, judgeVersion)
+    : turnId === null
+      ? undefined
+      : db.prepare(`
+          SELECT 1 AS ok FROM telemetry_turn_scores
+          WHERE session_id = ? AND turn_id = ? AND judge_version = ? AND ${REFLOW_RED_PREDICATE}
+          LIMIT 1
+        `).get(sessionId, turnId, judgeVersion);
+  if (scoreHit) return true;
+  try {
+    const feedbackHit = turnId === undefined
+      ? db.prepare(`
+          SELECT 1 AS ok FROM telemetry_feedback
+          WHERE session_id = ? AND rating = -1
+          LIMIT 1
+        `).get(sessionId)
+      : turnId === null
+        ? db.prepare(`
+            SELECT 1 AS ok FROM telemetry_feedback
+            WHERE session_id = ? AND turn_id IS NULL AND rating = -1
+            LIMIT 1
+          `).get(sessionId)
+        : db.prepare(`
+            SELECT 1 AS ok FROM telemetry_feedback
+            WHERE session_id = ? AND turn_id = ? AND rating = -1
+            LIMIT 1
+          `).get(sessionId, turnId);
+    return Boolean(feedbackHit);
+  } catch {
+    return false;
+  }
 }
 
 // ----------------------------------------------------------------------------

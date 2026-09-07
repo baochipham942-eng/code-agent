@@ -10,26 +10,52 @@ import type {
   HarvestFieldKey,
   HarvestPreviewRequest,
   HarvestPreviewResult,
+  StructuredReplay,
 } from '@shared/contract/evaluation';
-import type { PostLaunchReflowCandidate } from '@shared/contract/postLaunchScore';
+import type { PostLaunchConsentScope, PostLaunchReflowCandidate } from '@shared/contract/postLaunchScore';
 import { HARVEST_LOCKED_FIELDS } from '@shared/contract/evaluation';
 import { deriveHarvestSeed } from './harvestCandidates';
 import { queryNegativeFeedback } from './trajectoryToCase';
 import { isPostLaunchReflowEnabled } from '@host/testing/postlaunch/postLaunchGate';
-import { listReflowCandidates } from '@host/testing/postlaunch/postLaunchScoreStore';
+import { getPostLaunchConsentScope, listReflowCandidates } from '@host/testing/postlaunch/postLaunchScoreStore';
 
 /** 一次最多收多少场：模态本来就是人手选的量级，超出直接拒，不做分页。 */
 const HARVEST_MAX_SESSIONS = 20;
 /** 单场会话读多少条点踩：反向候选只需要少量锚点。 */
 const NEGATIVE_FEEDBACK_LIMIT = 10;
 
-function scopeReplayToCandidate(replay: import('@shared/contract/evaluation').StructuredReplay, candidates: readonly PostLaunchReflowCandidate[]): import('@shared/contract/evaluation').StructuredReplay {
+function turnHasUserPrompt(turn: NonNullable<StructuredReplay['turns']>[number]): boolean {
+  return (turn.blocks ?? []).some((block) => block.type === 'user' && block.content.trim());
+}
+
+function isTriggerTurn(turn: NonNullable<StructuredReplay['turns']>[number], turnId: string): boolean {
+  return String(turn.turnNumber) === String(turnId) || turn.parentTurnId === turnId;
+}
+
+/**
+ * 按保存时的同意档裁剪回放。full_session 不裁；turn_excerpt（及更低档）只留触发轮
+ * 及其直接上下文（触发轮本身 + 往前最近一条带用户原话的轮），不得带上更早轮的原文。
+ */
+export function scopeReplayToCandidate(
+  replay: StructuredReplay,
+  candidates: readonly PostLaunchReflowCandidate[],
+  consentScope: PostLaunchConsentScope,
+): StructuredReplay {
+  if (consentScope === 'full_session') return replay;
   const match = candidates.find((candidate) => candidate.sessionId === replay.sessionId && candidate.turnId);
-  if (!match) return replay;
+  if (!match?.turnId) return replay;
   const turns = replay.turns ?? [];
-  const index = turns.findIndex((turn) => String(turn.turnNumber) === String(match.turnId) || turn.parentTurnId === match.turnId);
+  const index = turns.findIndex((turn) => isTriggerTurn(turn, match.turnId!));
   if (index < 0) return replay;
-  return { ...replay, turns: turns.slice(0, index + 1) };
+  let userIndex = -1;
+  for (let cursor = index; cursor >= 0; cursor -= 1) {
+    if (turnHasUserPrompt(turns[cursor])) {
+      userIndex = cursor;
+      break;
+    }
+  }
+  const start = userIndex >= 0 ? userIndex : index;
+  return { ...replay, turns: turns.slice(start, index + 1) };
 }
 
 function harvestBatchTag(now = new Date()): string {
@@ -94,9 +120,7 @@ export async function buildHarvestPreview(payload: HarvestPreviewRequest): Promi
   ]);
   const database = getDatabase();
   const telemetry = getTelemetryQueryService();
-  const reflowCandidates = postLaunchReflow && database.getDb()
-    ? listReflowCandidates(database.getDb()!, { limit: 500 })
-    : [];
+  const db = database.getDb();
   const batchTag = harvestBatchTag();
   const seeds: HarvestDraftSeed[] = [];
   const failed: HarvestPreviewResult['failed'] = [];
@@ -106,8 +130,15 @@ export async function buildHarvestPreview(payload: HarvestPreviewRequest): Promi
       const replay = await telemetry.getStructuredReplay(sessionId);
       if (!replay) throw new Error('这场会话没有可回放的记录');
       const session = database.getSession(sessionId);
-      const db = database.getDb();
-      const scopedReplay = postLaunchReflow ? scopeReplayToCandidate(replay, reflowCandidates) : replay;
+      const sessionCandidates = postLaunchReflow && db
+        ? listReflowCandidates(db, { sessionId, limit: 500 })
+        : [];
+      const consentScope = postLaunchReflow && db
+        ? getPostLaunchConsentScope(db, sessionId)
+        : 'full_session';
+      const scopedReplay = postLaunchReflow
+        ? scopeReplayToCandidate(replay, sessionCandidates, consentScope)
+        : replay;
       let seed = deriveHarvestSeed({
         replay: scopedReplay,
         sessionTitle: session?.title?.trim() || sessionId,
@@ -120,7 +151,7 @@ export async function buildHarvestPreview(payload: HarvestPreviewRequest): Promi
       });
       if (!seed.prompt) throw new Error('这场会话没有可用的用户原话');
       if (postLaunchReflow) {
-        seed = applyPostLaunchReflowProvenance(seed, reflowCandidates);
+        seed = applyPostLaunchReflowProvenance(seed, sessionCandidates);
       }
       seeds.push(seed);
     } catch (error) {

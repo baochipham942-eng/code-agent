@@ -131,11 +131,31 @@ describe('SessionAgentsPanel', () => {
     await screen.findByTestId('agents-panel-row-researcher');
     expect(screen.getByTestId('agents-panel-row-writer')).toBeTruthy();
     expect(screen.getByTestId('agents-panel-status-researcher').textContent).toBe('完成');
-    // 两个代理全部完成 → 顶部「合没合」报已合并
-    expect(screen.getByTestId('agents-panel-merge-state').textContent).toBe('2 个代理的改动已经合到一起了');
+    // 两个代理全部完成、filesChanged 为空 → 顶部报已汇报，不说合到一起
+    expect(screen.getByTestId('agents-panel-merge-state').textContent).toBe('2 个代理已汇报');
+    expect(screen.getByTestId('agents-panel-merge-state').textContent).not.toContain('合到一起');
 
     fireEvent.click(screen.getByTestId('agents-panel-open-researcher'));
     expect(useMemberViewStore.getState().viewingMemberId).toBe('researcher');
+  });
+
+  it('只读/0 改动完成后面板是已汇报，不含合到一起', async () => {
+    mockLedger([record({ filesChanged: [] }), record({ agentId: 'writer', name: '撰稿员', role: 'writer', filesChanged: [] })]);
+
+    render(<SessionAgentsPanel />);
+    const merge = await screen.findByTestId('agents-panel-merge-state');
+    expect(merge.textContent).toBe('2 个代理已汇报');
+    expect(merge.textContent).not.toContain('合到一起');
+  });
+
+  it('有真实文件改动时面板仍报合到一起了', async () => {
+    mockLedger([
+      record({ filesChanged: ['src/a.ts'] }),
+      record({ agentId: 'writer', name: '撰稿员', role: 'writer', filesChanged: ['src/b.ts'] }),
+    ]);
+
+    render(<SessionAgentsPanel />);
+    expect((await screen.findByTestId('agents-panel-merge-state')).textContent).toBe('2 个代理的改动已经合到一起了');
   });
 
   it('已取消成员使用 outcomeWords 徽标词且不可再停', async () => {

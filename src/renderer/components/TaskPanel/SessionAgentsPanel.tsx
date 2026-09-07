@@ -126,11 +126,13 @@ export const SessionAgentsPanel: React.FC = () => {
 
   const mergeLabel = mergeState === 'merged'
     ? text.mergeState.merged.replace('{count}', String(rows.filter((row) => row.status !== 'standby').length))
-    : mergeState === 'conflict'
-      ? text.mergeState.conflict.replace('{count}', String(conflicts.length))
-      : mergeState === 'waiting'
-        ? text.mergeState.waiting
-        : null;
+    : mergeState === 'reported'
+      ? text.mergeState.reported.replace('{count}', String(rows.filter((row) => row.status !== 'standby').length))
+      : mergeState === 'conflict'
+        ? text.mergeState.conflict.replace('{count}', String(conflicts.length))
+        : mergeState === 'waiting'
+          ? text.mergeState.waiting
+          : null;
 
   return (
     <div data-testid="session-agents-panel" className="flex h-full flex-col">

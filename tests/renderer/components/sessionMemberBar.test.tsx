@@ -97,17 +97,38 @@ describe('SessionMemberBar（折叠 chip）', () => {
     expect(screen.queryByTestId('session-member-bar-collapsed')).toBeNull();
   });
 
-  it('空内存时回灌最近团队 run：全员完成文案 + 合并态 + 头像叠', async () => {
+  it('空内存时回灌最近团队 run：全员完成文案 + 已汇报 + 头像叠', async () => {
     mockLedger(completedDetail);
 
     render(<SessionMemberBar sessionId="session-1" />);
     const chip = await screen.findByTestId('session-member-bar-collapsed');
     expect(chip.textContent).toContain('2 个代理 · 完成');
-    // 两个代理全部完成且无冲突 → 尾部「合没合」报已合并
-    expect(screen.getByTestId('member-bar-merge-state').textContent).toBe('改动已经合到一起了');
+    // 两个代理全部完成、无冲突、filesChanged 为空 → 只读/0 改动报已汇报，不说合到一起
+    expect(screen.getByTestId('member-bar-merge-state').textContent).toBe('已汇报');
+    expect(screen.getByTestId('member-bar-merge-state').textContent).not.toContain('合到一起');
     // chip 左侧头像叠：专家行走 RoleInitialAvatar
     expect(screen.getByTestId('role-initial-avatar-researcher')).toBeTruthy();
     expect(screen.getByTestId('role-initial-avatar-writer')).toBeTruthy();
+  });
+
+  it('只读/0 改动完成后芯片是已汇报，不含合到一起', async () => {
+    mockLedger(completedDetail);
+
+    render(<SessionMemberBar sessionId="session-1" />);
+    const merge = await screen.findByTestId('member-bar-merge-state');
+    expect(merge.textContent).toBe('已汇报');
+    expect(merge.textContent).not.toContain('合到一起');
+  });
+
+  it('有真实文件改动时芯片仍报合到一起了', async () => {
+    const withChanges: SwarmRunDetail = {
+      ...completedDetail,
+      agents: agents.map((agent) => ({ ...agent, filesChanged: ['src/a.ts'] })),
+    };
+    mockLedger(withChanges);
+
+    render(<SessionMemberBar sessionId="session-1" />);
+    expect((await screen.findByTestId('member-bar-merge-state')).textContent).toBe('改动已经合到一起了');
   });
 
   it('点 chip 直达右侧「专家」一级页签', async () => {

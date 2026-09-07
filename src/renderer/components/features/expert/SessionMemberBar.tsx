@@ -66,6 +66,7 @@ export interface MemberPill {
   isLead: boolean;
   /** standby 成员的排除键（member 的 id ?? roleId；lead 用 roleId），× 掉时写进 composerStore */
   standbyKey?: string;
+  filesChanged?: string[];
   agent?: SwarmAgentState;
   record?: SwarmRunAgentRecord;
 }
@@ -123,6 +124,7 @@ export function useSessionMembers(sessionId: string | null): MemberPill[] {
         icon: iconOf(roleId),
         status: pillStatusOf(agent.status),
         isLead: roleId === teamLeadRoleId,
+        filesChanged: agent.filesChanged,
         agent,
         record: records?.[index],
       } satisfies MemberPill;
@@ -208,11 +210,13 @@ export const SessionMemberBar: React.FC<{ sessionId: string | null }> = ({ sessi
             : text.collapsedDone.replace('{count}', String(rows.length));
   const mergeLabel = mergeState === 'merged'
     ? text.mergeState.chipMerged
-    : mergeState === 'conflict'
-      ? text.mergeState.chipConflict.replace('{count}', String(conflicts.length))
-      : mergeState === 'waiting'
-        ? text.mergeState.chipWaiting
-        : null;
+    : mergeState === 'reported'
+      ? text.mergeState.chipReported
+      : mergeState === 'conflict'
+        ? text.mergeState.chipConflict.replace('{count}', String(conflicts.length))
+        : mergeState === 'waiting'
+          ? text.mergeState.chipWaiting
+          : null;
 
   return (
     <button /* ds-allow:button: 折叠 chip 是整行摘要入口（头像叠+两行信息），Button primitive 无此形态 */

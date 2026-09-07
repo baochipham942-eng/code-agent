@@ -159,3 +159,191 @@ describe('worktree 子代理记忆根继承', () => {
     expect(existsSync(target)).toBe(true);
   });
 });
+
+// ============================================================================
+// 修复轮 3：记忆目录被父级 primary 折叠时仍显式保留
+// ============================================================================
+// CODE_AGENT_DATA_DIR 指进沙箱（合法用法，#1686 第三轮认过）时，父级
+// buildEvalRunScoping 只产 primary 单根——记忆目录 <dataDir>/memory/ 被折叠覆盖、
+// 不产生 eval-memory 附加根，修复轮 2 的附加根继承没有根可继承 ⇒ worktree 子代理的
+// MemoryWrite(scope="global") 仍被判 PROJECT_SOURCE_OUTSIDE_WORKSPACE（worktree 根
+// 在沙箱外）。口径（爸拍板）：记忆目录始终显式保留（父级授权过它），🚫 不继承父级
+// primary 本体。几何：data 在沙箱**里面**（折叠），worktree 在 WORKTREE_BASE_DIR 下。
+// ============================================================================
+
+describe('worktree 子代理 · 记忆目录被父级 primary 折叠（修复轮 3）', () => {
+  let root: string;
+  let sandbox: string;
+  let outside: string;
+  let dataDir: string;
+  let memoryDir: string;
+  let worktree: string;
+  let previousDataDir: string | undefined;
+
+  beforeAll(() => { getProtocolRegistry(); });
+
+  beforeEach(async () => {
+    root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'wsb-wt3-')));
+    sandbox = path.join(root, 'a-sandbox');
+    outside = path.join(root, 'z-outside');
+    dataDir = path.join(sandbox, 'data');
+    await Promise.all([fs.mkdir(sandbox), fs.mkdir(outside)]);
+    await fs.mkdir(dataDir, { recursive: true });
+    memoryDir = path.join(dataDir, 'memory');
+    await fs.mkdir(memoryDir, { recursive: true });
+    previousDataDir = process.env.CODE_AGENT_DATA_DIR;
+    process.env.CODE_AGENT_DATA_DIR = dataDir;
+    await fs.mkdir(WORKTREE_BASE_DIR, { recursive: true });
+    worktree = await fs.mkdtemp(path.join(await fs.realpath(WORKTREE_BASE_DIR), 'wsb-wt3-'));
+    getToolCache().clear();
+    fileReadTracker.clear();
+    resetPermissionModeManager();
+  });
+
+  afterEach(async () => {
+    resetPermissionModeManager();
+    if (previousDataDir === undefined) delete process.env.CODE_AGENT_DATA_DIR;
+    else process.env.CODE_AGENT_DATA_DIR = previousDataDir;
+    await fs.rm(worktree, { recursive: true, force: true });
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  /** 折叠几何的父级 scope：真 buildEvalRunScoping 产物（此时应只有 primary 单根）。 */
+  function foldedParentScope(): WorkspaceScope {
+    const scoping = buildEvalRunScoping({
+      restrictWritesToWorkspace: true,
+      workingDirectory: sandbox,
+      runId: 'wsb-wt3-run',
+      sessionId: 'wsb-wt3-session',
+    });
+    if (!scoping.workspaceScope) throw new Error('buildEvalRunScoping did not derive a scope');
+    return scoping.workspaceScope;
+  }
+
+  function buildSubagentExecutor(input: {
+    parentScope: WorkspaceScope;
+    cwd: string;
+    boundaryEnabled: boolean;
+  }): ToolExecutor {
+    const context = {
+      runId: 'wsb-wt3-run',
+      sessionId: 'wsb-wt3-session',
+      workspace: sandbox,
+      workspaceScope: input.parentScope,
+      restrictWritesToWorkspace: input.boundaryEnabled,
+      cwd: input.cwd,
+      resolver: { getDefinition: () => undefined },
+      permission: { request: async () => true },
+      events: { emit: () => { /* no-op */ } },
+      abortSignal: new AbortController().signal,
+    } as unknown as SubagentExecutionContext;
+    const runtime = createSubagentToolRuntime({
+      context,
+      sessionId: 'wsb-wt3-session',
+      effectiveMode: 'default',
+      identity: { agentId: 'wsb-wt3-agent', runId: 'wsb-wt3-run', parentToolUseId: 'wsb-parent' },
+      allowedToolNames: new Set(['Write', 'MemoryWrite', 'Bash']),
+      checkToolExecution: () => true,
+    });
+    runtime.executor.setAuditEnabled(false);
+    return runtime.executor;
+  }
+
+  it('前提钉：CODE_AGENT_DATA_DIR 在沙箱内时 buildEvalRunScoping 只产 primary 单根（记忆被折叠）', () => {
+    // 任务书前提的几何钉：折叠不成立（比如 adapter 改成显式双根）时这条红，
+    // 说明被测前提已变，折叠用例要跟着重审，而不是静默变成双根走轮 2 路径。
+    expect(foldedParentScope().roots.length).toBe(1);
+    expect(foldedParentScope().roots[0].role).toBe('primary');
+  });
+
+  it('折叠 + worktree 子代理：MemoryWrite(scope="global") 放行且真落盘（修复轮 3 核心）', async () => {
+    const result = await buildSubagentExecutor({ parentScope: foldedParentScope(), cwd: worktree, boundaryEnabled: true })
+      .execute('MemoryWrite', {
+        action: 'write',
+        scope: 'global',
+        filename: 'wsb-wt3.md',
+        name: 'wsb',
+        description: 'folded memory root test',
+        type: 'project',
+        content: 'written by folded memory-root test',
+      }, { sessionId: 'wsb-wt3-session' });
+    expect(result.success).toBe(true);
+    // 判据锚真实副作用：记忆文件真的写进 <CODE_AGENT_DATA_DIR>/memory/（worktree 根外、
+    // 且只靠「折叠也保留」这条新逻辑才在子级 scope 里）
+    expect(existsSync(path.join(memoryDir, 'wsb-wt3.md'))).toBe(true);
+  });
+
+  it('折叠 + worktree 子代理：worktree 根外且记忆根外仍拒且不落盘', async () => {
+    const target = path.join(outside, 'wt3-escape.txt');
+    const result = await buildSubagentExecutor({ parentScope: foldedParentScope(), cwd: worktree, boundaryEnabled: true })
+      .execute('Write', { file_path: target, content: 'wsb' }, { sessionId: 'wsb-wt3-session' });
+    expect(result.success).toBe(false);
+    expect(result.metadata?.code).toBe('PROJECT_SOURCE_OUTSIDE_WORKSPACE');
+    expect(existsSync(target)).toBe(false);
+  });
+
+  it('折叠 + worktree 子代理：不继承父级 primary 本体——沙箱内（记忆根外）仍拒', async () => {
+    // 口径另一面：保留的只有记忆目录，父级 primary（沙箱）不跟着进子级 scope。
+    const target = path.join(sandbox, 'wt3-primary-body.txt');
+    const result = await buildSubagentExecutor({ parentScope: foldedParentScope(), cwd: worktree, boundaryEnabled: true })
+      .execute('Write', { file_path: target, content: 'wsb' }, { sessionId: 'wsb-wt3-session' });
+    expect(result.success).toBe(false);
+    expect(result.metadata?.code).toBe('PROJECT_SOURCE_OUTSIDE_WORKSPACE');
+    expect(existsSync(target)).toBe(false);
+  });
+
+  it('折叠 + 普通目录子代理：MemoryWrite 放行（非 worktree 分支零变化）', async () => {
+    // 普通目录子代理走 context.workspaceScope 原样（折叠 primary 覆盖记忆目标），
+    // 修复只动 worktree 分支——这条钉住非 worktree 路径不被顺手改坏。cwd 必须在
+    // 父级工作区内（createRunContext 会拒 scope 外的 cwd，真实非 worktree 子代理也如此）。
+    const normalDir = path.join(sandbox, 'sub-dir');
+    await fs.mkdir(normalDir);
+    const result = await buildSubagentExecutor({ parentScope: foldedParentScope(), cwd: normalDir, boundaryEnabled: true })
+      .execute('MemoryWrite', {
+        action: 'write',
+        scope: 'global',
+        filename: 'wsb-wt3-normal.md',
+        name: 'wsb',
+        description: 'normal dir subagent memory write',
+        type: 'project',
+        content: 'written by normal-dir subagent',
+      }, { sessionId: 'wsb-wt3-session' });
+    expect(result.success).toBe(true);
+    expect(existsSync(path.join(memoryDir, 'wsb-wt3-normal.md'))).toBe(true);
+  });
+
+  it('折叠 + 开关关着：不合成记忆根——Bash working_directory 指记忆目录被 RUN_WORKSPACE_BOUNDARY 拒', async () => {
+    // 保守性 gate：合成只在写边界开着时发生。关着时子级 scope 若多出记忆根，
+    // Bash working_directory 闸会被松掉（bindRunScopedParams 按根判）——这条
+    // 钉住「关着 = 一字不差」。拒在工具查找之前，不真跑 shell。
+    const result = await buildSubagentExecutor({ parentScope: foldedParentScope(), cwd: worktree, boundaryEnabled: false })
+      .execute('Bash', { command: 'pwd', working_directory: memoryDir }, { sessionId: 'wsb-wt3-session' });
+    expect(result.success).toBe(false);
+    expect(result.metadata?.code).toBe('RUN_WORKSPACE_BOUNDARY');
+  });
+
+  it('父级 scope 不覆盖记忆目录：不合成记忆根，MemoryWrite 仍拒（判据=父级授权，不是无脑加）', async () => {
+    // 防开松：CODE_AGENT_DATA_DIR 在父级 scope 之外（手工构造单根 parent scope，
+    // 同轮 2 重叠用例的构造方式）⇒ 父级没授权过记忆目录 ⇒ 不合成 ⇒ 目标在
+    // worktree 根外被拒。
+    const externalData = path.join(root, 'external-data');
+    await fs.mkdir(externalData);
+    process.env.CODE_AGENT_DATA_DIR = externalData;
+    const unauthorizedParent = createWorkspaceScope('wsb-wt3-noauth', [
+      { sourceId: 'eval-sandbox', path: sandbox, access: 'read_write', role: 'primary' },
+    ]);
+    const result = await buildSubagentExecutor({ parentScope: unauthorizedParent, cwd: worktree, boundaryEnabled: true })
+      .execute('MemoryWrite', {
+        action: 'write',
+        scope: 'global',
+        filename: 'wsb-wt3-unauth.md',
+        name: 'wsb',
+        description: 'unauthorized memory root must not be synthesized',
+        type: 'project',
+        content: 'must not land',
+      }, { sessionId: 'wsb-wt3-session' });
+    expect(result.success).toBe(false);
+    expect(result.metadata?.code).toBe('PROJECT_SOURCE_OUTSIDE_WORKSPACE');
+    expect(existsSync(path.join(externalData, 'memory', 'wsb-wt3-unauth.md'))).toBe(false);
+  });
+});

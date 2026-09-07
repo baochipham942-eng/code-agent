@@ -1,6 +1,7 @@
 import { createRunContext } from '../runtime/runContext';
 import { resolveBackgroundWorkspaceAuthority } from '../runtime/workspaceAuthority';
 import { createWorkspaceScope, isPathWithinRoot } from '../runtime/workspaceScope';
+import { getMemoryDir } from '../lightMemory/indexLoader';
 import { ToolExecutor } from '../tools/toolExecutor';
 import type { WorkspaceScope } from '../../shared/contract/project';
 import { getPermissionLevel } from './orchestrator/modelConfigResolver';
@@ -22,14 +23,37 @@ import type { SubagentEventIdentity } from './subagentLifecycleEvents';
 function inheritParentAdditionalRoots(
   worktreeScope: WorkspaceScope | undefined,
   parentScope: WorkspaceScope | undefined,
+  options: { boundaryEnabled: boolean },
 ): WorkspaceScope | undefined {
   if (!worktreeScope || !parentScope) return worktreeScope;
   const inherited = parentScope.roots
     .filter((root) => root.role !== 'primary')
     .filter((root) => !worktreeScope.roots.some((existing) =>
       isPathWithinRoot(root.path, existing.path) || isPathWithinRoot(existing.path, root.path)));
-  if (inherited.length === 0) return worktreeScope;
-  return createWorkspaceScope(worktreeScope.projectId, [...worktreeScope.roots, ...inherited]);
+  const roots = [...worktreeScope.roots, ...inherited];
+  // N-EVAL-POLICY-WRITE-BOUNDARY-ENABLE 修复轮 3：记忆目录被父级 primary 折叠时仍显式保留。
+  // CODE_AGENT_DATA_DIR 指进沙箱是合法用法（#1686 第三轮认过），此时父级
+  // buildEvalRunScoping 只产 primary 单根（防 createWorkspaceScope 的
+  // assertNonOverlappingRoots 抛，agentAdapter.ts 的重叠检查跳过 eval-memory 根），
+  // 上面的附加根继承没有根可继承 ⇒ worktree 子代理的 MemoryWrite(scope="global")
+  // 目标 <dataDir>/memory/（worktree 根在沙箱外）仍被判 PROJECT_SOURCE_OUTSIDE_WORKSPACE。
+  // 口径（爸拍板）：记忆目录始终显式保留——判据是父级授权过它（它落在父级任一根内，
+  // 折叠或显式同权）；🚫 不继承父级 primary 本体，worktree 隔离语义不动。记忆目录
+  // 出处与写目标解析同源：getMemoryDir()（writeTargets.ts 的 global-memory 分支同一
+  // 派生链，CODE_AGENT_DATA_DIR ?? ~/.code-agent），不拼路径。只在写边界开着时合成——
+  // 关着时子级 scope 多一个根会松 Bash working_directory 闸，非评测链路零变化。
+  if (options.boundaryEnabled) {
+    const memoryDir = getMemoryDir();
+    const parentAuthorizedMemory = parentScope.roots
+      .some((root) => isPathWithinRoot(memoryDir, root.path));
+    const childCoversMemory = roots.some((root) =>
+      isPathWithinRoot(memoryDir, root.path) || isPathWithinRoot(root.path, memoryDir));
+    if (parentAuthorizedMemory && !childCoversMemory) {
+      roots.push({ sourceId: 'eval-memory', path: memoryDir, role: 'additional', access: 'read_write' });
+    }
+  }
+  if (roots.length === worktreeScope.roots.length) return worktreeScope;
+  return createWorkspaceScope(worktreeScope.projectId, roots);
 }
 
 export function createSubagentToolRuntime(input: {
@@ -47,6 +71,7 @@ export function createSubagentToolRuntime(input: {
     ? inheritParentAdditionalRoots(
       resolveBackgroundWorkspaceAuthority({ workspace: worktreeWorkspace }),
       context.workspaceScope,
+      { boundaryEnabled: context.restrictWritesToWorkspace === true },
     )
     : context.workspaceScope;
   const nativeRunContext = context.runId && input.sessionId && runWorkspace

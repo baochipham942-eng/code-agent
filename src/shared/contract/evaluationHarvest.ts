@@ -59,6 +59,8 @@ export interface HarvestDraftSeed {
   /** 上线后回流候选的结构化溯源；正文仍由 HARVEST 按同意档决定是否带入。 */
   postLaunchReflow?: {
     turnId: string | null;
+    /** 触发本条草稿的点踩行；保存闸按它核对，撤销后必须拒。 */
+    feedbackId?: string;
     sources: Array<'judge' | 'signal' | 'feedback'>;
     redDimensions: PostLaunchDimension[];
     signals: PostLaunchSignalKind[];

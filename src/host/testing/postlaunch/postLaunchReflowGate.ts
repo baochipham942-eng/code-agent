@@ -32,6 +32,7 @@ export function isPostLaunchConsentScope(value: unknown): value is PostLaunchCon
 export function checkPostLaunchReflowGates(
   db: BetterSqlite3.Database,
   candidate: Pick<PostLaunchReflowCandidate, 'sessionId' | 'turnId'> & {
+    feedbackId?: string;
     previewConsentScope?: PostLaunchConsentScope;
   },
 ): ReflowGateDecision {

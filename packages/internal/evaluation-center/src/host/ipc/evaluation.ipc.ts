@@ -132,6 +132,7 @@ export function registerEvaluationHandlers(
       const decision = checkPostLaunchReflowGates(db, {
         sessionId,
         turnId: payload.postLaunchReflow.turnId ?? null,
+        feedbackId: payload.postLaunchReflow.feedbackId,
         previewConsentScope,
       });
       if (!decision.allowed) {

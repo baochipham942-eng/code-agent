@@ -16,7 +16,7 @@ import type {
 import type { PostLaunchConsentScope, PostLaunchReflowCandidate } from '@shared/contract/postLaunchScore';
 import { HARVEST_LOCKED_FIELDS } from '@shared/contract/evaluation';
 import { deriveHarvestSeed, resolveFeedbackTurn } from './harvestCandidates';
-import { queryNegativeFeedback } from './trajectoryToCase';
+import { queryNegativeFeedback, resolveFeedbackTargetMessage } from './trajectoryToCase';
 import { isPostLaunchReflowEnabled } from '@host/testing/postlaunch/postLaunchGate';
 import { getPostLaunchConsentScope, listReflowCandidates } from '@host/testing/postlaunch/postLaunchScoreStore';
 
@@ -70,14 +70,30 @@ function turnBelongsToOwner(
 }
 
 /**
+ * 一场会话可能有多条候选；裁剪/溯源/保存必须贯穿同一条——取 occurredAt 最新的那条
+ * （触发本次回流的那条），禁止混用别轮的 tags 或拿另一条去过保存闸。
+ */
+export function pickTriggerCandidate(
+  candidates: readonly PostLaunchReflowCandidate[],
+  sessionId: string,
+): PostLaunchReflowCandidate | null {
+  const matches = candidates
+    .filter((candidate) => candidate.sessionId === sessionId)
+    .sort((a, b) => (b.occurredAt ?? 0) - (a.occurredAt ?? 0));
+  return matches[0] ?? null;
+}
+
+/**
  * 评分/信号候选：turnId 必须是 telemetry_turns.id，对不上 fail-closed。
- * 点踩候选的 turnId 是 assistant message.id，匹配不上时按 created_at 时间锚
- * （resolveFeedbackTurn：startTime 不晚于点踩时刻的最后一轮），不许把 message.id 当轮 id。
+ * 点踩候选的 turnId 是 assistant message.id，匹配不上时按 resolveFeedbackPrompt
+ * 的两级顺序：先按 messageId/turnId 找被评价消息、用它自己的时间定轮；
+ * 找不到再退 created_at 时间锚。不许把 message.id 当轮 id。
  */
 function resolveTriggerOwner(
   turns: HarvestReplayTurns,
   candidate: PostLaunchReflowCandidate,
   turnRows: readonly HarvestTurnRow[],
+  messages: ReadonlyArray<{ id: string; timestamp?: number }> = [],
 ): { owner: HarvestTurnRow; index: number } {
   const byId = new Map(turnRows.map((row) => [row.id, row]));
   const trueRow = candidate.turnId ? byId.get(candidate.turnId) : undefined;
@@ -88,7 +104,12 @@ function resolveTriggerOwner(
     return { owner, index };
   }
   if (!candidate.sources.includes('feedback')) throw new Error(REFLOW_TURN_MISMATCH_MESSAGE);
-  const anchor = candidate.occurredAt ?? candidate.feedbackAt;
+  const target = resolveFeedbackTargetMessage(messages, {
+    messageId: candidate.messageId ?? null,
+    turnId: candidate.turnId,
+    anchorTimestamp: candidate.occurredAt ?? candidate.feedbackAt ?? null,
+  });
+  const anchor = target?.timestamp ?? candidate.occurredAt ?? candidate.feedbackAt;
   if (anchor == null) throw new Error(REFLOW_TURN_MISMATCH_MESSAGE);
   const anchored = resolveFeedbackTurn(turns, anchor);
   if (!anchored) throw new Error(REFLOW_TURN_MISMATCH_MESSAGE);
@@ -138,6 +159,18 @@ function ownedReplayRange(
   };
 }
 
+function listSessionMessages(
+  database: { getMessages?: (sessionId: string) => Array<{ id: string; timestamp?: number }> },
+  sessionId: string,
+): Array<{ id: string; timestamp?: number }> {
+  try {
+    const rows = database.getMessages?.(sessionId);
+    return Array.isArray(rows) ? rows : [];
+  } catch {
+    return [];
+  }
+}
+
 function listHarvestTurnRows(db: BetterSqlite3.Database, sessionId: string): HarvestTurnRow[] {
   const rows = db.prepare(`
     SELECT id, turn_number, start_time, turn_type, parent_turn_id
@@ -156,19 +189,20 @@ function listHarvestTurnRows(db: BetterSqlite3.Database, sessionId: string): Har
  * 按保存时的同意档裁剪回放。full_session 不裁；turn_excerpt（及更低档）只留触发
  * 父轮 + 它的全部 iteration 子轮（及往前最近一条带用户原话的轮），不得带上别的用户轮。
  * 评分/信号候选 turnId 对不上 telemetry_turns↔回放映射时 fail-closed；
- * 点踩候选走 created_at 时间锚，禁止把 message.id 当轮 id。
+ * 点踩候选走 messageId/turnId → 消息自身时间，找不到再退 created_at。
  */
 export function scopeReplayToCandidate(
   replay: StructuredReplay,
   candidates: readonly PostLaunchReflowCandidate[],
   consentScope: PostLaunchConsentScope,
   turnRows: readonly HarvestTurnRow[] = [],
+  messages: ReadonlyArray<{ id: string; timestamp?: number }> = [],
 ): StructuredReplay {
   if (consentScope === 'full_session') return replay;
-  const match = candidates.find((candidate) => candidate.sessionId === replay.sessionId);
+  const match = pickTriggerCandidate(candidates, replay.sessionId);
   if (!match) throw new Error(REFLOW_TURN_MISMATCH_MESSAGE);
   const turns = replay.turns ?? [];
-  const { owner, index } = resolveTriggerOwner(turns, match, turnRows);
+  const { owner, index } = resolveTriggerOwner(turns, match, turnRows, messages);
   const { start, end } = ownedReplayRange(turns, owner, turnRows, index);
   return { ...replay, turns: turns.slice(start, end + 1) };
 }
@@ -200,11 +234,11 @@ export function applyPostLaunchReflowProvenance(
   candidates: readonly PostLaunchReflowCandidate[],
   consentScope: PostLaunchConsentScope,
 ): HarvestDraftSeed {
-  const matches = candidates.filter((candidate) => candidate.sessionId === seed.sessionId);
-  if (matches.length === 0) throw new Error('这场会话没有可回流的候选');
-  const sources = [...new Set(matches.flatMap((candidate) => candidate.sources))];
-  const redDimensions = [...new Set(matches.flatMap((candidate) => candidate.redDimensions))];
-  const signals = [...new Set(matches.flatMap((candidate) => candidate.signals))];
+  const match = pickTriggerCandidate(candidates, seed.sessionId);
+  if (!match) throw new Error('这场会话没有可回流的候选');
+  const sources = [...match.sources];
+  const redDimensions = [...match.redDimensions];
+  const signals = [...match.signals];
   const trigger = [
     ...sources.map((source) => `source:${source}`),
     ...redDimensions.map((dimension) => `red:${dimension}`),
@@ -215,7 +249,8 @@ export function applyPostLaunchReflowProvenance(
     tags: [...new Set([...seed.tags, 'postlaunch', ...trigger])],
     description: `${seed.description}；上线后回流触发：${trigger.join('、')}`,
     postLaunchReflow: {
-      turnId: matches.find((candidate) => candidate.turnId)?.turnId ?? null,
+      turnId: match.turnId,
+      ...(match.feedbackId ? { feedbackId: match.feedbackId } : {}),
       sources,
       redDimensions,
       signals,
@@ -254,8 +289,9 @@ export async function buildHarvestPreview(payload: HarvestPreviewRequest): Promi
         ? getPostLaunchConsentScope(db, sessionId)
         : 'full_session';
       const turnRows = postLaunchReflow && db ? listHarvestTurnRows(db, sessionId) : [];
+      const messages = postLaunchReflow ? listSessionMessages(database, sessionId) : [];
       const scopedReplay = postLaunchReflow
-        ? scopeReplayToCandidate(replay, sessionCandidates, consentScope, turnRows)
+        ? scopeReplayToCandidate(replay, sessionCandidates, consentScope, turnRows, messages)
         : replay;
       let seed = deriveHarvestSeed({
         replay: scopedReplay,

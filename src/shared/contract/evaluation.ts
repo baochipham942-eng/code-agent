@@ -897,6 +897,7 @@ interface CreateEvalDraftRequest {
   /** 由上线后候选入口传入；host 会重新核对候选与同意档，不信任 renderer 声明。 */
   postLaunchReflow?: {
     turnId?: string | null;
+    feedbackId?: string;
     sources: Array<'judge' | 'signal' | 'feedback'>;
     redDimensions?: PostLaunchDimension[];
     signals?: PostLaunchSignalKind[];

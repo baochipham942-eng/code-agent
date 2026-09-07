@@ -13,6 +13,7 @@ const db = vi.hoisted(() => ({
   replay: vi.fn(),
   session: vi.fn(),
   feedback: vi.fn(),
+  messages: vi.fn(() => [] as Array<{ id: string; timestamp: number }>),
   turns: vi.fn(() => [] as Array<{
     id: string;
     turn_number: number;
@@ -33,6 +34,8 @@ const reflowStore = vi.hoisted(() => ({
     sources: Array<'judge' | 'signal' | 'feedback'>;
     occurredAt?: number;
     feedbackAt?: number;
+    feedbackId?: string;
+    messageId?: string | null;
   }>),
   consent: vi.fn(() => 'turn_excerpt' as 'metadata' | 'turn_excerpt' | 'full_session'),
   enabled: true,
@@ -47,6 +50,7 @@ vi.mock('@host/telemetry/replay/telemetryQueryService', () => ({
 vi.mock('@host/services/core/databaseService', () => ({
   getDatabase: () => ({
     getSession: db.session,
+    getMessages: db.messages,
     getDb: () => ({
       prepare: (sql: string) => ({
         all: () => (String(sql).includes('telemetry_turns') ? db.turns() : db.feedback()),
@@ -253,6 +257,7 @@ describe('预览编排', () => {
     reflowStore.consent.mockReturnValue('turn_excerpt');
     reflowStore.list.mockReturnValue([]);
     db.turns.mockReturnValue([]);
+    db.messages.mockReturnValue([]);
   });
 
   it('取不到内容的会话只进 failed，不炸整批；批次标签按当天日期', async () => {
@@ -415,6 +420,115 @@ describe('预览编排', () => {
     expect(result.seeds[0]?.prompt).not.toContain('FEATURE_A_FIRST_TURN_PROMPT');
     expect(JSON.stringify(result.seeds[0]?.candidates)).toContain('trigger-turn.txt');
     expect(JSON.stringify(result.seeds[0]?.candidates)).not.toContain('first-turn-secret.txt');
+  });
+
+  it('三轮会话事后给第一轮补踩：题面是第一轮原话，候选来自第一轮', async () => {
+    const messageId = '550e8400-e29b-41d4-a716-446655440000';
+    db.replay.mockResolvedValue(replay([
+      turn([
+        userBlock('FEATURE_A_FIRST_TURN_PROMPT'),
+        toolBlock('Write', 'Write', { file_path: 'first-turn-secret.txt' }, 1),
+      ], 1000, 1),
+      turn([
+        userBlock('FEATURE_B_TRIGGER_TURN_PROMPT'),
+        toolBlock('Write', 'Write', { file_path: 'trigger-turn.txt' }, 2),
+      ], 2000, 2),
+      turn([
+        userBlock('FEATURE_C_LATER_TURN_PROMPT'),
+        toolBlock('Write', 'Write', { file_path: 'later-turn.txt' }, 3),
+      ], 3000, 3),
+    ]));
+    reflowStore.enabled = true;
+    reflowStore.consent.mockReturnValue('turn_excerpt');
+    reflowStore.list.mockReturnValue([{
+      sessionId: 'sess-fake-0001',
+      turnId: messageId,
+      judgeVersion: null,
+      redDimensions: [],
+      signals: [],
+      failureClass: null,
+      sources: ['feedback'],
+      occurredAt: 4000,
+      feedbackAt: 4000,
+      messageId,
+    }]);
+    db.turns.mockReturnValue([
+      { id: '6f1a2b3c-4d5e-4f60-8a9b-0c1d2e3f4a5b', turn_number: 1, start_time: 1000, turn_type: 'user', parent_turn_id: null },
+      { id: '7a8b9c0d-1e2f-4a3b-9c8d-7e6f5a4b3c2d', turn_number: 2, start_time: 2000, turn_type: 'user', parent_turn_id: null },
+      { id: 'ad1e2f3a-4b5c-6d7e-9f8a-7b6c5d4e3f2a', turn_number: 3, start_time: 3000, turn_type: 'user', parent_turn_id: null },
+    ]);
+    db.messages.mockReturnValue([
+      { id: 'user-1', timestamp: 1000 },
+      { id: messageId, timestamp: 1100 },
+      { id: 'user-2', timestamp: 2000 },
+      { id: 'asst-2', timestamp: 2100 },
+      { id: 'user-3', timestamp: 3000 },
+      { id: 'asst-3', timestamp: 3100 },
+    ]);
+
+    const result = await buildHarvestPreview({
+      sessionIds: ['sess-fake-0001'],
+      fields: ['prompt'],
+      postLaunchReflow: true,
+    });
+    expect(result.failed).toEqual([]);
+    expect(result.seeds[0]?.prompt).toBe('FEATURE_A_FIRST_TURN_PROMPT');
+    expect(result.seeds[0]?.prompt).not.toContain('FEATURE_B_TRIGGER_TURN_PROMPT');
+    expect(result.seeds[0]?.prompt).not.toContain('FEATURE_C_LATER_TURN_PROMPT');
+    expect(JSON.stringify(result.seeds[0]?.candidates)).toContain('first-turn-secret.txt');
+    expect(JSON.stringify(result.seeds[0]?.candidates)).not.toContain('trigger-turn.txt');
+    expect(JSON.stringify(result.seeds[0]?.candidates)).not.toContain('later-turn.txt');
+  });
+
+  it('多候选会话只把最新那条的信号写进 tags，不混入旧评分轮', async () => {
+    db.replay.mockResolvedValue(replay([
+      turn([userBlock('FEATURE_A_FIRST_TURN_PROMPT')], 1000, 1),
+    ]));
+    reflowStore.enabled = true;
+    reflowStore.consent.mockReturnValue('turn_excerpt');
+    reflowStore.list.mockReturnValue([
+      {
+        sessionId: 'sess-fake-0001',
+        turnId: '7a8b9c0d-1e2f-4a3b-9c8d-7e6f5a4b3c2d',
+        judgeVersion: 'postlaunch-judge-v1',
+        redDimensions: ['goal'],
+        signals: ['timeout'],
+        failureClass: 'timeout',
+        sources: ['judge', 'signal'],
+        occurredAt: 1000,
+      },
+      {
+        sessionId: 'sess-fake-0001',
+        turnId: null,
+        judgeVersion: null,
+        redDimensions: [],
+        signals: [],
+        failureClass: null,
+        sources: ['feedback'],
+        occurredAt: 4000,
+        feedbackAt: 4000,
+        feedbackId: 'fb-down',
+      },
+    ]);
+    db.turns.mockReturnValue([
+      { id: '6f1a2b3c-4d5e-4f60-8a9b-0c1d2e3f4a5b', turn_number: 1, start_time: 1000, turn_type: 'user', parent_turn_id: null },
+    ]);
+
+    const result = await buildHarvestPreview({
+      sessionIds: ['sess-fake-0001'],
+      fields: ['prompt'],
+      postLaunchReflow: true,
+    });
+    expect(result.failed).toEqual([]);
+    expect(result.seeds[0]?.tags).toEqual(expect.arrayContaining(['postlaunch', 'source:feedback']));
+    expect(result.seeds[0]?.tags).not.toContain('source:judge');
+    expect(result.seeds[0]?.tags).not.toContain('red:goal');
+    expect(result.seeds[0]?.tags).not.toContain('signal:timeout');
+    expect(result.seeds[0]?.postLaunchReflow).toMatchObject({
+      turnId: null,
+      feedbackId: 'fb-down',
+      sources: ['feedback'],
+    });
   });
 
   it('回流预览保留触发父轮的 iteration 子轮工具/文件，不带后续用户轮', async () => {

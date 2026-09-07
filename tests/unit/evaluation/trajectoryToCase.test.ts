@@ -13,6 +13,7 @@ import {
   draftFileName,
   queryNegativeFeedback,
   resolveFeedbackPrompt,
+  resolveFeedbackTargetMessage,
   selectRiskTurnMessages,
   journalPatternToDraftSeed,
 } from '@internal-evaluation/host/evaluation/trajectoryToCase';
@@ -58,6 +59,16 @@ describe('resolveFeedbackPrompt（两级 fallback）', () => {
 
   it('feedback.messageId 命中 assistant 时回溯最近的 user 原话', () => {
     expect(resolveFeedbackPrompt(messages, { messageId: 'a2', turnId: 'a2' })).toBe('加个存档功能');
+  });
+
+  it('先按 messageId 命中被评价消息，再用它自己的时间，不落到更晚的轮', () => {
+    const later: Message[] = [
+      ...messages,
+      msg({ id: 'u3', role: 'user', content: '第三轮追问', timestamp: 10 }),
+      msg({ id: 'a3', role: 'assistant', content: '第三轮回复', timestamp: 11 }),
+    ];
+    expect(resolveFeedbackTargetMessage(later, { messageId: 'a1', turnId: 'a1', anchorTimestamp: 11 })?.id).toBe('a1');
+    expect(resolveFeedbackPrompt(later, { messageId: 'a1', turnId: 'a1', anchorTimestamp: 11 })).toBe('帮我做个游戏');
   });
 
   it('messageId 不存在时回退到会话最后一条 user 原话', () => {

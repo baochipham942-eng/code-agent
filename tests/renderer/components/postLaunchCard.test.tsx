@@ -471,4 +471,44 @@ describe('上线后质量卡 · 透视与环比', () => {
     expect(sessionIds).toHaveLength(20);
     expect(sessionIds.every((id) => /^down-\d{2}$/.test(id))).toBe(true);
   });
+
+  it('取消最后一项后选择保持空、入口按钮禁用、不回弹默认前 20', () => {
+    const onOpenHarvest = vi.fn();
+    const reflowCandidates = ['sess-a', 'sess-b', 'sess-c'].map((sessionId) => ({
+      sessionId,
+      turnId: `${sessionId}-turn`,
+      judgeVersion: 'postlaunch-judge-v1',
+      redDimensions: ['goal'] as Array<'goal'>,
+      signals: [],
+      failureClass: null,
+      sources: ['judge'] as Array<'judge'>,
+    }));
+    render(
+      <PostLaunchCard
+        report={report()}
+        running={false}
+        error={null}
+        days={7}
+        onRun={noop}
+        onOpenSession={noop}
+        reflowCandidates={reflowCandidates}
+        onOpenHarvest={onOpenHarvest}
+      />,
+    );
+    const boxes = screen.getAllByRole('checkbox') as HTMLInputElement[];
+    expect(boxes).toHaveLength(3);
+    expect(boxes.every((box) => box.checked)).toBe(true);
+
+    for (const box of [...boxes].reverse()) {
+      fireEvent.click(box);
+    }
+
+    const after = screen.getAllByRole('checkbox') as HTMLInputElement[];
+    expect(after.every((box) => !box.checked)).toBe(true);
+    const open = screen.getByTestId('postlaunch-reflow-open') as HTMLButtonElement;
+    expect(open.disabled).toBe(true);
+    expect(open.textContent).toContain('(0/20)');
+    fireEvent.click(open);
+    expect(onOpenHarvest).not.toHaveBeenCalled();
+  });
 });

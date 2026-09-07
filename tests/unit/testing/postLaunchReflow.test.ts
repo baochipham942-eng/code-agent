@@ -10,7 +10,7 @@ import {
   setPostLaunchConsentScope,
 } from '../../../src/host/testing/postlaunch/postLaunchScoreStore';
 import { checkPostLaunchReflowGates } from '../../../src/host/testing/postlaunch/postLaunchReflowGate';
-import { applyPostLaunchReflowProvenance, REFLOW_TURN_MISMATCH_MESSAGE, scopeReplayToCandidate } from '@internal-evaluation/host/evaluation/harvestPreview';
+import { applyPostLaunchReflowProvenance, pickTriggerCandidate, REFLOW_TURN_MISMATCH_MESSAGE, scopeReplayToCandidate } from '@internal-evaluation/host/evaluation/harvestPreview';
 import { deriveHarvestSeed } from '@internal-evaluation/host/evaluation/harvestCandidates';
 import type { ReplayBlock, ReplayTurn, StructuredReplay } from '../../../src/shared/contract/evaluation';
 import type { PostLaunchReflowCandidate } from '../../../src/shared/contract/postLaunchScore';
@@ -146,9 +146,76 @@ function feedbackCandidate(): PostLaunchReflowCandidate {
     failureClass: null,
     sources: ['feedback'],
     feedbackId: 'fb-thumbs-down',
+    messageId: FEEDBACK_MESSAGE_ID,
     feedbackAt: 2500,
     occurredAt: 2500,
   };
+}
+
+function threeTurnReplay(): StructuredReplay {
+  const first: ReplayTurn = {
+    turnNumber: 1,
+    blocks: [
+      { type: 'user', content: FIRST_TURN_PROMPT, timestamp: 0 },
+      toolBlock('Write', 'Write', { file_path: `${WORKDIR}/${FIRST_TURN_PATH}` }, 1),
+    ],
+    inputTokens: 0, outputTokens: 0, durationMs: 1, startTime: 1000,
+  };
+  const second: ReplayTurn = {
+    turnNumber: 2,
+    blocks: [
+      { type: 'user', content: TRIGGER_TURN_PROMPT, timestamp: 3 },
+      toolBlock('Write', 'Write', { file_path: `${WORKDIR}/${TRIGGER_TURN_PATH}` }, 4),
+    ],
+    inputTokens: 0, outputTokens: 0, durationMs: 1, startTime: 2000,
+  };
+  const third: ReplayTurn = {
+    turnNumber: 3,
+    blocks: [
+      { type: 'user', content: LATER_TURN_PROMPT, timestamp: 6 },
+      toolBlock('Write', 'Write', { file_path: `${WORKDIR}/${LATER_TURN_PATH}` }, 7),
+    ],
+    inputTokens: 0, outputTokens: 0, durationMs: 1, startTime: 3000,
+  };
+  return {
+    sessionId: 'sess-reflow-0001',
+    traceIdentity: {
+      traceId: 'session:sess-reflow-0001',
+      traceSource: 'session_replay',
+      source: 'session_replay',
+      sessionId: 'sess-reflow-0001',
+      replayKey: 'sess-reflow-0001',
+    },
+    traceSource: 'session_replay',
+    dataSource: 'telemetry',
+    turns: [first, second, third],
+    summary: {
+      totalTurns: 3,
+      toolDistribution: { Read: 0, Edit: 0, Write: 3, Bash: 0, Search: 0, Web: 0, Agent: 0, Skill: 0, Other: 0 },
+      thinkingRatio: 0,
+      selfRepairChains: 0,
+      totalDurationMs: 3,
+    },
+  };
+}
+
+function threeTurnRows() {
+  return [
+    { id: FIRST_TURN_ID, turn_number: 1, start_time: 1000, turn_type: 'user', parent_turn_id: null },
+    { id: TRIGGER_TURN_ID, turn_number: 2, start_time: 2000, turn_type: 'user', parent_turn_id: null },
+    { id: LATER_TURN_ID, turn_number: 3, start_time: 3000, turn_type: 'user', parent_turn_id: null },
+  ];
+}
+
+function firstTurnMessages() {
+  return [
+    { id: 'user-1', timestamp: 1000 },
+    { id: FEEDBACK_MESSAGE_ID, timestamp: 1100 },
+    { id: 'user-2', timestamp: 2000 },
+    { id: 'asst-2', timestamp: 2100 },
+    { id: 'user-3', timestamp: 3000 },
+    { id: 'asst-3', timestamp: 3100 },
+  ];
 }
 
 function iterationReplay(): StructuredReplay {
@@ -337,6 +404,47 @@ describe('post-launch reflow candidates and gates', () => {
     expect(excerptBlob).not.toContain(FIRST_TURN_COMMAND);
   });
 
+  it('三轮会话事后给第一轮补踩：按被评价消息自己的时间定轮，不锚到第三轮', () => {
+    const lateFeedback: PostLaunchReflowCandidate = {
+      ...feedbackCandidate(),
+      feedbackAt: 4000,
+      occurredAt: 4000,
+    };
+    const excerpt = seedFrom(scopeReplayToCandidate(
+      threeTurnReplay(),
+      [lateFeedback],
+      'turn_excerpt',
+      threeTurnRows(),
+      firstTurnMessages(),
+    ));
+    expect(excerpt.prompt).toBe(FIRST_TURN_PROMPT);
+    expect(excerpt.prompt).not.toContain(TRIGGER_TURN_PROMPT);
+    expect(excerpt.prompt).not.toContain(LATER_TURN_PROMPT);
+    const excerptBlob = JSON.stringify(excerpt.candidates);
+    expect(excerptBlob).toContain(FIRST_TURN_PATH);
+    expect(excerptBlob).not.toContain(TRIGGER_TURN_PATH);
+    expect(excerptBlob).not.toContain(LATER_TURN_PATH);
+  });
+
+  it('点踩消息对不上时再退 created_at 时间锚', () => {
+    const lateFeedback: PostLaunchReflowCandidate = {
+      ...feedbackCandidate(),
+      turnId: 'ghost-message',
+      messageId: 'ghost-message',
+      feedbackAt: 4000,
+      occurredAt: 4000,
+    };
+    const excerpt = seedFrom(scopeReplayToCandidate(
+      threeTurnReplay(),
+      [lateFeedback],
+      'turn_excerpt',
+      threeTurnRows(),
+      firstTurnMessages(),
+    ));
+    expect(excerpt.prompt).toBe(LATER_TURN_PROMPT);
+    expect(excerpt.prompt).not.toContain(FIRST_TURN_PROMPT);
+  });
+
   it('点踩候选缺 created_at 锚时仍 fail-closed，不把 message.id 当轮 id', () => {
     expect(() => scopeReplayToCandidate(
       twoTurnReplay(),
@@ -429,5 +537,47 @@ describe('post-launch reflow candidates and gates', () => {
     expect(hasReflowCandidate(db, { sessionId: 'old-0' })).toBe(true);
     expect(hasReflowCandidate(db, { sessionId: 'old-0', turnId: 'turn-0' })).toBe(true);
     expect(hasReflowCandidate(db, { sessionId: 'old-500', turnId: 'turn-500' })).toBe(true);
+  });
+
+  it('多候选会话裁剪/溯源/保存绑同一条：点踩撤销后必拒，tags 不含旧评分轮信号', () => {
+    score(db, 's', 'turn-A', redDims(), '["timeout"]', 1);
+    db.prepare(`
+      INSERT INTO telemetry_feedback (id, session_id, turn_id, message_id, rating, created_at)
+      VALUES ('fb-down', 's', NULL, NULL, -1, 10)
+    `).run();
+    setPostLaunchConsentScope(db, 's', 'turn_excerpt', 11);
+
+    const listed = listReflowCandidates(db, { sessionId: 's' });
+    const trigger = pickTriggerCandidate(listed, 's');
+    expect(trigger?.sources).toEqual(['feedback']);
+    expect(trigger?.feedbackId).toBe('fb-down');
+    expect(trigger?.turnId).toBeNull();
+
+    const seed = applyPostLaunchReflowProvenance({
+      sessionId: 's', sessionTitle: 'title', id: 'draft-s', prompt: 'p', description: 'd', tags: [], candidates: [], notes: [],
+    }, listed, 'turn_excerpt');
+    expect(seed.tags).toEqual(expect.arrayContaining(['postlaunch', 'source:feedback']));
+    expect(seed.tags).not.toContain('source:judge');
+    expect(seed.tags).not.toContain('red:goal');
+    expect(seed.tags).not.toContain('signal:timeout');
+    expect(seed.postLaunchReflow).toMatchObject({
+      turnId: null,
+      feedbackId: 'fb-down',
+      sources: ['feedback'],
+    });
+
+    expect(checkPostLaunchReflowGates(db, {
+      sessionId: 's',
+      turnId: seed.postLaunchReflow?.turnId ?? null,
+      feedbackId: seed.postLaunchReflow?.feedbackId,
+    }).allowed).toBe(true);
+
+    db.prepare('DELETE FROM telemetry_feedback WHERE id = ?').run('fb-down');
+    expect(checkPostLaunchReflowGates(db, {
+      sessionId: 's',
+      turnId: seed.postLaunchReflow?.turnId ?? null,
+      feedbackId: seed.postLaunchReflow?.feedbackId,
+    })).toMatchObject({ allowed: false, reason: 'not_candidate' });
+    expect(checkPostLaunchReflowGates(db, { sessionId: 's', turnId: 'turn-A' }).allowed).toBe(true);
   });
 });

@@ -28,6 +28,7 @@ import type {
   HarvestFieldKey,
 } from '@shared/contract/evaluation';
 import type { PostLaunchConsentScope } from '@shared/contract/postLaunchScore';
+import { TELEMETRY_CHANNELS } from '@shared/ipc/channels';
 import { EVALUATION_CHANNELS } from '../../shared/evaluationChannels';
 import { invokeEvaluation } from '../evaluationRunIpc';
 import { useEvaluationI18n } from '../i18n/useEvaluationI18n';
@@ -63,6 +64,15 @@ const FIELD_ROWS: Array<{ key: HarvestFieldKey | 'assistantReply'; labelKey: str
 ];
 
 const INPUT_CLASS = 'mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-200 outline-hidden focus:border-zinc-500';
+
+export function isMatchingPostLaunchConsentReceipt(
+  receipt: unknown,
+  request: { sessionId: string; scope: PostLaunchConsentScope },
+): receipt is { sessionId: string; scope: PostLaunchConsentScope } {
+  if (!receipt || typeof receipt !== 'object') return false;
+  const row = receipt as { sessionId?: unknown; scope?: unknown };
+  return row.sessionId === request.sessionId && row.scope === request.scope;
+}
 
 let rowSeq = 0;
 function toRows(candidates: HarvestCandidate[]): CandidateRow[] {
@@ -132,11 +142,24 @@ export const EvalHarvestDialog: React.FC<EvalHarvestDialogProps> = ({
     setPhase('loading');
     try {
       if (postLaunchReflow) {
+        const invokeUnknown = ipcService.invoke as unknown as (
+          channel: string,
+          payload: unknown,
+        ) => Promise<unknown> | undefined;
         for (const sessionId of sessionIds) {
-          await (ipcService.invoke as unknown as (channel: string, payload: unknown) => Promise<unknown>)(
-            'telemetry:set-postlaunch-reflow-consent',
-            { sessionId, scope: consentScope },
-          );
+          const request = { sessionId, scope: consentScope };
+          let receipt: unknown;
+          try {
+            receipt = await Promise.resolve(invokeUnknown(
+              TELEMETRY_CHANNELS.SET_POSTLAUNCH_REFLOW_CONSENT,
+              request,
+            ));
+          } catch {
+            throw new Error(h.consentWriteFailed);
+          }
+          if (!isMatchingPostLaunchConsentReceipt(receipt, request)) {
+            throw new Error(receipt == null ? h.consentWriteFailed : h.consentReceiptMismatch);
+          }
         }
       }
       const result = await invokeEvaluation(EVALUATION_CHANNELS.HARVEST_PREVIEW, { sessionIds, fields, postLaunchReflow });

@@ -241,6 +241,8 @@ export interface PostLaunchReflowCandidate {
   /** 三路来源的稳定标签：judge 红、确定性信号、点踩。 */
   sources: Array<'judge' | 'signal' | 'feedback'>;
   feedbackId?: string;
+  /** telemetry_feedback.message_id；点踩时与 turnId 一样可能是 assistant message.id。 */
+  messageId?: string | null;
   feedbackAt?: number;
   /** 统一排序键：评分行用 scored_at，点踩行用 created_at。 */
   occurredAt?: number;

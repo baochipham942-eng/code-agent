@@ -306,17 +306,29 @@ export function listReflowCandidates(
     });
   }
 
-  let feedbackRows: Array<{ id: string; session_id: string; turn_id: string | null; created_at: number }> = [];
+  let feedbackRows: Array<{
+    id: string;
+    session_id: string;
+    turn_id: string | null;
+    message_id: string | null;
+    created_at: number;
+  }> = [];
   try {
     const feedbackParams = sessionId ? [sessionId, limit] : [limit];
     feedbackRows = db.prepare(`
-      SELECT id, session_id, turn_id, created_at
+      SELECT id, session_id, turn_id, message_id, created_at
       FROM telemetry_feedback
       WHERE rating = -1
       ${sessionId ? 'AND session_id = ?' : ''}
       ORDER BY created_at DESC
       LIMIT ?
-    `).all(...feedbackParams) as Array<{ id: string; session_id: string; turn_id: string | null; created_at: number }>;
+    `).all(...feedbackParams) as Array<{
+      id: string;
+      session_id: string;
+      turn_id: string | null;
+      message_id: string | null;
+      created_at: number;
+    }>;
   } catch {
     // Older/fixture databases may not have the optional feedback table yet.
   }
@@ -326,6 +338,7 @@ export function listReflowCandidates(
     if (existing) {
       if (!existing.sources.includes('feedback')) existing.sources.push('feedback');
       existing.feedbackId = feedback.id;
+      existing.messageId = feedback.message_id;
       existing.feedbackAt = feedback.created_at;
       existing.occurredAt = Math.max(existing.occurredAt ?? 0, feedback.created_at);
       continue;
@@ -339,6 +352,7 @@ export function listReflowCandidates(
       failureClass: null,
       sources: ['feedback'],
       feedbackId: feedback.id,
+      messageId: feedback.message_id,
       feedbackAt: feedback.created_at,
       occurredAt: feedback.created_at,
     });
@@ -350,11 +364,23 @@ export function listReflowCandidates(
 
 export function hasReflowCandidate(
   db: BetterSqlite3.Database,
-  input: { sessionId: string; turnId?: string | null },
+  input: { sessionId: string; turnId?: string | null; feedbackId?: string },
   judgeVersion: string = POST_LAUNCH_JUDGE_VERSION,
 ): boolean {
   const sessionId = input.sessionId;
   const turnId = input.turnId;
+  if (input.feedbackId) {
+    try {
+      const feedbackHit = db.prepare(`
+        SELECT 1 AS ok FROM telemetry_feedback
+        WHERE id = ? AND session_id = ? AND rating = -1
+        LIMIT 1
+      `).get(input.feedbackId, sessionId);
+      return Boolean(feedbackHit);
+    } catch {
+      return false;
+    }
+  }
   const scoreHit = turnId === undefined
     ? db.prepare(`
         SELECT 1 AS ok FROM telemetry_turn_scores

@@ -6,12 +6,25 @@ import { EVALUATION_CHANNELS } from '@internal-evaluation/shared/evaluationChann
 import type { HarvestPreviewResult } from '../../../src/shared/contract/evaluation';
 
 const ipc = vi.hoisted(() => ({ invoke: vi.fn() }));
+const telemetryIpc = vi.hoisted(() => ({ invoke: vi.fn() }));
+const toastApi = vi.hoisted(() => ({ error: vi.fn(), success: vi.fn() }));
 
 vi.mock('@internal-evaluation/renderer/evaluationRunIpc', () => ({
   invokeEvaluation: ipc.invoke,
 }));
 
-import { EvalHarvestDialog } from '@internal-evaluation/renderer/evalCenter/EvalHarvestDialog';
+vi.mock('@renderer/services/ipcService', () => ({
+  default: { invoke: telemetryIpc.invoke },
+  ipcService: { invoke: telemetryIpc.invoke },
+}));
+
+vi.mock('@renderer/hooks/useToast', () => ({ toast: toastApi }));
+
+import {
+  EvalHarvestDialog,
+  isMatchingPostLaunchConsentReceipt,
+} from '@internal-evaluation/renderer/evalCenter/EvalHarvestDialog';
+import { TELEMETRY_CHANNELS } from '../../../src/shared/ipc/channels';
 
 const PREVIEW: HarvestPreviewResult = {
   seeds: [{
@@ -58,6 +71,9 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   ipc.invoke.mockReset();
+  telemetryIpc.invoke.mockReset();
+  toastApi.error.mockReset();
+  toastApi.success.mockReset();
 });
 
 describe('B7 字段映射清单', () => {
@@ -162,5 +178,67 @@ describe('N-EVAL-RESULT-HINT-TIERS：B7→B8 切换不复用 DOM', () => {
     const bucketRow = screen.getByTestId('eval-harvest-dialog').children[2];
     expect(bucketRow.textContent).toContain('归属集');
     expect(bucketRow.className).not.toContain('badge-warning');
+  });
+});
+
+describe('回流同意档写入核回执', () => {
+  function renderReflowDialog() {
+    return render(
+      <EvalHarvestDialog
+        sessionIds={['sess-fake-0001']}
+        postLaunchReflow
+        onClose={() => {}}
+        onOpenSession={() => {}}
+        onFinished={() => {}}
+      />,
+    );
+  }
+
+  it('isMatchingPostLaunchConsentReceipt 只认 sessionId+scope 都对上的回执', () => {
+    const request = { sessionId: 'sess-fake-0001', scope: 'turn_excerpt' as const };
+    expect(isMatchingPostLaunchConsentReceipt(undefined, request)).toBe(false);
+    expect(isMatchingPostLaunchConsentReceipt(null, request)).toBe(false);
+    expect(isMatchingPostLaunchConsentReceipt({ sessionId: 'sess-fake-0001', scope: 'full_session' }, request)).toBe(false);
+    expect(isMatchingPostLaunchConsentReceipt({ sessionId: 'other', scope: 'turn_excerpt' }, request)).toBe(false);
+    expect(isMatchingPostLaunchConsentReceipt({ sessionId: 'sess-fake-0001', scope: 'turn_excerpt' }, request)).toBe(true);
+  });
+
+  it.each([
+    ['reject', async () => { telemetryIpc.invoke.mockRejectedValue(new Error('transport down')); }],
+    ['undefined', async () => { telemetryIpc.invoke.mockResolvedValue(undefined); }],
+    ['回执 scope 不符', async () => {
+      telemetryIpc.invoke.mockResolvedValue({ sessionId: 'sess-fake-0001', scope: 'full_session' });
+    }],
+  ])('写入失败（%s）时不生成预览并报错', async (_label, arrange) => {
+    await arrange();
+    renderReflowDialog();
+    fireEvent.change(screen.getByTestId('eval-harvest-consent'), { target: { value: 'turn_excerpt' } });
+    fireEvent.click(screen.getByTestId('eval-harvest-generate'));
+
+    await waitFor(() => {
+      expect(toastApi.error).toHaveBeenCalled();
+    });
+    expect(ipc.invoke).not.toHaveBeenCalledWith(
+      EVALUATION_CHANNELS.HARVEST_PREVIEW,
+      expect.anything(),
+    );
+    expect(screen.getByTestId('eval-harvest-generate')).toBeTruthy();
+    expect(screen.queryByTestId('eval-harvest-save')).toBeNull();
+    expect(telemetryIpc.invoke).toHaveBeenCalledWith(
+      TELEMETRY_CHANNELS.SET_POSTLAUNCH_REFLOW_CONSENT,
+      { sessionId: 'sess-fake-0001', scope: 'turn_excerpt' },
+    );
+  });
+
+  it('回执与请求一致后才生成预览', async () => {
+    telemetryIpc.invoke.mockResolvedValue({ sessionId: 'sess-fake-0001', scope: 'turn_excerpt' });
+    renderReflowDialog();
+    fireEvent.change(screen.getByTestId('eval-harvest-consent'), { target: { value: 'turn_excerpt' } });
+    fireEvent.click(screen.getByTestId('eval-harvest-generate'));
+    await screen.findByTestId('eval-harvest-save');
+    expect(ipc.invoke).toHaveBeenCalledWith(
+      EVALUATION_CHANNELS.HARVEST_PREVIEW,
+      expect.objectContaining({ sessionIds: ['sess-fake-0001'], postLaunchReflow: true }),
+    );
   });
 });

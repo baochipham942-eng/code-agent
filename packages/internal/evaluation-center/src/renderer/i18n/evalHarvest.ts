@@ -37,6 +37,8 @@ export const evalHarvestZh = {
     consentMetadata: '仅元数据（不能保存回流草稿）',
     consentExcerpt: '这一轮摘录（允许保存结构化题面）',
     consentFull: '完整会话（允许保存原文题面）',
+    consentWriteFailed: '回流同意档没有写上，已停止生成',
+    consentReceiptMismatch: '回流同意档回执与这次选择不一致，已停止生成',
 
     stepTitle: '草稿 {index}/{total}',
     sourceLabel: '来源会话',
@@ -108,6 +110,8 @@ export const evalHarvestEn = {
     consentMetadata: 'Metadata only (cannot save a reflow draft)',
     consentExcerpt: 'Turn excerpt (allows a structured draft)',
     consentFull: 'Full session (allows original text)',
+    consentWriteFailed: 'Reflow consent was not written; generation stopped',
+    consentReceiptMismatch: 'Reflow consent receipt does not match this choice; generation stopped',
 
     stepTitle: 'Draft {index}/{total}',
     sourceLabel: 'Source session',

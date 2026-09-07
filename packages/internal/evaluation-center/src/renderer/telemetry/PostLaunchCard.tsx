@@ -64,8 +64,8 @@ export const PostLaunchCard: React.FC<PostLaunchCardProps> = ({
   // 弹层认的是可见列的下标，切轮类型 / 展开更早都会让下标改指别的组，所以那两处一并关掉弹层。
   const [openColumn, setOpenColumn] = useState<number | null>(null);
   const candidateSessionIds = useMemo(() => [...new Set(reflowCandidates.map((candidate) => candidate.sessionId))], [reflowCandidates]);
-  const [selectedReflowSessions, setSelectedReflowSessions] = useState<string[]>([]);
-  const selectedIds = selectedReflowSessions.length > 0 ? selectedReflowSessions : candidateSessionIds.slice(0, 20);
+  const [selectedReflowSessions, setSelectedReflowSessions] = useState<string[] | null>(null);
+  const selectedIds = selectedReflowSessions ?? candidateSessionIds.slice(0, 20);
   // IPC 回来的东西在信任边界之外：形状不对就当没有报告、渲染空态。
   // 一张卡片把整个遥测页崩掉，比它什么都不显示糟得多。
   const safe = report && Array.isArray(report.groups) && report.calibration && report.budget ? report : null;
@@ -312,7 +312,7 @@ export const PostLaunchCard: React.FC<PostLaunchCardProps> = ({
               <label key={id} className="flex items-center gap-1 text-[10px] text-zinc-400">
                 <input type="checkbox" checked={selectedIds.includes(id)} onChange={(event) => {
                   setSelectedReflowSessions((current) => {
-                    const base = current.length > 0 ? current : candidateSessionIds.slice(0, 20);
+                    const base = current ?? candidateSessionIds.slice(0, 20);
                     return event.target.checked ? [...new Set([...base, id])].slice(0, 20) : base.filter((value) => value !== id);
                   });
                 }} />
@@ -320,7 +320,13 @@ export const PostLaunchCard: React.FC<PostLaunchCardProps> = ({
               </label>
             ))}
           </div>
-          <button type="button" onClick={() => onOpenHarvest(selectedIds)} data-testid="postlaunch-reflow-open" className="rounded bg-badge-info/15 px-2 py-1 text-[10px] text-badge-info hover:bg-badge-info/25">
+          <button
+            type="button"
+            onClick={() => { if (selectedIds.length === 0) return; onOpenHarvest(selectedIds); }}
+            disabled={selectedIds.length === 0}
+            data-testid="postlaunch-reflow-open"
+            className="rounded bg-badge-info/15 px-2 py-1 text-[10px] text-badge-info hover:bg-badge-info/25 disabled:opacity-50"
+          >
             {p.reflowOpen} ({selectedIds.length}/20)
           </button>
         </div>

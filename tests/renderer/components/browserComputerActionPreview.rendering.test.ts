@@ -604,6 +604,29 @@ describe('browser/computer action preview rendering', () => {
     expect(expandedHtml).toContain('/Users/linchen/.claude/projects/-Users-linchen/memory/openclaw.md');
   });
 
+  // ai-review #1693 第三轮②：「空结果摘要交给状态行」只对 Grep/Glob 成立——别的工具
+  // 状态行不产出「无匹配」，删掉摘要后折叠行只剩动作名，用户看不出找没找到。
+  it('非 Grep/Glob 的工具返回 No matches found 时摘要必须保留', () => {
+    const html = renderToStaticMarkup(
+      React.createElement(ToolCallDisplay, {
+        toolCall: makeToolCall({
+          id: 'tool-mcp-search',
+          name: 'mcp__github__search_code',
+          arguments: { q: 'openclaw' },
+          result: {
+            toolCallId: 'tool-mcp-search',
+            success: true,
+            output: 'No matches found',
+            metadata: { totalMatches: 0 },
+          },
+        }),
+        index: 0,
+        total: 1,
+      }),
+    );
+    expect(html).toContain('No matches found');
+  });
+
   it('labels empty grep and glob results as no matches in collapsed details', () => {
     const grepHtml = renderToStaticMarkup(
       React.createElement(ToolCallDisplay, {

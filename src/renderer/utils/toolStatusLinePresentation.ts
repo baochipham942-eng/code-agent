@@ -13,13 +13,13 @@ import {
  * terminals. Other outcome phrases (已取消 / 切换会话时中断) are still one
  * terminal; they just are not this four-word set.
  */
-export type ToolStatusLineTerminal =
+type ToolStatusLineTerminal =
   | 'interrupted'
   | 'failed'
   | 'not-executed'
   | 'restart-interrupted';
 
-export interface ToolStatusLineFlags {
+interface ToolStatusLineFlags {
   /** Would have emitted 已中断 (status === interrupted). */
   interrupted: boolean;
   /** Would have emitted 未成功 (failed humanize / error result). */
@@ -63,7 +63,7 @@ export function localizeCollapsedToolSummary(
   return summary;
 }
 
-export function deriveToolStatusLineFlags(input: ToolStatusLineInput): ToolStatusLineFlags {
+function deriveToolStatusLineFlags(input: ToolStatusLineInput): ToolStatusLineFlags {
   const interrupted = input.status === 'interrupted';
   const placeholder = isToolInterruptionPlaceholder(input.toolCall.result?.error);
   const failed = input.status === 'error'
@@ -78,7 +78,7 @@ export function deriveToolStatusLineFlags(input: ToolStatusLineInput): ToolStatu
  * failure verb; "not executed" only wins when it is not already an interrupt;
  * failure is last.
  */
-export function resolveToolStatusLineTerminal(
+function resolveToolStatusLineTerminal(
   flags: ToolStatusLineFlags,
 ): ToolStatusLineTerminal {
   if (flags.restartInterrupted) return 'restart-interrupted';
@@ -87,7 +87,7 @@ export function resolveToolStatusLineTerminal(
   return 'failed';
 }
 
-export function formatToolStatusLineTerminal(
+function formatToolStatusLineTerminal(
   terminal: ToolStatusLineTerminal,
   t: Translations,
   interruptionReason?: StreamInterruptionReason,

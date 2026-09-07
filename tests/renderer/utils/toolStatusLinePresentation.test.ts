@@ -3,12 +3,8 @@ import type { ToolCall } from '../../../src/shared/contract';
 import { zh } from '../../../src/renderer/i18n/zh';
 import {
   buildToolStatusLineCopy,
-  deriveToolStatusLineFlags,
-  formatToolStatusLineTerminal,
   isRawToolStdoutNoMatches,
   localizeCollapsedToolSummary,
-  resolveToolStatusLineTerminal,
-  type ToolStatusLineFlags,
   type ToolStatusLineInput,
 } from '../../../src/renderer/utils/toolStatusLinePresentation';
 
@@ -40,28 +36,32 @@ function editDevNull(result?: ToolCall['result']): ToolCall {
   };
 }
 
-describe('tool status line — 状态输入组合 → 呈现文案', () => {
+describe('tool status line — 真实输入 → 唯一终态', () => {
+  // 🔴 原来这里按 flags 组合穷举，但那些组合有一半在生产里不可达
+  // （notExecuted 定义上蕴含 interrupted），等于在测一个比现实更大的空间；
+  // 而 deriveToolStatusLineFlags / resolveToolStatusLineTerminal 只为这个测试而导出，
+  // 被 knip 生产不可达棘轮判红。改成从公开入口 buildToolStatusLineCopy 喂真实输入，
+  // 只覆盖真能出现的状态——过棘轮，也更贴生产。
+  const placeholderError = '应用重启时中断';
   it.each([
-    [{ interrupted: true, failed: false, notExecuted: false, restartInterrupted: false }, undefined, 'interrupted', '已中断'],
-    [{ interrupted: false, failed: true, notExecuted: false, restartInterrupted: false }, undefined, 'failed', '未成功'],
-    [{ interrupted: false, failed: false, notExecuted: true, restartInterrupted: false }, undefined, 'not-executed', '未执行'],
-    [{ interrupted: false, failed: false, notExecuted: false, restartInterrupted: true }, 'app-restart', 'restart-interrupted', '应用重启时中断'],
-    [{ interrupted: true, failed: true, notExecuted: false, restartInterrupted: false }, undefined, 'interrupted', '已中断'],
-    [{ interrupted: true, failed: false, notExecuted: true, restartInterrupted: false }, undefined, 'interrupted', '已中断'],
-    [{ interrupted: true, failed: false, notExecuted: false, restartInterrupted: true }, 'app-restart', 'restart-interrupted', '应用重启时中断'],
-    [{ interrupted: false, failed: true, notExecuted: true, restartInterrupted: false }, undefined, 'not-executed', '未执行'],
-    [{ interrupted: false, failed: true, notExecuted: false, restartInterrupted: true }, 'app-restart', 'restart-interrupted', '应用重启时中断'],
-    [{ interrupted: false, failed: false, notExecuted: true, restartInterrupted: true }, 'app-restart', 'restart-interrupted', '应用重启时中断'],
-    [{ interrupted: true, failed: true, notExecuted: true, restartInterrupted: true }, 'app-restart', 'restart-interrupted', '应用重启时中断'],
-  ] as const)(
-    'flags %j → %s / %s',
-    (flags, reason, expectedKey, expected) => {
-      const key = resolveToolStatusLineTerminal(flags as ToolStatusLineFlags);
-      expect(key).toBe(expectedKey);
-      const word = formatToolStatusLineTerminal(key, zh, reason);
-      expect(presentTerminals(word)).toEqual([expected]);
-    },
-  );
+    ['中断且没有结果', { status: 'interrupted' as const, result: undefined }, undefined, 'interrupted', '已中断'],
+    ['中断且结果是中断占位', { status: 'interrupted' as const, result: { toolCallId: 'x', success: false, error: placeholderError } }, undefined, 'interrupted', '已中断'],
+    ['中断且原因是应用重启', { status: 'interrupted' as const, result: undefined }, 'app-restart' as const, 'restart-interrupted', '应用重启时中断'],
+    ['中断且带真实失败结果', { status: 'interrupted' as const, result: { toolCallId: 'x', success: false, error: 'boom' } }, undefined, 'interrupted', '已中断'],
+    ['状态就是 error', { status: 'error' as const, result: undefined }, undefined, 'failed', '未成功'],
+    ['结果 success=false', { status: 'success' as const, result: { toolCallId: 'x', success: false, error: 'boom' } }, undefined, 'failed', '未成功'],
+  ])('%s → %s', (_name, patch, reason, expectedKey, expectedWord) => {
+    const copy = buildToolStatusLineCopy(
+      {
+        toolCall: editDevNull(patch.result as never),
+        status: patch.status,
+        ...(reason ? { interruptionReason: reason } : {}),
+      } as never,
+      zh,
+    );
+    expect(copy.terminalKey).toBe(expectedKey);
+    expect(presentTerminals(copy.terminal)).toEqual([expectedWord]);
+  });
 
   it.each([
     [
@@ -194,20 +194,8 @@ describe('tool status line — 状态输入组合 → 呈现文案', () => {
     expect(copy.terminalKey).toBe('restart-interrupted');
     expect(copy.line).toBe('应用重启时中断 · 搜索 weather');
     expect(presentTerminals(copy.line)).toEqual(['应用重启时中断']);
-    expect(deriveToolStatusLineFlags({
-      status: 'interrupted',
-      interruptionReason: 'app-restart',
-      toolCall: grepWeather({
-        toolCallId: 'grep-weather',
-        success: true,
-        output: 'No matches found',
-      }),
-    })).toEqual({
-      interrupted: true,
-      failed: false,
-      notExecuted: false,
-      restartInterrupted: true,
-    });
+    // 原来这里再断言一遍内部 flags；内部件已不再导出（生产不可达），
+    // 而 terminalKey='restart-interrupted' 本身就唯一对应那组 flags，断言等价。
   });
 
   it('dogfood edit /dev/null+重启：动作不含未成功', () => {

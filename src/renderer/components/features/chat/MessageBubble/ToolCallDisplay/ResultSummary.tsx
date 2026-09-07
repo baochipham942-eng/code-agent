@@ -63,6 +63,3 @@ function collapsedSuccessSummary(summary: string | null, toolCall: ToolCall): st
   if (SUMMARY_OWNED_BY_STATUS_LINE.has(toolName) && isRawToolStdoutNoMatches(summary)) return null;
   return summary;
 }
-
-/** 测试出口：折叠行摘要的隐藏范围是安全边界，值得单独钉住。 */
-export const collapsedSuccessSummaryForTest = collapsedSuccessSummary;

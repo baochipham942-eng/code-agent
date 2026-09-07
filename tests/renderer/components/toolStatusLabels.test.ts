@@ -240,28 +240,3 @@ describe('ToolCallDisplay status labels', () => {
     expect(label).toBe('找到 3 处匹配');
   });
 });
-
-// ai-review #1693 第三轮②：删空匹配摘要只对 Grep/Glob 成立——它们的状态行会替它说
-// 「无匹配」。别的工具（mcp__github__search_code 等）状态行不产出这句，删掉摘要后
-// 折叠行只剩动作名，用户看不出找没找到。
-describe('折叠行摘要的隐藏范围', () => {
-  it('只有 Grep/Glob 的空结果摘要被状态行接管', async () => {
-    const { collapsedSuccessSummaryForTest } = await import(
-      '../../../src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/ResultSummary'
-    );
-    const call = (name: string, metadata?: Record<string, unknown>): ToolCall => ({
-      id: `${name}-x`,
-      name,
-      arguments: {},
-      result: { toolCallId: `${name}-x`, success: true, output: 'No matches found', ...(metadata ? { metadata } : {}) },
-    });
-    expect(collapsedSuccessSummaryForTest('No matches found', call('Glob', { totalMatches: 0 }))).toBeNull();
-    expect(collapsedSuccessSummaryForTest('No matches found', call('Grep', { totalMatches: 0 }))).toBeNull();
-    expect(collapsedSuccessSummaryForTest('No matches found', call('mcp__github__search_code', { totalMatches: 0 })))
-      .toBe('No matches found');
-    // 状态行没接管时不许删摘要，否则折叠行一个字都没有。
-    // 「没接管」= 判据说这不是空结果（有计数且非 0，或回落档不匹配），不是「没有 metadata」。
-    expect(collapsedSuccessSummaryForTest('No matches found', call('Glob', { totalMatches: 3 })))
-      .toBe('No matches found');
-  });
-});

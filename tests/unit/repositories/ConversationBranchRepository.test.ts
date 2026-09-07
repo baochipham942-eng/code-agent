@@ -9,6 +9,7 @@ import {
   ConversationBranchError,
   ConversationBranchRepository,
 } from '../../../src/host/services/core/repositories/ConversationBranchRepository';
+import { applyTestSessionSchema } from '../../utils/applyTestSessionSchema';
 
 const boundary = { ownerUserId: 'owner-1', projectId: 'project-1' } as const;
 
@@ -19,71 +20,11 @@ function totalChanges(db: BetterSqlite3.Database): number {
   return row.total_changes;
 }
 
-function installLegacySchema(db: BetterSqlite3.Database): void {
-  db.exec(`
-    CREATE TABLE sessions (
-      id TEXT PRIMARY KEY,
-      user_id TEXT,
-      project_id TEXT,
-      is_deleted INTEGER NOT NULL DEFAULT 0,
-      created_at INTEGER NOT NULL
-    );
-    CREATE TABLE messages (
-      id TEXT PRIMARY KEY,
-      session_id TEXT NOT NULL,
-      role TEXT NOT NULL,
-      content TEXT NOT NULL,
-      timestamp INTEGER NOT NULL,
-      tool_calls TEXT,
-      tool_results TEXT,
-      attachments TEXT,
-      thinking TEXT,
-      effort_level TEXT,
-      synced_at INTEGER,
-      content_parts TEXT,
-      metadata TEXT,
-      is_meta INTEGER NOT NULL DEFAULT 0,
-      compaction TEXT,
-      visibility TEXT NOT NULL DEFAULT 'active',
-      hidden_by_rewind_id TEXT,
-      hidden_at INTEGER
-    );
-    CREATE TABLE session_forks (
-      id TEXT PRIMARY KEY,
-      source_session_id TEXT NOT NULL,
-      child_session_id TEXT NOT NULL UNIQUE,
-      root_session_id TEXT NOT NULL,
-      parent_fork_id TEXT,
-      anchor_message_id TEXT NOT NULL,
-      anchor_child_message_id TEXT NOT NULL,
-      status TEXT NOT NULL,
-      depth INTEGER NOT NULL,
-      created_at INTEGER NOT NULL
-    );
-    CREATE TABLE session_fork_message_map (
-      fork_id TEXT NOT NULL,
-      ordinal INTEGER NOT NULL,
-      source_message_id TEXT NOT NULL,
-      child_message_id TEXT NOT NULL,
-      PRIMARY KEY (fork_id, ordinal)
-    );
-    CREATE TABLE session_rewinds (
-      id TEXT PRIMARY KEY,
-      session_id TEXT NOT NULL,
-      anchor_message_id TEXT NOT NULL,
-      hidden_message_ids TEXT NOT NULL,
-      status TEXT NOT NULL,
-      restored_at INTEGER,
-      created_at INTEGER NOT NULL
-    );
-  `);
-}
-
 function seedRootSession(db: BetterSqlite3.Database, id = 'source'): void {
   db.prepare(`
-    INSERT INTO sessions (id, user_id, project_id, is_deleted, created_at)
-    VALUES (?, 'owner-1', 'project-1', 0, 1)
-  `).run(id);
+    INSERT INTO sessions (id, user_id, project_id, title, model_provider, model_name, is_deleted, created_at, updated_at)
+    VALUES (?, 'owner-1', 'project-1', ?, 'test', 'test', 0, 1, 1)
+  `).run(id, id);
 }
 
 describe('ConversationBranchRepository', () => {
@@ -93,7 +34,7 @@ describe('ConversationBranchRepository', () => {
   beforeEach(() => {
     db = new Database(':memory:');
     db.pragma('foreign_keys = ON');
-    installLegacySchema(db);
+    applyTestSessionSchema(db);
     seedRootSession(db);
     applyConversationBranchSchema(db);
     // This suite exercises the immutable repository in isolation. Production

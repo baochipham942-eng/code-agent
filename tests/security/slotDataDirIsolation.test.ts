@@ -19,7 +19,6 @@ import {
   collectForeignSlotTraversalExcludes,
   evaluateToolSlotDataDirAccess,
   FOREIGN_SLOT_DATA_DIR_CODE,
-  foreignSlotPrunedGrepSearchPaths,
 } from '../../src/host/security/slotDataDirGuard';
 
 const CROSS_SLOT_READ_ALLOW_ENV = 'CODE_AGENT_ALLOW_CROSS_SLOT_READ';
@@ -139,15 +138,6 @@ describe('槽数据目录读隔离', () => {
     expectForeignDenied(result, '.code-agent', PROD_SENTINEL);
   });
 
-  it('Bash cat 拒读生产槽文件', async () => {
-    const result = await buildExecutor().execute(
-      'Bash',
-      { command: `cat ${JSON.stringify(prodFile)}` },
-      { sessionId: 'slot-isolation-bash-cat' },
-    );
-    expectForeignDenied(result, '.code-agent', PROD_SENTINEL);
-  });
-
   it('真阴：当前槽读自己的数据目录照常成功', async () => {
     const result = await buildExecutor().execute(
       'Read',
@@ -210,36 +200,6 @@ describe('槽数据目录读隔离', () => {
     expect(text).not.toContain('.code-agent/config.json');
     expect(text).not.toContain(`${path.sep}.code-agent${path.sep}memory`);
   }
-
-  it('Bash 中途 cd 后按新目录检查：cd "$HOME" && cat 生产槽配置被拒', async () => {
-    const result = await buildExecutor().execute(
-      'Bash',
-      { command: 'cd "$HOME" && cat .code-agent/config.json' },
-      { sessionId: 'slot-isolation-bash-cd-and' },
-    );
-    expectForeignDenied(result, '.code-agent', PROD_SENTINEL);
-    expectNoForeignLeak(result, PROD_SENTINEL, prodFile);
-  });
-
-  it('Bash 连续切目录：cd A; cd B; cat 生产槽配置被拒', async () => {
-    const result = await buildExecutor().execute(
-      'Bash',
-      { command: `cd ${JSON.stringify(projectDir)}; cd "$HOME"; cat .code-agent/config.json` },
-      { sessionId: 'slot-isolation-bash-cd-seq' },
-    );
-    expectForeignDenied(result, '.code-agent', PROD_SENTINEL);
-    expectNoForeignLeak(result, PROD_SENTINEL, prodFile);
-  });
-
-  it('Bash 子 shell 切目录：(cd HOME; cat 生产槽配置) 被拒', async () => {
-    const result = await buildExecutor().execute(
-      'Bash',
-      { command: '(cd "$HOME"; cat .code-agent/config.json)' },
-      { sessionId: 'slot-isolation-bash-cd-subshell' },
-    );
-    expectForeignDenied(result, '.code-agent', PROD_SENTINEL);
-    expectNoForeignLeak(result, PROD_SENTINEL, prodFile);
-  });
 
   it('从 home 递归 Glob 结果不含生产槽内容或路径', async () => {
     for (const pattern of ['**/*', '**/.code-agent/**']) {
@@ -353,7 +313,7 @@ describe('槽数据目录读隔离', () => {
   });
 
   // --------------------------------------------------------------------------
-  // 第二轮返修（R2 四条）：入口判据在执行时失效的漏网
+  // 第二轮返修（R2）：入口判据在执行时失效的漏网
   // --------------------------------------------------------------------------
 
   it('R2① 当前槽内的软链指向生产槽：读它被拒，字面路径在当前槽救不了它', async () => {
@@ -371,162 +331,9 @@ describe('槽数据目录读隔离', () => {
     }
   });
 
-  it('R2③ 子 shell 的 cd 不外溢：(cd /tmp); cat 生产槽相对路径被拒', async () => {
-    const result = await buildExecutor().execute(
-      'Bash',
-      { command: '(cd /tmp); cat .code-agent/memory/notes.md', working_directory: fakeHome },
-      { sessionId: 'slot-isolation-r2-subshell-cd-no-leak' },
-    );
-    expectForeignDenied(result, '.code-agent', PROD_SENTINEL);
-    expectNoForeignLeak(result, PROD_SENTINEL, prodFile);
-  });
-
-  it('R2③ 真阴：子 shell 的 cd 不外溢，外层读当前槽相对路径照常成功', async () => {
-    const result = await buildExecutor().execute(
-      'Bash',
-      { command: '(cd /tmp); cat .code-agent-dev/memory/notes.md', working_directory: fakeHome },
-      { sessionId: 'slot-isolation-r2-subshell-cd-own' },
-    );
-    expect(result.success).toBe(true);
-    expect(leakedText(result)).toContain(OWN_SENTINEL);
-    expect(result.error ?? '').not.toContain('另一个槽');
-  });
-
-  it('R2③ 花括号分组不建子 shell：cd 外溢后按外层语义判，仍拒生产槽', async () => {
-    const result = await buildExecutor().execute(
-      'Bash',
-      { command: '{ cd "$HOME"; }; cat .code-agent/memory/notes.md', working_directory: fakeHome },
-      { sessionId: 'slot-isolation-r2-brace-cd-leaks' },
-    );
-    expectForeignDenied(result, '.code-agent', PROD_SENTINEL);
-  });
-
-  it('R2② Bash 里 grep -r 整个 home：跨槽内容不能到达调用方', async () => {
-    const result = await buildExecutor().execute(
-      'Bash',
-      { command: `grep -r ${PROD_SENTINEL} "$HOME"` },
-      { sessionId: 'slot-isolation-r2-bash-grep-r-home' },
-    );
-    expect(leakedText(result), 'Bash 递归读不能带回生产槽内容').not.toContain(PROD_SENTINEL);
-    expect(result.success).toBe(false);
-    expect(result.error ?? '').toMatch(/这是另一个槽（\.code-agent(-chatprobe)?）的数据目录/);
-    expect(result.metadata?.code).toBe(FOREIGN_SLOT_DATA_DIR_CODE);
-  });
-
-  it('R2② 真阴：Bash 里 grep -r 项目目录（下面没有别人的槽）照常返回匹配', async () => {
-    const projectSentinel = 'SLOT_ISOLATION_PROJECT_MATCH_5d17';
-    const hitDir = path.join(projectDir, 'searchable');
-    mkdirSync(hitDir, { recursive: true });
-    writeFileSync(path.join(hitDir, 'notes.txt'), projectSentinel);
-
-    const result = await buildExecutor().execute(
-      'Bash',
-      { command: `grep -r ${projectSentinel} .` },
-      { sessionId: 'slot-isolation-r2-bash-grep-r-project' },
-    );
-    expect(result.success).toBe(true);
-    expect(leakedText(result)).toContain(projectSentinel);
-    expect(result.error ?? '').not.toContain('另一个槽');
-  });
-
   // ------------------------------------------------------------------------
-  // 第三轮（R3 三条）：字符串分析与真实 shell 语义的三个盲区
+  // 第四轮（R4①）：相对路径软链+.. 按内核序解析（结构化参数侧）
   // ------------------------------------------------------------------------
-
-  it('R3① 软链+..：cat <指向生产槽memory的软链>/../config.json 被拒（内核先解软链再走 ..）', async () => {
-    symlinkSync(path.join(prodSlot, 'memory'), path.join(devSlot, 'prodmem'));
-    try {
-      // 不能用 path.join 拼：它会把 .. 词法塌缩掉，攻击串里就没剩 .. 了。
-      const attack = [devSlot, 'prodmem', '..', 'config.json'].join('/');
-      const result = await buildExecutor().execute(
-        'Bash',
-        { command: `cat ${JSON.stringify(attack)}` },
-        { sessionId: 'slot-isolation-r3-symlink-dotdot' },
-      );
-      expectForeignDenied(result, '.code-agent', PROD_SENTINEL);
-      expectNoForeignLeak(result, PROD_SENTINEL, prodFile);
-    } finally {
-      rmSync(path.join(devSlot, 'prodmem'), { force: true });
-    }
-  });
-
-  it('R3① 真阴：软链指向当前槽 + .. 照常读到自己的文件', async () => {
-    symlinkSync(path.join(devSlot, 'memory'), path.join(devSlot, 'ownmem'));
-    try {
-      const attack = [devSlot, 'ownmem', '..', 'memory', 'notes.md'].join('/');
-      const result = await buildExecutor().execute(
-        'Bash',
-        { command: `cat ${JSON.stringify(attack)}` },
-        { sessionId: 'slot-isolation-r3-symlink-dotdot-own' },
-      );
-      expect(result.success).toBe(true);
-      expect(leakedText(result)).toContain(OWN_SENTINEL);
-      expect(result.error ?? '').not.toContain('另一个槽');
-    } finally {
-      rmSync(path.join(devSlot, 'ownmem'), { force: true });
-    }
-  });
-
-  it('R3② ${HOME} 参数展开不被当成花括号分组拆碎：cat ${HOME}/.code-agent/config.json 被拒', async () => {
-    const result = await buildExecutor().execute(
-      'Bash',
-      { command: 'cat ${HOME}/.code-agent/config.json' },
-      { sessionId: 'slot-isolation-r3-home-brace-expansion' },
-    );
-    expectForeignDenied(result, '.code-agent', PROD_SENTINEL);
-    expectNoForeignLeak(result, PROD_SENTINEL, prodFile);
-  });
-
-  it('R3② 真阴：${HOME} 展开后读当前槽文件照常成功', async () => {
-    const result = await buildExecutor().execute(
-      'Bash',
-      { command: 'cat ${HOME}/.code-agent-dev/memory/notes.md' },
-      { sessionId: 'slot-isolation-r3-home-brace-expansion-own' },
-    );
-    expect(result.success).toBe(true);
-    expect(leakedText(result)).toContain(OWN_SENTINEL);
-    expect(result.error ?? '').not.toContain('另一个槽');
-  });
-
-  it('R3③ 条件分支里的 cd 不算数：cd "$HOME"; true || cd /tmp; cat .code-agent/config.json 被拒', async () => {
-    const result = await buildExecutor().execute(
-      'Bash',
-      { command: 'cd "$HOME"; true || cd /tmp; cat .code-agent/config.json' },
-      { sessionId: 'slot-isolation-r3-dead-branch-cd' },
-    );
-    expectForeignDenied(result, '.code-agent', PROD_SENTINEL);
-    expectNoForeignLeak(result, PROD_SENTINEL, prodFile);
-  });
-
-  it('R3③ 真阴：条件分支 cd 不算数时读当前槽相对路径照常成功', async () => {
-    const result = await buildExecutor().execute(
-      'Bash',
-      { command: 'cd "$HOME"; true || cd /tmp; cat .code-agent-dev/memory/notes.md' },
-      { sessionId: 'slot-isolation-r3-dead-branch-cd-own' },
-    );
-    expect(result.success).toBe(true);
-    expect(leakedText(result)).toContain(OWN_SENTINEL);
-    expect(result.error ?? '').not.toContain('另一个槽');
-  });
-
-  // ------------------------------------------------------------------------
-  // 第四轮（R4 两条）：path.join 提前塌缩 ..、grep -f 模式文件——换共享解析器收口
-  // ------------------------------------------------------------------------
-
-  it('R4① 相对路径软链+..：项目内 prodmem 指向生产槽 memory，cat prodmem/../config.json 被拒', async () => {
-    symlinkSync(path.join(prodSlot, 'memory'), path.join(projectDir, 'prodmem'));
-    try {
-      const result = await buildExecutor().execute(
-        'Bash',
-        { command: 'cat "prodmem/../config.json"' },
-        { sessionId: 'slot-isolation-r4-relative-symlink-dotdot' },
-      );
-      expectForeignDenied(result, '.code-agent', PROD_SENTINEL);
-      expectNoForeignLeak(result, PROD_SENTINEL, path.join(prodSlot, 'config.json'));
-    } finally {
-      rmSync(path.join(projectDir, 'prodmem'), { force: true });
-    }
-  });
 
   it('R4① Read 工具相对路径同样被拒：file_path=prodmem/../config.json', async () => {
     symlinkSync(path.join(prodSlot, 'memory'), path.join(projectDir, 'prodmem'));
@@ -539,70 +346,6 @@ describe('槽数据目录读隔离', () => {
       expectForeignDenied(result, '.code-agent', PROD_SENTINEL);
     } finally {
       rmSync(path.join(projectDir, 'prodmem'), { force: true });
-    }
-  });
-
-  it('R4① 真阴：项目内软链指向当前槽 + .. 照常读到自己的文件', async () => {
-    symlinkSync(path.join(devSlot, 'memory'), path.join(projectDir, 'ownmem'));
-    try {
-      const result = await buildExecutor().execute(
-        'Bash',
-        { command: 'cat "ownmem/../memory/notes.md"' },
-        { sessionId: 'slot-isolation-r4-own-relative-symlink-dotdot' },
-      );
-      expect(result.success).toBe(true);
-      expect(leakedText(result)).toContain(OWN_SENTINEL);
-      expect(result.error ?? '').not.toContain('另一个槽');
-    } finally {
-      rmSync(path.join(projectDir, 'ownmem'), { force: true });
-    }
-  });
-
-  it('R4② grep -f 模式文件顶掉 pattern 位：grep -r -f patterns.txt "$HOME" 整条被拒', async () => {
-    writeFileSync(path.join(projectDir, 'patterns.txt'), 'memory\n');
-    try {
-      const result = await buildExecutor().execute(
-        'Bash',
-        { command: 'grep -r -f patterns.txt "$HOME"' },
-        { sessionId: 'slot-isolation-r4-grep-f-home' },
-      );
-      expectForeignDenied(result, '.code-agent', PROD_SENTINEL);
-      expectNoForeignLeak(result, PROD_SENTINEL, path.join(prodSlot, 'config.json'));
-    } finally {
-      rmSync(path.join(projectDir, 'patterns.txt'), { force: true });
-    }
-  });
-
-  it('R4② 真阴：grep -r -f patterns.txt . 搜项目目录照常返回匹配', async () => {
-    writeFileSync(path.join(projectDir, 'patterns.txt'), 'r4-needle\n');
-    writeFileSync(path.join(projectDir, 'haystack.txt'), 'r4-needle in project\n');
-    try {
-      const result = await buildExecutor().execute(
-        'Bash',
-        { command: 'grep -r -f patterns.txt .' },
-        { sessionId: 'slot-isolation-r4-grep-f-dot' },
-      );
-      expect(result.success).toBe(true);
-      expect(leakedText(result)).toContain('r4-needle in project');
-      expect(result.error ?? '').not.toContain('另一个槽');
-    } finally {
-      rmSync(path.join(projectDir, 'patterns.txt'), { force: true });
-      rmSync(path.join(projectDir, 'haystack.txt'), { force: true });
-    }
-  });
-
-  it('R4 换解析器附带：bash -c 内相对 cd 进软链读生产槽被拒（旧手写链漏）', async () => {
-    symlinkSync(prodSlot, path.join(projectDir, 'prodroot'));
-    try {
-      const result = await buildExecutor().execute(
-        'Bash',
-        { command: 'bash -c \'cd prodroot && cat config.json\'' },
-        { sessionId: 'slot-isolation-r4-bash-c-relative-cd' },
-      );
-      expectForeignDenied(result, '.code-agent', PROD_SENTINEL);
-      expectNoForeignLeak(result, PROD_SENTINEL, path.join(prodSlot, 'config.json'));
-    } finally {
-      rmSync(path.join(projectDir, 'prodroot'), { force: true });
     }
   });
 
@@ -689,7 +432,7 @@ describe('槽数据目录读隔离', () => {
     }
   });
 
-  it('R5 排除项不按目录名：excludes 不再有 excludeDirNames，剪枝搜索根按路径排除别人槽', () => {
+  it('R5 排除项不按目录名：excludes 只有按路径的 roots 与锚定 ignoreGlobs', () => {
     mkdirSync(path.join(fakeHome, 'projects', 'demo', '.code-agent'), { recursive: true });
     const options = { currentDataDir: devSlot, homeDirs: [fakeHome] };
 
@@ -697,56 +440,5 @@ describe('槽数据目录读隔离', () => {
     expect('excludeDirNames' in excludes).toBe(false);
     expect(excludes.roots.map((root) => path.resolve(root))).toContain(path.resolve(prodSlot));
     expect(excludes.ignoreGlobs).toContain('.code-agent/**');
-
-    const pruned = foreignSlotPrunedGrepSearchPaths(fakeHome, options);
-    expect(pruned, '别人槽的直接子项按路径剪掉').not.toContain(path.resolve(prodSlot));
-    expect(pruned, '当前槽照常可搜').toContain(path.resolve(devSlot));
-    expect(pruned, '项目目录照常可搜').toContain(path.resolve(fakeHome, 'projects'));
-    expect(pruned, '剪枝结果是子项列表，不含搜索根本身').not.toContain(path.resolve(fakeHome));
-
-    // 指向别人槽的软链子项按真实路径剪掉（判据是路径，不是名字）。
-    symlinkSync(prodSlot, path.join(fakeHome, 'linkprod'));
-    try {
-      expect(foreignSlotPrunedGrepSearchPaths(fakeHome, options)).not.toContain(path.resolve(fakeHome, 'linkprod'));
-    } finally {
-      rmSync(path.join(fakeHome, 'linkprod'), { force: true });
-    }
-
-    // 搜索根下没有别人槽时原样返回，不做任何枚举。
-    expect(foreignSlotPrunedGrepSearchPaths(projectDir, options)).toEqual([path.resolve(projectDir)]);
-  });
-
-  // ------------------------------------------------------------------------
-  // 第五轮（R5 Nit）：fail-closed / 条件 cd 候选枚举加预算，超限拒绝
-  // ------------------------------------------------------------------------
-
-  it('R5 Nit：解析失败 + 相对 cd 灌满基准预算 → fail-closed 拒绝（不是放行）', () => {
-    // 未闭合引号触发解析失败走宽视图；相对 cd 按全部历史基准扩展，基准指数增长。
-    const command = 'cd a; cd b; cd c; cd d; cd e; cd f; cd g; cd h; echo "unclosed';
-    const verdict = evaluateToolSlotDataDirAccess('Bash', { command }, projectDir, {
-      currentDataDir: devSlot,
-      homeDirs: [fakeHome],
-    });
-    expect(verdict.allowed).toBe(false);
-    if (!verdict.allowed) expect(verdict.reason).toContain('预算');
-  });
-
-  it('R5 Nit 真阴：常规解析失败命令的枚举量远够不到预算，照常评估放行', () => {
-    const verdict = evaluateToolSlotDataDirAccess('Bash', { command: 'cat notes.txt; echo "unclosed' }, projectDir, {
-      currentDataDir: devSlot,
-      homeDirs: [fakeHome],
-    });
-    expect(verdict.allowed).toBe(true);
-  });
-
-  it('R5 Nit：预算拒绝经 executor 到达调用方（整条 Bash 命令被拒）', async () => {
-    const result = await buildExecutor().execute(
-      'Bash',
-      { command: 'cd a; cd b; cd c; cd d; cd e; cd f; cd g; cd h; echo "unclosed' },
-      { sessionId: 'slot-isolation-r5-budget-executor' },
-    );
-    expect(result.success).toBe(false);
-    expect(result.error ?? '').toContain('预算');
-    expect(result.metadata?.code).toBe(FOREIGN_SLOT_DATA_DIR_CODE);
   });
 });

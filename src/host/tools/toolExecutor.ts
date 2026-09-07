@@ -23,7 +23,7 @@ import { getToolCache } from '../services/infra/toolCache';
 import { getSessionAutomationService } from '../services/sessionAutomation/sessionAutomationService';
 import { createLogger } from '../services/infra/logger';
 import { getAuditLogger, maskSensitiveData, isKnownSafeCommand, validateCommand, getShellSafetyMode, getExecPolicyStore, getPolicyEnforcer, type PolicyEnforcer, type PolicyCheckResult, type ValidationResult } from '../security';
-import { evaluateToolSlotDataDirAccess, FOREIGN_SLOT_DATA_DIR_CODE } from '../security/slotDataDirGuard';
+import { evaluateToolSlotDataDirAccess, FOREIGN_SLOT_DATA_DIR_CODE, type SlotDataDirAccess } from '../security/slotDataDirGuard';
 import { createFileCheckpointIfNeeded } from './middleware/fileCheckpointMiddleware';
 import { getFileCheckpointService } from '../services/checkpoint';
 import { getConfirmationGate } from '../agent/confirmationGate';
@@ -788,12 +788,17 @@ export class ToolExecutor {
       : this.executionCwd;
 
     // 槽隔离：默认拒读其它 CODE_AGENT_HOME / 数据目录槽。folder-trust 不管这件事。
-    // 放在审批之前，避免先弹确认再硬拒；Read/Glob/Grep/LS/Bash 都走这一处。
-    const slotAccess = evaluateToolSlotDataDirAccess(
-      executionToolName,
-      params,
-      isBashToolName(policyToolName) ? bashWorkingDirectory : this.executionCwd,
-    );
+    // 放在审批之前，避免先弹确认再硬拒；覆盖 Read/Glob/Grep/LS 这类结构化参数工具。
+    // Bash 不进这道守卫：从命令行推断会读哪些路径，枚举漏一个就等于放行，shell
+    // 语义的形状枚举不完（ADR-065；推断线已于 ai-review 第 8 轮摘掉）。
+    // Bash 的跨槽读拦截待下沉 seatbelt 沙箱，另行开单。
+    const slotAccess: SlotDataDirAccess = isBashToolName(policyToolName)
+      ? { allowed: true }
+      : evaluateToolSlotDataDirAccess(
+        executionToolName,
+        params,
+        this.executionCwd,
+      );
     if (!slotAccess.allowed) {
       logger.warn('Blocked by slot data dir isolation', {
         toolName: executionToolName,

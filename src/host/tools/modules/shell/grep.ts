@@ -38,7 +38,6 @@ import { grepSchema as schema } from './grep.schema';
 import { GREP, BASH } from '../../../../shared/constants';
 import {
   collectForeignSlotTraversalExcludes,
-  foreignSlotPrunedGrepSearchPaths,
   isListedPathInsideForeignSlot,
   type ForeignSlotTraversalExcludes,
 } from '../../../security/slotDataDirGuard';
@@ -553,23 +552,15 @@ class GrepHandler implements ToolHandler<Record<string, unknown>, string> {
         };
       } else {
         // 2) rg 不可用 → 系统 grep 降级
-        // 别人槽的排除按真实路径剪枝（--exclude-dir 只有目录名语义，按基名任意深度
-        // 匹配会误伤项目里同名的合法配置目录）：落进别人槽的直接子项不传给 grep；
-        // 全部被剪掉 = 没有可搜的根，直接按无匹配返回。
-        const searchPaths = foreignSlotPrunedGrepSearchPaths(searchPath);
-        if (searchPaths.length === 0) {
-          onProgress?.({ stage: 'completing', percent: 100 });
-          return {
-            ok: true,
-            output: 'No matches found',
-            meta: buildNoMatchesMeta('grep', pattern, searchPath, ctx),
-          };
-        }
+        // 别人槽的排除不在命令行上做：--exclude-dir 只有目录名语义，按基名任意深度
+        // 匹配会误伤项目里同名的合法配置目录；按路径剪枝搜索根属于「从搜索根枚举
+        // 需要检查什么」，同样是枚举面（ai-review 第 8 轮砍线，ADR-065）。
+        // 统一由结果侧 filterForeignSlotGrepOutput() 按真实路径过滤（与 rg 路径同）。
         try {
           stdout = filterForeignSlotGrepOutput(
             await runSystemGrep(
               pattern,
-              searchPaths,
+              [searchPath],
               caseInsensitive,
               ctxBefore,
               ctxAfter,

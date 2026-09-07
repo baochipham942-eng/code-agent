@@ -41,6 +41,11 @@ import ipcService from '../../services/ipcService';
 import { typedInvokeDomain } from '../../services/typedInvoke';
 import { getApiBaseUrl } from '../../api/transport';
 import { useI18n } from '../useI18n';
+import {
+  chatSendInflightKey,
+  claimSendInflight,
+  type ChatSendDelivery,
+} from '../../utils/chatSendState';
 
 const logger = createLogger('useAgent');
 
@@ -671,13 +676,15 @@ export function useAgentIPC({
   // 运行中继续发送时，直接交给前台 brain；短暂拒收由 host 输入投递层缓冲重投。
   const sendMessage = useCallback(
     async (envelope: ConversationEnvelope, options?: SendMessageOptions) => {
-      const { content, attachments, context } = envelope;
+      // 外层只用 content/attachments 做空消息检查；context 在 claimSendInflight 内层
+      // 重新解构后才用得上，这里带上它就是个未用变量（eslint 棘轮 +1）。
+      const { content, attachments } = envelope;
       logger.debug('sendMessage called', { contentPreview: content.substring(0, 50), sessionId: currentSessionId });
 
       // 空消息检查
       if (!content.trim() && !attachments?.length) {
         logger.debug('sendMessage blocked - empty content');
-        return;
+        return { outcome: 'failed' as const };
       }
 
       // 建会话竞态：点「新会话」后 create 尚未完成时，composer 仍挂在旧 currentSessionId。
@@ -702,6 +709,18 @@ export function useAgentIPC({
         },
       });
 
+      const clientMessageId = envelope.clientMessageId ?? generateMessageId();
+      const outboundEnvelope: ConversationEnvelope = {
+        ...envelope,
+        clientMessageId,
+        sessionId: effectiveSessionId ?? envelope.sessionId,
+      };
+
+      return claimSendInflight(
+        chatSendInflightKey(effectiveSessionId ?? 'none', clientMessageId),
+        async (): Promise<ChatSendDelivery> => {
+      const envelope = outboundEnvelope;
+      const { content, attachments, context } = envelope;
       const swarmState = useSwarmStore.getState();
       const sessionSnapshot = swarmState.activeSessionId === effectiveSessionId && swarmState.activeRunId
         ? {
@@ -746,7 +765,7 @@ export function useAgentIPC({
           content: errorContent,
           timestamp: Date.now(),
         });
-        return;
+        return { outcome: 'failed' as const };
       }
 
       if (directRouting.kind === 'send') {
@@ -829,7 +848,7 @@ export function useAgentIPC({
               content: 'Direct 路由发送失败，消息未送达，也没有写入当前 Team 记录。请重试，或切回 Auto / Parallel。',
               timestamp: Date.now(),
             });
-            return;
+            return { outcome: 'failed' as const };
           }
 
           if (effectiveSessionId) {
@@ -873,8 +892,9 @@ export function useAgentIPC({
             timestamp: Date.now(),
           });
           logger.error('direct routing send failed', error);
+          return { outcome: 'failed' as const };
         }
-        return;
+        return { outcome: 'sent' as const };
       }
 
       // 检查当前会话是否正在处理（允许其他会话并发发送）
@@ -894,7 +914,7 @@ export function useAgentIPC({
 
       const deliverToForegroundBrain = async (
         clientMessageId?: string,
-      ): Promise<SteerOrQueueOutcome | undefined> => {
+      ): Promise<ChatSendDelivery> => {
         const runtimeInputMode = getRuntimeInputMode(contextWithDesignContext);
         const messageId = clientMessageId ?? generateMessageId();
         const runtimeContext: ConversationEnvelopeContext | undefined = contextWithDesignContext
@@ -937,7 +957,7 @@ export function useAgentIPC({
             content: getAgentSendFailureMessage(error),
             timestamp: Date.now(),
           });
-          return undefined;
+          return { outcome: 'failed' as const };
         }
       };
 
@@ -966,7 +986,7 @@ export function useAgentIPC({
             });
             if (injection.success && injection.data.outcome === 'injected') {
               logger.info('sendMessage - routed busy text into live voice call');
-              return;
+              return { outcome: 'sent' as const };
             }
             logger.info('sendMessage - voice text injection fell back to foreground input delivery', {
               reason: injection.success
@@ -1000,7 +1020,10 @@ export function useAgentIPC({
       logger.debug('Adding user message', { id: userMessage.id, attachmentsCount: attachments?.length || 0 });
       // 乐观上屏去重：协作空间 composer 在切会话前已把同 id 消息放上时间线（落地即
       // 进行中态），这里再 append 就是双份——时间线上已有同 id 就跳过（neo 流程同款判法）。
-      if (!useSessionStore.getState().messages.some((message) => message.id === userMessage.id)) {
+      const addedOptimisticUser = !useSessionStore.getState().messages.some(
+        (message) => message.id === userMessage.id,
+      );
+      if (addedOptimisticUser) {
         addMessage(userMessage);
       }
 
@@ -1063,7 +1086,7 @@ export function useAgentIPC({
         if (isDurableRunRolloutUnavailable(sendFailure) && await waitForDurableRunReady()) {
           try {
             await ipcService.invoke('agent:send-message', messagePayload);
-            return;
+            return { outcome: 'sent' as const };
           } catch (retryError) {
             logger.error('Agent retry after durable run rollout completed failed', retryError);
             sendFailure = retryError;
@@ -1080,6 +1103,10 @@ export function useAgentIPC({
           }
           throw sendFailure;
         }
+        if (addedOptimisticUser) {
+          const store = useSessionStore.getState();
+          store.setMessages(store.messages.filter((message) => message.id !== userMessage.id));
+        }
         // 错误时创建一条错误消息
         const errorMessage: Message = {
           id: generateMessageId(),
@@ -1088,6 +1115,26 @@ export function useAgentIPC({
             ? t.common.durableRunStartupTimeout
             : getAgentSendFailureMessage(sendFailure),
           timestamp: Date.now(),
+          // 乐观用户消息被撤了，重试锚点必须跟着走：regenerateMessage 默认往回找最近的
+          // user 消息，撤掉这条之后它会找到**上一轮**并把上一轮重发一遍；首条消息失败时
+          // 则一条都找不到、重试变哑（ai-review #1694）。把失败内容挂在错误消息上当锚点。
+          // 锚点条件锚在「我们撤了一条消息」上，不锚在「它有没有文本」上：
+          // 纯附件消息（图片直发、无文字）content 是空的，按文本判就一点锚点都不留，
+          // 用户既恢复不了草稿也重试不了（ai-review #1694 第五轮）。
+          ...(addedOptimisticUser && (userMessage.content?.trim() || userMessage.attachments?.length)
+            ? {
+                metadata: {
+                  retryPrompt: userMessage.content ?? '',
+                  ...(userMessage.attachments?.length
+                    ? { retryAttachments: userMessage.attachments }
+                    : {}),
+                  // 锚点必须自带它属于哪个会话：错误消息会落到**当下**的会话上，
+                  // 用户在 A 发完切到 B、A 的失败回执才到时，不绑会话就会把 A 的
+                  // 内容和附件重发进 B，污染 B 的上下文（ai-review #1694 第六轮）。
+                  ...(effectiveSessionId ? { retrySessionId: effectiveSessionId } : {}),
+                },
+              }
+            : {}),
         };
         addMessage(errorMessage);
         // 按会话清除处理状态
@@ -1098,7 +1145,10 @@ export function useAgentIPC({
           status: 'error',
           error: String(sendFailure),
         });
+        return { outcome: 'failed' as const };
       }
+      return { outcome: 'sent' as const };
+        });
     },
     [addMessage, setSessionProcessing, isProcessing, currentSessionId, t]
   );

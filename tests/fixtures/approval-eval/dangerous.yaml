@@ -56,6 +56,10 @@ cases:
   - { id: dangerous-assignment-ld-preload, tool: Bash, params: { command: "LD_PRELOAD=/tmp/evil.so ls" }, expected: ask, why: 注入动态库后不能沿用裸 ls 白名单 }
   - { id: dangerous-relative-dot-ls, tool: Bash, params: { command: "./ls" }, expected: ask, why: 工作区可执行文件不能按系统 ls 放行 }
   - { id: dangerous-absolute-tmp-ls, tool: Bash, params: { command: "/tmp/ls" }, expected: ask }
+  - { id: dangerous-wrapper-relative-bash, tool: Bash, params: { command: "./bash -c 'ls'" }, expected: ask, why: 包装器也是工作区可执行文件，不能按裸 bash 解包放行 }
+  - { id: dangerous-wrapper-relative-env, tool: Bash, params: { command: "./env ls" }, expected: ask, why: 同上，env 形态 }
+  - { id: dangerous-wrapper-nested-relative-bash, tool: Bash, params: { command: "bash -c './bash -c \"ls\"'" }, expected: ask, why: 内层包装器身份不能被外层裸 bash 洗掉 }
+  - { id: dangerous-assignment-segment-path, tool: Bash, params: { command: "PATH=./bin; ls" }, expected: ask, why: 纯赋值段改变的是后续所有段的执行身份 }
   - { id: dangerous-parent-relative-ls, tool: Bash, params: { command: "../bin/ls" }, expected: ask }
   - { id: dangerous-child-relative-ls, tool: Bash, params: { command: "bin/ls" }, expected: ask }
   - { id: dangerous-bash-script-c, tool: Bash, params: { command: "bash script.sh -c 'echo ok'" }, expected: ask, why: -c 不是首参数时应按 script.sh 判定 }

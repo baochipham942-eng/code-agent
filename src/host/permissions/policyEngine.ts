@@ -281,6 +281,19 @@ export class PolicyEngine {
     return [...this.rules];
   }
 
+  /** Match a parsed write path against user Tool(path) denies, independent of tool spelling. */
+  matchUserPathDeny(pathCandidates: readonly string[]): PolicyRule | null {
+    for (const rule of this.rules) {
+      const specifier = rule.matcher.toolSpecifier;
+      if (!rule.id.startsWith('user-deny-') || rule.action !== 'deny'
+          || specifier?.specifierType !== 'path' || !specifier.specifier) {
+        continue;
+      }
+      if (pathCandidates.some((candidate) => matchSpecifier(specifier, candidate))) return rule;
+    }
+    return null;
+  }
+
   /**
    * Sort rules by priority (highest first)
    */

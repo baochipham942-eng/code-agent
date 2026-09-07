@@ -548,34 +548,89 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
         artifactReferences,
         sessionId: currentSessionId,
       };
+        /**
+         * 乐观清空 + 失败回滚。失败回执可能几秒后才回来，那期间用户可以继续操作，
+         * 所以回滚是**整份、要么全还要么全不还**，且只在「每一项都还是清空后的样子」时才还。
+         *
+         * 🔴 这里刻意把「怎么判还没动过」和「怎么还」写成**同一份清单**：
+         * ai-review #1694 前后七轮判红，全是同一形状——守卫少查了某一项（附件、appshot、
+         * 会话/产物引用、命令 chip…），那一项就被旧草稿悄悄覆盖。逐个补 if 补不完，
+         * 因为守卫与回滚是两处、天然会漂。清单化之后，**加一项回滚就必须同时给出它的
+         * pristine 判据**，漏不了。
+         *
+         * 最贵的那次：命令 chip 是零宽的、不进 value，守卫全通过 ⇒ A 的旧文本被还原到
+         * 用户新选的 /loop chip 旁，下一次提交拼成 `/loop A`，直接起一个用户从未要求的
+         * 循环任务并反复消耗模型调用。
+         */
         const restoreDraft = () => {
-          // 🔴 回滚不许覆盖用户在这期间新打的内容。乐观清空之后用户可以继续输入（B），
-          // 而上一条（A）的失败回执可能几秒后才回来；无条件写回就把 B 换成 A 的旧草稿，
-          // 未提交内容静默丢失（ai-review #1694）。切了会话同理，草稿不能跨会话落回去。
-          // 判据：只在「输入框仍是我们清空后的样子」时才还原。
-          // 回滚是**整份、要么全还要么全不还**：逐字段各判各的会把两份草稿混起来
-          // （发带附件的 A → 接着打纯文本 B → A 失败 ⇒ 留着 B 的文本却把 A 的附件塞回来，
-          // 用户下一次发送就带上了无关文件，ai-review #1694 第三轮）。
-          // 判据取**当下**的真值，不取闭包里发送那一刻的旧值。
           const latest = latestComposerRef.current;
+          // 草稿不跨会话落回去。
           if (latest.currentSessionId !== draftSnapshot.sessionId) return;
-          // 「用户动过了吗」= 回滚会写回的每一项现在都还是清空后的样子。
-          if (latest.value.trim() || latest.attachments.length) return;
-          if (latest.sessionReferences?.length || latest.artifactReferences?.length) return;
-          // appshot 存在自己的 store 里，不在上面那些 state 上（第四轮漏的就是它）。
-          if (useAppshotsStore.getState().pending) return;
-          setValue(draftSnapshot.value);
-          setAttachments(draftSnapshot.attachments);
-          setPendingPromptCommand(draftSnapshot.pendingPromptCommand);
-          setPendingAgentSelection(draftSnapshot.pendingAgentSelection);
-          if (typeof setSessionReferences === 'function') setSessionReferences(draftSnapshot.sessionReferences);
-          if (typeof setArtifactReferences === 'function') setArtifactReferences(draftSnapshot.artifactReferences);
-          setVoiceInputContext(draftSnapshot.voiceInputContext);
-          // 命令 chip 也随草稿一起还回来，跟文本输入框的回滚口径一致
-          if (pendingCommand) useComposerStore.getState().setPendingCommand(pendingCommand);
-          if (draftSnapshot.appshot) {
-            useAppshotsStore.getState().setPending(draftSnapshot.appshot, currentSessionId);
-          }
+
+          const targets: Array<{ pristine: () => boolean; restore: () => void }> = [
+            // pristine 的统一口径：**这一项没被换成别的**——要么还是清空后的样子，
+            // 要么原封不动还是我们发出去的那份。只判「为空」会把「原封没动」误当成脏
+            // （宿主没真清空时，比如 setValue 是个 mock，或清空被别的渲染吃掉）。
+            {
+              pristine: () => !latest.value.trim() || latest.value === draftSnapshot.value,
+              restore: () => setValue(draftSnapshot.value),
+            },
+            {
+              pristine: () => latest.attachments.length === 0
+                || latest.attachments === draftSnapshot.attachments,
+              restore: () => setAttachments(draftSnapshot.attachments),
+            },
+            {
+              pristine: () => !(latest.sessionReferences?.length)
+                || latest.sessionReferences === draftSnapshot.sessionReferences,
+              restore: () => setSessionReferences?.(draftSnapshot.sessionReferences),
+            },
+            {
+              pristine: () => !(latest.artifactReferences?.length)
+                || latest.artifactReferences === draftSnapshot.artifactReferences,
+              restore: () => setArtifactReferences?.(draftSnapshot.artifactReferences),
+            },
+            {
+              // appshot 存在自己的 store 里，不在上面那些 state 上。同 chip：判「没被换掉」。
+              pristine: () => {
+                const current = useAppshotsStore.getState().pending;
+                return !current || current === draftSnapshot.appshot;
+              },
+              restore: () => {
+                if (draftSnapshot.appshot) {
+                  useAppshotsStore.getState().setPending(draftSnapshot.appshot, currentSessionId);
+                }
+              },
+            },
+            {
+              // 命令 chip 同样在 composerStore 里，且是零宽的——不会体现在 value 上。
+              // 🔴 pristine 是「**没被换成别的**」，不是「为空」：发送并不清空 chip，
+              // 按「为空」判会把「还是原来那个 chip」误当成用户新选的，回滚整个不发生
+              // （两条既有用例当场红）。同理也不能只判「非空即脏」。
+              pristine: () => {
+                const current = useComposerStore.getState().pendingCommand;
+                return !current || current === pendingCommand;
+              },
+              restore: () => {
+                if (pendingCommand) useComposerStore.getState().setPendingCommand(pendingCommand);
+              },
+            },
+            {
+              pristine: () => true,
+              restore: () => setPendingPromptCommand(draftSnapshot.pendingPromptCommand),
+            },
+            {
+              pristine: () => true,
+              restore: () => setPendingAgentSelection(draftSnapshot.pendingAgentSelection),
+            },
+            {
+              pristine: () => true,
+              restore: () => setVoiceInputContext(draftSnapshot.voiceInputContext),
+            },
+          ];
+
+          if (!targets.every((target) => target.pristine())) return;
+          for (const target of targets) target.restore();
       };
 
       // 添加到输入历史

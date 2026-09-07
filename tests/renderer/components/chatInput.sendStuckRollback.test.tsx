@@ -439,6 +439,39 @@ describe('失败回滚不覆盖用户在这期间新打的内容', () => {
     expect(screen.getByTestId('refs').textContent).toBe('1');
   });
 
+  // ai-review #1694 第七轮（二裁维持）：命令 chip 零宽、不进 value，守卫全通过 ⇒
+  // A 的旧文本被还原到用户新选的 /loop chip 旁，下一次提交拼成「/loop A」，
+  // 直接起一个用户从未要求的循环任务。
+  it('用户新选了命令 chip 时不还原', async () => {
+    let resolveSend: ((sent: boolean) => void) | undefined;
+    const onSend = vi.fn(() => new Promise<boolean>((resolve) => { resolveSend = resolve; }));
+
+    function ChipHarness() {
+      const [value, setValue] = useState(DRAFT);
+      const { handleSubmit } = useChatInputSubmit(makeParams({
+        value, setValue, onSend, currentSessionId: 'session-chip',
+      }));
+      return (
+        <div>
+          <span data-testid="draft">{value}</span>
+          <button type="button" onClick={() => void handleSubmit()}>send</button>
+        </div>
+      );
+    }
+
+    render(<ChipHarness />);
+    fireEvent.click(screen.getByText('send'));
+    await waitFor(() => expect(onSend).toHaveBeenCalled());
+    await waitFor(() => expect(screen.getByTestId('draft').textContent).toBe(''));
+    act(() => {
+      useComposerStore.getState().setPendingCommand({ command: 'loop', raw: '/loop' } as never);
+    });
+
+    await act(async () => { resolveSend?.(false); });
+
+    expect(screen.getByTestId('draft').textContent).toBe('');
+  });
+
   it('输入框仍是空的（用户没打字）⇒ 照常把草稿还回去', async () => {
     const onSend = vi.fn(async () => false);
 

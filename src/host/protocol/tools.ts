@@ -151,6 +151,12 @@ export interface ToolContext {
   /** Immutable authorization/artifact boundary for this run. */
   readonly workspace?: string;
   readonly workspaceScope?: WorkspaceScope;
+  /**
+   * N-EVAL-POLICY-WRITE-BOUNDARY-ENABLE：写边界开关沿 spawn 链下传。
+   * subagentToolRuntime 自建 ToolExecutor 不走 forRun，不传子代理就绕过边界。
+   * 只在开着时出现（true）；关着时字段缺省，context 形状与 main 一致。
+   */
+  readonly restrictWritesToWorkspace?: boolean;
   readonly workingDir: string;
   readonly abortSignal: AbortSignal;
   /** 当前 run 的工具拒绝集，ToolSearch 不得借延迟加载把它们重新带回。 */

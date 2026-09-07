@@ -62,6 +62,7 @@ export interface ProtocolContextInput {
   sessionId?: string;
   workspace?: string;
   workspaceScope?: import('../../../shared/contract/project').WorkspaceScope;
+  restrictWritesToWorkspace?: boolean;
   workingDirectory: string;
   abortSignal?: AbortSignal;
   legacyCtx: LegacyToolContext;
@@ -124,6 +125,9 @@ export function buildProtocolContext(input: ProtocolContextInput): ProtocolToolC
     sessionId: input.sessionId ?? 'protocol-unknown',
     workspace: input.workspace,
     workspaceScope: input.workspaceScope ?? input.legacyCtx.workspaceScope,
+    // 漏搬 = 写边界开关断在 protocol 侧：父执行器开着边界，spawn_agent 派生的子代理
+    // 照样能往沙箱外写（修复轮 1 ai-review 的断链形状，与 forcePermissionHandler 同理）。
+    restrictWritesToWorkspace: input.restrictWritesToWorkspace ?? input.legacyCtx.restrictWritesToWorkspace,
     workingDir: input.workingDirectory,
     abortSignal: input.abortSignal ?? new AbortController().signal,
     deniedToolNames: legacy?.deniedToolNames as readonly string[] | undefined,

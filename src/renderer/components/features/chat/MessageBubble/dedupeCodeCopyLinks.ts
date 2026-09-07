@@ -2,7 +2,7 @@ import { unified } from 'unified';
 import remarkParse from 'remark-parse';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
-import type { Nodes } from 'mdast';
+import type { Code, Link, Nodes, PhrasingContent } from 'mdast';
 import { isChartSpecSource } from '@shared/chartSpec';
 
 const parser = unified().use(remarkParse).use(remarkGfm).use(remarkMath);
@@ -24,7 +24,18 @@ const NO_COPY_HEADER = new Set([
 ]);
 
 
-/** Remove copy-only paragraphs immediately before/after an ordinary fenced block.
+/** 链接 children 文本，与 IACTCopyButton 写入剪贴板的拼接口径一致。 */
+function copyLinkText(link: Link): string {
+  const phrasingText = (nodes: ReadonlyArray<PhrasingContent>): string => nodes.map((node) => {
+    if (node.type === 'text' || node.type === 'inlineCode') return node.value;
+    if ('children' in node) return phrasingText(node.children);
+    return '';
+  }).join('');
+  return phrasingText(link.children);
+}
+
+/** Remove copy-only paragraphs immediately before/after an ordinary fenced block
+ * when the link copies the same text as the fence body (trim, exact match).
  * Blank lines do not break adjacency; prose and container boundaries do.
  * Run before streaming splits the document so either side sees its neighbour.
  */
@@ -32,7 +43,7 @@ export function dedupeCodeCopyLinks(source: string): string {
   if (!source.includes('!copy')) return source;
 
   const ranges: Array<{ start: number; end: number }> = [];
-  const hasCopyHeader = (node: Nodes | undefined): boolean => {
+  const hasCopyHeader = (node: Nodes | undefined): node is Code => {
     if (node?.type !== 'code') return false;
     const start = node.position?.start.offset;
     if (start === undefined || !/^(?:`{3,}|~{3,})/.test(source.slice(start))) return false;
@@ -43,6 +54,9 @@ export function dedupeCodeCopyLinks(source: string): string {
       && !(language === 'json' && isChartSpecSource(node.value));
   };
 
+  const isDuplicateCopy = (sibling: Nodes | undefined, link: Link): boolean =>
+    hasCopyHeader(sibling) && sibling.value.trim() === copyLinkText(link).trim();
+
   const visit = (node: Nodes): void => {
     if (!('children' in node)) return;
     node.children.forEach((child, index, siblings) => {
@@ -50,7 +64,7 @@ export function dedupeCodeCopyLinks(source: string): string {
         const meaningful = child.children.filter(part => part.type !== 'text' || part.value.trim());
         const link = meaningful.length === 1 ? meaningful[0] : undefined;
         if (link?.type === 'link' && link.url === '!copy'
-          && (hasCopyHeader(siblings[index - 1]) || hasCopyHeader(siblings[index + 1]))) {
+          && (isDuplicateCopy(siblings[index - 1], link) || isDuplicateCopy(siblings[index + 1], link))) {
           const start = child.position?.start.offset;
           const end = child.position?.end.offset;
           if (start !== undefined && end !== undefined) ranges.push({ start, end });

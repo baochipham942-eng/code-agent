@@ -103,13 +103,81 @@ export async function startResident(): Promise<Resident> {
     return state;
   } catch (error) { await stopResident(state); throw error; }
 }
+/** TC-M1-01 费用阈值由任务书写死：有价走 $0.05，无价渠道退化为 token 上限。 */
+const EMPTY_CASE_COST_USD_LIMIT = 0.05;
+const EMPTY_CASE_INPUT_TOKEN_LIMIT = 20000;
+const EMPTY_CASE_OUTPUT_TOKEN_LIMIT = 500;
+const EMPTY_CASE_COST_FAIL_SUFFIX = '；费用≤$0.05 或 token 阈值，缺遥测不推定为零';
+
+export type TurnCostLedgerRow = {
+  usd: number | null;
+  source: string;
+  input_tokens: number;
+  output_tokens: number;
+};
+
+type EmptyCaseHealth = {
+  lastUpdated?: number;
+  tokenSource?: string;
+  currentTokens?: number;
+  usagePercent?: number;
+  compression?: { status?: string };
+};
+
+export function queryTurnCostLedger(db: InstanceType<typeof Database>, sessionId: string): TurnCostLedgerRow[] {
+  return db.prepare(
+    'SELECT usd, source, input_tokens, output_tokens FROM turn_cost_estimates WHERE session_id = ? ORDER BY created_at',
+  ).all(sessionId) as TurnCostLedgerRow[];
+}
+
+export function evaluateTurnCostLedger(rows: TurnCostLedgerRow[]): { ok: boolean; detail: string } {
+  if (rows.length === 0) {
+    return { ok: false, detail: `账本无本轮记录（费用遥测缺失≠通过）${EMPTY_CASE_COST_FAIL_SUFFIX}` };
+  }
+  const priced = rows.filter((row) => row.usd != null);
+  if (priced.length > 0) {
+    const sum = priced.reduce((total, row) => total + Number(row.usd), 0);
+    const sources = [...new Set(priced.map((row) => String(row.source)))].join('+');
+    const detail = `费用=$${sum}（账本，source=${sources}）`;
+    const ok = sum <= EMPTY_CASE_COST_USD_LIMIT;
+    return { ok, detail: ok ? detail : `${detail}${EMPTY_CASE_COST_FAIL_SUFFIX}` };
+  }
+  const inputTokens = rows.reduce((total, row) => total + Number(row.input_tokens), 0);
+  const outputTokens = rows.reduce((total, row) => total + Number(row.output_tokens), 0);
+  const ok = inputTokens <= EMPTY_CASE_INPUT_TOKEN_LIMIT && outputTokens <= EMPTY_CASE_OUTPUT_TOKEN_LIMIT;
+  const detail = `无价渠道按 token 阈值核（in=${inputTokens}/out=${outputTokens}，阈值 ${EMPTY_CASE_INPUT_TOKEN_LIMIT}/${EMPTY_CASE_OUTPUT_TOKEN_LIMIT}）`;
+  return { ok, detail: ok ? detail : `${detail}${EMPTY_CASE_COST_FAIL_SUFFIX}` };
+}
+
+function isEmptyInitialSnapshot(initial: EmptyCaseHealth | null): boolean {
+  if (initial === null) return true;
+  return initial.currentTokens === 0 && initial.usagePercent === 0 && initial.compression?.status === 'none';
+}
+
+export function evaluateEmptyCaseCheck1(input: {
+  initial: EmptyCaseHealth | null;
+  messages: Array<{ role: string }>;
+  auditLength: number;
+  finalSnapshot: EmptyCaseHealth | null | undefined;
+  expectedUserCount: number;
+}): Check {
+  const userCount = input.messages.filter((message) => message.role === 'user').length;
+  const ok = isEmptyInitialSnapshot(input.initial)
+    && userCount === input.expectedUserCount
+    && input.auditLength === 0
+    && input.finalSnapshot?.tokenSource === 'provider';
+  return {
+    status: ok ? '通过' : '失败',
+    detail: `初始空快照（无快照或全零快照）、user=${input.expectedUserCount}（实得 ${userCount}）、无压缩快照；见 result/messages/audit`,
+  };
+}
+
 async function collectEmptyCase(spec: Case, state: Resident, dir: string, runId: string, expectedUserCount = 1): Promise<Row> {
   mkdirSync(path.join(dir, 'screens'), { recursive: true });
   const row: Row = { id: spec.id, runId, status: '失败', reasons: [], checks: [], files: {}, frames: [], startedAt: new Date().toISOString() };
-  type Health = { lastUpdated?: number; tokenSource?: string };
-  type Trace = { receivedAt: string; eventName?: string; source?: string; data?: { type?: string; data?: { cost?: number }; [key: string]: unknown }; raw?: string };
-  type ProcessEvidence = { source: string; types: Array<string | undefined>; tools: number; approvals: number; modelCalls: number | null; costs: number[] | null; subagents: Trace[]; steps: number };
-  const observations: { caseHash: string; fixture: string; keySlot: string; adapter: string; responses: Array<Health | null>; sessionId?: string; process?: ProcessEvidence; checks?: Check[] } = { caseHash: spec.hash, fixture: 'F0: empty real session; transport request held before model delivery', keySlot: '~/.code-agent-chatprobe', adapter: 'browser send + native SSE JSONL + neo debug readonly', responses: [] };
+  type Trace = { receivedAt: string; eventName?: string; source?: string; data?: { type?: string; [key: string]: unknown }; raw?: string };
+  type ProcessEvidence = { source: string; types: Array<string | undefined>; tools: number; approvals: number; modelCalls: number | null; subagents: Trace[]; steps: number };
+  const observations: { caseHash: string; fixture: string; keySlot: string; adapter: string; responses: Array<EmptyCaseHealth | null>; sessionId?: string; process?: ProcessEvidence; checks?: Check[] } = { caseHash: spec.hash, fixture: 'F0: empty real session; transport request held before model delivery', keySlot: '~/.code-agent-chatprobe', adapter: 'browser send + native SSE JSONL + neo debug readonly', responses: [] };
   const trace: Trace[] = [];
   let browser: Browser | undefined;
   let page: Page;
@@ -187,7 +255,7 @@ async function collectEmptyCase(spec: Case, state: Resident, dir: string, runId:
     // Real first-run dialogs, no DOM deletion or fake authenticated state.
     for (let i = 0; i < 3; i++) { const close = page.getByRole('button', { name: '关闭', exact: true }); if (await close.last().isVisible()) await close.last().click(); else break; }
     await page.locator(`[data-session-id="${sessionId}"]`).click();
-    observations.responses.push(await api<Health | null>(state, 'context/health/get', [sessionId]));
+    observations.responses.push(await api<EmptyCaseHealth | null>(state, 'context/health/get', [sessionId]));
     const pill = page.getByRole('button', { name: /上下文.*使用|上下文.*健康/ }).first();
     const openDetail = async () => {
       const detail = page.locator('[data-testid="context-health-detail"]');
@@ -215,14 +283,16 @@ async function collectEmptyCase(spec: Case, state: Resident, dir: string, runId:
       if (trace.some(e => (JSON.stringify(e.data) ?? '').includes('agent_complete'))) break;
       await delay(500);
     }
-    observations.responses.push(await api<Health | null>(state, 'context/health/get', [sessionId]));
+    observations.responses.push(await api<EmptyCaseHealth | null>(state, 'context/health/get', [sessionId]));
     await openDetail();
     await frame('first-snapshot', []);
   } finally { await browser?.close(); }
+  // WAL 下 readonly 读者不阻塞 resident 写入；连法与 startResident 相同。
   const db = new Database(path.join(state.dataDir, 'code-agent.db'), { readonly: true });
   const messages = sessionId ? db.prepare('SELECT * FROM messages WHERE session_id = ? ORDER BY timestamp').all(sessionId) as Array<{ role: string }> : [];
   const audit = sessionId ? db.prepare('SELECT * FROM compaction_snapshots WHERE session_id = ?').all(sessionId) : [];
   const timeline = sessionId ? db.prepare('SELECT e.* FROM conversation_branch_events e JOIN conversation_branches b ON b.id=e.branch_id WHERE b.session_id=? ORDER BY e.sequence').all(sessionId) : [];
+  const ledger = sessionId ? queryTurnCostLedger(db, sessionId) : [];
   db.close();
   save(path.join(dir, 'messages.json'), messages); save(path.join(dir, 'audit.json'), audit); save(path.join(dir, 'timeline.json'), timeline);
   writeFileSync(path.join(dir, 'trace.jsonl'), trace.map(e => scrub(JSON.stringify(e))).join('\n') + '\n');
@@ -250,14 +320,14 @@ async function collectEmptyCase(spec: Case, state: Resident, dir: string, runId:
   const tools = types.filter(t => t === 'tool_call_start').length;
   const approvals = types.filter(t => t === 'permission_request' || t === 'approval_requested').length;
   const modelCalls = types.filter(t => t === 'model_response').length;
-  const cost = trace.map(e => e.data?.data?.cost).filter(v => typeof v === 'number');
-  observations.process = { source: 'native SSE stream-json; missing fields remain unknown', types, tools, approvals, modelCalls: modelCalls || null, costs: cost.length ? cost : null, subagents: trace.filter(e => /subagent|agent_dispatch|agent_result/.test(e.data?.type ?? '')), steps: types.filter(t => /turn_start|tool_call_start/.test(t ?? '')).length };
+  const costEval = evaluateTurnCostLedger(ledger);
+  observations.process = { source: 'native SSE stream-json; missing fields remain unknown', types, tools, approvals, modelCalls: modelCalls || null, subagents: trace.filter(e => /subagent|agent_dispatch|agent_result/.test(e.data?.type ?? '')), steps: types.filter(t => /turn_start|tool_call_start/.test(t ?? '')).length };
   const check = (ok: boolean, detail: string): Check => ({ status: ok ? '通过' : '失败', detail });
   const initial = observations.responses[0];
   const finalSnapshot = observations.responses.at(-1);
   row.checks = [
-    check((initial === null || initial?.lastUpdated === 0) && messages.filter(m => m.role === 'user').length === expectedUserCount && audit.length === 0 && finalSnapshot?.tokenSource === 'provider', `初始空快照、user=${expectedUserCount}（实得 ${messages.filter(m => m.role === 'user').length}）、无压缩快照；见 result/messages/audit`),
-    check(terminal && observations.process.steps <= 8 && observations.process.subagents.length === 0 && audit.length === 0 && modelCalls === 1 && tools === 0 && approvals === 0 && cost.length > 0 && cost.reduce((a, b) => a + b, 0) <= 0.05, `终态=${terminal}，主模型响应=${modelCalls || '未知'}，工具=${tools}，审批=${approvals}，费用=${cost.length ? cost.join('+') : '未知'}；费用≤$0.05，缺遥测不推定为零`),
+    evaluateEmptyCaseCheck1({ initial, messages, auditLength: audit.length, finalSnapshot, expectedUserCount }),
+    check(terminal && observations.process.steps <= 8 && observations.process.subagents.length === 0 && audit.length === 0 && modelCalls === 1 && tools === 0 && approvals === 0 && costEval.ok, `终态=${terminal}，主模型响应=${modelCalls || '未知'}，工具=${tools}，审批=${approvals}，${costEval.detail}`),
     check(row.frames.length === 3 && row.frames.every(f => { const dom = JSON.parse(readFileSync(path.join(dir, `screens/${f}.dom.json`), 'utf8')); return dom.criteria.length > 0 && dom.criteria.every((c: { visible: boolean }) => c.visible); }), '空态/等待态精确文本与三帧截图；稿 S-30/S-47/S-31')
   ];
   row.endedAt = new Date().toISOString();

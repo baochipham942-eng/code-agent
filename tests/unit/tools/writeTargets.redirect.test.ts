@@ -174,4 +174,15 @@ describe('引号/转义目标的词法保真（PR #1709 复审①）', () => {
     expect(resolve('m"v" a /etc/x').targets).toEqual([resolveCanonicalRunPath('/etc/x')]);
     expect(resolve('tee "/tmp/t1"').targets).toEqual([resolveCanonicalRunPath('/tmp/t1')]);
   });
+
+  it('带引号的尾部选项不遮蔽真实写目标（PR #1709 复审③：`cp src /outside/x "-f"`）', () => {
+    // 修复前：`"-f"` 带引号不被选项过滤 ⇒ 混进操作数 ⇒ cp 的「最后一个操作数」被顶成 -f，
+    // 真实目标 /etc/x 整个漏判。
+    expect(resolve('cp src /etc/x "-f"').targets).toEqual([resolveCanonicalRunPath('/etc/x')]);
+    expect(resolve('mv src /etc/x "-i"').targets).toEqual([resolveCanonicalRunPath('/etc/x')]);
+    expect(resolve('tee "-a" /etc/x').targets).toEqual([resolveCanonicalRunPath('/etc/x')]);
+    // 真阴：引号包的路径操作数不能误滤（值化后是 / 开头不是 - 开头）
+    expect(resolve('cp src "/etc/has space.txt"').targets)
+      .toEqual([resolveCanonicalRunPath('/etc/has space.txt')]);
+  });
 });

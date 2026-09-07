@@ -219,7 +219,9 @@ function argumentWriteTargets(words: string[]): string[] {
   const rule = ARGUMENT_WRITE_COMMANDS[path.basename(shellWordValue(words[0]))];
   if (!rule) return [];
   // `-r` / `-a` / `--append` 一律是开关不是路径；`--` 之后才是纯路径，但这里不需要区分。
-  const operands = words.slice(1).filter((word) => !word.startsWith('-'));
+  // 选项判定必须先词法值化再过滤（PR #1709 复审③）：带引号的 `"-f"` 不过滤会混进操作数，
+  // 把 cp 的「最后一个操作数」顶成 -f，真实目标 /outside/x 被遮蔽——界外写漏判。
+  const operands = words.slice(1).map(shellWordValue).filter((word) => !word.startsWith('-'));
   if (rule === 'all') return operands;
   return operands.length >= 2 ? [operands[operands.length - 1]] : [];
 }

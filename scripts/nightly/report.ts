@@ -2,11 +2,21 @@ import { execFileSync } from 'node:child_process';
 import { appendFileSync, cpSync, existsSync, mkdirSync, readFileSync, rmdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { chromium } from 'playwright';
-import { feedbackFingerprint, counts, validateReport, type Case, type Row } from './contracts';
+import { feedbackFingerprint, legacyFeedbackFingerprint, counts, validateReport, type Case, type Row } from './contracts';
 import { expand, save, scrub, type Resident } from './runtime';
 const escape = (s: unknown) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 const archive = expand('~/Downloads/ai/code-agent-private-archive');
 export const directory = (spec: Case, row: Row) => path.join(expand(spec.root), 'runs', row.id, row.runId);
+type FeedbackRegistry = { fb: string; fingerprint: string; occurrences: number; lastRun: string; lastEvidence: string };
+/** The fingerprint sidecar must live somewhere the next run always reads back; a run-id-keyed inbox is not that place. */
+const registryFile = (fingerprint: string) => expand(`~/.code-agent-nightly/feedback-registry/${fingerprint}.json`);
+const sidecarMatches = (item: { path: string | null }, fingerprint: string, row: Row, caseHash: string, mutation: boolean) => {
+  if (!item.path) return false;
+  const signature = path.join(path.dirname(expand(item.path)), 'feedback-signature.json');
+  if (!existsSync(signature)) return false;
+  const stored = JSON.parse(readFileSync(signature, 'utf8')).fingerprint;
+  return stored === fingerprint || stored === legacyFeedbackFingerprint(row, caseHash, mutation);
+};
 export function feedback(row: Row, dir: string, date: string, mutation = false): string {
   if (row.status !== '失败') throw new Error('FAIL only executed failed cases can file feedback');
   if (row.fb) return row.fb;
@@ -24,19 +34,33 @@ export function feedback(row: Row, dir: string, date: string, mutation = false):
   mkdirSync(lock); // Concurrent reporters fail closed; never race two adds for the same assertion.
   try {
     const items = JSON.parse(execFileSync(cli, ['list', '--json'], { encoding: 'utf8' })) as Array<{ fb: string; source: string; state: string; path: string | null }>;
-    const existing = items.find(item => {
-      if (item.source !== 'N-NIGHTLY-RUNNER' || !['待分诊', '已立单'].includes(item.state) || !item.path) return false;
-      const signature = path.join(path.dirname(expand(item.path)), 'feedback-signature.json');
-      return existsSync(signature) && JSON.parse(readFileSync(signature, 'utf8')).fingerprint === fingerprint;
-    });
-    const fb = existing?.fb ?? JSON.parse(execFileSync(cli, ['add', '--kind', 'diagnostics', '--title', `缺陷·${mutation ? '反向变异演练·' : ''}${row.id} 夜跑断言失败`, '--source', 'N-NIGHTLY-RUNNER', '--lane', '研发体系线', '--path', note, '--json'], { encoding: 'utf8' })).fb;
+    // Dedupe key = case id + failed-assertion fingerprint, never the run id. An open FB (待分诊/已立单)
+    // is resolved through the stable registry first, then the sidecar beside a legacy pool entry;
+    // 已修/不修/已忽略 never reuse — a recurrence appends to the original entry instead of adding a new one.
+    const openStates = ['待分诊', '已立单'];
+    const byNumber = new Map(items.map(item => [item.fb, item]));
+    const open = (fb: string | undefined) => !!fb && byNumber.has(fb) && openStates.includes(byNumber.get(fb)!.state);
+    const registered = existsSync(registryFile(fingerprint)) ? JSON.parse(readFileSync(registryFile(fingerprint), 'utf8')) as FeedbackRegistry : null;
+    const legacy = items.find(item => item.source === 'N-NIGHTLY-RUNNER' && openStates.includes(item.state) && sidecarMatches(item, fingerprint, row, result.caseHash, mutation));
+    const reuse = open(registered?.fb) ? byNumber.get(registered!.fb)! : legacy ?? null;
+    const fb = reuse ? reuse.fb : JSON.parse(execFileSync(cli, ['add', '--kind', 'diagnostics', '--title', `缺陷·${mutation ? '反向变异演练·' : ''}${row.id} 夜跑断言失败`, '--source', 'N-NIGHTLY-RUNNER', '--lane', '研发体系线', '--path', note, '--json'], { encoding: 'utf8' })).fb;
     if (!/^FB-\d+$/.test(fb)) throw new Error('FAIL feedback receipt has no FB number');
-    if (existing) {
-      const originalNote = expand(existing.path!);
-      if (!readFileSync(originalNote, 'utf8').includes(row.runId)) appendFileSync(originalNote, `\n复现 ${row.runId}：${scrub(note)}\n`);
+    let occurrences = 1;
+    if (reuse) {
+      const originalNote = reuse.path ? expand(reuse.path) : null;
+      if (originalNote && !existsSync(originalNote)) {
+        mkdirSync(path.dirname(originalNote), { recursive: true });
+        cpSync(note, originalNote);
+      }
+      const original = originalNote && existsSync(originalNote) ? readFileSync(originalNote, 'utf8') : null;
+      occurrences = registered && registered.fb === reuse.fb
+        ? (registered.lastRun === row.runId ? registered.occurrences : registered.occurrences + 1)
+        : 2 + (original?.match(/^复现/gm)?.length ?? 0); // Pre-registry entry: original filing + counted note recurrences + this run.
+      if (originalNote && original && !original.includes(row.runId)) appendFileSync(originalNote, `\n复现第 ${occurrences} 次 ${row.runId}：${scrub(note)}\n`);
     }
-    row.fb = fb; row.fbCreated = !existing;
-    save(path.join(dir, 'feedback.json'), { fb, created: row.fbCreated, fingerprint, evidence: scrub(note) });
+    save(registryFile(fingerprint), { fb, fingerprint, occurrences, lastRun: row.runId, lastEvidence: scrub(note) });
+    row.fb = fb; row.fbCreated = !reuse;
+    save(path.join(dir, 'feedback.json'), { fb, created: row.fbCreated, fingerprint, occurrences, evidence: scrub(note) });
     return fb;
   } finally { rmdirSync(lock); }
 }

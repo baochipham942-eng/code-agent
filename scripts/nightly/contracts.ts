@@ -143,7 +143,12 @@ export function scopedHostLog(log: string, sessionId: string): string {
   return log.split('\n').filter(line => line.includes(sessionId)).join('\n');
 }
 
-/** Same frozen assertion group and failure shape share a defect; numeric observations vary per run. */
+/** Same frozen case and failed-assertion shape share a defect; numeric observations, passing-check drift and run ids never fork the key. */
 export function feedbackFingerprint(row: Row, caseHash: string, mutation: boolean): string {
+  const failures = row.checks.flatMap((c, i) => c.status === '失败' ? [{ check: i + 1, detail: c.detail.replace(/\d+(?:\.\d+)?/g, '#') }] : []);
+  return digest(JSON.stringify({ id: row.id, caseHash, mutation, failures }));
+}
+/** Pre-N-NIGHTLY-FB-DEDUPE sidecar hashed the whole checks array. Keep this to adopt old entries. */
+export function legacyFeedbackFingerprint(row: Row, caseHash: string, mutation: boolean): string {
   return digest(JSON.stringify({ id: row.id, caseHash, mutation, checks: row.checks.map(c => ({ status: c.status, detail: c.detail.replace(/\d+(?:\.\d+)?/g, '#') })) }));
 }

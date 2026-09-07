@@ -299,6 +299,309 @@ describe('PermissionClassifier', () => {
       expect(result.decision).toBe('ask');
       expect(result.traceStep?.rule).toBe('B3: package_manager');
     });
+
+    // 第 32 轮审查：`&`/管道成员跑在子 shell，父 shell 的 cwd 没动，后续段按原 cwd 解析。
+    // 真 bash（3.2.57）探针核对；`|&` 用 zsh 交叉核对（本机 bash 3.2 不支持，bash4+ 同义
+    // `2>&1 |`）。这族只在家目录 cwd 下显形——cwd 是判据的一部分。
+    // 第 33 轮更正：`||` 不在这族里——见下方第 33 轮测试。
+    const homeContext = {
+      workingDirectory: os.homedir(),
+      workspaceRoot: '/tmp/comate-zulu-demo',
+      permissionLevel: 'execute' as const,
+    };
+
+    it('asks for a credential read after a backgrounded cd', async () => {
+      const result = await classifyPermission('bash', { command: 'cd /tmp & cat .ssh/id_rsa' }, homeContext);
+
+      expect(result.decision).toBe('ask');
+      expect(result.reason).toContain('凭据路径');
+      expect(result.reason).toContain(path.join(os.homedir(), '.ssh/id_rsa'));
+    });
+
+    it.each([
+      'cd /tmp | cat .ssh/id_rsa',
+      'cd /tmp |& cat .ssh/id_rsa',
+      'cd /tmp &\ncat .ssh/id_rsa',
+    ])('keeps the original cwd after a non-advancing separator: %s', async (command) => {
+      const result = await classifyPermission('bash', { command }, homeContext);
+
+      expect(result.decision).toBe('ask');
+      expect(result.reason).toContain('凭据路径');
+    });
+
+    it.each([
+      'cd /tmp; cat .ssh/id_rsa',
+      'cd /tmp && cat .ssh/id_rsa',
+    ])('keeps moving the cwd after an advancing separator: %s', async (command) => {
+      const result = await classifyPermission('bash', { command }, homeContext);
+
+      expect(result.decision).toBe('approve');
+    });
+
+    // 第 35 轮：`&` 后台化的是整个 AND/OR 列表，不是紧随其前的单段——`cd /tmp && env & …` 里
+    // cd 也在子 shell 跑，父 shell cwd 不动（真 bash 探针：`cd /tmp && env & pwd` 印出家目录）。
+    // 链尾是 `|` 不算：`a && b | c` 只把 `b | c` 放进管道，cd 仍在父 shell 推进。
+    it.each([
+      'cd /tmp && env & cat .ssh/id_rsa',
+      'cd /tmp || env & cat .ssh/id_rsa',
+    ])('asks for the credential read when the whole AND/OR list is backgrounded: %s', async (command) => {
+      const result = await classifyPermission('bash', { command }, homeContext);
+
+      expect(result.decision).toBe('ask');
+      expect(result.reason).toContain('凭据路径');
+      expect(result.reason).toContain(path.join(os.homedir(), '.ssh/id_rsa'));
+    });
+
+    it('still advances the cwd when the && chain ends in a pipeline', async () => {
+      const result = await classifyPermission(
+        'bash', { command: 'cd /tmp && env | cat .ssh/id_rsa' }, homeContext,
+      );
+
+      expect(result.decision).toBe('approve');
+    });
+
+    it('approves the backgrounded-list shape under a /tmp cwd — the read is genuinely there', async () => {
+      // 与 `cd /tmp; cat .ssh/id_rsa` 同例：父 shell cwd 是 /tmp 时相对路径就在 /tmp 下，
+      // 够不着家目录凭据；基线因 `env &` 复合段一律 ask，属过拦，不随它收严。
+      const result = await classifyPermission(
+        'bash',
+        { command: 'cd /tmp && env & cat .ssh/id_rsa' },
+        { workingDirectory: '/tmp', workspaceRoot: '/tmp/comate-zulu-demo', permissionLevel: 'execute' },
+      );
+
+      expect(result.decision).toBe('approve');
+    });
+
+    // 第 36 轮：`|&` 是把 stderr 接进管道的 `2>&1 |`，不是后台操作符——`cd ~ && true |& cat`
+    // 里 cd 仍在父 shell 跑、cwd 推进到家目录（zsh 探针：bash 3.2 无 `|&`）。链中段的 `|&`
+    // 不挡推进；cd 自身落在管道里（`cd /tmp |& cat`）仍由上方自身终止符检查挡住。
+    it('advances the cwd when the && chain closes with a |& pipe', async () => {
+      const result = await classifyPermission(
+        'bash',
+        { command: 'cd ~ && true |& cat .ssh/id_rsa' },
+        { workingDirectory: '/tmp', permissionLevel: 'execute' },
+      );
+
+      expect(result.decision).toBe('ask');
+      expect(result.reason).toContain('凭据路径');
+      expect(result.reason).toContain(path.join(os.homedir(), '.ssh/id_rsa'));
+    });
+
+    // 第 37 轮：`&` 后台化的是整个列表（管道 + AND/OR 链），走查不能停在管道边界
+    // （`cd /tmp && true | env & …` 里 cd 也在后台子 shell；bash 探针父 cwd 不动）。
+    // cd 自身在管道中段（`true | cd /tmp`）同样是子 shell——前置管道检查挡住。
+    it.each([
+      'cd /tmp && true | env & cat .ssh/id_rsa',
+      'true | cd /tmp; cat .ssh/id_rsa',
+    ])('asks for the credential read when the cd sits inside a backgrounded or piped list: %s', async (command) => {
+      const result = await classifyPermission('bash', { command }, homeContext);
+
+      expect(result.decision).toBe('ask');
+      expect(result.reason).toContain('凭据路径');
+      expect(result.reason).toContain(path.join(os.homedir(), '.ssh/id_rsa'));
+    });
+
+    it('still advances the cwd when a pipe-crossed && chain is not backgrounded', async () => {
+      const result = await classifyPermission(
+        'bash', { command: 'cd /tmp && true | env; cat .ssh/id_rsa' }, homeContext,
+      );
+
+      expect(result.decision).toBe('approve');
+    });
+
+    // 第 38-41 轮：无词命令（裸 `2>&1`）保留在段列表里，它的终止符不丢——后台边界、管道成员
+    // 身份、列表端点都在，cwd 走查按真实结构判定，凭据读回到基线的 ask（且 reason 带家目录路径）。
+    it.each([
+      'cd /tmp && 2>&1 & cat .ssh/id_rsa',
+      '2>&1 | cd /tmp; cat .ssh/id_rsa',
+    ])('asks when a word-free segment sits on a control-flow boundary: %s', async (command) => {
+      const result = await classifyPermission('bash', { command }, homeContext);
+
+      expect(result.decision).toBe('ask');
+      expect(result.reason).toContain('凭据路径');
+      expect(result.reason).toContain(path.join(os.homedir(), '.ssh/id_rsa'));
+    });
+
+    it('asks when a kept list end stops a later & from swallowing an earlier cd', async () => {
+      // 第 40/41 轮形状在 /tmp cwd 下显形：`cd ~` 真的推进（`；` 已结束列表），凭据读落在
+      // 家目录；丢掉 `;` 会误判 cd 被后面的 `&` 后台化、按 /tmp 解析。
+      const result = await classifyPermission(
+        'bash',
+        { command: 'cd ~ && 2>&1; cat .ssh/id_rsa & echo ok' },
+        { workingDirectory: '/tmp', permissionLevel: 'execute' },
+      );
+
+      expect(result.decision).toBe('ask');
+      expect(result.reason).toContain(path.join(os.homedir(), '.ssh/id_rsa'));
+    });
+
+    it('denies the credential rm after a word-free segment — the cd context survives', async () => {
+      // 第 41 轮：基线在这里是 deny（家目录凭据递归删除）；无词段留段后 cd 上下文不丢，
+      // 候选同样 deny，不再退成可批准的 ask。
+      const result = await classifyPermission(
+        'bash',
+        { command: 'cd ~ && 2>&1; rm -rf .ssh/id_rsa' },
+        { workingDirectory: '/tmp', permissionLevel: 'execute' },
+      );
+
+      expect(result.decision).toBe('deny');
+    });
+
+    // 第 42 轮（结构性收口：解析失败不再丢段视图）：前三行是第 41 轮的对照表，两个 cwd 各钉一遍；
+    // 后两行是仍会让严格解析失败的同族形状（heredoc 正文不可分）——lenient 段视图保住 cd 的 cwd
+    // 推进，基线的 deny 不再退成可批准的 ask。真机核对：cd / && cat <<x; rm -rf usr 在家目录 cwd
+    // 下，收口前是 ask（原 cwd 扫描够不着 /usr），基线与收口后都是 deny。
+    it.each([
+      ['cd ~ && 2>&1; rm -rf .ssh/id_rsa', 'deny'],
+      ['cd ~ && 2>&1; cat .ssh/id_rsa', 'ask'],
+      ['cd ~ ; rm -rf .ssh/id_rsa', 'deny'],
+      ['cd / && cat <<x; rm -rf usr', 'deny'],
+      ['cd /etc && cat <<x; rm -rf ssh', 'deny'],
+    ] as const)('keeps the cd cwd walk alive across cwds, strict or lenient: %s',
+      async (command, decision) => {
+        for (const cwd of ['/tmp/comate-zulu-demo', os.homedir()]) {
+          const result = await classifyPermission(
+            'bash', { command }, { workingDirectory: cwd, permissionLevel: 'execute' },
+          );
+          expect(result.decision).toBe(decision);
+        }
+      });
+
+    it('carries the propagated cwd into the parse-failed deny reasons', async () => {
+      // 表格第一行的 deny 理由落在推进后的家目录凭据上；heredoc 行的关键路径理由指向 cd / 推进
+      // 出的真实目标，而不是原 cwd 下的同名相对路径。
+      const credential = await classifyPermission(
+        'bash',
+        { command: 'cd ~ && 2>&1; rm -rf .ssh/id_rsa' },
+        { workingDirectory: os.homedir(), permissionLevel: 'execute' },
+      );
+      expect(credential.decision).toBe('deny');
+      expect(credential.reason).toContain('递归删除');
+      expect(credential.reason).toContain(path.join(os.homedir(), '.ssh/id_rsa'));
+
+      const system = await classifyPermission(
+        'bash',
+        { command: 'cd / && cat <<x; rm -rf usr' },
+        { workingDirectory: os.homedir(), permissionLevel: 'execute' },
+      );
+      expect(system.decision).toBe('deny');
+      expect(system.reason).toContain('递归删除关键路径');
+      expect(system.reason).toContain('/usr');
+    });
+
+    // 第 33 轮审查：`||` 链结束后 cd 成功那支的 cwd 已经变了，后续段按移动后的 cwd 解析
+    // （与基线一致；两个 cwd 都查会更严，本刀不做，记证据档）。heredoc 正文是其命令的
+    // stdin：严格解析失败，deny/ask 规则退回 lenient 词扫描，凭据路径落在原 cwd 上。
+    // 真 bash（3.2.57）用 ~/.cdprobe 探针核对过两族行为。
+    it.each([
+      'cd ~ || true; cat .ssh/id_rsa',
+      'cd ~ || cat .ssh/id_rsa',
+    ])('asks for the credential read after an || chain moves the cd cwd: %s', async (command) => {
+      const result = await classifyPermission(
+        'bash',
+        { command },
+        { workingDirectory: '/tmp', permissionLevel: 'execute' },
+      );
+
+      expect(result.decision).toBe('ask');
+      expect(result.reason).toContain('凭据路径');
+      expect(result.reason).toContain(path.join(os.homedir(), '.ssh/id_rsa'));
+    });
+
+    it('approves the baseline shape: an || cd to a dead directory leaves no credential read', async () => {
+      const result = await classifyPermission(
+        'bash',
+        { command: 'cd /nonexistent || cat .ssh/id_rsa' },
+        homeContext,
+      );
+
+      expect(result.decision).toBe('approve');
+    });
+
+    it('asks for the credential read after a heredoc-bearing compound on the original cwd', async () => {
+      const result = await classifyPermission(
+        'bash',
+        { command: 'cat <<true\ncd /tmp\ntrue\ncat .ssh/id_rsa' },
+        homeContext,
+      );
+
+      expect(result.decision).toBe('ask');
+      expect(result.reason).toContain('凭据路径');
+      expect(result.reason).toContain(path.join(os.homedir(), '.ssh/id_rsa'));
+    });
+
+    it('asks for a credential read after a parenthesized cd', async () => {
+      const result = await classifyPermission('bash', { command: '(cd /tmp) ; cat .ssh/id_rsa' }, homeContext);
+
+      expect(result.decision).toBe('ask');
+      expect(result.reason).toContain('凭据路径');
+    });
+  });
+
+  it.each(["./bash -c 'cd .'", "bash --rcfile ./startup.sh -ic 'ls'"]) (
+    'does not let an unqualified shell identity inherit an approval shortcut: %s', async (command) => {
+      const result = await classifyPermission(
+        'bash',
+        { command },
+        { workingDirectory: '/tmp', permissionLevel: 'execute' },
+      );
+      expect(result.decision).toBe('ask');
+    },
+  );
+
+  // origin/main refused this through the path analysis because the redirection target was still a
+  // word of the segment text. The shared parser moves targets into writeTargets, so the credential
+  // scan reads them from there — an unresolvable target must stay a refusal, not decay into an ask.
+  it('refuses a redirection target that cannot be a filesystem path', async () => {
+    const result = await classifyPermission(
+      'bash',
+      { command: "printf x > $'\\0'" },
+      { workingDirectory: '/tmp', permissionLevel: 'execute' },
+    );
+    expect(result.decision).toBe('deny');
+    expect(result.reason).toContain('NUL byte');
+  });
+
+  // Round 16: with `<` reported as an unsupported operator the whole segment vanished and the
+  // credential rules went blind. cwd is a real workspace on purpose — under /tmp the critical-path
+  // rule fires first and hides exactly this regression.
+  it.each([
+    ['rm -rf ~/.ssh/id_rsa < README.md', 'deny', '递归删除凭据路径'],
+    ['rm -rf ~/.ssh/id_rsa <<< x', 'deny', '递归删除凭据路径'],
+    ['rm -rf ~/.ssh/id_rsa <<EOF', 'deny', '递归删除凭据路径'],
+    ['cat < ~/.ssh/id_rsa', 'ask', '读取凭据路径'],
+    ['wc -l < README.md', 'approve', '安全命令'],
+    // Round 17: operators the parser does not structure (`>|`, `case … ;;`, subshells) fail the strict
+    // parse; the deny rules then read the lenient token view instead of an empty one.
+    ['rm -rf ~/.ssh/id_rsa >| run.log', 'deny', '递归删除凭据路径'],
+    ['case x in a) rm -rf ~/.ssh/id_rsa;; esac', 'deny', '递归删除凭据路径'],
+    ['rm -rf ~/.ssh/id_rsa; ls >| x', 'deny', '递归删除凭据路径'],
+    ['(rm -rf ~/.ssh/id_rsa)', 'deny', '递归删除凭据路径'],
+    ['ls >| out.txt', 'ask', '命令无法可靠解析'],
+    // Round 18: an operand spelled through $HOME is uncertain to the parser but not to the path
+    // resolver; dropping it from the credential scan let this read through as a safe command.
+    ['cat < "$HOME/.ssh/id_rsa"', 'ask', '读取凭据路径'],
+    ['cat < $HOME/.ssh/id_rsa', 'ask', '读取凭据路径'],
+    ['echo x > "$HOME/.aws/credentials"', 'ask', '读取凭据路径'],
+    ['wc -l < "$HOME/notes.txt"', 'approve', '安全命令'],
+  ] as const)('a failed strict parse never empties the words the deny rules read: %s', async (command, decision, reason) => {
+    const result = await classifyPermission(
+      'bash',
+      { command },
+      { workingDirectory: process.cwd(), permissionLevel: 'execute' },
+    );
+    expect(result.decision).toBe(decision);
+    expect(result.reason).toContain(reason);
+  });
+
+  it('keeps the specific credential-path ask ahead of the generic redirection ask', async () => {
+    const result = await classifyPermission(
+      'bash',
+      { command: 'echo x >> ~/.aws/credentials' },
+      { workingDirectory: '/tmp', permissionLevel: 'execute' },
+    );
+    expect(result).toMatchObject({ decision: 'ask', trustBoundary: true });
+    expect(result.reason).toContain('凭据路径');
   });
 
   it('auto-approves internal delegation tools', async () => {

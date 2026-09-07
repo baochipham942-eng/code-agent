@@ -2,7 +2,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, chmodSync 
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Case, Row } from '../../scripts/nightly/contracts';
+import { feedbackFingerprint, type Case, type Row } from '../../scripts/nightly/contracts';
 import { captureReferencesAndFeedback, feedback } from '../../scripts/nightly/report';
 import {
   evaluateEmptyCaseCheck1,
@@ -124,6 +124,15 @@ describe('nightly durable feedback deduplication', () => {
     expect(readFileSync(items[0].path, 'utf8')).toContain('second-longer');
     items[0].state = '已修'; expect(run('third').fb).toBe('FB-2');
     expect(run('mutation', true).fb).toBe('FB-3'); expect(added).toBe(3);
+  });
+  it('fingerprints only failed assertions: run ids and passing-check drift never fork the key', () => {
+    const failedRow = (runId: string): Row => ({ id: spec.id, runId, status: '失败', reasons: [], checks: [{ status: '失败', detail: 'user=1 observed 5' }, { status: '通过', detail: '费用=$0.01（账本，source=catalog）' }, { status: '通过', detail: 'render' }], files: {}, frames: [] });
+    const drifted = failedRow('run-b'); drifted.checks[1].detail = '费用=$0.09（账本，source=catalog+estimate）';
+    expect(feedbackFingerprint(drifted, spec.hash, false)).toBe(feedbackFingerprint(failedRow('run-a'), spec.hash, false));
+    const otherAssertion = failedRow('run-c'); otherAssertion.checks = [{ status: '通过', detail: 'user=2 observed 5' }, { status: '失败', detail: 'user=1 observed 5' }, { status: '通过', detail: 'render' }];
+    expect(feedbackFingerprint(otherAssertion, spec.hash, false)).not.toBe(feedbackFingerprint(failedRow('run-a'), spec.hash, false));
+    expect(feedbackFingerprint(failedRow('run-a'), 'drifted-case-hash', false)).not.toBe(feedbackFingerprint(failedRow('run-a'), spec.hash, false));
+    expect(feedbackFingerprint(failedRow('run-a'), spec.hash, true)).not.toBe(feedbackFingerprint(failedRow('run-a'), spec.hash, false));
   });
   it('refuses feedback for a precondition skip', () => {
     const row: Row = { id: spec.id, runId: 'skip', status: '未执行', reasons: ['environment'], checks: [], files: {}, frames: [] };

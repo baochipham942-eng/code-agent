@@ -1,6 +1,7 @@
 import type { Message } from '@shared/contract';
 import type { TraceNode, TraceProjection, TraceTurn } from '@shared/contract/trace';
 import type { StreamingMessageDelta } from '../stores/streamingMessageAccumulatorStore';
+import { remainingAssistantStreamDelta } from './assistantStreamDelta';
 import { measureStreamingPerformanceTiming } from './streamingPerformanceMetrics';
 
 export function applyStreamingMessageDeltasToProjection(
@@ -40,10 +41,16 @@ export function applyStreamingMessageDeltasToProjection(
       // 贴底视觉由 TurnCard 的稳定状态槽位承担。
       if (entry.reasoningDelta) {
         const target = nextNodes[nodeIndex];
-        nextNodes[nodeIndex] = {
-          ...target,
-          reasoning: (target.reasoning || '') + entry.reasoningDelta,
-        };
+        const remainingReasoning = remainingAssistantStreamDelta(
+          target.reasoning || '',
+          entry.reasoningDelta,
+        );
+        if (remainingReasoning) {
+          nextNodes[nodeIndex] = {
+            ...target,
+            reasoning: (target.reasoning || '') + remainingReasoning,
+          };
+        }
       }
 
       // contentDelta 尾置（2026-07-21 追加，思路同上方 reasoningDelta）：多段
@@ -53,8 +60,12 @@ export function applyStreamingMessageDeltasToProjection(
       // assistant_text 节点」（即已落账的最新段），身后仍有节点时改落轮尾 live 节点。
       const contentLiveNodeId = getContentLiveNodeId(messageId);
       const contentLiveNodeIndex = nextNodes.findIndex((node) => node.id === contentLiveNodeId);
+      const remainingContent = remainingAssistantStreamDelta(
+        concatenatedAssistantText(nextNodes, messageId, nodeIndex),
+        entry.contentDelta,
+      );
       let contentTargetIndex = -1;
-      if (entry.contentDelta) {
+      if (remainingContent) {
         if (contentLiveNodeIndex >= 0) {
           contentTargetIndex = contentLiveNodeIndex;
         } else {
@@ -76,9 +87,9 @@ export function applyStreamingMessageDeltasToProjection(
           }
         }
       }
-      if (entry.contentDelta && contentTargetIndex >= 0) {
+      if (remainingContent && contentTargetIndex >= 0) {
         const target = nextNodes[contentTargetIndex];
-        nextNodes[contentTargetIndex] = { ...target, content: target.content + entry.contentDelta };
+        nextNodes[contentTargetIndex] = { ...target, content: target.content + remainingContent };
       }
       return { ...turn, nodes: nextNodes };
     });
@@ -98,13 +109,18 @@ export function applyStreamingMessageDeltasToProjection(
       continue;
     }
 
+    const remainingContent = remainingAssistantStreamDelta(message.content || '', entry.contentDelta);
+    const remainingReasoning = remainingAssistantStreamDelta(message.reasoning || '', entry.reasoningDelta);
+    if (!remainingContent && !remainingReasoning) {
+      continue;
+    }
     const targetTurn = turns[targetTurnIndex];
     const syntheticNode: TraceNode = {
       id: nodeId,
       type: 'assistant_text',
-      content: entry.contentDelta,
+      content: remainingContent ? entry.contentDelta : '',
       timestamp: message.timestamp,
-      reasoning: entry.reasoningDelta || message.reasoning,
+      reasoning: remainingReasoning ? (entry.reasoningDelta || message.reasoning) : message.reasoning,
       thinking: message.thinking,
       artifacts: message.artifacts,
       metadata: message.metadata,
@@ -140,6 +156,23 @@ function findLastAssistantTextIndexForMessage(nodes: TraceNode[], messageId: str
     }
   }
   return -1;
+}
+
+function concatenatedAssistantText(nodes: TraceNode[], messageId: string, fallbackIndex: number): string {
+  const parts: string[] = [];
+  for (const node of nodes) {
+    if (node.type !== 'assistant_text') continue;
+    if (
+      node.messageId === messageId
+      || node.id === `${messageId}-text`
+      || node.id.startsWith(`${messageId}-text-`)
+      || node.id === `${messageId}-content-live`
+    ) {
+      parts.push(node.content);
+    }
+  }
+  if (parts.length > 0) return parts.join('');
+  return nodes[fallbackIndex]?.content ?? '';
 }
 
 function getTargetTurnIndex(projection: TraceProjection, turns: TraceTurn[]): number {

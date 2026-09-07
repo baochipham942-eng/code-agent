@@ -17,6 +17,7 @@ import {
   SdkError,
   SdkErrorCode,
   SdkHttpError,
+  type FetchLike,
 } from '@modelcontextprotocol/client';
 
 import {
@@ -27,6 +28,7 @@ import {
   resolveMCPProxyUrl,
   retryTransientRemoteMCPConnection,
 } from '../../../src/host/mcp/mcpTransport';
+import { createConnectorOAuthFetch } from '../../../src/host/connectors/oauth/oauthFetch';
 
 describe('mcpTransport remote connection retry', () => {
   beforeEach(() => {
@@ -168,6 +170,7 @@ describe('mcpTransport remote connection retry', () => {
           headers: { Authorization: 'Bearer test-token-abc' },
         },
         eventSourceInit: {},
+        fetch: expect.any(Function),
       },
     );
   });
@@ -185,6 +188,7 @@ describe('mcpTransport remote connection retry', () => {
       new URL('https://mcp.example.com/sse'),
       {
         eventSourceInit: {},
+        fetch: expect.any(Function),
       },
     );
   });
@@ -205,6 +209,7 @@ describe('mcpTransport remote connection retry', () => {
         requestInit: {
           headers: { Authorization: 'Bearer test-token-abc' },
         },
+        fetch: expect.any(Function),
       },
     );
   });
@@ -225,6 +230,7 @@ describe('mcpTransport remote connection retry', () => {
       new URL('https://mcp.example.com/mcp'),
       {
         requestInit: {},
+        fetch: expect.any(Function),
         authProvider,
       },
     );
@@ -243,6 +249,7 @@ describe('mcpTransport remote connection retry', () => {
       new URL('https://mcp.example.com/mcp'),
       {
         requestInit: {},
+        fetch: expect.any(Function),
       },
     );
   });
@@ -262,6 +269,7 @@ describe('mcpTransport remote connection retry', () => {
       new URL('https://mcp.example.com/sse'),
       {
         eventSourceInit: {},
+        fetch: expect.any(Function),
       },
     );
   });
@@ -288,8 +296,117 @@ describe('mcpTransport remote connection retry', () => {
         requestInit: {
           headers: { 'X-Trace': 'trace-id' },
         },
+        fetch: expect.any(Function),
         authProvider,
       },
     );
+  });
+});
+
+describe('createRemoteMCPFetch OAuth timeout', () => {
+  beforeEach(() => {
+    transportMocks.sseClientTransport.mockClear();
+    transportMocks.streamableHTTPClientTransport.mockClear();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('bounds OAuth outbound with a timeout abort even on the first connect (no proxy)', async () => {
+    // 首连（useProxy=false，对应 attemptNumber=1）注入的 fetch 也必须给 OAuth 出站加超时：
+    // 假 fetch 永不 resolve，只有超时 abort 能让它失败，且失败原因沿用 oauthFetch 的中文句式。
+    const stalledFetchSignals: AbortSignal[] = [];
+    const stalledFetch: FetchLike = (_url, init) => new Promise<Response>((_resolve, reject) => {
+      stalledFetchSignals.push(init?.signal as AbortSignal);
+      init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), { once: true });
+    });
+    vi.stubGlobal('fetch', vi.fn());
+
+    createTransport({
+      name: 'first-connect-oauth',
+      type: 'http-streamable',
+      serverUrl: 'https://mcp.example.com/mcp',
+      enabled: true,
+      auth: 'oauth',
+    }, {
+      useProxy: false,
+      oauthFetch: createConnectorOAuthFetch({ env: {}, timeoutMs: 10, directFetch: stalledFetch }),
+    });
+
+    expect(transportMocks.streamableHTTPClientTransport).toHaveBeenCalledTimes(1);
+    const transportOptions = transportMocks.streamableHTTPClientTransport.mock.calls[0][1] as { fetch: FetchLike };
+
+    await expect(transportOptions.fetch('https://auth.example.com/token', { method: 'POST' }))
+      .rejects.toThrow('连接 auth.example.com 超过 1 秒没有响应');
+    expect(stalledFetchSignals).toHaveLength(1);
+    expect(stalledFetchSignals[0].aborted).toBe(true);
+  });
+
+  it('keeps signal-carrying session requests off the OAuth timeout path', async () => {
+    // 会话流量（initialize POST、Streamable GET 长流、SSE 流）带 abort signal，不允许叠加
+    // 响应截止时间：signal 必须原样透传（同一实例、未被 AbortSignal.any 包装）。
+    const sessionFetch = vi.fn(async () => new Response('ok'));
+    const oauthFetch = vi.fn(async () => new Response('{}'));
+    vi.stubGlobal('fetch', sessionFetch);
+
+    createTransport({
+      name: 'session-stream',
+      type: 'http-streamable',
+      serverUrl: 'https://mcp.example.com/mcp',
+      enabled: true,
+    }, { useProxy: false, oauthFetch });
+
+    const transportOptions = transportMocks.streamableHTTPClientTransport.mock.calls[0][1] as { fetch: FetchLike };
+    const controller = new AbortController();
+
+    await transportOptions.fetch('https://mcp.example.com/mcp', {
+      method: 'GET',
+      signal: controller.signal,
+    });
+
+    expect(sessionFetch).toHaveBeenCalledTimes(1);
+    const firstCall = sessionFetch.mock.calls[0] as unknown as [string, RequestInit | undefined];
+    expect(firstCall[0]).toBe('https://mcp.example.com/mcp');
+    expect(firstCall[1]?.signal).toBe(controller.signal);
+    expect(controller.signal.aborted).toBe(false);
+    expect(oauthFetch).not.toHaveBeenCalled();
+  });
+
+  it('routes signal-less OAuth outbound through the bounded OAuth fetch unchanged', async () => {
+    const oauthFetch = vi.fn(async () => new Response('{}'));
+    createTransport({
+      name: 'oauth-discovery',
+      type: 'http-streamable',
+      serverUrl: 'https://mcp.example.com/mcp',
+      enabled: true,
+    }, { useProxy: false, oauthFetch });
+    const transportOptions = transportMocks.streamableHTTPClientTransport.mock.calls[0][1] as { fetch: FetchLike };
+
+    await transportOptions.fetch('https://auth.example.com/.well-known/oauth-protected-resource');
+    expect(oauthFetch).toHaveBeenCalledTimes(1);
+    expect(oauthFetch).toHaveBeenCalledWith(
+      'https://auth.example.com/.well-known/oauth-protected-resource',
+      undefined,
+    );
+  });
+
+  it('preserves wrapped network TypeError so SDK discovery can retry via proxy', async () => {
+    const networkError = new TypeError('fetch failed');
+    Object.assign(networkError, { cause: Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' }) });
+    const oauthFetch = vi.fn(async () => {
+      throw new Error('无法连接 auth.example.com：fetch failed', { cause: networkError });
+    });
+    createTransport({
+      name: 'oauth-reset',
+      type: 'http-streamable',
+      serverUrl: 'https://mcp.example.com/mcp',
+      enabled: true,
+    }, { useProxy: false, oauthFetch });
+    const transportOptions = transportMocks.streamableHTTPClientTransport.mock.calls[0][1] as { fetch: FetchLike };
+
+    await expect(transportOptions.fetch('https://auth.example.com/.well-known/oauth-protected-resource'))
+      .rejects.toBe(networkError);
+    expect(isRetryableRemoteMCPConnectionError(networkError)).toBe(true);
   });
 });

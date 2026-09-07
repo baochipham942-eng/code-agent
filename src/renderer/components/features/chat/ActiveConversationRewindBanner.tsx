@@ -33,7 +33,7 @@ export const ActiveConversationRewindBanner: React.FC<ActiveConversationRewindBa
   const [activeRewindId, setActiveRewindId] = useState<string | null>(null);
   const [anchorExcerpt, setAnchorExcerpt] = useState<string | null>(null);
   const [isRestoring, setIsRestoring] = useState(false);
-  const [phase, setPhase] = useState<'open' | 'done'>('open');
+  const [phase, setPhase] = useState<'open' | 'done' | 'partial'>('open');
   const dismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // 取活跃 rewind id + 锚点提示词摘录。新语义下锚点保持可见且是投影里最后一条
@@ -129,13 +129,14 @@ export const ActiveConversationRewindBanner: React.FC<ActiveConversationRewindBa
       );
       if (currentSessionIdRef.current !== expectedSessionId) return;
       onRestored(result);
-      if (result.state !== 'success') {
-        return;
-      }
       try {
         const next = await readActiveRewind(expectedSessionId);
         if (currentSessionIdRef.current !== expectedSessionId) return;
-        if (next.rewindId && next.rewindId !== expectedRewindId) {
+        if (next.rewindId === expectedRewindId) {
+          setPhase('open');
+          return;
+        }
+        if (next.rewindId) {
           setActiveRewindId(next.rewindId);
           setAnchorExcerpt(next.excerpt);
           setPhase('open');
@@ -146,6 +147,10 @@ export const ActiveConversationRewindBanner: React.FC<ActiveConversationRewindBa
         if (currentSessionIdRef.current !== expectedSessionId) return;
       }
       if (currentSessionIdRef.current !== expectedSessionId) return;
+      if (result.state !== 'success') {
+        setPhase('partial');
+        return;
+      }
       setPhase('done');
       if (dismissTimerRef.current) clearTimeout(dismissTimerRef.current);
       dismissTimerRef.current = setTimeout(() => {
@@ -175,15 +180,19 @@ export const ActiveConversationRewindBanner: React.FC<ActiveConversationRewindBa
       <div className={`mx-auto flex w-full max-w-3xl items-center gap-2 rounded-lg border px-3 py-2 text-xs ${
         phase === 'done'
           ? 'border-emerald-800/50 bg-emerald-950/20 text-zinc-300'
-          : 'border-badge-warning/60 bg-amber-950/30 text-zinc-300'
+          : phase === 'partial'
+            ? 'border-amber-800/50 bg-amber-950/20 text-zinc-300'
+            : 'border-badge-warning/60 bg-amber-950/30 text-zinc-300'
       }`}>
         <History className={`h-3.5 w-3.5 shrink-0 ${phase === 'done' ? 'text-badge-success' : 'text-badge-warning'}`} />
         <span className="min-w-0 flex-1 truncate">
           {phase === 'done'
             ? t.chat.rewindUndoDone
-            : anchorExcerpt
-              ? t.chat.rewindSuccessWithPrompt.replace('{prompt}', anchorExcerpt)
-              : t.chat.rewindSuccess}
+            : phase === 'partial'
+              ? t.chat.turnCheckoutNoteRedoPartial
+              : anchorExcerpt
+                ? t.chat.rewindSuccessWithPrompt.replace('{prompt}', anchorExcerpt)
+                : t.chat.rewindSuccess}
         </span>
         {phase === 'open' && (
           <button /* ds-allow:button: 横幅右端的紧凑内联恢复动作，Button primitive 的标准尺寸/形状不适配横幅布局 */

@@ -155,14 +155,15 @@ export class TelemetryCollector {
     // 占位会把真标题砸回快照。
     let title = config.title || 'Untitled';
     try {
-      const existing = this.storage.getSession(sessionId);
-      if (existing?.title?.trim()) {
-        title = existing.title;
+      // 已命名的 sessions.title 优先（含云端直写、首轮前改名）；否则才保既有遥测标题，
+      // 避免入口占位 INSERT OR REPLACE 把真标题砸回 CLI Session / 前 80 字。
+      const db = this.storage.dbOverride ?? getDatabase().getDb();
+      const live = db ? readNamedChatTitle(db, sessionId) : null;
+      if (live) {
+        title = live;
       } else {
-        // 首次建行：改名发生在遥测行出现之前（UPDATE 是空操作），读 sessions 当前真标题。
-        const db = this.storage.dbOverride ?? getDatabase().getDb();
-        const live = db ? readNamedChatTitle(db, sessionId) : null;
-        if (live) title = live;
+        const existing = this.storage.getSession(sessionId);
+        if (existing?.title?.trim()) title = existing.title;
       }
     } catch (error) {
       // 既有行读不到（DB 不可用 / sessions 表未建）按入口占位走，行为与旧版一致但留痕

@@ -743,8 +743,13 @@ export class AgentOrchestrator {
     } finally {
       if (sessionId) {
         sessionStateManager.updateStatus(sessionId, 'idle');
-        // N-TELEMETRY-SESSION-TITLE-STALE：标题同步收口到 SessionManager.updateSession
-        // （改名/自动起标题的统一写路径），这里不再做 turn 末 best-effort 二次同步。
+        // 云端同步直写 db.updateSession，绕过 SM 钩子；轮末把 sessions 真标题补进遥测。
+        try {
+          const session = await getSessionManager().getSession(sessionId);
+          if (session?.title && session.title !== 'New Chat' && session.title !== '新对话' && !session.title.startsWith('Session ')) {
+            getTelemetryCollector().updateSessionTitle(sessionId, session.title);
+          }
+        } catch { /* ignore - title sync is best effort */ }
         try {
           const sessionData = getTelemetryCollector().getSessionData(sessionId);
           if (sessionData && (sessionData.totalInputTokens > 0 || sessionData.totalOutputTokens > 0)) {

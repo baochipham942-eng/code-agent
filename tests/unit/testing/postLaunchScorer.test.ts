@@ -41,7 +41,7 @@ const ALL_PASS = JSON.stringify({
 
 function db(): Database.Database {
   const database = new Database(':memory:');
-  // 真机上两套表同库：报告只读遥测列，但 sessions 行还建着（钉住「有也不兜底」的读侧契约）。
+  // 真机上两套表同库：芯片优先 sessions.title（过 guard），空白时回落遥测快照。
   applySchema(database, LOGGER);
   applyTelemetrySchema(database, LOGGER);
   return database;
@@ -61,7 +61,7 @@ function insertSession(
   `).run(id, title, startTime, sessionType, originKind);
 }
 
-/** 会话主表那一行（模型自动起的标题写在这里；遥测列由写路径同步，读侧不兜底）。 */
+/** 会话主表那一行（模型自动起的标题写在这里；芯片优先读它）。 */
 function insertChatSession(database: Database.Database, id: string, title: string): void {
   database.prepare(`
     INSERT INTO sessions (id, title, model_provider, model_name, session_type, created_at, updated_at)

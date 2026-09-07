@@ -126,6 +126,25 @@ describe('TelemetryCollector.startSession 标题保真', () => {
     expect(collector.getSessionData('s-named')?.title).toBe('用户先改的名字');
   });
 
+  it('续跑：sessions 已改名时覆盖旧遥测标题（云端直写不走 SM 钩子）', () => {
+    db.prepare(
+      'INSERT INTO telemetry_sessions (id, title, model_provider, model_name, working_directory, start_time, status) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    ).run('s-cloud', 'CLI Session', 'deepseek', 'deepseek-chat', '/ws', 1, 'completed');
+    db.prepare(`
+      INSERT INTO sessions (id, title, model_provider, model_name, session_type, created_at, updated_at)
+      VALUES (?, ?, 'deepseek', 'deepseek-chat', 'chat', 0, 0)
+    `).run('s-cloud', '云端同步来的真标题');
+
+    collector.startSession('s-cloud', {
+      title: 'CLI Session',
+      modelProvider: 'deepseek',
+      modelName: 'deepseek-chat',
+      workingDirectory: '/ws',
+    });
+
+    expect(storedTitle(db, 's-cloud')).toBe('云端同步来的真标题');
+  });
+
   it('首次建行：sessions 仍是 New Chat 时保留入口快照', () => {
     db.prepare(`
       INSERT INTO sessions (id, title, model_provider, model_name, session_type, created_at, updated_at)

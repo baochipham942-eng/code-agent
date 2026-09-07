@@ -196,6 +196,24 @@ describe('shared shell command parser', () => {
     });
   });
 
+  // Round 35: `-l` takes a value on GNU but is a bare flag on BSD — an unresolvable arity
+  // conflict must fail closed whenever an in-place marker exists anywhere in argv; a truncated
+  // scan can never prove `-i` is absent (`sed -H -i '' …` still rewrites the file on BSD).
+  it.each([
+    "sed -l -i '' -e 's/x/y/' src/x.ts",
+    "sed -i.bak -l 80 's/x/y/' src/x.ts",
+  ])('fails closed when in-place sed carries an option of unresolvable arity: %s', (command) => {
+    expect(parseShellCommand(command)).toMatchObject({ parsingFailed: true });
+  });
+
+  it('reads BSD sed -H as a flag and keeps the in-place target', () => {
+    // macOS sed documents -H (enhanced regex); BSD probe: `sed -H -i '' -e 's/x/y/' f` rewrites f.
+    expect(parseShellCommand("sed -H -i '' -e 's/x/y/' src/x.ts")).toMatchObject({
+      parsingFailed: false,
+      writeTargets: [expect.objectContaining({ path: 'src/x.ts' })],
+    });
+  });
+
   it.each([
     'MODE=1 tee src/x.ts',
     'A=1 B=2 tee src/x.ts',

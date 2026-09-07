@@ -338,6 +338,40 @@ describe('PermissionClassifier', () => {
       expect(result.decision).toBe('approve');
     });
 
+    // 第 35 轮：`&` 后台化的是整个 AND/OR 列表，不是紧随其前的单段——`cd /tmp && env & …` 里
+    // cd 也在子 shell 跑，父 shell cwd 不动（真 bash 探针：`cd /tmp && env & pwd` 印出家目录）。
+    // 链尾是 `|` 不算：`a && b | c` 只把 `b | c` 放进管道，cd 仍在父 shell 推进。
+    it.each([
+      'cd /tmp && env & cat .ssh/id_rsa',
+      'cd /tmp || env & cat .ssh/id_rsa',
+    ])('asks for the credential read when the whole AND/OR list is backgrounded: %s', async (command) => {
+      const result = await classifyPermission('bash', { command }, homeContext);
+
+      expect(result.decision).toBe('ask');
+      expect(result.reason).toContain('凭据路径');
+      expect(result.reason).toContain(path.join(os.homedir(), '.ssh/id_rsa'));
+    });
+
+    it('still advances the cwd when the && chain ends in a pipeline', async () => {
+      const result = await classifyPermission(
+        'bash', { command: 'cd /tmp && env | cat .ssh/id_rsa' }, homeContext,
+      );
+
+      expect(result.decision).toBe('approve');
+    });
+
+    it('approves the backgrounded-list shape under a /tmp cwd — the read is genuinely there', async () => {
+      // 与 `cd /tmp; cat .ssh/id_rsa` 同例：父 shell cwd 是 /tmp 时相对路径就在 /tmp 下，
+      // 够不着家目录凭据；基线因 `env &` 复合段一律 ask，属过拦，不随它收严。
+      const result = await classifyPermission(
+        'bash',
+        { command: 'cd /tmp && env & cat .ssh/id_rsa' },
+        { workingDirectory: '/tmp', workspaceRoot: '/tmp/comate-zulu-demo', permissionLevel: 'execute' },
+      );
+
+      expect(result.decision).toBe('approve');
+    });
+
     // 第 33 轮审查：`||` 链结束后 cd 成功那支的 cwd 已经变了，后续段按移动后的 cwd 解析
     // （与基线一致；两个 cwd 都查会更严，本刀不做，记证据档）。heredoc 正文是其命令的
     // stdin：严格解析失败，deny/ask 规则退回 lenient 词扫描，凭据路径落在原 cwd 上。

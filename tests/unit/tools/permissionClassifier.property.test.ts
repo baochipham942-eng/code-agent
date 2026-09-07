@@ -282,6 +282,11 @@ const KNOWN_SHAPES = [
   'tee -- ~/.ssh/id_rsa',
   "sed -i.bak -e's/x/y/' ~/.aws/credentials",
   'mv -- source.txt ~/.ssh/authorized_keys',
+  // Round 35 (`cd /tmp && env & cat .ssh/id_rsa` — `&` backgrounds the whole AND/OR list, cd
+  // included) is deliberately not in KNOWN_SHAPES: the never-looser net is cwd-agnostic, but this
+  // family legitimately diverges per cwd — home cwd must ask (unit tests pin it), /tmp cwd rightly
+  // approves (the relative path then lives under /tmp, same as the pinned `cd /tmp; cat …`
+  // approve), while the baseline over-asks everywhere on the `env &` compound segment.
 ];
 
 // Under /tmp the critical-path rm rule fires before anything else and masks weaker rules; a real

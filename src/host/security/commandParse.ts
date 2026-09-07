@@ -574,12 +574,15 @@ const SED_SCRIPT_VALUE_OPTIONS: ReadonlySet<string> = new Set([
   '-e', '--expression', '-f', '--file',
 ]);
 const SED_VALUE_OPTIONS: ReadonlySet<string> = new Set([
-  ...SED_SCRIPT_VALUE_OPTIONS, '-l', '--line-length',
+  ...SED_SCRIPT_VALUE_OPTIONS, '--line-length',
 ]);
+// `-l` takes a value on GNU but is a bare flag on BSD (line-buffered output) — an unresolvable
+// arity conflict, so it stays unknown and fails closed. `-H` (BSD enhanced regex) is a flag; GNU
+// rejects it outright, which can only error the command, never hide a write.
 const SED_BOOLEAN_OPTIONS: ReadonlySet<string> = new Set([
   '-n', '--quiet', '--silent', '-r', '-E', '--regexp-extended', '-s', '--separate', '-u',
-  '--unbuffered', '-z', '--null-data', '-b', '--binary', '-c', '--copy', '-a', '--posix', '--sandbox',
-  '--debug', '--follow-symlinks', '--help', '--version',
+  '--unbuffered', '-z', '--null-data', '-b', '--binary', '-c', '--copy', '-a', '-H', '--posix',
+  '--sandbox', '--debug', '--follow-symlinks', '--help', '--version',
 ]);
 // GNU `-iSUFFIX` and BSD `-i`/`-I` take the backup suffix only attached or bare; the bare form must
 // not consume the next word (that word is the script on GNU: `sed -i 's/x/y/' f`).
@@ -587,11 +590,18 @@ const SED_IN_PLACE_OPTIONS: ReadonlySet<string> = new Set(['-i', '-I', '--in-pla
 
 function sedTargets(args: string[]): WriteTargetExtraction {
   const scan = scanArgv(args, SED_VALUE_OPTIONS, SED_BOOLEAN_OPTIONS, SED_IN_PLACE_OPTIONS);
+  if (scan.failed) {
+    // A truncated scan cannot prove the absence of in-place editing: `sed -H -i '' …` fails at
+    // `-H` yet still rewrites the file on BSD. Only an argv with no in-place marker anywhere is
+    // certainly write-free — an option sed cannot parse aborts it before any write on GNU and BSD.
+    const hasInPlaceMarker = args.some((arg) => /^--in-place(?:=|$)/.test(arg)
+      || (/^-[^-]/.test(arg) && /[iI]/.test(arg.slice(1))));
+    return hasInPlaceMarker ? { targets: [], failed: `sed ${scan.failed}` } : { targets: [] };
+  }
   const backupSuffixes = scan.entries.flatMap((entry) => entry.kind === 'value'
     && SED_IN_PLACE_OPTIONS.has(entry.option) ? [entry.value] : []);
-  // Without in-place editing sed writes only stdout; a scan failure there cannot hide a write.
+  // Without in-place editing sed writes only stdout; nothing can hide a write.
   if (backupSuffixes.length === 0) return { targets: [] };
-  if (scan.failed) return { targets: [], failed: `sed ${scan.failed}` };
   const backupSuffix = backupSuffixes.at(-1) ?? '';
 
   let scriptSeen = scan.entries.some((entry) => entry.kind === 'value'
@@ -1022,6 +1032,18 @@ function qualifySegments(command: string): ShellExecution[] | null {
  * Consumers deciding whether a command may skip approval must use this view;
  * write-target consumers must continue using parseShellCommand().executions.
  */
+/**
+ * The operator closing the AND/OR list the segment at `index` belongs to. `&` and `|&` background
+ * the entire list — a `cd` inside `cd /tmp && env & …` runs in the subshell and must not move the
+ * parent shell's cwd — while a chain closed by `|` pipelines only the last pipeline, so the cd in
+ * `a && b | c` still runs in the parent.
+ */
+export function listTerminatorAfter(terminators: SegmentTerminator[], index: number): SegmentTerminator {
+  let chainEnd = index;
+  while (terminators[chainEnd] === '&&' || terminators[chainEnd] === '||') chainEnd += 1;
+  return terminators[chainEnd] ?? null;
+}
+
 export function qualificationExecutions(command: string): ShellExecution[] | null {
   return qualifySegments(command);
 }

@@ -15,18 +15,18 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 import type { DecisionStep } from '../../shared/contract/decisionTrace';
 import {
-  createHostReason,
-  HostReasonCode,
+  createHostReason, HostReasonCode,
   type HostReasonPayload,
 } from '../../shared/contract/permission';
 import { createTraceStep } from '../security/decisionTraceBuilder';
 import {
-  commandWords as tokenizeCommandWords,
-  isKnownSafeCommand,
+  commandWords as tokenizeCommandWords, isKnownSafeCommand,
   splitCompoundCommand,
 } from '../security/commandSafety';
 import { canonicalizeCommand } from '../security/canonicalizeCommand';
-import { lenientCommandWords, parseShellCommand, type SegmentTerminator } from '../security/commandParse';
+import {
+  lenientCommandWords, listTerminatorAfter, parseShellCommand, type SegmentTerminator,
+} from '../security/commandParse';
 import { RM_FLAGS_REQUIRED, RM_HEAD } from '../security/rmFlagPattern';
 import { checkCommandPolicy } from './modules/shell/commandPolicy';
 import { inspectPermissionCommand, neverApprove } from './permissionCommandParse';
@@ -74,10 +74,7 @@ export interface ClassificationResult {
   riskUnknown?: boolean;
 }
 
-function classificationHostReason(
-  result: ClassificationResult,
-  toolName: string,
-): ClassificationResult {
+function classificationHostReason(result: ClassificationResult, toolName: string): ClassificationResult {
   if (result.hostReason) return result;
   const code = result.decision === 'approve'
     ? HostReasonCode.PermissionClassifierAllowed
@@ -415,9 +412,8 @@ function readPathCandidates(toolName: string, args: Record<string, unknown>): st
 }
 
 function contextAfterCdSegment(
-  segment: string,
-  context: ClassificationContext,
-  terminator: SegmentTerminator = null,
+  segment: string, context: ClassificationContext,
+  terminators: SegmentTerminator[], segmentIndex: number,
 ): ClassificationContext | null {
   const words = commandWords(segment);
   if (commandProgram(words[0]) !== 'cd') return null;
@@ -426,7 +422,10 @@ function contextAfterCdSegment(
   // the chain ends the cd-succeeded outcome has already moved the shell — of the two possible
   // cwds only the moved one is reconstructable here, and it is the one the baseline resolves
   // against. Checking both cwds would be stricter still; deliberately not done (round 33).
-  if (terminator !== null && ![';', '&&', '||', '\n'].includes(terminator)) return null;
+  if (![null, ';', '&&', '||', '\n'].includes(terminators[segmentIndex] ?? null)) return null;
+  // Round 35: `&` backgrounds the whole AND/OR list, cd included (`cd /tmp && env & …`).
+  const listEnd = listTerminatorAfter(terminators, segmentIndex);
+  if (listEnd === '&' || listEnd === '|&') return null;
 
   const args = words.slice(1);
   const separator = args.indexOf('--');
@@ -461,7 +460,7 @@ export function bashCommandRequiresPermission(
       pathResolutionCache: new Map(),
     };
     return segments.some((segment, index) => {
-      const advancedContext = contextAfterCdSegment(segment, segmentContext, terminators[index]);
+      const advancedContext = contextAfterCdSegment(segment, segmentContext, terminators, index);
       if (advancedContext) {
         segmentContext = advancedContext;
         return false;
@@ -861,7 +860,7 @@ export class PermissionClassifier {
     let segmentContext = context;
     let executableSegmentCount = 0;
     for (const [index, segment] of segments.entries()) {
-      const advancedContext = contextAfterCdSegment(segment, segmentContext, terminators[index]);
+      const advancedContext = contextAfterCdSegment(segment, segmentContext, terminators, index);
       if (advancedContext) {
         segmentContext = advancedContext;
         continue;

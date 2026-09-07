@@ -9,6 +9,7 @@ import type BetterSqlite3 from 'better-sqlite3';
 import { SessionRepository } from '../../../src/host/services/core/repositories/SessionRepository';
 import { findLatestExpertThreadSession } from '../../../src/host/services/core/repositories/sessionRepositoryExpertThread';
 import type { Session } from '../../../src/shared/contract/session';
+import { applyTestSessionSchema } from '../../utils/applyTestSessionSchema';
 
 vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
@@ -20,48 +21,7 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
 }));
 
 function createSchema(db: BetterSqlite3.Database): void {
-  db.exec(`
-      CREATE TABLE sessions (
-        id TEXT PRIMARY KEY,
-        user_id TEXT,
-        title TEXT NOT NULL,
-      model_provider TEXT NOT NULL,
-      model_name TEXT NOT NULL,
-      working_directory TEXT,
-      project_id TEXT,
-      session_type TEXT NOT NULL DEFAULT 'chat',
-      origin TEXT,
-      metadata TEXT,
-      parent_session_id TEXT,
-      source_run_id TEXT,
-      agent_engine TEXT,
-      read_only INTEGER NOT NULL DEFAULT 0,
-      retry_of_session_id TEXT,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL,
-      workspace TEXT,
-      workbench_provenance TEXT,
-      status TEXT DEFAULT 'idle',
-      memory_mode TEXT NOT NULL DEFAULT 'auto',
-      suppressed_memory_entry_ids TEXT NOT NULL DEFAULT '[]',
-      last_token_usage TEXT,
-      is_deleted INTEGER NOT NULL DEFAULT 0,
-      synced_at INTEGER,
-      git_branch TEXT
-    );
-
-    CREATE TABLE messages (
-      id TEXT PRIMARY KEY,
-      session_id TEXT NOT NULL,
-      role TEXT NOT NULL,
-      content TEXT NOT NULL DEFAULT '',
-      timestamp INTEGER NOT NULL DEFAULT 0,
-      is_meta INTEGER NOT NULL DEFAULT 0,
-      visibility TEXT NOT NULL DEFAULT 'active',
-      author_user_id TEXT,
-      synced_at INTEGER
-    );
-  `);
+  applyTestSessionSchema(db);
 }
 
 function makeSession(overrides: Partial<Session> = {}): Session {

@@ -1,4 +1,5 @@
 import { applyTestTelemetrySchema } from '../../utils/telemetrySchema';
+import { applyTestSessionSchema } from '../../utils/applyTestSessionSchema';
 import { execFile } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -74,16 +75,11 @@ describe('session correlation join', () => {
     const auditLogger = new AuditLogger(auditDir);
     const db = new Database(join(tempRoot, 'join.db'));
     applyTestTelemetrySchema(db);
-    db.exec(`
-      CREATE TABLE messages (
-        id TEXT PRIMARY KEY,
-        session_id TEXT NOT NULL,
-        role TEXT NOT NULL,
-        content TEXT NOT NULL,
-        tool_results TEXT,
-        metadata TEXT
-      );
-    `);
+    applyTestSessionSchema(db);
+    db.prepare(`
+      INSERT INTO sessions (id, title, model_provider, model_name, created_at, updated_at)
+      VALUES (?, 'correlation', 'test', 'test', 0, 0)
+    `).run(sessionId);
 
     await withRunTraceContext(tool, async () => {
       const { stdout } = await execFileAsync('/bin/bash', ['-lc', 'printf correlation-ok']);
@@ -100,12 +96,13 @@ describe('session correlation join', () => {
         INSERT INTO telemetry_tool_calls (session_id, turn_id, tool_call_id, name, success, timestamp) VALUES (?, ?, ?, 'Bash', 1, 0)
       `).run(sessionId, turnId, toolCallId);
       db.prepare(`
-        INSERT INTO messages (id, session_id, role, content, tool_results, metadata)
-        VALUES (?, ?, 'tool', ?, ?, ?)
+        INSERT INTO messages (id, session_id, role, content, timestamp, tool_results, metadata)
+        VALUES (?, ?, 'tool', ?, ?, ?, ?)
       `).run(
         'message-tool-correlation',
         sessionId,
         JSON.stringify([{ toolCallId, success: true, output: stdout }]),
+        0,
         JSON.stringify([{ toolCallId, success: true, output: stdout }]),
         JSON.stringify({ correlation: { turnId, traceId: run.traceId } }),
       );

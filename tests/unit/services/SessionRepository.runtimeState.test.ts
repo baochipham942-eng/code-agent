@@ -7,6 +7,7 @@ import type BetterSqlite3 from 'better-sqlite3';
 import { SessionRepository } from '../../../src/host/services/core/repositories/SessionRepository';
 import type { Message } from '../../../src/shared/contract';
 import type { SessionTask } from '../../../src/shared/contract/planning';
+import { applyTestSessionSchema } from '../../utils/applyTestSessionSchema';
 
 vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
@@ -18,119 +19,7 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
 }));
 
 function createSchema(db: BetterSqlite3.Database): void {
-  db.exec(`
-      CREATE TABLE sessions (
-        id TEXT PRIMARY KEY,
-        user_id TEXT,
-        title TEXT NOT NULL,
-      model_provider TEXT NOT NULL,
-      model_name TEXT NOT NULL,
-      working_directory TEXT,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL,
-      workbench_provenance TEXT,
-      status TEXT DEFAULT 'idle',
-      workspace TEXT,
-      last_token_usage TEXT,
-      is_deleted INTEGER NOT NULL DEFAULT 0,
-      synced_at INTEGER
-    );
-
-    CREATE TABLE messages (
-      id TEXT PRIMARY KEY,
-      session_id TEXT NOT NULL,
-      role TEXT NOT NULL,
-      content TEXT NOT NULL,
-      timestamp INTEGER NOT NULL,
-      tool_calls TEXT,
-      tool_results TEXT,
-      responses_output TEXT,
-      attachments TEXT,
-      thinking TEXT,
-      effort_level TEXT,
-        synced_at INTEGER,
-        content_parts TEXT,
-        metadata TEXT,
-        is_meta INTEGER NOT NULL DEFAULT 0,
-        compaction TEXT,
-        visibility TEXT NOT NULL DEFAULT 'active',
-        hidden_by_rewind_id TEXT,
-        hidden_at INTEGER
-      );
-
-      CREATE TABLE session_rewinds (
-        id TEXT PRIMARY KEY,
-        session_id TEXT NOT NULL,
-        anchor_message_id TEXT NOT NULL,
-        anchor_prompt TEXT NOT NULL,
-        anchor_timestamp INTEGER NOT NULL,
-        checkpoint_message_id TEXT,
-        redo_checkpoint_message_id TEXT,
-        hidden_message_count INTEGER NOT NULL DEFAULT 0,
-        hidden_message_ids TEXT,
-        files_restored INTEGER NOT NULL DEFAULT 0,
-        files_deleted INTEGER NOT NULL DEFAULT 0,
-        errors_json TEXT,
-        idempotency_key TEXT,
-        request_digest TEXT,
-        status TEXT NOT NULL DEFAULT 'completed',
-        restored_at INTEGER,
-        created_at INTEGER NOT NULL
-      );
-
-    CREATE TABLE session_tasks (
-      session_id TEXT NOT NULL,
-      task_id TEXT NOT NULL,
-      subject TEXT NOT NULL,
-      description TEXT NOT NULL,
-      active_form TEXT NOT NULL,
-        status TEXT NOT NULL,
-        priority TEXT NOT NULL,
-        owner TEXT,
-        parent_task_id TEXT,
-        blocks_json TEXT NOT NULL DEFAULT '[]',
-        blocked_by_json TEXT NOT NULL DEFAULT '[]',
-        metadata_json TEXT NOT NULL DEFAULT '{}',
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL,
-      PRIMARY KEY (session_id, task_id)
-    );
-
-    CREATE TABLE context_interventions (
-      session_id TEXT NOT NULL,
-      agent_id TEXT NOT NULL DEFAULT 'global',
-      message_id TEXT NOT NULL,
-      action TEXT NOT NULL,
-      updated_at INTEGER NOT NULL,
-      PRIMARY KEY (session_id, agent_id, message_id)
-    );
-
-    CREATE TABLE session_runtime_state (
-      session_id TEXT PRIMARY KEY,
-      compression_state_json TEXT,
-      persistent_system_context_json TEXT NOT NULL DEFAULT '[]',
-      updated_at INTEGER NOT NULL
-    );
-
-    CREATE TABLE generative_ui_instances (
-      instance_id TEXT PRIMARY KEY,
-      session_id TEXT NOT NULL,
-      source_message_id TEXT NOT NULL,
-      status TEXT NOT NULL,
-      hidden_by_rewind_id TEXT,
-      updated_at INTEGER NOT NULL
-    );
-
-    CREATE TABLE execution_manifests (
-      manifest_id TEXT PRIMARY KEY,
-      session_id TEXT NOT NULL,
-      instance_id TEXT NOT NULL,
-      status TEXT NOT NULL,
-      updated_at INTEGER NOT NULL,
-      resolved_at INTEGER,
-      invalidation_reason TEXT
-    );
-  `);
+  applyTestSessionSchema(db);
 
   db.prepare(
     `
@@ -349,12 +238,18 @@ describe('SessionRepository runtime recovery state', () => {
       { id: 'a2', role: 'assistant', content: 'generated UI', timestamp: 40 },
     ] as Message[]) repo.addMessage('session-1', message);
     db.prepare(`
-      INSERT INTO generative_ui_instances (instance_id, session_id, source_message_id, status, updated_at)
-      VALUES ('ui-1', 'session-1', 'a2', 'active', 40)
+      INSERT INTO generative_ui_instances (
+        instance_id, session_id, source_message_id, source_ordinal, source_key,
+        spec_hash, spec_json, state_json, status, created_at, updated_at
+      )
+      VALUES ('ui-1', 'session-1', 'a2', 0, 'key-ui-1', 'hash', '{}', '{}', 'active', 40, 40)
     `).run();
     db.prepare(`
-      INSERT INTO execution_manifests (manifest_id, session_id, instance_id, status, updated_at)
-      VALUES ('manifest-1', 'session-1', 'ui-1', 'approved', 50)
+      INSERT INTO execution_manifests (
+        manifest_id, session_id, instance_id, nonce, scope_hash, title, summary, items_json,
+        status, expires_at, created_at, updated_at
+      )
+      VALUES ('manifest-1', 'session-1', 'ui-1', 'nonce', 'scope', 't', 's', '[]', 'approved', 999, 50, 50)
     `).run();
 
     repo.applyPromptRewind('session-1', 'u2', { createdAt: 100, ownerUserId: null });
@@ -367,12 +262,22 @@ describe('SessionRepository runtime recovery state', () => {
 
   it('revokes generated UI authority on session deletion', () => {
     db.prepare(`
-      INSERT INTO generative_ui_instances (instance_id, session_id, source_message_id, status, updated_at)
-      VALUES ('ui-delete', 'session-1', 'message-delete', 'active', 40)
+      INSERT INTO messages (id, session_id, role, content, timestamp)
+      VALUES ('message-delete', 'session-1', 'assistant', 'generated UI', 40)
     `).run();
     db.prepare(`
-      INSERT INTO execution_manifests (manifest_id, session_id, instance_id, status, updated_at)
-      VALUES ('manifest-delete', 'session-1', 'ui-delete', 'executing', 50)
+      INSERT INTO generative_ui_instances (
+        instance_id, session_id, source_message_id, source_ordinal, source_key,
+        spec_hash, spec_json, state_json, status, created_at, updated_at
+      )
+      VALUES ('ui-delete', 'session-1', 'message-delete', 0, 'key-ui-delete', 'hash', '{}', '{}', 'active', 40, 40)
+    `).run();
+    db.prepare(`
+      INSERT INTO execution_manifests (
+        manifest_id, session_id, instance_id, nonce, scope_hash, title, summary, items_json,
+        status, expires_at, created_at, updated_at
+      )
+      VALUES ('manifest-delete', 'session-1', 'ui-delete', 'nonce', 'scope', 't', 's', '[]', 'executing', 999, 50, 50)
     `).run();
 
     repo.deleteSession('session-1', { deletedAt: 200 });

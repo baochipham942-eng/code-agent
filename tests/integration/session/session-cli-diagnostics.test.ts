@@ -1,4 +1,4 @@
-import { applyTestTelemetrySchema } from '../../utils/telemetrySchema';
+import { applyTestSessionSchema } from '../../utils/applyTestSessionSchema';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -18,41 +18,17 @@ describe('session diagnostics CLI projections', () => {
     dbPath = path.join(root, 'code-agent.db');
     process.env.CODE_AGENT_DATA_DIR = root;
     const db = new NativeDatabase(dbPath);
-    applyTestTelemetrySchema(db);
-    db.exec(`
-      CREATE TABLE sessions (
-        id TEXT PRIMARY KEY, title TEXT, model_provider TEXT, model_name TEXT,
-        working_directory TEXT, workspace TEXT, status TEXT, created_at INTEGER, updated_at INTEGER
-      );
-      CREATE TABLE messages (
-        id TEXT PRIMARY KEY, session_id TEXT, role TEXT, content TEXT, timestamp INTEGER,
-        tool_calls TEXT, tool_results TEXT, content_parts TEXT, thinking TEXT, metadata TEXT, is_meta INTEGER DEFAULT 0
-      );
-      CREATE TABLE session_task_events (id INTEGER PRIMARY KEY, session_id TEXT, task_id TEXT, at INTEGER, kind TEXT, summary TEXT, actor TEXT);
-      CREATE TABLE permission_decisions (
-        id INTEGER PRIMARY KEY, session_id TEXT, tool_name TEXT, summary TEXT,
-        final_outcome TEXT, history_outcome TEXT, reason TEXT, duration_ms INTEGER,
-        recorded_at INTEGER, trace_json TEXT
-      );
-      CREATE TABLE tool_execution_events (
-        id INTEGER PRIMARY KEY, execution_id TEXT, session_id TEXT, tool_name TEXT,
-        summary TEXT, params_json TEXT, phase TEXT, status TEXT, error TEXT, recorded_at INTEGER
-      );
-      CREATE TABLE swarm_runs (
-        id TEXT PRIMARY KEY, session_id TEXT, coordinator TEXT, status TEXT, started_at INTEGER,
-        ended_at INTEGER, total_agents INTEGER, completed_count INTEGER, failed_count INTEGER,
-        total_cost_usd REAL, total_tokens_in INTEGER, total_tokens_out INTEGER, trigger TEXT
-      );
-      CREATE TABLE swarm_run_events (
-        id INTEGER PRIMARY KEY, run_id TEXT, seq INTEGER, timestamp INTEGER, event_type TEXT,
-        agent_id TEXT, level TEXT, title TEXT, summary TEXT, payload_json TEXT
-      );
-      
-    `);
-    db.prepare(`INSERT INTO sessions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+    applyTestSessionSchema(db);
+    db.prepare(`
+      INSERT INTO sessions (id, title, model_provider, model_name, working_directory, workspace, status, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
       'session-1', 'CLI diagnostics', 'openai', 'gpt-test', '/work/project', null, 'idle', 1_000, 2_000,
     );
-    db.prepare(`INSERT INTO messages VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+    db.prepare(`
+      INSERT INTO messages (id, session_id, role, content, timestamp, tool_calls, tool_results, content_parts, thinking, metadata, is_meta)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
       'message-1', 'session-1', 'assistant', 'tool failed', 1_500, null,
       JSON.stringify([{ toolCallId: 'tool-1', success: false, error: 'command failed' }]),
       null, null, JSON.stringify({
@@ -60,11 +36,17 @@ describe('session diagnostics CLI projections', () => {
         agentError: { rawMessage: 'model failed', category: 'generic', timestamp: 1_500 },
       }), 0,
     );
-    db.prepare(`INSERT INTO permission_decisions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+    db.prepare(`
+      INSERT INTO permission_decisions (id, session_id, tool_name, summary, final_outcome, history_outcome, reason, duration_ms, recorded_at, trace_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
       1, 'session-1', 'Bash', 'blocked', 'deny', 'policy-deny', 'not allowed', 2, 1_400,
       JSON.stringify({ turnId: 'turn-1' }),
     );
-    db.prepare(`INSERT INTO tool_execution_events VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+    db.prepare(`
+      INSERT INTO tool_execution_events (id, execution_id, session_id, tool_name, summary, params_json, phase, status, error, recorded_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
       1, 'exec-1', 'session-1', 'Bash', 'run command', '{}', 'complete', 'error', 'command failed', 1_600,
     );
     db.prepare(`INSERT INTO telemetry_sessions (id, estimated_cost, total_input_tokens, total_output_tokens, agent_version, prompt_version, tool_schema_version, title, model_provider, model_name, working_directory, start_time) VALUES (?, ?, ?, ?, ?, ?, ?, 'Fixture', 'openai', 'fixture-model', '/tmp/project', 0)`).run(

@@ -14,6 +14,8 @@ vi.mock('../../../src/cli/sessionDiagnostics/sessionPackageAdapter', () => ({
   loadSessionPackageBuilder: async () => mocks,
 }));
 
+import { applyTestSessionSchema } from '../../utils/applyTestSessionSchema';
+
 const testRequire = Module.createRequire(import.meta.url);
 const NativeDatabase = testRequire('better-sqlite3') as typeof import('better-sqlite3');
 
@@ -28,14 +30,11 @@ describe('session export command', () => {
     outputDir = path.join(root, 'out');
     process.env.CODE_AGENT_DATA_DIR = root;
     const db = new NativeDatabase(path.join(root, 'code-agent.db'));
-    db.exec(`
-      CREATE TABLE sessions (
-        id TEXT PRIMARY KEY, title TEXT, model_provider TEXT, model_name TEXT,
-        working_directory TEXT, status TEXT, created_at INTEGER, updated_at INTEGER
-      );
-      CREATE TABLE messages (id TEXT PRIMARY KEY, session_id TEXT);
-    `);
-    db.prepare(`INSERT INTO sessions VALUES ('session-1','title','p','m','/tmp','idle',1,2)`).run();
+    applyTestSessionSchema(db);
+    db.prepare(`
+      INSERT INTO sessions (id, title, model_provider, model_name, working_directory, status, created_at, updated_at)
+      VALUES ('session-1','title','p','m','/tmp','idle',1,2)
+    `).run();
     db.close();
     rejectedWrite = false;
     mocks.buildSessionTranscriptJsonl.mockReset().mockImplementation((

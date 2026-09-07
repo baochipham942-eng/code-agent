@@ -82,11 +82,13 @@ function SubmitHarness({
   onSend,
   onSteer,
   initialValue = '请改成更简洁的方案',
+  pendingResendClientMessageIdRef,
 }: {
   isProcessing: boolean;
   onSend: (envelope: ConversationEnvelope) => boolean | Promise<boolean>;
   onSteer: (envelope: ConversationEnvelope) => Promise<SteerOrQueueOutcome | undefined>;
   initialValue?: string;
+  pendingResendClientMessageIdRef?: { current: string | null };
 }) {
   const [value, setValue] = useState(initialValue);
   const inputAreaRef = useRef<InputAreaRef>(null);
@@ -98,6 +100,7 @@ function SubmitHarness({
     onSend,
     onSteer,
     inputAreaRef,
+    pendingResendClientMessageIdRef,
   }));
 
   return (
@@ -162,6 +165,38 @@ describe('mid-turn composer submission', () => {
     expect(onSteer).not.toHaveBeenCalled();
   });
 
+  it('运行期间编辑重发走排队路径时复用原 clientMessageId', async () => {
+    const onSend = vi.fn().mockResolvedValue(true);
+    const onSteer = vi.fn().mockResolvedValue({ outcome: 'steered' });
+    const pendingResendClientMessageIdRef = { current: 'failed-bubble-id' as string | null };
+    render(
+      <SubmitHarness
+        isProcessing
+        onSend={onSend}
+        onSteer={onSteer}
+        pendingResendClientMessageIdRef={pendingResendClientMessageIdRef}
+      />,
+    );
+
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+
+    await waitFor(() => expect(domainInvoke).toHaveBeenCalledTimes(1));
+    expect(domainInvoke).toHaveBeenCalledWith(
+      'domain:queuedInput',
+      'enqueue',
+      expect.objectContaining({
+        id: 'failed-bubble-id',
+        sessionId: 'session-running',
+        envelope: expect.objectContaining({
+          clientMessageId: 'failed-bubble-id',
+          content: '请改成更简洁的方案',
+        }),
+      }),
+    );
+    expect(pendingResendClientMessageIdRef.current).toBeNull();
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
   it('does not render the running queue/redirect segmented choice and exposes the shortcut hint', () => {
     const onSend = vi.fn().mockResolvedValue(true);
     const onSteer = vi.fn().mockResolvedValue({ outcome: 'steered' });
@@ -209,5 +244,69 @@ describe('mid-turn composer submission', () => {
 
     expect(setValue).toHaveBeenLastCalledWith('请改成更简洁的方案');
     expect(focus).toHaveBeenCalledTimes(1);
+  });
+
+  it('空闲发送把草稿 pending id 写进 envelope；回滚时 pending 随草稿回来', async () => {
+    const pendingResendClientMessageIdRef = { current: 'failed-bubble-id' as string | null };
+    const onSend = vi.fn().mockResolvedValue(false);
+    const params = makeParams({
+      isProcessing: false,
+      disabled: false,
+      onSend,
+      pendingResendClientMessageIdRef,
+    });
+    const { result } = renderHook(() => useChatInputSubmit(params));
+
+    await act(async () => {
+      await result.current.handleSubmit();
+    });
+
+    expect(onSend).toHaveBeenCalledWith(expect.objectContaining({
+      clientMessageId: 'failed-bubble-id',
+      content: '请改成更简洁的方案',
+    }));
+    expect(pendingResendClientMessageIdRef.current).toBe('failed-bubble-id');
+  });
+
+  it('排队成功后下一次普通发送不再误用残留 pending id', async () => {
+    const pendingResendClientMessageIdRef = { current: 'failed-bubble-id' as string | null };
+    const params = makeParams({
+      pendingResendClientMessageIdRef,
+    });
+    const { result } = renderHook(() => useChatInputSubmit(params));
+
+    await act(async () => {
+      await result.current.handleSubmit();
+    });
+    expect(domainInvoke.mock.calls[0]?.[2]).toEqual(expect.objectContaining({ id: 'failed-bubble-id' }));
+    expect(pendingResendClientMessageIdRef.current).toBeNull();
+
+    await act(async () => {
+      await result.current.handleSubmit();
+    });
+    const secondId = (domainInvoke.mock.calls[1]?.[2] as { id?: string } | undefined)?.id;
+    expect(secondId).toBeTruthy();
+    expect(secondId).not.toBe('failed-bubble-id');
+  });
+
+  it('空闲发送成功后 pending id 不残留', async () => {
+    const pendingResendClientMessageIdRef = { current: 'failed-bubble-id' as string | null };
+    const onSend = vi.fn().mockResolvedValue(true);
+    const params = makeParams({
+      isProcessing: false,
+      disabled: false,
+      onSend,
+      pendingResendClientMessageIdRef,
+    });
+    const { result } = renderHook(() => useChatInputSubmit(params));
+
+    await act(async () => {
+      await result.current.handleSubmit();
+    });
+
+    expect(onSend).toHaveBeenCalledWith(expect.objectContaining({
+      clientMessageId: 'failed-bubble-id',
+    }));
+    expect(pendingResendClientMessageIdRef.current).toBeNull();
   });
 });

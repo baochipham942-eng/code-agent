@@ -158,7 +158,12 @@ export interface ChatInputProps {
 // Imperative handle exposed to parent (e.g. ChatView drop zone)
 export interface ChatInputHandle {
   addAttachments: (items: MessageAttachment[]) => void;
-  setDraft: (draft: { content: string; attachments?: MessageAttachment[] }) => void;
+  setDraft: (draft: {
+    content: string;
+    attachments?: MessageAttachment[];
+    /** 失败气泡编辑重发：绑在这份草稿上，普通发送/排队/插话分流前写入 envelope。 */
+    clientMessageId?: string;
+  }) => void;
   focus: () => void;
 }
 
@@ -268,9 +273,18 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const [attachments, setAttachments] = useState<MessageAttachment[]>([]);
   const [sessionReferences, setSessionReferences] = useState<ConversationSessionReference[]>([]);
   const [artifactReferences, setArtifactReferences] = useState<ConversationArtifactReference[]>([]);
+  const pendingResendClientMessageIdRef = useRef<string | null>(null);
+  const clearPendingResendClientMessageId = useCallback(() => {
+    pendingResendClientMessageIdRef.current = null;
+  }, []);
   // 会话作用域：currentSessionId / engine 类型 / 切换会话时清空草稿
   // （sessionless 时强制 null——项目页等无会话语境，见 ChatInputProps.sessionless）
-  const { currentSessionId } = useChatInputSessionScope(setValue, setAttachments, sessionless);
+  const { currentSessionId } = useChatInputSessionScope(
+    setValue,
+    setAttachments,
+    sessionless,
+    clearPendingResendClientMessageId,
+  );
 
   useEffect(() => {
     setEditingQueuedInputId(null);
@@ -582,6 +596,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     setDraft: (draft) => {
       setValue(draft.content);
       setAttachments((draft.attachments ?? []).slice(0, UI.MAX_ATTACHMENTS_DROP));
+      pendingResendClientMessageIdRef.current = draft.clientMessageId ?? null;
       setVoiceInputContext(null);
       inputAreaRef.current?.focus();
     },
@@ -883,6 +898,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     closeGoalConfirm: () => setGoalConfirm(null),
     openSeedComposer: (kind) => setSeedComposer({ kind, initialText: '' }),
     setActiveAgentId,
+    pendingResendClientMessageIdRef,
   });
 
   const submitWithRuntimeChoice = useCallback(async (event?: React.FormEvent, opts?: { steer?: boolean; content?: string }) => {

@@ -33,6 +33,7 @@ import type { InputAreaRef } from './InputArea';
 import type { BuildEnvelope } from './useChatInputEnvelope';
 import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 import { generateMessageId } from '@shared/utils/id';
+import { consumePendingClientMessageId } from '../../../../utils/chatSendState';
 import { parseScheduleCommand, isScheduleCommand } from './parseScheduleCommand';
 import { parseLoopCommand, isLoopCommand } from './parseLoopCommand';
 import {
@@ -98,6 +99,11 @@ export interface UseChatInputSubmitParams {
   closeGoalConfirm: () => void;
   openSeedComposer: (kind: SeedComposerKind) => void;
   setActiveAgentId: (id: string | null) => void;
+  /**
+   * 失败气泡「编辑重发」绑在草稿上的原 clientMessageId。
+   * 必须在普通发送 / 排队 / 插话分流之前写入 envelope，不能只在 ChatView.onSend 里消费。
+   */
+  pendingResendClientMessageIdRef?: { current: string | null };
 }
 
 /**
@@ -176,6 +182,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
     closeGoalConfirm,
     openSeedComposer,
     setActiveAgentId,
+    pendingResendClientMessageIdRef,
   } = params;
 
   // 版本同时绑定能力选择和会话；handoff 保留同一轮版本，切槽或再选择都会失效。
@@ -532,6 +539,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
         pendingAgentSelection,
         sessionReferences,
         artifactReferences,
+        resendClientMessageId: pendingResendClientMessageIdRef?.current ?? null,
       };
         const restoreDraft = () => {
           setValue(draftSnapshot.value);
@@ -545,6 +553,9 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
           if (pendingCommand) useComposerStore.getState().setPendingCommand(pendingCommand);
           if (draftSnapshot.appshot) {
             useAppshotsStore.getState().setPending(draftSnapshot.appshot, currentSessionId);
+          }
+          if (pendingResendClientMessageIdRef) {
+            pendingResendClientMessageIdRef.current = draftSnapshot.resendClientMessageId;
           }
       };
 
@@ -572,28 +583,32 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
       };
 
       const submitEnvelope = async (envelope: ConversationEnvelope): Promise<boolean | typeof SEND_TIMED_OUT> => {
+        const clientMessageId = consumePendingClientMessageId(
+          envelope.clientMessageId,
+          pendingResendClientMessageIdRef ?? { current: null },
+          generateMessageId,
+        );
+        const stamped: ConversationEnvelope = { ...envelope, clientMessageId };
         if (isProcessing && !opts?.steer) {
           if (!currentSessionId) return false;
-          const id = envelope.clientMessageId ?? generateMessageId();
           const queuedEnvelope: ConversationEnvelope = {
-            ...envelope,
-            clientMessageId: id,
-            sessionId: envelope.sessionId ?? currentSessionId,
+            ...stamped,
+            sessionId: stamped.sessionId ?? currentSessionId,
           };
           await ipcService.invokeDomain<QueuedInput>(
             IPC_DOMAINS.QUEUED_INPUT,
             'enqueue',
-            { id, sessionId: currentSessionId, envelope: queuedEnvelope },
+            { id: clientMessageId, sessionId: currentSessionId, envelope: queuedEnvelope },
           );
           onQueuedInputChanged?.();
           return true;
         }
         if (isProcessing && opts?.steer && onSteer) {
-          const outcome = await onSteer(envelope);
+          const outcome = await onSteer(stamped);
           if (outcome?.outcome === 'queued') onQueuedInputChanged?.();
           return outcome !== undefined;
         }
-        return settleSendWithinTimeout(onSend(envelope));
+        return settleSendWithinTimeout(onSend(stamped));
       };
 
       // P3-18: Shell shortcut - ! prefix sends command to agent as bash request

@@ -38,8 +38,8 @@ export function isChatSendAccepted(delivery: ChatSendDelivery | undefined): bool
 
 /**
  * composer 发出时的 clientMessageId：envelope 已带的优先（错误卡重试会铸进去），
- * 否则消费「编辑重发」留下的 pending id，再否则新铸。
- * pending 必须在这次发送里用掉，避免下一条无关消息误复用失败气泡的 id。
+ * 否则消费「编辑重发」绑在草稿上的 pending id，再否则新铸。
+ * 调用点必须在普通发送 / 排队 / 插话分流之前，pending 用过即清空。
  */
 export function consumePendingClientMessageId(
   envelopeClientMessageId: string | undefined,

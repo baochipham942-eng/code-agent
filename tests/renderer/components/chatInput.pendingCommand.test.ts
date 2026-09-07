@@ -100,7 +100,10 @@ describe('pendingCommand chip 的提交流', () => {
     const onSend = vi.fn().mockResolvedValue(true);
     await submit(makeParams({ value: '先调研再出报告', onSend }));
 
-    expect(onSend).toHaveBeenCalledWith({ content: '/workflow 先调研再出报告' });
+    expect(onSend).toHaveBeenCalledWith(expect.objectContaining({
+      content: '/workflow 先调研再出报告',
+      clientMessageId: expect.any(String),
+    }));
     expect(useComposerStore.getState().pendingCommand).toBeNull();
   });
 
@@ -131,7 +134,10 @@ describe('pendingCommand chip 的提交流', () => {
     const setValue = vi.fn();
     await submit(makeParams({ value: '先调研再出报告', onSend, setValue }));
 
-    expect(onSend).toHaveBeenCalledWith({ content: '/workflow 先调研再出报告' });
+    expect(onSend).toHaveBeenCalledWith(expect.objectContaining({
+      content: '/workflow 先调研再出报告',
+      clientMessageId: expect.any(String),
+    }));
     expect(setValue).toHaveBeenCalledWith('先调研再出报告');
     expect(useComposerStore.getState().pendingCommand).toEqual({ id: 'workflow', name: '编排工作流' });
   });

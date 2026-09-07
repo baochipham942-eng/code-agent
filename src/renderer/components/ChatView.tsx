@@ -104,7 +104,7 @@ import {
   transitionAssistantFeedback,
   type AssistantFeedbackState,
 } from '../utils/sendWithImmediateAssistantFeedback';
-import { consumePendingClientMessageId, isChatSendAccepted } from '../utils/chatSendState';
+import { isChatSendAccepted } from '../utils/chatSendState';
 
 // Zustand selectors must return a referentially stable fallback. A fresh [] here makes
 // useSyncExternalStore treat every snapshot as changed and can loop before ChatView mounts.
@@ -215,7 +215,6 @@ export const ChatView: React.FC = () => {
   const messagesRef = useRef(messages);
   messagesRef.current = messages;
   const chatInputRef = useRef<ChatInputHandle>(null);
-  const pendingResendClientMessageIdRef = useRef<string | null>(null);
   useEffect(() => {
     messageActionRegister(
       (content: string, context?: Pick<ConversationEnvelopeContext, 'localityAnchor'> & {
@@ -233,10 +232,10 @@ export const ChatView: React.FC = () => {
       },
       () => messagesRef.current,
       (draft) => {
-        pendingResendClientMessageIdRef.current = draft.clientMessageId;
         chatInputRef.current?.setDraft({
           content: draft.content,
           attachments: draft.attachments,
+          clientMessageId: draft.clientMessageId,
         });
       },
     );
@@ -628,11 +627,7 @@ export const ChatView: React.FC = () => {
   // @neo 提交分支已移除（2026-07-29 拍板）：输入框不再有工作卡/续接交互，
   // @neo 字样按普通文本消息发送；工作卡从 Neo 协同页发起。
   const handleSendEnvelope = useCallback(async (envelope: ConversationEnvelope): Promise<boolean> => {
-    const clientMessageId = consumePendingClientMessageId(
-      envelope.clientMessageId,
-      pendingResendClientMessageIdRef,
-      generateMessageId,
-    );
+    const clientMessageId = envelope.clientMessageId ?? generateMessageId();
     const feedbackSessionId = envelope.sessionId ?? currentSessionId;
     const outboundEnvelope = { ...envelope, clientMessageId };
     const sent = await sendWithImmediateAssistantFeedback({

@@ -27,7 +27,7 @@ import {
   SNAPSHOT_READ_FIXTURE_MARKER,
   planSnapshotRecordLayout,
   snapshotFakeModelEnv,
-} from './snapshot-replay-cases';
+} from '../lib/snapshot-replay-cases';
 
 function fail(message: string, details?: unknown): never {
   const suffix = details === undefined ? '' : `\n${JSON.stringify(details, null, 2)}`;

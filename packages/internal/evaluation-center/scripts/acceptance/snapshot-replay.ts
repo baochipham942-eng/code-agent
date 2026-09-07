@@ -21,7 +21,7 @@ import { fileURLToPath } from 'url';
 
 import {
   planSnapshotRecordDataDir,
-} from './snapshot-replay-cases';
+} from '../lib/snapshot-replay-cases';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const corpusDir = path.resolve(scriptDir, '../../snapshots/request-replay');

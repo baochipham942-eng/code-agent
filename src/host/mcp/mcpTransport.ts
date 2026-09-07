@@ -128,7 +128,7 @@ export function resolveMCPProxyUrl(
 const sharedProxyAwareOauthFetch = createConnectorOAuthFetch();
 const sharedDirectOauthFetch = createConnectorOAuthFetch({ env: {} });
 
-export function createRemoteMCPFetch(
+function createRemoteMCPFetch(
   target: URL,
   options: { useProxy?: boolean; oauthFetch?: FetchLike } = {},
 ): typeof globalThis.fetch {

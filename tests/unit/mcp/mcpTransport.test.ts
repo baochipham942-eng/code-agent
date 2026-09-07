@@ -24,7 +24,6 @@ import {
   createMCPSDKClient,
   createTransport,
   connectWithTimeout,
-  createRemoteMCPFetch,
   isRetryableRemoteMCPConnectionError,
   resolveMCPProxyUrl,
   retryTransientRemoteMCPConnection,
@@ -376,12 +375,15 @@ describe('createRemoteMCPFetch OAuth timeout', () => {
 
   it('routes signal-less OAuth outbound through the bounded OAuth fetch unchanged', async () => {
     const oauthFetch = vi.fn(async () => new Response('{}'));
-    const remoteFetch = createRemoteMCPFetch(new URL('https://mcp.example.com/mcp'), {
-      useProxy: false,
-      oauthFetch,
-    });
+    createTransport({
+      name: 'oauth-discovery',
+      type: 'http-streamable',
+      serverUrl: 'https://mcp.example.com/mcp',
+      enabled: true,
+    }, { useProxy: false, oauthFetch });
+    const transportOptions = transportMocks.streamableHTTPClientTransport.mock.calls[0][1] as { fetch: FetchLike };
 
-    await remoteFetch('https://auth.example.com/.well-known/oauth-protected-resource');
+    await transportOptions.fetch('https://auth.example.com/.well-known/oauth-protected-resource');
     expect(oauthFetch).toHaveBeenCalledTimes(1);
     expect(oauthFetch).toHaveBeenCalledWith(
       'https://auth.example.com/.well-known/oauth-protected-resource',
@@ -395,12 +397,15 @@ describe('createRemoteMCPFetch OAuth timeout', () => {
     const oauthFetch = vi.fn(async () => {
       throw new Error('无法连接 auth.example.com：fetch failed', { cause: networkError });
     });
-    const remoteFetch = createRemoteMCPFetch(new URL('https://mcp.example.com/mcp'), {
-      useProxy: false,
-      oauthFetch,
-    });
+    createTransport({
+      name: 'oauth-reset',
+      type: 'http-streamable',
+      serverUrl: 'https://mcp.example.com/mcp',
+      enabled: true,
+    }, { useProxy: false, oauthFetch });
+    const transportOptions = transportMocks.streamableHTTPClientTransport.mock.calls[0][1] as { fetch: FetchLike };
 
-    await expect(remoteFetch('https://auth.example.com/.well-known/oauth-protected-resource'))
+    await expect(transportOptions.fetch('https://auth.example.com/.well-known/oauth-protected-resource'))
       .rejects.toBe(networkError);
     expect(isRetryableRemoteMCPConnectionError(networkError)).toBe(true);
   });

@@ -95,6 +95,13 @@ on:
       - 'scripts/verify-renderer-hot-update-release-gate.mjs'
       - 'scripts/verify-runtime-assets-publish.mjs'
       - 'supabase/migrations/**'
+      # request-replay 快照体系（N-SNAPSHOT-REGRESSION，#1721 复审②）：回放实现、
+      # acceptance CLI 与快照语料都在 packages/internal/evaluation-center 下——不挂这几条，
+      # 只改回放实现或语料的 PR 一道门都不跑（与 #452 path 触发盲区同形状）。
+      # 语料目录也要触发：只改快照 = 手工改期望输出，必须由回放门真跑一遍。
+      - 'packages/internal/evaluation-center/src/**'
+      - 'packages/internal/evaluation-center/scripts/**'
+      - 'packages/internal/evaluation-center/snapshots/**'
   push:
     branches: [main]
   workflow_dispatch:

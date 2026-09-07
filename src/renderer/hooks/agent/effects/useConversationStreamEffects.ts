@@ -97,7 +97,7 @@ function acceptDeltaSeq(
   deltaSeq: unknown,
 ): boolean {
   if (typeof deltaSeq !== 'number' || !turnKey) return true;
-  const seen = (state.lastDeltaSeqByTurn ??= new Map<string, number>());
+  const seen = state.lastDeltaSeqByTurn;
   const last = seen.get(turnKey);
   if (last !== undefined && deltaSeq <= last) return false;
   seen.set(turnKey, deltaSeq);
@@ -114,7 +114,7 @@ export interface ConversationStreamState {
    * 事件本来就带 deltaSeq，host 侧 messageDeltaAccumulator.acceptDelta 早就是这么判的，
    * 渲染层照抄同一口径：序号回头就是重放，没有序号才回落到内容判定。
    */
-  lastDeltaSeqByTurn?: Map<string, number>;
+  lastDeltaSeqByTurn: Map<string, number>;
 }
 
 function appendAssistantStreamDelta(
@@ -251,6 +251,11 @@ export function applyConversationStreamEvent(
         if (!deltaData?.text) break;
         if (deltaData.isMeta) break;
         const targetMessageId = deltaData.messageId || deltaData.turnId || state.currentTurnMessageId;
+        // 生产里真正带 deltaSeq 的就是这条分支（eventBatcher 只在 message_delta 上透传），
+        // 序号去重必须接在这里，接漏了等于没接（ai-review #1696 第三轮）。
+        const deltaSeq = (event.data as { deltaSeq?: unknown } | undefined)?.deltaSeq;
+        if (!acceptDeltaSeq(state, targetMessageId, deltaSeq)) break;
+        const deltaHasSeq = typeof deltaSeq === 'number';
         const freshMsgs = getFreshMessages();
         const targetMessage = targetMessageId
           ? freshMsgs.find(m => m.id === targetMessageId)
@@ -266,7 +271,9 @@ export function applyConversationStreamEvent(
             const existing = field === 'reasoning'
               ? (targetMessage.reasoning || '')
               : (targetMessage.content || '');
-            const remaining = remainingAssistantStreamDelta(existing, deltaData.text);
+            const remaining = deltaHasSeq
+              ? deltaData.text
+              : remainingAssistantStreamDelta(existing, deltaData.text);
             if (!remaining) break;
             appendAssistantStreamDelta(actions, targetMessage.id, field === 'reasoning'
               ? { reasoning: remaining }
@@ -476,6 +483,10 @@ export const useConversationStreamEffects = ({
   setSessionTaskComplete,
 }: AgentEffectsProps) => {
   const committedAssistantMessageIdsRef = useRef<Set<string>>(new Set());
+  // 🔴 必须挂 ref：下面四个调用点的 state 是**每次现造的对象字面量**，把 Map 挂在它身上
+  // 等于每次调用都丢一次（ai-review #1696 第三轮抓到；我的单测复用了同一个 state 对象，
+  // 夹具寿命与生产不一致所以照样绿——这类断言必须让夹具跟生产同寿命）。
+  const lastDeltaSeqByTurnRef = useRef<Map<string, number>>(new Map());
 
   useEffect(() => {
     const unsubscribe = ipcService.on('agent:event', (event: AgentEvent) => {
@@ -593,6 +604,7 @@ export const useConversationStreamEffects = ({
                 currentTurnMessageIdRef.current = value;
               },
               committedAssistantMessageIds: committedAssistantMessageIdsRef.current,
+              lastDeltaSeqByTurn: lastDeltaSeqByTurnRef.current,
             },
             {
               addMessage,
@@ -626,6 +638,7 @@ export const useConversationStreamEffects = ({
                 currentTurnMessageIdRef.current = value;
               },
               committedAssistantMessageIds: committedAssistantMessageIdsRef.current,
+              lastDeltaSeqByTurn: lastDeltaSeqByTurnRef.current,
             },
             {
               addMessage,
@@ -656,6 +669,7 @@ export const useConversationStreamEffects = ({
                 currentTurnMessageIdRef.current = value;
               },
               committedAssistantMessageIds: committedAssistantMessageIdsRef.current,
+              lastDeltaSeqByTurn: lastDeltaSeqByTurnRef.current,
             },
             {
               addMessage,
@@ -684,6 +698,7 @@ export const useConversationStreamEffects = ({
                 currentTurnMessageIdRef.current = value;
               },
               committedAssistantMessageIds: committedAssistantMessageIdsRef.current,
+              lastDeltaSeqByTurn: lastDeltaSeqByTurnRef.current,
             },
             {
               addMessage,
@@ -755,6 +770,7 @@ export const useConversationStreamEffects = ({
                 currentTurnMessageIdRef.current = value;
               },
               committedAssistantMessageIds: committedAssistantMessageIdsRef.current,
+              lastDeltaSeqByTurn: lastDeltaSeqByTurnRef.current,
             },
             {
               addMessage,
@@ -805,6 +821,7 @@ export const useConversationStreamEffects = ({
                 currentTurnMessageIdRef.current = value;
               },
               committedAssistantMessageIds: committedAssistantMessageIdsRef.current,
+              lastDeltaSeqByTurn: lastDeltaSeqByTurnRef.current,
             },
             {
               addMessage,

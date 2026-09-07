@@ -3,7 +3,7 @@
 // ============================================================================
 
 import type { ReactNode } from 'react';
-import type { PermissionBoundaryRef, PermissionDecision, PermissionRequestReason } from '@shared/contract';
+import type { FileTargetKind, PermissionBoundaryRef, PermissionDecision, PermissionRequestReason } from '@shared/contract';
 
 // 权限类型
 export type PermissionType =
@@ -41,6 +41,8 @@ export interface PermissionRequestDetails {
   commandSecurityFlags?: string[];
   affectedPath?: string;
   affectedFileCount?: number;
+  /** Host 对写入目标的 stat 结论；渲染层只消费，缺省按 regular。 */
+  targetKind?: FileTargetKind;
   path?: string; // 兼容旧版 API
   // E2: 确认门控预览
   preview?: {

@@ -32,6 +32,16 @@ describe('AgentEventSchema', () => {
         timestamp: 1,
       },
     },
+    {
+      type: 'permission_request',
+      data: {
+        id: 'permission-device',
+        type: 'file_write',
+        tool: 'Write',
+        details: { path: '/dev/null', targetKind: 'device' },
+        timestamp: 1,
+      },
+    },
     { type: 'artifact_locator', data: { state: 'resolved', kind: 'document', reason: 'user-selected' } },
     {
       type: 'turn_diff',

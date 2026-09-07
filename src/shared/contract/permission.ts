@@ -24,6 +24,13 @@ export type PermissionType =
   /** request_directory 工具：申请把工作区外的一个目录加为 Project Source */
   | 'directory_access';
 
+/**
+ * Host 对写入目标的 stat 结论。渲染层只消费这个字段，不得从原始 file_path 推断。
+ * unknown / 缺省一律按 regular 出覆盖警告（fail-closed）。
+ */
+export const FILE_TARGET_KINDS = ['device', 'regular', 'unknown'] as const;
+export type FileTargetKind = (typeof FILE_TARGET_KINDS)[number];
+
 // 审批级别
 export type ApprovalLevel =
   | 'once'      // 允许一次
@@ -134,6 +141,11 @@ export interface PermissionRequest {
     /** 删除类命令在 host 侧解析并盘点出的目标证据。 */
     affectedPath?: string;
     affectedFileCount?: number;
+    /**
+     * Host 对 file_path 做 path.resolve + stat 后的目标种类。
+     * 渲染层只消费：device 出设备文案；regular / unknown / 缺省一律覆盖警告。
+     */
+    targetKind?: FileTargetKind;
     /**
      * B4：external 工具的授权 target 精确串（收件人/频道 id 等）。由 toolExecutor 在需人工审批时
      * 透传，供停车审批卡出「每次都允许发 <target>」铸权入口；模型侧无入口（no-self-grant）。

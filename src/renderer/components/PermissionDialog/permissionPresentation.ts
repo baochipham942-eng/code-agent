@@ -16,22 +16,10 @@ function basename(target: string): string {
 /**
  * /dev/null 的 basename 是 "null"，进标题会读成空值或普通文件名。
  * 设备节点与 DOS 保留名用完整路径展示，不当文件名截断。
- */
-/**
- * 这里**故意没有**「是不是设备文件」的判定。
  *
- * 审批卡拿到的是 host **未解析**的原始 file_path，渲染层无从知道它最终指向什么：
- * ai-review #1692 连着四轮各造出一个反例——`/dev/shm/report.md`（前缀）、POSIX 上名为
- * `NUL` 的文件（裸保留名）、`\dev\null`（反斜杠归一化）、Windows 上 `/dev/null` 解析成
- * `C:\dev\null`（平台差异）。每补一条判据就多一种构造法，且每一次判错的代价都是
- * **把「可能覆盖现有内容」的警告从一个真会被覆盖的文件上摘掉**。
- *
- * 所以按「穷举转结构性方案」收口：本层不再声称设备文件，一律保留覆盖警告
- * （写 /dev/null 时多一句无害的提示）。真要区分，得在 host 侧拿解析后的路径 + stat
- * 判断再传下来 —— 已开 N-APPROVAL-DEVICE-CONSEQUENCE-HOST。
+ * 标题是否保留完整路径。比设备白名单宽是**有意的**：多显示路径无害，少显示才误导。
+ * 覆盖警告不看这条——只看 host 下发的 `details.targetKind`。
  */
-
-/** 标题是否保留完整路径。比设备白名单宽是**有意的**：多显示路径无害，少显示才误导。 */
 function isDeviceOrSpecialPath(target: string): boolean {
   const normalized = target.replace(/\\/g, '/').replace(/\/+$/u, '');
   const lower = normalized.toLowerCase();
@@ -132,6 +120,17 @@ export function permissionConsequence(request: PermissionRequest, t: Translation
     return p.consequenceDelete
       .replace('{target}', safeTarget ?? p.targetFallback)
       .replace('{count}', fileCountText(count, t));
+  }
+  if (
+    request.details.targetKind === 'device'
+    && (request.type === 'file_write' || request.type === 'file_edit')
+  ) {
+    // Append 直写穿透：内容送达设备、节点保留；其余写类工具是原子替换，节点本身被换下。
+    if (request.tool === 'Append') {
+      return p.consequenceDeviceAppend.replace('{target}', safeTarget ?? p.targetFallback);
+    }
+    const copy = isOutsideWorkspace(request) ? p.consequenceDeviceOutside : p.consequenceDevice;
+    return copy.replace('{target}', safeTarget ?? p.targetFallback);
   }
   if (isOutsideWorkspace(request)) {
     return p.consequenceOutside

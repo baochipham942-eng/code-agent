@@ -399,16 +399,19 @@ describe('槽数据目录读隔离', () => {
     // 排除、后者必须能搜到。修好前系统 grep 拿 --exclude-dir=.code-agent 当排除项，
     // 按目录基名在任意深度匹配（槽根是 home 直接子目录时曾被判定为"精确"），项目
     // 配置一起被静默丢掉，调用方据此误判"配置不存在"。
+    //
+    // 引擎语义差异必须分开咬：rg 默认不搜隐藏目录（本工具未传 --hidden），
+    // projects/demo/.code-agent 这种隐藏配置目录只有系统 grep 腿能覆盖；
+    // rg 腿改咬同哨兵的非隐藏项目文件——锁的是「结果过滤不误伤正常项目匹配、
+    // 不泄漏生产槽」，而不是逼 rg 去搜它语义上就不搜的目录。
     const projectCfg = path.join(fakeHome, 'projects', 'demo', '.code-agent', 'agents.json');
+    const projectPlain = path.join(fakeHome, 'projects', 'demo', 'agents-plain.json');
     mkdirSync(path.dirname(projectCfg), { recursive: true });
     writeFileSync(projectCfg, `{"agents":"${PROD_SENTINEL}"}`);
+    writeFileSync(projectPlain, `{"agents":"${PROD_SENTINEL}"}`);
 
-    const assertProjectCfgSearchable = (result: ToolExecutionResult): void => {
-      expect(result.success).toBe(true);
-      const text = discoveryLeakText(result);
-      expect(text, '项目内 .code-agent 配置必须搜得到').toContain('projects/demo');
-      expect(text, '匹配要带着哨兵串回来').toContain(PROD_SENTINEL);
-      // 哨兵串同时存在于生产槽：泄漏判据咬生产槽根路径，不能咬哨兵串本身。
+    // 哨兵串同时存在于生产槽：泄漏判据咬生产槽根路径，不能咬哨兵串本身。
+    const assertNoProdLeak = (text: string): void => {
       expect(text, '生产槽路径（及其内容行）不能到达调用方').not.toContain(prodSlot);
     };
 
@@ -417,7 +420,11 @@ describe('槽数据目录读隔离', () => {
       { pattern: PROD_SENTINEL, path: fakeHome },
       { sessionId: 'slot-isolation-r5-projcfg-rg' },
     );
-    assertProjectCfgSearchable(rgResult);
+    expect(rgResult.success).toBe(true);
+    const rgText = discoveryLeakText(rgResult);
+    expect(rgText, 'rg 腿：非隐藏项目匹配不能被槽排除误伤').toContain('agents-plain.json');
+    expect(rgText, '匹配要带着哨兵串回来').toContain(PROD_SENTINEL);
+    assertNoProdLeak(rgText);
 
     __setRgBinaryPathForTest(null);
     try {
@@ -426,7 +433,11 @@ describe('槽数据目录读隔离', () => {
         { pattern: PROD_SENTINEL, path: fakeHome },
         { sessionId: 'slot-isolation-r5-projcfg-sysgrep' },
       );
-      assertProjectCfgSearchable(grepResult);
+      expect(grepResult.success).toBe(true);
+      const text = discoveryLeakText(grepResult);
+      expect(text, '系统 grep 腿：项目内 .code-agent 配置必须搜得到').toContain('projects/demo');
+      expect(text, '匹配要带着哨兵串回来').toContain(PROD_SENTINEL);
+      assertNoProdLeak(text);
     } finally {
       __setRgBinaryPathForTest(undefined);
     }

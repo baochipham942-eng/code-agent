@@ -54,15 +54,25 @@ function getIssueCode(issue: unknown): string | null {
 export function hasRecentArtifactRepairToolFailure(ctx: ContextAssemblyCtx): boolean {
   const recentMessages = ctx.runtime.messages.slice(-8);
   for (const message of recentMessages) {
-    if (message.role === 'tool') {
+    if (message.role !== 'tool') continue;
+    // Tool 消息的 content 是 toolResults 的 JSON 序列化（messageProcessor 落库前
+    // stringify）。验收通过分支写进 tool result 的 `artifactValidation: { failed:
+    // false, passed: true, ... }` 会让上方松正则在序列化文本上把「通过」判成修复
+    // 信号，连带 messageBuild 以 isArtifactRepairMode 为闸的记忆索引 / pinned 资料
+    // / 相关技能 / 延迟工具层在正常任务里全部被跳过。带 toolResults 的消息以
+    // 结构化判定为准（failed === true 元数据，或失败文本落在 error/output 上）；
+    // content 正则只留给没有 toolResults 的旧形态消息做兜底。
+    const results = message.toolResults?.length ? message.toolResults : null;
+    if (!results) {
       if (isArtifactRepairContent(message.content)) return true;
-      for (const result of message.toolResults ?? []) {
-        if (result.success === false && (isArtifactRepairContent(result.error) || isArtifactRepairContent(result.output))) {
-          return true;
-        }
-        if (getArtifactRepairToolMetadata(result).artifactValidation?.failed === true) {
-          return true;
-        }
+      continue;
+    }
+    for (const result of results) {
+      if (result.success === false && (isArtifactRepairContent(result.error) || isArtifactRepairContent(result.output))) {
+        return true;
+      }
+      if (getArtifactRepairToolMetadata(result).artifactValidation?.failed === true) {
+        return true;
       }
     }
   }

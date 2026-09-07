@@ -114,6 +114,7 @@ import { MountedConnectorIcons } from './MountedConnectorIcons';
 import { getAgentSlashCommandQuery } from './agentCommand';
 import { ComposerUploadStatus } from './ComposerUploadStatus';
 import { QueuedInputTray } from './QueuedInputTray';
+import { composerEditModeState } from './composerEditMode';
 import { useBundledCapabilityStore } from '../../../../stores/bundledCapabilityStore';
 
 // ============================================================================
@@ -594,9 +595,15 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       }
     },
     setDraft: (draft) => {
+      const mode = composerEditModeState(
+        draft.clientMessageId
+          ? { kind: 'failed-resend', clientMessageId: draft.clientMessageId }
+          : { kind: 'idle' },
+      );
       setValue(draft.content);
       setAttachments((draft.attachments ?? []).slice(0, UI.MAX_ATTACHMENTS_DROP));
-      pendingResendClientMessageIdRef.current = draft.clientMessageId ?? null;
+      pendingResendClientMessageIdRef.current = mode.pendingResendClientMessageId;
+      setEditingQueuedInputId(mode.editingQueuedInputId);
       setVoiceInputContext(null);
       inputAreaRef.current?.focus();
     },
@@ -1268,7 +1275,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
           revision={queuedInputRevision}
           editingId={editingQueuedInputId}
           onEdit={(input) => {
-            setEditingQueuedInputId(input.id);
+            const mode = composerEditModeState({ kind: 'queued-edit', queuedInputId: input.id });
+            setEditingQueuedInputId(mode.editingQueuedInputId);
+            pendingResendClientMessageIdRef.current = mode.pendingResendClientMessageId;
             setValue(input.envelope.content);
             setAttachments([]);
             setVoiceInputContext(null);

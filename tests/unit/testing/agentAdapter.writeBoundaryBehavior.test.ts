@@ -25,7 +25,55 @@ import { fileReadTracker } from '../../../src/host/tools/fileReadTracker';
 import { getProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
 import { resetPermissionModeManager } from '../../../src/host/permissions/modes';
 import { ToolExecutor } from '../../../src/host/tools/toolExecutor';
-import { buildEvalRunScoping } from '../../../src/host/testing/agentAdapter';
+
+// 父级 runContext 从真 StandaloneAgentAdapter 派生（与评测同码路）：Adapter 构造
+// ToolExecutor 时用 importActual 包裹捕获构造参数；AgentLoop 假掉（模型环不参与
+// scope 派生）。buildEvalRunScoping 是模块内私有（knip 生产档不许测试专用导出，
+// #1697 第七轮）——不 import 它、不手抄它的逻辑（手抄转接头两次栽过）。
+const captured = vi.hoisted(() => ({
+  executorConfigs: [] as Array<{ runContext?: import('../../../src/host/runtime/runContext').RunContext }>,
+}));
+
+vi.mock('../../../src/host/tools/toolExecutor', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../src/host/tools/toolExecutor')>();
+  return {
+    ...actual,
+    ToolExecutor: class extends actual.ToolExecutor {
+      constructor(config: ConstructorParameters<typeof actual.ToolExecutor>[0]) {
+        captured.executorConfigs.push(config);
+        super(config);
+      }
+    },
+  };
+});
+
+vi.mock('../../../src/host/agent/agentLoop', () => ({
+  AgentLoop: class AgentLoop {
+    constructor(_config: unknown) { /* 只读构造参数，不跑模型环 */ }
+    async run(): Promise<void> { /* no-op */ }
+  },
+}));
+
+vi.mock('../../../src/host/prompts/builder', () => ({
+  SYSTEM_PROMPT: 'test system prompt',
+}));
+
+vi.mock('../../../src/host/telemetry', () => ({
+  getTelemetryCollector: () => ({
+    startSession: vi.fn(),
+    endSession: vi.fn(),
+    handleEvent: vi.fn(),
+    createAdapter: vi.fn(() => ({})),
+    systemPromptCache: undefined,
+  }),
+}));
+
+vi.mock('../../../src/host/services/core/databaseService', () => ({
+  getDatabase: () => ({ isReady: false }),
+}));
+
+import { StandaloneAgentAdapter } from '../../../src/host/testing/agentAdapter';
+import { createRunContext } from '../../../src/host/runtime/runContext';
 
 describe('评测写边界（buildEvalRunScoping + 真 ToolExecutor）', () => {
   let parent: string;
@@ -64,22 +112,35 @@ describe('评测写边界（buildEvalRunScoping + 真 ToolExecutor）', () => {
     }
   });
 
-  /** 与 adapter.sendMessage 完全同款的构造（少 telemetry/spawn 等与边界无关项）。 */
-  function buildExecutor(restrict: boolean): ToolExecutor {
-    const scoping = buildEvalRunScoping({
-      restrictWritesToWorkspace: restrict,
+  /** 与 adapter.sendMessage 完全同码路的构造（少 telemetry/spawn 等与边界无关项）。
+   *  scope 取真 adapter 派生的那份；runContext 用公开构造器 createRunContext 换
+   *  本测试自己的 runId/sessionId 重包（直接复用 adapter 的 runContext 会撞
+   *  RUN_CONTEXT_MISMATCH——run 级一致性检查本来就是真的）。 */
+  async function buildExecutor(restrict: boolean): Promise<ToolExecutor> {
+    const adapter = new StandaloneAgentAdapter({
       workingDirectory: sandbox,
-      runId: 'wsb-behave-run',
-      sessionId: 'wsb-behave-session',
+      modelConfig: { provider: 'mock', model: 'mock-model' },
+      restrictWritesToWorkspace: restrict,
     });
+    await adapter.sendMessage('wsb behave probe');
+    const adapterRunContext = captured.executorConfigs.at(-1)?.runContext;
+    const runContext = adapterRunContext?.workspaceScope
+      ? createRunContext({
+        runId: 'wsb-behave-run',
+        sessionId: 'wsb-behave-session',
+        workspace: sandbox,
+        workspaceScope: adapterRunContext.workspaceScope,
+        cwd: adapterRunContext.cwd,
+      })
+      : undefined;
     const executor = new ToolExecutor({
       // 审批一律放行：要证明的是「边界拦住了」，不是「审批拦住了」。
       requestPermission: async () => true,
-      workingDirectory: scoping.runContext ? scoping.runContext.cwd : sandbox,
+      workingDirectory: runContext ? runContext.cwd : sandbox,
       ledgerOrigin: 'eval',
-      ...(scoping.runContext ? {
+      ...(runContext ? {
         restrictWritesToWorkspace: true,
-        runContext: scoping.runContext,
+        runContext,
       } : {}),
     });
     executor.setAuditEnabled(false);
@@ -88,7 +149,7 @@ describe('评测写边界（buildEvalRunScoping + 真 ToolExecutor）', () => {
 
   it('开着：沙箱内写放行且真落盘', async () => {
     const target = path.join(sandbox, 'inside.txt');
-    const result = await buildExecutor(true)
+    const result = await (await buildExecutor(true))
       .execute('Write', { file_path: target, content: 'wsb' }, { sessionId: 'wsb-behave-session' });
     expect(result.success).toBe(true);
     expect(existsSync(target)).toBe(true);
@@ -96,7 +157,7 @@ describe('评测写边界（buildEvalRunScoping + 真 ToolExecutor）', () => {
 
   it('开着：绝对路径逃逸拒绝且不落盘', async () => {
     const target = path.join(outside, 'escape-abs.txt');
-    const result = await buildExecutor(true)
+    const result = await (await buildExecutor(true))
       .execute('Write', { file_path: target, content: 'wsb' }, { sessionId: 'wsb-behave-session' });
     expect(result.success).toBe(false);
     expect(result.metadata?.code).toBe('PROJECT_SOURCE_OUTSIDE_WORKSPACE');
@@ -107,14 +168,14 @@ describe('评测写边界（buildEvalRunScoping + 真 ToolExecutor）', () => {
     const link = path.join(sandbox, 'link-out');
     await fs.symlink(outside, link, 'dir');
     const target = path.join(link, 'escape-symlink.txt');
-    const result = await buildExecutor(true)
+    const result = await (await buildExecutor(true))
       .execute('Write', { file_path: target, content: 'wsb' }, { sessionId: 'wsb-behave-session' });
     expect(result.success).toBe(false);
     expect(existsSync(path.join(outside, 'escape-symlink.txt'))).toBe(false);
   });
 
   it('开着：MemoryWrite 落进记忆目录（第二可写根）放行且真落盘', async () => {
-    const result = await buildExecutor(true)
+    const result = await (await buildExecutor(true))
       .execute('MemoryWrite', {
         action: 'write',
         filename: 'wsb-memory.md',
@@ -129,7 +190,7 @@ describe('评测写边界（buildEvalRunScoping + 真 ToolExecutor）', () => {
   });
 
   it('开着：Bash working_directory 越界被拒（注入 scope 后的有意行为）', async () => {
-    const result = await buildExecutor(true)
+    const result = await (await buildExecutor(true))
       .execute('Bash', { command: 'ls', working_directory: outside }, { sessionId: 'wsb-behave-session' });
     expect(result.success).toBe(false);
     expect(result.metadata?.code).toBe('RUN_WORKSPACE_BOUNDARY');
@@ -138,7 +199,7 @@ describe('评测写边界（buildEvalRunScoping + 真 ToolExecutor）', () => {
   it('🔴 关着：Bash working_directory 指到沙箱外**不拒**——不注入 scope ⇒ Bash 边界不亮（#1686 第五轮形状）', async () => {
     // 这条是验收④的行为面：开关关着时 runContext 不带 scope，挂在 scope 上的
     // RUN_WORKSPACE_BOUNDARY 必须不亮；亮了就是正常只读调用被拒 ⇒ 假阴性。
-    const result = await buildExecutor(false)
+    const result = await (await buildExecutor(false))
       .execute('Bash', { command: 'ls', working_directory: outside }, { sessionId: 'wsb-behave-session' });
     expect(result.metadata?.code).not.toBe('RUN_WORKSPACE_BOUNDARY');
     expect(result.metadata?.code).not.toBe('PROJECT_SOURCE_OUTSIDE_WORKSPACE');
@@ -146,7 +207,7 @@ describe('评测写边界（buildEvalRunScoping + 真 ToolExecutor）', () => {
 
   it('🔴 关着：沙箱外写不被这道闸拦（生产缺省行为，机制测试同款钉）', async () => {
     const target = path.join(outside, 'off-escape.txt');
-    const result = await buildExecutor(false)
+    const result = await (await buildExecutor(false))
       .execute('Write', { file_path: target, content: 'wsb' }, { sessionId: 'wsb-behave-session' });
     expect(result.metadata?.code).not.toBe('PROJECT_SOURCE_OUTSIDE_WORKSPACE');
   });
@@ -157,19 +218,27 @@ describe('评测写边界（buildEvalRunScoping + 真 ToolExecutor）', () => {
     await fs.mkdir(path.join(innerDataDir, 'memory'), { recursive: true });
     process.env.CODE_AGENT_DATA_DIR = innerDataDir;
     try {
-      const scoping = buildEvalRunScoping({
-        restrictWritesToWorkspace: true,
+      const adapter = new StandaloneAgentAdapter({
         workingDirectory: sandbox,
+        modelConfig: { provider: 'mock', model: 'mock-model' },
+        restrictWritesToWorkspace: true,
+      });
+      await adapter.sendMessage('wsb overlap probe');
+      const adapterRunContext = captured.executorConfigs.at(-1)?.runContext;
+      expect(adapterRunContext?.workspaceScope?.roots.map((root) => root.sourceId)).toEqual(['eval-sandbox']);
+      const runContext = createRunContext({
         runId: 'wsb-overlap-run',
         sessionId: 'wsb-behave-session',
+        workspace: sandbox,
+        workspaceScope: adapterRunContext?.workspaceScope,
+        cwd: adapterRunContext?.cwd ?? sandbox,
       });
-      expect(scoping.workspaceScope?.roots.map((root) => root.sourceId)).toEqual(['eval-sandbox']);
       const executor = new ToolExecutor({
         requestPermission: async () => true,
-        workingDirectory: scoping.runContext!.cwd,
+        workingDirectory: runContext.cwd,
         ledgerOrigin: 'eval',
         restrictWritesToWorkspace: true,
-        runContext: scoping.runContext,
+        runContext,
       });
       executor.setAuditEnabled(false);
       const result = await executor.execute('MemoryWrite', {

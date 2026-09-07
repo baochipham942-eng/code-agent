@@ -62,7 +62,7 @@ export const EVAL_AGENT_DEFAULTS = {
  * Bash 的写目标不归这个闸管（toolExecutor 对 isBashToolName 显式豁免，shell 解析只覆盖
  * `>`/cp/mv/tee 三类且只用于账本信号）——这是既有声明的边界，不是本单的覆盖面。
  */
-export function buildEvalRunScoping(input: {
+function buildEvalRunScoping(input: {
   restrictWritesToWorkspace: boolean;
   workingDirectory: string;
   runId: string;

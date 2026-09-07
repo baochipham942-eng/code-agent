@@ -9,16 +9,18 @@
 // 这是 #1686 第二轮「记忆根」形状往派生链深一层。
 //
 // 本测试走真 createSubagentToolRuntime（🚫 直注 executor——被测路径正是它内部的
-// worktree 分支 scope 重建），父级 scope 与评测 adapter 同源（真 buildEvalRunScoping
-// 造 sandbox primary + eval-memory additional 双根），cwd 构造真实 agent worktree 路径
-// （WORKTREE_BASE_DIR 下），判据锚真实落盘。
+// worktree 分支 scope 重建），父级 scope 与评测 adapter 同源（真 adapter 派生的
+// sandbox primary + eval-memory additional 双根），cwd 构造真实 agent worktree 路径
+// （WORKTREE_BASE_DIR 下），判据锚真实落盘。父级 scope 从真 StandaloneAgentAdapter
+// 派生（构造捕获，与评测同码路）——buildEvalRunScoping 是模块内私有，不许为测试开
+// export（knip 生产档，#1697 第七轮）。
 // ============================================================================
 
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { existsSync } from 'node:fs';
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getToolCache } from '../../../src/host/services/infra/toolCache';
 import { fileReadTracker } from '../../../src/host/tools/fileReadTracker';
@@ -26,11 +28,70 @@ import { getProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
 import { resetPermissionModeManager } from '../../../src/host/permissions/modes';
 import { createSubagentToolRuntime } from '../../../src/host/agent/subagentToolRuntime';
 import { WORKTREE_BASE_DIR } from '../../../src/host/agent/agentWorktreePath';
-import { buildEvalRunScoping } from '../../../src/host/testing/agentAdapter';
 import { createWorkspaceScope } from '../../../src/host/runtime/workspaceScope';
 import type { WorkspaceScope } from '../../../src/shared/contract/project';
 import type { SubagentExecutionContext } from '../../../src/host/agent/subagentExecutorTypes';
 import type { ToolExecutor } from '../../../src/host/tools/toolExecutor';
+
+// 父级 scope 从真 StandaloneAgentAdapter 派生（与评测同码路）：Adapter 构造 ToolExecutor
+// 时用 importActual 包裹捕获构造参数，AgentLoop 假掉（模型环不参与 scope 派生）。
+// buildEvalRunScoping 是模块内私有（knip 生产档不许测试专用导出，#1697 第七轮）。
+const captured = vi.hoisted(() => ({
+  executorConfigs: [] as Array<{ runContext?: { workspaceScope?: WorkspaceScope } }>,
+}));
+
+vi.mock('../../../src/host/tools/toolExecutor', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../src/host/tools/toolExecutor')>();
+  return {
+    ...actual,
+    ToolExecutor: class extends actual.ToolExecutor {
+      constructor(config: ConstructorParameters<typeof actual.ToolExecutor>[0]) {
+        captured.executorConfigs.push(config);
+        super(config);
+      }
+    },
+  };
+});
+
+vi.mock('../../../src/host/agent/agentLoop', () => ({
+  AgentLoop: class AgentLoop {
+    constructor(_config: unknown) { /* 只读构造参数，不跑模型环 */ }
+    async run(): Promise<void> { /* no-op */ }
+  },
+}));
+
+vi.mock('../../../src/host/prompts/builder', () => ({
+  SYSTEM_PROMPT: 'test system prompt',
+}));
+
+vi.mock('../../../src/host/telemetry', () => ({
+  getTelemetryCollector: () => ({
+    startSession: vi.fn(),
+    endSession: vi.fn(),
+    handleEvent: vi.fn(),
+    createAdapter: vi.fn(() => ({})),
+    systemPromptCache: undefined,
+  }),
+}));
+
+vi.mock('../../../src/host/services/core/databaseService', () => ({
+  getDatabase: () => ({ isReady: false }),
+}));
+
+import { StandaloneAgentAdapter } from '../../../src/host/testing/agentAdapter';
+
+/** 父级 scope 与评测 adapter 同码路：真 adapter 开边界派生，从构造捕获里取。 */
+async function evalScopeFromAdapter(workingDirectory: string): Promise<WorkspaceScope> {
+  const adapter = new StandaloneAgentAdapter({
+    workingDirectory,
+    modelConfig: { provider: 'mock', model: 'mock-model' },
+    restrictWritesToWorkspace: true,
+  });
+  await adapter.sendMessage('wsb probe');
+  const scope = captured.executorConfigs.at(-1)?.runContext?.workspaceScope;
+  if (!scope) throw new Error('adapter 没派生 scope');
+  return scope;
+}
 
 describe('worktree 子代理记忆根继承', () => {
   let parent: string;
@@ -72,16 +133,9 @@ describe('worktree 子代理记忆根继承', () => {
     await fs.rm(parent, { recursive: true, force: true });
   });
 
-  /** 父级 scope 与评测 adapter 完全同源：开着边界时 buildEvalRunScoping 造的双根 scope。 */
-  function evalParentScope(): WorkspaceScope {
-    const scoping = buildEvalRunScoping({
-      restrictWritesToWorkspace: true,
-      workingDirectory: sandbox,
-      runId: 'wsb-wtmr-run',
-      sessionId: 'wsb-wtmr-session',
-    });
-    if (!scoping.workspaceScope) throw new Error('buildEvalRunScoping did not derive a scope');
-    return scoping.workspaceScope;
+  /** 父级 scope 与评测 adapter 完全同源：开着边界的真 adapter 派生的双根 scope。 */
+  function evalParentScope(): Promise<WorkspaceScope> {
+    return evalScopeFromAdapter(sandbox);
   }
 
   function buildWorktreeSubagentExecutor(parentScope: WorkspaceScope): ToolExecutor {
@@ -112,7 +166,7 @@ describe('worktree 子代理记忆根继承', () => {
   }
 
   it('worktree 子代理：MemoryWrite 落记忆根（worktree 根外）放行且真落盘', async () => {
-    const result = await buildWorktreeSubagentExecutor(evalParentScope())
+    const result = await buildWorktreeSubagentExecutor(await evalParentScope())
       .execute('MemoryWrite', {
         action: 'write',
         filename: 'wsb-wtmr.md',
@@ -128,7 +182,7 @@ describe('worktree 子代理记忆根继承', () => {
 
   it('worktree 子代理：worktree 根内写放行且真落盘（重建后的 primary 生效）', async () => {
     const target = path.join(worktree, 'wt-inside.txt');
-    const result = await buildWorktreeSubagentExecutor(evalParentScope())
+    const result = await buildWorktreeSubagentExecutor(await evalParentScope())
       .execute('Write', { file_path: target, content: 'wsb' }, { sessionId: 'wsb-wtmr-session' });
     expect(result.success).toBe(true);
     expect(existsSync(target)).toBe(true);
@@ -136,7 +190,7 @@ describe('worktree 子代理记忆根继承', () => {
 
   it('worktree 子代理：worktree 根外且记忆根外仍拒且不落盘', async () => {
     const target = path.join(outside, 'wt-escape.txt');
-    const result = await buildWorktreeSubagentExecutor(evalParentScope())
+    const result = await buildWorktreeSubagentExecutor(await evalParentScope())
       .execute('Write', { file_path: target, content: 'wsb' }, { sessionId: 'wsb-wtmr-session' });
     expect(result.success).toBe(false);
     expect(result.metadata?.code).toBe('PROJECT_SOURCE_OUTSIDE_WORKSPACE');
@@ -208,16 +262,9 @@ describe('worktree 子代理 · 记忆目录被父级 primary 折叠（修复轮
     await fs.rm(root, { recursive: true, force: true });
   });
 
-  /** 折叠几何的父级 scope：真 buildEvalRunScoping 产物（此时应只有 primary 单根）。 */
-  function foldedParentScope(): WorkspaceScope {
-    const scoping = buildEvalRunScoping({
-      restrictWritesToWorkspace: true,
-      workingDirectory: sandbox,
-      runId: 'wsb-wt3-run',
-      sessionId: 'wsb-wt3-session',
-    });
-    if (!scoping.workspaceScope) throw new Error('buildEvalRunScoping did not derive a scope');
-    return scoping.workspaceScope;
+  /** 折叠几何的父级 scope：真 adapter 派生产物（此时应只有 primary 单根）。 */
+  function foldedParentScope(): Promise<WorkspaceScope> {
+    return evalScopeFromAdapter(sandbox);
   }
 
   function buildSubagentExecutor(input: {
@@ -249,15 +296,16 @@ describe('worktree 子代理 · 记忆目录被父级 primary 折叠（修复轮
     return runtime.executor;
   }
 
-  it('前提钉：CODE_AGENT_DATA_DIR 在沙箱内时 buildEvalRunScoping 只产 primary 单根（记忆被折叠）', () => {
+  it('前提钉：CODE_AGENT_DATA_DIR 在沙箱内时评测派生只产 primary 单根（记忆被折叠）', async () => {
     // 任务书前提的几何钉：折叠不成立（比如 adapter 改成显式双根）时这条红，
     // 说明被测前提已变，折叠用例要跟着重审，而不是静默变成双根走轮 2 路径。
-    expect(foldedParentScope().roots.length).toBe(1);
-    expect(foldedParentScope().roots[0].role).toBe('primary');
+    const foldedScope = await foldedParentScope();
+    expect(foldedScope.roots.length).toBe(1);
+    expect(foldedScope.roots[0].role).toBe('primary');
   });
 
   it('折叠 + worktree 子代理：MemoryWrite(scope="global") 放行且真落盘（修复轮 3 核心）', async () => {
-    const result = await buildSubagentExecutor({ parentScope: foldedParentScope(), cwd: worktree, boundaryEnabled: true })
+    const result = await buildSubagentExecutor({ parentScope: await foldedParentScope(), cwd: worktree, boundaryEnabled: true })
       .execute('MemoryWrite', {
         action: 'write',
         scope: 'global',
@@ -275,7 +323,7 @@ describe('worktree 子代理 · 记忆目录被父级 primary 折叠（修复轮
 
   it('折叠 + worktree 子代理：worktree 根外且记忆根外仍拒且不落盘', async () => {
     const target = path.join(outside, 'wt3-escape.txt');
-    const result = await buildSubagentExecutor({ parentScope: foldedParentScope(), cwd: worktree, boundaryEnabled: true })
+    const result = await buildSubagentExecutor({ parentScope: await foldedParentScope(), cwd: worktree, boundaryEnabled: true })
       .execute('Write', { file_path: target, content: 'wsb' }, { sessionId: 'wsb-wt3-session' });
     expect(result.success).toBe(false);
     expect(result.metadata?.code).toBe('PROJECT_SOURCE_OUTSIDE_WORKSPACE');
@@ -285,7 +333,7 @@ describe('worktree 子代理 · 记忆目录被父级 primary 折叠（修复轮
   it('折叠 + worktree 子代理：不继承父级 primary 本体——沙箱内（记忆根外）仍拒', async () => {
     // 口径另一面：保留的只有记忆目录，父级 primary（沙箱）不跟着进子级 scope。
     const target = path.join(sandbox, 'wt3-primary-body.txt');
-    const result = await buildSubagentExecutor({ parentScope: foldedParentScope(), cwd: worktree, boundaryEnabled: true })
+    const result = await buildSubagentExecutor({ parentScope: await foldedParentScope(), cwd: worktree, boundaryEnabled: true })
       .execute('Write', { file_path: target, content: 'wsb' }, { sessionId: 'wsb-wt3-session' });
     expect(result.success).toBe(false);
     expect(result.metadata?.code).toBe('PROJECT_SOURCE_OUTSIDE_WORKSPACE');
@@ -298,7 +346,7 @@ describe('worktree 子代理 · 记忆目录被父级 primary 折叠（修复轮
     // 父级工作区内（createRunContext 会拒 scope 外的 cwd，真实非 worktree 子代理也如此）。
     const normalDir = path.join(sandbox, 'sub-dir');
     await fs.mkdir(normalDir);
-    const result = await buildSubagentExecutor({ parentScope: foldedParentScope(), cwd: normalDir, boundaryEnabled: true })
+    const result = await buildSubagentExecutor({ parentScope: await foldedParentScope(), cwd: normalDir, boundaryEnabled: true })
       .execute('MemoryWrite', {
         action: 'write',
         scope: 'global',
@@ -316,7 +364,7 @@ describe('worktree 子代理 · 记忆目录被父级 primary 折叠（修复轮
     // 保守性 gate：合成只在写边界开着时发生。关着时子级 scope 若多出记忆根，
     // Bash working_directory 闸会被松掉（bindRunScopedParams 按根判）——这条
     // 钉住「关着 = 一字不差」。拒在工具查找之前，不真跑 shell。
-    const result = await buildSubagentExecutor({ parentScope: foldedParentScope(), cwd: worktree, boundaryEnabled: false })
+    const result = await buildSubagentExecutor({ parentScope: await foldedParentScope(), cwd: worktree, boundaryEnabled: false })
       .execute('Bash', { command: 'pwd', working_directory: memoryDir }, { sessionId: 'wsb-wt3-session' });
     expect(result.success).toBe(false);
     expect(result.metadata?.code).toBe('RUN_WORKSPACE_BOUNDARY');

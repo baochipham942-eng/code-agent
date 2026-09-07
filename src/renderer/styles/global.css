@@ -91,7 +91,7 @@ html, body, #root {
 }
 
 body {
-  font-family: 'Inter', 'Source Han Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   font-size: var(--font-size-base);
   line-height: var(--line-height-normal);
   background-color: var(--bg-deep);
@@ -296,7 +296,7 @@ body.theme-switching * {
    ============================================================================ */
 
 pre, code {
-  font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', Menlo, Monaco, 'Courier New', monospace;
+  font-family: 'SF Mono', 'Fira Code', Menlo, Monaco, 'Courier New', monospace;
   font-feature-settings: 'liga' on, 'calt' on;
 }
 

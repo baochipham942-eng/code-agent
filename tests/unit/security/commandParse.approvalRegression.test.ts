@@ -41,6 +41,9 @@ describe('shared parser automatic approval regressions', () => {
     expect(isKnownSafeCommand('echo ok\u00a0#tag; ./cleanup')).toBe(false);
     expect(isKnownSafeCommand('echo ok\u000b#tag; ./cleanup')).toBe(false);
     expect(isKnownSafeCommand('echo ok\r#tag; ./cleanup')).toBe(false);
+    // Round 22: the escaped form must not reach shell-quote either — `ls\<U+00A0>/run-task` is one word.
+    expect(isKnownSafeCommand('ls\\\u00a0/run-task')).toBe(false);
+    expect(parseShellCommand('ls\\\u00a0/run-task').segments[0].words).toEqual(['ls\u00a0/run-task']);
     const parsed = parseShellCommand('echo ok#tag; ./cleanup');
     expect(parsed.executions.map(({ program }) => program)).toEqual(['echo', './cleanup']);
     expect(isKnownSafeCommand('echo ok#tag; ./cleanup')).toBe(false);

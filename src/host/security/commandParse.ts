@@ -132,8 +132,17 @@ function shellLines(command: string): string[] {
         index += 2;
         continue;
       }
+      const escapedNext = command[index + 1];
+      if (quoteMode === 'plain' && escapedNext !== undefined && /\s/.test(escapedNext) && !/[ \t\n]/.test(escapedNext)) {
+        // `\<U+00A0>` is that byte to bash; shell-quote would drop the backslash and split on it, so
+        // it takes the same quoting path as the unescaped form (round 22).
+        result += `'${escapedNext}'`;
+        index += 1;
+        atWordStart = false;
+        continue;
+      }
       result += character;
-      if (command[index + 1] !== undefined) result += command[++index];
+      if (escapedNext !== undefined) result += command[++index];
       atWordStart = false;
       continue;
     }

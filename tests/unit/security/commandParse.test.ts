@@ -236,6 +236,23 @@ describe('shared shell command parser', () => {
     expect(parseShellCommand('echo ok #tag; ./cleanup').executions.map((e) => e.program)).toEqual(['echo']);
   });
 
+  // Rounds 20–22 were three members of one family, so pin the whole family: every character JS `\\s`
+  // matches that bash does not split on, in every position where it could reach shell-quote.
+  const NON_BASH_WHITESPACE = Array.from({ length: 0x10000 }, (_, code) => String.fromCharCode(code))
+    .filter((character) => /\s/.test(character) && !/[ \t\n]/.test(character));
+
+  it.each(NON_BASH_WHITESPACE.map((character) => [`U+${character.charCodeAt(0).toString(16).padStart(4, '0')}`, character]))(
+    'a JS-whitespace byte bash does not split on stays inside the word: %s', (_label, ws) => {
+      expect(parseShellCommand(`echo a${ws}b`).segments[0].words).toEqual(['echo', `a${ws}b`]);
+      expect(parseShellCommand(`echo a\\${ws}b`).segments[0].words).toEqual(['echo', `a${ws}b`]);
+      expect(parseShellCommand(`ls${ws}/run-task`).segments[0].words).toEqual([`ls${ws}/run-task`]);
+      expect(parseShellCommand(`ls\\${ws}/run-task`).segments[0].words).toEqual([`ls${ws}/run-task`]);
+      const comment = parseShellCommand(`echo ok${ws}#tag; ./cleanup`);
+      expect(comment.executions.map((e) => e.program)).toEqual(['echo', './cleanup']);
+      expect(comment.segments[0].words).toEqual(['echo', `ok${ws}#tag`]);
+    },
+  );
+
   it('keeps each redirection on its own segment', () => {
     const parsed = parseShellCommand('printf x > out.txt; ls; cat y >> log.txt');
     expect(parsed.segments.map((segment) => segment.redirects.map((target) => target.path)))

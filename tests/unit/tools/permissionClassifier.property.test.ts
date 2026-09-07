@@ -252,6 +252,8 @@ const KNOWN_SHAPES = [
   'echo\u00a0ok; ./cleanup',
   'rm\u00a0-rf ~/.ssh/id_rsa',
   'echo ok\r#tag; ./cleanup',
+  'ls\\\u00a0/run-task',
+  'ls\\\r/run-task',
 ];
 
 // Under /tmp the critical-path rm rule fires before anything else and masks weaker rules; a real

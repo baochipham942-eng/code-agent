@@ -58,7 +58,7 @@ export interface SnapshotBlobs {
   toolSchemas: Record<string, string>;
 }
 
-export interface SnapshotTurnReplayResult {
+interface SnapshotTurnReplayResult {
   turnId: string;
   status: 'verified' | 'skipped-degraded';
 }
@@ -92,7 +92,7 @@ function readSnapshotFile(filePath: string): string {
   }
 }
 
-export function readSnapshotJson<T>(filePath: string): T {
+function readSnapshotJson<T>(filePath: string): T {
   const raw = readSnapshotFile(filePath);
   try {
     return JSON.parse(raw) as T;
@@ -128,7 +128,7 @@ function assertSnapshotBytesEqual(label: string, expectedRaw: string, actualRaw:
 }
 
 /** 假模型响应的 canonical 形态：只留模型可见字节，键序由本函数构造固定。 */
-export function canonicalizeSnapshotResponse(response: ModelResponse): unknown {
+function canonicalizeSnapshotResponse(response: ModelResponse): unknown {
   return {
     type: response.type,
     content: response.content,
@@ -148,7 +148,7 @@ export function canonicalizeSnapshotResponse(response: ModelResponse): unknown {
   };
 }
 
-export function snapshotBlobsReaders(blobs: SnapshotBlobs): RequestReplayContentReaders {
+function snapshotBlobsReaders(blobs: SnapshotBlobs): RequestReplayContentReaders {
   return {
     getSystemPrompt: (hash) => {
       const content = blobs.systemPrompts[hash];
@@ -159,13 +159,13 @@ export function snapshotBlobsReaders(blobs: SnapshotBlobs): RequestReplayContent
   };
 }
 
-export interface SnapshotCaseFiles {
+interface SnapshotCaseFiles {
   index: SnapshotCaseIndex;
   ledgerMessages: Message[];
   blobs: SnapshotBlobs;
 }
 
-export function readSnapshotCase(caseDir: string): SnapshotCaseFiles {
+function readSnapshotCase(caseDir: string): SnapshotCaseFiles {
   const index = readSnapshotJson<SnapshotCaseIndex>(path.join(caseDir, 'index.json'));
   if (index.version !== 1) {
     throw new SnapshotReplayMismatchError(`快照 index 版本不支持：${JSON.stringify(index.version)}（${caseDir}）`);
@@ -183,7 +183,7 @@ export function readSnapshotCase(caseDir: string): SnapshotCaseFiles {
  * expected-response 字节。degraded manifest 返回 skipped-degraded（与
  * verifyRequestReplayBatch 同口径：跳过不算失败，但要计数防静默全跳）。
  */
-export function replaySnapshotTurn(
+function replaySnapshotTurn(
   caseDir: string,
   turnId: string,
   caseFiles: SnapshotCaseFiles,
@@ -474,7 +474,7 @@ export function buildSnapshotScrubRules(input: { repoRoot: string; dataDir: stri
     .sort((left, right) => right.from.length - left.from.length);
 }
 
-export function scrubSnapshotText(text: string, rules: readonly SnapshotScrubRule[]): string {
+function scrubSnapshotText(text: string, rules: readonly SnapshotScrubRule[]): string {
   let out = text;
   for (const rule of rules) {
     out = out.split(rule.from).join(rule.to);

@@ -426,7 +426,21 @@ export function collectSnapshotBlobs(
   };
 }
 
-/** 录制完成后立即自验：落盘字节必须能当场回放通过（白名单/规范化的钉测试）。 */
+/**
+ * 录制完成后立即自验：落盘字节必须能当场回放通过（白名单/规范化的钉测试）。
+ *
+ * 口径边界（ai-review #1721 Nit 2 成文）：本函数与回放器共用 reconstructRequest /
+ * deriveSnapshotResponse，因此录制自验只证明「往返一致」——manifest + 账本 +
+ * blob 能被同一份重建代码读回来；它**不**证明「与现场一致」——不证明落盘字节
+ * 等于推理现场真实跨过引擎边界的那一份。现场一致性由两道既有闸守：
+ *   1. 生产录制侧：request_manifest 在 inference.ts 记录的是实发视图，哈希对齐
+ *      content_cache（哈希不符即 degraded，录制器遇 degraded 直接 fail-loud）；
+ *   2. 现场对照挂点：acceptance:request-replay（request-replay-smoke.ts）把
+ *      重建视图与 ModelRouter 实发消息逐字节咬住（双向变异控制），
+ *      本快照体系负责「跨时间重放」，它负责「现场 vs 重建」。
+ * 若日后要给快照本体加现场对照，挂点在 deriveSnapshotResponse：把录制时真收到的
+ * ModelResponse（需可注入的 router 包装点，目前不存在）与推导值并排落盘比对。
+ */
 export function buildSnapshotTurnFiles(
   manifest: SnapshotManifest,
   ledgerMessages: readonly Message[],

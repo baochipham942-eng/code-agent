@@ -199,9 +199,39 @@ function injectCsp(html: string): string {
   return `<!DOCTYPE html><html><head>${CSP_META}</head><body>${html}</body></html>`;
 }
 
+function lastRealBodyClose(html: string): number {
+  const lower = html.toLowerCase();
+  let index = 0;
+  let last = -1;
+  while (index < lower.length) {
+    if (lower.startsWith('<!--', index)) {
+      const end = lower.indexOf('-->', index + 4);
+      index = end < 0 ? lower.length : end + 3;
+      continue;
+    }
+    if (lower.startsWith('<script', index)) {
+      const end = lower.indexOf('</script>', index);
+      index = end < 0 ? lower.length : end + 9;
+      continue;
+    }
+    if (lower.startsWith('<textarea', index)) {
+      const end = lower.indexOf('</textarea>', index);
+      index = end < 0 ? lower.length : end + 11;
+      continue;
+    }
+    if (lower.startsWith('</body>', index)) {
+      last = index;
+      index += 7;
+      continue;
+    }
+    index += 1;
+  }
+  return last;
+}
+
 function injectDriver(html: string): string {
   if (html.includes(IN_APP_VALIDATION_DRIVER_FLAG)) return html;
-  const close = html.toLowerCase().lastIndexOf('</body>');
+  const close = lastRealBodyClose(html);
   if (close >= 0) {
     return `${html.slice(0, close)}${DRIVER_SCRIPT}${html.slice(close)}`;
   }

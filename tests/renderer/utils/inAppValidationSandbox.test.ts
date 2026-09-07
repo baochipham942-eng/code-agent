@@ -52,4 +52,14 @@ describe('inAppValidationSandbox', () => {
     expect(driverAt).toBeGreaterThan(wrapped.indexOf('const suffix'));
     expect(driverAt).toBeLessThan(realClose);
   });
+
+  it('不把注释里的 </body> 当闭合标签', () => {
+    const source = '<html><body>ok</body><!-- </body> --></html>';
+    const wrapped = wrapInAppValidationHtml(source);
+    const commentAt = wrapped.indexOf('<!--');
+    const driverAt = wrapped.indexOf('data-neo-in-app-driver');
+    expect(driverAt).toBeGreaterThan(0);
+    expect(driverAt).toBeLessThan(commentAt);
+    expect(wrapped.slice(commentAt)).toContain('<!-- </body> -->');
+  });
 });

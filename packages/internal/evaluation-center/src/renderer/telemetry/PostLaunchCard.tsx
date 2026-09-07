@@ -18,6 +18,19 @@ import { pivotPostLaunchReport, type PostLaunchPivotColumn } from './postLaunchP
 
 type PostLaunchScope = PostLaunchScopeRow['scope'];
 
+/** 一次回流预览的场次上限。满额后禁用未选项，禁止静默 slice 砍掉新勾的 id。 */
+const REFLOW_SELECTION_LIMIT = 20;
+
+/**
+ * null = 未初始化，默认当前候选前 20；[] = 用户清空，保持空、不复活默认。
+ * 用户操作过的集合与当前候选取交集，掉出列表的会话不再进入提交/同意档。
+ */
+function liveReflowSelection(selected: string[] | null, candidateIds: string[]): string[] {
+  if (selected === null) return candidateIds.slice(0, REFLOW_SELECTION_LIMIT);
+  const live = new Set(candidateIds);
+  return selected.filter((id) => live.has(id));
+}
+
 interface PostLaunchCardProps {
   report: PostLaunchReport | null;
   running: boolean;
@@ -65,7 +78,8 @@ export const PostLaunchCard: React.FC<PostLaunchCardProps> = ({
   const [openColumn, setOpenColumn] = useState<number | null>(null);
   const candidateSessionIds = useMemo(() => [...new Set(reflowCandidates.map((candidate) => candidate.sessionId))], [reflowCandidates]);
   const [selectedReflowSessions, setSelectedReflowSessions] = useState<string[] | null>(null);
-  const selectedIds = selectedReflowSessions ?? candidateSessionIds.slice(0, 20);
+  const selectedIds = liveReflowSelection(selectedReflowSessions, candidateSessionIds);
+  const atReflowLimit = selectedIds.length >= REFLOW_SELECTION_LIMIT;
   // IPC 回来的东西在信任边界之外：形状不对就当没有报告、渲染空态。
   // 一张卡片把整个遥测页崩掉，比它什么都不显示糟得多。
   const safe = report && Array.isArray(report.groups) && report.calibration && report.budget ? report : null;
@@ -308,18 +322,37 @@ export const PostLaunchCard: React.FC<PostLaunchCardProps> = ({
       {onOpenHarvest && reflowCandidates.length > 0 && (
         <div className="mt-3" data-testid="postlaunch-reflow-entry">
           <div className="mb-1 flex flex-wrap gap-1">
-            {candidateSessionIds.map((id) => (
-              <label key={id} className="flex items-center gap-1 text-[10px] text-zinc-400">
-                <input type="checkbox" checked={selectedIds.includes(id)} onChange={(event) => {
-                  setSelectedReflowSessions((current) => {
-                    const base = current ?? candidateSessionIds.slice(0, 20);
-                    return event.target.checked ? [...new Set([...base, id])].slice(0, 20) : base.filter((value) => value !== id);
-                  });
-                }} />
-                <span className="max-w-[10rem] truncate">{id}</span>
-              </label>
-            ))}
+            {candidateSessionIds.map((id) => {
+              const checked = selectedIds.includes(id);
+              const lockedOut = !checked && atReflowLimit;
+              return (
+                <label key={id} className="flex items-center gap-1 text-[10px] text-zinc-400">
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    disabled={lockedOut}
+                    title={lockedOut ? p.reflowLimitReached : undefined}
+                    data-testid={`postlaunch-reflow-check-${id}`}
+                    onChange={(event) => {
+                      setSelectedReflowSessions((current) => {
+                        const base = liveReflowSelection(current, candidateSessionIds);
+                        if (!event.target.checked) return base.filter((value) => value !== id);
+                        if (base.length >= REFLOW_SELECTION_LIMIT) return base;
+                        if (!candidateSessionIds.includes(id)) return base;
+                        return [...new Set([...base, id])];
+                      });
+                    }}
+                  />
+                  <span className="max-w-[10rem] truncate">{id}</span>
+                </label>
+              );
+            })}
           </div>
+          {atReflowLimit && (
+            <p className="mb-1 text-[10px] text-zinc-500" data-testid="postlaunch-reflow-limit">
+              {p.reflowLimitReached}
+            </p>
+          )}
           <button
             type="button"
             onClick={() => { if (selectedIds.length === 0) return; onOpenHarvest(selectedIds); }}
@@ -327,7 +360,7 @@ export const PostLaunchCard: React.FC<PostLaunchCardProps> = ({
             data-testid="postlaunch-reflow-open"
             className="rounded bg-badge-info/15 px-2 py-1 text-[10px] text-badge-info hover:bg-badge-info/25 disabled:opacity-50"
           >
-            {p.reflowOpen} ({selectedIds.length}/20)
+            {p.reflowOpen} ({selectedIds.length}/{REFLOW_SELECTION_LIMIT})
           </button>
         </div>
       )}

@@ -156,6 +156,7 @@ export const evalCenterZh = {
       readingNote: '阅读口径：百分数是报告里的通过率，Δ 是这两个显示值相减（算得），不是相对增长率。分母是有判定的真实用户会话轮，列头 N 是该类型总轮数，不保证每一维都有判定；— 表示无判定，不是零通过率。失败类别、信号、成本、会话沿用整组统计，不随轮类型重新分拆。',
       openSession: '看这条会话',
       reflowOpen: '收为回归题目',
+      reflowLimitReached: '已选满 20 场，先取消一项再勾',
       dims: {
         goal: '目标',
         orchestration: '编排',
@@ -380,6 +381,7 @@ export const evalCenterEn = {
       readingNote: 'How to read it: the percentages come from the report, and Δ is those two displayed values subtracted (computed) — not a relative growth rate. The denominator is real user turns that got a verdict; the N in the header is the total turns of that type, and not every dimension has a verdict — an — means no verdict, not a zero pass rate. Failure classes, signals, cost and sessions stay whole-group and are never re-split by turn type.',
       openSession: 'Open session',
       reflowOpen: 'Save as regression case',
+      reflowLimitReached: 'Already 20 sessions selected; uncheck one first',
       dims: {
         goal: 'Goal',
         orchestration: 'Orchestration',

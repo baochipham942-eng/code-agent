@@ -60,6 +60,35 @@ export function queryNegativeFeedback(
   }));
 }
 
+export interface FeedbackAnchor {
+  messageId: string | null;
+  turnId: string | null;
+  anchorTimestamp?: number | null;
+}
+
+/**
+ * 点踩锚的两级顺序（与 resolveFeedbackPrompt 同一套，禁止另造第三套）：
+ * 1. messageId/turnId 命中某条消息 → 用被评价消息自己；
+ * 2. 都没命中 → 再退 created_at 时间锚；再没有时间锚 → 会话最后一条。
+ */
+export function resolveFeedbackTargetMessage<T extends { id: string; timestamp?: number }>(
+  messages: readonly T[],
+  feedback: FeedbackAnchor,
+): T | null {
+  const ordered = [...messages].sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
+  const byId = ordered.find(
+    (message) => message.id === feedback.messageId || (feedback.turnId !== null && message.id === feedback.turnId),
+  );
+  if (byId) return byId;
+  if (feedback.anchorTimestamp !== undefined && feedback.anchorTimestamp !== null) {
+    for (let index = ordered.length - 1; index >= 0; index -= 1) {
+      if ((ordered[index].timestamp ?? 0) <= feedback.anchorTimestamp) return ordered[index];
+    }
+    return null;
+  }
+  return ordered[ordered.length - 1] ?? null;
+}
+
 /**
  * 从会话消息里回溯反馈对应的用户原话（两级 fallback）：
  * 1. feedback.messageId/turnId 命中某条消息 → 取该消息之前最近的 user 原话
@@ -69,30 +98,13 @@ export function queryNegativeFeedback(
  */
 export function resolveFeedbackPrompt(
   messages: Message[],
-  feedback: { messageId: string | null; turnId: string | null; anchorTimestamp?: number | null },
+  feedback: FeedbackAnchor,
 ): string | null {
   const ordered = [...messages].sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
-  const anchorIndex = ordered.findIndex(
-    (m) => m.id === feedback.messageId || (feedback.turnId !== null && m.id === feedback.turnId),
-  );
-
-  // id 未命中时用时间锚收束回溯起点——盲落最后一条会拿到晚于反馈的原话
-  //（与 resolveTurnPrompt 同类问题的对称位置，Gemini 审计 R2）。
-  let searchFrom: number;
-  if (anchorIndex >= 0) {
-    searchFrom = anchorIndex;
-  } else if (feedback.anchorTimestamp !== undefined && feedback.anchorTimestamp !== null) {
-    searchFrom = -1;
-    for (let i = ordered.length - 1; i >= 0; i--) {
-      if ((ordered[i].timestamp ?? 0) <= feedback.anchorTimestamp) {
-        searchFrom = i;
-        break;
-      }
-    }
-    if (searchFrom < 0) return null;
-  } else {
-    searchFrom = ordered.length - 1;
-  }
+  const target = resolveFeedbackTargetMessage(ordered, feedback);
+  if (!target) return null;
+  const searchFrom = ordered.findIndex((message) => message.id === target.id);
+  if (searchFrom < 0) return null;
   for (let i = searchFrom; i >= 0; i--) {
     const m = ordered[i];
     if (m.role === 'user' && typeof m.content === 'string' && m.content.trim()) {

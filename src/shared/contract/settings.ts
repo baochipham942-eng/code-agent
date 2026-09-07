@@ -415,6 +415,8 @@ export interface AppSettings {
      * 「跟随默认」写显式的 'auto' 而不是删键：mergeSettings 跳过 undefined，删不掉旧值。
      */
     postLaunchScoring?: 'on' | 'off' | 'auto';
+    /** 上线后坏案例回流入口；三态与评分开关一致，默认跟随内部槽。 */
+    postLaunchReflow?: 'on' | 'off' | 'auto';
   };
   /** 第三方界面插件总开关。缺省与默认配置均为关闭。 */
   pluginUi?: {

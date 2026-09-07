@@ -94,8 +94,11 @@ function shellLines(command: string): string[] {
     }
     // shell-quote does not distinguish IO numbers from operands. Drop only a plain,
     // whole numeric word attached to a redirect; quoted/escaped digits and `2 > f` stay data.
+    // A line continuation between the digits and the operator is removed by bash before it reads
+    // the word, so `2\<LF>>&1` is the IO number 2 as well (round 24: it used to survive as cp's
+    // last operand and replace the real write target).
     if (quoteMode === 'plain' && atWordStart && /[0-9]/.test(character)) {
-      const ioNumber = command.slice(index).match(/^[0-9]+(?=[<>])/);
+      const ioNumber = command.slice(index).match(/^[0-9]+(?:\\\r?\n)*(?=[<>])/);
       if (ioNumber) {
         index += ioNumber[0].length - 1;
         continue;

@@ -261,6 +261,18 @@ describe('shared shell command parser', () => {
     expect(spaced.writeTargets.map((t) => t.path)).toEqual(['/dev/null', 'target.txt']);
   });
 
+  it('reads an IO number across a line continuation before the redirect operator', () => {
+    for (const command of ['cp source.txt target.txt 2\\\n>&1', 'cp source.txt target.txt 2\\\r\n>&1', 'cp source.txt target.txt 2\\\n\\\n>&1']) {
+      const parsed = parseShellCommand(command);
+      expect(parsed.parsingFailed).toBe(false);
+      expect(parsed.writeTargets).toEqual([{ path: 'target.txt', source: 'copy', uncertain: false }]);
+    }
+    expect(parseShellCommand('echo x 2\\\n> err.log').writeTargets.map((t) => t.path)).toEqual(['err.log']);
+    // A quoted or space-separated digit is still an operand, not an IO number.
+    expect(parseShellCommand("echo x '2'> two.txt").segments[0].words).toEqual(['echo', 'x', '2']);
+    expect(parseShellCommand('echo x 2 > two.txt').segments[0].words).toEqual(['echo', 'x', '2']);
+  });
+
   it('keeps each redirection on its own segment', () => {
     const parsed = parseShellCommand('printf x > out.txt; ls; cat y >> log.txt');
     expect(parsed.segments.map((segment) => segment.redirects.map((target) => target.path)))

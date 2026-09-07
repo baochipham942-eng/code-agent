@@ -74,6 +74,11 @@ describe('shell redirect write targets', () => {
       .toContain(resolveCanonicalRunPath(path.join(workingDirectory, target)));
   });
 
+  it('an IO number split from its operator by a line continuation does not replace the write target', () => {
+    expect(resolve('cp source.txt target.txt 2\\\n>&1').targets)
+      .toEqual([resolveCanonicalRunPath(path.join(workingDirectory, 'target.txt'))]);
+  });
+
   it('a background & followed by a redirect does not swallow the next command\'s write target', () => {
     expect(resolve('echo ok & > /dev/null cp source.txt target.txt').targets)
       .toContain(resolveCanonicalRunPath(path.join(workingDirectory, 'target.txt')));

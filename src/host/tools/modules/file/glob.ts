@@ -29,6 +29,10 @@ import type {
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { buildSpillNotice, spillToolResultArchive, type ToolResultArchiveRef } from '../../../utils/toolResultSpill';
 import { globSchema as schema } from './glob.schema';
+import {
+  collectForeignSlotTraversalExcludes,
+  isListedPathInsideForeignSlot,
+} from '../../../security/slotDataDirGuard';
 
 const MAX_RESULTS = 200;
 const MAX_LIMIT = 1000;
@@ -161,18 +165,24 @@ class GlobHandler implements ToolHandler<Record<string, unknown>, string> {
     }
 
     const searchPath = resolveInputPath(inputPath, ctx.workingDir);
+    const slotExcludes = collectForeignSlotTraversalExcludes(searchPath);
 
     onProgress?.({ stage: 'starting', detail: `glob ${pattern}` });
 
     try {
-      const ignore = respectGitignore
-        ? [...DEFAULT_IGNORE, ...await readGitignorePatterns(searchPath)]
-        : DEFAULT_IGNORE;
-      const matches = await globLib(pattern, {
+      const ignore = [
+        ...(respectGitignore
+          ? [...DEFAULT_IGNORE, ...await readGitignorePatterns(searchPath)]
+          : DEFAULT_IGNORE),
+        ...slotExcludes.ignoreGlobs,
+      ];
+      const matches = (await globLib(pattern, {
         cwd: searchPath,
         nodir: true,
         ignore,
-      });
+      })).filter((match) => (
+        !isListedPathInsideForeignSlot(path.resolve(searchPath, match), slotExcludes.roots)
+      ));
       const sortedMatches = await sortMatches(matches, searchPath, sort);
 
       if (sortedMatches.length === 0) {

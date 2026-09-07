@@ -82,8 +82,7 @@ function classificationHostReason(result: ClassificationResult, toolName: string
       ? HostReasonCode.PermissionClassifierDenied
       : HostReasonCode.PermissionClassifierConfirmationRequired;
   return {
-    ...result,
-    hostReason: createHostReason(code, result.reason, { toolName }),
+    ...result, hostReason: createHostReason(code, result.reason, { toolName }),
   };
 }
 
@@ -121,17 +120,9 @@ const MAX_CACHE_SIZE = 100;
 
 // 只读工具 — 无副作用，始终自动批准
 const READ_ONLY_TOOLS = new Set([
-  'read_file',
-  'Read',
-  'glob',
-  'Glob',
-  'grep',
-  'Grep',
-  'list_directory',
-  'ListDirectory',
-  'search_files',
-  'SearchFiles',
-  'ToolSearch',
+  'read_file', 'Read', 'glob', 'Glob',
+  'grep', 'Grep', 'list_directory', 'ListDirectory',
+  'search_files', 'SearchFiles', 'ToolSearch',
 ]);
 
 // 网络工具 — 只读网络请求，自动批准
@@ -269,6 +260,7 @@ function commandProgram(word: string | undefined): string {
 
 function gitCommand(command: string): { subcommand: string; args: string[] } | null {
   const words = commandWords(command);
+  if (!words) return null;
   const gitIndex = words.findIndex((word) => commandProgram(word) === 'git');
   if (gitIndex < 0) return null;
   let index = gitIndex + 1;
@@ -330,6 +322,7 @@ function gitMutationReason(command: string): string | null {
 
 function credentialReadTarget(command: string, context: ClassificationContext): string | null {
   const words = commandWords(command);
+  if (!words) return null;
   const projectRoot = resolveCanonicalRunPath(context.workspaceRoot ?? context.workingDirectory);
   const ignoredIndexes = new Set<number>();
   const grepIndex = words.findIndex((word) => ['grep', 'egrep', 'fgrep', 'rg'].includes(commandProgram(word)));
@@ -393,6 +386,7 @@ function ddCopiesWorkspaceFile(command: string, context: ClassificationContext):
 
 function hasPositiveAllowCandidate(command: string): boolean {
   const words = commandWords(command);
+  if (!words) return false;
   const npmIndex = words.findIndex((word) => commandProgram(word) === 'npm');
   if (npmIndex >= 0 && words[npmIndex + 1] === 'publish' && words.slice(npmIndex + 2).includes('--dry-run')) return true;
 
@@ -416,6 +410,7 @@ function contextAfterCdSegment(
   terminators: SegmentTerminator[], segmentIndex: number,
 ): ClassificationContext | null {
   const words = commandWords(segment);
+  if (!words) return null;
   if (commandProgram(words[0]) !== 'cd') return null;
   // `&`/pipeline members run in subshells: the parent shell's cwd never moved, so later segments
   // keep the original cwd. `||` does carry: its right side only runs after a failed cd, but once

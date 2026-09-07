@@ -224,21 +224,23 @@ describe('shared shell command parser', () => {
     });
   });
 
-  // Round 38: a word-free command (bare `2>&1`, redirect-only `> out.txt`) is legal bash and
-  // still carries its list terminator; dropping it would hide a background boundary from the cwd
-  // walk (`cd /tmp && 2>&1 & …` keeps the parent cwd — bash probe). Round 39 extends this to
-  // `|`/`|&`: a dropped pipe hides the next segment's pipeline membership (`2>&1 | cd /tmp` runs
-  // the cd in a subshell). Round 40 extends it to `;`/`\n`: a dropped list end glues two lists,
-  // so a later `&` scopes over an earlier cd (`cd ~ && 2>&1; cat … &`). We cannot represent the
-  // boundary, so any word-free segment that consumed redirect operators fails the parse.
+  // Rounds 38-41: a word-free command (bare `2>&1`, redirect-only `> out.txt`) is legal bash and
+  // still carries its list terminator. Keeping the segment preserves every control-flow boundary:
+  // a backgrounded `&` stays visible to the cwd walk, a pipe keeps the next segment's pipeline
+  // membership, and a `;` keeps the two lists apart so a later `&` cannot scope over an earlier cd.
   it.each([
-    'cd /tmp && 2>&1 & cat .ssh/id_rsa',
-    'cd /tmp && > out.txt & cat .ssh/id_rsa',
-    '2>&1 | cd /tmp; cat .ssh/id_rsa',
-    '> out.txt | cd /tmp; cat .ssh/id_rsa',
-    'cd ~ && 2>&1; cat .ssh/id_rsa & echo ok',
-  ])('fails closed when a word-free segment would drop its list terminator: %s', (command) => {
-    expect(parseShellCommand(command)).toMatchObject({ parsingFailed: true });
+    ['cd /tmp && 2>&1 & cat .ssh/id_rsa', ['&&', '&', null]],
+    ['cd /tmp && > out.txt & cat .ssh/id_rsa', ['&&', '&', null]],
+    ['2>&1 | cd /tmp; cat .ssh/id_rsa', ['|', ';', null]],
+    ['cd ~ && 2>&1; cat .ssh/id_rsa & echo ok', ['&&', ';', '&', null]],
+  ])('keeps a word-free segment and its list terminator: %s', (command, terminators) => {
+    const parsed = parseShellCommand(command);
+    expect(parsed.parsingFailed).toBe(false);
+    expect(parsed.segments.map((segment) => segment.terminator)).toEqual(terminators);
+  });
+
+  it('still extracts the write target of a redirect-only command', () => {
+    expect(parseShellCommand('> out.txt').writeTargets.map((t) => t.path)).toEqual(['out.txt']);
   });
 
   it.each([

@@ -297,12 +297,12 @@ const KNOWN_SHAPES = [
   // Round 37: BSD `-i` consumes the next word as the backup suffix — the backup write target is
   // new on the candidate side, baseline extracts nothing for the spelling, only tightens.
   "sed -i .bak -e 's/x/y/' ~/.aws/credentials",
-  // Round 38: a word-free `2>&1` segment hides the background boundary; the candidate fails
-  // closed (ask) where the baseline keeps the compound and asks, same in every cwd.
-  'cd /tmp && 2>&1 & cat .ssh/id_rsa',
-  // Round 39: same family on the pipe side — a dropped `|` hides the cd's pipeline membership.
-  '2>&1 | cd /tmp; cat .ssh/id_rsa',
-  // Round 40: a dropped `;` list end glues two lists and a later `&` scopes over the earlier cd.
+  // Round 38: a word-free `2>&1` segment keeps its background boundary. Not in KNOWN_SHAPES:
+  // with the structure preserved the candidate rightly approves under non-home cwds (the read
+  // then lives under /tmp, the round-35 pattern), while the baseline over-asks on the unknown
+  // compound — the cwd-agnostic never-looser net cannot express that, unit tests pin it.
+  // Round 39: same family on the pipe side, same per-cwd divergence, unit-test-only too.
+  // Round 40: this one moves the cd home in every cwd, so both sides ask everywhere — pinnable.
   'cd ~ && 2>&1; cat .ssh/id_rsa & echo ok',
 ];
 

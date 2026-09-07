@@ -739,19 +739,15 @@ function parseEntries(command: string): {
   let segmentSawEntry = false;
 
   const flush = (terminator: SegmentTerminator): void => {
-    if (words.length > 0) {
+    // Keep a word-free segment that consumed redirect operators (a bare `2>&1`, `3<&0`, or a
+    // redirect-only `> out.txt`): it is a legal bash command and still carries its list
+    // terminator. Dropping it shifts every later terminator off its segment — a lost `&` hides a
+    // background boundary from the cwd walk, a lost `|`/`|&` hides pipeline membership, and a
+    // lost `;`/`\n` glues two lists so a later `&` scopes over an earlier cd (rounds 38-41).
+    // Only separator-doubling empties (nothing consumed between two separators: a redundant `\n`
+    // after `;`, or a bash syntax error like `;;`) lose no information and stay droppable.
+    if (words.length > 0 || segmentSawEntry) {
       segments.push({ words, redirects: segmentRedirects, reads: segmentReads, terminator });
-    } else if (terminator !== null && segmentSawEntry) {
-      // A word-free command that consumed redirect operators (a bare `2>&1`, `3<&0`, or a
-      // redirect-only `> out.txt`) is legal bash and still carries its list terminator. Dropping
-      // it shifts every later terminator off its segment: a lost `&` hides a background boundary
-      // from the cwd walk, a lost `|`/`|&` hides pipeline membership, and a lost `;`/`\n` glues
-      // two lists so a later `&` scopes over an earlier cd (`cd ~ && 2>&1; cat … &`). The
-      // boundary cannot be represented in the segment list, so fail closed (rounds 38-40).
-      // Separator-doubling empties (nothing consumed between two separators) lose no information
-      // — a redundant `\n` after `;` or a bash syntax error — and stay droppable.
-      failed = true;
-      failureReason ??= 'word-free segment drops its list terminator';
     }
     words = [];
     segmentRedirects = [];

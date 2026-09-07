@@ -409,23 +409,22 @@ describe('PermissionClassifier', () => {
       expect(result.decision).toBe('approve');
     });
 
-    // 第 38 轮：无词命令（裸 `2>&1`）仍携带它的列表终止符；丢掉它会把后台边界从 cwd 走查里
-    // 抹掉。解析器无法表达这个边界，fail closed，凭据读回到基线的 ask。
-    // 第 39 轮同族：丢掉的 `|` 会藏掉下一段的管道成员身份（`2>&1 | cd /tmp` 的 cd 在子 shell）。
-    // 第 40 轮同族：丢掉的 `;` 把两个列表粘起来，后面的 `&` 越界罩住前面的 cd。
+    // 第 38-41 轮：无词命令（裸 `2>&1`）保留在段列表里，它的终止符不丢——后台边界、管道成员
+    // 身份、列表端点都在，cwd 走查按真实结构判定，凭据读回到基线的 ask（且 reason 带家目录路径）。
     it.each([
       'cd /tmp && 2>&1 & cat .ssh/id_rsa',
       '2>&1 | cd /tmp; cat .ssh/id_rsa',
-    ])('asks when a word-free segment hides a control-flow boundary: %s', async (command) => {
+    ])('asks when a word-free segment sits on a control-flow boundary: %s', async (command) => {
       const result = await classifyPermission('bash', { command }, homeContext);
 
       expect(result.decision).toBe('ask');
+      expect(result.reason).toContain('凭据路径');
+      expect(result.reason).toContain(path.join(os.homedir(), '.ssh/id_rsa'));
     });
 
-    it('asks when a dropped list end lets a later & swallow an earlier cd', async () => {
-      // 第 40 轮形状在 /tmp cwd 下显形：`cd ~` 真的推进（`；` 已结束列表），凭据读落在
-      // 家目录；丢掉 `;` 后后面的 `&` 会误判 cd 被后台化、按 /tmp 解析成 approve。
-      // fail closed 走解析失败兜底，reason 是通用解析失败而非凭据路径，只钉 decision。
+    it('asks when a kept list end stops a later & from swallowing an earlier cd', async () => {
+      // 第 40/41 轮形状在 /tmp cwd 下显形：`cd ~` 真的推进（`；` 已结束列表），凭据读落在
+      // 家目录；丢掉 `;` 会误判 cd 被后面的 `&` 后台化、按 /tmp 解析。
       const result = await classifyPermission(
         'bash',
         { command: 'cd ~ && 2>&1; cat .ssh/id_rsa & echo ok' },
@@ -433,6 +432,19 @@ describe('PermissionClassifier', () => {
       );
 
       expect(result.decision).toBe('ask');
+      expect(result.reason).toContain(path.join(os.homedir(), '.ssh/id_rsa'));
+    });
+
+    it('denies the credential rm after a word-free segment — the cd context survives', async () => {
+      // 第 41 轮：基线在这里是 deny（家目录凭据递归删除）；无词段留段后 cd 上下文不丢，
+      // 候选同样 deny，不再退成可批准的 ask。
+      const result = await classifyPermission(
+        'bash',
+        { command: 'cd ~ && 2>&1; rm -rf .ssh/id_rsa' },
+        { workingDirectory: '/tmp', permissionLevel: 'execute' },
+      );
+
+      expect(result.decision).toBe('deny');
     });
 
     // 第 33 轮审查：`||` 链结束后 cd 成功那支的 cwd 已经变了，后续段按移动后的 cwd 解析

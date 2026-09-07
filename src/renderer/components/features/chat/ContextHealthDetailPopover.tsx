@@ -18,6 +18,7 @@ import { Loader2, Shrink, X as XIcon } from 'lucide-react';
 import { useI18n } from '../../../hooks/useI18n';
 import { useAppStore } from '../../../stores/appStore';
 import { useStatusStore } from '../../../stores/statusStore';
+import { useSessionStore } from '../../../stores/sessionStore';
 import { useContextCompactionStore } from '../../../stores/contextCompactionStore';
 import { useBudgetStatus } from '../../../hooks/useBudgetStatus';
 import { CostDisplay } from '../../StatusBar/CostDisplay';
@@ -75,6 +76,38 @@ function buildBuckets(health: ContextHealthState, ch: Record<string, string>): B
   // ds-allow:end
 }
 
+type ContextHealthDetailMode = 'empty' | 'pending' | 'ready';
+
+/** 全零快照是「还没数据」，不是「用了 0%」。 */
+function isAllZeroContextHealth(health: ContextHealthState): boolean {
+  return health.currentTokens === 0 && health.usagePercent === 0;
+}
+
+/**
+ * 明细弹层三态：空会话走 S-30+S-47；已发首条尚无 provider 实报走 S-31；
+ * 有实报（currentTokens>0，或 tokenSource=provider 且非全零）走现有数据渲染。
+ */
+export function resolveContextHealthDetailMode(
+  health: ContextHealthState | null | undefined,
+  hasSentFirstMessage: boolean,
+): ContextHealthDetailMode {
+  if (
+    health &&
+    (health.currentTokens > 0 || (health.tokenSource === 'provider' && !isAllZeroContextHealth(health)))
+  ) {
+    return 'ready';
+  }
+  if (hasSentFirstMessage) return 'pending';
+  return 'empty';
+}
+
+function sessionHasSentMessage(): boolean {
+  const getState = useSessionStore.getState;
+  if (typeof getState !== 'function') return false;
+  const messages = getState().messages;
+  return Array.isArray(messages) && messages.length > 0;
+}
+
 interface ContextHealthDetailPopoverProps {
   onClose: () => void;
 }
@@ -91,6 +124,8 @@ export const ContextHealthDetailPopover: React.FC<ContextHealthDetailPopoverProp
   const sessionCost = useStatusStore((s) => s.sessionCost);
   const unknownCostTurns = useStatusStore((s) => s.unknownCostTurns);
   const isStreaming = useStatusStore((s) => s.isStreaming);
+  const hasSentFirstMessage = isStreaming || sessionHasSentMessage();
+  const detailMode = resolveContextHealthDetailMode(contextHealth, hasSentFirstMessage);
   const budgetStatus = useBudgetStatus(sessionCost, isStreaming);
   const compactResult = useContextCompactionStore((s) => s.result);
   const compactError = useContextCompactionStore((s) => s.error);
@@ -146,7 +181,7 @@ export const ContextHealthDetailPopover: React.FC<ContextHealthDetailPopoverProp
       </div>
 
       <div className="max-h-[60vh] overflow-y-auto px-4 pb-3">
-        {contextHealth ? (
+        {detailMode === 'ready' && contextHealth ? (
           <div>
             {/* 大数字行 + 分段总条：总量的唯一出口 */}
             <div className="mb-2 flex items-baseline justify-between tabular-nums">
@@ -304,11 +339,22 @@ export const ContextHealthDetailPopover: React.FC<ContextHealthDetailPopoverProp
               </div>
             )}
           </div>
+        ) : detailMode === 'pending' ? (
+          <div className="py-6 text-sm text-zinc-500">
+            <p>{ch.waitingCapacity}</p>
+            <p className="mt-2 text-xs text-zinc-600">
+              {ch.waitingCapacityHint}
+            </p>
+          </div>
         ) : (
           <div className="py-6 text-sm text-zinc-500">
             <p>{ch.emptyStateTitle}</p>
             <p className="mt-2 text-xs text-zinc-600">
               {ch.emptyStateHint}
+            </p>
+            <p className="mt-4">{ch.firstUseTitle}</p>
+            <p className="mt-2 text-xs text-zinc-600">
+              {ch.firstUseHint}
             </p>
           </div>
         )}

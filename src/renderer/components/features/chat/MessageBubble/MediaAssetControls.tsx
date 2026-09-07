@@ -67,7 +67,7 @@ export function getRenderableMediaSrc(asset: SessionMediaAsset): string {
   // Clipboard paste / user-bubble screenshots persist a path the renderer cannot
   // load, while messages.attachments.data already holds a complete data: URL.
   // A small inline payload must win over path; oversized inline still skips
-  // (largeInlineData) so we do not dump 512KB+ into <img src>.
+  // (largeInlineData) so we do not dump 512KB+ into an inline image src.
   const smallInlineSrc = asset.dataUrl
     && asset.dataUrl.startsWith('data:')
     && !asset.largeInlineData

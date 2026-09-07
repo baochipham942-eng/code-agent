@@ -542,7 +542,7 @@ function scanArgv(
 }
 
 const TEE_BOOLEAN_OPTIONS: ReadonlySet<string> = new Set([
-  '-a', '--append', '-p', '--help', '--version',
+  '-a', '--append', '-i', '--ignore-interrupts', '-p', '--help', '--version',
 ]);
 const TEE_OPTIONAL_ATTACHED_OPTIONS: ReadonlySet<string> = new Set(['--output-error']);
 

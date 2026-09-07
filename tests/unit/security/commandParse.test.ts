@@ -243,6 +243,16 @@ describe('shared shell command parser', () => {
     expect(parseShellCommand('> out.txt').writeTargets.map((t) => t.path)).toEqual(['out.txt']);
   });
 
+  it('reads tee -i as ignore-SIGINT, not as an unknown option', () => {
+    // BSD + GNU tee(1): -i only ignores SIGINT and still overwrites the file (probe: the file
+    // content changes). Missing it from the table failed the scan closed and dropped a target
+    // the baseline's ownership hard-deny already sees (round 42).
+    expect(parseShellCommand('tee -i shared.txt')).toMatchObject({
+      parsingFailed: false,
+      writeTargets: [expect.objectContaining({ path: 'shared.txt', source: 'tee' })],
+    });
+  });
+
   it.each([
     'echo hi 2>&1',
     'echo hi; ',

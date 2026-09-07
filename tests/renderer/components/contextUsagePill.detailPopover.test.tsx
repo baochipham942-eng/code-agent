@@ -260,4 +260,17 @@ describe('ContextUsagePill — hover 气泡与明细弹层', () => {
     fireEvent.click(pillButton());
     expect(screen.getByRole('button', { name: '立即压缩' })).toBeTruthy();
   });
+
+  it('窗口未知只停用已用占比，不拿掉手动压缩', () => {
+    pillMocks.appState.contextHealth = {
+      ...contextHealth,
+      usagePercent: 80,
+      warningLevel: 'warning',
+      windowKnown: false,
+    };
+    render(<ContextUsagePill />);
+    fireEvent.click(pillButton());
+    expect(screen.getByTestId('context-health-window-unknown')).toBeTruthy();
+    expect(screen.getByRole('button', { name: '立即压缩' })).toBeTruthy();
+  });
 });

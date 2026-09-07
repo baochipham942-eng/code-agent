@@ -122,7 +122,7 @@ export const ContextHealthDetailPopover: React.FC<ContextHealthDetailPopoverProp
   const usagePercent = contextHealth?.usagePercent ?? 0;
   const windowKnown = isContextWindowKnown(contextHealth);
   const displayPercent = windowKnown ? clampUsagePercent(usagePercent) : 0;
-  const canCompact = windowKnown && usagePercent >= 70;
+  const canCompact = usagePercent >= 70;
   // 操作区（费用 / 压缩反馈 / 压缩钮）按需整体渲染，避免全空时只剩一条分隔线
   const hasCost = sessionCost > 0 || unknownCostTurns > 0;
   const showActionRow = hasCost || canCompact || !!compactResult || !!compactError;

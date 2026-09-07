@@ -29,7 +29,7 @@ function countSerialExpects(step: BrowserInteractionStep): number {
   ].filter(Boolean).length;
 }
 
-export function inAppValidationDriverBudgetMs(step: BrowserInteractionStep): number {
+function inAppValidationDriverBudgetMs(step: BrowserInteractionStep): number {
   const waitMs = step.action.type === 'wait' ? step.action.ms : 0;
   const expectTimeout = step.expect?.timeoutMs ?? DEFAULT_EXPECT_TIMEOUT_MS;
   const serialExpects = countSerialExpects(step);

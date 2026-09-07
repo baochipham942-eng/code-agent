@@ -3,7 +3,7 @@
 // （N-VALIDATION-PANEL-ORIGIN-ISOLATION / #1670）。预览态 generative UI 已经是这套互斥，这里对齐。
 export const IN_APP_VALIDATION_SANDBOX = 'allow-scripts allow-forms';
 
-export const IN_APP_VALIDATION_CSP =
+const IN_APP_VALIDATION_CSP =
   "default-src 'self' 'unsafe-inline'; connect-src 'none'; img-src 'self' data: blob:;";
 
 const CSP_META = `<meta http-equiv="Content-Security-Policy" content="${IN_APP_VALIDATION_CSP}">`;

@@ -1,9 +1,6 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from 'vitest';
-import {
-  inAppValidationDriverBudgetMs,
-  runInAppInteractionStep,
-} from '../../../src/renderer/utils/inAppValidationExecutor';
+import { describe, expect, it, vi } from 'vitest';
+import { runInAppInteractionStep } from '../../../src/renderer/utils/inAppValidationExecutor';
 
 describe('inAppValidationExecutor unique-origin driver', () => {
   it('contentDocument 缺失时走 postMessage 驱动，不把跨源当成硬失败', async () => {
@@ -38,21 +35,44 @@ describe('inAppValidationExecutor unique-origin driver', () => {
     expect(result.checks).toContain('clicked #toggle');
   });
 
-  it('驱动超时覆盖 wait.ms 与 expect.timeoutMs，不会把 10s wait 截在 8s', () => {
-    expect(inAppValidationDriverBudgetMs({
-      action: { type: 'wait', ms: 10_000 },
-    })).toBeGreaterThan(10_000);
-    expect(inAppValidationDriverBudgetMs({
-      action: { type: 'click-selector', selector: '#a' },
-      expect: { textVisible: 'ok', timeoutMs: 1500 },
-    })).toBeGreaterThan(1500);
-    expect(inAppValidationDriverBudgetMs({
-      action: { type: 'click-selector', selector: '#a' },
-      expect: { textVisible: 'ok', selectorVisible: '#b', timeoutMs: 5000 },
-    })).toBeGreaterThan(10_000);
-    expect(inAppValidationDriverBudgetMs({
-      action: { type: 'click-selector', selector: '#a' },
-      expect: { textVisible: 'ok', timeoutMs: 0 },
-    })).toBeLessThan(2000);
+  it('驱动超时覆盖 wait.ms 与 expect.timeoutMs，不会把 10s wait 截在 8s', async () => {
+    vi.useFakeTimers();
+    const iframe = {
+      contentDocument: null,
+      contentWindow: { postMessage() { /* no driver result */ } },
+    } as unknown as HTMLIFrameElement;
+    try {
+      const waitP = runInAppInteractionStep(iframe, {
+        label: 'wait',
+        action: { type: 'wait', ms: 10_000 },
+      });
+      await vi.advanceTimersByTimeAsync(8_000);
+      expect(await Promise.race([waitP.then(() => 'done'), Promise.resolve('pending')])).toBe('pending');
+      await vi.advanceTimersByTimeAsync(5_000);
+      const waitResult = await waitP;
+      expect(waitResult.failures.some((line) => line.includes('timed out'))).toBe(true);
+
+      const serialP = runInAppInteractionStep(iframe, {
+        label: 'serial',
+        action: { type: 'click-selector', selector: '#a' },
+        expect: { textVisible: 'ok', selectorVisible: '#b', timeoutMs: 5000 },
+      });
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(await Promise.race([serialP.then(() => 'done'), Promise.resolve('pending')])).toBe('pending');
+      await vi.advanceTimersByTimeAsync(3_000);
+      const serial = await serialP;
+      expect(serial.failures.some((line) => line.includes('timed out'))).toBe(true);
+
+      const zeroP = runInAppInteractionStep(iframe, {
+        label: 'zero',
+        action: { type: 'click-selector', selector: '#a' },
+        expect: { textVisible: 'ok', timeoutMs: 0 },
+      });
+      await vi.advanceTimersByTimeAsync(2_000);
+      const zero = await zeroP;
+      expect(zero.failures.some((line) => line.includes('timed out'))).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

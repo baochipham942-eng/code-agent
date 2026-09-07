@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  IN_APP_VALIDATION_CSP,
   IN_APP_VALIDATION_SANDBOX,
   wrapInAppValidationHtml,
 } from '../../../src/renderer/utils/inAppValidationSandbox';
@@ -12,9 +11,10 @@ describe('inAppValidationSandbox', () => {
   });
 
   it('CSP 禁 connect 且 img 不含 https，堵住外传像素', () => {
-    expect(IN_APP_VALIDATION_CSP).toContain("connect-src 'none'");
-    expect(IN_APP_VALIDATION_CSP).toContain("img-src 'self' data: blob:");
-    expect(IN_APP_VALIDATION_CSP).not.toMatch(/img-src[^;]*https/);
+    const wrapped = wrapInAppValidationHtml('<button>ok</button>');
+    expect(wrapped).toContain("connect-src 'none'");
+    expect(wrapped).toContain("img-src 'self' data: blob:");
+    expect(wrapped).not.toMatch(/img-src[^;]*https/);
   });
 
   it('已有 head 的文档把 CSP 插进 head，不包第二层 html', () => {
@@ -84,7 +84,7 @@ describe('inAppValidationSandbox', () => {
   it('驱动插在工作台 CSP 之后、页面自带 CSP 之前，避免 script-src none 拦掉', () => {
     const source = '<html><head><meta http-equiv="Content-Security-Policy" content="script-src \'none\'"></head><body><button id="ok">ok</button></body></html>';
     const wrapped = wrapInAppValidationHtml(source);
-    const ours = wrapped.indexOf(IN_APP_VALIDATION_CSP);
+    const ours = wrapped.indexOf("connect-src 'none'");
     const driver = wrapped.indexOf('data-neo-in-app-driver');
     const theirs = wrapped.indexOf("script-src 'none'");
     expect(ours).toBeGreaterThanOrEqual(0);

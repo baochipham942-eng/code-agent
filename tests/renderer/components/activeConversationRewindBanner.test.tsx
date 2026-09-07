@@ -146,9 +146,20 @@ describe('ActiveConversationRewindBanner', () => {
       redoAvailable: false,
       externalSideEffectsWarning: 'Changes caused by external commands are not rolled back.',
     });
-    expect(screen.getByRole('status').getAttribute('data-rewind-phase')).toBe('done');
-    expect(screen.queryByRole('button', { name: '反悔' })).toBeNull();
-    expect(mocks.invokeDomain).toHaveBeenCalledTimes(2);
+    await waitFor(() => {
+      expect(mocks.invokeDomain).toHaveBeenNthCalledWith(
+        3,
+        IPC_DOMAINS.SESSION,
+        'replayConversationBranch',
+        {
+          sessionId: 'session-1',
+          options: { includeRewound: false },
+        },
+      );
+    });
+    expect(screen.getByRole('status').getAttribute('data-rewind-phase')).toBe('open');
+    expect(screen.getByRole('status').getAttribute('data-rewind-id')).toBe('rewind-older');
+    expect(screen.getByRole('button', { name: '反悔' })).toBeTruthy();
   });
 
   it('成功后短暂展示即可关闭', async () => {
@@ -186,6 +197,22 @@ describe('ActiveConversationRewindBanner', () => {
         staleEvidenceCount: 0,
         redoAvailable: false,
         externalSideEffectsWarning: 'Changes caused by external commands are not rolled back.',
+      })
+      .mockResolvedValueOnce({
+        lineage: {
+          branchId: 'branch-1',
+          sessionId: 'session-1',
+          ownerUserId: null,
+          projectId: null,
+          rootBranchId: 'branch-1',
+          parentBranchId: null,
+          forkId: null,
+          anchorEntryId: null,
+          createdAt: 1,
+        },
+        messages: [],
+        openRewindIds: [],
+        ledgerEventCount: 5,
       });
 
     render(
@@ -233,6 +260,22 @@ describe('ActiveConversationRewindBanner', () => {
         staleEvidenceCount: 0,
         redoAvailable: false,
         externalSideEffectsWarning: 'Changes caused by external commands are not rolled back.',
+      })
+      .mockResolvedValueOnce({
+        lineage: {
+          branchId: 'branch-1',
+          sessionId: 'session-1',
+          ownerUserId: null,
+          projectId: null,
+          rootBranchId: 'branch-1',
+          parentBranchId: null,
+          forkId: null,
+          anchorEntryId: null,
+          createdAt: 1,
+        },
+        messages: [],
+        openRewindIds: [],
+        ledgerEventCount: 5,
       });
     const onRestored = vi.fn();
     render(
@@ -242,6 +285,49 @@ describe('ActiveConversationRewindBanner', () => {
     await waitFor(() => expect(onRestored).toHaveBeenCalled());
     expect(screen.getByRole('status').getAttribute('data-rewind-phase')).toBe('done');
     expect(screen.queryByRole('button', { name: '反悔' })).toBeNull();
+  });
+
+  it('部分失败时不进入完成态，反悔入口仍在', async () => {
+    mocks.invokeDomain
+      .mockResolvedValueOnce({
+        lineage: {
+          branchId: 'branch-1',
+          sessionId: 'session-1',
+          ownerUserId: null,
+          projectId: null,
+          rootBranchId: 'branch-1',
+          parentBranchId: null,
+          forkId: null,
+          anchorEntryId: null,
+          createdAt: 1,
+        },
+        messages: [],
+        openRewindIds: ['rewind-latest'],
+        ledgerEventCount: 4,
+      })
+      .mockResolvedValueOnce({
+        success: false,
+        sessionId: 'session-1',
+        rewindId: 'rewind-latest',
+        restoredMessageCount: 0,
+        activeMessages: [],
+        state: 'partial',
+        done: [],
+        failed: [{ step: 'conversation', reason: 'restore failed' }],
+        skippedFiles: [],
+        restoredFiles: [],
+        deletedFiles: [],
+        staleEvidenceCount: 0,
+        redoAvailable: true,
+        externalSideEffectsWarning: 'Changes caused by external commands are not rolled back.',
+      });
+    render(
+      <ActiveConversationRewindBanner sessionId="session-1" onRestored={vi.fn()} />,
+    );
+    fireEvent.click(await screen.findByRole('button', { name: '反悔' }));
+    await waitFor(() => expect(mocks.invokeDomain).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole('status').getAttribute('data-rewind-phase')).toBe('open');
+    expect(screen.getByRole('button', { name: '反悔' })).toBeTruthy();
   });
 
   it('does not leak a late replay result after switching sessions', async () => {

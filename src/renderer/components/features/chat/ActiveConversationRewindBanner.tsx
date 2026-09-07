@@ -129,6 +129,21 @@ export const ActiveConversationRewindBanner: React.FC<ActiveConversationRewindBa
       );
       if (currentSessionIdRef.current !== expectedSessionId) return;
       onRestored(result);
+      if (result.state !== 'success') {
+        return;
+      }
+      try {
+        const next = await readActiveRewind(expectedSessionId);
+        if (currentSessionIdRef.current !== expectedSessionId) return;
+        if (next.rewindId && next.rewindId !== expectedRewindId) {
+          setActiveRewindId(next.rewindId);
+          setAnchorExcerpt(next.excerpt);
+          setPhase('open');
+          return;
+        }
+      } catch (error) {
+        console.warn('Failed to refresh active conversation rewind:', error);
+      }
       setPhase('done');
       if (dismissTimerRef.current) clearTimeout(dismissTimerRef.current);
       dismissTimerRef.current = setTimeout(() => {
@@ -143,7 +158,7 @@ export const ActiveConversationRewindBanner: React.FC<ActiveConversationRewindBa
         setIsRestoring(false);
       }
     }
-  }, [activeRewindId, clearBanner, disabled, isRestoring, onRestored, sessionId]);
+  }, [activeRewindId, clearBanner, disabled, isRestoring, onRestored, readActiveRewind, sessionId]);
 
   if (!activeRewindId) return null;
 

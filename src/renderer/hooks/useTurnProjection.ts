@@ -240,6 +240,11 @@ export function projectTurns(
       .filter((message) => isStreamRecoveryMessage(message))
       .flatMap((message) => (message.toolCalls ?? []).map((toolCall) => toolCall.id)),
   );
+  // 反悔结果卡按展示层替换：账本仍每条独立 id（被 rewind 隐藏的旧卡不能同 id 更新），
+  // 投影只留最新一张，避免时间线堆叠。
+  const latestTurnCheckoutNoteId = [...messages]
+    .reverse()
+    .find((message) => message.metadata?.turnCheckoutNote)?.id ?? null;
   // 连续相同的模型路由决策只显示首个——agent 一个 turn 内多次 LLM 调用会各发一条
   // "用户选择 mimo"，重复刷没意义；模型变化（降级/角色档位）时 key 不同会照常显示。
   let lastModelDecisionKey: string | null = null;
@@ -401,6 +406,9 @@ export function projectTurns(
         continue;
       }
       const { spec, payload } = event;
+      if (msg.metadata?.turnCheckoutNote && msg.id !== latestTurnCheckoutNoteId) {
+        continue;
+      }
       // settle 类（派活结局印章 X5.5-A2-a）：不是对话内容，不成节点——只把结局盖到
       // 按 workItemId 对回的派活轮上，任务卡据此报结局。对不上任何一轮就丢弃：
       // 宁可卡上不显示结局，也不能把印章盖到别人的活头上。

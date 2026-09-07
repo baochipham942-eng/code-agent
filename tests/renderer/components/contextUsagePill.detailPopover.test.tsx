@@ -196,6 +196,7 @@ describe('ContextUsagePill — hover 气泡与明细弹层', () => {
     expect(list.getAttribute('data-cost-column')).toBe('on');
     expect(list.textContent).toContain('100 · 8.0%');
     expect(list.textContent).toContain('$0.0001 · 12.2%');
+    expect(screen.getByTestId('context-cost-ranking-status').textContent).toContain('待验证');
   });
 
   it('现有上下文健康弹层展示当前周期已缓存 / 未缓存的 token 与成本两分', () => {

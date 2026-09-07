@@ -296,7 +296,7 @@ export const ContextHealthDetailPopover: React.FC<ContextHealthDetailPopoverProp
                     {showCostColumn
                       ? interpolate(ch.bucketRanking, {
                         tokenBucket: tokenLargestBucket.name,
-                        costBucket: tokenLargestBucket.key === 'systemPrompt' ? tokenLargestBucket.name : ch.pendingValidation,
+                        costBucket: ch.pendingValidation,
                       })
                       : interpolate(ch.bucketRankingTokensOnly, {
                         tokenBucket: tokenLargestBucket.name,

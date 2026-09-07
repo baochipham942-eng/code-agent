@@ -219,8 +219,22 @@ describe('queued input IPC', () => {
   });
 
   it('update 同步附件，省略 attachments 时保留原附件', async () => {
-    const oldAtt = { id: 'a', name: 'a.png', type: 'image/png', size: 1 };
-    const newAtt = { id: 'b', name: 'b.png', type: 'image/png', size: 2 };
+    const oldAtt = {
+      id: 'a',
+      name: 'a.png',
+      type: 'image' as const,
+      category: 'image' as const,
+      mimeType: 'image/png',
+      size: 1,
+    };
+    const newAtt = {
+      id: 'b',
+      name: 'b.png',
+      type: 'image' as const,
+      category: 'image' as const,
+      mimeType: 'image/png',
+      size: 2,
+    };
     await enqueue('with-file', { content: 'before', attachments: [oldAtt] });
 
     await expect(invoke({

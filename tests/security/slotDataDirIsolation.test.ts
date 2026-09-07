@@ -488,6 +488,103 @@ describe('槽数据目录读隔离', () => {
     expect(result.error ?? '').not.toContain('另一个槽');
   });
 
+  // ------------------------------------------------------------------------
+  // 第四轮（R4 两条）：path.join 提前塌缩 ..、grep -f 模式文件——换共享解析器收口
+  // ------------------------------------------------------------------------
+
+  it('R4① 相对路径软链+..：项目内 prodmem 指向生产槽 memory，cat prodmem/../config.json 被拒', async () => {
+    symlinkSync(path.join(prodSlot, 'memory'), path.join(projectDir, 'prodmem'));
+    try {
+      const result = await buildExecutor().execute(
+        'Bash',
+        { command: 'cat "prodmem/../config.json"' },
+        { sessionId: 'slot-isolation-r4-relative-symlink-dotdot' },
+      );
+      expectForeignDenied(result, '.code-agent', PROD_SENTINEL);
+      expectNoForeignLeak(result, PROD_SENTINEL, path.join(prodSlot, 'config.json'));
+    } finally {
+      rmSync(path.join(projectDir, 'prodmem'), { force: true });
+    }
+  });
+
+  it('R4① Read 工具相对路径同样被拒：file_path=prodmem/../config.json', async () => {
+    symlinkSync(path.join(prodSlot, 'memory'), path.join(projectDir, 'prodmem'));
+    try {
+      const result = await buildExecutor().execute(
+        'Read',
+        { file_path: 'prodmem/../config.json' },
+        { sessionId: 'slot-isolation-r4-read-relative-symlink-dotdot' },
+      );
+      expectForeignDenied(result, '.code-agent', PROD_SENTINEL);
+    } finally {
+      rmSync(path.join(projectDir, 'prodmem'), { force: true });
+    }
+  });
+
+  it('R4① 真阴：项目内软链指向当前槽 + .. 照常读到自己的文件', async () => {
+    symlinkSync(path.join(devSlot, 'memory'), path.join(projectDir, 'ownmem'));
+    try {
+      const result = await buildExecutor().execute(
+        'Bash',
+        { command: 'cat "ownmem/../memory/notes.md"' },
+        { sessionId: 'slot-isolation-r4-own-relative-symlink-dotdot' },
+      );
+      expect(result.success).toBe(true);
+      expect(leakedText(result)).toContain(OWN_SENTINEL);
+      expect(result.error ?? '').not.toContain('另一个槽');
+    } finally {
+      rmSync(path.join(projectDir, 'ownmem'), { force: true });
+    }
+  });
+
+  it('R4② grep -f 模式文件顶掉 pattern 位：grep -r -f patterns.txt "$HOME" 整条被拒', async () => {
+    writeFileSync(path.join(projectDir, 'patterns.txt'), 'memory\n');
+    try {
+      const result = await buildExecutor().execute(
+        'Bash',
+        { command: 'grep -r -f patterns.txt "$HOME"' },
+        { sessionId: 'slot-isolation-r4-grep-f-home' },
+      );
+      expectForeignDenied(result, '.code-agent', PROD_SENTINEL);
+      expectNoForeignLeak(result, PROD_SENTINEL, path.join(prodSlot, 'config.json'));
+    } finally {
+      rmSync(path.join(projectDir, 'patterns.txt'), { force: true });
+    }
+  });
+
+  it('R4② 真阴：grep -r -f patterns.txt . 搜项目目录照常返回匹配', async () => {
+    writeFileSync(path.join(projectDir, 'patterns.txt'), 'r4-needle\n');
+    writeFileSync(path.join(projectDir, 'haystack.txt'), 'r4-needle in project\n');
+    try {
+      const result = await buildExecutor().execute(
+        'Bash',
+        { command: 'grep -r -f patterns.txt .' },
+        { sessionId: 'slot-isolation-r4-grep-f-dot' },
+      );
+      expect(result.success).toBe(true);
+      expect(leakedText(result)).toContain('r4-needle in project');
+      expect(result.error ?? '').not.toContain('另一个槽');
+    } finally {
+      rmSync(path.join(projectDir, 'patterns.txt'), { force: true });
+      rmSync(path.join(projectDir, 'haystack.txt'), { force: true });
+    }
+  });
+
+  it('R4 换解析器附带：bash -c 内相对 cd 进软链读生产槽被拒（旧手写链漏）', async () => {
+    symlinkSync(prodSlot, path.join(projectDir, 'prodroot'));
+    try {
+      const result = await buildExecutor().execute(
+        'Bash',
+        { command: 'bash -c \'cd prodroot && cat config.json\'' },
+        { sessionId: 'slot-isolation-r4-bash-c-relative-cd' },
+      );
+      expectForeignDenied(result, '.code-agent', PROD_SENTINEL);
+      expectNoForeignLeak(result, PROD_SENTINEL, path.join(prodSlot, 'config.json'));
+    } finally {
+      rmSync(path.join(projectDir, 'prodroot'), { force: true });
+    }
+  });
+
   it('R2④ rg 不可用时从 home 父目录搜：普通项目匹配照常返回，槽内容被排除', async () => {
     // 同一个哨兵串既写进生产槽文件也写进普通项目文件：排除项只能按路径区分，
     // 修好前系统 grep 会把整个 home 目录名当排除项，普通项目的匹配一起被静默丢掉。

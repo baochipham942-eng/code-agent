@@ -14,6 +14,10 @@
 //   Bash 里的递归命令（grep -r / rg / find / fd）改不了排除项，起点覆盖别人槽根时整条拒
 // - 软链会让字面路径和真实路径分离：放行要求字面与真实路径都属于当前槽，
 //   任一命中别人的槽就拒；realpath 仍要做（防 ~/x/../.code-agent）。
+//
+// Bash 命令的段/词/cd 传播一律取自共享解析器 parseShellCommand（commandParse.ts），
+// 不再手写拆分。解析失败 / 有 uncertain 时按 ADR-065 的姿势 fail-closed：
+// 枚举只会变宽（lenient 全词 + 全部可能基准 + 家族名兜底），绝不因为解析失败交空清单。
 // ============================================================================
 
 import { readdirSync, realpathSync } from 'node:fs';
@@ -21,7 +25,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { getHomeDir, getUserConfigDir } from '../config/configPaths';
 import { resolveCanonicalRunPath } from '../runtime/runContext';
-import { commandWords } from './commandSafety';
+import { lenientCommandWords, listTerminatorAfter, parseShellCommand } from './commandParse';
+import type { SegmentTerminator } from './commandParse';
 import { CONFIG_DIR_NEW } from '../../shared/constants/configDir';
 
 export const FOREIGN_SLOT_DATA_DIR_CODE = 'FOREIGN_SLOT_DATA_DIR';
@@ -221,27 +226,33 @@ function recursiveTraversalKind(words: string[]): RecursiveTraversalKind | null 
   return ALWAYS_RECURSIVE_PROGRAMS.has(program) ? 'always' : null;
 }
 
-/** 这些 flag 的下一个词是值（pattern/文件/排除项），不是搜索根。 */
+/** 这些 flag 的下一个词是值（模式/模式文件/排除项），不是搜索根。 */
 const TRAVERSAL_VALUE_FLAGS = new Set([
   '-e', '-f', '-d', '-m', '--regexp', '--file', '--directories',
   '--exclude', '--exclude-dir', '--exclude-from', '--include',
   '-g', '--glob',
 ]);
+/** 提供了模式的 flag：出现后位置参数里不再有 pattern 位（R4②：-f/--file 从文件读模式，同样顶掉 pattern 位，否则真实的递归搜索根会被当成 pattern 删掉）。 */
+const TRAVERSAL_PATTERN_FLAGS = new Set(['-e', '--regexp', '-f', '--file']);
+/** 值本身是被读文件的 flag：值要进路径候选（读模式文件也是读）。 */
+const TRAVERSAL_READ_VALUE_FLAGS = new Set(['-f', '--file', '--exclude-from']);
 
 /**
  * 递归遍历命令的搜索根：位置参数（扣掉 pattern 位）按 cwd 解析成绝对路径；
  * 一个位置参数都没有就以 cwd 为根（grep -r x / find -name y 都从 cwd 起遍历）。
+ * readOperands 是 flag 值里被真实读取的文件（-f 模式文件等）。
  */
-function collectTraversalRoots(
+function extractTraversalRoots(
   words: string[],
   cwd: string,
   homeDir: string,
   kind: RecursiveTraversalKind,
-): string[] {
+): { roots: string[]; readOperands: string[] } {
   const start = skipCommandWrapper(words);
   const program = programBasename(words[start] ?? '');
   const args = words.slice(start + 1);
   const positionals: string[] = [];
+  const readOperands: string[] = [];
   let skipNextValue = false;
   let explicitPattern = false;
   let filesOnly = false;
@@ -261,9 +272,22 @@ function collectTraversalRoots(
         if (arg === '-H' || arg === '-L' || arg === '-P') continue;
         break; // 进入 find 表达式区，后面不再是路径
       }
+      if (TRAVERSAL_PATTERN_FLAGS.has(arg)) explicitPattern = true;
+      if (arg.startsWith('--regexp=') || arg.startsWith('--file=')) {
+        explicitPattern = true;
+        if (arg.startsWith('--file=')) {
+          readOperands.push(resolveCandidate(arg.slice('--file='.length), cwd, homeDir));
+        }
+        continue;
+      }
       if (TRAVERSAL_VALUE_FLAGS.has(arg)) {
         skipNextValue = true;
-        if (arg === '-e' || arg === '--regexp') explicitPattern = true;
+        if (TRAVERSAL_READ_VALUE_FLAGS.has(arg)) {
+          const value = args[index + 1];
+          if (value !== undefined && !value.startsWith('-')) {
+            readOperands.push(resolveCandidate(value, cwd, homeDir));
+          }
+        }
       }
       if (arg === '--files') filesOnly = true;
       continue;
@@ -271,21 +295,25 @@ function collectTraversalRoots(
     positionals.push(arg);
   }
 
-  // 第一个位置参数是 pattern（grep/rg/fd），不是搜索根；显式 -e 或 --files 时没有 pattern 位。
+  // 第一个位置参数是 pattern（grep/rg/fd），不是搜索根；显式 -e/-f 或 --files 时没有 pattern 位。
   const dropPattern = (kind === 'grep' || program === 'rg' || program === 'fd')
     && !explicitPattern && !filesOnly;
   const rootArgs = dropPattern && positionals.length > 0 ? positionals.slice(1) : positionals;
-  if (rootArgs.length === 0) return [lexicalPath(cwd)];
-  return rootArgs.map((raw) => resolveCandidate(unquote(raw), cwd, homeDir));
+  const roots = rootArgs.length === 0
+    ? [lexicalPath(cwd)]
+    : rootArgs.map((raw) => resolveCandidate(raw, cwd, homeDir));
+  return { roots, readOperands };
 }
 
 function resolveCandidate(raw: string, workingDirectory: string, homeDir: string): string {
-  const expanded = expandHomePrefix(unquote(raw), homeDir);
-  // join 不塌缩 ..，先把内核序的定身机会留给 resolveKernelStyle（R3①），
-  // 解析不了再退回词法 resolve（与旧行为一致）。
+  const expanded = expandHomePrefix(raw, homeDir);
+  // 不能用 path.join 拼 cwd 与相对路径：它会把 .. 词法塌缩掉，<软链>/../x 提前变成
+  // 软链的词法父目录、恰好躲开内核序（先解软链再走 ..）的 realpath 定身（R4①）。
+  // 字符串拼接保留 ..，交给 resolveKernelStyle 按内核语义解析；
+  // 解析不了（路径不存在等）再退回词法 resolve——读不到的路径没有泄露面。
   const joined = path.isAbsolute(expanded)
     ? expanded
-    : path.join(workingDirectory, expanded);
+    : `${workingDirectory}/${expanded}`;
   return resolveKernelStyle(joined) ?? lexicalPath(joined);
 }
 
@@ -338,114 +366,131 @@ function resolveCdTarget(words: string[], cwd: string, homeDir: string): string 
   return resolveCandidate(positional[0], cwd, homeDir);
 }
 
-interface ShellSegment {
-  text: string;
-  /** 段所在子 shell 深度：圆括号一层加一。花括号分组不建子 shell，不改深度。 */
-  depth: number;
-  /** 段是否跟在 && / || 后面：是否执行取决于前段退出码，静态不可知。 */
-  conditional: boolean;
+/** 词表里像路径的词 → 候选绝对路径。词来自解析器（已去引号）。 */
+function pathWordCandidates(words: string[], cwd: string, homeDir: string): string[] {
+  const candidates: string[] = [];
+  for (const word of words) {
+    if (!looksLikePath(word)) continue;
+    candidates.push(resolveCandidate(word, cwd, homeDir));
+  }
+  return candidates;
+}
+
+const SHELL_SCRIPT_PROGRAMS = new Set(['bash', 'sh', 'zsh', 'dash']);
+const SHELL_SCRIPT_VALUE_OPTIONS = new Set(['--rcfile', '--init-file', '-o', '+o', '-O', '+O']);
+
+/** bash/sh/zsh/dash -c 的内层脚本（与 commandParse 的同判）；脚本文件操作数返回 null（内容不可枚举）。 */
+function shellScriptOperand(words: string[]): string | null {
+  const start = skipCommandWrapper(words);
+  const program = programBasename(words[start] ?? '');
+  if (!SHELL_SCRIPT_PROGRAMS.has(program)) return null;
+  const args = words.slice(start + 1);
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === '--' || !arg.startsWith('-') || arg === '-') return null;
+    if (SHELL_SCRIPT_VALUE_OPTIONS.has(arg)) {
+      index += 1;
+      continue;
+    }
+    if (arg === '-c' || /^-[^-]*c[^-]*$/.test(arg)) return args[index + 1] ?? null;
+  }
+  return null;
+}
+
+/** eval 的内层脚本；无参数返回 null。 */
+function evalScriptOperand(words: string[]): string | null {
+  const start = skipCommandWrapper(words);
+  if (programBasename(words[start] ?? '') !== 'eval') return null;
+  const args = words.slice(start + 1);
+  return args.length === 0 ? null : args.join(' ');
 }
 
 /**
- * Quote-aware split on && || ; | newline and grouping parens/braces.
- * Unlike commandSafety.splitCompoundCommand, subshells stay analyzable so
- * `(cd X; cat …)` can still advance cwd inside the group — and each segment
- * carries its subshell depth so the cd does NOT leak past the closing paren.
+ * cd 段是否会把父 shell 的 cwd 挪走：`;`/`&&`/换行/收尾的 standalone 段才会；
+ * `&` 把整个 list 后台化、`|`/`|&` 的管道成员各自跑在子 shell 里，都不外溢
+ * （与 permissionClassifier.contextAfterCdSegment 同判，语义真源在 commandParse 的
+ * SegmentTerminator 注释）。
  */
-function splitShellSegments(command: string): ShellSegment[] {
-  const parts: ShellSegment[] = [];
-  let current = '';
-  let runDepth = 0;
-  let depth = 0;
-  let segmentConditional = false;
-  let inSingleQuote = false;
-  let inDoubleQuote = false;
-  let index = 0;
-
-  const push = (): void => {
-    const trimmed = current.trim();
-    if (trimmed) parts.push({ text: trimmed, depth: runDepth, conditional: segmentConditional });
-    current = '';
-  };
-  /** 段间分隔符出现后，下一段的条件性归零；&&/|| 分支另行置起。 */
-  const markUnconditional = (): void => {
-    segmentConditional = false;
-  };
-
-  while (index < command.length) {
-    const char = command[index];
-    if (char === "'" && !inDoubleQuote) {
-      inSingleQuote = !inSingleQuote;
-      current += char;
-      index += 1;
-      continue;
-    }
-    if (char === '"' && !inSingleQuote) {
-      inDoubleQuote = !inDoubleQuote;
-      current += char;
-      index += 1;
-      continue;
-    }
-    if (!inSingleQuote && !inDoubleQuote) {
-      if (char === '&' && command[index + 1] === '&') {
-        push();
-        segmentConditional = true;
-        runDepth = depth;
-        index += 2;
-        continue;
-      }
-      if (char === '|' && command[index + 1] === '|') {
-        push();
-        segmentConditional = true;
-        runDepth = depth;
-        index += 2;
-        continue;
-      }
-      if (char === '(' || char === ')') {
-        push();
-        markUnconditional();
-        depth = char === '(' ? depth + 1 : Math.max(0, depth - 1);
-        runDepth = depth;
-        index += 1;
-        continue;
-      }
-      // 花括号只在保留字分组位置（`{ cmd; }`：{ 后跟空白、} 前是分隔符）才是段
-      // 分隔符。词内花括号——${VAR} 展开、{a,b} 展开、find 的 {} 占位——拆开
-      // 会把 token 撕碎、丢掉真实路径（R3②：${HOME} 被拆成 `cat $` + `HOME}/…`）。
-      const braceOpensGroup = char === '{' && /\s/.test(command[index + 1] ?? ' ');
-      const braceClosesGroup = char === '}'
-        && (index === 0 || /[\s;&|()]/.test(command[index - 1]));
-      if (char === ';' || char === '|' || char === '\n' || braceOpensGroup || braceClosesGroup) {
-        push();
-        markUnconditional();
-        runDepth = depth;
-        index += 1;
-        continue;
-      }
-    }
-    current += char;
-    index += 1;
-  }
-  push();
-  return parts;
+function cdCarriesParentCwd(terminators: SegmentTerminator[], index: number): boolean {
+  const own = terminators[index] ?? null;
+  if (![null, ';', '&&', '||', '\n'].includes(own)) return false;
+  if (['|', '|&'].includes(terminators[index - 1] ?? '')) return false;
+  return listTerminatorAfter(terminators, index) !== '&';
 }
 
-function commandLooksUnanalyzable(command: string): boolean {
-  return /\$\(/.test(command) || /`[^`]+`/.test(command);
-}
+const LENIENT_SEPARATOR_WORDS = new Set([
+  ';', '&&', '||', '|', '|&', '&', '\n', '(', ')',
+  '<', '>', '>>', '<<<', '<&', '>&', '>|',
+]);
 
-function collectPathTokens(command: string, cwd: string, homeDir: string): string[] {
-  const candidates: string[] = [];
-  const words = commandWords(command) ?? [];
+/** lenient 全词流按分隔符切成伪段，让 cd/遍历程序识别仍然成立。 */
+function splitLenientSegments(words: string[]): string[][] {
+  const segments: string[][] = [[]];
   for (const word of words) {
-    const token = unquote(word);
-    if (!looksLikePath(token)) continue;
-    candidates.push(resolveCandidate(token, cwd, homeDir));
+    if (LENIENT_SEPARATOR_WORDS.has(word)) {
+      segments.push([]);
+      continue;
+    }
+    segments[segments.length - 1].push(word);
   }
+  return segments.filter((segment) => segment.length > 0);
+}
+
+/**
+ * 解析失败 / 有 uncertain 时的宽视图（ADR-065 姿势）：枚举只会变宽，绝不交空清单。
+ * 基准 = 初始 cwd ∪ 家目录 ∪ 顺路收集到的每个 cd 目标（cd 目标按全部当前基准解析，
+ * 嵌套子 shell 里相对 cd 链也能串起来）；词 = 解析中断前已切好的段 + lenient 全词流
+ * + 裸文本家族目录名兜底（$(…) 内部等结构丢失时仍能咬住）。
+ */
+function collectBashCandidatesFailClosed(
+  command: string,
+  parsed: ReturnType<typeof parseShellCommand>,
+  workingDirectory: string,
+  homeDir: string,
+): { candidates: string[]; traversalRoots: string[] } {
+  const candidates: string[] = [];
+  const traversalRoots: string[] = [];
+  const bases = new Set<string>([workingDirectory, homeDir]);
+
+  const absorb = (words: string[]): void => {
+    if (words.length === 0) return;
+    if (isCwdCommand(words)) {
+      const targets = [...bases].map((base) => resolveCdTarget(words, base, homeDir));
+      const resolved = targets.filter((entry): entry is string => entry !== null);
+      candidates.push(...resolved);
+      for (const target of resolved) bases.add(target);
+      // cd 后 cwd 不可知：不收敛基准（全部保留，含家目录）。
+    }
+    const kind = recursiveTraversalKind(words);
+    if (kind) {
+      for (const base of [...bases]) {
+        const traversal = extractTraversalRoots(words, base, homeDir, kind);
+        traversalRoots.push(...traversal.roots);
+        candidates.push(...traversal.readOperands);
+      }
+    }
+    for (const base of [...bases]) {
+      candidates.push(...pathWordCandidates(words, base, homeDir));
+    }
+  };
+
+  // 解析中断前已经切好的段（reads/redirects 是词表外的路径候选）。
+  for (const segment of parsed.segments) absorb(segment.words);
+  for (const segment of parsed.segments) {
+    for (const read of segment.reads) {
+      for (const base of [...bases]) candidates.push(resolveCandidate(read.path, base, homeDir));
+    }
+    for (const redirect of segment.redirects) {
+      for (const base of [...bases]) candidates.push(resolveCandidate(redirect.path, base, homeDir));
+    }
+  }
+  // lenient 全词视图：shell-quote 还能看见的每个 token。
+  for (const pseudo of splitLenientSegments(lenientCommandWords(command))) absorb(pseudo);
+  // 裸文本里的家族目录名兜底。
   for (const mention of extractEmbeddedFamilyMentions(command)) {
-    candidates.push(resolveCandidate(mention, cwd, homeDir));
+    for (const base of [...bases]) candidates.push(resolveCandidate(mention, base, homeDir));
   }
-  return candidates;
+  return { candidates, traversalRoots };
 }
 
 function collectBashCandidates(
@@ -453,90 +498,92 @@ function collectBashCandidates(
   workingDirectory: string,
   homeDir: string,
 ): { candidates: string[]; traversalRoots: string[] } {
+  const parsed = parseShellCommand(command);
+  if (parsed.parsingFailed || parsed.uncertain.length > 0) {
+    return collectBashCandidatesFailClosed(command, parsed, workingDirectory, homeDir);
+  }
+
   const candidates: string[] = [];
   const traversalRoots: string[] = [];
-  const segments = splitShellSegments(command);
-  const unanalyzable = commandLooksUnanalyzable(command);
-  // 子 shell 的 cd 只在括号内生效：进入 ( 时快照 cwd 状态，遇到 ) 弹回快照。
-  // 花括号 { } 只是分组、不建子 shell，cd 照常外溢，所以只有圆括号进出栈。
-  const stack: Array<{ cwd: string; cwdKnown: boolean; cwdBases: Set<string> }> = [];
-  const state = {
-    cwd: workingDirectory,
-    cwdKnown: !unanalyzable,
-    cwdBases: new Set<string>([workingDirectory]),
-  };
+  const terminators = parsed.segments.map((segment) => segment.terminator);
+  const cwdBases = new Set<string>([workingDirectory]);
   const allBases = new Set<string>([workingDirectory]);
-  let depth = 0;
+  let cwd = workingDirectory;
+  let cwdKnown = true;
 
-  for (const segment of segments) {
-    while (segment.depth < depth) {
-      depth -= 1;
-      const restored = stack.pop();
-      if (restored) {
-        state.cwd = restored.cwd;
-        state.cwdKnown = restored.cwdKnown;
-        state.cwdBases = restored.cwdBases;
-      }
-    }
-    if (segment.depth > depth) {
-      depth += 1;
-      stack.push({ cwd: state.cwd, cwdKnown: state.cwdKnown, cwdBases: new Set(state.cwdBases) });
+  for (const [index, segment] of parsed.segments.entries()) {
+    const words = segment.words;
+    const bases = cwdKnown ? [cwd] : [...cwdBases, homeDir];
+
+    // 内层脚本（bash -c / eval）：同一进程语义，按当前 cwd 递归解析。
+    // 内层解析失败时递归调用自己会走 fail-closed 宽视图。
+    const script = shellScriptOperand(words) ?? evalScriptOperand(words);
+    if (script !== null) {
+      const inner = collectBashCandidates(script, cwd, homeDir);
+      candidates.push(...inner.candidates);
+      traversalRoots.push(...inner.traversalRoots);
+      continue;
     }
 
-    const words = commandWords(segment.text);
-    if (words && isCwdCommand(words)) {
-      const nextCwd = resolveCdTarget(words, state.cwd, homeDir);
-      if (nextCwd) {
-        candidates.push(nextCwd);
-        if (segment.conditional) {
-          // &&/|| 后面的 cd 是否执行取决于前段退出码，静态不可知（R3③：
-          // `true || cd /tmp; cat f` 按未生效一侧检查才能咬住真实 cwd）。
-          // 不能确定性地推进 cwd，改为「cwd 未知 + 基准并集」，后续命令
-          // 按出现过的所有可能基准逐一检查。
-          state.cwdKnown = false;
-          state.cwdBases.add(nextCwd);
-          allBases.add(nextCwd);
-          continue;
-        }
-        state.cwd = nextCwd;
-        state.cwdBases.add(nextCwd);
-        allBases.add(nextCwd);
+    // 重定向读写两侧都是路径候选（解析器的词表里看不到它们）。
+    for (const read of segment.reads) {
+      for (const base of bases) candidates.push(resolveCandidate(read.path, base, homeDir));
+    }
+    for (const redirect of segment.redirects) {
+      for (const base of bases) candidates.push(resolveCandidate(redirect.path, base, homeDir));
+    }
+
+    if (isCwdCommand(words)) {
+      const targets = cwdKnown
+        ? [resolveCdTarget(words, cwd, homeDir)]
+        : [...cwdBases, homeDir].map((base) => resolveCdTarget(words, base, homeDir));
+      const resolved = targets.filter((entry): entry is string => entry !== null);
+      if (resolved.length === 0) {
+        // cd -/popd 这类目标不可重构：cwd 未知，家目录入基准。
+        cwdKnown = false;
+        cwdBases.add(homeDir);
+        allBases.add(homeDir);
         continue;
       }
-      state.cwdKnown = false;
-      state.cwdBases.add(homeDir);
-      allBases.add(homeDir);
+      candidates.push(...resolved);
+      const conditional = ['&&', '||'].includes(terminators[index - 1] ?? '');
+      if (!cdCarriesParentCwd(terminators, index)) {
+        // 子 shell/后台/管道里的 cd 不外溢：cwd 确定不变。
+        // cd 目标只作候选（cd 进别人槽本身就是探路），不进基准——进了会让
+        // 后续相对词按一个不可能的 cwd 解析，制造假阳性。
+        continue;
+      }
+      for (const target of resolved) {
+        cwdBases.add(target);
+        allBases.add(target);
+      }
+      if (conditional || resolved.length > 1) {
+        // &&/|| 后面的 cd 是否执行取决于前段退出码（R3③），或 cd 目标随基准多元：
+        // 不能确定性地推进 cwd —— cwd 未知 + 基准并集，后续命令按全部可能基准检查。
+        cwdKnown = false;
+        continue;
+      }
+      cwd = resolved[0];
       continue;
     }
 
     // 递归遍历命令的入口 token 可以全然无害（$HOME），真正读进去的是遍历到的整棵树：
     // 收集遍历起点，交给 evaluateBashTraversalRoot 判「起点是否覆盖别人的槽根」。
-    if (words) {
-      const kind = recursiveTraversalKind(words);
-      if (kind) {
-        const bases = state.cwdKnown ? [state.cwd] : [...state.cwdBases, homeDir];
-        for (const base of bases) {
-          traversalRoots.push(...collectTraversalRoots(words, base, homeDir, kind));
-        }
+    const kind = recursiveTraversalKind(words);
+    if (kind) {
+      for (const base of bases) {
+        const traversal = extractTraversalRoots(words, base, homeDir, kind);
+        traversalRoots.push(...traversal.roots);
+        candidates.push(...traversal.readOperands);
       }
     }
-
-    if (state.cwdKnown) {
-      candidates.push(...collectPathTokens(segment.text, state.cwd, homeDir));
-      continue;
-    }
-    for (const base of state.cwdBases) {
-      candidates.push(...collectPathTokens(segment.text, base, homeDir));
-    }
-    candidates.push(...collectPathTokens(segment.text, homeDir, homeDir));
+    for (const base of bases) candidates.push(...pathWordCandidates(words, base, homeDir));
   }
 
-  // 括号没配平（怪形/语法错）也按未知 cwd 收尾：整条命令按出现过的全部基准再查一遍。
-  if (!state.cwdKnown || unanalyzable || stack.length > 0) {
-    for (const base of allBases) {
-      candidates.push(...collectPathTokens(command, base, homeDir));
-    }
-    candidates.push(...collectPathTokens(command, homeDir, homeDir));
+  // 家族目录名兜底（裸文本扫描）：按出现过的全部基准（cwd 轨迹的并集，含初始 cwd）。
+  for (const mention of extractEmbeddedFamilyMentions(command)) {
+    for (const base of allBases) candidates.push(resolveCandidate(mention, base, homeDir));
+    if (!cwdKnown) candidates.push(resolveCandidate(mention, homeDir, homeDir));
   }
 
   return { candidates, traversalRoots };
@@ -550,14 +597,15 @@ function collectToolPathCandidates(
 ): { candidates: string[]; traversalRoots: string[] } {
   const candidates: string[] = [lexicalPath(workingDirectory)];
   let traversalRoots: string[] = [];
+  // 工具参数是 JSON 裸串：引号剥离在这一层做（Bash 词来自解析器，已免引号）。
   const searchPath = typeof params.path === 'string' && params.path.trim()
-    ? resolveCandidate(params.path, workingDirectory, homeDir)
+    ? resolveCandidate(unquote(params.path), workingDirectory, homeDir)
     : lexicalPath(workingDirectory);
 
   for (const [key, value] of Object.entries(params)) {
     if (typeof value !== 'string' || !value.trim()) continue;
     if (!isPathLikeParamKey(key, toolName)) continue;
-    candidates.push(resolveCandidate(value, workingDirectory, homeDir));
+    candidates.push(resolveCandidate(unquote(value), workingDirectory, homeDir));
     if (normalizeGlobTool(toolName) && key.toLowerCase() === 'pattern') {
       const literal = globLiteralPrefix(unquote(value));
       if (literal) {
@@ -573,7 +621,7 @@ function collectToolPathCandidates(
 
   if (isBashTool(toolName) && typeof params.command === 'string') {
     const bashCwd = typeof params.working_directory === 'string' && params.working_directory.trim()
-      ? resolveCandidate(params.working_directory, workingDirectory, homeDir)
+      ? resolveCandidate(unquote(params.working_directory), workingDirectory, homeDir)
       : lexicalPath(workingDirectory);
     const bash = collectBashCandidates(params.command, bashCwd, homeDir);
     candidates.push(...bash.candidates);
@@ -602,7 +650,7 @@ function discoverySearchRoot(
   homeDir: string,
 ): string {
   if (typeof params.path === 'string' && params.path.trim()) {
-    return resolveCandidate(params.path, workingDirectory, homeDir);
+    return resolveCandidate(unquote(params.path), workingDirectory, homeDir);
   }
   return lexicalPath(workingDirectory);
 }

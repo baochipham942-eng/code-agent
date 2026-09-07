@@ -91,7 +91,6 @@ import { applyStreamingMessageDeltasToProjection } from '../utils/streamingProje
 import { isStreamRecoveryMessage } from '../utils/streamRecoveryMessage';
 import { deriveStreamInterruptionDecision } from '../utils/streamInterruptionDecision';
 import {
-  deriveStreamInterruptionReason,
   isPersistedStreamInterruptionMessage,
 } from '../utils/streamInterruptionPresentation';
 import { recordStreamingPerformanceCounter } from '../utils/streamingPerformanceMetrics';

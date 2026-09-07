@@ -676,7 +676,9 @@ export function useAgentIPC({
   // 运行中继续发送时，直接交给前台 brain；短暂拒收由 host 输入投递层缓冲重投。
   const sendMessage = useCallback(
     async (envelope: ConversationEnvelope, options?: SendMessageOptions) => {
-      const { content, attachments, context } = envelope;
+      // 外层只用 content/attachments 做空消息检查；context 在 claimSendInflight 内层
+      // 重新解构后才用得上，这里带上它就是个未用变量（eslint 棘轮 +1）。
+      const { content, attachments } = envelope;
       logger.debug('sendMessage called', { contentPreview: content.substring(0, 50), sessionId: currentSessionId });
 
       // 空消息检查

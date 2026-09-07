@@ -61,12 +61,13 @@ export async function renderReport(cases: Case[], rows: Row[], state: Resident |
   if (errors.length) throw new Error(errors.join('\n'));
   const out = path.join(archive, 'docs/features/context-health-compaction/acceptance');
   mkdirSync(out, { recursive: true });
-  const title = `真跑 ${summary.executed} 条 / 未执行 ${summary.skipped} 条 / 共 55 条`;
+  const title = `真跑 ${summary.executed} 条 / 未执行 ${summary.skipped} 条 / 共 ${cases.length} 条`;
   const jsonFile = path.join(out, `${date}-${runId}.json`);
   save(jsonFile, { summary, rows, runId, date, mechanism, state, gates, inputs: cases.map(c => ({ id: c.id, hash: c.hash })) });
   const colors: Record<string, string> = { '通过': '#167044', '失败': '#b42318', '未执行': '#665b44' };
   const label = (status: string) => `<span style="color:${colors[status]}">${escape(status)}</span>`;
-  const table = rows.map(row => `<tr data-case="${row.id}" data-status="${row.status}"><td><a href="#${row.id}">${row.id}</a></td><td>${label(row.status)}</td>${row.checks.map(c => `<td>${label(c.status)}</td>`).join('')}<td>${escape(row.reasons.join('；') || cases.find(c => c.id === row.id)!.title)}</td><td>${escape(row.fb ?? '—')}</td></tr>`).join('');
+  const narrow = (s: string) => `<code>${escape(s)}</code>`;
+  const table = rows.map(row => { const spec = cases.find(c => c.id === row.id)!; return `<tr data-case="${row.id}" data-status="${row.status}"><td><a href="#${row.id}">${row.id}</a></td><td>${escape(spec.title)}</td><td>${narrow(spec.modules.join('·'))}</td><td>${narrow(spec.surfaces.join('+'))}</td><td>${label(row.status)}</td>${row.checks.map(c => `<td>${label(c.status)}</td>`).join('')}<td>${escape(row.reasons.join('；') || spec.title)}</td><td>${escape(row.fb ?? '—')}</td></tr>`; }).join('');
   let details = '';
   for (const row of rows) {
     const spec = cases.find(c => c.id === row.id)!;
@@ -103,7 +104,7 @@ export async function renderReport(cases: Case[], rows: Row[], state: Resident |
     ['head', '源码版本', state?.head ? hash(state.head) : '未采集'],
     ['build', '构建指纹', state?.build && Object.keys(state.build).length ? Object.entries(state.build).map(([file, sha]) => `<div>${value(file)}：${hash(sha)}</div>`).join('') : '未采集'],
   ].map(([key, name, content]) => `<tr data-field="${key}"><th scope="row">${name} <code>${key}</code></th><td>${content}</td></tr>`).join('');
-  const lead = `<style>pre{white-space:pre-wrap;overflow-wrap:anywhere}.pair{display:flex;gap:12px}.pair img{width:49%;object-fit:contain;align-self:start}td{vertical-align:top}details{margin:12px 0}img{max-width:100%}#nightly-counts{margin-top:0}#evidence-declaration{width:100%;table-layout:fixed;overflow-wrap:anywhere}#evidence-declaration th{width:190px;white-space:normal}</style><section><h1 id="夜跑验收包">夜跑验收包</h1><h2 id="nightly-counts" data-executed="${summary.executed}" data-skipped="${summary.skipped}">${title}</h2><p>通过 ${summary.passed} / 失败 ${summary.failed}。${escape(mechanism ?? '部分执行，未执行项目仍待补齐。')}</p><h2>门汇总原始行</h2><pre>${escape(gates.join('\n'))}</pre><table id="case-table"><thead><tr><th>用例</th><th>结论</th><th>①结果</th><th>②过程</th><th>③渲染</th><th>说明</th><th>缺陷</th></tr></thead><tbody>${table}</tbody></table>${details}<h2>证据声明</h2><table id="evidence-declaration"><tbody>${declaration}</tbody></table><p>合成 F0；真实 webServer/renderer/CLI；未执行项目没有运行时证据。采集器不代表产品断言通过。</p><p>证据档位：static-contract / fault-injection / real-runtime</p></section>`;
+  const lead = `<style>pre{white-space:pre-wrap;overflow-wrap:anywhere}.pair{display:flex;gap:12px}.pair img{width:49%;object-fit:contain;align-self:start}td{vertical-align:top}details{margin:12px 0}img{max-width:100%}#nightly-counts{margin-top:0}#case-table{width:100%}#case-table th,#case-table td{overflow-wrap:anywhere}#case-table td code{font-size:12px}#evidence-declaration{width:100%;table-layout:fixed;overflow-wrap:anywhere}#evidence-declaration th{width:190px;white-space:normal}</style><section><h1 id="夜跑验收包">夜跑验收包</h1><h2 id="nightly-counts" data-executed="${summary.executed}" data-skipped="${summary.skipped}">${title}</h2><p>通过 ${summary.passed} / 失败 ${summary.failed}。${escape(mechanism ?? '部分执行，未执行项目仍待补齐。')}</p><h2>门汇总原始行</h2><pre>${escape(gates.join('\n'))}</pre><table id="case-table"><thead><tr><th>用例</th><th>标题</th><th>模块</th><th>验收面</th><th>结论</th><th>①结果</th><th>②过程</th><th>③渲染</th><th>说明</th><th>缺陷</th></tr></thead><tbody>${table}</tbody></table>${details}<h2>证据声明</h2><table id="evidence-declaration"><tbody>${declaration}</tbody></table><p>合成 F0；真实 webServer/renderer/CLI；未执行项目没有运行时证据。采集器不代表产品断言通过。</p><p>证据档位：static-contract / fault-injection / real-runtime</p></section>`;
   const leadFile = path.join(out, `${date}-${runId}.lead.html`);
   const mdFile = path.join(out, `${date}-${runId}.md`);
   writeFileSync(leadFile, lead); writeFileSync(mdFile, '原始证据已内嵌，可断网打开。各用例状态由原始证据及阻塞清单共同核定。\n');
@@ -117,7 +118,7 @@ export async function renderReport(cases: Case[], rows: Row[], state: Resident |
     if (await page.locator('h1').count() !== 1 || await page.locator('main h1, main h2').first().innerText() !== '夜跑验收包') throw new Error('FAIL HTML 文档标题不在首位/存在两个 h1');
     const countBox = await page.locator('#nightly-counts').boundingBox();
     if (!countBox || countBox.y < 0 || countBox.y + countBox.height > 1000) throw new Error('FAIL HTML 计数不在第一屏');
-    if (await page.locator('#case-table tbody tr').count() !== 55 || await page.locator('#nightly-counts').innerText() !== title) throw new Error('FAIL HTML counts/table drift');
+    if (await page.locator('#case-table tbody tr').count() !== cases.length || await page.locator('#nightly-counts').innerText() !== title) throw new Error('FAIL HTML counts/table drift');
     for (const field of ['machine', 'data', 'keySlot', 'date', 'head', 'build']) {
       const entry = page.locator(`#evidence-declaration [data-field="${field}"]`);
       if (await entry.count() !== 1 || !(await entry.locator('td').innerText()).trim()) throw new Error(`FAIL HTML 证据声明缺字段 ${field}`);

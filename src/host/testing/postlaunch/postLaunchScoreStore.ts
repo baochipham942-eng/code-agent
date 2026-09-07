@@ -29,7 +29,6 @@ import {
   type PostLaunchTurnScore,
 } from '../../../shared/contract/postLaunchScore';
 import type { TelemetryTurnScoreRecord } from '../../../shared/contract/telemetry';
-import { guardTelemetryText } from '../../telemetry/telemetryStorageParsers';
 import { guardSensitiveText } from '../../security/sensitiveDataGuard';
 
 /**
@@ -532,8 +531,6 @@ interface ScoreRow {
   /** 芯片上给人看的名字与时间；同样是 LEFT JOIN，会话被删了就是 null。 */
   session_title: string | null;
   session_start_time: number | null;
-  /** sessions.title——模型自动起的真标题。遥测那份是开会话那刻的占位快照，之后不回写。 */
-  chat_title: string | null;
 }
 
 const DIM_COLUMN: Record<PostLaunchDimension, keyof ScoreRow> = {
@@ -592,22 +589,13 @@ export interface PostLaunchReportOptions {
  * **成本不过滤**：那些轮的钱是真花出去的，从账上抹掉才是假数。
  */
 /**
- * 芯片标题：优先 sessions.title（模型自动起的真标题），回落 telemetry_sessions.title
- * （开会话那一刻的占位快照 "CLI Session" / "New Session"——之后模型改标题只写 sessions，
- * 遥测表不回写，副本 846 条里 567 条两表不一致）。都空则给空串，展示侧回落 id 前 8 位。
- *
- * sessions.title 是**裸存**的（SessionRepository.createSession 直接 stmt.run(session.title)，
- * updateSession 也是 COALESCE(?, title)，两条路径都不脱敏），而 telemetry_sessions.title
- * 写入时过了 guardTelemetryText。所以这里对 sessions.title 补同一道 guard，
- * 让两个来源在同一条口径上出报告。
- *
- * ponytail: 用 guard 的输出而不是「命中就丢弃」——掩码后的串本来就是可展示的
- * （遥测那列存的就是掩码结果），而丢弃会让「标题里带了个路径」的会话退回 "CLI Session"，
- * 正好是本刀要修的病。要改成命中即丢，改这一个函数即可。
+ * 芯片标题：只读 telemetry_sessions.title。N-TELEMETRY-SESSION-TITLE-STALE 合入后
+ * 该列由写路径同步（改名/自动起标题 → guardTelemetryText 后回写）+ 启动回填收敛，
+ * 不再去 sessions 表兜底——遥测那列存的就是掩码后的真标题，芯片与遥测页同一口径。
+ * 空则给空串，展示侧回落 id 前 8 位。
  */
-function sessionTitle(row: Pick<ScoreRow, 'session_title' | 'chat_title'>): string {
-  const live = guardTelemetryText(row.chat_title, 2_000)?.trim();
-  return live || row.session_title?.trim() || '';
+function sessionTitle(row: Pick<ScoreRow, 'session_title'>): string {
+  return row.session_title?.trim() || '';
 }
 
 export function buildPostLaunchReport(
@@ -624,11 +612,9 @@ export function buildPostLaunchReport(
              s.dim_goal, s.dim_orchestration, s.dim_tools, s.dim_permission, s.dim_safety, s.dim_artifact,
              s.failure_class, s.signals, s.cost_usd, s.judge_model, s.sampled_by,
              sessions.session_type, sessions.origin_kind,
-             sessions.title AS session_title, sessions.start_time AS session_start_time,
-             chat.title AS chat_title
+             sessions.title AS session_title, sessions.start_time AS session_start_time
       FROM telemetry_turn_scores AS s
       LEFT JOIN telemetry_sessions AS sessions ON sessions.id = s.session_id
-      LEFT JOIN sessions AS chat ON chat.id = s.session_id
       WHERE s.judge_version = ? AND s.turn_started_at >= ?
       ORDER BY s.turn_started_at DESC
     `)

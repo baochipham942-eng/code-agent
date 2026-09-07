@@ -41,7 +41,7 @@ const ALL_PASS = JSON.stringify({
 
 function db(): Database.Database {
   const database = new Database(':memory:');
-  // 真机上两套表同库：报告要 LEFT JOIN sessions 拿模型起的真标题，只建遥测表会漏掉那条路径。
+  // 真机上两套表同库：报告只读遥测列，但 sessions 行还建着（钉住「有也不兜底」的读侧契约）。
   applySchema(database, LOGGER);
   applyTelemetrySchema(database, LOGGER);
   return database;
@@ -61,7 +61,7 @@ function insertSession(
   `).run(id, title, startTime, sessionType, originKind);
 }
 
-/** 会话主表那一行（模型自动起的标题写在这里，遥测表不回写）。 */
+/** 会话主表那一行（模型自动起的标题写在这里；遥测列由写路径同步，读侧不兜底）。 */
 function insertChatSession(database: Database.Database, id: string, title: string): void {
   database.prepare(`
     INSERT INTO sessions (id, title, model_provider, model_name, session_type, created_at, updated_at)
@@ -624,11 +624,11 @@ describe('上线后打分编排', () => {
     expect(report.budget.spentUsd).toBeCloseTo(0.2);
   });
 
-  it('⑦芯片标题优先取 sessions 的真标题，遥测表那份只是开会话那刻的占位快照', () => {
-    // 真机副本 846 条里 567 条两表不一致：遥测表停在 "CLI Session"，
-    // 模型后来起的真标题只写进了 sessions。芯片要显示后者。
-    insertSession(database, 'chat-1', 'chat', NOW - HOUR, null, 'CLI Session');
-    insertChatSession(database, 'chat-1', '帮我做一个 3 页 PPT，主题：AI Agent');
+  it('⑦芯片标题只读遥测列：写路径同步过的真标题直接出，不再去 sessions 表兜底', () => {
+    // N-TELEMETRY-SESSION-TITLE-STALE 合入后 telemetry_sessions.title 由改名/自动起标题
+    // 写路径同步 + 启动回填收敛。芯片只信遥测列——sessions 行哪怕另有标题也不抢。
+    insertSession(database, 'chat-1', 'chat', NOW - HOUR, null, '帮我做一个 3 页 PPT，主题：AI Agent');
+    insertChatSession(database, 'chat-1', '另一条会话标题（不应被芯片选中）');
     const day = localDay(NOW);
     database.prepare(`
       INSERT INTO telemetry_turn_scores (turn_id, session_id, scored_at, scored_day, turn_started_at,
@@ -639,13 +639,14 @@ describe('上线后打分编排', () => {
 
     const [group] = buildPostLaunchReport(database, { now: NOW }).groups;
     expect(group.sessions[0].title).toBe('帮我做一个 3 页 PPT，主题：AI Agent');
-    // 真阴：占位快照没被选中
-    expect(group.sessions[0].title).not.toBe('CLI Session');
+    expect(group.sessions[0].title).not.toBe('另一条会话标题（不应被芯片选中）');
   });
 
-  it('⑦sessions 的标题是空串时回落遥测快照，不是显示空白', () => {
+  it('⑦遥测列还是占位时芯片就显示占位：救援在写路径/回填，不在读侧（不再分叉兜底）', () => {
+    // 回填/同步尚未触达的行（老数据未重启、或回填前构建报告）不再被 sessions 兜底掩盖——
+    // 正是这条读侧兜底让 567 条不一致长期不可见。
     insertSession(database, 'chat-1', 'chat', NOW - HOUR, null, 'CLI Session');
-    insertChatSession(database, 'chat-1', '   ');
+    insertChatSession(database, 'chat-1', '帮我做一个 3 页 PPT，主题：AI Agent');
     const day = localDay(NOW);
     database.prepare(`
       INSERT INTO telemetry_turn_scores (turn_id, session_id, scored_at, scored_day, turn_started_at,
@@ -656,9 +657,10 @@ describe('上线后打分编排', () => {
     expect(buildPostLaunchReport(database, { now: NOW }).groups[0].sessions[0].title).toBe('CLI Session');
   });
 
-  it('⑦sessions.title 是裸存的，报告侧补脱敏后再出（遥测那列写入时已脱敏，两个来源同口径）', () => {
-    insertSession(database, 'chat-1', 'chat', NOW - HOUR, null, 'CLI Session');
-    // SessionRepository.createSession 直接把 title 塞进去，一个字都不过 guard
+  it('⑦遥测列已存的脱敏标题直接出：脱敏口径在写入侧，读侧不二次处理', () => {
+    // sessions.title 仍是裸存（SessionRepository 不过 guard），遥测列存的是 guard 后的值；
+    // 芯片读遥测列，泄露防线在写路径同步（见 sessionManager.telemetryTitleSync 测试）。
+    insertSession(database, 'chat-1', 'chat', NOW - HOUR, null, '修 [已脱敏路径] 的登录');
     insertChatSession(database, 'chat-1', '修 /Users/someone/secret-repo/a.ts 的登录');
     const day = localDay(NOW);
     database.prepare(`
@@ -669,8 +671,6 @@ describe('上线后打分编排', () => {
 
     const title = buildPostLaunchReport(database, { now: NOW }).groups[0].sessions[0].title;
     expect(title).not.toContain('/Users/someone/secret-repo');
-    // 掩码后仍是这条会话自己的名字，没退回占位快照——退回去就等于这一刀白做
-    expect(title).not.toBe('CLI Session');
     expect(title).toContain('登录');
   });
 

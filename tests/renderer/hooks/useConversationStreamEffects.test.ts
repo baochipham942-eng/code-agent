@@ -1570,6 +1570,19 @@ describe('applyConversationStreamEvent 按 deltaSeq 判重放', () => {
     expect(messagesRef.current[0].content).toBe(LONG + LONG);
   });
 
+  // ai-review #1696 第五轮③：无 deltaSeq 时判不了重放（合法的重复正文与重放长得一样）。
+  // 方向固定为宁可重复：重复看得见、能被后续权威快照纠正；丢字是静默的。
+  it('没有 deltaSeq 时不按内容丢，两段相同长正文都留下', () => {
+    const { messagesRef, actions, state } = harness();
+    const noSeq = (content: string) => ({
+      type: 'stream_chunk',
+      data: { turnId: 'turn-seq', content },
+    });
+    applyConversationStreamEvent(noSeq(LONG), state, actions as never);
+    applyConversationStreamEvent(noSeq(LONG), state, actions as never);
+    expect(messagesRef.current[0].content).toBe(LONG + LONG);
+  });
+
   it('序号回头的同一段只算一次（重放）', () => {
     const { messagesRef, actions, state } = harness();
     applyConversationStreamEvent(chunk(LONG, 1), state, actions as never);

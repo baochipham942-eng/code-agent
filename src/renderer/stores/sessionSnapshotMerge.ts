@@ -81,21 +81,50 @@ function hasConflictingToolCalls(a: Message, b: Message): boolean {
  * deliverables…）就要补一条挑选规则，而载荷种类是开放的，ai-review 已经按这个形状
  * 连点两轮（工具调用一轮、artifacts 一轮）。数组一律按 id 取并集，缺 id 的按引用去重。
  */
+/**
+ * 同 id 时**后来的（live）赢**：live 那份带着刚到的执行结果/输出路径，旧快照那份可能还是
+ * 「运行中」。先到先得会把已完成工具的结果清掉（ai-review #1696 第五轮①）。
+ * 顺序按首次出现位置保持稳定，避免合并后卡片跳动。
+ */
 function unionById<T>(
   left: T[] | undefined,
   right: T[] | undefined,
 ): T[] | undefined {
   if (!left?.length) return right;
   if (!right?.length) return left;
-  const seen = new Set<unknown>();
-  const out: T[] = [];
+  const order: unknown[] = [];
+  const byKey = new Map<unknown, T>();
   for (const item of [...left, ...right]) {
     const key = (item as { id?: unknown } | undefined)?.id ?? item;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(item);
+    if (!byKey.has(key)) order.push(key);
+    byKey.set(key, item); // 后写覆盖 ⇒ live 赢
   }
-  return out;
+  return order.map((key) => byKey.get(key) as T);
+}
+
+/**
+ * 消息上的数组载荷一律按 id 取并集，**不逐个点名**：载荷种类是开放的
+ * （toolCalls / toolResults / attachments / artifacts / …），点名式合并每加一种就要补一条
+ * 规则，ai-review 已按这个形状连点三轮。这里反过来：默认全部取并集，
+ * 只把**顺序敏感**的字段列进例外。
+ */
+const ORDER_SENSITIVE_ARRAY_FIELDS = new Set(['contentParts']);
+
+function mergeArrayPayloads(snapshotMessage: Message, liveMessage: Message): Partial<Message> {
+  const out: Record<string, unknown> = {};
+  const keys = new Set([...Object.keys(snapshotMessage), ...Object.keys(liveMessage)]);
+  for (const key of keys) {
+    const a = (snapshotMessage as unknown as Record<string, unknown>)[key];
+    const b = (liveMessage as unknown as Record<string, unknown>)[key];
+    if (!Array.isArray(a) && !Array.isArray(b)) continue;
+    if (ORDER_SENSITIVE_ARRAY_FIELDS.has(key)) {
+      // 交错顺序有语义，取并集会打乱 ⇒ 取更长的那份。
+      out[key] = ((b as unknown[])?.length ?? 0) >= ((a as unknown[])?.length ?? 0) ? b : a;
+      continue;
+    }
+    out[key] = unionById(a as unknown[] | undefined, b as unknown[] | undefined);
+  }
+  return out as Partial<Message>;
 }
 
 function mergeAssistantPair(snapshotMessage: Message, liveMessage: Message): Message {
@@ -107,23 +136,8 @@ function mergeAssistantPair(snapshotMessage: Message, liveMessage: Message): Mes
     ...liveMessage,
     content: longer(snapshotMessage.content, liveMessage.content) ?? '',
     reasoning: longer(snapshotMessage.reasoning, liveMessage.reasoning),
-    // 带 id 的载荷一律取并集——误配时也不丢东西。
-    toolCalls: unionById(snapshotMessage.toolCalls, liveMessage.toolCalls),
-    ...(snapshotMessage.toolResults || liveMessage.toolResults
-      ? { toolResults: unionById(snapshotMessage.toolResults, liveMessage.toolResults) }
-      : {}),
-    ...(snapshotMessage.attachments || liveMessage.attachments
-      ? { attachments: unionById(snapshotMessage.attachments, liveMessage.attachments) }
-      : {}),
-    // contentParts 保留 text/tool_call 的**交错顺序**，取并集会打乱语义 ⇒ 取更长的那份。
-    ...(snapshotMessage.contentParts || liveMessage.contentParts
-      ? {
-          contentParts: (liveMessage.contentParts?.length ?? 0)
-            >= (snapshotMessage.contentParts?.length ?? 0)
-            ? liveMessage.contentParts
-            : snapshotMessage.contentParts,
-        }
-      : {}),
+    // 所有数组载荷统一处理，不逐个点名（见 mergeArrayPayloads 的注释）。
+    ...mergeArrayPayloads(snapshotMessage, liveMessage),
   };
 }
 

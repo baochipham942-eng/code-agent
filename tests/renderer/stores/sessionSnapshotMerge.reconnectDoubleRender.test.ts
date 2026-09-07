@@ -282,6 +282,41 @@ describe('相似度合并的护栏：工具调用冲突时不合', () => {
     expect(attIds).toContain('att-new');
   });
 
+  // ai-review #1696 第五轮①：同 id 先到先得会把 live 那份刚到的执行结果清掉。
+  it('同 id 工具调用以 live 那份为准（旧快照不许清掉刚到的结果）', () => {
+    const call = (status: string, output?: string) => ([{
+      id: 'call-same', name: 'Bash', arguments: {},
+      ...(output ? { result: { toolCallId: 'call-same', success: true, output } } : {}),
+      status,
+    }] as never);
+    const snapshot = [user('u-4'), { ...assistant('a-old4', []), toolCalls: call('running') }];
+    const live = [user('u-4'), { ...assistant('a-new4', []), toolCalls: call('done', '产物路径 /tmp/out.md') }];
+
+    const merged = mergeSnapshotWithLiveTail(snapshot, live).messages;
+    const calls = merged.flatMap((m) => m.toolCalls ?? []);
+
+    expect(calls).toHaveLength(1);
+    expect((calls[0] as never as { result?: { output?: string } }).result?.output)
+      .toContain('/tmp/out.md');
+  });
+
+  // ai-review #1696 第五轮②：artifacts 不在点名清单里就被 live 直接覆盖。
+  // 现在改成「所有数组载荷默认取并集」，新增载荷种类不用再补规则。
+  it('未点名的数组载荷（artifacts）同样取并集', () => {
+    const withArtifacts = (id: string, artId: string): Message => ({
+      ...assistant(id, []),
+      artifacts: [{ id: artId, name: `${artId}.md` }],
+    } as never);
+    const snapshot = [user('u-5'), withArtifacts('a-old5', 'art-old')];
+    const live = [user('u-5'), withArtifacts('a-new5', 'art-new')];
+
+    const merged = mergeSnapshotWithLiveTail(snapshot, live).messages;
+    const artIds = merged.flatMap((m) => ((m as never as { artifacts?: { id: string }[] }).artifacts ?? []).map((a) => a.id));
+
+    expect(artIds).toContain('art-old');
+    expect(artIds).toContain('art-new');
+  });
+
   it('一边没有工具调用时照常合并（本单要治的重复渲染不受影响）', () => {
     const snapshot = [user('u-2'), assistant('a-old2', [])];
     const live = [user('u-2'), assistant('a-new2', ['call-x'])];

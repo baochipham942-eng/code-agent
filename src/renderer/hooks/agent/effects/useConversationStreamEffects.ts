@@ -15,7 +15,6 @@ import {
   projectGoalCompletePresentation,
   type GoalCompletePresentationData,
 } from '../../../utils/goalCompletePresentation';
-import { remainingAssistantStreamDelta } from '../../../utils/assistantStreamDelta';
 
 /**
  * 这些 agent 事件不构成「宿主还在跑」的证据：终态由各自分支负责把运行态放下，
@@ -198,16 +197,16 @@ export function applyConversationStreamEvent(
         const targetMessageId = chunkData.turnId || state.currentTurnMessageId;
         // 序号回头 = 重连重放，整条丢；有序号时不再看内容（内容判不了重放）。
         if (!acceptDeltaSeq(state, targetMessageId, (event.data as { deltaSeq?: unknown } | undefined)?.deltaSeq)) break;
-        const hasDeltaSeq = typeof (event.data as { deltaSeq?: unknown } | undefined)?.deltaSeq === 'number';
         const freshMsgs = getFreshMessages();
         const targetMessage = targetMessageId
           ? freshMsgs.find(m => m.id === targetMessageId)
           : freshMsgs[freshMsgs.length - 1];
 
         if (targetMessage?.role === 'assistant') {
-          const remaining = hasDeltaSeq
-            ? chunkData.content
-            : remainingAssistantStreamDelta(targetMessage.content || '', chunkData.content);
+          // 无 deltaSeq 时**不按内容丢**：合法的重复正文与重放长得一样，判错的两个方向
+          // 代价不对称——重复看得见、能被后续权威快照纠正；丢字是静默的，用户永远不知道
+          // 少了一段（ai-review #1696 第五轮）。方向固定为宁可重复。
+          const remaining = chunkData.content;
           if (!remaining) break;
           appendAssistantStreamDelta(actions, targetMessage.id, {
             content: remaining,
@@ -232,9 +231,7 @@ export function applyConversationStreamEvent(
               state.currentTurnMessageId = newMessage.id;
               state.committedAssistantMessageIds.delete(newMessage.id);
             } else {
-              const remaining = hasDeltaSeq
-                ? chunkData.content
-                : remainingAssistantStreamDelta(lastMessage.content || '', chunkData.content);
+              const remaining = chunkData.content;
               if (!remaining) break;
               appendAssistantStreamDelta(actions, lastMessage.id, {
                 content: remaining,
@@ -255,7 +252,6 @@ export function applyConversationStreamEvent(
         // 序号去重必须接在这里，接漏了等于没接（ai-review #1696 第三轮）。
         const deltaSeq = (event.data as { deltaSeq?: unknown } | undefined)?.deltaSeq;
         if (!acceptDeltaSeq(state, targetMessageId, deltaSeq)) break;
-        const deltaHasSeq = typeof deltaSeq === 'number';
         const freshMsgs = getFreshMessages();
         const targetMessage = targetMessageId
           ? freshMsgs.find(m => m.id === targetMessageId)
@@ -268,12 +264,7 @@ export function applyConversationStreamEvent(
               ? { reasoning: deltaData.text }
               : { content: deltaData.text });
           } else {
-            const existing = field === 'reasoning'
-              ? (targetMessage.reasoning || '')
-              : (targetMessage.content || '');
-            const remaining = deltaHasSeq
-              ? deltaData.text
-              : remainingAssistantStreamDelta(existing, deltaData.text);
+            const remaining = deltaData.text;
             if (!remaining) break;
             appendAssistantStreamDelta(actions, targetMessage.id, field === 'reasoning'
               ? { reasoning: remaining }
@@ -452,10 +443,7 @@ export function applyConversationStreamEvent(
           : getFreshMessages()[getFreshMessages().length - 1];
 
         if (targetMessage?.role === 'assistant') {
-          const remaining = remainingAssistantStreamDelta(
-            targetMessage.reasoning || '',
-            reasoningData.content,
-          );
+          const remaining = reasoningData.content;
           if (!remaining) break;
           appendAssistantStreamDelta(actions, targetMessage.id, {
             reasoning: remaining,

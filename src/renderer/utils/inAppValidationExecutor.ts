@@ -17,10 +17,23 @@ const DRIVER_STEP_TYPE = 'neo-in-app-step';
 const DRIVER_RESULT_TYPE = 'neo-in-app-result';
 const DRIVER_SLACK_MS = 1000;
 
+function countSerialExpects(step: BrowserInteractionStep): number {
+  const expect = step.expect;
+  if (!expect) return 0;
+  return [
+    expect.textVisible,
+    expect.textHidden,
+    expect.selectorVisible,
+    expect.selectorHidden,
+    expect.nonblankCanvasMin && expect.nonblankCanvasMin > 0,
+  ].filter(Boolean).length;
+}
+
 export function inAppValidationDriverBudgetMs(step: BrowserInteractionStep): number {
   const waitMs = step.action.type === 'wait' ? step.action.ms : 0;
   const expectTimeout = step.expect?.timeoutMs ?? DEFAULT_EXPECT_TIMEOUT_MS;
-  return waitMs + POST_ACTION_SETTLE_MS + expectTimeout + DRIVER_SLACK_MS;
+  const serialExpects = countSerialExpects(step);
+  return waitMs + POST_ACTION_SETTLE_MS + serialExpects * expectTimeout + DRIVER_SLACK_MS;
 }
 
 function runStepViaDriver(

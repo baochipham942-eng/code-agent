@@ -92,7 +92,8 @@ const DRIVER_SCRIPT = `<script ${IN_APP_VALIDATION_DRIVER_FLAG}="1">
         }
       } else if (action.type === 'type') {
         var active = document.activeElement;
-        if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) {
+        if (!active) failures.push('no active element to receive text');
+        else if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) {
           var proto = active instanceof HTMLInputElement ? HTMLInputElement.prototype : HTMLTextAreaElement.prototype;
           var setter = Object.getOwnPropertyDescriptor(proto, 'value') && Object.getOwnPropertyDescriptor(proto, 'value').set;
           if (setter) setter.call(active, active.value + (action.text || ''));
@@ -100,7 +101,16 @@ const DRIVER_SCRIPT = `<script ${IN_APP_VALIDATION_DRIVER_FLAG}="1">
           active.dispatchEvent(new Event('input', { bubbles: true }));
           active.dispatchEvent(new Event('change', { bubbles: true }));
           checks.push('typed ' + String(action.text || '').length + ' char(s)');
-        } else failures.push('no active element to receive text');
+        } else {
+          var text = String(action.text || '');
+          for (var i = 0; i < text.length; i += 1) {
+            var charInit = { key: text[i], bubbles: true, cancelable: true };
+            active.dispatchEvent(new KeyboardEvent('keydown', charInit));
+            active.dispatchEvent(new KeyboardEvent('keypress', charInit));
+            active.dispatchEvent(new KeyboardEvent('keyup', charInit));
+          }
+          checks.push('typed ' + text.length + ' char(s)');
+        }
       } else if (action.type === 'press') {
         var keyTarget = document.activeElement || document.body;
         var keyInit = { key: action.key, bubbles: true, cancelable: true };

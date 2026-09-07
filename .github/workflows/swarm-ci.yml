@@ -238,12 +238,6 @@ jobs:
         # 同时拒绝本机 -darwin 产物冒充 Swarm full 的 Linux/Chromium 基线。
         run: npm run check:visual-shotbase-baselines
 
-      - name: Script gates (vitest tests/scripts)
-        # tests/scripts 下的守门测试（designSystemGate / architectureDebtReport /
-        # windowChromeContract / releaseMacosGates 等）此前不在任何 CI 套件里，
-        # god-file 债务在 main 上红了都没人知道（2026-07-02 抓到 4 文件超线）。整套接入。
-        run: node scripts/ci/vitest-with-flake-ledger.mjs --job "Script gates (vitest tests/scripts)" -- npx vitest run tests/scripts --retry=1
-
       - name: Read Playwright version
         id: playwright-version
         run: |
@@ -269,6 +263,11 @@ jobs:
         # chromium_headless_shell。键加 -v2 甩掉毒缓存（N-CI-XYFLOW-DEPOPT）。
         run: npx playwright install --with-deps chromium
 
+      - name: Script gates (vitest tests/scripts)
+        # tests/scripts 下的守门测试（designSystemGate / architectureDebtReport /
+        # windowChromeContract / releaseMacosGates 等）此前不在任何 CI 套件里，
+        # god-file 债务在 main 上红了都没人知道（2026-07-02 抓到 4 文件超线）。整套接入。
+        run: node scripts/ci/vitest-with-flake-ledger.mjs --job "Script gates (vitest tests/scripts)" -- npx vitest run tests/scripts --retry=1
 
       - name: MCP protocol compatibility (unit + integration)
         run: node scripts/ci/vitest-with-flake-ledger.mjs --job "MCP protocol compatibility" -- npx vitest run tests/unit/mcp tests/integration/mcp --retry=1

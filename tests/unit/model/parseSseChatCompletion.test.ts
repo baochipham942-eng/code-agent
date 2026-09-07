@@ -42,6 +42,15 @@ describe('parseSseChatCompletion', () => {
     expect(parseSseChatCompletion(raw)).toEqual({ kind: 'content', content: 'second' });
   });
 
+  it('keeps the last non-empty complete message when a later event is empty', () => {
+    const raw = sseBody([
+      'data: {"choices":[{"message":{"content":"keep-me"}}]}',
+      'data: {"choices":[{"message":{"content":""}}]}',
+      'data: [DONE]',
+    ]);
+    expect(parseSseChatCompletion(raw)).toEqual({ kind: 'content', content: 'keep-me' });
+  });
+
   it('returns structured invalid instead of throwing on malformed events', () => {
     expect(parseSseChatCompletion(sseBody(['data: not-json', 'data: [DONE]']))).toEqual({
       kind: 'invalid',

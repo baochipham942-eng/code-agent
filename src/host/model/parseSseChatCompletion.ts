@@ -55,14 +55,6 @@ function parseChatCompletionDeltaContent(payload: unknown): string | null {
   return typeof content === 'string' && content.length > 0 ? content : null;
 }
 
-function isChatCompletionMessagePayload(payload: unknown): boolean {
-  if (!isUnknownRecord(payload) || !isUnknownArray(payload.choices)) {
-    return false;
-  }
-  const firstChoice = payload.choices[0];
-  return isUnknownRecord(firstChoice) && isUnknownRecord(firstChoice.message);
-}
-
 function readContentType(response: ChatCompletionHttpResponse): string {
   try {
     return response.headers?.get('content-type') ?? '';
@@ -106,7 +98,7 @@ function parseSseChatCompletionPayload(rawBody: string): ChatCompletionHttpBodyP
       deltaParts.push(delta);
       continue;
     }
-    if (isChatCompletionMessagePayload(payload)) {
+    if (parseChatCompletionContent(payload)) {
       completePayloads.push(payload);
     }
   }
@@ -141,6 +133,7 @@ export async function parseChatCompletionHttpBody(
   response: ChatCompletionHttpResponse,
 ): Promise<ChatCompletionHttpBodyParseResult> {
   const rawBody = await response.text();
+  // electronFetch 常不透传 content-type；header 缺失时靠 body 的 data: 前缀嗅探。
   if (looksLikeSse(readContentType(response), rawBody)) {
     return parseSseChatCompletionPayload(rawBody);
   }

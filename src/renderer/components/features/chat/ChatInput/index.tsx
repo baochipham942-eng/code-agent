@@ -114,6 +114,7 @@ import { MountedConnectorIcons } from './MountedConnectorIcons';
 import { getAgentSlashCommandQuery } from './agentCommand';
 import { ComposerUploadStatus } from './ComposerUploadStatus';
 import { QueuedInputTray } from './QueuedInputTray';
+import { composerEditModeState } from './composerEditMode';
 import { useBundledCapabilityStore } from '../../../../stores/bundledCapabilityStore';
 
 // ============================================================================
@@ -158,7 +159,12 @@ export interface ChatInputProps {
 // Imperative handle exposed to parent (e.g. ChatView drop zone)
 export interface ChatInputHandle {
   addAttachments: (items: MessageAttachment[]) => void;
-  setDraft: (draft: { content: string; attachments?: MessageAttachment[] }) => void;
+  setDraft: (draft: {
+    content: string;
+    attachments?: MessageAttachment[];
+    /** 失败气泡编辑重发：绑在这份草稿上，普通发送/排队/插话分流前写入 envelope。 */
+    clientMessageId?: string;
+  }) => void;
   focus: () => void;
 }
 
@@ -268,9 +274,18 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const [attachments, setAttachments] = useState<MessageAttachment[]>([]);
   const [sessionReferences, setSessionReferences] = useState<ConversationSessionReference[]>([]);
   const [artifactReferences, setArtifactReferences] = useState<ConversationArtifactReference[]>([]);
+  const pendingResendClientMessageIdRef = useRef<string | null>(null);
+  const clearPendingResendClientMessageId = useCallback(() => {
+    pendingResendClientMessageIdRef.current = null;
+  }, []);
   // 会话作用域：currentSessionId / engine 类型 / 切换会话时清空草稿
   // （sessionless 时强制 null——项目页等无会话语境，见 ChatInputProps.sessionless）
-  const { currentSessionId } = useChatInputSessionScope(setValue, setAttachments, sessionless);
+  const { currentSessionId } = useChatInputSessionScope(
+    setValue,
+    setAttachments,
+    sessionless,
+    clearPendingResendClientMessageId,
+  );
 
   useEffect(() => {
     setEditingQueuedInputId(null);
@@ -580,8 +595,15 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       }
     },
     setDraft: (draft) => {
+      const mode = composerEditModeState(
+        draft.clientMessageId
+          ? { kind: 'failed-resend', clientMessageId: draft.clientMessageId }
+          : { kind: 'idle' },
+      );
       setValue(draft.content);
       setAttachments((draft.attachments ?? []).slice(0, UI.MAX_ATTACHMENTS_DROP));
+      pendingResendClientMessageIdRef.current = mode.pendingResendClientMessageId;
+      setEditingQueuedInputId(mode.editingQueuedInputId);
       setVoiceInputContext(null);
       inputAreaRef.current?.focus();
     },
@@ -803,6 +825,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     setSlashFilter,
     setPendingAgentSelection,
     setActiveAgentId,
+    onComposerDraftDiscarded: clearPendingResendClientMessageId,
   });
 
   // 斜杠命令 / 能力选择单元：slash popover 选择分发 + skill/connector/mcp 当轮挂载
@@ -826,6 +849,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     setPendingAgentSelection,
     setActiveAgentId,
     openSeedComposer: (kind) => setSeedComposer({ kind, initialText: '' }),
+    onComposerDraftDiscarded: clearPendingResendClientMessageId,
   });
 
   // 历史命令功能
@@ -883,6 +907,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     closeGoalConfirm: () => setGoalConfirm(null),
     openSeedComposer: (kind) => setSeedComposer({ kind, initialText: '' }),
     setActiveAgentId,
+    pendingResendClientMessageIdRef,
   });
 
   const submitWithRuntimeChoice = useCallback(async (event?: React.FormEvent, opts?: { steer?: boolean; content?: string }) => {
@@ -1252,7 +1277,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
           revision={queuedInputRevision}
           editingId={editingQueuedInputId}
           onEdit={(input) => {
-            setEditingQueuedInputId(input.id);
+            const mode = composerEditModeState({ kind: 'queued-edit', queuedInputId: input.id });
+            setEditingQueuedInputId(mode.editingQueuedInputId);
+            pendingResendClientMessageIdRef.current = mode.pendingResendClientMessageId;
             setValue(input.envelope.content);
             setAttachments([]);
             setVoiceInputContext(null);
@@ -1329,7 +1356,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
               {/* 角色名单底部"招新"：对话式建角色入口（role-creation-flow §7） */}
               <button
                 type="button"
-                onClick={() => { setValue(''); void startCreateRoleChat(); }}
+                onClick={() => {
+                  setValue('');
+                  clearPendingResendClientMessageId();
+                  void startCreateRoleChat();
+                }}
                 className="flex w-full items-center gap-1.5 border-t border-zinc-800 px-3 py-2 text-left text-xs text-badge-success transition-colors hover:bg-emerald-500/10"
               >
                 <UserPlus className="h-3.5 w-3.5 shrink-0" />

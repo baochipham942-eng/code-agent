@@ -209,6 +209,19 @@ export class QueuedInputRepository {
     return result.changes === 1;
   }
 
+  /** 用户显式重发：把 failed/retracted 拉回 queued，重置 retry，写入本次 envelope。 */
+  requeue(id: string, envelopeJson: string, now?: number): boolean {
+    const result = this.db
+      .prepare(
+        `UPDATE queued_inputs
+         SET status = 'queued', envelope_json = ?, paused_reason = NULL,
+             retry_count = 0, updated_at = ?
+         WHERE id = ? AND status IN ('failed', 'retracted')`,
+      )
+      .run(envelopeJson, now ?? Date.now(), id);
+    return result.changes === 1;
+  }
+
   reorder(sessionId: string, orderedIds: string[], now?: number): boolean {
     const reorderTransaction = this.db.transaction(() => {
       const rows = this.db.prepare(

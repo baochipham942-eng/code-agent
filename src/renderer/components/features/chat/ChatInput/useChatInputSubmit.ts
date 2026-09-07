@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
 import type React from 'react';
 import type { MessageAttachment } from '@shared/contract';
-import type { QueuedInput } from '@shared/contract/queuedInput';
+import type { QueuedInput, UpdateQueuedInputResult } from '@shared/contract/queuedInput';
 import type {
   ComposerAgentSelection,
   ComposerPromptCommandSelection,
@@ -33,6 +33,15 @@ import type { InputAreaRef } from './InputArea';
 import type { BuildEnvelope } from './useChatInputEnvelope';
 import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 import { generateMessageId } from '@shared/utils/id';
+import {
+  consumePendingClientMessageId,
+  discardPendingResendClientMessageId,
+} from '../../../../utils/chatSendState';
+import { replaceOptimisticUserMessage } from '../../../../utils/optimisticUserSend';
+import {
+  decideSameIdQueueAction,
+  queuedRecordMatchesEnvelope,
+} from '@shared/queuedInputSameId';
 import { parseScheduleCommand, isScheduleCommand } from './parseScheduleCommand';
 import { parseLoopCommand, isLoopCommand } from './parseLoopCommand';
 import {
@@ -61,6 +70,18 @@ export function parseCompactCommand(input: string): ParsedCompactCommand | null 
   if (!match) return null;
   const focusText = match[1]?.trim();
   return focusText ? { focusText } : {};
+}
+
+async function enqueueQueuedInput(
+  id: string,
+  sessionId: string,
+  envelope: ConversationEnvelope,
+): Promise<QueuedInput> {
+  return ipcService.invokeDomain<QueuedInput>(
+    IPC_DOMAINS.QUEUED_INPUT,
+    'enqueue',
+    { id, sessionId, envelope: { ...envelope, clientMessageId: id } },
+  );
 }
 
 export interface UseChatInputSubmitParams {
@@ -98,6 +119,11 @@ export interface UseChatInputSubmitParams {
   closeGoalConfirm: () => void;
   openSeedComposer: (kind: SeedComposerKind) => void;
   setActiveAgentId: (id: string | null) => void;
+  /**
+   * 失败气泡「编辑重发」绑在草稿上的原 clientMessageId。
+   * 必须在普通发送 / 排队 / 插话分流之前写入 envelope，不能只在 ChatView.onSend 里消费。
+   */
+  pendingResendClientMessageIdRef?: { current: string | null };
 }
 
 /**
@@ -176,6 +202,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
     closeGoalConfirm,
     openSeedComposer,
     setActiveAgentId,
+    pendingResendClientMessageIdRef,
   } = params;
 
   // 版本同时绑定能力选择和会话；handoff 保留同一轮版本，切槽或再选择都会失效。
@@ -276,6 +303,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
     useSessionStore.getState().addMessage(buildGoalNoticeMessage({ kind: 'start', goal: parsed.goal }));
     addToInputHistory(historyEntry);
     setValue('');
+    discardPendingResendClientMessageId(pendingResendClientMessageIdRef);
     setAttachments([]);
     closeGoalConfirm();
     const resetSentSelection = captureSuccessfulSendReset();
@@ -291,7 +319,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
       if (currentSessionId) useAppStore.getState().clearGoalRun(currentSessionId);
       return false;
     }
-  }, [addToInputHistory, attachments, buildEnvelope, captureSuccessfulSendReset, closeGoalConfirm, currentSessionId, onSend, setAttachments, setValue]);
+  }, [addToInputHistory, attachments, buildEnvelope, captureSuccessfulSendReset, closeGoalConfirm, currentSessionId, onSend, pendingResendClientMessageIdRef, setAttachments, setValue]);
 
   // 处理提交
   // 运行中允许提交，把新输入排到当前回复结束后发送。
@@ -307,6 +335,9 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
     const clearPendingCommand = () => {
       if (pendingCommand) useComposerStore.getState().setPendingCommand(null);
     };
+    const discardPendingResend = () => {
+      discardPendingResendClientMessageId(pendingResendClientMessageIdRef);
+    };
 
     // 预选了团队配方：这句话就是主题，发送即启动整个团队（不走普通对话链路）
     const pendingRecipeId = useComposerStore.getState().selectedTeamRecipeId;
@@ -317,6 +348,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
         const excludeMemberKeys = useComposerStore.getState().standbyExcludedMemberKeys;
         addToInputHistory(trimmedValue);
         setValue('');
+        discardPendingResend();
         useComposerStore.getState().setSelectedTeamRecipeId(null);
         const result = currentSessionId
           ? await launchRecipe(currentSessionId, recipe.id, trimmedValue, excludeMemberKeys)
@@ -340,6 +372,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
     if (compactCommand) {
       addToInputHistory(commandValue);
       setValue('');
+      discardPendingResend();
       clearPendingCommand();
       setVoiceInputContext(null);
       try {
@@ -361,6 +394,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
       if (!parsed?.description) {
         // 不带描述 → 打开对话式创建卡片（解释怎么运作 + 模板/自定义），而非直接报错
         setValue('');
+        discardPendingResend();
         clearPendingCommand();
         closeGoalConfirm();
         setScheduleComposerOpen(true);
@@ -368,6 +402,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
       }
       addToInputHistory(commandValue);
       setValue('');
+      discardPendingResend();
       clearPendingCommand();
       setVoiceInputContext(null);
       await runScheduleCreation(parsed.description);
@@ -389,6 +424,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
       }
       addToInputHistory(commandValue);
       setValue('');
+      discardPendingResend();
       clearPendingCommand();
       setVoiceInputContext(null);
       try {
@@ -431,6 +467,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
       const rawParsed = parseGoalCommand(commandValue);
       if (!rawParsed || shouldOpenGoalConfirm(rawParsed)) {
         setValue('');
+        discardPendingResend();
         clearPendingCommand();
         setScheduleComposerOpen(false);
         openGoalConfirm(rawParsed?.goal ?? '');
@@ -445,6 +482,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
     const seedComposerKind = getBareSeedComposerKind(commandValue);
     if (seedComposerKind) {
       setValue('');
+      discardPendingResend();
       clearPendingCommand();
       setScheduleComposerOpen(false);
       closeGoalConfirm();
@@ -470,6 +508,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
       contentToSend = agentCommand.content;
       if (!contentToSend && attachments.length === 0) {
         setValue('');
+        discardPendingResend();
         setVoiceInputContext(null);
         toast.info(t.agentCommand.restoredAuto);
         return;
@@ -494,6 +533,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
       contentToSend = agentCommand.content;
       if (!contentToSend && attachments.length === 0) {
         setValue('');
+        discardPendingResend();
         setVoiceInputContext(null);
         toast.info(`${t.agentCommand.switchedToPrefix}${agentCommand.agent.name || agentCommand.agent.id}`);
         return;
@@ -532,6 +572,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
         pendingAgentSelection,
         sessionReferences,
         artifactReferences,
+        resendClientMessageId: pendingResendClientMessageIdRef?.current ?? null,
       };
         const restoreDraft = () => {
           setValue(draftSnapshot.value);
@@ -545,6 +586,9 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
           if (pendingCommand) useComposerStore.getState().setPendingCommand(pendingCommand);
           if (draftSnapshot.appshot) {
             useAppshotsStore.getState().setPending(draftSnapshot.appshot, currentSessionId);
+          }
+          if (pendingResendClientMessageIdRef) {
+            pendingResendClientMessageIdRef.current = draftSnapshot.resendClientMessageId;
           }
       };
 
@@ -572,28 +616,107 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
       };
 
       const submitEnvelope = async (envelope: ConversationEnvelope): Promise<boolean | typeof SEND_TIMED_OUT> => {
+        const clientMessageId = consumePendingClientMessageId(
+          envelope.clientMessageId,
+          pendingResendClientMessageIdRef ?? { current: null },
+          generateMessageId,
+        );
+        const stamped: ConversationEnvelope = { ...envelope, clientMessageId };
         if (isProcessing && !opts?.steer) {
           if (!currentSessionId) return false;
-          const id = envelope.clientMessageId ?? generateMessageId();
           const queuedEnvelope: ConversationEnvelope = {
-            ...envelope,
-            clientMessageId: id,
-            sessionId: envelope.sessionId ?? currentSessionId,
+            ...stamped,
+            sessionId: stamped.sessionId ?? currentSessionId,
           };
-          await ipcService.invokeDomain<QueuedInput>(
-            IPC_DOMAINS.QUEUED_INPUT,
-            'enqueue',
-            { id, sessionId: currentSessionId, envelope: queuedEnvelope },
+          const record = await enqueueQueuedInput(
+            clientMessageId,
+            currentSessionId,
+            queuedEnvelope,
           );
-          onQueuedInputChanged?.();
-          return true;
+          const samePayload = queuedRecordMatchesEnvelope(record, queuedEnvelope);
+          const action = decideSameIdQueueAction(record.status, samePayload);
+          const applyRecord = (next: QueuedInput): true => {
+            replaceOptimisticUserMessage({
+              id: clientMessageId,
+              content: next.envelope.content,
+              attachments: next.envelope.attachments,
+            });
+            onQueuedInputChanged?.();
+            return true;
+          };
+          const forkNewId = async (): Promise<boolean> => {
+            try {
+              const freshId = generateMessageId();
+              await enqueueQueuedInput(freshId, currentSessionId, queuedEnvelope);
+              onQueuedInputChanged?.();
+              return true;
+            } catch {
+              return false;
+            }
+          };
+          const readQueuedById = async (): Promise<QueuedInput | null> => {
+            try {
+              const listed = await ipcService.invokeDomain<QueuedInput[]>(
+                IPC_DOMAINS.QUEUED_INPUT,
+                'list',
+                { sessionId: currentSessionId },
+              );
+              if (!Array.isArray(listed)) return null;
+              return listed.find((item) => item.id === clientMessageId) ?? null;
+            } catch {
+              return null;
+            }
+          };
+          const reconcileAfterMutation = async (): Promise<boolean> => {
+            const current = await readQueuedById();
+            if (!current) return false;
+            const reconciled = decideSameIdQueueAction(
+              current.status,
+              queuedRecordMatchesEnvelope(current, queuedEnvelope),
+            );
+            if (reconciled === 'keep') return applyRecord(current);
+            if (reconciled === 'fork') return forkNewId();
+            return false;
+          };
+          if (action === 'update') {
+            try {
+              const updated = await ipcService.invokeDomain<UpdateQueuedInputResult>(
+                IPC_DOMAINS.QUEUED_INPUT,
+                'update',
+                {
+                  id: clientMessageId,
+                  content: queuedEnvelope.content,
+                  attachments: queuedEnvelope.attachments ?? [],
+                },
+              );
+              if (!updated.updated || !updated.input) return reconcileAfterMutation();
+              return applyRecord(updated.input);
+            } catch {
+              return reconcileAfterMutation();
+            }
+          }
+          if (action === 'requeue') {
+            try {
+              const revived = await ipcService.invokeDomain<QueuedInput>(
+                IPC_DOMAINS.QUEUED_INPUT,
+                'requeue',
+                { id: clientMessageId, envelope: queuedEnvelope },
+              );
+              if (!revived) return reconcileAfterMutation();
+              return applyRecord(revived);
+            } catch {
+              return reconcileAfterMutation();
+            }
+          }
+          if (action === 'fork') return forkNewId();
+          return applyRecord(record);
         }
         if (isProcessing && opts?.steer && onSteer) {
-          const outcome = await onSteer(envelope);
+          const outcome = await onSteer(stamped);
           if (outcome?.outcome === 'queued') onQueuedInputChanged?.();
           return outcome !== undefined;
         }
-        return settleSendWithinTimeout(onSend(envelope));
+        return settleSendWithinTimeout(onSend(stamped));
       };
 
       // P3-18: Shell shortcut - ! prefix sends command to agent as bash request

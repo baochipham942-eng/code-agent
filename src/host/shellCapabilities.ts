@@ -305,6 +305,7 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'markSending',
     'reportSendOutcome',
     'reorder',
+    'requeue',
     'retract',
     'sendNow',
     'update',

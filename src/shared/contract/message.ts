@@ -304,15 +304,25 @@ export interface InputRedirectReceiptMetadata {
 
 export interface MessageMetadata {
   /**
-   * 发送失败时的重试锚点：乐观用户消息会从时间线撤掉（避免重发变重复提交），
-   * 失败内容改挂在那条错误 assistant 消息上。重试入口优先读它——否则往回找
-   * 最近的 user 消息会命中**上一轮**，把已经答完的问题重发一遍（ai-review #1694）。
+   * 发送失败时的重试锚点：失败用户气泡留在时间线（N-CHAT-FAILED-BUBBLE-VISIBLE），
+   * 错误 assistant 消息仍挂原文/附件/原 clientMessageId，给错误卡「重试」用。
+   * 重试入口优先读它——否则往回找最近的 user 会命中**上一轮**。
    */
   retryPrompt?: string;
   /** 与 retryPrompt 同批：失败那条消息的附件，重试要一起带回去。 */
   retryAttachments?: MessageAttachment[];
   /** 锚点归属的会话；重试前必须与当前会话一致，否则内容会被重发到别的会话。 */
   retrySessionId?: string;
+  /**
+   * 失败那条乐观用户消息的 clientMessageId。错误卡重试必须复用它，
+   * 否则每次新 UUID，跨过 inflight 同键 / host 幂等 / user 按 id 去重。
+   */
+  retryClientMessageId?: string;
+  /**
+   * 这条用户消息是发送失败后留在时间线上的乐观气泡。
+   * 编辑重发 / 失败重试复用同一 clientMessageId（消息 id），不是新开一条。
+   */
+  sendFailed?: boolean;
   /** Structured verification evidence carried by message-level projections. */
   evidenceRefs?: EvidenceRef[];
   /** Stable join keys for reconstructing a persisted message's runtime turn. */

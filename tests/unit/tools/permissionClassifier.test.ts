@@ -412,11 +412,25 @@ describe('PermissionClassifier', () => {
     // 第 38 轮：无词命令（裸 `2>&1`）仍携带它的列表终止符；丢掉它会把后台边界从 cwd 走查里
     // 抹掉。解析器无法表达这个边界，fail closed，凭据读回到基线的 ask。
     // 第 39 轮同族：丢掉的 `|` 会藏掉下一段的管道成员身份（`2>&1 | cd /tmp` 的 cd 在子 shell）。
+    // 第 40 轮同族：丢掉的 `;` 把两个列表粘起来，后面的 `&` 越界罩住前面的 cd。
     it.each([
       'cd /tmp && 2>&1 & cat .ssh/id_rsa',
       '2>&1 | cd /tmp; cat .ssh/id_rsa',
     ])('asks when a word-free segment hides a control-flow boundary: %s', async (command) => {
       const result = await classifyPermission('bash', { command }, homeContext);
+
+      expect(result.decision).toBe('ask');
+    });
+
+    it('asks when a dropped list end lets a later & swallow an earlier cd', async () => {
+      // 第 40 轮形状在 /tmp cwd 下显形：`cd ~` 真的推进（`；` 已结束列表），凭据读落在
+      // 家目录；丢掉 `;` 后后面的 `&` 会误判 cd 被后台化、按 /tmp 解析成 approve。
+      // fail closed 走解析失败兜底，reason 是通用解析失败而非凭据路径，只钉 decision。
+      const result = await classifyPermission(
+        'bash',
+        { command: 'cd ~ && 2>&1; cat .ssh/id_rsa & echo ok' },
+        { workingDirectory: '/tmp', permissionLevel: 'execute' },
+      );
 
       expect(result.decision).toBe('ask');
     });

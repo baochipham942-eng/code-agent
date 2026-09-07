@@ -302,6 +302,8 @@ const KNOWN_SHAPES = [
   'cd /tmp && 2>&1 & cat .ssh/id_rsa',
   // Round 39: same family on the pipe side — a dropped `|` hides the cd's pipeline membership.
   '2>&1 | cd /tmp; cat .ssh/id_rsa',
+  // Round 40: a dropped `;` list end glues two lists and a later `&` scopes over the earlier cd.
+  'cd ~ && 2>&1; cat .ssh/id_rsa & echo ok',
 ];
 
 // Under /tmp the critical-path rm rule fires before anything else and masks weaker rules; a real

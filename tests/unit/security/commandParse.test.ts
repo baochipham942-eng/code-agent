@@ -226,15 +226,17 @@ describe('shared shell command parser', () => {
 
   // Round 38: a word-free command (bare `2>&1`, redirect-only `> out.txt`) is legal bash and
   // still carries its list terminator; dropping it would hide a background boundary from the cwd
-  // walk (`cd /tmp && 2>&1 & …` keeps the parent cwd — bash probe). We cannot represent the
-  // boundary, so the parse fails closed instead. Round 39 extends this to `|`/`|&`: a dropped
-  // pipe hides the next segment's pipeline membership (`2>&1 | cd /tmp` runs the cd in a
-  // subshell).
+  // walk (`cd /tmp && 2>&1 & …` keeps the parent cwd — bash probe). Round 39 extends this to
+  // `|`/`|&`: a dropped pipe hides the next segment's pipeline membership (`2>&1 | cd /tmp` runs
+  // the cd in a subshell). Round 40 extends it to `;`/`\n`: a dropped list end glues two lists,
+  // so a later `&` scopes over an earlier cd (`cd ~ && 2>&1; cat … &`). We cannot represent the
+  // boundary, so any word-free segment that consumed redirect operators fails the parse.
   it.each([
     'cd /tmp && 2>&1 & cat .ssh/id_rsa',
     'cd /tmp && > out.txt & cat .ssh/id_rsa',
     '2>&1 | cd /tmp; cat .ssh/id_rsa',
     '> out.txt | cd /tmp; cat .ssh/id_rsa',
+    'cd ~ && 2>&1; cat .ssh/id_rsa & echo ok',
   ])('fails closed when a word-free segment would drop its list terminator: %s', (command) => {
     expect(parseShellCommand(command)).toMatchObject({ parsingFailed: true });
   });
@@ -244,6 +246,7 @@ describe('shared shell command parser', () => {
     'echo hi; ',
     '> out.txt',
     'echo ok\nls',
+    'echo ok;\nls',
   ])('does not fail commands whose dropped empties carry no background boundary: %s', (command) => {
     expect(parseShellCommand(command)).toMatchObject({ parsingFailed: false });
   });

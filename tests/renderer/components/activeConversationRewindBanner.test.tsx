@@ -407,6 +407,52 @@ describe('ActiveConversationRewindBanner', () => {
     expect(screen.queryByRole('button', { name: '反悔' })).toBeNull();
   });
 
+  it('对话恢复失败且刷新抛错时保留反悔入口', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    mocks.invokeDomain
+      .mockResolvedValueOnce({
+        lineage: {
+          branchId: 'branch-1',
+          sessionId: 'session-1',
+          ownerUserId: null,
+          projectId: null,
+          rootBranchId: 'branch-1',
+          parentBranchId: null,
+          forkId: null,
+          anchorEntryId: null,
+          createdAt: 1,
+        },
+        messages: [],
+        openRewindIds: ['rewind-latest'],
+        ledgerEventCount: 4,
+      })
+      .mockResolvedValueOnce({
+        success: false,
+        sessionId: 'session-1',
+        rewindId: 'rewind-latest',
+        restoredMessageCount: 0,
+        activeMessages: [],
+        state: 'partial',
+        done: [],
+        failed: [{ step: 'conversation', reason: 'restore failed' }],
+        skippedFiles: [],
+        restoredFiles: [],
+        deletedFiles: [],
+        staleEvidenceCount: 0,
+        redoAvailable: true,
+        externalSideEffectsWarning: 'Changes caused by external commands are not rolled back.',
+      })
+      .mockRejectedValueOnce(new Error('replay failed'));
+    render(
+      <ActiveConversationRewindBanner sessionId="session-1" onRestored={vi.fn()} />,
+    );
+    fireEvent.click(await screen.findByRole('button', { name: '反悔' }));
+    await waitFor(() => expect(warn).toHaveBeenCalled());
+    expect(screen.getByRole('status').getAttribute('data-rewind-phase')).toBe('open');
+    expect(screen.getByRole('button', { name: '反悔' })).toBeTruthy();
+    warn.mockRestore();
+  });
+
   it('刷新失败且已切会话时，不把新会话横幅写成已反悔', async () => {
     let rejectRefresh: ((error: Error) => void) | undefined;
     mocks.invokeDomain

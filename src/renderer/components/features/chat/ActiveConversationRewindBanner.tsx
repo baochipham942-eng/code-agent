@@ -145,6 +145,10 @@ export const ActiveConversationRewindBanner: React.FC<ActiveConversationRewindBa
       } catch (error) {
         console.warn('Failed to refresh active conversation rewind:', error);
         if (currentSessionIdRef.current !== expectedSessionId) return;
+        if (result.state !== 'success' && !result.done.includes('conversation')) {
+          setPhase('open');
+          return;
+        }
       }
       if (currentSessionIdRef.current !== expectedSessionId) return;
       if (result.state !== 'success') {

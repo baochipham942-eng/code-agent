@@ -35,7 +35,7 @@ async function main() {
       const report = await renderReport(specs, rows, manifest.state, manifest.date, manifest.runId, gates, manifest.mechanism);
       const config = option('--notify-config');
       if (config) {
-        const text = `Neo 夜跑：真跑 ${report.summary.executed} / 未执行 ${report.summary.skipped} / 失败 ${report.summary.failed} / 共55。验收包 ${scrub(report.html)}；新增 ${rows.flatMap(r => r.fbCreated ? [r.fb!] : []).join('、') || '无 FB'}；关联 ${rows.flatMap(r => r.fb ? [r.fb] : []).join('、') || '无 FB'}。`;
+        const text = `Neo 夜跑：真跑 ${report.summary.executed} / 未执行 ${report.summary.skipped} / 失败 ${report.summary.failed} / 共${specs.length}。验收包 ${scrub(report.html)}；新增 ${rows.flatMap(r => r.fbCreated ? [r.fb!] : []).join('、') || '无 FB'}；关联 ${rows.flatMap(r => r.fb ? [r.fb] : []).join('、') || '无 FB'}。`;
         save(path.join(path.dirname(report.html), `${manifest.date}-${manifest.runId}.notification.json`), sendSummary(config, text, manifest.runId));
       }
       console.log(`REPORT ${scrub(report.html)}`); return;
@@ -98,7 +98,7 @@ async function main() {
   const gates = gateFile ? readFileSync(expand(gateFile), 'utf8').trim().split('\n') : ['本机门：未附回执', 'PR 门：未运行', 'ai-review：未运行'];
   const deliveryFailure = deliveryErrors.length ? `流水线异常：${deliveryErrors.join('；')}` : undefined;
   const report = await renderReport(specs, rows, state, date, runId, gates, [mechanism, deliveryFailure].filter(Boolean).join('；') || undefined);
-  const text = `Neo 夜跑：真跑 ${report.summary.executed} / 未执行 ${report.summary.skipped} / 失败 ${report.summary.failed} / 共55。验收包 ${scrub(report.html)}；新增 ${rows.flatMap(r => r.fbCreated ? [r.fb!] : []).join('、') || '无 FB'}；关联 ${rows.flatMap(r => r.fb ? [r.fb] : []).join('、') || '无 FB'}。`;
+  const text = `Neo 夜跑：真跑 ${report.summary.executed} / 未执行 ${report.summary.skipped} / 失败 ${report.summary.failed} / 共${specs.length}。验收包 ${scrub(report.html)}；新增 ${rows.flatMap(r => r.fbCreated ? [r.fb!] : []).join('、') || '无 FB'}；关联 ${rows.flatMap(r => r.fb ? [r.fb] : []).join('、') || '无 FB'}。`;
   const config = option('--notify-config');
   const summaryText = deliveryFailure ? `${text} ${deliveryFailure}` : text;
   if (config) save(path.join(path.dirname(report.html), `${date}-${runId}.notification.json`), sendSummary(config, summaryText, runId));

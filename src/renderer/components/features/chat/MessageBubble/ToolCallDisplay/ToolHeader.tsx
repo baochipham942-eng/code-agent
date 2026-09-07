@@ -21,10 +21,7 @@ import { useI18n } from '../../../../../hooks/useI18n';
 import { useAppStore } from '../../../../../stores/appStore';
 import { formatDisplayPath } from '../../../../../utils/displayPath';
 import { isToolInterruptionPlaceholder } from '../../../../../utils/toolExecutionPresentation';
-import {
-  getStreamInterruptionReasonLabel,
-  humanizeInterruptedToolAction,
-} from '../../../../../utils/streamInterruptionPresentation';
+import { buildToolStatusLineCopy } from '../../../../../utils/toolStatusLinePresentation';
 import { resolveStreamInterruptionOutcomeKey } from '../../../../../i18n/outcomeWords';
 
 interface Props {
@@ -78,8 +75,11 @@ export function ToolHeader({
   // 没有时 fallback 到 humanizeToolStep 合成的人话句子（读取了 xxx.md / 运行了命令 xxx），
   // 而不是裸露 "Read"/"Bash" 这类工具名——两条路径都已经是完整句子，不再需要
   // 单独的 params 副标题（避免语义重复）。
-  const displayName = status === 'interrupted'
-    ? humanizeInterruptedToolAction(toolCall, t)
+  const assembled = status === 'interrupted'
+    ? buildToolStatusLineCopy({ status, interruptionReason, toolCall }, t)
+    : null;
+  const displayName = assembled
+    ? assembled.action
     : humanizeToolStep(
         toolCall.name,
         toolCall.arguments as Record<string, unknown> | undefined,
@@ -94,7 +94,9 @@ export function ToolHeader({
               : 'completed',
         toolCall.stepLabel,
       );
-  const statusLabel = getToolStatusLabel(toolCall, status, t, awaitingApproval, interruptionReason);
+  const statusLabel = assembled
+    ? assembled.terminal
+    : getToolStatusLabel(toolCall, status, t, awaitingApproval, interruptionReason);
   const filePath = getToolFilePath(
     toolCall.name,
     toolCall.arguments as Record<string, unknown> | undefined,
@@ -165,16 +167,6 @@ export function ToolHeader({
           title={title}
         >
           {displayName}
-        </span>
-      )}
-
-      {status === 'interrupted' && (
-        <span className="shrink-0 text-zinc-600 text-xs font-normal">{t.toolStatus.notExecuted}</span>
-      )}
-
-      {status === 'interrupted' && interruptionReason && (
-        <span className="shrink-0 text-zinc-600 text-xs font-normal">
-          · {getStreamInterruptionReasonLabel(interruptionReason, t)}
         </span>
       )}
 

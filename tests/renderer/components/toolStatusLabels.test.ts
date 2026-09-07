@@ -32,6 +32,37 @@ function makeMutationCall(name: string, overrides: Partial<ToolCall> = {}): Tool
 }
 
 describe('ToolCallDisplay status labels', () => {
+  // ai-review #1693：「有没有匹配」只认结构化 totalMatches，绝不解析正文。
+  // 三轮各造出一个正文反例：docs/No matches.md（子串）、No files matched the pattern
+  // （整行全等漏真阳）、根目录 No files matched.md（首词前缀）。文件名能构造，计数不能。
+  const globCall = (output: string, metadata?: Record<string, unknown>): ToolCall => ({
+    id: 'glob-x',
+    name: 'Glob',
+    arguments: { pattern: '**' },
+    result: { toolCallId: 'glob-x', success: true, output, ...(metadata ? { metadata } : {}) },
+  });
+
+  it('totalMatches=0 才报「无匹配」', () => {
+    expect(getToolStatusLabel(globCall('No files matched the pattern', { totalMatches: 0 }), 'success', zh))
+      .toBe(zh.toolStatus.grepNoMatches);
+  });
+
+  it.each([
+    ['docs/No matches.md\n\nnextOffset: null'],
+    ['No files matched.md\n\nnextOffset: null'],
+  ])('找到名字长得像空结果标记的文件（%s）不得报「无匹配」', (output) => {
+    expect(getToolStatusLabel(globCall(output, { totalMatches: 1 }), 'success', zh))
+      .not.toBe(zh.toolStatus.grepNoMatches);
+  });
+
+  it('拿不到 totalMatches 时回落到首行锚定匹配（旧消息/metadata 丢失）', () => {
+    expect(getToolStatusLabel(globCall('No files matched the pattern'), 'success', zh))
+      .toBe(zh.toolStatus.grepNoMatches);
+    // 回落档仍然挡得住「文件名含标记但不在首行开头」这一类
+    expect(getToolStatusLabel(globCall('docs/No matches.md\n\nnextOffset: null'), 'success', zh))
+      .not.toBe(zh.toolStatus.grepNoMatches);
+  });
+
   it('reports spawn completion according to foreground versus background facts', () => {
     const foreground: ToolCall = {
       id: 'spawn-foreground',

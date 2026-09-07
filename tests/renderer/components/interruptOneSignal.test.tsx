@@ -111,12 +111,16 @@ describe('N-INTERRUPT-ONESIGNAL', () => {
 
     expect(screen.getAllByTestId('interrupt-timeline-step')).toHaveLength(1);
     const timelineText = screen.getByTestId('interrupt-timeline-step').textContent ?? '';
-    expect(timelineText).toContain(expectedOutcome);
+    const terminal = reason === 'user' ? expectedOutcome : expectedReason;
+    expect(timelineText).toContain(terminal);
     expect(timelineText).toContain('写入 产品设计长文.md');
-    expect(timelineText).toContain('未执行');
-    expect(timelineText).toContain(expectedReason);
+    expect(timelineText).not.toContain('未执行');
+    expect(timelineText).not.toContain('未成功');
     expect(timelineText).not.toContain('/workspace/');
-    expect(timelineText.match(new RegExp(expectedOutcome, 'gu'))).toHaveLength(1);
+    expect(timelineText.match(new RegExp(terminal, 'gu'))).toHaveLength(1);
+    if (reason === 'app-restart') {
+      expect(timelineText).not.toContain('已中断 ·');
+    }
     expect(screen.getAllByTestId('decision-slot')).toHaveLength(1);
     expect(screen.getByTestId('stream-interruption-decision').textContent)
       .toContain(`上次回复${expectedOutcome}，写入 产品设计长文.md 未执行`);
@@ -150,8 +154,9 @@ describe('N-INTERRUPT-ONESIGNAL', () => {
     const step = screen.getByTestId('interrupt-timeline-step');
     expect(step.textContent).toContain('已取消');
     expect(step.textContent).toContain('写入 主动停止.md');
-    expect(step.textContent).toContain('未执行');
-    expect(step.textContent).toContain('你停止了这次执行');
+    expect(step.textContent).not.toContain('未执行');
+    expect(step.textContent).not.toContain('未成功');
+    expect(step.textContent).not.toContain('你停止了这次执行');
     expect(step.textContent).not.toContain('写入了一个文件');
     expect(step.textContent).not.toContain('会改文件');
     expect(step.textContent).not.toContain('可重新运行');
@@ -169,7 +174,8 @@ describe('N-INTERRUPT-ONESIGNAL', () => {
     render(<TurnCard turn={turn} sessionId="session-1" isLastTurn />);
 
     expect(screen.getAllByTestId('interrupt-timeline-step')).toHaveLength(1);
-    expect(screen.getByTestId('interrupt-timeline-step').textContent).toContain('你停止了这次执行');
+    expect(screen.getByTestId('interrupt-timeline-step').textContent).toContain('已取消');
+    expect(screen.getByTestId('interrupt-timeline-step').textContent).not.toContain('你停止了这次执行');
     expect(document.body.textContent).not.toContain('已编辑 1 个文件');
     expect(document.body.textContent).not.toContain('准备写入');
     expect(document.body.textContent).not.toContain('信号传输中，正在等待模型回响');
@@ -187,10 +193,11 @@ describe('N-INTERRUPT-ONESIGNAL', () => {
     );
 
     const step = screen.getByTestId('interrupt-timeline-step');
-    expect(step.textContent).toContain('已中断');
-    expect(step.textContent).not.toContain('已取消');
-    expect(step.textContent).toContain('写入一个文件');
     expect(step.textContent).toContain('应用重启时中断');
+    expect(step.textContent).not.toContain('已取消');
+    expect(step.textContent).not.toContain('已中断 ·');
+    expect(step.textContent).not.toContain('未执行');
+    expect(step.textContent).toContain('写入一个文件');
   });
 
   it('Write 工具行在错误态展开后也不挂效果或重跑徽标', () => {

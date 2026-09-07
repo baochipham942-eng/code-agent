@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import {
   chatSendInflightKey,
   claimSendInflight,
-  consumePendingClientMessageId,
   isChatSendAccepted,
   type ChatSendDelivery,
 } from '../../../src/renderer/utils/chatSendState';
@@ -38,29 +37,6 @@ describe('chatSendState inflight 幂等', () => {
       .resolves.toEqual({ outcome: 'failed' });
     await expect(claimSendInflight(key, async () => ({ outcome: 'sent' as const })))
       .resolves.toEqual({ outcome: 'sent' });
-  });
-
-  it('编辑重发 pending id 在 envelope 没带 id 时被消费，用过即清空', () => {
-    const pending = { current: 'failed-bubble-id' };
-    const id = consumePendingClientMessageId(undefined, pending, () => 'fresh-uuid');
-    expect(id).toBe('failed-bubble-id');
-    expect(pending.current).toBeNull();
-  });
-
-  it('envelope 已带 id 时优先用它，pending 仍然清空以免污染下一条', () => {
-    const pending = { current: 'stale-pending' };
-    const id = consumePendingClientMessageId('envelope-id', pending, () => 'fresh-uuid');
-    expect(id).toBe('envelope-id');
-    expect(pending.current).toBeNull();
-  });
-
-  it('验收④ 变异：不消费 pending 时编辑重发会铸成新 UUID', () => {
-    const pending = { current: 'failed-bubble-id' };
-    const mutated = (envelopeId: string | undefined, generateId: () => string) => (
-      envelopeId ?? generateId()
-    );
-    expect(mutated(undefined, () => 'fresh-uuid')).toBe('fresh-uuid');
-    expect(pending.current).toBe('failed-bubble-id');
   });
 
   it('failed / undefined 不算发出去，sent 与 queued 算发出去', () => {

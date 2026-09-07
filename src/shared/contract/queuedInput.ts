@@ -59,6 +59,7 @@ export interface QueuedInputSendOutcomeResult {
 
 export interface UpdateQueuedInputResult {
   updated: boolean;
+  input?: QueuedInput;
 }
 
 export interface ReorderQueuedInputsResult {

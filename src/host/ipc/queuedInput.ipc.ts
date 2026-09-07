@@ -159,11 +159,46 @@ export function registerQueuedInputHandlers(
             return invalidState(`Queued input is not editable: ${payload.id}`);
           }
           const envelope = JSON.parse(record.envelopeJson) as ConversationEnvelope;
+          const nextEnvelope: ConversationEnvelope = {
+            ...envelope,
+            content: payload.content,
+            ...(payload.attachments !== undefined
+              ? { attachments: payload.attachments as ConversationEnvelope['attachments'] }
+              : {}),
+          };
           const updated = repository.updateEnvelope(
             payload.id,
-            JSON.stringify({ ...envelope, content: payload.content }),
+            JSON.stringify(nextEnvelope),
           );
-          return { success: true, data: { updated } } satisfies IPCResponse;
+          const input = updated ? repository.getById(payload.id) : null;
+          return {
+            success: true,
+            data: {
+              updated,
+              ...(input ? { input: toQueuedInput(input) } : {}),
+            },
+          } satisfies IPCResponse;
+        }
+
+        case 'requeue': {
+          const repository = getRepository();
+          const existing = repository.getById(payload.id);
+          if (existing?.status !== 'failed' && existing?.status !== 'retracted') {
+            return invalidState(`Queued input cannot be requeued: ${payload.id}`);
+          }
+          const envelope = stampModelSpec(
+            payload.envelope,
+            deps.resolveModelSpec?.(existing.sessionId),
+          );
+          if (!repository.requeue(payload.id, JSON.stringify(envelope))) {
+            return invalidState(`Queued input cannot be requeued: ${payload.id}`);
+          }
+          const revived = repository.getById(payload.id);
+          if (!revived) {
+            return invalidState(`Queued input disappeared after requeue: ${payload.id}`);
+          }
+          deps.onEnqueued?.(revived.sessionId);
+          return { success: true, data: toQueuedInput(revived) } satisfies IPCResponse;
         }
 
         case 'reorder': {

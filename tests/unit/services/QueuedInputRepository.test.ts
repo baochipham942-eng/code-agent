@@ -199,6 +199,71 @@ describe('QueuedInputRepository', () => {
     expect(repo.getById('input-1')).toMatchObject({ status: 'consumed', updatedAt: 300 });
   });
 
+  it('updateEnvelope 写入正文和附件', () => {
+    repo.enqueue({
+      id: 'input-1',
+      sessionId: 'session-1',
+      envelope: { content: 'old', attachments: [{ id: 'a', name: 'a.png', type: 'image/png', size: 1 }] },
+      now: 100,
+    });
+    expect(repo.updateEnvelope(
+      'input-1',
+      JSON.stringify({
+        content: 'new',
+        attachments: [{ id: 'b', name: 'b.png', type: 'image/png', size: 2 }],
+      }),
+      200,
+    )).toBe(true);
+    expect(JSON.parse(repo.getById('input-1')?.envelopeJson ?? '{}')).toEqual({
+      content: 'new',
+      attachments: [{ id: 'b', name: 'b.png', type: 'image/png', size: 2 }],
+    });
+    expect(repo.getById('input-1')?.updatedAt).toBe(200);
+  });
+
+  it('updateEnvelope 对 sending 行返回 false', () => {
+    repo.enqueue({ id: 'input-1', sessionId: 'session-1', envelope: { content: 'old' }, now: 100 });
+    expect(repo.markSending('input-1', 150)).toBe(true);
+    expect(repo.updateEnvelope('input-1', JSON.stringify({ content: 'new' }), 200)).toBe(false);
+    expect(JSON.parse(repo.getById('input-1')?.envelopeJson ?? '{}')).toEqual({ content: 'old' });
+  });
+
+  it('requeue 把 failed 恢复为 queued 并写入新 envelope、重置 retry', () => {
+    repo.enqueue({ id: 'input-1', sessionId: 'session-1', envelope: { content: 'old' }, now: 100 });
+    expect(repo.markFailed('input-1', 200)).toBe(true);
+    expect(repo.getNextDispatchable('session-1')).toBeNull();
+    expect(repo.requeue('input-1', JSON.stringify({ content: 'old', attachments: [] }), 300)).toBe(true);
+    expect(repo.getById('input-1')).toMatchObject({
+      status: 'queued',
+      retryCount: 0,
+      pausedReason: null,
+      updatedAt: 300,
+    });
+    expect(JSON.parse(repo.getById('input-1')?.envelopeJson ?? '{}')).toEqual({
+      content: 'old',
+      attachments: [],
+    });
+    expect(repo.getNextDispatchable('session-1')?.id).toBe('input-1');
+    expect(repo.markSending('input-1', 400)).toBe(true);
+  });
+
+  it('requeue 把 retracted 恢复为 queued', () => {
+    repo.enqueue({ id: 'input-1', sessionId: 'session-1', envelope: { content: 'old' }, now: 100 });
+    expect(repo.retract('input-1', 200)).toBe(true);
+    expect(repo.getNextDispatchable('session-1')).toBeNull();
+    expect(repo.requeue('input-1', JSON.stringify({ content: 'new' }), 300)).toBe(true);
+    expect(repo.getById('input-1')).toMatchObject({ status: 'queued', updatedAt: 300 });
+    expect(JSON.parse(repo.getById('input-1')?.envelopeJson ?? '{}')).toEqual({ content: 'new' });
+    expect(repo.getNextDispatchable('session-1')?.id).toBe('input-1');
+  });
+
+  it('requeue 对 sending 行返回 false', () => {
+    repo.enqueue({ id: 'input-1', sessionId: 'session-1', envelope: { content: 'old' }, now: 100 });
+    expect(repo.markSending('input-1', 150)).toBe(true);
+    expect(repo.requeue('input-1', JSON.stringify({ content: 'new' }), 200)).toBe(false);
+    expect(repo.getById('input-1')).toMatchObject({ status: 'sending', updatedAt: 150 });
+  });
+
   it('显式传入的固定时间戳会精确写入 updated_at', () => {
     const fixedTimestamp = 1_700_000_000_000;
     repo.enqueue({ id: 'input-1', sessionId: 'session-1', envelope: {}, now: 100 });

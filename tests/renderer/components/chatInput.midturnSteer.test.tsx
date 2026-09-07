@@ -23,6 +23,14 @@ import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
 import { useMessageActionStore } from '../../../src/renderer/stores/messageActionStore';
 import { markOptimisticUserSendFailed } from '../../../src/renderer/utils/optimisticUserSend';
 import { IPC_DOMAINS } from '../../../src/shared/ipc';
+import { composerEditModeState } from '../../../src/renderer/components/features/chat/ChatInput/composerEditMode';
+import { useChatInputSessionScope } from '../../../src/renderer/components/features/chat/ChatInput/useChatInputSessionScope';
+import {
+  decideSameIdQueueAction,
+  queuedRecordMatchesEnvelope,
+} from '../../../src/renderer/components/features/chat/ChatInput/queuedInputSameId';
+import type { QueuedInputStatus } from '../../../src/shared/contract/queuedInput';
+import { consumePendingClientMessageId } from '../../../src/renderer/utils/chatSendState';
 
 function makeParams(overrides: Partial<UseChatInputSubmitParams> = {}): UseChatInputSubmitParams {
   return {
@@ -139,6 +147,38 @@ afterEach(() => {
   vi.clearAllMocks();
   window.codeAgentDomainAPI = undefined;
   useMessageActionStore.getState().unregister();
+});
+
+describe('同 id 入队回执状态机', () => {
+  it.each([
+    ['queued', true, 'keep'],
+    ['queued', false, 'update'],
+    ['sending', true, 'keep'],
+    ['sending', false, 'fork'],
+    ['consumed', true, 'keep'],
+    ['consumed', false, 'fork'],
+    ['failed', true, 'requeue'],
+    ['failed', false, 'requeue'],
+    ['retracted', true, 'requeue'],
+    ['retracted', false, 'requeue'],
+  ] as const)('status=%s samePayload=%s → %s', (status: QueuedInputStatus, samePayload, action) => {
+    expect(decideSameIdQueueAction(status, samePayload)).toBe(action);
+  });
+
+  it('正文相同附件不同不算 payload 相同', () => {
+    expect(queuedRecordMatchesEnvelope(
+      { envelope: { content: '同一段话', attachments: [{ id: 'a', name: 'a.png' }] as never } },
+      { content: '同一段话', attachments: [{ id: 'b', name: 'b.png' }] as never },
+    )).toBe(false);
+  });
+
+  it('正文和附件都相同才算 payload 相同', () => {
+    const att = [{ id: 'a', name: 'a.png' }];
+    expect(queuedRecordMatchesEnvelope(
+      { envelope: { content: '同一段话', attachments: att as never } },
+      { content: '同一段话', attachments: att as never },
+    )).toBe(true);
+  });
 });
 
 describe('mid-turn composer submission', () => {
@@ -396,7 +436,18 @@ describe('mid-turn composer submission', () => {
       })
       .mockResolvedValueOnce({
         success: true,
-        data: { updated: true },
+        data: {
+          updated: true,
+          input: {
+            id: 'failed-bubble-id',
+            sessionId: 'session-running',
+            envelope: { content: '改过的需求 C', attachments: [] },
+            status: 'queued',
+            retryCount: 0,
+            createdAt: 1,
+            updatedAt: 2,
+          },
+        },
       });
     const pendingResendClientMessageIdRef = { current: 'failed-bubble-id' as string | null };
     const params = makeParams({
@@ -414,9 +465,51 @@ describe('mid-turn composer submission', () => {
     expect(domainInvoke.mock.calls[1]?.[2]).toEqual({
       id: 'failed-bubble-id',
       content: '改过的需求 C',
+      attachments: [],
     });
     const user = useSessionStore.getState().messages.find((message) => message.id === 'failed-bubble-id');
     expect(user?.content).toBe('改过的需求 C');
+    expect(user?.metadata?.sendFailed).toBeUndefined();
+  });
+
+  it('同 id 仍 queued 且 payload 相同时 keep，不再 update', async () => {
+    useSessionStore.setState({
+      currentSessionId: 'session-running',
+      messages: [{
+        id: 'failed-bubble-id',
+        role: 'user',
+        content: '同一段话',
+        timestamp: 1,
+        metadata: { sendFailed: true },
+      }],
+    } as never);
+    domainInvoke.mockReset();
+    domainInvoke.mockResolvedValueOnce({
+      success: true,
+      data: {
+        id: 'failed-bubble-id',
+        sessionId: 'session-running',
+        envelope: { content: '同一段话', attachments: [] },
+        status: 'queued',
+        retryCount: 0,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    });
+    const pendingResendClientMessageIdRef = { current: 'failed-bubble-id' as string | null };
+    const { result } = renderHook(() => useChatInputSubmit(makeParams({
+      value: '同一段话',
+      pendingResendClientMessageIdRef,
+    })));
+
+    await act(async () => {
+      await result.current.handleSubmit();
+    });
+
+    expect(domainInvoke).toHaveBeenCalledTimes(1);
+    expect(domainInvoke.mock.calls[0]?.[1]).toBe('enqueue');
+    const user = useSessionStore.getState().messages.find((message) => message.id === 'failed-bubble-id');
+    expect(user?.content).toBe('同一段话');
     expect(user?.metadata?.sendFailed).toBeUndefined();
   });
 
@@ -474,6 +567,286 @@ describe('mid-turn composer submission', () => {
     expect((domainInvoke.mock.calls[1]?.[2] as { id?: string }).id).not.toBe('failed-bubble-id');
     const user = useSessionStore.getState().messages.find((message) => message.id === 'failed-bubble-id');
     expect(user?.content).toBe('原文 B');
+    expect(user?.metadata?.sendFailed).toBe(true);
+  });
+
+  it('update 竞态 updated=false 时新 id 另排，原气泡不动', async () => {
+    useSessionStore.setState({
+      currentSessionId: 'session-running',
+      messages: [{
+        id: 'failed-bubble-id',
+        role: 'user',
+        content: '原文 B',
+        timestamp: 1,
+        metadata: { sendFailed: true },
+      }],
+    } as never);
+    domainInvoke.mockReset();
+    domainInvoke
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          id: 'failed-bubble-id',
+          sessionId: 'session-running',
+          envelope: { content: '原文 B' },
+          status: 'queued',
+          retryCount: 0,
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        data: { updated: false },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          id: 'fresh-queued-id',
+          sessionId: 'session-running',
+          envelope: { content: '改过的需求 C' },
+          status: 'queued',
+          retryCount: 0,
+          createdAt: 2,
+          updatedAt: 2,
+        },
+      });
+    const pendingResendClientMessageIdRef = { current: 'failed-bubble-id' as string | null };
+    const { result } = renderHook(() => useChatInputSubmit(makeParams({
+      value: '改过的需求 C',
+      pendingResendClientMessageIdRef,
+    })));
+
+    await act(async () => {
+      await result.current.handleSubmit();
+    });
+
+    expect(domainInvoke.mock.calls[1]?.[1]).toBe('update');
+    expect(domainInvoke.mock.calls[2]?.[1]).toBe('enqueue');
+    expect((domainInvoke.mock.calls[2]?.[2] as { id?: string }).id).not.toBe('failed-bubble-id');
+    const user = useSessionStore.getState().messages.find((message) => message.id === 'failed-bubble-id');
+    expect(user?.content).toBe('原文 B');
+    expect(user?.metadata?.sendFailed).toBe(true);
+  });
+
+  it('queued 换附件时 update 带上附件，气泡按回执附件更新', async () => {
+    const oldAtt = { id: 'a', name: 'a.png', type: 'image/png', size: 1, data: 'x' };
+    const newAtt = { id: 'b', name: 'b.png', type: 'image/png', size: 2, data: 'y' };
+    useSessionStore.setState({
+      currentSessionId: 'session-running',
+      messages: [{
+        id: 'failed-bubble-id',
+        role: 'user',
+        content: '同一段话',
+        timestamp: 1,
+        attachments: [oldAtt],
+        metadata: { sendFailed: true },
+      }],
+    } as never);
+    domainInvoke.mockReset();
+    domainInvoke
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          id: 'failed-bubble-id',
+          sessionId: 'session-running',
+          envelope: { content: '同一段话', attachments: [oldAtt] },
+          status: 'queued',
+          retryCount: 0,
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          updated: true,
+          input: {
+            id: 'failed-bubble-id',
+            sessionId: 'session-running',
+            envelope: { content: '同一段话', attachments: [newAtt] },
+            status: 'queued',
+            retryCount: 0,
+            createdAt: 1,
+            updatedAt: 2,
+          },
+        },
+      });
+    const pendingResendClientMessageIdRef = { current: 'failed-bubble-id' as string | null };
+    const params = makeParams({
+      value: '同一段话',
+      attachments: [newAtt] as never,
+      pendingResendClientMessageIdRef,
+    });
+    const { result } = renderHook(() => useChatInputSubmit(params));
+
+    await act(async () => {
+      await result.current.handleSubmit();
+    });
+
+    expect(domainInvoke.mock.calls[1]?.[1]).toBe('update');
+    expect(domainInvoke.mock.calls[1]?.[2]).toEqual({
+      id: 'failed-bubble-id',
+      content: '同一段话',
+      attachments: [newAtt],
+    });
+    const user = useSessionStore.getState().messages.find((message) => message.id === 'failed-bubble-id');
+    expect(user?.attachments).toEqual([newAtt]);
+    expect(user?.metadata?.sendFailed).toBeUndefined();
+  });
+
+  it('failed 且正文相同时走 requeue，气泡按恢复后的 queued 回执更新', async () => {
+    useSessionStore.setState({
+      currentSessionId: 'session-running',
+      messages: [{
+        id: 'failed-bubble-id',
+        role: 'user',
+        content: '同一段话',
+        timestamp: 1,
+        metadata: { sendFailed: true },
+      }],
+    } as never);
+    domainInvoke.mockReset();
+    domainInvoke
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          id: 'failed-bubble-id',
+          sessionId: 'session-running',
+          envelope: { content: '同一段话' },
+          status: 'failed',
+          retryCount: 3,
+          createdAt: 1,
+          updatedAt: 2,
+        },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          id: 'failed-bubble-id',
+          sessionId: 'session-running',
+          envelope: { content: '同一段话', attachments: [] },
+          status: 'queued',
+          retryCount: 0,
+          createdAt: 1,
+          updatedAt: 3,
+        },
+      });
+    const pendingResendClientMessageIdRef = { current: 'failed-bubble-id' as string | null };
+    const params = makeParams({
+      value: '同一段话',
+      pendingResendClientMessageIdRef,
+    });
+    const { result } = renderHook(() => useChatInputSubmit(params));
+
+    await act(async () => {
+      await result.current.handleSubmit();
+    });
+
+    expect(domainInvoke.mock.calls[1]?.[1]).toBe('requeue');
+    expect(domainInvoke.mock.calls[1]?.[2]).toEqual(expect.objectContaining({
+      id: 'failed-bubble-id',
+      envelope: expect.objectContaining({ content: '同一段话' }),
+    }));
+    const user = useSessionStore.getState().messages.find((message) => message.id === 'failed-bubble-id');
+    expect(user?.content).toBe('同一段话');
+    expect(user?.metadata?.sendFailed).toBeUndefined();
+  });
+
+  it('retracted 且正文相同时也走 requeue', async () => {
+    useSessionStore.setState({
+      currentSessionId: 'session-running',
+      messages: [{
+        id: 'failed-bubble-id',
+        role: 'user',
+        content: '同一段话',
+        timestamp: 1,
+        metadata: { sendFailed: true },
+      }],
+    } as never);
+    domainInvoke.mockReset();
+    domainInvoke
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          id: 'failed-bubble-id',
+          sessionId: 'session-running',
+          envelope: { content: '同一段话' },
+          status: 'retracted',
+          retryCount: 0,
+          createdAt: 1,
+          updatedAt: 2,
+        },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          id: 'failed-bubble-id',
+          sessionId: 'session-running',
+          envelope: { content: '同一段话' },
+          status: 'queued',
+          retryCount: 0,
+          createdAt: 1,
+          updatedAt: 3,
+        },
+      });
+    const pendingResendClientMessageIdRef = { current: 'failed-bubble-id' as string | null };
+    const { result } = renderHook(() => useChatInputSubmit(makeParams({
+      value: '同一段话',
+      pendingResendClientMessageIdRef,
+    })));
+
+    await act(async () => {
+      await result.current.handleSubmit();
+    });
+
+    expect(domainInvoke.mock.calls[1]?.[1]).toBe('requeue');
+  });
+
+  it('requeue 失败时草稿回滚，不清失败标记', async () => {
+    useSessionStore.setState({
+      currentSessionId: 'session-running',
+      messages: [{
+        id: 'failed-bubble-id',
+        role: 'user',
+        content: '同一段话',
+        timestamp: 1,
+        metadata: { sendFailed: true },
+      }],
+    } as never);
+    domainInvoke.mockReset();
+    domainInvoke
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          id: 'failed-bubble-id',
+          sessionId: 'session-running',
+          envelope: { content: '同一段话' },
+          status: 'failed',
+          retryCount: 1,
+          createdAt: 1,
+          updatedAt: 2,
+        },
+      })
+      .mockResolvedValueOnce({
+        success: false,
+        error: { code: 'INVALID_STATE', message: 'cannot requeue' },
+      });
+    const setValue = vi.fn();
+    const pendingResendClientMessageIdRef = { current: 'failed-bubble-id' as string | null };
+    const { result } = renderHook(() => useChatInputSubmit(makeParams({
+      value: '同一段话',
+      setValue,
+      pendingResendClientMessageIdRef,
+    })));
+
+    await act(async () => {
+      await result.current.handleSubmit();
+    });
+
+    expect(domainInvoke.mock.calls[1]?.[1]).toBe('requeue');
+    expect(setValue).toHaveBeenCalledWith('同一段话');
+    const user = useSessionStore.getState().messages.find((message) => message.id === 'failed-bubble-id');
     expect(user?.metadata?.sendFailed).toBe(true);
   });
 
@@ -537,5 +910,105 @@ describe('mid-turn composer submission', () => {
     const user = useSessionStore.getState().messages.find((message) => message.id === 'failed-bubble-id');
     expect(user?.content).toBe('改过的需求 B');
     expect(user?.metadata?.sendFailed).toBeUndefined();
+  });
+});
+
+describe('切换会话清掉编辑重发 pending', () => {
+  it('会话切换时触发草稿重置回调，pending id 不残留到下一会话', () => {
+    useSessionStore.setState({ currentSessionId: 'session-A' } as never);
+    const setValue = vi.fn();
+    const setAttachments = vi.fn();
+    const pending = { current: 'failed-bubble-id' as string | null };
+    const { rerender } = renderHook(
+      ({ sessionless }: { sessionless: boolean }) => useChatInputSessionScope(
+        setValue,
+        setAttachments,
+        sessionless,
+        () => { pending.current = null; },
+      ),
+      { initialProps: { sessionless: false } },
+    );
+
+    expect(pending.current).toBe('failed-bubble-id');
+
+    act(() => {
+      useSessionStore.setState({ currentSessionId: 'session-B' } as never);
+    });
+    rerender({ sessionless: false });
+
+    expect(setValue).toHaveBeenCalledWith('');
+    expect(setAttachments).toHaveBeenCalledWith([]);
+    expect(pending.current).toBeNull();
+  });
+});
+
+describe('失败重发与排队编辑互斥', () => {
+  it('恢复失败草稿时清掉队列编辑 id', () => {
+    expect(composerEditModeState({ kind: 'failed-resend', clientMessageId: 'failed-A' })).toEqual({
+      editingQueuedInputId: null,
+      pendingResendClientMessageId: 'failed-A',
+    });
+  });
+
+  it('进入队列编辑时清掉待重发 id，避免提交把排队消息 C 覆盖成 A', () => {
+    expect(composerEditModeState({ kind: 'queued-edit', queuedInputId: 'queued-C' })).toEqual({
+      editingQueuedInputId: 'queued-C',
+      pendingResendClientMessageId: null,
+    });
+  });
+
+  it('C 排队编辑后再点 A 失败重发，是整体切换不是 merge，提交不会截获去改 C', () => {
+    const queued = composerEditModeState({ kind: 'queued-edit', queuedInputId: 'queued-C' });
+    expect(queued.editingQueuedInputId).toBe('queued-C');
+    const afterFailedResend = composerEditModeState({ kind: 'failed-resend', clientMessageId: 'failed-A' });
+    expect({ ...queued, ...afterFailedResend }).toEqual({
+      editingQueuedInputId: null,
+      pendingResendClientMessageId: 'failed-A',
+    });
+  });
+
+  it('先失败重发 A 再排队编辑 C，pending 被清掉，下一次发送不会误用 A 的 id', () => {
+    const failed = composerEditModeState({ kind: 'failed-resend', clientMessageId: 'failed-A' });
+    const afterQueued = composerEditModeState({ kind: 'queued-edit', queuedInputId: 'queued-C' });
+    expect({ ...failed, ...afterQueued }).toEqual({
+      editingQueuedInputId: 'queued-C',
+      pendingResendClientMessageId: null,
+    });
+  });
+
+  it('ChatInput 两种模式入口都整体写入一对 id，不各自只写一半', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/renderer/components/features/chat/ChatInput/index.tsx'),
+      'utf8',
+    );
+    expect(source).toContain("kind: 'failed-resend'");
+    expect(source).toContain("kind: 'queued-edit'");
+    expect(source.match(/setEditingQueuedInputId\(mode\.editingQueuedInputId\)/g)?.length).toBe(2);
+    expect(source.match(/pendingResendClientMessageIdRef\.current = mode\.pendingResendClientMessageId/g)?.length).toBe(2);
+  });
+});
+
+describe('consumePendingClientMessageId', () => {
+  it('编辑重发 pending id 在 envelope 没带 id 时被消费，用过即清空', () => {
+    const pending = { current: 'failed-bubble-id' };
+    const id = consumePendingClientMessageId(undefined, pending, () => 'fresh-uuid');
+    expect(id).toBe('failed-bubble-id');
+    expect(pending.current).toBeNull();
+  });
+
+  it('envelope 已带 id 时优先用它，pending 仍然清空以免污染下一条', () => {
+    const pending = { current: 'stale-pending' };
+    const id = consumePendingClientMessageId('envelope-id', pending, () => 'fresh-uuid');
+    expect(id).toBe('envelope-id');
+    expect(pending.current).toBeNull();
+  });
+
+  it('验收④ 变异：不消费 pending 时编辑重发会铸成新 UUID', () => {
+    const pending = { current: 'failed-bubble-id' };
+    const mutated = (envelopeId: string | undefined, generateId: () => string) => (
+      envelopeId ?? generateId()
+    );
+    expect(mutated(undefined, () => 'fresh-uuid')).toBe('fresh-uuid');
+    expect(pending.current).toBe('failed-bubble-id');
   });
 });

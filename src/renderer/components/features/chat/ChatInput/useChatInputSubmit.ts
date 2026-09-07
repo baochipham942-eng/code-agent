@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
 import type React from 'react';
 import type { MessageAttachment } from '@shared/contract';
-import type { QueuedInput } from '@shared/contract/queuedInput';
+import type { QueuedInput, UpdateQueuedInputResult } from '@shared/contract/queuedInput';
 import type {
   ComposerAgentSelection,
   ComposerPromptCommandSelection,
@@ -35,6 +35,10 @@ import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 import { generateMessageId } from '@shared/utils/id';
 import { consumePendingClientMessageId } from '../../../../utils/chatSendState';
 import { replaceOptimisticUserMessage } from '../../../../utils/optimisticUserSend';
+import {
+  decideSameIdQueueAction,
+  queuedRecordMatchesEnvelope,
+} from './queuedInputSameId';
 import { parseScheduleCommand, isScheduleCommand } from './parseScheduleCommand';
 import { parseLoopCommand, isLoopCommand } from './parseLoopCommand';
 import {
@@ -63,14 +67,6 @@ export function parseCompactCommand(input: string): ParsedCompactCommand | null 
   if (!match) return null;
   const focusText = match[1]?.trim();
   return focusText ? { focusText } : {};
-}
-
-function queuedRecordMatchesEnvelope(
-  record: QueuedInput,
-  envelope: ConversationEnvelope,
-): boolean {
-  return (record.envelope.content ?? '') === (envelope.content ?? '')
-    && JSON.stringify(record.envelope.attachments ?? []) === JSON.stringify(envelope.attachments ?? []);
 }
 
 async function enqueueQueuedInput(
@@ -621,40 +617,56 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
             currentSessionId,
             queuedEnvelope,
           );
-          if (record.status === 'queued' && !queuedRecordMatchesEnvelope(record, queuedEnvelope)) {
-            const updated = await ipcService.invokeDomain<{ updated: boolean }>(
-              IPC_DOMAINS.QUEUED_INPUT,
-              'update',
-              { id: clientMessageId, content: queuedEnvelope.content },
-            );
-            if (!updated.updated) {
-              const freshId = generateMessageId();
-              await enqueueQueuedInput(freshId, currentSessionId, queuedEnvelope);
-              onQueuedInputChanged?.();
-              return true;
-            }
+          const samePayload = queuedRecordMatchesEnvelope(record, queuedEnvelope);
+          const action = decideSameIdQueueAction(record.status, samePayload);
+          const applyRecord = (next: QueuedInput): true => {
             replaceOptimisticUserMessage({
               id: clientMessageId,
-              content: queuedEnvelope.content,
-              attachments: queuedEnvelope.attachments,
+              content: next.envelope.content,
+              attachments: next.envelope.attachments,
             });
             onQueuedInputChanged?.();
             return true;
-          }
-          if (record.status !== 'queued' && !queuedRecordMatchesEnvelope(record, queuedEnvelope)) {
-            // 同 id 已 sending/sent：INSERT OR IGNORE 不会改旧行。铸新 id 另排 C，原气泡仍跟已推进的 B。
+          };
+          const forkNewId = async (): Promise<true> => {
             const freshId = generateMessageId();
             await enqueueQueuedInput(freshId, currentSessionId, queuedEnvelope);
             onQueuedInputChanged?.();
             return true;
+          };
+          if (action === 'update') {
+            try {
+              const updated = await ipcService.invokeDomain<UpdateQueuedInputResult>(
+                IPC_DOMAINS.QUEUED_INPUT,
+                'update',
+                {
+                  id: clientMessageId,
+                  content: queuedEnvelope.content,
+                  attachments: queuedEnvelope.attachments ?? [],
+                },
+              );
+              if (!updated.updated || !updated.input) return forkNewId();
+              return applyRecord(updated.input);
+            } catch {
+              // queued 已变成 sending/consumed：按 sending+payload 不同处理，不覆盖原行。
+              return forkNewId();
+            }
           }
-          replaceOptimisticUserMessage({
-            id: clientMessageId,
-            content: record.envelope.content,
-            attachments: record.envelope.attachments,
-          });
-          onQueuedInputChanged?.();
-          return true;
+          if (action === 'requeue') {
+            try {
+              const revived = await ipcService.invokeDomain<QueuedInput>(
+                IPC_DOMAINS.QUEUED_INPUT,
+                'requeue',
+                { id: clientMessageId, envelope: queuedEnvelope },
+              );
+              if (!revived) return false;
+              return applyRecord(revived);
+            } catch {
+              return false;
+            }
+          }
+          if (action === 'fork') return forkNewId();
+          return applyRecord(record);
         }
         if (isProcessing && opts?.steer && onSteer) {
           const outcome = await onSteer(stamped);

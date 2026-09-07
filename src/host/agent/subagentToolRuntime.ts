@@ -19,13 +19,20 @@ import type { SubagentEventIdentity } from './subagentLifecycleEvents';
  * PROJECT_SOURCE_OUTSIDE_WORKSPACE，合法记忆任务假阴性（#1686 第二轮「记忆根」形状
  * 往派生链深一层）。与 worktree 根重叠的附加根跳过：createWorkspaceScope 的
  * assertNonOverlappingRoots 会抛，照 buildEvalRunScoping 的双向检查处理。
+ *
+ * N-EVAL-POLICY-WRITE-BOUNDARY-ENABLE 修复轮 4：整个继承合成（含修复轮 3 的记忆根）
+ * 收进 boundaryEnabled 门内。轮 2 把通用附加根继承写在门外——开关关（生产缺省）时
+ * 父级 worktree 外附加根也流进子代理 scope，非评测会话里
+ * Bash({working_directory: <附加根>}) 从 RUN_WORKSPACE_BOUNDARY 拒变放行，等于默认
+ * 松了目录边界（#1686 头号纪律「新行为只在新开关下生效」的反面教材）。现在开关关 =
+ * 原样返回 worktreeScope（一根不多、一字段不变），非评测链路零变化。
  */
 function inheritParentAdditionalRoots(
   worktreeScope: WorkspaceScope | undefined,
   parentScope: WorkspaceScope | undefined,
   options: { boundaryEnabled: boolean },
 ): WorkspaceScope | undefined {
-  if (!worktreeScope || !parentScope) return worktreeScope;
+  if (!worktreeScope || !parentScope || !options.boundaryEnabled) return worktreeScope;
   const inherited = parentScope.roots
     .filter((root) => root.role !== 'primary')
     .filter((root) => !worktreeScope.roots.some((existing) =>
@@ -40,17 +47,15 @@ function inheritParentAdditionalRoots(
   // 口径（爸拍板）：记忆目录始终显式保留——判据是父级授权过它（它落在父级任一根内，
   // 折叠或显式同权）；🚫 不继承父级 primary 本体，worktree 隔离语义不动。记忆目录
   // 出处与写目标解析同源：getMemoryDir()（writeTargets.ts 的 global-memory 分支同一
-  // 派生链，CODE_AGENT_DATA_DIR ?? ~/.code-agent），不拼路径。只在写边界开着时合成——
-  // 关着时子级 scope 多一个根会松 Bash working_directory 闸，非评测链路零变化。
-  if (options.boundaryEnabled) {
-    const memoryDir = getMemoryDir();
-    const parentAuthorizedMemory = parentScope.roots
-      .some((root) => isPathWithinRoot(memoryDir, root.path));
-    const childCoversMemory = roots.some((root) =>
-      isPathWithinRoot(memoryDir, root.path) || isPathWithinRoot(root.path, memoryDir));
-    if (parentAuthorizedMemory && !childCoversMemory) {
-      roots.push({ sourceId: 'eval-memory', path: memoryDir, role: 'additional', access: 'read_write' });
-    }
+  // 派生链，CODE_AGENT_DATA_DIR ?? ~/.code-agent），不拼路径。合成随整个函数在
+  // boundaryEnabled 门内（修复轮 4 收口）。
+  const memoryDir = getMemoryDir();
+  const parentAuthorizedMemory = parentScope.roots
+    .some((root) => isPathWithinRoot(memoryDir, root.path));
+  const childCoversMemory = roots.some((root) =>
+    isPathWithinRoot(memoryDir, root.path) || isPathWithinRoot(root.path, memoryDir));
+  if (parentAuthorizedMemory && !childCoversMemory) {
+    roots.push({ sourceId: 'eval-memory', path: memoryDir, role: 'additional', access: 'read_write' });
   }
   if (roots.length === worktreeScope.roots.length) return worktreeScope;
   return createWorkspaceScope(worktreeScope.projectId, roots);

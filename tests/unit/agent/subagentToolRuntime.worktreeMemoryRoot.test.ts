@@ -347,3 +347,116 @@ describe('worktree 子代理 · 记忆目录被父级 primary 折叠（修复轮
     expect(existsSync(path.join(externalData, 'memory', 'wsb-wt3-unauth.md'))).toBe(false);
   });
 });
+
+// ============================================================================
+// 修复轮 4：附加根继承收进开关门内
+// ============================================================================
+// 轮 2 的通用附加根继承写在 boundaryEnabled 门外——开关关（生产缺省）时父级 worktree
+// 外附加根也流进子代理 scope，非评测会话里 Bash({working_directory: <附加根>}) 从
+// RUN_WORKSPACE_BOUNDARY 拒变放行，等于默认松了目录边界（#1686 头号纪律「新行为只在
+// 新开关下生效」的反面教材）。修复：整个继承合成收进门内，开关关 = 原样返回 worktree
+// 单根 scope（一根不多、一字段不变）。
+// ============================================================================
+
+describe('worktree 子代理 · 附加根继承收进开关门内（修复轮 4）', () => {
+  let root: string;
+  let sandbox: string;
+  let extraRoot: string;
+  let dataDir: string;
+  let worktree: string;
+  let previousDataDir: string | undefined;
+
+  beforeAll(() => { getProtocolRegistry(); });
+
+  beforeEach(async () => {
+    root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'wsb-wt4-')));
+    sandbox = path.join(root, 'a-sandbox');
+    // 显式附加根：worktree 外的普通目录（非记忆根——把通用继承与轮 3 记忆合成分开钉）。
+    extraRoot = path.join(root, 'z-extra');
+    // dataDir 放父级 scope 外：记忆目录不被父级授权 ⇒ 轮 3 合成不触发，纯钉通用继承。
+    dataDir = path.join(root, 'data');
+    await Promise.all([fs.mkdir(sandbox), fs.mkdir(extraRoot), fs.mkdir(dataDir)]);
+    previousDataDir = process.env.CODE_AGENT_DATA_DIR;
+    process.env.CODE_AGENT_DATA_DIR = dataDir;
+    await fs.mkdir(WORKTREE_BASE_DIR, { recursive: true });
+    worktree = await fs.mkdtemp(path.join(await fs.realpath(WORKTREE_BASE_DIR), 'wsb-wt4-'));
+    getToolCache().clear();
+    fileReadTracker.clear();
+    resetPermissionModeManager();
+  });
+
+  afterEach(async () => {
+    resetPermissionModeManager();
+    if (previousDataDir === undefined) delete process.env.CODE_AGENT_DATA_DIR;
+    else process.env.CODE_AGENT_DATA_DIR = previousDataDir;
+    await fs.rm(worktree, { recursive: true, force: true });
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  /** 父级带显式附加根的双根 scope（手工 createWorkspaceScope，同轮 2/3 用例构造方式）。 */
+  function explicitAdditionalRootScope(): WorkspaceScope {
+    return createWorkspaceScope('wsb-wt4-project', [
+      { sourceId: 'eval-sandbox', path: sandbox, access: 'read_write', role: 'primary' },
+      { sourceId: 'parent-extra', path: extraRoot, access: 'read_write', role: 'additional' },
+    ]);
+  }
+
+  /** boundary: 'absent'（字段不带，生产缺省态）| false | true。 */
+  function buildExecutor(input: { parentScope: WorkspaceScope; boundary: 'absent' | boolean }): ToolExecutor {
+    const context = {
+      runId: 'wsb-wt4-run',
+      sessionId: 'wsb-wt4-session',
+      workspace: sandbox,
+      workspaceScope: input.parentScope,
+      ...(input.boundary === 'absent' ? {} : { restrictWritesToWorkspace: input.boundary }),
+      cwd: worktree,
+      resolver: { getDefinition: () => undefined },
+      permission: { request: async () => true },
+      events: { emit: () => { /* no-op */ } },
+      abortSignal: new AbortController().signal,
+    } as unknown as SubagentExecutionContext;
+    const runtime = createSubagentToolRuntime({
+      context,
+      sessionId: 'wsb-wt4-session',
+      effectiveMode: 'default',
+      identity: { agentId: 'wsb-wt4-agent', runId: 'wsb-wt4-run', parentToolUseId: 'wsb-parent' },
+      allowedToolNames: new Set(['Write', 'Bash']),
+      checkToolExecution: () => true,
+    });
+    runtime.executor.setAuditEnabled(false);
+    return runtime.executor;
+  }
+
+  it('开关关（缺省态，字段不带）：Bash working_directory 指父级附加根仍 RUN_WORKSPACE_BOUNDARY 拒', async () => {
+    // 「关着时与改前一字不差」在这条的形状：继承在门外时附加根流进子级 scope，
+    // 这条 Bash 会从拒变放行（bindRunScopedParams 按根判）。拒在工具查找之前，不真跑 shell。
+    const result = await buildExecutor({ parentScope: explicitAdditionalRootScope(), boundary: 'absent' })
+      .execute('Bash', { command: 'pwd', working_directory: extraRoot }, { sessionId: 'wsb-wt4-session' });
+    expect(result.success).toBe(false);
+    expect(result.metadata?.code).toBe('RUN_WORKSPACE_BOUNDARY');
+  });
+
+  it('开关关（false 态）：Bash working_directory 指父级附加根仍拒（缺省/false 两态都不得多根）', async () => {
+    const result = await buildExecutor({ parentScope: explicitAdditionalRootScope(), boundary: false })
+      .execute('Bash', { command: 'pwd', working_directory: extraRoot }, { sessionId: 'wsb-wt4-session' });
+    expect(result.success).toBe(false);
+    expect(result.metadata?.code).toBe('RUN_WORKSPACE_BOUNDARY');
+  });
+
+  it('开关关：worktree 根内写仍放行（原样返回 worktree 单根 scope，不是全拒）', async () => {
+    // 另一面：收口不是把 scope 收没——单根 worktree scope 原样在，根内写照常。
+    const target = path.join(worktree, 'wt4-inside-off.txt');
+    const result = await buildExecutor({ parentScope: explicitAdditionalRootScope(), boundary: 'absent' })
+      .execute('Write', { file_path: target, content: 'wsb' }, { sessionId: 'wsb-wt4-session' });
+    expect(result.success).toBe(true);
+    expect(existsSync(target)).toBe(true);
+  });
+
+  it('开关开着：附加根继承照常——附加根内 Write 放行且真落盘（门内行为不变）', async () => {
+    const target = path.join(extraRoot, 'wt4-inherit-on.txt');
+    const result = await buildExecutor({ parentScope: explicitAdditionalRootScope(), boundary: true })
+      .execute('Write', { file_path: target, content: 'wsb' }, { sessionId: 'wsb-wt4-session' });
+    expect(result.success).toBe(true);
+    expect(existsSync(target)).toBe(true);
+  });
+});

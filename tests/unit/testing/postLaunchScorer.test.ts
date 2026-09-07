@@ -624,11 +624,9 @@ describe('上线后打分编排', () => {
     expect(report.budget.spentUsd).toBeCloseTo(0.2);
   });
 
-  it('⑦芯片标题只读遥测列：写路径同步过的真标题直接出，不再去 sessions 表兜底', () => {
-    // N-TELEMETRY-SESSION-TITLE-STALE 合入后 telemetry_sessions.title 由改名/自动起标题
-    // 写路径同步 + 启动回填收敛。芯片只信遥测列——sessions 行哪怕另有标题也不抢。
-    insertSession(database, 'chat-1', 'chat', NOW - HOUR, null, '帮我做一个 3 页 PPT，主题：AI Agent');
-    insertChatSession(database, 'chat-1', '另一条会话标题（不应被芯片选中）');
+  it('⑦芯片标题优先 sessions 真标题：写路径未覆盖的入口（云端同步）运行中仍可见', () => {
+    insertSession(database, 'chat-1', 'chat', NOW - HOUR, null, 'CLI Session');
+    insertChatSession(database, 'chat-1', '另一条会话标题（应被芯片选中）');
     const day = localDay(NOW);
     database.prepare(`
       INSERT INTO telemetry_turn_scores (turn_id, session_id, scored_at, scored_day, turn_started_at,
@@ -638,13 +636,10 @@ describe('上线后打分编排', () => {
     `).run(NOW, day, NOW - HOUR, POST_LAUNCH_JUDGE_VERSION);
 
     const [group] = buildPostLaunchReport(database, { now: NOW }).groups;
-    expect(group.sessions[0].title).toBe('帮我做一个 3 页 PPT，主题：AI Agent');
-    expect(group.sessions[0].title).not.toBe('另一条会话标题（不应被芯片选中）');
+    expect(group.sessions[0].title).toBe('另一条会话标题（应被芯片选中）');
   });
 
-  it('⑦遥测列还是占位时芯片就显示占位：救援在写路径/回填，不在读侧（不再分叉兜底）', () => {
-    // 回填/同步尚未触达的行（老数据未重启、或回填前构建报告）不再被 sessions 兜底掩盖——
-    // 正是这条读侧兜底让 567 条不一致长期不可见。
+  it('⑦遥测列还是占位时芯片读 sessions 真标题，不把 CLI Session 当正确答案', () => {
     insertSession(database, 'chat-1', 'chat', NOW - HOUR, null, 'CLI Session');
     insertChatSession(database, 'chat-1', '帮我做一个 3 页 PPT，主题：AI Agent');
     const day = localDay(NOW);
@@ -654,7 +649,7 @@ describe('上线后打分编排', () => {
       VALUES ('t1', 'chat-1', ?, ?, ?, ?, 'postlaunch-rubric-v1', 'deepseek/x', 1, '[]', 0, 0, 'sample')
     `).run(NOW, day, NOW - HOUR, POST_LAUNCH_JUDGE_VERSION);
 
-    expect(buildPostLaunchReport(database, { now: NOW }).groups[0].sessions[0].title).toBe('CLI Session');
+    expect(buildPostLaunchReport(database, { now: NOW }).groups[0].sessions[0].title).toBe('帮我做一个 3 页 PPT，主题：AI Agent');
   });
 
   it('⑦遥测列已存的脱敏标题直接出：脱敏口径在写入侧，读侧不二次处理', () => {

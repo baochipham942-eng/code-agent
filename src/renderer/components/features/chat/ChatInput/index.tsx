@@ -825,6 +825,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     setSlashFilter,
     setPendingAgentSelection,
     setActiveAgentId,
+    onComposerDraftDiscarded: clearPendingResendClientMessageId,
   });
 
   // 斜杠命令 / 能力选择单元：slash popover 选择分发 + skill/connector/mcp 当轮挂载
@@ -848,6 +849,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     setPendingAgentSelection,
     setActiveAgentId,
     openSeedComposer: (kind) => setSeedComposer({ kind, initialText: '' }),
+    onComposerDraftDiscarded: clearPendingResendClientMessageId,
   });
 
   // 历史命令功能
@@ -1354,7 +1356,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
               {/* 角色名单底部"招新"：对话式建角色入口（role-creation-flow §7） */}
               <button
                 type="button"
-                onClick={() => { setValue(''); void startCreateRoleChat(); }}
+                onClick={() => {
+                  setValue('');
+                  clearPendingResendClientMessageId();
+                  void startCreateRoleChat();
+                }}
                 className="flex w-full items-center gap-1.5 border-t border-zinc-800 px-3 py-2 text-left text-xs text-badge-success transition-colors hover:bg-emerald-500/10"
               >
                 <UserPlus className="h-3.5 w-3.5 shrink-0" />

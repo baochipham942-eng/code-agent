@@ -43,6 +43,8 @@ export interface UseChatInputSlashCommandsParams {
   setActiveAgentId: (id: string | null) => void;
   /** 打开「建团队 / 建角色」就地确认卡（这两个 skill 是对话流程，不是本轮能力）。 */
   openSeedComposer: (kind: SeedComposerKind) => void;
+  /** 清空输入框、结束当前草稿时丢掉失败重发 pending id。 */
+  onComposerDraftDiscarded?: () => void;
 }
 
 /**
@@ -70,6 +72,7 @@ export function useChatInputSlashCommands(params: UseChatInputSlashCommandsParam
     setPendingAgentSelection,
     setActiveAgentId,
     openSeedComposer,
+    onComposerDraftDiscarded,
   } = params;
 
   const setSelectedSkillIds = useComposerStore((state) => state.setSelectedSkillIds);
@@ -202,6 +205,7 @@ export function useChatInputSlashCommands(params: UseChatInputSlashCommandsParam
 
     if (cmd.actionKind === 'create-role') {
       setValue('');
+      onComposerDraftDiscarded?.();
       void startCreateRoleChat();
       return;
     }
@@ -248,6 +252,7 @@ export function useChatInputSlashCommands(params: UseChatInputSlashCommandsParam
     // （2026-07-23 客户端 dogfood 实测）。这里改成直接开卡，和命令候选、手打裸指令三条路一致。
     if (cmd.actionKind === 'select-skill' && (cmd.skillName === 'create-team' || cmd.skillName === 'create-role')) {
       setValue('');
+      onComposerDraftDiscarded?.();
       openSeedComposer(cmd.skillName === 'create-team' ? 'team' : 'role');
       return;
     }

@@ -50,3 +50,10 @@ export function consumePendingClientMessageId(
   pending.current = null;
   return clientMessageId;
 }
+
+/** 当前草稿结束但没走 submitEnvelope（命令提交、清空输入框的提前返回）时丢掉重发 id。 */
+export function discardPendingResendClientMessageId(
+  pending: { current: string | null } | null | undefined,
+): void {
+  if (pending) pending.current = null;
+}

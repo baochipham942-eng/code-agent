@@ -142,3 +142,48 @@ describe('pendingCommand chip 的提交流', () => {
     expect(useComposerStore.getState().pendingCommand).toEqual({ id: 'workflow', name: '编排工作流' });
   });
 });
+
+describe('命令提交结束草稿时丢掉失败重发 pending id', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.invoke.mockResolvedValue({ success: true });
+    useComposerStore.setState({ pendingCommand: null, selectedTeamRecipeId: null, standbyExcludedMemberKeys: [] });
+  });
+
+  it.each([
+    ['/compact', 'compact'],
+    ['/schedule', '裸 schedule 开创建卡'],
+    ['/goal 修好发布链路', 'goal 确认卡'],
+    ['/create-team', '建团队 seed'],
+    ['/agent default', '清专家 chip'],
+  ])('%s 清空输入后 pending 丢掉', async (value) => {
+    const pendingResendClientMessageIdRef = { current: 'failed-bubble-id' as string | null };
+    await submit(makeParams({ value, pendingResendClientMessageIdRef, onSend: vi.fn() }));
+    expect(pendingResendClientMessageIdRef.current).toBeNull();
+  });
+
+  it('/loop 缺参只提示、草稿还在，pending 保留', async () => {
+    const pendingResendClientMessageIdRef = { current: 'failed-bubble-id' as string | null };
+    await submit(makeParams({ value: '/loop', pendingResendClientMessageIdRef, onSend: vi.fn() }));
+    expect(pendingResendClientMessageIdRef.current).toBe('failed-bubble-id');
+  });
+
+  it('编辑失败消息后提交 /compact，再发 B 是新 id，不复用 A', async () => {
+    const pendingResendClientMessageIdRef = { current: 'failed-bubble-id' as string | null };
+    await submit(makeParams({
+      value: '/compact',
+      pendingResendClientMessageIdRef,
+      onSend: vi.fn(),
+    }));
+    expect(pendingResendClientMessageIdRef.current).toBeNull();
+
+    const onSend = vi.fn().mockResolvedValue(true);
+    await submit(makeParams({
+      value: '正文 B',
+      pendingResendClientMessageIdRef,
+      onSend,
+    }));
+    expect(onSend).toHaveBeenCalledWith(expect.objectContaining({ content: '正文 B' }));
+    expect(onSend.mock.calls[0]?.[0]?.clientMessageId).not.toBe('failed-bubble-id');
+  });
+});

@@ -30,7 +30,10 @@ import {
   queuedRecordMatchesEnvelope,
 } from '../../../src/renderer/components/features/chat/ChatInput/queuedInputSameId';
 import type { QueuedInputStatus } from '../../../src/shared/contract/queuedInput';
-import { consumePendingClientMessageId } from '../../../src/renderer/utils/chatSendState';
+import {
+  consumePendingClientMessageId,
+  discardPendingResendClientMessageId,
+} from '../../../src/renderer/utils/chatSendState';
 
 function makeParams(overrides: Partial<UseChatInputSubmitParams> = {}): UseChatInputSubmitParams {
   return {
@@ -1059,6 +1062,8 @@ describe('失败重发与排队编辑互斥', () => {
     expect(source).toContain("kind: 'queued-edit'");
     expect(source.match(/setEditingQueuedInputId\(mode\.editingQueuedInputId\)/g)?.length).toBe(2);
     expect(source.match(/pendingResendClientMessageIdRef\.current = mode\.pendingResendClientMessageId/g)?.length).toBe(2);
+    expect(source).toContain('onComposerDraftDiscarded: clearPendingResendClientMessageId');
+    expect(source).toContain('clearPendingResendClientMessageId();');
   });
 });
 
@@ -1084,5 +1089,11 @@ describe('consumePendingClientMessageId', () => {
     );
     expect(mutated(undefined, () => 'fresh-uuid')).toBe('fresh-uuid');
     expect(pending.current).toBe('failed-bubble-id');
+  });
+
+  it('discardPendingResendClientMessageId 丢掉 pending，不消费成发送 id', () => {
+    const pending = { current: 'failed-bubble-id' as string | null };
+    discardPendingResendClientMessageId(pending);
+    expect(pending.current).toBeNull();
   });
 });

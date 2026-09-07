@@ -33,7 +33,10 @@ import type { InputAreaRef } from './InputArea';
 import type { BuildEnvelope } from './useChatInputEnvelope';
 import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 import { generateMessageId } from '@shared/utils/id';
-import { consumePendingClientMessageId } from '../../../../utils/chatSendState';
+import {
+  consumePendingClientMessageId,
+  discardPendingResendClientMessageId,
+} from '../../../../utils/chatSendState';
 import { replaceOptimisticUserMessage } from '../../../../utils/optimisticUserSend';
 import {
   decideSameIdQueueAction,
@@ -300,6 +303,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
     useSessionStore.getState().addMessage(buildGoalNoticeMessage({ kind: 'start', goal: parsed.goal }));
     addToInputHistory(historyEntry);
     setValue('');
+    discardPendingResendClientMessageId(pendingResendClientMessageIdRef);
     setAttachments([]);
     closeGoalConfirm();
     const resetSentSelection = captureSuccessfulSendReset();
@@ -315,7 +319,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
       if (currentSessionId) useAppStore.getState().clearGoalRun(currentSessionId);
       return false;
     }
-  }, [addToInputHistory, attachments, buildEnvelope, captureSuccessfulSendReset, closeGoalConfirm, currentSessionId, onSend, setAttachments, setValue]);
+  }, [addToInputHistory, attachments, buildEnvelope, captureSuccessfulSendReset, closeGoalConfirm, currentSessionId, onSend, pendingResendClientMessageIdRef, setAttachments, setValue]);
 
   // 处理提交
   // 运行中允许提交，把新输入排到当前回复结束后发送。
@@ -331,6 +335,9 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
     const clearPendingCommand = () => {
       if (pendingCommand) useComposerStore.getState().setPendingCommand(null);
     };
+    const discardPendingResend = () => {
+      discardPendingResendClientMessageId(pendingResendClientMessageIdRef);
+    };
 
     // 预选了团队配方：这句话就是主题，发送即启动整个团队（不走普通对话链路）
     const pendingRecipeId = useComposerStore.getState().selectedTeamRecipeId;
@@ -341,6 +348,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
         const excludeMemberKeys = useComposerStore.getState().standbyExcludedMemberKeys;
         addToInputHistory(trimmedValue);
         setValue('');
+        discardPendingResend();
         useComposerStore.getState().setSelectedTeamRecipeId(null);
         const result = currentSessionId
           ? await launchRecipe(currentSessionId, recipe.id, trimmedValue, excludeMemberKeys)
@@ -364,6 +372,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
     if (compactCommand) {
       addToInputHistory(commandValue);
       setValue('');
+      discardPendingResend();
       clearPendingCommand();
       setVoiceInputContext(null);
       try {
@@ -385,6 +394,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
       if (!parsed?.description) {
         // 不带描述 → 打开对话式创建卡片（解释怎么运作 + 模板/自定义），而非直接报错
         setValue('');
+        discardPendingResend();
         clearPendingCommand();
         closeGoalConfirm();
         setScheduleComposerOpen(true);
@@ -392,6 +402,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
       }
       addToInputHistory(commandValue);
       setValue('');
+      discardPendingResend();
       clearPendingCommand();
       setVoiceInputContext(null);
       await runScheduleCreation(parsed.description);
@@ -413,6 +424,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
       }
       addToInputHistory(commandValue);
       setValue('');
+      discardPendingResend();
       clearPendingCommand();
       setVoiceInputContext(null);
       try {
@@ -455,6 +467,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
       const rawParsed = parseGoalCommand(commandValue);
       if (!rawParsed || shouldOpenGoalConfirm(rawParsed)) {
         setValue('');
+        discardPendingResend();
         clearPendingCommand();
         setScheduleComposerOpen(false);
         openGoalConfirm(rawParsed?.goal ?? '');
@@ -469,6 +482,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
     const seedComposerKind = getBareSeedComposerKind(commandValue);
     if (seedComposerKind) {
       setValue('');
+      discardPendingResend();
       clearPendingCommand();
       setScheduleComposerOpen(false);
       closeGoalConfirm();
@@ -494,6 +508,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
       contentToSend = agentCommand.content;
       if (!contentToSend && attachments.length === 0) {
         setValue('');
+        discardPendingResend();
         setVoiceInputContext(null);
         toast.info(t.agentCommand.restoredAuto);
         return;
@@ -518,6 +533,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
       contentToSend = agentCommand.content;
       if (!contentToSend && attachments.length === 0) {
         setValue('');
+        discardPendingResend();
         setVoiceInputContext(null);
         toast.info(`${t.agentCommand.switchedToPrefix}${agentCommand.agent.name || agentCommand.agent.id}`);
         return;

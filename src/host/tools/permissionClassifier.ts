@@ -357,10 +357,10 @@ function credentialReadTarget(command: string, context: ClassificationContext): 
     }
   }
   // Redirection operands (`> f`, `< f`) are path candidates too: `> $'\0'` must stay a refusal and
-  // `cat < ~/.ssh/id_rsa` a credential read. Uncertain operands cannot name one path and stay out.
+  // `cat < "$HOME/.ssh/id_rsa"` a credential read. resolveCandidatePath expands $HOME itself, so an
+  // uncertain operand is scanned like any other word — dropping it let that read go unasked (round 18).
   const parsed = parseShellCommand(command);
-  const operands = [...parsed.writeTargets, ...parsed.segments.flatMap((segment) => segment.reads)];
-  const targets = operands.filter((operand) => !operand.uncertain).map((operand) => operand.path);
+  const targets = [...parsed.writeTargets, ...parsed.segments.flatMap((segment) => segment.reads)].map((o) => o.path);
   for (const candidate of [...words.filter((word, index) => word && !ignoredIndexes.has(index)), ...targets]) {
     const resolved = resolveCandidatePath(candidate, context.workingDirectory, context.pathResolutionCache);
     if (isSensitiveCredentialPath(resolved, { homeDir: CANONICAL_HOME_DIR, projectRoot })) return resolved;

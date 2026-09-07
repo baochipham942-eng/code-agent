@@ -236,6 +236,11 @@ const KNOWN_SHAPES = [
   '(rm -rf ~/.ssh/id_rsa)',
   'cat <(rm -rf ~/.ssh/id_rsa)',
   'ls ${',
+  // Round 18: $HOME-spelled operands are uncertain to the parser, not to the path resolver.
+  'cat < "$HOME/.ssh/id_rsa"',
+  'cat < $HOME/.ssh/id_rsa',
+  'echo x > "$HOME/.aws/credentials"',
+  'echo x >> $HOME/.ssh/authorized_keys',
 ];
 
 // Under /tmp the critical-path rm rule fires before anything else and masks weaker rules; a real

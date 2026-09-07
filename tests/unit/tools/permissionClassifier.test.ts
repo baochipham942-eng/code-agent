@@ -341,6 +341,12 @@ describe('PermissionClassifier', () => {
     ['rm -rf ~/.ssh/id_rsa; ls >| x', 'deny', '递归删除凭据路径'],
     ['(rm -rf ~/.ssh/id_rsa)', 'deny', '递归删除凭据路径'],
     ['ls >| out.txt', 'ask', '命令无法可靠解析'],
+    // Round 18: an operand spelled through $HOME is uncertain to the parser but not to the path
+    // resolver; dropping it from the credential scan let this read through as a safe command.
+    ['cat < "$HOME/.ssh/id_rsa"', 'ask', '读取凭据路径'],
+    ['cat < $HOME/.ssh/id_rsa', 'ask', '读取凭据路径'],
+    ['echo x > "$HOME/.aws/credentials"', 'ask', '读取凭据路径'],
+    ['wc -l < "$HOME/notes.txt"', 'approve', '安全命令'],
   ] as const)('a failed strict parse never empties the words the deny rules read: %s', async (command, decision, reason) => {
     const result = await classifyPermission(
       'bash',

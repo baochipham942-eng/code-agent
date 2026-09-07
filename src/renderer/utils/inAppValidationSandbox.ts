@@ -9,7 +9,7 @@ export const IN_APP_VALIDATION_CSP =
 const CSP_META = `<meta http-equiv="Content-Security-Policy" content="${IN_APP_VALIDATION_CSP}">`;
 
 /** 跨源后父页读不到 contentDocument；步骤靠 iframe 内驱动回 postMessage。 */
-export const IN_APP_VALIDATION_DRIVER_FLAG = 'data-neo-in-app-driver';
+const IN_APP_VALIDATION_DRIVER_FLAG = 'data-neo-in-app-driver';
 
 const DRIVER_SCRIPT = `<script ${IN_APP_VALIDATION_DRIVER_FLAG}="1">
 (function () {

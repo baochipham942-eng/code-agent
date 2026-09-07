@@ -211,9 +211,11 @@ describe('browser/computer action preview rendering', () => {
     );
 
     // 工具行默认折叠：错误回合不再自动展开详情。脱敏仍成立——折叠态只显示已脱敏的
-    // 动作摘要（"输入 18 chars"）+ 红边框 + hover 摘要，原始输入文本绝不出现。
+    // 动作摘要（"输入 18 chars"）+ 失败状态词，原始输入文本绝不出现。
+    // N-TOOLFAIL-ONELINE：有可读失败态时不再叠 fallbackSummary「执行时出了问题」。
     expect(html).toContain('输入 18 chars');
-    expect(html).toContain('执行时出了问题');
+    expect(html).toContain('工具未返回可读的失败原因');
+    expect(html).not.toContain('执行时出了问题');
     expect(html).not.toContain('trace-browser-type-error');
     expect(html).not.toContain('secret@example.com');
   });

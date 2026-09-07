@@ -53,7 +53,9 @@ export function getToolStatusLabel(
       return enrichCompletedLabel(toolCall, t);
     case 'error': {
       const outcome = t.outcomeWords[resolveToolTerminalOutcomeKey(toolCall)].timeline;
-      return `${outcome.label} · ${humanizeToolFailureReason(toolCall, t)}`;
+      const reason = humanizeToolFailureReason(toolCall, t);
+      if (reason === outcome.label || reason === `${outcome.label} · ${outcome.reason}`) return reason;
+      return `${outcome.label} · ${reason}`;
     }
     case 'interrupted':
       return t.outcomeWords[resolveStreamInterruptionOutcomeKey(interruptionReason)].timeline.label;

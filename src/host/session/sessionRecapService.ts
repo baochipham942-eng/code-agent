@@ -78,19 +78,54 @@ export function collectRecapMaterial(
   }
 
   const touchedTasks = tasks.filter((task) => (task.updatedAt ?? 0) > sinceTimestamp);
+  const artifactLabels = [...labels];
+  const completedTasks = touchedTasks.filter((task) => task.status === 'completed');
+  const blockedTasks = touchedTasks.filter((task) => task.status === 'blocked');
+  // 收口轮次在、但产物名/任务结果都没实质句子 → 等同素材为空，不喂小模型。
+  if (!hasRecapSubstance({ artifactLabels, completedTasks, blockedTasks })) return null;
 
   return {
     records: fresh,
-    artifactLabels: [...labels],
-    completedTasks: touchedTasks.filter((task) => task.status === 'completed'),
-    blockedTasks: touchedTasks.filter((task) => task.status === 'blocked'),
+    artifactLabels,
+    completedTasks,
+    blockedTasks,
   };
+}
+
+function hasRecapSubstance(
+  material: Pick<SessionRecapMaterial, 'artifactLabels' | 'completedTasks' | 'blockedTasks'>,
+): boolean {
+  return material.artifactLabels.length > 0
+    || material.completedTasks.length > 0
+    || material.blockedTasks.length > 0;
+}
+
+/**
+ * 不像一句总结就不上屏：空、反问、请求补充。承重过滤——摘掉后反问会原样进横幅。
+ */
+function isUsableRecapText(text: string, knownTitles: string[] = []): boolean {
+  const trimmed = text.trim();
+  if (trimmed.length < 4) return false;
+  let withoutTitles = trimmed;
+  for (const title of knownTitles) {
+    if (title.length >= 2) withoutTitles = withoutTitles.split(title).join('');
+  }
+  if (/[？?]/.test(withoutTitles)) return false;
+  if (/^(您好|你好)[，,]/u.test(trimmed)) return false;
+  if (/(似乎没有|没有附上|未附上|请提供|请补充|请告知|请告诉|请贴|能否.{0,8}提供|可以.{0,8}提供|需要总结|缺少.{0,8}内容)/u.test(trimmed)) {
+    return false;
+  }
+  if (/(could you|please (provide|share|send|paste)|i don'?t (see|have|find)|there (doesn'?t|isn'?t|seems to be no)|no (content|material) (to |was )?(summar|provided))/i.test(trimmed)) {
+    return false;
+  }
+  return true;
 }
 
 /**
  * 降级形态：小模型不可用 / 出错时的纯规则拼接。只讲数字和产物名，不讲工具和报错。
+ * 没有实质句子时返回 null，不拿「跑完了 N 轮」充数。
  */
-export function formatRecapFallback(material: SessionRecapMaterial): string {
+export function formatRecapFallback(material: SessionRecapMaterial): string | null {
   const parts: string[] = [];
   if (material.artifactLabels.length > 0) {
     const shown = material.artifactLabels.slice(0, 3).join('、');
@@ -99,7 +134,9 @@ export function formatRecapFallback(material: SessionRecapMaterial): string {
   }
   if (material.completedTasks.length > 0) parts.push(`${material.completedTasks.length} 项任务完成`);
   if (material.blockedTasks.length > 0) parts.push(`${material.blockedTasks.length} 项任务受阻`);
-  if (parts.length === 0) parts.push(`跑完了 ${material.records.length} 轮`);
+  if (parts.length === 0) return null;
+  // 规则拼接是「更新了 X / N 项完成 / N 项受阻」，不是模型反问。产物名里的问号
+  // 不能当成「不像总结」把整轮追赶吞掉，也不该挡住后面的小模型调用。
   return parts.join('，');
 }
 
@@ -123,13 +160,18 @@ function buildPrompt(material: SessionRecapMaterial): string {
 }
 
 /**
- * 生成一句话追赶提示。素材为空返回 null；小模型不可用时返回 degraded 的规则拼接。
+ * 生成一句话追赶提示。素材为空、或模型输出不像一句总结时返回 null；
+ * 小模型不可用时返回 degraded 的规则拼接（同样经过总结过滤）。
  */
 export async function buildSessionRecap(
   material: SessionRecapMaterial,
-): Promise<SessionRecap> {
+): Promise<SessionRecap | null> {
+  if (!hasRecapSubstance(material)) return null;
+  const fallbackText = formatRecapFallback(material);
+  if (!fallbackText) return null;
+
   const fallback: SessionRecap = {
-    text: formatRecapFallback(material),
+    text: fallbackText,
     degraded: true,
     completedCount: material.completedTasks.length,
     blockedCount: material.blockedTasks.length,
@@ -140,8 +182,10 @@ export async function buildSessionRecap(
     if (!isQuickModelAvailable()) return fallback;
 
     const result = await quickTask(buildPrompt(material));
-    const text = result.success ? (result.content ?? '').trim().replace(/^["'「『]|["'」』]$/g, '') : '';
-    if (text.length < 4) return fallback;
+    if (!result.success) return fallback;
+    const text = (result.content ?? '').trim().replace(/^["'「『]|["'」』]$/g, '');
+    // 不像总结不上屏：反问/请求补充/空都不降级成规则拼接，避免把反问原样送进横幅。
+    if (!isUsableRecapText(text, material.artifactLabels)) return null;
 
     return {
       text: text.length > MAX_RECAP_LENGTH ? `${text.slice(0, MAX_RECAP_LENGTH)}…` : text,

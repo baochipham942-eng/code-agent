@@ -103,6 +103,16 @@ const gates = [
     args: ['run', 'acceptance:request-replay'],
   },
   {
+    ci: 'swarm-ci / smoke / Snapshot replay corpus gate',
+    command: 'npm',
+    args: ['run', 'acceptance:snapshot-replay'],
+  },
+  {
+    ci: 'swarm-ci / smoke / Snapshot replay baseline sync gate',
+    command: 'npm',
+    args: ['run', 'check:snapshot-replay-sync'],
+  },
+  {
     ci: 'swarm-ci / smoke / Attention budget ratchet',
     command: 'node',
     args: ['scripts/attention-budget-ratchet.mjs'],

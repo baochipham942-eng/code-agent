@@ -1,0 +1,88 @@
+{
+  "messages": [
+    {
+      "id": "msg-01",
+      "role": "user",
+      "content": "E2E_SNAPSHOT_REPLAY_READ_WRITE：先读夹具再把要点写进便签。",
+      "timestamp": 0
+    },
+    {
+      "id": "msg-02",
+      "role": "assistant",
+      "content": "Reading the snapshot fixture before writing.",
+      "timestamp": 0,
+      "toolCalls": [
+        {
+          "id": "e2e-real-agent-read-fixture",
+          "name": "Read",
+          "arguments": {
+            "file_path": "<RECORD_DATA_DIR>/workspace/read-then-write/snapshot-read-target.txt",
+            "offset": 1,
+            "limit": 20
+          }
+        }
+      ]
+    },
+    {
+      "id": "msg-03",
+      "role": "tool",
+      "content": "",
+      "timestamp": 0,
+      "toolResults": [
+        {
+          "toolCallId": "e2e-real-agent-read-fixture",
+          "success": true,
+          "output": "Read version digest: 61118334d0e25865\n     1\tE2E_REAL_AGENT_REPLAY_EVAL_FIXTURE=true\n     2\tThis file proves the snapshot corpus session reached the real Read tool executor."
+        }
+      ]
+    },
+    {
+      "id": "msg-04",
+      "role": "assistant",
+      "content": "Writing the snapshot note after reading the fixture.",
+      "timestamp": 0,
+      "toolCalls": [
+        {
+          "id": "e2e-snapshot-replay-write",
+          "name": "Write",
+          "arguments": {
+            "file_path": "<RECORD_DATA_DIR>/workspace/read-then-write/snapshot-write-note.txt",
+            "content": "E2E_SNAPSHOT_REPLAY_WRITE_PAYLOAD\n",
+            "content_length": 34
+          }
+        }
+      ]
+    },
+    {
+      "id": "msg-05",
+      "role": "tool",
+      "content": "",
+      "timestamp": 0,
+      "toolResults": [
+        {
+          "toolCallId": "e2e-snapshot-replay-write",
+          "success": true,
+          "output": "Created file: <RECORD_DATA_DIR>/workspace/read-then-write/snapshot-write-note.txt (33 chars)"
+        }
+      ]
+    },
+    {
+      "id": "msg-06",
+      "role": "system",
+      "content": "<thinking>\n刚执行了 Write。\n请简要分析：\n1. 执行结果是否符合预期？\n2. 离最终目标还有多远？\n3. 下一步的最优行动是什么？\n</thinking>",
+      "timestamp": 0
+    },
+    {
+      "id": "msg-07",
+      "role": "system",
+      "content": "<goal-checkpoint>\n原始目标: E2E_SNAPSHOT_REPLAY_READ_WRITE：先读夹具再把要点写进便签。\n已成功: Read, Write\n失败重试: 无\n待完成: 无\n当前第 3 轮\n</goal-checkpoint>",
+      "timestamp": 0
+    },
+    {
+      "id": "msg-08",
+      "role": "assistant",
+      "content": "E2E snapshot replay read-then-write completed. Created file: <RECORD_DATA_DIR>/workspace/read-then-write/snapshot-write-note.txt (33 chars)",
+      "timestamp": 0
+    }
+  ]
+}

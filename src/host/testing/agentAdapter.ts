@@ -600,6 +600,15 @@ export class StandaloneAgentAdapter implements AgentInterface {
     return count;
   }
 
+  /**
+   * N-SNAPSHOT-REGRESSION：快照录制器取与 request_manifest 同一份账本数组
+   * （AgentLoop 持引用原地增长的 this.messages）。DB 往返可能丢字段，录制必须
+   * 拿内存原件才能保证 ledger_message 引用可重建。
+   */
+  getTranscriptMessages(): readonly import('../../shared/contract').Message[] {
+    return [...this.messages];
+  }
+
   async getStructuredReplay(sessionId: string) {
     const { TelemetryQueryService, getTelemetryQueryService } = await import('../telemetry/replay/telemetryQueryService');
     return this.database

@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "caseId": "bash-echo",
+  "title": "Bash 确定性 echo + 命令输出回填后的收尾应答",
+  "coverage": [
+    "Bash",
+    "tool-result-backfill"
+  ],
+  "model": {
+    "provider": "openai",
+    "model": "e2e-local-agent-model"
+  },
+  "fakeModelEnv": {
+    "CODE_AGENT_E2E": "1",
+    "CODE_AGENT_E2E_LOCAL_AGENT_MODEL": "1",
+    "CODE_AGENT_E2E_AGENT_MODEL_READ_FILE": "<RECORD_DATA_DIR>/workspace/bash-echo/snapshot-read-target.txt",
+    "CODE_AGENT_E2E_AGENT_MODEL_WRITE_FILE": "<RECORD_DATA_DIR>/workspace/bash-echo/snapshot-write-note.txt"
+  },
+  "turns": [
+    "turn-01",
+    "turn-02"
+  ]
+}

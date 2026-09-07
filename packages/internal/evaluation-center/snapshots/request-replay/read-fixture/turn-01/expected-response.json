@@ -1,0 +1,28 @@
+{
+  "type": "tool_use",
+  "content": "Reading the E2E replay/eval fixture through the real tool executor.",
+  "finishReason": "tool_calls",
+  "actualProvider": "acceptance",
+  "actualModel": "e2e-local-agent-model",
+  "toolCalls": [
+    {
+      "id": "e2e-real-agent-read-fixture",
+      "name": "Read",
+      "arguments": {
+        "file_path": "<RECORD_DATA_DIR>/workspace/read-fixture/snapshot-read-target.txt",
+        "offset": 1,
+        "limit": 20
+      }
+    }
+  ],
+  "contentParts": [
+    {
+      "type": "tool_call",
+      "toolCallId": "e2e-real-agent-read-fixture"
+    }
+  ],
+  "usage": {
+    "inputTokens": 160,
+    "outputTokens": 32
+  }
+}

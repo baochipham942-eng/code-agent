@@ -1,0 +1,46 @@
+{
+  "messages": [
+    {
+      "id": "msg-01",
+      "role": "user",
+      "content": "E2E_SNAPSHOT_REPLAY_WRITE：把快照便签写进工作区。",
+      "timestamp": 0
+    },
+    {
+      "id": "msg-02",
+      "role": "assistant",
+      "content": "Writing the snapshot note through the real Write tool.",
+      "timestamp": 0,
+      "toolCalls": [
+        {
+          "id": "e2e-snapshot-replay-write",
+          "name": "Write",
+          "arguments": {
+            "file_path": "<RECORD_DATA_DIR>/workspace/write-file/snapshot-write-note.txt",
+            "content": "E2E_SNAPSHOT_REPLAY_WRITE_PAYLOAD\n",
+            "content_length": 34
+          }
+        }
+      ]
+    },
+    {
+      "id": "msg-03",
+      "role": "tool",
+      "content": "",
+      "timestamp": 0,
+      "toolResults": [
+        {
+          "toolCallId": "e2e-snapshot-replay-write",
+          "success": true,
+          "output": "Created file: <RECORD_DATA_DIR>/workspace/write-file/snapshot-write-note.txt (33 chars)"
+        }
+      ]
+    },
+    {
+      "id": "msg-04",
+      "role": "assistant",
+      "content": "E2E snapshot replay write completed. Created file: <RECORD_DATA_DIR>/workspace/write-file/snapshot-write-note.txt (33 chars)",
+      "timestamp": 0
+    }
+  ]
+}

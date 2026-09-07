@@ -1,0 +1,13 @@
+{
+  "type": "text",
+  "content": "E2E real agent replay eval smoke completed. E2E_REAL_AGENT_REPLAY_EVAL_FIXTURE observed through a real Read tool result.",
+  "finishReason": "stop",
+  "actualProvider": "acceptance",
+  "actualModel": "e2e-local-agent-model",
+  "toolCalls": [],
+  "contentParts": [],
+  "usage": {
+    "inputTokens": 180,
+    "outputTokens": 24
+  }
+}

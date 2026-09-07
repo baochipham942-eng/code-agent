@@ -1,0 +1,13 @@
+{
+  "type": "text",
+  "content": "E2E snapshot replay bash completed. [cwd: <RECORD_DATA_DIR>/workspace/bash-echo]\nE2E_SNAPSHOT_REPLAY_BASH_OUTPUT",
+  "finishReason": "stop",
+  "actualProvider": "acceptance",
+  "actualModel": "e2e-local-agent-model",
+  "toolCalls": [],
+  "contentParts": [],
+  "usage": {
+    "inputTokens": 110,
+    "outputTokens": 14
+  }
+}

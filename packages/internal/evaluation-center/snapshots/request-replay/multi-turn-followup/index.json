@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "caseId": "multi-turn-followup",
+  "title": "多轮会话：第一条 Read，第二条纯文本追问（账本跨轮增长）",
+  "coverage": [
+    "multi-turn",
+    "Read",
+    "tool-result-backfill"
+  ],
+  "model": {
+    "provider": "openai",
+    "model": "e2e-local-agent-model"
+  },
+  "fakeModelEnv": {
+    "CODE_AGENT_E2E": "1",
+    "CODE_AGENT_E2E_LOCAL_AGENT_MODEL": "1",
+    "CODE_AGENT_E2E_AGENT_MODEL_READ_FILE": "<RECORD_DATA_DIR>/workspace/multi-turn-followup/snapshot-read-target.txt",
+    "CODE_AGENT_E2E_AGENT_MODEL_WRITE_FILE": "<RECORD_DATA_DIR>/workspace/multi-turn-followup/snapshot-write-note.txt"
+  },
+  "turns": [
+    "turn-01",
+    "turn-02",
+    "turn-03"
+  ]
+}

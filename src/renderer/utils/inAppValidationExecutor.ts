@@ -13,6 +13,73 @@ function delay(ms: number): Promise<void> {
 
 type IframeWindow = Window & typeof globalThis;
 
+const DRIVER_STEP_TYPE = 'neo-in-app-step';
+const DRIVER_RESULT_TYPE = 'neo-in-app-result';
+const DRIVER_SLACK_MS = 1000;
+
+function countSerialExpects(step: BrowserInteractionStep): number {
+  const expect = step.expect;
+  if (!expect) return 0;
+  return [
+    expect.textVisible,
+    expect.textHidden,
+    expect.selectorVisible,
+    expect.selectorHidden,
+    expect.nonblankCanvasMin && expect.nonblankCanvasMin > 0,
+  ].filter(Boolean).length;
+}
+
+function inAppValidationDriverBudgetMs(step: BrowserInteractionStep): number {
+  const waitMs = step.action.type === 'wait' ? step.action.ms : 0;
+  const expectTimeout = step.expect?.timeoutMs ?? DEFAULT_EXPECT_TIMEOUT_MS;
+  const serialExpects = countSerialExpects(step);
+  return waitMs + POST_ACTION_SETTLE_MS + serialExpects * expectTimeout + DRIVER_SLACK_MS;
+}
+
+function runStepViaDriver(
+  iframe: HTMLIFrameElement,
+  step: BrowserInteractionStep,
+  startedAt: number,
+  labelPrefix: string,
+): Promise<BrowserInteractionStepResult> {
+  const id = `in-app-${startedAt}-${Math.random().toString(16).slice(2)}`;
+  const win = iframe.contentWindow;
+  if (!win) {
+    return Promise.resolve({
+      label: step.label,
+      viewport: step.viewport ?? 'in-app',
+      action: step.action,
+      passed: false,
+      durationMs: Date.now() - startedAt,
+      failures: [`${labelPrefix} iframe has no contentWindow`],
+      checks: [],
+    });
+  }
+  return new Promise((resolve) => {
+    const timer = window.setTimeout(() => {
+      window.removeEventListener('message', onMessage);
+      resolve({
+        label: step.label,
+        viewport: step.viewport ?? 'in-app',
+        action: step.action,
+        passed: false,
+        durationMs: Date.now() - startedAt,
+        failures: [`${labelPrefix} unique-origin driver timed out`],
+        checks: [],
+      });
+    }, inAppValidationDriverBudgetMs(step));
+    function onMessage(event: MessageEvent) {
+      const data = event.data as { type?: string; id?: string; result?: BrowserInteractionStepResult } | null;
+      if (data?.type !== DRIVER_RESULT_TYPE || data.id !== id || !data.result) return;
+      window.clearTimeout(timer);
+      window.removeEventListener('message', onMessage);
+      resolve(data.result);
+    }
+    window.addEventListener('message', onMessage);
+    win.postMessage({ type: DRIVER_STEP_TYPE, id, step }, '*');
+  });
+}
+
 function getContext(iframe: HTMLIFrameElement): {
   win: IframeWindow;
   doc: Document;
@@ -140,15 +207,8 @@ export async function runInAppInteractionStep(
 
   const context = getContext(iframe);
   if (!context) {
-    return {
-      label: step.label,
-      viewport: step.viewport ?? 'in-app',
-      action: step.action,
-      passed: false,
-      durationMs: Date.now() - startedAt,
-      failures: [`${labelPrefix} iframe has no contentWindow/contentDocument (cross-origin or not loaded)`],
-      checks,
-    };
+    // sandbox 去掉 same-origin 后 contentDocument 为 null；步骤走 iframe 内驱动。
+    return runStepViaDriver(iframe, step, startedAt, labelPrefix);
   }
   const { win, doc } = context;
 
@@ -264,6 +324,9 @@ export async function runInAppInteractions(
   for (const step of steps) {
     const result = await runInAppInteractionStep(iframe, step);
     results.push(result);
+    if (result.failures.some((failure) => failure.includes('unique-origin driver timed out'))) {
+      break;
+    }
   }
   return results;
 }

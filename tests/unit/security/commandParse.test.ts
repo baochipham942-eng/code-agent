@@ -282,7 +282,9 @@ describe('shared shell command parser', () => {
     expect(ampFold.segments).toHaveLength(1);
     expect(ampFold.writeTargets.map((t) => t.path)).toEqual(['out.txt']);
     expect(parseShellCommand('echo ok \\\n#tag; ./cleanup').executions.map((e) => e.program)).toEqual(['echo']);
-    expect(parseShellCommand('echo ok\\\n#tag; ./cleanup').segments[0].words).toEqual(['echo', 'ok#tag']);
+    const wordHash = parseShellCommand('echo ok\\\n#tag; ./cleanup');
+    expect(wordHash.segments[0].words).toEqual(['echo', 'ok#tag']);
+    expect(wordHash.segments[1].words).toEqual(['./cleanup']);
     expect(parseShellCommand("echo 'a\\\nb'").segments[0].words).toEqual(['echo', 'a\\\nb']);
     expect(parseShellCommand('echo "a\\\nb"').segments[0].words).toEqual(['echo', 'ab']);
     expect(parseShellCommand("ls\\\n\\\r\n-la").segments[0].words).toEqual(['ls-la']);

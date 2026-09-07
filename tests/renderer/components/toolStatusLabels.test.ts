@@ -225,6 +225,29 @@ describe('ToolCallDisplay status labels', () => {
     expect(label).toBeNull();
   });
 
+  it('spawn_agent worktree 失败状态词只拼一句人话原因，不叠 missing', () => {
+    const label = getToolStatusLabel(
+      {
+        id: 'spawn-1',
+        name: 'spawn_agent',
+        arguments: { description: '核对清单' },
+        result: {
+          toolCallId: 'spawn-1',
+          success: false,
+          error: 'Failed to create worktree for agent: dummy. Inspect worktree setup.',
+          metadata: { failureCode: 'worktree-create-failed' },
+        },
+      },
+      'error',
+      zh,
+    );
+    const outcome = zh.outcomeWords['failed-unavailable'].timeline;
+    const reason = zh.toolStepHumanize.failureCodes['worktree-create-failed'];
+    expect(label).toBe(`${outcome.label} · ${reason}`);
+    expect(label).not.toContain(zh.toolStepHumanize.failureReasonMissing);
+    expect(label).not.toContain(zh.systemError.fallbackSummary);
+  });
+
   it('成功且带结果数据时仍报数据——那不是重复动词而是新信息', () => {
     const label = getToolStatusLabel(
       {

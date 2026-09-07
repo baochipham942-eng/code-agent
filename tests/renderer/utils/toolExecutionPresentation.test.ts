@@ -4,9 +4,11 @@ import {
   formatToolDuration,
   getToolCapabilitySource,
   humanizeToolError,
+  humanizeToolFailureReason,
   isAutoLoadedRetry,
   isEscalatedToolError,
   isToolInterruptionPlaceholder,
+  resolveCollapsedFailureSummary,
   resolveToolTerminalOutcomeKey,
 } from '../../../src/renderer/utils/toolExecutionPresentation';
 import { zh } from '../../../src/renderer/i18n/zh';
@@ -429,5 +431,59 @@ describe('isEscalatedToolError（P0 失败去噪：区分需用户介入 vs agen
   it('没有 result（尚未执行）不算失败', () => {
     const tc = makeToolCall({ name: 'Bash' });
     expect(isEscalatedToolError(tc)).toBe(false);
+  });
+});
+
+describe('humanizeToolFailureReason — failureCode 优先翻成一句人话', () => {
+  function failedCall(
+    failureCode: string,
+    error = 'Failed to create worktree for agent: dummy',
+  ): ToolCall {
+    return makeToolCall({
+      name: 'spawn_agent',
+      result: {
+        toolCallId: 'tool-1',
+        success: false,
+        error,
+        metadata: { failureCode },
+      },
+    });
+  }
+
+  it('worktree-create-failed 翻成一句人话，不再拼 missing', () => {
+    const reason = humanizeToolFailureReason(failedCall('worktree-create-failed'), zh);
+    expect(reason).toBe(zh.toolStepHumanize.failureCodes['worktree-create-failed']);
+    expect(reason).not.toBe(zh.toolStepHumanize.failureReasonMissing);
+    expect(humanizeToolFailureReason(failedCall('worktree-create-failed'), en))
+      .toBe(en.toolStepHumanize.failureCodes['worktree-create-failed']);
+  });
+
+  it('gateway-timeout 同样翻成一句人话', () => {
+    const reason = humanizeToolFailureReason(failedCall('gateway-timeout', 'gateway timeout'), zh);
+    expect(reason).toBe(zh.toolStepHumanize.failureCodes['gateway-timeout']);
+    expect(reason).not.toBe(zh.toolStepHumanize.failureReasonMissing);
+  });
+
+  it('failureCode 人话优先于 metadata.reason 与原始 error', () => {
+    const call = makeToolCall({
+      name: 'spawn_agent',
+      result: {
+        toolCallId: 'tool-1',
+        success: false,
+        error: 'Failed to create worktree for agent: dummy',
+        metadata: {
+          failureCode: 'worktree-create-failed',
+          reason: 'raw host reason that should not win',
+        },
+      },
+    });
+    expect(humanizeToolFailureReason(call, zh)).toBe(
+      zh.toolStepHumanize.failureCodes['worktree-create-failed'],
+    );
+  });
+
+  it('折叠摘要有 failureCode 人话时不再叠 fallbackSummary', () => {
+    const call = failedCall('worktree-create-failed');
+    expect(resolveCollapsedFailureSummary(call, zh)).toBeNull();
   });
 });

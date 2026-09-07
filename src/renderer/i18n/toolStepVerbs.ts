@@ -87,6 +87,20 @@ interface ToolStepVerbBundle {
   pendingApprovalStatus: string;
   failureCode: string;
   failureReasonMissing: string;
+  failureCodes: {
+    'worktree-create-failed': string;
+    'gateway-timeout': string;
+    'tool-unavailable': string;
+    'blocked-by-parent-role': string;
+    'budget-exhausted': string;
+    'parent-gone': string;
+    'cancelled-by-user': string;
+    'cancelled-by-parent': string;
+    'dependency-failed': string;
+    'dependency-missing': string;
+    'workflow-stage-failed': string;
+    'model-error': string;
+  };
 }
 
 export const toolStepVerbsZh: ToolStepVerbBundle = {
@@ -161,6 +175,20 @@ export const toolStepVerbsZh: ToolStepVerbBundle = {
   pendingApprovalStatus: '待确认',
   failureCode: '错误码 {code}',
   failureReasonMissing: '工具未返回可读的失败原因',
+  failureCodes: {
+    'worktree-create-failed': '无法为这次任务准备运行环境',
+    'gateway-timeout': '服务暂时没有响应',
+    'tool-unavailable': '所需能力当前不可用',
+    'blocked-by-parent-role': '当前角色不允许这一步',
+    'budget-exhausted': '这次任务的额度已经用完',
+    'parent-gone': '上级任务已经结束',
+    'cancelled-by-user': '已按你的操作取消',
+    'cancelled-by-parent': '上级任务已取消这一步',
+    'dependency-failed': '前置步骤没有完成',
+    'dependency-missing': '还缺少必要的前置条件',
+    'workflow-stage-failed': '这一阶段没有完成',
+    'model-error': '模型没有给出可用结果',
+  },
 };
 
 export const toolStepVerbsEn: ToolStepVerbBundle = {
@@ -188,4 +216,18 @@ export const toolStepVerbsEn: ToolStepVerbBundle = {
   pendingApprovalStatus: 'Approval needed',
   failureCode: 'Error code {code}',
   failureReasonMissing: 'The tool did not return a readable failure reason',
+  failureCodes: {
+    'worktree-create-failed': 'Could not prepare the workspace for this task',
+    'gateway-timeout': 'The service did not respond in time',
+    'tool-unavailable': 'The required capability is unavailable',
+    'blocked-by-parent-role': 'This step is not allowed for the current role',
+    'budget-exhausted': 'This task used up its budget',
+    'parent-gone': 'The parent task has already ended',
+    'cancelled-by-user': 'Cancelled as requested',
+    'cancelled-by-parent': 'The parent task cancelled this step',
+    'dependency-failed': 'A required earlier step did not finish',
+    'dependency-missing': 'A required earlier step is missing',
+    'workflow-stage-failed': 'This stage did not finish',
+    'model-error': 'The model did not return a usable result',
+  },
 };

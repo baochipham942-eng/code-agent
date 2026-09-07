@@ -24,10 +24,10 @@ import {
 } from '../../../utils/humanizeToolStep';
 import {
   formatToolDuration,
-  humanizeToolError,
   humanizeToolFailureReason,
   isAutoLoadedRetry,
   isEscalatedToolError,
+  resolveCollapsedFailureSummary,
 } from '../../../utils/toolExecutionPresentation';
 import { useI18n } from '../../../hooks/useI18n';
 import type { Translations } from '../../../i18n';
@@ -470,7 +470,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
             {t.toolGroup.recovered}
           </span>
         )}
-        {status !== 'ok' && resultSummary && !permissionOutcome && (
+        {status !== 'ok' && resultSummary && resultSummary !== failureReason && !permissionOutcome && (
           <span className="hidden max-w-[220px] truncate text-zinc-600 sm:inline">{resultSummary}</span>
         )}
         {status !== 'ok' && outputCount > 0 && (
@@ -609,7 +609,7 @@ export function tailTruncateLiveOutput(live: ToolLiveOutput | undefined): ToolLi
 /**
  * 组头摘要（P0 #1 失败去重 + P0 接缝「单工具失败不说空话」）：
  *  · 多工具 → 计数（"N failed / M empty / K completed"），保留；
- *  · 单工具且失败 → 优先 humanizeToolError 的分类 summary，未分类错误用固定兜底；
+ *  · 单工具且失败 → failureCode 人话 / 分类 summary，与组头 reason 重复则不再并列；
  *  · 单工具其它（成功/空）→ summarizeTool 的结果摘要（如「找到 3 个文件」），保留。
  * 纯函数，便于单测。
  */
@@ -622,16 +622,13 @@ export function buildToolGroupHeadSummary(toolCalls: ToolCall[], t: Translations
 }
 
 /**
- * 单工具失败的组头摘要降级链：code 文案 summary → 正则分类 summary → 固定人话兜底。
+ * 单工具失败的组头摘要：failureCode 人话优先；与组头 reason 重复的 summary/fallback 不再并列。
  * 原始 error 可能含落库标记、内部名或用户键入的敏感文本，只能进展开明细。
  */
 function summarizeSingleFailure(toolCall: ToolCall, t: Translations): string | null {
   const result = toolCall.result;
   if (!result) return null;
-  const errorText = result.error || (typeof result.output === 'string' ? result.output : '');
-  const humanized = humanizeToolError(errorText, toolCall.name, t, result.metadata);
-  if (humanized) return humanized.summary;
-  return humanizeToolFailureReason(toolCall, t);
+  return resolveCollapsedFailureSummary(toolCall, t) ?? humanizeToolFailureReason(toolCall, t);
 }
 
 function summarizeToolGroupResults(toolCalls: ToolCall[], t: Translations): string | null {

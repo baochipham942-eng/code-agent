@@ -7,10 +7,7 @@ import React from 'react';
 import type { ToolCall } from '@shared/contract';
 import { summarizeTool } from './summarizers';
 import { useI18n } from '../../../../../hooks/useI18n';
-import {
-  humanizeToolError,
-  resolveToolTerminalOutcomeKey,
-} from '../../../../../utils/toolExecutionPresentation';
+import { resolveCollapsedFailureSummary } from '../../../../../utils/toolExecutionPresentation';
 import { isRawToolStdoutNoMatches } from '../../../../../utils/toolStatusLinePresentation';
 import { isEmptyMatchForStatusLine } from './statusLabels';
 
@@ -22,17 +19,8 @@ interface Props {
 export function ResultSummary({ toolCall, inline = false }: Props) {
   const { t } = useI18n();
   const isError = toolCall.result && !toolCall.result.success;
-  const humanizedError = isError
-    ? humanizeToolError(toolCall.result?.error, toolCall.name, t, toolCall.result?.metadata)
-    : null;
-  const outcome = isError
-    ? t.outcomeWords[resolveToolTerminalOutcomeKey(toolCall)].timeline
-    : null;
   const summary = isError
-    ? (humanizedError
-        ? [humanizedError.detail, humanizedError.summary]
-        : [t.systemError.fallbackSummary])
-        .find((candidate) => candidate && candidate !== outcome?.label && candidate !== outcome?.reason)
+    ? resolveCollapsedFailureSummary(toolCall, t)
     : collapsedSuccessSummary(summarizeTool(toolCall), toolCall);
 
   if (!summary) return null;

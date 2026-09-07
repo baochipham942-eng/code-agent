@@ -427,6 +427,21 @@ export function humanizeToolError(
 }
 
 /**
+ * metadata.failureCode → 一句人话。翻到了就停，不再拼 failureReasonMissing / fallbackSummary。
+ * timeout / permission-denied 不进这张表，仍走下面已有的分类文案，避免打乱既有状态词。
+ */
+function mapToolFailureCodeCopy(
+  metadata: Record<string, unknown> | null | undefined,
+  t: Translations,
+): string | null {
+  const raw = metadata?.failureCode;
+  if (typeof raw !== 'string' || !raw) return null;
+  const table = t.toolStepHumanize.failureCodes;
+  if (!Object.prototype.hasOwnProperty.call(table, raw)) return null;
+  return table[raw as keyof typeof table];
+}
+
+/**
  * Folded-row failure reason. Structured code/reason wins; absent structured evidence is stated
  * explicitly instead of filling the row with a generic claim that the tool failed.
  */
@@ -434,6 +449,9 @@ export function humanizeToolFailureReason(toolCall: Pick<ToolCall, 'name' | 'res
   const result = toolCall.result;
   const metadata = result?.metadata;
   const error = result?.error || (typeof result?.output === 'string' ? result.output : undefined);
+  const mappedFailureCode = mapToolFailureCodeCopy(metadata, t);
+  if (mappedFailureCode) return mappedFailureCode;
+
   const reason = sanitizeCodeParamValue(metadata?.reason);
   if (reason) return redactCredentialText(reason);
 
@@ -454,6 +472,35 @@ export function humanizeToolFailureReason(toolCall: Pick<ToolCall, 'name' | 'res
   const httpCode = error?.match(/\bHTTP\s+(\d{3})\b/iu)?.[1];
   if (httpCode) return t.toolStepHumanize.failureCode.replace('{code}', `HTTP ${httpCode}`);
   return t.toolStepHumanize.failureReasonMissing;
+}
+
+/**
+ * 折叠行失败摘要：状态行已经有 reason 时不再叠 summary / detail / fallbackSummary。
+ * 只在还有一句与 reason/outcome 都不同的信息时才返回。
+ */
+export function resolveCollapsedFailureSummary(
+  toolCall: Pick<ToolCall, 'name' | 'result'>,
+  t: Translations,
+): string | null {
+  if (toolCall.result?.success !== false) return null;
+  const reason = humanizeToolFailureReason(toolCall, t);
+  const error = toolCall.result.error
+    || (typeof toolCall.result.output === 'string' ? toolCall.result.output : undefined);
+  const humanized = humanizeToolError(error, toolCall.name, t, toolCall.result.metadata);
+  const outcome = t.outcomeWords[resolveToolTerminalOutcomeKey(toolCall)].timeline;
+  const seen = new Set(
+    [
+      reason,
+      outcome.label,
+      outcome.reason,
+      t.systemError.fallbackSummary,
+      t.toolStepHumanize.failureReasonMissing,
+    ].filter((value): value is string => Boolean(value)),
+  );
+  const extra = [humanized?.detail, humanized?.summary].find(
+    (candidate) => typeof candidate === 'string' && candidate.length > 0 && !seen.has(candidate),
+  );
+  return extra ?? null;
 }
 
 /**

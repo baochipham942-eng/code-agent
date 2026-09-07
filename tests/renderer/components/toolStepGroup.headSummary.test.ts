@@ -57,6 +57,24 @@ describe('buildToolGroupHeadSummary — 单工具失败不再返回 null', () =>
     ], zh)).toBe('错误码 BROWSER_CLEAR_FAILED');
   });
 
+  it('spawn_agent worktree-create-failed 组头是一句人话，不拼 missing', () => {
+    const call: ToolCall = {
+      id: 'spawn-1',
+      name: 'spawn_agent',
+      arguments: { description: '核对清单' },
+      result: {
+        toolCallId: 'spawn-1',
+        success: false,
+        error: 'Failed to create worktree for agent: dummy. Inspect worktree setup.',
+        metadata: { failureCode: 'worktree-create-failed' },
+      },
+    };
+    const summary = buildToolGroupHeadSummary([call], zh);
+    expect(summary).toBe(zh.toolStepHumanize.failureCodes['worktree-create-failed']);
+    expect(summary).not.toBe(zh.toolStepHumanize.failureReasonMissing);
+    expect(summary).not.toBe(zh.systemError.fallbackSummary);
+  });
+
   it('失败但完全没有 error 文本时明说缺少可读原因', () => {
     expect(buildToolGroupHeadSummary([failedCall(undefined)], zh)).toBe(zh.toolStepHumanize.failureReasonMissing);
     expect(buildToolGroupHeadSummary([failedCall('')], zh)).toBe(zh.toolStepHumanize.failureReasonMissing);

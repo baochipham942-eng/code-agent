@@ -17,6 +17,22 @@ const unexpectedArgs = process.argv.slice(2).filter((arg) => arg !== '--require-
 const answerEnumeratedSubdirectories = ['artifact-runnable', 'goal-contract', 'user-simulator', 'memory'];
 const securityRedlineSource = '.claude/test-cases/06-security-redline-tests.yaml';
 const gitWorkflowSource = '.claude/test-cases/10-git-workflow-tests.yaml';
+/** id 列表折叠阈值：超过就只列前几条 + 计数，别刷屏。 */
+const ID_LIST_FOLD_LIMIT = 10;
+
+/**
+ * 私档答案区（code-agent-private-archive/eval）是跨分支共享的工作区：
+ * 公开题进 main 与私档答案落档若不在同一批，任何树都会红在这里，且与自己的改动无关。
+ * 凡命中「两侧不配对」形状的错误都置位，收尾时统一给一句处置提示。
+ */
+let pairingDriftDetected = false;
+
+function formatIdList(ids) {
+  if (ids.length > ID_LIST_FOLD_LIMIT) {
+    return `${ids.slice(0, ID_LIST_FOLD_LIMIT).join(', ')} …等共 ${ids.length} 条（已折叠）`;
+  }
+  return ids.join(', ');
+}
 
 async function filesUnder(root, predicate) {
   const files = [];
@@ -213,11 +229,13 @@ async function checkPrivate(publicBank, errors) {
     seenSources.add(relative);
     const publicCases = publicBank.bySource.get(relative);
     if (!publicCases) {
-      errors.push(`${answerPath}: 私档 source 没有对应公开 YAML`);
+      pairingDriftDetected = true;
+      errors.push(`${answerPath}: 私档多出答案文件（公开仓没有题库 YAML ${relative}）`);
       continue;
     }
     const publicIds = new Set(publicCases.map((item) => item.id));
     const answerIds = new Set();
+    const orphanAnswerIds = [];
     for (const answer of parsed.cases) {
       const allowedCaseKeys = ['id', 'expect', 'expectations'];
       const extraCaseKeys = Object.keys(answer ?? {}).filter((key) => !allowedCaseKeys.includes(key));
@@ -227,18 +245,28 @@ async function checkPrivate(publicBank, errors) {
       }
       if (answerIds.has(answer.id)) errors.push(`${answerPath}: 重复答案 id ${answer.id}`);
       answerIds.add(answer.id);
-      if (!publicIds.has(answer.id)) errors.push(`${answerPath}: 私档孤儿 id ${answer.id}`);
+      if (!publicIds.has(answer.id)) orphanAnswerIds.push(answer.id);
       if (!nonEmpty(answer.expect) && !nonEmpty(answer.expectations)) {
         errors.push(`${answerPath}: ${answer.id} 没有非空判定标准`);
       }
     }
-    for (const id of publicIds) {
-      if (!answerIds.has(id)) errors.push(`${answerPath}: 缺少公开题答案 ${id}`);
+    // 两侧措辞对称，各自指明哪一侧多：私档多 = 答案在、公开题不在；公开多 = 题在、答案不在。
+    if (orphanAnswerIds.length > 0) {
+      pairingDriftDetected = true;
+      errors.push(`${answerPath}: 私档多 ${orphanAnswerIds.length} 条答案 id（公开题库没有这些题）：${formatIdList(orphanAnswerIds)}`);
+    }
+    const unansweredIds = [...publicIds].filter((id) => !answerIds.has(id)).sort();
+    if (unansweredIds.length > 0) {
+      pairingDriftDetected = true;
+      errors.push(`${answerPath}: 公开多 ${unansweredIds.length} 条题 id（私档缺这些答案）：${formatIdList(unansweredIds)}`);
     }
   }
 
   for (const source of publicBank.bySource.keys()) {
-    if (!seenSources.has(source)) errors.push(`${path.join(answersRoot, ...source.split('/'))}: 缺少答案文件`);
+    if (!seenSources.has(source)) {
+      pairingDriftDetected = true;
+      errors.push(`${path.join(answersRoot, ...source.split('/'))}: 公开仓多出题库 YAML（私档缺整个答案文件 ${source}）`);
+    }
   }
 
   const loader = await tsImport(
@@ -290,22 +318,40 @@ async function checkPrivate(publicBank, errors) {
       safetyCaseIds: redlineCases.map((testCase) => testCase.id),
     });
   } catch (error) {
-    errors.push(error instanceof Error ? error.message : String(error));
+    const message = error instanceof Error ? error.message : String(error);
+    // 私档切分与公开题库的 id 不配对也是 drift 家族：给两侧解读，别让人猜。
+    if (message.includes('split contains unknown case ids')) {
+      pairingDriftDetected = true;
+      errors.push(`${message}\n  （unknown = 私档切分里有这些 id、公开题库没有 → 私档侧多）`);
+    } else if (message.includes('split is missing case ids')) {
+      pairingDriftDetected = true;
+      errors.push(`${message}\n  （missing = 公开题库有这些题、私档切分没覆盖 → 公开侧多）`);
+    } else {
+      errors.push(message);
+    }
   }
   // K5：12 道危险题 + 12 道良性对照（tag benign-control）都在 safety split、都只在 OS jail 跑。
-  if (coreCases.length !== 155) errors.push(`默认题数应为 155，实际 ${coreCases.length}`);
-  if (redlineCases.length !== 24) errors.push(`红线题数（含良性对照）应为 24，实际 ${redlineCases.length}`);
+  if (coreCases.length !== 155) {
+    pairingDriftDetected = true;
+    errors.push(`默认题数应为 155，实际 ${coreCases.length}`);
+  }
+  if (redlineCases.length !== 24) {
+    pairingDriftDetected = true;
+    errors.push(`红线题数（含良性对照）应为 24，实际 ${redlineCases.length}`);
+  }
   if (!coreCases.every((testCase) => testCase.max_cost_usd === 0.10)) {
     errors.push('并非所有核心 case 的 max_cost_usd 都是 0.10');
   }
   if (split.safety.length !== 24) errors.push(`safety 应为 24，实际 ${split.safety.length}`);
   if (new Set([...split.heldIn, ...split.heldOut, ...split.safety]).size !== 155) {
+    pairingDriftDetected = true;
     errors.push('heldIn + heldOut + safety 去重后必须完整覆盖 155 题');
   }
   try {
     const coverage = mockPolicy.assertMockPolicyCoverage(split.heldIn);
     console.log(`[check-casebank-answers] mock policy: ${coverage.fixture} fixture / ${coverage.realOnly} real-only`);
   } catch (error) {
+    pairingDriftDetected = true;
     errors.push(error instanceof Error ? error.message : String(error));
   }
   console.log(`[check-casebank-answers] loader: ${groups.map((items) => items.length).join(' + ')} cases`);
@@ -327,6 +373,10 @@ async function main() {
   if (errors.length > 0) {
     console.error(`[check-casebank-answers] FAILED (${errors.length})`);
     for (const error of errors) console.error(`- ${error}`);
+    if (pairingDriftDetected) {
+      console.error('');
+      console.error('私档与公开题库不配对。若你没动过 eval/：先 git fetch && git merge origin/main 再判；仍红则私档与 main 不配对，找最近合入 eval 题的 PR。');
+    }
     process.exitCode = 1;
     return;
   }

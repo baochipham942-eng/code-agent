@@ -31,6 +31,28 @@ vi.mock('../../../../../src/host/services', () => ({
 
 import { videoGenerateModule, executeVideoGenerate } from '../../../../../src/host/plugins/builtin/videoGeneration/videoGenerate';
 
+function jsonChatCompletion(content: string): Response {
+  return new Response(JSON.stringify({
+    choices: [{ message: { content } }],
+  }), {
+    status: 200,
+    headers: { 'content-type': 'application/json' },
+  });
+}
+
+function sseChatCompletion(content: string): Response {
+  const sse = [
+    `data: ${JSON.stringify({ choices: [{ delta: { content } }] })}`,
+    '',
+    'data: [DONE]',
+    '',
+  ].join('\n');
+  return new Response(sse, {
+    status: 200,
+    headers: { 'content-type': 'text/event-stream' },
+  });
+}
+
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
 }
@@ -83,10 +105,7 @@ describe('video_generate — execute', () => {
       callCount++;
       if (callCount === 1) {
         // prompt expansion
-        return Promise.resolve({
-          ok: true,
-          json: async () => ({ choices: [{ message: { content: '扩展后的描述' } }] }),
-        });
+        return Promise.resolve(jsonChatCompletion('扩展后的描述'));
       }
       if (callCount === 2) {
         // submit
@@ -138,10 +157,7 @@ describe('video_generate — execute', () => {
     global.fetch = vi.fn().mockImplementation(() => {
       callCount++;
       if (callCount === 1) {
-        return Promise.resolve({
-          ok: true,
-          json: async () => ({ choices: [{ message: { content: '描述' } }] }),
-        });
+        return Promise.resolve(jsonChatCompletion('描述'));
       }
       if (callCount === 2) {
         return Promise.resolve({ ok: true, json: async () => ({ id: 't1' }) });
@@ -190,7 +206,7 @@ describe('video_generate — execute', () => {
     let callCount = 0;
     global.fetch = vi.fn().mockImplementation(() => {
       callCount++;
-      if (callCount === 1) return Promise.resolve({ ok: true, json: async () => ({ choices: [{ message: { content: 'p' } }] }) });
+      if (callCount === 1) return Promise.resolve(jsonChatCompletion('p'));
       if (callCount === 2) return Promise.resolve({ ok: true, json: async () => ({ id: 't' }) });
       return Promise.resolve({
         ok: true,
@@ -289,7 +305,7 @@ describe('video_generate — execute', () => {
     let callCount = 0;
     global.fetch = vi.fn().mockImplementation((_url, opts) => {
       callCount++;
-      if (callCount === 1) return Promise.resolve({ ok: true, json: async () => ({ choices: [{ message: { content: 'p' } }] }) });
+      if (callCount === 1) return Promise.resolve(jsonChatCompletion('p'));
       if (callCount === 2) {
         submitBodies.push(JSON.parse((opts as RequestInit).body as string) as Record<string, unknown>);
         return Promise.resolve({ ok: true, json: async () => ({ id: 't' }) });
@@ -317,7 +333,7 @@ describe('video_generate — execute', () => {
     let callCount = 0;
     global.fetch = vi.fn().mockImplementation(() => {
       callCount++;
-      if (callCount === 1) return Promise.resolve({ ok: true, json: async () => ({ choices: [{ message: { content: 'p' } }] }) });
+      if (callCount === 1) return Promise.resolve(jsonChatCompletion('p'));
       if (callCount === 2) return Promise.resolve({ ok: true, json: async () => ({ id: 't' }) });
       return Promise.resolve({
         ok: true,
@@ -336,5 +352,72 @@ describe('video_generate — execute', () => {
     );
     expect(onProgress).toHaveBeenCalledWith({ stage: 'starting', detail: 'video_generate' });
     expect(onProgress).toHaveBeenCalledWith({ stage: 'completing', percent: 100 });
+  });
+
+  it('sniffs SSE expand into the submit prompt, not a JSON.parse exception', async () => {
+    const submitBodies: Record<string, unknown>[] = [];
+    let callCount = 0;
+    global.fetch = vi.fn().mockImplementation((_url, opts) => {
+      callCount++;
+      if (callCount === 1) return Promise.resolve(sseChatCompletion('SSE扩写后的视频描述'));
+      if (callCount === 2) {
+        submitBodies.push(JSON.parse((opts as RequestInit).body as string) as Record<string, unknown>);
+        return Promise.resolve({ ok: true, json: async () => ({ id: 'task-sse' }) });
+      }
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({
+          task_status: 'SUCCESS',
+          video_result: [{ url: 'https://cdn/video.mp4', cover_image_url: 'https://cdn/cover.jpg' }],
+        }),
+      });
+    });
+
+    const result = await executeVideoGenerate({ prompt: '一只猫' }, makeCtx(), allowAll);
+    expect(result.ok).toBe(true);
+    expect(submitBodies[0]?.prompt).toBe('SSE扩写后的视频描述');
+  });
+
+  it('malformed SSE expand falls back to the original prompt and leaves a structured warn', async () => {
+    const logger = makeLogger();
+    const submitBodies: Record<string, unknown>[] = [];
+    let callCount = 0;
+    global.fetch = vi.fn().mockImplementation((_url, opts) => {
+      callCount++;
+      if (callCount === 1) {
+        return Promise.resolve(new Response('data: not-json\n\ndata: [DONE]\n\n', {
+          status: 200,
+          headers: { 'content-type': 'text/event-stream' },
+        }));
+      }
+      if (callCount === 2) {
+        submitBodies.push(JSON.parse((opts as RequestInit).body as string) as Record<string, unknown>);
+        return Promise.resolve({ ok: true, json: async () => ({ id: 'task-fb' }) });
+      }
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({
+          task_status: 'SUCCESS',
+          video_result: [{ url: 'https://cdn/video.mp4', cover_image_url: 'https://cdn/cover.jpg' }],
+        }),
+      });
+    });
+
+    const result = await executeVideoGenerate(
+      { prompt: '一只猫' },
+      makeCtx({ logger }),
+      allowAll,
+    );
+    expect(result.ok).toBe(true);
+    expect(submitBodies[0]?.prompt).toBe('一只猫');
+    expect(logger.warn).toHaveBeenCalledWith(
+      'video_generate prompt expand failed',
+      expect.objectContaining({ reason: 'malformed SSE data' }),
+    );
+    const warnPayload = (logger.warn as ReturnType<typeof vi.fn>).mock.calls.find(
+      (call) => call[0] === 'video_generate prompt expand failed',
+    )?.[1] as { reason?: string; error?: string };
+    expect(warnPayload?.error).toBeUndefined();
+    expect(String(warnPayload?.reason)).not.toMatch(/Unexpected token/);
   });
 });

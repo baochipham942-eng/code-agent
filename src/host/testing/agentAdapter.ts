@@ -30,6 +30,11 @@ import type { DatabaseService } from '../services/core/databaseService';
 import type { TelemetryCollector } from '../telemetry/telemetryCollector';
 import type { ScopedCostRecorder } from '../services/core/scopedCostLimit';
 import path from 'node:path';
+import { createRunContext, type RunContext } from '../runtime/runContext';
+import { createWorkspaceScope, isPathWithinRoot } from '../runtime/workspaceScope';
+import { getMemoryDir } from '../lightMemory/indexLoader';
+import { generateMessageId } from '../../shared/utils/id';
+import type { WorkspaceRoot, WorkspaceScope } from '../../shared/contract/project';
 
 const logger = createLogger('AgentAdapter');
 
@@ -38,6 +43,57 @@ export const EVAL_AGENT_DEFAULTS = {
   includeRecentConversations: false,
   skills: [] as readonly string[],
 } as const;
+
+/**
+ * N-EVAL-POLICY-WRITE-BOUNDARY-ENABLE：评测 run 的写边界 scope。
+ *
+ * 两个可写根（判据来自被放行对象的实现，不是声明）：
+ * - 沙箱 primary：writeTargets.ts 的 resolveToolPath 把相对路径锚 workingDirectory、
+ *   generate 族 `output_path ?? fileName` 也相对 ctx.workingDir 解析（chartGenerate.ts:153
+ *   一族同构）——正常产出一律落在沙箱内；
+ * - 记忆目录 additional：MemoryWrite 的 pathAuthority 是 `global-memory`（memoryWrite.schema.ts:67），
+ *   writeTargets.ts:252-261 把目标解析成 `<getUserConfigDir()>/memory/<basename>`
+ *   （getUserConfigDir = CODE_AGENT_DATA_DIR ?? ~/.code-agent，configPaths.ts:60）。
+ *   只放记忆目录、不放整个数据目录——数据目录里还有 DB/遥测等非模型可写物。
+ *
+ * 记忆目录落在沙箱内（CODE_AGENT_DATA_DIR 指进沙箱）时不加第二个根：
+ * createWorkspaceScope 的 assertNonOverlappingRoots 会直接抛，评测起不来（#1686 第三轮）。
+ *
+ * Bash 的写目标不归这个闸管（toolExecutor 对 isBashToolName 显式豁免，shell 解析只覆盖
+ * `>`/cp/mv/tee 三类且只用于账本信号）——这是既有声明的边界，不是本单的覆盖面。
+ */
+function buildEvalRunScoping(input: {
+  restrictWritesToWorkspace: boolean;
+  workingDirectory: string;
+  runId: string;
+  sessionId: string;
+}): { runContext?: RunContext; workspaceScope?: WorkspaceScope } {
+  // 🔴 惰性铁律（#1686 第五轮）：开关关着时什么都不注入——不建 scope、不给 runContext。
+  // 只要 runContext 带 workspaceScope，挂在 scope 上的 Bash working_directory 闸
+  // （bindRunScopedParams 的 RUN_WORKSPACE_BOUNDARY）就会被顺带点亮，正常只读调用被拒
+  // ⇒ 假阴性。注入 runContext 不是「关着就没副作用」的动作。
+  if (!input.restrictWritesToWorkspace) return {};
+  const memoryDir = getMemoryDir();
+  const roots: WorkspaceRoot[] = [{
+    sourceId: 'eval-sandbox', path: input.workingDirectory, role: 'primary', access: 'read_write',
+  }];
+  if (!isPathWithinRoot(memoryDir, input.workingDirectory) && !isPathWithinRoot(input.workingDirectory, memoryDir)) {
+    roots.push({
+      sourceId: 'eval-memory', path: memoryDir, role: 'additional', access: 'read_write',
+    });
+  }
+  const workspaceScope = createWorkspaceScope('eval-run', roots);
+  return {
+    workspaceScope,
+    runContext: createRunContext({
+      runId: input.runId,
+      sessionId: input.sessionId,
+      workspace: input.workingDirectory,
+      workspaceScope,
+      cwd: input.workingDirectory,
+    }),
+  };
+}
 
 type EvaluationSignal =
   | { type: 'skill_activated'; testId: string; name: string }
@@ -396,6 +452,13 @@ export class StandaloneAgentAdapter implements AgentInterface {
   /** 每题子代理拉起次数（subagent_activity kind='started' 计数）。 */
   private readonly subagentSpawns = new Map<string, number>();
   private requestPermission?: (request: PermissionRequestData) => Promise<RequestPermissionResult>;
+  /**
+   * N-EVAL-POLICY-WRITE-BOUNDARY-ENABLE：评测侧写边界开关，换姿态收口后**缺省 false**
+   * （与构造函数内 `?? false` 同口径；本字段注释原写「缺省 true」是翻转前的旧话，已改）。
+   * 缺省/显式 false = #1686 合入前的评测链路原样：不注入 scope/runContext，Bash 边界不亮。
+   * 打开的唯一入口是评测侧显式传 true（eval-ci 的 NEO_EVAL_WRITE_BOUNDARY=on）。
+   */
+  private readonly restrictWritesToWorkspace: boolean;
 
   constructor(config: {
     workingDirectory: string;
@@ -435,6 +498,11 @@ export class StandaloneAgentAdapter implements AgentInterface {
     onEvaluationSignal?: (signal: EvaluationSignal) => void;
     database?: DatabaseService;
     telemetryCollector?: TelemetryCollector;
+    /**
+     * N-EVAL-POLICY-WRITE-BOUNDARY-ENABLE：写边界（写目标必须落在沙箱/记忆目录内）。
+     * 缺省 true——评测侧默认开；显式 false 回到 #1686 前的原样链路（对照/回退用）。
+     */
+    restrictWritesToWorkspace?: boolean;
   }) {
     this.workingDirectory = config.workingDirectory;
     this.modelConfig = config.modelConfig;
@@ -456,6 +524,9 @@ export class StandaloneAgentAdapter implements AgentInterface {
     this.onEvaluationSignal = config.onEvaluationSignal;
     this.database = config.database;
     this.telemetryCollector = config.telemetryCollector;
+    // 评测写边界缺省关（换姿态收口：派生链缺口未清零前不开，见证据档「已知派生链缺口」节）。
+    // 打开的唯一入口是评测侧显式传 true（eval-ci 的 NEO_EVAL_WRITE_BOUNDARY=on）。
+    this.restrictWritesToWorkspace = config.restrictWritesToWorkspace ?? false;
     // harness.toolMode 优先于顶层 toolMode（对照实验显式控制工具集维度）
     this.toolMode = config.harness?.toolMode ?? config.toolMode ?? 'deferred';
   }
@@ -588,6 +659,21 @@ export class StandaloneAgentAdapter implements AgentInterface {
         : scriptedHandler;
       const recorder = narrowedHandler ? createPermissionRequestRecorder(narrowedHandler) : null;
       permissionRequests = recorder?.records;
+      // sessionId 要先落定：写边界的 runContext 用它做 session 对齐（executor 会校验
+      // options.sessionId 与 runContext.sessionId 一致）。原样上提，语义不变（幂等赋值）。
+      if (!this.currentSessionId) this.currentSessionId = `test-${Date.now()}`;
+      // N-EVAL-POLICY-WRITE-BOUNDARY-ENABLE：评测侧写边界接线（#1686 机制，本单打开）。
+      // 每个 sendMessage 一个 run：AgentLoop 不给 runId 会自造一个，与 executor 的
+      // runContext.runId 撞 RUN_CONTEXT_MISMATCH ⇒ 每次工具调用被拒（#1686 第一轮）。
+      // 🔴 开关关着时 buildEvalRunScoping 返回空对象——不建 scope、不注入 runContext、
+      // 不传 runId，评测链路与改前一字不差（Bash 边界不会被点亮）。
+      const writeBoundaryRunId = `run-${generateMessageId()}`;
+      const runScoping = buildEvalRunScoping({
+        restrictWritesToWorkspace: this.restrictWritesToWorkspace,
+        workingDirectory: this.workingDirectory,
+        runId: writeBoundaryRunId,
+        sessionId: this.currentSessionId,
+      });
       const toolExecutor = new ToolExecutor({
         requestPermission: recorder?.handler
           ?? (permissionDecider
@@ -602,6 +688,14 @@ export class StandaloneAgentAdapter implements AgentInterface {
         ...(this.orchestration?.spawnMaxDepth !== undefined
           ? { spawnMaxDepth: this.orchestration.spawnMaxDepth }
           : {}),
+        // 写边界开着才注入。workingDirectory 必须用 runContext.cwd：createRunContext
+        // 会 canonicalize（解软链），拿原始字面量会在 executor 构造期撞 cwd mismatch
+        // 抛错（#1686 第二轮；sendMessage 吞不进 errors 之外，直接不可用）。
+        ...(runScoping.runContext ? {
+          restrictWritesToWorkspace: true,
+          runContext: runScoping.runContext,
+          workingDirectory: runScoping.runContext.cwd,
+        } : {}),
       });
 
       // 3. Shared messages array — persisted on the adapter instance so follow-up
@@ -611,7 +705,7 @@ export class StandaloneAgentAdapter implements AgentInterface {
 
       // 4. Create AgentLoop with correct event handlers
       // Reuse session id across follow-ups so AgentLoop's session-scoped state stays consistent.
-      if (!this.currentSessionId) this.currentSessionId = `test-${Date.now()}`;
+      // （sessionId 已在 ToolExecutor 构造前落定，见上。）
       await this.ensureStandaloneSessionRecord(prompt);
       if (!this.telemetrySessionActive) {
         telemetryCollector.startSession(this.currentSessionId, {
@@ -661,6 +755,9 @@ export class StandaloneAgentAdapter implements AgentInterface {
           : undefined;
         const loop = new AgentLoop({
           sessionId: this.currentSessionId,
+          // 写边界开着才传 runId：executor 带 runContext 时必须同源，否则每次工具调用
+          // 撞 RUN_CONTEXT_MISMATCH（#1686 第一轮）。关着时不传，loop 自造——与改前一致。
+          ...(runScoping.runContext ? { runId: writeBoundaryRunId } : {}),
           workingDirectory: this.workingDirectory,
           systemPrompt: this.systemPromptOverride ?? SYSTEM_PROMPT,
           modelConfig: {

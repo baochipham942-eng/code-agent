@@ -131,6 +131,9 @@ flowchart LR
 
 C4 在这里表示从外部关系到进程、再到内部组件的三种缩放。Context 层复用第 4 章系统边界图；Container 层的节点是部署或执行单元，`packages/` 是复用包集合，不伪装成一个常驻进程。（`docs/architecture/repo-map.md`、`package.json`）
 
+> 🖼 archify 版（可交互、可导出、带构图门证据）：[Container 层](./architecture/diagrams/c4-container.html) · [Component 层](./architecture/diagrams/c4-component.html)。规格在 [`diagrams/specs/`](./architecture/diagrams/specs)，改图改规格后重跑 `archify deliver` 即可。下面的 mermaid 是随正文走的阅读版，两边同源。
+
+
 ```mermaid
 flowchart TB
   subgraph App[桌面应用]
@@ -227,7 +230,12 @@ Core 工具常驻请求，Deferred 工具经 ToolSearch 按需发现/装载；�
 
 六条泳道固定表示用户、页面/组件、store、IPC/HTTP、host、引擎或数据库。store 是页面共享的状态仓；IPC/HTTP 是跨进程消息通道。箭头同时标出状态读取和消息投递，不意味着每次请求都必须由 store 方法发起；实际请求常由 hook 或组件使用 `ipcService` 发出。（`src/renderer/hooks/agent/useAgentIPC.ts`、`src/renderer/services/ipcService.ts`）
 
+> 🖼 五张的 archify 版都在 [`architecture/diagrams/`](./architecture/diagrams)：泳道阶段带分段标题、返回/安全/强调三类箭头分色、结论卡写明每张「不画什么」。archify 版按构图门做过减法，逐条对照见私档证据档；mermaid 版保留完整分支，两边同源。
+
+
 ### ① 一次提问到出答案
+
+> 🖼 archify 版：[① 一次提问到出答案](./architecture/diagrams/seq1-ask-to-answer.html)
 
 桌面壳中的聊天同样使用 HTTP/SSE：SSE 是服务端持续推送答案片段的连接。下面是 Native 普通发送分支，运行中追加输入另由 `steerOrQueue` 决定投递；外部引擎按第 11 章分发。（`src/renderer/api/httpTransport.ts`、`src/renderer/hooks/agent/useAgentIPC.ts`、`src/web/routes/agent.ts`）
 
@@ -287,6 +295,8 @@ sequenceDiagram
 
 ### ② 工具调用遇到审批点（含拒绝出口）
 
+> 🖼 archify 版：[② 工具调用遇到审批点](./architecture/diagrams/seq2-approval.html)
+
 审批不是模型自己判“用户已同意”：host 保留待决请求，卡片只负责显示和回传选择。没有审批界面、请求过期或运行取消都必须区别于真人拒绝；当前交互审批的长等待提醒不自动代用户裁决。（`src/host/agent/orchestratorPermissions.ts`、`src/shared/contract/permission.ts`）
 
 ```mermaid
@@ -328,6 +338,8 @@ sequenceDiagram
 事实链：`src/host/tools/toolExecutor.ts`、`src/host/agent/orchestratorPermissions.ts`、`src/renderer/hooks/agent/effects/usePermissionQueueEffects.ts`、`src/renderer/stores/appStore.ts`、`src/renderer/components/PermissionDialog/PermissionCard.tsx`、`src/web/webPermissionResponseHandler.ts`。超时/取消的来源枚举在 `src/shared/contract/permission.ts`；取消后的主动重试沿图①重新申请，不能复用已失效批准。
 
 ### ③ 子代理派发与回收
+
+> 🖼 archify 版：[③ 子代理派发与回收](./architecture/diagrams/seq3-subagent.html)
 
 子代理是执行一个子任务的独立 Agent。这里画 `spawn_agent` 并行分支：依赖成功才启动，子代理失败不自动拖垮兄弟，父任务取消才向下级联。任务面板展示的是运行事件投影。（`src/host/agent/parallelAgentCoordinator.ts`、`src/shared/contract/cancellation.ts`、`docs/architecture/multiagent-system.md`）
 
@@ -377,6 +389,8 @@ sequenceDiagram
 
 ### ④ durable run 崩溃后恢复
 
+> 🖼 archify 版：[④ durable run 崩溃后恢复](./architecture/diagrams/seq4-durable-recovery.html)
+
 Durable 表示运行身份和检查点可以落盘。重启先认领新的 owner epoch（所有者代号），旧进程的迟到写入会被拒绝。当前 Native 已有生产恢复端口：尚未派发的模型请求可以进入续跑，已派发且无法查询结果的请求不能自动重发收费。（`src/host/runtime/runRegistry.ts`、`src/host/runtime/nativeRecoveryHost.ts`、`src/host/app/nativeRecoveryHost.ts`）
 
 ```mermaid
@@ -419,6 +433,8 @@ sequenceDiagram
 启动装配在 `src/web/webServer.ts`、`src/host/app/initializeDurableRun.ts`、`src/host/runtime/durableRecoveryDispatcher.ts`；各引擎有不同恢复条件，详见 [恢复集成分册](./architecture/durable-runtime-integration.md)。该分册早期“Native 全部仅复核”的表述已落后于 `src/host/app/nativeRecoveryHost.ts`。
 
 ### ⑤ 上下文压缩触发到会话继续
+
+> 🖼 archify 版：[⑤ 上下文压缩触发到会话继续](./architecture/diagrams/seq5-compaction.html)
 
 上下文是模型本轮实际能看到的资料；压缩用摘要与投影降低占用，原始会话仍供查证。下面选择有明确页面状态回路的手动压缩；自动压缩在执行轮首由压力策略触发，不能把手动 store 的状态冒充自动事件已接入的进度。（`src/renderer/hooks/useContextHealthActions.ts`、`src/host/agent/runtime/contextAssembly/compression.ts`、`src/host/context/projectionEngine.ts`）
 

@@ -69,7 +69,7 @@ function toWorkspaceRelativePath(rawPath: string, workingDirectory: string): str
 }
 
 /** 时间锚定位点踩那一轮：startTime 不晚于点踩时刻的最后一轮，都不满足取第一轮。 */
-function resolveFeedbackTurn(turns: ReplayTurn[], anchorTimestamp: number): ReplayTurn | null {
+export function resolveFeedbackTurn(turns: ReplayTurn[], anchorTimestamp: number): ReplayTurn | null {
   if (turns.length === 0) return null;
   let matched: ReplayTurn | null = null;
   for (const turn of turns) {

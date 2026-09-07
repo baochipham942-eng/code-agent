@@ -1,0 +1,309 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "HLD 第 6 章 · C4 Component 层",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "main-loop",
+        "label": "会话主循环",
+        "focus": [
+          "adapter",
+          "app",
+          "runtime",
+          "context",
+          "model"
+        ],
+        "note": "三种入口统一收口后开一次 run，上下文组装与模型选路都挂在 ConversationRuntime 下。"
+      },
+      {
+        "id": "tool-chain",
+        "label": "工具执行链",
+        "focus": [
+          "runtime",
+          "tool",
+          "guard",
+          "handler"
+        ],
+        "note": "工具不由模型直达 handler：策略、权限、写隔离在中间是硬边界。"
+      },
+      {
+        "id": "persistence",
+        "label": "运行身份与落盘",
+        "focus": [
+          "app",
+          "run",
+          "trace",
+          "repo"
+        ],
+        "note": "运行身份与轨迹分两条线写库，会话终态由 durable 侧持有。"
+      }
+    ]
+  },
+  "layout": {
+    "mode": "grid",
+    "origin": [
+      50,
+      60
+    ],
+    "cols": 5,
+    "cellW": 170,
+    "cellH": 76,
+    "gapX": 100,
+    "gapY": 58
+  },
+  "components": [
+    {
+      "id": "context",
+      "type": "backend",
+      "label": "ContextAssembly",
+      "sublabel": "上下文与 Prompt 组装",
+      "row": 0,
+      "col": 2,
+      "size": [
+        170,
+        76
+      ]
+    },
+    {
+      "id": "model",
+      "type": "backend",
+      "label": "ModelRouter",
+      "sublabel": "AI SDK adapter 选路",
+      "row": 0,
+      "col": 3,
+      "size": [
+        170,
+        76
+      ]
+    },
+    {
+      "id": "adapter",
+      "type": "frontend",
+      "label": "IPC · Web · CLI 适配层",
+      "sublabel": "三种入口统一收口",
+      "row": 1,
+      "col": 0,
+      "size": [
+        170,
+        76
+      ]
+    },
+    {
+      "id": "app",
+      "type": "backend",
+      "label": "应用服务 TaskManager",
+      "sublabel": "任务槽位与前后台",
+      "row": 1,
+      "col": 1,
+      "size": [
+        170,
+        76
+      ]
+    },
+    {
+      "id": "runtime",
+      "type": "backend",
+      "label": "ConversationRuntime",
+      "sublabel": "一次 run 的消息循环",
+      "row": 1,
+      "col": 2,
+      "size": [
+        170,
+        76
+      ]
+    },
+    {
+      "id": "tool",
+      "type": "backend",
+      "label": "ToolExecutor",
+      "sublabel": "注册、搜索、校验",
+      "row": 1,
+      "col": 3,
+      "size": [
+        170,
+        76
+      ]
+    },
+    {
+      "id": "guard",
+      "type": "security",
+      "label": "策略 · 权限 · 写隔离",
+      "sublabel": "执行前的硬边界",
+      "row": 1,
+      "col": 4,
+      "size": [
+        170,
+        76
+      ]
+    },
+    {
+      "id": "run",
+      "type": "backend",
+      "label": "RunRegistry",
+      "sublabel": "与 Durable Kernel",
+      "row": 2,
+      "col": 1,
+      "size": [
+        170,
+        76
+      ]
+    },
+    {
+      "id": "trace",
+      "type": "messagebus",
+      "label": "Trace 与 Ledger",
+      "sublabel": "运行轨迹与账本",
+      "row": 2,
+      "col": 2,
+      "size": [
+        170,
+        76
+      ]
+    },
+    {
+      "id": "handler",
+      "type": "external",
+      "label": "ToolModule 与 Connector",
+      "sublabel": "MCP · 原生应用适配",
+      "row": 2,
+      "col": 4,
+      "size": [
+        170,
+        76
+      ]
+    },
+    {
+      "id": "repo",
+      "type": "database",
+      "label": "Repositories · SQLite",
+      "sublabel": "本机持久层",
+      "row": 3,
+      "col": 2,
+      "size": [
+        170,
+        76
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "adapter-app",
+      "from": "adapter",
+      "to": "app",
+      "label": "统一收口"
+    },
+    {
+      "id": "app-runtime",
+      "from": "app",
+      "to": "runtime",
+      "label": "开一次 run",
+      "variant": "emphasis"
+    },
+    {
+      "id": "runtime-context",
+      "from": "runtime",
+      "to": "context",
+      "label": "组装上下文"
+    },
+    {
+      "id": "runtime-model",
+      "from": "runtime",
+      "to": "model",
+      "label": "选路推理"
+    },
+    {
+      "id": "runtime-tool",
+      "from": "runtime",
+      "to": "tool",
+      "label": "发起工具调用",
+      "variant": "emphasis",
+      "labelDy": 20
+    },
+    {
+      "id": "tool-guard",
+      "from": "tool",
+      "to": "guard",
+      "label": "先过策略",
+      "variant": "security"
+    },
+    {
+      "id": "guard-handler",
+      "from": "guard",
+      "to": "handler",
+      "label": "放行后分发",
+      "variant": "security",
+      "labelAt": [
+        1215,
+        284
+      ]
+    },
+    {
+      "id": "app-run",
+      "from": "app",
+      "to": "run",
+      "label": "登记运行身份",
+      "labelAt": [
+        405,
+        284
+      ]
+    },
+    {
+      "id": "runtime-trace",
+      "from": "runtime",
+      "to": "trace",
+      "label": "写事件",
+      "labelAt": [
+        675,
+        284
+      ]
+    },
+    {
+      "id": "run-repo",
+      "from": "run",
+      "to": "repo",
+      "label": "checkpoint 落盘"
+    },
+    {
+      "id": "trace-repo",
+      "from": "trace",
+      "to": "repo",
+      "label": "轨迹落盘",
+      "labelAt": [
+        675,
+        418
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Component 调用边界（均在 `src/host/` 下）",
+      "items": [
+        "`app/agentAppService.ts` · `task/TaskManager.ts`",
+        "`agent/runtime/conversationRuntime.ts` · `contextAssembly.ts`",
+        "`model/modelRouter.ts` · `tools/toolExecutor.ts`",
+        "`runtime/runRegistry.ts`"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "工具面不是一张平表",
+      "items": [
+        "Core 工具常驻请求，Deferred 工具经 ToolSearch 按需发现与装载",
+        "工具数量随注册表变化，旧的「108 个 / 15 核心」不当长期合同",
+        "Plugin、MCP、原生 ToolModule 最终都受同一道工具执行边界约束"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "读这张图容易错的两处",
+      "items": [
+        "模型产出的工具调用不直达 handler，中间那道是硬边界不是装饰",
+        "Trace 与 RunRegistry 是两条独立写库线，投影层不是第二真源"
+      ]
+    }
+  ]
+}

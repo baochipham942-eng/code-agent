@@ -1,0 +1,308 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "HLD 第 6 章 · C4 Container 层",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "desktop-path",
+        "label": "桌面主链路",
+        "focus": [
+          "shell",
+          "renderer",
+          "web",
+          "host"
+        ],
+        "note": "Tauri 壳装载渲染层与本地 Web 服务，请求最终落到 host 运行时。"
+      },
+      {
+        "id": "other-entries",
+        "label": "另外两个入口",
+        "focus": [
+          "cli",
+          "browser",
+          "bridge",
+          "web",
+          "host"
+        ],
+        "note": "CLI 直连 host；普通浏览器走同一套 HTTP/SSE，并另接 bridge 本地服务。"
+      },
+      {
+        "id": "state-and-cloud",
+        "label": "状态与云端",
+        "focus": [
+          "host",
+          "db",
+          "remote",
+          "supabase",
+          "admin"
+        ],
+        "note": "本机 SQLite 是运行事实真源，Supabase 由 host 与独立后台共用。"
+      }
+    ]
+  },
+  "layout": {
+    "mode": "grid",
+    "origin": [
+      50,
+      60
+    ],
+    "cols": 5,
+    "cellW": 170,
+    "cellH": 92,
+    "gapX": 100,
+    "gapY": 120
+  },
+  "components": [
+    {
+      "id": "shell",
+      "type": "frontend",
+      "label": "Tauri desktop shell",
+      "sublabel": "原生窗口与启动",
+      "row": 0,
+      "col": 0,
+      "size": [
+        170,
+        84
+      ]
+    },
+    {
+      "id": "renderer",
+      "type": "frontend",
+      "label": "React renderer",
+      "sublabel": "会话与产物呈现",
+      "row": 0,
+      "col": 1,
+      "size": [
+        170,
+        84
+      ]
+    },
+    {
+      "id": "web",
+      "type": "backend",
+      "label": "Node Web server",
+      "sublabel": "本地 HTTP 与 SSE",
+      "row": 0,
+      "col": 2,
+      "size": [
+        170,
+        84
+      ]
+    },
+    {
+      "id": "host",
+      "type": "backend",
+      "label": "host 应用服务与运行时",
+      "sublabel": "执行、权限、持久",
+      "row": 0,
+      "col": 3,
+      "size": [
+        170,
+        84
+      ]
+    },
+    {
+      "id": "db",
+      "type": "database",
+      "label": "本地 SQLite 与文件",
+      "sublabel": "会话与运行事实",
+      "row": 0,
+      "col": 4,
+      "size": [
+        170,
+        84
+      ]
+    },
+    {
+      "id": "bridge",
+      "type": "backend",
+      "label": "packages/bridge",
+      "sublabel": "本地服务",
+      "row": 1,
+      "col": 0,
+      "size": [
+        170,
+        84
+      ]
+    },
+    {
+      "id": "browser",
+      "type": "external",
+      "label": "普通浏览器",
+      "sublabel": "非桌面壳入口",
+      "row": 1,
+      "col": 1,
+      "size": [
+        170,
+        84
+      ]
+    },
+    {
+      "id": "cli",
+      "type": "external",
+      "label": "CLI",
+      "sublabel": "无头与脚本入口",
+      "row": 1,
+      "col": 2,
+      "size": [
+        170,
+        84
+      ]
+    },
+    {
+      "id": "remote",
+      "type": "cloud",
+      "label": "模型 · MCP · 云端控制面",
+      "sublabel": "出网依赖",
+      "row": 1,
+      "col": 3,
+      "size": [
+        170,
+        84
+      ]
+    },
+    {
+      "id": "supabase",
+      "type": "database",
+      "label": "Supabase",
+      "sublabel": "云端共享数据",
+      "row": 1,
+      "col": 4,
+      "size": [
+        170,
+        84
+      ]
+    },
+    {
+      "id": "admin",
+      "type": "frontend",
+      "label": "admin-console",
+      "sublabel": "独立后台",
+      "row": 2,
+      "col": 2,
+      "size": [
+        170,
+        84
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "桌面应用（一次分发）",
+      "wraps": [
+        "shell",
+        "renderer",
+        "web",
+        "host"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "shell-renderer",
+      "from": "shell",
+      "to": "renderer",
+      "label": "装载渲染层"
+    },
+    {
+      "id": "shell-web",
+      "from": "shell",
+      "to": "web",
+      "label": "拉起本地服务",
+      "fromSide": "top",
+      "toSide": "top"
+    },
+    {
+      "id": "renderer-web",
+      "from": "renderer",
+      "to": "web",
+      "label": "HTTP 与 SSE",
+      "variant": "emphasis"
+    },
+    {
+      "id": "web-host",
+      "from": "web",
+      "to": "host",
+      "label": "适配到应用服务",
+      "variant": "emphasis"
+    },
+    {
+      "id": "host-db",
+      "from": "host",
+      "to": "db",
+      "label": "落盘"
+    },
+    {
+      "id": "host-remote",
+      "from": "host",
+      "to": "remote",
+      "label": "出网调用",
+      "labelAt": [
+        945,
+        158
+      ]
+    },
+    {
+      "id": "host-supabase",
+      "from": "host",
+      "to": "supabase",
+      "label": "云端读写"
+    },
+    {
+      "id": "cli-host",
+      "from": "cli",
+      "to": "host",
+      "label": "直连运行时"
+    },
+    {
+      "id": "browser-web",
+      "from": "browser",
+      "to": "web",
+      "label": "同一套 HTTP 与 SSE"
+    },
+    {
+      "id": "browser-bridge",
+      "from": "browser",
+      "to": "bridge",
+      "label": "预览与定位协议"
+    },
+    {
+      "id": "admin-supabase",
+      "from": "admin",
+      "to": "supabase",
+      "label": "独立后台读写"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Container 入口（每个节点一条）",
+      "items": [
+        "shell `src-tauri/src/main.rs` · renderer `src/renderer/index.tsx`",
+        "web `src/web/webServer.ts` · host `src/host/app/createAgentRuntime.ts`",
+        "cli `src/cli/index.ts` · bridge `packages/bridge/src/index.ts` · admin `admin-console/app/page.tsx`"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "这张图不画什么",
+      "items": [
+        "Context 层复用第 4 章系统边界图，本章不重画",
+        "`packages/` 是复用包集合，按分发边界装载进 host，不伪装成常驻进程（`packages/internal/evaluation-center/README.md`）",
+        "Component 层的内部组件另见同章第二张图"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "两处容易读错的边界",
+      "items": [
+        "桌面壳里的聊天也走 HTTP/SSE，不是壳内私有通道",
+        "admin-console 是独立后台，与 host 只经 Supabase 相遇，不共享进程"
+      ]
+    }
+  ]
+}

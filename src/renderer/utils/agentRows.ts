@@ -27,6 +27,8 @@ export interface MemberRowSource {
   status: 'standby' | 'running' | 'completed' | 'failed' | 'cancelled';
   isLead: boolean;
   standbyKey?: string;
+  /** Swarm 账本记录的改动文件；只读 explore 为 []。 */
+  filesChanged?: readonly string[];
 }
 
 export interface AgentRow {
@@ -43,6 +45,8 @@ export interface AgentRow {
   failureReason?: string;
   stoppable: boolean;
   tokens?: number;
+  /** Swarm 账本记录的改动文件；只读 explore 为 []。 */
+  filesChanged?: readonly string[];
   /** 原始引用：成员视图 / 行级停 / 头像用。 */
   member?: MemberRowSource;
   node?: AgentTreeNode;
@@ -118,6 +122,7 @@ export function buildAgentRows(input: {
       // 它真实的最近工具步补上来。
       activity: undefined,
       stoppable: member.status === 'running',
+      filesChanged: member.filesChanged,
       member,
     });
   }

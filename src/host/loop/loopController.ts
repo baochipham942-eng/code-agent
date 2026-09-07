@@ -26,6 +26,7 @@ import {
 } from '../../shared/contract/loop';
 import type { TaskStatus } from '../../shared/contract/backgroundTask';
 import { buildTurnPrompt, detectDoneMarker, parseWaitMs } from './loopPrompt';
+import { captureLoopOwnerStamp } from './loopOwnership';
 import { getTaskManager } from '../task';
 import { getSessionManager } from '../services/infra/sessionManager';
 import { getBackgroundTaskLedger } from '../task/backgroundTaskLedger';
@@ -244,6 +245,9 @@ export class LoopController {
         nextRunAt: state.nextRunAt,
         sourceRefId: state.id,
         config: {
+          // 归属戳（N-LOOP-DURABLE 修复棒）：启动收口只对「归属进程已确认消失」的
+          // running 记录动手；没有戳的记录判不出归属，保持原样。
+          ownerProcess: captureLoopOwnerStamp(),
           prompt: state.prompt,
           until: state.until,
           intervalMs: state.intervalMs,
@@ -280,6 +284,9 @@ export class LoopController {
         error: state.error,
         eventId: `${event}:loop:${state.id}:${completedAt}`,
         lastRunAt: completedAt,
+        // 终态即摘除归属戳：记录不再代表任何活进程（configPatch 里显式 undefined
+        // 会在 JSON 序列化时把键抹掉）。
+        configPatch: { ownerProcess: undefined },
       }).catch((err) => logger.warn(`recordAutomationFinalized failed for ${state.id}:`, err));
     } catch (err) {
       logger.warn(`recordAutomationFinalized failed for ${state.id}:`, err);

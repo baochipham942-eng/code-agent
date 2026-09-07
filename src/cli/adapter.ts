@@ -189,13 +189,17 @@ export class CLIAgent {
         roleId: persistedExpertRoleId,
       });
     }
-    const runConfig: CLIConfig = persistedExpertOverride
-      ? {
-          ...this.config,
-          agentOverride: persistedExpertOverride,
-          requestedAgentId: persistedExpertRoleId,
-        }
-      : this.config;
+    const runConfig: CLIConfig = {
+      ...this.config,
+      // neo CLI 发起 = 脚本/无头；界面会话走 web /api/run，那条路不带这个标记。
+      originKind: 'headless',
+      ...(persistedExpertOverride
+        ? {
+            agentOverride: persistedExpertOverride,
+            requestedAgentId: persistedExpertRoleId,
+          }
+        : {}),
+    };
     // MCP 就绪门：init 与首屏并行（云端 server HTTP 握手可达数秒），
     // 首个 run 在这里等它完成，保证工具表完整；之后为已解决 promise 零成本。
     await whenCLIMcpReady();

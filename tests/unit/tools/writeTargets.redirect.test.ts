@@ -176,3 +176,94 @@ describe('cp / mv / tee 的写目标', () => {
     expect(resolve('cp /etc/a /etc/b /tmp/dst').targets).not.toContain(resolveCanonicalRunPath('/etc/a'));
   });
 });
+
+/**
+ * PR #1709 复审①（ENABLE2 修复轮 1）：重定向目标的分词不走 canonicalizeCommand——
+ * 它去引号（安全匹配面要的形状），会把带空格的引号目标截成另一个路径：
+ * `echo x > "/tmp/eval-sandbox escape.txt"` 曾解析成 /tmp/eval-sandbox（界外写当界内放行），
+ * `printf '%s\n' '>/outside/file'` 的字符串字面量反向被当成写目标。
+ * 修法：折续行 + 切未转义换行后，原文喂引号/转义感知的分词器，目标经 shellWordValue 词法值化。
+ */
+describe('引号/转义目标的词法保真（PR #1709 复审①）', () => {
+  it('带空格的双引号目标解析为完整路径，不截断（越界形状才能被界外判接住）', () => {
+    expect(resolve('echo x > "/etc/has space.txt"').targets)
+      .toEqual([resolveCanonicalRunPath('/etc/has space.txt')]);
+    expect(resolve('echo x > "/tmp/write-target-redirects/has space.txt"').targets)
+      .toEqual([resolveCanonicalRunPath('/tmp/write-target-redirects/has space.txt')]);
+  });
+
+  it('单引号目标含空格同样保真', () => {
+    expect(resolve("echo x > '/etc/single quoted.txt'").targets)
+      .toEqual([resolveCanonicalRunPath('/etc/single quoted.txt')]);
+  });
+
+  it('反斜杠转义空格是同一个词（bash 词义 `\\ ` = 空格），不截断', () => {
+    expect(resolve('echo x > /etc/has\\ space.txt').targets)
+      .toEqual([resolveCanonicalRunPath('/etc/has space.txt')]);
+  });
+
+  it('字符串字面量里的 `>` 不是重定向（printf 误判修复）', () => {
+    expect(resolve("printf '%s\\n' '>/outside/file'")).toMatchObject({ targets: [], uncertain: [] });
+    expect(resolve('echo "a > b"')).toMatchObject({ targets: [], uncertain: [] });
+  });
+
+  it('命令名带引号/转义仍认得出（PR #1709 复审②：`c"p"` 丢目标会削弱 WRITE_OWNERSHIP_CONFLICT）', () => {
+    expect(resolve('c"p" a /etc/x').targets).toEqual([resolveCanonicalRunPath('/etc/x')]);
+    expect(resolve('c\\p a /etc/x').targets).toEqual([resolveCanonicalRunPath('/etc/x')]);
+    expect(resolve('m"v" a /etc/x').targets).toEqual([resolveCanonicalRunPath('/etc/x')]);
+    expect(resolve('tee "/tmp/t1"').targets).toEqual([resolveCanonicalRunPath('/tmp/t1')]);
+  });
+
+  it('带引号的尾部选项不遮蔽真实写目标（PR #1709 复审③：`cp src /outside/x "-f"`）', () => {
+    // 修复前：`"-f"` 带引号不被选项过滤 ⇒ 混进操作数 ⇒ cp 的「最后一个操作数」被顶成 -f，
+    // 真实目标 /etc/x 整个漏判。
+    expect(resolve('cp src /etc/x "-f"').targets).toEqual([resolveCanonicalRunPath('/etc/x')]);
+    expect(resolve('mv src /etc/x "-i"').targets).toEqual([resolveCanonicalRunPath('/etc/x')]);
+    expect(resolve('tee "-a" /etc/x').targets).toEqual([resolveCanonicalRunPath('/etc/x')]);
+    // 真阴：引号包的路径操作数不能误滤（值化后是 / 开头不是 - 开头）
+    expect(resolve('cp src "/etc/has space.txt"').targets)
+      .toEqual([resolveCanonicalRunPath('/etc/has space.txt')]);
+  });
+
+  it('bash -c 内嵌脚本的重定向目标不丢（PR #1709 复审④①：保引号后内层整段被引号包住）', () => {
+    expect(resolve("bash -c 'echo x > /etc/owned.txt'").targets)
+      .toEqual([resolveCanonicalRunPath('/etc/owned.txt')]);
+    expect(resolve("bash -lc 'cp a /etc/x'").targets)
+      .toEqual([resolveCanonicalRunPath('/etc/x')]);
+    expect(resolve('sh -c "echo x > /etc/y"').targets)
+      .toEqual([resolveCanonicalRunPath('/etc/y')]);
+    // 真阴：bash 出现在非命令位不递归
+    expect(resolve("echo 'bash -c x'").targets).toEqual([]);
+  });
+
+  it('包装前缀后的 bash -c 不丢目标（PR #1709 复审⑤二裁维持：env/sudo/timeout/nohup 系）', () => {
+    expect(resolve("env bash -c 'echo x > /etc/owned.txt'").targets)
+      .toEqual([resolveCanonicalRunPath('/etc/owned.txt')]);
+    expect(resolve("sudo bash -c 'echo x > /etc/owned.txt'").targets)
+      .toEqual([resolveCanonicalRunPath('/etc/owned.txt')]);
+    expect(resolve("timeout 5 bash -c 'echo x > /etc/owned.txt'").targets)
+      .toEqual([resolveCanonicalRunPath('/etc/owned.txt')]);
+    expect(resolve("env FOO=1 bash -c 'echo x > /etc/owned.txt'").targets)
+      .toEqual([resolveCanonicalRunPath('/etc/owned.txt')]);
+    expect(resolve("nohup sh -c 'cp a /etc/x'").targets)
+      .toEqual([resolveCanonicalRunPath('/etc/x')]);
+  });
+
+  it('eval 字面脚本的写目标不丢（PR #1709 复审⑥：内建，剩余参数空格拼接后执行）', () => {
+    expect(resolve("eval 'echo x > /etc/owned.txt'").targets)
+      .toEqual([resolveCanonicalRunPath('/etc/owned.txt')]);
+    // eval 的拼接语义：分段给的脚本拼起来仍是一条命令
+    expect(resolve("eval echo x '>' /etc/y").targets)
+      .toEqual([resolveCanonicalRunPath('/etc/y')]);
+    // 包装前缀 + eval 组合
+    expect(resolve("env eval 'cp a /etc/z'").targets)
+      .toEqual([resolveCanonicalRunPath('/etc/z')]);
+    // 真阴：eval 作数据不递归
+    expect(resolve("echo 'eval x'").targets).toEqual([]);
+  });
+
+  it('单引号路径里的字面反斜杠不丢（PR #1709 复审④②：值化只许做一遍）', () => {
+    expect(resolve("cp src '/tmp/a\\b.txt'").targets)
+      .toEqual([resolveCanonicalRunPath('/tmp/a\\b.txt')]);
+  });
+});

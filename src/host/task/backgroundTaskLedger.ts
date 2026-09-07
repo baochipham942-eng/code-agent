@@ -216,6 +216,19 @@ export class BackgroundTaskLedger {
     return cloneNotification(delivered);
   }
 
+  /**
+   * 撤掉一条排队中的通知的内存缓存（N-LOOP-DURABLE-FIX2 第三棒 Important 2）。
+   * queueNotification 先写内存 Map、再写库；调用方的事务回滚（库写抛错或提交失败）
+   * 不会带走那份缓存，同进程重试会命中缓存直接返回、跳过入库。事务化收口在回滚
+   * 路径调这个恢复缓存，重试才会真的再走一遍入库。只撤自己排队且未持久化成功的那条。
+   */
+  revokeQueuedNotification(notificationId: string): void {
+    this.assertNonEmpty(notificationId, 'notification id');
+    this.notifications.delete(notificationId);
+    const index = this.notificationOrder.indexOf(notificationId);
+    if (index >= 0) this.notificationOrder.splice(index, 1);
+  }
+
   listTasks(filter: ListTasksFilter = {}): Task[] {
     const statuses = toSet(filter.status);
     const sources = toSet(filter.source);

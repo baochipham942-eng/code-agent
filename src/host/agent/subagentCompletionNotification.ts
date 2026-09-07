@@ -40,6 +40,8 @@ export interface BuildSubagentCompletionRecordInput extends SubagentCompletionSc
   toolsUsed?: string[];
   iterations?: number;
   cost?: number;
+  /** 声明了但未装配的工具（N-SUBAGENT-ZEROTOOLS 返修 Important 2：后台完成通知透传给父模型）。 */
+  missingTools?: string[];
 }
 
 function statusLabel(status: SubagentCompletionStatus): string {
@@ -117,6 +119,9 @@ export function buildSubagentCompletionRecord(input: BuildSubagentCompletionReco
       duration_ms: durationMs,
     },
     failure_code: input.failureCode,
+    ...(input.missingTools && input.missingTools.length > 0
+      ? { missing_tools: input.missingTools }
+      : {}),
     archive: archiveRef
       ? {
           artifact_id: archiveRef.artifactId,

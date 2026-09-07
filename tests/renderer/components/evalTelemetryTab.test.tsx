@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 // 显式标注签名：vi.fn(async () => undefined) 会把类型推成零参，
 // 后面 mockImplementation((channel) => ...) 就装不进去（tests tsconfig 棘轮会红）。
@@ -109,5 +109,79 @@ describe('EvalTelemetryTab', () => {
 
     fireEvent.click(screen.getByText('返回列表'));
     expect(await screen.findByText('遥测会话甲')).toBeTruthy();
+  });
+
+  it('跑完评分后立刻刷新回流候选，入口出现无需重进页面', async () => {
+    const redCandidate = {
+      sessionId: 'sess-red-1',
+      turnId: '6f1a2b3c-4d5e-4f60-8a9b-0c1d2e3f4a5b',
+      judgeVersion: 'postlaunch-judge-v1',
+      redDimensions: ['goal'] as Array<'goal'>,
+      signals: [],
+      failureClass: null,
+      sources: ['judge'] as Array<'judge'>,
+      occurredAt: 2000,
+    };
+    invokeMock.mockImplementation(async (channel: string) => {
+      switch (channel) {
+        case 'telemetry:list-sessions': return [listItem];
+        case 'telemetry:get-session': return sessionDetail;
+        case 'telemetry:get-postlaunch-report': return postLaunchReport;
+        case 'telemetry:run-postlaunch-scoring': return { scoredTurns: 1 };
+        case 'telemetry:get-postlaunch-reflow-candidates':
+          return invokeMock.mock.calls.some(([invoked]) => invoked === 'telemetry:run-postlaunch-scoring')
+            ? [redCandidate]
+            : [];
+        default: return [];
+      }
+    });
+
+    render(<EvalTelemetryTab />);
+    expect(await screen.findByTestId('postlaunch-card')).toBeTruthy();
+    expect(screen.queryByTestId('postlaunch-reflow-entry')).toBeNull();
+    expect(useTelemetryStore.getState().reflowCandidates).toEqual([]);
+
+    fireEvent.click(screen.getByTestId('postlaunch-run'));
+
+    expect(await screen.findByTestId('postlaunch-reflow-entry')).toBeTruthy();
+    expect(useTelemetryStore.getState().reflowCandidates).toEqual([redCandidate]);
+  });
+
+  it('评分失败收尾也会重载回流候选，入口无需重进页面', async () => {
+    const existingDown = {
+      sessionId: 'sess-down-1',
+      turnId: '550e8400-e29b-41d4-a716-446655440000',
+      judgeVersion: null,
+      redDimensions: [] as Array<'goal'>,
+      signals: [],
+      failureClass: null,
+      sources: ['feedback'] as Array<'feedback'>,
+      occurredAt: 3000,
+    };
+    invokeMock.mockImplementation(async (channel: string) => {
+      switch (channel) {
+        case 'telemetry:list-sessions': return [listItem];
+        case 'telemetry:get-session': return sessionDetail;
+        case 'telemetry:get-postlaunch-report': return postLaunchReport;
+        case 'telemetry:run-postlaunch-scoring': throw new Error('评分失败');
+        case 'telemetry:get-postlaunch-reflow-candidates':
+          return invokeMock.mock.calls.some(([invoked]) => invoked === 'telemetry:run-postlaunch-scoring')
+            ? [existingDown]
+            : [];
+        default: return [];
+      }
+    });
+
+    render(<EvalTelemetryTab />);
+    expect(await screen.findByTestId('postlaunch-card')).toBeTruthy();
+    expect(screen.queryByTestId('postlaunch-reflow-entry')).toBeNull();
+
+    fireEvent.click(screen.getByTestId('postlaunch-run'));
+
+    await waitFor(() => {
+      expect(useTelemetryStore.getState().postLaunchError).toContain('评分失败');
+    });
+    expect(await screen.findByTestId('postlaunch-reflow-entry')).toBeTruthy();
+    expect(useTelemetryStore.getState().reflowCandidates).toEqual([existingDown]);
   });
 });

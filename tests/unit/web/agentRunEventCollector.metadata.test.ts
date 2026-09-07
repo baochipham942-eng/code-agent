@@ -38,6 +38,30 @@ const turnQualityMetadata = {
 } as Message['metadata'];
 
 describe('AgentRunEventCollector assistantMetadata', () => {
+  it('turn_start 记下 lastTurnId，供 commitTurn 兜底落库带上 correlation', () => {
+    const collector = makeCollector();
+    collector.observe({
+      type: 'turn_start',
+      data: { turnId: 'turn-from-start' },
+    } as AgentEvent, true);
+    expect(collector.lastTurnId).toBe('turn-from-start');
+  });
+
+  it('assistant message 上的 correlation.turnId 覆盖 lastTurnId', () => {
+    const collector = makeCollector();
+    collector.observe({
+      type: 'turn_start',
+      data: { turnId: 'turn-from-start' },
+    } as AgentEvent, true);
+    collector.observe(assistantMessageEvent({
+      correlation: { turnId: 'turn-from-message' },
+    }, 'm-corr'), true);
+    expect(collector.lastTurnId).toBe('turn-from-message');
+    expect(collector.assistantMetadata).toMatchObject({
+      correlation: { turnId: 'turn-from-message' },
+    });
+  });
+
   it('采集 assistant message 事件携带的 metadata', () => {
     const collector = makeCollector();
     collector.observe(assistantMessageEvent(turnQualityMetadata), true);

@@ -16,6 +16,8 @@ import type { ModelMessage as ProviderModelMessage } from '../model/types';
 import type { ModelRouter } from '../model/modelRouter';
 import { normalizeImageData } from '../utils/imageUtils';
 import type { SubagentContextAnnotation } from '../context/subagentContextStore';
+import { buildSubagentSkillsBlock } from '../services/skills/subagentSkillInjection';
+import { buildRoleContextBlock } from '../services/roleAssets';
 
 export interface SubagentAttachmentInput {
   type: string;
@@ -57,6 +59,47 @@ type ProjectionLogger = {
   info: (message: string, meta?: unknown) => void;
   warn: (message: string, meta?: unknown) => void;
 };
+
+export interface EffectiveSystemPromptInput {
+  agentName: string;
+  systemPrompt: string;
+  /** GAP-011：spawn 时全文预注入的 skill 名单。 */
+  skills?: string[];
+  /** 持久化角色资产绑定 key（roles/<roleId>/）；未设置时跳过角色资产链路。 */
+  roleId?: string;
+  cwd: string;
+}
+
+/**
+ * 子代理有效 system prompt 装配（原 executeInternal 前奏抽出的纯投影）：
+ * skills 全文预注入 + 持久化角色资产注入。只注入知识，不改变 availableTools
+ * 权限边界（与 GAP-001 fork 限权正交）；角色资产失败不阻塞 spawn。
+ */
+export async function buildEffectiveSubagentSystemPrompt(
+  input: EffectiveSystemPromptInput,
+  logger: ProjectionLogger,
+): Promise<string> {
+  let effectiveSystemPrompt = input.systemPrompt;
+  if (input.skills && input.skills.length > 0) {
+    const { block, loaded, missing } = await buildSubagentSkillsBlock(input.skills);
+    if (block) {
+      effectiveSystemPrompt = `${input.systemPrompt}\n\n${block}`;
+    }
+    logger.info(`[${input.agentName}] skills preloaded into system prompt`, { loaded, missing });
+  }
+  if (input.roleId) {
+    try {
+      const roleBlock = await buildRoleContextBlock(input.roleId, input.cwd);
+      if (roleBlock) {
+        effectiveSystemPrompt = `${effectiveSystemPrompt}\n\n${roleBlock}`;
+        logger.info(`[${input.agentName}] role assets injected`, { roleId: input.roleId });
+      }
+    } catch (err) {
+      logger.warn(`[${input.agentName}] role assets injection failed (non-blocking)`, err);
+    }
+  }
+  return effectiveSystemPrompt;
+}
 
 export function flattenMessageContent(content: string | MessageContent[] | null | undefined): string {
   if (typeof content === 'string') return content;

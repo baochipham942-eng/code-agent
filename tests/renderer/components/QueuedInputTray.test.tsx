@@ -186,4 +186,16 @@ describe('QueuedInputTray', () => {
     await waitFor(() => expect(screen.queryByTestId('queued-input-tray')).toBeNull());
     expect(ipc.invokeDomain.mock.calls.filter((call) => call[1] === 'list')).toHaveLength(2);
   });
+
+  it('出队 sending 通知立刻清掉排队计数，不必等 consumed', async () => {
+    items = [input('one', { envelope: { content: '酒店什么时候订合适？' } })];
+    render(<QueuedInputTray sessionId="session-1" revision={0} editingId={null} onEdit={vi.fn()} />);
+    expect(await screen.findByText('排队中 · 1')).toBeTruthy();
+
+    items = [input('one', { status: 'sending', envelope: { content: '酒店什么时候订合适？' } })];
+    await act(async () => {
+      ipc.settledHandler?.({ sessionId: 'session-1', id: 'one', status: 'sending' });
+    });
+    await waitFor(() => expect(screen.queryByTestId('queued-input-tray')).toBeNull());
+  });
 });

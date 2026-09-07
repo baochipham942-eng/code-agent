@@ -35,6 +35,7 @@ import {
 import { getAutoCompressor } from '../context/autoCompressor';
 import { CompressionState } from '../context/compressionState';
 import { CompressionPipeline } from '../context/compressionPipeline';
+import { stampAssistantMessageCorrelation } from '../session/assistantCorrelation';
 
 const logger = createLogger('AgentLoop');
 
@@ -99,6 +100,7 @@ export class AgentLoop {
       sessionId: resolvedSessionId,
       onEvent: config.onEvent,
     });
+    const persistMessage = config.persistMessage;
     const persistedRuntimeState = loadPersistedRuntimeState(resolvedSessionId);
     let compressionState = new CompressionState();
     if (persistedRuntimeState?.compressionStateJson) {
@@ -139,7 +141,12 @@ export class AgentLoop {
       includeRecentConversations: config.includeRecentConversations ?? AGENT_RUNTIME_DEFAULTS.includeRecentConversations,
       maxSystemPromptTokens: config.maxSystemPromptTokens,
       skillDiscoveryService: config.skillDiscoveryService,
-      persistMessage: config.persistMessage,
+      persistMessage: persistMessage
+        ? async (message) => {
+            stampAssistantMessageCorrelation(message, { turnId: this.ctx.turn.currentTurnId });
+            await persistMessage(message);
+          }
+        : undefined,
       turnSnapshotSink: config.turnSnapshotSink,
       scopedCostRecorder: config.scopedCostRecorder,
       // 工具步骤录制接在这里，而不是接在 AgentOrchestrator 上：真机 renderer 的

@@ -1,0 +1,265 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "participants": [
+    {
+      "id": "u",
+      "type": "external",
+      "label": "用户"
+    },
+    {
+      "id": "p",
+      "type": "frontend",
+      "label": "页面/组件"
+    },
+    {
+      "id": "s",
+      "type": "frontend",
+      "label": "store"
+    },
+    {
+      "id": "i",
+      "type": "messagebus",
+      "label": "IPC / HTTP"
+    },
+    {
+      "id": "h",
+      "type": "backend",
+      "label": "host"
+    },
+    {
+      "id": "e",
+      "type": "database",
+      "label": "引擎或数据库"
+    }
+  ],
+  "meta": {
+    "title": "运行时时序 ② · 工具调用遇到审批点（含拒绝出口）",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "column_fit": "spread",
+    "viewBox": [
+      1340,
+      630
+    ],
+    "views": [
+      {
+        "id": "held",
+        "label": "请求被扣住",
+        "focus": [
+          "h",
+          "e",
+          "i"
+        ],
+        "note": "判为 ask 之后 handler 一步都不走，待决请求留在 host 手里。"
+      },
+      {
+        "id": "card",
+        "label": "卡片只显示与回传",
+        "focus": [
+          "s",
+          "p",
+          "u"
+        ],
+        "note": "卡片不做裁决，它显示操作目标并把用户的选择原样送回。"
+      },
+      {
+        "id": "exits",
+        "label": "两个出口",
+        "focus": [
+          "h",
+          "e",
+          "i"
+        ],
+        "note": "允许后执行 handler；拒绝则记录来源并把原因交回模型。"
+      }
+    ]
+  },
+  "segments": [
+    {
+      "from": 150,
+      "to": 262,
+      "label": "发起需要工具的任务"
+    },
+    {
+      "from": 274,
+      "to": 352,
+      "label": "判为 ask：请求被扣住"
+    },
+    {
+      "from": 364,
+      "to": 442,
+      "label": "卡片显示与用户回传"
+    },
+    {
+      "from": 454,
+      "to": 562,
+      "label": "两个出口与回执"
+    }
+  ],
+  "messages": [
+    {
+      "id": "task",
+      "from": "u",
+      "to": "p",
+      "label": "发起需要工具的任务",
+      "variant": "emphasis",
+      "y": 185
+    },
+    {
+      "id": "send",
+      "from": "p",
+      "to": "i",
+      "label": "发送任务",
+      "note": "页面先保存任务输入与会话身份，再投递",
+      "y": 215
+    },
+    {
+      "id": "exec",
+      "from": "i",
+      "to": "h",
+      "label": "执行请求",
+      "y": 245
+    },
+    {
+      "id": "infer",
+      "from": "h",
+      "to": "e",
+      "label": "模型推理",
+      "y": 275
+    },
+    {
+      "id": "toolcall",
+      "from": "e",
+      "to": "h",
+      "label": "返回工具名与参数",
+      "variant": "return",
+      "y": 305
+    },
+    {
+      "id": "ask",
+      "from": "h",
+      "to": "i",
+      "label": "判为 ask：发 permission_request",
+      "variant": "security",
+      "note": "ToolExecutor 判为 ask 后 handler 一步都不走；待决请求留在 host 手里，模型不能自己判定「用户已同意」",
+      "y": 335
+    },
+    {
+      "id": "card",
+      "from": "s",
+      "to": "p",
+      "label": "渲染 DecisionSlot / PermissionCard",
+      "variant": "return",
+      "note": "事件先经 IPC 按 session 入审批队列，再由 store 投影成卡片；卡片只显示操作目标与授权选项",
+      "y": 365
+    },
+    {
+      "id": "decide",
+      "from": "u",
+      "to": "p",
+      "label": "允许或拒绝",
+      "variant": "emphasis",
+      "y": 395
+    },
+    {
+      "id": "respond",
+      "from": "p",
+      "to": "i",
+      "label": "AGENT_PERMISSION_RESPONSE 带 requestId 与 sessionId",
+      "y": 425
+    },
+    {
+      "id": "island",
+      "from": "i",
+      "to": "h",
+      "label": "投递到持有它的 permission island",
+      "variant": "security",
+      "y": 455,
+      "note": "回传按 requestId 与 sessionId 找到实际持有该请求的岛"
+    },
+    {
+      "id": "allow",
+      "from": "h",
+      "to": "e",
+      "label": "允许出口：记录审批并执行 handler",
+      "y": 485,
+      "note": "只有请求仍有效才执行；已失效的批准不可复用"
+    },
+    {
+      "id": "deny",
+      "from": "h",
+      "to": "i",
+      "label": "拒绝出口：工具不执行，原因交回模型",
+      "variant": "security",
+      "note": "记录拒绝来源：没有审批界面、请求过期、运行取消都是机器拒绝，必须区别于真人拒绝",
+      "y": 515
+    },
+    {
+      "id": "render",
+      "from": "s",
+      "to": "p",
+      "label": "工具步骤显示成功、失败或拒绝",
+      "variant": "return",
+      "y": 545
+    }
+  ],
+  "activations": [
+    {
+      "participant": "p",
+      "from": 180,
+      "to": 550,
+      "type": "frontend"
+    },
+    {
+      "participant": "s",
+      "from": 360,
+      "to": 549,
+      "type": "frontend"
+    },
+    {
+      "participant": "i",
+      "from": 210,
+      "to": 549,
+      "type": "messagebus"
+    },
+    {
+      "participant": "h",
+      "from": 240,
+      "to": 519,
+      "type": "backend"
+    },
+    {
+      "participant": "e",
+      "from": 270,
+      "to": 310,
+      "type": "database"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "事实链",
+      "items": [
+        "toolExecutor · orchestratorPermissions · webPermissionResponseHandler",
+        "usePermissionQueueEffects · appStore · PermissionCard"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "拒绝有两种",
+      "items": [
+        "真人拒绝：用户在卡片上按了拒绝",
+        "机器拒绝：无审批界面 / 请求过期 / 运行已取消"
+      ]
+    },
+    {
+      "dot": "orange",
+      "title": "取消后不复用批准",
+      "items": [
+        "重试沿图 ① 重新申请一次审批",
+        "requestId 变了就是另一次决策"
+      ]
+    }
+  ]
+}

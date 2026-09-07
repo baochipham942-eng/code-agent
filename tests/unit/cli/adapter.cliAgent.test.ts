@@ -294,6 +294,19 @@ describe('CLIAgent', () => {
     expect(getActiveRunTraceContext()).toBeUndefined();
   });
 
+  it('CLI run 显式声明 originKind=headless（上线后评测据此剔分母）', async () => {
+    installLoop(async (ctl) => {
+      ctl.onEvent({ type: 'agent_complete' } as AgentEvent);
+    });
+
+    const agent = new CLIAgent();
+    await agent.run('headless turn');
+
+    // createAgentLoop 是 CLI 与界面 /api/run 的公共路径，来源只能由入口声明。
+    const config = mocks.createAgentLoop.mock.calls[0][0] as { originKind?: string };
+    expect(config.originKind).toBe('headless');
+  });
+
   it('restores the persisted expertThread role before creating the CLI AgentLoop', async () => {
     const override = {
       id: '牧之',

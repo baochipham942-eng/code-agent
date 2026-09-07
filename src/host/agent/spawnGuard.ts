@@ -873,6 +873,7 @@ class SpawnGuard {
       startedAt: agent.createdAt,
       finishedAt: agent.completedAt,
       failureCode: agent.result?.failureCode,
+      missingTools: agent.result?.missingTools,
       toolsUsed: agent.result?.toolsUsed,
       iterations: agent.result?.iterations,
       cost: agent.result?.cost,

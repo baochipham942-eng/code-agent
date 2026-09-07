@@ -276,6 +276,52 @@ describe('WebSessionStore', () => {
     );
   });
 
+  it('commitTurn 兜底 assistant 落库带上 collector 的 lastTurnId', async () => {
+    setDbAvailable(true);
+    const db = createDatabaseStub();
+    db.getSession.mockReturnValue({ id: 'session-corr', title: 'Existing' });
+    const tryGetSessionManager = vi.fn(async () => null);
+    const getDatabase = vi.fn(async () => db as unknown as DatabaseService);
+    const store = createWebSessionStore({ tryGetSessionManager, logger, getDatabase });
+
+    await store.commitTurn({
+      sessionId: 'session-corr',
+      title: 'correlation',
+      modelConfig: { provider: 'xiaomi', model: 'mimo-v2.5-pro' },
+      historyLength: 1,
+      userMessagePrePersistedDb: true,
+      userMessage: {
+        id: 'user-corr',
+        role: 'user',
+        content: 'hi',
+        timestamp: 20,
+      },
+      turn: {
+        assistantText: '带键回答',
+        assistantThinking: '',
+        assistantMetadata: { source: 'typed' },
+        assistantToolCalls: [],
+        lastLoopAssistantMessageId: undefined,
+        lastTurnId: 'turn-from-collector',
+        contentParts: [{ type: 'text', text: '带键回答' }],
+        runCancelled: false,
+        hasAssistantOutput: () => true,
+        hasInterleaving: () => false,
+      },
+    });
+
+    expect(db.addMessage).toHaveBeenCalledWith(
+      'session-corr',
+      expect.objectContaining({
+        role: 'assistant',
+        content: '带键回答',
+        metadata: expect.objectContaining({
+          correlation: { turnId: 'turn-from-collector' },
+        }),
+      }),
+    );
+  });
+
   it('captures the persisted final assistant as a Fork anchor without blocking the completed turn', async () => {
     setDbAvailable(true);
     const db = createDatabaseStub();

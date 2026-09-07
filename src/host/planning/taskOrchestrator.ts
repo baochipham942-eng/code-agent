@@ -6,6 +6,7 @@
 
 import { createLogger } from '../services/infra/logger';
 import { DEFAULT_MODELS, GROQ_DEFAULT_MODEL, MODEL_API_ENDPOINTS } from '../../shared/constants';
+import { parseChatCompletionHttpBody } from '../model/parseSseChatCompletion';
 
 const logger = createLogger('TaskOrchestrator');
 
@@ -438,8 +439,14 @@ export class TaskOrchestrator {
       throw new Error(`${provider} API error: ${response.status} - ${error}`);
     }
 
-    const data: unknown = await response.json();
-    return parseChatCompletionContent(data);
+    const parsed = await parseChatCompletionHttpBody(response);
+    if (parsed.kind === 'invalid') {
+      throw new Error(`${provider} API error: ${parsed.error}`);
+    }
+    if (parsed.kind === 'empty') {
+      throw new Error(`${provider} API error: empty response`);
+    }
+    return parseChatCompletionContent(parsed.payload);
   }
 
   /**

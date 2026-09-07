@@ -184,6 +184,22 @@ describe('createServeRequestHandler', () => {
     expect(secondTaskId).not.toBe(firstTaskId);
   });
 
+  it('serve 的 HTTP run 声明 originKind=headless（上线后评测据此剔分母）', async () => {
+    mocks.createCLIAgent.mockResolvedValue({
+      getConfig: () => ({ model: 'serve-config' }),
+    });
+    mocks.createAgentLoop.mockReturnValue({
+      run: vi.fn(async () => undefined),
+      cancel: vi.fn(async () => undefined),
+    });
+    await startServeApi();
+
+    await (await postRun({ prompt: 'headless task' })).text();
+
+    const config = mocks.createAgentLoop.mock.calls[0][0] as { originKind?: string };
+    expect(config.originKind).toBe('headless');
+  });
+
   it('applies the requested AgentEvent filter while keeping task protocol events', async () => {
     mocks.createCLIAgent.mockResolvedValue({
       getConfig: () => ({ model: 'filtered-config' }),

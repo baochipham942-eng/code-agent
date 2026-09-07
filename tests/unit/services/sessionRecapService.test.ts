@@ -9,19 +9,35 @@
 // 断开，第一条与第三条必红。
 // ============================================================================
 
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CompletionSummaryRecord, SessionTask } from '../../../src/shared/contract';
 import {
   buildSessionRecap,
   collectRecapMaterial,
   formatRecapFallback,
+  type SessionRecapMaterial,
 } from '../../../src/host/session/sessionRecapService';
 
-// 小模型不可用是常态（未配 key / 离线），降级必须静默且仍给得出东西
-vi.mock('../../../src/host/model/quickModel', () => ({
-  isQuickModelAvailable: () => false,
-  quickTask: async () => { throw new Error('should not be called when unavailable'); },
+const quickModel = vi.hoisted(() => ({
+  isQuickModelAvailable: vi.fn(() => false),
+  quickTask: vi.fn(async (): Promise<{ success: boolean; content?: string }> => {
+    throw new Error('should not be called when unavailable');
+  }),
 }));
+
+vi.mock('../../../src/host/model/quickModel', () => ({
+  isQuickModelAvailable: quickModel.isQuickModelAvailable,
+  quickTask: quickModel.quickTask,
+}));
+
+beforeEach(() => {
+  quickModel.isQuickModelAvailable.mockReset();
+  quickModel.quickTask.mockReset();
+  quickModel.isQuickModelAvailable.mockReturnValue(false);
+  quickModel.quickTask.mockImplementation(async (): Promise<{ success: boolean; content?: string }> => {
+    throw new Error('should not be called when unavailable');
+  });
+});
 
 function record(overrides: Partial<CompletionSummaryRecord> = {}): CompletionSummaryRecord {
   return {
@@ -107,8 +123,108 @@ describe('sessionRecapService 素材收集', () => {
   it('小模型不可用时静默降级成规则拼接，仍标 degraded', async () => {
     const material = collectRecapMaterial([record()], [task()], 500);
     const recap = await buildSessionRecap(material!);
-    expect(recap.degraded).toBe(true);
-    expect(recap.completedCount).toBe(1);
-    expect(recap.text).toContain('销售图表');
+    expect(recap).not.toBeNull();
+    expect(recap!.degraded).toBe(true);
+    expect(recap!.completedCount).toBe(1);
+    expect(recap!.text).toContain('销售图表');
+  });
+
+  it('收口轮次在但产物名和任务结果都空时不追赶', () => {
+    expect(collectRecapMaterial(
+      [record({ changedFiles: [], artifactRefs: [] })],
+      [],
+      500,
+    )).toBeNull();
+  });
+
+  it('规则拼接没有实质句子时返回 null，不拿轮次数字充数', () => {
+    const hollow: SessionRecapMaterial = {
+      records: [record({ changedFiles: [], artifactRefs: [] })],
+      artifactLabels: [],
+      completedTasks: [],
+      blockedTasks: [],
+    };
+    expect(formatRecapFallback(hollow)).toBeNull();
+  });
+});
+
+describe('sessionRecapService 模型输出过滤', () => {
+  it('假模型回反问时 recap 为 null（不像总结不上屏）', async () => {
+    quickModel.isQuickModelAvailable.mockReturnValue(true);
+    quickModel.quickTask.mockImplementation(async () => ({
+      success: true,
+      content: '您好，消息里似乎没有附上需要总结的产出变化内容，请补充。',
+    }));
+    const material = collectRecapMaterial([record()], [task()], 500);
+    expect(await buildSessionRecap(material!)).toBeNull();
+  });
+
+  it('假模型请求补充时 recap 为 null', async () => {
+    quickModel.isQuickModelAvailable.mockReturnValue(true);
+    quickModel.quickTask.mockImplementation(async () => ({
+      success: true,
+      content: '请提供需要总结的产出变化内容。',
+    }));
+    const material = collectRecapMaterial([record()], [task()], 500);
+    expect(await buildSessionRecap(material!)).toBeNull();
+  });
+
+  it('假模型回空串时 recap 为 null', async () => {
+    quickModel.isQuickModelAvailable.mockReturnValue(true);
+    quickModel.quickTask.mockImplementation(async () => ({ success: true, content: '  ' }));
+    const material = collectRecapMaterial([record()], [task()], 500);
+    expect(await buildSessionRecap(material!)).toBeNull();
+  });
+
+  it('产物名带问号时规则拼接仍可用，并且仍会调用小模型', async () => {
+    const material: SessionRecapMaterial = {
+      records: [record({ changedFiles: [], artifactRefs: [{ kind: 'artifact', messageId: 'm1', artifactId: 'a1', title: '为什么要做预算？.docx' }] })],
+      artifactLabels: ['为什么要做预算？.docx'],
+      completedTasks: [],
+      blockedTasks: [task({ id: 'task-2', status: 'blocked', subject: '核对预算表', blockedReason: '缺一列数字' })],
+    };
+    expect(formatRecapFallback(material)).toContain('为什么要做预算？.docx');
+    expect(formatRecapFallback(material)).toContain('1 项任务受阻');
+    quickModel.isQuickModelAvailable.mockReturnValue(true);
+    quickModel.quickTask.mockImplementation(async () => ({
+      success: true,
+      content: '更新了预算文档，一项任务受阻',
+    }));
+    const recap = await buildSessionRecap(material);
+    expect(quickModel.quickTask).toHaveBeenCalled();
+    expect(recap).not.toBeNull();
+    expect(recap!.degraded).toBe(false);
+    expect(recap!.text).toContain('预算');
+  });
+
+  it('假模型原样引用带问号的产物名并点出受阻时仍上屏', async () => {
+    const material: SessionRecapMaterial = {
+      records: [record()],
+      artifactLabels: ['为什么要做预算？.docx'],
+      completedTasks: [],
+      blockedTasks: [task({ id: 'task-2', status: 'blocked', subject: '核对预算表', blockedReason: '缺一列数字' })],
+    };
+    quickModel.isQuickModelAvailable.mockReturnValue(true);
+    quickModel.quickTask.mockImplementation(async () => ({
+      success: true,
+      content: '更新了为什么要做预算？.docx，预算核对受阻。',
+    }));
+    const recap = await buildSessionRecap(material);
+    expect(recap).not.toBeNull();
+    expect(recap!.text).toContain('为什么要做预算？.docx');
+    expect(recap!.text).toContain('受阻');
+  });
+
+  it('假模型回正常一句总结时有 text', async () => {
+    quickModel.isQuickModelAvailable.mockReturnValue(true);
+    quickModel.quickTask.mockImplementation(async () => ({
+      success: true,
+      content: '更新了销售图表，并完成扩写第三节',
+    }));
+    const material = collectRecapMaterial([record()], [task()], 500);
+    const recap = await buildSessionRecap(material!);
+    expect(recap).not.toBeNull();
+    expect(recap!.degraded).toBe(false);
+    expect(recap!.text).toContain('销售图表');
   });
 });

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  couldMcpServerToolsSurviveRunPolicy,
   isToolDeniedByRunPolicy,
   narrowToolNamesByRunPolicy,
   type RunToolPolicy,
@@ -60,5 +61,21 @@ describe('runToolPolicy (pure)', () => {
 
   it('narrowToolNamesByRunPolicy 无策略时原样返回', () => {
     expect(narrowToolNamesByRunPolicy(['Bash', 'Read'], {})).toEqual(['Bash', 'Read']);
+  });
+
+  it('couldMcpServerToolsSurviveRunPolicy：白名单不含该 server ⇒ 跳过；含精确名/glob/toolScope/无白名单 ⇒ 连', () => {
+    expect(couldMcpServerToolsSurviveRunPolicy('slow', { allowedToolNames: ['Read'] })).toBe(false);
+    expect(couldMcpServerToolsSurviveRunPolicy('slow', {
+      allowedToolNames: ['Read', 'mcp__slow__work'],
+    })).toBe(true);
+    expect(couldMcpServerToolsSurviveRunPolicy('slow', {
+      allowedToolNames: ['Read', 'mcp__slow__*'],
+    })).toBe(true);
+    expect(couldMcpServerToolsSurviveRunPolicy('slow', {
+      allowedToolNames: ['Read'],
+      toolScope: { allowedMcpServerIds: ['slow'] },
+    })).toBe(true);
+    expect(couldMcpServerToolsSurviveRunPolicy('slow', {})).toBe(true);
+    expect(couldMcpServerToolsSurviveRunPolicy('slow', { deniedToolNames: ['mcp__slow__*'] })).toBe(true);
   });
 });

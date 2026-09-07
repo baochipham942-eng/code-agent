@@ -211,9 +211,11 @@ describe('browser/computer action preview rendering', () => {
     );
 
     // 工具行默认折叠：错误回合不再自动展开详情。脱敏仍成立——折叠态只显示已脱敏的
-    // 动作摘要（"输入 18 chars"）+ 红边框 + hover 摘要，原始输入文本绝不出现。
+    // 动作摘要（"输入 18 chars"）+ 失败状态词，原始输入文本绝不出现。
+    // N-TOOLFAIL-ONELINE：有可读失败态时不再叠 fallbackSummary「执行时出了问题」。
     expect(html).toContain('输入 18 chars');
-    expect(html).toContain('执行时出了问题');
+    expect(html).toContain('工具未返回可读的失败原因');
+    expect(html).not.toContain('执行时出了问题');
     expect(html).not.toContain('trace-browser-type-error');
     expect(html).not.toContain('secret@example.com');
   });
@@ -260,7 +262,7 @@ describe('browser/computer action preview rendering', () => {
     );
 
     expect(html).toContain('已中断');
-    expect(html).toContain('未执行');
+    expect(html).not.toContain('未执行');
     expect(html).not.toContain('会改文件');
     expect(html).not.toContain('builtin');
     expect(html).not.toContain('running');
@@ -604,6 +606,29 @@ describe('browser/computer action preview rendering', () => {
     expect(expandedHtml).toContain('/Users/linchen/.claude/projects/-Users-linchen/memory/openclaw.md');
   });
 
+  // ai-review #1693 第三轮②：「空结果摘要交给状态行」只对 Grep/Glob 成立——别的工具
+  // 状态行不产出「无匹配」，删掉摘要后折叠行只剩动作名，用户看不出找没找到。
+  it('非 Grep/Glob 的工具返回 No matches found 时摘要必须保留', () => {
+    const html = renderToStaticMarkup(
+      React.createElement(ToolCallDisplay, {
+        toolCall: makeToolCall({
+          id: 'tool-mcp-search',
+          name: 'mcp__github__search_code',
+          arguments: { q: 'openclaw' },
+          result: {
+            toolCallId: 'tool-mcp-search',
+            success: true,
+            output: 'No matches found',
+            metadata: { totalMatches: 0 },
+          },
+        }),
+        index: 0,
+        total: 1,
+      }),
+    );
+    expect(html).toContain('No matches found');
+  });
+
   it('labels empty grep and glob results as no matches in collapsed details', () => {
     const grepHtml = renderToStaticMarkup(
       React.createElement(ToolCallDisplay, {
@@ -638,9 +663,11 @@ describe('browser/computer action preview rendering', () => {
       }),
     );
 
-    expect(grepHtml).toContain('No matches');
+    expect(grepHtml).toContain('无匹配');
+    expect(grepHtml).not.toContain('No matches');
     expect(grepHtml).not.toContain('Found 1 result');
-    expect(globHtml).toContain('No matches');
+    expect(globHtml).toContain('无匹配');
+    expect(globHtml).not.toContain('No matches');
     expect(globHtml).not.toContain('Found 1 file');
   });
 });

@@ -78,3 +78,27 @@ export function narrowToolNamesByRunPolicy(
   if (!allowedToolSet(policy) && !deniedToolSet(policy)) return [...toolNames];
   return toolNames.filter((name) => !isToolDeniedByRunPolicy(policy, name));
 }
+
+/**
+ * 装配期 server 粒度预判：`mcp__<server>__*` 展开前还没有具体工具名，
+ * 只在「展开后的工具确定会被本轮策略全部丢掉」时才跳过连接。
+ *
+ * 确定跳过：非空白名单里没有任何该 server 的 glob / 精确名，且 toolScope
+ * 也没点名这个 server。拿不准（无白名单、只有 denylist、toolScope 豁免）保守连。
+ */
+export function couldMcpServerToolsSurviveRunPolicy(
+  serverName: string,
+  policy: RunToolPolicy,
+): boolean {
+  const globName = `mcp__${serverName}__*`;
+  if (!isToolDeniedByRunPolicy(policy, globName)) return true;
+
+  const allowed = allowedToolSet(policy);
+  if (!allowed) return true;
+
+  const prefix = `mcp__${serverName.trim().toLowerCase()}__`;
+  for (const name of allowed) {
+    if (name.startsWith(prefix) && name !== `${prefix}*`) return true;
+  }
+  return false;
+}

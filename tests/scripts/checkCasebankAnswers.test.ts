@@ -146,7 +146,7 @@ describe('check-casebank-answers gate', () => {
     const result = runGate(target);
 
     expect(result.status).toBe(1);
-    expect(result.stderr).toContain('缺少公开题答案 case-021');
+    expect(result.stderr).toContain('公开多 1 条题 id（私档缺这些答案）：case-021');
   });
 
   it('私档多一个孤儿 id 时本地模式变红', async () => {
@@ -157,7 +157,48 @@ describe('check-casebank-answers gate', () => {
     const result = runGate(target);
 
     expect(result.status).toBe(1);
-    expect(result.stderr).toContain('私档孤儿 id orphan-case');
+    expect(result.stderr).toContain('私档多 1 条答案 id（公开题库没有这些题）：orphan-case');
+  });
+
+  it('公开多一题：报错指出公开侧缺答案，并给「先合 main 再判」的配对提示', async () => {
+    const target = await fixture();
+    target.publicSuite.cases.push({ id: 'public-extra', type: 'task', prompt: 'public-extra' });
+    await fs.writeFile(target.publicPath, JSON.stringify(target.publicSuite));
+
+    const result = runGate(target);
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('公开多 1 条题 id（私档缺这些答案）：public-extra');
+    expect(result.stderr).toContain('若你没动过 eval/：先 git fetch && git merge origin/main 再判；仍红则私档与 main 不配对，找最近合入 eval 题的 PR');
+  });
+
+  it('私档多一题：报错指出私档侧多答案，并给同一句配对提示', async () => {
+    const target = await fixture();
+    target.answerFile.cases.push({ id: 'private-extra', expect: { no_crash: true } });
+    await fs.writeFile(target.answerPath, JSON.stringify(target.answerFile));
+
+    const result = runGate(target);
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('私档多 1 条答案 id（公开题库没有这些题）：private-extra');
+    expect(result.stderr).toContain('若你没动过 eval/：先 git fetch && git merge origin/main 再判；仍红则私档与 main 不配对，找最近合入 eval 题的 PR');
+  });
+
+  it('id 列表超过折叠阈值时只列前 10 条并给总数，不整列刷屏', async () => {
+    const target = await fixture();
+    for (let index = 1; index <= 15; index += 1) {
+      target.answerFile.cases.push({ id: `orphan-${String(index).padStart(2, '0')}`, expect: { no_crash: true } });
+    }
+    await fs.writeFile(target.answerPath, JSON.stringify(target.answerFile));
+
+    const result = runGate(target);
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('私档多 15 条答案 id（公开题库没有这些题）');
+    expect(result.stderr).toContain('orphan-10');
+    expect(result.stderr).toContain('…等共 15 条（已折叠）');
+    expect(result.stderr).not.toContain('orphan-11,');
+    expect(result.stderr).not.toContain('orphan-12');
   });
 
   it('splits 漏一个 id 时本地模式变红', async () => {

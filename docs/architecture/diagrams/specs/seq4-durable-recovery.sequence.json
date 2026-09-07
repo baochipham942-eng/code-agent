@@ -1,0 +1,260 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "participants": [
+    {
+      "id": "u",
+      "type": "external",
+      "label": "用户"
+    },
+    {
+      "id": "p",
+      "type": "frontend",
+      "label": "页面/组件"
+    },
+    {
+      "id": "s",
+      "type": "frontend",
+      "label": "store"
+    },
+    {
+      "id": "i",
+      "type": "messagebus",
+      "label": "IPC / HTTP"
+    },
+    {
+      "id": "h",
+      "type": "backend",
+      "label": "host"
+    },
+    {
+      "id": "e",
+      "type": "database",
+      "label": "引擎或数据库"
+    }
+  ],
+  "meta": {
+    "title": "运行时时序 ④ · durable run 崩溃后恢复",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "column_fit": "spread",
+    "viewBox": [
+      1340,
+      630
+    ],
+    "views": [
+      {
+        "id": "claim",
+        "label": "先认领所有权",
+        "focus": [
+          "h",
+          "e"
+        ],
+        "note": "重启先认领新的 owner epoch，旧进程的迟到写入会被拒绝。"
+      },
+      {
+        "id": "branches",
+        "label": "三条恢复分支",
+        "focus": [
+          "h",
+          "e"
+        ],
+        "note": "已落盘终态禁止重跑，可证明的请求才续跑，结果未知的一律不重放。"
+      },
+      {
+        "id": "readback",
+        "label": "会话读链",
+        "focus": [
+          "p",
+          "s",
+          "i",
+          "h",
+          "e"
+        ],
+        "note": "页面看到的历史来自 durable 优先读取，不是内存里的残留状态。"
+      }
+    ]
+  },
+  "segments": [
+    {
+      "from": 150,
+      "to": 322,
+      "label": "重启与认领所有权"
+    },
+    {
+      "from": 334,
+      "to": 442,
+      "label": "读检查点后分三条走"
+    },
+    {
+      "from": 454,
+      "to": 562,
+      "label": "会话读链回填并呈现"
+    }
+  ],
+  "messages": [
+    {
+      "id": "reopen",
+      "from": "u",
+      "to": "p",
+      "label": "崩溃后重新打开应用",
+      "variant": "emphasis",
+      "y": 185
+    },
+    {
+      "id": "init",
+      "from": "h",
+      "to": "e",
+      "label": "初始化数据库，读取未终结 run",
+      "note": "Tauri 启动 host；健康检查仅保证页面可打开，不代表 run 已恢复",
+      "y": 215
+    },
+    {
+      "id": "claim",
+      "from": "h",
+      "to": "e",
+      "label": "recoverDurable 认领 owner epoch",
+      "variant": "security",
+      "note": "能力就绪后才认领 owner 与 attempt；旧进程的迟到写入会被新 epoch 拒绝",
+      "y": 245
+    },
+    {
+      "id": "ckpt",
+      "from": "h",
+      "to": "e",
+      "label": "读取 checkpoint 与未决操作",
+      "y": 275,
+      "note": "含 pending operations 与既有结果"
+    },
+    {
+      "id": "branch-terminal",
+      "from": "e",
+      "to": "h",
+      "label": "分支一 已落盘终态：禁止重跑",
+      "variant": "return",
+      "y": 305,
+      "note": "原终态原样返回，不允许再跑一遍"
+    },
+    {
+      "id": "branch-prepared",
+      "from": "h",
+      "to": "e",
+      "label": "分支二 可证明请求：落 fence 续跑",
+      "y": 335,
+      "note": "可证明的 prepared 请求先落 dispatch fence，再由恢复 handler 续跑"
+    },
+    {
+      "id": "evidence",
+      "from": "e",
+      "to": "h",
+      "label": "结果证据，提交恢复状态与结果引用",
+      "variant": "return",
+      "y": 365
+    },
+    {
+      "id": "branch-unknown",
+      "from": "h",
+      "to": "e",
+      "label": "分支三 结果未知：记 waiting",
+      "variant": "security",
+      "note": "已派发结果未知、权限或工作区漂移 → waiting / requires_review；不重放未知副作用，不合成成功，不自动重发收费",
+      "y": 395
+    },
+    {
+      "id": "ask-session",
+      "from": "p",
+      "to": "s",
+      "label": "sessionStore 请求恢复会话",
+      "y": 425
+    },
+    {
+      "id": "query",
+      "from": "i",
+      "to": "h",
+      "label": "持久状态与消息查询",
+      "note": "store 经 IPC/HTTP 发出会话读取请求",
+      "y": 455
+    },
+    {
+      "id": "durable-first",
+      "from": "h",
+      "to": "e",
+      "label": "durable 优先读取",
+      "y": 485
+    },
+    {
+      "id": "projection",
+      "from": "h",
+      "to": "i",
+      "label": "会话投影：已落盘消息与状态",
+      "variant": "return",
+      "y": 515
+    },
+    {
+      "id": "to-user",
+      "from": "p",
+      "to": "u",
+      "label": "查看恢复结果；未知结果不标为成功",
+      "variant": "return",
+      "y": 545
+    }
+  ],
+  "activations": [
+    {
+      "participant": "p",
+      "from": 180,
+      "to": 550,
+      "type": "frontend"
+    },
+    {
+      "participant": "s",
+      "from": 455,
+      "to": 519,
+      "type": "frontend"
+    },
+    {
+      "participant": "i",
+      "from": 480,
+      "to": 549,
+      "type": "messagebus"
+    },
+    {
+      "participant": "h",
+      "from": 210,
+      "to": 549,
+      "type": "backend"
+    },
+    {
+      "participant": "e",
+      "from": 210,
+      "to": 519,
+      "type": "database"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "事实链",
+      "items": [
+        "runRegistry · nativeRecoveryHost（runtime 与 app 两处）· durableRunReadService",
+        "装配：webServer · initializeDurableRun · durableRecoveryDispatcher"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "链路未闭合",
+      "items": [
+        "缺「复核恢复」页面动作 → 同一 Native run 续跑契约",
+        "requires_review 不是已实现的通用批准按钮"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "已不成立的旧说法",
+      "items": [
+        "分册早期「Native 全部仅复核」已落后于 nativeRecoveryHost",
+        "未派发的模型请求可以进入续跑"
+      ]
+    }
+  ]
+}

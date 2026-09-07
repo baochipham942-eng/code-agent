@@ -194,6 +194,8 @@ async function handleRun(
 
     // 创建自定义的 AgentLoop 来捕获事件
     const config = agent.getConfig();
+    // neo serve 的 HTTP API 是脚本入口，不进上线后评测分母。
+    config.originKind = 'headless';
     const { createAgentLoop } = await import('../bootstrap');
 
     const agentLoop = createAgentLoop(

@@ -7,6 +7,7 @@ import type BetterSqlite3 from 'better-sqlite3';
 
 import type { AgentEvent } from '../../../src/shared/contract';
 import type { ConversationEnvelope } from '../../../src/shared/contract/conversationEnvelope';
+import type { QueuedInputSettledEvent } from '../../../src/shared/contract/queuedInput';
 import { QUEUED_INPUT_RETRY } from '../../../src/shared/constants/queuedInput';
 
 const orchestratorMocks = vi.hoisted(() => ({
@@ -121,11 +122,15 @@ describe('desktop queued input drain', () => {
     taskManager: TestTaskManager | TaskManager,
     appService: { sendMessage: (envelope: ConversationEnvelope) => Promise<void> },
     repository: QueuedInputRepository,
+    settled?: QueuedInputSettledEvent[],
   ): DesktopQueuedInputDrainHandle {
     const handle = registerDesktopQueuedInputDrain({
       taskManager,
       appService,
       repository,
+      notifyQueuedInputSettled: settled
+        ? (event) => settled.push(event)
+        : undefined,
     });
     unregisterCallbacks.push(handle.dispose);
     return handle;
@@ -366,5 +371,33 @@ describe('desktop queued input drain', () => {
     });
     expect(sentIds).toEqual(['queued-later', 'queued-earlier']);
     expect(maxConcurrentSends).toBe(1);
+  });
+
+  it('出队那一刻就发出 sending，不等 sendMessage 结束', async () => {
+    const repository = createRepository();
+    repository.enqueue({
+      id: 'queued-live',
+      sessionId: 'session-live',
+      envelope: { content: '酒店什么时候订合适？' },
+      now: 1,
+    });
+    const manager = new TestTaskManager();
+    const settled: QueuedInputSettledEvent[] = [];
+    let releaseSend: (() => void) | undefined;
+    const sendMessage = vi.fn(() => new Promise<void>((resolve) => {
+      releaseSend = resolve;
+    }));
+    register(manager, { sendMessage }, repository, settled);
+
+    manager.transition('session-live', 'running');
+    manager.transition('session-live', 'idle');
+
+    await vi.waitFor(() => expect(settled).toEqual([
+      { sessionId: 'session-live', id: 'queued-live', status: 'sending' },
+    ]));
+    expect(repository.getById('queued-live')?.status).toBe('sending');
+
+    releaseSend?.();
+    await vi.waitFor(() => expect(settled.at(-1)?.status).toBe('consumed'));
   });
 });

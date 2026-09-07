@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { PermissionRequest } from '../../../src/renderer/components/PermissionDialog/types';
-import { permissionConsequence, isSafeDefaultDeny } from '../../../src/renderer/components/PermissionDialog/permissionPresentation';
+import { permissionConsequence, permissionSummary, isSafeDefaultDeny } from '../../../src/renderer/components/PermissionDialog/permissionPresentation';
 import { decisionCardZh } from '../../../src/renderer/i18n/decisionCard';
 
 const baseRequest: PermissionRequest = {
@@ -183,4 +183,125 @@ it.each([
 
   expect(permissionConsequence(request, decisionCardZh as never)).toBe('将执行高风险命令，可能覆盖本机系统或项目状态。');
   expect(request.reason).toContain('deterministic supplement');
+});
+
+describe('device / special path copy', () => {
+  const zh = decisionCardZh as never;
+
+  function writeRequest(
+    path: string,
+    targetKind?: PermissionRequest['details']['targetKind'],
+  ): PermissionRequest {
+    return {
+      ...baseRequest,
+      tool: 'Write',
+      type: 'file_write',
+      details: { path, ...(targetKind ? { targetKind } : {}) },
+      boundary: { id: 'file.external_write' },
+    };
+  }
+
+  it('titles /dev/null with the full path instead of a bare null basename', () => {
+    const request: PermissionRequest = {
+      ...baseRequest,
+      tool: 'Edit',
+      type: 'file_edit',
+      details: { path: '/dev/null' },
+      boundary: { id: 'file.external_write' },
+    };
+
+    const summary = permissionSummary(request, zh);
+    expect(summary).toBe('允许编辑 /dev/null（工作区外）？');
+    expect(summary).not.toBe('允许编辑 null（工作区外）？');
+  });
+
+  it('host-marked device uses the device copy and skips overwrite wording', () => {
+    const request = writeRequest('/dev/null', 'device');
+    const consequence = permissionConsequence(request, zh);
+    expect(consequence).toBe('将向工作区外的设备文件 /dev/null 写入；原子写入会替换该设备节点本身。');
+    expect(consequence).toContain('设备文件');
+    expect(consequence).not.toContain('可能覆盖现有内容');
+  });
+
+  it('host-marked device inside the workspace uses the in-workspace device copy', () => {
+    const request: PermissionRequest = {
+      ...baseRequest,
+      tool: 'Edit',
+      type: 'file_edit',
+      details: { path: '/dev/null', targetKind: 'device' },
+      boundary: { id: 'file.project_write' },
+    };
+    expect(permissionConsequence(request, zh)).toBe('将写入设备文件 /dev/null；原子写入会替换该设备节点本身。');
+  });
+
+  it('Append to a host-marked device shows the write-through copy, not node replacement', () => {
+    const request = { ...writeRequest('/dev/null', 'device'), tool: 'Append' };
+    const consequence = permissionConsequence(request, zh);
+    expect(consequence).toBe('将向设备文件 /dev/null 追加写入，内容直接送达设备。');
+    expect(consequence).not.toContain('替换该设备节点');
+    expect(consequence).not.toContain('可能覆盖现有内容');
+  });
+
+  it.each(['regular', 'unknown', undefined] as const)(
+    'targetKind %s fail-closes to the overwrite warning',
+    (targetKind) => {
+      const request = writeRequest('/dev/null', targetKind);
+      const consequence = permissionConsequence(request, zh);
+      expect(consequence).toContain('可能覆盖现有内容');
+      expect(consequence).not.toContain('设备文件');
+    },
+  );
+
+  // ai-review #1692 四轮构造法：渲染层不得从原始路径推断设备。
+  it.each([
+    ['/dev/shm/report.md', '前缀'],
+    ['NUL', '裸 Windows 保留名'],
+    ['\\dev\\null', '反斜杠归一化'],
+    ['C:/dev/null', 'Windows /dev/null 归一化'],
+  ])('POSIX/Windows 构造 %s（%s）无 targetKind=device 时必须保留覆盖警告', (path) => {
+    const consequence = permissionConsequence(writeRequest(path), zh);
+    expect(consequence).toContain('可能覆盖现有内容');
+    expect(consequence).not.toContain('设备文件');
+  });
+
+  it('titles /dev/stdout with the full path and does not infer a device from the path', () => {
+    const request = writeRequest('/dev/stdout');
+    expect(permissionSummary(request, zh)).toBe('允许写入 /dev/stdout（工作区外）？');
+    expect(permissionConsequence(request, zh)).toContain('可能覆盖现有内容');
+    expect(permissionConsequence(request, zh)).not.toContain('设备文件');
+  });
+
+  it('keeps basename titles and overwrite wording for ordinary files', () => {
+    const inside: PermissionRequest = {
+      ...baseRequest,
+      tool: 'Edit',
+      type: 'file_edit',
+      details: { path: '/workspace/src/report.md' },
+      boundary: { id: 'file.project_write' },
+    };
+    expect(permissionSummary(inside, zh)).toBe('允许编辑 report.md？');
+    expect(permissionConsequence(inside, zh)).toBe('将写入 /workspace/src/report.md（约 1 个文件），可能覆盖现有内容。');
+
+    const outside: PermissionRequest = {
+      ...baseRequest,
+      tool: 'Write',
+      type: 'file_write',
+      details: { path: '/tmp/notes.txt' },
+      boundary: { id: 'file.external_write' },
+    };
+    expect(permissionSummary(outside, zh)).toBe('允许写入 notes.txt（工作区外）？');
+    expect(permissionConsequence(outside, zh)).toBe('将在工作区外写入 /tmp/notes.txt（约 1 个文件），可能覆盖现有内容。');
+  });
+
+  it('still titles an ordinary file named null by basename', () => {
+    const request: PermissionRequest = {
+      ...baseRequest,
+      tool: 'Edit',
+      type: 'file_edit',
+      details: { path: '/workspace/src/null' },
+      boundary: { id: 'file.project_write' },
+    };
+    expect(permissionSummary(request, zh)).toBe('允许编辑 null？');
+    expect(permissionConsequence(request, zh)).toContain('可能覆盖现有内容');
+  });
 });

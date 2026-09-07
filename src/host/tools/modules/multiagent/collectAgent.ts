@@ -63,6 +63,11 @@ export async function executeCollectAgent(
   } else {
     lines.push('Still running in the background.');
   }
+  // N-SUBAGENT-ZEROTOOLS 返修 Important 2：后台路径同样要把缺失清单带回父模型——
+  // 子代理部分装配就完成了的话，父模型必须看到能力可能不完整的事实。
+  if (handle.result?.missingTools?.length) {
+    lines.push(`Missing tools: ${handle.result.missingTools.join(', ')}（声明的工具未全部装配，该子代理能力可能不完整）`);
+  }
 
   return withMultiagentMeta(
     { ok: true, output: lines.join('\n') },
@@ -73,7 +78,12 @@ export async function executeCollectAgent(
       status: handle.status,
       agentId: handle.agentId,
       declaredOutputs: handle.declaredOutputs,
-      result: { background: true, output: handle.result?.output, error: handle.error },
+      result: {
+        background: true,
+        output: handle.result?.output,
+        error: handle.error,
+        ...(handle.result?.missingTools?.length ? { missingTools: handle.result.missingTools } : {}),
+      },
     },
     'Collect agent result',
   );

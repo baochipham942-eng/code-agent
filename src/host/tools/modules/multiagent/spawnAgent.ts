@@ -157,6 +157,12 @@ async function runSpawnAgent(
         error: bgResult.error,
         defaultCode: AgentFailureCode.ModelError,
       });
+      // N-SUBAGENT-ZEROTOOLS 返修 Important 2：service 层放在 metadata 里的缺失清单
+      // 在这次重投影里捞回 SubagentResult，否则后台路径（完成通知 + collect_agent）
+      // 全程看不到「声明的工具未全部装配」的事实。
+      const missingTools = Array.isArray(bgResult.metadata?.missingTools)
+        ? bgResult.metadata.missingTools.filter((name): name is string => typeof name === 'string')
+        : undefined;
       return {
         success: bgResult.success,
         output: bgResult.success && typeof bgResult.output === 'string' ? bgResult.output : '',
@@ -164,6 +170,7 @@ async function runSpawnAgent(
         toolsUsed: [],
         iterations: 0,
         ...(failureCode ? { failureCode } : {}),
+        ...(missingTools && missingTools.length > 0 ? { missingTools } : {}),
       };
     }, {
       title: backgroundTitle,

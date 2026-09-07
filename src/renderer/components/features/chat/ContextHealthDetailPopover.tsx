@@ -18,12 +18,14 @@ import { Loader2, Shrink, X as XIcon } from 'lucide-react';
 import { useI18n } from '../../../hooks/useI18n';
 import { useAppStore } from '../../../stores/appStore';
 import { useStatusStore } from '../../../stores/statusStore';
+import { useSessionStore } from '../../../stores/sessionStore';
 import { useContextCompactionStore } from '../../../stores/contextCompactionStore';
 import { useBudgetStatus } from '../../../hooks/useBudgetStatus';
 import { CostDisplay } from '../../StatusBar/CostDisplay';
 import { useContextHealthActions } from '../../../hooks/useContextHealthActions';
 import { formatContextUsagePercent } from '../../../utils/contextUsageFormat';
 import type { ContextHealthState } from '@shared/contract/contextHealth';
+import { resolveContextHealthDetailMode } from './contextHealthDetailMode';
 
 function formatTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -75,6 +77,15 @@ function buildBuckets(health: ContextHealthState, ch: Record<string, string>): B
   // ds-allow:end
 }
 
+function sessionHasSentMessage(): boolean {
+  const getState = useSessionStore.getState;
+  if (typeof getState !== 'function') return false;
+  const messages = getState().messages;
+  // 只认 user 消息：/context 等斜杠命令的本地 assistant 诊断输出不算「已发首条」，
+  // 否则空会话执行 /context 后会错误进入等待态（ai-review PR#1705）。
+  return Array.isArray(messages) && messages.some((m) => m?.role === 'user');
+}
+
 interface ContextHealthDetailPopoverProps {
   onClose: () => void;
 }
@@ -91,6 +102,8 @@ export const ContextHealthDetailPopover: React.FC<ContextHealthDetailPopoverProp
   const sessionCost = useStatusStore((s) => s.sessionCost);
   const unknownCostTurns = useStatusStore((s) => s.unknownCostTurns);
   const isStreaming = useStatusStore((s) => s.isStreaming);
+  const hasSentFirstMessage = isStreaming || sessionHasSentMessage();
+  const detailMode = resolveContextHealthDetailMode(contextHealth, hasSentFirstMessage);
   const budgetStatus = useBudgetStatus(sessionCost, isStreaming);
   const compactResult = useContextCompactionStore((s) => s.result);
   const compactError = useContextCompactionStore((s) => s.error);
@@ -146,7 +159,7 @@ export const ContextHealthDetailPopover: React.FC<ContextHealthDetailPopoverProp
       </div>
 
       <div className="max-h-[60vh] overflow-y-auto px-4 pb-3">
-        {contextHealth ? (
+        {detailMode === 'ready' && contextHealth ? (
           <div>
             {/* 大数字行 + 分段总条：总量的唯一出口 */}
             <div className="mb-2 flex items-baseline justify-between tabular-nums">
@@ -304,11 +317,22 @@ export const ContextHealthDetailPopover: React.FC<ContextHealthDetailPopoverProp
               </div>
             )}
           </div>
+        ) : detailMode === 'pending' ? (
+          <div className="py-6 text-sm text-zinc-500">
+            <p>{ch.waitingCapacity}</p>
+            <p className="mt-2 text-xs text-zinc-600">
+              {ch.waitingCapacityHint}
+            </p>
+          </div>
         ) : (
           <div className="py-6 text-sm text-zinc-500">
             <p>{ch.emptyStateTitle}</p>
             <p className="mt-2 text-xs text-zinc-600">
               {ch.emptyStateHint}
+            </p>
+            <p className="mt-4">{ch.firstUseTitle}</p>
+            <p className="mt-2 text-xs text-zinc-600">
+              {ch.firstUseHint}
             </p>
           </div>
         )}

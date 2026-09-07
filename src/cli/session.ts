@@ -9,6 +9,7 @@ import type {
   ModelConfig,
   TodoItem,
 } from '../shared/contract';
+import { stampAssistantMessageCorrelation } from '../host/session/assistantCorrelation';
 import crypto from 'crypto';
 
 // ----------------------------------------------------------------------------
@@ -312,6 +313,8 @@ export class CLISessionManager {
         this.setCurrentSession(sessionId);
       }
     }
+
+    stampAssistantMessageCorrelation(message);
 
     // 数据库可用时持久化
     if (await this.ensureDbReady()) {

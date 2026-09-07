@@ -26,6 +26,7 @@ import { createLogger } from './logger';
 import { sanitizeSurfaceExecutionSessionExport } from '../../session/surfaceExecutionSessionExport';
 import { stripLegacyForkClaims } from '../sessionFork/portability';
 import { getContextHealthService } from '../../context/contextHealthService';
+import { stampAssistantMessageCorrelation } from '../../session/assistantCorrelation';
 
 import { Disposable, getServiceRegistry } from '../serviceRegistry';
 const logger = createLogger('SessionManager');
@@ -906,6 +907,7 @@ export class SessionManager implements Disposable {
    * 添加消息到指定会话（支持多会话并发）
    */
   async addMessageToSession(sessionId: string, message: Message): Promise<void> {
+    stampAssistantMessageCorrelation(message);
     const db = getDatabase();
     this.assertAccessibleSession(sessionId);
     let inserted = false;

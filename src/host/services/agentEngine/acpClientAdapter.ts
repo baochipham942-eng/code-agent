@@ -60,6 +60,7 @@ import type { ExternalEngineDurableLifecycle } from './externalEngineDurableLife
 import { emitExternalAgentEvent } from './agentEngineEventSink';
 import { bindExternalEngineAbort } from './agentEngineAbort';
 import { getAgentEngineSessionSink } from './agentEngineSessionSink';
+import { withTurnCorrelation } from '../../session/assistantCorrelation';
 import { AcpClientHostBridge } from './acpClientHostBridge';
 import { AcpToolCallTracker, mapAcpSessionUpdate } from './acpEventMapping';
 
@@ -505,7 +506,7 @@ class AcpClientAdapter {
         content: finalText || `已中断这一轮（${descriptor.label}）。`,
         timestamp: completedAt,
         modelDecision: buildAgentEngineModelDecision(descriptor, model, completedAt),
-        metadata: { workbench: { workingDirectory: cwd } },
+        metadata: withTurnCorrelation({ workbench: { workingDirectory: cwd } }, turnId),
       };
       await sessionManager.addMessageToSession(request.sessionId, cancelledMessage);
       emit({ type: 'message', data: cancelledMessage });
@@ -558,13 +559,13 @@ class AcpClientAdapter {
         role: 'assistant',
         content: '',
         timestamp: completedAt,
-        metadata: {
+        metadata: withTurnCorrelation({
           workbench: { workingDirectory: cwd },
           agentError: {
             ...buildAgentEngineFailureMetadata(failureDiagnostics),
             rawMessage: message,
           },
-        },
+        }, turnId),
       };
       await sessionManager.addMessageToSession(request.sessionId, assistantMessage);
       emit({ type: 'message', data: assistantMessage });
@@ -595,7 +596,7 @@ class AcpClientAdapter {
       content: finalText,
       timestamp: completedAt,
       modelDecision: buildAgentEngineModelDecision(descriptor, model, completedAt),
-      metadata: { workbench: { workingDirectory: cwd } },
+      metadata: withTurnCorrelation({ workbench: { workingDirectory: cwd } }, turnId),
     };
     await sessionManager.addMessageToSession(request.sessionId, assistantMessage);
     emit({ type: 'message', data: assistantMessage });

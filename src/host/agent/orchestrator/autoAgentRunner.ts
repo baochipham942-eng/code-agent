@@ -17,6 +17,7 @@ import { getToolResolver } from '../../tools/dispatch/toolResolver';
 import type { TaskListManager } from '../taskList';
 import { createLogger } from '../../services/infra/logger';
 import { getActiveRunTraceContext } from '../../telemetry/runTraceContext';
+import { stampAssistantMessageCorrelation } from '../../session/assistantCorrelation';
 import { GraphEventCompatibilityAdapter } from '../../orchestration/graphEventCompatibilityAdapter';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
@@ -238,6 +239,7 @@ export async function runAutoAgentMode(
       content: result.aggregatedOutput,
       timestamp: Date.now(),
     };
+    stampAssistantMessageCorrelation(assistantMessage);
     deps.addMessage(assistantMessage);
 
     // Save message

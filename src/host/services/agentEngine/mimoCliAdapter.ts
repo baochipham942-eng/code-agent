@@ -31,6 +31,7 @@ import {
 import { getShellPath } from '../infra/shellEnvironment';
 import { getBackgroundTaskLedger } from '../../task/backgroundTaskLedger';
 import { getAgentEngineRegistry } from './agentEngineRegistry';
+import { withTurnCorrelation } from '../../session/assistantCorrelation';
 import { assertAgentEngineRunnable } from './agentEngineGuards';
 import { assertExternalSubagentProfile, assertReadOnlyExternalProfile, assertWorkspaceCwd } from './agentEngineGuards';
 import { normalizeCodexCliRunTiming } from './agentEngineTiming';
@@ -411,12 +412,12 @@ export class MimoCliAdapter {
         role: 'assistant',
         content: '',
         timestamp: completedAt,
-        metadata: {
+        metadata: withTurnCorrelation({
           workbench: {
             workingDirectory: cwd,
           },
           agentError: buildAgentEngineFailureMetadata(failureDiagnostics),
-        },
+        }, turnId),
       };
       await sessionManager.addMessageToSession(request.sessionId, assistantMessage);
       emit({
@@ -454,11 +455,11 @@ export class MimoCliAdapter {
       content: finalText || 'MiMo-Code completed without text output.',
       timestamp: completedAt,
       modelDecision: buildAgentEngineModelDecision(descriptor, model, completedAt),
-      metadata: {
+      metadata: withTurnCorrelation({
         workbench: {
           workingDirectory: cwd,
         },
-      },
+      }, turnId),
     };
     await sessionManager.addMessageToSession(request.sessionId, assistantMessage);
 

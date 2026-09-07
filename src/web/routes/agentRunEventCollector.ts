@@ -22,6 +22,7 @@ export class AgentRunEventCollector {
    * 早轮已落库不能抑制兜底，否则终轮落库失败时内容+metadata 静默丢失（Codex audit HIGH1）。
    */
   lastLoopAssistantMessageId: string | undefined;
+  lastTurnId: string | undefined;
   readonly contentParts: AgentRunContentPart[] = [];
   runCancelled = false;
 
@@ -36,6 +37,12 @@ export class AgentRunEventCollector {
 
     if (event.type === 'agent_cancelled') {
       this.runCancelled = true;
+      return;
+    }
+
+    if (event.type === 'turn_start') {
+      const turnId = event.data?.turnId;
+      if (typeof turnId === 'string' && turnId.trim()) this.lastTurnId = turnId.trim();
       return;
     }
 
@@ -108,6 +115,8 @@ export class AgentRunEventCollector {
     if (message.metadata) {
       this.assistantMetadata = message.metadata;
     }
+    const correlatedTurnId = message.metadata?.correlation?.turnId?.trim();
+    if (correlatedTurnId) this.lastTurnId = correlatedTurnId;
   }
 
   private recordToolCallStart(id?: string, name?: string): void {

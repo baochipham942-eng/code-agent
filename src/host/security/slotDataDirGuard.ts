@@ -20,7 +20,7 @@
 // 枚举只会变宽（lenient 全词 + 全部可能基准 + 家族名兜底），绝不因为解析失败交空清单。
 // ============================================================================
 
-import { readdirSync, realpathSync } from 'node:fs';
+import { type Dirent, readdirSync, realpathSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { getHomeDir, getUserConfigDir } from '../config/configPaths';
@@ -58,8 +58,6 @@ export interface ForeignSlotTraversalExcludes {
   roots: string[];
   /** 相对搜索根的 glob ignore，给 Glob / rg --glob 用。 */
   ignoreGlobs: string[];
-  /** 目录名，给系统 grep --exclude-dir 用。 */
-  excludeDirNames: string[];
 }
 
 interface FamilySlot {
@@ -437,6 +435,15 @@ function splitLenientSegments(words: string[]): string[][] {
 }
 
 /**
+ * Bash 候选枚举预算（R5 Nit）：解析失败分支对每个相对 cd 按全部历史基准扩展、
+ * 重复处理两套词流，候选集合指数增长；strict 路径的条件分支 cd 同型放大 cwdBases。
+ * 超限 = 枚举面失控（正常命令远够不到），fail-closed 抛错整条拒绝，不是截断放行——
+ * 截断可能恰好丢掉最危险的那个候选。
+ */
+const MAX_BASH_CWD_BASES = 64;
+const MAX_BASH_PATH_CANDIDATES = 2048;
+
+/**
  * 解析失败 / 有 uncertain 时的宽视图（ADR-065 姿势）：枚举只会变宽，绝不交空清单。
  * 基准 = 初始 cwd ∪ 家目录 ∪ 顺路收集到的每个 cd 目标（cd 目标按全部当前基准解析，
  * 嵌套子 shell 里相对 cd 链也能串起来）；词 = 解析中断前已切好的段 + lenient 全词流
@@ -451,14 +458,23 @@ function collectBashCandidatesFailClosed(
   const candidates: string[] = [];
   const traversalRoots: string[] = [];
   const bases = new Set<string>([workingDirectory, homeDir]);
+  const pushCandidates = (newOnes: string[]): void => {
+    candidates.push(...newOnes);
+    if (candidates.length > MAX_BASH_PATH_CANDIDATES) {
+      throw new Error(`Bash 路径候选枚举超出预算（>${MAX_BASH_PATH_CANDIDATES}），fail-closed 拒绝`);
+    }
+  };
 
   const absorb = (words: string[]): void => {
     if (words.length === 0) return;
     if (isCwdCommand(words)) {
       const targets = [...bases].map((base) => resolveCdTarget(words, base, homeDir));
       const resolved = targets.filter((entry): entry is string => entry !== null);
-      candidates.push(...resolved);
+      pushCandidates(resolved);
       for (const target of resolved) bases.add(target);
+      if (bases.size > MAX_BASH_CWD_BASES) {
+        throw new Error(`Bash cd 基准展开超出预算（>${MAX_BASH_CWD_BASES}），fail-closed 拒绝`);
+      }
       // cd 后 cwd 不可知：不收敛基准（全部保留，含家目录）。
     }
     const kind = recursiveTraversalKind(words);
@@ -466,11 +482,11 @@ function collectBashCandidatesFailClosed(
       for (const base of [...bases]) {
         const traversal = extractTraversalRoots(words, base, homeDir, kind);
         traversalRoots.push(...traversal.roots);
-        candidates.push(...traversal.readOperands);
+        pushCandidates(traversal.readOperands);
       }
     }
     for (const base of [...bases]) {
-      candidates.push(...pathWordCandidates(words, base, homeDir));
+      pushCandidates(pathWordCandidates(words, base, homeDir));
     }
   };
 
@@ -478,17 +494,17 @@ function collectBashCandidatesFailClosed(
   for (const segment of parsed.segments) absorb(segment.words);
   for (const segment of parsed.segments) {
     for (const read of segment.reads) {
-      for (const base of [...bases]) candidates.push(resolveCandidate(read.path, base, homeDir));
+      pushCandidates([...bases].map((base) => resolveCandidate(read.path, base, homeDir)));
     }
     for (const redirect of segment.redirects) {
-      for (const base of [...bases]) candidates.push(resolveCandidate(redirect.path, base, homeDir));
+      pushCandidates([...bases].map((base) => resolveCandidate(redirect.path, base, homeDir)));
     }
   }
   // lenient 全词视图：shell-quote 还能看见的每个 token。
   for (const pseudo of splitLenientSegments(lenientCommandWords(command))) absorb(pseudo);
   // 裸文本里的家族目录名兜底。
   for (const mention of extractEmbeddedFamilyMentions(command)) {
-    for (const base of [...bases]) candidates.push(resolveCandidate(mention, base, homeDir));
+    pushCandidates([...bases].map((base) => resolveCandidate(mention, base, homeDir)));
   }
   return { candidates, traversalRoots };
 }
@@ -556,6 +572,10 @@ function collectBashCandidates(
       for (const target of resolved) {
         cwdBases.add(target);
         allBases.add(target);
+      }
+      if (cwdBases.size > MAX_BASH_CWD_BASES) {
+        // 条件分支 cd 逐个并入全部历史基准，与 fail-closed 分支同型指数放大（R5 Nit）。
+        throw new Error(`Bash cd 基准展开超出预算（>${MAX_BASH_CWD_BASES}），fail-closed 拒绝`);
       }
       if (conditional || resolved.length > 1) {
         // &&/|| 后面的 cd 是否执行取决于前段退出码（R3③），或 cd 目标随基准多元：
@@ -858,7 +878,6 @@ export function collectForeignSlotTraversalExcludes(
   const searchCanonical = canonicalize(searchPath);
   const roots: string[] = [];
   const ignoreGlobs: string[] = [];
-  const excludeDirNames: string[] = [];
 
   for (const slot of foreignSlotsUnderSearchRoot(searchLexical, searchCanonical, ctx)) {
     roots.push(slot.lexicalRoot, slot.canonicalRoot);
@@ -867,21 +886,46 @@ export function collectForeignSlotTraversalExcludes(
       ?? toPosixRelative(searchLexical, slot.canonicalRoot);
     if (relative) {
       ignoreGlobs.push(relative, `${relative}/**`);
-      // --exclude-dir 按目录名匹配，会误伤同名目录：只有槽根是搜索根的直接子目录时
-      // 排除才精确；槽根埋得更深时排除首段名等于删掉整棵子树（普通项目的匹配静默
-      // 丢失），这种情况交给 roots 的结果侧前缀过滤兜底。
-      const base = relative.split('/')[0];
-      if (base && !relative.includes('/')) excludeDirNames.push(base);
-    } else {
-      excludeDirNames.push(slot.name);
     }
   }
 
   return {
     roots: uniqueStrings(roots),
     ignoreGlobs: uniqueStrings(ignoreGlobs),
-    excludeDirNames: uniqueStrings(excludeDirNames),
   };
+}
+
+/**
+ * 系统 grep 的搜索根按真实路径剪枝（R5）。grep 的 --exclude-dir 只有目录名语义、
+ * 按基名在任意深度匹配，排除「槽目录名」会连带误伤项目里同名的合法配置目录
+ * （projects/demo/.code-agent 被静默跳过，调用方据此误判配置不存在）。
+ * 这里枚举搜索根的直接子项，字面或真实路径落进非当前、非白名单槽的不传给 grep；
+ * 判据始终是「路径是否别的槽」，不是「目录叫什么名字」。搜索根下没有别人槽时
+ * 原样返回（常见路径零开销、输出形状不变）；更深的槽根 grep 仍会遍历到，
+ * 由调用方结果侧的 roots 前缀过滤兜底。
+ */
+export function foreignSlotPrunedGrepSearchPaths(
+  searchPath: string,
+  options: SlotDataDirGuardOptions = {},
+): string[] {
+  const ctx = buildGuardContext(options);
+  const searchLexical = lexicalPath(searchPath);
+  if (foreignSlotsUnderSearchRoot(searchLexical, canonicalize(searchLexical), ctx).length === 0) {
+    return [searchLexical];
+  }
+  let entries: Dirent[];
+  try {
+    entries = readdirSync(searchLexical, { withFileTypes: true });
+  } catch {
+    // 搜索根读不了（不存在等）：原样交回，让 grep 报它自己的错；结果侧过滤照常兜底。
+    return [searchLexical];
+  }
+  const kept: string[] = [];
+  for (const entry of entries) {
+    const childPath = path.join(searchLexical, entry.name);
+    if (evaluateCandidate(childPath, ctx).allowed) kept.push(childPath);
+  }
+  return kept;
 }
 
 /** 结果侧前缀过滤：只 path.resolve，不 realpath。 */

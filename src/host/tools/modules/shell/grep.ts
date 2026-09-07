@@ -38,6 +38,7 @@ import { grepSchema as schema } from './grep.schema';
 import { GREP, BASH } from '../../../../shared/constants';
 import {
   collectForeignSlotTraversalExcludes,
+  foreignSlotPrunedGrepSearchPaths,
   isListedPathInsideForeignSlot,
   type ForeignSlotTraversalExcludes,
 } from '../../../security/slotDataDirGuard';
@@ -265,16 +266,17 @@ async function tryRipgrep(
 
 async function runSystemGrep(
   pattern: string,
-  searchPath: string,
+  searchPaths: string[],
   caseInsensitive: boolean,
   ctxBefore: number | undefined,
   ctxAfter: number | undefined,
   fileType: string | undefined,
   include: string | undefined,
   signal: AbortSignal,
-  excludeDirNames: string[] = [],
 ): Promise<string> {
-  const grepArgs: string[] = ['-r', '-n', '-E'];
+  // -H：剪枝后的搜索根可能是单个文件参数，没有 -H 时 grep 不带路径前缀，
+  // 输出形状（path:line:content）会被破坏，结果侧过滤与分页都靠这个前缀。
+  const grepArgs: string[] = ['-r', '-n', '-E', '-H'];
 
   if (caseInsensitive) grepArgs.push('-i');
 
@@ -299,11 +301,8 @@ async function runSystemGrep(
     '--exclude-dir=dist',
     '--exclude-dir=build',
   );
-  for (const dirName of excludeDirNames) {
-    grepArgs.push(`--exclude-dir=${dirName}`);
-  }
 
-  grepArgs.push(pattern, searchPath);
+  grepArgs.push(pattern, ...searchPaths);
 
   const result = await execFileAsync('grep', grepArgs, {
     maxBuffer: BASH.MAX_BUFFER,
@@ -552,18 +551,29 @@ class GrepHandler implements ToolHandler<Record<string, unknown>, string> {
         };
       } else {
         // 2) rg 不可用 → 系统 grep 降级
+        // 别人槽的排除按真实路径剪枝（--exclude-dir 只有目录名语义，按基名任意深度
+        // 匹配会误伤项目里同名的合法配置目录）：落进别人槽的直接子项不传给 grep；
+        // 全部被剪掉 = 没有可搜的根，直接按无匹配返回。
+        const searchPaths = foreignSlotPrunedGrepSearchPaths(searchPath);
+        if (searchPaths.length === 0) {
+          onProgress?.({ stage: 'completing', percent: 100 });
+          return {
+            ok: true,
+            output: 'No matches found',
+            meta: buildNoMatchesMeta('grep', pattern, searchPath, ctx),
+          };
+        }
         try {
           stdout = filterForeignSlotGrepOutput(
             await runSystemGrep(
               pattern,
-              searchPath,
+              searchPaths,
               caseInsensitive,
               ctxBefore,
               ctxAfter,
               fileType,
               include,
               ctx.abortSignal,
-              slotExcludes.excludeDirNames,
             ),
             searchPath,
             slotExcludes,

@@ -69,6 +69,66 @@ function basename(program: string): string {
 }
 
 function shellLines(command: string): string[] {
+  // Bash deletes an unquoted `\<LF>` (and `\<CR><LF>`, per round 24) before it reads words, so every
+  // look-ahead below — IO numbers, `$'`, `#` boundaries, `&>` adjacency — must observe the merged
+  // text. Rounds 24/25 were both a look-ahead outrunning this fold. The fold is quote-aware:
+  // single-quoted and ANSI-C bodies keep the pair verbatim (`$'a\<LF>b'` stays one word with the
+  // bytes), a comment ends at the raw newline (`# c\<LF>rm -rf /` leaves the second line a live
+  // command — bash does not fold inside comments), and escape pairs are consumed whole so a `\'`
+  // cannot flip the quote state and reopen the same split.
+  const withoutContinuations = (source: string): string => {
+    let output = '';
+    let mode: 'plain' | 'single' | 'double' | 'ansi' = 'plain';
+    let inComment = false;
+    // Same boundary rule the `#` branch below uses, read off the folded text: after `x\<LF>#tag`
+    // the `#` is mid-word, so looking at the raw source's preceding newline would lie.
+    const atCommentBoundary = (): boolean => {
+      if (output.length === 0) return true;
+      if (!/[ \t\n;&|()<>]/.test(output[output.length - 1])) return false;
+      let backslashes = 0;
+      for (let cursor = output.length - 2; cursor >= 0 && output[cursor] === '\\'; cursor -= 1) backslashes += 1;
+      return backslashes % 2 === 0;
+    };
+    for (let index = 0; index < source.length; index += 1) {
+      const character = source[index];
+      if (inComment) {
+        if (character === '\n') inComment = false;
+        output += character;
+        continue;
+      }
+      if (mode === 'plain' && character === '#' && atCommentBoundary()) {
+        inComment = true;
+        output += character;
+        continue;
+      }
+      if (character === '\\' && mode !== 'single') {
+        if (mode !== 'ansi') {
+          if (source[index + 1] === '\n') { index += 1; continue; }
+          if (source[index + 1] === '\r' && source[index + 2] === '\n') { index += 2; continue; }
+        }
+        // Consume the pair verbatim: `\'` must not open a quote bash never opened, and the second
+        // backslash of `a\\` must not pair with the newline after it (that newline is a separator).
+        output += character;
+        if (index + 1 < source.length) output += source[++index];
+        continue;
+      }
+      output += character;
+      if (mode === 'ansi' || mode === 'single') {
+        if (character === "'") mode = 'plain';
+      } else if (mode === 'double') {
+        if (character === '"') mode = 'plain';
+      } else if (character === '$' && source[index + 1] === "'") {
+        output += source[++index];
+        mode = 'ansi';
+      } else if (character === "'") {
+        mode = 'single';
+      } else if (character === '"') {
+        mode = 'double';
+      }
+    }
+    return output;
+  };
+  command = withoutContinuations(command);
   // `echo foo\ #tag` — the space before `#` is escaped, so it is not a word boundary and the `#`
   // stays inside the word. Count the backslashes: an odd run escapes the character that follows.
   const isEscaped = (position: number): boolean => {
@@ -98,7 +158,7 @@ function shellLines(command: string): string[] {
     // the word, so `2\<LF>>&1` is the IO number 2 as well (round 24: it used to survive as cp's
     // last operand and replace the real write target).
     if (quoteMode === 'plain' && atWordStart && /[0-9]/.test(character)) {
-      const ioNumber = command.slice(index).match(/^[0-9]+(?:\\\r?\n)*(?=[<>])/);
+      const ioNumber = command.slice(index).match(/^[0-9]+(?=[<>])/);
       if (ioNumber) {
         index += ioNumber[0].length - 1;
         continue;
@@ -127,14 +187,6 @@ function shellLines(command: string): string[] {
       continue;
     }
     if (character === '\\' && quoteMode !== 'single') {
-      if (command[index + 1] === '\n') {
-        index += 1;
-        continue;
-      }
-      if (command[index + 1] === '\r' && command[index + 2] === '\n') {
-        index += 2;
-        continue;
-      }
       const escapedNext = command[index + 1];
       if (quoteMode === 'plain' && escapedNext !== undefined && /\s/.test(escapedNext) && !/[ \t\n]/.test(escapedNext)) {
         // `\<U+00A0>` is that byte to bash; shell-quote would drop the backslash and split on it, so
@@ -158,8 +210,8 @@ function shellLines(command: string): string[] {
     if (quoteMode === 'plain' && character === '&' && command[index + 1] === '>') {
       // `&>f` / `&>>f` redirect both streams to f. shell-quote emits the same `&`, `>` pair for the
       // spaced `& >` — a background `&` followed by a redirect on the *next* command — so the
-      // adjacency has to be read here, on the original text: drop the `&` and let the `>` stand.
-      // Downstream the file is a write target either way.
+      // adjacency has to be read here, on the command text (folded): drop the `&` and let the `>`
+      // stand. Downstream the file is a write target either way.
       continue;
     }
     if (quoteMode === 'plain' && character === '$' && command[index + 1] === "'") {

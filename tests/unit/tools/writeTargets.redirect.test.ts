@@ -140,6 +140,8 @@ describe('cp / mv / tee 的写目标', () => {
     // 真阴：数字与 `>` 之间有空格时，按 bash 它就是普通操作数，仍要当写目标
     expect(resolve('cp a b 2 > /tmp/x').targets)
       .toContain(resolveCanonicalRunPath(path.join(workingDirectory, '2')));
+    expect(resolve('cp a b 2\\\n2>&1').targets)
+      .toEqual([resolveCanonicalRunPath(path.join(workingDirectory, 'b'))]);
   });
 
   it('多行命令：换行是命令边界，第 2 行起的写目标不能丢（ai-review #1650 第 3 轮）', () => {

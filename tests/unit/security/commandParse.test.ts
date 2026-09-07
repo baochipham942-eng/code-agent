@@ -273,6 +273,49 @@ describe('shared shell command parser', () => {
     expect(parseShellCommand('echo x 2 > two.txt').segments[0].words).toEqual(['echo', 'x', '2']);
   });
 
+  it('消除未引号续行后再解析所有前瞻形态', () => {
+    expect(parseShellCommand('cp a b 2\\\n2>&1').segments[0].words).toEqual(['cp', 'a', 'b']);
+    expect(parseShellCommand('cp a b 2\\\n>>&1').writeTargets.map((t) => t.path)).toEqual(['b']);
+    expect(parseShellCommand('cp a b \\\n2>&1').writeTargets.map((t) => t.path)).toEqual(['b']);
+    expect(parseShellCommand('$\\\n\'ls\'').segments[0].words).toEqual(['ls']);
+    const ampFold = parseShellCommand('printf x &\\\n> out.txt');
+    expect(ampFold.segments).toHaveLength(1);
+    expect(ampFold.writeTargets.map((t) => t.path)).toEqual(['out.txt']);
+    expect(parseShellCommand('echo ok \\\n#tag; ./cleanup').executions.map((e) => e.program)).toEqual(['echo']);
+    expect(parseShellCommand('echo ok\\\n#tag; ./cleanup').segments[0].words).toEqual(['echo', 'ok#tag']);
+    expect(parseShellCommand("echo 'a\\\nb'").segments[0].words).toEqual(['echo', 'a\\\nb']);
+    expect(parseShellCommand('echo "a\\\nb"').segments[0].words).toEqual(['echo', 'ab']);
+    expect(parseShellCommand("ls\\\n\\\r\n-la").segments[0].words).toEqual(['ls-la']);
+  });
+
+  // 折叠这一遍自身的引号/注释保真度，逐条先在真 bash（3.2.57，set -- + printf %q 打词）核过：
+  // `\'` 不开引号、`\\<LF>` 是分隔符不是续行、注释在裸换行处结束（不折叠进去）、ANSI-C 内 `\'`
+  // 不闭合且 `\<LF>` 原样保留、`$""` 按双引号折叠。
+  it('折叠保持引号与注释状态不漂移（真 bash 核对）', () => {
+    // bash: `set -- don\'t e\<LF>f` → 词 don't、ef
+    expect(parseShellCommand("set -- don\\'t e\\\nf").segments[0].words).toEqual(['set', '--', "don't", 'ef']);
+    // bash: `$'a\'b' c\<LF>d` → 词 a'b、cd（ANSI-C 内转义引号不闭合）
+    expect(parseShellCommand("$'a\\'b' c\\\nd").segments[0].words).toEqual(["a'b", 'cd']);
+    // `\'` 在前不污染后续折叠：IO 数字照样合成（bash: `…; set -- x y 2\<LF>>&1` → 词 x、y）
+    const afterEscQuote = parseShellCommand("echo a\\'b c; cp x y 2\\\n2>&1");
+    expect(afterEscQuote.segments[1].words).toEqual(['cp', 'x', 'y']);
+    expect(afterEscQuote.writeTargets.map((t) => t.path)).toEqual(['y']);
+    // 注释在裸换行处结束，第二行是真命令（bash 实跑 `t: command not found` 与 SIDE）
+    expect(parseShellCommand("echo hi # don't\\\nt; echo SIDE").executions.map((e) => e.program)).toEqual(['echo', 't', 'echo']);
+    expect(parseShellCommand('echo hi # c\\\necho SIDE').executions.map((e) => e.program)).toEqual(['echo', 'echo']);
+    // `\\` 是转义反斜杠：后面的换行是命令分隔符，不是续行（bash: 词 a\ + 第二行 echo SIDE）
+    const doubleBackslash = parseShellCommand('a\\\\\necho SIDE');
+    expect(doubleBackslash.segments[0].words).toEqual(['a\\']);
+    expect(doubleBackslash.segments[1].words).toEqual(['echo', 'SIDE']);
+    // `$"…"` 按双引号折叠（bash: 词 ab）；双引号内 `\"` 不闭合（bash: 词 x"yz）
+    expect(parseShellCommand('set -- $"a\\\nb"').segments[0].words).toEqual(['set', '--', 'ab']);
+    expect(parseShellCommand('set -- "x\\"y\\\nz"').segments[0].words).toEqual(['set', '--', 'x"yz']);
+    // ANSI-C 里 `\<LF>` 原样保留：词含换行不拆（bash 词是 a\+LF+b；解码器对未命名转义丢反斜杠是既有行为）
+    expect(parseShellCommand("echo $'a\\\nb'").segments[0].words).toEqual(['echo', 'a\nb']);
+    // `\<CR><LF>` 当续行删是第 24 轮起的房规（真 bash 3.2 判作转义 CR + 分隔符，证据档有记录）
+    expect(parseShellCommand('set -- a\\\r\nb').segments[0].words).toEqual(['set', '--', 'ab']);
+  });
+
   it('keeps each redirection on its own segment', () => {
     const parsed = parseShellCommand('printf x > out.txt; ls; cat y >> log.txt');
     expect(parsed.segments.map((segment) => segment.redirects.map((target) => target.path)))

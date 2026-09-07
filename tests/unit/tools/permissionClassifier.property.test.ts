@@ -256,6 +256,7 @@ const KNOWN_SHAPES = [
   'ls\\\r/run-task',
   'echo ok & > /dev/null cp source.txt target.txt',
   'cp source.txt ~/.ssh/authorized_keys 2\\\n>&1',
+  'cp source.txt ~/.ssh/authorized_keys 2\\\n2>&1',
 ];
 
 // Under /tmp the critical-path rm rule fires before anything else and masks weaker rules; a real

@@ -58,6 +58,13 @@ interface CompareAgentFactoryOptions {
   database?: DatabaseService;
   telemetryCollector?: TelemetryCollector;
   onEvaluationSignal?: ConstructorParameters<typeof StandaloneAgentAdapter>[0]['onEvaluationSignal'];
+  /**
+   * N-EVAL-POLICY-WRITE-BOUNDARY-ENABLE2 缺口①：compare 臂的写边界 ON 杆。
+   * 缺省（不传/false）= #1700 合入前的 compare 链路（adapter `?? false`，不注入
+   * scope/runContext）；显式 true 才打开——env 判定归 eval-ci 的 makeAgent，
+   * 与 createAgent() 同款口径（NEO_EVAL_WRITE_BOUNDARY === 'on'），工厂只收显式值。
+   */
+  restrictWritesToWorkspace?: boolean;
 }
 
 /** The only constructor path for compare arms, keeping signature/stamp/runtime values aligned. */
@@ -83,6 +90,7 @@ export function createCompareAgent(
     database: options.database,
     telemetryCollector: options.telemetryCollector,
     onEvaluationSignal: options.onEvaluationSignal,
+    restrictWritesToWorkspace: options.restrictWritesToWorkspace,
     ...(arm.reasoningEffort ? { inferenceOptions: { reasoningEffort: arm.reasoningEffort } } : {}),
     modelConfig: {
       provider: arm.provider as ModelProvider,

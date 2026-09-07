@@ -453,4 +453,139 @@ describe('e2eLocalAgentModel', () => {
     expect(final.type).toBe('text');
     expect(final.content).toContain('E2E task panel real-agent smoke completed');
   });
+
+  it('answers snapshot-replay QA in one deterministic text turn', () => {
+    const response = buildE2ELocalAgentModelResponse(
+      [{ role: 'user', content: 'E2E_SNAPSHOT_REPLAY_QA 这是什么？' }],
+      [readTool],
+      config,
+    );
+
+    expect(response.type).toBe('text');
+    expect(response.content).toBe('E2E snapshot replay single-turn QA answered deterministically.');
+  });
+
+  it('drives snapshot-replay Write then completion deterministically', () => {
+    const writeTool: ToolDefinition = {
+      name: 'Write',
+      description: 'Write a file',
+      outputSchema: { type: 'string' },
+      inputSchema: { type: 'object', properties: { file_path: { type: 'string' } } },
+      requiresPermission: true,
+      permissionLevel: 'write',
+    };
+    const env = { CODE_AGENT_E2E_AGENT_MODEL_WRITE_FILE: '/tmp/e2e-snapshot-note.txt' };
+    const first = buildE2ELocalAgentModelResponse(
+      [{ role: 'user', content: 'E2E_SNAPSHOT_REPLAY_WRITE' }],
+      [readTool, writeTool],
+      config,
+      undefined,
+      env,
+    );
+    // Read 工具在场但 WRITE marker 优先：不许被默认 Read 路由截胡
+    expect(first.type).toBe('tool_use');
+    expect(first.toolCalls?.[0]).toMatchObject({
+      id: 'e2e-snapshot-replay-write',
+      name: 'Write',
+      arguments: { file_path: '/tmp/e2e-snapshot-note.txt' },
+    });
+
+    const final = buildE2ELocalAgentModelResponse(
+      [
+        { role: 'user', content: 'E2E_SNAPSHOT_REPLAY_WRITE' },
+        { role: 'tool', toolCallId: 'e2e-snapshot-replay-write', content: 'File written' },
+      ],
+      [readTool, writeTool],
+      config,
+      undefined,
+      env,
+    );
+    expect(final.type).toBe('text');
+    expect(final.content).toContain('E2E snapshot replay write completed');
+  });
+
+  it('drives snapshot-replay Bash echo then completion deterministically', () => {
+    const bashTool: ToolDefinition = {
+      name: 'Bash',
+      description: 'Run a command',
+      outputSchema: { type: 'string' },
+      inputSchema: { type: 'object', properties: { command: { type: 'string' } } },
+      requiresPermission: true,
+      permissionLevel: 'execute',
+    };
+    const first = buildE2ELocalAgentModelResponse(
+      [{ role: 'user', content: 'E2E_SNAPSHOT_REPLAY_BASH' }],
+      [bashTool],
+      config,
+    );
+    expect(first.toolCalls?.[0]).toMatchObject({
+      id: 'e2e-snapshot-replay-bash',
+      name: 'Bash',
+      arguments: { command: 'echo E2E_SNAPSHOT_REPLAY_BASH_OUTPUT' },
+    });
+
+    const final = buildE2ELocalAgentModelResponse(
+      [
+        { role: 'user', content: 'E2E_SNAPSHOT_REPLAY_BASH' },
+        { role: 'tool', toolCallId: 'e2e-snapshot-replay-bash', content: 'E2E_SNAPSHOT_REPLAY_BASH_OUTPUT' },
+      ],
+      [bashTool],
+      config,
+    );
+    expect(final.type).toBe('text');
+    expect(final.content).toContain('E2E snapshot replay bash completed');
+  });
+
+  it('chains Read then Write for the snapshot read-then-write case', () => {
+    const writeTool: ToolDefinition = {
+      name: 'Write',
+      description: 'Write a file',
+      outputSchema: { type: 'string' },
+      inputSchema: { type: 'object', properties: { file_path: { type: 'string' } } },
+      requiresPermission: true,
+      permissionLevel: 'write',
+    };
+    const env = {
+      CODE_AGENT_E2E_AGENT_MODEL_READ_FILE: '/tmp/e2e-fixture.txt',
+      CODE_AGENT_E2E_AGENT_MODEL_WRITE_FILE: '/tmp/e2e-snapshot-note.txt',
+    };
+    const first = buildE2ELocalAgentModelResponse(
+      [{ role: 'user', content: 'E2E_SNAPSHOT_REPLAY_READ_WRITE' }],
+      [readTool, writeTool],
+      config,
+      undefined,
+      env,
+    );
+    expect(first.toolCalls?.[0]).toMatchObject({ id: 'e2e-real-agent-read-fixture', name: 'Read' });
+
+    const second = buildE2ELocalAgentModelResponse(
+      [
+        { role: 'user', content: 'E2E_SNAPSHOT_REPLAY_READ_WRITE' },
+        { role: 'tool', toolCallId: 'e2e-real-agent-read-fixture', content: 'E2E_REAL_AGENT_REPLAY_EVAL_FIXTURE=true' },
+      ],
+      [readTool, writeTool],
+      config,
+      undefined,
+      env,
+    );
+    expect(second.toolCalls?.[0]).toMatchObject({
+      id: 'e2e-snapshot-replay-write',
+      name: 'Write',
+      arguments: { file_path: '/tmp/e2e-snapshot-note.txt' },
+    });
+
+    const final = buildE2ELocalAgentModelResponse(
+      [
+        { role: 'user', content: 'E2E_SNAPSHOT_REPLAY_READ_WRITE' },
+        { role: 'tool', toolCallId: 'e2e-real-agent-read-fixture', content: 'fixture' },
+        { role: 'tool', toolCallId: 'e2e-snapshot-replay-write', content: 'File written' },
+      ],
+      [readTool, writeTool],
+      config,
+      undefined,
+      env,
+    );
+    expect(final.type).toBe('text');
+    expect(final.content).toContain('read-then-write completed');
+  });
 });

@@ -74,6 +74,11 @@ describe('shell redirect write targets', () => {
       .toContain(resolveCanonicalRunPath(path.join(workingDirectory, target)));
   });
 
+  it('a background & followed by a redirect does not swallow the next command\'s write target', () => {
+    expect(resolve('echo ok & > /dev/null cp source.txt target.txt').targets)
+      .toContain(resolveCanonicalRunPath(path.join(workingDirectory, 'target.txt')));
+  });
+
   it.each(['grep sh file', "printf '%s' bash", 'man sh', 'which bash zsh'])(
     'shell 名作为普通参数不制造 uncertain：%s',
     (command) => {

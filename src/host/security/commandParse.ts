@@ -152,6 +152,13 @@ function shellLines(command: string): string[] {
       atWordStart = true;
       continue;
     }
+    if (quoteMode === 'plain' && character === '&' && command[index + 1] === '>') {
+      // `&>f` / `&>>f` redirect both streams to f. shell-quote emits the same `&`, `>` pair for the
+      // spaced `& >` — a background `&` followed by a redirect on the *next* command — so the
+      // adjacency has to be read here, on the original text: drop the `&` and let the `>` stand.
+      // Downstream the file is a write target either way.
+      continue;
+    }
     if (quoteMode === 'plain' && character === '$' && command[index + 1] === "'") {
       // shell-quote does not know ANSI-C quoting: it hands `$'ls'` back as a variable callback plus
       // a single-quoted literal, which is byte-for-byte what `"$"ls` and `'${}ls'` produce too. Decode
@@ -517,11 +524,6 @@ function parseEntries(command: string): {
       continue;
     }
     if (isOperator(entry) && COMMAND_SEPARATORS.has(entry.op)) {
-      // shell-quote emits `&`, `>` for the `&>file` redirection spelling.
-      const nextEntry = entries[index + 1];
-      if (entry.op === '&' && nextEntry !== undefined && isOperator(nextEntry) && nextEntry.op === '>') {
-        continue;
-      }
       flush();
       trailingOperator = entry.op !== '\n' && index === entries.length - 1;
       continue;

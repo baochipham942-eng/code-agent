@@ -253,6 +253,14 @@ describe('shared shell command parser', () => {
     },
   );
 
+  it('tells `&>file` apart from a background `&` followed by a redirect on the next command', () => {
+    expect(parseShellCommand('printf x &> out.txt').writeTargets.map((t) => t.path)).toEqual(['out.txt']);
+    expect(parseShellCommand('printf x &>> out.txt').writeTargets.map((t) => t.path)).toEqual(['out.txt']);
+    const spaced = parseShellCommand('echo ok & > /dev/null cp source.txt target.txt');
+    expect(spaced.segments.map((segment) => segment.words)).toEqual([['echo', 'ok'], ['cp', 'source.txt', 'target.txt']]);
+    expect(spaced.writeTargets.map((t) => t.path)).toEqual(['/dev/null', 'target.txt']);
+  });
+
   it('keeps each redirection on its own segment', () => {
     const parsed = parseShellCommand('printf x > out.txt; ls; cat y >> log.txt');
     expect(parsed.segments.map((segment) => segment.redirects.map((target) => target.path)))

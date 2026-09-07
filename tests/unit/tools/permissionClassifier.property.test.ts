@@ -254,6 +254,7 @@ const KNOWN_SHAPES = [
   'echo ok\r#tag; ./cleanup',
   'ls\\\u00a0/run-task',
   'ls\\\r/run-task',
+  'echo ok & > /dev/null cp source.txt target.txt',
 ];
 
 // Under /tmp the critical-path rm rule fires before anything else and masks weaker rules; a real

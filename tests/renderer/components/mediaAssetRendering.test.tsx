@@ -69,6 +69,52 @@ describe('media asset rendering', () => {
     expect(html).toContain('media-asset-overflow-more');
   });
 
+  // 1×1 PNG. Keep this literal in the assertion path so reverse-mutation
+  // (restoring path-first getRenderableMediaSrc) turns the new tests red.
+  const TINY_PNG_DATA_URL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
+  it('prefers a small data URL over an unreadable attachment path', () => {
+    const asset = {
+      assetId: 'userbubble-img',
+      source: 'attachment' as const,
+      role: 'input' as const,
+      sources: [{ source: 'attachment' as const, role: 'input' as const, messageId: 'user-1', attachmentId: 'att-paste' }],
+      kind: 'image' as const,
+      state: 'ready' as const,
+      path: '/tmp/does-not-exist-screenshot.png',
+      dataUrl: TINY_PNG_DATA_URL,
+      filename: 'screenshot.png',
+      mimeType: 'image/png',
+    };
+
+    expect(getRenderableMediaSrc(asset)).toBe(TINY_PNG_DATA_URL);
+  });
+
+  it('renders a user-bubble screenshot from data URL when path is invalid', () => {
+    const html = renderToStaticMarkup(
+      <AttachmentDisplay
+        mediaContext={{ sessionId: 'session-paste', messageId: 'user-paste' }}
+        attachments={[
+          {
+            id: 'att-paste',
+            type: 'image',
+            category: 'image',
+            name: 'screenshot.png',
+            path: '/tmp/does-not-exist-screenshot.png',
+            data: TINY_PNG_DATA_URL,
+            mimeType: 'image/png',
+            size: 76,
+          },
+        ]}
+      />,
+    );
+
+    expect(html).toContain('<img');
+    expect(html).toContain(TINY_PNG_DATA_URL);
+    expect(html).not.toContain('file:///tmp/does-not-exist-screenshot.png');
+    expect(html).not.toContain('图片过大，已跳过内联预览');
+  });
+
   it('skips oversized inline attachment previews instead of rendering the data URL', () => {
     const payload = 'a'.repeat(Math.ceil((LARGE_INLINE_MEDIA_BYTES + 1) * 4 / 3));
     const dataUrl = `data:image/png;base64,${payload}`;

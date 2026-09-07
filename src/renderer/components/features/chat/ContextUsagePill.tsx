@@ -7,7 +7,11 @@ import { useAppStore } from '../../../stores/appStore';
 import { useContextCompactionStore } from '../../../stores/contextCompactionStore';
 import { useI18n } from '../../../hooks/useI18n';
 import { ContextHealthDetailPopover } from './ContextHealthDetailPopover';
-import { formatContextUsagePercent } from '../../../utils/contextUsageFormat';
+import {
+  clampUsagePercent,
+  formatContextUsagePercent,
+  isContextWindowKnown,
+} from '../../../utils/contextUsageFormat';
 import { OPEN_CONTEXT_HEALTH_EVENT } from '../../../utils/workbenchViews';
 
 function formatTokens(n: number): string {
@@ -75,10 +79,11 @@ export const ContextUsagePill: React.FC = () => {
   const usagePercent = contextHealth?.usagePercent ?? 0;
   const currentTokens = contextHealth?.currentTokens ?? 0;
   const maxTokens = contextHealth?.maxTokens ?? 0;
-  const pct = Math.max(0, Math.min(100, usagePercent));
+  const windowKnown = isContextWindowKnown(contextHealth);
+  const pct = windowKnown ? clampUsagePercent(usagePercent) : 0;
   const displayPct = formatContextUsagePercent(pct);
   const displayRemainingPct = formatContextUsagePercent(Math.max(0, 100 - pct));
-  const tone = toneFromPercent(pct);
+  const tone = windowKnown ? toneFromPercent(pct) : 'normal';
   const styles = TONE_STYLES[tone];
   const hasData = !!contextHealth && maxTokens > 0;
 
@@ -112,10 +117,14 @@ export const ContextUsagePill: React.FC = () => {
         className={`inline-flex h-8 items-center justify-center gap-1 rounded-lg px-1.5 text-xs tabular-nums transition-colors ${styles.text} ${styles.hoverBg}`}
         aria-label={ch.usageAriaLabel}
         title={hasData
-          ? ch.usageTitle
+          ? (windowKnown
+            ? ch.usageTitle
               .replace('{percent}', displayPct)
               .replace('{used}', formatTokens(currentTokens))
               .replace('{max}', formatTokens(maxTokens))
+            : `${ch.windowUnknownBadge} · ${ch.tokensFraction
+              .replace('{used}', formatTokens(currentTokens))
+              .replace('{max}', formatTokens(maxTokens))}`)
           : ch.waitingFirstTurn}
       >
         <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="transform -rotate-90">
@@ -147,7 +156,9 @@ export const ContextUsagePill: React.FC = () => {
         <div className="absolute bottom-full right-0 z-30 mb-2 min-w-[200px] rounded-xl border border-border-hover bg-zinc-900/95 px-4 py-3 text-center shadow-md dark:shadow-2xl backdrop-blur">
           <div className="text-sm font-semibold leading-tight tracking-normal text-zinc-50 tabular-nums">
             {hasData
-              ? ch.usageSummary.replace('{percent}', displayPct).replace('{remaining}', displayRemainingPct)
+              ? (windowKnown
+                ? ch.usageSummary.replace('{percent}', displayPct).replace('{remaining}', displayRemainingPct)
+                : ch.windowUnknownSummary)
               : ch.waitingFirstTurn}
           </div>
           <div className="mt-1 text-[11px] leading-tight text-zinc-400 tabular-nums">

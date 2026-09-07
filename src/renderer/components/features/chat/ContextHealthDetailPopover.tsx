@@ -24,7 +24,13 @@ import { useContextCompactionStore } from '../../../stores/contextCompactionStor
 import { useBudgetStatus } from '../../../hooks/useBudgetStatus';
 import { CostDisplay } from '../../StatusBar/CostDisplay';
 import { useContextHealthActions } from '../../../hooks/useContextHealthActions';
-import { formatContextUsagePercent } from '../../../utils/contextUsageFormat';
+import {
+  bucketSharePercent,
+  clampUsagePercent,
+  formatContextUsagePercent,
+  isContextWindowKnown,
+  shouldShowEstimateDeviation,
+} from '../../../utils/contextUsageFormat';
 import type { ContextHealthState } from '@shared/contract/contextHealth';
 import { resolveContextHealthDetailMode } from './contextHealthDetailMode';
 
@@ -114,17 +120,23 @@ export const ContextHealthDetailPopover: React.FC<ContextHealthDetailPopoverProp
   useEffect(() => () => clearCompaction(), [clearCompaction]);
 
   const usagePercent = contextHealth?.usagePercent ?? 0;
+  const windowKnown = isContextWindowKnown(contextHealth);
+  const displayPercent = windowKnown ? clampUsagePercent(usagePercent) : 0;
   const canCompact = usagePercent >= 70;
   // 操作区（费用 / 压缩反馈 / 压缩钮）按需整体渲染，避免全空时只剩一条分隔线
   const hasCost = sessionCost > 0 || unknownCostTurns > 0;
   const showActionRow = hasCost || canCompact || !!compactResult || !!compactError;
 
   const buckets = contextHealth ? buildBuckets(contextHealth, ch) : [];
-  const total = contextHealth?.currentTokens ?? 0;
+  const bucketTotal = buckets.reduce((sum, bucket) => sum + bucket.tokens, 0);
   const tokenLargestBucket = buckets.reduce<BucketSpec | undefined>(
     (largest, bucket) => (!largest || bucket.tokens > largest.tokens ? bucket : largest),
     undefined,
   );
+  const knownBucketCost = contextHealth?.systemPromptCacheCost?.status === 'known_cached'
+    ? contextHealth.systemPromptCacheCost
+    : null;
+  const showCostColumn = knownBucketCost != null;
   const cacheCostSplit = budgetStatus?.cacheCostSplit;
   const cacheSplitTokens = cacheCostSplit
     ? cacheCostSplit.cachedTokens + cacheCostSplit.uncachedTokens
@@ -139,6 +151,10 @@ export const ContextHealthDetailPopover: React.FC<ContextHealthDetailPopoverProp
     contextHealth.currentTokens > 0
       ? ((contextHealth.estimatedTokens - contextHealth.currentTokens) / contextHealth.currentTokens) * 100
       : null;
+  const showEstimateDeviation = shouldShowEstimateDeviation(estimateDeviation);
+  const estimateDeviationLabel = estimateDeviation === null
+    ? ''
+    : `${estimateDeviation > 0 ? '+' : ''}${estimateDeviation.toFixed(1)}`;
 
   return (
     <div
@@ -165,85 +181,111 @@ export const ContextHealthDetailPopover: React.FC<ContextHealthDetailPopoverProp
             {/* 大数字行 + 分段总条：总量的唯一出口 */}
             <div className="mb-2 flex items-baseline justify-between tabular-nums">
               <span className="text-sm font-semibold text-zinc-50">
-                {interpolate(ch.usageSummary, {
-                  percent: formatContextUsagePercent(Math.max(0, Math.min(100, usagePercent))),
-                  remaining: formatContextUsagePercent(Math.max(0, 100 - Math.max(0, Math.min(100, usagePercent)))),
-                })}
+                {windowKnown
+                  ? interpolate(ch.usageSummary, {
+                    percent: formatContextUsagePercent(displayPercent),
+                    remaining: formatContextUsagePercent(Math.max(0, 100 - displayPercent)),
+                  })
+                  : ch.windowUnknownSummary}
               </span>
               <span className="text-[11px] text-zinc-400">
+                <span data-testid="context-health-window-caption">{ch.windowUsageCaption}</span>
+                {' · '}
                 {interpolate(ch.tokensFraction, {
                   used: formatTokens(contextHealth.currentTokens),
                   max: formatTokens(contextHealth.maxTokens),
                 })}
+                {!windowKnown && (
+                  <span className="ml-1.5 text-zinc-500" data-testid="context-health-window-unknown">
+                    {ch.windowUnknownBadge}
+                  </span>
+                )}
                 {isEstimated && (
                   <span className="ml-1.5 text-zinc-500" data-testid="context-health-estimated-badge">
                     {ch.estimatedBadge}
                   </span>
                 )}
-                {estimateDeviation !== null && Math.abs(estimateDeviation) >= 0.05 && (
+                {showEstimateDeviation && (
                   <span
                     className="ml-1.5 text-zinc-500"
                     data-testid="context-health-deviation"
                     title={ch.estimateDeviationTitle}
                   >
                     {interpolate(ch.estimateDeviation, {
-                      percent: `${estimateDeviation > 0 ? '+' : ''}${estimateDeviation.toFixed(1)}`,
+                      percent: estimateDeviationLabel,
                     })}
                   </span>
                 )}
               </span>
             </div>
 
-            {buckets.length > 0 && total > 0 && (
+            {buckets.length > 0 && bucketTotal > 0 && (
               <>
+                <div className="mb-1 text-[10px] text-zinc-500" data-testid="context-bucket-share-caption">
+                  {ch.bucketShareCaption}
+                </div>
                 <div
                   className="mb-3 flex h-1.5 w-full overflow-hidden rounded-full bg-zinc-800"
                   data-testid="context-source-bar"
+                  data-share-denominator={bucketTotal}
                 >
-                  {buckets.map((bucket) => (
-                    <div
-                      key={bucket.key}
-                      className="h-full"
-                      style={{ width: `${(bucket.tokens / total) * 100}%`, background: bucket.color }}
-                      title={interpolate(ch.sourceBucketTitle, {
-                        name: bucket.name,
-                        tokens: formatTokens(bucket.tokens),
-                        percent: ((bucket.tokens / total) * 100).toFixed(1),
-                      })}
-                    />
-                  ))}
+                  {buckets.map((bucket) => {
+                    const share = bucketSharePercent(bucket.tokens, bucketTotal);
+                    return (
+                      <div
+                        key={bucket.key}
+                        className="h-full"
+                        data-bucket-key={bucket.key}
+                        data-share-percent={share.toFixed(1)}
+                        style={{ width: `${share}%`, background: bucket.color }}
+                        title={interpolate(ch.sourceBucketTitle, {
+                          name: bucket.name,
+                          tokens: formatTokens(bucket.tokens),
+                          percent: share.toFixed(1),
+                        })}
+                      />
+                    );
+                  })}
                 </div>
 
-                {/* token 与成本回答不同问题：成本列只有静态系统提示可判定，其余桶保持未知。 */}
-                <div data-testid="context-bucket-list">
-                  <div className="grid grid-cols-[minmax(0,1fr)_90px_112px] gap-2 pb-1 text-[10px] text-zinc-500">
+                <div data-testid="context-bucket-list" data-cost-column={showCostColumn ? 'on' : 'off'}>
+                  <div className={`grid gap-2 pb-1 text-[10px] text-zinc-500 ${
+                    showCostColumn ? 'grid-cols-[minmax(0,1fr)_90px_112px]' : 'grid-cols-[minmax(0,1fr)_90px]'
+                  }`}>
                     <span>{ch.bucketColumn}</span>
                     <span className="text-right">{ch.tokenShareColumn}</span>
-                    <span className="text-right">{ch.costShareColumn}</span>
+                    {showCostColumn && <span className="text-right">{ch.costShareColumn}</span>}
                   </div>
-                  {buckets.map((bucket) => (
-                    <div
-                      key={bucket.key}
-                      className="grid grid-cols-[minmax(0,1fr)_90px_112px] items-center gap-2 py-1 text-xs"
-                    >
-                      <span className="flex min-w-0 items-center gap-2 text-zinc-300">
-                        <span
-                          className="h-2 w-2 flex-shrink-0 rounded-sm"
-                          style={{ background: bucket.color }}
-                        />
-                        <span className="truncate">{bucket.name}</span>
-                      </span>
-                      <span className="text-right text-[11px] text-zinc-400 tabular-nums">
-                        {formatTokens(bucket.tokens)} · {((bucket.tokens / total) * 100).toFixed(1)}%
-                      </span>
-                      <span className="text-right text-[11px] text-zinc-400 tabular-nums">
-                        {bucket.key === 'systemPrompt'
-                          && contextHealth.systemPromptCacheCost?.status === 'known_cached'
-                          ? `${formatUsd(contextHealth.systemPromptCacheCost.costUsd)} · ${contextHealth.systemPromptCacheCost.inputCostPercent.toFixed(1)}%`
-                          : ch.unknownCost}
-                      </span>
-                    </div>
-                  ))}
+                  {buckets.map((bucket) => {
+                    const share = bucketSharePercent(bucket.tokens, bucketTotal);
+                    const bucketHasCost = showCostColumn && bucket.key === 'systemPrompt' && knownBucketCost;
+                    return (
+                      <div
+                        key={bucket.key}
+                        className={`grid items-center gap-2 py-1 text-xs ${
+                          showCostColumn ? 'grid-cols-[minmax(0,1fr)_90px_112px]' : 'grid-cols-[minmax(0,1fr)_90px]'
+                        }`}
+                      >
+                        <span className="flex min-w-0 items-center gap-2 text-zinc-300">
+                          <span
+                            className="h-2 w-2 flex-shrink-0 rounded-sm"
+                            style={{ background: bucket.color }}
+                          />
+                          <span className="truncate">{bucket.name}</span>
+                        </span>
+                        <span className="text-right text-[11px] text-zinc-400 tabular-nums">
+                          {formatTokens(bucket.tokens)} · {share.toFixed(1)}%
+                        </span>
+                        {showCostColumn && (
+                          <span className="text-right text-[11px] text-zinc-400 tabular-nums">
+                            {bucketHasCost
+                              ? `${formatUsd(knownBucketCost.costUsd)} · ${knownBucketCost.inputCostPercent.toFixed(1)}%`
+                              : ''}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
 
                 {tokenLargestBucket && (
@@ -251,10 +293,14 @@ export const ContextHealthDetailPopover: React.FC<ContextHealthDetailPopoverProp
                     className="mt-2 rounded-md bg-surface-hover px-2.5 py-2 text-[11px] text-zinc-400"
                     data-testid="context-cost-ranking-status"
                   >
-                    {interpolate(ch.bucketRanking, {
-                      tokenBucket: tokenLargestBucket.name,
-                      costBucket: ch.pendingValidation,
-                    })}
+                    {showCostColumn
+                      ? interpolate(ch.bucketRanking, {
+                        tokenBucket: tokenLargestBucket.name,
+                        costBucket: ch.pendingValidation,
+                      })
+                      : interpolate(ch.bucketRankingTokensOnly, {
+                        tokenBucket: tokenLargestBucket.name,
+                      })}
                   </div>
                 )}
               </>

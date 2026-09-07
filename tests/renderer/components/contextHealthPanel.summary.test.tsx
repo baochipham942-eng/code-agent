@@ -74,4 +74,23 @@ describe('ContextHealthPanel — bySource 摘要桶', () => {
     expect(screen.getByText('对话')).toBeTruthy();
     expect(screen.getByText('摘要（压了 2 轮）')).toBeTruthy();
   });
+
+  it('头部与进度条共用钳制后的窗口占比，不各画各的', () => {
+    const health = makeHealth(500, 2);
+    health.usagePercent = 120;
+    render(<ContextHealthPanel collapsed={false} health={health} />);
+    expect(screen.getByTestId('context-health-panel-percent').textContent).toBe('100.0%');
+    expect(screen.getByTestId('context-health-panel-bar').getAttribute('style')).toContain('100%');
+  });
+
+  it('窗口未知时头部不渲染自相矛盾的 100% 已用', () => {
+    const health = makeHealth(500, 2);
+    health.windowKnown = false;
+    health.usagePercent = 120;
+    health.currentTokens = 153600;
+    health.maxTokens = 128000;
+    render(<ContextHealthPanel collapsed={false} health={health} />);
+    expect(screen.getByTestId('context-health-panel-percent').textContent).toContain('容量未知');
+    expect(screen.getByTestId('context-health-panel-bar').getAttribute('style')).toContain('0%');
+  });
 });

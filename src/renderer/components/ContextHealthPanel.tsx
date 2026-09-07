@@ -22,6 +22,11 @@ import type {
   SourceTag,
 } from '@shared/contract/contextHealth';
 import { useI18n } from '../hooks/useI18n';
+import {
+  bucketSharePercent,
+  clampUsagePercent,
+  isContextWindowKnown,
+} from '../utils/contextUsageFormat';
 import { interpolate } from '../i18n/interpolate';
 
 interface ContextHealthPanelProps {
@@ -109,6 +114,24 @@ export const ContextHealthPanel: React.FC<ContextHealthPanelProps> = ({
 
   const colors = getWarningColors(health.warningLevel);
   const IconComponent = colors.icon;
+  const windowKnown = isContextWindowKnown(health);
+  const displayPercent = windowKnown ? clampUsagePercent(health.usagePercent) : 0;
+  const structureTotal = [
+    health.breakdown.systemPrompt,
+    health.breakdown.messages,
+    health.breakdown.toolResults,
+    health.breakdown.toolDefinitions ?? 0,
+  ].reduce((sum, tokens) => sum + Math.max(0, tokens), 0);
+  const sourceEntries = health.breakdown.bySource;
+  const sourceTotal = sourceEntries
+    ? (sourceEntries.rules
+      + Object.values(sourceEntries.skills).reduce((sum, tokens) => sum + tokens, 0)
+      + Object.values(sourceEntries.mcp).reduce((sum, tokens) => sum + tokens, 0)
+      + Object.values(sourceEntries.subagents).reduce((sum, tokens) => sum + tokens, 0)
+      + sourceEntries.fileReads
+      + (sourceEntries.summary ?? 0)
+      + (sourceEntries.conversation ?? 0))
+    : 0;
 
 
   const handleToggle = () => {
@@ -131,8 +154,11 @@ export const ContextHealthPanel: React.FC<ContextHealthPanelProps> = ({
         )}
         <IconComponent className={`w-4 h-4 ${colors.iconColor}`} />
         <span className="text-sm font-medium text-zinc-200">{ch.title}</span>
-        <span className={`ml-auto text-sm font-mono ${colors.textColor}`}>
-          {health.usagePercent.toFixed(1)}%
+        <span
+          className={`ml-auto text-sm font-mono ${colors.textColor}`}
+          data-testid="context-health-panel-percent"
+        >
+          {windowKnown ? `${displayPercent.toFixed(1)}%` : ch.windowUnknownSummary}
         </span>
       </button>
 
@@ -144,7 +170,8 @@ export const ContextHealthPanel: React.FC<ContextHealthPanelProps> = ({
               <div className="h-2 bg-zinc-700 rounded-full overflow-hidden">
                 <div
                   className={`h-full ${colors.barColor} transition-all duration-300`}
-                  style={{ width: `${Math.min(health.usagePercent, 100)}%` }}
+                  data-testid="context-health-panel-bar"
+                  style={{ width: `${displayPercent}%` }}
                 />
               </div>
               <div className="flex justify-between text-xs">
@@ -173,23 +200,23 @@ export const ContextHealthPanel: React.FC<ContextHealthPanelProps> = ({
                 <BreakdownItem
                   label={ch.bkSystemPrompt}
                   tokens={health.breakdown.systemPrompt}
-                  total={health.currentTokens}
+                  total={structureTotal}
                 />
                 <BreakdownItem
                   label={ch.bkMessages}
                   tokens={health.breakdown.messages}
-                  total={health.currentTokens}
+                  total={structureTotal}
                 />
                 <BreakdownItem
                   label={ch.bkToolResults}
                   tokens={health.breakdown.toolResults}
-                  total={health.currentTokens}
+                  total={structureTotal}
                 />
                 {health.breakdown.toolDefinitions !== undefined && (
                   <BreakdownItem
                     label={ch.bkToolDefs}
                     tokens={health.breakdown.toolDefinitions}
-                    total={health.currentTokens}
+                    total={structureTotal}
                   />
                 )}
               </div>
@@ -217,14 +244,14 @@ export const ContextHealthPanel: React.FC<ContextHealthPanelProps> = ({
                   <BreakdownItem
                     label={ch.bkRules}
                     tokens={health.breakdown.bySource.rules}
-                    total={health.currentTokens}
+                    total={sourceTotal}
                   />
 
                   {/* Skills — Record 嵌套折叠 */}
                   <NestedGroup
                     label="Skills"
                     entries={health.breakdown.bySource.skills}
-                    total={health.currentTokens}
+                    total={sourceTotal}
                     isExpanded={expandedGroups.skills}
                     onToggle={() => toggleGroup('skills')}
                     sourceFactory={(name) => ({ type: 'skill', name })}
@@ -236,7 +263,7 @@ export const ContextHealthPanel: React.FC<ContextHealthPanelProps> = ({
                   <NestedGroup
                     label="MCP"
                     entries={health.breakdown.bySource.mcp}
-                    total={health.currentTokens}
+                    total={sourceTotal}
                     isExpanded={expandedGroups.mcp}
                     onToggle={() => toggleGroup('mcp')}
                     sourceFactory={(server) => ({ type: 'mcp', server })}
@@ -248,7 +275,7 @@ export const ContextHealthPanel: React.FC<ContextHealthPanelProps> = ({
                   <NestedGroup
                     label="Subagents"
                     entries={health.breakdown.bySource.subagents}
-                    total={health.currentTokens}
+                    total={sourceTotal}
                     isExpanded={expandedGroups.subagents}
                     onToggle={() => toggleGroup('subagents')}
                     sourceFactory={(name) => ({ type: 'subagent', name })}
@@ -260,7 +287,7 @@ export const ContextHealthPanel: React.FC<ContextHealthPanelProps> = ({
                   <BreakdownItem
                     label={ch.bkFileReads}
                     tokens={health.breakdown.bySource.fileReads}
-                    total={health.currentTokens}
+                    total={sourceTotal}
                   />
 
                   {/* Summary — 派生值：压缩摘要消息估算，仅在压过之后渲染 */}
@@ -271,7 +298,7 @@ export const ContextHealthPanel: React.FC<ContextHealthPanelProps> = ({
                         String(health.compression?.compressionCount ?? 0),
                       )}
                       tokens={health.breakdown.bySource.summary}
-                      total={health.currentTokens}
+                      total={sourceTotal}
                     />
                   )}
 
@@ -279,7 +306,7 @@ export const ContextHealthPanel: React.FC<ContextHealthPanelProps> = ({
                   <BreakdownItem
                     label={ch.bkConversation}
                     tokens={health.breakdown.bySource.conversation}
-                    total={health.currentTokens}
+                    total={sourceTotal}
                   />
                 </div>
               )}
@@ -377,7 +404,7 @@ const BreakdownItem: React.FC<{
   total: number;
 }> = ({ label, tokens, total }) => {
   if (tokens <= 0) return null;
-  const percent = total > 0 ? ((tokens / total) * 100).toFixed(1) : '0.0';
+  const percent = bucketSharePercent(tokens, total).toFixed(1);
 
   return (
     <div className="flex justify-between text-xs">
@@ -409,7 +436,7 @@ const NestedGroup: React.FC<{
   const sum = Object.values(entries).reduce((a, b) => a + b, 0);
   // 空桶不占位（与 BreakdownItem 同一口径：0 值不渲染）
   if (sum <= 0) return null;
-  const percent = total > 0 ? ((sum / total) * 100).toFixed(1) : '0.0';
+  const percent = bucketSharePercent(sum, total).toFixed(1);
   const hasEntries = names.length > 0;
 
   return (

@@ -954,6 +954,12 @@ export const ChatView: React.FC = () => {
           disabled={effectiveIsProcessing}
           onRestored={(result) => {
             setMessages(result.activeMessages);
+            if (
+              result.state === 'success'
+              && result.failed.length === 0
+              && result.done.length === 0
+              && result.restoredMessageCount === 0
+            ) return;
             const restored = t.chat.rewindRestored.replace(
               '{count}',
               String(result.restoredMessageCount),

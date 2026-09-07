@@ -304,6 +304,14 @@ const KNOWN_SHAPES = [
   // Round 39: same family on the pipe side, same per-cwd divergence, unit-test-only too.
   // Round 40: this one moves the cd home in every cwd, so both sides ask everywhere — pinnable.
   'cd ~ && 2>&1; cat .ssh/id_rsa & echo ok',
+  // Round 42 (structural cut): the round-41 table rows pinned directly — the word-free `2>&1` no
+  // longer trips the strict parse, so both sides run the strict segment walk and stay equal — plus
+  // the still-parse-failing heredoc sibling: the lenient segment view keeps the cd cwd walk alive,
+  // so the baseline's /usr deny no longer decays into an approvable ask in any cwd.
+  'cd ~ && 2>&1; rm -rf .ssh/id_rsa',
+  'cd ~ && 2>&1; cat .ssh/id_rsa',
+  'cd ~ ; rm -rf .ssh/id_rsa',
+  'cd / && cat <<x; rm -rf usr',
 ];
 
 // Under /tmp the critical-path rm rule fires before anything else and masks weaker rules; a real

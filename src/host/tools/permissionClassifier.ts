@@ -21,7 +21,7 @@ import {
 import { createTraceStep } from '../security/decisionTraceBuilder';
 import {
   commandWords as tokenizeCommandWords, isKnownSafeCommand,
-  splitCompoundCommand,
+  lenientCompoundSegments, splitCompoundCommand,
 } from '../security/commandSafety';
 import { canonicalizeCommand } from '../security/canonicalizeCommand';
 import {
@@ -843,7 +843,16 @@ export class PermissionClassifier {
       // Failing to split is not evidence of safety: a null here hands the command to the caller's
       // fallback ask and silently downgrades a dangerous-command deny (round 7 / round 13 shape).
       // Let the deny rules read the whole command first; anything short of deny still falls through.
-      return neverApprove(this.classifyBashSegment(rawTrimmed, context, startTime));
+      const whole = neverApprove(this.classifyBashSegment(rawTrimmed, context, startTime));
+      // 第 42 轮（结构性收口）：解析失败不再清空段视图——与 lenientCommandWords 同一立场，抬到段级。
+      // lenient 段照走 cd 的 cwd 推进；只有走查出 deny 才盖过整串扫描（heredoc 后 `cd / && …; rm -rf usr`
+      // 在原 cwd 下够不着关键路径），walked 的 approve 出不去（neverApprove），整串扫描已拿到的 ask
+      // 及其理由（round 33 heredoc 凭据）原样保留。
+      const lenient = lenientCompoundSegments(rawTrimmed);
+      if (!lenient) return whole;
+      const walked = neverApprove(this.classifySegmentWalk(
+        lenient.segments, lenient.terminators, rawInspection.outputRedirectionAsk, context, startTime));
+      return walked?.decision === 'deny' ? walked : whole ?? walked;
     }
 
     if (segments.length === 1) {
@@ -856,15 +865,20 @@ export class PermissionClassifier {
     // 不改变 cd 自身或未知段的判决，只修正后续 rm/凭据相对路径的解析基准。
     // splitCompoundCommand rebuilds these one-for-one from the same parse's segments.
     const terminators = parseShellCommand(rawTrimmed).segments.map((segment) => segment.terminator);
-    let strictest: ClassificationResult | null = rawInspection.outputRedirectionAsk ?? null;
+    return this.classifySegmentWalk(segments, terminators, rawInspection.outputRedirectionAsk, context, startTime);
+  }
+
+  /** 严格段视图与 lenient 段视图共用的逐段走查：cd 段推进 cwd，可执行段逐段分类，deny 短路；
+   *  全 cd 时看重定向 ask，否则批准 cd。结果可能含 approve，两条调用路径各自负责 neverApprove。 */
+  private classifySegmentWalk(segments: string[], terminators: SegmentTerminator[],
+    redirectAsk: ClassificationResult | null | undefined, context: ClassificationContext, startTime: number,
+  ): ClassificationResult | null {
+    let strictest: ClassificationResult | null = redirectAsk ?? null;
     let segmentContext = context;
     let executableSegmentCount = 0;
     for (const [index, segment] of segments.entries()) {
       const advancedContext = contextAfterCdSegment(segment, segmentContext, terminators, index);
-      if (advancedContext) {
-        segmentContext = advancedContext;
-        continue;
-      }
+      if (advancedContext) { segmentContext = advancedContext; continue; }
       executableSegmentCount += 1;
       const result = this.classifyBashSegment(segment, segmentContext, startTime)
         ?? this.createUnknownCompoundAsk(segment, startTime);
@@ -873,13 +887,7 @@ export class PermissionClassifier {
     }
 
     if (executableSegmentCount === 0) {
-      if (rawInspection.outputRedirectionAsk) return rawInspection.outputRedirectionAsk;
-      return {
-        decision: 'approve',
-        reason: 'cd 命令',
-        confidence: 1.0,
-        cached: false,
-      };
+      return redirectAsk ?? { decision: 'approve', reason: 'cd 命令', confidence: 1.0, cached: false };
     }
 
     return strictest;

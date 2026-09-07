@@ -447,6 +447,48 @@ describe('PermissionClassifier', () => {
       expect(result.decision).toBe('deny');
     });
 
+    // 第 42 轮（结构性收口：解析失败不再丢段视图）：前三行是第 41 轮的对照表，两个 cwd 各钉一遍；
+    // 后两行是仍会让严格解析失败的同族形状（heredoc 正文不可分）——lenient 段视图保住 cd 的 cwd
+    // 推进，基线的 deny 不再退成可批准的 ask。真机核对：cd / && cat <<x; rm -rf usr 在家目录 cwd
+    // 下，收口前是 ask（原 cwd 扫描够不着 /usr），基线与收口后都是 deny。
+    it.each([
+      ['cd ~ && 2>&1; rm -rf .ssh/id_rsa', 'deny'],
+      ['cd ~ && 2>&1; cat .ssh/id_rsa', 'ask'],
+      ['cd ~ ; rm -rf .ssh/id_rsa', 'deny'],
+      ['cd / && cat <<x; rm -rf usr', 'deny'],
+      ['cd /etc && cat <<x; rm -rf ssh', 'deny'],
+    ] as const)('keeps the cd cwd walk alive across cwds, strict or lenient: %s',
+      async (command, decision) => {
+        for (const cwd of ['/tmp/comate-zulu-demo', os.homedir()]) {
+          const result = await classifyPermission(
+            'bash', { command }, { workingDirectory: cwd, permissionLevel: 'execute' },
+          );
+          expect(result.decision).toBe(decision);
+        }
+      });
+
+    it('carries the propagated cwd into the parse-failed deny reasons', async () => {
+      // 表格第一行的 deny 理由落在推进后的家目录凭据上；heredoc 行的关键路径理由指向 cd / 推进
+      // 出的真实目标，而不是原 cwd 下的同名相对路径。
+      const credential = await classifyPermission(
+        'bash',
+        { command: 'cd ~ && 2>&1; rm -rf .ssh/id_rsa' },
+        { workingDirectory: os.homedir(), permissionLevel: 'execute' },
+      );
+      expect(credential.decision).toBe('deny');
+      expect(credential.reason).toContain('递归删除');
+      expect(credential.reason).toContain(path.join(os.homedir(), '.ssh/id_rsa'));
+
+      const system = await classifyPermission(
+        'bash',
+        { command: 'cd / && cat <<x; rm -rf usr' },
+        { workingDirectory: os.homedir(), permissionLevel: 'execute' },
+      );
+      expect(system.decision).toBe('deny');
+      expect(system.reason).toContain('递归删除关键路径');
+      expect(system.reason).toContain('/usr');
+    });
+
     // 第 33 轮审查：`||` 链结束后 cd 成功那支的 cwd 已经变了，后续段按移动后的 cwd 解析
     // （与基线一致；两个 cwd 都查会更严，本刀不做，记证据档）。heredoc 正文是其命令的
     // stdin：严格解析失败，deny/ask 规则退回 lenient 词扫描，凭据路径落在原 cwd 上。

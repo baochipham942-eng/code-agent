@@ -23,6 +23,8 @@ import {
   parseShellCommand,
   qualificationExecutions,
   qualificationExecutable,
+  type ParsedShellCommand,
+  type SegmentTerminator,
 } from './commandParse';
 import {
   rmIsContainedInWorkspace,
@@ -231,14 +233,41 @@ const CONDITIONALLY_SAFE: Record<string, SafetyChecker> = {
 export function splitCompoundCommand(command: string): string[] | null {
   const parsed = parseShellCommand(command);
   if (parsed.parsingFailed || parsed.trailingOperator) return null;
-  // A segment keeps its own redirections: per-segment rules resolve write targets against that
-  // segment's cwd (`cd ~/.ssh; echo x > authorized_keys`), and a target that cannot be a path
-  // (`> $'\0'`) must reach the path analysis instead of vanishing from the rebuilt text.
-  return parsed.segments.map((segment) => [
-    quote(segment.words),
-    ...segment.reads.map((read) => `< ${quote([read.path])}`),
-    ...segment.redirects.map((target) => `> ${quote([target.path])}`),
-  ].join(' '));
+  return rebuildCompoundSegments(parsed).segments;
+}
+
+// A segment keeps its own redirections: per-segment rules resolve write targets against that
+// segment's cwd (`cd ~/.ssh; echo x > authorized_keys`), and a target that cannot be a path
+// (`> $'\0'`) must reach the path analysis instead of vanishing from the rebuilt text.
+// Both arrays stay one-for-one with parsed.segments, so terminators[i] always describes
+// segments[i] — the cd walk pairs them by index.
+function rebuildCompoundSegments(
+  parsed: ParsedShellCommand,
+): { segments: string[]; terminators: SegmentTerminator[] } {
+  return {
+    segments: parsed.segments.map((segment) => [
+      quote(segment.words),
+      ...segment.reads.map((read) => `< ${quote([read.path])}`),
+      ...segment.redirects.map((target) => `> ${quote([target.path])}`),
+    ].join(' ')),
+    terminators: parsed.segments.map((segment) => segment.terminator),
+  };
+}
+
+/**
+ * The lenient sibling of splitCompoundCommand(): a command we cannot structure must widen the
+ * risk rules' view, never empty it — lenientCommandWords() keeps every word for exactly that
+ * reason, and this lifts the stance one level up to segments. The strict view returns null on
+ * parsingFailed/trailingOperator, a single boolean discarding the segments parseEntries had
+ * already built, so the permission fallback lost the cd cwd walk and resolved later segments
+ * against the original cwd (rounds 32-41 family). Never an input to an approval proof;
+ * those stay on splitCompoundCommand().
+ */
+export function lenientCompoundSegments(
+  command: string,
+): { segments: string[]; terminators: SegmentTerminator[] } | null {
+  const parsed = parseShellCommand(command);
+  return parsed.segments.length > 0 ? rebuildCompoundSegments(parsed) : null;
 }
 
 /**

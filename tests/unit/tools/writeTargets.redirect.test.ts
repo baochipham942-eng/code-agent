@@ -266,4 +266,17 @@ describe('引号/转义目标的词法保真（PR #1709 复审①）', () => {
     expect(resolve("cp src '/tmp/a\\b.txt'").targets)
       .toEqual([resolveCanonicalRunPath('/tmp/a\\b.txt')]);
   });
+
+  it('嵌套脚本解析失败仍保住已识别的写目标（ai-review 第 46 轮：失败不许清空视图）', () => {
+    // `(true)` 让内层解析失败；基线从分号前的 cp 提得到目标，候选一度返回空 ⇒
+    // 工作区边界检查整个不触发。解析失败只该让视图变宽（多报），不该让它变空。
+    expect(resolve("bash -c 'cp source.txt /etc/owned46.txt; (true)'").targets)
+      .toEqual([resolveCanonicalRunPath('/etc/owned46.txt')]);
+    // 对照：不带失败尾巴时本来就有
+    expect(resolve("bash -c 'cp source.txt /etc/owned46.txt; true'").targets)
+      .toEqual([resolveCanonicalRunPath('/etc/owned46.txt')]);
+    // 对照：不经嵌套脚本时本来就有
+    expect(resolve('cp source.txt /etc/owned46.txt; (true)').targets)
+      .toEqual([resolveCanonicalRunPath('/etc/owned46.txt')]);
+  });
 });

@@ -982,7 +982,19 @@ function expandCommand(
 ): Expansion {
   const parsed = parseEntries(command);
   if (parsed.failed) {
-    return { executions: [], targets: parsed.redirects, uncertain: [], failed: parsed.failureReason };
+    // Same rule as lenientCompoundSegments: a script we cannot fully structure must widen the
+    // target view, never empty it. parsed.segments still holds what was read before the failure,
+    // and dropping it made `bash -c 'cp a ../outside/x; (true)'` report zero write targets while
+    // the baseline reported the cp operand — the workspace boundary check then never fired
+    // (ai-review round 46). Targets are safe to over-report; executions are not, so the approval
+    // proof still gets nothing out of a failed parse.
+    const salvaged = expandSegments(parsed.segments, originalProgram, wrappers, depth);
+    return {
+      executions: [],
+      targets: [...parsed.redirects, ...salvaged.flatMap((item) => item.targets)],
+      uncertain: salvaged.flatMap((item) => item.uncertain),
+      failed: parsed.failureReason,
+    };
   }
   const expanded = expandSegments(parsed.segments, originalProgram, wrappers, depth);
   return {

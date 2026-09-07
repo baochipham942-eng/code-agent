@@ -167,4 +167,11 @@ describe('引号/转义目标的词法保真（PR #1709 复审①）', () => {
     expect(resolve("printf '%s\\n' '>/outside/file'")).toMatchObject({ targets: [], uncertain: [] });
     expect(resolve('echo "a > b"')).toMatchObject({ targets: [], uncertain: [] });
   });
+
+  it('命令名带引号/转义仍认得出（PR #1709 复审②：`c"p"` 丢目标会削弱 WRITE_OWNERSHIP_CONFLICT）', () => {
+    expect(resolve('c"p" a /etc/x').targets).toEqual([resolveCanonicalRunPath('/etc/x')]);
+    expect(resolve('c\\p a /etc/x').targets).toEqual([resolveCanonicalRunPath('/etc/x')]);
+    expect(resolve('m"v" a /etc/x').targets).toEqual([resolveCanonicalRunPath('/etc/x')]);
+    expect(resolve('tee "/tmp/t1"').targets).toEqual([resolveCanonicalRunPath('/tmp/t1')]);
+  });
 });

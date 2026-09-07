@@ -69,15 +69,6 @@ function readShellWord(command: string, start: number): { raw: string; end: numb
   return { raw: command.slice(wordStart, index), end: index };
 }
 
-/** 去掉整词两端的同类引号：`cp a "/etc/x"` 的目标是 /etc/x，不是带引号的字面量。 */
-function unquote(word: string): string {
-  const first = word[0];
-  if ((first === "'" || first === '"') && word.length >= 2 && word.at(-1) === first) {
-    return word.slice(1, -1);
-  }
-  return word;
-}
-
 /**
  * `$'...'`（ANSI-C 引用）里一个 `\` 转义序列的解码。转义字母表从 canonicalizeCommand
  * import（同一份，别另抄）；`\xHH`/`\uHHHH`/`\UHHHHHHHH`/八进制的消费规则照它那边的
@@ -222,7 +213,10 @@ const ARGUMENT_WRITE_COMMANDS: Record<string, 'last' | 'all'> = { cp: 'last', mv
 
 function argumentWriteTargets(words: string[]): string[] {
   if (words.length < 2) return [];
-  const rule = ARGUMENT_WRITE_COMMANDS[path.basename(unquote(words[0]))];
+  // 命令名也要词法值化：保引号分词后 `c"p"`/`c\p` 这类合法写法带着引号/转义进来，
+  // unquote 只剥整词引号认不出 cp ⇒ 写目标丢失，削弱既有 WRITE_OWNERSHIP_CONFLICT
+  // （PR #1709 复审②）。shellWordValue 解完就是 cp。
+  const rule = ARGUMENT_WRITE_COMMANDS[path.basename(shellWordValue(words[0]))];
   if (!rule) return [];
   // `-r` / `-a` / `--append` 一律是开关不是路径；`--` 之后才是纯路径，但这里不需要区分。
   const operands = words.slice(1).filter((word) => !word.startsWith('-'));

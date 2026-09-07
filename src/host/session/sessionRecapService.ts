@@ -103,10 +103,14 @@ function hasRecapSubstance(
 /**
  * 不像一句总结就不上屏：空、反问、请求补充。承重过滤——摘掉后反问会原样进横幅。
  */
-function isUsableRecapText(text: string): boolean {
+function isUsableRecapText(text: string, knownTitles: string[] = []): boolean {
   const trimmed = text.trim();
   if (trimmed.length < 4) return false;
-  if (/[？?]/.test(trimmed)) return false;
+  let withoutTitles = trimmed;
+  for (const title of knownTitles) {
+    if (title.length >= 2) withoutTitles = withoutTitles.split(title).join('');
+  }
+  if (/[？?]/.test(withoutTitles)) return false;
   if (/^(您好|你好)[，,]/u.test(trimmed)) return false;
   if (/(似乎没有|没有附上|未附上|请提供|请补充|请告知|请告诉|请贴|能否.{0,8}提供|可以.{0,8}提供|需要总结|缺少.{0,8}内容)/u.test(trimmed)) {
     return false;
@@ -181,7 +185,7 @@ export async function buildSessionRecap(
     if (!result.success) return fallback;
     const text = (result.content ?? '').trim().replace(/^["'「『]|["'」』]$/g, '');
     // 不像总结不上屏：反问/请求补充/空都不降级成规则拼接，避免把反问原样送进横幅。
-    if (!isUsableRecapText(text)) return null;
+    if (!isUsableRecapText(text, material.artifactLabels)) return null;
 
     return {
       text: text.length > MAX_RECAP_LENGTH ? `${text.slice(0, MAX_RECAP_LENGTH)}…` : text,

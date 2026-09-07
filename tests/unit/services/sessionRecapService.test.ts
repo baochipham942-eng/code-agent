@@ -197,6 +197,24 @@ describe('sessionRecapService 模型输出过滤', () => {
     expect(recap!.text).toContain('预算');
   });
 
+  it('假模型原样引用带问号的产物名并点出受阻时仍上屏', async () => {
+    const material: SessionRecapMaterial = {
+      records: [record()],
+      artifactLabels: ['为什么要做预算？.docx'],
+      completedTasks: [],
+      blockedTasks: [task({ id: 'task-2', status: 'blocked', subject: '核对预算表', blockedReason: '缺一列数字' })],
+    };
+    quickModel.isQuickModelAvailable.mockReturnValue(true);
+    quickModel.quickTask.mockImplementation(async () => ({
+      success: true,
+      content: '更新了为什么要做预算？.docx，预算核对受阻。',
+    }));
+    const recap = await buildSessionRecap(material);
+    expect(recap).not.toBeNull();
+    expect(recap!.text).toContain('为什么要做预算？.docx');
+    expect(recap!.text).toContain('受阻');
+  });
+
   it('假模型回正常一句总结时有 text', async () => {
     quickModel.isQuickModelAvailable.mockReturnValue(true);
     quickModel.quickTask.mockImplementation(async () => ({

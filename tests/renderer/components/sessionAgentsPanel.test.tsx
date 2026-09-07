@@ -131,9 +131,8 @@ describe('SessionAgentsPanel', () => {
     await screen.findByTestId('agents-panel-row-researcher');
     expect(screen.getByTestId('agents-panel-row-writer')).toBeTruthy();
     expect(screen.getByTestId('agents-panel-status-researcher').textContent).toBe('完成');
-    // 两个代理全部完成、filesChanged 为空 → 顶部报已汇报，不说合到一起
-    expect(screen.getByTestId('agents-panel-merge-state').textContent).toBe('2 个代理已汇报');
-    expect(screen.getByTestId('agents-panel-merge-state').textContent).not.toContain('合到一起');
+    // 账本完成事件常把 filesChanged 落成 []，没有隔离 worktree 时仍报合到一起
+    expect(screen.getByTestId('agents-panel-merge-state').textContent).toBe('2 个代理的改动已经合到一起了');
 
     fireEvent.click(screen.getByTestId('agents-panel-open-researcher'));
     expect(useMemberViewStore.getState().viewingMemberId).toBe('researcher');
@@ -144,8 +143,8 @@ describe('SessionAgentsPanel', () => {
 
     render(<SessionAgentsPanel />);
     const merge = await screen.findByTestId('agents-panel-merge-state');
-    expect(merge.textContent).toBe('2 个代理已汇报');
-    expect(merge.textContent).not.toContain('合到一起');
+    // 账本 [] 不是零改动证据；只读 explore 的判据在 agentMergeState 单测（有隔离 worktree）。
+    expect(merge.textContent).toBe('2 个代理的改动已经合到一起了');
   });
 
   it('有真实文件改动时面板仍报合到一起了', async () => {

@@ -103,9 +103,8 @@ describe('SessionMemberBar（折叠 chip）', () => {
     render(<SessionMemberBar sessionId="session-1" />);
     const chip = await screen.findByTestId('session-member-bar-collapsed');
     expect(chip.textContent).toContain('2 个代理 · 完成');
-    // 两个代理全部完成、无冲突、filesChanged 为空 → 只读/0 改动报已汇报，不说合到一起
-    expect(screen.getByTestId('member-bar-merge-state').textContent).toBe('已汇报');
-    expect(screen.getByTestId('member-bar-merge-state').textContent).not.toContain('合到一起');
+    // 账本完成事件常把 filesChanged 落成 []，没有隔离 worktree 时仍报合到一起
+    expect(screen.getByTestId('member-bar-merge-state').textContent).toBe('改动已经合到一起了');
     // chip 左侧头像叠：专家行走 RoleInitialAvatar
     expect(screen.getByTestId('role-initial-avatar-researcher')).toBeTruthy();
     expect(screen.getByTestId('role-initial-avatar-writer')).toBeTruthy();
@@ -116,8 +115,8 @@ describe('SessionMemberBar（折叠 chip）', () => {
 
     render(<SessionMemberBar sessionId="session-1" />);
     const merge = await screen.findByTestId('member-bar-merge-state');
-    expect(merge.textContent).toBe('已汇报');
-    expect(merge.textContent).not.toContain('合到一起');
+    // 这条夹具没有隔离 worktree：缺 filesChanged 不能当零改动。合芯片形状见 agentMergeState 单测。
+    expect(merge.textContent).toBe('改动已经合到一起了');
   });
 
   it('有真实文件改动时芯片仍报合到一起了', async () => {

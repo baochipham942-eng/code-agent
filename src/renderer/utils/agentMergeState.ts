@@ -25,6 +25,12 @@ function rowHasFileChanges(row: MergeStateRow): boolean {
   return (row.node?.worktreeState?.changedFiles?.length ?? 0) > 0;
 }
 
+/** 有隔离 worktree（status 不是 none / 缺省）才认「只读 explore」这条形状。 */
+function rowHasIsolatedWorktree(row: MergeStateRow): boolean {
+  const status = row.node?.worktreeState?.status;
+  return Boolean(status && status !== 'none');
+}
+
 export function deriveAgentMergeState(
   rows: ReadonlyArray<MergeStateRow>,
   conflicts: readonly AgentTreeOwnershipConflict[],
@@ -34,7 +40,11 @@ export function deriveAgentMergeState(
   const active = rows.filter((row) => row.status !== 'standby');
   if (active.some((row) => row.status === 'waiting')) return 'waiting';
   if (active.length >= 2 && active.every((row) => row.status === 'done')) {
-    return active.some(rowHasFileChanges) ? 'merged' : 'reported';
+    if (active.some(rowHasFileChanges)) return 'merged';
+    // 完成事件经常不填 filesChanged（swarmEventPublisher 完成态落成 []）。
+    // 缺记录 ≠ 零改动：没有隔离 worktree 时保持原来的 merged。
+    // 只读 explore 的形状是「有 worktree 且 changedFiles 为空」。
+    return active.some(rowHasIsolatedWorktree) ? 'reported' : 'merged';
   }
   return null;
 }

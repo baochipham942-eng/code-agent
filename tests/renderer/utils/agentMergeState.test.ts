@@ -26,9 +26,9 @@ describe('deriveAgentMergeState', () => {
     expect(deriveAgentMergeState(changed('done', 'done', 'done'), [])).toBe('merged');
   });
 
-  it('≥2 个非 standby 行且全部 done、无文件改动报 reported', () => {
-    expect(deriveAgentMergeState(rows('done', 'done'), [])).toBe('reported');
-    expect(deriveAgentMergeState(rows('done', 'done', 'done'), [])).toBe('reported');
+  it('≥2 个非 standby 行且全部 done、没有 worktree 也没有改动记录时仍报 merged（完成事件经常不填 filesChanged）', () => {
+    expect(deriveAgentMergeState(rows('done', 'done'), [])).toBe('merged');
+    expect(deriveAgentMergeState(rows('done', 'done', 'done'), [])).toBe('merged');
   });
 
   it('worktree.changedFiles 也算有真实改动', () => {
@@ -45,6 +45,13 @@ describe('deriveAgentMergeState', () => {
     ], [])).toBe('reported');
   });
 
+  it('worktree status none 不算隔离，缺 filesChanged 仍 merged', () => {
+    expect(deriveAgentMergeState([
+      { status: 'done', node: { worktreeState: { status: 'none' } } },
+      { status: 'done' },
+    ], [])).toBe('merged');
+  });
+
   it('standby 行不参与「合没合」', () => {
     // standby 不算分子：两个 done + 一个 standby 仍然 merged
     expect(deriveAgentMergeState(changed('done', 'done', 'standby'), [])).toBe('merged');
@@ -52,8 +59,8 @@ describe('deriveAgentMergeState', () => {
     expect(deriveAgentMergeState(rows('standby', 'standby'), [])).toBeNull();
     // standby 不挡 waiting
     expect(deriveAgentMergeState(rows('standby', 'waiting'), [])).toBe('waiting');
-    // 无改动的 done + standby → reported
-    expect(deriveAgentMergeState(rows('done', 'done', 'standby'), [])).toBe('reported');
+    // 无 worktree、无改动记录的 done + standby → 仍 merged（缺记录不是零改动）
+    expect(deriveAgentMergeState(rows('done', 'done', 'standby'), [])).toBe('merged');
   });
 
   it('其余情况不显示（null）', () => {

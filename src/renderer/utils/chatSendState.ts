@@ -35,7 +35,3 @@ export function claimSendInflight(
 export function isChatSendAccepted(delivery: ChatSendDelivery | undefined): boolean {
   return delivery != null && delivery.outcome !== 'failed';
 }
-
-export function resetChatSendInflightForTests(): void {
-  inflightSends.clear();
-}

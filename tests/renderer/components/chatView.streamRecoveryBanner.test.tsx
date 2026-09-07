@@ -4,10 +4,8 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { Message, StreamRecoverySnapshot } from '../../../src/shared/contract';
 
-import {
-  deriveRetryTurnMessage,
-  deriveStreamInterruptionDecision,
-} from '../../../src/renderer/components/ChatView';
+import { deriveRetryTurnMessage } from '../../../src/renderer/components/ChatView';
+import { deriveStreamInterruptionDecision } from '../../../src/renderer/utils/streamInterruptionDecision';
 
 function makeSnapshot(overrides: Partial<StreamRecoverySnapshot> = {}): StreamRecoverySnapshot {
   return {
@@ -104,8 +102,9 @@ describe('deriveStreamInterruptionDecision — 活流式不得误报中断', () 
 
     expect(deriveStreamInterruptionDecision(
       liveSnapshot,
-      [user, streamingRecovery],
+      deriveRetryTurnMessage(liveSnapshot, [user, streamingRecovery]),
       true,
+      [user, streamingRecovery],
     )).toBeNull();
   });
 
@@ -124,8 +123,9 @@ describe('deriveStreamInterruptionDecision — 活流式不得误报中断', () 
 
     const decision = deriveStreamInterruptionDecision(
       interruptedSnapshot,
-      [user],
+      deriveRetryTurnMessage(interruptedSnapshot, [user]),
       false,
+      [user],
     );
     expect(decision?.retryMessage).toBe(user);
     expect(decision?.snapshot.interruptionReason).toBe('user');

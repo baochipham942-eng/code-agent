@@ -20,7 +20,6 @@ import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
 import { useSwarmStore } from '../../../src/renderer/stores/swarmStore';
 import { useTaskStore } from '../../../src/renderer/stores/taskStore';
-import { resetChatSendInflightForTests } from '../../../src/renderer/utils/chatSendState';
 
 const envelope: ConversationEnvelope = {
   content: '运行中补充要求',
@@ -61,7 +60,6 @@ describe('useAgentIPC sendMessage silentFailure', () => {
   afterEach(() => {
     vi.useRealTimers();
     globalThis.fetch = originalFetch;
-    resetChatSendInflightForTests();
   });
 
   it('rejects without adding an assistant error or leaving the session busy', async () => {

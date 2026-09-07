@@ -89,6 +89,7 @@ import { submitSteerEnvelope } from './features/chat/chatViewSteer';
 import { collectDroppedAttachments } from './features/chat/ChatInput/utils';
 import { applyStreamingMessageDeltasToProjection } from '../utils/streamingProjectionOverlay';
 import { isStreamRecoveryMessage } from '../utils/streamRecoveryMessage';
+import { deriveStreamInterruptionDecision } from '../utils/streamInterruptionDecision';
 import {
   deriveStreamInterruptionReason,
   isPersistedStreamInterruptionMessage,
@@ -756,8 +757,9 @@ export const ChatView: React.FC = () => {
   // 这轮的用户消息。取不到（数组为空或末位不是 user）就不重试。
   const interruptionDecision = deriveStreamInterruptionDecision(
     streamSnapshot,
-    messages,
+    deriveRetryTurnMessage(streamSnapshot, messages),
     effectiveIsProcessing,
+    messages,
   );
   const [interruptionPointInViewport, setInterruptionPointInViewport] = useState(true);
   useEffect(() => {
@@ -1142,8 +1144,6 @@ export const ChatView: React.FC = () => {
   );
 };
 
-
-
 /**
  * D-1「重试该轮」锚点推导：streamSnapshot.turnId 是每轮流式开始时现铸的 UUID
  * （streamHandler.ts beginTurn(generateMessageId())），跟触发它的用户消息 id 毫无
@@ -1166,28 +1166,4 @@ export function deriveRetryTurnMessage(
     return message.role === 'user' ? message : null;
   }
   return null;
-}
-
-/**
- * 中断决策槽只在流真正断掉时出现。
- * AGENT_STREAM_SNAPSHOT_REQUIRED 会在活 run 中途把 incomplete snapshot 灌回
- * sessionStore；那是续接证据，不是「上次回复已中断」。活轮还在出 token 时
- * 再亮 DecisionSlot，Continue 会把同一句再交一次。
- */
-export function deriveStreamInterruptionDecision(
-  streamSnapshot: StreamRecoverySnapshot | null,
-  messages: Message[],
-  isLiveTurn: boolean,
-): { snapshot: StreamRecoverySnapshot; retryMessage: Message } | null {
-  if (isLiveTurn) return null;
-  const retryMessage = deriveRetryTurnMessage(streamSnapshot, messages);
-  if (!streamSnapshot || !retryMessage) return null;
-  return {
-    snapshot: {
-      ...streamSnapshot,
-      interruptionReason: streamSnapshot.interruptionReason
-        ?? deriveStreamInterruptionReason(messages, streamSnapshot.turnId),
-    },
-    retryMessage,
-  };
 }

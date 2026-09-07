@@ -41,7 +41,7 @@ const ALL_PASS = JSON.stringify({
 
 function db(): Database.Database {
   const database = new Database(':memory:');
-  // 真机上两套表同库：报告要 LEFT JOIN sessions 拿模型起的真标题，只建遥测表会漏掉那条路径。
+  // 真机上两套表同库：芯片优先 sessions.title（过 guard），空白时回落遥测快照。
   applySchema(database, LOGGER);
   applyTelemetrySchema(database, LOGGER);
   return database;
@@ -61,7 +61,7 @@ function insertSession(
   `).run(id, title, startTime, sessionType, originKind);
 }
 
-/** 会话主表那一行（模型自动起的标题写在这里，遥测表不回写）。 */
+/** 会话主表那一行（模型自动起的标题写在这里；芯片优先读它）。 */
 function insertChatSession(database: Database.Database, id: string, title: string): void {
   database.prepare(`
     INSERT INTO sessions (id, title, model_provider, model_name, session_type, created_at, updated_at)
@@ -624,11 +624,9 @@ describe('上线后打分编排', () => {
     expect(report.budget.spentUsd).toBeCloseTo(0.2);
   });
 
-  it('⑦芯片标题优先取 sessions 的真标题，遥测表那份只是开会话那刻的占位快照', () => {
-    // 真机副本 846 条里 567 条两表不一致：遥测表停在 "CLI Session"，
-    // 模型后来起的真标题只写进了 sessions。芯片要显示后者。
+  it('⑦芯片标题优先 sessions 真标题：写路径未覆盖的入口（云端同步）运行中仍可见', () => {
     insertSession(database, 'chat-1', 'chat', NOW - HOUR, null, 'CLI Session');
-    insertChatSession(database, 'chat-1', '帮我做一个 3 页 PPT，主题：AI Agent');
+    insertChatSession(database, 'chat-1', '另一条会话标题（应被芯片选中）');
     const day = localDay(NOW);
     database.prepare(`
       INSERT INTO telemetry_turn_scores (turn_id, session_id, scored_at, scored_day, turn_started_at,
@@ -638,9 +636,20 @@ describe('上线后打分编排', () => {
     `).run(NOW, day, NOW - HOUR, POST_LAUNCH_JUDGE_VERSION);
 
     const [group] = buildPostLaunchReport(database, { now: NOW }).groups;
-    expect(group.sessions[0].title).toBe('帮我做一个 3 页 PPT，主题：AI Agent');
-    // 真阴：占位快照没被选中
-    expect(group.sessions[0].title).not.toBe('CLI Session');
+    expect(group.sessions[0].title).toBe('另一条会话标题（应被芯片选中）');
+  });
+
+  it('⑦遥测列还是占位时芯片读 sessions 真标题，不把 CLI Session 当正确答案', () => {
+    insertSession(database, 'chat-1', 'chat', NOW - HOUR, null, 'CLI Session');
+    insertChatSession(database, 'chat-1', '帮我做一个 3 页 PPT，主题：AI Agent');
+    const day = localDay(NOW);
+    database.prepare(`
+      INSERT INTO telemetry_turn_scores (turn_id, session_id, scored_at, scored_day, turn_started_at,
+        judge_version, rubric_version, judge_model, dim_goal, signals, cost_usd, budget_cost_usd, sampled_by)
+      VALUES ('t1', 'chat-1', ?, ?, ?, ?, 'postlaunch-rubric-v1', 'deepseek/x', 1, '[]', 0, 0, 'sample')
+    `).run(NOW, day, NOW - HOUR, POST_LAUNCH_JUDGE_VERSION);
+
+    expect(buildPostLaunchReport(database, { now: NOW }).groups[0].sessions[0].title).toBe('帮我做一个 3 页 PPT，主题：AI Agent');
   });
 
   it('⑦sessions 的标题是空串时回落遥测快照，不是显示空白', () => {
@@ -656,9 +665,8 @@ describe('上线后打分编排', () => {
     expect(buildPostLaunchReport(database, { now: NOW }).groups[0].sessions[0].title).toBe('CLI Session');
   });
 
-  it('⑦sessions.title 是裸存的，报告侧补脱敏后再出（遥测那列写入时已脱敏，两个来源同口径）', () => {
+  it('⑦sessions.title 是裸存的，报告侧补脱敏后再出，不退回遥测占位', () => {
     insertSession(database, 'chat-1', 'chat', NOW - HOUR, null, 'CLI Session');
-    // SessionRepository.createSession 直接把 title 塞进去，一个字都不过 guard
     insertChatSession(database, 'chat-1', '修 /Users/someone/secret-repo/a.ts 的登录');
     const day = localDay(NOW);
     database.prepare(`
@@ -669,9 +677,23 @@ describe('上线后打分编排', () => {
 
     const title = buildPostLaunchReport(database, { now: NOW }).groups[0].sessions[0].title;
     expect(title).not.toContain('/Users/someone/secret-repo');
-    // 掩码后仍是这条会话自己的名字，没退回占位快照——退回去就等于这一刀白做
     expect(title).not.toBe('CLI Session');
     expect(title).toContain('登录');
+  });
+
+  it('⑦遥测列已存的脱敏标题：sessions 空白时回落它，不显示空白也不泄露路径', () => {
+    insertSession(database, 'chat-1', 'chat', NOW - HOUR, null, '修 [已脱敏路径] 的登录');
+    insertChatSession(database, 'chat-1', '   ');
+    const day = localDay(NOW);
+    database.prepare(`
+      INSERT INTO telemetry_turn_scores (turn_id, session_id, scored_at, scored_day, turn_started_at,
+        judge_version, rubric_version, judge_model, dim_goal, signals, cost_usd, budget_cost_usd, sampled_by)
+      VALUES ('t1', 'chat-1', ?, ?, ?, ?, 'postlaunch-rubric-v1', 'deepseek/x', 1, '[]', 0, 0, 'sample')
+    `).run(NOW, day, NOW - HOUR, POST_LAUNCH_JUDGE_VERSION);
+
+    const title = buildPostLaunchReport(database, { now: NOW }).groups[0].sessions[0].title;
+    expect(title).toBe('修 [已脱敏路径] 的登录');
+    expect(title).not.toContain('/Users/someone/secret-repo');
   });
 
   it('⑦会话已被删（LEFT JOIN 落空）时标题与时间给空值，不是 null 也不是 1970', () => {

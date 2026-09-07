@@ -13,6 +13,7 @@ import type { ToolExecutionEventRepository } from '../repositories/ToolExecution
 import type { PermissionDecisionRepository } from '../repositories/PermissionDecisionRepository';
 import type { createLogger } from '../../infra/logger';
 import { persistCancelledToolCallClosures } from '../../../agent/runtime/cancelledToolCallClosure';
+import { backfillTelemetrySessionTitles } from '../../../telemetry/telemetrySessionTitleBackfill';
 
 type Logger = ReturnType<typeof createLogger>;
 
@@ -133,6 +134,11 @@ export function runStartupMaintenance(deps: StartupMaintenanceDeps): RecoverySna
   // 同理：memories FTS（BM25 检索通道，roadmap 2.5）
   memoryRepo.backfillMemoriesFts();
   step('fts-memories');
+
+  // N-TELEMETRY-SESSION-TITLE-STALE：遥测标题历史只存开会话那刻的占位快照，
+  // 用 sessions.title 幂等回填（在线同步之外的写路径由这里兜底收敛）。
+  backfillTelemetrySessionTitles(db);
+  step('telemetry-title-backfill');
 
   return snapshot;
 }

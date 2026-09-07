@@ -36,7 +36,7 @@ export class TelemetryStorage {
   private stmtCache = new Map<string, Database.Statement>();
   private dbUnavailable = false; // 标记 DB 不可用，避免重复报错
 
-  constructor(private readonly dbOverride?: Database.Database) {}
+  constructor(readonly dbOverride?: Database.Database) {}
 
   static getInstance(): TelemetryStorage {
     if (!this.instance) {

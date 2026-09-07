@@ -532,7 +532,7 @@ interface ScoreRow {
   /** 芯片上给人看的名字与时间；同样是 LEFT JOIN，会话被删了就是 null。 */
   session_title: string | null;
   session_start_time: number | null;
-  /** sessions.title——模型自动起的真标题。遥测那份是开会话那刻的占位快照，之后不回写。 */
+  /** sessions.title——模型自动起的真标题。写路径未覆盖的入口（云端同步）仍靠这里兜底。 */
   chat_title: string | null;
 }
 
@@ -592,18 +592,8 @@ export interface PostLaunchReportOptions {
  * **成本不过滤**：那些轮的钱是真花出去的，从账上抹掉才是假数。
  */
 /**
- * 芯片标题：优先 sessions.title（模型自动起的真标题），回落 telemetry_sessions.title
- * （开会话那一刻的占位快照 "CLI Session" / "New Session"——之后模型改标题只写 sessions，
- * 遥测表不回写，副本 846 条里 567 条两表不一致）。都空则给空串，展示侧回落 id 前 8 位。
- *
- * sessions.title 是**裸存**的（SessionRepository.createSession 直接 stmt.run(session.title)，
- * updateSession 也是 COALESCE(?, title)，两条路径都不脱敏），而 telemetry_sessions.title
- * 写入时过了 guardTelemetryText。所以这里对 sessions.title 补同一道 guard，
- * 让两个来源在同一条口径上出报告。
- *
- * ponytail: 用 guard 的输出而不是「命中就丢弃」——掩码后的串本来就是可展示的
- * （遥测那列存的就是掩码结果），而丢弃会让「标题里带了个路径」的会话退回 "CLI Session"，
- * 正好是本刀要修的病。要改成命中即丢，改这一个函数即可。
+ * 芯片标题：优先 sessions.title（运行中云端改名还不走 SessionManager），
+ * 回落 telemetry_sessions.title。sessions.title 裸存，读侧过同一道 guard。
  */
 function sessionTitle(row: Pick<ScoreRow, 'session_title' | 'chat_title'>): string {
   const live = guardTelemetryText(row.chat_title, 2_000)?.trim();

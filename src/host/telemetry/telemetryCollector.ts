@@ -4,8 +4,10 @@
 
 import { createLogger } from '../services/infra/logger';
 import { getServiceRegistry } from '../services/serviceRegistry';
+import { getDatabase } from '../services/core/databaseService';
 import { generateMessageId } from '../../shared/utils/id';
 import { getTelemetryStorage, type TelemetryStorage } from './telemetryStorage';
+import { readNamedChatTitle } from './telemetrySessionTitleBackfill';
 import { getAuthService } from '../services/auth/authService';
 import { trackNode } from '../observability/posthogNode';
 import { POSTHOG_EVENTS } from '../../shared/observability/posthog-events';
@@ -147,10 +149,34 @@ export class TelemetryCollector {
     // 版本指纹：调用方未显式传则用当前运行时版本兜底，保证每条会话都带齐
     const versions = getDiagnosticVersions();
 
+    // N-TELEMETRY-SESSION-TITLE-STALE：同一会话续跑（新进程/新一轮）时，库里可能已有
+    // 从 sessions.title 同步来的真标题，而 config.title 仍是入口占位（'CLI Session' /
+    // 首条消息前 80 字）。insertSession 是 INSERT OR REPLACE 全列覆盖，不保的话
+    // 占位会把真标题砸回快照。
+    let title = config.title || 'Untitled';
+    try {
+      // 已命名的 sessions.title 优先（含云端直写、首轮前改名）；否则才保既有遥测标题，
+      // 避免入口占位 INSERT OR REPLACE 把真标题砸回 CLI Session / 前 80 字。
+      const db = this.storage.dbOverride ?? getDatabase().getDb();
+      const live = db ? readNamedChatTitle(db, sessionId) : null;
+      if (live) {
+        title = live;
+      } else {
+        const existing = this.storage.getSession(sessionId);
+        if (existing?.title?.trim()) title = existing.title;
+      }
+    } catch (error) {
+      // 既有行读不到（DB 不可用 / sessions 表未建）按入口占位走，行为与旧版一致但留痕
+      logger.debug('Telemetry startSession: existing title unreadable, keeping entry placeholder', {
+        sessionId,
+        reason: error instanceof Error ? error.message : String(error),
+      });
+    }
+
     const session: TelemetrySession = {
       id: sessionId,
       userId: config.userId ?? getAuthService().getCurrentUser()?.id ?? null,
-      title: config.title || 'Untitled',
+      title,
       modelProvider: config.modelProvider,
       modelName: config.modelName,
       workingDirectory: config.workingDirectory,

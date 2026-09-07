@@ -22,7 +22,6 @@ vi.mock('@renderer/hooks/useToast', () => ({ toast: toastApi }));
 
 import {
   EvalHarvestDialog,
-  isMatchingPostLaunchConsentReceipt,
 } from '@internal-evaluation/renderer/evalCenter/EvalHarvestDialog';
 import { TELEMETRY_CHANNELS } from '../../../src/shared/ipc/channels';
 
@@ -194,15 +193,8 @@ describe('回流同意档写入核回执', () => {
     );
   }
 
-  it('isMatchingPostLaunchConsentReceipt 只认 sessionId+scope 都对上的回执', () => {
-    const request = { sessionId: 'sess-fake-0001', scope: 'turn_excerpt' as const };
-    expect(isMatchingPostLaunchConsentReceipt(undefined, request)).toBe(false);
-    expect(isMatchingPostLaunchConsentReceipt(null, request)).toBe(false);
-    expect(isMatchingPostLaunchConsentReceipt({ sessionId: 'sess-fake-0001', scope: 'full_session' }, request)).toBe(false);
-    expect(isMatchingPostLaunchConsentReceipt({ sessionId: 'other', scope: 'turn_excerpt' }, request)).toBe(false);
-    expect(isMatchingPostLaunchConsentReceipt({ sessionId: 'sess-fake-0001', scope: 'turn_excerpt' }, request)).toBe(true);
-  });
-
+  // 回执核对语义由下面两组组件级用例覆盖（写入失败三形态不生成预览 / 回执一致才生成）；
+  // 纯函数单测已随 helper 去 export 撤掉（knip 生产档不许测试专用导出，#1697 第 7 轮）。
   it.each([
     ['reject', async () => { telemetryIpc.invoke.mockRejectedValue(new Error('transport down')); }],
     ['undefined', async () => { telemetryIpc.invoke.mockResolvedValue(undefined); }],

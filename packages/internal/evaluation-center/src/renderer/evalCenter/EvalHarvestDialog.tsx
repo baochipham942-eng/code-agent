@@ -65,7 +65,7 @@ const FIELD_ROWS: Array<{ key: HarvestFieldKey | 'assistantReply'; labelKey: str
 
 const INPUT_CLASS = 'mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-200 outline-hidden focus:border-zinc-500';
 
-export function isMatchingPostLaunchConsentReceipt(
+function isMatchingPostLaunchConsentReceipt(
   receipt: unknown,
   request: { sessionId: string; scope: PostLaunchConsentScope },
 ): receipt is { sessionId: string; scope: PostLaunchConsentScope } {

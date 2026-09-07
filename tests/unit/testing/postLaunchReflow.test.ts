@@ -10,10 +10,38 @@ import {
   setPostLaunchConsentScope,
 } from '../../../src/host/testing/postlaunch/postLaunchScoreStore';
 import { checkPostLaunchReflowGates } from '../../../src/host/testing/postlaunch/postLaunchReflowGate';
-import { applyPostLaunchReflowProvenance, pickTriggerCandidate, REFLOW_TURN_MISMATCH_MESSAGE, scopeReplayToCandidate } from '@internal-evaluation/host/evaluation/harvestPreview';
-import { deriveHarvestSeed } from '@internal-evaluation/host/evaluation/harvestCandidates';
+import { buildHarvestPreview } from '@internal-evaluation/host/evaluation/harvestPreview';
 import type { ReplayBlock, ReplayTurn, StructuredReplay } from '../../../src/shared/contract/evaluation';
-import type { PostLaunchReflowCandidate } from '../../../src/shared/contract/postLaunchScore';
+
+// 回流裁剪/溯源的断言一律走公开入口 buildHarvestPreview：knip 生产档拦「只被测试
+// 消费」的导出，裁剪/溯源 helper 是模块内私有，不许为测试开 export（#1697 第 7 轮）。
+// 宿主取数口 mock 成夹具，库用真 in-memory SQLite；开关置 'on'。
+const env = vi.hoisted(() => ({
+  db: null as Database.Database | null,
+  getStructuredReplay: async (_sessionId: string): Promise<StructuredReplay | null> => null,
+  getSession: (_sessionId: string) => ({ title: '回流草稿', workingDirectory: '/tmp/reflow-harvest' }),
+  getMessages: (_sessionId: string): Array<{ id: string; timestamp?: number }> => [],
+}));
+
+vi.mock('@host/services/core/databaseService', () => ({
+  getDatabase: () => ({
+    getDb: () => env.db,
+    getSession: env.getSession,
+    getMessages: env.getMessages,
+  }),
+}));
+
+vi.mock('@host/telemetry/replay/telemetryQueryService', () => ({
+  getTelemetryQueryService: () => ({ getStructuredReplay: env.getStructuredReplay }),
+}));
+
+vi.mock('../../../src/host/services/core/configService', () => ({
+  getConfigService: () => ({ getSettings: () => ({ privacy: { postLaunchReflow: 'on' } }) }),
+}));
+
+vi.mock('../../../src/host/platform', () => ({
+  getUserDataPath: () => '/tmp/reflow-preview-test-data',
+}));
 
 const LOGGER = { debug() {}, info() {}, warn() {}, error() {} } as never;
 const VERSION = 'postlaunch-judge-v1';
@@ -116,40 +144,11 @@ function twoTurnReplay(): StructuredReplay {
   };
 }
 
-function triggerCandidate(): PostLaunchReflowCandidate {
-  return {
-    sessionId: 'sess-reflow-0001',
-    turnId: TRIGGER_TURN_ID,
-    judgeVersion: VERSION,
-    redDimensions: ['goal'],
-    signals: [],
-    failureClass: null,
-    sources: ['judge'],
-    occurredAt: 2000,
-  };
-}
-
 function triggerTurnRows() {
   return [
     { id: FIRST_TURN_ID, turn_number: 1, start_time: 1000, turn_type: 'user', parent_turn_id: null },
     { id: TRIGGER_TURN_ID, turn_number: 2, start_time: 2000, turn_type: 'user', parent_turn_id: null },
   ];
-}
-
-function feedbackCandidate(): PostLaunchReflowCandidate {
-  return {
-    sessionId: 'sess-reflow-0001',
-    turnId: FEEDBACK_MESSAGE_ID,
-    judgeVersion: null,
-    redDimensions: [],
-    signals: [],
-    failureClass: null,
-    sources: ['feedback'],
-    feedbackId: 'fb-thumbs-down',
-    messageId: FEEDBACK_MESSAGE_ID,
-    feedbackAt: 2500,
-    occurredAt: 2500,
-  };
 }
 
 function threeTurnReplay(): StructuredReplay {
@@ -295,14 +294,39 @@ function iterationTurnRows() {
   ];
 }
 
-function seedFrom(replay: StructuredReplay) {
-  return deriveHarvestSeed({
-    replay,
-    sessionTitle: '回流草稿',
-    workingDirectory: WORKDIR,
+function seedTurnRows(
+  db: Database.Database,
+  sessionId: string,
+  rows: Array<{
+    id: string;
+    turn_number: number;
+    start_time: number;
+    turn_type: string;
+    parent_turn_id: string | null;
+  }>,
+): void {
+  const stmt = db.prepare(`
+    INSERT INTO telemetry_turns (id, session_id, turn_number, start_time, end_time, duration_ms, turn_type, parent_turn_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  for (const row of rows) {
+    stmt.run(row.id, sessionId, row.turn_number, row.start_time, row.start_time + 1, 1, row.turn_type, row.parent_turn_id);
+  }
+}
+
+/** 公开入口预览：宿主取数全部走 env 夹具，库是调用方给的真 in-memory 库。 */
+async function previewReflow(
+  db: Database.Database,
+  replay: StructuredReplay,
+  messages: Array<{ id: string; timestamp?: number }> = [],
+) {
+  env.db = db;
+  env.getStructuredReplay = async () => replay;
+  env.getMessages = () => messages;
+  return buildHarvestPreview({
+    sessionIds: [replay.sessionId],
     fields: ['prompt', 'sourceSessionId'],
-    batchTag: 'harvest-0907',
-    negativeFeedbackAt: [],
+    postLaunchReflow: true,
   });
 }
 
@@ -334,29 +358,34 @@ describe('post-launch reflow candidates and gates', () => {
     expect(getPostLaunchConsentScope(db, 's')).toBe('full_session');
   });
 
-  it('HARVEST 草稿保留 postlaunch、源会话和触发信号溯源', () => {
-    const seed = {
-      sessionId: 's', sessionTitle: 'title', id: 'draft-s', prompt: 'p', description: 'd', tags: [], candidates: [], notes: [],
-    };
-    const enriched = applyPostLaunchReflowProvenance(seed, [{
-      sessionId: 's', turnId: 't', judgeVersion: VERSION, redDimensions: ['goal'], signals: ['timeout'],
-      failureClass: 'timeout', sources: ['judge', 'signal'],
-    }], 'turn_excerpt');
-    expect(enriched.tags).toEqual(expect.arrayContaining(['postlaunch', 'source:judge', 'red:goal', 'signal:timeout']));
-    expect(enriched.description).toContain('上线后回流触发');
-    expect(enriched.description).toContain('source:judge');
-    expect(enriched.description).toContain('red:goal');
-    expect(enriched.postLaunchReflow).toMatchObject({
-      turnId: 't',
+  it('HARVEST 草稿保留 postlaunch、源会话和触发信号溯源', async () => {
+    const db = makeDb();
+    seedTurnRows(db, 'sess-reflow-0001', triggerTurnRows());
+    score(db, 'sess-reflow-0001', TRIGGER_TURN_ID, redDims(), '["timeout"]', 2000);
+    setPostLaunchConsentScope(db, 'sess-reflow-0001', 'turn_excerpt', 10);
+    const result = await previewReflow(db, twoTurnReplay());
+    expect(result.failed).toEqual([]);
+    const seed = result.seeds[0];
+    if (!seed) throw new Error('预览没出草稿');
+    expect(seed.tags).toEqual(expect.arrayContaining(['postlaunch', 'source:judge', 'source:signal', 'red:goal', 'signal:timeout']));
+    expect(seed.description).toContain('上线后回流触发');
+    expect(seed.description).toContain('source:judge');
+    expect(seed.description).toContain('red:goal');
+    expect(seed.postLaunchReflow).toMatchObject({
+      turnId: TRIGGER_TURN_ID,
       sources: ['judge', 'signal'],
       consentScope: 'turn_excerpt',
     });
   });
 
-  it('turn_excerpt 题面只含触发轮原话、不含首轮原文和首轮工具参数；full_session 覆盖整会话', () => {
-    const replay = twoTurnReplay();
-    const candidates = [triggerCandidate()];
-    const excerpt = seedFrom(scopeReplayToCandidate(replay, candidates, 'turn_excerpt', triggerTurnRows()));
+  it('turn_excerpt 题面只含触发轮原话、不含首轮原文和首轮工具参数；full_session 覆盖整会话', async () => {
+    const db = makeDb();
+    seedTurnRows(db, 'sess-reflow-0001', triggerTurnRows());
+    score(db, 'sess-reflow-0001', TRIGGER_TURN_ID, redDims(), '[]', 2000);
+    setPostLaunchConsentScope(db, 'sess-reflow-0001', 'turn_excerpt', 10);
+    const excerptResult = await previewReflow(db, twoTurnReplay());
+    const excerpt = excerptResult.seeds[0];
+    if (!excerpt) throw new Error('预览没出草稿');
     expect(excerpt.prompt).toContain(TRIGGER_TURN_PROMPT);
     expect(excerpt.prompt).not.toContain(FIRST_TURN_PROMPT);
     const excerptBlob = JSON.stringify(excerpt.candidates);
@@ -364,7 +393,10 @@ describe('post-launch reflow candidates and gates', () => {
     expect(excerptBlob).not.toContain(FIRST_TURN_PATH);
     expect(excerptBlob).not.toContain(FIRST_TURN_COMMAND);
 
-    const full = seedFrom(scopeReplayToCandidate(replay, candidates, 'full_session', triggerTurnRows()));
+    setPostLaunchConsentScope(db, 'sess-reflow-0001', 'full_session', 11);
+    const fullResult = await previewReflow(db, twoTurnReplay());
+    const full = fullResult.seeds[0];
+    if (!full) throw new Error('预览没出草稿');
     expect(full.prompt).toContain(FIRST_TURN_PROMPT);
     const fullBlob = JSON.stringify(full.candidates);
     expect(fullBlob).toContain(FIRST_TURN_PATH);
@@ -372,30 +404,40 @@ describe('post-launch reflow candidates and gates', () => {
     expect(fullBlob).toContain(TRIGGER_TURN_PATH);
   });
 
-  it('候选 turnId 用 telemetry_turns 真 id 对得上才裁剪；对不上抛错，不退回整场会话', () => {
-    const replay = twoTurnReplay();
-    const matched = scopeReplayToCandidate(replay, [triggerCandidate()], 'turn_excerpt', triggerTurnRows());
-    expect(seedFrom(matched).prompt).toContain(TRIGGER_TURN_PROMPT);
-    expect(seedFrom(matched).prompt).not.toContain(FIRST_TURN_PROMPT);
+  it('评分/信号候选 turnId 对不上 telemetry_turns 时 fail-closed：进 failed、不出草稿', async () => {
+    // 真 id 形态（UUID）但不在 telemetry_turns 里 —— 带 occurredAt 也不许走点踩时间锚
+    const db = makeDb();
+    seedTurnRows(db, 'sess-reflow-0001', triggerTurnRows());
+    score(db, 'sess-reflow-0001', UNKNOWN_TURN_ID, redDims(), '[]', 2000);
+    setPostLaunchConsentScope(db, 'sess-reflow-0001', 'turn_excerpt', 10);
+    const result = await previewReflow(db, twoTurnReplay());
+    expect(result.seeds).toEqual([]);
+    expect(result.failed).toHaveLength(1);
+    expect(result.failed[0]?.error).toContain('回流触发轮对不上回放记录');
 
-    expect(() => scopeReplayToCandidate(
-      replay,
-      [{ ...triggerCandidate(), turnId: UNKNOWN_TURN_ID }],
-      'turn_excerpt',
-      triggerTurnRows(),
-    )).toThrow(REFLOW_TURN_MISMATCH_MESSAGE);
-
-    expect(() => scopeReplayToCandidate(
-      replay,
-      [{ ...triggerCandidate(), turnId: '2' }],
-      'turn_excerpt',
-      triggerTurnRows(),
-    )).toThrow(REFLOW_TURN_MISMATCH_MESSAGE);
+    // 顺手钉死「拿 turnNumber 当 id」的旧错形：数字串同样 fail-closed
+    const numericDb = makeDb();
+    seedTurnRows(numericDb, 'sess-reflow-0001', triggerTurnRows());
+    score(numericDb, 'sess-reflow-0001', '2', redDims(), '[]', 2000);
+    setPostLaunchConsentScope(numericDb, 'sess-reflow-0001', 'turn_excerpt', 10);
+    const numericResult = await previewReflow(numericDb, twoTurnReplay());
+    expect(numericResult.seeds).toEqual([]);
+    expect(numericResult.failed[0]?.error).toContain('回流触发轮对不上回放记录');
   });
 
-  it('点踩候选 turnId 是 message.id 时按 created_at 时间锚裁剪，题面是锚定轮原话', () => {
-    const replay = twoTurnReplay();
-    const excerpt = seedFrom(scopeReplayToCandidate(replay, [feedbackCandidate()], 'turn_excerpt', triggerTurnRows()));
+  it('点踩候选 turnId 是 message.id 时按 created_at 时间锚裁剪，题面是锚定轮原话', async () => {
+    const db = makeDb();
+    seedTurnRows(db, 'sess-reflow-0001', triggerTurnRows());
+    // 真实聊天反馈把 assistant message.id 同时写进 turn_id/message_id（与 telemetry turn 不是一套 id）
+    db.prepare(`
+      INSERT INTO telemetry_feedback (id, session_id, turn_id, message_id, rating, created_at)
+      VALUES ('fb-thumbs-down', 'sess-reflow-0001', ?, ?, -1, 2500)
+    `).run(FEEDBACK_MESSAGE_ID, FEEDBACK_MESSAGE_ID);
+    setPostLaunchConsentScope(db, 'sess-reflow-0001', 'turn_excerpt', 10);
+    const result = await previewReflow(db, twoTurnReplay());
+    expect(result.failed).toEqual([]);
+    const excerpt = result.seeds[0];
+    if (!excerpt) throw new Error('预览没出草稿');
     expect(excerpt.prompt).toBe(TRIGGER_TURN_PROMPT);
     expect(excerpt.prompt).not.toContain(FIRST_TURN_PROMPT);
     const excerptBlob = JSON.stringify(excerpt.candidates);
@@ -404,80 +446,47 @@ describe('post-launch reflow candidates and gates', () => {
     expect(excerptBlob).not.toContain(FIRST_TURN_COMMAND);
   });
 
-  it('三轮会话事后给第一轮补踩：按被评价消息自己的时间定轮，不锚到第三轮', () => {
-    const lateFeedback: PostLaunchReflowCandidate = {
-      ...feedbackCandidate(),
-      feedbackAt: 4000,
-      occurredAt: 4000,
-    };
-    const excerpt = seedFrom(scopeReplayToCandidate(
-      threeTurnReplay(),
-      [lateFeedback],
-      'turn_excerpt',
-      threeTurnRows(),
-      firstTurnMessages(),
-    ));
+  it('三轮会话事后给第一轮补踩：按被评价消息自己的时间定轮，不锚到第三轮', async () => {
+    const db = makeDb();
+    seedTurnRows(db, 'sess-reflow-0001', threeTurnRows());
+    db.prepare(`
+      INSERT INTO telemetry_feedback (id, session_id, turn_id, message_id, rating, created_at)
+      VALUES ('fb-late', 'sess-reflow-0001', ?, ?, -1, 4000)
+    `).run(FEEDBACK_MESSAGE_ID, FEEDBACK_MESSAGE_ID);
+    setPostLaunchConsentScope(db, 'sess-reflow-0001', 'turn_excerpt', 10);
+    const result = await previewReflow(db, threeTurnReplay(), firstTurnMessages());
+    const excerpt = result.seeds[0];
+    if (!excerpt) throw new Error('预览没出草稿');
     expect(excerpt.prompt).toBe(FIRST_TURN_PROMPT);
-    expect(excerpt.prompt).not.toContain(TRIGGER_TURN_PROMPT);
-    expect(excerpt.prompt).not.toContain(LATER_TURN_PROMPT);
     const excerptBlob = JSON.stringify(excerpt.candidates);
     expect(excerptBlob).toContain(FIRST_TURN_PATH);
     expect(excerptBlob).not.toContain(TRIGGER_TURN_PATH);
     expect(excerptBlob).not.toContain(LATER_TURN_PATH);
   });
 
-  it('点踩消息对不上时再退 created_at 时间锚', () => {
-    const lateFeedback: PostLaunchReflowCandidate = {
-      ...feedbackCandidate(),
-      turnId: 'ghost-message',
-      messageId: 'ghost-message',
-      feedbackAt: 4000,
-      occurredAt: 4000,
-    };
-    const excerpt = seedFrom(scopeReplayToCandidate(
-      threeTurnReplay(),
-      [lateFeedback],
-      'turn_excerpt',
-      threeTurnRows(),
-      firstTurnMessages(),
-    ));
+  it('点踩消息对不上时再退 created_at 时间锚', async () => {
+    const db = makeDb();
+    seedTurnRows(db, 'sess-reflow-0001', threeTurnRows());
+    db.prepare(`
+      INSERT INTO telemetry_feedback (id, session_id, turn_id, message_id, rating, created_at)
+      VALUES ('fb-ghost', 'sess-reflow-0001', 'ghost-message', 'ghost-message', -1, 4000)
+    `).run();
+    setPostLaunchConsentScope(db, 'sess-reflow-0001', 'turn_excerpt', 10);
+    const result = await previewReflow(db, threeTurnReplay(), firstTurnMessages());
+    const excerpt = result.seeds[0];
+    if (!excerpt) throw new Error('预览没出草稿');
     expect(excerpt.prompt).toBe(LATER_TURN_PROMPT);
     expect(excerpt.prompt).not.toContain(FIRST_TURN_PROMPT);
   });
 
-  it('点踩候选缺 created_at 锚时仍 fail-closed，不把 message.id 当轮 id', () => {
-    expect(() => scopeReplayToCandidate(
-      twoTurnReplay(),
-      [{ ...feedbackCandidate(), occurredAt: undefined, feedbackAt: undefined }],
-      'turn_excerpt',
-      triggerTurnRows(),
-    )).toThrow(REFLOW_TURN_MISMATCH_MESSAGE);
-  });
-
-  it('评分候选 turnId 对不上仍 fail-closed，即使带了 occurredAt 也不走点踩时间锚', () => {
-    expect(() => scopeReplayToCandidate(
-      twoTurnReplay(),
-      [{ ...triggerCandidate(), turnId: UNKNOWN_TURN_ID, occurredAt: 2500 }],
-      'turn_excerpt',
-      triggerTurnRows(),
-    )).toThrow(REFLOW_TURN_MISMATCH_MESSAGE);
-  });
-
-  it('turn_excerpt 保留触发父轮的全部 iteration 子轮工具/文件，裁掉其他用户轮', () => {
-    const scoped = scopeReplayToCandidate(
-      iterationReplay(),
-      [triggerCandidate()],
-      'turn_excerpt',
-      iterationTurnRows(),
-    );
-    const scopedBlob = JSON.stringify(scoped.turns);
-    expect(scopedBlob).toContain(ITERATION_TURN_PATH);
-    expect(scopedBlob).toContain(ITERATION_TURN_COMMAND);
-    expect(scopedBlob).not.toContain(FIRST_TURN_PATH);
-    expect(scopedBlob).not.toContain(LATER_TURN_PATH);
-    expect(scopedBlob).not.toContain(LATER_TURN_PROMPT);
-
-    const excerpt = seedFrom(scoped);
+  it('turn_excerpt 保留触发父轮的全部 iteration 子轮工具/文件，裁掉其他用户轮', async () => {
+    const db = makeDb();
+    seedTurnRows(db, 'sess-reflow-0001', iterationTurnRows());
+    score(db, 'sess-reflow-0001', TRIGGER_TURN_ID, redDims(), '[]', 2000);
+    setPostLaunchConsentScope(db, 'sess-reflow-0001', 'turn_excerpt', 10);
+    const result = await previewReflow(db, iterationReplay());
+    const excerpt = result.seeds[0];
+    if (!excerpt) throw new Error('预览没出草稿');
     expect(excerpt.prompt).toBe(TRIGGER_TURN_PROMPT);
     expect(excerpt.prompt).not.toContain(FIRST_TURN_PROMPT);
     expect(excerpt.prompt).not.toContain(LATER_TURN_PROMPT);
@@ -539,7 +548,7 @@ describe('post-launch reflow candidates and gates', () => {
     expect(hasReflowCandidate(db, { sessionId: 'old-500', turnId: 'turn-500' })).toBe(true);
   });
 
-  it('多候选会话裁剪/溯源/保存绑同一条：点踩撤销后必拒，tags 不含旧评分轮信号', () => {
+  it('多候选会话裁剪/溯源/保存绑同一条：点踩撤销后必拒，tags 不含旧评分轮信号', async () => {
     score(db, 's', 'turn-A', redDims(), '["timeout"]', 1);
     db.prepare(`
       INSERT INTO telemetry_feedback (id, session_id, turn_id, message_id, rating, created_at)
@@ -547,15 +556,11 @@ describe('post-launch reflow candidates and gates', () => {
     `).run();
     setPostLaunchConsentScope(db, 's', 'turn_excerpt', 11);
 
-    const listed = listReflowCandidates(db, { sessionId: 's' });
-    const trigger = pickTriggerCandidate(listed, 's');
-    expect(trigger?.sources).toEqual(['feedback']);
-    expect(trigger?.feedbackId).toBe('fb-down');
-    expect(trigger?.turnId).toBeNull();
-
-    const seed = applyPostLaunchReflowProvenance({
-      sessionId: 's', sessionTitle: 'title', id: 'draft-s', prompt: 'p', description: 'd', tags: [], candidates: [], notes: [],
-    }, listed, 'turn_excerpt');
+    // 裁剪/溯源/保存必须贯穿同一条候选：预览出的草稿只能带点踩那条的溯源，
+    // 不许混进旧评分轮（turn-A）的信号
+    const result = await previewReflow(db, { ...twoTurnReplay(), sessionId: 's' });
+    const seed = result.seeds[0];
+    if (!seed) throw new Error('预览没出草稿');
     expect(seed.tags).toEqual(expect.arrayContaining(['postlaunch', 'source:feedback']));
     expect(seed.tags).not.toContain('source:judge');
     expect(seed.tags).not.toContain('red:goal');

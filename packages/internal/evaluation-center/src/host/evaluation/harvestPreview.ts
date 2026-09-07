@@ -34,7 +34,7 @@ interface HarvestTurnRow {
   parent_turn_id: string | null;
 }
 
-export const REFLOW_TURN_MISMATCH_MESSAGE = '回流触发轮对不上回放记录';
+const REFLOW_TURN_MISMATCH_MESSAGE = '回流触发轮对不上回放记录';
 
 type HarvestReplayTurns = NonNullable<StructuredReplay['turns']>;
 
@@ -73,7 +73,7 @@ function turnBelongsToOwner(
  * 一场会话可能有多条候选；裁剪/溯源/保存必须贯穿同一条——取 occurredAt 最新的那条
  * （触发本次回流的那条），禁止混用别轮的 tags 或拿另一条去过保存闸。
  */
-export function pickTriggerCandidate(
+function pickTriggerCandidate(
   candidates: readonly PostLaunchReflowCandidate[],
   sessionId: string,
 ): PostLaunchReflowCandidate | null {
@@ -191,7 +191,7 @@ function listHarvestTurnRows(db: BetterSqlite3.Database, sessionId: string): Har
  * 评分/信号候选 turnId 对不上 telemetry_turns↔回放映射时 fail-closed；
  * 点踩候选走 messageId/turnId → 消息自身时间，找不到再退 created_at。
  */
-export function scopeReplayToCandidate(
+function scopeReplayToCandidate(
   replay: StructuredReplay,
   candidates: readonly PostLaunchReflowCandidate[],
   consentScope: PostLaunchConsentScope,
@@ -229,7 +229,7 @@ function normalizeRequest(payload: HarvestPreviewRequest): { sessionIds: string[
 }
 
 /** 将候选的结构化触发原因写入 HARVEST 草稿，不带回复/工具正文。 */
-export function applyPostLaunchReflowProvenance(
+function applyPostLaunchReflowProvenance(
   seed: HarvestDraftSeed,
   candidates: readonly PostLaunchReflowCandidate[],
   consentScope: PostLaunchConsentScope,

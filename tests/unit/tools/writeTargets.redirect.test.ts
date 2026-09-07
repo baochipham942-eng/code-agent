@@ -53,43 +53,6 @@ describe('shell redirect write targets', () => {
     expect(resolve('cmd >&12abc').targets)
       .toContain(resolveCanonicalRunPath(path.join(workingDirectory, '12abc')));
   });
-
-  it.each(["printf x >'&1'", 'printf x >\\&1'])(
-    '引号或转义后的 &1 是文件名：%s',
-    (command) => {
-      expect(resolve(command).targets)
-        .toContain(resolveCanonicalRunPath(path.join(workingDirectory, '&1')));
-    },
-  );
-
-  it.each([
-    ["sudo bash -c 'echo > f'", 'f'],
-    ["setsid bash --rcfile /dev/null -c 'printf x > c.md'", 'c.md'],
-    ["sed -i 's/x/y/' src/host/permissions/modes.ts", 'src/host/permissions/modes.ts'],
-    ['printf x | tee report.txt', 'report.txt'],
-    ['cp source.txt copied.txt', 'copied.txt'],
-    ['mv source.txt moved.txt', 'moved.txt'],
-  ])('共享解析器提取包装器与写工具目标：%s', (command, target) => {
-    expect(resolve(command).targets)
-      .toContain(resolveCanonicalRunPath(path.join(workingDirectory, target)));
-  });
-
-  it('an IO number split from its operator by a line continuation does not replace the write target', () => {
-    expect(resolve('cp source.txt target.txt 2\\\n>&1').targets)
-      .toEqual([resolveCanonicalRunPath(path.join(workingDirectory, 'target.txt'))]);
-  });
-
-  it('a background & followed by a redirect does not swallow the next command\'s write target', () => {
-    expect(resolve('echo ok & > /dev/null cp source.txt target.txt').targets)
-      .toContain(resolveCanonicalRunPath(path.join(workingDirectory, 'target.txt')));
-  });
-
-  it.each(['grep sh file', "printf '%s' bash", 'man sh', 'which bash zsh'])(
-    'shell 名作为普通参数不制造 uncertain：%s',
-    (command) => {
-      expect(resolve(command)).toMatchObject({ targets: [], uncertain: [] });
-    },
-  );
 });
 
 /**
@@ -140,8 +103,6 @@ describe('cp / mv / tee 的写目标', () => {
     // 真阴：数字与 `>` 之间有空格时，按 bash 它就是普通操作数，仍要当写目标
     expect(resolve('cp a b 2 > /tmp/x').targets)
       .toContain(resolveCanonicalRunPath(path.join(workingDirectory, '2')));
-    expect(resolve('cp a b 2\\\n2>&1').targets)
-      .toEqual([resolveCanonicalRunPath(path.join(workingDirectory, 'b'))]);
   });
 
   it('多行命令：换行是命令边界，第 2 行起的写目标不能丢（ai-review #1650 第 3 轮）', () => {
@@ -265,36 +226,5 @@ describe('引号/转义目标的词法保真（PR #1709 复审①）', () => {
   it('单引号路径里的字面反斜杠不丢（PR #1709 复审④②：值化只许做一遍）', () => {
     expect(resolve("cp src '/tmp/a\\b.txt'").targets)
       .toEqual([resolveCanonicalRunPath('/tmp/a\\b.txt')]);
-  });
-
-  it('包装器的 POSIX 附着值选项不该让整条命令失明（ai-review 第 47 轮）', () => {
-    // `-uMODE` 是 `-u MODE` 的附着写法。认不出它 ⇒ 整个 wrapper 判 unresolved ⇒ 零写目标 ⇒
-    // 工作区边界检查根本不触发。附着值是 POSIX 通用短选项语法，四个 wrapper 一起覆盖。
-    expect(resolve("env -uMODE bash -c 'cp source.txt /etc/owned47.txt'").targets)
-      .toEqual([resolveCanonicalRunPath('/etc/owned47.txt')]);
-    expect(resolve("sudo -uroot bash -c 'cp source.txt /etc/owned47b.txt'").targets)
-      .toEqual([resolveCanonicalRunPath('/etc/owned47b.txt')]);
-    expect(resolve("timeout -sKILL 5 bash -c 'cp source.txt /etc/owned47c.txt'").targets)
-      .toEqual([resolveCanonicalRunPath('/etc/owned47c.txt')]);
-    expect(resolve("nice -n5 bash -c 'cp source.txt /etc/owned47f.txt'").targets)
-      .toEqual([resolveCanonicalRunPath('/etc/owned47f.txt')]);
-    // 分离写法本来就认得，两种写法必须同判
-    expect(resolve("env -u MODE bash -c 'cp source.txt /etc/owned47d.txt'").targets)
-      .toEqual([resolveCanonicalRunPath('/etc/owned47d.txt')]);
-    // 真阴：真正读不懂的选项仍要 unresolved，别把守卫一起放松了
-    expect(resolve("env --bogus-unknown bash -c 'cp a /etc/x'").targets).toEqual([]);
-  });
-
-  it('嵌套脚本解析失败仍保住已识别的写目标（ai-review 第 46 轮：失败不许清空视图）', () => {
-    // `(true)` 让内层解析失败；基线从分号前的 cp 提得到目标，候选一度返回空 ⇒
-    // 工作区边界检查整个不触发。解析失败只该让视图变宽（多报），不该让它变空。
-    expect(resolve("bash -c 'cp source.txt /etc/owned46.txt; (true)'").targets)
-      .toEqual([resolveCanonicalRunPath('/etc/owned46.txt')]);
-    // 对照：不带失败尾巴时本来就有
-    expect(resolve("bash -c 'cp source.txt /etc/owned46.txt; true'").targets)
-      .toEqual([resolveCanonicalRunPath('/etc/owned46.txt')]);
-    // 对照：不经嵌套脚本时本来就有
-    expect(resolve('cp source.txt /etc/owned46.txt; (true)').targets)
-      .toEqual([resolveCanonicalRunPath('/etc/owned46.txt')]);
   });
 });

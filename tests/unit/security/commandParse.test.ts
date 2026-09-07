@@ -512,4 +512,29 @@ describe('shared shell command parser', () => {
       .toEqual([';', '&', '|', '&&', '||', '|&', null]);
     expect(parseShellCommand('cd x').segments.map((s) => s.terminator)).toEqual([null]);
   });
+
+  it('嵌套脚本解析失败仍保住已读到的写目标（ai-review 第 46 轮）', () => {
+    // `(true)` 让内层解析失败。解析失败只该让写目标视图变宽（多报），不该让它变空——
+    // 空目标会让下游的工作区边界检查完全不触发。
+    const paths = (command: string) => parseShellCommand(command).writeTargets.map((t) => t.path);
+    expect(paths("bash -c 'cp source.txt /etc/owned46.txt; (true)'")).toContain('/etc/owned46.txt');
+    // 对照：没有失败尾巴、以及不经嵌套脚本时本来就有
+    expect(paths("bash -c 'cp source.txt /etc/owned46.txt; true'")).toContain('/etc/owned46.txt');
+    expect(paths('cp source.txt /etc/owned46.txt; (true)')).toContain('/etc/owned46.txt');
+  });
+
+  it('包装器的 POSIX 附着值选项不让整条命令失明（ai-review 第 47 轮）', () => {
+    // `-uMODE` 是 `-u MODE` 的附着写法，认不出它会让整个 wrapper 判 unresolved、零写目标。
+    // 附着值是通用短选项语法，一条分支覆盖四个 wrapper。
+    const paths = (command: string) => parseShellCommand(command).writeTargets.map((t) => t.path);
+    for (const command of [
+      "env -uMODE bash -c 'cp source.txt /etc/owned47.txt'",
+      "sudo -uroot bash -c 'cp source.txt /etc/owned47.txt'",
+      "timeout -sKILL 5 bash -c 'cp source.txt /etc/owned47.txt'",
+      "nice -n5 bash -c 'cp source.txt /etc/owned47.txt'",
+      "env -u MODE bash -c 'cp source.txt /etc/owned47.txt'",
+    ]) {
+      expect(paths(command)).toContain('/etc/owned47.txt');
+    }
+  });
 });

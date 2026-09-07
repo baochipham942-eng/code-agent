@@ -34,6 +34,12 @@ export interface ToolContext {
   /** Immutable authorization/artifact boundary for a run-scoped executor. */
   workspace?: string;
   workspaceScope?: WorkspaceScope;
+  /**
+   * 写边界开关随 ToolContext 下传 spawn 链：toolExecutor 只在开着时带上（关着时
+   * 形状不变）。shadowAdapter.buildProtocolContext / subagentExecutionContext 逐字段
+   * 重建上下文时必须搬运——漏搬 = 委派链上子代理绕过写边界。
+   */
+  restrictWritesToWorkspace?: boolean;
   workingDirectory: string;
 
   requestPermission: (request: PermissionRequestData) => Promise<boolean>;

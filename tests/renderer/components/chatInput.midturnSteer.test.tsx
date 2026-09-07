@@ -38,7 +38,7 @@ import { useChatInputSessionScope } from '../../../src/renderer/components/featu
 import {
   decideSameIdQueueAction,
   queuedRecordMatchesEnvelope,
-} from '../../../src/renderer/components/features/chat/ChatInput/queuedInputSameId';
+} from '../../../src/shared/queuedInputSameId';
 import type { QueuedInputStatus } from '../../../src/shared/contract/queuedInput';
 import {
   consumePendingClientMessageId,

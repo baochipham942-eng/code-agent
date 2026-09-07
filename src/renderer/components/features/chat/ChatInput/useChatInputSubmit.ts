@@ -41,7 +41,7 @@ import { replaceOptimisticUserMessage } from '../../../../utils/optimisticUserSe
 import {
   decideSameIdQueueAction,
   queuedRecordMatchesEnvelope,
-} from './queuedInputSameId';
+} from '@shared/queuedInputSameId';
 import { parseScheduleCommand, isScheduleCommand } from './parseScheduleCommand';
 import { parseLoopCommand, isLoopCommand } from './parseLoopCommand';
 import {

@@ -7,7 +7,7 @@ import {
 } from '../../shared/queuedInputSameId';
 import { generateMessageId } from '../../shared/utils/id';
 
-export interface SameIdQueuedRecord {
+interface SameIdQueuedRecord {
   id: string;
   envelopeJson: string;
   status: QueuedInputStatus;

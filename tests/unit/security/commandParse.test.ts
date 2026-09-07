@@ -253,6 +253,16 @@ describe('shared shell command parser', () => {
     });
   });
 
+  it('reads cp --attributes-only as a boolean and keeps the target', () => {
+    // GNU cp: --attributes-only copies no data but still applies --preserve=mode to the target —
+    // a write the baseline's ownership hard-deny sees (round 43).
+    expect(parseShellCommand('cp --attributes-only --preserve=mode source.txt shared.txt'))
+      .toMatchObject({
+        parsingFailed: false,
+        writeTargets: [expect.objectContaining({ path: 'shared.txt', source: 'copy' })],
+      });
+  });
+
   it.each([
     'echo hi 2>&1',
     'echo hi; ',

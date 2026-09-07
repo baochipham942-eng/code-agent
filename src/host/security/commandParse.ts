@@ -552,11 +552,11 @@ const CP_VALUE_OPTIONS: ReadonlySet<string> = new Set([
   '-t', '--target-directory', '-S', '--suffix', '--sparse',
 ]);
 const CP_BOOLEAN_OPTIONS: ReadonlySet<string> = new Set([
-  '-a', '--archive', '-c', '-d', '--no-dereference', '--dereference', '-f', '--force', '-H', '-L',
-  '-i', '--interactive', '-l', '--link', '-n', '--no-clobber', '--parents', '-P', '-p', '-R', '-r',
-  '--recursive', '--remove-destination', '--strip-trailing-slashes', '-s', '--symbolic-link', '-T',
-  '--no-target-directory', '-u', '--update', '-v', '--verbose', '-x', '--one-file-system', '-X', '-Z',
-  '--copy-contents', '--debug', '--help', '--version',
+  '-a', '--archive', '--attributes-only', '-c', '-d', '--no-dereference', '--dereference', '-f',
+  '--force', '-H', '-L', '-i', '--interactive', '-l', '--link', '-n', '--no-clobber', '--parents',
+  '-P', '-p', '-R', '-r', '--recursive', '--remove-destination', '--strip-trailing-slashes', '-s',
+  '--symbolic-link', '-T', '--no-target-directory', '-u', '--update', '-v', '--verbose', '-x',
+  '--one-file-system', '-X', '-Z', '--copy-contents', '--debug', '--help', '--version',
 ]);
 const CP_OPTIONAL_ATTACHED_OPTIONS: ReadonlySet<string> = new Set([
   '-b', '--backup', '--preserve', '--no-preserve', '--reflink', '--context',

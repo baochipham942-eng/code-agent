@@ -665,10 +665,8 @@ describe('上线后打分编排', () => {
     expect(buildPostLaunchReport(database, { now: NOW }).groups[0].sessions[0].title).toBe('CLI Session');
   });
 
-  it('⑦遥测列已存的脱敏标题直接出：脱敏口径在写入侧，读侧不二次处理', () => {
-    // sessions.title 仍是裸存（SessionRepository 不过 guard），遥测列存的是 guard 后的值；
-    // 芯片读遥测列，泄露防线在写路径同步（见 sessionManager.telemetryTitleSync 测试）。
-    insertSession(database, 'chat-1', 'chat', NOW - HOUR, null, '修 [已脱敏路径] 的登录');
+  it('⑦sessions.title 是裸存的，报告侧补脱敏后再出，不退回遥测占位', () => {
+    insertSession(database, 'chat-1', 'chat', NOW - HOUR, null, 'CLI Session');
     insertChatSession(database, 'chat-1', '修 /Users/someone/secret-repo/a.ts 的登录');
     const day = localDay(NOW);
     database.prepare(`
@@ -679,7 +677,23 @@ describe('上线后打分编排', () => {
 
     const title = buildPostLaunchReport(database, { now: NOW }).groups[0].sessions[0].title;
     expect(title).not.toContain('/Users/someone/secret-repo');
+    expect(title).not.toBe('CLI Session');
     expect(title).toContain('登录');
+  });
+
+  it('⑦遥测列已存的脱敏标题：sessions 空白时回落它，不显示空白也不泄露路径', () => {
+    insertSession(database, 'chat-1', 'chat', NOW - HOUR, null, '修 [已脱敏路径] 的登录');
+    insertChatSession(database, 'chat-1', '   ');
+    const day = localDay(NOW);
+    database.prepare(`
+      INSERT INTO telemetry_turn_scores (turn_id, session_id, scored_at, scored_day, turn_started_at,
+        judge_version, rubric_version, judge_model, dim_goal, signals, cost_usd, budget_cost_usd, sampled_by)
+      VALUES ('t1', 'chat-1', ?, ?, ?, ?, 'postlaunch-rubric-v1', 'deepseek/x', 1, '[]', 0, 0, 'sample')
+    `).run(NOW, day, NOW - HOUR, POST_LAUNCH_JUDGE_VERSION);
+
+    const title = buildPostLaunchReport(database, { now: NOW }).groups[0].sessions[0].title;
+    expect(title).toBe('修 [已脱敏路径] 的登录');
+    expect(title).not.toContain('/Users/someone/secret-repo');
   });
 
   it('⑦会话已被删（LEFT JOIN 落空）时标题与时间给空值，不是 null 也不是 1970', () => {

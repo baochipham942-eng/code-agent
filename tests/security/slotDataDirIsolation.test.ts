@@ -17,13 +17,13 @@ vi.mock('../../src/host/tools/shell/dynamicDescription', () => ({
 import { getUserConfigDir } from '../../src/host/config/configPaths';
 import {
   collectForeignSlotTraversalExcludes,
-  CROSS_SLOT_READ_ALLOW_ENV,
-  CROSS_SLOT_READ_ALLOWLIST_ENV,
-  evaluateSlotDataDirAccess,
   evaluateToolSlotDataDirAccess,
   FOREIGN_SLOT_DATA_DIR_CODE,
   foreignSlotPrunedGrepSearchPaths,
 } from '../../src/host/security/slotDataDirGuard';
+
+const CROSS_SLOT_READ_ALLOW_ENV = 'CODE_AGENT_ALLOW_CROSS_SLOT_READ';
+const CROSS_SLOT_READ_ALLOWLIST_ENV = 'CODE_AGENT_CROSS_SLOT_READ_ALLOWLIST';
 import { getToolCache } from '../../src/host/services/infra/toolCache';
 import { fileReadTracker } from '../../src/host/tools/fileReadTracker';
 import { getProtocolRegistry } from '../../src/host/tools/protocolRegistry';
@@ -320,17 +320,22 @@ describe('槽数据目录读隔离', () => {
   });
 
   it('前缀陷阱：.code-agent 不是 .code-agent-dev 的父槽', () => {
-    const asProd = evaluateSlotDataDirAccess(path.join(devSlot, 'memory', 'notes.md'), {
-      currentDataDir: prodSlot,
-      homeDirs: [fakeHome],
-    });
+    const target = path.join(devSlot, 'memory', 'notes.md');
+    const asProd = evaluateToolSlotDataDirAccess(
+      'Read',
+      { file_path: target },
+      fakeHome,
+      { currentDataDir: prodSlot, homeDirs: [fakeHome] },
+    );
     expect(asProd.allowed).toBe(false);
     if (!asProd.allowed) expect(asProd.slotName).toBe('.code-agent-dev');
 
-    const asDev = evaluateSlotDataDirAccess(path.join(devSlot, 'memory', 'notes.md'), {
-      currentDataDir: devSlot,
-      homeDirs: [fakeHome],
-    });
+    const asDev = evaluateToolSlotDataDirAccess(
+      'Read',
+      { file_path: target },
+      fakeHome,
+      { currentDataDir: devSlot, homeDirs: [fakeHome] },
+    );
     expect(asDev.allowed).toBe(true);
   });
 

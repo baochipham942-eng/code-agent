@@ -488,14 +488,12 @@ describe('grepModule (native)', () => {
         // 裸名字：连合法的项目配置一起排掉了（当前实现的病）
         expect(bare).not.toContain('agents.json');
         expect(bare).not.toContain('config.json');
-        // 🔴 前导 `/` 在「搜索路径是绝对路径」时**完全不生效**——两个都保留。
-        // 也就是说 rg 的 --glob 表达不了「只排除搜索根下的这一个目录」：
-        // 裸名字会误伤任意深度的同名目录，锚定形式则一个都不排。
-        // ⇒ 修这个洞不能靠换 glob 写法，只能改成「搜完按真实路径过滤输出行」
-        //   （Glob 工具已经是这个模式：isListedPathInsideForeignSlot）。
-        // 这条测试锁住这个事实，防止有人再拿 glob 形式去试。
-        expect(anchored).toContain('agents.json');
-        expect(anchored).toContain('config.json');
+        // 锁的不变量：rg --glob **做不到**「只排除搜索根下那一个目录、保留任意深度同名目录」。
+        // 本机常见形态：绝对搜索路径下 `!/.code-agent` 一个都不排（两个都在）。
+        // CI Ubuntu rg 另一形态：同写法整次搜空。两种都证明 glob 不能当槽排除。
+        // 若某版 rg 真能 nested-kept + root-excluded，这个断言会红——那才该改回 glob。
+        const globCanSelectOnlySearchRoot = anchored.includes('agents.json') && !anchored.includes('config.json');
+        expect(globCanSelectOnlySearchRoot).toBe(false);
       } finally {
         await fs.rm(root, { recursive: true, force: true });
       }

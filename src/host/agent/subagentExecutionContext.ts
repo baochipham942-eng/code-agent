@@ -56,6 +56,8 @@ export function createProtocolSubagentExecutionContext(
     sessionId: ctx.sessionId,
     workspace: ctx.workspace,
     workspaceScope: ctx.workspaceScope,
+    // N-EVAL-POLICY-WRITE-BOUNDARY-ENABLE：写边界开关随 spawn 链下传（只在开着时出现）。
+    ...(ctx.restrictWritesToWorkspace ? { restrictWritesToWorkspace: true } : {}),
     cwd: ctx.workingDir,
     modelConfig,
     resolver,

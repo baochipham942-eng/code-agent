@@ -504,6 +504,11 @@ function createAgent(opts: {
     onEvaluationSignal: opts.onEvaluationSignal,
     database: opts.database,
     telemetryCollector: opts.telemetryCollector,
+    // N-EVAL-POLICY-WRITE-BOUNDARY-ENABLE：评测写边界缺省开（写目标必须落在
+    // 沙箱/记忆目录内）。NEO_EVAL_WRITE_BOUNDARY=off 显式关 = 对照臂（验收③的
+    // 打开前基线）与紧急回退杆；关着时 adapter 不注入 scope/runContext，链路
+    // 与 #1686 合入前一字不差。
+    restrictWritesToWorkspace: process.env.NEO_EVAL_WRITE_BOUNDARY !== 'off',
     modelConfig: {
       provider: resolvedProvider,
       model: resolvedModel,

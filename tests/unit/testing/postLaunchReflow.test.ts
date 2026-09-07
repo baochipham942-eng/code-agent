@@ -10,7 +10,7 @@ import {
   setPostLaunchConsentScope,
 } from '../../../src/host/testing/postlaunch/postLaunchScoreStore';
 import { checkPostLaunchReflowGates } from '../../../src/host/testing/postlaunch/postLaunchReflowGate';
-import { applyPostLaunchReflowProvenance, scopeReplayToCandidate } from '@internal-evaluation/host/evaluation/harvestPreview';
+import { applyPostLaunchReflowProvenance, REFLOW_TURN_MISMATCH_MESSAGE, scopeReplayToCandidate } from '@internal-evaluation/host/evaluation/harvestPreview';
 import { deriveHarvestSeed } from '@internal-evaluation/host/evaluation/harvestCandidates';
 import type { ReplayBlock, ReplayTurn, StructuredReplay } from '../../../src/shared/contract/evaluation';
 import type { PostLaunchReflowCandidate } from '../../../src/shared/contract/postLaunchScore';
@@ -23,6 +23,9 @@ const TRIGGER_TURN_PROMPT = 'FEATURE_B_TRIGGER_TURN_PROMPT';
 const FIRST_TURN_PATH = 'first-turn-secret.txt';
 const FIRST_TURN_COMMAND = 'first-turn-secret-cmd';
 const TRIGGER_TURN_PATH = 'trigger-turn.txt';
+const FIRST_TURN_ID = '6f1a2b3c-4d5e-4f60-8a9b-0c1d2e3f4a5b';
+const TRIGGER_TURN_ID = '7a8b9c0d-1e2f-4a3b-9c8d-7e6f5a4b3c2d';
+const UNKNOWN_TURN_ID = '00000000-0000-4000-8000-000000000099';
 
 function makeDb(): Database.Database {
   const db = new Database(':memory:');
@@ -107,7 +110,7 @@ function twoTurnReplay(): StructuredReplay {
 function triggerCandidate(): PostLaunchReflowCandidate {
   return {
     sessionId: 'sess-reflow-0001',
-    turnId: '2',
+    turnId: TRIGGER_TURN_ID,
     judgeVersion: VERSION,
     redDimensions: ['goal'],
     signals: [],
@@ -115,6 +118,13 @@ function triggerCandidate(): PostLaunchReflowCandidate {
     sources: ['judge'],
     occurredAt: 2000,
   };
+}
+
+function triggerTurnRows() {
+  return [
+    { id: FIRST_TURN_ID, turn_number: 1, start_time: 1000, turn_type: 'user', parent_turn_id: null },
+    { id: TRIGGER_TURN_ID, turn_number: 2, start_time: 2000, turn_type: 'user', parent_turn_id: null },
+  ];
 }
 
 function seedFrom(replay: StructuredReplay) {
@@ -163,18 +173,22 @@ describe('post-launch reflow candidates and gates', () => {
     const enriched = applyPostLaunchReflowProvenance(seed, [{
       sessionId: 's', turnId: 't', judgeVersion: VERSION, redDimensions: ['goal'], signals: ['timeout'],
       failureClass: 'timeout', sources: ['judge', 'signal'],
-    }]);
+    }], 'turn_excerpt');
     expect(enriched.tags).toEqual(expect.arrayContaining(['postlaunch', 'source:judge', 'red:goal', 'signal:timeout']));
     expect(enriched.description).toContain('上线后回流触发');
     expect(enriched.description).toContain('source:judge');
     expect(enriched.description).toContain('red:goal');
-    expect(enriched.postLaunchReflow).toMatchObject({ turnId: 't', sources: ['judge', 'signal'] });
+    expect(enriched.postLaunchReflow).toMatchObject({
+      turnId: 't',
+      sources: ['judge', 'signal'],
+      consentScope: 'turn_excerpt',
+    });
   });
 
   it('turn_excerpt 题面只含触发轮原话、不含首轮原文和首轮工具参数；full_session 覆盖整会话', () => {
     const replay = twoTurnReplay();
     const candidates = [triggerCandidate()];
-    const excerpt = seedFrom(scopeReplayToCandidate(replay, candidates, 'turn_excerpt'));
+    const excerpt = seedFrom(scopeReplayToCandidate(replay, candidates, 'turn_excerpt', triggerTurnRows()));
     expect(excerpt.prompt).toContain(TRIGGER_TURN_PROMPT);
     expect(excerpt.prompt).not.toContain(FIRST_TURN_PROMPT);
     const excerptBlob = JSON.stringify(excerpt.candidates);
@@ -182,12 +196,59 @@ describe('post-launch reflow candidates and gates', () => {
     expect(excerptBlob).not.toContain(FIRST_TURN_PATH);
     expect(excerptBlob).not.toContain(FIRST_TURN_COMMAND);
 
-    const full = seedFrom(scopeReplayToCandidate(replay, candidates, 'full_session'));
+    const full = seedFrom(scopeReplayToCandidate(replay, candidates, 'full_session', triggerTurnRows()));
     expect(full.prompt).toContain(FIRST_TURN_PROMPT);
     const fullBlob = JSON.stringify(full.candidates);
     expect(fullBlob).toContain(FIRST_TURN_PATH);
     expect(fullBlob).toContain('"tool":"Bash"');
     expect(fullBlob).toContain(TRIGGER_TURN_PATH);
+  });
+
+  it('候选 turnId 用 telemetry_turns 真 id 对得上才裁剪；对不上抛错，不退回整场会话', () => {
+    const replay = twoTurnReplay();
+    const matched = scopeReplayToCandidate(replay, [triggerCandidate()], 'turn_excerpt', triggerTurnRows());
+    expect(seedFrom(matched).prompt).toContain(TRIGGER_TURN_PROMPT);
+    expect(seedFrom(matched).prompt).not.toContain(FIRST_TURN_PROMPT);
+
+    expect(() => scopeReplayToCandidate(
+      replay,
+      [{ ...triggerCandidate(), turnId: UNKNOWN_TURN_ID }],
+      'turn_excerpt',
+      triggerTurnRows(),
+    )).toThrow(REFLOW_TURN_MISMATCH_MESSAGE);
+
+    expect(() => scopeReplayToCandidate(
+      replay,
+      [{ ...triggerCandidate(), turnId: '2' }],
+      'turn_excerpt',
+      triggerTurnRows(),
+    )).toThrow(REFLOW_TURN_MISMATCH_MESSAGE);
+  });
+
+  it('预览所用档高于当前档时拒，档不变或升高时放行', () => {
+    score(db, 's', 't', { goal: 0, orchestration: 1, tools: 1, permission: 1, safety: 1, artifact: 1 });
+    setPostLaunchConsentScope(db, 's', 'full_session', 11);
+    expect(checkPostLaunchReflowGates(db, {
+      sessionId: 's', turnId: 't', previewConsentScope: 'full_session',
+    }).allowed).toBe(true);
+
+    setPostLaunchConsentScope(db, 's', 'turn_excerpt', 12);
+    expect(checkPostLaunchReflowGates(db, {
+      sessionId: 's', turnId: 't', previewConsentScope: 'full_session',
+    })).toMatchObject({ allowed: false, reason: 'consent_stale' });
+    expect(checkPostLaunchReflowGates(db, {
+      sessionId: 's', turnId: 't', previewConsentScope: 'turn_excerpt',
+    }).allowed).toBe(true);
+
+    setPostLaunchConsentScope(db, 's', 'full_session', 13);
+    expect(checkPostLaunchReflowGates(db, {
+      sessionId: 's', turnId: 't', previewConsentScope: 'turn_excerpt',
+    }).allowed).toBe(true);
+
+    setPostLaunchConsentScope(db, 's', 'metadata', 14);
+    expect(checkPostLaunchReflowGates(db, {
+      sessionId: 's', turnId: 't', previewConsentScope: 'full_session',
+    })).toMatchObject({ allowed: false, reason: 'consent_required' });
   });
 
   it('200 条评分候选 + 1 条新点踩：点踩出现在默认限量结果里，且存在性检查为 true', () => {

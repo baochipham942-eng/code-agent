@@ -4,7 +4,7 @@
 // 从 evaluation.ts 拆出来单独成文件（那份已顶到 max-lines 上限）；
 // 消费方仍从 '@shared/contract/evaluation' 取，那边整体再导出。
 // ============================================================================
-import type { PostLaunchDimension, PostLaunchSignalKind } from './postLaunchScore';
+import type { PostLaunchConsentScope, PostLaunchDimension, PostLaunchSignalKind } from './postLaunchScore';
 /** 候选判定标准允许的类型白名单——只用现有断言类型，不发明新的。 */
 export const HARVEST_EXPECTATION_TYPES = [
   'file_exists',
@@ -62,6 +62,8 @@ export interface HarvestDraftSeed {
     sources: Array<'judge' | 'signal' | 'feedback'>;
     redDimensions: PostLaunchDimension[];
     signals: PostLaunchSignalKind[];
+    /** 预览生成时所用同意档；保存闸用它比对当前档，降档必须重新生成。 */
+    consentScope: PostLaunchConsentScope;
   };
 }
 

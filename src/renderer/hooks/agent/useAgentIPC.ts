@@ -46,6 +46,12 @@ import {
   claimSendInflight,
   type ChatSendDelivery,
 } from '../../utils/chatSendState';
+import {
+  buildSendFailureRetryAnchor,
+  markOptimisticUserSendFailed,
+  replaceOptimisticUserMessage,
+  upsertOptimisticUserMessage,
+} from '../../utils/optimisticUserSend';
 
 const logger = createLogger('useAgent');
 
@@ -937,15 +943,19 @@ export function useAgentIPC({
             'interrupt',
             runtimeEnvelope,
           );
-          if (!useSessionStore.getState().messages.some((message) => message.id === messageId)) {
-            addMessage({
-              id: messageId,
-              role: 'user',
-              content: runtimeEnvelope.content,
-              attachments: runtimeEnvelope.attachments,
-              timestamp: Date.now(),
-              metadata: toMessageMetadata(runtimeContext),
-            });
+          const optimisticUser = {
+            id: messageId,
+            role: 'user' as const,
+            content: runtimeEnvelope.content,
+            attachments: runtimeEnvelope.attachments,
+            timestamp: Date.now(),
+            metadata: toMessageMetadata(runtimeContext),
+          };
+          if (
+            !replaceOptimisticUserMessage(optimisticUser)
+            && !useSessionStore.getState().messages.some((message) => message.id === messageId)
+          ) {
+            addMessage(optimisticUser);
           }
           logger.info('sendMessage - foreground input delivery accepted', { outcome: outcome.outcome });
           return outcome;
@@ -971,10 +981,6 @@ export function useAgentIPC({
           && voiceCall.sessionId === effectiveSessionId
           ? effectiveSessionId
           : undefined;
-        const voiceFallbackMessageId = voiceInjectSessionId !== undefined
-          ? (envelope.clientMessageId ?? generateMessageId())
-          : undefined;
-
         if (voiceInjectSessionId !== undefined) {
           try {
             const injection = await typedInvokeDomain(VoiceSchemas.INJECT_USER_TEXT, {
@@ -1005,7 +1011,7 @@ export function useAgentIPC({
             isCurrentSessionProcessing,
           });
         }
-        return deliverToForegroundBrain(voiceFallbackMessageId);
+        return deliverToForegroundBrain(envelope.clientMessageId);
       }
 
       // Add user message with UUID
@@ -1019,13 +1025,8 @@ export function useAgentIPC({
       };
       logger.debug('Adding user message', { id: userMessage.id, attachmentsCount: attachments?.length || 0 });
       // 乐观上屏去重：协作空间 composer 在切会话前已把同 id 消息放上时间线（落地即
-      // 进行中态），这里再 append 就是双份——时间线上已有同 id 就跳过（neo 流程同款判法）。
-      const addedOptimisticUser = !useSessionStore.getState().messages.some(
-        (message) => message.id === userMessage.id,
-      );
-      if (addedOptimisticUser) {
-        addMessage(userMessage);
-      }
+      // 进行中态），这里再 append 就是双份。失败气泡编辑重发走同一 id 替换，不新开一条。
+      upsertOptimisticUserMessage(userMessage, addMessage);
 
       // 不再预创建 assistant placeholder
       // 后端会在每轮迭代开始时发送 turn_start 事件，前端据此创建消息
@@ -1103,10 +1104,8 @@ export function useAgentIPC({
           }
           throw sendFailure;
         }
-        if (addedOptimisticUser) {
-          const store = useSessionStore.getState();
-          store.setMessages(store.messages.filter((message) => message.id !== userMessage.id));
-        }
+        markOptimisticUserSendFailed(userMessage.id);
+        const retryAnchor = buildSendFailureRetryAnchor(userMessage, effectiveSessionId);
         // 错误时创建一条错误消息
         const errorMessage: Message = {
           id: generateMessageId(),
@@ -1115,26 +1114,9 @@ export function useAgentIPC({
             ? t.common.durableRunStartupTimeout
             : getAgentSendFailureMessage(sendFailure),
           timestamp: Date.now(),
-          // 乐观用户消息被撤了，重试锚点必须跟着走：regenerateMessage 默认往回找最近的
-          // user 消息，撤掉这条之后它会找到**上一轮**并把上一轮重发一遍；首条消息失败时
-          // 则一条都找不到、重试变哑（ai-review #1694）。把失败内容挂在错误消息上当锚点。
-          // 锚点条件锚在「我们撤了一条消息」上，不锚在「它有没有文本」上：
-          // 纯附件消息（图片直发、无文字）content 是空的，按文本判就一点锚点都不留，
-          // 用户既恢复不了草稿也重试不了（ai-review #1694 第五轮）。
-          ...(addedOptimisticUser && (userMessage.content?.trim() || userMessage.attachments?.length)
-            ? {
-                metadata: {
-                  retryPrompt: userMessage.content ?? '',
-                  ...(userMessage.attachments?.length
-                    ? { retryAttachments: userMessage.attachments }
-                    : {}),
-                  // 锚点必须自带它属于哪个会话：错误消息会落到**当下**的会话上，
-                  // 用户在 A 发完切到 B、A 的失败回执才到时，不绑会话就会把 A 的
-                  // 内容和附件重发进 B，污染 B 的上下文（ai-review #1694 第六轮）。
-                  ...(effectiveSessionId ? { retrySessionId: effectiveSessionId } : {}),
-                },
-              }
-            : {}),
+          // 失败用户气泡留在时间线上；错误卡「重试」仍锚到失败那条并带原
+          // clientMessageId。纯附件消息 content 为空，锚点不能按文本判。
+          ...(retryAnchor ? { metadata: retryAnchor } : {}),
         };
         addMessage(errorMessage);
         // 按会话清除处理状态

@@ -5,6 +5,10 @@ import { generateMessageId } from '@shared/utils/id';
 import { getAgentSendFailureMessage } from '../../../hooks/agent/useAgentIPC';
 import ipcService from '../../../services/ipcService';
 import { useSessionStore } from '../../../stores/sessionStore';
+import {
+  markOptimisticUserSendFailed,
+  replaceOptimisticUserMessage,
+} from '../../../utils/optimisticUserSend';
 
 function removeOptimisticMessage(messageId: string): void {
   const store = useSessionStore.getState();
@@ -25,19 +29,21 @@ export async function submitSteerEnvelope(
   };
 
   const sessionState = useSessionStore.getState();
-  const addedOptimisticMessage = steerEnvelope.sessionId === sessionState.currentSessionId
-    && !sessionState.messages.some((message) => message.id === clientMessageId);
+  const inCurrentSession = steerEnvelope.sessionId === sessionState.currentSessionId;
+  const optimisticUser = {
+    id: clientMessageId,
+    role: 'user' as const,
+    content: steerEnvelope.content,
+    attachments: steerEnvelope.attachments,
+    timestamp: Date.now(),
+    metadata: steerEnvelope.context?.runtimeInput
+      ? { workbench: { runtimeInputMode: steerEnvelope.context.runtimeInput.mode } }
+      : undefined,
+  };
+  const replacedExisting = inCurrentSession && replaceOptimisticUserMessage(optimisticUser);
+  const addedOptimisticMessage = inCurrentSession && !replacedExisting;
   if (addedOptimisticMessage) {
-    useSessionStore.getState().addMessage({
-      id: clientMessageId,
-      role: 'user',
-      content: steerEnvelope.content,
-      attachments: steerEnvelope.attachments,
-      timestamp: Date.now(),
-      metadata: steerEnvelope.context?.runtimeInput
-        ? { workbench: { runtimeInputMode: steerEnvelope.context.runtimeInput.mode } }
-        : undefined,
-    });
+    useSessionStore.getState().addMessage(optimisticUser);
   }
 
   try {
@@ -52,6 +58,7 @@ export async function submitSteerEnvelope(
     return outcome;
   } catch (error) {
     if (addedOptimisticMessage) removeOptimisticMessage(clientMessageId);
+    else if (replacedExisting) markOptimisticUserSendFailed(clientMessageId);
     useSessionStore.getState().addMessage({
       id: generateMessageId(),
       role: 'assistant',

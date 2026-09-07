@@ -29,6 +29,8 @@ export interface UseChatInputAgentCommandParams {
   setSlashFilter: React.Dispatch<React.SetStateAction<string>>;
   setPendingAgentSelection: React.Dispatch<React.SetStateAction<ComposerAgentSelection | null>>;
   setActiveAgentId: (id: string | null) => void;
+  /** Escape 清空输入框时丢掉失败重发 pending id。 */
+  onComposerDraftDiscarded?: () => void;
 }
 
 /**
@@ -48,6 +50,7 @@ export function useChatInputAgentCommand(params: UseChatInputAgentCommandParams)
     setSlashFilter,
     setPendingAgentSelection,
     setActiveAgentId,
+    onComposerDraftDiscarded,
   } = params;
 
   const isComposingRef = useImeCompositionRef();
@@ -150,6 +153,7 @@ export function useChatInputAgentCommand(params: UseChatInputAgentCommandParams)
       if (e.key === 'Escape') {
         e.preventDefault();
         setValue('');
+        onComposerDraftDiscarded?.();
         return true;
       }
     }

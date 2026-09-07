@@ -10,6 +10,7 @@ import { SteerRejectedError } from '../agent/runtime/conversationRuntime';
 import { SteerUnsupportedError } from './runContext';
 import { getDatabase } from '../services/core/databaseService';
 import { QueuedInputRepository } from '../services/core/repositories/QueuedInputRepository';
+import { applySameIdQueuedInput, type SameIdQueuedRepository } from './applySameIdQueuedInput';
 
 export function workbenchMetadataToEnvelopeContext(
   workbench?: WorkbenchMessageMetadata,
@@ -87,9 +88,7 @@ export interface SteerAttemptTarget {
   ): void | Promise<void>;
 }
 
-export interface SteerQueueFenceRepository {
-  enqueue(input: { id: string; sessionId: string; envelope: unknown; now?: number }): void;
-}
+export type SteerQueueFenceRepository = SameIdQueuedRepository;
 
 export interface SteerOrQueueInput {
   sessionId: string | null;
@@ -175,16 +174,17 @@ export async function steerOrQueue(
 
     const queued = buildQueuedSteerEnvelope({ ...input, sessionId }, options);
     const queueRepository = repository ?? resolveQueuedInputRepository();
-    queueRepository.enqueue({
+    const accepted = applySameIdQueuedInput(queueRepository, {
       id: queued.id,
       sessionId,
       envelope: queued.envelope,
       now: options?.now?.(),
+      generateId: options?.generateId,
     });
     const code = error.code;
     return {
       outcome: 'queued',
-      queuedInputId: queued.id,
+      queuedInputId: accepted.id,
       code,
       message: '这条先排上了，手头这轮做完就做',
     };
@@ -214,13 +214,14 @@ export function queuePendingSteerMessages(
 ): string[] {
   return pending.map((message) => {
     const queued = buildQueuedSteerEnvelope({ sessionId, ...message }, options);
-    repository.enqueue({
+    const accepted = applySameIdQueuedInput(repository, {
       id: queued.id,
       sessionId,
       envelope: queued.envelope,
       now: options?.now?.(),
+      generateId: options?.generateId,
     });
-    return queued.id;
+    return accepted.id;
   });
 }
 

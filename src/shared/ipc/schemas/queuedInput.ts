@@ -70,7 +70,20 @@ const RetractQueuedInputRequestSchema = z.object({
 
 const UpdateQueuedInputRequestSchema = z.object({
   action: z.literal('update'),
-  payload: z.object({ id: z.string(), content: z.string() }),
+  payload: z.object({
+    id: z.string(),
+    content: z.string(),
+    attachments: z.array(z.unknown()).optional(),
+  }),
+  requestId: z.string().optional(),
+});
+
+const RequeueQueuedInputRequestSchema = z.object({
+  action: z.literal('requeue'),
+  payload: z.object({
+    id: z.string(),
+    envelope: ConversationEnvelopeSchema,
+  }),
   requestId: z.string().optional(),
 });
 
@@ -108,6 +121,7 @@ const QueuedInputRequestSchema = z.discriminatedUnion('action', [
   EnqueueQueuedInputRequestSchema,
   ListQueuedInputsRequestSchema,
   UpdateQueuedInputRequestSchema,
+  RequeueQueuedInputRequestSchema,
   ReorderQueuedInputsRequestSchema,
   SendNowQueuedInputRequestSchema,
   RetractQueuedInputRequestSchema,
@@ -121,8 +135,12 @@ const RetractQueuedInputResponseSchema = IPCResponseSchema(
   z.object({ retracted: z.boolean() }) satisfies z.ZodType<RetractQueuedInputResult>,
 );
 const UpdateQueuedInputResponseSchema = IPCResponseSchema(
-  z.object({ updated: z.boolean() }) satisfies z.ZodType<UpdateQueuedInputResult>,
+  z.object({
+    updated: z.boolean(),
+    input: QueuedInputSchema.optional(),
+  }) satisfies z.ZodType<UpdateQueuedInputResult>,
 );
+const RequeueQueuedInputResponseSchema = EnqueueQueuedInputResponseSchema;
 const ReorderQueuedInputsResponseSchema = IPCResponseSchema(
   z.object({ reordered: z.boolean() }) satisfies z.ZodType<ReorderQueuedInputsResult>,
 );
@@ -140,6 +158,7 @@ const QueuedInputResponseSchema = z.union([
   EnqueueQueuedInputResponseSchema,
   ListQueuedInputsResponseSchema,
   UpdateQueuedInputResponseSchema,
+  RequeueQueuedInputResponseSchema,
   ReorderQueuedInputsResponseSchema,
   RetractQueuedInputResponseSchema,
   MarkQueuedInputSendingResponseSchema,
@@ -166,6 +185,11 @@ export const QueuedInputSchemas = {
     channel: IPC_DOMAINS.QUEUED_INPUT,
     payload: UpdateQueuedInputRequestSchema,
     response: UpdateQueuedInputResponseSchema,
+  }),
+  REQUEUE: channelSchema({
+    channel: IPC_DOMAINS.QUEUED_INPUT,
+    payload: RequeueQueuedInputRequestSchema,
+    response: RequeueQueuedInputResponseSchema,
   }),
   REORDER: channelSchema({
     channel: IPC_DOMAINS.QUEUED_INPUT,

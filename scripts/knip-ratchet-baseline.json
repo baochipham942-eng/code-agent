@@ -748,11 +748,6 @@
     },
     {
       "file": "src/host/agent/runtime/contextAssembly/artifactRepairProjection.ts",
-      "name": "hasRecentArtifactRepairToolFailure",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/agent/runtime/contextAssembly/artifactRepairProjection.ts",
       "name": "isArtifactRepairContent",
       "kind": "export"
     },

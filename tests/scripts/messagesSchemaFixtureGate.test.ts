@@ -64,18 +64,24 @@ function listTestFiles(root: string): string[] {
   return files;
 }
 
+function isCommentLine(text: string): boolean {
+  const trimmed = text.trim();
+  return trimmed.startsWith('//') || trimmed.startsWith('*') || trimmed.startsWith('/*');
+}
+
 function findHandwrittenMessagesCreateTable(root: string): Hit[] {
   const hits: Hit[] = [];
   for (const abs of listTestFiles(root)) {
     const file = relative(root, abs).replaceAll('\\', '/');
-    const lines = readFileSync(abs, 'utf8').split('\n');
-    lines.forEach((text, index) => {
-      const trimmed = text.trim();
-      if (trimmed.startsWith('//') || trimmed.startsWith('*') || trimmed.startsWith('/*')) return;
-      if (HANDWRITTEN_MESSAGES_DDL.test(trimmed)) {
-        hits.push({ file, line: index + 1, text: trimmed });
-      }
-    });
+    const source = readFileSync(abs, 'utf8');
+    const matcher = new RegExp(HANDWRITTEN_MESSAGES_DDL.source, 'gi');
+    let match: RegExpExecArray | null;
+    while ((match = matcher.exec(source))) {
+      const line = source.slice(0, match.index).split('\n').length;
+      const lineText = source.split('\n')[line - 1] ?? match[0];
+      if (isCommentLine(lineText)) continue;
+      hits.push({ file, line, text: match[0].replace(/\s+/g, ' ') });
+    }
   }
   return hits;
 }
@@ -128,6 +134,19 @@ describe('messages schema fixture gate', () => {
     writeFileSync(
       join(tempRoot, rogueRel),
       `${['CREATE TABLE', 'messages (id TEXT PRIMARY KEY);'].join(' ')}\n`,
+    );
+    const stray = findHandwrittenMessagesCreateTable(tempRoot)
+      .filter((hit) => !WHITELIST.has(hit.file));
+    expect(stray.map((hit) => hit.file)).toEqual([rogueRel]);
+  });
+
+  it('flags handwritten messages DDL split across lines', () => {
+    tempRoot = mkdtempSync(join(tmpdir(), 'msgschema-gate-multiline-'));
+    const rogueRel = 'tests/unit/rogue-messages-ddl-multiline.test.ts';
+    mkdirSync(join(tempRoot, 'tests/unit'), { recursive: true });
+    writeFileSync(
+      join(tempRoot, rogueRel),
+      'CREATE TABLE\nmessages (id TEXT PRIMARY KEY);\n',
     );
     const stray = findHandwrittenMessagesCreateTable(tempRoot)
       .filter((hit) => !WHITELIST.has(hit.file));

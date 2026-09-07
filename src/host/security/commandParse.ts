@@ -69,9 +69,11 @@ function basename(program: string): string {
 }
 
 function shellLines(command: string): string[] {
-  // Bash deletes an unquoted `\<LF>` (and `\<CR><LF>`, per round 24) before it reads words, so every
-  // look-ahead below — IO numbers, `$'`, `#` boundaries, `&>` adjacency — must observe the merged
-  // text. Rounds 24/25 were both a look-ahead outrunning this fold. The fold is quote-aware:
+  // Bash deletes an unquoted `\<LF>` before it reads words, so every look-ahead below — IO
+  // numbers, `$'`, `#` boundaries, `&>` adjacency — must observe the merged text. (`\<CR><LF>` is
+  // folded too; that is a round-24 house rule, not bash — real bash reads `\<CR>` as an escaped CR
+  // and splits at the LF, see the phase-6 evidence.) Rounds 24/25 were both a look-ahead
+  // outrunning this fold. The fold is quote-aware:
   // single-quoted and ANSI-C bodies keep the pair verbatim (`$'a\<LF>b'` stays one word with the
   // bytes), a comment ends at the raw newline (`# c\<LF>rm -rf /` leaves the second line a live
   // command — bash does not fold inside comments), and escape pairs are consumed whole so a `\'`

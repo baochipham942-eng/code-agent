@@ -260,6 +260,28 @@ describe('相似度合并的护栏：工具调用冲突时不合', () => {
     expect(toolIds).toContain('call-old');
   });
 
+  // ai-review #1696 第四轮②：一边没有工具调用时护栏放行，但两边各带不同 artifacts/
+  // 附件时，「哪边多留哪边」会让较早那条的产物入口整组消失。合并必须无损。
+  it('合并是无损的：两边各自的附件与工具调用都留在结果里', () => {
+    const withPayload = (id: string, toolId: string, attId: string): Message => ({
+      id,
+      role: 'assistant',
+      content: '一模一样的回答正文，长度足够触发相似度判定的门槛',
+      timestamp: 2,
+      toolCalls: [{ id: toolId, name: 'Bash', arguments: {} }] as never,
+      attachments: [{ id: attId, name: `${attId}.png`, type: 'image', size: 1, data: 'x' }] as never,
+    });
+    const snapshot = [user('u-3'), withPayload('a-old3', 'call-old', 'att-old')];
+    const live = [user('u-3'), withPayload('a-new3', 'call-old', 'att-new')];
+
+    const merged = mergeSnapshotWithLiveTail(snapshot, live).messages;
+
+    const assistants = merged.filter((m) => m.role === 'assistant');
+    const attIds = assistants.flatMap((m) => (m.attachments ?? []).map((a) => a.id));
+    expect(attIds).toContain('att-old');
+    expect(attIds).toContain('att-new');
+  });
+
   it('一边没有工具调用时照常合并（本单要治的重复渲染不受影响）', () => {
     const snapshot = [user('u-2'), assistant('a-old2', [])];
     const live = [user('u-2'), assistant('a-new2', ['call-x'])];

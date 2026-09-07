@@ -72,6 +72,32 @@ function hasConflictingToolCalls(a: Message, b: Message): boolean {
   return !subset(left, right) && !subset(right, left);
 }
 
+/**
+ * 合并必须是**无损**的：配对判据是「前置 user 相同 + 正文相似」这种弱证据，一定会有
+ * 误配的时候；只要合并本身不丢东西，误配的代价就从「数据消失」降到「两段一样的正文
+ * 并成一条」——后者正是本单要的效果，前者是新 bug。
+ *
+ * 🔴 别再走「哪边多留哪边」那条路：那等于每加一种结构化载荷（toolCalls、artifacts、
+ * deliverables…）就要补一条挑选规则，而载荷种类是开放的，ai-review 已经按这个形状
+ * 连点两轮（工具调用一轮、artifacts 一轮）。数组一律按 id 取并集，缺 id 的按引用去重。
+ */
+function unionById<T>(
+  left: T[] | undefined,
+  right: T[] | undefined,
+): T[] | undefined {
+  if (!left?.length) return right;
+  if (!right?.length) return left;
+  const seen = new Set<unknown>();
+  const out: T[] = [];
+  for (const item of [...left, ...right]) {
+    const key = (item as { id?: unknown } | undefined)?.id ?? item;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(item);
+  }
+  return out;
+}
+
 function mergeAssistantPair(snapshotMessage: Message, liveMessage: Message): Message {
   const longer = (left: string | undefined, right: string | undefined) => (
     (right?.length ?? 0) > (left?.length ?? 0) ? right : left
@@ -81,9 +107,23 @@ function mergeAssistantPair(snapshotMessage: Message, liveMessage: Message): Mes
     ...liveMessage,
     content: longer(snapshotMessage.content, liveMessage.content) ?? '',
     reasoning: longer(snapshotMessage.reasoning, liveMessage.reasoning),
-    toolCalls: (liveMessage.toolCalls?.length ?? 0) >= (snapshotMessage.toolCalls?.length ?? 0)
-      ? liveMessage.toolCalls
-      : snapshotMessage.toolCalls,
+    // 带 id 的载荷一律取并集——误配时也不丢东西。
+    toolCalls: unionById(snapshotMessage.toolCalls, liveMessage.toolCalls),
+    ...(snapshotMessage.toolResults || liveMessage.toolResults
+      ? { toolResults: unionById(snapshotMessage.toolResults, liveMessage.toolResults) }
+      : {}),
+    ...(snapshotMessage.attachments || liveMessage.attachments
+      ? { attachments: unionById(snapshotMessage.attachments, liveMessage.attachments) }
+      : {}),
+    // contentParts 保留 text/tool_call 的**交错顺序**，取并集会打乱语义 ⇒ 取更长的那份。
+    ...(snapshotMessage.contentParts || liveMessage.contentParts
+      ? {
+          contentParts: (liveMessage.contentParts?.length ?? 0)
+            >= (snapshotMessage.contentParts?.length ?? 0)
+            ? liveMessage.contentParts
+            : snapshotMessage.contentParts,
+        }
+      : {}),
   };
 }
 

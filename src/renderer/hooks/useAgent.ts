@@ -37,7 +37,6 @@ import {
 } from './agent/useAgentIPC';
 import { useAgentState } from './agent/useAgentState';
 import { applyToolCallArgumentDelta } from '../utils/toolCallStreaming';
-import { remainingAssistantStreamDelta } from '../utils/assistantStreamDelta';
 import { recordStreamingPerformanceCounter } from '../utils/streamingPerformanceMetrics';
 import ipcService from '../services/ipcService';
 import { IPC_CHANNELS } from '@shared/ipc';
@@ -49,18 +48,21 @@ export { resolveDirectRouting } from './agent/useAgentIPC';
 // 故这里压到 150ms 主要让纯文本流不再「半秒蹦一坨」，又不至于过度重渲染。
 const STREAMING_MESSAGE_FLUSH_INTERVAL_MS = 150;
 
+/**
+ * flush 时把累加的增量落到消息上。**不再按正文全等丢**：重放去重已经在
+ * applyConversationStreamEvent 里按 deltaSeq 做过（真源），到这一层的增量都是
+ * 已确认非重放的，再按内容丢一次只会吞掉合法的重复正文（ai-review #1696 第四轮）。
+ */
 function buildStreamingDeltaChanges(
   message: Message,
   entry: StreamingMessageDelta,
 ): Partial<Message> | null {
   const changes: Partial<Message> = {};
   if (entry.contentDelta) {
-    const remaining = remainingAssistantStreamDelta(message.content || '', entry.contentDelta);
-    if (remaining) changes.content = (message.content || '') + remaining;
+    changes.content = (message.content || '') + entry.contentDelta;
   }
   if (entry.reasoningDelta) {
-    const remaining = remainingAssistantStreamDelta(message.reasoning || '', entry.reasoningDelta);
-    if (remaining) changes.reasoning = (message.reasoning || '') + remaining;
+    changes.reasoning = (message.reasoning || '') + entry.reasoningDelta;
   }
   return Object.keys(changes).length > 0 ? changes : null;
 }
@@ -169,17 +171,12 @@ export const useAgent = () => {
     });
   }, [updateMessage]);
 
+  // 序号去重已在 applyConversationStreamEvent 里按 deltaSeq 做过（那是真源）。
+  // 到这一层的增量都是**已确认不是重放**的，再按正文全等丢一次只会吞掉合法的重复正文
+  // （连着两段一模一样的长文，ai-review #1696 第四轮）。这里只做「空增量不写」。
   const appendStreamingMessageDelta = useCallback((messageId: string, delta: { content?: string; reasoning?: string }) => {
-    const message = useSessionStore.getState().messages.find((item) => item.id === messageId);
-    const accumulated = useStreamingMessageAccumulatorStore.getState().entries[messageId];
-    const content = remainingAssistantStreamDelta(
-      `${message?.content ?? ''}${accumulated?.contentDelta ?? ''}`,
-      delta.content || '',
-    );
-    const reasoning = remainingAssistantStreamDelta(
-      `${message?.reasoning ?? ''}${accumulated?.reasoningDelta ?? ''}`,
-      delta.reasoning || '',
-    );
+    const content = delta.content || '';
+    const reasoning = delta.reasoning || '';
     if (!content && !reasoning) return;
     useStreamingMessageAccumulatorStore.getState().appendDelta(messageId, {
       ...(content ? { content } : {}),

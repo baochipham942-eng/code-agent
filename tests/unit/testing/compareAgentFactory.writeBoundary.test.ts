@@ -1,14 +1,14 @@
 // ============================================================================
-// N-EVAL-POLICY-WRITE-BOUNDARY-ENABLE2 · 缺口①：compare 入口 ON 杆接线
+// N-EVAL-POLICY-WRITE-BOUNDARY-ENABLE3 · compare 入口 OFF 杆接线（缺省开翻转后）
 // ============================================================================
 // 钉三件事：
-// ① eval-ci 的 compare makeAgent 读 NEO_EVAL_WRITE_BOUNDARY（=on 显式开）——与
+// ① eval-ci 的 compare makeAgent 读 NEO_EVAL_WRITE_BOUNDARY（缺省开，=off 显式关）——与
 //   createAgent() 同款口径（源码钉，eval-ci 是脚本，沿 compareWiring.test.ts 的
 //   readFileSync 模式）。
-// ② 工厂两态接线：显式 true → adapter 注入 scope/runContext（compare 臂边界可开）；
-//   缺省（不传）→ 与 #1700 合入前的 compare 链路一字不差（无 scope、无 runContext、
-//   loop 不收 runId）。
-// ③ 行为：ON 杆下经真实构造链（createCompareAgent → adapter → executor → spawn_agent
+// ② 工厂三态接线：缺省（不传）→ 开（adapter `?? true`，注入 scope/runContext）；
+//   显式 true → 同款开；显式 false → 与 #1700 合入前的 compare 链路一字不差
+//   （无 scope、无 runContext、loop 不收 runId，对照/回退用）。
+// ③ 行为：开着时经真实构造链（createCompareAgent → adapter → executor → spawn_agent
 //   派生链）的 compare 臂子代理越界写被拒且不落盘、沙箱内写真落盘。
 // ============================================================================
 
@@ -93,7 +93,7 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../
 const BASELINE: CompareConfiguration = { name: 'baseline', model: 'model-a', provider: 'mock' };
 const CANDIDATE: CompareConfiguration = { name: 'candidate', model: 'model-a', provider: 'mock' };
 
-describe('compare 入口写边界 ON 杆（N-EVAL-POLICY-WRITE-BOUNDARY-ENABLE2 缺口①）', () => {
+describe('compare 入口写边界 OFF 杆（N-EVAL-POLICY-WRITE-BOUNDARY-ENABLE3 缺省开）', () => {
   let parent: string;
   let sandbox: string;
   let outside: string;
@@ -140,7 +140,7 @@ describe('compare 入口写边界 ON 杆（N-EVAL-POLICY-WRITE-BOUNDARY-ENABLE2 
     });
   }
 
-  it('eval-ci compare makeAgent 读 NEO_EVAL_WRITE_BOUNDARY（与 createAgent 同款口径）', () => {
+  it('eval-ci compare makeAgent 读 NEO_EVAL_WRITE_BOUNDARY（缺省开，与 createAgent 同款口径）', () => {
     const evalCiSrc = readFileSync(path.join(
       repoRoot, 'packages/internal/evaluation-center/scripts/eval-ci.ts'), 'utf8');
     const compareCommand = evalCiSrc.slice(
@@ -153,11 +153,28 @@ describe('compare 入口写边界 ON 杆（N-EVAL-POLICY-WRITE-BOUNDARY-ENABLE2 
     );
     // 只认 createCompareAgent 分支（real compare 臂）；mock 臂走 createAgent 自带开关。
     const realArm = makeAgent.slice(makeAgent.indexOf('return createCompareAgent'));
-    expect(realArm).toMatch(/restrictWritesToWorkspace:\s*process\.env\.NEO_EVAL_WRITE_BOUNDARY === 'on'/);
+    expect(realArm).toMatch(/restrictWritesToWorkspace:\s*process\.env\.NEO_EVAL_WRITE_BOUNDARY !== 'off'/);
   });
 
-  it('缺省（不传开关）：compare 臂与 #1700 合入前一字不差——无 scope/runContext，loop 不收 runId', async () => {
-    await makeCompareAgent().sendMessage('compare parity probe');
+  it('缺省（不传开关）：compare 臂接线打开——scope 双根 + runId 同源（ENABLE3 缺省开）', async () => {
+    await makeCompareAgent().sendMessage('compare default-on probe');
+    expect(captured.executorConfigs).toHaveLength(1);
+    const executorConfig = captured.executorConfigs[0] as Record<string, unknown>;
+    const loopConfig = captured.loopConfigs[0] as Record<string, unknown>;
+    expect(loopConfig).toBeDefined();
+    expect(executorConfig.restrictWritesToWorkspace).toBe(true);
+    const runContext = executorConfig.runContext as {
+      runId: string; cwd: string;
+      workspaceScope?: { roots: Array<{ role: string }> };
+    };
+    expect(runContext).toBeDefined();
+    expect(executorConfig.workingDirectory).toBe(runContext.cwd);
+    expect(loopConfig.runId).toBe(runContext.runId);
+    expect((runContext.workspaceScope?.roots ?? []).length).toBeGreaterThan(0);
+  });
+
+  it('显式 false（回退杆）：compare 臂与 #1700 合入前一字不差——无 scope/runContext，loop 不收 runId', async () => {
+    await makeCompareAgent(false).sendMessage('compare parity probe');
     expect(captured.executorConfigs).toHaveLength(1);
     const executorConfig = captured.executorConfigs[0] as Record<string, unknown>;
     const loopConfig = captured.loopConfigs[0] as Record<string, unknown>;
@@ -186,9 +203,10 @@ describe('compare 入口写边界 ON 杆（N-EVAL-POLICY-WRITE-BOUNDARY-ENABLE2 
     expect(roots.find((root) => root.role === 'primary')?.path).toBe(runContext.cwd);
   });
 
-  /** 从 compare 臂 adapter 派生的 scope 出发，经真实 spawn_agent 派发链拉起子代理。 */
+  /** 从 compare 臂 adapter 派生的 scope 出发，经真实 spawn_agent 派发链拉起子代理。
+   *  缺省（不传开关）构造——行为证明走缺省开路径本身，不靠显式 true。 */
   async function spawnCompareArmSubagent(): Promise<SubagentExecutionContext> {
-    await makeCompareAgent(true).sendMessage('compare spawn probe');
+    await makeCompareAgent().sendMessage('compare spawn probe');
     const adapterRunContext = (captured.executorConfigs.at(-1) as Record<string, unknown> | undefined)?.runContext as
       | import('../../../src/host/runtime/runContext').RunContext | undefined;
     if (!adapterRunContext?.workspaceScope) throw new Error('compare arm adapter did not build a scoped runContext');
@@ -220,7 +238,7 @@ describe('compare 入口写边界 ON 杆（N-EVAL-POLICY-WRITE-BOUNDARY-ENABLE2 
     return derived;
   }
 
-  it('ON 杆：compare 臂子代理越界写被拒且不落盘', async () => {
+  it('缺省开：compare 臂子代理越界写被拒且不落盘', async () => {
     const escape = path.join(outside, 'compare-escape.txt');
     const derived = await spawnCompareArmSubagent();
     const runtime = createSubagentToolRuntime({
@@ -239,7 +257,7 @@ describe('compare 入口写边界 ON 杆（N-EVAL-POLICY-WRITE-BOUNDARY-ENABLE2 
     expect(existsSync(escape)).toBe(false);
   });
 
-  it('ON 杆：compare 臂子代理沙箱内写放行且真落盘（对照面）', async () => {
+  it('缺省开：compare 臂子代理沙箱内写放行且真落盘（对照面）', async () => {
     const target = path.join(sandbox, 'compare-inside.txt');
     const derived = await spawnCompareArmSubagent();
     const runtime = createSubagentToolRuntime({

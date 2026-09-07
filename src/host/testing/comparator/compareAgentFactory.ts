@@ -59,10 +59,10 @@ interface CompareAgentFactoryOptions {
   telemetryCollector?: TelemetryCollector;
   onEvaluationSignal?: ConstructorParameters<typeof StandaloneAgentAdapter>[0]['onEvaluationSignal'];
   /**
-   * N-EVAL-POLICY-WRITE-BOUNDARY-ENABLE2 缺口①：compare 臂的写边界 ON 杆。
-   * 缺省（不传/false）= #1700 合入前的 compare 链路（adapter `?? false`，不注入
-   * scope/runContext）；显式 true 才打开——env 判定归 eval-ci 的 makeAgent，
-   * 与 createAgent() 同款口径（NEO_EVAL_WRITE_BOUNDARY === 'on'），工厂只收显式值。
+   * N-EVAL-POLICY-WRITE-BOUNDARY-ENABLE3：compare 臂的写边界 OFF 杆。
+   * 缺省（不传）= 开（adapter `?? true`，注入 scope/runContext）；显式 false 回到
+   * #1700 合入前的 compare 链路（对照/回退用）——env 判定归 eval-ci 的 makeAgent，
+   * 与 createAgent() 同款口径（NEO_EVAL_WRITE_BOUNDARY !== 'off'），工厂只收显式值。
    */
   restrictWritesToWorkspace?: boolean;
 }

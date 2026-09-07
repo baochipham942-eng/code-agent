@@ -453,10 +453,10 @@ export class StandaloneAgentAdapter implements AgentInterface {
   private readonly subagentSpawns = new Map<string, number>();
   private requestPermission?: (request: PermissionRequestData) => Promise<RequestPermissionResult>;
   /**
-   * N-EVAL-POLICY-WRITE-BOUNDARY-ENABLE：评测侧写边界开关，换姿态收口后**缺省 false**
-   * （与构造函数内 `?? false` 同口径；本字段注释原写「缺省 true」是翻转前的旧话，已改）。
-   * 缺省/显式 false = #1686 合入前的评测链路原样：不注入 scope/runContext，Bash 边界不亮。
-   * 打开的唯一入口是评测侧显式传 true（eval-ci 的 NEO_EVAL_WRITE_BOUNDARY=on）。
+   * N-EVAL-POLICY-WRITE-BOUNDARY-ENABLE3：评测侧写边界开关**缺省 true**（缺口随 ENABLE2
+   * 清零后名副其实地打开；与构造函数内 `?? true` 同口径）。
+   * 显式 false = 回到 #1686 合入前的评测链路原样（对照/回退用）：不注入 scope/runContext，
+   * Bash 边界不亮。关的唯一入口是评测侧显式传 false（eval-ci 的 NEO_EVAL_WRITE_BOUNDARY=off）。
    */
   private readonly restrictWritesToWorkspace: boolean;
 
@@ -524,9 +524,9 @@ export class StandaloneAgentAdapter implements AgentInterface {
     this.onEvaluationSignal = config.onEvaluationSignal;
     this.database = config.database;
     this.telemetryCollector = config.telemetryCollector;
-    // 评测写边界缺省关（换姿态收口：派生链缺口未清零前不开，见证据档「已知派生链缺口」节）。
-    // 打开的唯一入口是评测侧显式传 true（eval-ci 的 NEO_EVAL_WRITE_BOUNDARY=on）。
-    this.restrictWritesToWorkspace = config.restrictWritesToWorkspace ?? false;
+    // 评测写边界缺省开（ENABLE3：ENABLE2 已把派生链三缺口清零，前置备齐）。
+    // 关的唯一入口是评测侧显式传 false（eval-ci 的 NEO_EVAL_WRITE_BOUNDARY=off，对照/回退用）。
+    this.restrictWritesToWorkspace = config.restrictWritesToWorkspace ?? true;
     // harness.toolMode 优先于顶层 toolMode（对照实验显式控制工具集维度）
     this.toolMode = config.harness?.toolMode ?? config.toolMode ?? 'deferred';
   }

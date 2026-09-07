@@ -153,6 +153,42 @@ describe('regenerate 的重试锚点', () => {
     expect(send.mock.calls[0][1]).toEqual({ clientMessageId: 'user-failed-1' });
   });
 
+  it('编辑后再点旧错误卡，重发的是时间线上同 id 的当前正文和附件', () => {
+    const oldAttachment = { id: 'old', name: 'old.png', type: 'image', size: 1, data: 'a' } as never;
+    const newAttachment = { id: 'new', name: 'new.png', type: 'image', size: 1, data: 'b' } as never;
+    install([
+      {
+        id: 'user-failed-1',
+        role: 'user',
+        content: '改过的需求 B',
+        timestamp: 2,
+        attachments: [newAttachment],
+        metadata: { sendFailed: true },
+      },
+      {
+        id: 'err-a',
+        role: 'assistant',
+        content: '发送失败',
+        timestamp: 1,
+        metadata: {
+          retryPrompt: '原文 A',
+          retryAttachments: [oldAttachment],
+          retryClientMessageId: 'user-failed-1',
+        },
+      },
+    ]);
+
+    useMessageActionStore.getState().regenerateMessage('err-a');
+
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0][0]).toBe('改过的需求 B');
+    expect(send.mock.calls[0][0]).not.toBe('原文 A');
+    expect(send.mock.calls[0][1]).toEqual({
+      attachments: [newAttachment],
+      clientMessageId: 'user-failed-1',
+    });
+  });
+
   it('往回找到 sendFailed 用户气泡时复用它的 id', () => {
     install([
       {

@@ -126,7 +126,23 @@ export const useMessageActionStore = create<MessageActionState>((set, get) => ({
     const retryClientMessageId = typeof anchor?.retryClientMessageId === 'string'
       ? anchor.retryClientMessageId
       : undefined;
+    // 时间线上同 id 的当前用户消息是真源：A 失败 → 编辑成 B 再失败后，点第一张
+    // 错误卡不能把化石 retryPrompt（A）覆盖掉已经在气泡上的 B。
+    if (anchorUsable && retryClientMessageId) {
+      const liveUser = messages.find(
+        (message) => message.id === retryClientMessageId && message.role === 'user',
+      );
+      if (liveUser && (liveUser.content?.trim() || liveUser.attachments?.length)) {
+        const retryContext = {
+          ...(liveUser.attachments?.length ? { attachments: liveUser.attachments } : {}),
+          clientMessageId: retryClientMessageId,
+        };
+        _send(liveUser.content ?? '', retryContext);
+        return;
+      }
+    }
     // 纯附件消息的 retryPrompt 是空串——有附件就照样能重试，别按文本判。
+    // 没有同 id 用户气泡时才退回锚点化石（旧路径：乐观气泡曾被删掉）。
     if (anchorUsable && typeof retryPrompt === 'string' && (retryPrompt.trim() || retryAttachments?.length)) {
       const retryContext = {
         ...(retryAttachments?.length ? { attachments: retryAttachments } : {}),

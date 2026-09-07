@@ -189,13 +189,48 @@ const DRIVER_SCRIPT = `<script ${IN_APP_VALIDATION_DRIVER_FLAG}="1">
 })();
 </script>`;
 
+function skipOpaqueHtml(lower: string, index: number): number | null {
+  if (lower.startsWith('<!--', index)) {
+    const end = lower.indexOf('-->', index + 4);
+    return end < 0 ? lower.length : end + 3;
+  }
+  if (lower.startsWith('<script', index)) {
+    const end = lower.indexOf('</script>', index);
+    return end < 0 ? lower.length : end + 9;
+  }
+  if (lower.startsWith('<textarea', index)) {
+    const end = lower.indexOf('</textarea>', index);
+    return end < 0 ? lower.length : end + 11;
+  }
+  return null;
+}
+
+function findRealOpenTag(html: string, tag: 'head' | 'html'): { end: number } | null {
+  const lower = html.toLowerCase();
+  const needle = `<${tag}`;
+  let index = 0;
+  while (index < lower.length) {
+    const skip = skipOpaqueHtml(lower, index);
+    if (skip != null) {
+      index = skip;
+      continue;
+    }
+    const after = lower[index + needle.length];
+    if (lower.startsWith(needle, index) && (after === '>' || after === ' ' || after === '\t' || after === '\n' || after === '\r')) {
+      const gt = html.indexOf('>', index);
+      if (gt < 0) return null;
+      return { end: gt + 1 };
+    }
+    index += 1;
+  }
+  return null;
+}
+
 function injectCsp(html: string): string {
-  if (/<head[\s>]/i.test(html)) {
-    return html.replace(/<head([^>]*)>/i, `<head$1>${CSP_META}`);
-  }
-  if (/<html/i.test(html)) {
-    return html.replace(/<html([^>]*)>/i, `<html$1><head>${CSP_META}</head>`);
-  }
+  const head = findRealOpenTag(html, 'head');
+  if (head) return `${html.slice(0, head.end)}${CSP_META}${html.slice(head.end)}`;
+  const root = findRealOpenTag(html, 'html');
+  if (root) return `${html.slice(0, root.end)}<head>${CSP_META}</head>${html.slice(root.end)}`;
   return `<!DOCTYPE html><html><head>${CSP_META}</head><body>${html}</body></html>`;
 }
 
@@ -204,19 +239,9 @@ function lastRealBodyClose(html: string): number {
   let index = 0;
   let last = -1;
   while (index < lower.length) {
-    if (lower.startsWith('<!--', index)) {
-      const end = lower.indexOf('-->', index + 4);
-      index = end < 0 ? lower.length : end + 3;
-      continue;
-    }
-    if (lower.startsWith('<script', index)) {
-      const end = lower.indexOf('</script>', index);
-      index = end < 0 ? lower.length : end + 9;
-      continue;
-    }
-    if (lower.startsWith('<textarea', index)) {
-      const end = lower.indexOf('</textarea>', index);
-      index = end < 0 ? lower.length : end + 11;
+    const skip = skipOpaqueHtml(lower, index);
+    if (skip != null) {
+      index = skip;
       continue;
     }
     if (lower.startsWith('</body>', index)) {

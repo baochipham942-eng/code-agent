@@ -53,6 +53,16 @@ describe('inAppValidationSandbox', () => {
     expect(driverAt).toBeLessThan(realClose);
   });
 
+  it('不把脚本字符串里的 <head> 当真实 head', () => {
+    const source = '<html><body><script>const template = "<head>";</script><button>ok</button></body></html>';
+    const wrapped = wrapInAppValidationHtml(source);
+    expect(wrapped).toContain('const template = "<head>";');
+    const scriptAt = wrapped.indexOf('const template');
+    const cspAt = wrapped.indexOf('Content-Security-Policy');
+    expect(cspAt).toBeGreaterThan(0);
+    expect(cspAt).toBeLessThan(scriptAt);
+  });
+
   it('不把注释里的 </body> 当闭合标签', () => {
     const source = '<html><body>ok</body><!-- </body> --></html>';
     const wrapped = wrapInAppValidationHtml(source);

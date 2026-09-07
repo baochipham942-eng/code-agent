@@ -7,6 +7,7 @@
 import { useCallback } from 'react';
 import { toast } from './useToast';
 import { useI18n } from './useI18n';
+import { interpolate } from '../i18n/interpolate';
 import ipcService from '../services/ipcService';
 import { useAppStore } from '../stores/appStore';
 import { useSkillStore } from '../stores/skillStore';
@@ -47,11 +48,11 @@ export function useContextHealthActions(): ContextHealthActions {
         openWorkbenchTab('skills');
         setActiveWorkbenchTab('skills');
         setWorkbenchHighlight({ kind: 'mcp', name: target.server });
-        toast.info(ch.mcpNavigateToast.replace('{name}', target.server));
+        toast.info(interpolate(ch.mcpNavigateToast, { name: target.server }));
         break;
       case 'subagent':
         setWorkbenchHighlight({ kind: 'subagent', name: target.name });
-        toast.info(ch.subagentNavigateToast.replace('{name}', target.name));
+        toast.info(interpolate(ch.subagentNavigateToast, { name: target.name }));
         break;
     }
   }, [ch, openWorkbenchTab, setActiveWorkbenchTab, setWorkbenchHighlight]);
@@ -62,9 +63,9 @@ export function useContextHealthActions(): ContextHealthActions {
       case 'skill':
         try {
           await unmountSkill(target.name);
-          toast.success(ch.unmountSkillSuccessToast.replace('{name}', target.name));
+          toast.success(interpolate(ch.unmountSkillSuccessToast, { name: target.name }));
         } catch (err) {
-          toast.error(ch.unmountFailedToast.replace('{message}', err instanceof Error ? err.message : ch.unknownError));
+          toast.error(interpolate(ch.unmountFailedToast, { message: err instanceof Error ? err.message : ch.unknownError }));
         }
         break;
       case 'mcp':
@@ -73,9 +74,9 @@ export function useContextHealthActions(): ContextHealthActions {
             serverName: target.server,
             enabled: false,
           });
-          toast.success(ch.disableMcpSuccessToast.replace('{name}', target.server));
+          toast.success(interpolate(ch.disableMcpSuccessToast, { name: target.server }));
         } catch (err) {
-          toast.error(ch.disableFailedToast.replace('{message}', err instanceof Error ? err.message : ch.unknownError));
+          toast.error(interpolate(ch.disableFailedToast, { message: err instanceof Error ? err.message : ch.unknownError }));
         }
         break;
       case 'subagent':

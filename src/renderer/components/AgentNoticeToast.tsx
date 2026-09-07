@@ -9,6 +9,7 @@ import { ipcService } from '../services/ipcService';
 import { IPC_CHANNELS } from '@shared/ipc';
 import type { AgentNoticeEvent } from '@shared/ipc/handlers';
 import { useI18n } from '../hooks/useI18n';
+import { interpolate } from '../i18n/interpolate';
 import type { Translations } from '../i18n';
 
 const WARNING_REASON_CODES = new Set<AgentNoticeEvent['reasonCode']>([
@@ -22,24 +23,26 @@ export function formatAgentNoticeToast(event: AgentNoticeEvent, t: Translations)
   const params = event.params ?? {};
   switch (event.reasonCode) {
     case 'heartbeat_check_failed':
-      return an.heartbeatCheckFailed
-        .replace('{name}', params.name ?? '')
-        .replace('{error}', params.error ?? '')
-        .replace('{count}', String(params.consecutiveFailures ?? 0));
+      return interpolate(an.heartbeatCheckFailed, {
+        name: params.name ?? '',
+        error: params.error ?? '',
+        count: params.consecutiveFailures ?? 0,
+      });
     case 'heartbeat_status_alert':
-      return an.heartbeatStatusAlert
-        .replace('{name}', params.name ?? '')
-        .replace('{status}', params.status ?? '');
+      return interpolate(an.heartbeatStatusAlert, {
+        name: params.name ?? '',
+        status: params.status ?? '',
+      });
     case 'auto_agent_awaiting_approval':
       return an.autoAgentAwaitingApproval;
     case 'delegate_mode_active':
       return an.delegateModeActive;
     case 'agent_routed':
-      return an.agentRouted.replace('{agentName}', params.agentName ?? '');
+      return interpolate(an.agentRouted, { agentName: params.agentName ?? '' });
     case 'historical_images_omitted':
-      return an.historicalImagesOmitted.replace('{count}', String(params.count ?? 0));
+      return interpolate(an.historicalImagesOmitted, { count: params.count ?? 0 });
     case 'interaction_response_expired':
-      return an.interactionResponseExpired.replace('{kind}', params.kind ?? '请求');
+      return interpolate(an.interactionResponseExpired, { kind: params.kind ?? '请求' });
     default: {
       // 穷举检查：新增 reasonCode 忘记在这里加分支会在此处报编译错误
       const exhaustive: never = event.reasonCode;

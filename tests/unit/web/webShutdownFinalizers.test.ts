@@ -15,6 +15,10 @@ const langfuseCleanupAll = vi.fn(async () => {});
 const langfuseShutdown = vi.fn(async () => {});
 const cleanupSessionStateManager = vi.fn(() => {});
 const disposeAgentRegistry = vi.fn(async () => {});
+const stopPtyCleanupTimer = vi.fn(() => {});
+const stopBackgroundTaskCleanupTimer = vi.fn(() => {});
+const stopConnectorStatusWatcher = vi.fn(() => {});
+const stopRateLimitCleanupTimer = vi.fn(() => {});
 
 vi.mock('../../../src/host/mcp/mcpClient', () => ({
   getMCPClient: () => ({ disconnectAll, getStdioChildPids }),
@@ -34,6 +38,18 @@ vi.mock('../../../src/host/session/sessionStateManager', () => ({
 vi.mock('../../../src/host/agent/agentRegistry', () => ({
   disposeAgentRegistry: () => disposeAgentRegistry(),
 }));
+vi.mock('../../../src/host/tools/shell/ptyExecutor', () => ({
+  stopPtyCleanupTimer: () => stopPtyCleanupTimer(),
+}));
+vi.mock('../../../src/host/tools/shell/backgroundTasks', () => ({
+  stopBackgroundTaskCleanupTimer: () => stopBackgroundTaskCleanupTimer(),
+}));
+vi.mock('../../../src/host/ipc/connector.ipc', () => ({
+  stopConnectorStatusWatcher: () => stopConnectorStatusWatcher(),
+}));
+vi.mock('../../../src/web/middleware/auth', () => ({
+  stopRateLimitCleanupTimer: () => stopRateLimitCleanupTimer(),
+}));
 
 const ALL_LABELS = [
   'mcp.disconnect',
@@ -41,6 +57,7 @@ const ALL_LABELS = [
   'langfuse.flush',
   'sessionState.cleanup',
   'agentRegistry.dispose',
+  'cleanupTimers.stop',
 ];
 
 beforeEach(() => {
@@ -54,7 +71,7 @@ beforeEach(() => {
 });
 
 describe('runShutdownFinalizers — 死文件 lifecycle.ts 记的责任，接进真属主', () => {
-  it('正例：五步全跑到，且每步都在日志里留痕', async () => {
+  it('正例：六步全跑到，且每步都在日志里留痕', async () => {
     const lines: string[] = [];
     await runShutdownFinalizers(1_000, (msg) => lines.push(msg));
 
@@ -71,7 +88,16 @@ describe('runShutdownFinalizers — 死文件 lifecycle.ts 记的责任，接进
     }
   });
 
-  it('负例（故障注入）：一步抛错不影响其余四步，且日志指名道姓', async () => {
+  it('N-SHUTDOWN-DEADLINK：原挂死表的四处定时器清理，活停机会跑到（各恰一次）', async () => {
+    await runShutdownFinalizers(1_000, () => {});
+
+    expect(stopPtyCleanupTimer).toHaveBeenCalledTimes(1);
+    expect(stopBackgroundTaskCleanupTimer).toHaveBeenCalledTimes(1);
+    expect(stopConnectorStatusWatcher).toHaveBeenCalledTimes(1);
+    expect(stopRateLimitCleanupTimer).toHaveBeenCalledTimes(1);
+  });
+
+  it('负例（故障注入）：一步抛错不影响其余五步，且日志指名道姓', async () => {
     shutdownPostHog.mockRejectedValueOnce(new Error('posthog boom'));
     const lines: string[] = [];
 
@@ -81,9 +107,10 @@ describe('runShutdownFinalizers — 死文件 lifecycle.ts 记的责任，接进
     for (const label of ALL_LABELS.filter((l) => l !== 'posthog.flush')) {
       expect(lines[0]).toContain(`${label}=ok(`);
     }
-    // 其余四步真的跑了，不是被短路掉
+    // 其余五步真的跑了，不是被短路掉
     expect(disconnectAll).toHaveBeenCalledTimes(1);
     expect(disposeAgentRegistry).toHaveBeenCalledTimes(1);
+    expect(stopRateLimitCleanupTimer).toHaveBeenCalledTimes(1);
   });
 
   it('负例（挂死）：断连挂住时到上限跳过，并对幸存的 MCP 子进程补 SIGKILL', async () => {
@@ -176,6 +203,29 @@ describe('接线守护：收尾步骤必须排在干净关库之前', () => {
   it('死文件 src/host/app/lifecycle.ts 已删，责任不再有第二个账本', () => {
     expect(() =>
       readFileSync(join(process.cwd(), 'src/host/app/lifecycle.ts'), 'utf-8'),
+    ).toThrow();
+  });
+
+  it('N-SHUTDOWN-DEADLINK：四处清理不再挂从没跑过的 onShutdown 死表', () => {
+    // 那张表的 setupDefaultSignalHandlers 零调用方，挂上去等于换个地方继续死
+    // （terminalSessionManager 同款守护）。清理必须走 webShutdownFinalizers 活停机序列。
+    for (const file of [
+      'src/host/tools/shell/ptyExecutor.ts',
+      'src/host/tools/shell/backgroundTasks.ts',
+      'src/host/ipc/connector.ipc.ts',
+      'src/web/middleware/auth.ts',
+    ]) {
+      const source = readFileSync(join(process.cwd(), file), 'utf-8');
+      expect(source, `${file} 又挂回了 onShutdown 死表`).not.toContain('onShutdown(');
+    }
+  });
+
+  it('N-SHUTDOWN-DEADLINK：死注册表 gracefulShutdown.ts 整文件已删（含 setupDefaultSignalHandlers）', () => {
+    // 信号注册面的完整守护在 shutdownSignalOwnership.static.test.ts（带白名单）；
+    // 这里锚文件级删除——onShutdown 表的 setupDefaultSignalHandlers 零调用方，
+    // 四处注册迁活停机后整文件死透（同 lifecycle.ts 先例：责任不再有第二个账本）。
+    expect(() =>
+      readFileSync(join(process.cwd(), 'src/host/services/infra/gracefulShutdown.ts'), 'utf-8'),
     ).toThrow();
   });
 });

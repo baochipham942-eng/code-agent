@@ -2,9 +2,24 @@
 // useI18n Hook - 国际化 Hook（支持云端配置）
 // ============================================================================
 
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import { useAppStore } from '../stores/appStore';
 import { languages, type Language, type Translations } from '../i18n';
+
+/** 把嵌套文案树拍平成点分路径集合（数组/原始值是叶子，不展开 index）。 */
+function flattenTranslationKeys(node: unknown, prefix = ''): Set<string> {
+  const keys = new Set<string>();
+  if (!node || typeof node !== 'object' || Array.isArray(node)) return keys;
+  for (const [key, value] of Object.entries(node)) {
+    const path = prefix ? `${prefix}.${key}` : key;
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      for (const nested of flattenTranslationKeys(value, path)) keys.add(nested);
+    } else {
+      keys.add(path);
+    }
+  }
+  return keys;
+}
 
 /**
  * 国际化 Hook
@@ -22,6 +37,18 @@ export function useI18n() {
   const cloudStrings = useMemo(() => {
     return cloudUIStrings?.[language] || {};
   }, [cloudUIStrings, language]);
+
+  // 云端 kv 的 key 不在内置文案树里 = 配置错位/过期（永远没有消费方）。静默吞掉排查时
+  // 看不见，这里 warn 一声留痕（降级留痕规则）；开发者日志，不弹窗、不拦渲染。
+  const builtinKeySet = useMemo(() => flattenTranslationKeys(builtinT), [builtinT]);
+  useEffect(() => {
+    const unknownKeys = Object.keys(cloudStrings).filter((key) => !builtinKeySet.has(key));
+    if (unknownKeys.length > 0) {
+      console.warn(
+        `[i18n] 云端 UI 字符串的 key 不在内置文案树里（${language}）: ${unknownKeys.join(', ')}`,
+      );
+    }
+  }, [cloudStrings, builtinKeySet, language]);
 
   // 获取云端字符串的函数
   const getCloudString = useCallback(

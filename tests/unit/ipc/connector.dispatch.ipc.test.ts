@@ -26,7 +26,7 @@ const env = vi.hoisted(() => ({
 vi.mock('../../../src/host/connectors', () => ({ getConnectorRegistry: () => env.registry }));
 vi.mock('../../../src/host/platform', () => ({ broadcastToRenderer: (...a: unknown[]) => env.broadcast(...a) }));
 vi.mock('child_process', () => ({ exec: (cmd: string, cb: (err: Error | null) => void) => env.exec(cmd, cb) }));
-vi.mock('../../../src/host/services/infra/gracefulShutdown', () => ({ onShutdown: vi.fn() }));
+// gracefulShutdown mock 已删（N-SHUTDOWN-DEADLINK）：connector.ipc 不再往那张死表挂注册
 
 import { registerConnectorHandlers } from '../../../src/host/ipc/connector.ipc';
 

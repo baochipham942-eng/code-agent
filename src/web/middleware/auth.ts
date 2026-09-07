@@ -186,7 +186,10 @@ export function rateLimitMiddleware(req: Request, res: Response, next: NextFunct
 }
 
 // Periodic cleanup of stale rate limit entries (every 5 minutes)
-// 捕获 handle 用于 graceful shutdown 时清理；.unref() 保证 handle 不阻塞进程退出
+// 捕获 handle 用于停机清理；.unref() 保证 handle 不阻塞进程退出。停机清理由同目录
+// webShutdownFinalizers 的 cleanupTimers.stop 条目调 stopRateLimitCleanupTimer()
+// （原先挂的 onShutdown 注册表 setupDefaultSignalHandlers 零调用方，挂上去等于
+// 没挂，N-SHUTDOWN-DEADLINK 迁走——也顺带消掉了 web → host 的 lazy import 反向依赖）
 const rateLimitCleanupTimer = setInterval(() => {
   const now = Date.now();
   for (const [key, timestamps] of rateLimitStore) {
@@ -200,14 +203,10 @@ const rateLimitCleanupTimer = setInterval(() => {
 }, 5 * 60_000);
 rateLimitCleanupTimer.unref();
 
-// Lazy import 避免 main → web 反向依赖，且 web middleware 单独跑（CLI/test）时不强求 shutdown infra
-import('../../host/services/infra/gracefulShutdown')
-  .then(({ onShutdown }) => {
-    onShutdown('web/auth.rateLimitCleanup', async () => {
-      clearInterval(rateLimitCleanupTimer);
-    });
-  })
-  .catch(() => { /* gracefulShutdown 不可用就纯靠 .unref() 兜底 */ });
+/** 停机清理：释放限流条目周期清理定时器（webShutdownFinalizers 调，幂等）。 */
+export function stopRateLimitCleanupTimer(): void {
+  clearInterval(rateLimitCleanupTimer);
+}
 
 // ── Unsafe dev mode refusal under the real Tauri shell ────────────────────
 /**

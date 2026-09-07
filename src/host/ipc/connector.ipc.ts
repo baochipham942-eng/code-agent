@@ -692,17 +692,18 @@ function ensureConnectorStatusWatcher(
     void pollAndBroadcastConnectorStatuses(getMainWindow).catch(() => {});
   }, CONNECTOR_STATUS_POLL_MS);
   connectorStatusWatchTimer.unref?.();
+}
 
-  void import('../services/infra/gracefulShutdown')
-    .then(({ onShutdown }) => {
-      onShutdown('ipc/connector.statusWatcher', async () => {
-        if (connectorStatusWatchTimer) {
-          clearInterval(connectorStatusWatchTimer);
-          connectorStatusWatchTimer = null;
-        }
-      });
-    })
-    .catch(() => { /* shutdown infra 不可用就靠 .unref() */ });
+/**
+ * 停机清理：释放连接器状态轮询定时器（webShutdownFinalizers 的
+ * cleanupTimers.stop 条目调，幂等）。原先挂的 onShutdown 注册表
+ * setupDefaultSignalHandlers 零调用方，挂上去等于没挂，N-SHUTDOWN-DEADLINK 迁走。
+ */
+export function stopConnectorStatusWatcher(): void {
+  if (connectorStatusWatchTimer) {
+    clearInterval(connectorStatusWatchTimer);
+    connectorStatusWatchTimer = null;
+  }
 }
 
 export function registerConnectorHandlers(

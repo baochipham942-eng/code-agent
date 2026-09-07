@@ -7,7 +7,7 @@ import type {
 } from '../../shared/contract';
 import { getMemoryDir } from '../lightMemory/indexLoader';
 import { resolveCanonicalRunPath } from '../runtime/runContext';
-import { canonicalizeCommand } from '../security/canonicalizeCommand';
+import { canonicalizeCommand, ANSI_C_ESCAPES } from '../security/canonicalizeCommand';
 
 export interface ResolveToolWriteTargetsInput {
   definition: ToolDefinition;
@@ -76,6 +76,81 @@ function unquote(word: string): string {
     return word.slice(1, -1);
   }
   return word;
+}
+
+/**
+ * `$'...'`（ANSI-C 引用）里一个 `\` 转义序列的解码。转义字母表从 canonicalizeCommand
+ * import（同一份，别另抄）；`\xHH`/`\uHHHH`/`\UHHHHHHHH`/八进制的消费规则照它那边的
+ * ansi 档。返回 undefined = 非法/截断，调用方原样保留反斜杠。
+ */
+function readAnsiCEscape(word: string, index: number): { value: string; end: number } | undefined {
+  const escaped = word[index + 1];
+  if (escaped === undefined) return undefined;
+  const named = ANSI_C_ESCAPES[escaped];
+  if (named !== undefined) return { value: named, end: index + 1 };
+  const isUnicode = escaped === 'u' || escaped === 'U';
+  const encoded = escaped === 'x'
+    ? word.slice(index + 2).match(/^[0-9a-fA-F]{1,2}/)?.[0]
+    : escaped === 'u'
+      ? word.slice(index + 2).match(/^[0-9a-fA-F]{1,4}/)?.[0]
+      : escaped === 'U'
+        ? word.slice(index + 2).match(/^[0-9a-fA-F]{1,8}/)?.[0]
+        : word.slice(index + 1).match(/^[0-7]{1,3}/)?.[0];
+  if (encoded === undefined) return { value: escaped, end: index + 1 }; // 未识别字母：照 canonicalize 原样取该字符
+  const radix = escaped === 'x' || isUnicode ? 16 : 8;
+  const codePoint = Number.parseInt(encoded, radix);
+  if (isUnicode && codePoint > 0x10ffff) return undefined;
+  return {
+    value: isUnicode ? String.fromCodePoint(codePoint) : String.fromCharCode(codePoint),
+    end: index + encoded.length + (radix === 16 ? 1 : 0),
+  };
+}
+
+/**
+ * 词法值化（bash 词义）：去引号（可跨段、可只在词中）+ 解反斜杠转义 + 解 `$'...'` ANSI-C。
+ * unquote 只够剥整词引号；`"/tmp/a b"`、`/tmp/a\ b`、`re"port".txt`、`$'\x72eport.txt'`
+ * 这些形状要逐字符走（PR #1709 复审① + commandCanonicalization 的跨形等价钉）。
+ * 双引号内 `\` 只转义 $ ` " \（照 canonicalizeCommand 的 double 档）；`$(`/反引号不解——
+ * 含 $ ` * ? { } 的目标下游一律打 uncertain，不用在这里抠动态替换语义。
+ */
+function shellWordValue(word: string): string {
+  let value = '';
+  let quote: "'" | '"' | undefined;
+  let ansi = false;
+  for (let index = 0; index < word.length; index += 1) {
+    const char = word[index];
+    if (quote === "'") {
+      if (char === "'") { quote = undefined; ansi = false; continue; }
+      if (ansi && char === '\\') {
+        const decoded = readAnsiCEscape(word, index);
+        if (decoded) { value += decoded.value; index = decoded.end; continue; }
+      }
+      value += char;
+      continue;
+    }
+    if (quote === '"') {
+      if (char === '"') { quote = undefined; continue; }
+      if (char === '\\' && ['$', '`', '"', '\\'].includes(word[index + 1] ?? '')) {
+        value += word[index + 1];
+        index += 1;
+        continue;
+      }
+      value += char;
+      continue;
+    }
+    if (char === '$' && word[index + 1] === "'") { quote = "'"; ansi = true; index += 1; continue; }
+    if (char === '$' && word[index + 1] === '"') { quote = '"'; index += 1; continue; }
+    if (char === '\\') {
+      const next = word[index + 1];
+      if (next === undefined) { value += char; break; }
+      value += next;
+      index += 1;
+      continue;
+    }
+    if (char === "'" || char === '"') { quote = char; ansi = false; continue; }
+    value += char;
+  }
+  return value;
 }
 
 interface ShellToken {
@@ -175,11 +250,12 @@ export function shellWriteTargets(command: string): string[] {
     else targets.push(token.raw);
   }
   flushSegment();
-  return targets.map(unquote);
+  return targets.map(shellWordValue);
 }
 
 /**
- * 没被反斜杠转义的换行 → `;`。词中续行（`\` + 换行）原样留着，交给 canonicalizeCommand 折。
+ * 没被反斜杠转义的换行 → `;`。词中续行（`\` + 换行）由调用方先折掉（descriptorAssessment
+ * 里 continuationsFolded 那步），别走到这里。
  * ponytail: 单引号里跨行的字面量也会被换成 `;`，代价是多出一个不成命令的片段
  * （几乎不可能以 cp/mv/tee 开头），方向保守，不为它写引号状态机。
  */
@@ -269,13 +345,15 @@ function descriptorAssessment(
   const uncertain: string[] = [];
   const memoryAlias = path.join(path.basename(path.dirname(memoryDir)), path.basename(memoryDir));
   const canonical = canonicalizeCommand(command);
-  // canonicalizeCommand 把所有空白压成单空格（:163），多行脚本到这里就只剩一行、
-  // 第 2 行起的命令会跟第 1 行粘住。它有十几个安全消费方靠这个形状做匹配，不能动，
-  // 所以在喂给它之前先把**没被反斜杠转义的**换行换成 `;`——`;` 本来就是命令分隔符，
-  // canonicalizeCommand 原样保留，下面的分词器也认（ai-review PR #1650 第 3 轮）。
-  // 转义过的换行（`rep\<换行>ort.txt` 这种词中续行）留给 canonicalizeCommand 自己折，
-  // 那是它已经做对的事，别抢。
-  const redirectTargets = shellWriteTargets(canonicalizeCommand(splitUnescapedNewlines(command)).command);
+  // 🔴 重定向目标的分词别喂 canonicalizeCommand 的输出（PR #1709 复审①实测双向错）：
+  // 它去引号（安全匹配面要的形状，十几个消费方靠它，不能动），于是
+  // `echo x > "/tmp/eval-sandbox escape.txt"` 被截成 /tmp/eval-sandbox——界外写被当界内放行；
+  // `printf '%s\n' '>/outside/file'` 的字符串字面量反向被误判成写目标。
+  // 分词器本身引号/转义感知（readShellWord/tokenizeShellCommand），只需替 canonicalize
+  // 做掉它原来顺带做的两件词法预处理：先折词中续行（`\`+换行，照它的折法消掉），
+  // 再把没被反斜杠转义的换行切成 `;`（多行脚本第 2 行起不粘第 1 行，PR #1650 第 3 轮）。
+  const continuationsFolded = command.replace(/\\(?:\r\n?|\n)/g, '');
+  const redirectTargets = shellWriteTargets(splitUnescapedNewlines(continuationsFolded));
   if (canonical.parsingFailed && redirectTargets.length > 0) {
     uncertain.push(`uncertain-command-analysis:${canonical.failureReason ?? 'parse-failure'}`);
   }

@@ -169,6 +169,31 @@ describe('Bash 写目标边界（restrictWritesToWorkspace 开关门内）', () 
     expect(existsSync(path.join(sandbox, 'inside.txt'))).toBe(true);
   });
 
+  it('开着：带空格的引号越界目标按完整路径判，拒且不落盘（PR #1709 复审①）', async () => {
+    // 复审①的精确形状：真实目标是沙箱的同级兄弟 `"${sandbox} escape.txt"`（界外）。
+    // 修复前分词先去引号再截断在空格 ⇒ 闸看到的只剩 ${sandbox}（界内）⇒ 放行，
+    // 真实 bash 写的是界外兄弟文件——静默绕过。截断必须落在界内才咬得住这条。
+    const target = `${sandbox} escape.txt`;
+    const result = await runBash(buildExecutor(true), `echo wsb > "${target}"`);
+    expect(result.success).toBe(false);
+    expect(result.metadata?.code).toBe('PROJECT_SOURCE_OUTSIDE_WORKSPACE');
+    expect(existsSync(target)).toBe(false);
+  });
+
+  it('开着：带空格的引号界内目标放行且真落盘（PR #1709 复审①对照面）', async () => {
+    const target = path.join(sandbox, 'quoted ok.txt');
+    const result = await runBash(buildExecutor(true), `echo wsb > "${target}"`);
+    expect(result.success).toBe(true);
+    expect(existsSync(target)).toBe(true);
+  });
+
+  it('开着：字符串字面量里的 `>` 不误判为写目标，printf 照常执行（PR #1709 复审①假阳性面）', async () => {
+    const literalTarget = path.join(outside, 'literal-not-a-write.txt');
+    const result = await runBash(buildExecutor(true), `printf '%s\\n' '>${literalTarget}'`);
+    expect(result.success).toBe(true);
+    expect(existsSync(literalTarget)).toBe(false);
+  });
+
   it('开着：working_directory 子目录里相对重定向放行且落在该子目录（锚 working_directory）', async () => {
     const sub = path.join(sandbox, 'sub');
     await fs.mkdir(sub);

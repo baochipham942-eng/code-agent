@@ -137,3 +137,34 @@ describe('cp / mv / tee 的写目标', () => {
     expect(resolve('cp /etc/a /etc/b /tmp/dst').targets).not.toContain(resolveCanonicalRunPath('/etc/a'));
   });
 });
+
+/**
+ * PR #1709 复审①（ENABLE2 修复轮 1）：重定向目标的分词不走 canonicalizeCommand——
+ * 它去引号（安全匹配面要的形状），会把带空格的引号目标截成另一个路径：
+ * `echo x > "/tmp/eval-sandbox escape.txt"` 曾解析成 /tmp/eval-sandbox（界外写当界内放行），
+ * `printf '%s\n' '>/outside/file'` 的字符串字面量反向被当成写目标。
+ * 修法：折续行 + 切未转义换行后，原文喂引号/转义感知的分词器，目标经 shellWordValue 词法值化。
+ */
+describe('引号/转义目标的词法保真（PR #1709 复审①）', () => {
+  it('带空格的双引号目标解析为完整路径，不截断（越界形状才能被界外判接住）', () => {
+    expect(resolve('echo x > "/etc/has space.txt"').targets)
+      .toEqual([resolveCanonicalRunPath('/etc/has space.txt')]);
+    expect(resolve('echo x > "/tmp/write-target-redirects/has space.txt"').targets)
+      .toEqual([resolveCanonicalRunPath('/tmp/write-target-redirects/has space.txt')]);
+  });
+
+  it('单引号目标含空格同样保真', () => {
+    expect(resolve("echo x > '/etc/single quoted.txt'").targets)
+      .toEqual([resolveCanonicalRunPath('/etc/single quoted.txt')]);
+  });
+
+  it('反斜杠转义空格是同一个词（bash 词义 `\\ ` = 空格），不截断', () => {
+    expect(resolve('echo x > /etc/has\\ space.txt').targets)
+      .toEqual([resolveCanonicalRunPath('/etc/has space.txt')]);
+  });
+
+  it('字符串字面量里的 `>` 不是重定向（printf 误判修复）', () => {
+    expect(resolve("printf '%s\\n' '>/outside/file'")).toMatchObject({ targets: [], uncertain: [] });
+    expect(resolve('echo "a > b"')).toMatchObject({ targets: [], uncertain: [] });
+  });
+});

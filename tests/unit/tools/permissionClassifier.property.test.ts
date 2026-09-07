@@ -287,6 +287,9 @@ const KNOWN_SHAPES = [
   // family legitimately diverges per cwd — home cwd must ask (unit tests pin it), /tmp cwd rightly
   // approves (the relative path then lives under /tmp, same as the pinned `cd /tmp; cat …`
   // approve), while the baseline over-asks everywhere on the `env &` compound segment.
+  // Round 36: `|&` is a pipe, not a background operator — the cd advances and the credential read
+  // resolves against the moved cwd on both sides, ask in every cwd.
+  'cd ~ && true |& cat .ssh/id_rsa',
 ];
 
 // Under /tmp the critical-path rm rule fires before anything else and masks weaker rules; a real

@@ -423,9 +423,11 @@ function contextAfterCdSegment(
   // cwds only the moved one is reconstructable here, and it is the one the baseline resolves
   // against. Checking both cwds would be stricter still; deliberately not done (round 33).
   if (![null, ';', '&&', '||', '\n'].includes(terminators[segmentIndex] ?? null)) return null;
-  // Round 35: `&` backgrounds the whole AND/OR list, cd included (`cd /tmp && env & …`).
+  // Round 35/36: `&` backgrounds the whole AND/OR list, cd included (`cd /tmp && env & …`).
+  // `|&` is only a pipe (`2>&1 |`), not a background operator: `cd ~ && true |& cat` still runs
+  // the cd in the parent shell, so it must not block propagation.
   const listEnd = listTerminatorAfter(terminators, segmentIndex);
-  if (listEnd === '&' || listEnd === '|&') return null;
+  if (listEnd === '&') return null;
 
   const args = words.slice(1);
   const separator = args.indexOf('--');

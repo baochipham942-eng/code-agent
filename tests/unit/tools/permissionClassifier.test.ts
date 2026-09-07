@@ -372,6 +372,21 @@ describe('PermissionClassifier', () => {
       expect(result.decision).toBe('approve');
     });
 
+    // 第 36 轮：`|&` 是把 stderr 接进管道的 `2>&1 |`，不是后台操作符——`cd ~ && true |& cat`
+    // 里 cd 仍在父 shell 跑、cwd 推进到家目录（zsh 探针：bash 3.2 无 `|&`）。链中段的 `|&`
+    // 不挡推进；cd 自身落在管道里（`cd /tmp |& cat`）仍由上方自身终止符检查挡住。
+    it('advances the cwd when the && chain closes with a |& pipe', async () => {
+      const result = await classifyPermission(
+        'bash',
+        { command: 'cd ~ && true |& cat .ssh/id_rsa' },
+        { workingDirectory: '/tmp', permissionLevel: 'execute' },
+      );
+
+      expect(result.decision).toBe('ask');
+      expect(result.reason).toContain('凭据路径');
+      expect(result.reason).toContain(path.join(os.homedir(), '.ssh/id_rsa'));
+    });
+
     // 第 33 轮审查：`||` 链结束后 cd 成功那支的 cwd 已经变了，后续段按移动后的 cwd 解析
     // （与基线一致；两个 cwd 都查会更严，本刀不做，记证据档）。heredoc 正文是其命令的
     // stdin：严格解析失败，deny/ask 规则退回 lenient 词扫描，凭据路径落在原 cwd 上。

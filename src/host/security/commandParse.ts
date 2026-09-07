@@ -1033,10 +1033,11 @@ function qualifySegments(command: string): ShellExecution[] | null {
  * write-target consumers must continue using parseShellCommand().executions.
  */
 /**
- * The operator closing the AND/OR list the segment at `index` belongs to. `&` and `|&` background
- * the entire list — a `cd` inside `cd /tmp && env & …` runs in the subshell and must not move the
- * parent shell's cwd — while a chain closed by `|` pipelines only the last pipeline, so the cd in
- * `a && b | c` still runs in the parent.
+ * The operator closing the AND/OR list the segment at `index` belongs to. `&` backgrounds the
+ * entire list — a `cd` inside `cd /tmp && env & …` runs in the subshell and must not move the
+ * parent shell's cwd. `|&` is a pipe (`2>&1 |`), not a background operator: a chain closed by
+ * `|&` or `|` pipelines only the last pipeline, so the cd in `a && b |& c` still runs in the
+ * parent.
  */
 export function listTerminatorAfter(terminators: SegmentTerminator[], index: number): SegmentTerminator {
   let chainEnd = index;

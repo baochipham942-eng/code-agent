@@ -176,6 +176,27 @@ describe('sessionRecapService 模型输出过滤', () => {
     expect(await buildSessionRecap(material!)).toBeNull();
   });
 
+  it('产物名带问号时规则拼接仍可用，并且仍会调用小模型', async () => {
+    const material: SessionRecapMaterial = {
+      records: [record({ changedFiles: [], artifactRefs: [{ kind: 'artifact', messageId: 'm1', artifactId: 'a1', title: '为什么要做预算？.docx' }] })],
+      artifactLabels: ['为什么要做预算？.docx'],
+      completedTasks: [],
+      blockedTasks: [task({ id: 'task-2', status: 'blocked', subject: '核对预算表', blockedReason: '缺一列数字' })],
+    };
+    expect(formatRecapFallback(material)).toContain('为什么要做预算？.docx');
+    expect(formatRecapFallback(material)).toContain('1 项任务受阻');
+    quickModel.isQuickModelAvailable.mockReturnValue(true);
+    quickModel.quickTask.mockImplementation(async () => ({
+      success: true,
+      content: '更新了预算文档，一项任务受阻',
+    }));
+    const recap = await buildSessionRecap(material);
+    expect(quickModel.quickTask).toHaveBeenCalled();
+    expect(recap).not.toBeNull();
+    expect(recap!.degraded).toBe(false);
+    expect(recap!.text).toContain('预算');
+  });
+
   it('假模型回正常一句总结时有 text', async () => {
     quickModel.isQuickModelAvailable.mockReturnValue(true);
     quickModel.quickTask.mockImplementation(async () => ({

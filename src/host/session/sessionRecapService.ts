@@ -131,8 +131,9 @@ export function formatRecapFallback(material: SessionRecapMaterial): string | nu
   if (material.completedTasks.length > 0) parts.push(`${material.completedTasks.length} 项任务完成`);
   if (material.blockedTasks.length > 0) parts.push(`${material.blockedTasks.length} 项任务受阻`);
   if (parts.length === 0) return null;
-  const text = parts.join('，');
-  return isUsableRecapText(text) ? text : null;
+  // 规则拼接是「更新了 X / N 项完成 / N 项受阻」，不是模型反问。产物名里的问号
+  // 不能当成「不像总结」把整轮追赶吞掉，也不该挡住后面的小模型调用。
+  return parts.join('，');
 }
 
 function buildPrompt(material: SessionRecapMaterial): string {

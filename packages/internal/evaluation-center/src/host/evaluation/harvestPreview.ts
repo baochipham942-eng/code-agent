@@ -15,7 +15,7 @@ import type {
 } from '@shared/contract/evaluation';
 import type { PostLaunchConsentScope, PostLaunchReflowCandidate } from '@shared/contract/postLaunchScore';
 import { HARVEST_LOCKED_FIELDS } from '@shared/contract/evaluation';
-import { deriveHarvestSeed } from './harvestCandidates';
+import { deriveHarvestSeed, resolveFeedbackTurn } from './harvestCandidates';
 import { queryNegativeFeedback } from './trajectoryToCase';
 import { isPostLaunchReflowEnabled } from '@host/testing/postlaunch/postLaunchGate';
 import { getPostLaunchConsentScope, listReflowCandidates } from '@host/testing/postlaunch/postLaunchScoreStore';
@@ -36,29 +36,106 @@ interface HarvestTurnRow {
 
 export const REFLOW_TURN_MISMATCH_MESSAGE = '回流触发轮对不上回放记录';
 
-function turnHasUserPrompt(turn: NonNullable<StructuredReplay['turns']>[number]): boolean {
+type HarvestReplayTurns = NonNullable<StructuredReplay['turns']>;
+
+function turnHasUserPrompt(turn: HarvestReplayTurns[number]): boolean {
   return (turn.blocks ?? []).some((block) => block.type === 'user' && block.content.trim());
 }
 
-/**
- * 候选 turnId 是 telemetry_turns.id；回放轮只有 turnNumber/startTime。
- * 对齐方式与 postLaunchScorer.collectScorableTurns 同一把钥匙：(turn_number, start_time)。
- * iteration 行跟到 user 父轮，和打分分母一致。
- */
-function findTriggerTurnIndex(
-  turns: NonNullable<StructuredReplay['turns']>,
-  candidateTurnId: string,
-  turnRows: readonly HarvestTurnRow[],
-): number {
-  const byId = new Map(turnRows.map((row) => [row.id, row]));
-  const row = byId.get(candidateTurnId);
-  if (!row) return -1;
-  const owner = row.turn_type === 'iteration' && row.parent_turn_id
-    ? byId.get(row.parent_turn_id) ?? row
-    : row;
+function ownerRowOf(
+  row: HarvestTurnRow,
+  byId: Map<string, HarvestTurnRow>,
+): HarvestTurnRow {
+  if (row.turn_type === 'iteration' && row.parent_turn_id) {
+    return byId.get(row.parent_turn_id) ?? row;
+  }
+  return row;
+}
+
+function replayIndexOfRow(turns: HarvestReplayTurns, row: HarvestTurnRow): number {
   return turns.findIndex((turn) => (
-    turn.turnNumber === owner.turn_number && turn.startTime === owner.start_time
+    turn.turnNumber === row.turn_number && turn.startTime === row.start_time
   ));
+}
+
+function turnBelongsToOwner(
+  turn: HarvestReplayTurns[number],
+  owner: HarvestTurnRow,
+  row: HarvestTurnRow | undefined,
+): boolean {
+  if (row) {
+    return row.id === owner.id || (row.turn_type === 'iteration' && row.parent_turn_id === owner.id);
+  }
+  return turn.turnType === 'iteration' && turn.parentTurnId === owner.id;
+}
+
+/**
+ * 评分/信号候选：turnId 必须是 telemetry_turns.id，对不上 fail-closed。
+ * 点踩候选的 turnId 是 assistant message.id，匹配不上时按 created_at 时间锚
+ * （resolveFeedbackTurn：startTime 不晚于点踩时刻的最后一轮），不许把 message.id 当轮 id。
+ */
+function resolveTriggerOwner(
+  turns: HarvestReplayTurns,
+  candidate: PostLaunchReflowCandidate,
+  turnRows: readonly HarvestTurnRow[],
+): { owner: HarvestTurnRow; index: number } {
+  const byId = new Map(turnRows.map((row) => [row.id, row]));
+  const trueRow = candidate.turnId ? byId.get(candidate.turnId) : undefined;
+  if (trueRow) {
+    const owner = ownerRowOf(trueRow, byId);
+    const index = replayIndexOfRow(turns, owner);
+    if (index < 0) throw new Error(REFLOW_TURN_MISMATCH_MESSAGE);
+    return { owner, index };
+  }
+  if (!candidate.sources.includes('feedback')) throw new Error(REFLOW_TURN_MISMATCH_MESSAGE);
+  const anchor = candidate.occurredAt ?? candidate.feedbackAt;
+  if (anchor == null) throw new Error(REFLOW_TURN_MISMATCH_MESSAGE);
+  const anchored = resolveFeedbackTurn(turns, anchor);
+  if (!anchored) throw new Error(REFLOW_TURN_MISMATCH_MESSAGE);
+  const anchoredRow = turnRows.find((row) => (
+    row.turn_number === anchored.turnNumber && row.start_time === anchored.startTime
+  ));
+  const owner = anchoredRow
+    ? ownerRowOf(anchoredRow, byId)
+    : {
+      id: anchored.parentTurnId ?? '',
+      turn_number: anchored.turnNumber,
+      start_time: anchored.startTime,
+      turn_type: anchored.turnType === 'iteration' ? 'iteration' : 'user',
+      parent_turn_id: anchored.parentTurnId ?? null,
+    };
+  const index = replayIndexOfRow(turns, owner);
+  if (index < 0) throw new Error(REFLOW_TURN_MISMATCH_MESSAGE);
+  return { owner, index };
+}
+
+/** 父轮及其全部 iteration 子轮的回放下标闭区间，与 collectScorableTurns 同一归属。 */
+function ownedReplayRange(
+  turns: HarvestReplayTurns,
+  owner: HarvestTurnRow,
+  turnRows: readonly HarvestTurnRow[],
+  ownerIndex: number,
+): { start: number; end: number } {
+  const byKey = new Map(turnRows.map((row) => [`${row.turn_number}:${row.start_time}`, row]));
+  let firstOwned = ownerIndex;
+  let lastOwned = ownerIndex;
+  for (let index = 0; index < turns.length; index += 1) {
+    const turn = turns[index];
+    if (!turnBelongsToOwner(turn, owner, byKey.get(`${turn.turnNumber}:${turn.startTime}`))) continue;
+    firstOwned = Math.min(firstOwned, index);
+    lastOwned = Math.max(lastOwned, index);
+  }
+  let userIndex = -1;
+  for (let cursor = ownerIndex; cursor >= 0; cursor -= 1) {
+    if (turnHasUserPrompt(turns[cursor])) {
+      userIndex = cursor;
+      break;
+    }
+  }
+  return {
+    start: Math.min(userIndex >= 0 ? userIndex : ownerIndex, firstOwned),
+    end: lastOwned,
+  };
 }
 
 function listHarvestTurnRows(db: BetterSqlite3.Database, sessionId: string): HarvestTurnRow[] {
@@ -76,9 +153,10 @@ function listHarvestTurnRows(db: BetterSqlite3.Database, sessionId: string): Har
 }
 
 /**
- * 按保存时的同意档裁剪回放。full_session 不裁；turn_excerpt（及更低档）只留触发轮
- * 及其直接上下文（触发轮本身 + 往前最近一条带用户原话的轮），不得带上更早轮的原文。
- * 候选 turnId 对不上 telemetry_turns↔回放映射时 fail-closed，禁止退回整场会话。
+ * 按保存时的同意档裁剪回放。full_session 不裁；turn_excerpt（及更低档）只留触发
+ * 父轮 + 它的全部 iteration 子轮（及往前最近一条带用户原话的轮），不得带上别的用户轮。
+ * 评分/信号候选 turnId 对不上 telemetry_turns↔回放映射时 fail-closed；
+ * 点踩候选走 created_at 时间锚，禁止把 message.id 当轮 id。
  */
 export function scopeReplayToCandidate(
   replay: StructuredReplay,
@@ -87,20 +165,12 @@ export function scopeReplayToCandidate(
   turnRows: readonly HarvestTurnRow[] = [],
 ): StructuredReplay {
   if (consentScope === 'full_session') return replay;
-  const match = candidates.find((candidate) => candidate.sessionId === replay.sessionId && candidate.turnId);
-  if (!match?.turnId) throw new Error(REFLOW_TURN_MISMATCH_MESSAGE);
+  const match = candidates.find((candidate) => candidate.sessionId === replay.sessionId);
+  if (!match) throw new Error(REFLOW_TURN_MISMATCH_MESSAGE);
   const turns = replay.turns ?? [];
-  const index = findTriggerTurnIndex(turns, match.turnId, turnRows);
-  if (index < 0) throw new Error(REFLOW_TURN_MISMATCH_MESSAGE);
-  let userIndex = -1;
-  for (let cursor = index; cursor >= 0; cursor -= 1) {
-    if (turnHasUserPrompt(turns[cursor])) {
-      userIndex = cursor;
-      break;
-    }
-  }
-  const start = userIndex >= 0 ? userIndex : index;
-  return { ...replay, turns: turns.slice(start, index + 1) };
+  const { owner, index } = resolveTriggerOwner(turns, match, turnRows);
+  const { start, end } = ownedReplayRange(turns, owner, turnRows, index);
+  return { ...replay, turns: turns.slice(start, end + 1) };
 }
 
 function harvestBatchTag(now = new Date()): string {

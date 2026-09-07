@@ -31,6 +31,8 @@ const reflowStore = vi.hoisted(() => ({
     signals: string[];
     failureClass: string | null;
     sources: Array<'judge' | 'signal' | 'feedback'>;
+    occurredAt?: number;
+    feedbackAt?: number;
   }>),
   consent: vi.fn(() => 'turn_excerpt' as 'metadata' | 'turn_excerpt' | 'full_session'),
   enabled: true,
@@ -371,5 +373,105 @@ describe('预览编排', () => {
       sessionId: 'sess-fake-0001',
       error: '回流触发轮对不上回放记录',
     }]);
+  });
+
+  it('点踩候选 turnId 是 message.id 时按 created_at 预览出锚定轮原话，不进 failed', async () => {
+    const messageId = '550e8400-e29b-41d4-a716-446655440000';
+    db.replay.mockResolvedValue(replay([
+      turn([
+        userBlock('FEATURE_A_FIRST_TURN_PROMPT'),
+        toolBlock('Write', 'Write', { file_path: 'first-turn-secret.txt' }, 1),
+      ], 1000, 1),
+      turn([
+        userBlock('FEATURE_B_TRIGGER_TURN_PROMPT'),
+        toolBlock('Write', 'Write', { file_path: 'trigger-turn.txt' }, 2),
+      ], 2000, 2),
+    ]));
+    reflowStore.enabled = true;
+    reflowStore.consent.mockReturnValue('turn_excerpt');
+    reflowStore.list.mockReturnValue([{
+      sessionId: 'sess-fake-0001',
+      turnId: messageId,
+      judgeVersion: null,
+      redDimensions: [],
+      signals: [],
+      failureClass: null,
+      sources: ['feedback'],
+      occurredAt: 2500,
+      feedbackAt: 2500,
+    }]);
+    db.turns.mockReturnValue([
+      { id: '6f1a2b3c-4d5e-4f60-8a9b-0c1d2e3f4a5b', turn_number: 1, start_time: 1000, turn_type: 'user', parent_turn_id: null },
+      { id: '7a8b9c0d-1e2f-4a3b-9c8d-7e6f5a4b3c2d', turn_number: 2, start_time: 2000, turn_type: 'user', parent_turn_id: null },
+    ]);
+
+    const result = await buildHarvestPreview({
+      sessionIds: ['sess-fake-0001'],
+      fields: ['prompt'],
+      postLaunchReflow: true,
+    });
+    expect(result.failed).toEqual([]);
+    expect(result.seeds[0]?.prompt).toBe('FEATURE_B_TRIGGER_TURN_PROMPT');
+    expect(result.seeds[0]?.prompt).not.toContain('FEATURE_A_FIRST_TURN_PROMPT');
+    expect(JSON.stringify(result.seeds[0]?.candidates)).toContain('trigger-turn.txt');
+    expect(JSON.stringify(result.seeds[0]?.candidates)).not.toContain('first-turn-secret.txt');
+  });
+
+  it('回流预览保留触发父轮的 iteration 子轮工具/文件，不带后续用户轮', async () => {
+    const parentId = '7a8b9c0d-1e2f-4a3b-9c8d-7e6f5a4b3c2d';
+    db.replay.mockResolvedValue(replay([
+      turn([
+        userBlock('FEATURE_A_FIRST_TURN_PROMPT'),
+        toolBlock('Write', 'Write', { file_path: 'first-turn-secret.txt' }, 1),
+      ], 1000, 1),
+      { ...turn([userBlock('FEATURE_B_TRIGGER_TURN_PROMPT')], 2000, 2), turnType: 'user' },
+      {
+        ...turn([toolBlock('Write', 'Write', { file_path: 'iter-turn.txt' }, 3)], 2100, 3),
+        turnType: 'iteration',
+        parentTurnId: parentId,
+      },
+      {
+        ...turn([toolBlock('Bash', 'Bash', { command: 'iter-secret-cmd' }, 4)], 2200, 4),
+        turnType: 'iteration',
+        parentTurnId: parentId,
+      },
+      turn([
+        userBlock('FEATURE_C_LATER_TURN_PROMPT'),
+        toolBlock('Write', 'Write', { file_path: 'later-turn.txt' }, 5),
+      ], 3000, 5),
+    ]));
+    reflowStore.enabled = true;
+    reflowStore.consent.mockReturnValue('turn_excerpt');
+    reflowStore.list.mockReturnValue([{
+      sessionId: 'sess-fake-0001',
+      turnId: parentId,
+      judgeVersion: 'postlaunch-judge-v1',
+      redDimensions: ['goal'],
+      signals: [],
+      failureClass: null,
+      sources: ['judge'],
+    }]);
+    db.turns.mockReturnValue([
+      { id: '6f1a2b3c-4d5e-4f60-8a9b-0c1d2e3f4a5b', turn_number: 1, start_time: 1000, turn_type: 'user', parent_turn_id: null },
+      { id: parentId, turn_number: 2, start_time: 2000, turn_type: 'user', parent_turn_id: null },
+      { id: '8b9c0d1e-2f3a-4b5c-9d8e-7f6a5b4c3d2e', turn_number: 3, start_time: 2100, turn_type: 'iteration', parent_turn_id: parentId },
+      { id: '9c0d1e2f-3a4b-5c6d-8e7f-6a5b4c3d2e1f', turn_number: 4, start_time: 2200, turn_type: 'iteration', parent_turn_id: parentId },
+      { id: 'ad1e2f3a-4b5c-6d7e-9f8a-7b6c5d4e3f2a', turn_number: 5, start_time: 3000, turn_type: 'user', parent_turn_id: null },
+    ]);
+
+    const result = await buildHarvestPreview({
+      sessionIds: ['sess-fake-0001'],
+      fields: ['prompt'],
+      postLaunchReflow: true,
+    });
+    expect(result.failed).toEqual([]);
+    expect(result.seeds[0]?.prompt).toBe('FEATURE_B_TRIGGER_TURN_PROMPT');
+    expect(result.seeds[0]?.prompt).not.toContain('FEATURE_A_FIRST_TURN_PROMPT');
+    expect(result.seeds[0]?.prompt).not.toContain('FEATURE_C_LATER_TURN_PROMPT');
+    const blob = JSON.stringify(result.seeds[0]?.candidates);
+    expect(blob).toContain('iter-turn.txt');
+    expect(blob).toContain('"tool":"Bash"');
+    expect(blob).not.toContain('first-turn-secret.txt');
+    expect(blob).not.toContain('later-turn.txt');
   });
 });

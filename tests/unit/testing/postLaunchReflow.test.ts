@@ -25,7 +25,16 @@ const FIRST_TURN_COMMAND = 'first-turn-secret-cmd';
 const TRIGGER_TURN_PATH = 'trigger-turn.txt';
 const FIRST_TURN_ID = '6f1a2b3c-4d5e-4f60-8a9b-0c1d2e3f4a5b';
 const TRIGGER_TURN_ID = '7a8b9c0d-1e2f-4a3b-9c8d-7e6f5a4b3c2d';
+const ITERATION_ONE_TURN_ID = '8b9c0d1e-2f3a-4b5c-9d8e-7f6a5b4c3d2e';
+const ITERATION_TWO_TURN_ID = '9c0d1e2f-3a4b-5c6d-8e7f-6a5b4c3d2e1f';
+const LATER_TURN_ID = 'ad1e2f3a-4b5c-6d7e-9f8a-7b6c5d4e3f2a';
 const UNKNOWN_TURN_ID = '00000000-0000-4000-8000-000000000099';
+/** assistant message.id 形态：UUID，但不在 telemetry_turns 里。 */
+const FEEDBACK_MESSAGE_ID = '550e8400-e29b-41d4-a716-446655440000';
+const ITERATION_TURN_PATH = 'iter-turn.txt';
+const ITERATION_TURN_COMMAND = 'iter-secret-cmd';
+const LATER_TURN_PROMPT = 'FEATURE_C_LATER_TURN_PROMPT';
+const LATER_TURN_PATH = 'later-turn.txt';
 
 function makeDb(): Database.Database {
   const db = new Database(':memory:');
@@ -127,6 +136,98 @@ function triggerTurnRows() {
   ];
 }
 
+function feedbackCandidate(): PostLaunchReflowCandidate {
+  return {
+    sessionId: 'sess-reflow-0001',
+    turnId: FEEDBACK_MESSAGE_ID,
+    judgeVersion: null,
+    redDimensions: [],
+    signals: [],
+    failureClass: null,
+    sources: ['feedback'],
+    feedbackId: 'fb-thumbs-down',
+    feedbackAt: 2500,
+    occurredAt: 2500,
+  };
+}
+
+function iterationReplay(): StructuredReplay {
+  const first: ReplayTurn = {
+    turnNumber: 1,
+    turnType: 'user',
+    blocks: [
+      { type: 'user', content: FIRST_TURN_PROMPT, timestamp: 0 },
+      toolBlock('Write', 'Write', { file_path: `${WORKDIR}/${FIRST_TURN_PATH}` }, 1),
+    ],
+    inputTokens: 0, outputTokens: 0, durationMs: 1, startTime: 1000,
+  };
+  const parent: ReplayTurn = {
+    turnNumber: 2,
+    turnType: 'user',
+    blocks: [
+      { type: 'user', content: TRIGGER_TURN_PROMPT, timestamp: 3 },
+    ],
+    inputTokens: 0, outputTokens: 0, durationMs: 1, startTime: 2000,
+  };
+  const iterationOne: ReplayTurn = {
+    turnNumber: 3,
+    turnType: 'iteration',
+    parentTurnId: TRIGGER_TURN_ID,
+    blocks: [
+      toolBlock('Write', 'Write', { file_path: `${WORKDIR}/${ITERATION_TURN_PATH}` }, 4),
+    ],
+    inputTokens: 0, outputTokens: 0, durationMs: 1, startTime: 2100,
+  };
+  const iterationTwo: ReplayTurn = {
+    turnNumber: 4,
+    turnType: 'iteration',
+    parentTurnId: TRIGGER_TURN_ID,
+    blocks: [
+      toolBlock('Bash', 'Bash', { command: ITERATION_TURN_COMMAND }, 5),
+    ],
+    inputTokens: 0, outputTokens: 0, durationMs: 1, startTime: 2200,
+  };
+  const later: ReplayTurn = {
+    turnNumber: 5,
+    turnType: 'user',
+    blocks: [
+      { type: 'user', content: LATER_TURN_PROMPT, timestamp: 6 },
+      toolBlock('Write', 'Write', { file_path: `${WORKDIR}/${LATER_TURN_PATH}` }, 7),
+    ],
+    inputTokens: 0, outputTokens: 0, durationMs: 1, startTime: 3000,
+  };
+  return {
+    sessionId: 'sess-reflow-0001',
+    traceIdentity: {
+      traceId: 'session:sess-reflow-0001',
+      traceSource: 'session_replay',
+      source: 'session_replay',
+      sessionId: 'sess-reflow-0001',
+      replayKey: 'sess-reflow-0001',
+    },
+    traceSource: 'session_replay',
+    dataSource: 'telemetry',
+    turns: [first, parent, iterationOne, iterationTwo, later],
+    summary: {
+      totalTurns: 5,
+      toolDistribution: { Read: 0, Edit: 0, Write: 3, Bash: 1, Search: 0, Web: 0, Agent: 0, Skill: 0, Other: 0 },
+      thinkingRatio: 0,
+      selfRepairChains: 0,
+      totalDurationMs: 5,
+    },
+  };
+}
+
+function iterationTurnRows() {
+  return [
+    { id: FIRST_TURN_ID, turn_number: 1, start_time: 1000, turn_type: 'user', parent_turn_id: null },
+    { id: TRIGGER_TURN_ID, turn_number: 2, start_time: 2000, turn_type: 'user', parent_turn_id: null },
+    { id: ITERATION_ONE_TURN_ID, turn_number: 3, start_time: 2100, turn_type: 'iteration', parent_turn_id: TRIGGER_TURN_ID },
+    { id: ITERATION_TWO_TURN_ID, turn_number: 4, start_time: 2200, turn_type: 'iteration', parent_turn_id: TRIGGER_TURN_ID },
+    { id: LATER_TURN_ID, turn_number: 5, start_time: 3000, turn_type: 'user', parent_turn_id: null },
+  ];
+}
+
 function seedFrom(replay: StructuredReplay) {
   return deriveHarvestSeed({
     replay,
@@ -223,6 +324,60 @@ describe('post-launch reflow candidates and gates', () => {
       'turn_excerpt',
       triggerTurnRows(),
     )).toThrow(REFLOW_TURN_MISMATCH_MESSAGE);
+  });
+
+  it('点踩候选 turnId 是 message.id 时按 created_at 时间锚裁剪，题面是锚定轮原话', () => {
+    const replay = twoTurnReplay();
+    const excerpt = seedFrom(scopeReplayToCandidate(replay, [feedbackCandidate()], 'turn_excerpt', triggerTurnRows()));
+    expect(excerpt.prompt).toBe(TRIGGER_TURN_PROMPT);
+    expect(excerpt.prompt).not.toContain(FIRST_TURN_PROMPT);
+    const excerptBlob = JSON.stringify(excerpt.candidates);
+    expect(excerptBlob).toContain(TRIGGER_TURN_PATH);
+    expect(excerptBlob).not.toContain(FIRST_TURN_PATH);
+    expect(excerptBlob).not.toContain(FIRST_TURN_COMMAND);
+  });
+
+  it('点踩候选缺 created_at 锚时仍 fail-closed，不把 message.id 当轮 id', () => {
+    expect(() => scopeReplayToCandidate(
+      twoTurnReplay(),
+      [{ ...feedbackCandidate(), occurredAt: undefined, feedbackAt: undefined }],
+      'turn_excerpt',
+      triggerTurnRows(),
+    )).toThrow(REFLOW_TURN_MISMATCH_MESSAGE);
+  });
+
+  it('评分候选 turnId 对不上仍 fail-closed，即使带了 occurredAt 也不走点踩时间锚', () => {
+    expect(() => scopeReplayToCandidate(
+      twoTurnReplay(),
+      [{ ...triggerCandidate(), turnId: UNKNOWN_TURN_ID, occurredAt: 2500 }],
+      'turn_excerpt',
+      triggerTurnRows(),
+    )).toThrow(REFLOW_TURN_MISMATCH_MESSAGE);
+  });
+
+  it('turn_excerpt 保留触发父轮的全部 iteration 子轮工具/文件，裁掉其他用户轮', () => {
+    const scoped = scopeReplayToCandidate(
+      iterationReplay(),
+      [triggerCandidate()],
+      'turn_excerpt',
+      iterationTurnRows(),
+    );
+    const scopedBlob = JSON.stringify(scoped.turns);
+    expect(scopedBlob).toContain(ITERATION_TURN_PATH);
+    expect(scopedBlob).toContain(ITERATION_TURN_COMMAND);
+    expect(scopedBlob).not.toContain(FIRST_TURN_PATH);
+    expect(scopedBlob).not.toContain(LATER_TURN_PATH);
+    expect(scopedBlob).not.toContain(LATER_TURN_PROMPT);
+
+    const excerpt = seedFrom(scoped);
+    expect(excerpt.prompt).toBe(TRIGGER_TURN_PROMPT);
+    expect(excerpt.prompt).not.toContain(FIRST_TURN_PROMPT);
+    expect(excerpt.prompt).not.toContain(LATER_TURN_PROMPT);
+    const excerptBlob = JSON.stringify(excerpt.candidates);
+    expect(excerptBlob).toContain(ITERATION_TURN_PATH);
+    expect(excerptBlob).toContain('"tool":"Bash"');
+    expect(excerptBlob).not.toContain(FIRST_TURN_PATH);
+    expect(excerptBlob).not.toContain(LATER_TURN_PATH);
   });
 
   it('预览所用档高于当前档时拒，档不变或升高时放行', () => {

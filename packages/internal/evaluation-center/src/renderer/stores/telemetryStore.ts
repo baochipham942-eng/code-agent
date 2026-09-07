@@ -187,6 +187,7 @@ export const useTelemetryStore = create<TelemetryStore>((set, get) => ({
       console.error('Failed to run post-launch scoring:', error);
       set({ postLaunchError: String(error) });
     } finally {
+      await get().loadReflowCandidates();
       set({ postLaunchRunning: false });
     }
   },

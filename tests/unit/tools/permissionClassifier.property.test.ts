@@ -275,6 +275,13 @@ const KNOWN_SHAPES = [
   'cd ~ || cat .ssh/id_rsa',
   'cd /nonexistent || cat .ssh/id_rsa',
   'cat <<true\ncd /tmp\ntrue\ncat .ssh/id_rsa',
+  // Round 34: `--` ends the option region and attached sed scripts carry their value, so the
+  // credential write targets after them must reach the path policy instead of being filtered as
+  // options (baseline extracts nothing for these spellings, so this can only tighten).
+  'cp -- source.txt ~/.ssh/authorized_keys',
+  'tee -- ~/.ssh/id_rsa',
+  "sed -i.bak -e's/x/y/' ~/.aws/credentials",
+  'mv -- source.txt ~/.ssh/authorized_keys',
 ];
 
 // Under /tmp the critical-path rm rule fires before anything else and masks weaker rules; a real

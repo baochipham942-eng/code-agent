@@ -152,6 +152,50 @@ describe('shared shell command parser', () => {
       .toEqual(['allowed.txt']);
   });
 
+  // Round 34: `--` ends the option region, so a `-`-leading word after it is a real write target
+  // (real bash probe: `cp -- source.txt '-locked.txt'` creates `-locked.txt`; `tee --` likewise).
+  it.each([
+    ['cp -- source.txt -locked.txt', ['-locked.txt']],
+    ['mv -- source.txt -locked.txt', ['-locked.txt']],
+    ['tee -- -locked.txt', ['-locked.txt']],
+    ['cp -t dir -- -src.txt', ['dir']],
+  ])('honors the -- option terminator instead of filtering real targets: %s', (command, targets) => {
+    expect(parseShellCommand(command)).toMatchObject({
+      parsingFailed: false,
+      writeTargets: targets.map((target) => expect.objectContaining({ path: target })),
+    });
+  });
+
+  // Round 34: attached value options carry the script, so the file after them is the edit target
+  // (real bash probe: `sed -i.bak -e's/x/y/' target.txt` rewrites target.txt and keeps target.txt.bak;
+  // `-f'build/script.sed'` reads the script file but never writes it).
+  it.each([
+    ["sed -i.bak -e's/x/y/' src/x.ts", ['src/x.ts', 'src/x.ts.bak']],
+    ["sed -i.bak -f'build/script.sed' src/x.ts", ['src/x.ts', 'src/x.ts.bak']],
+    ["sed --in-place=.bak --expression='s/x/y/' src/x.ts", ['src/x.ts', 'src/x.ts.bak']],
+    ["sed -i '' -e's/x/y/' src/x.ts", ['src/x.ts']],
+  ])('reads attached sed script options without losing the edit target: %s', (command, targets) => {
+    expect(parseShellCommand(command).writeTargets.map((t) => t.path)).toEqual(targets);
+  });
+
+  it.each([
+    'cp --bogus-opt source.txt target.txt',
+    'tee --bogus out.txt',
+    "sed -i.bak --bogus 's/x/y/' src/x.ts",
+    "sed -i.bak -e's/x/y/' --out-of-place src/x.ts",
+  ])('fails closed when a write-command option arity is unknown: %s', (command) => {
+    // Same rule as the wrapper allowlists: guessing the unknown option as a flag lets its value
+    // swallow the real write target, so the scan must not return certain-but-wrong targets.
+    expect(parseShellCommand(command)).toMatchObject({ parsingFailed: true });
+  });
+
+  it('does not fail a non-in-place sed on unknown options — stdout writes nothing', () => {
+    expect(parseShellCommand("sed --bogus 's/x/y/' src/x.ts")).toMatchObject({
+      parsingFailed: false,
+      writeTargets: [],
+    });
+  });
+
   it.each([
     'MODE=1 tee src/x.ts',
     'A=1 B=2 tee src/x.ts',

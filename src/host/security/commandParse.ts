@@ -447,77 +447,228 @@ function shellScript(args: string[]): { command: string } | { scriptIndex: numbe
   return null;
 }
 
-function sedTargets(words: string[]): ShellWriteTarget[] {
-  const args = words.slice(1);
-  const inPlaceArg = args.find((arg) => arg === '-i' || arg.startsWith('-i')
-    || arg === '--in-place' || arg.startsWith('--in-place='));
-  if (inPlaceArg === undefined) return [];
-  // `sed -i.bak f` also creates `f.bak`; a deny on the suffix pattern (*.pem) has to see it.
-  const backupSuffix = inPlaceArg.startsWith('--in-place=')
-    ? inPlaceArg.slice('--in-place='.length)
-    : inPlaceArg.startsWith('-i') ? inPlaceArg.slice(2) : '';
+type WriteTargetExtraction = { targets: ShellWriteTarget[]; failed?: string };
 
-  let scriptSeen = false;
-  let optionConsumesValue = false;
+type OptionScanEntry =
+  | { kind: 'boolean'; option: string }
+  | { kind: 'value'; option: string; value: string }
+  | { kind: 'operand'; word: string };
+
+// cp/mv/tee/sed option words follow the same allowlist rules as the wrapper scan above: `--` ends
+// the option region (every later word is an operand, even one starting with `-`), known value
+// options take their value attached (`-tdir`, `--target-directory=dir`) or as the next word, known
+// boolean letters cluster (`cp -Rv`), and a letter with an optional attached value (`sed -i.bak`)
+// ends its cluster. An unknown `-` word is never guessed as a flag — its value could be the real
+// write target (`cp -- a -locked.txt` writes `-locked.txt`), so the scan fails closed and the
+// command falls back to an approval instead of silently losing the target.
+function scanArgv(
+  args: string[],
+  valueOptions: ReadonlySet<string>,
+  booleanOptions: ReadonlySet<string>,
+  optionalAttachedOptions: ReadonlySet<string>,
+): { entries: OptionScanEntry[]; failed?: string } {
+  const entries: OptionScanEntry[] = [];
+  let optionsRegion = true;
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (optionsRegion && arg === '--') {
+      optionsRegion = false;
+      continue;
+    }
+    if (!optionsRegion || !arg.startsWith('-') || arg === '-') {
+      entries.push({ kind: 'operand', word: arg });
+      continue;
+    }
+    if (arg.startsWith('--')) {
+      const optionName = arg.split('=', 1)[0];
+      if (optionalAttachedOptions.has(optionName)) {
+        entries.push({ kind: 'value', option: optionName,
+          value: arg.includes('=') ? arg.slice(optionName.length + 1) : '' });
+        continue;
+      }
+      if (valueOptions.has(optionName)) {
+        if (arg.includes('=')) {
+          entries.push({ kind: 'value', option: optionName, value: arg.slice(optionName.length + 1) });
+          continue;
+        }
+        const value = args[index + 1];
+        if (value === undefined) return { entries, failed: `${optionName} requires a value` };
+        index += 1;
+        entries.push({ kind: 'value', option: optionName, value });
+        continue;
+      }
+      if (booleanOptions.has(optionName)) {
+        entries.push({ kind: 'boolean', option: optionName });
+        continue;
+      }
+      return { entries, failed: `${optionName} option arity is not known` };
+    }
+    let rest = arg.slice(1);
+    let failed: string | undefined;
+    while (rest.length > 0) {
+      const letter = `-${rest[0]}`;
+      if (booleanOptions.has(letter)) {
+        entries.push({ kind: 'boolean', option: letter });
+        rest = rest.slice(1);
+        continue;
+      }
+      if (valueOptions.has(letter)) {
+        if (rest.length > 1) {
+          entries.push({ kind: 'value', option: letter, value: rest.slice(1) });
+          rest = '';
+          continue;
+        }
+        const value = args[index + 1];
+        if (value === undefined) {
+          failed = `${letter} requires a value`;
+          break;
+        }
+        index += 1;
+        entries.push({ kind: 'value', option: letter, value });
+        rest = '';
+        continue;
+      }
+      if (optionalAttachedOptions.has(letter)) {
+        entries.push({ kind: 'value', option: letter, value: rest.slice(1) });
+        rest = '';
+        continue;
+      }
+      failed = `${arg} option arity is not known`;
+      break;
+    }
+    if (failed) return { entries, failed };
+  }
+  return { entries };
+}
+
+const TEE_BOOLEAN_OPTIONS: ReadonlySet<string> = new Set([
+  '-a', '--append', '-p', '--help', '--version',
+]);
+const TEE_OPTIONAL_ATTACHED_OPTIONS: ReadonlySet<string> = new Set(['--output-error']);
+
+// GNU + BSD union; an option missing here fails closed rather than guessing. `-b`/`--backup`,
+// `--preserve`, `--reflink` and `--context` take their value only attached, never as the next word.
+const CP_VALUE_OPTIONS: ReadonlySet<string> = new Set([
+  '-t', '--target-directory', '-S', '--suffix', '--sparse',
+]);
+const CP_BOOLEAN_OPTIONS: ReadonlySet<string> = new Set([
+  '-a', '--archive', '-c', '-d', '--no-dereference', '--dereference', '-f', '--force', '-H', '-L',
+  '-i', '--interactive', '-l', '--link', '-n', '--no-clobber', '--parents', '-P', '-p', '-R', '-r',
+  '--recursive', '--remove-destination', '--strip-trailing-slashes', '-s', '--symbolic-link', '-T',
+  '--no-target-directory', '-u', '--update', '-v', '--verbose', '-x', '--one-file-system', '-X', '-Z',
+  '--copy-contents', '--debug', '--help', '--version',
+]);
+const CP_OPTIONAL_ATTACHED_OPTIONS: ReadonlySet<string> = new Set([
+  '-b', '--backup', '--preserve', '--no-preserve', '--reflink', '--context',
+]);
+
+const MV_VALUE_OPTIONS: ReadonlySet<string> = new Set(['-t', '--target-directory', '-S', '--suffix']);
+const MV_BOOLEAN_OPTIONS: ReadonlySet<string> = new Set([
+  '-f', '--force', '-i', '--interactive', '-n', '--no-clobber', '-u', '--update', '-v', '--verbose',
+  '-T', '--no-target-directory', '--strip-trailing-slashes', '-h', '--no-dereference', '-Z',
+  '--help', '--version',
+]);
+const MV_OPTIONAL_ATTACHED_OPTIONS: ReadonlySet<string> = new Set(['-b', '--backup', '--context']);
+
+const SED_SCRIPT_VALUE_OPTIONS: ReadonlySet<string> = new Set([
+  '-e', '--expression', '-f', '--file',
+]);
+const SED_VALUE_OPTIONS: ReadonlySet<string> = new Set([
+  ...SED_SCRIPT_VALUE_OPTIONS, '-l', '--line-length',
+]);
+const SED_BOOLEAN_OPTIONS: ReadonlySet<string> = new Set([
+  '-n', '--quiet', '--silent', '-r', '-E', '--regexp-extended', '-s', '--separate', '-u',
+  '--unbuffered', '-z', '--null-data', '-b', '--binary', '-c', '--copy', '-a', '--posix', '--sandbox',
+  '--debug', '--follow-symlinks', '--help', '--version',
+]);
+// GNU `-iSUFFIX` and BSD `-i`/`-I` take the backup suffix only attached or bare; the bare form must
+// not consume the next word (that word is the script on GNU: `sed -i 's/x/y/' f`).
+const SED_IN_PLACE_OPTIONS: ReadonlySet<string> = new Set(['-i', '-I', '--in-place']);
+
+function sedTargets(args: string[]): WriteTargetExtraction {
+  const scan = scanArgv(args, SED_VALUE_OPTIONS, SED_BOOLEAN_OPTIONS, SED_IN_PLACE_OPTIONS);
+  const backupSuffixes = scan.entries.flatMap((entry) => entry.kind === 'value'
+    && SED_IN_PLACE_OPTIONS.has(entry.option) ? [entry.value] : []);
+  // Without in-place editing sed writes only stdout; a scan failure there cannot hide a write.
+  if (backupSuffixes.length === 0) return { targets: [] };
+  if (scan.failed) return { targets: [], failed: `sed ${scan.failed}` };
+  const backupSuffix = backupSuffixes.at(-1) ?? '';
+
+  let scriptSeen = scan.entries.some((entry) => entry.kind === 'value'
+    && SED_SCRIPT_VALUE_OPTIONS.has(entry.option));
   const files: string[] = [];
-  for (const arg of args) {
-    if (optionConsumesValue) {
-      optionConsumesValue = false;
-      if (!scriptSeen) scriptSeen = true;
-      continue;
-    }
-    if (arg === '-e' || arg === '--expression' || arg === '-f' || arg === '--file') {
-      optionConsumesValue = true;
-      continue;
-    }
-    if (arg === '-i' || arg === '--in-place' || arg.startsWith('-i') || arg.startsWith('--in-place=')) {
-      continue;
-    }
-    if (arg.startsWith('-') && !scriptSeen) continue;
+  for (const entry of scan.entries) {
+    if (entry.kind !== 'operand') continue;
+    // An empty word can never be opened ('' fails with ENOENT on every sed); in the BSD idiom
+    // `sed -i '' -eSCRIPT f` it is the -i suffix, not a file.
+    if (!entry.word) continue;
     if (!scriptSeen) {
       scriptSeen = true;
       continue;
     }
-    files.push(arg);
+    files.push(entry.word);
   }
-  return files.flatMap((target) => {
-    const uncertain = /[$`*?{}]/.test(target);
-    const entries: ShellWriteTarget[] = [{ path: target, source: 'sed-in-place', uncertain }];
-    if (backupSuffix) {
-      entries.push({
-        path: `${target}${backupSuffix}`,
-        source: 'sed-in-place',
-        uncertain: uncertain || /[$`*?{}]/.test(backupSuffix),
-      });
-    }
-    return entries;
-  });
+  // `sed -i.bak f` also creates `f.bak`; a deny on the suffix pattern (*.pem) has to see it.
+  return {
+    targets: files.flatMap((target) => {
+      const uncertain = /[$`*?{}]/.test(target);
+      const entries: ShellWriteTarget[] = [{ path: target, source: 'sed-in-place', uncertain }];
+      if (backupSuffix) {
+        entries.push({
+          path: `${target}${backupSuffix}`,
+          source: 'sed-in-place',
+          uncertain: uncertain || /[$`*?{}]/.test(backupSuffix),
+        });
+      }
+      return entries;
+    }),
+  };
 }
 
-function commandWriteTargets(execution: ShellExecution): ShellWriteTarget[] {
-  const program = basename(execution.program);
-  const words = [program, ...execution.args];
-  if (program === 'sed') return sedTargets(words);
-  if (program === 'tee') {
-    return execution.args.filter((arg) => arg !== '--' && !arg.startsWith('-')).map((target) => ({
-      path: target,
+function teeTargets(args: string[]): WriteTargetExtraction {
+  const scan = scanArgv(args, new Set(), TEE_BOOLEAN_OPTIONS, TEE_OPTIONAL_ATTACHED_OPTIONS);
+  if (scan.failed) return { targets: [], failed: `tee ${scan.failed}` };
+  return {
+    targets: scan.entries.flatMap((entry) => entry.kind === 'operand' ? [{
+      path: entry.word,
       source: 'tee' as const,
-      uncertain: /[$`*?{}]/.test(target),
-    }));
-  }
-  if (program !== 'cp' && program !== 'mv') return [];
+      uncertain: /[$`*?{}]/.test(entry.word),
+    }] : []),
+  };
+}
 
-  const targetDirectoryIndex = execution.args.findIndex((arg) => arg === '-t' || arg === '--target-directory');
-  const attachedTargetDirectory = execution.args.find((arg) => arg.startsWith('--target-directory='))
-    ?.slice('--target-directory='.length);
-  const target = attachedTargetDirectory || (targetDirectoryIndex >= 0
-    ? execution.args[targetDirectoryIndex + 1]
-    : execution.args.filter((arg) => arg === '-' || !arg.startsWith('-')).at(-1));
-  return target ? [{
-    path: target,
-    source: program === 'cp' ? 'copy' : 'move',
-    uncertain: /[$`*?{}]/.test(target),
-  }] : [];
+function copyMoveTargets(program: 'cp' | 'mv', args: string[]): WriteTargetExtraction {
+  const scan = scanArgv(
+    args,
+    program === 'cp' ? CP_VALUE_OPTIONS : MV_VALUE_OPTIONS,
+    program === 'cp' ? CP_BOOLEAN_OPTIONS : MV_BOOLEAN_OPTIONS,
+    program === 'cp' ? CP_OPTIONAL_ATTACHED_OPTIONS : MV_OPTIONAL_ATTACHED_OPTIONS,
+  );
+  if (scan.failed) return { targets: [], failed: `${program} ${scan.failed}` };
+  let directory: string | undefined;
+  const operands: string[] = [];
+  for (const entry of scan.entries) {
+    if (entry.kind === 'operand') operands.push(entry.word);
+    else if (entry.kind === 'value' && (entry.option === '-t' || entry.option === '--target-directory')) {
+      directory = entry.value;
+    }
+  }
+  const target = directory ?? operands.at(-1);
+  return {
+    targets: target === undefined ? [] : [{
+      path: target,
+      source: program === 'cp' ? 'copy' : 'move',
+      uncertain: /[$`*?{}]/.test(target),
+    }],
+  };
+}
+
+function commandWriteTargets(execution: ShellExecution): WriteTargetExtraction {
+  const program = basename(execution.program);
+  if (program === 'sed') return sedTargets(execution.args);
+  if (program === 'tee') return teeTargets(execution.args);
+  if (program === 'cp' || program === 'mv') return copyMoveTargets(program, execution.args);
+  return { targets: [] };
 }
 
 function parseEntries(command: string): {
@@ -733,17 +884,21 @@ function expandExecutions(
       [...wrappers, program],
       depth + 1,
     );
+    const scan = commandWriteTargets(execution);
+    const failed = scan.failed ?? nested.failed;
     return {
       executions: [execution, ...nested.executions],
-      targets: [...commandWriteTargets(execution), ...nested.targets],
+      targets: [...scan.targets, ...nested.targets],
       uncertain: [...launcherUncertain, ...nested.uncertain],
-      ...(nested.failed ? { failed: nested.failed } : {}),
+      ...(failed ? { failed } : {}),
     };
   }
+  const scan = commandWriteTargets(execution);
   return {
     executions: [execution],
-    targets: commandWriteTargets(execution),
+    targets: scan.targets,
     uncertain: launcherUncertain,
+    ...(scan.failed ? { failed: scan.failed } : {}),
   };
 }
 

@@ -576,6 +576,62 @@ export class ToolExecutor {
       }
     }
 
+    // N-EVAL-POLICY-WRITE-BOUNDARY-ENABLE2 缺口②：Bash 路的写目标边界（只在开关开着时）。
+    // 存量闸（上面）把 bash 排除在外——#1686 证据档声明「Bash 一类：本单不做」，bash 的
+    // permissionLevel 是 'execute' 也不进 'write' 闸。本单在 restrictWritesToWorkspace
+    // 开着时接上 shellWriteTargets 派生链（writeTargets.ts 的 shell descriptor：
+    // `>`/`>>`/`&>` 重定向 + cp/mv/tee 的目标位，fd 复制不算）；解析不出的写法
+    // （变量/通配目标、其它写盘命令）不在拦截面内，清单见证据档「仍不解析的 shell 形态」。
+    // 🔴 只在开关开着时执行：关着时这段一行不跑，Bash 路与改前一字不差。
+    if (
+      this.restrictWritesToWorkspace
+      && this.runContext?.workspaceScope
+      && isBashToolName(policyToolName)
+    ) {
+      // 相对写目标锚 bash 的真实执行基准（working_directory），不是会话 cwd——
+      // bindRunScopedParams 已把它约束进 scope 并规范化成绝对路径。
+      const bashWorkingDirectory = typeof params.working_directory === 'string'
+        && params.working_directory.trim()
+        ? nodePath.resolve(this.executionCwd, params.working_directory)
+        : this.executionCwd;
+      const bashTargets = resolveToolWriteTargets({
+        definition: toolDef, params, workingDirectory: bashWorkingDirectory,
+      });
+      const scope = this.runContext.workspaceScope;
+      // /dev/null 豁免：`2>/dev/null` 是压倒性的惯用法（真跑 79 题实测 26/101 次 bash
+      // 调用带它），写入位是空汇、无数据落盘，不豁免会把正常探索流打成假阴性。
+      // 只豁免这一个字符设备，/dev/ 其它不豁免。
+      const outsideTarget = bashTargets.targets
+        .find((candidate) => candidate !== '/dev/null'
+          && !resolveWorkspacePath(scope, candidate, 'read'));
+      if (outsideTarget !== undefined) {
+        return {
+          success: false,
+          error: `Bash write target is outside the writable workspace of this run: ${outsideTarget}`,
+          metadata: {
+            code: 'PROJECT_SOURCE_OUTSIDE_WORKSPACE',
+            projectId: scope.projectId,
+            workspaceScopeVersion: scope.version,
+          },
+        };
+      }
+      // N-EVAL-POLICY-WRITE-BOUNDARY-ENABLE2 缺口③：uncertain 写目标口径 = 放行 + 留痕。
+      // 真跑 79 题 268 调用实测 uncertain 命中 4 次（1.49%），12 条 entry 全部是
+      // 多行 python heredoc 体的解析伪影（正则碎片进 uncertain-redirection），其中含
+      // 成功完成修复的调用——拒会把真实修复流打成假阴性（excel-bench-59196 实测）。
+      // `$VAR` 目标型解析逃逸真跑 0 命中，兜底仍有审批面与沙箱工作目录约束。
+      // 留痕=结构化 warn（独立档，事后可从运行日志数出来），失败不留痕等于黑箱。
+      if (bashTargets.uncertain.length > 0) {
+        logger.warn('Write boundary: Bash call with uncertain write targets allowed (缺口③口径：放行+留痕)', {
+          runId: this.runContext.runId,
+          uncertain: bashTargets.uncertain,
+          command: typeof params.command === 'string'
+            ? params.command.slice(0, 200)
+            : String(params.command).slice(0, 200),
+        });
+      }
+    }
+
     annotateToolExecution({
       toolCallId: options.currentToolCallId,
       toolName: executionToolName,

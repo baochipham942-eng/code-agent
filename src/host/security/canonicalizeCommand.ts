@@ -1,4 +1,4 @@
-const ANSI_C_ESCAPES: Record<string, string> = {
+export const ANSI_C_ESCAPES: Record<string, string> = {
   a: '\x07',
   b: '\b',
   e: '\x1b',

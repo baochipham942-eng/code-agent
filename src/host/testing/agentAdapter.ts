@@ -453,8 +453,10 @@ export class StandaloneAgentAdapter implements AgentInterface {
   private readonly subagentSpawns = new Map<string, number>();
   private requestPermission?: (request: PermissionRequestData) => Promise<RequestPermissionResult>;
   /**
-   * N-EVAL-POLICY-WRITE-BOUNDARY-ENABLE：评测侧写边界开关，缺省 true（评测默认开）。
-   * 显式 false = #1686 合入前的评测链路原样：不注入 scope/runContext，Bash 边界不亮。
+   * N-EVAL-POLICY-WRITE-BOUNDARY-ENABLE：评测侧写边界开关，换姿态收口后**缺省 false**
+   * （与构造函数内 `?? false` 同口径；本字段注释原写「缺省 true」是翻转前的旧话，已改）。
+   * 缺省/显式 false = #1686 合入前的评测链路原样：不注入 scope/runContext，Bash 边界不亮。
+   * 打开的唯一入口是评测侧显式传 true（eval-ci 的 NEO_EVAL_WRITE_BOUNDARY=on）。
    */
   private readonly restrictWritesToWorkspace: boolean;
 

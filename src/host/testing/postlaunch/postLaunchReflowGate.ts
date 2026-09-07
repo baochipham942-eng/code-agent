@@ -20,7 +20,7 @@ const CONSENT_RANK: Record<PostLaunchConsentScope, number> = {
 
 export interface ReflowGateDecision {
   allowed: boolean;
-  reason?: 'not_candidate' | 'consent_required';
+  reason?: 'not_candidate' | 'consent_required' | 'consent_stale';
   consentScope: PostLaunchConsentScope;
 }
 
@@ -31,7 +31,9 @@ export function isPostLaunchConsentScope(value: unknown): value is PostLaunchCon
 /** 回流草稿要求至少「这一轮摘录」；metadata 只能留分数行，不能进草稿。 */
 export function checkPostLaunchReflowGates(
   db: BetterSqlite3.Database,
-  candidate: Pick<PostLaunchReflowCandidate, 'sessionId' | 'turnId'>,
+  candidate: Pick<PostLaunchReflowCandidate, 'sessionId' | 'turnId'> & {
+    previewConsentScope?: PostLaunchConsentScope;
+  },
 ): ReflowGateDecision {
   const consentScope = getPostLaunchConsentScope(db, candidate.sessionId);
   if (!hasReflowCandidate(db, candidate)) {
@@ -39,6 +41,12 @@ export function checkPostLaunchReflowGates(
   }
   if (CONSENT_RANK[consentScope] < CONSENT_RANK.turn_excerpt) {
     return { allowed: false, reason: 'consent_required', consentScope };
+  }
+  if (
+    candidate.previewConsentScope
+    && CONSENT_RANK[consentScope] < CONSENT_RANK[candidate.previewConsentScope]
+  ) {
+    return { allowed: false, reason: 'consent_stale', consentScope };
   }
   return { allowed: true, consentScope };
 }

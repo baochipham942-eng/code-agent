@@ -35,7 +35,7 @@ import { assertAiReviewDimensionsComplete, isAiReviewDimension } from '@host/tes
 import type { AnnotationRow } from '@host/services/core/databaseService';
 import { registerEvaluationBaselineHandlers } from './evaluationBaseline.ipc';
 import { isPostLaunchReflowEnabled } from '@host/testing/postlaunch/postLaunchGate';
-import { checkPostLaunchReflowGates } from '@host/testing/postlaunch/postLaunchReflowGate';
+import { checkPostLaunchReflowGates, isPostLaunchConsentScope } from '@host/testing/postlaunch/postLaunchReflowGate';
 import { getDatabase } from '@host/services/core/databaseService';
 import { POST_LAUNCH_REFLOW_DISABLED_MESSAGE } from '@shared/contract/postLaunchScore';
 
@@ -125,13 +125,21 @@ export function registerEvaluationHandlers(
       if (!sessionId) throw new Error('回流草稿缺少来源会话');
       const db = getDatabase().getDb();
       if (!db) throw new Error('数据库尚未就绪，无法检查回流闸');
+      const previewConsentScope = payload.postLaunchReflow.consentScope;
+      if (!isPostLaunchConsentScope(previewConsentScope)) {
+        throw new Error('回流草稿未保存：预览同意档缺失，请重新生成');
+      }
       const decision = checkPostLaunchReflowGates(db, {
         sessionId,
         turnId: payload.postLaunchReflow.turnId ?? null,
+        previewConsentScope,
       });
       if (!decision.allowed) {
         if (decision.reason === 'consent_required') {
           throw new Error(`回流草稿未保存：会话同意档为 ${decision.consentScope}，至少需要 turn_excerpt`);
+        }
+        if (decision.reason === 'consent_stale') {
+          throw new Error(`回流草稿未保存：当前同意档为 ${decision.consentScope}，低于预览所用档，请重新生成`);
         }
         throw new Error('回流草稿未保存：候选已不存在或未通过候选闸');
       }

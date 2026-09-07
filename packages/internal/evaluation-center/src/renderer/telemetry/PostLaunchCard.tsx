@@ -305,6 +305,27 @@ export const PostLaunchCard: React.FC<PostLaunchCardProps> = ({
         </div>
       )}
 
+      {onOpenHarvest && reflowCandidates.length > 0 && (
+        <div className="mt-3" data-testid="postlaunch-reflow-entry">
+          <div className="mb-1 flex flex-wrap gap-1">
+            {candidateSessionIds.map((id) => (
+              <label key={id} className="flex items-center gap-1 text-[10px] text-zinc-400">
+                <input type="checkbox" checked={selectedIds.includes(id)} onChange={(event) => {
+                  setSelectedReflowSessions((current) => {
+                    const base = current.length > 0 ? current : candidateSessionIds.slice(0, 20);
+                    return event.target.checked ? [...new Set([...base, id])].slice(0, 20) : base.filter((value) => value !== id);
+                  });
+                }} />
+                <span className="max-w-[10rem] truncate">{id}</span>
+              </label>
+            ))}
+          </div>
+          <button type="button" onClick={() => onOpenHarvest(selectedIds)} data-testid="postlaunch-reflow-open" className="rounded bg-badge-info/15 px-2 py-1 text-[10px] text-badge-info hover:bg-badge-info/25">
+            {p.reflowOpen} ({selectedIds.length}/20)
+          </button>
+        </div>
+      )}
+
       {sessionColumn && (
         <Modal
           isOpen
@@ -328,26 +349,6 @@ export const PostLaunchCard: React.FC<PostLaunchCardProps> = ({
               </button>
             ))}
           </div>
-          {onOpenHarvest && reflowCandidates.length > 0 && (
-            <div className="mt-3">
-              <div className="mb-1 flex flex-wrap gap-1">
-                {candidateSessionIds.map((id) => (
-                  <label key={id} className="flex items-center gap-1 text-[10px] text-zinc-400">
-                    <input type="checkbox" checked={selectedIds.includes(id)} onChange={(event) => {
-                      setSelectedReflowSessions((current) => {
-                        const base = current.length > 0 ? current : candidateSessionIds.slice(0, 20);
-                        return event.target.checked ? [...new Set([...base, id])].slice(0, 20) : base.filter((value) => value !== id);
-                      });
-                    }} />
-                    <span className="max-w-[10rem] truncate">{id}</span>
-                  </label>
-                ))}
-              </div>
-              <button type="button" onClick={() => onOpenHarvest(selectedIds)} data-testid="postlaunch-reflow-open" className="rounded bg-badge-info/15 px-2 py-1 text-[10px] text-badge-info hover:bg-badge-info/25">
-                {p.reflowOpen} ({selectedIds.length}/20)
-              </button>
-            </div>
-          )}
           <p className="mt-3 text-[10px] text-zinc-500">{p.sessionsNote}</p>
         </Modal>
       )}

@@ -427,7 +427,7 @@ describe('上线后质量卡 · 透视与环比', () => {
         onOpenHarvest={onOpenHarvest}
       />,
     );
-    fireEvent.click(screen.getByTestId('postlaunch-sessions-0'));
+    expect(screen.getByTestId('postlaunch-reflow-entry')).toBeTruthy();
     const open = screen.getByTestId('postlaunch-reflow-open') as HTMLButtonElement;
     expect(open.disabled).toBe(false);
     fireEvent.click(open);
@@ -436,5 +436,39 @@ describe('上线后质量卡 · 透视与环比', () => {
     expect(sessionIds.length).toBeLessThanOrEqual(20);
     expect(sessionIds).toHaveLength(20);
     expect(sessionIds.every((id) => /^sess-\d{3}$/.test(id))).toBe(true);
+  });
+
+  it('无评分报告但有点踩候选时，卡面回流入口可见可用，传出 sessionIds ≤20', () => {
+    const onOpenHarvest = vi.fn();
+    const reflowCandidates = Array.from({ length: 25 }, (_, index) => ({
+      sessionId: `down-${String(index).padStart(2, '0')}`,
+      turnId: `aaaaaaaa-bbbb-4ccc-8ddd-${String(index).padStart(12, '0')}`,
+      judgeVersion: null,
+      redDimensions: [] as Array<'goal'>,
+      signals: [],
+      failureClass: null,
+      sources: ['feedback'] as Array<'feedback'>,
+    }));
+    render(
+      <PostLaunchCard
+        report={null}
+        running={false}
+        error={null}
+        days={7}
+        onRun={noop}
+        onOpenSession={noop}
+        reflowCandidates={reflowCandidates}
+        onOpenHarvest={onOpenHarvest}
+      />,
+    );
+    expect(screen.getByTestId('postlaunch-empty')).toBeTruthy();
+    expect(screen.queryByTestId('postlaunch-sessions-0')).toBeNull();
+    expect(screen.getByTestId('postlaunch-reflow-entry')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('postlaunch-reflow-open'));
+    expect(onOpenHarvest).toHaveBeenCalledTimes(1);
+    const sessionIds = onOpenHarvest.mock.calls[0]?.[0] as string[];
+    expect(sessionIds.length).toBeLessThanOrEqual(20);
+    expect(sessionIds).toHaveLength(20);
+    expect(sessionIds.every((id) => /^down-\d{2}$/.test(id))).toBe(true);
   });
 });

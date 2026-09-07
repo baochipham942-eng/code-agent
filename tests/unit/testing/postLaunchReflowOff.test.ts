@@ -16,7 +16,7 @@ import { TELEMETRY_CHANNELS } from '../../../src/shared/ipc/channels';
 import { EVALUATION_CHANNELS } from '@internal-evaluation/shared/evaluationChannels';
 import { applySchema } from '../../../src/host/services/core/database/schema';
 import { applyTelemetrySchema } from '../../../src/host/services/core/database/schemaTelemetry';
-import { insertTurnScore } from '../../../src/host/testing/postlaunch/postLaunchScoreStore';
+import { insertTurnScore, setPostLaunchConsentScope } from '../../../src/host/testing/postlaunch/postLaunchScoreStore';
 import type { IpcMain } from '../../../src/host/platform';
 
 const INTERNAL_SLOT_DIR = path.join('/tmp', CONFIG_DIR_DEV);
@@ -229,6 +229,73 @@ describe('回流开关三态本身', () => {
       sourceSessionId: 'live-session',
       postLaunchReflow: { turnId: 'live-turn', sources: ['judge'] },
     })).rejects.toThrow(POST_LAUNCH_REFLOW_DISABLED_MESSAGE);
+    expect(env.saveCase).not.toHaveBeenCalled();
+  });
+});
+
+describe('回流 SAVE_CASE 绑定预览同意档', () => {
+  async function saveCase(payload: Record<string, unknown>) {
+    const { registerEvaluationHandlers } = await import('@internal-evaluation/host/ipc/evaluation.ipc');
+    const handlers = new Map<string, (...args: unknown[]) => unknown>();
+    const ipcMain = {
+      handle: vi.fn((channel: string, handler: (...args: unknown[]) => unknown) => handlers.set(channel, handler)),
+    };
+    registerEvaluationHandlers(ipcMain as unknown as IpcMain);
+    return handlers.get(EVALUATION_CHANNELS.SAVE_CASE)!(null, payload);
+  }
+
+  const reflowPayload = {
+    ...SAVE_PAYLOAD,
+    sourceSessionId: 'live-session',
+    postLaunchReflow: { turnId: 'live-turn', sources: ['judge'] as Array<'judge'>, consentScope: 'full_session' as const },
+  };
+
+  beforeEach(() => {
+    env.getSettings.mockReset();
+    env.getUserDataPath.mockReset();
+    env.getDb.mockReset();
+    env.saveCase.mockClear();
+    env.getSettings.mockReturnValue({ privacy: { postLaunchReflow: 'on' } });
+    env.getUserDataPath.mockReturnValue(INTERNAL_SLOT_DIR);
+    env.getDb.mockReturnValue(makeDb());
+  });
+
+  it('full_session 预览后降到 turn_excerpt/metadata 时拒存，档不变或升高时放行', async () => {
+    const db = env.getDb() as Database.Database;
+    setPostLaunchConsentScope(db, 'live-session', 'full_session', 20);
+    await expect(saveCase(reflowPayload)).resolves.toMatchObject({ action: 'create-draft', id: 'draft-1' });
+    expect(env.saveCase).toHaveBeenCalledTimes(1);
+
+    env.saveCase.mockClear();
+    setPostLaunchConsentScope(db, 'live-session', 'turn_excerpt', 21);
+    await expect(saveCase(reflowPayload)).rejects.toThrow(/低于预览所用档，请重新生成/);
+    expect(env.saveCase).not.toHaveBeenCalled();
+
+    setPostLaunchConsentScope(db, 'live-session', 'metadata', 22);
+    await expect(saveCase(reflowPayload)).rejects.toThrow(/至少需要 turn_excerpt/);
+    expect(env.saveCase).not.toHaveBeenCalled();
+
+    setPostLaunchConsentScope(db, 'live-session', 'turn_excerpt', 23);
+    await expect(saveCase({
+      ...reflowPayload,
+      postLaunchReflow: { ...reflowPayload.postLaunchReflow, consentScope: 'turn_excerpt' },
+    })).resolves.toMatchObject({ action: 'create-draft', id: 'draft-1' });
+
+    env.saveCase.mockClear();
+    setPostLaunchConsentScope(db, 'live-session', 'full_session', 24);
+    await expect(saveCase({
+      ...reflowPayload,
+      postLaunchReflow: { ...reflowPayload.postLaunchReflow, consentScope: 'turn_excerpt' },
+    })).resolves.toMatchObject({ action: 'create-draft', id: 'draft-1' });
+  });
+
+  it('旧预览没带同意档时拒存并要求重新生成', async () => {
+    const db = env.getDb() as Database.Database;
+    setPostLaunchConsentScope(db, 'live-session', 'full_session', 20);
+    await expect(saveCase({
+      ...reflowPayload,
+      postLaunchReflow: { turnId: 'live-turn', sources: ['judge'] },
+    })).rejects.toThrow(/预览同意档缺失，请重新生成/);
     expect(env.saveCase).not.toHaveBeenCalled();
   });
 });

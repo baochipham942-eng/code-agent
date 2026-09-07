@@ -260,11 +260,20 @@ const KNOWN_SHAPES = [
   // Round 31: a `\<CR><LF>` is an escaped word byte plus a real separator to bash — the cp must
   // stay a live second command, not splice into the echo.
   'echo ok\\\r\ncp source.txt target.txt',
+  // Round 32: a backgrounded/piped/`||` cd never moves the parent shell's cwd, so the
+  // credential read stays on the home-cwd resolution. The advancing separators stay approve
+  // (path under /tmp), pinning that the fix did not over-tighten.
+  'cd /tmp & cat .ssh/id_rsa',
+  'cd /tmp | cat .ssh/id_rsa',
+  'cd /tmp; cat .ssh/id_rsa',
+  'cd /tmp && cat .ssh/id_rsa',
+  '(cd /tmp) ; cat .ssh/id_rsa',
 ];
 
 // Under /tmp the critical-path rm rule fires before anything else and masks weaker rules; a real
-// workspace cwd is where round 16's deny→ask actually showed. Compare known shapes in both.
-const KNOWN_SHAPE_CWDS = ['/tmp', process.cwd()];
+// workspace cwd is where round 16's deny→ask actually showed, and the home cwd is where round 32's
+// backgrounded/pipe cd shapes resolve `.ssh/id_rsa` against ~ — cwd is part of the criterion.
+const KNOWN_SHAPE_CWDS = ['/tmp', process.cwd(), os.homedir()];
 
 describe('final decision is never looser than the detached origin/main baseline', () => {
   const knownBaseline = new Map<string, 'approve' | 'deny' | 'ask'>();

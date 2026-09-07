@@ -367,4 +367,24 @@ describe('shared shell command parser', () => {
       .toEqual([['out.txt'], [], ['log.txt']]);
     expect(parsed.writeTargets.map((target) => target.path)).toEqual(['out.txt', 'log.txt']);
   });
+
+  // 第 32 轮：后台/管道/`||` 段的 cd 不传播 cwd。真 bash（3.2.57）用家目录/`/tmp` 两份探针文件
+  // 核过：`cd /tmp & cat f`、`cd /tmp | cat f`、`cd /nonexistent || cat f`、`cd /tmp &<LF>cat f` 读的
+  // 都是家目录的 f；`|&` 本机 bash 3.2 不支持，用 zsh 交叉核对（bash4+ 同义 `2>&1 |`，管道两成员
+  // 都在子 shell 里）同样读家目录。只有 `;`、`&&`、换行之后才读 /tmp 的 f。
+  it('terminator 逐段记录段后分隔符，末段为 null（真 bash 核对）', () => {
+    expect(parseShellCommand('cd /tmp; cat x').segments.map((s) => s.terminator)).toEqual([';', null]);
+    expect(parseShellCommand('cd /tmp && cat x').segments.map((s) => s.terminator)).toEqual(['&&', null]);
+    expect(parseShellCommand('cd /tmp\ncat x').segments.map((s) => s.terminator)).toEqual(['\n', null]);
+    expect(parseShellCommand('cd /tmp & cat x').segments.map((s) => s.terminator)).toEqual(['&', null]);
+    expect(parseShellCommand('cd /tmp | cat x').segments.map((s) => s.terminator)).toEqual(['|', null]);
+    expect(parseShellCommand('cd /tmp |& cat x').segments.map((s) => s.terminator)).toEqual(['|&', null]);
+    expect(parseShellCommand('cd /nonexistent || cat x').segments.map((s) => s.terminator)).toEqual(['||', null]);
+    // 后台 `&` 已把段封掉，其后的换行只是空段分隔，不覆盖 terminator。
+    expect(parseShellCommand('cd /tmp &\ncat x').segments.map((s) => s.terminator)).toEqual(['&', null]);
+    // 混排链上每段记自己紧跟的分隔符。
+    expect(parseShellCommand('a; b & c | d && e || f |& g').segments.map((s) => s.terminator))
+      .toEqual([';', '&', '|', '&&', '||', '|&', null]);
+    expect(parseShellCommand('cd x').segments.map((s) => s.terminator)).toEqual([null]);
+  });
 });

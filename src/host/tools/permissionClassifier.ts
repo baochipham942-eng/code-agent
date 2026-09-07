@@ -26,7 +26,7 @@ import {
   splitCompoundCommand,
 } from '../security/commandSafety';
 import { canonicalizeCommand } from '../security/canonicalizeCommand';
-import { lenientCommandWords, parseShellCommand } from '../security/commandParse';
+import { lenientCommandWords, parseShellCommand, type SegmentTerminator } from '../security/commandParse';
 import { RM_FLAGS_REQUIRED, RM_HEAD } from '../security/rmFlagPattern';
 import { checkCommandPolicy } from './modules/shell/commandPolicy';
 import { inspectPermissionCommand, neverApprove } from './permissionCommandParse';
@@ -371,8 +371,7 @@ function credentialReadTarget(command: string, context: ClassificationContext): 
 function recursivelyRemovesPath(command: string): boolean {
   const words = commandWords(command);
   const rmIndex = words.findIndex((word) => commandProgram(word) === 'rm');
-  return rmIndex >= 0 && words.slice(rmIndex + 1)
-    .some((arg) => arg === '--recursive' || /^-[A-Za-z]*[rR]/.test(arg));
+  return rmIndex >= 0 && words.slice(rmIndex + 1).some((arg) => arg === '--recursive' || /^-[A-Za-z]*[rR]/.test(arg));
 }
 
 function isNpmPublishDryRun(command: string): boolean {
@@ -398,8 +397,7 @@ function ddCopiesWorkspaceFile(command: string, context: ClassificationContext):
 function hasPositiveAllowCandidate(command: string): boolean {
   const words = commandWords(command);
   const npmIndex = words.findIndex((word) => commandProgram(word) === 'npm');
-  if (npmIndex >= 0 && words[npmIndex + 1] === 'publish'
-    && words.slice(npmIndex + 2).includes('--dry-run')) return true;
+  if (npmIndex >= 0 && words[npmIndex + 1] === 'publish' && words.slice(npmIndex + 2).includes('--dry-run')) return true;
 
   const ddIndex = words.findIndex((word) => commandProgram(word) === 'dd');
   return ddIndex >= 0
@@ -419,14 +417,18 @@ function readPathCandidates(toolName: string, args: Record<string, unknown>): st
 function contextAfterCdSegment(
   segment: string,
   context: ClassificationContext,
+  terminator: SegmentTerminator = null,
 ): ClassificationContext | null {
   const words = commandWords(segment);
   if (commandProgram(words[0]) !== 'cd') return null;
+  // `&`/pipeline members run in subshells and the `||` successor only runs after a failed cd:
+  // in all three shapes the parent shell's cwd never moved, so later segments keep the
+  // original cwd. Only `;`, `&&` and a newline let the cd's directory carry forward.
+  if (terminator !== null && ![';', '&&', '\n'].includes(terminator)) return null;
 
   const args = words.slice(1);
   const separator = args.indexOf('--');
-  const candidates = (separator >= 0 ? args.slice(separator + 1) : args)
-    .filter((arg) => !arg.startsWith('-'));
+  const candidates = (separator >= 0 ? args.slice(separator + 1) : args).filter((arg) => !arg.startsWith('-'));
   const target = candidates[0] ?? '~';
   // `cd -` depends on shell history, so its successor cwd cannot be reconstructed here.
   if (target === '-') return context;
@@ -449,13 +451,15 @@ export function bashCommandRequiresPermission(
     // Segmentation needs the original quotes: code arguments may contain shell operators.
     const segments = splitCompoundCommand(command);
     if (!segments) return true;
+    // splitCompoundCommand rebuilds these one-for-one from the same parse's segments.
+    const terminators = parseShellCommand(command).segments.map((segment) => segment.terminator);
     let segmentContext: ClassificationContext = {
       ...context,
       permissionLevel: 'execute',
       pathResolutionCache: new Map(),
     };
-    return segments.some((segment) => {
-      const advancedContext = contextAfterCdSegment(segment, segmentContext);
+    return segments.some((segment, index) => {
+      const advancedContext = contextAfterCdSegment(segment, segmentContext, terminators[index]);
       if (advancedContext) {
         segmentContext = advancedContext;
         return false;
@@ -849,11 +853,13 @@ export class PermissionClassifier {
 
     // 沿用 #1609 的逐段风险分类，同时把 cd 的 cwd 影响传给后续段的路径解析。
     // 不改变 cd 自身或未知段的判决，只修正后续 rm/凭据相对路径的解析基准。
+    // splitCompoundCommand rebuilds these one-for-one from the same parse's segments.
+    const terminators = parseShellCommand(rawTrimmed).segments.map((segment) => segment.terminator);
     let strictest: ClassificationResult | null = rawInspection.outputRedirectionAsk ?? null;
     let segmentContext = context;
     let executableSegmentCount = 0;
-    for (const segment of segments) {
-      const advancedContext = contextAfterCdSegment(segment, segmentContext);
+    for (const [index, segment] of segments.entries()) {
+      const advancedContext = contextAfterCdSegment(segment, segmentContext, terminators[index]);
       if (advancedContext) {
         segmentContext = advancedContext;
         continue;

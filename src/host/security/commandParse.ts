@@ -15,12 +15,20 @@ const PRIVILEGE_WRAPPERS = new Set(['sudo', 'doas']);
 const SIMPLE_WRAPPERS = new Set(['command', 'exec', 'nohup', 'setsid']);
 const MAX_WRAPPER_DEPTH = 4;
 
+/**
+ * Separator immediately after a segment. Only `;`, `&&` and a newline let a preceding `cd`
+ * move the parent shell's cwd: `&` and pipeline members (`|`, `|&`) run in subshells, and the
+ * `||` successor only runs after a failed (cwd-preserving) cd. `null` = last segment.
+ */
+export type SegmentTerminator = ';' | '&&' | '||' | '\n' | '&' | '|' | '|&' | null;
+
 interface ParsedShellSegment {
   words: string[];
   /** Output redirections attached to this segment. Also collected into `writeTargets`. */
   redirects: ShellWriteTarget[];
   /** Files read through `<`. Not writes, but path candidates for the credential scan. */
   reads: Array<{ path: string; uncertain: boolean }>;
+  terminator: SegmentTerminator;
 }
 
 interface ShellWriteTarget {
@@ -545,8 +553,8 @@ function parseEntries(command: string): {
   let failed = canonical.parsingFailed;
   let failureReason = canonical.failureReason;
 
-  const flush = (): void => {
-    if (words.length > 0) segments.push({ words, redirects: segmentRedirects, reads: segmentReads });
+  const flush = (terminator: SegmentTerminator): void => {
+    if (words.length > 0) segments.push({ words, redirects: segmentRedirects, reads: segmentReads, terminator });
     words = [];
     segmentRedirects = [];
     segmentReads = [];
@@ -590,7 +598,7 @@ function parseEntries(command: string): {
       continue;
     }
     if (isOperator(entry) && COMMAND_SEPARATORS.has(entry.op)) {
-      flush();
+      flush(entry.op as SegmentTerminator);
       trailingOperator = entry.op !== '\n' && index === entries.length - 1;
       continue;
     }
@@ -602,7 +610,7 @@ function parseEntries(command: string): {
     const word = entryWord(entry);
     if (word) words.push(word.word);
   }
-  flush();
+  flush(null);
   return { segments, redirects, failed, failureReason, trailingOperator };
 }
 

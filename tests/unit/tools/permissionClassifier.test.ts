@@ -299,6 +299,51 @@ describe('PermissionClassifier', () => {
       expect(result.decision).toBe('ask');
       expect(result.traceStep?.rule).toBe('B3: package_manager');
     });
+
+    // 第 32 轮审查：`&`/管道成员跑在子 shell、`||` 后继只在 cd 失败后跑，父 shell 的 cwd 都没动，
+    // 后续段按原 cwd 解析。真 bash（3.2.57）探针核对；`|&` 用 zsh 交叉核对（本机 bash 3.2 不支持，
+    // bash4+ 同义 `2>&1 |`）。这族只在家目录 cwd 下显形——cwd 是判据的一部分。
+    const homeContext = {
+      workingDirectory: os.homedir(),
+      workspaceRoot: '/tmp/comate-zulu-demo',
+      permissionLevel: 'execute' as const,
+    };
+
+    it('asks for a credential read after a backgrounded cd', async () => {
+      const result = await classifyPermission('bash', { command: 'cd /tmp & cat .ssh/id_rsa' }, homeContext);
+
+      expect(result.decision).toBe('ask');
+      expect(result.reason).toContain('凭据路径');
+      expect(result.reason).toContain(path.join(os.homedir(), '.ssh/id_rsa'));
+    });
+
+    it.each([
+      'cd /tmp | cat .ssh/id_rsa',
+      'cd /tmp |& cat .ssh/id_rsa',
+      'cd /nonexistent || cat .ssh/id_rsa',
+      'cd /tmp &\ncat .ssh/id_rsa',
+    ])('keeps the original cwd after a non-advancing separator: %s', async (command) => {
+      const result = await classifyPermission('bash', { command }, homeContext);
+
+      expect(result.decision).toBe('ask');
+      expect(result.reason).toContain('凭据路径');
+    });
+
+    it.each([
+      'cd /tmp; cat .ssh/id_rsa',
+      'cd /tmp && cat .ssh/id_rsa',
+    ])('keeps moving the cwd after an advancing separator: %s', async (command) => {
+      const result = await classifyPermission('bash', { command }, homeContext);
+
+      expect(result.decision).toBe('approve');
+    });
+
+    it('asks for a credential read after a parenthesized cd', async () => {
+      const result = await classifyPermission('bash', { command: '(cd /tmp) ; cat .ssh/id_rsa' }, homeContext);
+
+      expect(result.decision).toBe('ask');
+      expect(result.reason).toContain('凭据路径');
+    });
   });
 
   it.each(["./bash -c 'cd .'", "bash --rcfile ./startup.sh -ic 'ls'"]) (

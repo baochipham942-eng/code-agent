@@ -151,37 +151,37 @@ describe('sessionRecapService 素材收集', () => {
 describe('sessionRecapService 模型输出过滤', () => {
   it('假模型回反问时 recap 为 null（不像总结不上屏）', async () => {
     quickModel.isQuickModelAvailable.mockReturnValue(true);
-    quickModel.quickTask.mockResolvedValue({
-      success: true,
+    quickModel.quickTask.mockImplementation(async () => ({
+      success: true as const,
       content: '您好，消息里似乎没有附上需要总结的产出变化内容，请补充。',
-    });
+    }));
     const material = collectRecapMaterial([record()], [task()], 500);
     expect(await buildSessionRecap(material!)).toBeNull();
   });
 
   it('假模型请求补充时 recap 为 null', async () => {
     quickModel.isQuickModelAvailable.mockReturnValue(true);
-    quickModel.quickTask.mockResolvedValue({
-      success: true,
+    quickModel.quickTask.mockImplementation(async () => ({
+      success: true as const,
       content: '请提供需要总结的产出变化内容。',
-    });
+    }));
     const material = collectRecapMaterial([record()], [task()], 500);
     expect(await buildSessionRecap(material!)).toBeNull();
   });
 
   it('假模型回空串时 recap 为 null', async () => {
     quickModel.isQuickModelAvailable.mockReturnValue(true);
-    quickModel.quickTask.mockResolvedValue({ success: true, content: '  ' });
+    quickModel.quickTask.mockImplementation(async () => ({ success: true as const, content: '  ' }));
     const material = collectRecapMaterial([record()], [task()], 500);
     expect(await buildSessionRecap(material!)).toBeNull();
   });
 
   it('假模型回正常一句总结时有 text', async () => {
     quickModel.isQuickModelAvailable.mockReturnValue(true);
-    quickModel.quickTask.mockResolvedValue({
-      success: true,
+    quickModel.quickTask.mockImplementation(async () => ({
+      success: true as const,
       content: '更新了销售图表，并完成扩写第三节',
-    });
+    }));
     const material = collectRecapMaterial([record()], [task()], 500);
     const recap = await buildSessionRecap(material!);
     expect(recap).not.toBeNull();

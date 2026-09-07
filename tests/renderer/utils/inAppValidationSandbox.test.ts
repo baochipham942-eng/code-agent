@@ -35,5 +35,9 @@ describe('inAppValidationSandbox', () => {
     const wrapped = wrapInAppValidationHtml('<!doctype html><html><head></head><body>hi</body></html>');
     expect(wrapped).toContain('data-neo-in-app-driver');
     expect(wrapped).toContain('neo-in-app-step');
+    expect(wrapped).toContain('function isVisible');
+    expect(wrapped).toContain('nonblankCanvasCount');
+    expect(wrapped).toContain('KeyboardEvent(\'keyup\'');
+    expect(wrapped).toContain('waitFor');
   });
 });

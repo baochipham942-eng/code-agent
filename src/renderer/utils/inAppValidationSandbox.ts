@@ -15,7 +15,42 @@ const DRIVER_SCRIPT = `<script ${IN_APP_VALIDATION_DRIVER_FLAG}="1">
 (function () {
   if (window.__neoInAppDriver) return;
   window.__neoInAppDriver = true;
+  var SETTLE_MS = 200;
+  var POLL_MS = 80;
+  var DEFAULT_EXPECT_MS = 5000;
   function delay(ms) { return new Promise(function (resolve) { setTimeout(resolve, ms); }); }
+  function mouse(target, type, x, y) {
+    target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y, button: 0 }));
+  }
+  function isVisible(el) {
+    if (!(el instanceof HTMLElement)) return true;
+    if (el.offsetParent === null && getComputedStyle(el).position !== 'fixed') return false;
+    var rect = el.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return false;
+    var style = getComputedStyle(el);
+    if (style.visibility === 'hidden' || style.display === 'none' || style.opacity === '0') return false;
+    return true;
+  }
+  async function waitFor(predicate, timeoutMs) {
+    var deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      if (predicate()) return true;
+      await delay(POLL_MS);
+    }
+    return predicate();
+  }
+  function nonblankCanvasCount() {
+    var count = 0;
+    document.querySelectorAll('canvas').forEach(function (canvas) {
+      try {
+        var context = canvas.getContext('2d', { willReadFrequently: true });
+        if (!context || canvas.width <= 0 || canvas.height <= 0) return;
+        var pixel = context.getImageData(Math.floor(canvas.width / 2), Math.floor(canvas.height / 2), 1, 1).data;
+        if (pixel[3] > 8 && pixel[0] + pixel[1] + pixel[2] > 28) count += 1;
+      } catch (e) {}
+    });
+    return count;
+  }
   window.addEventListener('message', function (ev) {
     var msg = ev.data;
     if (!msg || msg.type !== 'neo-in-app-step') return;
@@ -25,47 +60,101 @@ const DRIVER_SCRIPT = `<script ${IN_APP_VALIDATION_DRIVER_FLAG}="1">
     var checks = [];
     var startedAt = Date.now();
     Promise.resolve().then(async function () {
-      if (action.type === 'click-selector') {
+      if (action.type === 'click') {
+        var clickTarget = document.elementFromPoint(action.x, action.y);
+        if (!clickTarget) failures.push('no element at (' + action.x + ', ' + action.y + ')');
+        else {
+          mouse(clickTarget, 'mousedown', action.x, action.y);
+          mouse(clickTarget, 'mouseup', action.x, action.y);
+          mouse(clickTarget, 'click', action.x, action.y);
+          checks.push('clicked at (' + action.x + ', ' + action.y + ')');
+        }
+      } else if (action.type === 'click-selector') {
         var el = document.querySelector(action.selector);
         if (!el) failures.push('selector not found: ' + action.selector);
-        else { el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window })); checks.push('clicked ' + action.selector); }
-      } else if (action.type === 'type') {
-        var active = document.activeElement;
-        if (active && 'value' in active) {
-          active.value = (active.value || '') + (action.text || '');
-          active.dispatchEvent(new Event('input', { bubbles: true }));
-          checks.push('typed');
-        } else failures.push('no active element');
-      } else if (action.type === 'wait') {
-        await delay(action.ms || 0);
-        checks.push('waited');
-      } else if (action.type === 'click') {
-        var target = document.elementFromPoint(action.x, action.y);
-        if (!target) failures.push('no element at point');
-        else { target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window, clientX: action.x, clientY: action.y })); checks.push('clicked point'); }
-      } else if (action.type === 'press') {
-        var keyTarget = document.activeElement || document.body;
-        keyTarget.dispatchEvent(new KeyboardEvent('keydown', { key: action.key, bubbles: true }));
-        checks.push('pressed');
+        else {
+          var rect = el.getBoundingClientRect();
+          var cx = rect.left + rect.width / 2;
+          var cy = rect.top + rect.height / 2;
+          mouse(el, 'mousedown', cx, cy);
+          mouse(el, 'mouseup', cx, cy);
+          mouse(el, 'click', cx, cy);
+          checks.push('clicked selector ' + action.selector);
+        }
       } else if (action.type === 'hover') {
         var hoverEl = document.elementFromPoint(action.x, action.y);
-        if (!hoverEl) failures.push('no element to hover');
-        else { hoverEl.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, view: window, clientX: action.x, clientY: action.y })); checks.push('hovered'); }
+        if (!hoverEl) failures.push('no element at (' + action.x + ', ' + action.y + ') to hover');
+        else {
+          mouse(hoverEl, 'mouseover', action.x, action.y);
+          mouse(hoverEl, 'mouseenter', action.x, action.y);
+          mouse(hoverEl, 'mousemove', action.x, action.y);
+          checks.push('hovered at (' + action.x + ', ' + action.y + ')');
+        }
+      } else if (action.type === 'type') {
+        var active = document.activeElement;
+        if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) {
+          var proto = active instanceof HTMLInputElement ? HTMLInputElement.prototype : HTMLTextAreaElement.prototype;
+          var setter = Object.getOwnPropertyDescriptor(proto, 'value') && Object.getOwnPropertyDescriptor(proto, 'value').set;
+          if (setter) setter.call(active, active.value + (action.text || ''));
+          else active.value = active.value + (action.text || '');
+          active.dispatchEvent(new Event('input', { bubbles: true }));
+          active.dispatchEvent(new Event('change', { bubbles: true }));
+          checks.push('typed ' + String(action.text || '').length + ' char(s)');
+        } else failures.push('no active element to receive text');
+      } else if (action.type === 'press') {
+        var keyTarget = document.activeElement || document.body;
+        var keyInit = { key: action.key, bubbles: true, cancelable: true };
+        keyTarget.dispatchEvent(new KeyboardEvent('keydown', keyInit));
+        keyTarget.dispatchEvent(new KeyboardEvent('keypress', keyInit));
+        keyTarget.dispatchEvent(new KeyboardEvent('keyup', keyInit));
+        checks.push('pressed ' + action.key);
+      } else if (action.type === 'wait') {
+        await delay(action.ms || 0);
+        checks.push('waited ' + (action.ms || 0) + 'ms');
       }
-      await delay(200);
-      var exp = step.expect || {};
-      var text = (document.body && document.body.innerText) || '';
-      if (exp.textVisible && text.toLowerCase().indexOf(String(exp.textVisible).toLowerCase()) < 0) {
-        failures.push('text not visible: ' + exp.textVisible);
+      await delay(SETTLE_MS);
+      var exp = step.expect;
+      if (!exp) return;
+      var expectTimeout = exp.timeoutMs || DEFAULT_EXPECT_MS;
+      if (exp.textVisible) {
+        var needle = exp.textVisible;
+        var ok = await waitFor(function () {
+          return ((document.body && document.body.innerText) || '').toLowerCase().indexOf(String(needle).toLowerCase()) >= 0;
+        }, expectTimeout);
+        if (ok) checks.push('text visible: ' + needle);
+        else failures.push('expected text "' + needle + '" not visible within ' + expectTimeout + 'ms');
       }
-      if (exp.textHidden && text.toLowerCase().indexOf(String(exp.textHidden).toLowerCase()) >= 0) {
-        failures.push('text not hidden: ' + exp.textHidden);
+      if (exp.textHidden) {
+        var hiddenNeedle = exp.textHidden;
+        var hiddenOk = await waitFor(function () {
+          return ((document.body && document.body.innerText) || '').toLowerCase().indexOf(String(hiddenNeedle).toLowerCase()) < 0;
+        }, expectTimeout);
+        if (hiddenOk) checks.push('text hidden: ' + hiddenNeedle);
+        else failures.push('expected text "' + hiddenNeedle + '" not hidden within ' + expectTimeout + 'ms');
       }
-      if (exp.selectorVisible && !document.querySelector(exp.selectorVisible)) {
-        failures.push('selector not visible: ' + exp.selectorVisible);
+      if (exp.selectorVisible) {
+        var visSel = exp.selectorVisible;
+        var visOk = await waitFor(function () {
+          var node = document.querySelector(visSel);
+          return node ? isVisible(node) : false;
+        }, expectTimeout);
+        if (visOk) checks.push('selector visible: ' + visSel);
+        else failures.push('expected selector "' + visSel + '" not visible within ' + expectTimeout + 'ms');
       }
-      if (exp.selectorHidden && document.querySelector(exp.selectorHidden)) {
-        failures.push('selector not hidden: ' + exp.selectorHidden);
+      if (exp.selectorHidden) {
+        var hidSel = exp.selectorHidden;
+        var hidOk = await waitFor(function () {
+          var node = document.querySelector(hidSel);
+          return !node || !isVisible(node);
+        }, expectTimeout);
+        if (hidOk) checks.push('selector hidden: ' + hidSel);
+        else failures.push('expected selector "' + hidSel + '" not hidden within ' + expectTimeout + 'ms');
+      }
+      if (exp.nonblankCanvasMin && exp.nonblankCanvasMin > 0) {
+        var min = exp.nonblankCanvasMin;
+        var count = nonblankCanvasCount();
+        if (count >= min) checks.push('nonblank canvas ' + count + ' ≥ ' + min);
+        else failures.push('nonblank canvas count ' + count + ' < required ' + min);
       }
     }).catch(function (err) {
       failures.push(String(err && err.message ? err.message : err));

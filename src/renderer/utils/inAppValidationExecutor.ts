@@ -15,7 +15,13 @@ type IframeWindow = Window & typeof globalThis;
 
 const DRIVER_STEP_TYPE = 'neo-in-app-step';
 const DRIVER_RESULT_TYPE = 'neo-in-app-result';
-const DRIVER_TIMEOUT_MS = 8000;
+const DRIVER_SLACK_MS = 1000;
+
+export function inAppValidationDriverBudgetMs(step: BrowserInteractionStep): number {
+  const waitMs = step.action.type === 'wait' ? step.action.ms : 0;
+  const expectTimeout = step.expect?.timeoutMs ?? DEFAULT_EXPECT_TIMEOUT_MS;
+  return waitMs + POST_ACTION_SETTLE_MS + expectTimeout + DRIVER_SLACK_MS;
+}
 
 function runStepViaDriver(
   iframe: HTMLIFrameElement,
@@ -48,7 +54,7 @@ function runStepViaDriver(
         failures: [`${labelPrefix} unique-origin driver timed out`],
         checks: [],
       });
-    }, DRIVER_TIMEOUT_MS);
+    }, inAppValidationDriverBudgetMs(step));
     function onMessage(event: MessageEvent) {
       const data = event.data as { type?: string; id?: string; result?: BrowserInteractionStepResult } | null;
       if (data?.type !== DRIVER_RESULT_TYPE || data.id !== id || !data.result) return;
@@ -305,6 +311,9 @@ export async function runInAppInteractions(
   for (const step of steps) {
     const result = await runInAppInteractionStep(iframe, step);
     results.push(result);
+    if (result.failures.some((failure) => failure.includes('unique-origin driver timed out'))) {
+      break;
+    }
   }
   return results;
 }

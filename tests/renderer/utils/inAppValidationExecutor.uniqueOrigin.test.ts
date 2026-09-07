@@ -1,6 +1,9 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
-import { runInAppInteractionStep } from '../../../src/renderer/utils/inAppValidationExecutor';
+import {
+  inAppValidationDriverBudgetMs,
+  runInAppInteractionStep,
+} from '../../../src/renderer/utils/inAppValidationExecutor';
 
 describe('inAppValidationExecutor unique-origin driver', () => {
   it('contentDocument 缺失时走 postMessage 驱动，不把跨源当成硬失败', async () => {
@@ -33,5 +36,15 @@ describe('inAppValidationExecutor unique-origin driver', () => {
     });
     expect(result.passed).toBe(true);
     expect(result.checks).toContain('clicked #toggle');
+  });
+
+  it('驱动超时覆盖 wait.ms 与 expect.timeoutMs，不会把 10s wait 截在 8s', () => {
+    expect(inAppValidationDriverBudgetMs({
+      action: { type: 'wait', ms: 10_000 },
+    })).toBeGreaterThan(10_000);
+    expect(inAppValidationDriverBudgetMs({
+      action: { type: 'click-selector', selector: '#a' },
+      expect: { textVisible: 'ok', timeoutMs: 1500 },
+    })).toBeGreaterThan(1500);
   });
 });

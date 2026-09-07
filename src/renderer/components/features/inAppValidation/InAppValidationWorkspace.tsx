@@ -19,6 +19,10 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Play, RotateCw, AlertTriangle, CheckCircle2, Radio } from 'lucide-react';
 import { runInAppInteractions } from '../../../utils/inAppValidationExecutor';
+import {
+  IN_APP_VALIDATION_SANDBOX,
+  wrapInAppValidationHtml,
+} from '../../../utils/inAppValidationSandbox';
 import { ipcService } from '../../../services/ipcService';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { useAppStore } from '../../../stores/appStore';
@@ -150,7 +154,7 @@ export function InAppValidationWorkspace(): React.ReactElement {
     setDirty(false);
     if (iframeRef.current) {
       setIframeReady(false);
-      iframeRef.current.srcdoc = DEMO_HTML;
+      iframeRef.current.srcdoc = wrapInAppValidationHtml(DEMO_HTML);
     }
   }, [setResultsWithKeys]);
 
@@ -322,10 +326,11 @@ export function InAppValidationWorkspace(): React.ReactElement {
             key={pendingRequest?.requestId || `manual-${manualReloadKey}`}
             ref={iframeRef}
             title="in-app-validation-preview"
-            srcDoc={htmlSource}
+            srcDoc={wrapInAppValidationHtml(htmlSource)}
             onLoad={() => setIframeReady(true)}
             className="flex-1 bg-zinc-950"
-            sandbox="allow-scripts allow-same-origin allow-forms"
+            data-testid="in-app-validation-iframe"
+            sandbox={IN_APP_VALIDATION_SANDBOX}
           />
         </div>
 

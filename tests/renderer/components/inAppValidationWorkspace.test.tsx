@@ -181,3 +181,23 @@ describe('InAppValidationWorkspace 粗糙点收尾（2026-07-27）', () => {
     expect(text.indexOf('failed-step')).toBeLessThan(text.indexOf('passed-step'));
   });
 });
+
+describe('InAppValidationWorkspace origin isolation', () => {
+  afterEach(() => {
+    cleanup();
+    useAppStore.setState({ pendingInAppValidationRequest: null });
+  });
+
+  it('iframe sandbox 允许脚本但不给 same-origin，srcdoc 注入 connect-src none 的 CSP', () => {
+    const { container } = render(<InAppValidationWorkspace />);
+    const iframe = container.querySelector('[data-testid="in-app-validation-iframe"]') as HTMLIFrameElement;
+    expect(iframe).toBeTruthy();
+    const sandbox = iframe.getAttribute('sandbox') ?? '';
+    expect(sandbox.split(/\s+/)).toEqual(expect.arrayContaining(['allow-scripts', 'allow-forms']));
+    expect(sandbox).not.toContain('allow-same-origin');
+    const srcDoc = iframe.getAttribute('srcdoc') ?? '';
+    expect(srcDoc).toContain("connect-src 'none'");
+    expect(srcDoc).toContain("img-src 'self' data: blob:");
+    expect(srcDoc).not.toMatch(/img-src[^"]*https:/);
+  });
+});

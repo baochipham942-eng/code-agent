@@ -13,6 +13,54 @@ function delay(ms: number): Promise<void> {
 
 type IframeWindow = Window & typeof globalThis;
 
+const DRIVER_STEP_TYPE = 'neo-in-app-step';
+const DRIVER_RESULT_TYPE = 'neo-in-app-result';
+const DRIVER_TIMEOUT_MS = 8000;
+
+function runStepViaDriver(
+  iframe: HTMLIFrameElement,
+  step: BrowserInteractionStep,
+  startedAt: number,
+  labelPrefix: string,
+): Promise<BrowserInteractionStepResult> {
+  const id = `in-app-${startedAt}-${Math.random().toString(16).slice(2)}`;
+  const win = iframe.contentWindow;
+  if (!win) {
+    return Promise.resolve({
+      label: step.label,
+      viewport: step.viewport ?? 'in-app',
+      action: step.action,
+      passed: false,
+      durationMs: Date.now() - startedAt,
+      failures: [`${labelPrefix} iframe has no contentWindow`],
+      checks: [],
+    });
+  }
+  return new Promise((resolve) => {
+    const timer = window.setTimeout(() => {
+      window.removeEventListener('message', onMessage);
+      resolve({
+        label: step.label,
+        viewport: step.viewport ?? 'in-app',
+        action: step.action,
+        passed: false,
+        durationMs: Date.now() - startedAt,
+        failures: [`${labelPrefix} unique-origin driver timed out`],
+        checks: [],
+      });
+    }, DRIVER_TIMEOUT_MS);
+    function onMessage(event: MessageEvent) {
+      const data = event.data as { type?: string; id?: string; result?: BrowserInteractionStepResult } | null;
+      if (data?.type !== DRIVER_RESULT_TYPE || data.id !== id || !data.result) return;
+      window.clearTimeout(timer);
+      window.removeEventListener('message', onMessage);
+      resolve(data.result);
+    }
+    window.addEventListener('message', onMessage);
+    win.postMessage({ type: DRIVER_STEP_TYPE, id, step }, '*');
+  });
+}
+
 function getContext(iframe: HTMLIFrameElement): {
   win: IframeWindow;
   doc: Document;
@@ -140,15 +188,8 @@ export async function runInAppInteractionStep(
 
   const context = getContext(iframe);
   if (!context) {
-    return {
-      label: step.label,
-      viewport: step.viewport ?? 'in-app',
-      action: step.action,
-      passed: false,
-      durationMs: Date.now() - startedAt,
-      failures: [`${labelPrefix} iframe has no contentWindow/contentDocument (cross-origin or not loaded)`],
-      checks,
-    };
+    // sandbox 去掉 same-origin 后 contentDocument 为 null；步骤走 iframe 内驱动。
+    return runStepViaDriver(iframe, step, startedAt, labelPrefix);
   }
   const { win, doc } = context;
 

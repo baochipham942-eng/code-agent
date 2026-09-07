@@ -77,6 +77,7 @@ import {
 } from '../../shared/contract/workbenchTools';
 import { evaluateGuardFabricGate } from './guardFabricGate';
 import { classifyShellDesktopAutomation } from '../permissions/shellDesktopAutomation';
+import { resolveFileTargetKind } from '../permissions/fileTargetKind';
 import { completeArtifactLocatorGuardedWrite } from './artifacts/artifactLocatorHost';
 import { ensureFailedToolResultError } from './toolResultError';
 import { probeHeadlessPermission, requestDirectiveMemoryConfirmation } from '../memory/directiveMemoryConfirmation';
@@ -1483,6 +1484,28 @@ export class ToolExecutor {
         commandValidation,
         commandRiskUnknown ? 'unknown' : knownAskCommandRisk,
       );
+      if (
+        permissionRequest.type === 'file_read'
+        || permissionRequest.type === 'file_write'
+        || permissionRequest.type === 'file_edit'
+      ) {
+        // Append 直写穿透（fs.appendFile 跟 symlink 到目标）；file_read 同样跟随链接。
+        // 其余写类工具走 atomicWriteFile 的 rename，替换的是链接/节点本身。
+        // Edit 不展开 ~（multiEdit 的字面语义，权限分类器也按字面放行），两侧必须一致。
+        permissionRequest.details.targetKind = resolveFileTargetKind(
+          permissionRequest.details.path
+            ?? permissionRequest.details.filePath
+            ?? params.file_path
+            ?? params.path,
+          this.executionCwd,
+          {
+            writeMode: permissionRequest.tool === 'Append' || permissionRequest.type === 'file_read'
+              ? 'write-through'
+              : 'atomic-replace',
+            expandTilde: permissionRequest.tool !== 'Edit',
+          },
+        );
+      }
       if (deterministicAskReason) {
         const risk = permissionRequest.details.commandRiskLevel;
         permissionRequest.reason = risk === 'high' || risk === 'critical'

@@ -46,7 +46,7 @@ import type {
   ModelProviderIdentity,
   ModelToolStrategyDiagnostics,
 } from './modelDecision';
-import type { HostReasonPayload, PermissionRequest } from './permission';
+import { FILE_TARGET_KINDS, type HostReasonPayload, type PermissionRequest } from './permission';
 import type { SessionTask, TodoItem } from './planning';
 import type { SurfaceExecutionEventV1 } from './surfaceExecution';
 import type { ToolCall, ToolResult } from './tool';
@@ -174,6 +174,7 @@ const permissionRequestSchema = typed<PermissionRequest>(z.object({
     commandSecurityFlags: z.array(z.string()).optional(),
     affectedPath: z.string().optional(),
     affectedFileCount: z.number().int().nonnegative().optional(),
+    targetKind: z.enum(FILE_TARGET_KINDS).optional(),
     standingGrantTarget: z.string().optional(),
     requestedAccess: z.enum(['read_only', 'read_write']).optional(),
     preview: z.object({

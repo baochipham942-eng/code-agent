@@ -188,6 +188,19 @@ it.each([
 describe('device / special path copy', () => {
   const zh = decisionCardZh as never;
 
+  function writeRequest(
+    path: string,
+    targetKind?: PermissionRequest['details']['targetKind'],
+  ): PermissionRequest {
+    return {
+      ...baseRequest,
+      tool: 'Write',
+      type: 'file_write',
+      details: { path, ...(targetKind ? { targetKind } : {}) },
+      boundary: { id: 'file.external_write' },
+    };
+  }
+
   it('titles /dev/null with the full path instead of a bare null basename', () => {
     const request: PermissionRequest = {
       ...baseRequest,
@@ -200,64 +213,63 @@ describe('device / special path copy', () => {
     const summary = permissionSummary(request, zh);
     expect(summary).toBe('允许编辑 /dev/null（工作区外）？');
     expect(summary).not.toBe('允许编辑 null（工作区外）？');
-    // 收口后本层不再声称设备文件：覆盖警告一律保留（写 /dev/null 多一句无害提示）。
-    expect(permissionConsequence(request, zh)).toContain('可能覆盖现有内容');
-    expect(permissionConsequence(request, zh)).not.toContain('设备文件');
   });
 
-  // ai-review #1692：`/dev/` 前缀不能当「设备文件」判据——Linux 上 /dev/shm/<name> 是普通文件。
-
-
-  // ai-review #1692 第三轮：反斜杠归一化会把 POSIX 上名为 `\dev\null` 的普通文件当成设备。
-  // 判据已改为逐字精确、零归一化——下面三条是三轮各自的构造法，一起钉住。
-  it.each([
-    ['/dev/shm/report.md', '前缀'],
-    ['NUL', '裸 Windows 保留名'],
-    ['\\dev\\null', '反斜杠归一化'],
-  ])('POSIX 普通文件 %s（%s）必须保留覆盖警告', (path) => {
-    const request: PermissionRequest = {
-      ...baseRequest,
-      tool: 'Write',
-      type: 'file_write',
-      details: { path },
-      boundary: { id: 'file.external_write' },
-    };
+  it('host-marked device uses the device copy and skips overwrite wording', () => {
+    const request = writeRequest('/dev/null', 'device');
     const consequence = permissionConsequence(request, zh);
-    expect(consequence).toContain('可能覆盖现有内容');
-    expect(consequence).not.toContain('设备文件');
+    expect(consequence).toBe('将向工作区外的设备文件 /dev/null 写入；原子写入会替换该设备节点本身。');
+    expect(consequence).toContain('设备文件');
+    expect(consequence).not.toContain('可能覆盖现有内容');
   });
 
-  it('titles /dev/stdout with the full path（覆盖警告按收口后的口径一律保留）', () => {
+  it('host-marked device inside the workspace uses the in-workspace device copy', () => {
     const request: PermissionRequest = {
       ...baseRequest,
-      tool: 'Write',
-      type: 'file_write',
-      details: { path: '/dev/stdout' },
-      boundary: { id: 'file.external_write' },
+      tool: 'Edit',
+      type: 'file_edit',
+      details: { path: '/dev/null', targetKind: 'device' },
+      boundary: { id: 'file.project_write' },
     };
-
-    expect(permissionSummary(request, zh)).toBe('允许写入 /dev/stdout（工作区外）？');
-    expect(permissionConsequence(request, zh)).toContain('可能覆盖现有内容');
-    expect(permissionConsequence(request, zh)).not.toContain('设备文件');
+    expect(permissionConsequence(request, zh)).toBe('将写入设备文件 /dev/null；原子写入会替换该设备节点本身。');
   });
 
-  // 收口断言：这一层不许再出现「设备文件」措辞——它需要 host 侧解析后的路径 + stat
-  // 才判得了，放在渲染层每种判据都能被文件名构造（ai-review #1692 四轮）。
-  it.each(['/dev/null', '/dev/stdout', '/dev/shm/report.md', 'NUL', 'C:/dev/null'])(
-    '%s 一律保留覆盖警告，且不称设备文件',
-    (path) => {
-      const request: PermissionRequest = {
-        ...baseRequest,
-        tool: 'Write',
-        type: 'file_write',
-        details: { path },
-        boundary: { id: 'file.external_write' },
-      };
+  it('Append to a host-marked device shows the write-through copy, not node replacement', () => {
+    const request = { ...writeRequest('/dev/null', 'device'), tool: 'Append' };
+    const consequence = permissionConsequence(request, zh);
+    expect(consequence).toBe('将向设备文件 /dev/null 追加写入，内容直接送达设备。');
+    expect(consequence).not.toContain('替换该设备节点');
+    expect(consequence).not.toContain('可能覆盖现有内容');
+  });
+
+  it.each(['regular', 'unknown', undefined] as const)(
+    'targetKind %s fail-closes to the overwrite warning',
+    (targetKind) => {
+      const request = writeRequest('/dev/null', targetKind);
       const consequence = permissionConsequence(request, zh);
       expect(consequence).toContain('可能覆盖现有内容');
       expect(consequence).not.toContain('设备文件');
     },
   );
+
+  // ai-review #1692 四轮构造法：渲染层不得从原始路径推断设备。
+  it.each([
+    ['/dev/shm/report.md', '前缀'],
+    ['NUL', '裸 Windows 保留名'],
+    ['\\dev\\null', '反斜杠归一化'],
+    ['C:/dev/null', 'Windows /dev/null 归一化'],
+  ])('POSIX/Windows 构造 %s（%s）无 targetKind=device 时必须保留覆盖警告', (path) => {
+    const consequence = permissionConsequence(writeRequest(path), zh);
+    expect(consequence).toContain('可能覆盖现有内容');
+    expect(consequence).not.toContain('设备文件');
+  });
+
+  it('titles /dev/stdout with the full path and does not infer a device from the path', () => {
+    const request = writeRequest('/dev/stdout');
+    expect(permissionSummary(request, zh)).toBe('允许写入 /dev/stdout（工作区外）？');
+    expect(permissionConsequence(request, zh)).toContain('可能覆盖现有内容');
+    expect(permissionConsequence(request, zh)).not.toContain('设备文件');
+  });
 
   it('keeps basename titles and overwrite wording for ordinary files', () => {
     const inside: PermissionRequest = {

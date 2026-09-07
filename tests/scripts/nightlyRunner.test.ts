@@ -79,7 +79,7 @@ describe('nightly acceptance fail-closed evidence', () => {
   it('cross-checks the 场景×状态覆盖矩阵 against the parsed inventory', () => {
     const one = `### TC-M1-01 · a\n\n| 夜跑标记 | 是 |\n| 模块 | 上下文 |\n| 验收面 | api |\n| 步骤 | API 读取 health:get |\n| 证据落点 | 拟执行：\`~/fixture/runs/TC-M1-01/<run-id>/result.json\` |\n| ①结果断言 | result |\n| ②过程断言 | process |\n| ③渲染断言 | render |\n`;
     const two = one.replace(/M1-01/g, 'M1-02');
-    const matrix = count => `## 场景 × 状态覆盖矩阵\n\n| 场景 | 用例 | 状态/异常轴 |\n|---|---|---|\n| M1 | ${count} | 覆盖 |\n\n## 逐条用例\n\n`;
+    const matrix = (count: string) => `## 场景 × 状态覆盖矩阵\n\n| 场景 | 用例 | 状态/异常轴 |\n|---|---|---|\n| M1 | ${count} | 覆盖 |\n\n## 逐条用例\n\n`;
     expect(() => parseCases(matrix('TC-M1-01、TC-M1-02') + one + two)).not.toThrow();
     expect(() => parseCases(matrix('TC-M1-01') + one + two)).toThrow('覆盖矩阵与逐条用例不一致');
     // 矩阵标题在但一条用例行都没选中 = 选择器漂移，不能当成"无矩阵"跳过

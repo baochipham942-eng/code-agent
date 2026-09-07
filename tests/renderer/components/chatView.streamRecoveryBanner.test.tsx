@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import type { Message, StreamRecoverySnapshot } from '../../../src/shared/contract';
 
 import { deriveRetryTurnMessage } from '../../../src/renderer/components/ChatView';
+import { deriveStreamInterruptionDecision } from '../../../src/renderer/utils/streamInterruptionDecision';
 
 function makeSnapshot(overrides: Partial<StreamRecoverySnapshot> = {}): StreamRecoverySnapshot {
   return {
@@ -79,6 +80,58 @@ describe('deriveRetryTurnMessage — 锚点推导', () => {
   });
 });
 
+describe('deriveStreamInterruptionDecision — 活流式不得误报中断', () => {
+  it('真流式 run（incomplete snapshot + 正在出正文 + 活轮）不生成中断决策', () => {
+    const user = makeUserMessage({
+      id: 'user-live',
+      content: '国庆去旧金山和洛杉矶如何',
+    });
+    const liveSnapshot = makeSnapshot({
+      turnId: 'turn-live-stream',
+      content: '旧金山秋季适合步行，洛杉矶',
+      isFinal: false,
+      streamStatus: 'incomplete',
+    });
+    const streamingRecovery: Message = {
+      id: 'turn-live-stream',
+      role: 'assistant',
+      content: liveSnapshot.content,
+      timestamp: Date.now(),
+      metadata: { streamRecovery: { turnId: 'turn-live-stream' } },
+    };
+
+    expect(deriveStreamInterruptionDecision(
+      liveSnapshot,
+      deriveRetryTurnMessage(liveSnapshot, [user, streamingRecovery]),
+      true,
+      [user, streamingRecovery],
+    )).toBeNull();
+  });
+
+  it('同一份 incomplete snapshot 在活轮结束后才成为中断决策', () => {
+    const user = makeUserMessage({
+      id: 'user-live',
+      content: '国庆去旧金山和洛杉矶如何',
+    });
+    const interruptedSnapshot = makeSnapshot({
+      turnId: 'turn-live-stream',
+      content: '旧金山秋季适合步行，洛杉矶',
+      isFinal: false,
+      streamStatus: 'incomplete',
+      interruptionReason: 'user',
+    });
+
+    const decision = deriveStreamInterruptionDecision(
+      interruptedSnapshot,
+      deriveRetryTurnMessage(interruptedSnapshot, [user]),
+      false,
+      [user],
+    );
+    expect(decision?.retryMessage).toBe(user);
+    expect(decision?.snapshot.interruptionReason).toBe('user');
+  });
+});
+
 describe('ChatView — 中断入口收进 DecisionSlot', () => {
   it('不再挂顶部 StreamRecoveryBanner，唯一动作入口交给 DecisionSlot', () => {
     const source = fs.readFileSync(
@@ -90,5 +143,7 @@ describe('ChatView — 中断入口收进 DecisionSlot', () => {
     expect(source).not.toContain('data-testid="stream-recovery-banner"');
     expect(source).toContain('<DecisionSlot');
     expect(source).toContain('streamInterruption={streamInterruptionDecision}');
+    expect(source).toContain('deriveStreamInterruptionDecision');
+    expect(source).toContain('effectiveIsProcessing');
   });
 });

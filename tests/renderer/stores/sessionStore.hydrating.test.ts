@@ -140,6 +140,7 @@ describe('switchSession 的 isHydratingSession 窗口', () => {
     const streamState = {
       currentTurnMessageId: null as string | null,
       committedAssistantMessageIds: new Set<string>(),
+    lastDeltaSeqByTurn: new Map<string, number>(),
     };
     const streamActions = {
       addMessage: useSessionStore.getState().addMessage,

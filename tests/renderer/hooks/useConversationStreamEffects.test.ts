@@ -131,6 +131,7 @@ describe('removeUncommittedAssistantDraft', () => {
     const state = {
       currentTurnMessageId: 'turn-1',
       committedAssistantMessageIds: new Set<string>(),
+    lastDeltaSeqByTurn: new Map<string, number>(),
     };
 
     applyConversationStreamEvent(
@@ -199,7 +200,7 @@ describe('applyConversationStreamEvent input redirect receipt', () => {
         interruptedTools: ['Bash'],
       },
     };
-    const state = { currentTurnMessageId: 'turn-1', committedAssistantMessageIds: new Set<string>() };
+    const state = { currentTurnMessageId: 'turn-1', committedAssistantMessageIds: new Set<string>(), lastDeltaSeqByTurn: new Map<string, number>() };
 
     applyConversationStreamEvent(event, state, actions);
     applyConversationStreamEvent(event, state, actions);
@@ -243,7 +244,7 @@ describe('applyConversationStreamEvent host-owned user message', () => {
           timestamp: 400,
         },
       },
-      { currentTurnMessageId: null, committedAssistantMessageIds: new Set<string>() },
+      { currentTurnMessageId: null, committedAssistantMessageIds: new Set<string>(), lastDeltaSeqByTurn: new Map<string, number>() },
       makeActions(messagesRef),
     );
 
@@ -271,7 +272,7 @@ describe('applyConversationStreamEvent host-owned user message', () => {
         type: 'message',
         data: { id: 'queued-input-1', role: 'user', content: '已经在屏幕上了', timestamp: 400 },
       },
-      { currentTurnMessageId: null, committedAssistantMessageIds: new Set<string>() },
+      { currentTurnMessageId: null, committedAssistantMessageIds: new Set<string>(), lastDeltaSeqByTurn: new Map<string, number>() },
       makeActions(messagesRef),
     );
 
@@ -290,7 +291,7 @@ describe('applyConversationStreamEvent host-owned user message', () => {
         type: 'message',
         data: { id: 'turn-1', turnId: 'turn-1', content: '完整回答' },
       },
-      { currentTurnMessageId: 'turn-1', committedAssistantMessageIds: new Set<string>() },
+      { currentTurnMessageId: 'turn-1', committedAssistantMessageIds: new Set<string>(), lastDeltaSeqByTurn: new Map<string, number>() },
       {
         ...makeActions(messagesRef),
         updateMessage: (id: string, changes: Partial<Message>) => {
@@ -382,6 +383,7 @@ describe('applyConversationStreamEvent model_decision', () => {
       {
         currentTurnMessageId: 'turn-1',
         committedAssistantMessageIds: new Set<string>(),
+    lastDeltaSeqByTurn: new Map<string, number>(),
       },
       {
         addMessage: (message) => {
@@ -511,6 +513,7 @@ describe('applyConversationStreamEvent model_decision', () => {
       {
         currentTurnMessageId: 'turn-1',
         committedAssistantMessageIds: new Set<string>(),
+    lastDeltaSeqByTurn: new Map<string, number>(),
       },
       {
         addMessage: (message) => {
@@ -641,6 +644,7 @@ describe('applyConversationStreamEvent model_fallback', () => {
       {
         currentTurnMessageId: 'turn-1',
         committedAssistantMessageIds: new Set<string>(),
+    lastDeltaSeqByTurn: new Map<string, number>(),
       },
       {
         addMessage: (message) => {
@@ -720,6 +724,7 @@ describe('applyConversationStreamEvent meta turns', () => {
     const state = {
       currentTurnMessageId: null,
       committedAssistantMessageIds: new Set<string>(),
+    lastDeltaSeqByTurn: new Map<string, number>(),
     };
 
     applyConversationStreamEvent(
@@ -761,6 +766,7 @@ describe('applyConversationStreamEvent meta turns', () => {
     const state = {
       currentTurnMessageId: 'assistant-visible',
       committedAssistantMessageIds: new Set<string>(['assistant-visible']),
+      lastDeltaSeqByTurn: new Map<string, number>(),
     };
 
     const actions = {
@@ -821,6 +827,7 @@ describe('applyConversationStreamEvent meta turns', () => {
     const state = {
       currentTurnMessageId: 'turn-meta',
       committedAssistantMessageIds: new Set<string>(),
+    lastDeltaSeqByTurn: new Map<string, number>(),
     };
 
     applyConversationStreamEvent(
@@ -877,6 +884,7 @@ describe('mergeCommittedAssistantContent', () => {
     const state = {
       currentTurnMessageId: 'turn-1',
       committedAssistantMessageIds: new Set<string>(),
+    lastDeltaSeqByTurn: new Map<string, number>(),
     };
 
     applyConversationStreamEvent(
@@ -931,6 +939,7 @@ describe('mergeCommittedAssistantContent', () => {
     const state = {
       currentTurnMessageId: 'turn-1',
       committedAssistantMessageIds: new Set<string>(),
+    lastDeltaSeqByTurn: new Map<string, number>(),
     };
 
     applyConversationStreamEvent(
@@ -1019,6 +1028,7 @@ describe('mergeCommittedAssistantContent', () => {
     const state = {
       currentTurnMessageId: 'turn-1',
       committedAssistantMessageIds: new Set<string>(),
+    lastDeltaSeqByTurn: new Map<string, number>(),
     };
 
     applyConversationStreamEvent(
@@ -1125,6 +1135,7 @@ describe('applyConversationStreamEvent contentParts adoption', () => {
     const state = {
       currentTurnMessageId: 'turn-1',
       committedAssistantMessageIds: new Set<string>(),
+    lastDeltaSeqByTurn: new Map<string, number>(),
     };
 
     applyConversationStreamEvent(
@@ -1181,6 +1192,7 @@ describe('applyConversationStreamEvent contentParts adoption', () => {
     const state = {
       currentTurnMessageId: 'turn-1',
       committedAssistantMessageIds: new Set<string>(),
+    lastDeltaSeqByTurn: new Map<string, number>(),
     };
 
     applyConversationStreamEvent(
@@ -1209,6 +1221,53 @@ describe('applyConversationStreamEvent contentParts adoption', () => {
   });
 });
 
+describe('applyConversationStreamEvent turn_start replay', () => {
+  it('does not create a second assistant bubble when the same turnId is replayed', () => {
+    let messages: Message[] = [];
+    const state = {
+      currentTurnMessageId: null as string | null,
+      committedAssistantMessageIds: new Set<string>(),
+    lastDeltaSeqByTurn: new Map<string, number>(),
+    };
+    const actions = {
+      addMessage: (message: Message) => {
+        messages = [...messages, message];
+      },
+      updateMessage: () => {},
+      setMessages: (next: Message[]) => {
+        messages = next;
+      },
+      getMessages: () => messages,
+      queueUpdate: () => {},
+    };
+
+    applyConversationStreamEvent(
+      { type: 'turn_start', data: { turnId: 'turn-1' } },
+      state,
+      actions,
+    );
+    applyConversationStreamEvent(
+      { type: 'stream_chunk', data: { turnId: 'turn-1', content: 'hello' } },
+      state,
+      { ...actions, appendStreamingMessageDelta: (messageId, delta) => {
+        messages = messages.map((message) => (
+          message.id === messageId
+            ? { ...message, content: `${message.content}${delta.content ?? ''}` }
+            : message
+        ));
+      } },
+    );
+    applyConversationStreamEvent(
+      { type: 'turn_start', data: { turnId: 'turn-1' } },
+      state,
+      actions,
+    );
+
+    expect(messages.filter((message) => message.id === 'turn-1')).toHaveLength(1);
+    expect(messages[0]?.content).toBe('hello');
+  });
+});
+
 describe('applyConversationStreamEvent streaming accumulator', () => {
   it('routes stream chunks to the local accumulator when available', () => {
     const appendStreamingMessageDelta = vi.fn();
@@ -1230,6 +1289,7 @@ describe('applyConversationStreamEvent streaming accumulator', () => {
       {
         currentTurnMessageId: 'turn-1',
         committedAssistantMessageIds: new Set<string>(),
+    lastDeltaSeqByTurn: new Map<string, number>(),
       },
       {
         addMessage: () => {},
@@ -1272,6 +1332,7 @@ describe('applyConversationStreamEvent streaming accumulator', () => {
       {
         currentTurnMessageId: 'turn-1',
         committedAssistantMessageIds: new Set<string>(),
+    lastDeltaSeqByTurn: new Map<string, number>(),
       },
       {
         addMessage: () => {},
@@ -1312,6 +1373,7 @@ describe('applyConversationStreamEvent streaming accumulator', () => {
       {
         currentTurnMessageId: 'turn-1',
         committedAssistantMessageIds: new Set<string>(),
+    lastDeltaSeqByTurn: new Map<string, number>(),
       },
       {
         addMessage: () => {},
@@ -1353,6 +1415,7 @@ describe('applyConversationStreamEvent streaming accumulator', () => {
       {
         currentTurnMessageId: 'turn-1',
         committedAssistantMessageIds: new Set<string>(),
+    lastDeltaSeqByTurn: new Map<string, number>(),
       },
       {
         addMessage: () => {},
@@ -1379,7 +1442,7 @@ import { useStatusStore } from '../../../src/renderer/stores/statusStore';
 
 function costStreamHarness() {
   return {
-    state: { currentTurnMessageId: null, committedAssistantMessageIds: new Set<string>() },
+    state: { currentTurnMessageId: null, committedAssistantMessageIds: new Set<string>(), lastDeltaSeqByTurn: new Map<string, number>() },
     actions: {
       addMessage: vi.fn(),
       appendStreamingMessageDelta: vi.fn(),
@@ -1430,5 +1493,87 @@ describe('turn cost stream wiring', () => {
       actions as never,
     );
     expect(useStatusStore.getState().lastTurnCost).toBeNull();
+  });
+});
+
+// ai-review #1696 两轮各撞一次：字符串比对判不了重放——合法的重复正文与重放长得一样，
+// 按内容丢就吞真内容（前缀裁剪丢字、整段全等吞段）。事件本来就带 deltaSeq，
+// host 的 messageDeltaAccumulator.acceptDelta 早就按它判，渲染层照抄同一口径。
+describe('applyConversationStreamEvent 按 deltaSeq 判重放', () => {
+  const LONG = '这是一段足够长的正文用来越过整段全等的最小长度门槛不少于三十二个字符';
+
+  function harness() {
+    const messagesRef = { current: [] as Message[] };
+    const actions = {
+      addMessage: (message: Message) => { messagesRef.current = [...messagesRef.current, message]; },
+      updateMessage: (id: string, updates: Partial<Message>) => {
+        messagesRef.current = messagesRef.current.map((m) => (m.id === id ? { ...m, ...updates } : m));
+      },
+      appendStreamingMessageDelta: (messageId: string, delta: { content?: string }) => {
+        messagesRef.current = messagesRef.current.map((m) => (
+          m.id === messageId ? { ...m, content: (m.content || '') + (delta.content || '') } : m
+        ));
+      },
+      setMessages: (next: Message[]) => { messagesRef.current = next; },
+      getMessages: () => messagesRef.current,
+      queueUpdate: () => {},
+      now: () => 1,
+    };
+    const state = {
+      currentTurnMessageId: 'turn-seq',
+      committedAssistantMessageIds: new Set<string>(),
+    lastDeltaSeqByTurn: new Map<string, number>(),
+    };
+    messagesRef.current = [{ id: 'turn-seq', role: 'assistant', content: '', timestamp: 1 }];
+    return { messagesRef, actions, state };
+  }
+
+  const chunk = (content: string, deltaSeq: number) => ({
+    type: 'stream_chunk',
+    data: { turnId: 'turn-seq', content, deltaSeq },
+  });
+
+  it('序号递增的两段相同长正文都要留下（不是重放）', () => {
+    const { messagesRef, actions, state } = harness();
+    applyConversationStreamEvent(chunk(LONG, 1), state, actions as never);
+    applyConversationStreamEvent(chunk(LONG, 2), state, actions as never);
+    expect(messagesRef.current[0].content).toBe(LONG + LONG);
+  });
+
+  // 生产里 state 是每次调用现造的对象字面量，Map 必须由外部 ref 持有。
+  // 夹具照生产的样子造：每次调用都换一个新的 state 外壳，只共享那个 Map。
+  it('state 每次现造时序号去重仍然生效（Map 由外部持有）', () => {
+    const { messagesRef, actions } = harness();
+    const shared = new Map<string, number>();
+    let currentTurnMessageId: string | null = 'turn-seq';
+    const freshState = () => ({
+      get currentTurnMessageId() { return currentTurnMessageId; },
+      set currentTurnMessageId(v: string | null) { currentTurnMessageId = v; },
+      committedAssistantMessageIds: new Set<string>(),
+      lastDeltaSeqByTurn: shared,
+    });
+    applyConversationStreamEvent(chunk(LONG, 1), freshState(), actions as never);
+    applyConversationStreamEvent(chunk(LONG, 1), freshState(), actions as never);
+    expect(messagesRef.current[0].content).toBe(LONG);
+  });
+
+  it('message_delta 分支同样按序号去重（生产里带 deltaSeq 的是它）', () => {
+    const { messagesRef, actions, state } = harness();
+    const delta = (text: string, deltaSeq: number) => ({
+      type: 'message_delta',
+      data: { role: 'assistant', messageId: 'turn-seq', path: 'content', op: 'append', text, deltaSeq },
+    });
+    applyConversationStreamEvent(delta(LONG, 1), state, actions as never);
+    applyConversationStreamEvent(delta(LONG, 1), state, actions as never);
+    expect(messagesRef.current[0].content).toBe(LONG);
+    applyConversationStreamEvent(delta(LONG, 2), state, actions as never);
+    expect(messagesRef.current[0].content).toBe(LONG + LONG);
+  });
+
+  it('序号回头的同一段只算一次（重放）', () => {
+    const { messagesRef, actions, state } = harness();
+    applyConversationStreamEvent(chunk(LONG, 1), state, actions as never);
+    applyConversationStreamEvent(chunk(LONG, 1), state, actions as never);
+    expect(messagesRef.current[0].content).toBe(LONG);
   });
 });

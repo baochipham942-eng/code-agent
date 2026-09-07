@@ -15,6 +15,7 @@ import {
   projectGoalCompletePresentation,
   type GoalCompletePresentationData,
 } from '../../../utils/goalCompletePresentation';
+import { remainingAssistantStreamDelta } from '../../../utils/assistantStreamDelta';
 
 /**
  * 这些 agent 事件不构成「宿主还在跑」的证据：终态由各自分支负责把运行态放下，
@@ -89,9 +90,31 @@ export function mergeCommittedAssistantContent(
   return committedContent;
 }
 
+/** 与 host 的 messageDeltaAccumulator.acceptDelta 同一口径：序号回头即重放，无序号放行。 */
+function acceptDeltaSeq(
+  state: ConversationStreamState,
+  turnKey: string | null | undefined,
+  deltaSeq: unknown,
+): boolean {
+  if (typeof deltaSeq !== 'number' || !turnKey) return true;
+  const seen = state.lastDeltaSeqByTurn;
+  const last = seen.get(turnKey);
+  if (last !== undefined && deltaSeq <= last) return false;
+  seen.set(turnKey, deltaSeq);
+  return true;
+}
+
 export interface ConversationStreamState {
   currentTurnMessageId: string | null;
   committedAssistantMessageIds: Set<string>;
+  /**
+   * 每个 turn 已应用到的最大 deltaSeq。重连/重放会把已经应用过的 chunk 原样再送一遍，
+   * 而**字符串比对判不了重放**：合法的重复正文（连着两段一模一样的长文）与重放长得一样，
+   * 按内容丢就会吞掉真内容（ai-review #1696 两轮各撞一次：前缀裁剪丢字、整段全等吞段）。
+   * 事件本来就带 deltaSeq，host 侧 messageDeltaAccumulator.acceptDelta 早就是这么判的，
+   * 渲染层照抄同一口径：序号回头就是重放，没有序号才回落到内容判定。
+   */
+  lastDeltaSeqByTurn: Map<string, number>;
 }
 
 function appendAssistantStreamDelta(
@@ -148,6 +171,12 @@ export function applyConversationStreamEvent(
           state.committedAssistantMessageIds.delete(turnId);
           break;
         }
+        const existing = getFreshMessages().find((message) => message.id === turnId);
+        if (existing?.role === 'assistant') {
+          state.currentTurnMessageId = turnId;
+          state.committedAssistantMessageIds.delete(turnId);
+          break;
+        }
         const newMessage: Message = {
           id: turnId,
           role: 'assistant',
@@ -167,14 +196,21 @@ export function applyConversationStreamEvent(
         if (!chunkData?.content) break;
         if (chunkData.isMeta) break;
         const targetMessageId = chunkData.turnId || state.currentTurnMessageId;
+        // 序号回头 = 重连重放，整条丢；有序号时不再看内容（内容判不了重放）。
+        if (!acceptDeltaSeq(state, targetMessageId, (event.data as { deltaSeq?: unknown } | undefined)?.deltaSeq)) break;
+        const hasDeltaSeq = typeof (event.data as { deltaSeq?: unknown } | undefined)?.deltaSeq === 'number';
         const freshMsgs = getFreshMessages();
         const targetMessage = targetMessageId
           ? freshMsgs.find(m => m.id === targetMessageId)
           : freshMsgs[freshMsgs.length - 1];
 
         if (targetMessage?.role === 'assistant') {
+          const remaining = hasDeltaSeq
+            ? chunkData.content
+            : remainingAssistantStreamDelta(targetMessage.content || '', chunkData.content);
+          if (!remaining) break;
           appendAssistantStreamDelta(actions, targetMessage.id, {
-            content: chunkData.content,
+            content: remaining,
           });
         } else if (targetMessageId) {
           break;
@@ -196,8 +232,12 @@ export function applyConversationStreamEvent(
               state.currentTurnMessageId = newMessage.id;
               state.committedAssistantMessageIds.delete(newMessage.id);
             } else {
+              const remaining = hasDeltaSeq
+                ? chunkData.content
+                : remainingAssistantStreamDelta(lastMessage.content || '', chunkData.content);
+              if (!remaining) break;
               appendAssistantStreamDelta(actions, lastMessage.id, {
-                content: chunkData.content,
+                content: remaining,
               });
             }
           }
@@ -211,6 +251,11 @@ export function applyConversationStreamEvent(
         if (!deltaData?.text) break;
         if (deltaData.isMeta) break;
         const targetMessageId = deltaData.messageId || deltaData.turnId || state.currentTurnMessageId;
+        // 生产里真正带 deltaSeq 的就是这条分支（eventBatcher 只在 message_delta 上透传），
+        // 序号去重必须接在这里，接漏了等于没接（ai-review #1696 第三轮）。
+        const deltaSeq = (event.data as { deltaSeq?: unknown } | undefined)?.deltaSeq;
+        if (!acceptDeltaSeq(state, targetMessageId, deltaSeq)) break;
+        const deltaHasSeq = typeof deltaSeq === 'number';
         const freshMsgs = getFreshMessages();
         const targetMessage = targetMessageId
           ? freshMsgs.find(m => m.id === targetMessageId)
@@ -223,9 +268,16 @@ export function applyConversationStreamEvent(
               ? { reasoning: deltaData.text }
               : { content: deltaData.text });
           } else {
+            const existing = field === 'reasoning'
+              ? (targetMessage.reasoning || '')
+              : (targetMessage.content || '');
+            const remaining = deltaHasSeq
+              ? deltaData.text
+              : remainingAssistantStreamDelta(existing, deltaData.text);
+            if (!remaining) break;
             appendAssistantStreamDelta(actions, targetMessage.id, field === 'reasoning'
-              ? { reasoning: deltaData.text }
-              : { content: deltaData.text });
+              ? { reasoning: remaining }
+              : { content: remaining });
           }
         }
       }
@@ -400,8 +452,13 @@ export function applyConversationStreamEvent(
           : getFreshMessages()[getFreshMessages().length - 1];
 
         if (targetMessage?.role === 'assistant') {
+          const remaining = remainingAssistantStreamDelta(
+            targetMessage.reasoning || '',
+            reasoningData.content,
+          );
+          if (!remaining) break;
           appendAssistantStreamDelta(actions, targetMessage.id, {
-            reasoning: reasoningData.content,
+            reasoning: remaining,
           });
         }
       }
@@ -426,6 +483,10 @@ export const useConversationStreamEffects = ({
   setSessionTaskComplete,
 }: AgentEffectsProps) => {
   const committedAssistantMessageIdsRef = useRef<Set<string>>(new Set());
+  // 🔴 必须挂 ref：下面四个调用点的 state 是**每次现造的对象字面量**，把 Map 挂在它身上
+  // 等于每次调用都丢一次（ai-review #1696 第三轮抓到；我的单测复用了同一个 state 对象，
+  // 夹具寿命与生产不一致所以照样绿——这类断言必须让夹具跟生产同寿命）。
+  const lastDeltaSeqByTurnRef = useRef<Map<string, number>>(new Map());
 
   useEffect(() => {
     const unsubscribe = ipcService.on('agent:event', (event: AgentEvent) => {
@@ -543,6 +604,7 @@ export const useConversationStreamEffects = ({
                 currentTurnMessageIdRef.current = value;
               },
               committedAssistantMessageIds: committedAssistantMessageIdsRef.current,
+              lastDeltaSeqByTurn: lastDeltaSeqByTurnRef.current,
             },
             {
               addMessage,
@@ -576,6 +638,7 @@ export const useConversationStreamEffects = ({
                 currentTurnMessageIdRef.current = value;
               },
               committedAssistantMessageIds: committedAssistantMessageIdsRef.current,
+              lastDeltaSeqByTurn: lastDeltaSeqByTurnRef.current,
             },
             {
               addMessage,
@@ -606,6 +669,7 @@ export const useConversationStreamEffects = ({
                 currentTurnMessageIdRef.current = value;
               },
               committedAssistantMessageIds: committedAssistantMessageIdsRef.current,
+              lastDeltaSeqByTurn: lastDeltaSeqByTurnRef.current,
             },
             {
               addMessage,
@@ -634,6 +698,7 @@ export const useConversationStreamEffects = ({
                 currentTurnMessageIdRef.current = value;
               },
               committedAssistantMessageIds: committedAssistantMessageIdsRef.current,
+              lastDeltaSeqByTurn: lastDeltaSeqByTurnRef.current,
             },
             {
               addMessage,
@@ -705,6 +770,7 @@ export const useConversationStreamEffects = ({
                 currentTurnMessageIdRef.current = value;
               },
               committedAssistantMessageIds: committedAssistantMessageIdsRef.current,
+              lastDeltaSeqByTurn: lastDeltaSeqByTurnRef.current,
             },
             {
               addMessage,
@@ -755,6 +821,7 @@ export const useConversationStreamEffects = ({
                 currentTurnMessageIdRef.current = value;
               },
               committedAssistantMessageIds: committedAssistantMessageIdsRef.current,
+              lastDeltaSeqByTurn: lastDeltaSeqByTurnRef.current,
             },
             {
               addMessage,

@@ -48,6 +48,11 @@ export { resolveDirectRouting } from './agent/useAgentIPC';
 // 故这里压到 150ms 主要让纯文本流不再「半秒蹦一坨」，又不至于过度重渲染。
 const STREAMING_MESSAGE_FLUSH_INTERVAL_MS = 150;
 
+/**
+ * flush 时把累加的增量落到消息上。**不再按正文全等丢**：重放去重已经在
+ * applyConversationStreamEvent 里按 deltaSeq 做过（真源），到这一层的增量都是
+ * 已确认非重放的，再按内容丢一次只会吞掉合法的重复正文（ai-review #1696 第四轮）。
+ */
 function buildStreamingDeltaChanges(
   message: Message,
   entry: StreamingMessageDelta,
@@ -166,8 +171,17 @@ export const useAgent = () => {
     });
   }, [updateMessage]);
 
+  // 序号去重已在 applyConversationStreamEvent 里按 deltaSeq 做过（那是真源）。
+  // 到这一层的增量都是**已确认不是重放**的，再按正文全等丢一次只会吞掉合法的重复正文
+  // （连着两段一模一样的长文，ai-review #1696 第四轮）。这里只做「空增量不写」。
   const appendStreamingMessageDelta = useCallback((messageId: string, delta: { content?: string; reasoning?: string }) => {
-    useStreamingMessageAccumulatorStore.getState().appendDelta(messageId, delta);
+    const content = delta.content || '';
+    const reasoning = delta.reasoning || '';
+    if (!content && !reasoning) return;
+    useStreamingMessageAccumulatorStore.getState().appendDelta(messageId, {
+      ...(content ? { content } : {}),
+      ...(reasoning ? { reasoning } : {}),
+    });
     if (streamingFlushTimersRef.current.has(messageId)) {
       return;
     }

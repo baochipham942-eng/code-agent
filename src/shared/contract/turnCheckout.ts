@@ -20,6 +20,11 @@ export interface TurnRedoRequest {
   rewindId: string;
 }
 
+/** 每个会话最多一张反悔结果卡：同 id 再次写入走 addMessageToSession 的 upsert。 */
+export function turnCheckoutNoteMessageId(sessionId: string): string {
+  return `turn-checkout-note:${sessionId}`;
+}
+
 export interface TurnCheckoutResult {
   success: boolean;
   state: 'success' | 'partial';

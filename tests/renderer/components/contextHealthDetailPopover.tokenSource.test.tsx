@@ -140,6 +140,41 @@ describe('ContextHealthDetailPopover — 总量真源标注（N-CTXTRUTH）', ()
     expect(screen.queryByTestId('context-health-estimated-badge')).toBeNull();
   });
 
+  it('FB-117：4.9% 不标注，5% 起标注（门槛是百分点不是 0.05%）', () => {
+    pillMocks.appState.contextHealth = makeHealth({
+      tokenSource: 'provider',
+      currentTokens: 10000,
+      estimatedTokens: 10000 + 490,
+    });
+    openPopover();
+    expect(screen.queryByTestId('context-health-deviation')).toBeNull();
+    cleanup();
+
+    pillMocks.appState.contextHealth = makeHealth({
+      tokenSource: 'provider',
+      currentTokens: 10000,
+      estimatedTokens: 10500,
+    });
+    openPopover();
+    expect(screen.getByTestId('context-health-deviation').textContent).toContain('+5.0%');
+  });
+
+  it('窗口兜底：停用已用占比，标容量未知', () => {
+    pillMocks.appState.contextHealth = makeHealth({
+      currentTokens: 153600,
+      maxTokens: 128000,
+      usagePercent: 120,
+      windowKnown: false,
+      tokenSource: 'provider',
+      estimatedTokens: 40000,
+    });
+    openPopover();
+
+    expect(screen.getByTestId('context-health-window-unknown').textContent).toContain('容量未知');
+    expect(screen.queryByText(/100% 已用/)).toBeNull();
+    expect(screen.queryByText(/120% 已用/)).toBeNull();
+  });
+
   it('tokenSource=estimated：显示「估算」标注，即使有 estimatedTokens 也不显示偏差', () => {
     pillMocks.appState.contextHealth = makeHealth({
       tokenSource: 'estimated',

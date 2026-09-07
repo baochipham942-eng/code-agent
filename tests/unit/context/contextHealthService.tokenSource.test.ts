@@ -81,6 +81,13 @@ describe('ContextHealthService — provider 真源总量（N-CTXTRUTH）', () =>
     expect(health.usagePercent).toBe(Math.round((10000 / health.maxTokens) * 1000) / 10);
     // 估算对照保留（缩放前总量），供弹层显示估/实偏差
     expect(health.estimatedTokens).toBe(estimated);
+    expect(health.windowKnown).toBe(true);
+  });
+
+  it('查不到模型窗口时 windowKnown=false，maxTokens 仍是 128k 兜底', () => {
+    const health = service.update('unknown-window', MESSAGES, '', 'not-a-real-model-id-xyz');
+    expect(health.windowKnown).toBe(false);
+    expect(health.maxTokens).toBe(128000);
   });
 
   it('provider 未回报（不传参）时：全走估算，tokenSource=estimated，无估算对照', () => {

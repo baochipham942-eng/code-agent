@@ -252,16 +252,36 @@ export const CONTEXT_WINDOWS: Record<string, number> = {
 /** 默认上下文窗口（未知模型 fallback） */
 export const DEFAULT_CONTEXT_WINDOW = 128_000;
 
+export interface ResolvedContextWindow {
+  tokens: number;
+  /** 表内命中或调用方显式传入。false = 静默 128k 兜底，不得拿去渲染「已用占比」。 */
+  known: boolean;
+}
+
 /**
  * 查模型的上下文窗口（先规范化，再查表，查不到回落到 DEFAULT_CONTEXT_WINDOW）。
  * 所有需要根据 model ID 取 context size 的地方都应通过本函数，不要直接读 CONTEXT_WINDOWS。
+ * 呈现层要区分「真窗口」和「兜底」时用 resolveContextWindow，不要拿 128k 这个数字猜。
  */
+export function resolveContextWindow(
+  model: string,
+  _provider?: string,
+  configuredContextWindow?: number,
+): ResolvedContextWindow {
+  if (configuredContextWindow != null) {
+    return { tokens: configuredContextWindow, known: true };
+  }
+  const id = normalizeModelId(model);
+  if (Object.prototype.hasOwnProperty.call(CONTEXT_WINDOWS, id)) {
+    return { tokens: CONTEXT_WINDOWS[id], known: true };
+  }
+  return { tokens: DEFAULT_CONTEXT_WINDOW, known: false };
+}
+
 export function getContextWindow(
   model: string,
   _provider?: string,
   configuredContextWindow?: number,
 ): number {
-  if (configuredContextWindow != null) return configuredContextWindow;
-  const id = normalizeModelId(model);
-  return CONTEXT_WINDOWS[id] ?? DEFAULT_CONTEXT_WINDOW;
+  return resolveContextWindow(model, _provider, configuredContextWindow).tokens;
 }

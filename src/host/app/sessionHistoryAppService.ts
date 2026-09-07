@@ -42,14 +42,14 @@ import {
   type RewindConversationRequest,
   type RewindConversationResult,
 } from '../../shared/contract/sessionRewind';
-import type {
-  TurnCheckoutRequest,
-  TurnCheckoutResult,
-  TurnRedoRequest,
-  TurnRedoResult,
+import {
+  turnCheckoutNoteMessageId,
+  type TurnCheckoutRequest,
+  type TurnCheckoutResult,
+  type TurnRedoRequest,
+  type TurnRedoResult,
 } from '../../shared/contract/turnCheckout';
 import type { SystemEventMessageMetadata } from '../../shared/contract/systemEventRegistry';
-import { v4 as uuidv4 } from 'uuid';
 import type { TaskManager } from '../task';
 import { getContextHealthService } from '../context/contextHealthService';
 import { getAuthService } from '../services/auth/authService';
@@ -644,7 +644,7 @@ export class SessionHistoryAppService {
     const content = `${action} ${note.state}; ${note.changedFileCount} workspace file(s) changed.`
       + `${detail ? ` Failed: ${detail}.` : ''} ${note.externalSideEffectsWarning}`;
     await getSessionManager().addMessageToSession(sessionId, {
-      id: `turn-checkout-note-${Date.now()}-${uuidv4().slice(0, 8)}`,
+      id: turnCheckoutNoteMessageId(sessionId),
       role: 'system',
       content,
       timestamp: Date.now(),

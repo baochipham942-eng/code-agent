@@ -4,7 +4,7 @@
 
 import { AppWindow } from '../platform';
 import { IPC_CHANNELS } from '../../shared/ipc';
-import { getContextWindow, DEFAULT_MODEL } from '../../shared/constants';
+import { resolveContextWindow, DEFAULT_MODEL } from '../../shared/constants';
 import {
   ContextHealthState,
   ContextHealthUpdateEvent,
@@ -114,7 +114,7 @@ export class ContextHealthService {
    * 获取指定模型的上下文限制
    */
   getModelContextLimit(model: string): number {
-    return getContextWindow(model);
+    return resolveContextWindow(model).tokens;
   }
 
   /**
@@ -143,7 +143,8 @@ export class ContextHealthService {
     providerUsage?: ProviderContextUsage,
     sourceHints?: SourceCompositionHints,
   ): ContextHealthState {
-    const maxTokens = this.getModelContextLimit(model);
+    const resolvedWindow = resolveContextWindow(model);
+    const maxTokens = resolvedWindow.tokens;
     const previousHealth = this.sessionStates.get(sessionId);
 
     // 计算各部分的 token 使用量
@@ -198,6 +199,7 @@ export class ContextHealthService {
       // GAP-023: 被预算丢弃的 prompt 块可见化（undefined = 调用方没传，沿用上次；[] = 明确无丢弃）
       droppedPromptBlocks: droppedPromptBlocks ?? previousHealth?.droppedPromptBlocks,
       tokenSource: useProviderTruth ? 'provider' : 'estimated',
+      windowKnown: resolvedWindow.known,
       ...(useProviderTruth ? { estimatedTokens: estimatedTotal } : {}),
       ...(useProviderTruth && providerUsage
         ? {

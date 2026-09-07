@@ -34,6 +34,7 @@ import type { BuildEnvelope } from './useChatInputEnvelope';
 import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 import { generateMessageId } from '@shared/utils/id';
 import { consumePendingClientMessageId } from '../../../../utils/chatSendState';
+import { replaceOptimisticUserMessage } from '../../../../utils/optimisticUserSend';
 import { parseScheduleCommand, isScheduleCommand } from './parseScheduleCommand';
 import { parseLoopCommand, isLoopCommand } from './parseLoopCommand';
 import {
@@ -600,6 +601,11 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
             'enqueue',
             { id: clientMessageId, sessionId: currentSessionId, envelope: queuedEnvelope },
           );
+          replaceOptimisticUserMessage({
+            id: clientMessageId,
+            content: queuedEnvelope.content,
+            attachments: queuedEnvelope.attachments,
+          });
           onQueuedInputChanged?.();
           return true;
         }

@@ -18,6 +18,11 @@ import {
   useChatInputSubmit,
   type UseChatInputSubmitParams,
 } from '../../../src/renderer/components/features/chat/ChatInput/useChatInputSubmit';
+import { submitSteerEnvelope } from '../../../src/renderer/components/features/chat/chatViewSteer';
+import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
+import { useMessageActionStore } from '../../../src/renderer/stores/messageActionStore';
+import { markOptimisticUserSendFailed } from '../../../src/renderer/utils/optimisticUserSend';
+import { IPC_DOMAINS } from '../../../src/shared/ipc';
 
 function makeParams(overrides: Partial<UseChatInputSubmitParams> = {}): UseChatInputSubmitParams {
   return {
@@ -121,6 +126,7 @@ afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   window.codeAgentDomainAPI = undefined;
+  useMessageActionStore.getState().unregister();
 });
 
 describe('mid-turn composer submission', () => {
@@ -308,5 +314,108 @@ describe('mid-turn composer submission', () => {
       clientMessageId: 'failed-bubble-id',
     }));
     expect(pendingResendClientMessageIdRef.current).toBeNull();
+  });
+
+  it('运行中编辑重发入队后，同 id 失败气泡换成新正文且无失败态，再点编辑重发取回新正文', async () => {
+    useSessionStore.setState({
+      currentSessionId: 'session-running',
+      messages: [{
+        id: 'failed-bubble-id',
+        role: 'user',
+        content: '原文 A',
+        timestamp: 1,
+        metadata: { sendFailed: true },
+      }],
+    } as never);
+    const restoreComposer = vi.fn();
+    useMessageActionStore.getState().register(
+      vi.fn(),
+      () => useSessionStore.getState().messages,
+      restoreComposer,
+    );
+    const pendingResendClientMessageIdRef = { current: 'failed-bubble-id' as string | null };
+    const params = makeParams({
+      value: '改过的需求 B',
+      pendingResendClientMessageIdRef,
+    });
+    const { result } = renderHook(() => useChatInputSubmit(params));
+
+    await act(async () => {
+      await result.current.handleSubmit();
+    });
+
+    const user = useSessionStore.getState().messages.find((message) => message.id === 'failed-bubble-id');
+    expect(user?.content).toBe('改过的需求 B');
+    expect(user?.metadata?.sendFailed).toBeUndefined();
+
+    // 入队成功后失败态已清，编辑重发入口随之消失。同 id 若再次失败，入口读的是更新后的 B，不是化石 A。
+    markOptimisticUserSendFailed('failed-bubble-id');
+    useMessageActionStore.getState().editAndResendMessage('failed-bubble-id');
+    expect(restoreComposer).toHaveBeenCalledWith(expect.objectContaining({
+      content: '改过的需求 B',
+      clientMessageId: 'failed-bubble-id',
+    }));
+  });
+
+  it('插话成功时把同 id 失败气泡替换成新正文并清失败态', async () => {
+    useSessionStore.setState({
+      currentSessionId: 'session-running',
+      messages: [{
+        id: 'failed-bubble-id',
+        role: 'user',
+        content: '原文 A',
+        timestamp: 1,
+        metadata: { sendFailed: true },
+      }],
+    } as never);
+    domainInvoke.mockResolvedValueOnce({
+      success: true,
+      data: { outcome: 'steered' },
+    });
+
+    const outcome = await submitSteerEnvelope({
+      content: '改过的需求 B',
+      clientMessageId: 'failed-bubble-id',
+      attachments: [],
+      context: { runtimeInput: { mode: 'redirect' } },
+    }, 'session-running', 'turn-visible');
+
+    expect(outcome?.outcome).toBe('steered');
+    expect(domainInvoke).toHaveBeenCalledWith(
+      IPC_DOMAINS.AGENT,
+      'interrupt',
+      expect.objectContaining({ clientMessageId: 'failed-bubble-id', content: '改过的需求 B' }),
+    );
+    const user = useSessionStore.getState().messages.find((message) => message.id === 'failed-bubble-id');
+    expect(user?.content).toBe('改过的需求 B');
+    expect(user?.metadata?.sendFailed).toBeUndefined();
+    expect(useSessionStore.getState().messages.filter((message) => message.role === 'user')).toHaveLength(1);
+  });
+
+  it('插话被排进队列时也不撤掉已替换的失败气泡', async () => {
+    useSessionStore.setState({
+      currentSessionId: 'session-running',
+      messages: [{
+        id: 'failed-bubble-id',
+        role: 'user',
+        content: '原文 A',
+        timestamp: 1,
+        metadata: { sendFailed: true },
+      }],
+    } as never);
+    domainInvoke.mockResolvedValueOnce({
+      success: true,
+      data: { outcome: 'queued', queuedInputId: 'buffered-1', code: 'TURN_CHANGED', message: 'queued' },
+    });
+
+    const outcome = await submitSteerEnvelope({
+      content: '改过的需求 B',
+      clientMessageId: 'failed-bubble-id',
+    }, 'session-running', 'turn-visible');
+
+    expect(outcome?.outcome).toBe('queued');
+    const user = useSessionStore.getState().messages.find((message) => message.id === 'failed-bubble-id');
+    expect(user?.content).toBe('改过的需求 B');
+    expect(user?.metadata?.sendFailed).toBeUndefined();
   });
 });

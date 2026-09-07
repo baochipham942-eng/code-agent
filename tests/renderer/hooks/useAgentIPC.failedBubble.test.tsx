@@ -16,6 +16,8 @@ vi.mock('../../../src/renderer/services/ipcService', () => ({
 }));
 
 import { useAgentIPC } from '../../../src/renderer/hooks/agent/useAgentIPC';
+import { applyConversationStreamEvent } from '../../../src/renderer/hooks/agent/effects/useConversationStreamEffects';
+import type { Message } from '../../../src/shared/contract';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
 import { useSwarmStore } from '../../../src/renderer/stores/swarmStore';
@@ -186,5 +188,57 @@ describe('useAgentIPC 失败气泡保留 + clientMessageId 幂等', () => {
     expect(new Set(hostClientMessageIds()).size).toBe(2);
     expect(hostClientMessageIds()[0]).toBe('client-msg-keep');
     expect(hostClientMessageIds()[1]).not.toBe('client-msg-keep');
+  });
+
+  it('host 回放同 id 用户消息时更新失败气泡正文并清失败态', () => {
+    const messagesRef = {
+      current: [{
+        id: 'client-msg-keep',
+        role: 'user',
+        content: '原文 A',
+        timestamp: 1,
+        metadata: { sendFailed: true },
+      }] as Message[],
+    };
+    applyConversationStreamEvent(
+      {
+        type: 'message',
+        data: {
+          id: 'client-msg-keep',
+          role: 'user',
+          content: '改过的需求 B',
+          timestamp: 2,
+        },
+      },
+      {
+        currentTurnMessageId: null,
+        committedAssistantMessageIds: new Set<string>(),
+        lastDeltaSeqByTurn: new Map<string, number>(),
+      },
+      {
+        addMessage: (message) => {
+          messagesRef.current = [...messagesRef.current, message];
+        },
+        updateMessage: (id, updates) => {
+          messagesRef.current = messagesRef.current.map((message) => (
+            message.id === id ? { ...message, ...updates } : message
+          ));
+        },
+        setMessages: (next) => {
+          messagesRef.current = next;
+        },
+        getMessages: () => messagesRef.current,
+        queueUpdate: () => {},
+        now: () => 500,
+        generateId: () => 'generated',
+      },
+    );
+
+    expect(messagesRef.current).toHaveLength(1);
+    expect(messagesRef.current[0]).toMatchObject({
+      id: 'client-msg-keep',
+      content: '改过的需求 B',
+    });
+    expect(messagesRef.current[0]?.metadata?.sendFailed).toBeUndefined();
   });
 });

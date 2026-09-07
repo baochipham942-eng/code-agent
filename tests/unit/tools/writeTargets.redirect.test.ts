@@ -267,6 +267,24 @@ describe('引号/转义目标的词法保真（PR #1709 复审①）', () => {
       .toEqual([resolveCanonicalRunPath('/tmp/a\\b.txt')]);
   });
 
+  it('包装器的 POSIX 附着值选项不该让整条命令失明（ai-review 第 47 轮）', () => {
+    // `-uMODE` 是 `-u MODE` 的附着写法。认不出它 ⇒ 整个 wrapper 判 unresolved ⇒ 零写目标 ⇒
+    // 工作区边界检查根本不触发。附着值是 POSIX 通用短选项语法，四个 wrapper 一起覆盖。
+    expect(resolve("env -uMODE bash -c 'cp source.txt /etc/owned47.txt'").targets)
+      .toEqual([resolveCanonicalRunPath('/etc/owned47.txt')]);
+    expect(resolve("sudo -uroot bash -c 'cp source.txt /etc/owned47b.txt'").targets)
+      .toEqual([resolveCanonicalRunPath('/etc/owned47b.txt')]);
+    expect(resolve("timeout -sKILL 5 bash -c 'cp source.txt /etc/owned47c.txt'").targets)
+      .toEqual([resolveCanonicalRunPath('/etc/owned47c.txt')]);
+    expect(resolve("nice -n5 bash -c 'cp source.txt /etc/owned47f.txt'").targets)
+      .toEqual([resolveCanonicalRunPath('/etc/owned47f.txt')]);
+    // 分离写法本来就认得，两种写法必须同判
+    expect(resolve("env -u MODE bash -c 'cp source.txt /etc/owned47d.txt'").targets)
+      .toEqual([resolveCanonicalRunPath('/etc/owned47d.txt')]);
+    // 真阴：真正读不懂的选项仍要 unresolved，别把守卫一起放松了
+    expect(resolve("env --bogus-unknown bash -c 'cp a /etc/x'").targets).toEqual([]);
+  });
+
   it('嵌套脚本解析失败仍保住已识别的写目标（ai-review 第 46 轮：失败不许清空视图）', () => {
     // `(true)` 让内层解析失败；基线从分号前的 cp 提得到目标，候选一度返回空 ⇒
     // 工作区边界检查整个不触发。解析失败只该让视图变宽（多报），不该让它变空。

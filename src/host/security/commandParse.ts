@@ -297,6 +297,11 @@ function optionCommandIndex(
       continue;
     }
     if (booleanOptions.has(optionName)) continue;
+    // A POSIX short option may carry its value attached: `env -uMODE`, `sudo -uroot`,
+    // `timeout -sKILL`. Reading that as an unknown option marked the whole wrapper unresolved,
+    // and an unresolved wrapper reports zero write targets — the workspace boundary check then
+    // never fires on the command it wraps (ai-review round 47).
+    if (arg.length > 2 && !arg.startsWith('--') && valueOptions.has(arg.slice(0, 2))) continue;
     // A cluster of short boolean flags (`sudo -En`) is still fully understood.
     if (/^-[A-Za-z0-9]+$/.test(arg)
       && [...arg.slice(1)].every((letter) => booleanOptions.has(`-${letter}`))) continue;

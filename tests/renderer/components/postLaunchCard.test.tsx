@@ -403,4 +403,38 @@ describe('上线后质量卡 · 透视与环比', () => {
     fireEvent.click(screen.getByTestId('postlaunch-session-s1'));
     expect(onOpenSession).toHaveBeenCalledWith('s1');
   });
+
+  it('200 场候选渲染时回流入口可用，传给预览的 sessionIds 不超过 20', () => {
+    const onOpenHarvest = vi.fn();
+    const reflowCandidates = Array.from({ length: 200 }, (_, index) => ({
+      sessionId: `sess-${String(index).padStart(3, '0')}`,
+      turnId: `t-${index}`,
+      judgeVersion: 'postlaunch-judge-v1',
+      redDimensions: ['goal'] as Array<'goal'>,
+      signals: [],
+      failureClass: null,
+      sources: ['judge'] as Array<'judge'>,
+    }));
+    render(
+      <PostLaunchCard
+        report={report()}
+        running={false}
+        error={null}
+        days={7}
+        onRun={noop}
+        onOpenSession={noop}
+        reflowCandidates={reflowCandidates}
+        onOpenHarvest={onOpenHarvest}
+      />,
+    );
+    fireEvent.click(screen.getByTestId('postlaunch-sessions-0'));
+    const open = screen.getByTestId('postlaunch-reflow-open') as HTMLButtonElement;
+    expect(open.disabled).toBe(false);
+    fireEvent.click(open);
+    expect(onOpenHarvest).toHaveBeenCalledTimes(1);
+    const sessionIds = onOpenHarvest.mock.calls[0]?.[0] as string[];
+    expect(sessionIds.length).toBeLessThanOrEqual(20);
+    expect(sessionIds).toHaveLength(20);
+    expect(sessionIds.every((id) => /^sess-\d{3}$/.test(id))).toBe(true);
+  });
 });

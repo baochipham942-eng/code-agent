@@ -15,6 +15,20 @@ const db = vi.hoisted(() => ({
   feedback: vi.fn(),
 }));
 
+const reflowStore = vi.hoisted(() => ({
+  list: vi.fn(() => [] as Array<{
+    sessionId: string;
+    turnId: string | null;
+    judgeVersion: string | null;
+    redDimensions: string[];
+    signals: string[];
+    failureClass: string | null;
+    sources: Array<'judge' | 'signal' | 'feedback'>;
+  }>),
+  consent: vi.fn(() => 'turn_excerpt' as 'metadata' | 'turn_excerpt' | 'full_session'),
+  enabled: true,
+}));
+
 // 宿主取数走真实入口 buildHarvestPreview，只把数据库与回放服务换成夹具
 // （与 tests/unit/ipc/evaluationRunBridge.ipc.test.ts 同一套 mock 写法）。
 vi.mock('@host/telemetry/replay/telemetryQueryService', () => ({
@@ -26,6 +40,15 @@ vi.mock('@host/services/core/databaseService', () => ({
     getSession: db.session,
     getDb: () => ({ prepare: () => ({ all: db.feedback }) }),
   }),
+}));
+
+vi.mock('@host/testing/postlaunch/postLaunchScoreStore', () => ({
+  listReflowCandidates: reflowStore.list,
+  getPostLaunchConsentScope: reflowStore.consent,
+}));
+
+vi.mock('@host/testing/postlaunch/postLaunchGate', () => ({
+  isPostLaunchReflowEnabled: () => reflowStore.enabled,
 }));
 
 import { deriveHarvestSeed } from '@internal-evaluation/host/evaluation/harvestCandidates';
@@ -212,6 +235,9 @@ describe('预览编排', () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.clearAllMocks();
+    reflowStore.enabled = true;
+    reflowStore.consent.mockReturnValue('turn_excerpt');
+    reflowStore.list.mockReturnValue([]);
   });
 
   it('取不到内容的会话只进 failed，不炸整批；批次标签按当天日期', async () => {
@@ -241,5 +267,52 @@ describe('预览编排', () => {
       sessionIds: Array.from({ length: 21 }, (_, index) => `sess-fake-${index}`),
       fields: [],
     })).rejects.toThrow('一次最多转换 20 场会话');
+  });
+
+  it('回流预览按同意档裁剪：turn_excerpt 不含首轮原文，full_session 覆盖整会话', async () => {
+    const firstTurnPath = 'first-turn-secret.txt';
+    const triggerPath = 'trigger-turn.txt';
+    db.replay.mockResolvedValue(replay([
+      turn([
+        userBlock('FEATURE_A_FIRST_TURN_PROMPT'),
+        toolBlock('Write', 'Write', { file_path: firstTurnPath }, 1),
+      ], 1000, 1),
+      turn([
+        userBlock('FEATURE_B_TRIGGER_TURN_PROMPT'),
+        toolBlock('Write', 'Write', { file_path: triggerPath }, 2),
+      ], 2000, 2),
+    ]));
+    reflowStore.enabled = true;
+    reflowStore.list.mockReturnValue([{
+      sessionId: 'sess-fake-0001',
+      turnId: '2',
+      judgeVersion: 'postlaunch-judge-v1',
+      redDimensions: ['goal'],
+      signals: [],
+      failureClass: null,
+      sources: ['judge'],
+    }]);
+
+    reflowStore.consent.mockReturnValue('turn_excerpt');
+    const excerpt = await buildHarvestPreview({
+      sessionIds: ['sess-fake-0001'],
+      fields: ['prompt'],
+      postLaunchReflow: true,
+    });
+    expect(excerpt.failed).toEqual([]);
+    expect(excerpt.seeds[0]?.prompt).toContain('FEATURE_B_TRIGGER_TURN_PROMPT');
+    expect(excerpt.seeds[0]?.prompt).not.toContain('FEATURE_A_FIRST_TURN_PROMPT');
+    expect(JSON.stringify(excerpt.seeds[0]?.candidates)).not.toContain(firstTurnPath);
+    expect(JSON.stringify(excerpt.seeds[0]?.candidates)).toContain(triggerPath);
+
+    reflowStore.consent.mockReturnValue('full_session');
+    const full = await buildHarvestPreview({
+      sessionIds: ['sess-fake-0001'],
+      fields: ['prompt'],
+      postLaunchReflow: true,
+    });
+    expect(full.seeds[0]?.prompt).toContain('FEATURE_A_FIRST_TURN_PROMPT');
+    expect(JSON.stringify(full.seeds[0]?.candidates)).toContain(firstTurnPath);
+    expect(JSON.stringify(full.seeds[0]?.candidates)).toContain(triggerPath);
   });
 });

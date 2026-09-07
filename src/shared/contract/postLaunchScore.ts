@@ -242,6 +242,8 @@ export interface PostLaunchReflowCandidate {
   sources: Array<'judge' | 'signal' | 'feedback'>;
   feedbackId?: string;
   feedbackAt?: number;
+  /** 统一排序键：评分行用 scored_at，点踩行用 created_at。 */
+  occurredAt?: number;
 }
 
 export interface PostLaunchReportGroup {

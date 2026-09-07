@@ -125,7 +125,7 @@ const DRIVER_SCRIPT = `<script ${IN_APP_VALIDATION_DRIVER_FLAG}="1">
       await delay(SETTLE_MS);
       var exp = step.expect;
       if (!exp) return;
-      var expectTimeout = exp.timeoutMs || DEFAULT_EXPECT_MS;
+      var expectTimeout = exp.timeoutMs != null ? exp.timeoutMs : DEFAULT_EXPECT_MS;
       if (exp.textVisible) {
         var needle = exp.textVisible;
         var ok = await waitFor(function () {
@@ -201,8 +201,9 @@ function injectCsp(html: string): string {
 
 function injectDriver(html: string): string {
   if (html.includes(IN_APP_VALIDATION_DRIVER_FLAG)) return html;
-  if (/<\/body>/i.test(html)) {
-    return html.replace(/<\/body>/i, `${DRIVER_SCRIPT}</body>`);
+  const close = html.toLowerCase().lastIndexOf('</body>');
+  if (close >= 0) {
+    return `${html.slice(0, close)}${DRIVER_SCRIPT}${html.slice(close)}`;
   }
   return `${html}${DRIVER_SCRIPT}`;
 }

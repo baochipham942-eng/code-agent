@@ -50,5 +50,9 @@ describe('inAppValidationExecutor unique-origin driver', () => {
       action: { type: 'click-selector', selector: '#a' },
       expect: { textVisible: 'ok', selectorVisible: '#b', timeoutMs: 5000 },
     })).toBeGreaterThan(10_000);
+    expect(inAppValidationDriverBudgetMs({
+      action: { type: 'click-selector', selector: '#a' },
+      expect: { textVisible: 'ok', timeoutMs: 0 },
+    })).toBeLessThan(2000);
   });
 });

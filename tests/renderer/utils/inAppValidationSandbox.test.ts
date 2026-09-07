@@ -41,4 +41,15 @@ describe('inAppValidationSandbox', () => {
     expect(wrapped).toContain('waitFor');
     expect(wrapped).toContain('for (var i = 0; i < text.length');
   });
+
+  it('不把脚本字符串里的 </body> 当闭合标签', () => {
+    const source = '<!doctype html><html><head></head><body><script>const suffix = "</body>";</script></body></html>';
+    const wrapped = wrapInAppValidationHtml(source);
+    expect(wrapped).toContain('const suffix = "</body>";');
+    expect(wrapped.match(/data-neo-in-app-driver/g)?.length).toBe(1);
+    const driverAt = wrapped.indexOf('data-neo-in-app-driver');
+    const realClose = wrapped.toLowerCase().lastIndexOf('</body>');
+    expect(driverAt).toBeGreaterThan(wrapped.indexOf('const suffix'));
+    expect(driverAt).toBeLessThan(realClose);
+  });
 });

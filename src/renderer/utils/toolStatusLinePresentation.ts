@@ -30,7 +30,8 @@ export interface ToolStatusLineFlags {
   restartInterrupted: boolean;
 }
 
-export type ToolStatusLineStatus = 'pending' | 'success' | 'error' | 'interrupted';
+// 只在本文件内部用，别导出——导出无人消费的类型会打红 knip dead-export 棘轮。
+type ToolStatusLineStatus = 'pending' | 'success' | 'error' | 'interrupted';
 
 export interface ToolStatusLineInput {
   status: ToolStatusLineStatus;

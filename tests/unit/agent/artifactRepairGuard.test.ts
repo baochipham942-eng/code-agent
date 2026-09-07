@@ -1,10 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ContextHealthState } from '../../../src/host/agent/runtime/contextHealthState';
 import {
-  ARTIFACT_REPAIR_GUARD_SEED_MESSAGE_WINDOW,
   getArtifactRepairToolPolicy,
   seedArtifactRepairGuardFromContext,
 } from '../../../src/host/agent/runtime/artifactRepairGuard';
+import { ARTIFACT_REPAIR_MAX_ATTEMPTS } from '../../../src/shared/constants/repair';
+
+// 与 seed 模块内同名常量同源派生（模块内不再 export：production profile 下它没有
+// 生产消费方，只有本测试在窗口边界用例里引用）。
+const ARTIFACT_REPAIR_GUARD_SEED_MESSAGE_WINDOW = ARTIFACT_REPAIR_MAX_ATTEMPTS * 6;
 import { ArtifactState } from '../../../src/host/agent/runtime/artifactState';
 import type { Message, ToolResult } from '../../../src/shared/contract';
 

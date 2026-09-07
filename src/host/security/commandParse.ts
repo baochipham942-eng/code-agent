@@ -70,9 +70,9 @@ function basename(program: string): string {
 
 function shellLines(command: string): string[] {
   // Bash deletes an unquoted `\<LF>` before it reads words, so every look-ahead below — IO
-  // numbers, `$'`, `#` boundaries, `&>` adjacency — must observe the merged text. (`\<CR><LF>` is
-  // folded too; that is a round-24 house rule, not bash — real bash reads `\<CR>` as an escaped CR
-  // and splits at the LF, see the phase-6 evidence.) Rounds 24/25 were both a look-ahead
+  // numbers, `$'`, `#` boundaries, `&>` adjacency — must observe the merged text. `\<CR>` is no
+  // continuation at all: bash reads it as an escaped CR word byte and the LF after it is a real
+  // separator, so it survives this fold verbatim (round 31). Rounds 24/25 were both a look-ahead
   // outrunning this fold. The fold is quote-aware:
   // single-quoted and ANSI-C bodies keep the pair verbatim (`$'a\<LF>b'` stays one word with the
   // bytes), a comment ends at the raw newline (`# c\<LF>rm -rf /` leaves the second line a live
@@ -104,10 +104,7 @@ function shellLines(command: string): string[] {
         continue;
       }
       if (character === '\\' && mode !== 'single') {
-        if (mode !== 'ansi') {
-          if (source[index + 1] === '\n') { index += 1; continue; }
-          if (source[index + 1] === '\r' && source[index + 2] === '\n') { index += 2; continue; }
-        }
+        if (mode !== 'ansi' && source[index + 1] === '\n') { index += 1; continue; }
         // Consume the pair verbatim: `\'` must not open a quote bash never opened, and the second
         // backslash of `a\\` must not pair with the newline after it (that newline is a separator).
         output += character;
@@ -122,11 +119,11 @@ function shellLines(command: string): string[] {
       } else if (character === '$') {
         // The fold itself changes adjacency: `$\<LF>'` is `$'` to bash (round 27). Look past the
         // continuations this pass is about to remove, or the ANSI-C opener is misread as a plain
-        // single quote and every fold after it drifts.
+        // single quote and every fold after it drifts. Only `\<LF>` counts — `$\<CR><LF>'` is
+        // `$<CR>` then a new line to bash, not an opener (round 31 probe).
         let after = index + 1;
         while (after < source.length && source[after] === '\\') {
           if (source[after + 1] === '\n') { after += 2; continue; }
-          if (source[after + 1] === '\r' && source[after + 2] === '\n') { after += 3; continue; }
           break;
         }
         if (source[after] === "'") {

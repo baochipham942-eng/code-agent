@@ -229,7 +229,8 @@ describe('shared shell command parser', () => {
     expect(nbsp.segments[0].words).toEqual(['echo', 'ok\u00a0#tag']);
     expect(parseShellCommand('echo ok\u000b#tag; ./cleanup').executions.map((e) => e.program)).toEqual(['echo', './cleanup']);
     expect(parseShellCommand('echo a\u00a0b\u3000c').segments[0].words).toEqual(['echo', 'a\u00a0b\u3000c']);
-    // A bare carriage return is a word byte to bash as well (only `\\\r\n` is a line continuation).
+    // A bare carriage return is a word byte to bash as well — no `\\\r` form is ever a
+    // continuation, `\<LF>` alone is (round 31).
     expect(parseShellCommand('echo ok\r#tag; ./cleanup').executions.map((e) => e.program)).toEqual(['echo', './cleanup']);
     expect(parseShellCommand('echo a\rb').segments[0].words).toEqual(['echo', 'a\rb']);
     // A real space before `#` does start a comment; bash never reaches `./cleanup` here.
@@ -262,7 +263,7 @@ describe('shared shell command parser', () => {
   });
 
   it('reads an IO number across a line continuation before the redirect operator', () => {
-    for (const command of ['cp source.txt target.txt 2\\\n>&1', 'cp source.txt target.txt 2\\\r\n>&1', 'cp source.txt target.txt 2\\\n\\\n>&1']) {
+    for (const command of ['cp source.txt target.txt 2\\\n>&1', 'cp source.txt target.txt 2\\\n\\\n>&1']) {
       const parsed = parseShellCommand(command);
       expect(parsed.parsingFailed).toBe(false);
       expect(parsed.writeTargets).toEqual([{ path: 'target.txt', source: 'copy', uncertain: false }]);
@@ -271,6 +272,14 @@ describe('shared shell command parser', () => {
     // A quoted or space-separated digit is still an operand, not an IO number.
     expect(parseShellCommand("echo x '2'> two.txt").segments[0].words).toEqual(['echo', 'x', '2']);
     expect(parseShellCommand('echo x 2 > two.txt').segments[0].words).toEqual(['echo', 'x', '2']);
+    // `\<CR>` is an escaped word byte to bash, not half a continuation: the digit stays an operand
+    // and `>&1` starts a new line, so the copy destination is the literal `2\r` file. Real bash
+    // (3.2, probe): cp reports `2\r: Not a directory`; the old expectation `target.txt` was the
+    // round-24 house rule, which round 31 overturned.
+    const crlf = parseShellCommand('cp source.txt target.txt 2\\\r\n>&1');
+    expect(crlf.parsingFailed).toBe(false);
+    expect(crlf.segments[0].words).toEqual(['cp', 'source.txt', 'target.txt', '2\r']);
+    expect(crlf.writeTargets).toEqual([{ path: '2\r', source: 'copy', uncertain: false }]);
   });
 
   it('消除未引号续行后再解析所有前瞻形态', () => {
@@ -290,7 +299,29 @@ describe('shared shell command parser', () => {
     expect(wordHash.segments[1].words).toEqual(['./cleanup']);
     expect(parseShellCommand("echo 'a\\\nb'").segments[0].words).toEqual(['echo', 'a\\\nb']);
     expect(parseShellCommand('echo "a\\\nb"').segments[0].words).toEqual(['echo', 'ab']);
-    expect(parseShellCommand("ls\\\n\\\r\n-la").segments[0].words).toEqual(['ls-la']);
+    // `\<LF>` folds, then `\<CR>` is a word byte and the LF after it a separator: bash runs
+    // `ls\r` and `-la` as two commands (probe: `-la: command not found`).
+    const crlfAfterFold = parseShellCommand("ls\\\n\\\r\n-la");
+    expect(crlfAfterFold.segments[0].words).toEqual(['ls\r']);
+    expect(crlfAfterFold.segments[1].words).toEqual(['-la']);
+  });
+
+  // Round 31: `\<CR>` is never a continuation byte. Real bash (3.2, probes): the escaped CR
+  // stays inside the word, the LF after it is the command boundary — so a CRLF cannot splice
+  // two commands into one, and a redirect's IO number cannot be smuggled across it.
+  it('`\\<CR>` 是词内字节，LF 才是命令边界（真 bash 核对）', () => {
+    const parsed = parseShellCommand('echo ok\\\r\ncp source.txt target.txt');
+    expect(parsed.parsingFailed).toBe(false);
+    expect(parsed.segments).toHaveLength(2);
+    expect(parsed.segments[0].words).toEqual(['echo', 'ok\r']);
+    expect(parsed.segments[1].words).toEqual(['cp', 'source.txt', 'target.txt']);
+    expect(parsed.writeTargets).toEqual([{ path: 'target.txt', source: 'copy', uncertain: false }]);
+    // Contrast with round 27's `$\\<LF>'ls'`: there the fold makes it an ANSI-C opener; across a
+    // `\\<CR><LF>` bash keeps `$\r` a word and `'ls'` starts the next line (probe: word `$\r`).
+    // The lone `$` carries the round-15 empty-key marker, like `"$"ls` above.
+    const dollarCrlf = parseShellCommand("echo $\\\r\n'ls'");
+    expect(dollarCrlf.segments[0].words).toEqual(['echo', '${}\r']);
+    expect(dollarCrlf.segments[1].words).toEqual(['ls']);
   });
 
   // 折叠这一遍自身的引号/注释保真度，逐条先在真 bash（3.2.57，set -- + printf %q 打词）核过：
@@ -317,8 +348,10 @@ describe('shared shell command parser', () => {
     expect(parseShellCommand('set -- "x\\"y\\\nz"').segments[0].words).toEqual(['set', '--', 'x"yz']);
     // ANSI-C 里 `\<LF>` 原样保留：词含换行不拆（bash 词是 a\+LF+b；解码器对未命名转义丢反斜杠是既有行为）
     expect(parseShellCommand("echo $'a\\\nb'").segments[0].words).toEqual(['echo', 'a\nb']);
-    // `\<CR><LF>` 当续行删是第 24 轮起的房规（真 bash 3.2 判作转义 CR + 分隔符，证据档有记录）
-    expect(parseShellCommand('set -- a\\\r\nb').segments[0].words).toEqual(['set', '--', 'ab']);
+    // `\<CR>` 不是续行的一半：真 bash 3.2 判词为 `a\r`，LF 之后 `b` 是独立命令（探针实跑核对）
+    const crlfWord = parseShellCommand('set -- a\\\r\nb');
+    expect(crlfWord.segments[0].words).toEqual(['set', '--', 'a\r']);
+    expect(crlfWord.segments[1].words).toEqual(['b']);
     // 第 27 轮：`$\<LF>'` 折叠后才相邻，ANSI-C 开引号要在折叠后的相邻关系上认。
     // 真 bash 实跑词恰为 [cp source.txt target.txt]（`22>&1` 是 IO 数字），写目标 target.txt。
     const foldedAnsiOpener = parseShellCommand("echo $\\\n'a\\'b'; cp source.txt target.txt 2\\\n2>&1 # '");

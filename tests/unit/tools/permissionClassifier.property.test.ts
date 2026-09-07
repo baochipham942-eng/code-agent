@@ -257,6 +257,9 @@ const KNOWN_SHAPES = [
   'echo ok & > /dev/null cp source.txt target.txt',
   'cp source.txt ~/.ssh/authorized_keys 2\\\n>&1',
   'cp source.txt ~/.ssh/authorized_keys 2\\\n2>&1',
+  // Round 31: a `\<CR><LF>` is an escaped word byte plus a real separator to bash — the cp must
+  // stay a live second command, not splice into the echo.
+  'echo ok\\\r\ncp source.txt target.txt',
 ];
 
 // Under /tmp the critical-path rm rule fires before anything else and masks weaker rules; a real

@@ -367,9 +367,9 @@ describe('createRemoteMCPFetch OAuth timeout', () => {
     });
 
     expect(sessionFetch).toHaveBeenCalledTimes(1);
-    const [sessionInput, sessionInit] = sessionFetch.mock.calls[0];
-    expect(sessionInput).toBe('https://mcp.example.com/mcp');
-    expect(sessionInit?.signal).toBe(controller.signal);
+    const firstCall = sessionFetch.mock.calls[0] as unknown as [string, RequestInit | undefined];
+    expect(firstCall[0]).toBe('https://mcp.example.com/mcp');
+    expect(firstCall[1]?.signal).toBe(controller.signal);
     expect(controller.signal.aborted).toBe(false);
     expect(oauthFetch).not.toHaveBeenCalled();
   });

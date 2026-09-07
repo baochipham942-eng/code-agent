@@ -648,4 +648,147 @@ describe('image_generate — 扩写静默回退必须当场更正', () => {
     await executeImageGenerate({ prompt: '一只柯基' }, ctxCollecting(out), allowAll);
     expect(out.join('\n')).not.toContain('更正');
   });
+
+  it('cogview 扩写嗅探 SSE 正文，提交扩写结果而不是 JSON.parse 异常', async () => {
+    const sse = [
+      'data: {"choices":[{"delta":{"content":"一只柯基在草地上"}}]}',
+      '',
+      'data: [DONE]',
+      '',
+    ].join('\n');
+    global.fetch = vi.fn().mockImplementation((url: string) => {
+      if (String(url).includes('chat/completions')) {
+        return Promise.resolve(new Response(sse, {
+          status: 200,
+          headers: { 'content-type': 'text/event-stream' },
+        }));
+      }
+      if (String(url).includes('images/generations')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ data: [{ url: 'https://cdn/img.png' }] }),
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        headers: new Headers({ 'content-type': 'image/png' }),
+        arrayBuffer: async () => new Uint8Array([0x89, 0x50, 0x4e, 0x47]).buffer,
+      });
+    });
+
+    const result = await executeImageGenerate(
+      { prompt: '一只柯基', expand_prompt: true },
+      makeCtx(),
+      allowAll,
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.meta?.expandedPrompt).toBe('一只柯基在草地上');
+      expect(result.meta?.originalPrompt).toBe('一只柯基');
+    }
+  });
+
+  it('cogview 扩写遇到残缺 SSE 时回落原 prompt，并留下结构化 warn', async () => {
+    const logger = makeLogger();
+    const out: string[] = [];
+    global.fetch = vi.fn().mockImplementation((url: string) => {
+      if (String(url).includes('chat/completions')) {
+        return Promise.resolve(new Response('data: not-json\n\ndata: [DONE]\n\n', {
+          status: 200,
+          headers: { 'content-type': 'text/event-stream' },
+        }));
+      }
+      if (String(url).includes('images/generations')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ data: [{ url: 'https://cdn/img.png' }] }),
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        headers: new Headers({ 'content-type': 'image/png' }),
+        arrayBuffer: async () => new Uint8Array([0x89, 0x50, 0x4e, 0x47]).buffer,
+      });
+    });
+
+    const result = await executeImageGenerate(
+      { prompt: '一只柯基', expand_prompt: true },
+      {
+        ...ctxCollecting(out),
+        logger,
+      },
+      allowAll,
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.meta?.expandedPrompt).toBe('一只柯基');
+    }
+    expect(out.join('\n')).toContain('更正：扩写没成功');
+    expect(logger.warn).toHaveBeenCalledWith(
+      'image_generate cogview prompt expand failed',
+      expect.objectContaining({ reason: 'malformed SSE data' }),
+    );
+    const warnPayload = (logger.warn as ReturnType<typeof vi.fn>).mock.calls.find(
+      (call) => call[0] === 'image_generate cogview prompt expand failed',
+    )?.[1] as { reason?: string; error?: string };
+    expect(warnPayload?.error).toBeUndefined();
+    expect(String(warnPayload?.reason)).not.toMatch(/Unexpected token/);
+  });
+});
+
+describe('image_generate — flux SSE 扩写', () => {
+  const origEnv = { ...process.env };
+  beforeEach(() => {
+    vi.clearAllMocks();
+    existsSyncMock.mockReturnValue(true);
+    delete process.env.ZHIPU_OFFICIAL_API_KEY;
+    getConfigServiceMock.mockReturnValue({
+      getApiKey: vi.fn((p: string) => (p === 'openrouter' ? 'or-key' : undefined)),
+    });
+    getAuthServiceMock.mockReturnValue({
+      getCurrentUser: vi.fn().mockReturnValue({ isAdmin: false }),
+    });
+  });
+  afterEach(() => { process.env = { ...origEnv }; });
+
+  it('OpenRouter 扩写嗅探 SSE 正文', async () => {
+    const sse = [
+      'data: {"choices":[{"message":{"content":"a fluffy corgi in a meadow"}}]}',
+      '',
+      'data: [DONE]',
+      '',
+    ].join('\n');
+    let n = 0;
+    global.fetch = vi.fn().mockImplementation(() => {
+      n++;
+      if (n === 1) {
+        return Promise.resolve(new Response(sse, {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }));
+      }
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({
+          choices: [{
+            message: {
+              images: [{ image_url: { url: 'data:image/png;base64,xyz' } }],
+            },
+          }],
+        }),
+      });
+    });
+
+    const result = await executeImageGenerate(
+      { prompt: 'corgi', expand_prompt: true },
+      makeCtx(),
+      allowAll,
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.meta?.engine).toBe('flux');
+      expect(result.meta?.expandedPrompt).toBe('a fluffy corgi in a meadow');
+    }
+  });
 });

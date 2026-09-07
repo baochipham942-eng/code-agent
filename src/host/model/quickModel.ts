@@ -15,6 +15,7 @@ import { getProviderLimiter } from './concurrencyLimiter';
 import { isZhipuFreeModel, resolveProviderApiKey, resolveProviderBaseUrl } from './providers/providerResolution';
 import { getMemoryModelOverride, type MemoryModelOverride } from './memoryModelOverrideScope';
 import type { ModelConfig, ModelProvider } from '../../shared/contract';
+import { looksLikeSse, parseSseChatCompletion } from './parseSseChatCompletion';
 
 const logger = createLogger('QuickModel');
 
@@ -136,81 +137,21 @@ function parseChatCompletionContent(payload: unknown): string | null {
   return typeof content === 'string' && content.length > 0 ? content : null;
 }
 
-function parseChatCompletionDeltaContent(payload: unknown): string | null {
-  if (!isUnknownRecord(payload) || !isUnknownArray(payload.choices)) {
-    return null;
-  }
-
-  const firstChoice = payload.choices[0];
-  if (!isUnknownRecord(firstChoice) || !isUnknownRecord(firstChoice.delta)) {
-    return null;
-  }
-
-  const content = firstChoice.delta.content;
-  return typeof content === 'string' && content.length > 0 ? content : null;
-}
-
 type QuickModelResponseParseResult =
   | { kind: 'content'; content: string }
   | { kind: 'empty' }
   | { kind: 'invalid'; error: string };
 
-function parseSseChatCompletion(rawBody: string): QuickModelResponseParseResult {
-  const events = rawBody.replace(/\r\n/g, '\n').split(/\n\n+/);
-  const deltaParts: string[] = [];
-  const completeMessages: string[] = [];
-  let jsonEventCount = 0;
-  let malformedEventCount = 0;
-
-  for (const event of events) {
-    const data = event
-      .split('\n')
-      .filter((line) => line.startsWith('data:'))
-      .map((line) => line.slice(5).trimStart())
-      .join('\n')
-      .trim();
-    if (!data || data === '[DONE]') continue;
-
-    let payload: unknown;
-    try {
-      payload = JSON.parse(data);
-      jsonEventCount++;
-    } catch {
-      malformedEventCount++;
-      continue;
-    }
-
-    const delta = parseChatCompletionDeltaContent(payload);
-    if (delta) {
-      deltaParts.push(delta);
-      continue;
-    }
-    const completeMessage = parseChatCompletionContent(payload);
-    if (completeMessage) completeMessages.push(completeMessage);
-  }
-
-  if (deltaParts.length > 0) {
-    return { kind: 'content', content: deltaParts.join('') };
-  }
-  const completeMessage = completeMessages.at(-1);
-  if (completeMessage) {
-    return { kind: 'content', content: completeMessage };
-  }
-  if (jsonEventCount > 0) return { kind: 'empty' };
-  return {
-    kind: 'invalid',
-    error: malformedEventCount > 0
-      ? 'Quick model returned malformed SSE data'
-      : 'Quick model returned an invalid SSE response',
-  };
-}
-
 async function parseQuickModelResponse(response: Response): Promise<QuickModelResponseParseResult> {
   const rawBody = await response.text();
   const trimmedBody = rawBody.trimStart();
-  const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
-  if (contentType.includes('text/event-stream') || trimmedBody.startsWith('data:')) {
-    return parseSseChatCompletion(rawBody);
+  const contentType = response.headers.get('content-type') ?? '';
+  if (looksLikeSse(contentType, trimmedBody)) {
+    const parsed = parseSseChatCompletion(rawBody);
+    if (parsed.kind === 'invalid') {
+      return { kind: 'invalid', error: `Quick model returned ${parsed.error}` };
+    }
+    return parsed;
   }
   if (!trimmedBody) return { kind: 'empty' };
 

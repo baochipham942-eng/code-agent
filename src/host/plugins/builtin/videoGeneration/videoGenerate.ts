@@ -34,6 +34,7 @@ import {
   readRecordField,
   readStringField,
 } from '../typedResponseGuards';
+import { parseChatCompletionHttpBody } from '../../../model/parseSseChatCompletion';
 
 const TIMEOUT_MS = {
   SUBMIT: 30000,
@@ -222,14 +223,22 @@ async function expandVideoPrompt(
     );
 
     if (!response.ok) {
-      logger.warn('video_generate prompt expand non-ok');
+      logger.warn('video_generate prompt expand non-ok', { status: response.status });
       return shortPrompt;
     }
 
-    const expandedPrompt = readChatCompletionText(await response.json());
+    const parsed = await parseChatCompletionHttpBody(response);
+    if (parsed.kind !== 'payload') {
+      logger.warn('video_generate prompt expand failed', {
+        reason: parsed.kind === 'invalid' ? parsed.error : 'empty_response',
+      });
+      return shortPrompt;
+    }
+    const expandedPrompt = readChatCompletionText(parsed.payload);
     if (expandedPrompt) {
       return expandedPrompt;
     }
+    logger.warn('video_generate prompt expand failed', { reason: 'empty_content' });
     return shortPrompt;
   } catch (error) {
     logger.warn('video_generate prompt expand failed', {

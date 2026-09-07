@@ -55,7 +55,15 @@ describe('BaseOpenAIProvider', () => {
       .mockResolvedValueOnce({
         ok: true,
         status: 200,
-        text: async () => '',
+        text: async () => JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: 'recovered',
+              },
+            },
+          ],
+        }),
         json: async () => ({
           choices: [
             {
@@ -179,5 +187,43 @@ describe('BaseOpenAIProvider', () => {
     ).catch((err: unknown) => err);
 
     expect(getModelAuthFailureMarker(error)).toBeUndefined();
+  });
+
+  it('forceNonStreaming: upstream SSE body is sniffed into text, not a JSON.parse exception', async () => {
+    const sse = [
+      'data: {"choices":[{"delta":{"content":"Hello "}}]}',
+      '',
+      'data: {"choices":[{"delta":{"content":"from SSE"}}]}',
+      '',
+      'data: [DONE]',
+      '',
+    ].join('\n');
+    mockElectronFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: async () => sse,
+      json: async () => {
+        throw new SyntaxError("Unexpected token 'd', \"data: {\\\"ch\"... is not valid JSON");
+      },
+    } as never);
+
+    const provider = new TestOpenAIProvider();
+    const config: ModelConfig = {
+      provider: 'openai',
+      model: 'gpt-4o',
+      apiKey: 'test-key',
+      maxTokens: 1000,
+    };
+
+    const result = await provider.inference(
+      [{ role: 'user', content: 'hi' }],
+      [],
+      config,
+      undefined,
+      undefined,
+      { forceNonStreaming: true, disableProviderTransientRetry: true },
+    );
+
+    expect(result).toMatchObject({ type: 'text', content: 'Hello from SSE' });
   });
 });

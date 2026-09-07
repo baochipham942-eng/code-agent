@@ -232,7 +232,7 @@ const NESTED_SCRIPT_SHELLS = new Set(['bash', 'sh', 'zsh', 'dash']);
 
 /** `bash -c '...'` 内嵌脚本的写目标（原始词，值化在出口统一做）。 */
 function nestedScriptTargets(words: string[]): string[] {
-  if (words.length < 3) return [];
+  if (words.length < 2) return []; // eval 只要两个词（eval + 脚本）；shell 的 -c 循环自带界
   // PR #1709 复审⑤（二裁维持）：保引号分词后整段脚本是一个引号词，基线靠 canonicalize
   // 拍平顺带抓到，换成保真词法后必须主动找——而且不能只看 words[0]：`env bash -c`、
   // `sudo bash -c`、`timeout 5 bash -c`、`env FOO=1 bash -c` 这些包装前缀会把 shell 挪到
@@ -241,7 +241,15 @@ function nestedScriptTargets(words: string[]): string[] {
   // 同款（多判漏判不对称，选保守），且脚本解析不出写目标时本来就零产出。
   const scanLimit = Math.min(words.length - 2, 6);
   for (let shellIndex = 0; shellIndex <= scanLimit; shellIndex += 1) {
-    if (!NESTED_SCRIPT_SHELLS.has(path.basename(shellWordValue(words[shellIndex])))) continue;
+    const wordValue = path.basename(shellWordValue(words[shellIndex]));
+    // eval 是内建不是外部命令（PR #1709 复审⑥）：语义 = 剩余参数空格拼接后执行，
+    // `eval 'echo x > /etc/z'` 整段字面脚本不递归就零目标，ownership 检查被绕过。
+    // 这是「字面脚本在参数里」家族的最后一种形状：外部包装器由上面的剥壳扫描覆盖，
+    // 脚本走变量的命中 $ 进 uncertain，source <(…)/ssh 远程执行超出本族。
+    if (wordValue === 'eval') {
+      return collectShellTargets(words.slice(shellIndex + 1).map(shellWordValue).join(' '));
+    }
+    if (!NESTED_SCRIPT_SHELLS.has(wordValue)) continue;
     for (let flagIndex = shellIndex + 1; flagIndex < words.length - 1; flagIndex += 1) {
       const flag = shellWordValue(words[flagIndex]);
       if (/^-[a-zA-Z]*c[a-zA-Z]*$/.test(flag)) {

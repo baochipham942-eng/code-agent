@@ -210,6 +210,19 @@ describe('引号/转义目标的词法保真（PR #1709 复审①）', () => {
       .toEqual([resolveCanonicalRunPath('/etc/x')]);
   });
 
+  it('eval 字面脚本的写目标不丢（PR #1709 复审⑥：内建，剩余参数空格拼接后执行）', () => {
+    expect(resolve("eval 'echo x > /etc/owned.txt'").targets)
+      .toEqual([resolveCanonicalRunPath('/etc/owned.txt')]);
+    // eval 的拼接语义：分段给的脚本拼起来仍是一条命令
+    expect(resolve("eval echo x '>' /etc/y").targets)
+      .toEqual([resolveCanonicalRunPath('/etc/y')]);
+    // 包装前缀 + eval 组合
+    expect(resolve("env eval 'cp a /etc/z'").targets)
+      .toEqual([resolveCanonicalRunPath('/etc/z')]);
+    // 真阴：eval 作数据不递归
+    expect(resolve("echo 'eval x'").targets).toEqual([]);
+  });
+
   it('单引号路径里的字面反斜杠不丢（PR #1709 复审④②：值化只许做一遍）', () => {
     expect(resolve("cp src '/tmp/a\\b.txt'").targets)
       .toEqual([resolveCanonicalRunPath('/tmp/a\\b.txt')]);

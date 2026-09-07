@@ -133,5 +133,41 @@ describe('regenerate 的重试锚点', () => {
     useMessageActionStore.getState().regenerateLast();
 
     expect(send.mock.calls[0][0]).toBe('问题 A');
+    expect(send.mock.calls[0][1]).not.toEqual(expect.objectContaining({ clientMessageId: 'u-a' }));
+  });
+
+  it('错误锚点带 retryClientMessageId 时重发复用原 id', () => {
+    install([
+      {
+        id: 'err-id',
+        role: 'assistant',
+        content: '发送失败',
+        timestamp: 3,
+        metadata: { retryPrompt: '失败的问题', retryClientMessageId: 'user-failed-1' },
+      },
+    ]);
+
+    useMessageActionStore.getState().regenerateLast();
+
+    expect(send.mock.calls[0][0]).toBe('失败的问题');
+    expect(send.mock.calls[0][1]).toEqual({ clientMessageId: 'user-failed-1' });
+  });
+
+  it('往回找到 sendFailed 用户气泡时复用它的 id', () => {
+    install([
+      {
+        id: 'user-failed-2',
+        role: 'user',
+        content: '长段需求',
+        timestamp: 1,
+        metadata: { sendFailed: true },
+      },
+      { id: 'err-plain', role: 'assistant', content: '发送失败', timestamp: 2 },
+    ]);
+
+    useMessageActionStore.getState().regenerateLast();
+
+    expect(send.mock.calls[0][0]).toBe('长段需求');
+    expect(send.mock.calls[0][1]).toEqual({ clientMessageId: 'user-failed-2' });
   });
 });

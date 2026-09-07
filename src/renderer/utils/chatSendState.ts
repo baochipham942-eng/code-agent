@@ -35,3 +35,18 @@ export function claimSendInflight(
 export function isChatSendAccepted(delivery: ChatSendDelivery | undefined): boolean {
   return delivery != null && delivery.outcome !== 'failed';
 }
+
+/**
+ * composer 发出时的 clientMessageId：envelope 已带的优先（错误卡重试会铸进去），
+ * 否则消费「编辑重发」留下的 pending id，再否则新铸。
+ * pending 必须在这次发送里用掉，避免下一条无关消息误复用失败气泡的 id。
+ */
+export function consumePendingClientMessageId(
+  envelopeClientMessageId: string | undefined,
+  pending: { current: string | null },
+  generateId: () => string,
+): string {
+  const clientMessageId = envelopeClientMessageId ?? pending.current ?? generateId();
+  pending.current = null;
+  return clientMessageId;
+}

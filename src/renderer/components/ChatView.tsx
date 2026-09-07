@@ -104,7 +104,7 @@ import {
   transitionAssistantFeedback,
   type AssistantFeedbackState,
 } from '../utils/sendWithImmediateAssistantFeedback';
-import { isChatSendAccepted } from '../utils/chatSendState';
+import { consumePendingClientMessageId, isChatSendAccepted } from '../utils/chatSendState';
 
 // Zustand selectors must return a referentially stable fallback. A fresh [] here makes
 // useSyncExternalStore treat every snapshot as changed and can loop before ChatView mounts.
@@ -195,9 +195,14 @@ export const ChatView: React.FC = () => {
     return () => window.clearInterval(interval);
   }, [currentSessionId, hasNeoWorkCardAwaitingRuntimeTerminal, loadNeoWorkCardsForConversation]);
 
-  const buildEnvelope = useCallback((content: string, attachments?: MessageAttachment[]): ConversationEnvelope => ({
+  const buildEnvelope = useCallback((
+    content: string,
+    attachments?: MessageAttachment[],
+    clientMessageId?: string,
+  ): ConversationEnvelope => ({
     content,
     ...(attachments?.length ? { attachments } : {}),
+    ...(clientMessageId ? { clientMessageId } : {}),
     searchEnabled,
     thinkingEnabled,
     ...(effortLevelExplicit ? { effortLevel } : {}),
@@ -209,10 +214,15 @@ export const ChatView: React.FC = () => {
   const messageActionUnregister = useMessageActionStore((s) => s.unregister);
   const messagesRef = useRef(messages);
   messagesRef.current = messages;
+  const chatInputRef = useRef<ChatInputHandle>(null);
+  const pendingResendClientMessageIdRef = useRef<string | null>(null);
   useEffect(() => {
     messageActionRegister(
-      (content: string, context?: Pick<ConversationEnvelopeContext, 'localityAnchor'> & { attachments?: MessageAttachment[] }) => {
-        const envelope = buildEnvelope(content, context?.attachments);
+      (content: string, context?: Pick<ConversationEnvelopeContext, 'localityAnchor'> & {
+        attachments?: MessageAttachment[];
+        clientMessageId?: string;
+      }) => {
+        const envelope = buildEnvelope(content, context?.attachments, context?.clientMessageId);
         // ADR-040：定点反馈的结构化锚点并进 composer context，host 侧补 revision 后
         // 落 user message metadata，供写前 guard 对账。不带锚点时 envelope 一字不变。
         void sendMessage(
@@ -222,6 +232,13 @@ export const ChatView: React.FC = () => {
         );
       },
       () => messagesRef.current,
+      (draft) => {
+        pendingResendClientMessageIdRef.current = draft.clientMessageId;
+        chatInputRef.current?.setDraft({
+          content: draft.content,
+          attachments: draft.attachments,
+        });
+      },
     );
     return () => messageActionUnregister();
   }, [buildEnvelope, sendMessage, messageActionRegister, messageActionUnregister]);
@@ -497,7 +514,6 @@ export const ChatView: React.FC = () => {
   }, [currentSessionId, pendingSearchJump, projection, setPendingSearchJump]);
 
   // Global drop zone state
-  const chatInputRef = useRef<ChatInputHandle>(null);
   const globalDropZoneRef = useRef<HTMLDivElement>(null);
   const [isGlobalDragOver, setIsGlobalDragOver] = useState(false);
   const dragCounterRef = useRef(0);
@@ -612,7 +628,11 @@ export const ChatView: React.FC = () => {
   // @neo 提交分支已移除（2026-07-29 拍板）：输入框不再有工作卡/续接交互，
   // @neo 字样按普通文本消息发送；工作卡从 Neo 协同页发起。
   const handleSendEnvelope = useCallback(async (envelope: ConversationEnvelope): Promise<boolean> => {
-    const clientMessageId = envelope.clientMessageId ?? generateMessageId();
+    const clientMessageId = consumePendingClientMessageId(
+      envelope.clientMessageId,
+      pendingResendClientMessageIdRef,
+      generateMessageId,
+    );
     const feedbackSessionId = envelope.sessionId ?? currentSessionId;
     const outboundEnvelope = { ...envelope, clientMessageId };
     const sent = await sendWithImmediateAssistantFeedback({
@@ -658,9 +678,10 @@ export const ChatView: React.FC = () => {
           // 枚举**：文本、附件、appshot、会话引用、产物引用、命令 chip、团队预选……
           // ai-review 连着九轮各点出一项，每轮补一个判据都只是把边界往外挪一格。
           //
-          // 收口方式：投递失败不回滚草稿，恢复靠错误消息上的重试锚点（retryPrompt /
-          // retryAttachments / retrySessionId，本单已加）。这与改前行为**一字不差**，
-          // 锚点是净增量。真正没发出去的两种情况（未登录、模型没配）仍然返回 false、
+          // 收口方式：投递失败不回滚草稿。失败用户气泡留在时间线上，恢复靠气泡上的
+          // 「编辑重发」（原文+附件填回 composer，复用原 clientMessageId）和错误卡
+          // 重试锚点（retryPrompt / retryAttachments / retryClientMessageId /
+          // retrySessionId）。真正没发出去的两种情况（未登录、模型没配）仍然返回 false、
           // 照旧回滚，那条路改前就在，行为不变。
           return true;
         });

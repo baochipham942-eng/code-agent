@@ -104,6 +104,7 @@ import {
   transitionAssistantFeedback,
   type AssistantFeedbackState,
 } from '../utils/sendWithImmediateAssistantFeedback';
+import { isChatSendAccepted } from '../utils/chatSendState';
 
 // Zustand selectors must return a referentially stable fallback. A fresh [] here makes
 // useSyncExternalStore treat every snapshot as changed and can loop before ChatView mounts.
@@ -210,8 +211,8 @@ export const ChatView: React.FC = () => {
   messagesRef.current = messages;
   useEffect(() => {
     messageActionRegister(
-      (content: string, context?: Pick<ConversationEnvelopeContext, 'localityAnchor'>) => {
-        const envelope = buildEnvelope(content);
+      (content: string, context?: Pick<ConversationEnvelopeContext, 'localityAnchor'> & { attachments?: MessageAttachment[] }) => {
+        const envelope = buildEnvelope(content, context?.attachments);
         // ADR-040：定点反馈的结构化锚点并进 composer context，host 侧补 revision 后
         // 落 user message metadata，供写前 guard 对账。不带锚点时 envelope 一字不变。
         void sendMessage(
@@ -641,6 +642,26 @@ export const ChatView: React.FC = () => {
               sessionId: feedbackSessionId,
             }));
           }
+          if (!isChatSendAccepted(delivery)) {
+            // 投递被拒：显式收掉「正在发送」的反馈（本单症状①要的就是这个）。
+            setPendingAssistantFeedback((current) => transitionAssistantFeedback(current, {
+              type: 'send_failed',
+              clientMessageId,
+              sessionId: feedbackSessionId ?? undefined,
+            }));
+          }
+          // 🔴 这里**照改前一样返回 true**（只要真的调到了 sendMessage）。
+          //
+          // 这个返回值同时被 composer 当作「要不要回滚草稿」的信号。把它改成真实投递
+          // 结果，等于把一条改前根本走不到的回滚路径接通了 —— 于是「回滚会覆盖用户在
+          // 这期间新做的任何操作」变成实际问题，而"用户可能动过的项"是**没有边界的
+          // 枚举**：文本、附件、appshot、会话引用、产物引用、命令 chip、团队预选……
+          // ai-review 连着九轮各点出一项，每轮补一个判据都只是把边界往外挪一格。
+          //
+          // 收口方式：投递失败不回滚草稿，恢复靠错误消息上的重试锚点（retryPrompt /
+          // retryAttachments / retrySessionId，本单已加）。这与改前行为**一字不差**，
+          // 锚点是净增量。真正没发出去的两种情况（未登录、模型没配）仍然返回 false、
+          // 照旧回滚，那条路改前就在，行为不变。
           return true;
         });
         return didSend === true;
@@ -733,23 +754,20 @@ export const ChatView: React.FC = () => {
   // (sessionStore.ts addMessage)，所以只要 streamSnapshot 还在，messages 数组末尾就不可能是
   // 之后新增的消息；跳过末尾合入的 recovery 消息（F4，id=snapshot.turnId）后，末位就是触发
   // 这轮的用户消息。取不到（数组为空或末位不是 user）就不重试。
-  const retryTurnMessage = deriveRetryTurnMessage(streamSnapshot, messages);
-  const interruptionDecisionSnapshot = streamSnapshot
-    ? {
-        ...streamSnapshot,
-        interruptionReason: streamSnapshot.interruptionReason
-          ?? deriveStreamInterruptionReason(messages, streamSnapshot.turnId),
-      }
-    : null;
+  const interruptionDecision = deriveStreamInterruptionDecision(
+    streamSnapshot,
+    messages,
+    effectiveIsProcessing,
+  );
   const [interruptionPointInViewport, setInterruptionPointInViewport] = useState(true);
   useEffect(() => {
     // Virtuoso 首次回报可见范围前 fail closed：有中断快照时先当作中断点仍在视口，
     // 避免追赶条抢在列表测量前闪现。
     setInterruptionPointInViewport(Boolean(streamSnapshot));
   }, [currentSessionId, streamSnapshot?.turnId]);
-  const streamInterruptionDecision = interruptionDecisionSnapshot && retryTurnMessage ? {
-    snapshot: interruptionDecisionSnapshot,
-    retryMessage: retryTurnMessage,
+  const streamInterruptionDecision = interruptionDecision ? {
+    snapshot: interruptionDecision.snapshot,
+    retryMessage: interruptionDecision.retryMessage,
     onContinue: async (message: Message) => handleSendMessage(message.content, message.attachments),
   } : null;
 
@@ -1148,4 +1166,28 @@ export function deriveRetryTurnMessage(
     return message.role === 'user' ? message : null;
   }
   return null;
+}
+
+/**
+ * 中断决策槽只在流真正断掉时出现。
+ * AGENT_STREAM_SNAPSHOT_REQUIRED 会在活 run 中途把 incomplete snapshot 灌回
+ * sessionStore；那是续接证据，不是「上次回复已中断」。活轮还在出 token 时
+ * 再亮 DecisionSlot，Continue 会把同一句再交一次。
+ */
+export function deriveStreamInterruptionDecision(
+  streamSnapshot: StreamRecoverySnapshot | null,
+  messages: Message[],
+  isLiveTurn: boolean,
+): { snapshot: StreamRecoverySnapshot; retryMessage: Message } | null {
+  if (isLiveTurn) return null;
+  const retryMessage = deriveRetryTurnMessage(streamSnapshot, messages);
+  if (!streamSnapshot || !retryMessage) return null;
+  return {
+    snapshot: {
+      ...streamSnapshot,
+      interruptionReason: streamSnapshot.interruptionReason
+        ?? deriveStreamInterruptionReason(messages, streamSnapshot.turnId),
+    },
+    retryMessage,
+  };
 }

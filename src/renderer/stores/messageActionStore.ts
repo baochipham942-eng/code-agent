@@ -10,6 +10,7 @@ import { create } from 'zustand';
 import type { Message } from '@shared/contract';
 import type { CreateSessionForkResult } from '@shared/contract/sessionFork';
 import type { SessionForkWorkspaceMode } from '@shared/contract/sessionFork';
+import type { MessageAttachment } from '@shared/contract';
 import type { ConversationEnvelopeContext } from '@shared/contract/conversationEnvelope';
 import { IPC_DOMAINS } from '@shared/ipc';
 import ipcService from '../services/ipcService';
@@ -21,7 +22,10 @@ import { toast } from '../hooks/useToast';
  * 锚点走 envelope.context（host 补 revision 后落 message metadata），文本仍走 content——
  * 两者内容一致但用途不同：文本给模型读，锚点给写前 guard 对账。
  */
-type SendContext = Pick<ConversationEnvelopeContext, 'localityAnchor'>;
+type SendContext = Pick<ConversationEnvelopeContext, 'localityAnchor'> & {
+  /** 重试时把原消息的附件一起带回去——只带文本等于让用户丢文件（ai-review #1694 第四轮）。 */
+  attachments?: MessageAttachment[];
+};
 type SendFn = (content: string, context?: SendContext) => void | Promise<void>;
 
 interface MessageActionState {
@@ -73,6 +77,26 @@ export const useMessageActionStore = create<MessageActionState>((set, get) => ({
     // Find the assistant message, then look backward for the preceding user message
     const idx = messages.findIndex((m) => m.id === messageId);
     if (idx < 0) return;
+
+    // 发送失败时乐观用户消息会被撤掉，失败内容改挂在错误消息的 metadata.retryPrompt 上。
+    // 有锚点就用锚点——否则往回找会命中**上一轮**的提问，把已经答完的问题重发一遍。
+    const anchor = messages[idx].metadata as
+      { retryPrompt?: unknown; retryAttachments?: unknown; retrySessionId?: unknown } | undefined;
+    // 锚点绑了会话就必须对得上：错误消息会落到**当下**的会话，跨会话重试等于把
+    // A 的内容和附件发进 B，污染 B 的上下文（ai-review #1694 第六轮）。
+    // 对不上就当没有锚点，回落到往回找——那条路本来就只看本会话的消息。
+    const anchorSessionId = typeof anchor?.retrySessionId === 'string' ? anchor.retrySessionId : undefined;
+    const anchorUsable = !anchorSessionId
+      || anchorSessionId === useSessionStore.getState().currentSessionId;
+    const retryPrompt = anchor?.retryPrompt;
+    const retryAttachments = Array.isArray(anchor?.retryAttachments)
+      ? (anchor.retryAttachments as MessageAttachment[])
+      : undefined;
+    // 纯附件消息的 retryPrompt 是空串——有附件就照样能重试，别按文本判。
+    if (anchorUsable && typeof retryPrompt === 'string' && (retryPrompt.trim() || retryAttachments?.length)) {
+      _send(retryPrompt, retryAttachments?.length ? { attachments: retryAttachments } : undefined);
+      return;
+    }
 
     for (let i = idx - 1; i >= 0; i--) {
       if (messages[i].role === 'user' && messages[i].content?.trim()) {

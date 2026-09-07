@@ -1,6 +1,7 @@
 import type { AgentApplicationService } from '../../shared/contract/appService';
 import type { AgentEvent } from '../../shared/contract';
 import type { ConversationEnvelope } from '../../shared/contract/conversationEnvelope';
+import type { QueuedInputSettledEvent } from '../../shared/contract/queuedInput';
 import { QUEUED_INPUT_RETRY } from '../../shared/constants/queuedInput';
 import type { TaskManagerEvent } from '../task';
 import type { QueuedInputRepository } from '../services/core/repositories/QueuedInputRepository';
@@ -40,6 +41,8 @@ export interface DesktopQueuedInputDrainDependencies {
   taskManager: DesktopDrainTaskManager;
   appService: DesktopDrainAppService;
   repository: DesktopDrainRepository;
+  /** 出队/重入队/终态时通知前端；缺省则只改 DB（测试夹具可不传）。 */
+  notifyQueuedInputSettled?: (settled: QueuedInputSettledEvent) => void;
 }
 
 function errorMessage(error: unknown): string {
@@ -50,6 +53,7 @@ export function registerDesktopQueuedInputDrain({
   taskManager,
   appService,
   repository,
+  notifyQueuedInputSettled,
 }: DesktopQueuedInputDrainDependencies): DesktopQueuedInputDrainHandle {
   const activeSessions = new Set<string>();
   const pendingIdleSessions = new Set<string>();
@@ -73,6 +77,7 @@ export function registerDesktopQueuedInputDrain({
     }
 
     if (requeued.retryCount <= QUEUED_INPUT_RETRY.MAX_RESEND_ATTEMPTS) {
+      notifyQueuedInputSettled?.({ sessionId, id, status: 'queued' });
       return;
     }
 
@@ -92,6 +97,7 @@ export function registerDesktopQueuedInputDrain({
         message: errorMessage(error),
       },
     });
+    notifyQueuedInputSettled?.({ sessionId, id, status: 'failed' });
   };
 
   const drainOne = async (sessionId: string): Promise<void> => {
@@ -100,6 +106,7 @@ export function registerDesktopQueuedInputDrain({
       if (!record || !repository.markSending(record.id)) {
         return;
       }
+      notifyQueuedInputSettled?.({ sessionId, id: record.id, status: 'sending' });
 
       let envelope: ConversationEnvelope;
       try {
@@ -126,6 +133,7 @@ export function registerDesktopQueuedInputDrain({
           id: record.id,
         });
       }
+      notifyQueuedInputSettled?.({ sessionId, id: record.id, status: 'consumed' });
     } finally {
       activeSessions.delete(sessionId);
       if (pendingIdleSessions.delete(sessionId)) {

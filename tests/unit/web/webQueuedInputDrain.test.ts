@@ -375,10 +375,44 @@ describe('web queued input drain', () => {
         runEnvelope: async () => {},
       });
       drain.handleReleasedSession('s1');
-      await vi.waitFor(() => expect(settled.length).toBe(1));
+      await vi.waitFor(() => expect(settled.at(-1)?.status).toBe('consumed'));
 
-      expect(settled[0]).toEqual({ sessionId: 's1', id: 'q1', status: 'consumed' });
+      expect(settled).toEqual([
+        { sessionId: 's1', id: 'q1', status: 'sending' },
+        { sessionId: 's1', id: 'q1', status: 'consumed' },
+      ]);
       expect(repository.getById('q1')?.status).toBe('consumed');
+    });
+
+    it('出队那一刻就发出 sending，不等 runEnvelope 结束', async () => {
+      const repository = createRepository();
+      const settled: QueuedInputSettledEvent[] = [];
+      let releaseRun: (() => void) | undefined;
+      repository.enqueue({
+        id: 'q-live',
+        sessionId: 's-live',
+        envelope: { content: '酒店什么时候订合适？' },
+      });
+
+      const drain = createDrain({
+        repository,
+        settled,
+        runEnvelope: async () => {
+          await new Promise<void>((resolve) => {
+            releaseRun = resolve;
+          });
+        },
+      });
+      drain.handleReleasedSession('s-live');
+
+      await vi.waitFor(() => expect(settled).toEqual([
+        { sessionId: 's-live', id: 'q-live', status: 'sending' },
+      ]));
+      expect(repository.getById('q-live')?.status).toBe('sending');
+      expect(releaseRun).toBeTypeOf('function');
+
+      releaseRun?.();
+      await vi.waitFor(() => expect(settled.at(-1)?.status).toBe('consumed'));
     });
 
     it('重试耗尽标记失败后同样通知，卡片不会永远留着', async () => {

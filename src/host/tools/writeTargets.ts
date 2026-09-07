@@ -214,30 +214,46 @@ const ARGUMENT_WRITE_COMMANDS: Record<string, 'last' | 'all'> = { cp: 'last', mv
 function argumentWriteTargets(words: string[]): string[] {
   if (words.length < 2) return [];
   // 命令名也要词法值化：保引号分词后 `c"p"`/`c\p` 这类合法写法带着引号/转义进来，
-  // unquote 只剥整词引号认不出 cp ⇒ 写目标丢失，削弱既有 WRITE_OWNERSHIP_CONFLICT
+  // 不词法值化认不出 cp ⇒ 写目标丢失，削弱既有 WRITE_OWNERSHIP_CONFLICT
   // （PR #1709 复审②）。shellWordValue 解完就是 cp。
   const rule = ARGUMENT_WRITE_COMMANDS[path.basename(shellWordValue(words[0]))];
   if (!rule) return [];
   // `-r` / `-a` / `--append` 一律是开关不是路径；`--` 之后才是纯路径，但这里不需要区分。
-  // 选项判定必须先词法值化再过滤（PR #1709 复审③）：带引号的 `"-f"` 不过滤会混进操作数，
-  // 把 cp 的「最后一个操作数」顶成 -f，真实目标 /outside/x 被遮蔽——界外写漏判。
-  const operands = words.slice(1).map(shellWordValue).filter((word) => !word.startsWith('-'));
+  // 选项判定要先词法值化（PR #1709 复审③：带引号的 `"-f"` 不过滤会混进操作数遮蔽真目标），
+  // 但返回的必须是**原始词**——值化只许在 shellWriteTargets 出口做一遍，做两遍会把
+  // 合法路径里的字面反斜杠吃掉（`'/tmp/a\b.txt'` → `/tmp/ab.txt`，复审④②）。
+  const operands = words.slice(1).filter((word) => !shellWordValue(word).startsWith('-'));
   if (rule === 'all') return operands;
   return operands.length >= 2 ? [operands[operands.length - 1]] : [];
 }
 
-/**
- * shell 命令里的写目标：`>` / `>>` 重定向 + cp / mv / tee 的目标位（fd 复制不算）。
- * 上线后评测的越权写信号也用它，别再造一份。
- * ponytail: 只认这三个命令名，不做「哪些命令会写盘」的全量枚举——
- * 按名字枚举永远漏，真正的兜底是沙盒本身，这里只补最常见的三条。
- */
-export function shellWriteTargets(command: string): string[] {
+/** 内嵌脚本宿主：`bash`/`sh`/`zsh`/`dash` 的 `-c` 后面第一个词是脚本。 */
+const NESTED_SCRIPT_SHELLS = new Set(['bash', 'sh', 'zsh', 'dash']);
+
+/** `bash -c '...'` 内嵌脚本的写目标（原始词，值化在出口统一做）。 */
+function nestedScriptTargets(words: string[]): string[] {
+  if (words.length < 3) return [];
+  if (!NESTED_SCRIPT_SHELLS.has(path.basename(shellWordValue(words[0])))) return [];
+  for (let index = 1; index < words.length - 1; index += 1) {
+    // -c 可以捆在组合开关里（bash -lc '…'）：单横线开头、非 `--`、字母里含 c 即算
+    const flag = shellWordValue(words[index]);
+    if (/^-[a-zA-Z]*c[a-zA-Z]*$/.test(flag)) {
+      // 保引号分词把整段脚本包成一个引号词，不递归解析内层 `>` 整段丢失（PR #1709 复审④①）。
+      // 脚本词先值化成脚本文本（这是词→文本的必要一步），递归产物仍是原始词，不多解。
+      return collectShellTargets(shellWordValue(words[index + 1]));
+    }
+  }
+  return [];
+}
+
+/** 收集写目标原始词（引号/转义还在词上）；词法值化只在 shellWriteTargets 出口做一遍。 */
+function collectShellTargets(command: string): string[] {
   const tokens = tokenizeShellCommand(command);
   const targets: string[] = [];
   let words: string[] = [];
   const flushSegment = (): void => {
     targets.push(...argumentWriteTargets(words));
+    targets.push(...nestedScriptTargets(words));
     words = [];
   };
   for (const token of tokens) {
@@ -246,7 +262,18 @@ export function shellWriteTargets(command: string): string[] {
     else targets.push(token.raw);
   }
   flushSegment();
-  return targets.map(shellWordValue);
+  return targets;
+}
+
+/**
+ * shell 命令里的写目标：`>` / `>>` 重定向 + cp / mv / tee 的目标位（fd 复制不算）
+ * + `bash -c` 一类内嵌脚本（递归一层，复审④①）。
+ * 上线后评测的越权写信号也用它，别再造一份。
+ * ponytail: 只认这三个命令名，不做「哪些命令会写盘」的全量枚举——
+ * 按名字枚举永远漏，真正的兜底是沙盒本身，这里只补最常见的三条。
+ */
+export function shellWriteTargets(command: string): string[] {
+  return collectShellTargets(command).map(shellWordValue);
 }
 
 /**

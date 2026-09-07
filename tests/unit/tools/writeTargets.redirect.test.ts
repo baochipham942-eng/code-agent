@@ -185,4 +185,20 @@ describe('引号/转义目标的词法保真（PR #1709 复审①）', () => {
     expect(resolve('cp src "/etc/has space.txt"').targets)
       .toEqual([resolveCanonicalRunPath('/etc/has space.txt')]);
   });
+
+  it('bash -c 内嵌脚本的重定向目标不丢（PR #1709 复审④①：保引号后内层整段被引号包住）', () => {
+    expect(resolve("bash -c 'echo x > /etc/owned.txt'").targets)
+      .toEqual([resolveCanonicalRunPath('/etc/owned.txt')]);
+    expect(resolve("bash -lc 'cp a /etc/x'").targets)
+      .toEqual([resolveCanonicalRunPath('/etc/x')]);
+    expect(resolve('sh -c "echo x > /etc/y"').targets)
+      .toEqual([resolveCanonicalRunPath('/etc/y')]);
+    // 真阴：bash 出现在非命令位不递归
+    expect(resolve("echo 'bash -c x'").targets).toEqual([]);
+  });
+
+  it('单引号路径里的字面反斜杠不丢（PR #1709 复审④②：值化只许做一遍）', () => {
+    expect(resolve("cp src '/tmp/a\\b.txt'").targets)
+      .toEqual([resolveCanonicalRunPath('/tmp/a\\b.txt')]);
+  });
 });

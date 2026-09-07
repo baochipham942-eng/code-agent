@@ -65,9 +65,11 @@ export const expertZh = {
       collapsedStandby: '{count} 个代理待命中',
       mergeState: {
         merged: '{count} 个代理的改动已经合到一起了',
+        reported: '{count} 个代理已汇报',
         conflict: '有 {count} 处改到了同一个地方，需要你定用哪个 →',
         waiting: '一个代理卡住了在等你',
         chipMerged: '改动已经合到一起了',
+        chipReported: '已汇报',
         chipConflict: '{count} 处改到同一个地方 →',
         chipWaiting: '一个代理卡住了',
       },
@@ -353,9 +355,11 @@ export const expertEn: typeof expertZh = {
       collapsedStandby: '{count} agents on standby',
       mergeState: {
         merged: 'Changes from {count} agents are merged',
+        reported: '{count} agents reported in',
         conflict: '{count} spots were changed by two agents — pick which to keep →',
         waiting: 'An agent is stuck waiting for you',
         chipMerged: 'Changes merged',
+        chipReported: 'Reported',
         chipConflict: '{count} overlapping edits →',
         chipWaiting: 'An agent is stuck',
       },

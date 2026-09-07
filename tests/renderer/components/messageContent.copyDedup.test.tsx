@@ -9,6 +9,7 @@ import { useI18n } from '../../../src/renderer/hooks/useI18n';
 const command = 'echo hello';
 const fence = `\`\`\`bash\n${command}\n\`\`\``;
 const copyLink = '[Copy command](!copy)';
+const matchingCopy = `[${command}](!copy)`;
 
 function Labels() {
   const { t } = useI18n();
@@ -35,25 +36,26 @@ describe('code block copy deduplication', () => {
 
   it('keeps a copy header for an empty unlabelled fence', async () => {
     const result = await renderMessage(`\`\`\`\n\`\`\`\n\n${copyLink}`);
-    expect(result.queryByRole('button', { name: 'Copy command' })).toBeNull();
+    // Empty fence copies '' — different from "Copy command", so the link stays.
+    expect(result.getByRole('button', { name: 'Copy command' })).toBeTruthy();
     expect(result.getAllByRole('button', { name: result.getByTestId('copy-label').textContent! })).toHaveLength(1);
   });
 
   it.each([
-    ['immediately after', `${fence}\n${copyLink}`],
-    ['one blank line after', `${fence}\n\n${copyLink}`],
-    ['several blank lines after', `${fence}\n\n\n\n${copyLink}`],
-    ['immediately before', `${copyLink}\n${fence}`],
-    ['one blank line before', `${copyLink}\n\n${fence}`],
-    ['both sides', `${copyLink}\n\n${fence}\n\n${copyLink}`],
-    ['unlabelled single-line fence', `\`\`\`\n${command}\n\`\`\`\n\n${copyLink}`],
-    ['tilde fence', `~~~bash\n${command}\n~~~\n\n${copyLink}`],
+    ['immediately after', `${fence}\n${matchingCopy}`],
+    ['one blank line after', `${fence}\n\n${matchingCopy}`],
+    ['several blank lines after', `${fence}\n\n\n\n${matchingCopy}`],
+    ['immediately before', `${matchingCopy}\n${fence}`],
+    ['one blank line before', `${matchingCopy}\n\n${fence}`],
+    ['both sides', `${matchingCopy}\n\n${fence}\n\n${matchingCopy}`],
+    ['unlabelled single-line fence', `\`\`\`\n${command}\n\`\`\`\n\n${matchingCopy}`],
+    ['tilde fence', `~~~bash\n${command}\n~~~\n\n${matchingCopy}`],
   ])('keeps only the header copy button: %s', async (_name, content) => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } });
     try {
       const result = await renderMessage(content);
-      expect(result.queryByRole('button', { name: 'Copy command' })).toBeNull();
+      expect(result.queryByRole('button', { name: command })).toBeNull();
       const headerCopy = result.getAllByRole('button', { name: result.getByTestId('copy-label').textContent! });
       expect(headerCopy).toHaveLength(1);
       fireEvent.click(headerCopy[0]);
@@ -83,18 +85,36 @@ describe('code block copy deduplication', () => {
   });
 
   it('deduplicates across streaming block boundaries and after completion', async () => {
-    const result = await renderMessage(`${copyLink}\n\n${fence}\n\n${copyLink}`, true);
-    expect(result.queryByRole('button', { name: 'Copy command' })).toBeNull();
-    result.rerender(<MessageContent content={`${copyLink}\n\n${fence}\n\n${copyLink}`} isUser={false} />);
+    const result = await renderMessage(`${matchingCopy}\n\n${fence}\n\n${matchingCopy}`, true);
+    expect(result.queryByRole('button', { name: command })).toBeNull();
+    result.rerender(<MessageContent content={`${matchingCopy}\n\n${fence}\n\n${matchingCopy}`} isUser={false} />);
     await waitFor(() => expect(result.container.querySelector('[data-code-block-lines]')).toBeTruthy());
-    expect(result.queryByRole('button', { name: 'Copy command' })).toBeNull();
+    expect(result.queryByRole('button', { name: command })).toBeNull();
   });
 
-  it('preserves copy syntax inside code and only removes the outside action', async () => {
+  it('preserves copy syntax inside code; a different-value outside copy stays', async () => {
     const result = await renderMessage(`\`\`\`text\n${copyLink}\n\`\`\`\n\n${copyLink}`);
     const block = result.container.querySelector('[data-code-block-lines]')!;
     expect(block.textContent).toContain(copyLink);
-    expect(within(result.container).queryByRole('button', { name: 'Copy command' })).toBeNull();
+    expect(within(result.container).getByRole('button', { name: 'Copy command' })).toBeTruthy();
+  });
+
+  it('keeps a copy link whose clipboard value differs from the adjacent fence', async () => {
+    const portFence = '```bash\nexport PORT=8180\n```';
+    const portCopy = '[8180](!copy)';
+    const content = `${portFence}\n\n${portCopy}`;
+    expect(dedupeCodeCopyLinks(content)).toContain('!copy');
+
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } });
+    try {
+      const result = await renderMessage(content);
+      const portButton = result.getByRole('button', { name: '8180' });
+      fireEvent.click(portButton);
+      expect(writeText).toHaveBeenCalledWith('8180');
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   // 这些块一律不去重：组件里有 handleCopy 只代表「渲染成功时有按钮」，而每一种都带早退分支
@@ -125,7 +145,7 @@ describe('code block copy deduplication', () => {
   });
 
   it('removes the duplicate action next to a tilde fence', () => {
-    const content = `~~~bash\nnpm i\n~~~\n\n${copyLink}`;
+    const content = '~~~bash\nnpm i\n~~~\n\n[npm i](!copy)';
     expect(dedupeCodeCopyLinks(content)).not.toContain('!copy');
   });
 });

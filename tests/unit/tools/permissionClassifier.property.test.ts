@@ -246,6 +246,11 @@ const KNOWN_SHAPES = [
   "l$'\\t's",
   "$'ｌｓ'",
   "l$'\\u200b's",
+  // Round 20: JS `\s` extras (U+00A0, U+000B) are word bytes to bash, not comment boundaries.
+  'echo ok\u00a0#tag; ./cleanup',
+  'echo ok\u000b#tag; ./cleanup',
+  'echo\u00a0ok; ./cleanup',
+  'rm\u00a0-rf ~/.ssh/id_rsa',
 ];
 
 // Under /tmp the critical-path rm rule fires before anything else and masks weaker rules; a real

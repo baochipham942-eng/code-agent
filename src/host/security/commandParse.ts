@@ -101,8 +101,17 @@ function shellLines(command: string): string[] {
         continue;
       }
     }
+    if (quoteMode === 'plain' && /\s/.test(character) && !/[ \t\r\n]/.test(character)) {
+      // JS `\s` is wider than bash's metacharacters: U+00A0, U+000B, U+3000… are ordinary word bytes
+      // to bash but separators to shell-quote (and would make a following `#` look like a comment,
+      // hiding `; ./cleanup`). A backslash does not help — shell-quote drops it and still splits — so
+      // wrap the byte in single quotes: `a'\u00a0'b` is the same word `a\u00a0b` to bash.
+      result += `'${character}'`;
+      atWordStart = false;
+      continue;
+    }
     if (quoteMode === 'plain' && character === '#'
-      && (index === 0 || (/[\s;&|()<>]/.test(command[index - 1]) && !isEscaped(index - 1)))) {
+      && (index === 0 || (/[ \t\r\n;&|()<>]/.test(command[index - 1]) && !isEscaped(index - 1)))) {
       inComment = true;
       result += character;
       continue;
@@ -163,7 +172,7 @@ function shellLines(command: string): string[] {
     } else if (character === '"' && (quoteMode === 'plain' || quoteMode === 'double')) {
       quoteMode = quoteMode === 'double' ? 'plain' : 'double';
     }
-    atWordStart = quoteMode === 'plain' && /[\s;|&()]/.test(character)
+    atWordStart = quoteMode === 'plain' && /[ \t\r\n;|&()]/.test(character)
       && !(character === '&' && /[<>]/.test(command[index - 1] ?? ''));
     result += character;
   }

@@ -222,6 +222,17 @@ describe('shared shell command parser', () => {
     expect(decodeAnsiCQuotedBody('abc\\')).toMatchObject({ failureReason: 'trailing escape in ANSI-C quoted word' });
   });
 
+  it('treats only bash whitespace as a word boundary, never JS `\\s` extras like U+00A0', () => {
+    // bash: `ok\u00a0#tag` is one word, `#` inside a word is literal, so `./cleanup` really runs.
+    const nbsp = parseShellCommand('echo ok\u00a0#tag; ./cleanup');
+    expect(nbsp.executions.map((e) => e.program)).toEqual(['echo', './cleanup']);
+    expect(nbsp.segments[0].words).toEqual(['echo', 'ok\u00a0#tag']);
+    expect(parseShellCommand('echo ok\u000b#tag; ./cleanup').executions.map((e) => e.program)).toEqual(['echo', './cleanup']);
+    expect(parseShellCommand('echo a\u00a0b\u3000c').segments[0].words).toEqual(['echo', 'a\u00a0b\u3000c']);
+    // A real space before `#` does start a comment; bash never reaches `./cleanup` here.
+    expect(parseShellCommand('echo ok #tag; ./cleanup').executions.map((e) => e.program)).toEqual(['echo']);
+  });
+
   it('keeps each redirection on its own segment', () => {
     const parsed = parseShellCommand('printf x > out.txt; ls; cat y >> log.txt');
     expect(parsed.segments.map((segment) => segment.redirects.map((target) => target.path)))

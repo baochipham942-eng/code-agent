@@ -40,6 +40,7 @@ describe('shared parser automatic approval regressions', () => {
     // Round 20: U+00A0 is not bash whitespace, so `ok\u00a0#tag` is one word and `./cleanup` runs.
     expect(isKnownSafeCommand('echo ok\u00a0#tag; ./cleanup')).toBe(false);
     expect(isKnownSafeCommand('echo ok\u000b#tag; ./cleanup')).toBe(false);
+    expect(isKnownSafeCommand('echo ok\r#tag; ./cleanup')).toBe(false);
     const parsed = parseShellCommand('echo ok#tag; ./cleanup');
     expect(parsed.executions.map(({ program }) => program)).toEqual(['echo', './cleanup']);
     expect(isKnownSafeCommand('echo ok#tag; ./cleanup')).toBe(false);

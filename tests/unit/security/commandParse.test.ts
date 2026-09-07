@@ -229,6 +229,9 @@ describe('shared shell command parser', () => {
     expect(nbsp.segments[0].words).toEqual(['echo', 'ok\u00a0#tag']);
     expect(parseShellCommand('echo ok\u000b#tag; ./cleanup').executions.map((e) => e.program)).toEqual(['echo', './cleanup']);
     expect(parseShellCommand('echo a\u00a0b\u3000c').segments[0].words).toEqual(['echo', 'a\u00a0b\u3000c']);
+    // A bare carriage return is a word byte to bash as well (only `\\\r\n` is a line continuation).
+    expect(parseShellCommand('echo ok\r#tag; ./cleanup').executions.map((e) => e.program)).toEqual(['echo', './cleanup']);
+    expect(parseShellCommand('echo a\rb').segments[0].words).toEqual(['echo', 'a\rb']);
     // A real space before `#` does start a comment; bash never reaches `./cleanup` here.
     expect(parseShellCommand('echo ok #tag; ./cleanup').executions.map((e) => e.program)).toEqual(['echo']);
   });

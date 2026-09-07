@@ -20,6 +20,7 @@ vi.mock('../../../../../src/host/services/toolSearch/toolSearchService', () => (
   getToolSearchService: () => ({
     searchTools: searchToolsMock,
   }),
+  setProtocolToolNameChecker: vi.fn(),
 }));
 
 vi.mock('../../../../../src/host/mcp/mcpClient', () => ({

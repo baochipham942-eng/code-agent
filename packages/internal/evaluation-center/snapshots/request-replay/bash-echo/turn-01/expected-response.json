@@ -1,0 +1,26 @@
+{
+  "type": "tool_use",
+  "content": "Running a deterministic echo through the real Bash tool.",
+  "finishReason": "tool_calls",
+  "actualProvider": "acceptance",
+  "actualModel": "e2e-local-agent-model",
+  "toolCalls": [
+    {
+      "id": "e2e-snapshot-replay-bash",
+      "name": "Bash",
+      "arguments": {
+        "command": "echo E2E_SNAPSHOT_REPLAY_BASH_OUTPUT"
+      }
+    }
+  ],
+  "contentParts": [
+    {
+      "type": "tool_call",
+      "toolCallId": "e2e-snapshot-replay-bash"
+    }
+  ],
+  "usage": {
+    "inputTokens": 150,
+    "outputTokens": 22
+  }
+}

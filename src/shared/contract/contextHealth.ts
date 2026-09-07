@@ -199,7 +199,16 @@ export interface ContextHealthState {
    * 其余八桶没有有序前缀边界，不在此合同中伪造成本字段。
    */
   systemPromptCacheCost?: SystemPromptCacheCost;
+  /**
+   * N-CTXHEALTH-BAR / BR-011：maxTokens 是否来自模型窗口表或显式配置。
+   * false = 静默 128k 兜底，呈现层必须标「容量未知」并停用占比。
+   * 老快照缺省此字段，消费方视同 true。
+   */
+  windowKnown?: boolean;
 }
+
+/** 估/实偏差展示门槛（百分点）。PRD M2 / FB-117：≥5% 才标注，不是 0.05%。 */
+export const ESTIMATE_DEVIATION_DISPLAY_PERCENT = 5;
 
 /**
  * 手动 Compact 操作的结构化返回

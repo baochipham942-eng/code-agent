@@ -1,0 +1,27 @@
+{
+  "type": "tool_use",
+  "content": "Writing the snapshot note after reading the fixture.",
+  "finishReason": "tool_calls",
+  "actualProvider": "acceptance",
+  "actualModel": "e2e-local-agent-model",
+  "toolCalls": [
+    {
+      "id": "e2e-snapshot-replay-write",
+      "name": "Write",
+      "arguments": {
+        "file_path": "<RECORD_DATA_DIR>/workspace/read-then-write/snapshot-write-note.txt",
+        "content": "E2E_SNAPSHOT_REPLAY_WRITE_PAYLOAD\n"
+      }
+    }
+  ],
+  "contentParts": [
+    {
+      "type": "tool_call",
+      "toolCallId": "e2e-snapshot-replay-write"
+    }
+  ],
+  "usage": {
+    "inputTokens": 150,
+    "outputTokens": 22
+  }
+}

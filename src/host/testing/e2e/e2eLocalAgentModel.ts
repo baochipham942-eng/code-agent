@@ -23,6 +23,17 @@ const E2E_TASK_WAKE_NOOP_MARKER = 'E2E_TASK_WAKE_NOOP';
 const E2E_TASK_WAKE_NOOP_CALL_ID = 'e2e-task-wake-noop';
 const E2E_BACKGROUND_APPROVAL_MARKER = 'E2E_BACKGROUND_APPROVAL';
 const E2E_BACKGROUND_APPROVAL_CALL_ID = 'e2e-background-approval';
+// N-SNAPSHOT-REGRESSION：快照语料录制专用 marker。每条路由都是确定性的
+// 「marker → 固定工具调用/固定文本」，让 request-replay 快照能覆盖 Read 之外的
+// 单轮问答、Write 落盘、Bash、Read→Write 混合路径。改动本段必须同 PR 重录
+// packages/internal/evaluation-center/snapshots/request-replay（snapshot-replay-sync-gate）。
+const E2E_SNAPSHOT_QA_MARKER = 'E2E_SNAPSHOT_REPLAY_QA';
+const E2E_SNAPSHOT_WRITE_MARKER = 'E2E_SNAPSHOT_REPLAY_WRITE';
+const E2E_SNAPSHOT_BASH_MARKER = 'E2E_SNAPSHOT_REPLAY_BASH';
+const E2E_SNAPSHOT_READ_WRITE_MARKER = 'E2E_SNAPSHOT_REPLAY_READ_WRITE';
+const E2E_SNAPSHOT_WRITE_CALL_ID = 'e2e-snapshot-replay-write';
+const E2E_SNAPSHOT_BASH_CALL_ID = 'e2e-snapshot-replay-bash';
+const E2E_SNAPSHOT_BASH_COMMAND = 'echo E2E_SNAPSHOT_REPLAY_BASH_OUTPUT';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -52,6 +63,12 @@ function resolveFixturePath(env: NodeJS.ProcessEnv): string {
   const configured = env.CODE_AGENT_E2E_AGENT_MODEL_READ_FILE?.trim();
   if (configured) return configured;
   return path.join(process.cwd(), 'package.json');
+}
+
+function resolveSnapshotWritePath(env: NodeJS.ProcessEnv): string {
+  const configured = env.CODE_AGENT_E2E_AGENT_MODEL_WRITE_FILE?.trim();
+  if (configured) return configured;
+  return path.join(process.cwd(), 'e2e-snapshot-replay-note.txt');
 }
 
 function hasReadTool(tools: ToolDefinition[]): boolean {
@@ -545,6 +562,121 @@ function buildWebSearchE2EResponse(
   };
 }
 
+function snapshotTextResponse(content: string, onStream?: StreamCallback): ModelResponse {
+  onStream?.({ type: 'text', content });
+  onStream?.({ type: 'complete', finishReason: 'stop' });
+  return {
+    type: 'text',
+    content,
+    finishReason: 'stop',
+    actualProvider: 'acceptance',
+    actualModel: 'e2e-local-agent-model',
+    usage: { inputTokens: 110, outputTokens: 14 },
+  };
+}
+
+function snapshotToolUseResponse(
+  toolCall: { id: string; name: string; arguments: Record<string, unknown> },
+  content: string,
+  onStream?: StreamCallback,
+): ModelResponse {
+  onStream?.({
+    type: 'tool_call_start',
+    toolCall: { index: 0, id: toolCall.id, name: toolCall.name },
+  });
+  onStream?.({ type: 'complete', finishReason: 'tool_calls' });
+  return {
+    type: 'tool_use',
+    content,
+    toolCalls: [toolCall],
+    finishReason: 'tool_calls',
+    actualProvider: 'acceptance',
+    actualModel: 'e2e-local-agent-model',
+    usage: { inputTokens: 150, outputTokens: 22 },
+    contentParts: [{ type: 'tool_call', toolCallId: toolCall.id }],
+  };
+}
+
+function buildSnapshotReplayE2EResponse(
+  messages: ModelMessage[],
+  tools: ToolDefinition[],
+  onStream?: StreamCallback,
+  env: NodeJS.ProcessEnv = process.env,
+): ModelResponse | null {
+  const allText = messages.map(getMessageText).join('\n');
+  if (!allText.includes('E2E_SNAPSHOT_REPLAY')) return null;
+
+  if (allText.includes(E2E_SNAPSHOT_QA_MARKER)) {
+    return snapshotTextResponse(
+      'E2E snapshot replay single-turn QA answered deterministically.',
+      onStream,
+    );
+  }
+
+  const writeCall = {
+    id: E2E_SNAPSHOT_WRITE_CALL_ID,
+    name: 'Write',
+    arguments: {
+      file_path: resolveSnapshotWritePath(env),
+      content: 'E2E_SNAPSHOT_REPLAY_WRITE_PAYLOAD\n',
+    },
+  };
+  const writeResult = findToolResultContent(messages, E2E_SNAPSHOT_WRITE_CALL_ID);
+
+  if (allText.includes(E2E_SNAPSHOT_READ_WRITE_MARKER)) {
+    if (writeResult) {
+      return snapshotTextResponse(
+        `E2E snapshot replay read-then-write completed. ${writeResult.trim()}`,
+        onStream,
+      );
+    }
+    if (hasFixtureToolResult(messages)) {
+      return snapshotToolUseResponse(writeCall, 'Writing the snapshot note after reading the fixture.', onStream);
+    }
+    if (!hasReadTool(tools)) {
+      return snapshotTextResponse('E2E snapshot replay could not find the Read tool.', onStream);
+    }
+    return snapshotToolUseResponse({
+      id: E2E_READ_TOOL_CALL_ID,
+      name: 'Read',
+      arguments: { file_path: resolveFixturePath(env), offset: 1, limit: 20 },
+    }, 'Reading the snapshot fixture before writing.', onStream);
+  }
+
+  if (allText.includes(E2E_SNAPSHOT_WRITE_MARKER)) {
+    if (writeResult) {
+      return snapshotTextResponse(
+        `E2E snapshot replay write completed. ${writeResult.trim()}`,
+        onStream,
+      );
+    }
+    if (!hasTool(tools, 'Write')) {
+      return snapshotTextResponse('E2E snapshot replay could not find the Write tool.', onStream);
+    }
+    return snapshotToolUseResponse(writeCall, 'Writing the snapshot note through the real Write tool.', onStream);
+  }
+
+  if (allText.includes(E2E_SNAPSHOT_BASH_MARKER)) {
+    const bashResult = findToolResultContent(messages, E2E_SNAPSHOT_BASH_CALL_ID);
+    if (bashResult) {
+      return snapshotTextResponse(
+        `E2E snapshot replay bash completed. ${bashResult.trim()}`,
+        onStream,
+      );
+    }
+    if (!hasTool(tools, 'Bash')) {
+      return snapshotTextResponse('E2E snapshot replay could not find the Bash tool.', onStream);
+    }
+    return snapshotToolUseResponse({
+      id: E2E_SNAPSHOT_BASH_CALL_ID,
+      name: 'Bash',
+      arguments: { command: E2E_SNAPSHOT_BASH_COMMAND },
+    }, 'Running a deterministic echo through the real Bash tool.', onStream);
+  }
+
+  return null;
+}
+
 export function buildE2ELocalAgentModelResponse(
   messages: ModelMessage[],
   tools: ToolDefinition[],
@@ -552,6 +684,9 @@ export function buildE2ELocalAgentModelResponse(
   onStream?: StreamCallback,
   env: NodeJS.ProcessEnv = process.env,
 ): ModelResponse {
+  const snapshotReplayResponse = buildSnapshotReplayE2EResponse(messages, tools, onStream, env);
+  if (snapshotReplayResponse) return snapshotReplayResponse;
+
   const backgroundApprovalResponse = buildBackgroundApprovalE2EResponse(messages, tools, onStream);
   if (backgroundApprovalResponse) return backgroundApprovalResponse;
 

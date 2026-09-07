@@ -95,6 +95,13 @@ on:
       - 'scripts/verify-renderer-hot-update-release-gate.mjs'
       - 'scripts/verify-runtime-assets-publish.mjs'
       - 'supabase/migrations/**'
+      # request-replay 快照体系（N-SNAPSHOT-REGRESSION，#1721 复审②）：回放实现、
+      # acceptance CLI 与快照语料都在 packages/internal/evaluation-center 下——不挂这几条，
+      # 只改回放实现或语料的 PR 一道门都不跑（与 #452 path 触发盲区同形状）。
+      # 语料目录也要触发：只改快照 = 手工改期望输出，必须由回放门真跑一遍。
+      - 'packages/internal/evaluation-center/src/**'
+      - 'packages/internal/evaluation-center/scripts/**'
+      - 'packages/internal/evaluation-center/snapshots/**'
   push:
     branches: [main]
   workflow_dispatch:
@@ -172,6 +179,18 @@ jobs:
         # 无 Key 真跑 E2E 本地模型的一次含工具请求，再从 request_manifest +
         # 账本 + 内容库重建首发拼装视图。消息和工具表任一字节不等即红。
         run: npm run acceptance:request-replay
+
+      - name: Snapshot replay corpus gate
+        # N-SNAPSHOT-REGRESSION：keyless 假模型真会话的快照语料（6 条会话 13 轮），
+        # 当前代码重建请求 + 重推导假模型响应，与快照逐字节比对。degraded 轮按
+        # verifyRequestReplayBatch 口径跳过并计数，0 轮通过视同门空转即红。
+        run: npm run acceptance:snapshot-replay
+
+      - name: Snapshot replay baseline sync gate
+        # 动了模型可见行为面（contextAssembly/prompts/E2E 假模型/requestReplay）
+        # 必须同 PR 重录快照（acceptance:snapshot-replay:record），照
+        # visual-shotbase-baseline-gate 的 git-diff 口径。
+        run: npm run check:snapshot-replay-sync
 
       - name: Tool output schema ratchet
         # 扫 builtin modules + plugins 的真实 schema exports；0 文件、0 工具、覆盖数回退、

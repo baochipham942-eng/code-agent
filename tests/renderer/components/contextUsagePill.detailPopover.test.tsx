@@ -164,10 +164,15 @@ describe('ContextUsagePill — hover 气泡与明细弹层', () => {
     expect(list.textContent).toContain('技能');
     expect(list.textContent).toContain('规则');
     expect(list.textContent).toContain('Token 占比');
-    expect(list.textContent).toContain('成本占比');
-    // 门槛未满足的系统提示与其余八桶都必须显式未知，不能悄悄按 0。
-    expect(list.textContent).toContain('未知');
-    expect(screen.getByTestId('context-cost-ranking-status').textContent).toContain('成本第一大桶：待验证');
+    expect(list.getAttribute('data-cost-column')).toBe('off');
+    expect(list.textContent).not.toContain('成本占比');
+    expect(list.textContent).not.toContain('未知');
+    expect(screen.getByTestId('context-cost-ranking-status').textContent).toContain('Token 第一大桶');
+    expect(screen.getByTestId('context-cost-ranking-status').textContent).not.toContain('待验证');
+    expect(screen.getByTestId('context-health-window-caption').textContent).toContain('本窗口');
+    expect(screen.getByTestId('context-bucket-share-caption').textContent).toContain('谁在占');
+    const shares = [...bar.querySelectorAll('[data-share-percent]')].map((el) => Number(el.getAttribute('data-share-percent')));
+    expect(shares.reduce((sum, share) => sum + share, 0)).toBeCloseTo(100, 0);
     // fixture 里 mcp/subagents/fileReads 为 0 → 不占位
     expect(list.textContent).not.toContain('连接器');
     expect(list.textContent).not.toContain('子代理');
@@ -188,8 +193,10 @@ describe('ContextUsagePill — hover 气泡与明细弹层', () => {
     fireEvent.click(pillButton());
 
     const list = screen.getByTestId('context-bucket-list');
-    expect(list.textContent).toContain('100 · 5.0%');
+    expect(list.getAttribute('data-cost-column')).toBe('on');
+    expect(list.textContent).toContain('100 · 8.0%');
     expect(list.textContent).toContain('$0.0001 · 12.2%');
+    expect(screen.getByTestId('context-cost-ranking-status').textContent).toContain('待验证');
   });
 
   it('现有上下文健康弹层展示当前周期已缓存 / 未缓存的 token 与成本两分', () => {
@@ -251,6 +258,19 @@ describe('ContextUsagePill — hover 气泡与明细弹层', () => {
     pillMocks.appState.contextHealth = { ...contextHealth, usagePercent: 80, warningLevel: 'warning' };
     render(<ContextUsagePill />);
     fireEvent.click(pillButton());
+    expect(screen.getByRole('button', { name: '立即压缩' })).toBeTruthy();
+  });
+
+  it('窗口未知只停用已用占比，不拿掉手动压缩', () => {
+    pillMocks.appState.contextHealth = {
+      ...contextHealth,
+      usagePercent: 80,
+      warningLevel: 'warning',
+      windowKnown: false,
+    };
+    render(<ContextUsagePill />);
+    fireEvent.click(pillButton());
+    expect(screen.getByTestId('context-health-window-unknown')).toBeTruthy();
     expect(screen.getByRole('button', { name: '立即压缩' })).toBeTruthy();
   });
 });

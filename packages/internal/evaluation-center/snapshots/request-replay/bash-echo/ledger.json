@@ -1,0 +1,44 @@
+{
+  "messages": [
+    {
+      "id": "msg-01",
+      "role": "user",
+      "content": "E2E_SNAPSHOT_REPLAY_BASH：跑一下确定性 echo 并告诉我输出。",
+      "timestamp": 0
+    },
+    {
+      "id": "msg-02",
+      "role": "assistant",
+      "content": "Running a deterministic echo through the real Bash tool.",
+      "timestamp": 0,
+      "toolCalls": [
+        {
+          "id": "e2e-snapshot-replay-bash",
+          "name": "Bash",
+          "arguments": {
+            "command": "echo E2E_SNAPSHOT_REPLAY_BASH_OUTPUT"
+          }
+        }
+      ]
+    },
+    {
+      "id": "msg-03",
+      "role": "tool",
+      "content": "",
+      "timestamp": 0,
+      "toolResults": [
+        {
+          "toolCallId": "e2e-snapshot-replay-bash",
+          "success": true,
+          "output": "[cwd: <RECORD_DATA_DIR>/workspace/bash-echo]\nE2E_SNAPSHOT_REPLAY_BASH_OUTPUT\n"
+        }
+      ]
+    },
+    {
+      "id": "msg-04",
+      "role": "assistant",
+      "content": "E2E snapshot replay bash completed. [cwd: <RECORD_DATA_DIR>/workspace/bash-echo]\nE2E_SNAPSHOT_REPLAY_BASH_OUTPUT",
+      "timestamp": 0
+    }
+  ]
+}

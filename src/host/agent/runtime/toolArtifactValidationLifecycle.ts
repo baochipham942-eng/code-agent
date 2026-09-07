@@ -300,6 +300,22 @@ export async function handleModifiedArtifactValidation({
         },
       };
     } else if (validation.shouldValidate && (validation.checks.length > 0 || appendFinalHint)) {
+      // 与失败侧对称的落库：失败状态随 tool result 持久化（messageProcessor 把
+      // toolResults 落库），通过状态此前只有内存标记（ArtifactState +
+      // injectSystemMessage 都不落库）。重开会话后历史里"失败还在、通过已消失"，
+      // 冷启动扫描（artifactRepairGuard）会复活已解决的 guard、重新收窄工具面。
+      // 这里把带目标路径的通过状态写进同一份会落库的 tool result，让扫描器
+      // 从真实持久化消息读到「该目标已解决」。
+      toolResult.metadata = {
+        ...toolResult.metadata,
+        artifactValidation: {
+          failed: false,
+          passed: true,
+          targetFile: absolutePath,
+          inferredKind: validation.inferredKind,
+          checks: validation.checks,
+        },
+      };
       runFinalizer.emitTaskProgress('tool_running', 'artifact 验收通过');
       getArtifactValidationFailureMap(ctx).delete(absolutePath);
       if (ctx.artifact.repairGuard?.targetFile === absolutePath) {

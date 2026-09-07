@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { lenientCommandWords, parseShellCommand } from '../../../src/host/security/commandParse';
+import { decodeAnsiCQuotedBody } from '../../../src/host/security/canonicalizeCommand';
 
 describe('shared shell command parser', () => {
   it.each([
@@ -208,6 +209,17 @@ describe('shared shell command parser', () => {
     // shell-quote itself throws on `${` — fall back to the canonical whitespace split, still no words lost.
     expect(lenientCommandWords('ls ${')).toEqual(['ls', '${']);
     expect(lenientCommandWords('echo "a b" > $HOME/x')).toEqual(['echo', 'a b', '>', '${HOME}/x']);
+  });
+
+  it('decodes ANSI-C escapes only: whitespace and Unicode stay part of the word identity', () => {
+    expect(parseShellCommand("l$' 's").segments[0].words).toEqual(['l s']);
+    expect(parseShellCommand("echo $'a  b\\tc'").segments[0].words).toEqual(['echo', 'a  b\tc']);
+    expect(parseShellCommand("$'ｌｓ'").segments[0].words).toEqual(['ｌｓ']);
+    expect(parseShellCommand("l$'\\u200b's").segments[0].words).toEqual(['l\u200bs']);
+    expect(parseShellCommand("printf x > $'a b.txt'").writeTargets)
+      .toEqual([{ path: 'a b.txt', source: 'redirect', uncertain: false }]);
+    expect(decodeAnsiCQuotedBody("\\x6c\\x73 \\'x\\'")).toEqual({ text: "ls 'x'" });
+    expect(decodeAnsiCQuotedBody('abc\\')).toMatchObject({ failureReason: 'trailing escape in ANSI-C quoted word' });
   });
 
   it('keeps each redirection on its own segment', () => {

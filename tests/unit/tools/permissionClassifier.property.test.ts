@@ -241,6 +241,11 @@ const KNOWN_SHAPES = [
   'cat < $HOME/.ssh/id_rsa',
   'echo x > "$HOME/.aws/credentials"',
   'echo x >> $HOME/.ssh/authorized_keys',
+  // Round 19: an ANSI-C fragment decodes escapes only; whitespace and Unicode stay in the identity.
+  "l$' 's",
+  "l$'\\t's",
+  "$'ｌｓ'",
+  "l$'\\u200b's",
 ];
 
 // Under /tmp the critical-path rm rule fires before anything else and masks weaker rules; a real

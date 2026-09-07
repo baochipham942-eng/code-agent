@@ -1,6 +1,6 @@
 import * as path from 'node:path';
 import { parse } from 'shell-quote';
-import { canonicalizeCommand } from './canonicalizeCommand';
+import { canonicalizeCommand, decodeAnsiCQuotedBody } from './canonicalizeCommand';
 
 const COMMAND_SEPARATORS = new Set(['&&', '||', ';', '|', '|&', '&', '\n']);
 const OUTPUT_REDIRECTS = new Set(['>', '>>', '>&']);
@@ -137,14 +137,15 @@ function shellLines(command: string): string[] {
     if (quoteMode === 'plain' && character === '$' && command[index + 1] === "'") {
       // shell-quote does not know ANSI-C quoting: it hands `$'ls'` back as a variable callback plus
       // a single-quoted literal, which is byte-for-byte what `"$"ls` and `'${}ls'` produce too. Decode
-      // the word here, while the quote boundaries are still visible, and hand shell-quote an
-      // ordinary single-quoted literal instead. An unterminated or malformed ANSI-C word is left as
-      // written; canonicalizeCommand() flags the same defect on the whole command.
+      // the escapes here, while the quote boundaries are still visible, and hand shell-quote an
+      // ordinary single-quoted literal instead. Escapes only — folding whitespace or normalizing
+      // Unicode would change the identity (`l$' 's` is the program `l s`). An unterminated or
+      // malformed ANSI-C word is left as written; canonicalizeCommand() flags it on the whole command.
       let end = index + 2;
       while (end < command.length && command[end] !== "'") end += command[end] === '\\' ? 2 : 1;
-      const decoded = end < command.length ? canonicalizeCommand(command.slice(index, end + 1)) : null;
-      if (decoded && !decoded.parsingFailed) {
-        result += `'${decoded.command.replaceAll("'", "'\\''")}'`;
+      const decoded = end < command.length ? decodeAnsiCQuotedBody(command.slice(index + 2, end)) : null;
+      if (decoded && !decoded.failureReason) {
+        result += `'${decoded.text.replaceAll("'", "'\\''")}'`;
         index = end;
         atWordStart = false;
         continue;

@@ -27,6 +27,10 @@ describe('shared parser automatic approval regressions', () => {
     expect(isKnownSafeCommand('"$"ls')).toBe(false);
     expect(isKnownSafeCommand('$"ls"')).toBe(true);
     expect(isKnownSafeCommand('$\\x6c\\x73')).toBe(false);
+    // Round 19: whitespace inside an ANSI-C fragment is part of the word, not something to fold away.
+    expect(isKnownSafeCommand("l$' 's")).toBe(false);
+    expect(isKnownSafeCommand("l$'\\t's")).toBe(false);
+    expect(isKnownSafeCommand("$'ｌｓ'")).toBe(false);
     expect(parseShellCommand("'${}ls'").executions[0].program).toBe('${}ls');
     expect(parseShellCommand('"$"ls').executions[0].program).toBe('${}ls');
     expect(qualificationExecutions('"$"ls')).toBeNull();

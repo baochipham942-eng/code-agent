@@ -199,6 +199,7 @@ export class CLISessionManager {
     if (await this.ensureDbReady()) {
       try {
         this.getDb()!.updateSession(sessionId, updates);
+        await this.syncTelemetrySessionTitle(sessionId, updates);
       } catch (error) {
         console.warn('[SessionManager] Failed to update session:', (error as Error).message);
       }
@@ -208,6 +209,20 @@ export class CLISessionManager {
     if (this.sessionCache.has(sessionId)) {
       const cached = this.sessionCache.get(sessionId)!;
       Object.assign(cached, updates, { updatedAt: Date.now() });
+    }
+  }
+
+  /**
+   * N-TELEMETRY-SESSION-TITLE-STALE：标题变更（改名/首条消息派生标题）同步回遥测表，
+   * 遥测写入在 storage 层过 guardTelemetryText。懒加载 host 模块，避免 CLI 启动时拉起遥测栈。
+   */
+  private async syncTelemetrySessionTitle(sessionId: string, updates: Partial<Session>): Promise<void> {
+    if (typeof updates.title !== 'string' || !updates.title.trim()) return;
+    try {
+      const { getTelemetryCollector } = await import('../host/telemetry/telemetryCollector');
+      getTelemetryCollector().updateSessionTitle(sessionId, updates.title);
+    } catch (error) {
+      console.warn('[SessionManager] Failed to sync telemetry session title:', (error as Error).message);
     }
   }
 

@@ -27,6 +27,7 @@ import { sanitizeSurfaceExecutionSessionExport } from '../../session/surfaceExec
 import { stripLegacyForkClaims } from '../sessionFork/portability';
 import { getContextHealthService } from '../../context/contextHealthService';
 import { stampAssistantMessageCorrelation } from '../../session/assistantCorrelation';
+import { getTelemetryCollector } from '../../telemetry';
 
 import { Disposable, getServiceRegistry } from '../serviceRegistry';
 const logger = createLogger('SessionManager');
@@ -643,6 +644,17 @@ export class SessionManager implements Disposable {
     }
 
     db.updateSession(sessionId, updates);
+
+    // N-TELEMETRY-SESSION-TITLE-STALE：标题变更（用户改名/自动起标题）同步回遥测表，
+    // 不让 telemetry_sessions.title 停在开会话那刻的占位快照。遥测写入在 storage 层
+    // 过 guardTelemetryText；sessions.title 保持裸存（用户可见名不动）。
+    if (typeof updates.title === 'string' && updates.title.trim()) {
+      try {
+        getTelemetryCollector().updateSessionTitle(sessionId, updates.title);
+      } catch (error) {
+        logger.warn('[SessionManager] Telemetry title sync failed (ignored):', error);
+      }
+    }
 
     // 工作目录后补时，仅为未归桶/待整理会话重算项目归属；明确归属不覆盖。
     if (typeof updates.workingDirectory === 'string' && updates.workingDirectory.trim()) {

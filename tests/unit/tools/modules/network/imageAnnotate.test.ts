@@ -173,12 +173,12 @@ describe('image_annotate — execute', () => {
       getApiKey: vi.fn().mockReturnValue('zhipu-key'),
     });
 
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        choices: [{ message: { content: '这是一段中文截图' } }],
-      }),
-    });
+    global.fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      choices: [{ message: { content: '这是一段中文截图' } }],
+    }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    }));
 
     const result = await executeImageAnnotate(
       { image_path: '/abs/p.png', query: '描述图片' },
@@ -242,10 +242,12 @@ describe('image_annotate — execute', () => {
         return Promise.resolve({ ok: false, status: 500 });
       }
       // zhipu vision call
-      return Promise.resolve({
-        ok: true,
-        json: async () => ({ choices: [{ message: { content: '降级描述' } }] }),
-      });
+      return Promise.resolve(new Response(JSON.stringify({
+        choices: [{ message: { content: '降级描述' } }],
+      }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }));
     });
 
     const result = await executeImageAnnotate(
@@ -257,6 +259,35 @@ describe('image_annotate — execute', () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.meta?.ocrMethod).toBe('vision_llm');
+    }
+  });
+
+  it('vision_llm sniffs SSE chat completions into description, not a JSON.parse exception', async () => {
+    getConfigServiceMock.mockReturnValue({
+      getApiKey: vi.fn().mockReturnValue('zhipu-key'),
+    });
+    const sse = [
+      'data: {"choices":[{"delta":{"content":"SSE标注正文"}}]}',
+      '',
+      'data: [DONE]',
+      '',
+    ].join('\n');
+    global.fetch = vi.fn().mockResolvedValue(new Response(sse, {
+      status: 200,
+      headers: { 'content-type': 'text/event-stream' },
+    }));
+
+    const result = await executeImageAnnotate(
+      { image_path: '/abs/p.png', query: '描述图片' },
+      makeCtx(),
+      allowAll,
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.meta?.ocrMethod).toBe('vision_llm');
+      expect(result.output).toContain('SSE标注正文');
+      expect(result.meta?.contentLength).toBe('SSE标注正文'.length);
     }
   });
 

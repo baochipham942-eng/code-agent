@@ -15,18 +15,34 @@ import { TaskOrchestrator } from '../../../src/host/planning/taskOrchestrator';
 import { GROQ_DEFAULT_MODEL } from '../../../src/shared/constants';
 
 function mockModelResponse(content: string): void {
+  const payload = {
+    choices: [
+      {
+        message: { content },
+      },
+    ],
+  };
   vi.stubGlobal(
     'fetch',
-    vi.fn(async () => ({
-      ok: true,
-      json: async () => ({
-        choices: [
-          {
-            message: { content },
-          },
-        ],
-      }),
-      text: async () => '',
+    vi.fn(async () => new Response(JSON.stringify(payload), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    })),
+  );
+}
+
+function mockModelSseResponse(content: string): void {
+  const sse = [
+    `data: ${JSON.stringify({ choices: [{ message: { content } }] })}`,
+    '',
+    'data: [DONE]',
+    '',
+  ].join('\n');
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => new Response(sse, {
+      status: 200,
+      headers: { 'content-type': 'text/event-stream' },
     })),
   );
 }
@@ -192,5 +208,22 @@ describe('TaskOrchestrator JSON parsing', () => {
 
     const payload = JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body));
     expect(payload.model).toBe(GROQ_DEFAULT_MODEL);
+  });
+
+  it('sniffs SSE chat completions into judgment JSON instead of throwing JSON.parse', async () => {
+    mockModelSseResponse('{"shouldParallel":true,"reason":"多个独立方向可以并行","criticalPathLength":8,"parallelDimensions":3,"suggestedDimensions":["安全审计","性能分析","代码质量"],"estimatedSpeedup":2.5,"confidence":0.86}');
+
+    const judgment = await createOrchestrator().judge('审计安全、性能和代码质量');
+
+    expect(judgment).toEqual({
+      shouldParallel: true,
+      reason: '多个独立方向可以并行',
+      criticalPathLength: 8,
+      parallelDimensions: 3,
+      suggestedDimensions: ['安全审计', '性能分析', '代码质量'],
+      estimatedSpeedup: 2.5,
+      confidence: 0.86,
+    });
+    expect(loggerMocks.warn).not.toHaveBeenCalled();
   });
 });

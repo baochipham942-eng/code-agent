@@ -36,6 +36,7 @@ import {
   readStringField,
 } from '../typedResponseGuards';
 import { requireSharp } from '../../../runtime/sharpRuntime';
+import { parseChatCompletionHttpBody } from '../../../model/parseSseChatCompletion';
 
 const CONFIG = {
   ZHIPU_MODEL: ZHIPU_VISION_MODEL,
@@ -281,7 +282,14 @@ async function analyzeImageContent(
     const errorText = await response.text();
     throw new Error(`智谱视觉 API 错误: ${response.status} - ${errorText}`);
   }
-  return readChatCompletionText(await response.json());
+  const parsed = await parseChatCompletionHttpBody(response);
+  if (parsed.kind === 'invalid') {
+    throw new Error(`vision API invalid response: ${parsed.error}`);
+  }
+  if (parsed.kind === 'empty') {
+    throw new Error('vision API empty response');
+  }
+  return readChatCompletionText(parsed.payload);
 }
 
 async function drawAnnotations(

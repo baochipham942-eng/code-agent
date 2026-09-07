@@ -31,6 +31,7 @@ import {
   type ImageEngine,
 } from '../../../services/media/imageGenerationService';
 import { readChatCompletionText } from '../typedResponseGuards';
+import { parseChatCompletionHttpBody } from '../../../model/parseSseChatCompletion';
 import {
   aspectOrientation,
   aspectRatioMatches,
@@ -244,6 +245,26 @@ async function fetchWithAbort(
   }
 }
 
+async function readExpandedPromptFromResponse(
+  response: Response,
+  logger: ToolContext['logger'],
+  event: string,
+): Promise<string | undefined> {
+  const parsed = await parseChatCompletionHttpBody(response);
+  if (parsed.kind !== 'payload') {
+    logger.warn(event, {
+      reason: parsed.kind === 'invalid' ? parsed.error : 'empty_response',
+    });
+    return undefined;
+  }
+  const expanded = readChatCompletionText(parsed.payload);
+  if (!expanded) {
+    logger.warn(event, { reason: 'empty_content' });
+    return undefined;
+  }
+  return expanded;
+}
+
 async function expandPromptWithLLM(
   prompt: string,
   engine: ImageEngine,
@@ -252,6 +273,7 @@ async function expandPromptWithLLM(
   style?: string,
 ): Promise<string> {
   const configService = getConfigService();
+  const fallback = style ? addStyleSuffix(prompt, style) : prompt;
 
   if (engine === 'cogview') {
     const zhipuApiKey = configService.getApiKey('zhipu')!;
@@ -278,17 +300,26 @@ async function expandPromptWithLLM(
         outerSignal,
       );
 
-      if (response.ok) {
-        const expanded = readChatCompletionText(await response.json());
-        if (expanded) return expanded;
+      if (!response.ok) {
+        logger.warn('image_generate cogview prompt expand failed', {
+          reason: 'http_error',
+          status: response.status,
+        });
+        return fallback;
       }
+      const expanded = await readExpandedPromptFromResponse(
+        response,
+        logger,
+        'image_generate cogview prompt expand failed',
+      );
+      if (expanded) return expanded;
     } catch (e: unknown) {
       if (outerSignal.aborted) throw e;
       logger.warn('image_generate cogview prompt expand failed', {
         error: e instanceof Error ? e.message : String(e),
       });
     }
-    return style ? addStyleSuffix(prompt, style) : prompt;
+    return fallback;
   }
 
   // engine === 'flux': OpenRouter 英文扩写
@@ -303,36 +334,47 @@ async function expandPromptWithLLM(
   };
 
   const openrouterApiKey = configService.getApiKey('openrouter');
-  if (openrouterApiKey) {
-    try {
-      const response = await fetchWithAbort(
-        `${MODEL_API_ENDPOINTS.openrouter}/chat/completions`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${openrouterApiKey}`,
-            'HTTP-Referer': 'https://code-agent.app',
-            'X-Title': 'Agent Neo',
-          },
-          body: JSON.stringify(fluxRequestBody),
+  if (!openrouterApiKey) {
+    logger.warn('image_generate flux prompt expand failed', { reason: 'missing_api_key' });
+    return fallback;
+  }
+  try {
+    const response = await fetchWithAbort(
+      `${MODEL_API_ENDPOINTS.openrouter}/chat/completions`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${openrouterApiKey}`,
+          'HTTP-Referer': 'https://code-agent.app',
+          'X-Title': 'Agent Neo',
         },
-        PROMPT_EXPAND_TIMEOUT_MS,
-        outerSignal,
-      );
-      if (response.ok) {
-        const expanded = readChatCompletionText(await response.json());
-        if (expanded) return expanded;
-      }
-    } catch (e: unknown) {
-      if (outerSignal.aborted) throw e;
+        body: JSON.stringify(fluxRequestBody),
+      },
+      PROMPT_EXPAND_TIMEOUT_MS,
+      outerSignal,
+    );
+    if (!response.ok) {
       logger.warn('image_generate flux prompt expand failed', {
-        error: e instanceof Error ? e.message : String(e),
+        reason: 'http_error',
+        status: response.status,
       });
+      return fallback;
     }
+    const expanded = await readExpandedPromptFromResponse(
+      response,
+      logger,
+      'image_generate flux prompt expand failed',
+    );
+    if (expanded) return expanded;
+  } catch (e: unknown) {
+    if (outerSignal.aborted) throw e;
+    logger.warn('image_generate flux prompt expand failed', {
+      error: e instanceof Error ? e.message : String(e),
+    });
   }
 
-  return style ? addStyleSuffix(prompt, style) : prompt;
+  return fallback;
 }
 
 export async function executeImageGenerate(

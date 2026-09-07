@@ -10,6 +10,7 @@ import { convertToolsToOpenAI, convertToOpenAIMessages } from './shared';
 import { openAISSEStream } from './sseStream';
 import { electronFetch, parseOpenAIResponse, safeJsonStringify } from './shared';
 import { withTransientRetry } from './retryStrategy';
+import { parseChatCompletionHttpBody } from '../parseSseChatCompletion';
 import { MODEL_MAX_TOKENS, DEFAULT_MODEL } from '../../../shared/constants';
 import { PROVIDER_REGISTRY } from '../providerRegistry';
 import { MODEL_API_KEY_MISSING_CODE } from '../errorClassifier';
@@ -187,7 +188,20 @@ export abstract class BaseOpenAIProvider implements Provider {
             });
           }
 
-          return parseOpenAIResponse(await response.json());
+          const parsed = await parseChatCompletionHttpBody(response);
+          if (parsed.kind === 'invalid') {
+            throw Object.assign(
+              new Error(`${this.name} API error: invalid response - ${parsed.error}`),
+              { status: response.status, provider: config.provider, model: config.model },
+            );
+          }
+          if (parsed.kind === 'empty') {
+            throw Object.assign(
+              new Error(`${this.name} API error: empty response`),
+              { status: response.status, provider: config.provider, model: config.model },
+            );
+          }
+          return parseOpenAIResponse(parsed.payload);
         },
         {
           providerName: config.provider,

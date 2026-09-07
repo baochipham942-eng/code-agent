@@ -32,6 +32,37 @@ function makeMutationCall(name: string, overrides: Partial<ToolCall> = {}): Tool
 }
 
 describe('ToolCallDisplay status labels', () => {
+  // ai-review #1693：「有没有匹配」只认结构化 totalMatches，绝不解析正文。
+  // 三轮各造出一个正文反例：docs/No matches.md（子串）、No files matched the pattern
+  // （整行全等漏真阳）、根目录 No files matched.md（首词前缀）。文件名能构造，计数不能。
+  const globCall = (output: string, metadata?: Record<string, unknown>): ToolCall => ({
+    id: 'glob-x',
+    name: 'Glob',
+    arguments: { pattern: '**' },
+    result: { toolCallId: 'glob-x', success: true, output, ...(metadata ? { metadata } : {}) },
+  });
+
+  it('totalMatches=0 才报「无匹配」', () => {
+    expect(getToolStatusLabel(globCall('No files matched the pattern', { totalMatches: 0 }), 'success', zh))
+      .toBe(zh.toolStatus.grepNoMatches);
+  });
+
+  it.each([
+    ['docs/No matches.md\n\nnextOffset: null'],
+    ['No files matched.md\n\nnextOffset: null'],
+  ])('找到名字长得像空结果标记的文件（%s）不得报「无匹配」', (output) => {
+    expect(getToolStatusLabel(globCall(output, { totalMatches: 1 }), 'success', zh))
+      .not.toBe(zh.toolStatus.grepNoMatches);
+  });
+
+  it('拿不到 totalMatches 时回落到首行锚定匹配（旧消息/metadata 丢失）', () => {
+    expect(getToolStatusLabel(globCall('No files matched the pattern'), 'success', zh))
+      .toBe(zh.toolStatus.grepNoMatches);
+    // 回落档仍然挡得住「文件名含标记但不在首行开头」这一类
+    expect(getToolStatusLabel(globCall('docs/No matches.md\n\nnextOffset: null'), 'success', zh))
+      .not.toBe(zh.toolStatus.grepNoMatches);
+  });
+
   it('reports spawn completion according to foreground versus background facts', () => {
     const foreground: ToolCall = {
       id: 'spawn-foreground',
@@ -207,5 +238,30 @@ describe('ToolCallDisplay status labels', () => {
     );
 
     expect(label).toBe('找到 3 处匹配');
+  });
+});
+
+// ai-review #1693 第三轮②：删空匹配摘要只对 Grep/Glob 成立——它们的状态行会替它说
+// 「无匹配」。别的工具（mcp__github__search_code 等）状态行不产出这句，删掉摘要后
+// 折叠行只剩动作名，用户看不出找没找到。
+describe('折叠行摘要的隐藏范围', () => {
+  it('只有 Grep/Glob 的空结果摘要被状态行接管', async () => {
+    const { collapsedSuccessSummaryForTest } = await import(
+      '../../../src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/ResultSummary'
+    );
+    const call = (name: string, metadata?: Record<string, unknown>): ToolCall => ({
+      id: `${name}-x`,
+      name,
+      arguments: {},
+      result: { toolCallId: `${name}-x`, success: true, output: 'No matches found', ...(metadata ? { metadata } : {}) },
+    });
+    expect(collapsedSuccessSummaryForTest('No matches found', call('Glob', { totalMatches: 0 }))).toBeNull();
+    expect(collapsedSuccessSummaryForTest('No matches found', call('Grep', { totalMatches: 0 }))).toBeNull();
+    expect(collapsedSuccessSummaryForTest('No matches found', call('mcp__github__search_code', { totalMatches: 0 })))
+      .toBe('No matches found');
+    // 状态行没接管时不许删摘要，否则折叠行一个字都没有。
+    // 「没接管」= 判据说这不是空结果（有计数且非 0，或回落档不匹配），不是「没有 metadata」。
+    expect(collapsedSuccessSummaryForTest('No matches found', call('Glob', { totalMatches: 3 })))
+      .toBe('No matches found');
   });
 });

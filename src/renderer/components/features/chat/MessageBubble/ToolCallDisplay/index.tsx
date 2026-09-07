@@ -283,7 +283,7 @@ export function ToolCallDisplay({
         {receipt && (
           <ToolReceiptMeta receipt={receipt} />
         )}
-        {!receipt && toolCall.result && !delegationPresentation && !expanded && !isBashTool(toolCall) && (
+        {!receipt && toolCall.result && !delegationPresentation && !expanded && !isBashTool(toolCall) && status !== 'interrupted' && (
           <span className="min-w-0 max-w-[220px] shrink truncate text-xs text-zinc-500">
             <ResultSummary toolCall={toolCall} inline />
           </span>

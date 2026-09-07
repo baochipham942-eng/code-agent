@@ -260,7 +260,7 @@ describe('browser/computer action preview rendering', () => {
     );
 
     expect(html).toContain('已中断');
-    expect(html).toContain('未执行');
+    expect(html).not.toContain('未执行');
     expect(html).not.toContain('会改文件');
     expect(html).not.toContain('builtin');
     expect(html).not.toContain('running');
@@ -638,9 +638,11 @@ describe('browser/computer action preview rendering', () => {
       }),
     );
 
-    expect(grepHtml).toContain('No matches');
+    expect(grepHtml).toContain('无匹配');
+    expect(grepHtml).not.toContain('No matches');
     expect(grepHtml).not.toContain('Found 1 result');
-    expect(globHtml).toContain('No matches');
+    expect(globHtml).toContain('无匹配');
+    expect(globHtml).not.toContain('No matches');
     expect(globHtml).not.toContain('Found 1 file');
   });
 });

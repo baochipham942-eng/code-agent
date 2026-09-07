@@ -64,6 +64,27 @@ export function getToolStatusLabel(
  * 从结果里抽出可报的数据做状态词（Grep → 找到 N 处匹配，Glob → 找到 N 个文件…）。
  * 抽不出东西时返回 null —— 光秃秃的「已完成/已创建」不值得占一个视觉位置。
  */
+/**
+ * 「有没有匹配」只认工具返回的**结构化计数**，绝不解析正文。
+ *
+ * 正文解析这条路穷举不完：ai-review #1693 连着三轮各造出一个反例——
+ * `docs/No matches.md`（includes 子串）、`No files matched the pattern`（整行全等漏真阳）、
+ * 根目录的 `No files matched.md`（首词前缀）。只要判据落在人类可读文本上，
+ * 文件名就能构造出来。Glob（glob.ts:184）与 Grep（grep.ts:421）都在 meta 里给了
+ * `totalMatches`，那才是真源。
+ *
+ * 拿不到计数（旧消息、metadata 丢失）才回落到**首行锚定**匹配：只认输出第一行就以
+ * 工具自产的空结果串开头。它挡得住 `docs/No matches.md`（首行以 docs/ 开头），
+ * 挡不住根目录下正好叫 `No files matched.md` 的文件——那是回落档能做到的极限，
+ * 代价只是一句状态标签说错，没有安全后果。有计数时永远以计数为准。
+ */
+export function isEmptyMatchForStatusLine(toolCall: ToolCall): boolean {
+  const total = (toolCall.result?.metadata as { totalMatches?: unknown } | undefined)?.totalMatches;
+  if (typeof total === 'number') return total === 0;
+  const first = (toolCall.result?.output ?? '').split('\n', 1)[0]?.trim() ?? '';
+  return /^(no matches found|no files matched|0 matches)\b/i.test(first);
+}
+
 function enrichCompletedLabel(toolCall: ToolCall, t: Translations): string | null {
   const output = toolCall.result?.output;
   if (!output || typeof output !== 'string') return null;
@@ -73,12 +94,13 @@ function enrichCompletedLabel(toolCall: ToolCall, t: Translations): string | nul
   if (name === 'Grep') {
     const match = output.match(/(\d+)\s*match/i);
     if (match) return t.toolStatus.grepMatches.replace('{count}', match[1]);
-    if (output.includes('No matches') || output.includes('0 matches')) return t.toolStatus.grepNoMatches;
+    if (isEmptyMatchForStatusLine(toolCall)) return t.toolStatus.grepNoMatches;
   }
 
   if (name === 'Glob') {
     const match = output.match(/(\d+)\s*file/i);
     if (match) return t.toolStatus.globFiles.replace('{count}', match[1]);
+    if (isEmptyMatchForStatusLine(toolCall)) return t.toolStatus.grepNoMatches;
   }
 
   if (name === 'Read') {

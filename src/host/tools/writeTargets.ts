@@ -233,15 +233,23 @@ const NESTED_SCRIPT_SHELLS = new Set(['bash', 'sh', 'zsh', 'dash']);
 /** `bash -c '...'` 内嵌脚本的写目标（原始词，值化在出口统一做）。 */
 function nestedScriptTargets(words: string[]): string[] {
   if (words.length < 3) return [];
-  if (!NESTED_SCRIPT_SHELLS.has(path.basename(shellWordValue(words[0])))) return [];
-  for (let index = 1; index < words.length - 1; index += 1) {
-    // -c 可以捆在组合开关里（bash -lc '…'）：单横线开头、非 `--`、字母里含 c 即算
-    const flag = shellWordValue(words[index]);
-    if (/^-[a-zA-Z]*c[a-zA-Z]*$/.test(flag)) {
-      // 保引号分词把整段脚本包成一个引号词，不递归解析内层 `>` 整段丢失（PR #1709 复审④①）。
-      // 脚本词先值化成脚本文本（这是词→文本的必要一步），递归产物仍是原始词，不多解。
-      return collectShellTargets(shellWordValue(words[index + 1]));
+  // PR #1709 复审⑤（二裁维持）：保引号分词后整段脚本是一个引号词，基线靠 canonicalize
+  // 拍平顺带抓到，换成保真词法后必须主动找——而且不能只看 words[0]：`env bash -c`、
+  // `sudo bash -c`、`timeout 5 bash -c`、`env FOO=1 bash -c` 这些包装前缀会把 shell 挪到
+  // 后面的词位。改为在前几个词里扫第一个 shell 名（剥壳），再从它后面找 -c（含 -lc 组合）。
+  // 代价：`grep bash -c '…'` 这类「bash 是数据不是命令」的形状会保守多判——方向与 heredoc
+  // 同款（多判漏判不对称，选保守），且脚本解析不出写目标时本来就零产出。
+  const scanLimit = Math.min(words.length - 2, 6);
+  for (let shellIndex = 0; shellIndex <= scanLimit; shellIndex += 1) {
+    if (!NESTED_SCRIPT_SHELLS.has(path.basename(shellWordValue(words[shellIndex])))) continue;
+    for (let flagIndex = shellIndex + 1; flagIndex < words.length - 1; flagIndex += 1) {
+      const flag = shellWordValue(words[flagIndex]);
+      if (/^-[a-zA-Z]*c[a-zA-Z]*$/.test(flag)) {
+        // 脚本词先值化成脚本文本（这是词→文本的必要一步），递归产物仍是原始词，不多解。
+        return collectShellTargets(shellWordValue(words[flagIndex + 1]));
+      }
     }
+    return [];
   }
   return [];
 }

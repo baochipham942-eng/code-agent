@@ -197,6 +197,19 @@ describe('引号/转义目标的词法保真（PR #1709 复审①）', () => {
     expect(resolve("echo 'bash -c x'").targets).toEqual([]);
   });
 
+  it('包装前缀后的 bash -c 不丢目标（PR #1709 复审⑤二裁维持：env/sudo/timeout/nohup 系）', () => {
+    expect(resolve("env bash -c 'echo x > /etc/owned.txt'").targets)
+      .toEqual([resolveCanonicalRunPath('/etc/owned.txt')]);
+    expect(resolve("sudo bash -c 'echo x > /etc/owned.txt'").targets)
+      .toEqual([resolveCanonicalRunPath('/etc/owned.txt')]);
+    expect(resolve("timeout 5 bash -c 'echo x > /etc/owned.txt'").targets)
+      .toEqual([resolveCanonicalRunPath('/etc/owned.txt')]);
+    expect(resolve("env FOO=1 bash -c 'echo x > /etc/owned.txt'").targets)
+      .toEqual([resolveCanonicalRunPath('/etc/owned.txt')]);
+    expect(resolve("nohup sh -c 'cp a /etc/x'").targets)
+      .toEqual([resolveCanonicalRunPath('/etc/x')]);
+  });
+
   it('单引号路径里的字面反斜杠不丢（PR #1709 复审④②：值化只许做一遍）', () => {
     expect(resolve("cp src '/tmp/a\\b.txt'").targets)
       .toEqual([resolveCanonicalRunPath('/tmp/a\\b.txt')]);

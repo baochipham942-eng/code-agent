@@ -63,6 +63,24 @@ describe('inAppValidationSandbox', () => {
     expect(cspAt).toBeLessThan(scriptAt);
   });
 
+  it('不把 style 文本里的 <head> 当真实 head', () => {
+    const source = '<style>.x::before{content:"<head>"}</style><button id="ok">ok</button>';
+    const wrapped = wrapInAppValidationHtml(source);
+    expect(wrapped).toContain('content:"<head>"');
+    const styleOpen = wrapped.indexOf('<style>');
+    const styleClose = wrapped.indexOf('</style>');
+    const cspAt = wrapped.indexOf('Content-Security-Policy');
+    const driverAt = wrapped.indexOf('data-neo-in-app-driver');
+    expect(styleOpen).toBeGreaterThan(0);
+    expect(styleClose).toBeGreaterThan(styleOpen);
+    expect(cspAt).toBeGreaterThan(0);
+    expect(driverAt).toBeGreaterThan(0);
+    expect(cspAt).toBeLessThan(styleOpen);
+    expect(driverAt).toBeLessThan(styleOpen);
+    expect(wrapped.slice(styleOpen, styleClose)).not.toContain('data-neo-in-app-driver');
+    expect(wrapped.slice(styleOpen, styleClose)).not.toContain('Content-Security-Policy');
+  });
+
   it('驱动插在工作台 CSP 之后、页面自带 CSP 之前，避免 script-src none 拦掉', () => {
     const source = '<html><head><meta http-equiv="Content-Security-Policy" content="script-src \'none\'"></head><body><button id="ok">ok</button></body></html>';
     const wrapped = wrapInAppValidationHtml(source);

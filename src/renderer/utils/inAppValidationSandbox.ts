@@ -202,6 +202,10 @@ function skipOpaqueHtml(lower: string, index: number): number | null {
     const end = lower.indexOf('</textarea>', index);
     return end < 0 ? lower.length : end + 11;
   }
+  if (lower.startsWith('<style', index)) {
+    const end = lower.indexOf('</style>', index);
+    return end < 0 ? lower.length : end + 8;
+  }
   return null;
 }
 

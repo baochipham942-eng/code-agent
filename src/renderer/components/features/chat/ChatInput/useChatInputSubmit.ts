@@ -628,11 +628,39 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
             onQueuedInputChanged?.();
             return true;
           };
-          const forkNewId = async (): Promise<true> => {
-            const freshId = generateMessageId();
-            await enqueueQueuedInput(freshId, currentSessionId, queuedEnvelope);
-            onQueuedInputChanged?.();
-            return true;
+          const forkNewId = async (): Promise<boolean> => {
+            try {
+              const freshId = generateMessageId();
+              await enqueueQueuedInput(freshId, currentSessionId, queuedEnvelope);
+              onQueuedInputChanged?.();
+              return true;
+            } catch {
+              return false;
+            }
+          };
+          const readQueuedById = async (): Promise<QueuedInput | null> => {
+            try {
+              const listed = await ipcService.invokeDomain<QueuedInput[]>(
+                IPC_DOMAINS.QUEUED_INPUT,
+                'list',
+                { sessionId: currentSessionId },
+              );
+              if (!Array.isArray(listed)) return null;
+              return listed.find((item) => item.id === clientMessageId) ?? null;
+            } catch {
+              return null;
+            }
+          };
+          const reconcileAfterMutation = async (): Promise<boolean> => {
+            const current = await readQueuedById();
+            if (!current) return false;
+            const reconciled = decideSameIdQueueAction(
+              current.status,
+              queuedRecordMatchesEnvelope(current, queuedEnvelope),
+            );
+            if (reconciled === 'keep') return applyRecord(current);
+            if (reconciled === 'fork') return forkNewId();
+            return false;
           };
           if (action === 'update') {
             try {
@@ -645,11 +673,10 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
                   attachments: queuedEnvelope.attachments ?? [],
                 },
               );
-              if (!updated.updated || !updated.input) return forkNewId();
+              if (!updated.updated || !updated.input) return reconcileAfterMutation();
               return applyRecord(updated.input);
             } catch {
-              // queued 已变成 sending/consumed：按 sending+payload 不同处理，不覆盖原行。
-              return forkNewId();
+              return reconcileAfterMutation();
             }
           }
           if (action === 'requeue') {
@@ -659,10 +686,10 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
                 'requeue',
                 { id: clientMessageId, envelope: queuedEnvelope },
               );
-              if (!revived) return false;
+              if (!revived) return reconcileAfterMutation();
               return applyRecord(revived);
             } catch {
-              return false;
+              return reconcileAfterMutation();
             }
           }
           if (action === 'fork') return forkNewId();

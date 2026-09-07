@@ -601,6 +601,18 @@ describe('mid-turn composer submission', () => {
       })
       .mockResolvedValueOnce({
         success: true,
+        data: [{
+          id: 'failed-bubble-id',
+          sessionId: 'session-running',
+          envelope: { content: '原文 B' },
+          status: 'sending',
+          retryCount: 0,
+          createdAt: 1,
+          updatedAt: 2,
+        }],
+      })
+      .mockResolvedValueOnce({
+        success: true,
         data: {
           id: 'fresh-queued-id',
           sessionId: 'session-running',
@@ -622,8 +634,9 @@ describe('mid-turn composer submission', () => {
     });
 
     expect(domainInvoke.mock.calls[1]?.[1]).toBe('update');
-    expect(domainInvoke.mock.calls[2]?.[1]).toBe('enqueue');
-    expect((domainInvoke.mock.calls[2]?.[2] as { id?: string }).id).not.toBe('failed-bubble-id');
+    expect(domainInvoke.mock.calls[2]?.[1]).toBe('list');
+    expect(domainInvoke.mock.calls[3]?.[1]).toBe('enqueue');
+    expect((domainInvoke.mock.calls[3]?.[2] as { id?: string }).id).not.toBe('failed-bubble-id');
     const user = useSessionStore.getState().messages.find((message) => message.id === 'failed-bubble-id');
     expect(user?.content).toBe('原文 B');
     expect(user?.metadata?.sendFailed).toBe(true);
@@ -691,6 +704,67 @@ describe('mid-turn composer submission', () => {
       attachments: [newAtt],
     });
     const user = useSessionStore.getState().messages.find((message) => message.id === 'failed-bubble-id');
+    expect(user?.attachments).toEqual([newAtt]);
+    expect(user?.metadata?.sendFailed).toBeUndefined();
+  });
+
+  it('update 成功但回执丢失时重读核对，已是新稿且 queued 则不另建 id', async () => {
+    const newAtt = { id: 'b', name: 'b.png', type: 'image/png', size: 2, data: 'y' };
+    useSessionStore.setState({
+      currentSessionId: 'session-running',
+      messages: [{
+        id: 'failed-bubble-id',
+        role: 'user',
+        content: '原文 A',
+        timestamp: 1,
+        metadata: { sendFailed: true },
+      }],
+    } as never);
+    domainInvoke.mockReset();
+    domainInvoke
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          id: 'failed-bubble-id',
+          sessionId: 'session-running',
+          envelope: { content: '原文 A', attachments: [] },
+          status: 'queued',
+          retryCount: 0,
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      })
+      .mockRejectedValueOnce(new Error('receipt lost'))
+      .mockResolvedValueOnce({
+        success: true,
+        data: [{
+          id: 'failed-bubble-id',
+          sessionId: 'session-running',
+          envelope: { content: '改过的需求 B', attachments: [newAtt] },
+          status: 'queued',
+          retryCount: 0,
+          createdAt: 1,
+          updatedAt: 2,
+        }],
+      });
+    const pendingResendClientMessageIdRef = { current: 'failed-bubble-id' as string | null };
+    const { result } = renderHook(() => useChatInputSubmit(makeParams({
+      value: '改过的需求 B',
+      attachments: [newAtt] as never,
+      pendingResendClientMessageIdRef,
+    })));
+
+    await act(async () => {
+      await result.current.handleSubmit();
+    });
+
+    expect(domainInvoke.mock.calls[1]?.[1]).toBe('update');
+    expect(domainInvoke.mock.calls[2]?.[1]).toBe('list');
+    expect(domainInvoke.mock.calls.some((call) => (
+      call[1] === 'enqueue' && (call[2] as { id?: string }).id !== 'failed-bubble-id'
+    ))).toBe(false);
+    const user = useSessionStore.getState().messages.find((message) => message.id === 'failed-bubble-id');
+    expect(user?.content).toBe('改过的需求 B');
     expect(user?.attachments).toEqual([newAtt]);
     expect(user?.metadata?.sendFailed).toBeUndefined();
   });

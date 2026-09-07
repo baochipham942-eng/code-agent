@@ -6,6 +6,9 @@ import type BetterSqlite3 from 'better-sqlite3';
 
 import { QueuedInputRepository } from '../../../src/host/services/core/repositories/QueuedInputRepository';
 import { applySchema } from '../../../src/host/services/core/database/schema';
+import { SteerRejectedError } from '../../../src/host/agent/runtime/conversationRuntime';
+import { applySameIdQueuedInput } from '../../../src/host/runtime/applySameIdQueuedInput';
+import { steerOrQueue } from '../../../src/host/runtime/steerQueueFence';
 
 function createSchema(db: BetterSqlite3.Database): void {
   db.exec(`
@@ -337,5 +340,63 @@ describe('QueuedInputRepository', () => {
     const indexes = legacy.prepare("PRAGMA index_list('queued_inputs')").all() as Array<{ name: string }>;
     expect(indexes.map((index) => index.name)).toContain('idx_queued_inputs_position');
     legacy.close();
+  });
+});
+
+describe('steer 回退入队走同一套同 id 状态机', () => {
+  let db: BetterSqlite3.Database;
+  let repo: QueuedInputRepository;
+
+  beforeEach(() => {
+    db = new Database(':memory:');
+    createSchema(db);
+    repo = new QueuedInputRepository(db);
+  });
+
+  afterEach(() => {
+    db.close();
+  });
+
+  it('同 id 已 queued 时插话回退入队更新为新稿，不被 INSERT OR IGNORE', async () => {
+    repo.enqueue({
+      id: 'same-id',
+      sessionId: 'session-1',
+      envelope: { content: '原文 A', attachments: [] },
+      now: 100,
+    });
+
+    const outcome = await steerOrQueue(
+      { steer: vi.fn().mockRejectedValue(new SteerRejectedError()) },
+      { sessionId: 'session-1', content: '改过的需求 B', clientMessageId: 'same-id' },
+      repo,
+    );
+
+    expect(outcome).toMatchObject({ outcome: 'queued', queuedInputId: 'same-id' });
+    expect(JSON.parse(repo.getById('same-id')?.envelopeJson ?? '{}')).toEqual(
+      expect.objectContaining({ content: '改过的需求 B' }),
+    );
+    expect(repo.listBySession('session-1')).toHaveLength(1);
+    expect(repo.getNextDispatchable('session-1')?.id).toBe('same-id');
+  });
+
+  it('applySameId 对 failed 行 requeue 为可抽干的 queued', () => {
+    repo.enqueue({
+      id: 'same-id',
+      sessionId: 'session-1',
+      envelope: { content: '原文 A' },
+      now: 100,
+    });
+    expect(repo.markFailed('same-id', 200)).toBe(true);
+
+    const accepted = applySameIdQueuedInput(repo, {
+      id: 'same-id',
+      sessionId: 'session-1',
+      envelope: { content: '原文 A', attachments: [] },
+      now: 300,
+    });
+
+    expect(accepted).toMatchObject({ id: 'same-id', action: 'requeue' });
+    expect(repo.getById('same-id')).toMatchObject({ status: 'queued', pausedReason: null });
+    expect(repo.getNextDispatchable('session-1')?.id).toBe('same-id');
   });
 });

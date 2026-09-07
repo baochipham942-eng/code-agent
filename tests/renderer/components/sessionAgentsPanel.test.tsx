@@ -138,13 +138,24 @@ describe('SessionAgentsPanel', () => {
     expect(useMemberViewStore.getState().viewingMemberId).toBe('researcher');
   });
 
-  it('只读/0 改动完成后面板是已汇报，不含合到一起', async () => {
+  it('账本 filesChanged 为空、角色不是只读时面板仍报合到一起了', async () => {
     mockLedger([record({ filesChanged: [] }), record({ agentId: 'writer', name: '撰稿员', role: 'writer', filesChanged: [] })]);
 
     render(<SessionAgentsPanel />);
     const merge = await screen.findByTestId('agents-panel-merge-state');
-    // 账本 [] 不是零改动证据；只读 explore 的判据在 agentMergeState 单测（有隔离 worktree）。
     expect(merge.textContent).toBe('2 个代理的改动已经合到一起了');
+  });
+
+  it('两个只读 explore 完成且无改动后面板是已汇报', async () => {
+    mockLedger([
+      record({ agentId: 'explore-1', name: '探查员', role: 'explore', filesChanged: [] }),
+      record({ agentId: 'explore-2', name: '复核员', role: 'explorer', filesChanged: [] }),
+    ]);
+
+    render(<SessionAgentsPanel />);
+    const merge = await screen.findByTestId('agents-panel-merge-state');
+    expect(merge.textContent).toBe('2 个代理已汇报');
+    expect(merge.textContent).not.toContain('合到一起');
   });
 
   it('有真实文件改动时面板仍报合到一起了', async () => {

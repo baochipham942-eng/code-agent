@@ -38,17 +38,21 @@ describe('deriveAgentMergeState', () => {
     ], [])).toBe('merged');
   });
 
-  it('有 worktree 但 changedFiles 为空报 reported', () => {
+  it('两个只读 explore 完成且无改动报 reported（默认无 worktree）', () => {
     expect(deriveAgentMergeState([
-      { status: 'done', node: { worktreeState: { status: 'active', changedFiles: [] } } },
-      { status: 'done' },
+      { status: 'done', roleId: 'explore' },
+      { status: 'done', roleId: 'explorer' },
+    ], [])).toBe('reported');
+    expect(deriveAgentMergeState([
+      { status: 'done', node: { role: 'reviewer', worktreeState: { status: 'none' } } },
+      { status: 'done', roleId: 'explore' },
     ], [])).toBe('reported');
   });
 
-  it('worktree status none 不算隔离，缺 filesChanged 仍 merged', () => {
+  it('只读角色只要有改动证据仍报 merged', () => {
     expect(deriveAgentMergeState([
-      { status: 'done', node: { worktreeState: { status: 'none' } } },
-      { status: 'done' },
+      { status: 'done', roleId: 'explore', filesChanged: ['notes.md'] },
+      { status: 'done', roleId: 'explore' },
     ], [])).toBe('merged');
   });
 

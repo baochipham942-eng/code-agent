@@ -110,12 +110,11 @@ describe('SessionMemberBar（折叠 chip）', () => {
     expect(screen.getByTestId('role-initial-avatar-writer')).toBeTruthy();
   });
 
-  it('只读/0 改动完成后芯片是已汇报，不含合到一起', async () => {
+  it('账本完成事件 filesChanged 为空、角色不是只读时芯片仍报合到一起了', async () => {
     mockLedger(completedDetail);
 
     render(<SessionMemberBar sessionId="session-1" />);
     const merge = await screen.findByTestId('member-bar-merge-state');
-    // 这条夹具没有隔离 worktree：缺 filesChanged 不能当零改动。合芯片形状见 agentMergeState 单测。
     expect(merge.textContent).toBe('改动已经合到一起了');
   });
 

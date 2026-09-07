@@ -3,15 +3,25 @@
 import React, { useRef, useState } from 'react';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { act, cleanup, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SteerOrQueueOutcome } from '../../../src/shared/contract/appService';
 import type { ConversationEnvelope } from '../../../src/shared/contract/conversationEnvelope';
+import type { TraceNode } from '../../../src/shared/contract/trace';
 
 vi.mock('../../../src/renderer/hooks/useI18n', async () => {
   const { zh } = await import('../../../src/renderer/i18n/zh');
   return { useI18n: () => ({ t: zh, language: 'zh' }) };
 });
+
+vi.mock('../../../src/renderer/components/features/chat/MessageBubble/MessageContent', () => ({
+  MessageContent: () => null,
+}));
+
+vi.mock('../../../src/renderer/components/features/chat/MessageBubble/AttachmentPreview', () => ({
+  AttachmentDisplay: () => null,
+}));
 
 import { InputArea, type InputAreaRef } from '../../../src/renderer/components/features/chat/ChatInput/InputArea';
 import {
@@ -34,6 +44,7 @@ import {
   consumePendingClientMessageId,
   discardPendingResendClientMessageId,
 } from '../../../src/renderer/utils/chatSendState';
+import { TraceNodeRenderer } from '../../../src/renderer/components/features/chat/TraceNodeRenderer';
 
 function makeParams(overrides: Partial<UseChatInputSubmitParams> = {}): UseChatInputSubmitParams {
   return {
@@ -1095,5 +1106,46 @@ describe('consumePendingClientMessageId', () => {
     const pending = { current: 'failed-bubble-id' as string | null };
     discardPendingResendClientMessageId(pending);
     expect(pending.current).toBeNull();
+  });
+});
+
+describe('失败用户气泡呈现', () => {
+  it('发送失败后保留原文，并给出失败标记和编辑重发入口', () => {
+    const html = renderToStaticMarkup(
+      React.createElement(TraceNodeRenderer, {
+        node: {
+          id: 'user-failed-visible',
+          type: 'user',
+          content: '这段需求失败后还在',
+          timestamp: 1,
+          metadata: { sendFailed: true },
+        } satisfies TraceNode,
+      }),
+    );
+
+    expect(html).toContain('data-testid="user-message-send-failed"');
+    expect(html).toContain('没发出去');
+    expect(html).toContain('data-testid="user-message-edit-resend"');
+    expect(html).toContain('编辑重发');
+    expect(html).toContain('border-red-500/40');
+    expect(html).toContain('text-badge-danger');
+    expect(html).not.toContain('border-border-muted');
+  });
+
+  it('成功发出的用户气泡没有失败标记和编辑重发', () => {
+    const html = renderToStaticMarkup(
+      React.createElement(TraceNodeRenderer, {
+        node: {
+          id: 'user-ok',
+          type: 'user',
+          content: '正常发出去的',
+          timestamp: 1,
+        } satisfies TraceNode,
+      }),
+    );
+
+    expect(html).not.toContain('data-testid="user-message-send-failed"');
+    expect(html).not.toContain('编辑重发');
+    expect(html).toContain('border-border-muted');
   });
 });

@@ -74,7 +74,13 @@ export function applySameIdQueuedInput(
   repo: SameIdQueuedRepository,
   input: ApplySameIdQueuedInput,
 ): ApplySameIdQueuedResult {
-  const existing = repo.getById?.(input.id) ?? null;
+  const existing = ((): SameIdQueuedRecord | null => {
+    try {
+      return repo.getById?.(input.id) ?? null;
+    } catch {
+      return null;
+    }
+  })();
   if (!existing) {
     repo.enqueue({
       id: input.id,

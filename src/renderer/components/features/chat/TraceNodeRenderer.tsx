@@ -200,7 +200,7 @@ const UserNode: React.FC<{
             {sendFailed && (
               <div
                 data-testid="user-message-send-failed"
-                className="mb-1 flex items-center justify-end gap-2 text-2xs text-red-400/90"
+                className="mb-1 flex items-center justify-end gap-2 text-2xs text-badge-danger/90"
               >
                 <AlertTriangle className="h-3 w-3" />
                 <span>{t.turnCard.sendFailed}</span>
@@ -208,7 +208,7 @@ const UserNode: React.FC<{
                   type="button"
                   data-testid="user-message-edit-resend"
                   onClick={() => editAndResendMessage(messageId)}
-                  className="rounded-md px-1.5 py-0.5 font-medium text-red-300 transition-colors hover:bg-red-500/10 hover:text-red-200 focus:outline-hidden focus-visible:ring-1 focus-visible:ring-[var(--focus-ring)]"
+                  className="rounded-md px-1.5 py-0.5 font-medium text-badge-danger/80 transition-colors hover:bg-red-500/10 hover:text-badge-danger focus:outline-hidden focus-visible:ring-1 focus-visible:ring-[var(--focus-ring)]"
                 >
                   {t.turnCard.editAndResend}
                 </button>

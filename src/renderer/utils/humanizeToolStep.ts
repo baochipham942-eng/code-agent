@@ -138,7 +138,7 @@ const MEMORY_SEARCH_TOOLS = new Set(['memory_search']);
 // ToolSearch：工具目录检索，对用户零意义的纯内部动作，不进主流聚合行
 const TOOL_SEARCH_TOOLS = new Set(['ToolSearch', 'tool_search']);
 
-function classifyToolName(name: string): ToolCategory {
+export function classifyToolName(name: string): ToolCategory {
   if (READ_TOOLS.has(name)) return 'read';
   if (WRITE_TOOLS.has(name)) return 'write';
   if (EDIT_TOOLS.has(name)) return 'edit';
@@ -354,6 +354,7 @@ export function humanizeToolStep(
   stepLabel?: ToolStepLabelKey,
   renderContext: { connectorPrefixRendered?: boolean } = {},
 ): string {
+  if (classifyToolName(name) === 'search' && args?.pattern === '\uFFFD' && status === 'completed') return t.deliveryExperience.checkCharacters;
   if (stepLabel) {
     return status === 'completed'
       ? t.toolStepHumanize.declared[stepLabel]

@@ -1,3 +1,4 @@
+import { toolPreflightCopy } from '../../../../../utils/toolPreflightPresentation';
 // ============================================================================
 // ToolHeader - Humanized step sentence (shortDescription, or humanizeToolStep
 // fallback) + optional clickable file path for right-pane preview
@@ -78,7 +79,8 @@ export function ToolHeader({
   const assembled = status === 'interrupted'
     ? buildToolStatusLineCopy({ status, interruptionReason, toolCall }, t)
     : null;
-  const displayName = assembled
+  const preflight = toolPreflightCopy(toolCall, t);
+  const displayName = preflight?.action ?? (assembled
     ? assembled.action
     : humanizeToolStep(
         toolCall.name,
@@ -93,7 +95,7 @@ export function ToolHeader({
               ? 'failed'
               : 'completed',
         toolCall.stepLabel,
-      );
+      ));
   const statusLabel = assembled
     ? assembled.terminal
     : getToolStatusLabel(toolCall, status, t, awaitingApproval, interruptionReason);
@@ -132,7 +134,7 @@ export function ToolHeader({
     <div className="flex items-baseline gap-2 flex-1 min-w-0">
       {/* 状态词只在带结果数据时出现（getToolStatusLabel 成功且无数据时返回 null）：
           否则与主文案的动词重复。成败由左侧 StatusIndicator 表达。 */}
-      {statusLabel && !hideStatusLabel && (
+      {statusLabel && !hideStatusLabel && !preflight && (
         <span className="text-zinc-500 text-xs flex-shrink-0">
           {statusLabel}{status === 'interrupted' ? ' ·' : ''}
         </span>

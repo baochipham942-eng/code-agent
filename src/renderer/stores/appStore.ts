@@ -2,6 +2,7 @@
 // App Store - Global Application State
 // ============================================================================
 
+import { useWorkbenchFocusStore } from './workbenchFocusStore';
 import { create } from 'zustand';
 import type {
   ModelConfig,
@@ -763,6 +764,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   openPreview: (filePath, options) => {
     noteSurfaceIntentNavigation('preview', options?.source ?? 'user');
     const activate = options?.activate !== false;
+    if (activate && options?.source !== 'auto') useWorkbenchFocusStore.getState().setWorkbenchFocused(true);
     // Resolve relative paths against workingDirectory
     let resolved = filePath;
     if (filePath && !filePath.startsWith('/')) {

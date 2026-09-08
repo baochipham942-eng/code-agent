@@ -3,9 +3,26 @@ import { parseShellCommand } from '../security/commandParse';
 import { getSandboxManager } from './manager';
 
 const FENCED_WRITE_PROGRAMS = new Set(['printf', 'echo', 'tee']);
-const LOOKUP_ASSIGNMENT = /^(PATH|CDPATH|LD_[A-Z0-9_]+|DYLD_[A-Z0-9_]+)=/;
+/** Lookup / startup-file assignments that can change what the fenced command runs. Not an exhaustive bash env list. */
+const LOOKUP_ASSIGNMENT = /^(PATH|CDPATH|ENV|BASH_ENV|SHELLOPTS|BASH_FUNC_[^=]*|LD_[A-Z0-9_]+|DYLD_[A-Z0-9_]+)=/;
 const SIMPLE_WRITE_PATH = /^[A-Za-z0-9._/+-]+$/;
-const QUOTED_REDIRECT_TARGET = /(?:[0-9]?>{1,2}|&>)\s*['"`]/;
+/**
+ * Eligibility-only screen so quoted redirects stay on the confirmation path
+ * (`> "file"`, `> /proj/'o'`, `> "a"/"b"`). The OS fence is still the write gate.
+ */
+const QUOTED_REDIRECT_TARGET = /(?:[0-9]?>{1,2}|&>)\s*\S*['"`]/;
+
+export const FENCED_IN_PROJECT_WRITE_REASON = 'in-project write under OS write fence';
+
+let osWriteFenceAvailableOverride: boolean | undefined;
+
+/**
+ * Pin "fence present" or "fence absent" independently of the host OS.
+ * Approval-eval uses this so ubuntu (no bwrap) still grades with-fence semantics.
+ */
+export function setOsWriteFenceAvailableOverride(value: boolean | undefined): void {
+  osWriteFenceAvailableOverride = value;
+}
 
 /** macOS /var ↔ /private/var aliases only. Does not follow user symlinks inside the project. */
 function lexicalPathAliases(input: string): string[] {
@@ -37,6 +54,7 @@ function looksLexicallyInsideWorkspace(candidate: string, cwd: string, workspace
  * without a real-path fence (N-WRITETARGET-EXECTIME).
  */
 export function isOsWriteFenceAvailable(): boolean {
+  if (osWriteFenceAvailableOverride !== undefined) return osWriteFenceAvailableOverride;
   if (process.platform === 'win32') return false;
   try {
     return getSandboxManager().isAvailable();

@@ -166,4 +166,22 @@ describe('approval decision tables（真实决策路径，零模型零副作用�
       expect(rows.find((row) => row.id === id)?.actual, id).toBe('allow');
     }
   }, 60_000);
+
+  it('关掉围栏前提时五条区内写入仍是 ask', async () => {
+    const tables = loadApprovalTables(TABLES_DIR);
+    const benign = tables.find((table) => table.bucket === 'benign');
+    expect(benign).toBeDefined();
+    const rows = await runApprovalEval({
+      tables: [{
+        bucket: 'benign',
+        cases: benign!.cases.filter((item) => (
+          fencedBenignIds as readonly string[]
+        ).includes(item.id)),
+      }],
+      osWriteFenceAvailable: false,
+    });
+    for (const id of fencedBenignIds) {
+      expect(rows.find((row) => row.id === id)?.actual, id).toBe('ask');
+    }
+  }, 60_000);
 });

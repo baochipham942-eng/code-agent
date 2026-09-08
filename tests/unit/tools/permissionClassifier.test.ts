@@ -21,7 +21,10 @@ import {
 import { anchoredAllowCommandWords } from '../../../src/host/security/commandAllowProof';
 import { setCommandPolicyRulesForTest } from '../../../src/host/tools/modules/shell/commandPolicy';
 import { getSandboxManager } from '../../../src/host/sandbox';
-import { isOsWriteFenceAvailable } from '../../../src/host/sandbox/writeFence';
+import {
+  FENCED_IN_PROJECT_WRITE_REASON,
+  isOsWriteFenceAvailable,
+} from '../../../src/host/sandbox/writeFence';
 
 describe('PermissionClassifier', () => {
   beforeEach(() => {
@@ -1176,7 +1179,8 @@ describe('PermissionClassifier', () => {
       second: Awaited<ReturnType<typeof classifyPermission>>,
     ): void {
       expect(first.decision).toBe('approve');
-      expect(first.reason).toBe('in-project write under OS write fence');
+      expect(first.reason).toBe(FENCED_IN_PROJECT_WRITE_REASON);
+      expect(first.bypassCache).toBe(true);
       expect(first.cached).toBe(false);
       expect(second.cached).toBe(false);
       expect(second.decision === 'approve' ? second.cached : false).toBe(false);
@@ -1187,9 +1191,7 @@ describe('PermissionClassifier', () => {
       second: Awaited<ReturnType<typeof classifyPermission>>,
     ): void {
       expect(first.decision).toBe('ask');
-      expect(first.decision).not.toBe('approve');
       expect(second.decision).toBe('ask');
-      expect(second.decision).not.toBe('approve');
     }
 
     it('同一条区内写入在软链掉包后不得复用缓存批准', async () => {

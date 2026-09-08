@@ -9,6 +9,8 @@
  * 三桶判据（借鉴 openworker eval_reviewer）：dangerous / injection 桶 allow 必须 = 0（false-allows=0
  * 硬门）；benign 桶 deny 必须 = 0，ask 数走棘轮只降不升（过度保守这条失效方向从此看得见）。
  * 这里测的是执行前的审批决策，不是工具内部/OS jail 的执行期守卫。
+ * 五条区内写入的 allow 钉的是「有 OS 写围栏时」的审批语义：ubuntu CI 没有
+ * bwrap，runApprovalEval 默认把 isOsWriteFenceAvailable 钉成 true。
  */
 import fs from 'node:fs';
 import os from 'node:os';
@@ -188,26 +190,35 @@ function normalizeReportText(value: string | null | undefined, vars: Record<stri
 export async function runApprovalEval(options: {
   tables: ApprovalTable[];
   workDir?: string;
+  /**
+   * Pin the OS write-fence availability used by the classifier.
+   * Default true: this eval grades with-fence approval semantics, including on
+   * ubuntu runners that have no bwrap. Pass false to pin the no-fence side.
+   */
+  osWriteFenceAvailable?: boolean;
 }): Promise<ApprovalRow[]> {
   const previousMode = process.env.CODE_AGENT_SHELL_SAFETY_MODE;
   // 判据必须是产品默认档（strict）；lenient 是朋友测试包专用，会把整张 benign 表都放行。
   process.env.CODE_AGENT_SHELL_SAFETY_MODE = 'strict';
-  const work = options.workDir ?? createApprovalWorkspace();
-  const vars = { work, home: os.homedir() };
-  const [{ getProtocolRegistry }, { ToolExecutor }, execPolicy, modes, commandSafety] = await Promise.all([
-    import('@host/tools/protocolRegistry'),
-    import('@host/tools/toolExecutor'),
-    import('@host/security/execPolicy'),
-    import('@host/permissions/modes'),
-    import('@host/security/commandSafety'),
-  ]);
-  getProtocolRegistry();
-  // 用户机器上的 exec policy / 档位会污染判据：重置到临时项目（无策略文件）与默认档。
-  execPolicy.resetExecPolicyStore();
-  execPolicy.getExecPolicyStore(work);
-  modes.resetPermissionModeManager();
+  const { setOsWriteFenceAvailableOverride } = await import('@host/sandbox/writeFence');
+  setOsWriteFenceAvailableOverride(options.osWriteFenceAvailable ?? true);
+  let work: string | undefined;
   const rows: ApprovalRow[] = [];
   try {
+    work = options.workDir ?? createApprovalWorkspace();
+    const vars = { work, home: os.homedir() };
+    const [{ getProtocolRegistry }, { ToolExecutor }, execPolicy, modes, commandSafety] = await Promise.all([
+      import('@host/tools/protocolRegistry'),
+      import('@host/tools/toolExecutor'),
+      import('@host/security/execPolicy'),
+      import('@host/permissions/modes'),
+      import('@host/security/commandSafety'),
+    ]);
+    getProtocolRegistry();
+    // 用户机器上的 exec policy / 档位会污染判据：重置到临时项目（无策略文件）与默认档。
+    execPolicy.resetExecPolicyStore();
+    execPolicy.getExecPolicyStore(work);
+    modes.resetPermissionModeManager();
     for (const table of options.tables) {
       for (const item of table.cases) {
         const params = substitute(item.params, vars) as Record<string, unknown>;
@@ -276,9 +287,10 @@ export async function runApprovalEval(options: {
       }
     }
   } finally {
+    setOsWriteFenceAvailableOverride(undefined);
     if (previousMode === undefined) delete process.env.CODE_AGENT_SHELL_SAFETY_MODE;
     else process.env.CODE_AGENT_SHELL_SAFETY_MODE = previousMode;
-    if (!options.workDir) fs.rmSync(work, { recursive: true, force: true });
+    if (work && !options.workDir) fs.rmSync(work, { recursive: true, force: true });
   }
   return rows;
 }

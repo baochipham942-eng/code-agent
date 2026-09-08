@@ -30,7 +30,11 @@ import {
 import { RM_FLAGS_REQUIRED, RM_HEAD } from '../security/rmFlagPattern';
 import { checkCommandPolicy } from './modules/shell/commandPolicy';
 import { inspectPermissionCommand, neverApprove } from './permissionCommandParse';
-import { isFencedInProjectWriteEligible, isOsWriteFenceAvailable } from '../sandbox/writeFence';
+import {
+  FENCED_IN_PROJECT_WRITE_REASON,
+  isFencedInProjectWriteEligible,
+  isOsWriteFenceAvailable,
+} from '../sandbox/writeFence';
 import { isBashToolName, normalizeToolName } from './toolNames';
 import { resolveCanonicalRunPath } from '../runtime/runContext';
 import { isPathWithinRoot } from '../runtime/workspaceScope';
@@ -73,6 +77,8 @@ export interface ClassificationResult {
   trustBoundary?: boolean;
   /** The classifier asked because no rule could determine the command risk. */
   riskUnknown?: boolean;
+  /** Do not store this result in the command-text cache (fenced in-project writes). */
+  bypassCache?: boolean;
 }
 
 function classificationHostReason(result: ClassificationResult, toolName: string): ClassificationResult {
@@ -879,7 +885,7 @@ export class PermissionClassifier {
 
     // Reverse mutation: drop isOsWriteFenceAvailable() ⇒ symlink/TOCTOU writes escape.
     if (isFencedInProjectWriteEligible(command, context) && isOsWriteFenceAvailable() && this.classifyBashSegment(command, context, startTime)?.decision !== 'deny') {
-      return { decision: 'approve', reason: 'in-project write under OS write fence', confidence: 0.95, cached: false };
+      return { decision: 'approve', reason: FENCED_IN_PROJECT_WRITE_REASON, confidence: 0.95, cached: false, bypassCache: true };
     }
 
     // The shared parser reconstructs each segment with shell-safe quoting, so text
@@ -1241,7 +1247,7 @@ export class PermissionClassifier {
   }
 
   private setCache(key: string, result: ClassificationResult): void {
-    if (result.reason === 'in-project write under OS write fence') return;
+    if (result.bypassCache) return;
     // 缓存容量控制：FIFO 淘汰
     if (this.cache.size >= MAX_CACHE_SIZE) {
       const firstKey = this.cache.keys().next().value;

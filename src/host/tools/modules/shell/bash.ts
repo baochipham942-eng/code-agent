@@ -22,6 +22,7 @@
 // ============================================================================
 
 import { spawn } from 'child_process';
+import path from 'node:path';
 import type {
   ToolHandler,
   ToolModule,
@@ -50,6 +51,7 @@ import { rewriteBashCommand } from './rtkRewriter';
 import { getPermissionModeManager } from '../../../permissions/modes';
 import { resolveSandboxNetworkPolicy, wrapCommandForSandbox } from '../../../sandbox';
 import { isFencedInProjectWriteEligible, isOsWriteFenceAvailable } from '../../../sandbox/writeFence';
+import { resolveCanonicalRunPath } from '../../../runtime/runContext';
 
 const MAX_TIMEOUT_MS = BASH.MAX_TIMEOUT;
 const BACKGROUND_TRAILING_OPERATOR = /(?:^|[;\n])\s*([^;&|\n][\s\S]*?)\s*&\s*$/;
@@ -606,7 +608,20 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
     }
 
     const timeout = Math.min((args.timeout as number) || BASH.DEFAULT_TIMEOUT, MAX_TIMEOUT_MS);
-    const workingDirectory = (args.working_directory as string) || ctx.workingDir;
+    let workingDirectory: string;
+    let workspaceRoot: string;
+    try {
+      const rawWorkingDirectory = typeof args.working_directory === 'string' && args.working_directory.trim()
+        ? path.resolve(ctx.workingDir, args.working_directory)
+        : ctx.workingDir;
+      workingDirectory = resolveCanonicalRunPath(rawWorkingDirectory);
+      workspaceRoot = ctx.workspace
+        ? resolveCanonicalRunPath(ctx.workspace)
+        : workingDirectory;
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      return { ok: false, error: `working directory is not a usable path: ${detail}`, code: 'INVALID_ARGS' };
+    }
     const implicitBackground = rewriteImplicitBackgroundCommand(command);
     const normalizedCommand = implicitBackground.command;
     const runInBackground = (args.run_in_background as boolean | undefined) ?? implicitBackground.rewritten;
@@ -625,7 +640,7 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
     const permissionModeManager = getPermissionModeManager();
     const writeFence = isFencedInProjectWriteEligible(normalizedCommand, {
       workingDirectory,
-      workspaceRoot: ctx.workspace ?? workingDirectory,
+      workspaceRoot,
     }) && isOsWriteFenceAvailable();
     const shouldSandbox = writeFence || (OS_SANDBOX.ENABLED
       && (process.env.CODE_AGENT_EVAL_REAL_ROOT !== undefined
@@ -646,11 +661,13 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
           workingDirectory,
           readOnlyRoots: ctx.workspaceScope?.roots
             .filter((root) => root.access === 'read_only')
-            .map((root) => root.path),
+            .map((root) => resolveCanonicalRunPath(root.path)),
+          // `??` only covers a missing workspaceScope. An empty read_write list
+          // stays empty and does not fall back to ctx.workspace.
           readWriteRoots: ctx.workspaceScope?.roots
             .filter((root) => root.access === 'read_write')
-            .map((root) => root.path)
-            ?? (ctx.workspace ? [ctx.workspace] : undefined),
+            .map((root) => resolveCanonicalRunPath(root.path))
+            ?? (ctx.workspace ? [workspaceRoot] : undefined),
           deniedReadRoots: process.env.CODE_AGENT_EVAL_REAL_ROOT
             ? [process.env.CODE_AGENT_EVAL_REAL_ROOT]
             : undefined,

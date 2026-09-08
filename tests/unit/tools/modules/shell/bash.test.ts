@@ -355,8 +355,8 @@ describe('bashModule (native)', () => {
       );
       expect(result.ok).toBe(true);
       if (result.ok) {
-        // resolved symlinks on macOS: /tmp → /private/tmp; check both
-        expect(result.output).toMatch(/\[cwd: \/tmp\]/);
+        // Fence/cwd canonicalization follows /tmp → /private/tmp on macOS.
+        expect(result.output).toMatch(/\[cwd: (?:\/private)?\/tmp\]/);
         expect(result.output).toMatch(/(\/private)?\/tmp/);
       }
     });

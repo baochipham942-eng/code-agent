@@ -125,6 +125,12 @@ describe('ExecPolicyStore', () => {
       expect(store.match('npm install lodash')).toBe('allow');
     });
 
+    it('a learned npm install allow does not let a compound publish tail hitch a ride', () => {
+      store.addRule(['npm', 'install'], 'allow');
+      expect(store.match('npm install lodash')).toBe('allow');
+      expect(store.match('npm install && npm publish')).toBeNull();
+    });
+
     it('rules loaded from a file without source are treated as learned and still guarded', () => {
       const dir = path.join(tmpDir, '.code-agent');
       fs.mkdirSync(dir, { recursive: true });

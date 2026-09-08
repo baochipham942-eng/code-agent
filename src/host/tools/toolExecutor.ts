@@ -121,10 +121,8 @@ const FILE_MUTATION_LOCK_WAIT_TIMEOUT_MS = 10_000;
 // $HOME / $PWD are the two variables the host itself sets and knows the value of, so a target
 // written as "$HOME/.ssh/authorized_keys" can be resolved exactly rather than waved through as
 // dynamic. Without this the parser marks it uncertain and the deny check below skips it entirely.
-// ponytail: only these two — a target built from an arbitrary variable ($SSHDIR/...) stays
-// unresolvable and is still skipped. Closing that needs a product call (skip / ask / deny when a
-// write target cannot be resolved and a path deny is configured); raised with the ticket, not
-// decided here.
+// Arbitrary variables ($SSHDIR/...) stay unresolvable: if a path deny is configured they become
+// an approval card, otherwise they keep the skip (N-WRITETARGET-UNRESOLVED).
 function expandControlledShellVars(rawPath: string, workingDirectory: string): string | null {
   const expanded = rawPath
     .replaceAll(/\$\{HOME\}|\$HOME\b/g, nodeOs.homedir())
@@ -143,24 +141,45 @@ function resolveShellTarget(rawPath: string, workingDirectory: string): string {
     : nodePath.resolve(workingDirectory, expanded));
 }
 
+type ShellWritePathPolicyOutcome =
+  | { kind: 'allow' }
+  | { kind: 'deny'; check: PolicyCheckResult }
+  | { kind: 'ask'; uncertain: string[] };
+
+function hasConfiguredWritePathDeny(policyEnforcer: PolicyEnforcer | null | undefined): boolean {
+  // Active policy files union-merge with defaults that always include denied_paths
+  // (~/.ssh/**, ~/.aws/**, /etc/**). No file → getPolicyEnforcer returns null.
+  if (policyEnforcer?.isActive) return true;
+  return getPolicyEngine().getRules().some((rule) =>
+    rule.id.startsWith('user-deny-')
+    && rule.action === 'deny'
+    && rule.matcher.toolSpecifier?.specifierType === 'path'
+    && Boolean(rule.matcher.toolSpecifier.specifier)
+  );
+}
+
 function shellWritePathPolicyCheck(
   command: string,
   workingDirectory: string,
   policyEnforcer: PolicyEnforcer | null | undefined,
-): PolicyCheckResult {
+): ShellWritePathPolicyOutcome {
   const parsed = parseShellCommand(command);
+  const unresolved: string[] = [];
   for (const target of parsed.writeTargets) {
     if (!target.path) continue;
     let targetPath = target.path;
     if (target.uncertain) {
       const expanded = expandControlledShellVars(target.path, workingDirectory);
-      if (!expanded) continue;
+      if (!expanded) {
+        unresolved.push(target.path);
+        continue;
+      }
       targetPath = expanded;
     }
     const resolved = resolveShellTarget(targetPath, workingDirectory);
     if (policyEnforcer?.isActive) {
       const policyCheck = policyEnforcer.checkFilePath(resolved, 'write');
-      if (!policyCheck.allowed) return policyCheck;
+      if (!policyCheck.allowed) return { kind: 'deny', check: policyCheck };
     }
 
     const relative = nodePath.relative(workingDirectory, resolved) || '.';
@@ -173,14 +192,20 @@ function shellWritePathPolicyCheck(
     if (matchedRule) {
       const reason = `Shell write target "${target.path}" is denied by ${matchedRule.name}`;
       return {
-        allowed: false,
-        reason,
-        section: 'user-permissions',
-        traceStep: createTraceStep('policy_enforcer', matchedRule.id, 'deny', reason, Date.now()),
+        kind: 'deny',
+        check: {
+          allowed: false,
+          reason,
+          section: 'user-permissions',
+          traceStep: createTraceStep('policy_enforcer', matchedRule.id, 'deny', reason, Date.now()),
+        },
       };
     }
   }
-  return { allowed: true };
+  if (unresolved.length > 0 && hasConfiguredWritePathDeny(policyEnforcer)) {
+    return { kind: 'ask', uncertain: unresolved };
+  }
+  return { kind: 'allow' };
 }
 
 async function fileExists(filePath: string): Promise<boolean> {
@@ -1272,36 +1297,44 @@ export class ToolExecutor {
     const policyEnforcer = getPolicyEnforcer(resolveCanonicalRunPath(this.runtimeWorkspace));
     const shellPathCheck = isBashToolName(policyToolName) && typeof params.command === 'string'
       ? shellWritePathPolicyCheck(params.command, bashWorkingDirectory, policyEnforcer)
-      : { allowed: true };
-    if (!shellPathCheck.allowed) {
+      : { kind: 'allow' as const };
+    if (shellPathCheck.kind === 'deny') {
+      const denied = shellPathCheck.check;
       logger.warn('Blocked shell write target by path policy', {
         toolName: executionToolName,
-        section: shellPathCheck.section,
-        reason: shellPathCheck.reason,
+        section: denied.section,
+        reason: denied.reason,
       });
-      policyEnforcer?.logToolCall(executionToolName, params, 'blocked', shellPathCheck.reason);
+      policyEnforcer?.logToolCall(executionToolName, params, 'blocked', denied.reason);
       options.hookManager?.triggerPermissionDenied(
-        executionToolName, shellPathCheck.reason || 'path policy', 'policy',
+        executionToolName, denied.reason || 'path policy', 'policy',
         effectiveSessionId || 'unknown',
       ).catch(() => {});
-      const trace = shellPathCheck.traceStep
+      const trace = denied.traceStep
         ? createTraceBuilder(executionToolName)
           .addStep(
-            shellPathCheck.traceStep.layer,
-            shellPathCheck.traceStep.rule,
-            shellPathCheck.traceStep.result,
-            shellPathCheck.traceStep.reason,
+            denied.traceStep.layer,
+            denied.traceStep.rule,
+            denied.traceStep.result,
+            denied.traceStep.reason,
           )
           .build('deny')
         : undefined;
       recordDecision(
-        executionToolName, params, 'policy-deny', shellPathCheck.reason || 'path policy',
+        executionToolName, params, 'policy-deny', denied.reason || 'path policy',
         permStartTime, trace, effectiveSessionId, this.ledgerOrigin,
       );
       return {
         success: false,
-        error: `Blocked by path policy: ${shellPathCheck.reason}`,
+        error: `Blocked by path policy: ${denied.reason}`,
       };
+    }
+    const unresolvedWriteTargetForcesAsk = shellPathCheck.kind === 'ask';
+    if (unresolvedWriteTargetForcesAsk) {
+      logger.info('Uncertain shell write target requires approval because a path deny is configured', {
+        toolName: executionToolName,
+        uncertain: shellPathCheck.uncertain,
+      });
     }
     if (policyEnforcer?.isActive) {
       const policyCheck = this.checkAgainstPolicy(policyEnforcer, executionToolName, policyToolName, params, toolDef);
@@ -1435,6 +1468,7 @@ export class ToolExecutor {
       && !consequenceForcesClassification
       && !argumentForcesClassification
       && !this.forcePermissionHandler
+      && !unresolvedWriteTargetForcesAsk
       && options.preApprovedTools !== undefined
       && options.preApprovedTools.size > 0
       && toolMatchesPatternSet(executionToolName, params, options.preApprovedTools);
@@ -1494,7 +1528,7 @@ export class ToolExecutor {
       }
     }
 
-    if ((toolDef.requiresPermission || readArgumentForcesClassification) && (commandAnalysisFailedReason || this.forcePermissionHandler || writeWithoutWorkspaceAuthority || guardFabricForcesApproval || protectedWriteForcesConfirmation || policyForcesConfirmation || boundaryViolation || readOnlyForcesConfirmation || shellDesktopAutomation || consequenceForcesClassification || argumentForcesClassification || (!isPreApproved && !isSafeCommand))) {
+    if ((toolDef.requiresPermission || readArgumentForcesClassification) && (commandAnalysisFailedReason || this.forcePermissionHandler || writeWithoutWorkspaceAuthority || guardFabricForcesApproval || protectedWriteForcesConfirmation || policyForcesConfirmation || unresolvedWriteTargetForcesAsk || boundaryViolation || readOnlyForcesConfirmation || shellDesktopAutomation || consequenceForcesClassification || argumentForcesClassification || (!isPreApproved && !isSafeCommand))) {
       // P1: Auto-approve classifier — 规则+LLM 自动判断安全性
       let needsUserApproval = true;
       // 信任边界 ask（W3 写边界）→ forceConfirm：终审层便利放行必须让路（同 directory_access）。
@@ -1551,6 +1585,7 @@ export class ToolExecutor {
             policyToolName,
             params,
             policyForcesConfirmation,
+            unresolvedWriteTargetForcesAsk,
             boundaryViolation,
             workingDirectory: canonicalBashWorkingDirectory,
             workspaceRoot,
@@ -1698,6 +1733,7 @@ export class ToolExecutor {
         && !guardFabricForcesApproval
         && !protectedWriteForcesConfirmation
         && !policyForcesConfirmation
+        && !unresolvedWriteTargetForcesAsk
         && !boundaryViolation
         && !readOnlyForcesConfirmation
         && !commandAnalysisFailedReason
@@ -1769,8 +1805,11 @@ export class ToolExecutor {
       // 写入/执行必须逐次真人确认，且不写入/不消费权限记忆。
       // 信任边界 ask（W3 写边界）同样让路：2026-08-13 真机事故里 devModeAutoApprove
       // 把 $HOME 写边界 ask 自动批掉、文件真落盘。
-      if (readOnlyForcesConfirmation || guardFabricForcesApproval || boundaryAskForcesConfirmation || protectedWriteForcesConfirmation) {
+      if (readOnlyForcesConfirmation || guardFabricForcesApproval || boundaryAskForcesConfirmation || protectedWriteForcesConfirmation || unresolvedWriteTargetForcesAsk) {
         permissionRequest.forceConfirm = true;
+      }
+      if (unresolvedWriteTargetForcesAsk) {
+        permissionRequest.reasonCode = PermissionRequestReason.UncertainWriteTargetWithPathDeny;
       }
 
       // Attach decision trace to permission request

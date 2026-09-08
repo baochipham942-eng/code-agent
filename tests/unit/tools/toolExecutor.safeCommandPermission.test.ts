@@ -12,6 +12,10 @@ const execPolicyState = vi.hoisted(() => ({
   match: (_cmd: string): 'allow' | 'prompt' | 'forbidden' | null => null,
 }));
 
+const classifierState = vi.hoisted(() => ({
+  autoApprove: false,
+}));
+
 vi.mock('../../../src/host/security', async (importOriginal) => {
   const original = await importOriginal<typeof import('../../../src/host/security')>();
   return {
@@ -23,11 +27,35 @@ vi.mock('../../../src/host/security', async (importOriginal) => {
   };
 });
 
+vi.mock('../../../src/host/tools/permissionClassifier', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../../../src/host/tools/permissionClassifier')>();
+  return {
+    ...original,
+    classifyPermission: vi.fn(async (
+      ...args: Parameters<typeof original.classifyPermission>
+    ) => {
+      if (classifierState.autoApprove) {
+        return {
+          decision: 'approve' as const,
+          reason: 'test auto-approve',
+          confidence: 1,
+          cached: false,
+        };
+      }
+      return original.classifyPermission(...args);
+    }),
+  };
+});
+
 import { getToolCache } from '../../../src/host/services/infra/toolCache';
 import { getProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
 import { ToolExecutor } from '../../../src/host/tools/toolExecutor';
 import type { PermissionRequestData } from '../../../src/host/tools/types';
 import { ExecPolicyStore } from '../../../src/host/security/execPolicy';
+import { PermissionRequestReason } from '../../../src/shared/contract/permission';
+import { resetPolicyEnforcer } from '../../../src/host/security/policyEnforcer';
+import { getPolicyEngine, resetPolicyEngine } from '../../../src/host/permissions/policyEngine';
+import { resolveCanonicalRunPath } from '../../../src/host/runtime/runContext';
 
 describe('ToolExecutor Bash 安全命令单一判据', () => {
   let workspace: string;
@@ -49,6 +77,7 @@ describe('ToolExecutor Bash 安全命令单一判据', () => {
 
   afterEach(async () => {
     execPolicyState.match = () => null;
+    classifierState.autoApprove = false;
     if (previousSafetyMode === undefined) delete process.env.CODE_AGENT_SHELL_SAFETY_MODE;
     else process.env.CODE_AGENT_SHELL_SAFETY_MODE = previousSafetyMode;
     await fs.rm(workspace, { recursive: true, force: true });
@@ -284,5 +313,132 @@ describe('ToolExecutor Bash 安全命令单一判据', () => {
       if (previousDataDir === undefined) delete process.env.CODE_AGENT_DATA_DIR;
       else process.env.CODE_AGENT_DATA_DIR = previousDataDir;
     }
+  });
+
+  describe('N-WRITETARGET-UNRESOLVED：uncertain 写目标 + 路径 deny', () => {
+    const unresolvedSshWrite = 'echo x > "$SSHDIR/authorized_keys"';
+    const echoPreApproved = { preApprovedTools: new Set(['Bash(echo:*)']) };
+
+    beforeEach(() => {
+      classifierState.autoApprove = true;
+      resetPolicyEnforcer();
+      resetPolicyEngine();
+    });
+
+    afterEach(() => {
+      resetPolicyEnforcer();
+      resetPolicyEngine();
+    });
+
+    function isDirectiveMemoryProbe(request: PermissionRequestData): boolean {
+      return request.type === 'file_write'
+        && typeof request.reason === 'string'
+        && request.reason.includes('全局记忆写入');
+    }
+
+    function buildPathPolicyExecutor(): ToolExecutor {
+      const executor = new ToolExecutor({
+        workingDirectory: workspace,
+        requestPermission: async (request) => {
+          permissionRequests.push(request);
+          // Headless 下 writeTargets 把 $VAR 记入 uncertain，会先探一次记忆目录确认。
+          // 放行那张卡，才能测到路径禁止对「解析不出」的口径（跳过 vs 转审批）。
+          return isDirectiveMemoryProbe(request);
+        },
+      });
+      executor.setAuditEnabled(false);
+      return executor;
+    }
+
+    async function writeDeniedPathsPolicy(): Promise<void> {
+      await fs.writeFile(
+        path.join(workspace, 'code-agent-policy.toml'),
+        `[filesystem]\ndenied_paths = ["${path.join(resolveCanonicalRunPath(os.homedir()), '.ssh')}/**"]\n`,
+        'utf8',
+      );
+    }
+
+    it('配了 denied_paths 时，$SSHDIR 写目标必须弹审批卡；拒绝后不执行、也不是路径硬拒', async () => {
+      await writeDeniedPathsPolicy();
+      const executor = buildPathPolicyExecutor();
+
+      const result = await executor.execute(
+        'Bash',
+        { command: unresolvedSshWrite },
+        { sessionId: 'unresolved-sshdir-denied-paths', ...echoPreApproved },
+      );
+
+      const pathPolicyAsks = permissionRequests.filter((request) => !isDirectiveMemoryProbe(request));
+      expect(pathPolicyAsks).toHaveLength(1);
+      expect(pathPolicyAsks[0]?.reasonCode).toBe(PermissionRequestReason.UncertainWriteTargetWithPathDeny);
+      expect(pathPolicyAsks[0]?.forceConfirm).toBe(true);
+      expect(result.success).toBe(false);
+      expect(result.error ?? '').not.toContain('Blocked by path policy');
+    });
+
+    it('配了 Edit(path) deny 时，$SSHDIR 写目标必须弹审批卡；拒绝后不执行、也不是路径硬拒', async () => {
+      getPolicyEngine().loadUserRules({ deny: ['Edit(~/.ssh/**)'] });
+      const executor = buildPathPolicyExecutor();
+
+      const result = await executor.execute(
+        'Bash',
+        { command: unresolvedSshWrite },
+        { sessionId: 'unresolved-sshdir-edit-path-deny', ...echoPreApproved },
+      );
+
+      const pathPolicyAsks = permissionRequests.filter((request) => !isDirectiveMemoryProbe(request));
+      expect(pathPolicyAsks).toHaveLength(1);
+      expect(pathPolicyAsks[0]?.reasonCode).toBe(PermissionRequestReason.UncertainWriteTargetWithPathDeny);
+      expect(pathPolicyAsks[0]?.forceConfirm).toBe(true);
+      expect(result.success).toBe(false);
+      expect(result.error ?? '').not.toContain('Blocked by path policy');
+    });
+
+    it('没配任何路径 deny 时，$SSHDIR 写目标不因解析不出而多一张卡', async () => {
+      const executor = buildPathPolicyExecutor();
+
+      await executor.execute(
+        'Bash',
+        { command: unresolvedSshWrite },
+        { sessionId: 'unresolved-sshdir-no-path-deny', ...echoPreApproved },
+      );
+
+      const pathPolicyAsks = permissionRequests.filter((request) => !isDirectiveMemoryProbe(request));
+      expect(pathPolicyAsks).toHaveLength(0);
+    });
+
+    it('$HOME 写目标仍展开后走路径禁止硬拒，不改成审批卡', async () => {
+      await writeDeniedPathsPolicy();
+      const executor = buildPathPolicyExecutor();
+
+      const result = await executor.execute(
+        'Bash',
+        { command: 'echo x > "$HOME/.ssh/authorized_keys"' },
+        { sessionId: 'home-ssh-still-hard-deny', ...echoPreApproved },
+      );
+
+      const pathPolicyAsks = permissionRequests.filter((request) => !isDirectiveMemoryProbe(request));
+      expect(pathPolicyAsks).toHaveLength(0);
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Blocked by path policy');
+    });
+
+    it('chmod -R 777 配路径 deny 且写目标解析不出时，仍硬拒不可批，不降成审批卡', async () => {
+      classifierState.autoApprove = false;
+      await writeDeniedPathsPolicy();
+      const executor = buildPathPolicyExecutor();
+
+      const result = await executor.execute(
+        'Bash',
+        { command: 'chmod -R 777 /Applications > "$LOG/out.txt"' },
+        { sessionId: 'unresolved-chmod-777-still-deny' },
+      );
+
+      const pathPolicyAsks = permissionRequests.filter((request) => !isDirectiveMemoryProbe(request));
+      expect(pathPolicyAsks).toHaveLength(0);
+      expect(result.success).toBe(false);
+      expect(result.error ?? '').toContain('Denied');
+      expect(result.error ?? '').toContain('危险权限变更');
+    });
   });
 });

@@ -35,7 +35,7 @@ function resolveProfileFile() {
 function findIdentity() {
   try {
     return capture('security', ['find-identity', '-v', '-p', 'codesigning']).split('\n')
-      .map(line => line.match(/"([^"]*(?:iPhone Distribution|Apple Development)[^"]*)"/)?.[1])
+      .map(line => line.match(/"([^"]*(?:iPhone Distribution|Apple Distribution|Apple Development)[^"]*)"/)?.[1])
       .filter(name => name?.includes(teamId))[0] ?? null;
   } catch { return null; }
 }

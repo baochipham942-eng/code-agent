@@ -230,7 +230,8 @@ export function commandAnalysisDenialError(toolName: string): HostReasonPayload 
  * 权限分类三分支解析 + 档位改写：
  * 1. policy always_confirm / skill 边界违规 → 直接 ask（跳过 classifier）；
  * 2. 其余走 classifier；
- * 3. readOnly 档把 classifier 的 approve 降级为 ask（deny 保持原判，危险命令不弱化）；
+ * 3. readOnly 档 / 解析不出的写目标+路径 deny：只把 classifier 的 approve 降级为 ask
+ *    （deny 保持原判，危险命令不弱化）；
  * 4. B1 档位免确认（审出 MED：bypass/acceptEdits 曾在主判定链零消费、纯虚标）：
  *    bypassPermissions=写入+执行免确认，acceptEdits=仅写入免确认——只把 ask 升级为
  *    approve，deny / exec-policy forbidden / policy always_confirm / skill 边界 /
@@ -269,29 +270,6 @@ export async function resolveToolPermissionClassification(input: {
         'tools.always_confirm',
         'ask',
         'Tool requires confirmation by policy',
-        input.permStartTime,
-      ),
-    };
-  }
-  if (input.unresolvedWriteTargetForcesAsk) {
-    const reason = 'Write target cannot be resolved while a path deny is configured';
-    return {
-      decision: 'ask',
-      reason,
-      hostReason: createHostReason(
-        HostReasonCode.PermissionUncertainWriteTargetConfirmationRequired,
-        reason,
-        { toolName: input.executionToolName },
-      ),
-      confidence: 1,
-      cached: false,
-      external,
-      trustBoundary: true,
-      traceStep: createTraceStep(
-        'policy_enforcer',
-        'uncertain_write_target_path_deny',
-        'ask',
-        reason,
         input.permStartTime,
       ),
     };
@@ -384,6 +362,30 @@ export async function resolveToolPermissionClassification(input: {
       confidence: 1,
       cached: false,
       traceStep: createTraceStep('permission_classifier', 'permission_mode_auto_approve', 'allow', reason, input.permStartTime),
+    };
+  }
+  // After auto-approve so bypass cannot promote this ask back to approve.
+  // Deny stays deny: chmod 777 / mkfs / resolved_rm_critical_path remain unapprovable.
+  if (input.unresolvedWriteTargetForcesAsk && classification.decision === 'approve') {
+    const reason = 'Write target cannot be resolved while a path deny is configured';
+    classification = {
+      decision: 'ask',
+      reason,
+      hostReason: createHostReason(
+        HostReasonCode.PermissionUncertainWriteTargetConfirmationRequired,
+        reason,
+        { toolName: input.executionToolName },
+      ),
+      confidence: 1,
+      cached: false,
+      trustBoundary: true,
+      traceStep: createTraceStep(
+        'policy_enforcer',
+        'uncertain_write_target_path_deny',
+        'ask',
+        reason,
+        input.permStartTime,
+      ),
     };
   }
   return { ...classification, external };

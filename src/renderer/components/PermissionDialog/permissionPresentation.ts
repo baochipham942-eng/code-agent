@@ -71,12 +71,15 @@ export function defaultPermissionViewMode(request: PermissionRequest): DecisionC
 
 export function permissionSummary(request: PermissionRequest, t: Translations): string {
   const p = t.decisionCard.permission;
-  if (request.reasonCode === PermissionRequestReason.UncertainWriteTargetWithPathDeny) {
-    return p.questionUncertainWriteTarget;
-  }
   const target = fileTarget(request);
   const compactTarget = target ? compactFileTarget(target) : undefined;
   const qualifier = isOutsideWorkspace(request) ? `（${p.workspaceOutside}）` : '';
+  if (
+    request.reasonCode === PermissionRequestReason.UncertainWriteTargetWithPathDeny
+    && !isDeletionRequest(request)
+  ) {
+    return p.questionUncertainWriteTarget;
+  }
   switch (request.type) {
     case 'file_read':
       return compactTarget ? p.questionFileRead.replace('{target}', `${compactTarget}${qualifier}`) : p.questionFallback;
@@ -110,9 +113,6 @@ function fileCountText(count: number | undefined, t: Translations): string {
 
 export function permissionConsequence(request: PermissionRequest, t: Translations): string | undefined {
   const p = t.decisionCard.permission;
-  if (request.reasonCode === PermissionRequestReason.UncertainWriteTargetWithPathDeny) {
-    return p.consequenceUncertainWriteTarget;
-  }
   const commandDeleteTarget = request.details.command?.match(/\brm\s+(?:(?:-[^\s]+|--[^\s]+)\s+)*(?:"([^"]+)"|'([^']+)'|([^\s;&|]+))/u);
   const target = request.details.affectedPath
     || fileTarget(request)
@@ -138,6 +138,9 @@ export function permissionConsequence(request: PermissionRequest, t: Translation
     }
     const copy = isOutsideWorkspace(request) ? p.consequenceDeviceOutside : p.consequenceDevice;
     return copy.replace('{target}', safeTarget ?? p.targetFallback);
+  }
+  if (request.reasonCode === PermissionRequestReason.UncertainWriteTargetWithPathDeny) {
+    return p.consequenceUncertainWriteTarget;
   }
   if (isOutsideWorkspace(request)) {
     return p.consequenceOutside

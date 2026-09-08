@@ -395,5 +395,23 @@ describe('ToolExecutor Bash 安全命令单一判据', () => {
       expect(result.success).toBe(false);
       expect(result.error).toContain('Blocked by path policy');
     });
+
+    it('chmod -R 777 配路径 deny 且写目标解析不出时，仍硬拒不可批，不降成审批卡', async () => {
+      classifierState.autoApprove = false;
+      await writeDeniedPathsPolicy();
+      const executor = buildPathPolicyExecutor();
+
+      const result = await executor.execute(
+        'Bash',
+        { command: 'chmod -R 777 /Applications > "$LOG/out.txt"' },
+        { sessionId: 'unresolved-chmod-777-still-deny' },
+      );
+
+      const pathPolicyAsks = permissionRequests.filter((request) => !isDirectiveMemoryProbe(request));
+      expect(pathPolicyAsks).toHaveLength(0);
+      expect(result.success).toBe(false);
+      expect(result.error ?? '').toContain('Denied');
+      expect(result.error ?? '').toContain('危险权限变更');
+    });
   });
 });

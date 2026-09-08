@@ -1330,7 +1330,7 @@ export class ToolExecutor {
     }
     const unresolvedWriteTargetForcesAsk = shellPathCheck.kind === 'ask';
     if (unresolvedWriteTargetForcesAsk) {
-      logger.warn('Uncertain shell write target requires approval because a path deny is configured', {
+      logger.info('Uncertain shell write target requires approval because a path deny is configured', {
         toolName: executionToolName,
         uncertain: shellPathCheck.uncertain,
       });

@@ -3,3 +3,4 @@ dist/
 android/
 .artifacts/
 .reports/
+ios/

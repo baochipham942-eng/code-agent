@@ -5,7 +5,7 @@ import {
   checkPolicyExamples,
   explainPolicyCommand,
 } from '../../src/host/security/execPolicyCheck';
-import { matchPolicyRule, tokenizePolicyCommand, type PrefixRule } from '../../src/host/security/execPolicy';
+import { matchPolicyRule, resolvePolicyDecision, tokenizePolicyCommand, type PrefixRule } from '../../src/host/security/execPolicy';
 
 function rule(pattern: string[], decision: PrefixRule['decision'], source: PrefixRule['source'] = 'user'): PrefixRule {
   return { pattern, decision, createdAt: 1700000000000, source };
@@ -195,3 +195,39 @@ describe('learned-prefix guard is shared with the offline checker', () => {
   });
 });
 
+describe('compound-command hitchhiking is shared with the offline checker', () => {
+  const rules: PrefixRule[] = [{ pattern: ['npm', 'install'], decision: 'allow', createdAt: 1, source: 'user' }];
+
+  it('checkPolicyExamples reports npm install && npm publish as not allowed', () => {
+    const [result] = checkPolicyExamples(rules, [
+      { command: 'npm install && npm publish', expect: 'allow' },
+    ]);
+    expect(result?.actual).toBeNull();
+    expect(result?.pass).toBe(false);
+  });
+
+  it('explainPolicyCommand says the compound tail is not covered', () => {
+    const explanation = explainPolicyCommand(rules, 'npm install && npm publish');
+    expect(explanation.matched?.pattern).toEqual(['npm', 'install']);
+    expect(explanation.decision).toBeNull();
+    expect(explanation.reason).toContain('复合命令尾段未被该前缀覆盖');
+  });
+});
+
+describe('explainPolicyCommand agrees with resolvePolicyDecision on compound commands', () => {
+  it('reports allow when every segment independently matches a learned allow', () => {
+    const rules = [rule(['cat'], 'allow'), rule(['npm', 'install'], 'allow')];
+    const command = 'cat README.md && npm install';
+    const explanation = explainPolicyCommand(rules, command);
+    expect(explanation.decision).toBe('allow');
+    expect(explanation.decision).toBe(resolvePolicyDecision(rules, command));
+  });
+
+  it('reports forbidden when a later segment matches a forbidden rule', () => {
+    const rules = [rule(['rm', '-rf'], 'forbidden')];
+    const command = 'npm ci && rm -rf /';
+    const explanation = explainPolicyCommand(rules, command);
+    expect(explanation.decision).toBe('forbidden');
+    expect(explanation.decision).toBe(resolvePolicyDecision(rules, command));
+  });
+});

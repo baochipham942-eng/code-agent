@@ -1443,7 +1443,7 @@ export class ToolExecutor {
       // 1. 检查 exec policy 持久化规则
       try {
         const policyDecision = getExecPolicyStore().match(cmd);
-        if (policyDecision === 'allow') {
+        if (policyDecision === 'allow' && !bashArgumentForcesClassification) {
           isSafeCommand = true;
           logger.debug('Command allowed by exec policy', { command: cmd.substring(0, 80) });
           recordDecision(executionToolName, params, 'policy-allow', 'exec-policy', permStartTime, undefined, effectiveSessionId, this.ledgerOrigin);

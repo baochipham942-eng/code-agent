@@ -13,6 +13,7 @@
 
 import { checkWindowsBlockRules } from '../../../security/shellRules/windowsRules';
 import { canonicalizeCommand } from '../../../security/canonicalizeCommand';
+import { splitCompoundCommand } from '../../../security/commandSafety';
 
 export interface PolicyDecision {
   allowed: boolean;
@@ -216,13 +217,22 @@ export function evaluateCommandPolicyRules(
 
   const matchingAllow = rules.find((rule) => rule.action === 'allow' && matchesCommandRule(canonical.command, rule));
   if (matchingAllow) {
+    // Deny/hard-block stay on the whole string; allow is single-segment only.
+    const segments = splitCompoundCommand(canonical.command);
+    if (segments?.length === 1) {
+      return {
+        ...analysis,
+        allowed: true,
+        action: 'allow',
+        source: 'user-rule',
+        reason: matchingAllow.reason ?? `User command policy allowed ${matchingAllow.kind}:${matchingAllow.pattern}`,
+        matchedRule: matchingAllow,
+      };
+    }
     return {
       ...analysis,
       allowed: true,
-      action: 'allow',
-      source: 'user-rule',
-      reason: matchingAllow.reason ?? `User command policy allowed ${matchingAllow.kind}:${matchingAllow.pattern}`,
-      matchedRule: matchingAllow,
+      reason: 'User command policy allow applies only to a single-segment command; compound command was not stamped',
     };
   }
 

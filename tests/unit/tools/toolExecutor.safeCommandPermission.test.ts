@@ -8,12 +8,16 @@ vi.mock('../../../src/host/tools/shell/dynamicDescription', () => ({
   generateBashDescription: async () => null,
 }));
 
+const execPolicyState = vi.hoisted(() => ({
+  match: (_cmd: string): 'allow' | 'prompt' | 'forbidden' | null => null,
+}));
+
 vi.mock('../../../src/host/security', async (importOriginal) => {
   const original = await importOriginal<typeof import('../../../src/host/security')>();
   return {
     ...original,
     getExecPolicyStore: () => ({
-      match: () => null,
+      match: (cmd: string) => execPolicyState.match(cmd),
       learnFromApproval: () => false,
     }),
   };
@@ -23,6 +27,7 @@ import { getToolCache } from '../../../src/host/services/infra/toolCache';
 import { getProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
 import { ToolExecutor } from '../../../src/host/tools/toolExecutor';
 import type { PermissionRequestData } from '../../../src/host/tools/types';
+import { ExecPolicyStore } from '../../../src/host/security/execPolicy';
 
 describe('ToolExecutor Bash 安全命令单一判据', () => {
   let workspace: string;
@@ -43,6 +48,7 @@ describe('ToolExecutor Bash 安全命令单一判据', () => {
   });
 
   afterEach(async () => {
+    execPolicyState.match = () => null;
     if (previousSafetyMode === undefined) delete process.env.CODE_AGENT_SHELL_SAFETY_MODE;
     else process.env.CODE_AGENT_SHELL_SAFETY_MODE = previousSafetyMode;
     await fs.rm(workspace, { recursive: true, force: true });
@@ -78,6 +84,28 @@ describe('ToolExecutor Bash 安全命令单一判据', () => {
     });
     expect(result.success).toBe(false);
     expect(existsSync(target)).toBe(true);
+  });
+
+  it('学到 npm install 的 exec-policy allow 后，复合命令 npm install && npm publish 不得整串免审批', async () => {
+    const policyDir = path.join(workspace, 'exec-policy-home');
+    const store = new ExecPolicyStore(policyDir);
+    store.addRule(['npm', 'install'], 'allow');
+    execPolicyState.match = (cmd) => store.match(cmd);
+
+    const executor = buildRejectingExecutor();
+    const result = await executor.execute(
+      'Bash',
+      { command: 'npm install && npm publish' },
+      { sessionId: 'safe-command-exec-policy-compound-hitch' },
+    );
+
+    expect(store.match('npm install lodash')).toBe('allow');
+    expect(permissionRequests).toHaveLength(1);
+    expect(permissionRequests[0]).toMatchObject({
+      type: 'command',
+      details: { command: 'npm install && npm publish' },
+    });
+    expect(result.success).toBe(false);
   });
 
   it('带引号的工作区重定向请求审批，拒绝后不写入', async () => {

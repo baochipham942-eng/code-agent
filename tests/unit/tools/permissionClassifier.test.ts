@@ -635,6 +635,26 @@ describe('PermissionClassifier', () => {
     expect(control.reason).toContain('控制类');
   });
 
+  it('does not let a command policy prefix allow approve a compound tail', async () => {
+    setCommandPolicyRulesForTest([
+      { action: 'allow', kind: 'prefix', pattern: 'npm install' },
+    ]);
+
+    const hitch = await classifyPermission(
+      'bash',
+      { command: 'npm install && npm publish' },
+      { workingDirectory: '/tmp/comate-zulu-demo', permissionLevel: 'execute' },
+    );
+    const single = await classifyPermission(
+      'bash',
+      { command: 'npm install lodash' },
+      { workingDirectory: '/tmp/comate-zulu-demo', permissionLevel: 'execute' },
+    );
+
+    expect(hitch.decision).not.toBe('approve');
+    expect(single.decision).toBe('approve');
+  });
+
   it('honors command policy DSL deny before allow', async () => {
     setCommandPolicyRulesForTest([
       { action: 'allow', kind: 'prefix', pattern: 'npm' },

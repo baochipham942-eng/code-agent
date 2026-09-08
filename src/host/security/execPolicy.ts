@@ -12,7 +12,7 @@ import { createLogger } from '../services/infra/logger';
 import { getProjectConfigDir, getUserConfigDir } from '../config/configPaths';
 import { canonicalizeCommand } from './canonicalizeCommand';
 import { commandWordsFromParse, parseShellCommand, qualificationExecutable } from './commandParse';
-import { classifyCommand, isKnownSafeCommand } from './commandSafety';
+import { classifyCommand, isKnownSafeCommand, splitCompoundCommand } from './commandSafety';
 
 const logger = createLogger('ExecPolicy');
 
@@ -118,10 +118,34 @@ export function learnedRuleCovers(rule: PrefixRule, command: string): boolean {
   return rule.decision !== 'allow' || rule.source === 'builtin' || prefixCarriesTheRisk(rule.pattern, command);
 }
 
-/** 最长前缀命中 + 学来前缀守卫，一步给出最终决策（null = 不命中/被守卫拦下，走常规权限流程）。 */
-export function resolvePolicyDecision(rules: readonly PrefixRule[], command: string): PolicyDecision | null {
+function resolveSingleCommandDecision(
+  rules: readonly PrefixRule[],
+  command: string,
+): PolicyDecision | null {
   const rule = matchPolicyRule(rules, command);
   return rule && learnedRuleCovers(rule, command) ? rule.decision : null;
+}
+
+/**
+ * 最长前缀命中 + 学来前缀守卫，一步给出最终决策（null = 不命中/被守卫拦下，走常规权限流程）。
+ * 复合命令按段独立核：任一段 forbidden 则整串 forbidden；全部 allow 才整串 allow。
+ * 拆不出段时 fail-closed，学来的 allow 不放行。prefixCarriesTheRisk 语义不变。
+ */
+export function resolvePolicyDecision(rules: readonly PrefixRule[], command: string): PolicyDecision | null {
+  const segments = splitCompoundCommand(command);
+  if (!segments) {
+    const decision = resolveSingleCommandDecision(rules, command);
+    return decision === 'allow' ? null : decision;
+  }
+  if (segments.length <= 1) {
+    return resolveSingleCommandDecision(rules, command);
+  }
+
+  const decisions = segments.map((segment) => resolveSingleCommandDecision(rules, segment));
+  if (decisions.some((decision) => decision === 'forbidden')) return 'forbidden';
+  // ponytail: 每段 allow 即整串 allow，放弃了整串守卫。丢掉分类器跨段 cd cwd 走查（需要学来的 `cd <dir>` allow 才够得着，且该形态基线同样泄漏）。
+  if (decisions.every((decision) => decision === 'allow')) return 'allow';
+  return null;
 }
 
 // ----------------------------------------------------------------------------
@@ -167,6 +191,12 @@ export class ExecPolicyStore {
   learnFromApproval(command: string): boolean {
     const tokens = tokenizePolicyCommand(command);
     if (tokens.length === 0) return false;
+
+    const segments = splitCompoundCommand(command);
+    if (segments?.length !== 1) {
+      logger.debug('Skipping compound command prefix', { command });
+      return false;
+    }
 
     // Qualification deliberately stops unwrapping at the written identity, so for `nohup npm …`
     // its program *is* `nohup` and the equality guard below can no longer see the wrapper.

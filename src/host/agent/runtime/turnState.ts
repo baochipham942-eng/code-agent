@@ -18,6 +18,20 @@ export interface ModelFacingUserMessage {
 }
 
 /**
+ * 逐轮 advisory 注记的 key（thinking / goal-checkpoint / current-plan）。
+ * 这些注记内容随轮变化，只进 transient 动态尾巴，不进持久历史——否则
+ * buildAiSdkPrompt 会把它们提升进请求最前的 instructions，system+历史前缀
+ * 缓存被整体打掉（N-EDIT-CACHEKEY）。
+ */
+export type AdvisoryTailKey = 'current-plan' | 'goal-checkpoint' | 'adaptive-thinking';
+
+const ADVISORY_TAIL_ORDER: readonly AdvisoryTailKey[] = [
+  'current-plan',
+  'goal-checkpoint',
+  'adaptive-thinking',
+];
+
+/**
  * ADR-038 批3a: turn 级共享状态切片。
  * 原 RuntimeContext 顶层散字段收敛于此：字段私有、读走 getter、写走显式方法，
  * "谁在写"从 grep 考古变成方法调用链。
@@ -57,6 +71,9 @@ export class TurnState {
   private _activeSkillContextBlock?: string;
   private _skillToolBoundary?: SkillToolBoundary;
 
+  // --- 逐轮 advisory 注记槽（latest-wins；由 messageBuild 渲染进 transient 尾巴） ---
+  private _advisoryTailBlocks = new Map<AdvisoryTailKey, string>();
+
   constructor(seed?: { searchEnabled?: boolean; thinkingEnabled?: boolean; effortLevel?: EffortLevel }) {
     if (seed?.searchEnabled !== undefined) this._searchEnabled = seed.searchEnabled;
     if (seed?.thinkingEnabled !== undefined) this._thinkingEnabled = seed.thinkingEnabled;
@@ -81,10 +98,21 @@ export class TurnState {
   get activeSkillInvocation(): ActiveSkillInvocation | undefined { return this._activeSkillInvocation; }
   get activeSkillContextBlock(): string | undefined { return this._activeSkillContextBlock; }
   get skillToolBoundary(): SkillToolBoundary | undefined { return this._skillToolBoundary; }
+  /** 固定顺序返回已置位的 advisory 注记，保证尾巴字节序列稳定 */
+  get advisoryTailBlocks(): string[] {
+    return ADVISORY_TAIL_ORDER
+      .map((key) => this._advisoryTailBlocks.get(key))
+      .filter((block): block is string => block !== undefined);
+  }
 
-  /** run 开始：清 turn 标识（原 conversationRuntime#run 起始段语义） */
+  /** run 开始：清 turn 标识与上一轮 run 残留的 advisory 注记（原 conversationRuntime#run 起始段语义） */
   beginRun(): void {
     this._currentTurnId = '';
+    this._advisoryTailBlocks.clear();
+  }
+
+  setAdvisoryTailBlock(key: AdvisoryTailKey, content: string): void {
+    this._advisoryTailBlocks.set(key, content);
   }
 
   /** iteration 开始：新 turn id + delta 序号归零 + iteration span（原 streamHandler#setupIteration 前段） */

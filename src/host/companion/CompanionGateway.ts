@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import type BetterSqlite3 from 'better-sqlite3';
 import { applyCompanionSchema } from '../services/core/database/migrations/companion';
 import { companionCommandSchema } from '../../shared/contract/companion';
@@ -27,6 +27,12 @@ function digest(value: unknown): string {
 
 function credentialDigest(value: string): string {
   return createHash('sha256').update(value).digest('hex');
+}
+
+function equalCredentialDigest(left: string, right: string): boolean {
+  const leftBytes = Buffer.from(left, 'utf8');
+  const rightBytes = Buffer.from(right, 'utf8');
+  return leftBytes.length === rightBytes.length && timingSafeEqual(leftBytes, rightBytes);
 }
 
 export interface CompanionDispatchResult {
@@ -72,7 +78,7 @@ export class CompanionGateway {
   authenticateDevice(deviceId: string, credential: string): boolean {
     const row = this.db.prepare('SELECT credential_hash, revoked_at FROM companion_devices WHERE device_id = ?').get(deviceId) as SqlRow | undefined;
     if (!row || row.revoked_at != null || typeof row.credential_hash !== 'string' || !row.credential_hash) return false;
-    return credentialDigest(credential) === row.credential_hash;
+    return equalCredentialDigest(credentialDigest(credential), row.credential_hash);
   }
 
   revokeDevice(deviceId: string, now = this.now()): number {

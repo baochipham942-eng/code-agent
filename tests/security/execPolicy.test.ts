@@ -273,6 +273,11 @@ describe('ExecPolicyStore', () => {
       expect(learned).toBe(true);
       expect(store.match('tsc --noEmit')).toBe('allow');
     });
+
+    it('does not learn a prefix from a compound command approval', () => {
+      expect(store.learnFromApproval('npm install && npm publish')).toBe(false);
+      expect(store.getRules()).toEqual([]);
+    });
   });
 
   // =================================================================    });

@@ -143,6 +143,7 @@ export function resolvePolicyDecision(rules: readonly PrefixRule[], command: str
 
   const decisions = segments.map((segment) => resolveSingleCommandDecision(rules, segment));
   if (decisions.some((decision) => decision === 'forbidden')) return 'forbidden';
+  // ponytail: 每段 allow 即整串 allow，放弃了整串守卫。丢掉分类器跨段 cd cwd 走查（需要学来的 `cd <dir>` allow 才够得着，且该形态基线同样泄漏）。
   if (decisions.every((decision) => decision === 'allow')) return 'allow';
   return null;
 }
@@ -190,6 +191,12 @@ export class ExecPolicyStore {
   learnFromApproval(command: string): boolean {
     const tokens = tokenizePolicyCommand(command);
     if (tokens.length === 0) return false;
+
+    const segments = splitCompoundCommand(command);
+    if (segments?.length !== 1) {
+      logger.debug('Skipping compound command prefix', { command });
+      return false;
+    }
 
     // Qualification deliberately stops unwrapping at the written identity, so for `nohup npm …`
     // its program *is* `nohup` and the equality guard below can no longer see the wrapper.

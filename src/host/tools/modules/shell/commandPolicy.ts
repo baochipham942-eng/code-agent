@@ -229,6 +229,11 @@ export function evaluateCommandPolicyRules(
         matchedRule: matchingAllow,
       };
     }
+    return {
+      ...analysis,
+      allowed: true,
+      reason: 'User command policy allow applies only to a single-segment command; compound command was not stamped',
+    };
   }
 
   return { ...analysis, allowed: true };

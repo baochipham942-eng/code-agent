@@ -572,6 +572,7 @@ describe('commandPolicy DSL', () => {
 
     expect(hitch.action).not.toBe('allow');
     expect(hitch.allowed).toBe(true);
+    expect(hitch.reason).toContain('compound command was not stamped');
     expect(single.action).toBe('allow');
     expect(blocked.allowed).toBe(false);
     expect(blocked.source).toBe('hard-block');

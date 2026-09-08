@@ -231,4 +231,3 @@ describe('explainPolicyCommand agrees with resolvePolicyDecision on compound com
     expect(explanation.decision).toBe(resolvePolicyDecision(rules, command));
   });
 });
-

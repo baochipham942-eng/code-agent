@@ -4,7 +4,6 @@
 // ============================================================================
 
 import type {
-  Message,
   ToolCall,
 } from '../../../shared/contract';
 import type { ModelResponse } from '../../agent/loopTypes';
@@ -70,16 +69,15 @@ export class StreamHandler {
 
   /**
    * Inject plan context for the current iteration.
+   * 内容随计划进度逐轮变化：只写 transient 尾巴槽，不再删改/追加历史消息
+   * （历史重写 + instructions 提升会击穿 provider 前缀缓存，N-EDIT-CACHEKEY）。
    */
   async injectPlanContext(iterations: number): Promise<void> {
     try {
       if (this.ctx.planningService) {
         const planContext = await this.contextAssembly.buildPlanContextMessage();
         if (planContext) {
-          this.ctx.messages = this.ctx.messages.filter(
-            (m: Message) => !(m.role === 'system' && typeof m.content === 'string' && m.content.includes('<current-plan>'))
-          );
-          this.contextAssembly.injectSystemMessage(planContext, 'plan-stream');
+          this.contextAssembly.injectAdvisoryTailMessage(planContext, 'current-plan', 'plan-stream');
           logger.debug(`[AgentLoop] Plan context injected at iteration ${iterations}`);
         }
       }
@@ -153,10 +151,10 @@ export class StreamHandler {
 
     this.runFinalizer.emitTaskStats(iterations);
 
-    // F1: Goal Re-Injection
+    // F1: Goal Re-Injection（内容随轮次变化，走 transient 尾巴槽，不进持久历史）
     const goalCheckpoint = this.ctx.goalTracker.getGoalCheckpoint(iterations);
     if (goalCheckpoint) {
-      this.contextAssembly.injectSystemMessage(goalCheckpoint, 'goal-checkpoint');
+      this.contextAssembly.injectAdvisoryTailMessage(goalCheckpoint, 'goal-checkpoint', 'goal-checkpoint');
       logger.debug(`[AgentLoop] Goal checkpoint injected at iteration ${iterations}`);
     }
 

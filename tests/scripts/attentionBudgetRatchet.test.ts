@@ -21,20 +21,27 @@ function makeFixture(): string {
     // 只有 60——两个数字差 55%，所以下面第一条用例顺带把口径钉死：口径退回 ÷3 就报红。
     liveVoiceFixedTokens: 93,
     liveVoiceToleranceRatio: 0.1,
-    panoramaMatchedFiles: 1,
-    astCallCount: 1,
-    panoramaPointCount: 1,
+    panoramaMatchedFiles: 2,
+    astCallCount: 2,
+    panoramaPointCount: 2,
     reason: '测试基线',
   }));
   writeFileSync(join(root, 'docs/architecture/injection-panorama.md'), [
-    "`rg -l 'injectSystemMessage|system_reminder' src/host` 当前命中 1 个文件",
+    "`rg -l 'injectSystemMessage|system_reminder|injectAdvisoryTailMessage' src/host` 当前命中 2 个文件",
     '| 注入点 | 内容 | 触发条件 | 频次 | token |',
     '| --- | --- | --- | --- | ---: |',
     '| `src/host/agent/runtime/example.ts:2 <conditional>` | 条件提示 | flag | 条件触发 | ~2 |',
+    '| `src/host/agent/runtime/advisory.ts:2 <advisory>` | 逐轮注记 | flag | 条件触发 | ~1 |',
   ].join('\n'));
   writeFileSync(join(root, 'src/host/agent/runtime/example.ts'), [
     'export function inject(flag: boolean, injectSystemMessage: (text: string) => void) {',
     "  if (flag) injectSystemMessage('条件提示');",
+    '}',
+  ].join('\n'));
+  // 只含 injectAdvisoryTailMessage 的文件：验证改道 transient 尾巴的注记仍在扫描与 AST 口径内
+  writeFileSync(join(root, 'src/host/agent/runtime/advisory.ts'), [
+    'export function advise(flag: boolean, injectAdvisoryTailMessage: (text: string) => void, note: string) {',
+    '  if (flag) injectAdvisoryTailMessage(note);',
     '}',
   ].join('\n'));
   writeFileSync(join(root, 'src/host/agent/orchestratorTurnContext.ts'), [
@@ -75,7 +82,7 @@ describe('attention-budget-ratchet', () => {
     appendFileSync(file, "\nexport function added(injectSystemMessage: (text: string) => void) { injectSystemMessage('新增无条件每轮固定文案'); }\n");
     const result = run(root);
     expect(result.status).toBe(1);
-    expect(result.stderr).toContain('调用数 current=2 baseline=1');
+    expect(result.stderr).toContain('调用数 current=3 baseline=2');
     expect(result.stderr).toContain('无条件静态注入调用点');
     expect(result.stderr).toContain('本地无守卫静态注入总量超基线');
     expect(result.stderr).toContain('改成条件触发或降频');
@@ -85,6 +92,7 @@ describe('attention-budget-ratchet', () => {
   it('扫描路径失效或全景表文件数漂移时 fail-loud', () => {
     const root = makeFixture();
     writeFileSync(join(root, 'src/host/agent/runtime/example.ts'), 'export const value = 1;\n');
+    writeFileSync(join(root, 'src/host/agent/runtime/advisory.ts'), 'export const other = 2;\n');
     const result = run(root);
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('扫描命中 0 个文件');

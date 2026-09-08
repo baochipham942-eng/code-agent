@@ -16,6 +16,7 @@ import type {
   ModelResponse,
 } from '../../agent/loopTypes';
 import type { RuntimeContext } from './runtimeContext';
+import type { AdvisoryTailKey } from './turnState';
 import type { TaskProgressPort } from './runtimePorts';
 import type { ContextInterventionSnapshot } from '../../../shared/contract/contextView';
 import type {
@@ -48,6 +49,7 @@ import {
 } from './contextAssembly/compression';
 import {
   injectSystemMessage as injectSystemMessageImpl,
+  injectAdvisoryTailMessage as injectAdvisoryTailMessageImpl,
   flushHookMessageBuffer as flushHookMessageBufferImpl,
   pushPersistentSystemContext as pushPersistentSystemContextImpl,
   getBudgetedPersistentSystemContext as getBudgetedPersistentSystemContextImpl,
@@ -161,6 +163,7 @@ export class ContextAssembly {
       summarizeCollapsedContext: this.summarizeCollapsedContext.bind(this),
       loadResearchSkillPrompt: this.loadResearchSkillPrompt.bind(this),
       injectSystemMessage: this.injectSystemMessage.bind(this),
+      injectAdvisoryTailMessage: this.injectAdvisoryTailMessage.bind(this),
       flushHookMessageBuffer: this.flushHookMessageBuffer.bind(this),
       pushPersistentSystemContext: this.pushPersistentSystemContext.bind(this),
       getBudgetedPersistentSystemContext: this.getBudgetedPersistentSystemContext.bind(this),
@@ -224,6 +227,10 @@ export class ContextAssembly {
 
   injectSystemMessage(content: string, source: ContextInjectionSource, category?: string): void {
     return injectSystemMessageImpl(this.makeCtx(), content, source, category);
+  }
+
+  injectAdvisoryTailMessage(content: string, key: AdvisoryTailKey, source: ContextInjectionSource): void {
+    return injectAdvisoryTailMessageImpl(this.makeCtx(), content, key, source);
   }
 
   flushHookMessageBuffer(): void {

@@ -25,6 +25,7 @@ export interface CheckAndAutoCompressOptions {
 import { SYSTEM_PROMPT_BUDGET } from '../../../../shared/constants';
 import { resolveContextWindow } from '../../../model/modelLimits';
 import type { RuntimeContext } from '../runtimeContext';
+import type { AdvisoryTailKey } from '../turnState';
 import type { TaskProgressPort } from '../runtimePorts';
 
 const fileCache = new Map<string, { content: string; mtime: number }>();
@@ -165,6 +166,7 @@ export interface ContextAssemblyCtx {
   summarizeCollapsedContext(messages: Array<{ role: string; content: string }>): Promise<string>;
   loadResearchSkillPrompt(): string | null;
   injectSystemMessage(content: string, source: ContextInjectionSource, category?: string): void;
+  injectAdvisoryTailMessage(content: string, key: AdvisoryTailKey, source: ContextInjectionSource): void;
   flushHookMessageBuffer(): void;
   pushPersistentSystemContext(content: string, source: ContextInjectionSource): void;
   getBudgetedPersistentSystemContext(): string[];

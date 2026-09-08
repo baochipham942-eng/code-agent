@@ -162,7 +162,7 @@ export async function maybeInjectThinking(
 
   try {
     const thinkingPrompt = ctx.generateThinkingPrompt(toolCalls, toolResults);
-    ctx.injectSystemMessage(thinkingPrompt, 'adaptive-thinking');
+    ctx.injectAdvisoryTailMessage(thinkingPrompt, 'adaptive-thinking', 'adaptive-thinking');
 
     // 发送思考事件到 UI（可折叠显示）
     ctx.runtime.onEvent({

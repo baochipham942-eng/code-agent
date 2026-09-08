@@ -28,9 +28,11 @@ import { HookMessageBuffer } from '../../../src/host/context/tokenOptimizer';
 import {
   buildContextEventsForMessage,
   flushHookMessageBuffer,
+  injectAdvisoryTailMessage,
   injectSystemMessage,
 } from '../../../src/host/agent/runtime/contextAssembly/systemContextStack';
 import { maybeInjectThinking } from '../../../src/host/agent/runtime/contextAssembly/modeInjection';
+import { TurnState } from '../../../src/host/agent/runtime/turnState';
 
 const tempDirs: string[] = [];
 
@@ -58,10 +60,10 @@ function makeHarness(options?: {
       agentId: 'source-agent',
       messages: [] as Message[],
       hookMessageBuffer: options?.hookMessageBuffer ?? new HookMessageBuffer(),
-      turn: {
+      turn: TurnState.forTest({
         thinkingStepCount: 1,
         effortLevel: 'medium',
-      },
+      }),
       onEvent: vi.fn(),
     },
     inferBufferedSystemMessageCategory: vi.fn().mockReturnValue(undefined),
@@ -78,6 +80,11 @@ function makeHarness(options?: {
     source: ContextInjectionSource,
     category?: string,
   ) => injectSystemMessage(ctx, content, source, category);
+  ctx.injectAdvisoryTailMessage = (
+    content: string,
+    key: 'current-plan' | 'goal-checkpoint' | 'adaptive-thinking',
+    source: ContextInjectionSource,
+  ) => injectAdvisoryTailMessage(ctx, content, key, source);
 
   return { ctx, ledger };
 }
@@ -113,6 +120,13 @@ describe('context injection provenance', () => {
     expect(sourceDetails).toEqual(sourceKinds);
     expect(events.every((event) => event.sourceDetail !== 'system_message')).toBe(true);
     expect(events.every((event) => event.sourceKind !== 'unattributed')).toBe(true);
+
+    // N-EDIT-CACHEKEY：逐轮变化的 thinking 注记只进 transient 尾巴槽，不落持久历史
+    // （落历史会被 buildAiSdkPrompt 提升进 instructions，击穿 provider 前缀缓存）。
+    expect(ctx.runtime.turn.advisoryTailBlocks).toEqual(['<thinking>inspect provenance</thinking>']);
+    expect(ctx.runtime.messages.every(
+      (m: Message) => !(typeof m.content === 'string' && m.content.includes('<thinking>')),
+    )).toBe(true);
   });
 
   it('keeps category as a routing switch independent from source', () => {

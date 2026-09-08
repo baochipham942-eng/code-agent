@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { PermissionRequestReason } from '../../../src/shared/contract/permission';
 import type { PermissionRequest } from '../../../src/renderer/components/PermissionDialog/types';
 import { permissionConsequence, permissionSummary, isSafeDefaultDeny } from '../../../src/renderer/components/PermissionDialog/permissionPresentation';
 import { decisionCardZh } from '../../../src/renderer/i18n/decisionCard';
@@ -303,5 +304,32 @@ describe('device / special path copy', () => {
     };
     expect(permissionSummary(request, zh)).toBe('允许编辑 null？');
     expect(permissionConsequence(request, zh)).toContain('可能覆盖现有内容');
+  });
+
+  it('uncertain write target with a path deny uses the dedicated ask copy', () => {
+    const request: PermissionRequest = {
+      ...baseRequest,
+      tool: 'Bash',
+      type: 'command',
+      reasonCode: PermissionRequestReason.UncertainWriteTargetWithPathDeny,
+      details: { command: 'echo x > "$SSHDIR/authorized_keys"' },
+    };
+    expect(permissionSummary(request, zh)).toBe('这条命令说不清会写到哪个文件，而你设过禁止写入的路径。');
+    expect(permissionConsequence(request, zh)).toBe('允许的话，它可能写到那些被禁止的位置。拒绝则什么都不写。');
+  });
+
+  it('deletion plus uncertain write target still shows the deletion consequence', () => {
+    const request: PermissionRequest = {
+      ...baseRequest,
+      tool: 'Bash',
+      type: 'command',
+      reasonCode: PermissionRequestReason.UncertainWriteTargetWithPathDeny,
+      details: {
+        command: 'rm -rf /tmp/projects/foo > "$LOG/out"',
+        affectedPath: '/tmp/projects/foo',
+        affectedFileCount: 3,
+      },
+    };
+    expect(permissionConsequence(request, zh)).toBe('将永久删除 /tmp/projects/foo（约 3 个文件），不进回收站。');
   });
 });

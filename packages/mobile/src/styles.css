@@ -1,0 +1,44 @@
+:root { font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif; color: var(--text); background: var(--bg); color-scheme: light; --bg: #fff; --text: #161616; --muted: #65656b; --group: #f3f3f6; --line: #e5e5ea; --surface: #fff; --scrim: #0006; }
+:root[data-theme='dark'] { color-scheme: dark; --bg: #171719; --text: #f5f5f7; --muted: #b0b0b6; --group: #262629; --line: #3b3b3f; --surface: #212124; --scrim: #0009; }
+* { box-sizing: border-box; }
+body { margin: 0; overscroll-behavior: none; }
+button,input,textarea { font: inherit; color: inherit; }
+button { min-width: 48px; min-height: 48px; border: 0; background: transparent; cursor: pointer; touch-action: manipulation; }
+button:disabled { opacity: .45; cursor: default; }
+button:focus-visible,input:focus-visible,textarea:focus-visible { outline: 2px solid #668ded; outline-offset: 2px; }
+.app { height: var(--viewport-height, 100vh); overflow: hidden; font-size: 17px; }
+.conversation { display: flex; flex-direction: column; height: 100%; padding-top: env(safe-area-inset-top); }
+.topbar,.drawer header { display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; padding: 6px 14px; }
+.topbar button { font-size: 25px; border-radius: 50%; }
+.welcome { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 16px 28px; overflow: auto; }
+.brand { font-size: 44px; font-weight: 750; letter-spacing: -5px; }.brand span { font-size: 24px; vertical-align: super; }
+h1 { font-size: 27px; line-height: 1.3; letter-spacing: -.7px; text-align: center; font-weight: 600; }
+h2 { font-size: 19px; line-height: 1.35; margin: 0; overflow-wrap: anywhere; }
+p { line-height: 1.5; overflow-wrap: anywhere; }
+.composer-area { flex-shrink: 0; padding: 4px 14px max(10px, env(safe-area-inset-bottom)); }
+.composer { border: 1px solid var(--line); background: var(--group); border-radius: 28px; padding: 13px 10px 8px; }
+textarea { display: block; width: 100%; min-height: 48px; max-height: 140px; border: 0; padding: 0 10px; background: transparent; resize: none; line-height: 1.4; font-size: 17px; }
+textarea::placeholder { color: var(--muted); }
+.composer-actions { display: flex; align-items: center; justify-content: space-between; margin-top: 4px; }
+.composer-actions button { font-size: 26px; border-radius: 50%; }.send,.primary { background: var(--text); color: var(--bg); }
+.caption,.notice,.group-title { color: var(--muted); font-size: 14px; }.caption { margin: 4px 4px 8px; text-align: center; }.notice { margin: 4px 8px 8px; }
+.drawer-layer,.sheet-layer { position: fixed; inset: 0; height: var(--viewport-height, 100vh); }.drawer-layer { z-index: 10; }.sheet-layer { z-index: 20; }
+.scrim { position: absolute; inset: 0; width: 100%; height: 100%; background: var(--scrim); border-radius: 0; }
+.drawer { position: absolute; inset: 0 auto 0 0; width: min(86%, 360px); background: var(--surface); display: flex; flex-direction: column; padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
+.drawer-functions { flex-shrink: 0; padding: 10px; border-bottom: 1px solid var(--line); }
+.drawer-functions > button,.drawer-history button { display: block; width: 100%; text-align: left; padding: 10px 16px; border-radius: 12px; overflow-wrap: anywhere; }
+.drawer-history { flex: 1; min-height: 0; overflow: auto; padding: 8px 10px; overscroll-behavior: contain; }
+.group-title { display: block; margin: 20px 14px 8px; }
+.personal-bar { display: flex; align-items: center; gap: 12px; padding: 14px 20px; border-top: 1px solid var(--line); text-align: left; flex-shrink: 0; }.personal-bar strong { flex: 1; overflow-wrap: anywhere; }
+.avatar { display: grid; place-items: center; background: var(--group); border-radius: 50%; width: 42px; height: 42px; flex-shrink: 0; }
+.sheet { position: absolute; bottom: 0; width: 100%; max-height: calc(100% - max(16px, env(safe-area-inset-top))); min-height: 230px; display: flex; flex-direction: column; background: var(--group); border-radius: 28px 28px 0 0; padding-bottom: max(16px, env(safe-area-inset-bottom)); outline: none; }
+.drag-handle { height: 24px; flex-shrink: 0; display: grid; place-items: center; touch-action: none; }.drag-handle span { width: 36px; height: 5px; border-radius: 4px; background: var(--muted); opacity: .5; }
+.sheet-header { display: grid; grid-template-columns: 48px 1fr 48px; align-items: center; gap: 10px; padding: 0 12px 8px; text-align: center; flex-shrink: 0; }.sheet-header button { font-size: 29px; }
+.sheet-content { padding: 0 20px 24px; overflow: auto; overscroll-behavior: contain; min-height: 0; }
+.settings-group { border-radius: 16px; background: var(--surface); overflow: hidden; }.settings-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; width: 100%; padding: 14px 16px; text-align: left; }.settings-row + .settings-row { border-top: 1px solid var(--line); }.row-detail { color: var(--muted); }
+.profile-card { display: flex; align-items: center; gap: 12px; width: 100%; padding: 18px 10px; text-align: left; }.profile-card strong { flex: 1; overflow-wrap: anywhere; }
+input { width: 100%; padding: 16px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; font-size: 17px; }.primary { border-radius: 24px; width: 100%; margin-top: 18px; }
+.about { text-align: center; padding: 18px 8px; }.about p { color: var(--muted); }
+.virtual-history { flex: 1; min-height: 0; overflow: auto; overflow-anchor: none; overscroll-behavior: contain; }.history-row { left: 0; right: 0; padding: 16px 24px; border-bottom: 1px solid var(--line); overflow: auto; }.history-row p { margin: 8px 0; color: var(--muted); font-size: 15px; }
+.loading { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 30px; }
+@media (max-height: 520px) { .welcome { padding: 4px 20px; }.welcome .brand { display: none; }h1 { font-size: 21px; margin: 10px; }.composer textarea { min-height: 28px; max-height: 80px; }.composer { padding-top: 8px; } }

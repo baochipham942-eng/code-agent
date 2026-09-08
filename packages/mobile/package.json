@@ -1,0 +1,39 @@
+{
+  "name": "@neo/mobile",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "preinstall": "node scripts/remote-only.mjs",
+    "pretypecheck": "node scripts/remote-only.mjs",
+    "pretest": "node scripts/remote-only.mjs",
+    "prebuild": "node scripts/remote-only.mjs",
+    "predev": "node scripts/remote-only.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --root ../.. --config packages/mobile/vitest.config.ts",
+    "build": "npm run typecheck && vite build",
+    "dev": "vite --host 127.0.0.1",
+    "android:build": "node scripts/build-android.mjs",
+    "android:verify": "node scripts/android-verify.mjs"
+  },
+  "dependencies": {
+    "@capacitor/android": "8.5.1",
+    "@capacitor/app": "8.1.1",
+    "@capacitor/core": "8.5.1",
+    "@capacitor/keyboard": "8.0.5",
+    "@capacitor/preferences": "8.0.1",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "zustand": "5.0.13"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.5.1",
+    "@types/node": "24.10.1",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.7",
+    "typescript": "7.0.2",
+    "vite": "8.2.2",
+    "vitest": "4.1.7"
+  }
+}

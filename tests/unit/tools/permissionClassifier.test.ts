@@ -24,7 +24,6 @@ import { getSandboxManager } from '../../../src/host/sandbox';
 import {
   FENCED_IN_PROJECT_WRITE_REASON,
   isOsWriteFenceAvailable,
-  setOsWriteFenceAvailableOverride,
 } from '../../../src/host/sandbox/writeFence';
 
 describe('PermissionClassifier', () => {
@@ -1228,7 +1227,7 @@ describe('PermissionClassifier', () => {
       'printf x >> .env',
       'tee .env',
     ])('%s 在围栏可用时仍 ask 不免确认', async (command) => {
-      setOsWriteFenceAvailableOverride(true);
+      isOsWriteFenceAvailable.setAvailableOverrideForTest(true);
       const root = await fs.mkdtemp(path.join(os.tmpdir(), 'exectime-env-'));
       try {
         expect(isOsWriteFenceAvailable()).toBe(true);
@@ -1240,7 +1239,7 @@ describe('PermissionClassifier', () => {
         expect(result.decision).toBe('ask');
         expect(result.reason).not.toBe(FENCED_IN_PROJECT_WRITE_REASON);
       } finally {
-        setOsWriteFenceAvailableOverride(undefined);
+        isOsWriteFenceAvailable.setAvailableOverrideForTest(undefined);
         await fs.rm(root, { recursive: true, force: true });
       }
     });
@@ -1253,7 +1252,7 @@ describe('PermissionClassifier', () => {
       'printf "${VAR}" > out.txt',
       'echo "100$" > out.txt',
     ])('%s 在围栏可用时仍 ask 不免确认', async (command) => {
-      setOsWriteFenceAvailableOverride(true);
+      isOsWriteFenceAvailable.setAvailableOverrideForTest(true);
       const root = await fs.mkdtemp(path.join(os.tmpdir(), 'exectime-expand-'));
       try {
         expect(isOsWriteFenceAvailable()).toBe(true);
@@ -1265,13 +1264,13 @@ describe('PermissionClassifier', () => {
         expect(result.decision).toBe('ask');
         expect(result.reason).not.toBe(FENCED_IN_PROJECT_WRITE_REASON);
       } finally {
-        setOsWriteFenceAvailableOverride(undefined);
+        isOsWriteFenceAvailable.setAvailableOverrideForTest(undefined);
         await fs.rm(root, { recursive: true, force: true });
       }
     });
 
     it('printf x > .env 在 /var↔/private/var 别名项目根下仍 ask', async () => {
-      setOsWriteFenceAvailableOverride(true);
+      isOsWriteFenceAvailable.setAvailableOverrideForTest(true);
       try {
         expect(isOsWriteFenceAvailable()).toBe(true);
         const result = await classifyPermission(
@@ -1286,7 +1285,7 @@ describe('PermissionClassifier', () => {
         expect(result.decision).toBe('ask');
         expect(result.reason).not.toBe(FENCED_IN_PROJECT_WRITE_REASON);
       } finally {
-        setOsWriteFenceAvailableOverride(undefined);
+        isOsWriteFenceAvailable.setAvailableOverrideForTest(undefined);
       }
     });
   });

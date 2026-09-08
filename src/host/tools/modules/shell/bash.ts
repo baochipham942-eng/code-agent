@@ -665,8 +665,8 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
           // Missing workspaceScope: writable surface is the project workspace, not just cwd.
           // Fence eligibility is workspace-wide (a sibling of cwd is still in-project), so the
           // OS jail must match. Bypass-tier without a scope uses the same project boundary.
-          // `??` only covers a missing workspaceScope. An empty read_write list
-          // stays empty and does not fall back to ctx.workspace.
+          // createWorkspaceScope requires a unique read_write primary, so this `??` only
+          // fires when workspaceScope itself is absent.
           readWriteRoots: ctx.workspaceScope?.roots
             .filter((root) => root.access === 'read_write')
             .map((root) => resolveCanonicalRunPath(root.path))

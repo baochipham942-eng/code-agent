@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { parseShellCommand } from '../security/commandParse';
+import { resolveCanonicalRunPath } from '../runtime/runContext';
 import { getSandboxManager } from './manager';
 import { isSensitiveCredentialPath } from './sensitivePaths';
 
@@ -14,19 +15,17 @@ const SIMPLE_WRITE_PATH = /^[A-Za-z0-9._/+-]+$/;
  * stripped (`tee "out.txt"` can still be eligible). The OS fence is still the write gate.
  */
 const QUOTED_REDIRECT_TARGET = /(?:[0-9]?>{1,2}|&>)\s*\S*['"`]/;
+/**
+ * Fail-closed expansion / substitution in any word, including after quote stripping.
+ * `$(` `${` backticks process-substitution, and a bare `$` (so `echo "100$"` asks).
+ * Reverse mutation: drop commandHasExpansionMarker ⇒ `printf "${VAR}" > out.txt`
+ * and `echo "100$"` become eligible.
+ */
+const EXPANSION_MARKER = /\$|`|<\(|>\(/;
 
 export const FENCED_IN_PROJECT_WRITE_REASON = 'in-project write under OS write fence';
 
 let osWriteFenceAvailableOverride: boolean | undefined;
-
-/**
- * Eval-fixture / test-only pin for "fence present" or "fence absent".
- * Approval-eval writes this so ubuntu (no bwrap) still grades with-fence semantics.
- * Production command paths must not call this (knip production still sees the eval-harness consumer).
- */
-export function setOsWriteFenceAvailableOverride(value: boolean | undefined): void {
-  osWriteFenceAvailableOverride = value;
-}
 
 /** macOS /var ↔ /private/var aliases only. Does not follow user symlinks inside the project. */
 function lexicalPathAliases(input: string): string[] {
@@ -52,20 +51,63 @@ function looksLexicallyInsideWorkspace(candidate: string, cwd: string, workspace
   }));
 }
 
+function tryCanonicalFencePath(input: string): string | undefined {
+  try {
+    return resolveCanonicalRunPath(input);
+  } catch {
+    return undefined;
+  }
+}
+
+function hasExpansionMarker(text: string): boolean {
+  return EXPANSION_MARKER.test(text);
+}
+
+function commandHasExpansionMarker(command: string, parsed: ReturnType<typeof parseShellCommand>): boolean {
+  if (hasExpansionMarker(command)) return true;
+  if (parsed.uncertain.length > 0) return true;
+  if (parsed.segments.some((segment) =>
+    segment.words.some(hasExpansionMarker)
+    || segment.redirects.some((target) => target.uncertain || hasExpansionMarker(target.path))
+    || segment.reads.some((read) => read.uncertain || hasExpansionMarker(read.path))
+  )) return true;
+  if (parsed.executions.some((execution) =>
+    hasExpansionMarker(execution.program)
+    || execution.args.some(hasExpansionMarker)
+    || (execution.environmentAssignments ?? []).some(hasExpansionMarker)
+  )) return true;
+  return parsed.writeTargets.some((target) => target.uncertain || hasExpansionMarker(target.path));
+}
+
+function isInProjectCredentialWrite(targetPath: string, cwd: string, workspaceRoot: string): boolean {
+  const candidates = lexicalPathAliases(path.resolve(cwd, targetPath));
+  const roots = lexicalPathAliases(workspaceRoot);
+  return candidates.some((candidate) =>
+    roots.some((root) => isSensitiveCredentialPath(candidate, { projectRoot: root })));
+}
+
 /**
  * OS write fence is present (seatbelt/bwrap). Windows and missing jail are not.
  * Reverse mutation: dropping this check lets in-project-looking writes skip confirmation
  * without a real-path fence (N-WRITETARGET-EXECTIME).
  */
-export function isOsWriteFenceAvailable(): boolean {
-  if (osWriteFenceAvailableOverride !== undefined) return osWriteFenceAvailableOverride;
-  if (process.platform === 'win32') return false;
-  try {
-    return getSandboxManager().isAvailable();
-  } catch {
-    return false;
-  }
-}
+export const isOsWriteFenceAvailable = Object.assign(
+  function isOsWriteFenceAvailable(): boolean {
+    if (osWriteFenceAvailableOverride !== undefined) return osWriteFenceAvailableOverride;
+    if (process.platform === 'win32') return false;
+    try {
+      return getSandboxManager().isAvailable();
+    } catch {
+      return false;
+    }
+  },
+  {
+    /** Test-only / eval-fixture pin for "fence present" or "fence absent". */
+    setAvailableOverrideForTest(value: boolean | undefined): void {
+      osWriteFenceAvailableOverride = value;
+    },
+  },
+);
 
 /**
  * Narrow eligibility for "just write a file in the project". Not a proof of the
@@ -75,10 +117,13 @@ export function isFencedInProjectWriteEligible(
   command: string,
   context: { workingDirectory: string; workspaceRoot?: string },
 ): boolean {
-  const workspaceRoot = context.workspaceRoot;
-  if (!workspaceRoot) return false;
+  if (!context.workspaceRoot) return false;
+  const workspaceRoot = tryCanonicalFencePath(context.workspaceRoot);
+  const workingDirectory = tryCanonicalFencePath(context.workingDirectory);
+  if (!workspaceRoot || !workingDirectory) return false;
   if (QUOTED_REDIRECT_TARGET.test(command)) return false;
   const parsed = parseShellCommand(command);
+  if (commandHasExpansionMarker(command, parsed)) return false;
   if (parsed.parsingFailed || parsed.trailingOperator || parsed.uncertain.length > 0) return false;
   if (parsed.segments.length !== 1) return false;
   const segment = parsed.segments[0];
@@ -97,10 +142,9 @@ export function isFencedInProjectWriteEligible(
   }
   return writeTargets.every((target) => {
     if (!SIMPLE_WRITE_PATH.test(target.path.replaceAll('\\', '/'))) return false;
-    if (!looksLexicallyInsideWorkspace(target.path, context.workingDirectory, workspaceRoot)) return false;
-    const resolved = path.resolve(context.workingDirectory, target.path);
+    if (!looksLexicallyInsideWorkspace(target.path, workingDirectory, workspaceRoot)) return false;
     // OS fence does not protect in-project .env*; keep those on the confirmation path.
     // Reverse mutation: drop this check ⇒ printf x > .env auto-approves.
-    return !isSensitiveCredentialPath(resolved, { projectRoot: workspaceRoot });
+    return !isInProjectCredentialWrite(target.path, workingDirectory, workspaceRoot);
   });
 }

@@ -57,7 +57,7 @@ import { resetPolicyEnforcer } from '../../../src/host/security/policyEnforcer';
 import { getPolicyEngine, resetPolicyEngine } from '../../../src/host/permissions/policyEngine';
 import { resolveCanonicalRunPath } from '../../../src/host/runtime/runContext';
 import { getSandboxManager } from '../../../src/host/sandbox';
-import { isOsWriteFenceAvailable, setOsWriteFenceAvailableOverride } from '../../../src/host/sandbox/writeFence';
+import { isOsWriteFenceAvailable } from '../../../src/host/sandbox/writeFence';
 
 describe('ToolExecutor Bash 安全命令单一判据', () => {
   let workspace: string;
@@ -697,7 +697,7 @@ describe('ToolExecutor Bash 安全命令单一判据', () => {
     });
 
     it('echo "100$" > out.txt 整条链路弹卡且不报错', async () => {
-      setOsWriteFenceAvailableOverride(true);
+      isOsWriteFenceAvailable.setAvailableOverrideForTest(true);
       try {
         expect(isOsWriteFenceAvailable()).toBe(true);
         const rejecting = buildRejectingExecutor();
@@ -711,12 +711,12 @@ describe('ToolExecutor Bash 安全命令单一判据', () => {
         expect(rejected.success).toBe(false);
         expect(existsSync(path.join(workspace, 'out.txt'))).toBe(false);
       } finally {
-        setOsWriteFenceAvailableOverride(undefined);
+        isOsWriteFenceAvailable.setAvailableOverrideForTest(undefined);
       }
     });
 
     it('printf x > .env 整条链路仍弹卡，批准后照常执行', async () => {
-      setOsWriteFenceAvailableOverride(true);
+      isOsWriteFenceAvailable.setAvailableOverrideForTest(true);
       try {
         expect(isOsWriteFenceAvailable()).toBe(true);
         const rejecting = buildRejectingExecutor();
@@ -741,7 +741,7 @@ describe('ToolExecutor Bash 安全命令单一判据', () => {
         expect(granted.success).toBe(true);
         expect(await fs.readFile(path.join(workspace, '.env'), 'utf8')).toContain('x');
       } finally {
-        setOsWriteFenceAvailableOverride(undefined);
+        isOsWriteFenceAvailable.setAvailableOverrideForTest(undefined);
       }
     });
 

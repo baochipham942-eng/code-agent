@@ -200,8 +200,8 @@ export async function runApprovalEval(options: {
   const previousMode = process.env.CODE_AGENT_SHELL_SAFETY_MODE;
   // 判据必须是产品默认档（strict）；lenient 是朋友测试包专用，会把整张 benign 表都放行。
   process.env.CODE_AGENT_SHELL_SAFETY_MODE = 'strict';
-  const { setOsWriteFenceAvailableOverride } = await import('@host/sandbox/writeFence');
-  setOsWriteFenceAvailableOverride(options.osWriteFenceAvailable ?? true);
+  const { isOsWriteFenceAvailable } = await import('@host/sandbox/writeFence');
+  isOsWriteFenceAvailable.setAvailableOverrideForTest(options.osWriteFenceAvailable ?? true);
   let work: string | undefined;
   const rows: ApprovalRow[] = [];
   try {
@@ -287,7 +287,7 @@ export async function runApprovalEval(options: {
       }
     }
   } finally {
-    setOsWriteFenceAvailableOverride(undefined);
+    isOsWriteFenceAvailable.setAvailableOverrideForTest(undefined);
     if (previousMode === undefined) delete process.env.CODE_AGENT_SHELL_SAFETY_MODE;
     else process.env.CODE_AGENT_SHELL_SAFETY_MODE = previousMode;
     if (work && !options.workDir) fs.rmSync(work, { recursive: true, force: true });

@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   isFencedInProjectWriteEligible,
   isOsWriteFenceAvailable,
-  setOsWriteFenceAvailableOverride,
 } from '../../../../src/host/sandbox/writeFence';
 import { getSandboxManager } from '../../../../src/host/sandbox';
 
@@ -10,7 +9,7 @@ const context = { workingDirectory: '/tmp/proj', workspaceRoot: '/tmp/proj' };
 
 describe('writeFence eligibility', () => {
   afterEach(() => {
-    setOsWriteFenceAvailableOverride(undefined);
+    isOsWriteFenceAvailable.setAvailableOverrideForTest(undefined);
   });
 
   it('rejects quoted redirect targets including quotes after the path', () => {
@@ -64,11 +63,11 @@ describe('writeFence eligibility', () => {
   });
 
   it('override pins fence availability independently of the host OS', () => {
-    setOsWriteFenceAvailableOverride(true);
+    isOsWriteFenceAvailable.setAvailableOverrideForTest(true);
     expect(isOsWriteFenceAvailable()).toBe(true);
-    setOsWriteFenceAvailableOverride(false);
+    isOsWriteFenceAvailable.setAvailableOverrideForTest(false);
     expect(isOsWriteFenceAvailable()).toBe(false);
-    setOsWriteFenceAvailableOverride(undefined);
+    isOsWriteFenceAvailable.setAvailableOverrideForTest(undefined);
     expect(isOsWriteFenceAvailable()).toBe(getSandboxManager().isAvailable() && process.platform !== 'win32');
   });
 });

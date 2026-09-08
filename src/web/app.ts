@@ -145,6 +145,7 @@ export function createApp(deps: CreateAppDeps): express.Express {
   const app = express();
   const traceReadService = new TraceReadService(resolveCodeAgentDataDir());
   let companionRun: ((body: AgentRunBody) => { runId?: string }) | undefined;
+  let publishCompanionEvent: ((sessionId: string, kind: string, payload: Record<string, unknown>) => void) | undefined;
 
   // HTML 产物人工编辑落库后让 web 消息投影失效（dogfood 抓到的崩法 A 根因）
   wireGenerativeUiEditProjectionInvalidation();
@@ -223,6 +224,7 @@ export function createApp(deps: CreateAppDeps): express.Express {
     registerQueuedInputEnqueueHook: deps.registerQueuedInputEnqueueHook,
     registerQueuedInputSendNowHook: deps.registerQueuedInputSendNowHook,
     registerCompanionRun: (run) => { companionRun = run; },
+    publishCompanionEvent: (sessionId, kind, payload) => publishCompanionEvent?.(sessionId, kind, payload),
   }));
 
   try {
@@ -248,6 +250,9 @@ export function createApp(deps: CreateAppDeps): express.Express {
           return { state: 'accepted', result: { queued: true, runId: run.runId } };
         },
       });
+      publishCompanionEvent = (sessionId, kind, payload) => {
+        gateway.publish(sessionId, kind, payload);
+      };
       app.use('/api', createCompanionRouter({ gateway }));
     }
   } catch (error) {

@@ -149,6 +149,7 @@ interface AgentRouterDeps extends AgentDurableRouteDeps {
     envelope: ConversationEnvelope;
   }, route: 'active' | 'idle') => Promise<'sent' | 'steered' | 'queued'>) => void;
   registerCompanionRun?: (run: (body: AgentRunBody) => { runId?: string }) => void;
+  publishCompanionEvent?: (sessionId: string, kind: string, payload: Record<string, unknown>) => void;
 }
 
 export type ActiveAgentLoop = RunControlTarget;
@@ -1068,6 +1069,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       const agentLoop = createAgentLoop(config, (event) => {
         const emitted = runController.emitAgentEvent(event);
         runEventCollector.observe(event, emitted);
+        deps.publishCompanionEvent?.(sessionId, event.type, { event: event.data });
       }, messages, sessionId, undefined, runToolExecutor, runContext, runHandle.traceContext);
 
       await runHandle.attach(agentLoop);

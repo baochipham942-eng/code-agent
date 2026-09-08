@@ -1,4 +1,7 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { describe, expect, it, vi } from 'vitest';
 import {
   isFencedInProjectWriteEligible,
   isOsWriteFenceAvailable,
@@ -7,11 +10,21 @@ import { getSandboxManager } from '../../../../src/host/sandbox';
 
 const context = { workingDirectory: '/tmp/proj', workspaceRoot: '/tmp/proj' };
 
-describe('writeFence eligibility', () => {
-  afterEach(() => {
-    isOsWriteFenceAvailable.setAvailableOverrideForTest(undefined);
-  });
+function makeTempProject(): string {
+  return fs.mkdtempSync(path.join(os.tmpdir(), 'exectime-fence-'));
+}
 
+function pinOsWriteFenceAvailable(available: boolean): () => void {
+  const manager = getSandboxManager();
+  const availableSpy = vi.spyOn(manager, 'isAvailable').mockReturnValue(available);
+  const enabledSpy = vi.spyOn(manager, 'isEnabled').mockReturnValue(available);
+  return () => {
+    availableSpy.mockRestore();
+    enabledSpy.mockRestore();
+  };
+}
+
+describe('writeFence eligibility', () => {
   it('rejects quoted redirect targets including quotes after the path', () => {
     expect(isFencedInProjectWriteEligible('printf x > "/tmp/proj/out.txt"', context)).toBe(false);
     expect(isFencedInProjectWriteEligible("printf x > /tmp/proj/'o'", context)).toBe(false);
@@ -62,6 +75,47 @@ describe('writeFence eligibility', () => {
     expect(isFencedInProjectWriteEligible('printf x > .CODE-AGENT/settings.json', context)).toBe(false);
   });
 
+  it('rejects Neo hooks.json and legacy Claude settings writes', () => {
+    expect(isFencedInProjectWriteEligible(
+      'printf x > /tmp/proj/.code-agent/hooks/hooks.json',
+      context,
+    )).toBe(false);
+    expect(isFencedInProjectWriteEligible('printf x > .CODE-AGENT/hooks/hooks.json', context)).toBe(false);
+    expect(isFencedInProjectWriteEligible('printf x > .claude/settings.json', context)).toBe(false);
+    expect(isFencedInProjectWriteEligible('printf x > .CLAUDE/settings.json', context)).toBe(false);
+    expect(isFencedInProjectWriteEligible('printf x > .code-agent/mcp.json', context)).toBe(false);
+    expect(isFencedInProjectWriteEligible('printf x > .code-agent/mcp.local.json', context)).toBe(false);
+    expect(isFencedInProjectWriteEligible('printf x > .code-agent/HEARTBEAT.md', context)).toBe(false);
+  });
+
+  it('rejects write through in-project symlink into .git/hooks', () => {
+    const root = makeTempProject();
+    try {
+      fs.mkdirSync(path.join(root, '.git', 'hooks'), { recursive: true });
+      fs.symlinkSync(path.join(root, '.git', 'hooks'), path.join(root, 'deploy'));
+      expect(isFencedInProjectWriteEligible('printf x > deploy/pre-commit', {
+        workingDirectory: root,
+        workspaceRoot: root,
+      })).toBe(false);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects write through in-project symlink onto .env', () => {
+    const root = makeTempProject();
+    try {
+      fs.writeFileSync(path.join(root, '.env'), 'OLD=1\n');
+      fs.symlinkSync(path.join(root, '.env'), path.join(root, 'cache.txt'));
+      expect(isFencedInProjectWriteEligible('printf x > cache.txt', {
+        workingDirectory: root,
+        workspaceRoot: root,
+      })).toBe(false);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it.each([
     ['printf "$(rm -rf src)" > /tmp/proj/out.txt'],
     ['printf "$(cat ~/x)" > /tmp/proj/out.txt'],
@@ -86,16 +140,21 @@ describe('writeFence eligibility', () => {
     })).toBe(false);
   });
 
-  it('override pins fence availability independently of the host OS', () => {
-    isOsWriteFenceAvailable.setAvailableOverrideForTest(true);
-    expect(isOsWriteFenceAvailable()).toBe(true);
-    isOsWriteFenceAvailable.setAvailableOverrideForTest(false);
-    expect(isOsWriteFenceAvailable()).toBe(false);
-    isOsWriteFenceAvailable.setAvailableOverrideForTest(undefined);
+  it('spy on sandbox manager pins fence availability independently of the host OS', () => {
+    const unpinTrue = pinOsWriteFenceAvailable(true);
+    try {
+      expect(isOsWriteFenceAvailable()).toBe(true);
+    } finally {
+      unpinTrue();
+    }
+    const unpinFalse = pinOsWriteFenceAvailable(false);
+    try {
+      expect(isOsWriteFenceAvailable()).toBe(false);
+    } finally {
+      unpinFalse();
+    }
     expect(isOsWriteFenceAvailable()).toBe(
-      getSandboxManager().isAvailable()
-      && getSandboxManager().isEnabled()
-      && process.platform !== 'win32',
+      getSandboxManager().isAvailable() && getSandboxManager().isEnabled(),
     );
   });
 

@@ -50,7 +50,7 @@ import { checkCommandPolicy } from './commandPolicy';
 import { rewriteBashCommand } from './rtkRewriter';
 import { getPermissionModeManager } from '../../../permissions/modes';
 import { resolveSandboxNetworkPolicy, wrapCommandForSandbox } from '../../../sandbox';
-import { isFencedInProjectWriteEligible, isOsWriteFenceAvailable } from '../../../sandbox/writeFence';
+import { isFencedWriteSandboxEligible, isOsWriteFenceAvailable } from '../../../sandbox/writeFence';
 import { resolveCanonicalRunPath } from '../../../runtime/runContext';
 
 const MAX_TIMEOUT_MS = BASH.MAX_TIMEOUT;
@@ -609,11 +609,13 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
 
     const timeout = Math.min((args.timeout as number) || BASH.DEFAULT_TIMEOUT, MAX_TIMEOUT_MS);
     let workingDirectory: string;
+    let displayWorkingDirectory: string;
     let workspaceRoot: string;
     try {
       const rawWorkingDirectory = typeof args.working_directory === 'string' && args.working_directory.trim()
         ? path.resolve(ctx.workingDir, args.working_directory)
         : ctx.workingDir;
+      displayWorkingDirectory = rawWorkingDirectory;
       workingDirectory = resolveCanonicalRunPath(rawWorkingDirectory);
       workspaceRoot = ctx.workspace
         ? resolveCanonicalRunPath(ctx.workspace)
@@ -638,7 +640,7 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
     // unattended 会话不论钳后档位，命令一律带沙箱跑。
     // -------------------------------------------------------------------------
     const permissionModeManager = getPermissionModeManager();
-    const writeFence = isFencedInProjectWriteEligible(normalizedCommand, {
+    const writeFence = isFencedWriteSandboxEligible(normalizedCommand, {
       workingDirectory,
       workspaceRoot,
     }) && isOsWriteFenceAvailable();
@@ -662,15 +664,13 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
           readOnlyRoots: ctx.workspaceScope?.roots
             .filter((root) => root.access === 'read_only')
             .map((root) => resolveCanonicalRunPath(root.path)),
-          // Missing workspaceScope: writable surface is the project workspace, not just cwd.
-          // Fence eligibility is workspace-wide (a sibling of cwd is still in-project), so the
-          // OS jail must match. Bypass-tier without a scope uses the same project boundary.
-          // createWorkspaceScope requires a unique read_write primary, so this `??` only
-          // fires when workspaceScope itself is absent.
+          // Missing workspaceScope: write-fence eligibility is workspace-wide, so the OS
+          // jail must match. Bypass/unattended without a scope keep the cwd cage
+          // (manager defaults readWriteRoots to cwd); do not expand to the project root.
           readWriteRoots: ctx.workspaceScope?.roots
             .filter((root) => root.access === 'read_write')
             .map((root) => resolveCanonicalRunPath(root.path))
-            ?? (ctx.workspace ? [workspaceRoot] : undefined),
+            ?? (writeFence && ctx.workspace ? [workspaceRoot] : undefined),
           deniedReadRoots: process.env.CODE_AGENT_EVAL_REAL_ROOT
             ? [process.env.CODE_AGENT_EVAL_REAL_ROOT]
             : undefined,
@@ -975,7 +975,7 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
         dataFingerprintStore.recordFact(bashFact);
       }
 
-      const cwdPrefix = `[cwd: ${workingDirectory}]\n`;
+      const cwdPrefix = `[cwd: ${displayWorkingDirectory}]\n`;
 
       onProgress?.({ stage: 'completing', percent: 100 });
       ctx.logger.debug('Bash done', { command: normalizedCommand.slice(0, 80), hasStderr: !!stderr });
@@ -987,7 +987,7 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
           ...(dynamicDesc ? { description: dynamicDesc } : {}),
           process: {
             command: normalizedCommand,
-            cwd: workingDirectory,
+            cwd: displayWorkingDirectory,
             background: false,
             pty: false,
           },
@@ -1000,7 +1000,7 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
             mimeType: 'text/plain',
             contentLength: output.length,
             preview: output.slice(0, 500),
-            metadata: { cwd: workingDirectory, command: normalizedCommand.slice(0, 200) },
+            metadata: { cwd: displayWorkingDirectory, command: normalizedCommand.slice(0, 200) },
           }),
         },
       };

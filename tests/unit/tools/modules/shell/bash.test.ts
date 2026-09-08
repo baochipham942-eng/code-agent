@@ -355,8 +355,8 @@ describe('bashModule (native)', () => {
       );
       expect(result.ok).toBe(true);
       if (result.ok) {
-        // Fence/cwd canonicalization follows /tmp → /private/tmp on macOS.
-        expect(result.output).toMatch(/\[cwd: (?:\/private)?\/tmp\]/);
+        // Display keeps the user spelling; execution cwd is still canonical.
+        expect(result.output).toMatch(/\[cwd: \/tmp\]/);
         expect(result.output).toMatch(/(\/private)?\/tmp/);
       }
     });

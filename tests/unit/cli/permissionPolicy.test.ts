@@ -9,6 +9,7 @@ import {
 } from '../../../src/cli/permissionPolicy';
 import { getPermissionClassifier } from '../../../src/host/tools/permissionClassifier';
 import { setCommandPolicyRulesForTest } from '../../../src/host/tools/modules/shell/commandPolicy';
+import { getSandboxManager } from '../../../src/host/sandbox';
 import { isOsWriteFenceAvailable } from '../../../src/host/sandbox/writeFence';
 import type { PermissionRequestData } from '../../../src/host/tools/types';
 import type { DecisionTrace } from '../../../src/shared/contract/decisionTrace';
@@ -286,9 +287,12 @@ describe('createCLIPermissionHandler --permission-mode auto', () => {
   });
 
   it('auto 档重跑形状：Bash working_directory 在区外、分类 cwd 为项目根时不得批准', async () => {
-    isOsWriteFenceAvailable.setAvailableOverrideForTest(true);
+    const manager = getSandboxManager();
+    const availableSpy = vi.spyOn(manager, 'isAvailable').mockReturnValue(true);
+    const enabledSpy = vi.spyOn(manager, 'isEnabled').mockReturnValue(true);
     const project = await fs.mkdtemp(path.join(os.tmpdir(), 'exectime-cli-auto-'));
     try {
+      expect(isOsWriteFenceAvailable()).toBe(true);
       const warn = vi.fn();
       const handler = createCLIPermissionHandler({
         permissionMode: 'auto',
@@ -306,7 +310,8 @@ describe('createCLIPermissionHandler --permission-mode auto', () => {
       expect(result.approved).toBe(false);
       expect(result.denialSource).toBe('no-approval-ui');
     } finally {
-      isOsWriteFenceAvailable.setAvailableOverrideForTest(undefined);
+      availableSpy.mockRestore();
+      enabledSpy.mockRestore();
       await fs.rm(project, { recursive: true, force: true });
     }
   });

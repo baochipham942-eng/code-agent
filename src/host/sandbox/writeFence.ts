@@ -1,9 +1,9 @@
 import path from 'node:path';
 import { parseShellCommand } from '../security/commandParse';
 import { resolveCanonicalRunPath } from '../runtime/runContext';
-import { CONFIG_DIR_NEW } from '../../shared/constants/configDir';
+import { CONFIG_DIR_LEGACY, CONFIG_DIR_NEW } from '../../shared/constants/configDir';
 import { getSandboxManager } from './manager';
-import { isProtectedWritePath, isSensitiveCredentialPath } from './sensitivePaths';
+import { isProtectedWritePath, isSensitiveCredentialPath, pathAliases } from './sensitivePaths';
 
 const FENCED_WRITE_PROGRAMS = new Set(['printf', 'echo', 'tee']);
 /** Lookup / startup-file assignments that can change what the fenced command runs. Not an exhaustive bash env list. */
@@ -26,10 +26,28 @@ const EXPANSION_MARKER = /\$|`|<\(|>\(/;
 
 export const FENCED_IN_PROJECT_WRITE_REASON = 'in-project write under OS write fence';
 
-let osWriteFenceAvailableOverride: boolean | undefined;
+function writeTargetAliases(targetPath: string, cwd: string): string[] {
+  const resolved = path.resolve(cwd, targetPath);
+  // Same existing-prefix walk as cwd/workspace (pathAliases one-parent is not enough
+  // for /tmp/proj when only /tmp exists). Reverse mutation: drop this ⇒ /tmp vs
+  // /private/tmp ordinary writes stop matching, and `deploy -> .git/hooks` stays lexical.
+  const canonical = tryCanonicalFencePath(resolved) ?? resolved;
+  return pathAliases(canonical);
+}
+
+function isInsideWorkspaceRoot(candidate: string, workspaceRoot: string): boolean {
+  const relative = path.relative(workspaceRoot, candidate);
+  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+}
+
+function looksInsideWorkspace(targetPath: string, cwd: string, workspaceRoot: string): boolean {
+  const targets = writeTargetAliases(targetPath, cwd);
+  const roots = pathAliases(workspaceRoot);
+  return targets.some((target) => roots.some((root) => isInsideWorkspaceRoot(target, root)));
+}
 
 /** macOS /var ↔ /private/var aliases only. Does not follow user symlinks inside the project. */
-function lexicalPathAliases(input: string): string[] {
+function lexicalOsPathAliases(input: string): string[] {
   const resolved = path.resolve(input);
   const aliases = [resolved];
   if (resolved === '/var' || resolved.startsWith('/var/')) aliases.push(`/private${resolved}`);
@@ -43,13 +61,10 @@ function lexicalPathAliases(input: string): string[] {
   return [...new Set(aliases)];
 }
 
-function looksLexicallyInsideWorkspace(candidate: string, cwd: string, workspaceRoot: string): boolean {
-  const targets = lexicalPathAliases(path.resolve(cwd, candidate));
-  const roots = lexicalPathAliases(workspaceRoot);
-  return targets.some((target) => roots.some((root) => {
-    const relative = path.relative(root, target);
-    return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
-  }));
+function looksLexicallyInsideWorkspace(targetPath: string, cwd: string, workspaceRoot: string): boolean {
+  const targets = lexicalOsPathAliases(path.resolve(cwd, targetPath));
+  const roots = lexicalOsPathAliases(workspaceRoot);
+  return targets.some((target) => roots.some((root) => isInsideWorkspaceRoot(target, root)));
 }
 
 function tryCanonicalFencePath(input: string): string | undefined {
@@ -81,35 +96,56 @@ function commandHasExpansionMarker(command: string, parsed: ReturnType<typeof pa
 }
 
 function isInProjectCredentialWrite(targetPath: string, cwd: string, workspaceRoot: string): boolean {
-  const candidates = lexicalPathAliases(path.resolve(cwd, targetPath));
-  const roots = lexicalPathAliases(workspaceRoot);
+  const candidates = writeTargetAliases(targetPath, cwd);
+  const roots = pathAliases(workspaceRoot);
   return candidates.some((candidate) =>
     roots.some((root) => isSensitiveCredentialPath(candidate, { projectRoot: root })));
 }
 
 function isInProjectProtectedWrite(targetPath: string, cwd: string, workspaceRoot: string): boolean {
-  const candidates = lexicalPathAliases(path.resolve(cwd, targetPath));
-  const roots = lexicalPathAliases(workspaceRoot);
+  const candidates = writeTargetAliases(targetPath, cwd);
+  const roots = pathAliases(workspaceRoot);
   return candidates.some((candidate) =>
     roots.some((root) => isProtectedWritePath(candidate, { projectRoot: root })));
 }
 
-const PROJECT_SETTINGS_RELATIVE = `${CONFIG_DIR_NEW}/settings.json`.toLowerCase();
+/** Directories git / husky / Neo later execute from. Folded; prefix match includes children. */
+const PROJECT_STARTUP_EXECUTABLE_PREFIXES = [
+  '.git/hooks',
+  '.husky',
+  `${CONFIG_DIR_NEW}/hooks`,
+  `${CONFIG_DIR_NEW}/agents`,
+  `${CONFIG_DIR_NEW}/skills`,
+  `${CONFIG_DIR_LEGACY}/skills`,
+].map((relative) => relative.toLowerCase());
 
-/** Writes that execute on the next tool run — same skip-confirm exclusion as .git/config. */
-function isStartupExecutableRelative(candidate: string, projectRoot: string): boolean {
+/** Project files Neo later reads as config or uses to spawn / schedule. Folded exact match. */
+const PROJECT_RUNTIME_CONFIG_FILES = new Set([
+  `${CONFIG_DIR_NEW}/settings.json`,
+  `${CONFIG_DIR_NEW}/mcp.json`,
+  `${CONFIG_DIR_NEW}/mcp.local.json`,
+  `${CONFIG_DIR_NEW}/heartbeat.md`,
+  `${CONFIG_DIR_LEGACY}/settings.json`,
+].map((relative) => relative.toLowerCase()));
+
+function foldedProjectRelative(candidate: string, projectRoot: string): string | undefined {
   const relative = path.relative(projectRoot, candidate);
-  if (relative === '' || relative.startsWith('..') || path.isAbsolute(relative)) return false;
-  const folded = relative.replaceAll('\\', '/').toLowerCase();
-  if (folded === PROJECT_SETTINGS_RELATIVE) return true;
-  if (folded === '.git/hooks' || folded.startsWith('.git/hooks/')) return true;
-  if (folded === '.husky' || folded.startsWith('.husky/')) return true;
-  return false;
+  if (relative === '' || relative.startsWith('..') || path.isAbsolute(relative)) return undefined;
+  return relative.replaceAll('\\', '/').toLowerCase();
+}
+
+function isStartupExecutableRelative(candidate: string, projectRoot: string): boolean {
+  const folded = foldedProjectRelative(candidate, projectRoot);
+  if (!folded) return false;
+  if (PROJECT_RUNTIME_CONFIG_FILES.has(folded)) return true;
+  return PROJECT_STARTUP_EXECUTABLE_PREFIXES.some((prefix) => (
+    folded === prefix || folded.startsWith(`${prefix}/`)
+  ));
 }
 
 function isInProjectStartupExecutableWrite(targetPath: string, cwd: string, workspaceRoot: string): boolean {
-  const candidates = lexicalPathAliases(path.resolve(cwd, targetPath));
-  const roots = lexicalPathAliases(workspaceRoot);
+  const candidates = writeTargetAliases(targetPath, cwd);
+  const roots = pathAliases(workspaceRoot);
   return candidates.some((candidate) =>
     roots.some((root) => isStartupExecutableRelative(candidate, root)));
 }
@@ -119,70 +155,86 @@ function isInProjectStartupExecutableWrite(targetPath: string, cwd: string, work
  * Reverse mutation: dropping this check lets in-project-looking writes skip confirmation
  * without a real-path fence (N-WRITETARGET-EXECTIME).
  */
-export const isOsWriteFenceAvailable = Object.assign(
-  function isOsWriteFenceAvailable(): boolean {
-    if (osWriteFenceAvailableOverride !== undefined) return osWriteFenceAvailableOverride;
-    if (process.platform === 'win32') return false;
-    try {
-      const manager = getSandboxManager();
-      // wrapCommand throws when disabled; treat disabled as "no fence" so skip-confirm
-      // falls back to ask instead of a hard SANDBOX_UNAVAILABLE error.
-      return manager.isAvailable() && manager.isEnabled();
-    } catch {
-      return false;
-    }
-  },
-  {
-    /** Test-only / eval-fixture pin for "fence present" or "fence absent". */
-    setAvailableOverrideForTest(value: boolean | undefined): void {
-      osWriteFenceAvailableOverride = value;
-    },
-  },
-);
+export function isOsWriteFenceAvailable(): boolean {
+  try {
+    const manager = getSandboxManager();
+    // wrapCommand throws when disabled; treat disabled as "no fence" so skip-confirm
+    // falls back to ask instead of a hard SANDBOX_UNAVAILABLE error.
+    return manager.isAvailable() && manager.isEnabled();
+  } catch {
+    return false;
+  }
+}
+
+function inspectFencedWrite(
+  command: string,
+  context: { workingDirectory: string; workspaceRoot?: string },
+): { workingDirectory: string; workspaceRoot: string; writeTargets: Array<{ path: string }> } | undefined {
+  if (!context.workspaceRoot) return undefined;
+  const workspaceRoot = tryCanonicalFencePath(context.workspaceRoot);
+  const workingDirectory = tryCanonicalFencePath(context.workingDirectory);
+  if (!workspaceRoot || !workingDirectory) return undefined;
+  if (QUOTED_REDIRECT_TARGET.test(command)) return undefined;
+  const parsed = parseShellCommand(command);
+  if (commandHasExpansionMarker(command, parsed)) return undefined;
+  if (parsed.parsingFailed || parsed.trailingOperator || parsed.uncertain.length > 0) return undefined;
+  if (parsed.segments.length !== 1) return undefined;
+  const segment = parsed.segments[0];
+  if (segment.terminator === '&' || segment.reads.length > 0) return undefined;
+  const writeTargets = parsed.writeTargets.filter((target) => target.path !== '/dev/null');
+  if (writeTargets.length === 0 || writeTargets.some((target) => target.uncertain)) return undefined;
+  if (parsed.executions.length !== 1) return undefined;
+  const execution = parsed.executions[0];
+  if (execution.wrappers.length > 0) return undefined;
+  if (execution.program.includes('/') || execution.program.includes('\\')) return undefined;
+  if (!FENCED_WRITE_PROGRAMS.has(execution.program)) return undefined;
+  if (execution.program === 'printf' && execution.args.some((arg) => arg === '-v' || arg.startsWith('-v'))) {
+    return undefined;
+  }
+  if ((execution.environmentAssignments ?? []).some((assignment) => LOOKUP_ASSIGNMENT.test(assignment))) {
+    return undefined;
+  }
+  if (writeTargets.some((target) => !SIMPLE_WRITE_PATH.test(target.path.replaceAll('\\', '/')))) return undefined;
+  return { workingDirectory, workspaceRoot, writeTargets };
+}
 
 /**
- * Narrow eligibility for "just write a file in the project". Not a proof of the
- * real write path — the OS fence is. Quote/compound/lookup/printf -v stay out.
+ * Wrap simple in-project-looking writes in the OS jail. Lexical inside only —
+ * user symlinks that escape the project stay fenced so seatbelt/bwrap is the gate.
+ */
+export function isFencedWriteSandboxEligible(
+  command: string,
+  context: { workingDirectory: string; workspaceRoot?: string },
+): boolean {
+  const inspected = inspectFencedWrite(command, context);
+  if (!inspected) return false;
+  return inspected.writeTargets.every((target) => (
+    looksLexicallyInsideWorkspace(target.path, inspected.workingDirectory, inspected.workspaceRoot)
+  ));
+}
+
+/**
+ * Narrow skip-confirm eligibility. Quote/compound/lookup/printf -v stay out.
+ * Canonical inside + credential/startup-config exclusions; the OS fence is still
+ * the write gate for lexical-in-project paths that resolve outside.
  */
 export function isFencedInProjectWriteEligible(
   command: string,
   context: { workingDirectory: string; workspaceRoot?: string },
 ): boolean {
-  if (!context.workspaceRoot) return false;
-  const workspaceRoot = tryCanonicalFencePath(context.workspaceRoot);
-  const workingDirectory = tryCanonicalFencePath(context.workingDirectory);
-  if (!workspaceRoot || !workingDirectory) return false;
-  if (QUOTED_REDIRECT_TARGET.test(command)) return false;
-  const parsed = parseShellCommand(command);
-  if (commandHasExpansionMarker(command, parsed)) return false;
-  if (parsed.parsingFailed || parsed.trailingOperator || parsed.uncertain.length > 0) return false;
-  if (parsed.segments.length !== 1) return false;
-  const segment = parsed.segments[0];
-  if (segment.terminator === '&' || segment.reads.length > 0) return false;
-  const writeTargets = parsed.writeTargets.filter((target) => target.path !== '/dev/null');
-  if (writeTargets.length === 0 || writeTargets.some((target) => target.uncertain)) return false;
-  if (parsed.executions.length !== 1) return false;
-  const execution = parsed.executions[0];
-  if (execution.wrappers.length > 0) return false;
-  if (execution.program.includes('/') || execution.program.includes('\\')) return false;
-  if (!FENCED_WRITE_PROGRAMS.has(execution.program)) return false;
-  if (execution.program === 'printf' && execution.args.some((arg) => arg === '-v' || arg.startsWith('-v'))) {
-    return false;
-  }
-  if ((execution.environmentAssignments ?? []).some((assignment) => LOOKUP_ASSIGNMENT.test(assignment))) {
-    return false;
-  }
+  const inspected = inspectFencedWrite(command, context);
+  if (!inspected) return false;
+  const { workingDirectory, workspaceRoot, writeTargets } = inspected;
   return writeTargets.every((target) => {
-    if (!SIMPLE_WRITE_PATH.test(target.path.replaceAll('\\', '/'))) return false;
-    if (!looksLexicallyInsideWorkspace(target.path, workingDirectory, workspaceRoot)) return false;
+    if (!looksInsideWorkspace(target.path, workingDirectory, workspaceRoot)) return false;
     // OS fence does not protect in-project .env* or constraint files.
     // Reverse mutation: drop credential check ⇒ printf x > .env auto-approves.
     // Reverse mutation: drop case fold in isSensitiveCredentialPath ⇒ printf x >> .ENV auto-approves.
     if (isInProjectCredentialWrite(target.path, workingDirectory, workspaceRoot)) return false;
     // Same shape as .env: protected writes lose auto-approve even when the OS jail is up.
     if (isInProjectProtectedWrite(target.path, workingDirectory, workspaceRoot)) return false;
-    // Reverse mutation: drop startup-executable prefixes ⇒ .git/hooks / .husky /
-    // .code-agent/settings.json skip confirmation while remaining in-project.
+    // Reverse mutation: drop startup-executable prefixes ⇒ .git/hooks / hooks.json /
+    // mcp.json skip confirmation while remaining in-project.
     if (isInProjectStartupExecutableWrite(target.path, workingDirectory, workspaceRoot)) return false;
     return true;
   });

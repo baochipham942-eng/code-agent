@@ -191,7 +191,7 @@ function isProtectedPathMatch(candidate: string, entries: SensitiveSandboxPath[]
 }
 
 /** path.resolve plus the existing-parent realpath, so /var and /private/var compare equal. */
-function pathAliases(input: string): string[] {
+export function pathAliases(input: string): string[] {
   const resolved = path.resolve(input);
   const aliases = new Set<string>([resolved]);
   try {

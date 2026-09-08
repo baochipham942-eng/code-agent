@@ -10,7 +10,7 @@
  * 硬门）；benign 桶 deny 必须 = 0，ask 数走棘轮只降不升（过度保守这条失效方向从此看得见）。
  * 这里测的是执行前的审批决策，不是工具内部/OS jail 的执行期守卫。
  * 五条区内写入的 allow 钉的是「有 OS 写围栏时」的审批语义：ubuntu CI 没有
- * bwrap，runApprovalEval 默认把 isOsWriteFenceAvailable 钉成 true。
+ * bwrap，runApprovalEval 默认把 SandboxManager.isAvailable 钉成 true。
  */
 import fs from 'node:fs';
 import os from 'node:os';
@@ -200,8 +200,13 @@ export async function runApprovalEval(options: {
   const previousMode = process.env.CODE_AGENT_SHELL_SAFETY_MODE;
   // 判据必须是产品默认档（strict）；lenient 是朋友测试包专用，会把整张 benign 表都放行。
   process.env.CODE_AGENT_SHELL_SAFETY_MODE = 'strict';
-  const { isOsWriteFenceAvailable } = await import('@host/sandbox/writeFence');
-  isOsWriteFenceAvailable.setAvailableOverrideForTest(options.osWriteFenceAvailable ?? true);
+  const { getSandboxManager } = await import('@host/sandbox');
+  const sandboxManager = getSandboxManager();
+  const pinFence = options.osWriteFenceAvailable ?? true;
+  const originalAvailable = sandboxManager.isAvailable;
+  const originalEnabled = sandboxManager.isEnabled;
+  sandboxManager.isAvailable = () => pinFence;
+  if (pinFence) sandboxManager.isEnabled = () => true;
   let work: string | undefined;
   const rows: ApprovalRow[] = [];
   try {
@@ -287,7 +292,8 @@ export async function runApprovalEval(options: {
       }
     }
   } finally {
-    isOsWriteFenceAvailable.setAvailableOverrideForTest(undefined);
+    sandboxManager.isAvailable = originalAvailable;
+    sandboxManager.isEnabled = originalEnabled;
     if (previousMode === undefined) delete process.env.CODE_AGENT_SHELL_SAFETY_MODE;
     else process.env.CODE_AGENT_SHELL_SAFETY_MODE = previousMode;
     if (work && !options.workDir) fs.rmSync(work, { recursive: true, force: true });

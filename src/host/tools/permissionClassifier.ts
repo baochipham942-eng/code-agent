@@ -888,12 +888,11 @@ export class PermissionClassifier {
     // Reverse mutation: drop isOsWriteFenceAvailable() ⇒ symlink/TOCTOU writes escape.
     // Reverse mutation: drop workingDirectoryFromToolCall ⇒ CLI auto-mode process.cwd()
     // re-run auto-approves a relative write while bash executes in the tool's outside cwd.
-    // Deny probe is on the original spelling; the single-segment branch below re-classifies
-    // reconstructed text when it differs (`printf "${VAR}"` → `printf \$\{VAR\} > out.txt`).
-    if (context.workingDirectoryFromToolCall === true && isFencedInProjectWriteEligible(command, context)
-      && isOsWriteFenceAvailable() && this.classifyBashSegment(command, context, startTime)?.decision !== 'deny') {
-      return { decision: 'approve', reason: FENCED_IN_PROJECT_WRITE_REASON, confidence: 0.95, cached: false, bypassCache: true };
-    }
+    // Eligible commands have no quotes/expansion, so original spelling matches the
+    // reconstructed single segment; reuse the probe instead of classifying twice.
+    const fenceEligible = context.workingDirectoryFromToolCall === true && isFencedInProjectWriteEligible(command, context) && isOsWriteFenceAvailable();
+    const fenceProbe = fenceEligible ? this.classifyBashSegment(command, context, startTime) : undefined;
+    if (fenceEligible && fenceProbe?.decision !== 'deny') return { decision: 'approve', reason: FENCED_IN_PROJECT_WRITE_REASON, confidence: 0.95, cached: false, bypassCache: true };
 
     // The shared parser reconstructs each segment with shell-safe quoting, so text
     // arguments remain one word while policy checks still consume canonical text.
@@ -918,7 +917,7 @@ export class PermissionClassifier {
 
     if (segments.length === 1) {
       // A segment's deny or specific ask outranks the generic redirection ask; only an approve yields.
-      const result = this.classifyBashSegment(segments[0], context, startTime);
+      const result = fenceProbe ?? this.classifyBashSegment(segments[0], context, startTime);
       return neverApprove(result) ?? rawInspection.outputRedirectionAsk ?? result;
     }
 

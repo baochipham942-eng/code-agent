@@ -59,6 +59,16 @@ import { resolveCanonicalRunPath } from '../../../src/host/runtime/runContext';
 import { getSandboxManager } from '../../../src/host/sandbox';
 import { isOsWriteFenceAvailable } from '../../../src/host/sandbox/writeFence';
 
+function pinOsWriteFenceAvailable(available: boolean): () => void {
+  const manager = getSandboxManager();
+  const availableSpy = vi.spyOn(manager, 'isAvailable').mockReturnValue(available);
+  const enabledSpy = vi.spyOn(manager, 'isEnabled').mockReturnValue(available);
+  return () => {
+    availableSpy.mockRestore();
+    enabledSpy.mockRestore();
+  };
+}
+
 describe('ToolExecutor Bash 安全命令单一判据', () => {
   let workspace: string;
   let permissionRequests: PermissionRequestData[];
@@ -697,7 +707,7 @@ describe('ToolExecutor Bash 安全命令单一判据', () => {
     });
 
     it('echo "100$" > out.txt 整条链路弹卡且不报错', async () => {
-      isOsWriteFenceAvailable.setAvailableOverrideForTest(true);
+      const unpin = pinOsWriteFenceAvailable(true);
       try {
         expect(isOsWriteFenceAvailable()).toBe(true);
         const rejecting = buildRejectingExecutor();
@@ -711,12 +721,12 @@ describe('ToolExecutor Bash 安全命令单一判据', () => {
         expect(rejected.success).toBe(false);
         expect(existsSync(path.join(workspace, 'out.txt'))).toBe(false);
       } finally {
-        isOsWriteFenceAvailable.setAvailableOverrideForTest(undefined);
+        unpin();
       }
     });
 
     it('printf PWNED=1 >> .ENV 整条链路仍弹卡', async () => {
-      isOsWriteFenceAvailable.setAvailableOverrideForTest(true);
+      const unpin = pinOsWriteFenceAvailable(true);
       try {
         expect(isOsWriteFenceAvailable()).toBe(true);
         const rejecting = buildRejectingExecutor();
@@ -731,7 +741,7 @@ describe('ToolExecutor Bash 安全命令单一判据', () => {
         expect(existsSync(path.join(workspace, '.env'))).toBe(false);
         expect(existsSync(path.join(workspace, '.ENV'))).toBe(false);
       } finally {
-        isOsWriteFenceAvailable.setAvailableOverrideForTest(undefined);
+        unpin();
       }
     });
 
@@ -740,8 +750,9 @@ describe('ToolExecutor Bash 安全命令单一判据', () => {
       ['printf x > .GIT/hooks/pre-commit', '.GIT/hooks/pre-commit'],
       ['printf x > .husky/pre-commit', '.husky/pre-commit'],
       ['printf x > .code-agent/settings.json', '.code-agent/settings.json'],
+      ['printf x > .code-agent/hooks/hooks.json', '.code-agent/hooks/hooks.json'],
     ])('%s 整条链路仍弹卡', async (command, relative) => {
-      isOsWriteFenceAvailable.setAvailableOverrideForTest(true);
+      const unpin = pinOsWriteFenceAvailable(true);
       try {
         expect(isOsWriteFenceAvailable()).toBe(true);
         const rejecting = buildRejectingExecutor();
@@ -755,12 +766,12 @@ describe('ToolExecutor Bash 安全命令单一判据', () => {
         expect(rejected.success).toBe(false);
         expect(existsSync(path.join(workspace, relative))).toBe(false);
       } finally {
-        isOsWriteFenceAvailable.setAvailableOverrideForTest(undefined);
+        unpin();
       }
     });
 
     it("printf '[core] hooksPath' > .GIT/config 整条链路仍弹卡", async () => {
-      isOsWriteFenceAvailable.setAvailableOverrideForTest(true);
+      const unpin = pinOsWriteFenceAvailable(true);
       try {
         expect(isOsWriteFenceAvailable()).toBe(true);
         const rejecting = buildRejectingExecutor();
@@ -775,12 +786,12 @@ describe('ToolExecutor Bash 安全命令单一判据', () => {
         expect(existsSync(path.join(workspace, '.git', 'config'))).toBe(false);
         expect(existsSync(path.join(workspace, '.GIT', 'config'))).toBe(false);
       } finally {
-        isOsWriteFenceAvailable.setAvailableOverrideForTest(undefined);
+        unpin();
       }
     });
 
     it('printf x > .env 整条链路仍弹卡，批准后照常执行', async () => {
-      isOsWriteFenceAvailable.setAvailableOverrideForTest(true);
+      const unpin = pinOsWriteFenceAvailable(true);
       try {
         expect(isOsWriteFenceAvailable()).toBe(true);
         const rejecting = buildRejectingExecutor();
@@ -805,7 +816,7 @@ describe('ToolExecutor Bash 安全命令单一判据', () => {
         expect(granted.success).toBe(true);
         expect(await fs.readFile(path.join(workspace, '.env'), 'utf8')).toContain('x');
       } finally {
-        isOsWriteFenceAvailable.setAvailableOverrideForTest(undefined);
+        unpin();
       }
     });
 

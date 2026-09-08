@@ -26,6 +26,16 @@ import {
   isOsWriteFenceAvailable,
 } from '../../../src/host/sandbox/writeFence';
 
+function pinOsWriteFenceAvailable(available: boolean): () => void {
+  const manager = getSandboxManager();
+  const availableSpy = vi.spyOn(manager, 'isAvailable').mockReturnValue(available);
+  const enabledSpy = vi.spyOn(manager, 'isEnabled').mockReturnValue(available);
+  return () => {
+    availableSpy.mockRestore();
+    enabledSpy.mockRestore();
+  };
+}
+
 describe('PermissionClassifier', () => {
   beforeEach(() => {
     getPermissionClassifier().clearCache();
@@ -1237,7 +1247,7 @@ describe('PermissionClassifier', () => {
       'printf PWNED=1 >> .ENV',
       'printf x > .Env.local',
     ])('%s 在围栏可用时仍 ask 不免确认', async (command) => {
-      isOsWriteFenceAvailable.setAvailableOverrideForTest(true);
+      const unpin = pinOsWriteFenceAvailable(true);
       const root = await fs.mkdtemp(path.join(os.tmpdir(), 'exectime-env-'));
       try {
         expect(isOsWriteFenceAvailable()).toBe(true);
@@ -1249,7 +1259,7 @@ describe('PermissionClassifier', () => {
         expect(result.decision).toBe('ask');
         expect(result.reason).not.toBe(FENCED_IN_PROJECT_WRITE_REASON);
       } finally {
-        isOsWriteFenceAvailable.setAvailableOverrideForTest(undefined);
+        unpin();
         await fs.rm(root, { recursive: true, force: true });
       }
     });
@@ -1262,7 +1272,7 @@ describe('PermissionClassifier', () => {
       'printf "${VAR}" > out.txt',
       'echo "100$" > out.txt',
     ])('%s 在围栏可用时仍 ask 不免确认', async (command) => {
-      isOsWriteFenceAvailable.setAvailableOverrideForTest(true);
+      const unpin = pinOsWriteFenceAvailable(true);
       const root = await fs.mkdtemp(path.join(os.tmpdir(), 'exectime-expand-'));
       try {
         expect(isOsWriteFenceAvailable()).toBe(true);
@@ -1274,7 +1284,7 @@ describe('PermissionClassifier', () => {
         expect(result.decision).toBe('ask');
         expect(result.reason).not.toBe(FENCED_IN_PROJECT_WRITE_REASON);
       } finally {
-        isOsWriteFenceAvailable.setAvailableOverrideForTest(undefined);
+        unpin();
         await fs.rm(root, { recursive: true, force: true });
       }
     });
@@ -1285,7 +1295,7 @@ describe('PermissionClassifier', () => {
       'printf x > .GitConfig',
       'printf x > .NPMRC',
     ])('%s 在围栏可用时仍 ask 不免确认', async (command) => {
-      isOsWriteFenceAvailable.setAvailableOverrideForTest(true);
+      const unpin = pinOsWriteFenceAvailable(true);
       const root = await fs.mkdtemp(path.join(os.tmpdir(), 'exectime-protected-'));
       try {
         expect(isOsWriteFenceAvailable()).toBe(true);
@@ -1297,13 +1307,13 @@ describe('PermissionClassifier', () => {
         expect(result.decision).toBe('ask');
         expect(result.reason).not.toBe(FENCED_IN_PROJECT_WRITE_REASON);
       } finally {
-        isOsWriteFenceAvailable.setAvailableOverrideForTest(undefined);
+        unpin();
         await fs.rm(root, { recursive: true, force: true });
       }
     });
 
     it('printf x > .env 在 /var↔/private/var 别名项目根下仍 ask', async () => {
-      isOsWriteFenceAvailable.setAvailableOverrideForTest(true);
+      const unpin = pinOsWriteFenceAvailable(true);
       try {
         expect(isOsWriteFenceAvailable()).toBe(true);
         const result = await classifyPermission(
@@ -1314,12 +1324,12 @@ describe('PermissionClassifier', () => {
         expect(result.decision).toBe('ask');
         expect(result.reason).not.toBe(FENCED_IN_PROJECT_WRITE_REASON);
       } finally {
-        isOsWriteFenceAvailable.setAvailableOverrideForTest(undefined);
+        unpin();
       }
     });
 
     it('auto 档重跑形状：working_directory 指向区外 + 分类 cwd 为项目根 ⇒ 不得围栏免确认', async () => {
-      isOsWriteFenceAvailable.setAvailableOverrideForTest(true);
+      const unpin = pinOsWriteFenceAvailable(true);
       const root = await fs.mkdtemp(path.join(os.tmpdir(), 'exectime-auto-cwd-'));
       try {
         expect(isOsWriteFenceAvailable()).toBe(true);
@@ -1334,7 +1344,7 @@ describe('PermissionClassifier', () => {
         expect(result.decision).toBe('ask');
         expect(result.reason).not.toBe(FENCED_IN_PROJECT_WRITE_REASON);
       } finally {
-        isOsWriteFenceAvailable.setAvailableOverrideForTest(undefined);
+        unpin();
         await fs.rm(root, { recursive: true, force: true });
       }
     });
@@ -1346,8 +1356,11 @@ describe('PermissionClassifier', () => {
       'printf x > .HUSKY/pre-commit',
       'printf x > .code-agent/settings.json',
       'printf x > .CODE-AGENT/settings.json',
+      'printf x > .code-agent/hooks/hooks.json',
+      'printf x > .CODE-AGENT/hooks/hooks.json',
+      'printf x > .claude/settings.json',
     ])('%s 在围栏可用时仍 ask 不免确认', async (command) => {
-      isOsWriteFenceAvailable.setAvailableOverrideForTest(true);
+      const unpin = pinOsWriteFenceAvailable(true);
       const root = await fs.mkdtemp(path.join(os.tmpdir(), 'exectime-hooks-'));
       try {
         expect(isOsWriteFenceAvailable()).toBe(true);
@@ -1359,7 +1372,47 @@ describe('PermissionClassifier', () => {
         expect(result.decision).toBe('ask');
         expect(result.reason).not.toBe(FENCED_IN_PROJECT_WRITE_REASON);
       } finally {
-        isOsWriteFenceAvailable.setAvailableOverrideForTest(undefined);
+        unpin();
+        await fs.rm(root, { recursive: true, force: true });
+      }
+    });
+
+    it('deploy -> .git/hooks 软链写入在围栏可用时仍 ask 不免确认', async () => {
+      const unpin = pinOsWriteFenceAvailable(true);
+      const root = await fs.mkdtemp(path.join(os.tmpdir(), 'exectime-deploy-link-'));
+      try {
+        await fs.mkdir(path.join(root, '.git', 'hooks'), { recursive: true });
+        await fs.symlink(path.join(root, '.git', 'hooks'), path.join(root, 'deploy'));
+        expect(isOsWriteFenceAvailable()).toBe(true);
+        const result = await classifyPermission(
+          'Bash',
+          { command: 'printf x > deploy/pre-commit' },
+          executorFenceContext(root),
+        );
+        expect(result.decision).toBe('ask');
+        expect(result.reason).not.toBe(FENCED_IN_PROJECT_WRITE_REASON);
+      } finally {
+        unpin();
+        await fs.rm(root, { recursive: true, force: true });
+      }
+    });
+
+    it('cache.txt -> .env 软链写入在围栏可用时仍 ask 不免确认', async () => {
+      const unpin = pinOsWriteFenceAvailable(true);
+      const root = await fs.mkdtemp(path.join(os.tmpdir(), 'exectime-cache-link-'));
+      try {
+        await fs.writeFile(path.join(root, '.env'), 'OLD=1\n');
+        await fs.symlink(path.join(root, '.env'), path.join(root, 'cache.txt'));
+        expect(isOsWriteFenceAvailable()).toBe(true);
+        const result = await classifyPermission(
+          'Bash',
+          { command: 'printf x > cache.txt' },
+          executorFenceContext(root),
+        );
+        expect(result.decision).toBe('ask');
+        expect(result.reason).not.toBe(FENCED_IN_PROJECT_WRITE_REASON);
+      } finally {
+        unpin();
         await fs.rm(root, { recursive: true, force: true });
       }
     });

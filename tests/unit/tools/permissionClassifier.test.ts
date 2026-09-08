@@ -1183,7 +1183,6 @@ describe('PermissionClassifier', () => {
       expect(first.bypassCache).toBe(true);
       expect(first.cached).toBe(false);
       expect(second.cached).toBe(false);
-      expect(second.decision === 'approve' ? second.cached : false).toBe(false);
     }
 
     function assertAskNotApprove(

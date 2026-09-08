@@ -2,7 +2,7 @@ import path from 'node:path';
 import { parseShellCommand } from '../security/commandParse';
 import { resolveCanonicalRunPath } from '../runtime/runContext';
 import { getSandboxManager } from './manager';
-import { isSensitiveCredentialPath } from './sensitivePaths';
+import { isProtectedWritePath, isSensitiveCredentialPath } from './sensitivePaths';
 
 const FENCED_WRITE_PROGRAMS = new Set(['printf', 'echo', 'tee']);
 /** Lookup / startup-file assignments that can change what the fenced command runs. Not an exhaustive bash env list. */
@@ -86,6 +86,13 @@ function isInProjectCredentialWrite(targetPath: string, cwd: string, workspaceRo
     roots.some((root) => isSensitiveCredentialPath(candidate, { projectRoot: root })));
 }
 
+function isInProjectProtectedWrite(targetPath: string, cwd: string, workspaceRoot: string): boolean {
+  const candidates = lexicalPathAliases(path.resolve(cwd, targetPath));
+  const roots = lexicalPathAliases(workspaceRoot);
+  return candidates.some((candidate) =>
+    roots.some((root) => isProtectedWritePath(candidate, { projectRoot: root })));
+}
+
 /**
  * OS write fence is present (seatbelt/bwrap). Windows and missing jail are not.
  * Reverse mutation: dropping this check lets in-project-looking writes skip confirmation
@@ -134,17 +141,22 @@ export function isFencedInProjectWriteEligible(
   const execution = parsed.executions[0];
   if (execution.wrappers.length > 0) return false;
   if (execution.program.includes('/') || execution.program.includes('\\')) return false;
-  const program = path.posix.basename(execution.program);
-  if (!FENCED_WRITE_PROGRAMS.has(program)) return false;
-  if (program === 'printf' && execution.args.some((arg) => arg === '-v' || arg.startsWith('-v'))) return false;
+  if (!FENCED_WRITE_PROGRAMS.has(execution.program)) return false;
+  if (execution.program === 'printf' && execution.args.some((arg) => arg === '-v' || arg.startsWith('-v'))) {
+    return false;
+  }
   if ((execution.environmentAssignments ?? []).some((assignment) => LOOKUP_ASSIGNMENT.test(assignment))) {
     return false;
   }
   return writeTargets.every((target) => {
     if (!SIMPLE_WRITE_PATH.test(target.path.replaceAll('\\', '/'))) return false;
     if (!looksLexicallyInsideWorkspace(target.path, workingDirectory, workspaceRoot)) return false;
-    // OS fence does not protect in-project .env*; keep those on the confirmation path.
-    // Reverse mutation: drop this check ⇒ printf x > .env auto-approves.
-    return !isInProjectCredentialWrite(target.path, workingDirectory, workspaceRoot);
+    // OS fence does not protect in-project .env* or constraint files.
+    // Reverse mutation: drop credential check ⇒ printf x > .env auto-approves.
+    // Reverse mutation: drop case fold in isSensitiveCredentialPath ⇒ printf x >> .ENV auto-approves.
+    if (isInProjectCredentialWrite(target.path, workingDirectory, workspaceRoot)) return false;
+    // Same shape as .env: protected writes lose auto-approve even when the OS jail is up.
+    if (isInProjectProtectedWrite(target.path, workingDirectory, workspaceRoot)) return false;
+    return true;
   });
 }

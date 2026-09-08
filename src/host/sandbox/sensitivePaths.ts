@@ -49,6 +49,21 @@ const DATA_DIR_SECRET_FILES = [
   'code-agent.db',
 ];
 
+/** Reserved `.env*` names fold on every platform. Linux extra asks are the safe direction. */
+function isEnvFamilyFileName(fileName: string): boolean {
+  return fileName.toLowerCase().startsWith('.env');
+}
+
+function pathEqualsFold(left: string, right: string): boolean {
+  return left === right || left.toLowerCase() === right.toLowerCase();
+}
+
+function pathIsInsideFold(candidate: string, root: string): boolean {
+  if (pathEqualsFold(candidate, root)) return true;
+  const prefix = root.endsWith(path.sep) ? root : `${root}${path.sep}`;
+  return candidate.toLowerCase().startsWith(prefix.toLowerCase());
+}
+
 export function getSensitiveSandboxPaths(
   options: SensitiveSandboxPathOptions = {},
 ): SensitiveSandboxPath[] {
@@ -104,6 +119,13 @@ export function isSensitiveCredentialPath(
   }
 
   if (
+    pathEqualsFold(path.dirname(candidate), homeDir)
+    && isEnvFamilyFileName(path.basename(candidate))
+  ) {
+    return true;
+  }
+
+  if (
     path.dirname(candidate) === homeDir
     && HOME_SECRET_FILE_PREFIXES.some((prefix) => path.basename(candidate).startsWith(prefix))
   ) {
@@ -115,7 +137,8 @@ export function isSensitiveCredentialPath(
     const relative = path.relative(projectRoot, candidate);
     const isInsideProject = relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
     const name = path.basename(candidate);
-    if (isInsideProject && name.startsWith('.env')) {
+    // Reverse mutation: drop toLowerCase ⇒ `.ENV` / `.Env.local` stop matching.
+    if (isInsideProject && isEnvFamilyFileName(name)) {
       return true;
     }
   }
@@ -155,7 +178,16 @@ const PROTECTED_DATA_DIR_FILES = [
 ];
 
 function isProtectedSettingsFileName(fileName: string): boolean {
-  return fileName.startsWith('settings') && fileName.endsWith('.json');
+  const lower = fileName.toLowerCase();
+  return lower.startsWith('settings') && lower.endsWith('.json');
+}
+
+function isProtectedPathMatch(candidate: string, entries: SensitiveSandboxPath[]): boolean {
+  return entries.some((entry) => {
+    const denied = path.resolve(entry.path);
+    if (entry.kind === 'file') return pathEqualsFold(candidate, denied);
+    return pathIsInsideFold(candidate, denied);
+  });
 }
 
 /** path.resolve plus the existing-parent realpath, so /var and /private/var compare equal. */
@@ -257,13 +289,13 @@ export const isProtectedWritePath = Object.assign(
     for (const candidate of candidateAliases) {
       for (const resolvedDataDir of dataDirAliases) {
         if (
-          path.dirname(candidate) === resolvedDataDir
+          pathEqualsFold(path.dirname(candidate), resolvedDataDir)
           && isProtectedSettingsFileName(path.basename(candidate))
         ) {
           return true;
         }
       }
-      if (isPathDeniedBySensitiveSandboxPath(candidate, protectedEntries)) return true;
+      if (isProtectedPathMatch(candidate, protectedEntries)) return true;
     }
     return false;
   },

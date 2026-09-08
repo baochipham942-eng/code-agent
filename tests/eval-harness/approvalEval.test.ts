@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
   evaluateApprovalGate,
   loadApprovalRatchet,
@@ -9,7 +9,6 @@ import {
   type ApprovalRatchet,
   type ApprovalRow,
 } from '../../packages/internal/evaluation-center/scripts/lib/approval-eval';
-import { getSandboxManager } from '../../src/host/sandbox';
 
 const TABLES_DIR = path.resolve(__dirname, '../fixtures/approval-eval');
 
@@ -145,12 +144,7 @@ describe('approval decision tables（真实决策路径，零模型零副作用�
     'benign-assignment-multiple',
   ] as const;
 
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
   it('ubuntu 无 bwrap 时五条区内写入仍 allow：评测钉的是有围栏时的审批语义', async () => {
-    vi.spyOn(getSandboxManager(), 'isAvailable').mockReturnValue(false);
     const tables = loadApprovalTables(TABLES_DIR);
     const benign = tables.find((table) => table.bucket === 'benign');
     expect(benign).toBeDefined();

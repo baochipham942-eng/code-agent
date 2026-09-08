@@ -61,7 +61,8 @@ function splitByCode(markdown: string): Array<{ text: string; isCode: boolean }>
 function isInsideMarkdownLink(text: string, matchIndex: number, matchLength: number): boolean {
   // Preserve the entire link label, including paths inside command actions.
   for (const link of text.matchAll(/\[(?:[^\]\n]|\\.)*\]\([^\n]*?\)/g)) {
-    if (matchIndex >= link.index! && matchIndex + matchLength <= link.index! + link[0].length) return true;
+    const start = link.index;
+    if (matchIndex >= start && matchIndex + matchLength <= start + link[0].length) return true;
   }
   // Check if preceded by ]( — markdown link target
   const before = text.slice(Math.max(0, matchIndex - 2), matchIndex);

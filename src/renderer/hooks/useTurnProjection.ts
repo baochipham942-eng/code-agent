@@ -887,8 +887,10 @@ function markRecoveredFailures(turns: TraceTurn[]): void {
       const args = tc.args;
       const path = args?.file_path ?? args?.path;
       if (typeof path !== 'string') return null;
-      const edits = Array.isArray(args?.edits) ? args.edits : [{ old_text: args?.old_string, new_text: args?.new_string }];
-      if (!edits.length || edits.some((edit) => !edit || typeof edit.old_text !== 'string' || typeof edit.new_text !== 'string')) return null;
+      const edits: unknown[] = Array.isArray(args?.edits) ? args.edits : [{ old_text: args?.old_string, new_text: args?.new_string }];
+      if (!edits.length || !edits.every((edit): edit is { old_text: string; new_text: string; replace_all?: unknown } =>
+        typeof edit === 'object' && edit !== null && 'old_text' in edit && typeof edit.old_text === 'string'
+        && 'new_text' in edit && typeof edit.new_text === 'string')) return null;
       return JSON.stringify([path.replace(/^\.\//, ''), edits.map((edit) => [edit.old_text, edit.new_text, edit.replace_all === true]), args?.replace_all === true]);
     };
     // 从后往前扫：到达某个失败工具节点时，laterSuccess 已反映它"之后"是否出现过成功标志。

@@ -1,14 +1,21 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { CONFIG_DIR_NEW } from '../../../../src/shared/constants/configDir';
+import { MAX_DEV_SLOT, devSlotDataDirName } from '../../../../src/shared/devSlot';
 import {
   getSensitiveSandboxPaths,
   isSensitiveCredentialPath,
   isPathDeniedBySensitiveSandboxPath,
+  isProtectedWritePath,
 } from '../../../../src/host/sandbox/sensitivePaths';
 
 describe('sensitive sandbox paths', () => {
+  beforeEach(() => {
+    isProtectedWritePath.resetCacheForTest();
+  });
+
   it('denies home-level secrets without denying workspace .env files', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sensitive-paths-'));
     try {
@@ -36,7 +43,7 @@ describe('sensitive sandbox paths', () => {
     }
   });
 
-  it('covers production, dev, and explicit CODE_AGENT_DATA_DIR secret files', () => {
+  it('covers production, every dev slot, and explicit CODE_AGENT_DATA_DIR secret files', () => {
     const home = '/Users/tester';
     const explicitDataDir = '/tmp/code-agent-data';
     const entries = getSensitiveSandboxPaths({
@@ -44,11 +51,14 @@ describe('sensitive sandbox paths', () => {
       env: { CODE_AGENT_DATA_DIR: explicitDataDir },
     });
 
-    for (const dataDir of [
+    const dataDirs = [
       explicitDataDir,
-      path.join(home, '.code-agent'),
-      path.join(home, '.code-agent-dev'),
-    ]) {
+      path.join(home, CONFIG_DIR_NEW),
+      ...Array.from({ length: MAX_DEV_SLOT }, (_, index) => (
+        path.join(home, devSlotDataDirName(index + 1))
+      )),
+    ];
+    for (const dataDir of dataDirs) {
       expect(entries).toContainEqual({ kind: 'file', path: path.join(dataDir, '.secure-key') });
       expect(entries).toContainEqual({ kind: 'file', path: path.join(dataDir, 'secure-storage.json') });
       expect(entries).toContainEqual({ kind: 'file', path: path.join(dataDir, '.env') });
@@ -66,5 +76,30 @@ describe('sensitive sandbox paths', () => {
     expect(isSensitiveCredentialPath('/Users/tester/work/repo/.env.example', { homeDir: home, projectRoot: project })).toBe(true);
     expect(isSensitiveCredentialPath('/Users/tester/work/repo/.envrc', { homeDir: home, projectRoot: project })).toBe(true);
     expect(isSensitiveCredentialPath('/Users/tester/work/repo/README.md', { homeDir: home, projectRoot: project })).toBe(false);
+  });
+
+  it('classifies Neo constraint files and workspace git/npm config as protected writes', () => {
+    const home = '/Users/tester';
+    const project = '/Users/tester/work/repo';
+    const dataDir = '/tmp/code-agent-data';
+    const opts = { homeDir: home, projectRoot: project, env: { CODE_AGENT_DATA_DIR: dataDir } };
+
+    expect(isProtectedWritePath(path.join(dataDir, 'settings.json'), opts)).toBe(true);
+    expect(isProtectedWritePath(path.join(dataDir, 'settings.local.json'), opts)).toBe(true);
+    expect(isProtectedWritePath(path.join(dataDir, 'policy.toml'), opts)).toBe(true);
+    expect(isProtectedWritePath(path.join(dataDir, 'hooks', 'hooks.json'), opts)).toBe(true);
+    expect(isProtectedWritePath(path.join(dataDir, 'session-permission-modes.json'), opts)).toBe(true);
+    expect(isProtectedWritePath(path.join(dataDir, 'exec-policy.json'), opts)).toBe(true);
+    expect(isProtectedWritePath(path.join(project, CONFIG_DIR_NEW, 'exec-policy.json'), opts)).toBe(true);
+    expect(isProtectedWritePath(path.join(project, 'code-agent-policy.toml'), opts)).toBe(true);
+    expect(isProtectedWritePath(path.join(project, '.git', 'config'), opts)).toBe(true);
+    expect(isProtectedWritePath(path.join(project, '.gitconfig'), opts)).toBe(true);
+    expect(isProtectedWritePath(path.join(project, '.npmrc'), opts)).toBe(true);
+    expect(isProtectedWritePath(path.join(home, devSlotDataDirName(2), 'settings.json'), opts)).toBe(true);
+    expect(isProtectedWritePath(path.join(home, devSlotDataDirName(9), 'policy.toml'), opts)).toBe(true);
+    expect(isProtectedWritePath(path.join(project, 'notes.txt'), opts)).toBe(false);
+    expect(isProtectedWritePath(path.join(dataDir, 'notes.txt'), opts)).toBe(false);
+    expect(isProtectedWritePath(path.join(dataDir, 'code-agent-policy.toml'), opts)).toBe(false);
+    expect(isProtectedWritePath(path.join(dataDir, CONFIG_DIR_NEW, 'exec-policy.json'), opts)).toBe(false);
   });
 });

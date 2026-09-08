@@ -1,6 +1,8 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { CONFIG_DIR_NEW } from '../../shared/constants/configDir';
+import { MAX_DEV_SLOT, devSlotDataDirName } from '../../shared/devSlot';
 
 export type SensitiveSandboxPathKind = 'directory' | 'file';
 
@@ -133,6 +135,146 @@ export function isPathDeniedBySensitiveSandboxPath(
   });
 }
 
+interface ProtectedWritePathOptions {
+  homeDir?: string;
+  projectRoot?: string;
+  env?: Partial<Pick<NodeJS.ProcessEnv, 'CODE_AGENT_DATA_DIR'>>;
+}
+
+// As-built user-level files under getUserConfigDir() / candidate data dirs.
+// Project-level counterparts live on projectRoot (see isProtectedWritePath).
+// ponytail: coverage ceiling is the closed as-built default, not a full Neo
+// config inventory. Known gaps (same baseline verdict, not a regression):
+// project-level `.code-agent/settings.json`, `permissions.json`,
+// `hooks/hooks.json`, `mcp.json`; user-level `permissions.json` / `mcp.json`.
+const PROTECTED_DATA_DIR_FILES = [
+  'policy.toml',
+  'session-permission-modes.json',
+  'exec-policy.json',
+  'hooks.json',
+];
+
+function isProtectedSettingsFileName(fileName: string): boolean {
+  return fileName.startsWith('settings') && fileName.endsWith('.json');
+}
+
+/** path.resolve plus the existing-parent realpath, so /var and /private/var compare equal. */
+function pathAliases(input: string): string[] {
+  const resolved = path.resolve(input);
+  const aliases = new Set<string>([resolved]);
+  try {
+    aliases.add(fs.realpathSync(resolved));
+  } catch {
+    try {
+      aliases.add(path.join(fs.realpathSync(path.dirname(resolved)), path.basename(resolved)));
+    } catch {
+      // keep the lexical form; comparison stays existence-independent
+    }
+  }
+  return [...aliases];
+}
+
+interface ProtectedWritePathAnchors {
+  key: string;
+  dataDirAliases: string[];
+  homeAliases: string[];
+  projectRootAliases: string[];
+}
+
+let protectedWritePathAnchors: ProtectedWritePathAnchors | null = null;
+
+function protectedWriteAnchorKey(
+  homeDir: string,
+  env: Partial<Pick<NodeJS.ProcessEnv, 'CODE_AGENT_DATA_DIR'>>,
+  projectRoot: string | undefined,
+): string {
+  return `${homeDir}\0${env.CODE_AGENT_DATA_DIR?.trim() ?? ''}\0${projectRoot ?? ''}`;
+}
+
+/**
+ * Data-dir / home / projectRoot aliases do not depend on the candidate path.
+ * Memoize by (home, CODE_AGENT_DATA_DIR, projectRoot) so env-overriding tests
+ * still pierce the cache when any of those three change.
+ */
+function getProtectedWritePathAnchors(
+  homeDir: string,
+  env: Partial<Pick<NodeJS.ProcessEnv, 'CODE_AGENT_DATA_DIR'>>,
+  projectRoot: string | undefined,
+): ProtectedWritePathAnchors {
+  const key = protectedWriteAnchorKey(homeDir, env, projectRoot);
+  if (protectedWritePathAnchors?.key === key) return protectedWritePathAnchors;
+  protectedWritePathAnchors = {
+    key,
+    dataDirAliases: getCandidateDataDirs(homeDir, env).flatMap(pathAliases),
+    homeAliases: pathAliases(homeDir),
+    projectRootAliases: projectRoot ? pathAliases(projectRoot) : [],
+  };
+  return protectedWritePathAnchors;
+}
+
+/**
+ * Writes that would let the agent rewrite the constraints that bind it.
+ * Comparison is the same path.resolve / prefix check as
+ * isSensitiveCredentialPath / isPathDeniedBySensitiveSandboxPath.
+ * The list is a closed default: callers may only tighten, never disable.
+ */
+export const isProtectedWritePath = Object.assign(
+  function isProtectedWritePath(
+    candidatePath: string,
+    options: ProtectedWritePathOptions = {},
+  ): boolean {
+    const homeDir = path.resolve(options.homeDir ?? os.homedir());
+    const env = options.env ?? process.env;
+    const { dataDirAliases, homeAliases, projectRootAliases } = getProtectedWritePathAnchors(
+      homeDir,
+      env,
+      options.projectRoot,
+    );
+    const candidateAliases = pathAliases(candidatePath);
+    const entries: SensitiveSandboxPath[] = [];
+
+    for (const resolvedDataDir of dataDirAliases) {
+      for (const fileName of PROTECTED_DATA_DIR_FILES) {
+        entries.push({ kind: 'file', path: path.join(resolvedDataDir, fileName) });
+      }
+      entries.push({ kind: 'directory', path: path.join(resolvedDataDir, 'hooks') });
+    }
+
+    for (const projectRoot of projectRootAliases) {
+      entries.push({ kind: 'file', path: path.join(projectRoot, '.git', 'config') });
+      entries.push({ kind: 'file', path: path.join(projectRoot, '.gitconfig') });
+      entries.push({ kind: 'file', path: path.join(projectRoot, '.npmrc') });
+      entries.push({ kind: 'file', path: path.join(projectRoot, CONFIG_DIR_NEW, 'exec-policy.json') });
+      entries.push({ kind: 'file', path: path.join(projectRoot, 'code-agent-policy.toml') });
+    }
+
+    for (const resolvedHome of homeAliases) {
+      entries.push({ kind: 'file', path: path.join(resolvedHome, '.gitconfig') });
+      entries.push({ kind: 'file', path: path.join(resolvedHome, '.npmrc') });
+    }
+
+    const protectedEntries = dedupeSensitivePaths(entries);
+    for (const candidate of candidateAliases) {
+      for (const resolvedDataDir of dataDirAliases) {
+        if (
+          path.dirname(candidate) === resolvedDataDir
+          && isProtectedSettingsFileName(path.basename(candidate))
+        ) {
+          return true;
+        }
+      }
+      if (isPathDeniedBySensitiveSandboxPath(candidate, protectedEntries)) return true;
+    }
+    return false;
+  },
+  {
+    /** Test-only: drop the (home, env, projectRoot) alias cache. */
+    resetCacheForTest(): void {
+      protectedWritePathAnchors = null;
+    },
+  },
+);
+
 function enumerateHomeSecretPrefixMatches(homeDir: string): string[] {
   let fileNames: string[];
   try {
@@ -152,8 +294,10 @@ function getCandidateDataDirs(
 ): string[] {
   const dirs = [
     env.CODE_AGENT_DATA_DIR?.trim() ? path.resolve(env.CODE_AGENT_DATA_DIR.trim()) : undefined,
-    path.join(homeDir, '.code-agent'),
-    path.join(homeDir, '.code-agent-dev'),
+    path.join(homeDir, CONFIG_DIR_NEW),
+    ...Array.from({ length: MAX_DEV_SLOT }, (_, index) => (
+      path.join(homeDir, devSlotDataDirName(index + 1))
+    )),
   ].filter((dir): dir is string => Boolean(dir));
 
   return Array.from(new Set(dirs));

@@ -289,6 +289,33 @@ describe('ToolExecutor Bash 安全命令单一判据', () => {
     });
   });
 
+  it('受保护路径不被 allow 放行：Edit(**)+预批写 settings.json 仍要审批且 forceConfirm', async () => {
+    const { getPolicyEngine, resetPolicyEngine } = await import('../../../src/host/permissions/policyEngine');
+    const previousDataDir = process.env.CODE_AGENT_DATA_DIR;
+    const dataDir = path.join(workspace, 'neo-data');
+    await fs.mkdir(dataDir, { recursive: true });
+    process.env.CODE_AGENT_DATA_DIR = dataDir;
+    resetPolicyEngine();
+    getPolicyEngine().loadUserRules({ allow: ['Edit(**)', 'Write(**)'] });
+    try {
+      const target = path.join(dataDir, 'settings.json');
+      const executor = buildRejectingExecutor();
+      const result = await executor.execute(
+        'Write',
+        { file_path: target, content: 'pwned' },
+        { sessionId: 'protected-write-settings-allow', preApprovedTools: new Set(['Write', 'Edit']) },
+      );
+      expect(permissionRequests).toHaveLength(1);
+      expect(permissionRequests[0].forceConfirm).toBe(true);
+      expect(result.success).toBe(false);
+      expect(existsSync(target)).toBe(false);
+    } finally {
+      resetPolicyEngine();
+      if (previousDataDir === undefined) delete process.env.CODE_AGENT_DATA_DIR;
+      else process.env.CODE_AGENT_DATA_DIR = previousDataDir;
+    }
+  });
+
   describe('N-WRITETARGET-UNRESOLVED：uncertain 写目标 + 路径 deny', () => {
     const unresolvedSshWrite = 'echo x > "$SSHDIR/authorized_keys"';
     const echoPreApproved = { preApprovedTools: new Set(['Bash(echo:*)']) };

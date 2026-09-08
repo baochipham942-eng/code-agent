@@ -2,7 +2,9 @@
 // FileArtifactCard - Render turn-owned files and media artifacts
 // ============================================================================
 
-import React, { useMemo, useState } from 'react';
+import { useI18n } from '../../../../hooks/useI18n';
+import { useWorkbenchFocusStore } from '../../../../stores/workbenchFocusStore';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Code,
   File,
@@ -35,25 +37,41 @@ interface Props {
 
 const DeliverableDiffDetail: React.FC<{ change: FileChange }> = ({ change }) => {
   const [expanded, setExpanded] = useState(false);
+  const { t } = useI18n();
+  const copy = t.deliveryExperience;
+  const activeTab = useAppStore((s) => s.activeWorkbenchTab);
+  const collapsed = useAppStore((s) => s.workbenchCollapsed);
+  useEffect(() => {
+    if (!collapsed && activeTab?.startsWith('preview:')) setExpanded(false);
+  }, [activeTab, collapsed]);
   const hasLineChanges = change.added > 0 || change.removed > 0;
 
   return (
     <div className="border-t border-border-muted px-2.5 py-1.5">
+      <button type="button" className="mr-4 text-xs text-zinc-300 hover:underline" onClick={(event) => {
+        event.stopPropagation();
+        setExpanded(false);
+        useAppStore.getState().openPreview(change.filePath);
+      }}>{copy.product}</button>
       <button
         type="button"
         onClick={(event) => {
           event.stopPropagation();
+          if (!expanded) {
+            useWorkbenchFocusStore.getState().setWorkbenchFocused(false);
+            useAppStore.getState().setWorkbenchCollapsed(true);
+          }
           setExpanded((value) => !value);
         }}
         aria-expanded={expanded}
-        className="flex items-center gap-1.5 text-[11px] text-zinc-500 transition-colors hover:text-zinc-300"
+        className="inline-flex items-center gap-1.5 text-[11px] text-zinc-500 transition-colors hover:text-zinc-300"
       >
         {expanded ? <span aria-hidden="true">⌄</span> : <span aria-hidden="true">›</span>}
-        <span>本次变更</span>
+        <span>{copy.changes}</span>
         {hasLineChanges && (
           <span className="flex items-center gap-1">
-            {change.added > 0 && <span className="text-badge-success">+{change.added} 行</span>}
-            {change.removed > 0 && <span className="text-badge-danger">-{change.removed} 行</span>}
+            {change.added > 0 && <span className="text-badge-success">{(change.oldText ? copy.addedLines : copy.generatedLines).replace('{count}', String(change.added))}</span>}
+            {change.removed > 0 && <span className="text-badge-danger">{copy.removedLines.replace('{count}', String(change.removed))}</span>}
           </span>
         )}
       </button>

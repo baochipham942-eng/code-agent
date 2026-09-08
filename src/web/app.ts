@@ -58,6 +58,7 @@ import { createAdminReviewQueueRouter } from './routes/adminReviewQueue';
 import { createCompanionRouter } from './routes/companion';
 import { createCompanionProvisioningRouter } from './routes/companionProvisioning';
 import { CompanionGateway } from '../host/companion/CompanionGateway';
+import { projectCompanionEvent } from '../host/companion/projectCompanionEvent';
 import { getDatabase } from '../host/services/core/databaseService';
 import type { AgentRunBody } from './routes/agentBodySchemas';
 import { wireGenerativeUiEditProjectionInvalidation } from './helpers/generativeUiEditWiring';
@@ -253,7 +254,14 @@ export function createApp(deps: CreateAppDeps): express.Express {
         },
       });
       publishCompanionEvent = (sessionId, kind, payload) => {
-        gateway.publish(sessionId, kind, payload);
+        const projection = projectCompanionEvent(kind, payload.event);
+        if (!projection) return;
+        try {
+          gateway.publish(sessionId, kind, { ...projection, ...(typeof payload.runId === 'string' ? { runId: payload.runId } : {}) });
+        } catch {
+          // A companion projection failure must not abort the desktop engine.
+          logger.warn('Companion event projection unavailable');
+        }
       };
       app.use('/api/companion', createCompanionProvisioningRouter({ gateway }));
       app.use('/companion', createCompanionRouter({

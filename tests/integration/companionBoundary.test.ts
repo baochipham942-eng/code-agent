@@ -9,6 +9,7 @@ vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
 import { CompanionGateway } from '../../src/host/companion/CompanionGateway';
 import { createCompanionRouter } from '../../src/web/routes/companion';
+import { projectCompanionEvent } from '../../src/host/companion/projectCompanionEvent';
 import type { CompanionDeviceCredential } from '../../src/shared/contract/companion';
 
 describe('companion device boundary (HTTP + persistent SQLite)', () => {
@@ -137,5 +138,19 @@ describe('companion device boundary (HTTP + persistent SQLite)', () => {
     expect(await response.json()).toMatchObject({ error: { reason: 'unsupported_action' } });
     expect(db.prepare('SELECT status FROM companion_decisions').get()).toEqual({ status: 'pending' });
     expect(executions).toBe(0);
+  });
+  it('projects user-visible content without tool arguments, paths or diagnostic metadata', () => {
+    expect(projectCompanionEvent('tool_call_start', { id: 'tool-1', name: 'read_file', arguments: { token: 'secret-marker' }, liveOutput: { stdout: 'private-marker' } }))
+      .toEqual({ id: 'tool-1', name: 'read_file' });
+    expect(projectCompanionEvent('tool_call_end', { toolCallId: 'tool-1', success: true, outputPath: '/private/path', metadata: { secret: 'private-marker' } }))
+      .toEqual({ toolCallId: 'tool-1', success: true });
+    expect(projectCompanionEvent('message', { id: 'm1', role: 'assistant', content: 'visible', reasoning: 'internal', attachments: [{ path: '/private/path' }] }))
+      .toEqual({ id: 'm1', role: 'assistant', content: 'visible' });
+    expect(projectCompanionEvent('message_delta', { role: 'assistant', path: 'reasoning', op: 'append', text: 'internal' })).toBeNull();
+    expect(projectCompanionEvent('message', { id: 'm2', role: 'system', content: 'internal' })).toBeNull();
+    expect(projectCompanionEvent('diagnostic', { secret: 'private-marker' })).toBeNull();
+    expect(projectCompanionEvent('agent_complete', null)).toEqual({});
+    expect(projectCompanionEvent('agent_cancelled', null)).toEqual({});
+    expect(projectCompanionEvent('error', { stack: 'private-marker' })).toEqual({ code: 'RUN_FAILED' });
   });
 });

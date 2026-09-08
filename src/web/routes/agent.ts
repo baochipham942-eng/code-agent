@@ -1069,7 +1069,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       const agentLoop = createAgentLoop(config, (event) => {
         const emitted = runController.emitAgentEvent(event);
         runEventCollector.observe(event, emitted);
-        deps.publishCompanionEvent?.(sessionId, event.type, { event: event.data });
+        deps.publishCompanionEvent?.(sessionId, event.type, { event: event.data, runId: runContext.runId });
       }, messages, sessionId, undefined, runToolExecutor, runContext, runHandle.traceContext);
 
       await runHandle.attach(agentLoop);
@@ -1145,6 +1145,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           data: null,
         };
         runEventCollector.observe(cancelledEvent, runController.emitAgentEvent(cancelledEvent));
+        deps.publishCompanionEvent?.(sessionId, 'agent_cancelled', { event: null, runId: runContext.runId });
       } else {
         await agentLoop.run(modelFacePrompt, visiblePrompt);
       }
@@ -1224,6 +1225,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
 
       // 发送 agent_complete（useAgent 依赖此事件清除处理状态）
       runController.emitAgentEvent({ type: 'agent_complete', data: null });
+      deps.publishCompanionEvent?.(sessionId, 'agent_complete', { event: null, runId: runContext.runId });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       if (externalEngineFailureContext) {

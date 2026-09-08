@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import {
@@ -8,6 +9,7 @@ import {
 } from '../../../src/cli/permissionPolicy';
 import { getPermissionClassifier } from '../../../src/host/tools/permissionClassifier';
 import { setCommandPolicyRulesForTest } from '../../../src/host/tools/modules/shell/commandPolicy';
+import { isOsWriteFenceAvailable } from '../../../src/host/sandbox/writeFence';
 import type { PermissionRequestData } from '../../../src/host/tools/types';
 import type { DecisionTrace } from '../../../src/shared/contract/decisionTrace';
 
@@ -280,6 +282,32 @@ describe('createCLIPermissionHandler --permission-mode auto', () => {
       expect(provider).toHaveBeenCalledTimes(1);
     } finally {
       setInteractiveApprovalProvider(null);
+    }
+  });
+
+  it('auto 档重跑形状：Bash working_directory 在区外、分类 cwd 为项目根时不得批准', async () => {
+    isOsWriteFenceAvailable.setAvailableOverrideForTest(true);
+    const project = await fs.mkdtemp(path.join(os.tmpdir(), 'exectime-cli-auto-'));
+    try {
+      const warn = vi.fn();
+      const handler = createCLIPermissionHandler({
+        permissionMode: 'auto',
+        workingDirectory: project,
+        warn,
+      });
+      const result = await handler(makeRequest({
+        type: 'command',
+        tool: 'Bash',
+        details: {
+          command: 'printf pwned > com.evil.plist',
+          working_directory: path.join(os.homedir(), 'Library', 'LaunchAgents'),
+        },
+      }));
+      expect(result.approved).toBe(false);
+      expect(result.denialSource).toBe('no-approval-ui');
+    } finally {
+      isOsWriteFenceAvailable.setAvailableOverrideForTest(undefined);
+      await fs.rm(project, { recursive: true, force: true });
     }
   });
 });

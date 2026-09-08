@@ -735,6 +735,30 @@ describe('ToolExecutor Bash 安全命令单一判据', () => {
       }
     });
 
+    it.each([
+      ['printf x > .git/hooks/pre-commit', '.git/hooks/pre-commit'],
+      ['printf x > .GIT/hooks/pre-commit', '.GIT/hooks/pre-commit'],
+      ['printf x > .husky/pre-commit', '.husky/pre-commit'],
+      ['printf x > .code-agent/settings.json', '.code-agent/settings.json'],
+    ])('%s 整条链路仍弹卡', async (command, relative) => {
+      isOsWriteFenceAvailable.setAvailableOverrideForTest(true);
+      try {
+        expect(isOsWriteFenceAvailable()).toBe(true);
+        const rejecting = buildRejectingExecutor();
+        const rejected = await rejecting.execute(
+          'Bash',
+          { command },
+          { sessionId: `exectime-hooks-reject-${relative}` },
+        );
+        expect(permissionRequests.length).toBeGreaterThan(0);
+        expect(permissionRequests[0]?.type).toBe('command');
+        expect(rejected.success).toBe(false);
+        expect(existsSync(path.join(workspace, relative))).toBe(false);
+      } finally {
+        isOsWriteFenceAvailable.setAvailableOverrideForTest(undefined);
+      }
+    });
+
     it("printf '[core] hooksPath' > .GIT/config 整条链路仍弹卡", async () => {
       isOsWriteFenceAvailable.setAvailableOverrideForTest(true);
       try {

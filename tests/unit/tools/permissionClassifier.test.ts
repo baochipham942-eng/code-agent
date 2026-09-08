@@ -1312,5 +1312,51 @@ describe('PermissionClassifier', () => {
         isOsWriteFenceAvailable.setAvailableOverrideForTest(undefined);
       }
     });
+
+    it('auto 档重跑形状：working_directory 指向区外 + 分类 cwd 为项目根 ⇒ 不得围栏免确认', async () => {
+      isOsWriteFenceAvailable.setAvailableOverrideForTest(true);
+      const root = await fs.mkdtemp(path.join(os.tmpdir(), 'exectime-auto-cwd-'));
+      try {
+        expect(isOsWriteFenceAvailable()).toBe(true);
+        const result = await classifyPermission(
+          'Bash',
+          {
+            command: 'printf pwned > com.evil.plist',
+            working_directory: path.join(root, '..', 'LaunchAgents'),
+          },
+          { workingDirectory: root, workspaceRoot: root, permissionLevel: 'execute' },
+        );
+        expect(result.decision).toBe('ask');
+        expect(result.reason).not.toBe(FENCED_IN_PROJECT_WRITE_REASON);
+      } finally {
+        isOsWriteFenceAvailable.setAvailableOverrideForTest(undefined);
+        await fs.rm(root, { recursive: true, force: true });
+      }
+    });
+
+    it.each([
+      'printf x > .git/hooks/pre-commit',
+      'printf x > .GIT/hooks/pre-commit',
+      'printf x > .husky/pre-commit',
+      'printf x > .HUSKY/pre-commit',
+      'printf x > .code-agent/settings.json',
+      'printf x > .CODE-AGENT/settings.json',
+    ])('%s 在围栏可用时仍 ask 不免确认', async (command) => {
+      isOsWriteFenceAvailable.setAvailableOverrideForTest(true);
+      const root = await fs.mkdtemp(path.join(os.tmpdir(), 'exectime-hooks-'));
+      try {
+        expect(isOsWriteFenceAvailable()).toBe(true);
+        const result = await classifyPermission(
+          'Bash',
+          { command },
+          { workingDirectory: root, workspaceRoot: root, permissionLevel: 'execute' },
+        );
+        expect(result.decision).toBe('ask');
+        expect(result.reason).not.toBe(FENCED_IN_PROJECT_WRITE_REASON);
+      } finally {
+        isOsWriteFenceAvailable.setAvailableOverrideForTest(undefined);
+        await fs.rm(root, { recursive: true, force: true });
+      }
+    });
   });
 });

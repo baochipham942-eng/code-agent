@@ -53,6 +53,15 @@ describe('writeFence eligibility', () => {
     expect(isFencedInProjectWriteEligible('printf x > /tmp/proj/.npmrc', context)).toBe(false);
   });
 
+  it('rejects startup-hook and project-settings writes that execute on the next tool run', () => {
+    expect(isFencedInProjectWriteEligible('printf x > /tmp/proj/.git/hooks/pre-commit', context)).toBe(false);
+    expect(isFencedInProjectWriteEligible('printf x > .GIT/hooks/pre-commit', context)).toBe(false);
+    expect(isFencedInProjectWriteEligible('printf x > /tmp/proj/.husky/pre-commit', context)).toBe(false);
+    expect(isFencedInProjectWriteEligible('printf x > .HUSKY/pre-commit', context)).toBe(false);
+    expect(isFencedInProjectWriteEligible('printf x > /tmp/proj/.code-agent/settings.json', context)).toBe(false);
+    expect(isFencedInProjectWriteEligible('printf x > .CODE-AGENT/settings.json', context)).toBe(false);
+  });
+
   it.each([
     ['printf "$(rm -rf src)" > /tmp/proj/out.txt'],
     ['printf "$(cat ~/x)" > /tmp/proj/out.txt'],
@@ -83,6 +92,21 @@ describe('writeFence eligibility', () => {
     isOsWriteFenceAvailable.setAvailableOverrideForTest(false);
     expect(isOsWriteFenceAvailable()).toBe(false);
     isOsWriteFenceAvailable.setAvailableOverrideForTest(undefined);
-    expect(isOsWriteFenceAvailable()).toBe(getSandboxManager().isAvailable() && process.platform !== 'win32');
+    expect(isOsWriteFenceAvailable()).toBe(
+      getSandboxManager().isAvailable()
+      && getSandboxManager().isEnabled()
+      && process.platform !== 'win32',
+    );
+  });
+
+  it('disabled sandbox is not fence-available, so skip-confirm cannot treat wrapCommand throws as a hard error', () => {
+    const manager = getSandboxManager();
+    const wasEnabled = manager.isEnabled();
+    manager.disable();
+    try {
+      expect(isOsWriteFenceAvailable()).toBe(false);
+    } finally {
+      if (wasEnabled) manager.enable();
+    }
   });
 });

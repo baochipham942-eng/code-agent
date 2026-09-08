@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createMobileStore } from '../src/stores/mobileStore';
+import { createMobileStore } from '../../../packages/mobile/src/stores/mobileStore';
 
 function disk(initial: string | null = null) {
   let value = initial;

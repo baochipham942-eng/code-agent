@@ -14,10 +14,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import type { DecisionStep } from '../../shared/contract/decisionTrace';
-import {
-  createHostReason, HostReasonCode,
-  type HostReasonPayload,
-} from '../../shared/contract/permission';
+import { createHostReason, HostReasonCode, type HostReasonPayload } from '../../shared/contract/permission';
 import { createTraceStep } from '../security/decisionTraceBuilder';
 import {
   commandWords as tokenizeCommandWords, isKnownSafeCommand,
@@ -78,7 +75,11 @@ export interface ClassificationResult {
   /** The classifier asked because no rule could determine the command risk. */
   riskUnknown?: boolean;
   /** Do not store this result in the command-text cache (fenced in-project writes). */
-  bypassCache?: boolean; requiresOsWriteFence?: boolean; writeFenceWorkspaceRoot?: string;
+  bypassCache?: boolean;
+  /** Skip-confirm approve must wrap the command in the OS write fence. Bash consumes this. */
+  requiresOsWriteFence?: boolean;
+  /** Canonical workspace root the classifier used for the in-zone check; bash's only fence root. */
+  writeFenceWorkspaceRoot?: string;
 }
 
 function classificationHostReason(result: ClassificationResult, toolName: string): ClassificationResult {
@@ -889,8 +890,8 @@ export class PermissionClassifier {
     // re-run auto-approves a relative write while bash executes in the tool's outside cwd.
     // Reverse mutation: drop requiresOsWriteFence / writeFenceWorkspaceRoot ⇒ bash
     // no longer wraps skip-confirm writes.
-    // Eligible commands have no quotes/expansion, so original spelling matches the
-    // reconstructed single segment; reuse the probe instead of classifying twice.
+    // Eligibility rejects quoted redirect targets (`> "file"`); quoted tee operands
+    // still parse. Reuse the original command for the deny probe, not a reconstructed segment.
     const fence = isFencedInProjectWriteEligible(command, context) ? fencedWriteSkipConfirm(context) : undefined;
     const fenceProbe = fence ? this.classifyBashSegment(command, context, startTime) : undefined;
     if (fence && fenceProbe?.decision !== 'deny') return {

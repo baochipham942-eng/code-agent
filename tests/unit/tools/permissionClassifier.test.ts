@@ -1353,6 +1353,31 @@ describe('PermissionClassifier', () => {
       }
     });
 
+    it('cwd 位于 workspace 子目录时写 .code-agent/skills 与 hooks.json 不免确认', async () => {
+      const unpin = pinOsWriteFenceAvailable(true);
+      const repo = await fs.mkdtemp(path.join(os.tmpdir(), 'exectime-nested-cwd-'));
+      const cwd = path.join(repo, 'packages', 'app');
+      try {
+        await fs.mkdir(cwd, { recursive: true });
+        expect(isOsWriteFenceAvailable()).toBe(true);
+        for (const command of [
+          'printf x > .code-agent/skills/x/SKILL.md',
+          'printf x > .code-agent/hooks/hooks.json',
+        ]) {
+          const result = await classifyPermission(
+            'Bash',
+            { command },
+            executorFenceContext(cwd, repo),
+          );
+          expect(result.decision).toBe('ask');
+          expect(result.reason).not.toBe(FENCED_IN_PROJECT_WRITE_REASON);
+        }
+      } finally {
+        unpin();
+        await fs.rm(repo, { recursive: true, force: true });
+      }
+    });
+
     it.each([
       'printf x > .git/hooks/pre-commit',
       'printf x > .GIT/hooks/pre-commit',

@@ -38,6 +38,8 @@ describe('writeFence eligibility', () => {
     expect(isFencedInProjectWriteEligible('BASH_ENV=/tmp/evil tee /tmp/proj/out.txt', context)).toBe(false);
     expect(isFencedInProjectWriteEligible('ENV=/tmp/evil tee /tmp/proj/out.txt', context)).toBe(false);
     expect(isFencedInProjectWriteEligible('SHELLOPTS=xtrace tee /tmp/proj/out.txt', context)).toBe(false);
+    expect(isFencedInProjectWriteEligible('GCONV_PATH=/tmp/evil tee /tmp/proj/out.txt', context)).toBe(false);
+    expect(isFencedInProjectWriteEligible('LOCPATH=/tmp/evil tee /tmp/proj/out.txt', context)).toBe(false);
     expect(isFencedInProjectWriteEligible('BASH_FUNC_foo%%=() { :; } tee /tmp/proj/out.txt', context)).toBe(false);
   });
 
@@ -88,6 +90,32 @@ describe('writeFence eligibility', () => {
     expect(isFencedInProjectWriteEligible('printf x > .code-agent/mcp.json', context)).toBe(false);
     expect(isFencedInProjectWriteEligible('printf x > .code-agent/mcp.local.json', context)).toBe(false);
     expect(isFencedInProjectWriteEligible('printf x > .code-agent/HEARTBEAT.md', context)).toBe(false);
+  });
+
+  it('rejects nested-cwd .code-agent/skills and hooks writes when workspaceRoot is the repo root', () => {
+    const root = makeTempProject();
+    const cwd = path.join(root, 'packages', 'app');
+    try {
+      fs.mkdirSync(cwd, { recursive: true });
+      const nested = { workingDirectory: cwd, workspaceRoot: root };
+      expect(isFencedInProjectWriteEligible(
+        'printf x > .code-agent/skills/x/SKILL.md',
+        nested,
+      )).toBe(false);
+      expect(isFencedInProjectWriteEligible(
+        'printf x > .code-agent/hooks/hooks.json',
+        nested,
+      )).toBe(false);
+      expect(isFencedInProjectWriteEligible('printf x > .git/hooks/pre-commit', nested)).toBe(false);
+      expect(isFencedInProjectWriteEligible('printf x > .husky/pre-commit', nested)).toBe(false);
+      expect(isFencedInProjectWriteEligible('printf x > .claude/skills/x/SKILL.md', nested)).toBe(false);
+      expect(isFencedInProjectWriteEligible('printf x > .code-agent/agents/x.md', nested)).toBe(false);
+      expect(isFencedInProjectWriteEligible('printf x > .code-agent/exec-policy.json', nested)).toBe(false);
+      expect(isFencedInProjectWriteEligible('printf x > .gitconfig', nested)).toBe(false);
+      expect(isFencedInProjectWriteEligible('printf x > .npmrc', nested)).toBe(false);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it('rejects write through in-project symlink into .git/hooks', () => {

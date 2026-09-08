@@ -205,6 +205,7 @@ export async function runApprovalEval(options: {
   const pinFence = options.osWriteFenceAvailable ?? true;
   const originalAvailable = sandboxManager.isAvailable;
   const originalEnabled = sandboxManager.isEnabled;
+  const hadOwnEnabled = Object.prototype.hasOwnProperty.call(sandboxManager, 'isEnabled');
   sandboxManager.isAvailable = () => pinFence;
   if (pinFence) sandboxManager.isEnabled = () => true;
   let work: string | undefined;
@@ -293,7 +294,10 @@ export async function runApprovalEval(options: {
     }
   } finally {
     sandboxManager.isAvailable = originalAvailable;
-    sandboxManager.isEnabled = originalEnabled;
+    if (pinFence) {
+      if (hadOwnEnabled) sandboxManager.isEnabled = originalEnabled;
+      else delete (sandboxManager as { isEnabled?: unknown }).isEnabled;
+    }
     if (previousMode === undefined) delete process.env.CODE_AGENT_SHELL_SAFETY_MODE;
     else process.env.CODE_AGENT_SHELL_SAFETY_MODE = previousMode;
     if (work && !options.workDir) fs.rmSync(work, { recursive: true, force: true });

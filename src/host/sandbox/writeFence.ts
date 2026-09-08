@@ -8,8 +8,9 @@ import { isProtectedWritePath, isSensitiveCredentialPath, pathAliases } from './
 import { resolveBackgroundWorkspaceAuthority } from '../runtime/workspaceAuthority';
 
 const FENCED_WRITE_PROGRAMS = new Set(['printf', 'echo', 'tee']);
-/** Lookup / startup-file assignments that can change what the fenced command runs. Not an exhaustive bash env list. */
-const LOOKUP_ASSIGNMENT = /^(PATH|CDPATH|ENV|BASH_ENV|SHELLOPTS|BASH_FUNC_[^=]*|LD_[A-Z0-9_]+|DYLD_[A-Z0-9_]+)=/;
+/** Lookup / startup-file assignments that can change what the fenced command runs. Not an exhaustive bash env list.
+ * GCONV_PATH/LOCPATH are here because tee is the only fenced program that is an external binary. */
+const LOOKUP_ASSIGNMENT = /^(PATH|CDPATH|ENV|BASH_ENV|SHELLOPTS|GCONV_PATH|LOCPATH|BASH_FUNC_[^=]*|LD_[A-Z0-9_]+|DYLD_[A-Z0-9_]+)=/;
 const SIMPLE_WRITE_PATH = /^[A-Za-z0-9._/+-]+$/;
 /**
  * Eligibility-only screen so quoted redirects stay on the confirmation path
@@ -91,7 +92,7 @@ function isInProjectProtectedWrite(targetPath: string, cwd: string, workspaceRoo
     roots.some((root) => isProtectedWritePath(candidate, { projectRoot: root })));
 }
 
-/** Directories git / husky / Neo later execute from. Folded; prefix match includes children. */
+/** Directories git / husky / Neo later execute from. Folded suffix at any depth, not workspace-root-only. */
 const PROJECT_STARTUP_EXECUTABLE_PREFIXES = [
   '.git/hooks',
   '.husky',
@@ -101,35 +102,40 @@ const PROJECT_STARTUP_EXECUTABLE_PREFIXES = [
   `${CONFIG_DIR_LEGACY}/skills`,
 ].map((relative) => relative.toLowerCase());
 
-/** Project files Neo later reads as config or uses to spawn / schedule. Folded exact match. */
+/** Config / spawn files Neo or the toolchain later reads. Basename match at any depth. */
 const PROJECT_RUNTIME_CONFIG_FILES = new Set([
-  `${CONFIG_DIR_NEW}/settings.json`,
-  `${CONFIG_DIR_NEW}/mcp.json`,
-  `${CONFIG_DIR_NEW}/mcp.local.json`,
-  `${CONFIG_DIR_NEW}/heartbeat.md`,
-  `${CONFIG_DIR_LEGACY}/settings.json`,
-].map((relative) => relative.toLowerCase()));
+  'settings.json',
+  'hooks.json',
+  'exec-policy.json',
+  '.gitconfig',
+  '.npmrc',
+  'mcp.json',
+  'mcp.local.json',
+  'heartbeat.md',
+].map((name) => name.toLowerCase()));
 
-function foldedProjectRelative(candidate: string, projectRoot: string): string | undefined {
-  const relative = path.relative(projectRoot, candidate);
-  if (relative === '' || relative.startsWith('..') || path.isAbsolute(relative)) return undefined;
-  return relative.replaceAll('\\', '/').toLowerCase();
+function foldedPosixPath(candidate: string): string {
+  return candidate.replaceAll('\\', '/').toLowerCase();
 }
 
-function isStartupExecutableRelative(candidate: string, projectRoot: string): boolean {
-  const folded = foldedProjectRelative(candidate, projectRoot);
-  if (!folded) return false;
-  if (PROJECT_RUNTIME_CONFIG_FILES.has(folded)) return true;
-  return PROJECT_STARTUP_EXECUTABLE_PREFIXES.some((prefix) => (
-    folded === prefix || folded.startsWith(`${prefix}/`)
-  ));
+function matchesStartupDirSuffix(folded: string, suffix: string): boolean {
+  if (folded === suffix || folded.startsWith(`${suffix}/`)) return true;
+  if (folded.endsWith(`/${suffix}`)) return true;
+  return folded.includes(`/${suffix}/`);
 }
 
-function isInProjectStartupExecutableWrite(targetPath: string, cwd: string, workspaceRoot: string): boolean {
-  const candidates = writeTargetAliases(targetPath, cwd);
-  const roots = pathAliases(workspaceRoot);
-  return candidates.some((candidate) =>
-    roots.some((root) => isStartupExecutableRelative(candidate, root)));
+function isStartupExecutablePath(candidate: string): boolean {
+  const folded = foldedPosixPath(candidate);
+  const slash = folded.lastIndexOf('/');
+  const base = slash === -1 ? folded : folded.slice(slash + 1);
+  if (PROJECT_RUNTIME_CONFIG_FILES.has(base)) return true;
+  return PROJECT_STARTUP_EXECUTABLE_PREFIXES.some((prefix) => matchesStartupDirSuffix(folded, prefix));
+}
+
+function isInProjectStartupExecutableWrite(targetPath: string, cwd: string): boolean {
+  // Reverse mutation: fold only against workspaceRoot ⇒ nested cwd
+  // `.code-agent/skills` / `hooks.json` skip confirmation (R12).
+  return writeTargetAliases(targetPath, cwd).some(isStartupExecutablePath);
 }
 
 /**
@@ -251,7 +257,7 @@ export function isFencedInProjectWriteEligible(
     if (isInProjectProtectedWrite(target.path, workingDirectory, workspaceRoot)) return false;
     // Reverse mutation: drop startup-executable prefixes ⇒ .git/hooks / hooks.json /
     // mcp.json skip confirmation while remaining in-project.
-    if (isInProjectStartupExecutableWrite(target.path, workingDirectory, workspaceRoot)) return false;
+    if (isInProjectStartupExecutableWrite(target.path, workingDirectory)) return false;
     return true;
   });
 }

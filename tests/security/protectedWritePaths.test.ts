@@ -61,11 +61,7 @@ describe('PROTECTED_WRITE_PATHS fuse', () => {
     await fs.rm(workspace, { recursive: true, force: true });
   });
 
-  function buildExecutor(overrides: ConstructorParameters<typeof ToolExecutor>[0] extends infer T
-    ? T extends { requestPermission: unknown }
-      ? Partial<T>
-      : never
-    : never = {}): ToolExecutor {
+  function buildExecutor(overrides: Partial<ConstructorParameters<typeof ToolExecutor>[0]> = {}): ToolExecutor {
     const executor = new ToolExecutor({
       workingDirectory: workspace,
       requestPermission: async (request) => {

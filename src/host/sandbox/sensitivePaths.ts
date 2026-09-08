@@ -143,6 +143,10 @@ interface ProtectedWritePathOptions {
 
 // As-built user-level files under getUserConfigDir() / candidate data dirs.
 // Project-level counterparts live on projectRoot (see isProtectedWritePath).
+// ponytail: coverage ceiling is the closed as-built default, not a full Neo
+// config inventory. Known gaps (same baseline verdict, not a regression):
+// project-level `.code-agent/settings.json`, `permissions.json`,
+// `hooks/hooks.json`, `mcp.json`; user-level `permissions.json` / `mcp.json`.
 const PROTECTED_DATA_DIR_FILES = [
   'policy.toml',
   'session-permission-modes.json',
@@ -170,6 +174,49 @@ function pathAliases(input: string): string[] {
   return [...aliases];
 }
 
+interface ProtectedWritePathAnchors {
+  key: string;
+  dataDirAliases: string[];
+  homeAliases: string[];
+  projectRootAliases: string[];
+}
+
+let protectedWritePathAnchors: ProtectedWritePathAnchors | null = null;
+
+function protectedWriteAnchorKey(
+  homeDir: string,
+  env: Partial<Pick<NodeJS.ProcessEnv, 'CODE_AGENT_DATA_DIR'>>,
+  projectRoot: string | undefined,
+): string {
+  return `${homeDir}\0${env.CODE_AGENT_DATA_DIR?.trim() ?? ''}\0${projectRoot ?? ''}`;
+}
+
+/**
+ * Data-dir / home / projectRoot aliases do not depend on the candidate path.
+ * Memoize by (home, CODE_AGENT_DATA_DIR, projectRoot) so env-overriding tests
+ * still pierce the cache when any of those three change.
+ */
+function getProtectedWritePathAnchors(
+  homeDir: string,
+  env: Partial<Pick<NodeJS.ProcessEnv, 'CODE_AGENT_DATA_DIR'>>,
+  projectRoot: string | undefined,
+): ProtectedWritePathAnchors {
+  const key = protectedWriteAnchorKey(homeDir, env, projectRoot);
+  if (protectedWritePathAnchors?.key === key) return protectedWritePathAnchors;
+  protectedWritePathAnchors = {
+    key,
+    dataDirAliases: getCandidateDataDirs(homeDir, env).flatMap(pathAliases),
+    homeAliases: pathAliases(homeDir),
+    projectRootAliases: projectRoot ? pathAliases(projectRoot) : [],
+  };
+  return protectedWritePathAnchors;
+}
+
+/** Test-only: drop the (home, env, projectRoot) alias cache. */
+export function resetProtectedWritePathAliasCacheForTest(): void {
+  protectedWritePathAnchors = null;
+}
+
 /**
  * Writes that would let the agent rewrite the constraints that bind it.
  * Comparison is the same path.resolve / prefix check as
@@ -182,9 +229,11 @@ export function isProtectedWritePath(
 ): boolean {
   const homeDir = path.resolve(options.homeDir ?? os.homedir());
   const env = options.env ?? process.env;
-  const dataDirAliases = getCandidateDataDirs(homeDir, env).flatMap(pathAliases);
-  const projectRootAliases = options.projectRoot ? pathAliases(options.projectRoot) : [];
-  const homeAliases = pathAliases(homeDir);
+  const { dataDirAliases, homeAliases, projectRootAliases } = getProtectedWritePathAnchors(
+    homeDir,
+    env,
+    options.projectRoot,
+  );
   const candidateAliases = pathAliases(candidatePath);
   const entries: SensitiveSandboxPath[] = [];
 

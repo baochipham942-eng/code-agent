@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -9,9 +9,14 @@ import {
   isSensitiveCredentialPath,
   isPathDeniedBySensitiveSandboxPath,
   isProtectedWritePath,
+  resetProtectedWritePathAliasCacheForTest,
 } from '../../../../src/host/sandbox/sensitivePaths';
 
 describe('sensitive sandbox paths', () => {
+  beforeEach(() => {
+    resetProtectedWritePathAliasCacheForTest();
+  });
+
   it('denies home-level secrets without denying workspace .env files', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sensitive-paths-'));
     try {

@@ -1099,13 +1099,16 @@ export class PermissionClassifier {
 
     const candidate = path.resolve(context.workingDirectory, filePath);
     const resolved = resolveCanonicalRunPath(candidate);
-    if (!context.workspaceRoot) return outsideProjectWriteAsk(toolName, resolved, startTime);
-
-    const workspaceBoundary = path.resolve(context.workspaceRoot);
-    const workspace = resolveCanonicalRunPath(workspaceBoundary);
+    const workspaceBoundary = context.workspaceRoot
+      ? path.resolve(context.workspaceRoot)
+      : undefined;
+    const workspace = workspaceBoundary
+      ? resolveCanonicalRunPath(workspaceBoundary)
+      : undefined;
     if (isProtectedWritePath(resolved, { homeDir: CANONICAL_HOME_DIR, projectRoot: workspace })) {
       return protectedWriteAsk(toolName, resolved, startTime);
     }
+    if (!workspaceBoundary || !workspace) return outsideProjectWriteAsk(toolName, resolved, startTime);
     if (isPathInside(resolved, workspace)) {
       return { decision: 'approve', reason: '写入项目目录内', confidence: 0.95, cached: false };
     }

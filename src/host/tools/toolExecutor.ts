@@ -1443,31 +1443,34 @@ export class ToolExecutor {
       recordDecision(executionToolName, params, 'auto-approve', 'pre-approved', permStartTime, undefined, effectiveSessionId, this.ledgerOrigin);
     }
 
-    // P0: 安全命令白名单 + exec policy — 已知安全命令跳过审批
+    // P0: 安全命令白名单 + exec policy — 已知安全命令跳过审批。
+    // exec-policy forbidden 留在放行守卫外：学来的 allow 不得放行受保护路径，
+    // 但用户显式 forbidden 仍硬拒，不得被 protectedWriteForcesConfirmation 降成可批卡。
     let isSafeCommand = false;
-    if (isBashToolName(policyToolName) && params.command && !commandAnalysisFailedReason && !shellDesktopAutomation && !isPreApproved && !guardFabricForcesApproval && !protectedWriteForcesConfirmation && !this.forcePermissionHandler) {
+    if (isBashToolName(policyToolName) && params.command && !commandAnalysisFailedReason && !shellDesktopAutomation && !isPreApproved && !guardFabricForcesApproval && !this.forcePermissionHandler) {
       const cmd = params.command as string;
 
-      // 1. 检查 exec policy 持久化规则
+      // 1. 检查 exec policy 持久化规则（forbidden 先于受保护路径熔断）
       try {
         const policyDecision = getExecPolicyStore().match(cmd);
-        if (policyDecision === 'allow' && !bashArgumentForcesClassification) {
-          isSafeCommand = true;
-          logger.debug('Command allowed by exec policy', { command: cmd.substring(0, 80) });
-          recordDecision(executionToolName, params, 'policy-allow', 'exec-policy', permStartTime, undefined, effectiveSessionId, this.ledgerOrigin);
-        } else if (policyDecision === 'forbidden') {
+        if (policyDecision === 'forbidden') {
           recordDecision(executionToolName, params, 'policy-deny', 'exec-policy', permStartTime, undefined, effectiveSessionId, this.ledgerOrigin);
           return {
             success: false,
             error: `Blocked by exec policy: ${cmd.substring(0, 80)}`,
           };
         }
+        if (policyDecision === 'allow' && !bashArgumentForcesClassification && !protectedWriteForcesConfirmation) {
+          isSafeCommand = true;
+          logger.debug('Command allowed by exec policy', { command: cmd.substring(0, 80) });
+          recordDecision(executionToolName, params, 'policy-allow', 'exec-policy', permStartTime, undefined, effectiveSessionId, this.ledgerOrigin);
+        }
       } catch {
         // exec policy not initialized, skip
       }
 
       // 2. 检查安全命令白名单
-      if (!isSafeCommand && !bashArgumentForcesClassification && isKnownSafeCommand(cmd)) {
+      if (!isSafeCommand && !bashArgumentForcesClassification && !protectedWriteForcesConfirmation && isKnownSafeCommand(cmd)) {
         isSafeCommand = true;
         logger.debug('Command is known safe, skipping approval', { command: cmd.substring(0, 80) });
         recordDecision(executionToolName, params, 'auto-approve', 'safe-command', permStartTime, undefined, effectiveSessionId, this.ledgerOrigin);
@@ -1479,6 +1482,7 @@ export class ToolExecutor {
       if (
         !isSafeCommand
         && !argumentForcesClassification
+        && !protectedWriteForcesConfirmation
         && getShellSafetyMode() === 'lenient'
       ) {
         const lenientCheck = commandValidation ?? validateCommand(cmd);

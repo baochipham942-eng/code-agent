@@ -219,6 +219,30 @@ describe('PermissionClassifier', () => {
     }
   });
 
+  it('asks with W0 for protected writes even when no authoritative workspace exists', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'protected-write-unscoped-'));
+    const dataDir = path.join(root, 'neo-data');
+    await fs.mkdir(dataDir, { recursive: true });
+    const previousDataDir = process.env.CODE_AGENT_DATA_DIR;
+    process.env.CODE_AGENT_DATA_DIR = dataDir;
+    try {
+      const result = await classifyPermission(
+        'Write',
+        { file_path: path.join(dataDir, 'settings.json'), content: 'pwned' },
+        { workingDirectory: root, permissionLevel: 'write' },
+      );
+      expect(result).toMatchObject({
+        decision: 'ask',
+        reason: expect.stringContaining('protected write path requires confirmation'),
+        traceStep: { rule: 'W0: protected_write_path', result: 'ask' },
+      });
+    } finally {
+      if (previousDataDir === undefined) delete process.env.CODE_AGENT_DATA_DIR;
+      else process.env.CODE_AGENT_DATA_DIR = previousDataDir;
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
   it('asks before reading Claude global memory files', async () => {
     const result = await classifyPermission(
       'Read',

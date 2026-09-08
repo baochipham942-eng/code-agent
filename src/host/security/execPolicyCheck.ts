@@ -307,14 +307,17 @@ export function explainPolicyCommand(rules: readonly PrefixRule[], command: stri
       reason: '命令无法静态解析（canonicalize 失败或为空）→ 不命中任何规则，走常规权限流程',
     };
   }
+  const decision = resolvePolicyDecision(rules, command);
   const matched = matchPolicyRule(rules, command);
   if (!matched) {
     return {
       command,
       tokens,
       matched: null,
-      decision: null,
-      reason: '没有规则匹配 → match() 返回 null，走常规权限流程',
+      decision,
+      reason: decision === null
+        ? '没有规则匹配 → match() 返回 null，走常规权限流程'
+        : '决策由复合命令的其他段决定',
     };
   }
   if (!learnedRuleCovers(matched, command)) {
@@ -322,11 +325,12 @@ export function explainPolicyCommand(rules: readonly PrefixRule[], command: stri
       command,
       tokens,
       matched,
-      decision: null,
-      reason: `最长前缀命中规则 ${formatPattern(matched.pattern)}，但该前缀单独是安全命令而整条不是（风险在前缀之外，如 find … -delete）→ 学来的 allow 不放行，走常规权限流程`,
+      decision,
+      reason: decision === null
+        ? `最长前缀命中规则 ${formatPattern(matched.pattern)}，但该前缀单独是安全命令而整条不是（风险在前缀之外，如 find … -delete）→ 学来的 allow 不放行，走常规权限流程`
+        : '决策由复合命令的其他段决定',
     };
   }
-  const decision = resolvePolicyDecision(rules, command);
   if (decision === null) {
     return {
       command,
@@ -341,6 +345,8 @@ export function explainPolicyCommand(rules: readonly PrefixRule[], command: stri
     tokens,
     matched,
     decision,
-    reason: `最长前缀命中规则 ${formatPattern(matched.pattern)}（长度 ${matched.pattern.length}，source: ${matched.source}）→ ${decision}`,
+    reason: decision !== matched.decision
+      ? '决策由复合命令的其他段决定'
+      : `最长前缀命中规则 ${formatPattern(matched.pattern)}（长度 ${matched.pattern.length}，source: ${matched.source}）→ ${decision}`,
   };
 }

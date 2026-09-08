@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { COMPANION_LIMITS } from '../constants/companion';
 
 export const companionActionSchema = z.enum([
   'message.send',
@@ -7,16 +8,26 @@ export const companionActionSchema = z.enum([
 ]);
 export type CompanionAction = z.infer<typeof companionActionSchema>;
 
-export const companionCommandSchema = z.object({
+const id = z.string().trim().min(1).max(COMPANION_LIMITS.idLength);
+const commandFields = {
   version: z.literal(1),
-  commandId: z.string().min(1),
-  deviceId: z.string().min(1),
-  scopeEpoch: z.number().int().nonnegative(),
-  sessionId: z.string().min(1).optional(),
-  action: companionActionSchema,
-  expectedRevision: z.number().int().nonnegative().optional(),
-  payload: z.unknown(),
-});
+  commandId: id,
+  deviceId: id,
+  scopeEpoch: z.number().int().positive().safe(),
+  sessionId: id,
+};
+export const companionCommandSchema = z.discriminatedUnion('action', [
+  z.object({ ...commandFields, action: z.literal('message.send'),
+    payload: z.object({ text: z.string().min(1).max(COMPANION_LIMITS.messageLength).refine(value => value.trim().length > 0) }).strict(),
+  }).strict(),
+  z.object({ ...commandFields, action: z.literal('run.cancel'),
+    payload: z.object({ runId: id }).strict(),
+  }).strict(),
+  z.object({ ...commandFields, action: z.literal('approval.respond'),
+    expectedRevision: z.number().int().nonnegative().safe(),
+    payload: z.object({ requestId: id, decision: z.enum(['approved', 'rejected']), operationDigest: id }).strict(),
+  }).strict(),
+]);
 export type CompanionCommand = z.infer<typeof companionCommandSchema>;
 
 export interface CompanionDevice {
@@ -34,7 +45,7 @@ export interface CompanionDeviceCredential {
   scope: readonly string[];
 }
 
-export type CompanionCommandState = 'accepted' | 'resolved' | 'rejected' | 'conflict';
+export type CompanionCommandState = 'accepted' | 'resolved' | 'rejected' | 'conflict' | 'reconciling';
 
 export interface CompanionCommandRecord {
   deviceId: string;
@@ -70,7 +81,7 @@ export type CompanionSubmitResult =
   | { kind: 'accepted'; command: CompanionCommandRecord }
   | { kind: 'replayed'; command: CompanionCommandRecord }
   | { kind: 'conflict'; reason: 'command_payload_mismatch' | 'scope_epoch_mismatch' }
-  | { kind: 'rejected'; reason: 'device_revoked' | 'device_unknown' | 'scope_denied' | 'invalid_command' }
+  | { kind: 'rejected'; reason: 'device_revoked' | 'device_unknown' | 'scope_denied' | 'invalid_command' | 'unsupported_action' }
   | { kind: 'approval_conflict'; current: CompanionDecision };
 
 export interface CompanionSyncResult {

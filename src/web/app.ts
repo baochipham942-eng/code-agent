@@ -236,10 +236,11 @@ export function createApp(deps: CreateAppDeps): express.Express {
           if (command.action === 'run.cancel' && command.sessionId) {
             const target = runRegistry.resolve({ sessionId: command.sessionId });
             if (!target) return { state: 'resolved', result: { alreadyTerminal: true } };
+            if (target.context.runId !== command.payload.runId) return { state: 'rejected', result: { code: 'RUN_NOT_ACTIVE' } };
             void target.cancel('user');
             return { state: 'accepted', result: { stopping: true, runId: target.context.runId } };
           }
-          if (command.action !== 'message.send' || !companionRun) return { state: 'accepted', result: { queued: true } };
+          if (command.action !== 'message.send' || !companionRun) return { state: 'rejected', result: { code: 'HOST_UNAVAILABLE' } };
           const payload = command.payload as { text?: unknown };
           const text = typeof payload.text === 'string' ? payload.text : '';
           const run = companionRun({

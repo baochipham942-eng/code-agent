@@ -43,10 +43,16 @@ describe('CompanionGateway', () => {
   });
 
   it('allows only the first approval decision for a revision', () => {
-    gateway.registerDecision({ requestId: 'req-1', sessionId: 'session-1', revision: 4, status: 'pending', resolvedBy: null, operationDigest: null });
+    const decide = vi.fn((cmd: import('../../../src/shared/contract/companion').CompanionCommand) => {
+      gateway.registerDecision({ requestId: 'req-1', sessionId: 'session-1', revision: 4, status: 'approved', resolvedBy: cmd.deviceId, operationDigest: 'digest-1' });
+      return { kind: 'accepted' as const, command: { deviceId: cmd.deviceId, commandId: cmd.commandId, payloadHash: '', action: cmd.action, sessionId: cmd.sessionId, state: 'resolved' as const, result: { approved: true }, createdAt: 1000 } };
+    });
+    gateway = new CompanionGateway(db, { now: () => 1000, decide });
+    gateway.registerDecision({ requestId: 'req-1', sessionId: 'session-1', revision: 4, status: 'pending', resolvedBy: null, operationDigest: 'digest-1' });
     const command = { version: 1 as const, commandId: 'approve-1', deviceId: 'phone-1', scopeEpoch: 1, sessionId: 'session-1', action: 'approval.respond' as const, expectedRevision: 4, payload: { requestId: 'req-1', decision: 'approved', operationDigest: 'digest-1' } };
     expect(gateway.submit(command).kind).toBe('accepted');
     expect(gateway.submit({ ...command, commandId: 'approve-2' }).kind).toBe('approval_conflict');
+    expect(decide).toHaveBeenCalledTimes(1);
   });
 
   it('rejects revoked devices before dispatch', () => {

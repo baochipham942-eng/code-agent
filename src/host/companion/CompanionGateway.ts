@@ -2,6 +2,7 @@ import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypt
 import type BetterSqlite3 from 'better-sqlite3';
 import { applyCompanionSchema } from '../services/core/database/migrations/companion';
 import { companionCommandSchema } from '../../shared/contract/companion';
+import { COMPANION_LIMITS } from '../../shared/constants/companion';
 import type {
   CompanionCommand,
   CompanionCommandRecord,
@@ -44,6 +45,8 @@ export interface CompanionDispatchResult {
 export interface CompanionGatewayDeps {
   now?: () => number;
   dispatch?: (command: CompanionCommand) => CompanionDispatchResult;
+  /** Must resolve through the same authoritative service used by the desktop. */
+  decide?: (command: Extract<CompanionCommand, { action: 'approval.respond' }>) => CompanionSubmitResult;
 }
 
 /**
@@ -54,13 +57,18 @@ export interface CompanionGatewayDeps {
 export class CompanionGateway {
   private readonly now: () => number;
   private readonly dispatch: (command: CompanionCommand) => CompanionDispatchResult;
+  private readonly decide: CompanionGatewayDeps['decide'];
   private currentEpoch = 1;
 
   constructor(private readonly db: BetterSqlite3.Database, deps: CompanionGatewayDeps = {}) {
     this.now = deps.now ?? Date.now;
-    this.dispatch = deps.dispatch ?? (() => ({ state: 'accepted' }));
+    this.dispatch = deps.dispatch ?? (() => ({ state: 'rejected', result: { code: 'HOST_UNAVAILABLE' } }));
+    this.decide = deps.decide;
     this.ensureSchema();
-    const row = this.db.prepare('SELECT COALESCE(MAX(epoch), 1) AS epoch FROM companion_events').get() as SqlRow | undefined;
+    const row = this.db.prepare(`SELECT MAX(epoch) AS epoch FROM (
+      SELECT COALESCE(MAX(epoch), 1) AS epoch FROM companion_events
+      UNION ALL SELECT COALESCE(MAX(scope_epoch), 1) AS epoch FROM companion_devices
+    )`).get() as SqlRow | undefined;
     this.currentEpoch = Math.max(1, Number(row?.epoch ?? 1));
   }
 
@@ -110,7 +118,7 @@ export class CompanionGateway {
       return { kind: 'rejected', reason: 'scope_denied' };
     }
 
-    const payloadHash = digest({ action: command.action, sessionId: command.sessionId ?? null, payload: command.payload });
+    const payloadHash = digest(command);
     const existing = this.getCommand(command.deviceId, command.commandId);
     if (existing) {
       return existing.payloadHash === payloadHash
@@ -119,19 +127,24 @@ export class CompanionGateway {
     }
 
     if (command.action === 'approval.respond') {
-      const decision = this.resolveApproval(command);
-      if (decision) return decision;
+      // A separate companion-only CAS cannot authorize a desktop operation.
+      if (!this.decide) return { kind: 'rejected', reason: 'unsupported_action' };
+      const current = this.getDecision(command.payload.requestId);
+      if (!current || current.sessionId !== command.sessionId) return { kind: 'rejected', reason: 'scope_denied' };
+      if (current.revision !== command.expectedRevision || current.status !== 'pending' ||
+          current.operationDigest !== command.payload.operationDigest) {
+        return { kind: 'approval_conflict', current };
+      }
     }
 
-    const outcome = this.dispatch(command);
     const record: CompanionCommandRecord = {
       deviceId: command.deviceId,
       commandId: command.commandId,
       payloadHash,
       action: command.action,
       sessionId: command.sessionId ?? null,
-      state: outcome.state ?? 'accepted',
-      result: outcome.result ?? { accepted: true },
+      state: 'reconciling',
+      result: { code: 'COMMAND_RECONCILING' },
       createdAt: this.now(),
     };
     this.db.prepare(`
@@ -139,7 +152,38 @@ export class CompanionGateway {
         (device_id, command_id, payload_hash, action, session_id, state, result_json, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `).run(record.deviceId, record.commandId, record.payloadHash, record.action, record.sessionId, record.state, JSON.stringify(record.result), record.createdAt);
+
+    // Commit the reservation before invoking a side effect. A crash or uncertain
+    // dispatch keeps this ID reserved across restarts; retries never redispatch.
+    // Recovery must consult the durable engine, not infer "not executed".
+    try {
+      if (command.action === 'approval.respond') {
+        const decision = this.decide!(command);
+        if (decision.kind !== 'accepted' && decision.kind !== 'replayed') {
+          record.state = 'rejected';
+          record.result = { decision };
+        } else {
+          record.state = decision.command.state;
+          record.result = decision.command.result;
+        }
+      } else {
+        const outcome = this.dispatch(command);
+        record.state = outcome.state ?? 'rejected';
+        record.result = outcome.result ?? { code: 'HOST_UNAVAILABLE' };
+      }
+      this.db.prepare(`UPDATE companion_commands SET state = ?, result_json = ? WHERE device_id = ? AND command_id = ?`)
+        .run(record.state, JSON.stringify(record.result), record.deviceId, record.commandId);
+    } catch {
+      return { kind: 'replayed', command: this.getCommand(command.deviceId, command.commandId)! };
+    }
     return { kind: 'accepted', command: record };
+  }
+
+  commandStatus(deviceId: string, commandId: string): CompanionCommandRecord | null {
+    const device = this.getDevice(deviceId);
+    if (!device || device.revokedAt !== null) return null;
+    const command = this.getCommand(deviceId, commandId);
+    return command?.sessionId && device.scope.includes(command.sessionId) ? command : null;
   }
 
   publish(sessionId: string | null, kind: string, payload: Record<string, unknown>, now = this.now()): CompanionEvent {
@@ -195,27 +239,13 @@ export class CompanionGateway {
     return { kind: 'events', epoch, nextSeq: events.at(-1)?.seq ?? afterSeq, events };
   }
 
-  private resolveApproval(command: CompanionCommand): CompanionSubmitResult | null {
-    const payload = command.payload as { requestId?: unknown; decision?: unknown; operationDigest?: unknown };
-    const requestId = typeof payload.requestId === 'string' ? payload.requestId : null;
-    const decision = payload.decision === 'approved' || payload.decision === 'rejected' ? payload.decision : null;
-    if (!requestId || !decision || command.expectedRevision === undefined || !command.sessionId) {
-      return { kind: 'rejected', reason: 'invalid_command' };
-    }
-    const current = this.getDecision(requestId);
-    if (current?.status !== 'pending' || current.revision !== command.expectedRevision) {
-      return { kind: 'approval_conflict', current: current ?? {
-        requestId, sessionId: command.sessionId, revision: command.expectedRevision, status: 'rejected', resolvedBy: null, operationDigest: null,
-      } };
-    }
-    const changes = this.db.prepare(`UPDATE companion_decisions SET status = ?, resolved_by = ?, operation_digest = ? WHERE request_id = ? AND status = 'pending' AND revision = ?`)
-      .run(decision, command.deviceId, typeof payload.operationDigest === 'string' ? payload.operationDigest : null, requestId, command.expectedRevision);
-    if (changes.changes !== 1) {
-      return { kind: 'approval_conflict', current: this.getDecision(requestId) ?? {
-        requestId, sessionId: command.sessionId, revision: command.expectedRevision, status: 'rejected', resolvedBy: null, operationDigest: null,
-      } };
-    }
-    return null;
+  syncForDevice(deviceId: string, epoch: number, afterSeq: number): CompanionSyncResult {
+    const device = this.getDevice(deviceId);
+    if (!device || device.revokedAt !== null) return { kind: 'revoked', epoch, nextSeq: afterSeq, events: [] };
+    // Page the underlying stream first, then filter. Advance over unauthorized
+    // rows too, so one busy unshared session cannot pin a phone's cursor.
+    const page = this.sync(epoch, afterSeq, COMPANION_LIMITS.syncPageSize);
+    return { ...page, events: page.events.filter(event => event.sessionId !== null && device.scope.includes(event.sessionId)) };
   }
 
   private getDevice(deviceId: string): CompanionDevice | null {

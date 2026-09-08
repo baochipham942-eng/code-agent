@@ -68,18 +68,6 @@
     },
     {
       "id": "msg-06",
-      "role": "system",
-      "content": "<thinking>\n刚执行了 Write。\n请简要分析：\n1. 执行结果是否符合预期？\n2. 离最终目标还有多远？\n3. 下一步的最优行动是什么？\n</thinking>",
-      "timestamp": 0
-    },
-    {
-      "id": "msg-07",
-      "role": "system",
-      "content": "<goal-checkpoint>\n原始目标: E2E_SNAPSHOT_REPLAY_READ_WRITE：先读夹具再把要点写进便签。\n已成功: Read, Write\n失败重试: 无\n待完成: 无\n当前第 3 轮\n</goal-checkpoint>",
-      "timestamp": 0
-    },
-    {
-      "id": "msg-08",
       "role": "assistant",
       "content": "E2E snapshot replay read-then-write completed. Created file: <RECORD_DATA_DIR>/workspace/read-then-write/snapshot-write-note.txt (33 chars)",
       "timestamp": 0

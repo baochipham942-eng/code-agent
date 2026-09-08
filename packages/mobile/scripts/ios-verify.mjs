@@ -51,8 +51,8 @@ try {
   check('codesign-signature-present', /Identifier=/.test(signature) && /TeamIdentifier=/.test(signature));
   check('codesign-team', new RegExp(`TeamIdentifier=${teamId}`).test(signature));
   const expected = process.env.NEO_IOS_EXPECTED_UDID;
-  if (expected) check('covers-expected-device', profileCoversDevice(profilePlist, expected));
-  else checks.push({ name: 'covers-expected-device', status: 'NOT_RUN', reason: 'NEO_IOS_EXPECTED_UDID not provided' });
+  if (!expected) throw new Error('NEO_IOS_EXPECTED_UDID_REQUIRED');
+  check('covers-expected-device', profileCoversDevice(profilePlist, expected));
 } catch (error) {
   checks.push({ name: 'execution', status: 'FAIL', reason: error.message }); process.exitCode = 1;
 } finally {

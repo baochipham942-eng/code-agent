@@ -47,6 +47,7 @@ try { xcode = capture('xcodebuild', ['-version']); } catch (error) {
 }
 if (style === 'manual' && !identity) missing.push(`no iOS signing identity for team ${teamId} (security find-identity -v -p codesigning)`);
 if (style === 'manual' && !profileFile) missing.push('no .mobileprovision (set NEO_IOS_PROFILE or place one in ~/Library/MobileDevice/Provisioning Profiles/)');
+if (!expectedDevice) missing.push('NEO_IOS_EXPECTED_UDID required so Ad Hoc export fails closed unless the profile covers the target iPhone');
 if (missing.length > 0) throw new Error(`IOS_PREREQUISITES_MISSING: ${missing.join(' | ')}`);
 
 run('npm', ['run', 'build']);
@@ -86,6 +87,7 @@ const embeddedPlist = readMobileprovision(execFileSync('unzip', ['-p', ipa, `Pay
 const summary = summarizeProfile(embeddedPlist);
 if (summary.method !== 'ad-hoc') throw new Error(`NOT_AD_HOC: exported profile is ${summary.method}`);
 if (summary.expired) throw new Error(`PROFILE_EXPIRED: ${summary.expiresAt.toISOString()}`);
+if (!profileCoversDevice(embeddedPlist, expectedDevice)) throw new Error('PROFILE_DOES_NOT_COVER_EXPECTED_DEVICE');
 const sourceStatus = capture('git', ['status', '--porcelain'], root);
 const manifest = {
   kind: 'mobile-base-preview', platform: 'ios', version, build, appId,

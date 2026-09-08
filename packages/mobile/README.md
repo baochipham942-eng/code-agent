@@ -68,12 +68,11 @@ with the device.
 
 试用安装与更新（给使用者）：
 
-1. 没有蒲公英（pgyer）账号/额度，所以没有扫码安装入口，不要相信任何自称安装页的网页。
-2. IPA 与构建清单保留在构建机的 `~/work/out/N-MOBILE-IOS/`，文件名里的
-   `neo-mobile-<版本>-<build>.ipa` 就是这次装的版本；`.ipa.json` 是对应清单。
-3. 用数据线把 iPhone 连到任意一台 Mac，把 IPA 拖进「访达/Finder → 设备 → iPhone」
-   或 Apple Configurator 安装（前提：分发 profile 覆盖这台 iPhone 的 UDID）。
-4. 更新：拿到更高 build 号的 IPA 后直接覆盖安装（同一团队、同一 Bundle ID、
-   build 号递增），数据与草稿保留；不要先卸载再装。
-5. 装不上时先看清单里的 `signing.profile`：过期、不含本机 UDID、或不是 ad-hoc
-   都装不上，找构建方重新出包，不要反复重试。
+1. 没有蒲公英扫码入口。不要打开自称安装页的网页。IPA **不进 git**，由舰队机 `ios:build` 产出。
+2. 构建产物在舰队 `.artifacts/neo-mobile-<版本>-<build>.ipa`（旁路 `.ipa.json` 清单含 sha256）。
+   本机交接副本：`~/Downloads/neo-mobile-ipa/`。
+3. 用数据线把 iPhone 连到本机，Apple Configurator 安装：
+   `cfgutil install-app neo-mobile-<版本>-<build>.ipa`
+   （profile 必须覆盖这台 iPhone；`ios:build` / `ios:verify` 在缺 `NEO_IOS_EXPECTED_UDID` 或覆盖失败时直接退出）。
+4. 更新：更高 build 号的 IPA 直接覆盖安装（同一团队、同一 Bundle ID），不要先卸载。
+5. 装不上先看清单 `signing.profile`：过期或不是 ad-hoc 都装不上，重新出包。

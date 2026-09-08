@@ -9,6 +9,7 @@ import type { SystemEventMessageMetadata } from '../../../../shared/contract/sys
 import { estimateTokens } from '../../../context/tokenOptimizer';
 import { getContextEventLedger } from '../../../context/contextEventLedger';
 import type { ContextAssemblyCtx } from './shared';
+import type { AdvisoryTailKey } from '../turnState';
 import { persistRuntimeState } from '../runtimeStatePersistence';
 import { attachMessageCorrelation } from '../turnQuality';
 import {
@@ -92,6 +93,31 @@ export function injectSystemMessage(
   markMessageContextInjection(systemMessage, [source], 'runtime_system_message');
   ctx.runtime.messages.push(systemMessage);
   ctx.recordContextEventsForMessage(systemMessage);
+}
+
+/**
+ * 逐轮 advisory 注记（内容随轮变化：thinking / goal-checkpoint / current-plan）。
+ * 与 injectSystemMessage 的唯一差别：不落持久 ledger，只写 TurnState 的
+ * latest-wins 尾巴槽，由 buildModelMessages 渲染进历史之后的 transient 尾巴。
+ * 落 ledger 的注入会被 buildAiSdkPrompt 提升进请求最前的 instructions，注记
+ * 内容逐轮变化 ⇒ system+历史前缀缓存整体失效（N-EDIT-CACHEKEY）。
+ * context-events 审计照常记录。
+ */
+export function injectAdvisoryTailMessage(
+  ctx: ContextAssemblyCtx,
+  content: string,
+  key: AdvisoryTailKey,
+  source: ContextInjectionSource,
+): void {
+  const systemMessage: Message = {
+    id: ctx.generateId(),
+    role: 'system',
+    content,
+    timestamp: Date.now(),
+  };
+  markMessageContextInjection(systemMessage, [source], 'runtime_system_message');
+  ctx.recordContextEventsForMessage(systemMessage);
+  ctx.runtime.turn.setAdvisoryTailBlock(key, content);
 }
 
 export function flushHookMessageBuffer(ctx: ContextAssemblyCtx): void {

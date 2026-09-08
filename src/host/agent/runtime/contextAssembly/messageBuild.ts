@@ -803,6 +803,13 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
     tailWorking = result.prompt;
   }
 
+  // 逐轮 advisory 注记（current-plan / goal-checkpoint / adaptive-thinking）：
+  // 内容随轮变化，只进 transient 尾巴（latest-wins 槽，TurnState 按固定序返回），
+  // 不进持久历史——否则 buildAiSdkPrompt 提升进 instructions 会击穿前缀缓存。
+  for (const advisoryBlock of ctx.runtime.turn.advisoryTailBlocks) {
+    tailWorking = appendPromptBlockWithinBudget(tailWorking, advisoryBlock, 'advisory turn note', ctx);
+  }
+
   // 尾巴内容 = 合并视图里稳定前缀之后的部分（trim 前切出，稳定前缀字节不动）
   const dynamicTailContent = tailWorking.slice(stableSystemPrompt.length).trim();
 

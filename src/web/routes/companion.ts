@@ -3,17 +3,26 @@ import type { CompanionGateway } from '../../host/companion/CompanionGateway';
 
 export interface CompanionRouterDeps {
   gateway: CompanionGateway;
+  authenticate: (deviceId: string, credential: string) => boolean;
 }
 
 /**
- * Authenticated companion transport boundary. The normal /api Bearer guard is
- * still applied by app.ts; this route additionally requires a device id in the
- * command contract and never exposes the desktop token as a device credential.
+ * Authenticated companion transport boundary. This route is mounted outside
+ * the desktop /api Bearer guard and requires a separate device credential.
  */
-export function createCompanionRouter({ gateway }: CompanionRouterDeps): Router {
+export function createCompanionRouter({ gateway, authenticate }: CompanionRouterDeps): Router {
   const router = Router();
+  router.use((req, res, next) => {
+    const deviceId = req.header('x-neo-companion-device')?.trim();
+    const credential = req.header('x-neo-companion-credential')?.trim();
+    if (!deviceId || !credential || !authenticate(deviceId, credential)) {
+      res.status(401).json({ success: false, error: { code: 'COMPANION_UNAUTHORIZED' } });
+      return;
+    }
+    next();
+  });
 
-  router.post('/companion/commands', (req, res) => {
+  router.post('/commands', (req, res) => {
     const result = gateway.submit(req.body);
     if (result.kind === 'accepted' || result.kind === 'replayed') {
       res.status(result.kind === 'replayed' ? 200 : 202).json({ success: true, data: result });
@@ -23,7 +32,7 @@ export function createCompanionRouter({ gateway }: CompanionRouterDeps): Router 
     res.status(status).json({ success: false, error: result });
   });
 
-  router.get('/companion/sync', (req, res) => {
+  router.get('/sync', (req, res) => {
     const epoch = Number(req.query.epoch);
     const afterSeq = Number(req.query.afterSeq ?? 0);
     if (!Number.isInteger(epoch) || epoch < 1 || !Number.isInteger(afterSeq) || afterSeq < 0) {

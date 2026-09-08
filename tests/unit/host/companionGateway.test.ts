@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createHash } from 'node:crypto';
 
 vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
@@ -12,7 +13,7 @@ describe('CompanionGateway', () => {
   beforeEach(() => {
     db = new Database(':memory:');
     gateway = new CompanionGateway(db, { now: () => 1000 });
-    gateway.registerDevice({ deviceId: 'phone-1', scopeEpoch: 1, scope: ['session-1'], revokedAt: null });
+    gateway.registerDevice({ deviceId: 'phone-1', credentialHash: 'hash-phone-1', scopeEpoch: 1, scope: ['session-1'], revokedAt: null });
   });
 
   afterEach(() => db.close());
@@ -20,7 +21,7 @@ describe('CompanionGateway', () => {
   it('accepts a command once and replays the durable result', () => {
     const dispatch = vi.fn(() => ({ state: 'accepted' as const, result: { runId: 'run-1' } }));
     gateway = new CompanionGateway(db, { now: () => 1000, dispatch });
-    gateway.registerDevice({ deviceId: 'phone-1', scopeEpoch: 1, scope: ['session-1'], revokedAt: null });
+    gateway.registerDevice({ deviceId: 'phone-1', credentialHash: 'hash-phone-1', scopeEpoch: 1, scope: ['session-1'], revokedAt: null });
     const command = { version: 1 as const, commandId: 'cmd-1', deviceId: 'phone-1', scopeEpoch: 1, sessionId: 'session-1', action: 'message.send' as const, payload: { text: 'hello' } };
     expect(gateway.submit(command).kind).toBe('accepted');
     expect(gateway.submit(command).kind).toBe('replayed');
@@ -51,5 +52,12 @@ describe('CompanionGateway', () => {
   it('rejects revoked devices before dispatch', () => {
     gateway.revokeDevice('phone-1', 1100);
     expect(gateway.submit({ version: 1, commandId: 'cmd-1', deviceId: 'phone-1', scopeEpoch: 2, sessionId: 'session-1', action: 'run.cancel', payload: { runId: 'run-1' } })).toEqual({ kind: 'rejected', reason: 'device_revoked' });
+  });
+
+  it('authenticates the device credential separately from the desktop API token', () => {
+    const credentialHash = createHash('sha256').update('abc').digest('hex');
+    gateway.registerDevice({ deviceId: 'phone-2', credentialHash, scopeEpoch: 1, scope: ['session-1'], revokedAt: null });
+    expect(gateway.authenticateDevice('phone-2', 'abc')).toBe(true);
+    expect(gateway.authenticateDevice('phone-2', 'desktop-bearer')).toBe(false);
   });
 });

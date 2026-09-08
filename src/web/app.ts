@@ -253,7 +253,10 @@ export function createApp(deps: CreateAppDeps): express.Express {
       publishCompanionEvent = (sessionId, kind, payload) => {
         gateway.publish(sessionId, kind, payload);
       };
-      app.use('/api', createCompanionRouter({ gateway }));
+      app.use('/companion', createCompanionRouter({
+        gateway,
+        authenticate: (deviceId, credential) => gateway.authenticateDevice(deviceId, credential),
+      }));
     }
   } catch (error) {
     // Companion is additive: a migration/runtime failure must not prevent the desktop app from serving.

@@ -25,6 +25,10 @@ function digest(value: unknown): string {
   return createHash('sha256').update(stableJson(value)).digest('hex');
 }
 
+function credentialDigest(value: string): string {
+  return createHash('sha256').update(value).digest('hex');
+}
+
 export interface CompanionDispatchResult {
   state?: 'accepted' | 'resolved' | 'rejected';
   result?: Record<string, unknown>;
@@ -55,13 +59,20 @@ export class CompanionGateway {
 
   registerDevice(device: CompanionDevice): void {
     this.db.prepare(`
-      INSERT INTO companion_devices (device_id, scope_json, scope_epoch, revoked_at)
-      VALUES (?, ?, ?, ?)
+      INSERT INTO companion_devices (device_id, credential_hash, scope_json, scope_epoch, revoked_at)
+      VALUES (?, ?, ?, ?, ?)
       ON CONFLICT(device_id) DO UPDATE SET
+        credential_hash = excluded.credential_hash,
         scope_json = excluded.scope_json,
         scope_epoch = excluded.scope_epoch,
         revoked_at = excluded.revoked_at
-    `).run(device.deviceId, JSON.stringify(device.scope), device.scopeEpoch, device.revokedAt);
+    `).run(device.deviceId, device.credentialHash, JSON.stringify(device.scope), device.scopeEpoch, device.revokedAt);
+  }
+
+  authenticateDevice(deviceId: string, credential: string): boolean {
+    const row = this.db.prepare('SELECT credential_hash, revoked_at FROM companion_devices WHERE device_id = ?').get(deviceId) as SqlRow | undefined;
+    if (!row || row.revoked_at != null || typeof row.credential_hash !== 'string' || !row.credential_hash) return false;
+    return credentialDigest(credential) === row.credential_hash;
   }
 
   revokeDevice(deviceId: string, now = this.now()): number {
@@ -194,9 +205,9 @@ export class CompanionGateway {
   }
 
   private getDevice(deviceId: string): CompanionDevice | null {
-    const row = this.db.prepare('SELECT device_id, scope_json, scope_epoch, revoked_at FROM companion_devices WHERE device_id = ?').get(deviceId) as SqlRow | undefined;
+    const row = this.db.prepare('SELECT device_id, credential_hash, scope_json, scope_epoch, revoked_at FROM companion_devices WHERE device_id = ?').get(deviceId) as SqlRow | undefined;
     if (!row) return null;
-    return { deviceId: String(row.device_id), scope: JSON.parse(String(row.scope_json)) as string[], scopeEpoch: Number(row.scope_epoch), revokedAt: row.revoked_at == null ? null : Number(row.revoked_at) };
+    return { deviceId: String(row.device_id), credentialHash: String(row.credential_hash ?? ''), scope: JSON.parse(String(row.scope_json)) as string[], scopeEpoch: Number(row.scope_epoch), revokedAt: row.revoked_at == null ? null : Number(row.revoked_at) };
   }
 
   private getCommand(deviceId: string, commandId: string): CompanionCommandRecord | null {

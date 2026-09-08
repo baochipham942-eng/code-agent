@@ -21,6 +21,7 @@ export type CompanionCommand = z.infer<typeof companionCommandSchema>;
 
 export interface CompanionDevice {
   deviceId: string;
+  credentialHash: string;
   scopeEpoch: number;
   scope: readonly string[];
   revokedAt: number | null;

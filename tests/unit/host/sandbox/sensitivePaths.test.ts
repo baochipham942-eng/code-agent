@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { CONFIG_DIR_NEW } from '../../../../src/shared/constants/configDir';
+import { MAX_DEV_SLOT, devSlotDataDirName } from '../../../../src/shared/devSlot';
 import {
   getSensitiveSandboxPaths,
   isSensitiveCredentialPath,
@@ -37,7 +39,7 @@ describe('sensitive sandbox paths', () => {
     }
   });
 
-  it('covers production, dev, and explicit CODE_AGENT_DATA_DIR secret files', () => {
+  it('covers production, every dev slot, and explicit CODE_AGENT_DATA_DIR secret files', () => {
     const home = '/Users/tester';
     const explicitDataDir = '/tmp/code-agent-data';
     const entries = getSensitiveSandboxPaths({
@@ -45,11 +47,14 @@ describe('sensitive sandbox paths', () => {
       env: { CODE_AGENT_DATA_DIR: explicitDataDir },
     });
 
-    for (const dataDir of [
+    const dataDirs = [
       explicitDataDir,
-      path.join(home, '.code-agent'),
-      path.join(home, '.code-agent-dev'),
-    ]) {
+      path.join(home, CONFIG_DIR_NEW),
+      ...Array.from({ length: MAX_DEV_SLOT }, (_, index) => (
+        path.join(home, devSlotDataDirName(index + 1))
+      )),
+    ];
+    for (const dataDir of dataDirs) {
       expect(entries).toContainEqual({ kind: 'file', path: path.join(dataDir, '.secure-key') });
       expect(entries).toContainEqual({ kind: 'file', path: path.join(dataDir, 'secure-storage.json') });
       expect(entries).toContainEqual({ kind: 'file', path: path.join(dataDir, '.env') });
@@ -77,14 +82,20 @@ describe('sensitive sandbox paths', () => {
 
     expect(isProtectedWritePath(path.join(dataDir, 'settings.json'), opts)).toBe(true);
     expect(isProtectedWritePath(path.join(dataDir, 'settings.local.json'), opts)).toBe(true);
-    expect(isProtectedWritePath(path.join(dataDir, 'code-agent-policy.toml'), opts)).toBe(true);
+    expect(isProtectedWritePath(path.join(dataDir, 'policy.toml'), opts)).toBe(true);
     expect(isProtectedWritePath(path.join(dataDir, 'hooks', 'hooks.json'), opts)).toBe(true);
     expect(isProtectedWritePath(path.join(dataDir, 'session-permission-modes.json'), opts)).toBe(true);
     expect(isProtectedWritePath(path.join(dataDir, 'exec-policy.json'), opts)).toBe(true);
+    expect(isProtectedWritePath(path.join(project, CONFIG_DIR_NEW, 'exec-policy.json'), opts)).toBe(true);
+    expect(isProtectedWritePath(path.join(project, 'code-agent-policy.toml'), opts)).toBe(true);
     expect(isProtectedWritePath(path.join(project, '.git', 'config'), opts)).toBe(true);
     expect(isProtectedWritePath(path.join(project, '.gitconfig'), opts)).toBe(true);
     expect(isProtectedWritePath(path.join(project, '.npmrc'), opts)).toBe(true);
+    expect(isProtectedWritePath(path.join(home, devSlotDataDirName(2), 'settings.json'), opts)).toBe(true);
+    expect(isProtectedWritePath(path.join(home, devSlotDataDirName(9), 'policy.toml'), opts)).toBe(true);
     expect(isProtectedWritePath(path.join(project, 'notes.txt'), opts)).toBe(false);
     expect(isProtectedWritePath(path.join(dataDir, 'notes.txt'), opts)).toBe(false);
+    expect(isProtectedWritePath(path.join(dataDir, 'code-agent-policy.toml'), opts)).toBe(false);
+    expect(isProtectedWritePath(path.join(dataDir, CONFIG_DIR_NEW, 'exec-policy.json'), opts)).toBe(false);
   });
 });

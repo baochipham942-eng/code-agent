@@ -1534,9 +1534,13 @@ export class ToolExecutor {
           'ask',
           `命令无法可靠拆词，审批结果不能放行：${commandAnalysisFailedReason}`,
         );
-      } else if (!guardFabricForcesApproval && !protectedWriteForcesConfirmation) {
+      } else if (!guardFabricForcesApproval) {
         try {
           // 三分支解析 + readOnly/档位改写规则见 toolPermissionClassification.ts
+          // Protected write means "cannot auto-approve", not "skip the classifier".
+          // An early skip hid dangerous-command deny (chmod 777 / user deny rules)
+          // behind an approvable ask — same invariant as permissionClassifier.ts
+          // holding outputRedirectionAsk until every deny has had its say.
           const workspaceRoot = this.writeWorkspaceRoot;
           const classification: ClassificationResult = await resolveToolPermissionClassification({
             executionToolName,
@@ -1557,7 +1561,11 @@ export class ToolExecutor {
           if (classification.external) {
             traceBuilder.addStep('permission_classifier', EXTERNAL_SIDE_EFFECT_TRACE_RULE, 'allow', EXTERNAL_SIDE_EFFECT_TRACE_REASON);
           }
-          if (classification.decision === 'approve' && !this.forcePermissionHandler) {
+          if (
+            classification.decision === 'approve'
+            && !this.forcePermissionHandler
+            && !protectedWriteForcesConfirmation
+          ) {
             logger.info('Auto-approved by classifier', {
               tool: executionToolName,
               reason: classification.reason,
@@ -1620,7 +1628,7 @@ export class ToolExecutor {
               },
             };
           } else {
-            if (classification.decision === 'approve') {
+            if (classification.decision === 'approve' && this.forcePermissionHandler) {
               traceBuilder.addStep(
                 'plan_approval',
                 INJECTED_PERMISSION_HANDLER_TRACE_RULE,

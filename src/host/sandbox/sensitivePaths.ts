@@ -1,6 +1,8 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { CONFIG_DIR_NEW } from '../../shared/constants/configDir';
+import { MAX_DEV_SLOT, devSlotDataDirName } from '../../shared/devSlot';
 
 export type SensitiveSandboxPathKind = 'directory' | 'file';
 
@@ -139,8 +141,10 @@ interface ProtectedWritePathOptions {
   env?: Partial<Pick<NodeJS.ProcessEnv, 'CODE_AGENT_DATA_DIR'>>;
 }
 
+// As-built user-level files under getUserConfigDir() / candidate data dirs.
+// Project-level counterparts live on projectRoot (see isProtectedWritePath).
 const PROTECTED_DATA_DIR_FILES = [
-  'code-agent-policy.toml',
+  'policy.toml',
   'session-permission-modes.json',
   'exec-policy.json',
   'hooks.json',
@@ -178,39 +182,40 @@ export function isProtectedWritePath(
 ): boolean {
   const homeDir = path.resolve(options.homeDir ?? os.homedir());
   const env = options.env ?? process.env;
+  const dataDirAliases = getCandidateDataDirs(homeDir, env).flatMap(pathAliases);
+  const projectRootAliases = options.projectRoot ? pathAliases(options.projectRoot) : [];
+  const homeAliases = pathAliases(homeDir);
+  const candidateAliases = pathAliases(candidatePath);
   const entries: SensitiveSandboxPath[] = [];
 
-  for (const dataDir of getCandidateDataDirs(homeDir, env)) {
-    for (const resolvedDataDir of pathAliases(dataDir)) {
-      for (const fileName of PROTECTED_DATA_DIR_FILES) {
-        entries.push({ kind: 'file', path: path.join(resolvedDataDir, fileName) });
-      }
-      entries.push({ kind: 'directory', path: path.join(resolvedDataDir, 'hooks') });
-      entries.push({ kind: 'file', path: path.join(resolvedDataDir, '.code-agent', 'exec-policy.json') });
+  for (const resolvedDataDir of dataDirAliases) {
+    for (const fileName of PROTECTED_DATA_DIR_FILES) {
+      entries.push({ kind: 'file', path: path.join(resolvedDataDir, fileName) });
     }
+    entries.push({ kind: 'directory', path: path.join(resolvedDataDir, 'hooks') });
   }
 
-  for (const projectRoot of options.projectRoot ? pathAliases(options.projectRoot) : []) {
+  for (const projectRoot of projectRootAliases) {
     entries.push({ kind: 'file', path: path.join(projectRoot, '.git', 'config') });
     entries.push({ kind: 'file', path: path.join(projectRoot, '.gitconfig') });
     entries.push({ kind: 'file', path: path.join(projectRoot, '.npmrc') });
+    entries.push({ kind: 'file', path: path.join(projectRoot, CONFIG_DIR_NEW, 'exec-policy.json') });
+    entries.push({ kind: 'file', path: path.join(projectRoot, 'code-agent-policy.toml') });
   }
 
-  for (const resolvedHome of pathAliases(homeDir)) {
+  for (const resolvedHome of homeAliases) {
     entries.push({ kind: 'file', path: path.join(resolvedHome, '.gitconfig') });
     entries.push({ kind: 'file', path: path.join(resolvedHome, '.npmrc') });
   }
 
   const protectedEntries = dedupeSensitivePaths(entries);
-  for (const candidate of pathAliases(candidatePath)) {
-    for (const dataDir of getCandidateDataDirs(homeDir, env)) {
-      for (const resolvedDataDir of pathAliases(dataDir)) {
-        if (
-          path.dirname(candidate) === resolvedDataDir
-          && isProtectedSettingsFileName(path.basename(candidate))
-        ) {
-          return true;
-        }
+  for (const candidate of candidateAliases) {
+    for (const resolvedDataDir of dataDirAliases) {
+      if (
+        path.dirname(candidate) === resolvedDataDir
+        && isProtectedSettingsFileName(path.basename(candidate))
+      ) {
+        return true;
       }
     }
     if (isPathDeniedBySensitiveSandboxPath(candidate, protectedEntries)) return true;
@@ -237,8 +242,10 @@ function getCandidateDataDirs(
 ): string[] {
   const dirs = [
     env.CODE_AGENT_DATA_DIR?.trim() ? path.resolve(env.CODE_AGENT_DATA_DIR.trim()) : undefined,
-    path.join(homeDir, '.code-agent'),
-    path.join(homeDir, '.code-agent-dev'),
+    path.join(homeDir, CONFIG_DIR_NEW),
+    ...Array.from({ length: MAX_DEV_SLOT }, (_, index) => (
+      path.join(homeDir, devSlotDataDirName(index + 1))
+    )),
   ].filter((dir): dir is string => Boolean(dir));
 
   return Array.from(new Set(dirs));

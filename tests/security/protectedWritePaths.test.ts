@@ -152,11 +152,13 @@ describe('PROTECTED_WRITE_PATHS fuse', () => {
 
   it('数据目录 policy / hooks / session-permission-modes / exec-policy 写入强制审批', async () => {
     const files = [
-      path.join(dataDir, 'code-agent-policy.toml'),
+      path.join(dataDir, 'policy.toml'),
       path.join(dataDir, 'session-permission-modes.json'),
       path.join(dataDir, 'exec-policy.json'),
       path.join(dataDir, 'hooks', 'hooks.json'),
       path.join(dataDir, 'settings.local.json'),
+      path.join(workspace, 'code-agent-policy.toml'),
+      path.join(workspace, '.code-agent', 'exec-policy.json'),
     ];
     for (const target of files) {
       permissionRequests = [];

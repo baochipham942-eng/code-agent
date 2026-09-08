@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { parseShellCommand } from '../security/commandParse';
 import { getSandboxManager } from './manager';
+import { isSensitiveCredentialPath } from './sensitivePaths';
 
 const FENCED_WRITE_PROGRAMS = new Set(['printf', 'echo', 'tee']);
 /** Lookup / startup-file assignments that can change what the fenced command runs. Not an exhaustive bash env list. */
@@ -8,7 +9,9 @@ const LOOKUP_ASSIGNMENT = /^(PATH|CDPATH|ENV|BASH_ENV|SHELLOPTS|BASH_FUNC_[^=]*|
 const SIMPLE_WRITE_PATH = /^[A-Za-z0-9._/+-]+$/;
 /**
  * Eligibility-only screen so quoted redirects stay on the confirmation path
- * (`> "file"`, `> /proj/'o'`, `> "a"/"b"`). The OS fence is still the write gate.
+ * (`> "file"`, `> /proj/'o'`, `> "a"/"b"`). Quoted tee operands are not matched
+ * here: they go through parseShellCommand + SIMPLE_WRITE_PATH after quotes are
+ * stripped (`tee "out.txt"` can still be eligible). The OS fence is still the write gate.
  */
 const QUOTED_REDIRECT_TARGET = /(?:[0-9]?>{1,2}|&>)\s*\S*['"`]/;
 
@@ -17,8 +20,9 @@ export const FENCED_IN_PROJECT_WRITE_REASON = 'in-project write under OS write f
 let osWriteFenceAvailableOverride: boolean | undefined;
 
 /**
- * Pin "fence present" or "fence absent" independently of the host OS.
- * Approval-eval uses this so ubuntu (no bwrap) still grades with-fence semantics.
+ * Eval-fixture / test-only pin for "fence present" or "fence absent".
+ * Approval-eval writes this so ubuntu (no bwrap) still grades with-fence semantics.
+ * Production command paths must not call this (knip production still sees the eval-harness consumer).
  */
 export function setOsWriteFenceAvailableOverride(value: boolean | undefined): void {
   osWriteFenceAvailableOverride = value;
@@ -91,8 +95,12 @@ export function isFencedInProjectWriteEligible(
   if ((execution.environmentAssignments ?? []).some((assignment) => LOOKUP_ASSIGNMENT.test(assignment))) {
     return false;
   }
-  return writeTargets.every((target) => (
-    SIMPLE_WRITE_PATH.test(target.path.replaceAll('\\', '/'))
-    && looksLexicallyInsideWorkspace(target.path, context.workingDirectory, workspaceRoot)
-  ));
+  return writeTargets.every((target) => {
+    if (!SIMPLE_WRITE_PATH.test(target.path.replaceAll('\\', '/'))) return false;
+    if (!looksLexicallyInsideWorkspace(target.path, context.workingDirectory, workspaceRoot)) return false;
+    const resolved = path.resolve(context.workingDirectory, target.path);
+    // OS fence does not protect in-project .env*; keep those on the confirmation path.
+    // Reverse mutation: drop this check ⇒ printf x > .env auto-approves.
+    return !isSensitiveCredentialPath(resolved, { projectRoot: workspaceRoot });
+  });
 }

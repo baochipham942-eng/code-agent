@@ -884,6 +884,7 @@ export class PermissionClassifier {
     }
 
     // Reverse mutation: drop isOsWriteFenceAvailable() ⇒ symlink/TOCTOU writes escape.
+    // Credential write targets (.env*) fail eligibility and fall through to the usual ask.
     if (isFencedInProjectWriteEligible(command, context) && isOsWriteFenceAvailable() && this.classifyBashSegment(command, context, startTime)?.decision !== 'deny') {
       return { decision: 'approve', reason: FENCED_IN_PROJECT_WRITE_REASON, confidence: 0.95, cached: false, bypassCache: true };
     }

@@ -662,6 +662,9 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
           readOnlyRoots: ctx.workspaceScope?.roots
             .filter((root) => root.access === 'read_only')
             .map((root) => resolveCanonicalRunPath(root.path)),
+          // Missing workspaceScope: writable surface is the project workspace, not just cwd.
+          // Fence eligibility is workspace-wide (a sibling of cwd is still in-project), so the
+          // OS jail must match. Bypass-tier without a scope uses the same project boundary.
           // `??` only covers a missing workspaceScope. An empty read_write list
           // stays empty and does not fall back to ctx.workspace.
           readWriteRoots: ctx.workspaceScope?.roots

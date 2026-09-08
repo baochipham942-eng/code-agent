@@ -445,6 +445,15 @@ describe('ToolExecutor Bash 安全命令单一判据', () => {
   });
 
   describe('N-WRITETARGET-EXECTIME：围栏内项目写入免确认', () => {
+    /**
+     * Seatbelt allows TMPDIR writes. Vitest points TMPDIR at the run root
+     * (`os.tmpdir()`), so fence-outside dirs must not use that path — `/tmp`
+     * is the host temp that the jail does not auto-allow.
+     */
+    function mkdirOutsideSeatbeltTemp(prefix: string): Promise<string> {
+      return fs.mkdtemp(path.join('/tmp', prefix));
+    }
+
     function buildGrantingExecutor(): ToolExecutor {
       const executor = new ToolExecutor({
         workingDirectory: workspace,
@@ -550,7 +559,7 @@ describe('ToolExecutor Bash 安全命令单一判据', () => {
 
     it('软链跨界：字面在区内的写入不得静默写到区外', async () => {
       const sub = path.join(workspace, 'link-sub');
-      const outsideDir = await fs.mkdtemp(path.join('/tmp', 'exectime-link-'));
+      const outsideDir = await mkdirOutsideSeatbeltTemp('exectime-link-');
       const outsideFile = path.join(outsideDir, 'out.txt');
       await fs.symlink(outsideDir, sub, process.platform === 'win32' ? 'junction' : 'dir');
 
@@ -597,7 +606,7 @@ describe('ToolExecutor Bash 安全命令单一判据', () => {
       );
       expect(first.success).toBe(true);
 
-      const outsideDir = await fs.mkdtemp(path.join('/tmp', 'exectime-toctou-'));
+      const outsideDir = await mkdirOutsideSeatbeltTemp('exectime-toctou-');
       const outsideFile = path.join(outsideDir, 'out.txt');
       await fs.rm(sub, { recursive: true, force: true });
       await fs.symlink(outsideDir, sub, process.platform === 'win32' ? 'junction' : 'dir');
@@ -626,7 +635,7 @@ describe('ToolExecutor Bash 安全命令单一判据', () => {
       try {
         expect(isOsWriteFenceAvailable()).toBe(false);
         const sub = path.join(workspace, 'link-sub-nofence');
-        const outsideDir = await fs.mkdtemp(path.join('/tmp', 'exectime-link-nofence-'));
+        const outsideDir = await mkdirOutsideSeatbeltTemp('exectime-link-nofence-');
         try {
           await fs.symlink(outsideDir, sub, process.platform === 'win32' ? 'junction' : 'dir');
           const executor = buildRejectingExecutor();
@@ -667,7 +676,7 @@ describe('ToolExecutor Bash 安全命令单一判据', () => {
         expect(first.success).toBe(true);
         expect(permissionRequests.length).toBeGreaterThan(0);
 
-        const outsideDir = await fs.mkdtemp(path.join('/tmp', 'exectime-toctou-nofence-'));
+        const outsideDir = await mkdirOutsideSeatbeltTemp('exectime-toctou-nofence-');
         try {
           await fs.rm(sub, { recursive: true, force: true });
           await fs.symlink(outsideDir, sub, process.platform === 'win32' ? 'junction' : 'dir');
@@ -722,7 +731,7 @@ describe('ToolExecutor Bash 安全命令单一判据', () => {
       const realRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'exectime-realroot-'));
       const linkRoot = path.join(parent, 'proj');
       await fs.symlink(realRoot, linkRoot, process.platform === 'win32' ? 'junction' : 'dir');
-      const outsideDir = await fs.mkdtemp(path.join('/tmp', 'exectime-linkroot-out-'));
+      const outsideDir = await mkdirOutsideSeatbeltTemp('exectime-linkroot-out-');
       await fs.symlink(outsideDir, path.join(realRoot, 'logs'), process.platform === 'win32' ? 'junction' : 'dir');
       await fs.writeFile(path.join(realRoot, 'README.md'), 'fixture\n');
       try {

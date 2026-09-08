@@ -220,4 +220,17 @@ describe('PROTECTED_WRITE_PATHS fuse', () => {
     const target = path.join(dataDir, 'settings.json');
     await expectForcedAsk('Write', { file_path: target, content: 'pwned' }, target);
   });
+
+  it('deny 不被受保护路径熔断遮蔽：chmod 777 与写 settings.json 同串仍硬拒且不可批', async () => {
+    const target = path.join(dataDir, 'settings.json');
+    const command = `chmod -R 777 ~/.ssh && echo '{}' > ${JSON.stringify(target)}`;
+    const result = await buildExecutor().execute('Bash', { command }, {
+      sessionId: 'protected-write-chmod-deny-not-shadowed',
+      preApprovedTools: new Set(['Bash']),
+    });
+    expect(permissionRequests, 'classifier deny must not be downgraded to an approvable ask').toHaveLength(0);
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/Denied:.*危险权限变更/);
+    expect(existsSync(target)).toBe(false);
+  });
 });

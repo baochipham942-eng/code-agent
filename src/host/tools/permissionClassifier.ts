@@ -34,7 +34,7 @@ import { isBashToolName, normalizeToolName } from './toolNames';
 import { resolveCanonicalRunPath } from '../runtime/runContext';
 import { isPathWithinRoot } from '../runtime/workspaceScope';
 import { connectorExternalWriteReason, isConnectorToolName } from '../../shared/contract/workbenchTools';
-import { isSensitiveCredentialPath } from '../sandbox/sensitivePaths';
+import { isProtectedWritePath, isSensitiveCredentialPath } from '../sandbox/sensitivePaths';
 import { resolvedRmCriticalTarget } from '../security/recursiveRmPathSafety';
 import { anchoredAllowCommandWords } from '../security/commandAllowProof';
 
@@ -497,6 +497,48 @@ export function readArgumentsRequirePermission(
   } catch {
     return true;
   }
+}
+
+function outsideProjectWriteAsk(
+  toolName: string,
+  resolved: string,
+  startTime: number,
+): ClassificationResult {
+  const reason = `写入项目目录外: ${resolved}`;
+  return {
+    decision: 'ask',
+    reason,
+    hostReason: createHostReason(
+      HostReasonCode.PermissionFileOutsideWorkspaceConfirmationRequired,
+      reason,
+      { toolName, path: resolved },
+    ),
+    confidence: 0.9,
+    cached: false,
+    traceStep: createTraceStep('permission_classifier', 'W3: outside_project', 'ask', reason, startTime),
+    trustBoundary: true,
+  };
+}
+
+function protectedWriteAsk(
+  toolName: string,
+  resolved: string,
+  startTime: number,
+): ClassificationResult {
+  const reason = `protected write path requires confirmation: ${resolved}`;
+  return {
+    decision: 'ask',
+    reason,
+    hostReason: createHostReason(
+      HostReasonCode.PermissionPolicyConfirmationRequired,
+      reason,
+      { toolName, path: resolved },
+    ),
+    confidence: 1,
+    cached: false,
+    traceStep: createTraceStep('permission_classifier', 'W0: protected_write_path', 'ask', reason, startTime),
+    trustBoundary: true,
+  };
 }
 
 // ----------------------------------------------------------------------------
@@ -1057,87 +1099,30 @@ export class PermissionClassifier {
 
     const candidate = path.resolve(context.workingDirectory, filePath);
     const resolved = resolveCanonicalRunPath(candidate);
-    if (!context.workspaceRoot) {
-      const reason = `写入项目目录外: ${resolved}`;
-      return {
-        decision: 'ask',
-        reason,
-        hostReason: createHostReason(
-          HostReasonCode.PermissionFileOutsideWorkspaceConfirmationRequired,
-          reason,
-          { toolName, path: resolved },
-        ),
-        confidence: 0.9,
-        cached: false,
-        traceStep: createTraceStep('permission_classifier', 'W3: outside_project', 'ask', reason, startTime),
-        trustBoundary: true,
-      };
+    const workspaceBoundary = context.workspaceRoot
+      ? path.resolve(context.workspaceRoot)
+      : undefined;
+    const workspace = workspaceBoundary
+      ? resolveCanonicalRunPath(workspaceBoundary)
+      : undefined;
+    if (isProtectedWritePath(resolved, { homeDir: CANONICAL_HOME_DIR, projectRoot: workspace })) {
+      return protectedWriteAsk(toolName, resolved, startTime);
     }
-
-    const workspaceBoundary = path.resolve(context.workspaceRoot);
-    const workspace = resolveCanonicalRunPath(workspaceBoundary);
-    const canonicalInsideWorkspace = isPathInside(resolved, workspace);
-
-    // W1: 写入项目目录内 → approve (no traceStep)
-    if (canonicalInsideWorkspace) {
-      return {
-        decision: 'approve',
-        reason: '写入项目目录内',
-        confidence: 0.95,
-        cached: false,
-      };
+    if (!workspaceBoundary || !workspace) return outsideProjectWriteAsk(toolName, resolved, startTime);
+    if (isPathInside(resolved, workspace)) {
+      return { decision: 'approve', reason: '写入项目目录内', confidence: 0.95, cached: false };
     }
-
-    // A path that appears to stay inside the workspace but resolves through a
-    // symlink to an external target is an authorization-boundary escape. Check
-    // it before the temporary-directory allowlist so a link into /tmp cannot
-    // turn an external write into an implicit approval.
-    if (isPathInside(candidate, workspaceBoundary)) {
-      const reason = `写入项目目录外: ${resolved}`;
-      return {
-        decision: 'ask',
-        reason,
-        hostReason: createHostReason(
-          HostReasonCode.PermissionFileOutsideWorkspaceConfirmationRequired,
-          reason,
-          { toolName, path: resolved },
-        ),
-        confidence: 0.9,
-        cached: false,
-        traceStep: createTraceStep('permission_classifier', 'W3: outside_project', 'ask', reason, startTime),
-        trustBoundary: true,
-      };
-    }
-
-    // W2: 写入临时目录 → approve (no traceStep)
+    // Symlink that looks in-workspace but resolves outside is a boundary escape;
+    // check before the /tmp allowlist so a link into /tmp cannot become implicit approval.
+    if (isPathInside(candidate, workspaceBoundary)) return outsideProjectWriteAsk(toolName, resolved, startTime);
     const tmpRoot = resolveCanonicalRunPath(os.tmpdir());
     if (
-      isPathWithinRoot(resolved, tmpRoot) ||
-      (process.platform !== 'win32' && isPathWithinRoot(resolved, '/tmp'))
+      isPathWithinRoot(resolved, tmpRoot)
+      || (process.platform !== 'win32' && isPathWithinRoot(resolved, '/tmp'))
     ) {
-      return {
-        decision: 'approve',
-        reason: '写入临时目录',
-        confidence: 0.95,
-        cached: false,
-      };
+      return { decision: 'approve', reason: '写入临时目录', confidence: 0.95, cached: false };
     }
-
-    // W3: 写入项目目录外 → ask
-    const reason = `写入项目目录外: ${resolved}`;
-    return {
-      decision: 'ask',
-      reason,
-      hostReason: createHostReason(
-        HostReasonCode.PermissionFileOutsideWorkspaceConfirmationRequired,
-        reason,
-        { toolName, path: resolved },
-      ),
-      confidence: 0.9,
-      cached: false,
-      traceStep: createTraceStep('permission_classifier', 'W3: outside_project', 'ask', reason, startTime),
-      trustBoundary: true,
-    };
+    return outsideProjectWriteAsk(toolName, resolved, startTime);
   }
 
   /**

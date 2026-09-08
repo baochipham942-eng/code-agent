@@ -94,6 +94,7 @@ import {
   createDirectiveMemoryWriteGrant,
 } from '../memory/directiveMemoryPathAuthority';
 import { resolveToolWriteTargets } from './writeTargets';
+import { isProtectedWritePath } from '../sandbox/sensitivePaths';
 import { parseShellCommand } from '../security/commandParse';
 import { getPolicyEngine } from '../permissions/policyEngine';
 import {
@@ -1395,6 +1396,12 @@ export class ToolExecutor {
 
     // B1 第 4 档「只读探索」判定：语义与档位改写规则集中在 toolPermissionClassification.ts
     const sessionPermissionMode = resolveSessionPermissionMode(this.permissionModeOverride, options.sessionId);
+    // PROTECTED_WRITE_PATHS：policyEnforcer 之后、prefix_rule 之前。allow / hook 预批 /
+    // classifier W1 / acceptEdits 都不能放行；只有 bypassPermissions 档保持放行语义。
+    const protectedWriteForcesConfirmation = sessionPermissionMode !== 'bypassPermissions'
+      && writeTargets.targets.some((target) => isProtectedWritePath(target, {
+        projectRoot: this.writeWorkspaceRoot ?? this.executionCwd,
+      }));
     const readOnlyForcesConfirmation = readOnlyForcesConfirmationFor(sessionPermissionMode, toolDef);
     const shellDesktopAutomation = isBashToolName(policyToolName)
       ? classifyShellDesktopAutomation(params.command)
@@ -1455,6 +1462,7 @@ export class ToolExecutor {
     // Skill 系统：预授权工具跳过普通权限检查（但不能跳过边界违规或 consequence hard deny）
     const isPreApproved = !boundaryViolation
       && !guardFabricForcesApproval
+      && !protectedWriteForcesConfirmation
       && !commandAnalysisFailedReason
       && !shellDesktopAutomation
       && !consequenceForcesClassification
@@ -1469,31 +1477,34 @@ export class ToolExecutor {
       recordDecision(executionToolName, params, 'auto-approve', 'pre-approved', permStartTime, undefined, effectiveSessionId, this.ledgerOrigin);
     }
 
-    // P0: 安全命令白名单 + exec policy — 已知安全命令跳过审批
+    // P0: 安全命令白名单 + exec policy — 已知安全命令跳过审批。
+    // exec-policy forbidden 留在放行守卫外：学来的 allow 不得放行受保护路径，
+    // 但用户显式 forbidden 仍硬拒，不得被 protectedWriteForcesConfirmation 降成可批卡。
     let isSafeCommand = false;
     if (isBashToolName(policyToolName) && params.command && !commandAnalysisFailedReason && !shellDesktopAutomation && !isPreApproved && !guardFabricForcesApproval && !this.forcePermissionHandler) {
       const cmd = params.command as string;
 
-      // 1. 检查 exec policy 持久化规则
+      // 1. 检查 exec policy 持久化规则（forbidden 先于受保护路径熔断）
       try {
         const policyDecision = getExecPolicyStore().match(cmd);
-        if (policyDecision === 'allow' && !bashArgumentForcesClassification) {
-          isSafeCommand = true;
-          logger.debug('Command allowed by exec policy', { command: cmd.substring(0, 80) });
-          recordDecision(executionToolName, params, 'policy-allow', 'exec-policy', permStartTime, undefined, effectiveSessionId, this.ledgerOrigin);
-        } else if (policyDecision === 'forbidden') {
+        if (policyDecision === 'forbidden') {
           recordDecision(executionToolName, params, 'policy-deny', 'exec-policy', permStartTime, undefined, effectiveSessionId, this.ledgerOrigin);
           return {
             success: false,
             error: `Blocked by exec policy: ${cmd.substring(0, 80)}`,
           };
         }
+        if (policyDecision === 'allow' && !bashArgumentForcesClassification && !protectedWriteForcesConfirmation) {
+          isSafeCommand = true;
+          logger.debug('Command allowed by exec policy', { command: cmd.substring(0, 80) });
+          recordDecision(executionToolName, params, 'policy-allow', 'exec-policy', permStartTime, undefined, effectiveSessionId, this.ledgerOrigin);
+        }
       } catch {
         // exec policy not initialized, skip
       }
 
       // 2. 检查安全命令白名单
-      if (!isSafeCommand && !bashArgumentForcesClassification && isKnownSafeCommand(cmd)) {
+      if (!isSafeCommand && !bashArgumentForcesClassification && !protectedWriteForcesConfirmation && isKnownSafeCommand(cmd)) {
         isSafeCommand = true;
         logger.debug('Command is known safe, skipping approval', { command: cmd.substring(0, 80) });
         recordDecision(executionToolName, params, 'auto-approve', 'safe-command', permStartTime, undefined, effectiveSessionId, this.ledgerOrigin);
@@ -1505,6 +1516,7 @@ export class ToolExecutor {
       if (
         !isSafeCommand
         && !argumentForcesClassification
+        && !protectedWriteForcesConfirmation
         && getShellSafetyMode() === 'lenient'
       ) {
         const lenientCheck = commandValidation ?? validateCommand(cmd);
@@ -1516,7 +1528,7 @@ export class ToolExecutor {
       }
     }
 
-    if ((toolDef.requiresPermission || readArgumentForcesClassification) && (commandAnalysisFailedReason || this.forcePermissionHandler || writeWithoutWorkspaceAuthority || guardFabricForcesApproval || policyForcesConfirmation || unresolvedWriteTargetForcesAsk || boundaryViolation || readOnlyForcesConfirmation || shellDesktopAutomation || consequenceForcesClassification || argumentForcesClassification || (!isPreApproved && !isSafeCommand))) {
+    if ((toolDef.requiresPermission || readArgumentForcesClassification) && (commandAnalysisFailedReason || this.forcePermissionHandler || writeWithoutWorkspaceAuthority || guardFabricForcesApproval || protectedWriteForcesConfirmation || policyForcesConfirmation || unresolvedWriteTargetForcesAsk || boundaryViolation || readOnlyForcesConfirmation || shellDesktopAutomation || consequenceForcesClassification || argumentForcesClassification || (!isPreApproved && !isSafeCommand))) {
       // P1: Auto-approve classifier — 规则+LLM 自动判断安全性
       let needsUserApproval = true;
       // 信任边界 ask（W3 写边界）→ forceConfirm：终审层便利放行必须让路（同 directory_access）。
@@ -1545,6 +1557,14 @@ export class ToolExecutor {
           guardFabricTraceStep.reason,
         );
       }
+      if (protectedWriteForcesConfirmation) {
+        traceBuilder.addStep(
+          'policy_enforcer',
+          'protected_write_path',
+          'ask',
+          'Protected write path requires confirmation',
+        );
+      }
       if (commandAnalysisFailedReason) {
         traceBuilder.addStep(
           'permission_classifier',
@@ -1555,6 +1575,10 @@ export class ToolExecutor {
       } else if (!guardFabricForcesApproval) {
         try {
           // 三分支解析 + readOnly/档位改写规则见 toolPermissionClassification.ts
+          // Protected write means "cannot auto-approve", not "skip the classifier".
+          // An early skip hid dangerous-command deny (chmod 777 / user deny rules)
+          // behind an approvable ask — same invariant as permissionClassifier.ts
+          // holding outputRedirectionAsk until every deny has had its say.
           const workspaceRoot = this.writeWorkspaceRoot;
           const classification: ClassificationResult = await resolveToolPermissionClassification({
             executionToolName,
@@ -1576,7 +1600,11 @@ export class ToolExecutor {
           if (classification.external) {
             traceBuilder.addStep('permission_classifier', EXTERNAL_SIDE_EFFECT_TRACE_RULE, 'allow', EXTERNAL_SIDE_EFFECT_TRACE_REASON);
           }
-          if (classification.decision === 'approve' && !this.forcePermissionHandler) {
+          if (
+            classification.decision === 'approve'
+            && !this.forcePermissionHandler
+            && !protectedWriteForcesConfirmation
+          ) {
             logger.info('Auto-approved by classifier', {
               tool: executionToolName,
               reason: classification.reason,
@@ -1639,7 +1667,7 @@ export class ToolExecutor {
               },
             };
           } else {
-            if (classification.decision === 'approve') {
+            if (classification.decision === 'approve' && this.forcePermissionHandler) {
               traceBuilder.addStep(
                 'plan_approval',
                 INJECTED_PERMISSION_HANDLER_TRACE_RULE,
@@ -1703,6 +1731,7 @@ export class ToolExecutor {
         needsUserApproval
         && standingGrantTarget
         && !guardFabricForcesApproval
+        && !protectedWriteForcesConfirmation
         && !policyForcesConfirmation
         && !unresolvedWriteTargetForcesAsk
         && !boundaryViolation
@@ -1776,7 +1805,7 @@ export class ToolExecutor {
       // 写入/执行必须逐次真人确认，且不写入/不消费权限记忆。
       // 信任边界 ask（W3 写边界）同样让路：2026-08-13 真机事故里 devModeAutoApprove
       // 把 $HOME 写边界 ask 自动批掉、文件真落盘。
-      if (readOnlyForcesConfirmation || guardFabricForcesApproval || boundaryAskForcesConfirmation || unresolvedWriteTargetForcesAsk) {
+      if (readOnlyForcesConfirmation || guardFabricForcesApproval || boundaryAskForcesConfirmation || protectedWriteForcesConfirmation || unresolvedWriteTargetForcesAsk) {
         permissionRequest.forceConfirm = true;
       }
       if (unresolvedWriteTargetForcesAsk) {

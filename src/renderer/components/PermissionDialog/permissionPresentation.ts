@@ -3,6 +3,7 @@ import type { DecisionCardViewMode } from '../DecisionCard';
 import type { PermissionRequest } from './types';
 import { formatFilePath } from './utils';
 import { redactCredentialText } from '@shared/security/secretPatterns';
+import { PermissionRequestReason } from '@shared/contract';
 
 function fileTarget(request: PermissionRequest): string | undefined {
   return request.details.filePath || request.details.path;
@@ -73,6 +74,12 @@ export function permissionSummary(request: PermissionRequest, t: Translations): 
   const target = fileTarget(request);
   const compactTarget = target ? compactFileTarget(target) : undefined;
   const qualifier = isOutsideWorkspace(request) ? `（${p.workspaceOutside}）` : '';
+  if (
+    request.reasonCode === PermissionRequestReason.UncertainWriteTargetWithPathDeny
+    && !isDeletionRequest(request)
+  ) {
+    return p.questionUncertainWriteTarget;
+  }
   switch (request.type) {
     case 'file_read':
       return compactTarget ? p.questionFileRead.replace('{target}', `${compactTarget}${qualifier}`) : p.questionFallback;
@@ -131,6 +138,9 @@ export function permissionConsequence(request: PermissionRequest, t: Translation
     }
     const copy = isOutsideWorkspace(request) ? p.consequenceDeviceOutside : p.consequenceDevice;
     return copy.replace('{target}', safeTarget ?? p.targetFallback);
+  }
+  if (request.reasonCode === PermissionRequestReason.UncertainWriteTargetWithPathDeny) {
+    return p.consequenceUncertainWriteTarget;
   }
   if (isOutsideWorkspace(request)) {
     return p.consequenceOutside

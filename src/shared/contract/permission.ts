@@ -56,6 +56,7 @@ export enum HostReasonCode {
   PermissionPolicyConfirmationRequired = 'PERMISSION_POLICY_CONFIRMATION_REQUIRED',
   PermissionSkillBoundaryConfirmationRequired = 'PERMISSION_SKILL_BOUNDARY_CONFIRMATION_REQUIRED',
   PermissionFileOutsideWorkspaceConfirmationRequired = 'PERMISSION_FILE_OUTSIDE_WORKSPACE_CONFIRMATION_REQUIRED',
+  PermissionUncertainWriteTargetConfirmationRequired = 'PERMISSION_UNCERTAIN_WRITE_TARGET_CONFIRMATION_REQUIRED',
   PermissionReadOnlyConfirmationRequired = 'PERMISSION_READ_ONLY_CONFIRMATION_REQUIRED',
   PermissionCommandAnalysisFailed = 'PERMISSION_COMMAND_ANALYSIS_FAILED',
   PermissionClassifierFailed = 'PERMISSION_CLASSIFIER_FAILED',
@@ -289,6 +290,8 @@ export function normalizePermissionAskResult(
 export enum PermissionRequestReason {
   /** 写入工作区目录之外的文件 */
   FileWriteOutsideWorkspace = 'file_write_outside_workspace',
+  /** 写目标无法解析，且运行已配置路径禁止 */
+  UncertainWriteTargetWithPathDeny = 'uncertain_write_target_with_path_deny',
   /** 执行 Shell 命令（潜在高风险操作面） */
   ShellHighRisk = 'shell_high_risk',
   /** 访问外部网络资源 */
@@ -309,6 +312,8 @@ export function permissionReasonText(code: PermissionRequestReason): string {
   switch (code) {
     case PermissionRequestReason.FileWriteOutsideWorkspace:
       return '写入工作区外的文件';
+    case PermissionRequestReason.UncertainWriteTargetWithPathDeny:
+      return '写目标无法解析且已配置路径禁止';
     case PermissionRequestReason.ShellHighRisk:
       return '执行 Shell 命令';
     case PermissionRequestReason.NetworkEgress:

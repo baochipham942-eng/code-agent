@@ -194,6 +194,31 @@ describe('PermissionClassifier', () => {
     expect(authoritativeResult).toMatchObject({ decision: 'approve', cached: false });
   });
 
+  it('asks for writes to Neo data-dir settings.json even when the path is inside the workspace', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'protected-write-classifier-'));
+    const workspaceRoot = path.join(root, 'project');
+    const dataDir = path.join(workspaceRoot, 'neo-data');
+    await fs.mkdir(dataDir, { recursive: true });
+    const previousDataDir = process.env.CODE_AGENT_DATA_DIR;
+    process.env.CODE_AGENT_DATA_DIR = dataDir;
+    try {
+      const result = await classifyPermission(
+        'Write',
+        { file_path: path.join(dataDir, 'settings.json'), content: 'pwned' },
+        { workingDirectory: workspaceRoot, workspaceRoot, permissionLevel: 'write' },
+      );
+      expect(result).toMatchObject({
+        decision: 'ask',
+        trustBoundary: true,
+        traceStep: { rule: 'W0: protected_write_path', result: 'ask' },
+      });
+    } finally {
+      if (previousDataDir === undefined) delete process.env.CODE_AGENT_DATA_DIR;
+      else process.env.CODE_AGENT_DATA_DIR = previousDataDir;
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
   it('asks before reading Claude global memory files', async () => {
     const result = await classifyPermission(
       'Read',

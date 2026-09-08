@@ -15,12 +15,15 @@
     "build": "npm run typecheck && vite build",
     "dev": "vite --host 127.0.0.1",
     "android:build": "node scripts/build-android.mjs",
-    "android:verify": "node scripts/android-verify.mjs"
+    "android:verify": "node scripts/android-verify.mjs",
+    "ios:build": "node scripts/build-ios.mjs",
+    "ios:verify": "node scripts/ios-verify.mjs"
   },
   "dependencies": {
     "@capacitor/android": "8.5.1",
     "@capacitor/app": "8.1.1",
     "@capacitor/core": "8.5.1",
+    "@capacitor/ios": "8.5.1",
     "@capacitor/keyboard": "8.0.5",
     "@capacitor/preferences": "8.0.1",
     "react": "19.2.8",

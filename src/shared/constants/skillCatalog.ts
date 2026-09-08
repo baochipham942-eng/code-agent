@@ -86,6 +86,17 @@ export const RECOMMENDED_REPOSITORIES: SkillRepository[] = [
     description: '知识工作 Skills（品牌系统/SOP/程序化视频/PPT 生成）',
     author: 'coleam00',
   },
+  {
+    id: 'archify',
+    name: 'Archify Architecture Diagrams',
+    url: 'https://github.com/tt-a1i/archify',
+    branch: 'main',
+    skillsPath: '.',
+    category: 'community',
+    recommended: true,
+    description: '从系统描述或代码库生成可交互、可分享的架构与流程图',
+    author: 'tt-a1i',
+  },
 ];
 
 // ----------------------------------------------------------------------------
@@ -598,6 +609,14 @@ export const RECOMMENDED_SKILLS: RecommendedSkillEntry[] = [
   },
 
   // ---- 开发工程 ----
+  {
+    name: 'archify',
+    displayName: 'Archify 架构图',
+    description: '从系统描述或代码库生成架构、流程、时序、数据流和生命周期图，并导出独立 HTML 文件',
+    category: 'development',
+    repoId: 'archify',
+    keywords: ['架构图', '系统设计', '架构设计', '流程图', '时序图', '数据流图', 'architecture', 'architecture diagram', 'system design'],
+  },
   {
     name: 'systematic-debugging',
     displayName: '系统化调试',

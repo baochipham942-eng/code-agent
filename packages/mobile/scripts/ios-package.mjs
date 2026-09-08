@@ -138,12 +138,17 @@ export function exportOptionsXml({ method, teamId, style, appId, profileName, id
     entries.push(['signingCertificate', identity]);
     entries.push(['provisioningProfiles', { [appId]: profileName }]);
   }
+  const xmlEscape = text => String(text)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;');
   const render = value => {
     if (typeof value === 'boolean') return value ? '<true/>' : '<false/>';
     if (typeof value === 'object' && value !== null) {
-      return `<dict>${Object.entries(value).map(([key, nested]) => `<key>${key}</key>${render(nested)}`).join('')}</dict>`;
+      return `<dict>${Object.entries(value).map(([key, nested]) => `<key>${xmlEscape(key)}</key>${render(nested)}`).join('')}</dict>`;
     }
-    return `<string>${value}</string>`;
+    return `<string>${xmlEscape(value)}</string>`;
   };
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

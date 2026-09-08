@@ -89,6 +89,8 @@ describe('project version stamping', () => {
 describe('ad-hoc export options', () => {
   it('renders manual signing with the explicit profile and boolean plist literals', () => {
     const xml = exportOptionsXml({ method: 'ad-hoc', teamId: 'D7CVTJ72NV', style: 'manual', appId: 'dev.neo.companion.preview', profileName: 'Neo Preview AdHoc', identity: 'iPhone Distribution: Neo Preview Team (D7CVTJ72NV)' });
+    expect(exportOptionsXml({ method: 'ad-hoc', teamId: 'D7CVTJ72NV', style: 'manual', appId: 'dev.neo.companion.preview', profileName: 'A & B <C>', identity: 'iPhone Distribution: Neo Preview Team (D7CVTJ72NV)' }))
+      .toContain('<string>A &amp; B &lt;C&gt;</string>');
     expect(xml).toContain('<key>method</key><string>ad-hoc</string>');
     expect(xml).toContain('<key>signingStyle</key><string>manual</string>');
     expect(xml).toContain('<key>provisioningProfiles</key><dict><key>dev.neo.companion.preview</key><string>Neo Preview AdHoc</string></dict>');

@@ -9,6 +9,7 @@ import {
   isOsWriteFenceAvailable,
 } from '../../../../src/host/sandbox/writeFence';
 import { getSandboxManager } from '../../../../src/host/sandbox';
+import type { ClassificationResult } from '../../../../src/host/tools/permissionClassifier';
 
 const context = { workingDirectory: '/tmp/proj', workspaceRoot: '/tmp/proj' };
 
@@ -170,12 +171,13 @@ describe('writeFence eligibility', () => {
   });
 
   it('围栏文案路径缺少 requiresOsWriteFence 时不得免确认', () => {
-    const stripped = enforceWriteFenceObligation({
+    const classification: ClassificationResult = {
       decision: 'approve',
       reason: FENCED_IN_PROJECT_WRITE_REASON,
       confidence: 0.95,
       cached: false,
-    });
+    };
+    const stripped = enforceWriteFenceObligation(classification);
     expect(stripped.decision).toBe('ask');
     expect(stripped.requiresOsWriteFence).not.toBe(true);
   });

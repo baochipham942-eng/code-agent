@@ -63,4 +63,16 @@ describe('demo acceptance: truthful historical presentation', () => {
     const nodes = projectTurns(messages, 'session', false, []).turns.flatMap((turn) => turn.nodes);
     expect(Boolean(nodes.find((node) => node.toolCall?.id === 'x')?.toolCall?.recovered)).toBe(same);
   });
+  it('links batch Edit NOT_READ to the same later successful batch, ignoring JSON key order', () => {
+    const first = { file_path: '/workspace/report.md', edits: [{ old_text: 'a', new_text: 'b', old_text_length: 1 }] };
+    const later = { edits: [{ new_text: 'b', old_text: 'a' }], file_path: '/workspace/report.md' };
+    const messages: Message[] = [
+      { id: 'u', role: 'user', content: 'Repair document', timestamp: 1 },
+      { id: 'a', role: 'assistant', content: '', timestamp: 2, toolCalls: [{ ...failed('Edit', 'NOT_READ'), arguments: first }] },
+      { id: 'r', role: 'assistant', content: '', timestamp: 3, toolCalls: [{ id: 'read', name: 'Read', arguments: { file_path: '/workspace/report.md' }, result: { toolCallId: 'read', success: true, output: 'a' } }] },
+      { id: 'b', role: 'assistant', content: '', timestamp: 4, toolCalls: [{ id: 'success', name: 'Edit', arguments: later, result: { toolCallId: 'success', success: true, output: 'ok' } }] },
+    ];
+    expect(projectTurns(messages, 'session', false, []).turns.flatMap((turn) => turn.nodes).find((node) => node.toolCall?.id === 'x')?.toolCall?.recovered).toBe(true);
+  });
+
 });

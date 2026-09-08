@@ -57,6 +57,7 @@ import { resetPolicyEnforcer } from '../../../src/host/security/policyEnforcer';
 import { getPolicyEngine, resetPolicyEngine } from '../../../src/host/permissions/policyEngine';
 import { resolveCanonicalRunPath } from '../../../src/host/runtime/runContext';
 import { getSandboxManager } from '../../../src/host/sandbox';
+import { isOsWriteFenceAvailable } from '../../../src/host/sandbox/writeFence';
 
 describe('ToolExecutor Bash 安全命令单一判据', () => {
   let workspace: string;
@@ -444,10 +445,6 @@ describe('ToolExecutor Bash 安全命令单一判据', () => {
   });
 
   describe('N-WRITETARGET-EXECTIME：围栏内项目写入免确认', () => {
-    function fenceAvailable(): boolean {
-      return process.platform !== 'win32' && getSandboxManager().isAvailable();
-    }
-
     function buildGrantingExecutor(): ToolExecutor {
       const executor = new ToolExecutor({
         workingDirectory: workspace,
@@ -474,7 +471,7 @@ describe('ToolExecutor Bash 安全命令单一判据', () => {
         { sessionId: `exectime-benign-${relative}` },
       );
 
-      if (fenceAvailable()) {
+      if (isOsWriteFenceAvailable()) {
         expect(permissionRequests).toHaveLength(0);
         expect(result.success).toBe(true);
         expect(existsSync(path.join(workspace, relative))).toBe(true);
@@ -567,7 +564,12 @@ describe('ToolExecutor Bash 安全命令单一判据', () => {
       const outsideContents = existsSync(outsideFile)
         ? await fs.readFile(outsideFile, 'utf8')
         : '';
-      expect(outsideContents).not.toContain('ok');
+      if (isOsWriteFenceAvailable()) {
+        expect(outsideContents).not.toContain('ok');
+      } else {
+        expect(permissionRequests.length).toBeGreaterThan(0);
+        expect(permissionRequests[0]?.type).toBe('command');
+      }
       await fs.rm(outsideDir, { recursive: true, force: true });
     });
 
@@ -610,8 +612,79 @@ describe('ToolExecutor Bash 安全命令单一判据', () => {
       const outsideContents = existsSync(outsideFile)
         ? await fs.readFile(outsideFile, 'utf8')
         : '';
-      expect(outsideContents).not.toContain('ok');
+      if (isOsWriteFenceAvailable()) {
+        expect(outsideContents).not.toContain('ok');
+      } else {
+        expect(permissionRequests.length).toBeGreaterThan(0);
+        expect(permissionRequests[0]?.type).toBe('command');
+      }
       await fs.rm(outsideDir, { recursive: true, force: true });
+    });
+
+    it('围栏不可用时软链跨界判定仍是 ask 不是 approve', async () => {
+      const spy = vi.spyOn(getSandboxManager(), 'isAvailable').mockReturnValue(false);
+      try {
+        expect(isOsWriteFenceAvailable()).toBe(false);
+        const sub = path.join(workspace, 'link-sub-nofence');
+        const outsideDir = await fs.mkdtemp(path.join('/tmp', 'exectime-link-nofence-'));
+        try {
+          await fs.symlink(outsideDir, sub, process.platform === 'win32' ? 'junction' : 'dir');
+          const executor = buildRejectingExecutor();
+          await executor.execute(
+            'Bash',
+            { command: `printf ok > ${path.join(sub, 'out.txt')}` },
+            { sessionId: 'exectime-bypass-symlink-nofence' },
+          );
+          expect(permissionRequests.length).toBeGreaterThan(0);
+          expect(permissionRequests[0]?.type).toBe('command');
+          const outsideFile = path.join(outsideDir, 'out.txt');
+          const outsideContents = existsSync(outsideFile)
+            ? await fs.readFile(outsideFile, 'utf8')
+            : '';
+          expect(outsideContents).not.toContain('ok');
+        } finally {
+          await fs.rm(outsideDir, { recursive: true, force: true });
+        }
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it('围栏不可用时 TOCTOU 第二次判定仍是 ask 不是 approve', async () => {
+      const spy = vi.spyOn(getSandboxManager(), 'isAvailable').mockReturnValue(false);
+      try {
+        expect(isOsWriteFenceAvailable()).toBe(false);
+        const sub = path.join(workspace, 'toctou-sub-nofence');
+        await fs.mkdir(sub);
+        const command = `printf ok > ${path.join(sub, 'out.txt')}`;
+        const executor = buildGrantingExecutor();
+
+        const first = await executor.execute(
+          'Bash',
+          { command },
+          { sessionId: 'exectime-toctou-nofence-1' },
+        );
+        expect(first.success).toBe(true);
+        expect(permissionRequests.length).toBeGreaterThan(0);
+
+        const outsideDir = await fs.mkdtemp(path.join('/tmp', 'exectime-toctou-nofence-'));
+        try {
+          await fs.rm(sub, { recursive: true, force: true });
+          await fs.symlink(outsideDir, sub, process.platform === 'win32' ? 'junction' : 'dir');
+          permissionRequests.length = 0;
+          await executor.execute(
+            'Bash',
+            { command },
+            { sessionId: 'exectime-toctou-nofence-2' },
+          );
+          expect(permissionRequests.length).toBeGreaterThan(0);
+          expect(permissionRequests[0]?.type).toBe('command');
+        } finally {
+          await fs.rm(outsideDir, { recursive: true, force: true });
+        }
+      } finally {
+        spy.mockRestore();
+      }
     });
   });
 });

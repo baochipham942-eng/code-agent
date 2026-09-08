@@ -20,6 +20,8 @@ import {
 } from '../../../src/host/tools/permissionClassifier';
 import { anchoredAllowCommandWords } from '../../../src/host/security/commandAllowProof';
 import { setCommandPolicyRulesForTest } from '../../../src/host/tools/modules/shell/commandPolicy';
+import { getSandboxManager } from '../../../src/host/sandbox';
+import { isOsWriteFenceAvailable } from '../../../src/host/sandbox/writeFence';
 
 describe('PermissionClassifier', () => {
   beforeEach(() => {
@@ -1148,7 +1150,11 @@ describe('PermissionClassifier', () => {
   });
 
   describe('N-WRITETARGET-EXECTIME：围栏内写入不缓存可写结论', () => {
-    it('同一条区内写入在软链掉包后不得复用缓存批准', async () => {
+    async function classifyPrintfWriteAfterSymlinkSwap(): Promise<{
+      first: Awaited<ReturnType<typeof classifyPermission>>;
+      second: Awaited<ReturnType<typeof classifyPermission>>;
+      root: string;
+    }> {
       const root = await fs.mkdtemp(path.join(os.tmpdir(), 'exectime-cache-'));
       const workspaceRoot = path.join(root, 'work');
       const sub = path.join(workspaceRoot, 'sub');
@@ -1162,12 +1168,56 @@ describe('PermissionClassifier', () => {
       await fs.rm(sub, { recursive: true, force: true });
       await fs.symlink(outside, sub, process.platform === 'win32' ? 'junction' : 'dir');
       const second = await classifyPermission('Bash', { command }, context);
+      return { first, second, root };
+    }
 
+    function assertFenceApproveNotCached(
+      first: Awaited<ReturnType<typeof classifyPermission>>,
+      second: Awaited<ReturnType<typeof classifyPermission>>,
+    ): void {
+      expect(first.decision).toBe('approve');
+      expect(first.reason).toBe('in-project write under OS write fence');
+      expect(first.cached).toBe(false);
       expect(second.cached).toBe(false);
-      if (first.decision === 'approve') {
-        expect(second.decision === 'approve' ? second.cached : false).toBe(false);
+      expect(second.decision === 'approve' ? second.cached : false).toBe(false);
+    }
+
+    function assertAskNotApprove(
+      first: Awaited<ReturnType<typeof classifyPermission>>,
+      second: Awaited<ReturnType<typeof classifyPermission>>,
+    ): void {
+      expect(first.decision).toBe('ask');
+      expect(first.decision).not.toBe('approve');
+      expect(second.decision).toBe('ask');
+      expect(second.decision).not.toBe('approve');
+    }
+
+    it('同一条区内写入在软链掉包后不得复用缓存批准', async () => {
+      const { first, second, root } = await classifyPrintfWriteAfterSymlinkSwap();
+      try {
+        if (isOsWriteFenceAvailable()) {
+          assertFenceApproveNotCached(first, second);
+        } else {
+          assertAskNotApprove(first, second);
+        }
+      } finally {
+        await fs.rm(root, { recursive: true, force: true });
       }
-      await fs.rm(root, { recursive: true, force: true });
+    });
+
+    it('围栏不可用时软链掉包后判定仍是 ask 不是 approve', async () => {
+      const spy = vi.spyOn(getSandboxManager(), 'isAvailable').mockReturnValue(false);
+      try {
+        expect(isOsWriteFenceAvailable()).toBe(false);
+        const { first, second, root } = await classifyPrintfWriteAfterSymlinkSwap();
+        try {
+          assertAskNotApprove(first, second);
+        } finally {
+          await fs.rm(root, { recursive: true, force: true });
+        }
+      } finally {
+        spy.mockRestore();
+      }
     });
   });
 });

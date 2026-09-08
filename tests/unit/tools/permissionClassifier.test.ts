@@ -1226,6 +1226,8 @@ describe('PermissionClassifier', () => {
       'printf x > .env',
       'printf x >> .env',
       'tee .env',
+      'printf PWNED=1 >> .ENV',
+      'printf x > .Env.local',
     ])('%s 在围栏可用时仍 ask 不免确认', async (command) => {
       isOsWriteFenceAvailable.setAvailableOverrideForTest(true);
       const root = await fs.mkdtemp(path.join(os.tmpdir(), 'exectime-env-'));
@@ -1254,6 +1256,29 @@ describe('PermissionClassifier', () => {
     ])('%s 在围栏可用时仍 ask 不免确认', async (command) => {
       isOsWriteFenceAvailable.setAvailableOverrideForTest(true);
       const root = await fs.mkdtemp(path.join(os.tmpdir(), 'exectime-expand-'));
+      try {
+        expect(isOsWriteFenceAvailable()).toBe(true);
+        const result = await classifyPermission(
+          'Bash',
+          { command },
+          { workingDirectory: root, workspaceRoot: root, permissionLevel: 'execute' },
+        );
+        expect(result.decision).toBe('ask');
+        expect(result.reason).not.toBe(FENCED_IN_PROJECT_WRITE_REASON);
+      } finally {
+        isOsWriteFenceAvailable.setAvailableOverrideForTest(undefined);
+        await fs.rm(root, { recursive: true, force: true });
+      }
+    });
+
+    it.each([
+      "printf '[core]\\n\\thooksPath = .neo-hooks\\n' > .GIT/config",
+      'printf x > .git/config',
+      'printf x > .GitConfig',
+      'printf x > .NPMRC',
+    ])('%s 在围栏可用时仍 ask 不免确认', async (command) => {
+      isOsWriteFenceAvailable.setAvailableOverrideForTest(true);
+      const root = await fs.mkdtemp(path.join(os.tmpdir(), 'exectime-protected-'));
       try {
         expect(isOsWriteFenceAvailable()).toBe(true);
         const result = await classifyPermission(

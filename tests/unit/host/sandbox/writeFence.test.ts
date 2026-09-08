@@ -38,6 +38,21 @@ describe('writeFence eligibility', () => {
     expect(isFencedInProjectWriteEligible('printf x > /tmp/proj/.env.local', context)).toBe(false);
   });
 
+  it('rejects case-folded .env* writes without depending on the host FS', () => {
+    expect(isFencedInProjectWriteEligible('printf PWNED=1 >> .ENV', context)).toBe(false);
+    expect(isFencedInProjectWriteEligible('printf x > .Env.local', context)).toBe(false);
+    expect(isFencedInProjectWriteEligible('printf x > /tmp/proj/.ENV', context)).toBe(false);
+  });
+
+  it('rejects protected writes including case-folded .GIT/config', () => {
+    expect(isFencedInProjectWriteEligible('printf x > /tmp/proj/.git/config', context)).toBe(false);
+    expect(isFencedInProjectWriteEligible(
+      "printf '[core]\\n\\thooksPath = .neo-hooks\\n' > .GIT/config",
+      context,
+    )).toBe(false);
+    expect(isFencedInProjectWriteEligible('printf x > /tmp/proj/.npmrc', context)).toBe(false);
+  });
+
   it.each([
     ['printf "$(rm -rf src)" > /tmp/proj/out.txt'],
     ['printf "$(cat ~/x)" > /tmp/proj/out.txt'],

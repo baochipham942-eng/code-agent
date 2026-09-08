@@ -78,6 +78,17 @@ describe('sensitive sandbox paths', () => {
     expect(isSensitiveCredentialPath('/Users/tester/work/repo/README.md', { homeDir: home, projectRoot: project })).toBe(false);
   });
 
+  it('folds .env* credential basenames so case-insensitive FS cannot bypass', () => {
+    const home = '/Users/tester';
+    const project = '/Users/tester/work/repo';
+    const opts = { homeDir: home, projectRoot: project };
+
+    expect(isSensitiveCredentialPath(path.join(project, '.ENV'), opts)).toBe(true);
+    expect(isSensitiveCredentialPath(path.join(project, '.Env.local'), opts)).toBe(true);
+    expect(isSensitiveCredentialPath(path.join(project, '.ENVRC'), opts)).toBe(true);
+    expect(isSensitiveCredentialPath(path.join(home, '.ENV'), opts)).toBe(true);
+  });
+
   it('classifies Neo constraint files and workspace git/npm config as protected writes', () => {
     const home = '/Users/tester';
     const project = '/Users/tester/work/repo';
@@ -95,6 +106,9 @@ describe('sensitive sandbox paths', () => {
     expect(isProtectedWritePath(path.join(project, '.git', 'config'), opts)).toBe(true);
     expect(isProtectedWritePath(path.join(project, '.gitconfig'), opts)).toBe(true);
     expect(isProtectedWritePath(path.join(project, '.npmrc'), opts)).toBe(true);
+    expect(isProtectedWritePath(path.join(project, '.GIT', 'config'), opts)).toBe(true);
+    expect(isProtectedWritePath(path.join(project, '.GitConfig'), opts)).toBe(true);
+    expect(isProtectedWritePath(path.join(project, '.NPMRC'), opts)).toBe(true);
     expect(isProtectedWritePath(path.join(home, devSlotDataDirName(2), 'settings.json'), opts)).toBe(true);
     expect(isProtectedWritePath(path.join(home, devSlotDataDirName(9), 'policy.toml'), opts)).toBe(true);
     expect(isProtectedWritePath(path.join(project, 'notes.txt'), opts)).toBe(false);

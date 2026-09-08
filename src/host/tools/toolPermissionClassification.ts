@@ -328,6 +328,7 @@ export async function resolveToolPermissionClassification(input: {
       workingDirectory: input.workingDirectory,
       workspaceRoot: input.workspaceRoot,
       permissionLevel: input.permissionLevel,
+      workingDirectoryFromToolCall: true,
     });
   }
   if (input.readOnlyForcesConfirmation && classification.decision === 'approve') {

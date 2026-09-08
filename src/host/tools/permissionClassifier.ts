@@ -110,6 +110,8 @@ interface ClassificationContext {
   permissionLevel?: string;
   /** Per-classification cache only; never survives symlink or filesystem changes. */
   pathResolutionCache?: Map<string, string>;
+  /** True when workingDirectory is this tool call's real cwd. Auto-mode process.cwd() re-run must omit it. */
+  workingDirectoryFromToolCall?: boolean;
 }
 
 interface CacheEntry {
@@ -884,11 +886,12 @@ export class PermissionClassifier {
     }
 
     // Reverse mutation: drop isOsWriteFenceAvailable() ⇒ symlink/TOCTOU writes escape.
-    // Credential write targets (.env*) fail eligibility and fall through to the usual ask.
-    // classifyBashSegment here is only a deny probe on the original spelling. The
-    // single-segment branch below re-classifies splitCompoundCommand's reconstructed
-    // text (`printf "${VAR}"` → `printf \$\{VAR\} > out.txt`), which is a different string.
-    if (isFencedInProjectWriteEligible(command, context) && isOsWriteFenceAvailable() && this.classifyBashSegment(command, context, startTime)?.decision !== 'deny') {
+    // Reverse mutation: drop workingDirectoryFromToolCall ⇒ CLI auto-mode process.cwd()
+    // re-run auto-approves a relative write while bash executes in the tool's outside cwd.
+    // Deny probe is on the original spelling; the single-segment branch below re-classifies
+    // reconstructed text when it differs (`printf "${VAR}"` → `printf \$\{VAR\} > out.txt`).
+    if (context.workingDirectoryFromToolCall === true && isFencedInProjectWriteEligible(command, context)
+      && isOsWriteFenceAvailable() && this.classifyBashSegment(command, context, startTime)?.decision !== 'deny') {
       return { decision: 'approve', reason: FENCED_IN_PROJECT_WRITE_REASON, confidence: 0.95, cached: false, bypassCache: true };
     }
 

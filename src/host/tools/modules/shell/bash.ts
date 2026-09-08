@@ -686,7 +686,7 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
         return {
           ok: false,
           error: writeFence
-            ? `in-project write auto-approve requires an OS write fence: ${detail}`
+            ? `区内写入免确认要求 OS 沙箱可用，但当前不可用：${detail}。请安装 bubblewrap（Linux）或切换到 default 档。`
             : `bypassPermissions 档要求 OS 沙箱可用，但当前不可用：${detail}。` +
               `请安装 bubblewrap（Linux）或切换到 default 档。`,
         };

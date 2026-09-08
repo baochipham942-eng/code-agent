@@ -1153,6 +1153,15 @@ describe('PermissionClassifier', () => {
   });
 
   describe('N-WRITETARGET-EXECTIME：围栏内写入不缓存可写结论', () => {
+    function executorFenceContext(workingDirectory: string, workspaceRoot = workingDirectory) {
+      return {
+        workingDirectory,
+        workspaceRoot,
+        permissionLevel: 'execute',
+        workingDirectoryFromToolCall: true,
+      };
+    }
+
     async function classifyPrintfWriteAfterSymlinkSwap(): Promise<{
       first: Awaited<ReturnType<typeof classifyPermission>>;
       second: Awaited<ReturnType<typeof classifyPermission>>;
@@ -1163,7 +1172,7 @@ describe('PermissionClassifier', () => {
       const sub = path.join(workspaceRoot, 'sub');
       await fs.mkdir(sub, { recursive: true });
       const command = `printf ok > ${path.join(sub, 'out.txt')}`;
-      const context = { workingDirectory: workspaceRoot, workspaceRoot, permissionLevel: 'execute' };
+      const context = executorFenceContext(workspaceRoot);
 
       const first = await classifyPermission('Bash', { command }, context);
       const outside = path.join(root, 'outside');
@@ -1235,7 +1244,7 @@ describe('PermissionClassifier', () => {
         const result = await classifyPermission(
           'Bash',
           { command },
-          { workingDirectory: root, workspaceRoot: root, permissionLevel: 'execute' },
+          executorFenceContext(root),
         );
         expect(result.decision).toBe('ask');
         expect(result.reason).not.toBe(FENCED_IN_PROJECT_WRITE_REASON);
@@ -1260,7 +1269,7 @@ describe('PermissionClassifier', () => {
         const result = await classifyPermission(
           'Bash',
           { command },
-          { workingDirectory: root, workspaceRoot: root, permissionLevel: 'execute' },
+          executorFenceContext(root),
         );
         expect(result.decision).toBe('ask');
         expect(result.reason).not.toBe(FENCED_IN_PROJECT_WRITE_REASON);
@@ -1283,7 +1292,7 @@ describe('PermissionClassifier', () => {
         const result = await classifyPermission(
           'Bash',
           { command },
-          { workingDirectory: root, workspaceRoot: root, permissionLevel: 'execute' },
+          executorFenceContext(root),
         );
         expect(result.decision).toBe('ask');
         expect(result.reason).not.toBe(FENCED_IN_PROJECT_WRITE_REASON);
@@ -1300,11 +1309,7 @@ describe('PermissionClassifier', () => {
         const result = await classifyPermission(
           'Bash',
           { command: 'printf x > .env' },
-          {
-            workingDirectory: '/var/tmp/exectime-proj',
-            workspaceRoot: '/private/var/tmp/exectime-proj',
-            permissionLevel: 'execute',
-          },
+          executorFenceContext('/var/tmp/exectime-proj', '/private/var/tmp/exectime-proj'),
         );
         expect(result.decision).toBe('ask');
         expect(result.reason).not.toBe(FENCED_IN_PROJECT_WRITE_REASON);
@@ -1349,7 +1354,7 @@ describe('PermissionClassifier', () => {
         const result = await classifyPermission(
           'Bash',
           { command },
-          { workingDirectory: root, workspaceRoot: root, permissionLevel: 'execute' },
+          executorFenceContext(root),
         );
         expect(result.decision).toBe('ask');
         expect(result.reason).not.toBe(FENCED_IN_PROJECT_WRITE_REASON);

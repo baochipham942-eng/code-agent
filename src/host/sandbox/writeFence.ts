@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { parseShellCommand } from '../security/commandParse';
 import { resolveCanonicalRunPath } from '../runtime/runContext';
+import { CONFIG_DIR_NEW } from '../../shared/constants/configDir';
 import { getSandboxManager } from './manager';
 import { isProtectedWritePath, isSensitiveCredentialPath } from './sensitivePaths';
 
@@ -93,6 +94,26 @@ function isInProjectProtectedWrite(targetPath: string, cwd: string, workspaceRoo
     roots.some((root) => isProtectedWritePath(candidate, { projectRoot: root })));
 }
 
+const PROJECT_SETTINGS_RELATIVE = `${CONFIG_DIR_NEW}/settings.json`.toLowerCase();
+
+/** Writes that execute on the next tool run — same skip-confirm exclusion as .git/config. */
+function isStartupExecutableRelative(candidate: string, projectRoot: string): boolean {
+  const relative = path.relative(projectRoot, candidate);
+  if (relative === '' || relative.startsWith('..') || path.isAbsolute(relative)) return false;
+  const folded = relative.replaceAll('\\', '/').toLowerCase();
+  if (folded === PROJECT_SETTINGS_RELATIVE) return true;
+  if (folded === '.git/hooks' || folded.startsWith('.git/hooks/')) return true;
+  if (folded === '.husky' || folded.startsWith('.husky/')) return true;
+  return false;
+}
+
+function isInProjectStartupExecutableWrite(targetPath: string, cwd: string, workspaceRoot: string): boolean {
+  const candidates = lexicalPathAliases(path.resolve(cwd, targetPath));
+  const roots = lexicalPathAliases(workspaceRoot);
+  return candidates.some((candidate) =>
+    roots.some((root) => isStartupExecutableRelative(candidate, root)));
+}
+
 /**
  * OS write fence is present (seatbelt/bwrap). Windows and missing jail are not.
  * Reverse mutation: dropping this check lets in-project-looking writes skip confirmation
@@ -103,7 +124,10 @@ export const isOsWriteFenceAvailable = Object.assign(
     if (osWriteFenceAvailableOverride !== undefined) return osWriteFenceAvailableOverride;
     if (process.platform === 'win32') return false;
     try {
-      return getSandboxManager().isAvailable();
+      const manager = getSandboxManager();
+      // wrapCommand throws when disabled; treat disabled as "no fence" so skip-confirm
+      // falls back to ask instead of a hard SANDBOX_UNAVAILABLE error.
+      return manager.isAvailable() && manager.isEnabled();
     } catch {
       return false;
     }
@@ -157,6 +181,9 @@ export function isFencedInProjectWriteEligible(
     if (isInProjectCredentialWrite(target.path, workingDirectory, workspaceRoot)) return false;
     // Same shape as .env: protected writes lose auto-approve even when the OS jail is up.
     if (isInProjectProtectedWrite(target.path, workingDirectory, workspaceRoot)) return false;
+    // Reverse mutation: drop startup-executable prefixes ⇒ .git/hooks / .husky /
+    // .code-agent/settings.json skip confirmation while remaining in-project.
+    if (isInProjectStartupExecutableWrite(target.path, workingDirectory, workspaceRoot)) return false;
     return true;
   });
 }

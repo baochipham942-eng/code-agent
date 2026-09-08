@@ -3,6 +3,7 @@ import type { DecisionCardViewMode } from '../DecisionCard';
 import type { PermissionRequest } from './types';
 import { formatFilePath } from './utils';
 import { redactCredentialText } from '@shared/security/secretPatterns';
+import { PermissionRequestReason } from '@shared/contract';
 
 function fileTarget(request: PermissionRequest): string | undefined {
   return request.details.filePath || request.details.path;
@@ -70,6 +71,9 @@ export function defaultPermissionViewMode(request: PermissionRequest): DecisionC
 
 export function permissionSummary(request: PermissionRequest, t: Translations): string {
   const p = t.decisionCard.permission;
+  if (request.reasonCode === PermissionRequestReason.UncertainWriteTargetWithPathDeny) {
+    return p.questionUncertainWriteTarget;
+  }
   const target = fileTarget(request);
   const compactTarget = target ? compactFileTarget(target) : undefined;
   const qualifier = isOutsideWorkspace(request) ? `（${p.workspaceOutside}）` : '';
@@ -106,6 +110,9 @@ function fileCountText(count: number | undefined, t: Translations): string {
 
 export function permissionConsequence(request: PermissionRequest, t: Translations): string | undefined {
   const p = t.decisionCard.permission;
+  if (request.reasonCode === PermissionRequestReason.UncertainWriteTargetWithPathDeny) {
+    return p.consequenceUncertainWriteTarget;
+  }
   const commandDeleteTarget = request.details.command?.match(/\brm\s+(?:(?:-[^\s]+|--[^\s]+)\s+)*(?:"([^"]+)"|'([^']+)'|([^\s;&|]+))/u);
   const target = request.details.affectedPath
     || fileTarget(request)

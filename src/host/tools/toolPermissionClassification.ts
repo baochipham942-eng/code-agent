@@ -241,6 +241,7 @@ export async function resolveToolPermissionClassification(input: {
   policyToolName: string;
   params: Parameters<typeof classifyPermission>[1];
   policyForcesConfirmation: boolean;
+  unresolvedWriteTargetForcesAsk?: boolean;
   boundaryViolation: { skillName: string; allowedTools: readonly string[] } | undefined;
   workingDirectory: string;
   workspaceRoot?: string;
@@ -268,6 +269,29 @@ export async function resolveToolPermissionClassification(input: {
         'tools.always_confirm',
         'ask',
         'Tool requires confirmation by policy',
+        input.permStartTime,
+      ),
+    };
+  }
+  if (input.unresolvedWriteTargetForcesAsk) {
+    const reason = 'Write target cannot be resolved while a path deny is configured';
+    return {
+      decision: 'ask',
+      reason,
+      hostReason: createHostReason(
+        HostReasonCode.PermissionUncertainWriteTargetConfirmationRequired,
+        reason,
+        { toolName: input.executionToolName },
+      ),
+      confidence: 1,
+      cached: false,
+      external,
+      trustBoundary: true,
+      traceStep: createTraceStep(
+        'policy_enforcer',
+        'uncertain_write_target_path_deny',
+        'ask',
+        reason,
         input.permStartTime,
       ),
     };

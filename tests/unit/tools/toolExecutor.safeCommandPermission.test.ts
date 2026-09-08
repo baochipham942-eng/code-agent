@@ -52,6 +52,7 @@ import { getProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
 import { ToolExecutor } from '../../../src/host/tools/toolExecutor';
 import type { PermissionRequestData } from '../../../src/host/tools/types';
 import { ExecPolicyStore } from '../../../src/host/security/execPolicy';
+import { PermissionRequestReason } from '../../../src/shared/contract/permission';
 import { resetPolicyEnforcer } from '../../../src/host/security/policyEnforcer';
 import { getPolicyEngine, resetPolicyEngine } from '../../../src/host/permissions/policyEngine';
 import { resolveCanonicalRunPath } from '../../../src/host/runtime/runContext';
@@ -342,6 +343,8 @@ describe('ToolExecutor Bash 安全命令单一判据', () => {
 
       const pathPolicyAsks = permissionRequests.filter((request) => !isDirectiveMemoryProbe(request));
       expect(pathPolicyAsks).toHaveLength(1);
+      expect(pathPolicyAsks[0]?.reasonCode).toBe(PermissionRequestReason.UncertainWriteTargetWithPathDeny);
+      expect(pathPolicyAsks[0]?.forceConfirm).toBe(true);
       expect(result.success).toBe(false);
       expect(result.error ?? '').not.toContain('Blocked by path policy');
     });
@@ -358,6 +361,8 @@ describe('ToolExecutor Bash 安全命令单一判据', () => {
 
       const pathPolicyAsks = permissionRequests.filter((request) => !isDirectiveMemoryProbe(request));
       expect(pathPolicyAsks).toHaveLength(1);
+      expect(pathPolicyAsks[0]?.reasonCode).toBe(PermissionRequestReason.UncertainWriteTargetWithPathDeny);
+      expect(pathPolicyAsks[0]?.forceConfirm).toBe(true);
       expect(result.success).toBe(false);
       expect(result.error ?? '').not.toContain('Blocked by path policy');
     });

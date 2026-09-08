@@ -66,7 +66,7 @@ describe('permissionReasonText 枚举文案映射', () => {
     // 互不相同（确认没有两个码意外落到同一文案）
     expect(new Set(texts).size).toBe(codes.length);
     // 锁定枚举规模，未来新增值会让此断言提示同步补文案 + 分类
-    expect(codes.length).toBe(5);
+    expect(codes.length).toBe(6);
   });
 });
 

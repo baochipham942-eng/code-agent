@@ -9,12 +9,11 @@ import {
   isSensitiveCredentialPath,
   isPathDeniedBySensitiveSandboxPath,
   isProtectedWritePath,
-  resetProtectedWritePathAliasCacheForTest,
 } from '../../../../src/host/sandbox/sensitivePaths';
 
 describe('sensitive sandbox paths', () => {
   beforeEach(() => {
-    resetProtectedWritePathAliasCacheForTest();
+    isProtectedWritePath.resetCacheForTest();
   });
 
   it('denies home-level secrets without denying workspace .env files', () => {

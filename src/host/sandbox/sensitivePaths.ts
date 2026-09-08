@@ -212,65 +212,68 @@ function getProtectedWritePathAnchors(
   return protectedWritePathAnchors;
 }
 
-/** Test-only: drop the (home, env, projectRoot) alias cache. */
-export function resetProtectedWritePathAliasCacheForTest(): void {
-  protectedWritePathAnchors = null;
-}
-
 /**
  * Writes that would let the agent rewrite the constraints that bind it.
  * Comparison is the same path.resolve / prefix check as
  * isSensitiveCredentialPath / isPathDeniedBySensitiveSandboxPath.
  * The list is a closed default: callers may only tighten, never disable.
  */
-export function isProtectedWritePath(
-  candidatePath: string,
-  options: ProtectedWritePathOptions = {},
-): boolean {
-  const homeDir = path.resolve(options.homeDir ?? os.homedir());
-  const env = options.env ?? process.env;
-  const { dataDirAliases, homeAliases, projectRootAliases } = getProtectedWritePathAnchors(
-    homeDir,
-    env,
-    options.projectRoot,
-  );
-  const candidateAliases = pathAliases(candidatePath);
-  const entries: SensitiveSandboxPath[] = [];
+export const isProtectedWritePath = Object.assign(
+  function isProtectedWritePath(
+    candidatePath: string,
+    options: ProtectedWritePathOptions = {},
+  ): boolean {
+    const homeDir = path.resolve(options.homeDir ?? os.homedir());
+    const env = options.env ?? process.env;
+    const { dataDirAliases, homeAliases, projectRootAliases } = getProtectedWritePathAnchors(
+      homeDir,
+      env,
+      options.projectRoot,
+    );
+    const candidateAliases = pathAliases(candidatePath);
+    const entries: SensitiveSandboxPath[] = [];
 
-  for (const resolvedDataDir of dataDirAliases) {
-    for (const fileName of PROTECTED_DATA_DIR_FILES) {
-      entries.push({ kind: 'file', path: path.join(resolvedDataDir, fileName) });
-    }
-    entries.push({ kind: 'directory', path: path.join(resolvedDataDir, 'hooks') });
-  }
-
-  for (const projectRoot of projectRootAliases) {
-    entries.push({ kind: 'file', path: path.join(projectRoot, '.git', 'config') });
-    entries.push({ kind: 'file', path: path.join(projectRoot, '.gitconfig') });
-    entries.push({ kind: 'file', path: path.join(projectRoot, '.npmrc') });
-    entries.push({ kind: 'file', path: path.join(projectRoot, CONFIG_DIR_NEW, 'exec-policy.json') });
-    entries.push({ kind: 'file', path: path.join(projectRoot, 'code-agent-policy.toml') });
-  }
-
-  for (const resolvedHome of homeAliases) {
-    entries.push({ kind: 'file', path: path.join(resolvedHome, '.gitconfig') });
-    entries.push({ kind: 'file', path: path.join(resolvedHome, '.npmrc') });
-  }
-
-  const protectedEntries = dedupeSensitivePaths(entries);
-  for (const candidate of candidateAliases) {
     for (const resolvedDataDir of dataDirAliases) {
-      if (
-        path.dirname(candidate) === resolvedDataDir
-        && isProtectedSettingsFileName(path.basename(candidate))
-      ) {
-        return true;
+      for (const fileName of PROTECTED_DATA_DIR_FILES) {
+        entries.push({ kind: 'file', path: path.join(resolvedDataDir, fileName) });
       }
+      entries.push({ kind: 'directory', path: path.join(resolvedDataDir, 'hooks') });
     }
-    if (isPathDeniedBySensitiveSandboxPath(candidate, protectedEntries)) return true;
-  }
-  return false;
-}
+
+    for (const projectRoot of projectRootAliases) {
+      entries.push({ kind: 'file', path: path.join(projectRoot, '.git', 'config') });
+      entries.push({ kind: 'file', path: path.join(projectRoot, '.gitconfig') });
+      entries.push({ kind: 'file', path: path.join(projectRoot, '.npmrc') });
+      entries.push({ kind: 'file', path: path.join(projectRoot, CONFIG_DIR_NEW, 'exec-policy.json') });
+      entries.push({ kind: 'file', path: path.join(projectRoot, 'code-agent-policy.toml') });
+    }
+
+    for (const resolvedHome of homeAliases) {
+      entries.push({ kind: 'file', path: path.join(resolvedHome, '.gitconfig') });
+      entries.push({ kind: 'file', path: path.join(resolvedHome, '.npmrc') });
+    }
+
+    const protectedEntries = dedupeSensitivePaths(entries);
+    for (const candidate of candidateAliases) {
+      for (const resolvedDataDir of dataDirAliases) {
+        if (
+          path.dirname(candidate) === resolvedDataDir
+          && isProtectedSettingsFileName(path.basename(candidate))
+        ) {
+          return true;
+        }
+      }
+      if (isPathDeniedBySensitiveSandboxPath(candidate, protectedEntries)) return true;
+    }
+    return false;
+  },
+  {
+    /** Test-only: drop the (home, env, projectRoot) alias cache. */
+    resetCacheForTest(): void {
+      protectedWritePathAnchors = null;
+    },
+  },
+);
 
 function enumerateHomeSecretPrefixMatches(homeDir: string): string[] {
   let fileNames: string[];

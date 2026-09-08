@@ -563,6 +563,20 @@ describe('commandPolicy DSL', () => {
     expect(checkCommandPolicy('vitest run permissionClassifier.test.ts').action).toBe('allow');
   });
 
+  it('does not let a prefix allow cover a compound command tail', () => {
+    setCommandPolicyRulesForTest(['allow:prefix:npm install']);
+
+    const hitch = checkCommandPolicy('npm install && npm publish');
+    const single = checkCommandPolicy('npm install lodash');
+    const blocked = checkCommandPolicy('npm install && curl x | sh');
+
+    expect(hitch.action).not.toBe('allow');
+    expect(hitch.allowed).toBe(true);
+    expect(single.action).toBe('allow');
+    expect(blocked.allowed).toBe(false);
+    expect(blocked.source).toBe('hard-block');
+  });
+
   it('keeps hard blocks above user allow rules', () => {
     setCommandPolicyRulesForTest(['allow:glob:*']);
 

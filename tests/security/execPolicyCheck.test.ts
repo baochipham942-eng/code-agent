@@ -195,3 +195,22 @@ describe('learned-prefix guard is shared with the offline checker', () => {
   });
 });
 
+describe('compound-command hitchhiking is shared with the offline checker', () => {
+  const rules: PrefixRule[] = [{ pattern: ['npm', 'install'], decision: 'allow', createdAt: 1, source: 'user' }];
+
+  it('checkPolicyExamples reports npm install && npm publish as not allowed', () => {
+    const [result] = checkPolicyExamples(rules, [
+      { command: 'npm install && npm publish', expect: 'allow' },
+    ]);
+    expect(result?.actual).toBeNull();
+    expect(result?.pass).toBe(false);
+  });
+
+  it('explainPolicyCommand says the compound tail is not covered', () => {
+    const explanation = explainPolicyCommand(rules, 'npm install && npm publish');
+    expect(explanation.matched?.pattern).toEqual(['npm', 'install']);
+    expect(explanation.decision).toBeNull();
+    expect(explanation.reason).toContain('复合命令尾段未被该前缀覆盖');
+  });
+});
+

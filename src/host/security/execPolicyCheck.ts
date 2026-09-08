@@ -326,11 +326,21 @@ export function explainPolicyCommand(rules: readonly PrefixRule[], command: stri
       reason: `最长前缀命中规则 ${formatPattern(matched.pattern)}，但该前缀单独是安全命令而整条不是（风险在前缀之外，如 find … -delete）→ 学来的 allow 不放行，走常规权限流程`,
     };
   }
+  const decision = resolvePolicyDecision(rules, command);
+  if (decision === null) {
+    return {
+      command,
+      tokens,
+      matched,
+      decision: null,
+      reason: `最长前缀命中规则 ${formatPattern(matched.pattern)}，但复合命令尾段未被该前缀覆盖 → 不整串放行，走常规权限流程`,
+    };
+  }
   return {
     command,
     tokens,
     matched,
-    decision: matched.decision,
-    reason: `最长前缀命中规则 ${formatPattern(matched.pattern)}（长度 ${matched.pattern.length}，source: ${matched.source}）→ ${matched.decision}`,
+    decision,
+    reason: `最长前缀命中规则 ${formatPattern(matched.pattern)}（长度 ${matched.pattern.length}，source: ${matched.source}）→ ${decision}`,
   };
 }

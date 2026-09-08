@@ -129,6 +129,18 @@ describe('ExecPolicyStore', () => {
       store.addRule(['npm', 'install'], 'allow');
       expect(store.match('npm install lodash')).toBe('allow');
       expect(store.match('npm install && npm publish')).toBeNull();
+      expect(store.match('npm install; npm publish')).toBeNull();
+      expect(store.match('npm install | npm publish')).toBeNull();
+    });
+
+    it('compound commands stay allowed only when every segment is independently allowed', () => {
+      store.addRule(['npm', 'install'], 'allow');
+      expect(store.match('npm install lodash && npm install express')).toBe('allow');
+    });
+
+    it('forbidden still applies to a compound command as a whole', () => {
+      store.addRule(['rm', '-rf'], 'forbidden');
+      expect(store.match('rm -rf /tmp && echo done')).toBe('forbidden');
     });
 
     it('rules loaded from a file without source are treated as learned and still guarded', () => {

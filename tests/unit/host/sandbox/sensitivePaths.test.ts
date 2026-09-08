@@ -6,6 +6,7 @@ import {
   getSensitiveSandboxPaths,
   isSensitiveCredentialPath,
   isPathDeniedBySensitiveSandboxPath,
+  isProtectedWritePath,
 } from '../../../../src/host/sandbox/sensitivePaths';
 
 describe('sensitive sandbox paths', () => {
@@ -66,5 +67,24 @@ describe('sensitive sandbox paths', () => {
     expect(isSensitiveCredentialPath('/Users/tester/work/repo/.env.example', { homeDir: home, projectRoot: project })).toBe(true);
     expect(isSensitiveCredentialPath('/Users/tester/work/repo/.envrc', { homeDir: home, projectRoot: project })).toBe(true);
     expect(isSensitiveCredentialPath('/Users/tester/work/repo/README.md', { homeDir: home, projectRoot: project })).toBe(false);
+  });
+
+  it('classifies Neo constraint files and workspace git/npm config as protected writes', () => {
+    const home = '/Users/tester';
+    const project = '/Users/tester/work/repo';
+    const dataDir = '/tmp/code-agent-data';
+    const opts = { homeDir: home, projectRoot: project, env: { CODE_AGENT_DATA_DIR: dataDir } };
+
+    expect(isProtectedWritePath(path.join(dataDir, 'settings.json'), opts)).toBe(true);
+    expect(isProtectedWritePath(path.join(dataDir, 'settings.local.json'), opts)).toBe(true);
+    expect(isProtectedWritePath(path.join(dataDir, 'code-agent-policy.toml'), opts)).toBe(true);
+    expect(isProtectedWritePath(path.join(dataDir, 'hooks', 'hooks.json'), opts)).toBe(true);
+    expect(isProtectedWritePath(path.join(dataDir, 'session-permission-modes.json'), opts)).toBe(true);
+    expect(isProtectedWritePath(path.join(dataDir, 'exec-policy.json'), opts)).toBe(true);
+    expect(isProtectedWritePath(path.join(project, '.git', 'config'), opts)).toBe(true);
+    expect(isProtectedWritePath(path.join(project, '.gitconfig'), opts)).toBe(true);
+    expect(isProtectedWritePath(path.join(project, '.npmrc'), opts)).toBe(true);
+    expect(isProtectedWritePath(path.join(project, 'notes.txt'), opts)).toBe(false);
+    expect(isProtectedWritePath(path.join(dataDir, 'notes.txt'), opts)).toBe(false);
   });
 });

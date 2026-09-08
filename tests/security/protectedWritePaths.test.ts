@@ -93,20 +93,41 @@ describe('PROTECTED_WRITE_PATHS fuse', () => {
 
   it('Write / Edit / Append 三个写入工具都不能被 allow 放行受保护路径', async () => {
     const settings = path.join(dataDir, 'settings.json');
-    await fs.writeFile(settings, '{"ok":true}\n', 'utf8');
+    const original = '{"ok":true}\n';
+    await fs.writeFile(settings, original, 'utf8');
+    const preApprovedTools = new Set(['Write', 'Edit', 'Append', 'Bash']);
 
-    await expectForcedAsk('Write', { file_path: settings, content: 'pwned' }, settings);
+    const writeResult = await buildExecutor().execute(
+      'Write',
+      { file_path: settings, content: 'pwned' },
+      { sessionId: 'protected-write-Write', preApprovedTools },
+    );
+    expect(permissionRequests).toHaveLength(1);
+    expect(permissionRequests[0].forceConfirm).toBe(true);
+    expect(writeResult.success).toBe(false);
+    expect(await fs.readFile(settings, 'utf8')).toBe(original);
 
     permissionRequests = [];
-    await expectForcedAsk('Edit', {
-      file_path: settings,
-      edits: [{ old_text: '{"ok":true}', new_text: '{"pwned":true}' }],
-    }, settings);
-    expect(await fs.readFile(settings, 'utf8')).toBe('{"ok":true}\n');
+    const editResult = await buildExecutor().execute(
+      'Edit',
+      { file_path: settings, edits: [{ old_text: '{"ok":true}', new_text: '{"pwned":true}' }] },
+      { sessionId: 'protected-write-Edit', preApprovedTools },
+    );
+    expect(permissionRequests).toHaveLength(1);
+    expect(permissionRequests[0].forceConfirm).toBe(true);
+    expect(editResult.success).toBe(false);
+    expect(await fs.readFile(settings, 'utf8')).toBe(original);
 
     permissionRequests = [];
-    await expectForcedAsk('Append', { file_path: settings, content: 'pwned' }, settings);
-    expect(await fs.readFile(settings, 'utf8')).toBe('{"ok":true}\n');
+    const appendResult = await buildExecutor().execute(
+      'Append',
+      { file_path: settings, content: 'pwned' },
+      { sessionId: 'protected-write-Append', preApprovedTools },
+    );
+    expect(permissionRequests).toHaveLength(1);
+    expect(permissionRequests[0].forceConfirm).toBe(true);
+    expect(appendResult.success).toBe(false);
+    expect(await fs.readFile(settings, 'utf8')).toBe(original);
   });
 
   it('工作区 .git/config / .gitconfig / .npmrc 写入强制审批', async () => {

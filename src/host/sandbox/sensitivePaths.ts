@@ -133,6 +133,91 @@ export function isPathDeniedBySensitiveSandboxPath(
   });
 }
 
+interface ProtectedWritePathOptions {
+  homeDir?: string;
+  projectRoot?: string;
+  env?: Partial<Pick<NodeJS.ProcessEnv, 'CODE_AGENT_DATA_DIR'>>;
+}
+
+const PROTECTED_DATA_DIR_FILES = [
+  'code-agent-policy.toml',
+  'session-permission-modes.json',
+  'exec-policy.json',
+  'hooks.json',
+];
+
+function isProtectedSettingsFileName(fileName: string): boolean {
+  return fileName.startsWith('settings') && fileName.endsWith('.json');
+}
+
+/** path.resolve plus the existing-parent realpath, so /var and /private/var compare equal. */
+function pathAliases(input: string): string[] {
+  const resolved = path.resolve(input);
+  const aliases = new Set<string>([resolved]);
+  try {
+    aliases.add(fs.realpathSync(resolved));
+  } catch {
+    try {
+      aliases.add(path.join(fs.realpathSync(path.dirname(resolved)), path.basename(resolved)));
+    } catch {
+      // keep the lexical form; comparison stays existence-independent
+    }
+  }
+  return [...aliases];
+}
+
+/**
+ * Writes that would let the agent rewrite the constraints that bind it.
+ * Comparison is the same path.resolve / prefix check as
+ * isSensitiveCredentialPath / isPathDeniedBySensitiveSandboxPath.
+ * The list is a closed default: callers may only tighten, never disable.
+ */
+export function isProtectedWritePath(
+  candidatePath: string,
+  options: ProtectedWritePathOptions = {},
+): boolean {
+  const homeDir = path.resolve(options.homeDir ?? os.homedir());
+  const env = options.env ?? process.env;
+  const entries: SensitiveSandboxPath[] = [];
+
+  for (const dataDir of getCandidateDataDirs(homeDir, env)) {
+    for (const resolvedDataDir of pathAliases(dataDir)) {
+      for (const fileName of PROTECTED_DATA_DIR_FILES) {
+        entries.push({ kind: 'file', path: path.join(resolvedDataDir, fileName) });
+      }
+      entries.push({ kind: 'directory', path: path.join(resolvedDataDir, 'hooks') });
+      entries.push({ kind: 'file', path: path.join(resolvedDataDir, '.code-agent', 'exec-policy.json') });
+    }
+  }
+
+  for (const projectRoot of options.projectRoot ? pathAliases(options.projectRoot) : []) {
+    entries.push({ kind: 'file', path: path.join(projectRoot, '.git', 'config') });
+    entries.push({ kind: 'file', path: path.join(projectRoot, '.gitconfig') });
+    entries.push({ kind: 'file', path: path.join(projectRoot, '.npmrc') });
+  }
+
+  for (const resolvedHome of pathAliases(homeDir)) {
+    entries.push({ kind: 'file', path: path.join(resolvedHome, '.gitconfig') });
+    entries.push({ kind: 'file', path: path.join(resolvedHome, '.npmrc') });
+  }
+
+  const protectedEntries = dedupeSensitivePaths(entries);
+  for (const candidate of pathAliases(candidatePath)) {
+    for (const dataDir of getCandidateDataDirs(homeDir, env)) {
+      for (const resolvedDataDir of pathAliases(dataDir)) {
+        if (
+          path.dirname(candidate) === resolvedDataDir
+          && isProtectedSettingsFileName(path.basename(candidate))
+        ) {
+          return true;
+        }
+      }
+    }
+    if (isPathDeniedBySensitiveSandboxPath(candidate, protectedEntries)) return true;
+  }
+  return false;
+}
+
 function enumerateHomeSecretPrefixMatches(homeDir: string): string[] {
   let fileNames: string[];
   try {

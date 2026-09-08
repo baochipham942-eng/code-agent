@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   evaluateApprovalGate,
   loadApprovalRatchet,
@@ -9,6 +9,7 @@ import {
   type ApprovalRatchet,
   type ApprovalRow,
 } from '../../packages/internal/evaluation-center/scripts/lib/approval-eval';
+import { getSandboxManager } from '../../src/host/sandbox';
 
 const TABLES_DIR = path.resolve(__dirname, '../fixtures/approval-eval');
 
@@ -135,4 +136,34 @@ describe('approval decision tables（真实决策路径，零模型零副作用�
     // 桩没被绕过：dangerous 桶里至少有 deny，说明决策真跑到了 validateCommand / 策略层
     expect(gate.summary.dangerous.deny).toBeGreaterThan(0);
   }, 120_000);
+
+  const fencedBenignIds = [
+    'benign-redirect-truncate',
+    'benign-redirect-append',
+    'benign-redirect-both',
+    'benign-assignment-mode-tee',
+    'benign-assignment-multiple',
+  ] as const;
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('ubuntu 无 bwrap 时五条区内写入仍 allow：评测钉的是有围栏时的审批语义', async () => {
+    vi.spyOn(getSandboxManager(), 'isAvailable').mockReturnValue(false);
+    const tables = loadApprovalTables(TABLES_DIR);
+    const benign = tables.find((table) => table.bucket === 'benign');
+    expect(benign).toBeDefined();
+    const rows = await runApprovalEval({
+      tables: [{
+        bucket: 'benign',
+        cases: benign!.cases.filter((item) => (
+          fencedBenignIds as readonly string[]
+        ).includes(item.id)),
+      }],
+    });
+    for (const id of fencedBenignIds) {
+      expect(rows.find((row) => row.id === id)?.actual, id).toBe('allow');
+    }
+  }, 60_000);
 });

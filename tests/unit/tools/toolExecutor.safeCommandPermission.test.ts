@@ -686,5 +686,39 @@ describe('ToolExecutor Bash 安全命令单一判据', () => {
         spy.mockRestore();
       }
     });
+
+    it('项目根是软链时，classifier 免确认则 bash 必须套围栏（logs→区外不得写出）', async () => {
+      const parent = await fs.mkdtemp(path.join(os.tmpdir(), 'exectime-linkroot-'));
+      const realRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'exectime-realroot-'));
+      const linkRoot = path.join(parent, 'proj');
+      await fs.symlink(realRoot, linkRoot, process.platform === 'win32' ? 'junction' : 'dir');
+      const outsideDir = await fs.mkdtemp(path.join('/tmp', 'exectime-linkroot-out-'));
+      await fs.symlink(outsideDir, path.join(realRoot, 'logs'), process.platform === 'win32' ? 'junction' : 'dir');
+      await fs.writeFile(path.join(realRoot, 'README.md'), 'fixture\n');
+      try {
+        const executor = new ToolExecutor({
+          workingDirectory: linkRoot,
+          requestPermission: async (request) => {
+            permissionRequests.push(request);
+            return false;
+          },
+        });
+        executor.setAuditEnabled(false);
+        await executor.execute(
+          'Bash',
+          { command: 'printf x > logs/out.txt' },
+          { sessionId: 'exectime-symlink-project-root' },
+        );
+        const outsideFile = path.join(outsideDir, 'out.txt');
+        const outsideContents = existsSync(outsideFile)
+          ? await fs.readFile(outsideFile, 'utf8')
+          : '';
+        expect(outsideContents).not.toContain('x');
+      } finally {
+        await fs.rm(parent, { recursive: true, force: true });
+        await fs.rm(realRoot, { recursive: true, force: true });
+        await fs.rm(outsideDir, { recursive: true, force: true });
+      }
+    });
   });
 });

@@ -66,7 +66,7 @@ try {
   failSelfCheck(`无法读取全景表：${error instanceof Error ? error.message : String(error)}`);
 }
 
-const declaredCount = panorama.match(/rg -l 'injectSystemMessage\|system_reminder' src\/host` 当前命中 (\d+) 个文件/)?.[1];
+const declaredCount = panorama.match(/rg -l 'injectSystemMessage\|system_reminder\|injectAdvisoryTailMessage' src\/host` 当前命中 (\d+) 个文件/)?.[1];
 if (!declaredCount) failSelfCheck('全景表缺少 rg 文件数声明，无法判断表是否陈旧');
 if (Number(declaredCount) !== baseline.panoramaMatchedFiles) {
   failSelfCheck(`基线声明 ${baseline.panoramaMatchedFiles} 个命中文件，全景表声明 ${declaredCount} 个，请先对账`);
@@ -83,7 +83,10 @@ function sourceFiles(dir) {
   return out;
 }
 
-const matchedFiles = sourceFiles(hostRoot).filter((file) => /injectSystemMessage|system_reminder/.test(fs.readFileSync(file, 'utf8')));
+// 盘点范围含 injectAdvisoryTailMessage：逐轮 advisory 注记（thinking/goal-checkpoint/current-plan）
+// 自 injectSystemMessage 改道 transient 尾巴（N-EDIT-CACHEKEY-R3），仍进模型上下文，
+// 函数出入不许让注入点从盘点里消失。
+const matchedFiles = sourceFiles(hostRoot).filter((file) => /injectSystemMessage|system_reminder|injectAdvisoryTailMessage/.test(fs.readFileSync(file, 'utf8')));
 if (matchedFiles.length === 0) failSelfCheck('扫描命中 0 个文件，禁止测量路径失效时假绿');
 if (matchedFiles.length !== Number(declaredCount)) {
   failSelfCheck(`全景表声明 ${declaredCount} 个命中文件，实际扫描 ${matchedFiles.length} 个；先更新全景表再过门`);
@@ -94,11 +97,13 @@ function pointOf(file, sourceFile, node) {
   return `${path.relative(repoRoot, file).split(path.sep).join('/')}:${line}`;
 }
 
+const INJECTION_CALL_NAMES = new Set(['injectSystemMessage', 'injectAdvisoryTailMessage']);
+
 function isInjectionCall(node) {
   if (!ts.isCallExpression(node)) return false;
   const expression = node.expression;
-  return (ts.isIdentifier(expression) && expression.text === 'injectSystemMessage')
-    || (ts.isPropertyAccessExpression(expression) && expression.name.text === 'injectSystemMessage');
+  return (ts.isIdentifier(expression) && INJECTION_CALL_NAMES.has(expression.text))
+    || (ts.isPropertyAccessExpression(expression) && INJECTION_CALL_NAMES.has(expression.name.text));
 }
 
 function isGuarded(node) {
@@ -182,14 +187,14 @@ const voiceTokens = countTokens(voiceText);
 const voiceMin = baseline.liveVoiceFixedTokens * (1 - baseline.liveVoiceToleranceRatio);
 const voiceMax = baseline.liveVoiceFixedTokens * (1 + baseline.liveVoiceToleranceRatio);
 
-console.log(`[attention-budget-ratchet] 扫描 ${matchedFiles.length} 个命中文件、${calls.length} 个 injectSystemMessage 调用`);
+console.log(`[attention-budget-ratchet] 扫描 ${matchedFiles.length} 个命中文件、${calls.length} 个 injectSystemMessage/injectAdvisoryTailMessage 调用`);
 console.log(`[attention-budget-ratchet] 本地无守卫静态注入总量 current=${globalTokens} baseline=${baseline.globalFixedTokens}`);
 console.log(`[attention-budget-ratchet] 实时语音条件路径 current=${voiceTokens} baseline=${baseline.liveVoiceFixedTokens} tolerance=±${Math.round(baseline.liveVoiceToleranceRatio * 100)}%`);
 
 let failed = false;
 if (calls.length !== baseline.astCallCount) {
   failed = true;
-  console.error(`[attention-budget-ratchet] ✗ injectSystemMessage 调用数 current=${calls.length} baseline=${baseline.astCallCount}——增删注入点必须同步全景表与基线（rg -n injectSystemMessage src/host 定位差异）。`);
+  console.error(`[attention-budget-ratchet] ✗ 注入调用数 current=${calls.length} baseline=${baseline.astCallCount}——增删注入点必须同步全景表与基线（rg -n 'injectSystemMessage|injectAdvisoryTailMessage' src/host 定位差异）。`);
 }
 if (unguardedStatic.length > 0 && globalTokens > baseline.globalFixedTokens) {
   console.error(`[attention-budget-ratchet] ✗ 发现 ${unguardedStatic.length} 个无条件静态注入调用点：`);

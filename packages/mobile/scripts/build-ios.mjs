@@ -62,6 +62,8 @@ if (!existsSync(scheme)) {
   writeFileSync(scheme, sharedSchemeXml(targetId));
 }
 run('node_modules/.bin/cap', ['sync', 'ios']);
+copyFileSync(resolve(root, 'src-tauri/icons/ios/AppIcon-512@2x.png'),
+  resolve('ios/App/App/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png'));
 mkdirSync('.artifacts/ios', { recursive: true });
 const archive = '.artifacts/ios/App.xcarchive';
 const profileSummary = profileFile ? summarizeProfile(readMobileprovision(readFileSync(profileFile))) : null;

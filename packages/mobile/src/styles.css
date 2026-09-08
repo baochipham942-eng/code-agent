@@ -8,17 +8,12 @@ button,input,textarea { font: inherit; color: inherit; }
 button { min-width: 48px; min-height: 48px; border: 0; background: transparent; cursor: pointer; touch-action: manipulation; }
 button:disabled { opacity: .45; cursor: default; }
 button:focus-visible,input:focus-visible,textarea:focus-visible { outline: 2px solid #668ded; outline-offset: 2px; }
-.app { height: var(--viewport-height, 100vh); overflow: hidden; font-size: 17px; background: var(--bg); }
+.app { height: var(--viewport-height, 100vh); overflow: hidden; font-size: 17px; }
 .conversation { display: flex; flex-direction: column; height: 100%; padding-top: var(--safe-top); }
-.topbar,.drawer header { display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; padding: 5px 16px 10px; min-height: 59px; gap: 8px; background: var(--bg); }
-.topbar-title { flex: 1; min-width: 0; text-align: center; font-size: 17px; font-weight: 600; letter-spacing: -.3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.nav-button { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; min-width: 44px; padding: 0; border-radius: 8px; color: var(--muted); }
-.nav-button:active { background: var(--group); }
-.nav-icon { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-.nav-button:first-child .nav-icon { width: 22px; height: 22px; }
-.nav-button .nav-icon circle { fill: currentColor; stroke: none; }
+.topbar,.drawer header { display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; padding: 6px 14px; }
+.topbar button { font-size: 25px; border-radius: 50%; }
 .welcome { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 16px 28px; overflow: auto; }
-.brand { font-size: 44px; font-weight: 750; letter-spacing: -5px; }.brand span { font-size: 24px; vertical-align: super; }
+.brand-mark { display: block; flex-shrink: 0; }
 h1 { font-size: 27px; line-height: 1.3; letter-spacing: -.7px; text-align: center; font-weight: 600; }
 h2 { font-size: 19px; line-height: 1.35; margin: 0; overflow-wrap: anywhere; }
 p { line-height: 1.5; overflow-wrap: anywhere; }
@@ -27,7 +22,7 @@ p { line-height: 1.5; overflow-wrap: anywhere; }
 textarea { display: block; width: 100%; min-height: 48px; max-height: 140px; border: 0; padding: 0 10px; background: transparent; resize: none; line-height: 1.4; font-size: 17px; }
 textarea::placeholder { color: var(--muted); }
 .composer-actions { display: flex; align-items: center; justify-content: space-between; margin-top: 4px; }
-.composer-actions button { display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; }.composer-actions .nav-icon { width: 21px; height: 21px; }.send,.primary { background: var(--text); color: var(--bg); }
+.composer-actions button { font-size: 26px; border-radius: 50%; }.send,.primary { background: var(--text); color: var(--bg); }
 .caption,.notice,.group-title { color: var(--muted); font-size: 14px; }.caption { margin: 4px 4px 8px; text-align: center; }.notice { margin: 4px 8px 8px; }
 .drawer-layer,.sheet-layer { position: fixed; inset: 0; height: var(--viewport-height, 100vh); }.drawer-layer { z-index: 10; }.sheet-layer { z-index: 20; }
 .scrim { position: absolute; inset: 0; width: 100%; height: 100%; background: var(--scrim); border-radius: 0; }
@@ -40,7 +35,7 @@ textarea::placeholder { color: var(--muted); }
 .avatar { display: grid; place-items: center; background: var(--group); border-radius: 50%; width: 42px; height: 42px; flex-shrink: 0; }
 .sheet { position: absolute; bottom: 0; width: 100%; max-height: calc(100% - max(16px, var(--safe-top))); min-height: 230px; display: flex; flex-direction: column; background: var(--group); border-radius: 28px 28px 0 0; padding-bottom: max(16px, var(--safe-bottom)); outline: none; }
 .drag-handle { height: 24px; flex-shrink: 0; display: grid; place-items: center; touch-action: none; }.drag-handle span { width: 36px; height: 5px; border-radius: 4px; background: var(--muted); opacity: .5; }
-.sheet-header { display: grid; grid-template-columns: 48px 1fr 48px; align-items: center; gap: 10px; padding: 0 12px 8px; text-align: center; flex-shrink: 0; }.sheet-header button { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; padding: 0; border-radius: 8px; color: var(--muted); }.sheet-header button:active { background: var(--group); }.sheet-icon { width: 21px; height: 21px; display: block; }
+.sheet-header { display: grid; grid-template-columns: 48px 1fr 48px; align-items: center; gap: 10px; padding: 0 12px 8px; text-align: center; flex-shrink: 0; }.sheet-header button { font-size: 29px; }
 .sheet-content { padding: 0 20px 24px; overflow: auto; overscroll-behavior: contain; min-height: 0; }
 .settings-group { border-radius: 16px; background: var(--surface); overflow: hidden; }.settings-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; width: 100%; padding: 14px 16px; text-align: left; }.settings-row + .settings-row { border-top: 1px solid var(--line); }.row-detail { color: var(--muted); }
 .profile-card { display: flex; align-items: center; gap: 12px; width: 100%; padding: 18px 10px; text-align: left; }.profile-card strong { flex: 1; overflow-wrap: anywhere; }
@@ -48,4 +43,4 @@ input { width: 100%; padding: 16px; background: var(--surface); border: 1px soli
 .about { text-align: center; padding: 18px 8px; }.about p { color: var(--muted); }
 .virtual-history { flex: 1; min-height: 0; overflow: auto; overflow-anchor: none; overscroll-behavior: contain; }.history-row { left: 0; right: 0; padding: 16px 24px; border-bottom: 1px solid var(--line); overflow: auto; }.history-row p { margin: 8px 0; color: var(--muted); font-size: 15px; }
 .loading { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 30px; }
-@media (max-height: 520px) { .welcome { padding: 4px 20px; }.welcome .brand { display: none; }h1 { font-size: 21px; margin: 10px; }.composer textarea { min-height: 28px; max-height: 80px; }.composer { padding-top: 8px; } }
+@media (max-height: 520px) { .welcome { padding: 4px 20px; }.welcome .brand-mark { display: none; }h1 { font-size: 21px; margin: 10px; }.composer textarea { min-height: 28px; max-height: 80px; }.composer { padding-top: 8px; } }

@@ -7,13 +7,7 @@ import { createBackCoordinator } from './backCoordinator';
 import { SheetHost } from './SheetHost';
 import { SettingsPage } from '../features/settings/SettingsPage';
 import { VirtualHistory } from '../features/sessions/VirtualHistory';
-
-function NavIcon({ kind }: { kind: 'menu' | 'more' | 'plus' | 'send' }) {
-  if (kind === 'more') return <svg className="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="19" cy="12" r="1.6" /></svg>;
-  if (kind === 'plus') return <svg className="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>;
-  if (kind === 'send') return <svg className="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 14-7-3.5 14-3.2-6.1L5 12Z" /><path d="m12.3 12.9 6.7-7.2" /></svg>;
-  return <svg className="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /></svg>;
-}
+import { NeoBrandMark } from '../features/brand/NeoBrandMark';
 
 export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures: boolean }) {
   const [store] = useState(() => createMobileStore(ports.preferences));
@@ -104,9 +98,9 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
 
   return <div className="app" data-theme={theme} onTouchStart={gestureStart} onTouchEnd={gestureEnd} onTouchCancel={() => { swipe.current = null; }}>
     <main className="conversation" inert={state.drawer || !!state.sheet}>
-      <header className="topbar"><button className="nav-button" aria-label={text.sessions} data-testid="open-drawer" onClick={state.openDrawer}><NavIcon kind="menu" /></button>
-        <strong className="topbar-title">{state.route === 'new' ? text.neo : text.fixture}</strong><button className="nav-button" aria-label={text.more} data-testid="open-more" onClick={() => state.openSheet('more')}><NavIcon kind="more" /></button></header>
-      {state.route === 'fixture' && fixtures ? <VirtualHistory text={text} /> : <div className="welcome"><span className="brand">N<span>²</span></span><h1>{text.welcome}</h1></div>}
+      <header className="topbar"><button aria-label={text.sessions} data-testid="open-drawer" onClick={state.openDrawer}>☰</button>
+        <strong>{state.route === 'new' ? text.neo : text.fixture}</strong><button aria-label={text.more} data-testid="open-more" onClick={() => state.openSheet('more')}>···</button></header>
+      {state.route === 'fixture' && fixtures ? <VirtualHistory text={text} /> : <div className="welcome"><NeoBrandMark /><h1>{text.welcome}</h1></div>}
       <div className="composer-area">
         {fixtures && <p className="caption">{text.fixtureNotice}</p>}
         {(state.saveError || nativeError || state.sendAttempted) && <p role="status" className="notice">
@@ -118,16 +112,16 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
             value={state.preferences.drafts[state.route]} data-testid="draft"
             onCompositionStart={() => { composing.current = true; }} onCompositionEnd={() => { composing.current = false; }}
             onChange={event => state.editDraft(event.target.value)} />
-          <div className="composer-actions"><button aria-label={text.projects} onClick={() => state.openSheet('projects')}><NavIcon kind="plus" /></button>
+          <div className="composer-actions"><button aria-label={text.projects} onClick={() => state.openSheet('projects')}>＋</button>
             <button className="send" aria-label={text.send} data-testid="send" disabled={!state.preferences.drafts[state.route].trim()}
-              onClick={() => { if (!composing.current) state.attemptSend(); }}><NavIcon kind="send" /></button></div>
+              onClick={() => { if (!composing.current) state.attemptSend(); }}>↑</button></div>
         </div>
       </div>
     </main>
     {state.drawer && <div className="drawer-layer" inert={!!state.sheet}>
       <button className="scrim" aria-label={text.closeDrawer} onClick={state.closeDrawer} />
       <aside className="drawer" aria-label={text.sessions}>
-        <div className="drawer-functions"><header><strong>{text.neo}</strong><button className="nav-button" aria-label={text.newSession} data-testid="new-session" onClick={() => state.navigate('new')}><NavIcon kind="plus" /></button></header>
+        <div className="drawer-functions"><header><strong>{text.neo}</strong><button aria-label={text.newSession} data-testid="new-session" onClick={() => state.navigate('new')}>＋</button></header>
           <button onClick={() => state.navigate('new')}>{text.newSession}</button>
           <button onClick={() => state.openSheet('projects')}>{text.projects}</button><button onClick={() => state.openSheet('remote')}>{text.remote}</button></div>
         <nav className="drawer-history" aria-label={text.history}><p className="group-title">{text.history}</p>

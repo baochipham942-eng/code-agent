@@ -1,6 +1,11 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 import type { messages } from '../i18n';
 
+function SheetIcon({ kind }: { kind: 'back' | 'close' }) {
+  if (kind === 'back') return <svg className="sheet-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m14.5 5-7 7 7 7" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>;
+  return <svg className="sheet-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>;
+}
+
 export function SheetHost({ page, title, hasParent, close, back, text, children }: {
   page: string; title: string; hasParent: boolean; close(): void; back(): void;
   text: ReturnType<typeof messages>; children: ReactNode;
@@ -32,8 +37,8 @@ export function SheetHost({ page, title, hasParent, close, back, text, children 
           if (initial && event.clientY - initial.y > 86 && Math.abs(event.clientX - initial.x) < 70) close();
         }}><span /></div>
       <header className="sheet-header">
-        {hasParent ? <button aria-label={text.back} onClick={back}>‹</button> : <span className="header-spacer" />}
-        <h2 id="sheet-title">{title}</h2><button aria-label={text.closeSheet} onClick={close}>×</button>
+        {hasParent ? <button aria-label={text.back} onClick={back}><SheetIcon kind="back" /></button> : <span className="header-spacer" />}
+        <h2 id="sheet-title">{title}</h2><button aria-label={text.closeSheet} onClick={close}><SheetIcon kind="close" /></button>
       </header>
       <div className="sheet-content" data-page={page}>{children}</div>
     </section>

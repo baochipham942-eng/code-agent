@@ -3,9 +3,17 @@ import { useStore } from 'zustand';
 import type { PlatformPorts } from '../platform/ports';
 import { createMobileStore } from '../stores/mobileStore';
 import { messages } from '../i18n';
+import { createBackCoordinator } from './backCoordinator';
 import { SheetHost } from './SheetHost';
 import { SettingsPage } from '../features/settings/SettingsPage';
 import { VirtualHistory } from '../features/sessions/VirtualHistory';
+
+function NavIcon({ kind }: { kind: 'menu' | 'more' | 'plus' | 'send' }) {
+  if (kind === 'more') return <svg className="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="19" cy="12" r="1.6" /></svg>;
+  if (kind === 'plus') return <svg className="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>;
+  if (kind === 'send') return <svg className="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 14-7-3.5 14-3.2-6.1L5 12Z" /><path d="m12.3 12.9 6.7-7.2" /></svg>;
+  return <svg className="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /></svg>;
+}
 
 export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures: boolean }) {
   const [store] = useState(() => createMobileStore(ports.preferences));
@@ -13,7 +21,9 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
   const text = messages(navigator.language);
   const [appInfo, setAppInfo] = useState<{ version: string; build: string } | null>(null);
   const [nativeError, setNativeError] = useState(false);
-  const [systemDark, setSystemDark] = useState(() => matchMedia('(prefers-color-scheme: dark)').matches);
+  // Native pushes the Android night flag (WebView 95 never updates prefers-color-scheme); matchMedia covers web/iOS.
+  const [systemDark, setSystemDark] = useState(() => document.documentElement.dataset.systemNight === 'true'
+    || matchMedia('(prefers-color-scheme: dark)').matches);
   const keyboardVisible = useRef(false);
   const composing = useRef(false);
   const swipe = useRef<{ x: number; y: number } | null>(null);
@@ -21,6 +31,23 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
   const theme = state.preferences.appearance === 'system' ? (systemDark ? 'dark' : 'light') : state.preferences.appearance;
   const currentPage = state.sheet?.pages.at(-1);
 
+  // Text selections inside the composer never surface through window.getSelection on WebKit,
+  // and long-press selection on WebView only lives in the element's own range.
+  const selectedInput = () => {
+    const active = document.activeElement;
+    return active instanceof HTMLTextAreaElement || active instanceof HTMLInputElement
+      ? active : null;
+  };
+  const textSelected = () => {
+    if (window.getSelection()?.toString()) return true;
+    const input = selectedInput();
+    return !!input && input.selectionStart !== input.selectionEnd;
+  };
+  const clearTextSelection = () => {
+    if (window.getSelection()?.toString()) { window.getSelection()?.removeAllRanges(); return; }
+    const input = selectedInput();
+    if (input) input.setSelectionRange(input.selectionEnd, input.selectionEnd);
+  };
   useEffect(() => {
     void store.getState().hydrate();
     void ports.appInfo.read().then(setAppInfo).catch(() => setAppInfo(null));
@@ -29,41 +56,46 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
     const register = (promise: Promise<() => void>) => void promise.then(cleanup => {
       if (disposed) cleanup(); else cleanups.push(cleanup);
     }).catch(() => { if (!disposed) setNativeError(true); });
-    const back = () => {
-      if (window.getSelection()?.toString()) { window.getSelection()?.removeAllRanges(); return; }
-      if (keyboardVisible.current) {
-        void ports.keyboard.hide().catch(() => setNativeError(true)); return;
-      }
-      if (!store.getState().back()) void ports.lifecycle.leave().catch(() => setNativeError(true));
-    };
-    register(ports.lifecycle.subscribe(active => { if (!active) void store.getState().flush(); }, back));
+    const back = createBackCoordinator({
+      ports,
+      hasSelection: textSelected,
+      clearSelection: clearTextSelection,
+      isKeyboardVisible: () => keyboardVisible.current,
+      dismissLayer: () => store.getState().back(),
+      onNativeError: () => setNativeError(true),
+    });
+    register(ports.lifecycle.subscribe(active => { if (!active) void store.getState().flush(); }, back.onBack));
     register(ports.keyboard.subscribe(visible => { keyboardVisible.current = visible; }));
-    const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') { event.preventDefault(); back(); } };
+    const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') { event.preventDefault(); back.onBack(); } };
     document.addEventListener('keydown', escape);
     const query = matchMedia('(prefers-color-scheme: dark)');
-    const change = () => setSystemDark(query.matches);
+    const change = () => setSystemDark(document.documentElement.dataset.systemNight === 'true' || query.matches);
+    document.addEventListener('neo-system-night', change);
     query.addEventListener('change', change);
     // Native resize and visualViewport already reflect IME; never subtract keyboard height twice.
     const resize = () => document.documentElement.style.setProperty('--viewport-height', `${window.visualViewport?.height ?? innerHeight}px`);
     resize(); window.addEventListener('resize', resize); window.visualViewport?.addEventListener('resize', resize);
     return () => {
       disposed = true; cleanups.forEach(cleanup => cleanup());
-      document.removeEventListener('keydown', escape); query.removeEventListener('change', change);
+      document.removeEventListener('keydown', escape); document.removeEventListener('neo-system-night', change); query.removeEventListener('change', change);
       window.removeEventListener('resize', resize); window.visualViewport?.removeEventListener('resize', resize);
     };
   }, [ports, store]);
-  useEffect(() => { document.documentElement.dataset.theme = theme; }, [theme]);
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    void ports.systemBars.setStyle(theme).catch(() => {});
+  }, [ports, theme]);
 
   const gestureStart = (event: React.TouchEvent) => {
     const touch = event.touches[0];
     if (!touch || event.touches.length !== 1 || state.sheet || keyboardVisible.current ||
-      window.getSelection()?.toString() || (event.target as Element).closest('button,input,textarea,[data-testid="history"]') || touch.clientX < 24) return;
+      textSelected() || (event.target as Element).closest('button,input,textarea,[data-testid="history"]') || touch.clientX < 24) return;
     swipe.current = { x: touch.clientX, y: touch.clientY };
   };
   const gestureEnd = (event: React.TouchEvent) => {
     const start = swipe.current; swipe.current = null;
     const touch = event.changedTouches[0];
-    if (!start || !touch || window.getSelection()?.toString() || Math.abs(touch.clientY - start.y) > 60) return;
+    if (!start || !touch || textSelected() || Math.abs(touch.clientY - start.y) > 60) return;
     if (state.drawer && touch.clientX - start.x < -86) state.closeDrawer();
     else if (!state.drawer && touch.clientX - start.x > 86) state.openDrawer();
   };
@@ -72,8 +104,8 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
 
   return <div className="app" data-theme={theme} onTouchStart={gestureStart} onTouchEnd={gestureEnd} onTouchCancel={() => { swipe.current = null; }}>
     <main className="conversation" inert={state.drawer || !!state.sheet}>
-      <header className="topbar"><button aria-label={text.sessions} data-testid="open-drawer" onClick={state.openDrawer}>☰</button>
-        <strong>{state.route === 'new' ? text.neo : text.fixture}</strong><button aria-label={text.more} data-testid="open-more" onClick={() => state.openSheet('more')}>···</button></header>
+      <header className="topbar"><button className="nav-button" aria-label={text.sessions} data-testid="open-drawer" onClick={state.openDrawer}><NavIcon kind="menu" /></button>
+        <strong className="topbar-title">{state.route === 'new' ? text.neo : text.fixture}</strong><button className="nav-button" aria-label={text.more} data-testid="open-more" onClick={() => state.openSheet('more')}><NavIcon kind="more" /></button></header>
       {state.route === 'fixture' && fixtures ? <VirtualHistory text={text} /> : <div className="welcome"><span className="brand">N<span>²</span></span><h1>{text.welcome}</h1></div>}
       <div className="composer-area">
         {fixtures && <p className="caption">{text.fixtureNotice}</p>}
@@ -86,16 +118,16 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
             value={state.preferences.drafts[state.route]} data-testid="draft"
             onCompositionStart={() => { composing.current = true; }} onCompositionEnd={() => { composing.current = false; }}
             onChange={event => state.editDraft(event.target.value)} />
-          <div className="composer-actions"><button aria-label={text.projects} onClick={() => state.openSheet('projects')}>＋</button>
+          <div className="composer-actions"><button aria-label={text.projects} onClick={() => state.openSheet('projects')}><NavIcon kind="plus" /></button>
             <button className="send" aria-label={text.send} data-testid="send" disabled={!state.preferences.drafts[state.route].trim()}
-              onClick={() => { if (!composing.current) state.attemptSend(); }}>↑</button></div>
+              onClick={() => { if (!composing.current) state.attemptSend(); }}><NavIcon kind="send" /></button></div>
         </div>
       </div>
     </main>
     {state.drawer && <div className="drawer-layer" inert={!!state.sheet}>
       <button className="scrim" aria-label={text.closeDrawer} onClick={state.closeDrawer} />
       <aside className="drawer" aria-label={text.sessions}>
-        <div className="drawer-functions"><header><strong>{text.neo}</strong><button aria-label={text.newSession} data-testid="new-session" onClick={() => state.navigate('new')}>＋</button></header>
+        <div className="drawer-functions"><header><strong>{text.neo}</strong><button className="nav-button" aria-label={text.newSession} data-testid="new-session" onClick={() => state.navigate('new')}><NavIcon kind="plus" /></button></header>
           <button onClick={() => state.navigate('new')}>{text.newSession}</button>
           <button onClick={() => state.openSheet('projects')}>{text.projects}</button><button onClick={() => state.openSheet('remote')}>{text.remote}</button></div>
         <nav className="drawer-history" aria-label={text.history}><p className="group-title">{text.history}</p>

@@ -1,5 +1,5 @@
 import { App } from '@capacitor/app';
-import { Capacitor } from '@capacitor/core';
+import { Capacitor, SystemBars, SystemBarsStyle } from '@capacitor/core';
 import { Keyboard } from '@capacitor/keyboard';
 import { Preferences } from '@capacitor/preferences';
 import type { PlatformPorts } from './ports';
@@ -32,5 +32,12 @@ export const capacitorPorts: PlatformPorts = {
       } catch (error) { await show.remove(); throw error; }
     },
     hide: async () => { if (Capacitor.isNativePlatform()) await Keyboard.hide(); },
+  },
+  // Icon shade follows the resolved theme; on web there are no system bars, so degrade silently like appInfo.
+  systemBars: {
+    setStyle: async appearance => {
+      if (!Capacitor.isNativePlatform()) return;
+      await SystemBars.setStyle({ style: appearance === 'dark' ? SystemBarsStyle.Dark : SystemBarsStyle.Light });
+    },
   },
 };

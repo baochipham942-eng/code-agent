@@ -5,6 +5,7 @@ import { resolveCanonicalRunPath } from '../runtime/runContext';
 import { CONFIG_DIR_LEGACY, CONFIG_DIR_NEW } from '../../shared/constants/configDir';
 import { getSandboxManager } from './manager';
 import { isProtectedWritePath, isSensitiveCredentialPath, pathAliases } from './sensitivePaths';
+import { resolveBackgroundWorkspaceAuthority } from '../runtime/workspaceAuthority';
 
 const FENCED_WRITE_PROGRAMS = new Set(['printf', 'echo', 'tee']);
 /** Lookup / startup-file assignments that can change what the fenced command runs. Not an exhaustive bash env list. */
@@ -44,27 +45,6 @@ function isInsideWorkspaceRoot(candidate: string, workspaceRoot: string): boolea
 function looksInsideWorkspace(targetPath: string, cwd: string, workspaceRoot: string): boolean {
   const targets = writeTargetAliases(targetPath, cwd);
   const roots = pathAliases(workspaceRoot);
-  return targets.some((target) => roots.some((root) => isInsideWorkspaceRoot(target, root)));
-}
-
-/** macOS /var ↔ /private/var aliases only. Does not follow user symlinks. */
-function lexicalOsPathAliases(input: string): string[] {
-  const resolved = path.resolve(input);
-  const aliases = [resolved];
-  if (resolved === '/var' || resolved.startsWith('/var/')) aliases.push(`/private${resolved}`);
-  else if (resolved === '/private/var' || resolved.startsWith('/private/var/')) {
-    aliases.push(resolved.slice('/private'.length));
-  }
-  if (resolved === '/tmp' || resolved.startsWith('/tmp/')) aliases.push(`/private${resolved}`);
-  else if (resolved === '/private/tmp' || resolved.startsWith('/private/tmp/')) {
-    aliases.push(resolved.slice('/private'.length));
-  }
-  return [...new Set(aliases)];
-}
-
-function looksLexicallyInsideWorkspace(targetPath: string, cwd: string, workspaceRoot: string): boolean {
-  const targets = lexicalOsPathAliases(path.resolve(cwd, targetPath));
-  const roots = lexicalOsPathAliases(workspaceRoot);
   return targets.some((target) => roots.some((root) => isInsideWorkspaceRoot(target, root)));
 }
 
@@ -153,6 +133,45 @@ function isInProjectStartupExecutableWrite(targetPath: string, cwd: string, work
 }
 
 /**
+ * Canonical workspaceRoot the classifier may treat as an in-zone fence root.
+ * Home / data-dir / ancestor roots fail closed: the OS jail cannot contain them.
+ */
+export function containWriteFenceWorkspaceRoot(workspaceRoot: string | undefined): string | undefined {
+  if (!workspaceRoot) return undefined;
+  const canonical = tryCanonicalFencePath(workspaceRoot);
+  if (!canonical) return undefined;
+  if (!resolveBackgroundWorkspaceAuthority({ workspace: canonical })) return undefined;
+  return canonical;
+}
+
+export function writeFenceObligationRoot(classification: {
+  decision: string;
+  requiresOsWriteFence?: boolean;
+  writeFenceWorkspaceRoot?: string;
+}): string | undefined {
+  if (classification.decision !== 'approve') return undefined;
+  if (classification.requiresOsWriteFence !== true) return undefined;
+  return containWriteFenceWorkspaceRoot(classification.writeFenceWorkspaceRoot);
+}
+
+/** Fence-reason copy without the structured obligation is not skip-confirm. */
+export function enforceWriteFenceObligation<T extends {
+  decision: string;
+  reason: string;
+  requiresOsWriteFence?: boolean;
+  writeFenceWorkspaceRoot?: string;
+}>(classification: T): T {
+  if (classification.reason !== FENCED_IN_PROJECT_WRITE_REASON) return classification;
+  if (writeFenceObligationRoot(classification)) return classification;
+  return {
+    ...classification,
+    decision: 'ask',
+    requiresOsWriteFence: undefined,
+    writeFenceWorkspaceRoot: undefined,
+  };
+}
+
+/**
  * OS write fence is present (seatbelt/bwrap). Windows and missing jail are not.
  * Reverse mutation: dropping this check lets in-project-looking writes skip confirmation
  * without a real-path fence (N-WRITETARGET-EXECTIME).
@@ -173,7 +192,7 @@ function inspectFencedWrite(
   context: { workingDirectory: string; workspaceRoot?: string },
 ): { workingDirectory: string; workspaceRoot: string; writeTargets: Array<{ path: string }> } | undefined {
   if (!context.workspaceRoot) return undefined;
-  const workspaceRoot = tryCanonicalFencePath(context.workspaceRoot);
+  const workspaceRoot = containWriteFenceWorkspaceRoot(context.workspaceRoot);
   const workingDirectory = tryCanonicalFencePath(context.workingDirectory);
   if (!workspaceRoot || !workingDirectory) return undefined;
   if (QUOTED_REDIRECT_TARGET.test(command)) return undefined;
@@ -200,10 +219,20 @@ function inspectFencedWrite(
   return { workingDirectory, workspaceRoot, writeTargets };
 }
 
+/** Classifier skip-confirm cage: tool-call cwd + fence available + containable workspaceRoot. */
+export function fencedWriteSkipConfirm(
+  context: { workspaceRoot?: string; workingDirectoryFromToolCall?: boolean },
+): { workspaceRoot: string } | undefined {
+  if (context.workingDirectoryFromToolCall !== true || !isOsWriteFenceAvailable()) return undefined;
+  const workspaceRoot = containWriteFenceWorkspaceRoot(context.workspaceRoot);
+  if (!workspaceRoot) return undefined;
+  return { workspaceRoot };
+}
+
 /**
  * Skip-confirm eligibility. Canonical (realpath) inside + credential/startup-config
- * exclusions. Classifier and bash pass the same canonical cwd / workspaceRoot.
- * Spelled-path-only inside is not a skip-confirm criterion.
+ * exclusions. Classifier is the only consumer; bash wraps from the obligation
+ * that approve carries, and does not recompute this predicate.
  */
 export function isFencedInProjectWriteEligible(
   command: string,
@@ -225,24 +254,4 @@ export function isFencedInProjectWriteEligible(
     if (isInProjectStartupExecutableWrite(target.path, workingDirectory, workspaceRoot)) return false;
     return true;
   });
-}
-
-/**
- * OS-jail wrap. Wrapper / superset of {@link isFencedInProjectWriteEligible}:
- * skip-confirm ⇒ wrap, so sibling symlink-back (`../current/notes.txt`) cannot
- * approve without a fence. Spelled-inside paths whose realpath is outside still
- * wrap so seatbelt/bwrap remains the write gate (in-project symlink escape and
- * classify-then-retarget TOCTOU). Reverse mutation: drop the skip-confirm arm ⇒
- * `printf x > ../current/notes.txt` approves without wrap.
- */
-export function isFencedWriteSandboxEligible(
-  command: string,
-  context: { workingDirectory: string; workspaceRoot?: string },
-): boolean {
-  if (isFencedInProjectWriteEligible(command, context)) return true;
-  const inspected = inspectFencedWrite(command, context);
-  if (!inspected) return false;
-  return inspected.writeTargets.every((target) => (
-    looksLexicallyInsideWorkspace(target.path, inspected.workingDirectory, inspected.workspaceRoot)
-  ));
 }

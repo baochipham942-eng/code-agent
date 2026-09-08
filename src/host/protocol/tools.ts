@@ -152,6 +152,13 @@ export interface ToolContext {
   readonly workspace?: string;
   readonly workspaceScope?: WorkspaceScope;
   /**
+   * Classifier skip-confirm for in-project writes carries an OS write-fence obligation.
+   * Bash must wrap; wrap failure is SANDBOX_UNAVAILABLE, never a naked run.
+   */
+  readonly requiresOsWriteFence?: boolean;
+  /** Canonical workspaceRoot the classifier used for the in-zone check. */
+  readonly writeFenceWorkspaceRoot?: string;
+  /**
    * N-EVAL-POLICY-WRITE-BOUNDARY-ENABLE：写边界开关沿 spawn 链下传。
    * subagentToolRuntime 自建 ToolExecutor 不走 forRun，不传子代理就绕过边界。
    * 只在开着时出现（true）；关着时字段缺省，context 形状与 main 一致。

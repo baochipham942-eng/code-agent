@@ -50,7 +50,7 @@ import { checkCommandPolicy } from './commandPolicy';
 import { rewriteBashCommand } from './rtkRewriter';
 import { getPermissionModeManager } from '../../../permissions/modes';
 import { resolveSandboxNetworkPolicy, wrapCommandForSandbox } from '../../../sandbox';
-import { isFencedWriteSandboxEligible, isOsWriteFenceAvailable } from '../../../sandbox/writeFence';
+import { containWriteFenceWorkspaceRoot, isOsWriteFenceAvailable } from '../../../sandbox/writeFence';
 import { resolveCanonicalRunPath } from '../../../runtime/runContext';
 
 const MAX_TIMEOUT_MS = BASH.MAX_TIMEOUT;
@@ -609,25 +609,22 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
 
     const timeout = Math.min((args.timeout as number) || BASH.DEFAULT_TIMEOUT, MAX_TIMEOUT_MS);
     let workingDirectory: string;
-    let displayWorkingDirectory: string;
-    let workspaceRoot: string;
     try {
       const rawWorkingDirectory = typeof args.working_directory === 'string' && args.working_directory.trim()
         ? path.resolve(ctx.workingDir, args.working_directory)
         : ctx.workingDir;
-      displayWorkingDirectory = rawWorkingDirectory;
       workingDirectory = resolveCanonicalRunPath(rawWorkingDirectory);
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);
       return { ok: false, error: `working directory is not a usable path: ${detail}`, code: 'INVALID_ARGS' };
     }
-    try {
-      workspaceRoot = ctx.workspace
-        ? resolveCanonicalRunPath(ctx.workspace)
-        : workingDirectory;
-    } catch (err) {
-      const detail = err instanceof Error ? err.message : String(err);
-      return { ok: false, error: `workspace is not a usable path: ${detail}`, code: 'INVALID_ARGS' };
+    if (ctx.workspace) {
+      try {
+        resolveCanonicalRunPath(ctx.workspace);
+      } catch (err) {
+        const detail = err instanceof Error ? err.message : String(err);
+        return { ok: false, error: `workspace is not a usable path: ${detail}`, code: 'INVALID_ARGS' };
+      }
     }
     const implicitBackground = rewriteImplicitBackgroundCommand(command);
     const normalizedCommand = implicitBackground.command;
@@ -645,10 +642,11 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
     // unattended 会话不论钳后档位，命令一律带沙箱跑。
     // -------------------------------------------------------------------------
     const permissionModeManager = getPermissionModeManager();
-    const writeFence = isFencedWriteSandboxEligible(normalizedCommand, {
-      workingDirectory,
-      workspaceRoot,
-    }) && isOsWriteFenceAvailable();
+    // Reverse mutation: ignore requiresOsWriteFence ⇒ skip-confirm writes run naked.
+    const writeFence = ctx.requiresOsWriteFence === true;
+    const fenceRoot = writeFence
+      ? containWriteFenceWorkspaceRoot(ctx.writeFenceWorkspaceRoot)
+      : undefined;
     const shouldSandbox = writeFence || (OS_SANDBOX.ENABLED
       && (process.env.CODE_AGENT_EVAL_REAL_ROOT !== undefined
         || permissionModeManager.getModeForSession(ctx.sessionId) === 'bypassPermissions'
@@ -664,18 +662,19 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
     const applySandbox = (cmd: string): { ok: true; command: string } | { ok: false; error: string } => {
       if (!shouldSandbox) return { ok: true, command: cmd };
       try {
+        if (writeFence && (!fenceRoot || !isOsWriteFenceAvailable())) {
+          throw new Error('write fence cannot contain workspace root');
+        }
         const wrapped = wrapCommandForSandbox(cmd, {
           workingDirectory,
           readOnlyRoots: ctx.workspaceScope?.roots
             .filter((root) => root.access === 'read_only')
             .map((root) => resolveCanonicalRunPath(root.path)),
-          // Missing workspaceScope: write-fence eligibility is workspace-wide, so the OS
-          // jail must match. Bypass/unattended without a scope keep the cwd cage
-          // (manager defaults readWriteRoots to cwd); do not expand to the project root.
-          readWriteRoots: ctx.workspaceScope?.roots
-            .filter((root) => root.access === 'read_write')
-            .map((root) => resolveCanonicalRunPath(root.path))
-            ?? (writeFence && ctx.workspace ? [workspaceRoot] : undefined),
+          readWriteRoots: writeFence && fenceRoot
+            ? [fenceRoot]
+            : ctx.workspaceScope?.roots
+              .filter((root) => root.access === 'read_write')
+              .map((root) => resolveCanonicalRunPath(root.path)),
           deniedReadRoots: process.env.CODE_AGENT_EVAL_REAL_ROOT
             ? [process.env.CODE_AGENT_EVAL_REAL_ROOT]
             : undefined,
@@ -980,7 +979,7 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
         dataFingerprintStore.recordFact(bashFact);
       }
 
-      const cwdPrefix = `[cwd: ${displayWorkingDirectory}]\n`;
+      const cwdPrefix = `[cwd: ${workingDirectory}]\n`;
 
       onProgress?.({ stage: 'completing', percent: 100 });
       ctx.logger.debug('Bash done', { command: normalizedCommand.slice(0, 80), hasStderr: !!stderr });
@@ -992,7 +991,7 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
           ...(dynamicDesc ? { description: dynamicDesc } : {}),
           process: {
             command: normalizedCommand,
-            cwd: displayWorkingDirectory,
+            cwd: workingDirectory,
             background: false,
             pty: false,
           },
@@ -1005,7 +1004,7 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
             mimeType: 'text/plain',
             contentLength: output.length,
             preview: output.slice(0, 500),
-            metadata: { cwd: displayWorkingDirectory, command: normalizedCommand.slice(0, 200) },
+            metadata: { cwd: workingDirectory, command: normalizedCommand.slice(0, 200) },
           }),
         },
       };

@@ -3,6 +3,7 @@
 // ============================================================================
 
 import { classifyPermission, type ClassificationResult } from './permissionClassifier';
+import { enforceWriteFenceObligation } from '../sandbox/writeFence';
 import { isExternalSideEffectTool } from './externalSideEffect';
 import { createTraceStep } from '../security/decisionTraceBuilder';
 import { getPermissionModeManager, permissionModeAutoApproves, type PermissionMode } from '../permissions/modes';
@@ -389,5 +390,5 @@ export async function resolveToolPermissionClassification(input: {
       ),
     };
   }
-  return { ...classification, external };
+  return enforceWriteFenceObligation({ ...classification, external });
 }

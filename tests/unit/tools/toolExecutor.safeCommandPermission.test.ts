@@ -573,22 +573,19 @@ describe('ToolExecutor Bash 安全命令单一判据', () => {
       const outsideFile = path.join(outsideDir, 'out.txt');
       await fs.symlink(outsideDir, sub, process.platform === 'win32' ? 'junction' : 'dir');
 
-      const executor = buildGrantingExecutor();
+      const executor = buildRejectingExecutor();
       await executor.execute(
         'Bash',
         { command: `printf ok > ${path.join(sub, 'out.txt')}` },
         { sessionId: 'exectime-bypass-symlink' },
       );
 
+      expect(permissionRequests.length).toBeGreaterThan(0);
+      expect(permissionRequests[0]?.type).toBe('command');
       const outsideContents = existsSync(outsideFile)
         ? await fs.readFile(outsideFile, 'utf8')
         : '';
-      if (isOsWriteFenceAvailable()) {
-        expect(outsideContents).not.toContain('ok');
-      } else {
-        expect(permissionRequests.length).toBeGreaterThan(0);
-        expect(permissionRequests[0]?.type).toBe('command');
-      }
+      expect(outsideContents).not.toContain('ok');
       await fs.rm(outsideDir, { recursive: true, force: true });
     });
 
@@ -622,21 +619,19 @@ describe('ToolExecutor Bash 安全命令单一判据', () => {
       await fs.symlink(outsideDir, sub, process.platform === 'win32' ? 'junction' : 'dir');
 
       permissionRequests.length = 0;
-      await executor.execute(
+      const rejecting = buildRejectingExecutor();
+      await rejecting.execute(
         'Bash',
         { command },
         { sessionId: 'exectime-toctou-2' },
       );
 
+      expect(permissionRequests.length).toBeGreaterThan(0);
+      expect(permissionRequests[0]?.type).toBe('command');
       const outsideContents = existsSync(outsideFile)
         ? await fs.readFile(outsideFile, 'utf8')
         : '';
-      if (isOsWriteFenceAvailable()) {
-        expect(outsideContents).not.toContain('ok');
-      } else {
-        expect(permissionRequests.length).toBeGreaterThan(0);
-        expect(permissionRequests[0]?.type).toBe('command');
-      }
+      expect(outsideContents).not.toContain('ok');
       await fs.rm(outsideDir, { recursive: true, force: true });
     });
 

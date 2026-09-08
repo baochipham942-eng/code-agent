@@ -4,7 +4,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'fs';
-import { tmpdir } from 'os';
+import { homedir, tmpdir } from 'os';
 import { join } from 'path';
 import type {
   ToolContext,
@@ -357,9 +357,9 @@ describe('bashModule (native)', () => {
       );
       expect(result.ok).toBe(true);
       if (result.ok) {
-        // Display keeps the user spelling; execution cwd is still canonical.
-        expect(result.output).toMatch(/\[cwd: \/tmp\]/);
-        expect(result.output).toMatch(/(\/private)?\/tmp/);
+        const canonicalTmp = resolveCanonicalRunPath('/tmp');
+        expect(result.output).toContain(`[cwd: ${canonicalTmp}]`);
+        expect(result.output).toContain(canonicalTmp);
       }
     });
   });
@@ -1220,7 +1220,12 @@ describe('bashModule write-fence (default mode, unified eligibility)', () => {
       const handler = await bashModule.createHandler();
       const result = await handler.execute(
         { command: 'printf x > ../current/notes.txt' },
-        makeCtx({ workingDir: proj, workspace: proj }),
+        makeCtx({
+          workingDir: proj,
+          workspace: proj,
+          requiresOsWriteFence: true,
+          writeFenceWorkspaceRoot: resolveCanonicalRunPath(proj),
+        }),
         allowAll,
       );
       expect(wrapMock).toHaveBeenCalledTimes(1);
@@ -1259,7 +1264,12 @@ describe('bashModule write-fence (default mode, unified eligibility)', () => {
       const handler = await bashModule.createHandler();
       const result = await handler.execute(
         { command: 'printf x > ../current/notes.txt' },
-        makeCtx({ workingDir: proj, workspace: proj }),
+        makeCtx({
+          workingDir: proj,
+          workspace: proj,
+          requiresOsWriteFence: true,
+          writeFenceWorkspaceRoot: resolveCanonicalRunPath(proj),
+        }),
         allowAll,
       );
       expect(wrapMock).toHaveBeenCalledTimes(1);
@@ -1287,6 +1297,85 @@ describe('bashModule write-fence (default mode, unified eligibility)', () => {
         expect(result.error).toMatch(/^working directory is not a usable path:/);
       }
     } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('workspace=$HOME 写 .zshrc 被强制套笼时硬错且不写入', async () => {
+    const unpin = pinFenceAvailable(true);
+    const home = homedir();
+    const zshrc = join(home, '.zshrc');
+    const before = existsSync(zshrc) ? readFileSync(zshrc) : null;
+    wrapMock.mockReturnValue({ command: 'echo __SANDBOXED__', cleanup: cleanupMock });
+    try {
+      const handler = await bashModule.createHandler();
+      const result = await handler.execute(
+        { command: 'printf x > .zshrc' },
+        makeCtx({
+          workingDir: home,
+          workspace: home,
+          requiresOsWriteFence: true,
+          writeFenceWorkspaceRoot: home,
+        }),
+        allowAll,
+      );
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.code).toBe('SANDBOX_UNAVAILABLE');
+      expect(wrapMock).not.toHaveBeenCalled();
+      if (before === null) expect(existsSync(zshrc)).toBe(false);
+      else expect(readFileSync(zshrc)).toEqual(before);
+    } finally {
+      unpin();
+      if (before === null && existsSync(zshrc)) {
+        // Test must not leave a newly created ~/.zshrc behind.
+        rmSync(zshrc);
+      } else if (before !== null) {
+        writeFileSync(zshrc, before);
+      }
+    }
+  });
+
+  it('/tmp/alias 批准后改指 $HOME：执行侧套笼拦下，不是裸写', async () => {
+    const unpin = pinFenceAvailable(true);
+    const root = mkdtempSync(join(tmpdir(), 'exectime-alias-'));
+    const proj = join(root, 'proj');
+    mkdirSync(proj);
+    const alias = join(tmpdir(), `exectime-alias-${process.pid}`);
+    const probeName = `exectime-r11-alias-${process.pid}.txt`;
+    const homeProbe = join(homedir(), probeName);
+    wrapMock.mockReturnValue({
+      command: `/bin/sh -c 'echo "sandbox: Operation not permitted" >&2; exit 1'`,
+      cleanup: cleanupMock,
+    });
+    try {
+      symlinkSync(proj, alias, process.platform === 'win32' ? 'junction' : 'dir');
+      rmSync(alias, { recursive: true, force: true });
+      symlinkSync(homedir(), alias, process.platform === 'win32' ? 'junction' : 'dir');
+      const handler = await bashModule.createHandler();
+      const result = await handler.execute(
+        { command: `printf x > ${alias}/${probeName}` },
+        makeCtx({
+          workingDir: proj,
+          workspace: proj,
+          requiresOsWriteFence: true,
+          writeFenceWorkspaceRoot: resolveCanonicalRunPath(proj),
+        }),
+        allowAll,
+      );
+      expect(wrapMock).toHaveBeenCalledTimes(1);
+      expect(wrapMock).toHaveBeenCalledWith(
+        `printf x > ${alias}/${probeName}`,
+        expect.objectContaining({
+          readWriteRoots: [resolveCanonicalRunPath(proj)],
+        }),
+      );
+      expect(result.ok).toBe(false);
+      expect(existsSync(homeProbe)).toBe(false);
+      expect(existsSync(join(proj, probeName))).toBe(false);
+    } finally {
+      unpin();
+      rmSync(alias, { recursive: true, force: true });
+      rmSync(homeProbe, { force: true });
       rmSync(root, { recursive: true, force: true });
     }
   });

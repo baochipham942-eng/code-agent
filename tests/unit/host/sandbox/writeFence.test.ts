@@ -3,8 +3,9 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import {
+  enforceWriteFenceObligation,
+  FENCED_IN_PROJECT_WRITE_REASON,
   isFencedInProjectWriteEligible,
-  isFencedWriteSandboxEligible,
   isOsWriteFenceAvailable,
 } from '../../../../src/host/sandbox/writeFence';
 import { getSandboxManager } from '../../../../src/host/sandbox';
@@ -127,25 +128,28 @@ describe('writeFence eligibility', () => {
       const ctx = { workingDirectory: proj, workspaceRoot: proj };
       const command = 'printf x > ../current/notes.txt';
       expect(isFencedInProjectWriteEligible(command, ctx)).toBe(true);
-      expect(isFencedWriteSandboxEligible(command, ctx)).toBe(true);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
   });
 
-  it('skip-confirm eligibility is a subset of wrap eligibility', () => {
-    const ctx = context;
-    const commands = [
-      'printf x > /tmp/proj/out.txt',
-      'MODE=1 tee /tmp/proj/mode.txt',
-      'printf x > /tmp/proj/.env',
-      'printf x > /tmp/proj/.git/hooks/pre-commit',
-    ];
-    for (const command of commands) {
-      if (isFencedInProjectWriteEligible(command, ctx)) {
-        expect(isFencedWriteSandboxEligible(command, ctx)).toBe(true);
-      }
-    }
+  it('workspace=$HOME 写 .zshrc 不是围栏免确认资格', () => {
+    const home = os.homedir();
+    expect(isFencedInProjectWriteEligible('printf x > .zshrc', {
+      workingDirectory: home,
+      workspaceRoot: home,
+    })).toBe(false);
+  });
+
+  it('围栏文案路径缺少 requiresOsWriteFence 时不得免确认', () => {
+    const stripped = enforceWriteFenceObligation({
+      decision: 'approve',
+      reason: FENCED_IN_PROJECT_WRITE_REASON,
+      confidence: 0.95,
+      cached: false,
+    });
+    expect(stripped.decision).toBe('ask');
+    expect(stripped.requiresOsWriteFence).not.toBe(true);
   });
 
   it('drops eligibility after the sibling symlink is retargeted outside the project', () => {

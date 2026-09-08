@@ -40,6 +40,21 @@ function makeLegacyCtx(workingDir: string): LegacyToolContext {
 describe('protocolAdapter — buildProtocolContext', () => {
   // N-PTCEXEC：PTC 再入口由 ToolExecutor 挂在 legacy ctx 上，adapter 漏搬 = 真实调用
   // 路径上通道恒关闭，而单测里直接注入 protocol ctx 又永远是通的（假绿）。
+  it('原样搬运 requiresOsWriteFence 套笼义务，漏搬会让 bash 重新自算资格', () => {
+    const legacy = {
+      ...makeLegacyCtx('/tmp/workdir'),
+      requiresOsWriteFence: true,
+      writeFenceWorkspaceRoot: '/tmp/proj',
+    } as LegacyToolContext;
+    const ctx = buildProtocolContext({
+      sessionId: 'sess-fence',
+      workingDirectory: '/tmp/workdir',
+      legacyCtx: legacy,
+    });
+    expect(ctx.requiresOsWriteFence).toBe(true);
+    expect(ctx.writeFenceWorkspaceRoot).toBe('/tmp/proj');
+  });
+
   it('原样搬运 executeTool（PTC 再入口），漏搬会让真实路径静默失效', async () => {
     const executeTool = async () => ({ success: true, result: 'ok' });
     const legacy = { ...makeLegacyCtx('/tmp/workdir'), executeTool } as LegacyToolContext;

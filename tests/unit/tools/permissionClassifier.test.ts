@@ -25,6 +25,7 @@ import {
   FENCED_IN_PROJECT_WRITE_REASON,
   isOsWriteFenceAvailable,
 } from '../../../src/host/sandbox/writeFence';
+import { resolveCanonicalRunPath } from '../../../src/host/runtime/runContext';
 
 function pinOsWriteFenceAvailable(available: boolean): () => void {
   const manager = getSandboxManager();
@@ -1201,6 +1202,8 @@ describe('PermissionClassifier', () => {
       expect(first.reason).toBe(FENCED_IN_PROJECT_WRITE_REASON);
       expect(first.bypassCache).toBe(true);
       expect(first.cached).toBe(false);
+      expect(first.requiresOsWriteFence).toBe(true);
+      expect(typeof first.writeFenceWorkspaceRoot).toBe('string');
       expect(second.cached).toBe(false);
       expect(second.decision).toBe('ask');
     }
@@ -1414,9 +1417,29 @@ describe('PermissionClassifier', () => {
         );
         expect(result.decision).toBe('approve');
         expect(result.reason).toBe(FENCED_IN_PROJECT_WRITE_REASON);
+        expect(result.requiresOsWriteFence).toBe(true);
+        expect(result.writeFenceWorkspaceRoot).toBe(resolveCanonicalRunPath(proj));
       } finally {
         unpin();
         await fs.rm(root, { recursive: true, force: true });
+      }
+    });
+
+    it('workspace=$HOME 写 .zshrc 不免确认', async () => {
+      const unpin = pinOsWriteFenceAvailable(true);
+      try {
+        expect(isOsWriteFenceAvailable()).toBe(true);
+        const home = os.homedir();
+        const result = await classifyPermission(
+          'Bash',
+          { command: 'printf x > .zshrc' },
+          executorFenceContext(home),
+        );
+        expect(result.decision).toBe('ask');
+        expect(result.reason).not.toBe(FENCED_IN_PROJECT_WRITE_REASON);
+        expect(result.requiresOsWriteFence).not.toBe(true);
+      } finally {
+        unpin();
       }
     });
 

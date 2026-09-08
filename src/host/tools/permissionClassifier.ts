@@ -32,8 +32,8 @@ import { checkCommandPolicy } from './modules/shell/commandPolicy';
 import { inspectPermissionCommand, neverApprove } from './permissionCommandParse';
 import {
   FENCED_IN_PROJECT_WRITE_REASON,
-  isFencedInProjectWriteEligible,
-  isOsWriteFenceAvailable,
+  enforceWriteFenceObligation,
+  fencedWriteSkipConfirm, isFencedInProjectWriteEligible,
 } from '../sandbox/writeFence';
 import { isBashToolName, normalizeToolName } from './toolNames';
 import { resolveCanonicalRunPath } from '../runtime/runContext';
@@ -78,7 +78,7 @@ export interface ClassificationResult {
   /** The classifier asked because no rule could determine the command risk. */
   riskUnknown?: boolean;
   /** Do not store this result in the command-text cache (fenced in-project writes). */
-  bypassCache?: boolean;
+  bypassCache?: boolean; requiresOsWriteFence?: boolean; writeFenceWorkspaceRoot?: string;
 }
 
 function classificationHostReason(result: ClassificationResult, toolName: string): ClassificationResult {
@@ -604,7 +604,7 @@ export class PermissionClassifier {
         traceStep: createTraceStep('permission_classifier', 'B0: path_analysis_failed', 'deny', reason, startTime) };
     }
     if (ruleResult) {
-      const structured = classificationHostReason(ruleResult, toolName);
+      const structured = classificationHostReason(enforceWriteFenceObligation(ruleResult), toolName);
       this.setCache(cacheKey, structured);
       return structured;
     }
@@ -887,13 +887,15 @@ export class PermissionClassifier {
     // Reverse mutation: drop isOsWriteFenceAvailable() ⇒ symlink/TOCTOU writes escape.
     // Reverse mutation: drop workingDirectoryFromToolCall ⇒ CLI auto-mode process.cwd()
     // re-run auto-approves a relative write while bash executes in the tool's outside cwd.
+    // Reverse mutation: drop requiresOsWriteFence / writeFenceWorkspaceRoot ⇒ bash
+    // no longer wraps skip-confirm writes.
     // Eligible commands have no quotes/expansion, so original spelling matches the
     // reconstructed single segment; reuse the probe instead of classifying twice.
-    const fenceEligible = context.workingDirectoryFromToolCall === true
-      && isFencedInProjectWriteEligible(command, context) && isOsWriteFenceAvailable();
-    const fenceProbe = fenceEligible ? this.classifyBashSegment(command, context, startTime) : undefined;
-    if (fenceEligible && fenceProbe?.decision !== 'deny') return {
-      decision: 'approve', reason: FENCED_IN_PROJECT_WRITE_REASON, confidence: 0.95, cached: false, bypassCache: true };
+    const fence = isFencedInProjectWriteEligible(command, context) ? fencedWriteSkipConfirm(context) : undefined;
+    const fenceProbe = fence ? this.classifyBashSegment(command, context, startTime) : undefined;
+    if (fence && fenceProbe?.decision !== 'deny') return {
+      decision: 'approve', reason: FENCED_IN_PROJECT_WRITE_REASON, confidence: 0.95, cached: false, bypassCache: true,
+      requiresOsWriteFence: true, writeFenceWorkspaceRoot: fence.workspaceRoot };
 
     // The shared parser reconstructs each segment with shell-safe quoting, so text
     // arguments remain one word while policy checks still consume canonical text.

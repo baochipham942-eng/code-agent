@@ -24,6 +24,7 @@ import { getSandboxManager } from '../../../src/host/sandbox';
 import {
   FENCED_IN_PROJECT_WRITE_REASON,
   isOsWriteFenceAvailable,
+  setOsWriteFenceAvailableOverride,
 } from '../../../src/host/sandbox/writeFence';
 
 describe('PermissionClassifier', () => {
@@ -1219,6 +1220,28 @@ describe('PermissionClassifier', () => {
         }
       } finally {
         spy.mockRestore();
+      }
+    });
+
+    it.each([
+      'printf x > .env',
+      'printf x >> .env',
+      'tee .env',
+    ])('%s 在围栏可用时仍 ask 不免确认', async (command) => {
+      setOsWriteFenceAvailableOverride(true);
+      const root = await fs.mkdtemp(path.join(os.tmpdir(), 'exectime-env-'));
+      try {
+        expect(isOsWriteFenceAvailable()).toBe(true);
+        const result = await classifyPermission(
+          'Bash',
+          { command },
+          { workingDirectory: root, workspaceRoot: root, permissionLevel: 'execute' },
+        );
+        expect(result.decision).toBe('ask');
+        expect(result.reason).not.toBe(FENCED_IN_PROJECT_WRITE_REASON);
+      } finally {
+        setOsWriteFenceAvailableOverride(undefined);
+        await fs.rm(root, { recursive: true, force: true });
       }
     });
   });

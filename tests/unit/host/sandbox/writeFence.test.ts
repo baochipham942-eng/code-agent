@@ -32,6 +32,13 @@ describe('writeFence eligibility', () => {
     expect(isFencedInProjectWriteEligible('MODE=1 tee /tmp/proj/mode.txt', context)).toBe(true);
   });
 
+  it('rejects in-project .env credential writes even when they look like ordinary printf/tee', () => {
+    expect(isFencedInProjectWriteEligible('printf x > /tmp/proj/.env', context)).toBe(false);
+    expect(isFencedInProjectWriteEligible('printf x >> /tmp/proj/.env', context)).toBe(false);
+    expect(isFencedInProjectWriteEligible('tee /tmp/proj/.env', context)).toBe(false);
+    expect(isFencedInProjectWriteEligible('printf x > /tmp/proj/.env.local', context)).toBe(false);
+  });
+
   it('override pins fence availability independently of the host OS', () => {
     setOsWriteFenceAvailableOverride(true);
     expect(isOsWriteFenceAvailable()).toBe(true);

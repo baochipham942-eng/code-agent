@@ -57,7 +57,7 @@ import { resetPolicyEnforcer } from '../../../src/host/security/policyEnforcer';
 import { getPolicyEngine, resetPolicyEngine } from '../../../src/host/permissions/policyEngine';
 import { resolveCanonicalRunPath } from '../../../src/host/runtime/runContext';
 import { getSandboxManager } from '../../../src/host/sandbox';
-import { isOsWriteFenceAvailable } from '../../../src/host/sandbox/writeFence';
+import { isOsWriteFenceAvailable, setOsWriteFenceAvailableOverride } from '../../../src/host/sandbox/writeFence';
 
 describe('ToolExecutor Bash 安全命令单一判据', () => {
   let workspace: string;
@@ -684,6 +684,36 @@ describe('ToolExecutor Bash 安全命令单一判据', () => {
         }
       } finally {
         spy.mockRestore();
+      }
+    });
+
+    it('printf x > .env 整条链路仍弹卡，批准后照常执行', async () => {
+      setOsWriteFenceAvailableOverride(true);
+      try {
+        expect(isOsWriteFenceAvailable()).toBe(true);
+        const rejecting = buildRejectingExecutor();
+        const rejected = await rejecting.execute(
+          'Bash',
+          { command: 'printf x > .env' },
+          { sessionId: 'exectime-env-reject' },
+        );
+        expect(permissionRequests.length).toBeGreaterThan(0);
+        expect(permissionRequests[0]?.type).toBe('command');
+        expect(rejected.success).toBe(false);
+        expect(existsSync(path.join(workspace, '.env'))).toBe(false);
+
+        permissionRequests.length = 0;
+        const granting = buildGrantingExecutor();
+        const granted = await granting.execute(
+          'Bash',
+          { command: 'printf x > .env' },
+          { sessionId: 'exectime-env-grant' },
+        );
+        expect(permissionRequests.length).toBeGreaterThan(0);
+        expect(granted.success).toBe(true);
+        expect(await fs.readFile(path.join(workspace, '.env'), 'utf8')).toContain('x');
+      } finally {
+        setOsWriteFenceAvailableOverride(undefined);
       }
     });
 

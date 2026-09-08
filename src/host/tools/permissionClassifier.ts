@@ -30,7 +30,7 @@ import {
 import { RM_FLAGS_REQUIRED, RM_HEAD } from '../security/rmFlagPattern';
 import { checkCommandPolicy } from './modules/shell/commandPolicy';
 import { inspectPermissionCommand, neverApprove } from './permissionCommandParse';
-import { isFencedInProjectWriteEligible, isOsWriteFenceAvailable } from './modules/shell/bash';
+import { isFencedInProjectWriteEligible, isOsWriteFenceAvailable } from '../sandbox/writeFence';
 import { isBashToolName, normalizeToolName } from './toolNames';
 import { resolveCanonicalRunPath } from '../runtime/runContext';
 import { isPathWithinRoot } from '../runtime/workspaceScope';

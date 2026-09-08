@@ -11,7 +11,7 @@ const profileXml = ({ taskAllow, devices, expires }: { taskAllow?: boolean; devi
 <dict>
   <key>Name</key><string>Neo Preview AdHoc</string>
   <key>UUID</key><string>AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE</string>
-  <key>TeamName</key><string>jay lem</string>
+  <key>TeamName</key><string>Neo Preview Team</string>
   <key>TeamIdentifier</key>
   <array><string>D7CVTJ72NV</string></array>
   <key>CreationDate</key><date>2026-09-01T08:00:00Z</date>
@@ -88,7 +88,7 @@ describe('project version stamping', () => {
 
 describe('ad-hoc export options', () => {
   it('renders manual signing with the explicit profile and boolean plist literals', () => {
-    const xml = exportOptionsXml({ method: 'ad-hoc', teamId: 'D7CVTJ72NV', style: 'manual', appId: 'dev.neo.companion.preview', profileName: 'Neo Preview AdHoc', identity: 'iPhone Distribution: jay lem (D7CVTJ72NV)' });
+    const xml = exportOptionsXml({ method: 'ad-hoc', teamId: 'D7CVTJ72NV', style: 'manual', appId: 'dev.neo.companion.preview', profileName: 'Neo Preview AdHoc', identity: 'iPhone Distribution: Neo Preview Team (D7CVTJ72NV)' });
     expect(xml).toContain('<key>method</key><string>ad-hoc</string>');
     expect(xml).toContain('<key>signingStyle</key><string>manual</string>');
     expect(xml).toContain('<key>provisioningProfiles</key><dict><key>dev.neo.companion.preview</key><string>Neo Preview AdHoc</string></dict>');

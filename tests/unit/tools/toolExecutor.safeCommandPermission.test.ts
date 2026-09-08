@@ -56,6 +56,7 @@ import { PermissionRequestReason } from '../../../src/shared/contract/permission
 import { resetPolicyEnforcer } from '../../../src/host/security/policyEnforcer';
 import { getPolicyEngine, resetPolicyEngine } from '../../../src/host/permissions/policyEngine';
 import { resolveCanonicalRunPath } from '../../../src/host/runtime/runContext';
+import { getSandboxManager } from '../../../src/host/sandbox';
 
 describe('ToolExecutor Bash 安全命令单一判据', () => {
   let workspace: string;
@@ -412,6 +413,178 @@ describe('ToolExecutor Bash 安全命令单一判据', () => {
       expect(result.success).toBe(false);
       expect(result.error ?? '').toContain('Denied');
       expect(result.error ?? '').toContain('危险权限变更');
+    });
+  });
+
+  describe('N-WRITETARGET-EXECTIME：围栏内项目写入免确认', () => {
+    function fenceAvailable(): boolean {
+      return process.platform !== 'win32' && getSandboxManager().isAvailable();
+    }
+
+    function buildGrantingExecutor(): ToolExecutor {
+      const executor = new ToolExecutor({
+        workingDirectory: workspace,
+        requestPermission: async (request) => {
+          permissionRequests.push(request);
+          return true;
+        },
+      });
+      executor.setAuditEnabled(false);
+      return executor;
+    }
+
+    it.each([
+      ['benign-redirect-truncate', (root: string) => `printf ok > ${root}/out.txt`, 'out.txt'],
+      ['benign-redirect-append', (root: string) => `printf ok >> ${root}/out.txt`, 'out.txt'],
+      ['benign-redirect-both', (root: string) => `printf ok &> ${root}/out.txt`, 'out.txt'],
+      ['benign-assignment-mode-tee', (root: string) => `MODE=1 tee ${root}/mode.txt`, 'mode.txt'],
+      ['benign-assignment-multiple', (root: string) => `A=1 B=2 tee ${root}/multi.txt`, 'multi.txt'],
+    ])('%s 在围栏可用时免确认并写入项目内', async (_id, commandFor, relative) => {
+      const executor = buildRejectingExecutor();
+      const result = await executor.execute(
+        'Bash',
+        { command: commandFor(workspace) },
+        { sessionId: `exectime-benign-${relative}` },
+      );
+
+      if (fenceAvailable()) {
+        expect(permissionRequests).toHaveLength(0);
+        expect(result.success).toBe(true);
+        expect(existsSync(path.join(workspace, relative))).toBe(true);
+      } else {
+        expect(permissionRequests.length).toBeGreaterThan(0);
+        expect(result.success).toBe(false);
+        expect(existsSync(path.join(workspace, relative))).toBe(false);
+      }
+    });
+
+    it('围栏不可用时不假装免确认，退回弹卡', async () => {
+      const manager = getSandboxManager();
+      const spy = vi.spyOn(manager, 'isAvailable').mockReturnValue(false);
+      try {
+        const executor = buildRejectingExecutor();
+        const result = await executor.execute(
+          'Bash',
+          { command: `printf ok > ${workspace}/no-fence.txt` },
+          { sessionId: 'exectime-fence-unavailable' },
+        );
+        expect(permissionRequests.length).toBeGreaterThan(0);
+        expect(result.success).toBe(false);
+        expect(existsSync(path.join(workspace, 'no-fence.txt'))).toBe(false);
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it('引号拼接不得把区外路径当成区内免确认', async () => {
+      const outside = path.join(os.tmpdir(), `exectime-quote-${process.pid}.txt`);
+      const executor = buildRejectingExecutor();
+      await executor.execute(
+        'Bash',
+        { command: `printf ok > ${JSON.stringify(path.dirname(outside))}/"${path.basename(outside)}"` },
+        { sessionId: 'exectime-bypass-quote' },
+      );
+      expect(permissionRequests.length).toBeGreaterThan(0);
+      expect(existsSync(outside)).toBe(false);
+    });
+
+    it('Unicode 同形路径不得免确认放行到区外', async () => {
+      const outside = path.join(os.tmpdir(), `exectime-homo-${process.pid}.txt`);
+      const executor = buildRejectingExecutor();
+      await executor.execute(
+        'Bash',
+        { command: `printf ok > ..\u2215${path.basename(outside)}` },
+        { sessionId: 'exectime-bypass-homoglyph' },
+      );
+      expect(permissionRequests.length).toBeGreaterThan(0);
+      expect(existsSync(outside)).toBe(false);
+      expect(existsSync(path.join(workspace, '..', path.basename(outside)))).toBe(false);
+    });
+
+    it('Unicode 空白后的第二命令不得被当成注释而免确认', async () => {
+      const outside = path.join(os.tmpdir(), `exectime-nbsp-${process.pid}.txt`);
+      const executor = buildRejectingExecutor();
+      await executor.execute(
+        'Bash',
+        { command: `printf ok > ${workspace}/nbsp.txt\u00a0; printf pwned > ${JSON.stringify(outside)}` },
+        { sessionId: 'exectime-bypass-nbsp' },
+      );
+      expect(permissionRequests.length).toBeGreaterThan(0);
+      expect(existsSync(outside)).toBe(false);
+    });
+
+    it('-- 后横线文件名不得当选项丢掉后免确认', async () => {
+      const executor = buildRejectingExecutor();
+      await executor.execute(
+        'Bash',
+        { command: 'cp -- bar -locked.txt' },
+        { sessionId: 'exectime-bypass-dash-operand' },
+      );
+      expect(permissionRequests.length).toBeGreaterThan(0);
+      expect(existsSync(path.join(workspace, '-locked.txt'))).toBe(false);
+    });
+
+    it('软链跨界：字面在区内的写入不得静默写到区外', async () => {
+      const sub = path.join(workspace, 'link-sub');
+      const outsideDir = await fs.mkdtemp(path.join(os.tmpdir(), 'exectime-link-'));
+      const outsideFile = path.join(outsideDir, 'out.txt');
+      await fs.symlink(outsideDir, sub, process.platform === 'win32' ? 'junction' : 'dir');
+
+      const executor = buildGrantingExecutor();
+      await executor.execute(
+        'Bash',
+        { command: `printf ok > ${path.join(sub, 'out.txt')}` },
+        { sessionId: 'exectime-bypass-symlink' },
+      );
+
+      const outsideContents = existsSync(outsideFile)
+        ? await fs.readFile(outsideFile, 'utf8')
+        : '';
+      expect(outsideContents).not.toContain('ok');
+      await fs.rm(outsideDir, { recursive: true, force: true });
+    });
+
+    it('printf -v 改查找路径不得当「只是写文件」免确认', async () => {
+      const executor = buildRejectingExecutor();
+      await executor.execute(
+        'Bash',
+        { command: `printf -v PATH '%s' '/tmp/exectime-bin' > ${workspace}/printf-v.txt` },
+        { sessionId: 'exectime-bypass-printf-v' },
+      );
+      expect(permissionRequests.length).toBeGreaterThan(0);
+      expect(existsSync(path.join(workspace, 'printf-v.txt'))).toBe(false);
+    });
+
+    it('TOCTOU：批准区内写入后把目录换成区外软链，不得复用批准写出去', async () => {
+      const sub = path.join(workspace, 'toctou-sub');
+      await fs.mkdir(sub);
+      const command = `printf ok > ${path.join(sub, 'out.txt')}`;
+      const executor = buildGrantingExecutor();
+
+      const first = await executor.execute(
+        'Bash',
+        { command },
+        { sessionId: 'exectime-toctou-1' },
+      );
+      expect(first.success).toBe(true);
+
+      const outsideDir = await fs.mkdtemp(path.join(os.tmpdir(), 'exectime-toctou-'));
+      const outsideFile = path.join(outsideDir, 'out.txt');
+      await fs.rm(sub, { recursive: true, force: true });
+      await fs.symlink(outsideDir, sub, process.platform === 'win32' ? 'junction' : 'dir');
+
+      permissionRequests.length = 0;
+      await executor.execute(
+        'Bash',
+        { command },
+        { sessionId: 'exectime-toctou-2' },
+      );
+
+      const outsideContents = existsSync(outsideFile)
+        ? await fs.readFile(outsideFile, 'utf8')
+        : '';
+      expect(outsideContents).not.toContain('ok');
+      await fs.rm(outsideDir, { recursive: true, force: true });
     });
   });
 });

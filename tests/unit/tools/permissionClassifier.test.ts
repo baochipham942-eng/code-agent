@@ -1097,4 +1097,28 @@ describe('PermissionClassifier', () => {
       expect(bashCommandRequiresPermission(command, context)).toBe(true);
     });
   });
+
+  describe('N-WRITETARGET-EXECTIME：围栏内写入不缓存可写结论', () => {
+    it('同一条区内写入在软链掉包后不得复用缓存批准', async () => {
+      const root = await fs.mkdtemp(path.join(os.tmpdir(), 'exectime-cache-'));
+      const workspaceRoot = path.join(root, 'work');
+      const sub = path.join(workspaceRoot, 'sub');
+      await fs.mkdir(sub, { recursive: true });
+      const command = `printf ok > ${path.join(sub, 'out.txt')}`;
+      const context = { workingDirectory: workspaceRoot, workspaceRoot, permissionLevel: 'execute' };
+
+      const first = await classifyPermission('Bash', { command }, context);
+      const outside = path.join(root, 'outside');
+      await fs.mkdir(outside);
+      await fs.rm(sub, { recursive: true, force: true });
+      await fs.symlink(outside, sub, process.platform === 'win32' ? 'junction' : 'dir');
+      const second = await classifyPermission('Bash', { command }, context);
+
+      expect(second.cached).toBe(false);
+      if (first.decision === 'approve') {
+        expect(second.decision === 'approve' ? second.cached : false).toBe(false);
+      }
+      await fs.rm(root, { recursive: true, force: true });
+    });
+  });
 });

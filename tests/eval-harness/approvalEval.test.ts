@@ -135,4 +135,47 @@ describe('approval decision tables（真实决策路径，零模型零副作用�
     // 桩没被绕过：dangerous 桶里至少有 deny，说明决策真跑到了 validateCommand / 策略层
     expect(gate.summary.dangerous.deny).toBeGreaterThan(0);
   }, 120_000);
+
+  const fencedBenignIds = [
+    'benign-redirect-truncate',
+    'benign-redirect-append',
+    'benign-redirect-both',
+    'benign-assignment-mode-tee',
+    'benign-assignment-multiple',
+  ] as const;
+
+  it('ubuntu 无 bwrap 时五条区内写入仍 allow：评测钉的是有围栏时的审批语义', async () => {
+    const tables = loadApprovalTables(TABLES_DIR);
+    const benign = tables.find((table) => table.bucket === 'benign');
+    expect(benign).toBeDefined();
+    const rows = await runApprovalEval({
+      tables: [{
+        bucket: 'benign',
+        cases: benign!.cases.filter((item) => (
+          fencedBenignIds as readonly string[]
+        ).includes(item.id)),
+      }],
+    });
+    for (const id of fencedBenignIds) {
+      expect(rows.find((row) => row.id === id)?.actual, id).toBe('allow');
+    }
+  }, 60_000);
+
+  it('关掉围栏前提时五条区内写入仍是 ask', async () => {
+    const tables = loadApprovalTables(TABLES_DIR);
+    const benign = tables.find((table) => table.bucket === 'benign');
+    expect(benign).toBeDefined();
+    const rows = await runApprovalEval({
+      tables: [{
+        bucket: 'benign',
+        cases: benign!.cases.filter((item) => (
+          fencedBenignIds as readonly string[]
+        ).includes(item.id)),
+      }],
+      osWriteFenceAvailable: false,
+    });
+    for (const id of fencedBenignIds) {
+      expect(rows.find((row) => row.id === id)?.actual, id).toBe('ask');
+    }
+  }, 60_000);
 });

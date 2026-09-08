@@ -35,6 +35,13 @@ export interface ToolContext {
   workspace?: string;
   workspaceScope?: WorkspaceScope;
   /**
+   * Classifier skip-confirm for in-project writes carries an OS write-fence obligation.
+   * Bash must wrap; wrap failure is SANDBOX_UNAVAILABLE, never a naked run.
+   */
+  requiresOsWriteFence?: boolean;
+  /** Canonical workspaceRoot the classifier used for the in-zone check. */
+  writeFenceWorkspaceRoot?: string;
+  /**
    * 写边界开关随 ToolContext 下传 spawn 链：toolExecutor 只在开着时带上（关着时
    * 形状不变）。shadowAdapter.buildProtocolContext / subagentExecutionContext 逐字段
    * 重建上下文时必须搬运——漏搬 = 委派链上子代理绕过写边界。

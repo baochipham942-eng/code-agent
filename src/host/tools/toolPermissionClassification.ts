@@ -3,6 +3,7 @@
 // ============================================================================
 
 import { classifyPermission, type ClassificationResult } from './permissionClassifier';
+import { enforceWriteFenceObligation } from '../sandbox/writeFence';
 import { isExternalSideEffectTool } from './externalSideEffect';
 import { createTraceStep } from '../security/decisionTraceBuilder';
 import { getPermissionModeManager, permissionModeAutoApproves, type PermissionMode } from '../permissions/modes';
@@ -328,6 +329,7 @@ export async function resolveToolPermissionClassification(input: {
       workingDirectory: input.workingDirectory,
       workspaceRoot: input.workspaceRoot,
       permissionLevel: input.permissionLevel,
+      workingDirectoryFromToolCall: true,
     });
   }
   if (input.readOnlyForcesConfirmation && classification.decision === 'approve') {
@@ -388,5 +390,5 @@ export async function resolveToolPermissionClassification(input: {
       ),
     };
   }
-  return { ...classification, external };
+  return enforceWriteFenceObligation({ ...classification, external });
 }

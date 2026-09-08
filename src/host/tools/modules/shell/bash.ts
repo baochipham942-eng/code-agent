@@ -22,6 +22,7 @@
 // ============================================================================
 
 import { spawn } from 'child_process';
+import path from 'node:path';
 import type {
   ToolHandler,
   ToolModule,
@@ -49,6 +50,8 @@ import { checkCommandPolicy } from './commandPolicy';
 import { rewriteBashCommand } from './rtkRewriter';
 import { getPermissionModeManager } from '../../../permissions/modes';
 import { resolveSandboxNetworkPolicy, wrapCommandForSandbox } from '../../../sandbox';
+import { containWriteFenceWorkspaceRoot, isOsWriteFenceAvailable } from '../../../sandbox/writeFence';
+import { resolveCanonicalRunPath } from '../../../runtime/runContext';
 
 const MAX_TIMEOUT_MS = BASH.MAX_TIMEOUT;
 const BACKGROUND_TRAILING_OPERATOR = /(?:^|[;\n])\s*([^;&|\n][\s\S]*?)\s*&\s*$/;
@@ -605,7 +608,28 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
     }
 
     const timeout = Math.min((args.timeout as number) || BASH.DEFAULT_TIMEOUT, MAX_TIMEOUT_MS);
-    const workingDirectory = (args.working_directory as string) || ctx.workingDir;
+    let workingDirectory: string;
+    try {
+      const rawWorkingDirectory = typeof args.working_directory === 'string' && args.working_directory.trim()
+        ? path.resolve(ctx.workingDir, args.working_directory)
+        : ctx.workingDir;
+      workingDirectory = resolveCanonicalRunPath(rawWorkingDirectory);
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      return { ok: false, error: `working directory is not a usable path: ${detail}`, code: 'INVALID_ARGS' };
+    }
+    let canonicalWorkspace: string | undefined;
+    if (ctx.workspace) {
+      try {
+        canonicalWorkspace = resolveCanonicalRunPath(ctx.workspace);
+      } catch (err) {
+        const detail = err instanceof Error ? err.message : String(err);
+        return { ok: false, error: `workspace is not a usable path: ${detail}`, code: 'INVALID_ARGS' };
+      }
+      if (!canonicalWorkspace) {
+        return { ok: false, error: 'workspace is not a usable path: empty', code: 'INVALID_ARGS' };
+      }
+    }
     const implicitBackground = rewriteImplicitBackgroundCommand(command);
     const normalizedCommand = implicitBackground.command;
     const runInBackground = (args.run_in_background as boolean | undefined) ?? implicitBackground.rewritten;
@@ -622,11 +646,16 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
     // unattended 会话不论钳后档位，命令一律带沙箱跑。
     // -------------------------------------------------------------------------
     const permissionModeManager = getPermissionModeManager();
-    const shouldSandbox = OS_SANDBOX.ENABLED
+    // Reverse mutation: ignore requiresOsWriteFence ⇒ skip-confirm writes run naked.
+    const writeFence = ctx.requiresOsWriteFence === true;
+    const fenceRoot = writeFence
+      ? containWriteFenceWorkspaceRoot(ctx.writeFenceWorkspaceRoot)
+      : undefined;
+    const shouldSandbox = writeFence || (OS_SANDBOX.ENABLED
       && (process.env.CODE_AGENT_EVAL_REAL_ROOT !== undefined
         || permissionModeManager.getModeForSession(ctx.sessionId) === 'bypassPermissions'
         || permissionModeManager.isUnattendedSession(ctx.sessionId)
-        || (ctx.workspaceScope?.roots.length ?? 0) > 1);
+        || (ctx.workspaceScope?.roots.length ?? 0) > 1));
     let sandboxCleanup: (() => void) | undefined;
     const cleanupSandbox = () => {
       const cleanup = sandboxCleanup;
@@ -637,14 +666,19 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
     const applySandbox = (cmd: string): { ok: true; command: string } | { ok: false; error: string } => {
       if (!shouldSandbox) return { ok: true, command: cmd };
       try {
+        if (writeFence && (!fenceRoot || !isOsWriteFenceAvailable())) {
+          throw new Error('write fence cannot contain workspace root');
+        }
         const wrapped = wrapCommandForSandbox(cmd, {
           workingDirectory,
           readOnlyRoots: ctx.workspaceScope?.roots
             .filter((root) => root.access === 'read_only')
-            .map((root) => root.path),
-          readWriteRoots: ctx.workspaceScope?.roots
-            .filter((root) => root.access === 'read_write')
-            .map((root) => root.path),
+            .map((root) => resolveCanonicalRunPath(root.path)),
+          readWriteRoots: writeFence && fenceRoot
+            ? [fenceRoot]
+            : ctx.workspaceScope?.roots
+              .filter((root) => root.access === 'read_write')
+              .map((root) => resolveCanonicalRunPath(root.path)),
           deniedReadRoots: process.env.CODE_AGENT_EVAL_REAL_ROOT
             ? [process.env.CODE_AGENT_EVAL_REAL_ROOT]
             : undefined,
@@ -656,11 +690,13 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
         sandboxCleanup = wrapped.cleanup;
         return { ok: true, command: wrapped.command };
       } catch (err) {
+        const detail = err instanceof Error ? err.message : String(err);
         return {
           ok: false,
-          error:
-            `bypassPermissions 档要求 OS 沙箱可用，但当前不可用：${err instanceof Error ? err.message : String(err)}。` +
-            `请安装 bubblewrap（Linux）或切换到 default 档。`,
+          error: writeFence
+            ? `区内写入免确认要求 OS 沙箱可用，但当前不可用：${detail}。请安装 bubblewrap（Linux）或切换到 default 档。`
+            : `bypassPermissions 档要求 OS 沙箱可用，但当前不可用：${detail}。` +
+              `请安装 bubblewrap（Linux）或切换到 default 档。`,
         };
       }
     };

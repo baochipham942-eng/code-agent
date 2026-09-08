@@ -369,7 +369,7 @@ describe('ToolExecutor per-run workspace isolation', () => {
     );
     expect(bashAtWorkspace).toMatchObject({ success: true });
     const bashWorkspaceOutput = resultText(bashAtWorkspace);
-    expect(bashWorkspaceOutput).toContain(`[cwd: ${run.workspace}]`);
+    expect(bashWorkspaceOutput).toContain(`[cwd: ${await fs.realpath(workspace)}]`);
     expect(bashWorkspaceOutput).toContain(await fs.realpath(workspace));
 
     const escapedBash = await executor.execute(

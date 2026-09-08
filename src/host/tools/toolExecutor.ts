@@ -62,6 +62,7 @@ import { normalizePermissionAskResult, type RequestPermissionResult } from '../.
 import { applyEditedArgs } from '../../shared/contract/permissionEdit';
 import { EXTERNAL_SIDE_EFFECT_TRACE_RULE, EXTERNAL_SIDE_EFFECT_TRACE_REASON, isExternalSideEffectTool, extractStandingGrantTarget } from './externalSideEffect';
 import { isRunPathInsideWorkspace, resolveCanonicalRunPath, type RunContext } from '../runtime/runContext';
+import { writeFenceObligationRoot } from '../sandbox/writeFence';
 import { resolveBackgroundWorkspaceAuthority } from '../runtime/workspaceAuthority';
 import { resolveWorkspacePath } from '../runtime/workspaceScope';
 import { isDangerousCommand, sanitizeToolParams, toolMatchesPatternSet, truncateToolOutput } from './toolExecutorHelpers';
@@ -1223,7 +1224,7 @@ export class ToolExecutor {
       runId: effectiveRunId, turnId: options.turnId,
       sourceMessageId: options.sourceMessageId,
       sessionId: effectiveSessionId,
-      workspace: this.runtimeWorkspace,
+      workspace: this.writeWorkspaceRoot ?? this.runtimeWorkspace,
       workspaceScope: this.runContext?.workspaceScope,
       // N-EVAL-POLICY-WRITE-BOUNDARY-ENABLE：写边界开关随 ToolContext 下传给 spawn 链
       // （subagentToolRuntime 自建 executor 不走 forRun）。只在开着时出现，关着时
@@ -1599,6 +1600,11 @@ export class ToolExecutor {
           // approve 路径另建 builder（见下），故其单独补一条。
           if (classification.external) {
             traceBuilder.addStep('permission_classifier', EXTERNAL_SIDE_EFFECT_TRACE_RULE, 'allow', EXTERNAL_SIDE_EFFECT_TRACE_REASON);
+          }
+          const fenceRoot = writeFenceObligationRoot(classification);
+          if (fenceRoot) {
+            context.requiresOsWriteFence = true;
+            context.writeFenceWorkspaceRoot = fenceRoot;
           }
           if (
             classification.decision === 'approve'

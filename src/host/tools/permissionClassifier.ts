@@ -14,10 +14,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import type { DecisionStep } from '../../shared/contract/decisionTrace';
-import {
-  createHostReason, HostReasonCode,
-  type HostReasonPayload,
-} from '../../shared/contract/permission';
+import { createHostReason, HostReasonCode, type HostReasonPayload } from '../../shared/contract/permission';
 import { createTraceStep } from '../security/decisionTraceBuilder';
 import {
   commandWords as tokenizeCommandWords, isKnownSafeCommand,
@@ -30,6 +27,11 @@ import {
 import { RM_FLAGS_REQUIRED, RM_HEAD } from '../security/rmFlagPattern';
 import { checkCommandPolicy } from './modules/shell/commandPolicy';
 import { inspectPermissionCommand, neverApprove } from './permissionCommandParse';
+import {
+  FENCED_IN_PROJECT_WRITE_REASON,
+  enforceWriteFenceObligation,
+  fencedWriteSkipConfirm, isFencedInProjectWriteEligible,
+} from '../sandbox/writeFence';
 import { isBashToolName, normalizeToolName } from './toolNames';
 import { resolveCanonicalRunPath } from '../runtime/runContext';
 import { isPathWithinRoot } from '../runtime/workspaceScope';
@@ -72,6 +74,12 @@ export interface ClassificationResult {
   trustBoundary?: boolean;
   /** The classifier asked because no rule could determine the command risk. */
   riskUnknown?: boolean;
+  /** Do not store this result in the command-text cache (fenced in-project writes). */
+  bypassCache?: boolean;
+  /** Skip-confirm approve must wrap the command in the OS write fence. Bash consumes this. */
+  requiresOsWriteFence?: boolean;
+  /** Canonical workspace root the classifier used for the in-zone check; bash's only fence root. */
+  writeFenceWorkspaceRoot?: string;
 }
 
 function classificationHostReason(result: ClassificationResult, toolName: string): ClassificationResult {
@@ -103,6 +111,8 @@ interface ClassificationContext {
   permissionLevel?: string;
   /** Per-classification cache only; never survives symlink or filesystem changes. */
   pathResolutionCache?: Map<string, string>;
+  /** True when workingDirectory is this tool call's real cwd. Auto-mode process.cwd() re-run must omit it. */
+  workingDirectoryFromToolCall?: boolean;
 }
 
 interface CacheEntry {
@@ -595,7 +605,7 @@ export class PermissionClassifier {
         traceStep: createTraceStep('permission_classifier', 'B0: path_analysis_failed', 'deny', reason, startTime) };
     }
     if (ruleResult) {
-      const structured = classificationHostReason(ruleResult, toolName);
+      const structured = classificationHostReason(enforceWriteFenceObligation(ruleResult), toolName);
       this.setCache(cacheKey, structured);
       return structured;
     }
@@ -871,10 +881,22 @@ export class PermissionClassifier {
       return {
         decision: 'approve',
         reason: policyDecision.reason ?? '命令级权限规则允许',
-        confidence: 1.0,
-        cached: false,
+        confidence: 1.0, cached: false,
       };
     }
+
+    // Reverse mutation: drop isOsWriteFenceAvailable() ⇒ symlink/TOCTOU writes escape.
+    // Reverse mutation: drop workingDirectoryFromToolCall ⇒ CLI auto-mode process.cwd()
+    // re-run auto-approves a relative write while bash executes in the tool's outside cwd.
+    // Reverse mutation: drop requiresOsWriteFence / writeFenceWorkspaceRoot ⇒ bash
+    // no longer wraps skip-confirm writes.
+    // Eligibility rejects quoted redirect targets (`> "file"`); quoted tee operands
+    // still parse. Reuse the original command for the deny probe, not a reconstructed segment.
+    const fence = isFencedInProjectWriteEligible(command, context) ? fencedWriteSkipConfirm(context) : undefined;
+    const fenceProbe = fence ? this.classifyBashSegment(command, context, startTime) : undefined;
+    if (fence && fenceProbe?.decision !== 'deny') return {
+      decision: 'approve', reason: FENCED_IN_PROJECT_WRITE_REASON, confidence: 0.95, cached: false, bypassCache: true,
+      requiresOsWriteFence: true, writeFenceWorkspaceRoot: fence.workspaceRoot };
 
     // The shared parser reconstructs each segment with shell-safe quoting, so text
     // arguments remain one word while policy checks still consume canonical text.
@@ -899,7 +921,7 @@ export class PermissionClassifier {
 
     if (segments.length === 1) {
       // A segment's deny or specific ask outranks the generic redirection ask; only an approve yields.
-      const result = this.classifyBashSegment(segments[0], context, startTime);
+      const result = fenceProbe ?? this.classifyBashSegment(segments[0], context, startTime);
       return neverApprove(result) ?? rawInspection.outputRedirectionAsk ?? result;
     }
 
@@ -1235,6 +1257,7 @@ export class PermissionClassifier {
   }
 
   private setCache(key: string, result: ClassificationResult): void {
+    if (result.bypassCache) return;
     // 缓存容量控制：FIFO 淘汰
     if (this.cache.size >= MAX_CACHE_SIZE) {
       const firstKey = this.cache.keys().next().value;

@@ -56,6 +56,18 @@ import { PermissionRequestReason } from '../../../src/shared/contract/permission
 import { resetPolicyEnforcer } from '../../../src/host/security/policyEnforcer';
 import { getPolicyEngine, resetPolicyEngine } from '../../../src/host/permissions/policyEngine';
 import { resolveCanonicalRunPath } from '../../../src/host/runtime/runContext';
+import { getSandboxManager } from '../../../src/host/sandbox';
+import { isOsWriteFenceAvailable } from '../../../src/host/sandbox/writeFence';
+
+function pinOsWriteFenceAvailable(available: boolean): () => void {
+  const manager = getSandboxManager();
+  const availableSpy = vi.spyOn(manager, 'isAvailable').mockReturnValue(available);
+  const enabledSpy = vi.spyOn(manager, 'isEnabled').mockReturnValue(available);
+  return () => {
+    availableSpy.mockRestore();
+    enabledSpy.mockRestore();
+  };
+}
 
 describe('ToolExecutor Bash 安全命令单一判据', () => {
   let workspace: string;
@@ -439,6 +451,402 @@ describe('ToolExecutor Bash 安全命令单一判据', () => {
       expect(result.success).toBe(false);
       expect(result.error ?? '').toContain('Denied');
       expect(result.error ?? '').toContain('危险权限变更');
+    });
+  });
+
+  describe('N-WRITETARGET-EXECTIME：围栏内项目写入免确认', () => {
+    /**
+     * Seatbelt allows TMPDIR writes. Vitest points TMPDIR at the run root
+     * (`os.tmpdir()`), so fence-outside dirs must not use that path — `/tmp`
+     * is the host temp that the jail does not auto-allow.
+     */
+    function mkdirOutsideSeatbeltTemp(prefix: string): Promise<string> {
+      return fs.mkdtemp(path.join('/tmp', prefix));
+    }
+
+    function buildGrantingExecutor(): ToolExecutor {
+      const executor = new ToolExecutor({
+        workingDirectory: workspace,
+        requestPermission: async (request) => {
+          permissionRequests.push(request);
+          return true;
+        },
+      });
+      executor.setAuditEnabled(false);
+      return executor;
+    }
+
+    it.each([
+      ['benign-redirect-truncate', (root: string) => `printf ok > ${root}/out.txt`, 'out.txt'],
+      ['benign-redirect-append', (root: string) => `printf ok >> ${root}/out.txt`, 'out.txt'],
+      ['benign-redirect-both', (root: string) => `printf ok &> ${root}/out.txt`, 'out.txt'],
+      ['benign-assignment-mode-tee', (root: string) => `MODE=1 tee ${root}/mode.txt`, 'mode.txt'],
+      ['benign-assignment-multiple', (root: string) => `A=1 B=2 tee ${root}/multi.txt`, 'multi.txt'],
+    ])('%s 在围栏可用时免确认并写入项目内', async (_id, commandFor, relative) => {
+      const executor = buildRejectingExecutor();
+      const result = await executor.execute(
+        'Bash',
+        { command: commandFor(workspace) },
+        { sessionId: `exectime-benign-${relative}` },
+      );
+
+      if (isOsWriteFenceAvailable()) {
+        expect(permissionRequests).toHaveLength(0);
+        expect(result.success).toBe(true);
+        expect(existsSync(path.join(workspace, relative))).toBe(true);
+      } else {
+        expect(permissionRequests.length).toBeGreaterThan(0);
+        expect(result.success).toBe(false);
+        expect(existsSync(path.join(workspace, relative))).toBe(false);
+      }
+    });
+
+    it('围栏不可用时不假装免确认，退回弹卡', async () => {
+      const manager = getSandboxManager();
+      const spy = vi.spyOn(manager, 'isAvailable').mockReturnValue(false);
+      try {
+        const executor = buildRejectingExecutor();
+        const result = await executor.execute(
+          'Bash',
+          { command: `printf ok > ${workspace}/no-fence.txt` },
+          { sessionId: 'exectime-fence-unavailable' },
+        );
+        expect(permissionRequests.length).toBeGreaterThan(0);
+        expect(result.success).toBe(false);
+        expect(existsSync(path.join(workspace, 'no-fence.txt'))).toBe(false);
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it('引号拼接不得把区外路径当成区内免确认', async () => {
+      const outside = path.join(os.tmpdir(), `exectime-quote-${process.pid}.txt`);
+      const executor = buildRejectingExecutor();
+      await executor.execute(
+        'Bash',
+        { command: `printf ok > ${JSON.stringify(path.dirname(outside))}/"${path.basename(outside)}"` },
+        { sessionId: 'exectime-bypass-quote' },
+      );
+      expect(permissionRequests.length).toBeGreaterThan(0);
+      expect(existsSync(outside)).toBe(false);
+    });
+
+    it('Unicode 同形路径不得免确认放行到区外', async () => {
+      const outside = path.join(os.tmpdir(), `exectime-homo-${process.pid}.txt`);
+      const executor = buildRejectingExecutor();
+      await executor.execute(
+        'Bash',
+        { command: `printf ok > ..\u2215${path.basename(outside)}` },
+        { sessionId: 'exectime-bypass-homoglyph' },
+      );
+      expect(permissionRequests.length).toBeGreaterThan(0);
+      expect(existsSync(outside)).toBe(false);
+      expect(existsSync(path.join(workspace, '..', path.basename(outside)))).toBe(false);
+    });
+
+    it('Unicode 空白后的第二命令不得被当成注释而免确认', async () => {
+      const outside = path.join(os.tmpdir(), `exectime-nbsp-${process.pid}.txt`);
+      const executor = buildRejectingExecutor();
+      await executor.execute(
+        'Bash',
+        { command: `printf ok > ${workspace}/nbsp.txt\u00a0; printf pwned > ${JSON.stringify(outside)}` },
+        { sessionId: 'exectime-bypass-nbsp' },
+      );
+      expect(permissionRequests.length).toBeGreaterThan(0);
+      expect(existsSync(outside)).toBe(false);
+    });
+
+    it('-- 后横线文件名不得当选项丢掉后免确认', async () => {
+      const executor = buildRejectingExecutor();
+      await executor.execute(
+        'Bash',
+        { command: 'cp -- bar -locked.txt' },
+        { sessionId: 'exectime-bypass-dash-operand' },
+      );
+      expect(permissionRequests.length).toBeGreaterThan(0);
+      expect(existsSync(path.join(workspace, '-locked.txt'))).toBe(false);
+    });
+
+    it('软链跨界：字面在区内的写入不得静默写到区外', async () => {
+      const sub = path.join(workspace, 'link-sub');
+      const outsideDir = await mkdirOutsideSeatbeltTemp('exectime-link-');
+      const outsideFile = path.join(outsideDir, 'out.txt');
+      await fs.symlink(outsideDir, sub, process.platform === 'win32' ? 'junction' : 'dir');
+
+      const executor = buildRejectingExecutor();
+      await executor.execute(
+        'Bash',
+        { command: `printf ok > ${path.join(sub, 'out.txt')}` },
+        { sessionId: 'exectime-bypass-symlink' },
+      );
+
+      expect(permissionRequests.length).toBeGreaterThan(0);
+      expect(permissionRequests[0]?.type).toBe('command');
+      const outsideContents = existsSync(outsideFile)
+        ? await fs.readFile(outsideFile, 'utf8')
+        : '';
+      expect(outsideContents).not.toContain('ok');
+      await fs.rm(outsideDir, { recursive: true, force: true });
+    });
+
+    it('printf -v 改查找路径不得当「只是写文件」免确认', async () => {
+      const executor = buildRejectingExecutor();
+      await executor.execute(
+        'Bash',
+        { command: `printf -v PATH '%s' '/tmp/exectime-bin' > ${workspace}/printf-v.txt` },
+        { sessionId: 'exectime-bypass-printf-v' },
+      );
+      expect(permissionRequests.length).toBeGreaterThan(0);
+      expect(existsSync(path.join(workspace, 'printf-v.txt'))).toBe(false);
+    });
+
+    it('TOCTOU：批准区内写入后把目录换成区外软链，不得复用批准写出去', async () => {
+      const sub = path.join(workspace, 'toctou-sub');
+      await fs.mkdir(sub);
+      const command = `printf ok > ${path.join(sub, 'out.txt')}`;
+      const executor = buildGrantingExecutor();
+
+      const first = await executor.execute(
+        'Bash',
+        { command },
+        { sessionId: 'exectime-toctou-1' },
+      );
+      expect(first.success).toBe(true);
+
+      const outsideDir = await mkdirOutsideSeatbeltTemp('exectime-toctou-');
+      const outsideFile = path.join(outsideDir, 'out.txt');
+      await fs.rm(sub, { recursive: true, force: true });
+      await fs.symlink(outsideDir, sub, process.platform === 'win32' ? 'junction' : 'dir');
+
+      permissionRequests.length = 0;
+      const rejecting = buildRejectingExecutor();
+      await rejecting.execute(
+        'Bash',
+        { command },
+        { sessionId: 'exectime-toctou-2' },
+      );
+
+      expect(permissionRequests.length).toBeGreaterThan(0);
+      expect(permissionRequests[0]?.type).toBe('command');
+      const outsideContents = existsSync(outsideFile)
+        ? await fs.readFile(outsideFile, 'utf8')
+        : '';
+      expect(outsideContents).not.toContain('ok');
+      await fs.rm(outsideDir, { recursive: true, force: true });
+    });
+
+    it('围栏不可用时软链跨界判定仍是 ask 不是 approve', async () => {
+      const spy = vi.spyOn(getSandboxManager(), 'isAvailable').mockReturnValue(false);
+      try {
+        expect(isOsWriteFenceAvailable()).toBe(false);
+        const sub = path.join(workspace, 'link-sub-nofence');
+        const outsideDir = await mkdirOutsideSeatbeltTemp('exectime-link-nofence-');
+        try {
+          await fs.symlink(outsideDir, sub, process.platform === 'win32' ? 'junction' : 'dir');
+          const executor = buildRejectingExecutor();
+          await executor.execute(
+            'Bash',
+            { command: `printf ok > ${path.join(sub, 'out.txt')}` },
+            { sessionId: 'exectime-bypass-symlink-nofence' },
+          );
+          expect(permissionRequests.length).toBeGreaterThan(0);
+          expect(permissionRequests[0]?.type).toBe('command');
+          const outsideFile = path.join(outsideDir, 'out.txt');
+          const outsideContents = existsSync(outsideFile)
+            ? await fs.readFile(outsideFile, 'utf8')
+            : '';
+          expect(outsideContents).not.toContain('ok');
+        } finally {
+          await fs.rm(outsideDir, { recursive: true, force: true });
+        }
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it('围栏不可用时 TOCTOU 第二次判定仍是 ask 不是 approve', async () => {
+      const spy = vi.spyOn(getSandboxManager(), 'isAvailable').mockReturnValue(false);
+      try {
+        expect(isOsWriteFenceAvailable()).toBe(false);
+        const sub = path.join(workspace, 'toctou-sub-nofence');
+        await fs.mkdir(sub);
+        const command = `printf ok > ${path.join(sub, 'out.txt')}`;
+        const executor = buildGrantingExecutor();
+
+        const first = await executor.execute(
+          'Bash',
+          { command },
+          { sessionId: 'exectime-toctou-nofence-1' },
+        );
+        expect(first.success).toBe(true);
+        expect(permissionRequests.length).toBeGreaterThan(0);
+
+        const outsideDir = await mkdirOutsideSeatbeltTemp('exectime-toctou-nofence-');
+        try {
+          await fs.rm(sub, { recursive: true, force: true });
+          await fs.symlink(outsideDir, sub, process.platform === 'win32' ? 'junction' : 'dir');
+          permissionRequests.length = 0;
+          await executor.execute(
+            'Bash',
+            { command },
+            { sessionId: 'exectime-toctou-nofence-2' },
+          );
+          expect(permissionRequests.length).toBeGreaterThan(0);
+          expect(permissionRequests[0]?.type).toBe('command');
+        } finally {
+          await fs.rm(outsideDir, { recursive: true, force: true });
+        }
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it('echo "100$" > out.txt 整条链路弹卡且不报错', async () => {
+      const unpin = pinOsWriteFenceAvailable(true);
+      try {
+        expect(isOsWriteFenceAvailable()).toBe(true);
+        const rejecting = buildRejectingExecutor();
+        const rejected = await rejecting.execute(
+          'Bash',
+          { command: 'echo "100$" > out.txt' },
+          { sessionId: 'exectime-dollar-reject' },
+        );
+        expect(permissionRequests.length).toBeGreaterThan(0);
+        expect(permissionRequests[0]?.type).toBe('command');
+        expect(rejected.success).toBe(false);
+        expect(existsSync(path.join(workspace, 'out.txt'))).toBe(false);
+      } finally {
+        unpin();
+      }
+    });
+
+    it('printf PWNED=1 >> .ENV 整条链路仍弹卡', async () => {
+      const unpin = pinOsWriteFenceAvailable(true);
+      try {
+        expect(isOsWriteFenceAvailable()).toBe(true);
+        const rejecting = buildRejectingExecutor();
+        const rejected = await rejecting.execute(
+          'Bash',
+          { command: 'printf PWNED=1 >> .ENV' },
+          { sessionId: 'exectime-env-case-reject' },
+        );
+        expect(permissionRequests.length).toBeGreaterThan(0);
+        expect(permissionRequests[0]?.type).toBe('command');
+        expect(rejected.success).toBe(false);
+        expect(existsSync(path.join(workspace, '.env'))).toBe(false);
+        expect(existsSync(path.join(workspace, '.ENV'))).toBe(false);
+      } finally {
+        unpin();
+      }
+    });
+
+    it.each([
+      ['printf x > .git/hooks/pre-commit', '.git/hooks/pre-commit'],
+      ['printf x > .GIT/hooks/pre-commit', '.GIT/hooks/pre-commit'],
+      ['printf x > .husky/pre-commit', '.husky/pre-commit'],
+      ['printf x > .code-agent/settings.json', '.code-agent/settings.json'],
+      ['printf x > .code-agent/hooks/hooks.json', '.code-agent/hooks/hooks.json'],
+    ])('%s 整条链路仍弹卡', async (command, relative) => {
+      const unpin = pinOsWriteFenceAvailable(true);
+      try {
+        expect(isOsWriteFenceAvailable()).toBe(true);
+        const rejecting = buildRejectingExecutor();
+        const rejected = await rejecting.execute(
+          'Bash',
+          { command },
+          { sessionId: `exectime-hooks-reject-${relative}` },
+        );
+        expect(permissionRequests.length).toBeGreaterThan(0);
+        expect(permissionRequests[0]?.type).toBe('command');
+        expect(rejected.success).toBe(false);
+        expect(existsSync(path.join(workspace, relative))).toBe(false);
+      } finally {
+        unpin();
+      }
+    });
+
+    it("printf '[core] hooksPath' > .GIT/config 整条链路仍弹卡", async () => {
+      const unpin = pinOsWriteFenceAvailable(true);
+      try {
+        expect(isOsWriteFenceAvailable()).toBe(true);
+        const rejecting = buildRejectingExecutor();
+        const rejected = await rejecting.execute(
+          'Bash',
+          { command: "printf '[core]\\n\\thooksPath = .neo-hooks\\n' > .GIT/config" },
+          { sessionId: 'exectime-git-config-case-reject' },
+        );
+        expect(permissionRequests.length).toBeGreaterThan(0);
+        expect(permissionRequests[0]?.type).toBe('command');
+        expect(rejected.success).toBe(false);
+        expect(existsSync(path.join(workspace, '.git', 'config'))).toBe(false);
+        expect(existsSync(path.join(workspace, '.GIT', 'config'))).toBe(false);
+      } finally {
+        unpin();
+      }
+    });
+
+    it('printf x > .env 整条链路仍弹卡，批准后照常执行', async () => {
+      const unpin = pinOsWriteFenceAvailable(true);
+      try {
+        expect(isOsWriteFenceAvailable()).toBe(true);
+        const rejecting = buildRejectingExecutor();
+        const rejected = await rejecting.execute(
+          'Bash',
+          { command: 'printf x > .env' },
+          { sessionId: 'exectime-env-reject' },
+        );
+        expect(permissionRequests.length).toBeGreaterThan(0);
+        expect(permissionRequests[0]?.type).toBe('command');
+        expect(rejected.success).toBe(false);
+        expect(existsSync(path.join(workspace, '.env'))).toBe(false);
+
+        permissionRequests.length = 0;
+        const granting = buildGrantingExecutor();
+        const granted = await granting.execute(
+          'Bash',
+          { command: 'printf x > .env' },
+          { sessionId: 'exectime-env-grant' },
+        );
+        expect(permissionRequests.length).toBeGreaterThan(0);
+        expect(granted.success).toBe(true);
+        expect(await fs.readFile(path.join(workspace, '.env'), 'utf8')).toContain('x');
+      } finally {
+        unpin();
+      }
+    });
+
+    it('项目根是软链时，classifier 免确认则 bash 必须套围栏（logs→区外不得写出）', async () => {
+      const parent = await fs.mkdtemp(path.join(os.tmpdir(), 'exectime-linkroot-'));
+      const realRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'exectime-realroot-'));
+      const linkRoot = path.join(parent, 'proj');
+      await fs.symlink(realRoot, linkRoot, process.platform === 'win32' ? 'junction' : 'dir');
+      const outsideDir = await mkdirOutsideSeatbeltTemp('exectime-linkroot-out-');
+      await fs.symlink(outsideDir, path.join(realRoot, 'logs'), process.platform === 'win32' ? 'junction' : 'dir');
+      await fs.writeFile(path.join(realRoot, 'README.md'), 'fixture\n');
+      try {
+        const executor = new ToolExecutor({
+          workingDirectory: linkRoot,
+          requestPermission: async (request) => {
+            permissionRequests.push(request);
+            return false;
+          },
+        });
+        executor.setAuditEnabled(false);
+        await executor.execute(
+          'Bash',
+          { command: 'printf x > logs/out.txt' },
+          { sessionId: 'exectime-symlink-project-root' },
+        );
+        const outsideFile = path.join(outsideDir, 'out.txt');
+        const outsideContents = existsSync(outsideFile)
+          ? await fs.readFile(outsideFile, 'utf8')
+          : '';
+        expect(outsideContents).not.toContain('x');
+      } finally {
+        await fs.rm(parent, { recursive: true, force: true });
+        await fs.rm(realRoot, { recursive: true, force: true });
+        await fs.rm(outsideDir, { recursive: true, force: true });
+      }
     });
   });
 });

@@ -344,7 +344,8 @@ export class Bubblewrap {
       }
     }
 
-    // Read-write mounts
+    // Read-write mounts. In-project bash auto-approve (N-WRITETARGET-EXECTIME) depends on
+    // these binds being the only writable project paths.
     for (const p of config.readWritePaths) {
       if (this.pathExists(p)) {
         args.push('--bind', p, p);

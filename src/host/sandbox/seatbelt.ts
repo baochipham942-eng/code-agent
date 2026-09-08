@@ -171,7 +171,8 @@ export function generateProfile(config: SeatbeltConfig): string {
     lines.push('');
   }
 
-  // Writes：默认全拒，再按 realpath 放行 /dev + 临时目录 + 工作目录/显式写路径
+  // Writes：默认全拒，再按 realpath 放行 /dev + 临时目录 + 工作目录/显式写路径。
+  // In-project bash auto-approve (N-WRITETARGET-EXECTIME) depends on this realpath jail.
   lines.push('; Confine writes: deny all, re-allow specific real paths');
   lines.push('(deny file-write*)');
   lines.push('(allow file-write* (subpath "/dev"))');

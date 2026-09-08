@@ -1222,7 +1222,7 @@ export class ToolExecutor {
       runId: effectiveRunId, turnId: options.turnId,
       sourceMessageId: options.sourceMessageId,
       sessionId: effectiveSessionId,
-      workspace: this.runtimeWorkspace,
+      workspace: this.writeWorkspaceRoot ?? this.runtimeWorkspace,
       workspaceScope: this.runContext?.workspaceScope,
       // N-EVAL-POLICY-WRITE-BOUNDARY-ENABLE：写边界开关随 ToolContext 下传给 spawn 链
       // （subagentToolRuntime 自建 executor 不走 forRun）。只在开着时出现，关着时

@@ -56,6 +56,7 @@ import { createBackgroundRouter } from './routes/background';
 import { dispatchHostWebRoute } from '../host/services/capabilities/hostCapabilityContributions';
 import { createAdminReviewQueueRouter } from './routes/adminReviewQueue';
 import { createCompanionRouter } from './routes/companion';
+import { createCompanionProvisioningRouter } from './routes/companionProvisioning';
 import { CompanionGateway } from '../host/companion/CompanionGateway';
 import { getDatabase } from '../host/services/core/databaseService';
 import type { AgentRunBody } from './routes/agentBodySchemas';
@@ -253,6 +254,7 @@ export function createApp(deps: CreateAppDeps): express.Express {
       publishCompanionEvent = (sessionId, kind, payload) => {
         gateway.publish(sessionId, kind, payload);
       };
+      app.use('/api/companion', createCompanionProvisioningRouter({ gateway }));
       app.use('/companion', createCompanionRouter({
         gateway,
         authenticate: (deviceId, credential) => gateway.authenticateDevice(deviceId, credential),

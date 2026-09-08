@@ -27,6 +27,13 @@ export interface CompanionDevice {
   revokedAt: number | null;
 }
 
+export interface CompanionDeviceCredential {
+  deviceId: string;
+  credential: string;
+  scopeEpoch: number;
+  scope: readonly string[];
+}
+
 export type CompanionCommandState = 'accepted' | 'resolved' | 'rejected' | 'conflict';
 
 export interface CompanionCommandRecord {

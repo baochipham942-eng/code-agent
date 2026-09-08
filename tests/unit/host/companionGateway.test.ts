@@ -60,4 +60,13 @@ describe('CompanionGateway', () => {
     expect(gateway.authenticateDevice('phone-2', 'abc')).toBe(true);
     expect(gateway.authenticateDevice('phone-2', 'desktop-bearer')).toBe(false);
   });
+
+  it('issues a device credential without persisting the raw secret', () => {
+    const issued = gateway.issueDeviceCredential(['session-1']);
+    expect(issued.deviceId).toMatch(/^phone-/);
+    expect(issued.credential.length).toBeGreaterThan(32);
+    expect(gateway.authenticateDevice(issued.deviceId, issued.credential)).toBe(true);
+    const row = db.prepare('SELECT credential_hash FROM companion_devices WHERE device_id = ?').get(issued.deviceId) as { credential_hash: string };
+    expect(row.credential_hash).not.toBe(issued.credential);
+  });
 });

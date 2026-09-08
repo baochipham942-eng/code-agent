@@ -1,4 +1,4 @@
-import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import type BetterSqlite3 from 'better-sqlite3';
 import { applyCompanionSchema } from '../services/core/database/migrations/companion';
 import { companionCommandSchema } from '../../shared/contract/companion';
@@ -6,6 +6,7 @@ import type {
   CompanionCommand,
   CompanionCommandRecord,
   CompanionDecision,
+  CompanionDeviceCredential,
   CompanionDevice,
   CompanionEvent,
   CompanionSubmitResult,
@@ -73,6 +74,13 @@ export class CompanionGateway {
         scope_epoch = excluded.scope_epoch,
         revoked_at = excluded.revoked_at
     `).run(device.deviceId, device.credentialHash, JSON.stringify(device.scope), device.scopeEpoch, device.revokedAt);
+  }
+
+  issueDeviceCredential(scope: readonly string[], scopeEpoch = this.currentEpoch): CompanionDeviceCredential {
+    const deviceId = `phone-${randomUUID()}`;
+    const credential = randomBytes(32).toString('base64url');
+    this.registerDevice({ deviceId, credentialHash: credentialDigest(credential), scopeEpoch, scope, revokedAt: null });
+    return { deviceId, credential, scopeEpoch, scope: [...scope] };
   }
 
   authenticateDevice(deviceId: string, credential: string): boolean {

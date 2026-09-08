@@ -130,6 +130,17 @@ describe('Light Memory consolidation live contract', () => {
     await fs.rm(root, { recursive: true, force: true });
   });
 
+  it('excludes a tainted persisted candidate from prompt and model-selected merges', async () => {
+    const alpha = path.join(memoryDir, 'alpha.md');
+    await fs.writeFile(alpha, (await fs.readFile(alpha, 'utf8')).replace('status: active', 'status: active\nmemory_tainted: true'));
+    const original = await fs.readFile(alpha, 'utf8');
+    const report = await consolidateLightMemory({ force: true, workingDirectory: root, db: new FakeMemoryDb() });
+    expect(mocks.memoryTask.mock.calls[0][0]).not.toContain('Alpha original fact');
+    expect(report.actions).toEqual([]);
+    expect(await fs.readFile(alpha, 'utf8')).toBe(original);
+    expect(await readMemoryFile('alpha.md')).toMatchObject({ memoryTainted: true, status: 'active' });
+  });
+
   it('keeps dry-run strictly read-only', async () => {
     const beforeIndex = await fs.readFile(path.join(memoryDir, 'INDEX.md'), 'utf-8');
     const beforeAlpha = await fs.readFile(path.join(memoryDir, 'alpha.md'), 'utf-8');

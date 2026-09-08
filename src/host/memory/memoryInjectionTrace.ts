@@ -6,7 +6,8 @@ export type MemoryInjectionBlockType =
   | 'memory_hint'
   | 'recent_conversations'
   | 'failure_journal'
-  | 'library_pins';
+  | 'library_pins'
+  | 'automatic_memory';
 
 export interface MemoryInjectionTrace {
   id: string;

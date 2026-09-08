@@ -24,6 +24,16 @@ function buildParams() {
 }
 
 describe('useChatInputEnvelope · 同族逐轮设置随载荷', () => {
+  it('carries paste provenance at send time, including a stable builder reused after typing', () => {
+    const inputMemoryTainted = { current: false };
+    const { result } = renderHook(() => useChatInputEnvelope({ ...buildParams(), inputMemoryTainted }));
+    expect(result.current('typed').context?.memoryTainted).toBeUndefined();
+    inputMemoryTainted.current = true;
+    expect(result.current('pasted then edited').context?.memoryTainted).toBe(true);
+    inputMemoryTainted.current = false;
+    expect(result.current('new clean draft').context?.memoryTainted).toBeUndefined();
+  });
+
   it('envelope 携带 modeStore 提交时刻的 searchEnabled / thinkingEnabled（正负成对）', () => {
     const { result } = renderHook(() => useChatInputEnvelope(buildParams() as never));
 

@@ -285,6 +285,7 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     if (!context) return undefined;
 
     const metadata: WorkbenchMessageMetadata = {};
+    if (context.memoryTainted === true) metadata.memoryTainted = true;
 
     if (context.workingDirectory !== undefined) {
       metadata.workingDirectory = context.workingDirectory;

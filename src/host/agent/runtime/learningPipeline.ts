@@ -8,6 +8,7 @@
 // 失败分类原料来自 telemetryCollector（telemetry_tool_calls 表），journal 长期整理复用 consolidation cron。
 // ============================================================================
 
+import { skipRunAutomaticMemory } from '../../memory/automaticMemoryPolicy';
 import type { AgentEvent } from '../../../shared/contract';
 import type { TelemetryToolCall } from '../../../shared/contract/telemetry';
 import type { RuntimeContext } from './runtimeContext';
@@ -146,6 +147,7 @@ export class LearningPipeline {
    * 产出进 skill-drafts 队列由用户确认，绝不自动入库。
    */
   async runConversationReviewDistillation(): Promise<void> {
+    if (skipRunAutomaticMemory(this.ctx, 'skill_draft')) return;
     const messages = this.ctx.messages ?? [];
     const userMessages = messages
       .filter((m) => m.role === 'user' && typeof m.content === 'string' && m.content.trim().length > 0)
@@ -172,7 +174,7 @@ export class LearningPipeline {
     const lastAssistantText = typeof lastAssistant?.content === 'string' ? lastAssistant.content : undefined;
 
     const reviewed = await reviewConversationForSkill({ userMessages, lastAssistant: lastAssistantText });
-    if (!reviewed) return;
+    if (!reviewed || skipRunAutomaticMemory(this.ctx, 'skill_draft')) return;
 
     const draft = await enqueueSkillDraft({
       name: reviewed.name,
@@ -203,6 +205,7 @@ export class LearningPipeline {
    * Failure Journal（全自动）：重复失败模式 → Light Memory。
    */
   async runErrorPatternLearning(toolCalls?: TelemetryToolCall[]): Promise<void> {
+    if (skipRunAutomaticMemory(this.ctx, 'failure_journal')) return;
     const calls = toolCalls ?? this.getSessionToolCalls();
     const patterns = extractFailurePatterns(calls, this.ctx.sessionId);
     if (patterns.length === 0) return;

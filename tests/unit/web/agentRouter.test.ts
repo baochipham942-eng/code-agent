@@ -1078,6 +1078,24 @@ describe('createAgentRouter', () => {
   });
 
   describe('/api/run 逐轮设置接线（QE-01：桌面主链走本路由，不经 appService envelope 分支）', () => {
+    it('persists pasted-input taint through the native HTTP route into AgentLoop history', async () => {
+      const controller = new AbortController();
+      try {
+        const response = await fetch(`${baseUrl}/api/run`, {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ prompt: 'External pasted material', sessionId: 'session-paste-taint',
+            context: { memoryTainted: true } }), signal: controller.signal,
+        });
+        expect(response.ok).toBe(true);
+        await waitForAssertion(() => expect(mockCreateAgentLoop).toHaveBeenCalled());
+        const messages = mockCreateAgentLoop.mock.calls.at(-1)![2] as Message[];
+        expect(messages).toContainEqual(expect.objectContaining({
+          role: 'user', metadata: expect.objectContaining({ workbench: { memoryTainted: true } }),
+        }));
+      } finally { controller.abort(); }
+      await waitForAssertion(() => expect(mockCancel).toHaveBeenCalled());
+    });
+
     it('连接器 chip 进入 AgentLoop toolScope，不只停在提示词和消息 metadata', async () => {
       const controller = new AbortController();
       const response = await fetch(`${baseUrl}/api/run`, {

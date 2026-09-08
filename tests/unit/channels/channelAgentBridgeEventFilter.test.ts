@@ -21,6 +21,7 @@ vi.mock('../../../src/host/tools/dispatch/toolDefinitions', () => ({
 }));
 
 interface ChannelAgentBridgeHarness {
+  handleStreamingMessage(accountId: string, message: ChannelMessage, orchestrator: unknown, attachments: undefined): Promise<void>;
   handleSyncMessage(
     accountId: string,
     message: ChannelMessage,
@@ -32,6 +33,17 @@ interface ChannelAgentBridgeHarness {
 }
 
 describe('ChannelAgentBridge event declaration', () => {
+  it('marks SSE channel text as tainted before dispatching it as a user message', async () => {
+    const res = { write: vi.fn(() => true), end: vi.fn(), on: vi.fn(), writableEnded: false };
+    const orchestrator = { on: vi.fn(), removeListener: vi.fn(), sendMessage: vi.fn(async () => undefined) };
+    const message: ChannelMessage = { id: 'sse-1', channelId: 'api', sender: { id: 'external', name: 'External' },
+      context: { chatId: 'api-chat', chatType: 'p2p' }, content: 'External message', timestamp: 1, raw: { res } };
+    const bridge = new ChannelAgentBridge({ configService: {} as never });
+    await (bridge as unknown as ChannelAgentBridgeHarness).handleStreamingMessage('account', message, orchestrator, undefined);
+    expect(orchestrator.sendMessage).toHaveBeenCalledWith('External message', undefined, undefined, { memoryTainted: true });
+    expect(res.end).toHaveBeenCalled();
+  });
+
   it('subscribes sync channels to permission events without streaming deltas', async () => {
     let declaredFilter: AgentEventFilter | undefined;
     const orchestrator = {
@@ -67,6 +79,9 @@ describe('ChannelAgentBridge event declaration', () => {
       responseCallback,
     );
 
+    expect(orchestrator.sendMessage).toHaveBeenCalledWith(
+      'hello', undefined, expect.any(Object), expect.objectContaining({ channel: expect.any(Object) }),
+    );
     expect(shouldDeliverAgentEvent('message_delta', declaredFilter)).toBe(false);
     expect(shouldDeliverAgentEvent('stream_chunk', declaredFilter)).toBe(false);
     expect(shouldDeliverAgentEvent('permission_request', declaredFilter)).toBe(true);

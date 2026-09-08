@@ -1,3 +1,4 @@
+import { skipAutomaticMemory } from '../../../../../src/host/memory/automaticMemoryPolicy';
 // ============================================================================
 // MemoryWrite (native ToolModule) Tests
 // Tests write/delete, validation, INDEX.md auto-maintenance, canUseTool gate
@@ -88,7 +89,15 @@ describe('memoryWriteModule (native)', () => {
   });
 
   describe('schema', () => {
-    it('has correct name and write metadata', () => {
+    it('an automatic-memory skip does not disable explicit MemoryWrite', async () => {
+    expect(skipAutomaticMemory({ memoryTainted: true }, 'test-session', 'durable_facts')).toBe(true);
+    const result = await runWrite({ action: 'write', filename: 'explicit.md',
+      name: 'Explicit', description: 'User requested', type: 'reference', content: 'User-approved fact.' });
+    expect(result.ok).toBe(true);
+    expect(await fs.readFile(path.join(memDir, 'explicit.md'), 'utf8')).toContain('User-approved fact.');
+  });
+
+  it('has correct name and write metadata', () => {
       expect(memoryWriteModule.schema.name).toBe('MemoryWrite');
       expect(memoryWriteModule.schema.permissionLevel).toBe('write');
       expect(memoryWriteModule.schema.readOnly).toBe(false);

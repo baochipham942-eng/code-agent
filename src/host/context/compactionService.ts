@@ -1,3 +1,4 @@
+import { hasUntrustedMemoryInput } from '../memory/automaticMemoryPolicy';
 import type { ModelConfig } from '../../shared/contract/model';
 import type { ToolResultArchiveRef } from '../utils/toolResultSpill';
 import type {
@@ -701,6 +702,7 @@ export async function compactMessagesWithSummary(
     content: summaryContent,
     timestamp: summaryMessageTimestamp,
     compaction: block,
+    ...(hasUntrustedMemoryInput(options.messages) ? { metadata: { memoryTainted: true } } : {}),
   };
   const newMessages = [summaryMessage, ...planWithHooks.preservedMessages];
   const afterTokens = countMessageTokens(newMessages);

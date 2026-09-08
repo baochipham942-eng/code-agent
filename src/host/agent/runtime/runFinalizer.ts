@@ -17,6 +17,7 @@ import { HostReasonCode } from '../../../shared/contract';
 import { recordSessionEnd } from '../../lightMemory/sessionMetadata';
 import { appendConversationSummary, isLoopAutomationSummaryText } from '../../lightMemory/recentConversations';
 import { judgeConversation } from '../../lightMemory/conversationJudge';
+import { skipRunAutomaticMemory } from '../../memory/automaticMemoryPolicy';
 import { writeDurableFacts } from '../../lightMemory/durableFactWriter';
 import { getLangfuseService, getBudgetService, BudgetAlertLevel } from '../../services';
 import { logCollector } from '../../mcp/logCollector.js';
@@ -884,6 +885,7 @@ export class RunFinalizer {
     // Persistent roles own their MEMORY.md lifecycle. Do not mirror role traffic into
     // the ordinary global/project recent-conversations ledger.
     if (this.ctx.persistentRoleId) return;
+    if (skipRunAutomaticMemory(this.ctx, 'durable_facts')) return;
 
     const userMessages = this.ctx.messages
       .filter((m: { role: string; content?: string; isMeta?: boolean }) =>
@@ -908,6 +910,8 @@ export class RunFinalizer {
     const lastAssistantText = typeof lastAssistant?.content === 'string' ? lastAssistant.content : undefined;
 
     const judgment = await judgeConversation({ userMessages, lastAssistant: lastAssistantText });
+    // A steer/tool result may arrive while the judge is running.
+    if (skipRunAutomaticMemory(this.ctx, 'durable_facts')) return;
 
     if (
       judgment.worth

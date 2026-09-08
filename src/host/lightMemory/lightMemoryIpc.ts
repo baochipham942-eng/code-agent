@@ -33,6 +33,7 @@ export interface LightMemoryFile {
   projectPath?: string;
   sessionId?: string;
   importProvenance?: MemoryImportProvenance;
+  memoryTainted?: boolean;
   /** File modification time (ISO) */
   updatedAt: string;
 }
@@ -186,6 +187,7 @@ function toLightMemoryFile(filename: string, content: string, updatedAt: Date): 
     status: parseMemoryEntryStatus(metadata.status),
     deprecatedBy: metadata.deprecated_by || undefined,
     source: metadata.source,
+    memoryTainted: metadata.memory_tainted === 'true',
     schemaVersion: parseSchemaVersion(metadata.schema_version),
     scope: parseMemoryEntryScope(metadata.scope),
     projectPath: metadata.project_path || undefined,
@@ -300,6 +302,7 @@ export async function writeLightMemoryFile(input: {
   projectPath?: string | null;
   sessionId?: string | null;
   importProvenance?: MemoryImportProvenance | null;
+  memoryTainted?: boolean;
   /** Only the interactive directive confirmation path may set this. */
   directiveConfirmedByUser?: boolean;
 }): Promise<LightMemoryFile> {
@@ -316,6 +319,7 @@ export async function writeLightMemoryFile(input: {
     ['status', input.status],
     ['deprecated_by', input.deprecatedBy || undefined],
     ['source', input.source],
+    ['memory_tainted', input.memoryTainted || undefined],
     ['schema_version', input.schemaVersion],
     ['scope', input.scope],
     ['project_path', input.projectPath || undefined],
@@ -360,6 +364,7 @@ export async function archiveMemoryFile(filename: string, deprecatedBy?: string 
     status: 'archived',
     deprecatedBy,
     source: current.source,
+    memoryTainted: current.memoryTainted,
     schemaVersion: current.schemaVersion,
     scope: current.scope,
     projectPath: current.projectPath,

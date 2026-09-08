@@ -62,6 +62,7 @@ import { resolveBudgetScope } from '../services/core/budgetService';
 import { ToolExecutionEngine } from './runtime/toolExecutionEngine';
 import { ContextAssembly } from './runtime/contextAssembly';
 import { RunFinalizer } from './runtime/runFinalizer';
+import { hasUntrustedMemoryInput, skipRunAutomaticMemory } from '../memory/automaticMemoryPolicy';
 import { LearningPipeline } from './runtime/learningPipeline';
 import { loadPersistedRuntimeState } from './runtime/runtimeStatePersistence';
 import { TurnTraceRecorder } from './runtime/turnTrace';
@@ -143,6 +144,9 @@ export class AgentLoop {
       skillDiscoveryService: config.skillDiscoveryService,
       persistMessage: persistMessage
         ? async (message) => {
+            if (this.ctx.control.memoryTainted) {
+              message.metadata = { ...message.metadata, memoryTainted: true };
+            }
             stampAssistantMessageCorrelation(message, { turnId: this.ctx.turn.currentTurnId });
             await persistMessage(message);
           }
@@ -281,6 +285,7 @@ export class AgentLoop {
    *   `<live_voice_permission_notice>` 整块就是这么露给用户的）。省略时按 userMessage 处理。
    */
   async run(userMessage: string, displayPrompt?: string): Promise<void> {
+    if (hasUntrustedMemoryInput(this.ctx.messages)) this.ctx.control.markMemoryTainted();
     const assistantMessageIdsBeforeRun = new Set(
       this.ctx.messages.filter((message) => message.role === 'assistant').map((message) => message.id),
     );
@@ -347,6 +352,7 @@ export class AgentLoop {
   ): void {
     const roleId = this.ctx.persistentRoleId;
     if (!roleId || this.ctx.control.isCancelled || this.conversationRuntime.wasInterrupted()) return;
+    if (skipRunAutomaticMemory(this.ctx, 'role_memory')) return;
     const finalMessage = [...this.ctx.messages].reverse().find((message) => (
       message.role === 'assistant'
       && !assistantMessageIdsBeforeRun.has(message.id)

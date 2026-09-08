@@ -19,6 +19,11 @@ export class ControlState {
   private _forceFinalResponsePrompt?: string;
   private readonly _preApprovedTools = new Set<string>();
   private _externalDataCallCount = 0;
+  private _memoryTainted = false;
+
+  get memoryTainted(): boolean { return this._memoryTainted; }
+
+  markMemoryTainted(): void { this._memoryTainted = true; }
 
   get isCancelled(): boolean { return this._isCancelled; }
   get isInterrupted(): boolean { return this._isInterrupted; }

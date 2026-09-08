@@ -71,6 +71,7 @@ export interface InputAreaProps {
   onFileSelect: (files: FileList) => void;
   /** 图片粘贴回调 */
   onImagePaste?: (file: File) => void;
+  onTextPaste?: () => void;
   /** 是否禁用 */
   disabled?: boolean;
   /** 是否有附件 */
@@ -140,6 +141,7 @@ export const InputArea = forwardRef<InputAreaRef, InputAreaProps>(
       onSubmit,
       onFileSelect,
       onImagePaste,
+      onTextPaste,
       disabled = false,
       hasAttachments = false,
       onFocusChange,
@@ -370,6 +372,7 @@ export const InputArea = forwardRef<InputAreaRef, InputAreaProps>(
         e.preventDefault();
         const root = editorRef.current;
         if (!root) return;
+        onTextPaste?.();
         insertPlainTextAtCaret(root, text);
         emitChange();
       }

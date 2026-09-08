@@ -1,3 +1,5 @@
+import { ControlState } from '../../../../src/host/agent/runtime/controlState';
+import { listMemoryInjectionTraces } from '../../../../src/host/memory/memoryInjectionTrace';
 // ============================================================================
 // LearningPipeline LLM 复盘链 — 真穿透集成测试（Codex 审计 MED：补真 memoryTask 链路）
 // 只 mock memory model（fake 返回）+ telemetry，不 mock conversationReview / skillDraftQueue / 安全闸，
@@ -100,6 +102,20 @@ function makeCtx(events: AgentEvent[]) {
 }
 
 describe('LLM 复盘链真穿透', () => {
+  it('tainted runs cannot enqueue a skill draft', async () => {
+    const events: AgentEvent[] = [];
+    const ctx = makeCtx(events);
+    const control = new ControlState();
+    control.markMemoryTainted();
+    const pipeline = new LearningPipeline({ ...ctx, control } as never);
+    await pipeline.runSessionEndLearning();
+    expect(memoryMocks.memoryTask).not.toHaveBeenCalled();
+    expect(await listSkillDrafts()).toEqual([]);
+    expect(listMemoryInjectionTraces({ sessionId: ctx.sessionId })).toContainEqual(
+      expect.objectContaining({ source: 'skill_draft', trigger: 'skipped:tainted' }),
+    );
+  });
+
   it('runSessionEndLearning → 真复盘 → memoryTask → 真 enqueue → 事件 → 真 confirm 落盘', async () => {
     const events: AgentEvent[] = [];
     await new LearningPipeline(makeCtx(events)).runSessionEndLearning();

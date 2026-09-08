@@ -526,7 +526,7 @@ describe('ToolExecutor Bash 安全命令单一判据', () => {
 
     it('软链跨界：字面在区内的写入不得静默写到区外', async () => {
       const sub = path.join(workspace, 'link-sub');
-      const outsideDir = await fs.mkdtemp(path.join(os.tmpdir(), 'exectime-link-'));
+      const outsideDir = await fs.mkdtemp(path.join('/tmp', 'exectime-link-'));
       const outsideFile = path.join(outsideDir, 'out.txt');
       await fs.symlink(outsideDir, sub, process.platform === 'win32' ? 'junction' : 'dir');
 
@@ -568,7 +568,7 @@ describe('ToolExecutor Bash 安全命令单一判据', () => {
       );
       expect(first.success).toBe(true);
 
-      const outsideDir = await fs.mkdtemp(path.join(os.tmpdir(), 'exectime-toctou-'));
+      const outsideDir = await fs.mkdtemp(path.join('/tmp', 'exectime-toctou-'));
       const outsideFile = path.join(outsideDir, 'out.txt');
       await fs.rm(sub, { recursive: true, force: true });
       await fs.symlink(outsideDir, sub, process.platform === 'win32' ? 'junction' : 'dir');

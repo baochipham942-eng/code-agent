@@ -30,6 +30,7 @@ import {
 import { RM_FLAGS_REQUIRED, RM_HEAD } from '../security/rmFlagPattern';
 import { checkCommandPolicy } from './modules/shell/commandPolicy';
 import { inspectPermissionCommand, neverApprove } from './permissionCommandParse';
+import { isFencedInProjectWriteEligible, isOsWriteFenceAvailable } from './modules/shell/bash';
 import { isBashToolName, normalizeToolName } from './toolNames';
 import { resolveCanonicalRunPath } from '../runtime/runContext';
 import { isPathWithinRoot } from '../runtime/workspaceScope';
@@ -834,6 +835,11 @@ export class PermissionClassifier {
       };
     }
 
+    // Reverse mutation: drop isOsWriteFenceAvailable() ⇒ symlink/TOCTOU writes escape.
+    if (isFencedInProjectWriteEligible(command, context) && isOsWriteFenceAvailable() && this.classifyBashSegment(command, context, startTime)?.decision !== 'deny') {
+      return { decision: 'approve', reason: 'in-project write under OS write fence', confidence: 0.95, cached: false };
+    }
+
     // The shared parser reconstructs each segment with shell-safe quoting, so text
     // arguments remain one word while policy checks still consume canonical text.
     const rawTrimmed = command.trim();
@@ -1250,6 +1256,7 @@ export class PermissionClassifier {
   }
 
   private setCache(key: string, result: ClassificationResult): void {
+    if (result.reason === 'in-project write under OS write fence') return;
     // 缓存容量控制：FIFO 淘汰
     if (this.cache.size >= MAX_CACHE_SIZE) {
       const firstKey = this.cache.keys().next().value;

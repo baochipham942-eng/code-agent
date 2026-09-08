@@ -148,6 +148,7 @@ interface AgentRouterDeps extends AgentDurableRouteDeps {
     sessionId: string;
     envelope: ConversationEnvelope;
   }, route: 'active' | 'idle') => Promise<'sent' | 'steered' | 'queued'>) => void;
+  registerCompanionRun?: (run: (body: AgentRunBody) => { runId?: string }) => void;
 }
 
 export type ActiveAgentLoop = RunControlTarget;
@@ -1271,6 +1272,18 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       releaseSseSlot(); // 并发槽位释放兜底（与 res 'close' 双保险，release 幂等）
     }
   }
+
+  deps.registerCompanionRun?.((body) => {
+    const sessionId = body.sessionId;
+    void runAgentTurn(
+      body,
+      createOfflineAgentRunResponseSink(),
+      { connectedClient: false },
+    ).catch((error) => {
+      logger.error(`[AgentRouter] Companion run failed for ${sessionId ?? 'new session'}:`, error);
+    });
+    return { runId: sessionId ? runRegistry.getBySessionId(sessionId)?.context.runId : undefined };
+  });
 
   router.post('/run', async (req: Request, res: Response) => {
     const parsedBody = AgentRunBodySchema.safeParse(req.body);

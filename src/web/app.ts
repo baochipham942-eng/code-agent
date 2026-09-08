@@ -55,6 +55,10 @@ import type { PendingDevPermissionRequest } from './routes/dev';
 import { createBackgroundRouter } from './routes/background';
 import { dispatchHostWebRoute } from '../host/services/capabilities/hostCapabilityContributions';
 import { createAdminReviewQueueRouter } from './routes/adminReviewQueue';
+import { createCompanionRouter } from './routes/companion';
+import { CompanionGateway } from '../host/companion/CompanionGateway';
+import { getDatabase } from '../host/services/core/databaseService';
+import type { AgentRunBody } from './routes/agentBodySchemas';
 import { wireGenerativeUiEditProjectionInvalidation } from './helpers/generativeUiEditWiring';
 
 type WebSupabaseBinding = SupabaseAgentBinding & SupabaseSessionBinding;
@@ -140,6 +144,7 @@ export function createApp(deps: CreateAppDeps): express.Express {
 
   const app = express();
   const traceReadService = new TraceReadService(resolveCodeAgentDataDir());
+  let companionRun: ((body: AgentRunBody) => { runId?: string }) | undefined;
 
   // HTML 产物人工编辑落库后让 web 消息投影失效（dogfood 抓到的崩法 A 根因）
   wireGenerativeUiEditProjectionInvalidation();
@@ -217,7 +222,38 @@ export function createApp(deps: CreateAppDeps): express.Express {
     registerQueuedInputStartupSweep: deps.registerQueuedInputStartupSweep,
     registerQueuedInputEnqueueHook: deps.registerQueuedInputEnqueueHook,
     registerQueuedInputSendNowHook: deps.registerQueuedInputSendNowHook,
+    registerCompanionRun: (run) => { companionRun = run; },
   }));
+
+  try {
+    const db = getDatabase().getDb();
+    if (db) {
+      const gateway = new CompanionGateway(db, {
+        dispatch: (command) => {
+          if (command.action === 'run.cancel' && command.sessionId) {
+            const target = runRegistry.resolve({ sessionId: command.sessionId });
+            if (!target) return { state: 'resolved', result: { alreadyTerminal: true } };
+            void target.cancel('user');
+            return { state: 'accepted', result: { stopping: true, runId: target.context.runId } };
+          }
+          if (command.action !== 'message.send' || !companionRun) return { state: 'accepted', result: { queued: true } };
+          const payload = command.payload as { text?: unknown };
+          const text = typeof payload.text === 'string' ? payload.text : '';
+          const run = companionRun({
+            version: 1,
+            prompt: text,
+            sessionId: command.sessionId ?? undefined,
+            clientMessageId: command.commandId,
+          });
+          return { state: 'accepted', result: { queued: true, runId: run.runId } };
+        },
+      });
+      app.use('/api', createCompanionRouter({ gateway }));
+    }
+  } catch (error) {
+    // Companion is additive: a migration/runtime failure must not prevent the desktop app from serving.
+    logger.warn('Companion routes unavailable:', error);
+  }
 
   app.use('/api', createBackgroundRouter({ logger }));
   app.use('/api', dispatchHostWebRoute);

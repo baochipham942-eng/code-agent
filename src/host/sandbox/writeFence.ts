@@ -1,3 +1,4 @@
+import os from 'node:os';
 import path from 'node:path';
 import { parseShellCommand } from '../security/commandParse';
 import { resolveCanonicalRunPath } from '../runtime/runContext';
@@ -46,7 +47,7 @@ function looksInsideWorkspace(targetPath: string, cwd: string, workspaceRoot: st
   return targets.some((target) => roots.some((root) => isInsideWorkspaceRoot(target, root)));
 }
 
-/** macOS /var ↔ /private/var aliases only. Does not follow user symlinks inside the project. */
+/** macOS /var ↔ /private/var aliases only. Does not follow user symlinks. */
 function lexicalOsPathAliases(input: string): string[] {
   const resolved = path.resolve(input);
   const aliases = [resolved];
@@ -98,8 +99,9 @@ function commandHasExpansionMarker(command: string, parsed: ReturnType<typeof pa
 function isInProjectCredentialWrite(targetPath: string, cwd: string, workspaceRoot: string): boolean {
   const candidates = writeTargetAliases(targetPath, cwd);
   const roots = pathAliases(workspaceRoot);
+  const homeDir = tryCanonicalFencePath(os.homedir()) ?? os.homedir();
   return candidates.some((candidate) =>
-    roots.some((root) => isSensitiveCredentialPath(candidate, { projectRoot: root })));
+    roots.some((root) => isSensitiveCredentialPath(candidate, { homeDir, projectRoot: root })));
 }
 
 function isInProjectProtectedWrite(targetPath: string, cwd: string, workspaceRoot: string): boolean {
@@ -199,24 +201,9 @@ function inspectFencedWrite(
 }
 
 /**
- * Wrap simple in-project-looking writes in the OS jail. Lexical inside only —
- * user symlinks that escape the project stay fenced so seatbelt/bwrap is the gate.
- */
-export function isFencedWriteSandboxEligible(
-  command: string,
-  context: { workingDirectory: string; workspaceRoot?: string },
-): boolean {
-  const inspected = inspectFencedWrite(command, context);
-  if (!inspected) return false;
-  return inspected.writeTargets.every((target) => (
-    looksLexicallyInsideWorkspace(target.path, inspected.workingDirectory, inspected.workspaceRoot)
-  ));
-}
-
-/**
- * Narrow skip-confirm eligibility. Quote/compound/lookup/printf -v stay out.
- * Canonical inside + credential/startup-config exclusions; the OS fence is still
- * the write gate for lexical-in-project paths that resolve outside.
+ * Skip-confirm eligibility. Canonical (realpath) inside + credential/startup-config
+ * exclusions. Classifier and bash pass the same canonical cwd / workspaceRoot.
+ * Spelled-path-only inside is not a skip-confirm criterion.
  */
 export function isFencedInProjectWriteEligible(
   command: string,
@@ -238,4 +225,24 @@ export function isFencedInProjectWriteEligible(
     if (isInProjectStartupExecutableWrite(target.path, workingDirectory, workspaceRoot)) return false;
     return true;
   });
+}
+
+/**
+ * OS-jail wrap. Wrapper / superset of {@link isFencedInProjectWriteEligible}:
+ * skip-confirm ⇒ wrap, so sibling symlink-back (`../current/notes.txt`) cannot
+ * approve without a fence. Spelled-inside paths whose realpath is outside still
+ * wrap so seatbelt/bwrap remains the write gate (in-project symlink escape and
+ * classify-then-retarget TOCTOU). Reverse mutation: drop the skip-confirm arm ⇒
+ * `printf x > ../current/notes.txt` approves without wrap.
+ */
+export function isFencedWriteSandboxEligible(
+  command: string,
+  context: { workingDirectory: string; workspaceRoot?: string },
+): boolean {
+  if (isFencedInProjectWriteEligible(command, context)) return true;
+  const inspected = inspectFencedWrite(command, context);
+  if (!inspected) return false;
+  return inspected.writeTargets.every((target) => (
+    looksLexicallyInsideWorkspace(target.path, inspected.workingDirectory, inspected.workspaceRoot)
+  ));
 }

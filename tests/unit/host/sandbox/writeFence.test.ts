@@ -4,6 +4,7 @@ import * as path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import {
   isFencedInProjectWriteEligible,
+  isFencedWriteSandboxEligible,
   isOsWriteFenceAvailable,
 } from '../../../../src/host/sandbox/writeFence';
 import { getSandboxManager } from '../../../../src/host/sandbox';
@@ -110,6 +111,61 @@ describe('writeFence eligibility', () => {
       expect(isFencedInProjectWriteEligible('printf x > cache.txt', {
         workingDirectory: root,
         workspaceRoot: root,
+      })).toBe(false);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps sibling symlink-back writes eligible so bash must wrap the same command', () => {
+    const root = makeTempProject();
+    const proj = path.join(root, 'proj');
+    const current = path.join(root, 'current');
+    try {
+      fs.mkdirSync(proj);
+      fs.symlinkSync(proj, current, process.platform === 'win32' ? 'junction' : 'dir');
+      const ctx = { workingDirectory: proj, workspaceRoot: proj };
+      const command = 'printf x > ../current/notes.txt';
+      expect(isFencedInProjectWriteEligible(command, ctx)).toBe(true);
+      expect(isFencedWriteSandboxEligible(command, ctx)).toBe(true);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('skip-confirm eligibility is a subset of wrap eligibility', () => {
+    const ctx = context;
+    const commands = [
+      'printf x > /tmp/proj/out.txt',
+      'MODE=1 tee /tmp/proj/mode.txt',
+      'printf x > /tmp/proj/.env',
+      'printf x > /tmp/proj/.git/hooks/pre-commit',
+    ];
+    for (const command of commands) {
+      if (isFencedInProjectWriteEligible(command, ctx)) {
+        expect(isFencedWriteSandboxEligible(command, ctx)).toBe(true);
+      }
+    }
+  });
+
+  it('drops eligibility after the sibling symlink is retargeted outside the project', () => {
+    const root = makeTempProject();
+    const proj = path.join(root, 'proj');
+    const current = path.join(root, 'current');
+    const outside = path.join(root, 'outside');
+    try {
+      fs.mkdirSync(proj);
+      fs.mkdirSync(outside);
+      fs.symlinkSync(proj, current, process.platform === 'win32' ? 'junction' : 'dir');
+      expect(isFencedInProjectWriteEligible('printf x > ../current/notes.txt', {
+        workingDirectory: proj,
+        workspaceRoot: proj,
+      })).toBe(true);
+      fs.rmSync(current, { recursive: true, force: true });
+      fs.symlinkSync(outside, current, process.platform === 'win32' ? 'junction' : 'dir');
+      expect(isFencedInProjectWriteEligible('printf x > ../current/notes.txt', {
+        workingDirectory: proj,
+        workspaceRoot: proj,
       })).toBe(false);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });

@@ -617,12 +617,17 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
         : ctx.workingDir;
       displayWorkingDirectory = rawWorkingDirectory;
       workingDirectory = resolveCanonicalRunPath(rawWorkingDirectory);
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      return { ok: false, error: `working directory is not a usable path: ${detail}`, code: 'INVALID_ARGS' };
+    }
+    try {
       workspaceRoot = ctx.workspace
         ? resolveCanonicalRunPath(ctx.workspace)
         : workingDirectory;
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);
-      return { ok: false, error: `working directory is not a usable path: ${detail}`, code: 'INVALID_ARGS' };
+      return { ok: false, error: `workspace is not a usable path: ${detail}`, code: 'INVALID_ARGS' };
     }
     const implicitBackground = rewriteImplicitBackgroundCommand(command);
     const normalizedCommand = implicitBackground.command;

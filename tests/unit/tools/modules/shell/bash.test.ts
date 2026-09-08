@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import type {
@@ -78,6 +78,8 @@ import {
   looksLikeCodeImageGeneration,
 } from '../../../../../src/host/tools/modules/shell/bash';
 import { getPermissionModeManager } from '../../../../../src/host/permissions/modes';
+import { getSandboxManager } from '../../../../../src/host/sandbox';
+import { resolveCanonicalRunPath } from '../../../../../src/host/runtime/runContext';
 
 // -----------------------------------------------------------------------------
 // Helpers
@@ -1174,6 +1176,141 @@ describe('bashModule OS 沙箱 gating（bypassPermissions）', () => {
       'curl https://example.com',
       expect.objectContaining({ allowNetwork: false }),
     );
+  });
+});
+
+describe('bashModule write-fence (default mode, unified eligibility)', () => {
+  const modeMgr = getPermissionModeManager();
+
+  function pinFenceAvailable(available: boolean): () => void {
+    const manager = getSandboxManager();
+    const availableSpy = vi.spyOn(manager, 'isAvailable').mockReturnValue(available);
+    const enabledSpy = vi.spyOn(manager, 'isEnabled').mockReturnValue(available);
+    return () => {
+      availableSpy.mockRestore();
+      enabledSpy.mockRestore();
+    };
+  }
+
+  function makeCircularSymlinkPair(root: string): string {
+    const left = join(root, 'loop-a');
+    const right = join(root, 'loop-b');
+    symlinkSync(right, left);
+    symlinkSync(left, right);
+    return left;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    wrapMock.mockReturnValue({ command: 'echo __SANDBOXED__', cleanup: cleanupMock });
+    modeMgr.setMode('default', true);
+  });
+  afterEach(() => {
+    modeMgr.setMode('default', true);
+  });
+
+  it('区内软链指回 printf x > ../current/notes.txt 必套围栏', async () => {
+    const unpin = pinFenceAvailable(true);
+    const root = mkdtempSync(join(tmpdir(), 'exectime-pointback-'));
+    const proj = join(root, 'proj');
+    const current = join(root, 'current');
+    mkdirSync(proj);
+    symlinkSync(proj, current, process.platform === 'win32' ? 'junction' : 'dir');
+    try {
+      const handler = await bashModule.createHandler();
+      const result = await handler.execute(
+        { command: 'printf x > ../current/notes.txt' },
+        makeCtx({ workingDir: proj, workspace: proj }),
+        allowAll,
+      );
+      expect(wrapMock).toHaveBeenCalledTimes(1);
+      expect(wrapMock).toHaveBeenCalledWith(
+        'printf x > ../current/notes.txt',
+        expect.objectContaining({
+          workingDirectory: resolveCanonicalRunPath(proj),
+          readWriteRoots: [resolveCanonicalRunPath(proj)],
+        }),
+      );
+      expect(result.ok).toBe(true);
+    } finally {
+      unpin();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('软链在套围栏后改指区外，执行被围栏打成失败且区外不得落地', async () => {
+    const unpin = pinFenceAvailable(true);
+    const root = mkdtempSync(join(tmpdir(), 'exectime-retarget-'));
+    const proj = join(root, 'proj');
+    const current = join(root, 'current');
+    const outside = join(root, 'outside');
+    mkdirSync(proj);
+    mkdirSync(outside);
+    symlinkSync(proj, current, process.platform === 'win32' ? 'junction' : 'dir');
+    wrapMock.mockImplementation(() => {
+      rmSync(current, { recursive: true, force: true });
+      symlinkSync(outside, current, process.platform === 'win32' ? 'junction' : 'dir');
+      return {
+        command: `/bin/sh -c 'echo "sandbox: Operation not permitted" >&2; exit 1'`,
+        cleanup: cleanupMock,
+      };
+    });
+    try {
+      const handler = await bashModule.createHandler();
+      const result = await handler.execute(
+        { command: 'printf x > ../current/notes.txt' },
+        makeCtx({ workingDir: proj, workspace: proj }),
+        allowAll,
+      );
+      expect(wrapMock).toHaveBeenCalledTimes(1);
+      expect(result.ok).toBe(false);
+      expect(existsSync(join(outside, 'notes.txt'))).toBe(false);
+      expect(existsSync(join(proj, 'notes.txt'))).toBe(false);
+    } finally {
+      unpin();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('working directory 解析失败仍报 working directory', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'exectime-cwd-loop-'));
+    const loop = makeCircularSymlinkPair(root);
+    try {
+      const handler = await bashModule.createHandler();
+      const result = await handler.execute(
+        { command: 'echo hi' },
+        makeCtx({ workingDir: loop }),
+        allowAll,
+      );
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toMatch(/^working directory is not a usable path:/);
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('workspace 解析失败不误报成 working directory', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'exectime-ws-loop-'));
+    const cwd = join(root, 'cwd');
+    mkdirSync(cwd);
+    const loop = makeCircularSymlinkPair(root);
+    try {
+      const handler = await bashModule.createHandler();
+      const result = await handler.execute(
+        { command: 'echo hi' },
+        makeCtx({ workingDir: cwd, workspace: loop }),
+        allowAll,
+      );
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toMatch(/^workspace is not a usable path:/);
+        expect(result.error).not.toMatch(/working directory is not a usable path/);
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 

@@ -880,8 +880,7 @@ export class PermissionClassifier {
       return {
         decision: 'approve',
         reason: policyDecision.reason ?? '命令级权限规则允许',
-        confidence: 1.0,
-        cached: false,
+        confidence: 1.0, cached: false,
       };
     }
 
@@ -890,9 +889,11 @@ export class PermissionClassifier {
     // re-run auto-approves a relative write while bash executes in the tool's outside cwd.
     // Eligible commands have no quotes/expansion, so original spelling matches the
     // reconstructed single segment; reuse the probe instead of classifying twice.
-    const fenceEligible = context.workingDirectoryFromToolCall === true && isFencedInProjectWriteEligible(command, context) && isOsWriteFenceAvailable();
+    const fenceEligible = context.workingDirectoryFromToolCall === true
+      && isFencedInProjectWriteEligible(command, context) && isOsWriteFenceAvailable();
     const fenceProbe = fenceEligible ? this.classifyBashSegment(command, context, startTime) : undefined;
-    if (fenceEligible && fenceProbe?.decision !== 'deny') return { decision: 'approve', reason: FENCED_IN_PROJECT_WRITE_REASON, confidence: 0.95, cached: false, bypassCache: true };
+    if (fenceEligible && fenceProbe?.decision !== 'deny') return {
+      decision: 'approve', reason: FENCED_IN_PROJECT_WRITE_REASON, confidence: 0.95, cached: false, bypassCache: true };
 
     // The shared parser reconstructs each segment with shell-safe quoting, so text
     // arguments remain one word while policy checks still consume canonical text.

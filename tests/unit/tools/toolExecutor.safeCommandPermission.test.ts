@@ -696,6 +696,25 @@ describe('ToolExecutor Bash 安全命令单一判据', () => {
       }
     });
 
+    it('echo "100$" > out.txt 整条链路弹卡且不报错', async () => {
+      setOsWriteFenceAvailableOverride(true);
+      try {
+        expect(isOsWriteFenceAvailable()).toBe(true);
+        const rejecting = buildRejectingExecutor();
+        const rejected = await rejecting.execute(
+          'Bash',
+          { command: 'echo "100$" > out.txt' },
+          { sessionId: 'exectime-dollar-reject' },
+        );
+        expect(permissionRequests.length).toBeGreaterThan(0);
+        expect(permissionRequests[0]?.type).toBe('command');
+        expect(rejected.success).toBe(false);
+        expect(existsSync(path.join(workspace, 'out.txt'))).toBe(false);
+      } finally {
+        setOsWriteFenceAvailableOverride(undefined);
+      }
+    });
+
     it('printf x > .env 整条链路仍弹卡，批准后照常执行', async () => {
       setOsWriteFenceAvailableOverride(true);
       try {

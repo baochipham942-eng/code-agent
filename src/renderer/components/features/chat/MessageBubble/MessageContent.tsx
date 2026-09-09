@@ -264,7 +264,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
       th({ children, style }) {
         return (
           <th
-            className="px-2 py-1.5 text-left text-[11px] font-medium text-zinc-500"
+            className="min-w-[4em] px-2 py-1.5 text-left text-[11px] font-medium text-zinc-500"
             style={style}
           >
             {children}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { acceptInvitation, createIdentity, decryptFrame, encryptFrame, issueInvitation, PairingError, PairingRegistry, signHandshake, verifyHandshake } from './protocol';
+import { acceptInvitation, createIdentity, decryptFrame, encryptFrame, issueInvitation, PairingError, PairingRegistry, signHandshake, verifyHandshake } from '../../../packages/mobile/src/pairing/protocol';
 
 describe('mobile pairing protocol', () => {
   it('pairs once and rejects expiry/replay/identity mismatch', () => {

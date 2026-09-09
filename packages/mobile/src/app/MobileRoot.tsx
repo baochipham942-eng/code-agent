@@ -1,3 +1,5 @@
+import { VoiceInput } from '../features/sessions/VoiceInput';
+import { LibrarySheet } from '../features/sessions/LibrarySheet';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from 'zustand';
 import type { PlatformPorts } from '../platform/ports';
@@ -15,9 +17,9 @@ import { NeoBrandMark } from '../features/brand/NeoBrandMark';
 
 export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures: boolean }) {
   const [store] = useState(() => createMobileStore(ports.preferences));
-  const [companionStore] = useState(() => createCompanionStore(ports.companion, acceptedText => {
-    return store.getState().acknowledgeDraft(acceptedText);
-  }));
+  const [companionStore] = useState(() => createCompanionStore(ports.companion, (acceptedText, sessionId, hostKey) => {
+    return store.getState().acknowledgeDraft(acceptedText, `${hostKey}:${sessionId}`);
+  }, (text, sessionId, hostKey, commandId) => store.getState().appendTranscript(text, `${hostKey}:${sessionId}`, commandId)));
   const companion = useStore(companionStore);
   const state = useStore(store);
   const text = messages(navigator.language);
@@ -28,14 +30,15 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
     || matchMedia('(prefers-color-scheme: dark)').matches);
   const keyboardVisible = useRef(false);
   const composing = useRef(false);
+  const managing = useRef(false);
   const swipe = useRef<{ x: number; y: number } | null>(null);
   const textarea = useRef<HTMLTextAreaElement>(null);
   const theme = state.preferences.appearance === 'system' ? (systemDark ? 'dark' : 'light') : state.preferences.appearance;
   const currentPage = state.sheet?.pages.at(-1);
   const pendingApprovals = useMemo(() => {
     const cards = new Map<string, Record<string, unknown>>();
-    for (const event of companion.events) if (event.sessionId === companion.sessionId && event.kind === 'approval' && typeof event.payload.requestId === 'string') {
-      cards.set(event.payload.requestId, { ...cards.get(event.payload.requestId), ...event.payload });
+    for (const event of companion.events) if (event.kind === 'approval' && typeof event.payload.requestId === 'string') {
+      cards.set(event.payload.requestId, { ...cards.get(event.payload.requestId), ...event.payload, sessionId: event.sessionId });
     }
     return [...cards.values()].filter(card => card.status === 'pending');
   }, [companion.events, companion.sessionId]);
@@ -97,6 +100,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
   useEffect(() => { if (state.ready) void companionStore.getState().hydrate(); }, [state.ready, companionStore]);
   useEffect(() => {
     if (companion.status !== 'connected') return;
+    void companionStore.getState().refreshLibrary();
     void companionStore.getState().sync();
     const timer = setInterval(() => { void companionStore.getState().sync(); }, COMPANION_LIMITS.pollIntervalMs);
     return () => clearInterval(timer);
@@ -111,6 +115,24 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
     if (input) { input.style.height = 'auto'; input.style.height = `${Math.min(input.scrollHeight, 140)}px`; }
   }, [state.preferences.drafts, state.ready]);
 
+  useEffect(() => {
+    if (companion.sessionId && companion.binding && state.route !== 'fixture') {
+      store.getState().activateDraft(`${companion.binding.hostKey}:${companion.sessionId}`);
+      void companionStore.getState().loadHistory(companion.sessionId);
+    } else if (state.route !== 'fixture') store.getState().activateDraft('new');
+  }, [companion.sessionId, companion.binding?.hostKey, companion.status, state.route, store, companionStore]);
+  const selectSession = (id: string) => { companion.selectSession(id); state.navigate('new'); };
+  const manage: typeof companion.manage = async (...args) => {
+    managing.current = true;
+    await companion.manage(...args);
+    if (!companionStore.getState().pending && companionStore.getState().status === 'connected') state.navigate('new');
+  };
+  useEffect(() => {
+    if (managing.current && !companion.pending && !companion.busy) {
+      managing.current = false;
+      if (companion.status === 'connected') store.getState().navigate('new');
+    }
+  }, [companion.pending, companion.busy, companion.status, store]);
   const pairAndOpenConversation = async () => {
     await companionStore.getState().pair();
     const result = companionStore.getState();
@@ -136,15 +158,15 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
   return <div className="app" data-theme={theme} onTouchStart={gestureStart} onTouchEnd={gestureEnd} onTouchCancel={() => { swipe.current = null; }}>
     <main className="conversation" inert={state.drawer || !!state.sheet}>
       <header className="topbar"><button aria-label={text.sessions} data-testid="open-drawer" onClick={state.openDrawer}>☰</button>
-        <strong>{companion.sessionId ? `${text.sharedSession} ${(companion.binding?.scope.indexOf(companion.sessionId) ?? 0) + 1}` : state.route === 'new' ? text.neo : text.fixture}</strong><button aria-label={text.more} data-testid="open-more" onClick={() => state.openSheet('more')}>···</button></header>
-      {state.route === 'fixture' && fixtures ? <VirtualHistory text={text} /> : companion.sessionId && companion.events.some(event => event.sessionId === companion.sessionId)
-        ? <CompanionConversation hidePendingApprovals events={companion.events} sessionId={companion.sessionId} text={text}
+        <strong>{companion.sessionId ? companion.library?.sessions.find(s => s.id === companion.sessionId)?.title ?? `${text.sharedSession} ${(companion.binding?.scope.indexOf(companion.sessionId) ?? 0) + 1}` : state.route === 'new' ? text.neo : text.fixture}</strong><button aria-label={text.more} data-testid="open-more" onClick={() => state.openSheet('more')}>···</button></header>
+      {state.route === 'fixture' && fixtures ? <VirtualHistory text={text} /> : companion.sessionId && (companion.history[companion.sessionId]?.messages.length || companion.history[companion.sessionId]?.nextOffset != null || companion.events.some(event => event.sessionId === companion.sessionId))
+        ? <CompanionConversation history={companion.history[companion.sessionId]} loadMore={() => void companion.loadHistory(companion.sessionId!, true)} hidePendingApprovals events={companion.events} sessionId={companion.sessionId} text={text}
           disabled={companion.busy || companion.pending || companion.status !== 'connected'} respond={companion.respond} />
         : <div className="welcome"><NeoBrandMark /><h1>{companion.status === 'connected' ? text.connectedReady : text.welcome}</h1>{companion.status === 'connected' && <p className="connection-next">{text.connectedNext}</p>}</div>}
       <div className="composer-area">
         {pendingApprovals.length > 0 && <div className="approval-tray" aria-live="polite">
-          <ApprovalCard card={pendingApprovals[0]} text={text} disabled={companion.busy || companion.pending || companion.status !== 'connected'}
-            respond={decision => companion.respond(String(pendingApprovals[0].requestId), decision)} />
+          {pendingApprovals[0].sessionId !== companion.sessionId ? <button className="primary" onClick={() => selectSession(String(pendingApprovals[0].sessionId))}>{text.reviewApproval}</button> : <ApprovalCard card={pendingApprovals[0]} text={text} disabled={companion.busy || companion.pending || companion.status !== 'connected'}
+            respond={decision => companion.respond(String(pendingApprovals[0].requestId), decision)} />}
         </div>}
         {companion.binding && <div className="task-status" role="status">
           <button className="connection-pill" data-connected={companion.status === 'connected'} onClick={() => state.openSheet('remote')}>
@@ -157,6 +179,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
           <p>{companion.status === 'storageError' ? text.secureStorageError : companion.status === 'rejected' ? text.rejected : companion.connectionError ? text[companion.connectionError] : text.unconnected}</p>
           <button disabled={companion.busy} onClick={() => void companion.reconnect()}>{text.retry}</button>
         </div>}
+        {companion.libraryError && <p className="notice" role="status">{text.libraryError}<button onClick={() => void companion.reconnect()}>{text.reconnect}</button></p>}
         {fixtures && <p className="caption">{text.fixtureNotice}</p>}
         {(state.saveError || nativeError || (state.sendAttempted && companion.status !== 'connected')) && <p role="status" className="notice">
           {state.saveError ? text.saveError : nativeError ? text.nativeError : text.unconnected}
@@ -164,13 +187,15 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
         </p>}
         <div className="composer">
           <textarea ref={textarea} aria-label={text.draft} placeholder={text.placeholder} rows={1}
-            value={state.preferences.drafts[state.route]} data-testid="draft"
+            value={(state.preferences.drafts[state.draftKey] ?? '')} data-testid="draft"
             onCompositionStart={() => { composing.current = true; }} onCompositionEnd={() => { composing.current = false; }}
             onChange={event => state.editDraft(event.target.value)} />
           <div className="composer-actions"><button aria-label={text.projects} onClick={() => state.openSheet('projects')}>＋</button>
-            <button className="send" aria-label={text.send} data-testid="send" disabled={!state.preferences.drafts[state.route].trim() || companion.busy || companion.pending}
+            {ports.recorder && companion.sessionId && <VoiceInput key={`${companion.binding?.hostKey}:${companion.sessionId}`} recorder={ports.recorder} text={text}
+              disabled={companion.status !== 'connected' || companion.busy || companion.pending} pending={companion.pending} outcome={companion.voiceOutcome} transcribe={audio => companion.transcribe(audio, companion.sessionId!, companion.binding!.hostKey)} />}
+            <button className="send" aria-label={text.send} data-testid="send" disabled={!(state.preferences.drafts[state.draftKey] ?? '').trim() || companion.busy || companion.pending}
               onClick={() => { if (!composing.current) {
-                if (companion.status === 'connected' && state.route !== 'fixture') void companion.send(state.preferences.drafts[state.route]);
+                if (companion.status === 'connected' && state.route !== 'fixture') void companion.send((state.preferences.drafts[state.draftKey] ?? ''));
                 else state.attemptSend();
               } }}>↑</button></div>
         </div>
@@ -179,12 +204,13 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
     {state.drawer && <div className="drawer-layer" inert={!!state.sheet}>
       <button className="scrim" aria-label={text.closeDrawer} onClick={state.closeDrawer} />
       <aside className="drawer" aria-label={text.sessions}>
-        <div className="drawer-functions"><header><strong>{text.neo}</strong>{!companion.binding && <button aria-label={text.newSession} data-testid="new-session" onClick={() => state.navigate('new')}>＋</button>}</header>
-          {!companion.binding && <button onClick={() => state.navigate('new')}>{text.newSession}</button>}
+        <div className="drawer-functions"><header><strong>{text.neo}</strong>{<button aria-label={text.newSession} data-testid="new-session" onClick={() => companion.binding ? state.openSheet('projects') : state.navigate('new')}>＋</button>}</header>
+          <button onClick={() => companion.binding ? state.openSheet('projects') : state.navigate('new')}>{text.newSession}</button>
           <button onClick={() => state.openSheet('projects')}>{text.projects}</button><button onClick={() => state.openSheet('remote')}>{text.remote}</button></div>
         <nav className="drawer-history" aria-label={text.history}><p className="group-title">{text.history}</p>
-          {companion.binding?.scope.map((id, index) => <button key={id} onClick={() => { companion.selectSession(id); state.navigate('new'); }}>{text.sharedSession} {index + 1}</button>)}
-          {fixtures ? Array.from({ length: 60 }, (_, n) => <button key={n} onClick={() => state.navigate('fixture')} data-testid={n === 0 ? 'fixture-session' : undefined}>{text.fixture} {n + 1}</button>) : <p className="caption">{text.emptyHistory}</p>}
+          {companion.library?.sessions.map(session => <button key={session.id} aria-current={session.id === companion.sessionId ? 'page' : undefined} onClick={() => selectSession(session.id)}>{session.title}{session.archived ? ` · ${text.archived}` : ''}</button>)}
+          {companion.library?.nextOffset != null && <button onClick={() => void companion.refreshLibrary(true)}>{text.loadHistory}</button>}
+          {fixtures ? Array.from({ length: 60 }, (_, n) => <button key={n} onClick={() => state.navigate('fixture')} data-testid={n === 0 ? 'fixture-session' : undefined}>{text.fixture} {n + 1}</button>) : !companion.library?.sessions.length && <p className="caption">{text.emptyHistory}</p>}
         </nav>
         <button className="personal-bar" aria-label={text.personal} data-testid="open-settings" onClick={() => state.openSheet('settings')}>
           <span className="avatar">{(state.preferences.nickname || text.guest).slice(0, 1)}</span><strong>{state.preferences.nickname || text.guest}</strong><span aria-hidden="true">⚙</span>
@@ -193,8 +219,11 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
     </div>}
     {state.sheet && currentPage && <SheetHost page={currentPage} title={text[currentPage]} hasParent={state.sheet.pages.length > 1}
       close={state.closeSheet} back={state.back} text={text}>
-      {pendingApprovals.length > 0 && <button className="primary" onClick={() => state.navigate('new')}>{text.reviewApproval}</button>}
-      {currentPage === 'remote' ? <div className="settings-group">
+      {pendingApprovals.length > 0 && <button className="primary" onClick={() => selectSession(String(pendingApprovals[0].sessionId))}>{text.reviewApproval}</button>}
+      {(currentPage === 'projects' || currentPage === 'more') && companion.binding ? <>
+        {companion.library ? <LibrarySheet key={`${currentPage}:${companion.sessionId}`} library={companion.library} sessionId={companion.sessionId} text={text} mode={currentPage} busy={companion.busy || companion.pending || companion.status !== 'connected'} select={selectSession} manage={manage} loadMore={() => void companion.refreshLibrary(true)} /> : <p>{companion.libraryError ? text.libraryError : text.loading}</p>}
+        <button onClick={() => void companion.refreshLibrary()}>{text.retry}</button>
+      </> : currentPage === 'remote' ? <div className="settings-group">
         <p>{text.lanHint}</p>
         {companion.status === 'connected' ? <div className="connection-success" role="status"><span className="connection-check" aria-hidden="true">✓</span><strong>{text.connected}</strong><p>{text.connectedNext}</p></div>
           : <p role="status">{companion.status === 'connecting' ? text.connecting : companion.status === 'storageError' ? text.secureStorageError : companion.connectionError ? text[companion.connectionError] : text.unconnected}</p>}

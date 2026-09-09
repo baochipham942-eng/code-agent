@@ -1,3 +1,4 @@
+import { VoiceRecorder } from 'capacitor-voice-recorder';
 import { App } from '@capacitor/app';
 import { Capacitor, SystemBars, SystemBarsStyle } from '@capacitor/core';
 import { Keyboard } from '@capacitor/keyboard';
@@ -8,6 +9,17 @@ import { nativeCompanionPort } from './nativeCompanion';
 const PREFERENCES_KEY = 'neo.mobile.preferences.v1';
 
 export const capacitorPorts: PlatformPorts = {
+  recorder: Capacitor.isNativePlatform() ? {
+    start: async () => {
+      if (!(await VoiceRecorder.requestAudioRecordingPermission()).value) throw new Error('MICROPHONE_DENIED');
+      await VoiceRecorder.startRecording();
+    },
+    stop: async () => {
+      const { value } = await VoiceRecorder.stopRecording();
+      if (!value.recordDataBase64) throw new Error('EMPTY_RECORDING');
+      return { audioData: value.recordDataBase64, mimeType: value.mimeType.split(';')[0], durationMs: value.msDuration };
+    },
+  } : undefined,
   companion: Capacitor.isNativePlatform() ? nativeCompanionPort : undefined,
   preferences: {
     get: async () => (await Preferences.get({ key: PREFERENCES_KEY })).value,

@@ -1,3 +1,4 @@
+import { configureVoiceRelease } from './configure-voice.mjs';
 import './remote-only.mjs';
 import { configureIosLan } from './configure-lan.mjs';
 import { execFileSync } from 'node:child_process';
@@ -51,6 +52,7 @@ if (style === 'manual' && !profileFile) missing.push('no .mobileprovision (set N
 if (!expectedDevice) missing.push('NEO_IOS_EXPECTED_UDID required so Ad Hoc export fails closed unless the profile covers the target iPhone');
 if (missing.length > 0) throw new Error(`IOS_PREREQUISITES_MISSING: ${missing.join(' | ')}`);
 
+configureVoiceRelease();
 run('npm', ['run', 'build']);
 if (!existsSync('ios')) run('node_modules/.bin/cap', ['add', 'ios']);
 const pbxproj = 'ios/App/App.xcodeproj/project.pbxproj';

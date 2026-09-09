@@ -25,7 +25,7 @@ export function ApprovalCard({ card, text, disabled, respond }: {
     <div className="approval-details">
     <dl className="approval-summary">
       <div><dt>{text.operation}</dt><dd>{operation}</dd></div>
-      <div><dt>{text.targetPath}</dt><dd>{target === undefined ? text.targetInDetails : value(target)}</dd></div>
+      <div><dt>{text.approvalTarget}</dt><dd>{target === undefined ? text.targetInDetails : value(target)}</dd></div>
       <div><dt>{text.impact}</dt><dd>{details.newContent !== undefined ? text.writeImpact : details.command ? text.commandImpact : text.operationImpact}</dd></div>
     </dl>
     {!readable && <p role="status">{text.unreadableApproval}</p>}

@@ -126,3 +126,35 @@ describe('persistence failure boundaries', () => {
       expect(store.getState().ready).toBe(false); expect(await port.get()).toBe(raw);
     });
 });
+
+describe('real conversation draft identity', () => {
+  it('preserves the old draft on first pairing and isolates hosts and sessions through restart', async () => {
+    const port = disk(); const store = createMobileStore(port); await store.getState().hydrate();
+    store.getState().editDraft('build 15 draft');
+    store.getState().activateDraft('host-a:session-a');
+    expect(store.getState().preferences.drafts['host-a:session-a']).toBe('build 15 draft');
+    store.getState().activateDraft('host-a:session-b'); store.getState().editDraft('second draft');
+    store.getState().activateDraft('host-b:session-a'); store.getState().editDraft('other computer');
+    await store.getState().acknowledgeDraft('build 15 draft', 'host-a:session-a');
+    const restored = createMobileStore(port); await restored.getState().hydrate();
+    expect(restored.getState().preferences.drafts).toMatchObject({ 'host-a:session-a': '', 'host-a:session-b': 'second draft', 'host-b:session-a': 'other computer' });
+  });
+  it('late acknowledgements do not clear edits to the same conversation', async () => {
+    const store = createMobileStore(disk()); await store.getState().hydrate();
+    store.getState().activateDraft('host:session'); store.getState().editDraft('newer text');
+    await store.getState().acknowledgeDraft('old text', 'host:session');
+    expect(store.getState().preferences.drafts['host:session']).toBe('newer text');
+  });
+});
+
+it('transcription receipts append once to the originating draft and never send it', async () => {
+  const port = disk(); const store = createMobileStore(port); await store.getState().hydrate();
+  store.getState().activateDraft('host:a'); store.getState().editDraft('existing');
+  store.getState().activateDraft('host:b'); store.getState().editDraft('other session');
+  await store.getState().appendTranscript('spoken words', 'host:a', 'voice-command');
+  const next = createMobileStore(port); await next.getState().hydrate();
+  await next.getState().appendTranscript('spoken words', 'host:a', 'voice-command');
+  expect(next.getState().preferences.drafts['host:a']).toBe('existing\nspoken words');
+  expect(next.getState().preferences.drafts['host:b']).toBe('other session');
+  expect(next.getState().sendAttempted).toBe(false);
+});

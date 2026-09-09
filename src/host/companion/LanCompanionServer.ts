@@ -49,8 +49,8 @@ export class LanCompanionServer {
     app.post('/v1/finish', (req, res) => {
       try { res.json(this.finish(req.body)); } catch { res.status(403).json({ error: 'COMPANION_HANDSHAKE_REJECTED' }); }
     });
-    app.post('/v1/exchange', (req, res) => {
-      try { res.json(this.exchange(req.body)); } catch { res.status(403).json({ error: 'COMPANION_CHANNEL_CLOSED' }); }
+    app.post('/v1/exchange', async (req, res) => {
+      try { res.json(await this.exchange(req.body)); } catch { res.status(403).json({ error: 'COMPANION_CHANNEL_CLOSED' }); }
     });
     // Body/parser failures must never echo ciphertext, invitation material, or stack traces.
     app.use((_error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
@@ -89,7 +89,7 @@ export class LanCompanionServer {
     const now = this.now();
     return [...this.channels.values()].some(channel => channel.lastSeenAt !== null
       && now >= channel.lastSeenAt && now - channel.lastSeenAt <= L.uiPresenceTtlMs && channel.expiresAt > now
-      && this.gateway.identityDevice(channel.publicKey)?.scope.includes(sessionId));
+      && !!this.gateway.identityDevice(channel.publicKey) && this.gateway.canAccessSession(this.gateway.identityDevice(channel.publicKey)!.deviceId, sessionId));
   }
 
   async stop(): Promise<void> {
@@ -154,7 +154,7 @@ export class LanCompanionServer {
     return { welcome: cipher.seal(device) };
   }
 
-  private exchange(body: { channelId?: unknown; frame?: unknown }) {
+  private async exchange(body: { channelId?: unknown; frame?: unknown }) {
     this.prune();
     const id = typeof body.channelId === 'string' ? body.channelId : '';
     const channel = this.channels.get(id);
@@ -163,13 +163,15 @@ export class LanCompanionServer {
       if (!Array.isArray(body.frame) || body.frame.length > L.maxRequestRecords) throw new Error('COMPANION_INVALID_FRAME');
       const device = this.gateway.identityDevice(channel.publicKey);
       if (!device) throw new Error('COMPANION_DEVICE_REVOKED');
-      const request = channel.cipher.open(body.frame) as { requestId?: unknown; action?: unknown; command?: unknown; epoch?: unknown; afterSeq?: unknown; commandId?: unknown };
+      const request = channel.cipher.open(body.frame) as { requestId?: unknown; action?: unknown; command?: unknown; epoch?: unknown; afterSeq?: unknown; commandId?: unknown; query?: unknown };
       if (!request || typeof request.requestId !== 'string' || request.requestId.length > L.idLength) throw new Error('COMPANION_INVALID_REQUEST');
       let result: unknown;
       if (request.action === 'command') {
         const command = companionCommandSchema.parse(request.command);
         if (command.deviceId !== device.deviceId) throw new Error('COMPANION_IDENTITY_MISMATCH');
         result = this.gateway.submit(command);
+      } else if (request.action === 'read') {
+        result = await this.gateway.read(device.deviceId, request.query);
       } else if (request.action === 'sync') {
         if (!Number.isSafeInteger(request.epoch) || Number(request.epoch) < 1 || !Number.isSafeInteger(request.afterSeq) || Number(request.afterSeq) < 0) throw new Error('COMPANION_INVALID_CURSOR');
         const page = this.gateway.syncForDevice(device.deviceId, Number(request.epoch), Number(request.afterSeq));

@@ -18,7 +18,7 @@ await build({ stdin: { contents: `
   import { isPrivateIPv4 } from '../../src/shared/companion/lanProtocol';
   export async function fixture() {
     const db = new Database(':memory:'); let executions = 0;
-    const gateway = new CompanionGateway(db, { dispatch: command => {
+    const gateway = new CompanionGateway(db, { read: async (_device, request) => request.kind === 'library' ? { projects: [], sessions: [{ id: 'browser-session', title: '共享会话 1', projectId: null }], models: [] } : { sessionId: request.sessionId, messages: [], nextOffset: null }, dispatch: command => {
       executions++;
       const runId = 'fixture-run-' + executions;
       gateway.publish(command.sessionId, 'message', { id: command.commandId, role: 'user', content: command.payload.text, runId });

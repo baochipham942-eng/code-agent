@@ -1,3 +1,4 @@
+import { configureVoiceRelease } from './configure-voice.mjs';
 import './remote-only.mjs';
 import { configureAndroidLan } from './configure-lan.mjs';
 import { execFileSync } from 'node:child_process';
@@ -14,6 +15,7 @@ const capture = (command, args, cwd = process.cwd()) => execFileSync(command, ar
 const hash = file => createHash('sha256').update(readFileSync(file)).digest('hex');
 const version = JSON.parse(readFileSync('package.json', 'utf8')).version;
 if (!/^\d+\.\d+\.\d+$/.test(version)) throw new Error('INVALID_VERSION');
+configureVoiceRelease();
 run('npm', ['run', 'build']);
 if (!existsSync('android')) run('node_modules/.bin/cap', ['add', 'android']);
 const gradle = 'android/app/build.gradle';

@@ -1,3 +1,4 @@
+import type { CompanionLibrary, CompanionHistory } from '../../../../src/shared/contract/companionLibrary';
 import { createStore } from 'zustand/vanilla';
 import { createIdentity } from '../../../../src/shared/companion/noiseChannel';
 import { fromHex, toHex, parseInvitation, type LanBinding } from '../../../../src/shared/companion/lanProtocol';
@@ -13,6 +14,11 @@ interface Saved {
 type ConnectionError = 'connectionQrInvalid' | 'connectionScanFailed' | 'connectionRejected' | 'connectionUnavailable' | 'connectionFailed';
 
 interface State {
+  voiceOutcome: 'done' | 'error' | null;
+  transcribe(audio: { audioData: string; mimeType: string; durationMs: number }, sessionId: string, hostKey: string): Promise<void>;
+  library: CompanionLibrary | null; history: Record<string, CompanionHistory>; libraryError: boolean;
+  refreshLibrary(more?: boolean): Promise<void>; loadHistory(id: string, more?: boolean): Promise<void>;
+  manage(action: 'session.create' | 'session.rename' | 'session.archive' | 'session.delete' | 'session.model', payload: Record<string, unknown>, target?: string): Promise<void>;
   connectionError: ConnectionError | null;
   status: 'unpaired' | 'connecting' | 'connected' | 'offline' | 'storageError' | 'rejected';
   binding: LanBinding | null; sessionId: string | null; pending: boolean; busy: boolean;
@@ -22,7 +28,7 @@ interface State {
   selectSession(id: string): void; send(text: string): Promise<void>; stop(): Promise<void>; sync(): Promise<void>;
 }
 
-export function createCompanionStore(port: PlatformPorts['companion'], onAccepted: (text: string) => void | Promise<void>) {
+export function createCompanionStore(port: PlatformPorts['companion'], onAccepted: (text: string, sessionId: string, hostKey: string) => void | Promise<void>, onTranscript?: (text: string, sessionId: string, hostKey: string, commandId: string) => Promise<void>) {
   let saved: Saved | null = null;
   let client: LanCompanionClient | null = null;
   let epoch = 1; let cursor = 0;
@@ -46,12 +52,20 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
       if (!['accepted', 'resolved', 'rejected', 'conflict'].includes(record.state)) throw new Error('COMPANION_INVALID_ACK');
       if (record.state !== 'rejected' && record.state !== 'conflict' && pending.action === 'message.send') {
         // Retain the command reservation until the draft has durably cleared.
-        await onAccepted(pending.payload.text);
+        await onAccepted(pending.payload.text, pending.sessionId, saved!.binding!.hostKey);
+      }
+      if (pending.action === 'voice.transcribe') {
+        if (record.state === 'accepted' && typeof record.result.text === 'string' && onTranscript) {
+          await onTranscript(record.result.text, pending.sessionId, saved!.binding!.hostKey, pending.commandId); set({ voiceOutcome: 'done' });
+        } else set({ voiceOutcome: 'error' });
       }
       await persist({ ...saved!, pending: undefined });
       set({ pending: false });
       if (record.state === 'rejected' || record.state === 'conflict') { set({ status: 'rejected' }); return; }
-      if (pending.action === 'message.send') {
+      if (pending.action === 'session.create' && typeof record.result.sessionId === 'string') set({ sessionId: record.result.sessionId, runId: null, terminal: null });
+      if (pending.action === 'session.delete' && get().sessionId === pending.sessionId) set({ sessionId: null, runId: null, terminal: null });
+      if (pending.action.startsWith('session.')) await get().refreshLibrary();
+      if (pending.action === 'message.send' && get().sessionId === pending.sessionId) {
         const runId = typeof record.result.runId === 'string' ? record.result.runId : null;
         const terminal = get().events.filter(event => event.payload.runId === runId && ['agent_complete', 'agent_cancelled', 'error'].includes(event.kind)).at(-1);
         set({ runId: terminal ? null : runId, terminal: terminal ? terminal.kind === 'agent_complete' ? 'complete' : terminal.kind === 'agent_cancelled' ? 'stopped' : 'failed' : null });
@@ -80,6 +94,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
       finally { set({ busy: false }); }
     };
     return {
+      voiceOutcome: null, library: null, history: {}, libraryError: false,
       connectionError: null, status: 'unpaired', binding: null, sessionId: null, busy: false, pending: false, events: [], runId: null, terminal: null,
       hydrate: async () => {
         if (!port || get().busy) return;
@@ -91,7 +106,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
           fromHex(value.publicKey, 32); fromHex(value.secretKey, 32);
           if (value.pending) companionCommandSchema.parse(value.pending);
           saved = value;
-          set({ busy: false, binding: value.binding ?? null, sessionId: value.binding?.scope[0] ?? null, pending: !!value.pending });
+          set({ busy: false, binding: value.binding ?? null, sessionId: value.binding?.scope.find(id => !id.startsWith('project:')) ?? null, pending: !!value.pending });
           if (value.candidate || value.binding) await get().reconnect();
         } catch { set({ busy: false, status: 'storageError' }); }
       },
@@ -110,7 +125,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         const binding = await createClient().pair(raw);
         await persist({ ...saved!, binding, candidate: undefined });
         epoch = binding.scopeEpoch; cursor = 0;
-        set({ status: 'connected', binding, sessionId: binding.scope[0], events: [], runId: null, terminal: null });
+        set({ status: 'connected', binding, sessionId: binding.scope.find(id => !id.startsWith('project:')) ?? null, library: null, history: {}, events: [], runId: null, terminal: null });
       }),
       reconnect: () => safely(async () => {
         const target = saved?.binding ?? saved?.candidate;
@@ -119,14 +134,53 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         const binding = await createClient().recover(target.endpoint, target.hostKey, saved?.binding);
         await persist({ ...saved!, binding, candidate: undefined });
         epoch = binding.scopeEpoch;
-        set({ status: 'connected', binding, sessionId: get().sessionId ?? binding.scope[0] });
+        set({ status: 'connected', binding, sessionId: get().sessionId ?? binding.scope.find(id => !id.startsWith('project:')) ?? null });
         if (saved?.pending) {
           const record = await client!.request({ action: 'status', commandId: saved.pending.commandId }) as CompanionCommandRecord | null;
           if (record) await accepted(record); else await deliver();
         }
       }),
       pause: () => { client?.close(); if (get().binding) set({ status: 'offline' }); },
-      selectSession: sessionId => { if (get().binding?.scope.includes(sessionId) && !get().pending && !get().busy) set({ sessionId, runId: null, terminal: null }); },
+      refreshLibrary: async (more = false) => {
+        if (!client || get().status !== 'connected') return;
+        try {
+          const library = await client.request({ action: 'read', query: { kind: 'library', offset: more ? get().library?.nextOffset ?? 0 : 0 } }) as CompanionLibrary;
+          if (!library || !Array.isArray(library.sessions) || !Array.isArray(library.projects) || !Array.isArray(library.models)) throw new Error('COMPANION_INVALID_LIBRARY');
+          const sessions = new Map((more ? get().library?.sessions ?? [] : []).map(s => [s.id, s]));
+          for (const session of library.sessions) sessions.set(session.id, session);
+          set({ library: { ...library, sessions: [...sessions.values()] }, libraryError: false });
+        } catch { set({ libraryError: true }); }
+      },
+      loadHistory: async (id, more = false) => {
+        if (!client || get().status !== 'connected') return;
+        try {
+          const old = get().history[id];
+          if (more && old?.nextOffset === null) return;
+          const page = await client.request({ action: 'read', query: { kind: 'history', sessionId: id, offset: more ? old?.nextOffset ?? 0 : 0 } }) as CompanionHistory;
+          if (page.sessionId !== id || !Array.isArray(page.messages)) throw new Error('COMPANION_INVALID_HISTORY');
+          set({ history: { ...get().history, [id]: { ...page, messages: more ? [...page.messages, ...(old?.messages ?? [])] : page.messages } }, libraryError: false });
+        } catch { set({ libraryError: true }); }
+      },
+      manage: (action, payload, target) => safely(async () => {
+        if (!saved?.binding || !client || saved.pending || get().status !== 'connected') return;
+        const command = companionCommandSchema.parse({ version: 1, deviceId: saved.binding.deviceId, scopeEpoch: saved.binding.scopeEpoch,
+          commandId: crypto.randomUUID(), sessionId: target ?? get().sessionId, action, payload });
+        await persist({ ...saved, pending: command }); set({ pending: true }); await deliver();
+      }),
+      selectSession: sessionId => {
+        if ((get().library?.sessions.some(s => s.id === sessionId) || get().binding?.scope.includes(sessionId) || get().events.some(e => e.sessionId === sessionId && e.kind === 'approval')) && !get().busy) {
+          const events = get().events.filter(e => e.sessionId === sessionId);
+          const last = events.filter(e => ['run_started', 'agent_complete', 'agent_cancelled', 'error'].includes(e.kind)).at(-1);
+          set({ sessionId, runId: last?.kind === 'run_started' ? String(last.payload.runId) : null, terminal: null });
+        }
+      },
+      transcribe: (audio, sessionId, hostKey) => safely(async () => {
+        if (get().sessionId !== sessionId || get().binding?.hostKey !== hostKey) return;
+        if (!saved?.binding || !client || saved.pending || get().status !== 'connected' || !get().sessionId) return;
+        const command = companionCommandSchema.parse({ version: 1, deviceId: saved.binding.deviceId, scopeEpoch: saved.binding.scopeEpoch,
+          commandId: crypto.randomUUID(), sessionId: get().sessionId, action: 'voice.transcribe', payload: audio });
+        await persist({ ...saved, pending: command }); set({ pending: true, voiceOutcome: null }); await deliver();
+      }),
       send: text => safely(async () => {
         if (!saved?.binding || !client || saved.pending || get().status !== 'connected' || !get().sessionId) return;
         const command = companionCommandSchema.parse({ version: 1, deviceId: saved.binding.deviceId, scopeEpoch: saved.binding.scopeEpoch,
@@ -163,8 +217,9 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
             if (event.kind === 'error') set({ runId: null, terminal: 'failed' });
           }
           if (saved?.pending) {
-            const record = await client.request({ action: 'status', commandId: saved.pending.commandId }) as CompanionCommandRecord | null;
-            if (record) await accepted(record);
+            const pendingId = saved.pending.commandId;
+            const record = await client.request({ action: 'status', commandId: pendingId }) as CompanionCommandRecord | null;
+            if (record && saved?.pending?.commandId === pendingId) await accepted(record);
           }
         } catch { client?.close(); if (get().status !== 'storageError') set({ status: 'offline', connectionError: 'connectionUnavailable' }); }
         finally { syncing = false; }

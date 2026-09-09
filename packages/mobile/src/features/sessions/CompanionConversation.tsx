@@ -1,21 +1,23 @@
+import type { CompanionHistory } from '../../../../../src/shared/contract/companionLibrary';
 import { useLayoutEffect, useRef, useState } from 'react';
 import { ApprovalCard } from './ApprovalCard';
 import type { CompanionEvent } from '../../../../../src/shared/contract/companion';
 import type { messages } from '../../i18n';
 
-export function CompanionConversation({ hidePendingApprovals = false, events, sessionId, text, disabled, respond }: { hidePendingApprovals?: boolean; events: CompanionEvent[]; sessionId: string; text: ReturnType<typeof messages>; disabled: boolean; respond: (requestId: string, decision: 'approved' | 'rejected') => Promise<void> }) {
+export function CompanionConversation({ history, loadMore, hidePendingApprovals = false, events, sessionId, text, disabled, respond }: { history?: CompanionHistory; loadMore(): void; hidePendingApprovals?: boolean; events: CompanionEvent[]; sessionId: string; text: ReturnType<typeof messages>; disabled: boolean; respond: (requestId: string, decision: 'approved' | 'rejected') => Promise<void> }) {
   const scroller = useRef<HTMLDivElement>(null);
   const following = useRef(true);
   const [showLatest, setShowLatest] = useState(false);
   useLayoutEffect(() => { following.current = true; setShowLatest(false); }, [sessionId]);
   useLayoutEffect(() => {
     if (following.current && scroller.current) scroller.current.scrollTop = scroller.current.scrollHeight;
-  }, [events, sessionId]);
+  }, [events, sessionId, history]);
   const approvals = new Map<string, Record<string, unknown>>();
   const activeStreams = new Map<string, string>();
   const committedStreams = new Set<string>();
   const aliases = new Map<string, string>();
-  const rows = new Map<string, { role: string; content: string }>();
+  const rows = new Map<string, { role: string; content: string; truncated?: boolean }>();
+  for (const message of history?.messages ?? []) rows.set(message.id, { role: message.role, content: message.content, truncated: message.truncated });
   for (const event of events) {
     if (event.sessionId !== sessionId) continue;
     const p = event.payload;
@@ -25,9 +27,11 @@ export function CompanionConversation({ hidePendingApprovals = false, events, se
     if (event.kind === 'message' && typeof p.content === 'string') {
       // The engine's durable message ID can differ from its streamed turn ID.
       const stream = p.role === 'assistant' ? activeStreams.get(run) : undefined;
-      const key = aliases.get(id) ?? stream ?? id;
+      const durableId = String(p.id ?? p.messageId ?? event.eventId);
+      const key = durableId;
+      if (stream) rows.delete(stream);
       rows.set(key, { role: String(p.role), content: p.content });
-      if (stream) { aliases.set(id, key); committedStreams.add(stream); activeStreams.delete(run); }
+      if (stream) { aliases.set(id, key); aliases.set(stream, key); committedStreams.add(stream); committedStreams.add(key); activeStreams.delete(run); }
     } else if (event.kind === 'message_snapshot' || event.kind === 'message_delta') {
       const key = aliases.get(id) ?? id;
       if (committedStreams.has(key)) continue;
@@ -45,7 +49,8 @@ export function CompanionConversation({ hidePendingApprovals = false, events, se
     following.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
     setShowLatest(!following.current);
   }} className="lan-messages" aria-label={text.history} aria-live="polite">
-    {Array.from(rows, ([id, row]) => <p key={id} className={`lan-message ${row.role === 'user' ? 'from-user' : ''}`}>{row.content}</p>)}
+    {history?.nextOffset != null && <button onClick={loadMore}>{text.loadHistory}</button>}
+    {Array.from(rows, ([id, row]) => <p key={id} className={`lan-message ${row.role === 'user' ? 'from-user' : ''}`}>{row.content}{row.truncated && <small className="notice">{text.historyTruncated}</small>}</p>)}
     {Array.from(approvals, ([id, card]) => (!hidePendingApprovals || card.status !== 'pending') && <ApprovalCard key={id} card={card} text={text} disabled={disabled}
       respond={decision => respond(id, decision)} />)}
   </div>{showLatest && <button className="jump-latest" onClick={() => {

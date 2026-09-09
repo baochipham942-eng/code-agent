@@ -15,7 +15,10 @@ const directory=resolve(root,'.reports/companion-acceptance');
 assert(existsSync(resolve(directory,'data/config.json')),'ISOLATED_CONFIG_REQUIRED');
 mkdirSync(directory,{recursive:true});
 const port=18189; const base=`http://127.0.0.1:${port}`;
-const child=spawn(process.execPath,[resolve(root,'dist/web/webServer.bundle.cjs')],{
+const keychainBridge=process.env.NEO_TEST_COMPANION_KEYCHAIN==='1';
+const preload=resolve(directory,'keychain-test-port.cjs');
+if(keychainBridge)writeFileSync(preload,`const {createRequire}=require('node:module'); const r=createRequire(${JSON.stringify(resolve(root,'package.json'))}); const original=r('keytar'); let identity=null; const bridge={...original,getPassword:(s,a)=>s==='dev.neo.companion.host.v1'?Promise.resolve(identity):original.getPassword(s,a),setPassword:(s,a,v)=>s==='dev.neo.companion.host.v1'?Promise.resolve(identity=v):original.setPassword(s,a,v)};r.cache[r.resolve('keytar')].exports=bridge;`);
+const child=spawn(process.execPath,[...(keychainBridge?['--require',preload]:[]),resolve(root,'dist/web/webServer.bundle.cjs')],{
   cwd:directory,env:{...process.env,CODE_AGENT_DATA_DIR:resolve(directory,'data'),CODE_AGENT_E2E:'1',WEB_PORT:String(port)},
   stdio:['ignore',openSync(resolve(directory,'host.log'),'w'),openSync(resolve(directory,'host-error.log'),'w')],
 });
@@ -67,7 +70,7 @@ try {
   await page.goto(`http://127.0.0.1:${http.address().port}`);
   await page.getByTestId('open-drawer').click();await page.getByRole('button',{name:'连接电脑',exact:true}).click();
   await page.getByRole('button',{name:'扫描电脑二维码',exact:true}).click();await page.getByText('已连接电脑',{exact:true}).last().waitFor();
-  assert.equal(await page.getByRole('dialog').count(),0);assert.equal(await page.locator('.topbar strong').innerText(),'共享会话 1');pass('pair-production-mobile-to-real-Neo-host');
+  assert.equal(await page.getByRole('dialog').count(),0);await page.getByText('Mobile real Neo acceptance',{exact:true}).first().waitFor();pass('pair-production-mobile-to-real-Neo-host');
   const filename=`mobile-acceptance-${Date.now()}.txt`;const marker='NEO_MOBILE_REAL_TASK_OK';
   await page.getByTestId('draft').fill(`Use write_file to create ${filename} in this project containing exactly ${marker}. Do not run shell commands or access any other paths. Wait for my approval when requested, then report the created filename.`);
   await page.getByTestId('send').click();await waitFor(page.getByRole('button',{name:'停止任务',exact:true}));pass('durable-run-id-reaches-mobile-stop-control');
@@ -109,7 +112,7 @@ try {
     pass(`real-mobile-${action}-prevents-file-side-effect`);
     await page.screenshot({path:resolve(directory,`${action}.png`)});
   }
-  const output={checks,passed:checks.length,failed:0,skipped:0,sessionId,filename,scope:'Production mobile UI + real LAN Noise + full Neo webServer, actual model API/tool executor/approval resolver/SQLite/file. Scanner and mobile storage are bridged test ports; no physical-phone evidence.'};
+  const output={keychainBridge,checks,passed:checks.length,failed:0,skipped:0,sessionId,filename,scope:'Production mobile UI + real LAN Noise + full Neo webServer, actual model API/tool executor/approval resolver/SQLite/file. Scanner and mobile storage are bridged test ports; no physical-phone evidence.'};
   writeFileSync(resolve(directory,'result.json'),JSON.stringify(output,null,2));console.log(JSON.stringify(output));
 } catch(error){writeFileSync(resolve(directory,'failure.json'),JSON.stringify({checks,error:String(error),passed:checks.length,failed:1},null,2));throw error;}
 finally {

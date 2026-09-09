@@ -38,6 +38,13 @@ export function CompanionSection() {
           setScope(event.target.checked ? [...scope, session.id] : scope.filter(id => id !== session.id)); setQr(null);
         }} />{session.title}
       </label>)}
+      <p className="text-sm">{text.projectScope}</p>
+      {status?.projects?.map(project => <label key={project.id} className="flex gap-2 text-sm">
+        <input type="checkbox" checked={scope.includes(`project:${project.id}`)} onChange={event => {
+          const grant = `project:${project.id}`;
+          setScope(event.target.checked ? [...scope, grant] : scope.filter(id => id !== grant)); setQr(null);
+        }} />{project.name}
+      </label>)}
       <div className="flex gap-3"><button disabled={!scope.length || busy} onClick={() => void run(async () => {
         setQr(null); setExpired(false);
         const result = await invoke(COMPANION_MANAGE_CHANNEL, { action: 'invite', scope });

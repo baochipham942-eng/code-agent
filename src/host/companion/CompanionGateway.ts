@@ -1,3 +1,4 @@
+import { companionReadSchema, projectGrant, type CompanionRead } from '../../shared/contract/companionLibrary';
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import type BetterSqlite3 from 'better-sqlite3';
 import { applyCompanionSchema } from '../services/core/database/migrations/companion';
@@ -44,6 +45,8 @@ export interface CompanionDispatchResult {
 
 export interface CompanionGatewayDeps {
   now?: () => number;
+  sessionProject?: (sessionId: string) => string | null;
+  read?: (deviceId: string, request: CompanionRead) => Promise<unknown>;
   refreshDecisions?: () => void;
   dispatch?: (command: CompanionCommand) => CompanionDispatchResult;
   /** Must resolve through the same authoritative service used by the desktop. */
@@ -62,12 +65,16 @@ export class CompanionGateway {
   private currentEpoch = 1;
   private readonly refreshDecisions: () => void;
 
-  constructor(private readonly db: BetterSqlite3.Database, deps: CompanionGatewayDeps = {}) {
+  constructor(private readonly db: BetterSqlite3.Database, private readonly deps: CompanionGatewayDeps = {}) {
     this.now = deps.now ?? Date.now;
     this.dispatch = deps.dispatch ?? (() => ({ state: 'rejected', result: { code: 'HOST_UNAVAILABLE' } }));
     this.decide = deps.decide;
     this.refreshDecisions = deps.refreshDecisions ?? (() => {});
     this.ensureSchema();
+    // Session mutations commit their DB effect and receipt in one transaction.
+    // An interrupted reservation therefore has no committed session mutation.
+    this.db.prepare(`UPDATE companion_commands SET state = 'rejected', result_json = ?
+      WHERE state = 'reconciling' AND (action LIKE 'session.%' OR action = 'voice.transcribe')`).run(JSON.stringify({ code: 'COMPANION_INTERRUPTED' }));
     const row = this.db.prepare(`SELECT MAX(epoch) AS epoch FROM (
       SELECT COALESCE(MAX(epoch), 1) AS epoch FROM companion_events
       UNION ALL SELECT COALESCE(MAX(scope_epoch), 1) AS epoch FROM companion_devices
@@ -141,7 +148,7 @@ export class CompanionGateway {
     if (!device) return { kind: 'rejected', reason: 'device_unknown' };
     if (device.revokedAt !== null) return { kind: 'rejected', reason: 'device_revoked' };
     if (command.scopeEpoch !== device.scopeEpoch) return { kind: 'conflict', reason: 'scope_epoch_mismatch' };
-    if (!command.sessionId || !device.scope.includes(command.sessionId)) {
+    if (!command.sessionId || !(command.action === 'session.create' ? command.sessionId.startsWith('project:') && device.scope.includes(command.sessionId) : this.canAccessSession(command.deviceId, command.sessionId))) {
       return { kind: 'rejected', reason: 'scope_denied' };
     }
 
@@ -204,12 +211,22 @@ export class CompanionGateway {
         record.state = outcome.state ?? 'rejected';
         record.result = outcome.result ?? { code: 'HOST_UNAVAILABLE' };
       }
-      this.db.prepare(`UPDATE companion_commands SET state = ?, result_json = ? WHERE device_id = ? AND command_id = ?`)
+      this.db.prepare(`UPDATE companion_commands SET state = ?, result_json = ? WHERE device_id = ? AND command_id = ? AND state = 'reconciling'`)
         .run(record.state, JSON.stringify(record.result), record.deviceId, record.commandId);
     } catch {
       return { kind: 'replayed', command: this.getCommand(command.deviceId, command.commandId)! };
     }
-    return { kind: 'accepted', command: record };
+    return { kind: 'accepted', command: this.getCommand(command.deviceId, command.commandId)! };
+  }
+
+  commitMutation(command: CompanionCommand, write: () => void, result: Record<string, unknown>): void {
+    this.db.transaction(() => {
+      const record = this.getCommand(command.deviceId, command.commandId);
+      if (!record || record.state !== 'reconciling') throw new Error('COMPANION_COMMAND_CLOSED');
+      write();
+      if (command.action === 'session.delete') this.db.prepare('INSERT OR IGNORE INTO companion_session_cleanup (session_id) VALUES (?)').run(command.sessionId);
+      this.settleCommand(command.deviceId, command.commandId, 'accepted', result);
+    })();
   }
 
   settleCommand(deviceId: string, commandId: string, state: 'accepted' | 'rejected', result: Record<string, unknown>): void {
@@ -226,7 +243,7 @@ export class CompanionGateway {
     const device = this.getDevice(deviceId);
     if (!device || device.revokedAt !== null) return null;
     const command = this.getCommand(deviceId, commandId);
-    return command?.sessionId && device.scope.includes(command.sessionId) ? command : null;
+    return command?.sessionId && (command.action === 'session.create' ? device.scope.includes(command.sessionId) : this.canAccessSession(deviceId, command.sessionId)) ? command : null;
   }
 
   publish(sessionId: string | null, kind: string, payload: Record<string, unknown>, now = this.now()): CompanionEvent {
@@ -289,7 +306,29 @@ export class CompanionGateway {
     // rows too, so one busy unshared session cannot pin a phone's cursor.
     this.refreshDecisions();
     const page = this.sync(epoch, afterSeq, COMPANION_LIMITS.syncPageSize);
-    return { ...page, events: page.events.filter(event => event.sessionId !== null && device.scope.includes(event.sessionId)) };
+    return { ...page, events: page.events.filter(event => event.sessionId !== null && this.canAccessSession(deviceId, event.sessionId)) };
+  }
+
+  canAccessSession(deviceId: string, sessionId: string): boolean {
+    const device = this.getDevice(deviceId);
+    if (!device || device.revokedAt !== null || sessionId.startsWith('project:')) return false;
+    if (device.scope.includes(sessionId)) return true;
+    const project = this.deps.sessionProject?.(sessionId);
+    return !!project && device.scope.includes(projectGrant(project));
+  }
+
+  grants(deviceId: string): readonly string[] {
+    const device = this.getDevice(deviceId);
+    return device?.revokedAt === null ? device.scope : [];
+  }
+
+  async read(deviceId: string, raw: unknown): Promise<unknown> {
+    if (!this.grants(deviceId).length || !this.deps.read) throw new Error('COMPANION_LIBRARY_UNAVAILABLE');
+    const request = companionReadSchema.parse(raw);
+    if (request.kind === 'history' && !this.canAccessSession(deviceId, request.sessionId)) throw new Error('COMPANION_SCOPE_DENIED');
+    const result = await this.deps.read(deviceId, request);
+    if (!this.grants(deviceId).length || (request.kind === 'history' && !this.canAccessSession(deviceId, request.sessionId))) throw new Error('COMPANION_SCOPE_DENIED');
+    return result;
   }
 
   private getDevice(deviceId: string): CompanionDevice | null {

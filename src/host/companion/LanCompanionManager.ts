@@ -1,3 +1,4 @@
+import { projectGrant } from '../../shared/contract/companionLibrary';
 import { networkInterfaces } from 'node:os';
 import { z } from 'zod';
 import type { KeyPair } from 'noise-handshake';
@@ -18,19 +19,20 @@ export class LanCompanionManager {
   private address: string | null = null;
   private starting: Promise<LanCompanionServer> | null = null;
   constructor(private readonly gateway: CompanionGateway, private readonly loadIdentity: () => Promise<KeyPair>,
-    private readonly listSessions: () => Promise<{ id: string; title: string }[]>) {}
+    private readonly listSessions: () => Promise<{ id: string; title: string }[]>,
+    private readonly listProjects: () => { id: string; name: string }[] = () => []) {}
 
   async restore(): Promise<void> { if (this.gateway.pairedDevices().length) await this.start(); }
 
   async manage(raw: unknown): Promise<CompanionManagementResult> {
     const request = requestSchema.parse(raw);
-    if (request.action === 'status') return { kind: 'status', sessions: await this.listSessions(), devices: this.gateway.pairedDevices() };
+    if (request.action === 'status') return { kind: 'status', sessions: await this.listSessions(), projects: this.listProjects(), devices: this.gateway.pairedDevices() };
     if (request.action === 'revoke') {
       if (this.server) this.server.revoke(request.deviceId); else this.gateway.revokeDevice(request.deviceId);
       return { kind: 'revoked' };
     }
     const sessions = await this.listSessions();
-    if (request.scope.some(id => !sessions.some(session => session.id === id))) throw new Error('COMPANION_SESSION_NOT_FOUND');
+    if (request.scope.some(id => !sessions.some(session => session.id === id) && !this.listProjects().some(project => projectGrant(project.id) === id))) throw new Error('COMPANION_SESSION_NOT_FOUND');
     const server = await this.start();
     return { kind: 'invitation', invitation: server.invite(request.scope) };
   }

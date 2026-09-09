@@ -1,6 +1,7 @@
 export type Dispose = () => void;
 
 export interface PlatformPorts {
+  recorder?: { start(): Promise<void>; stop(): Promise<{ audioData: string; mimeType: string; durationMs: number }>; };
   companion?: {
     read(): Promise<string | null>; write(value: string): Promise<void>;
     scan(): Promise<string>; post(url: string, body: unknown): Promise<unknown>;

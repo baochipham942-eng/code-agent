@@ -3,6 +3,7 @@ import type BetterSqlite3 from 'better-sqlite3';
 /** Durable Host state used by the companion gateway. Safe on old databases. */
 export function applyCompanionSchema(db: BetterSqlite3.Database): void {
   db.exec(`
+    CREATE TABLE IF NOT EXISTS companion_session_cleanup (session_id TEXT PRIMARY KEY);
     CREATE TABLE IF NOT EXISTS companion_devices (
       device_id TEXT PRIMARY KEY,
       credential_hash TEXT NOT NULL DEFAULT '',

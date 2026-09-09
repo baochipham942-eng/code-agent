@@ -1,4 +1,9 @@
 const zh = {
+  approvalTarget: '目标',
+  voice: '语音输入', cancelRecording: '取消录音', stopRecording: '停止录音并转写', transcribing: '正在转写', microphoneDenied: '麦克风未允许，请在系统设置中允许 Neo 录音。', voiceFailed: '录音或转写未完成，重试后继续。',
+  historyTruncated: '这条较长的历史消息仅显示部分内容，完整内容保留在电脑。',
+  authorizedProjects: '仅显示电脑授权的项目与会话', projectGrantRequired: '需要在电脑连接手机设置中勾选此项目，再扫码更新授权，才能新建会话。', sessionName: '会话名称', rename: '保存名称', archive: '归档会话', unarchive: '取消归档', archived: '已归档', deleteSession: '删除会话', deleteConfirmation: '将从电脑删除此会话。此操作无法撤回。', keepSession: '保留', confirmDelete: '确认删除', model: '模型', useModel: '使用此模型', libraryError: '项目或历史未读取完整，请重连后重试。', loadHistory: '继续加载历史',
+
   operation: '操作', impact: '影响', technicalDetails: '查看技术详情', writeOperation: '写入文件', readOperation: '读取文件', commandOperation: '运行命令', requestedOperation: '执行请求的操作', targetInDetails: '见操作详情', writeImpact: '将写入或替换目标内容', commandImpact: '将按下方命令操作电脑，请展开核对', operationImpact: '仅允许当前请求，后续操作仍需确认', unreadableApproval: '无法完整读取操作内容，请拒绝或回电脑处理。',
   running: '电脑正在处理', latest: '回到最新', connectionDetails: '连接详情',
 
@@ -38,6 +43,11 @@ const zh = {
   next: '打开', drag: '下滑关闭弹层', draft: '消息草稿',
 };
 const en: Record<keyof typeof zh, string> = {
+  approvalTarget: 'Target',
+  voice: 'Voice input', cancelRecording: 'Cancel recording', stopRecording: 'Stop and transcribe', transcribing: 'Transcribing', microphoneDenied: 'Allow Neo microphone access in system settings.', voiceFailed: 'Recording or transcription did not complete. Retry to continue.',
+  historyTruncated: 'This long historical message is partially shown. The complete text remains on your computer.',
+  authorizedProjects: 'Only projects and conversations shared by your computer', projectGrantRequired: 'Select this project in desktop phone settings and scan a new code to allow new conversations.', sessionName: 'Conversation name', rename: 'Save name', archive: 'Archive conversation', unarchive: 'Unarchive', archived: 'Archived', deleteSession: 'Delete conversation', deleteConfirmation: 'Delete this conversation from your computer? This cannot be undone.', keepSession: 'Keep', confirmDelete: 'Confirm deletion', model: 'Model', useModel: 'Use this model', libraryError: 'Projects or history could not be fully loaded. Reconnect and retry.', loadHistory: 'Load more history',
+
   operation: 'Operation', impact: 'Impact', technicalDetails: 'Technical details', writeOperation: 'Write file', readOperation: 'Read file', commandOperation: 'Run command', requestedOperation: 'Perform requested operation', targetInDetails: 'See operation details', writeImpact: 'Writes or replaces the target content', commandImpact: 'Runs the command below on your computer. Expand to review.', operationImpact: 'Allows this request only. Later operations still require confirmation.', unreadableApproval: 'Cannot read the complete operation. Deny or review on your computer.',
   running: 'Working on your computer', latest: 'Jump to latest', connectionDetails: 'Connection details',
 

@@ -7,6 +7,7 @@ export function configureIosLan() {
     try { execFileSync('/usr/libexec/PlistBuddy', ['-c', `Delete :${key}`, plist], { stdio: 'ignore' }); } catch {}
     execFileSync('/usr/libexec/PlistBuddy', ['-c', `Add :${key} ${type} ${value}`, plist]);
   };
+  set('NSMicrophoneUsageDescription', 'string', 'Record speech and transcribe it through your computer into an editable draft.');
   set('NSCameraUsageDescription', 'string', 'Scan the pairing code shown by Neo on your computer.');
   set('NSLocalNetworkUsageDescription', 'string', 'Connect to your computer to send tasks and receive results in Neo.');
   try { execFileSync('/usr/libexec/PlistBuddy', ['-c', 'Add :NSAppTransportSecurity dict', plist], { stdio: 'ignore' }); } catch {}
@@ -27,6 +28,7 @@ export function configureAndroidLan() {
   if (/android:usesCleartextTraffic=/.test(xml)) xml = xml.replace(/android:usesCleartextTraffic="[^"]*"/, 'android:usesCleartextTraffic="true"');
   else xml = xml.replace('<application', '<application android:usesCleartextTraffic="true"');
   if (!xml.includes('android.permission.CAMERA')) xml = xml.replace('</manifest>', '<uses-permission android:name="android.permission.CAMERA" /></manifest>');
+  if (!xml.includes('android.permission.RECORD_AUDIO')) xml = xml.replace('</manifest>', '<uses-permission android:name="android.permission.RECORD_AUDIO" /></manifest>');
   // Do not restore an Android Keystore ciphertext onto a different installation.
   if (/android:allowBackup=/.test(xml)) xml = xml.replace(/android:allowBackup="[^"]*"/, 'android:allowBackup="false"');
   else xml = xml.replace('<application', '<application android:allowBackup="false"');

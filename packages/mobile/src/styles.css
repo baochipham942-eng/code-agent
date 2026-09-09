@@ -85,3 +85,8 @@ input { width: 100%; padding: 16px; background: var(--surface); border: 1px soli
 .approval-actions button { flex: 1; min-height: 44px; border-radius: 22px; background: var(--group); font-size: 14px; }
 .approval-actions button:last-child { background: var(--text); color: var(--bg); }
 @media (max-height: 520px) { .composer-area { padding-bottom: 4px; } .approval-tray .approval-card { max-height: 36dvh; padding: 8px; } .approval-summary > div { padding: 1px 0; } .task-status { min-height: 28px; } .task-status button { min-height: 28px; } }
+
+select { width: 100%; min-height: 48px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; color: var(--text); background: var(--surface); font: inherit; }
+.library-sheet .settings-group { margin: 10px 0; } .danger { color: #c43b38; } .drawer-history [aria-current='page'] { background: var(--group); }
+
+.voice-card { display: grid; grid-template-columns: 44px minmax(0,1fr) 44px; align-items: center; flex: 1; text-align: center; font-size: 12px; } .voice-card button { font-size: 14px; min-width: 44px; } .voice-card .recording-stop { justify-self: center; width: 48px; background: #c43b38; color: white; border-radius: 50%; }

@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from 'zustand';
 import type { PlatformPorts } from '../platform/ports';
 import { createMobileStore } from '../stores/mobileStore';
 import { createCompanionStore } from '../stores/companionStore';
 import { COMPANION_LIMITS } from '../../../../src/shared/constants/companion';
+import { ApprovalCard } from '../features/sessions/ApprovalCard';
 import { CompanionConversation } from '../features/sessions/CompanionConversation';
 import { messages } from '../i18n';
 import { createBackCoordinator } from './backCoordinator';
@@ -31,6 +32,13 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
   const textarea = useRef<HTMLTextAreaElement>(null);
   const theme = state.preferences.appearance === 'system' ? (systemDark ? 'dark' : 'light') : state.preferences.appearance;
   const currentPage = state.sheet?.pages.at(-1);
+  const pendingApprovals = useMemo(() => {
+    const cards = new Map<string, Record<string, unknown>>();
+    for (const event of companion.events) if (event.sessionId === companion.sessionId && event.kind === 'approval' && typeof event.payload.requestId === 'string') {
+      cards.set(event.payload.requestId, { ...cards.get(event.payload.requestId), ...event.payload });
+    }
+    return [...cards.values()].filter(card => card.status === 'pending');
+  }, [companion.events, companion.sessionId]);
 
   // Text selections inside the composer never surface through window.getSelection on WebKit,
   // and long-press selection on WebView only lives in the element's own range.
@@ -125,10 +133,14 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
       <header className="topbar"><button aria-label={text.sessions} data-testid="open-drawer" onClick={state.openDrawer}>☰</button>
         <strong>{companion.sessionId ? `${text.sharedSession} ${(companion.binding?.scope.indexOf(companion.sessionId) ?? 0) + 1}` : state.route === 'new' ? text.neo : text.fixture}</strong><button aria-label={text.more} data-testid="open-more" onClick={() => state.openSheet('more')}>···</button></header>
       {state.route === 'fixture' && fixtures ? <VirtualHistory text={text} /> : companion.sessionId && companion.events.some(event => event.sessionId === companion.sessionId)
-        ? <CompanionConversation events={companion.events} sessionId={companion.sessionId} text={text}
+        ? <CompanionConversation hidePendingApprovals events={companion.events} sessionId={companion.sessionId} text={text}
           disabled={companion.busy || companion.pending || companion.status !== 'connected'} respond={companion.respond} />
         : <div className="welcome"><NeoBrandMark /><h1>{companion.status === 'connected' ? text.connectedReady : text.welcome}</h1>{companion.status === 'connected' && <p className="connection-next">{text.connectedNext}</p>}</div>}
       <div className="composer-area">
+        {pendingApprovals.length > 0 && <div className="approval-tray" aria-live="polite">
+          <ApprovalCard card={pendingApprovals[0]} text={text} disabled={companion.busy || companion.pending || companion.status !== 'connected'}
+            respond={decision => companion.respond(String(pendingApprovals[0].requestId), decision)} />
+        </div>}
         {companion.binding && <p role="status" className="caption">{companion.pending ? text.pendingCommand : companion.status === 'connected' ? text.connected : companion.status === 'connecting' ? text.connecting : companion.status === 'storageError' ? text.secureStorageError : companion.status === 'rejected' ? text.rejected : companion.connectionError ? text[companion.connectionError] : text.unconnected}</p>}
         {companion.terminal && <p role="status" className="caption">{text[companion.terminal]}</p>}
         {companion.runId && <button disabled={companion.busy || companion.pending || companion.status !== 'connected'} onClick={() => void companion.stop()}>{text.stop}</button>}
@@ -168,6 +180,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
     </div>}
     {state.sheet && currentPage && <SheetHost page={currentPage} title={text[currentPage]} hasParent={state.sheet.pages.length > 1}
       close={state.closeSheet} back={state.back} text={text}>
+      {pendingApprovals.length > 0 && <button className="primary" onClick={() => state.navigate('new')}>{text.reviewApproval}</button>}
       {currentPage === 'remote' ? <div className="settings-group">
         <p>{text.lanHint}</p>
         {companion.status === 'connected' ? <div className="connection-success" role="status"><span className="connection-check" aria-hidden="true">✓</span><strong>{text.connected}</strong><p>{text.connectedNext}</p></div>

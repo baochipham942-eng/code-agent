@@ -304,6 +304,7 @@ async function startAgentApi(deps: {
   registerQueuedInputSendNowHook?: Parameters<typeof createAgentRouter>[0]['registerQueuedInputSendNowHook'];
   registerCompanionRun?: Parameters<typeof createAgentRouter>[0]['registerCompanionRun'];
   publishCompanionEvent?: Parameters<typeof createAgentRouter>[0]['publishCompanionEvent'];
+  hasCompanionApprovalUi?: Parameters<typeof createAgentRouter>[0]['hasCompanionApprovalUi'];
 } = {}) {
   const app = express();
   app.use(express.json());
@@ -322,6 +323,7 @@ async function startAgentApi(deps: {
     registerQueuedInputSendNowHook: deps.registerQueuedInputSendNowHook,
     registerCompanionRun: deps.registerCompanionRun,
     publishCompanionEvent: deps.publishCompanionEvent,
+    hasCompanionApprovalUi: deps.hasCompanionApprovalUi,
   } as Parameters<typeof createAgentRouter>[0]));
 
   server = await new Promise<http.Server>((resolve) => {
@@ -543,6 +545,34 @@ describe('createAgentRouter', () => {
     await handle.cancel('user');
     await expect(pending).resolves.toMatchObject({ approved: false, denialSource: 'cancelled' });
     expect(handle.cancellationRequested).toBe(true);
+  });
+
+  it('uses live companion presence for the run session without a desktop renderer', async () => {
+    await closeServer();
+    setBrowserWindowInteractionProbe(() => false);
+    const states: boolean[] = [];
+    const probe = vi.fn(() => true);
+    const spy = vi.spyOn(OrchestratorPermissionIsland.prototype, 'requestPermission')
+      .mockImplementation(function (this: OrchestratorPermissionIsland) {
+        states.push((this as unknown as { hasApprovalUi: () => boolean }).hasApprovalUi());
+        return Promise.resolve({ approved: false, denialSource: 'cancelled' });
+      });
+    let start: Parameters<NonNullable<Parameters<typeof createAgentRouter>[0]['registerCompanionRun']>>[0] | undefined;
+    try {
+      await startAgentApi({ registerCompanionRun: value => { start = value; }, hasCompanionApprovalUi: probe });
+      await start!({ version: 1, sessionId: 'phone-ui-session', prompt: 'bounded task' });
+      await vi.waitFor(() => expect(mockCreateRunToolExecutor.mock.calls.length).toBeGreaterThan(0));
+      const ask = mockCreateRunToolExecutor.mock.calls.at(-1)![2] as OrchestratorPermissionIsland['requestPermission'];
+      const request = { type: 'file_write' as const, tool: 'Write', sessionId: 'phone-ui-session', details: { path: '/tmp/phone-ui.txt' } };
+      await ask(request);
+      probe.mockReturnValue(false);
+      await ask(request);
+      expect(states).toEqual([true, false]);
+      expect(probe.mock.calls).toEqual([['phone-ui-session'], ['phone-ui-session']]);
+    } finally {
+      await runRegistry.getBySessionId('phone-ui-session')?.cancel('user');
+      spy.mockRestore();
+    }
   });
 
   it('treats an SSE-subscribed renderer as the approval UI for a queued run', async () => {

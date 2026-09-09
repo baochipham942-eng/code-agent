@@ -149,6 +149,7 @@ interface AgentRouterDeps extends AgentDurableRouteDeps {
     envelope: ConversationEnvelope;
   }, route: 'active' | 'idle') => Promise<'sent' | 'steered' | 'queued'>) => void;
   registerCompanionRun?: (run: (body: AgentRunBody) => Promise<{ runId: string }>) => void;
+  hasCompanionApprovalUi?: (sessionId: string) => boolean;
   publishCompanionEvent?: (sessionId: string, kind: string, payload: Record<string, unknown>) => void;
 }
 
@@ -711,7 +712,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
             getSettings: () => acpConfigService.getSettings(),
             isDevModeAutoApproveEnabled: () => acpConfigService.isDevModeAutoApproveEnabled(),
             getExecutionTopology: () => 'main',
-            hasApprovalUi: () => hasInteractiveUi(),
+            hasApprovalUi: () => hasInteractiveUi() || deps.hasCompanionApprovalUi?.(sessionId) === true,
             onEvent: (event) => runController.emitAgentEvent(event),
           });
           registerForegroundPermissionIsland(sessionId, foregroundPermissionIsland);
@@ -1050,7 +1051,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         getSettings: () => configService.getSettings(),
         isDevModeAutoApproveEnabled: () => configService.isDevModeAutoApproveEnabled(),
         getExecutionTopology: () => 'main',
-        hasApprovalUi: () => hasInteractiveUi(),
+        hasApprovalUi: () => hasInteractiveUi() || deps.hasCompanionApprovalUi?.(sessionId) === true,
         onEvent: (event) => runController.emitAgentEvent(event),
       });
       registerForegroundPermissionIsland(sessionId, foregroundPermissionIsland);

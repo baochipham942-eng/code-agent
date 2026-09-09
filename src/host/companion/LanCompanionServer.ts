@@ -11,7 +11,7 @@ import type { CompanionGateway } from './CompanionGateway';
 
 interface Invitation { id: string; psk: string; expiresAt: number; scope: string[] }
 interface Pending { noise: Noise; invite: Invitation; expiresAt: number }
-interface Channel { cipher: NoiseChannel; publicKey: string; expiresAt: number }
+interface Channel { cipher: NoiseChannel; publicKey: string; expiresAt: number; lastSeenAt: number | null }
 
 /** Dedicated LAN surface: encrypted records only, never desktop HTTP/IPC routes. */
 export class LanCompanionServer {
@@ -85,6 +85,13 @@ export class LanCompanionServer {
     this.prune();
   }
 
+  hasApprovalUi(sessionId: string): boolean {
+    const now = this.now();
+    return [...this.channels.values()].some(channel => channel.lastSeenAt !== null
+      && now >= channel.lastSeenAt && now - channel.lastSeenAt <= L.uiPresenceTtlMs && channel.expiresAt > now
+      && this.gateway.identityDevice(channel.publicKey)?.scope.includes(sessionId));
+  }
+
   async stop(): Promise<void> {
     if (this.sweep) clearInterval(this.sweep);
     this.invitation = null; this.pending.clear();
@@ -127,7 +134,7 @@ export class LanCompanionServer {
     if (!device) throw new Error('COMPANION_DEVICE_REVOKED');
     const frame = toHex(noise.send());
     const cipher = new NoiseChannel(noise);
-    this.channels.set(channelId, { cipher, publicKey, expiresAt: this.now() + L.channelTtlMs });
+    this.channels.set(channelId, { cipher, publicKey, expiresAt: this.now() + L.channelTtlMs, lastSeenAt: null });
     return { channelId, frame, welcome: cipher.seal(device) };
   }
 
@@ -143,7 +150,7 @@ export class LanCompanionServer {
     const publicKey = toHex(pending.noise.rs);
     const device = this.gateway.pairIdentity(publicKey, pending.invite.scope);
     const cipher = new NoiseChannel(pending.noise);
-    this.channels.set(id, { cipher, publicKey, expiresAt: this.now() + L.channelTtlMs });
+    this.channels.set(id, { cipher, publicKey, expiresAt: this.now() + L.channelTtlMs, lastSeenAt: null });
     return { welcome: cipher.seal(device) };
   }
 
@@ -179,7 +186,9 @@ export class LanCompanionServer {
       } else if (request.action === 'status' && typeof request.commandId === 'string' && request.commandId.length <= L.idLength) {
         result = this.gateway.commandStatus(device.deviceId, request.commandId);
       } else throw new Error('COMPANION_UNSUPPORTED_ACTION');
-      return { frame: channel.cipher.seal({ requestId: request.requestId, result }) };
+      const frame = channel.cipher.seal({ requestId: request.requestId, result });
+      channel.lastSeenAt = this.now();
+      return { frame };
     } catch (error) {
       channel.cipher.close(); this.channels.delete(id); throw error;
     }

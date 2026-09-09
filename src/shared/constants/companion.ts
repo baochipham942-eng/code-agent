@@ -17,6 +17,7 @@ export const COMPANION_LIMITS = {
   maxMessageRecords: 64,
   maxRequestRecords: 4,
   pollIntervalMs: 1_000,
+  uiPresenceTtlMs: 15_000,
   lanPort: 8181,
   approvalPreviewLength: 16_000,
 } as const;

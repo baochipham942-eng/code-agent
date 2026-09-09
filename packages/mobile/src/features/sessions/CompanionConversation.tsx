@@ -2,7 +2,7 @@ import { ApprovalCard } from './ApprovalCard';
 import type { CompanionEvent } from '../../../../../src/shared/contract/companion';
 import type { messages } from '../../i18n';
 
-export function CompanionConversation({ events, sessionId, text, disabled, respond }: { events: CompanionEvent[]; sessionId: string; text: ReturnType<typeof messages>; disabled: boolean; respond: (requestId: string, decision: 'approved' | 'rejected') => Promise<void> }) {
+export function CompanionConversation({ hidePendingApprovals = false, events, sessionId, text, disabled, respond }: { hidePendingApprovals?: boolean; events: CompanionEvent[]; sessionId: string; text: ReturnType<typeof messages>; disabled: boolean; respond: (requestId: string, decision: 'approved' | 'rejected') => Promise<void> }) {
   const approvals = new Map<string, Record<string, unknown>>();
   const activeStreams = new Map<string, string>();
   const committedStreams = new Set<string>();
@@ -34,7 +34,7 @@ export function CompanionConversation({ events, sessionId, text, disabled, respo
   }
   return <div className="lan-messages" aria-label={text.history} aria-live="polite">
     {Array.from(rows, ([id, row]) => <p key={id} className={`lan-message ${row.role === 'user' ? 'from-user' : ''}`}>{row.content}</p>)}
-    {Array.from(approvals, ([id, card]) => <ApprovalCard key={id} card={card} text={text} disabled={disabled}
+    {Array.from(approvals, ([id, card]) => (!hidePendingApprovals || card.status !== 'pending') && <ApprovalCard key={id} card={card} text={text} disabled={disabled}
       respond={decision => respond(id, decision)} />)}
   </div>;
 }

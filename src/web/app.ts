@@ -153,6 +153,7 @@ export function createApp(deps: CreateAppDeps): express.Express {
 
   const app = express();
   const traceReadService = new TraceReadService(resolveCodeAgentDataDir());
+  let hasCompanionApprovalUi = (_sessionId: string): boolean => false;
   let companionRun: ((body: AgentRunBody) => Promise<{ runId: string }>) | undefined;
   let publishCompanionEvent: ((sessionId: string, kind: string, payload: Record<string, unknown>) => void) | undefined;
 
@@ -232,6 +233,7 @@ export function createApp(deps: CreateAppDeps): express.Express {
     registerQueuedInputStartupSweep: deps.registerQueuedInputStartupSweep,
     registerQueuedInputEnqueueHook: deps.registerQueuedInputEnqueueHook,
     registerQueuedInputSendNowHook: deps.registerQueuedInputSendNowHook,
+    hasCompanionApprovalUi: (sessionId) => hasCompanionApprovalUi(sessionId),
     registerCompanionRun: (run) => { companionRun = run; },
     publishCompanionEvent: (sessionId, kind, payload) => publishCompanionEvent?.(sessionId, kind, payload),
   }));
@@ -286,6 +288,7 @@ export function createApp(deps: CreateAppDeps): express.Express {
         const sessions = await (await tryGetSessionManager())?.listSessions() ?? [];
         return sessions.map(session => ({ id: session.id, title: session.title }));
       });
+      hasCompanionApprovalUi = (sessionId) => lan.hasApprovalUi(sessionId);
       handlers.set(COMPANION_MANAGE_CHANNEL, (_event, request) => lan.manage(request));
       deps.registerCompanionShutdown?.(() => lan.stop());
       void lan.restore().catch(() => logger.warn('Companion LAN restore unavailable'));

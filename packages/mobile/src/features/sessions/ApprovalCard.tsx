@@ -18,8 +18,10 @@ export function ApprovalCard({ card, text, disabled, respond }: {
   const readable = preview?.details && typeof preview.details === 'object' && !Array.isArray(preview.details);
   return <section className="approval-card" aria-label={text.approval}>
     <strong>{text.approval}</strong>
+    <div className="approval-details">
     {readable && Object.entries(preview?.details ?? {}).map(([key, detail]) => <div key={key}><p>{labels[key] ?? text.otherDetails}</p><pre>{value(detail)}</pre></div>)}
     {preview?.boundary !== undefined && <div><p>{text.dataBoundary}</p><pre>{value(preview.boundary)}</pre></div>}
+    </div>
     {card.status === 'pending' ? <div className="approval-actions">
       <button disabled={disabled} onClick={() => void respond('rejected')}>{text.deny}</button>
       <button disabled={disabled || !readable} onClick={() => void respond('approved')}>{text.approveOnce}</button>

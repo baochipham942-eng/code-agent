@@ -156,8 +156,8 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
           if (result.kind === 'snapshot_required') { epoch = result.epoch; cursor = 0; set({ events: [] }); return; }
           if (result.kind !== 'events' || result.epoch !== epoch || !Number.isSafeInteger(result.nextSeq) || result.nextSeq < cursor || !Array.isArray(result.events)) throw new Error('COMPANION_INVALID_SYNC');
           set({ events: [...get().events, ...result.events] }); cursor = result.nextSeq;
-          for (const event of result.events) if (event.sessionId === get().sessionId && (event.kind === 'run_started' || !get().runId || event.payload.runId === get().runId)) {
-            if (event.kind === 'run_started' && typeof event.payload.runId === 'string') set({ runId: event.payload.runId, terminal: null });
+          for (const event of result.events) if (event.sessionId === get().sessionId && (event.kind === 'run_started' || (event.kind === 'message' && event.payload.role === 'user') || !get().runId || event.payload.runId === get().runId)) {
+            if ((event.kind === 'run_started' || (event.kind === 'message' && event.payload.role === 'user')) && typeof event.payload.runId === 'string') set({ runId: event.payload.runId, terminal: null });
             if (event.kind === 'agent_complete') set({ runId: null, terminal: 'complete' });
             if (event.kind === 'agent_cancelled') set({ runId: null, terminal: 'stopped' });
             if (event.kind === 'error') set({ runId: null, terminal: 'failed' });

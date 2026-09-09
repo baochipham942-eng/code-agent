@@ -35,6 +35,8 @@ export class LanCompanionManager {
     return { kind: 'invitation', invitation: server.invite(request.scope) };
   }
 
+  hasApprovalUi(sessionId: string): boolean { return this.server?.hasApprovalUi(sessionId) ?? false; }
+
   async stop(): Promise<void> { await this.starting?.catch(() => {}); await this.server?.stop(); this.server = null; this.address = null; }
 
   private start(): Promise<LanCompanionServer> {

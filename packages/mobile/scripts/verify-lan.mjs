@@ -103,6 +103,20 @@ try {
   await page.getByText('LAN fixture response 2', { exact: true }).waitFor();
   assert.equal(await page.getByTestId('draft').inputValue(), ''); assert.equal(fixture.count(), 2); checks.push('reload-reconciles-without-duplicate');
   assert(!wire.join('\n').includes('browser-private')); assert(!wire.join('\n').includes('LAN fixture response')); checks.push('browser-wire-encrypted');
+  // Keep history scrolled away from the end: a real person must still see the action.
+  for(let n=0;n<80;n++) fixture.gateway.publish('browser-session','message',{id:'history-'+n,role:'assistant',content:'Older history '+n});
+  await page.getByTestId('open-more').click();
+  fixture.gateway.publish('browser-session','approval',{requestId:'layout-approval',status:'pending',revision:1,
+    preview:JSON.stringify({details:{path:'phone-ok.txt',newContent:'Neo 真机验收通过'}})});
+  await page.getByRole('button',{name:'有待确认的操作，返回会话处理',exact:true}).click();
+  await page.locator('.lan-messages').evaluate(el=>{el.scrollTop=0;});
+  const allow=page.getByRole('button',{name:'允许这一次',exact:true});
+  await allow.waitFor();
+  const bounds=await allow.boundingBox();assert(bounds && bounds.y>=0 && bounds.y+bounds.height<=852,'approval action must be in the viewport without scrolling history');
+  assert.equal(await page.getByRole('dialog').count(),0);
+  checks.push('approval-visible-above-composer-with-long-history-and-open-sheet');
+  fixture.gateway.publish('browser-session','approval',{requestId:'layout-approval',status:'closed',revision:1});
+  await page.locator('.approval-tray').waitFor({state:'detached'});
   fixture.server.revoke(fixture.gateway.pairedDevices()[0].deviceId);
   await page.getByText('无法连接电脑。请确认两台设备在同一 Wi-Fi，或电脑连接了手机热点，并允许 Neo 访问本地网络。换网后需重新扫码。', { exact: true }).first().waitFor(); checks.push('revocation-disconnects');
   assert.deepEqual(pageErrors, []); checks.push('no-browser-errors');

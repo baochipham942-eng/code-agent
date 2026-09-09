@@ -217,6 +217,39 @@ describe('LAN companion: real HTTP + Noise + SQLite', () => {
     if (!failure) expect(send).not.toHaveBeenCalled();
     expect(executions).toBe(0);
   });
+  it('counts only recent authenticated activity in the authorized session as an approval UI', async () => {
+    const binding = await pair();
+    expect(server.hasApprovalUi('shared')).toBe(false);
+    await client.request({ action: 'sync', epoch: binding.scopeEpoch, afterSeq: 0 });
+    expect(server.hasApprovalUi('shared')).toBe(true);
+    expect(server.hasApprovalUi('hidden')).toBe(false);
+    now += L.uiPresenceTtlMs + 1;
+    expect(server.hasApprovalUi('shared')).toBe(false);
+    await client.request({ action: 'sync', epoch: binding.scopeEpoch, afterSeq: 0 });
+    expect(server.hasApprovalUi('shared')).toBe(true);
+    server.revoke(binding.deviceId);
+    expect(server.hasApprovalUi('shared')).toBe(false);
+  });
+  it('does not keep approval UI presence after an invalid authenticated exchange closes the channel', async () => {
+    const binding = await pair();
+    await client.request({ action: 'sync', epoch: binding.scopeEpoch, afterSeq: 0 });
+    expect(server.hasApprovalUi('shared')).toBe(true);
+    await expect(client.request({ action: 'unsupported' })).rejects.toThrow();
+    expect(server.hasApprovalUi('shared')).toBe(false);
+  });
+  it('recognizes a desktop-started user message as an active run on the phone', async () => {
+    let storage: string | null = null;
+    const phone = createCompanionStore({ read: async () => storage, write: async value => { storage = value; },
+      scan: async () => JSON.stringify(server.invite(['shared'])), post }, () => {});
+    await phone.getState().pair();
+    gateway.publish('shared', 'message', { id: 'desktop-message', role: 'user', content: 'desktop task', runId: 'desktop-run' });
+    await phone.getState().sync();
+    expect(phone.getState()).toMatchObject({ runId: 'desktop-run', terminal: null });
+    gateway.publish('shared', 'agent_complete', { runId: 'desktop-run' });
+    await phone.getState().sync();
+    expect(phone.getState()).toMatchObject({ runId: null, terminal: 'complete' });
+    phone.getState().pause();
+  });
   it('does not resurrect a connection when pairing completes after the phone closes it', async () => {
     const closing = new LanCompanionClient(phoneIdentity, async (url, body) => {
       const result = await post(url, body);

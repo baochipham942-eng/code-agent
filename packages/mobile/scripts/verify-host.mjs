@@ -73,7 +73,11 @@ try {
   await page.getByTestId('send').click();await waitFor(page.getByRole('button',{name:'停止任务',exact:true}));pass('durable-run-id-reaches-mobile-stop-control');
   const allow=page.getByRole('button',{name:'允许这一次',exact:true});await Promise.race([waitFor(allow), page.getByText('任务已完成',{exact:true}).waitFor().then(()=>{throw new Error('TASK_FINISHED_WITHOUT_REQUIRED_APPROVAL');})]);
   assert(!existsSync(resolve(project,filename)),'file must not exist before real approval');
+  const approvalBounds=await allow.boundingBox();assert(approvalBounds && approvalBounds.y>=0 && approvalBounds.y+approvalBounds.height<=852,'approval must be visible without scrolling');
   await page.screenshot({path:resolve(directory,'approval.png')});pass('real-model-write-pauses-before-file-side-effect');
+  await pause(65_000);
+  assert.equal(await allow.count(),1);assert(!existsSync(resolve(project,filename)),'phone approval must remain pending beyond the headless timeout');
+  pass('active-authorized-phone-keeps-real-approval-open-past-60-seconds');
   const projected=db.prepare("SELECT payload_json FROM companion_events WHERE session_id=? AND kind='approval' ORDER BY seq DESC LIMIT 1").get(sessionId);
   const operation=JSON.parse(JSON.parse(projected.payload_json).preview);
   assert((await page.locator('.approval-card').last().innerText()).includes(filename));

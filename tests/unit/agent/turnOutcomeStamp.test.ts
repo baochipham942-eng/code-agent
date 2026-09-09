@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { existsSync, rmSync } from 'fs';
+import { existsSync, rmSync, mkdirSync, writeFileSync } from 'fs';
 import os from 'os';
 import path from 'path';
 
@@ -73,6 +73,38 @@ function latestOutcome(recorder: TurnTraceRecorder) {
 }
 
 describe('turn outcome stamp', () => {
+  it('canonicalizes and hashes real files, excludes missing duplicates, and refuses a verified stamp', async () => {
+    mkdirSync(traceRoot, { recursive: true });
+    const artifact = path.join(traceRoot, 'report.md');
+    writeFileSync(artifact, 'Fixture report');
+    const recorder = new TurnTraceRecorder('paths', traceRoot);
+    const ctx = { ...context(recorder), workingDirectory: traceRoot };
+    await recordTurnOutcomeStamp(ctx, 'completed', summary({ changedFiles: [artifact, 'report.md', 'missing/report.md'],
+      artifactRefs: [{ kind: 'file', path: artifact }] }));
+    const outcome = latestOutcome(recorder);
+    expect(outcome.verdict).toBe('self_claimed');
+    expect(outcome.evidenceRefs).toHaveLength(1);
+    expect(outcome.evidenceRefs[0].freshness).toMatchObject({ state: 'read', digest: expect.stringMatching(/^[a-f0-9]{64}$/) });
+    expect(outcome.evidenceProblems).toEqual(['COMPLETION_FILE_UNREADABLE: missing/report.md']);
+  });
+
+  it('does not promote failed verification or old successful reads to completed evidence', async () => {
+    const recorder = new TurnTraceRecorder('failed-verification', traceRoot);
+    await recordTurnOutcomeStamp(context(recorder), 'completed', summary({ verificationEvidence: [
+      { kind: 'command', toolCallId: 'test-failed', command: 'npm test', success: false, exitCode: 1 },
+    ] }));
+    expect(latestOutcome(recorder).verdict).toBe('self_claimed');
+    expect(latestOutcome(recorder).evidenceRefs).toEqual([]);
+  });
+
+  it('retains successful verification after a recovered failure', async () => {
+    const recorder = new TurnTraceRecorder('recovery', traceRoot);
+    await recordTurnOutcomeStamp(context(recorder), 'completed', summary({ verificationEvidence: [
+      { kind: 'command', toolCallId: 'test-ok', command: 'npm test', success: true, exitCode: 0 },
+    ] }));
+    expect(latestOutcome(recorder).verdict).toBe('verified');
+  });
+
   afterEach(() => {
     void cleanupVoiceResolver?.();
     cleanupVoiceResolver = undefined;
@@ -109,7 +141,7 @@ describe('turn outcome stamp', () => {
     });
   });
 
-  it('uses a real successful tool result as completed-run evidence', async () => {
+  it('records a successful tool as candidate evidence without verifying its conclusions', async () => {
     const recorder = new TurnTraceRecorder('session-1');
     const messages = [
       message(),
@@ -125,7 +157,7 @@ describe('turn outcome stamp', () => {
 
     expect(latestOutcome(recorder)).toMatchObject({
       terminal: 'completed',
-      verdict: 'verified',
+      verdict: 'self_claimed',
       source: 'generic',
       evidenceRefs: [{ id: 'tool-call-17', kind: 'tool', ref: 'tool_execution:tool-call-17' }],
     });

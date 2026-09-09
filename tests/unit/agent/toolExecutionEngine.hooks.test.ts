@@ -364,6 +364,66 @@ function makeMessageProcessorDeps(_ctx: RuntimeContext) {
 }
 
 describe('ToolExecutionEngine hook/telemetry argument handling', () => {
+  it('preserves a failed Edit, successful Read, and recovered Edit as separate terminal events', async () => {
+    const execute = vi.fn()
+      .mockResolvedValueOnce({ success: false, error: 'NOT_READ', metadata: { executionStarted: true } })
+      .mockResolvedValueOnce({ success: true, output: 'old', metadata: { executionStarted: true } })
+      .mockResolvedValueOnce({ success: true, output: 'edited', metadata: { executionStarted: true } });
+    const ctx = makeRuntimeContext({ toolExecutor: { execute } as never });
+    const engine = new ToolExecutionEngine(ctx);
+    engine.setModules({ injectSystemMessage: vi.fn(), pushPersistentSystemContext: vi.fn(),
+      getCurrentAttachments: () => [] } as never, { emitTaskProgress: vi.fn() } as never,
+      { isPlanMode: () => false, setPlanMode: vi.fn() } as never);
+    for (const [index, name] of ['Edit', 'Read', 'Edit'].entries()) await engine.executeSingleTool({
+      id: `recovery-${index}`, name, arguments: { file_path: '/tmp/recovery-fixture.ts', edits: [{ old_text: 'old', new_text: 'new' }] },
+    }, index, 3);
+    const terminal = vi.mocked(ctx.turnTrace.record).mock.calls.filter(([type]) => type === 'tool_dispatch').map(([, data]) => data);
+    expect(terminal).toEqual([
+      expect.objectContaining({ toolCallId: 'recovery-0', success: false, execution: 'executed' }),
+      expect.objectContaining({ toolCallId: 'recovery-1', success: true, consecutiveErrors: 0 }),
+      expect.objectContaining({ toolCallId: 'recovery-2', success: true, recoveredFrom: ['recovery-0'] }),
+    ]);
+    expect(engine.noProgressStopped).toBe(false);
+  });
+
+  it('blocks unsupported report generation before calling the executor', async () => {
+    const execute = vi.fn();
+    const ctx = makeRuntimeContext({ toolExecutor: { execute } as never });
+    const engine = new ToolExecutionEngine(ctx);
+    engine.setModules({ injectSystemMessage: vi.fn() } as never, {} as never, {} as never);
+    const result = await engine.executeSingleTool({ id: 'false-report', name: 'Write',
+      arguments: { file_path: '/tmp/report.md', content: '✅ 纪要与逐字稿双记录互证' } }, 0, 1);
+    expect(execute).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ success: false, metadata: { evidenceBoundary: ['SOURCE_INDEPENDENCE_UNVERIFIED'] } });
+  });
+
+  it('traces rejected repair attempts and stops cross-tool retries without dispatch', async () => {
+    const execute = vi.fn();
+    const ctx = makeRuntimeContext({ toolExecutor: { execute } as never,
+      artifact: ArtifactState.forTest({ repairGuard: {
+      targetFile: '/nonexistent/trace-fixture.html', phase: 'initial_repair', attempts: 0, patched: false,
+    } } as never) });
+    const engine = new ToolExecutionEngine(ctx);
+    engine.setModules({ injectSystemMessage: vi.fn(), pushPersistentSystemContext: vi.fn() } as never,
+      {} as never, {} as never);
+    for (const [index, name] of ['Write', 'Bash', 'Write', 'Bash'].entries()) {
+      await engine.executeSingleTool({ id: `rejected-${index}`, name,
+        arguments: { file_path: '/tmp/report.md', content: 'report', command: 'echo report' } }, index, 4);
+    }
+    expect(execute).not.toHaveBeenCalled();
+    expect(engine.consecutiveErrors).toBe(4);
+    expect(engine.noProgressStopped).toBe(true);
+    expect(ctx.control.forceFinalResponseReason).toContain('artifact repair attempts exhausted:');
+    const records = vi.mocked(ctx.turnTrace.record).mock.calls;
+    expect(records.filter(([type]) => type === 'tool_attempt')).toHaveLength(4);
+    expect(records.filter(([type]) => type === 'tool_execution_start')).toHaveLength(0);
+    expect(records.filter(([type]) => type === 'tool_dispatch').map(([, data]) => data)).toEqual(
+      [1, 2, 3, 4].map((consecutiveErrors) => expect.objectContaining({
+        stage: 'preflight', outcome: 'rejected', success: false, consecutiveErrors,
+      })),
+    );
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     fileReadTracker.clear();

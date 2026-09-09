@@ -467,6 +467,8 @@ function createMockContext(overrides: Partial<RuntimeContext> = {}): RuntimeCont
 function createMockModules() {
   return {
     toolEngine: {
+      resetRepairGate: vi.fn(),
+      consecutiveErrors: 0,
       executeToolCalls: vi.fn(),
       executeSingleTool: vi.fn(),
     } as any,

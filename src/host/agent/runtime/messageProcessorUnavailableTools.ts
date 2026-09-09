@@ -1,3 +1,4 @@
+import { getToolAttemptTrace } from './toolAttemptTrace';
 // ============================================================================
 // handleUnavailableToolCalls — 处理「模型本轮请求了当前不可见/未解锁的工具」。
 //
@@ -141,6 +142,12 @@ export async function handleUnavailableToolCalls(
           metadata: { autoLoadedTools: loadedList, autoLoaded: true },
         };
       });
+      for (const result of recoveryResults) {
+        const call = toolCalls.find((candidate) => candidate.id === result.toolCallId);
+        if (!call) continue;
+        getToolAttemptTrace(ctx).begin(call);
+        getToolAttemptTrace(ctx).finish(call, result, false, 0);
+      }
       const toolMsg: Message = {
         id: contextAssembly.generateId(),
         role: 'tool',
@@ -231,6 +238,7 @@ export async function handleUnavailableToolCalls(
       duration: 0,
       metadata: {
         // telemetry 与 UI 可据此判断失败源头是流程性收窄而非工具真坏
+        skipped: !blocked,
         narrowedBy: guard?.targetFile ? 'artifact_repair' : strictBoundary ? 'strict_skill' : 'unavailable',
         artifactRepairGuard: {
           blocked: true,
@@ -244,6 +252,12 @@ export async function handleUnavailableToolCalls(
       },
     };
   });
+  for (const result of syntheticResults) {
+    const call = toolCalls.find((candidate) => candidate.id === result.toolCallId);
+    if (!call) continue;
+    getToolAttemptTrace(ctx).begin(call);
+    getToolAttemptTrace(ctx).finish(call, result, false, 0);
+  }
   const toolMsg: Message = {
     id: contextAssembly.generateId(),
     role: 'tool',

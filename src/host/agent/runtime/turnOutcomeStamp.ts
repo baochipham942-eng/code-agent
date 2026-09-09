@@ -1,3 +1,5 @@
+import { checkDocumentEvidenceClaims } from './documentEvidenceBoundary';
+import { readbackFileEvidence } from './fileEvidenceReadback';
 import type { Message, ToolResult } from '../../../shared/contract';
 import type { CompletionSummaryRecord } from '../../../shared/contract/completionSummary';
 import { makeEvidenceRef, type EvidenceRef } from '../../../shared/contract/evidence';
@@ -11,6 +13,7 @@ const logger = createLogger('TurnOutcomeStamp');
 
 export interface TurnOutcomeStampContext {
   sessionId: string;
+  workingDirectory?: string;
   messages: Message[];
   goalMode?: RuntimeContext['goalMode'];
   turnTrace: TurnTraceRecorder;
@@ -20,51 +23,59 @@ function successfulToolResults(messages: readonly Message[]): ToolResult[] {
   return messages.flatMap((message) => message.toolResults ?? []).filter((result) => result.success);
 }
 
-function genericEvidenceRefs(
+async function genericEvidenceRefs(
   messages: readonly Message[],
   summary: CompletionSummaryRecord | undefined,
-): EvidenceRef[] {
+  workingDirectory: string,
+): Promise<{ refs: EvidenceRef[]; problems: string[] }> {
   const refs: EvidenceRef[] = successfulToolResults(messages).map((result) => makeEvidenceRef({
     id: result.toolCallId,
     kind: 'tool',
     ref: `tool_execution:${result.toolCallId}`,
     source: 'tool_execution_event',
+    state: 'candidate',
   }));
 
-  for (const filePath of summary?.changedFiles ?? []) {
-    refs.push(makeEvidenceRef({ kind: 'file', ref: filePath, source: 'completion_summary' }));
-  }
-  for (const artifact of summary?.artifactRefs ?? []) {
-    const ref = artifact.path
-      ?? (artifact.artifactId ? `artifact:${artifact.artifactId}` : artifact.title);
-    if (!ref) continue;
-    refs.push(makeEvidenceRef({
-      kind: artifact.kind === 'file' ? 'file' : 'artifact',
-      ref,
-      source: 'completion_summary',
-    }));
+  const problems: string[] = [];
+  const paths = new Set([
+    ...(summary?.changedFiles ?? []),
+    ...(summary?.artifactRefs ?? []).flatMap((artifact) => artifact.path ? [artifact.path] : []),
+  ]);
+  const canonicalPaths = new Set<string>();
+  for (const filePath of paths) {
+    try {
+      const { evidence, documentText } = readbackFileEvidence(filePath, workingDirectory, 'completion_file_readback');
+      if (canonicalPaths.has(evidence.ref)) continue;
+      canonicalPaths.add(evidence.ref);
+      if (documentText !== undefined) problems.push(...checkDocumentEvidenceClaims(documentText, messages));
+      refs.push(evidence);
+    } catch {
+      problems.push(`COMPLETION_FILE_UNREADABLE: ${filePath}`);
+    }
   }
   for (const verification of summary?.verificationEvidence ?? []) {
+    if (!verification.success || verification.exitCode !== 0) continue;
     refs.push(makeEvidenceRef({
       id: verification.toolCallId,
       kind: 'test',
       ref: verification.outputPreview ?? verification.command,
       source: 'verification_output',
+      state: 'read',
     }));
   }
   for (const commitId of summary?.commitIds ?? []) {
-    refs.push(makeEvidenceRef({ kind: 'diff', ref: commitId, source: 'completion_summary' }));
+    refs.push(makeEvidenceRef({ kind: 'diff', ref: commitId, source: 'completion_summary', state: 'candidate' }));
   }
 
   const unique = new Map<string, EvidenceRef>();
   for (const ref of refs) unique.set(`${ref.kind}\0${ref.id}\0${ref.ref}`, ref);
-  return [...unique.values()];
+  return { refs: [...unique.values()], problems };
 }
 
 function latestGoalEvidence(events: readonly TraceEvent[]): EvidenceRef[] {
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const event = events[index];
-    if (event.type === 'goal_evidence_gate') return event.data.evidenceRefs;
+    if (event.type === 'goal_evidence_gate') return event.data.verdict === 'pass' ? event.data.evidenceRefs : [];
   }
   return [];
 }
@@ -98,7 +109,7 @@ async function buildTurnOutcome(
     };
   }
 
-  const evidenceRefs = genericEvidenceRefs(ctx.messages, summary);
+  const { refs: evidenceRefs, problems } = await genericEvidenceRefs(ctx.messages, summary, ctx.workingDirectory ?? process.cwd());
   const voiceDispatch = currentVoiceDispatch(ctx.messages);
   if (voiceDispatch) {
     if (terminal !== 'completed') {
@@ -118,9 +129,12 @@ async function buildTurnOutcome(
   }
   return {
     terminal,
-    verdict: evidenceRefs.length > 0 ? 'verified' : 'self_claimed',
+    // File readback proves delivery bytes, not the truth of claims inside them.
+    verdict: problems.length === 0 && !ctx.turnTrace.getEvents().some((event) => event.type === 'evidence_boundary') && evidenceRefs.some((ref) => ref.kind === 'test' && ref.freshness.state === 'read')
+      ? 'verified' : 'self_claimed',
     evidenceRefs,
     source: 'generic',
+    evidenceProblems: problems,
   };
 }
 

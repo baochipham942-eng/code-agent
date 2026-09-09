@@ -492,10 +492,10 @@ describe('NudgeManager', () => {
 
       const modified = manager.getModifiedFiles();
 
-      // All paths should be normalized (leading ./ and / stripped)
+      // Only ./ is removed: absolute paths must retain their root.
       expect(modified.has('src/app.ts')).toBe(true);
       expect(modified.has('src/utils.ts')).toBe(true);
-      expect(modified.has('src/index.ts')).toBe(true);
+      expect(modified.has('/src/index.ts')).toBe(true);
       expect(modified.size).toBe(3);
     });
   });

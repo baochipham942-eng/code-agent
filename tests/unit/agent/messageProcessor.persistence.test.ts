@@ -532,6 +532,35 @@ describe('MessageProcessor persistence', () => {
     expect(ctx.onEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'turn_end' }));
   });
 
+  it('persists field-specific evidence boundaries instead of unsupported final claims', async () => {
+    const ctx = {
+      // A local Read already happened; the desktop zero-tool gate is a separate contract.
+      stats: RunStatsState.forTest({ totalToolCallCount: 1 }), contextHealth: ContextHealthState.forTest(),
+      artifact: ArtifactState.forTest(), sessionId: 'boundary-session',
+      messages: [{ id: 'user', role: 'user' as const, content: '空间盘点', timestamp: 1 }],
+      control: ControlState.forTest(), modelConfig: { model: 'mimo-v2.5-pro' },
+      turn: TurnState.forTest(), turnTrace: { record: vi.fn() },
+      nudgeManager: { runNudgeChecks: vi.fn(), runOutputValidation: vi.fn() },
+      onEvent: vi.fn(), telemetryAdapter: { onTurnEnd: vi.fn() },
+    };
+    const addAndPersistMessage = vi.fn();
+    const processor = createProcessor(ctx as DeepPartial<RuntimeContext>, {
+      stripInternalFormatMimicry: (content: string) => content, generateId: () => 'final',
+      addAndPersistMessage, injectSystemMessage: vi.fn(), updateContextHealth: vi.fn(),
+    }, { emitTaskProgress: vi.fn(), emitTaskComplete: vi.fn(), tryParseTodosFromResponse: vi.fn() });
+    const content = '空间主人是 Neo 登录用户 owner，已实测确认。';
+    await processor.handleTextResponse({ type: 'text', content,
+      contentParts: [{ type: 'text', text: content }], finishReason: 'stop', truncated: false,
+    } as ModelResponse, true, 1, false, { endSpan: vi.fn() });
+    const saved = addAndPersistMessage.mock.calls.at(-1)?.[0];
+    expect(saved.content).toContain('空间归属待查');
+    expect(saved.content).not.toContain('已实测确认');
+    expect(JSON.stringify(saved.contentParts ?? [])).not.toContain('已实测确认');
+    expect(ctx.turnTrace.record).toHaveBeenCalledWith('evidence_boundary', {
+      problems: ['SPACE_OWNER_UNVERIFIED'], surface: 'final_response',
+    });
+  });
+
   it('persists truncated text before asking the next iteration to continue', async () => {
     const ctx = {
       stats: RunStatsState.forTest(),

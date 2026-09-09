@@ -1,3 +1,5 @@
+import { getToolAttemptTrace } from './toolAttemptTrace';
+import { checkDocumentEvidenceClaims, formatDocumentEvidenceBoundary } from './documentEvidenceBoundary';
 import { hasUntrustedMemoryInput } from '../../memory/automaticMemoryPolicy';
 import { cancelTimeWakesOnUserReturn } from '../../services/wake/userReturn';
 // ============================================================================
@@ -456,7 +458,12 @@ export class MessageProcessor {
       });
     }
 
-    const finalContent = gated.content;
+    const claimProblems = checkDocumentEvidenceClaims(gated.content, this.ctx.messages);
+    // Reject unsupported final claims as well as file writes; never stream a verified stamp from this text.
+    const finalContent = claimProblems.length > 0
+      ? formatDocumentEvidenceBoundary(claimProblems)
+      : gated.content;
+    if (claimProblems.length > 0) this.ctx.turnTrace.record('evidence_boundary', { problems: claimProblems, surface: 'final_response' });
     if (desktopClaimGate.action === 'warn') {
       logger.warn('[DesktopActionClaimGate] warning prepended to text response without desktop tool evidence', {
         reason: desktopClaimGate.reason,
@@ -464,7 +471,7 @@ export class MessageProcessor {
       });
     }
     const assistantMessage = this.buildAssistantMessageFromResponse(response, finalContent);
-    if (handoffTail.found && assistantMessage.contentParts?.length) assistantMessage.contentParts = [{ type: 'text', text: finalContent }];
+    if ((handoffTail.found || claimProblems.length > 0) && assistantMessage.contentParts?.length) assistantMessage.contentParts = [{ type: 'text', text: finalContent }];
 
     // Artifact extraction
     const artifacts = extractArtifacts(finalContent);
@@ -555,6 +562,12 @@ export class MessageProcessor {
 
     const deniedToolCalls = toolCalls.filter((toolCall) => isToolDeniedForRun(this.ctx, toolCall.name));
     if (deniedToolCalls.length > 0) {
+      for (const call of toolCalls) {
+        const blocked = deniedToolCalls.some((denied) => denied.id === call.id);
+        getToolAttemptTrace(this.ctx).begin(call);
+        getToolAttemptTrace(this.ctx).finish(call, { toolCallId: call.id, success: false,
+          error: blocked ? 'TOOL_DISABLED_FOR_RUN' : 'TOOL_BATCH_SKIPPED', metadata: { skipped: !blocked } }, false, 0);
+      }
       this.guardState.toolCallRetryCount++;
       const deniedNames = Array.from(new Set(deniedToolCalls.map((toolCall) => toolCall.name))).join(', ');
       this.contextAssembly.injectSystemMessage(

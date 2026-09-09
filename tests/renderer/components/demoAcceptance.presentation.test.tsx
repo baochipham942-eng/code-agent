@@ -9,6 +9,7 @@ import { getToolPreflightKind, toolPreflightCopy } from '../../../src/renderer/u
 import { humanizeToolFailureReason } from '../../../src/renderer/utils/toolExecutionPresentation';
 import { wrapFilePathsInBackticks } from '../../../src/renderer/components/features/chat/MessageBubble/filePathProcessor';
 import { projectTurns } from '../../../src/renderer/hooks/useTurnProjection';
+import { TraceNodeRenderer } from '../../../src/renderer/components/features/chat/TraceNodeRenderer';
 
 vi.mock('../../../src/renderer/hooks/useI18n', () => ({ useI18n: () => ({ t: zh, language: 'zh' }) }));
 const failed = (name: string, error: string, metadata = {}): ToolCall => ({ id: 'x', name, arguments: { file_path: '/workspace/report.md' }, result: { toolCallId: 'x', success: false, error, metadata } });
@@ -72,7 +73,11 @@ describe('demo acceptance: truthful historical presentation', () => {
       { id: 'r', role: 'assistant', content: '', timestamp: 3, toolCalls: [{ id: 'read', name: 'Read', arguments: { file_path: '/workspace/report.md' }, result: { toolCallId: 'read', success: true, output: 'a' } }] },
       { id: 'b', role: 'assistant', content: '', timestamp: 4, toolCalls: [{ id: 'success', name: 'Edit', arguments: later, result: { toolCallId: 'success', success: true, output: 'ok' } }] },
     ];
-    expect(projectTurns(messages, 'session', false, []).turns.flatMap((turn) => turn.nodes).find((node) => node.toolCall?.id === 'x')?.toolCall?.recovered).toBe(true);
+    const node = projectTurns(messages, 'session', false, []).turns.flatMap((turn) => turn.nodes).find((item) => item.toolCall?.id === 'x')!;
+    expect(node.toolCall?.recovered).toBe(true);
+    const html = renderToStaticMarkup(<TraceNodeRenderer node={node} />);
+    expect(html).toContain(zh.deliveryExperience.recovered);
+    expect(html).toContain(zh.deliveryExperience.readRequired);
   });
 
 });

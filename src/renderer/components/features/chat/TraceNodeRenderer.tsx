@@ -488,7 +488,9 @@ const ToolCallNode: React.FC<{ node: TraceNode; sessionId?: string }> = ({ node,
       error: node.toolCall.success === false ? node.toolCall.result : undefined,
       duration: node.toolCall.duration,
       outputPath: node.toolCall.outputPath,
-      metadata: node.toolCall.metadata,
+      metadata: node.toolCall.recovered
+        ? { ...node.toolCall.metadata, recovered: true }
+        : node.toolCall.metadata,
     } : undefined,
     liveOutput: node.toolCall.liveOutput,
   };

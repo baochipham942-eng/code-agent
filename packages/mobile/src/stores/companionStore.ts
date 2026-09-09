@@ -10,7 +10,10 @@ interface Saved {
   version: 1; publicKey: string; secretKey: string;
   candidate?: { endpoint: string; hostKey: string }; binding?: LanBinding; pending?: CompanionCommand;
 }
+type ConnectionError = 'connectionQrInvalid' | 'connectionScanFailed' | 'connectionRejected' | 'connectionUnavailable' | 'connectionFailed';
+
 interface State {
+  connectionError: ConnectionError | null;
   status: 'unpaired' | 'connecting' | 'connected' | 'offline' | 'storageError' | 'rejected';
   binding: LanBinding | null; sessionId: string | null; pending: boolean; busy: boolean;
   events: CompanionEvent[]; runId: string | null; terminal: 'complete' | 'stopped' | 'failed' | null;
@@ -64,12 +67,20 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
     };
     const safely = async (work: () => Promise<void>) => {
       if (get().busy) return;
-      set({ busy: true });
-      try { await work(); } catch { client?.close(); if (get().status !== 'storageError') set({ status: 'offline' }); }
+      set({ busy: true, connectionError: null });
+      try { await work(); } catch (error) {
+        client?.close();
+        const code = error instanceof Error ? error.message : '';
+        const connectionError: ConnectionError = code === 'COMPANION_INVALID_INVITATION' ? 'connectionQrInvalid'
+          : code === 'COMPANION_SCAN_FAILED' ? 'connectionScanFailed'
+          : code === 'COMPANION_PAIRING_REJECTED' ? 'connectionRejected'
+          : code === 'COMPANION_NETWORK_UNAVAILABLE' ? 'connectionUnavailable' : 'connectionFailed';
+        if (get().status !== 'storageError') set({ status: 'offline', connectionError });
+      }
       finally { set({ busy: false }); }
     };
     return {
-      status: 'unpaired', binding: null, sessionId: null, busy: false, pending: false, events: [], runId: null, terminal: null,
+      connectionError: null, status: 'unpaired', binding: null, sessionId: null, busy: false, pending: false, events: [], runId: null, terminal: null,
       hydrate: async () => {
         if (!port || get().busy) return;
         set({ busy: true });
@@ -86,7 +97,9 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
       },
       pair: () => safely(async () => {
         if (!port || saved?.pending) return;
-        const raw = await port.scan(); const invitation = parseInvitation(raw);
+        const raw = await port.scan().catch(() => { throw new Error('COMPANION_SCAN_FAILED'); });
+        let invitation;
+        try { invitation = parseInvitation(raw); } catch { throw new Error('COMPANION_INVALID_INVITATION'); }
         set({ status: 'connecting' });
         if (!saved) {
           const identity = createIdentity();
@@ -153,7 +166,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
             const record = await client.request({ action: 'status', commandId: saved.pending.commandId }) as CompanionCommandRecord | null;
             if (record) await accepted(record);
           }
-        } catch { client?.close(); if (get().status !== 'storageError') set({ status: 'offline' }); }
+        } catch { client?.close(); if (get().status !== 'storageError') set({ status: 'offline', connectionError: 'connectionUnavailable' }); }
         finally { syncing = false; }
       },
     };

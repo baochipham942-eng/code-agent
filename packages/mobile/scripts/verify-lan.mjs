@@ -22,7 +22,11 @@ await build({ stdin: { contents: `
       executions++;
       const runId = 'fixture-run-' + executions;
       gateway.publish(command.sessionId, 'message', { id: command.commandId, role: 'user', content: command.payload.text, runId });
+      gateway.publish(command.sessionId, 'message_delta', { messageId: runId + '-stream', role: 'assistant', text: 'LAN fixture response ' + executions, op: 'append', runId });
       gateway.publish(command.sessionId, 'message', { id: runId, role: 'assistant', content: 'LAN fixture response ' + executions, runId });
+      gateway.publish(command.sessionId, 'message_delta', { messageId: runId + '-stream', role: 'assistant', text: ' late duplicate', op: 'append', runId });
+      gateway.publish(command.sessionId, 'message_snapshot', { messageId: runId + '-next', content: 'Follow-up ' + executions, runId });
+      gateway.publish(command.sessionId, 'message', { id: runId + '-final-next', role: 'assistant', content: 'Follow-up ' + executions, runId });
       gateway.publish(command.sessionId, 'agent_complete', { runId });
       return { state: 'accepted', result: { runId } };
     }});
@@ -87,6 +91,9 @@ try {
   await page.getByRole('heading', { name: '已连接，可以发任务', exact: true }).waitFor();
   await page.getByTestId('draft').fill('browser-private-message'); await page.getByTestId('send').click();
   await page.getByText('LAN fixture response 1', { exact: true }).waitFor();
+  assert.equal(await page.getByText('LAN fixture response 1', { exact: true }).count(), 1);
+  assert.equal(await page.getByText('Follow-up 1', { exact: true }).count(), 1);
+  assert.equal(await page.locator('.lan-message:not(.from-user)').count(), 2);
   assert.equal(await page.getByTestId('draft').inputValue(), ''); assert.equal(fixture.count(), 1); checks.push('send-ack-and-result');
   await page.screenshot({ path: resolve(directory, 'connected.png') });
   loseReceipt = true;
@@ -97,7 +104,7 @@ try {
   assert.equal(await page.getByTestId('draft').inputValue(), ''); assert.equal(fixture.count(), 2); checks.push('reload-reconciles-without-duplicate');
   assert(!wire.join('\n').includes('browser-private')); assert(!wire.join('\n').includes('LAN fixture response')); checks.push('browser-wire-encrypted');
   fixture.server.revoke(fixture.gateway.pairedDevices()[0].deviceId);
-  await page.getByText('电脑尚未连接，草稿已保留', { exact: true }).first().waitFor(); checks.push('revocation-disconnects');
+  await page.getByText('无法连接电脑。请确认两台设备在同一 Wi-Fi，或电脑连接了手机热点，并允许 Neo 访问本地网络。换网后需重新扫码。', { exact: true }).first().waitFor(); checks.push('revocation-disconnects');
   assert.deepEqual(pageErrors, []); checks.push('no-browser-errors');
   writeFileSync(resolve(directory, 'result.json'), JSON.stringify({ checks, passed: checks.length, failed: 0, skipped: 0,
     scope: 'Chromium + production mobile UI/Noise client + real HTTP/SQLite; scan/storage bridged test ports, engine dispatch fixture, no native camera/keychain evidence' }, null, 2));

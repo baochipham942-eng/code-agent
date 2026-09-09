@@ -201,6 +201,22 @@ describe('LAN companion: real HTTP + Noise + SQLite', () => {
     expect(await client.request({ action: 'command', command: long })).toMatchObject({ kind: 'accepted' });
     expect(executions).toBe(1);
   });
+  it.each([
+    ['invalid QR', 'not-json', undefined, 'connectionQrInvalid'],
+    ['expired QR', 'expired', undefined, 'connectionQrInvalid'],
+    ['network failure', 'valid', 'COMPANION_NETWORK_UNAVAILABLE', 'connectionUnavailable'],
+    ['host rejection', 'valid', 'COMPANION_PAIRING_REJECTED', 'connectionRejected'],
+  ])('reports actionable %s without accepting work or revealing raw errors', async (_name, qr, failure, expected) => {
+    const invitation = server.invite(['shared']);
+    const send = vi.fn(async () => { throw new Error(failure); });
+    const phone = createCompanionStore({ read: async () => null, write: async () => {},
+      scan: async () => qr === 'not-json' ? qr : JSON.stringify({ ...invitation, ...(qr === 'expired' ? { expiresAt: 1 } : {}) }),
+      post: send }, () => {});
+    await phone.getState().pair();
+    expect(phone.getState()).toMatchObject({ status: 'offline', connectionError: expected, pending: false });
+    if (!failure) expect(send).not.toHaveBeenCalled();
+    expect(executions).toBe(0);
+  });
   it('does not resurrect a connection when pairing completes after the phone closes it', async () => {
     const closing = new LanCompanionClient(phoneIdentity, async (url, body) => {
       const result = await post(url, body);

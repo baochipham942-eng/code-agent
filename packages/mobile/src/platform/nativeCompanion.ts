@@ -27,7 +27,8 @@ export const nativeCompanionPort: NonNullable<PlatformPorts['companion']> = {
     if (!['/v1/hello', '/v1/finish', '/v1/exchange'].includes(target.pathname) || target.search || target.hash || target.username || target.password) throw new Error('COMPANION_INVALID_LAN_ENDPOINT');
     const response = await CapacitorHttp.post({ url, headers: { 'content-type': 'application/json' }, data: body,
       disableRedirects: true, connectTimeout: L.requestTimeoutMs, readTimeout: L.requestTimeoutMs, responseType: 'json',
-    });
+    }).catch(() => { throw new Error('COMPANION_NETWORK_UNAVAILABLE'); });
+    if (response.url === url && response.status === 403 && target.pathname !== '/v1/exchange') throw new Error('COMPANION_PAIRING_REJECTED');
     if (response.status !== 200 || response.url !== url) throw new Error('COMPANION_NETWORK_UNAVAILABLE');
     return response.data as unknown;
   },

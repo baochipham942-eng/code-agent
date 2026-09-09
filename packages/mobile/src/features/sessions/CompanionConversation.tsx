@@ -4,17 +4,32 @@ import type { messages } from '../../i18n';
 
 export function CompanionConversation({ events, sessionId, text, disabled, respond }: { events: CompanionEvent[]; sessionId: string; text: ReturnType<typeof messages>; disabled: boolean; respond: (requestId: string, decision: 'approved' | 'rejected') => Promise<void> }) {
   const approvals = new Map<string, Record<string, unknown>>();
+  const activeStreams = new Map<string, string>();
+  const committedStreams = new Set<string>();
+  const aliases = new Map<string, string>();
   const rows = new Map<string, { role: string; content: string }>();
   for (const event of events) {
     if (event.sessionId !== sessionId) continue;
     const p = event.payload;
     if (event.kind === 'approval' && typeof p.requestId === 'string') approvals.set(p.requestId, { ...approvals.get(p.requestId), ...p });
-    const id = String(p.id ?? p.messageId ?? p.turnId ?? p.runId ?? event.eventId);
-    if (event.kind === 'message' && typeof p.content === 'string') rows.set(id, { role: String(p.role), content: p.content });
-    else if (event.kind === 'message_snapshot' && typeof p.content === 'string') rows.set(id, { role: 'assistant', content: p.content });
-    else if (event.kind === 'message_delta' && typeof p.text === 'string') {
-      const old = rows.get(id)?.content ?? '';
-      rows.set(id, { role: 'assistant', content: p.op === 'append' ? old + p.text : p.text });
+    const run = String(p.runId ?? sessionId);
+    const id = `${run}:${String(p.id ?? p.messageId ?? p.turnId ?? event.eventId)}`;
+    if (event.kind === 'message' && typeof p.content === 'string') {
+      // The engine's durable message ID can differ from its streamed turn ID.
+      const stream = p.role === 'assistant' ? activeStreams.get(run) : undefined;
+      const key = aliases.get(id) ?? stream ?? id;
+      rows.set(key, { role: String(p.role), content: p.content });
+      if (stream) { aliases.set(id, key); committedStreams.add(stream); activeStreams.delete(run); }
+    } else if (event.kind === 'message_snapshot' || event.kind === 'message_delta') {
+      const key = aliases.get(id) ?? id;
+      if (committedStreams.has(key)) continue;
+      if (event.kind === 'message_snapshot' && typeof p.content === 'string') {
+        activeStreams.set(run, key); rows.set(key, { role: 'assistant', content: p.content });
+      } else if (event.kind === 'message_delta' && typeof p.text === 'string') {
+        activeStreams.set(run, key);
+        const old = rows.get(key)?.content ?? '';
+        rows.set(key, { role: 'assistant', content: p.op === 'append' ? old + p.text : p.text });
+      }
     }
   }
   return <div className="lan-messages" aria-label={text.history} aria-live="polite">

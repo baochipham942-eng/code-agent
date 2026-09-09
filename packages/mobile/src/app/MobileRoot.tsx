@@ -129,7 +129,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
           disabled={companion.busy || companion.pending || companion.status !== 'connected'} respond={companion.respond} />
         : <div className="welcome"><NeoBrandMark /><h1>{companion.status === 'connected' ? text.connectedReady : text.welcome}</h1>{companion.status === 'connected' && <p className="connection-next">{text.connectedNext}</p>}</div>}
       <div className="composer-area">
-        {companion.binding && <p role="status" className="caption">{companion.pending ? text.pendingCommand : companion.status === 'connected' ? text.connected : companion.status === 'connecting' ? text.connecting : companion.status === 'storageError' ? text.secureStorageError : companion.status === 'rejected' ? text.rejected : text.unconnected}</p>}
+        {companion.binding && <p role="status" className="caption">{companion.pending ? text.pendingCommand : companion.status === 'connected' ? text.connected : companion.status === 'connecting' ? text.connecting : companion.status === 'storageError' ? text.secureStorageError : companion.status === 'rejected' ? text.rejected : companion.connectionError ? text[companion.connectionError] : text.unconnected}</p>}
         {companion.terminal && <p role="status" className="caption">{text[companion.terminal]}</p>}
         {companion.runId && <button disabled={companion.busy || companion.pending || companion.status !== 'connected'} onClick={() => void companion.stop()}>{text.stop}</button>}
         {fixtures && <p className="caption">{text.fixtureNotice}</p>}
@@ -171,7 +171,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
       {currentPage === 'remote' ? <div className="settings-group">
         <p>{text.lanHint}</p>
         {companion.status === 'connected' ? <div className="connection-success" role="status"><span className="connection-check" aria-hidden="true">✓</span><strong>{text.connected}</strong><p>{text.connectedNext}</p></div>
-          : <p role="status">{companion.status === 'connecting' ? text.connecting : companion.status === 'storageError' ? text.secureStorageError : text.unconnected}</p>}
+          : <p role="status">{companion.status === 'connecting' ? text.connecting : companion.status === 'storageError' ? text.secureStorageError : companion.connectionError ? text[companion.connectionError] : text.unconnected}</p>}
         {companion.status === 'connected' && <button className="primary" onClick={() => state.navigate('new')}>{text.enterConversation}</button>}
         {!ports.companion && <p>{text.nativeConnectionOnly}</p>}
         <button className={companion.status === 'connected' ? undefined : 'primary'} disabled={!ports.companion || companion.busy || companion.pending} onClick={() => void pairAndOpenConversation()}>{text.scan}</button>

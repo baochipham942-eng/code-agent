@@ -44,6 +44,7 @@ import { applyPublishInfoToDeliverableCard, applyShareInfoToDeliverableCard } fr
 import { ShareLinkPanel } from './ShareLinkPanel';
 
 interface Props {
+  surface?: 'conversation' | 'artifact';
   cards: DeliverableCardView[];
   className?: string;
   renderCardDetail?: (card: DeliverableCardView) => React.ReactNode;
@@ -187,6 +188,7 @@ function secondaryActionLabel(
 }
 
 interface CardRowProps {
+  surface: 'conversation' | 'artifact';
   card: DeliverableCardView;
   labels: ReturnType<typeof useI18n>['t']['deliverable'];
   openCard: (card: DeliverableCardView) => void;
@@ -195,7 +197,7 @@ interface CardRowProps {
   detail?: React.ReactNode;
 }
 
-const CardRow: React.FC<CardRowProps> = ({ card, labels, openCard, runSecondaryAction, requestPublish, detail }) => {
+const CardRow: React.FC<CardRowProps> = ({ card, labels, openCard, runSecondaryAction, requestPublish, detail, surface }) => {
   const { t } = useI18n();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -221,7 +223,7 @@ const CardRow: React.FC<CardRowProps> = ({ card, labels, openCard, runSecondaryA
   const clickable = card.openTarget.kind !== 'none';
   const cardChrome = 'rounded-md border border-border-muted bg-surface-subtle transition-colors';
 
-  const allActions = card.secondaryActions?.filter((action) => !action.disabled) ?? [];
+  const allActions = surface === 'artifact' ? card.secondaryActions?.filter((action) => !action.disabled) ?? [] : [];
   const publishAction = allActions.find(
     (action): action is Extract<DeliverableSecondaryAction, { kind: 'publish-version' }> => action.kind === 'publish-version',
   );
@@ -251,8 +253,8 @@ const CardRow: React.FC<CardRowProps> = ({ card, labels, openCard, runSecondaryA
         <div className="flex min-w-0 flex-1 items-center gap-2 px-2.5 py-1.5 text-left">
           {iconForKind(card.kind)}
           <div className="min-w-0 flex-1 truncate text-xs font-medium text-zinc-100">{card.title}</div>
-          <DeliverablePublishBadge state={card.publishState} testId={`deliverable-publish-state-${card.id}`} />
-          {card.shareLinkInfo?.stale && card.shareLinkInfo.share && !card.shareLinkInfo.share.revokedAt && (
+          {surface === 'artifact' && <DeliverablePublishBadge state={card.publishState} testId={`deliverable-publish-state-${card.id}`} />}
+          {surface === 'artifact' && card.shareLinkInfo?.stale && card.shareLinkInfo.share && !card.shareLinkInfo.share.revokedAt && (
             <span className="max-w-48 truncate text-[10px] text-badge-warning" data-testid={`deliverable-share-stale-${card.id}`}>
               {labels.shareLink.stale.replace('{version}', String(card.shareLinkInfo.latestPublishedVersion ?? card.shareLinkInfo.share.pushedVersion))}
             </span>
@@ -341,7 +343,7 @@ const CardRow: React.FC<CardRowProps> = ({ card, labels, openCard, runSecondaryA
   );
 };
 
-export const DeliverableCardList: React.FC<Props> = ({ cards, className = 'mt-2', renderCardDetail }) => {
+export const DeliverableCardList: React.FC<Props> = ({ cards, className = 'mt-2', renderCardDetail, surface = 'conversation' }) => {
   const { t } = useI18n();
   const deliverableLabels = t.deliverable;
   const openPreview = useAppStore((state) => state.openPreview);
@@ -641,6 +643,7 @@ export const DeliverableCardList: React.FC<Props> = ({ cards, className = 'mt-2'
           <CardRow
             key={card.id}
             card={card}
+            surface={surface}
             labels={deliverableLabels}
             openCard={openCard}
             runSecondaryAction={runSecondaryAction}

@@ -529,7 +529,7 @@ export const WorkspacePreviewPanel: React.FC<WorkspacePreviewPanelProps> = ({
                   {/* 当前产物的元数据与四个动作（预览/复制/归档/删除）——之前每个文件行都常驻一份，
                       现在只对当前那个、且要点开才出现。产物只有一个时这里也照样有，不依赖切换器。 */}
                   {selectedDeliverableCard && (
-                    <DeliverableCardList cards={[selectedDeliverableCard]} className="" />
+                    <DeliverableCardList surface="artifact" cards={[selectedDeliverableCard]} className="" />
                   )}
                   {selected.designBrief && (
                     <div>

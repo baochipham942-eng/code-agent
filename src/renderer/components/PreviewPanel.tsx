@@ -25,6 +25,7 @@ import {
   type HtmlLocalitySelectionController,
 } from '../utils/htmlLocality';
 import { DeliverableStatusBadge } from './DeliverableStatusBadge';
+import { PublishVersionButton } from './PublishVersionButton';
 import { DeliverablePublishBadge } from './DeliverablePublishBadge';
 import { ArtifactFollowToolbar, ArtifactPreviewLoading } from './ArtifactFollowToolbar';
 import { ArtifactSourceEditor } from './ArtifactSourceEditor';
@@ -817,6 +818,11 @@ export const PreviewPanel: React.FC = () => {
               </div>
             )}
           </div>
+        )}
+        {!isVirtual && previewFilePath && publishInfo && !viewingPublishedVersion && (
+          <PublishVersionButton key={previewFilePath} filePath={previewFilePath}
+            title={previewFilePath.split('/').pop() ?? previewFilePath}
+            info={publishInfo} disabled={isDirty || isLoading} onPublished={setPublishInfo} />
         )}
         {!isVirtual && (
           <button /* ds-allow:button: compact file-header icon action */

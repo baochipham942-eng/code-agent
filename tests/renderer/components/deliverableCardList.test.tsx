@@ -145,7 +145,7 @@ afterEach(cleanup);
 // ⇒ 要改本组断言的方向，必须先拿到爸的新拍板并在 PR 里引用单号，不许顺手反转。
 describe('DeliverableCardList 卡面降噪', () => {
   it('卡面只保留文件名与动作，不显示第二行、验证/质量徽标和眼睛图标', () => {
-    const { container } = render(<DeliverableCardList cards={[baseCard({
+    const { container } = render(<DeliverableCardList surface="artifact" cards={[baseCard({
       title: '报告',
       description: 'Document · Write · Created',
       status: 'verified',
@@ -173,7 +173,7 @@ describe('DeliverableCardList 卡面降噪', () => {
     ['unverified', '未检查'],
     ['failed', '有问题'],
   ] as const)('evidencePack.status=%s 时卡面仍不出现「%s」徽章', (status, label) => {
-    render(<DeliverableCardList cards={[baseCard({
+    render(<DeliverableCardList surface="artifact" cards={[baseCard({
       status,
       evidencePack: { status, summary: label, refs: [] },
     })]} />);
@@ -186,7 +186,7 @@ describe('DeliverableCardList 卡面降噪', () => {
 describe('DeliverableCardList 主体点击与动作收敛', () => {
   it('点击卡片主体打开文件预览', () => {
     const cards = [baseCard({ title: '报告' })];
-    render(<DeliverableCardList cards={cards} />);
+    render(<DeliverableCardList surface="artifact" cards={cards} />);
 
     fireEvent.click(screen.getByRole('button', { name: '打开文件预览: 报告' }));
     expect(mocks.setWorkbenchCollapsed).toHaveBeenCalledWith(false);
@@ -202,7 +202,7 @@ describe('DeliverableCardList 主体点击与动作收敛', () => {
         openTarget: { kind: 'workspace-preview', itemId: 'artifact:ui' },
       }),
     ];
-    render(<DeliverableCardList cards={cards} />);
+    render(<DeliverableCardList surface="artifact" cards={cards} />);
 
     fireEvent.click(screen.getByRole('button', { name: '在工作区预览中打开: UI 原型' }));
     expect(mocks.openContentPreview).toHaveBeenCalledWith({
@@ -212,6 +212,20 @@ describe('DeliverableCardList 主体点击与动作收敛', () => {
       format: 'html',
     });
     expect(mocks.openWorkspacePreview).not.toHaveBeenCalled();
+  });
+
+  it('conversation cards keep preview and omit all publication controls and menus', () => {
+    const card = baseCard({ title: '报告', secondaryActions: [
+      { kind: 'publish-version', label: 'publish', path: '/workspace/report.md', title: 'report.md' },
+      { kind: 'share-link', label: 'share', path: '/workspace/report.md', title: 'report.md' },
+    ] });
+    render(<DeliverableCardList cards={[card]} />);
+    expect(screen.queryByText('草稿')).toBeNull();
+    expect(screen.queryByRole('button', { name: '发布这一版: 报告' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '更多: 报告' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '查看成品: 报告' }));
+    expect(mocks.openPreview).toHaveBeenCalled();
+    expect(mocks.invokeDomain.mock.calls.some((call) => call[1] === 'publishVersion')).toBe(false);
   });
 
   it('发布按钮常驻，归档和其他动作收进更多菜单', () => {
@@ -226,7 +240,7 @@ describe('DeliverableCardList 主体点击与动作收敛', () => {
         ],
       }),
     ];
-    render(<DeliverableCardList cards={cards} />);
+    render(<DeliverableCardList surface="artifact" cards={cards} />);
 
     expect(screen.getByRole('button', { name: '发布这一版: 报告' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: '归档到资料库: 报告' })).toBeNull();
@@ -249,7 +263,7 @@ describe('DeliverableCardList 主体点击与动作收敛', () => {
         ],
       }),
     ];
-    render(<DeliverableCardList cards={cards} />);
+    render(<DeliverableCardList surface="artifact" cards={cards} />);
 
     fireEvent.click(screen.getByRole('button', { name: '更多: 报告' }));
     fireEvent.click(screen.getByRole('menuitem', { name: '复制路径或链接: 报告' }));
@@ -260,7 +274,7 @@ describe('DeliverableCardList 主体点击与动作收敛', () => {
 
   it('点击菜单里的归档不冒泡到卡片预览', () => {
     mocks.addLibraryItem.mockResolvedValue({ title: 'report.md' });
-    render(<DeliverableCardList cards={[baseCard({
+    render(<DeliverableCardList surface="artifact" cards={[baseCard({
       title: '报告',
       secondaryActions: [
         { kind: 'archive-to-library', label: 'archive', path: '/workspace/report.md', title: 'report.md' },
@@ -283,7 +297,7 @@ describe('DeliverableCardList 主体点击与动作收敛', () => {
         ],
       }),
     ];
-    render(<DeliverableCardList cards={cards} />);
+    render(<DeliverableCardList surface="artifact" cards={cards} />);
 
     fireEvent.click(screen.getByRole('button', { name: '更多: 报告' }));
     expect(screen.getByRole('menuitem', { name: '在文件夹中显示: 报告' })).toBeTruthy();
@@ -303,7 +317,7 @@ describe('DeliverableCardList 主体点击与动作收敛', () => {
     ];
     render(
       <div>
-        <DeliverableCardList cards={cards} />
+        <DeliverableCardList surface="artifact" cards={cards} />
         <button type="button">外部</button>
       </div>,
     );
@@ -324,7 +338,7 @@ describe('DeliverableCardList 主体点击与动作收敛', () => {
         ],
       }),
     ];
-    render(<DeliverableCardList cards={cards} />);
+    render(<DeliverableCardList surface="artifact" cards={cards} />);
 
     expect(screen.queryByRole('button', { name: '更多: 报告' })).toBeNull();
   });
@@ -338,7 +352,7 @@ describe('DeliverableCardList 主体点击与动作收敛', () => {
         ],
       }),
     ];
-    render(<DeliverableCardList cards={cards} />);
+    render(<DeliverableCardList surface="artifact" cards={cards} />);
 
     expect(screen.queryByRole('button', { name: '归档到资料库: 报告' })).toBeNull();
     expect(screen.getByRole('button', { name: '更多: 报告' })).toBeTruthy();
@@ -353,7 +367,7 @@ describe('DeliverableCardList 主体点击与动作收敛', () => {
         ],
       }),
     ];
-    render(<DeliverableCardList cards={cards} />);
+    render(<DeliverableCardList surface="artifact" cards={cards} />);
 
     fireEvent.click(screen.getByRole('button', { name: '更多: 报告' }));
     fireEvent.click(screen.getByRole('menuitem', { name: '在文件夹中显示: 报告' }));
@@ -375,7 +389,7 @@ describe('DeliverableCardList 主体点击与动作收敛', () => {
       }
       return undefined;
     });
-    render(<DeliverableCardList cards={[baseCard({
+    render(<DeliverableCardList surface="artifact" cards={[baseCard({
       title: '报告',
       secondaryActions: [
         { kind: 'publish-version', label: 'publish', path: '/workspace/report.md', title: 'report.md' },

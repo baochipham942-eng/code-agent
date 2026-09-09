@@ -36,7 +36,7 @@ import { SessionRecapBanner } from './features/chat/SessionRecapBanner';
 import { ForkSourceHint } from './features/chat/ForkSourceHint';
 import { ChatTraceFallback } from './features/chat/ChatTraceFallback';
 import { ErrorBoundary } from './ErrorBoundary';
-import { ActiveConversationRewindBanner } from './features/chat/ActiveConversationRewindBanner';
+import { SessionHistoryBanners } from './features/chat/SessionHistoryBanners';
 import { ChatInput } from './features/chat/ChatInput';
 import { applyVoicePartialsToProjection } from '../utils/voicePartialOverlay';
 import { useVoiceLiveRuntime } from '../hooks/useVoiceLiveRuntime';
@@ -128,6 +128,7 @@ export const ChatView: React.FC = () => {
     hasOlderMessages,
     isLoading: isSessionLoading,
     isHydratingSession,
+    error: sessionLoadError,
     isCreatingSession,
     isLoadingOlder,
     loadOlderMessages,
@@ -627,6 +628,7 @@ export const ChatView: React.FC = () => {
   // @neo 提交分支已移除（2026-07-29 拍板）：输入框不再有工作卡/续接交互，
   // @neo 字样按普通文本消息发送；工作卡从 Neo 协同页发起。
   const handleSendEnvelope = useCallback(async (envelope: ConversationEnvelope): Promise<boolean> => {
+    if (useSessionStore.getState().error) return false;
     const clientMessageId = envelope.clientMessageId ?? generateMessageId();
     const feedbackSessionId = envelope.sessionId ?? currentSessionId;
     const outboundEnvelope = { ...envelope, clientMessageId };
@@ -948,27 +950,7 @@ export const ChatView: React.FC = () => {
           interruptionPointInViewport={streamSnapshot ? interruptionPointInViewport : false}
         />
 
-        <ActiveConversationRewindBanner
-          sessionId={currentSessionId}
-          refreshToken={rewindRefreshToken}
-          disabled={effectiveIsProcessing}
-          onRestored={(result) => {
-            setMessages(result.activeMessages);
-            if (
-              result.state === 'success'
-              && result.failed.length === 0
-              && result.done.length === 0
-              && result.restoredMessageCount === 0
-            ) return;
-            const restored = t.chat.rewindRestored.replace(
-              '{count}',
-              String(result.restoredMessageCount),
-            );
-            const message = `${restored} ${t.chat.turnCheckoutExternalEffects}`;
-            if (result.state === 'success') toast.success(message);
-            else toast.warning(`${t.chat.turnCheckoutNoteRedoPartial} ${message}`);
-          }}
-        />
+        <SessionHistoryBanners sessionId={currentSessionId} refreshToken={rewindRefreshToken} disabled={effectiveIsProcessing} />
 
         <SurfaceExecutionChatPanel conversationId={currentSessionId} />
 
@@ -986,7 +968,7 @@ export const ChatView: React.FC = () => {
             // 冷启动未定会话 → 空白占位。加载中绝不能误渲染成空态/欢迎页。
             <EmptySessionArea
               isHydratingSession={isHydratingSession}
-              settled={!!currentSessionId && !isSessionLoading}
+              settled={!!currentSessionId && !isSessionLoading && !sessionLoadError}
               welcome={
                 <NewSessionWelcome
                   onSend={handleSendMessage}
@@ -1108,7 +1090,7 @@ export const ChatView: React.FC = () => {
           {/* /goal 运行进度条（独立一行，仅 goal 运行中显示） */}
           <GoalStatusBar />
 
-          <ChatInput
+          {!sessionLoadError && <ChatInput
             ref={chatInputRef}
             onSend={handleSendEnvelope}
             onSteer={handleSteerEnvelope}
@@ -1119,7 +1101,7 @@ export const ChatView: React.FC = () => {
             onStop={cancel}
             hasPlan={false}
             placeholder={currentSessionId === skippedQuestionSessionId ? t.userQuestion.skippedPlaceholder : undefined}
-          />
+          />}
         </div>
       </div>
 

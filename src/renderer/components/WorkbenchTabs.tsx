@@ -518,7 +518,7 @@ export const WorkbenchTabs: React.FC<{ children?: React.ReactNode; focusable?: b
         focused={focusable ? workbenchFocused : undefined}
         onToggleFocus={focusable ? () => setWorkbenchFocused(!workbenchFocused) : undefined}
         focusEnterLabel={focusable ? t.workbenchTabs.focusEnter : undefined}
-        focusExitLabel={focusable ? t.workbenchTabs.focusExit : undefined}
+        focusExitLabel={focusable ? t.deliveryExperience.backToChat : undefined}
         trailing={canAddAny ? (
           <IconButton
             size="sm"

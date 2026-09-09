@@ -36,6 +36,29 @@ describe('appStore workbench per-session', () => {
     });
   });
 
+  it('restores the file content selection together with the session preview title', () => {
+    const store = useAppStore.getState();
+    store.syncWorkbenchForSession('session-a');
+    store.openPreview('/tmp/requirements.md');
+    const requirementsId = useAppStore.getState().activePreviewTabId!;
+    store.markPreviewTabLoaded(requirementsId, '# Requirements');
+    store.syncWorkbenchForSession('session-b');
+    store.openPreview('/tmp/satisfaction.html');
+    const satisfactionId = useAppStore.getState().activePreviewTabId!;
+    store.markPreviewTabLoaded(satisfactionId, '<h1>Satisfaction</h1>');
+
+    for (const [sessionId, path, id, content] of [
+      ['session-a', '/tmp/requirements.md', requirementsId, '# Requirements'],
+      ['session-b', '/tmp/satisfaction.html', satisfactionId, '<h1>Satisfaction</h1>'],
+    ]) {
+      store.syncWorkbenchForSession(sessionId);
+      const state = useAppStore.getState();
+      expect(state.activeWorkbenchTab).toBe(`preview:${path}`);
+      expect(state.previewTabs.find((tab) => tab.id === state.activePreviewTabId))
+        .toMatchObject({ id, path, content });
+    }
+  });
+
   it('filters evicted preview views and falls active back to the first survivor', () => {
     const store = useAppStore.getState();
     store.syncWorkbenchForSession('session-a');

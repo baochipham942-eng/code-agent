@@ -881,9 +881,24 @@ function isRecoverableRetrievalTool(name: string | undefined): boolean {
 function markRecoveredFailures(turns: TraceTurn[]): void {
   for (const turn of turns) {
     let laterSuccess = false;
+    const successfulEdits = new Set<string>();
+    const editKey = (tc: NonNullable<TraceNode['toolCall']>): string | null => {
+      if (!/^(edit|edit_file)$/i.test(tc.name)) return null;
+      const args = tc.args;
+      const path = args?.file_path ?? args?.path;
+      if (typeof path !== 'string') return null;
+      const edits: unknown[] = Array.isArray(args?.edits) ? args.edits : [{ old_text: args?.old_string, new_text: args?.new_string }];
+      if (!edits.length || !edits.every((edit): edit is { old_text: string; new_text: string; replace_all?: unknown } =>
+        typeof edit === 'object' && edit !== null && 'old_text' in edit && typeof edit.old_text === 'string'
+        && 'new_text' in edit && typeof edit.new_text === 'string')) return null;
+      return JSON.stringify([path.replace(/^\.\//, ''), edits.map((edit) => [edit.old_text, edit.new_text, edit.replace_all === true]), args?.replace_all === true]);
+    };
     // 从后往前扫：到达某个失败工具节点时，laterSuccess 已反映它"之后"是否出现过成功标志。
     for (let i = turn.nodes.length - 1; i >= 0; i -= 1) {
       const node = turn.nodes[i];
+      const key = node.toolCall ? editKey(node.toolCall) : null;
+      if (key && node.toolCall?.success === false && successfulEdits.has(key)) node.toolCall.recovered = true;
+      if (key && node.toolCall?.success === true) successfulEdits.add(key);
       const isSuccessMarker =
         (node.type === 'assistant_text' && Boolean(node.content?.trim())) ||
         (node.type === 'tool_call' && node.toolCall?.success === true);

@@ -1,0 +1,62 @@
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { IPC_DOMAINS } from '@shared/ipc';
+import type { Message } from '@shared/contract';
+import { redactCredentialText } from '@shared/security/secretPatterns';
+import { useSessionStore } from '../../../stores/sessionStore';
+import { hydrateToolCallResults } from '../../../utils/messageHydration';
+import { useI18n } from '../../../hooks/useI18n';
+import { Button } from '../../primitives/Button';
+
+/** Viewing the authorized saved projection never restores a runnable session. */
+export const SessionLoadErrorBanner: React.FC = () => {
+  const { t } = useI18n();
+  const error = useSessionStore((state) => state.error);
+  const sessionId = useSessionStore((state) => state.currentSessionId);
+  const [loading, setLoading] = useState(false);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
+  const requestVersion = useRef(0);
+  const [readError, setReadError] = useState<string | null>(null);
+  const c = t.deliveryExperience;
+  const viewSaved = useCallback(async () => {
+    if (!error || !sessionId) return;
+    const version = ++requestVersion.current;
+    setLoading(true);
+    setReadError(null);
+    try {
+      // This existing host endpoint checks session ownership before reading messages.
+      const response = await window.domainAPI?.invoke<Message[]>(IPC_DOMAINS.SESSION, 'getMessages', { sessionId });
+      if (!response?.success) throw new Error(response?.error?.message || c.historyReadFailed);
+      const state = useSessionStore.getState();
+      if (version !== requestVersion.current || state.currentSessionId !== sessionId || state.error !== error) return;
+      if (!response.data?.length) throw new Error(c.historyReadFailed);
+      state.setMessages(hydrateToolCallResults(response.data));
+      setHistoryLoaded(true);
+      // Keep the load error: reading history must not unlock task execution.
+    } catch (cause) {
+      if (version === requestVersion.current) setReadError(cause instanceof Error ? cause.message : c.historyReadFailed);
+    } finally { if (version === requestVersion.current) setLoading(false); }
+  }, [error, sessionId, c.historyReadFailed]);
+  useEffect(() => {
+    setHistoryLoaded(false);
+    void viewSaved();
+    return () => { requestVersion.current += 1; };
+  }, [viewSaved]);
+  if (!error || !sessionId) return null;
+  if (historyLoaded) return <details className="my-1 text-xs leading-5 text-zinc-400">
+    <summary className="cursor-pointer">{c.savedHistoryOpened}</summary>
+    <div className="mt-1 flex items-center gap-2">
+      <span>{c.savedHistoryNotice}</span>
+      <Button size="sm" variant="ghost" onClick={() => void useSessionStore.getState().switchSession(sessionId, { force: true })}>{c.retrySessionLoad}</Button>
+    </div>
+    <p className="whitespace-pre-wrap break-words text-zinc-500">{redactCredentialText(error)}</p>
+  </details>;
+  return <div role="alert" className="my-2 rounded-lg border border-badge-warning/30 bg-surface-subtle px-4 py-3 text-xs leading-5 text-zinc-300">
+    <p className="font-medium">{c.sessionLoadFailed}</p>
+    <p className="mt-1 text-zinc-400">{c.savedHistoryNotice}</p>
+    <div className="mt-2 flex items-center gap-2">
+      <Button size="sm" variant="secondary" loading={loading} onClick={() => void viewSaved()}>{c.viewSavedHistory}</Button>
+      <Button size="sm" variant="ghost" onClick={() => void useSessionStore.getState().switchSession(sessionId, { force: true })}>{c.retrySessionLoad}</Button>
+    </div>
+    <details className="mt-2 text-zinc-500"><summary className="cursor-pointer">{c.loadDetails}</summary><p className="whitespace-pre-wrap break-words">{redactCredentialText(readError || error)}</p></details>
+  </div>;
+};

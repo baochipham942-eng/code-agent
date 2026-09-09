@@ -1,3 +1,4 @@
+import { extractDocumentAssertions, type DocumentAssertion } from './documentEvidenceAssertions';
 import { appendFile, mkdir, readFile } from 'node:fs/promises';
 import { dirname, extname, resolve } from 'node:path';
 import type { Message, ToolCall, ToolResult } from '../../../shared/contract';
@@ -75,9 +76,10 @@ export async function attachDocumentOrigin(
   }
 }
 
-/** Check each assertion, so an unrelated caveat cannot license another row's claim. */
-export function checkDocumentEvidenceClaims(content: string, messages: readonly Message[]): string[] {
-  const problems = new Set<string>();
+interface ClaimProblem extends DocumentAssertion { code: string; }
+
+function documentClaimProblems(content: string, messages: readonly Message[]): ClaimProblem[] {
+  const problems: ClaimProblem[] = [];
   const active = currentMessages(messages);
   const calls = new Map(active.flatMap((message) => message.toolCalls ?? []).map((call) => [call.id, call]));
   const spaceQueries = active.flatMap((message) => message.toolResults ?? []).flatMap((result) => {
@@ -90,20 +92,32 @@ export function checkDocumentEvidenceClaims(content: string, messages: readonly 
   });
   const spaceContext = /空间|space\b/i.test(content)
     || active.some((message) => message.role === 'user' && /空间|space\b/i.test(message.content));
-  for (const line of content.split(/\n|[。；;]/)) {
-    const qualified = /待[查补核]|未[核验知经]|尚未|无法确认|不能[证明认定]|仅[为能指]|推断|不代表|unverified|unknown|cannot (?:confirm|establish)|not independent/i.test(line);
-    const independent = /(?:相互|互相|彼此)?独立(?:的)?(?:来源|证据|记载)|independent (?:sources|evidence|records)/i.test(line);
-    const sameOriginUpgrade = /(?:✅|明确证据|互证|已验证)/.test(line) && /同源|双记录|纪要.*逐字稿|逐字稿.*纪要/.test(line);
-    if (!qualified && (independent || sameOriginUpgrade)) problems.add('SOURCE_INDEPENDENCE_UNVERIFIED');
-    if (!spaceContext || qualified) continue;
-    const owner = /空间主人|空间.*owner|空间.*所有者|登录用户.*owner|space owner/i.test(line);
-    const members = /(?:agents\/|本地|名册).*(?:专家|成员)|(?:专家|成员).*(?:agents\/|本地|名册)/i.test(line);
-    const automations = /(?:当前|没有|为零|0|实测|已核验|registered:).*定时|定时.*(?:当前|没有|为零|实测|已核验|registered:)|(?:no|zero|current).*automations/i.test(line);
-    if (owner && !spaceQueries.some((query) => query.cloudMembers?.some((member) => member.role === 'owner' && member.projectId === (query.space?.cloudProjectId ?? query.space?.id) && (line.includes(member.userId) || Boolean(member.displayName && line.includes(member.displayName)))))) problems.add('SPACE_OWNER_UNVERIFIED');
-    if (members && !spaceQueries.some((query) => query.capabilities?.experts?.some((expert) => line.includes(expert.id) || line.includes(expert.displayName)))) problems.add('SPACE_MEMBERS_UNVERIFIED');
-    if (automations && !spaceQueries.some((query) => Array.isArray(query.capabilities?.automations) && query.capabilities.automations.length === 0 && /没有|为零|\b0\b|no|zero/i.test(line))) problems.add('SPACE_AUTOMATIONS_UNVERIFIED');
+  for (const assertion of extractDocumentAssertions(content, spaceContext)) {
+    if (assertion.mode !== 'asserted') continue;
+    const line = assertion.text;
+    const add = (code: string) => problems.push({ ...assertion, code });
+    if (assertion.field === 'source') add('SOURCE_INDEPENDENCE_UNVERIFIED');
+    if (assertion.field === 'owner' && !spaceQueries.some((query) => query.cloudMembers?.some((member) => member.role === 'owner' && member.projectId === (query.space?.cloudProjectId ?? query.space?.id) && (line.includes(member.userId) || Boolean(member.displayName && line.includes(member.displayName)))))) add('SPACE_OWNER_UNVERIFIED');
+    if (assertion.field === 'members' && !spaceQueries.some((query) => query.capabilities?.experts?.some((expert) => line.includes(expert.id) || line.includes(expert.displayName)))) add('SPACE_MEMBERS_UNVERIFIED');
+    if (assertion.field === 'automations' && !spaceQueries.some((query) => Array.isArray(query.capabilities?.automations) && query.capabilities.automations.length === 0 && /没有|为零|\b0\b|no|zero/i.test(line))) add('SPACE_AUTOMATIONS_UNVERIFIED');
   }
-  return [...problems];
+  return problems;
+}
+
+export function checkDocumentEvidenceClaims(content: string, messages: readonly Message[]): string[] {
+  return [...new Set(documentClaimProblems(content, messages).map((problem) => problem.code))];
+}
+
+/** Replace only the unsupported assertion span; preserve unrelated prose and punctuation verbatim. */
+export function boundDocumentEvidenceClaims(content: string, messages: readonly Message[]): { content: string; problems: string[] } {
+  const findings = documentClaimProblems(content, messages);
+  const spans = new Map<string, ClaimProblem>();
+  for (const finding of findings) spans.set(`${finding.start}:${finding.end}`, finding);
+  let bounded = content;
+  for (const finding of [...spans.values()].sort((a, b) => b.start - a.start)) {
+    bounded = bounded.slice(0, finding.start) + formatDocumentEvidenceBoundary([finding.code]) + bounded.slice(finding.end);
+  }
+  return { content: bounded, problems: [...new Set(findings.map((finding) => finding.code))] };
 }
 
 export function documentClaimPreflight(call: ToolCall, messages: readonly Message[]): string[] {
@@ -118,12 +132,12 @@ export function documentClaimPreflight(call: ToolCall, messages: readonly Messag
 }
 
 /** A bounded final answer lists the unsupported fields instead of publishing their claims. */
-export function formatDocumentEvidenceBoundary(problems: readonly string[]): string {
+function formatDocumentEvidenceBoundary(problems: readonly string[]): string {
   const descriptions: Record<string, string> = {
     SOURCE_INDEPENDENCE_UNVERIFIED: '来源独立性未核实：纪要、摘要和同源转载不能增加独立来源数量。',
     SPACE_OWNER_UNVERIFIED: '空间归属待查：登录身份不能证明空间所有者。',
     SPACE_MEMBERS_UNVERIFIED: '空间成员与专家待查：本机名册不能证明已绑定到目标空间。',
     SPACE_AUTOMATIONS_UNVERIFIED: '空间自动化待查：启动日志不能证明当前空间配置。',
   };
-  return ['现有证据不足以确认以下结论：', '', ...problems.map((code) => `- ${descriptions[code] ?? code}`)].join('\n');
+  return problems.map((code) => `[${descriptions[code] ?? code}]`).join(' ');
 }

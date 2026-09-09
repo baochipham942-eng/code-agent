@@ -86,7 +86,7 @@ export interface TraceEventDataMap {
     consecutiveErrors: number;
     contextRatio: number;
   };
-  evidence_boundary: { problems: string[]; surface: 'final_response' };
+  evidence_boundary: { problems: string[]; surface: 'final_response' | 'partial_response' | 'tool_prelude' };
   tool_attempt: { toolCallId: string; toolName: string };
   /** Executor admission started; permission decisions still happen inside it. */
   tool_execution_start: { toolCallId: string; toolName: string };

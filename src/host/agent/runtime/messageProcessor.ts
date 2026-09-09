@@ -1,5 +1,6 @@
+import type { TraceEventDataMap } from './turnTrace';
 import { getToolAttemptTrace } from './toolAttemptTrace';
-import { checkDocumentEvidenceClaims, formatDocumentEvidenceBoundary } from './documentEvidenceBoundary';
+import { boundDocumentEvidenceClaims } from './documentEvidenceBoundary';
 import { hasUntrustedMemoryInput } from '../../memory/automaticMemoryPolicy';
 import { cancelTimeWakesOnUserReturn } from '../../services/wake/userReturn';
 // ============================================================================
@@ -140,11 +141,13 @@ export class MessageProcessor {
     return Math.max(currentMaxTokens, providerRecommendedMax);
   }
 
-  private buildAssistantMessageFromResponse(response: ModelResponse, content: string): Message {
+  private buildAssistantMessageFromResponse(response: ModelResponse, content: string, surface: TraceEventDataMap['evidence_boundary']['surface'] = 'final_response'): Message {
+    const bounded = boundDocumentEvidenceClaims(content, this.ctx.messages);
+    if (bounded.problems.length) this.ctx.turnTrace?.record('evidence_boundary', { problems: bounded.problems, surface });
     return {
       id: this.contextAssembly.generateId(),
       role: 'assistant',
-      content,
+      content: bounded.content,
       timestamp: Date.now(),
       thinking: response.thinking,
       responsesOutput: response.responsesOutput,
@@ -153,11 +156,9 @@ export class MessageProcessor {
       outputTokens: response.usage?.outputTokens,
       modelDecision: response.runtimeDiagnostics?.modelDecision,
       metadata: attachTurnQualityMetadata(this.ctx, undefined, response),
-      contentParts: response.contentParts?.map((part) =>
-        part.type === 'text'
-          ? { type: 'text' as const, text: this.contextAssembly.stripInternalFormatMimicry(part.text) }
-          : part
-      ),
+      contentParts: response.contentParts?.length
+        ? [{ type: 'text', text: bounded.content }, ...response.contentParts.filter((part) => part.type !== 'text')]
+        : undefined,
     };
   }
 
@@ -347,7 +348,7 @@ export class MessageProcessor {
       this.guardState._consecutiveTruncations++;
 
       const strippedPartialContent = this.contextAssembly.stripInternalFormatMimicry(response.content);
-      const partialAssistantMessage = this.buildAssistantMessageFromResponse(response, strippedPartialContent);
+      const partialAssistantMessage = this.buildAssistantMessageFromResponse(response, strippedPartialContent, 'partial_response');
 
       await this.contextAssembly.addAndPersistMessage(partialAssistantMessage);
       this.ctx.onEvent({ type: 'message', data: partialAssistantMessage });
@@ -458,20 +459,14 @@ export class MessageProcessor {
       });
     }
 
-    const claimProblems = checkDocumentEvidenceClaims(gated.content, this.ctx.messages);
-    // Reject unsupported final claims as well as file writes; never stream a verified stamp from this text.
-    const finalContent = claimProblems.length > 0
-      ? formatDocumentEvidenceBoundary(claimProblems)
-      : gated.content;
-    if (claimProblems.length > 0) this.ctx.turnTrace.record('evidence_boundary', { problems: claimProblems, surface: 'final_response' });
     if (desktopClaimGate.action === 'warn') {
       logger.warn('[DesktopActionClaimGate] warning prepended to text response without desktop tool evidence', {
         reason: desktopClaimGate.reason,
         sessionId: this.ctx.sessionId,
       });
     }
-    const assistantMessage = this.buildAssistantMessageFromResponse(response, finalContent);
-    if ((handoffTail.found || claimProblems.length > 0) && assistantMessage.contentParts?.length) assistantMessage.contentParts = [{ type: 'text', text: finalContent }];
+    const assistantMessage = this.buildAssistantMessageFromResponse(response, gated.content);
+    const finalContent = assistantMessage.content;
 
     // Artifact extraction
     const artifacts = extractArtifacts(finalContent);
@@ -768,27 +763,14 @@ export class MessageProcessor {
 
     const isTerminalWakeNoop = isTerminalWakeNoopCall(toolCalls, this.ctx.allowedToolNames);
     const assistantMessage: Message = {
-      id: this.contextAssembly.generateId(),
-      role: 'assistant',
-      content: cleanedContent,
-      timestamp: Date.now(),
+      ...this.buildAssistantMessageFromResponse(response, cleanedContent, 'tool_prelude'),
       toolCalls: sanitizeToolCallsForHistory(toolCalls),
-      thinking: response.thinking,
-      responsesOutput: response.responsesOutput,
-      effortLevel: this.ctx.turn.effortLevel,
-      inputTokens: response.usage?.inputTokens,
-      outputTokens: response.usage?.outputTokens,
-      modelDecision: response.runtimeDiagnostics?.modelDecision,
-      metadata: attachTurnQualityMetadata(this.ctx, undefined, response),
-      contentParts: response.contentParts?.map(p =>
-        p.type === 'text' ? { type: 'text' as const, text: this.contextAssembly.stripInternalFormatMimicry(p.text) } : p
-      ),
       ...(isTerminalWakeNoop ? { isMeta: true } : {}),
     };
 
     // Artifact extraction
-    if (cleanedContent) {
-      const artifacts = extractArtifacts(cleanedContent);
+    if (assistantMessage.content) {
+      const artifacts = extractArtifacts(assistantMessage.content);
       if (artifacts.length > 0) {
         assistantMessage.artifacts = artifacts;
       }

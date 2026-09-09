@@ -1,3 +1,6 @@
+import { runGoalEvidenceGate } from '../../../src/host/agent/runtime/goalEvidenceGate';
+import { ArtifactState } from '../../../src/host/agent/runtime/artifactState';
+import type { RuntimeContext } from '../../../src/host/agent/runtime/runtimeContext';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { existsSync, rmSync, mkdirSync, writeFileSync } from 'fs';
 import os from 'os';
@@ -103,6 +106,34 @@ describe('turn outcome stamp', () => {
       { kind: 'command', toolCallId: 'test-ok', command: 'npm test', success: true, exitCode: 0 },
     ] }));
     expect(latestOutcome(recorder).verdict).toBe('verified');
+  });
+
+  it.each([
+    ['核验要求：至少两份独立来源，才能标记已验证。', undefined],
+    ['这些不是独立来源。', undefined],
+    ['引用：“这些是独立来源。”', undefined],
+    ['这些是独立来源。', 'SOURCE_INDEPENDENCE_UNVERIFIED'],
+    ['空间主人：owner-fixture，自动化配置待查。', 'SPACE_OWNER_UNVERIFIED'],
+    ['空间主人：owner-fixture；自动化配置待查。', 'SPACE_OWNER_UNVERIFIED'],
+    ['空间专家成员：expert-fixture，空间主人待查。', 'SPACE_MEMBERS_UNVERIFIED'],
+    ['空间没有自动化，成员待查。', 'SPACE_AUTOMATIONS_UNVERIFIED'],
+    ['空间主人待查，自动化配置待查。', undefined],
+  ])('checks actual completion-file readback and goal evidence: %s', async (content, problem) => {
+    mkdirSync(traceRoot, { recursive: true });
+    const artifact = path.join(traceRoot, 'boundary.md');
+    writeFileSync(artifact, content);
+    const recorder = new TurnTraceRecorder('boundary-completion', traceRoot);
+    const ctx = { ...context(recorder), workingDirectory: traceRoot };
+    await recordTurnOutcomeStamp(ctx, 'completed', summary({ changedFiles: [artifact], verificationEvidence: [
+      { kind: 'command', toolCallId: 'test-ok', command: 'fixture-check', success: true, exitCode: 0 },
+    ] }));
+    expect(latestOutcome(recorder).evidenceProblems).toEqual(problem ? [problem] : []);
+    expect(latestOutcome(recorder).verdict).toBe(problem ? 'self_claimed' : 'verified');
+    const goal = runGoalEvidenceGate({ ...ctx, artifact: ArtifactState.forTest(), goalEvidenceState: { bounces: 0 },
+      goalMode: { getVerifyCommand: () => undefined },
+    } as unknown as RuntimeContext, { id: 'completion', name: 'attempt_completion', arguments: { evidence: { deliverables: [artifact] } } });
+    expect(goal.verdict).toBe(problem ? 'bounce' : 'pass');
+    expect(goal.evidenceRefs).toHaveLength(problem ? 0 : 1);
   });
 
   afterEach(() => {

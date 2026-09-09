@@ -1,3 +1,4 @@
+import { createDocumentEvidenceStream } from '../../../src/host/agent/runtime/documentEvidenceStream';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ModelResponse } from '../../../src/host/agent/loopTypes';
 import type { RuntimeContext } from '../../../src/host/agent/runtime/runtimeContext';
@@ -532,7 +533,15 @@ describe('MessageProcessor persistence', () => {
     expect(ctx.onEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'turn_end' }));
   });
 
-  it('persists field-specific evidence boundaries instead of unsupported final claims', async () => {
+  it.each([
+    ['空间主人是 Neo 登录用户 owner，已实测确认。', true],
+    ['附件已整理。空间主人：owner-fixture，自动化配置待查。下一步核对原文。', true],
+    ['空间主人：owner-fixture；自动化配置待查。', true],
+    ['核验要求：至少两份独立来源，才能标记已验证。', false],
+    ['这些不是独立来源。', false],
+    ['引用：“这些是独立来源。”', false],
+    ['附件已整理。空间主人：owner-fixture，自动化配置待查。', true, true],
+  ])('persists field-specific boundaries and matches the production text stream: %s', async (content, blocked, truncated = false) => {
     const ctx = {
       // A local Read already happened; the desktop zero-tool gate is a separate contract.
       stats: RunStatsState.forTest({ totalToolCallCount: 1 }), contextHealth: ContextHealthState.forTest(),
@@ -548,16 +557,27 @@ describe('MessageProcessor persistence', () => {
       stripInternalFormatMimicry: (content: string) => content, generateId: () => 'final',
       addAndPersistMessage, injectSystemMessage: vi.fn(), updateContextHealth: vi.fn(),
     }, { emitTaskProgress: vi.fn(), emitTaskComplete: vi.fn(), tryParseTodosFromResponse: vi.fn() });
-    const content = '空间主人是 Neo 登录用户 owner，已实测确认。';
+    const streamed: string[] = [];
+    const stream = createDocumentEvidenceStream(ctx.messages, (text) => streamed.push(text));
+    for (const char of content) stream.push(char);
+    stream.finish(content);
     await processor.handleTextResponse({ type: 'text', content,
-      contentParts: [{ type: 'text', text: content }], finishReason: 'stop', truncated: false,
+      contentParts: [{ type: 'text', text: content }], finishReason: truncated ? 'length' : 'stop', truncated,
     } as ModelResponse, true, 1, false, { endSpan: vi.fn() });
     const saved = addAndPersistMessage.mock.calls.at(-1)?.[0];
+    expect(saved.content).toBe(streamed.join(''));
+    if (!blocked) {
+      expect(saved.content).toBe(content);
+      expect(ctx.turnTrace.record).not.toHaveBeenCalled();
+      return;
+    }
+    if (content.startsWith('附件')) expect(saved.content).toContain('附件已整理。');
+    if (content.includes('下一步')) expect(saved.content).toContain('下一步核对原文。');
     expect(saved.content).toContain('空间归属待查');
     expect(saved.content).not.toContain('已实测确认');
     expect(JSON.stringify(saved.contentParts ?? [])).not.toContain('已实测确认');
     expect(ctx.turnTrace.record).toHaveBeenCalledWith('evidence_boundary', {
-      problems: ['SPACE_OWNER_UNVERIFIED'], surface: 'final_response',
+      problems: ['SPACE_OWNER_UNVERIFIED'], surface: truncated ? 'partial_response' : 'final_response',
     });
   });
 

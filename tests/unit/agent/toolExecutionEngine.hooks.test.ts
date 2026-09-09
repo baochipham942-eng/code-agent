@@ -397,6 +397,28 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     expect(result).toMatchObject({ success: false, metadata: { evidenceBoundary: ['SOURCE_INDEPENDENCE_UNVERIFIED'] } });
   });
 
+  it.each([
+    ['核验要求：至少两份独立来源，才能标记已验证。', true],
+    ['这些不是独立来源。', true],
+    ['引用：“这些是独立来源。”', true],
+    ['这些是独立来源。', false],
+    ['空间主人：owner-fixture，自动化配置待查。', false],
+    ['空间主人：owner-fixture；自动化配置待查。', false],
+    ['空间专家成员：expert-fixture，空间主人待查。', false],
+    ['空间没有自动化，成员待查。', false],
+  ])('production Write preflight reaches the executor only for permitted claims: %s', async (content, allowed) => {
+    // Returning failure deliberately avoids document-origin file I/O after this dispatch spy.
+    const execute = vi.fn().mockResolvedValue({ success: false, error: 'FIXTURE_EXECUTOR_ENTERED', metadata: { executionStarted: true } });
+    const ctx = makeRuntimeContext({ toolExecutor: { execute } as never });
+    const engine = new ToolExecutionEngine(ctx);
+    engine.setModules({ injectSystemMessage: vi.fn(), pushPersistentSystemContext: vi.fn(), getCurrentAttachments: () => [] } as never,
+      { emitTaskProgress: vi.fn() } as never, { isPlanMode: () => false, setPlanMode: vi.fn() } as never);
+    const result = await engine.executeSingleTool({ id: 'boundary-write', name: 'Write', arguments: { file_path: '/tmp/boundary-fixture.md', content } }, 0, 1);
+    expect(execute).toHaveBeenCalledTimes(allowed ? 1 : 0);
+    if (allowed) expect(result.error).toBe('FIXTURE_EXECUTOR_ENTERED');
+    else expect(result.metadata?.evidenceBoundary).toEqual([expect.stringMatching(/UNVERIFIED$/)]);
+  });
+
   it('traces rejected repair attempts and stops cross-tool retries without dispatch', async () => {
     const execute = vi.fn();
     const ctx = makeRuntimeContext({ toolExecutor: { execute } as never,

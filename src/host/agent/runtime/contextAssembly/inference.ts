@@ -42,7 +42,7 @@ import {
 } from '../artifactRepairGuard';
 import { preloadDeferredToolsForTurn } from './deferredToolPreload';
 import { runMaxModeStep, MaxModeAbortError } from '../maxMode';
-import { createHandoffTailStreamFilter } from '../../../handoff/handoffStream';
+import { createDocumentEvidenceStream } from '../documentEvidenceStream';
 import { applyEffortControls } from './effortControls';
 import { buildCompactArtifactRepairWriteRetryMessages } from './artifactRepairRetryMessages';
 import {
@@ -759,16 +759,15 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
     // Reset partial content accumulator for this inference call
     ctx.runtime.turn.resetStreamedContent();
     let commandCenterPreannounce = '';
-    const contentStreamFilter = createHandoffTailStreamFilter((text) =>
-      emitAssistantMessageDelta(ctx, 'content', text)
-    );
+    const contentStreamFilter = createDocumentEvidenceStream(ctx.runtime.messages, (text) => {
+      ctx.runtime.turn.appendStreamedContent(text);
+      emitAssistantMessageDelta(ctx, 'content', text);
+    });
 
     const streamCallback: StreamCallback = (chunk) => {
       if (typeof chunk === 'string') {
-        ctx.runtime.turn.appendStreamedContent(chunk);
         contentStreamFilter.push(chunk);
       } else if (chunk.type === 'text') {
-        ctx.runtime.turn.appendStreamedContent(chunk.content ?? '');
         contentStreamFilter.push(chunk.content);
       } else if (chunk.type === 'reasoning') {
         // 推理模型的思考过程 (glm-4.7 等)
@@ -778,7 +777,7 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
         commandCenterPreannounce = emitCommandCenterToolStart({
           toolName: chunk.toolCall?.name,
           commandCenterEnabled: ctx.runtime.allowedToolNames?.includes('delegate_task') === true,
-          streamedContent: ctx.runtime.turn.lastStreamedContent,
+          streamedContent: ctx.runtime.turn.lastStreamedContent + contentStreamFilter.pending,
           existingPreannounce: commandCenterPreannounce,
           userMessage: extractUserRequestText(latestUserMessage),
           emitPreview: (preview) => {
@@ -870,7 +869,7 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
     } finally {
       stopArtifactProgress();
     }
-    contentStreamFilter.flush();
+    if (!ctx.runtime.control.isCancelled) contentStreamFilter.finish(response.content);
     response = applyCommandCenterPreannounce(response, commandCenterPreannounce);
     if (pendingCapabilityFallback && !response.fallback) {
       response.actualProvider = pendingCapabilityFallback.to.provider;

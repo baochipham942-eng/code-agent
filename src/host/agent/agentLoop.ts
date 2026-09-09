@@ -352,7 +352,6 @@ export class AgentLoop {
   ): void {
     const roleId = this.ctx.persistentRoleId;
     if (!roleId || this.ctx.control.isCancelled || this.conversationRuntime.wasInterrupted()) return;
-    if (skipRunAutomaticMemory(this.ctx, 'role_memory')) return;
     const finalMessage = [...this.ctx.messages].reverse().find((message) => (
       message.role === 'assistant'
       && !assistantMessageIdsBeforeRun.has(message.id)
@@ -361,22 +360,24 @@ export class AgentLoop {
     ));
     if (!finalMessage) return;
 
-    const artifacts = (finalMessage.artifacts ?? []).map((artifact) => ({
-      label: artifact.title || artifact.id,
-      ref: artifact.id,
-    }));
-    void import('../services/roleAssets/roleWriteBack')
-      .then(({ runRoleWriteBack }) => runRoleWriteBack({
-        roleId,
-        workspacePath: this.ctx.workingDirectory,
-        taskPrompt,
-        finalOutput: finalMessage.content,
-        artifacts,
-      }))
-      .catch((error) => logger.warn('[AgentLoop] foreground role write-back failed (non-blocking)', {
-        roleId,
-        error: error instanceof Error ? error.message : String(error),
+    if (!skipRunAutomaticMemory(this.ctx, 'role_memory')) {
+      const artifacts = (finalMessage.artifacts ?? []).map((artifact) => ({
+        label: artifact.title || artifact.id,
+        ref: artifact.id,
       }));
+      void import('../services/roleAssets/roleWriteBack')
+        .then(({ runRoleWriteBack }) => runRoleWriteBack({
+          roleId,
+          workspacePath: this.ctx.workingDirectory,
+          taskPrompt,
+          finalOutput: finalMessage.content,
+          artifacts,
+        }))
+        .catch((error) => logger.warn('[AgentLoop] foreground role write-back failed (non-blocking)', {
+          roleId,
+          error: error instanceof Error ? error.message : String(error),
+        }));
+    }
     void import('../services/roleAssets/roleProactivity')
       .then(({ recordRoleParticipation }) => recordRoleParticipation(this.ctx.sessionId, roleId))
       .catch((error) => logger.warn('[AgentLoop] foreground role participation record failed (non-blocking)', {

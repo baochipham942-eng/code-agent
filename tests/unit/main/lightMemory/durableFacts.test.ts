@@ -14,6 +14,12 @@ import * as os from 'os';
 import * as path from 'path';
 
 const mockConfigDir = vi.hoisted(() => ({ dir: '' }));
+const roleMocks = vi.hoisted(() => ({
+  writeBack: vi.fn(async () => undefined),
+  participation: vi.fn(),
+}));
+vi.mock('../../../../src/host/services/roleAssets/roleWriteBack', () => ({ runRoleWriteBack: roleMocks.writeBack }));
+vi.mock('../../../../src/host/services/roleAssets/roleProactivity', () => ({ recordRoleParticipation: roleMocks.participation }));
 const memoryModelMocks = vi.hoisted(() => ({
   memoryTask: vi.fn<(
     prompt: string,
@@ -120,6 +126,25 @@ async function runSummaryExtraction(extra: Partial<RuntimeContext> = {}): Promis
 }
 
 describe('默认助手长期事实写回', () => {
+  it.each([true, false])('records role participation while gating only memory write-back (tainted=%s)', async (tainted) => {
+    const { AgentLoop } = await import('../../../../src/host/agent/agentLoop');
+    roleMocks.writeBack.mockClear();
+    roleMocks.participation.mockClear();
+    const control = new ControlState();
+    if (tainted) control.markMemoryTainted();
+    const loop = Object.assign(Object.create(AgentLoop.prototype), {
+      ctx: {
+        sessionId: 'role-session', persistentRoleId: 'researcher', control,
+        messages: [{ id: 'output-1', role: 'assistant', content: 'completed output' }],
+      },
+      conversationRuntime: { wasInterrupted: () => false },
+    });
+    loop.schedulePersistentRoleWriteBack('task', new Set());
+    await vi.waitFor(() => expect(roleMocks.participation).toHaveBeenCalledWith('role-session', 'researcher'));
+    if (tainted) expect(roleMocks.writeBack).not.toHaveBeenCalled();
+    else await vi.waitFor(() => expect(roleMocks.writeBack).toHaveBeenCalledOnce());
+  });
+
   it('keeps memory taint across external-query counter resets and isolates new runs', () => {
     const state = new ControlState();
     state.markMemoryTainted();

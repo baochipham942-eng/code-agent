@@ -84,7 +84,8 @@ try {
   assert.equal(readFileSync(resolve(project,filename),'utf8').trim(),marker);pass('mobile-approval-survives-lost-receipt-and-real-file-is-created');
   const saved=JSON.parse(storage);assert(!saved.pending);pass('pending-command-cleared-after-authoritative-reconciliation');
   const committed=db.prepare("SELECT payload_json FROM companion_events WHERE session_id=? AND kind='message'").all(sessionId).map(row=>JSON.parse(row.payload_json)).filter(row=>row.role==='assistant');
-  for(const content of new Set(committed.map(row=>row.content))) assert.equal(await page.getByText(content,{exact:true}).count(),committed.filter(row=>row.content===content).length,'stream and committed reply must share one visible row');
+  const rendered=await page.locator('.lan-message:not(.from-user)').allTextContents();
+  for(const content of new Set(committed.map(row=>row.content))) assert.equal(rendered.filter(value=>value===content).length,committed.filter(row=>row.content===content).length,'stream and committed reply must share one visible row');
   pass('real-stream-and-durable-message-render-once');
   const detail=await api('/api/sessions/'+sessionId);assert(JSON.stringify(detail).includes(filename),'desktop session must contain real result');
   assert(!wire.join('\n').includes(marker));assert.deepEqual(errors,[]);pass('encrypted-wire-and-no-page-errors');

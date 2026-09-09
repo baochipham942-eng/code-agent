@@ -6,8 +6,11 @@
 // 本门钉死：composer 主路径构造的 envelope 必须携带 modeStore 提交时刻的 searchEnabled。
 
 import { act, renderHook } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { runInNewContext } from 'node:vm';
+import { describe, expect, it, vi } from 'vitest';
 import { useChatInputEnvelope } from '../../../src/renderer/components/features/chat/ChatInput/useChatInputEnvelope';
+import { composerEditModeState } from '../../../src/renderer/components/features/chat/ChatInput/composerEditMode';
 import { useModeStore } from '../../../src/renderer/stores/modeStore';
 
 function buildParams() {
@@ -24,6 +27,32 @@ function buildParams() {
 }
 
 describe('useChatInputEnvelope · 同族逐轮设置随载荷', () => {
+  it.each([
+    ['transcript', { context: { voiceInput: { source: 'dictation' } } }, true],
+    ['attachment', { attachments: [{ id: 'attachment-1' }] }, true],
+    ['paste', { context: { memoryTainted: true } }, true],
+    ['typed', {}, false],
+  ])('preserves %s provenance through the actual queued-edit callback and re-submit', (_name, provenance, tainted) => {
+    // Execute the shipped callback, with state setters at the boundary, then the
+    // real envelope hook. This does not claim a mounted full-composer UI test.
+    const source = readFileSync('src/renderer/components/features/chat/ChatInput/index.tsx', 'utf8');
+    const callback = source.match(/onEdit=\{(\(input\) => \{[\s\S]*?\n {10}\})\}/)?.[1];
+    expect(callback).toBeDefined();
+    const inputMemoryTainted = { current: false };
+    const setValue = vi.fn();
+    const setVoiceInputContext = vi.fn();
+    const edit = runInNewContext(`(${callback})`, {
+      composerEditModeState, inputMemoryTainted, setValue, setVoiceInputContext,
+      setEditingQueuedInputId: vi.fn(), pendingResendClientMessageIdRef: { current: null },
+      setAttachments: vi.fn(), inputAreaRef: { current: { focus: vi.fn() } },
+    });
+    edit({ id: 'queued-1', envelope: { content: 'retained draft', ...provenance } });
+    expect(setValue).toHaveBeenCalledWith('retained draft');
+    expect(setVoiceInputContext).toHaveBeenCalledWith(null);
+    const { result } = renderHook(() => useChatInputEnvelope({ ...buildParams(), inputMemoryTainted }));
+    expect(result.current('retained draft, edited').context?.memoryTainted === true).toBe(tainted);
+  });
+
   it('carries paste provenance at send time, including a stable builder reused after typing', () => {
     const inputMemoryTainted = { current: false };
     const { result } = renderHook(() => useChatInputEnvelope({ ...buildParams(), inputMemoryTainted }));

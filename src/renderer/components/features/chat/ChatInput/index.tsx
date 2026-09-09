@@ -1284,7 +1284,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
             const mode = composerEditModeState({ kind: 'queued-edit', queuedInputId: input.id });
             setEditingQueuedInputId(mode.editingQueuedInputId);
             pendingResendClientMessageIdRef.current = mode.pendingResendClientMessageId;
-            inputMemoryTainted.current = input.envelope.context?.memoryTainted === true;
+            inputMemoryTainted.current = input.envelope.context?.memoryTainted === true
+              || Boolean(input.envelope.context?.voiceInput)
+              || Boolean(input.envelope.attachments?.length);
             setValue(input.envelope.content);
             setAttachments([]);
             setVoiceInputContext(null);

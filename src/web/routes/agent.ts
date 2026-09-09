@@ -1075,7 +1075,18 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         }
       }, messages, sessionId, undefined, runToolExecutor, runContext, runHandle.traceContext);
 
-      await runHandle.attach(agentLoop);
+      await runHandle.attach({
+        cancel: (reason) => {
+          // Abort the loop before releasing its approval wait. A stopped run must
+          // never remain parked on a permission Promise until route finalization.
+          const cancellation = agentLoop.cancel(reason);
+          foregroundPermissionIsland?.drainPendingPermissions();
+          return cancellation;
+        },
+        pause: () => agentLoop.pause(),
+        resume: () => agentLoop.resume(),
+        steer: (...args) => agentLoop.steer(...args),
+      });
       if (runController.disconnected) {
         logger.warn(`[AgentRouter] Client disconnected before run ${runContext.runId} attached`);
       }

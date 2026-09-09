@@ -530,6 +530,21 @@ describe('createAgentRouter', () => {
     await runRegistry.getBySessionId('companion-activation')!.cancel('user');
   });
 
+  it('cancelling a companion run releases its real pending approval with denial', async () => {
+    await closeServer();
+    setBrowserWindowInteractionProbe(() => true);
+    let start: Parameters<NonNullable<Parameters<typeof createAgentRouter>[0]['registerCompanionRun']>>[0] | undefined;
+    await startAgentApi({ registerCompanionRun: value => { start = value; } });
+    await start!({ version: 1, sessionId: 'companion-cancel-approval', prompt: 'bounded task' });
+    await vi.waitFor(() => expect(mockCreateRunToolExecutor.mock.calls.length).toBeGreaterThan(0));
+    const ask = mockCreateRunToolExecutor.mock.calls.at(-1)![2] as OrchestratorPermissionIsland['requestPermission'];
+    const pending = ask({ type: 'file_write', tool: 'Write', sessionId: 'companion-cancel-approval', forceConfirm: true, details: { path: '/tmp/bounded-cancel.txt' } });
+    const handle = runRegistry.getBySessionId('companion-cancel-approval')!;
+    await handle.cancel('user');
+    await expect(pending).resolves.toMatchObject({ approved: false, denialSource: 'cancelled' });
+    expect(handle.cancellationRequested).toBe(true);
+  });
+
   it('treats an SSE-subscribed renderer as the approval UI for a queued run', async () => {
     await closeServer();
     // #1415 把判定源从「路由自己数 sseClients」换成了 platform 的 hasInteractiveUi()，

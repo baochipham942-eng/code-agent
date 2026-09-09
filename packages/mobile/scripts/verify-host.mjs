@@ -93,7 +93,8 @@ try {
     await waitFor(page.getByRole('button',{name:'允许这一次',exact:true}));
     assert(!existsSync(resolve(project,blockedFile)));
     await page.getByRole('button',{name:action==='deny'?'拒绝':'停止任务',exact:true}).click();
-    await waitFor(page.getByText(action==='deny'?'任务已完成':'任务已停止',{exact:true}));
+    if(action==='stop') await page.getByText('任务已停止',{exact:true}).waitFor({timeout:10000});
+    else await waitFor(page.getByText('任务已完成',{exact:true}));
     assert(!existsSync(resolve(project,blockedFile)),'denied/stopped operation must not write');
     const decision=db.prepare('SELECT status FROM companion_decisions WHERE session_id=? ORDER BY rowid DESC LIMIT 1').get(sessionId);
     assert.notEqual(decision.status,'pending');

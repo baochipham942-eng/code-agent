@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Archive,
+  ArrowUpRight,
   BarChart3,
   BookOpen,
   Code,
@@ -233,6 +234,41 @@ const CardRow: React.FC<CardRowProps> = ({ card, labels, openCard, runSecondaryA
     setMenuOpen(false);
     void runSecondaryAction(action, card);
   };
+
+  if (surface === 'conversation') {
+    const kindLabels = t.sidebarProject.artifactKind;
+    const kindLabel = kindLabels[card.kind as keyof typeof kindLabels] ?? kindLabels.file;
+    const fileName = card.openTarget.kind === 'file-preview' ? card.openTarget.path.split('/').pop() : card.title;
+    const extension = fileName?.match(/\.([a-zA-Z0-9]{1,8})$/)?.[1].toUpperCase();
+
+    return (
+      <div className="space-y-2">
+        <button /* ds-allow:button: 整张附件卡是一个预览入口，文件信息与动作共用焦点 */
+          type="button"
+          disabled={!clickable}
+          aria-label={`${t.deliveryExperience.viewProduct}: ${card.title}`}
+          title={card.title}
+          onClick={() => openCard(card)}
+          className="group flex w-full max-w-[26rem] items-center gap-3 rounded-xl border border-border-muted bg-surface-subtle p-3 text-left transition-colors enabled:cursor-pointer enabled:hover:border-zinc-500/60 enabled:hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/60 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900"
+        >
+          <span aria-hidden="true" className="flex h-12 w-11 shrink-0 items-center justify-center rounded-lg border border-border-muted bg-zinc-500/[0.08] [&>svg]:h-6 [&>svg]:w-6">
+            {iconForKind(card.kind)}
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-sm font-medium leading-5 text-zinc-100">{card.title}</span>
+            <span className="mt-1 block text-xs leading-4 text-zinc-500">{[extension, kindLabel].filter(Boolean).join(' · ')}</span>
+          </span>
+          {clickable && (
+            <span className="flex shrink-0 items-center gap-1 text-xs text-zinc-400 transition-colors group-hover:text-zinc-100">
+              {t.deliveryExperience.viewProduct}
+              <ArrowUpRight aria-hidden="true" className="h-3.5 w-3.5" />
+            </span>
+          )}
+        </button>
+        {detail}
+      </div>
+    );
+  }
 
   return (
     <div

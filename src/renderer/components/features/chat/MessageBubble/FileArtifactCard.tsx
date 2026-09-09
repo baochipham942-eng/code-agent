@@ -47,7 +47,7 @@ const DeliverableDiffDetail: React.FC<{ change: FileChange }> = ({ change }) => 
   const hasLineChanges = change.added > 0 || change.removed > 0;
 
   return (
-    <div className="border-t border-border-muted px-2.5 py-1.5">
+    <div className="px-1">
       <button
         type="button"
         onClick={(event) => {
@@ -63,7 +63,7 @@ const DeliverableDiffDetail: React.FC<{ change: FileChange }> = ({ change }) => 
       >
         {expanded ? <span aria-hidden="true">⌄</span> : <span aria-hidden="true">›</span>}
         <span>{copy.changes}</span>
-        {hasLineChanges && (
+        {expanded && hasLineChanges && (
           <span className="flex items-center gap-1">
             {change.added > 0 && <span className="text-badge-success">{(change.oldText ? copy.addedLines : copy.generatedLines).replace('{count}', String(change.added))}</span>}
             {change.removed > 0 && <span className="text-badge-danger">{copy.removedLines.replace('{count}', String(change.removed))}</span>}

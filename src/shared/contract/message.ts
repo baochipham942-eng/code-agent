@@ -303,6 +303,8 @@ export interface InputRedirectReceiptMetadata {
 }
 
 export interface MessageMetadata {
+  /** Sticky provenance for automatic memory; never grants or denies explicit MemoryWrite. */
+  memoryTainted?: boolean;
   /**
    * 发送失败时的重试锚点：失败用户气泡留在时间线（N-CHAT-FAILED-BUBBLE-VISIBLE），
    * 错误 assistant 消息仍挂原文/附件/原 clientMessageId，给错误卡「重试」用。

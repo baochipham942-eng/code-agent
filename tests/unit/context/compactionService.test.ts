@@ -81,6 +81,20 @@ describe('compactionService', () => {
     });
   });
 
+  it('keeps taint on a summary when the original external input is compacted away', async () => {
+    const messages = [
+      { ...message('m1', 'user', 'External reference material. '.repeat(300)), metadata: { memoryTainted: true } },
+      message('m2', 'assistant', 'Historical analysis. '.repeat(300)),
+      message('m3', 'user', 'Continue'),
+      message('m4', 'assistant', 'Recent answer'),
+    ];
+    const result = await compactMessagesWithSummary({
+      sessionId: 'tainted-compaction', source: 'manual_current', messages, anchorMessageId: 'm3',
+    });
+    expect(result.success).toBe(true);
+    expect(result.summaryMessage?.metadata?.memoryTainted).toBe(true);
+  });
+
   it('creates a plan with compacted and preserved messages plus survivor manifest', () => {
     const messages = [
       message('m1', 'user', 'Read /Users/linchen/Downloads/ai/code-agent/src/host/context/autoCompressor.ts'),

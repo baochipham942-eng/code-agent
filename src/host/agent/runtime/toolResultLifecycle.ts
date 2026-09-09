@@ -1,5 +1,5 @@
 import type { ToolCall, ToolResult } from '../../../shared/contract';
-import type { UntrustedContentPolicy } from '../../protocol/tools';
+import { getUntrustedContentPolicy } from '../../memory/automaticMemoryPolicy';
 import type { ToolExecutionResult } from '../../tools/types';
 import { canonicalToolName, isBashToolName } from '../../tools/toolNames';
 import { getProtocolToolSchemas } from '../../tools/protocolToolRegistration';
@@ -17,17 +17,6 @@ import {
 import { registerArtifactRepairBlockedToolTurn } from './artifactRepairAdmission';
 
 const logger = createLogger('AgentLoop');
-
-function getUntrustedContentPolicy(toolName: string): UntrustedContentPolicy | undefined {
-  const canonicalName = canonicalToolName(toolName);
-  return getProtocolToolSchemas()
-    .filter((schema) => (
-      schema.readsUntrustedContent !== undefined
-      && canonicalName.startsWith(canonicalToolName(schema.name))
-    ))
-    .sort((left, right) => right.name.length - left.name.length)[0]
-    ?.readsUntrustedContent;
-}
 
 // 子代理产出回填父上下文前的注入扫描：任何 category 'multiagent' 的工具（spawn_agent/
 // Task/collect_agent/wait_agent/teammate 等）都可能把子代理消费过外部数据后产出的文本
@@ -189,6 +178,12 @@ export function handleToolResultBookkeeping({
   const isExternalData = untrustedContentPolicy !== undefined;
   const isSubagentResult = !isExternalData && isSubagentResultTool(toolCall.name);
   const effectiveUntrustedContentPolicy = isSubagentResult ? 'block' : untrustedContentPolicy;
+
+  // Error bodies and sanitizer-blocked results also originate outside the trust boundary.
+  if (isExternalData || isSubagentResult) {
+    ctx.control.markMemoryTainted();
+    toolResult.metadata = { ...toolResult.metadata, memoryTainted: true };
+  }
 
   if ((isExternalData || isSubagentResult) && normalizedResult.success && toolResult.output) {
     try {

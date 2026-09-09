@@ -124,6 +124,8 @@ export interface ConversationArtifactReference {
 }
 
 export interface ConversationEnvelopeContext {
+  /** Input includes pasted/external text; downstream automatic memory must fail closed. */
+  memoryTainted?: boolean;
   workingDirectory?: string | null;
   preferredAgentId?: string | null;
   preferredAgentName?: string | null;
@@ -182,6 +184,7 @@ export interface ConversationEnvelope {
 }
 
 export interface WorkbenchMessageMetadata {
+  memoryTainted?: boolean;
   workingDirectory?: string | null;
   preferredAgentId?: string | null;
   preferredAgentName?: string | null;

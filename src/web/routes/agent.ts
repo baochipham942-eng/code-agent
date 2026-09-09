@@ -235,6 +235,7 @@ function toWorkbenchMetadata(context?: ConversationEnvelopeContext): MessageMeta
   if (context.runtimeInput) {
     workbench.runtimeInputMode = context.runtimeInput.mode;
   }
+  if (context.memoryTainted === true) workbench.memoryTainted = true;
   if (context.voiceInput) {
     workbench.voiceInput = { ...context.voiceInput };
   }

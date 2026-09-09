@@ -1,3 +1,9 @@
+import { ControlState } from '../../../../src/host/agent/runtime/controlState';
+import { ArtifactState } from '../../../../src/host/agent/runtime/artifactState';
+import { handleToolResultBookkeeping } from '../../../../src/host/agent/runtime/toolResultLifecycle';
+import * as protocolTools from '../../../../src/host/tools/protocolToolRegistration';
+import { webFetchUnifiedSchema } from '../../../../src/host/tools/modules/network/webFetchUnified.schema';
+import { listMemoryInjectionTraces, clearMemoryInjectionTracesForTest } from '../../../../src/host/memory/memoryInjectionTrace';
 // ============================================================================
 // 默认助手长期事实写回测试
 // ============================================================================
@@ -8,6 +14,12 @@ import * as os from 'os';
 import * as path from 'path';
 
 const mockConfigDir = vi.hoisted(() => ({ dir: '' }));
+const roleMocks = vi.hoisted(() => ({
+  writeBack: vi.fn(async () => undefined),
+  participation: vi.fn(),
+}));
+vi.mock('../../../../src/host/services/roleAssets/roleWriteBack', () => ({ runRoleWriteBack: roleMocks.writeBack }));
+vi.mock('../../../../src/host/services/roleAssets/roleProactivity', () => ({ recordRoleParticipation: roleMocks.participation }));
 const memoryModelMocks = vi.hoisted(() => ({
   memoryTask: vi.fn<(
     prompt: string,
@@ -101,18 +113,47 @@ async function waitForFactFiles(memoryDir: string, expected: string[]): Promise<
   });
 }
 
-async function runSummaryExtraction(): Promise<void> {
+async function runSummaryExtraction(extra: Partial<RuntimeContext> = {}): Promise<void> {
   const finalizer = new RunFinalizer({
     messages: [
       { role: 'user', content: '我在上海，长期住这里。' },
       { role: 'assistant', content: '已了解。' },
     ],
+    ...extra,
   } as unknown as RuntimeContext);
 
   await (finalizer as unknown as SummaryRunner).extractAndSaveConversationSummary();
 }
 
 describe('默认助手长期事实写回', () => {
+  it.each([true, false])('records role participation while gating only memory write-back (tainted=%s)', async (tainted) => {
+    const { AgentLoop } = await import('../../../../src/host/agent/agentLoop');
+    roleMocks.writeBack.mockClear();
+    roleMocks.participation.mockClear();
+    const control = new ControlState();
+    if (tainted) control.markMemoryTainted();
+    const loop = Object.assign(Object.create(AgentLoop.prototype), {
+      ctx: {
+        sessionId: 'role-session', persistentRoleId: 'researcher', control,
+        messages: [{ id: 'output-1', role: 'assistant', content: 'completed output' }],
+      },
+      conversationRuntime: { wasInterrupted: () => false },
+    });
+    loop.schedulePersistentRoleWriteBack('task', new Set());
+    await vi.waitFor(() => expect(roleMocks.participation).toHaveBeenCalledWith('role-session', 'researcher'));
+    if (tainted) expect(roleMocks.writeBack).not.toHaveBeenCalled();
+    else await vi.waitFor(() => expect(roleMocks.writeBack).toHaveBeenCalledOnce());
+  });
+
+  it('keeps memory taint across external-query counter resets and isolates new runs', () => {
+    const state = new ControlState();
+    state.markMemoryTainted();
+    state.incrementExternalDataCalls();
+    state.resetExternalDataCalls();
+    expect(state.memoryTainted).toBe(true);
+    expect(new ControlState().memoryTainted).toBe(false);
+  });
+
   let tempDir: string;
   let memoryDir: string;
 
@@ -125,6 +166,55 @@ describe('默认助手长期事实写回', () => {
 
   afterEach(async () => {
     await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
+  it.each(['web-fetch', 'channel', 'paste', 'transcript', 'prior-run'])(
+    '%s input cannot write automatic durable facts or summaries', async (source) => {
+      clearMemoryInjectionTracesForTest();
+      memoryModelMocks.memoryTask.mockResolvedValue(llmResult({ durableFacts: [makeFact(1)] }));
+      const control = new ControlState();
+      const messages = [{ id: 'u', role: 'user', content: 'External material', timestamp: 1,
+        metadata: source === 'channel' ? { channel: { accountId: 'external' } }
+          : source === 'paste' ? { workbench: { memoryTainted: true } }
+          : source === 'transcript' ? { voiceTranscript: { itemId: 'transcript' } }
+          : source === 'prior-run' ? { memoryTainted: true } : undefined,
+      }] as RuntimeContext['messages'];
+      if (source === 'web-fetch') {
+        const registry = vi.spyOn(protocolTools, 'getProtocolToolSchemas').mockReturnValue([webFetchUnifiedSchema]);
+        const ctx = { sessionId: '', control, artifact: ArtifactState.forTest(),
+          circuitBreaker: { recordSuccess: () => undefined },
+          goalTracker: { recordAction: () => undefined },
+          antiPatternDetector: { clearToolFailure: () => undefined, trackDuplicateCall: () => undefined },
+        } as unknown as RuntimeContext;
+        const result = { toolCallId: 'fetch-1', success: true, output: 'External article text' };
+        try {
+          handleToolResultBookkeeping({ ctx,
+            toolCall: { id: 'fetch-1', name: 'WebFetch', arguments: {} },
+            normalizedResult: { success: true, output: result.output }, toolResult: result,
+            contextAssembly: {} as never, runtimeControl: {} as never,
+          });
+          expect(control.memoryTainted).toBe(true);
+          expect(result).toMatchObject({ metadata: { memoryTainted: true } });
+        } finally { registry.mockRestore(); }
+      }
+      await runSummaryExtraction({ sessionId: 'taint-test', control, messages });
+      expect(await listFactFiles(memoryDir)).toEqual([]);
+      await expect(fs.access(path.join(memoryDir, 'recent-conversations.md'))).rejects.toThrow();
+      expect(memoryModelMocks.memoryTask).not.toHaveBeenCalled();
+      expect(listMemoryInjectionTraces({ sessionId: 'taint-test' })).toContainEqual(
+        expect.objectContaining({ trigger: 'skipped:tainted', source: 'durable_facts', injected: false }),
+      );
+    },
+  );
+
+  it('rechecks taint after the asynchronous judge before writing', async () => {
+    const control = new ControlState();
+    memoryModelMocks.memoryTask.mockImplementation(async () => {
+      control.markMemoryTainted();
+      return llmResult({ durableFacts: [makeFact(1)] });
+    });
+    await runSummaryExtraction({ control, sessionId: 'late-taint' });
+    expect(await listFactFiles(memoryDir)).toEqual([]);
   });
 
   it('判断器返回两条合格事实时写入两个文件并维护索引', async () => {

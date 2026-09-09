@@ -1,3 +1,4 @@
+import { hasUntrustedMemoryInput } from '../../memory/automaticMemoryPolicy';
 import { cancelTimeWakesOnUserReturn } from '../../services/wake/userReturn';
 // ============================================================================
 // MessageProcessor — Message building, parsing, and telemetry recording
@@ -1155,6 +1156,7 @@ export class MessageProcessor {
       metadata,
     };
     this.ctx.messages.push(steerMessage);
+    if (hasUntrustedMemoryInput([steerMessage])) this.ctx.control.markMemoryTainted();
 
     // 只有纯 CLI 才跳过落库。webServer（桌面 app 也跑它）为了 keytar/原生模块安全
     // 同样会设 CODE_AGENT_CLI_MODE=true，只看这一个标志等于**在产品主路径上静默丢弃

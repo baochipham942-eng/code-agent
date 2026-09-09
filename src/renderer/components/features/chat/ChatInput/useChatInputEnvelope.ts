@@ -29,6 +29,7 @@ export interface UseChatInputEnvelopeParams {
   browserSession: ReturnType<typeof useWorkbenchBrowserSession>;
   voiceInputContext: { anchor: string; metadata: ConversationVoiceInputMetadata } | null;
   buildContext: () => ConversationEnvelopeContext | undefined;
+  inputMemoryTainted?: { readonly current: boolean };
   pendingPromptCommand: ComposerPromptCommandSelection | null;
   pendingAgentSelection: ComposerAgentSelection | null;
   sessionReferences?: ConversationSessionReference[];
@@ -56,6 +57,7 @@ export function useChatInputEnvelope(params: UseChatInputEnvelopeParams): BuildE
     browserSession,
     voiceInputContext,
     buildContext,
+    inputMemoryTainted,
     pendingPromptCommand,
     pendingAgentSelection,
     sessionReferences = [],
@@ -161,7 +163,9 @@ export function useChatInputEnvelope(params: UseChatInputEnvelopeParams): BuildE
       searchEnabled: modeState.searchEnabled,
       thinkingEnabled: modeState.thinkingEnabled,
       ...(modeState.effortLevelExplicit ? { effortLevel: modeState.effortLevel } : {}),
-      context: runtimeScopedContext,
+      context: inputMemoryTainted?.current
+        ? { ...runtimeScopedContext, memoryTainted: true }
+        : runtimeScopedContext,
     };
   }, [
     activeAgentId,
@@ -169,6 +173,7 @@ export function useChatInputEnvelope(params: UseChatInputEnvelopeParams): BuildE
     artifactReferences,
     browserSession,
     buildContext,
+    inputMemoryTainted,
     pendingAgentSelection,
     pendingPromptCommand,
     sessionReferences,

@@ -33,6 +33,7 @@ import { getMemoryDir } from './indexLoader';
 import {
   rebuildMemoryMirrorFromLightFiles,
 } from '../memory/memoryEntryRuntime';
+import { skipAutomaticMemory } from '../memory/automaticMemoryPolicy';
 import type { MemoryRecord } from '../services/core/repositories';
 
 const logger = createLogger('MemoryConsolidation');
@@ -476,13 +477,14 @@ export async function consolidateLightMemory(
   };
 
   const [health, allFiles] = await Promise.all([getLightMemoryHealth(), listMemoryFiles()]);
-  const files = allFiles.filter((file) => (file.status || 'active') === 'active');
-  const beforeCount = files.length;
+  const files = allFiles.filter((file) => (file.status || 'active') === 'active'
+    && !skipAutomaticMemory(file, file.sessionId || 'memory-consolidation', 'consolidation'));
+  const beforeCount = allFiles.filter((file) => (file.status || 'active') === 'active').length;
   const before = { fileCount: beforeCount, indexLineCount: health.indexLineCount };
 
   const trigger = force
     ? { shouldRun: true, reason: 'forced (manual trigger, gate bypassed)' }
-    : decideTrigger(health, beforeCount);
+    : decideTrigger(health, files.length);
   if (!trigger.shouldRun) {
     logger.info('Consolidation skipped', { reason: trigger.reason });
     return finish({
@@ -636,6 +638,12 @@ export async function consolidateLightMemory(
   // Apply: create result cards, archive source cards, mutate INDEX pointers only,
   // then synchronize the rebuildable SQLite mirror.
   try {
+    for (const filename of archivedSources) {
+      const current = await readMemoryFile(filename);
+      if (!current || skipAutomaticMemory(current, current.sessionId || 'memory-consolidation', 'consolidation')) {
+        throw new Error('MEMORY_CANDIDATE_TAINTED_OR_MISSING');
+      }
+    }
     for (const action of plan.actions) {
       if (!action.result?.entryId) continue;
       const first = await readMemoryFile(action.sources[0]);

@@ -329,7 +329,8 @@ describe('InputArea 内联 chip', () => {
 
   it('粘贴纯文本（含换行）走纯文本插入并触发 onChange', () => {
     const onChange = vi.fn();
-    render(<Harness initialValue="" onChange={onChange} />);
+    const onTextPaste = vi.fn();
+    render(<Harness initialValue="" onChange={onChange} onTextPaste={onTextPaste} />);
     const editor = getEditor();
 
     fireEvent.paste(editor, {
@@ -339,6 +340,7 @@ describe('InputArea 内联 chip', () => {
       },
     });
 
+    expect(onTextPaste).toHaveBeenCalledOnce();
     expect(onChange).toHaveBeenLastCalledWith('第一行\n第二行');
     expect(extractComposerPlainText(editor)).toBe('第一行\n第二行');
   });

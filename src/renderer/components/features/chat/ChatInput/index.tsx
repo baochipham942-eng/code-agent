@@ -257,6 +257,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
 }, ref) => {
   const { t } = useI18n();
   const [value, setValue] = useState('');
+  const inputMemoryTainted = useRef(false);
+  useEffect(() => { if (!value) inputMemoryTainted.current = false; }, [value]);
   // @ 文件附件是异步读盘构建的，chip 替换触发词时需要此刻的最新文本（闭包里的 value 可能已旧）
   const latestValueRef = useRef('');
   latestValueRef.current = value;
@@ -545,6 +547,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   }, []);
 
   const buildEnvelope = useChatInputEnvelope({
+    inputMemoryTainted,
     swarmAgents,
     agentEntries,
     activeAgentId,
@@ -600,6 +603,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
           ? { kind: 'failed-resend', clientMessageId: draft.clientMessageId }
           : { kind: 'idle' },
       );
+      inputMemoryTainted.current = true;
       setValue(draft.content);
       setAttachments((draft.attachments ?? []).slice(0, UI.MAX_ATTACHMENTS_DROP));
       pendingResendClientMessageIdRef.current = mode.pendingResendClientMessageId;
@@ -1280,6 +1284,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
             const mode = composerEditModeState({ kind: 'queued-edit', queuedInputId: input.id });
             setEditingQueuedInputId(mode.editingQueuedInputId);
             pendingResendClientMessageIdRef.current = mode.pendingResendClientMessageId;
+            inputMemoryTainted.current = input.envelope.context?.memoryTainted === true
+              || Boolean(input.envelope.context?.voiceInput)
+              || Boolean(input.envelope.attachments?.length);
             setValue(input.envelope.content);
             setAttachments([]);
             setVoiceInputContext(null);
@@ -1424,14 +1431,23 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
             onSubmit={(opts) => { void submitWithRuntimeChoice(undefined, opts); }}
             onFileSelect={handleFileSelect}
             onImagePaste={handleImagePaste}
+            onTextPaste={() => { inputMemoryTainted.current = true; }}
             disabled={disabled && !isProcessing}
             hasAttachments={attachments.length > 0}
             hasMessages={hasMessages}
             isFocused={isFocused}
             onFocusChange={setIsFocused}
             placeholder={resolvedPlaceholder}
-            onHistoryPrev={getPreviousInput}
-            onHistoryNext={getNextInput}
+            onHistoryPrev={(current) => {
+              const previous = getPreviousInput(current);
+              if (previous) inputMemoryTainted.current = true;
+              return previous;
+            }}
+            onHistoryNext={() => {
+              const next = getNextInput();
+              if (next) inputMemoryTainted.current = true;
+              return next;
+            }}
             onHistoryReset={resetInputHistoryIndex}
             onAutocompleteKeyDown={handleComposerAutocompleteKeyDown}
             chips={(

@@ -72,7 +72,7 @@ export interface CompanionDecision {
   requestId: string;
   sessionId: string;
   revision: number;
-  status: 'pending' | 'approved' | 'rejected';
+  status: 'pending' | 'approved' | 'rejected' | 'closed';
   resolvedBy: string | null;
   operationDigest: string | null;
 }

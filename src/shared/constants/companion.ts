@@ -18,4 +18,5 @@ export const COMPANION_LIMITS = {
   maxRequestRecords: 4,
   pollIntervalMs: 1_000,
   lanPort: 8181,
+  approvalPreviewLength: 16_000,
 } as const;

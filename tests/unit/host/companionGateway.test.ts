@@ -75,4 +75,17 @@ describe('CompanionGateway', () => {
     const row = db.prepare('SELECT credential_hash FROM companion_devices WHERE device_id = ?').get(issued.deviceId) as { credential_hash: string };
     expect(row.credential_hash).not.toBe(issued.credential);
   });
+  it('persists a logical approval claim before an uncertain callback', () => {
+    const decide = vi.fn(() => { throw new Error('side effect outcome unknown'); });
+    gateway = new CompanionGateway(db, { decide });
+    gateway.registerDecision({ requestId: 'request', sessionId: 'session-1', revision: 1, status: 'pending', resolvedBy: null, operationDigest: 'digest' });
+    const command = { version: 1, commandId: 'first', deviceId: 'phone-1', scopeEpoch: 1, sessionId: 'session-1', action: 'approval.respond', expectedRevision: 1,
+      payload: { requestId: 'request', decision: 'approved', operationDigest: 'digest' } };
+    gateway.submit(command);
+    gateway = new CompanionGateway(db, { decide });
+    gateway.submit({ ...command, commandId: 'second' });
+    expect(decide).toHaveBeenCalledTimes(1);
+    expect(gateway.commandStatus('phone-1', 'second')?.state).toBe('reconciling');
+  });
+
 });

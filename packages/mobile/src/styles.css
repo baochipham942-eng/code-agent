@@ -47,3 +47,5 @@ input { width: 100%; padding: 16px; background: var(--surface); border: 1px soli
 .lan-messages { flex: 1; min-height: 0; overflow: auto; padding: 16px; }
 .lan-message { white-space: pre-wrap; overflow-wrap: anywhere; padding: 12px; line-height: 1.6; }
 .lan-message.from-user { margin-left: 24px; background: var(--surface); border-radius: 16px; }
+
+.approval-card{padding:16px;border:1px solid var(--border,#ddd);border-radius:16px;margin:12px 0}.approval-card pre{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;font-size:13px;max-height:280px;overflow:auto}.approval-actions{display:flex;justify-content:flex-end;gap:20px}

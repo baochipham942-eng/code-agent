@@ -1,4 +1,8 @@
 const zh = {
+  targetPath: '目标文件或目录', commandPreview: '将执行的命令', targetUrl: '访问地址', beforeChange: '修改前', afterChange: '写入内容',
+  changePreview: '变更预览', targetService: '目标服务', targetOperation: '操作对象', operationRisk: '操作风险', affectedFiles: '影响的文件数',
+  targetKind: '目标类型', requestedAccess: '申请的访问权限', otherDetails: '其他详情', dataBoundary: '数据范围',
+  approval: '需要你的确认', approveOnce: '允许这一次', deny: '拒绝', approvalClosed: '此请求已处理或失效',
   lanTitle: '连接电脑', lanHint: '手机和电脑连接同一网络。在电脑 Neo 的设置 → 通道中生成配对二维码。',
   scan: '扫描电脑二维码', reconnect: '重新连接', connected: '已连接电脑', connecting: '正在连接电脑',
   pendingCommand: '正在核对电脑是否已接收，请勿重复发送', rejected: '电脑未接受这次操作，文字已保留',
@@ -24,6 +28,10 @@ const zh = {
   next: '打开', drag: '下滑关闭弹层', draft: '消息草稿',
 };
 const en: Record<keyof typeof zh, string> = {
+  targetPath: 'Target file or directory', commandPreview: 'Command to execute', targetUrl: 'Destination', beforeChange: 'Before', afterChange: 'Content to write',
+  changePreview: 'Change preview', targetService: 'Service', targetOperation: 'Operation target', operationRisk: 'Operation risk', affectedFiles: 'Affected files',
+  targetKind: 'Target type', requestedAccess: 'Requested access', otherDetails: 'Other details', dataBoundary: 'Data boundary',
+  approval: 'Your confirmation is needed', approveOnce: 'Allow once', deny: 'Deny', approvalClosed: 'This request was handled or is no longer active',
   lanTitle: 'Connect a computer', lanHint: 'Connect both devices to the same network. Create a pairing code in Neo desktop Settings → Channels.',
   scan: 'Scan computer code', reconnect: 'Reconnect', connected: 'Computer connected', connecting: 'Connecting to computer',
   pendingCommand: 'Checking whether the computer received this. Please do not resend.', rejected: 'The computer did not accept this action. Your text is retained.',

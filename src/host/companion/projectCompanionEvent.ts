@@ -1,6 +1,6 @@
 /** Export only the mobile projection, never raw tool arguments or diagnostics. */
 export function projectCompanionEvent(kind: string, value: unknown): Record<string, unknown> | null {
-  if (kind === 'agent_complete' || kind === 'agent_cancelled') return {};
+  if (kind === 'run_started' || kind === 'agent_complete' || kind === 'agent_cancelled') return {};
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const event = value as Record<string, unknown>;
   switch (kind) {

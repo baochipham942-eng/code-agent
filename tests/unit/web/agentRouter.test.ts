@@ -302,6 +302,8 @@ async function startAgentApi(deps: {
   tryGetCLISessionManager?: () => Promise<unknown>;
   getSupabaseForSession?: () => Promise<unknown>;
   registerQueuedInputSendNowHook?: Parameters<typeof createAgentRouter>[0]['registerQueuedInputSendNowHook'];
+  registerCompanionRun?: Parameters<typeof createAgentRouter>[0]['registerCompanionRun'];
+  publishCompanionEvent?: Parameters<typeof createAgentRouter>[0]['publishCompanionEvent'];
 } = {}) {
   const app = express();
   app.use(express.json());
@@ -318,6 +320,8 @@ async function startAgentApi(deps: {
       ?? (async () => null),
     getSupabaseForSession: deps.getSupabaseForSession ?? (async () => null),
     registerQueuedInputSendNowHook: deps.registerQueuedInputSendNowHook,
+    registerCompanionRun: deps.registerCompanionRun,
+    publishCompanionEvent: deps.publishCompanionEvent,
   } as Parameters<typeof createAgentRouter>[0]));
 
   server = await new Promise<http.Server>((resolve) => {
@@ -512,6 +516,18 @@ describe('createAgentRouter', () => {
     inMemorySessions.clear();
     sessionMessages.clear();
     setDbAvailable(false);
+  });
+
+  it('companion activation waits for a real run handle and publishes its stable ID', async () => {
+    await closeServer();
+    let start: Parameters<NonNullable<Parameters<typeof createAgentRouter>[0]['registerCompanionRun']>>[0] | undefined;
+    const publish = vi.fn();
+    await startAgentApi({ registerCompanionRun: value => { start = value; }, publishCompanionEvent: publish });
+    const activation = await start!({ version: 1, sessionId: 'companion-activation', prompt: 'bounded task', clientMessageId: 'companion-message' });
+    expect(activation.runId).toBeTruthy();
+    expect(runRegistry.getBySessionId('companion-activation')?.context.runId).toBe(activation.runId);
+    expect(publish).toHaveBeenCalledWith('companion-activation', 'run_started', { event: {}, runId: activation.runId });
+    await runRegistry.getBySessionId('companion-activation')!.cancel('user');
   });
 
   it('treats an SSE-subscribed renderer as the approval UI for a queued run', async () => {

@@ -119,7 +119,8 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
       <header className="topbar"><button aria-label={text.sessions} data-testid="open-drawer" onClick={state.openDrawer}>☰</button>
         <strong>{companion.sessionId ? `${text.sharedSession} ${(companion.binding?.scope.indexOf(companion.sessionId) ?? 0) + 1}` : state.route === 'new' ? text.neo : text.fixture}</strong><button aria-label={text.more} data-testid="open-more" onClick={() => state.openSheet('more')}>···</button></header>
       {state.route === 'fixture' && fixtures ? <VirtualHistory text={text} /> : companion.sessionId && companion.events.some(event => event.sessionId === companion.sessionId)
-        ? <CompanionConversation events={companion.events} sessionId={companion.sessionId} text={text} />
+        ? <CompanionConversation events={companion.events} sessionId={companion.sessionId} text={text}
+          disabled={companion.busy || companion.pending || companion.status !== 'connected'} respond={companion.respond} />
         : <div className="welcome"><NeoBrandMark /><h1>{text.welcome}</h1></div>}
       <div className="composer-area">
         {companion.binding && <p role="status" className="caption">{companion.pending ? text.pendingCommand : companion.status === 'connected' ? text.connected : companion.status === 'connecting' ? text.connecting : companion.status === 'storageError' ? text.secureStorageError : companion.status === 'rejected' ? text.rejected : text.unconnected}</p>}

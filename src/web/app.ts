@@ -59,6 +59,8 @@ import { createCompanionRouter } from './routes/companion';
 import { createCompanionProvisioningRouter } from './routes/companionProvisioning';
 import { CompanionGateway } from '../host/companion/CompanionGateway';
 import { projectCompanionEvent } from '../host/companion/projectCompanionEvent';
+import { CompanionApprovalService } from '../host/companion/CompanionApprovalService';
+import type { PermissionResponse } from '../shared/contract/permission';
 import { LanCompanionManager } from '../host/companion/LanCompanionManager';
 import { loadLanIdentity } from '../host/companion/lanIdentity';
 import { COMPANION_MANAGE_CHANNEL } from '../shared/constants/companion';
@@ -91,6 +93,7 @@ export interface CreateAppDeps {
   };
   getPendingPermissionRequests?: () => PermissionRequest[];
   registerQueuedInputStartupSweep?: (runStartupSweep: () => void) => void;
+  deliverCompanionPermission?: (requestId: string, response: PermissionResponse, sessionId: string) => { success: boolean; data?: { closed?: boolean } };
   registerCompanionShutdown?: (stop: () => Promise<void>) => void;
   registerQueuedInputEnqueueHook?: (onEnqueued: (sessionId: string) => void) => void;
   registerQueuedInputSendNowHook?: (sendNow: (input: {
@@ -150,7 +153,7 @@ export function createApp(deps: CreateAppDeps): express.Express {
 
   const app = express();
   const traceReadService = new TraceReadService(resolveCodeAgentDataDir());
-  let companionRun: ((body: AgentRunBody) => { runId?: string }) | undefined;
+  let companionRun: ((body: AgentRunBody) => Promise<{ runId: string }>) | undefined;
   let publishCompanionEvent: ((sessionId: string, kind: string, payload: Record<string, unknown>) => void) | undefined;
 
   // HTML 产物人工编辑落库后让 web 消息投影失效（dogfood 抓到的崩法 A 根因）
@@ -236,7 +239,10 @@ export function createApp(deps: CreateAppDeps): express.Express {
   try {
     const db = getDatabase().getDb();
     if (db) {
+      let approvals: CompanionApprovalService | undefined;
       const gateway = new CompanionGateway(db, {
+        refreshDecisions: () => approvals?.refresh(),
+        decide: command => approvals?.respond(command) ?? { kind: 'rejected', reason: 'unsupported_action' },
         dispatch: (command) => {
           if (command.action === 'run.cancel' && command.sessionId) {
             const target = runRegistry.resolve({ sessionId: command.sessionId });
@@ -248,15 +254,23 @@ export function createApp(deps: CreateAppDeps): express.Express {
           if (command.action !== 'message.send' || !companionRun) return { state: 'rejected', result: { code: 'HOST_UNAVAILABLE' } };
           const payload = command.payload as { text?: unknown };
           const text = typeof payload.text === 'string' ? payload.text : '';
-          const run = companionRun({
+          const activation = companionRun({
             version: 1,
             prompt: text,
             sessionId: command.sessionId ?? undefined,
             clientMessageId: command.commandId,
           });
-          return { state: 'accepted', result: { queued: true, runId: run.runId } };
+          void activation.then(({ runId }) => {
+            gateway.settleCommand(command.deviceId, command.commandId, 'accepted', { runId });
+          }, () => {
+            gateway.settleCommand(command.deviceId, command.commandId, 'rejected', { code: 'RUN_START_FAILED' });
+          }).catch(() => logger.warn('Companion activation receipt unavailable'));
+          return { state: 'reconciling', result: { code: 'RUN_STARTING' } };
         },
       });
+      if (getPendingPermissionRequests && deps.deliverCompanionPermission) {
+        approvals = new CompanionApprovalService(gateway, getPendingPermissionRequests, deps.deliverCompanionPermission);
+      }
       publishCompanionEvent = (sessionId, kind, payload) => {
         const projection = projectCompanionEvent(kind, payload.event);
         if (!projection) return;

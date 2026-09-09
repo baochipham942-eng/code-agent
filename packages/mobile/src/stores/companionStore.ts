@@ -15,6 +15,7 @@ interface State {
   binding: LanBinding | null; sessionId: string | null; pending: boolean; busy: boolean;
   events: CompanionEvent[]; runId: string | null; terminal: 'complete' | 'stopped' | 'failed' | null;
   hydrate(): Promise<void>; pair(): Promise<void>; reconnect(): Promise<void>; pause(): void;
+  respond(requestId: string, decision: 'approved' | 'rejected'): Promise<void>;
   selectSession(id: string): void; send(text: string): Promise<void>; stop(): Promise<void>; sync(): Promise<void>;
 }
 
@@ -48,7 +49,9 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
       set({ pending: false });
       if (record.state === 'rejected' || record.state === 'conflict') { set({ status: 'rejected' }); return; }
       if (pending.action === 'message.send') {
-        set({ runId: typeof record.result.runId === 'string' ? record.result.runId : null, terminal: null });
+        const runId = typeof record.result.runId === 'string' ? record.result.runId : null;
+        const terminal = get().events.filter(event => event.payload.runId === runId && ['agent_complete', 'agent_cancelled', 'error'].includes(event.kind)).at(-1);
+        set({ runId: terminal ? null : runId, terminal: terminal ? terminal.kind === 'agent_complete' ? 'complete' : terminal.kind === 'agent_cancelled' ? 'stopped' : 'failed' : null });
       }
     };
     const deliver = async () => {
@@ -123,6 +126,15 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
           commandId: crypto.randomUUID(), sessionId: get().sessionId, action: 'run.cancel', payload: { runId: get().runId } });
         await persist({ ...saved, pending: command }); set({ pending: true }); await deliver();
       }),
+      respond: (requestId, decision) => safely(async () => {
+        if (!saved?.binding || saved.pending || get().status !== 'connected' || !get().sessionId) return;
+        const latest = get().events.filter(event => event.kind === 'approval' && event.sessionId === get().sessionId && event.payload.requestId === requestId).at(-1)?.payload;
+        if (!latest || latest.status !== 'pending') return;
+        const command = companionCommandSchema.parse({ version: 1, deviceId: saved.binding.deviceId, scopeEpoch: saved.binding.scopeEpoch,
+          commandId: crypto.randomUUID(), sessionId: get().sessionId, action: 'approval.respond', expectedRevision: latest.revision,
+          payload: { requestId, decision, operationDigest: latest.operationDigest } });
+        await persist({ ...saved, pending: command }); set({ pending: true }); await deliver();
+      }),
       sync: async () => {
         if (syncing || get().busy || get().status !== 'connected' || !client) return;
         syncing = true;
@@ -131,7 +143,8 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
           if (result.kind === 'snapshot_required') { epoch = result.epoch; cursor = 0; set({ events: [] }); return; }
           if (result.kind !== 'events' || result.epoch !== epoch || !Number.isSafeInteger(result.nextSeq) || result.nextSeq < cursor || !Array.isArray(result.events)) throw new Error('COMPANION_INVALID_SYNC');
           set({ events: [...get().events, ...result.events] }); cursor = result.nextSeq;
-          for (const event of result.events) if (event.sessionId === get().sessionId && (!get().runId || event.payload.runId === get().runId)) {
+          for (const event of result.events) if (event.sessionId === get().sessionId && (event.kind === 'run_started' || !get().runId || event.payload.runId === get().runId)) {
+            if (event.kind === 'run_started' && typeof event.payload.runId === 'string') set({ runId: event.payload.runId, terminal: null });
             if (event.kind === 'agent_complete') set({ runId: null, terminal: 'complete' });
             if (event.kind === 'agent_cancelled') set({ runId: null, terminal: 'stopped' });
             if (event.kind === 'error') set({ runId: null, terminal: 'failed' });

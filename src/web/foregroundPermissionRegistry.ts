@@ -24,6 +24,10 @@ export function unregisterForegroundPermissionIsland(
   }
 }
 
+export function listForegroundPermissionRequests() {
+  return [...foregroundPermissionIslands.values()].flatMap(island => island.listPendingRequests());
+}
+
 export function deliverForegroundPermissionResponse(
   sessionId: string,
   requestId: string,

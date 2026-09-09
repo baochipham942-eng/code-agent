@@ -38,12 +38,13 @@ function equalCredentialDigest(left: string, right: string): boolean {
 }
 
 export interface CompanionDispatchResult {
-  state?: 'accepted' | 'resolved' | 'rejected';
+  state?: 'accepted' | 'resolved' | 'rejected' | 'reconciling';
   result?: Record<string, unknown>;
 }
 
 export interface CompanionGatewayDeps {
   now?: () => number;
+  refreshDecisions?: () => void;
   dispatch?: (command: CompanionCommand) => CompanionDispatchResult;
   /** Must resolve through the same authoritative service used by the desktop. */
   decide?: (command: Extract<CompanionCommand, { action: 'approval.respond' }>) => CompanionSubmitResult;
@@ -59,11 +60,13 @@ export class CompanionGateway {
   private readonly dispatch: (command: CompanionCommand) => CompanionDispatchResult;
   private readonly decide: CompanionGatewayDeps['decide'];
   private currentEpoch = 1;
+  private readonly refreshDecisions: () => void;
 
   constructor(private readonly db: BetterSqlite3.Database, deps: CompanionGatewayDeps = {}) {
     this.now = deps.now ?? Date.now;
     this.dispatch = deps.dispatch ?? (() => ({ state: 'rejected', result: { code: 'HOST_UNAVAILABLE' } }));
     this.decide = deps.decide;
+    this.refreshDecisions = deps.refreshDecisions ?? (() => {});
     this.ensureSchema();
     const row = this.db.prepare(`SELECT MAX(epoch) AS epoch FROM (
       SELECT COALESCE(MAX(epoch), 1) AS epoch FROM companion_events
@@ -153,6 +156,7 @@ export class CompanionGateway {
     if (command.action === 'approval.respond') {
       // A separate companion-only CAS cannot authorize a desktop operation.
       if (!this.decide) return { kind: 'rejected', reason: 'unsupported_action' };
+      this.refreshDecisions();
       const current = this.getDecision(command.payload.requestId);
       if (!current || current.sessionId !== command.sessionId) return { kind: 'rejected', reason: 'scope_denied' };
       if (current.revision !== command.expectedRevision || current.status !== 'pending' ||
@@ -182,6 +186,11 @@ export class CompanionGateway {
     // Recovery must consult the durable engine, not infer "not executed".
     try {
       if (command.action === 'approval.respond') {
+        // A different command ID must not redispatch an uncertain logical decision.
+        const claimed = this.db.prepare(`INSERT OR IGNORE INTO companion_decision_claims
+          (request_id, revision, operation_digest) VALUES (?, ?, ?)`).run(
+            command.payload.requestId, command.expectedRevision, command.payload.operationDigest);
+        if (!claimed.changes) return { kind: 'replayed', command: record };
         const decision = this.decide!(command);
         if (decision.kind !== 'accepted' && decision.kind !== 'replayed') {
           record.state = 'rejected';
@@ -201,6 +210,16 @@ export class CompanionGateway {
       return { kind: 'replayed', command: this.getCommand(command.deviceId, command.commandId)! };
     }
     return { kind: 'accepted', command: record };
+  }
+
+  settleCommand(deviceId: string, commandId: string, state: 'accepted' | 'rejected', result: Record<string, unknown>): void {
+    this.db.prepare(`UPDATE companion_commands SET state = ?, result_json = ?
+      WHERE device_id = ? AND command_id = ? AND state = 'reconciling'`).run(state, JSON.stringify(result), deviceId, commandId);
+  }
+
+  pendingDecisions(): CompanionDecision[] {
+    const rows = this.db.prepare("SELECT request_id FROM companion_decisions WHERE status = 'pending'").all() as SqlRow[];
+    return rows.flatMap(row => { const decision = this.getDecision(String(row.request_id)); return decision ? [decision] : []; });
   }
 
   commandStatus(deviceId: string, commandId: string): CompanionCommandRecord | null {
@@ -268,6 +287,7 @@ export class CompanionGateway {
     if (!device || device.revokedAt !== null) return { kind: 'revoked', epoch, nextSeq: afterSeq, events: [] };
     // Page the underlying stream first, then filter. Advance over unauthorized
     // rows too, so one busy unshared session cannot pin a phone's cursor.
+    this.refreshDecisions();
     const page = this.sync(epoch, afterSeq, COMPANION_LIMITS.syncPageSize);
     return { ...page, events: page.events.filter(event => event.sessionId !== null && device.scope.includes(event.sessionId)) };
   }
@@ -284,7 +304,7 @@ export class CompanionGateway {
     return { deviceId: String(row.device_id), commandId: String(row.command_id), payloadHash: String(row.payload_hash), action: row.action as CompanionCommandRecord['action'], sessionId: row.session_id == null ? null : String(row.session_id), state: row.state as CompanionCommandRecord['state'], result: JSON.parse(String(row.result_json)) as Record<string, unknown>, createdAt: Number(row.created_at) };
   }
 
-  private getDecision(requestId: string): CompanionDecision | null {
+  getDecision(requestId: string): CompanionDecision | null {
     const row = this.db.prepare('SELECT * FROM companion_decisions WHERE request_id = ?').get(requestId) as SqlRow | undefined;
     if (!row) return null;
     return { requestId: String(row.request_id), sessionId: String(row.session_id), revision: Number(row.revision), status: row.status as CompanionDecision['status'], resolvedBy: row.resolved_by == null ? null : String(row.resolved_by), operationDigest: row.operation_digest == null ? null : String(row.operation_digest) };

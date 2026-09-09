@@ -148,7 +148,7 @@ interface AgentRouterDeps extends AgentDurableRouteDeps {
     sessionId: string;
     envelope: ConversationEnvelope;
   }, route: 'active' | 'idle') => Promise<'sent' | 'steered' | 'queued'>) => void;
-  registerCompanionRun?: (run: (body: AgentRunBody) => { runId?: string }) => void;
+  registerCompanionRun?: (run: (body: AgentRunBody) => Promise<{ runId: string }>) => void;
   publishCompanionEvent?: (sessionId: string, kind: string, payload: Record<string, unknown>) => void;
 }
 
@@ -1022,6 +1022,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       const modelFacePrompt = capabilityContextLines.length > 0
         ? wrapWithTurnSystemContext(capabilityContextLines, visiblePrompt)
         : visiblePrompt;
+      deps.publishCompanionEvent?.(sessionId, 'message', { event: userMsg, runId: runContext.runId });
       const messages = [
         ...history,
         modelFacePrompt === visiblePrompt ? userMsg : { ...userMsg, content: modelFacePrompt },
@@ -1281,17 +1282,22 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     }
   }
 
-  deps.registerCompanionRun?.((body) => {
-    const sessionId = body.sessionId;
-    void runAgentTurn(
-      body,
-      createOfflineAgentRunResponseSink(),
-      { connectedClient: false },
-    ).catch((error) => {
-      logger.error(`[AgentRouter] Companion run failed for ${sessionId ?? 'new session'}:`, error);
+  deps.registerCompanionRun?.((body) => new Promise((resolve, reject) => {
+    let activated = false;
+    void runAgentTurn(body, createOfflineAgentRunResponseSink(), {
+      connectedClient: false,
+      onDurableActivated: ({ runId }) => {
+        activated = true;
+        deps.publishCompanionEvent?.(body.sessionId!, 'run_started', { event: {}, runId });
+        resolve({ runId });
+      },
+    }).then(() => {
+      if (!activated) reject(new Error('COMPANION_RUN_NOT_STARTED'));
+    }, error => {
+      if (!activated) reject(error);
+      logger.error('[AgentRouter] Companion run failed', error);
     });
-    return { runId: sessionId ? runRegistry.getBySessionId(sessionId)?.context.runId : undefined };
-  });
+  }));
 
   router.post('/run', async (req: Request, res: Response) => {
     const parsedBody = AgentRunBodySchema.safeParse(req.body);

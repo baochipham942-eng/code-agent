@@ -36,12 +36,10 @@ const FAILURE_CODES: Record<Exclude<PermissionDeliveryOutcome, 'delivered'>, str
   no_session: 'NO_ACTIVE_SESSION',
 };
 
-export function installPermissionResponseHandler(deps: PermissionResponseDeps): void {
+export function installPermissionResponseHandler(deps: PermissionResponseDeps) {
   const { handlers, pendingDevPermissions, getCurrentSessionId, logger } = deps;
 
-  handlers.set(
-    IPC_CHANNELS.AGENT_PERMISSION_RESPONSE,
-    async (_event: unknown, ...args: unknown[]) => {
+  const deliver = (_event: unknown, ...args: unknown[]) => {
       const [requestId, response, sessionId] = args as [string, PermissionResponse, string | undefined];
       const pending = pendingDevPermissions.get(requestId);
       if (pending) {
@@ -111,6 +109,7 @@ export function installPermissionResponseHandler(deps: PermissionResponseDeps): 
           message: `Permission response for ${requestId} not delivered (${outcome}, session=${targetSessionId ?? 'none'})`,
         },
       };
-    },
-  );
+    };
+  handlers.set(IPC_CHANNELS.AGENT_PERMISSION_RESPONSE, async (event, ...args) => deliver(event, ...args));
+  return (requestId: string, response: PermissionResponse, sessionId: string) => deliver(null, requestId, response, sessionId);
 }

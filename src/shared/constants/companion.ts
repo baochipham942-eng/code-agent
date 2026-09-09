@@ -23,6 +23,6 @@ export const COMPANION_LIMITS = {
   voiceDurationMs: 60_000,
   pollIntervalMs: 1_000,
   uiPresenceTtlMs: 15_000,
-  lanPort: 8181,
+  lanPort: 8182,
   approvalPreviewLength: 16_000,
 } as const;

@@ -12,7 +12,7 @@ export function CompanionSection() {
   const [status, setStatus] = useState<Extract<CompanionManagementResult, { kind: 'status' }> | null>(null);
   const [scope, setScope] = useState<string[]>([]);
   const [qr, setQr] = useState<{ image: string; expiresAt: number } | null>(null);
-  const [busy, setBusy] = useState(false); const [error, setError] = useState(false);
+  const [busy, setBusy] = useState(false); const [error, setError] = useState<string | null>(null);
   const [expired, setExpired] = useState(false);
   const refresh = async () => {
     const result = await invoke(COMPANION_MANAGE_CHANNEL, { action: 'status' });
@@ -20,8 +20,8 @@ export function CompanionSection() {
     setStatus(result);
   };
   const run = async (work: () => Promise<void>) => {
-    setBusy(true); setError(false);
-    try { await work(); } catch { setError(true); } finally { setBusy(false); }
+    setBusy(true); setError(null);
+    try { await work(); } catch (caught) { const detail = caught instanceof Error ? caught.message : String(caught); console.error('[companion] management failed', caught); setError(detail || 'UNKNOWN_ERROR'); } finally { setBusy(false); }
   };
   useEffect(() => { void run(refresh); }, []);
   useEffect(() => {
@@ -61,7 +61,7 @@ export function CompanionSection() {
           await invoke(COMPANION_MANAGE_CHANNEL, { action: 'revoke', deviceId: device.deviceId }); await refresh();
         })}>{text.revoke}</button>
       </div>)}
-      {error && <p role="alert">{text.error}</p>}
+      {error && <p role="alert">{text.error} <code>{error}</code></p>}
     </fieldset>
   </SettingsSection>;
 }

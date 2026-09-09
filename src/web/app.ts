@@ -309,6 +309,17 @@ export function createApp(deps: CreateAppDeps): express.Express {
       }, () => library.projects());
       hasCompanionApprovalUi = (sessionId) => lan.hasApprovalUi(sessionId);
       handlers.set(COMPANION_MANAGE_CHANNEL, (_event, request) => lan.manage(request));
+      // Web transport sends `companion:manage` to /api/companion/manage.
+      // Keep an explicit route so browser/web builds can generate invitations
+      // without relying on the generic IPC fallback (which is auth-gated).
+      app.post('/api/companion/manage', async (req, res) => {
+        try {
+          const result = await lan.manage(req.body);
+          res.json(result);
+        } catch (error) {
+          res.status(500).json({ success: false, error: { code: 'COMPANION_MANAGE_FAILED', message: error instanceof Error ? error.message : String(error) } });
+        }
+      });
       deps.registerCompanionShutdown?.(() => lan.stop());
       void lan.restore().catch(() => logger.warn('Companion LAN restore unavailable'));
       app.use('/companion', createCompanionRouter({

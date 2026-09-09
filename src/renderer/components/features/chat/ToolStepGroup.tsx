@@ -465,7 +465,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
         )}
         <span className="min-w-0 flex-1">
           <span className="block break-words text-xs leading-5">{status === 'pending-approval' ? `${t.toolStepHumanize.pendingApprovalStatus} · ` : status === 'streaming' ? `${t.toolGroup.statusRunning} · ` : ''}{label}</span>
-          {(status === 'partial' || status === 'error') && (failureReason || permissionOutcome?.reason) && (
+          {(status === 'partial' || status === 'error') && (failureReason || permissionEvidence.some(({ denied, timedOut }) => denied || timedOut)) && (
             <span className={`mt-0.5 block whitespace-normal break-words text-xs leading-5 ${hasEscalatedError ? 'text-badge-danger' : 'text-zinc-400'}`}>
               {permissionEvidence.some(({ denied, timedOut }) => denied || timedOut) && permissionOutcome ? `${permissionOutcome.label} · ` : ''}
               {failureReason ?? permissionOutcome?.reason ?? t.toolStepHumanize.failureReasonMissing}

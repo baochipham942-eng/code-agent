@@ -55,6 +55,7 @@ describe('demo acceptance: truthful historical presentation', () => {
       const html = renderToStaticMarkup(<ToolStepGroup nodes={nodes} />);
       expect(html).toContain(mixed ? '1 条命令未执行' : '2 条命令未执行');
       expect(html).not.toContain(zh.toolGroup.summaryFailed.replace('{count}', '2'));
+      expect(html).not.toContain('审批被拒绝');
     }
   });
   it('preserves a quoted command link without nested path formatting', () => {

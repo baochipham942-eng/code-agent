@@ -120,6 +120,15 @@ async function runSummaryExtraction(extra: Partial<RuntimeContext> = {}): Promis
 }
 
 describe('默认助手长期事实写回', () => {
+  it('keeps memory taint across external-query counter resets and isolates new runs', () => {
+    const state = new ControlState();
+    state.markMemoryTainted();
+    state.incrementExternalDataCalls();
+    state.resetExternalDataCalls();
+    expect(state.memoryTainted).toBe(true);
+    expect(new ControlState().memoryTainted).toBe(false);
+  });
+
   let tempDir: string;
   let memoryDir: string;
 

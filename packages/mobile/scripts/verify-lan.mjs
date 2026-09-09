@@ -115,6 +115,22 @@ try {
   const bounds=await allow.boundingBox();assert(bounds && bounds.y>=0 && bounds.y+bounds.height<=852,'approval action must be in the viewport without scrolling history');
   assert.equal(await page.getByRole('dialog').count(),0);
   checks.push('approval-visible-above-composer-with-long-history-and-open-sheet');
+  for (const height of [640, 420]) {
+    await page.setViewportSize({ width: 320, height });
+    await page.waitForFunction(h => Math.abs(document.querySelector('.app').getBoundingClientRect().height - h) < 1, height);
+    for (const expanded of [false, true]) {
+      await page.locator('.approval-tray details').evaluate((el, open) => { el.open = open; }, expanded);
+      for (const name of ['允许这一次', '拒绝']) {
+        const box = await page.getByRole('button', { name, exact: true }).boundingBox();
+        assert(box && box.y >= 0 && box.y + box.height <= height && box.x >= 0 && box.x + box.width <= 320, JSON.stringify({ height, expanded, name, box }));
+      }
+      const composer = await page.getByTestId('draft').boundingBox();
+      assert(composer && composer.y >= 0 && composer.y + composer.height <= height);
+    }
+  }
+  checks.push('small-screen-and-keyboard-sized-viewport-keeps-approval-and-composer-reachable');
+  await page.setViewportSize({ width: 393, height: 852 });
+  await page.screenshot({ path: resolve(directory, 'approval-r5.png') });
   fixture.gateway.publish('browser-session','approval',{requestId:'layout-approval',status:'closed',revision:1});
   await page.locator('.approval-tray').waitFor({state:'detached'});
   fixture.server.revoke(fixture.gateway.pairedDevices()[0].deviceId);

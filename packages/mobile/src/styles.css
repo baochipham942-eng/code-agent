@@ -56,3 +56,32 @@ input { width: 100%; padding: 16px; background: var(--surface); border: 1px soli
 .approval-tray .approval-details{min-height:0;overflow:auto;margin:8px 0}
 .approval-tray .approval-card>strong,.approval-tray .approval-actions{flex-shrink:0}
 .approval-tray .approval-actions{padding-top:8px;border-top:1px solid var(--border,#ddd)}
+
+/* R5: quiet connection chrome, readable messages and reachable approval actions. */
+.topbar strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 17px; }
+.task-status { display: flex; align-items: center; gap: 8px; min-height: 32px; font-size: 12px; color: var(--muted); }
+.task-status > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.task-status button { min-height: 36px; padding: 4px 6px; font-size: 12px; flex-shrink: 0; }
+.connection-pill { display: inline-flex; align-items: center; gap: 5px; }
+.status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); }
+[data-connected='true'] .status-dot { background: #168365; }
+.connection-recovery { display: flex; align-items: center; gap: 8px; padding: 0 6px; font-size: 13px; color: var(--muted); }
+.connection-recovery p { margin: 4px 0; max-height: 60px; overflow: auto; }
+.message-region { position: relative; display: flex; flex: 1; min-height: 0; }
+.lan-messages { overscroll-behavior: contain; padding: 8px 20px 20px; }
+.lan-message { padding: 8px 0; margin: 12px 0 22px; line-height: 1.7; font-size: 16px; }
+.lan-message.from-user { width: fit-content; max-width: 88%; margin-left: auto; background: var(--group); padding: 12px 16px; border-radius: 22px; }
+.jump-latest { position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); background: var(--surface); border: 1px solid var(--line); box-shadow: 0 3px 12px #0001; border-radius: 24px; font-size: 13px; padding: 6px 16px; }
+.approval-card { background: var(--surface); border-color: var(--line); }
+.approval-tray .approval-card { padding: 12px; border: 1px solid var(--line); box-shadow: 0 2px 12px #0001; max-height: min(300px, 38dvh); }
+.approval-card > strong { font-size: 14px; }
+.approval-summary { margin: 0; font-size: 13px; }
+.approval-summary > div { display: grid; grid-template-columns: 90px minmax(0, 1fr); gap: 8px; padding: 3px 0; }
+.approval-summary dt { color: var(--muted); }
+.approval-summary dd { margin: 0; overflow-wrap: anywhere; }
+.approval-technical summary { cursor: pointer; padding: 10px 0; font-size: 13px; color: var(--muted); }
+.approval-technical p { margin: 4px 0; font-size: 13px; }
+.approval-actions { gap: 8px; }
+.approval-actions button { flex: 1; min-height: 44px; border-radius: 22px; background: var(--group); font-size: 14px; }
+.approval-actions button:last-child { background: var(--text); color: var(--bg); }
+@media (max-height: 520px) { .composer-area { padding-bottom: 4px; } .approval-tray .approval-card { max-height: 36dvh; padding: 8px; } .approval-summary > div { padding: 1px 0; } .task-status { min-height: 28px; } .task-status button { min-height: 28px; } }

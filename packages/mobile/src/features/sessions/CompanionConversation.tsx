@@ -1,8 +1,16 @@
+import { useLayoutEffect, useRef, useState } from 'react';
 import { ApprovalCard } from './ApprovalCard';
 import type { CompanionEvent } from '../../../../../src/shared/contract/companion';
 import type { messages } from '../../i18n';
 
 export function CompanionConversation({ hidePendingApprovals = false, events, sessionId, text, disabled, respond }: { hidePendingApprovals?: boolean; events: CompanionEvent[]; sessionId: string; text: ReturnType<typeof messages>; disabled: boolean; respond: (requestId: string, decision: 'approved' | 'rejected') => Promise<void> }) {
+  const scroller = useRef<HTMLDivElement>(null);
+  const following = useRef(true);
+  const [showLatest, setShowLatest] = useState(false);
+  useLayoutEffect(() => { following.current = true; setShowLatest(false); }, [sessionId]);
+  useLayoutEffect(() => {
+    if (following.current && scroller.current) scroller.current.scrollTop = scroller.current.scrollHeight;
+  }, [events, sessionId]);
   const approvals = new Map<string, Record<string, unknown>>();
   const activeStreams = new Map<string, string>();
   const committedStreams = new Set<string>();
@@ -32,9 +40,15 @@ export function CompanionConversation({ hidePendingApprovals = false, events, se
       }
     }
   }
-  return <div className="lan-messages" aria-label={text.history} aria-live="polite">
+  return <div className="message-region"><div ref={scroller} onScroll={() => {
+    const el = scroller.current!;
+    following.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    setShowLatest(!following.current);
+  }} className="lan-messages" aria-label={text.history} aria-live="polite">
     {Array.from(rows, ([id, row]) => <p key={id} className={`lan-message ${row.role === 'user' ? 'from-user' : ''}`}>{row.content}</p>)}
     {Array.from(approvals, ([id, card]) => (!hidePendingApprovals || card.status !== 'pending') && <ApprovalCard key={id} card={card} text={text} disabled={disabled}
       respond={decision => respond(id, decision)} />)}
-  </div>;
+  </div>{showLatest && <button className="jump-latest" onClick={() => {
+    following.current = true; scroller.current!.scrollTop = scroller.current!.scrollHeight; setShowLatest(false);
+  }}>{text.latest} ↓</button>}</div>;
 }

@@ -106,6 +106,11 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
     void ports.systemBars.setStyle(theme).catch(() => {});
   }, [ports, theme]);
 
+  useEffect(() => {
+    const input = textarea.current;
+    if (input) { input.style.height = 'auto'; input.style.height = `${Math.min(input.scrollHeight, 140)}px`; }
+  }, [state.preferences.drafts, state.ready]);
+
   const pairAndOpenConversation = async () => {
     await companionStore.getState().pair();
     const result = companionStore.getState();
@@ -141,16 +146,24 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
           <ApprovalCard card={pendingApprovals[0]} text={text} disabled={companion.busy || companion.pending || companion.status !== 'connected'}
             respond={decision => companion.respond(String(pendingApprovals[0].requestId), decision)} />
         </div>}
-        {companion.binding && <p role="status" className="caption">{companion.pending ? text.pendingCommand : companion.status === 'connected' ? text.connected : companion.status === 'connecting' ? text.connecting : companion.status === 'storageError' ? text.secureStorageError : companion.status === 'rejected' ? text.rejected : companion.connectionError ? text[companion.connectionError] : text.unconnected}</p>}
-        {companion.terminal && <p role="status" className="caption">{text[companion.terminal]}</p>}
-        {companion.runId && <button disabled={companion.busy || companion.pending || companion.status !== 'connected'} onClick={() => void companion.stop()}>{text.stop}</button>}
+        {companion.binding && <div className="task-status" role="status">
+          <button className="connection-pill" data-connected={companion.status === 'connected'} onClick={() => state.openSheet('remote')}>
+            <span aria-hidden="true" className="status-dot" />{companion.status === 'connected' ? text.connected : companion.status === 'connecting' ? text.connecting : text.reconnect}
+          </button>
+          <span>{companion.pending ? text.pendingCommand : companion.runId ? text.running : companion.terminal ? text[companion.terminal] : ''}</span>
+          {companion.runId && <button disabled={companion.busy || companion.pending || companion.status !== 'connected'} onClick={() => void companion.stop()}>{text.stop}</button>}
+        </div>}
+        {companion.binding && !['connected', 'connecting'].includes(companion.status) && <div className="connection-recovery">
+          <p>{companion.status === 'storageError' ? text.secureStorageError : companion.status === 'rejected' ? text.rejected : companion.connectionError ? text[companion.connectionError] : text.unconnected}</p>
+          <button disabled={companion.busy} onClick={() => void companion.reconnect()}>{text.retry}</button>
+        </div>}
         {fixtures && <p className="caption">{text.fixtureNotice}</p>}
         {(state.saveError || nativeError || (state.sendAttempted && companion.status !== 'connected')) && <p role="status" className="notice">
           {state.saveError ? text.saveError : nativeError ? text.nativeError : text.unconnected}
           {state.saveError && <button onClick={() => void state.flush()}>{text.retry}</button>}
         </p>}
         <div className="composer">
-          <textarea ref={textarea} aria-label={text.draft} placeholder={text.placeholder} rows={2}
+          <textarea ref={textarea} aria-label={text.draft} placeholder={text.placeholder} rows={1}
             value={state.preferences.drafts[state.route]} data-testid="draft"
             onCompositionStart={() => { composing.current = true; }} onCompositionEnd={() => { composing.current = false; }}
             onChange={event => state.editDraft(event.target.value)} />

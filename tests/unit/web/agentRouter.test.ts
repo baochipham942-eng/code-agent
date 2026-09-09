@@ -334,6 +334,9 @@ async function closeServer() {
   if (!server) return;
   await new Promise<void>((resolve, reject) => {
     server?.close((err) => (err ? reject(err) : resolve()));
+    // Assertions have finished; release HTTP/SSE sockets owned by this test
+    // instead of waiting for the client's keep-alive timeout during teardown.
+    server?.closeAllConnections();
   });
   server = undefined;
   baseUrl = '';

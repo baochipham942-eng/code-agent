@@ -85,7 +85,7 @@ interface MessageWriteOptions {
   updatedAt?: number;
   /** Internal compatibility projection write; immutable ledger was recorded by the caller. */
   skipConversationLedger?: boolean;
-  provenanceKind?: 'compatibility_projection_append' | 'crash-recovery'; // Immutable entry provenance.
+  provenanceKind?: 'compatibility_projection_append' | 'crash-recovery' | 'historical_cli_import'; // Immutable entry provenance.
 }
 
 export class SessionRepository {

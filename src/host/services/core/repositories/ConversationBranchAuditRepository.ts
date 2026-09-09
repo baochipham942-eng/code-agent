@@ -38,6 +38,21 @@ export class ConversationBranchAuditRepository {
     boundary: ConversationBoundary,
   ): ConversationLineageAudit {
     const branch = this.store.requireBranch(sessionId, boundary);
+    return this.auditStoredBranch(branch);
+  }
+
+  /** Import-only inspection: an explicit session grant never grants execution on an ownerless ledger. */
+  auditHistoricalImportSource(sessionId: string, boundary: ConversationBoundary): ConversationLineageAudit {
+    this.store.requireSessionBoundary(sessionId, boundary);
+    const branch = this.store.readBranchBySession(sessionId);
+    if (!boundary.ownerUserId || branch?.owner_user_id !== null
+      || branch.project_id !== boundary.projectId) {
+      throw new ConversationBranchError('OWNER_MISMATCH', 'historical import requires a granted session and an unowned source ledger in the same project');
+    }
+    return this.auditStoredBranch(branch);
+  }
+
+  private auditStoredBranch(branch: ConversationBranchRow): ConversationLineageAudit {
     const issues: ConversationLineageIssue[] = [];
     const references = this.store.readReferences(branch.id);
     const events = this.store.readEvents(branch.id);
@@ -638,11 +653,17 @@ export class ConversationBranchAuditRepository {
       source_message_id: string;
       child_message_id: string;
     }>;
+    const parentReferences = branch.parent_branch_id ? this.store.readReferences(branch.parent_branch_id) : [];
     for (const mapping of mappings) {
       const reference = references[mapping.ordinal];
+      // A compatibility fork maps the immediate parent's alias. For a grandchild
+      // that alias differs from the canonical original message ID by design.
+      const parentReference = parentReferences.find((candidate) => candidate.projected_message_id === mapping.source_message_id);
       if (
         reference?.projected_message_id !== mapping.child_message_id
-        || reference?.canonical_source_message_id !== mapping.source_message_id
+        || parentReference?.entry_id !== reference?.entry_id
+        || parentReference.canonical_source_message_id !== reference?.canonical_source_message_id
+        || parentReference.canonical_source_session_id !== reference?.canonical_source_session_id
       ) {
         issues.push({
           code: 'FORK_ALIAS_MISMATCH',

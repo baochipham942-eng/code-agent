@@ -81,8 +81,10 @@ try {
   await page.getByRole('button', { name: '连接电脑', exact: true }).click();
   await page.getByRole('button', { name: '扫描电脑二维码', exact: true }).click();
   await page.getByText('已连接电脑', { exact: true }).last().waitFor(); checks.push('pair-through-mobile-sheet');
-  await page.getByRole('dialog').getByRole('button', { name: '关闭弹层', exact: true }).click();
-  await page.getByRole('button', { name: '共享会话 1', exact: true }).click();
+  assert.equal(await page.getByRole('dialog').count(), 0);
+  assert.equal(await page.locator('.drawer').count(), 0);
+  assert.equal(await page.locator('.topbar strong').innerText(), '共享会话 1');
+  await page.getByRole('heading', { name: '已连接，可以发任务', exact: true }).waitFor();
   await page.getByTestId('draft').fill('browser-private-message'); await page.getByTestId('send').click();
   await page.getByText('LAN fixture response 1', { exact: true }).waitFor();
   assert.equal(await page.getByTestId('draft').inputValue(), ''); assert.equal(fixture.count(), 1); checks.push('send-ack-and-result');

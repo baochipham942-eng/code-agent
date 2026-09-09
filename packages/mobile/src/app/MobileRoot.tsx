@@ -98,6 +98,12 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
     void ports.systemBars.setStyle(theme).catch(() => {});
   }, [ports, theme]);
 
+  const pairAndOpenConversation = async () => {
+    await companionStore.getState().pair();
+    const result = companionStore.getState();
+    if (result.status === 'connected' && result.sessionId) store.getState().navigate('new');
+  };
+
   const gestureStart = (event: React.TouchEvent) => {
     const touch = event.touches[0];
     if (!touch || event.touches.length !== 1 || state.sheet || keyboardVisible.current ||
@@ -121,7 +127,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
       {state.route === 'fixture' && fixtures ? <VirtualHistory text={text} /> : companion.sessionId && companion.events.some(event => event.sessionId === companion.sessionId)
         ? <CompanionConversation events={companion.events} sessionId={companion.sessionId} text={text}
           disabled={companion.busy || companion.pending || companion.status !== 'connected'} respond={companion.respond} />
-        : <div className="welcome"><NeoBrandMark /><h1>{text.welcome}</h1></div>}
+        : <div className="welcome"><NeoBrandMark /><h1>{companion.status === 'connected' ? text.connectedReady : text.welcome}</h1>{companion.status === 'connected' && <p className="connection-next">{text.connectedNext}</p>}</div>}
       <div className="composer-area">
         {companion.binding && <p role="status" className="caption">{companion.pending ? text.pendingCommand : companion.status === 'connected' ? text.connected : companion.status === 'connecting' ? text.connecting : companion.status === 'storageError' ? text.secureStorageError : companion.status === 'rejected' ? text.rejected : text.unconnected}</p>}
         {companion.terminal && <p role="status" className="caption">{text[companion.terminal]}</p>}
@@ -164,9 +170,11 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
       close={state.closeSheet} back={state.back} text={text}>
       {currentPage === 'remote' ? <div className="settings-group">
         <p>{text.lanHint}</p>
-        <p role="status">{companion.status === 'connected' ? text.connected : companion.status === 'connecting' ? text.connecting : companion.status === 'storageError' ? text.secureStorageError : text.unconnected}</p>
+        {companion.status === 'connected' ? <div className="connection-success" role="status"><span className="connection-check" aria-hidden="true">✓</span><strong>{text.connected}</strong><p>{text.connectedNext}</p></div>
+          : <p role="status">{companion.status === 'connecting' ? text.connecting : companion.status === 'storageError' ? text.secureStorageError : text.unconnected}</p>}
+        {companion.status === 'connected' && <button className="primary" onClick={() => state.navigate('new')}>{text.enterConversation}</button>}
         {!ports.companion && <p>{text.nativeConnectionOnly}</p>}
-        <button className="primary" disabled={!ports.companion || companion.busy || companion.pending} onClick={() => void companion.pair()}>{text.scan}</button>
+        <button className={companion.status === 'connected' ? undefined : 'primary'} disabled={!ports.companion || companion.busy || companion.pending} onClick={() => void pairAndOpenConversation()}>{text.scan}</button>
         {ports.companion && <button disabled={companion.busy} onClick={() => void companion.reconnect()}>{text.reconnect}</button>}
       </div> : <SettingsPage page={currentPage} text={text} appearance={state.preferences.appearance} nickname={state.preferences.nickname}
         profileDraft={state.profileDraft} appInfo={appInfo} open={state.pushSheet} chooseAppearance={state.setAppearance}

@@ -67,7 +67,7 @@ try {
   await page.goto(`http://127.0.0.1:${http.address().port}`);
   await page.getByTestId('open-drawer').click();await page.getByRole('button',{name:'连接电脑',exact:true}).click();
   await page.getByRole('button',{name:'扫描电脑二维码',exact:true}).click();await page.getByText('已连接电脑',{exact:true}).last().waitFor();
-  await page.getByRole('dialog').getByRole('button',{name:'关闭弹层',exact:true}).click();await page.getByRole('button',{name:'共享会话 1',exact:true}).click();pass('pair-production-mobile-to-real-Neo-host');
+  assert.equal(await page.getByRole('dialog').count(),0);assert.equal(await page.locator('.topbar strong').innerText(),'共享会话 1');pass('pair-production-mobile-to-real-Neo-host');
   const filename=`mobile-acceptance-${Date.now()}.txt`;const marker='NEO_MOBILE_REAL_TASK_OK';
   await page.getByTestId('draft').fill(`Use write_file to create ${filename} in this project containing exactly ${marker}. Do not run shell commands or access any other paths. Wait for my approval when requested, then report the created filename.`);
   await page.getByTestId('send').click();await waitFor(page.getByRole('button',{name:'停止任务',exact:true}));pass('durable-run-id-reaches-mobile-stop-control');

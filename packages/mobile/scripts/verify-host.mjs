@@ -34,6 +34,8 @@ try {
   db=new Database(resolve(directory,'data/code-agent.db'),{readonly:true});
   const created=await api('/api/sessions',{title:'Mobile real Neo acceptance',workingDirectory:project});
   assert(created.success); const sessionId=created.data.id;
+  const mode=await api('/api/domain/agent/setSessionPermissionMode',{payload:{sessionId,mode:'readOnly'}});
+  assert(mode.success && mode.data.mode==='readOnly','REAL_SESSION_APPROVAL_MODE_REQUIRED');
   const invited=await api('/api/companion/manage',{action:'invite',scope:[sessionId]});
   assert.equal(invited.kind,'invitation');const invitation=invited.invitation;
   await build({stdin:{contents:`
@@ -75,7 +77,7 @@ try {
   const projected=db.prepare("SELECT payload_json FROM companion_events WHERE session_id=? AND kind='approval' ORDER BY seq DESC LIMIT 1").get(sessionId);
   const operation=JSON.parse(JSON.parse(projected.payload_json).preview);
   assert((await page.locator('.approval-card').last().innerText()).includes(filename));
-  assert.equal(operation.type,'file_write');assert.equal(operation.tool,'write_file');
+  assert.equal(operation.type,'file_write');assert.equal(operation.tool,'Write');
   assert.equal(resolve(project,operation.details.path ?? operation.details.filePath),resolve(project,filename));
   loseReceipt=true;await allow.click();await page.getByText('正在核对电脑是否已接收，请勿重复发送',{exact:true}).waitFor();
   await page.reload();await waitFor(page.getByText('任务已完成',{exact:true}));
@@ -84,6 +86,20 @@ try {
   const detail=await api('/api/sessions/'+sessionId);assert(JSON.stringify(detail).includes(filename),'desktop session must contain real result');
   assert(!wire.join('\n').includes(marker));assert.deepEqual(errors,[]);pass('encrypted-wire-and-no-page-errors');
   await page.screenshot({path:resolve(directory,'completed.png')});
+  for (const action of ['deny', 'stop']) {
+    const blockedFile = `mobile-${action}-${Date.now()}.txt`;
+    await page.getByTestId('draft').fill(`Use Write to create ${blockedFile} containing ${marker}. Only access this project. If denied or cancelled, stop without retrying or using another tool.`);
+    await page.getByTestId('send').click();
+    await waitFor(page.getByRole('button',{name:'允许这一次',exact:true}));
+    assert(!existsSync(resolve(project,blockedFile)));
+    await page.getByRole('button',{name:action==='deny'?'拒绝':'停止任务',exact:true}).click();
+    await waitFor(page.getByText(action==='deny'?'任务已完成':'任务已停止',{exact:true}));
+    assert(!existsSync(resolve(project,blockedFile)),'denied/stopped operation must not write');
+    const decision=db.prepare('SELECT status FROM companion_decisions WHERE session_id=? ORDER BY rowid DESC LIMIT 1').get(sessionId);
+    assert.notEqual(decision.status,'pending');
+    pass(`real-mobile-${action}-prevents-file-side-effect`);
+    await page.screenshot({path:resolve(directory,`${action}.png`)});
+  }
   const output={checks,passed:checks.length,failed:0,skipped:0,sessionId,filename,scope:'Production mobile UI + real LAN Noise + full Neo webServer, actual model API/tool executor/approval resolver/SQLite/file. Scanner and mobile storage are bridged test ports; no physical-phone evidence.'};
   writeFileSync(resolve(directory,'result.json'),JSON.stringify(output,null,2));console.log(JSON.stringify(output));
 } catch(error){writeFileSync(resolve(directory,'failure.json'),JSON.stringify({checks,error:String(error),passed:checks.length,failed:1},null,2));throw error;}

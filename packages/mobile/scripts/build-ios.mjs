@@ -73,7 +73,22 @@ const profileName = profileSummary ? (profileSummary.name ?? profileSummary.uuid
 const archiveArgs = ['-project', 'ios/App/App.xcodeproj', '-scheme', 'App', '-configuration', 'Release',
   '-destination', 'generic/platform=iOS', '-archivePath', archive, 'archive'];
 if (style === 'manual') {
-  archiveArgs.push('CODE_SIGN_STYLE=Manual', `PROVISIONING_PROFILE_SPECIFIER=${profileName}`, `CODE_SIGN_IDENTITY=${identity}`);
+  // Command-line provisioning settings also reach Swift package targets, which cannot
+  // carry an app profile (including the scanner's OSBarcodeLib dependency).
+  let appConfigurations = 0;
+  const signedProject = readFileSync(pbxproj, 'utf8').replace(/buildSettings = \{([\s\S]*?)\n(\s*)\};/g, (block, settings, indent) => {
+    if (!settings.includes(`PRODUCT_BUNDLE_IDENTIFIER = ${appId};`)) return block;
+    appConfigurations++;
+    const values = { CODE_SIGN_STYLE: 'Manual', PROVISIONING_PROFILE_SPECIFIER: profileName, CODE_SIGN_IDENTITY: identity, DEVELOPMENT_TEAM: teamId };
+    for (const [key, value] of Object.entries(values)) {
+      const assignment = `${key} = ${JSON.stringify(value)};`;
+      const existing = new RegExp(`${key} = [^;]*;`, 'g');
+      settings = existing.test(settings) ? settings.replace(existing, assignment) : `${settings}\n${indent}\t${assignment}`;
+    }
+    return `buildSettings = {${settings}\n${indent}};`;
+  });
+  if (appConfigurations !== 2) throw new Error('IOS_APP_SIGNING_CONFIGURATIONS_CHANGED');
+  writeFileSync(pbxproj, signedProject);
 } else archiveArgs.push('-allowProvisioningUpdates');
 run('xcodebuild', archiveArgs);
 const exportPath = '.artifacts/ios-export';

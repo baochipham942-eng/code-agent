@@ -11,7 +11,7 @@ import { OrchestratorPermissionIsland } from '../../src/host/agent/orchestratorP
 import { registerForegroundPermissionIsland, unregisterForegroundPermissionIsland, listForegroundPermissionRequests } from '../../src/web/foregroundPermissionRegistry';
 import { installPermissionResponseHandler } from '../../src/web/webPermissionResponseHandler';
 import { IPC_CHANNELS } from '../../src/shared/ipc';
-import type { AppSettings } from '../../src/shared/contract';
+import { DEFAULT_SETTINGS } from '../../src/host/services/core/configDefaults';
 import type { CompanionCommand } from '../../src/shared/contract/companion';
 
 describe('companion uses the desktop live approval authority', () => {
@@ -24,7 +24,7 @@ describe('companion uses the desktop live approval authority', () => {
   beforeEach(() => {
     db = new Database(':memory:'); handlers = new Map();
     island = new OrchestratorPermissionIsland({
-      getSettings: () => ({ permissions: { autoApprove: { read: false, write: false, execute: false, network: false }, blockedCommands: [], devModeAutoApprove: false } } as AppSettings),
+      getSettings: () => ({ ...DEFAULT_SETTINGS, permissions: { ...DEFAULT_SETTINGS.permissions, autoApprove: { read: false, write: false, execute: false, network: false }, blockedCommands: [], devModeAutoApprove: false } }),
       isDevModeAutoApproveEnabled: () => false, getExecutionTopology: () => 'main', hasApprovalUi: () => true, onEvent: () => {},
     });
     registerForegroundPermissionIsland(sessionId, island);
@@ -90,7 +90,7 @@ describe('companion uses the desktop live approval authority', () => {
   it('a parked SQLite failure or lost CAS is not reported as delivered', async () => {
     db.exec(`CREATE TABLE pending_approvals (id TEXT PRIMARY KEY,kind TEXT,agent_id TEXT,agent_name TEXT,coordinator_id TEXT,payload_json TEXT,status TEXT,submitted_at INTEGER,resolved_at INTEGER,feedback TEXT)`);
     const repo = new PendingApprovalRepository(db);
-    const parked = new OrchestratorPermissionIsland({ getSettings: () => ({ permissions: { autoApprove: {} } } as AppSettings),
+    const parked = new OrchestratorPermissionIsland({ getSettings: () => ({ ...DEFAULT_SETTINGS, permissions: { ...DEFAULT_SETTINGS.permissions, autoApprove: { read: false, write: false, execute: false, network: false } } }),
       isDevModeAutoApproveEnabled: () => false, getExecutionTopology: () => 'main', hasApprovalUi: () => true, onEvent: () => {}, injectedPendingApprovalRepo: repo });
     const promise = parked.requestPermission({ type: 'directory_access', tool: 'request_directory', sessionId, details: { path: '/tmp/neo-approval-project' } });
     const id = parked.listPendingRequests()[0].id;

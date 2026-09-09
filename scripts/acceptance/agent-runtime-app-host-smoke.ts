@@ -22,6 +22,7 @@ import {
   SYSTEM_CHROME_CDP_PROVIDER,
 } from './browser-computer-system-chrome.ts';
 import { describeChildExit, isChildGone } from './childProcessState';
+import { folderTrustZh, folderTrustEn } from '../../src/renderer/i18n/folderTrust';
 
 interface SmokeChromeSession {
   browser: Browser;
@@ -308,8 +309,8 @@ async function waitForRenderer(page: Page, timeoutMs = 60_000): Promise<{ title:
 
 async function resolveFolderTrustGate(page: Page): Promise<'blocked' | 'not_shown'> {
   const dialog = page
-    .getByRole('dialog')
-    .filter({ hasText: /(?:信任这个项目文件夹|Trust this project folder)/ })
+    .getByRole('dialog', { name: folderTrustZh.folderTrust.title, exact: true })
+    .or(page.getByRole('dialog', { name: folderTrustEn.folderTrust.title, exact: true }))
     .first();
   const shown = await dialog.waitFor({ state: 'visible', timeout: 10_000 })
     .then(() => true)
@@ -317,7 +318,8 @@ async function resolveFolderTrustGate(page: Page): Promise<'blocked' | 'not_show
   if (!shown) return 'not_shown';
 
   await dialog
-    .getByRole('button', { name: /^(?:阻止项目配置|Block project config)$/ })
+    .getByRole('button', { name: folderTrustZh.folderTrust.block, exact: true })
+    .or(dialog.getByRole('button', { name: folderTrustEn.folderTrust.block, exact: true }))
     .first()
     .click({ timeout: 5_000 });
   await dialog.waitFor({ state: 'hidden', timeout: 10_000 });
@@ -733,6 +735,20 @@ async function main(): Promise<void> {
 
     await installUiCancelRunInterception(page, uiCancelRunRequests);
     await installIsolatedFolderTrustSafetyRoute(page);
+    // Fresh profiles now open a folderless conversation. Seed an actual session
+    // for the isolated fixture before expecting its folder-trust prompt.
+    await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+    await waitForRenderer(page);
+    await page.locator('[data-chat-input]').first().waitFor({ state: 'visible' });
+    const fixtureSession = await fetchFromRenderer<{ success?: boolean; data?: { id?: string } }>(
+      page, '/api/sessions', {
+        method: 'POST',
+        body: { title: 'Isolated stop smoke', workingDirectory: isolatedWorkingDirectory },
+      },
+    );
+    if (!fixtureSession.ok || !fixtureSession.data?.success || !fixtureSession.data.data?.id) {
+      throw new Error(`Failed to create isolated stop-smoke session (${fixtureSession.status}).`);
+    }
     const startupDoctorSettled = page.waitForResponse(
       (response) => response.url().includes('/api/domain/provider/run_doctor'),
       { timeout: 20_000 },

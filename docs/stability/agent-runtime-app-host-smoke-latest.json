@@ -1,18 +1,18 @@
 {
   "schemaVersion": 1,
   "smoke": "agent-runtime-app-host",
-  "generatedAt": "2026-08-19T09:24:15.038Z",
-  "gitHead": "5716f0462fdff225846e14c3d87c1a5e39eec090",
+  "generatedAt": "2026-09-09T00:50:29.026Z",
+  "gitHead": "176092727811ead9de9ece966b6c228a65488e64",
   "passed": true,
   "scenarios": {
     "RunRegistry": {
       "passed": true,
-      "durationMs": 70,
+      "durationMs": 66,
       "terminalCleanup": true
     },
     "rendererStop": {
       "passed": true,
-      "durationMs": 84,
+      "durationMs": 77,
       "terminalCleanup": true
     }
   }

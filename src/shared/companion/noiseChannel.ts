@@ -1,4 +1,3 @@
-/// <reference path="./noise-types.d.ts" />
 import Noise, { type KeyPair } from 'noise-handshake';
 import Cipher from 'noise-handshake/cipher';
 import { COMPANION_LIMITS as L } from '../constants/companion';

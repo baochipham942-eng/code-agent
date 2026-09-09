@@ -5,5 +5,5 @@
     "jsx": "react-jsx", "esModuleInterop": true, "skipLibCheck": true,
     "noEmit": true, "resolveJsonModule": true, "types": ["vite/client", "node"]
   },
-  "include": ["src", "../../tests/unit/mobile", "capacitor.config.ts", "vite.config.ts", "vitest.config.ts"]
+  "include": ["src", "../../src/shared/companion/noise-types.d.ts", "../../tests/unit/mobile", "capacitor.config.ts", "vite.config.ts", "vitest.config.ts"]
 }

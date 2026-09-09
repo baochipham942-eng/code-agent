@@ -70,7 +70,7 @@ describe('local replay message presentation', () => {
     const replay = entry();
     const restored = restoreLocalMessageContent('session-story', replay, () => ({
       ...local,
-      metadata: { unrecorded: true },
+      metadata: { retryPrompt: 'Unrecorded retry instruction' },
       toolCalls: [],
     }));
     expect(restored).toEqual({ ...replay.message, content: local.content });

@@ -48,11 +48,6 @@ const DeliverableDiffDetail: React.FC<{ change: FileChange }> = ({ change }) => 
 
   return (
     <div className="border-t border-border-muted px-2.5 py-1.5">
-      <button type="button" className="mr-4 text-xs text-zinc-300 hover:underline" onClick={(event) => {
-        event.stopPropagation();
-        setExpanded(false);
-        useAppStore.getState().openPreview(change.filePath);
-      }}>{copy.product}</button>
       <button
         type="button"
         onClick={(event) => {

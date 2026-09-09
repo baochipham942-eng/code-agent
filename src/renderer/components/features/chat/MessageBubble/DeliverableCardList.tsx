@@ -196,6 +196,7 @@ interface CardRowProps {
 }
 
 const CardRow: React.FC<CardRowProps> = ({ card, labels, openCard, runSecondaryAction, requestPublish, detail }) => {
+  const { t } = useI18n();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -240,7 +241,7 @@ const CardRow: React.FC<CardRowProps> = ({ card, labels, openCard, runSecondaryA
       title={clickable ? actionLabel(card, labels) : undefined}
       onClick={() => clickable && openCard(card)}
       onKeyDown={(event) => {
-        if (!clickable || (event.key !== 'Enter' && event.key !== ' ')) return;
+        if (event.target !== event.currentTarget || !clickable || (event.key !== 'Enter' && event.key !== ' ')) return;
         event.preventDefault();
         openCard(card);
       }}
@@ -257,16 +258,23 @@ const CardRow: React.FC<CardRowProps> = ({ card, labels, openCard, runSecondaryA
             </span>
           )}
         </div>
-        {(publishAction || overflowActions.length > 0) && (
+        {(clickable || publishAction || overflowActions.length > 0) && (
           <div className="flex flex-shrink-0 items-center gap-0.5 pr-1.5">
+            {clickable && (
+              <Button size="sm" variant="primary" className="h-8 px-3 text-xs"
+                aria-label={`${t.deliveryExperience.viewProduct}: ${card.title}`}
+                onClick={(event) => { event.stopPropagation(); openCard(card); }}>
+                {t.deliveryExperience.viewProduct}
+              </Button>
+            )}
             {publishAction && (
-              <button /* ds-allow:button: 产物卡窄版专用主动作，通用 Button 尺寸不适配 */
+              <button /* ds-allow:button: 产物卡窄版专用次级动作，通用 Button 尺寸不适配 */
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
                   requestPublish(publishAction, card);
                 }}
-                className="inline-flex h-6 items-center justify-center gap-1 rounded border border-teal-500/50 px-1.5 text-[11px] text-badge-success hover:bg-teal-500/10"
+                className="inline-flex h-7 items-center justify-center gap-1 rounded px-2 text-[11px] text-zinc-400 hover:bg-surface-hover hover:text-zinc-200"
                 title={labels.publishVersion}
                 aria-label={`${labels.publishVersion}: ${card.title}`}
               >

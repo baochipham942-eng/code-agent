@@ -1,5 +1,7 @@
 export const deliveryExperienceZh = {
   deliveryExperience: {
+    savedHistoryOpened: '已打开保存记录 · 暂不能继续任务',
+    viewProduct: '查看成品',
     sessionLoadFailed: '暂时无法恢复这条会话', savedHistoryNotice: '可查看已保存的记录；继续任务仍需先解决会话加载问题。', viewSavedHistory: '查看已保存记录', retrySessionLoad: '重试打开', loadDetails: '错误详情', historyReadFailed: '读取历史记录失败',
     product: '成品', changes: '本次修改', currentFile: '当前文件', backToChat: '返回对话',
     generatedLines: '已生成 · {count} 行', addedLines: '+{count} 行', removedLines: '-{count} 行',
@@ -20,6 +22,8 @@ export const deliveryExperienceZh = {
 };
 export const deliveryExperienceEn: typeof deliveryExperienceZh = {
   deliveryExperience: {
+    savedHistoryOpened: 'Saved records opened · Task continuation unavailable',
+    viewProduct: 'View deliverable',
     sessionLoadFailed: 'This session could not be restored', savedHistoryNotice: 'Saved records can be viewed. Resolve the session loading error before continuing the task.', viewSavedHistory: 'View saved records', retrySessionLoad: 'Retry opening', loadDetails: 'Error details', historyReadFailed: 'Could not read saved records',
     product: 'Deliverable', changes: 'Changes', currentFile: 'Current file', backToChat: 'Back to chat',
     generatedLines: 'Created · {count} lines', addedLines: '+{count} lines', removedLines: '-{count} lines',

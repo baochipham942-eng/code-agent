@@ -358,9 +358,9 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
 
   const failureReason = useMemo(() => {
     const failedCalls = toolCalls.filter((toolCall) => toolCall.result?.success === false);
-    if (failedCalls.length === 0) return null;
-    if (failedCalls.length === 1) return humanizeToolFailureReason(failedCalls[0], t);
-    return t.toolGroup.summaryFailed.replace('{count}', String(failedCalls.length));
+    // The main label already counts failed and blocked steps; repeat only a concrete cause.
+    const reasons = [...new Set(failedCalls.map((toolCall) => humanizeToolFailureReason(toolCall, t)))];
+    return reasons.length === 1 && reasons[0] !== t.toolStepHumanize.failureReasonMissing ? reasons[0] : null;
   }, [t, toolCalls]);
   const outputCount = useMemo(() => {
     return toolCalls.filter((toolCall) => hasToolOutputArtifact(toolCall)).length;
@@ -465,9 +465,9 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
         )}
         <span className="min-w-0 flex-1">
           <span className="block break-words text-xs leading-5">{status === 'pending-approval' ? `${t.toolStepHumanize.pendingApprovalStatus} · ` : status === 'streaming' ? `${t.toolGroup.statusRunning} · ` : ''}{label}</span>
-          {(status === 'partial' || status === 'error') && (
+          {(status === 'partial' || status === 'error') && (failureReason || permissionOutcome?.reason) && (
             <span className={`mt-0.5 block whitespace-normal break-words text-xs leading-5 ${hasEscalatedError ? 'text-badge-danger' : 'text-zinc-400'}`}>
-              {status === 'partial' ? `${t.toolGroup.statusPartial} · ` : ''}
+              {permissionEvidence.some(({ denied, timedOut }) => denied || timedOut) && permissionOutcome ? `${permissionOutcome.label} · ` : ''}
               {failureReason ?? permissionOutcome?.reason ?? t.toolStepHumanize.failureReasonMissing}
             </span>
           )}

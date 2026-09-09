@@ -44,6 +44,19 @@ describe('demo acceptance: truthful historical presentation', () => {
     expect(html).not.toContain('运行了 1 条命令');
     expect(html).not.toContain('审批被拒绝');
   });
+  it('does not repeat failure totals beneath blocked command and mixed failure summaries', () => {
+    for (const mixed of [false, true]) {
+      const nodes = [
+        { id: 'b1', name: 'Bash', args: {}, success: false, result: 'auto 档不放行', metadata: { failureCode: 'permission-denied' } },
+        mixed
+          ? { id: 's', name: 'Skill', args: { skill: 'slides' }, success: false, result: 'skill unavailable' }
+          : { id: 'b2', name: 'Bash', args: {}, success: false, result: 'auto 档不放行', metadata: { failureCode: 'permission-denied' } },
+      ].map((toolCall, i) => ({ id: toolCall.id, type: 'tool_call', content: '', timestamp: i, toolCall } as TraceNode));
+      const html = renderToStaticMarkup(<ToolStepGroup nodes={nodes} />);
+      expect(html).toContain(mixed ? '1 条命令未执行' : '2 条命令未执行');
+      expect(html).not.toContain(zh.toolGroup.summaryFailed.replace('{count}', '2'));
+    }
+  });
   it('preserves a quoted command link without nested path formatting', () => {
     const content = '[python3 "/workspace/演示/build_ppt.py"](!run)';
     expect(wrapFilePathsInBackticks(content)).toBe(content);

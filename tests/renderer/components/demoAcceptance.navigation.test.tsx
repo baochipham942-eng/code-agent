@@ -46,7 +46,7 @@ describe('deliverable and command navigation', () => {
     const view = render(<FileArtifactCard items={[{ label: 'report.md', path: filePath, kind: 'file', ownerKind: 'tool', ownerLabel: 'Write', role: 'deliverable' }]} fileChangesByPath={new Map([[filePath, { filePath, oldText: '', newText: '# Report', added: 1, removed: 0, isNewFile: true, editCount: 1 }]])} />);
     fireEvent.click(view.getByText('本次修改'));
     expect(view.getByTestId('diff')).toBeTruthy();
-    fireEvent.click(view.getByText('成品'));
+    fireEvent.click(view.getByRole('button', { name: '查看成品: report.md' }));
     await waitFor(() => expect(view.queryByTestId('diff')).toBeNull());
     expect(useWorkbenchFocusStore.getState().workbenchFocused).toBe(true);
   });

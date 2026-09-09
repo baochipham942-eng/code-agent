@@ -1,7 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 vi.unmock('better-sqlite3');
+vi.mock('node:os', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:os')>();
+  return { ...actual, networkInterfaces: vi.fn(actual.networkInterfaces) };
+});
 import Database from 'better-sqlite3';
 import { networkInterfaces } from 'node:os';
+import { LanCompanionManager } from '../../src/host/companion/LanCompanionManager';
 import { CompanionGateway } from '../../src/host/companion/CompanionGateway';
 import { LanCompanionServer } from '../../src/host/companion/LanCompanionServer';
 import { createHandshake, createIdentity, NoiseChannel } from '../../src/shared/companion/noiseChannel';
@@ -260,5 +265,52 @@ describe('LAN protocol validation', () => {
     expect(() => rx.open(record)).toThrow();
     expect(() => rx.open(tx.seal({ content: 'second' }))).toThrow();
     tx.close();
+  });
+});
+
+
+describe('LAN manager network changes (mocked network and listener)', () => {
+  afterEach(() => { vi.restoreAllMocks(); });
+  function setup() {
+    const interfaces = vi.mocked(networkInterfaces);
+    const setAddresses = (...addresses: string[]) => interfaces.mockReturnValue({ en0: addresses.map(address => ({
+      address, family: 'IPv4', internal: false, netmask: '255.255.255.0', mac: '00:00:00:00:00:00', cidr: `${address}/24`,
+    })) });
+    const start = vi.spyOn(LanCompanionServer.prototype, 'start').mockResolvedValue();
+    const stop = vi.spyOn(LanCompanionServer.prototype, 'stop').mockResolvedValue();
+    vi.spyOn(LanCompanionServer.prototype, 'invite').mockReturnValue({ version: 1, endpoint: 'http://192.168.1.2:8181',
+      inviteId: 'fixture', psk: '00'.repeat(32), hostKey: '00'.repeat(32), expiresAt: Date.now() + L.invitationTtlMs });
+    const db = new Database(':memory:');
+    const gateway = new CompanionGateway(db, { dispatch: () => ({ state: 'accepted' }) });
+    const manager = new LanCompanionManager(gateway, async () => createIdentity(), async () => [{ id: 'shared', title: 'Shared' }]);
+    return { setAddresses, start, stop, db, manager, invite: () => manager.manage({ action: 'invite', scope: ['shared'] }) };
+  }
+  it('rebinds when the paired interface disappears and serializes concurrent invitations', async () => {
+    const t = setup();
+    try {
+      t.setAddresses('172.20.10.6'); await t.invite();
+      t.setAddresses('192.168.1.2'); await Promise.all([t.invite(), t.invite()]);
+      expect(t.start.mock.calls).toEqual([['172.20.10.6'], ['192.168.1.2']]);
+      expect(t.stop).toHaveBeenCalledTimes(1);
+      expect(t.stop.mock.invocationCallOrder[0]).toBeLessThan(t.start.mock.invocationCallOrder[1]);
+    } finally { await t.manager.stop(); t.db.close(); }
+  });
+  it('keeps a still available interface even when network enumeration changes order', async () => {
+    const t = setup();
+    try {
+      t.setAddresses('192.168.1.2'); await t.invite();
+      t.setAddresses('10.1.1.2', '192.168.1.2'); await t.invite();
+      expect(t.start).toHaveBeenCalledTimes(1); expect(t.stop).not.toHaveBeenCalled();
+    } finally { await t.manager.stop(); t.db.close(); }
+  });
+  it('stops the stale listener and refuses invitations without a private interface, then recovers', async () => {
+    const t = setup();
+    try {
+      t.setAddresses('192.168.1.2'); await t.invite();
+      t.setAddresses('203.0.113.4'); await expect(t.invite()).rejects.toThrow('COMPANION_LAN_UNAVAILABLE');
+      expect(t.stop).toHaveBeenCalledTimes(1); expect(t.start).toHaveBeenCalledTimes(1);
+      t.setAddresses('10.1.1.2'); await t.invite();
+      expect(t.start).toHaveBeenLastCalledWith('10.1.1.2');
+    } finally { await t.manager.stop(); t.db.close(); }
   });
 });

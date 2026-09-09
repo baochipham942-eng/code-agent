@@ -25,7 +25,7 @@ export interface AgentResultEntry {
   cancelled?: boolean;
   filesChanged: string[];
   stats: {
-    toolCalls: number;
+    toolCalls: number | null;
     iterations: number;
     cost?: number;
     durationMs: number;
@@ -52,7 +52,7 @@ export interface AggregatedTeamResult {
   /** Total iterations across all agents */
   totalIterations: number;
   /** Total tool calls across all agents */
-  totalToolCalls: number;
+  totalToolCalls: number | null;
 }
 
 // ============================================================================
@@ -105,7 +105,7 @@ export function aggregateTeamResults(
   const allFiles = new Set<string>();
   let totalCost = 0;
   let totalIterations = 0;
-  let totalToolCalls = 0;
+  let totalToolCalls: number | null = 0;
   let serialDuration = 0;
   let succeeded = 0;
 
@@ -123,7 +123,7 @@ export function aggregateTeamResults(
       cancelled: r.cancelled || undefined,
       filesChanged: files,
       stats: {
-        toolCalls: r.toolsUsed.length,
+        toolCalls: r.toolCallCount ?? null,
         iterations: r.iterations,
         cost: r.cost,
         durationMs: r.duration,
@@ -133,7 +133,8 @@ export function aggregateTeamResults(
     agentResults.push(entry);
     totalCost += r.cost || 0;
     totalIterations += r.iterations;
-    totalToolCalls += r.toolsUsed.length;
+    totalToolCalls = totalToolCalls !== null && r.toolCallCount !== undefined
+      ? totalToolCalls + r.toolCallCount : null;
     serialDuration += r.duration;
     if (r.success) succeeded++;
   }

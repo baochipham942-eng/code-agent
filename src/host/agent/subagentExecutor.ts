@@ -556,6 +556,7 @@ export class SubagentExecutor {
             output: finalOutput || '',
             error: errorMsg,
             toolsUsed: [...new Set(toolsUsed)],
+            toolCallCount: turnObservability.getToolCallCount(),
             iterations,
             tokensUsed: getTotalTokens(),
             cost: getTotalCost(),
@@ -665,6 +666,14 @@ export class SubagentExecutor {
           inferenceDuration,
           telemetryTurnId,
           turnNumber: currentTelemetryTurnNumber,
+        });
+        turnObservability.recordInference({
+          responseType: response.type, durationMs: inferenceDuration,
+          inputTokens: response.usage?.inputTokens ?? 0,
+          outputTokens: response.usage?.outputTokens ?? 0,
+          ...(response.usage?.cacheReadTokens !== undefined ? { cacheReadTokens: response.usage.cacheReadTokens } : {}),
+          usageReported: response.usage !== undefined,
+          finishReason: response.finishReason ?? null, truncated: Boolean(response.truncated),
         });
         outputTokensUsed += modelCall.outputTokens;
         pipeline.recordTokenUsage(pipelineContext, {
@@ -807,6 +816,7 @@ export class SubagentExecutor {
               const error = `Budget exceeded for ${toolCall.name}: ${permCheck.reason}`;
               toolResults.push(`Error: ${error}`);
               logger.warn(`[${config.name}] Tool ${toolCall.name} blocked: ${permCheck.reason}`);
+              turnObservability.recordToolError(toolCall, error, 0);
               telemetryToolCalls.push({
                 toolCallId: toolCall.id,
                 name: toolCall.name,
@@ -860,6 +870,7 @@ export class SubagentExecutor {
                   const error = `Blocked by plan approval: ${approval.feedback || 'rejected'}`;
                   toolResults.push(`Tool ${toolCall.name}: ${error}`);
                   logger.info(`[${config.name}] Tool ${toolCall.name} blocked by plan approval`);
+                  turnObservability.recordToolError(toolCall, error, 0);
                   telemetryToolCalls.push({
                     toolCallId: toolCall.id,
                     name: toolCall.name,
@@ -1112,6 +1123,7 @@ export class SubagentExecutor {
         success: true,
         output: finalOutput || 'Subagent completed without output',
         toolsUsed: [...new Set(toolsUsed)],
+        toolCallCount: turnObservability.getToolCallCount(),
         iterations,
         tokensUsed: getTotalTokens(),
         cost: getTotalCost(),
@@ -1153,7 +1165,7 @@ export class SubagentExecutor {
         ).catch(() => {});
       }
 
-      if (error instanceof SubagentDoomLoopStopError) return error.toResult(finalOutput, toolsUsed, iterations, getTotalTokens(), getTotalCost(), executionAgentId, latestContextSnapshot);
+      if (error instanceof SubagentDoomLoopStopError) return { ...error.toResult(finalOutput, toolsUsed, iterations, getTotalTokens(), getTotalCost(), executionAgentId, latestContextSnapshot), toolCallCount: turnObservability.getToolCallCount() };
 
       // 把已消耗的 outputTokens 挂到 error 上，让 dynamic-workflow 的 BudgetTracker 在抛出路径
       // 也能记账（provider 产出部分 output 后崩的场景，Codex R2 MED#4）。不影响既有错误处理。

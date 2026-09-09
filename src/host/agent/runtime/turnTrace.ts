@@ -27,6 +27,9 @@ const INCREMENTAL_FLUSH_INTERVAL_MS = 2_000;
 export type TraceEventType =
   | 'inference'
   | 'loop_decision'
+  | 'evidence_boundary'
+  | 'tool_attempt'
+  | 'tool_execution_start'
   | 'tool_dispatch'
   | 'compaction'
   | 'verification'
@@ -70,6 +73,8 @@ export interface TraceEventDataMap {
     inputTokens: number;
     outputTokens: number;
     cacheReadTokens?: number;
+    /** False means token numbers are absent, not a measured zero. */
+    usageReported?: boolean;
     finishReason: string | null;
     truncated: boolean;
   };
@@ -81,7 +86,17 @@ export interface TraceEventDataMap {
     consecutiveErrors: number;
     contextRatio: number;
   };
+  evidence_boundary: { problems: string[]; surface: 'final_response' };
+  tool_attempt: { toolCallId: string; toolName: string };
+  /** Executor admission started; permission decisions still happen inside it. */
+  tool_execution_start: { toolCallId: string; toolName: string };
   tool_dispatch: {
+    toolCallId?: string;
+    stage?: 'preflight' | 'executor';
+    execution?: 'not_executed' | 'cache_hit' | 'executed' | 'unknown';
+    outcome?: 'succeeded' | 'rejected' | 'failed' | 'cancelled' | 'skipped';
+    consecutiveErrors?: number;
+    recoveredFrom?: string[];
     toolName: string;
     /** Safe connector operation id (for example list_events); never stores full tool args. */
     toolAction?: string | null;
@@ -169,6 +184,7 @@ export interface TraceEventDataMap {
     verdict: 'verified' | 'self_claimed' | 'n_a';
     evidenceRefs: EvidenceRef[];
     source: 'generic' | 'goal_gates' | 'voice';
+    evidenceProblems?: string[];
   };
   /** P3 slot only. Registration wiring is intentionally out of scope for P0A. */
   compensation_registered: {

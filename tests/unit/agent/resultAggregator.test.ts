@@ -18,6 +18,20 @@ function result(overrides: Partial<AgentTaskResult>): AgentTaskResult {
 }
 
 describe('aggregateTeamResults', () => {
+  it('counts terminal attempts rather than unique tool names', () => {
+    const aggregation = aggregateTeamResults([
+      result({ toolsUsed: ['Read'], toolCallCount: 2 }),
+      result({ toolsUsed: ['Read', 'Bash', 'Grep'], toolCallCount: 5 }),
+      result({ toolsUsed: ['Read', 'Grep'], toolCallCount: 4 }),
+    ], 100);
+    expect(aggregation.totalToolCalls).toBe(11);
+    expect(aggregation.agentResults.map((entry) => entry.stats.toolCalls)).toEqual([2, 5, 4]);
+  });
+
+  it('does not invent a call count when an executor did not report it', () => {
+    expect(aggregateTeamResults([result({ toolsUsed: ['Read'] })], 10).totalToolCalls).toBeNull();
+  });
+
   it('keeps failed, blocked, and cancelled agent details in the result structure', () => {
     const aggregation = aggregateTeamResults([
       result({ taskId: 'ok', role: 'coder', success: true, output: 'done' }),

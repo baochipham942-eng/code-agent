@@ -1,6 +1,12 @@
 const zh = {
+  lanTitle: '连接电脑', lanHint: '手机和电脑连接同一网络。在电脑 Neo 的设置 → 通道中生成配对二维码。',
+  scan: '扫描电脑二维码', reconnect: '重新连接', connected: '已连接电脑', connecting: '正在连接电脑',
+  pendingCommand: '正在核对电脑是否已接收，请勿重复发送', rejected: '电脑未接受这次操作，文字已保留',
+  secureStorageError: '设备连接信息尚未安全保存，请重试。', sharedSession: '共享会话',
+  stop: '停止任务', complete: '任务已完成', stopped: '任务已停止', failed: '任务失败',
+  nativeConnectionOnly: '请使用手机 Neo 扫码连接。',
   neo: 'Neo', welcome: '有什么想交给 Neo？', placeholder: '发消息给 Neo',
-  newSession: '新会话', sessions: '会话列表', projects: '项目', remote: '远程', history: '历史会话',
+  newSession: '新会话', sessions: '会话列表', projects: '项目', remote: '连接电脑', history: '历史会话',
   emptyHistory: '还没有会话', personal: '个人信息与设置', guest: 'Neo 用户', settings: '设置',
   closeDrawer: '关闭会话列表', more: '会话操作', closeSheet: '关闭弹层', back: '返回上一级',
   appearance: '外观', system: '跟随系统', light: '浅色', dark: '深色',
@@ -18,6 +24,11 @@ const zh = {
   next: '打开', drag: '下滑关闭弹层', draft: '消息草稿',
 };
 const en: Record<keyof typeof zh, string> = {
+  lanTitle: 'Connect a computer', lanHint: 'Connect both devices to the same network. Create a pairing code in Neo desktop Settings → Channels.',
+  scan: 'Scan computer code', reconnect: 'Reconnect', connected: 'Computer connected', connecting: 'Connecting to computer',
+  pendingCommand: 'Checking whether the computer received this. Please do not resend.', rejected: 'The computer did not accept this action. Your text is retained.',
+  secureStorageError: 'Connection details could not be saved securely. Please retry.', sharedSession: 'Shared conversation',
+  stop: 'Stop task', complete: 'Task completed', stopped: 'Task stopped', failed: 'Task failed', nativeConnectionOnly: 'Use Neo on your phone to scan and connect.',
   neo: 'Neo', welcome: 'What would you like Neo to do?', placeholder: 'Message Neo',
   newSession: 'New conversation', sessions: 'Conversations', projects: 'Projects', remote: 'Remote', history: 'History',
   emptyHistory: 'No conversations yet', personal: 'Profile and settings', guest: 'Neo user', settings: 'Settings',

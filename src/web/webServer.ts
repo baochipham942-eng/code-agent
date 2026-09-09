@@ -1037,8 +1037,10 @@ async function main(): Promise<void> {
     logger.info(`[renderer-hot-update] startup activation: ${stagedActivation}`);
   }
 
+  let stopCompanion: (() => Promise<void>) | undefined;
   const app = createApp({
     handlers,
+    registerCompanionShutdown: stop => { stopCompanion = stop; },
     logger,
     runRegistry,
     pendingLocalToolCalls,
@@ -1099,6 +1101,7 @@ async function main(): Promise<void> {
 
   // 优雅退出
   const shutdown = async () => {
+    await stopCompanion?.().catch(() => logger.warn('Companion LAN shutdown failed'));
     console.log('\nShutting down...');
     // 宽限期是有限的（Rust 侧 GRACEFUL_SHUTDOWN_TIMEOUT 到点就 SIGKILL），关库是这段
     // 时间里唯一不能省的一步——前面的清理任何一个卡住，都会把预算吃光，最后仍然被

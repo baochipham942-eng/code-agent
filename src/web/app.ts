@@ -59,6 +59,9 @@ import { createCompanionRouter } from './routes/companion';
 import { createCompanionProvisioningRouter } from './routes/companionProvisioning';
 import { CompanionGateway } from '../host/companion/CompanionGateway';
 import { projectCompanionEvent } from '../host/companion/projectCompanionEvent';
+import { LanCompanionManager } from '../host/companion/LanCompanionManager';
+import { loadLanIdentity } from '../host/companion/lanIdentity';
+import { COMPANION_MANAGE_CHANNEL } from '../shared/constants/companion';
 import { getDatabase } from '../host/services/core/databaseService';
 import type { AgentRunBody } from './routes/agentBodySchemas';
 import { wireGenerativeUiEditProjectionInvalidation } from './helpers/generativeUiEditWiring';
@@ -88,6 +91,7 @@ export interface CreateAppDeps {
   };
   getPendingPermissionRequests?: () => PermissionRequest[];
   registerQueuedInputStartupSweep?: (runStartupSweep: () => void) => void;
+  registerCompanionShutdown?: (stop: () => Promise<void>) => void;
   registerQueuedInputEnqueueHook?: (onEnqueued: (sessionId: string) => void) => void;
   registerQueuedInputSendNowHook?: (sendNow: (input: {
     id: string;
@@ -264,6 +268,13 @@ export function createApp(deps: CreateAppDeps): express.Express {
         }
       };
       app.use('/api/companion', createCompanionProvisioningRouter({ gateway }));
+      const lan = new LanCompanionManager(gateway, () => loadLanIdentity(resolveCodeAgentDataDir()), async () => {
+        const sessions = await (await tryGetSessionManager())?.listSessions() ?? [];
+        return sessions.map(session => ({ id: session.id, title: session.title }));
+      });
+      handlers.set(COMPANION_MANAGE_CHANNEL, (_event, request) => lan.manage(request));
+      deps.registerCompanionShutdown?.(() => lan.stop());
+      void lan.restore().catch(() => logger.warn('Companion LAN restore unavailable'));
       app.use('/companion', createCompanionRouter({
         gateway,
         authenticate: (deviceId, credential) => gateway.authenticateDevice(deviceId, credential),

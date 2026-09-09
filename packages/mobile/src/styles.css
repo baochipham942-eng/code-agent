@@ -44,3 +44,6 @@ input { width: 100%; padding: 16px; background: var(--surface); border: 1px soli
 .virtual-history { flex: 1; min-height: 0; overflow: auto; overflow-anchor: none; overscroll-behavior: contain; }.history-row { left: 0; right: 0; padding: 16px 24px; border-bottom: 1px solid var(--line); overflow: auto; }.history-row p { margin: 8px 0; color: var(--muted); font-size: 15px; }
 .loading { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 30px; }
 @media (max-height: 520px) { .welcome { padding: 4px 20px; }.welcome .brand-mark { display: none; }h1 { font-size: 21px; margin: 10px; }.composer textarea { min-height: 28px; max-height: 80px; }.composer { padding-top: 8px; } }
+.lan-messages { flex: 1; min-height: 0; overflow: auto; padding: 16px; }
+.lan-message { white-space: pre-wrap; overflow-wrap: anywhere; padding: 12px; line-height: 1.6; }
+.lan-message.from-user { margin-left: 24px; background: var(--surface); border-radius: 16px; }

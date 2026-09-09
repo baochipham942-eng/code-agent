@@ -37,6 +37,7 @@ import { WebModeBanner } from '../WebModeBanner';
 import ipcService from '../../../../services/ipcService';
 import { useI18n } from '../../../../hooks/useI18n';
 import { zh } from '../../../../i18n/zh';
+import { CompanionSection } from '../sections/CompanionSection';
 
 const logger = createLogger('ChannelsSettings');
 
@@ -779,6 +780,7 @@ export const ChannelsSettings: React.FC = () => {
       description={channelText.description}
     >
       <WebModeBanner />
+      <CompanionSection />
 
       <SettingsSection
         title={channelText.lowDistraction.title}

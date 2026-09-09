@@ -3,10 +3,12 @@ import { Capacitor, SystemBars, SystemBarsStyle } from '@capacitor/core';
 import { Keyboard } from '@capacitor/keyboard';
 import { Preferences } from '@capacitor/preferences';
 import type { PlatformPorts } from './ports';
+import { nativeCompanionPort } from './nativeCompanion';
 
 const PREFERENCES_KEY = 'neo.mobile.preferences.v1';
 
 export const capacitorPorts: PlatformPorts = {
+  companion: Capacitor.isNativePlatform() ? nativeCompanionPort : undefined,
   preferences: {
     get: async () => (await Preferences.get({ key: PREFERENCES_KEY })).value,
     set: async value => { await Preferences.set({ key: PREFERENCES_KEY, value }); },

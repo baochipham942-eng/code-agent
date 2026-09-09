@@ -1,4 +1,5 @@
 import './remote-only.mjs';
+import { configureIosLan } from './configure-lan.mjs';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
@@ -62,6 +63,7 @@ if (!existsSync(scheme)) {
   writeFileSync(scheme, sharedSchemeXml(targetId));
 }
 run('node_modules/.bin/cap', ['sync', 'ios']);
+configureIosLan();
 copyFileSync(resolve(root, 'src-tauri/icons/ios/AppIcon-512@2x.png'),
   resolve('ios/App/App/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png'));
 mkdirSync('.artifacts/ios', { recursive: true });

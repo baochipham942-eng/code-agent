@@ -1,4 +1,5 @@
 import './remote-only.mjs';
+import { configureAndroidLan } from './configure-lan.mjs';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, readdirSync } from 'node:fs';
@@ -100,6 +101,7 @@ if (!manifestTemplate.includes('enableOnBackInvokedCallback')) {
     '<application\n        android:enableOnBackInvokedCallback="true"'));
 }
 run('node_modules/.bin/cap', ['sync', 'android']);
+configureAndroidLan();
 run('./gradlew', ['--offline', '--no-daemon', '--max-workers=2', 'assembleDebug'], resolve('android'));
 mkdirSync('.artifacts', { recursive: true });
 const apk = `.artifacts/neo-mobile-${version}-${build}.apk`;

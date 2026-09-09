@@ -14,6 +14,7 @@ interface State {
   openDrawer(): void; closeDrawer(): void; navigate(route: Route): void;
   openSheet(page: SheetPage): void; pushSheet(page: SheetPage): void; closeSheet(): void; back(): boolean;
   attemptSend(): void;
+  acknowledgeDraft(text: string): Promise<void>;
 }
 const defaults = (): Preferences => ({ schema: 1, drafts: { new: '', fixture: '' }, appearance: 'system', nickname: '' });
 function decode(raw: string | null): Preferences {
@@ -93,6 +94,16 @@ export function createMobileStore(port: PlatformPorts['preferences']) {
         return false;
       },
       attemptSend: () => { if (get().ready && get().preferences.drafts[get().route].trim()) set({ sendAttempted: true }); },
+      acknowledgeDraft: async text => {
+        const { preferences } = get();
+        if (!get().ready) throw new Error('COMPANION_DRAFT_NOT_READY');
+        if (preferences.drafts.new === text) {
+          set({ preferences: { ...preferences, drafts: { ...preferences.drafts, new: '' } }, sendAttempted: false }); persist();
+        } else if (get().saveError) persist();
+        // Include edits queued while the acknowledgement write was in flight.
+        for (;;) { const tail = pending; await tail; if (tail === pending) break; }
+        if (get().saveError) throw new Error('COMPANION_DRAFT_NOT_SAVED');
+      },
     };
   });
   return store;

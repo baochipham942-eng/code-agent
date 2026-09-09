@@ -97,6 +97,30 @@ export class CompanionGateway {
     return equalCredentialDigest(credentialDigest(credential), row.credential_hash);
   }
 
+  pairIdentity(publicKey: string, scope: readonly string[]): Omit<CompanionDeviceCredential, 'credential'> {
+    return this.db.transaction(() => {
+      const previous = this.identityDevice(publicKey);
+      if (previous) this.revokeDevice(previous.deviceId);
+      const { credential: _credential, ...device } = this.issueDeviceCredential(scope);
+      this.db.prepare(`INSERT INTO companion_identity_keys (public_key, device_id) VALUES (?, ?)
+        ON CONFLICT(public_key) DO UPDATE SET device_id = excluded.device_id`).run(publicKey, device.deviceId);
+      return device;
+    })();
+  }
+
+  identityDevice(publicKey: string): Omit<CompanionDeviceCredential, 'credential'> | null {
+    const row = this.db.prepare('SELECT device_id FROM companion_identity_keys WHERE public_key = ?').get(publicKey) as SqlRow | undefined;
+    const device = row ? this.getDevice(String(row.device_id)) : null;
+    return device && device.revokedAt === null
+      ? { deviceId: device.deviceId, scopeEpoch: device.scopeEpoch, scope: [...device.scope] } : null;
+  }
+
+  pairedDevices(): { deviceId: string; scope: string[] }[] {
+    return (this.db.prepare(`SELECT d.device_id, d.scope_json FROM companion_identity_keys k
+      JOIN companion_devices d ON d.device_id = k.device_id WHERE d.revoked_at IS NULL`).all() as SqlRow[])
+      .map(row => ({ deviceId: String(row.device_id), scope: JSON.parse(String(row.scope_json)) as string[] }));
+  }
+
   revokeDevice(deviceId: string, now = this.now()): number {
     const nextEpoch = this.currentEpoch + 1;
     const changes = this.db.prepare(`

@@ -3,7 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=24" },
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "preinstall": "node scripts/remote-only.mjs",
     "pretypecheck": "node scripts/remote-only.mjs",
@@ -29,7 +31,10 @@
     "@capacitor/status-bar": "8.0.3",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "zustand": "5.0.13"
+    "zustand": "5.0.13",
+    "noise-handshake": "4.2.0",
+    "@aparajita/capacitor-secure-storage": "8.0.0",
+    "@capacitor/barcode-scanner": "3.1.2"
   },
   "devDependencies": {
     "@capacitor/cli": "8.5.1",
@@ -39,5 +44,10 @@
     "typescript": "7.0.2",
     "vite": "8.2.2",
     "vitest": "4.1.7"
+  },
+  "overrides": {
+    "noise-handshake": {
+      "sodium-universal": "npm:sodium-javascript@0.8.0"
+    }
   }
 }

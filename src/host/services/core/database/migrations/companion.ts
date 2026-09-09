@@ -39,6 +39,10 @@ export function applyCompanionSchema(db: BetterSqlite3.Database): void {
       resolved_by TEXT,
       operation_digest TEXT
     );
+    CREATE TABLE IF NOT EXISTS companion_identity_keys (
+      public_key TEXT PRIMARY KEY,
+      device_id TEXT NOT NULL UNIQUE REFERENCES companion_devices(device_id)
+    );
     CREATE INDEX IF NOT EXISTS idx_companion_events_session_seq
       ON companion_events(session_id, epoch, seq);
   `);

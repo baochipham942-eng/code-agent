@@ -95,6 +95,9 @@ export function createWorkbenchActions({
         workbenchBySession,
         workbenchTabs,
         activeWorkbenchTab,
+        activePreviewTabId: isPreviewWorkbenchView(activeWorkbenchTab)
+          ? state.previewTabs.find((tab) => tab.path === previewPathOf(activeWorkbenchTab))?.id ?? null
+          : state.activePreviewTabId,
         workbenchSessionKey: sessionId,
         // 没有任何页签时整栏必须收起；全新会话也从空右栏开始。
         // 若放任 collapsed 跨会话泄漏，上一会话的展开状态会直接带进新会话。

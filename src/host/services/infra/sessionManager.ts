@@ -10,6 +10,7 @@ import {
   sanitizeModelConfigForSession,
 } from './sessionManagerNormalization';
 import { backfillMissingTelemetryUserPrompts } from './sessionManagerTelemetryBackfill';
+import { restoreLocalMessageContent } from './sessionMessagePresentation';
 import { getAuthService } from '../auth/authService';
 import { getSupabase, isSupabaseInitialized } from './supabaseService';
 import { IPC_CHANNELS } from '../../../shared/ipc';
@@ -322,12 +323,17 @@ export class SessionManager implements Disposable {
       ownerUserId: storedSession.userId ?? null,
       projectId: storedSession.projectId ?? null,
     };
+    const loadLedgerMessages = (): Message[] => db.replayConversationBranchForLoad(
+      sessionId,
+      replayBoundary,
+    ).messages.map((entry) => restoreLocalMessageContent(
+      sessionId,
+      entry,
+      (localSessionId, messageId) => db.getMessageById(localSessionId, messageId),
+    ));
     let preloadedLedgerMessages: Message[] | null = null;
     if (options.messageSource === 'ledger' && db.hasConversationBranch(sessionId)) {
-      preloadedLedgerMessages = db.replayConversationBranchForLoad(
-        sessionId,
-        replayBoundary,
-      ).messages.map((entry) => entry.message as Message);
+      preloadedLedgerMessages = loadLedgerMessages();
     }
     const backfilled = this.backfillMissingTelemetryUserPrompts(
       sessionId,
@@ -344,8 +350,7 @@ export class SessionManager implements Disposable {
       }
       if (!db.hasConversationBranch(sessionId)) return [];
       const messages = backfilled > 0 || !preloadedLedgerMessages
-        ? db.replayConversationBranchForLoad(sessionId, replayBoundary)
-            .messages.map((entry) => entry.message as Message)
+        ? loadLedgerMessages()
         : preloadedLedgerMessages;
       return messages.slice(-messageLimit);
     };

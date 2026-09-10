@@ -41,6 +41,21 @@ describe('demo acceptance: truthful historical presentation', () => {
     expect(humanizeToolFailureReason(tool, zh)).toBe(zh.toolStepHumanize.failureCode.replace('{code}', '1'));
     expect(humanizeToolFailureReason(tool, zh)).not.toBe(zh.deliveryExperience.approvalRequired);
   });
+  // ai-review #1741 Important：hostReason 登记表里 7 个 permission code 各有专属文案，
+  // 必须先于 preflight 那句笼统的「未能自动批准」。用户在弹窗上亲手点的拒绝，不能被说成
+  // 「系统没能自动批准」——那是把决定权从人误标成系统。反过来，只有裸 failureCode
+  // （CLI auto 档 fail-closed、从没到过人眼）时，仍然该走 preflight 的笼统措辞。
+  it.each([
+    // hostReason 必须是完整 payload（isHostReasonPayload 要求 code + modelText），
+    // 只给 code 的话 resolveHostReasonCopy 返回 null，本来就轮不到它——生产里 host 两者都给。
+    ['人点的拒绝', { failureCode: 'permission-denied', hostReason: { code: 'PERMISSION_DENIED_BY_USER', modelText: 'user denied' } }],
+    ['审批超时', { failureCode: 'timeout', hostReason: { code: 'PERMISSION_DENIED_TIMEOUT', modelText: 'approval timed out' } }],
+  ])('a host-recorded permission decision keeps its own wording: %s', (_label, metadata) => {
+    const reason = humanizeToolFailureReason(failed('Write', 'not approved', metadata), zh);
+    expect(reason).not.toBe(zh.deliveryExperience.approvalRequired);
+    expect(reason).toBeTruthy();
+  });
+
   it('does not mark an undelivered question as answered or successful', () => {
     const tool: ToolCall = { id: 'q', name: 'AskUserQuestion', arguments: {}, result: { toolCallId: 'q', success: true, output: '[用户未响应 - CLI 模式无法交互]', metadata: { permissionDecision: 'deny', permissionDecisionReason: '当前运行环境没有可投递的交互界面' } } };
     expect(getToolPreflightKind(tool)).toBe('question');
@@ -67,6 +82,27 @@ describe('demo acceptance: truthful historical presentation', () => {
     const html = renderToStaticMarkup(<ToolStepGroup nodes={nodes.filter((node) => node.toolCall)} defaultExpanded={false} />);
     expect(html).not.toContain('未成功');
     expect(html).not.toContain(zh.deliveryExperience.blockedSteps.replace('{count}', '1'));
+  });
+
+  // ai-review #1741 Important：组内节点**全部**被判为 recovered 时，分桶不能把它们一个不剩地
+  // 丢掉——label 变空串会撞 ToolStepGroup 的 `!label` 守卫，整个工具组从时间线上消失，
+  // 用户连「搜索发生过」都不知道。基线上同一输入至少会渲染一行「联网查询 2 次未成功」。
+  it('a group whose every node was recovered still renders', () => {
+    const messages: Message[] = [
+      { id: 'u', role: 'user', content: '查一下', timestamp: 1 },
+      { id: 'a', role: 'assistant', content: '', timestamp: 2, toolCalls: [
+        failed('WebSearch', 'search backend unavailable'),
+        { ...failed('WebFetch', 'fetch failed'), id: 'y' },
+      ] },
+      { id: 'b', role: 'assistant', content: '这是答案。', timestamp: 3 },
+    ];
+    const nodes = projectTurns(messages, 'session', false, []).turns.flatMap((turn) => turn.nodes);
+    const toolNodes = nodes.filter((node) => node.toolCall);
+    expect(toolNodes.every((node) => node.toolCall?.recovered)).toBe(true);
+    const html = renderToStaticMarkup(<ToolStepGroup nodes={toolNodes} defaultExpanded={false} />);
+    expect(html).not.toBe('');
+    expect(html).toContain('联网');
+    expect(html).not.toContain('未成功');
   });
 
   it('mixed group counts executed reads separately from unexecuted commands', () => {

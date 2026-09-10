@@ -141,12 +141,14 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
     for (const node of streamVisibleNodes) {
       const tc = node.toolCall;
       if (!tc) continue;
-      // 与下面 status 判定同一口径：自动加载重试和已恢复的失败都是良性/已收尾状态。
-      // 漏掉这道闸的后果是组头把「已经恢复的那次失败」重新喊一遍——组状态是 ok（无红点、
-      // 无原因行），组头文字却写「…未成功」，正好是那条注释要防的「把成功的一轮演成翻车」。
-      // 恢复它的那次成功调用本身还在组里，会被正常计数。
-      if (isAutoLoadedRetry(tc.metadata) || tc.recovered) continue;
-      const preflight = getToolPreflightKind({ name: tc.name, result: tc.result === undefined ? undefined : {
+      // 自动加载重试和已恢复的失败是良性/已收尾状态：**不按失败计**，但**仍要计数**。
+      //  · 不按失败计——否则组状态是 ok（无红点、无原因行），组头却写「…未成功」，
+      //    正好是 status 那边注释要防的「把成功的一轮演成翻车」。
+      //  · 仍要计数——直接 continue 会让「WebSearch 失败 → WebFetch 失败 → 模型给出答案」
+      //    这种整组都被过滤的情形 label 变成空串，撞上下面 `!label` 的守卫，整个工具组
+      //    从时间线上消失，用户连「搜索发生过」都不知道。
+      const benign = isAutoLoadedRetry(tc.metadata) || tc.recovered;
+      const preflight = benign ? null : getToolPreflightKind({ name: tc.name, result: tc.result === undefined ? undefined : {
         toolCallId: tc.id, success: tc.success ?? true, error: tc.success === false ? tc.result : undefined, output: tc.result, metadata: tc.metadata,
       } });
       if (preflight) {
@@ -154,7 +156,9 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
         else blockedSteps += 1;
         continue;
       }
-      const stepStatus = resolveTraceToolStepStatus(tc, isToolCallAwaitingApproval(tc.id, sessionId, permissionState));
+      const stepStatus = benign
+        ? 'completed'
+        : resolveTraceToolStepStatus(tc, isToolCallAwaitingApproval(tc.id, sessionId, permissionState));
       byStatus.set(stepStatus, [...(byStatus.get(stepStatus) ?? []), tc.name]);
     }
     return [
@@ -482,7 +486,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
         {status !== 'ok' && outputCount > 0 && (
           <span className="flex-shrink-0 rounded bg-white/[0.03] px-1.5 py-0.5 text-[10px] text-zinc-500">{t.toolGroup.outputCount.replace('{count}', String(outputCount))}</span>
         )}
-        {totalDuration && ariaExpanded && (
+        {totalDuration && (
           <span
             className="min-w-[4ch] flex-shrink-0 text-right text-[10px] text-zinc-600"
             title={t.toolGroup.durationTitle}

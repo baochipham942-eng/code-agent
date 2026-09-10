@@ -10,6 +10,7 @@ import { voiceZh } from './voice';
 import { chatInputModelStrategyZh } from './chatInputModelStrategy';
 import { sidebarZh } from './sidebar';
 import { cronCenterZh } from './cronCenter';
+import { deliveryExperienceZh } from './deliveryExperience';
 import { previewWorkspaceZh } from './previewWorkspace';
 import { modalPrimitivesZh } from './modalPrimitives';
 import { userQuestionZh } from './userQuestion';
@@ -933,6 +934,7 @@ export const zh = {
   ...sidebarZh,
   ...cronCenterZh,
   ...previewWorkspaceZh,
+  ...deliveryExperienceZh,
   ...modalPrimitivesZh,
   ...userQuestionZh,
   ...decisionCardZh,

@@ -58,7 +58,29 @@ function splitByCode(markdown: string): Array<{ text: string; isCode: boolean }>
 /**
  * Check if a path match is inside a markdown link syntax like [text](path) or ![alt](path)
  */
-function isInsideMarkdownLink(text: string, matchIndex: number, matchLength: number): boolean {
+function findMarkdownLinkSpans(text: string): Array<readonly [number, number]> {
+  // Preserve the entire link label, including paths inside command actions.
+  // Scanned once per text segment and passed down — the per-match rescan it replaces was
+  // O(matches x segment length), redone for every streaming chunk.
+  const spans: Array<readonly [number, number]> = [];
+  for (const link of text.matchAll(/\[(?:[^\]\n]|\\.)*\]\([^\n]*?\)/g)) {
+    // matchAll always sets `index` for a real match; guard instead of `!` (eslint no-non-null-assertion).
+    const start = link.index;
+    if (start === undefined) continue;
+    spans.push([start, start + link[0].length] as const);
+  }
+  return spans;
+}
+
+function isInsideMarkdownLink(
+  text: string,
+  matchIndex: number,
+  matchLength: number,
+  linkSpans: Array<readonly [number, number]>,
+): boolean {
+  for (const [start, end] of linkSpans) {
+    if (matchIndex >= start && matchIndex + matchLength <= end) return true;
+  }
   // Check if preceded by ]( — markdown link target
   const before = text.slice(Math.max(0, matchIndex - 2), matchIndex);
   if (before.endsWith('](')) {
@@ -101,6 +123,7 @@ function isUrl(text: string, matchIndex: number): boolean {
 function processTextSegment(text: string): string {
   // Reset regex lastIndex
   FILE_PATH_PATTERN.lastIndex = 0;
+  const linkSpans = findMarkdownLinkSpans(text);
 
   let result = '';
   let lastIndex = 0;
@@ -116,7 +139,7 @@ function processTextSegment(text: string): string {
     }
 
     // Skip paths inside markdown link syntax
-    if (isInsideMarkdownLink(text, matchIndex, matchedPath.length)) {
+    if (isInsideMarkdownLink(text, matchIndex, matchedPath.length, linkSpans)) {
       continue;
     }
 
@@ -169,6 +192,7 @@ const TICKET_PATTERN = /\b[A-Z]{2,10}-\d{1,6}\b/g;
 
 function processTicketSegment(text: string): string {
   TICKET_PATTERN.lastIndex = 0;
+  const linkSpans = findMarkdownLinkSpans(text);
   let result = '';
   let lastIndex = 0;
   let match: RegExpExecArray | null;
@@ -177,7 +201,7 @@ function processTicketSegment(text: string): string {
     const matched = match[0];
     const matchIndex = match.index;
 
-    if (isInsideMarkdownLink(text, matchIndex, matched.length)) continue;
+    if (isInsideMarkdownLink(text, matchIndex, matched.length, linkSpans)) continue;
 
     // Skip if already wrapped in backticks
     const charBefore = matchIndex > 0 ? text[matchIndex - 1] : '';

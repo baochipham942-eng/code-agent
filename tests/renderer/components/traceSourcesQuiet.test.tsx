@@ -7,6 +7,7 @@ import { TraceNodeRenderer } from '../../../src/renderer/components/features/cha
 import type { TraceNode } from '../../../src/shared/contract/trace';
 import type { TurnArtifactOwnershipItem } from '../../../src/shared/contract/turnTimeline';
 import type { FileChange } from '../../../src/renderer/utils/turnDiffSummary';
+import { zh } from '../../../src/renderer/i18n/zh';
 
 function makeNode(items: TurnArtifactOwnershipItem[]): TraceNode {
   return {
@@ -128,8 +129,11 @@ describe('Sources (纯链接来源) 视觉降级 — 不长得像交付物卡', 
       />,
     );
 
+    // #1-story-A 2c44c0cf9 把这块从硬编码字面量改成 i18n（"本次变更"→copy.changes="本次修改"，
+    // 纯措辞同义词），同时新文件不再一律显示"+N 行"（那是编辑既有文件的措辞），改用更准确的
+    // copy.generatedLines="已生成 · N 行"——这条 fixture 本来就是 isNewFile:true，新文案更诚实。
     expect(html).toContain('简报.md');
-    expect(html).toContain('本次变更');
-    expect(html).toContain('+1 行');
+    expect(html).toContain(zh.deliveryExperience.changes);
+    expect(html).toContain(zh.deliveryExperience.generatedLines.replace('{count}', '1'));
   });
 });

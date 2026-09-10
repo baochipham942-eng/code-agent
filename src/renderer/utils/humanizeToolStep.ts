@@ -354,6 +354,9 @@ export function humanizeToolStep(
   stepLabel?: ToolStepLabelKey,
   renderContext: { connectorPrefixRendered?: boolean } = {},
 ): string {
+  // ponytail: 只认 pattern 恰好是单个 U+FFFD（替换字符）这一种形状——搜「文档里有没有乱码」
+  // 是目前唯一会这么调的用法，写成规则集反而要先编出一批还不存在的用法。天花板：出现第二种
+  // 「按字符类排查」的搜索（控制字符、零宽空格）时，换成一张 pattern → 文案的小表。
   if (classifyToolName(name) === 'search' && args?.pattern === '\uFFFD' && status === 'completed') return t.deliveryExperience.checkCharacters;
   if (stepLabel) {
     return status === 'completed'

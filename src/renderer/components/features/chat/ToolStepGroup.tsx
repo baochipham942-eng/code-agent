@@ -15,8 +15,6 @@ import {
   ToolCallDisplay,
   type ToolReceiptPresentation,
 } from './MessageBubble/ToolCallDisplay/index';
-import { summarizeTool } from './MessageBubble/ToolCallDisplay/summarizers';
-import { localizeCollapsedToolSummary } from '../../../utils/toolStatusLinePresentation';
 import { computeBashPreviewLines } from './MessageBubble/ToolCallDisplay/bashOutputPreview';
 import {
   humanizeToolGroupLabel,
@@ -28,10 +26,8 @@ import {
   humanizeToolFailureReason,
   isAutoLoadedRetry,
   isEscalatedToolError,
-  resolveCollapsedFailureSummary,
 } from '../../../utils/toolExecutionPresentation';
 import { useI18n } from '../../../hooks/useI18n';
-import type { Translations } from '../../../i18n';
 import { getDeferredContentStyle } from '../../../utils/turnContentVisibility';
 import { getPlanApprovalRecord } from '../../../utils/planApprovalView';
 import { PlanApprovalEvidence } from '../../PlanApprovalCard';
@@ -627,66 +623,4 @@ export function tailTruncateLiveOutput(live: ToolLiveOutput | undefined): ToolLi
     stdout: live.stdout ? computeBashPreviewLines(live.stdout, true).displayLines.join('\n') : live.stdout,
     stderr: live.stderr ? computeBashPreviewLines(live.stderr, true).displayLines.join('\n') : live.stderr,
   };
-}
-
-/**
- * 组头摘要（P0 #1 失败去重 + P0 接缝「单工具失败不说空话」）：
- *  · 多工具 → 计数（"N failed / M empty / K completed"），保留；
- *  · 单工具且失败 → failureCode 人话 / 分类 summary，与组头 reason 重复则不再并列；
- *  · 单工具其它（成功/空）→ summarizeTool 的结果摘要（如「找到 3 个文件」），保留。
- * 纯函数，便于单测。
- */
-export function buildToolGroupHeadSummary(toolCalls: ToolCall[], t: Translations): string | null {
-  if (toolCalls.length === 0) return null;
-  if (toolCalls.length > 1) return summarizeToolGroupResults(toolCalls, t);
-  const only = toolCalls[0];
-  if (only.result?.success === false) return summarizeSingleFailure(only, t);
-  return localizeCollapsedToolSummary(summarizeTool(only), t);
-}
-
-/**
- * 单工具失败的组头摘要：failureCode 人话优先；与组头 reason 重复的 summary/fallback 不再并列。
- * 原始 error 可能含落库标记、内部名或用户键入的敏感文本，只能进展开明细。
- */
-function summarizeSingleFailure(toolCall: ToolCall, t: Translations): string | null {
-  const result = toolCall.result;
-  if (!result) return null;
-  return resolveCollapsedFailureSummary(toolCall, t) ?? humanizeToolFailureReason(toolCall, t);
-}
-
-function summarizeToolGroupResults(toolCalls: ToolCall[], t: Translations): string | null {
-  let failed = 0;
-  let emptySearches = 0;
-  let completed = 0;
-
-  for (const toolCall of toolCalls) {
-    const result = toolCall.result;
-    if (!result) continue;
-    // 自动加载重试 + 已恢复的失败不计入任何计数（否则会出现 "1 failed, 1 completed"
-    // 这种自相矛盾，或把已被恢复的失败仍计成 failed）。
-    if (isAutoLoadedRetry(result.metadata) || result.metadata?.recovered) continue;
-    if (result.success === false) {
-      failed += 1;
-      continue;
-    }
-    if (isEmptySearchResult(toolCall)) {
-      emptySearches += 1;
-      continue;
-    }
-    completed += 1;
-  }
-
-  const parts: string[] = [];
-  if (failed > 0) parts.push(t.toolGroup.summaryFailed.replace('{count}', String(failed)));
-  if (emptySearches > 0) parts.push(t.toolGroup.summaryEmpty.replace('{count}', String(emptySearches)));
-  if (completed > 0) parts.push(t.toolGroup.summaryCompleted.replace('{count}', String(completed)));
-
-  return parts.length > 0 ? parts.join(', ') : null;
-}
-
-function isEmptySearchResult(toolCall: ToolCall): boolean {
-  if (toolCall.name !== 'Grep' && toolCall.name !== 'Glob') return false;
-  const output = toolCall.result?.output;
-  if (typeof output !== 'string') return false;
-  return /(?:No matches found|No files matched the pattern|No matches|0 matches)/i.test(output.trim());
 }

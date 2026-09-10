@@ -79,16 +79,14 @@ function iactSendTextOf(node: React.ReactNode): string | null {
   if (!React.isValidElement(node)) return null;
   const props = node.props as { href?: unknown; children?: React.ReactNode };
   if (props.href !== '!send') return null;
-  const c = props.children;
-  return typeof c === 'string' ? c
-    : Array.isArray(c) ? c.map(x => (typeof x === 'string' ? x : '')).join('')
-    : String(c ?? '');
+  return plainText(props.children);
 }
 
 // 递归取纯文本：children 可能是 [字符串, <strong>, 字符串]（label 带行内标记时），
 // 旧写法把非字符串子节点一律映射成 ''，`[**报告.md**](!open)` 会得到空串，随后拿空串
 // 去撞工作目录。ai-review #1739 只点名了 !open / !preview 两处，但同一个 a renderer 里
-// 五个 IACT 分支（!send / !add / !open / !preview / !ticket）逐字一样，一处修就一起修。
+// 五个 IACT 分支（!send / !add / !open / !preview / !ticket）与上面的 iactSendTextOf 逐字
+// 一样——第六处会把带行内标记的选项行发成 "[object Object]"，一处修就一起修。
 function plainText(value: React.ReactNode): string {
   return React.Children.toArray(value).map((child) =>
     typeof child === 'string' || typeof child === 'number' ? String(child)
@@ -450,7 +448,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
               type="button"
               onClick={() => void handleOpenFile(text)}
               className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-md bg-blue-500/10 text-badge-info hover:bg-blue-500/20 hover:text-badge-info border border-badge-info/20 hover:border-badge-info/40 transition-all cursor-pointer text-sm font-medium"
-              title="打开文件"
+              title={t.deliverable.openFile}
             >
               <ExternalLink className="w-3 h-3 opacity-60" />
               {children}

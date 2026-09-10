@@ -12,7 +12,7 @@
 .report-preview th, .report-preview td { padding: 12px 16px; text-align: left; vertical-align: top; border: 1px solid rgb(var(--zinc-700)); }
 .report-preview th { font-weight: 650; background: rgb(var(--zinc-800)); }
 .report-preview blockquote { border-left: 3px solid rgb(var(--zinc-600)); padding: .25em 1em; margin: 1em 0; color: rgb(var(--zinc-400)); }
-.report-preview pre { padding: 16px; overflow-x: auto; border-radius: 8px; background: rgb(var(--zinc-950)); }
+.report-preview pre { padding: 16px; overflow-x: auto; border-radius: var(--radius-xl); background: rgb(var(--zinc-950)); }
 .report-preview code { font-size: .9em; }
 .report-preview a { color: var(--badge-info-fg); text-decoration: underline; }
 .report-preview hr { border-color: rgb(var(--zinc-700)); margin: 2em 0; }

@@ -8,6 +8,17 @@ import { createLogger } from '../../services/infra/logger';
 
 const logger = createLogger('DocumentEvidenceBoundary');
 const DOCUMENT_EXTENSIONS = new Set(['.md', '.txt', '.html', '.csv']);
+// 「空间」当作用域信号本身没问题——用户说「整理这个空间的盘点」时，报告里的
+// 「成员 / 专家 / 自动化」确实就是空间断言。问题在于中文里一大票复合词跟 Neo 空间无关：
+// 磁盘空间、内存空间、向量空间、命名空间、地址空间、空间复杂度…先把这些整体剔掉，
+// 再看还剩不剩下一个"裸"的空间。英文 space 歧义更大（the space between fields），
+// 所以英文侧只认 workspace 或与字段名相邻的写法。
+const NON_NEO_SPACE = /(?:磁盘|硬盘|内存|显存|存储|缓存|向量|矩阵|命名|地址|栈|堆|色彩|颜色|留白|空白|物理|虚拟|线性|样本|特征|状态|搜索|参数|解|用户|内核|二维|三维|欧氏|希尔伯特)空间|空间复杂度|空间换时间/g;
+const NEO_SPACE_EN = /\b(?:work)?spaces?\s+(?:owner|members?|experts?|automations?)\b|\b(?:owner|members?|experts?|automations?)\s+of\s+(?:the\s+)?(?:work)?space\b/i;
+
+function mentionsNeoSpace(text: string): boolean {
+  return /空间/.test(text.replace(NON_NEO_SPACE, '')) || NEO_SPACE_EN.test(text);
+}
 interface DocumentOrigin {
   path: string;
   digest: string;
@@ -90,8 +101,18 @@ function documentClaimProblems(content: string, messages: readonly Message[]): C
       return value.space?.id === call.arguments.projectId && content.includes(call.arguments.projectId) ? [value] : [];
     } catch { return []; }
   });
-  const spaceContext = /空间|space\b/i.test(content)
-    || active.some((message) => message.role === 'user' && /空间|space\b/i.test(message.content));
+  // 作用域信号不能是「正文或用户消息里出现过『空间/space』」——「空间」在中文里太常见
+  // （磁盘空间 / 内存空间 / 向量空间 / 命名空间 / 空间复杂度…），英文 space 更甚。实测：
+  // 用户问「看看这个向量空间的结构体」，助手答「该结构体的成员按 4 字节对齐，专家建议
+  // 保持这个布局。」——整句被替换成两条「空间成员与专家待查」，正文一个字都没剩下，
+  // 同一会话里写含「成员」的 .md 也会被 Write/Edit 前置检查拦掉。
+  //
+  // 作用域信号仍然是「正文或用户消息在谈空间」（用户说「整理这个空间的盘点」时，报告里的
+  // 裸『成员/专家/自动化』确实就是空间断言，这一点原设计没错），但先用 mentionsNeoSpace
+  // 把与 Neo 空间无关的复合词剔掉；会话里出现过 space_query 也直接算在场。
+  const spaceContext = [...calls.values()].some((call) => call.name === 'space_query')
+    || mentionsNeoSpace(content)
+    || active.some((message) => message.role === 'user' && mentionsNeoSpace(message.content));
   for (const assertion of extractDocumentAssertions(content, spaceContext)) {
     if (assertion.mode !== 'asserted') continue;
     const line = assertion.text;

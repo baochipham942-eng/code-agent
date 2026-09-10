@@ -7,6 +7,7 @@
 // 打回预算用尽后放行进闸1/闸2（闸0 是前置增强，不设新的死锁面）。
 // ============================================================================
 
+import { isAbsolute, resolve } from 'path';
 import { readbackFileEvidence } from './fileEvidenceReadback';
 import { checkDocumentEvidenceClaims } from './documentEvidenceBoundary';
 import { execFileSync } from 'child_process';
@@ -148,7 +149,9 @@ export function runGoalEvidenceGate(
       else if (!evidenceRefs.some((ref) => ref.ref === evidence.ref)) evidenceRefs.push(evidence);
     } catch {
       const origin = claimed.deliverables.includes(filePath) ? '自报产物' : '事先声明的产物';
-      problems.push(`${origin} FILE_EVIDENCE_UNREADABLE: ${filePath}`);
+      // 打回理由要带解析后的绝对路径：模型写错相对路径时，只报它自己写的那串没法自纠。
+      const absolutePath = isAbsolute(filePath) ? filePath : resolve(ctx.workingDirectory || process.cwd(), filePath);
+      problems.push(`${origin} \`${filePath}\` 读不到（核验路径 ${absolutePath}）。`);
     }
   }
 

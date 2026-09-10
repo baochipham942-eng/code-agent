@@ -759,16 +759,24 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
     // Reset partial content accumulator for this inference call
     ctx.runtime.turn.resetStreamedContent();
     let commandCenterPreannounce = '';
+    // 证据流按整段判定（后面的从句可以否定/限定前面的片段），所以正文攒到 finish 才发布。
+    // 但 turn 的 streamedContent 累加**不能**跟着一起等：取消/转向走的是 abort，inference
+    // Promise 立刻 reject，下面那句 finish 根本执行不到，preserveStreamedPartial
+    // （conversationRuntime.ts:1144）读到的就是空串——已生成的几千字在库里一个字都没有，
+    // 正是 2026-08-01 真机实测修掉的那个 bug。所以：原始 chunk 边来边进 turn（只为 abort
+    // 时留住半截），finish 时先清空再写入定稿正文，避免两者叠加。
     const contentStreamFilter = createDocumentEvidenceStream(ctx.runtime.messages, (text) => {
-      ctx.runtime.turn.appendStreamedContent(text);
+      ctx.runtime.turn.resetStreamedContent(); ctx.runtime.turn.appendStreamedContent(text);
       emitAssistantMessageDelta(ctx, 'content', text);
     });
 
+    // 原始 chunk 边来边进 turn（abort 时留住半截），同时喂给按整段判定的证据流。
+    const pushContent = (text: string) => { ctx.runtime.turn.appendStreamedContent(text); contentStreamFilter.push(text); };
     const streamCallback: StreamCallback = (chunk) => {
       if (typeof chunk === 'string') {
-        contentStreamFilter.push(chunk);
+        pushContent(chunk);
       } else if (chunk.type === 'text') {
-        contentStreamFilter.push(chunk.content);
+        pushContent(chunk.content ?? '');
       } else if (chunk.type === 'reasoning') {
         // 推理模型的思考过程 (glm-4.7 等)
         emitAssistantMessageDelta(ctx, 'reasoning', chunk.content);
@@ -777,7 +785,7 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
         commandCenterPreannounce = emitCommandCenterToolStart({
           toolName: chunk.toolCall?.name,
           commandCenterEnabled: ctx.runtime.allowedToolNames?.includes('delegate_task') === true,
-          streamedContent: ctx.runtime.turn.lastStreamedContent + contentStreamFilter.pending,
+          streamedContent: ctx.runtime.turn.lastStreamedContent,
           existingPreannounce: commandCenterPreannounce,
           userMessage: extractUserRequestText(latestUserMessage),
           emitPreview: (preview) => {

@@ -4,11 +4,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Message, ToolCall } from '../../../src/shared/contract';
 import { attachDocumentOrigin, checkDocumentEvidenceClaims, documentClaimPreflight, boundDocumentEvidenceClaims } from '../../../src/host/agent/runtime/documentEvidenceBoundary';
+import { readbackFileEvidence } from '../../../src/host/agent/runtime/fileEvidenceReadback';
 import { createDocumentEvidenceStream } from '../../../src/host/agent/runtime/documentEvidenceStream';
 const roots: string[] = [];
 afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))); });
 const call = (name: string, path: string): ToolCall => ({ id: `${name}-${path}`, name, arguments: { file_path: path } });
 const user: Message = { id: 'user', role: 'user', content: '整理来源与空间盘点', timestamp: 1 };
+const userSaying = (content: string): Message => ({ id: 'u', role: 'user', content, timestamp: 1 });
 
 describe('document evidence boundary', () => {
   it('keeps transcript and generated minutes in one digest-bound origin family across sessions', async () => {
@@ -75,6 +77,47 @@ describe('document evidence boundary', () => {
     ];
     expect(checkDocumentEvidenceClaims(report, foreignOwner)).toContain('SPACE_OWNER_UNVERIFIED');
 
+  });
+
+  // ai-review #1740 Important：作用域信号不能是「文本里出现过『空间/space』」——中文里
+  // 磁盘空间 / 内存空间 / 向量空间 / 命名空间 / 空间复杂度全都跟 Neo 空间无关。实测旧口径下
+  // 「该结构体的成员按 4 字节对齐，专家建议保持这个布局。」整句被替换成两条「空间成员与专家
+  // 待查」，正文一个字都没剩，同会话里写含「成员」的 .md 也被 Write 前置检查拦掉。
+  it.each([
+    ['向量空间语境下的结构体成员', [userSaying('看看这个向量空间的结构体')], '该结构体的成员按 4 字节对齐，专家建议保持这个布局。'],
+    ['磁盘空间 + 自动化流水线', [userSaying('磁盘空间还够吗')], '磁盘空间充足。我们的自动化流水线每晚跑一次。'],
+    ['命名空间 + 成员', [userSaying('这个命名空间怎么组织')], '命名空间里的成员按字母序排列。'],
+    ['英文 space between fields', [userSaying('describe the struct layout')], 'The struct members are 4-byte aligned; the space between fields is padding.'],
+  ])('leaves an unrelated answer verbatim: %s', (_label, messages, answer) => {
+    expect(checkDocumentEvidenceClaims(answer, messages)).toEqual([]);
+    expect(boundDocumentEvidenceClaims(answer, messages).content).toBe(answer);
+    expect(documentClaimPreflight({ id: 'w', name: 'Write', arguments: { file_path: 'notes.md', content: answer } }, messages)).toEqual([]);
+  });
+
+  // ai-review #1740 Important：「读不回内容」不等于「文件不存在」。一个 30MB 的交付物确实在盘上，
+  // 只是超过摘要读取上限；基线的 statSync().isFile() 对它是放行的。合并成同一条打回理由会让
+  // attempt_completion 被反复打回到预算耗尽，提示词还说「产物不可读」。
+  it('an oversized deliverable still proves existence, without claiming its content was read', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'oversized-')); roots.push(root);
+    const big = join(root, 'deliverable.mp4');
+    await writeFile(big, Buffer.alloc(11 * 1024 * 1024));
+    const { evidence, documentText } = readbackFileEvidence(big, root, 'test');
+    expect(evidence.ref).toContain('deliverable.mp4');
+    expect(evidence.freshness.state).toBe('candidate');
+    expect(evidence.freshness.digest).toBeUndefined();
+    expect(documentText).toBeUndefined();
+    expect(() => readbackFileEvidence(join(root, 'missing.md'), root, 'test')).toThrow();
+  });
+
+  // ai-review #1740 Important 的配套契约：证据流把正文攒到 finish 才发布，所以在它之前
+  // 缓冲区必须是无损可取的——取消/转向时 finish 根本执行不到，半截回答要靠调用方留住。
+  it('an unfinished stream still holds everything it was given', () => {
+    const emitted: string[] = [];
+    const stream = createDocumentEvidenceStream([], (text) => emitted.push(text));
+    stream.push('前半句');
+    stream.push('后半句');
+    expect(emitted).toEqual([]);
+    expect(stream.pending).toBe('前半句后半句');
   });
 
   it('does not allow an unrelated caveat to license an unsupported measured row', () => {

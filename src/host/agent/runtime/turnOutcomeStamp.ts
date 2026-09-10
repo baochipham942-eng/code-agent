@@ -54,7 +54,12 @@ async function genericEvidenceRefs(
     }
   }
   for (const verification of summary?.verificationEvidence ?? []) {
-    if (!verification.success || verification.exitCode !== 0) continue;
+    // 只在「明确知道它非零退出」时丢弃证据。生产上普通前台 Bash 的成功返回不写
+    // metadata.exitCode（只有 pty 分支写），parseExitCode 于是返回 undefined——
+    // 写成 `exitCode !== 0` 会把所有真实跑通的验证证据全部丢掉，verified 在生产中
+    // 根本不可达，而单测只因夹具手写了 exitCode: 0 才是绿的。
+    if (!verification.success) continue;
+    if (typeof verification.exitCode === 'number' && verification.exitCode !== 0) continue;
     refs.push(makeEvidenceRef({
       id: verification.toolCallId,
       kind: 'test',

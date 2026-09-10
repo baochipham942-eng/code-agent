@@ -108,6 +108,26 @@ describe('turn outcome stamp', () => {
     expect(latestOutcome(recorder).verdict).toBe('verified');
   });
 
+  // ai-review #1740 Important：生产上普通前台 Bash 的成功返回**不写** metadata.exitCode
+  // （只有 pty 分支写，bash.ts:992 那条 meta 里没有），parseExitCode 于是返回 undefined。
+  // 这条夹具刻意不给 exitCode，钉住「不知道退出码」不等于「退出码非零」——否则 verified
+  // 在生产中根本不可达，而上面那条只因夹具手写了 exitCode: 0 才是绿的（测试替身比真实依赖宽容）。
+  it('treats an unrecorded exit code as unknown, not as a failure', async () => {
+    const recorder = new TurnTraceRecorder('exit-unknown', traceRoot);
+    await recordTurnOutcomeStamp(context(recorder), 'completed', summary({ verificationEvidence: [
+      { kind: 'command', toolCallId: 'test-ok', command: 'npm test', success: true },
+    ] }));
+    expect(latestOutcome(recorder).verdict).toBe('verified');
+  });
+
+  it('still drops evidence from a command that demonstrably exited non-zero', async () => {
+    const recorder = new TurnTraceRecorder('exit-nonzero', traceRoot);
+    await recordTurnOutcomeStamp(context(recorder), 'completed', summary({ verificationEvidence: [
+      { kind: 'command', toolCallId: 'test-bad', command: 'npm test', success: true, exitCode: 2 },
+    ] }));
+    expect(latestOutcome(recorder).verdict).not.toBe('verified');
+  });
+
   it.each([
     ['核验要求：至少两份独立来源，才能标记已验证。', undefined],
     ['这些不是独立来源。', undefined],

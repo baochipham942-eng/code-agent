@@ -58,7 +58,34 @@ function splitByCode(markdown: string): Array<{ text: string; isCode: boolean }>
 /**
  * Check if a path match is inside a markdown link syntax like [text](path) or ![alt](path)
  */
-function isInsideMarkdownLink(text: string, matchIndex: number, matchLength: number): boolean {
+function findMarkdownLinkSpans(text: string): Array<readonly [number, number]> {
+  // Preserve the entire link label, including paths inside command actions.
+  // Scanned once per text segment and passed down — the per-match rescan it replaces was
+  // O(matches x segment length), redone for every streaming chunk.
+  const spans: Array<readonly [number, number]> = [];
+  // 标签段只用 [^\]\n]*：不要写成 (?:[^\]\n]|\\.)*——那两个分支对反斜杠是歧义的
+  // （`\` 既能被 [^\]\n] 单独吃掉、也能被 \\. 连同下一字符吃掉），行内出现未闭合的 `[`
+  // 时整体匹配失败，引擎穷举切分，步数随反斜杠个数 2^k 增长。一行 LaTeX 公式
+  // （`\[ \sum \alpha … \]`）或一条 Windows 路径就能把 renderer 主线程卡死几十秒，
+  // 且流式期间每个 chunk 重跑一次。反斜杠本来就被 [^\]\n] 正常吃掉，不需要那个分支。
+  for (const link of text.matchAll(/\[[^\]\n]*\]\([^\n]*?\)/g)) {
+    // matchAll always sets `index` for a real match; guard instead of `!` (eslint no-non-null-assertion).
+    const start = link.index;
+    if (start === undefined) continue;
+    spans.push([start, start + link[0].length] as const);
+  }
+  return spans;
+}
+
+function isInsideMarkdownLink(
+  text: string,
+  matchIndex: number,
+  matchLength: number,
+  linkSpans: Array<readonly [number, number]>,
+): boolean {
+  for (const [start, end] of linkSpans) {
+    if (matchIndex >= start && matchIndex + matchLength <= end) return true;
+  }
   // Check if preceded by ]( — markdown link target
   const before = text.slice(Math.max(0, matchIndex - 2), matchIndex);
   if (before.endsWith('](')) {
@@ -101,6 +128,7 @@ function isUrl(text: string, matchIndex: number): boolean {
 function processTextSegment(text: string): string {
   // Reset regex lastIndex
   FILE_PATH_PATTERN.lastIndex = 0;
+  const linkSpans = findMarkdownLinkSpans(text);
 
   let result = '';
   let lastIndex = 0;
@@ -116,7 +144,7 @@ function processTextSegment(text: string): string {
     }
 
     // Skip paths inside markdown link syntax
-    if (isInsideMarkdownLink(text, matchIndex, matchedPath.length)) {
+    if (isInsideMarkdownLink(text, matchIndex, matchedPath.length, linkSpans)) {
       continue;
     }
 
@@ -169,6 +197,7 @@ const TICKET_PATTERN = /\b[A-Z]{2,10}-\d{1,6}\b/g;
 
 function processTicketSegment(text: string): string {
   TICKET_PATTERN.lastIndex = 0;
+  const linkSpans = findMarkdownLinkSpans(text);
   let result = '';
   let lastIndex = 0;
   let match: RegExpExecArray | null;
@@ -177,7 +206,7 @@ function processTicketSegment(text: string): string {
     const matched = match[0];
     const matchIndex = match.index;
 
-    if (isInsideMarkdownLink(text, matchIndex, matched.length)) continue;
+    if (isInsideMarkdownLink(text, matchIndex, matched.length, linkSpans)) continue;
 
     // Skip if already wrapped in backticks
     const charBefore = matchIndex > 0 ? text[matchIndex - 1] : '';

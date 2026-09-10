@@ -2,6 +2,7 @@
 // MessageContent - Markdown rendering using react-markdown
 // ============================================================================
 
+import { useI18n } from '../../../../hooks/useI18n';
 import React, { useMemo, useCallback, memo, useEffect, useRef } from 'react';
 import { Send, PenLine, Terminal, Eye, ExternalLink, Play } from 'lucide-react';
 import remend from 'remend';
@@ -78,14 +79,24 @@ function iactSendTextOf(node: React.ReactNode): string | null {
   if (!React.isValidElement(node)) return null;
   const props = node.props as { href?: unknown; children?: React.ReactNode };
   if (props.href !== '!send') return null;
-  const c = props.children;
-  return typeof c === 'string' ? c
-    : Array.isArray(c) ? c.map(x => (typeof x === 'string' ? x : '')).join('')
-    : String(c ?? '');
+  return plainText(props.children);
+}
+
+// 递归取纯文本：children 可能是 [字符串, <strong>, 字符串]（label 带行内标记时），
+// 旧写法把非字符串子节点一律映射成 ''，`[**报告.md**](!open)` 会得到空串，随后拿空串
+// 去撞工作目录。ai-review #1739 只点名了 !open / !preview 两处，但同一个 a renderer 里
+// 五个 IACT 分支（!send / !add / !open / !preview / !ticket）与上面的 iactSendTextOf 逐字
+// 一样——第六处会把带行内标记的选项行发成 "[object Object]"，一处修就一起修。
+function plainText(value: React.ReactNode): string {
+  return React.Children.toArray(value).map((child) =>
+    typeof child === 'string' || typeof child === 'number' ? String(child)
+      : React.isValidElement<{ children?: React.ReactNode }>(child) ? plainText(child.props.children) : '',
+  ).join('');
 }
 
 // Main message content component
 export const MessageContent: React.FC<MessageContentProps> = memo(function MessageContent({ content, isUser, isStreaming = false, messageId, mediaContext, streamingTailStart }) {
+  const { t } = useI18n();
   const openPreview = useAppStore((state) => state.openPreview);
   const workingDirectory = useAppStore((state) => state.workingDirectory);
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
@@ -264,7 +275,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
       th({ children, style }) {
         return (
           <th
-            className="px-2 py-1.5 text-left text-[11px] font-medium text-zinc-500"
+            className="min-w-[4em] px-2 py-1.5 text-left text-[11px] font-medium text-zinc-500"
             style={style}
           >
             {children}
@@ -382,9 +393,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
         // data-iact-send 是 DOM 侧识别标记（测试/排查用）；p 层分组（B）按 href 扫描，
         // 同段 ≥2 个时会被摘出为选项行。
         if (href === '!send') {
-          const text = typeof children === 'string' ? children
-            : Array.isArray(children) ? children.map(c => typeof c === 'string' ? c : '').join('')
-            : String(children ?? '');
+          const text = plainText(children);
           return (
             <button
               type="button"
@@ -401,9 +410,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
 
         // IACT: [text](!add) — click to fill text into input box
         if (href === '!add') {
-          const text = typeof children === 'string' ? children
-            : Array.isArray(children) ? children.map(c => typeof c === 'string' ? c : '').join('')
-            : String(children ?? '');
+          const text = plainText(children);
           return (
             <button
               type="button"
@@ -421,44 +428,27 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
 
         // IACT: [command](!run) — click to execute shell command
         if (href === '!run') {
-          const text = typeof children === 'string' ? children
-            : Array.isArray(children) ? children.map(c => typeof c === 'string' ? c : '').join('')
-            : String(children ?? '');
-          return (
-            <button
-              type="button"
-              onClick={() => {
-                window.dispatchEvent(new CustomEvent('iact:run', { detail: text }));
-              }}
-              className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-md bg-emerald-500/10 text-badge-success hover:bg-emerald-500/20 hover:text-badge-success border border-badge-success/20 hover:border-badge-success/40 transition-all cursor-pointer text-sm font-medium font-mono"
-              title="点击执行命令"
-            >
-              <Terminal className="w-3 h-3 opacity-60" />
-              {children}
+          const text = plainText(children);
+          return <span className="my-2 inline-flex max-w-full flex-col gap-2 rounded-lg border border-zinc-700 bg-zinc-900 p-3 align-top">
+            <span className="whitespace-pre-wrap break-all font-mono text-xs text-zinc-300">{text}</span>
+            <button type="button" title={t.deliveryExperience.runHint}
+              onClick={() => window.dispatchEvent(new CustomEvent('iact:run', { detail: text }))}
+              className="inline-flex w-fit items-center gap-2 rounded-md border border-zinc-600 px-3 py-1.5 text-sm text-zinc-200 hover:bg-zinc-800">
+              <Terminal className="h-3.5 w-3.5" />
+              {/\bpython[23]?\b.*\.py\b/.test(text) ? t.deliveryExperience.runScript : t.deliveryExperience.runCommand}
             </button>
-          );
+          </span>;
         }
 
         // IACT: [filepath](!open) — click to open file in editor/Finder
         if (href === '!open') {
-          const text = typeof children === 'string' ? children
-            : Array.isArray(children) ? children.map(c => typeof c === 'string' ? c : '').join('')
-            : String(children ?? '');
+          const text = plainText(children);
           return (
             <button
               type="button"
-              onClick={() => {
-                // host openPath 只接受绝对路径；相对路径在调用方先按工作目录解析。
-                let filePath = text;
-                if (filePath && !filePath.startsWith('/') && !filePath.startsWith('~')) {
-                  filePath = workingDirectory
-                    ? `${workingDirectory.replace(/\/+$/, '')}/${filePath.replace(/^\.?\//, '')}`
-                    : filePath;
-                }
-                void window.domainAPI?.invoke('workspace', 'openPath', { filePath });
-              }}
+              onClick={() => void handleOpenFile(text)}
               className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-md bg-blue-500/10 text-badge-info hover:bg-blue-500/20 hover:text-badge-info border border-badge-info/20 hover:border-badge-info/40 transition-all cursor-pointer text-sm font-medium"
-              title="打开文件"
+              title={t.deliverable.openFile}
             >
               <ExternalLink className="w-3 h-3 opacity-60" />
               {children}
@@ -468,9 +458,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
 
         // IACT: [filepath](!preview) — click to preview in PreviewPanel
         if (href === '!preview') {
-          const text = typeof children === 'string' ? children
-            : Array.isArray(children) ? children.map(c => typeof c === 'string' ? c : '').join('')
-            : String(children ?? '');
+          const text = plainText(children);
           return (
             <button
               type="button"
@@ -495,9 +483,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
 
         // IACT: [ID](!ticket) — Jira-like ticket auto-link, click to copy ID
         if (href === '!ticket') {
-          const text = typeof children === 'string' ? children
-            : Array.isArray(children) ? children.map(c => typeof c === 'string' ? c : '').join('')
-            : String(children ?? '');
+          const text = plainText(children);
           return (
             <button
               type="button"
@@ -580,7 +566,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
         );
       },
     }),
-    [handleOpenFile, handleOpenHttpLink, handlePreviewHtml, isStreaming, mediaContext?.sessionId, mediaContext?.turnId, mediaContext?.messageId, messageId]
+    [t, handleOpenFile, handleOpenHttpLink, handlePreviewHtml, isStreaming, mediaContext?.sessionId, mediaContext?.turnId, mediaContext?.messageId, messageId]
   );
 
   // For user messages, render as plain text (no markdown processing)

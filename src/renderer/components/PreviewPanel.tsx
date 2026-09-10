@@ -2,6 +2,7 @@
 // PreviewPanel - Right side panel for HTML/Web preview
 // ============================================================================
 
+import './reportPreview.css';
 import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Archive, Check, ChevronDown, File, Folder, X, RefreshCw, ExternalLink, Maximize2, Minimize2, Camera, Save, FolderOpen, Presentation, MousePointerClick, MoreHorizontal } from 'lucide-react';
 import { IPC_DOMAINS } from '@shared/ipc';
@@ -32,6 +33,7 @@ import { artifactFollowKey, useArtifactFollowStore } from '../stores/artifactFol
 import { artifactCompletionMeta, usePreviewFileMetadata } from '../hooks/usePreviewFileMetadata';
 import { useSessionTurnActive } from '../hooks/useSessionTurnActive';
 import {
+
   basename,
   buildDocxPreviewSpec,
   buildExcelPreviewSpec,
@@ -47,6 +49,13 @@ import {
 } from './previewPanelModel';
 
 export { parseDesignPptArtifactContent, shouldFlashOnDiskLoad, toPreviewErrorState } from './previewPanelModel';
+
+// 模块级常量：写成内联字面量的话每次渲染都是新引用，ReactMarkdown 整棵重建。
+const REPORT_MARKDOWN_COMPONENTS = {
+  table: ({ children }: { children?: React.ReactNode }) => (
+    <div className="my-5 overflow-x-auto"><table>{children}</table></div>
+  ),
+};
 
 const CodeEditor = lazy(() => import('./CodeEditor'));
 const CsvTable = lazy(() => import('./CsvTable'));
@@ -775,7 +784,9 @@ export const PreviewPanel: React.FC = () => {
           title={previewFilePath ?? activeTab.title}
           aria-label={pv.copyPath}
         >
-          {isVirtual ? activeTab.title : previewFilePath}
+          {isVirtual || !previewFilePath
+            ? activeTab.title
+            : `${previewFilePath.split(/[\\/]/).filter(Boolean).pop() || activeTab.title} · ${t.deliveryExperience.currentFile}`}
         </button>
         {activeTab.deliverableStatus && <DeliverableStatusBadge status={activeTab.deliverableStatus} />}
         {directPublishedVersion && (
@@ -980,10 +991,10 @@ export const PreviewPanel: React.FC = () => {
             />
           </Suspense>
         ) : isMarkdown ? (
-          <div className="h-full overflow-y-auto px-6 py-4">
-            <article className="prose prose-invert prose-sm max-w-none prose-pre:bg-zinc-950 prose-pre:border prose-pre:border-zinc-800">
+          <div className="h-full overflow-auto px-8 py-8">
+            <article className="report-preview">
               <Suspense fallback={<div className="whitespace-pre-wrap break-words">{content}</div>}>
-                <MarkdownCore content={content} gfm breaks />
+                <MarkdownCore content={content} gfm breaks components={REPORT_MARKDOWN_COMPONENTS} />
               </Suspense>
             </article>
           </div>

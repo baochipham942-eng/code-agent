@@ -24,7 +24,6 @@ export const workbenchTabsZh = {
     expandPanel: '展开面板',
     // 专注模式（2026-08-01 工单①）：一个按钮一个位置两个状态，Esc 退出
     focusEnter: '专注模式：面板占满窗口',
-    focusExit: '退出专注模式（Esc）',
     overviewLabel: '任务',
     overviewTitle: '任务工作台',
     logsLabel: '日志',
@@ -194,7 +193,6 @@ export const workbenchTabsEn: typeof workbenchTabsZh = {
     collapsePanel: 'Collapse panel',
     expandPanel: 'Expand panel',
     focusEnter: 'Focus mode: panel fills the window',
-    focusExit: 'Exit focus mode (Esc)',
     overviewLabel: 'Task',
     overviewTitle: 'Task workspace',
     logsLabel: 'Logs',

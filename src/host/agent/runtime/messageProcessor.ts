@@ -1,6 +1,6 @@
 import type { TraceEventDataMap } from './turnTrace';
 import { getToolAttemptTrace } from './toolAttemptTrace';
-import { boundDocumentEvidenceClaims } from './documentEvidenceBoundary';
+import { checkDocumentEvidenceClaims } from './documentEvidenceBoundary';
 import { hasUntrustedMemoryInput } from '../../memory/automaticMemoryPolicy';
 import { cancelTimeWakesOnUserReturn } from '../../services/wake/userReturn';
 // ============================================================================
@@ -142,12 +142,14 @@ export class MessageProcessor {
   }
 
   private buildAssistantMessageFromResponse(response: ModelResponse, content: string, surface: TraceEventDataMap['evidence_boundary']['surface'] = 'final_response'): Message {
-    const bounded = boundDocumentEvidenceClaims(content, this.ctx.messages);
-    if (bounded.problems.length) this.ctx.turnTrace?.record('evidence_boundary', { problems: bounded.problems, surface });
+    // 记录式：只统计问题、不改写正文（2026-09-11 爸拍板）。误伤的代价从「毁掉整段回答」
+    // 降到「trace 里多一行」；无证据的断言照原样发出去，但在 evidence_boundary 里留痕。
+    const claimProblems = checkDocumentEvidenceClaims(content, this.ctx.messages);
+    if (claimProblems.length) this.ctx.turnTrace?.record('evidence_boundary', { problems: claimProblems, surface });
     return {
       id: this.contextAssembly.generateId(),
       role: 'assistant',
-      content: bounded.content,
+      content,
       timestamp: Date.now(),
       thinking: response.thinking,
       responsesOutput: response.responsesOutput,
@@ -156,9 +158,14 @@ export class MessageProcessor {
       outputTokens: response.usage?.outputTokens,
       modelDecision: response.runtimeDiagnostics?.modelDecision,
       metadata: attachTurnQualityMetadata(this.ctx, undefined, response),
-      contentParts: response.contentParts?.length
-        ? [{ type: 'text', text: bounded.content }, ...response.contentParts.filter((part) => part.type !== 'text')]
-        : undefined,
+      // 逐段就地映射，保住 provider 记录的 text/tool 交错顺序——渲染层拿它当权威顺序。
+      // 拍平成「一段合并 text + 其余非 text」会把「先读 config」→Read→「再看 package.json」→Read
+      // 渲染成两段旁白粘连并全部前置、两张卡在后，叙事顺序对不上实际发生顺序。
+      contentParts: response.contentParts?.map((part) =>
+        part.type === 'text'
+          ? { type: 'text' as const, text: this.contextAssembly.stripInternalFormatMimicry(part.text) }
+          : part
+      ),
     };
   }
 

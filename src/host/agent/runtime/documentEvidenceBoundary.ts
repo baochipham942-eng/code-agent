@@ -129,18 +129,6 @@ export function checkDocumentEvidenceClaims(content: string, messages: readonly 
   return [...new Set(documentClaimProblems(content, messages).map((problem) => problem.code))];
 }
 
-/** Replace only the unsupported assertion span; preserve unrelated prose and punctuation verbatim. */
-export function boundDocumentEvidenceClaims(content: string, messages: readonly Message[]): { content: string; problems: string[] } {
-  const findings = documentClaimProblems(content, messages);
-  const spans = new Map<string, ClaimProblem>();
-  for (const finding of findings) spans.set(`${finding.start}:${finding.end}`, finding);
-  let bounded = content;
-  for (const finding of [...spans.values()].sort((a, b) => b.start - a.start)) {
-    bounded = bounded.slice(0, finding.start) + formatDocumentEvidenceBoundary([finding.code]) + bounded.slice(finding.end);
-  }
-  return { content: bounded, problems: [...new Set(findings.map((finding) => finding.code))] };
-}
-
 export function documentClaimPreflight(call: ToolCall, messages: readonly Message[]): string[] {
   if (!/^(Write|write_file|Edit|edit_file|MultiEdit)$/i.test(call.name)) return [];
   const raw = call.arguments.file_path ?? call.arguments.path;
@@ -152,8 +140,8 @@ export function documentClaimPreflight(call: ToolCall, messages: readonly Messag
   return checkDocumentEvidenceClaims(text, messages);
 }
 
-/** A bounded final answer lists the unsupported fields instead of publishing their claims. */
-function formatDocumentEvidenceBoundary(problems: readonly string[]): string {
+/** 人话版说明，给模型看的 advisory 用（正文不再被改写，见 2026-09-11 的记录式决定）。 */
+export function describeDocumentEvidenceProblems(problems: readonly string[]): string {
   const descriptions: Record<string, string> = {
     SOURCE_INDEPENDENCE_UNVERIFIED: '来源独立性未核实：纪要、摘要和同源转载不能增加独立来源数量。',
     SPACE_OWNER_UNVERIFIED: '空间归属待查：登录身份不能证明空间所有者。',

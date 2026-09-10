@@ -765,10 +765,9 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
     // （conversationRuntime.ts:1144）读到的就是空串——已生成的几千字在库里一个字都没有，
     // 正是 2026-08-01 真机实测修掉的那个 bug。所以：原始 chunk 边来边进 turn（只为 abort
     // 时留住半截），finish 时先清空再写入定稿正文，避免两者叠加。
-    const contentStreamFilter = createDocumentEvidenceStream(ctx.runtime.messages, (text) => {
-      ctx.runtime.turn.resetStreamedContent(); ctx.runtime.turn.appendStreamedContent(text);
-      emitAssistantMessageDelta(ctx, 'content', text);
-    });
+    // 按句流出：证据检查改成记录式后不再改写正文，可见文本与原始 chunk 一致，
+    // 所以 turn 由 pushContent 边收边存（abort 时留底），这里只负责把整句发给前端。
+    const contentStreamFilter = createDocumentEvidenceStream(ctx.runtime.messages, (text) => emitAssistantMessageDelta(ctx, 'content', text));
 
     // 原始 chunk 边来边进 turn（abort 时留住半截），同时喂给按整段判定的证据流。
     const pushContent = (text: string) => { ctx.runtime.turn.appendStreamedContent(text); contentStreamFilter.push(text); };

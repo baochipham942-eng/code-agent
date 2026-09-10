@@ -541,7 +541,9 @@ describe('MessageProcessor persistence', () => {
     ['这些不是独立来源。', false],
     ['引用：“这些是独立来源。”', false],
     ['附件已整理。空间主人：owner-fixture，自动化配置待查。', true, true],
-  ])('persists field-specific boundaries and matches the production text stream: %s', async (content, blocked, truncated = false) => {
+    // 2026-09-11 爸拍板改记录式：正文一律原样落库，第二列现在表示「是否会记一条
+    // evidence_boundary」，不再是「是否被改写」。
+  ])('persists text verbatim and records the boundary instead of rewriting it: %s', async (content, flagged, truncated = false) => {
     const ctx = {
       // A local Read already happened; the desktop zero-tool gate is a separate contract.
       stats: RunStatsState.forTest({ totalToolCallCount: 1 }), contextHealth: ContextHealthState.forTest(),
@@ -565,17 +567,15 @@ describe('MessageProcessor persistence', () => {
       contentParts: [{ type: 'text', text: content }], finishReason: truncated ? 'length' : 'stop', truncated,
     } as ModelResponse, true, 1, false, { endSpan: vi.fn() });
     const saved = addAndPersistMessage.mock.calls.at(-1)?.[0];
+    // 落库的正文 = 流出去的正文 = 模型原话，三者逐字相同（记录式不改写任何一个字）。
     expect(saved.content).toBe(streamed.join(''));
-    if (!blocked) {
-      expect(saved.content).toBe(content);
+    expect(saved.content).toBe(content);
+    expect(JSON.stringify(saved.contentParts ?? [])).toContain(content);
+    if (!flagged) {
       expect(ctx.turnTrace.record).not.toHaveBeenCalled();
       return;
     }
-    if (content.startsWith('附件')) expect(saved.content).toContain('附件已整理。');
-    if (content.includes('下一步')) expect(saved.content).toContain('下一步核对原文。');
-    expect(saved.content).toContain('空间归属待查');
-    expect(saved.content).not.toContain('已实测确认');
-    expect(JSON.stringify(saved.contentParts ?? [])).not.toContain('已实测确认');
+    // 留痕仍在：问题进 evidence_boundary 事件，不进正文。
     expect(ctx.turnTrace.record).toHaveBeenCalledWith('evidence_boundary', {
       problems: ['SPACE_OWNER_UNVERIFIED'], surface: truncated ? 'partial_response' : 'final_response',
     });

@@ -1,5 +1,5 @@
 import { getToolAttemptTrace } from './toolAttemptTrace';
-import { attachDocumentOrigin, documentClaimPreflight } from './documentEvidenceBoundary';
+import { attachDocumentOrigin, describeDocumentEvidenceProblems, documentClaimPreflight } from './documentEvidenceBoundary';
 // ============================================================================
 // ToolExecutionEngine — Tool execution with hooks, circuit breaker, content verification
 // Extracted from AgentLoop
@@ -386,13 +386,16 @@ export class ToolExecutionEngine {
       return emitBlockedToolResult(toolResult);
     }
 
+    // 记录式：提醒模型，但**不拦**这次写入，也不计入连续错误去触发强制收尾
+    // （2026-09-11 爸拍板）。这条判据是一组中文/英文正则，误伤在所难免——
+    // 让它把用户真实要写的文档挡在门外、连挡三次还把整轮改成 aborted，代价远大于收益。
     const claimProblems = documentClaimPreflight(toolCall, this.ctx.messages);
     if (claimProblems.length > 0) {
-      const error = `EVIDENCE_BOUNDARY: ${claimProblems.join(', ')}. Keep same-origin records together; label unknown independence and space fields as unverified. Local files/logs do not establish current space configuration.`;
-      this.contextAssembly.injectSystemMessage(error, 'tool-schema-repair');
-      if (this.consecutiveErrors >= 2) this.ctx.control.forceFinalResponse('evidence boundary repeated', error);
-      return emitBlockedToolResult({ toolCallId: toolCall.id, success: false, error,
-        metadata: { blocked: true, evidenceBoundary: claimProblems }, duration: 0 });
+      this.ctx.turnTrace?.record('evidence_boundary', { problems: claimProblems, surface: 'tool_prelude' });
+      this.contextAssembly.injectSystemMessage(
+        `EVIDENCE_BOUNDARY (advisory): ${claimProblems.join(', ')} ${describeDocumentEvidenceProblems(claimProblems)} Keep same-origin records together; label unknown independence and space fields as unverified. Local files/logs do not establish current space configuration.`,
+        'tool-schema-repair',
+      );
     }
 
     if (this.ctx.hookManager) {

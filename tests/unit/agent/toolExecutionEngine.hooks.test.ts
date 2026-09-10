@@ -386,15 +386,23 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     expect(engine.noProgressStopped).toBe(false);
   });
 
-  it('blocks unsupported report generation before calling the executor', async () => {
-    const execute = vi.fn();
+  // 2026-09-11 爸拍板改记录式：无证据支撑的报告照写不误，只在系统消息里提醒模型。
+  // 原本这条钉的是「拦住不让写」——那条判据是一组中英文正则，误伤在所难免，
+  // 让它把用户真实要写的文档挡在门外、连挡三次还把整轮改成 aborted，代价远大于收益。
+  it('warns about an unsupported report instead of blocking it', async () => {
+    const execute = vi.fn().mockResolvedValue({ success: true, output: 'written' });
     const ctx = makeRuntimeContext({ toolExecutor: { execute } as never });
     const engine = new ToolExecutionEngine(ctx);
-    engine.setModules({ injectSystemMessage: vi.fn() } as never, {} as never, {} as never);
-    const result = await engine.executeSingleTool({ id: 'false-report', name: 'Write',
+    const injectSystemMessage = vi.fn();
+    engine.setModules({ injectSystemMessage, pushPersistentSystemContext: vi.fn(), getCurrentAttachments: () => [] } as never,
+      { emitTaskProgress: vi.fn() } as never, { isPlanMode: () => false, setPlanMode: vi.fn() } as never);
+    await engine.executeSingleTool({ id: 'false-report', name: 'Write',
       arguments: { file_path: '/tmp/report.md', content: '✅ 纪要与逐字稿双记录互证' } }, 0, 1);
-    expect(execute).not.toHaveBeenCalled();
-    expect(result).toMatchObject({ success: false, metadata: { evidenceBoundary: ['SOURCE_INDEPENDENCE_UNVERIFIED'] } });
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(injectSystemMessage.mock.calls.map(([text]) => String(text))
+      .filter((text) => text.startsWith('EVIDENCE_BOUNDARY (advisory):'))).toEqual([
+      expect.stringContaining('SOURCE_INDEPENDENCE_UNVERIFIED'),
+    ]);
   });
 
   it.each([
@@ -406,17 +414,24 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     ['空间主人：owner-fixture；自动化配置待查。', false],
     ['空间专家成员：expert-fixture，空间主人待查。', false],
     ['空间没有自动化，成员待查。', false],
-  ])('production Write preflight reaches the executor only for permitted claims: %s', async (content, allowed) => {
+    // 2026-09-11 爸拍板：证据边界改为**记录式**——写入一律放行，只提醒 + 留痕。
+    // 第二列现在表示「是否会产生一条 advisory 提醒」，不再是「是否放行」。
+  ])('production Write always reaches the executor; unsupported claims only add an advisory: %s', async (content, clean) => {
     // Returning failure deliberately avoids document-origin file I/O after this dispatch spy.
     const execute = vi.fn().mockResolvedValue({ success: false, error: 'FIXTURE_EXECUTOR_ENTERED', metadata: { executionStarted: true } });
     const ctx = makeRuntimeContext({ toolExecutor: { execute } as never });
     const engine = new ToolExecutionEngine(ctx);
-    engine.setModules({ injectSystemMessage: vi.fn(), pushPersistentSystemContext: vi.fn(), getCurrentAttachments: () => [] } as never,
+    const injectSystemMessage = vi.fn();
+    engine.setModules({ injectSystemMessage, pushPersistentSystemContext: vi.fn(), getCurrentAttachments: () => [] } as never,
       { emitTaskProgress: vi.fn() } as never, { isPlanMode: () => false, setPlanMode: vi.fn() } as never);
     const result = await engine.executeSingleTool({ id: 'boundary-write', name: 'Write', arguments: { file_path: '/tmp/boundary-fixture.md', content } }, 0, 1);
-    expect(execute).toHaveBeenCalledTimes(allowed ? 1 : 0);
-    if (allowed) expect(result.error).toBe('FIXTURE_EXECUTOR_ENTERED');
-    else expect(result.metadata?.evidenceBoundary).toEqual([expect.stringMatching(/UNVERIFIED$/)]);
+    // 无论断言有没有证据，写入都必须真的发生——不许把用户要写的文档挡在门外。
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(result.error).toBe('FIXTURE_EXECUTOR_ENTERED');
+    expect(result.metadata?.evidenceBoundary).toBeUndefined();
+    const advisories = injectSystemMessage.mock.calls.filter(([text]) => String(text).startsWith('EVIDENCE_BOUNDARY (advisory):'));
+    expect(advisories).toHaveLength(clean ? 0 : 1);
+    if (!clean) expect(String(advisories[0][0])).toMatch(/UNVERIFIED/);
   });
 
   it('traces rejected repair attempts and stops cross-tool retries without dispatch', async () => {

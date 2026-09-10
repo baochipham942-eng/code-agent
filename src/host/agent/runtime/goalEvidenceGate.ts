@@ -9,7 +9,6 @@
 
 import { isAbsolute, resolve } from 'path';
 import { readbackFileEvidence } from './fileEvidenceReadback';
-import { checkDocumentEvidenceClaims } from './documentEvidenceBoundary';
 import { execFileSync } from 'child_process';
 import type { ToolCall } from '../../../shared/contract';
 import { GOAL_MODE } from '../../../shared/constants/agent';
@@ -143,10 +142,10 @@ export function runGoalEvidenceGate(
   const filesToVerify = [...new Set([...claimed.deliverables, ...declaredArtifacts])];
   for (const filePath of filesToVerify) {
     try {
-      const { evidence, documentText } = readbackFileEvidence(filePath, ctx.workingDirectory || process.cwd(), 'goal-evidence-gate');
-      const boundaryProblems = documentText !== undefined ? checkDocumentEvidenceClaims(documentText, ctx.messages) : [];
-      if (boundaryProblems.length > 0) problems.push(...boundaryProblems);
-      else if (!evidenceRefs.some((ref) => ref.ref === evidence.ref)) evidenceRefs.push(evidence);
+      const { evidence } = readbackFileEvidence(filePath, ctx.workingDirectory || process.cwd(), 'goal-evidence-gate');
+      // 记录式：文档断言问题不再当作打回理由（否则模型会被反复打回到预算耗尽），
+      // 产物的存在性证据照常收下。留痕由 turnTrace 的 evidence_boundary 事件负责。
+      if (!evidenceRefs.some((ref) => ref.ref === evidence.ref)) evidenceRefs.push(evidence);
     } catch {
       const origin = claimed.deliverables.includes(filePath) ? '自报产物' : '事先声明的产物';
       // 打回理由要带解析后的绝对路径：模型写错相对路径时，只报它自己写的那串没法自纠。

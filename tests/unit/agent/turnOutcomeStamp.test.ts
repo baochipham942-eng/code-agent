@@ -152,8 +152,11 @@ describe('turn outcome stamp', () => {
     const goal = runGoalEvidenceGate({ ...ctx, artifact: ArtifactState.forTest(), goalEvidenceState: { bounces: 0 },
       goalMode: { getVerifyCommand: () => undefined },
     } as unknown as RuntimeContext, { id: 'completion', name: 'attempt_completion', arguments: { evidence: { deliverables: [artifact] } } });
-    expect(goal.verdict).toBe(problem ? 'bounce' : 'pass');
-    expect(goal.evidenceRefs).toHaveLength(problem ? 0 : 1);
+    // 2026-09-11 爸拍板改记录式：goal 门不再因为文档断言问题打回（原本会把模型反复打回
+    // 到预算耗尽），产物的存在性证据照常收下。留痕仍在——上面 evidenceProblems 与
+    // verdict='self_claimed' 两条断言不变，turnTrace 里也有 evidence_boundary 事件。
+    expect(goal.verdict).toBe('pass');
+    expect(goal.evidenceRefs).toHaveLength(1);
   });
 
   afterEach(() => {

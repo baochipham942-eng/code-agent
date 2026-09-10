@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Message, ToolCall } from '../../../src/shared/contract';
-import { attachDocumentOrigin, checkDocumentEvidenceClaims, documentClaimPreflight, boundDocumentEvidenceClaims } from '../../../src/host/agent/runtime/documentEvidenceBoundary';
+import { attachDocumentOrigin, checkDocumentEvidenceClaims, documentClaimPreflight } from '../../../src/host/agent/runtime/documentEvidenceBoundary';
 import { readbackFileEvidence } from '../../../src/host/agent/runtime/fileEvidenceReadback';
 import { createDocumentEvidenceStream } from '../../../src/host/agent/runtime/documentEvidenceStream';
 const roots: string[] = [];
@@ -90,7 +90,6 @@ describe('document evidence boundary', () => {
     ['英文 space between fields', [userSaying('describe the struct layout')], 'The struct members are 4-byte aligned; the space between fields is padding.'],
   ])('leaves an unrelated answer verbatim: %s', (_label, messages, answer) => {
     expect(checkDocumentEvidenceClaims(answer, messages)).toEqual([]);
-    expect(boundDocumentEvidenceClaims(answer, messages).content).toBe(answer);
     expect(documentClaimPreflight({ id: 'w', name: 'Write', arguments: { file_path: 'notes.md', content: answer } }, messages)).toEqual([]);
   });
 
@@ -161,7 +160,6 @@ describe('assertion modality and field scope regressions', () => {
   it.each(descriptions)('preserves a non-assertive explanation in both checks and Write: %s', (content) => {
     expect(checkDocumentEvidenceClaims(content, [])).toEqual([]);
     expect(documentClaimPreflight({ id: 'write', name: 'Write', arguments: { file_path: 'report.md', content } }, [])).toEqual([]);
-    expect(boundDocumentEvidenceClaims(content, []).content).toBe(content);
   });
   it.each([
     '已找到两份独立来源，核验要求尚未完善。',
@@ -190,17 +188,18 @@ describe('assertion modality and field scope regressions', () => {
   });
   it('preserves valid text around a locally replaced assertion, including chunk-split negation', () => {
     const content = '附件已整理。核验要求：至少两份独立来源，才能标记已验证。\n空间主人：owner-fixture，自动化配置待查。\n这些不是独立来源。下一步核对原文。';
-    const final = boundDocumentEvidenceClaims(content, []);
-    expect(final.problems).toEqual(['SPACE_OWNER_UNVERIFIED']);
-    expect(final.content).toContain('附件已整理。核验要求：至少两份独立来源，才能标记已验证。');
-    expect(final.content).toContain('，自动化配置待查。\n这些不是独立来源。下一步核对原文。');
-    expect(final.content).not.toContain('owner-fixture');
+    expect(checkDocumentEvidenceClaims(content, [])).toEqual(['SPACE_OWNER_UNVERIFIED']);
+    // 2026-09-11 爸拍板：边界改记录式（不改写正文）+ 按句流出。流出去的是模型原话，
+    // 逐字等于输入；被判有问题的字段进 stream.problems，不进正文。
     const emitted: string[] = [];
     const stream = createDocumentEvidenceStream([], (text) => emitted.push(text));
     for (const char of content) stream.push(char);
-    expect(emitted).toEqual([]);
+    // 按句流出：最后一句没有终止符之前不会发出去，但前面的整句已经在路上了。
+    expect(emitted.length).toBeGreaterThan(0);
+    expect(content.startsWith(emitted.join(''))).toBe(true);
     stream.finish(content);
-    expect(emitted.join('')).toBe(final.content);
+    expect(emitted.join('')).toBe(content);
+    expect(stream.problems).toEqual(['SPACE_OWNER_UNVERIFIED']);
   });
 });
 
@@ -240,7 +239,12 @@ it.each([
   const router = {
     inference: vi.fn(async (_messages: unknown, _tools: unknown, _config: unknown, stream: StreamCallback) => {
       for (const char of content) stream({ type: 'text', content: char });
-      expect(onEvent.mock.calls.filter(([event]) => event.type === 'message_delta' && event.data?.path === 'content')).toHaveLength(0);
+      // 按句流出（2026-09-11）：整句一到就发，不再憋到 finish——40 秒的回答不该是 40 秒空气泡。
+      // 收尾前至少发过一段，且发出去的一定是原文的前缀。
+      const midStream = onEvent.mock.calls.filter(([event]) => event.type === 'message_delta' && event.data?.path === 'content');
+      const streamedSoFar = midStream.map(([event]) => event.data.text).join('');
+      expect(content.startsWith(streamedSoFar)).toBe(true);
+      if (/[。！？；\n]/.test(content.slice(0, -1))) expect(midStream.length).toBeGreaterThan(0);
       return { type: 'text', content, finishReason: 'stop', usage: { inputTokens: 10, outputTokens: 5 } };
     }),
     detectRequiredCapabilities: () => [], getModelInfo: () => ({ supportsVision: true, supportsTool: true, capabilities: ['general'] }),
@@ -259,11 +263,11 @@ it.each([
   } as unknown as ContextAssemblyCtx;
   await inference(ctx);
   expect(router.inference).toHaveBeenCalledTimes(1);
-  expect(runtime.turn.lastStreamedContent).toBe(boundDocumentEvidenceClaims(content, []).content);
+  // 记录式：turn 与 delta 都是模型原话，逐字等于 content（不再有「同一段有界文本」这回事）。
+  expect(runtime.turn.lastStreamedContent).toBe(content);
   const emitted = onEvent.mock.calls.filter(([event]) => event.type === 'message_delta' && event.data.path === 'content');
-  expect(emitted.map(([event]) => event.data.text).join('')).toBe(boundDocumentEvidenceClaims(content, []).content);
+  expect(emitted.map(([event]) => event.data.text).join('')).toBe(content);
   expect(emitted.length).toBeGreaterThan(0);
-  expect(JSON.stringify(emitted)).not.toContain('owner-fixture');
 });
 
 it('keeps handoff tails private and withholds an unfinished response', () => {

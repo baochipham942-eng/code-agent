@@ -200,7 +200,16 @@ export type PermissionDeliveryOutcome =
   /** 该 session 没有活跃 orchestrator（进程重启后内存里的 pending promise 已不存在） */
   | 'no_orchestrator'
   /** 请求没带 sessionId，且当前也没有活跃会话可兜底 */
-  | 'no_session';
+  | 'no_session'
+  /**
+   * 内存里的 pending promise 还在、宿主 run 也还活着，只是台账这一次写不进去
+   * （瞬时 SQLITE_BUSY 等）。**与 `'unknown_request'` 严格分开**：后者的含义是
+   * 「宿主没有这条请求」，上层据此把台账行 fail-closed 收掉；把瞬时写失败混进去，
+   * 用户点的「允许」会被翻成永久 rejected，还附一句「owning run is no longer alive」
+   * 这种与事实相反的理由，此后该审批再也裁决不了。这是可重试的中间态，
+   * 调用方必须原样保留台账行和内存 promise，让用户再点一次。
+   */
+  | 'storage_unavailable';
 
 /**
  * 「这次审批是被谁拒的」——`'user'` 之外**全部是机器做的判断**。

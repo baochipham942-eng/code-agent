@@ -76,6 +76,7 @@ export function readPersistedModelOverride(
 export async function persistModelOverride(
   sessionId: string,
   override: Omit<ModelOverride, 'setAt'> & { setAt?: number },
+  commit?: (write: () => void) => void,
 ): Promise<boolean> {
   return enqueuePersistOp(sessionId, async () => {
     try {
@@ -92,6 +93,7 @@ export async function persistModelOverride(
         sessionId,
         { [MODEL_OVERRIDE_METADATA_KEY]: { ...marker } },
         {
+          commit,
           // adaptive（自动路由）时 provider/model 只是占位，不写进列，避免列语义失真
           ...(override.adaptive === true
             ? {}

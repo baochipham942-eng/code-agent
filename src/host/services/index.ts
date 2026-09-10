@@ -35,7 +35,3 @@ export {
 // 故意不在此处聚合 — 这些模块携带重下游依赖（plugins/tools/model），
 // 透过顶层 barrel 暴露会引发 services ↔ tools/plugins/model 循环依赖。
 // 使用方请 `import ... from '@host/services/<domain>/<file>'` 直接引用。
-
-// Companion gateway is loaded by the Host services graph; its public class is consumed by the integration adapter.
-import { CompanionGateway } from './companion/gateway';
-void CompanionGateway;

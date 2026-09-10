@@ -34,14 +34,13 @@ const FAILURE_CODES: Record<Exclude<PermissionDeliveryOutcome, 'delivered'>, str
   unknown_request: 'PENDING_PERMISSION_NOT_FOUND',
   no_orchestrator: 'NO_ACTIVE_ORCHESTRATOR',
   no_session: 'NO_ACTIVE_SESSION',
+  storage_unavailable: 'PENDING_APPROVAL_STORAGE_UNAVAILABLE',
 };
 
-export function installPermissionResponseHandler(deps: PermissionResponseDeps): void {
+export function installPermissionResponseHandler(deps: PermissionResponseDeps) {
   const { handlers, pendingDevPermissions, getCurrentSessionId, logger } = deps;
 
-  handlers.set(
-    IPC_CHANNELS.AGENT_PERMISSION_RESPONSE,
-    async (_event: unknown, ...args: unknown[]) => {
+  const deliver = (_event: unknown, ...args: unknown[]) => {
       const [requestId, response, sessionId] = args as [string, PermissionResponse, string | undefined];
       const pending = pendingDevPermissions.get(requestId);
       if (pending) {
@@ -90,6 +89,24 @@ export function installPermissionResponseHandler(deps: PermissionResponseDeps): 
         return { success: true, data: { requestId, sessionId: targetSessionId, source: 'task-manager' } };
       }
 
+      // 台账这一次写不进去 ≠ 宿主已死：内存 promise 还在、run 还活着，收口会把用户的
+      // 「允许」翻成永久 rejected 且附一句假理由，此后再点也裁决不了。原样留着等重试。
+      if (outcome === 'storage_unavailable') {
+        logger.warn('Permission response not delivered, approval left decidable (web)', {
+          requestId,
+          response,
+          sessionId: targetSessionId,
+          outcome,
+        });
+        return {
+          success: false,
+          error: {
+            code: FAILURE_CODES[outcome],
+            message: `Permission response for ${requestId} could not be recorded (${outcome}, session=${targetSessionId ?? 'none'}); retry`,
+          },
+        };
+      }
+
       // 停车审批的宿主已随进程重启消失：fail-closed 拒绝并从待办收口。
       if (closeDeadParkedApproval(requestId)) {
         logger.warn('Parked approval rejected on dead resolve (web)', { requestId, outcome });
@@ -111,6 +128,7 @@ export function installPermissionResponseHandler(deps: PermissionResponseDeps): 
           message: `Permission response for ${requestId} not delivered (${outcome}, session=${targetSessionId ?? 'none'})`,
         },
       };
-    },
-  );
+    };
+  handlers.set(IPC_CHANNELS.AGENT_PERMISSION_RESPONSE, async (event, ...args) => deliver(event, ...args));
+  return (requestId: string, response: PermissionResponse, sessionId: string) => deliver(null, requestId, response, sessionId);
 }

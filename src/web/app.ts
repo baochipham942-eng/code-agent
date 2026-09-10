@@ -1,3 +1,4 @@
+import { CompanionLibraryService } from '../host/services/companion/CompanionLibraryService';
 // ============================================================================
 // Web App Assembly - 纯 Express app 装配（无顶层副作用）
 // ============================================================================
@@ -54,7 +55,19 @@ import { createDevRouter } from './routes/dev';
 import type { PendingDevPermissionRequest } from './routes/dev';
 import { createBackgroundRouter } from './routes/background';
 import { dispatchHostWebRoute } from '../host/services/capabilities/hostCapabilityContributions';
+import { getRegisteredSpeechTranscriber } from '../host/services/capabilities/hostCapabilityPorts';
 import { createAdminReviewQueueRouter } from './routes/adminReviewQueue';
+import { createCompanionRouter } from './routes/companion';
+import { createCompanionProvisioningRouter } from './routes/companionProvisioning';
+import { CompanionGateway } from '../host/services/companion/CompanionGateway';
+import { projectCompanionEvent } from '../host/services/companion/projectCompanionEvent';
+import { CompanionApprovalService } from '../host/services/companion/CompanionApprovalService';
+import type { PermissionResponse } from '../shared/contract/permission';
+import { LanCompanionManager } from '../host/services/companion/LanCompanionManager';
+import { loadLanIdentity } from '../host/services/companion/lanIdentity';
+import { COMPANION_MANAGE_CHANNEL } from '../shared/constants/companion';
+import { getDatabase } from '../host/services/core/databaseService';
+import type { AgentRunBody } from './routes/agentBodySchemas';
 import { wireGenerativeUiEditProjectionInvalidation } from './helpers/generativeUiEditWiring';
 
 type WebSupabaseBinding = SupabaseAgentBinding & SupabaseSessionBinding;
@@ -82,6 +95,8 @@ export interface CreateAppDeps {
   };
   getPendingPermissionRequests?: () => PermissionRequest[];
   registerQueuedInputStartupSweep?: (runStartupSweep: () => void) => void;
+  deliverCompanionPermission?: (requestId: string, response: PermissionResponse, sessionId: string) => { success: boolean; data?: { closed?: boolean } };
+  registerCompanionShutdown?: (stop: () => Promise<void>) => void;
   registerQueuedInputEnqueueHook?: (onEnqueued: (sessionId: string) => void) => void;
   registerQueuedInputSendNowHook?: (sendNow: (input: {
     id: string;
@@ -140,6 +155,9 @@ export function createApp(deps: CreateAppDeps): express.Express {
 
   const app = express();
   const traceReadService = new TraceReadService(resolveCodeAgentDataDir());
+  let hasCompanionApprovalUi = (_sessionId: string, _request: PermissionRequest): boolean => false;
+  let companionRun: ((body: AgentRunBody) => Promise<{ runId: string }>) | undefined;
+  let publishCompanionEvent: ((sessionId: string, kind: string, payload: Record<string, unknown>) => void) | undefined;
 
   // HTML 产物人工编辑落库后让 web 消息投影失效（dogfood 抓到的崩法 A 根因）
   wireGenerativeUiEditProjectionInvalidation();
@@ -217,7 +235,117 @@ export function createApp(deps: CreateAppDeps): express.Express {
     registerQueuedInputStartupSweep: deps.registerQueuedInputStartupSweep,
     registerQueuedInputEnqueueHook: deps.registerQueuedInputEnqueueHook,
     registerQueuedInputSendNowHook: deps.registerQueuedInputSendNowHook,
+    hasCompanionApprovalUi: (sessionId, request) => hasCompanionApprovalUi(sessionId, request),
+    registerCompanionRun: (run) => { companionRun = run; },
+    publishCompanionEvent: (sessionId, kind, payload) => publishCompanionEvent?.(sessionId, kind, payload),
   }));
+
+  try {
+    const db = getDatabase().getDb();
+    if (db) {
+      let approvals: CompanionApprovalService | undefined;
+      // gateway 与 library 互相依赖：gateway 的回调要调 library，library 又要拿 gateway。
+      // 用一个 const 容器打破这个环，而不是先声明后赋值的 let——后者读起来像「可能被改」，
+      // 实际只赋值一次，而且回调里读到的是同一个坑位。
+      const services: { library?: CompanionLibraryService } = {};
+      const requireLibrary = () => {
+        const library = services.library;
+        // 回调只在路由挂载之后才可能触发，那时 library 早已就位；真取不到就说明接线断了。
+        if (!library) throw new Error('COMPANION_LIBRARY_UNAVAILABLE');
+        return library;
+      };
+      const gateway = new CompanionGateway(db, {
+        sessionProject: id => requireLibrary().sessionProject(id),
+        read: (deviceId, request) => requireLibrary().read(deviceId, request),
+        refreshDecisions: () => approvals?.refresh(),
+        decide: command => approvals?.respond(command) ?? { kind: 'rejected', reason: 'unsupported_action' },
+        dispatch: (command) => {
+          if (command.action === 'voice.transcribe') {
+            // Registered by the voice-input capability. Absent = that capability is not
+            // installed, so say so now rather than parking the phone on 'reconciling'.
+            const transcribe = getRegisteredSpeechTranscriber();
+            if (!transcribe) return { state: 'rejected', result: { code: 'COMPANION_TRANSCRIPTION_UNAVAILABLE' } };
+            void transcribe({ ...command.payload, mode: 'cloud-only', source: 'composer', keepAudioOnFailure: false, durationSeconds: command.payload.durationMs / 1000 })
+              .then(result => gateway.settleCommand(command.deviceId, command.commandId, result.success && result.engine === 'groq' ? 'accepted' : 'rejected',
+                result.success && result.engine === 'groq' ? { text: result.text, engine: result.engine } : { code: 'COMPANION_TRANSCRIPTION_FAILED' }),
+                () => gateway.settleCommand(command.deviceId, command.commandId, 'rejected', { code: 'COMPANION_TRANSCRIPTION_FAILED' }));
+            return { state: 'reconciling', result: { code: 'COMMAND_RECONCILING' } };
+          }
+          if (command.action.startsWith('session.')) {
+            void requireLibrary().mutate(command).then(result => gateway.settleCommand(command.deviceId, command.commandId, 'accepted', result),
+              error => gateway.settleCommand(command.deviceId, command.commandId, 'rejected', { code: error instanceof Error && error.message.startsWith('COMPANION_') ? error.message : 'COMPANION_OPERATION_FAILED' }));
+            return { state: 'reconciling', result: { code: 'COMMAND_RECONCILING' } };
+          }
+          if (command.action === 'run.cancel' && command.sessionId) {
+            const target = runRegistry.resolve({ sessionId: command.sessionId });
+            if (!target) return { state: 'resolved', result: { alreadyTerminal: true } };
+            if (target.context.runId !== command.payload.runId) return { state: 'rejected', result: { code: 'RUN_NOT_ACTIVE' } };
+            void target.cancel('user');
+            return { state: 'accepted', result: { stopping: true, runId: target.context.runId } };
+          }
+          if (command.action !== 'message.send' || !companionRun) return { state: 'rejected', result: { code: 'HOST_UNAVAILABLE' } };
+          const payload = command.payload as { text?: unknown };
+          const text = typeof payload.text === 'string' ? payload.text : '';
+          const activation = companionRun({
+            version: 1,
+            prompt: text,
+            sessionId: command.sessionId ?? undefined,
+            clientMessageId: command.commandId,
+          });
+          void activation.then(({ runId }) => {
+            gateway.settleCommand(command.deviceId, command.commandId, 'accepted', { runId });
+          }, () => {
+            gateway.settleCommand(command.deviceId, command.commandId, 'rejected', { code: 'RUN_START_FAILED' });
+          }).catch(() => logger.warn('Companion activation receipt unavailable'));
+          return { state: 'reconciling', result: { code: 'RUN_STARTING' } };
+        },
+      });
+      services.library = new CompanionLibraryService(gateway, id => !!runRegistry.resolve({ sessionId: id }));
+      void services.library.cleanup();
+      if (getPendingPermissionRequests && deps.deliverCompanionPermission) {
+        approvals = new CompanionApprovalService(gateway, getPendingPermissionRequests, deps.deliverCompanionPermission);
+      }
+      publishCompanionEvent = (sessionId, kind, payload) => {
+        const projection = projectCompanionEvent(kind, payload.event);
+        if (!projection) return;
+        try {
+          gateway.publish(sessionId, kind, { ...projection, ...(typeof payload.runId === 'string' ? { runId: payload.runId } : {}) });
+        } catch {
+          // A companion projection failure must not abort the desktop engine.
+          logger.warn('Companion event projection unavailable');
+        }
+      };
+      app.use('/api/companion', createCompanionProvisioningRouter({ gateway }));
+      const lan = new LanCompanionManager(gateway, () => loadLanIdentity(resolveCodeAgentDataDir()), async () => {
+        const sessions = await (await tryGetSessionManager())?.listSessions() ?? [];
+        return sessions.map(session => ({ id: session.id, title: session.title }));
+      }, () => requireLibrary().projects());
+      // Both halves must hold: a phone is reachable for this session, AND this particular
+      // card is renderable. With no approvals service there is no companion approval path.
+      hasCompanionApprovalUi = (sessionId, request) => lan.hasApprovalUi(sessionId) && approvals?.canDisplay(request) === true;
+      handlers.set(COMPANION_MANAGE_CHANNEL, (_event, request) => lan.manage(request));
+      // Web transport sends `companion:manage` to /api/companion/manage.
+      // Keep an explicit route so browser/web builds can generate invitations
+      // without relying on the generic IPC fallback (which is auth-gated).
+      app.post('/api/companion/manage', async (req, res) => {
+        try {
+          const result = await lan.manage(req.body);
+          res.json(result);
+        } catch (error) {
+          res.status(500).json({ success: false, error: { code: 'COMPANION_MANAGE_FAILED', message: error instanceof Error ? error.message : String(error) } });
+        }
+      });
+      deps.registerCompanionShutdown?.(() => lan.stop());
+      void lan.restore().catch(() => logger.warn('Companion LAN restore unavailable'));
+      app.use('/companion', createCompanionRouter({
+        gateway,
+        authenticate: (deviceId, credential) => gateway.authenticateDevice(deviceId, credential),
+      }));
+    }
+  } catch (error) {
+    // Companion is additive: a migration/runtime failure must not prevent the desktop app from serving.
+    logger.warn('Companion routes unavailable:', error);
+  }
 
   app.use('/api', createBackgroundRouter({ logger }));
   app.use('/api', dispatchHostWebRoute);

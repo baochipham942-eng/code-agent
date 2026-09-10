@@ -3,6 +3,8 @@
 // ============================================================================
 
 import type { AgentsChangedEvent } from '../contract/agentRegistry';
+import { COMPANION_MANAGE_CHANNEL } from '../constants/companion';
+import type { CompanionManagementRequest, CompanionManagementResult } from '../contract/companionManagement';
 import type {
   QueuedInputActivatedEvent,
   QueuedInputSettledEvent,
@@ -72,6 +74,7 @@ import type { AgentTrajectorySessionQualitySummary } from '../contract/agentTraj
 // ----------------------------------------------------------------------------
 
 export interface IpcInvokeHandlers {
+  [COMPANION_MANAGE_CHANNEL]: (request: CompanionManagementRequest) => Promise<CompanionManagementResult>;
   // In-App validation — renderer → main 回传结果
   [IPC_CHANNELS.IN_APP_VALIDATION_RESULT]: (payload: InAppValidationResultPayload) => Promise<void>;
 

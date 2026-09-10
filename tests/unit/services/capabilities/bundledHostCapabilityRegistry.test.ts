@@ -40,6 +40,7 @@ function cleanupHost(): HostCapabilityContext {
     registerProviderAction: vi.fn(() => cleanup),
     registerTurnOutcomeResolver: vi.fn(() => cleanup),
     registerUserQuestionRoute: vi.fn(() => cleanup),
+    registerSpeechTranscriber: vi.fn(() => cleanup),
     registerVoiceInstructionsRefresher: vi.fn(() => cleanup),
     publishRendererCapabilityState: vi.fn(),
   };

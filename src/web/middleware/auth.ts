@@ -126,7 +126,7 @@ export function corsMiddleware(req: Request, res: Response, next: NextFunction):
   }
   // If no origin header (e.g. same-origin, curl), don't set the header at all
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Neo-Companion-Device, X-Neo-Companion-Credential');
   if (req.method === 'OPTIONS') {
     res.sendStatus(204);
     return;

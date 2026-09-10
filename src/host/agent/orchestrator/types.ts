@@ -2,7 +2,7 @@
 // Agent Orchestrator - Types & Constants
 // ============================================================================
 
-import type { AgentEvent } from '../../../shared/contract';
+import type { AgentEvent, PermissionRequest } from '../../../shared/contract';
 import type { ConfigService } from '../../services/core/configService';
 import type { PlanningService } from '../../planning';
 import type { DAGVisualizationEvent } from '../../../shared/contract/dagVisualization';
@@ -16,8 +16,12 @@ import type { PendingApprovalRepository } from '../../services/core/repositories
 export interface AgentOrchestratorConfig {
   configService: ConfigService;
   onEvent: (event: AgentEvent) => void;
-  /** 当前宿主是否存在能裁决工具审批的 UI；无 UI 时审批继续按短超时 fail-closed。 */
-  hasApprovalUi: () => boolean;
+  /**
+   * 这条审批请求**能不能真的送到某个能裁决它的界面上**；不能时继续按短超时 fail-closed。
+   * 判据是「这张卡送得到吗」而不是「有没有通道在线」——手机通道在线但卡片因超长被跳过时，
+   * 按通道回答会取消超时，运行就永久挂在一个谁也没看见的 tool call 上。
+   */
+  hasApprovalUi: (request: PermissionRequest) => boolean;
   planningService?: PlanningService;
   runRegistry?: RunRegistry;
   getHomeDir?: () => string;

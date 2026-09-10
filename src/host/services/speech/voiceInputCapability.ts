@@ -30,6 +30,7 @@ export const voiceInputCapabilityDescriptor: BundledHostCapabilityDescriptor = {
       clearRetainedAudio: clearRetainedSpeechAudio,
     });
     const cleanupPasteConfig = configureVoicePasteTranscription(transcribe);
+    host.registerSpeechTranscriber(transcribe);
     host.registerIpcHandler(registerSpeechHandlers);
     host.registerIpcHandler(registerVoicePasteHandlers);
     host.registerWebRoute(createVoiceInputWebRouteContribution());

@@ -362,7 +362,8 @@ import {
 } from '../host/app/initializeDurableRun';
 import { resolveDurableRunRollout } from '../host/app/durableRunRollout';
 import type { PendingDevPermissionRequest } from './routes/dev';
-import { createApp } from './app';
+import { createApp, type CreateAppDeps } from './app';
+import { listForegroundPermissionRequests } from './foregroundPermissionRegistry';
 import { installSessionDomainHandler } from './sessionDomainHandler';
 import { startDurableRunStartup } from './durableRunStartup';
 
@@ -401,6 +402,7 @@ function getDurableRunReadService() {
 
 // ── Local Tool Bridge: 待处理的本地工具调用 ──
 const pendingLocalToolCalls = new Map<string, PendingLocalToolCall>();
+let deliverCompanionPermission: CreateAppDeps['deliverCompanionPermission'];
 const pendingDevPermissions = new Map<string, PendingDevPermissionRequest>();
 
 // ============================================================================
@@ -897,7 +899,7 @@ function registerHandlers(): void {
 
   // 覆盖 agent.ipc.ts 的 legacy handler：它走 AppService，而 web 路径的 AppService 恒为 null
   // （= 生产上「点允许」永远 500 "Agent not initialized"）。实现见该模块头注释。
-  installPermissionResponseHandler({
+  deliverCompanionPermission = installPermissionResponseHandler({
     handlers,
     pendingDevPermissions,
     getCurrentSessionId: () => currentSessionId,
@@ -1037,8 +1039,10 @@ async function main(): Promise<void> {
     logger.info(`[renderer-hot-update] startup activation: ${stagedActivation}`);
   }
 
+  let stopCompanion: (() => Promise<void>) | undefined;
   const app = createApp({
     handlers,
+    registerCompanionShutdown: stop => { stopCompanion = stop; },
     logger,
     runRegistry,
     pendingLocalToolCalls,
@@ -1053,7 +1057,8 @@ async function main(): Promise<void> {
       registry: (await import('../host/plugins/pluginRegistry')).getPluginRegistry(),
       pluginsDir: (await import('../host/plugins/pluginLoader')).getPluginsDir(),
     },
-    getPendingPermissionRequests: () => getTaskManager().listPendingPermissionRequests(),
+    deliverCompanionPermission,
+    getPendingPermissionRequests: () => [...listForegroundPermissionRequests(), ...getTaskManager().listPendingPermissionRequests()],
     registerQueuedInputStartupSweep: (runStartupSweep) => queuedInputStartupSweep.registerTrigger(runStartupSweep),
     registerQueuedInputEnqueueHook: (onEnqueued) => { onQueuedInputEnqueued = onEnqueued; },
     registerQueuedInputSendNowHook: (sendNow) => { onQueuedInputSendNow = sendNow; },
@@ -1105,6 +1110,14 @@ async function main(): Promise<void> {
     // 硬杀，留下陈旧 -wal/-shm。所以关库之前的步骤共用一个总预算、每步再各自封顶，
     // 超时就跳过，绝不挡住关库。预算从这一刻起算。
     const { withCap, stepMs } = createShutdownStepCap();
+    // companion 的 LAN 监听器最先撤，但必须在预算之内：restore() 可能正卡在
+    // keytar.getPassword 上（macOS 会弹钥匙串授权框等人点），无上限地等它 = 预算一秒
+    // 没走、关库永远轮不到、Rust 侧到点 SIGKILL，留下陈旧 -wal/-shm（下次启动 SIGBUS）。
+    // 任何 pre-close 步骤都不许无限期挡住 shutdown，会弹系统授权框的尤其不许。
+    await withCap(
+      stopCompanion?.().catch(() => logger.warn('Companion LAN shutdown failed')) ?? Promise.resolve(),
+      'companion.stop',
+    );
     // .dev-token 保留不删 — dev 下 kill/restart webServer 时 auth.ts 会复用
     // 同一个 token，避免 Tauri WebView 里固化的旧 token 失效踩 "Invalid auth
     // token"。若要轮换 token，手动删 .dev-token 后重启 webServer。

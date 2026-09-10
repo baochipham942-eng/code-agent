@@ -783,7 +783,9 @@ export class TaskManager extends EventEmitter {
       const background = this.backgroundRuns.get(backgroundTaskId);
       if (background?.sessionId !== sessionId) return 'no_orchestrator';
       const outcome = background.orchestrator.handlePermissionResponse(requestId, response, updatedArgs);
-      if (outcome !== 'unknown_request') this.backgroundPermissionOwners.delete(requestId);
+      // 'storage_unavailable' 是台账瞬时写失败、可重试：跟 'unknown_request' 一样不能
+      // 丢掉属主映射，否则用户再点一次就找不到这条后台 run，审批彻底不可裁决。
+      if (outcome !== 'unknown_request' && outcome !== 'storage_unavailable') this.backgroundPermissionOwners.delete(requestId);
       return outcome;
     }
     const wrapper = this.activeOrchestrators.get(sessionId);

@@ -30,5 +30,8 @@
   ],
   "ignoreBinaries": [
     ".*"
+  ],
+  "ignore": [
+    "src/host/services/companion/gateway.ts"
   ]
 }

@@ -3,6 +3,7 @@ import React from 'react';
 import { cleanup, render } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ToolCall } from '../../../src/shared/contract';
+import { zh } from '../../../src/renderer/i18n/zh';
 
 vi.mock('../../../src/renderer/stores/appStore', () => {
   const state = {
@@ -52,12 +53,16 @@ describe('ToolHeader terminal copy', () => {
     };
 
     const view = render(<ToolCallDisplay toolCall={toolCall} index={0} total={1} />);
-    const text = view.getByTestId('tool-call-row-tmeetMeetingCreate').textContent ?? '';
+    // #1-story-A 2c44c0cf9 起：失败原因搬进折叠行下方独立的一行（组件整体的兄弟节点，
+    // 不再挂在 tool-call-row-... 这个 testid 内部），且不再重复一个和原因近义的终态徽标词
+    // （"未获批准"≈"审批被拒绝"，ToolStepGroup 的同款折叠 declutter 见旁边那条测试）。
+    // 用整个容器读，才是用户真实看到的"这一行 + 紧跟的原因"。
+    const text = view.container.textContent ?? '';
 
-    expect(text.match(/未获批准/g)).toHaveLength(1);
     expect(text.match(/审批被拒绝/g)).toHaveLength(1);
     expect(text).toContain('创建会议');
     expect(text).not.toContain('创建了一场会议');
     expect(text).not.toContain('审批失败');
+    expect(text).not.toContain(zh.toolStepHumanize.failureReasonMissing);
   });
 });

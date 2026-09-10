@@ -1,3 +1,4 @@
+import { toolPreflightCopy } from './toolPreflightPresentation';
 import type { ToolCall } from '@shared/contract';
 import { AgentFailureCode, inferAgentFailureCode } from '@shared/contract';
 import type { ToolCapabilitySource } from '../types/runWorkbench';
@@ -392,6 +393,11 @@ export function humanizeToolError(
       detail: copy.detail ? interpolateCodeCopy(copy.detail, metadata) : undefined,
     };
   }
+  // 结构化 hostReason/failureCode/code 都没命中，才轮到 preflight 这条「历史呈现」兜底
+  // ——它读的是自由文本（Bash 里是被执行程序自己的 stdout/stderr），必须排在所有结构化
+  // 证据之后，否则一条不相关的程序输出就能顶掉更准确的结构化判断。
+  const preflight = toolPreflightCopy({ name: _toolName ?? '', result: { toolCallId: '', success: false, error, metadata: metadata ?? undefined } }, t);
+  if (preflight) return { summary: preflight.action, detail: preflight.reason };
   // 2. 正则兜底（原有分类，逐条不变）
   if (!error?.trim()) return null;
   const classification = classifyToolError(error);
@@ -451,6 +457,9 @@ export function humanizeToolFailureReason(toolCall: Pick<ToolCall, 'name' | 'res
   const error = result?.error || (typeof result?.output === 'string' ? result.output : undefined);
   const mappedFailureCode = mapToolFailureCodeCopy(metadata, t);
   if (mappedFailureCode) return mappedFailureCode;
+  // 结构化 metadata.failureCode 没命中才轮到 preflight——同一条理由见 humanizeToolError 里的注释。
+  const preflight = toolPreflightCopy(toolCall, t);
+  if (preflight) return preflight.reason;
 
   const reason = sanitizeCodeParamValue(metadata?.reason);
   if (reason) return redactCredentialText(reason);

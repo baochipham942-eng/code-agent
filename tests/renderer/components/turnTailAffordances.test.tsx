@@ -8,7 +8,7 @@
 //           和它产出的文件卡之间，看起来像在给上面那一句话打分。
 // ============================================================================
 import React from 'react';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../../src/renderer/stores/sessionStore', () => {
@@ -101,11 +101,22 @@ describe('轮尾：时间与评价', () => {
   it('单个工具的裸秒数不再上屏——「这段花了多久」由组头一处回答', () => {
     render(React.createElement(TurnCard, { turn: longTurn(), forceExpanded: true }));
 
-    const text = visibleText();
-    // 组头给合计 4.0s；Grep 的 2.6s 与 Read 的 1.4s 都不该各挂一个
-    expect(text).toContain('4.0s');
-    expect(text).not.toContain('2.6s');
-    expect(text).not.toContain('1.4s');
+    // 单个工具的裸秒数（2.6s / 1.4s）在折叠态和展开态下都不该出现——这条核心断言不变。
+    const collapsedText = visibleText();
+    expect(collapsedText).not.toContain('2.6s');
+    expect(collapsedText).not.toContain('1.4s');
+
+    // #1-story-A 2c44c0cf9 起：合计耗时只在组头展开后才显示（`totalDuration && ariaExpanded`），
+    // 折叠态收窄成一句纯内容摘要（"查看了 2 次内容"），不再堆数字——跟这条 PR 里其余折叠行
+    // 统一 declutter 到"内容摘要，细节点开再看"是同一个模式。TurnStepGroup 默认折叠
+    // （`defaultExpanded={false}`，TurnCard.forceExpanded 只展开轮级正文，不下传到工具组），
+    // 点开工具组头才能看到组头给的合计 4.0s（2.6s + 1.4s，Write 不计入这组）。
+    const group = screen.getByRole('button', { name: /查看了 2 次内容/ });
+    fireEvent.click(group);
+    const expandedText = visibleText();
+    expect(expandedText).toContain('4.0s');
+    expect(expandedText).not.toContain('2.6s');
+    expect(expandedText).not.toContain('1.4s');
   });
 
   it('点赞点踩在整轮最后，排在文件变更卡之后', () => {

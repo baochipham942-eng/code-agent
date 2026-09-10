@@ -174,7 +174,7 @@ export const toolStepVerbsZh: ToolStepVerbBundle = {
   intentWrap: { 'pending-approval': '请求{action}', running: '正在{action}', failed: '{action}未成功' },
   pendingApprovalStatus: '待确认',
   failureCode: '错误码 {code}',
-  failureReasonMissing: '工具未返回可读的失败原因',
+  failureReasonMissing: '暂无失败原因摘要，可展开详情查看记录',
   failureCodes: {
     'worktree-create-failed': '无法为这次任务准备运行环境',
     'gateway-timeout': '服务暂时没有响应',
@@ -215,7 +215,7 @@ export const toolStepVerbsEn: ToolStepVerbBundle = {
   intentWrap: { 'pending-approval': 'Request to {action}', running: '{action} in progress', failed: 'Could not {action}' },
   pendingApprovalStatus: 'Approval needed',
   failureCode: 'Error code {code}',
-  failureReasonMissing: 'The tool did not return a readable failure reason',
+  failureReasonMissing: 'No failure summary is available; expand the details to inspect the record',
   failureCodes: {
     'worktree-create-failed': 'Could not prepare the workspace for this task',
     'gateway-timeout': 'The service did not respond in time',

@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import type { TraceNode } from '../../../src/shared/contract/trace';
 import type { ToolCall } from '../../../src/shared/contract';
+import { zh } from '../../../src/renderer/i18n/zh';
 
 vi.mock('../../../src/renderer/stores/appStore', () => {
   // useI18n 不带 selector 直接解构整个 store（language/setLanguage/cloudUIStrings），
@@ -214,7 +215,9 @@ describe('browser/computer action preview rendering', () => {
     // 动作摘要（"输入 18 chars"）+ 失败状态词，原始输入文本绝不出现。
     // N-TOOLFAIL-ONELINE：有可读失败态时不再叠 fallbackSummary「执行时出了问题」。
     expect(html).toContain('输入 18 chars');
-    expect(html).toContain('工具未返回可读的失败原因');
+    // #1-story-A 2c44c0cf9 重写了 failureReasonMissing 文案（同一把 key，纯措辞优化，
+    // 加了"可展开详情查看记录"的引导），断言改用 i18n 常量，别再硬编码旧字面量。
+    expect(html).toContain(zh.toolStepHumanize.failureReasonMissing);
     expect(html).not.toContain('执行时出了问题');
     expect(html).not.toContain('trace-browser-type-error');
     expect(html).not.toContain('secret@example.com');
@@ -525,7 +528,12 @@ describe('browser/computer action preview rendering', () => {
 
     expect(html).toContain('aria-label="有提醒"');
     expect(html).toContain('错误码 HTTP 404');
-    expect(html).toContain('联网查了 2 次');
+    // #1-story-A 2c44c0cf9 起：组头合并计数改成按结果分桶——一次成功一次失败不再糊成
+    // "联网查了 2 次"（把失败盖住），而是拆成"联网查了 1 次；联网查询 1 次未成功"，
+    // 跟这个 PR 的主题（历史呈现要诚实）一致，不再是回归。
+    expect(html).toContain('联网查了 1 次');
+    expect(html).toContain('联网查询 1 次未成功');
+    expect(html).not.toContain('联网查了 2 次');
     expect(html).not.toContain('aria-label="失败"');
   });
 
@@ -595,7 +603,12 @@ describe('browser/computer action preview rendering', () => {
     const collapsedHtml = renderToStaticMarkup(
       React.createElement(ToolStepGroup, { nodes, defaultExpanded: false }),
     );
-    expect(collapsedHtml).toContain('1 失败, 2 空结果, 1 完成');
+    // #1-story-A 2c44c0cf9 起：`buildToolGroupHeadSummary` 那条按 失败/空结果/完成 三分桶
+    // 计数的摘要行被拆掉了调用点（现已是死代码，团队记录在案单独清理）——组头改用跟上面
+    // "联网查了 N 次" 同一套 byStatus 分桶 label，按状态分组而不是精确到"空结果"这一档，
+    // 但失败/成功的粗粒度区分仍然保留，不是信息丢失。
+    expect(collapsedHtml).toContain('查看 1 次内容未成功');
+    expect(collapsedHtml).toContain('查看了 3 次内容');
     expect(collapsedHtml).not.toContain('4/4 results');
     expect(collapsedHtml).not.toContain('1 output');
     expect(collapsedHtml).not.toContain('/Users/linchen/.claude/projects/-Users-linchen/memory/openclaw.md');

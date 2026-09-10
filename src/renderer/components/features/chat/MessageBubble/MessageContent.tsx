@@ -85,6 +85,17 @@ function iactSendTextOf(node: React.ReactNode): string | null {
     : String(c ?? '');
 }
 
+// 递归取纯文本：children 可能是 [字符串, <strong>, 字符串]（label 带行内标记时），
+// 旧写法把非字符串子节点一律映射成 ''，`[**报告.md**](!open)` 会得到空串，随后拿空串
+// 去撞工作目录。ai-review #1739 只点名了 !open / !preview 两处，但同一个 a renderer 里
+// 五个 IACT 分支（!send / !add / !open / !preview / !ticket）逐字一样，一处修就一起修。
+function plainText(value: React.ReactNode): string {
+  return React.Children.toArray(value).map((child) =>
+    typeof child === 'string' || typeof child === 'number' ? String(child)
+      : React.isValidElement<{ children?: React.ReactNode }>(child) ? plainText(child.props.children) : '',
+  ).join('');
+}
+
 // Main message content component
 export const MessageContent: React.FC<MessageContentProps> = memo(function MessageContent({ content, isUser, isStreaming = false, messageId, mediaContext, streamingTailStart }) {
   const { t } = useI18n();
@@ -384,9 +395,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
         // data-iact-send 是 DOM 侧识别标记（测试/排查用）；p 层分组（B）按 href 扫描，
         // 同段 ≥2 个时会被摘出为选项行。
         if (href === '!send') {
-          const text = typeof children === 'string' ? children
-            : Array.isArray(children) ? children.map(c => typeof c === 'string' ? c : '').join('')
-            : String(children ?? '');
+          const text = plainText(children);
           return (
             <button
               type="button"
@@ -403,9 +412,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
 
         // IACT: [text](!add) — click to fill text into input box
         if (href === '!add') {
-          const text = typeof children === 'string' ? children
-            : Array.isArray(children) ? children.map(c => typeof c === 'string' ? c : '').join('')
-            : String(children ?? '');
+          const text = plainText(children);
           return (
             <button
               type="button"
@@ -423,10 +430,6 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
 
         // IACT: [command](!run) — click to execute shell command
         if (href === '!run') {
-          const plainText = (value: React.ReactNode): string => React.Children.toArray(value).map((child) =>
-            typeof child === 'string' || typeof child === 'number' ? String(child)
-              : React.isValidElement<{ children?: React.ReactNode }>(child) ? plainText(child.props.children) : '',
-          ).join('');
           const text = plainText(children);
           return <span className="my-2 inline-flex max-w-full flex-col gap-2 rounded-lg border border-zinc-700 bg-zinc-900 p-3 align-top">
             <span className="whitespace-pre-wrap break-all font-mono text-xs text-zinc-300">{text}</span>
@@ -441,9 +444,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
 
         // IACT: [filepath](!open) — click to open file in editor/Finder
         if (href === '!open') {
-          const text = typeof children === 'string' ? children
-            : Array.isArray(children) ? children.map(c => typeof c === 'string' ? c : '').join('')
-            : String(children ?? '');
+          const text = plainText(children);
           return (
             <button
               type="button"
@@ -459,9 +460,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
 
         // IACT: [filepath](!preview) — click to preview in PreviewPanel
         if (href === '!preview') {
-          const text = typeof children === 'string' ? children
-            : Array.isArray(children) ? children.map(c => typeof c === 'string' ? c : '').join('')
-            : String(children ?? '');
+          const text = plainText(children);
           return (
             <button
               type="button"
@@ -486,9 +485,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
 
         // IACT: [ID](!ticket) — Jira-like ticket auto-link, click to copy ID
         if (href === '!ticket') {
-          const text = typeof children === 'string' ? children
-            : Array.isArray(children) ? children.map(c => typeof c === 'string' ? c : '').join('')
-            : String(children ?? '');
+          const text = plainText(children);
           return (
             <button
               type="button"

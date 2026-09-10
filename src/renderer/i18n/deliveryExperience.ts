@@ -1,6 +1,6 @@
 export const deliveryExperienceZh = {
   deliveryExperience: {
-    product: '成品', changes: '本次修改', currentFile: '当前文件', backToChat: '返回对话',
+    product: '成品', changes: '本次修改', currentFile: '当前文件', backToChat: '返回对话（Esc）',
     generatedLines: '已生成 · {count} 行', addedLines: '+{count} 行', removedLines: '-{count} 行',
     runCommand: '运行命令', runScript: '运行生成脚本', runHint: '运行前仍按当前权限规则检查',
     blocked: '未执行', notWritten: '未写入', notEdited: '未修改', notRead: '未读取',
@@ -19,7 +19,7 @@ export const deliveryExperienceZh = {
 };
 export const deliveryExperienceEn: typeof deliveryExperienceZh = {
   deliveryExperience: {
-    product: 'Deliverable', changes: 'Changes', currentFile: 'Current file', backToChat: 'Back to chat',
+    product: 'Deliverable', changes: 'Changes', currentFile: 'Current file', backToChat: 'Back to chat (Esc)',
     generatedLines: 'Created · {count} lines', addedLines: '+{count} lines', removedLines: '-{count} lines',
     runCommand: 'Run command', runScript: 'Run generation script', runHint: 'Current permission checks still apply',
     blocked: 'Not executed', notWritten: 'Not written', notEdited: 'Not modified', notRead: 'Not read',

@@ -59,7 +59,12 @@ const DeliverableDiffDetail: React.FC<{ change: FileChange }> = ({ change }) => 
           event.stopPropagation();
           if (!expanded) {
             useWorkbenchFocusStore.getState().setWorkbenchFocused(false);
-            useAppStore.getState().setWorkbenchCollapsed(true);
+            // 直接写 workbenchCollapsed，不走 setWorkbenchCollapsed：后者会连带把
+            // workbenchCollapsedByUser 置真（appStore.ts:1042），而那面旗的语义是
+            // #700 的「用户自己按过收起，活动信号不许把右栏弹回来」。气泡里这个
+            // 「本次修改」折叠钮不是收起控件，是「我想就地看 diff」——写了那面旗，
+            // 本会话后续所有 source:'auto' 的产物预览与任务监视器都只注册 tab 不露面。
+            useAppStore.setState({ workbenchCollapsed: true });
           }
           setExpanded((value) => !value);
         }}

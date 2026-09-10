@@ -53,6 +53,22 @@ describe('deliverable and command navigation', () => {
     expect(Date.now() - started).toBeLessThan(500);
   });
 
+  // ai-review #1739 Important：气泡里的「本次修改」折叠钮不是右栏的收起控件。走
+  // setWorkbenchCollapsed 会连带把 workbenchCollapsedByUser 置真，而那面旗的语义是
+  // #700「用户自己按过收起，活动信号不许把右栏弹回来」——一旦被这里写上，本会话后续
+  // 所有 source:'auto' 的产物预览与任务监视器就只注册 tab、右栏永不露面。
+  it('expanding the inline diff collapses the workbench without claiming the user asked for it', () => {
+    const filePath = '/workspace/report.md';
+    const view = render(<FileArtifactCard items={[{ label: 'report.md', path: filePath, kind: 'file', ownerKind: 'tool', ownerLabel: 'Write', role: 'deliverable' }]} fileChangesByPath={new Map([[filePath, { filePath, oldText: '', newText: '# Report', added: 1, removed: 0, isNewFile: true, editCount: 1 }]])} />);
+    expect(useAppStore.getState().workbenchCollapsedByUser).toBe(false);
+    fireEvent.click(view.getByText('本次修改'));
+    expect(useAppStore.getState().workbenchCollapsed).toBe(true);
+    expect(useAppStore.getState().workbenchCollapsedByUser).toBe(false);
+    // 自动源仍然能把右栏带出来（这正是被那面旗掐掉的能力）
+    useAppStore.getState().openPreview('/workspace/next.md', { source: 'auto', activate: true });
+    expect(useAppStore.getState().workbenchCollapsed).toBe(false);
+  });
+
   it('background auto previews do not take focus', () => {
     useAppStore.getState().openPreview('/workspace/report.md', { source: 'auto', activate: false });
     expect(useWorkbenchFocusStore.getState().workbenchFocused).toBe(false);

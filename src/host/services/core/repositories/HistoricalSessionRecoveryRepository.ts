@@ -8,7 +8,9 @@ import { ConversationBranchRepository } from './ConversationBranchRepository';
 import { SessionRepository } from './SessionRepository';
 import { SessionForkRepository } from './SessionForkRepository';
 import { rowToMessage } from './sessionRepositoryParsers';
+import { createLogger } from '../../infra/logger';
 
+const logger = createLogger('HistoricalSessionRecoveryRepository');
 type Row = Record<string, unknown>;
 const digest = (value: unknown): string => conversationSha256(canonicalConversationJson(value));
 class RecoveryRejected extends Error {
@@ -16,6 +18,20 @@ class RecoveryRejected extends Error {
 }
 function requireEvidence(condition: unknown, code: string): asserts condition {
   if (!condition) throw new RecoveryRejected(code);
+}
+
+// Background writers (sync upload cursors, crash recovery) mutate these columns on
+// otherwise-idle sessions/messages independent of conversation content. Hashing them
+// into sourceDigest would make a routine sync pass indistinguishable from someone
+// editing the actual history — permanently locking out both the pre-import retry path
+// (STALE_PLAN) and the post-import idempotent path (SOURCE_CHANGED_AFTER_IMPORT), with
+// no way forward since the receipt is immutable and the target session already exists.
+const SESSION_DIGEST_VOLATILE_COLUMNS = ['synced_at', 'updated_at', 'status', 'last_token_usage'] as const;
+const MESSAGE_DIGEST_VOLATILE_COLUMNS = ['synced_at'] as const;
+function omitVolatileColumns(row: Row, columns: readonly string[]): Row {
+  const sanitized = { ...row };
+  for (const column of columns) delete sanitized[column];
+  return sanitized;
 }
 
 /** Trusted host callers supply the authenticated actor; renderer payloads cannot select it. */
@@ -37,7 +53,11 @@ export class HistoricalSessionRecoveryRepository {
         requireEvidence(requested.project_id === request.projectId, 'PROJECT_MISMATCH');
         historyReadable = true;
         const snapshot = this.inspectSource(actorUserId, request.sessionId, request.projectId);
-        const sourceDigest = digest(snapshot);
+        const sourceDigest = digest({
+          ...snapshot,
+          sessions: snapshot.sessions.map((session) => omitVolatileColumns(session, SESSION_DIGEST_VOLATILE_COLUMNS)),
+          messages: snapshot.messages.map((message) => omitVolatileColumns(message, MESSAGE_DIGEST_VOLATILE_COLUMNS)),
+        });
         const recoveryId = `history_recovery_${digest({ actorUserId, projectId: request.projectId, root: snapshot.root.session_id }).slice(0, 32)}`;
         const sessionMap = Object.fromEntries(snapshot.branches.map((branch) => [String(branch.session_id),
           `session_recovered_${digest({ recoveryId, source: branch.session_id }).slice(0, 32)}`]));
@@ -99,9 +119,18 @@ export class HistoricalSessionRecoveryRepository {
       };
       return request.action === 'import' ? this.db.transaction(execute).immediate() : this.db.transaction(execute)();
     } catch (error) {
-      return { status: 'rejected', code: error instanceof RecoveryRejected ? error.code
-        : error && typeof error === 'object' && 'code' in error && typeof error.code === 'string' ? error.code : 'RECOVERY_FAILED',
-      historyReadable, sourceContinuable: false, targetContinuable: false };
+      const code = error instanceof RecoveryRejected ? error.code
+        : error && typeof error === 'object' && 'code' in error && typeof error.code === 'string' ? error.code : 'RECOVERY_FAILED';
+      // RecoveryRejected is an expected validation outcome (bad request, ownership
+      // mismatch, stale plan, ...) and is noisy to log. Anything else reaching here
+      // is unexpected — warn with a distinguishable reason so a silent SQLite/runtime
+      // failure doesn't disappear into an opaque RECOVERY_FAILED with no trace.
+      if (!(error instanceof RecoveryRejected)) {
+        logger.warn('historical session recovery failed with an unexpected error', {
+          code, action: request.action, sessionId: request.sessionId, error,
+        });
+      }
+      return { status: 'rejected', code, historyReadable, sourceContinuable: false, targetContinuable: false };
     }
   }
 

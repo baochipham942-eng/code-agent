@@ -574,6 +574,10 @@ const HIGH_RISK_CAPABILITIES = new Set([
   makeShellCapabilityId(IPC_DOMAINS.DESKTOP, 'importBrowserProfileCookies'),
   makeShellCapabilityId(IPC_DOMAINS.DESKTOP, 'observeComputerSurface'),
   makeShellCapabilityId(IPC_DOMAINS.DESKTOP, 'openManagedBrowserUrl'),
+  // recoverHistory's import action writes sessions/messages/forks and creates a
+  // receipt table; inferRisk's prefix regex doesn't match "recoverHistory" so it
+  // would silently fall through to low.
+  makeShellCapabilityId(IPC_DOMAINS.SESSION, 'recoverHistory'),
   makeShellCapabilityId(IPC_DOMAINS.SESSION, 'restoreWorkspaceFilesAtCheckpoint'),
   makeShellCapabilityId(IPC_DOMAINS.SESSION, 'turnCheckout'),
   makeShellCapabilityId(IPC_DOMAINS.SESSION, 'turnRedo'),

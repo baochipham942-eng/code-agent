@@ -87,6 +87,19 @@ describe('historical CLI import with real SQLite ledger and permissions', () => 
       forks: 0, forkMessageMappings: 0, receipts: 0, schemaObjects: 0 });
     expect(original()).toEqual(before); expect(rows('historical_session_recoveries')).toHaveLength(1);
   });
+  it('stays idempotent after import when background sync touches sync-cursor columns, not content', () => {
+    const imported = apply();
+    // Simulate SessionRepository.markSessionsSynced/markMessagesSynced (syncService.ts)
+    // and sessionRepositoryCrashRecovery.ts — both routinely mutate these columns on an
+    // otherwise-idle session independent of conversation content.
+    db.prepare("UPDATE sessions SET synced_at = ?, updated_at = ?, status = 'interrupted', last_token_usage = ? WHERE id = ?")
+      .run(9999, 9999, JSON.stringify({ promptTokens: 1 }), source);
+    db.prepare('UPDATE messages SET synced_at = ? WHERE session_id = ?').run(9999, source);
+    const reinspected = inspect();
+    expect(reinspected).toMatchObject({ status: 'already_imported', code: 'ALREADY_IMPORTED', recoveryId: imported.recoveryId });
+    expect(reinspected.code).not.toBe('SOURCE_CHANGED_AFTER_IMPORT');
+    expect(apply(reinspected.sourceDigest)).toMatchObject({ status: 'already_imported', recoveryId: imported.recoveryId });
+  });
   it('rolls back sessions, branches, messages and receipt on a real SQLite write failure', () => {
     const before = original();
     db.exec(`CREATE TRIGGER fixture_fail BEFORE INSERT ON conversation_entries

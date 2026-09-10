@@ -370,34 +370,70 @@ export class OrchestratorPermissionIsland {
       // 停在 t=0 的 true 上，就等于这条 run 永久挂在一个两端都看不见的 tool call 上——
       // 比不接这个功能更糟（同样输入在没有 companion 时是到点 fail-closed 拒绝、run 继续）。
       // 所以按节拍重新问：有面就把 fail-closed 时钟清零，面没了就让它接着走完。
+      //
+      // 这段跑在定时器回调里，而**回调抛出的异常没有任何东西接**：src/web 与 src/host
+      // 都没有注册 process.on('uncaughtException')，所以一次抛出 = webServer 进程直接
+      // 退出、全部会话与在飞 run 一起丢。判据链上确实有会抛的东西——hasApprovalUi 会
+      // 经 identityDevice / sessionProject 走到 SQLite，DB 重建窗口里 ensureDb() 抛
+      // 'Database not initialized'；hasInteractiveUi 走的是外部注入的 probe；onEvent 要
+      // 写 SSE；连 logger 自己也可能坏。所以下面每一处外部调用都必须自己兜住。
       let withoutUiMs = 0;
       let withUiMs = 0;
-      const watchdog = setInterval(() => {
-        if (this.hasApprovalUi(fullRequest)) {
-          withoutUiMs = 0;
-          withUiMs += APPROVAL_UI_RECHECK_MS;
-          if (withUiMs >= INTERACTIVE_PERMISSION_REMINDER_MS) {
-            withUiMs = 0;
-            logger.warn(`Permission still pending after 30m for ${request.type} on ${request.tool}`, {
-              requestId: fullRequest.id,
-              sessionId: fullRequest.sessionId,
-            });
-          }
-          return;
-        }
-        withoutUiMs += APPROVAL_UI_RECHECK_MS;
-        if (withoutUiMs < PERMISSION_TIMEOUT) return;
+
+      /** 日志通道自己坏掉，也不能反过来把定时器回调炸掉。 */
+      const safeWarn = (message: string, detail?: unknown): void => {
+        try {
+          logger.warn(message, {
+            requestId: fullRequest.id,
+            sessionId: fullRequest.sessionId,
+            tool: request.tool,
+            ...(detail === undefined ? {} : { detail }),
+          });
+        } catch { /* 留痕失败不值得再赔上一个进程 */ }
+      };
+
+      const settleTimedOut = (): void => {
         clearInterval(watchdog);
         this.pendingPermissions.delete(fullRequest.id);
-        logger.warn(`Timeout for ${request.type} on ${request.tool}, denying`);
-        // 同一稳定 permission_request 事件做加法回传终态；renderer 以 host 结果为准，
-        // 不复制 60s 计时器，也就不会把后台节流/切会话误判为已过期。
-        this.onEvent({
-          type: 'permission_request',
-          data: { ...fullRequest, resolved: true, decision: 'timeout' },
-        });
+        safeWarn(`Timeout for ${request.type} on ${request.tool}, denying`);
+        try {
+          // 同一稳定 permission_request 事件做加法回传终态；renderer 以 host 结果为准，
+          // 不复制 60s 计时器，也就不会把后台节流/切会话误判为已过期。
+          this.onEvent({
+            type: 'permission_request',
+            data: { ...fullRequest, resolved: true, decision: 'timeout' },
+          });
+        } catch (error) {
+          // 事件发不出去也必须把 Promise 解除：否则这条 run 照样永久挂着，
+          // 正是这个 watchdog 本来要根治的病。
+          safeWarn('Permission timeout event could not be emitted; resolving fail-closed anyway', error);
+        }
         // N-PERMTRACE：超时无人应答 ≠ 用户拒绝。
         resolve({ approved: false, denialSource: 'timeout' });
+      };
+
+      /** 没有面的一拍：推进 fail-closed 时钟，走满就解除。 */
+      const advanceWithoutUi = (): void => {
+        withoutUiMs += APPROVAL_UI_RECHECK_MS;
+        if (withoutUiMs >= PERMISSION_TIMEOUT) settleTimedOut();
+      };
+
+      const watchdog = setInterval(() => {
+        try {
+          if (!this.hasApprovalUi(fullRequest)) { advanceWithoutUi(); return; }
+          withoutUiMs = 0;
+          withUiMs += APPROVAL_UI_RECHECK_MS;
+          if (withUiMs < INTERACTIVE_PERMISSION_REMINDER_MS) return;
+          withUiMs = 0;
+          safeWarn(`Permission still pending after 30m for ${request.type} on ${request.tool}`);
+        } catch (error) {
+          // 探测失败 ≠ 有面。宣称有面而实际没有，正是这条 run 永久挂起的成因（本 PR 反复
+          // 在修的「状态与事实不符」）；反过来最坏只是把一条本可批准的审批按 fail-closed
+          // 拒掉——模型会重发、卡片会重弹，可恢复。所以往安全侧倒，并且必须留痕，
+          // 否则下一个人只看得到「审批莫名其妙超时了」。
+          safeWarn('Approval UI probe failed, treating this tick as no surface', error);
+          advanceWithoutUi();
+        }
       }, APPROVAL_UI_RECHECK_MS);
 
       this.pendingPermissions.set(fullRequest.id, {

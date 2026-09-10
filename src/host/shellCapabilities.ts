@@ -389,6 +389,7 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'readSessionForkNeighborhood',
     'readSessionForkTree',
     'recordConversationEvaluationAttribution',
+    'recoverHistory',
     'repairConversationLineage',
     'replayConversationBranch',
     'restoreConversationRewind',

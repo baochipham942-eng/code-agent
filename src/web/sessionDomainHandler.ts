@@ -433,6 +433,13 @@ export function installSessionDomainHandler(deps: SessionDomainHandlerDependenci
           data = await getSessionRecap(sessionId, since);
           break;
         }
+        case 'recoverHistory': {
+          const { recoverHistoricalSession } = await import('../host/ipc/historicalSessionRecovery');
+          data = recoverHistoricalSession(
+            payload as import('../shared/contract/historicalSessionRecovery').HistoricalSessionRecoveryRequest,
+          );
+          break;
+        }
         case 'rewindConversation':
         case 'rewindToPrompt': {
           const sessionId = typeof payload?.sessionId === 'string' ? payload.sessionId.trim() : '';

@@ -658,11 +658,16 @@ export class ConversationBranchAuditRepository {
       const reference = references[mapping.ordinal];
       // A compatibility fork maps the immediate parent's alias. For a grandchild
       // that alias differs from the canonical original message ID by design.
-      const parentReference = parentReferences.find((candidate) => candidate.projected_message_id === mapping.source_message_id);
+      // Match on entry_id (the immutable entry the fork actually copied), not just
+      // projected_message_id: a revised/projection-replaced parent message has
+      // multiple historical reference rows sharing the same projected_message_id,
+      // and picking the wrong (stale) one would false-positive on any fork taken
+      // after a revision.
+      const parentReference = parentReferences.find((candidate) => candidate.entry_id === reference?.entry_id
+        && candidate.projected_message_id === mapping.source_message_id);
       if (
         reference?.projected_message_id !== mapping.child_message_id
-        || parentReference?.entry_id !== reference?.entry_id
-        || parentReference.canonical_source_message_id !== reference?.canonical_source_message_id
+        || parentReference?.canonical_source_message_id !== reference?.canonical_source_message_id
         || parentReference.canonical_source_session_id !== reference?.canonical_source_session_id
       ) {
         issues.push({

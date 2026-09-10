@@ -1,5 +1,6 @@
 import type { messages } from '../../i18n';
 import type { Appearance, SheetPage } from '../../stores/mobileStore';
+import { NeoBrandMark } from '../brand/NeoBrandMark';
 
 export function SettingsPage({ page, text, appearance, nickname, profileDraft, appInfo, open, chooseAppearance, editProfile, saveProfile }: {
   page: SheetPage; text: ReturnType<typeof messages>; appearance: Appearance; nickname: string;
@@ -28,7 +29,7 @@ export function SettingsPage({ page, text, appearance, nickname, profileDraft, a
       <input id="nickname" autoComplete="nickname" value={profileDraft} maxLength={60} onChange={event => editProfile(event.target.value)} />
       <button type="submit" className="primary" disabled={!profileDraft.trim()}>{text.save}</button>
     </form>;
-    case 'about': return <div className="about"><span className="brand">N<span>²</span></span><h3>{text.neo}</h3>
+    case 'about': return <div className="about"><NeoBrandMark size={56} /><h3>{text.neo}</h3>
       <p>{text.aboutDescription}</p><p data-testid="app-version">{appInfo ? `${text.version} ${appInfo.version}（${appInfo.build}）` : text.unavailableVersion}</p>
     </div>;
     case 'help': return <p>{text.helpBody}</p>;

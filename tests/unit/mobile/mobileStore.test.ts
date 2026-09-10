@@ -57,6 +57,41 @@ describe('mobile draft and navigation behavior', () => {
 });
 
 describe('persistence failure boundaries', () => {
+  it('does not acknowledge a cleared draft until its write succeeds, including a retry after in-memory clearing', async () => {
+    const storage = disk(); let fail = false;
+    const store = createMobileStore({ get: storage.get, set: async value => { if (fail) throw new Error('DISK_FULL'); await storage.set(value); } });
+    await store.getState().hydrate(); store.getState().editDraft('accepted task'); await store.getState().flush();
+    fail = true;
+    await expect(store.getState().acknowledgeDraft('accepted task')).rejects.toThrow('DRAFT_NOT_SAVED');
+    await expect(store.getState().acknowledgeDraft('accepted task')).rejects.toThrow('DRAFT_NOT_SAVED');
+    expect(JSON.parse((await storage.get())!).drafts.new).toBe('accepted task');
+    fail = false; await store.getState().acknowledgeDraft('accepted task');
+    expect(JSON.parse((await storage.get())!).drafts.new).toBe('');
+  });
+  it('preserves newly edited text and other drafts when an older message is acknowledged', async () => {
+    const storage = disk(); const store = createMobileStore(storage); await store.getState().hydrate();
+    store.getState().editDraft('newer text'); store.getState().navigate('fixture'); store.getState().editDraft('accepted task');
+    await store.getState().acknowledgeDraft('accepted task');
+    expect(store.getState().preferences.drafts).toEqual({ new: 'newer text', fixture: 'accepted task' });
+  });
+  it('waits for a newer draft write if it was queued during a failed acknowledgement write', async () => {
+    const storage = disk(); let count = 0;
+    let releaseClear!: () => void; let releaseNew!: () => void;
+    const store = createMobileStore({ get: storage.get, set: async value => {
+      const current = ++count;
+      if (current === 2) { await new Promise<void>(resolve => { releaseClear = resolve; }); throw new Error('WRITE_FAILED'); }
+      if (current === 3) await new Promise<void>(resolve => { releaseNew = resolve; });
+      await storage.set(value);
+    } });
+    await store.getState().hydrate(); store.getState().editDraft('accepted'); await store.getState().flush();
+    let acknowledged = false;
+    const ack = store.getState().acknowledgeDraft('accepted').then(() => { acknowledged = true; });
+    await Promise.resolve(); store.getState().editDraft('new text'); releaseClear();
+    for (let i = 0; i < 8; i++) await Promise.resolve();
+    expect(acknowledged).toBe(false);
+    releaseNew(); await ack;
+    expect(JSON.parse((await storage.get())!).drafts.new).toBe('new text');
+  });
   it('serializes writes so a slow old draft cannot overwrite the newest draft', async () => {
     let release!: () => void; let value: string | null = null; let calls = 0;
     const port = { get: async () => value, set: async (next: string) => {
@@ -90,4 +125,36 @@ describe('persistence failure boundaries', () => {
       store.getState().setAppearance('light'); await store.getState().flush();
       expect(store.getState().ready).toBe(false); expect(await port.get()).toBe(raw);
     });
+});
+
+describe('real conversation draft identity', () => {
+  it('preserves the old draft on first pairing and isolates hosts and sessions through restart', async () => {
+    const port = disk(); const store = createMobileStore(port); await store.getState().hydrate();
+    store.getState().editDraft('build 15 draft');
+    store.getState().activateDraft('host-a:session-a');
+    expect(store.getState().preferences.drafts['host-a:session-a']).toBe('build 15 draft');
+    store.getState().activateDraft('host-a:session-b'); store.getState().editDraft('second draft');
+    store.getState().activateDraft('host-b:session-a'); store.getState().editDraft('other computer');
+    await store.getState().acknowledgeDraft('build 15 draft', 'host-a:session-a');
+    const restored = createMobileStore(port); await restored.getState().hydrate();
+    expect(restored.getState().preferences.drafts).toMatchObject({ 'host-a:session-a': '', 'host-a:session-b': 'second draft', 'host-b:session-a': 'other computer' });
+  });
+  it('late acknowledgements do not clear edits to the same conversation', async () => {
+    const store = createMobileStore(disk()); await store.getState().hydrate();
+    store.getState().activateDraft('host:session'); store.getState().editDraft('newer text');
+    await store.getState().acknowledgeDraft('old text', 'host:session');
+    expect(store.getState().preferences.drafts['host:session']).toBe('newer text');
+  });
+});
+
+it('transcription receipts append once to the originating draft and never send it', async () => {
+  const port = disk(); const store = createMobileStore(port); await store.getState().hydrate();
+  store.getState().activateDraft('host:a'); store.getState().editDraft('existing');
+  store.getState().activateDraft('host:b'); store.getState().editDraft('other session');
+  await store.getState().appendTranscript('spoken words', 'host:a', 'voice-command');
+  const next = createMobileStore(port); await next.getState().hydrate();
+  await next.getState().appendTranscript('spoken words', 'host:a', 'voice-command');
+  expect(next.getState().preferences.drafts['host:a']).toBe('existing\nspoken words');
+  expect(next.getState().preferences.drafts['host:b']).toBe('other session');
+  expect(next.getState().sendAttempted).toBe(false);
 });

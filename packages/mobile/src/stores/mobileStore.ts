@@ -4,16 +4,19 @@ import type { PlatformPorts } from '../platform/ports';
 export type Appearance = 'system' | 'light' | 'dark';
 export type SheetPage = 'settings' | 'appearance' | 'profile' | 'about' | 'help' | 'more' | 'projects' | 'remote';
 type Route = 'new' | 'fixture';
-type Preferences = { schema: 1; drafts: Record<Route, string>; appearance: Appearance; nickname: string };
+type Preferences = { schema: 1; drafts: Record<string, string>; transcriptCommands?: Record<string, string>; appearance: Appearance; nickname: string };
 type Sheet = { origin: 'root' | 'drawer'; pages: SheetPage[] };
 interface State {
   preferences: Preferences; ready: boolean; loadError: boolean; saveError: boolean; saving: boolean;
+  draftKey: string; activateDraft(key: string): void;
   route: Route; drawer: boolean; sheet: Sheet | null; profileDraft: string; sendAttempted: boolean;
   hydrate(): Promise<void>; editDraft(value: string): void; setAppearance(value: Appearance): void;
   editProfile(value: string): void; saveProfile(): void; flush(): Promise<void>;
   openDrawer(): void; closeDrawer(): void; navigate(route: Route): void;
   openSheet(page: SheetPage): void; pushSheet(page: SheetPage): void; closeSheet(): void; back(): boolean;
   attemptSend(): void;
+  appendTranscript(text: string, key: string, commandId: string): Promise<void>;
+  acknowledgeDraft(text: string, key?: string): Promise<void>;
 }
 const defaults = (): Preferences => ({ schema: 1, drafts: { new: '', fixture: '' }, appearance: 'system', nickname: '' });
 function decode(raw: string | null): Preferences {
@@ -25,7 +28,7 @@ function decode(raw: string | null): Preferences {
       !['system', 'light', 'dark'].includes(v.appearance ?? '') || typeof v.nickname !== 'string') {
     throw new Error('INVALID_PREFERENCES');
   }
-  return { schema: 1, drafts: { new: v.drafts.new, fixture: v.drafts.fixture }, appearance: v.appearance!, nickname: v.nickname };
+  return { schema: 1, transcriptCommands: v.transcriptCommands ?? {}, drafts: Object.fromEntries(Object.entries(v.drafts).filter(([, value]) => typeof value === 'string')), appearance: v.appearance!, nickname: v.nickname };
 }
 
 export function createMobileStore(port: PlatformPorts['preferences']) {
@@ -48,6 +51,14 @@ export function createMobileStore(port: PlatformPorts['preferences']) {
     };
     return {
       preferences: defaults(), ready: false, loadError: false, saveError: false, saving: false,
+      draftKey: 'new', activateDraft: key => {
+        const { preferences } = get();
+        // Preserve the build-15 unassigned draft on the first actual shared session.
+        if (key !== 'new' && key !== 'fixture' && preferences.drafts[key] === undefined && preferences.drafts.new) {
+          set({ preferences: { ...preferences, drafts: { ...preferences.drafts, [key]: preferences.drafts.new, new: '' } } }); persist();
+        }
+        set({ draftKey: key });
+      },
       route: 'new', drawer: false, sheet: null, profileDraft: '', sendAttempted: false,
       hydrate: () => {
         if (get().ready) return Promise.resolve();
@@ -63,8 +74,8 @@ export function createMobileStore(port: PlatformPorts['preferences']) {
       },
       editDraft: value => {
         if (!get().ready) return;
-        const { preferences, route } = get();
-        set({ preferences: { ...preferences, drafts: { ...preferences.drafts, [route]: value } }, sendAttempted: false });
+        const { preferences, draftKey } = get();
+        set({ preferences: { ...preferences, drafts: { ...preferences.drafts, [draftKey]: value } }, sendAttempted: false });
         persist();
       },
       setAppearance: appearance => {
@@ -79,7 +90,7 @@ export function createMobileStore(port: PlatformPorts['preferences']) {
       flush: async () => { if (get().ready && get().saveError) persist(); await pending; },
       openDrawer: () => { if (!get().sheet) set({ drawer: true }); },
       closeDrawer: () => set({ drawer: false }),
-      navigate: route => set({ route, drawer: false, sheet: null, sendAttempted: false }),
+      navigate: route => set({ route, ...(route === 'fixture' ? { draftKey: 'fixture' } : {}), drawer: false, sheet: null, sendAttempted: false }),
       openSheet: page => { if (!get().sheet) set({ sheet: { origin: get().drawer ? 'drawer' : 'root', pages: [page] } }); },
       pushSheet: page => {
         const sheet = get().sheet;
@@ -92,7 +103,29 @@ export function createMobileStore(port: PlatformPorts['preferences']) {
         if (drawer) { set({ drawer: false }); return true; }
         return false;
       },
-      attemptSend: () => { if (get().ready && get().preferences.drafts[get().route].trim()) set({ sendAttempted: true }); },
+      attemptSend: () => { if (get().ready && (get().preferences.drafts[get().draftKey] ?? '').trim()) set({ sendAttempted: true }); },
+      appendTranscript: async (text, key, commandId) => {
+        const { preferences } = get();
+        if (!get().ready) throw new Error('COMPANION_DRAFT_NOT_READY');
+        if (preferences.transcriptCommands?.[key] !== commandId) {
+          set({ preferences: { ...preferences, drafts: { ...preferences.drafts, [key]: [preferences.drafts[key], text].filter(Boolean).join('\n') },
+            transcriptCommands: { ...preferences.transcriptCommands, [key]: commandId } } }); persist();
+        } else if (get().saveError) persist();
+        for (;;) { const tail = pending; await tail; if (tail === pending) break; }
+        if (get().saveError) throw new Error('COMPANION_DRAFT_NOT_SAVED');
+      },
+      acknowledgeDraft: async (text, key = 'new') => {
+        const { preferences } = get();
+        if (!get().ready) throw new Error('COMPANION_DRAFT_NOT_READY');
+        if (preferences.drafts[key] === undefined && key !== 'new' && preferences.drafts.new === text) {
+          set({ preferences: { ...preferences, drafts: { ...preferences.drafts, new: '' } } }); persist();
+        } else if (preferences.drafts[key] === text) {
+          set({ preferences: { ...preferences, drafts: { ...preferences.drafts, [key]: '' } }, sendAttempted: false }); persist();
+        } else if (get().saveError) persist();
+        // Include edits queued while the acknowledgement write was in flight.
+        for (;;) { const tail = pending; await tail; if (tail === pending) break; }
+        if (get().saveError) throw new Error('COMPANION_DRAFT_NOT_SAVED');
+      },
     };
   });
   return store;

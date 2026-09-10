@@ -302,6 +302,9 @@ async function startAgentApi(deps: {
   tryGetCLISessionManager?: () => Promise<unknown>;
   getSupabaseForSession?: () => Promise<unknown>;
   registerQueuedInputSendNowHook?: Parameters<typeof createAgentRouter>[0]['registerQueuedInputSendNowHook'];
+  registerCompanionRun?: Parameters<typeof createAgentRouter>[0]['registerCompanionRun'];
+  publishCompanionEvent?: Parameters<typeof createAgentRouter>[0]['publishCompanionEvent'];
+  hasCompanionApprovalUi?: Parameters<typeof createAgentRouter>[0]['hasCompanionApprovalUi'];
 } = {}) {
   const app = express();
   app.use(express.json());
@@ -318,6 +321,9 @@ async function startAgentApi(deps: {
       ?? (async () => null),
     getSupabaseForSession: deps.getSupabaseForSession ?? (async () => null),
     registerQueuedInputSendNowHook: deps.registerQueuedInputSendNowHook,
+    registerCompanionRun: deps.registerCompanionRun,
+    publishCompanionEvent: deps.publishCompanionEvent,
+    hasCompanionApprovalUi: deps.hasCompanionApprovalUi,
   } as Parameters<typeof createAgentRouter>[0]));
 
   server = await new Promise<http.Server>((resolve) => {
@@ -512,6 +518,67 @@ describe('createAgentRouter', () => {
     inMemorySessions.clear();
     sessionMessages.clear();
     setDbAvailable(false);
+  });
+
+  it('companion activation waits for a real run handle and publishes its stable ID', async () => {
+    await closeServer();
+    let start: Parameters<NonNullable<Parameters<typeof createAgentRouter>[0]['registerCompanionRun']>>[0] | undefined;
+    const publish = vi.fn();
+    await startAgentApi({ registerCompanionRun: value => { start = value; }, publishCompanionEvent: publish });
+    const activation = await start!({ version: 1, sessionId: 'companion-activation', prompt: 'bounded task', clientMessageId: 'companion-message' });
+    expect(activation.runId).toBeTruthy();
+    expect(runRegistry.getBySessionId('companion-activation')?.context.runId).toBe(activation.runId);
+    expect(publish).toHaveBeenCalledWith('companion-activation', 'run_started', { event: {}, runId: activation.runId });
+    await runRegistry.getBySessionId('companion-activation')!.cancel('user');
+  });
+
+  it('cancelling a companion run releases its real pending approval with denial', async () => {
+    await closeServer();
+    setBrowserWindowInteractionProbe(() => true);
+    let start: Parameters<NonNullable<Parameters<typeof createAgentRouter>[0]['registerCompanionRun']>>[0] | undefined;
+    await startAgentApi({ registerCompanionRun: value => { start = value; } });
+    await start!({ version: 1, sessionId: 'companion-cancel-approval', prompt: 'bounded task' });
+    await vi.waitFor(() => expect(mockCreateRunToolExecutor.mock.calls.length).toBeGreaterThan(0));
+    const ask = mockCreateRunToolExecutor.mock.calls.at(-1)![2] as OrchestratorPermissionIsland['requestPermission'];
+    const pending = ask({ type: 'file_write', tool: 'Write', sessionId: 'companion-cancel-approval', forceConfirm: true, details: { path: '/tmp/bounded-cancel.txt' } });
+    const handle = runRegistry.getBySessionId('companion-cancel-approval')!;
+    await handle.cancel('user');
+    await expect(pending).resolves.toMatchObject({ approved: false, denialSource: 'cancelled' });
+    expect(handle.cancellationRequested).toBe(true);
+  });
+
+  it('uses live companion presence for the run session without a desktop renderer', async () => {
+    await closeServer();
+    setBrowserWindowInteractionProbe(() => false);
+    const states: boolean[] = [];
+    // 按 deps 上的真实签名声明，别用无参 vi.fn()——那样 mock.calls 是空元组数组，
+    // 下面按位取 sessionId 会是类型错（tsc-tests-ratchet 判红）。
+    const probe = vi.fn<NonNullable<Parameters<typeof createAgentRouter>[0]['hasCompanionApprovalUi']>>(() => true);
+    const spy = vi.spyOn(OrchestratorPermissionIsland.prototype, 'requestPermission')
+      .mockImplementation(function (this: OrchestratorPermissionIsland) {
+        states.push((this as unknown as { hasApprovalUi: () => boolean }).hasApprovalUi());
+        return Promise.resolve({ approved: false, denialSource: 'cancelled' });
+      });
+    let start: Parameters<NonNullable<Parameters<typeof createAgentRouter>[0]['registerCompanionRun']>>[0] | undefined;
+    try {
+      await startAgentApi({ registerCompanionRun: value => { start = value; }, hasCompanionApprovalUi: probe });
+      await start!({ version: 1, sessionId: 'phone-ui-session', prompt: 'bounded task' });
+      await vi.waitFor(() => expect(mockCreateRunToolExecutor.mock.calls.length).toBeGreaterThan(0));
+      const ask = mockCreateRunToolExecutor.mock.calls.at(-1)![2] as OrchestratorPermissionIsland['requestPermission'];
+      const request = { type: 'file_write' as const, tool: 'Write', sessionId: 'phone-ui-session', details: { path: '/tmp/phone-ui.txt' } };
+      await ask(request);
+      probe.mockReturnValue(false);
+      await ask(request);
+      expect(states).toEqual([true, false]);
+      // 只钉「每次审批都就地问一次、问的是本会话」这个行为。探针签名在刀A(#1737) 的审查里
+      // 从 (sessionId) 变成 (sessionId, request)——本用例 spy 掉了 requestPermission，
+      // 调的是无参的 this.hasApprovalUi()，所以第二个实参是 undefined。断言只看 sessionId，
+      // 不再跟签名的元数耦合。
+      expect(probe.mock.calls.map(([sessionId]) => sessionId)).toEqual(['phone-ui-session', 'phone-ui-session']);
+    } finally {
+      await runRegistry.getBySessionId('phone-ui-session')?.cancel('user');
+      spy.mockRestore();
+    }
   });
 
   it('treats an SSE-subscribed renderer as the approval UI for a queued run', async () => {

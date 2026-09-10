@@ -3,7 +3,7 @@ import type { HistoricalSessionRecoveryRequest, HistoricalSessionRecoveryResult 
 import { TERMINAL_RUN_STATUSES } from '../../../../shared/contract/durableRun';
 import { canonicalConversationJson, conversationSha256 } from '../database/schemaConversationBranch';
 import { ConversationBranchAuditRepository } from './ConversationBranchAuditRepository';
-import { ConversationBranchLedgerStore } from './ConversationBranchLedgerStore';
+import { ConversationBranchLedgerStore, parseConversationRecord } from './ConversationBranchLedgerStore';
 import { ConversationBranchRepository } from './ConversationBranchRepository';
 import { SessionRepository } from './SessionRepository';
 import { SessionForkRepository } from './SessionForkRepository';
@@ -41,12 +41,16 @@ export class HistoricalSessionRecoveryRepository {
         const recoveryId = `history_recovery_${digest({ actorUserId, projectId: request.projectId, root: snapshot.root.session_id }).slice(0, 32)}`;
         const sessionMap = Object.fromEntries(snapshot.branches.map((branch) => [String(branch.session_id),
           `session_recovered_${digest({ recoveryId, source: branch.session_id }).slice(0, 32)}`]));
-        const sessions = snapshot.branches.map((branch) => ({
-          sourceSessionId: String(branch.session_id), targetSessionId: sessionMap[String(branch.session_id)],
-          parentSourceSessionId: branch.parent_branch_id === null ? null
-            : String(snapshot.branches.find((parent) => parent.id === branch.parent_branch_id)!.session_id),
-          messages: snapshot.messages.filter((message) => message.session_id === branch.session_id).length,
-        }));
+        const sessions = snapshot.branches.map((branch) => {
+          const parentBranch = branch.parent_branch_id === null ? null
+            : snapshot.branches.find((parent) => parent.id === branch.parent_branch_id);
+          requireEvidence(branch.parent_branch_id === null || parentBranch, 'LEDGER_CORRUPT');
+          return {
+            sourceSessionId: String(branch.session_id), targetSessionId: sessionMap[String(branch.session_id)],
+            parentSourceSessionId: parentBranch ? String(parentBranch.session_id) : null,
+            messages: snapshot.messages.filter((message) => message.session_id === branch.session_id).length,
+          };
+        });
         const changes = { sessions: sessions.length, messages: snapshot.messages.length,
           branches: snapshot.branches.length, entries: snapshot.entries.length, references: snapshot.references.length,
           events: snapshot.events.length, forks: snapshot.branches.length - 1,
@@ -117,7 +121,7 @@ export class HistoricalSessionRecoveryRepository {
       requireEvidence(item.owner_user_id === null, 'SOURCE_ALREADY_OWNED');
       requireEvidence(typeof session.working_directory === 'string' && session.working_directory.length > 0, 'WORKSPACE_EVIDENCE_REQUIRED');
       requireEvidence(!session.read_only && !['running', 'queued', 'paused', 'cancelling'].includes(String(session.status)), 'SOURCE_NOT_IDLE');
-      requireEvidence(!session.agent_engine || JSON.parse(String(session.agent_engine)).kind === 'native', 'UNSUPPORTED_ENGINE');
+      requireEvidence(!session.agent_engine || parseConversationRecord(String(session.agent_engine)).kind === 'native', 'UNSUPPORTED_ENGINE');
       requireEvidence(!this.hasUnfinishedRun(String(item.session_id)), 'SOURCE_RUN_ACTIVE');
       const children = this.db.prepare('SELECT * FROM conversation_branches WHERE parent_branch_id = ?').all(item.id) as Row[];
       requireEvidence(children.every((child) => branches.some((candidate) => candidate.id === child.id)), 'GRAPH_NOT_CLOSED');
@@ -160,7 +164,7 @@ export class HistoricalSessionRecoveryRepository {
         requireEvidence(branches.some((candidate) => candidate.session_id === entry.source_session_id), 'ENTRY_SOURCE_NOT_CLOSED');
         const consumers = this.db.prepare('SELECT branch_id FROM conversation_branch_entries WHERE entry_id = ?').all(entry.id) as Row[];
         requireEvidence(consumers.every((consumer) => branches.some((candidate) => candidate.id === consumer.branch_id)), 'ENTRY_SHARED_OUTSIDE_GRAPH');
-        const provenance = JSON.parse(String(entry.provenance_json));
+        const provenance = parseConversationRecord(String(entry.provenance_json));
         requireEvidence(provenance.kind === 'compatibility_projection_append' && provenance.syncOrigin === 'local', 'LOCAL_LEDGER_EVIDENCE_REQUIRED');
         entries.set(String(entry.id), entry);
       }
@@ -188,11 +192,13 @@ export class HistoricalSessionRecoveryRepository {
     const messageMap: Record<string, string> = {}, forkMap: Record<string, string> = {};
     for (const branch of snapshot.branches) {
       const sourceId = String(branch.session_id), targetId = sessionMap[sourceId];
-      const source = snapshot.sessions.find((row) => row.id === sourceId)!;
+      const source = snapshot.sessions.find((row) => row.id === sourceId);
+      requireEvidence(source, 'LEDGER_CORRUPT');
       const refs = snapshot.references.filter((row) => row.branch_id === branch.id);
       const copies = refs.filter((ref) => ref.alias_kind === 'fork_copy');
       if (branch.parent_branch_id !== null) {
-        const parent = snapshot.branches.find((row) => row.id === branch.parent_branch_id)!;
+        const parent = snapshot.branches.find((row) => row.id === branch.parent_branch_id);
+        requireEvidence(parent, 'LEDGER_CORRUPT');
         const anchor = snapshot.references.find((ref) => ref.branch_id === parent.id && ref.entry_id === branch.anchor_entry_id);
         requireEvidence(anchor && copies.length > 0, 'FORK_EVIDENCE_REQUIRED');
         const forkId = `fork_recovered_${digest({ recoveryId, source: branch.fork_id }).slice(0, 32)}`;
@@ -216,7 +222,8 @@ export class HistoricalSessionRecoveryRepository {
       }
       for (const ref of refs.filter((row) => row.alias_kind !== 'fork_copy')) {
         const sourceMessageId = String(ref.projected_message_id);
-        const row = snapshot.messages.find((message) => message.id === sourceMessageId)!;
+        const row = snapshot.messages.find((message) => message.id === sourceMessageId);
+        requireEvidence(row, 'LEDGER_CORRUPT');
         const targetMessageId = `msg_recovered_${digest({ recoveryId, sourceMessageId }).slice(0, 32)}`;
         messageMap[sourceMessageId] = targetMessageId;
         sessions.addMessage(targetId, { ...rowToMessage(row), id: targetMessageId }, {

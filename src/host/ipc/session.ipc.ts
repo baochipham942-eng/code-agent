@@ -32,6 +32,7 @@ import { ConversationBranchError } from '../../shared/contract/conversationBranc
 import { SessionForkPortabilityError } from '../../shared/contract/sessionForkPortability';
 import { WorkspaceFileRestoreError } from '../../shared/contract/fileRestore';
 import { getUserBrowserLinkService } from '../services/surfaceExecution/UserBrowserLinkService';
+import { recoverHistoricalSession } from './historicalSessionRecovery';
 
 /** Inline stub — old memoryTriggerService removed */
 type SessionMemoryContext = unknown;
@@ -63,6 +64,9 @@ export function registerSessionHandlers(
       let data: unknown;
 
       switch (action) {
+        case 'recoverHistory':
+          data = recoverHistoricalSession(payload as import('../../shared/contract/historicalSessionRecovery').HistoricalSessionRecoveryRequest);
+          break;
         case 'list':
           data = await requireAppService().listSessions(payload as import('../../shared/contract/appService').SessionListQueryOptions | undefined);
           break;

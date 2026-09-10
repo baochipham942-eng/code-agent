@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CompanionGateway } from '../../src/host/companion/gateway';
+import { CompanionGateway } from '../../src/host/services/companion/gateway';
 
 describe('CompanionGateway', () => {
   const scope = { projectId: 'p1', sessionId: 's1', deviceId: 'd1' };

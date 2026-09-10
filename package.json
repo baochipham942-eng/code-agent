@@ -228,8 +228,7 @@
     "onnxruntime-node": "^1.24.3",
     "playwright": "^1.60.0",
     "playwright-core": "^1.60.0",
-    "sharp": "^0.35.3",
-    "noise-handshake": "4.2.0"
+    "sharp": "^0.35.3"
   },
   "devDependencies": {
     "@agentclientprotocol/sdk": "^1.4.0",
@@ -335,6 +334,7 @@
     "mermaid": "^11.15.0",
     "minimatch": "^10.2.5",
     "node-fetch": "^3.3.2",
+    "noise-handshake": "4.2.0",
     "ora": "^9.4.0",
     "papaparse": "^5.5.3",
     "pdfkit": "^0.18.0",

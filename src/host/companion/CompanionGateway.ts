@@ -63,6 +63,8 @@ export class CompanionGateway {
   private readonly dispatch: (command: CompanionCommand) => CompanionDispatchResult;
   private readonly decide: CompanionGatewayDeps['decide'];
   private currentEpoch = 1;
+  /** Events published under an older epoch are unreachable: every device re-snapshots. */
+  get epoch(): number { return this.currentEpoch; }
   private readonly refreshDecisions: () => void;
 
   constructor(private readonly db: BetterSqlite3.Database, private readonly deps: CompanionGatewayDeps = {}) {
@@ -204,6 +206,15 @@ export class CompanionGateway {
         if (!claimed.changes) return { kind: 'replayed', command: record };
         const decision = decide(command);
         if (decision.kind !== 'accepted' && decision.kind !== 'replayed') {
+          // The claim exists to stop a *second* command ID from redispatching a decision
+          // whose outcome is unknown. A definite non-decision is not that: nothing was
+          // authorized, the request is still pending, and leaving the claim behind turns
+          // the retry we tell the user to make into a permanent lock — the retry gets
+          // IGNOREd above and comes back 'reconciling', which the phone never clears.
+          // A same-commandId replay is still caught earlier, by the command row itself.
+          this.db.prepare(`DELETE FROM companion_decision_claims
+            WHERE request_id = ? AND revision = ? AND operation_digest = ?`).run(
+              command.payload.requestId, command.expectedRevision, command.payload.operationDigest);
           record.state = 'rejected';
           record.result = { decision };
         } else {

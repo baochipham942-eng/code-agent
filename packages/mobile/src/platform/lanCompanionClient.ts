@@ -27,7 +27,7 @@ export class LanCompanionClient {
       if (noise.recv(fromHex(hello.frame)).length !== 0 || !noise.rs || toHex(noise.rs) !== invitation.hostKey) throw new Error('COMPANION_HOST_KEY_MISMATCH');
       const finish = toHex(noise.send());
       this.channel = new NoiseChannel(noise); this.channelId = hello.channelId;
-      const result = await this.post(`${invitation.endpoint}/v1/finish`, { channelId: hello.channelId, frame: finish }) as { welcome: string };
+      const result = await this.post(`${invitation.endpoint}/v1/finish`, { channelId: hello.channelId, frame: finish }) as { welcome: string[] };
       if (generation !== this.generation) throw new Error('COMPANION_CHANNEL_CHANGED');
       this.binding = this.readBinding(this.channel.open(result.welcome), invitation.endpoint, invitation.hostKey);
       return this.binding;
@@ -43,7 +43,7 @@ export class LanCompanionClient {
     const generation = this.generation;
     const noise = createHandshake(true, this.identity, undefined, undefined, hostKey);
     try {
-      const hello = await this.post(`${endpoint}/v1/hello`, { mode: 'resume', frame: toHex(noise.send()) }) as { channelId: string; frame: string; welcome: string };
+      const hello = await this.post(`${endpoint}/v1/hello`, { mode: 'resume', frame: toHex(noise.send()) }) as { channelId: string; frame: string; welcome: string[] };
       if (generation !== this.generation) throw new Error('COMPANION_CHANNEL_CHANGED');
       if (noise.recv(fromHex(hello.frame)).length !== 0) throw new Error('COMPANION_INVALID_FRAME');
       this.channel = new NoiseChannel(noise); this.channelId = hello.channelId;
@@ -65,7 +65,7 @@ export class LanCompanionClient {
         const requestId = crypto.randomUUID();
         const response = await this.post(`${this.binding.endpoint}/v1/exchange`, {
           channelId: this.channelId, frame: channel.seal({ ...payload, requestId }),
-        }) as { frame: string };
+        }) as { frame: string[] };
         if (this.channel !== channel) throw new Error('COMPANION_CHANNEL_CHANGED');
         const body = channel.open(response.frame) as { requestId: string; result: unknown };
         if (body.requestId !== requestId) throw new Error('COMPANION_INVALID_ACK');

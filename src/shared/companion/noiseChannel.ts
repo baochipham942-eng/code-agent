@@ -10,6 +10,14 @@ export function createHandshake(initiator: boolean, identity: KeyPair, inviteId?
   return noise;
 }
 
+// ponytail: package.json overrides noise-handshake's `sodium-universal` to the pure-JS
+// `sodium-javascript@0.8.0` (JSON takes no comments, so the note lives here, next to the
+// crypto it governs). This is a deliberate downgrade, not an equivalent swap: the pure-JS
+// primitives are NOT constant-time, so this channel must not be treated as hardened against
+// a local timing side channel. It buys a dependency with no native build step, which is what
+// keeps the mobile bundle and CI installable. Upgrade path: drop the override and ship
+// prebuilt sodium-native binaries for every target once the mobile build can carry them.
+
 /** Ordered duplex records. Any ambiguity retires the channel; retry with a new handshake. */
 export class NoiseChannel {
   private readonly tx: Cipher;

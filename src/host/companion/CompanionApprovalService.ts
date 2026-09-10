@@ -13,6 +13,14 @@ function canonical(value: unknown): string {
 
 /** Mobile cards are a projection. The desktop's pending resolver remains the authority. */
 export class CompanionApprovalService {
+  /**
+   * Epoch of the last publish per request.
+   * ponytail: in-memory, so a host restart republishes every live card once — harmless,
+   * and cheaper than a JSON query over companion_events. Move it into the events table
+   * if cards ever need to survive a restart without that extra publish.
+   */
+  private readonly publishedEpoch = new Map<string, number>();
+
   constructor(private readonly gateway: CompanionGateway,
     private readonly pending: () => PermissionRequest[],
     private readonly deliver: (requestId: string, response: PermissionResponse, sessionId: string) => { success: boolean; data?: { closed?: boolean } }) {}
@@ -28,17 +36,26 @@ export class CompanionApprovalService {
       displayable.add(request.id);
       const operationDigest = createHash('sha256').update(canonical(request)).digest('hex');
       const old = this.gateway.getDecision(request.id);
-      if (old?.operationDigest === operationDigest) continue;
-      const decision = { requestId: request.id, sessionId: request.sessionId, revision: (old?.revision ?? 0) + 1,
-        operationDigest, status: 'pending' as const, resolvedBy: null };
-      this.gateway.registerDecision(decision);
-      this.gateway.publish(request.sessionId, 'approval', { ...decision, preview });
+      const unchanged = old?.operationDigest === operationDigest;
+      // An unchanged card still has to be republished after an epoch bump (a revoke does
+      // that): every other phone re-snapshots and drops its events, so a card that is
+      // never re-emitted into the new epoch simply disappears while the run keeps waiting.
+      if (unchanged && (old.status !== 'pending' || this.publishedEpoch.get(request.id) === this.gateway.epoch)) continue;
+      // Republishing is not a new decision: reusing the row keeps the revision the phone
+      // already holds valid, so an in-flight approval.respond is not invalidated.
+      const decision = unchanged
+        ? old
+        : { requestId: request.id, sessionId: request.sessionId, revision: (old?.revision ?? 0) + 1,
+          operationDigest, status: 'pending' as const, resolvedBy: null };
+      if (!unchanged) this.gateway.registerDecision(decision);
+      this.publishedEpoch.set(request.id, this.gateway.publish(request.sessionId, 'approval', { ...decision, preview }).epoch);
     }
     for (const decision of this.gateway.pendingDecisions()) {
       if (!displayable.has(decision.requestId)) {
         const closed = { ...decision, status: 'closed' as const };
         this.gateway.registerDecision(closed);
         this.gateway.publish(decision.sessionId, 'approval', { ...closed });
+        this.publishedEpoch.delete(decision.requestId);
       }
     }
   }

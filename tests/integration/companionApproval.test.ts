@@ -109,3 +109,77 @@ describe('companion uses the desktop live approval authority', () => {
   });
 
 });
+
+// 上一轮我们把「台账瞬时写失败 → 可重试」这条路打通了一半：用户被引导去再点一次，
+// 而重试撞上 approval claim 行没回滚，被 INSERT OR IGNORE 静默吞掉，返回 reconciling，
+// companionStore 见 reconciling 直接 return —— saved.pending 永不清除，整台设备锁死。
+// 修了一半的重试路径比不修更糟，所以这里钉住的是完整链路，不是单点。
+describe('a half-open retry path must not lock the device', () => {
+  let db: Database.Database;
+  let repo: PendingApprovalRepository;
+  let island: OrchestratorPermissionIsland;
+  let gateway: CompanionGateway;
+  let service: CompanionApprovalService;
+  const sessionId = 'parked-retry-session';
+
+  beforeEach(() => {
+    db = new Database(':memory:');
+    db.exec('CREATE TABLE pending_approvals (id TEXT PRIMARY KEY,kind TEXT,agent_id TEXT,agent_name TEXT,coordinator_id TEXT,payload_json TEXT,status TEXT,submitted_at INTEGER,resolved_at INTEGER,feedback TEXT)');
+    repo = new PendingApprovalRepository(db);
+    island = new OrchestratorPermissionIsland({
+      getSettings: () => ({ ...DEFAULT_SETTINGS, permissions: { ...DEFAULT_SETTINGS.permissions, autoApprove: { read: false, write: false, execute: false, network: false }, blockedCommands: [], devModeAutoApprove: false } }),
+      isDevModeAutoApproveEnabled: () => false, getExecutionTopology: () => 'main', hasApprovalUi: () => true,
+      onEvent: () => {}, injectedPendingApprovalRepo: repo,
+    });
+    registerForegroundPermissionIsland(sessionId, island);
+    const deliver = installPermissionResponseHandler({ handlers: new Map(), pendingDevPermissions: new Map(),
+      getCurrentSessionId: () => sessionId, logger: { info: () => {}, warn: () => {} } });
+    gateway = new CompanionGateway(db, {
+      refreshDecisions: () => service.refresh(),
+      decide: command => service.respond(command),
+      dispatch: () => ({ state: 'accepted', result: { runId: 'run-after-retry' } }),
+    });
+    service = new CompanionApprovalService(gateway, listForegroundPermissionRequests, deliver);
+    gateway.registerDevice({ deviceId: 'phone', credentialHash: 'hash', scope: [sessionId], scopeEpoch: 1, revokedAt: null });
+  });
+  afterEach(() => { island.drainPendingPermissions(); unregisterForegroundPermissionIsland(sessionId, island); db.close(); });
+
+  const claims = () => (db.prepare('SELECT COUNT(*) AS n FROM companion_decision_claims').get() as { n: number }).n;
+
+  it('a fresh commandId after a transient ledger failure really decides, and the device stays usable', async () => {
+    const promise = island.requestPermission({ type: 'directory_access', tool: 'request_directory', sessionId,
+      details: { path: '/tmp/neo-claim-retry' } });
+    const request = island.listPendingRequests()[0];
+    service.refresh();
+    const card = gateway.getDecision(request.id)!;
+    const respond = (commandId: string) => ({ version: 1 as const, deviceId: 'phone', scopeEpoch: 1, commandId,
+      sessionId, action: 'approval.respond' as const, expectedRevision: card.revision,
+      payload: { requestId: request.id, operationDigest: card.operationDigest!, decision: 'approved' as const } });
+
+    // 台账这一次写不进去（等价于瞬时 SQLITE_BUSY）：裁决必然没做成
+    db.exec("CREATE TRIGGER fail_parked BEFORE UPDATE ON pending_approvals BEGIN SELECT RAISE(ABORT, 'SQLITE_BUSY injected'); END");
+    expect(gateway.submit(respond('first'))).toMatchObject({ command: { state: 'rejected' } });
+    expect(gateway.getDecision(request.id)).toMatchObject({ status: 'pending' });
+    expect(db.prepare('SELECT status FROM pending_approvals WHERE id = ?').get(request.id)).toEqual({ status: 'pending' });
+    // 没做成就不许留下 claim——留着的话下面这次重试会被静默吞掉
+    expect(claims()).toBe(0);
+
+    db.exec('DROP TRIGGER fail_parked');
+    // 这一步就是我们上一轮把用户引向的动作：换个 commandId 再点一次
+    const retried = gateway.submit(respond('second'));
+    expect(retried).toMatchObject({ kind: 'accepted', command: { state: 'resolved', result: { decision: 'approved' } } });
+    // 不是 reconciling：companionStore 见到 reconciling 会直接 return，pending 永不清除
+    expect(gateway.commandStatus('phone', 'second')?.state).toBe('resolved');
+    // 桌面那条真实的挂起 Promise 确实被这次重试放行了
+    await expect(promise).resolves.toMatchObject({ approved: true });
+    expect(db.prepare('SELECT status FROM pending_approvals WHERE id = ?').get(request.id)).toEqual({ status: 'approved' });
+    // 成功之后 claim 必须留着：换 commandId 不得重放一个已经生效的逻辑裁决
+    expect(claims()).toBe(1);
+    expect(gateway.submit(respond('third')).kind).toBe('approval_conflict');
+
+    // 设备没被卡死：后续普通命令照常受理
+    expect(gateway.submit({ version: 1, deviceId: 'phone', scopeEpoch: 1, commandId: 'after-retry',
+      sessionId, action: 'message.send', payload: { text: 'still usable' } }))
+      .toMatchObject({ kind: 'accepted', command: { state: 'accepted' } });
+  });
+});

@@ -13,6 +13,14 @@ interface Saved {
 }
 type ConnectionError = 'connectionQrInvalid' | 'connectionScanFailed' | 'connectionRejected' | 'connectionUnavailable' | 'connectionFailed';
 
+/**
+ * 只有这几种 reason 说的是「这台设备不能用了」——撤销、主机不认、授权不覆盖、epoch 已翻篇，
+ * 四者都要重新配对/重连才能恢复。其余（approval_conflict 抢答、payload 不符、动作不支持…）
+ * 都只是**这一条命令**没成，连接本身照旧可用。
+ * `status` 描述连接，命令结果写 `commandError`；两条 ack 路径共用这一个判据，别再各判各的。
+ */
+const DEVICE_LEVEL_REASONS = new Set(['device_revoked', 'device_unknown', 'scope_denied', 'scope_epoch_mismatch']);
+
 interface State {
   voiceOutcome: 'done' | 'error' | null;
   transcribe(audio: { audioData: string; mimeType: string; durationMs: number }, sessionId: string, hostKey: string): Promise<void>;
@@ -80,10 +88,15 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
     };
     const deliver = async () => {
       if (!saved?.pending || !client) return;
-      const result = await client.request({ action: 'command', command: saved.pending }) as { kind: string; command?: CompanionCommandRecord };
+      const result = await client.request({ action: 'command', command: saved.pending }) as { kind: string; reason?: string; command?: CompanionCommandRecord };
       if (['accepted', 'replayed'].includes(result.kind) && result.command) await accepted(result.command);
       else if (['rejected', 'conflict', 'approval_conflict'].includes(result.kind)) {
-        await persist({ ...saved, pending: undefined }); set({ pending: false, status: 'rejected' });
+        await persist({ ...saved, pending: undefined });
+        // 按语义分，不按「它是不是 rejected」分。桌面或另一台手机先批了同一条审批时，
+        // 网关回的是 approval_conflict——那是正常抢答，把整台设备停掉是错的。
+        set(typeof result.reason === 'string' && DEVICE_LEVEL_REASONS.has(result.reason)
+          ? { pending: false, status: 'rejected', connectionError: 'connectionRejected' }
+          : { pending: false, commandError: result.kind === 'approval_conflict' ? 'COMPANION_APPROVAL_CONFLICT' : result.reason ?? 'COMPANION_COMMAND_REJECTED' });
       } else throw new Error('COMPANION_INVALID_ACK');
     };
     const safely = async (work: () => Promise<void>) => {

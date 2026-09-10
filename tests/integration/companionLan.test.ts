@@ -313,6 +313,87 @@ describe('LAN companion: real HTTP + Noise + SQLite', () => {
   });
 });
 
+// 桌面或另一台手机先批了同一条审批时，网关回 approval_conflict。它曾经跟「设备被撤销」
+// 共用 status:'rejected'，于是这台手机 sync / send / stop / respond 全部短路，界面显示
+// 「设备已被移除」，只能人工重连。抢答是正常并发，不是设备失效。
+describe('a lost approval race must not retire the device', () => {
+  let db: Database.Database;
+  let gateway: CompanionGateway;
+  let server: LanCompanionServer;
+  let decideCalls: number;
+  const hostIdentity = createIdentity();
+  const address = Object.values(networkInterfaces()).flat().find(n => n?.family === 'IPv4' && isPrivateIPv4(n.address))?.address;
+  const post: LanPost = async (url, body) => {
+    const res = await fetch(url, { method: 'POST', redirect: 'error', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    const raw = await res.text();
+    if (!res.ok) throw new Error(`HTTP_${res.status}`);
+    return JSON.parse(raw);
+  };
+
+  beforeEach(async () => {
+    if (!address) throw new Error('LAN_TEST_REQUIRES_PRIVATE_IPV4_ON_FLEET');
+    decideCalls = 0;
+    db = new Database(':memory:');
+    gateway = new CompanionGateway(db, {
+      dispatch: () => ({ state: 'accepted', result: { runId: 'run-after-race' } }),
+      // 抢答会在 submit 的前置检查就返回，真实裁决口不该被再调一次。
+      decide: () => { decideCalls += 1; return { kind: 'rejected', reason: 'unsupported_action' }; },
+    });
+    server = new LanCompanionServer(gateway, hostIdentity);
+    await server.start(address, 0);
+  });
+  afterEach(async () => { await server?.stop(); db?.close(); });
+
+  async function phoneOnline() {
+    let storage: string | null = null;
+    const invitation = JSON.stringify(server.invite(['shared']));
+    const phone = createCompanionStore({
+      read: async () => storage, write: async value => { storage = value; },
+      scan: async () => invitation, post,
+    }, () => {});
+    await phone.getState().pair();
+    expect(phone.getState().status).toBe('connected');
+    return phone;
+  }
+
+  it('抢答只记成这条命令的结果，连接照旧可用', async () => {
+    const phone = await phoneOnline();
+    const requestId = 'request-raced';
+    const card = { requestId, sessionId: 'shared', revision: 1, status: 'pending' as const, resolvedBy: null, operationDigest: 'digest-1' };
+    gateway.registerDecision(card);
+    gateway.publish('shared', 'approval', { ...card, preview: 'write /tmp/raced.txt' });
+    await phone.getState().sync();
+    expect(phone.getState().events.at(-1)?.kind).toBe('approval');
+
+    // 桌面先批了：台账翻成 approved，手机手里那张卡就此过期——这就是抢答现场
+    gateway.registerDecision({ ...card, status: 'approved', resolvedBy: 'desktop' });
+    await phone.getState().respond(requestId, 'approved');
+
+    // 连接没有被这次抢答终结
+    expect(phone.getState().status).toBe('connected');
+    // 而且这次抢答是可区分的，不是笼统的一句失败
+    expect(phone.getState().commandError).toBe('COMPANION_APPROVAL_CONFLICT');
+    expect(decideCalls).toBe(0);
+
+    // 事件流还在收
+    gateway.publish('shared', 'message', { content: 'after the race' });
+    await phone.getState().sync();
+    expect(phone.getState().events.map(event => event.payload.content)).toContain('after the race');
+
+    // 后续命令仍然发得出去
+    await phone.getState().send('still usable');
+    expect(phone.getState()).toMatchObject({ status: 'connected', pending: false });
+    phone.getState().pause();
+  });
+
+  it('授权真的不覆盖这条会话时仍然终结连接——修的是误判，不是把终态取消', async () => {
+    const phone = await phoneOnline();
+    await phone.getState().manage('session.rename', { title: 'renamed' }, 'session-outside-my-scope');
+    expect(phone.getState()).toMatchObject({ status: 'rejected', connectionError: 'connectionRejected' });
+    phone.getState().pause();
+  });
+});
+
 describe('LAN protocol validation', () => {
   it.each(['IK', 'XXpsk0'])('matches fixed %s handshake vectors and directional keys with the pure JS backend', pattern => {
     const keys = vector.keys.map(k => ({ publicKey: fromHex(k.publicKey), secretKey: fromHex(k.secretKey) }));

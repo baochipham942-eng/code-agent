@@ -63,6 +63,17 @@ describe('document evidence boundary', () => {
     expect(checkDocumentEvidenceClaims(scoped, messages)).toEqual([]);
     expect(documentClaimPreflight({ id: 'scoped-write', name: 'Write', arguments: { file_path: 'report.md', content: scoped } }, messages)).toEqual([]);
     expect(checkDocumentEvidenceClaims(scoped, [...messages, { ...user, id: 'next-turn' }])).toEqual(['SPACE_OWNER_UNVERIFIED', 'SPACE_MEMBERS_UNVERIFIED']);
+    // 归属作用域：owner 记录必须属于**这个** space 的 cloudProjectId。别的云项目里的 owner 行
+    // 不能给本空间的归属断言背书——去掉 member.projectId 那道比对，上面所有断言仍然全绿
+    // （fixture 里两者恰好相等），这条才是真正钉住作用域的那一条。
+    const foreignOwner: Message[] = [user,
+      { ...user, id: 'call', role: 'assistant', toolCalls: [query] },
+      { ...user, id: 'result', role: 'tool', toolResults: [{ toolCallId: 'query', success: true,
+        output: JSON.stringify({ space: { id: 'project-fixture', cloudProjectId: 'cloud-fixture' },
+          cloudMembers: [{ projectId: 'another-cloud-project', role: 'owner', userId: 'owner-fixture' }],
+          capabilities: { experts: [{ id: 'expert-fixture', displayName: 'Expert fixture' }], automations: [] } }) }] },
+    ];
+    expect(checkDocumentEvidenceClaims(report, foreignOwner)).toContain('SPACE_OWNER_UNVERIFIED');
 
   });
 

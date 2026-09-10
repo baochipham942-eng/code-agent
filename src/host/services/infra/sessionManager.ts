@@ -68,6 +68,9 @@ function isSessionForkAnchorCandidate(message: Message): boolean {
 }
 
 export interface SessionCreateOptions {
+  /** Reserved durable command identity, supplied by trusted Host callers only. */
+  id?: string;
+  commit?: (write: () => void) => void;
   title?: string;
   modelConfig: ModelConfig;
   workingDirectory?: string;
@@ -208,7 +211,7 @@ export class SessionManager implements Disposable {
     }
 
 	    const session: Session = {
-      id: `session_${now}_${crypto.randomUUID().split('-')[0]}`,
+      id: options.id ?? `session_${now}_${crypto.randomUUID().split('-')[0]}`,
       userId: options.userId ?? getAuthService().getCurrentUser()?.id ?? null,
       title: options.title || this.generateSessionTitle(),
       modelConfig: sanitizeModelConfigForSession(options.modelConfig),
@@ -246,7 +249,7 @@ export class SessionManager implements Disposable {
       throw err;
     }
 
-    db.createSession(session);
+    if (options.commit) options.commit(() => db.createSession(session)); else db.createSession(session);
 
     // B1 权限档收口（单点）：新会话按「新会话默认权限档」快照建档；
     // cron/heartbeat/channel（IM 桥接）等无人值守来源先标记 unattended，权限解析时强制钳到不高于 acceptEdits。
@@ -619,7 +622,7 @@ export class SessionManager implements Disposable {
   /**
    * 更新会话
    */
-  async updateSession(sessionId: string, updates: Partial<Session>, options?: { allowEngineUpdate?: boolean }): Promise<void> {
+  async updateSession(sessionId: string, updates: Partial<Session>, options?: { allowEngineUpdate?: boolean; commit?: (write: () => void) => void }): Promise<void> {
     if (updates.engine !== undefined && !options?.allowEngineUpdate) {
       throw new Error('Agent Engine metadata must be changed through the Agent Engine selector.');
     }
@@ -643,7 +646,7 @@ export class SessionManager implements Disposable {
       } catch { /* 读不到当前 metadata 时按原样写入 */ }
     }
 
-    db.updateSession(sessionId, updates);
+    if (options?.commit) options.commit(() => db.updateSession(sessionId, updates)); else db.updateSession(sessionId, updates);
 
     // N-TELEMETRY-SESSION-TITLE-STALE：标题变更（用户改名/自动起标题）同步回遥测表，
     // 不让 telemetry_sessions.title 停在开会话那刻的占位快照。遥测写入在 storage 层
@@ -701,6 +704,7 @@ export class SessionManager implements Disposable {
     sessionId: string,
     patch: Record<string, unknown>,
     options?: {
+      commit?: (write: () => void) => void;
       modelConfig?: { provider: string; model: string };
       updatedAt?: number;
       /**
@@ -714,7 +718,9 @@ export class SessionManager implements Disposable {
     const db = getDatabase();
     const ownerId = this.currentOwnerUserId();
     this.assertAccessibleSession(sessionId, ownerId);
-    const patched = db.patchSessionMetadata(sessionId, patch, options);
+    let patched = false;
+    const write = () => { patched = db.patchSessionMetadata(sessionId, patch, options); if (!patched && options?.commit) throw new Error('SESSION_NOT_FOUND'); };
+    if (options?.commit) options.commit(write); else write();
     if (!patched) return false;
 
     let resolvedMetadata: Record<string, unknown> | undefined;
@@ -786,9 +792,17 @@ export class SessionManager implements Disposable {
   /**
    * 删除会话
    */
-  async deleteSession(sessionId: string): Promise<void> {
+  async deleteSession(sessionId: string, commit?: (write: () => void) => void): Promise<void> {
     const db = getDatabase();
     this.assertAccessibleSession(sessionId);
+    if (commit) {
+      commit(() => db.deleteSession(sessionId));
+      this.sessionCache.delete(sessionId);
+      if (this.currentSessionId === sessionId) this.currentSessionId = null;
+      this.notifySessionListUpdated();
+      db.logAuditEvent('session_deleted', { sessionId });
+      return; // Companion retains a durable cleanup job after the tombstone.
+    }
     await (await import('../surfaceExecution/ManagedBrowserProviderAdapter')).getManagedBrowserProviderAdapter().clearConversationResumeState(sessionId);
     // 先删帧再写会话 tombstone。帧删失败时会话仍可见，不能让用户得到“已删除”假象。
     await this.deleteTerminalFrames(sessionId);
@@ -807,16 +821,22 @@ export class SessionManager implements Disposable {
     db.logAuditEvent('session_deleted', { sessionId });
   }
 
+  async cleanupDeletedSession(sessionId: string): Promise<void> {
+    if (getDatabase().getSession(sessionId)) throw new Error('SESSION_NOT_DELETED');
+    await (await import('../surfaceExecution/ManagedBrowserProviderAdapter')).getManagedBrowserProviderAdapter().clearConversationResumeState(sessionId);
+    await this.deleteTerminalFrames(sessionId);
+  }
+
   /**
    * 归档会话
    */
-  async archiveSession(sessionId: string): Promise<Session | null> {
+  async archiveSession(sessionId: string, commit?: (write: () => void) => void): Promise<Session | null> {
     const db = getDatabase();
     const ownerId = this.currentOwnerUserId();
     this.assertAccessibleSession(sessionId, ownerId);
 
     // 归档会话
-    db.archiveSession(sessionId);
+    if (commit) commit(() => db.archiveSession(sessionId)); else db.archiveSession(sessionId);
 
     // 清除缓存
     this.sessionCache.delete(sessionId);
@@ -836,13 +856,13 @@ export class SessionManager implements Disposable {
   /**
    * 取消归档会话
    */
-  async unarchiveSession(sessionId: string): Promise<Session | null> {
+  async unarchiveSession(sessionId: string, commit?: (write: () => void) => void): Promise<Session | null> {
     const db = getDatabase();
     const ownerId = this.currentOwnerUserId();
     this.assertAccessibleSession(sessionId, ownerId);
 
     // 取消归档
-    db.unarchiveSession(sessionId);
+    if (commit) commit(() => db.unarchiveSession(sessionId)); else db.unarchiveSession(sessionId);
 
     // 清除缓存
     this.sessionCache.delete(sessionId);

@@ -148,6 +148,9 @@ interface AgentRouterDeps extends AgentDurableRouteDeps {
     sessionId: string;
     envelope: ConversationEnvelope;
   }, route: 'active' | 'idle') => Promise<'sent' | 'steered' | 'queued'>) => void;
+  registerCompanionRun?: (run: (body: AgentRunBody) => Promise<{ runId: string }>) => void;
+  hasCompanionApprovalUi?: (sessionId: string) => boolean;
+  publishCompanionEvent?: (sessionId: string, kind: string, payload: Record<string, unknown>) => void;
 }
 
 export type ActiveAgentLoop = RunControlTarget;
@@ -709,7 +712,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
             getSettings: () => acpConfigService.getSettings(),
             isDevModeAutoApproveEnabled: () => acpConfigService.isDevModeAutoApproveEnabled(),
             getExecutionTopology: () => 'main',
-            hasApprovalUi: () => hasInteractiveUi(),
+            hasApprovalUi: () => hasInteractiveUi() || deps.hasCompanionApprovalUi?.(sessionId) === true,
             onEvent: (event) => runController.emitAgentEvent(event),
           });
           registerForegroundPermissionIsland(sessionId, foregroundPermissionIsland);
@@ -1020,6 +1023,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       const modelFacePrompt = capabilityContextLines.length > 0
         ? wrapWithTurnSystemContext(capabilityContextLines, visiblePrompt)
         : visiblePrompt;
+      deps.publishCompanionEvent?.(sessionId, 'message', { event: userMsg, runId: runContext.runId });
       const messages = [
         ...history,
         modelFacePrompt === visiblePrompt ? userMsg : { ...userMsg, content: modelFacePrompt },
@@ -1047,7 +1051,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         getSettings: () => configService.getSettings(),
         isDevModeAutoApproveEnabled: () => configService.isDevModeAutoApproveEnabled(),
         getExecutionTopology: () => 'main',
-        hasApprovalUi: () => hasInteractiveUi(),
+        hasApprovalUi: () => hasInteractiveUi() || deps.hasCompanionApprovalUi?.(sessionId) === true,
         onEvent: (event) => runController.emitAgentEvent(event),
       });
       registerForegroundPermissionIsland(sessionId, foregroundPermissionIsland);
@@ -1067,9 +1071,23 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       const agentLoop = createAgentLoop(config, (event) => {
         const emitted = runController.emitAgentEvent(event);
         runEventCollector.observe(event, emitted);
+        if (event.type !== 'agent_complete' && event.type !== 'agent_cancelled') {
+          deps.publishCompanionEvent?.(sessionId, event.type, { event: event.data, runId: runContext.runId });
+        }
       }, messages, sessionId, undefined, runToolExecutor, runContext, runHandle.traceContext);
 
-      await runHandle.attach(agentLoop);
+      await runHandle.attach({
+        cancel: (reason) => {
+          // Abort the loop before releasing its approval wait. A stopped run must
+          // never remain parked on a permission Promise until route finalization.
+          const cancellation = agentLoop.cancel(reason);
+          foregroundPermissionIsland?.drainPendingPermissions();
+          return cancellation;
+        },
+        pause: () => agentLoop.pause(),
+        resume: () => agentLoop.resume(),
+        steer: (...args) => agentLoop.steer(...args),
+      });
       if (runController.disconnected) {
         logger.warn(`[AgentRouter] Client disconnected before run ${runContext.runId} attached`);
       }
@@ -1221,6 +1239,9 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
 
       // 发送 agent_complete（useAgent 依赖此事件清除处理状态）
       runController.emitAgentEvent({ type: 'agent_complete', data: null });
+      deps.publishCompanionEvent?.(sessionId,
+        finalStatus === 'interrupted' ? 'agent_cancelled' : finalStatus === 'error' ? 'error' : 'agent_complete',
+        { event: finalStatus === 'error' ? { code: 'RUN_FAILED' } : null, runId: runContext.runId });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       if (externalEngineFailureContext) {
@@ -1235,6 +1256,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         disconnected: runController.disconnected,
         message,
       });
+      deps.publishCompanionEvent?.(sessionId, 'error', { event: { code: 'RUN_FAILED' }, runId: runContext?.runId });
       if (!runController.disconnected) {
         runController.emitAgentEvent({
           type: 'error',
@@ -1271,6 +1293,23 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       releaseSseSlot(); // 并发槽位释放兜底（与 res 'close' 双保险，release 幂等）
     }
   }
+
+  deps.registerCompanionRun?.((body) => new Promise((resolve, reject) => {
+    let activated = false;
+    void runAgentTurn(body, createOfflineAgentRunResponseSink(), {
+      connectedClient: false,
+      onDurableActivated: ({ runId }) => {
+        activated = true;
+        deps.publishCompanionEvent?.(body.sessionId!, 'run_started', { event: {}, runId });
+        resolve({ runId });
+      },
+    }).then(() => {
+      if (!activated) reject(new Error('COMPANION_RUN_NOT_STARTED'));
+    }, error => {
+      if (!activated) reject(error);
+      logger.error('[AgentRouter] Companion run failed', error);
+    });
+  }));
 
   router.post('/run', async (req: Request, res: Response) => {
     const parsedBody = AgentRunBodySchema.safeParse(req.body);

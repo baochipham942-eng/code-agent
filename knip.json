@@ -4,7 +4,6 @@
     "src/cli/index.ts",
     "src/web/webServer.ts",
     "src/host/mcp/mcp-server-entry.ts",
-    "src/host/services/companion/gateway.ts",
     "src/renderer/index.tsx",
     "packages/bridge/src/index.ts",
     "packages/eval-harness/src/index.ts",
@@ -31,7 +30,5 @@
   "ignoreBinaries": [
     ".*"
   ],
-  "ignore": [
-    "src/host/services/companion/gateway.ts"
-  ]
+  "ignore": []
 }

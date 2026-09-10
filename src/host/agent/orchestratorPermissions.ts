@@ -112,18 +112,17 @@ export class OrchestratorPermissionIsland {
       if (updatedArgs) {
         // 停车审批（飞书卡/收件箱）没有编辑口；带着改过的参数来的应答不可信，fail-closed 拒。
         logger.warn('Edited arguments on a parked approval, denying', { requestId, tool: pending.request?.tool });
-        this.resolveParkedApproval(requestId, 'deny', 'edited arguments not accepted on parked approval', 'fail-closed');
-        return 'delivered';
+        return this.resolveParkedApproval(requestId, 'deny', 'edited arguments not accepted on parked approval', 'fail-closed')
+          ? 'delivered' : 'unknown_request';
       }
       logger.info('Permission response delivered to parked approval', { requestId, response, tool: pending.request?.tool });
-      this.resolveParkedApproval(requestId, response);
-      return 'delivered';
+      return this.resolveParkedApproval(requestId, response) ? 'delivered' : 'unknown_request';
     }
     // 成功路径也要留痕：没有这条就无法区分「点击没到 host」和「到了但没生效」，
     // 2026-07-26 那次排查整整卡在这个区分上。
     logger.info('Permission response delivered', { requestId, response, tool: pending.request?.tool, edited: Boolean(updatedArgs) });
-    pending.resolve(response, undefined, updatedArgs);
     this.pendingPermissions.delete(requestId);
+    pending.resolve(response, undefined, updatedArgs);
     return 'delivered';
   }
 
@@ -150,9 +149,9 @@ export class OrchestratorPermissionIsland {
     feedbackOverride?: string,
     /** 非空表示这次 'deny' 是机器做的（24h 兜底过期等），不是用户点的。 */
     machineDenial?: PermissionDenialSource,
-  ): void {
+  ): boolean {
     const pending = this.pendingPermissions.get(id);
-    if (!pending) return;
+    if (!pending) return false;
     const repo = this.getPendingApprovalRepo();
     if (repo) {
       const status = isApproveResponse(response) ? 'approved' : 'rejected';
@@ -167,11 +166,11 @@ export class OrchestratorPermissionIsland {
       } catch (err) {
         logger.warn(`Parked approval repo.resolve failed for ${id}`, err);
         // repo 写失败按裁决未赢处理，不动内存 Promise，避免 DB/内存分叉。
-        return;
+        return false;
       }
       if (changes === 0) {
         logger.info(`Parked approval ${id} already resolved/expired, ignoring second responder`);
-        return;
+        return false;
       }
       approvalParkEvents.emit('resolved', { id, sessionId: pending.request.sessionId ?? null, status });
     }
@@ -183,6 +182,7 @@ export class OrchestratorPermissionIsland {
     }
     this.pendingPermissions.delete(id);
     pending.resolve(response, machineDenial);
+    return true;
   }
 
   /** B4：从审批请求解析 target 并在其会话所属 automation 上铸造长期授权规则（幂等、fail-safe）。 */

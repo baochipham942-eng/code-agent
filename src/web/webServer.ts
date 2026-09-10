@@ -362,7 +362,8 @@ import {
 } from '../host/app/initializeDurableRun';
 import { resolveDurableRunRollout } from '../host/app/durableRunRollout';
 import type { PendingDevPermissionRequest } from './routes/dev';
-import { createApp } from './app';
+import { createApp, type CreateAppDeps } from './app';
+import { listForegroundPermissionRequests } from './foregroundPermissionRegistry';
 import { installSessionDomainHandler } from './sessionDomainHandler';
 import { startDurableRunStartup } from './durableRunStartup';
 
@@ -401,6 +402,7 @@ function getDurableRunReadService() {
 
 // ── Local Tool Bridge: 待处理的本地工具调用 ──
 const pendingLocalToolCalls = new Map<string, PendingLocalToolCall>();
+let deliverCompanionPermission: CreateAppDeps['deliverCompanionPermission'];
 const pendingDevPermissions = new Map<string, PendingDevPermissionRequest>();
 
 // ============================================================================
@@ -897,7 +899,7 @@ function registerHandlers(): void {
 
   // 覆盖 agent.ipc.ts 的 legacy handler：它走 AppService，而 web 路径的 AppService 恒为 null
   // （= 生产上「点允许」永远 500 "Agent not initialized"）。实现见该模块头注释。
-  installPermissionResponseHandler({
+  deliverCompanionPermission = installPermissionResponseHandler({
     handlers,
     pendingDevPermissions,
     getCurrentSessionId: () => currentSessionId,
@@ -1037,8 +1039,10 @@ async function main(): Promise<void> {
     logger.info(`[renderer-hot-update] startup activation: ${stagedActivation}`);
   }
 
+  let stopCompanion: (() => Promise<void>) | undefined;
   const app = createApp({
     handlers,
+    registerCompanionShutdown: stop => { stopCompanion = stop; },
     logger,
     runRegistry,
     pendingLocalToolCalls,
@@ -1053,7 +1057,8 @@ async function main(): Promise<void> {
       registry: (await import('../host/plugins/pluginRegistry')).getPluginRegistry(),
       pluginsDir: (await import('../host/plugins/pluginLoader')).getPluginsDir(),
     },
-    getPendingPermissionRequests: () => getTaskManager().listPendingPermissionRequests(),
+    deliverCompanionPermission,
+    getPendingPermissionRequests: () => [...listForegroundPermissionRequests(), ...getTaskManager().listPendingPermissionRequests()],
     registerQueuedInputStartupSweep: (runStartupSweep) => queuedInputStartupSweep.registerTrigger(runStartupSweep),
     registerQueuedInputEnqueueHook: (onEnqueued) => { onQueuedInputEnqueued = onEnqueued; },
     registerQueuedInputSendNowHook: (sendNow) => { onQueuedInputSendNow = sendNow; },
@@ -1099,6 +1104,7 @@ async function main(): Promise<void> {
 
   // 优雅退出
   const shutdown = async () => {
+    await stopCompanion?.().catch(() => logger.warn('Companion LAN shutdown failed'));
     console.log('\nShutting down...');
     // 宽限期是有限的（Rust 侧 GRACEFUL_SHUTDOWN_TIMEOUT 到点就 SIGKILL），关库是这段
     // 时间里唯一不能省的一步——前面的清理任何一个卡住，都会把预算吃光，最后仍然被

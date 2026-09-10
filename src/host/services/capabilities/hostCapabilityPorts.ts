@@ -1,10 +1,21 @@
 import type { UserQuestionRequest, UserQuestionResponse } from '../../../shared/contract';
+import type { SpeechTranscribeOptions, SpeechTranscribeResult } from '../../../shared/contract/speech';
 
 export type HostCapabilityCleanup = () => void | Promise<void>;
 export type TurnOutcomeResolver = (
   sessionId: string,
   dispatchedAtMs: number,
 ) => Promise<'done' | 'unverified'>;
+
+/**
+ * Structural mirror of the speech package's request. Declared here on purpose: host core
+ * must not import anything under services/speech, type-only imports included.
+ */
+interface SpeechTranscriptionInput extends SpeechTranscribeOptions {
+  audioData?: string;
+  mimeType: string;
+}
+export type SpeechTranscriber = (request: SpeechTranscriptionInput) => Promise<SpeechTranscribeResult>;
 
 export interface UserQuestionRoute {
   canOffer: (sessionId: string | undefined) => boolean;
@@ -18,6 +29,7 @@ export interface UserQuestionRoute {
 let turnOutcomeResolver: TurnOutcomeResolver | null = null;
 let userQuestionRoute: UserQuestionRoute | null = null;
 let voiceInstructionsRefresher: (() => void) | null = null;
+let speechTranscriber: SpeechTranscriber | null = null;
 
 function exclusiveRegistration<T>(
   current: T | null,
@@ -82,6 +94,24 @@ export function offerRegisteredUserQuestion(
 
 export function cancelRegisteredUserQuestion(requestId: string): void {
   userQuestionRoute?.cancel(requestId);
+}
+
+export function registerSpeechTranscriber(transcriber: SpeechTranscriber): HostCapabilityCleanup {
+  const cleanup = exclusiveRegistration(
+    speechTranscriber,
+    transcriber,
+    'speech transcriber',
+    () => {
+      if (speechTranscriber === transcriber) speechTranscriber = null;
+    },
+  );
+  speechTranscriber = transcriber;
+  return cleanup;
+}
+
+/** null when the voice-input capability is not installed — callers must fail closed, not wait. */
+export function getRegisteredSpeechTranscriber(): SpeechTranscriber | null {
+  return speechTranscriber;
 }
 
 export function registerVoiceInstructionsRefresher(refresher: () => void): HostCapabilityCleanup {

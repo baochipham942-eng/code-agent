@@ -9,7 +9,8 @@ export const companionReadSchema = z.discriminatedUnion('kind', [
     offset: z.number().int().nonnegative().safe().default(0) }).strict(),
 ]);
 export type CompanionRead = z.infer<typeof companionReadSchema>;
-export interface CompanionSessionSummary {
+// File-local: only CompanionLibrary below refers to it.
+interface CompanionSessionSummary {
   id: string; title: string; projectId: string | null; updatedAt: number; archived: boolean;
   provider: string; model: string;
 }

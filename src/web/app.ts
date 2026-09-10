@@ -1,4 +1,3 @@
-import { getSpeechTranscriptionService } from '../host/services/speech/speechTranscriptionService';
 import { CompanionLibraryService } from '../host/companion/CompanionLibraryService';
 // ============================================================================
 // Web App Assembly - 纯 Express app 装配（无顶层副作用）
@@ -56,6 +55,7 @@ import { createDevRouter } from './routes/dev';
 import type { PendingDevPermissionRequest } from './routes/dev';
 import { createBackgroundRouter } from './routes/background';
 import { dispatchHostWebRoute } from '../host/services/capabilities/hostCapabilityContributions';
+import { getRegisteredSpeechTranscriber } from '../host/services/capabilities/hostCapabilityPorts';
 import { createAdminReviewQueueRouter } from './routes/adminReviewQueue';
 import { createCompanionRouter } from './routes/companion';
 import { createCompanionProvisioningRouter } from './routes/companionProvisioning';
@@ -261,7 +261,11 @@ export function createApp(deps: CreateAppDeps): express.Express {
         decide: command => approvals?.respond(command) ?? { kind: 'rejected', reason: 'unsupported_action' },
         dispatch: (command) => {
           if (command.action === 'voice.transcribe') {
-            void getSpeechTranscriptionService().transcribe({ ...command.payload, mode: 'cloud-only', source: 'composer', keepAudioOnFailure: false, durationSeconds: command.payload.durationMs / 1000 })
+            // Registered by the voice-input capability. Absent = that capability is not
+            // installed, so say so now rather than parking the phone on 'reconciling'.
+            const transcribe = getRegisteredSpeechTranscriber();
+            if (!transcribe) return { state: 'rejected', result: { code: 'COMPANION_TRANSCRIPTION_UNAVAILABLE' } };
+            void transcribe({ ...command.payload, mode: 'cloud-only', source: 'composer', keepAudioOnFailure: false, durationSeconds: command.payload.durationMs / 1000 })
               .then(result => gateway.settleCommand(command.deviceId, command.commandId, result.success && result.engine === 'groq' ? 'accepted' : 'rejected',
                 result.success && result.engine === 'groq' ? { text: result.text, engine: result.engine } : { code: 'COMPANION_TRANSCRIPTION_FAILED' }),
                 () => gateway.settleCommand(command.deviceId, command.commandId, 'rejected', { code: 'COMPANION_TRANSCRIPTION_FAILED' }));

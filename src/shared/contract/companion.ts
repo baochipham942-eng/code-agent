@@ -1,13 +1,6 @@
 import { z } from 'zod';
 import { COMPANION_LIMITS } from '../constants/companion';
 
-export const companionActionSchema = z.enum([
-  'message.send',
-  'run.cancel',
-  'approval.respond', 'session.create', 'session.rename', 'session.archive', 'session.delete', 'session.model', 'voice.transcribe',
-]);
-export type CompanionAction = z.infer<typeof companionActionSchema>;
-
 const id = z.string().trim().min(1).max(COMPANION_LIMITS.idLength);
 const commandFields = {
   version: z.literal(1),
@@ -47,6 +40,8 @@ export const companionCommandSchema = z.discriminatedUnion('action', [
   }).strict(),
 ]);
 export type CompanionCommand = z.infer<typeof companionCommandSchema>;
+/** Derived from the command schema so the action list has exactly one definition. */
+type CompanionAction = CompanionCommand['action'];
 
 export interface CompanionDevice {
   deviceId: string;
@@ -63,7 +58,7 @@ export interface CompanionDeviceCredential {
   scope: readonly string[];
 }
 
-export type CompanionCommandState = 'accepted' | 'resolved' | 'rejected' | 'conflict' | 'reconciling';
+type CompanionCommandState = 'accepted' | 'resolved' | 'rejected' | 'conflict' | 'reconciling';
 
 export interface CompanionCommandRecord {
   deviceId: string;

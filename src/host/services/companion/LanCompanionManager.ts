@@ -1,10 +1,10 @@
-import { projectGrant } from '../../shared/contract/companionLibrary';
+import { projectGrant } from '../../../shared/contract/companionLibrary';
 import { networkInterfaces } from 'node:os';
 import { z } from 'zod';
 import type { KeyPair } from 'noise-handshake';
-import { COMPANION_LIMITS as L } from '../../shared/constants/companion';
-import { isPrivateIPv4 } from '../../shared/companion/lanProtocol';
-import type { CompanionManagementResult } from '../../shared/contract/companionManagement';
+import { COMPANION_LIMITS as L } from '../../../shared/constants/companion';
+import { isPrivateIPv4 } from '../../../shared/companion/lanProtocol';
+import type { CompanionManagementResult } from '../../../shared/contract/companionManagement';
 import { LanCompanionServer } from './LanCompanionServer';
 import type { CompanionGateway } from './CompanionGateway';
 

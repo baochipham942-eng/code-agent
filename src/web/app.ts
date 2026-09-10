@@ -1,4 +1,4 @@
-import { CompanionLibraryService } from '../host/companion/CompanionLibraryService';
+import { CompanionLibraryService } from '../host/services/companion/CompanionLibraryService';
 // ============================================================================
 // Web App Assembly - 纯 Express app 装配（无顶层副作用）
 // ============================================================================
@@ -59,12 +59,12 @@ import { getRegisteredSpeechTranscriber } from '../host/services/capabilities/ho
 import { createAdminReviewQueueRouter } from './routes/adminReviewQueue';
 import { createCompanionRouter } from './routes/companion';
 import { createCompanionProvisioningRouter } from './routes/companionProvisioning';
-import { CompanionGateway } from '../host/companion/CompanionGateway';
-import { projectCompanionEvent } from '../host/companion/projectCompanionEvent';
-import { CompanionApprovalService } from '../host/companion/CompanionApprovalService';
+import { CompanionGateway } from '../host/services/companion/CompanionGateway';
+import { projectCompanionEvent } from '../host/services/companion/projectCompanionEvent';
+import { CompanionApprovalService } from '../host/services/companion/CompanionApprovalService';
 import type { PermissionResponse } from '../shared/contract/permission';
-import { LanCompanionManager } from '../host/companion/LanCompanionManager';
-import { loadLanIdentity } from '../host/companion/lanIdentity';
+import { LanCompanionManager } from '../host/services/companion/LanCompanionManager';
+import { loadLanIdentity } from '../host/services/companion/lanIdentity';
 import { COMPANION_MANAGE_CHANNEL } from '../shared/constants/companion';
 import { getDatabase } from '../host/services/core/databaseService';
 import type { AgentRunBody } from './routes/agentBodySchemas';

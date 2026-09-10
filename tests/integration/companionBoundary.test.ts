@@ -7,9 +7,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
-import { CompanionGateway } from '../../src/host/companion/CompanionGateway';
+import { CompanionGateway } from '../../src/host/services/companion/CompanionGateway';
 import { createCompanionRouter } from '../../src/web/routes/companion';
-import { projectCompanionEvent } from '../../src/host/companion/projectCompanionEvent';
+import { projectCompanionEvent } from '../../src/host/services/companion/projectCompanionEvent';
 import type { CompanionDeviceCredential } from '../../src/shared/contract/companion';
 
 describe('companion device boundary (HTTP + persistent SQLite)', () => {

@@ -1,5 +1,5 @@
 import { Router, type Request } from 'express';
-import type { CompanionGateway } from '../../host/companion/CompanionGateway';
+import type { CompanionGateway } from '../../host/services/companion/CompanionGateway';
 
 /**
  * The router guard below rejects every request without a device header, so a miss

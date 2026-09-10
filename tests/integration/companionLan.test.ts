@@ -6,9 +6,9 @@ vi.mock('node:os', async (importOriginal) => {
 });
 import Database from 'better-sqlite3';
 import { networkInterfaces } from 'node:os';
-import { LanCompanionManager } from '../../src/host/companion/LanCompanionManager';
-import { CompanionGateway } from '../../src/host/companion/CompanionGateway';
-import { LanCompanionServer } from '../../src/host/companion/LanCompanionServer';
+import { LanCompanionManager } from '../../src/host/services/companion/LanCompanionManager';
+import { CompanionGateway } from '../../src/host/services/companion/CompanionGateway';
+import { LanCompanionServer } from '../../src/host/services/companion/LanCompanionServer';
 import { createHandshake, createIdentity, NoiseChannel } from '../../src/shared/companion/noiseChannel';
 import { fromHex, toHex, isPrivateIPv4, parseInvitation, validateLanEndpoint, type LanBinding } from '../../src/shared/companion/lanProtocol';
 import { LanCompanionClient, type LanPost } from '../../packages/mobile/src/platform/lanCompanionClient';

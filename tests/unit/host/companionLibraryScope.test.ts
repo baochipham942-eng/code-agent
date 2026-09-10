@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
-import { CompanionGateway } from '../../../src/host/companion/CompanionGateway';
+import { CompanionGateway } from '../../../src/host/services/companion/CompanionGateway';
 
 function fixture() {
   const db = new Database(':memory:');

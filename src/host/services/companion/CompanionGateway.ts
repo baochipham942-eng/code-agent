@@ -1,9 +1,9 @@
-import { companionReadSchema, projectGrant, type CompanionRead } from '../../shared/contract/companionLibrary';
+import { companionReadSchema, projectGrant, type CompanionRead } from '../../../shared/contract/companionLibrary';
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import type BetterSqlite3 from 'better-sqlite3';
-import { applyCompanionSchema } from '../services/core/database/migrations/companion';
-import { companionCommandSchema } from '../../shared/contract/companion';
-import { COMPANION_LIMITS } from '../../shared/constants/companion';
+import { applyCompanionSchema } from '../core/database/migrations/companion';
+import { companionCommandSchema } from '../../../shared/contract/companion';
+import { COMPANION_LIMITS } from '../../../shared/constants/companion';
 import type {
   CompanionCommand,
   CompanionCommandRecord,
@@ -13,7 +13,7 @@ import type {
   CompanionEvent,
   CompanionSubmitResult,
   CompanionSyncResult,
-} from '../../shared/contract/companion';
+} from '../../../shared/contract/companion';
 
 type SqlRow = Record<string, unknown>;
 

@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
 import type BetterSqlite3 from 'better-sqlite3';
-import { CompanionGateway } from '../../../src/host/companion/CompanionGateway';
+import { CompanionGateway } from '../../../src/host/services/companion/CompanionGateway';
 
 describe('CompanionGateway', () => {
   let db: BetterSqlite3.Database;

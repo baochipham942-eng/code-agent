@@ -3,10 +3,10 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import express from 'express';
 import type Noise from 'noise-handshake';
 import type { KeyPair } from 'noise-handshake';
-import { COMPANION_EVENT_DROPPED, COMPANION_LIMITS as L } from '../../shared/constants/companion';
-import { fromHex, toHex, isPrivateIPv4, type LanInvitation } from '../../shared/companion/lanProtocol';
-import { createHandshake, NoiseChannel } from '../../shared/companion/noiseChannel';
-import { companionCommandSchema, type CompanionEvent } from '../../shared/contract/companion';
+import { COMPANION_EVENT_DROPPED, COMPANION_LIMITS as L } from '../../../shared/constants/companion';
+import { fromHex, toHex, isPrivateIPv4, type LanInvitation } from '../../../shared/companion/lanProtocol';
+import { createHandshake, NoiseChannel } from '../../../shared/companion/noiseChannel';
+import { companionCommandSchema, type CompanionEvent } from '../../../shared/contract/companion';
 import type { CompanionGateway } from './CompanionGateway';
 
 interface Invitation { id: string; psk: string; expiresAt: number; scope: string[] }

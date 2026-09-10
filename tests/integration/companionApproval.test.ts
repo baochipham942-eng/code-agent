@@ -5,8 +5,8 @@ vi.mock('../../src/host/task/TaskManager', () => ({ getTaskManager: () => ({ han
 vi.mock('../../src/host/agent/parkedApprovalHydration', () => ({ closeDeadParkedApproval: () => false }));
 import Database from 'better-sqlite3';
 import { PendingApprovalRepository } from '../../src/host/services/core/repositories/PendingApprovalRepository';
-import { CompanionGateway } from '../../src/host/companion/CompanionGateway';
-import { CompanionApprovalService } from '../../src/host/companion/CompanionApprovalService';
+import { CompanionGateway } from '../../src/host/services/companion/CompanionGateway';
+import { CompanionApprovalService } from '../../src/host/services/companion/CompanionApprovalService';
 import { OrchestratorPermissionIsland } from '../../src/host/agent/orchestratorPermissions';
 import { registerForegroundPermissionIsland, unregisterForegroundPermissionIsland, listForegroundPermissionRequests } from '../../src/web/foregroundPermissionRegistry';
 import { installPermissionResponseHandler } from '../../src/web/webPermissionResponseHandler';

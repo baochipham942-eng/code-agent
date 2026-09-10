@@ -1,17 +1,17 @@
-import { visibleHistoryMessageWhere } from '../services/core/repositories/sessionRepositoryParsers';
+import { visibleHistoryMessageWhere } from '../core/repositories/sessionRepositoryParsers';
 import { createHash } from 'node:crypto';
-import { getDatabase } from '../services/core/databaseService';
-import { getSessionManager } from '../services/infra/sessionManager';
-import { getConfigService } from '../services/core/configService';
-import { getAuthService } from '../services/auth/authService';
-import { buildRuntimeModelOptions } from '../../shared/modelRuntime';
-import { COMPANION_LIMITS as L } from '../../shared/constants/companion';
-import { projectGrant, type CompanionRead, type CompanionLibrary, type CompanionHistory } from '../../shared/contract/companionLibrary';
-import type { CompanionCommand } from '../../shared/contract/companion';
+import { getDatabase } from '../core/databaseService';
+import { getSessionManager } from '../infra/sessionManager';
+import { getConfigService } from '../core/configService';
+import { getAuthService } from '../auth/authService';
+import { buildRuntimeModelOptions } from '../../../shared/modelRuntime';
+import { COMPANION_LIMITS as L } from '../../../shared/constants/companion';
+import { projectGrant, type CompanionRead, type CompanionLibrary, type CompanionHistory } from '../../../shared/contract/companionLibrary';
+import type { CompanionCommand } from '../../../shared/contract/companion';
 import type { CompanionGateway } from './CompanionGateway';
-import { MODEL_OVERRIDE_METADATA_KEY, persistModelOverride } from '../session/modelOverridePersistence';
-import { getModelSessionState } from '../session/modelSessionState';
-import { createLogger } from '../services/infra/logger';
+import { MODEL_OVERRIDE_METADATA_KEY, persistModelOverride } from '../../session/modelOverridePersistence';
+import { getModelSessionState } from '../../session/modelSessionState';
+import { createLogger } from '../infra/logger';
 
 const logger = createLogger('CompanionLibrary');
 

@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
-import type { PermissionRequest, PermissionResponse } from '../../shared/contract/permission';
-import type { CompanionCommand, CompanionSubmitResult } from '../../shared/contract/companion';
-import { COMPANION_LIMITS } from '../../shared/constants/companion';
+import type { PermissionRequest, PermissionResponse } from '../../../shared/contract/permission';
+import type { CompanionCommand, CompanionSubmitResult } from '../../../shared/contract/companion';
+import { COMPANION_LIMITS } from '../../../shared/constants/companion';
 import type { CompanionGateway } from './CompanionGateway';
 
 function canonical(value: unknown): string {

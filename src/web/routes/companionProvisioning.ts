@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { COMPANION_LIMITS } from '../../shared/constants/companion';
-import type { CompanionGateway } from '../../host/companion/CompanionGateway';
+import type { CompanionGateway } from '../../host/services/companion/CompanionGateway';
 
 /** Same shape the handler validated by hand; parsing it keeps `any` out of the route. */
 const pairingSchema = z.object({

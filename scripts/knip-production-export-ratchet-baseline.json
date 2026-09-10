@@ -15002,6 +15002,21 @@
       "kind": "type"
     },
     {
+      "file": "src/shared/companion/lanProtocol.ts",
+      "name": "LanBinding",
+      "kind": "type"
+    },
+    {
+      "file": "src/shared/companion/lanProtocol.ts",
+      "name": "parseInvitation",
+      "kind": "export"
+    },
+    {
+      "file": "src/shared/companion/lanProtocol.ts",
+      "name": "validateLanEndpoint",
+      "kind": "export"
+    },
+    {
       "file": "src/shared/constants/acceptance.ts",
       "name": "ACCEPTANCE_DEFAULTS",
       "kind": "export"

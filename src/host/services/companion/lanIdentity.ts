@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto';
 import type { KeyPair } from 'noise-handshake';
-import { loadKeytar } from '../services/core/keytarAdapter';
-import { createIdentity } from '../../shared/companion/noiseChannel';
-import { fromHex, toHex } from '../../shared/companion/lanProtocol';
+import { loadKeytar } from '../core/keytarAdapter';
+import { createIdentity } from '../../../shared/companion/noiseChannel';
+import { fromHex, toHex } from '../../../shared/companion/lanProtocol';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 

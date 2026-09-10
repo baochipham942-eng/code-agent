@@ -12,6 +12,8 @@ import { registerForegroundPermissionIsland, unregisterForegroundPermissionIslan
 import { installPermissionResponseHandler } from '../../src/web/webPermissionResponseHandler';
 import { IPC_CHANNELS } from '../../src/shared/ipc';
 import { DEFAULT_SETTINGS } from '../../src/host/services/core/configDefaults';
+import { COMPANION_LIMITS } from '../../src/shared/constants/companion';
+import { EDITABLE_PERMISSION_TIMEOUT_MS } from '../../src/shared/contract/permissionEdit';
 import type { CompanionCommand } from '../../src/shared/contract/companion';
 
 describe('companion uses the desktop live approval authority', () => {
@@ -114,6 +116,80 @@ describe('companion uses the desktop live approval authority', () => {
 // 而重试撞上 approval claim 行没回滚，被 INSERT OR IGNORE 静默吞掉，返回 reconciling，
 // companionStore 见 reconciling 直接 return —— saved.pending 永不清除，整台设备锁死。
 // 修了一半的重试路径比不修更糟，所以这里钉住的是完整链路，不是单点。
+// 桌面 app 关着、手机在线，模型对一个大文件发起 write_file 审批：preview 撑破 16000 字符，
+// 卡片被跳过（不 register 也不 publish），而 hasApprovalUi 只看「通道在不在线」仍答 true，
+// 于是 fail-closed 超时被取消 —— 手机零卡片、桌面无人接、运行永久挂死。
+// 同样输入在 main 上是 5 分钟后拒绝、运行继续，所以这条分支必须做到「不劣于 main」。
+describe('an approval no surface can render must keep its fail-closed timeout', () => {
+  let db: Database.Database;
+  let gateway: CompanionGateway;
+  let island: OrchestratorPermissionIsland;
+  let service: CompanionApprovalService;
+  const sessionId = 'oversized-session';
+  // 生产接线：hasInteractiveUi() 为 false（桌面关着），答案完全由 companion 侧给。
+  // 见 src/web/app.ts —— 通道可达 **且** 这张卡渲染得出来，两个都成立才算有 UI。
+  const phoneChannelLive = true;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    db = new Database(':memory:');
+    island = new OrchestratorPermissionIsland({
+      getSettings: () => ({ ...DEFAULT_SETTINGS, permissions: { ...DEFAULT_SETTINGS.permissions, autoApprove: { read: false, write: false, execute: false, network: false }, blockedCommands: [], devModeAutoApprove: false } }),
+      isDevModeAutoApproveEnabled: () => false, getExecutionTopology: () => 'main',
+      hasApprovalUi: request => phoneChannelLive && service.canDisplay(request),
+      onEvent: () => {},
+    });
+    registerForegroundPermissionIsland(sessionId, island);
+    const deliver = installPermissionResponseHandler({ handlers: new Map(), pendingDevPermissions: new Map(),
+      getCurrentSessionId: () => sessionId, logger: { info: () => {}, warn: () => {} } });
+    gateway = new CompanionGateway(db, { refreshDecisions: () => service.refresh(), decide: command => service.respond(command) });
+    service = new CompanionApprovalService(gateway, listForegroundPermissionRequests, deliver);
+    gateway.registerDevice({ deviceId: 'phone', credentialHash: 'hash', scope: [sessionId], scopeEpoch: 1, revokedAt: null });
+  });
+  afterEach(() => {
+    island.drainPendingPermissions();
+    unregisterForegroundPermissionIsland(sessionId, island);
+    db.close();
+    vi.useRealTimers();
+  });
+
+  const write = (newContent: string) => island.requestPermission({
+    type: 'file_write', tool: 'write_file', sessionId, forceConfirm: true,
+    details: { path: '/tmp/neo-oversized.txt', newContent },
+  });
+
+  it('超长 preview 的审批：卡片确实没发出去，超时就必须照旧生效', async () => {
+    const promise = write('x'.repeat(COMPANION_LIMITS.approvalPreviewLength + 1_000));
+    service.refresh();
+
+    // 前提复现：这张卡确实一个字都没送出去
+    expect(gateway.pendingDecisions()).toEqual([]);
+    expect(gateway.syncForDevice('phone', 1, 0).events).toEqual([]);
+
+    // 不劣于 main：fail-closed 超时没有被取消，到点按机器拒绝解除，运行继续。
+    // 不直接 await promise —— 修复被摘掉时它永不 resolve，那样只会拿到一个 30s 超时，
+    // 看不出是「挂死」还是「测试写慢了」。
+    let outcome: unknown = 'still-pending';
+    void promise.then(value => { outcome = value; });
+    await vi.advanceTimersByTimeAsync(EDITABLE_PERMISSION_TIMEOUT_MS + 1_000);
+    expect(outcome, 'fail-closed 超时被取消了：这次运行会永久挂在一个谁也没看见的 tool call 上')
+      .toEqual({ approved: false, denialSource: 'timeout' });
+  });
+
+  it('卡片送得出去时才免超时——正常大小的审批仍然一直等真人裁决', async () => {
+    const promise = write('bounded content');
+    service.refresh();
+
+    // 卡片真的到了手机上
+    expect(gateway.syncForDevice('phone', 1, 0).events[0].payload.preview).toContain('bounded content');
+
+    let settled = false;
+    void promise.then(() => { settled = true; });
+    await vi.advanceTimersByTimeAsync(EDITABLE_PERMISSION_TIMEOUT_MS + 1_000);
+    expect(settled, '卡片送达时不该再有 fail-closed 超时——那会把真人还没看的审批自动拒掉').toBe(false);
+  });
+});
+
 describe('a half-open retry path must not lock the device', () => {
   let db: Database.Database;
   let repo: PendingApprovalRepository;

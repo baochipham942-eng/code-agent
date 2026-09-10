@@ -155,7 +155,7 @@ export function createApp(deps: CreateAppDeps): express.Express {
 
   const app = express();
   const traceReadService = new TraceReadService(resolveCodeAgentDataDir());
-  let hasCompanionApprovalUi = (_sessionId: string): boolean => false;
+  let hasCompanionApprovalUi = (_sessionId: string, _request: PermissionRequest): boolean => false;
   let companionRun: ((body: AgentRunBody) => Promise<{ runId: string }>) | undefined;
   let publishCompanionEvent: ((sessionId: string, kind: string, payload: Record<string, unknown>) => void) | undefined;
 
@@ -235,7 +235,7 @@ export function createApp(deps: CreateAppDeps): express.Express {
     registerQueuedInputStartupSweep: deps.registerQueuedInputStartupSweep,
     registerQueuedInputEnqueueHook: deps.registerQueuedInputEnqueueHook,
     registerQueuedInputSendNowHook: deps.registerQueuedInputSendNowHook,
-    hasCompanionApprovalUi: (sessionId) => hasCompanionApprovalUi(sessionId),
+    hasCompanionApprovalUi: (sessionId, request) => hasCompanionApprovalUi(sessionId, request),
     registerCompanionRun: (run) => { companionRun = run; },
     publishCompanionEvent: (sessionId, kind, payload) => publishCompanionEvent?.(sessionId, kind, payload),
   }));
@@ -320,7 +320,9 @@ export function createApp(deps: CreateAppDeps): express.Express {
         const sessions = await (await tryGetSessionManager())?.listSessions() ?? [];
         return sessions.map(session => ({ id: session.id, title: session.title }));
       }, () => requireLibrary().projects());
-      hasCompanionApprovalUi = (sessionId) => lan.hasApprovalUi(sessionId);
+      // Both halves must hold: a phone is reachable for this session, AND this particular
+      // card is renderable. With no approvals service there is no companion approval path.
+      hasCompanionApprovalUi = (sessionId, request) => lan.hasApprovalUi(sessionId) && approvals?.canDisplay(request) === true;
       handlers.set(COMPANION_MANAGE_CHANNEL, (_event, request) => lan.manage(request));
       // Web transport sends `companion:manage` to /api/companion/manage.
       // Keep an explicit route so browser/web builds can generate invitations

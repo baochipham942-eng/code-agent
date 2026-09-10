@@ -20,6 +20,8 @@ interface State {
   refreshLibrary(more?: boolean): Promise<void>; loadHistory(id: string, more?: boolean): Promise<void>;
   manage(action: 'session.create' | 'session.rename' | 'session.archive' | 'session.delete' | 'session.model', payload: Record<string, unknown>, target?: string): Promise<void>;
   connectionError: ConnectionError | null;
+  /** Why the last command was refused. Connection-level standing stays in `status`. */
+  commandError: string | null;
   status: 'unpaired' | 'connecting' | 'connected' | 'offline' | 'storageError' | 'rejected';
   binding: LanBinding | null; sessionId: string | null; pending: boolean; busy: boolean;
   events: CompanionEvent[]; runId: string | null; terminal: 'complete' | 'stopped' | 'failed' | null;
@@ -61,7 +63,12 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
       }
       await persist({ ...saved!, pending: undefined });
       set({ pending: false });
-      if (record.state === 'rejected' || record.state === 'conflict') { set({ status: 'rejected' }); return; }
+      if (record.state === 'rejected' || record.state === 'conflict') {
+        // 单条命令被拒（转写失败 / RUN_NOT_ACTIVE / 审批被抢答）不代表这台设备不能用了。
+        // 置成 status:'rejected' 会挡住 sync 和后续每一条命令，事件流从此停摆到手动重连。
+        set({ commandError: typeof record.result.code === 'string' ? record.result.code : 'COMPANION_COMMAND_REJECTED' });
+        return;
+      }
       if (pending.action === 'session.create' && typeof record.result.sessionId === 'string') set({ sessionId: record.result.sessionId, runId: null, terminal: null });
       if (pending.action === 'session.delete' && get().sessionId === pending.sessionId) set({ sessionId: null, runId: null, terminal: null });
       if (pending.action.startsWith('session.')) await get().refreshLibrary();
@@ -81,7 +88,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
     };
     const safely = async (work: () => Promise<void>) => {
       if (get().busy) return;
-      set({ busy: true, connectionError: null });
+      set({ busy: true, connectionError: null, commandError: null });
       try { await work(); } catch (error) {
         client?.close();
         const code = error instanceof Error ? error.message : '';
@@ -95,7 +102,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
     };
     return {
       voiceOutcome: null, library: null, history: {}, libraryError: false,
-      connectionError: null, status: 'unpaired', binding: null, sessionId: null, busy: false, pending: false, events: [], runId: null, terminal: null,
+      connectionError: null, commandError: null, status: 'unpaired', binding: null, sessionId: null, busy: false, pending: false, events: [], runId: null, terminal: null,
       hydrate: async () => {
         if (!port || get().busy) return;
         set({ busy: true });
@@ -208,6 +215,8 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         try {
           const result = await client.request({ action: 'sync', epoch, afterSeq: cursor }) as CompanionSyncResult;
           if (result.kind === 'snapshot_required') { epoch = result.epoch; cursor = 0; set({ events: [] }); return; }
+          // 被撤销不是网络问题：混进通用 offline 会让这台设备一直重试、永远不知道自己已被踢。
+          if (result.kind === 'revoked') { client?.close(); set({ status: 'rejected', connectionError: 'connectionRejected' }); return; }
           if (result.kind !== 'events' || result.epoch !== epoch || !Number.isSafeInteger(result.nextSeq) || result.nextSeq < cursor || !Array.isArray(result.events)) throw new Error('COMPANION_INVALID_SYNC');
           set({ events: [...get().events, ...result.events] }); cursor = result.nextSeq;
           for (const event of result.events) if (event.sessionId === get().sessionId && (event.kind === 'run_started' || (event.kind === 'message' && event.payload.role === 'user') || !get().runId || event.payload.runId === get().runId)) {

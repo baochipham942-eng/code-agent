@@ -53,9 +53,4 @@ export function applyCompanionSchema(db: BetterSqlite3.Database): void {
     CREATE INDEX IF NOT EXISTS idx_companion_events_session_seq
       ON companion_events(session_id, epoch, seq);
   `);
-  try {
-    db.exec("ALTER TABLE companion_devices ADD COLUMN credential_hash TEXT NOT NULL DEFAULT ''");
-  } catch (error) {
-    if (!(error instanceof Error) || !/duplicate column|already exists/i.test(error.message)) throw error;
-  }
 }

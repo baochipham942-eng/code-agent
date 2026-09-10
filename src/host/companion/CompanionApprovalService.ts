@@ -25,14 +25,33 @@ export class CompanionApprovalService {
     private readonly pending: () => PermissionRequest[],
     private readonly deliver: (requestId: string, response: PermissionResponse, sessionId: string) => { success: boolean; data?: { closed?: boolean } }) {}
 
+  /**
+   * The card a phone would actually see, or null when it cannot be shown truthfully.
+   * Never truncate: a person approving a clipped diff is approving what they did not read.
+   */
+  private card(request: PermissionRequest): { preview: string; sessionId: string } | null {
+    if (!request.sessionId || request.resolved) return null;
+    const preview = JSON.stringify({ type: request.type, tool: request.tool, details: request.details, boundary: request.boundary }, null, 2);
+    return preview.length > COMPANION_LIMITS.approvalPreviewLength ? null : { preview, sessionId: request.sessionId };
+  }
+
+  /**
+   * Whether this specific request would reach a phone as an actionable card.
+   * The permission island asks before it decides to drop its fail-closed timeout, so
+   * answering "a phone is online" instead of "this card gets delivered" is what turned
+   * an oversized preview into a run parked forever with nothing on screen.
+   */
+  canDisplay(request: PermissionRequest): boolean {
+    return this.card(request) !== null;
+  }
+
   refresh(): void {
     const live = this.pending();
     const displayable = new Set<string>();
     for (const request of live) {
-      if (!request.sessionId || request.resolved) continue;
-      const preview = JSON.stringify({ type: request.type, tool: request.tool, details: request.details, boundary: request.boundary }, null, 2);
-      // Never let an incomplete or truncated preview authorize an operation.
-      if (preview.length > COMPANION_LIMITS.approvalPreviewLength) continue;
+      const card = this.card(request);
+      if (!card) continue;
+      const { preview, sessionId } = card;
       displayable.add(request.id);
       const operationDigest = createHash('sha256').update(canonical(request)).digest('hex');
       const old = this.gateway.getDecision(request.id);
@@ -45,10 +64,10 @@ export class CompanionApprovalService {
       // already holds valid, so an in-flight approval.respond is not invalidated.
       const decision = unchanged
         ? old
-        : { requestId: request.id, sessionId: request.sessionId, revision: (old?.revision ?? 0) + 1,
+        : { requestId: request.id, sessionId, revision: (old?.revision ?? 0) + 1,
           operationDigest, status: 'pending' as const, resolvedBy: null };
       if (!unchanged) this.gateway.registerDecision(decision);
-      this.publishedEpoch.set(request.id, this.gateway.publish(request.sessionId, 'approval', { ...decision, preview }).epoch);
+      this.publishedEpoch.set(request.id, this.gateway.publish(sessionId, 'approval', { ...decision, preview }).epoch);
     }
     for (const decision of this.gateway.pendingDecisions()) {
       if (!displayable.has(decision.requestId)) {

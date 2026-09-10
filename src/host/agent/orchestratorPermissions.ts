@@ -83,7 +83,7 @@ export class OrchestratorPermissionIsland {
     getSettings: () => AppSettings;
     isDevModeAutoApproveEnabled: () => boolean;
     getExecutionTopology: () => ExecutionTopology;
-    hasApprovalUi: () => boolean;
+    hasApprovalUi: (request: PermissionRequest) => boolean;
     onEvent: (event: AgentEvent) => void;
     injectedPendingApprovalRepo?: PendingApprovalRepository;
   }) {
@@ -98,7 +98,7 @@ export class OrchestratorPermissionIsland {
   private readonly getSettings: () => AppSettings;
   private readonly isDevModeAutoApproveEnabled: () => boolean;
   private readonly getExecutionTopology: () => ExecutionTopology;
-  private readonly hasApprovalUi: () => boolean;
+  private readonly hasApprovalUi: (request: PermissionRequest) => boolean;
   private readonly onEvent: (event: AgentEvent) => void;
 
   handlePermissionResponse(requestId: string, response: PermissionResponse, updatedArgs?: Record<string, unknown>): PermissionDeliveryOutcome {
@@ -352,7 +352,9 @@ export class OrchestratorPermissionIsland {
     // fail-closed，和 createCLIPermissionHandler 的 no-approval-ui 判据保持同一环境边界。
     // 交互路径的 30min 计时器只留泄漏诊断，不删除请求、不发 timeout 终态。
     const PERMISSION_TIMEOUT = isEditableTool(request.tool) ? EDITABLE_PERMISSION_TIMEOUT_MS : 60000;
-    const approvalUiAvailable = this.hasApprovalUi();
+    // Per request, not per channel: an approval no surface can render must keep its
+    // fail-closed timeout, or the run waits forever for a card nobody ever sees.
+    const approvalUiAvailable = this.hasApprovalUi(fullRequest);
 
     return new Promise((resolve) => {
       const timeoutId = approvalUiAvailable

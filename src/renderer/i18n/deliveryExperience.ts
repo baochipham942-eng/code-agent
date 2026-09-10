@@ -15,6 +15,7 @@ export const deliveryExperienceZh = {
     errorDetails: '已有错误记录，展开详情查看具体原因。',
     blockedCommands: '{count} 条命令未执行', blockedSteps: '{count} 个步骤未执行',
     recovered: '后续修改已成功', checkCharacters: '检查文档中的异常字符',
+    labelSeparator: '；',
   },
 };
 export const deliveryExperienceEn: typeof deliveryExperienceZh = {
@@ -34,5 +35,6 @@ export const deliveryExperienceEn: typeof deliveryExperienceZh = {
     errorDetails: 'An error was recorded. Expand the details for the original reason.',
     blockedCommands: '{count} commands not executed', blockedSteps: '{count} steps not executed',
     recovered: 'A later edit succeeded', checkCharacters: 'Check the document for invalid characters',
+    labelSeparator: '; ',
   },
 };

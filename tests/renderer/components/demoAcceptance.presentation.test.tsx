@@ -48,6 +48,27 @@ describe('demo acceptance: truthful historical presentation', () => {
     expect(tool.result?.success).toBe(true); // immutable historic transport result
     expect(getToolPreflightKind({ ...tool, result: { toolCallId: 'q', success: true, output: 'User responses:\n[Choice]: Yes' } })).toBeNull();
   });
+  // ai-review #1741 Important：组头 label 的分桶必须和 status 判定同口径，把 recovered /
+  // isAutoLoadedRetry 排除掉。否则「Edit 失败 → Read → 同参数 Edit 成功」这一轮里，status
+  // 判 ok（无红点、无原因行、「已恢复」pill 还要 hover 才浮出），组头却写「…未成功」——
+  // 一句没有任何错误标识、也没有原因说明的失败断言，正是那道闸要防的「把成功的一轮演成翻车」。
+  it('a recovered failure is not re-announced in the collapsed group head', () => {
+    const args = { file_path: '/workspace/report.md', old_string: 'old', new_string: 'new' };
+    const messages: Message[] = [
+      { id: 'u', role: 'user', content: 'Edit report', timestamp: 1 },
+      { id: 'a', role: 'assistant', content: '', timestamp: 2, toolCalls: [
+        { ...failed('Edit', 'Existing file must be read before editing', { code: 'NOT_READ' }), arguments: args },
+        { id: 'read', name: 'Read', arguments: { file_path: args.file_path }, result: { toolCallId: 'read', success: true, output: 'contents' } },
+        { id: 'redo', name: 'Edit', arguments: args, result: { toolCallId: 'redo', success: true, output: 'ok' } },
+      ] },
+    ];
+    const nodes = projectTurns(messages, 'session', false, []).turns.flatMap((turn) => turn.nodes);
+    expect(nodes.find((node) => node.toolCall?.id === 'x')?.toolCall?.recovered).toBe(true);
+    const html = renderToStaticMarkup(<ToolStepGroup nodes={nodes.filter((node) => node.toolCall)} defaultExpanded={false} />);
+    expect(html).not.toContain('未成功');
+    expect(html).not.toContain(zh.deliveryExperience.blockedSteps.replace('{count}', '1'));
+  });
+
   it('mixed group counts executed reads separately from unexecuted commands', () => {
     const nodes = [
       { id: 'r', name: 'Read', args: {}, success: true, result: 'read content' },

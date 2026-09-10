@@ -9,7 +9,6 @@ import { ChevronRight, ChevronDown, RotateCcw } from 'lucide-react';
 import type { TraceNode } from '@shared/contract/trace';
 import type { TurnArtifactOwnershipItem } from '@shared/contract/turnTimeline';
 import type { PermissionRequest, ToolCall, ToolLiveOutput, ToolStepStatus } from '@shared/contract';
-import { AgentFailureCode, inferAgentFailureCode } from '@shared/contract';
 import { findConnectorIdForToolName } from '@shared/contract/workbenchTools';
 import {
   ToolCallDisplay,
@@ -17,6 +16,7 @@ import {
 } from './MessageBubble/ToolCallDisplay/index';
 import { computeBashPreviewLines } from './MessageBubble/ToolCallDisplay/bashOutputPreview';
 import {
+  classifyToolName,
   humanizeToolGroupLabel,
   humanizeToolStep,
   isInternalStreamTool,
@@ -141,11 +141,16 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
     for (const node of streamVisibleNodes) {
       const tc = node.toolCall;
       if (!tc) continue;
+      // 与下面 status 判定同一口径：自动加载重试和已恢复的失败都是良性/已收尾状态。
+      // 漏掉这道闸的后果是组头把「已经恢复的那次失败」重新喊一遍——组状态是 ok（无红点、
+      // 无原因行），组头文字却写「…未成功」，正好是那条注释要防的「把成功的一轮演成翻车」。
+      // 恢复它的那次成功调用本身还在组里，会被正常计数。
+      if (isAutoLoadedRetry(tc.metadata) || tc.recovered) continue;
       const preflight = getToolPreflightKind({ name: tc.name, result: tc.result === undefined ? undefined : {
         toolCallId: tc.id, success: tc.success ?? true, error: tc.success === false ? tc.result : undefined, output: tc.result, metadata: tc.metadata,
       } });
       if (preflight) {
-        if (/^(bash|run_command|execute_command)$/i.test(tc.name)) blockedCommands += 1;
+        if (classifyToolName(tc.name) === 'bash') blockedCommands += 1;
         else blockedSteps += 1;
         continue;
       }
@@ -156,7 +161,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
       ...Array.from(byStatus, ([stepStatus, names]) => humanizeToolGroupLabel(names, t, stepStatus)),
       blockedCommands ? t.deliveryExperience.blockedCommands.replace('{count}', String(blockedCommands)) : '',
       blockedSteps ? t.deliveryExperience.blockedSteps.replace('{count}', String(blockedSteps)) : '',
-    ].filter(Boolean).join('；');
+    ].filter(Boolean).join(t.deliveryExperience.labelSeparator);
   }, [permissionState, sessionId, streamVisibleNodes, t]);
 
   const status = useMemo<'pending-approval' | 'streaming' | 'partial' | 'error' | 'ok'>(() => {
@@ -282,31 +287,18 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
 
     return [{ request, statusLabel, stepLabel, details, timedOut, denied }];
   }), [nodes, resolvedPermissionRequests, t]);
-  const toolFailureCode = toolCalls.reduce<AgentFailureCode | null>((resolved, toolCall) => {
-    if (resolved || toolCall.result?.success !== false) return resolved;
-    return inferAgentFailureCode({
-      failureCode: toolCall.result.metadata?.failureCode,
-      toolResultCode: toolCall.result.metadata?.code,
-      defaultCode: AgentFailureCode.Unknown,
-    });
-  }, null);
-  // Grounded in an actual resolved PermissionRequest linked to a toolCall in this group — real
-  // "a human/UI made this decision" evidence. Kept separate from the generic toolFailureCode-based
-  // guess below: the latter fires on a bare metadata.failureCode flag (which may be a CLI
-  // auto-mode fail-closed denial that never reached a human), which humanizeToolFailureReason /
-  // preflight already classify more precisely — it must not preempt that per-toolCall reason.
+  // 来自本组里一条已解析的 PermissionRequest——真的「有人/有界面做了这个决定」。
+  // 只有它才可以抢在 failureReason 之前：仅凭 metadata.failureCode 的那种猜测（很可能是
+  // CLI auto 档 fail-closed、从没到过人眼）由 humanizeToolFailureReason / preflight
+  // 分类得更准，不该顶掉逐 toolCall 的原因。
+  // （原先还挂了一档 toolFailureCode 兜底，已删：它不可达——那一行只在 status 为
+  //   partial/error 时渲染，而那两种状态成立就必然存在 success===false 的 toolCall，
+  //   failureReason 于是必非空，永远轮不到那一档。）
   const permissionRequestOutcome = permissionEvidence.some(({ denied }) => denied)
     ? t.outcomeWords['failed-approval-denied'].timeline
     : permissionEvidence.some(({ timedOut }) => timedOut)
       ? t.outcomeWords['failed-timeout'].timeline
       : null;
-  const permissionOutcome = permissionRequestOutcome ?? (
-    toolFailureCode === AgentFailureCode.PermissionDenied
-      ? t.outcomeWords['failed-approval-denied'].timeline
-      : toolFailureCode === AgentFailureCode.Timeout
-        ? t.outcomeWords['failed-timeout'].timeline
-        : null
-  );
   const planApproval = useMemo(
     () => toolCalls.map(getPlanApprovalRecord).find((record) => record !== null) ?? null,
     [toolCalls],
@@ -475,12 +467,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
           {(status === 'partial' || status === 'error') && (
             <span className={`mt-0.5 block whitespace-normal break-words text-xs leading-5 ${hasEscalatedError ? 'text-badge-danger' : 'text-zinc-400'}`}>
               {status === 'partial' ? `${t.toolGroup.statusPartial} · ` : ''}
-              {/* permissionRequestOutcome is grounded in a resolved PermissionRequest (real
-                  "a human decided this" evidence) — it alone may preempt failureReason.
-                  failureReason is a generic per-toolCall guess that, by design, never returns
-                  null (falls back to failureReasonMissing itself), so it must be checked before
-                  the weaker toolFailureCode-only permissionOutcome fallback, not after. */}
-              {permissionRequestOutcome?.reason ?? failureReason ?? permissionOutcome?.reason ?? t.toolStepHumanize.failureReasonMissing}
+              {permissionRequestOutcome?.reason ?? failureReason ?? t.toolStepHumanize.failureReasonMissing}
             </span>
           )}
         </span>

@@ -869,9 +869,13 @@ function markFeedbackEligibleNodes(turns: TraceTurn[]): void {
  * 或非空的助手正文/最终答案），说明这次失败已被恢复——标记 recovered，让 UI 把它降级
  * 为安静脚注，而不是用最差的中间步骤顶着红色 failed 当整轮头条。
  *
- * 仅对【联网检索类工具】（web search / fetch）做降级——这类"换搜索源/换抓取方式重试"
- * 是常态恢复模式。Edit/Bash 这类的失败即便后面有别的成功也可能是独立真错误，不降级，
- * 以免把用户该看到的真失败藏掉。
+ * 降级只在两种情况下发生，别的失败一律照原样红着：
+ *  1. 【联网检索类工具】（web search / fetch）之后出现任意成功标志——这类"换搜索源/
+ *     换抓取方式重试"是常态恢复模式；
+ *  2. 【Edit】之后出现**同一处**编辑成功——判据是 editKey（路径 + old_string +
+ *     new_string + replace_all 四元组全等），不是"后面有别的成功就算"。Edit 的失败
+ *     多半是独立真错误，只有当模型确实把同一处改成功了，那次失败才算被自己收尾。
+ *     Bash 及其余工具不参与降级。
  */
 function isRecoverableRetrievalTool(name: string | undefined): boolean {
   if (!name) return false;

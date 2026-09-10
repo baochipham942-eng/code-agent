@@ -44,7 +44,8 @@ export class LanCompanionManager {
   private start(): Promise<LanCompanionServer> {
     if (this.starting) return this.starting;
     this.starting = (async () => {
-      const addresses = Object.values(networkInterfaces()).flat().filter(n => n?.family === 'IPv4' && !n.internal && isPrivateIPv4(n.address)).map(n => n!.address);
+      const addresses = Object.values(networkInterfaces()).flat()
+        .flatMap(n => n?.family === 'IPv4' && !n.internal && isPrivateIPv4(n.address) ? [n.address] : []);
       if (this.server && this.address && addresses.includes(this.address)) return this.server;
       // A new invitation must never advertise an interface that disappeared.
       await this.server?.stop(); this.server = null; this.address = null;

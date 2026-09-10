@@ -95,9 +95,12 @@ describe('companion uses the desktop live approval authority', () => {
     const promise = parked.requestPermission({ type: 'directory_access', tool: 'request_directory', sessionId, details: { path: '/tmp/neo-approval-project' } });
     const id = parked.listPendingRequests()[0].id;
     db.exec("CREATE TRIGGER fail_parked BEFORE UPDATE ON pending_approvals BEGIN SELECT RAISE(ABORT, 'injected'); END");
-    expect(parked.handlePermissionResponse(id, 'allow')).toBe('unknown_request');
-    expect(parked.handlePermissionResponse(id, 'allow', { path: '/tmp/edited' })).toBe('unknown_request');
+    // 台账写不进去要报成可重试的 'storage_unavailable'，不能混进 'unknown_request'——
+    // 上层看到后者就会把这行 fail-closed 收掉，用户的「允许」从此再也裁决不了。
+    expect(parked.handlePermissionResponse(id, 'allow')).toBe('storage_unavailable');
+    expect(parked.handlePermissionResponse(id, 'allow', { path: '/tmp/edited' })).toBe('storage_unavailable');
     expect(parked.listPendingRequests()).toHaveLength(1);
+    expect(db.prepare('SELECT status FROM pending_approvals WHERE id = ?').get(id)).toEqual({ status: 'pending' });
     db.exec('DROP TRIGGER fail_parked');
     expect(parked.handlePermissionResponse(id, 'deny')).toBe('delivered');
     expect(parked.handlePermissionResponse(id, 'allow')).toBe('unknown_request');

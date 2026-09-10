@@ -160,9 +160,10 @@ export class CompanionGateway {
         : { kind: 'conflict', reason: 'command_payload_mismatch' };
     }
 
+    const decide = this.decide;
     if (command.action === 'approval.respond') {
       // A separate companion-only CAS cannot authorize a desktop operation.
-      if (!this.decide) return { kind: 'rejected', reason: 'unsupported_action' };
+      if (!decide) return { kind: 'rejected', reason: 'unsupported_action' };
       this.refreshDecisions();
       const current = this.getDecision(command.payload.requestId);
       if (current?.sessionId !== command.sessionId) return { kind: 'rejected', reason: 'scope_denied' };
@@ -192,13 +193,16 @@ export class CompanionGateway {
     // dispatch keeps this ID reserved across restarts; retries never redispatch.
     // Recovery must consult the durable engine, not infer "not executed".
     try {
-      if (command.action === 'approval.respond') {
+      // `decide &&` only restates the guard above (an approval without an authority
+      // already returned); it keeps the narrowing here without a non-null assertion,
+      // and an impossible miss degrades to dispatch's HOST_UNAVAILABLE, not a crash.
+      if (decide && command.action === 'approval.respond') {
         // A different command ID must not redispatch an uncertain logical decision.
         const claimed = this.db.prepare(`INSERT OR IGNORE INTO companion_decision_claims
           (request_id, revision, operation_digest) VALUES (?, ?, ?)`).run(
             command.payload.requestId, command.expectedRevision, command.payload.operationDigest);
         if (!claimed.changes) return { kind: 'replayed', command: record };
-        const decision = this.decide!(command);
+        const decision = decide(command);
         if (decision.kind !== 'accepted' && decision.kind !== 'replayed') {
           record.state = 'rejected';
           record.result = { decision };
@@ -214,9 +218,11 @@ export class CompanionGateway {
       this.db.prepare(`UPDATE companion_commands SET state = ?, result_json = ? WHERE device_id = ? AND command_id = ? AND state = 'reconciling'`)
         .run(record.state, JSON.stringify(record.result), record.deviceId, record.commandId);
     } catch {
-      return { kind: 'replayed', command: this.getCommand(command.deviceId, command.commandId)! };
+      // The reservation was committed before the side effect, so the row is there;
+      // fall back to the in-memory record rather than handing back a null command.
+      return { kind: 'replayed', command: this.getCommand(command.deviceId, command.commandId) ?? record };
     }
-    return { kind: 'accepted', command: this.getCommand(command.deviceId, command.commandId)! };
+    return { kind: 'accepted', command: this.getCommand(command.deviceId, command.commandId) ?? record };
   }
 
   commitMutation(command: CompanionCommand, write: () => void, result: Record<string, unknown>): void {

@@ -13,7 +13,7 @@ export function toHex(value: Uint8Array): string {
 export function fromHex(value: unknown, bytes?: number): Uint8Array {
   if (typeof value !== 'string' || !/^(?:[0-9a-f]{2})+$/.test(value) || value.length > L.maxFrameBytes * 2 ||
       (bytes !== undefined && value.length !== bytes * 2)) throw new Error('COMPANION_INVALID_FRAME');
-  return Uint8Array.from(value.match(/../g)!, byte => Number.parseInt(byte, 16));
+  return Uint8Array.from(value.match(/../g) ?? [], byte => Number.parseInt(byte, 16));
 }
 export function isPrivateIPv4(host: string): boolean {
   const octets = host.split('.');

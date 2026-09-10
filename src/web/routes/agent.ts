@@ -1300,7 +1300,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       connectedClient: false,
       onDurableActivated: ({ runId }) => {
         activated = true;
-        deps.publishCompanionEvent?.(body.sessionId!, 'run_started', { event: {}, runId });
+        if (body.sessionId) deps.publishCompanionEvent?.(body.sessionId, 'run_started', { event: {}, runId });
         resolve({ runId });
       },
     }).then(() => {

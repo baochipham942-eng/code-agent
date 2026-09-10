@@ -27,6 +27,14 @@ const INTERACTIVE_PERMISSION_REMINDER_MS = 30 * 60_000;
 
 type OrchestratorPermissionRequest = Omit<PermissionRequest, 'id' | 'timestamp'>;
 
+/** 停车审批裁决的三态：赢了 / 没赢（抢答、过期、宿主已丢）/ 台账瞬时写不进去（可重试）。 */
+type ParkedResolution = 'resolved' | 'lost' | 'storage_unavailable';
+
+function toDeliveryOutcome(resolution: ParkedResolution): PermissionDeliveryOutcome {
+  if (resolution === 'resolved') return 'delivered';
+  return resolution === 'storage_unavailable' ? 'storage_unavailable' : 'unknown_request';
+}
+
 /** 归一化审批响应为「放行/拒绝」。allow_standing（B4 铸权）在放行语义上等价 allow。 */
 function isApproveResponse(response: PermissionResponse): boolean {
   return response === 'allow' || response === 'allow_session' || response === 'allow_standing';
@@ -112,11 +120,12 @@ export class OrchestratorPermissionIsland {
       if (updatedArgs) {
         // 停车审批（飞书卡/收件箱）没有编辑口；带着改过的参数来的应答不可信，fail-closed 拒。
         logger.warn('Edited arguments on a parked approval, denying', { requestId, tool: pending.request?.tool });
-        return this.resolveParkedApproval(requestId, 'deny', 'edited arguments not accepted on parked approval', 'fail-closed')
-          ? 'delivered' : 'unknown_request';
+        return toDeliveryOutcome(
+          this.tryResolveParkedApproval(requestId, 'deny', 'edited arguments not accepted on parked approval', 'fail-closed'),
+        );
       }
       logger.info('Permission response delivered to parked approval', { requestId, response, tool: pending.request?.tool });
-      return this.resolveParkedApproval(requestId, response) ? 'delivered' : 'unknown_request';
+      return toDeliveryOutcome(this.tryResolveParkedApproval(requestId, response));
     }
     // 成功路径也要留痕：没有这条就无法区分「点击没到 host」和「到了但没生效」，
     // 2026-07-26 那次排查整整卡在这个区分上。
@@ -150,8 +159,23 @@ export class OrchestratorPermissionIsland {
     /** 非空表示这次 'deny' 是机器做的（24h 兜底过期等），不是用户点的。 */
     machineDenial?: PermissionDenialSource,
   ): boolean {
+    return this.tryResolveParkedApproval(id, response, feedbackOverride, machineDenial) === 'resolved';
+  }
+
+  /**
+   * 与 `resolveParkedApproval` 同一条裁决口，但把「没赢」拆成两种，因为上层对这两种
+   * 的处置完全相反：`'lost'`（抢答/过期/宿主已丢）该把台账行收掉，`'storage_unavailable'`
+   * （台账这一次写不进去）必须原样留着等重试。两者混成一个 false 正是
+   * 「用户点了允许 → 被记成永久 rejected + 一句假理由」的成因。
+   */
+  private tryResolveParkedApproval(
+    id: string,
+    response: PermissionResponse,
+    feedbackOverride?: string,
+    machineDenial?: PermissionDenialSource,
+  ): ParkedResolution {
     const pending = this.pendingPermissions.get(id);
-    if (!pending) return false;
+    if (!pending) return 'lost';
     const repo = this.getPendingApprovalRepo();
     if (repo) {
       const status = isApproveResponse(response) ? 'approved' : 'rejected';
@@ -164,13 +188,13 @@ export class OrchestratorPermissionIsland {
           resolvedAt: Date.now(),
         });
       } catch (err) {
-        logger.warn(`Parked approval repo.resolve failed for ${id}`, err);
-        // repo 写失败按裁决未赢处理，不动内存 Promise，避免 DB/内存分叉。
-        return false;
+        logger.warn(`Parked approval repo.resolve failed for ${id}, keeping it decidable`, err);
+        // 瞬时写失败不动内存 Promise，也不许上层据此改台账终态——用户再点一次要能成。
+        return 'storage_unavailable';
       }
       if (changes === 0) {
         logger.info(`Parked approval ${id} already resolved/expired, ignoring second responder`);
-        return false;
+        return 'lost';
       }
       approvalParkEvents.emit('resolved', { id, sessionId: pending.request.sessionId ?? null, status });
     }
@@ -182,7 +206,7 @@ export class OrchestratorPermissionIsland {
     }
     this.pendingPermissions.delete(id);
     pending.resolve(response, machineDenial);
-    return true;
+    return 'resolved';
   }
 
   /** B4：从审批请求解析 target 并在其会话所属 automation 上铸造长期授权规则（幂等、fail-safe）。 */

@@ -175,6 +175,22 @@ describe('createShutdownStepCap — 关库前总预算', () => {
 
     expect(warn).toHaveBeenCalledWith('[shutdown] hungStep timed out, skipping');
   });
+
+  it('companion 停机挂死（keytar 弹框）时后续步骤照跑，关库轮得到', async () => {
+    // lan.stop() 会 await 还在飞的 restore()，而 restore() 可能正卡在
+    // keytar.getPassword 上等用户点钥匙串授权框——那是一个没有上限的等待。
+    // 它一旦不被 withCap 封顶，下面两步一步都轮不到，Rust 侧到点就 SIGKILL。
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { withCap } = createShutdownStepCap(60);
+    const ran: string[] = [];
+
+    await withCap(new Promise<void>(() => {}), 'companion.stop');
+    await withCap((async () => { ran.push('reapChildProcesses'); })(), 'reapChildProcesses');
+    ran.push('closeAllDatabaseConnections');
+
+    expect(warn).toHaveBeenCalledWith('[shutdown] companion.stop timed out, skipping');
+    expect(ran).toEqual(['reapChildProcesses', 'closeAllDatabaseConnections']);
+  });
 });
 
 describe('接线守护：收尾步骤必须排在干净关库之前', () => {
@@ -198,6 +214,19 @@ describe('接线守护：收尾步骤必须排在干净关库之前', () => {
 
     expect(shutdownStart).toBeGreaterThan(-1);
     expect(capCreated).toBeGreaterThan(shutdownStart);
+  });
+
+  it('companion 停机排在预算创建之后并经 withCap 封顶——它是唯一会弹系统授权框的 pre-close 步骤', () => {
+    const capCreated = source.indexOf('createShutdownStepCap()');
+    const companion = source.indexOf('stopCompanion?.()');
+    const closeDb = source.indexOf('closeAllDatabaseConnections()');
+
+    expect(companion).toBeGreaterThan(-1);
+    // 排在 cap 之前 = 预算时钟根本没起跑，之后每一步的封顶都是空头支票
+    expect(companion).toBeGreaterThan(capCreated);
+    expect(companion).toBeLessThan(closeDb);
+    // 光排在后面不够，必须真被封顶：裸 await 一个可能永不 resolve 的 promise 等于没预算
+    expect(source).toMatch(/withCap\(\s*\n\s*stopCompanion\?\.\(\)[\s\S]{0,240}?'companion\.stop'/);
   });
 
   it('死文件 src/host/app/lifecycle.ts 已删，责任不再有第二个账本', () => {

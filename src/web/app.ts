@@ -244,10 +244,19 @@ export function createApp(deps: CreateAppDeps): express.Express {
     const db = getDatabase().getDb();
     if (db) {
       let approvals: CompanionApprovalService | undefined;
-      let library: CompanionLibraryService;
+      // gateway 与 library 互相依赖：gateway 的回调要调 library，library 又要拿 gateway。
+      // 用一个 const 容器打破这个环，而不是先声明后赋值的 let——后者读起来像「可能被改」，
+      // 实际只赋值一次，而且回调里读到的是同一个坑位。
+      const services: { library?: CompanionLibraryService } = {};
+      const requireLibrary = () => {
+        const library = services.library;
+        // 回调只在路由挂载之后才可能触发，那时 library 早已就位；真取不到就说明接线断了。
+        if (!library) throw new Error('COMPANION_LIBRARY_UNAVAILABLE');
+        return library;
+      };
       const gateway = new CompanionGateway(db, {
-        sessionProject: id => library.sessionProject(id),
-        read: (deviceId, request) => library.read(deviceId, request),
+        sessionProject: id => requireLibrary().sessionProject(id),
+        read: (deviceId, request) => requireLibrary().read(deviceId, request),
         refreshDecisions: () => approvals?.refresh(),
         decide: command => approvals?.respond(command) ?? { kind: 'rejected', reason: 'unsupported_action' },
         dispatch: (command) => {
@@ -259,7 +268,7 @@ export function createApp(deps: CreateAppDeps): express.Express {
             return { state: 'reconciling', result: { code: 'COMMAND_RECONCILING' } };
           }
           if (command.action.startsWith('session.')) {
-            void library.mutate(command).then(result => gateway.settleCommand(command.deviceId, command.commandId, 'accepted', result),
+            void requireLibrary().mutate(command).then(result => gateway.settleCommand(command.deviceId, command.commandId, 'accepted', result),
               error => gateway.settleCommand(command.deviceId, command.commandId, 'rejected', { code: error instanceof Error && error.message.startsWith('COMPANION_') ? error.message : 'COMPANION_OPERATION_FAILED' }));
             return { state: 'reconciling', result: { code: 'COMMAND_RECONCILING' } };
           }
@@ -287,8 +296,8 @@ export function createApp(deps: CreateAppDeps): express.Express {
           return { state: 'reconciling', result: { code: 'RUN_STARTING' } };
         },
       });
-      library = new CompanionLibraryService(gateway, id => !!runRegistry.resolve({ sessionId: id }));
-      void library.cleanup();
+      services.library = new CompanionLibraryService(gateway, id => !!runRegistry.resolve({ sessionId: id }));
+      void services.library.cleanup();
       if (getPendingPermissionRequests && deps.deliverCompanionPermission) {
         approvals = new CompanionApprovalService(gateway, getPendingPermissionRequests, deps.deliverCompanionPermission);
       }
@@ -306,7 +315,7 @@ export function createApp(deps: CreateAppDeps): express.Express {
       const lan = new LanCompanionManager(gateway, () => loadLanIdentity(resolveCodeAgentDataDir()), async () => {
         const sessions = await (await tryGetSessionManager())?.listSessions() ?? [];
         return sessions.map(session => ({ id: session.id, title: session.title }));
-      }, () => library.projects());
+      }, () => requireLibrary().projects());
       hasCompanionApprovalUi = (sessionId) => lan.hasApprovalUi(sessionId);
       handlers.set(COMPANION_MANAGE_CHANNEL, (_event, request) => lan.manage(request));
       // Web transport sends `companion:manage` to /api/companion/manage.

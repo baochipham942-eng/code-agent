@@ -12,6 +12,9 @@ import type { CompanionGateway } from './CompanionGateway';
 interface Invitation { id: string; psk: string; expiresAt: number; scope: string[] }
 interface Pending { noise: Noise; invite: Invitation; expiresAt: number }
 interface Channel { cipher: NoiseChannel; publicKey: string; expiresAt: number; lastSeenAt: number | null }
+/** Wire bodies stay `unknown`-per-field: every handler below validates before use. */
+interface HelloBody { mode?: unknown; inviteId?: unknown; frame?: unknown }
+interface ChannelBody { channelId?: unknown; frame?: unknown }
 
 /** Keeps the seq and envelope of the event it replaces; the payload only says what was lost. */
 function dropped(event: CompanionEvent, bytes: number): CompanionEvent {
@@ -49,13 +52,13 @@ export class LanCompanionServer {
     });
     app.use(express.json({ limit: L.maxFrameBytes * L.maxRequestRecords * 2 + 512, strict: true }));
     app.post('/v1/hello', (req, res) => {
-      try { res.json(this.hello(req.body)); } catch { res.status(403).json({ error: 'COMPANION_HANDSHAKE_REJECTED' }); }
+      try { res.json(this.hello(req.body as HelloBody)); } catch { res.status(403).json({ error: 'COMPANION_HANDSHAKE_REJECTED' }); }
     });
     app.post('/v1/finish', (req, res) => {
-      try { res.json(this.finish(req.body)); } catch { res.status(403).json({ error: 'COMPANION_HANDSHAKE_REJECTED' }); }
+      try { res.json(this.finish(req.body as ChannelBody)); } catch { res.status(403).json({ error: 'COMPANION_HANDSHAKE_REJECTED' }); }
     });
     app.post('/v1/exchange', async (req, res) => {
-      try { res.json(await this.exchange(req.body)); } catch { res.status(403).json({ error: 'COMPANION_CHANNEL_CLOSED' }); }
+      try { res.json(await this.exchange(req.body as ChannelBody)); } catch { res.status(403).json({ error: 'COMPANION_CHANNEL_CLOSED' }); }
     });
     // Body/parser failures must never echo ciphertext, invitation material, or stack traces.
     app.use((_error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
@@ -92,9 +95,12 @@ export class LanCompanionServer {
 
   hasApprovalUi(sessionId: string): boolean {
     const now = this.now();
-    return [...this.channels.values()].some(channel => channel.lastSeenAt !== null
-      && now >= channel.lastSeenAt && now - channel.lastSeenAt <= L.uiPresenceTtlMs && channel.expiresAt > now
-      && !!this.gateway.identityDevice(channel.publicKey) && this.gateway.canAccessSession(this.gateway.identityDevice(channel.publicKey)!.deviceId, sessionId));
+    return [...this.channels.values()].some(channel => {
+      if (channel.lastSeenAt === null || now < channel.lastSeenAt
+        || now - channel.lastSeenAt > L.uiPresenceTtlMs || channel.expiresAt <= now) return false;
+      const device = this.gateway.identityDevice(channel.publicKey);
+      return !!device && this.gateway.canAccessSession(device.deviceId, sessionId);
+    });
   }
 
   async stop(): Promise<void> {
@@ -115,7 +121,7 @@ export class LanCompanionServer {
     }
   }
 
-  private hello(body: { mode?: unknown; inviteId?: unknown; frame?: unknown }) {
+  private hello(body: HelloBody) {
     this.prune();
     if (this.now() - this.handshakeWindow >= L.handshakeTtlMs) { this.handshakeWindow = this.now(); this.handshakeCount = 0; }
     if (++this.handshakeCount > L.maxChannels || this.channels.size >= L.maxChannels || this.pending.size >= L.maxHandshakes) {
@@ -143,7 +149,7 @@ export class LanCompanionServer {
     return { channelId, frame, welcome: cipher.seal(device) };
   }
 
-  private finish(body: { channelId?: unknown; frame?: unknown }) {
+  private finish(body: ChannelBody) {
     this.prune();
     const id = typeof body.channelId === 'string' ? body.channelId : '';
     const pending = this.pending.get(id);
@@ -159,7 +165,7 @@ export class LanCompanionServer {
     return { welcome: cipher.seal(device) };
   }
 
-  private async exchange(body: { channelId?: unknown; frame?: unknown }) {
+  private async exchange(body: ChannelBody) {
     this.prune();
     const id = typeof body.channelId === 'string' ? body.channelId : '';
     const channel = this.channels.get(id);

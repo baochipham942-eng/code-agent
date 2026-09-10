@@ -1104,13 +1104,20 @@ async function main(): Promise<void> {
 
   // 优雅退出
   const shutdown = async () => {
-    await stopCompanion?.().catch(() => logger.warn('Companion LAN shutdown failed'));
     console.log('\nShutting down...');
     // 宽限期是有限的（Rust 侧 GRACEFUL_SHUTDOWN_TIMEOUT 到点就 SIGKILL），关库是这段
     // 时间里唯一不能省的一步——前面的清理任何一个卡住，都会把预算吃光，最后仍然被
     // 硬杀，留下陈旧 -wal/-shm。所以关库之前的步骤共用一个总预算、每步再各自封顶，
     // 超时就跳过，绝不挡住关库。预算从这一刻起算。
     const { withCap, stepMs } = createShutdownStepCap();
+    // companion 的 LAN 监听器最先撤，但必须在预算之内：restore() 可能正卡在
+    // keytar.getPassword 上（macOS 会弹钥匙串授权框等人点），无上限地等它 = 预算一秒
+    // 没走、关库永远轮不到、Rust 侧到点 SIGKILL，留下陈旧 -wal/-shm（下次启动 SIGBUS）。
+    // 任何 pre-close 步骤都不许无限期挡住 shutdown，会弹系统授权框的尤其不许。
+    await withCap(
+      stopCompanion?.().catch(() => logger.warn('Companion LAN shutdown failed')) ?? Promise.resolve(),
+      'companion.stop',
+    );
     // .dev-token 保留不删 — dev 下 kill/restart webServer 时 auth.ts 会复用
     // 同一个 token，避免 Tauri WebView 里固化的旧 token 失效踩 "Invalid auth
     // token"。若要轮换 token，手动删 .dev-token 后重启 webServer。

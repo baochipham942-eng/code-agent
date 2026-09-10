@@ -11,6 +11,9 @@ import type { CompanionCommand } from '../../shared/contract/companion';
 import type { CompanionGateway } from './CompanionGateway';
 import { MODEL_OVERRIDE_METADATA_KEY, persistModelOverride } from '../session/modelOverridePersistence';
 import { getModelSessionState } from '../session/modelSessionState';
+import { createLogger } from '../services/infra/logger';
+
+const logger = createLogger('CompanionLibrary');
 
 /** Mobile reuses the desktop repositories, model catalogue and session services. */
 export class CompanionLibraryService {
@@ -28,10 +31,12 @@ export class CompanionLibraryService {
 
   async read(deviceId: string, request: CompanionRead): Promise<CompanionLibrary | CompanionHistory> {
     const db = getDatabase();
+    const handle = db.getDb();
+    if (!handle) throw new Error('COMPANION_LIBRARY_UNAVAILABLE');
     const owner = getAuthService().getCurrentUser()?.id ?? null;
     if (request.kind === 'history') {
       if (!this.session(request.sessionId)) throw new Error('COMPANION_SESSION_NOT_FOUND');
-      const rows = db.getDb()!.prepare(`SELECT rowid AS cursor, id, role, content, timestamp FROM messages
+      const rows = handle.prepare(`SELECT rowid AS cursor, id, role, content, timestamp FROM messages
         WHERE session_id = ? AND ${visibleHistoryMessageWhere('messages')} AND role IN ('user','assistant')
           AND (? = 0 OR rowid < ?) ORDER BY rowid DESC LIMIT ?`).all(request.sessionId, request.offset, request.offset, L.syncPageSize) as
           { cursor: number; id: string; role: string; content: string; timestamp: number }[];
@@ -104,10 +109,15 @@ export class CompanionLibraryService {
   }
 
   async cleanup(): Promise<void> {
-    const db = getDatabase().getDb()!;
+    const db = getDatabase().getDb();
+    if (!db) { logger.warn('Companion cleanup skipped: database unavailable, jobs stay queued'); return; }
     for (const { session_id: id } of db.prepare('SELECT session_id FROM companion_session_cleanup').all() as { session_id: string }[]) {
       try { await getSessionManager().cleanupDeletedSession(id); db.prepare('DELETE FROM companion_session_cleanup WHERE session_id = ?').run(id); }
-      catch { /* Retain the cleanup job across Host restarts. The deletion receipt stays committed. */ }
+      catch (error) {
+        // Retain the cleanup job across Host restarts; the deletion receipt stays committed.
+        // Silence would hide a row that retries on every boot and never succeeds.
+        logger.warn('Companion deleted-session cleanup failed, will retry next boot', { sessionId: id, error });
+      }
     }
   }
 

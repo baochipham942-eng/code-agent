@@ -179,7 +179,6 @@
     "package:linux-web": "docker build --platform linux/amd64 -f scripts/ci/Dockerfile.linux-web-server -t agent-neo-web:linux-x64 .",
     "verify:linux-web:native": "node scripts/ci/verify-linux-native-runtime.cjs",
     "dev:web:server": "npm run build:web && node dist/web/webServer.cjs",
-    "web:start": "node dist/web/webServer.bundle.cjs",
     "dev:web": "concurrently -k \"npm run dev:web:server\" \"sleep 2 && npm run dev:renderer\"",
     "tauri:dev": "cargo tauri dev",
     "tauri:dev:before": "bash scripts/tauri-dev-before.sh",

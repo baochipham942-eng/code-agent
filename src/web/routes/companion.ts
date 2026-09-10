@@ -1,5 +1,15 @@
-import { Router } from 'express';
+import { Router, type Request } from 'express';
 import type { CompanionGateway } from '../../host/companion/CompanionGateway';
+
+/**
+ * The router guard below rejects every request without a device header, so a miss
+ * here is a wiring bug rather than untrusted input — surface it instead of asserting.
+ */
+function deviceOf(req: Request): string {
+  const deviceId = req.header('x-neo-companion-device')?.trim();
+  if (!deviceId) throw new Error('COMPANION_UNAUTHORIZED');
+  return deviceId;
+}
 
 export interface CompanionRouterDeps {
   gateway: CompanionGateway;
@@ -29,7 +39,8 @@ export function createCompanionRouter({ gateway, authenticate }: CompanionRouter
   });
 
   router.post('/commands', (req, res) => {
-    if (req.body?.deviceId !== req.header('x-neo-companion-device')?.trim()) {
+    const body = req.body as { deviceId?: unknown } | undefined;
+    if (body?.deviceId !== deviceOf(req)) {
       res.status(403).json({ success: false, error: { code: 'COMPANION_IDENTITY_MISMATCH' } });
       return;
     }
@@ -49,11 +60,11 @@ export function createCompanionRouter({ gateway, authenticate }: CompanionRouter
       res.status(400).json({ success: false, error: { code: 'INVALID_SYNC_CURSOR' } });
       return;
     }
-    res.json({ success: true, data: gateway.syncForDevice(req.header('x-neo-companion-device')!.trim(), epoch, afterSeq) });
+    res.json({ success: true, data: gateway.syncForDevice(deviceOf(req), epoch, afterSeq) });
   });
 
   router.get('/commands/:commandId', (req, res) => {
-    const command = gateway.commandStatus(req.header('x-neo-companion-device')!.trim(), String(req.params.commandId));
+    const command = gateway.commandStatus(deviceOf(req), String(req.params.commandId));
     res.json({ success: true, data: command ? { kind: 'found', command } : { kind: 'not_seen' } });
   });
 

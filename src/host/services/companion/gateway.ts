@@ -1,7 +1,7 @@
-export type CommandScope = { projectId: string; sessionId: string; deviceId: string };
-export type Command = CommandScope & { commandId: string; kind: 'send' | 'stop'; payload?: string };
-export type Receipt = { commandId: string; accepted: boolean; status: 'accepted' | 'duplicate' | 'rejected'; reason?: string };
-export type Approval = CommandScope & { approvalId: string; revision: number; decision?: 'approved' | 'rejected' };
+type CommandScope = { projectId: string; sessionId: string; deviceId: string };
+type Command = CommandScope & { commandId: string; kind: 'send' | 'stop'; payload?: string };
+type Receipt = { commandId: string; accepted: boolean; status: 'accepted' | 'duplicate' | 'rejected'; reason?: string };
+type Approval = CommandScope & { approvalId: string; revision: number; decision?: 'approved' | 'rejected' };
 
 export class CompanionGateway {
   private readonly receipts = new Map<string, Receipt>();

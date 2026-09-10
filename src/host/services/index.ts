@@ -36,5 +36,6 @@ export {
 // 透过顶层 barrel 暴露会引发 services ↔ tools/plugins/model 循环依赖。
 // 使用方请 `import ... from '@host/services/<domain>/<file>'` 直接引用。
 
-// Companion mobile gateway: scoped command ingress and approval revision guard.
-export * from './companion/gateway';
+// Companion gateway is loaded by the Host services graph; its public class is consumed by the integration adapter.
+import { CompanionGateway } from './companion/gateway';
+void CompanionGateway;

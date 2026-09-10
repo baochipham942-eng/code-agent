@@ -70,7 +70,9 @@ describe('local replay message presentation', () => {
     const replay = entry();
     const restored = restoreLocalMessageContent('session-story', replay, () => ({
       ...local,
-      metadata: { unrecorded: true },
+      // 投影侧可能带着账本从未记录过的字段，这正是本用例要喂进去的东西。
+      // 断言不变：restoreLocalMessageContent 必须把它们丢掉，只取 content。
+      metadata: { unrecorded: true } as Message['metadata'],
       toolCalls: [],
     }));
     expect(restored).toEqual({ ...replay.message, content: local.content });

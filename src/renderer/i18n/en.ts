@@ -10,6 +10,7 @@ import { voiceEn } from './voice';
 import { chatInputModelStrategyEn } from './chatInputModelStrategy';
 import { sidebarEn } from './sidebar';
 import { cronCenterEn } from './cronCenter';
+import { deliveryExperienceEn } from './deliveryExperience';
 import { previewWorkspaceEn } from './previewWorkspace';
 import { modalPrimitivesEn } from './modalPrimitives';
 import { userQuestionEn } from './userQuestion';
@@ -931,6 +932,7 @@ export const en = {
   ...sidebarEn,
   ...cronCenterEn,
   ...previewWorkspaceEn,
+  ...deliveryExperienceEn,
   ...modalPrimitivesEn,
   ...userQuestionEn,
   ...decisionCardEn,

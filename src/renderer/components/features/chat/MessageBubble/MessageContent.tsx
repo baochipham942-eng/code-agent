@@ -2,6 +2,7 @@
 // MessageContent - Markdown rendering using react-markdown
 // ============================================================================
 
+import { useI18n } from '../../../../hooks/useI18n';
 import React, { useMemo, useCallback, memo, useEffect, useRef } from 'react';
 import { Send, PenLine, Terminal, Eye, ExternalLink, Play } from 'lucide-react';
 import remend from 'remend';
@@ -86,6 +87,7 @@ function iactSendTextOf(node: React.ReactNode): string | null {
 
 // Main message content component
 export const MessageContent: React.FC<MessageContentProps> = memo(function MessageContent({ content, isUser, isStreaming = false, messageId, mediaContext, streamingTailStart }) {
+  const { t } = useI18n();
   const openPreview = useAppStore((state) => state.openPreview);
   const workingDirectory = useAppStore((state) => state.workingDirectory);
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
@@ -264,7 +266,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
       th({ children, style }) {
         return (
           <th
-            className="px-2 py-1.5 text-left text-[11px] font-medium text-zinc-500"
+            className="min-w-[4em] px-2 py-1.5 text-left text-[11px] font-medium text-zinc-500"
             style={style}
           >
             {children}
@@ -421,22 +423,20 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
 
         // IACT: [command](!run) — click to execute shell command
         if (href === '!run') {
-          const text = typeof children === 'string' ? children
-            : Array.isArray(children) ? children.map(c => typeof c === 'string' ? c : '').join('')
-            : String(children ?? '');
-          return (
-            <button
-              type="button"
-              onClick={() => {
-                window.dispatchEvent(new CustomEvent('iact:run', { detail: text }));
-              }}
-              className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-md bg-emerald-500/10 text-badge-success hover:bg-emerald-500/20 hover:text-badge-success border border-badge-success/20 hover:border-badge-success/40 transition-all cursor-pointer text-sm font-medium font-mono"
-              title="点击执行命令"
-            >
-              <Terminal className="w-3 h-3 opacity-60" />
-              {children}
+          const plainText = (value: React.ReactNode): string => React.Children.toArray(value).map((child) =>
+            typeof child === 'string' || typeof child === 'number' ? String(child)
+              : React.isValidElement<{ children?: React.ReactNode }>(child) ? plainText(child.props.children) : '',
+          ).join('');
+          const text = plainText(children);
+          return <span className="my-2 inline-flex max-w-full flex-col gap-2 rounded-lg border border-zinc-700 bg-zinc-900 p-3 align-top">
+            <span className="whitespace-pre-wrap break-all font-mono text-xs text-zinc-300">{text}</span>
+            <button type="button" title={t.deliveryExperience.runHint}
+              onClick={() => window.dispatchEvent(new CustomEvent('iact:run', { detail: text }))}
+              className="inline-flex w-fit items-center gap-2 rounded-md border border-zinc-600 px-3 py-1.5 text-sm text-zinc-200 hover:bg-zinc-800">
+              <Terminal className="h-3.5 w-3.5" />
+              {/\bpython[23]?\b.*\.py\b/.test(text) ? t.deliveryExperience.runScript : t.deliveryExperience.runCommand}
             </button>
-          );
+          </span>;
         }
 
         // IACT: [filepath](!open) — click to open file in editor/Finder
@@ -447,16 +447,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
           return (
             <button
               type="button"
-              onClick={() => {
-                // host openPath 只接受绝对路径；相对路径在调用方先按工作目录解析。
-                let filePath = text;
-                if (filePath && !filePath.startsWith('/') && !filePath.startsWith('~')) {
-                  filePath = workingDirectory
-                    ? `${workingDirectory.replace(/\/+$/, '')}/${filePath.replace(/^\.?\//, '')}`
-                    : filePath;
-                }
-                void window.domainAPI?.invoke('workspace', 'openPath', { filePath });
-              }}
+              onClick={() => void handleOpenFile(text)}
               className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-md bg-blue-500/10 text-badge-info hover:bg-blue-500/20 hover:text-badge-info border border-badge-info/20 hover:border-badge-info/40 transition-all cursor-pointer text-sm font-medium"
               title="打开文件"
             >
@@ -580,7 +571,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
         );
       },
     }),
-    [handleOpenFile, handleOpenHttpLink, handlePreviewHtml, isStreaming, mediaContext?.sessionId, mediaContext?.turnId, mediaContext?.messageId, messageId]
+    [t, handleOpenFile, handleOpenHttpLink, handlePreviewHtml, isStreaming, mediaContext?.sessionId, mediaContext?.turnId, mediaContext?.messageId, messageId]
   );
 
   // For user messages, render as plain text (no markdown processing)

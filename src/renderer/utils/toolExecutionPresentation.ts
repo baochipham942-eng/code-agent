@@ -1,3 +1,4 @@
+import { toolPreflightCopy } from './toolPreflightPresentation';
 import type { ToolCall } from '@shared/contract';
 import { AgentFailureCode, inferAgentFailureCode } from '@shared/contract';
 import type { ToolCapabilitySource } from '../types/runWorkbench';
@@ -329,6 +330,8 @@ export function humanizeToolError(
   t: Translations,
   metadata?: Record<string, unknown> | null,
 ): HumanizedToolError | null {
+  const preflight = toolPreflightCopy({ name: _toolName ?? '', result: { toolCallId: '', success: false, error, metadata: metadata ?? undefined } }, t);
+  if (preflight) return { summary: preflight.action, detail: preflight.reason };
   if (isToolInterruptionPlaceholder(error)) {
     const outcome = t.outcomeWords[resolveToolInterruptionPlaceholderOutcomeKey(error)].badge;
     return {
@@ -449,6 +452,8 @@ export function humanizeToolFailureReason(toolCall: Pick<ToolCall, 'name' | 'res
   const result = toolCall.result;
   const metadata = result?.metadata;
   const error = result?.error || (typeof result?.output === 'string' ? result.output : undefined);
+  const preflight = toolPreflightCopy(toolCall, t);
+  if (preflight) return preflight.reason;
   const mappedFailureCode = mapToolFailureCodeCopy(metadata, t);
   if (mappedFailureCode) return mappedFailureCode;
 

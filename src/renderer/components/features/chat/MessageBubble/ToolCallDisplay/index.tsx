@@ -1,3 +1,4 @@
+import { getToolPreflightKind, toolPreflightCopy } from '../../../../../utils/toolPreflightPresentation';
 // ============================================================================
 // ToolCallDisplay - Claude Code terminal style tool execution display
 // StatusIndicator (braille spinner) + ToolName + params + ⎿ result summary
@@ -20,6 +21,7 @@ import {
 } from '../../../../../utils/browserComputerActionPreview';
 import {
   humanizeToolError,
+  humanizeToolFailureReason,
   isEscalatedToolError,
 } from '../../../../../utils/toolExecutionPresentation';
 import type { Translations } from '../../../../../i18n';
@@ -123,7 +125,7 @@ export interface ToolReceiptPresentation {
 }
 
 export function ToolCallDisplay({
-  toolCall,
+  toolCall: originalToolCall,
   index,
   total: _total,
   compact = false,
@@ -132,6 +134,10 @@ export function ToolCallDisplay({
   interruptionReason,
   receipt,
 }: ToolCallDisplayProps) {
+  const { t } = useI18n();
+  const toolCall = useMemo(() => getToolPreflightKind(originalToolCall) === 'question' && originalToolCall.result
+    ? { ...originalToolCall, result: { ...originalToolCall.result, success: false, error: originalToolCall.result.error ?? originalToolCall.result.output } }
+    : originalToolCall, [originalToolCall]);
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
   const processingSessionIds = useAppStore((state) => state.processingSessionIds);
   const pendingPermissionRequest = useAppStore((state) => state.pendingPermissionRequest);
@@ -278,17 +284,32 @@ export function ToolCallDisplay({
               awaitingApproval={awaitingApproval}
               interruptionReason={interruptionReason}
               showDetailName={expanded}
-              hideStatusLabel={Boolean(receipt)}
+              hideStatusLabel={Boolean(receipt) || status === 'error'}
             />}
         {receipt && (
           <ToolReceiptMeta receipt={receipt} />
         )}
-        {!receipt && toolCall.result && !delegationPresentation && !expanded && !isBashTool(toolCall) && status !== 'interrupted' && (
+        {!receipt && status !== 'error' && toolCall.result && !delegationPresentation && !expanded && !isBashTool(toolCall) && status !== 'interrupted' && (
           <span className="min-w-0 max-w-[220px] shrink truncate text-xs text-zinc-500">
             <ResultSummary toolCall={toolCall} inline />
           </span>
         )}
       </div>
+
+      {status === 'error' && !delegationPresentation && (
+        <div className="ml-6 mt-1 whitespace-normal break-words text-xs leading-5 text-zinc-400">
+          {toolPreflightCopy(toolCall, t)?.reason ?? humanizeToolFailureReason(toolCall, t)}
+          {toolCall.result?.metadata?.recovered === true && <span className="ml-2 text-badge-success">{t.deliveryExperience.recovered}</span>}
+        </div>
+      )}
+      {getToolPreflightKind(toolCall) === 'question' && (
+        <button type="button" className="ml-6 mt-2 rounded border border-zinc-700 px-3 py-1.5 text-xs text-zinc-200 hover:bg-zinc-800"
+          onClick={() => {
+            const questions = toolCall.arguments?.questions as Array<{ question?: string }> | undefined;
+            const question = questions?.map((item) => item.question).filter(Boolean).join('\n') ?? '';
+            window.dispatchEvent(new CustomEvent('iact:add', { detail: t.deliveryExperience.continueDraft.replace('{question}', question) }));
+          }}>{t.deliveryExperience.continueQuestion}</button>
+      )}
 
       {delegationPresentation && <DelegationReceipt presentation={delegationPresentation} />}
 

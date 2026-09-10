@@ -237,6 +237,13 @@ export const App: React.FC = () => {
   const { showAuthModal, showPasswordResetModal, isLoading: isAuthLoading } = useAuthStore();
   const sentryUserId = useAuthStore((state) => state.user?.id ?? null);
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
+  const focusSessionRef = useRef(currentSessionId);
+  useEffect(() => {
+    if (focusSessionRef.current !== currentSessionId) {
+      focusSessionRef.current = currentSessionId;
+      setWorkbenchFocused(false);
+    }
+  }, [currentSessionId, setWorkbenchFocused]);
   useSurfaceExecutionEffects(currentSessionId);
   const currentSessionWorkingDirectory = useSessionStore((state) =>
     state.sessions.find((item) => item.id === state.currentSessionId)?.workingDirectory ?? null);

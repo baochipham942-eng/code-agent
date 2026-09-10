@@ -1,0 +1,38 @@
+export const deliveryExperienceZh = {
+  deliveryExperience: {
+    product: '成品', changes: '本次修改', currentFile: '当前文件', backToChat: '返回对话',
+    generatedLines: '已生成 · {count} 行', addedLines: '+{count} 行', removedLines: '-{count} 行',
+    runCommand: '运行命令', runScript: '运行生成脚本', runHint: '运行前仍按当前权限规则检查',
+    blocked: '未执行', notWritten: '未写入', notEdited: '未修改', notRead: '未读取',
+    questionUnavailable: '未能向你提问',
+    questionReason: '当时的运行环境不支持交互，问题没有送达你。',
+    continueQuestion: '在对话中继续',
+    continueDraft: '请在当前对话中重新向我确认这个问题；涉及执行的操作仍需按权限规则审批：\n{question}',
+    repairReason: '正在修复另一份成品，这一步超出当前允许的修复范围。',
+    approvalUnavailable: '当前运行环境无法请求审批，这一步没有执行。',
+    approvalRequired: '这一步需要人工确认，当时未能自动批准。',
+    readRequired: '需要先读取文档，才能修改。',
+    errorDetails: '已有错误记录，展开详情查看具体原因。',
+    blockedCommands: '{count} 条命令未执行', blockedSteps: '{count} 个步骤未执行',
+    recovered: '后续修改已成功', checkCharacters: '检查文档中的异常字符',
+  },
+};
+export const deliveryExperienceEn: typeof deliveryExperienceZh = {
+  deliveryExperience: {
+    product: 'Deliverable', changes: 'Changes', currentFile: 'Current file', backToChat: 'Back to chat',
+    generatedLines: 'Created · {count} lines', addedLines: '+{count} lines', removedLines: '-{count} lines',
+    runCommand: 'Run command', runScript: 'Run generation script', runHint: 'Current permission checks still apply',
+    blocked: 'Not executed', notWritten: 'Not written', notEdited: 'Not modified', notRead: 'Not read',
+    questionUnavailable: 'Question could not be delivered',
+    questionReason: 'The runtime used at the time did not support interaction; this question never reached you.',
+    continueQuestion: 'Continue in chat',
+    continueDraft: 'Please ask me to confirm this question in the current conversation. Execution still requires the usual permission checks:\n{question}',
+    repairReason: 'Another deliverable is being repaired; this step is outside the allowed repair scope.',
+    approvalUnavailable: 'That runtime could not request approval, so this step was not executed.',
+    approvalRequired: 'This step requires human confirmation and could not be approved automatically.',
+    readRequired: 'Read the document before modifying it.',
+    errorDetails: 'An error was recorded. Expand the details for the original reason.',
+    blockedCommands: '{count} commands not executed', blockedSteps: '{count} steps not executed',
+    recovered: 'A later edit succeeded', checkCharacters: 'Check the document for invalid characters',
+  },
+};

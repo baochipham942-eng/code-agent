@@ -16,6 +16,7 @@ const database = vi.hoisted(() => ({
     turnCount: state.messages.get(sessionId)?.filter((message) => message.role === 'user').length ?? 0,
   })),
   getDb: vi.fn(() => null),
+  getMessageById: vi.fn(() => null as any),
   getRecentMessages: vi.fn((sessionId: string, messageLimit: number) => (
     (state.messages.get(sessionId) ?? []).slice(-messageLimit)
   )),
@@ -63,6 +64,7 @@ vi.mock('../../../../src/host/services/infra/toolCache', () => ({
 import { getContextHealthService } from '../../../../src/host/context/contextHealthService';
 import { resolveContextHealthForSession } from '../../../../src/host/ipc/contextHealth.ipc';
 import { SessionManager } from '../../../../src/host/services/infra/sessionManager';
+import { sanitizeConversationMessageSnapshot } from '../../../../src/host/services/core/conversationMessageSnapshot';
 
 function messages(count: number) {
   return Array.from({ length: count }, (_, index) => ({
@@ -147,6 +149,21 @@ describe('SessionManager cache messageLimit hydration', () => {
 
     expect(restored?.messages).toEqual([]);
     expect(database.replayConversationBranchForLoad).not.toHaveBeenCalled();
+  });
+
+  it('restores local diagram content after the ledger selects visible messages', async () => {
+    const sessionId = 'restore-story-diagram';
+    const local = {
+      id: 'story-message', role: 'assistant' as const, timestamp: 1,
+      content: 'Journey\n```mermaid\nflowchart LR\nA --> B\n```',
+    };
+    state.messages.set(sessionId, [sanitizeConversationMessageSnapshot(local)]);
+    database.getMessageById.mockReturnValueOnce(local);
+    const restored = await new SessionManager().restoreSession(sessionId);
+    expect(restored?.messages[0].content).toBe(local.content);
+    expect(database.getMessageById).toHaveBeenCalledWith(sessionId, local.id);
+    expect(state.messages.get(sessionId)?.[0].content).not.toContain('A --> B');
+    expect(database.getRecentMessages).not.toHaveBeenCalled();
   });
 });
 

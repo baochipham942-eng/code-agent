@@ -1,3 +1,4 @@
+import { getToolPreflightKind, toolPreflightCopy } from '../../../utils/toolPreflightPresentation';
 // ============================================================================
 // ToolStepGroup - 把相邻的工具调用折成一行 "Explored 2 files, 2 lists"
 // 默认折叠，点击展开显示原 ToolCallDisplay 列表
@@ -66,7 +67,7 @@ function resolveTraceToolStepStatus(
 }
 
 export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
-  nodes,
+  nodes: sourceNodes,
   sessionId,
   defaultExpanded = false,
   isStreamingTurn = false,
@@ -74,6 +75,13 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
   receiptTimestamp,
 }) => {
   const { t } = useI18n();
+  const nodes = useMemo(() => sourceNodes.map((node) => {
+    const tc = node.toolCall;
+    if (!tc || getToolPreflightKind({ name: tc.name, result: tc.result === undefined ? undefined : {
+      toolCallId: tc.id, success: tc.success ?? true, output: tc.result, metadata: tc.metadata,
+    } }) !== 'question') return node;
+    return { ...node, toolCall: { ...tc, success: false } };
+  }), [sourceNodes]);
   const sendPrompt = useMessageActionStore((state) => state.sendPrompt);
   const resolvedPermissionRequests = useAppStore((state) => (
     sessionId ? state.resolvedPermissionRequests?.[sessionId] : undefined
@@ -104,7 +112,10 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
           tc,
           isToolCallAwaitingApproval(tc.id, sessionId, permissionState),
         );
-        const step = humanizeToolStep(
+        const preflight = toolPreflightCopy({ name: tc.name, arguments: tc.args, result: tc.result === undefined ? undefined : {
+          toolCallId: tc.id, success: tc.success ?? true, error: tc.success === false ? tc.result : undefined, output: tc.result, metadata: tc.metadata,
+        } }, t);
+        const step = preflight?.action ?? humanizeToolStep(
           tc.name,
           tc.args as Record<string, unknown> | undefined,
           t,
@@ -121,29 +132,35 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
         return `${connector} · ${step}`;
       }
     }
-    const names = streamVisibleNodes
-      .map((n) => n.toolCall?.name)
-      .filter((x): x is string => !!x);
+    const names = streamVisibleNodes.flatMap((node) => node.toolCall ? [node.toolCall.name] : []);
     const connectorIds = new Set(names.map(findConnectorIdForToolName).filter(Boolean));
-    if (connectorIds.size === 1 && names.every((name) => findConnectorIdForToolName(name))) {
-      const connector = getHumanToolLabel({
-        toolName: names[0],
-        labels: t.receiptPresentation.humanToolLabels,
-      });
+    if (connectorIds.size === 1 && names.every((name) => findConnectorIdForToolName(name))
+      && streamVisibleNodes.every((node) => node.toolCall?.success === true)) {
+      const connector = getHumanToolLabel({ toolName: names[0], labels: t.receiptPresentation.humanToolLabels });
       return `${connector} · ${t.toolGroup.executedSteps.replace('{count}', String(names.length))}`;
     }
-    const groupStatus: ToolStepStatus = streamVisibleNodes.some((node) => (
-      node.toolCall
-      && node.toolCall.result === undefined
-      && isToolCallAwaitingApproval(node.toolCall.id, sessionId, permissionState)
-    ))
-      ? 'pending-approval'
-      : streamVisibleNodes.some((node) => node.toolCall?.result === undefined)
-        ? 'running'
-        : streamVisibleNodes.every((node) => node.toolCall?.success === false)
-          ? 'failed'
-          : 'completed';
-    return humanizeToolGroupLabel(names, t, groupStatus);
+    const byStatus = new Map<ToolStepStatus, string[]>();
+    let blockedCommands = 0;
+    let blockedSteps = 0;
+    for (const node of streamVisibleNodes) {
+      const tc = node.toolCall;
+      if (!tc) continue;
+      const preflight = getToolPreflightKind({ name: tc.name, result: tc.result === undefined ? undefined : {
+        toolCallId: tc.id, success: tc.success ?? true, error: tc.success === false ? tc.result : undefined, output: tc.result, metadata: tc.metadata,
+      } });
+      if (preflight) {
+        if (/^(bash|run_command|execute_command)$/i.test(tc.name)) blockedCommands += 1;
+        else blockedSteps += 1;
+        continue;
+      }
+      const stepStatus = resolveTraceToolStepStatus(tc, isToolCallAwaitingApproval(tc.id, sessionId, permissionState));
+      byStatus.set(stepStatus, [...(byStatus.get(stepStatus) ?? []), tc.name]);
+    }
+    return [
+      ...Array.from(byStatus, ([stepStatus, names]) => humanizeToolGroupLabel(names, t, stepStatus)),
+      blockedCommands ? t.deliveryExperience.blockedCommands.replace('{count}', String(blockedCommands)) : '',
+      blockedSteps ? t.deliveryExperience.blockedSteps.replace('{count}', String(blockedSteps)) : '',
+    ].filter(Boolean).join('；');
   }, [permissionState, sessionId, streamVisibleNodes, t]);
 
   const status = useMemo<'pending-approval' | 'streaming' | 'partial' | 'error' | 'ok'>(() => {
@@ -339,7 +356,6 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
     return { ...runningToolCall, liveOutput: tailTruncateLiveOutput(runningToolCall.liveOutput) };
   }, [tier, runningToolCall]);
 
-  const resultSummary = useMemo(() => buildToolGroupHeadSummary(toolCalls, t), [toolCalls, t]);
   const failureReason = useMemo(() => {
     const failedCalls = toolCalls.filter((toolCall) => toolCall.result?.success === false);
     if (failedCalls.length === 0) return null;
@@ -447,36 +463,27 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
             aria-label={t.toolGroup.statusPartial}
           />
         )}
-        {/* 状态词必须与右侧标签用同一套字体栈（都 font-mono）。两段本来就都是 11px，
-            但状态词原先继承 body 的 Inter、标签是 JetBrains Mono；两个栈的中文回退字体
-            度量不同，同一行里基线实测差 1px（真实组件 web 量：现状 −1px，统一字体后 0px）。
-            这不是 align-items 的问题——改 items-baseline 对它无效，必须统一字体栈。 */}
-        {status !== 'ok' && (
-          <span className={`flex-shrink-0 font-mono ${getToolGroupStatusClass(status, hasEscalatedError)}`}>
-            {permissionOutcome?.label ?? getToolGroupStatusLabel(status, t)}
-            {(status === 'partial' || status === 'error') && (
-              <span className="ml-1 text-zinc-600">
-                · {permissionOutcome?.reason ?? failureReason ?? t.toolStepHumanize.failureReasonMissing}
-              </span>
-            )}
-          </span>
-        )}
-        <span className="min-w-0 flex-1 truncate font-mono">{label}</span>
+        <span className="min-w-0 flex-1">
+          <span className="block break-words text-xs leading-5">{status === 'pending-approval' ? `${t.toolStepHumanize.pendingApprovalStatus} · ` : status === 'streaming' ? `${t.toolGroup.statusRunning} · ` : ''}{label}</span>
+          {(status === 'partial' || status === 'error') && (
+            <span className={`mt-0.5 block whitespace-normal break-words text-xs leading-5 ${hasEscalatedError ? 'text-badge-danger' : 'text-zinc-400'}`}>
+              {status === 'partial' ? `${t.toolGroup.statusPartial} · ` : ''}
+              {failureReason ?? permissionOutcome?.reason ?? t.toolStepHumanize.failureReasonMissing}
+            </span>
+          )}
+        </span>
         {recoveredCount > 0 && (
           <span
-            className="flex-shrink-0 rounded bg-white/[0.03] px-1.5 py-0.5 text-[10px] text-zinc-500 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100"
+            className="flex-shrink-0 rounded bg-white/[0.03] px-1.5 py-0.5 text-[10px] text-zinc-500"
             title={t.toolGroup.recoveredTitle}
           >
             {t.toolGroup.recovered}
           </span>
         )}
-        {status !== 'ok' && resultSummary && resultSummary !== failureReason && !permissionOutcome && (
-          <span className="hidden max-w-[220px] truncate text-zinc-600 sm:inline">{resultSummary}</span>
-        )}
         {status !== 'ok' && outputCount > 0 && (
           <span className="flex-shrink-0 rounded bg-white/[0.03] px-1.5 py-0.5 text-[10px] text-zinc-500">{t.toolGroup.outputCount.replace('{count}', String(outputCount))}</span>
         )}
-        {totalDuration && (
+        {totalDuration && ariaExpanded && (
           <span
             className="min-w-[4ch] flex-shrink-0 text-right text-[10px] text-zinc-600"
             title={t.toolGroup.durationTitle}
@@ -666,22 +673,4 @@ function isEmptySearchResult(toolCall: ToolCall): boolean {
   const output = toolCall.result?.output;
   if (typeof output !== 'string') return false;
   return /(?:No matches found|No files matched the pattern|No matches|0 matches)/i.test(output.trim());
-}
-
-function getToolGroupStatusLabel(status: 'pending-approval' | 'streaming' | 'partial' | 'error' | 'ok', t: Translations): string {
-  if (status === 'pending-approval') return t.toolStepHumanize.pendingApprovalStatus;
-  if (status === 'streaming') return t.toolGroup.statusRunning;
-  if (status === 'partial') return t.outcomeWords['completed-with-warnings'].badge.label;
-  if (status === 'error') return t.outcomeWords['failed-tool'].badge.label;
-  return t.outcomeWords.completed.badge.label;
-}
-
-// hasEscalatedError=false（探索性失败，非用户需介入）一律用中性色，不顶红/顶黄——
-// 跟成功行视觉权重接近，agent 试错不该喊给用户看。
-function getToolGroupStatusClass(status: 'pending-approval' | 'streaming' | 'partial' | 'error' | 'ok', hasEscalatedError: boolean): string {
-  if (status === 'pending-approval' || status === 'streaming') return 'text-badge-info';
-  if (!hasEscalatedError && (status === 'partial' || status === 'error')) return 'text-zinc-500';
-  if (status === 'partial') return 'text-badge-warning';
-  if (status === 'error') return 'text-badge-danger';
-  return 'text-badge-success';
 }

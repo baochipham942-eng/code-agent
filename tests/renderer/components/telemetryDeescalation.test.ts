@@ -52,11 +52,11 @@ describe('ToolStepGroup 遥测呈现', () => {
     expect(toolStepGroup).toMatch(/t\.toolGroup\.recoveredTitle[\s\S]{0,200}group-hover:opacity-100 group-focus-visible:opacity-100|group-hover:opacity-100 group-focus-visible:opacity-100[\s\S]{0,200}t\.toolGroup\.recoveredTitle/);
   });
 
-  // 这条钉的是「时长不做 hover 淡入」——组头展开后它就该稳稳在那儿，右对齐、固定最小宽度，
-  // 不像「已恢复」pill 那样要 hover 才浮出。原标题写的是「常显」，而现在时长只在组头展开后
-  // 才渲染（totalDuration && ariaExpanded），折叠态收窄成一句纯内容摘要；断言本身只匹配
-  // className、不涉及那个条件，所以一直是绿的——标题按实情改，别让它继续声称一个已被推翻的验收。
-  it('组级时长不做 hover 淡入：展开后右对齐常驻并保留固定最小宽度', () => {
+  // 这条钉的是「时长不做 hover 淡入」——它就该稳稳在那儿，右对齐、固定最小宽度，
+  // 不像「已恢复」pill 那样要 hover 才浮出。（上一轮我把标题改成「展开后…」，但同一轮又把
+  // `totalDuration && ariaExpanded` 改回了无条件渲染，标题于是又跟实情对不上——
+  // 正是这条自己要防的坑，踩了两次。现在组头无条件渲染时长，标题按这个写。）
+  it('组级时长常显、右对齐并保留固定最小宽度，不做 hover 淡入', () => {
     expect(toolStepGroup).toMatch(/min-w-\[4ch\][^"\n]*text-right[^"\n]*"\s*\n\s*title=\{t\.toolGroup\.durationTitle\}/);
     expect(toolStepGroup).not.toMatch(/opacity-0[^"\n]*group-hover:opacity-100[^\n]*t\.toolGroup\.durationTitle/);
   });

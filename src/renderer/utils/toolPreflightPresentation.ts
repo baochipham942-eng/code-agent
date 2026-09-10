@@ -42,7 +42,13 @@ export function getToolPreflightKind(tool: Pick<ToolCall, 'name' | 'result'>): P
     || /CLI 模式无法交互/.test(text)
   )) return 'question';
   if (result.success) return null;
-  if ((metadata?.artifactRepairGuard as { blocked?: boolean } | undefined)?.blocked || /Artifact repair mode is active/i.test(text)) return 'repair';
+  // 只认结构化的 artifactRepairGuard.blocked，不再对自由文本匹配「Artifact repair mode
+  // is active」——那句话对 Bash 来说就是被执行程序自己的 stdout/stderr。在本仓库跑
+  // `npx vitest run tests/renderer/components/` 这类命令，输出里就带着这句原文（夹具里有），
+  // 命令真跑了、真 exit 1、可能已产生副作用，却会被渲染成「未执行 · 正在修复另一份成品」，
+  // 真实失败原因被顶掉。这条旁路还是纯冗余：产出该短语的 host 路径都挂了结构化字段
+  // （artifactRepairProjection.ts:387 就按 metadata.artifactRepairGuard.blocked 判定）。
+  if ((metadata?.artifactRepairGuard as { blocked?: boolean } | undefined)?.blocked) return 'repair';
   // hostReason is host-attached structured metadata (never parsed from program output); a loose
   // field read is deliberate — we only ever compare `.code` against the known enum below, so a
   // malformed/partial payload just fails to match rather than needing full schema validation.

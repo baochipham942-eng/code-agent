@@ -20,6 +20,15 @@ describe('demo acceptance: truthful historical presentation', () => {
     expect(humanizeToolFailureReason(tool, en)).toBe(en.deliveryExperience.repairReason);
     expect(tool.result?.error).toContain('/workspace/report.html');
   });
+  // ai-review #1741 Important：repair 档只认结构化 artifactRepairGuard.blocked。在本仓库跑
+  // 一条真实失败的命令，输出里就可能带着「Artifact repair mode is active」这句原文
+  // （本文件上一条用例的夹具里就有），命令真跑了、真 exit 1，不能被说成「未执行」。
+  it('a real Bash failure is not read as a repair block just because its output quotes that phrase', () => {
+    const tool = failed('Bash', 'FAIL tests/x.test.ts\nArtifact repair mode is active for /workspace/report.html\n1 failed', { exitCode: 1 });
+    expect(getToolPreflightKind(tool)).toBeNull();
+    expect(toolPreflightCopy(tool, zh)).toBeNull();
+    expect(humanizeToolFailureReason(tool, zh)).toBe(zh.toolStepHumanize.failureCode.replace('{code}', '1'));
+  });
   it('distinguishes automatic approval failure from a user denial', () => {
     const tool = failed('Write', 'not approved', { failureCode: 'permission-denied', hostReason: { code: 'PERMISSION_DENIED_NO_APPROVAL_UI' } });
     expect(toolPreflightCopy(tool, zh)).toEqual({ action: '未写入 · report.md', reason: zh.deliveryExperience.approvalUnavailable });

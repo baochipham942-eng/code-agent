@@ -63,7 +63,12 @@ function findMarkdownLinkSpans(text: string): Array<readonly [number, number]> {
   // Scanned once per text segment and passed down — the per-match rescan it replaces was
   // O(matches x segment length), redone for every streaming chunk.
   const spans: Array<readonly [number, number]> = [];
-  for (const link of text.matchAll(/\[(?:[^\]\n]|\\.)*\]\([^\n]*?\)/g)) {
+  // 标签段只用 [^\]\n]*：不要写成 (?:[^\]\n]|\\.)*——那两个分支对反斜杠是歧义的
+  // （`\` 既能被 [^\]\n] 单独吃掉、也能被 \\. 连同下一字符吃掉），行内出现未闭合的 `[`
+  // 时整体匹配失败，引擎穷举切分，步数随反斜杠个数 2^k 增长。一行 LaTeX 公式
+  // （`\[ \sum \alpha … \]`）或一条 Windows 路径就能把 renderer 主线程卡死几十秒，
+  // 且流式期间每个 chunk 重跑一次。反斜杠本来就被 [^\]\n] 正常吃掉，不需要那个分支。
+  for (const link of text.matchAll(/\[[^\]\n]*\]\([^\n]*?\)/g)) {
     // matchAll always sets `index` for a real match; guard instead of `!` (eslint no-non-null-assertion).
     const start = link.index;
     if (start === undefined) continue;

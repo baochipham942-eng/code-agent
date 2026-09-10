@@ -776,7 +776,9 @@ export const PreviewPanel: React.FC = () => {
           title={previewFilePath ?? activeTab.title}
           aria-label={pv.copyPath}
         >
-          {isVirtual ? activeTab.title : previewFilePath?.split(/[\\/]/).pop()} · {t.deliveryExperience.currentFile}
+          {isVirtual || !previewFilePath
+            ? activeTab.title
+            : `${previewFilePath.split(/[\\/]/).pop()} · ${t.deliveryExperience.currentFile}`}
         </button>
         {activeTab.deliverableStatus && <DeliverableStatusBadge status={activeTab.deliverableStatus} />}
         {directPublishedVersion && (

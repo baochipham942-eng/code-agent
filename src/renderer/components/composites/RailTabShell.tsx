@@ -166,7 +166,7 @@ export const RailTabShell: React.FC<RailTabShellProps> = ({
       {/* 专注开关：条右端固定槽位，两态同住一个位置（只换图标/称谓，不搬家）。
           focusLabel 判空兜底：有开关必须有称谓（IconButton 强制 aria-label）。 */}
       {onToggleFocus && focusLabel && (
-        focused ? <Button size="sm" variant="ghost" data-testid="rail-tab-shell-focus-toggle" aria-pressed={true} aria-label={focusLabel} onClick={onToggleFocus} className="shrink-0 gap-1.5"><Minimize2 className="h-3.5 w-3.5" />{focusLabel}</Button> : <IconButton
+        focused ? <Button size="sm" variant="ghost" data-testid="rail-tab-shell-focus-toggle" aria-pressed={true} aria-label={focusLabel} title={focusLabel} onClick={onToggleFocus} className="shrink-0 gap-1.5"><Minimize2 className="h-3.5 w-3.5" />{focusLabel}</Button> : <IconButton
           size="sm"
           variant="ghost"
           data-testid="rail-tab-shell-focus-toggle"

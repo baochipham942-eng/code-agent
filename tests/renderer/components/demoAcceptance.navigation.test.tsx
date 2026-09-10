@@ -3,6 +3,7 @@ import React from 'react';
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MessageContent } from '../../../src/renderer/components/features/chat/MessageBubble/MessageContent';
+import { wrapFilePathsInBackticks, wrapTicketsAsLinks } from '../../../src/renderer/components/features/chat/MessageBubble/filePathProcessor';
 import { FileArtifactCard } from '../../../src/renderer/components/features/chat/MessageBubble/FileArtifactCard';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { useWorkbenchFocusStore } from '../../../src/renderer/stores/workbenchFocusStore';
@@ -37,6 +38,21 @@ describe('deliverable and command navigation', () => {
       expect((receive.mock.calls[0][0] as CustomEvent).detail).toBe(command);
     } finally { window.removeEventListener('iact:run', receive); }
   });
+  // ai-review #1739 Important：链接扫描正则里 (?:[^\]\n]|\\.)* 的两个分支对反斜杠歧义，
+  // 行内有未闭合的 `[` 时整体匹配失败会让引擎穷举切分，步数随反斜杠个数 2^k 增长。这两条
+  // 输入在旧正则下实测 7~38 秒（renderer 主线程同步跑，流式期间每 chunk 重跑一次 = 界面卡死）。
+  // 用挂钟时间钉住：只要有人把歧义分支写回来，这条就红。
+  it.each([
+    ['未闭合 [ 加一串反斜杠转义', '[' + '\\x'.repeat(28)],
+    ['行内 LaTeX 公式', 'note \\[ \\sum \\alpha \\beta \\gamma \\delta \\epsilon \\zeta \\eta \\theta \\iota \\kappa \\lambda \\mu \\nu \\xi \\pi \\rho \\sigma \\tau \\phi \\chi \\psi \\omega \\Gamma \\Delta \\Theta \\Lambda'],
+    ['未闭合 [ 加 Windows 路径', 'see [these: C:\\Users\\a\\b\\c\\d\\e\\f\\g\\h\\i\\j\\k\\l\\m\\n\\o\\p\\q\\r\\s\\t\\u\\v\\w\\x\\y\\z\\aa\\bb'],
+  ])('链接扫描对 %s 不发生指数回溯', (_label, input) => {
+    const started = Date.now();
+    wrapFilePathsInBackticks(input);
+    wrapTicketsAsLinks(input);
+    expect(Date.now() - started).toBeLessThan(500);
+  });
+
   it('background auto previews do not take focus', () => {
     useAppStore.getState().openPreview('/workspace/report.md', { source: 'auto', activate: false });
     expect(useWorkbenchFocusStore.getState().workbenchFocused).toBe(false);

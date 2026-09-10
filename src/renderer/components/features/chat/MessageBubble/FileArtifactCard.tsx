@@ -70,7 +70,7 @@ const DeliverableDiffDetail: React.FC<{ change: FileChange }> = ({ change }) => 
         <span>{copy.changes}</span>
         {hasLineChanges && (
           <span className="flex items-center gap-1">
-            {change.added > 0 && <span className="text-badge-success">{(change.oldText ? copy.addedLines : copy.generatedLines).replace('{count}', String(change.added))}</span>}
+            {change.added > 0 && <span className="text-badge-success">{(change.isNewFile ? copy.generatedLines : copy.addedLines).replace('{count}', String(change.added))}</span>}
             {change.removed > 0 && <span className="text-badge-danger">{copy.removedLines.replace('{count}', String(change.removed))}</span>}
           </span>
         )}

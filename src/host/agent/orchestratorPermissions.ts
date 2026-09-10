@@ -25,6 +25,16 @@ const logger = createLogger('AgentOrchestrator');
 /** 交互审批只提醒、不裁决；运行取消/会话切换负责最终清理。 */
 const INTERACTIVE_PERMISSION_REMINDER_MS = 30 * 60_000;
 
+/**
+ * 重新确认「还有没有面能裁决这条审批」的节拍。
+ * ponytail: 用轮询是因为「面还在吗」是随时间衰减的条件，而没有可订阅的事件——companion
+ * 通道是被 LanCompanionServer 自己的 prune() 定时拆掉的，不会回头通知这里。节拍只决定
+ * 「多久发现面没了」，发现之后 fail-closed 时钟从那一刻起整段重新计时，不会漏掉截止点。
+ * 取 15s 还因为它整除 60s 与 5min 两档预算，无面路径的到期时刻与改造前逐毫秒一致。
+ * 要更快就调小它，或者让审批面在消失时主动通知（那时这段轮询就该删掉）。
+ */
+const APPROVAL_UI_RECHECK_MS = 15_000;
+
 type OrchestratorPermissionRequest = Omit<PermissionRequest, 'id' | 'timestamp'>;
 
 /** 停车审批裁决的三态：赢了 / 没赢（抢答、过期、宿主已丢）/ 台账瞬时写不进去（可重试）。 */
@@ -352,34 +362,83 @@ export class OrchestratorPermissionIsland {
     // fail-closed，和 createCLIPermissionHandler 的 no-approval-ui 判据保持同一环境边界。
     // 交互路径的 30min 计时器只留泄漏诊断，不删除请求、不发 timeout 终态。
     const PERMISSION_TIMEOUT = isEditableTool(request.tool) ? EDITABLE_PERMISSION_TIMEOUT_MS : 60000;
-    // Per request, not per channel: an approval no surface can render must keep its
-    // fail-closed timeout, or the run waits forever for a card nobody ever sees.
-    const approvalUiAvailable = this.hasApprovalUi(fullRequest);
 
     return new Promise((resolve) => {
-      const timeoutId = approvalUiAvailable
-        ? setTimeout(() => {
-          logger.warn(`Permission still pending after 30m for ${request.type} on ${request.tool}`, {
+      // 免超时是一个**可撤回**的决定，不是 t=0 那一次问出来就永久生效的结论。
+      // 判据既要对空间（这条请求渲染得出卡片吗——见 hasApprovalUi 的入参），也要对时间：
+      // companion 通道建链后固定到期、被 prune() 无条件拆除，而没有任何事件回来重判。
+      // 停在 t=0 的 true 上，就等于这条 run 永久挂在一个两端都看不见的 tool call 上——
+      // 比不接这个功能更糟（同样输入在没有 companion 时是到点 fail-closed 拒绝、run 继续）。
+      // 所以按节拍重新问：有面就把 fail-closed 时钟清零，面没了就让它接着走完。
+      //
+      // 这段跑在定时器回调里，而**回调抛出的异常没有任何东西接**：src/web 与 src/host
+      // 都没有注册 process.on('uncaughtException')，所以一次抛出 = webServer 进程直接
+      // 退出、全部会话与在飞 run 一起丢。判据链上确实有会抛的东西——hasApprovalUi 会
+      // 经 identityDevice / sessionProject 走到 SQLite，DB 重建窗口里 ensureDb() 抛
+      // 'Database not initialized'；hasInteractiveUi 走的是外部注入的 probe；onEvent 要
+      // 写 SSE；连 logger 自己也可能坏。所以下面每一处外部调用都必须自己兜住。
+      let withoutUiMs = 0;
+      let withUiMs = 0;
+
+      /** 日志通道自己坏掉，也不能反过来把定时器回调炸掉。 */
+      const safeWarn = (message: string, detail?: unknown): void => {
+        try {
+          logger.warn(message, {
             requestId: fullRequest.id,
             sessionId: fullRequest.sessionId,
+            tool: request.tool,
+            ...(detail === undefined ? {} : { detail }),
           });
-        }, INTERACTIVE_PERMISSION_REMINDER_MS)
-        : setTimeout(() => {
-          this.pendingPermissions.delete(fullRequest.id);
-          logger.warn(`Timeout for ${request.type} on ${request.tool}, denying`);
+        } catch { /* 留痕失败不值得再赔上一个进程 */ }
+      };
+
+      const settleTimedOut = (): void => {
+        clearInterval(watchdog);
+        this.pendingPermissions.delete(fullRequest.id);
+        safeWarn(`Timeout for ${request.type} on ${request.tool}, denying`);
+        try {
           // 同一稳定 permission_request 事件做加法回传终态；renderer 以 host 结果为准，
           // 不复制 60s 计时器，也就不会把后台节流/切会话误判为已过期。
           this.onEvent({
             type: 'permission_request',
             data: { ...fullRequest, resolved: true, decision: 'timeout' },
           });
-          // N-PERMTRACE：超时无人应答 ≠ 用户拒绝。
-          resolve({ approved: false, denialSource: 'timeout' });
-        }, PERMISSION_TIMEOUT);
+        } catch (error) {
+          // 事件发不出去也必须把 Promise 解除：否则这条 run 照样永久挂着，
+          // 正是这个 watchdog 本来要根治的病。
+          safeWarn('Permission timeout event could not be emitted; resolving fail-closed anyway', error);
+        }
+        // N-PERMTRACE：超时无人应答 ≠ 用户拒绝。
+        resolve({ approved: false, denialSource: 'timeout' });
+      };
+
+      /** 没有面的一拍：推进 fail-closed 时钟，走满就解除。 */
+      const advanceWithoutUi = (): void => {
+        withoutUiMs += APPROVAL_UI_RECHECK_MS;
+        if (withoutUiMs >= PERMISSION_TIMEOUT) settleTimedOut();
+      };
+
+      const watchdog = setInterval(() => {
+        try {
+          if (!this.hasApprovalUi(fullRequest)) { advanceWithoutUi(); return; }
+          withoutUiMs = 0;
+          withUiMs += APPROVAL_UI_RECHECK_MS;
+          if (withUiMs < INTERACTIVE_PERMISSION_REMINDER_MS) return;
+          withUiMs = 0;
+          safeWarn(`Permission still pending after 30m for ${request.type} on ${request.tool}`);
+        } catch (error) {
+          // 探测失败 ≠ 有面。宣称有面而实际没有，正是这条 run 永久挂起的成因（本 PR 反复
+          // 在修的「状态与事实不符」）；反过来最坏只是把一条本可批准的审批按 fail-closed
+          // 拒掉——模型会重发、卡片会重弹，可恢复。所以往安全侧倒，并且必须留痕，
+          // 否则下一个人只看得到「审批莫名其妙超时了」。
+          safeWarn('Approval UI probe failed, treating this tick as no surface', error);
+          advanceWithoutUi();
+        }
+      }, APPROVAL_UI_RECHECK_MS);
 
       this.pendingPermissions.set(fullRequest.id, {
         resolve: (response, machineDenial, updatedArgs) => {
-          clearTimeout(timeoutId);
+          clearInterval(watchdog);
           if (response === 'allow_session' && fullRequest.sessionId) {
             getConfirmationGate().recordApproval(fullRequest.sessionId, fullRequest.tool);
           }

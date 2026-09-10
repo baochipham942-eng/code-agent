@@ -128,15 +128,18 @@ describe('an approval no surface can render must keep its fail-closed timeout', 
   const sessionId = 'oversized-session';
   // 生产接线：hasInteractiveUi() 为 false（桌面关着），答案完全由 companion 侧给。
   // 见 src/web/app.ts —— 通道可达 **且** 这张卡渲染得出来，两个都成立才算有 UI。
-  const phoneChannelLive = true;
+  // 通道可达是会随时间失效的（LanCompanionServer 的 expiresAt 建链后不续期，到点被
+  // prune() 拆除），所以这里是个谓词而不是常量。
+  let phoneChannelLive: () => boolean;
 
   beforeEach(() => {
     vi.useFakeTimers();
+    phoneChannelLive = () => true;
     db = new Database(':memory:');
     island = new OrchestratorPermissionIsland({
       getSettings: () => ({ ...DEFAULT_SETTINGS, permissions: { ...DEFAULT_SETTINGS.permissions, autoApprove: { read: false, write: false, execute: false, network: false }, blockedCommands: [], devModeAutoApprove: false } }),
       isDevModeAutoApproveEnabled: () => false, getExecutionTopology: () => 'main',
-      hasApprovalUi: request => phoneChannelLive && service.canDisplay(request),
+      hasApprovalUi: request => phoneChannelLive() && service.canDisplay(request),
       onEvent: () => {},
     });
     registerForegroundPermissionIsland(sessionId, island);
@@ -187,6 +190,35 @@ describe('an approval no surface can render must keep its fail-closed timeout', 
     void promise.then(() => { settled = true; });
     await vi.advanceTimersByTimeAsync(EDITABLE_PERMISSION_TIMEOUT_MS + 1_000);
     expect(settled, '卡片送达时不该再有 fail-closed 超时——那会把真人还没看的审批自动拒掉').toBe(false);
+  });
+
+  it('通道到点被拆之后必须重判——不能永远停在 t=0 那个 true', async () => {
+    // 手机通道建链即固定到期，到点被 LanCompanionServer.prune() 无条件拆掉，
+    // 而没有任何事件回来通知审批岛。t=0 判到的「有 UI」在那之后不再成立。
+    const openedAt = Date.now();
+    phoneChannelLive = () => Date.now() - openedAt < COMPANION_LIMITS.channelTtlMs;
+
+    const promise = write('bounded content');
+    service.refresh();
+    // 前提：这张卡当时确实送到了手机上，免超时是当时的正确决定
+    expect(gateway.syncForDevice('phone', 1, 0).events[0].payload.preview).toContain('bounded content');
+
+    let outcome: unknown = 'still-pending';
+    void promise.then(value => { outcome = value; });
+
+    // 通道还在的这段：不该有 fail-closed 超时把真人没看的审批自动拒掉
+    await vi.advanceTimersByTimeAsync(COMPANION_LIMITS.channelTtlMs - 1_000);
+    expect(outcome, '通道还在时就超时拒绝，等于把用户还没看到的审批替他拒了').toBe('still-pending');
+
+    // 通道到点被拆，此后两端都没有人能看见这张卡
+    expect(phoneChannelLive()).toBe(true);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(phoneChannelLive()).toBe(false);
+
+    // 必须有人重判：要么 fail-closed 拒绝、run 继续，绝不是永久挂起
+    await vi.advanceTimersByTimeAsync(EDITABLE_PERMISSION_TIMEOUT_MS + 60_000);
+    expect(outcome, '通道拆了之后没有人重判：这次运行会永久挂在一个两端都看不见的 tool call 上，既不完成也不报错')
+      .toEqual({ approved: false, denialSource: 'timeout' });
   });
 });
 

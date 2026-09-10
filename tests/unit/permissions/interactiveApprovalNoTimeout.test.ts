@@ -39,13 +39,13 @@ function isStillPending(promise: Promise<PermissionAskResult>): Promise<boolean>
   return Promise.race([promise, Promise.resolve(marker)]).then((result) => result === marker);
 }
 
-function beginApproval(hasApprovalUi: boolean, tool = 'Write') {
+function beginApproval(hasApprovalUi: boolean | (() => boolean), tool = 'Write') {
   const events: AgentEvent[] = [];
   const island = new OrchestratorPermissionIsland({
     getSettings: settings,
     isDevModeAutoApproveEnabled: () => false,
     getExecutionTopology: () => 'main',
-    hasApprovalUi: () => hasApprovalUi,
+    hasApprovalUi: () => (typeof hasApprovalUi === 'function' ? hasApprovalUi() : hasApprovalUi),
     onEvent: (event) => events.push(event),
   });
   const promise = island.requestPermission({
@@ -121,6 +121,37 @@ describe('有审批 UI 的交互请求不因超时自动拒绝', () => {
 
     await expect(editable.promise).resolves.toEqual({ approved: false, denialSource: 'timeout' });
     expect((editable.island as unknown as IslandInternals).pendingPermissions.has(editable.request.id)).toBe(false);
+  });
+
+  // 复检是在定时器回调里跑的，而回调抛出的异常没有任何东西接：src/web 与 src/host
+  // 都没有注册 process.on('uncaughtException')，一次抛出 = webServer 进程退出、
+  // 全部会话与在飞 run 一起丢。真实成因是判据链上的 SQLite I/O——DB 重建窗口里
+  // ensureDb() 抛 'Database not initialized'。
+  it('复检抛错不炸进程：按「没有面」处理、留痕，并照常 fail-closed 拒绝', async () => {
+    const { island, promise, request, events } = beginApproval(() => {
+      throw new Error('Database not initialized');
+    });
+
+    // ① 推进节拍时不得有异常逃逸。假定时器把回调同步跑在这一行上，没兜住的话这次
+    //    advance 直接 reject；真机上对应的是没人接的 uncaughtException，进程直接没了。
+    await expect(
+      vi.advanceTimersByTimeAsync(60_000),
+      '复检回调里的异常逃了出来——真机上这一下就是整个 webServer 退出、全部会话与在飞 run 一起丢',
+    ).resolves.toBeDefined();
+
+    // ② 这条审批走到 fail-closed，而不是永久挂起
+    await expect(promise).resolves.toEqual({ approved: false, denialSource: 'timeout' });
+    expect((island as unknown as IslandInternals).pendingPermissions.has(request.id)).toBe(false);
+    expect(events).toContainEqual(expect.objectContaining({
+      type: 'permission_request',
+      data: expect.objectContaining({ resolved: true, decision: 'timeout' }),
+    }));
+
+    // ③ 留下可区分的原因，不是让人对着「审批莫名其妙超时了」去猜
+    expect(logSpies.warn).toHaveBeenCalledWith(
+      expect.stringContaining('Approval UI probe failed'),
+      expect.objectContaining({ requestId: request.id }),
+    );
   });
 
   it('运行取消会以 cancelled 解除交互 pending 请求', async () => {

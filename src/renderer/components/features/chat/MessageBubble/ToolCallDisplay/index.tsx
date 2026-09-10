@@ -30,6 +30,7 @@ import {
   buildAskUserQuestionRecord,
   type AskUserQuestionRecord,
 } from '../../../../../utils/askUserQuestionRecord';
+import { Button } from '../../../../primitives';
 import { useI18n } from '../../../../../hooks/useI18n';
 import { useBackgroundTaskStore } from '../../../../../stores/backgroundTaskStore';
 import { useAgentTreeSnapshot } from '../../../../../hooks/useAgentTreeSnapshot';
@@ -303,12 +304,12 @@ export function ToolCallDisplay({
         </div>
       )}
       {getToolPreflightKind(toolCall) === 'question' && (
-        <button type="button" className="ml-6 mt-2 rounded border border-zinc-700 px-3 py-1.5 text-xs text-zinc-200 hover:bg-zinc-800"
+        <Button type="button" variant="secondary" size="sm" className="ml-6 mt-2"
           onClick={() => {
             const questions = toolCall.arguments?.questions as Array<{ question?: string }> | undefined;
             const question = questions?.map((item) => item.question).filter(Boolean).join('\n') ?? '';
             window.dispatchEvent(new CustomEvent('iact:add', { detail: t.deliveryExperience.continueDraft.replace('{question}', question) }));
-          }}>{t.deliveryExperience.continueQuestion}</button>
+          }}>{t.deliveryExperience.continueQuestion}</Button>
       )}
 
       {delegationPresentation && <DelegationReceipt presentation={delegationPresentation} />}

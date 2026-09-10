@@ -12,8 +12,9 @@ import { LanCompanionServer } from '../../src/host/companion/LanCompanionServer'
 import { createHandshake, createIdentity, NoiseChannel } from '../../src/shared/companion/noiseChannel';
 import { fromHex, toHex, isPrivateIPv4, parseInvitation, validateLanEndpoint, type LanBinding } from '../../src/shared/companion/lanProtocol';
 import { LanCompanionClient, type LanPost } from '../../packages/mobile/src/platform/lanCompanionClient';
-import { COMPANION_LIMITS as L } from '../../src/shared/constants/companion';
+import { COMPANION_EVENT_DROPPED, COMPANION_LIMITS as L } from '../../src/shared/constants/companion';
 import { createCompanionStore } from '../../packages/mobile/src/stores/companionStore';
+import type { CompanionSyncResult } from '../../src/shared/contract/companion';
 import vector from '../fixtures/companion/lan-noise-vector.json';
 
 describe('LAN companion: real HTTP + Noise + SQLite', () => {
@@ -200,6 +201,57 @@ describe('LAN companion: real HTTP + Noise + SQLite', () => {
     const long = { ...command(binding), payload: { text: '你'.repeat(30_000) } };
     expect(await client.request({ action: 'command', command: long })).toMatchObject({ kind: 'accepted' });
     expect(executions).toBe(1);
+  });
+  // A desktop paste can publish one event bigger than a whole frame. It used to retire the
+  // channel, and the cursor could never get past it: the phone was locked out for good.
+  const oversized = () => 'x'.repeat(L.maxPayloadBytes * L.maxMessageRecords + 1_024);
+  const sync = async (binding: LanBinding, afterSeq: number) =>
+    await client.request({ action: 'sync', epoch: binding.scopeEpoch, afterSeq }) as CompanionSyncResult;
+
+  it('steps the cursor past an undeliverable oversized event and keeps delivering what follows', async () => {
+    const binding = await pair();
+    gateway.publish('shared', 'message', { content: 'before' });
+    gateway.publish('shared', 'message', { content: oversized() });
+    gateway.publish('shared', 'message', { content: 'after' });
+
+    const first = await sync(binding, 0);
+    expect(first.events.map(event => event.payload.content)).toEqual(['before']);
+    expect(first.nextSeq).toBe(1);
+
+    // The oversized event is now first in the page: it must be cleared, not fatal.
+    const second = await sync(binding, first.nextSeq);
+    expect(second.nextSeq).toBe(2);
+    expect(second.events).toHaveLength(1);
+    expect(second.events[0]).toMatchObject({ seq: 2, sessionId: 'shared', kind: COMPANION_EVENT_DROPPED,
+      payload: { reason: 'too_large', kind: 'message' } });
+    // The marker replaces the payload rather than truncating it — no leak, no silent gap.
+    expect(second.events[0].payload).not.toHaveProperty('content');
+    expect(Number(second.events[0].payload.bytes)).toBeGreaterThan(L.maxPayloadBytes * L.maxMessageRecords);
+
+    const third = await sync(binding, second.nextSeq);
+    expect(third.events.map(event => event.payload.content)).toEqual(['after']);
+    expect(third.nextSeq).toBe(3);
+    // Same channel the whole way: the poison event never kicked the phone off.
+    expect(server.hasApprovalUi('shared')).toBe(true);
+  });
+
+  it('leaves the phone connected on an oversized event and shows it as dropped, not missing', async () => {
+    const invitation = JSON.stringify(server.invite(['shared']));
+    let storage: string | null = null;
+    const phone = createCompanionStore({
+      read: async () => storage, write: async value => { storage = value; },
+      scan: async () => invitation, post,
+    }, () => {});
+    await phone.getState().pair();
+    gateway.publish('shared', 'message', { content: oversized() });
+    gateway.publish('shared', 'message', { content: 'after' });
+
+    await phone.getState().sync();
+    await phone.getState().sync();
+    expect(phone.getState().status).toBe('connected');
+    expect(phone.getState().events.map(event => event.kind)).toEqual([COMPANION_EVENT_DROPPED, 'message']);
+    expect(phone.getState().events[1].payload.content).toBe('after');
+    phone.getState().pause();
   });
   it.each([
     ['invalid QR', 'not-json', undefined, 'connectionQrInvalid'],

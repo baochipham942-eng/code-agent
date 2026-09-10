@@ -3,15 +3,20 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import express from 'express';
 import type Noise from 'noise-handshake';
 import type { KeyPair } from 'noise-handshake';
-import { COMPANION_LIMITS as L } from '../../shared/constants/companion';
+import { COMPANION_EVENT_DROPPED, COMPANION_LIMITS as L } from '../../shared/constants/companion';
 import { fromHex, toHex, isPrivateIPv4, type LanInvitation } from '../../shared/companion/lanProtocol';
 import { createHandshake, NoiseChannel } from '../../shared/companion/noiseChannel';
-import { companionCommandSchema } from '../../shared/contract/companion';
+import { companionCommandSchema, type CompanionEvent } from '../../shared/contract/companion';
 import type { CompanionGateway } from './CompanionGateway';
 
 interface Invitation { id: string; psk: string; expiresAt: number; scope: string[] }
 interface Pending { noise: Noise; invite: Invitation; expiresAt: number }
 interface Channel { cipher: NoiseChannel; publicKey: string; expiresAt: number; lastSeenAt: number | null }
+
+/** Keeps the seq and envelope of the event it replaces; the payload only says what was lost. */
+function dropped(event: CompanionEvent, bytes: number): CompanionEvent {
+  return { ...event, kind: COMPANION_EVENT_DROPPED, payload: { reason: 'too_large', kind: event.kind, bytes } };
+}
 
 /** Dedicated LAN surface: encrypted records only, never desktop HTTP/IPC routes. */
 export class LanCompanionServer {
@@ -176,14 +181,21 @@ export class LanCompanionServer {
         if (!Number.isSafeInteger(request.epoch) || Number(request.epoch) < 1 || !Number.isSafeInteger(request.afterSeq) || Number(request.afterSeq) < 0) throw new Error('COMPANION_INVALID_CURSOR');
         const page = this.gateway.syncForDevice(device.deviceId, Number(request.epoch), Number(request.afterSeq));
         let bytes = 512;
-        const events = [];
+        const events: CompanionEvent[] = [];
         let nextSeq = page.nextSeq;
         for (const event of page.events) {
           const size = Buffer.byteLength(JSON.stringify(event));
-          if (bytes + size > L.maxPayloadBytes * L.maxMessageRecords) { nextSeq = event.seq - 1; break; }
+          if (bytes + size > L.maxPayloadBytes * L.maxMessageRecords) {
+            // An event larger than a whole frame can never be delivered. Retiring the channel
+            // left the cursor pinned on it forever, so the device could never advance again.
+            // Hand over a same-seq marker instead: the cursor clears it and the phone still
+            // sees that something was dropped rather than silently missing a seq.
+            if (events.length === 0) { events.push(dropped(event, size)); nextSeq = event.seq; }
+            else nextSeq = event.seq - 1;
+            break;
+          }
           bytes += size + 1; events.push(event);
         }
-        if (page.events.length && events.length === 0) throw new Error('COMPANION_EVENT_TOO_LARGE');
         result = { ...page, events, nextSeq };
       } else if (request.action === 'status' && typeof request.commandId === 'string' && request.commandId.length <= L.idLength) {
         result = this.gateway.commandStatus(device.deviceId, request.commandId);

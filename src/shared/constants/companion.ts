@@ -1,5 +1,7 @@
 /** Bounds for the companion's device-scoped protocol. */
 export const COMPANION_MANAGE_CHANNEL = 'companion:manage';
+/** Stand-in for an event too large to fit one frame; the original payload is never delivered. */
+export const COMPANION_EVENT_DROPPED = 'event_dropped';
 export const COMPANION_LIMITS = {
   idLength: 128,
   messageLength: 32_000,

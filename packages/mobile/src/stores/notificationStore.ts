@@ -71,10 +71,7 @@ export function createNotificationStore(deps: {
       setPreference: async value => {
         deps.preference.set(value);
         set({ preference: value });
-        if (value && (get().osPermission === 'unknown' || get().osPermission === 'denied' || get().osPermission === 'restricted')) {
-          // Denied does not re-prompt on every refresh; only an explicit user enable requests.
-          if (get().osPermission === 'unknown') await get().requestFromUser();
-        }
+        if (value && get().osPermission === 'unknown') await get().requestFromUser();
         await syncRegistration();
       },
       requestFromUser: async () => {

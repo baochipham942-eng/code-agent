@@ -3,7 +3,7 @@ import {
   assertPushEntitlement, exportOptionsXml, extractNativeTargetId, extractPlistXml, parsePlistXml, patchPbxprojVersions,
   profileCoversDevice, readMobileprovision, summarizeProfile,
 } from '../../../packages/mobile/scripts/ios-package.mjs';
-import { ensureAndroidPushPermission } from '../../../packages/mobile/scripts/configure-lan.mjs';
+import { ensureAndroidPushPermission, mergeRemoteNotificationMode } from '../../../packages/mobile/scripts/configure-lan.mjs';
 
 const profileXml = ({ taskAllow, devices, expires, aps }: { taskAllow?: boolean; devices?: string[]; expires: string; aps?: string | null }) =>
   `<?xml version="1.0" encoding="UTF-8"?>
@@ -68,6 +68,14 @@ describe('android push permission declaration', () => {
     const xml = ensureAndroidPushPermission('<manifest><application /></manifest>');
     expect(xml).toContain('android.permission.POST_NOTIFICATIONS');
     expect(ensureAndroidPushPermission(xml)).toBe(xml);
+  });
+});
+
+describe('iOS background modes merge', () => {
+  it('keeps existing modes such as audio and only appends remote-notification', () => {
+    expect(mergeRemoteNotificationMode(['audio'])).toEqual(['audio', 'remote-notification']);
+    expect(mergeRemoteNotificationMode(['remote-notification'])).toEqual(['remote-notification']);
+    expect(mergeRemoteNotificationMode([])).toEqual(['remote-notification']);
   });
 });
 

@@ -6,6 +6,21 @@ export function ensureAndroidPushPermission(xml) {
   return xml.replace('</manifest>', '<uses-permission android:name="android.permission.POST_NOTIFICATIONS" /></manifest>');
 }
 
+export function mergeRemoteNotificationMode(modes) {
+  const list = Array.isArray(modes) ? modes.filter(mode => typeof mode === 'string' && mode.length > 0) : [];
+  if (!list.includes('remote-notification')) list.push('remote-notification');
+  return list;
+}
+
+function readBackgroundModes(plist) {
+  try {
+    return execFileSync('/usr/libexec/PlistBuddy', ['-c', 'Print :UIBackgroundModes', plist], { encoding: 'utf8' })
+      .split('\n').map(line => line.trim()).filter(line => line && line !== 'Array {' && line !== '}');
+  } catch {
+    return [];
+  }
+}
+
 export function configureIosLan() {
   const plist = 'ios/App/App/Info.plist';
   const set = (key, type, value) => {
@@ -15,9 +30,12 @@ export function configureIosLan() {
   set('NSMicrophoneUsageDescription', 'string', 'Record speech and transcribe it through your computer into an editable draft.');
   set('NSCameraUsageDescription', 'string', 'Scan the pairing code shown by Neo on your computer.');
   set('NSLocalNetworkUsageDescription', 'string', 'Connect to your computer to send tasks and receive results in Neo.');
+  const modes = mergeRemoteNotificationMode(readBackgroundModes(plist));
   try { execFileSync('/usr/libexec/PlistBuddy', ['-c', 'Delete :UIBackgroundModes', plist], { stdio: 'ignore' }); } catch {}
   execFileSync('/usr/libexec/PlistBuddy', ['-c', 'Add :UIBackgroundModes array', plist]);
-  execFileSync('/usr/libexec/PlistBuddy', ['-c', 'Add :UIBackgroundModes:0 string remote-notification', plist]);
+  modes.forEach((mode, index) => {
+    execFileSync('/usr/libexec/PlistBuddy', ['-c', `Add :UIBackgroundModes:${index} string ${mode}`, plist]);
+  });
   try { execFileSync('/usr/libexec/PlistBuddy', ['-c', 'Add :NSAppTransportSecurity dict', plist], { stdio: 'ignore' }); } catch {}
   set('NSAppTransportSecurity:NSAllowsLocalNetworking', 'bool', 'true');
   // iOS 17+ also requires IP/CIDR ATS exceptions for numeric LAN endpoints.

@@ -14,7 +14,6 @@ import {
   type MessageAttachment,
   type MessageMetadata,
   type InputRedirectReceiptMetadata,
-  type AgentEvent,
 } from '../../../shared/contract';
 import { type StructuredOutputConfig, type StructuredOutputResult, generateFormatCorrectionPrompt } from '../../agent/structuredOutput';
 import type { PlanningService } from '../../planning';
@@ -160,11 +159,6 @@ export class ConversationRuntime {
     this.learningPipeline = learningPipeline;
     this.messageProcessor = new MessageProcessor(this.ctx, contextAssembly, runFinalizer, toolEngine);
     this.streamHandler = new StreamHandler(this.ctx, contextAssembly, runFinalizer);
-  }
-
-  // Convenience: emit event through context
-  protected onEvent(event: AgentEvent): void {
-    this.ctx.onEvent(event);
   }
 
   private releasePauseWaiters(): void {
@@ -600,7 +594,7 @@ export class ConversationRuntime {
             },
             maxTokens: getContextWindow(this.ctx.modelConfig.model),
             errorType: null,
-            consecutiveErrors: this.ctx.consecutiveErrors,
+            consecutiveErrors: this.toolEngine.consecutiveErrors,
             // budgetRemaining: budgetService 真实剩余比例（0-1）；未配预算时 usagePercentage=0 → 1.0，不误触发停止闸
             budgetRemaining: Math.max(0, Math.min(1, 1 - getBudgetService(this.ctx.budgetScope).checkBudget().usagePercentage)),
             iterationCount: iterations,
@@ -745,6 +739,7 @@ export class ConversationRuntime {
         // 不能让用户拿到一个看似 completed 的 run（goal_complete 事件已在闸内发出）
         terminal = { status: 'aborted' };
       }
+      if (terminal.status === 'completed' && this.toolEngine.noProgressStopped) terminal = { status: 'aborted' };
     } catch (error) {
       terminal = { status: 'failed', error };
       runError = error;
@@ -788,6 +783,7 @@ export class ConversationRuntime {
     const runTraceContext = getActiveRunTraceContext() ?? this.ctx.runTraceContext;
     this.ctx.stats.setTraceId(runTraceContext?.traceId ?? `trace-${this.ctx.sessionId}-${Date.now()}`);
     this.ctx.turn.beginRun();
+    this.toolEngine.resetRepairGate();
     langfuse.startTrace(this.ctx.stats.traceId, {
       sessionId: this.ctx.sessionId,
       userId: this.ctx.userId,

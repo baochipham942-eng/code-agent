@@ -1082,7 +1082,7 @@ async function executeParallelAgents(
       const costNote = entry.stats.cost !== undefined
         ? ` · $${entry.stats.cost.toFixed(4)}`
         : '';
-      return `[${entry.role}] ${entry.status} in ${entry.stats.durationMs}ms · ${entry.stats.iterations} iter · ${entry.stats.toolCalls} tools${costNote}\n${entry.resultPreview}${filesNote}`;
+      return `[${entry.role}] ${entry.status} in ${entry.stats.durationMs}ms · ${entry.stats.iterations} iter · ${entry.stats.toolCalls ?? 'unavailable'} tool attempts${costNote}\n${entry.resultPreview}${filesNote}`;
     }).join('\n\n---\n\n');
 
     const filesNote = aggregation.filesChanged.length > 0
@@ -1103,7 +1103,7 @@ Stats:
 - Max parallelism: ${result.parallelism}
 - Success rate: ${(aggregation.successRate * 100).toFixed(0)}% (${result.results.filter(r => r.success).length}/${result.results.length})
 - Total cost: $${aggregation.totalCost.toFixed(4)}
-- Total iterations: ${aggregation.totalIterations} · Total tool calls: ${aggregation.totalToolCalls}${coordNote}
+- Total iterations: ${aggregation.totalIterations} · Total tool attempts (terminal events, including failures/rejections): ${aggregation.unreportedToolCallAgents > 0 ? `at least ${aggregation.totalToolCalls} (${aggregation.unreportedToolCallAgents} agent(s) did not report)` : aggregation.totalToolCalls}${coordNote}
 ${filesNote}
 
 Agent Results:

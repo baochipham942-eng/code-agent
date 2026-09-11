@@ -1,3 +1,5 @@
+import { getToolAttemptTrace } from './toolAttemptTrace';
+import { attachDocumentOrigin, describeDocumentEvidenceProblems, documentClaimPreflight } from './documentEvidenceBoundary';
 // ============================================================================
 // ToolExecutionEngine — Tool execution with hooks, circuit breaker, content verification
 // Extracted from AgentLoop
@@ -13,7 +15,6 @@ import type {
   ToolResult,
   AgentEvent,
 } from '../../../shared/contract';
-import { extractWorkbenchReferenceFromToolCall } from '../../../shared/contract/workbenchTools';
 import { getLangfuseService } from '../../services';
 import { logCollector } from '../../mcp/logCollector.js';
 import { EXIT_ROLE_FLOW_TOOL_NAME } from '../../tools/modules/roleAuthoring/exitRoleFlow.schema';
@@ -110,6 +111,9 @@ export class ToolExecutionEngine {
   runtimeControl!: RuntimeControlPort;
   private forceFinalResponseReasonAtBatchStart: string | undefined;
   private forceFinalResponseBatchActive = false;
+  private readonly dispatchedCalls = new Set<string>();
+  get consecutiveErrors(): number { return getToolAttemptTrace(this.ctx).consecutiveErrors; }
+  get noProgressStopped(): boolean { return getToolAttemptTrace(this.ctx).noProgressStopped; }
   private readonly activeToolNames = new Map<string, string>();
   // 工具入参 repair 节流闸：按 toolName 统计连续校验失败，超上限切终止指引
   // （Kimi 借鉴 #1）。引擎实例随 AgentLoop 跨多轮复用，run 起点须 reset。
@@ -120,6 +124,8 @@ export class ToolExecutionEngine {
   /** run 起点重置 repair 计数（每条 user 消息开新的连续失败统计窗口）。 */
   resetRepairGate(): void {
     this.repairGate.reset();
+    getToolAttemptTrace(this.ctx).reset();
+    this.dispatchedCalls.clear();
   }
 
   getActiveToolNames(): string[] {
@@ -134,11 +140,6 @@ export class ToolExecutionEngine {
     this.contextAssembly = contextAssembly;
     this.runFinalizer = runFinalizer;
     this.runtimeControl = runtimeControl;
-  }
-
-  // Convenience: emit event through context
-  protected onEvent(event: AgentEvent): void {
-    this.ctx.onEvent(event);
   }
 
   private isRunCancelled(): boolean {
@@ -309,7 +310,24 @@ export class ToolExecutionEngine {
     return results.filter((r): r is ToolResult => r !== undefined && !this.shouldSuppressResult(r));
   }
 
-  async executeSingleTool(
+  /** One attempt and one terminal dispatch record, including every preflight return. */
+  async executeSingleTool(toolCall: ToolCall, index: number, total: number, parallel = false): Promise<ToolResult> {
+    const startedAt = Date.now();
+    getToolAttemptTrace(this.ctx).begin(toolCall);
+    let result: ToolResult;
+    let thrown: unknown;
+    try {
+      result = await this.executeSingleToolAttempt(toolCall, index, total, parallel);
+    } catch (error) {
+      thrown = error;
+      result = { toolCallId: toolCall.id, success: false, error: String(error), duration: Date.now() - startedAt };
+    }
+    getToolAttemptTrace(this.ctx).finish(toolCall, result, this.dispatchedCalls.delete(toolCall.id), Date.now() - startedAt);
+    if (thrown !== undefined) throw thrown;
+    return result;
+  }
+
+  private async executeSingleToolAttempt(
     incomingToolCall: ToolCall,
     index: number,
     total: number,
@@ -366,6 +384,18 @@ export class ToolExecutionEngine {
         },
       };
       return emitBlockedToolResult(toolResult);
+    }
+
+    // 记录式：提醒模型，但**不拦**这次写入，也不计入连续错误去触发强制收尾
+    // （2026-09-11 爸拍板）。这条判据是一组中文/英文正则，误伤在所难免——
+    // 让它把用户真实要写的文档挡在门外、连挡三次还把整轮改成 aborted，代价远大于收益。
+    const claimProblems = documentClaimPreflight(toolCall, this.ctx.messages);
+    if (claimProblems.length > 0) {
+      this.ctx.turnTrace?.record('evidence_boundary', { problems: claimProblems, surface: 'tool_prelude' });
+      this.contextAssembly.injectSystemMessage(
+        `EVIDENCE_BOUNDARY (advisory): ${claimProblems.join(', ')} ${describeDocumentEvidenceProblems(claimProblems)} Keep same-origin records together; label unknown independence and space fields as unverified. Local files/logs do not establish current space configuration.`,
+        'tool-schema-repair',
+      );
     }
 
     if (this.ctx.hookManager) {
@@ -777,6 +807,7 @@ export class ToolExecutionEngine {
         ? await captureWorkspaceMutationSnapshot(this.ctx.workingDirectory || process.cwd())
         : undefined;
 
+      this.dispatchedCalls.add(toolCall.id);
       const result = await this.ctx.toolExecutor.execute(
         toolCall.name,
         toolCall.arguments,
@@ -833,17 +864,6 @@ export class ToolExecutionEngine {
         logger.info('[AgentLoop] exit_role_flow succeeded: strict skill tool boundary cleared for this turn');
       }
 
-      // G20: 记一条 tool_dispatch trace —— 工具名 / 成败 / 耗时 / 错误，
-      // 用于回放"这个 turn 派了哪些工具、结果如何"（也是验证 G7 是否死代码的数据来源）。
-      this.ctx.turnTrace.record('tool_dispatch', {
-        toolName: toolCall.name,
-        toolAction: extractWorkbenchReferenceFromToolCall(toolCall)?.action ?? null,
-        success: result.success,
-        durationMs: Date.now() - startTime,
-        error: result.error ?? null,
-        fromCache: result.fromCache ?? false,
-      });
-
       if (this.isRunCancelled()) {
         const suppressedResult = this.buildSuppressedCancelledResult(toolCall, startTime);
         langfuse.endSpan(toolSpanId, {
@@ -879,7 +899,7 @@ export class ToolExecutionEngine {
         error: normalizedResult.error,
         outputPath: normalizedResult.outputPath,
         duration: Date.now() - startTime,
-        metadata: normalizedResult.metadata,
+        metadata: { ...normalizedResult.metadata, fromCache: normalizedResult.fromCache ?? false },
       };
 
       logger.debug(` Tool ${toolCall.name} completed in ${toolResult.duration}ms`);
@@ -984,6 +1004,7 @@ export class ToolExecutionEngine {
       }
 
       let preservedToolResult = markFileEvidenceResult(toolCall, toolResult);
+      preservedToolResult = await attachDocumentOrigin(toolCall, preservedToolResult, this.ctx.messages, this.ctx.workingDirectory);
       preservedToolResult = this.appendBackgroundCompletionReminder(preservedToolResult);
 
       // User-configurable Post-Tool Hook

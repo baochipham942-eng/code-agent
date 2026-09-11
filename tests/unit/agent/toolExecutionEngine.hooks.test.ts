@@ -364,6 +364,103 @@ function makeMessageProcessorDeps(_ctx: RuntimeContext) {
 }
 
 describe('ToolExecutionEngine hook/telemetry argument handling', () => {
+  it('preserves a failed Edit, successful Read, and recovered Edit as separate terminal events', async () => {
+    const execute = vi.fn()
+      .mockResolvedValueOnce({ success: false, error: 'NOT_READ', metadata: { executionStarted: true } })
+      .mockResolvedValueOnce({ success: true, output: 'old', metadata: { executionStarted: true } })
+      .mockResolvedValueOnce({ success: true, output: 'edited', metadata: { executionStarted: true } });
+    const ctx = makeRuntimeContext({ toolExecutor: { execute } as never });
+    const engine = new ToolExecutionEngine(ctx);
+    engine.setModules({ injectSystemMessage: vi.fn(), pushPersistentSystemContext: vi.fn(),
+      getCurrentAttachments: () => [] } as never, { emitTaskProgress: vi.fn() } as never,
+      { isPlanMode: () => false, setPlanMode: vi.fn() } as never);
+    for (const [index, name] of ['Edit', 'Read', 'Edit'].entries()) await engine.executeSingleTool({
+      id: `recovery-${index}`, name, arguments: { file_path: '/tmp/recovery-fixture.ts', edits: [{ old_text: 'old', new_text: 'new' }] },
+    }, index, 3);
+    const terminal = vi.mocked(ctx.turnTrace.record).mock.calls.filter(([type]) => type === 'tool_dispatch').map(([, data]) => data);
+    expect(terminal).toEqual([
+      expect.objectContaining({ toolCallId: 'recovery-0', success: false, execution: 'executed' }),
+      expect.objectContaining({ toolCallId: 'recovery-1', success: true, consecutiveErrors: 0 }),
+      expect.objectContaining({ toolCallId: 'recovery-2', success: true, recoveredFrom: ['recovery-0'] }),
+    ]);
+    expect(engine.noProgressStopped).toBe(false);
+  });
+
+  // 2026-09-11 爸拍板改记录式：无证据支撑的报告照写不误，只在系统消息里提醒模型。
+  // 原本这条钉的是「拦住不让写」——那条判据是一组中英文正则，误伤在所难免，
+  // 让它把用户真实要写的文档挡在门外、连挡三次还把整轮改成 aborted，代价远大于收益。
+  it('warns about an unsupported report instead of blocking it', async () => {
+    const execute = vi.fn().mockResolvedValue({ success: true, output: 'written' });
+    const ctx = makeRuntimeContext({ toolExecutor: { execute } as never });
+    const engine = new ToolExecutionEngine(ctx);
+    const injectSystemMessage = vi.fn();
+    engine.setModules({ injectSystemMessage, pushPersistentSystemContext: vi.fn(), getCurrentAttachments: () => [] } as never,
+      { emitTaskProgress: vi.fn() } as never, { isPlanMode: () => false, setPlanMode: vi.fn() } as never);
+    await engine.executeSingleTool({ id: 'false-report', name: 'Write',
+      arguments: { file_path: '/tmp/report.md', content: '✅ 纪要与逐字稿双记录互证' } }, 0, 1);
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(injectSystemMessage.mock.calls.map(([text]) => String(text))
+      .filter((text) => text.startsWith('EVIDENCE_BOUNDARY (advisory):'))).toEqual([
+      expect.stringContaining('SOURCE_INDEPENDENCE_UNVERIFIED'),
+    ]);
+  });
+
+  it.each([
+    ['核验要求：至少两份独立来源，才能标记已验证。', true],
+    ['这些不是独立来源。', true],
+    ['引用：“这些是独立来源。”', true],
+    ['这些是独立来源。', false],
+    ['空间主人：owner-fixture，自动化配置待查。', false],
+    ['空间主人：owner-fixture；自动化配置待查。', false],
+    ['空间专家成员：expert-fixture，空间主人待查。', false],
+    ['空间没有自动化，成员待查。', false],
+    // 2026-09-11 爸拍板：证据边界改为**记录式**——写入一律放行，只提醒 + 留痕。
+    // 第二列现在表示「是否会产生一条 advisory 提醒」，不再是「是否放行」。
+  ])('production Write always reaches the executor; unsupported claims only add an advisory: %s', async (content, clean) => {
+    // Returning failure deliberately avoids document-origin file I/O after this dispatch spy.
+    const execute = vi.fn().mockResolvedValue({ success: false, error: 'FIXTURE_EXECUTOR_ENTERED', metadata: { executionStarted: true } });
+    const ctx = makeRuntimeContext({ toolExecutor: { execute } as never });
+    const engine = new ToolExecutionEngine(ctx);
+    const injectSystemMessage = vi.fn();
+    engine.setModules({ injectSystemMessage, pushPersistentSystemContext: vi.fn(), getCurrentAttachments: () => [] } as never,
+      { emitTaskProgress: vi.fn() } as never, { isPlanMode: () => false, setPlanMode: vi.fn() } as never);
+    const result = await engine.executeSingleTool({ id: 'boundary-write', name: 'Write', arguments: { file_path: '/tmp/boundary-fixture.md', content } }, 0, 1);
+    // 无论断言有没有证据，写入都必须真的发生——不许把用户要写的文档挡在门外。
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(result.error).toBe('FIXTURE_EXECUTOR_ENTERED');
+    expect(result.metadata?.evidenceBoundary).toBeUndefined();
+    const advisories = injectSystemMessage.mock.calls.filter(([text]) => String(text).startsWith('EVIDENCE_BOUNDARY (advisory):'));
+    expect(advisories).toHaveLength(clean ? 0 : 1);
+    if (!clean) expect(String(advisories[0][0])).toMatch(/UNVERIFIED/);
+  });
+
+  it('traces rejected repair attempts and stops cross-tool retries without dispatch', async () => {
+    const execute = vi.fn();
+    const ctx = makeRuntimeContext({ toolExecutor: { execute } as never,
+      artifact: ArtifactState.forTest({ repairGuard: {
+      targetFile: '/nonexistent/trace-fixture.html', phase: 'initial_repair', attempts: 0, patched: false,
+    } } as never) });
+    const engine = new ToolExecutionEngine(ctx);
+    engine.setModules({ injectSystemMessage: vi.fn(), pushPersistentSystemContext: vi.fn() } as never,
+      {} as never, {} as never);
+    for (const [index, name] of ['Write', 'Bash', 'Write', 'Bash'].entries()) {
+      await engine.executeSingleTool({ id: `rejected-${index}`, name,
+        arguments: { file_path: '/tmp/report.md', content: 'report', command: 'echo report' } }, index, 4);
+    }
+    expect(execute).not.toHaveBeenCalled();
+    expect(engine.consecutiveErrors).toBe(4);
+    expect(engine.noProgressStopped).toBe(true);
+    expect(ctx.control.forceFinalResponseReason).toContain('artifact repair attempts exhausted:');
+    const records = vi.mocked(ctx.turnTrace.record).mock.calls;
+    expect(records.filter(([type]) => type === 'tool_attempt')).toHaveLength(4);
+    expect(records.filter(([type]) => type === 'tool_execution_start')).toHaveLength(0);
+    expect(records.filter(([type]) => type === 'tool_dispatch').map(([, data]) => data)).toEqual(
+      [1, 2, 3, 4].map((consecutiveErrors) => expect.objectContaining({
+        stage: 'preflight', outcome: 'rejected', success: false, consecutiveErrors,
+      })),
+    );
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     fileReadTracker.clear();

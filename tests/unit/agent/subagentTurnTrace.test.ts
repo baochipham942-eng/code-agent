@@ -30,6 +30,25 @@ describe('subagent turn trace and diff slots', () => {
     return { repoRoot: await realpath(repo), traceDir };
   }
 
+  it('counts every terminal event and preserves provider usage separately', async () => {
+    const { repoRoot, traceDir } = await makeRepo();
+    const observability = createSubagentTurnObservability({ sessionId: 'parent',
+      identity: { agentId: 'reviewer', runId: 'run' }, events: { emit: () => {} },
+      workingDirectory: repoRoot, traceDir, warn });
+    const turn = observability.startTurn(1);
+    observability.recordInference({ responseType: 'tool_use', durationMs: 10, inputTokens: 100,
+      outputTokens: 20, cacheReadTokens: 60, usageReported: true, finishReason: 'tool_calls', truncated: false });
+    await observability.recordToolResult({ id: 'r1', name: 'Read', arguments: {} }, { success: true }, 1);
+    observability.recordToolError({ id: 'denied', name: 'Bash', arguments: {} }, 'permission denied', 0);
+    await observability.recordToolResult({ id: 'r2', name: 'Read', arguments: {} }, { success: true }, 1);
+    await observability.endTurn(turn);
+    expect(observability.getToolCallCount()).toBe(3);
+    const files = await listFilesRecursive(traceDir);
+    const events = (await readFile(files[0], 'utf8')).trim().split('\n').map((line) => JSON.parse(line));
+    expect(events.filter((event) => event.type === 'tool_dispatch').map((event) => event.data.toolCallId)).toEqual(['r1', 'denied', 'r2']);
+    expect(events[0].data).toMatchObject({ inputTokens: 100, outputTokens: 20, cacheReadTokens: 60, usageReported: true });
+  });
+
   it('keeps mutation path slots independent across concurrent agent runs', async () => {
     const { repoRoot, traceDir } = await makeRepo();
     const outputPath = join(repoRoot, 'first-run.txt');

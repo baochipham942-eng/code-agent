@@ -1,3 +1,6 @@
+import type { TraceEventDataMap } from './turnTrace';
+import { getToolAttemptTrace } from './toolAttemptTrace';
+import { checkDocumentEvidenceClaims } from './documentEvidenceBoundary';
 import { hasUntrustedMemoryInput } from '../../memory/automaticMemoryPolicy';
 import { cancelTimeWakesOnUserReturn } from '../../services/wake/userReturn';
 // ============================================================================
@@ -138,7 +141,11 @@ export class MessageProcessor {
     return Math.max(currentMaxTokens, providerRecommendedMax);
   }
 
-  private buildAssistantMessageFromResponse(response: ModelResponse, content: string): Message {
+  private buildAssistantMessageFromResponse(response: ModelResponse, content: string, surface: TraceEventDataMap['evidence_boundary']['surface'] = 'final_response'): Message {
+    // 记录式：只统计问题、不改写正文（2026-09-11 爸拍板）。误伤的代价从「毁掉整段回答」
+    // 降到「trace 里多一行」；无证据的断言照原样发出去，但在 evidence_boundary 里留痕。
+    const claimProblems = checkDocumentEvidenceClaims(content, this.ctx.messages);
+    if (claimProblems.length) this.ctx.turnTrace?.record('evidence_boundary', { problems: claimProblems, surface });
     return {
       id: this.contextAssembly.generateId(),
       role: 'assistant',
@@ -151,6 +158,9 @@ export class MessageProcessor {
       outputTokens: response.usage?.outputTokens,
       modelDecision: response.runtimeDiagnostics?.modelDecision,
       metadata: attachTurnQualityMetadata(this.ctx, undefined, response),
+      // 逐段就地映射，保住 provider 记录的 text/tool 交错顺序——渲染层拿它当权威顺序。
+      // 拍平成「一段合并 text + 其余非 text」会把「先读 config」→Read→「再看 package.json」→Read
+      // 渲染成两段旁白粘连并全部前置、两张卡在后，叙事顺序对不上实际发生顺序。
       contentParts: response.contentParts?.map((part) =>
         part.type === 'text'
           ? { type: 'text' as const, text: this.contextAssembly.stripInternalFormatMimicry(part.text) }
@@ -345,7 +355,7 @@ export class MessageProcessor {
       this.guardState._consecutiveTruncations++;
 
       const strippedPartialContent = this.contextAssembly.stripInternalFormatMimicry(response.content);
-      const partialAssistantMessage = this.buildAssistantMessageFromResponse(response, strippedPartialContent);
+      const partialAssistantMessage = this.buildAssistantMessageFromResponse(response, strippedPartialContent, 'partial_response');
 
       await this.contextAssembly.addAndPersistMessage(partialAssistantMessage);
       this.ctx.onEvent({ type: 'message', data: partialAssistantMessage });
@@ -456,14 +466,18 @@ export class MessageProcessor {
       });
     }
 
-    const finalContent = gated.content;
     if (desktopClaimGate.action === 'warn') {
       logger.warn('[DesktopActionClaimGate] warning prepended to text response without desktop tool evidence', {
         reason: desktopClaimGate.reason,
         sessionId: this.ctx.sessionId,
       });
     }
-    const assistantMessage = this.buildAssistantMessageFromResponse(response, finalContent);
+    const assistantMessage = this.buildAssistantMessageFromResponse(response, gated.content);
+    const finalContent = assistantMessage.content;
+    // 终答尾部带 handoff proposal 时，contentParts 必须收口成清洗后的正文：它没过
+    // extractHandoffProposalTail，而 transcriptReplayBuilder 无条件优先用 contentParts，
+    // 原样落库会把 <handoff-proposal>{...}</handoff-proposal> 里的 JSON 当正文显示给用户，
+    // survivorManifest 还会把它拼进压缩 manifest 回灌模型。
     if (handoffTail.found && assistantMessage.contentParts?.length) assistantMessage.contentParts = [{ type: 'text', text: finalContent }];
 
     // Artifact extraction
@@ -555,6 +569,12 @@ export class MessageProcessor {
 
     const deniedToolCalls = toolCalls.filter((toolCall) => isToolDeniedForRun(this.ctx, toolCall.name));
     if (deniedToolCalls.length > 0) {
+      for (const call of toolCalls) {
+        const blocked = deniedToolCalls.some((denied) => denied.id === call.id);
+        getToolAttemptTrace(this.ctx).begin(call);
+        getToolAttemptTrace(this.ctx).finish(call, { toolCallId: call.id, success: false,
+          error: blocked ? 'TOOL_DISABLED_FOR_RUN' : 'TOOL_BATCH_SKIPPED', metadata: { skipped: !blocked } }, false, 0);
+      }
       this.guardState.toolCallRetryCount++;
       const deniedNames = Array.from(new Set(deniedToolCalls.map((toolCall) => toolCall.name))).join(', ');
       this.contextAssembly.injectSystemMessage(
@@ -755,27 +775,14 @@ export class MessageProcessor {
 
     const isTerminalWakeNoop = isTerminalWakeNoopCall(toolCalls, this.ctx.allowedToolNames);
     const assistantMessage: Message = {
-      id: this.contextAssembly.generateId(),
-      role: 'assistant',
-      content: cleanedContent,
-      timestamp: Date.now(),
+      ...this.buildAssistantMessageFromResponse(response, cleanedContent, 'tool_prelude'),
       toolCalls: sanitizeToolCallsForHistory(toolCalls),
-      thinking: response.thinking,
-      responsesOutput: response.responsesOutput,
-      effortLevel: this.ctx.turn.effortLevel,
-      inputTokens: response.usage?.inputTokens,
-      outputTokens: response.usage?.outputTokens,
-      modelDecision: response.runtimeDiagnostics?.modelDecision,
-      metadata: attachTurnQualityMetadata(this.ctx, undefined, response),
-      contentParts: response.contentParts?.map(p =>
-        p.type === 'text' ? { type: 'text' as const, text: this.contextAssembly.stripInternalFormatMimicry(p.text) } : p
-      ),
       ...(isTerminalWakeNoop ? { isMeta: true } : {}),
     };
 
     // Artifact extraction
-    if (cleanedContent) {
-      const artifacts = extractArtifacts(cleanedContent);
+    if (assistantMessage.content) {
+      const artifacts = extractArtifacts(assistantMessage.content);
       if (artifacts.length > 0) {
         assistantMessage.artifacts = artifacts;
       }

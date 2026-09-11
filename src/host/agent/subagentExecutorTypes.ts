@@ -53,7 +53,10 @@ export interface SubagentResult {
   success: boolean;
   output: string;
   error?: string;
+  /** Distinct tool names, never a call count. */
   toolsUsed: string[];
+  /** Terminal tool events, including rejected and failed attempts. */
+  toolCallCount?: number;
   iterations: number;
   /** Cost incurred by this subagent */
   cost?: number;

@@ -1,10 +1,10 @@
 import { z } from 'zod';
 import { COMPANION_LIMITS } from '../constants/companion';
 
-export const COMPANION_PUSH_KINDS = ['agent_complete', 'agent_cancelled', 'error', 'approval'] as const;
-export type CompanionPushKind = (typeof COMPANION_PUSH_KINDS)[number];
+const COMPANION_PUSH_KINDS = ['agent_complete', 'agent_cancelled', 'error', 'approval'] as const;
+type CompanionPushKind = (typeof COMPANION_PUSH_KINDS)[number];
 
-export const COMPANION_PUSH_TITLE_KEYS = {
+const COMPANION_PUSH_TITLE_KEYS = {
   agent_complete: 'task_complete',
   agent_cancelled: 'task_stopped',
   error: 'task_failed',
@@ -12,8 +12,8 @@ export const COMPANION_PUSH_TITLE_KEYS = {
 } as const;
 export type CompanionPushTitleKey = (typeof COMPANION_PUSH_TITLE_KEYS)[CompanionPushKind];
 
-export const companionPushProviderSchema = z.enum(['apns', 'fcm', 'vendor']);
-export const companionPushEnvironmentSchema = z.enum(['production', 'sandbox']);
+const companionPushProviderSchema = z.enum(['apns', 'fcm', 'vendor']);
+const companionPushEnvironmentSchema = z.enum(['production', 'sandbox']);
 export type CompanionPushProvider = z.infer<typeof companionPushProviderSchema>;
 export type CompanionPushEnvironment = z.infer<typeof companionPushEnvironmentSchema>;
 
@@ -48,7 +48,7 @@ export type CompanionPushOpenResult =
   | { kind: 'reread'; sessionId: string }
   | { kind: 'rejected'; reason: 'device_revoked' | 'device_unknown' | 'scope_denied' | 'unknown_token' | 'device_mismatch' };
 
-export type CompanionPushChannelMissing =
+type CompanionPushChannelMissing =
   | 'apns_auth_key'
   | 'aps_entitlement'
   | 'gms_or_vendor';

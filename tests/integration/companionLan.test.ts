@@ -144,7 +144,8 @@ describe('LAN companion: real HTTP + Noise + SQLite', () => {
     const replies = await Promise.all(['first', 'second'].map(id => client.request({ action: 'command', command: command(binding, id) })));
     expect(replies).toHaveLength(2); expect(executions).toBe(2);
     // A channel expires only after a full TTL of silence following its last successful RPC.
-    now += L.channelTtlMs;
+    // 显式越过边界（TTL + 1ms），不押 expiresAt <= now 的等号巧合。
+    now += L.channelTtlMs + 1;
     await expect(client.request({ action: 'status', commandId: 'first' })).rejects.toThrow('HTTP_403');
     await client.resume(binding);
   });

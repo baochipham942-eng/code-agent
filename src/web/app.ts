@@ -64,6 +64,7 @@ import { projectCompanionEvent } from '../host/services/companion/projectCompani
 import { CompanionApprovalService } from '../host/services/companion/CompanionApprovalService';
 import type { PermissionResponse } from '../shared/contract/permission';
 import { LanCompanionManager } from '../host/services/companion/LanCompanionManager';
+import { IdleSleepInhibitor } from '../host/services/desktop/idleSleepInhibitor';
 import { loadLanIdentity } from '../host/services/companion/lanIdentity';
 import { COMPANION_MANAGE_CHANNEL } from '../shared/constants/companion';
 import { getDatabase } from '../host/services/core/databaseService';
@@ -316,6 +317,12 @@ export function createApp(deps: CreateAppDeps): express.Express {
         }
       };
       app.use('/api/companion', createCompanionProvisioningRouter({ gateway }));
+      const idleSleepInhibitor = new IdleSleepInhibitor(
+        () => runRegistry.size > 0,
+        () => gateway.pairedDevices().length > 0,
+        { logger },
+      );
+      idleSleepInhibitor.start();
       const lan = new LanCompanionManager(gateway, () => loadLanIdentity(resolveCodeAgentDataDir()), async () => {
         const sessions = await (await tryGetSessionManager())?.listSessions() ?? [];
         return sessions.map(session => ({ id: session.id, title: session.title }));
@@ -335,7 +342,7 @@ export function createApp(deps: CreateAppDeps): express.Express {
           res.status(500).json({ success: false, error: { code: 'COMPANION_MANAGE_FAILED', message: error instanceof Error ? error.message : String(error) } });
         }
       });
-      deps.registerCompanionShutdown?.(() => lan.stop());
+      deps.registerCompanionShutdown?.(async () => { await idleSleepInhibitor.stop(); await lan.stop(); });
       void lan.restore().catch(() => logger.warn('Companion LAN restore unavailable'));
       app.use('/companion', createCompanionRouter({
         gateway,

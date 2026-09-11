@@ -4,15 +4,13 @@ import { Capacitor, SystemBars, SystemBarsStyle } from '@capacitor/core';
 import { Directory, Filesystem } from '@capacitor/filesystem';
 import { Keyboard } from '@capacitor/keyboard';
 import { Preferences } from '@capacitor/preferences';
-import { companionFileMime, COMPANION_FILE_MIME_TYPES } from '../../../../src/shared/constants/companion';
+import { companionFileMime } from '../../../../src/shared/constants/companion';
 import type { FilePorts, PlatformPorts } from './ports';
 import { bytesToArrayBuffer, bytesToBase64, FileCache } from './fileCache';
+import { FILE_ACCEPT, IMAGE_ACCEPT } from './fileAccept';
 import { nativeCompanionPort } from './nativeCompanion';
 
 const PREFERENCES_KEY = 'neo.mobile.preferences.v1';
-
-const IMAGE_ACCEPT = COMPANION_FILE_MIME_TYPES.filter(type => type.startsWith('image/')).join(',');
-const FILE_ACCEPT = COMPANION_FILE_MIME_TYPES.join(',');
 
 function webFilePorts(cache: FileCache): FilePorts {
   return {

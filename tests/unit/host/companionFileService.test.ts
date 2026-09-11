@@ -8,7 +8,7 @@ vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
 import { CompanionGateway } from '../../../src/host/services/companion/CompanionGateway';
 import { CompanionFileService, type CompanionFileIo } from '../../../src/host/services/companion/CompanionFileService';
-import { COMPANION_FILE_MIME_TYPES, COMPANION_LIMITS as L, companionFileMime } from '../../../src/shared/constants/companion';
+import { COMPANION_LIMITS as L } from '../../../src/shared/constants/companion';
 import type { CompanionCommand, CompanionSubmitResult } from '../../../src/shared/contract/companion';
 
 function sha(bytes: Buffer): string {
@@ -150,24 +150,6 @@ describe('CompanionFileService', () => {
     files.noteWrite('session-1', 'evil', escape);
     expect(files.completeWrite('session-1', 'evil')).toBeNull();
     rmSync(escape, { force: true });
-  });
-
-  it('keeps the picker allowlist in sync with host-side MIME acceptance', () => {
-    // 手机文件选择器的 accept 列表（capacitor.ts 的 IMAGE_ACCEPT/FILE_ACCEPT）从这个常量派生；
-    // host 经 companionFileMime 只放行同一集合——两边漂移时这个测试先红。
-    // 每种白名单类型必须至少有一个扩展名能到达它（声明 MIME 只做一致性校验，扩展名才是权威）。
-    const extFor: Record<string, string> = {
-      'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp', 'image/gif': '.gif', 'image/heic': '.heic',
-      'application/pdf': '.pdf', 'text/plain': '.txt', 'text/markdown': '.md', 'text/csv': '.csv', 'application/json': '.json',
-      'application/zip': '.zip', 'video/mp4': '.mp4', 'audio/mpeg': '.mp3', 'audio/mp4': '.m4a', 'audio/wav': '.wav',
-    };
-    for (const type of COMPANION_FILE_MIME_TYPES) {
-      expect(companionFileMime(`upload${extFor[type]}`, type)).toBe(type);
-      expect(companionFileMime(`upload${extFor[type]}`, '')).toBe(type);
-    }
-    expect(companionFileMime('payload.png', 'application/pdf')).toBeNull();
-    expect(companionFileMime('payload.exe', 'image/png')).toBeNull();
-    expect(companionFileMime('payload.exe', 'application/x-msdownload')).toBeNull();
   });
 
   it('does not read an artifact from another session', async () => {

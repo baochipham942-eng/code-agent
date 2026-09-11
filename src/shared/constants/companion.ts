@@ -5,13 +5,15 @@ export const COMPANION_MANAGE_CHANNEL = 'companion:manage';
 /** Stand-in for an event too large to fit one frame; the original payload is never delivered. */
 export const COMPANION_EVENT_DROPPED = 'event_dropped';
 
-/** Phone → desktop materials. Size cap is the shared FILE.MAX_SIZE, not a second magic number. */
-export const COMPANION_FILE_MIME_TYPES = [
-  'image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/heic',
-  'application/pdf', 'text/plain', 'text/markdown', 'text/csv', 'application/json',
-  'application/zip', 'video/mp4', 'audio/mpeg', 'audio/mp4', 'audio/wav',
-] as const;
-export type CompanionFileMime = (typeof COMPANION_FILE_MIME_TYPES)[number];
+/** Phone → desktop materials. Acceptance is extension-authoritative（此表是唯一真源）;
+ *  手机选择器的 accept 列表在 packages/mobile/src/platform/fileAccept.ts，由 tests/unit/mobile 的契约测试与真源钉齐。 */
+const FILE_EXT_MIME = {
+  '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp',
+  '.gif': 'image/gif', '.heic': 'image/heic', '.pdf': 'application/pdf', '.txt': 'text/plain',
+  '.md': 'text/markdown', '.csv': 'text/csv', '.json': 'application/json', '.zip': 'application/zip',
+  '.mp4': 'video/mp4', '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4', '.wav': 'audio/wav',
+} as const;
+export type CompanionFileMime = (typeof FILE_EXT_MIME)[keyof typeof FILE_EXT_MIME];
 
 const FILE_CHUNK_BYTES = 24 * 1024;
 
@@ -66,17 +68,10 @@ export function companionFileRetryable(code: string): boolean {
   return RETRYABLE_FILE_CODES.has(code);
 }
 
-const FILE_EXT_MIME: Record<string, CompanionFileMime> = {
-  '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp',
-  '.gif': 'image/gif', '.heic': 'image/heic', '.pdf': 'application/pdf', '.txt': 'text/plain',
-  '.md': 'text/markdown', '.csv': 'text/csv', '.json': 'application/json', '.zip': 'application/zip',
-  '.mp4': 'video/mp4', '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4', '.wav': 'audio/wav',
-};
-
 export function companionFileMime(name: string, declared: string): CompanionFileMime | null {
   // 扩展名是权威，客户端声明只做一致性校验：payload.exe 声明 image/png 这类伪造必须拒。
   const dot = name.lastIndexOf('.');
-  const inferred = dot >= 0 ? FILE_EXT_MIME[name.slice(dot).toLowerCase()] : undefined;
+  const inferred = dot >= 0 ? (FILE_EXT_MIME as Record<string, CompanionFileMime>)[name.slice(dot).toLowerCase()] : undefined;
   if (!inferred) return null;
   if (declared && declared !== inferred) return null;
   return inferred;

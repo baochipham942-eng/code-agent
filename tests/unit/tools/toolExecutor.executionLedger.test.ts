@@ -57,6 +57,25 @@ describe('ToolExecutor → 执行生命周期事件账本 接入（第二期）'
     ledgerState.throwOnGet = false;
   });
 
+  it('records actual handler admission and distinguishes it from a policy rejection', async () => {
+    resolverState.getDefinition.mockReturnValue(readDef());
+    const record = vi.fn();
+    const executor = new ToolExecutor({ requestPermission: vi.fn().mockResolvedValue(true), workingDirectory: '/tmp/workbench' });
+    const denied = await executor.execute('Read', { file_path: 'README.md' }, {
+      currentToolCallId: 'denied', deniedToolNames: ['Read'], turnTrace: { record } as never,
+    });
+    expect(denied.success).toBe(false);
+    expect(denied.metadata?.executionStarted).toBe(false);
+    expect(record).not.toHaveBeenCalled();
+    resolverState.execute.mockResolvedValue({ success: false, error: 'disk failure' });
+    const failed = await executor.execute('Read', { file_path: 'README.md' }, {
+      currentToolCallId: 'executed', turnTrace: { record } as never,
+    });
+    expect(failed.success).toBe(false);
+    expect(failed.metadata?.executionStarted).toBe(true);
+    expect(record).toHaveBeenCalledWith('tool_execution_start', { toolCallId: 'executed', toolName: 'Read' });
+  });
+
   it('放行执行一次工具 → 成对落 begin + complete，execution_id 一致，complete.status=success', async () => {
     resolverState.getDefinition.mockReturnValue(readDef());
     const executor = new ToolExecutor({ requestPermission: vi.fn().mockResolvedValue(true), workingDirectory: '/tmp/workbench' });

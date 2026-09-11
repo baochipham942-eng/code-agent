@@ -25,7 +25,7 @@ export interface AgentResultEntry {
   cancelled?: boolean;
   filesChanged: string[];
   stats: {
-    toolCalls: number;
+    toolCalls: number | null;
     iterations: number;
     cost?: number;
     durationMs: number;
@@ -53,6 +53,8 @@ export interface AggregatedTeamResult {
   totalIterations: number;
   /** Total tool calls across all agents */
   totalToolCalls: number;
+  /** 有多少个 agent 没上报工具计数——汇总里要说出来，别让「至少 N」看起来像「正好 N」。 */
+  unreportedToolCallAgents: number;
 }
 
 // ============================================================================
@@ -106,6 +108,7 @@ export function aggregateTeamResults(
   let totalCost = 0;
   let totalIterations = 0;
   let totalToolCalls = 0;
+  let unreportedToolCallAgents = 0;
   let serialDuration = 0;
   let succeeded = 0;
 
@@ -123,7 +126,7 @@ export function aggregateTeamResults(
       cancelled: r.cancelled || undefined,
       filesChanged: files,
       stats: {
-        toolCalls: r.toolsUsed.length,
+        toolCalls: r.toolCallCount ?? null,
         iterations: r.iterations,
         cost: r.cost,
         durationMs: r.duration,
@@ -133,7 +136,10 @@ export function aggregateTeamResults(
     agentResults.push(entry);
     totalCost += r.cost || 0;
     totalIterations += r.iterations;
-    totalToolCalls += r.toolsUsed.length;
+    // 已上报的照常累加；没上报的只记一笔「未知」，不把整队累加值作废——
+    // 一次含 blocked/cancelled 任务的并行执行里，其余如实上报的 agent 数据不该被连坐。
+    if (r.toolCallCount === undefined) unreportedToolCallAgents += 1;
+    else totalToolCalls += r.toolCallCount;
     serialDuration += r.duration;
     if (r.success) succeeded++;
   }
@@ -155,5 +161,6 @@ export function aggregateTeamResults(
     successRate,
     totalIterations,
     totalToolCalls,
+    unreportedToolCallAgents,
   };
 }

@@ -207,7 +207,9 @@ export class LanCompanionServer {
         result = this.gateway.commandStatus(device.deviceId, request.commandId);
       } else throw new Error('COMPANION_UNSUPPORTED_ACTION');
       const frame = channel.cipher.seal({ requestId: request.requestId, result });
-      channel.lastSeenAt = this.now();
+      const lastSeenAt = this.now();
+      channel.lastSeenAt = lastSeenAt;
+      channel.expiresAt = lastSeenAt + L.channelTtlMs;
       return { frame };
     } catch (error) {
       channel.cipher.close(); this.channels.delete(id); throw error;

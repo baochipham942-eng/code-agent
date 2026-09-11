@@ -139,13 +139,16 @@ export class CompanionFileService {
     this.pendingWrites.delete(`${sessionId}:${toolCallId}`);
     if (!pending) return null;
     const workspace = this.requireWorkspace(sessionId);
-    if (!this.io.exists(pending.filePath) || !isPathWithinRoot(pending.filePath, workspace)) return null;
+    // filePath 的生产者（imageGenerate/imageAnnotate 等）允许相对 workingDir 的写法，
+    // 工具 schema 示例就是 "./product.png"；按宿主进程 cwd 解析恒找不到，先按 workspace 归一。
+    const abs = path.isAbsolute(pending.filePath) ? pending.filePath : path.join(workspace, pending.filePath);
+    if (!this.io.exists(abs) || !isPathWithinRoot(abs, workspace)) return null;
     let size: number;
-    try { size = this.io.stat(pending.filePath).size; } catch { return null; }
+    try { size = this.io.stat(abs).size; } catch { return null; }
     if (size < 1 || size > L.fileMaxBytes) return null;
-    const name = safeName(pending.filePath);
+    const name = safeName(abs);
     const mime = companionFileMime(name, '') ?? 'application/octet-stream';
-    const bytes = this.io.readFile(pending.filePath);
+    const bytes = this.io.readFile(abs);
     return this.storeArtifact(sessionId, name, mime, bytes, 'result');
   }
 

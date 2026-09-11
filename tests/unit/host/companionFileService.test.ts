@@ -167,6 +167,11 @@ describe('CompanionFileService', () => {
     const artifact = files.completeWrite('session-1', 'tool-1');
     expect(artifact).toMatchObject({ name: 'result.md', origin: 'result' });
     expect(JSON.stringify(artifact)).not.toContain(workspace);
+    // 相对路径按 workspace 归一：imageGenerate 的 schema 示例就是 './product.png'（修正轮 8 回归钉）
+    writeFileSync(path.join(workspace, 'product.png'), Buffer.from('png-bytes'));
+    files.noteWrite('session-1', 'tool-rel', './product.png');
+    const relative = files.completeWrite('session-1', 'tool-rel');
+    expect(relative).toMatchObject({ name: 'product.png', origin: 'result' });
     const escape = path.join(tmpdir(), `neo-escape-${process.pid}.txt`);
     writeFileSync(escape, 'stolen');
     files.noteWrite('session-1', 'evil', escape);

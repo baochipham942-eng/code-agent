@@ -36,7 +36,7 @@ const zh = {
   commandRejected: '电脑那边拒绝了这条操作',
   connectHint: '连接电脑后，可继续发送这条消息。',
   noProjects: '在电脑连接手机设置中勾选项目后，可在这里切换或新建会话。',
-  attach: '添加图片或文件',
+  attach: '添加图片或文件', fromPhone: '手机上传',
   artifactWriting: '电脑正在生成文件',
 
   artifacts: '成果文件', preview: '预览', saveToDevice: '保存到此设备', savedToDevice: '已保存到此设备',
@@ -94,7 +94,7 @@ const en: Record<keyof typeof zh, string> = {
   noSession: 'No conversation selected. Your draft is retained — pick a project or start one first.',
   commandRejected: 'Your computer rejected that action.', connectHint: 'Connect your computer to send this message.',
   noProjects: 'After a project is shared in desktop phone settings, switch or start conversations here.',
-  attach: 'Add photo or file',
+  attach: 'Add photo or file', fromPhone: 'From this phone',
   artifactWriting: 'Neo is writing a file on your computer',
 
   artifacts: 'Files', preview: 'Preview', saveToDevice: 'Save on this device', savedToDevice: 'Saved on this device',

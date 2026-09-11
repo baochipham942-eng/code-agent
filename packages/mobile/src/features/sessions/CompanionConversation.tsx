@@ -62,7 +62,7 @@ export function CompanionConversation({ history, loadMore, hidePendingApprovals 
         <p key={event.eventId} className="notice">{text.artifactWriting} {String(event.payload.name ?? '')}</p>);
     })()}
     {artifacts.map(artifact => <button key={artifact.artifactId} className="artifact-card" disabled={disabled} onClick={() => openArtifact(artifact.artifactId)}>
-      <strong>{artifact.name}</strong><span>{artifact.origin === 'upload' ? text.attach : text.artifacts}</span>
+      <strong>{artifact.name}</strong><span>{artifact.origin === 'upload' ? text.fromPhone : text.artifacts}</span>
     </button>)}
   </div>{showLatest && <button className="jump-latest" onClick={() => {
     following.current = true; scroller.current!.scrollTop = scroller.current!.scrollHeight; setShowLatest(false);

@@ -470,7 +470,11 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
           />
         )}
         <span className="min-w-0 flex-1">
-          <span className="block break-words text-xs leading-5">{status === 'pending-approval' ? `${t.toolStepHumanize.pendingApprovalStatus} · ` : status === 'streaming' ? `${t.toolGroup.statusRunning} · ` : ''}{label}</span>
+          {/* data-testid 是给 tests/e2e/tool-group-header-alignment.spec.ts（#1002 的排版几何
+              护栏）用的稳定锚点。原先那条 spec 按 truncate / flex-shrink-0 两个**样式类**定位，
+              组头一改版就找不到元素、静默失效——而 test:swarm:e2e 不含它，PR CI 也不会红。
+              锚点要钉在身份上，不是钉在它此刻长什么样。 */}
+          <span data-testid="tool-group-head-label" className="block break-words text-xs leading-5">{status === 'pending-approval' ? <span data-testid="tool-group-head-status">{`${t.toolStepHumanize.pendingApprovalStatus} · `}</span> : status === 'streaming' ? <span data-testid="tool-group-head-status">{`${t.toolGroup.statusRunning} · `}</span> : ''}{label}</span>
           {(status === 'partial' || status === 'error') && (
             <span className={`mt-0.5 block whitespace-normal break-words text-xs leading-5 ${hasEscalatedError ? 'text-badge-danger' : 'text-zinc-400'}`}>
               {status === 'partial' ? `${t.toolGroup.statusPartial} · ` : ''}

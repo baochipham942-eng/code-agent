@@ -9,10 +9,15 @@ import Database from 'better-sqlite3';
 import { CompanionGateway } from '../../../src/host/services/companion/CompanionGateway';
 import { CompanionFileService, type CompanionFileIo } from '../../../src/host/services/companion/CompanionFileService';
 import { COMPANION_LIMITS as L } from '../../../src/shared/constants/companion';
-import type { CompanionCommand } from '../../../src/shared/contract/companion';
+import type { CompanionCommand, CompanionSubmitResult } from '../../../src/shared/contract/companion';
 
 function sha(bytes: Buffer): string {
   return createHash('sha256').update(bytes).digest('hex');
+}
+
+function acceptedResult(result: CompanionSubmitResult): Record<string, unknown> {
+  if (result.kind !== 'accepted' && result.kind !== 'replayed') throw new Error(`expected accepted, got ${result.kind}`);
+  return result.command.result;
 }
 
 describe('CompanionFileService', () => {
@@ -38,7 +43,7 @@ describe('CompanionFileService', () => {
     const digest = sha(bytes);
     const prepared = gateway.submit(command('files.prepare', { name, mimeType, size: bytes.length, sha256: digest }));
     expect(prepared.kind).toBe('accepted');
-    const transferId = (prepared as { command: { result: { transferId: string } } }).command.result.transferId;
+    const transferId = String(acceptedResult(prepared).transferId);
     for (let offset = 0; offset < bytes.length; offset += L.fileChunkBytes) {
       const slice = bytes.subarray(offset, offset + L.fileChunkBytes);
       const chunk = gateway.submit(command('files.chunk', { transferId, offset, data: slice.toString('base64'), sha256: sha(slice) }));
@@ -51,15 +56,15 @@ describe('CompanionFileService', () => {
     const bytes = Buffer.from('hello-image');
     const result = await upload(bytes);
     expect(result).toMatchObject({ kind: 'accepted', command: { state: 'accepted', result: { name: 'photo.png', mimeType: 'image/png', origin: 'upload' } } });
-    const artifactId = (result as { command: { result: { artifactId: string } } }).command.result.artifactId;
+    const artifactId = String(acceptedResult(result).artifactId);
     const listed = files.list('session-1');
     expect(listed.artifacts).toHaveLength(1);
     expect(JSON.stringify(listed)).not.toContain(workspace);
     const read = gateway.submit(command('files.read', { artifactId, version: 1, offset: 0, length: bytes.length }));
     expect(read).toMatchObject({ kind: 'accepted' });
-    const data = (read as { command: { result: { data: string; path?: unknown } } }).command.result;
+    const data = acceptedResult(read);
     expect(data.path).toBeUndefined();
-    expect(Buffer.from(data.data, 'base64').equals(bytes)).toBe(true);
+    expect(Buffer.from(String(data.data), 'base64').equals(bytes)).toBe(true);
     expect(readFileSync(path.join(workspace, L.fileRootDir, L.fileUploadsDir, 'session-1', artifactId, 'photo.png')).equals(bytes)).toBe(true);
     expect(readdirSync(path.join(workspace, L.fileRootDir, L.fileStagingDir), { withFileTypes: true }).filter(entry => entry.isFile())).toHaveLength(0);
   });
@@ -76,7 +81,7 @@ describe('CompanionFileService', () => {
     const bytes = Buffer.from('abcdefghij');
     const digest = sha(bytes);
     const prepared = gateway.submit(command('files.prepare', { name: 'note.txt', mimeType: 'text/plain', size: bytes.length, sha256: digest }));
-    const transferId = (prepared as { command: { result: { transferId: string } } }).command.result.transferId;
+    const transferId = String(acceptedResult(prepared).transferId);
     const slice = bytes.subarray(0, 3);
     gateway.submit(command('files.chunk', { transferId, offset: 0, data: slice.toString('base64'), sha256: sha(slice) }));
     expect(files.dispatch(command('files.abort', { transferId }))).toMatchObject({ state: 'accepted', result: { aborted: true } });
@@ -91,7 +96,7 @@ describe('CompanionFileService', () => {
     const bytes = Buffer.from('partial');
     const digest = sha(bytes);
     const prepared = gateway.submit(command('files.prepare', { name: 'a.txt', mimeType: 'text/plain', size: bytes.length, sha256: digest }));
-    const transferId = (prepared as { command: { result: { transferId: string } } }).command.result.transferId;
+    const transferId = String(acceptedResult(prepared).transferId);
     const slice = bytes.subarray(0, 2);
     gateway.submit(command('files.chunk', { transferId, offset: 0, data: slice.toString('base64'), sha256: sha(slice) }));
     const restarted = new CompanionFileService(db, gateway, () => workspace);
@@ -134,7 +139,7 @@ describe('CompanionFileService', () => {
 
   it('does not read an artifact from another session', async () => {
     const result = await upload(Buffer.from('secret'));
-    const artifactId = (result as { command: { result: { artifactId: string } } }).command.result.artifactId;
+    const artifactId = String(acceptedResult(result).artifactId);
     const other = { version: 1 as const, deviceId, scopeEpoch: 1, sessionId: 'other', commandId: 'read-other', action: 'files.read' as const,
       payload: { artifactId, version: 1, offset: 0, length: 6 } };
     expect(files.dispatch(other)).toMatchObject({ state: 'rejected', result: { code: 'ARTIFACT_MISSING' } });

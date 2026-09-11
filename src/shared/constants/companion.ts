@@ -74,8 +74,10 @@ const FILE_EXT_MIME: Record<string, CompanionFileMime> = {
 };
 
 export function companionFileMime(name: string, declared: string): CompanionFileMime | null {
-  if ((COMPANION_FILE_MIME_TYPES as readonly string[]).includes(declared)) return declared as CompanionFileMime;
+  // 扩展名是权威，客户端声明只做一致性校验：payload.exe 声明 image/png 这类伪造必须拒。
   const dot = name.lastIndexOf('.');
   const inferred = dot >= 0 ? FILE_EXT_MIME[name.slice(dot).toLowerCase()] : undefined;
-  return inferred ?? null;
+  if (!inferred) return null;
+  if (declared && declared !== inferred) return null;
+  return inferred;
 }

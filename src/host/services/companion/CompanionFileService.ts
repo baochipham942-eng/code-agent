@@ -102,6 +102,7 @@ export class CompanionFileService {
   }
 
   handle(command: CompanionCommand): Record<string, unknown> {
+    this.expireStale();
     if (command.action === 'files.prepare') return this.prepare(command);
     if (command.action === 'files.chunk') return this.chunk(command);
     if (command.action === 'files.commit') return this.commit(command);
@@ -145,10 +146,14 @@ export class CompanionFileService {
 
   recover(): void {
     const rows = this.db.prepare(`SELECT transfer_id, staging_path FROM companion_file_transfers WHERE state = 'staging'`).all() as SqlRow[];
-    for (const row of rows) {
-      this.io.rm(String(row.staging_path));
-      this.db.prepare(`UPDATE companion_file_transfers SET state = 'aborted' WHERE transfer_id = ?`).run(String(row.transfer_id));
-    }
+    for (const row of rows) this.abortInternal(String(row.transfer_id));
+  }
+
+  /** Live host: drop abandoned staging without waiting for a process restart. */
+  private expireStale(): void {
+    const cutoff = this.now() - L.reconcilingRecoveryMs;
+    const rows = this.db.prepare(`SELECT transfer_id FROM companion_file_transfers WHERE state = 'staging' AND created_at <= ?`).all(cutoff) as SqlRow[];
+    for (const row of rows) this.abortInternal(String(row.transfer_id));
   }
 
   private prepare(command: Extract<CompanionCommand, { action: 'files.prepare' }>): Record<string, unknown> {

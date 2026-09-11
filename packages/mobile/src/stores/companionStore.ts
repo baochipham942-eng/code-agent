@@ -353,10 +353,10 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
             set({ artifacts: [...get().artifacts.filter(item => item.artifactId !== artifact.artifactId), artifact] });
           }
         } catch (error) {
-          if (transferId && saved?.binding && client && get().status === 'connected') {
+          if (transferId && saved?.binding && client) {
             try {
               await enqueue(companionCommandSchema.parse({ ...base, commandId: crypto.randomUUID(), action: 'files.abort', payload: { transferId } }));
-            } catch { /* host recover() deletes staging; phone must not keep a half-file */ }
+            } catch { /* host expireStale/recover deletes staging if this abort cannot be delivered */ }
           }
           await releasePending();
           const code = error instanceof Error ? error.message : 'COMPANION_TRANSFER_INTERRUPTED';

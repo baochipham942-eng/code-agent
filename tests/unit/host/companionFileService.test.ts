@@ -92,6 +92,21 @@ describe('CompanionFileService', () => {
     expect(files.list('session-1').artifacts).toHaveLength(1);
   });
 
+  it('expires abandoned staging on the next file command without a host restart', () => {
+    let now = 1000;
+    files = new CompanionFileService(db, gateway, () => workspace, undefined, () => now);
+    const bytes = Buffer.from('stale-partial');
+    const digest = sha(bytes);
+    const prepared = gateway.submit(command('files.prepare', { name: 'a.txt', mimeType: 'text/plain', size: bytes.length, sha256: digest }));
+    const transferId = String(acceptedResult(prepared).transferId);
+    const slice = bytes.subarray(0, 2);
+    gateway.submit(command('files.chunk', { transferId, offset: 0, data: slice.toString('base64'), sha256: sha(slice) }));
+    now += L.reconcilingRecoveryMs + 1;
+    files.dispatch(command('files.read', { artifactId: 'none', version: 1, offset: 0, length: 1 }));
+    expect(db.prepare(`SELECT state FROM companion_file_transfers WHERE transfer_id = ?`).get(transferId)).toEqual({ state: 'aborted' });
+    expect(readdirSync(path.join(workspace, L.fileRootDir, L.fileStagingDir))).not.toContain(transferId);
+  });
+
   it('host restart recovers staging leftovers', () => {
     const bytes = Buffer.from('partial');
     const digest = sha(bytes);

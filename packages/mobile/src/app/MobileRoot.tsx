@@ -14,6 +14,7 @@ import { SheetHost } from './SheetHost';
 import { SettingsPage } from '../features/settings/SettingsPage';
 import { VirtualHistory } from '../features/sessions/VirtualHistory';
 import { NeoBrandMark } from '../features/brand/NeoBrandMark';
+import { AppIcon } from './AppIcon';
 
 export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures: boolean }) {
   const [store] = useState(() => createMobileStore(ports.preferences));
@@ -160,8 +161,8 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
 
   return <div className="app" data-theme={theme} onTouchStart={gestureStart} onTouchEnd={gestureEnd} onTouchCancel={() => { swipe.current = null; }}>
     <main className="conversation" inert={state.drawer || !!state.sheet}>
-      <header className="topbar"><button aria-label={text.sessions} data-testid="open-drawer" onClick={state.openDrawer}>☰</button>
-        <strong>{companion.sessionId ? companion.library?.sessions.find(s => s.id === companion.sessionId)?.title ?? `${text.sharedSession} ${(companion.binding?.scope.indexOf(companion.sessionId) ?? 0) + 1}` : state.route === 'new' ? text.neo : text.fixture}</strong><button aria-label={text.more} data-testid="open-more" onClick={() => state.openSheet('more')}>···</button></header>
+      <header className="topbar"><button aria-label={text.sessions} data-testid="open-drawer" onClick={state.openDrawer}><AppIcon name="menu" /></button>
+        <strong>{companion.sessionId ? companion.library?.sessions.find(s => s.id === companion.sessionId)?.title ?? `${text.sharedSession} ${(companion.binding?.scope.indexOf(companion.sessionId) ?? 0) + 1}` : state.route === 'new' ? text.neo : text.fixture}</strong><button aria-label={text.more} data-testid="open-more" onClick={() => state.openSheet('more')}><AppIcon name="more" /></button></header>
       {state.route === 'fixture' && fixtures ? <VirtualHistory text={text} /> : companion.sessionId && (companion.history[companion.sessionId]?.messages.length || companion.history[companion.sessionId]?.nextOffset != null || companion.events.some(event => event.sessionId === companion.sessionId))
         ? <CompanionConversation history={companion.history[companion.sessionId]} loadMore={() => void companion.loadHistory(companion.sessionId!, true)} hidePendingApprovals events={companion.events} sessionId={companion.sessionId} text={text}
           disabled={companion.busy || companion.pending || companion.status !== 'connected'} respond={companion.respond} />
@@ -205,7 +206,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
             value={(state.preferences.drafts[state.draftKey] ?? '')} data-testid="draft"
             onCompositionStart={() => { composing.current = true; }} onCompositionEnd={() => { composing.current = false; }}
             onChange={event => state.editDraft(event.target.value)} />
-          <div className="composer-actions"><button aria-label={text.projects} onClick={() => state.openSheet('projects')}>＋</button>
+          <div className="composer-actions"><button aria-label={text.projects} onClick={() => state.openSheet('projects')}><AppIcon name="plus" /></button>
             {ports.recorder && companion.sessionId && <VoiceInput key={`${companion.binding?.hostKey}:${companion.sessionId}`} recorder={ports.recorder} text={text}
               disabled={companion.status !== 'connected' || companion.busy || companion.pending} pending={companion.pending} outcome={companion.voiceOutcome} transcribe={audio => companion.transcribe(audio, companion.sessionId!, companion.binding!.hostKey)} />}
             <button className="send" aria-label={text.send} data-testid="send" disabled={!(state.preferences.drafts[state.draftKey] ?? '').trim() || companion.busy || companion.pending}
@@ -215,14 +216,14 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
                 // 点发送却什么都不发生——无报错、无 pending、草稿不清，只能反复点。
                 if (canAddressSession(companion) && state.route !== 'fixture') void companion.send((state.preferences.drafts[state.draftKey] ?? ''));
                 else state.attemptSend();
-              } }}>↑</button></div>
+              } }}><AppIcon name="arrow" /></button></div>
         </div>
       </div>
     </main>
     {state.drawer && <div className="drawer-layer" inert={!!state.sheet}>
       <button className="scrim" aria-label={text.closeDrawer} onClick={state.closeDrawer} />
       <aside className="drawer" aria-label={text.sessions}>
-        <div className="drawer-functions"><header><strong>{text.neo}</strong>{<button aria-label={text.newSession} data-testid="new-session" onClick={() => companion.binding ? state.openSheet('projects') : state.navigate('new')}>＋</button>}</header>
+        <div className="drawer-functions"><header><strong>{text.neo}</strong>{<button aria-label={text.newSession} data-testid="new-session" onClick={() => companion.binding ? state.openSheet('projects') : state.navigate('new')}><AppIcon name="plus" /></button>}</header>
           <button onClick={() => companion.binding ? state.openSheet('projects') : state.navigate('new')}>{text.newSession}</button>
           <button onClick={() => state.openSheet('projects')}>{text.projects}</button><button onClick={() => state.openSheet('remote')}>{text.remote}</button></div>
         <nav className="drawer-history" aria-label={text.history}><p className="group-title">{text.history}</p>
@@ -231,7 +232,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
           {fixtures ? Array.from({ length: 60 }, (_, n) => <button key={n} onClick={() => state.navigate('fixture')} data-testid={n === 0 ? 'fixture-session' : undefined}>{text.fixture} {n + 1}</button>) : !companion.library?.sessions.length && <p className="caption">{text.emptyHistory}</p>}
         </nav>
         <button className="personal-bar" aria-label={text.personal} data-testid="open-settings" onClick={() => state.openSheet('settings')}>
-          <span className="avatar">{(state.preferences.nickname || text.guest).slice(0, 1)}</span><strong>{state.preferences.nickname || text.guest}</strong><span aria-hidden="true">⚙</span>
+          <span className="avatar">{(state.preferences.nickname || text.guest).slice(0, 1)}</span><strong>{state.preferences.nickname || text.guest}</strong><AppIcon name="settings" />
         </button>
       </aside>
     </div>}
@@ -243,7 +244,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
         <button onClick={() => void companion.refreshLibrary()}>{text.retry}</button>
       </> : currentPage === 'remote' ? <div className="settings-group">
         <p>{text.lanHint}</p>
-        {companion.status === 'connected' ? <div className="connection-success" role="status"><span className="connection-check" aria-hidden="true">✓</span><strong>{text.connected}</strong><p>{text.connectedNext}</p></div>
+        {companion.status === 'connected' ? <div className="connection-success" role="status"><span className="connection-check"><AppIcon name="check" /></span><strong>{text.connected}</strong><p>{text.connectedNext}</p></div>
           : <p role="status">{companion.status === 'connecting' ? text.connecting : companion.status === 'storageError' ? text.secureStorageError : companion.connectionError ? text[companion.connectionError] : text.unconnected}</p>}
         {companion.status === 'connected' && <button className="primary" onClick={() => state.navigate('new')}>{text.enterConversation}</button>}
         {!ports.companion && <p>{text.nativeConnectionOnly}</p>}

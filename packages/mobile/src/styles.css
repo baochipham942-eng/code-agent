@@ -90,3 +90,17 @@ select { width: 100%; min-height: 48px; padding: 12px; border: 1px solid var(--l
 .library-sheet .settings-group { margin: 10px 0; } .danger { color: #c43b38; } .drawer-history [aria-current='page'] { background: var(--group); }
 
 .voice-card { display: grid; grid-template-columns: 44px minmax(0,1fr) 44px; align-items: center; flex: 1; text-align: center; font-size: 12px; } .voice-card button { font-size: 14px; min-width: 44px; } .voice-card .recording-stop { justify-self: center; width: 48px; background: #c43b38; color: white; border-radius: 50%; }
+
+/* AppIcon: 描边图标的尺寸与居中；颜色一律 currentColor，由上下文上色。 */
+.app-icon { width: 20px; height: 20px; display: block; flex: none; }
+.topbar button,.drawer header button,.composer-actions button,.sheet-header button,.voice-card button { display: inline-flex; align-items: center; justify-content: center; }
+.topbar .app-icon,.drawer header .app-icon { width: 22px; height: 22px; }
+.composer-actions .app-icon { width: 21px; height: 21px; }
+.sheet-header .app-icon { width: 22px; height: 22px; }
+.personal-bar .app-icon { color: var(--muted); }
+.row-detail { display: inline-flex; align-items: center; gap: 4px; }
+.settings-row .app-icon,.profile-card .app-icon { width: 18px; height: 18px; color: var(--muted); }
+.settings-row .app-icon[data-name='check'] { color: var(--text); }
+.connection-check .app-icon { width: 16px; height: 16px; }
+.voice-card .app-icon { width: 20px; height: 20px; }
+.voice-card .recording-stop .app-icon { width: 18px; height: 18px; }

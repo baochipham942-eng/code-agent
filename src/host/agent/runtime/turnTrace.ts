@@ -237,6 +237,9 @@ export class TurnTraceRecorder {
   }
 
   /** 切换当前 turn index，后续 record 的事件归属此 turn */
+  /** 当前 turn 序号——判「**本轮**有没有发生过某类事件」时必须拿它过滤。 */
+  get turnIndex(): number { return this.currentTurn; }
+
   setTurn(turnIndex: number): void {
     this.currentTurn = turnIndex;
   }

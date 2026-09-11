@@ -477,7 +477,7 @@ export class MessageProcessor {
     // 终答尾部带 handoff proposal 时，contentParts 必须收口成清洗后的正文：它没过
     // extractHandoffProposalTail，而 transcriptReplayBuilder 无条件优先用 contentParts，
     // 原样落库会把 <handoff-proposal>{...}</handoff-proposal> 里的 JSON 当正文显示给用户，
-    // survivorManifest 还会把它拼进压缩 manifest 回灌模型。（基线有这道收口，本 PR 删了。）
+    // survivorManifest 还会把它拼进压缩 manifest 回灌模型。
     if (handoffTail.found && assistantMessage.contentParts?.length) assistantMessage.contentParts = [{ type: 'text', text: finalContent }];
 
     // Artifact extraction

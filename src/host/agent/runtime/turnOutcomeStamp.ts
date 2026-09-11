@@ -135,7 +135,13 @@ async function buildTurnOutcome(
   return {
     terminal,
     // File readback proves delivery bytes, not the truth of claims inside them.
-    verdict: problems.length === 0 && !ctx.turnTrace.getEvents().some((event) => event.type === 'evidence_boundary') && evidenceRefs.some((ref) => ref.kind === 'test' && ref.freshness.state === 'read')
+    // 只看**本轮**的事件：TurnTraceRecorder 随 AgentLoop 构造一次、events 从不清空，
+    // 扫全量等于「会话里任何一轮命中过一次，此后每轮永久降级」——第 2 轮写了句「这些是
+    // 独立来源。」，第 9 轮就算真跑通 npm test 也照样 stamp 成 self_claimed，verdict 这个
+    // 字段在该会话内彻底失去区分能力，而它正是本单要交付的东西。
+    verdict: problems.length === 0
+      && !ctx.turnTrace.getEvents().some((event) => event.type === 'evidence_boundary' && event.turnIndex === ctx.turnTrace.turnIndex)
+      && evidenceRefs.some((ref) => ref.kind === 'test' && ref.freshness.state === 'read')
       ? 'verified' : 'self_claimed',
     evidenceRefs,
     source: 'generic',

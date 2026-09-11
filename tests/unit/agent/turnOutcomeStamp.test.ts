@@ -112,6 +112,31 @@ describe('turn outcome stamp', () => {
   // （只有 pty 分支写，bash.ts:992 那条 meta 里没有），parseExitCode 于是返回 undefined。
   // 这条夹具刻意不给 exitCode，钉住「不知道退出码」不等于「退出码非零」——否则 verified
   // 在生产中根本不可达，而上面那条只因夹具手写了 exitCode: 0 才是绿的（测试替身比真实依赖宽容）。
+  // ai-review #1740 Important：verdict 里的 evidence_boundary 检查只能看**本轮**。
+  // TurnTraceRecorder 随 AgentLoop 构造一次、events 从不清空，扫全量等于「会话里任何一轮
+  // 命中过一次，此后每轮永久降级」——第 2 轮写了句「这些是独立来源。」，第 9 轮就算真跑通
+  // npm test 也照样 self_claimed，verdict 这个字段在该会话内彻底失去区分能力。
+  it('an earlier turn boundary does not permanently downgrade later turns', async () => {
+    const recorder = new TurnTraceRecorder('turn-scope', traceRoot);
+    recorder.setTurn(1);
+    recorder.record('evidence_boundary', { problems: ['SOURCE_INDEPENDENCE_UNVERIFIED'], surface: 'final_response' });
+    recorder.setTurn(2);
+    await recordTurnOutcomeStamp(context(recorder), 'completed', summary({ verificationEvidence: [
+      { kind: 'command', toolCallId: 'test-ok', command: 'npm test', success: true, exitCode: 0 },
+    ] }));
+    expect(latestOutcome(recorder).verdict).toBe('verified');
+  });
+
+  it('a boundary recorded in this very turn still downgrades it', async () => {
+    const recorder = new TurnTraceRecorder('turn-scope-same', traceRoot);
+    recorder.setTurn(3);
+    recorder.record('evidence_boundary', { problems: ['SOURCE_INDEPENDENCE_UNVERIFIED'], surface: 'final_response' });
+    await recordTurnOutcomeStamp(context(recorder), 'completed', summary({ verificationEvidence: [
+      { kind: 'command', toolCallId: 'test-ok', command: 'npm test', success: true, exitCode: 0 },
+    ] }));
+    expect(latestOutcome(recorder).verdict).toBe('self_claimed');
+  });
+
   it('treats an unrecorded exit code as unknown, not as a failure', async () => {
     const recorder = new TurnTraceRecorder('exit-unknown', traceRoot);
     await recordTurnOutcomeStamp(context(recorder), 'completed', summary({ verificationEvidence: [

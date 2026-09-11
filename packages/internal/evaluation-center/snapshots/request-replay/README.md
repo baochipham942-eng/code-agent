@@ -52,3 +52,4 @@ keyless 确定性假模型（`CODE_AGENT_E2E_LOCAL_AGENT_MODEL=1`）真会话的
 ## 重录确认
 
 （行为不可见改动在此追加：日期 / PR / 说明）
+- 2026-09-11 / PR #1740 / `src/host/agent/runtime/contextAssembly/inference.ts` 的改动只调整 turn.streamedContent 的累加时机与 finish 时的清空顺序（abort 时留住半截正文），不改请求拼装。本机 `acceptance:snapshot-replay:record` 重录 6 会话 13 轮，与已提交快照的差异仅为环境字段：系统提示里的今日日期（09-08→09-11）与 `Default Shell`（bash→zsh），无任何消息或工具表内容漂移。

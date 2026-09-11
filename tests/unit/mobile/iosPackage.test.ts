@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
-  exportOptionsXml, extractNativeTargetId, extractPlistXml, parsePlistXml, patchPbxprojVersions,
+  assertPushEntitlement, exportOptionsXml, extractNativeTargetId, extractPlistXml, parsePlistXml, patchPbxprojVersions,
   profileCoversDevice, readMobileprovision, summarizeProfile,
 } from '../../../packages/mobile/scripts/ios-package.mjs';
+import { ensureAndroidPushPermission } from '../../../packages/mobile/scripts/configure-lan.mjs';
 
-const profileXml = ({ taskAllow, devices, expires }: { taskAllow?: boolean; devices?: string[]; expires: string }) =>
+const profileXml = ({ taskAllow, devices, expires, aps }: { taskAllow?: boolean; devices?: string[]; expires: string; aps?: string | null }) =>
   `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -21,7 +22,7 @@ const profileXml = ({ taskAllow, devices, expires }: { taskAllow?: boolean; devi
   <key>Entitlements</key>
   <dict>
     <key>application-identifier</key><string>D7CVTJ72NV.dev.neo.companion.preview</string>
-    <key>aps-environment</key><string>production</string>
+    ${aps === null ? '' : `<key>aps-environment</key><string>${aps ?? 'production'}</string>`}
     <key>get-task-allow</key><${taskAllow ?? false}/>
   </dict>
 </dict>
@@ -52,6 +53,21 @@ describe('mobileprovision parsing and classification', () => {
     expect(summary.provisionedDeviceCount).toBe(1);
     expect(profileCoversDevice(plist, targetUdid)).toBe(true);
     expect(profileCoversDevice(plist, 'aabbcc-unknown')).toBe(false);
+  });
+  it('fails closed when the profile has no Push entitlement instead of reporting a silent empty field', () => {
+    const summary = summarizeProfile(readMobileprovision(asProfileBuffer(profileXml({ devices: [targetUdid], expires: '2027-01-01T00:00:00Z', aps: null }))));
+    expect(summary.apsEnvironment).toBeNull();
+    expect(() => assertPushEntitlement(summary)).toThrow('PUSH_ENTITLEMENT_MISSING');
+    expect(assertPushEntitlement(summarizeProfile(readMobileprovision(asProfileBuffer(profileXml({ devices: [targetUdid], expires: '2027-01-01T00:00:00Z' }))))))
+      .toBe('production');
+  });
+});
+
+describe('android push permission declaration', () => {
+  it('adds POST_NOTIFICATIONS once and does not invent an FCM channel', () => {
+    const xml = ensureAndroidPushPermission('<manifest><application /></manifest>');
+    expect(xml).toContain('android.permission.POST_NOTIFICATIONS');
+    expect(ensureAndroidPushPermission(xml)).toBe(xml);
   });
 });
 

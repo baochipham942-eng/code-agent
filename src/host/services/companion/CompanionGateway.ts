@@ -51,6 +51,8 @@ export interface CompanionGatewayDeps {
   dispatch?: (command: CompanionCommand) => CompanionDispatchResult;
   /** Must resolve through the same authoritative service used by the desktop. */
   decide?: (command: Extract<CompanionCommand, { action: 'approval.respond' }>) => CompanionSubmitResult;
+  onPublish?: (event: CompanionEvent) => void;
+  onRevoke?: (deviceId: string) => void;
 }
 
 /**
@@ -151,8 +153,25 @@ export class CompanionGateway {
     const changes = this.db.prepare(`
       UPDATE companion_devices SET revoked_at = ?, scope_epoch = ? WHERE device_id = ?
     `).run(now, nextEpoch, deviceId).changes;
-    if (changes > 0) this.currentEpoch = nextEpoch;
+    if (changes > 0) {
+      this.currentEpoch = nextEpoch;
+      try { this.deps.onRevoke?.(deviceId); } catch { /* push cleanup must not abort revoke */ }
+    }
     return changes;
+  }
+
+  isUsableDevice(deviceId: string): boolean {
+    const device = this.getDevice(deviceId);
+    return device?.revokedAt === null;
+  }
+
+  hasDevice(deviceId: string): boolean {
+    return this.getDevice(deviceId) != null;
+  }
+
+  activeDevices(): { deviceId: string }[] {
+    return (this.db.prepare('SELECT device_id FROM companion_devices WHERE revoked_at IS NULL').all() as SqlRow[])
+      .map(row => ({ deviceId: String(row.device_id) }));
   }
 
   submit(rawCommand: unknown): CompanionSubmitResult {
@@ -304,6 +323,7 @@ export class CompanionGateway {
       INSERT INTO companion_events (event_id, epoch, seq, session_id, kind, payload_json, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `).run(event.eventId, event.epoch, event.seq, event.sessionId, event.kind, JSON.stringify(event.payload), event.createdAt);
+    try { this.deps.onPublish?.(event); } catch { /* push enqueue must not abort the event log */ }
     return event;
   }
 

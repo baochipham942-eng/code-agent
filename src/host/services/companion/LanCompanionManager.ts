@@ -7,6 +7,7 @@ import { isPrivateIPv4 } from '../../../shared/companion/lanProtocol';
 import type { CompanionManagementResult } from '../../../shared/contract/companionManagement';
 import { LanCompanionServer } from './LanCompanionServer';
 import type { CompanionGateway } from './CompanionGateway';
+import type { CompanionPushOutbox } from './CompanionPushOutbox';
 
 const requestSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('status') }).strict(),
@@ -20,7 +21,8 @@ export class LanCompanionManager {
   private starting: Promise<LanCompanionServer> | null = null;
   constructor(private readonly gateway: CompanionGateway, private readonly loadIdentity: () => Promise<KeyPair>,
     private readonly listSessions: () => Promise<{ id: string; title: string }[]>,
-    private readonly listProjects: () => { id: string; name: string }[] = () => []) {}
+    private readonly listProjects: () => { id: string; name: string }[] = () => [],
+    private readonly push?: CompanionPushOutbox) {}
 
   async restore(): Promise<void> { if (this.gateway.pairedDevices().length) await this.start(); }
 
@@ -51,7 +53,7 @@ export class LanCompanionManager {
       await this.server?.stop(); this.server = null; this.address = null;
       const address = addresses[0];
       if (!address) throw new Error('COMPANION_LAN_UNAVAILABLE');
-      const server = new LanCompanionServer(this.gateway, await this.loadIdentity());
+      const server = new LanCompanionServer(this.gateway, await this.loadIdentity(), Date.now, this.push);
       await server.start(address); this.server = server; this.address = address; return server;
     })().finally(() => { this.starting = null; });
     return this.starting;

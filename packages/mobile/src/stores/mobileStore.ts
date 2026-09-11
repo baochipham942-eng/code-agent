@@ -2,15 +2,16 @@ import { createStore } from 'zustand/vanilla';
 import type { PlatformPorts } from '../platform/ports';
 
 export type Appearance = 'system' | 'light' | 'dark';
-export type SheetPage = 'settings' | 'appearance' | 'profile' | 'about' | 'help' | 'more' | 'projects' | 'remote' | 'storage' | 'preview';
+export type SheetPage = 'settings' | 'appearance' | 'profile' | 'about' | 'help' | 'more' | 'projects' | 'remote' | 'storage' | 'preview' | 'notifications';
 type Route = 'new' | 'fixture';
-type Preferences = { schema: 1; drafts: Record<string, string>; transcriptCommands?: Record<string, string>; appearance: Appearance; nickname: string };
+type Preferences = { schema: 1; drafts: Record<string, string>; transcriptCommands?: Record<string, string>; appearance: Appearance; nickname: string; notifyEnabled: boolean };
 type Sheet = { origin: 'root' | 'drawer'; pages: SheetPage[] };
 interface State {
   preferences: Preferences; ready: boolean; loadError: boolean; saveError: boolean; saving: boolean;
   draftKey: string; activateDraft(key: string): void;
   route: Route; drawer: boolean; sheet: Sheet | null; profileDraft: string; sendAttempted: boolean;
   hydrate(): Promise<void>; editDraft(value: string): void; setAppearance(value: Appearance): void;
+  setNotifyEnabled(value: boolean): void;
   editProfile(value: string): void; saveProfile(): void; flush(): Promise<void>;
   openDrawer(): void; closeDrawer(): void; navigate(route: Route): void;
   openSheet(page: SheetPage): void; pushSheet(page: SheetPage): void; closeSheet(): void; back(): boolean;
@@ -18,7 +19,7 @@ interface State {
   appendTranscript(text: string, key: string, commandId: string): Promise<void>;
   acknowledgeDraft(text: string, key?: string): Promise<void>;
 }
-const defaults = (): Preferences => ({ schema: 1, drafts: { new: '', fixture: '' }, appearance: 'system', nickname: '' });
+const defaults = (): Preferences => ({ schema: 1, drafts: { new: '', fixture: '' }, appearance: 'system', nickname: '', notifyEnabled: false });
 function decode(raw: string | null): Preferences {
   if (raw === null) return defaults();
   const p: unknown = JSON.parse(raw);
@@ -28,7 +29,7 @@ function decode(raw: string | null): Preferences {
       !['system', 'light', 'dark'].includes(v.appearance ?? '') || typeof v.nickname !== 'string') {
     throw new Error('INVALID_PREFERENCES');
   }
-  return { schema: 1, transcriptCommands: v.transcriptCommands ?? {}, drafts: Object.fromEntries(Object.entries(v.drafts).filter(([, value]) => typeof value === 'string')), appearance: v.appearance!, nickname: v.nickname };
+  return { schema: 1, transcriptCommands: v.transcriptCommands ?? {}, drafts: Object.fromEntries(Object.entries(v.drafts).filter(([, value]) => typeof value === 'string')), appearance: v.appearance!, nickname: v.nickname, notifyEnabled: v.notifyEnabled === true };
 }
 
 export function createMobileStore(port: PlatformPorts['preferences']) {
@@ -81,6 +82,10 @@ export function createMobileStore(port: PlatformPorts['preferences']) {
       setAppearance: appearance => {
         if (!get().ready) return;
         set({ preferences: { ...get().preferences, appearance } }); persist();
+      },
+      setNotifyEnabled: notifyEnabled => {
+        if (!get().ready) return;
+        set({ preferences: { ...get().preferences, notifyEnabled } }); persist();
       },
       editProfile: profileDraft => set({ profileDraft }),
       saveProfile: () => {

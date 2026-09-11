@@ -14,6 +14,7 @@ export interface ProfileSummary {
   apsEnvironment: string | null;
 }
 export declare function summarizeProfile(plist: Record<string, unknown>, now?: Date): ProfileSummary;
+export declare function assertPushEntitlement(summary: Pick<ProfileSummary, 'apsEnvironment'>): string;
 export declare function profileCoversDevice(plist: Record<string, unknown>, udid: string): boolean;
 export declare function patchPbxprojVersions(content: string, version: string, build: number): string;
 export declare function extractNativeTargetId(content: string): string;

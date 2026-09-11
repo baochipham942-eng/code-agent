@@ -3,6 +3,7 @@ import { createStore } from 'zustand/vanilla';
 import { createIdentity } from '../../../../src/shared/companion/noiseChannel';
 import { fromHex, toHex, parseInvitation, type LanBinding } from '../../../../src/shared/companion/lanProtocol';
 import type { CompanionCommand, CompanionCommandRecord, CompanionEvent, CompanionSyncResult } from '../../../../src/shared/contract/companion';
+import type { CompanionPushRegister, CompanionPushRegisterResult, CompanionPushOpenResult } from '../../../../src/shared/contract/companionPush';
 import { companionCommandSchema } from '../../../../src/shared/contract/companion';
 import { LanCompanionClient } from '../platform/lanCompanionClient';
 import type { FilePorts, PlatformPorts, PickedFile } from '../platform/ports';
@@ -37,6 +38,10 @@ interface State {
   events: CompanionEvent[]; runId: string | null; terminal: 'complete' | 'stopped' | 'failed' | null;
   hydrate(): Promise<void>; pair(): Promise<void>; reconnect(): Promise<void>; pause(): void;
   respond(requestId: string, decision: 'approved' | 'rejected'): Promise<void>;
+  routeError: string | null;
+  registerPush(input: CompanionPushRegister): Promise<CompanionPushRegisterResult>;
+  unregisterPush(): Promise<void>;
+  openRoute(routeToken: string): Promise<void>;
   selectSession(id: string): void; send(text: string): Promise<void>; stop(): Promise<void>; sync(): Promise<void>;
   artifacts: CompanionArtifact[]; preview: (CompanionArtifact & { bytes: Uint8Array }) | null; savedPreview: boolean; savedPreviewName: string | null;
   cacheUsage: CacheInspect | null;
@@ -165,7 +170,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
     };
     return {
       voiceOutcome: null, library: null, history: {}, libraryError: false,
-      connectionError: null, commandError: null, status: 'unpaired', binding: null, sessionId: null, busy: false, pending: false, events: [], runId: null, terminal: null,
+      connectionError: null, commandError: null, routeError: null, status: 'unpaired', binding: null, sessionId: null, busy: false, pending: false, events: [], runId: null, terminal: null,
       artifacts: [], preview: null, savedPreview: false, savedPreviewName: null, cacheUsage: files?.cache.inspect() ?? null,
       hydrate: async () => {
         if (!port || get().busy) return;
@@ -266,6 +271,22 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
           commandId: crypto.randomUUID(), sessionId: get().sessionId, action: 'run.cancel', payload: { runId: get().runId } });
         await persist({ ...saved, pending: command }); set({ pending: true }); await deliver();
       }),
+      registerPush: async input => {
+        if (!client || get().status !== 'connected') return { kind: 'rejected', reason: 'unsupported_action' };
+        return await client.request({ action: 'push.register', provider: input.provider, token: input.token, environment: input.environment }) as CompanionPushRegisterResult;
+      },
+      unregisterPush: async () => {
+        if (!client || get().status !== 'connected') return;
+        await client.request({ action: 'push.unregister' });
+      },
+      openRoute: async routeToken => {
+        if (!client || get().status !== 'connected') { set({ routeError: 'auth_required' }); return; }
+        const result = await client.request({ action: 'push.open', routeToken }) as CompanionPushOpenResult;
+        if (result.kind === 'rejected') { set({ routeError: result.reason }); return; }
+        set({ routeError: null });
+        get().selectSession(result.sessionId);
+        await get().sync();
+      },
       respond: (requestId, decision) => safely(async () => {
         if (!saved?.binding || saved.pending || !canAddressSession(get())) return;
         const latest = get().events.filter(event => event.kind === 'approval' && event.sessionId === get().sessionId && event.payload.requestId === requestId).at(-1)?.payload;

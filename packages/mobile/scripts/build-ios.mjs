@@ -106,6 +106,7 @@ const appBundle = capture('unzip', ['-Z1', ipa]).split('\n').map(line => line.ma
 if (!appBundle) throw new Error('APP_BUNDLE_MISSING_IN_IPA');
 const embeddedPlist = readMobileprovision(execFileSync('unzip', ['-p', ipa, `Payload/${appBundle}/embedded.mobileprovision`], { maxBuffer: 1 << 24 }));
 const summary = summarizeProfile(embeddedPlist);
+if (!summary.apsEnvironment) console.warn('PUSH_ENTITLEMENT_MISSING: profile has no aps-environment; ios:verify will fail push-entitlement-present');
 if (summary.method !== 'ad-hoc') throw new Error(`NOT_AD_HOC: exported profile is ${summary.method}`);
 if (summary.expired) throw new Error(`PROFILE_EXPIRED: ${summary.expiresAt.toISOString()}`);
 if (!profileCoversDevice(embeddedPlist, expectedDevice)) throw new Error('PROFILE_DOES_NOT_COVER_EXPECTED_DEVICE');

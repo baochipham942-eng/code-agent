@@ -4,11 +4,9 @@ import { createNotificationStore } from '../../../packages/mobile/src/stores/not
 import { nativeTokenUnavailable } from '../../../packages/mobile/src/platform/notifications';
 import type { NotificationPort, OsPermission, TokenResult } from '../../../packages/mobile/src/platform/ports';
 
-function port(opts: { permission?: OsPermission; token?: TokenResult } = {}): NotificationPort & { taps: ((token: string) => void)[] } {
+function port(opts: { permission?: OsPermission; token?: TokenResult } = {}): NotificationPort & { setPermission(next: OsPermission): void } {
   let permission = opts.permission ?? 'unknown';
-  const taps: ((token: string) => void)[] = [];
   return {
-    taps,
     permission: {
       read: async () => permission,
       request: async () => { permission = opts.permission === 'granted' ? 'granted' : (permission === 'unknown' ? 'denied' : permission); return permission; },
@@ -17,11 +15,11 @@ function port(opts: { permission?: OsPermission; token?: TokenResult } = {}): No
       current: async () => opts.token ?? { kind: 'token', token: { provider: 'apns', token: 'device-token-aaaaaaaa', environment: 'production' } },
       subscribe: () => () => {},
     },
-    tap: { subscribe: async onTap => { taps.push(onTap); return () => {}; } },
+    tap: { subscribe: async () => () => {} },
     openSettings: async () => {},
     network: { read: () => 'online' },
     setPermission(next: OsPermission) { permission = next; },
-  } as NotificationPort & { taps: ((token: string) => void)[]; setPermission(next: OsPermission): void };
+  };
 }
 
 describe('notificationStore', () => {

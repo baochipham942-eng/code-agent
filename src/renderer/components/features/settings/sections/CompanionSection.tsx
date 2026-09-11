@@ -17,7 +17,7 @@ export function CompanionSection() {
   const [expired, setExpired] = useState(false);
   const refresh = async () => {
     const result = await invoke(COMPANION_MANAGE_CHANNEL, { action: 'status' });
-    if (!result || result.kind !== 'status') throw new Error('COMPANION_UNAVAILABLE');
+    if (result?.kind !== 'status') throw new Error('COMPANION_UNAVAILABLE');
     setStatus(result);
   };
   const run = async (work: () => Promise<void>) => {

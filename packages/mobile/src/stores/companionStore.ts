@@ -6,6 +6,7 @@ import type { CompanionCommand, CompanionCommandRecord, CompanionEvent, Companio
 import { companionCommandSchema } from '../../../../src/shared/contract/companion';
 import { LanCompanionClient } from '../platform/lanCompanionClient';
 import type { PlatformPorts } from '../platform/ports';
+import { COMPANION_LIMITS } from '../../../../src/shared/constants/companion';
 
 interface Saved {
   version: 1; publicKey: string; secretKey: string;
@@ -96,6 +97,17 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         set({ runId: terminal ? null : runId, terminal: terminal ? terminal.kind === 'agent_complete' ? 'complete' : terminal.kind === 'agent_cancelled' ? 'stopped' : 'failed' : null });
       }
     };
+    const recoverStalePending = async (record: CompanionCommandRecord | null) => {
+      const pending = saved?.pending;
+      if (!pending || !record || record.state !== 'reconciling') return false;
+      if (Date.now() - record.createdAt < COMPANION_LIMITS.reconcilingRecoveryMs) return false;
+      // Do not redispatch an uncertain command. Release the UI lock while
+      // leaving the user's draft untouched (the command payload is separate
+      // from the draft store); the host reservation is never reused.
+      await persist({ ...saved!, pending: undefined });
+      set({ pending: false, commandError: 'COMPANION_COMMAND_RECONCILING_TIMEOUT' });
+      return true;
+    };
     const deliver = async () => {
       if (!saved?.pending || !client) return;
       const result = await client.request({ action: 'command', command: saved.pending }) as { kind: string; reason?: string; command?: CompanionCommandRecord };
@@ -167,7 +179,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         set({ status: 'connected', binding, sessionId: get().sessionId ?? binding.scope.find(id => !id.startsWith('project:')) ?? null });
         if (saved?.pending) {
           const record = await client!.request({ action: 'status', commandId: saved.pending.commandId }) as CompanionCommandRecord | null;
-          if (record) await accepted(record); else await deliver();
+          if (record && !(await recoverStalePending(record))) await accepted(record); else if (!record) await deliver();
         }
       }),
       pause: () => { client?.close(); if (get().binding) set({ status: 'offline' }); },
@@ -251,7 +263,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
           if (saved?.pending) {
             const pendingId = saved.pending.commandId;
             const record = await client.request({ action: 'status', commandId: pendingId }) as CompanionCommandRecord | null;
-            if (record && saved?.pending?.commandId === pendingId) await accepted(record);
+            if (record && saved?.pending?.commandId === pendingId && !(await recoverStalePending(record))) await accepted(record);
           }
         } catch { client?.close(); if (get().status !== 'storageError') set({ status: 'offline', connectionError: 'connectionUnavailable' }); }
         finally { syncing = false; }

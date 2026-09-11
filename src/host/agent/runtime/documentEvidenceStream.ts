@@ -1,5 +1,4 @@
 import type { Message } from '../../../shared/contract';
-import { checkDocumentEvidenceClaims } from './documentEvidenceBoundary';
 import { createHandoffTailStreamFilter } from '../../handoff/handoffStream';
 
 /**
@@ -27,17 +26,19 @@ function lastStrongBoundary(text: string): number {
  *
  * 仍然保留的两条：handoff 尾巴不外泄；未完成（取消/抛错）的尾句不发布——
  * 半句话的判定和呈现都没有意义，且调用方已经把原始 chunk 存进 turn 供 abort 时留底。
+ *
+ * 这里**不**做断言判定：落库那一刻 messageProcessor 会对完整正文统一记一次
+ * evidence_boundary，逐句再扫一遍纯属重复劳动（而且判定是 O(n²)，见 MAX_CLAIM_SCAN_CHARS）。
+ * messages 因此暂时用不上，保留在签名里是为了让调用方不必知道这个实现细节。
  */
-export function createDocumentEvidenceStream(messages: readonly Message[], emit: (text: string) => void): {
+export function createDocumentEvidenceStream(_messages: readonly Message[], emit: (text: string) => void): {
   push(text: string | undefined): void;
   finish(content: string | undefined): void;
   readonly pending: string;
-  readonly problems: string[];
 } {
   let raw = '';
   let visible = '';
   let published = '';
-  const problems = new Set<string>();
   const handoff = createHandoffTailStreamFilter((text) => { visible += text; });
 
   const flush = (all: boolean) => {
@@ -46,13 +47,11 @@ export function createDocumentEvidenceStream(messages: readonly Message[], emit:
     const head = visible.slice(0, cut + 1);
     visible = visible.slice(cut + 1);
     published += head;
-    for (const problem of checkDocumentEvidenceClaims(head, messages)) problems.add(problem);
     if (head) emit(head);
   };
 
   return {
     get pending() { return raw.slice(published.length); },
-    get problems() { return [...problems]; },
     push(text) {
       raw += text ?? '';
       handoff.push(text ?? '');

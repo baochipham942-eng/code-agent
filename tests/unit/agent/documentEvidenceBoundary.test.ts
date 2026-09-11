@@ -204,7 +204,8 @@ describe('assertion modality and field scope regressions', () => {
     const content = '附件已整理。核验要求：至少两份独立来源，才能标记已验证。\n空间主人：owner-fixture，自动化配置待查。\n这些不是独立来源。下一步核对原文。';
     expect(checkDocumentEvidenceClaims(content, [])).toEqual(['SPACE_OWNER_UNVERIFIED']);
     // 2026-09-11 爸拍板：边界改记录式（不改写正文）+ 按句流出。流出去的是模型原话，
-    // 逐字等于输入；被判有问题的字段进 stream.problems，不进正文。
+    // 逐字等于输入。判定不在流里做——落库那一刻 messageProcessor 对完整正文统一记一次
+    // evidence_boundary，逐句再扫一遍纯属重复（判定是 O(n²)）。
     const emitted: string[] = [];
     const stream = createDocumentEvidenceStream([], (text) => emitted.push(text));
     for (const char of content) stream.push(char);
@@ -213,7 +214,7 @@ describe('assertion modality and field scope regressions', () => {
     expect(content.startsWith(emitted.join(''))).toBe(true);
     stream.finish(content);
     expect(emitted.join('')).toBe(content);
-    expect(stream.problems).toEqual(['SPACE_OWNER_UNVERIFIED']);
+    expect(checkDocumentEvidenceClaims(content, [])).toEqual(['SPACE_OWNER_UNVERIFIED']);
   });
 });
 

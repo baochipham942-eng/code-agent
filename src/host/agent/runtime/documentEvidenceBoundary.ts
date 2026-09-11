@@ -1,5 +1,5 @@
 import { extractDocumentAssertions, type DocumentAssertion } from './documentEvidenceAssertions';
-import { appendFile, mkdir, readFile } from 'node:fs/promises';
+import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, extname, resolve } from 'node:path';
 import type { Message, ToolCall, ToolResult } from '../../../shared/contract';
 import { getUserConfigDir } from '../../config/configPaths';
@@ -8,6 +8,8 @@ import { createLogger } from '../../services/infra/logger';
 
 const logger = createLogger('DocumentEvidenceBoundary');
 const DOCUMENT_EXTENSIONS = new Set(['.md', '.txt', '.html', '.csv']);
+/** 文档血缘账本只保留尾部这么多行，读写都按它收口。 */
+const MAX_ORIGIN_LEDGER_LINES = 500;
 // 「空间」当作用域信号本身没问题——用户说「整理这个空间的盘点」时，报告里的
 // 「成员 / 专家 / 自动化」确实就是空间断言。问题在于中文里一大票复合词跟 Neo 空间无关：
 // 磁盘空间、内存空间、向量空间、命名空间、地址空间、空间复杂度…先把这些整体剔掉，
@@ -63,7 +65,12 @@ export async function attachDocumentOrigin(
     let ledger = '';
     try { ledger = await readFile(ledgerPath, 'utf8'); }
     catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
-    for (const line of ledger.split('\n')) {
+    // 只看最近 MAX_ORIGIN_LEDGER_LINES 行：血缘查的是「这份文件此刻的 digest 从哪来」，
+    // 那条记录必然是最近写的；更早的行既命中不了也没人读。不限行的话，装机用久了
+    // 每一次 .md/.txt/.html/.csv 的 Read 都要在工具结果返回的关键路径上读完整份账本
+    // 并逐行 JSON.parse（数万行就是百毫秒量级），且文件永不回收。
+    const lines = ledger.split('\n');
+    for (const line of lines.slice(-MAX_ORIGIN_LEDGER_LINES)) {
       if (!line) continue;
       try {
         const prior: unknown = JSON.parse(line);
@@ -77,7 +84,17 @@ export async function attachDocumentOrigin(
       origin = { path: canonical, digest, kind: 'derived',
         roots: [...new Set(sources.flatMap((source) => source.roots))] };
       await mkdir(dirname(ledgerPath), { recursive: true });
-      await appendFile(ledgerPath, `${JSON.stringify(origin)}\n`, 'utf8');
+      // 同一 path+digest 已在尾窗里就不重复追加，并在超出上限时就地截成尾窗——
+      // append-only 且永不回收会让上面那段读取开销随使用时间单调增长。
+      const tail = lines.filter(Boolean).slice(-MAX_ORIGIN_LEDGER_LINES);
+      const encoded = JSON.stringify(origin);
+      if (!tail.includes(encoded)) {
+        if (tail.length >= MAX_ORIGIN_LEDGER_LINES) {
+          await writeFile(ledgerPath, `${[...tail.slice(-(MAX_ORIGIN_LEDGER_LINES - 1)), encoded].join('\n')}\n`, 'utf8');
+        } else {
+          await appendFile(ledgerPath, `${encoded}\n`, 'utf8');
+        }
+      }
     }
     return { ...result, metadata: { ...result.metadata, documentOrigin: origin },
       output: read ? `${result.output ?? ''}\n\n<document-evidence>${JSON.stringify(origin)}; local file content, source independence unverified</document-evidence>` : result.output };

@@ -1103,7 +1103,7 @@ Stats:
 - Max parallelism: ${result.parallelism}
 - Success rate: ${(aggregation.successRate * 100).toFixed(0)}% (${result.results.filter(r => r.success).length}/${result.results.length})
 - Total cost: $${aggregation.totalCost.toFixed(4)}
-- Total iterations: ${aggregation.totalIterations} · Total tool attempts (terminal events, including failures/rejections): ${aggregation.totalToolCalls ?? 'unavailable'}${coordNote}
+- Total iterations: ${aggregation.totalIterations} · Total tool attempts (terminal events, including failures/rejections): ${aggregation.unreportedToolCallAgents > 0 ? `at least ${aggregation.totalToolCalls} (${aggregation.unreportedToolCallAgents} agent(s) did not report)` : aggregation.totalToolCalls}${coordNote}
 ${filesNote}
 
 Agent Results:

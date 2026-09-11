@@ -12,8 +12,8 @@ mkdirSync(directory, { recursive: true });
 await build({ stdin: { contents: `
   import Database from 'better-sqlite3';
   import { networkInterfaces } from 'node:os';
-  import { CompanionGateway } from '../../src/host/companion/CompanionGateway';
-  import { LanCompanionServer } from '../../src/host/companion/LanCompanionServer';
+  import { CompanionGateway } from '../../src/host/services/companion/CompanionGateway';
+  import { LanCompanionServer } from '../../src/host/services/companion/LanCompanionServer';
   import { createIdentity } from '../../src/shared/companion/noiseChannel';
   import { isPrivateIPv4 } from '../../src/shared/companion/lanProtocol';
   export async function fixture() {

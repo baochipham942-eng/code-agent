@@ -22,7 +22,9 @@ function webFilePorts(cache: FileCache): FilePorts {
         const file = input.files?.[0];
         if (!file) { resolve(null); return; }
         const bytes = new Uint8Array(await file.arrayBuffer());
-        const mime = companionFileMime(file.name, file.type) ?? file.type;
+        // OS/浏览器上报的 MIME 不可靠（.m4a 常见 audio/x-m4a、.md 报 octet-stream），扩展名才是权威；
+        // 不把上报值带给上层，避免与扩展名矛盾被 companionFileMime 一致性校验拒掉。
+        const mime = companionFileMime(file.name, '') ?? '';
         resolve({ name: file.name, mimeType: mime, size: file.size, bytes });
       }, { once: true });
       input.addEventListener('cancel', () => resolve(null), { once: true });

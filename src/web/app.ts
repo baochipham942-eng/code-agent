@@ -332,10 +332,10 @@ export function createApp(deps: CreateAppDeps): express.Express {
       publishCompanionEvent = (sessionId, kind, payload) => {
         // 成果复制只对「有已配对手机」的桌面发生：没配对过的用户每次成图都复制一份
         // 进项目目录且无任何清理路径，是纯浪费（claude 复审 Important 2）。
-        const paired = gateway.pairedDevices().length > 0;
+        // pairedDevices() 是 SQL JOIN，只在真的涉及成果的两个 kind 里才算（流式事件每帧都过这里）。
         const raw = payload.event && typeof payload.event === 'object' && !Array.isArray(payload.event)
           ? payload.event as Record<string, unknown> : null;
-        if (paired && kind === 'artifact_write_started' && raw) {
+        if (kind === 'artifact_write_started' && raw && gateway.pairedDevices().length > 0) {
           services.files?.noteWrite(sessionId, String(raw.toolCallId ?? ''), String(raw.filePath ?? ''));
         }
         const projection = projectCompanionEvent(kind, payload.event);
@@ -343,7 +343,7 @@ export function createApp(deps: CreateAppDeps): express.Express {
         try {
           gateway.publish(sessionId, kind, { ...projection, ...(typeof payload.runId === 'string' ? { runId: payload.runId } : {}) });
           if (kind === 'tool_call_end' && raw && typeof raw.toolCallId === 'string') {
-            if (paired && raw.success === true) {
+            if (raw.success === true && gateway.pairedDevices().length > 0) {
               const artifact = services.files?.completeWrite(sessionId, raw.toolCallId);
               if (artifact) gateway.publish(sessionId, 'artifact', { ...artifact, ...(typeof payload.runId === 'string' ? { runId: payload.runId } : {}) });
             } else {

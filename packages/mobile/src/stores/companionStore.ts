@@ -242,7 +242,9 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         if ((get().library?.sessions.some(s => s.id === sessionId) || get().binding?.scope.includes(sessionId) || get().events.some(e => e.sessionId === sessionId && e.kind === 'approval')) && !get().busy) {
           const events = get().events.filter(e => e.sessionId === sessionId);
           const last = events.filter(e => ['run_started', 'agent_complete', 'agent_cancelled', 'error'].includes(e.kind)).at(-1);
-          set({ sessionId, runId: last?.kind === 'run_started' ? String(last.payload.runId) : null, terminal: null });
+          // artifacts/preview 是当前会话作用域：切会话必须清掉，否则 offline 时
+          // refreshArtifacts 提前 return，B 会话会一直显示 A 会话的成果卡（点开必 ARTIFACT_MISSING）。
+          set({ sessionId, runId: last?.kind === 'run_started' ? String(last.payload.runId) : null, terminal: null, artifacts: [], preview: null, savedPreview: false });
         }
       },
       transcribe: (audio, sessionId, hostKey) => safely(async () => {
@@ -319,7 +321,8 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         if (file.size > COMPANION_LIMITS.fileMaxBytes || file.bytes.byteLength > COMPANION_LIMITS.fileMaxBytes) {
           set({ commandError: 'UPLOAD_TOO_LARGE' }); return;
         }
-        const mime = companionFileMime(file.name, file.mimeType);
+        // 扩展名权威：picker 已按扩展名归一化（归不了的是空串），这里不再信任何声明值。
+        const mime = companionFileMime(file.name, '');
         if (!mime) { set({ commandError: 'COMPANION_FILE_TYPE_DENIED' }); return; }
         const sha256 = await sha256Hex(file.bytes);
         const base = { version: 1 as const, deviceId: saved.binding.deviceId, scopeEpoch: saved.binding.scopeEpoch, sessionId: get().sessionId! };

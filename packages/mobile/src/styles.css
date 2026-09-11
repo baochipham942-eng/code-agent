@@ -109,5 +109,4 @@ select { width: 100%; min-height: 48px; padding: 12px; border: 1px solid var(--l
 .artifact-card span { color: var(--muted); font-size: 13px; }
 .preview-pane { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
 .preview-media { width: 100%; max-height: 50vh; object-fit: contain; background: var(--surface); border-radius: 12px; }
-.preview-html { width: 100%; min-height: 40vh; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
 .preview-text { max-height: 40vh; overflow: auto; white-space: pre-wrap; background: var(--surface); padding: 12px; border-radius: 12px; font-size: 14px; }

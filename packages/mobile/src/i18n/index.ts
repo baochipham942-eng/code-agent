@@ -37,7 +37,7 @@ const zh = {
   connectHint: '连接电脑后，可继续发送这条消息。',
   noProjects: '在电脑连接手机设置中勾选项目后，可在这里切换或新建会话。',
   attach: '添加图片或文件',
-  uploading: '正在发送到电脑', artifactWriting: '电脑正在生成文件',
+  artifactWriting: '电脑正在生成文件',
 
   artifacts: '成果文件', preview: '预览', saveToDevice: '保存到此设备', savedToDevice: '已保存到此设备',
   previewHint: '先预览，确认后再保存。不会自动写入相册或文件。',
@@ -95,7 +95,7 @@ const en: Record<keyof typeof zh, string> = {
   commandRejected: 'Your computer rejected that action.', connectHint: 'Connect your computer to send this message.',
   noProjects: 'After a project is shared in desktop phone settings, switch or start conversations here.',
   attach: 'Add photo or file',
-  uploading: 'Sending to your computer', artifactWriting: 'Neo is writing a file on your computer',
+  artifactWriting: 'Neo is writing a file on your computer',
 
   artifacts: 'Files', preview: 'Preview', saveToDevice: 'Save on this device', savedToDevice: 'Saved on this device',
   previewHint: 'Preview first, then save. Nothing is written to Photos or Files until you save.',

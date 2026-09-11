@@ -355,9 +355,9 @@ export class CompanionGateway {
   async read(deviceId: string, raw: unknown): Promise<unknown> {
     if (!this.grants(deviceId).length || !this.deps.read) throw new Error('COMPANION_LIBRARY_UNAVAILABLE');
     const request = companionReadSchema.parse(raw);
-    if (request.kind === 'history' && !this.canAccessSession(deviceId, request.sessionId)) throw new Error('COMPANION_SCOPE_DENIED');
+    if ((request.kind === 'history' || request.kind === 'artifacts') && !this.canAccessSession(deviceId, request.sessionId)) throw new Error('COMPANION_SCOPE_DENIED');
     const result = await this.deps.read(deviceId, request);
-    if (!this.grants(deviceId).length || (request.kind === 'history' && !this.canAccessSession(deviceId, request.sessionId))) throw new Error('COMPANION_SCOPE_DENIED');
+    if (!this.grants(deviceId).length || ((request.kind === 'history' || request.kind === 'artifacts') && !this.canAccessSession(deviceId, request.sessionId))) throw new Error('COMPANION_SCOPE_DENIED');
     return result;
   }
 

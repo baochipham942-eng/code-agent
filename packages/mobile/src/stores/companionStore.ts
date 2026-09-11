@@ -1,12 +1,13 @@
-import type { CompanionLibrary, CompanionHistory } from '../../../../src/shared/contract/companionLibrary';
+import type { CompanionArtifact, CompanionArtifacts, CompanionLibrary, CompanionHistory } from '../../../../src/shared/contract/companionLibrary';
 import { createStore } from 'zustand/vanilla';
 import { createIdentity } from '../../../../src/shared/companion/noiseChannel';
 import { fromHex, toHex, parseInvitation, type LanBinding } from '../../../../src/shared/companion/lanProtocol';
 import type { CompanionCommand, CompanionCommandRecord, CompanionEvent, CompanionSyncResult } from '../../../../src/shared/contract/companion';
 import { companionCommandSchema } from '../../../../src/shared/contract/companion';
 import { LanCompanionClient } from '../platform/lanCompanionClient';
-import type { PlatformPorts } from '../platform/ports';
-import { COMPANION_LIMITS } from '../../../../src/shared/constants/companion';
+import type { FilePorts, PlatformPorts, PickedFile } from '../platform/ports';
+import { companionFileMime, companionFileRetryable, COMPANION_LIMITS } from '../../../../src/shared/constants/companion';
+import { base64ToBytes, bytesToBase64, sha256Hex, type CacheInspect } from '../platform/fileCache';
 
 interface Saved {
   version: 1; publicKey: string; secretKey: string;
@@ -37,6 +38,14 @@ interface State {
   hydrate(): Promise<void>; pair(): Promise<void>; reconnect(): Promise<void>; pause(): void;
   respond(requestId: string, decision: 'approved' | 'rejected'): Promise<void>;
   selectSession(id: string): void; send(text: string): Promise<void>; stop(): Promise<void>; sync(): Promise<void>;
+  artifacts: CompanionArtifact[]; preview: (CompanionArtifact & { bytes: Uint8Array }) | null; savedPreview: boolean;
+  cacheUsage: CacheInspect | null;
+  upload(file: PickedFile): Promise<void>;
+  previewArtifact(artifactId: string): Promise<void>;
+  closePreview(): void;
+  savePreview(): Promise<void>;
+  refreshArtifacts(): Promise<void>;
+  clearCache(): CacheInspect;
 }
 
 /**
@@ -49,11 +58,21 @@ export function canAddressSession(state: Pick<State, 'status' | 'sessionId'>): b
   return state.status === 'connected' && Boolean(state.sessionId);
 }
 
-export function createCompanionStore(port: PlatformPorts['companion'], onAccepted: (text: string, sessionId: string, hostKey: string) => void | Promise<void>, onTranscript?: (text: string, sessionId: string, hostKey: string, commandId: string) => Promise<void>) {
+/** Receipt identity: a status/result from a different command must not settle this one. */
+export function companionAckMatches(
+  pending: Pick<CompanionCommand, 'commandId' | 'deviceId' | 'sessionId' | 'action'>,
+  record: Pick<CompanionCommandRecord, 'commandId' | 'deviceId' | 'sessionId' | 'action'>,
+): boolean {
+  return record.commandId === pending.commandId && record.deviceId === pending.deviceId
+    && record.sessionId === pending.sessionId && record.action === pending.action;
+}
+
+export function createCompanionStore(port: PlatformPorts['companion'], onAccepted: (text: string, sessionId: string, hostKey: string) => void | Promise<void>, onTranscript?: (text: string, sessionId: string, hostKey: string, commandId: string) => Promise<void>, files?: FilePorts) {
   let saved: Saved | null = null;
   let client: LanCompanionClient | null = null;
   let epoch = 1; let cursor = 0;
   let syncing = false;
+
   const store = createStore<State>((set, get) => {
     const persist = async (next: Saved) => {
       if (!port) throw new Error('COMPANION_NATIVE_REQUIRED');
@@ -68,7 +87,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
     };
     const accepted = async (record: CompanionCommandRecord) => {
       const pending = saved?.pending;
-      if (!pending || record.commandId !== pending.commandId || record.deviceId !== pending.deviceId || record.sessionId !== pending.sessionId || record.action !== pending.action) throw new Error('COMPANION_INVALID_ACK');
+      if (!pending || !companionAckMatches(pending, record)) throw new Error('COMPANION_INVALID_ACK');
       if (record.state === 'reconciling') return;
       if (!['accepted', 'resolved', 'rejected', 'conflict'].includes(record.state)) throw new Error('COMPANION_INVALID_ACK');
       if (record.state !== 'rejected' && record.state !== 'conflict' && pending.action === 'message.send') {
@@ -108,18 +127,23 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
       set({ pending: false, commandError: 'COMPANION_COMMAND_RECONCILING_TIMEOUT' });
       return true;
     };
-    const deliver = async () => {
-      if (!saved?.pending || !client) return;
+    const deliver = async (): Promise<CompanionCommandRecord | null> => {
+      if (!saved?.pending || !client) return null;
       const result = await client.request({ action: 'command', command: saved.pending }) as { kind: string; reason?: string; command?: CompanionCommandRecord };
-      if (['accepted', 'replayed'].includes(result.kind) && result.command) await accepted(result.command);
-      else if (['rejected', 'conflict', 'approval_conflict'].includes(result.kind)) {
+      if (['accepted', 'replayed'].includes(result.kind) && result.command) {
+        await accepted(result.command);
+        return result.command;
+      }
+      if (['rejected', 'conflict', 'approval_conflict'].includes(result.kind)) {
         await persist({ ...saved, pending: undefined });
         // 按语义分，不按「它是不是 rejected」分。桌面或另一台手机先批了同一条审批时，
         // 网关回的是 approval_conflict——那是正常抢答，把整台设备停掉是错的。
         set(typeof result.reason === 'string' && DEVICE_LEVEL_REASONS.has(result.reason)
           ? { pending: false, status: 'rejected', connectionError: 'connectionRejected' }
           : { pending: false, commandError: result.kind === 'approval_conflict' ? 'COMPANION_APPROVAL_CONFLICT' : result.reason ?? 'COMPANION_COMMAND_REJECTED' });
-      } else throw new Error('COMPANION_INVALID_ACK');
+        return result.command ?? null;
+      }
+      throw new Error('COMPANION_INVALID_ACK');
     };
     const safely = async (work: () => Promise<void>) => {
       if (get().busy) return;
@@ -138,6 +162,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
     return {
       voiceOutcome: null, library: null, history: {}, libraryError: false,
       connectionError: null, commandError: null, status: 'unpaired', binding: null, sessionId: null, busy: false, pending: false, events: [], runId: null, terminal: null,
+      artifacts: [], preview: null, savedPreview: false, cacheUsage: files?.cache.inspect() ?? null,
       hydrate: async () => {
         if (!port || get().busy) return;
         set({ busy: true });
@@ -167,7 +192,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         const binding = await createClient().pair(raw);
         await persist({ ...saved!, binding, candidate: undefined });
         epoch = binding.scopeEpoch; cursor = 0;
-        set({ status: 'connected', binding, sessionId: binding.scope.find(id => !id.startsWith('project:')) ?? null, library: null, history: {}, events: [], runId: null, terminal: null });
+        set({ status: 'connected', binding, sessionId: binding.scope.find(id => !id.startsWith('project:')) ?? null, library: null, history: {}, events: [], artifacts: [], preview: null, runId: null, terminal: null });
       }),
       reconnect: () => safely(async () => {
         const target = saved?.binding ?? saved?.candidate;
@@ -259,6 +284,15 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
             if (event.kind === 'agent_complete') set({ runId: null, terminal: 'complete' });
             if (event.kind === 'agent_cancelled') set({ runId: null, terminal: 'stopped' });
             if (event.kind === 'error') set({ runId: null, terminal: 'failed' });
+            if (event.kind === 'artifact' && typeof event.payload.artifactId === 'string' && typeof event.payload.name === 'string') {
+              const artifact: CompanionArtifact = {
+                artifactId: event.payload.artifactId, version: Number(event.payload.version ?? 1),
+                name: event.payload.name, mimeType: String(event.payload.mimeType ?? ''),
+                size: Number(event.payload.size ?? 0), sha256: String(event.payload.sha256 ?? ''),
+                origin: event.payload.origin === 'result' ? 'result' : 'upload',
+              };
+              set({ artifacts: [...get().artifacts.filter(item => item.artifactId !== artifact.artifactId), artifact] });
+            }
           }
           if (saved?.pending) {
             const pendingId = saved.pending.commandId;
@@ -267,6 +301,112 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
           }
         } catch { client?.close(); if (get().status !== 'storageError') set({ status: 'offline', connectionError: 'connectionUnavailable' }); }
         finally { syncing = false; }
+      },
+      refreshArtifacts: async () => {
+        if (!client || get().status !== 'connected' || !get().sessionId) return;
+        try {
+          const page = await client.request({ action: 'read', query: { kind: 'artifacts', sessionId: get().sessionId } }) as CompanionArtifacts;
+          if (page.sessionId !== get().sessionId || !Array.isArray(page.artifacts)) throw new Error('COMPANION_INVALID_LIBRARY');
+          set({ artifacts: page.artifacts });
+        } catch { set({ libraryError: true }); }
+      },
+      upload: file => safely(async () => {
+        if (!saved?.binding || !client || saved.pending || !canAddressSession(get())) return;
+        if (file.size > COMPANION_LIMITS.fileMaxBytes || file.bytes.byteLength > COMPANION_LIMITS.fileMaxBytes) {
+          set({ commandError: 'UPLOAD_TOO_LARGE' }); return;
+        }
+        const mime = companionFileMime(file.name, file.mimeType);
+        if (!mime) { set({ commandError: 'COMPANION_FILE_TYPE_DENIED' }); return; }
+        const sha256 = await sha256Hex(file.bytes);
+        const base = { version: 1 as const, deviceId: saved.binding.deviceId, scopeEpoch: saved.binding.scopeEpoch, sessionId: get().sessionId! };
+        const enqueue = async (command: CompanionCommand) => {
+          await persist({ ...saved!, pending: command }); set({ pending: true });
+          const record = await deliver();
+          if (!record || record.state === 'rejected' || record.state === 'conflict') {
+            throw new Error(typeof record?.result.code === 'string' ? record.result.code : 'COMPANION_COMMAND_REJECTED');
+          }
+          return record;
+        };
+        let transferId = '';
+        try {
+          const prepared = await enqueue(companionCommandSchema.parse({ ...base, commandId: crypto.randomUUID(), action: 'files.prepare', payload: { name: file.name, mimeType: mime, size: file.bytes.byteLength, sha256 } }));
+          transferId = typeof prepared.result.transferId === 'string' ? prepared.result.transferId : '';
+          if (!transferId) throw new Error('COMPANION_INVALID_ACK');
+          for (let offset = 0; offset < file.bytes.byteLength; offset += COMPANION_LIMITS.fileChunkBytes) {
+            const slice = file.bytes.subarray(offset, offset + COMPANION_LIMITS.fileChunkBytes);
+            const data = bytesToBase64(slice);
+            await enqueue(companionCommandSchema.parse({ ...base, commandId: crypto.randomUUID(), action: 'files.chunk',
+              payload: { transferId, offset, data, sha256: await sha256Hex(slice) } }));
+          }
+          const committed = await enqueue(companionCommandSchema.parse({ ...base, commandId: crypto.randomUUID(), action: 'files.commit', payload: { transferId, sha256 } }));
+          if (typeof committed.result.artifactId === 'string') {
+            const artifact: CompanionArtifact = {
+              artifactId: committed.result.artifactId, version: Number(committed.result.version ?? 1),
+              name: String(committed.result.name ?? file.name), mimeType: String(committed.result.mimeType ?? mime),
+              size: Number(committed.result.size ?? file.bytes.byteLength), sha256: String(committed.result.sha256 ?? sha256),
+              origin: 'upload',
+            };
+            set({ artifacts: [...get().artifacts.filter(item => item.artifactId !== artifact.artifactId), artifact] });
+          }
+        } catch (error) {
+          if (transferId && saved?.binding && client && get().status === 'connected') {
+            try {
+              await enqueue(companionCommandSchema.parse({ ...base, commandId: crypto.randomUUID(), action: 'files.abort', payload: { transferId } }));
+            } catch { /* host recover() deletes staging; phone must not keep a half-file */ }
+          }
+          const code = error instanceof Error ? error.message : 'COMPANION_TRANSFER_INTERRUPTED';
+          set({ commandError: companionFileRetryable(code) || code === 'UPLOAD_TOO_LARGE' || code === 'COMPANION_FILE_TYPE_DENIED' ? code : 'COMPANION_TRANSFER_INTERRUPTED' });
+        }
+      }),
+      previewArtifact: artifactId => safely(async () => {
+        if (!saved?.binding || !client || saved.pending || !canAddressSession(get()) || !files) return;
+        const listed = get().artifacts.find(item => item.artifactId === artifactId);
+        if (!listed) { set({ commandError: 'ARTIFACT_MISSING' }); return; }
+        const cached = files.cache.get(artifactId);
+        if (cached && cached.size === listed.size) {
+          set({ preview: { ...listed, bytes: cached.bytes }, savedPreview: false });
+          return;
+        }
+        const base = { version: 1 as const, deviceId: saved.binding.deviceId, scopeEpoch: saved.binding.scopeEpoch, sessionId: get().sessionId! };
+        const parts: Uint8Array[] = [];
+        try {
+          for (let offset = 0; offset < listed.size; offset += COMPANION_LIMITS.fileChunkBytes) {
+            const command = companionCommandSchema.parse({
+              ...base, commandId: crypto.randomUUID(), action: 'files.read',
+              payload: { artifactId, version: listed.version, offset, length: Math.min(COMPANION_LIMITS.fileChunkBytes, listed.size - offset) },
+            });
+            await persist({ ...saved!, pending: command }); set({ pending: true });
+            const record = await deliver();
+            if (!record || record.state === 'rejected' || record.state === 'conflict' || typeof record.result.data !== 'string') {
+              throw new Error(typeof record?.result.code === 'string' ? record.result.code : 'ARTIFACT_MISSING');
+            }
+            parts.push(base64ToBytes(record.result.data));
+          }
+          const total = parts.reduce((sum, part) => sum + part.byteLength, 0);
+          const bytes = new Uint8Array(total);
+          let cursor = 0;
+          for (const part of parts) { bytes.set(part, cursor); cursor += part.byteLength; }
+          if (await sha256Hex(bytes) !== listed.sha256) throw new Error('COMPANION_INVALID_HASH');
+          files.cache.put(artifactId, { name: listed.name, mimeType: listed.mimeType, bytes });
+          set({ preview: { ...listed, bytes }, savedPreview: false, cacheUsage: files.cache.inspect() });
+        } catch (error) {
+          const code = error instanceof Error ? error.message : 'ARTIFACT_MISSING';
+          set({ commandError: code, preview: null });
+        }
+      }),
+      closePreview: () => set({ preview: null, savedPreview: false }),
+      savePreview: async () => {
+        const preview = get().preview;
+        if (!preview || !files) return;
+        const result = await files.save({ name: preview.name, mimeType: preview.mimeType, bytes: preview.bytes });
+        if (result.status === 'saved') set({ savedPreview: true, commandError: null });
+        else if (result.status === 'cancelled') set({ savedPreview: false });
+        else set({ commandError: result.code ?? 'COMPANION_EXPORT_FAILED', savedPreview: false });
+      },
+      clearCache: () => {
+        const usage = files?.cache.clear() ?? { freedBytes: 0, remainingBytes: 0, failedEntries: [] };
+        set({ cacheUsage: files?.cache.inspect() ?? null, preview: null, savedPreview: false });
+        return { previewBytes: usage.remainingBytes, conversationBytes: 0, protectedBytes: 0 };
       },
     };
   });

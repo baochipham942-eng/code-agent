@@ -29,11 +29,20 @@ export class CompanionLibraryService {
 
   sessionProject(id: string): string | null { return getDatabase().getSession(id, { includeDeleted: true, userId: getAuthService().getCurrentUser()?.id ?? null })?.projectId ?? null; }
 
+  workspaceOf(id: string): string | null {
+    const session = this.session(id);
+    if (!session) return null;
+    if (session.workingDirectory) return session.workingDirectory;
+    if (!session.projectId) return null;
+    return getDatabase().getProjectRepo().getProject(session.projectId)?.workspacePath ?? null;
+  }
+
   async read(deviceId: string, request: CompanionRead): Promise<CompanionLibrary | CompanionHistory> {
     const db = getDatabase();
     const handle = db.getDb();
     if (!handle) throw new Error('COMPANION_LIBRARY_UNAVAILABLE');
     const owner = getAuthService().getCurrentUser()?.id ?? null;
+    if (request.kind === 'artifacts') throw new Error('COMPANION_UNSUPPORTED_ACTION');
     if (request.kind === 'history') {
       if (!this.session(request.sessionId)) throw new Error('COMPANION_SESSION_NOT_FOUND');
       const rows = handle.prepare(`SELECT rowid AS cursor, id, role, content, timestamp FROM messages

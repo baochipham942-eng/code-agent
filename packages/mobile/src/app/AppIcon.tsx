@@ -12,6 +12,7 @@ const PATHS = {
   settings: 'M12 8a4 4 0 1 1 0 8 4 4 0 0 1 0-8ZM10 2h4l1 3 3 2 3 1v4l-2 3-1 3-3 1-1 3h-4l-1-3-3-1-2-3-2-3V8l3-1 3-2Z',
   mic: 'M9 5a3 3 0 0 1 6 0v7a3 3 0 0 1-6 0Zm-3 6v1a6 6 0 0 0 12 0v-1M12 18v4M9 22h6',
   stop: 'M7 7h10v10H7z',
+  attach: 'M21.4 11.1 12.2 20.3a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 1 1-2.8-2.8l8.5-8.5',
 } as const;
 
 export function AppIcon({ name }: { name: keyof typeof PATHS }) {

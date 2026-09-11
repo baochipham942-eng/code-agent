@@ -1,10 +1,10 @@
-import type { CompanionHistory } from '../../../../../src/shared/contract/companionLibrary';
+import type { CompanionArtifact, CompanionHistory } from '../../../../../src/shared/contract/companionLibrary';
 import { useLayoutEffect, useRef, useState } from 'react';
 import { ApprovalCard } from './ApprovalCard';
 import type { CompanionEvent } from '../../../../../src/shared/contract/companion';
 import type { messages } from '../../i18n';
 
-export function CompanionConversation({ history, loadMore, hidePendingApprovals = false, events, sessionId, text, disabled, respond }: { history?: CompanionHistory; loadMore(): void; hidePendingApprovals?: boolean; events: CompanionEvent[]; sessionId: string; text: ReturnType<typeof messages>; disabled: boolean; respond: (requestId: string, decision: 'approved' | 'rejected') => Promise<void> }) {
+export function CompanionConversation({ history, loadMore, hidePendingApprovals = false, events, artifacts, sessionId, text, disabled, respond, openArtifact }: { history?: CompanionHistory; loadMore(): void; hidePendingApprovals?: boolean; events: CompanionEvent[]; artifacts: CompanionArtifact[]; sessionId: string; text: ReturnType<typeof messages>; disabled: boolean; respond: (requestId: string, decision: 'approved' | 'rejected') => Promise<void>; openArtifact(id: string): void }) {
   const scroller = useRef<HTMLDivElement>(null);
   const following = useRef(true);
   const [showLatest, setShowLatest] = useState(false);
@@ -53,6 +53,11 @@ export function CompanionConversation({ history, loadMore, hidePendingApprovals 
     {Array.from(rows, ([id, row]) => <p key={id} className={`lan-message ${row.role === 'user' ? 'from-user' : ''}`}>{row.content}{row.truncated && <small className="notice">{text.historyTruncated}</small>}</p>)}
     {Array.from(approvals, ([id, card]) => (!hidePendingApprovals || card.status !== 'pending') && <ApprovalCard key={id} card={card} text={text} disabled={disabled}
       respond={decision => respond(id, decision)} />)}
+    {events.filter(event => event.sessionId === sessionId && event.kind === 'artifact_write_started').map(event =>
+      <p key={event.eventId} className="notice">{text.uploading} {String(event.payload.name ?? '')}</p>)}
+    {artifacts.map(artifact => <button key={artifact.artifactId} className="artifact-card" disabled={disabled} onClick={() => openArtifact(artifact.artifactId)}>
+      <strong>{artifact.name}</strong><span>{artifact.origin === 'upload' ? text.attach : text.artifacts}</span>
+    </button>)}
   </div>{showLatest && <button className="jump-latest" onClick={() => {
     following.current = true; scroller.current!.scrollTop = scroller.current!.scrollHeight; setShowLatest(false);
   }}>{text.latest} ↓</button>}</div>;

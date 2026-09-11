@@ -144,6 +144,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
   const commandNotice = companion.commandError === 'UPLOAD_TOO_LARGE' ? text.uploadTooLarge
     : companion.commandError === 'COMPANION_FILE_TYPE_DENIED' ? text.fileTypeDenied
     : companion.commandError === 'STORAGE_FULL' ? text.storageFull
+    : companion.commandError === 'COMPANION_EXPORT_FAILED' ? text.exportFailed
     : companion.commandError === 'ARTIFACT_MISSING' ? text.artifactMissing
     : companion.commandError && ['COMPANION_TRANSFER_INTERRUPTED', 'ATTACHMENT_INCOMPLETE', 'COMPANION_INTERRUPTED', 'COMPANION_NETWORK_UNAVAILABLE', 'COMPANION_CHANNEL_CLOSED'].includes(companion.commandError) ? text.transferInterrupted
     : companion.commandError ? text.commandRejected : null;
@@ -271,6 +272,8 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
       </> : currentPage === 'preview' && companion.preview ? <div className="preview-pane">
         <p className="caption">{text.previewHint}</p>
         <PreviewMedia name={companion.preview.name} mimeType={companion.preview.mimeType} bytes={companion.preview.bytes} />
+        {/* 保存失败必须报在预览面板里——composer 区的提示被模态弹层遮住且 inert，用户看不到。 */}
+        {!companion.savedPreview && companion.commandError && <p role="status" className="notice">{commandNotice}</p>}
         {companion.savedPreview ? <p role="status">{companion.savedPreviewName && companion.savedPreviewName !== companion.preview.name ? `${text.savedToDevice}：${companion.savedPreviewName}` : text.savedToDevice}</p>
           : <button className="primary" onClick={() => void companion.savePreview()}>{text.saveToDevice}</button>}
       </div> : currentPage === 'remote' ? <div className="settings-group">

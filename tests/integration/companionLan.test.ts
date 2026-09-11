@@ -6,8 +6,13 @@ vi.mock('node:os', async (importOriginal) => {
 });
 import Database from 'better-sqlite3';
 import { networkInterfaces } from 'node:os';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { LanCompanionManager } from '../../src/host/services/companion/LanCompanionManager';
 import { CompanionGateway } from '../../src/host/services/companion/CompanionGateway';
+import { CompanionFileService } from '../../src/host/services/companion/CompanionFileService';
+import { FileCache } from '../../packages/mobile/src/platform/fileCache';
 import { LanCompanionServer } from '../../src/host/services/companion/LanCompanionServer';
 import { createHandshake, createIdentity, NoiseChannel } from '../../src/shared/companion/noiseChannel';
 import { fromHex, toHex, isPrivateIPv4, parseInvitation, validateLanEndpoint, type LanBinding } from '../../src/shared/companion/lanProtocol';
@@ -211,6 +216,43 @@ describe('LAN companion: real HTTP + Noise + SQLite', () => {
     await restarted.getState().hydrate();
     expect(restarted.getState().pending).toBe(false); expect(cleared).toBe('persist before dispatch'); expect(executions).toBe(1);
     restarted.getState().pause();
+  });
+  it('cache-full phone still previews a fully downloaded artifact', async () => {
+    // 真 LAN + Noise + 真 CompanionFileService；手机缓存配额 1 字节必然 STORAGE_FULL。
+    // 文件完整回传并通过 SHA-256 后预览必须照常，commandError 只提示 STORAGE_FULL。
+    const workspace = mkdtempSync(path.join(tmpdir(), 'neo-lan-files-'));
+    const db2 = new Database(':memory:');
+    const holder: { files?: CompanionFileService } = {};
+    const gateway2 = new CompanionGateway(db2, { now: () => now, dispatch: (cmd) =>
+      cmd.action.startsWith('files.') ? holder.files?.dispatch(cmd) ?? { state: 'rejected', result: { code: 'HOST_UNAVAILABLE' } }
+        : { state: 'rejected', result: { code: 'HOST_UNAVAILABLE' } } });
+    holder.files = new CompanionFileService(db2, gateway2, () => workspace, undefined, () => now);
+    const server2 = new LanCompanionServer(gateway2, hostIdentity, () => now);
+    await server2.start(address!, 0);
+    let storage: string | null = null;
+    const phone = createCompanionStore({ read: async () => storage,
+      write: async value => { storage = value; },
+      scan: async () => JSON.stringify(server2.invite(['shared'])), post,
+    }, () => {}, undefined, {
+      cache: new FileCache(1),
+      pick: async () => null,
+      save: async () => { throw new Error('must-not-save'); },
+    });
+    try {
+      await phone.getState().pair();
+      const bytes = new TextEncoder().encode('lan-file-正文');
+      await phone.getState().upload({ name: 'note.txt', mimeType: 'text/plain', bytes });
+      const artifact = phone.getState().artifacts[0];
+      expect(artifact).toBeTruthy();
+      await phone.getState().previewArtifact(artifact.artifactId);
+      const state = phone.getState();
+      expect(state.preview?.bytes.length).toBe(bytes.length);
+      expect(state.commandError).toBe('STORAGE_FULL');
+    } finally {
+      phone.getState().pause();
+      await server2.stop(); db2.close();
+      rmSync(workspace, { recursive: true, force: true });
+    }
   });
   it('transports long Unicode messages across multiple authenticated records', async () => {
     const binding = await pair();

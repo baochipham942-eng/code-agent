@@ -97,7 +97,7 @@ export class LanCompanionServer {
     const now = this.now();
     return [...this.channels.values()].some(channel => {
       if (channel.lastSeenAt === null || now < channel.lastSeenAt
-        || now - channel.lastSeenAt > L.uiPresenceTtlMs || channel.expiresAt <= now) return false;
+        || now - channel.lastSeenAt >= L.uiPresenceTtlMs || channel.expiresAt <= now) return false;
       const device = this.gateway.identityDevice(channel.publicKey);
       return !!device && this.gateway.canAccessSession(device.deviceId, sessionId);
     });

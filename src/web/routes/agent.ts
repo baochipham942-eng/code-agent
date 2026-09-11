@@ -156,6 +156,15 @@ interface AgentRouterDeps extends AgentDurableRouteDeps {
 
 export type ActiveAgentLoop = RunControlTarget;
 
+/** Presence is read at the call, never captured when the island is constructed. */
+function liveHasApprovalUi(
+  sessionId: string,
+  request: PermissionRequest,
+  hasCompanionApprovalUi: AgentRouterDeps['hasCompanionApprovalUi'],
+): boolean {
+  return hasInteractiveUi() || hasCompanionApprovalUi?.(sessionId, request) === true;
+}
+
 function extractWorkingDirectory(value: unknown): string | undefined {
   if (!value || typeof value !== 'object') return undefined;
   const workingDirectory = (value as { workingDirectory?: unknown }).workingDirectory;
@@ -713,7 +722,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
             getSettings: () => acpConfigService.getSettings(),
             isDevModeAutoApproveEnabled: () => acpConfigService.isDevModeAutoApproveEnabled(),
             getExecutionTopology: () => 'main',
-            hasApprovalUi: (request) => hasInteractiveUi() || deps.hasCompanionApprovalUi?.(sessionId, request) === true,
+            hasApprovalUi: (request) => liveHasApprovalUi(sessionId, request, deps.hasCompanionApprovalUi),
             onEvent: (event) => runController.emitAgentEvent(event),
           });
           registerForegroundPermissionIsland(sessionId, foregroundPermissionIsland);
@@ -1052,7 +1061,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         getSettings: () => configService.getSettings(),
         isDevModeAutoApproveEnabled: () => configService.isDevModeAutoApproveEnabled(),
         getExecutionTopology: () => 'main',
-        hasApprovalUi: (request) => hasInteractiveUi() || deps.hasCompanionApprovalUi?.(sessionId, request) === true,
+        hasApprovalUi: (request) => liveHasApprovalUi(sessionId, request, deps.hasCompanionApprovalUi),
         onEvent: (event) => runController.emitAgentEvent(event),
       });
       registerForegroundPermissionIsland(sessionId, foregroundPermissionIsland);

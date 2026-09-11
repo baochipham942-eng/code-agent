@@ -325,7 +325,9 @@ export function createApp(deps: CreateAppDeps): express.Express {
       });
       services.library = new CompanionLibraryService(gateway, id => !!runRegistry.resolve({ sessionId: id }));
       services.files = new CompanionFileService(db, gateway, id => requireLibrary().workspaceOf(id));
-      void services.library.cleanup();
+      void services.library.cleanup().catch((error) => {
+        logger.warn('Companion deleted-session cleanup unavailable', error);
+      });
       if (getPendingPermissionRequests && deps.deliverCompanionPermission) {
         approvals = new CompanionApprovalService(gateway, getPendingPermissionRequests, deps.deliverCompanionPermission);
       }

@@ -15,6 +15,12 @@ import { createLogger } from '../infra/logger';
 
 const logger = createLogger('CompanionLibrary');
 
+function sessionAccessible(grants: readonly string[], session: { id: string; projectId?: string | null }): boolean {
+  if (session.id.startsWith('project:')) return false;
+  if (grants.includes(session.id)) return true;
+  return !!session.projectId && grants.includes(projectGrant(session.projectId));
+}
+
 /** Mobile reuses the desktop repositories, model catalogue and session services. */
 export class CompanionLibraryService {
   constructor(private readonly gateway: CompanionGateway, private readonly isRunning: (id: string) => boolean) {}
@@ -62,13 +68,15 @@ export class CompanionLibraryService {
       return { sessionId: request.sessionId, messages: messages.reverse(), nextOffset };
 
     }
+    const grants = this.gateway.grants(deviceId);
     const sessions: ReturnType<typeof db.listSessions> = [];
     for (let offset = 0; ; offset += L.librarySessionLimit) {
       const page = db.listSessions(L.librarySessionLimit, offset, true, owner);
-      sessions.push(...page.filter(s => this.gateway.canAccessSession(deviceId, s.id)));
+      for (const session of page) {
+        if (sessionAccessible(grants, session)) sessions.push(session);
+      }
       if (page.length < L.librarySessionLimit) break;
     }
-    const grants = this.gateway.grants(deviceId);
     const projects = this.projects().filter(p => grants.includes(projectGrant(p.id)) || sessions.some(s => s.projectId === p.id))
       .map(p => ({ ...p, canCreate: grants.includes(projectGrant(p.id)) }));
     const models = buildRuntimeModelOptions(getConfigService().getSettings()).map(({ provider, model, label, providerLabel }) => ({ provider, model, label, providerLabel }));
@@ -118,15 +126,19 @@ export class CompanionLibraryService {
   }
 
   async cleanup(): Promise<void> {
-    const db = getDatabase().getDb();
-    if (!db) { logger.warn('Companion cleanup skipped: database unavailable, jobs stay queued'); return; }
-    for (const { session_id: id } of db.prepare('SELECT session_id FROM companion_session_cleanup').all() as { session_id: string }[]) {
-      try { await getSessionManager().cleanupDeletedSession(id); db.prepare('DELETE FROM companion_session_cleanup WHERE session_id = ?').run(id); }
-      catch (error) {
-        // Retain the cleanup job across Host restarts; the deletion receipt stays committed.
-        // Silence would hide a row that retries on every boot and never succeeds.
-        logger.warn('Companion deleted-session cleanup failed, will retry next boot', { sessionId: id, error });
+    try {
+      const db = getDatabase().getDb();
+      if (!db) { logger.warn('Companion cleanup skipped: database unavailable, jobs stay queued'); return; }
+      for (const { session_id: id } of db.prepare('SELECT session_id FROM companion_session_cleanup').all() as { session_id: string }[]) {
+        try { await getSessionManager().cleanupDeletedSession(id); db.prepare('DELETE FROM companion_session_cleanup WHERE session_id = ?').run(id); }
+        catch (error) {
+          // Retain the cleanup job across Host restarts; the deletion receipt stays committed.
+          // Silence would hide a row that retries on every boot and never succeeds.
+          logger.warn('Companion deleted-session cleanup failed, will retry next boot', { sessionId: id, error });
+        }
       }
+    } catch (error) {
+      logger.warn('Companion deleted-session cleanup unavailable', error);
     }
   }
 

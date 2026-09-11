@@ -392,8 +392,15 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
           let cursor = 0;
           for (const part of parts) { bytes.set(part, cursor); cursor += part.byteLength; }
           if (await sha256Hex(bytes) !== listed.sha256) throw new Error('COMPANION_INVALID_HASH');
-          files.cache.put(artifactId, { name: listed.name, mimeType: listed.mimeType, bytes });
-          set({ preview: { ...listed, bytes }, savedPreview: false, cacheUsage: files.cache.inspect() });
+          // 缓存满不等于成果丢失：文件已完整回传且 SHA-256 校验通过，预览与显式保存必须照常，
+          // 只提示缓存不可用（STORAGE_FULL 走既有 commandError → storageFull 文案链）。
+          let cacheFailed = false;
+          try {
+            files.cache.put(artifactId, { name: listed.name, mimeType: listed.mimeType, bytes });
+          } catch {
+            cacheFailed = true;
+          }
+          set({ preview: { ...listed, bytes }, savedPreview: false, cacheUsage: files.cache.inspect(), commandError: cacheFailed ? 'STORAGE_FULL' : null });
         } catch (error) {
           await releasePending();
           const code = error instanceof Error ? error.message : 'ARTIFACT_MISSING';

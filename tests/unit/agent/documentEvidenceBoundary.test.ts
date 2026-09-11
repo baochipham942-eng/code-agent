@@ -119,6 +119,20 @@ describe('document evidence boundary', () => {
     expect(stream.pending).toBe('前半句后半句');
   });
 
+  // ai-review #1740 Important：判定是 O(n²)（实测 25KB 11ms / 100KB 112ms / 400KB 1727ms，
+  // 每翻一倍约 ×4），而 turnOutcomeStamp / documentClaimPreflight 喂进来的是整份文件正文
+  // （上限 10MB）、跑在 host 主线程上——阻塞住 turn_end 就发不出去，界面停在「组织回复中」。
+  // 边界已是记录式，大文档跳过判定只是少一行提醒。
+  it('skips the scan on a document too large to afford, instead of blocking the host thread', () => {
+    const line = '空间主人：owner-fixture，已实测确认。';
+    expect(checkDocumentEvidenceClaims(line, [])).toContain('SPACE_OWNER_UNVERIFIED');
+    const huge = line + '这是一段普通的说明文字，用来撑大文档体积。'.repeat(4000);
+    expect(huge.length).toBeGreaterThan(64 * 1024);
+    const started = Date.now();
+    expect(checkDocumentEvidenceClaims(huge, [])).toEqual([]);
+    expect(Date.now() - started).toBeLessThan(200);
+  });
+
   it('does not allow an unrelated caveat to license an unsupported measured row', () => {
     expect(checkDocumentEvidenceClaims('空间字段待补。\n空间主人 | 登录用户 owner | 实测', [user])).toContain('SPACE_OWNER_UNVERIFIED');
   });

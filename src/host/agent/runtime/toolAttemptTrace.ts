@@ -18,7 +18,8 @@ class ToolAttemptTrace {
 
   finish(call: ToolCall, result: ToolResult, dispatched: boolean, durationMs: number): void {
     const stopReason = this.ctx.control?.forceFinalResponseReason ?? '';
-    if (/^(artifact repair attempts exhausted:|artifact repair unavailable tool repeated:|evidence boundary repeated)/.test(stopReason)) this.noProgressStopped = true;
+    // 'evidence boundary repeated' 已随证据边界改记录式而没有产生方，从这条正则里摘掉。
+    if (/^(artifact repair attempts exhausted:|artifact repair unavailable tool repeated:)/.test(stopReason)) this.noProgressStopped = true;
     const cancelled = result.metadata?.cancelledByRun === true;
     const skipped = result.metadata?.skipped === true || result.metadata?.autoLoaded === true;
     const rejected = !dispatched || result.metadata?.permissionDecision === 'deny'

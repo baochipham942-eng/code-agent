@@ -89,7 +89,19 @@ export async function attachDocumentOrigin(
 
 interface ClaimProblem extends DocumentAssertion { code: string; }
 
+/**
+ * 超过这个体量就不做断言判定。理由是两条叠在一起：
+ *  · extractDocumentAssertions 对每个分句反扫，整体是 O(n²)——实测 25KB 11ms、
+ *    100KB 112ms、400KB 1727ms，每翻一倍约 ×4，2MB 就是分钟级；
+ *  · 调用方（turnOutcomeStamp / documentClaimPreflight）喂进来的是**整份文件正文**，
+ *    上限 10MB，而且跑在 host 主线程上——阻塞在那儿 turn_end 发不出去，界面停在
+ *    「组织回复中」，表现为应用假死。
+ * 边界已经是记录式的（只提醒、不改写、不拦），所以大文档跳过判定的代价只是少一行提醒。
+ */
+const MAX_CLAIM_SCAN_CHARS = 64 * 1024;
+
 function documentClaimProblems(content: string, messages: readonly Message[]): ClaimProblem[] {
+  if (content.length > MAX_CLAIM_SCAN_CHARS) return [];
   const problems: ClaimProblem[] = [];
   const active = currentMessages(messages);
   const calls = new Map(active.flatMap((message) => message.toolCalls ?? []).map((call) => [call.id, call]));

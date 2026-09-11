@@ -42,6 +42,8 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
     }
     return [...cards.values()].filter(card => card.status === 'pending');
   }, [companion.events, companion.sessionId]);
+  const mineApproval = pendingApprovals.find(card => card.sessionId === companion.sessionId);
+  const otherApproval = pendingApprovals.find(card => card.sessionId !== companion.sessionId);
 
   // Text selections inside the composer never surface through window.getSelection on WebKit,
   // and long-press selection on WebView only lives in the element's own range.
@@ -165,9 +167,15 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
           disabled={companion.busy || companion.pending || companion.status !== 'connected'} respond={companion.respond} />
         : <div className="welcome"><NeoBrandMark /><h1>{companion.status === 'connected' ? text.connectedReady : text.welcome}</h1>{companion.status === 'connected' && <p className="connection-next">{text.connectedNext}</p>}</div>}
       <div className="composer-area">
-        {pendingApprovals.length > 0 && <div className="approval-tray" aria-live="polite">
-          {pendingApprovals[0].sessionId !== companion.sessionId ? <button className="primary" onClick={() => selectSession(String(pendingApprovals[0].sessionId))}>{text.reviewApproval}</button> : <ApprovalCard card={pendingApprovals[0]} text={text} disabled={companion.busy || companion.pending || companion.status !== 'connected'}
-            respond={decision => companion.respond(String(pendingApprovals[0].requestId), decision)} />}
+        {/* 本会话的审批优先在托盘里就地给控件——CompanionConversation 被传了
+            hidePendingApprovals，它不会再渲染 pending 卡片，所以这里是本会话审批**唯一**的
+            落点。原写法只看全局第一条：会话 A 先有一条没处理的审批时，在会话 B 触发的审批
+            既不在对话里、也不在托盘里，B 的 run 在手机上没有任何 approve/deny 可点，
+            用户得先猜到要去 A 处理完才能回来。别的会话那条仍然给一个跳转按钮，不互相挤掉。 */}
+        {(mineApproval || otherApproval) && <div className="approval-tray" aria-live="polite">
+          {mineApproval && <ApprovalCard card={mineApproval} text={text} disabled={companion.busy || companion.pending || companion.status !== 'connected'}
+            respond={decision => companion.respond(String(mineApproval.requestId), decision)} />}
+          {otherApproval && <button className="primary" onClick={() => selectSession(String(otherApproval.sessionId))}>{text.reviewApproval}</button>}
         </div>}
         {companion.binding && <div className="task-status" role="status">
           <button className="connection-pill" data-connected={companion.status === 'connected'} onClick={() => state.openSheet('remote')}>

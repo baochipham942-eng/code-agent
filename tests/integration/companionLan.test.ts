@@ -241,7 +241,7 @@ describe('LAN companion: real HTTP + Noise + SQLite', () => {
     try {
       await phone.getState().pair();
       const bytes = new TextEncoder().encode('lan-file-正文');
-      await phone.getState().upload({ name: 'note.txt', mimeType: 'text/plain', bytes });
+      await phone.getState().upload({ name: 'note.txt', mimeType: 'text/plain', size: bytes.length, bytes });
       const artifact = phone.getState().artifacts[0];
       expect(artifact).toBeTruthy();
       await phone.getState().previewArtifact(artifact.artifactId);

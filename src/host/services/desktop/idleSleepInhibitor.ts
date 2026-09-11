@@ -60,7 +60,7 @@ export class IdleSleepInhibitor {
       return;
     }
     this.reason = running ? 'running-run' : 'paired-companion';
-    if (this.child || (this.state === 'unavailable' && this.reason === 'unsupported-platform')) return;
+    if (this.child || (this.state === 'unavailable' && this.platform !== 'darwin')) return;
     if (this.platform !== 'darwin') {
       this.state = 'unavailable';
       this.reason = 'unsupported-platform';

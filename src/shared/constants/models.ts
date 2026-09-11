@@ -168,7 +168,7 @@ export const VERIFIED_AGENTIC_MODELS: ReadonlySet<string> = new Set<string>([
     .map(([modelId]) => modelId),
   // 2026-08-13 真机实测：官方 api.deepseek.com 3/3、基元 tokenrhythm 2/3 返回
   // get_weather({"city":"上海"}) 工具调用且 finish_reason=tool_calls；另 1 次 503 为中转可用性问题。
-  'deepseek-flash',
+  // deepseek-flash（V4.1，2026-09-10）未做同款真机工具调用验证，不加进来。
   'deepseek-v4-flash',
   // 2026-08-13 真机实测（QE-02）：基元 tokenrhythm 0731 走 ModelRouter 真实入口（生产槽
   // config 形状，含 protocol:'openai' 印章）3/3 返回 get_weather 工具调用，日志证实

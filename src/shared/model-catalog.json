@@ -130,7 +130,7 @@
         {
           "id": "deepseek-flash",
           "label": "DeepSeek V4.1 Flash",
-          "desc": "1M · 552B MoE · 原生视觉 · 官方当前 Flash"
+          "desc": "1M · 552B MoE · 官方当前 Flash（模型支持视觉，Responses 传图未接完所以 UI 不标视觉）"
         },
         {
           "id": "deepseek-v4-pro",

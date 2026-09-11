@@ -27,11 +27,12 @@ describe('model capability matrix', () => {
     });
   });
 
-  it('marks deepseek-flash as explicitly tool-call verified without changing its scaffold tier', () => {
-    expect(isAgenticVerifiedModel('deepseek-flash')).toBe(true);
-    expect(getModelScaffoldTier('deepseek-flash')).toBe('standard');
+  it('marks deepseek-v4-flash as explicitly tool-call verified without changing its scaffold tier', () => {
     expect(isAgenticVerifiedModel('deepseek-v4-flash')).toBe(true);
     expect(getModelScaffoldTier('deepseek-v4-flash')).toBe('standard');
+    // V4.1 Flash 尚未做同款真机工具调用验证，不能借 08-13 那条证据发绿标。
+    expect(isAgenticVerifiedModel('deepseek-flash')).toBe(false);
+    expect(getModelScaffoldTier('deepseek-flash')).toBe('standard');
   });
 
   it('resolves relay deepseek-v4-flash-0731 to Responses protocol with web search', () => {

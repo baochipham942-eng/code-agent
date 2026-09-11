@@ -241,6 +241,17 @@ export function createApp(deps: CreateAppDeps): express.Express {
     publishCompanionEvent: (sessionId, kind, payload) => publishCompanionEvent?.(sessionId, kind, payload),
   }));
 
+  // 保活必须在数据库条件之外创建：runRegistry 不依赖 DB，数据库降级时运行中的长任务
+  // 仍要阻止空闲休眠；companion 配对源在 db 分支里接线，无 gateway 时安全归 false。
+  let inhibitorGateway: CompanionGateway | undefined;
+  const idleSleepInhibitor = new IdleSleepInhibitor(
+    () => runRegistry.size > 0,
+    () => (inhibitorGateway?.pairedDevices().length ?? 0) > 0,
+    { logger },
+  );
+  idleSleepInhibitor.start();
+  deps.registerCompanionShutdown?.(async () => { await idleSleepInhibitor.stop(); });
+
   try {
     const db = getDatabase().getDb();
     if (db) {
@@ -317,12 +328,7 @@ export function createApp(deps: CreateAppDeps): express.Express {
         }
       };
       app.use('/api/companion', createCompanionProvisioningRouter({ gateway }));
-      const idleSleepInhibitor = new IdleSleepInhibitor(
-        () => runRegistry.size > 0,
-        () => gateway.pairedDevices().length > 0,
-        { logger },
-      );
-      idleSleepInhibitor.start();
+      inhibitorGateway = gateway;
       const lan = new LanCompanionManager(gateway, () => loadLanIdentity(resolveCodeAgentDataDir()), async () => {
         const sessions = await (await tryGetSessionManager())?.listSessions() ?? [];
         return sessions.map(session => ({ id: session.id, title: session.title }));
@@ -342,7 +348,7 @@ export function createApp(deps: CreateAppDeps): express.Express {
           res.status(500).json({ success: false, error: { code: 'COMPANION_MANAGE_FAILED', message: error instanceof Error ? error.message : String(error) } });
         }
       });
-      deps.registerCompanionShutdown?.(async () => { await idleSleepInhibitor.stop(); await lan.stop(); });
+      deps.registerCompanionShutdown?.(async () => { await lan.stop(); });
       void lan.restore().catch(() => logger.warn('Companion LAN restore unavailable'));
       app.use('/companion', createCompanionRouter({
         gateway,

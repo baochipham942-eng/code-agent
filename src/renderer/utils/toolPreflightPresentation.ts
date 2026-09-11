@@ -5,8 +5,14 @@ import { classifyToolName } from './humanizeToolStep';
 
 type PreflightKind = 'question' | 'repair' | 'approvalUnavailable' | 'approvalRequired' | 'readRequired';
 
-/** 宿主给未送达提问写的占位符，必须整条匹配——用户答案里出现同样的字不算。 */
-const UNDELIVERED_QUESTION_PLACEHOLDER = /^\s*\[用户未响应[^\]]*\]\s*$/;
+/**
+ * 宿主给未送达提问写的占位符，锚在**开头**。
+ * 生产里它后面还跟着问题列表与告诫（askUserQuestion.ts:48：
+ * `[用户未响应 - CLI 模式无法交互]\n\n${formatted}\n\n⚠️ …`），所以不能整条匹配——
+ * 我上一轮就是照着测试夹具写成了整条锚定，夹具过了、生产里一条都匹配不上。
+ * 锚开头既排掉「用户自己答案里出现同样的字」，又认得真实形状。
+ */
+const UNDELIVERED_QUESTION_PLACEHOLDER = /^\s*\[用户未响应[^\]\n]*\]/;
 
 // Denied-for-approval-reasons host codes: the operation reached the permission layer and was
 // rejected there (classifier/policy/hard-gate/timeout/cancel), as opposed to no approval UI
@@ -58,7 +64,13 @@ export function getToolPreflightKind(tool: Pick<ToolCall, 'name' | 'result'>): P
   // 命令真跑了、真 exit 1、可能已产生副作用，却会被渲染成「未执行 · 正在修复另一份成品」，
   // 真实失败原因被顶掉。这条旁路还是纯冗余：产出该短语的 host 路径都挂了结构化字段
   // （artifactRepairProjection.ts:387 就按 metadata.artifactRepairGuard.blocked 判定）。
-  if ((metadata?.artifactRepairGuard as { blocked?: boolean } | undefined)?.blocked) return 'repair';
+  // blocked 这个字段是**重载**的：执行前拦下会挂它（toolExecutionEngine.ts:460/508），
+  // 执行**之后**锚点失配也会补挂（toolResultLifecycle.ts:144），后者是真跑过的 Edit。
+  // 只有后者带 editAnchorFailure，用它把两种情形分开——否则修复模式下一次 old_string
+  // 对不上的 Edit 会被渲染成「未修改 · 这一步超出当前允许的修复范围」，把真实原因
+  // （锚点对不上）用一句错误解释顶掉，组头还计成「1 个步骤未执行」。
+  const repairGuard = metadata?.artifactRepairGuard as { blocked?: boolean; editAnchorFailure?: boolean } | undefined;
+  if (repairGuard?.blocked && repairGuard.editAnchorFailure !== true) return 'repair';
   // hostReason is host-attached structured metadata (never parsed from program output); a loose
   // field read is deliberate — we only ever compare `.code` against the known enum below, so a
   // malformed/partial payload just fails to match rather than needing full schema validation.

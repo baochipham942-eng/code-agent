@@ -77,6 +77,22 @@ describe('demo acceptance: truthful historical presentation', () => {
     expect(toolPreflightCopy(tool, zh)?.action).not.toBe(toolPreflightCopy(other, zh)?.action);
   });
 
+  // ai-review #1741 Important：artifactRepairGuard.blocked 是重载字段——执行前拦下会挂它，
+  // 执行**之后**锚点失配也会补挂（toolResultLifecycle.ts:144），后者是真跑过的 Edit。
+  // 只认 blocked 会把「old_string 对不上」渲染成「未修改 · 超出允许的修复范围」，
+  // 用一句错误解释顶掉真实原因，组头还计成「1 个步骤未执行」。
+  it('an Edit that really ran and missed its anchor is not a repair block', () => {
+    const ran = failed('Edit', 'old_string not found', {
+      artifactRepairGuard: { blocked: true, targetFile: '/workspace/x.html', editAnchorFailure: true },
+    });
+    expect(getToolPreflightKind(ran)).toBeNull();
+    expect(toolPreflightCopy(ran, zh)).toBeNull();
+    const blockedBeforeRunning = failed('Edit', 'blocked', {
+      artifactRepairGuard: { blocked: true, targetFile: '/workspace/x.html' },
+    });
+    expect(getToolPreflightKind(blockedBeforeRunning)).toBe('repair');
+  });
+
   it('does not mark an undelivered question as answered or successful', () => {
     const tool: ToolCall = { id: 'q', name: 'AskUserQuestion', arguments: {}, result: { toolCallId: 'q', success: true, output: '[用户未响应 - CLI 模式无法交互]', metadata: { permissionDecision: 'deny', permissionDecisionReason: '当前运行环境没有可投递的交互界面' } } };
     expect(getToolPreflightKind(tool)).toBe('question');
@@ -88,6 +104,10 @@ describe('demo acceptance: truthful historical presentation', () => {
     // 而紧下方的 askUserRecord 还渲染着他的真实答案，同一块 UI 自相矛盾。
     expect(getToolPreflightKind({ name: 'AskUserQuestion', result: { toolCallId: 'q', success: true,
       output: 'User responses:\n[原因]: 因为 CLI 模式无法交互，所以我选第二个' } })).toBeNull();
+    // 生产里的真实形状（askUserQuestion.ts:48）：占位符之后还跟着问题列表与告诫。
+    // 上一轮我照着夹具写成整条锚定，夹具过了、生产里一条都匹配不上——判据要照真实依赖写。
+    expect(getToolPreflightKind({ name: 'AskUserQuestion', result: { toolCallId: 'q', success: true,
+      output: '[用户未响应 - CLI 模式无法交互]\n\n1. 选哪个？\n   A. 甲\n   B. 乙\n\n⚠️ 用户无法回答问题。' } })).toBe('question');
   });
   // ai-review #1741 Important：组头 label 的分桶必须和 status 判定同口径，把 recovered /
   // isAutoLoadedRetry 排除掉。否则「Edit 失败 → Read → 同参数 Edit 成功」这一轮里，status

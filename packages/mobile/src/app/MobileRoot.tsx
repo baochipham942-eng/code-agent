@@ -39,7 +39,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
   const [appInfo, setAppInfo] = useState<{ version: string; build: string } | null>(null);
   const [nativeError, setNativeError] = useState(false);
   const [cacheConfirm, setCacheConfirm] = useState(false);
-  const [cacheResult, setCacheResult] = useState<'clean' | 'failed' | null>(null);
+  const [cacheResult, setCacheResult] = useState<'clean' | null>(null);
   // Native pushes the Android night flag (WebView 95 never updates prefers-color-scheme); matchMedia covers web/iOS.
   const [systemDark, setSystemDark] = useState(() => document.documentElement.dataset.systemNight === 'true'
     || matchMedia('(prefers-color-scheme: dark)').matches);
@@ -145,7 +145,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
     : companion.commandError === 'COMPANION_FILE_TYPE_DENIED' ? text.fileTypeDenied
     : companion.commandError === 'STORAGE_FULL' ? text.storageFull
     : companion.commandError === 'ARTIFACT_MISSING' ? text.artifactMissing
-    : companion.commandError && ['COMPANION_TRANSFER_INTERRUPTED', 'ATTACHMENT_INCOMPLETE', 'COMPANION_INTERRUPTED'].includes(companion.commandError) ? text.transferInterrupted
+    : companion.commandError && ['COMPANION_TRANSFER_INTERRUPTED', 'ATTACHMENT_INCOMPLETE', 'COMPANION_INTERRUPTED', 'COMPANION_NETWORK_UNAVAILABLE', 'COMPANION_CHANNEL_CLOSED'].includes(companion.commandError) ? text.transferInterrupted
     : companion.commandError ? text.commandRejected : null;
   const selectSession = (id: string) => { companion.selectSession(id); state.navigate('new'); };
   const manage: typeof companion.manage = async (...args) => {
@@ -286,7 +286,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
         editProfile={state.editProfile} saveProfile={state.saveProfile}
         storage={{ previewBytes: companion.cacheUsage?.previewBytes ?? 0, result: cacheResult, confirm: cacheConfirm,
           onConfirm: () => setCacheConfirm(true),
-          onClear: () => { try { companion.clearCache(); setCacheResult('clean'); setCacheConfirm(false); } catch { setCacheResult('failed'); } } }} />}
+          onClear: () => { companion.clearCache(); setCacheResult('clean'); setCacheConfirm(false); } }} />}
     </SheetHost>}
   </div>;
 }

@@ -157,6 +157,9 @@ export class CompanionFileService {
   /** Live host: drop abandoned staging without waiting for a process restart. */
   private expireStale(): void {
     const cutoff = this.now() - L.reconcilingRecoveryMs;
+    // 已 committed 的传输行没有后续查询路径（重读走 companion_artifacts），一并到期清除，
+    // 否则该表随累计上传永久增长。
+    this.db.prepare(`DELETE FROM companion_file_transfers WHERE state = 'committed' AND created_at <= ?`).run(cutoff);
     const rows = this.db.prepare(`SELECT transfer_id FROM companion_file_transfers WHERE state = 'staging' AND created_at <= ?`).all(cutoff) as SqlRow[];
     for (const row of rows) this.abortInternal(String(row.transfer_id));
   }

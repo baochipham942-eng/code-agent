@@ -422,7 +422,8 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
       clearCache: () => {
         const usage = files?.cache.clear() ?? { freedBytes: 0, remainingBytes: 0, failedEntries: [] };
         set({ cacheUsage: files?.cache.inspect() ?? null, preview: null, savedPreview: false });
-        return { previewBytes: usage.remainingBytes, conversationBytes: 0, protectedBytes: 0 };
+        // previewBytes 报告本次释放的预览字节（不是清理后的剩余——那个恒为 0，没有信息量）。
+        return { previewBytes: usage.freedBytes, conversationBytes: 0, protectedBytes: 0 };
       },
     };
   });

@@ -339,7 +339,13 @@ export function createApp(deps: CreateAppDeps): express.Express {
           services.files?.noteWrite(sessionId, String(raw.toolCallId ?? ''), String(raw.filePath ?? ''));
         }
         const projection = projectCompanionEvent(kind, payload.event);
-        if (!projection) return;
+        if (!projection) {
+          // 投影被丢弃的 tool_call_end 失败帧也要清掉 pendingWrites 记账，否则条目永久滞留。
+          if (kind === 'tool_call_end' && raw && typeof raw.toolCallId === 'string' && raw.success !== true) {
+            services.files?.discardWrite(sessionId, raw.toolCallId);
+          }
+          return;
+        }
         try {
           gateway.publish(sessionId, kind, { ...projection, ...(typeof payload.runId === 'string' ? { runId: payload.runId } : {}) });
           if (kind === 'tool_call_end' && raw && typeof raw.toolCallId === 'string') {

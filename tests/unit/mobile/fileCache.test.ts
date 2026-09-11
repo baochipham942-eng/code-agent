@@ -42,7 +42,8 @@ describe('mobile file cache quota and cleanup', () => {
     });
     expect(cache.inspect().previewBytes).toBe(2);
     const usage = companion.getState().clearCache();
-    expect(usage.previewBytes).toBe(0);
+    // previewBytes 报告本次释放的预览字节（放入过 2 字节的预览副本）
+    expect(usage.previewBytes).toBe(2);
     expect(cache.get('preview')).toBeNull();
     expect(identityWrites).toBe(0);
     expect(JSON.parse((await prefs.get())!).drafts.new).toBe('keep-this-draft');

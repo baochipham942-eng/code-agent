@@ -65,6 +65,8 @@ export function applyCompanionSchema(db: BetterSqlite3.Database): void {
       staging_path TEXT NOT NULL,
       created_at INTEGER NOT NULL
     );
+    CREATE INDEX IF NOT EXISTS idx_companion_file_transfers_state_created
+      ON companion_file_transfers(state, created_at);
     CREATE TABLE IF NOT EXISTS companion_artifacts (
       artifact_id TEXT PRIMARY KEY,
       session_id TEXT NOT NULL,

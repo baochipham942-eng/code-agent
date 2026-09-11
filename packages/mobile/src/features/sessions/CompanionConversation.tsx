@@ -53,8 +53,14 @@ export function CompanionConversation({ history, loadMore, hidePendingApprovals 
     {Array.from(rows, ([id, row]) => <p key={id} className={`lan-message ${row.role === 'user' ? 'from-user' : ''}`}>{row.content}{row.truncated && <small className="notice">{text.historyTruncated}</small>}</p>)}
     {Array.from(approvals, ([id, card]) => (!hidePendingApprovals || card.status !== 'pending') && <ApprovalCard key={id} card={card} text={text} disabled={disabled}
       respond={decision => respond(id, decision)} />)}
-    {events.filter(event => event.sessionId === sessionId && event.kind === 'artifact_write_started').map(event =>
-      <p key={event.eventId} className="notice">{text.artifactWriting} {String(event.payload.name ?? '')}</p>)}
+    {(() => {
+      // 「正在生成」只留还未完成的：tool_call_end 投影带同一 toolCallId 到达后即消失，
+      // 不再长期挂在只增不减的 events 流里。
+      const done = new Set(events.filter(e => e.kind === 'tool_call_end').map(e => String(e.payload.toolCallId)));
+      return events.filter(event => event.sessionId === sessionId && event.kind === 'artifact_write_started'
+        && !done.has(String(event.payload.toolCallId))).map(event =>
+        <p key={event.eventId} className="notice">{text.artifactWriting} {String(event.payload.name ?? '')}</p>);
+    })()}
     {artifacts.map(artifact => <button key={artifact.artifactId} className="artifact-card" disabled={disabled} onClick={() => openArtifact(artifact.artifactId)}>
       <strong>{artifact.name}</strong><span>{artifact.origin === 'upload' ? text.attach : text.artifacts}</span>
     </button>)}

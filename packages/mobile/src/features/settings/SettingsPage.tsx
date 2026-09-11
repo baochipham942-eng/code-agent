@@ -7,7 +7,7 @@ export function SettingsPage({ page, text, appearance, nickname, profileDraft, a
   page: SheetPage; text: ReturnType<typeof messages>; appearance: Appearance; nickname: string;
   profileDraft: string; appInfo: { version: string; build: string } | null;
   open(page: SheetPage): void; chooseAppearance(value: Appearance): void; editProfile(value: string): void; saveProfile(): void;
-  storage?: { previewBytes: number; result: 'clean' | 'failed' | null; confirm: boolean; onConfirm(): void; onClear(): void };
+  storage?: { previewBytes: number; result: 'clean' | null; confirm: boolean; onConfirm(): void; onClear(): void };
 }) {
   const row = (target: SheetPage, detail?: string) => <button className="settings-row" data-testid={`open-${target}`} onClick={() => open(target)}>
     <span>{text[target]}</span><span className="row-detail">{detail}<AppIcon name="chevron" /></span>
@@ -39,7 +39,6 @@ export function SettingsPage({ page, text, appearance, nickname, profileDraft, a
       <p className="caption">{text.storageProtected}</p>
       <div className="settings-group"><div className="settings-row"><span>{text.storageUsage}</span><span className="row-detail">{Math.ceil((storage?.previewBytes ?? 0) / (1024 * 1024))} MB</span></div></div>
       {storage?.result === 'clean' && <p className="notice" role="status">{text.cacheCleared}</p>}
-      {storage?.result === 'failed' && <p className="notice" role="status">{text.cacheFailed}</p>}
       {storage?.confirm
         ? <><p role="alert">{text.clearCacheConfirm}</p><button className="primary" onClick={storage.onClear}>{text.confirmClear}</button></>
         : <button className="primary" onClick={storage?.onConfirm}>{text.clearCache}</button>}

@@ -604,7 +604,7 @@ describe('browser/computer action preview rendering', () => {
       React.createElement(ToolStepGroup, { nodes, defaultExpanded: false }),
     );
     // #1-story-A 2c44c0cf9 起：`buildToolGroupHeadSummary` 那条按 失败/空结果/完成 三分桶
-    // 计数的摘要行被拆掉了调用点（现已是死代码，团队记录在案单独清理）——组头改用跟上面
+    // 计数的摘要行被拆掉了调用点，本 PR 已连同它那份只保护死代码的测试一起删除——组头改用跟上面
     // "联网查了 N 次" 同一套 byStatus 分桶 label，按状态分组而不是精确到"空结果"这一档，
     // 但失败/成功的粗粒度区分仍然保留，不是信息丢失。
     expect(collapsedHtml).toContain('查看 1 次内容未成功');

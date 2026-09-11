@@ -5,6 +5,9 @@ import { classifyToolName } from './humanizeToolStep';
 
 type PreflightKind = 'question' | 'repair' | 'approvalUnavailable' | 'approvalRequired' | 'readRequired';
 
+/** 宿主给未送达提问写的占位符，必须整条匹配——用户答案里出现同样的字不算。 */
+const UNDELIVERED_QUESTION_PLACEHOLDER = /^\s*\[用户未响应[^\]]*\]\s*$/;
+
 // Denied-for-approval-reasons host codes: the operation reached the permission layer and was
 // rejected there (classifier/policy/hard-gate/timeout/cancel), as opposed to no approval UI
 // existing at all (PermissionDeniedNoApprovalUi, handled separately below).
@@ -38,9 +41,15 @@ export function getToolPreflightKind(tool: Pick<ToolCall, 'name' | 'result'>): P
   if (!result) return null;
   const metadata = result.metadata;
   const text = result.error || (typeof result.output === 'string' ? result.output : '');
+  // 这一档必须排在 result.success 守卫之前：未送达的提问在传输层确实是 success（历史结果
+  // 不可篡改），要靠它自己识别。但也正因为排在前面，判据必须紧——原先对 output 做的是
+  // 无锚点子串匹配，用户在自由文本答案里写下「CLI 模式无法交互」这几个字，他自己那条
+  // 已回答的提问就会被翻成 success:false：行首变红、显示「问题没有送达你」，而紧下方的
+  // askUserRecord 还渲染着他的真实答案，同一块 UI 自相矛盾。
+  // 改成只认两种：宿主挂的结构化 permissionDecision，或**整条 output 就是**宿主那句占位符。
   if (classifyToolName(tool.name) === 'askUser' && (
     (metadata?.permissionDecision === 'deny' && /没有可投递|不支持交互|no.*interaction/i.test(String(metadata?.permissionDecisionReason)))
-    || /CLI 模式无法交互/.test(text)
+    || UNDELIVERED_QUESTION_PLACEHOLDER.test(text)
   )) return 'question';
   if (result.success) return null;
   // 只认结构化的 artifactRepairGuard.blocked，不再对自由文本匹配「Artifact repair mode

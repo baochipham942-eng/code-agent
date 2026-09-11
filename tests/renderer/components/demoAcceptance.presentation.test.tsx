@@ -83,6 +83,11 @@ describe('demo acceptance: truthful historical presentation', () => {
     expect(toolPreflightCopy(tool, zh)?.action).toBe('未能向你提问');
     expect(tool.result?.success).toBe(true); // immutable historic transport result
     expect(getToolPreflightKind({ ...tool, result: { toolCallId: 'q', success: true, output: 'User responses:\n[Choice]: Yes' } })).toBeNull();
+    // ai-review #1741 Important：用户在自由文本答案里写下占位符里的那几个字，不能把他
+    // 自己这条**已回答**的提问翻成「未送达」——否则行首变红写「问题没有送达你」，
+    // 而紧下方的 askUserRecord 还渲染着他的真实答案，同一块 UI 自相矛盾。
+    expect(getToolPreflightKind({ name: 'AskUserQuestion', result: { toolCallId: 'q', success: true,
+      output: 'User responses:\n[原因]: 因为 CLI 模式无法交互，所以我选第二个' } })).toBeNull();
   });
   // ai-review #1741 Important：组头 label 的分桶必须和 status 判定同口径，把 recovered /
   // isAutoLoadedRetry 排除掉。否则「Edit 失败 → Read → 同参数 Edit 成功」这一轮里，status

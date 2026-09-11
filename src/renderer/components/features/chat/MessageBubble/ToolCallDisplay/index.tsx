@@ -307,8 +307,9 @@ export function ToolCallDisplay({
       {getToolPreflightKind(toolCall) === 'question' && (
         <Button type="button" variant="secondary" size="sm" className="ml-6 mt-2"
           onClick={() => {
-            const questions = toolCall.arguments?.questions as Array<{ question?: string }> | undefined;
-            const question = questions?.map((item) => item.question).filter(Boolean).join('\n') ?? '';
+            const raw = toolCall.arguments?.questions;
+            const questions = Array.isArray(raw) ? raw as Array<{ question?: string }> : [];
+            const question = questions.map((item) => item?.question).filter(Boolean).join('\n');
             neoUIActionRouter.fillComposer(t.deliveryExperience.continueDraft.replace('{question}', question));
           }}>{t.deliveryExperience.continueQuestion}</Button>
       )}

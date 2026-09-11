@@ -143,9 +143,25 @@ describe('LAN companion: real HTTP + Noise + SQLite', () => {
     const binding = await pair();
     const replies = await Promise.all(['first', 'second'].map(id => client.request({ action: 'command', command: command(binding, id) })));
     expect(replies).toHaveLength(2); expect(executions).toBe(2);
-    now += L.channelTtlMs;
+    // A channel expires only after a full TTL of silence following its last successful RPC.
+    // 显式越过边界（TTL + 1ms），不押 expiresAt <= now 的等号巧合。
+    now += L.channelTtlMs + 1;
     await expect(client.request({ action: 'status', commandId: 'first' })).rejects.toThrow('HTTP_403');
     await client.resume(binding);
+  });
+  it('keeps an active channel online beyond its original TTL', async () => {
+    await pair();
+    const firstExpiry = now + L.channelTtlMs;
+    now += L.channelTtlMs - 1;
+    await client.request({ action: 'status', commandId: 'missing' });
+    expect(now).toBeGreaterThanOrEqual(firstExpiry - 1);
+
+    now += L.channelTtlMs - 1;
+    await client.request({ action: 'status', commandId: 'missing' });
+    expect(now).toBeGreaterThan(firstExpiry);
+
+    now += L.channelTtlMs - 1;
+    await expect(client.request({ action: 'status', commandId: 'missing' })).resolves.toBeDefined();
   });
   it('retains a phone identity before pairing and recovers a lost pairing receipt', async () => {
     const raw = JSON.stringify(server.invite(['shared']));

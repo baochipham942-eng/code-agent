@@ -2,8 +2,8 @@ import { useEffect, useRef, type ReactNode } from 'react';
 import type { messages } from '../i18n';
 
 function SheetIcon({ kind }: { kind: 'back' | 'close' }) {
-  if (kind === 'back') return <svg className="sheet-icon" width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="m14.5 5-7 7 7 7" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>;
-  return <svg className="sheet-icon" width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>;
+  if (kind === 'back') return <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="m14.5 5-7 7 7 7" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>;
+  return <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>;
 }
 
 export function SheetHost({ page, title, hasParent, close, back, text, children }: {

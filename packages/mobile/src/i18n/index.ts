@@ -5,7 +5,7 @@ const zh = {
   authorizedProjects: '仅显示电脑授权的项目与会话', projectGrantRequired: '需要在电脑连接手机设置中勾选此项目，再扫码更新授权，才能新建会话。', sessionName: '会话名称', rename: '保存名称', archive: '归档会话', unarchive: '取消归档', archived: '已归档', deleteSession: '删除会话', deleteConfirmation: '将从电脑删除此会话。此操作无法撤回。', keepSession: '保留', confirmDelete: '确认删除', model: '模型', useModel: '使用此模型', libraryError: '项目或历史未读取完整，请重连后重试。', loadHistory: '继续加载历史',
 
   operation: '操作', impact: '影响', technicalDetails: '查看技术详情', writeOperation: '写入文件', readOperation: '读取文件', commandOperation: '运行命令', requestedOperation: '执行请求的操作', targetInDetails: '见操作详情', writeImpact: '将写入或替换目标内容', commandImpact: '将按下方命令操作电脑，请展开核对', operationImpact: '仅允许当前请求，后续操作仍需确认', unreadableApproval: '无法完整读取操作内容，请拒绝或回电脑处理。',
-  running: '电脑正在处理', latest: '回到最新', connectionDetails: '连接详情',
+  running: '电脑正在处理', latest: '回到最新',
 
   targetPath: '目标文件或目录', commandPreview: '将执行的命令', targetUrl: '访问地址', beforeChange: '修改前', afterChange: '写入内容',
   changePreview: '变更预览', targetService: '目标服务', targetOperation: '操作对象', operationRisk: '操作风险', affectedFiles: '影响的文件数',
@@ -18,7 +18,7 @@ const zh = {
   connectionUnavailable: '无法连接电脑。请确认两台设备在同一 Wi-Fi，或电脑连接了手机热点，并允许 Neo 访问本地网络。换网后需重新扫码。',
   connectionFailed: '连接未完成。请重新连接；仍失败时在电脑上刷新二维码后重新扫描。',
   connectedReady: '已连接，可以发任务', connectedNext: '输入任务，电脑上的 Neo 会执行，并把结果同步到这里。', enterConversation: '进入会话',
-  lanTitle: '连接电脑', lanHint: '手机和电脑需连接同一 Wi-Fi，也可以让电脑连接手机热点。换网络后，请在电脑 Neo 的设置 → 通道中生成新二维码，再次扫码。',
+  lanHint: '手机和电脑需连接同一 Wi-Fi，也可以让电脑连接手机热点。换网络后，请在电脑 Neo 的设置 → 通道中生成新二维码，再次扫码。',
   scan: '扫描电脑二维码', reconnect: '重新连接', connected: '已连接电脑', connecting: '正在连接电脑',
   pendingCommand: '正在核对电脑是否已接收，请勿重复发送', rejected: '电脑未接受这次操作，文字已保留',
   secureStorageError: '设备连接信息尚未安全保存，请重试。', sharedSession: '共享会话',
@@ -51,7 +51,7 @@ const en: Record<keyof typeof zh, string> = {
   authorizedProjects: 'Only projects and conversations shared by your computer', projectGrantRequired: 'Select this project in desktop phone settings and scan a new code to allow new conversations.', sessionName: 'Conversation name', rename: 'Save name', archive: 'Archive conversation', unarchive: 'Unarchive', archived: 'Archived', deleteSession: 'Delete conversation', deleteConfirmation: 'Delete this conversation from your computer? This cannot be undone.', keepSession: 'Keep', confirmDelete: 'Confirm deletion', model: 'Model', useModel: 'Use this model', libraryError: 'Projects or history could not be fully loaded. Reconnect and retry.', loadHistory: 'Load more history',
 
   operation: 'Operation', impact: 'Impact', technicalDetails: 'Technical details', writeOperation: 'Write file', readOperation: 'Read file', commandOperation: 'Run command', requestedOperation: 'Perform requested operation', targetInDetails: 'See operation details', writeImpact: 'Writes or replaces the target content', commandImpact: 'Runs the command below on your computer. Expand to review.', operationImpact: 'Allows this request only. Later operations still require confirmation.', unreadableApproval: 'Cannot read the complete operation. Deny or review on your computer.',
-  running: 'Working on your computer', latest: 'Jump to latest', connectionDetails: 'Connection details',
+  running: 'Working on your computer', latest: 'Jump to latest',
 
   targetPath: 'Target file or directory', commandPreview: 'Command to execute', targetUrl: 'Destination', beforeChange: 'Before', afterChange: 'Content to write',
   changePreview: 'Change preview', targetService: 'Service', targetOperation: 'Operation target', operationRisk: 'Operation risk', affectedFiles: 'Affected files',
@@ -64,7 +64,7 @@ const en: Record<keyof typeof zh, string> = {
   connectionUnavailable: 'Cannot reach your computer. Use the same Wi-Fi or connect your computer to your phone’s hotspot, and allow Neo local network access. Scan a new code after changing networks.',
   connectionFailed: 'The connection did not complete. Reconnect, or refresh the code on your computer and scan again.',
   connectedReady: 'Connected. Ready for your task.', connectedNext: 'Send a task. Neo will run it on your computer and show the result here.', enterConversation: 'Open conversation',
-  lanTitle: 'Connect a computer', lanHint: 'Connect both devices to the same Wi-Fi, or connect your computer to your phone’s personal hotspot. After changing networks, generate a new code in Neo desktop Settings → Channels and scan again.',
+  lanHint: 'Connect both devices to the same Wi-Fi, or connect your computer to your phone’s personal hotspot. After changing networks, generate a new code in Neo desktop Settings → Channels and scan again.',
   scan: 'Scan computer code', reconnect: 'Reconnect', connected: 'Computer connected', connecting: 'Connecting to computer',
   pendingCommand: 'Checking whether the computer received this. Please do not resend.', rejected: 'The computer did not accept this action. Your text is retained.',
   secureStorageError: 'Connection details could not be saved securely. Please retry.', sharedSession: 'Shared conversation',

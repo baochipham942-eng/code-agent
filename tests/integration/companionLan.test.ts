@@ -336,7 +336,7 @@ describe('LAN companion: real HTTP + Noise + SQLite', () => {
     await client.request({ action: 'sync', epoch: binding.scopeEpoch, afterSeq: 0 });
     expect(server.hasApprovalUi('shared')).toBe(true);
     expect(server.hasApprovalUi('hidden')).toBe(false);
-    now += L.uiPresenceTtlMs + 1;
+    now += L.uiPresenceTtlMs;
     expect(server.hasApprovalUi('shared')).toBe(false);
     await client.request({ action: 'sync', epoch: binding.scopeEpoch, afterSeq: 0 });
     expect(server.hasApprovalUi('shared')).toBe(true);

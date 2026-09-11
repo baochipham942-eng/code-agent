@@ -581,6 +581,36 @@ describe('createAgentRouter', () => {
     }
   });
 
+  it('re-reads companion presence during a pending approval instead of keeping the t=0 snapshot', async () => {
+    await closeServer();
+    setBrowserWindowInteractionProbe(() => false);
+    const probe = vi.fn<NonNullable<Parameters<typeof createAgentRouter>[0]['hasCompanionApprovalUi']>>(() => true);
+    let start: Parameters<NonNullable<Parameters<typeof createAgentRouter>[0]['registerCompanionRun']>>[0] | undefined;
+    await startAgentApi({ registerCompanionRun: value => { start = value; }, hasCompanionApprovalUi: probe });
+    await start!({ version: 1, sessionId: 'phone-ui-live', prompt: 'bounded task' });
+    await vi.waitFor(() => expect(mockCreateRunToolExecutor.mock.calls.length).toBeGreaterThan(0));
+    const ask = mockCreateRunToolExecutor.mock.calls.at(-1)![2] as OrchestratorPermissionIsland['requestPermission'];
+    vi.useFakeTimers();
+    try {
+      const pending = ask({
+        type: 'file_write',
+        tool: 'Write',
+        sessionId: 'phone-ui-live',
+        forceConfirm: true,
+        details: { path: '/tmp/phone-live.txt' },
+      });
+      probe.mockReturnValue(false);
+      let outcome: unknown = 'still-pending';
+      void pending.then(value => { outcome = value; });
+      await vi.advanceTimersByTimeAsync(60_000 + 15_000);
+      expect(outcome, '离网后还停在创建时的 true：运行会永久挂在两端都看不见的 tool call 上')
+        .toEqual({ approved: false, denialSource: 'timeout' });
+    } finally {
+      vi.useRealTimers();
+      await runRegistry.getBySessionId('phone-ui-live')?.cancel('user');
+    }
+  });
+
   it('treats an SSE-subscribed renderer as the approval UI for a queued run', async () => {
     await closeServer();
     // #1415 把判定源从「路由自己数 sseClients」换成了 platform 的 hasInteractiveUi()，

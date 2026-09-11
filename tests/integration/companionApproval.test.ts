@@ -56,6 +56,14 @@ describe('companion uses the desktop live approval authority', () => {
     expect(await handlers.get(IPC_CHANNELS.AGENT_PERMISSION_RESPONSE)!(null, request.id, 'deny', sessionId)).toMatchObject({ success: false });
     expect(gateway.submit({ ...command, commandId: 'command-two' }).kind).toBe('approval_conflict');
   });
+  it('drops publishedEpoch for a request after respond succeeds', async () => {
+    const { promise, request, command } = pending();
+    const published = (service as unknown as { publishedEpoch: Map<string, number> }).publishedEpoch;
+    expect(published.has(request.id)).toBe(true);
+    expect(gateway.submit(command).kind).toBe('accepted');
+    await expect(promise).resolves.toEqual({ approved: true, approvalSource: 'user' });
+    expect(published.has(request.id)).toBe(false);
+  });
   it('desktop winning first prevents a stale mobile approval', async () => {
     const { promise, request, command } = pending();
     await handlers.get(IPC_CHANNELS.AGENT_PERMISSION_RESPONSE)!(null, request.id, 'deny', sessionId);
@@ -190,6 +198,25 @@ describe('an approval no surface can render must keep its fail-closed timeout', 
     void promise.then(() => { settled = true; });
     await vi.advanceTimersByTimeAsync(EDITABLE_PERMISSION_TIMEOUT_MS + 1_000);
     expect(settled, '卡片送达时不该再有 fail-closed 超时——那会把真人还没看的审批自动拒掉').toBe(false);
+  });
+
+  it('在场 TTL 过期后必须重判——不能把创建时的 true 用到超时全程', async () => {
+    let present = true;
+    phoneChannelLive = () => present;
+    const promise = write('bounded content');
+    service.refresh();
+    expect(gateway.syncForDevice('phone', 1, 0).events[0].payload.preview).toContain('bounded content');
+
+    let outcome: unknown = 'still-pending';
+    void promise.then(value => { outcome = value; });
+
+    await vi.advanceTimersByTimeAsync(COMPANION_LIMITS.uiPresenceTtlMs);
+    expect(outcome, '在场尚未撤销时就超时拒绝，等于把用户还没看到的审批替他拒了').toBe('still-pending');
+
+    present = false;
+    await vi.advanceTimersByTimeAsync(60_000 + 15_000);
+    expect(outcome, '手机离网后还停在创建时的 true：这次运行会永久挂在一个两端都看不见的 tool call 上')
+      .toEqual({ approved: false, denialSource: 'timeout' });
   });
 
   it('通道到点被拆之后必须重判——不能永远停在 t=0 那个 true', async () => {

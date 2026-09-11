@@ -65,6 +65,18 @@ describe('demo acceptance: truthful historical presentation', () => {
     expect(reason).toBeTruthy();
   });
 
+  // ai-review #1741 Important：非文件类工具被拦下时，折叠行必须带上命令原文。否则一轮里
+  // 连着几条命令被权限层拦下，时间线上就是数条一模一样的「未执行 · 需要人工确认」，
+  // 用户分不清拦的是哪条（origin/main 显示的是「运行命令 npm test 未成功」，原文在行内）。
+  it('a blocked command keeps its own text in the folded row', () => {
+    const tool: ToolCall = { id: 'b', name: 'Bash', arguments: { command: 'npm test' },
+      result: { toolCallId: 'b', success: false, error: 'denied', metadata: { failureCode: 'permission-denied' } } };
+    expect(toolPreflightCopy(tool, zh)?.action).toContain('npm test');
+    const other: ToolCall = { ...tool, id: 'c', arguments: { command: 'npm run build' } };
+    expect(toolPreflightCopy(other, zh)?.action).toContain('npm run build');
+    expect(toolPreflightCopy(tool, zh)?.action).not.toBe(toolPreflightCopy(other, zh)?.action);
+  });
+
   it('does not mark an undelivered question as answered or successful', () => {
     const tool: ToolCall = { id: 'q', name: 'AskUserQuestion', arguments: {}, result: { toolCallId: 'q', success: true, output: '[用户未响应 - CLI 模式无法交互]', metadata: { permissionDecision: 'deny', permissionDecisionReason: '当前运行环境没有可投递的交互界面' } } };
     expect(getToolPreflightKind(tool)).toBe('question');

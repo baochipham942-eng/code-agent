@@ -31,6 +31,7 @@ import {
   type AskUserQuestionRecord,
 } from '../../../../../utils/askUserQuestionRecord';
 import { Button } from '../../../../primitives';
+import { neoUIActionRouter } from '../../../../../services/neoUIActionRouter';
 import { useI18n } from '../../../../../hooks/useI18n';
 import { useBackgroundTaskStore } from '../../../../../stores/backgroundTaskStore';
 import { useAgentTreeSnapshot } from '../../../../../hooks/useAgentTreeSnapshot';
@@ -308,7 +309,7 @@ export function ToolCallDisplay({
           onClick={() => {
             const questions = toolCall.arguments?.questions as Array<{ question?: string }> | undefined;
             const question = questions?.map((item) => item.question).filter(Boolean).join('\n') ?? '';
-            window.dispatchEvent(new CustomEvent('iact:add', { detail: t.deliveryExperience.continueDraft.replace('{question}', question) }));
+            neoUIActionRouter.fillComposer(t.deliveryExperience.continueDraft.replace('{question}', question));
           }}>{t.deliveryExperience.continueQuestion}</Button>
       )}
 

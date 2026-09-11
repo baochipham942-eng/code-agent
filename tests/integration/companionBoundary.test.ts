@@ -94,10 +94,11 @@ describe('companion device boundary (HTTP + persistent SQLite)', () => {
     const result = gateway.submit(command());
     expect(result).toMatchObject({ kind: 'replayed', command: { state: 'reconciling' } });
     expect(executions).toBe(1);
+    db.exec('DROP TRIGGER fail_receipt');
     db.close();
     db = new Database(join(directory, 'test.db'));
     const restarted = new CompanionGateway(db, { dispatch });
-    expect(restarted.submit(command())).toMatchObject({ kind: 'replayed', command: { state: 'reconciling' } });
+    expect(restarted.submit(command())).toMatchObject({ kind: 'replayed', command: { state: 'rejected', result: { code: 'COMPANION_INTERRUPTED' } } });
     expect(executions).toBe(1);
   });
   it('does not dispatch if the durable reservation cannot be saved', () => {

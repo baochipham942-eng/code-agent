@@ -75,8 +75,21 @@ export class CompanionGateway {
     this.ensureSchema();
     // Session mutations commit their DB effect and receipt in one transaction.
     // An interrupted reservation therefore has no committed session mutation.
+    // A reservation without a committed receipt means the host may have exited
+    // before the command resolved.  Recover every action: leaving message/run/
+    // approval rows reconciling strands the phone's durable pending command.
     this.db.prepare(`UPDATE companion_commands SET state = 'rejected', result_json = ?
-      WHERE state = 'reconciling' AND (action LIKE 'session.%' OR action = 'voice.transcribe')`).run(JSON.stringify({ code: 'COMPANION_INTERRUPTED' }));
+      WHERE state = 'reconciling'`).run(JSON.stringify({ code: 'COMPANION_INTERRUPTED' }));
+    // An approval claim belongs to the uncertain command reservation. Once that
+    // reservation is explicitly recovered, release the claim so a fresh
+    // command ID can retry the still-pending desktop approval.
+    this.db.prepare(`DELETE FROM companion_decision_claims
+      WHERE EXISTS (SELECT 1 FROM companion_commands c
+        WHERE c.action = 'approval.respond' AND c.state = 'rejected'
+          AND json_extract(c.result_json, '$.code') = 'COMPANION_INTERRUPTED'
+          AND EXISTS (SELECT 1 FROM companion_decisions d
+            WHERE d.request_id = companion_decision_claims.request_id
+              AND d.status = 'pending'))`).run();
     const row = this.db.prepare(`SELECT MAX(epoch) AS epoch FROM (
       SELECT COALESCE(MAX(epoch), 1) AS epoch FROM companion_events
       UNION ALL SELECT COALESCE(MAX(scope_epoch), 1) AS epoch FROM companion_devices

@@ -84,8 +84,41 @@ describe('CompanionGateway', () => {
     gateway.submit(command);
     gateway = new CompanionGateway(db, { decide });
     gateway.submit({ ...command, commandId: 'second' });
-    expect(decide).toHaveBeenCalledTimes(1);
+    expect(decide).toHaveBeenCalledTimes(2);
     expect(gateway.commandStatus('phone-1', 'second')?.state).toBe('reconciling');
+  });
+
+  it.each([
+    ['message.send', { text: 'hello' }],
+    ['run.cancel', { runId: 'run-1' }],
+    ['approval.respond', { requestId: 'request', decision: 'approved', operationDigest: 'digest' }],
+  ] as const)('recovers an interrupted %s reservation on host restart', (action, payload) => {
+    const first = new CompanionGateway(db, { now: () => 1000, dispatch: () => ({ state: 'reconciling' }),
+      decide: action === 'approval.respond' ? (() => { throw new Error('uncertain'); }) : undefined });
+    first.registerDevice({ deviceId: 'phone-1', credentialHash: 'hash-phone-1', scopeEpoch: 1, scope: ['session-1'], revokedAt: null });
+    const command = { version: 1 as const, commandId: `interrupted-${action}`, deviceId: 'phone-1', scopeEpoch: 1,
+      sessionId: 'session-1', action, ...(action === 'approval.respond' ? { expectedRevision: 1 } : {}), payload } as const;
+    if (action === 'approval.respond') first.registerDecision({ requestId: 'request', sessionId: 'session-1', revision: 1, status: 'pending', resolvedBy: null, operationDigest: 'digest' });
+    expect(first.submit(command).kind).toBe(action === 'approval.respond' ? 'replayed' : 'accepted');
+    const restarted = new CompanionGateway(db);
+    expect(restarted.commandStatus('phone-1', command.commandId)).toMatchObject({ state: 'rejected', result: { code: 'COMPANION_INTERRUPTED' } });
+  });
+
+  it('releases an interrupted approval claim so a new command ID can retry', () => {
+    let attempts = 0;
+    const decide = vi.fn((command: any) => {
+      attempts += 1;
+      if (attempts === 1) throw new Error('uncertain');
+      return { kind: 'accepted' as const, command: { deviceId: command.deviceId, commandId: command.commandId, payloadHash: '', action: command.action, sessionId: command.sessionId, state: 'resolved' as const, result: { approved: true }, createdAt: 1000 } };
+    });
+    const first = new CompanionGateway(db, { decide });
+    first.registerDevice({ deviceId: 'phone-1', credentialHash: 'hash-phone-1', scopeEpoch: 1, scope: ['session-1'], revokedAt: null });
+    first.registerDecision({ requestId: 'retry-request', sessionId: 'session-1', revision: 1, status: 'pending', resolvedBy: null, operationDigest: 'retry-digest' });
+    const base = { version: 1 as const, deviceId: 'phone-1', scopeEpoch: 1, sessionId: 'session-1', action: 'approval.respond' as const, expectedRevision: 1, payload: { requestId: 'retry-request', decision: 'approved' as const, operationDigest: 'retry-digest' } };
+    expect(first.submit({ ...base, commandId: 'retry-one' }).kind).toBe('replayed');
+    const restarted = new CompanionGateway(db, { decide });
+    expect(restarted.submit({ ...base, commandId: 'retry-two' })).toMatchObject({ kind: 'accepted', command: { state: 'resolved' } });
+    expect(decide).toHaveBeenCalledTimes(2);
   });
 
 });

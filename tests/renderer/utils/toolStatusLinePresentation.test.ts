@@ -4,7 +4,6 @@ import { zh } from '../../../src/renderer/i18n/zh';
 import {
   buildToolStatusLineCopy,
   isRawToolStdoutNoMatches,
-  localizeCollapsedToolSummary,
   type ToolStatusLineInput,
 } from '../../../src/renderer/utils/toolStatusLinePresentation';
 
@@ -218,7 +217,5 @@ describe('collapsed tool stdout', () => {
     expect(isRawToolStdoutNoMatches('No matches')).toBe(true);
     expect(isRawToolStdoutNoMatches('No matches found')).toBe(true);
     expect(isRawToolStdoutNoMatches('No files matched the pattern')).toBe(true);
-    expect(localizeCollapsedToolSummary('No matches', zh)).toBe('无匹配');
-    expect(localizeCollapsedToolSummary('Found 3 results', zh)).toBe('Found 3 results');
   });
 });

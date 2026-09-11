@@ -1,3 +1,4 @@
+import { getToolPreflightKind, toolPreflightCopy } from '../../../../../utils/toolPreflightPresentation';
 // ============================================================================
 // ToolCallDisplay - Claude Code terminal style tool execution display
 // StatusIndicator (braille spinner) + ToolName + params + ⎿ result summary
@@ -20,6 +21,7 @@ import {
 } from '../../../../../utils/browserComputerActionPreview';
 import {
   humanizeToolError,
+  humanizeToolFailureReason,
   isEscalatedToolError,
 } from '../../../../../utils/toolExecutionPresentation';
 import type { Translations } from '../../../../../i18n';
@@ -28,6 +30,8 @@ import {
   buildAskUserQuestionRecord,
   type AskUserQuestionRecord,
 } from '../../../../../utils/askUserQuestionRecord';
+import { Button } from '../../../../primitives';
+import { neoUIActionRouter } from '../../../../../services/neoUIActionRouter';
 import { useI18n } from '../../../../../hooks/useI18n';
 import { useBackgroundTaskStore } from '../../../../../stores/backgroundTaskStore';
 import { useAgentTreeSnapshot } from '../../../../../hooks/useAgentTreeSnapshot';
@@ -123,7 +127,7 @@ export interface ToolReceiptPresentation {
 }
 
 export function ToolCallDisplay({
-  toolCall,
+  toolCall: originalToolCall,
   index,
   total: _total,
   compact = false,
@@ -132,6 +136,10 @@ export function ToolCallDisplay({
   interruptionReason,
   receipt,
 }: ToolCallDisplayProps) {
+  const { t } = useI18n();
+  const toolCall = useMemo(() => getToolPreflightKind(originalToolCall) === 'question' && originalToolCall.result
+    ? { ...originalToolCall, result: { ...originalToolCall.result, success: false, error: originalToolCall.result.error ?? originalToolCall.result.output } }
+    : originalToolCall, [originalToolCall]);
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
   const processingSessionIds = useAppStore((state) => state.processingSessionIds);
   const pendingPermissionRequest = useAppStore((state) => state.pendingPermissionRequest);
@@ -278,17 +286,38 @@ export function ToolCallDisplay({
               awaitingApproval={awaitingApproval}
               interruptionReason={interruptionReason}
               showDetailName={expanded}
-              hideStatusLabel={Boolean(receipt)}
+              hideStatusLabel={Boolean(receipt) || status === 'error'}
             />}
         {receipt && (
           <ToolReceiptMeta receipt={receipt} />
         )}
-        {!receipt && toolCall.result && !delegationPresentation && !expanded && !isBashTool(toolCall) && status !== 'interrupted' && (
+        {!receipt && status !== 'error' && toolCall.result && !delegationPresentation && !expanded && !isBashTool(toolCall) && status !== 'interrupted' && (
           <span className="min-w-0 max-w-[220px] shrink truncate text-xs text-zinc-500">
             <ResultSummary toolCall={toolCall} inline />
           </span>
         )}
       </div>
+
+      {status === 'error' && !delegationPresentation && (
+        <div className="ml-6 mt-1 whitespace-normal break-words text-xs leading-5 text-zinc-400">
+          {/* 直接用 humanizeToolFailureReason：它内部已经把顺序排好了（hostReason 登记表 →
+              preflight → 其余结构化来源）。这里若先调 toolPreflightCopy 就等于把那个顺序绕过去，
+              用户亲手点的拒绝会被渲染成「未能自动批准」，而同一屏上方的组头（走
+              humanizeToolFailureReason）显示「审批被拒绝」——同一件事两处自相矛盾。 */}
+          {humanizeToolFailureReason(toolCall, t)}
+          {toolCall.result?.metadata?.recovered === true && <span className="ml-2 text-badge-success">{t.deliveryExperience.recovered}</span>}
+        </div>
+      )}
+      {getToolPreflightKind(toolCall) === 'question' && (
+        <Button type="button" variant="secondary" size="sm" className="ml-6 mt-2"
+          onClick={() => {
+            const raw = toolCall.arguments?.questions;
+            const questions = Array.isArray(raw) ? raw as Array<{ question?: string }> : [];
+            const question = questions.map((item) => item?.question).filter(Boolean).join('\n');
+            // 问题取不到就别灌——只剩前缀的模板对用户没有意义。
+            if (question) neoUIActionRouter.fillComposer(t.deliveryExperience.continueDraft.replace('{question}', question));
+          }}>{t.deliveryExperience.continueQuestion}</Button>
+      )}
 
       {delegationPresentation && <DelegationReceipt presentation={delegationPresentation} />}
 

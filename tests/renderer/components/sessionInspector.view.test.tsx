@@ -4,6 +4,7 @@ import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { TraceLedgerEvent, TraceSessionRead } from '../../../src/renderer/services/traceLedgerClient';
+import { zh } from '../../../src/renderer/i18n/zh';
 
 const traceApi = vi.hoisted(() => ({
   read: null as TraceSessionRead | null,
@@ -239,7 +240,8 @@ describe('A · 层1 工具汇总句（可展开逐条明细）', () => {
     const text = (await screen.findByTestId('inspector-activity-detail')).textContent ?? '';
     expect(text).toContain('更新了任务');
     expect(text).toContain('执行工具操作未成功');
-    expect(text).toContain('工具未返回可读的失败原因');
+    // #1-story-A 2c44c0cf9 重写了 failureReasonMissing 文案（同一把 key，纯措辞优化）。
+    expect(text).toContain(zh.toolStepHumanize.failureReasonMissing);
     expect(text).not.toContain('TaskManager');
     expect(text).not.toContain('futureCamelTool');
     expect(text).not.toContain('[cancelled]');

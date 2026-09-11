@@ -1,3 +1,4 @@
+import { getToolPreflightKind, toolPreflightCopy } from '../../../utils/toolPreflightPresentation';
 // ============================================================================
 // ToolStepGroup - 把相邻的工具调用折成一行 "Explored 2 files, 2 lists"
 // 默认折叠，点击展开显示原 ToolCallDisplay 列表
@@ -8,16 +9,14 @@ import { ChevronRight, ChevronDown, RotateCcw } from 'lucide-react';
 import type { TraceNode } from '@shared/contract/trace';
 import type { TurnArtifactOwnershipItem } from '@shared/contract/turnTimeline';
 import type { PermissionRequest, ToolCall, ToolLiveOutput, ToolStepStatus } from '@shared/contract';
-import { AgentFailureCode, inferAgentFailureCode } from '@shared/contract';
 import { findConnectorIdForToolName } from '@shared/contract/workbenchTools';
 import {
   ToolCallDisplay,
   type ToolReceiptPresentation,
 } from './MessageBubble/ToolCallDisplay/index';
-import { summarizeTool } from './MessageBubble/ToolCallDisplay/summarizers';
-import { localizeCollapsedToolSummary } from '../../../utils/toolStatusLinePresentation';
 import { computeBashPreviewLines } from './MessageBubble/ToolCallDisplay/bashOutputPreview';
 import {
+  classifyToolName,
   humanizeToolGroupLabel,
   humanizeToolStep,
   isInternalStreamTool,
@@ -27,10 +26,8 @@ import {
   humanizeToolFailureReason,
   isAutoLoadedRetry,
   isEscalatedToolError,
-  resolveCollapsedFailureSummary,
 } from '../../../utils/toolExecutionPresentation';
 import { useI18n } from '../../../hooks/useI18n';
-import type { Translations } from '../../../i18n';
 import { getDeferredContentStyle } from '../../../utils/turnContentVisibility';
 import { getPlanApprovalRecord } from '../../../utils/planApprovalView';
 import { PlanApprovalEvidence } from '../../PlanApprovalCard';
@@ -66,7 +63,7 @@ function resolveTraceToolStepStatus(
 }
 
 export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
-  nodes,
+  nodes: sourceNodes,
   sessionId,
   defaultExpanded = false,
   isStreamingTurn = false,
@@ -74,6 +71,13 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
   receiptTimestamp,
 }) => {
   const { t } = useI18n();
+  const nodes = useMemo(() => sourceNodes.map((node) => {
+    const tc = node.toolCall;
+    if (!tc || getToolPreflightKind({ name: tc.name, result: tc.result === undefined ? undefined : {
+      toolCallId: tc.id, success: tc.success ?? true, output: tc.result, metadata: tc.metadata,
+    } }) !== 'question') return node;
+    return { ...node, toolCall: { ...tc, success: false } };
+  }), [sourceNodes]);
   const sendPrompt = useMessageActionStore((state) => state.sendPrompt);
   const resolvedPermissionRequests = useAppStore((state) => (
     sessionId ? state.resolvedPermissionRequests?.[sessionId] : undefined
@@ -104,7 +108,10 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
           tc,
           isToolCallAwaitingApproval(tc.id, sessionId, permissionState),
         );
-        const step = humanizeToolStep(
+        const preflight = toolPreflightCopy({ name: tc.name, arguments: tc.args, result: tc.result === undefined ? undefined : {
+          toolCallId: tc.id, success: tc.success ?? true, error: tc.success === false ? tc.result : undefined, output: tc.result, metadata: tc.metadata,
+        } }, t);
+        const step = preflight?.action ?? humanizeToolStep(
           tc.name,
           tc.args as Record<string, unknown> | undefined,
           t,
@@ -121,29 +128,44 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
         return `${connector} · ${step}`;
       }
     }
-    const names = streamVisibleNodes
-      .map((n) => n.toolCall?.name)
-      .filter((x): x is string => !!x);
+    const names = streamVisibleNodes.flatMap((node) => node.toolCall ? [node.toolCall.name] : []);
     const connectorIds = new Set(names.map(findConnectorIdForToolName).filter(Boolean));
-    if (connectorIds.size === 1 && names.every((name) => findConnectorIdForToolName(name))) {
-      const connector = getHumanToolLabel({
-        toolName: names[0],
-        labels: t.receiptPresentation.humanToolLabels,
-      });
+    if (connectorIds.size === 1 && names.every((name) => findConnectorIdForToolName(name))
+      && streamVisibleNodes.every((node) => node.toolCall?.success === true)) {
+      const connector = getHumanToolLabel({ toolName: names[0], labels: t.receiptPresentation.humanToolLabels });
       return `${connector} · ${t.toolGroup.executedSteps.replace('{count}', String(names.length))}`;
     }
-    const groupStatus: ToolStepStatus = streamVisibleNodes.some((node) => (
-      node.toolCall
-      && node.toolCall.result === undefined
-      && isToolCallAwaitingApproval(node.toolCall.id, sessionId, permissionState)
-    ))
-      ? 'pending-approval'
-      : streamVisibleNodes.some((node) => node.toolCall?.result === undefined)
-        ? 'running'
-        : streamVisibleNodes.every((node) => node.toolCall?.success === false)
-          ? 'failed'
-          : 'completed';
-    return humanizeToolGroupLabel(names, t, groupStatus);
+    const byStatus = new Map<ToolStepStatus, string[]>();
+    let blockedCommands = 0;
+    let blockedSteps = 0;
+    for (const node of streamVisibleNodes) {
+      const tc = node.toolCall;
+      if (!tc) continue;
+      // 自动加载重试和已恢复的失败是良性/已收尾状态：**不按失败计**，但**仍要计数**。
+      //  · 不按失败计——否则组状态是 ok（无红点、无原因行），组头却写「…未成功」，
+      //    正好是 status 那边注释要防的「把成功的一轮演成翻车」。
+      //  · 仍要计数——直接 continue 会让「WebSearch 失败 → WebFetch 失败 → 模型给出答案」
+      //    这种整组都被过滤的情形 label 变成空串，撞上下面 `!label` 的守卫，整个工具组
+      //    从时间线上消失，用户连「搜索发生过」都不知道。
+      const benign = isAutoLoadedRetry(tc.metadata) || tc.recovered;
+      const preflight = benign ? null : getToolPreflightKind({ name: tc.name, result: tc.result === undefined ? undefined : {
+        toolCallId: tc.id, success: tc.success ?? true, error: tc.success === false ? tc.result : undefined, output: tc.result, metadata: tc.metadata,
+      } });
+      if (preflight) {
+        if (classifyToolName(tc.name) === 'bash') blockedCommands += 1;
+        else blockedSteps += 1;
+        continue;
+      }
+      const stepStatus = benign
+        ? 'completed'
+        : resolveTraceToolStepStatus(tc, isToolCallAwaitingApproval(tc.id, sessionId, permissionState));
+      byStatus.set(stepStatus, [...(byStatus.get(stepStatus) ?? []), tc.name]);
+    }
+    return [
+      ...Array.from(byStatus, ([stepStatus, names]) => humanizeToolGroupLabel(names, t, stepStatus)),
+      blockedCommands ? t.deliveryExperience.blockedCommands.replace('{count}', String(blockedCommands)) : '',
+      blockedSteps ? t.deliveryExperience.blockedSteps.replace('{count}', String(blockedSteps)) : '',
+    ].filter(Boolean).join(t.deliveryExperience.labelSeparator);
   }, [permissionState, sessionId, streamVisibleNodes, t]);
 
   const status = useMemo<'pending-approval' | 'streaming' | 'partial' | 'error' | 'ok'>(() => {
@@ -269,18 +291,16 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
 
     return [{ request, statusLabel, stepLabel, details, timedOut, denied }];
   }), [nodes, resolvedPermissionRequests, t]);
-  const toolFailureCode = toolCalls.reduce<AgentFailureCode | null>((resolved, toolCall) => {
-    if (resolved || toolCall.result?.success !== false) return resolved;
-    return inferAgentFailureCode({
-      failureCode: toolCall.result.metadata?.failureCode,
-      toolResultCode: toolCall.result.metadata?.code,
-      defaultCode: AgentFailureCode.Unknown,
-    });
-  }, null);
-  const permissionOutcome = permissionEvidence.some(({ denied }) => denied)
-    || toolFailureCode === AgentFailureCode.PermissionDenied
+  // 来自本组里一条已解析的 PermissionRequest——真的「有人/有界面做了这个决定」。
+  // 只有它才可以抢在 failureReason 之前：仅凭 metadata.failureCode 的那种猜测（很可能是
+  // CLI auto 档 fail-closed、从没到过人眼）由 humanizeToolFailureReason / preflight
+  // 分类得更准，不该顶掉逐 toolCall 的原因。
+  // （原先还挂了一档 toolFailureCode 兜底，已删：它不可达——那一行只在 status 为
+  //   partial/error 时渲染，而那两种状态成立就必然存在 success===false 的 toolCall，
+  //   failureReason 于是必非空，永远轮不到那一档。）
+  const permissionRequestOutcome = permissionEvidence.some(({ denied }) => denied)
     ? t.outcomeWords['failed-approval-denied'].timeline
-    : permissionEvidence.some(({ timedOut }) => timedOut) || toolFailureCode === AgentFailureCode.Timeout
+    : permissionEvidence.some(({ timedOut }) => timedOut)
       ? t.outcomeWords['failed-timeout'].timeline
       : null;
   const planApproval = useMemo(
@@ -339,9 +359,11 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
     return { ...runningToolCall, liveOutput: tailTruncateLiveOutput(runningToolCall.liveOutput) };
   }, [tier, runningToolCall]);
 
-  const resultSummary = useMemo(() => buildToolGroupHeadSummary(toolCalls, t), [toolCalls, t]);
   const failureReason = useMemo(() => {
-    const failedCalls = toolCalls.filter((toolCall) => toolCall.result?.success === false);
+    // 与组头 label 同口径：已恢复/自动重试的失败不算数，否则会出现 label 说「1 条未成功」、
+    // 原因行说「2 失败」这种自相矛盾。
+    const failedCalls = toolCalls.filter((toolCall) => toolCall.result?.success === false
+      && !isAutoLoadedRetry(toolCall.result?.metadata) && toolCall.result?.metadata?.recovered !== true);
     if (failedCalls.length === 0) return null;
     if (failedCalls.length === 1) return humanizeToolFailureReason(failedCalls[0], t);
     return t.toolGroup.summaryFailed.replace('{count}', String(failedCalls.length));
@@ -447,21 +469,19 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
             aria-label={t.toolGroup.statusPartial}
           />
         )}
-        {/* 状态词必须与右侧标签用同一套字体栈（都 font-mono）。两段本来就都是 11px，
-            但状态词原先继承 body 的 Inter、标签是 JetBrains Mono；两个栈的中文回退字体
-            度量不同，同一行里基线实测差 1px（真实组件 web 量：现状 −1px，统一字体后 0px）。
-            这不是 align-items 的问题——改 items-baseline 对它无效，必须统一字体栈。 */}
-        {status !== 'ok' && (
-          <span className={`flex-shrink-0 font-mono ${getToolGroupStatusClass(status, hasEscalatedError)}`}>
-            {permissionOutcome?.label ?? getToolGroupStatusLabel(status, t)}
-            {(status === 'partial' || status === 'error') && (
-              <span className="ml-1 text-zinc-600">
-                · {permissionOutcome?.reason ?? failureReason ?? t.toolStepHumanize.failureReasonMissing}
-              </span>
-            )}
-          </span>
-        )}
-        <span className="min-w-0 flex-1 truncate font-mono">{label}</span>
+        <span className="min-w-0 flex-1">
+          {/* data-testid 是给 tests/e2e/tool-group-header-alignment.spec.ts（#1002 的排版几何
+              护栏）用的稳定锚点。原先那条 spec 按 truncate / flex-shrink-0 两个**样式类**定位，
+              组头一改版就找不到元素、静默失效——而 test:swarm:e2e 不含它，PR CI 也不会红。
+              锚点要钉在身份上，不是钉在它此刻长什么样。 */}
+          <span data-testid="tool-group-head-label" className="block break-words text-xs leading-5">{status === 'pending-approval' ? <span data-testid="tool-group-head-status">{`${t.toolStepHumanize.pendingApprovalStatus} · `}</span> : status === 'streaming' ? <span data-testid="tool-group-head-status">{`${t.toolGroup.statusRunning} · `}</span> : ''}{label}</span>
+          {(status === 'partial' || status === 'error') && (
+            <span className={`mt-0.5 block whitespace-normal break-words text-xs leading-5 ${hasEscalatedError ? 'text-badge-danger' : 'text-zinc-400'}`}>
+              {status === 'partial' ? `${t.toolGroup.statusPartial} · ` : ''}
+              {permissionRequestOutcome?.reason ?? failureReason ?? t.toolStepHumanize.failureReasonMissing}
+            </span>
+          )}
+        </span>
         {recoveredCount > 0 && (
           <span
             className="flex-shrink-0 rounded bg-white/[0.03] px-1.5 py-0.5 text-[10px] text-zinc-500 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100"
@@ -469,9 +489,6 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
           >
             {t.toolGroup.recovered}
           </span>
-        )}
-        {status !== 'ok' && resultSummary && resultSummary !== failureReason && !permissionOutcome && (
-          <span className="hidden max-w-[220px] truncate text-zinc-600 sm:inline">{resultSummary}</span>
         )}
         {status !== 'ok' && outputCount > 0 && (
           <span className="flex-shrink-0 rounded bg-white/[0.03] px-1.5 py-0.5 text-[10px] text-zinc-500">{t.toolGroup.outputCount.replace('{count}', String(outputCount))}</span>
@@ -604,84 +621,4 @@ export function tailTruncateLiveOutput(live: ToolLiveOutput | undefined): ToolLi
     stdout: live.stdout ? computeBashPreviewLines(live.stdout, true).displayLines.join('\n') : live.stdout,
     stderr: live.stderr ? computeBashPreviewLines(live.stderr, true).displayLines.join('\n') : live.stderr,
   };
-}
-
-/**
- * 组头摘要（P0 #1 失败去重 + P0 接缝「单工具失败不说空话」）：
- *  · 多工具 → 计数（"N failed / M empty / K completed"），保留；
- *  · 单工具且失败 → failureCode 人话 / 分类 summary，与组头 reason 重复则不再并列；
- *  · 单工具其它（成功/空）→ summarizeTool 的结果摘要（如「找到 3 个文件」），保留。
- * 纯函数，便于单测。
- */
-export function buildToolGroupHeadSummary(toolCalls: ToolCall[], t: Translations): string | null {
-  if (toolCalls.length === 0) return null;
-  if (toolCalls.length > 1) return summarizeToolGroupResults(toolCalls, t);
-  const only = toolCalls[0];
-  if (only.result?.success === false) return summarizeSingleFailure(only, t);
-  return localizeCollapsedToolSummary(summarizeTool(only), t);
-}
-
-/**
- * 单工具失败的组头摘要：failureCode 人话优先；与组头 reason 重复的 summary/fallback 不再并列。
- * 原始 error 可能含落库标记、内部名或用户键入的敏感文本，只能进展开明细。
- */
-function summarizeSingleFailure(toolCall: ToolCall, t: Translations): string | null {
-  const result = toolCall.result;
-  if (!result) return null;
-  return resolveCollapsedFailureSummary(toolCall, t) ?? humanizeToolFailureReason(toolCall, t);
-}
-
-function summarizeToolGroupResults(toolCalls: ToolCall[], t: Translations): string | null {
-  let failed = 0;
-  let emptySearches = 0;
-  let completed = 0;
-
-  for (const toolCall of toolCalls) {
-    const result = toolCall.result;
-    if (!result) continue;
-    // 自动加载重试 + 已恢复的失败不计入任何计数（否则会出现 "1 failed, 1 completed"
-    // 这种自相矛盾，或把已被恢复的失败仍计成 failed）。
-    if (isAutoLoadedRetry(result.metadata) || result.metadata?.recovered) continue;
-    if (result.success === false) {
-      failed += 1;
-      continue;
-    }
-    if (isEmptySearchResult(toolCall)) {
-      emptySearches += 1;
-      continue;
-    }
-    completed += 1;
-  }
-
-  const parts: string[] = [];
-  if (failed > 0) parts.push(t.toolGroup.summaryFailed.replace('{count}', String(failed)));
-  if (emptySearches > 0) parts.push(t.toolGroup.summaryEmpty.replace('{count}', String(emptySearches)));
-  if (completed > 0) parts.push(t.toolGroup.summaryCompleted.replace('{count}', String(completed)));
-
-  return parts.length > 0 ? parts.join(', ') : null;
-}
-
-function isEmptySearchResult(toolCall: ToolCall): boolean {
-  if (toolCall.name !== 'Grep' && toolCall.name !== 'Glob') return false;
-  const output = toolCall.result?.output;
-  if (typeof output !== 'string') return false;
-  return /(?:No matches found|No files matched the pattern|No matches|0 matches)/i.test(output.trim());
-}
-
-function getToolGroupStatusLabel(status: 'pending-approval' | 'streaming' | 'partial' | 'error' | 'ok', t: Translations): string {
-  if (status === 'pending-approval') return t.toolStepHumanize.pendingApprovalStatus;
-  if (status === 'streaming') return t.toolGroup.statusRunning;
-  if (status === 'partial') return t.outcomeWords['completed-with-warnings'].badge.label;
-  if (status === 'error') return t.outcomeWords['failed-tool'].badge.label;
-  return t.outcomeWords.completed.badge.label;
-}
-
-// hasEscalatedError=false（探索性失败，非用户需介入）一律用中性色，不顶红/顶黄——
-// 跟成功行视觉权重接近，agent 试错不该喊给用户看。
-function getToolGroupStatusClass(status: 'pending-approval' | 'streaming' | 'partial' | 'error' | 'ok', hasEscalatedError: boolean): string {
-  if (status === 'pending-approval' || status === 'streaming') return 'text-badge-info';
-  if (!hasEscalatedError && (status === 'partial' || status === 'error')) return 'text-zinc-500';
-  if (status === 'partial') return 'text-badge-warning';
-  if (status === 'error') return 'text-badge-danger';
-  return 'text-badge-success';
 }

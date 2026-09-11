@@ -53,16 +53,6 @@ export function isRawToolStdoutNoMatches(summary: string): boolean {
   return RAW_NO_MATCHES.test(summary.trim());
 }
 
-/** Collapsed-row copy: translate grep/glob empty stdout instead of passing it through. */
-export function localizeCollapsedToolSummary(
-  summary: string | null,
-  t: Translations,
-): string | null {
-  if (!summary) return null;
-  if (isRawToolStdoutNoMatches(summary)) return t.toolStatus.grepNoMatches;
-  return summary;
-}
-
 function deriveToolStatusLineFlags(input: ToolStatusLineInput): ToolStatusLineFlags {
   const interrupted = input.status === 'interrupted';
   const placeholder = isToolInterruptionPlaceholder(input.toolCall.result?.error);

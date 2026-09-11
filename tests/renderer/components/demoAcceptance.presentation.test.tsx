@@ -1,0 +1,186 @@
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { describe, expect, it, vi } from 'vitest';
+import type { ToolCall, Message } from '../../../src/shared/contract';
+import type { TraceNode } from '../../../src/shared/contract/trace';
+import { zh, en } from '../../../src/renderer/i18n';
+import { ToolStepGroup } from '../../../src/renderer/components/features/chat/ToolStepGroup';
+import { getToolPreflightKind, toolPreflightCopy } from '../../../src/renderer/utils/toolPreflightPresentation';
+import { humanizeToolFailureReason } from '../../../src/renderer/utils/toolExecutionPresentation';
+import { wrapFilePathsInBackticks } from '../../../src/renderer/components/features/chat/MessageBubble/filePathProcessor';
+import { projectTurns } from '../../../src/renderer/hooks/useTurnProjection';
+
+vi.mock('../../../src/renderer/hooks/useI18n', () => ({ useI18n: () => ({ t: zh, language: 'zh' }) }));
+const failed = (name: string, error: string, metadata = {}): ToolCall => ({ id: 'x', name, arguments: { file_path: '/workspace/report.md' }, result: { toolCallId: 'x', success: false, error, metadata } });
+
+describe('demo acceptance: truthful historical presentation', () => {
+  it('explains repair scope without exposing paths or claiming an absent error', () => {
+    const tool = failed('Read', 'Artifact repair mode is active for /workspace/report.html. Read is limited to the target artifact file during repair.', { artifactRepairGuard: { blocked: true } });
+    expect(humanizeToolFailureReason(tool, zh)).toBe(zh.deliveryExperience.repairReason);
+    expect(humanizeToolFailureReason(tool, en)).toBe(en.deliveryExperience.repairReason);
+    expect(tool.result?.error).toContain('/workspace/report.html');
+  });
+  // ai-review #1741 Important：repair 档只认结构化 artifactRepairGuard.blocked。在本仓库跑
+  // 一条真实失败的命令，输出里就可能带着「Artifact repair mode is active」这句原文
+  // （本文件上一条用例的夹具里就有），命令真跑了、真 exit 1，不能被说成「未执行」。
+  it('a real Bash failure is not read as a repair block just because its output quotes that phrase', () => {
+    const tool = failed('Bash', 'FAIL tests/x.test.ts\nArtifact repair mode is active for /workspace/report.html\n1 failed', { exitCode: 1 });
+    expect(getToolPreflightKind(tool)).toBeNull();
+    expect(toolPreflightCopy(tool, zh)).toBeNull();
+    expect(humanizeToolFailureReason(tool, zh)).toBe(zh.toolStepHumanize.failureCode.replace('{code}', '1'));
+  });
+  it('distinguishes automatic approval failure from a user denial', () => {
+    const tool = failed('Write', 'not approved', { failureCode: 'permission-denied', hostReason: { code: 'PERMISSION_DENIED_NO_APPROVAL_UI' } });
+    expect(toolPreflightCopy(tool, zh)).toEqual({ action: '未写入 · report.md', reason: zh.deliveryExperience.approvalUnavailable });
+    expect(getToolPreflightKind(failed('Bash', 'Approval denied by user'))).toBeNull();
+  });
+  // N-DEMOACCEPT-0909-STORY-A ai-review Important: a Bash command that actually ran (real exit
+  // code, no host permission denial) must never be presented as "not executed" just because the
+  // executed program's own stderr happens to contain approval-shaped words. `gh pr merge` hitting
+  // branch protection is real: it ran, exited 1, and GitHub's own message says
+  // "requires approval from a reviewer" — none of that is our host denying permission.
+  it('a real exit≠0 Bash run is never mistaken for an unexecuted approval gate, even when stderr says "requires approval"', () => {
+    const tool = failed(
+      'Bash',
+      'remote: - Changes must be made through a pull request.\nremote: - Waiting on code owner review: requires approval from a reviewer\nerror: failed to push some refs',
+      { exitCode: 1 },
+    );
+    expect(getToolPreflightKind(tool)).toBeNull();
+    expect(toolPreflightCopy(tool, zh)).toBeNull();
+    expect(humanizeToolFailureReason(tool, zh)).toBe(zh.toolStepHumanize.failureCode.replace('{code}', '1'));
+    expect(humanizeToolFailureReason(tool, zh)).not.toBe(zh.deliveryExperience.approvalRequired);
+  });
+  // ai-review #1741 Important：hostReason 登记表里 7 个 permission code 各有专属文案，
+  // 必须先于 preflight 那句笼统的「未能自动批准」。用户在弹窗上亲手点的拒绝，不能被说成
+  // 「系统没能自动批准」——那是把决定权从人误标成系统。反过来，只有裸 failureCode
+  // （CLI auto 档 fail-closed、从没到过人眼）时，仍然该走 preflight 的笼统措辞。
+  it.each([
+    // hostReason 必须是完整 payload（isHostReasonPayload 要求 code + modelText），
+    // 只给 code 的话 resolveHostReasonCopy 返回 null，本来就轮不到它——生产里 host 两者都给。
+    ['人点的拒绝', { failureCode: 'permission-denied', hostReason: { code: 'PERMISSION_DENIED_BY_USER', modelText: 'user denied' } }],
+    ['审批超时', { failureCode: 'timeout', hostReason: { code: 'PERMISSION_DENIED_TIMEOUT', modelText: 'approval timed out' } }],
+  ])('a host-recorded permission decision keeps its own wording: %s', (_label, metadata) => {
+    const reason = humanizeToolFailureReason(failed('Write', 'not approved', metadata), zh);
+    expect(reason).not.toBe(zh.deliveryExperience.approvalRequired);
+    expect(reason).toBeTruthy();
+  });
+
+  // ai-review #1741 Important：非文件类工具被拦下时，折叠行必须带上命令原文。否则一轮里
+  // 连着几条命令被权限层拦下，时间线上就是数条一模一样的「未执行 · 需要人工确认」，
+  // 用户分不清拦的是哪条（origin/main 显示的是「运行命令 npm test 未成功」，原文在行内）。
+  it('a blocked command keeps its own text in the folded row', () => {
+    const tool: ToolCall = { id: 'b', name: 'Bash', arguments: { command: 'npm test' },
+      result: { toolCallId: 'b', success: false, error: 'denied', metadata: { failureCode: 'permission-denied' } } };
+    expect(toolPreflightCopy(tool, zh)?.action).toContain('npm test');
+    const other: ToolCall = { ...tool, id: 'c', arguments: { command: 'npm run build' } };
+    expect(toolPreflightCopy(other, zh)?.action).toContain('npm run build');
+    expect(toolPreflightCopy(tool, zh)?.action).not.toBe(toolPreflightCopy(other, zh)?.action);
+  });
+
+  // ai-review #1741 Important：artifactRepairGuard.blocked 是重载字段——执行前拦下会挂它，
+  // 执行**之后**锚点失配也会补挂（toolResultLifecycle.ts:144），后者是真跑过的 Edit。
+  // 只认 blocked 会把「old_string 对不上」渲染成「未修改 · 超出允许的修复范围」，
+  // 用一句错误解释顶掉真实原因，组头还计成「1 个步骤未执行」。
+  it('an Edit that really ran and missed its anchor is not a repair block', () => {
+    const ran = failed('Edit', 'old_string not found', {
+      artifactRepairGuard: { blocked: true, targetFile: '/workspace/x.html', editAnchorFailure: true },
+    });
+    expect(getToolPreflightKind(ran)).toBeNull();
+    expect(toolPreflightCopy(ran, zh)).toBeNull();
+    const blockedBeforeRunning = failed('Edit', 'blocked', {
+      artifactRepairGuard: { blocked: true, targetFile: '/workspace/x.html' },
+    });
+    expect(getToolPreflightKind(blockedBeforeRunning)).toBe('repair');
+  });
+
+  it('does not mark an undelivered question as answered or successful', () => {
+    const tool: ToolCall = { id: 'q', name: 'AskUserQuestion', arguments: {}, result: { toolCallId: 'q', success: true, output: '[用户未响应 - CLI 模式无法交互]', metadata: { permissionDecision: 'deny', permissionDecisionReason: '当前运行环境没有可投递的交互界面' } } };
+    expect(getToolPreflightKind(tool)).toBe('question');
+    expect(toolPreflightCopy(tool, zh)?.action).toBe('未能向你提问');
+    expect(tool.result?.success).toBe(true); // immutable historic transport result
+    expect(getToolPreflightKind({ ...tool, result: { toolCallId: 'q', success: true, output: 'User responses:\n[Choice]: Yes' } })).toBeNull();
+    // ai-review #1741 Important：用户在自由文本答案里写下占位符里的那几个字，不能把他
+    // 自己这条**已回答**的提问翻成「未送达」——否则行首变红写「问题没有送达你」，
+    // 而紧下方的 askUserRecord 还渲染着他的真实答案，同一块 UI 自相矛盾。
+    expect(getToolPreflightKind({ name: 'AskUserQuestion', result: { toolCallId: 'q', success: true,
+      output: 'User responses:\n[原因]: 因为 CLI 模式无法交互，所以我选第二个' } })).toBeNull();
+    // 生产里的真实形状（askUserQuestion.ts:48）：占位符之后还跟着问题列表与告诫。
+    // 上一轮我照着夹具写成整条锚定，夹具过了、生产里一条都匹配不上——判据要照真实依赖写。
+    expect(getToolPreflightKind({ name: 'AskUserQuestion', result: { toolCallId: 'q', success: true,
+      output: '[用户未响应 - CLI 模式无法交互]\n\n1. 选哪个？\n   A. 甲\n   B. 乙\n\n⚠️ 用户无法回答问题。' } })).toBe('question');
+  });
+  // ai-review #1741 Important：组头 label 的分桶必须和 status 判定同口径，把 recovered /
+  // isAutoLoadedRetry 排除掉。否则「Edit 失败 → Read → 同参数 Edit 成功」这一轮里，status
+  // 判 ok（无红点、无原因行、「已恢复」pill 还要 hover 才浮出），组头却写「…未成功」——
+  // 一句没有任何错误标识、也没有原因说明的失败断言，正是那道闸要防的「把成功的一轮演成翻车」。
+  it('a recovered failure is not re-announced in the collapsed group head', () => {
+    const args = { file_path: '/workspace/report.md', old_string: 'old', new_string: 'new' };
+    const messages: Message[] = [
+      { id: 'u', role: 'user', content: 'Edit report', timestamp: 1 },
+      { id: 'a', role: 'assistant', content: '', timestamp: 2, toolCalls: [
+        { ...failed('Edit', 'Existing file must be read before editing', { code: 'NOT_READ' }), arguments: args },
+        { id: 'read', name: 'Read', arguments: { file_path: args.file_path }, result: { toolCallId: 'read', success: true, output: 'contents' } },
+        { id: 'redo', name: 'Edit', arguments: args, result: { toolCallId: 'redo', success: true, output: 'ok' } },
+      ] },
+    ];
+    const nodes = projectTurns(messages, 'session', false, []).turns.flatMap((turn) => turn.nodes);
+    expect(nodes.find((node) => node.toolCall?.id === 'x')?.toolCall?.recovered).toBe(true);
+    const html = renderToStaticMarkup(<ToolStepGroup nodes={nodes.filter((node) => node.toolCall)} defaultExpanded={false} />);
+    expect(html).not.toContain('未成功');
+    expect(html).not.toContain(zh.deliveryExperience.blockedSteps.replace('{count}', '1'));
+  });
+
+  // ai-review #1741 Important：组内节点**全部**被判为 recovered 时，分桶不能把它们一个不剩地
+  // 丢掉——label 变空串会撞 ToolStepGroup 的 `!label` 守卫，整个工具组从时间线上消失，
+  // 用户连「搜索发生过」都不知道。基线上同一输入至少会渲染一行「联网查询 2 次未成功」。
+  it('a group whose every node was recovered still renders', () => {
+    const messages: Message[] = [
+      { id: 'u', role: 'user', content: '查一下', timestamp: 1 },
+      { id: 'a', role: 'assistant', content: '', timestamp: 2, toolCalls: [
+        failed('WebSearch', 'search backend unavailable'),
+        { ...failed('WebFetch', 'fetch failed'), id: 'y' },
+      ] },
+      { id: 'b', role: 'assistant', content: '这是答案。', timestamp: 3 },
+    ];
+    const nodes = projectTurns(messages, 'session', false, []).turns.flatMap((turn) => turn.nodes);
+    const toolNodes = nodes.filter((node) => node.toolCall);
+    expect(toolNodes.every((node) => node.toolCall?.recovered)).toBe(true);
+    const html = renderToStaticMarkup(<ToolStepGroup nodes={toolNodes} defaultExpanded={false} />);
+    expect(html).not.toBe('');
+    expect(html).toContain('联网');
+    expect(html).not.toContain('未成功');
+  });
+
+  it('mixed group counts executed reads separately from unexecuted commands', () => {
+    const nodes = [
+      { id: 'r', name: 'Read', args: {}, success: true, result: 'read content' },
+      { id: 'b', name: 'Bash', args: {}, success: false, result: 'auto 档不放行', metadata: { failureCode: 'permission-denied' } },
+    ].map((toolCall, i) => ({ id: toolCall.id, type: 'tool_call', content: '', timestamp: i, toolCall } as TraceNode));
+    const html = renderToStaticMarkup(<ToolStepGroup nodes={nodes} />);
+    expect(html).toContain('查看了 1 次内容');
+    expect(html).toContain('1 条命令未执行');
+    expect(html).not.toContain('运行了 1 条命令');
+    expect(html).not.toContain('审批被拒绝');
+  });
+  it('preserves a quoted command link without nested path formatting', () => {
+    const content = '[python3 "/workspace/演示/build_ppt.py"](!run)';
+    expect(wrapFilePathsInBackticks(content)).toBe(content);
+    expect(wrapFilePathsInBackticks('Inspect /workspace/report.md')).toContain('`/workspace/report.md`');
+  });
+  it('known precondition errors explain Read first; unclassified recorded errors do not become missing', () => {
+    // 真实生产形状（multiEdit.ts）是结构化 code，不是塞进 error 自由文本——preflight 只认前者。
+    expect(humanizeToolFailureReason(failed('Edit', 'Existing file must be read before editing', { code: 'NOT_READ' }), zh)).toBe(zh.deliveryExperience.readRequired);
+    expect(humanizeToolFailureReason(failed('Read', 'custom error'), zh)).toBe(zh.toolStepHumanize.failureReasonMissing);
+    expect(humanizeToolFailureReason(failed('Read', ''), zh)).toBe(zh.toolStepHumanize.failureReasonMissing);
+  });
+  it.each([true, false])('only the same successful edit recovers the failure: same=%s', (same) => {
+    const args = { file_path: '/workspace/report.md', old_string: 'old', new_string: 'new' };
+    const messages: Message[] = [
+      { id: 'u', role: 'user', content: 'Edit report', timestamp: 1 },
+      { id: 'a', role: 'assistant', content: '', timestamp: 2, toolCalls: [{ ...failed('Edit', 'NOT_READ'), arguments: args }] },
+      { id: 'b', role: 'assistant', content: '', timestamp: 3, toolCalls: [{ id: 'success', name: 'Edit', arguments: { ...args, new_string: same ? 'new' : 'other' }, result: { toolCallId: 'success', success: true, output: 'ok' } }] },
+    ];
+    const nodes = projectTurns(messages, 'session', false, []).turns.flatMap((turn) => turn.nodes);
+    expect(Boolean(nodes.find((node) => node.toolCall?.id === 'x')?.toolCall?.recovered)).toBe(same);
+  });
+});

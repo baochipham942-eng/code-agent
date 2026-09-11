@@ -54,6 +54,7 @@ function tokenHash(token: string): string {
  */
 export class CompanionPushOutbox {
   private readonly now: () => number;
+  private flushTail: Promise<void> = Promise.resolve();
 
   constructor(
     private readonly db: BetterSqlite3.Database,
@@ -115,8 +116,14 @@ export class CompanionPushOutbox {
   }
 
   async flush(now = this.now()): Promise<void> {
-    const rows = this.db.prepare(`SELECT * FROM companion_push_outbox WHERE state = 'pending'`).all() as SqlRow[];
-    for (const row of rows) await this.dispatchRow(row, now);
+    const run = this.flushTail.then(() => this.dispatchPending(now));
+    this.flushTail = run.catch(() => {});
+    return run;
+  }
+
+  rowsFor(deviceId: string): SqlRow[] {
+    return this.db.prepare('SELECT event_id, device_id, kind, state, attempts, expires_at, payload_json FROM companion_push_outbox WHERE device_id = ?')
+      .all(deviceId) as SqlRow[];
   }
 
   open(deviceId: string, raw: unknown, now = this.now()): CompanionPushOpenResult {
@@ -132,9 +139,9 @@ export class CompanionPushOutbox {
     return { kind: 'open', sessionId };
   }
 
-  pendingFor(deviceId: string): SqlRow[] {
-    return this.db.prepare('SELECT event_id, device_id, kind, state, attempts, expires_at, payload_json FROM companion_push_outbox WHERE device_id = ?')
-      .all(deviceId) as SqlRow[];
+  private async dispatchPending(now: number): Promise<void> {
+    const rows = this.db.prepare(`SELECT * FROM companion_push_outbox WHERE state = 'pending'`).all() as SqlRow[];
+    for (const row of rows) await this.dispatchRow(row, now);
   }
 
   private async dispatchRow(row: SqlRow, now: number): Promise<void> {

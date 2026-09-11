@@ -246,7 +246,19 @@ export class CompanionGateway {
       // fall back to the in-memory record rather than handing back a null command.
       return { kind: 'replayed', command: this.getCommand(command.deviceId, command.commandId) ?? record };
     }
-    return { kind: 'accepted', command: this.getCommand(command.deviceId, command.commandId) ?? record };
+    return { kind: 'accepted', command: this.deliverCommand(record) };
+  }
+
+  // files.read 的分片 base64 是全仓唯一进 result_json 的二进制大对象：返回值携带 data 交给手机，
+  // 落库行随即擦掉 data，否则 companion_commands 无 TTL 无上限，按累计传输字节数永久膨胀
+  // （claude 复审 Important 3）。手机重放/重读路径不依赖旧行的 data（缓存未命中会以新
+  // commandId 重发 files.read，从磁盘重读）。
+  private deliverCommand(record: CompanionCommandRecord): CompanionCommandRecord {
+    const command = this.getCommand(record.deviceId, record.commandId) ?? record;
+    if (command.action === 'files.read' && command.state !== 'reconciling' && 'data' in command.result) {
+      this.db.prepare(`UPDATE companion_commands SET result_json = json_remove(result_json, '$.data') WHERE device_id = ? AND command_id = ?`).run(command.deviceId, command.commandId);
+    }
+    return command;
   }
 
   commitMutation(command: CompanionCommand, write: () => void, result: Record<string, unknown>): void {
@@ -273,7 +285,8 @@ export class CompanionGateway {
     const device = this.getDevice(deviceId);
     if (device?.revokedAt !== null) return null;
     const command = this.getCommand(deviceId, commandId);
-    return command?.sessionId && (command.action === 'session.create' ? device.scope.includes(command.sessionId) : this.canAccessSession(deviceId, command.sessionId)) ? command : null;
+    const allowed = command?.sessionId && (command.action === 'session.create' ? device.scope.includes(command.sessionId) : this.canAccessSession(deviceId, command.sessionId)) ? command : null;
+    return allowed ? this.deliverCommand(allowed) : null;
   }
 
   publish(sessionId: string | null, kind: string, payload: Record<string, unknown>, now = this.now()): CompanionEvent {

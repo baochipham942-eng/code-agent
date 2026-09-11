@@ -129,6 +129,11 @@ export class CompanionFileService {
     this.pendingWrites.set(`${sessionId}:${toolCallId}`, { sessionId, filePath });
   }
 
+  /** 工具调用失败/取消时丢弃记账，否则 pendingWrites 在进程内只增不减。 */
+  discardWrite(sessionId: string, toolCallId: string): void {
+    this.pendingWrites.delete(`${sessionId}:${toolCallId}`);
+  }
+
   completeWrite(sessionId: string, toolCallId: string): CompanionArtifact | null {
     const pending = this.pendingWrites.get(`${sessionId}:${toolCallId}`);
     this.pendingWrites.delete(`${sessionId}:${toolCallId}`);

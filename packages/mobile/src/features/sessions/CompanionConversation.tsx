@@ -54,7 +54,7 @@ export function CompanionConversation({ history, loadMore, hidePendingApprovals 
     {Array.from(approvals, ([id, card]) => (!hidePendingApprovals || card.status !== 'pending') && <ApprovalCard key={id} card={card} text={text} disabled={disabled}
       respond={decision => respond(id, decision)} />)}
     {events.filter(event => event.sessionId === sessionId && event.kind === 'artifact_write_started').map(event =>
-      <p key={event.eventId} className="notice">{text.uploading} {String(event.payload.name ?? '')}</p>)}
+      <p key={event.eventId} className="notice">{text.artifactWriting} {String(event.payload.name ?? '')}</p>)}
     {artifacts.map(artifact => <button key={artifact.artifactId} className="artifact-card" disabled={disabled} onClick={() => openArtifact(artifact.artifactId)}>
       <strong>{artifact.name}</strong><span>{artifact.origin === 'upload' ? text.attach : text.artifacts}</span>
     </button>)}

@@ -248,6 +248,9 @@ describe('LAN companion: real HTTP + Noise + SQLite', () => {
       const state = phone.getState();
       expect(state.preview?.bytes.length).toBe(bytes.length);
       expect(state.commandError).toBe('STORAGE_FULL');
+      // files.read 的分片 base64 落库后随手机读取即擦除，不留永久膨胀（claude 复审 Important 3）
+      const leftovers = db2.prepare("SELECT command_id FROM companion_commands WHERE action = 'files.read' AND json_extract(result_json, '$.data') IS NOT NULL").all();
+      expect(leftovers).toEqual([]);
     } finally {
       phone.getState().pause();
       await server2.stop(); db2.close();

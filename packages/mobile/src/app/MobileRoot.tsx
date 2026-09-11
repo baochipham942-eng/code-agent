@@ -17,6 +17,17 @@ import { VirtualHistory } from '../features/sessions/VirtualHistory';
 import { NeoBrandMark } from '../features/brand/NeoBrandMark';
 import { AppIcon } from './AppIcon';
 
+// 预览 object URL 只在 preview 变化时创建、卸载/变更时 revoke——sync 每秒重渲染不能累积 Blob。
+function PreviewMedia({ name, mimeType, bytes }: { name: string; mimeType: string; bytes: Uint8Array }) {
+  const url = useMemo(() => mimeType.startsWith('image/')
+    ? URL.createObjectURL(new Blob([bytesToArrayBuffer(bytes)], { type: mimeType })) : null,
+  [mimeType, bytes]);
+  useEffect(() => () => { if (url) URL.revokeObjectURL(url); }, [url]);
+  if (url) return <img className="preview-media" alt={name} src={url} />;
+  if (mimeType.startsWith('text/')) return <pre className="preview-text">{new TextDecoder().decode(bytes)}</pre>;
+  return <p>{name}</p>;
+}
+
 export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures: boolean }) {
   const [store] = useState(() => createMobileStore(ports.preferences));
   const [companionStore] = useState(() => createCompanionStore(ports.companion, (acceptedText, sessionId, hostKey) => {
@@ -259,13 +270,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
         <button onClick={() => void companion.refreshLibrary()}>{text.retry}</button>
       </> : currentPage === 'preview' && companion.preview ? <div className="preview-pane">
         <p className="caption">{text.previewHint}</p>
-        {companion.preview.mimeType.startsWith('image/')
-          ? <img className="preview-media" alt={companion.preview.name} src={URL.createObjectURL(new Blob([bytesToArrayBuffer(companion.preview.bytes)], { type: companion.preview.mimeType }))} />
-          : companion.preview.mimeType === 'text/html'
-            ? <><p className="caption">{text.htmlPreviewBlocked}</p><iframe className="preview-html" sandbox="" referrerPolicy="no-referrer" srcDoc={new TextDecoder().decode(companion.preview.bytes)} title={companion.preview.name} /></>
-            : companion.preview.mimeType.startsWith('text/')
-              ? <pre className="preview-text">{new TextDecoder().decode(companion.preview.bytes)}</pre>
-              : <p>{companion.preview.name}</p>}
+        <PreviewMedia name={companion.preview.name} mimeType={companion.preview.mimeType} bytes={companion.preview.bytes} />
         {companion.savedPreview ? <p role="status">{text.savedToDevice}</p>
           : <button className="primary" onClick={() => void companion.savePreview()}>{text.saveToDevice}</button>}
       </div> : currentPage === 'remote' ? <div className="settings-group">

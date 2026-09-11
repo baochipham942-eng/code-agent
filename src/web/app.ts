@@ -330,18 +330,25 @@ export function createApp(deps: CreateAppDeps): express.Express {
         approvals = new CompanionApprovalService(gateway, getPendingPermissionRequests, deps.deliverCompanionPermission);
       }
       publishCompanionEvent = (sessionId, kind, payload) => {
+        // 成果复制只对「有已配对手机」的桌面发生：没配对过的用户每次成图都复制一份
+        // 进项目目录且无任何清理路径，是纯浪费（claude 复审 Important 2）。
+        const paired = gateway.pairedDevices().length > 0;
         const raw = payload.event && typeof payload.event === 'object' && !Array.isArray(payload.event)
           ? payload.event as Record<string, unknown> : null;
-        if (kind === 'artifact_write_started' && raw) {
+        if (paired && kind === 'artifact_write_started' && raw) {
           services.files?.noteWrite(sessionId, String(raw.toolCallId ?? ''), String(raw.filePath ?? ''));
         }
         const projection = projectCompanionEvent(kind, payload.event);
         if (!projection) return;
         try {
           gateway.publish(sessionId, kind, { ...projection, ...(typeof payload.runId === 'string' ? { runId: payload.runId } : {}) });
-          if (kind === 'tool_call_end' && raw?.success === true && typeof raw.toolCallId === 'string') {
-            const artifact = services.files?.completeWrite(sessionId, raw.toolCallId);
-            if (artifact) gateway.publish(sessionId, 'artifact', { ...artifact, ...(typeof payload.runId === 'string' ? { runId: payload.runId } : {}) });
+          if (kind === 'tool_call_end' && raw && typeof raw.toolCallId === 'string') {
+            if (paired && raw.success === true) {
+              const artifact = services.files?.completeWrite(sessionId, raw.toolCallId);
+              if (artifact) gateway.publish(sessionId, 'artifact', { ...artifact, ...(typeof payload.runId === 'string' ? { runId: payload.runId } : {}) });
+            } else {
+              services.files?.discardWrite(sessionId, raw.toolCallId);
+            }
           }
         } catch {
           // A companion projection failure must not abort the desktop engine.

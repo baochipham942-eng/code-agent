@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createMobileStore } from '../../../packages/mobile/src/stores/mobileStore';
+import { canAddressSession } from '../../../packages/mobile/src/stores/companionStore';
 
 function disk(initial: string | null = null) {
   let value = initial;
@@ -157,4 +158,19 @@ it('transcription receipts append once to the originating draft and never send i
   expect(next.getState().preferences.drafts['host:a']).toBe('existing\nspoken words');
   expect(next.getState().preferences.drafts['host:b']).toBe('other session');
   expect(next.getState().sendAttempted).toBe(false);
+});
+
+// ai-review #1742 Important：send / transcribe / respond 三处在没有可寻址会话时都是**静默
+// return**。界面若只按 status==='connected' 分流，用只勾项目的二维码配对（本 PR 新增的项目
+// 授权形态）后 sessionId 为 null，手机写着「已连接，可以发任务」，点发送却什么都不发生——
+// 无报错、无提示、无 pending、草稿不清，用户只能反复点。这条判据是那三处与界面的唯一共用来源。
+describe('canAddressSession', () => {
+  it.each([
+    ['已连接且选了会话', { status: 'connected' as const, sessionId: 's1' }, true],
+    ['已连接但没有会话（只勾项目的配对）', { status: 'connected' as const, sessionId: null }, false],
+    ['有会话但没连上', { status: 'offline' as const, sessionId: 's1' }, false],
+    ['未配对', { status: 'unpaired' as const, sessionId: null }, false],
+  ])('%s', (_label, state, expected) => {
+    expect(canAddressSession(state)).toBe(expected);
+  });
 });

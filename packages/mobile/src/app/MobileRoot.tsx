@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from 'zustand';
 import type { PlatformPorts } from '../platform/ports';
 import { createMobileStore } from '../stores/mobileStore';
-import { createCompanionStore } from '../stores/companionStore';
+import { canAddressSession, createCompanionStore } from '../stores/companionStore';
 import { COMPANION_LIMITS } from '../../../../src/shared/constants/companion';
 import { ApprovalCard } from '../features/sessions/ApprovalCard';
 import { CompanionConversation } from '../features/sessions/CompanionConversation';
@@ -182,9 +182,15 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
         </div>}
         {companion.libraryError && <p className="notice" role="status">{text.libraryError}<button onClick={() => void companion.reconnect()}>{text.reconnect}</button></p>}
         {fixtures && <p className="caption">{text.fixtureNotice}</p>}
-        {(state.saveError || nativeError || (state.sendAttempted && companion.status !== 'connected')) && <p role="status" className="notice">
-          {state.saveError ? text.saveError : nativeError ? text.nativeError : text.unconnected}
+        {(state.saveError || nativeError || companion.commandError || (state.sendAttempted && !canAddressSession(companion))) && <p role="status" className="notice">
+          {state.saveError ? text.saveError
+            : nativeError ? text.nativeError
+            : companion.commandError ? text.commandRejected
+            : companion.status === 'connected' ? text.noSession
+            : text.unconnected}
           {state.saveError && <button onClick={() => void state.flush()}>{text.retry}</button>}
+          {!state.saveError && !nativeError && !companion.commandError && companion.status === 'connected'
+            && <button onClick={() => state.openSheet('projects')}>{text.projects}</button>}
         </p>}
         <div className="composer">
           <textarea ref={textarea} aria-label={text.draft} placeholder={text.placeholder} rows={1}
@@ -196,7 +202,10 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
               disabled={companion.status !== 'connected' || companion.busy || companion.pending} pending={companion.pending} outcome={companion.voiceOutcome} transcribe={audio => companion.transcribe(audio, companion.sessionId!, companion.binding!.hostKey)} />}
             <button className="send" aria-label={text.send} data-testid="send" disabled={!(state.preferences.drafts[state.draftKey] ?? '').trim() || companion.busy || companion.pending}
               onClick={() => { if (!composing.current) {
-                if (companion.status === 'connected' && state.route !== 'fixture') void companion.send((state.preferences.drafts[state.draftKey] ?? ''));
+                // companionStore.send 在没有 sessionId 时会静默 return（只勾了项目的二维码
+                // 配对就是这个形态）。不把这一档也走 attemptSend 的话，用户看到「已连接」、
+                // 点发送却什么都不发生——无报错、无 pending、草稿不清，只能反复点。
+                if (canAddressSession(companion) && state.route !== 'fixture') void companion.send((state.preferences.drafts[state.draftKey] ?? ''));
                 else state.attemptSend();
               } }}>↑</button></div>
         </div>

@@ -31,7 +31,6 @@
     "@capacitor/ios": "8.5.1",
     "@capacitor/keyboard": "8.0.5",
     "@capacitor/preferences": "8.0.1",
-    "@capacitor/status-bar": "8.0.3",
     "capacitor-voice-recorder": "7.0.6",
     "noise-handshake": "4.2.0",
     "react": "19.2.8",

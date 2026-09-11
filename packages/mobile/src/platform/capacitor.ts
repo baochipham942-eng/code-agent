@@ -4,7 +4,7 @@ import { Capacitor, SystemBars, SystemBarsStyle } from '@capacitor/core';
 import { Directory, Filesystem } from '@capacitor/filesystem';
 import { Keyboard } from '@capacitor/keyboard';
 import { Preferences } from '@capacitor/preferences';
-import { companionFileMime } from '../../../../src/shared/constants/companion';
+import { companionFileMime, COMPANION_LIMITS } from '../../../../src/shared/constants/companion';
 import type { FilePorts, PlatformPorts } from './ports';
 import { bytesToArrayBuffer, bytesToBase64, FileCache } from './fileCache';
 import { FILE_ACCEPT, IMAGE_ACCEPT } from './fileAccept';
@@ -14,13 +14,16 @@ const PREFERENCES_KEY = 'neo.mobile.preferences.v1';
 
 function webFilePorts(cache: FileCache): FilePorts {
   return {
-    pick: kind => new Promise(resolve => {
+    pick: kind => new Promise((resolve, reject) => {
       const input = document.createElement('input');
       input.type = 'file';
       input.accept = kind === 'image' ? IMAGE_ACCEPT : FILE_ACCEPT;
       input.addEventListener('change', async () => {
         const file = input.files?.[0];
         if (!file) { resolve(null); return; }
+        // 先卡大小再读字节：arrayBuffer() 会把整段录像一次性读进 WebView 内存，
+        // 100MB+ 直接 OOM，超限提示根本轮不到（claude 复审修正轮 7）。
+        if (file.size > COMPANION_LIMITS.fileMaxBytes) { reject(new Error('UPLOAD_TOO_LARGE')); return; }
         const bytes = new Uint8Array(await file.arrayBuffer());
         // OS/浏览器上报的 MIME 不可靠（.m4a 常见 audio/x-m4a、.md 报 octet-stream），扩展名才是权威；
         // 不把上报值带给上层，避免与扩展名矛盾被 companionFileMime 一致性校验拒掉。

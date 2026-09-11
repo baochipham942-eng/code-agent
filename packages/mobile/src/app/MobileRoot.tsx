@@ -232,7 +232,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
             onCompositionStart={() => { composing.current = true; }} onCompositionEnd={() => { composing.current = false; }}
             onChange={event => state.editDraft(event.target.value)} />
           <div className="composer-actions"><button aria-label={text.projects} onClick={() => state.openSheet('projects')}><AppIcon name="plus" /></button>
-            {ports.files && <button aria-label={text.attach} disabled={!canAddressSession(companion) || companion.busy || companion.pending} onClick={() => void ports.files!.pick('file').then(picked => { if (picked) void companion.upload(picked); })}><AppIcon name="attach" /></button>}
+            {ports.files && <button aria-label={text.attach} disabled={!canAddressSession(companion) || companion.busy || companion.pending} onClick={() => void ports.files!.pick('file').then(picked => { if (picked) void companion.upload(picked); }).catch(error => { if (error instanceof Error && error.message === 'UPLOAD_TOO_LARGE') companionStore.setState({ commandError: 'UPLOAD_TOO_LARGE' }); })}><AppIcon name="attach" /></button>}
             {ports.recorder && companion.sessionId && <VoiceInput key={`${companion.binding?.hostKey}:${companion.sessionId}`} recorder={ports.recorder} text={text}
               disabled={companion.status !== 'connected' || companion.busy || companion.pending} pending={companion.pending} outcome={companion.voiceOutcome} transcribe={audio => companion.transcribe(audio, companion.sessionId!, companion.binding!.hostKey)} />}
             <button className="send" aria-label={text.send} data-testid="send" disabled={!(state.preferences.drafts[state.draftKey] ?? '').trim() || companion.busy || companion.pending}

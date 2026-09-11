@@ -14,6 +14,7 @@ const traceRoot = path.join(os.tmpdir(), `turn-outcome-stamp-${process.pid}-${Da
 vi.mock('../../../src/host/platform/appPaths', () => ({ getPath: () => traceRoot }));
 
 import { TurnTraceRecorder } from '../../../src/host/agent/runtime/turnTrace';
+import { NudgeManager } from '../../../src/host/agent/nudgeManager';
 import type { RunTerminalStatus } from '../../../src/host/agent/runtime/runTerminalStatus';
 import {
   recordTurnOutcomeStamp,
@@ -79,16 +80,24 @@ describe('turn outcome stamp', () => {
   it('canonicalizes and hashes real files, excludes missing duplicates, and refuses a verified stamp', async () => {
     mkdirSync(traceRoot, { recursive: true });
     const artifact = path.join(traceRoot, 'report.md');
+    const missing = path.join(traceRoot, 'missing', 'report.md');
     writeFileSync(artifact, 'Fixture report');
     const recorder = new TurnTraceRecorder('paths', traceRoot);
-    const ctx = { ...context(recorder), workingDirectory: traceRoot };
+    // summary 的文件清单在生产里是 completionSummaryService 归一化后的绝对路径，
+    // 且本 run 的工具结果（写入点）会报出同一份清单——夹具照这个真实形状写。
+    const messages = [message(), message({
+      id: 'wrote-report', role: 'assistant', content: '',
+      toolResults: [{ toolCallId: 'write-report', success: true, metadata: { changedFiles: [artifact, missing, 'report.md'] } }],
+    })];
+    const ctx = { ...context(recorder, messages), workingDirectory: traceRoot };
     await recordTurnOutcomeStamp(ctx, 'completed', summary({ changedFiles: [artifact, 'report.md'],
-      artifactRefs: [{ kind: 'file', path: artifact }, { kind: 'file', path: 'missing/report.md' }] }));
+      artifactRefs: [{ kind: 'file', path: artifact }, { kind: 'file', path: missing }] }));
     const outcome = latestOutcome(recorder);
     expect(outcome.verdict).toBe('self_claimed');
-    expect(outcome.evidenceRefs).toHaveLength(1);
-    expect(outcome.evidenceRefs[0].freshness).toMatchObject({ state: 'read', digest: expect.stringMatching(/^[a-f0-9]{64}$/) });
-    expect(outcome.evidenceProblems).toEqual(['COMPLETION_FILE_UNREADABLE: missing/report.md']);
+    const fileRefs = outcome.evidenceRefs.filter((ref) => ref.kind === 'file');
+    expect(fileRefs).toHaveLength(1);
+    expect(fileRefs[0].freshness).toMatchObject({ state: 'read', digest: expect.stringMatching(/^[a-f0-9]{64}$/) });
+    expect(outcome.evidenceProblems).toEqual([`COMPLETION_FILE_UNREADABLE: ${missing}`]);
   });
 
   // ai-review #1740 第 7 轮 Important：changedFiles 来自 git status/diff（gitCommit.ts:124 剥掉状态位后
@@ -97,7 +106,11 @@ describe('turn outcome stamp', () => {
   // 本轮故意删掉的文件说「产物不可读」，与本单要交付的「账本不说假话」正好相反。
   it('a file deleted or renamed this turn stays a candidate ref and never downgrades the verdict', async () => {
     const recorder = new TurnTraceRecorder('deleted-changed-file', traceRoot);
-    const ctx = { ...context(recorder), workingDirectory: traceRoot };
+    const messages = [message(), message({
+      id: 'removed-docs', role: 'assistant', content: '',
+      toolResults: [{ toolCallId: 'remove-docs', success: true, metadata: { changedFiles: ['docs/old.md', 'docs/old.md -> docs/new.md'] } }],
+    })];
+    const ctx = { ...context(recorder, messages), workingDirectory: traceRoot };
     await recordTurnOutcomeStamp(ctx, 'completed', summary({
       changedFiles: ['docs/old.md', 'docs/old.md -> docs/new.md'],
       verificationEvidence: [{ kind: 'command', toolCallId: 'test-ok', command: 'npm test', success: true, exitCode: 0 }],
@@ -175,6 +188,112 @@ describe('turn outcome stamp', () => {
     expect(latestOutcome(recorder).verdict).toBe('self_claimed');
   });
 
+  // ai-review #1740 第 8 轮 Important（arbitrate 二审维持）：summary 的 changedFiles/artifactRefs
+  // 是会话级清单（collectChangedFiles 扫全 ctx.messages，nudgeManager.modifiedFiles 只增不减），
+  // 拿它做回读+断言扫描，第 1 轮写的含「这些是独立来源。」的 report.md 会在第 5 轮被重读并记
+  // SOURCE_INDEPENDENCE_UNVERIFIED——旧账记在本轮头上，verdict 失去判别力。回读集合按本 run 切。
+  it('an artifact written in an earlier run does not downgrade the current run', async () => {
+    mkdirSync(traceRoot, { recursive: true });
+    const artifact = path.join(traceRoot, 'report.md');
+    writeFileSync(artifact, '这些是独立来源。');
+    const recorder = new TurnTraceRecorder('run-scope-files', traceRoot);
+    const run1 = [
+      message({ id: 'user-1' }),
+      message({ id: 'assistant-1', role: 'assistant', content: '',
+        toolResults: [{ toolCallId: 'write-report', success: true, metadata: { outputPath: artifact } }] }),
+    ];
+    // 第 1 轮：报告是本轮写的，断言问题就该记在本轮账上。
+    await recordTurnOutcomeStamp({ ...context(recorder, run1), workingDirectory: traceRoot }, 'completed',
+      summary({ artifactRefs: [{ kind: 'file', path: artifact }] }));
+    expect(latestOutcome(recorder).evidenceProblems).toEqual(['SOURCE_INDEPENDENCE_UNVERIFIED']);
+    // 第 5 轮：只跑测试、一个文档都没碰；会话级清单仍带着 report.md，但那不是本轮的账。
+    const run5 = [
+      ...run1,
+      message({ id: 'user-2', content: '再跑一遍测试' }),
+      message({ id: 'assistant-2', role: 'assistant', content: '测试全绿' }),
+    ];
+    await recordTurnOutcomeStamp({ ...context(recorder, run5), workingDirectory: traceRoot }, 'completed', summary({
+      artifactRefs: [{ kind: 'file', path: artifact }],
+      verificationEvidence: [{ kind: 'command', toolCallId: 'test-ok', command: 'npm test', success: true, exitCode: 0 }],
+    }));
+    const outcome = latestOutcome(recorder);
+    expect(outcome.evidenceProblems).toEqual([]);
+    expect(outcome.verdict).toBe('verified');
+    // 旧产物不消失，仍挂 candidate 条目如实列出，只是不回读、不降级。
+    expect(outcome.evidenceRefs.some((ref) => ref.kind === 'file' && ref.ref === artifact && ref.freshness.state === 'candidate')).toBe(true);
+  });
+
+  it('a declared artifact deleted between runs does not report UNREADABLE on later runs', async () => {
+    mkdirSync(traceRoot, { recursive: true });
+    const artifact = path.join(traceRoot, 'report.md');
+    writeFileSync(artifact, 'Fixture report');
+    const recorder = new TurnTraceRecorder('run-scope-deleted', traceRoot);
+    const run1 = [
+      message({ id: 'user-1' }),
+      message({ id: 'assistant-1', role: 'assistant', content: '',
+        toolResults: [{ toolCallId: 'write-report', success: true, metadata: { outputPath: artifact } }] }),
+    ];
+    await recordTurnOutcomeStamp({ ...context(recorder, run1), workingDirectory: traceRoot }, 'completed',
+      summary({ artifactRefs: [{ kind: 'file', path: artifact }] }));
+    rmSync(artifact);
+    const run2 = [
+      ...run1,
+      message({ id: 'user-2', content: '跑测试' }),
+      message({ id: 'assistant-2', role: 'assistant', content: '绿了' }),
+    ];
+    await recordTurnOutcomeStamp({ ...context(recorder, run2), workingDirectory: traceRoot }, 'completed', summary({
+      artifactRefs: [{ kind: 'file', path: artifact }],
+      verificationEvidence: [{ kind: 'command', toolCallId: 'test-ok', command: 'npm test', success: true, exitCode: 0 }],
+    }));
+    const outcome = latestOutcome(recorder);
+    expect(outcome.evidenceProblems).toEqual([]);
+    expect(outcome.verdict).toBe('verified');
+  });
+
+  // ai-review #1745 第 1 轮 Important：bash/脚本/子代理写的文件没有 outputPath 可报，
+  // 只进 nudgeManager 账（toolFileMutationTracking.ts）——本 run 的集合必须带上它，
+  // 否则本轮 bash 写的含未核实声明的文档永不回读，verdict 照样 verified。
+  it('a bash-written document this run is read back via nudge tracking', async () => {
+    mkdirSync(traceRoot, { recursive: true });
+    const artifact = path.join(traceRoot, 'report.md');
+    writeFileSync(artifact, '这些是独立来源。');
+    const recorder = new TurnTraceRecorder('run-scope-bash', traceRoot);
+    const nudgeManager = new NudgeManager();
+    const userTimestamp = 1_700_000_000_000;
+    nudgeManager.trackModifiedFile(artifact, userTimestamp + 1);
+    const messages = [
+      message({ timestamp: userTimestamp }),
+      message({ id: 'assistant-1', role: 'assistant', content: '',
+        toolResults: [{ toolCallId: 'bash-write', success: true, output: 'written' }] }),
+    ];
+    await recordTurnOutcomeStamp({ ...context(recorder, messages), workingDirectory: traceRoot, nudgeManager },
+      'completed', summary({ changedFiles: [artifact] }));
+    const outcome = latestOutcome(recorder);
+    expect(outcome.evidenceProblems).toEqual(['SOURCE_INDEPENDENCE_UNVERIFIED']);
+    expect(outcome.verdict).toBe('self_claimed');
+  });
+
+  it('a nudge-tracked file from before this run stays out of the readback set', async () => {
+    mkdirSync(traceRoot, { recursive: true });
+    const artifact = path.join(traceRoot, 'report.md');
+    writeFileSync(artifact, '这些是独立来源。');
+    const recorder = new TurnTraceRecorder('run-scope-nudge-old', traceRoot);
+    const nudgeManager = new NudgeManager();
+    const userTimestamp = 1_700_000_000_000;
+    nudgeManager.trackModifiedFile(artifact, userTimestamp - 1_000);
+    const messages = [
+      message({ timestamp: userTimestamp }),
+      message({ id: 'assistant-1', role: 'assistant', content: '测试全绿' }),
+    ];
+    await recordTurnOutcomeStamp({ ...context(recorder, messages), workingDirectory: traceRoot, nudgeManager }, 'completed', summary({
+      changedFiles: [artifact],
+      verificationEvidence: [{ kind: 'command', toolCallId: 'test-ok', command: 'npm test', success: true, exitCode: 0 }],
+    }));
+    const outcome = latestOutcome(recorder);
+    expect(outcome.evidenceProblems).toEqual([]);
+    expect(outcome.verdict).toBe('verified');
+  });
+
   it('a boundary recorded in this very turn still downgrades it', async () => {
     const recorder = new TurnTraceRecorder('turn-scope-same', traceRoot);
     recorder.setTurn(3);
@@ -216,7 +335,11 @@ describe('turn outcome stamp', () => {
     const artifact = path.join(traceRoot, 'boundary.md');
     writeFileSync(artifact, content);
     const recorder = new TurnTraceRecorder('boundary-completion', traceRoot);
-    const ctx = { ...context(recorder), workingDirectory: traceRoot };
+    const messages = [message(), message({
+      id: 'wrote-boundary', role: 'assistant', content: '',
+      toolResults: [{ toolCallId: 'write-boundary', success: true, metadata: { outputPath: artifact } }],
+    })];
+    const ctx = { ...context(recorder, messages), workingDirectory: traceRoot };
     await recordTurnOutcomeStamp(ctx, 'completed', summary({ changedFiles: [artifact], verificationEvidence: [
       { kind: 'command', toolCallId: 'test-ok', command: 'fixture-check', success: true, exitCode: 0 },
     ] }));

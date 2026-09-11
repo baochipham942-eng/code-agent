@@ -87,7 +87,7 @@ export class NudgeManager {
   private fileNudgeCount: number = 0;
   private maxFileNudges: number = 2;
   private targetFiles: string[] = [];
-  private modifiedFiles: Set<string> = new Set();
+  private modifiedFiles: Map<string, number> = new Map();
   // #7 deliveryCritic 证据驱动：本 run 内验证命令（test/typecheck/build/lint）运行结果
   // 'none' = 未运行；'passed' = 最近一次通过；'failed' = 最近一次失败（latest-wins）
   private verificationOutcome: 'none' | 'passed' | 'failed' = 'none';
@@ -196,11 +196,23 @@ export class NudgeManager {
 
   /**
    * Track a file that was successfully modified (Edit / Write).
+   * trackedAt 可显式传入（测试与「按 run 切」的口径核对用），默认取当前时刻。
    */
-  trackModifiedFile(filePath: string): void {
+  trackModifiedFile(filePath: string, trackedAt = Date.now()): void {
     const normalizedPath = filePath.replace(/^\.\//, '');
-    this.modifiedFiles.add(normalizedPath);
+    this.modifiedFiles.set(normalizedPath, trackedAt);
     logger.debug(`[NudgeManager] P3 Nudge: Tracked modified file: ${normalizedPath}`);
+  }
+
+  /**
+   * 某个时刻之后记录到的修改。modifiedFiles 整个会话只增不减（reset() 无调用方），
+   * 完成印章要「本 run 改了哪些文件」时按最后一条 user 消息的时间戳过滤
+   * （turnOutcomeStamp.currentRunFilePaths）——bash/脚本/子代理的工作区变更只有这条账。
+   */
+  getModifiedFilesSince(timestamp: number): string[] {
+    return [...this.modifiedFiles.entries()]
+      .filter(([, trackedAt]) => trackedAt >= timestamp)
+      .map(([filePath]) => filePath);
   }
 
   /**
@@ -215,7 +227,7 @@ export class NudgeManager {
 
   /** Get the set of modified files (read-only snapshot). */
   getModifiedFiles(): Set<string> {
-    return this.modifiedFiles;
+    return new Set(this.modifiedFiles.keys());
   }
 
   /**
@@ -380,7 +392,7 @@ export class NudgeManager {
       const missingFiles: string[] = [];
       for (const targetFile of this.targetFiles) {
         const normalizedTarget = targetFile.replace(/^\.\//, '');
-        const found = Array.from(this.modifiedFiles).some(modFile =>
+        const found = Array.from(this.modifiedFiles.keys()).some(modFile =>
           modFile === normalizedTarget ||
           modFile.endsWith(normalizedTarget) ||
           normalizedTarget.endsWith(modFile)
@@ -397,13 +409,13 @@ export class NudgeManager {
         logCollector.agent('INFO', `P3 Nudge: Missing file modifications`, {
           nudgeCount: this.fileNudgeCount,
           missingFiles,
-          modifiedFiles: Array.from(this.modifiedFiles),
+          modifiedFiles: Array.from(this.modifiedFiles.keys()),
           targetFiles: this.targetFiles,
         });
         ctx.injectSystemMessage(
           `<file-completion-check>\n` +
           `STOP! The following files were mentioned in the task but have not been modified:\n${fileList}\n\n` +
-          `Modified files so far: ${Array.from(this.modifiedFiles).join(', ') || 'none'}\n\n` +
+          `Modified files so far: ${Array.from(this.modifiedFiles.keys()).join(', ') || 'none'}\n\n` +
           `You MUST modify ALL required files before finishing. Continue working on the missing files NOW.\n` +
           `</file-completion-check>`,
           'nudge',

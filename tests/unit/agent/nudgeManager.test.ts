@@ -82,6 +82,33 @@ describe('NudgeManager', () => {
   });
 
   // ────────────────────────────────────────────────────────────────────────
+  // P3 file tracking：按时刻过滤（turnOutcomeStamp「按 run 切」的来源之一，
+  // bash/脚本/子代理的工作区变更只有这条账——ai-review #1745 第 1 轮 Important）
+  // ────────────────────────────────────────────────────────────────────────
+
+  describe('P3: modified-file timestamps', () => {
+    it('getModifiedFilesSince returns only files tracked at or after the timestamp', () => {
+      manager.trackModifiedFile('docs/old.md', 1_000);
+      manager.trackModifiedFile('docs/new.md', 2_000);
+      expect(manager.getModifiedFilesSince(1_500)).toEqual(['docs/new.md']);
+      expect(manager.getModifiedFilesSince(1_000)).toEqual(['docs/old.md', 'docs/new.md']);
+      expect(manager.getModifiedFilesSince(2_500)).toEqual([]);
+    });
+
+    it('re-tracking the same file moves it to the latest timestamp', () => {
+      manager.trackModifiedFile('docs/a.md', 1_000);
+      manager.trackModifiedFile('docs/a.md', 3_000);
+      expect(manager.getModifiedFilesSince(1_500)).toEqual(['docs/a.md']);
+    });
+
+    it('getModifiedFiles still returns every tracked path without timestamps', () => {
+      manager.trackModifiedFile('docs/old.md', 1_000);
+      manager.trackModifiedFile('docs/new.md', 2_000);
+      expect([...manager.getModifiedFiles()].sort()).toEqual(['docs/new.md', 'docs/old.md']);
+    });
+  });
+
+  // ────────────────────────────────────────────────────────────────────────
   // P1: Read-only stop pattern detection
   // ────────────────────────────────────────────────────────────────────────
 

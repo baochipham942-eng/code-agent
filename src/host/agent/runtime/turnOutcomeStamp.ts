@@ -1,5 +1,6 @@
-import { checkDocumentEvidenceClaims } from './documentEvidenceBoundary';
+import { checkDocumentEvidenceClaims, currentMessages } from './documentEvidenceBoundary';
 import { readbackFileEvidence } from './fileEvidenceReadback';
+import { isAbsolute, resolve } from 'node:path';
 import type { Message, ToolResult } from '../../../shared/contract';
 import type { CompletionSummaryRecord } from '../../../shared/contract/completionSummary';
 import { makeEvidenceRef, type EvidenceRef } from '../../../shared/contract/evidence';
@@ -17,16 +18,58 @@ export interface TurnOutcomeStampContext {
   messages: Message[];
   goalMode?: RuntimeContext['goalMode'];
   turnTrace: TurnTraceRecorder;
+  nudgeManager?: RuntimeContext['nudgeManager'];
 }
 
 function successfulToolResults(messages: readonly Message[]): ToolResult[] {
   return messages.flatMap((message) => message.toolResults ?? []).filter((result) => result.success);
 }
 
+/**
+ * 本 run 真碰过的文件集合。summary 的 changedFiles/artifactRefs 是**会话级**清单
+ * （completionSummaryService.collectChangedFiles 扫全 ctx.messages，nudgeManager.modifiedFiles
+ * 只增不减、reset() 无调用方），直接拿它做回读+断言扫描，等于第 1 轮写的报告在第 5 轮
+ * 再读一遍并把旧账记在本轮头上（ai-review #1740 第 8 轮 Important，arbitrate 二审维持）。
+ * 与 verdict 里的 evidence_boundary 检查同一把尺：只认最后一条 user 消息之后（currentMessages，
+ * documentEvidenceBoundary.ts 同一口径）。两路来源：
+ *  · 成功工具结果报出来的路径（metadata.changedFiles + outputPath，失败调用不算数，
+ *    抽取规则照抄 completionSummaryService）；
+ *  · nudgeManager.getModifiedFilesSince（最后一条 user 消息的时间戳）——bash/脚本/子代理
+ *    的工作区变更没有 outputPath 可报，只进这条账（toolFileMutationTracking.ts），
+ *    漏掉它本轮 bash 写的文档就永不回读（ai-review #1745 第 1 轮 Important）。
+ * 归一化与 completionSummaryService 同为「绝对路径原样、相对路径对 workingDirectory resolve」。
+ */
+function currentRunFilePaths(
+  messages: readonly Message[],
+  workingDirectory: string,
+  nudgeManager?: RuntimeContext['nudgeManager'],
+): Set<string> {
+  const paths = new Set<string>();
+  const add = (value: unknown) => {
+    if (typeof value !== 'string' || !value.trim()) return;
+    const trimmed = value.trim();
+    paths.add(isAbsolute(trimmed) ? trimmed : resolve(workingDirectory, trimmed));
+  };
+  for (const message of currentMessages(messages)) {
+    for (const result of message.toolResults ?? []) {
+      if (!result.success) continue;
+      if (Array.isArray(result.metadata?.changedFiles)) result.metadata.changedFiles.forEach(add);
+      add(result.outputPath);
+      add(result.metadata?.outputPath);
+    }
+  }
+  if (nudgeManager) {
+    const lastUserTimestamp = [...messages].reverse().find((message) => message.role === 'user')?.timestamp ?? 0;
+    nudgeManager.getModifiedFilesSince(lastUserTimestamp).forEach(add);
+  }
+  return paths;
+}
+
 async function genericEvidenceRefs(
   messages: readonly Message[],
   summary: CompletionSummaryRecord | undefined,
   workingDirectory: string,
+  nudgeManager?: RuntimeContext['nudgeManager'],
 ): Promise<{ refs: EvidenceRef[]; problems: string[] }> {
   const refs: EvidenceRef[] = successfulToolResults(messages).map((result) => makeEvidenceRef({
     id: result.toolCallId,
@@ -55,6 +98,11 @@ async function genericEvidenceRefs(
   // 基线对它们无条件出一条 candidate ref、不报错；这里保持同一口径：能回读就升 read，
   // 读不到退回 candidate、不进 problems，verdict 不因一个本就该消失的文件降级。
   const changedPaths = [...new Set(summary?.changedFiles ?? [])].filter((filePath) => !declaredPaths.has(filePath));
+  // 回读/断言扫描只覆盖本 run 真碰过的文件；更早轮次的产物保留 candidate 条目（交付清单
+  // 如实列出），但不回读、不断言、不报 UNREADABLE——它此刻是否存在、写了什么，是那一轮的账。
+  const runPaths = currentRunFilePaths(messages, workingDirectory, nudgeManager);
+  // summary 一侧生产上已是绝对路径，这里仍按同一规则归一化再比对，不吃调用方有没有归一化。
+  const inCurrentRun = (filePath: string) => runPaths.has(isAbsolute(filePath) ? filePath : resolve(workingDirectory, filePath));
   const canonicalPaths = new Set<string>();
   const readback = (filePath: string): boolean => {
     try {
@@ -68,11 +116,13 @@ async function genericEvidenceRefs(
       return false;
     }
   };
+  const candidateFileRef = (filePath: string) => makeEvidenceRef({ kind: 'file', ref: filePath, source: 'completion_summary', state: 'candidate' });
   for (const filePath of declaredPaths) {
+    if (!inCurrentRun(filePath)) { refs.push(candidateFileRef(filePath)); continue; }
     if (!readback(filePath)) problems.push(`COMPLETION_FILE_UNREADABLE: ${filePath}`);
   }
   for (const filePath of changedPaths) {
-    if (!readback(filePath)) refs.push(makeEvidenceRef({ kind: 'file', ref: filePath, source: 'completion_summary', state: 'candidate' }));
+    if (!inCurrentRun(filePath) || !readback(filePath)) refs.push(candidateFileRef(filePath));
   }
   for (const verification of summary?.verificationEvidence ?? []) {
     // 只在「明确知道它非零退出」时丢弃证据。生产上普通前台 Bash 的成功返回不写
@@ -149,7 +199,7 @@ async function buildTurnOutcome(
     };
   }
 
-  const { refs: evidenceRefs, problems } = await genericEvidenceRefs(ctx.messages, summary, ctx.workingDirectory ?? process.cwd());
+  const { refs: evidenceRefs, problems } = await genericEvidenceRefs(ctx.messages, summary, ctx.workingDirectory ?? process.cwd(), ctx.nudgeManager);
   const voiceDispatch = currentVoiceDispatch(ctx.messages);
   if (voiceDispatch) {
     if (terminal !== 'completed') {

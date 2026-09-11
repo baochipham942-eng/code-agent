@@ -149,7 +149,7 @@ describe('LAN companion: real HTTP + Noise + SQLite', () => {
     await client.resume(binding);
   });
   it('keeps an active channel online beyond its original TTL', async () => {
-    const binding = await pair();
+    await pair();
     const firstExpiry = now + L.channelTtlMs;
     now += L.channelTtlMs - 1;
     await client.request({ action: 'status', commandId: 'missing' });

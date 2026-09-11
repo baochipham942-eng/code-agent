@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { PlatformPorts } from '../../platform/ports';
 import type { messages } from '../../i18n';
 import { COMPANION_LIMITS as L } from '../../../../../src/shared/constants/companion';
+import { AppIcon } from '../../app/AppIcon';
 
 export function VoiceInput({ recorder, text, disabled, pending, outcome, transcribe }: {
   recorder: NonNullable<PlatformPorts['recorder']>; text: ReturnType<typeof messages>; disabled: boolean; pending: boolean;
@@ -39,10 +40,10 @@ export function VoiceInput({ recorder, text, disabled, pending, outcome, transcr
       setPhase('recording'); timer.current = setTimeout(() => { void stop(); }, L.voiceDurationMs);
     } catch (error) { setDenied(error instanceof Error && error.message === 'MICROPHONE_DENIED'); setPhase('error'); }
   };
-  if (phase === 'idle') return <button aria-label={text.voice} disabled={disabled} onClick={() => void start()}><svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="9" y="3" width="6" height="12" rx="3" /><path d="M6 11v1a6 6 0 0 0 12 0v-1M12 18v3M9 21h6" /></svg></button>;
+  if (phase === 'idle') return <button aria-label={text.voice} disabled={disabled} onClick={() => void start()}><AppIcon name="mic" /></button>;
   return <div className="voice-card" role="status">
-    <button aria-label={text.cancelRecording} disabled={phase === 'stopping' || pending} onClick={() => { if (active.current) void stop(true); else { cancelled.current = true; audio.current = null; setPhase('idle'); } }}>×</button>
-    {phase === 'recording' ? <button className="recording-stop" onClick={() => void stop()} aria-label={text.stopRecording}>■</button> : <span>{pending ? text.transcribing : phase === 'starting' || phase === 'stopping' ? text.loading : denied ? text.microphoneDenied : text.voiceFailed}</span>}
+    <button aria-label={text.cancelRecording} disabled={phase === 'stopping' || pending} onClick={() => { if (active.current) void stop(true); else { cancelled.current = true; audio.current = null; setPhase('idle'); } }}><AppIcon name="close" /></button>
+    {phase === 'recording' ? <button className="recording-stop" onClick={() => void stop()} aria-label={text.stopRecording}><AppIcon name="stop" /></button> : <span>{pending ? text.transcribing : phase === 'starting' || phase === 'stopping' ? text.loading : denied ? text.microphoneDenied : text.voiceFailed}</span>}
     {phase === 'error' || (phase === 'ready' && !pending) ? <button disabled={disabled} onClick={() => audio.current ? void transcribe(audio.current) : void start()}>{text.retry}</button> : <span />}
   </div>;
 }

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { CompanionLibrary } from '../../../../../src/shared/contract/companionLibrary';
 import type { messages } from '../../i18n';
+import { AppIcon } from '../../app/AppIcon';
 
 export function LibrarySheet({ library, sessionId, text, busy, mode, select, manage, loadMore }: {
   library: CompanionLibrary; sessionId: string | null; text: ReturnType<typeof messages>; busy: boolean; mode: 'projects' | 'more';
@@ -20,7 +21,7 @@ export function LibrarySheet({ library, sessionId, text, busy, mode, select, man
   return <div className="library-sheet">
     {mode === 'projects' ? <>
       <p className="caption">{text.authorizedProjects}</p>
-      <div className="settings-group">{library.projects.map(p => <button key={p.id} className="settings-row" aria-pressed={p.id === projectId} onClick={() => setProject(p.id)}>{p.name}{p.id === projectId ? ' ✓' : ''}</button>)}</div>
+      <div className="settings-group">{library.projects.map(p => <button key={p.id} className="settings-row" aria-pressed={p.id === projectId} onClick={() => setProject(p.id)}><span>{p.name}</span>{p.id === projectId && <AppIcon name="check" />}</button>)}</div>
       {!library.projects.length && <p>{text.projectGrantRequired}</p>}
       {project && <><h3>{project.name}</h3>
         <div className="settings-group">{library.sessions.filter(s => s.projectId === projectId).map(s => <button className="settings-row" key={s.id} disabled={busy} onClick={() => select(s.id)}>{s.title}{s.archived ? ` · ${text.archived}` : ''}</button>)}</div>

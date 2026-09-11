@@ -207,7 +207,7 @@ describe('image_generate — execute', () => {
 
     const result = await executeImageGenerate(
       { prompt: 'cat', output_path: './product.png' },
-      makeCtx({ currentToolCallId: 'tc-1', emit: (event: { type: string; data: Record<string, unknown> }) => { events.push(event); } }),
+      makeCtx({ currentToolCallId: 'tc-1', emit: ((event: unknown) => { events.push(event as { type: string; data: Record<string, unknown> }); }) as ToolContext['emit'] }),
       allowAll,
     );
     expect(result.ok).toBe(true);

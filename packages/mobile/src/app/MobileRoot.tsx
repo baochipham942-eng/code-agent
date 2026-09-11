@@ -271,7 +271,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
       </> : currentPage === 'preview' && companion.preview ? <div className="preview-pane">
         <p className="caption">{text.previewHint}</p>
         <PreviewMedia name={companion.preview.name} mimeType={companion.preview.mimeType} bytes={companion.preview.bytes} />
-        {companion.savedPreview ? <p role="status">{text.savedToDevice}</p>
+        {companion.savedPreview ? <p role="status">{companion.savedPreviewName && companion.savedPreviewName !== companion.preview.name ? `${text.savedToDevice}：${companion.savedPreviewName}` : text.savedToDevice}</p>
           : <button className="primary" onClick={() => void companion.savePreview()}>{text.saveToDevice}</button>}
       </div> : currentPage === 'remote' ? <div className="settings-group">
         <p>{text.lanHint}</p>

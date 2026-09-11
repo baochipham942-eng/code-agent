@@ -38,7 +38,7 @@ interface State {
   hydrate(): Promise<void>; pair(): Promise<void>; reconnect(): Promise<void>; pause(): void;
   respond(requestId: string, decision: 'approved' | 'rejected'): Promise<void>;
   selectSession(id: string): void; send(text: string): Promise<void>; stop(): Promise<void>; sync(): Promise<void>;
-  artifacts: CompanionArtifact[]; preview: (CompanionArtifact & { bytes: Uint8Array }) | null; savedPreview: boolean;
+  artifacts: CompanionArtifact[]; preview: (CompanionArtifact & { bytes: Uint8Array }) | null; savedPreview: boolean; savedPreviewName: string | null;
   cacheUsage: CacheInspect | null;
   upload(file: PickedFile): Promise<void>;
   previewArtifact(artifactId: string): Promise<void>;
@@ -166,7 +166,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
     return {
       voiceOutcome: null, library: null, history: {}, libraryError: false,
       connectionError: null, commandError: null, status: 'unpaired', binding: null, sessionId: null, busy: false, pending: false, events: [], runId: null, terminal: null,
-      artifacts: [], preview: null, savedPreview: false, cacheUsage: files?.cache.inspect() ?? null,
+      artifacts: [], preview: null, savedPreview: false, savedPreviewName: null, cacheUsage: files?.cache.inspect() ?? null,
       hydrate: async () => {
         if (!port || get().busy) return;
         set({ busy: true });
@@ -196,7 +196,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         const binding = await createClient().pair(raw);
         await persist({ ...saved!, binding, candidate: undefined });
         epoch = binding.scopeEpoch; cursor = 0;
-        set({ status: 'connected', binding, sessionId: binding.scope.find(id => !id.startsWith('project:')) ?? null, library: null, history: {}, events: [], artifacts: [], preview: null, runId: null, terminal: null });
+        set({ status: 'connected', binding, sessionId: binding.scope.find(id => !id.startsWith('project:')) ?? null, library: null, history: {}, events: [], artifacts: [], preview: null, savedPreviewName: null, runId: null, terminal: null });
       }),
       reconnect: () => safely(async () => {
         const target = saved?.binding ?? saved?.candidate;
@@ -244,7 +244,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
           const last = events.filter(e => ['run_started', 'agent_complete', 'agent_cancelled', 'error'].includes(e.kind)).at(-1);
           // artifacts/preview 是当前会话作用域：切会话必须清掉，否则 offline 时
           // refreshArtifacts 提前 return，B 会话会一直显示 A 会话的成果卡（点开必 ARTIFACT_MISSING）。
-          set({ sessionId, runId: last?.kind === 'run_started' ? String(last.payload.runId) : null, terminal: null, artifacts: [], preview: null, savedPreview: false });
+          set({ sessionId, runId: last?.kind === 'run_started' ? String(last.payload.runId) : null, terminal: null, artifacts: [], preview: null, savedPreview: false, savedPreviewName: null });
         }
       },
       transcribe: (audio, sessionId, hostKey) => safely(async () => {
@@ -372,7 +372,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         if (!listed) { set({ commandError: 'ARTIFACT_MISSING' }); return; }
         const cached = files.cache.get(artifactId);
         if (cached && cached.size === listed.size) {
-          set({ preview: { ...listed, bytes: cached.bytes }, savedPreview: false });
+          set({ preview: { ...listed, bytes: cached.bytes }, savedPreview: false, savedPreviewName: null });
           return;
         }
         const base = { version: 1 as const, deviceId: saved.binding.deviceId, scopeEpoch: saved.binding.scopeEpoch, sessionId: get().sessionId! };
@@ -403,19 +403,19 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
           } catch {
             cacheFailed = true;
           }
-          set({ preview: { ...listed, bytes }, savedPreview: false, cacheUsage: files.cache.inspect(), commandError: cacheFailed ? 'STORAGE_FULL' : null });
+          set({ preview: { ...listed, bytes }, savedPreview: false, savedPreviewName: null, cacheUsage: files.cache.inspect(), commandError: cacheFailed ? 'STORAGE_FULL' : null });
         } catch (error) {
           await releasePending();
           const code = error instanceof Error ? error.message : 'ARTIFACT_MISSING';
           set({ commandError: code, preview: null });
         }
       }),
-      closePreview: () => set({ preview: null, savedPreview: false }),
+      closePreview: () => set({ preview: null, savedPreview: false, savedPreviewName: null }),
       savePreview: async () => {
         const preview = get().preview;
         if (!preview || !files) return;
         const result = await files.save({ name: preview.name, mimeType: preview.mimeType, bytes: preview.bytes });
-        if (result.status === 'saved') set({ savedPreview: true, commandError: null });
+        if (result.status === 'saved') set({ savedPreview: true, savedPreviewName: result.name ?? preview.name, commandError: null });
         else if (result.status === 'cancelled') set({ savedPreview: false });
         else set({ commandError: result.code ?? 'COMPANION_EXPORT_FAILED', savedPreview: false });
       },

@@ -33,10 +33,19 @@ function webFilePorts(cache: FileCache): FilePorts {
     save: async file => {
       try {
         if (Capacitor.isNativePlatform()) {
+          // 同名成果不静默覆盖：photo.png 已存在则写 photo (1).png、photo (2).png…
+          const dot = file.name.lastIndexOf('.');
+          const stem = dot > 0 ? file.name.slice(0, dot) : file.name;
+          const ext = dot > 0 ? file.name.slice(dot) : '';
+          let candidate = file.name;
+          for (let n = 1; ; n++) {
+            try { await Filesystem.stat({ path: candidate, directory: Directory.Documents }); candidate = `${stem} (${n})${ext}`; }
+            catch { break; }
+          }
           await Filesystem.writeFile({
-            path: file.name, data: bytesToBase64(file.bytes), directory: Directory.Documents,
+            path: candidate, data: bytesToBase64(file.bytes), directory: Directory.Documents,
           });
-          return { status: 'saved' };
+          return { status: 'saved', name: candidate };
         }
         const href = URL.createObjectURL(new Blob([bytesToArrayBuffer(file.bytes)], { type: file.mimeType }));
         const link = document.createElement('a');

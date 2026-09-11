@@ -198,7 +198,9 @@ export class CompanionFileService {
       this.abortInternal(String(transfer.transfer_id));
       storageOr(error);
     }
-    this.db.prepare(`UPDATE companion_file_transfers SET received = ? WHERE transfer_id = ?`).run(next, transfer.transfer_id);
+    // 分片同时刷新 created_at（语义=最后活跃时间）：大文件数百次串行分片可能跨过
+    // reconcilingRecoveryMs，不刷新的话 expireStale 会把这条正在推进的传输当自己人删掉。
+    this.db.prepare(`UPDATE companion_file_transfers SET received = ?, created_at = ? WHERE transfer_id = ?`).run(next, this.now(), transfer.transfer_id);
     return { transferId: transfer.transfer_id, received: next };
   }
 

@@ -12,6 +12,8 @@ export interface PickedFile {
 export interface FileExportResult {
   status: 'saved' | 'cancelled' | 'error';
   code?: string;
+  /** 实际落盘文件名（同名去重后可能与请求名不同）。 */
+  name?: string;
 }
 
 export interface FilePorts {

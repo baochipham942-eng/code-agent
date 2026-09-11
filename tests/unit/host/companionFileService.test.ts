@@ -107,6 +107,28 @@ describe('CompanionFileService', () => {
     expect(readdirSync(path.join(workspace, L.fileRootDir, L.fileStagingDir))).not.toContain(transferId);
   });
 
+  it('does not abort an actively progressing transfer that crosses the recovery horizon', () => {
+    // 大文件分片串行往返可能跨过 reconcilingRecoveryMs；chunk 刷新最后活跃时间后，
+    // 自己的下一条 chunk 触发的 expireStale 不得中止它（claude 复审修正轮 6 的回归钉）。
+    let now = 1000;
+    files = new CompanionFileService(db, gateway, () => workspace, undefined, () => now);
+    const bytes = Buffer.from('chunk-a');
+    const digest = sha(bytes);
+    const prepared = gateway.submit(command('files.prepare', { name: 'a.txt', mimeType: 'text/plain', size: bytes.length, sha256: digest }));
+    const transferId = String(acceptedResult(prepared).transferId);
+    // 持续活跃但累计时长跨过 horizons：两个分片各间隔 4 分钟（< 5min horizon），累计 8 分钟
+    const first = bytes.subarray(0, 2);
+    gateway.submit(command('files.chunk', { transferId, offset: 0, data: first.toString('base64'), sha256: sha(first) }));
+    now += L.reconcilingRecoveryMs - 60_000;
+    const second = bytes.subarray(2, 4);
+    gateway.submit(command('files.chunk', { transferId, offset: 2, data: second.toString('base64'), sha256: sha(second) }));
+    now += L.reconcilingRecoveryMs - 60_000;
+    const rest = bytes.subarray(4);
+    const chunk = gateway.submit(command('files.chunk', { transferId, offset: 4, data: rest.toString('base64'), sha256: sha(rest) }));
+    expect(chunk).toMatchObject({ kind: 'accepted', command: { state: 'accepted' } });
+    expect(db.prepare(`SELECT state FROM companion_file_transfers WHERE transfer_id = ?`).get(transferId)).toEqual({ state: 'staging' });
+  });
+
   it('host restart recovers staging leftovers', () => {
     const bytes = Buffer.from('partial');
     const digest = sha(bytes);

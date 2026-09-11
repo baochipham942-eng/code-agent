@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { IdleSleepInhibitor } from '../../../../../src/host/services/desktop/idleSleepInhibitor';
+import { IdleSleepInhibitor } from '../../../../src/host/services/desktop/idleSleepInhibitor';
 
 describe('IdleSleepInhibitor', () => {
   it('inhibits while a run or paired companion exists and releases when both disappear', async () => {

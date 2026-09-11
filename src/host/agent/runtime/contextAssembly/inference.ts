@@ -42,7 +42,7 @@ import {
 } from '../artifactRepairGuard';
 import { preloadDeferredToolsForTurn } from './deferredToolPreload';
 import { runMaxModeStep, MaxModeAbortError } from '../maxMode';
-import { createHandoffTailStreamFilter } from '../../../handoff/handoffStream';
+import { createDocumentEvidenceStream } from '../documentEvidenceStream';
 import { applyEffortControls } from './effortControls';
 import { buildCompactArtifactRepairWriteRetryMessages } from './artifactRepairRetryMessages';
 import {
@@ -759,17 +759,19 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
     // Reset partial content accumulator for this inference call
     ctx.runtime.turn.resetStreamedContent();
     let commandCenterPreannounce = '';
-    const contentStreamFilter = createHandoffTailStreamFilter((text) =>
-      emitAssistantMessageDelta(ctx, 'content', text)
-    );
+    // 按句流出：证据检查改成记录式后不再改写正文，可见文本与原始 chunk 逐字一致，
+    // 所以 turn 由 pushContent 边收边存（取消/转向走 abort，inference Promise 立刻 reject，
+    // finish 根本执行不到，preserveStreamedPartial 只能靠 turn 里那份留底——正是
+    // 2026-08-01 真机实测修掉的那个 bug），这里只负责把攒满一整句的正文发给前端。
+    const contentStreamFilter = createDocumentEvidenceStream(ctx.runtime.messages, (text) => emitAssistantMessageDelta(ctx, 'content', text));
 
+    // 原始 chunk 边来边进 turn（abort 时留住半截），同时喂给按整段判定的证据流。
+    const pushContent = (text: string) => { ctx.runtime.turn.appendStreamedContent(text); contentStreamFilter.push(text); };
     const streamCallback: StreamCallback = (chunk) => {
       if (typeof chunk === 'string') {
-        ctx.runtime.turn.appendStreamedContent(chunk);
-        contentStreamFilter.push(chunk);
+        pushContent(chunk);
       } else if (chunk.type === 'text') {
-        ctx.runtime.turn.appendStreamedContent(chunk.content ?? '');
-        contentStreamFilter.push(chunk.content);
+        pushContent(chunk.content ?? '');
       } else if (chunk.type === 'reasoning') {
         // 推理模型的思考过程 (glm-4.7 等)
         emitAssistantMessageDelta(ctx, 'reasoning', chunk.content);
@@ -870,7 +872,7 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
     } finally {
       stopArtifactProgress();
     }
-    contentStreamFilter.flush();
+    if (!ctx.runtime.control.isCancelled) contentStreamFilter.finish(response.content);
     response = applyCommandCenterPreannounce(response, commandCenterPreannounce);
     if (pendingCapabilityFallback && !response.fallback) {
       response.actualProvider = pendingCapabilityFallback.to.provider;

@@ -7,8 +7,8 @@
 // 打回预算用尽后放行进闸1/闸2（闸0 是前置增强，不设新的死锁面）。
 // ============================================================================
 
-import { statSync } from 'fs';
 import { isAbsolute, resolve } from 'path';
+import { readbackFileEvidence } from './fileEvidenceReadback';
 import { execFileSync } from 'child_process';
 import type { ToolCall } from '../../../shared/contract';
 import { GOAL_MODE } from '../../../shared/constants/agent';
@@ -141,25 +141,16 @@ export function runGoalEvidenceGate(
 
   const filesToVerify = [...new Set([...claimed.deliverables, ...declaredArtifacts])];
   for (const filePath of filesToVerify) {
-    const absolutePath = isAbsolute(filePath)
-      ? filePath
-      : resolve(ctx.workingDirectory || process.cwd(), filePath);
-    let exists: boolean;
     try {
-      exists = statSync(absolutePath).isFile();
+      const { evidence } = readbackFileEvidence(filePath, ctx.workingDirectory || process.cwd(), 'goal-evidence-gate');
+      // 记录式：文档断言问题不再当作打回理由（否则模型会被反复打回到预算耗尽），
+      // 产物的存在性证据照常收下。留痕由 turnTrace 的 evidence_boundary 事件负责。
+      if (!evidenceRefs.some((ref) => ref.ref === evidence.ref)) evidenceRefs.push(evidence);
     } catch {
-      exists = false;
-    }
-    if (exists) {
-      evidenceRefs.push(makeEvidenceRef({
-        kind: 'file',
-        ref: absolutePath,
-        source: 'goal-evidence-gate',
-        state: 'read',
-      }));
-    } else {
       const origin = claimed.deliverables.includes(filePath) ? '自报产物' : '事先声明的产物';
-      problems.push(`${origin} \`${filePath}\` 在磁盘上不存在（核验路径 ${absolutePath}）。`);
+      // 打回理由要带解析后的绝对路径：模型写错相对路径时，只报它自己写的那串没法自纠。
+      const absolutePath = isAbsolute(filePath) ? filePath : resolve(ctx.workingDirectory || process.cwd(), filePath);
+      problems.push(`${origin} \`${filePath}\` 读不到（核验路径 ${absolutePath}）。`);
     }
   }
 

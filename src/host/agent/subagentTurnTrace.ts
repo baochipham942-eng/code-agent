@@ -10,7 +10,7 @@ import {
   isFileMutationTool,
 } from './runtime/toolArtifactRepairPolicy';
 import { isWorkspaceDiscoveryMutationTool } from './runtime/toolFileMutationTracking';
-import { TurnTraceRecorder } from './runtime/turnTrace';
+import { TurnTraceRecorder, type TraceEventDataMap } from './runtime/turnTrace';
 import {
   createSubagentEventScope,
   type SubagentEventIdentity,
@@ -117,11 +117,13 @@ export function createSubagentTurnObservability(input: {
   let mutationPaths = createSubagentMutationPathSlot();
   return {
     identity: eventScope.identity,
+    getToolCallCount: () => recorder.getEvents().filter((event) => event.type === 'tool_dispatch').length,
     startTurn(iteration: number): string {
       mutationPaths = createSubagentMutationPathSlot();
       recorder.setTurn(iteration);
       return eventScope.startTurn(iteration);
     },
+    recordInference(data: TraceEventDataMap['inference']): void { recorder.record('inference', data); },
     recordCompaction(totalTokens: number): void {
       recorder.record('compaction', {
         layersTriggered: ['subagent_compaction'], totalTokens, commitCount: 1, autocompactNeeded: true,
@@ -140,6 +142,7 @@ export function createSubagentTurnObservability(input: {
       workspaceMutationSnapshot?: WorkspaceMutationSnapshot,
     ): Promise<void> {
       recorder.record('tool_dispatch', {
+        toolCallId: toolCall.id,
         toolName: toolCall.name,
         toolAction: extractWorkbenchReferenceFromToolCall(toolCall)?.action ?? null,
         success: result.success,
@@ -162,6 +165,7 @@ export function createSubagentTurnObservability(input: {
       durationMs: number,
     ): void {
       recorder.record('tool_dispatch', {
+        toolCallId: toolCall.id,
         toolName: toolCall.name,
         toolAction: extractWorkbenchReferenceFromToolCall(toolCall)?.action ?? null,
         success: false,

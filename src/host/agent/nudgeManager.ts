@@ -198,7 +198,7 @@ export class NudgeManager {
    * Track a file that was successfully modified (Edit / Write).
    */
   trackModifiedFile(filePath: string): void {
-    const normalizedPath = filePath.replace(/^\.\//, '').replace(/^\//, '');
+    const normalizedPath = filePath.replace(/^\.\//, '');
     this.modifiedFiles.add(normalizedPath);
     logger.debug(`[NudgeManager] P3 Nudge: Tracked modified file: ${normalizedPath}`);
   }
@@ -379,7 +379,7 @@ export class NudgeManager {
     if (this.targetFiles.length > 0 && this.fileNudgeCount < this.maxFileNudges) {
       const missingFiles: string[] = [];
       for (const targetFile of this.targetFiles) {
-        const normalizedTarget = targetFile.replace(/^\.\//, '').replace(/^\//, '');
+        const normalizedTarget = targetFile.replace(/^\.\//, '');
         const found = Array.from(this.modifiedFiles).some(modFile =>
           modFile === normalizedTarget ||
           modFile.endsWith(normalizedTarget) ||

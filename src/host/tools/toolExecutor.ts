@@ -544,17 +544,20 @@ export class ToolExecutor {
     rawParams: Record<string, unknown>,
     options: ExecuteOptions
   ): Promise<ToolExecutionResult> {
+    const invoke = async (): Promise<ToolExecutionResult> => {
+      const result = await this.executeInCorrelationContext(toolName, rawParams, options);
+      return { ...result, metadata: { ...result.metadata,
+        executionStarted: result.fromCache ? false : result.metadata?.executionStarted === true } };
+    };
     const active = getActiveRunTraceContext();
-    if (!active) {
-      return this.executeInCorrelationContext(toolName, rawParams, options);
-    }
+    if (!active) return invoke();
     const toolTraceContext = createChildRunTraceContext(active, {
       turnId: options.turnId?.trim() || active.turnId,
       toolCallId: options.currentToolCallId?.trim() || null,
     });
     return withRunTraceContext(
       toolTraceContext,
-      () => this.executeInCorrelationContext(toolName, rawParams, options),
+      invoke,
     );
   }
 
@@ -2055,6 +2058,7 @@ export class ToolExecutor {
       replaySafety: classifyToolReplaySafety(toolDef),
     });
     const { executionId } = executionLedger;
+    let executionStarted = false;
     try {
       if (writeIsolationScope) {
         const waitStart = Date.now();
@@ -2095,6 +2099,10 @@ export class ToolExecutor {
         toolCallId: options.currentToolCallId,
         executionId,
         startedAt: startTime,
+      });
+      executionStarted = true;
+      options.turnTrace?.record('tool_execution_start', {
+        toolCallId: options.currentToolCallId ?? executionId, toolName: executionToolName,
       });
       const delegatedResult = this.dispatchTool
         ? await this.dispatchTool(executionToolName, params, context, options)
@@ -2183,7 +2191,7 @@ export class ToolExecutor {
 
       executionLedger.complete(result.success ? 'success' : 'error', result.error);
       await durableCheckpoint.complete(result.success);
-      return result;
+      return { ...result, metadata: { ...result.metadata, executionStarted } };
     } catch (error) {
       const duration = Date.now() - startTime;
       logger.error('Tool threw error', error, { toolName: executionToolName });
@@ -2207,6 +2215,7 @@ export class ToolExecutor {
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error',
+        metadata: { executionStarted },
       };
     } finally {
       releaseWriteIsolation?.();

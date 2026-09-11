@@ -1,3 +1,4 @@
+import { createDocumentEvidenceStream } from '../../../src/host/agent/runtime/documentEvidenceStream';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ModelResponse } from '../../../src/host/agent/loopTypes';
 import type { RuntimeContext } from '../../../src/host/agent/runtime/runtimeContext';
@@ -530,6 +531,54 @@ describe('MessageProcessor persistence', () => {
     expect(runFinalizer.autoAdvanceTodos).not.toHaveBeenCalled();
     expect(ctx.telemetryAdapter.onTurnEnd).not.toHaveBeenCalled();
     expect(ctx.onEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'turn_end' }));
+  });
+
+  it.each([
+    ['空间主人是 Neo 登录用户 owner，已实测确认。', true],
+    ['附件已整理。空间主人：owner-fixture，自动化配置待查。下一步核对原文。', true],
+    ['空间主人：owner-fixture；自动化配置待查。', true],
+    ['核验要求：至少两份独立来源，才能标记已验证。', false],
+    ['这些不是独立来源。', false],
+    ['引用：“这些是独立来源。”', false],
+    ['附件已整理。空间主人：owner-fixture，自动化配置待查。', true, true],
+    // 2026-09-11 爸拍板改记录式：正文一律原样落库，第二列现在表示「是否会记一条
+    // evidence_boundary」，不再是「是否被改写」。
+  ])('persists text verbatim and records the boundary instead of rewriting it: %s', async (content, flagged, truncated = false) => {
+    const ctx = {
+      // A local Read already happened; the desktop zero-tool gate is a separate contract.
+      stats: RunStatsState.forTest({ totalToolCallCount: 1 }), contextHealth: ContextHealthState.forTest(),
+      artifact: ArtifactState.forTest(), sessionId: 'boundary-session',
+      messages: [{ id: 'user', role: 'user' as const, content: '空间盘点', timestamp: 1 }],
+      control: ControlState.forTest(), modelConfig: { model: 'mimo-v2.5-pro' },
+      turn: TurnState.forTest(), turnTrace: { record: vi.fn() },
+      nudgeManager: { runNudgeChecks: vi.fn(), runOutputValidation: vi.fn() },
+      onEvent: vi.fn(), telemetryAdapter: { onTurnEnd: vi.fn() },
+    };
+    const addAndPersistMessage = vi.fn();
+    const processor = createProcessor(ctx as DeepPartial<RuntimeContext>, {
+      stripInternalFormatMimicry: (content: string) => content, generateId: () => 'final',
+      addAndPersistMessage, injectSystemMessage: vi.fn(), updateContextHealth: vi.fn(),
+    }, { emitTaskProgress: vi.fn(), emitTaskComplete: vi.fn(), tryParseTodosFromResponse: vi.fn() });
+    const streamed: string[] = [];
+    const stream = createDocumentEvidenceStream(ctx.messages, (text) => streamed.push(text));
+    for (const char of content) stream.push(char);
+    stream.finish(content);
+    await processor.handleTextResponse({ type: 'text', content,
+      contentParts: [{ type: 'text', text: content }], finishReason: truncated ? 'length' : 'stop', truncated,
+    } as ModelResponse, true, 1, false, { endSpan: vi.fn() });
+    const saved = addAndPersistMessage.mock.calls.at(-1)?.[0];
+    // 落库的正文 = 流出去的正文 = 模型原话，三者逐字相同（记录式不改写任何一个字）。
+    expect(saved.content).toBe(streamed.join(''));
+    expect(saved.content).toBe(content);
+    expect(JSON.stringify(saved.contentParts ?? [])).toContain(content);
+    if (!flagged) {
+      expect(ctx.turnTrace.record).not.toHaveBeenCalled();
+      return;
+    }
+    // 留痕仍在：问题进 evidence_boundary 事件，不进正文。
+    expect(ctx.turnTrace.record).toHaveBeenCalledWith('evidence_boundary', {
+      problems: ['SPACE_OWNER_UNVERIFIED'], surface: truncated ? 'partial_response' : 'final_response',
+    });
   });
 
   it('persists truncated text before asking the next iteration to continue', async () => {

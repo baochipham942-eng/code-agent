@@ -38,6 +38,16 @@ interface State {
   selectSession(id: string): void; send(text: string): Promise<void>; stop(): Promise<void>; sync(): Promise<void>;
 }
 
+/**
+ * 「这条命令此刻有没有一个可寻址的会话」——send / transcribe / respond 三处共用的判据。
+ * 任何一项不满足时它们都是**静默 return**，所以界面不能只看 status==='connected'：
+ * 只勾了项目的二维码配对后 sessionId 为 null，手机写着「已连接」，点发送却什么都不发生
+ * （无报错、无 pending、草稿不清），用户只能反复点。
+ */
+export function canAddressSession(state: Pick<State, 'status' | 'sessionId'>): boolean {
+  return state.status === 'connected' && Boolean(state.sessionId);
+}
+
 export function createCompanionStore(port: PlatformPorts['companion'], onAccepted: (text: string, sessionId: string, hostKey: string) => void | Promise<void>, onTranscript?: (text: string, sessionId: string, hostKey: string, commandId: string) => Promise<void>) {
   let saved: Saved | null = null;
   let client: LanCompanionClient | null = null;
@@ -196,13 +206,13 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
       },
       transcribe: (audio, sessionId, hostKey) => safely(async () => {
         if (get().sessionId !== sessionId || get().binding?.hostKey !== hostKey) return;
-        if (!saved?.binding || !client || saved.pending || get().status !== 'connected' || !get().sessionId) return;
+        if (!saved?.binding || !client || saved.pending || !canAddressSession(get())) return;
         const command = companionCommandSchema.parse({ version: 1, deviceId: saved.binding.deviceId, scopeEpoch: saved.binding.scopeEpoch,
           commandId: crypto.randomUUID(), sessionId: get().sessionId, action: 'voice.transcribe', payload: audio });
         await persist({ ...saved, pending: command }); set({ pending: true, voiceOutcome: null }); await deliver();
       }),
       send: text => safely(async () => {
-        if (!saved?.binding || !client || saved.pending || get().status !== 'connected' || !get().sessionId) return;
+        if (!saved?.binding || !client || saved.pending || !canAddressSession(get())) return;
         const command = companionCommandSchema.parse({ version: 1, deviceId: saved.binding.deviceId, scopeEpoch: saved.binding.scopeEpoch,
           commandId: crypto.randomUUID(), sessionId: get().sessionId, action: 'message.send', payload: { text } });
         await persist({ ...saved, pending: command }); set({ pending: true }); await deliver();
@@ -214,7 +224,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         await persist({ ...saved, pending: command }); set({ pending: true }); await deliver();
       }),
       respond: (requestId, decision) => safely(async () => {
-        if (!saved?.binding || saved.pending || get().status !== 'connected' || !get().sessionId) return;
+        if (!saved?.binding || saved.pending || !canAddressSession(get())) return;
         const latest = get().events.filter(event => event.kind === 'approval' && event.sessionId === get().sessionId && event.payload.requestId === requestId).at(-1)?.payload;
         if (!latest || latest.status !== 'pending') return;
         const command = companionCommandSchema.parse({ version: 1, deviceId: saved.binding.deviceId, scopeEpoch: saved.binding.scopeEpoch,

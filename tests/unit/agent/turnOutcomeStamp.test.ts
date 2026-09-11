@@ -1,5 +1,8 @@
+import { runGoalEvidenceGate } from '../../../src/host/agent/runtime/goalEvidenceGate';
+import { ArtifactState } from '../../../src/host/agent/runtime/artifactState';
+import type { RuntimeContext } from '../../../src/host/agent/runtime/runtimeContext';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { existsSync, rmSync } from 'fs';
+import { existsSync, rmSync, mkdirSync, writeFileSync } from 'fs';
 import os from 'os';
 import path from 'path';
 
@@ -73,6 +76,162 @@ function latestOutcome(recorder: TurnTraceRecorder) {
 }
 
 describe('turn outcome stamp', () => {
+  it('canonicalizes and hashes real files, excludes missing duplicates, and refuses a verified stamp', async () => {
+    mkdirSync(traceRoot, { recursive: true });
+    const artifact = path.join(traceRoot, 'report.md');
+    writeFileSync(artifact, 'Fixture report');
+    const recorder = new TurnTraceRecorder('paths', traceRoot);
+    const ctx = { ...context(recorder), workingDirectory: traceRoot };
+    await recordTurnOutcomeStamp(ctx, 'completed', summary({ changedFiles: [artifact, 'report.md'],
+      artifactRefs: [{ kind: 'file', path: artifact }, { kind: 'file', path: 'missing/report.md' }] }));
+    const outcome = latestOutcome(recorder);
+    expect(outcome.verdict).toBe('self_claimed');
+    expect(outcome.evidenceRefs).toHaveLength(1);
+    expect(outcome.evidenceRefs[0].freshness).toMatchObject({ state: 'read', digest: expect.stringMatching(/^[a-f0-9]{64}$/) });
+    expect(outcome.evidenceProblems).toEqual(['COMPLETION_FILE_UNREADABLE: missing/report.md']);
+  });
+
+  // ai-review #1740 第 7 轮 Important：changedFiles 来自 git status/diff（gitCommit.ts:124 剥掉状态位后
+  // ` D path` 就是已删除路径、`R  old -> new` 剥完是 `old -> new`），回读必失败。基线对它们无条件出
+  // candidate ref 不报错；本刀一度把它们记成 COMPLETION_FILE_UNREADABLE 并降级 verdict——账本对一个
+  // 本轮故意删掉的文件说「产物不可读」，与本单要交付的「账本不说假话」正好相反。
+  it('a file deleted or renamed this turn stays a candidate ref and never downgrades the verdict', async () => {
+    const recorder = new TurnTraceRecorder('deleted-changed-file', traceRoot);
+    const ctx = { ...context(recorder), workingDirectory: traceRoot };
+    await recordTurnOutcomeStamp(ctx, 'completed', summary({
+      changedFiles: ['docs/old.md', 'docs/old.md -> docs/new.md'],
+      verificationEvidence: [{ kind: 'command', toolCallId: 'test-ok', command: 'npm test', success: true, exitCode: 0 }],
+    }));
+    const outcome = latestOutcome(recorder);
+    expect(outcome.evidenceProblems).toEqual([]);
+    expect(outcome.verdict).toBe('verified');
+    expect(outcome.evidenceRefs.filter((ref) => ref.kind === 'file').map((ref) => [ref.ref, ref.freshness.state]))
+      .toEqual([['docs/old.md', 'candidate'], ['docs/old.md -> docs/new.md', 'candidate']]);
+  });
+
+  it('does not promote failed verification or old successful reads to completed evidence', async () => {
+    const recorder = new TurnTraceRecorder('failed-verification', traceRoot);
+    await recordTurnOutcomeStamp(context(recorder), 'completed', summary({ verificationEvidence: [
+      { kind: 'command', toolCallId: 'test-failed', command: 'npm test', success: false, exitCode: 1 },
+    ] }));
+    expect(latestOutcome(recorder).verdict).toBe('self_claimed');
+    expect(latestOutcome(recorder).evidenceRefs).toEqual([]);
+  });
+
+  it('retains successful verification after a recovered failure', async () => {
+    const recorder = new TurnTraceRecorder('recovery', traceRoot);
+    await recordTurnOutcomeStamp(context(recorder), 'completed', summary({ verificationEvidence: [
+      { kind: 'command', toolCallId: 'test-ok', command: 'npm test', success: true, exitCode: 0 },
+    ] }));
+    expect(latestOutcome(recorder).verdict).toBe('verified');
+  });
+
+  // ai-review #1740 Important：生产上普通前台 Bash 的成功返回**不写** metadata.exitCode
+  // （只有 pty 分支写，bash.ts:992 那条 meta 里没有），parseExitCode 于是返回 undefined。
+  // 这条夹具刻意不给 exitCode，钉住「不知道退出码」不等于「退出码非零」——否则 verified
+  // 在生产中根本不可达，而上面那条只因夹具手写了 exitCode: 0 才是绿的（测试替身比真实依赖宽容）。
+  // ai-review #1740 Important：verdict 里的 evidence_boundary 检查只能看**本轮**。
+  // TurnTraceRecorder 随 AgentLoop 构造一次、events 从不清空，扫全量等于「会话里任何一轮
+  // 命中过一次，此后每轮永久降级」——第 2 轮写了句「这些是独立来源。」，第 9 轮就算真跑通
+  // npm test 也照样 self_claimed，verdict 这个字段在该会话内彻底失去区分能力。
+  // ai-review #1740 Important：聊天内 artifact（kind:'artifact'，只有 artifactId/title，
+  // 结构上没有 path）也要出证据条目。本刀一度把 artifactRefs 收窄成「只取 artifact.path」，
+  // 一轮只交付聊天内 artifact 的 run 证据条目就从 N 条降为 0，SessionInspector 的
+  // evidenceCount 显示 0，账本上表现为「该轮零交付」。基线有 artifact:${id} / title 兜底。
+  it('keeps evidence for a chat-only artifact that has no path on disk', async () => {
+    const recorder = new TurnTraceRecorder('chat-artifact', traceRoot);
+    await recordTurnOutcomeStamp(context(recorder), 'completed', summary({
+      artifactRefs: [{ kind: 'artifact', artifactId: 'a1', title: '简报' }],
+    }));
+    const refs = latestOutcome(recorder).evidenceRefs;
+    expect(refs.some((ref) => ref.kind === 'artifact' && ref.ref === 'artifact:a1')).toBe(true);
+    expect(refs.every((ref) => ref.freshness.state !== 'read' || ref.kind !== 'artifact')).toBe(true);
+  });
+
+  // ai-review #1740 第 7 轮 Important：上一版按 turnIndex 过滤，但 turnIndex 是 run 内迭代号、每条用户
+  // 消息从 1 重启（conversationRuntime.ts 的局部 iterations），recorder 却是每会话一个——上一条用户消息
+  // 第 3 次迭代记的 boundary 与本条第 3 次迭代同号，照样命中。「本轮」的线是上一枚 turn_outcome 印章。
+  it('a boundary from an earlier run does not downgrade the next run, even at the same iteration number', async () => {
+    const recorder = new TurnTraceRecorder('turn-scope', traceRoot);
+    recorder.setTurn(3);
+    recorder.record('evidence_boundary', { problems: ['SOURCE_INDEPENDENCE_UNVERIFIED'], surface: 'final_response' });
+    await recordTurnOutcomeStamp(context(recorder), 'completed', summary());
+    expect(latestOutcome(recorder).verdict).toBe('self_claimed');
+    recorder.setTurn(3);
+    await recordTurnOutcomeStamp(context(recorder), 'completed', summary({ verificationEvidence: [
+      { kind: 'command', toolCallId: 'test-ok', command: 'npm test', success: true, exitCode: 0 },
+    ] }));
+    expect(latestOutcome(recorder).verdict).toBe('verified');
+  });
+
+  it('a boundary from an earlier iteration of the same run still downgrades it', async () => {
+    const recorder = new TurnTraceRecorder('turn-scope-same-run', traceRoot);
+    recorder.setTurn(1);
+    recorder.record('evidence_boundary', { problems: ['SOURCE_INDEPENDENCE_UNVERIFIED'], surface: 'final_response' });
+    recorder.setTurn(2);
+    await recordTurnOutcomeStamp(context(recorder), 'completed', summary({ verificationEvidence: [
+      { kind: 'command', toolCallId: 'test-ok', command: 'npm test', success: true, exitCode: 0 },
+    ] }));
+    expect(latestOutcome(recorder).verdict).toBe('self_claimed');
+  });
+
+  it('a boundary recorded in this very turn still downgrades it', async () => {
+    const recorder = new TurnTraceRecorder('turn-scope-same', traceRoot);
+    recorder.setTurn(3);
+    recorder.record('evidence_boundary', { problems: ['SOURCE_INDEPENDENCE_UNVERIFIED'], surface: 'final_response' });
+    await recordTurnOutcomeStamp(context(recorder), 'completed', summary({ verificationEvidence: [
+      { kind: 'command', toolCallId: 'test-ok', command: 'npm test', success: true, exitCode: 0 },
+    ] }));
+    expect(latestOutcome(recorder).verdict).toBe('self_claimed');
+  });
+
+  it('treats an unrecorded exit code as unknown, not as a failure', async () => {
+    const recorder = new TurnTraceRecorder('exit-unknown', traceRoot);
+    await recordTurnOutcomeStamp(context(recorder), 'completed', summary({ verificationEvidence: [
+      { kind: 'command', toolCallId: 'test-ok', command: 'npm test', success: true },
+    ] }));
+    expect(latestOutcome(recorder).verdict).toBe('verified');
+  });
+
+  it('still drops evidence from a command that demonstrably exited non-zero', async () => {
+    const recorder = new TurnTraceRecorder('exit-nonzero', traceRoot);
+    await recordTurnOutcomeStamp(context(recorder), 'completed', summary({ verificationEvidence: [
+      { kind: 'command', toolCallId: 'test-bad', command: 'npm test', success: true, exitCode: 2 },
+    ] }));
+    expect(latestOutcome(recorder).verdict).not.toBe('verified');
+  });
+
+  it.each([
+    ['核验要求：至少两份独立来源，才能标记已验证。', undefined],
+    ['这些不是独立来源。', undefined],
+    ['引用：“这些是独立来源。”', undefined],
+    ['这些是独立来源。', 'SOURCE_INDEPENDENCE_UNVERIFIED'],
+    ['空间主人：owner-fixture，自动化配置待查。', 'SPACE_OWNER_UNVERIFIED'],
+    ['空间主人：owner-fixture；自动化配置待查。', 'SPACE_OWNER_UNVERIFIED'],
+    ['空间专家成员：expert-fixture，空间主人待查。', 'SPACE_MEMBERS_UNVERIFIED'],
+    ['空间没有自动化，成员待查。', 'SPACE_AUTOMATIONS_UNVERIFIED'],
+    ['空间主人待查，自动化配置待查。', undefined],
+  ])('checks actual completion-file readback and goal evidence: %s', async (content, problem) => {
+    mkdirSync(traceRoot, { recursive: true });
+    const artifact = path.join(traceRoot, 'boundary.md');
+    writeFileSync(artifact, content);
+    const recorder = new TurnTraceRecorder('boundary-completion', traceRoot);
+    const ctx = { ...context(recorder), workingDirectory: traceRoot };
+    await recordTurnOutcomeStamp(ctx, 'completed', summary({ changedFiles: [artifact], verificationEvidence: [
+      { kind: 'command', toolCallId: 'test-ok', command: 'fixture-check', success: true, exitCode: 0 },
+    ] }));
+    expect(latestOutcome(recorder).evidenceProblems).toEqual(problem ? [problem] : []);
+    expect(latestOutcome(recorder).verdict).toBe(problem ? 'self_claimed' : 'verified');
+    const goal = runGoalEvidenceGate({ ...ctx, artifact: ArtifactState.forTest(), goalEvidenceState: { bounces: 0 },
+      goalMode: { getVerifyCommand: () => undefined },
+    } as unknown as RuntimeContext, { id: 'completion', name: 'attempt_completion', arguments: { evidence: { deliverables: [artifact] } } });
+    // 2026-09-11 爸拍板改记录式：goal 门不再因为文档断言问题打回（原本会把模型反复打回
+    // 到预算耗尽），产物的存在性证据照常收下。留痕仍在——上面 evidenceProblems 与
+    // verdict='self_claimed' 两条断言不变，turnTrace 里也有 evidence_boundary 事件。
+    expect(goal.verdict).toBe('pass');
+    expect(goal.evidenceRefs).toHaveLength(1);
+  });
+
   afterEach(() => {
     void cleanupVoiceResolver?.();
     cleanupVoiceResolver = undefined;
@@ -109,7 +268,7 @@ describe('turn outcome stamp', () => {
     });
   });
 
-  it('uses a real successful tool result as completed-run evidence', async () => {
+  it('records a successful tool as candidate evidence without verifying its conclusions', async () => {
     const recorder = new TurnTraceRecorder('session-1');
     const messages = [
       message(),
@@ -125,7 +284,7 @@ describe('turn outcome stamp', () => {
 
     expect(latestOutcome(recorder)).toMatchObject({
       terminal: 'completed',
-      verdict: 'verified',
+      verdict: 'self_claimed',
       source: 'generic',
       evidenceRefs: [{ id: 'tool-call-17', kind: 'tool', ref: 'tool_execution:tool-call-17' }],
     });

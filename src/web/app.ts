@@ -1,4 +1,5 @@
 import { CompanionLibraryService } from '../host/services/companion/CompanionLibraryService';
+import { CompanionFileService } from '../host/services/companion/CompanionFileService';
 // ============================================================================
 // Web App Assembly - 纯 Express app 装配（无顶层副作用）
 // ============================================================================
@@ -262,7 +263,7 @@ export function createApp(deps: CreateAppDeps): express.Express {
       // gateway 与 library 互相依赖：gateway 的回调要调 library，library 又要拿 gateway。
       // 用一个 const 容器打破这个环，而不是先声明后赋值的 let——后者读起来像「可能被改」，
       // 实际只赋值一次，而且回调里读到的是同一个坑位。
-      const services: { library?: CompanionLibraryService } = {};
+      const services: { library?: CompanionLibraryService; files?: CompanionFileService } = {};
       const requireLibrary = () => {
         const library = services.library;
         // 回调只在路由挂载之后才可能触发，那时 library 早已就位；真取不到就说明接线断了。
@@ -271,10 +272,17 @@ export function createApp(deps: CreateAppDeps): express.Express {
       };
       const gateway = new CompanionGateway(db, {
         sessionProject: id => requireLibrary().sessionProject(id),
-        read: (deviceId, request) => requireLibrary().read(deviceId, request),
+        read: (deviceId, request) => {
+          if (request.kind !== 'artifacts') return requireLibrary().read(deviceId, request);
+          if (!services.files) throw new Error('COMPANION_LIBRARY_UNAVAILABLE');
+          return Promise.resolve(services.files.list(request.sessionId));
+        },
         refreshDecisions: () => approvals?.refresh(),
         decide: command => approvals?.respond(command) ?? { kind: 'rejected', reason: 'unsupported_action' },
         dispatch: (command) => {
+          if (command.action.startsWith('files.')) {
+            return services.files?.dispatch(command) ?? { state: 'rejected', result: { code: 'HOST_UNAVAILABLE' } };
+          }
           if (command.action === 'voice.transcribe') {
             // Registered by the voice-input capability. Absent = that capability is not
             // installed, so say so now rather than parking the phone on 'reconciling'.
@@ -316,15 +324,38 @@ export function createApp(deps: CreateAppDeps): express.Express {
         },
       });
       services.library = new CompanionLibraryService(gateway, id => !!runRegistry.resolve({ sessionId: id }));
+      services.files = new CompanionFileService(db, gateway, id => requireLibrary().workspaceOf(id));
       void services.library.cleanup();
       if (getPendingPermissionRequests && deps.deliverCompanionPermission) {
         approvals = new CompanionApprovalService(gateway, getPendingPermissionRequests, deps.deliverCompanionPermission);
       }
       publishCompanionEvent = (sessionId, kind, payload) => {
+        // 成果复制只对「有已配对手机」的桌面发生：没配对过的用户每次成图都复制一份
+        // 进项目目录且无任何清理路径，是纯浪费（claude 复审 Important 2）。
+        // pairedDevices() 是 SQL JOIN，只在真的涉及成果的两个 kind 里才算（流式事件每帧都过这里）。
+        const raw = payload.event && typeof payload.event === 'object' && !Array.isArray(payload.event)
+          ? payload.event as Record<string, unknown> : null;
+        if (kind === 'artifact_write_started' && raw && gateway.pairedDevices().length > 0) {
+          services.files?.noteWrite(sessionId, String(raw.toolCallId ?? ''), String(raw.filePath ?? ''));
+        }
         const projection = projectCompanionEvent(kind, payload.event);
-        if (!projection) return;
+        if (!projection) {
+          // 投影被丢弃的 tool_call_end 失败帧也要清掉 pendingWrites 记账，否则条目永久滞留。
+          if (kind === 'tool_call_end' && raw && typeof raw.toolCallId === 'string' && raw.success !== true) {
+            services.files?.discardWrite(sessionId, raw.toolCallId);
+          }
+          return;
+        }
         try {
           gateway.publish(sessionId, kind, { ...projection, ...(typeof payload.runId === 'string' ? { runId: payload.runId } : {}) });
+          if (kind === 'tool_call_end' && raw && typeof raw.toolCallId === 'string') {
+            if (raw.success === true && gateway.pairedDevices().length > 0) {
+              const artifact = services.files?.completeWrite(sessionId, raw.toolCallId);
+              if (artifact) gateway.publish(sessionId, 'artifact', { ...artifact, ...(typeof payload.runId === 'string' ? { runId: payload.runId } : {}) });
+            } else {
+              services.files?.discardWrite(sessionId, raw.toolCallId);
+            }
+          }
         } catch {
           // A companion projection failure must not abort the desktop engine.
           logger.warn('Companion event projection unavailable');

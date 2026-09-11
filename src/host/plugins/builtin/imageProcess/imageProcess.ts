@@ -237,10 +237,12 @@ export async function executeImageProcess(
 
     const inputBaseName = path.basename(absInputPath, path.extname(absInputPath));
     const outputFileName = `${inputBaseName}_${action}.${outputFormat}`;
-    const outputDir = params.output_path
-      ? path.dirname(params.output_path)
-      : ctx.workingDir;
-    const finalPath = params.output_path || path.join(outputDir, outputFileName);
+    // 相对 output_path 一律按 workingDir 归一：既决定真实写入位置，也决定发出去的
+    // artifact_write_started.filePath——成果回传/记账只认绝对路径。
+    const finalPath = params.output_path
+      ? (path.isAbsolute(params.output_path) ? params.output_path : path.join(ctx.workingDir, params.output_path))
+      : path.join(ctx.workingDir, outputFileName);
+    const outputDir = path.dirname(finalPath);
 
     if (ctx.currentToolCallId) {
       ctx.emit({

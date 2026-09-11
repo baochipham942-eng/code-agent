@@ -7,6 +7,7 @@ export const companionReadSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('library'), offset: z.number().int().nonnegative().safe().default(0) }).strict(),
   z.object({ kind: z.literal('history'), sessionId: z.string().min(1).max(L.idLength),
     offset: z.number().int().nonnegative().safe().default(0) }).strict(),
+  z.object({ kind: z.literal('artifacts'), sessionId: z.string().min(1).max(L.idLength) }).strict(),
 ]);
 export type CompanionRead = z.infer<typeof companionReadSchema>;
 // File-local: only CompanionLibrary below refers to it.
@@ -24,4 +25,19 @@ export interface CompanionHistory {
   sessionId: string;
   messages: { id: string; role: string; content: string; timestamp: number; truncated?: boolean }[];
   nextOffset: number | null;
+}
+
+export interface CompanionArtifact {
+  artifactId: string;
+  version: number;
+  name: string;
+  mimeType: string;
+  size: number;
+  sha256: string;
+  origin: 'upload' | 'result';
+}
+
+export interface CompanionArtifacts {
+  sessionId: string;
+  artifacts: CompanionArtifact[];
 }

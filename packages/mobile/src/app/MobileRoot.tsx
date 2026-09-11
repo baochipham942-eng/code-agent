@@ -9,6 +9,7 @@ import { COMPANION_LIMITS } from '../../../../src/shared/constants/companion';
 import { ApprovalCard } from '../features/sessions/ApprovalCard';
 import { CompanionConversation } from '../features/sessions/CompanionConversation';
 import { messages } from '../i18n';
+import { bytesToArrayBuffer } from '../platform/fileCache';
 import { createBackCoordinator } from './backCoordinator';
 import { SheetHost } from './SheetHost';
 import { SettingsPage } from '../features/settings/SettingsPage';
@@ -16,16 +17,29 @@ import { VirtualHistory } from '../features/sessions/VirtualHistory';
 import { NeoBrandMark } from '../features/brand/NeoBrandMark';
 import { AppIcon } from './AppIcon';
 
+// 预览 object URL 只在 preview 变化时创建、卸载/变更时 revoke——sync 每秒重渲染不能累积 Blob。
+function PreviewMedia({ name, mimeType, bytes }: { name: string; mimeType: string; bytes: Uint8Array }) {
+  const url = useMemo(() => mimeType.startsWith('image/')
+    ? URL.createObjectURL(new Blob([bytesToArrayBuffer(bytes)], { type: mimeType })) : null,
+  [mimeType, bytes]);
+  useEffect(() => () => { if (url) URL.revokeObjectURL(url); }, [url]);
+  if (url) return <img className="preview-media" alt={name} src={url} />;
+  if (mimeType.startsWith('text/')) return <pre className="preview-text">{new TextDecoder().decode(bytes)}</pre>;
+  return <p>{name}</p>;
+}
+
 export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures: boolean }) {
   const [store] = useState(() => createMobileStore(ports.preferences));
   const [companionStore] = useState(() => createCompanionStore(ports.companion, (acceptedText, sessionId, hostKey) => {
     return store.getState().acknowledgeDraft(acceptedText, `${hostKey}:${sessionId}`);
-  }, (text, sessionId, hostKey, commandId) => store.getState().appendTranscript(text, `${hostKey}:${sessionId}`, commandId)));
+  }, (text, sessionId, hostKey, commandId) => store.getState().appendTranscript(text, `${hostKey}:${sessionId}`, commandId), ports.files));
   const companion = useStore(companionStore);
   const state = useStore(store);
   const text = messages(navigator.language);
   const [appInfo, setAppInfo] = useState<{ version: string; build: string } | null>(null);
   const [nativeError, setNativeError] = useState(false);
+  const [cacheConfirm, setCacheConfirm] = useState(false);
+  const [cacheResult, setCacheResult] = useState<'clean' | null>(null);
   // Native pushes the Android night flag (WebView 95 never updates prefers-color-scheme); matchMedia covers web/iOS.
   const [systemDark, setSystemDark] = useState(() => document.documentElement.dataset.systemNight === 'true'
     || matchMedia('(prefers-color-scheme: dark)').matches);
@@ -123,8 +137,17 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
     if (companion.sessionId && companion.binding && state.route !== 'fixture') {
       store.getState().activateDraft(`${companion.binding.hostKey}:${companion.sessionId}`);
       void companionStore.getState().loadHistory(companion.sessionId);
+      void companionStore.getState().refreshArtifacts();
     } else if (state.route !== 'fixture') store.getState().activateDraft('new');
   }, [companion.sessionId, companion.binding?.hostKey, companion.status, state.route, store, companionStore]);
+  useEffect(() => { if (currentPage !== 'storage') { setCacheConfirm(false); setCacheResult(null); } }, [currentPage]);
+  const commandNotice = companion.commandError === 'UPLOAD_TOO_LARGE' ? text.uploadTooLarge
+    : companion.commandError === 'COMPANION_FILE_TYPE_DENIED' ? text.fileTypeDenied
+    : companion.commandError === 'STORAGE_FULL' ? text.storageFull
+    : companion.commandError === 'COMPANION_EXPORT_FAILED' ? text.exportFailed
+    : companion.commandError === 'ARTIFACT_MISSING' ? text.artifactMissing
+    : companion.commandError && ['COMPANION_TRANSFER_INTERRUPTED', 'ATTACHMENT_INCOMPLETE', 'COMPANION_INTERRUPTED', 'COMPANION_NETWORK_UNAVAILABLE', 'COMPANION_CHANNEL_CLOSED'].includes(companion.commandError) ? text.transferInterrupted
+    : companion.commandError ? text.commandRejected : null;
   const selectSession = (id: string) => { companion.selectSession(id); state.navigate('new'); };
   const manage: typeof companion.manage = async (...args) => {
     managing.current = true;
@@ -163,9 +186,12 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
     <main className="conversation" inert={state.drawer || !!state.sheet}>
       <header className="topbar"><button aria-label={text.sessions} data-testid="open-drawer" onClick={state.openDrawer}><AppIcon name="menu" /></button>
         <strong>{companion.sessionId ? companion.library?.sessions.find(s => s.id === companion.sessionId)?.title ?? `${text.sharedSession} ${(companion.binding?.scope.indexOf(companion.sessionId) ?? 0) + 1}` : state.route === 'new' ? text.neo : text.fixture}</strong><button aria-label={text.more} data-testid="open-more" onClick={() => state.openSheet('more')}><AppIcon name="more" /></button></header>
-      {state.route === 'fixture' && fixtures ? <VirtualHistory text={text} /> : companion.sessionId && (companion.history[companion.sessionId]?.messages.length || companion.history[companion.sessionId]?.nextOffset != null || companion.events.some(event => event.sessionId === companion.sessionId))
-        ? <CompanionConversation history={companion.history[companion.sessionId]} loadMore={() => void companion.loadHistory(companion.sessionId!, true)} hidePendingApprovals events={companion.events} sessionId={companion.sessionId} text={text}
-          disabled={companion.busy || companion.pending || companion.status !== 'connected'} respond={companion.respond} />
+      {state.route === 'fixture' && fixtures ? <VirtualHistory text={text} /> : companion.sessionId && (companion.history[companion.sessionId]?.messages.length || companion.history[companion.sessionId]?.nextOffset != null || companion.artifacts.length || companion.events.some(event => event.sessionId === companion.sessionId))
+        ? <CompanionConversation history={companion.history[companion.sessionId]} loadMore={() => void companion.loadHistory(companion.sessionId!, true)} hidePendingApprovals events={companion.events} artifacts={companion.artifacts} sessionId={companion.sessionId} text={text}
+          disabled={companion.busy || companion.pending || companion.status !== 'connected'} respond={companion.respond}
+          openArtifact={id => void companion.previewArtifact(id).then(() => {
+            if (companionStore.getState().preview) store.getState().openSheet('preview');
+          })} />
         : <div className="welcome"><NeoBrandMark /><h1>{companion.status === 'connected' ? text.connectedReady : text.welcome}</h1>{companion.status === 'connected' && <p className="connection-next">{text.connectedNext}</p>}</div>}
       <div className="composer-area">
         {/* 本会话的审批优先在托盘里就地给控件——CompanionConversation 被传了
@@ -194,7 +220,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
         {(state.saveError || nativeError || companion.commandError || (state.sendAttempted && !canAddressSession(companion))) && <p role="status" className="notice">
           {state.saveError ? text.saveError
             : nativeError ? text.nativeError
-            : companion.commandError ? text.commandRejected
+            : commandNotice ? commandNotice
             : companion.status === 'connected' ? text.noSession
             : text.unconnected}
           {state.saveError && <button onClick={() => void state.flush()}>{text.retry}</button>}
@@ -207,6 +233,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
             onCompositionStart={() => { composing.current = true; }} onCompositionEnd={() => { composing.current = false; }}
             onChange={event => state.editDraft(event.target.value)} />
           <div className="composer-actions"><button aria-label={text.projects} onClick={() => state.openSheet('projects')}><AppIcon name="plus" /></button>
+            {ports.files && <button aria-label={text.attach} disabled={!canAddressSession(companion) || companion.busy || companion.pending} onClick={() => void ports.files!.pick('file').then(picked => { if (picked) void companion.upload(picked); }).catch(error => { if (error instanceof Error && error.message === 'UPLOAD_TOO_LARGE') companionStore.setState({ commandError: 'UPLOAD_TOO_LARGE' }); })}><AppIcon name="attach" /></button>}
             {ports.recorder && companion.sessionId && <VoiceInput key={`${companion.binding?.hostKey}:${companion.sessionId}`} recorder={ports.recorder} text={text}
               disabled={companion.status !== 'connected' || companion.busy || companion.pending} pending={companion.pending} outcome={companion.voiceOutcome} transcribe={audio => companion.transcribe(audio, companion.sessionId!, companion.binding!.hostKey)} />}
             <button className="send" aria-label={text.send} data-testid="send" disabled={!(state.preferences.drafts[state.draftKey] ?? '').trim() || companion.busy || companion.pending}
@@ -237,12 +264,19 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
       </aside>
     </div>}
     {state.sheet && currentPage && <SheetHost page={currentPage} title={text[currentPage]} hasParent={state.sheet.pages.length > 1}
-      close={state.closeSheet} back={state.back} text={text}>
+      close={() => { if (currentPage === 'preview') companion.closePreview(); state.closeSheet(); }} back={() => { if (currentPage === 'preview') companion.closePreview(); state.back(); }} text={text}>
       {pendingApprovals.length > 0 && <button className="primary" onClick={() => selectSession(String(pendingApprovals[0].sessionId))}>{text.reviewApproval}</button>}
       {(currentPage === 'projects' || currentPage === 'more') && companion.binding ? <>
         {companion.library ? <LibrarySheet key={`${currentPage}:${companion.sessionId}`} library={companion.library} sessionId={companion.sessionId} text={text} mode={currentPage} busy={companion.busy || companion.pending || companion.status !== 'connected'} select={selectSession} manage={manage} loadMore={() => void companion.refreshLibrary(true)} /> : <p>{companion.libraryError ? text.libraryError : text.loading}</p>}
         <button onClick={() => void companion.refreshLibrary()}>{text.retry}</button>
-      </> : currentPage === 'remote' ? <div className="settings-group">
+      </> : currentPage === 'preview' && companion.preview ? <div className="preview-pane">
+        <p className="caption">{text.previewHint}</p>
+        <PreviewMedia name={companion.preview.name} mimeType={companion.preview.mimeType} bytes={companion.preview.bytes} />
+        {/* 保存失败必须报在预览面板里——composer 区的提示被模态弹层遮住且 inert，用户看不到。 */}
+        {!companion.savedPreview && companion.commandError && <p role="status" className="notice">{commandNotice}</p>}
+        {companion.savedPreview ? <p role="status">{companion.savedPreviewName && companion.savedPreviewName !== companion.preview.name ? `${text.savedToDevice}：${companion.savedPreviewName}` : text.savedToDevice}</p>
+          : <button className="primary" onClick={() => void companion.savePreview()}>{text.saveToDevice}</button>}
+      </div> : currentPage === 'remote' ? <div className="settings-group">
         <p>{text.lanHint}</p>
         {companion.status === 'connected' ? <div className="connection-success" role="status"><span className="connection-check"><AppIcon name="check" /></span><strong>{text.connected}</strong><p>{text.connectedNext}</p></div>
           : <p role="status">{companion.status === 'connecting' ? text.connecting : companion.status === 'storageError' ? text.secureStorageError : companion.connectionError ? text[companion.connectionError] : text.unconnected}</p>}
@@ -252,7 +286,10 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
         {ports.companion && <button disabled={companion.busy} onClick={() => void companion.reconnect()}>{text.reconnect}</button>}
       </div> : <SettingsPage page={currentPage} text={text} appearance={state.preferences.appearance} nickname={state.preferences.nickname}
         profileDraft={state.profileDraft} appInfo={appInfo} open={state.pushSheet} chooseAppearance={state.setAppearance}
-        editProfile={state.editProfile} saveProfile={state.saveProfile} />}
+        editProfile={state.editProfile} saveProfile={state.saveProfile}
+        storage={{ previewBytes: companion.cacheUsage?.previewBytes ?? 0, result: cacheResult, confirm: cacheConfirm,
+          onConfirm: () => setCacheConfirm(true),
+          onClear: () => { companion.clearCache(); setCacheResult('clean'); setCacheConfirm(false); } }} />}
     </SheetHost>}
   </div>;
 }

@@ -2,7 +2,7 @@ import { createStore } from 'zustand/vanilla';
 import type { PlatformPorts } from '../platform/ports';
 
 export type Appearance = 'system' | 'light' | 'dark';
-export type SheetPage = 'settings' | 'appearance' | 'profile' | 'about' | 'help' | 'more' | 'projects' | 'remote';
+export type SheetPage = 'settings' | 'appearance' | 'profile' | 'about' | 'help' | 'more' | 'projects' | 'remote' | 'storage' | 'preview';
 type Route = 'new' | 'fixture';
 type Preferences = { schema: 1; drafts: Record<string, string>; transcriptCommands?: Record<string, string>; appearance: Appearance; nickname: string };
 type Sheet = { origin: 'root' | 'drawer'; pages: SheetPage[] };

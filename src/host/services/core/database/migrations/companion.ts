@@ -52,5 +52,34 @@ export function applyCompanionSchema(db: BetterSqlite3.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_companion_events_session_seq
       ON companion_events(session_id, epoch, seq);
+    CREATE TABLE IF NOT EXISTS companion_file_transfers (
+      transfer_id TEXT PRIMARY KEY,
+      device_id TEXT NOT NULL,
+      session_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      mime_type TEXT NOT NULL,
+      size INTEGER NOT NULL,
+      sha256 TEXT NOT NULL,
+      received INTEGER NOT NULL,
+      state TEXT NOT NULL,
+      staging_path TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_companion_file_transfers_state_created
+      ON companion_file_transfers(state, created_at);
+    CREATE TABLE IF NOT EXISTS companion_artifacts (
+      artifact_id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      version INTEGER NOT NULL,
+      name TEXT NOT NULL,
+      mime_type TEXT NOT NULL,
+      size INTEGER NOT NULL,
+      sha256 TEXT NOT NULL,
+      path TEXT NOT NULL,
+      origin TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_companion_artifacts_session
+      ON companion_artifacts(session_id, created_at);
   `);
 }

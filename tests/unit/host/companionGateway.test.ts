@@ -92,6 +92,7 @@ describe('CompanionGateway', () => {
     ['message.send', { text: 'hello' }],
     ['run.cancel', { runId: 'run-1' }],
     ['approval.respond', { requestId: 'request', decision: 'approved', operationDigest: 'digest' }],
+    ['files.prepare', { name: 'photo.png', mimeType: 'image/png', size: 4, sha256: 'a'.repeat(64) }],
   ] as const)('recovers an interrupted %s reservation on host restart', (action, payload) => {
     const first = new CompanionGateway(db, { now: () => 1000, dispatch: () => ({ state: 'reconciling' }),
       decide: action === 'approval.respond' ? (() => { throw new Error('uncertain'); }) : undefined });

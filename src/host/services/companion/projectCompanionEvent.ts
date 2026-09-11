@@ -24,6 +24,12 @@ export function projectCompanionEvent(kind: string, value: unknown): Record<stri
     case 'tool_call_end':
       return typeof event.toolCallId === 'string' && typeof event.success === 'boolean' ? { toolCallId: event.toolCallId, success: event.success } : null;
     case 'error': return { code: 'RUN_FAILED' };
+    case 'artifact_write_started': {
+      if (typeof event.toolCallId !== 'string') return null;
+      const raw = typeof event.filePath === 'string' ? event.filePath.replaceAll('\\', '/') : '';
+      const name = raw.split('/').pop() ?? '';
+      return name ? { status: 'generating', toolCallId: event.toolCallId, name } : null;
+    }
     default: return null;
   }
 }

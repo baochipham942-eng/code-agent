@@ -38,6 +38,36 @@ export const companionCommandSchema = z.discriminatedUnion('action', [
       mimeType: z.enum(['audio/aac', 'audio/mp4', 'audio/webm', 'audio/ogg', 'audio/wav']),
       durationMs: z.number().positive().max(COMPANION_LIMITS.voiceDurationMs + 5_000) }).strict(),
   }).strict(),
+  z.object({ ...commandFields, action: z.literal('files.prepare'),
+    payload: z.object({
+      name: z.string().trim().min(1).max(COMPANION_LIMITS.fileNameLength),
+      mimeType: z.string().trim().min(1).max(127),
+      size: z.number().int().positive().max(COMPANION_LIMITS.fileMaxBytes).safe(),
+      sha256: z.string().length(64).regex(/^[a-f0-9]+$/),
+    }).strict(),
+  }).strict(),
+  z.object({ ...commandFields, action: z.literal('files.chunk'),
+    payload: z.object({
+      transferId: id,
+      offset: z.number().int().nonnegative().safe(),
+      data: z.string().min(1).max(COMPANION_LIMITS.fileChunkBase64Limit).regex(/^[A-Za-z0-9+/]+={0,2}$/),
+      sha256: z.string().length(64).regex(/^[a-f0-9]+$/),
+    }).strict(),
+  }).strict(),
+  z.object({ ...commandFields, action: z.literal('files.commit'),
+    payload: z.object({ transferId: id, sha256: z.string().length(64).regex(/^[a-f0-9]+$/) }).strict(),
+  }).strict(),
+  z.object({ ...commandFields, action: z.literal('files.abort'),
+    payload: z.object({ transferId: id }).strict(),
+  }).strict(),
+  z.object({ ...commandFields, action: z.literal('files.read'),
+    payload: z.object({
+      artifactId: id,
+      version: z.number().int().positive().safe().default(1),
+      offset: z.number().int().nonnegative().safe(),
+      length: z.number().int().positive().max(COMPANION_LIMITS.fileChunkBytes).safe(),
+    }).strict(),
+  }).strict(),
 ]);
 export type CompanionCommand = z.infer<typeof companionCommandSchema>;
 /** Derived from the command schema so the action list has exactly one definition. */

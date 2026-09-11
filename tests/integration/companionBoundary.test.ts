@@ -153,5 +153,9 @@ describe('companion device boundary (HTTP + persistent SQLite)', () => {
     expect(projectCompanionEvent('agent_complete', null)).toEqual({});
     expect(projectCompanionEvent('agent_cancelled', null)).toEqual({});
     expect(projectCompanionEvent('error', { stack: 'private-marker' })).toEqual({ code: 'RUN_FAILED' });
+    const generating = projectCompanionEvent('artifact_write_started', { toolCallId: 't1', filePath: '/private/secret/photo.png', token: 'secret-marker' });
+    expect(generating).toEqual({ status: 'generating', toolCallId: 't1', name: 'photo.png' });
+    expect(JSON.stringify(generating)).not.toContain('/private');
+    expect(JSON.stringify(generating)).not.toContain('secret-marker');
   });
 });

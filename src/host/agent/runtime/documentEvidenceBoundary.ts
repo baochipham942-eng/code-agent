@@ -34,7 +34,7 @@ function documentPath(call: ToolCall, cwd: string): string | undefined {
     ? resolve(cwd, raw) : undefined;
 }
 
-function currentMessages(messages: readonly Message[]): readonly Message[] {
+export function currentMessages(messages: readonly Message[]): readonly Message[] {
   const index = messages.findLastIndex((message) => message.role === 'user');
   return messages.slice(Math.max(0, index));
 }

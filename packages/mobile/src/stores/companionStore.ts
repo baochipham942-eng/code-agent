@@ -145,6 +145,10 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
       }
       throw new Error('COMPANION_INVALID_ACK');
     };
+    const releasePending = async () => {
+      if (saved?.pending) await persist({ ...saved, pending: undefined });
+      set({ pending: false });
+    };
     const safely = async (work: () => Promise<void>) => {
       if (get().busy) return;
       set({ busy: true, connectionError: null, commandError: null });
@@ -354,6 +358,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
               await enqueue(companionCommandSchema.parse({ ...base, commandId: crypto.randomUUID(), action: 'files.abort', payload: { transferId } }));
             } catch { /* host recover() deletes staging; phone must not keep a half-file */ }
           }
+          await releasePending();
           const code = error instanceof Error ? error.message : 'COMPANION_TRANSFER_INTERRUPTED';
           set({ commandError: companionFileRetryable(code) || code === 'UPLOAD_TOO_LARGE' || code === 'COMPANION_FILE_TYPE_DENIED' ? code : 'COMPANION_TRANSFER_INTERRUPTED' });
         }
@@ -390,6 +395,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
           files.cache.put(artifactId, { name: listed.name, mimeType: listed.mimeType, bytes });
           set({ preview: { ...listed, bytes }, savedPreview: false, cacheUsage: files.cache.inspect() });
         } catch (error) {
+          await releasePending();
           const code = error instanceof Error ? error.message : 'ARTIFACT_MISSING';
           set({ commandError: code, preview: null });
         }

@@ -318,6 +318,24 @@ describe('LAN companion: real HTTP + Noise + SQLite', () => {
     expect(phone.getState()).toMatchObject({ runId: null, terminal: 'complete' });
     phone.getState().pause();
   });
+  it('clears a pending file command after the transfer is interrupted so retry is possible', async () => {
+    const invitation = JSON.stringify(server.invite(['shared']));
+    let storage: string | null = null;
+    const failingPost: LanPost = async (url, body) => {
+      if (String(url).endsWith('/v1/exchange')) throw new Error('COMPANION_NETWORK_UNAVAILABLE');
+      return post(url, body);
+    };
+    const phone = createCompanionStore({
+      read: async () => storage, write: async value => { storage = value; },
+      scan: async () => invitation, post: failingPost,
+    }, () => {});
+    await phone.getState().pair();
+    expect(phone.getState().status).toBe('connected');
+    await phone.getState().upload({ name: 'photo.png', mimeType: 'image/png', size: 4, bytes: new Uint8Array([1, 2, 3, 4]) });
+    expect(phone.getState().pending).toBe(false);
+    expect(JSON.parse(storage!).pending).toBeUndefined();
+    phone.getState().pause();
+  });
   it('does not resurrect a connection when pairing completes after the phone closes it', async () => {
     const closing = new LanCompanionClient(phoneIdentity, async (url, body) => {
       const result = await post(url, body);

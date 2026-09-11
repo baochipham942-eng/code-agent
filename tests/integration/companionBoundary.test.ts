@@ -11,6 +11,7 @@ import { CompanionGateway } from '../../src/host/services/companion/CompanionGat
 import { createCompanionRouter } from '../../src/web/routes/companion';
 import { projectCompanionEvent } from '../../src/host/services/companion/projectCompanionEvent';
 import type { CompanionDeviceCredential } from '../../src/shared/contract/companion';
+import { COMPANION_LIMITS } from '../../src/shared/constants/companion';
 
 describe('companion device boundary (HTTP + persistent SQLite)', () => {
   let directory: string;
@@ -147,6 +148,11 @@ describe('companion device boundary (HTTP + persistent SQLite)', () => {
       .toEqual({ toolCallId: 'tool-1', success: true });
     expect(projectCompanionEvent('message', { id: 'm1', role: 'assistant', content: 'visible', reasoning: 'internal', attachments: [{ path: '/private/path' }] }))
       .toEqual({ id: 'm1', role: 'assistant', content: 'visible' });
+    const long = 'x'.repeat(COMPANION_LIMITS.messageLength + 25);
+    const clipped = long.slice(0, COMPANION_LIMITS.messageLength);
+    expect(projectCompanionEvent('message', { id: 'm1', role: 'assistant', content: long })).toEqual({ id: 'm1', role: 'assistant', content: clipped });
+    expect(projectCompanionEvent('message_delta', { role: 'assistant', path: 'content', op: 'append', text: long })).toMatchObject({ text: clipped });
+    expect(projectCompanionEvent('message_snapshot', { content: long })).toMatchObject({ content: clipped });
     expect(projectCompanionEvent('message_delta', { role: 'assistant', path: 'reasoning', op: 'append', text: 'internal' })).toBeNull();
     expect(projectCompanionEvent('message', { id: 'm2', role: 'system', content: 'internal' })).toBeNull();
     expect(projectCompanionEvent('diagnostic', { secret: 'private-marker' })).toBeNull();

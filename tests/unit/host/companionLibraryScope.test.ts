@@ -42,6 +42,26 @@ describe('companion explicit project scope', () => {
       expect(f.gateway.commandStatus(f.projectDevice.deviceId, command.commandId)).not.toBeNull();
     } finally { f.db.close(); }
   });
+  it('does not expose a deleted project member through /sync', () => {
+    const f = fixture();
+    try {
+      f.gateway.publish('b', 'message', { content: 'deleted-member' });
+      expect(f.gateway.syncForDevice(f.projectDevice.deviceId, 1, 0).events.map(e => e.payload.content)).toEqual(['deleted-member']);
+      f.gateway.forgetSession('b');
+      expect(f.gateway.canAccessSession(f.projectDevice.deviceId, 'b')).toBe(false);
+      expect(f.gateway.syncForDevice(f.projectDevice.deviceId, 1, 0).events).toEqual([]);
+      expect(f.db.prepare('SELECT COUNT(*) AS n FROM companion_events WHERE session_id = ?').get('b')).toEqual({ n: 0 });
+    } finally { f.db.close(); }
+  });
+  it('hides leftover deleted-session events from a later project grant', () => {
+    const f = fixture();
+    try {
+      f.gateway.publish('b', 'message', { content: 'stale-deleted' });
+      f.db.prepare('INSERT INTO companion_session_cleanup (session_id) VALUES (?)').run('b');
+      expect(f.gateway.syncForDevice(f.projectDevice.deviceId, 1, 0).events).toEqual([]);
+      expect(f.db.prepare('SELECT COUNT(*) AS n FROM companion_events WHERE session_id = ?').get('b')).toEqual({ n: 1 });
+    } finally { f.db.close(); }
+  });
   it('filters project events and rejects revocation without exposing global events', () => {
     const f = fixture();
     try {

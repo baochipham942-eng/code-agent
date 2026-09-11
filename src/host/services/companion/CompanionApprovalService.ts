@@ -46,6 +46,7 @@ export class CompanionApprovalService {
   }
 
   refresh(): void {
+    if (!this.gateway.hasLiveDevices()) return;
     const live = this.pending();
     const displayable = new Set<string>();
     for (const request of live) {

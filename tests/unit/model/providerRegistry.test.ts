@@ -131,8 +131,10 @@ describe('ProviderRegistry', () => {
   // --------------------------------------------------------------------------
   describe('search capability backfill', () => {
     it('backfills search for models whose matrix search mode is not none', () => {
-      const flash = PROVIDER_REGISTRY.deepseek.models.find((m) => m.id === 'deepseek-v4-flash');
+      const flash = PROVIDER_REGISTRY.deepseek.models.find((m) => m.id === 'deepseek-flash');
       expect(flash?.capabilities).toContain('search');
+      const legacyFlash = PROVIDER_REGISTRY.deepseek.models.find((m) => m.id === 'deepseek-v4-flash');
+      expect(legacyFlash?.capabilities).toContain('search');
     });
 
     it('does not mark models whose matrix search mode is none', () => {

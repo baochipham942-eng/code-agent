@@ -17,13 +17,19 @@ describe('model capability matrix', () => {
   });
 
   it('declares DeepSeek Responses web search and protocol as the default', () => {
+    expect(resolveModelCapabilities('deepseek', 'deepseek-flash')).toMatchObject({
+      protocol: 'responses',
+      search: { mode: 'deepseek-responses' },
+    });
     expect(resolveModelCapabilities('deepseek', 'deepseek-v4-flash')).toMatchObject({
       protocol: 'responses',
       search: { mode: 'deepseek-responses' },
     });
   });
 
-  it('marks deepseek-v4-flash as explicitly tool-call verified without changing its scaffold tier', () => {
+  it('marks deepseek-flash as explicitly tool-call verified without changing its scaffold tier', () => {
+    expect(isAgenticVerifiedModel('deepseek-flash')).toBe(true);
+    expect(getModelScaffoldTier('deepseek-flash')).toBe('standard');
     expect(isAgenticVerifiedModel('deepseek-v4-flash')).toBe(true);
     expect(getModelScaffoldTier('deepseek-v4-flash')).toBe('standard');
   });
@@ -48,8 +54,13 @@ describe('model capability matrix', () => {
   });
 
   it('marks official DeepSeek Responses at the API root and relay models under /v1', () => {
+    expect(resolveModelCapabilities('deepseek', 'deepseek-flash').responsesAtApiRoot).toBe(true);
     expect(resolveModelCapabilities('deepseek', 'deepseek-v4-flash').responsesAtApiRoot).toBe(true);
     expect(resolveModelCapabilities('custom-tokenrhythm', 'deepseek-v4-flash-0731').responsesAtApiRoot).toBe(false);
     expect(resolveModelCapabilities('custom-tokenrhythm', 'deepseek-v4-flash').responsesAtApiRoot).toBe(false);
+    expect(resolveModelCapabilities('custom-tokenrhythm', 'deepseek-flash')).toMatchObject({
+      protocol: 'chat-completions',
+      search: { mode: 'none' },
+    });
   });
 });

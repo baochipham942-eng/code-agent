@@ -55,7 +55,10 @@ export const MODEL_MIGRATIONS: Record<string, string> = {
   'o3': 'gpt-5.5',
   'o4-mini': 'gpt-5.4-mini',
   // DeepSeek — V4 于 2026-04-24 发布，legacy chat/reasoner 2026-07-24 退役
-  'deepseek-coder': 'deepseek-v4-flash',
+  // V4.1 Flash（2026-09-10）官方 ID 为 deepseek-flash；旧 Flash 名仍可调用但已路由过去。
+  'deepseek-coder': 'deepseek-flash',
+  'deepseek-v4-flash': 'deepseek-flash',
+  'deepseek-v4-flash-vision-exp': 'deepseek-flash',
   // 火山豆包 — 1.5 系列 → 1.6 系列
   'doubao-1.5-pro-256k': 'doubao-seed-1-6',
   'doubao-1.5-thinking-pro': 'doubao-seed-1-6-thinking',
@@ -106,7 +109,8 @@ export const MODEL_MAX_OUTPUT_TOKENS: Record<string, number> = {
   'gemini-3-flash-preview': 64_000,
   'gemini-2.5-pro': 64_000,
   'gemini-2.5-flash': 64_000,
-  // DeepSeek — 官方 API 上限
+  // DeepSeek — 官方 API 上限 384K；请求侧仍用 64K 作为 agent 默认输出帽
+  'deepseek-flash': 64_000,
   'deepseek-v4-flash': 64_000,
   'deepseek-v4-pro': 64_000,
   'deepseek-chat': 8_192,
@@ -197,7 +201,8 @@ export const CONTEXT_WINDOWS: Record<string, number> = {
   'gemini-3-flash-preview': 1_000_000,
   'gemini-2.5-pro': 1_000_000,
   'gemini-2.5-flash': 1_000_000,
-  // DeepSeek — V4 原生 1M 上下文
+  // DeepSeek — V4 / V4.1 原生 1M 上下文
+  'deepseek-flash': 1_000_000,
   'deepseek-v4-flash': 1_000_000,
   'deepseek-v4-pro': 1_000_000,
   'deepseek-chat': 128_000,

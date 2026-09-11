@@ -28,10 +28,10 @@ type ModelConfig = import('../../src/shared/contract').ModelConfig;
 type ModelMessage = import('../../src/host/model/types').ModelMessage;
 
 const BASE_URL = 'https://tokenrhythm.studio/v1';
-// deepseek-v4-flash 是 thinking 模型：max_tokens 给小了会全烧在 reasoning 上、
+// deepseek-flash（V4.1 Flash）是 thinking 模型：max_tokens 给小了会全烧在 reasoning 上、
 // 正文为空（实测 64 → content="" 而 outputTokens=65）。判据要的是正文，给足。
 const MAX_TOKENS = 512;
-const MODEL = 'deepseek-v4-flash';
+const MODEL = 'deepseek-flash';
 const MAGIC = 'NEOTEST7';
 // 基元自己的 key 命名空间；护栏据此判「这把 key 是不是基元的」，
 // 比「等于我读到的那串」更强：它能识别出别家 provider 的 key 被顶上来。

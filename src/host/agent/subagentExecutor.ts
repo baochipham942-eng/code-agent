@@ -776,6 +776,10 @@ export class SubagentExecutor {
             if (!toolDef) {
               const error = `Tool ${toolCall.name} not available`;
               toolResults.push(`Error: ${error}`);
+              // 与隔壁 budget 拦截那条同口径：这也是一次**终态工具事件**，要计进
+              // getToolCallCount()。漏掉它，本刀刚修好的「工具调用计数不撒谎」在
+              // 「模型点名了一个不存在的工具」这条路上又会少算一次。
+              turnObservability.recordToolError(toolCall, error, 0);
               telemetryToolCalls.push({
                 toolCallId: toolCall.id,
                 name: toolCall.name,

@@ -1,5 +1,5 @@
 import { extractDocumentAssertions, type DocumentAssertion } from './documentEvidenceAssertions';
-import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, extname, resolve } from 'node:path';
 import type { Message, ToolCall, ToolResult } from '../../../shared/contract';
 import { getUserConfigDir } from '../../config/configPaths';
@@ -90,7 +90,10 @@ export async function attachDocumentOrigin(
       const encoded = JSON.stringify(origin);
       if (!tail.includes(encoded)) {
         if (tail.length >= MAX_ORIGIN_LEDGER_LINES) {
-          await writeFile(ledgerPath, `${[...tail.slice(-(MAX_ORIGIN_LEDGER_LINES - 1)), encoded].join('\n')}\n`, 'utf8');
+          // 临时文件 + rename：整文件重写不是原子的，并行工具批次同时走到这里会互相截断。
+          const staged = `${ledgerPath}.${process.pid}.${Date.now()}.tmp`;
+          await writeFile(staged, `${[...tail.slice(-(MAX_ORIGIN_LEDGER_LINES - 1)), encoded].join('\n')}\n`, 'utf8');
+          await rename(staged, ledgerPath);
         } else {
           await appendFile(ledgerPath, `${encoded}\n`, 'utf8');
         }

@@ -41,6 +41,16 @@ async function genericEvidenceRefs(
     ...(summary?.changedFiles ?? []),
     ...(summary?.artifactRefs ?? []).flatMap((artifact) => artifact.path ? [artifact.path] : []),
   ]);
+  // 聊天内 artifact（kind:'artifact'，只有 artifactId/title，结构上没有 path）也要出证据条目。
+  // 基线用 `artifact:${artifactId}` / title 兜底；本刀一度收窄成「只取 artifact.path」，
+  // 于是一轮只交付聊天内 artifact 的 run 证据条目从 N 条降为 0，账本上表现为「该轮零交付」。
+  // 它们没有落盘文件可回读，所以 state 记 candidate——有交付、但未经字节校验。
+  for (const artifact of summary?.artifactRefs ?? []) {
+    if (artifact.path) continue;
+    const ref = artifact.artifactId ? `artifact:${artifact.artifactId}` : artifact.title;
+    if (!ref) continue;
+    refs.push(makeEvidenceRef({ kind: 'artifact', ref, source: 'completion_summary', state: 'candidate' }));
+  }
   const canonicalPaths = new Set<string>();
   for (const filePath of paths) {
     try {

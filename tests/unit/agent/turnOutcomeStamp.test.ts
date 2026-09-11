@@ -116,6 +116,20 @@ describe('turn outcome stamp', () => {
   // TurnTraceRecorder 随 AgentLoop 构造一次、events 从不清空，扫全量等于「会话里任何一轮
   // 命中过一次，此后每轮永久降级」——第 2 轮写了句「这些是独立来源。」，第 9 轮就算真跑通
   // npm test 也照样 self_claimed，verdict 这个字段在该会话内彻底失去区分能力。
+  // ai-review #1740 Important：聊天内 artifact（kind:'artifact'，只有 artifactId/title，
+  // 结构上没有 path）也要出证据条目。本刀一度把 artifactRefs 收窄成「只取 artifact.path」，
+  // 一轮只交付聊天内 artifact 的 run 证据条目就从 N 条降为 0，SessionInspector 的
+  // evidenceCount 显示 0，账本上表现为「该轮零交付」。基线有 artifact:${id} / title 兜底。
+  it('keeps evidence for a chat-only artifact that has no path on disk', async () => {
+    const recorder = new TurnTraceRecorder('chat-artifact', traceRoot);
+    await recordTurnOutcomeStamp(context(recorder), 'completed', summary({
+      artifactRefs: [{ kind: 'artifact', artifactId: 'a1', title: '简报' }],
+    }));
+    const refs = latestOutcome(recorder).evidenceRefs;
+    expect(refs.some((ref) => ref.kind === 'artifact' && ref.ref === 'artifact:a1')).toBe(true);
+    expect(refs.every((ref) => ref.freshness.state !== 'read' || ref.kind !== 'artifact')).toBe(true);
+  });
+
   it('an earlier turn boundary does not permanently downgrade later turns', async () => {
     const recorder = new TurnTraceRecorder('turn-scope', traceRoot);
     recorder.setTurn(1);

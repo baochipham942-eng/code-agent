@@ -869,9 +869,13 @@ function markFeedbackEligibleNodes(turns: TraceTurn[]): void {
  * 或非空的助手正文/最终答案），说明这次失败已被恢复——标记 recovered，让 UI 把它降级
  * 为安静脚注，而不是用最差的中间步骤顶着红色 failed 当整轮头条。
  *
- * 仅对【联网检索类工具】（web search / fetch）做降级——这类"换搜索源/换抓取方式重试"
- * 是常态恢复模式。Edit/Bash 这类的失败即便后面有别的成功也可能是独立真错误，不降级，
- * 以免把用户该看到的真失败藏掉。
+ * 降级只在两种情况下发生，别的失败一律照原样红着：
+ *  1. 【联网检索类工具】（web search / fetch）之后出现任意成功标志——这类"换搜索源/
+ *     换抓取方式重试"是常态恢复模式；
+ *  2. 【Edit】之后出现**同一处**编辑成功——判据是 editKey（路径 + old_string +
+ *     new_string + replace_all 四元组全等），不是"后面有别的成功就算"。Edit 的失败
+ *     多半是独立真错误，只有当模型确实把同一处改成功了，那次失败才算被自己收尾。
+ *     Bash 及其余工具不参与降级。
  */
 function isRecoverableRetrievalTool(name: string | undefined): boolean {
   if (!name) return false;
@@ -881,9 +885,20 @@ function isRecoverableRetrievalTool(name: string | undefined): boolean {
 function markRecoveredFailures(turns: TraceTurn[]): void {
   for (const turn of turns) {
     let laterSuccess = false;
+    const successfulEdits = new Set<string>();
+    const editKey = (tc: NonNullable<TraceNode['toolCall']>): string | null => {
+      if (!/^(edit|edit_file)$/i.test(tc.name)) return null;
+      const args = tc.args;
+      const path = args?.file_path ?? args?.path;
+      if (typeof path !== 'string' || typeof args?.new_string !== 'string' || typeof args?.old_string !== 'string') return null;
+      return JSON.stringify([path.replace(/^\.\//, ''), args.old_string, args.new_string, args.replace_all === true]);
+    };
     // 从后往前扫：到达某个失败工具节点时，laterSuccess 已反映它"之后"是否出现过成功标志。
     for (let i = turn.nodes.length - 1; i >= 0; i -= 1) {
       const node = turn.nodes[i];
+      const key = node.toolCall ? editKey(node.toolCall) : null;
+      if (key && node.toolCall?.success === false && successfulEdits.has(key)) node.toolCall.recovered = true;
+      if (key && node.toolCall?.success === true) successfulEdits.add(key);
       const isSuccessMarker =
         (node.type === 'assistant_text' && Boolean(node.content?.trim())) ||
         (node.type === 'tool_call' && node.toolCall?.success === true);

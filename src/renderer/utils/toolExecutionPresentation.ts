@@ -1,3 +1,4 @@
+import { toolPreflightCopy } from './toolPreflightPresentation';
 import type { ToolCall } from '@shared/contract';
 import { AgentFailureCode, inferAgentFailureCode } from '@shared/contract';
 import type { ToolCapabilitySource } from '../types/runWorkbench';
@@ -392,6 +393,11 @@ export function humanizeToolError(
       detail: copy.detail ? interpolateCodeCopy(copy.detail, metadata) : undefined,
     };
   }
+  // 结构化 hostReason/failureCode/code 都没命中，才轮到 preflight 这条「历史呈现」兜底
+  // ——它读的是自由文本（Bash 里是被执行程序自己的 stdout/stderr），必须排在所有结构化
+  // 证据之后，否则一条不相关的程序输出就能顶掉更准确的结构化判断。
+  const preflight = toolPreflightCopy({ name: _toolName ?? '', result: { toolCallId: '', success: false, error, metadata: metadata ?? undefined } }, t);
+  if (preflight) return { summary: preflight.action, detail: preflight.reason };
   // 2. 正则兜底（原有分类，逐条不变）
   if (!error?.trim()) return null;
   const classification = classifyToolError(error);
@@ -451,6 +457,23 @@ export function humanizeToolFailureReason(toolCall: Pick<ToolCall, 'name' | 'res
   const error = result?.error || (typeof result?.output === 'string' ? result.output : undefined);
   const mappedFailureCode = mapToolFailureCodeCopy(metadata, t);
   if (mappedFailureCode) return mappedFailureCode;
+  // hostReason 登记表要排在 preflight 之前：那 7 个 permission host code 各有专属文案
+  // （「你拒绝了写入 report.md」/「审批超时」…），而 preflight 只会给一句笼统的
+  // 「这一步需要人工确认，当时未能自动批准」——把用户在弹窗上亲手点的拒绝说成系统没批准，
+  // 等于把决定权从人误标成系统，正是 host 侧 toolPermissionClassification.ts:189 要求
+  // 「每种 denialSource 给出真实原因」所禁止的。
+  //
+  // 但**只**提前 hostReason 这一档，不能连 humanizeToolError 里那个「裸 failureCode →
+  // 审批被拒绝」的兜底一起提前：那一档命中的多半是 CLI auto 档 fail-closed、从没到过人眼，
+  // 说成「审批被拒绝」同样是把机器判定冒充成人的决定（demoAcceptance.presentation 的
+  // 「mixed group」用例正是钉这个）。所以那一档仍然排在 preflight 之后。
+  if (resolveHostReasonCopy(readHostReasonFromMetadata(metadata), t)) {
+    const hostCopy = humanizeToolError(undefined, toolCall.name, t, metadata);
+    if (hostCopy) return hostCopy.detail ?? hostCopy.summary;
+  }
+
+  const preflight = toolPreflightCopy(toolCall, t);
+  if (preflight) return preflight.reason;
 
   const reason = sanitizeCodeParamValue(metadata?.reason);
   if (reason) return redactCredentialText(reason);

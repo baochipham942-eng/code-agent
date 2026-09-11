@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import type { PermissionRequest } from '../../../src/shared/contract';
 import type { TraceNode } from '../../../src/shared/contract/trace';
+import { zh } from '../../../src/renderer/i18n/zh';
 
 const state = vi.hoisted(() => ({
   resolved: [] as PermissionRequest[],
@@ -115,10 +116,14 @@ describe('ToolStepGroup resolved permission evidence', () => {
     };
     render(<ToolStepGroup nodes={[deniedNode]} sessionId="session-1" />);
 
+    // 折叠组头（#1-story-A 2c44c0cf9 起）只留一句具体原因，不再重复挂一个和原因近义的
+    // 终态徽标词（"未获批准"≈"审批被拒绝"）——同一处 declutter 也发生在 ToolHeader 的
+    // 单工具折叠行上。完整的 label · reason · stepLabel 三段仍然在展开的
+    // permission-decision-evidence 明细里，折叠态收窄不等于信息丢失。
     const header = screen.getByRole('button', { expanded: false }).textContent ?? '';
-    expect(header).toContain('未获批准');
     expect(header).toContain('审批被拒绝');
     expect(header).not.toContain('执行时出了问题');
+    expect(header).not.toContain(zh.toolStepHumanize.failureReasonMissing);
     expect(screen.getByTestId('permission-decision-evidence').textContent).toContain('未获批准 · 审批被拒绝');
   });
 

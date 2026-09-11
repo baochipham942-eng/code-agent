@@ -82,13 +82,31 @@ describe('turn outcome stamp', () => {
     writeFileSync(artifact, 'Fixture report');
     const recorder = new TurnTraceRecorder('paths', traceRoot);
     const ctx = { ...context(recorder), workingDirectory: traceRoot };
-    await recordTurnOutcomeStamp(ctx, 'completed', summary({ changedFiles: [artifact, 'report.md', 'missing/report.md'],
-      artifactRefs: [{ kind: 'file', path: artifact }] }));
+    await recordTurnOutcomeStamp(ctx, 'completed', summary({ changedFiles: [artifact, 'report.md'],
+      artifactRefs: [{ kind: 'file', path: artifact }, { kind: 'file', path: 'missing/report.md' }] }));
     const outcome = latestOutcome(recorder);
     expect(outcome.verdict).toBe('self_claimed');
     expect(outcome.evidenceRefs).toHaveLength(1);
     expect(outcome.evidenceRefs[0].freshness).toMatchObject({ state: 'read', digest: expect.stringMatching(/^[a-f0-9]{64}$/) });
     expect(outcome.evidenceProblems).toEqual(['COMPLETION_FILE_UNREADABLE: missing/report.md']);
+  });
+
+  // ai-review #1740 第 7 轮 Important：changedFiles 来自 git status/diff（gitCommit.ts:124 剥掉状态位后
+  // ` D path` 就是已删除路径、`R  old -> new` 剥完是 `old -> new`），回读必失败。基线对它们无条件出
+  // candidate ref 不报错；本刀一度把它们记成 COMPLETION_FILE_UNREADABLE 并降级 verdict——账本对一个
+  // 本轮故意删掉的文件说「产物不可读」，与本单要交付的「账本不说假话」正好相反。
+  it('a file deleted or renamed this turn stays a candidate ref and never downgrades the verdict', async () => {
+    const recorder = new TurnTraceRecorder('deleted-changed-file', traceRoot);
+    const ctx = { ...context(recorder), workingDirectory: traceRoot };
+    await recordTurnOutcomeStamp(ctx, 'completed', summary({
+      changedFiles: ['docs/old.md', 'docs/old.md -> docs/new.md'],
+      verificationEvidence: [{ kind: 'command', toolCallId: 'test-ok', command: 'npm test', success: true, exitCode: 0 }],
+    }));
+    const outcome = latestOutcome(recorder);
+    expect(outcome.evidenceProblems).toEqual([]);
+    expect(outcome.verdict).toBe('verified');
+    expect(outcome.evidenceRefs.filter((ref) => ref.kind === 'file').map((ref) => [ref.ref, ref.freshness.state]))
+      .toEqual([['docs/old.md', 'candidate'], ['docs/old.md -> docs/new.md', 'candidate']]);
   });
 
   it('does not promote failed verification or old successful reads to completed evidence', async () => {
@@ -130,15 +148,31 @@ describe('turn outcome stamp', () => {
     expect(refs.every((ref) => ref.freshness.state !== 'read' || ref.kind !== 'artifact')).toBe(true);
   });
 
-  it('an earlier turn boundary does not permanently downgrade later turns', async () => {
+  // ai-review #1740 第 7 轮 Important：上一版按 turnIndex 过滤，但 turnIndex 是 run 内迭代号、每条用户
+  // 消息从 1 重启（conversationRuntime.ts 的局部 iterations），recorder 却是每会话一个——上一条用户消息
+  // 第 3 次迭代记的 boundary 与本条第 3 次迭代同号，照样命中。「本轮」的线是上一枚 turn_outcome 印章。
+  it('a boundary from an earlier run does not downgrade the next run, even at the same iteration number', async () => {
     const recorder = new TurnTraceRecorder('turn-scope', traceRoot);
+    recorder.setTurn(3);
+    recorder.record('evidence_boundary', { problems: ['SOURCE_INDEPENDENCE_UNVERIFIED'], surface: 'final_response' });
+    await recordTurnOutcomeStamp(context(recorder), 'completed', summary());
+    expect(latestOutcome(recorder).verdict).toBe('self_claimed');
+    recorder.setTurn(3);
+    await recordTurnOutcomeStamp(context(recorder), 'completed', summary({ verificationEvidence: [
+      { kind: 'command', toolCallId: 'test-ok', command: 'npm test', success: true, exitCode: 0 },
+    ] }));
+    expect(latestOutcome(recorder).verdict).toBe('verified');
+  });
+
+  it('a boundary from an earlier iteration of the same run still downgrades it', async () => {
+    const recorder = new TurnTraceRecorder('turn-scope-same-run', traceRoot);
     recorder.setTurn(1);
     recorder.record('evidence_boundary', { problems: ['SOURCE_INDEPENDENCE_UNVERIFIED'], surface: 'final_response' });
     recorder.setTurn(2);
     await recordTurnOutcomeStamp(context(recorder), 'completed', summary({ verificationEvidence: [
       { kind: 'command', toolCallId: 'test-ok', command: 'npm test', success: true, exitCode: 0 },
     ] }));
-    expect(latestOutcome(recorder).verdict).toBe('verified');
+    expect(latestOutcome(recorder).verdict).toBe('self_claimed');
   });
 
   it('a boundary recorded in this very turn still downgrades it', async () => {

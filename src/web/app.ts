@@ -64,6 +64,7 @@ import { projectCompanionEvent } from '../host/services/companion/projectCompani
 import { CompanionApprovalService } from '../host/services/companion/CompanionApprovalService';
 import type { PermissionResponse } from '../shared/contract/permission';
 import { LanCompanionManager } from '../host/services/companion/LanCompanionManager';
+import { IdleSleepInhibitor } from '../host/services/desktop/idleSleepInhibitor';
 import { loadLanIdentity } from '../host/services/companion/lanIdentity';
 import { COMPANION_MANAGE_CHANNEL } from '../shared/constants/companion';
 import { getDatabase } from '../host/services/core/databaseService';
@@ -240,6 +241,20 @@ export function createApp(deps: CreateAppDeps): express.Express {
     publishCompanionEvent: (sessionId, kind, payload) => publishCompanionEvent?.(sessionId, kind, payload),
   }));
 
+  // 保活必须在数据库条件之外创建：runRegistry 不依赖 DB，数据库降级时运行中的长任务
+  // 仍要阻止空闲休眠；companion 配对源在 db 分支里接线，无 gateway 时安全归 false。
+  let inhibitorGateway: CompanionGateway | undefined;
+  // registerCompanionShutdown 只保存一个回调（webServer.ts 的 stopCompanion 单槽），
+  // 必须注册一次组合回调；companion 侧句柄在 db 分支里接线，未接线时安全跳过。
+  let companionLan: { stop(): Promise<void> } | undefined;
+  const idleSleepInhibitor = new IdleSleepInhibitor(
+    () => runRegistry.size > 0,
+    () => (inhibitorGateway?.pairedDevices().length ?? 0) > 0,
+    { logger },
+  );
+  idleSleepInhibitor.start();
+  deps.registerCompanionShutdown?.(async () => { await idleSleepInhibitor.stop(); await companionLan?.stop(); });
+
   try {
     const db = getDatabase().getDb();
     if (db) {
@@ -316,6 +331,7 @@ export function createApp(deps: CreateAppDeps): express.Express {
         }
       };
       app.use('/api/companion', createCompanionProvisioningRouter({ gateway }));
+      inhibitorGateway = gateway;
       const lan = new LanCompanionManager(gateway, () => loadLanIdentity(resolveCodeAgentDataDir()), async () => {
         const sessions = await (await tryGetSessionManager())?.listSessions() ?? [];
         return sessions.map(session => ({ id: session.id, title: session.title }));
@@ -335,7 +351,7 @@ export function createApp(deps: CreateAppDeps): express.Express {
           res.status(500).json({ success: false, error: { code: 'COMPANION_MANAGE_FAILED', message: error instanceof Error ? error.message : String(error) } });
         }
       });
-      deps.registerCompanionShutdown?.(() => lan.stop());
+      companionLan = lan;
       void lan.restore().catch(() => logger.warn('Companion LAN restore unavailable'));
       app.use('/companion', createCompanionRouter({
         gateway,

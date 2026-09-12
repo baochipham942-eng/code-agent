@@ -31,6 +31,7 @@ export class LanCompanionServer {
   private readonly channels = new Map<string, Channel>();
   private sweep: ReturnType<typeof setInterval> | null = null;
   private endpoint = '';
+  private altEndpoint: string | null = null;
   private handshakeWindow = 0;
   private handshakeCount = 0;
 
@@ -84,7 +85,11 @@ export class LanCompanionServer {
     });
     this.server = server;
     const listenPort = (server.address() as { port: number }).port;
-    this.endpoint = `http://${lanAdvertisedHost(address, hostname())}:${listenPort}`;
+    // 主地址用「此刻一定连得上」的字面量；mDNS 名只作备用，手机连不上主地址时才试它。
+    // 反过来（只广告 mDNS 名）在「电脑连手机热点」下 100% 配不上：手机解析不了宿主的 .local。
+    this.endpoint = `http://${address}:${listenPort}`;
+    const advertised = lanAdvertisedHost(address, hostname());
+    this.altEndpoint = advertised === address ? null : `http://${advertised}:${listenPort}`;
     this.sweep = setInterval(() => this.prune(), L.handshakeTtlMs);
     this.sweep.unref();
   }
@@ -95,7 +100,8 @@ export class LanCompanionServer {
     }
     this.pending.clear();
     this.invitation = { id: randomUUID(), psk: randomBytes(32).toString('hex'), scope: [...new Set(scope)], expiresAt: this.now() + L.invitationTtlMs };
-    return { version: 1, endpoint: this.endpoint, inviteId: this.invitation.id, psk: this.invitation.psk,
+    return { version: 1, endpoint: this.endpoint, ...(this.altEndpoint ? { altEndpoint: this.altEndpoint } : {}),
+      inviteId: this.invitation.id, psk: this.invitation.psk,
       hostKey: toHex(this.identity.publicKey), expiresAt: this.invitation.expiresAt };
   }
 

@@ -5,7 +5,7 @@ vi.mock('node:os', async (importOriginal) => {
   return { ...actual, networkInterfaces: vi.fn(actual.networkInterfaces) };
 });
 import Database from 'better-sqlite3';
-import { networkInterfaces } from 'node:os';
+import { hostname, networkInterfaces } from 'node:os';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -53,6 +53,65 @@ describe('LAN companion: real HTTP + Noise + SQLite', () => {
   const command = (binding: LanBinding, id = 'once', sessionId = 'shared') => ({ version: 1, deviceId: binding.deviceId,
     commandId: id, scopeEpoch: binding.scopeEpoch, sessionId, action: 'message.send', payload: { text: 'private-lan-message-正文' } });
   async function pair() { return client.pair(JSON.stringify(server.invite(['shared']))); }
+
+  it('invites with the literal first and the mDNS name as the alternate', () => {
+    // 2026-09-12 真机：只广告 mDNS 名时，Mac 连着 iPhone 热点的手机解析不了宿主的 .local，
+    // 配对 100% 失败（app 报「无法连接电脑」，宿主端口上零 TCP，Safari 直连同样找不到服务器）。
+    // 字面量是「此刻一定连得上」的那个，mDNS 名换网后才有价值——所以两个都给，顺序不能反。
+    const invitation = server.invite(['shared']);
+    expect(invitation.endpoint).toBe(`http://${address}:${new URL(invitation.endpoint).port}`);
+    const advertised = lanAdvertisedHost(address!, hostname());
+    if (advertised === address) expect(invitation.altEndpoint).toBeUndefined();
+    else expect(invitation.altEndpoint).toBe(`http://${advertised}:${new URL(invitation.endpoint).port}`);
+    expect(parseInvitation(JSON.stringify(invitation))).toMatchObject({ endpoint: invitation.endpoint });
+  });
+
+  it('rejects an invitation whose alternate address is not a valid LAN endpoint', () => {
+    const invitation = server.invite(['shared']);
+    for (const altEndpoint of ['http://evil.example:8182', 'http://8.8.8.8:8182', 'http://192.168.1.2:8182/path', 42]) {
+      expect(() => parseInvitation(JSON.stringify({ ...invitation, altEndpoint }))).toThrow();
+    }
+  });
+
+  it('pairs over the alternate address when the primary one is dead, and remembers which worked', async () => {
+    const live = server.invite(['shared']);
+    // 主地址指向一个没人听的端口：这就是「宿主换了网、旧地址失效」在测试里的样子。
+    const dead = `http://${address}:${1}`;
+    const binding = await client.pair(JSON.stringify({ ...live, endpoint: dead, altEndpoint: live.endpoint }));
+    expect(binding.endpoint).toBe(live.endpoint);
+    expect(binding.altEndpoint).toBe(dead);
+    expect(await client.request({ action: 'command', command: command(binding) })).toMatchObject({ kind: 'accepted' });
+  });
+
+  it('reconnects over the alternate address after the primary one stops answering', async () => {
+    const live = server.invite(['shared']);
+    const binding = await client.pair(JSON.stringify(live));
+    const dead = `http://${address}:${1}`;
+    const recovered = await client.recover({ endpoint: dead, altEndpoint: binding.endpoint, hostKey: binding.hostKey }, binding);
+    expect(recovered.endpoint).toBe(binding.endpoint);
+    expect(recovered.altEndpoint).toBe(dead);
+  });
+
+  it('does not spend the alternate address when the handshake itself was rejected', async () => {
+    // 换地址只解决「没连上」。主机身份对不上说明已经够到宿主了，换个地址还是同一台机器，
+    // 只会白烧掉一次性邀请，并把真正的错误换成第二次的。
+    const live = server.invite(['shared']);
+    let hellos = 0;
+    const counting = new LanCompanionClient(createIdentity(), async (url, body) => {
+      if (url.endsWith('/v1/hello')) hellos += 1;
+      return post(url, body);
+    });
+    await expect(counting.pair(JSON.stringify({ ...live, altEndpoint: live.endpoint,
+      hostKey: toHex(createIdentity().publicKey) }))).rejects.toThrow('HOST_KEY_MISMATCH');
+    expect(hellos).toBe(1);
+    counting.close();
+  });
+
+  it('surfaces the primary failure, not the alternate one, when neither address answers', async () => {
+    const live = server.invite(['shared']);
+    await expect(client.pair(JSON.stringify({ ...live, endpoint: `http://${address}:1`, altEndpoint: `http://${address}:2` })))
+      .rejects.toThrow(/ECONNREFUSED|fetch failed/);
+  });
 
   it('pairs, delivers a command and receives scoped events without plaintext on the wire', async () => {
     const binding = await pair();

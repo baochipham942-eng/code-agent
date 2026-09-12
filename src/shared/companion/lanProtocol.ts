@@ -1,10 +1,16 @@
 import { COMPANION_LIMITS as L } from '../constants/companion';
 
+/**
+ * endpoint 是「此刻一定连得上」的那个地址（私网 IPv4 字面量），altEndpoint 是宿主的 mDNS 名。
+ * 两个都给：mDNS 名换网后仍有效（宿主换网不用重扫码），但它不是哪儿都能解析——
+ * 2026-09-12 真机实测，Mac 连着 iPhone 热点时手机解析不了宿主的 .local（Safari 直连同样「找不到服务器」），
+ * 只广告 mDNS 名会让这个官方推荐场景 100% 配不上。
+ */
 export interface LanInvitation {
-  version: 1; endpoint: string; inviteId: string; psk: string; hostKey: string; expiresAt: number;
+  version: 1; endpoint: string; altEndpoint?: string; inviteId: string; psk: string; hostKey: string; expiresAt: number;
 }
 export interface LanBinding {
-  version: 1; endpoint: string; hostKey: string; deviceId: string; scopeEpoch: number; scope: string[];
+  version: 1; endpoint: string; altEndpoint?: string; hostKey: string; deviceId: string; scopeEpoch: number; scope: string[];
 }
 export const LAN_PROLOGUE = 'neo-companion/lan/v1';
 export function toHex(value: Uint8Array): string {
@@ -41,7 +47,10 @@ export function isLanPeer(peer: string): boolean {
 /**
  * RFC 6762 reserves `.local` for mDNS: public DNS never answers it, so such a name can only
  * resolve to a host on the same link — the same reach a private IPv4 literal has. Unlike the
- * literal it survives the host changing networks, which is why an invitation prefers it.
+ * literal it survives the host changing networks, which is why an invitation carries it as the
+ * alternate address (`altEndpoint`) — it is the alternate rather than the primary because reachable
+ * is not the same as resolvable: a phone hosting the personal hotspot its host sits on cannot
+ * resolve that host's `.local` at all (2026-09-12 真机实测).
  * Reach is not trust: the peer still has to pass the Noise handshake against the pinned hostKey,
  * so a squatted mDNS name gets an attacker a TCP connection and nothing else.
  */
@@ -51,8 +60,10 @@ function isMdnsHostname(host: string): boolean {
 /**
  * What a phone stores has to outlive the address it was paired on: an IPv4 literal dies the moment
  * the host joins another network (or the same one with a new lease), and the only cure is scanning
- * a fresh QR. An mDNS name does not move, so an invitation advertises it whenever the host has one
- * and keeps the literal for hosts that do not (Linux/Windows without Bonjour).
+ * a fresh QR. An mDNS name does not move, so an invitation carries it alongside the literal whenever
+ * the host has one — the literal stays the primary address (it is what definitely answers right now,
+ * and what phones built before altEndpoint understand), the name is what a paired phone falls back to
+ * after the host changes networks. Hosts without Bonjour (Linux/Windows) only ever get the literal.
  */
 export function lanAdvertisedHost(address: string, mdnsName: string | null): string {
   return mdnsName && isMdnsHostname(mdnsName) ? mdnsName.toLowerCase() : address;
@@ -71,6 +82,11 @@ export function parseInvitation(raw: string, now = Date.now()): LanInvitation {
   if (v.version !== 1 || typeof v.endpoint !== 'string' || typeof v.inviteId !== 'string' ||
       !/^[0-9a-f-]{36}$/.test(v.inviteId) || !Number.isSafeInteger(v.expiresAt) ||
       v.expiresAt <= now || v.expiresAt > now + L.invitationTtlMs) throw new Error('COMPANION_INVALID_INVITATION');
-  validateLanEndpoint(v.endpoint); fromHex(v.psk, 32); fromHex(v.hostKey, 32);
+  validateLanEndpoint(v.endpoint);
+  if (v.altEndpoint !== undefined) {
+    if (typeof v.altEndpoint !== 'string') throw new Error('COMPANION_INVALID_INVITATION');
+    validateLanEndpoint(v.altEndpoint);
+  }
+  fromHex(v.psk, 32); fromHex(v.hostKey, 32);
   return v;
 }

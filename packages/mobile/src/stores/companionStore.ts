@@ -12,7 +12,7 @@ import { base64ToBytes, bytesToBase64, sha256Hex, type CacheInspect } from '../p
 
 interface Saved {
   version: 1; publicKey: string; secretKey: string;
-  candidate?: { endpoint: string; hostKey: string }; binding?: LanBinding; pending?: CompanionCommand;
+  candidate?: { endpoint: string; altEndpoint?: string; hostKey: string }; binding?: LanBinding; pending?: CompanionCommand;
 }
 type ConnectionError = 'connectionQrInvalid' | 'connectionScanFailed' | 'connectionRejected' | 'connectionUnavailable' | 'connectionFailed';
 
@@ -197,7 +197,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
           await persist({ version: 1, publicKey: toHex(identity.publicKey), secretKey: toHex(identity.secretKey) });
           identity.secretKey.fill(0);
         }
-        await persist({ ...saved!, candidate: { endpoint: invitation.endpoint, hostKey: invitation.hostKey }, binding: undefined });
+        await persist({ ...saved!, candidate: { endpoint: invitation.endpoint, ...(invitation.altEndpoint ? { altEndpoint: invitation.altEndpoint } : {}), hostKey: invitation.hostKey }, binding: undefined });
         const binding = await createClient().pair(raw);
         await persist({ ...saved!, binding, candidate: undefined });
         epoch = binding.scopeEpoch; cursor = 0;
@@ -207,7 +207,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         const target = saved?.binding ?? saved?.candidate;
         if (!target) return;
         set({ status: 'connecting' });
-        const binding = await createClient().recover(target.endpoint, target.hostKey, saved?.binding);
+        const binding = await createClient().recover(target, saved?.binding);
         await persist({ ...saved!, binding, candidate: undefined });
         epoch = binding.scopeEpoch;
         set({ status: 'connected', binding, sessionId: get().sessionId ?? binding.scope.find(id => !id.startsWith('project:')) ?? null });

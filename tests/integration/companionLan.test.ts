@@ -326,6 +326,26 @@ describe('LAN companion: real HTTP + Noise + SQLite', () => {
     expect(restarted.getState().pending).toBe(false); expect(cleared).toBe('persist before dispatch'); expect(executions).toBe(1);
     restarted.getState().pause();
   });
+  it('退到后台是「暂停」不是「连不上」：pause 只在连着的时候立 paused 标记', async () => {
+    // 爸 2026-09-12 真机：Neo 还没关，应用切换器的卡片上就写着「电脑尚未连接，草稿已保留」——
+    // app 一退后台我们主动 pause() 关掉连接，界面立刻翻成报错形态，而 iOS 快照正是那一刻拍的。
+    let storage: string | null = null;
+    const phone = createCompanionStore({ read: async () => storage, write: async (value: string) => { storage = value; },
+      scan: async () => JSON.stringify(server.invite(['shared'])), post }, () => {});
+    try {
+      await phone.getState().pair();
+      expect(phone.getState().status).toBe('connected');
+      phone.getState().pause();
+      expect(phone.getState()).toMatchObject({ status: 'offline', paused: true });
+      // 回到前台重连要把暂停标记清掉，否则真断线时界面还以为自己只是在后台
+      await phone.getState().reconnect();
+      expect(phone.getState()).toMatchObject({ status: 'connected', paused: false });
+      // 本来就断着再 pause 不算暂停：那种情况下报错该继续留在界面上
+      phone.getState().pause(); phone.getState().pause();
+      expect(phone.getState()).toMatchObject({ status: 'offline', paused: false });
+    } finally { phone.getState().pause(); }
+  });
+
   it('分片已进待确认槽后断网：transcribe 必须报「已发出」，否则同一段音频会被传两遍', async () => {
     // grok ai-review #1764 Important：判据是「进没进待确认槽」，不是 deliver 成没成功。
     // 一旦 persist 成 saved.pending，重连后这条一定会被结算、结果会进草稿；此时若回 false，

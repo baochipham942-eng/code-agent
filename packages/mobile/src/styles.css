@@ -69,14 +69,12 @@ input { width: 100%; padding: 16px; background: var(--surface); border: 1px soli
 
 /* R5: quiet connection chrome, readable messages and reachable approval actions. */
 .topbar strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 17px; }
-.task-status { display: flex; align-items: center; gap: 8px; min-height: 32px; font-size: 12px; color: var(--muted); }
+.task-status { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-height: 32px; font-size: 12px; color: var(--muted); }
 .task-status > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .task-status button { min-height: 36px; padding: 4px 6px; font-size: 12px; flex-shrink: 0; }
-.connection-pill { display: inline-flex; align-items: center; gap: 5px; }
+.connection-pill { display: inline-flex; align-items: center; gap: 5px; min-width: 0; max-width: 100%; text-align: left; }
 .status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); }
 [data-connected='true'] .status-dot { background: #168365; }
-.connection-recovery { display: flex; align-items: center; gap: 8px; padding: 0 6px; font-size: 13px; color: var(--muted); }
-.connection-recovery p { margin: 4px 0; max-height: 60px; overflow: auto; }
 .message-region { position: relative; display: flex; flex: 1; min-height: 0; }
 .lan-messages { overscroll-behavior: contain; padding: 8px 20px 20px; }
 .lan-message { padding: 8px 0; margin: 12px 0 22px; line-height: 1.7; font-size: 16px; }

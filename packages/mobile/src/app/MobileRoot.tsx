@@ -32,6 +32,24 @@ function PreviewMedia({ name, mimeType, bytes }: { name: string; mimeType: strin
 }
 
 /**
+ * 连接那一行的文案与动作。合成一条的原因（2026-09-12 爸真机反馈）：原来「连接胶囊说『重新连接』」
+ * 与「下面一行说『电脑尚未连接，草稿已保留』+ 重试」是同一件事说两遍，用户看到两行提示。
+ * 后台暂停期间（paused）不报错：那时没有任何事需要用户做，报「请重试」是假警报。
+ */
+export function connectionCopy(
+  text: ReturnType<typeof messages>,
+  companion: { status: string; paused: boolean; connectionError: string | null },
+): { label: string; connected: boolean; retry: boolean } {
+  if (companion.status === 'connected' || companion.paused) return { label: text.connected, connected: true, retry: false };
+  if (companion.status === 'connecting') return { label: text.connecting, connected: false, retry: false };
+  const label = companion.status === 'storageError' ? text.secureStorageError
+    : companion.status === 'rejected' ? text.rejected
+    : companion.connectionError ? text[companion.connectionError as keyof typeof text]
+    : text.unconnected;
+  return { label, connected: false, retry: true };
+}
+
+/**
  * 输入区模型胶囊的文案（design.html composer 的 .model）：显示这条会话当前在用的模型。
  * 模型表里查不到就退回会话自己的模型 id——电脑的可用模型列表会剔掉没配 key 的 provider，
  * 而会话可能正用着其中一个（2026-09-12 build 24 真机：会话是 custom-glm-coding/glm-5.3-flash，
@@ -107,6 +125,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
   // 输入区的模型胶囊（design.html composer 的 .model）：显示这条会话当前在用的模型，
   // 没有会话或还没读到模型表时不显示——不拿列表第一个冒充当前模型。
   const sessionModelLabel = composerModelLabel(companion.library, companion.sessionId);
+  const connection = connectionCopy(text, companion);
 
   // Text selections inside the composer never surface through window.getSelection on WebKit,
   // and long-press selection on WebView only lives in the element's own range.
@@ -266,15 +285,12 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
           {otherApproval && <button className="primary" onClick={() => selectSession(String(otherApproval.sessionId))}>{text.reviewApproval}</button>}
         </div>}
         {companion.binding && <div className="task-status" role="status">
-          <button className="connection-pill" data-connected={companion.status === 'connected'} onClick={() => state.openSheet('remote')}>
-            <span aria-hidden="true" className="status-dot" />{companion.status === 'connected' ? text.connected : companion.status === 'connecting' ? text.connecting : text.reconnect}
+          <button className="connection-pill" data-connected={connection.connected} onClick={() => state.openSheet('remote')}>
+            <span aria-hidden="true" className="status-dot" />{connection.label}
           </button>
           <span>{taskStatusCopy(text, companion)}</span>
           {companion.runId && <button disabled={companion.busy || companion.pending || companion.status !== 'connected'} onClick={() => void companion.stop()}>{text.stop}</button>}
-        </div>}
-        {companion.binding && !['connected', 'connecting'].includes(companion.status) && <div className="connection-recovery">
-          <p>{companion.status === 'storageError' ? text.secureStorageError : companion.status === 'rejected' ? text.rejected : companion.connectionError ? text[companion.connectionError] : text.unconnected}</p>
-          <button disabled={companion.busy} onClick={() => void companion.reconnect()}>{text.retry}</button>
+          {connection.retry && <button disabled={companion.busy} onClick={() => void companion.reconnect()}>{text.retry}</button>}
         </div>}
         {companion.libraryError && <p className="notice" role="status">{text.libraryError}<button onClick={() => void companion.reconnect()}>{text.reconnect}</button></p>}
         {fixtures && <p className="caption">{text.fixtureNotice}</p>}

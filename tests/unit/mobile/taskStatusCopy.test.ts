@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { composerModelLabel, taskStatusCopy } from '../../../packages/mobile/src/app/MobileRoot';
+import { composerModelLabel, connectionCopy, taskStatusCopy } from '../../../packages/mobile/src/app/MobileRoot';
 import type { CompanionLibrary } from '../../../src/shared/contract/companionLibrary';
 import { messages } from '../../../packages/mobile/src/i18n';
 
@@ -57,5 +57,41 @@ describe('composerModelLabel', () => {
     expect(composerModelLabel(library(), null)).toBeNull();
     expect(composerModelLabel(library(), '不存在的会话')).toBeNull();
     expect(composerModelLabel(null, 's1')).toBeNull();
+  });
+});
+
+// 爸 2026-09-12 真机反馈两条，同一个根：
+// ① Neo 还没关，应用切换器的卡片上就写着「电脑尚未连接，草稿已保留」——app 一退到后台
+//    我们主动 pause() 把连接停了，界面立刻翻成报错形态，而 iOS 的快照正是那一刻拍的。
+// ② 即使真的断了，也不该出现两行提示（胶囊说「重新连接」+ 下面一行说「电脑尚未连接…重试」）。
+describe('connectionCopy', () => {
+  const state = (patch: Partial<Parameters<typeof connectionCopy>[1]> = {}) =>
+    ({ status: 'connected', paused: false, connectionError: null, ...patch });
+
+  it('后台暂停期间不报错、不给重试——那时用户没有任何事可做', () => {
+    expect(connectionCopy(text, state({ status: 'offline', paused: true })))
+      .toEqual({ label: text.connected, connected: true, retry: false });
+  });
+
+  it('真的断了才报原因并给重试，且只有一条文案', () => {
+    expect(connectionCopy(text, state({ status: 'offline', paused: false })))
+      .toEqual({ label: text.unconnected, connected: false, retry: true });
+    expect(connectionCopy(text, state({ status: 'offline', connectionError: 'connectionUnavailable' })))
+      .toEqual({ label: text.connectionUnavailable, connected: false, retry: true });
+    expect(connectionCopy(text, state({ status: 'storageError' })))
+      .toEqual({ label: text.secureStorageError, connected: false, retry: true });
+    expect(connectionCopy(text, state({ status: 'rejected' })))
+      .toEqual({ label: text.rejected, connected: false, retry: true });
+  });
+
+  it('正在连接时不给重试按钮（点了也是重来一遍）', () => {
+    expect(connectionCopy(text, state({ status: 'connecting' })))
+      .toEqual({ label: text.connecting, connected: false, retry: false });
+  });
+
+  it('文案里不出现「重新连接」那个动作词——它当初就是与下面那行重复的那半', () => {
+    for (const status of ['offline', 'storageError', 'rejected'] as const) {
+      expect(connectionCopy(text, state({ status })).label).not.toBe(text.reconnect);
+    }
   });
 });

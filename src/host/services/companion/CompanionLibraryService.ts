@@ -27,7 +27,9 @@ export class CompanionLibraryService {
     return getDatabase().getProjectRepo().listProjects().map(p => ({ id: p.id, name: p.name }));
   }
 
-  sessionProject(id: string): string | null { return getDatabase().getSession(id, { includeDeleted: true, userId: getAuthService().getCurrentUser()?.id ?? null })?.projectId ?? null; }
+  sessionExists(id: string): boolean { return this.session(id) !== null; }
+
+  sessionProject(id: string): string | null { return this.session(id)?.projectId ?? null; }
 
   workspaceOf(id: string): string | null {
     const session = this.session(id);
@@ -121,7 +123,11 @@ export class CompanionLibraryService {
     const db = getDatabase().getDb();
     if (!db) { logger.warn('Companion cleanup skipped: database unavailable, jobs stay queued'); return; }
     for (const { session_id: id } of db.prepare('SELECT session_id FROM companion_session_cleanup').all() as { session_id: string }[]) {
-      try { await getSessionManager().cleanupDeletedSession(id); db.prepare('DELETE FROM companion_session_cleanup WHERE session_id = ?').run(id); }
+      try {
+        await getSessionManager().cleanupDeletedSession(id);
+        this.gateway.forgetSession(id);
+        db.prepare('DELETE FROM companion_session_cleanup WHERE session_id = ?').run(id);
+      }
       catch (error) {
         // Retain the cleanup job across Host restarts; the deletion receipt stays committed.
         // Silence would hide a row that retries on every boot and never succeeds.

@@ -5,7 +5,7 @@ import express from 'express';
 import type Noise from 'noise-handshake';
 import type { KeyPair } from 'noise-handshake';
 import { COMPANION_EVENT_DROPPED, COMPANION_LIMITS as L } from '../../../shared/constants/companion';
-import { fromHex, toHex, isLoopbackHost, isPrivateIPv4, lanAdvertisedHost, type LanInvitation } from '../../../shared/companion/lanProtocol';
+import { fromHex, toHex, isLanPeer, isPrivateIPv4, lanAdvertisedHost, type LanInvitation } from '../../../shared/companion/lanProtocol';
 import { createHandshake, NoiseChannel } from '../../../shared/companion/noiseChannel';
 import { companionCommandSchema, type CompanionEvent } from '../../../shared/contract/companion';
 import type { CompanionGateway } from './CompanionGateway';
@@ -45,7 +45,7 @@ export class LanCompanionServer {
     app.use((req, res, next) => {
       const peer = req.socket.remoteAddress?.replace(/^::ffff:/, '') ?? '';
       res.setHeader('Cache-Control', 'no-store');
-      if (!isPrivateIPv4(peer) && !isLoopbackHost(peer)) { res.sendStatus(403); return; }
+      if (!isLanPeer(peer)) { res.sendStatus(403); return; }
       if (req.method !== 'POST' || req.headers['content-type'] !== 'application/json' ||
           (req.headers.origin && !['capacitor://localhost', 'http://localhost', 'https://localhost'].includes(req.headers.origin))) {
         res.sendStatus(403); return;
@@ -70,12 +70,16 @@ export class LanCompanionServer {
     server.requestTimeout = L.requestTimeoutMs;
     server.headersTimeout = L.requestTimeoutMs;
     server.maxConnections = L.maxChannels * 2;
+    // Bound to every interface on purpose: pinning the socket to one literal makes it deaf the
+    // moment that address goes away (host switches network), and nothing re-binds it until the
+    // next invitation. Reach is taken back at the TCP layer instead — an off-link caller is cut
+    // before it can hold a socket against maxConnections or idle out requestTimeout, which is
+    // strictly tighter than the per-request 403 that guarded the single-address bind.
+    server.on('connection', socket => {
+      if (!isLanPeer(socket.remoteAddress?.replace(/^::ffff:/, '') ?? '')) socket.destroy();
+    });
     await new Promise<void>((resolve, reject) => {
       server.once('error', reject);
-      // Bound to every interface on purpose: pinning the socket to one literal makes it deaf the
-      // moment that address goes away (host switches network), and nothing re-binds it until the
-      // next invitation. What limits reach is the peer check above — it rejects any source that
-      // is not private IPv4, so Tailscale (100.x) and tunnel (198.18.x) callers get 403 either way.
       server.listen(port, () => { server.off('error', reject); resolve(); });
     });
     this.server = server;

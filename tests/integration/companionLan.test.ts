@@ -15,7 +15,7 @@ import { CompanionFileService } from '../../src/host/services/companion/Companio
 import { FileCache } from '../../packages/mobile/src/platform/fileCache';
 import { LanCompanionServer } from '../../src/host/services/companion/LanCompanionServer';
 import { createHandshake, createIdentity, NoiseChannel } from '../../src/shared/companion/noiseChannel';
-import { fromHex, toHex, isPrivateIPv4, lanAdvertisedHost, parseInvitation, validateLanEndpoint, type LanBinding } from '../../src/shared/companion/lanProtocol';
+import { fromHex, toHex, isLanPeer, isPrivateIPv4, lanAdvertisedHost, parseInvitation, validateLanEndpoint, type LanBinding } from '../../src/shared/companion/lanProtocol';
 import { LanCompanionClient, type LanPost } from '../../packages/mobile/src/platform/lanCompanionClient';
 import { COMPANION_EVENT_DROPPED, COMPANION_LIMITS as L } from '../../src/shared/constants/companion';
 import { createCompanionStore } from '../../packages/mobile/src/stores/companionStore';
@@ -521,6 +521,16 @@ describe('LAN protocol validation', () => {
   it.each(notMdns)('does not mistake %s for an mDNS name', host => {
     expect(() => validateLanEndpoint(`http://${host}:8181`)).toThrow();
     expect(lanAdvertisedHost('192.168.1.2', host)).toBe('192.168.1.2');
+  });
+  it('admits only on-link peers, and cuts the rest before they can hold a socket', () => {
+    // Binding every interface is only safe because this predicate runs on 'connection', not per
+    // request: an off-link caller never gets to occupy maxConnections or idle out requestTimeout.
+    for (const peer of ['192.168.1.2', '10.0.0.7', '172.16.3.4', '127.0.0.1', '127.5.5.5', '::1']) {
+      expect(isLanPeer(peer)).toBe(true);
+    }
+    for (const peer of ['100.83.97.48', '198.18.0.1', '8.8.8.8', '169.254.169.254', '172.32.1.1', '', 'localhost']) {
+      expect(isLanPeer(peer)).toBe(false);
+    }
   });
   it('advertises the mDNS name when the host has one, the literal when it does not', () => {
     // The literal is what dies on a network change; the name is why a paired phone need not rescan.

@@ -27,8 +27,16 @@ export function isPrivateIPv4(host: string): boolean {
  * reach the server (it is the host's own process), while a loopback *endpoint* stays rejected
  * below — a phone can never dial the host's 127.0.0.1.
  */
-export function isLoopbackHost(host: string): boolean {
+function isLoopbackHost(host: string): boolean {
   return host === '::1' || /^127\.(?:0|[1-9]\d{0,2})\.(?:0|[1-9]\d{0,2})\.(?:0|[1-9]\d{0,2})$/.test(host);
+}
+/**
+ * Who may reach the LAN surface at all. Enforced at the TCP layer (connection accepted then
+ * destroyed) rather than only per-request, so a caller outside the link cannot hold sockets open
+ * against maxConnections while the HTTP layer would have 403'd it anyway.
+ */
+export function isLanPeer(peer: string): boolean {
+  return isPrivateIPv4(peer) || isLoopbackHost(peer);
 }
 /**
  * RFC 6762 reserves `.local` for mDNS: public DNS never answers it, so such a name can only

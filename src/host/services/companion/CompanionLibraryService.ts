@@ -5,6 +5,7 @@ import { getSessionManager } from '../infra/sessionManager';
 import { getConfigService } from '../core/configService';
 import { getAuthService } from '../auth/authService';
 import { buildRuntimeModelOptions } from '../../../shared/modelRuntime';
+import { resolveSessionDefaultModelConfig } from '../core/sessionDefaults';
 import { COMPANION_LIMITS as L } from '../../../shared/constants/companion';
 import { projectGrant, type CompanionRead, type CompanionLibrary, type CompanionHistory } from '../../../shared/contract/companionLibrary';
 import type { CompanionCommand } from '../../../shared/contract/companion';
@@ -12,8 +13,24 @@ import type { CompanionGateway } from './CompanionGateway';
 import { MODEL_OVERRIDE_METADATA_KEY, persistModelOverride } from '../../session/modelOverridePersistence';
 import { getModelSessionState } from '../../session/modelSessionState';
 import { createLogger } from '../infra/logger';
+import type { AppSettings } from '../../../shared/contract';
 
 const logger = createLogger('CompanionLibrary');
+
+/**
+ * 手机的模型下拉直接吃这个列表。可用性由 buildRuntimeModelOptions 负责（没配 key 的 provider
+ * 不进列表），默认项由电脑自己的新会话默认模型决定——列表顺序是桌面切换面板的 provider 常量序
+ * （moonshot 排第一），拿它当默认等于让手机替用户挑了一家他从没选过的（FB-141）。
+ */
+function companionModelOptions(
+  settings: AppSettings | null | undefined,
+  hostDefault: { provider: string; model: string },
+): CompanionLibrary['models'] {
+  return buildRuntimeModelOptions(settings).map(({ provider, model, label, providerLabel }) => ({
+    provider, model, label, providerLabel,
+    ...(provider === hostDefault.provider && model === hostDefault.model ? { isDefault: true as const } : {}),
+  }));
+}
 
 /** Page-level form of canAccessSession(): grants plus the cleanup queue, so a session queued for
  * cleanup stays hidden even if the store lists it again (cloud sync can flip isDeleted back before
@@ -87,7 +104,7 @@ export class CompanionLibraryService {
     }
     const projects = this.projects().filter(p => grants.includes(projectGrant(p.id)) || sessions.some(s => s.projectId === p.id))
       .map(p => ({ ...p, canCreate: grants.includes(projectGrant(p.id)) }));
-    const models = buildRuntimeModelOptions(getConfigService().getSettings()).map(({ provider, model, label, providerLabel }) => ({ provider, model, label, providerLabel }));
+    const models = companionModelOptions(getConfigService().getSettings(), resolveSessionDefaultModelConfig());
     return { projects, models, nextOffset: request.offset + L.syncPageSize < sessions.length ? request.offset + L.syncPageSize : null, sessions: sessions.slice(request.offset, request.offset + L.syncPageSize).map(s => ({ id: s.id, title: s.title, projectId: s.projectId ?? null,
       updatedAt: s.updatedAt, archived: s.status === 'archived', provider: s.modelConfig.provider, model: s.modelConfig.model })) };
   }

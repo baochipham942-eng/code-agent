@@ -19,7 +19,8 @@ export interface CompanionLibrary {
   nextOffset: number | null;
   projects: { id: string; name: string; canCreate: boolean }[];
   sessions: CompanionSessionSummary[];
-  models: { provider: string; model: string; label: string; providerLabel: string }[];
+  /** isDefault = 电脑自己新建会话会用的那个模型；手机的下拉默认必须跟着它，不是跟着列表顺序。 */
+  models: { provider: string; model: string; label: string; providerLabel: string; isDefault?: true }[];
 }
 export interface CompanionHistory {
   sessionId: string;

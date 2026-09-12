@@ -134,18 +134,12 @@ interface RunRecord {
   artifactPath: string | null;
   error: string | null;
   repairRoundsUsed: number | null;
-  /**
-   * True iff this unit hit PER_RUN_HARD_TIMEOUT_MS. The underlying
-   * agent.sendMessage() promise from StandaloneAgentAdapter has no exposed
-   * abort/cancel channel (it constructs its own AgentLoop internally and
-   * never surfaces it), so losing the Promise.race does not stop the
-   * in-flight model/tool calls — they keep running detached in the
-   * background. This flag is the harness-level acknowledgment of that: it
-   * marks the run as abandoned-in-flight so summary stats and the reward
-   * judge can discount it as noise rather than a "0 codes" pass.
-   */
+  /** True iff this unit hit PER_RUN_HARD_TIMEOUT_MS. 超时后 runner 会调 adapter.cancelActiveRun() 真的掐掉 loop（N-EVAL-L3-HARNESS 加的取消通道）。 */
   timedOut?: true;
-  /** Always true when timedOut is true; see the field's comment above. */
+  /**
+   * 仅当超时且 cancelActiveRun 不可用或抛错时为 true：底层模型/工具调用可能仍在后台跑，
+   * summary 与 reward judge 要把它当噪声而不是 "0 codes" 的通过（ai-review #1765 Important）。
+   */
   abandonedInflight?: true;
 }
 
@@ -178,6 +172,7 @@ export interface RunnerContext {
     }>;
     finalizeSession: () => Promise<void>;
     getSessionId: () => string | undefined;
+    cancelActiveRun?: () => Promise<void>;
   };
   validateGameArtifact: (filePath: string, options: Record<string, unknown>) => Promise<{
     passed: boolean;
@@ -468,6 +463,15 @@ async function runOneUnit(
     // any other thrown error (agent construction, sendMessage rejection,
     // validator exception) takes the normal non-timeout path below.
     const isTimeout = error === timeoutError;
+    // 超时不只是放弃赛跑：掐掉 loop，否则超时题的工具/模型调用会活到下一题并发跑（限流、串扰、误写产物）。
+    let abandonedInflight = false;
+    if (isTimeout) {
+      if (agent?.cancelActiveRun) {
+        try { await agent.cancelActiveRun(); } catch { abandonedInflight = true; }
+      } else {
+        abandonedInflight = true;
+      }
+    }
     return {
       ...base,
       durationMs: Date.now() - startedAtMs,
@@ -479,7 +483,7 @@ async function runOneUnit(
       artifactPath: null,
       error: error instanceof Error ? error.message : String(error),
       repairRoundsUsed: null,
-      ...(isTimeout ? { timedOut: true, abandonedInflight: true } : {}),
+      ...(isTimeout ? { timedOut: true as const, ...(abandonedInflight ? { abandonedInflight: true as const } : {}) } : {}),
     };
   } finally {
     if (agent) {
@@ -624,6 +628,10 @@ export async function realRun(opts: CliOpts, injectedCtx?: RunnerContext): Promi
 
   await fs.mkdir(path.join(opts.outDir, 'runs'), { recursive: true });
   const runsJsonlPath = path.join(opts.outDir, 'runs.jsonl');
+  if (await fileExists(runsJsonlPath)) {
+    // runs.jsonl 是追加写、summary.json 只汇总本次 ⇒ 复用目录会让两者口径不一致，--revalidate 还会混入旧样本。
+    throw new Error(`--out 已有 runs.jsonl：${runsJsonlPath}。换一个输出目录（每轮一个目录），不要追加。`);
+  }
 
   const ctx = injectedCtx ?? await loadRunnerContext();
 

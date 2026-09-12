@@ -90,8 +90,13 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
   let syncing = false;
   /** 在飞的这条转写是不是「同一次录音的后续分片」——只影响草稿里要不要换行，故不持久化。 */
   let transcriptContinuation = false;
-  /** 已被用户取消、结果要丢弃的那条转写命令。 */
-  let discardTranscript: string | null = null;
+  /**
+   * 用户取消了录音 ⇒ 下一条回来的转写结果一律丢弃。
+   * 不按 commandId 记的原因：取消可能正好落在 transcribe 已过守卫、还没 persist 的那一刻，
+   * 那时根本没有 commandId 可记，晚到结果照样会进草稿（grok ai-review Nit）。
+   * 这个标记由「新录音的第一段」清掉（continuation === false），不会误伤下一次录音。
+   */
+  let discardVoiceResult = false;
 
   const store = createStore<State>((set, get) => {
     const persist = async (next: Saved) => {
@@ -125,7 +130,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
           // 用户已经取消了这次录音：这条是晚到结果，不许再往草稿里写（screen-contract「取消过滤晚到结果」）。
           // voiceOutcome 也不能置 'done'——那会让输入区弹出「已转成文字，可以修改后发送」，
           // 而用户刚刚取消的就是这次语音，草稿里那些字是他自己打的。
-          if (discardTranscript === pending.commandId) { discardTranscript = null; set({ voiceOutcome: null }); }
+          if (discardVoiceResult) { discardVoiceResult = false; set({ voiceOutcome: null }); }
           else { await onTranscript(record.result.text, pending.sessionId, saved!.binding!.hostKey, pending.commandId, transcriptContinuation); set({ voiceOutcome: 'done' }); }
         } else set({ voiceOutcome: 'error' });
       }
@@ -297,7 +302,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
           // 这一条是不是「同一次录音的后续分片」只活在内存里：进程被杀后重放那条 pending 命令
           // 最多让草稿多一个换行，不会丢字，所以不进持久化结构。
           transcriptContinuation = continuation;
-          discardTranscript = null;
+          if (!continuation) discardVoiceResult = false;
           await persist({ ...saved, pending: command }); set({ pending: true, voiceOutcome: null });
           queued = true;
           await deliver();
@@ -305,9 +310,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         return queued;
       },
       /** 取消录音：在飞那条的结果属于「晚到结果」，按 screen-contract 的语音契约过滤掉，不进草稿。 */
-      discardPendingTranscript: () => {
-        if (saved?.pending?.action === 'voice.transcribe') discardTranscript = saved.pending.commandId;
-      },
+      discardPendingTranscript: () => { discardVoiceResult = true; },
       send: text => safely(async () => {
         if (!saved?.binding || !client || saved.pending || !canAddressSession(get())) return;
         const command = companionCommandSchema.parse({ version: 1, deviceId: saved.binding.deviceId, scopeEpoch: saved.binding.scopeEpoch,

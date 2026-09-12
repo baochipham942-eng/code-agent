@@ -32,7 +32,7 @@ function mount(overrides: {
     modelLabel={overrides.modelLabel === undefined ? 'DeepSeek V4.1 Flash' : overrides.modelLabel} openModel={openModel}
     attach={'attach' in overrides ? overrides.attach : () => {}} attachDisabled={false}
     recorder={overrides.recorder === false ? undefined : recorder} transcribe={transcribe} discardPendingTranscript={discardPendingTranscript}
-    voiceDisabled={false} voicePending={false} voiceOutcome={overrides.voiceOutcome ?? null} voiceErrorCode={null} onRecording={onRecording} />);
+    voiceDisabled={false} voicePending={false} voiceOutcome={overrides.voiceOutcome ?? null} voiceErrorCode={null} voiceReady onRecording={onRecording} />);
   return { transcribe, send, openModel, onRecording, discardPendingTranscript };
 }
 
@@ -157,9 +157,9 @@ describe('VoiceCapture failure reporting', () => {
 // ——— 分片伪流式（N-VOICE-CHUNKED-STREAM）———
 // 这个 Harness 照搬 companionStore 的真实时序：transcribe 发出后 pending=true / outcome=null，
 // 主机结算后才 pending=false + outcome。协议一次只允许一条在飞，所以队列必须串行。
-function ChunkHarness({ sent, verdict = () => 'done' as const, refuseFirst = false, ackDelay = 10 }: {
+function ChunkHarness({ sent, verdict = () => 'done' as const, refuseFirst = false, refuseAll = false, ackDelay = 10, ready = true }: {
   sent: (audioData: string, continuation: boolean) => void; verdict?: (seq: number) => 'done' | 'error';
-  refuseFirst?: boolean; ackDelay?: number;
+  refuseFirst?: boolean; refuseAll?: boolean; ackDelay?: number; ready?: boolean;
 }) {
   const [pending, setPending] = React.useState(false);
   const [outcome, setOutcome] = React.useState<'done' | 'error' | null>(null);
@@ -174,6 +174,7 @@ function ChunkHarness({ sent, verdict = () => 'done' as const, refuseFirst = fal
   }).current;
   const transcribe = async (audio: { audioData: string }, continuation: boolean) => {
     sent(audio.audioData, continuation);
+    if (refuseAll) return false;
     if (refuseFirst && !refused.current) { refused.current = true; return false; }
     const n = ++seq.current;
     setPending(true); setOutcome(null);
@@ -186,7 +187,7 @@ function ChunkHarness({ sent, verdict = () => 'done' as const, refuseFirst = fal
   };
   return <Composer text={text} draft={draft} editDraft={setDraft} offline={false} sendDisabled={!draft} send={() => {}}
     modelLabel="DeepSeek V4.1 Flash" openModel={() => {}} attach={() => {}} attachDisabled={false}
-    recorder={recorder} transcribe={transcribe} discardPendingTranscript={() => {}} voiceDisabled={false} voicePending={pending}
+    recorder={recorder} transcribe={transcribe} discardPendingTranscript={() => {}} voiceReady={ready} voiceDisabled={false} voicePending={pending}
     voiceOutcome={outcome} voiceErrorCode={null} onRecording={() => {}} />;
 }
 
@@ -319,5 +320,40 @@ describe('ai-review #1764 第二轮 Nit', () => {
     fireEvent.click(screen.getByRole('button', { name: text.stopRecording }));
     await advance(2_000);
     expect(screen.queryByText(new RegExp(text.voiceTranscribeFailed))).toBeNull();
+  });
+});
+
+describe('ai-review #1764 第三轮 Important：断网不许把输入区锁死', () => {
+  afterEach(() => { vi.useRealTimers(); cleanup(); });
+
+  it('录音中途连不上电脑，点停止后面板要收尾，把输入框还给用户', async () => {
+    vi.useFakeTimers();
+    const sent = vi.fn();
+    // transcribe 恒回 false = 协议此刻发不出去（断网时 companionStore 就是静默 return）
+    render(<ChunkHarness sent={sent} refuseAll ready={false} />);
+    fireEvent.click(screen.getByRole('button', { name: text.voice }));
+    await advance(5_000);
+    fireEvent.click(screen.getByRole('button', { name: text.stopRecording }));
+    await advance(2_000);
+    // 输入框必须回来，而不是停在「正在转写」的面板上
+    expect(screen.getByTestId('draft')).toBeTruthy();
+    expect(document.querySelector('.voice-composer')).toBeNull();
+    // 录下来的音频没丢：给了重试入口
+    expect(screen.getByRole('button', { name: text.retry })).toBeTruthy();
+  });
+
+  it('取消键任何时候都能点——它是这块面板唯一的出口', async () => {
+    vi.useFakeTimers();
+    const sent = vi.fn();
+    render(<ChunkHarness sent={sent} refuseAll />);
+    fireEvent.click(screen.getByRole('button', { name: text.voice }));
+    await advance(5_000);
+    fireEvent.click(screen.getByRole('button', { name: text.stopRecording }));
+    await advance(1_000);
+    const cancel = screen.getByRole('button', { name: text.cancelRecording });
+    expect((cancel as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(cancel);
+    await advance(500);
+    expect(screen.getByTestId('draft')).toBeTruthy();
   });
 });

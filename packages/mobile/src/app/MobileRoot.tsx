@@ -325,6 +325,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
           discardPendingTranscript={companion.discardPendingTranscript}
           voiceDisabled={companion.status !== 'connected' || companion.busy || companion.pending}
           voicePending={companion.pending} voiceOutcome={companion.voiceOutcome} voiceErrorCode={companion.commandError}
+          voiceReady={canAddressSession(companion)}
           onRecording={active => { recording.current = active; }} />
       </div>
     </main>

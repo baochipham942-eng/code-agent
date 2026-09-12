@@ -26,10 +26,12 @@ type Audio = { audioData: string; mimeType: string; durationMs: number };
  * 所以录音走一条主循环、上传走一条队列，两边都不并发；`transcribe` 回报「发出去了没有」，
  * 没发出去的分片留在队头等下一拍，不静默丢。
  */
-export function useVoiceCapture({ recorder, pending, outcome, errorCode, transcribe, discardPending }: {
+export function useVoiceCapture({ recorder, pending, outcome, errorCode, ready, transcribe, discardPending }: {
   recorder: PlatformPorts['recorder'];
   pending: boolean;
   outcome: 'done' | 'error' | null;
+  /** 此刻发得出命令吗（已连上电脑且有可寻址会话）。发不出就不能干等——面板会把输入框锁死。 */
+  ready: boolean;
   /** 最近一条命令被拒的真实错误码，用来给「整段都没转出来」配上可定位的原因。 */
   errorCode: string | null;
   transcribe(audio: Audio, continuation: boolean): Promise<boolean>;
@@ -47,7 +49,7 @@ export function useVoiceCapture({ recorder, pending, outcome, errorCode, transcr
   const awaiting = useRef<Audio | null>(null);
   const retryable = useRef<Audio[]>([]);
   /** 这次录音里最后一次失败的真实原因（录音阶段/转写阶段都记）——一段都没成文时要靠它报错。 */
-  const lastFailure = useRef<VoiceFailure | null>(null);
+  const lastFailure = useRef<{ stage: VoiceFailure['stage']; reason?: string } | null>(null);
   const sending = useRef(false);
   const sentAny = useRef(false);
   const active = useRef(false);
@@ -68,7 +70,7 @@ export function useVoiceCapture({ recorder, pending, outcome, errorCode, transcr
     setDropped(0); setQueued(0);
   };
   const reset = () => { clearQueue(); active.current = false; stopRequest.current = null; };
-  const drop = (failure: VoiceFailure) => { lastFailure.current = failure; setDropped(count => count + 1); };
+  const drop = (failure: { stage: VoiceFailure['stage']; reason?: string }) => { lastFailure.current = failure; setDropped(count => count + 1); };
   const enqueue = (value: Audio) => {
     if (value.audioData.length > L.voiceBase64Limit) { drop({ stage: 'record', reason: 'AUDIO_TOO_LARGE' }); return; }
     queue.current.push(value); syncQueued();
@@ -144,9 +146,11 @@ export function useVoiceCapture({ recorder, pending, outcome, errorCode, transcr
     return () => clearInterval(timer);
   }, [phase]);
 
-  // 队列泵：一次只发一条，发出去了才出队；没发出去（协议在忙 / 断连）留在队头，下一拍再试。
+  // 队列泵：一次只发一条，发出去了才出队；没发出去（协议在忙）留在队头，下一拍再试。
+  // 明知发不出去（没连上电脑）就别空转：每一拍都把 sending 置起，会让收尾那个副作用
+  // 永远看到「正在发」而不收尾，面板把输入框锁死在后面。
   useEffect(() => {
-    if (sending.current || awaiting.current || pending || !queue.current.length) return;
+    if (!ready || sending.current || awaiting.current || pending || !queue.current.length) return;
     sending.current = true;
     void (async () => {
       const chunk = queue.current[0];
@@ -163,27 +167,43 @@ export function useVoiceCapture({ recorder, pending, outcome, errorCode, transcr
       if (!sent) { setTimeout(() => setTick(count => count + 1), 500); return; }
       queue.current.shift(); awaiting.current = chunk; syncQueued();
     })();
-  }, [pending, queued, tick, transcribe]);
+  }, [ready, pending, queued, tick, transcribe]);
 
   // 结算：ack 回来才知道这一段成没成文。失败的留着，「重试」按原顺序补发。
   useEffect(() => {
     if (!awaiting.current || pending || outcome === null) return;
     if (outcome === 'done') sentAny.current = true;
-    else { retryable.current.push(awaiting.current); drop({ stage: 'transcribe', reason: errorCode ?? 'COMPANION_TRANSCRIPTION_FAILED' }); }
+    // 原因留到收尾再取：commandError 与 voiceOutcome 是两次 set，结算这一帧读到的可能还是旧值
+    // （grok ai-review Nit）。这里只记「是转写阶段失败的」，真实错误码在 surface 时取最新的。
+    else { retryable.current.push(awaiting.current); drop({ stage: 'transcribe' }); }
     awaiting.current = null; syncQueued(); setTick(count => count + 1);
   }, [pending, outcome, tick]);
 
   // 收尾：录音结束且队列排空才关面板；一段都没成文时报一次失败，留出重试入口。
   useEffect(() => {
     if (!ended.current || phase === 'idle' || phase === 'error') return;
-    if (pending || sending.current || awaiting.current || queue.current.length) return;
+    if (pending || sending.current || awaiting.current) return;
+    if (queue.current.length) {
+      // 还连得上就继续排队发。连不上就**不能干等**：面板替换了输入框，队列永远排不空的话
+      // 用户既改不了草稿也发不出字，整块输入区被锁死（grok ai-review Important：
+      // 录音中途电脑掉线、再点停止就是这条路）。把没发出去的留给重试，先把输入框还回去。
+      if (ready) return;
+      const stranded = queue.current.length;
+      retryable.current.push(...queue.current); queue.current = [];
+      lastFailure.current ??= { stage: 'transcribe' };
+      setDropped(count => count + stranded); syncQueued();
+    }
     // 这次录音只要有过失败就必须留痕，别管其余几段成没成文：
     // 只在「一段都没成」时报的话，部分成功那条路会把 dropped/retryable 一起 reset 掉——
     // 末段失败的字既没提示也没补传入口，静悄悄没了（grok ai-review 两轮分别指出这两半）。
-    if (lastFailure.current) { setFailure({ ...lastFailure.current, partial: sentAny.current }); setPhase('error'); }
+    if (lastFailure.current) {
+      const { stage, reason } = lastFailure.current;
+      setFailure({ stage, reason: reason ?? errorCode ?? 'COMPANION_TRANSCRIPTION_FAILED', partial: sentAny.current });
+      setPhase('error');
+    }
     else { reset(); setPhase('idle'); }
     ended.current = false;
-  }, [phase, pending, queued, tick, errorCode]);
+  }, [phase, pending, queued, tick, errorCode, ready]);
 
   const retry = () => {
     if (!retryable.current.length) { void start(); return; }
@@ -229,7 +249,8 @@ export function VoicePanel({ text, phase, pending, elapsedMs, transcript, droppe
       {BARS.map((bar, i) => <i key={i} style={{ height: `${bar.height}px`, animationDelay: `${bar.delay}s` }} />)}
     </div>
     <div className="voice-controls">
-      <button className="text-btn" aria-label={text.cancelRecording} disabled={phase === 'stopping' || pending} onClick={cancel}>{text.cancel}</button>
+      {/* 取消是这块面板唯一的出口：它替换了输入框，禁用它等于把输入区锁死。 */}
+      <button className="text-btn" aria-label={text.cancelRecording} onClick={cancel}>{text.cancel}</button>
       {listening
         ? <button className="record-stop" onClick={stop} aria-label={text.stopRecording}><AppIcon name="stop" /></button>
         : <span className="record-stop-placeholder" aria-hidden="true" />}

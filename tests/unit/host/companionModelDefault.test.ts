@@ -67,5 +67,9 @@ describe('companion model list marks the computer default', () => {
     const models = await readModels();
     const plain = models.find(model => !model.isDefault);
     expect(Object.keys(plain ?? {}).sort()).toEqual(['label', 'model', 'provider', 'providerLabel']);
+    // 默认项才是唯一可能漏 key 的那条：它是拿 resolveSessionDefaultModelConfig() 的返回值比出来的，
+    // 而那个返回值里带 apiKey / baseUrl / maxTokens
+    const marked = models.find(model => model.isDefault);
+    expect(Object.keys(marked ?? {}).sort()).toEqual(['isDefault', 'label', 'model', 'provider', 'providerLabel']);
   });
 });

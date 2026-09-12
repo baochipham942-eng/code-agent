@@ -45,6 +45,8 @@ export function Composer({
   // 录音中不让横滑离开主会话（design.md §5 手势表）。
   useEffect(() => { onRecording(voice.panelOpen); }, [voice.panelOpen, onRecording]);
   const notice = voice.failure?.reason === 'MICROPHONE_DENIED' ? text.microphoneDenied
+    // 部分成功：其余几段已经在草稿里了，说成「转写未完成」是把整次录音都判死
+    : voice.failure?.partial ? `${text.voiceChunkDropped} · ${voice.failure.reason}`
     : voice.failure ? `${voice.failure.stage === 'record' ? text.voiceRecordFailed : text.voiceTranscribeFailed} · ${voice.failure.reason}`
     : null;
   return <>

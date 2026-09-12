@@ -291,3 +291,33 @@ describe('ai-review #1764 回归', () => {
     expect(discardPendingTranscript).toHaveBeenCalled();
   });
 });
+
+describe('ai-review #1764 第二轮 Nit', () => {
+  afterEach(() => { vi.useRealTimers(); cleanup(); });
+
+  it('部分成功时末段失败也要留痕，并留出补传入口', async () => {
+    vi.useFakeTimers();
+    const sent = vi.fn();
+    // 前两段成文、第三段失败：面板关掉之后，失败那段不能静悄悄没了
+    render(<ChunkHarness sent={sent} verdict={n => (n >= 3 ? 'error' : 'done')} />);
+    fireEvent.click(screen.getByRole('button', { name: text.voice }));
+    await advance(13_000);
+    fireEvent.click(screen.getByRole('button', { name: text.stopRecording }));
+    await advance(2_000);
+    expect(screen.getByText(new RegExp(text.voiceChunkDropped))).toBeTruthy();
+    expect(screen.getByRole('button', { name: text.retry })).toBeTruthy();
+    // 成文的那几段照常留在输入框里
+    expect((screen.getByTestId('draft') as HTMLTextAreaElement).value).toContain('段1');
+  });
+
+  it('部分成功的提示不说成整次转写失败', async () => {
+    vi.useFakeTimers();
+    const sent = vi.fn();
+    render(<ChunkHarness sent={sent} verdict={n => (n >= 3 ? 'error' : 'done')} />);
+    fireEvent.click(screen.getByRole('button', { name: text.voice }));
+    await advance(13_000);
+    fireEvent.click(screen.getByRole('button', { name: text.stopRecording }));
+    await advance(2_000);
+    expect(screen.queryByText(new RegExp(text.voiceTranscribeFailed))).toBeNull();
+  });
+});

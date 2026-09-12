@@ -84,6 +84,13 @@ describe('connectionCopy', () => {
       .toEqual({ label: text.rejected, connected: false, retry: true });
   });
 
+  it('暂停期间的占位文案不能与胶囊打架：连着就不说「连接后再发送」', () => {
+    // 输入框的 offline 口子吃的就是这个 connected：暂停期胶囊说已连接、占位却说
+    // 「先写下来，连接后再发送」，同一张后台快照里自相矛盾（grok ai-review Nit）。
+    expect(connectionCopy(text, state({ status: 'offline', paused: true })).connected).toBe(true);
+    expect(connectionCopy(text, state({ status: 'offline', paused: false })).connected).toBe(false);
+  });
+
   it('正在连接时不给重试按钮（点了也是重来一遍）', () => {
     expect(connectionCopy(text, state({ status: 'connecting' })))
       .toEqual({ label: text.connecting, connected: false, retry: false });

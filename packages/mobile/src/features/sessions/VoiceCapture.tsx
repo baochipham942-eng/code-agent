@@ -9,7 +9,7 @@ import { AppIcon } from '../../app/AppIcon';
  * 此前共用一句文案且丢掉 message，ALREADY_RECORDING / MICROPHONE_BEING_USED / 插件初始化失败
  * 在手机上长成同一句话，真机上无从定位（FB-140）。
  */
-export type VoiceFailure = { stage: 'record' | 'transcribe'; reason: string };
+export type VoiceFailure = { stage: 'record' | 'transcribe'; reason: string; partial?: boolean };
 export type VoicePhase = 'idle' | 'starting' | 'recording' | 'stopping' | 'ready' | 'error';
 
 type Audio = { audioData: string; mimeType: string; durationMs: number };
@@ -177,10 +177,10 @@ export function useVoiceCapture({ recorder, pending, outcome, errorCode, transcr
   useEffect(() => {
     if (!ended.current || phase === 'idle' || phase === 'error') return;
     if (pending || sending.current || awaiting.current || queue.current.length) return;
-    // 一段都没成文就必须报出来。只看 retryable 会漏掉「每段都 EMPTY_RECORDING」那条路径——
-    // 那时队列和 retryable 都是空的，面板会静悄悄关掉、用户点了麦克风什么都没发生
-    // （grok ai-review Important；相对基线 VoiceInput 是回归，它在这条路上会报 EMPTY_RECORDING）。
-    if (!sentAny.current && lastFailure.current) { setFailure(lastFailure.current); setPhase('error'); }
+    // 这次录音只要有过失败就必须留痕，别管其余几段成没成文：
+    // 只在「一段都没成」时报的话，部分成功那条路会把 dropped/retryable 一起 reset 掉——
+    // 末段失败的字既没提示也没补传入口，静悄悄没了（grok ai-review 两轮分别指出这两半）。
+    if (lastFailure.current) { setFailure({ ...lastFailure.current, partial: sentAny.current }); setPhase('error'); }
     else { reset(); setPhase('idle'); }
     ended.current = false;
   }, [phase, pending, queued, tick, errorCode]);

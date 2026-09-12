@@ -306,7 +306,9 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
         </p>}
         <Composer key={`${companion.binding?.hostKey}:${companion.sessionId}`} text={text}
           draft={state.preferences.drafts[state.draftKey] ?? ''} editDraft={state.editDraft}
-          offline={!!companion.binding && companion.status !== 'connected'}
+          // 暂停不是离线：胶囊那边显示已连接，占位却说「先写下来，连接后再发送」就自相矛盾
+          // （grok ai-review Nit，正是爸看到的那张后台快照）。
+          offline={!!companion.binding && !connection.connected}
           sendDisabled={!(state.preferences.drafts[state.draftKey] ?? '').trim() || companion.busy || companion.pending}
           send={() => {
             // companionStore.send 在没有 sessionId 时会静默 return（只勾了项目的二维码

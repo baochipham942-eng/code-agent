@@ -335,14 +335,19 @@ describe('LAN companion: real HTTP + Noise + SQLite', () => {
     try {
       await phone.getState().pair();
       expect(phone.getState().status).toBe('connected');
-      phone.getState().pause();
+      // iOS 退后台会连发两次生命周期回调：第二次不能把暂停标记打回去，
+      // 否则爸看到的那个「卡片上写着未连接」的假警报原样回来。
+      phone.getState().pause(); phone.getState().pause();
       expect(phone.getState()).toMatchObject({ status: 'offline', paused: true });
       // 回到前台重连要把暂停标记清掉，否则真断线时界面还以为自己只是在后台
       await phone.getState().reconnect();
       expect(phone.getState()).toMatchObject({ status: 'connected', paused: false });
-      // 本来就断着再 pause 不算暂停：那种情况下报错该继续留在界面上
-      phone.getState().pause(); phone.getState().pause();
-      expect(phone.getState()).toMatchObject({ status: 'offline', paused: false });
+      // 真断线之后再退后台：报错不能被「只是暂停」盖掉
+      server.revoke(phone.getState().binding!.deviceId);
+      await phone.getState().sync();
+      expect(phone.getState().paused).toBe(false);
+      phone.getState().pause();
+      expect(phone.getState().paused).toBe(false);
     } finally { phone.getState().pause(); }
   });
 

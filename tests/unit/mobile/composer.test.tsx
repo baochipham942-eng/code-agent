@@ -26,14 +26,14 @@ function mount(overrides: {
   const discardPendingTranscript = vi.fn();
   const send = vi.fn();
   const openModel = vi.fn();
-  const onRecording = vi.fn();
+  const onVoiceState = vi.fn();
   render(<Composer text={text} draft={overrides.draft ?? ''} editDraft={() => {}} offline={overrides.offline ?? false}
     sendDisabled={!(overrides.draft ?? '').trim()} send={send}
     modelLabel={overrides.modelLabel === undefined ? 'DeepSeek V4.1 Flash' : overrides.modelLabel} openModel={openModel}
     attach={'attach' in overrides ? overrides.attach : () => {}} attachDisabled={false}
     recorder={overrides.recorder === false ? undefined : recorder} transcribe={transcribe} discardPendingTranscript={discardPendingTranscript}
-    voiceDisabled={false} voicePending={false} voiceOutcome={overrides.voiceOutcome ?? null} voiceErrorCode={null} voiceReady onRecording={onRecording} />);
-  return { transcribe, send, openModel, onRecording, discardPendingTranscript };
+    voiceDisabled={false} voicePending={false} voiceOutcome={overrides.voiceOutcome ?? null} voiceErrorCode={null} voiceReady onVoiceState={onVoiceState} />);
+  return { transcribe, send, openModel, onVoiceState, discardPendingTranscript };
 }
 
 const clickMic = () => fireEvent.click(screen.getByRole('button', { name: text.voice }));
@@ -75,7 +75,7 @@ describe('Composer 布局契约（design.html composer()）', () => {
   });
 
   it('录音中整块输入框换成语音面板：来源、计时、居中停止键，输入框与工具行不在场', async () => {
-    const { onRecording } = mount({ draft: '已经写了一半' });
+    const { onVoiceState } = mount({ draft: '已经写了一半' });
     clickMic();
     await screen.findByRole('button', { name: text.stopRecording });
     expect(screen.getByText(text.voiceSource)).toBeTruthy();
@@ -88,7 +88,7 @@ describe('Composer 布局契约（design.html composer()）', () => {
     expect(document.querySelector('.composer-tools')).toBeNull();
     expect(document.querySelector('.composer')?.className).toContain('voice-composer');
     // 录音态要上报给 MobileRoot——右滑打开会话列表在录音时必须失效（design.md §5 手势表）
-    expect(onRecording).toHaveBeenLastCalledWith(true);
+    expect(onVoiceState).toHaveBeenLastCalledWith({ recording: true, failed: false });
   });
 });
 
@@ -157,9 +157,9 @@ describe('VoiceCapture failure reporting', () => {
 // ——— 分片伪流式（N-VOICE-CHUNKED-STREAM）———
 // 这个 Harness 照搬 companionStore 的真实时序：transcribe 发出后 pending=true / outcome=null，
 // 主机结算后才 pending=false + outcome。协议一次只允许一条在飞，所以队列必须串行。
-function ChunkHarness({ sent, verdict = () => 'done' as const, refuseFirst = false, refuseAll = false, ackDelay = 10, ready = true }: {
+function ChunkHarness({ sent, verdict = () => 'done' as const, refuseFirst = false, refuseAll = false, ackDelay = 10, ready = true, onStart }: {
   sent: (audioData: string, continuation: boolean) => void; verdict?: (seq: number) => 'done' | 'error';
-  refuseFirst?: boolean; refuseAll?: boolean; ackDelay?: number; ready?: boolean;
+  refuseFirst?: boolean; refuseAll?: boolean; ackDelay?: number; ready?: boolean; onStart?: () => void;
 }) {
   const [pending, setPending] = React.useState(false);
   const [outcome, setOutcome] = React.useState<'done' | 'error' | null>(null);
@@ -169,7 +169,7 @@ function ChunkHarness({ sent, verdict = () => 'done' as const, refuseFirst = fal
   // 录音口必须是稳定引用（生产里是 ports.recorder 单例）：每渲染换一个新对象会让
   // useVoiceCapture 的清理副作用把正在录的这次当作「录音口换了」收掉。
   const recorder = React.useRef({
-    start: async () => {},
+    start: async () => { onStart?.(); },
     stop: async () => ({ audioData: `chunk${seq.current + 1}`, mimeType: 'audio/aac', durationMs: 4000 }),
   }).current;
   const transcribe = async (audio: { audioData: string }, continuation: boolean) => {
@@ -188,7 +188,7 @@ function ChunkHarness({ sent, verdict = () => 'done' as const, refuseFirst = fal
   return <Composer text={text} draft={draft} editDraft={setDraft} offline={false} sendDisabled={!draft} send={() => {}}
     modelLabel="DeepSeek V4.1 Flash" openModel={() => {}} attach={() => {}} attachDisabled={false}
     recorder={recorder} transcribe={transcribe} discardPendingTranscript={() => {}} voiceReady={ready} voiceDisabled={false} voicePending={pending}
-    voiceOutcome={outcome} voiceErrorCode={null} onRecording={() => {}} />;
+    voiceOutcome={outcome} voiceErrorCode={null} onVoiceState={() => {}} />;
 }
 
 
@@ -355,5 +355,31 @@ describe('ai-review #1764 第三轮 Important：断网不许把输入区锁死',
     fireEvent.click(cancel);
     await advance(500);
     expect(screen.getByTestId('draft')).toBeTruthy();
+  });
+});
+
+describe('ai-review #1764 第五轮 Nit', () => {
+  afterEach(() => { vi.useRealTimers(); cleanup(); });
+
+  it('转写失败在不在场要如实上报——通用提示条据此决定让不让位', async () => {
+    const { onVoiceState } = mount({ start: async () => { throw new Error('MICROPHONE_DENIED'); } });
+    clickMic();
+    await screen.findByText(text.microphoneDenied);
+    expect(onVoiceState).toHaveBeenLastCalledWith({ recording: false, failed: true });
+  });
+
+  it('取消后立刻再点麦克风不会开出两条录音循环', async () => {
+    vi.useFakeTimers();
+    const sent = vi.fn();
+    let starts = 0;
+    render(<ChunkHarness sent={sent} onStart={() => { starts += 1; }} />);
+    fireEvent.click(screen.getByRole('button', { name: text.voice }));
+    await advance(250);
+    fireEvent.click(screen.getByRole('button', { name: text.cancelRecording }));
+    fireEvent.click(screen.getByRole('button', { name: text.voice }));
+    await advance(9_000);
+    // 两条循环抢同一个 recorder 的话，同一段时间里 stop→start 的次数会翻倍
+    expect(starts).toBeLessThanOrEqual(4);
+    expect(document.querySelectorAll('.voice-composer').length).toBeLessThanOrEqual(1);
   });
 });

@@ -255,7 +255,10 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
       }),
       pause: () => {
         // 只有「本来连着」才算暂停：原本就断着的话，报错该继续留在界面上。
-        const live = get().status === 'connected';
+        // 必须幂等：iOS 退后台会连发两次生命周期回调，第二次时 status 已经是 offline，
+        // 按「当前是否连着」重算就会把 paused 打回 false——爸报的那个假警报原样回来
+        // （grok ai-review Nit）。暂停标记只由 pair / reconnect 清。
+        const live = get().status === 'connected' || get().paused;
         client?.close();
         if (get().binding) set({ status: 'offline', paused: live });
       },

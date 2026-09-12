@@ -111,6 +111,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
   const managing = useRef(false);
   const swipe = useRef<{ x: number; y: number } | null>(null);
   const recording = useRef(false);
+  const [voiceFailureShown, setVoiceFailureShown] = useState(false);
   const theme = state.preferences.appearance === 'system' ? (systemDark ? 'dark' : 'light') : state.preferences.appearance;
   const currentPage = state.sheet?.pages.at(-1);
   const pendingApprovals = useMemo(() => {
@@ -226,7 +227,9 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
     : companion.commandError && ['COMPANION_TRANSFER_INTERRUPTED', 'ATTACHMENT_INCOMPLETE', 'COMPANION_INTERRUPTED', 'COMPANION_NETWORK_UNAVAILABLE', 'COMPANION_CHANNEL_CLOSED'].includes(companion.commandError) ? text.transferInterrupted
     // 转写失败由输入区那条提示负责（它带阶段和真实错误码）；这里再来一句「电脑那边拒绝了这条操作」
     // 只是把同一件事说两遍——真机上就是上下叠着两行（2026-09-12 build 24 实测）。
-    : companion.commandError === 'COMPANION_TRANSCRIPTION_FAILED' ? null
+    // 但只有它**真的在显示**时才让位：切会话会把输入区重挂、取消后 ack 才回来，
+    // 那些时候输入区手里没有这条失败，无条件让位等于让它一个落点都没有（grok ai-review Nit）。
+    : companion.commandError === 'COMPANION_TRANSCRIPTION_FAILED' && voiceFailureShown ? null
     : companion.commandError ? text.commandRejected : null;
   const selectSession = (id: string) => { companion.selectSession(id); state.navigate('new'); };
   const manage: typeof companion.manage = async (...args) => {
@@ -326,7 +329,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
           voiceDisabled={companion.status !== 'connected' || companion.busy || companion.pending}
           voicePending={companion.pending} voiceOutcome={companion.voiceOutcome} voiceErrorCode={companion.commandError}
           voiceReady={canAddressSession(companion)}
-          onRecording={active => { recording.current = active; }} />
+          onVoiceState={({ recording: active, failed }) => { recording.current = active; setVoiceFailureShown(failed); }} />
       </div>
     </main>
     {state.drawer && <div className="drawer-layer" inert={!!state.sheet}>

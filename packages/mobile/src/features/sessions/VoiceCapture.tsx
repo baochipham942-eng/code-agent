@@ -57,6 +57,10 @@ export function useVoiceCapture({ recorder, pending, outcome, errorCode, ready, 
   const stopRequest = useRef<'keep' | 'discard' | null>(null);
   const wake = useRef<(() => void) | null>(null);
   const startedAt = useRef(0);
+  /** 每次录音一个代号：取消后立刻再点麦克风时，上一轮 start() 不能接着把面板开回来。 */
+  const generation = useRef(0);
+  /** 正在跑的那条录音循环。新一轮必须先把它拆干净，否则两条循环抢同一个 recorder。 */
+  const running = useRef<Promise<void> | null>(null);
 
   const syncQueued = () => setQueued(queue.current.length + (awaiting.current ? 1 : 0));
   const fail = (stage: VoiceFailure['stage'], error: unknown) => {
@@ -110,15 +114,21 @@ export function useVoiceCapture({ recorder, pending, outcome, errorCode, ready, 
 
   const start = async () => {
     if (!recorder) return;
+    const mine = ++generation.current;
+    // 上一轮还在收尾（取消之后立刻再点麦克风就是这个时序）：先把它拆干净再开新的，
+    // 否则两条录音循环会抢同一个 recorder，切段全乱（grok ai-review Nit）。
+    if (running.current) { stopRequest.current = 'discard'; wake.current?.(); await running.current; }
+    if (generation.current !== mine) return;   // 拆的期间又被点了，让最后那次赢
     reset(); setFailure(null); setPhase('starting');
     retryable.current = [];
     startedAt.current = Date.now(); setElapsedMs(0);
     try {
-      await recorder.start(); active.current = true;
-      if (stopRequest.current) { await recorder.stop().catch(() => {}); active.current = false; setPhase('idle'); return; }
+      await recorder.start();
+      if (stopRequest.current || generation.current !== mine) { await recorder.stop().catch(() => {}); if (generation.current === mine) setPhase('idle'); return; }
+      active.current = true;
       setPhase('recording');
-      void run();
-    } catch (error) { fail('record', error); }
+      running.current = run().finally(() => { running.current = null; });
+    } catch (error) { if (generation.current === mine) fail('record', error); }
   };
   const endRecording = (discard: boolean) => {
     if (discard) discardPending();
@@ -204,6 +214,13 @@ export function useVoiceCapture({ recorder, pending, outcome, errorCode, ready, 
     else { reset(); setPhase('idle'); }
     ended.current = false;
   }, [phase, pending, queued, tick, errorCode, ready]);
+
+  // 失败提示里的兜底码是「还没拿到真原因」的占位：commandError 晚一拍到时把它换掉。
+  useEffect(() => {
+    if (phase !== 'error' || !errorCode) return;
+    setFailure(current => current && current.reason === 'COMPANION_TRANSCRIPTION_FAILED' && current.stage === 'transcribe'
+      ? { ...current, reason: errorCode } : current);
+  }, [phase, errorCode]);
 
   const retry = () => {
     if (!retryable.current.length) { void start(); return; }

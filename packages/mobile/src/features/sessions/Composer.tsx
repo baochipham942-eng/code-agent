@@ -12,7 +12,7 @@ import { useVoiceCapture, VoicePanel } from './VoiceCapture';
  */
 export function Composer({
   text, draft, editDraft, offline, sendDisabled, send, modelLabel, openModel,
-  attach, attachDisabled, recorder, transcribe, discardPendingTranscript, voiceDisabled, voicePending, voiceOutcome, voiceErrorCode, voiceReady, onRecording,
+  attach, attachDisabled, recorder, transcribe, discardPendingTranscript, voiceDisabled, voicePending, voiceOutcome, voiceErrorCode, voiceReady, onVoiceState,
 }: {
   text: ReturnType<typeof messages>;
   draft: string;
@@ -35,7 +35,8 @@ export function Composer({
   voiceErrorCode: string | null;
   /** 此刻发得出转写命令吗——发不出时录音面板要收尾，不能把输入框锁在后面。 */
   voiceReady: boolean;
-  onRecording(active: boolean): void;
+  /** 上报输入区自己的状态：录音中（禁横滑）、以及「转写失败正由我显示」（通用提示条据此让位）。 */
+  onVoiceState(state: { recording: boolean; failed: boolean }): void;
 }) {
   const textarea = useRef<HTMLTextAreaElement>(null);
   const composing = useRef(false);
@@ -44,8 +45,10 @@ export function Composer({
     const input = textarea.current;
     if (input) { input.style.height = 'auto'; input.style.height = `${Math.min(input.scrollHeight, 140)}px`; }
   }, [draft, voice.panelOpen]);
-  // 录音中不让横滑离开主会话（design.md §5 手势表）。
-  useEffect(() => { onRecording(voice.panelOpen); }, [voice.panelOpen, onRecording]);
+  // 录音中不让横滑离开主会话（design.md §5 手势表）；失败在不在场也要上报，
+  // 否则通用提示条让位之后，转写失败可能一个落点都没有（grok ai-review Nit）。
+  useEffect(() => { onVoiceState({ recording: voice.panelOpen, failed: !!voice.failure }); },
+    [voice.panelOpen, voice.failure, onVoiceState]);
   const notice = voice.failure?.reason === 'MICROPHONE_DENIED' ? text.microphoneDenied
     // 部分成功：其余几段已经在草稿里了，说成「转写未完成」是把整次录音都判死
     : voice.failure?.partial ? `${text.voiceChunkDropped} · ${voice.failure.reason}`

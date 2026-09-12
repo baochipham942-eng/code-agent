@@ -96,7 +96,10 @@ function getAudioExtension(mimeType: string): string {
   if (mimeType.includes('wav')) return '.wav';
   if (mimeType.includes('mp3') || mimeType.includes('mpeg')) return '.mp3';
   if (mimeType.includes('ogg')) return '.ogg';
-  if (mimeType.includes('aac')) return '.aac';
+  // AAC 从手机上来的一定是 MP4 容器（iOS AVAudioRecorder / Android MediaRecorder 都是），
+  // 而 Groq 按扩展名收文件、支持列表里没有 .aac：同一段字节命名成 .aac 会被 400
+  // unsupported_audio_format 拒掉，命名成 .m4a 就能转（2026-09-12 同字节差分实测）。
+  if (mimeType.includes('aac')) return '.m4a';
   return '.webm';
 }
 
@@ -287,6 +290,9 @@ function logSpeechTranscriptionResult(
   logger.info('Speech transcription result', {
     success: result.success,
     code: result.code,
+    // 失败原因必须落日志：只记 code 时，一次「TRANSCRIPTION_FAILED」要靠差分实验才能定位
+    // （2026-09-12 实付：真因是 Groq 400 unsupported_audio_format，而日志里一个字都没有）。
+    ...(result.success ? {} : { error: result.error }),
     recoverable: result.recoverable,
     engine: result.engine,
     cloud: result.engine === 'groq',

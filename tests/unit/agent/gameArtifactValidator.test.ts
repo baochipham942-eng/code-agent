@@ -3368,3 +3368,87 @@ describe('breakout whole-contract collapse (N-GAME-BREAKOUT-CONTRACT)', () => {
     expect(light.failures.some((failure) => failure.includes('breakout 缺少 window.__GAME_META__'))).toBe(true);
   });
 });
+
+function playableBreakoutWithoutContract(): string {
+  return [
+    '<!doctype html>',
+    '<html><body>',
+    '<canvas id="game" width="400" height="300"></canvas>',
+    '<script>',
+    'const paddle = { x: 40 };',
+    'const ball = { x: 10, y: 10 };',
+    'const bricks = [];',
+    'const player = paddle;',
+    'let score = 0;',
+    'let lives = 3;',
+    "document.addEventListener('keydown', (event) => { paddle.x += event.key === 'ArrowRight' ? 4 : 0; });",
+    'function loop() { requestAnimationFrame(loop); }',
+    'loop();',
+    '</script>',
+    '</body></html>',
+  ].join('\n');
+}
+
+describe('N-GAMEVALIDATOR-STRIP-COMMENTS', () => {
+  it('does not treat a commented contract assignment as present', async () => {
+    const html = playableBreakoutWithoutContract().replace(
+      '<script>',
+      `<script>
+// window.__GAME_META__ = {
+// window.__GAME_TEST__ = {`,
+    );
+    expect(html).toMatch(/window\.__GAME_META__\s*=\s*\{/);
+    const filePath = await writeTempHtml(html, 'brick-breaker.html');
+    const light = await validateGameArtifact(filePath, { contractLevel: 'light' });
+    expect(light.passed).toBe(false);
+    expect(light.failures.some((failure) => failure.includes('breakout 缺少 window.__GAME_META__'))).toBe(true);
+  });
+
+  it('comment-only contract on the HI-B1-r2 collapse fixture still fails light', async () => {
+    const { readFile } = await import('fs/promises');
+    const original = await readFile(path.join(BREAKOUT_FIXTURE_DIR, 'HI-B1-r2-brick-breaker.html'), 'utf-8');
+    const faked = original.replace('<script>', '<script>\n// window.__GAME_META__ = {\n// window.__GAME_TEST__ = {\n');
+    const filePath = await writeTempHtml(faked, 'brick-breaker.html');
+    const light = await validateGameArtifact(filePath, { contractLevel: 'light' });
+    expect(light.passed).toBe(false);
+    expect(light.failures.some((failure) => failure.includes('breakout 缺少 window.__GAME_META__'))).toBe(true);
+  });
+
+  it('does not treat a string-literal contract assignment as present', async () => {
+    const html = playableBreakoutWithoutContract().replace(
+      '<script>',
+      `<script>
+const fakeMeta = "window.__GAME_META__ = {";
+const fakeTest = "window.__GAME_TEST__ = {";`,
+    );
+    expect(html).toMatch(/window\.__GAME_META__\s*=\s*\{/);
+    const filePath = await writeTempHtml(html, 'brick-breaker.html');
+    const light = await validateGameArtifact(filePath, { contractLevel: 'light' });
+    expect(light.passed).toBe(false);
+    expect(light.failures.some((failure) => failure.includes('breakout 缺少 window.__GAME_META__'))).toBe(true);
+  });
+
+  it('still sees keydown when it only appears as an event-name string', async () => {
+    const html = [
+      '<!doctype html>',
+      '<html><head></head><body>',
+      '<canvas id="game" width="400" height="300"></canvas>',
+      '<script>',
+      "document.addEventListener('keydown', () => {});",
+      'const player = {}; const score = 0; const level = 1;',
+      'function loop() { requestAnimationFrame(loop); }',
+      'loop();',
+      '</script>',
+      '</body></html>',
+    ].join('\n');
+    const filePath = await writeTempHtml(html, 'casual-game-light.html');
+    const light = await validateGameArtifact(filePath, { contractLevel: 'light' });
+    expect(light.passed).toBe(true);
+    expect(light.checks).toContain('user input entry detected');
+  });
+
+  it('reverse mutation: raw regex still matches the comment fake (mask is what rejects it)', () => {
+    const fake = '// window.__GAME_META__ = {\n';
+    expect(/window\.__GAME_META__\s*=\s*\{/.test(fake)).toBe(true);
+  });
+});

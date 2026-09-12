@@ -16,6 +16,7 @@ import { runLightPlayabilitySmoke } from './browser/lightPlayabilitySmoke';
 import { GAME_VALIDATION_TIMEOUTS } from '../../../shared/constants/game';
 import { gameSubtypeRegistry } from './gameArtifactSubtypeRegistry';
 import { looksLikeBreakoutGame } from './game/breakout/BreakoutChecker';
+import { maskArtifactSource } from './game/artifactSourceMask';
 
 export type { RuntimeSmokeSummary } from './gameArtifactRuntimeSmoke';
 
@@ -129,9 +130,35 @@ function writeCachedValidation(cacheKey: string, summary: GameArtifactValidation
   return cloneValidationSummary(summary);
 }
 
-const GAME_SIGNAL_PATTERNS = [
+interface ArtifactSourceViews {
+  original: string;
+  comments: string;
+  code: string;
+}
+
+function viewsOf(content: string): ArtifactSourceViews {
+  return {
+    original: content,
+    // Event names and quoted keys live in strings (addEventListener('keydown')).
+    comments: maskArtifactSource(content, 'comments'),
+    // Identifier/assignment constructs must not match inside comments or JS strings.
+    code: maskArtifactSource(content, 'comments-and-js-strings'),
+  };
+}
+
+function anyHit(patterns: readonly RegExp[], view: string): boolean {
+  return patterns.some((pattern) => {
+    pattern.lastIndex = 0;
+    return pattern.test(view);
+  });
+}
+
+const GAME_SIGNAL_CODE_PATTERNS = [
   /window\.__GAME_META__/i,
   /window\.__GAME_TEST__/i,
+];
+
+const GAME_SIGNAL_MARKUP_PATTERNS = [
   /id=["']game-meta["']/i,
   /window\.__INTERACTIVE_META__[\s\S]{0,1200}\bdomain\s*:\s*['"`]game['"`]/i,
   /id=["']interactive-meta["'][\s\S]{0,1200}"domain"\s*:\s*"game"/i,
@@ -257,28 +284,32 @@ interface ContractSnippet {
   end: number;
 }
 
-function hasExplicitGameSignal(content: string): boolean {
-  return GAME_SIGNAL_PATTERNS.some((pattern) => pattern.test(content));
+function hasExplicitGameSignal(views: ArtifactSourceViews): boolean {
+  return anyHit(GAME_SIGNAL_CODE_PATTERNS, views.code) || anyHit(GAME_SIGNAL_MARKUP_PATTERNS, views.comments);
 }
 
-function hasStrongInteractiveSignal(content: string): boolean {
-  if (STRONG_INTERACTIVE_PATTERNS.some((pattern) => pattern.test(content))) {
+function hasStrongInteractiveSignal(views: ArtifactSourceViews): boolean {
+  if (anyHit(STRONG_INTERACTIVE_PATTERNS, views.code)) {
     return true;
   }
 
+  const content = views.comments;
   const hasCanvas = /<canvas\b/i.test(content);
   const hasRealtimeLoop = /\brequestAnimationFrame\b/i.test(content) || /\bsetInterval\b/i.test(content);
-  const hasInput = CONTROL_PATTERNS.some((pattern) => pattern.test(content));
-  const gameplaySignalCount = GAMEPLAY_HINT_PATTERNS.filter((pattern) => pattern.test(content)).length;
+  const hasInput = anyHit(CONTROL_PATTERNS, content);
+  const gameplaySignalCount = GAMEPLAY_HINT_PATTERNS.filter((pattern) => {
+    pattern.lastIndex = 0;
+    return pattern.test(content);
+  }).length;
 
   return hasCanvas && hasInput && gameplaySignalCount >= 3 && (hasRealtimeLoop || gameplaySignalCount >= 4);
 }
 
-function inferArtifactKind(content: string): 'game' | 'interactive_app' | 'other' {
-  if (hasExplicitGameSignal(content)) {
+function inferArtifactKind(views: ArtifactSourceViews): 'game' | 'interactive_app' | 'other' {
+  if (hasExplicitGameSignal(views)) {
     return 'game';
   }
-  if (hasStrongInteractiveSignal(content) || /<canvas\b/i.test(content) || /<script\b/i.test(content)) {
+  if (hasStrongInteractiveSignal(views) || /<canvas\b/i.test(views.comments) || /<script\b/i.test(views.comments)) {
     return 'interactive_app';
   }
   return 'other';
@@ -419,14 +450,18 @@ function findBalancedObjectAssignmentSnippet(content: string, assignmentPattern:
   return null;
 }
 
-function extractInteractiveContractSnippet(content: string): ContractSnippet | null {
-  return findBalancedObjectAssignmentSnippet(content, /window\.__INTERACTIVE_TEST__\s*=\s*\{/i)
-    || findBalancedObjectAssignmentSnippet(content, /window\.__GAME_TEST__\s*=\s*\{/i);
+function extractInteractiveContractSnippet(views: ArtifactSourceViews): ContractSnippet | null {
+  const found = findBalancedObjectAssignmentSnippet(views.code, /window\.__INTERACTIVE_TEST__\s*=\s*\{/i)
+    || findBalancedObjectAssignmentSnippet(views.code, /window\.__GAME_TEST__\s*=\s*\{/i);
+  if (!found) return null;
+  return { start: found.start, end: found.end, text: views.original.slice(found.start, found.end) };
 }
 
-function extractGameMetadataSnippet(content: string): ContractSnippet | null {
-  return findBalancedObjectAssignmentSnippet(content, /window\.__GAME_META__\s*=\s*\{/i)
-    || findBalancedObjectAssignmentSnippet(content, /window\.__INTERACTIVE_META__\s*=\s*\{/i);
+function extractGameMetadataSnippet(views: ArtifactSourceViews): ContractSnippet | null {
+  const found = findBalancedObjectAssignmentSnippet(views.code, /window\.__GAME_META__\s*=\s*\{/i)
+    || findBalancedObjectAssignmentSnippet(views.code, /window\.__INTERACTIVE_META__\s*=\s*\{/i);
+  if (!found) return null;
+  return { start: found.start, end: found.end, text: views.original.slice(found.start, found.end) };
 }
 
 function hasOrphanedContractTail(content: string, contractSnippet: ContractSnippet | null): boolean {
@@ -502,13 +537,13 @@ function detectSubtype(metadataSnippet: string): string | undefined {
 }
 
 function dispatchSubtypeMechanicsValidation(
-  content: string,
+  views: ArtifactSourceViews,
   filePath: string,
 ): { failures: string[]; checks: string[] } {
-  const metadataSnippet = extractGameMetadataSnippet(content)?.text || content;
+  const metadataSnippet = extractGameMetadataSnippet(views)?.text || views.comments;
   const declaredSubtype = detectSubtype(metadataSnippet);
 
-  // 优先看声明的 subtype；失败时把 content 喂给所有 checker 让它们自检
+  // 优先看声明的 subtype；失败时把 comments view 喂给所有 checker 让它们自检
   // （eg. platformer 通过文件名兜底）。每个 checker 自己负责短路。
   const candidateSubtypes = declaredSubtype
     ? [declaredSubtype, ...gameSubtypeRegistry.list().filter((s) => s !== declaredSubtype)]
@@ -517,7 +552,7 @@ function dispatchSubtypeMechanicsValidation(
   for (const subtype of candidateSubtypes) {
     const checker = gameSubtypeRegistry.get(subtype);
     if (!checker) continue;
-    const result = checker.validateMechanics(content, {
+    const result = checker.validateMechanics(views.comments, {
       artifactRef: filePath,
       strict: false,
       metadata: { filePath },
@@ -530,16 +565,16 @@ function dispatchSubtypeMechanicsValidation(
   return { failures: [], checks: [] };
 }
 
-function validateTestContractIntegrity(content: string, contractSnippet?: ContractSnippet | null): { failures: string[]; checks: string[] } {
+function validateTestContractIntegrity(views: ArtifactSourceViews, contractSnippet?: ContractSnippet | null): { failures: string[]; checks: string[] } {
   const failures: string[] = [];
   const checks: string[] = [];
-  const contractContent = contractSnippet?.text || content;
+  const contractContent = contractSnippet?.text || views.original;
   const stepSnippet = extractFunctionSnippet(contractContent, 'step');
   const smokeSnippet = extractFunctionSnippet(contractContent, 'runSmokeTest');
 
   if (!stepSnippet && !smokeSnippet) {
     const hasContractObject = Boolean(contractSnippet)
-      || /window\.__(?:GAME|INTERACTIVE)_TEST__\s*=/i.test(contractContent);
+      || /window\.__(?:GAME|INTERACTIVE)_TEST__\s*=/i.test(views.code);
     if (!hasContractObject) {
       checks.push('test contract integrity: step() and runSmokeTest() are both absent');
       failures.push(
@@ -609,7 +644,7 @@ export async function validateGameArtifact(
     };
   }
 
-  let content = '';
+  let content: string;
   try {
     content = await readFile(filePath, 'utf-8');
   } catch (error) {
@@ -623,10 +658,11 @@ export async function validateGameArtifact(
     };
   }
 
-  const inferredKind = inferArtifactKind(content);
+  const views = viewsOf(content);
+  const inferredKind = inferArtifactKind(views);
   const isComplete = looksLikeCompleteHtml(content);
   const hasTrailingHtmlContent = hasTrailingContentAfterHtml(content);
-  const shouldValidate = inferredKind === 'game' || hasStrongInteractiveSignal(content);
+  const shouldValidate = inferredKind === 'game' || hasStrongInteractiveSignal(views);
   const cacheKey = makeValidationCacheKey(filePath, content, options);
   const cached = readCachedValidation(cacheKey);
   if (cached) {
@@ -661,26 +697,26 @@ export async function validateGameArtifact(
   }
 
   if (contractLevel === 'full') {
-    const largeFixedCanvas = findLargeFixedCanvas(content);
-    if (largeFixedCanvas && hasCanvasViewportCroppingRisk(content) && !hasResponsiveCanvasSizing(content)) {
+    const largeFixedCanvas = findLargeFixedCanvas(views.comments);
+    if (largeFixedCanvas && hasCanvasViewportCroppingRisk(views.comments) && !hasResponsiveCanvasSizing(views.comments)) {
       const dimensions = [largeFixedCanvas.width, largeFixedCanvas.height]
         .filter((value) => typeof value === 'number')
         .join('x');
       failures.push(`大型固定 canvas${dimensions ? ` (${dimensions})` : ''} 缺少响应式 CSS；窄窗口会裁切游戏画面。请保留内部分辨率，但给 canvas 或 wrapper 同时约束宽高，例如 max-width: calc(100vw - 16px)、max-height: calc(100dvh - 16px)、aspect-ratio、height:auto，确保 390px mobile viewport 内完整可见。`);
-    } else if (largeFixedCanvas && hasResponsiveCanvasSizing(content)) {
+    } else if (largeFixedCanvas && hasResponsiveCanvasSizing(views.comments)) {
       checks.push('responsive canvas sizing detected');
     }
   }
 
-  const hasStepProbe = INTERACTIVE_TEST_STEP_PATTERNS.some((pattern) => pattern.test(content));
-  const hasResetProbe = INTERACTIVE_TEST_RESET_PATTERNS.some((pattern) => pattern.test(content));
-  const breakoutShaped = looksLikeBreakoutGame(content, filePath);
+  const hasStepProbe = anyHit(INTERACTIVE_TEST_STEP_PATTERNS, views.code);
+  const hasResetProbe = anyHit(INTERACTIVE_TEST_RESET_PATTERNS, views.code);
+  const breakoutShaped = looksLikeBreakoutGame(views.comments, filePath);
   // 只在 breakout 整契约缺失这条分支上用「右侧必须是直接对象字面量」的严判据：
   // 失败文案要求的就是直接对象字面量，光看 `=` 会让 `__GAME_META__ = null` 骗过闸门。
-  // 故意不改 INTERACTIVE_TEST_CONTRACT_PATTERNS——那是共享常量，:732/:740 的通用路径
+  // 故意不改 INTERACTIVE_TEST_CONTRACT_PATTERNS——那是共享常量，通用路径
   // 还在用它，收紧它等于顺带收紧所有搭便车的消费方。
-  const hasGameMetaAssignment = /window\.__(?:GAME|INTERACTIVE)_META__\s*=\s*\{/i.test(content);
-  const hasTestContractAssignment = /window\.__(?:GAME|INTERACTIVE)_TEST__\s*=\s*\{/i.test(content);
+  const hasGameMetaAssignment = /window\.__(?:GAME|INTERACTIVE)_META__\s*=\s*\{/i.test(views.code);
+  const hasTestContractAssignment = /window\.__(?:GAME|INTERACTIVE)_TEST__\s*=\s*\{/i.test(views.code);
   const breakoutWholeContractMissing = breakoutShaped && !hasGameMetaAssignment && !hasTestContractAssignment;
 
   if (breakoutShaped && (!hasGameMetaAssignment || !hasTestContractAssignment)) {
@@ -691,7 +727,7 @@ export async function validateGameArtifact(
     checks.push('breakout contract objects declared');
   }
 
-  if (!CONTROL_PATTERNS.some((pattern) => pattern.test(content)) && !hasStepProbe) {
+  if (!anyHit(CONTROL_PATTERNS, views.comments) && !hasStepProbe) {
     failures.push('缺少明确的用户输入入口，无法确认玩家能实际操作游戏。');
   } else {
     checks.push('user input entry detected');
@@ -701,20 +737,20 @@ export async function validateGameArtifact(
   // 普通聊天里随手生成的交互产物（light）跳过，只要"能跑"即可，不卡内部机器可读契约。
   // breakout 例外：整段 META/TEST 都没有时只报一条 subtype 码 + integrity，不散射 8 条零件缺失。
   if (contractLevel === 'full' && !breakoutWholeContractMissing) {
-  if (!META_COVERAGE_PATTERNS.some((pattern) => pattern.test(content))) {
+  if (!anyHit(META_COVERAGE_PATTERNS, views.comments)) {
     failures.push('缺少可用于验收的关卡、片段、场景或目标元数据；工程层不能只凭源码猜游戏是否完整。');
   } else {
     checks.push('scenario/objective metadata detected');
   }
 
-  if (!META_CONTROL_PATTERNS.some((pattern) => pattern.test(content))) {
+  if (!anyHit(META_CONTROL_PATTERNS, views.comments)) {
     failures.push('缺少 controls 元数据；工程层不知道该模拟什么输入来验证真实可操作性。');
   } else {
     checks.push('controls metadata detected');
   }
 
-  if (!META_REACHABILITY_PATTERNS.some((pattern) => pattern.test(content))) {
-    if (META_REACHABILITY_NEAR_MISS_PATTERNS.some((pattern) => pattern.test(content))) {
+  if (!anyHit(META_REACHABILITY_PATTERNS, views.comments)) {
+    if (anyHit(META_REACHABILITY_NEAR_MISS_PATTERNS, views.comments)) {
       failures.push('发现 progress/coverage 说明，但缺少 reachability/progressPlan/smokePlan/validation 元数据；__GAME_META__.progress、coverage 或字符串数组 acceptance 不算可执行验收计划。请添加 progressPlan 或 reachability 数组，每一步包含 input、frames、metric 和 expect。');
     } else {
       failures.push('缺少 reachability/progressPlan/smokePlan/validation 元数据；工程层无法验证目标、场景或关卡能被推进。');
@@ -723,39 +759,39 @@ export async function validateGameArtifact(
     checks.push('reachability/progress metadata detected');
   }
 
-  if (!META_QUALITY_PATTERNS.some((pattern) => pattern.test(content))) {
+  if (!anyHit(META_QUALITY_PATTERNS, views.comments)) {
     failures.push('缺少 qualityPlan/acceptance 级别的玩法承诺元数据；工程层无法判断角色可辨识、奖励/风险是否真实存在。');
   } else {
     checks.push('quality/acceptance metadata detected');
   }
 
-  const subtypeMechanics = dispatchSubtypeMechanicsValidation(content, filePath);
+  const subtypeMechanics = dispatchSubtypeMechanicsValidation(views, filePath);
   checks.push(...subtypeMechanics.checks);
   failures.push(...subtypeMechanics.failures);
 
-  if (!INTERACTIVE_TEST_CONTRACT_PATTERNS.some((pattern) => pattern.test(content))) {
+  if (!anyHit(INTERACTIVE_TEST_CONTRACT_PATTERNS, views.code)) {
     failures.push('缺少通用交互测试合约 window.__INTERACTIVE_TEST__ 或 window.__GAME_TEST__，工程层无法真实启动、输入并读取状态变化。');
   } else {
     checks.push('interactive test contract detected');
   }
 
-  const interactiveContractSnippet = extractInteractiveContractSnippet(content);
+  const interactiveContractSnippet = extractInteractiveContractSnippet(views);
   if (
-    INTERACTIVE_TEST_CONTRACT_PATTERNS.some((pattern) => pattern.test(content))
+    anyHit(INTERACTIVE_TEST_CONTRACT_PATTERNS, views.code)
     && !interactiveContractSnippet
   ) {
     failures.push('交互测试合约没有形成可平衡解析的对象字面量；请把 window.__INTERACTIVE_TEST__ / window.__GAME_TEST__ 修成一个直接赋值的平衡对象字面量，形如 window.__GAME_TEST__ = { start() {...}, reset(levelOrScenario) {...}, snapshot() {...}, step(inputState = {}, frames = 1) {...}, runSmokeTest() { return { passed, checks, failures, coverage }; } }; 不要放在注释、函数/类/IIFE/Object.assign 外壳里，也不要在对象闭合后留下重复或孤立的方法尾巴。');
-  } else if (interactiveContractSnippet && hasOrphanedContractTail(content, interactiveContractSnippet)) {
+  } else if (interactiveContractSnippet && hasOrphanedContractTail(views.comments, interactiveContractSnippet)) {
     failures.push('交互测试合约闭合后仍然残留游离的 start/reset/snapshot/step/runSmokeTest 方法尾巴；请删除重复或孤立的 contract tail，再保留一份真实生效的测试合约。');
   }
 
-  if (!INTERACTIVE_TEST_START_PATTERNS.some((pattern) => pattern.test(content))) {
+  if (!anyHit(INTERACTIVE_TEST_START_PATTERNS, views.code)) {
     failures.push('交互测试合约缺少 start()，验收无法从真实初始状态启动产物。');
   } else {
     checks.push('interactive start probe detected');
   }
 
-  if (!INTERACTIVE_TEST_SNAPSHOT_PATTERNS.some((pattern) => pattern.test(content))) {
+  if (!anyHit(INTERACTIVE_TEST_SNAPSHOT_PATTERNS, views.code)) {
     failures.push('交互测试合约缺少 snapshot()，验收无法读取主对象、进度或反馈变化。');
   } else {
     checks.push('interactive snapshot probe detected');
@@ -769,19 +805,19 @@ export async function validateGameArtifact(
     checks.push('interactive step probe detected');
   }
 
-  const contractIntegrity = validateTestContractIntegrity(content, interactiveContractSnippet);
+  const contractIntegrity = validateTestContractIntegrity(views, interactiveContractSnippet);
   checks.push(...contractIntegrity.checks);
   failures.push(...contractIntegrity.failures);
   } else if (contractLevel === 'full' && breakoutWholeContractMissing) {
     const contractIntegrity = validateTestContractIntegrity(
-      content,
-      extractInteractiveContractSnippet(content),
+      views,
+      extractInteractiveContractSnippet(views),
     );
     checks.push(...contractIntegrity.checks);
     failures.push(...contractIntegrity.failures);
   } // end contractLevel === 'full'（重契约元数据校验，仅 goal/验收模式强制）
 
-  const hasSmokeProbe = INTERACTIVE_TEST_SMOKE_PATTERNS.some((pattern) => pattern.test(content));
+  const hasSmokeProbe = anyHit(INTERACTIVE_TEST_SMOKE_PATTERNS, views.code);
   if (contractLevel === 'full' && !hasSmokeProbe && !breakoutWholeContractMissing) {
     failures.push('交互测试合约缺少 runSmokeTest()，验收无法用真实输入证明游戏可操作。');
   } else if (hasSmokeProbe) {

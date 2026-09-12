@@ -375,6 +375,73 @@ describe('LAN companion: real HTTP + Noise + SQLite', () => {
     } finally { phone.getState().pause(); }
   });
 
+  it('取消过的录音，晚到 ack 不许因为「后来又取消了一次」而漏网', async () => {
+    // grok ai-review Important：取消槽只有一个，后一次取消会把前一次的代号盖掉。
+    // 真机时序：取消 A（A 的分片已进待确认槽、ack 还在路上）→ 立刻再点麦克风录 B
+    //（B 的分片发不出去，槽还被 A 占着，所以在飞的代号仍是 A）→ 再取消 B → A 的 ack 到了。
+    // 判据一被盖掉，用户刚撤掉的那句话照样写进输入框。
+    const db2 = new Database(':memory:');
+    const gateway2 = new CompanionGateway(db2, { now: () => now,
+      dispatch: () => ({ state: 'accepted', result: { text: '取消掉的那句话' } }) });
+    const server2 = new LanCompanionServer(gateway2, hostIdentity, () => now);
+    await server2.start(address!, 0);
+    let storage: string | null = null; let lose = true;
+    const transcripts: string[] = [];
+    const port = { read: async () => storage, write: async (value: string) => { storage = value; },
+      scan: async () => JSON.stringify(server2.invite(['shared'])),
+      post: async (url: string, body: unknown) => {
+        const result = await post(url, body);
+        // 吞掉命令回执：主机已经收下并转好了，手机这边 deliver 抛错，结算要等重连后的 status
+        // 查询——ack 于是落在两次取消**之后**，正是覆盖那个判据的窗口。
+        if (url.endsWith('/exchange') && lose) { lose = false; throw new Error('RECEIPT_LOST'); }
+        return result;
+      } };
+    const phone = createCompanionStore(port, () => {}, async text => { transcripts.push(text); });
+    try {
+      await phone.getState().pair();
+      const { sessionId, binding } = phone.getState();
+      await phone.getState().transcribe({ audioData: 'YXVkaW8=', mimeType: 'audio/aac', durationMs: 4000 },
+        sessionId!, binding!.hostKey, false, 'take-1');
+      expect(phone.getState().pending).toBe(true);
+      phone.getState().discardPendingTranscript('take-1');
+      phone.getState().discardPendingTranscript('take-2');
+      await phone.getState().reconnect();
+      expect(phone.getState().pending).toBe(false);
+      expect(transcripts).toEqual([]);
+    } finally { phone.getState().pause(); await server2.stop(); db2.close(); }
+  });
+
+  it('取消掉的那次转写被拒，不再弹一句通用报错——那个动作用户已经撤了', async () => {
+    // grok ai-review Nit：取消之后冒出「电脑那边拒绝了这条操作」，说的是用户刚撤掉的动作。
+    // 输入区那条带阶段的失败提示此刻也不在场（面板已经收了），所以这句没有任何可操作性。
+    const db2 = new Database(':memory:');
+    const gateway2 = new CompanionGateway(db2, { now: () => now,
+      dispatch: () => ({ state: 'rejected', result: { code: 'COMPANION_TRANSCRIPTION_FAILED' } }) });
+    const server2 = new LanCompanionServer(gateway2, hostIdentity, () => now);
+    await server2.start(address!, 0);
+    let storage: string | null = null; let lose = true;
+    const port = { read: async () => storage, write: async (value: string) => { storage = value; },
+      scan: async () => JSON.stringify(server2.invite(['shared'])),
+      post: async (url: string, body: unknown) => {
+        const result = await post(url, body);
+        if (url.endsWith('/exchange') && lose) { lose = false; throw new Error('RECEIPT_LOST'); }
+        return result;
+      } };
+    const phone = createCompanionStore(port, () => {}, async () => {});
+    try {
+      await phone.getState().pair();
+      const { sessionId, binding } = phone.getState();
+      await phone.getState().transcribe({ audioData: 'YXVkaW8=', mimeType: 'audio/aac', durationMs: 4000 },
+        sessionId!, binding!.hostKey, false, 'take-1');
+      phone.getState().discardPendingTranscript('take-1');
+      await phone.getState().reconnect();
+      expect(phone.getState().pending).toBe(false);
+      expect(phone.getState().commandError).toBeNull();
+      // 结论照旧要给出来，否则分片队列一直等 ack
+      expect(phone.getState().voiceResult?.outcome).toBe('error');
+    } finally { phone.getState().pause(); await server2.stop(); db2.close(); }
+  });
+
   it('待确认的语音命令被回收时也必须给出结论，否则分片队列一直等 ack、面板永不收口', async () => {
     // grok ai-review #1764 Important：清待确认槽的路不止「结算」一条——被拒、抢答冲突、
     // reconciling 超时回收都在别处清槽，谁都没写结果。分片队列等的就是这条命令的结果，

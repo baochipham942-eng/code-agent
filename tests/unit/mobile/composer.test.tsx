@@ -27,13 +27,13 @@ function mount(overrides: {
   const send = vi.fn();
   const openModel = vi.fn();
   const onVoiceState = vi.fn();
-  render(<Composer text={text} draft={overrides.draft ?? ''} editDraft={() => {}} offline={overrides.offline ?? false}
+  const view = render(<Composer text={text} draft={overrides.draft ?? ''} editDraft={() => {}} offline={overrides.offline ?? false}
     sendDisabled={!(overrides.draft ?? '').trim()} send={send}
     modelLabel={overrides.modelLabel === undefined ? 'DeepSeek V4.1 Flash' : overrides.modelLabel} openModel={openModel}
     attach={'attach' in overrides ? overrides.attach : () => {}} attachDisabled={false}
     recorder={overrides.recorder === false ? undefined : recorder} transcribe={transcribe} discardPendingTranscript={discardPendingTranscript}
     voiceDisabled={false} voicePending={false} voiceResult={null} voiceReady onVoiceState={onVoiceState} />);
-  return { transcribe, send, openModel, onVoiceState, discardPendingTranscript };
+  return { transcribe, send, openModel, onVoiceState, discardPendingTranscript, unmount: view.unmount };
 }
 
 const clickMic = () => fireEvent.click(screen.getByRole('button', { name: text.voice }));
@@ -524,6 +524,17 @@ describe('一次录音是显式对象 + 代号：所有异步续段先比代号'
     await advance(2_000);
     expect(screen.getByTestId('draft')).toBeTruthy();
     expect(document.querySelector('.voice-composer')).toBeNull();
+  });
+
+  it('录音中切会话（输入区被重挂）也要点名取消，不能只摘身份', async () => {
+    // Composer 的 key 是 hostKey:sessionId，切会话就是卸载重挂；录音中横滑被禁，但顶栏汉堡键
+    // 和审批跳转仍能切走。只摘身份的话，已进待确认槽的那段照样会写进原会话的草稿
+    // ——基线 VoiceInput 在这条路上走 stop(true)，根本不会发起转写（grok ai-review Important）。
+    const { discardPendingTranscript, unmount } = mount();
+    clickMic();
+    await screen.findByRole('button', { name: text.cancelRecording });
+    unmount();
+    expect(discardPendingTranscript).toHaveBeenCalled();
   });
 
   it('结算必须认 commandId：上一段的结论不许替下一段签字', async () => {

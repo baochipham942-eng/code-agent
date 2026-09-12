@@ -207,7 +207,11 @@ export function useVoiceCapture({ recorder, pending, result, ready, transcribe, 
       document.removeEventListener('visibilitychange', hide);
       const t = take.current;
       if (!t) return;
+      // 卸载 = 换会话（Composer 的 key 是 hostKey:sessionId）或换录音口，语义与取消一样，
+      // 就得跟取消一样点名：只摘身份的话，已进待确认槽的那段照样会写进原会话的草稿
+      // ——基线 VoiceInput 在这条路上走 stop(true)，根本不会发起转写（grok ai-review Important）。
       take.current = null;
+      discardPending(t.id);
       t.wake?.(); void release(t);
     };
   }, [recorder]);

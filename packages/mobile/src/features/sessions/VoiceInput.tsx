@@ -35,7 +35,11 @@ export function VoiceInput({ recorder, text, disabled, pending, outcome, transcr
       if (discard || cancelled.current) { audio.current = null; setPhase('idle'); return; }
       if (value.audioData.length > L.voiceBase64Limit) throw new Error('AUDIO_TOO_LARGE');
       audio.current = value; setPhase('ready'); stage = 'transcribe'; await transcribe(value);
-    } catch (error) { fail(stage, error); }
+    } catch (error) {
+      // 丢弃路径上的失败不该报给用户：录音本来就不要了（切后台时原生侧可能已经自己收了摊，
+      // 这时 stop 抛的是 RECORDING_HAS_NOT_STARTED，显示成「录音失败」是假警报）。
+      if (discard || cancelled.current) { audio.current = null; setPhase('idle'); } else fail(stage, error);
+    }
     finally { active.current = false; stopping.current = false; }
   };
   useEffect(() => {

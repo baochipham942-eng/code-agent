@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   assertPushEntitlement, exportOptionsXml, extractNativeTargetId, extractPlistXml, parsePlistXml, patchPbxprojVersions,
-  profileCoversDevice, readMobileprovision, summarizeProfile, unlinkedSpmPlugins,
+  profileCoversDevice, readMobileprovision, summarizeProfile, unlinkedSpmPlugins, withSelfImplementedPluginClasses,
 } from '../../../packages/mobile/scripts/ios-package.mjs';
 import { ensureAndroidPushPermission, mergeRemoteNotificationMode } from '../../../packages/mobile/scripts/configure-lan.mjs';
 
@@ -170,5 +170,33 @@ let package = Package(
   it('reports every unlinked plugin, not just the first', () => {
     expect(unlinkedSpmPlugins(packageSwift, ['capacitor-voice-recorder', '@capacitor/filesystem']))
       .toEqual(['capacitor-voice-recorder', '@capacitor/filesystem']);
+  });
+});
+
+describe('capacitor plugin registration list', () => {
+  // cap sync 生成的真实形状：厂商插件的 ObjC 类名照样进表，哪怕那个包没被链接。
+  const config = { appId: 'dev.neo.companion.preview', packageClassList: ['AppPlugin', 'KeyboardPlugin', 'VoiceRecorder'] };
+  const replacements = [{ vendorClass: 'VoiceRecorder', nativeClass: 'NeoVoiceRecorderPlugin' }];
+
+  it('swaps the vendor class for the first-party one in place', () => {
+    expect(withSelfImplementedPluginClasses(config, replacements).packageClassList)
+      .toEqual(['AppPlugin', 'KeyboardPlugin', 'NeoVoiceRecorderPlugin']);
+  });
+
+  it('registers the first-party class even when cap sync never listed the vendor one', () => {
+    // 厂商 npm 依赖若被移除，cap sync 不会再写 VoiceRecorder——那时仍必须登记我们自己的类，
+    // 否则录音会再次静默失效。
+    expect(withSelfImplementedPluginClasses({ packageClassList: ['AppPlugin'] }, replacements).packageClassList)
+      .toEqual(['AppPlugin', 'NeoVoiceRecorderPlugin']);
+  });
+
+  it('does not duplicate an already registered class', () => {
+    const once = withSelfImplementedPluginClasses(config, replacements);
+    expect(withSelfImplementedPluginClasses(once, replacements).packageClassList)
+      .toEqual(once.packageClassList);
+  });
+
+  it('keeps every other key of the config untouched', () => {
+    expect(withSelfImplementedPluginClasses(config, replacements).appId).toBe('dev.neo.companion.preview');
   });
 });

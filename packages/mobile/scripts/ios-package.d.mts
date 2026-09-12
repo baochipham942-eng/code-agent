@@ -31,3 +31,8 @@ export declare function exportOptionsXml(options: ExportOptions): string;
 
 /** 装了的 iOS 插件里，哪些没被 cap sync 链进 CapApp-SPM/Package.swift（selfImplemented 除外）。 */
 export function unlinkedSpmPlugins(packageSwift: string, plugins: string[], selfImplemented?: string[]): string[];
+
+export interface SelfImplementedPluginClass { vendorClass: string; nativeClass: string }
+/** 把 packageClassList 里厂商插件的登记名换成第一方类名（Capacitor 按这张表 NSClassFromString）。 */
+export declare function withSelfImplementedPluginClasses<T extends { packageClassList?: string[] }>(
+  config: T, replacements: SelfImplementedPluginClass[]): T & { packageClassList: string[] };

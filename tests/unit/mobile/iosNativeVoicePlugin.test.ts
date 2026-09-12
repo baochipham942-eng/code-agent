@@ -5,11 +5,20 @@ import { readFileSync } from 'node:fs';
 // 桥就找不到实现（FB-140 就是这个形状：原生根本没进包，JS 侧照常调）。
 const swift = readFileSync('packages/mobile/ios-native/NeoVoiceRecorder.swift', 'utf8');
 const capacitorPort = readFileSync('packages/mobile/src/platform/capacitor.ts', 'utf8');
+const buildScript = readFileSync('packages/mobile/scripts/build-ios.mjs', 'utf8');
 
 describe('first-party ios voice recorder contract', () => {
   it('registers under the js name the app actually calls', () => {
     expect(swift).toContain('public let jsName = "VoiceRecorder"');
     expect(capacitorPort).toContain("import { VoiceRecorder } from 'capacitor-voice-recorder'");
+  });
+
+  it('exposes the objc class name the build script puts in packageClassList', () => {
+    // Capacitor 8 按 packageClassList 里的类名找类，找不到就静默跳过——两边写的名字必须是同一个。
+    const objcName = swift.match(/@objc\((\w+)\)/)?.[1];
+    expect(objcName).toBeTruthy();
+    expect(buildScript).toContain(`nativeClass: '${objcName}'`);
+    expect(swift).toContain(`public let identifier = "${objcName}"`);
   });
 
   it('declares every bridge method the port calls', () => {

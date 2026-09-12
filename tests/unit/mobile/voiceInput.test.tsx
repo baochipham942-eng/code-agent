@@ -54,6 +54,17 @@ describe('VoiceInput failure reporting', () => {
     expect(screen.queryByText(new RegExp(text.voiceRecordFailed))).toBeNull();
   });
 
+  it('stays quiet when a discarded recording fails to stop', async () => {
+    // 切后台时原生侧会自己停录并删音频，之后这次 stop 抛 RECORDING_HAS_NOT_STARTED——
+    // 录音本来就不要了，不该弹错误卡
+    mount({ stop: async () => { throw new Error('RECORDING_HAS_NOT_STARTED'); } });
+    clickMic();
+    fireEvent.click(await screen.findByRole('button', { name: text.cancelRecording }));
+    await waitFor(() => expect(screen.getByRole('button', { name: text.voice })).toBeTruthy());
+    expect(screen.queryByText(new RegExp(text.voiceRecordFailed))).toBeNull();
+    expect(screen.queryByText(new RegExp('RECORDING_HAS_NOT_STARTED'))).toBeNull();
+  });
+
   it('records a retry failure instead of swallowing it', async () => {
     let attempt = 0;
     mount({ transcribe: async () => { attempt += 1; throw new Error(attempt === 1 ? 'FIRST' : 'RETRY_FAILED'); } });

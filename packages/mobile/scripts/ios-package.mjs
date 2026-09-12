@@ -177,3 +177,21 @@ export function unlinkedSpmPlugins(packageSwift, plugins, selfImplemented = []) 
   const own = new Set(selfImplemented);
   return plugins.filter((name) => !own.has(name) && !packageSwift.includes(`node_modules/${name}"`));
 }
+
+/**
+ * Capacitor 8 不扫描 CAPBridgedPlugin，而是读 ios/App/App/capacitor.config.json 的
+ * packageClassList，逐个按类名找类（找不到就静默跳过）。cap sync 生成这张表时会把**厂商**插件的
+ * ObjC 类名写进去——即便那个包因为没有 Package.swift 根本不会被编译。于是「类进了二进制」
+ * 与「Capacitor 会注册它」是两回事：自己实现的插件必须把登记名换成第一方类名，否则
+ * 运行时照旧是 plugin is not implemented on ios（ai-review PR#1760 Important 1，已用真机
+ * 生成的 capacitor.config.json 与 Capacitor.framework 里的 packageClassList / autoRegisterPlugins 核实）。
+ */
+export function withSelfImplementedPluginClasses(config, replacements) {
+  const list = Array.isArray(config.packageClassList) ? [...config.packageClassList] : [];
+  for (const { vendorClass, nativeClass } of replacements) {
+    const at = list.indexOf(vendorClass);
+    if (at >= 0) list.splice(at, 1, nativeClass);
+    else if (!list.includes(nativeClass)) list.push(nativeClass);
+  }
+  return { ...config, packageClassList: list };
+}

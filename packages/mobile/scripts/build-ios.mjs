@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { resolve } from 'node:path';
-import { extractNativeTargetId, exportOptionsXml, patchPbxprojVersions, profileCoversDevice, readMobileprovision, sharedSchemeXml, summarizeProfile, unlinkedSpmPlugins } from './ios-package.mjs';
+import { extractNativeTargetId, exportOptionsXml, patchPbxprojVersions, profileCoversDevice, readMobileprovision, sharedSchemeXml, summarizeProfile, unlinkedSpmPlugins, withSelfImplementedPluginClasses } from './ios-package.mjs';
 
 const build = Number(process.env.NEO_MOBILE_BUILD);
 if (!Number.isSafeInteger(build) || build < 1) throw new Error('POSITIVE_NEO_MOBILE_BUILD_REQUIRED');
@@ -52,8 +52,14 @@ if (style === 'manual' && !profileFile) missing.push('no .mobileprovision (set N
 if (!expectedDevice) missing.push('NEO_IOS_EXPECTED_UDID required so Ad Hoc export fails closed unless the profile covers the target iPhone');
 if (missing.length > 0) throw new Error(`IOS_PREREQUISITES_MISSING: ${missing.join(' | ')}`);
 
-/** iOS 侧我们自己实现、故意不用厂商原生包的插件（JS 依赖仍在，Android 走厂商实现）。 */
-const SELF_IMPLEMENTED_IOS_PLUGINS = ['capacitor-voice-recorder'];
+/**
+ * iOS 侧我们自己实现、故意不用厂商原生包的插件（JS 依赖仍在，Android 走厂商实现）。
+ * vendorClass 是 cap sync 会写进 packageClassList 的那个名字——那个类不会被编译进来，
+ * 必须换成 nativeClass，Capacitor 的注册表才指向真正存在的实现。
+ */
+const SELF_IMPLEMENTED_IOS_PLUGINS = [
+  { package: 'capacitor-voice-recorder', vendorClass: 'VoiceRecorder', nativeClass: 'NeoVoiceRecorderPlugin' },
+];
 
 /** 装了哪些带 iOS 原生实现的 Capacitor 插件——以 package.json 依赖为准，不靠手抄清单。 */
 function installedIosPlugins() {
@@ -74,8 +80,17 @@ function stageNativePlugins() {
     if (!existsSync(resolve(sources, file))) throw new Error(`IOS_NATIVE_SOURCE_NOT_STAGED: ${file}`);
   }
   const unlinked = unlinkedSpmPlugins(readFileSync(`${sources}/../../Package.swift`, 'utf8'),
-    installedIosPlugins(), SELF_IMPLEMENTED_IOS_PLUGINS);
+    installedIosPlugins(), SELF_IMPLEMENTED_IOS_PLUGINS.map(plugin => plugin.package));
   if (unlinked.length > 0) throw new Error(`IOS_PLUGINS_NOT_LINKED: ${unlinked.join(' | ')}`);
+  // 注册表按类名找类：厂商类不会被编译进来，登记名必须换成第一方类名，否则桥照样找不到实现。
+  const configPath = 'ios/App/App/capacitor.config.json';
+  const registered = withSelfImplementedPluginClasses(JSON.parse(readFileSync(configPath, 'utf8')), SELF_IMPLEMENTED_IOS_PLUGINS);
+  writeFileSync(configPath, `${JSON.stringify(registered, null, '\t')}\n`);
+  for (const { vendorClass, nativeClass } of SELF_IMPLEMENTED_IOS_PLUGINS) {
+    if (registered.packageClassList.includes(vendorClass) || !registered.packageClassList.includes(nativeClass)) {
+      throw new Error(`IOS_PLUGIN_CLASS_NOT_REGISTERED: ${nativeClass}`);
+    }
+  }
 }
 
 configureVoiceRelease();

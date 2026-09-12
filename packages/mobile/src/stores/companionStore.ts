@@ -24,11 +24,20 @@ type ConnectionError = 'connectionQrInvalid' | 'connectionScanFailed' | 'connect
  */
 const DEVICE_LEVEL_REASONS = new Set(['device_revoked', 'device_unknown', 'scope_denied', 'scope_epoch_mismatch']);
 
+/**
+ * 一条转写命令的结局，**带着它是哪一条**。
+ * 之前这里是个粘着的 `voiceOutcome: 'done'|'error'|null`：上一次录音、上一个会话留下的电平，
+ * 下一次录音照样读得到，于是每加一条修法就多一道交叉判据（七轮 ai-review 的共因）。
+ * 认 commandId 之后，陈旧结果连匹配都匹配不上，不需要谁负责去清它。
+ */
+export type VoiceResult = { commandId: string; outcome: 'done' | 'error'; code?: string };
+
 interface State {
-  voiceOutcome: 'done' | 'error' | null;
-  /** 返回「这条命令有没有真发出去」：分片伪流式要靠它决定重排队，静默丢片就没人知道了。 */
-  transcribe(audio: { audioData: string; mimeType: string; durationMs: number }, sessionId: string, hostKey: string, continuation?: boolean): Promise<boolean>;
-  discardPendingTranscript(): void;
+  voiceResult: VoiceResult | null;
+  /** 返回这条命令的 commandId（已进待确认槽）；没发出去回 null，分片队列据此重排队，不静默丢片。 */
+  transcribe(audio: { audioData: string; mimeType: string; durationMs: number }, sessionId: string, hostKey: string, continuation?: boolean, take?: string | null): Promise<string | null>;
+  /** 取消这次录音：晚到的结果不进草稿。按录音代号点名。 */
+  discardPendingTranscript(take: string): void;
   library: CompanionLibrary | null; history: Record<string, CompanionHistory>; libraryError: boolean;
   refreshLibrary(more?: boolean): Promise<void>; loadHistory(id: string, more?: boolean): Promise<void>;
   manage(action: 'session.create' | 'session.rename' | 'session.archive' | 'session.delete' | 'session.model', payload: Record<string, unknown>, target?: string): Promise<void>;
@@ -91,28 +100,33 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
   /** 在飞的这条转写是不是「同一次录音的后续分片」——只影响草稿里要不要换行，故不持久化。 */
   let transcriptContinuation = false;
   /**
-   * 用户取消了录音 ⇒ 下一条回来的转写结果一律丢弃。
-   * 不按 commandId 记的原因：取消可能正好落在 transcribe 已过守卫、还没 persist 的那一刻，
-   * 那时根本没有 commandId 可记，晚到结果照样会进草稿（grok ai-review Nit）。
-   * 这个标记由「新录音的第一段」清掉（continuation === false），不会误伤下一次录音。
+   * 在飞那条语音命令属于**哪一次录音**，以及**哪一次录音**已被用户取消；两者都非空且相等
+   * ⇒ 这是晚到结果，不进草稿。
+   * 记录音代号而不是 commandId：取消可能正好落在 transcribe 已过守卫、还没 persist 的那一刻，
+   * 那时根本还没有 commandId 可记，而代号在进 transcribe 时就由输入区给定了（grok ai-review Nit）。
+   * 两个都初始为 null 且要求非空匹配：进程重启后重放那条 pending 命令时代号已经没了，
+   * 那时必须当「没被取消」处理，否则用户上次说的话会被无声吞掉。
    */
-  let discardVoiceResult = false;
+  let voiceTake: string | null = null;
+  let discardedTake: string | null = null;
 
   const store = createStore<State>((set, get) => {
     const persist = async (next: Saved) => {
       if (!port) throw new Error('COMPANION_NATIVE_REQUIRED');
       // 待确认槽被清掉、而这条语音还没有任何结论 ⇒ 给它一个终局。
       // 清槽的路不止「结算」一条：被拒（scope_denied / scope_epoch_mismatch…）、抢答冲突、
-      // reconciling 超时回收，都在别处清槽而不写 voiceOutcome；分片队列等的就是这个 outcome，
+      // reconciling 超时回收，都在别处清槽而不写结果；分片队列等的就是这条命令的结果，
       // 等不到就一直 awaiting，语音面板永不收口（grok ai-review Important）。
-      // 结算成功那条路在调用本函数之前已经把 voiceOutcome 置好，不会被这里覆盖。
-      const orphanVoice = saved?.pending?.action === 'voice.transcribe' && !next.pending && get().voiceOutcome === null;
+      // 结算那条路在调用本函数之前已经给**这个 commandId**写好结果了，不会被这里覆盖。
+      const orphanVoice = saved?.pending?.action === 'voice.transcribe' && !next.pending
+        && get().voiceResult?.commandId !== saved.pending.commandId ? saved.pending.commandId : null;
       try {
         await port.write(JSON.stringify(next)); saved = next;
         // 落盘记录是待确认命令的唯一真源，派生放在这一处，省得九个 set({pending}) 各自同步。
         // 两个字段必须同一拍置起：只改 pendingAction 的话，结算那一帧会是
         // pending=true + pendingAction=null，状态行闪回「请勿重复发送」——正是本单要消掉的那句。
-        set({ pending: Boolean(next.pending), pendingAction: next.pending?.action ?? null, ...(orphanVoice ? { voiceOutcome: 'error' as const } : {}) });
+        set({ pending: Boolean(next.pending), pendingAction: next.pending?.action ?? null,
+          ...(orphanVoice ? { voiceResult: { commandId: orphanVoice, outcome: 'error' as const } } : {}) });
       }
       catch (error) { client?.close(); set({ status: 'storageError' }); throw error; }
     };
@@ -132,15 +146,15 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         await onAccepted(pending.payload.text, pending.sessionId, saved!.binding!.hostKey);
       }
       if (pending.action === 'voice.transcribe') {
-        if (record.state === 'accepted' && typeof record.result.text === 'string' && onTranscript) {
-          // 用户已经取消了这次录音：这条是晚到结果，不许再往草稿里写（screen-contract「取消过滤晚到结果」）。
-          // voiceOutcome 也不能置 'done'——那会让输入区弹出「已转成文字，可以修改后发送」，
-          // 而用户刚刚取消的就是这次语音，草稿里那些字是他自己打的。
-          // 标记不在这里清：一次取消可能有好几段在飞/在途，被第一条 ack 消耗掉的话，
-          // 后面那几段照样写进草稿（grok ai-review Important）。由下一次录音的第一段清。
-          if (discardVoiceResult) set({ voiceOutcome: null });
-          else { await onTranscript(record.result.text, pending.sessionId, saved!.binding!.hostKey, pending.commandId, transcriptContinuation); set({ voiceOutcome: 'done' }); }
-        } else set({ voiceOutcome: 'error' });
+        // 用户已经取消了这次录音：这条是晚到结果，不许再往草稿里写（screen-contract「取消过滤晚到结果」）。
+        // 代号不在这里清：一次取消可能有好几段在飞/在途，被第一条 ack 消耗掉的话，
+        // 后面那几段照样写进草稿（grok ai-review Important）。下一段自带新代号，不会误伤。
+        const discarded = voiceTake !== null && voiceTake === discardedTake;
+        if (record.state === 'accepted' && typeof record.result.text === 'string' && onTranscript && !discarded) {
+          await onTranscript(record.result.text, pending.sessionId, saved!.binding!.hostKey, pending.commandId, transcriptContinuation);
+          set({ voiceResult: { commandId: pending.commandId, outcome: 'done' } });
+        } else set({ voiceResult: { commandId: pending.commandId, outcome: 'error',
+          code: typeof record.result.code === 'string' ? record.result.code : undefined } });
       }
       await persist({ ...saved!, pending: undefined });
       set({ pending: false });
@@ -178,12 +192,15 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         return result.command;
       }
       if (['rejected', 'conflict', 'approval_conflict'].includes(result.kind)) {
+        // 拒绝理由要跟着这条命令的结果走，否则输入区只拿得到 persist 那道兜底的通用码。
+        const voice = saved.pending?.action === 'voice.transcribe' ? saved.pending.commandId : null;
         await persist({ ...saved, pending: undefined });
         // 按语义分，不按「它是不是 rejected」分。桌面或另一台手机先批了同一条审批时，
         // 网关回的是 approval_conflict——那是正常抢答，把整台设备停掉是错的。
         set(typeof result.reason === 'string' && DEVICE_LEVEL_REASONS.has(result.reason)
           ? { pending: false, status: 'rejected', connectionError: 'connectionRejected' }
           : { pending: false, commandError: result.kind === 'approval_conflict' ? 'COMPANION_APPROVAL_CONFLICT' : result.reason ?? 'COMPANION_COMMAND_REJECTED' });
+        if (voice) set({ voiceResult: { commandId: voice, outcome: 'error', code: get().commandError ?? undefined } });
         return result.command ?? null;
       }
       throw new Error('COMPANION_INVALID_ACK');
@@ -207,7 +224,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
       finally { set({ busy: false }); }
     };
     return {
-      voiceOutcome: null, library: null, history: {}, libraryError: false,
+      voiceResult: null, library: null, history: {}, libraryError: false,
       connectionError: null, commandError: null, routeError: null, status: 'unpaired', paused: false, binding: null, sessionId: null, busy: false, pending: false, pendingAction: null, events: [], runId: null, terminal: null,
       artifacts: [], preview: null, savedPreview: false, savedPreviewName: null, cacheUsage: files?.cache.inspect() ?? null,
       hydrate: async () => {
@@ -299,12 +316,12 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
           set({ sessionId, runId: last?.kind === 'run_started' ? String(last.payload.runId) : null, terminal: null, artifacts: [], preview: null, savedPreview: false, savedPreviewName: null });
         }
       },
-      transcribe: async (audio, sessionId, hostKey, continuation = false) => {
+      transcribe: async (audio, sessionId, hostKey, continuation = false, take = null) => {
         // 「发出去了没有」的判据是**进没进待确认槽**，不是 deliver 有没有成功：
         // 一旦 persist 成 saved.pending，这条命令重连后一定会被结算、结果会进草稿。
-        // 此时若因为 deliver 抛错回 false，调用方（分片队列）会把同一段音频再发一遍，
+        // 此时若因为 deliver 抛错回 null，调用方（分片队列）会把同一段音频再发一遍，
         // 草稿里出现重复的字（grok ai-review Important）。
-        let queued = false;
+        let commandId: string | null = null;
         await safely(async () => {
           if (get().sessionId !== sessionId || get().binding?.hostKey !== hostKey) return;
           if (!saved?.binding || !client || saved.pending || !canAddressSession(get())) return;
@@ -313,15 +330,16 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
           // 这一条是不是「同一次录音的后续分片」只活在内存里：进程被杀后重放那条 pending 命令
           // 最多让草稿多一个换行，不会丢字，所以不进持久化结构。
           transcriptContinuation = continuation;
-          if (!continuation) discardVoiceResult = false;
-          await persist({ ...saved, pending: command }); set({ pending: true, voiceOutcome: null });
-          queued = true;
+          // 代号要记在**任何 await 之前**：取消可能落在 persist 中间，那时还没有 commandId 可认。
+          voiceTake = take;
+          await persist({ ...saved, pending: command }); set({ pending: true });
+          commandId = command.commandId;
           await deliver();
         });
-        return queued;
+        return commandId;
       },
       /** 取消录音：在飞那条的结果属于「晚到结果」，按 screen-contract 的语音契约过滤掉，不进草稿。 */
-      discardPendingTranscript: () => { discardVoiceResult = true; },
+      discardPendingTranscript: take => { discardedTake = take; },
       send: text => safely(async () => {
         if (!saved?.binding || !client || saved.pending || !canAddressSession(get())) return;
         const command = companionCommandSchema.parse({ version: 1, deviceId: saved.binding.deviceId, scopeEpoch: saved.binding.scopeEpoch,

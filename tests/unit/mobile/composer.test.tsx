@@ -3,6 +3,7 @@ import React from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { Composer } from '../../../packages/mobile/src/features/sessions/Composer';
+import type { VoiceResult } from '../../../packages/mobile/src/stores/companionStore';
 import { messages } from '../../../packages/mobile/src/i18n';
 
 const text = messages('zh');
@@ -10,11 +11,10 @@ const text = messages('zh');
 function mount(overrides: {
   start?: () => Promise<void>;
   stop?: () => Promise<{ audioData: string; mimeType: string; durationMs: number }>;
-  transcribe?: (audio: { audioData: string; mimeType: string; durationMs: number }) => Promise<boolean>;
+  transcribe?: (audio: { audioData: string; mimeType: string; durationMs: number }) => Promise<string | null>;
   draft?: string;
   offline?: boolean;
   modelLabel?: string | null;
-  voiceOutcome?: 'done' | 'error' | null;
   attach?: (() => void) | undefined;
   recorder?: boolean;
 } = {}) {
@@ -22,7 +22,7 @@ function mount(overrides: {
     start: overrides.start ?? (async () => {}),
     stop: overrides.stop ?? (async () => ({ audioData: 'YXVkaW8=', mimeType: 'audio/aac', durationMs: 1000 })),
   };
-  const transcribe = vi.fn(overrides.transcribe ?? (async () => true));
+  const transcribe = vi.fn(overrides.transcribe ?? (async () => 'cmd-1'));
   const discardPendingTranscript = vi.fn();
   const send = vi.fn();
   const openModel = vi.fn();
@@ -32,7 +32,7 @@ function mount(overrides: {
     modelLabel={overrides.modelLabel === undefined ? 'DeepSeek V4.1 Flash' : overrides.modelLabel} openModel={openModel}
     attach={'attach' in overrides ? overrides.attach : () => {}} attachDisabled={false}
     recorder={overrides.recorder === false ? undefined : recorder} transcribe={transcribe} discardPendingTranscript={discardPendingTranscript}
-    voiceDisabled={false} voicePending={false} voiceOutcome={overrides.voiceOutcome ?? null} voiceErrorCode={null} voiceReady onVoiceState={onVoiceState} />);
+    voiceDisabled={false} voicePending={false} voiceResult={null} voiceReady onVoiceState={onVoiceState} />);
   return { transcribe, send, openModel, onVoiceState, discardPendingTranscript };
 }
 
@@ -63,15 +63,37 @@ describe('Composer 布局契约（design.html composer()）', () => {
     expect(screen.getByTestId('draft').getAttribute('placeholder')).toBe(text.offlinePlaceholder);
   });
 
-  it('转写回填后提示可以改完再发，且不自动发送', () => {
-    const { send } = mount({ draft: '帮我整理一下这三家的品牌资料', voiceOutcome: 'done' });
+  it('转写回填后提示可以改完再发，且不自动发送', async () => {
+    vi.useFakeTimers();
+    render(<ChunkHarness sent={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: text.voice }));
+    await advance(5_000);
+    fireEvent.click(screen.getByRole('button', { name: text.stopRecording }));
+    await advance(1_000);
     expect(screen.getByText(text.voiceReviewHint)).toBeTruthy();
-    expect(send).not.toHaveBeenCalled();
+    // 草稿被清掉（发出去了）之后提示自然收起
+    fireEvent.change(screen.getByTestId('draft'), { target: { value: '' } });
+    expect(screen.queryByText(text.voiceReviewHint)).toBeNull();
+    vi.useRealTimers();
   });
 
-  it('草稿为空时不显示转写提示', () => {
-    mount({ draft: '', voiceOutcome: 'done' });
+  it('上一次录音成文不该留给下一次：重录后取消，提示不许还挂在那儿', async () => {
+    // 提示以前读的是 store 里那个粘着的 voiceOutcome==='done'，它跨录音、跨会话都不清，
+    // 于是下一次录音取消之后、甚至换一个会话之后，只要草稿非空就照样说「已转成文字」。
+    vi.useFakeTimers();
+    render(<ChunkHarness sent={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: text.voice }));
+    await advance(5_000);
+    fireEvent.click(screen.getByRole('button', { name: text.stopRecording }));
+    await advance(1_000);
+    expect(screen.getByText(text.voiceReviewHint)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: text.voice }));
+    await advance(1_000);
+    fireEvent.click(screen.getByRole('button', { name: text.cancelRecording }));
+    await advance(500);
+    expect((screen.getByTestId('draft') as HTMLTextAreaElement).value).toContain('段1');
     expect(screen.queryByText(text.voiceReviewHint)).toBeNull();
+    vi.useRealTimers();
   });
 
   it('录音中整块输入框换成语音面板：来源、计时、居中停止键，输入框与工具行不在场', async () => {
@@ -155,40 +177,52 @@ describe('VoiceCapture failure reporting', () => {
 });
 
 // ——— 分片伪流式（N-VOICE-CHUNKED-STREAM）———
-// 这个 Harness 照搬 companionStore 的真实时序：transcribe 发出后 pending=true / outcome=null，
-// 主机结算后才 pending=false + outcome。协议一次只允许一条在飞，所以队列必须串行。
-function ChunkHarness({ sent, verdict = () => 'done' as const, refuseFirst = false, refuseAll = false, ackDelay = 10, ready = true, onStart, stopDelay = 0 }: {
-  sent: (audioData: string, continuation: boolean) => void; verdict?: (seq: number) => 'done' | 'error';
-  refuseFirst?: boolean; refuseAll?: boolean; ackDelay?: number; ready?: boolean; onStart?: () => void; stopDelay?: number;
+// 这个 Harness 照搬 companionStore 的真实时序：transcribe 进了待确认槽就回 commandId、
+// pending=true，主机结算后才 pending=false + 一条**认 commandId** 的 result。
+// 协议一次只允许一条在飞，所以队列必须串行。
+function ChunkHarness({ sent, verdict = () => 'done' as const, refuseFirst = false, refuseAll = false, ackDelay = 10, ready = true, onStart, stopDelay = 0, sendDelay = 0 }: {
+  sent: (audioData: string, continuation: boolean, take?: string) => void; verdict?: (seq: number) => 'done' | 'error';
+  refuseFirst?: boolean; refuseAll?: boolean; ackDelay?: number; ready?: boolean; onStart?: () => void;
+  /** recorder.stop() 的耗时（真机切口 ~0.32s）。 */
+  stopDelay?: number;
+  /** 命令进待确认槽的耗时——取消正落在这个 await 里，就是 grok 第七轮那条 Important 的窗口。 */
+  sendDelay?: number;
 }) {
   const [pending, setPending] = React.useState(false);
-  const [outcome, setOutcome] = React.useState<'done' | 'error' | null>(null);
+  const [result, setResult] = React.useState<VoiceResult | null>(null);
   const [draft, setDraft] = React.useState('');
   const seq = React.useRef(0);
   const refused = React.useRef(false);
+  /** 照搬 companionStore 的取消语义：被取消的那**次录音**，晚到结果一律不写进草稿。 */
+  const discarded = React.useRef<string | null>(null);
   // 录音口必须是稳定引用（生产里是 ports.recorder 单例）：每渲染换一个新对象会让
   // useVoiceCapture 的清理副作用把正在录的这次当作「录音口换了」收掉。
   const recorder = React.useRef({
     start: async () => { onStart?.(); },
     stop: async () => { if (stopDelay) await new Promise(resolve => setTimeout(resolve, stopDelay)); return { audioData: `chunk${seq.current + 1}`, mimeType: 'audio/aac', durationMs: 4000 }; },
   }).current;
-  const transcribe = async (audio: { audioData: string }, continuation: boolean) => {
-    sent(audio.audioData, continuation);
-    if (refuseAll) return false;
-    if (refuseFirst && !refused.current) { refused.current = true; return false; }
+  const transcribe = async (audio: { audioData: string }, continuation: boolean, take: string) => {
+    sent(audio.audioData, continuation, take);
+    if (refuseAll) return null;
+    if (refuseFirst && !refused.current) { refused.current = true; return null; }
     const n = ++seq.current;
-    setPending(true); setOutcome(null);
-    setTimeout(() => {
-      const result = verdict(n);
-      if (result === 'done') setDraft(previous => previous + `段${n}`);
-      setOutcome(result); setPending(false);
-    }, ackDelay);
-    return true;
+    const commandId = `cmd-${n}`;
+    setPending(true);
+    if (sendDelay) await new Promise(resolve => setTimeout(resolve, sendDelay));
+    const settle = () => {
+      const outcome = verdict(n);
+      if (outcome === 'done' && discarded.current !== take) setDraft(previous => previous + `段${n}`);
+      setResult({ commandId, outcome }); setPending(false);
+    };
+    // ackDelay=0 走真机常态那条路：deliver 当场就把 ack 带回来，结果比 commandId 还早进 store，
+    // 队列这时还没把 awaiting 挂上——认 commandId 的结算必须照样领得到。
+    if (ackDelay) setTimeout(settle, ackDelay); else settle();
+    return commandId;
   };
   return <Composer text={text} draft={draft} editDraft={setDraft} offline={false} sendDisabled={!draft} send={() => {}}
     modelLabel="DeepSeek V4.1 Flash" openModel={() => {}} attach={() => {}} attachDisabled={false}
-    recorder={recorder} transcribe={transcribe} discardPendingTranscript={() => {}} voiceReady={ready} voiceDisabled={false} voicePending={pending}
-    voiceOutcome={outcome} voiceErrorCode={null} onVoiceState={() => {}} />;
+    recorder={recorder} transcribe={transcribe} discardPendingTranscript={take => { discarded.current = take; }} voiceReady={ready} voiceDisabled={false} voicePending={pending}
+    voiceResult={result} onVoiceState={() => {}} />;
 }
 
 
@@ -404,5 +438,114 @@ describe('ai-review #1764 第六轮：录音中途取消不许再漏字', () => 
     // 取消之后一段都不许再发出去
     expect(sent.mock.calls.length).toBe(before);
     expect(screen.getByTestId('draft')).toBeTruthy();
+  });
+});
+
+describe('一次录音是显式对象 + 代号：所有异步续段先比代号', () => {
+  afterEach(() => { vi.useRealTimers(); cleanup(); });
+
+  it('ack 比 commandId 还早回来（deliver 当场结算）也要认领得到，不许永远挂着 awaiting', async () => {
+    // 真机常态：结算发生在 transcribe 内部的 deliver 里，result 进 store 时队列还没挂 awaiting。
+    // 结算只盯 result 变化的话，这一拍之后 result 不再变，那段音频就永远等不到结论——面板收不了口。
+    vi.useFakeTimers();
+    const sent = vi.fn();
+    render(<ChunkHarness sent={sent} ackDelay={0} />);
+    fireEvent.click(screen.getByRole('button', { name: text.voice }));
+    await advance(9_000);
+    fireEvent.click(screen.getByRole('button', { name: text.stopRecording }));
+    await advance(1_000);
+    expect(screen.getByTestId('draft')).toBeTruthy();
+    expect(document.querySelector('.voice-composer')).toBeNull();
+    expect((screen.getByTestId('draft') as HTMLTextAreaElement).value).toContain('段1');
+  });
+
+  it('取消正落在 transcribe 的 await 里：那段音频不算数，也不许被算进下一轮', async () => {
+    // grok 第七轮 Important：在飞的 IIFE 在 await 返回后无条件 shift/挂 awaiting。
+    // 队列/awaiting 以前是整个 hook 共用的 ref，于是上一次录音的续段会把已取消的音频
+    // 挂进新一轮，重试再把它写进输入框。现在这些数据长在 take 上，续段回来先比代号。
+    vi.useFakeTimers();
+    const sent = vi.fn();
+    render(<ChunkHarness sent={sent} sendDelay={3_000} ackDelay={1_000} />);
+    fireEvent.click(screen.getByRole('button', { name: text.voice }));
+    await advance(4_500);                       // 第一段已切出来，transcribe 正卡在 await 里
+    expect(sent).toHaveBeenCalledTimes(1);
+    const cancelledTake = sent.mock.calls[0][2];
+    fireEvent.click(screen.getByRole('button', { name: text.cancelRecording }));
+    // 取消当场就把输入框还回来，不等 await 回来
+    expect(screen.getByTestId('draft')).toBeTruthy();
+    await advance(6_000);
+    expect((screen.getByTestId('draft') as HTMLTextAreaElement).value).toBe('');
+
+    // 紧接着再录一次：上一轮那段绝不能顶着新代号混进来
+    fireEvent.click(screen.getByRole('button', { name: text.voice }));
+    await advance(9_000);
+    const takes = sent.mock.calls.map(call => call[2]);
+    expect(takes.filter(take => take === cancelledTake).length).toBe(1);
+    expect(new Set(takes).size).toBe(2);
+    // 新一轮的第一段必须是「另起一行」，没有继承上一次录音的续写状态
+    expect(sent.mock.calls[1][1]).toBe(false);
+  });
+
+  it('取消落在切段的 recorder.start() 里：麦克风不许留在开着的状态', async () => {
+    // 切段是「停当前文件 → 立刻重开」，重开那一步在真机上是有耗时的。
+    // 取消正落在这个窗口里时，录音口是**后**开出来的：谁负责关它取决于 live 什么时候置起。
+    // 置在身份判断之后的话，续段一看「这次不算数了」就直接返回，麦克风谁都不认领、一直开着。
+    vi.useFakeTimers();
+    let open = 0;
+    const recorder = {
+      start: async () => { await new Promise(resolve => setTimeout(resolve, 1_000)); open += 1; },
+      stop: async () => { open -= 1; return { audioData: 'chunk', mimeType: 'audio/aac', durationMs: 4000 }; },
+    };
+    render(<Composer text={text} draft="" editDraft={() => {}} offline={false} sendDisabled send={() => {}}
+      modelLabel="DeepSeek V4.1 Flash" openModel={() => {}} attach={() => {}} attachDisabled={false}
+      recorder={recorder} transcribe={async () => 'cmd-1'} discardPendingTranscript={() => {}}
+      voiceReady voiceDisabled={false} voicePending={false} voiceResult={null} onVoiceState={() => {}} />);
+    fireEvent.click(screen.getByRole('button', { name: text.voice }));
+    await advance(1_500);
+    expect(open).toBe(1);
+    // 第一段在 5s 切出来（停），第二次 start 要到 6s 才 resolve——取消打在这中间
+    await advance(4_000);
+    expect(open).toBe(0);
+    fireEvent.click(screen.getByRole('button', { name: text.cancelRecording }));
+    await advance(3_000);
+    expect(open).toBe(0);
+  });
+
+  it('停止按在切段的 recorder.stop() 里：这一次录音当场收尾，不再多录一整段', async () => {
+    // 切段那 ~320ms 里录音口已经在停了、t.live 是 false，界面上却还是「正在听你说」，
+    // 用户按停止就落在这个窗口。循环若只认进循环前那一眼的 stopping，这次停止要等满
+    // 下一整段（4s）才生效——用户看到的是「按了没反应」。
+    vi.useFakeTimers();
+    const sent = vi.fn();
+    render(<ChunkHarness sent={sent} stopDelay={2_000} />);
+    fireEvent.click(screen.getByRole('button', { name: text.voice }));
+    await advance(5_000);   // 第一段 4s 切出来，recorder.stop() 要到 6s 才回
+    fireEvent.click(screen.getByRole('button', { name: text.stopRecording }));
+    await advance(2_000);
+    expect(screen.getByTestId('draft')).toBeTruthy();
+    expect(document.querySelector('.voice-composer')).toBeNull();
+  });
+
+  it('结算必须认 commandId：上一段的结论不许替下一段签字', async () => {
+    // 结果在 store 里是留着的——下一段的 ack 还没回来时，读到的就是上一段那条。
+    // 不认 commandId 的话，第二段刚挂上 awaiting 就被上一段的 'done' 当场结算掉；
+    // 它真正的 'error' 回来时已经没人接，失败既不留痕、也没有补传入口。
+    vi.useFakeTimers();
+    const sent = vi.fn();
+    render(<ChunkHarness sent={sent} ackDelay={1_000} verdict={n => (n >= 2 ? 'error' : 'done')} />);
+    fireEvent.click(screen.getByRole('button', { name: text.voice }));
+    await advance(10_000);
+    fireEvent.click(screen.getByRole('button', { name: text.stopRecording }));
+    await advance(3_000);
+    expect(screen.getByText(new RegExp(text.voiceChunkDropped))).toBeTruthy();
+    // 成文的第一段照常留在输入框里
+    expect((screen.getByTestId('draft') as HTMLTextAreaElement).value).toContain('段1');
+    // 判据落在「进重试队列的是几段」上：只看有没有失败提示是区分不开的——
+    // 晚签一段的写法同样会报失败，只是报的是别人的失败，而失败的那段被顶成了成功。
+    const before = sent.mock.calls.length;
+    expect(before).toBe(3);
+    fireEvent.click(screen.getByRole('button', { name: text.retry }));
+    await advance(6_000);
+    expect(sent.mock.calls.length - before).toBe(2);
   });
 });

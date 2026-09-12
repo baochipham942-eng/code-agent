@@ -370,14 +370,14 @@ describe('LAN companion: real HTTP + Noise + SQLite', () => {
       const { sessionId, binding } = phone.getState();
       const sent = await phone.getState().transcribe(
         { audioData: 'YXVkaW8=', mimeType: 'audio/aac', durationMs: 4000 }, sessionId!, binding!.hostKey);
-      expect(sent).toBe(true);
+      expect(typeof sent).toBe('string');
       expect(phone.getState().pending).toBe(true);
     } finally { phone.getState().pause(); }
   });
 
   it('待确认的语音命令被回收时也必须给出结论，否则分片队列一直等 ack、面板永不收口', async () => {
     // grok ai-review #1764 Important：清待确认槽的路不止「结算」一条——被拒、抢答冲突、
-    // reconciling 超时回收都在别处清槽，谁都没写 voiceOutcome。分片队列等的就是这个 outcome，
+    // reconciling 超时回收都在别处清槽，谁都没写结果。分片队列等的就是这条命令的结果，
     // 等不到就一直 awaiting，语音面板永远收不了口。
     // 这里复现最真实的那条：主机收下了转写请求（reconciling），但一直没结算。
     const db2 = new Database(':memory:');
@@ -395,13 +395,15 @@ describe('LAN companion: real HTTP + Noise + SQLite', () => {
       // 回收判据读的是主机记的 createdAt 与手机本地时钟之差。
       const paired = now;
       now -= L.reconcilingRecoveryMs + 1_000;
-      await phone.getState().transcribe(
+      const commandId = await phone.getState().transcribe(
         { audioData: 'YXVkaW8=', mimeType: 'audio/aac', durationMs: 4000 }, sessionId!, binding!.hostKey);
-      expect(phone.getState()).toMatchObject({ pending: true, voiceOutcome: null });
+      expect(phone.getState()).toMatchObject({ pending: true, voiceResult: null });
       now = paired;
       // 回到前台重连：走的就是那条「躺太久了，回收掉」的路径
       await phone.getState().reconnect();
-      expect(phone.getState()).toMatchObject({ pending: false, voiceOutcome: 'error',
+      // 结论必须认得出「是哪条命令的」：粘着的全局 outcome 会被下一次录音读成自己的。
+      expect(phone.getState()).toMatchObject({ pending: false,
+        voiceResult: { commandId, outcome: 'error' },
         commandError: 'COMPANION_COMMAND_RECONCILING_TIMEOUT' });
     } finally { phone.getState().pause(); await server2.stop(); db2.close(); }
   });

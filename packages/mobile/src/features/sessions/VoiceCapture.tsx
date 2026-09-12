@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { PlatformPorts } from '../../platform/ports';
 import type { messages } from '../../i18n';
+import type { VoiceResult } from '../../stores/companionStore';
 import { COMPANION_LIMITS as L } from '../../../../../src/shared/constants/companion';
 import { AppIcon } from '../../app/AppIcon';
 
@@ -12,7 +13,41 @@ import { AppIcon } from '../../app/AppIcon';
 export type VoiceFailure = { stage: 'record' | 'transcribe'; reason: string; partial?: boolean };
 export type VoicePhase = 'idle' | 'starting' | 'recording' | 'stopping' | 'ready' | 'error';
 
-type Audio = { audioData: string; mimeType: string; durationMs: number };
+type Chunk = { audioData: string; mimeType: string; durationMs: number };
+
+/**
+ * 「一次录音」——从点麦克风到面板收口之间的全部在途数据，以及它的代号 `id`。
+ *
+ * 这个对象是本模块**唯一**的身份判据：每个异步续段（`recorder.start/stop` 的 await 之后、
+ * 队列泵的 IIFE、结算、取消）回来第一件事都是 `take.current === t`，不是自己的就直接丢。
+ * 在此之前这些续段靠电平（`pending` / `voiceOutcome` / `commandError`）反推「我这次还算不算数」，
+ * 而那些电平跨录音、跨会话粘着——2026-09-12 那七轮 ai-review 抓出的九条 Important/Nit
+ * 全长在这同一个形状上，每修一条就多一道交叉判据。改成显式代号之后，
+ * 「取消 / 换一次录音 / 换会话」只需要**摘掉身份**这一个动作，所有在途的东西自动作废。
+ */
+type Take = {
+  id: string;
+  queue: Chunk[];
+  /** 已进待确认槽、等主机结算的那一段——按 commandId 认领结果，不看粘着的全局 outcome。 */
+  awaiting: { chunk: Chunk; commandId: string } | null;
+  retry: Chunk[];
+  sending: boolean;
+  sentAny: boolean;
+  /** 这次录音里最后一次失败的真实原因（录音阶段/转写阶段都记）——收尾时要靠它报错。 */
+  failure: { stage: VoiceFailure['stage']; reason?: string } | null;
+  dropped: number;
+  /** 录音口此刻开着。收 recorder 的人先把它落下，避免两处并发 stop 同一次录音。 */
+  live: boolean;
+  /** 录音循环已结束，只剩队列在排空。 */
+  drained: boolean;
+  /** 用户按了停止：录完手上这一段就收尾。取消不走这里——取消是直接摘身份。 */
+  stopping: boolean;
+  startedAt: number;
+  wake: (() => void) | null;
+};
+
+/** 代号在模块级发，跨 mount 也不重号：Composer 会随会话重挂，计数器从 0 重来会撞上一次的代号。 */
+let takeSeq = 0;
 
 /**
  * 录音状态机 + 分片伪流式上传。
@@ -23,224 +58,245 @@ type Audio = { audioData: string; mimeType: string; durationMs: number };
  * 真机实测值记在证据档里。
  *
  * 一切串行：companion 协议一次只允许一条待确认命令（`saved.pending`），第二条会被静默丢弃。
- * 所以录音走一条主循环、上传走一条队列，两边都不并发；`transcribe` 回报「发出去了没有」，
+ * 所以录音走一条主循环、上传走一条队列，两边都不并发；`transcribe` 回报这条命令的 commandId，
  * 没发出去的分片留在队头等下一拍，不静默丢。
  */
-export function useVoiceCapture({ recorder, pending, outcome, errorCode, ready, transcribe, discardPending }: {
+export function useVoiceCapture({ recorder, pending, result, ready, transcribe, discardPending }: {
   recorder: PlatformPorts['recorder'];
+  /** 协议此刻有没有待确认命令。这是队列泵的**前置条件**（发不出去就别发），不是相位判据。 */
   pending: boolean;
-  outcome: 'done' | 'error' | null;
+  /** 最近一条转写命令的结果，带着它是哪一条。认 commandId 才能保证结算的是自己发的那段。 */
+  result: VoiceResult | null;
   /** 此刻发得出命令吗（已连上电脑且有可寻址会话）。发不出就不能干等——面板会把输入框锁死。 */
   ready: boolean;
-  /** 最近一条命令被拒的真实错误码，用来给「整段都没转出来」配上可定位的原因。 */
-  errorCode: string | null;
-  transcribe(audio: Audio, continuation: boolean): Promise<boolean>;
-  /** 取消录音时调用：在飞那条转写的结果按语音契约当晚到结果丢掉，不进草稿。 */
-  discardPending(): void;
+  /** 返回这条命令的 commandId（已进待确认槽）；没发出去回 null，那段留在队头下一拍再试。 */
+  transcribe(audio: Chunk, continuation: boolean, take: string): Promise<string | null>;
+  /** 取消这次录音：晚到的结果按语音契约丢掉，不进草稿。按代号点名，不是一个粘着的开关。 */
+  discardPending(take: string): void;
 }) {
   const [phase, setPhase] = useState<VoicePhase>('idle');
   const [failure, setFailure] = useState<VoiceFailure | null>(null);
   const [elapsedMs, setElapsedMs] = useState(0);
-  const [dropped, setDropped] = useState(0);
-  const [queued, setQueued] = useState(0);
+  /** 这次录音有字成文了——「可以改完再发」的提示据此显示，不再读跨会话粘着的全局 outcome。 */
+  const [transcribed, setTranscribed] = useState(false);
   const [tick, setTick] = useState(0);
 
-  const queue = useRef<Audio[]>([]);
-  const awaiting = useRef<Audio | null>(null);
-  const retryable = useRef<Audio[]>([]);
-  /** 这次录音里最后一次失败的真实原因（录音阶段/转写阶段都记）——一段都没成文时要靠它报错。 */
-  const lastFailure = useRef<{ stage: VoiceFailure['stage']; reason?: string } | null>(null);
-  const sending = useRef(false);
-  const sentAny = useRef(false);
-  const active = useRef(false);
-  const ended = useRef(false);
-  const stopRequest = useRef<'keep' | 'discard' | null>(null);
-  const wake = useRef<(() => void) | null>(null);
-  const startedAt = useRef(0);
-  /** 每次录音一个代号：取消后立刻再点麦克风时，上一轮 start() 不能接着把面板开回来。 */
-  const generation = useRef(0);
-  /** 正在跑的那条录音循环。新一轮必须先把它拆干净，否则两条循环抢同一个 recorder。 */
+  const take = useRef<Take | null>(null);
   const running = useRef<Promise<void> | null>(null);
 
-  const syncQueued = () => setQueued(queue.current.length + (awaiting.current ? 1 : 0));
-  const fail = (stage: VoiceFailure['stage'], error: unknown) => {
+  /** take 是可变对象，改完必须 bump 一下界面才看得见——全模块只有这一个重渲染触发器。 */
+  const bump = () => setTick(count => count + 1);
+  const mine = (t: Take) => take.current === t;
+  const open = () => {
+    const t: Take = { id: `take-${++takeSeq}`, queue: [], awaiting: null, retry: [], sending: false,
+      sentAny: false, failure: null, dropped: 0, live: false, drained: false, stopping: false,
+      startedAt: Date.now(), wake: null };
+    take.current = t;
+    return t;
+  };
+  /**
+  * 这次录音不算数了：把录音口收干净，别把麦克风留在开着的状态。先落 live 再 await，才幂等
+  * （取消与录音循环可能同时走到这里）。
+  * 与它配对的铁律：`recorder.start()` 一 resolve 就立刻置 live，**早于**任何身份判断——
+  * 中间插一个 `if (!mine(t)) return` 的话，切段时被取消就会留下一个谁都不认领的开着的麦克风。
+  */
+  const release = async (t: Take) => { if (t.live) { t.live = false; await recorder?.stop().catch(() => {}); } };
+
+  const fail = (t: Take, stage: VoiceFailure['stage'], error: unknown) => {
+    if (!mine(t)) return;
     setFailure({ stage, reason: error instanceof Error && error.message ? error.message : String(error) });
     setPhase('error');
   };
-  /** 清掉这次录音的全部在途数据，但不碰 stopRequest——它可能是「正在取消」的唯一记号。 */
-  const clearQueue = () => {
-    queue.current = []; awaiting.current = null; sending.current = false;
-    sentAny.current = false; ended.current = false; lastFailure.current = null;
-    setDropped(0); setQueued(0);
+  const drop = (t: Take, reason: { stage: VoiceFailure['stage']; reason?: string }) => {
+    t.failure = reason; t.dropped += 1; bump();
   };
-  const reset = () => { clearQueue(); active.current = false; stopRequest.current = null; };
-  const drop = (failure: { stage: VoiceFailure['stage']; reason?: string }) => { lastFailure.current = failure; setDropped(count => count + 1); };
-  const enqueue = (value: Audio) => {
-    if (value.audioData.length > L.voiceBase64Limit) { drop({ stage: 'record', reason: 'AUDIO_TOO_LARGE' }); return; }
-    queue.current.push(value); syncQueued();
+  const enqueue = (t: Take, chunk: Chunk) => {
+    if (chunk.audioData.length > L.voiceBase64Limit) { drop(t, { stage: 'record', reason: 'AUDIO_TOO_LARGE' }); return; }
+    t.queue.push(chunk); bump();
   };
   /** 等一个分片的时长；停止/取消会提前唤醒，不用等满这一段。 */
-  const waitChunk = () => new Promise<void>(resolve => {
+  const waitChunk = (t: Take) => new Promise<void>(resolve => {
     const timer = setTimeout(() => done(), L.voiceChunkMs);
-    const done = () => { clearTimeout(timer); wake.current = null; resolve(); };
-    wake.current = done;
+    const done = () => { clearTimeout(timer); t.wake = null; resolve(); };
+    t.wake = done;
   });
 
-  const run = async () => {
-    for (;;) {
-      await waitChunk();
-      const last = stopRequest.current !== null || Date.now() - startedAt.current >= L.voiceDurationMs;
-      let value: Audio | null = null;
-      try { value = await recorder!.stop(); }
-      catch (error) {
-        // 丢弃路径上的失败不该报给用户：录音本来就不要了（切后台时原生侧可能已经自己收了摊，
-        // 这时 stop 抛的是 RECORDING_HAS_NOT_STARTED，显示成「录音失败」是假警报）。
-        if (stopRequest.current === 'discard') { active.current = false; reset(); setPhase('idle'); return; }
-        // 整段静音时插件抛 EMPTY_RECORDING——那只该丢这一段，不该毁掉整次录音。
-        if (!(error instanceof Error && error.message === 'EMPTY_RECORDING')) { active.current = false; fail('record', error); return; }
-        drop({ stage: 'record', reason: 'EMPTY_RECORDING' });
+  const run = async (t: Take) => {
+    try {
+      for (;;) {
+        await waitChunk(t);
+        if (!mine(t)) return;
+        const last = t.stopping || Date.now() - t.startedAt >= L.voiceDurationMs;
+        let chunk: Chunk | null = null;
+        // stop 一发出去，录音口就不再算「开着」：卸载的清理可能正落在这个 await 里，
+        // 它的 release 必须看到 live=false，否则两处并发 stop 同一次录音。
+        t.live = false;
+        try { chunk = await recorder!.stop(); }
+        catch (error) {
+          if (!mine(t)) return;
+          // 整段静音时插件抛 EMPTY_RECORDING——那只该丢这一段，不该毁掉整次录音。
+          if (!(error instanceof Error && error.message === 'EMPTY_RECORDING')) { fail(t, 'record', error); return; }
+          drop(t, { stage: 'record', reason: 'EMPTY_RECORDING' });
+        }
+        if (!mine(t)) return;
+        if (chunk) enqueue(t, chunk);
+        // 到 60s 上限是我们自己收的尾：不切 stopping 的话，面板会一直显示「正在听你说」，
+        // 而停止键因为录音已停、点了没反应（grok ai-review Nit，真实死键）。
+        // `stopping` 要在 await 之后再读一次：用户按停止时录音口正卡在 recorder.stop() 里
+        // （真机 ~320ms）是常态，只认进循环前那一眼的话，这次停止要再等满一整段才生效。
+        if (last || t.stopping) { setPhase('stopping'); break; }
+        try { await recorder!.start(); t.live = true; }
+        catch (error) { fail(t, 'record', error); return; }
+        if (!mine(t)) return;   // 取消落在这次切段里：live 已经置起，收尾的 release 会去收它
       }
-      if (value && stopRequest.current !== 'discard') enqueue(value);
-      // 到 60s 上限是我们自己收的尾：不切 stopping 的话，面板会一直显示「正在听你说」，
-      // 而停止键因为 active 已经是 false 点了没反应（grok ai-review Nit，真实死键）。
-      if (last) { active.current = false; if (stopRequest.current === null) setPhase('stopping'); break; }
-      // 切段窗口里可能刚好被取消/卸载：别把 recorder 再拉起来（grok ai-review Nit）。
-      if (stopRequest.current !== null) { active.current = false; break; }
-      try { await recorder!.start(); }
-      catch (error) { active.current = false; fail('record', error); return; }
-    }
-    if (stopRequest.current === 'discard') { reset(); setPhase('idle'); return; }
-    ended.current = true;
-    setTick(count => count + 1);
+      t.drained = true;
+      bump();
+    } finally { await release(t); }
   };
 
   const start = async () => {
     if (!recorder) return;
-    const mine = ++generation.current;
-    // 上一轮还在收尾（取消之后立刻再点麦克风就是这个时序）：先把它拆干净再开新的，
+    // 先占住身份：上一次录音（以及它所有在途的续段）从这一行起就不算数了。
+    const previous = take.current;
+    const t = open();
+    // 上一轮还在收尾（取消之后立刻再点麦克风就是这个时序）：叫醒它、等它把 recorder 还回来，
     // 否则两条录音循环会抢同一个 recorder，切段全乱（grok ai-review Nit）。
-    if (running.current) { stopRequest.current = 'discard'; wake.current?.(); await running.current; }
-    if (generation.current !== mine) return;   // 拆的期间又被点了，让最后那次赢
-    reset(); setFailure(null); setPhase('starting');
-    retryable.current = [];
-    startedAt.current = Date.now(); setElapsedMs(0);
+    previous?.wake?.();
+    if (running.current) await running.current;
+    if (!mine(t)) return;   // 等的期间又被点了，让最后那次赢
+    setFailure(null); setTranscribed(false); setPhase('starting');
+    t.startedAt = Date.now(); setElapsedMs(0);
     try {
       await recorder.start();
-      if (stopRequest.current || generation.current !== mine) { await recorder.stop().catch(() => {}); if (generation.current === mine) setPhase('idle'); return; }
-      active.current = true;
+      t.live = true;
+      if (!mine(t) || t.stopping) { await release(t); if (mine(t)) { take.current = null; setPhase('idle'); } return; }
       setPhase('recording');
-      running.current = run().finally(() => { running.current = null; });
-    } catch (error) { if (generation.current === mine) fail('record', error); }
+      const loop = run(t);
+      running.current = loop;
+      void loop.finally(() => { if (running.current === loop) running.current = null; });
+    } catch (error) { fail(t, 'record', error); }
   };
-  const endRecording = (discard: boolean) => {
-    if (discard) discardPending();
-    // 先立记号：录音可能还停在 recorder.start() 的 await 里（phase='starting'），
-    // 那时 active 还是 false，但这次取消必须被 start() 看见，不能当没发生。
-    stopRequest.current = discard ? 'discard' : 'keep';
-    if (discard) {
-      // 队列必须**就地**清掉，不能等录音循环醒过来：它要先 await recorder.stop()，
-      // 真机上这一步就要 ~320ms；这个窗口里在飞那段的 ack 一回来，泵立刻把下一段发出去，
-      // 于是「取消掉的话」照样写进输入框（grok ai-review Important）。
-      clearQueue(); setFailure(null);
-    }
-    if (!active.current) { if (discard) setPhase('idle'); return; }
-    setPhase(discard ? 'idle' : 'stopping');
-    wake.current?.();
+
+  const stop = () => {
+    const t = take.current;
+    if (!t) return;
+    // 录音可能还停在 recorder.start() 的 await 里（phase='starting'）：那一档由 start() 的续段
+    // 收尾，这里别抢着切面板；除此之外立刻切，别让「正在听你说」挂在已经按下的停止上。
+    t.stopping = true;
+    if (phase !== 'starting') setPhase('stopping');
+    t.wake?.();
+  };
+  const cancel = () => {
+    const t = take.current;
+    if (!t) return;
+    // 摘身份就是**就地**丢掉队列——不能等录音循环醒过来：它要先 await recorder.stop()，
+    // 真机上这一步就要 ~320ms；这个窗口里在飞那段的 ack 一回来，泵立刻把下一段发出去，
+    // 于是「取消掉的话」照样写进输入框（grok ai-review Important）。
+    take.current = null;
+    discardPending(t.id);
+    // 录音口不在这里收：循环的 finally 与 start() 的续段各自负责把自己开的那个还回去，
+    // 这里再来一遍只是让「谁负责关麦克风」多一个答案（变异实证：删掉它一条测试都不红）。
+    t.wake?.();
+    setFailure(null); setPhase('idle');
   };
 
   useEffect(() => {
-    const hide = () => { if (document.hidden) endRecording(true); };
+    const hide = () => { if (document.hidden) cancel(); };
     document.addEventListener('visibilitychange', hide);
     return () => {
       document.removeEventListener('visibilitychange', hide);
-      stopRequest.current = 'discard'; wake.current?.();
-      if (active.current) void recorder?.stop().catch(() => {});
-      active.current = false;
+      const t = take.current;
+      if (!t) return;
+      take.current = null;
+      t.wake?.(); void release(t);
     };
   }, [recorder]);
   useEffect(() => {
     if (phase !== 'recording') return;
-    const timer = setInterval(() => setElapsedMs(Date.now() - startedAt.current), 500);
+    const timer = setInterval(() => { const t = take.current; if (t) setElapsedMs(Date.now() - t.startedAt); }, 500);
     return () => clearInterval(timer);
   }, [phase]);
 
-  // 队列泵：一次只发一条，发出去了才出队；没发出去（协议在忙）留在队头，下一拍再试。
+  // 队列泵：一次只发一条，进了待确认槽才出队；没发出去（协议在忙）留在队头，下一拍再试。
   // 明知发不出去（没连上电脑）就别空转：每一拍都把 sending 置起，会让收尾那个副作用
   // 永远看到「正在发」而不收尾，面板把输入框锁死在后面。
   useEffect(() => {
-    if (!ready || sending.current || awaiting.current || pending || !queue.current.length) return;
-    sending.current = true;
+    const t = take.current;
+    if (!t || !ready || t.sending || t.awaiting || pending || !t.queue.length) return;
+    t.sending = true;
     void (async () => {
-      const chunk = queue.current[0];
-      let sent: boolean;
-      try { sent = await transcribe(chunk, sentAny.current); }
+      const chunk = t.queue[0];
+      let commandId: string | null;
+      try { commandId = await transcribe(chunk, t.sentAny, t.id); }
       catch (error) {
+        if (!mine(t)) return;
         // 抛出 = 这条命令这次没戏。记下真实原因、把这段留给重试，别把队列卡死在队头。
-        queue.current.shift(); retryable.current.push(chunk); sending.current = false;
-        drop({ stage: 'transcribe', reason: error instanceof Error && error.message ? error.message : String(error) });
-        syncQueued(); setTick(count => count + 1);
+        t.sending = false; t.queue.shift(); t.retry.push(chunk);
+        drop(t, { stage: 'transcribe', reason: error instanceof Error && error.message ? error.message : String(error) });
         return;
       }
-      sending.current = false;
-      if (!sent) { setTimeout(() => setTick(count => count + 1), 500); return; }
-      queue.current.shift(); awaiting.current = chunk; syncQueued();
+      // 取消 / 换会话正落在这个 await 里：这段音频连同它的 commandId 都不再算数，
+      // 否则它会被挂进新一轮的 awaiting，重试还会把取消掉的话写进输入框（grok 第七轮 Important）。
+      if (!mine(t)) return;
+      t.sending = false;
+      if (!commandId) { setTimeout(() => { if (mine(t)) bump(); }, 500); return; }
+      t.queue.shift(); t.awaiting = { chunk, commandId }; bump();
     })();
-  }, [ready, pending, queued, tick, transcribe]);
+  }, [ready, pending, tick, transcribe]);
 
-  // 结算：ack 回来才知道这一段成没成文。失败的留着，「重试」按原顺序补发。
+  // 结算：认 commandId。失败的留着，「重试」按原顺序补发。
+  // 依赖里要有 tick：deliver 是在 transcribe 内部 await 掉的，ack 可能比 awaiting 挂上还早，
+  // 那时 result 已经不再变化，只有泵那一拍的 bump 能把这次结算带回来。
   useEffect(() => {
-    if (!awaiting.current || pending || outcome === null) return;
-    if (outcome === 'done') sentAny.current = true;
-    // 原因留到收尾再取：commandError 与 voiceOutcome 是两次 set，结算这一帧读到的可能还是旧值
-    // （grok ai-review Nit）。这里只记「是转写阶段失败的」，真实错误码在 surface 时取最新的。
-    else { retryable.current.push(awaiting.current); drop({ stage: 'transcribe' }); }
-    awaiting.current = null; syncQueued(); setTick(count => count + 1);
-  }, [pending, outcome, tick]);
+    const t = take.current;
+    if (!t?.awaiting || !result || result.commandId !== t.awaiting.commandId) return;
+    if (result.outcome === 'done') { t.sentAny = true; t.awaiting = null; bump(); return; }
+    t.retry.push(t.awaiting.chunk); t.awaiting = null;
+    drop(t, { stage: 'transcribe', reason: result.code });
+  }, [result, tick]);
 
-  // 收尾：录音结束且队列排空才关面板；一段都没成文时报一次失败，留出重试入口。
+  // 收尾：录音结束且队列排空才关面板；这次录音只要有过失败就报一次，留出重试入口。
   useEffect(() => {
-    if (!ended.current || phase === 'idle' || phase === 'error') return;
-    if (pending || sending.current || awaiting.current) return;
-    if (queue.current.length) {
+    const t = take.current;
+    if (!t || !t.drained || t.sending || t.awaiting) return;
+    if (t.queue.length) {
       // 还连得上就继续排队发。连不上就**不能干等**：面板替换了输入框，队列永远排不空的话
       // 用户既改不了草稿也发不出字，整块输入区被锁死（grok ai-review Important：
       // 录音中途电脑掉线、再点停止就是这条路）。把没发出去的留给重试，先把输入框还回去。
       if (ready) return;
-      const stranded = queue.current.length;
-      retryable.current.push(...queue.current); queue.current = [];
-      lastFailure.current ??= { stage: 'transcribe' };
-      setDropped(count => count + stranded); syncQueued();
+      t.dropped += t.queue.length;
+      t.retry.push(...t.queue); t.queue = [];
+      t.failure ??= { stage: 'transcribe' };
     }
-    // 这次录音只要有过失败就必须留痕，别管其余几段成没成文：
-    // 只在「一段都没成」时报的话，部分成功那条路会把 dropped/retryable 一起 reset 掉——
-    // 末段失败的字既没提示也没补传入口，静悄悄没了（grok ai-review 两轮分别指出这两半）。
-    if (lastFailure.current) {
-      const { stage, reason } = lastFailure.current;
-      setFailure({ stage, reason: reason ?? errorCode ?? 'COMPANION_TRANSCRIPTION_FAILED', partial: sentAny.current });
+    t.drained = false;
+    // 有过失败就必须留痕，别管其余几段成没成文：只在「一段都没成」时报的话，部分成功那条路
+    // 会把 dropped/retry 一起清掉——末段失败的字既没提示也没补传入口，静悄悄没了
+    // （grok ai-review 两轮分别指出这两半）。
+    if (t.failure) {
+      const { stage, reason } = t.failure;
+      // 失败的 take 不摘身份：重试按钮要拿它 retry 里的音频补发。下一次 start() 会把它顶掉。
+      setFailure({ stage, reason: reason ?? 'COMPANION_TRANSCRIPTION_FAILED', partial: t.sentAny });
       setPhase('error');
+      return;
     }
-    else { reset(); setPhase('idle'); }
-    ended.current = false;
-  }, [phase, pending, queued, tick, errorCode, ready]);
-
-  // 失败提示里的兜底码是「还没拿到真原因」的占位：commandError 晚一拍到时把它换掉。
-  useEffect(() => {
-    if (phase !== 'error' || !errorCode) return;
-    setFailure(current => current && current.reason === 'COMPANION_TRANSCRIPTION_FAILED' && current.stage === 'transcribe'
-      ? { ...current, reason: errorCode } : current);
-  }, [phase, errorCode]);
+    setTranscribed(t.sentAny);
+    take.current = null;
+    setPhase('idle');
+  }, [tick, ready]);
 
   const retry = () => {
-    if (!retryable.current.length) { void start(); return; }
-    setFailure(null); setPhase('ready'); ended.current = true; lastFailure.current = null;
-    queue.current.push(...retryable.current); retryable.current = [];
-    setDropped(0); syncQueued(); setTick(count => count + 1);
+    const t = take.current;
+    if (!t?.retry.length) { void start(); return; }
+    setFailure(null); setPhase('ready');
+    t.queue.push(...t.retry); t.retry = [];
+    t.dropped = 0; t.failure = null; t.drained = true;
+    bump();
   };
   return {
-    phase, failure, elapsedMs, dropped,
+    phase, failure, elapsedMs, transcribed, dropped: take.current?.dropped ?? 0,
     // 面板只在「正在录 / 正在转写」时替换输入框；失败按设计稿落在输入区上方，输入框要留给用户改字。
     panelOpen: phase !== 'idle' && phase !== 'error',
-    start, stop: () => endRecording(false), cancel: () => endRecording(true), retry,
+    start, stop, cancel, retry,
     dismissFailure: () => setFailure(null),
   };
 }

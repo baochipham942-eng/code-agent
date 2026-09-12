@@ -324,10 +324,10 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
           attach={ports.files && (() => void ports.files!.pick('file').then(picked => { if (picked) void companion.upload(picked); }).catch(error => { if (error instanceof Error && error.message === 'UPLOAD_TOO_LARGE') companionStore.setState({ commandError: 'UPLOAD_TOO_LARGE' }); }))}
           attachDisabled={!canAddressSession(companion) || companion.busy || companion.pending}
           recorder={companion.sessionId ? ports.recorder : undefined}
-          transcribe={(audio, continuation) => companion.transcribe(audio, companion.sessionId!, companion.binding!.hostKey, continuation)}
+          transcribe={(audio, continuation, take) => companion.transcribe(audio, companion.sessionId!, companion.binding!.hostKey, continuation, take)}
           discardPendingTranscript={companion.discardPendingTranscript}
           voiceDisabled={companion.status !== 'connected' || companion.busy || companion.pending}
-          voicePending={companion.pending} voiceOutcome={companion.voiceOutcome} voiceErrorCode={companion.commandError}
+          voicePending={companion.pending} voiceResult={companion.voiceResult}
           voiceReady={canAddressSession(companion)}
           onVoiceState={({ recording: active, failed }) => { recording.current = active; setVoiceFailureShown(failed); }} />
       </div>

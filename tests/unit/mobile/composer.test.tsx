@@ -157,9 +157,9 @@ describe('VoiceCapture failure reporting', () => {
 // ——— 分片伪流式（N-VOICE-CHUNKED-STREAM）———
 // 这个 Harness 照搬 companionStore 的真实时序：transcribe 发出后 pending=true / outcome=null，
 // 主机结算后才 pending=false + outcome。协议一次只允许一条在飞，所以队列必须串行。
-function ChunkHarness({ sent, verdict = () => 'done' as const, refuseFirst = false, refuseAll = false, ackDelay = 10, ready = true, onStart }: {
+function ChunkHarness({ sent, verdict = () => 'done' as const, refuseFirst = false, refuseAll = false, ackDelay = 10, ready = true, onStart, stopDelay = 0 }: {
   sent: (audioData: string, continuation: boolean) => void; verdict?: (seq: number) => 'done' | 'error';
-  refuseFirst?: boolean; refuseAll?: boolean; ackDelay?: number; ready?: boolean; onStart?: () => void;
+  refuseFirst?: boolean; refuseAll?: boolean; ackDelay?: number; ready?: boolean; onStart?: () => void; stopDelay?: number;
 }) {
   const [pending, setPending] = React.useState(false);
   const [outcome, setOutcome] = React.useState<'done' | 'error' | null>(null);
@@ -170,7 +170,7 @@ function ChunkHarness({ sent, verdict = () => 'done' as const, refuseFirst = fal
   // useVoiceCapture 的清理副作用把正在录的这次当作「录音口换了」收掉。
   const recorder = React.useRef({
     start: async () => { onStart?.(); },
-    stop: async () => ({ audioData: `chunk${seq.current + 1}`, mimeType: 'audio/aac', durationMs: 4000 }),
+    stop: async () => { if (stopDelay) await new Promise(resolve => setTimeout(resolve, stopDelay)); return { audioData: `chunk${seq.current + 1}`, mimeType: 'audio/aac', durationMs: 4000 }; },
   }).current;
   const transcribe = async (audio: { audioData: string }, continuation: boolean) => {
     sent(audio.audioData, continuation);
@@ -381,5 +381,28 @@ describe('ai-review #1764 第五轮 Nit', () => {
     // 两条循环抢同一个 recorder 的话，同一段时间里 stop→start 的次数会翻倍
     expect(starts).toBeLessThanOrEqual(4);
     expect(document.querySelectorAll('.voice-composer').length).toBeLessThanOrEqual(1);
+  });
+});
+
+describe('ai-review #1764 第六轮：录音中途取消不许再漏字', () => {
+  afterEach(() => { vi.useRealTimers(); cleanup(); });
+
+  it('取消时就地清队列——不等录音循环 stop 完（真机那一步就要 ~320ms）', async () => {
+    vi.useFakeTimers();
+    const sent = vi.fn();
+    // 复现真实时序：主机慢（ack 9s > 段长 4s）⇒ 取消那一刻队列里确实压着后面的分片；
+    // recorder.stop() 也慢（2s，真机实测切口 ~0.32s，这里放大成可观察窗口）。
+    // 旧写法要等录音循环醒来才清队列，而在飞那段的 ack 恰好落在这个窗口里，
+    // 泵立刻把队头发出去——取消掉的话照样进输入框。
+    render(<ChunkHarness sent={sent} stopDelay={2_000} ackDelay={7_500} />);
+    fireEvent.click(screen.getByRole('button', { name: text.voice }));
+    await advance(12_500);
+    const before = sent.mock.calls.length;
+    expect(before).toBeGreaterThanOrEqual(1);
+    fireEvent.click(screen.getByRole('button', { name: text.cancelRecording }));
+    await advance(4_000);
+    // 取消之后一段都不许再发出去
+    expect(sent.mock.calls.length).toBe(before);
+    expect(screen.getByTestId('draft')).toBeTruthy();
   });
 });

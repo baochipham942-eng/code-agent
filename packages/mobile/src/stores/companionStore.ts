@@ -136,7 +136,9 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
           // 用户已经取消了这次录音：这条是晚到结果，不许再往草稿里写（screen-contract「取消过滤晚到结果」）。
           // voiceOutcome 也不能置 'done'——那会让输入区弹出「已转成文字，可以修改后发送」，
           // 而用户刚刚取消的就是这次语音，草稿里那些字是他自己打的。
-          if (discardVoiceResult) { discardVoiceResult = false; set({ voiceOutcome: null }); }
+          // 标记不在这里清：一次取消可能有好几段在飞/在途，被第一条 ack 消耗掉的话，
+          // 后面那几段照样写进草稿（grok ai-review Important）。由下一次录音的第一段清。
+          if (discardVoiceResult) set({ voiceOutcome: null });
           else { await onTranscript(record.result.text, pending.sessionId, saved!.binding!.hostKey, pending.commandId, transcriptContinuation); set({ voiceOutcome: 'done' }); }
         } else set({ voiceOutcome: 'error' });
       }

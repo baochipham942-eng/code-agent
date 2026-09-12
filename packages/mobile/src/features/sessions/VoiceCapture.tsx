@@ -104,6 +104,8 @@ export function useVoiceCapture({ recorder, pending, outcome, errorCode, ready, 
       // 到 60s 上限是我们自己收的尾：不切 stopping 的话，面板会一直显示「正在听你说」，
       // 而停止键因为 active 已经是 false 点了没反应（grok ai-review Nit，真实死键）。
       if (last) { active.current = false; if (stopRequest.current === null) setPhase('stopping'); break; }
+      // 切段窗口里可能刚好被取消/卸载：别把 recorder 再拉起来（grok ai-review Nit）。
+      if (stopRequest.current !== null) { active.current = false; break; }
       try { await recorder!.start(); }
       catch (error) { active.current = false; fail('record', error); return; }
     }
@@ -135,7 +137,13 @@ export function useVoiceCapture({ recorder, pending, outcome, errorCode, ready, 
     // 先立记号：录音可能还停在 recorder.start() 的 await 里（phase='starting'），
     // 那时 active 还是 false，但这次取消必须被 start() 看见，不能当没发生。
     stopRequest.current = discard ? 'discard' : 'keep';
-    if (!active.current) { if (discard) { clearQueue(); setFailure(null); setPhase('idle'); } return; }
+    if (discard) {
+      // 队列必须**就地**清掉，不能等录音循环醒过来：它要先 await recorder.stop()，
+      // 真机上这一步就要 ~320ms；这个窗口里在飞那段的 ack 一回来，泵立刻把下一段发出去，
+      // 于是「取消掉的话」照样写进输入框（grok ai-review Important）。
+      clearQueue(); setFailure(null);
+    }
+    if (!active.current) { if (discard) setPhase('idle'); return; }
     setPhase(discard ? 'idle' : 'stopping');
     wake.current?.();
   };

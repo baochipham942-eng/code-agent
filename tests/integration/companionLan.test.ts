@@ -15,7 +15,7 @@ import { CompanionFileService } from '../../src/host/services/companion/Companio
 import { FileCache } from '../../packages/mobile/src/platform/fileCache';
 import { LanCompanionServer } from '../../src/host/services/companion/LanCompanionServer';
 import { createHandshake, createIdentity, NoiseChannel } from '../../src/shared/companion/noiseChannel';
-import { fromHex, toHex, isPrivateIPv4, parseInvitation, validateLanEndpoint, type LanBinding } from '../../src/shared/companion/lanProtocol';
+import { fromHex, toHex, isPrivateIPv4, lanAdvertisedHost, parseInvitation, validateLanEndpoint, type LanBinding } from '../../src/shared/companion/lanProtocol';
 import { LanCompanionClient, type LanPost } from '../../packages/mobile/src/platform/lanCompanionClient';
 import { COMPANION_EVENT_DROPPED, COMPANION_LIMITS as L } from '../../src/shared/constants/companion';
 import { createCompanionStore } from '../../packages/mobile/src/stores/companionStore';
@@ -511,10 +511,23 @@ describe('LAN protocol validation', () => {
   it.each(['http://127.0.0.1:8181', 'http://169.254.169.254:80', 'http://example.com:8181', 'http://192.168.1.2:8181/path', 'http://user@192.168.1.2:8181', 'https://192.168.1.2:8181', 'http://192.168.1.2:8181#token'])('rejects invitation endpoint %s', endpoint => {
     expect(() => validateLanEndpoint(endpoint)).toThrow();
   });
-  it('accepts only canonical RFC1918 endpoints and an unexpired well-formed QR', () => {
+  it('accepts canonical RFC1918 or mDNS endpoints and an unexpired well-formed QR', () => {
     expect(validateLanEndpoint('http://192.168.1.2:8181')).toBe('http://192.168.1.2:8181');
+    expect(validateLanEndpoint('http://neo-host.local:8182')).toBe('http://neo-host.local:8182');
     expect(isPrivateIPv4('172.31.1.1')).toBe(true); expect(isPrivateIPv4('172.32.1.1')).toBe(false);
     expect(() => parseInvitation('{}')).toThrow();
+  });
+  const notMdns = ['local', 'localhost', '.local', '-bad.local', 'bad-.local', 'evil.local.com', 'foo.localdomain', 'local.evil.com'];
+  it.each(notMdns)('does not mistake %s for an mDNS name', host => {
+    expect(() => validateLanEndpoint(`http://${host}:8181`)).toThrow();
+    expect(lanAdvertisedHost('192.168.1.2', host)).toBe('192.168.1.2');
+  });
+  it('advertises the mDNS name when the host has one, the literal when it does not', () => {
+    // The literal is what dies on a network change; the name is why a paired phone need not rescan.
+    expect(lanAdvertisedHost('192.168.1.2', 'Linchens-MacBook-Pro.local')).toBe('linchens-macbook-pro.local');
+    expect(lanAdvertisedHost('192.168.1.2', 'ubuntu-box')).toBe('192.168.1.2');
+    expect(lanAdvertisedHost('192.168.1.2', 'host.localdomain')).toBe('192.168.1.2');
+    expect(validateLanEndpoint(`http://${lanAdvertisedHost('192.168.1.2', 'neo.local')}:8182`)).toBe('http://neo.local:8182');
   });
   it('retires a channel on replay and cannot resume using the next valid record', () => {
     // A separate matching IK exchange exercises the real cipher, not a mock decryptor.

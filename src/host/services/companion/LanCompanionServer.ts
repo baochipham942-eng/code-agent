@@ -1,10 +1,11 @@
 import { createServer, type Server } from 'node:http';
 import { randomBytes, randomUUID } from 'node:crypto';
+import { hostname } from 'node:os';
 import express from 'express';
 import type Noise from 'noise-handshake';
 import type { KeyPair } from 'noise-handshake';
 import { COMPANION_EVENT_DROPPED, COMPANION_LIMITS as L } from '../../../shared/constants/companion';
-import { fromHex, toHex, isPrivateIPv4, type LanInvitation } from '../../../shared/companion/lanProtocol';
+import { fromHex, toHex, isLoopbackHost, isPrivateIPv4, lanAdvertisedHost, type LanInvitation } from '../../../shared/companion/lanProtocol';
 import { createHandshake, NoiseChannel } from '../../../shared/companion/noiseChannel';
 import { companionCommandSchema, type CompanionEvent } from '../../../shared/contract/companion';
 import type { CompanionGateway } from './CompanionGateway';
@@ -44,7 +45,7 @@ export class LanCompanionServer {
     app.use((req, res, next) => {
       const peer = req.socket.remoteAddress?.replace(/^::ffff:/, '') ?? '';
       res.setHeader('Cache-Control', 'no-store');
-      if (!isPrivateIPv4(peer)) { res.sendStatus(403); return; }
+      if (!isPrivateIPv4(peer) && !isLoopbackHost(peer)) { res.sendStatus(403); return; }
       if (req.method !== 'POST' || req.headers['content-type'] !== 'application/json' ||
           (req.headers.origin && !['capacitor://localhost', 'http://localhost', 'https://localhost'].includes(req.headers.origin))) {
         res.sendStatus(403); return;
@@ -71,10 +72,15 @@ export class LanCompanionServer {
     server.maxConnections = L.maxChannels * 2;
     await new Promise<void>((resolve, reject) => {
       server.once('error', reject);
-      server.listen(port, address, () => { server.off('error', reject); resolve(); });
+      // Bound to every interface on purpose: pinning the socket to one literal makes it deaf the
+      // moment that address goes away (host switches network), and nothing re-binds it until the
+      // next invitation. What limits reach is the peer check above — it rejects any source that
+      // is not private IPv4, so Tailscale (100.x) and tunnel (198.18.x) callers get 403 either way.
+      server.listen(port, () => { server.off('error', reject); resolve(); });
     });
     this.server = server;
-    this.endpoint = `http://${address}:${(server.address() as { port: number }).port}`;
+    const listenPort = (server.address() as { port: number }).port;
+    this.endpoint = `http://${lanAdvertisedHost(address, hostname())}:${listenPort}`;
     this.sweep = setInterval(() => this.prune(), L.handshakeTtlMs);
     this.sweep.unref();
   }

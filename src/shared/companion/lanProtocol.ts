@@ -21,9 +21,37 @@ export function isPrivateIPv4(host: string): boolean {
   const [a, b] = octets.map(Number);
   return a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
 }
+/**
+ * Callers on this very machine, which an mDNS name resolves to over loopback whenever the host
+ * talks to itself. Kept apart from isPrivateIPv4() on purpose: a loopback peer is allowed to
+ * reach the server (it is the host's own process), while a loopback *endpoint* stays rejected
+ * below — a phone can never dial the host's 127.0.0.1.
+ */
+export function isLoopbackHost(host: string): boolean {
+  return host === '::1' || /^127\.(?:0|[1-9]\d{0,2})\.(?:0|[1-9]\d{0,2})\.(?:0|[1-9]\d{0,2})$/.test(host);
+}
+/**
+ * RFC 6762 reserves `.local` for mDNS: public DNS never answers it, so such a name can only
+ * resolve to a host on the same link — the same reach a private IPv4 literal has. Unlike the
+ * literal it survives the host changing networks, which is why an invitation prefers it.
+ * Reach is not trust: the peer still has to pass the Noise handshake against the pinned hostKey,
+ * so a squatted mDNS name gets an attacker a TCP connection and nothing else.
+ */
+function isMdnsHostname(host: string): boolean {
+  return /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*\.local$/i.test(host);
+}
+/**
+ * What a phone stores has to outlive the address it was paired on: an IPv4 literal dies the moment
+ * the host joins another network (or the same one with a new lease), and the only cure is scanning
+ * a fresh QR. An mDNS name does not move, so an invitation advertises it whenever the host has one
+ * and keeps the literal for hosts that do not (Linux/Windows without Bonjour).
+ */
+export function lanAdvertisedHost(address: string, mdnsName: string | null): string {
+  return mdnsName && isMdnsHostname(mdnsName) ? mdnsName.toLowerCase() : address;
+}
 export function validateLanEndpoint(endpoint: string): string {
   const url = new URL(endpoint);
-  if (url.protocol !== 'http:' || !isPrivateIPv4(url.hostname) || !url.port ||
+  if (url.protocol !== 'http:' || !(isPrivateIPv4(url.hostname) || isMdnsHostname(url.hostname)) || !url.port ||
       url.username || url.password || url.search || url.hash || url.pathname !== '/' || url.origin !== endpoint) {
     throw new Error('COMPANION_INVALID_LAN_ENDPOINT');
   }

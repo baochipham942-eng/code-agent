@@ -28,3 +28,6 @@ export interface ExportOptions {
   identity: string | null;
 }
 export declare function exportOptionsXml(options: ExportOptions): string;
+
+/** 装了的 iOS 插件里，哪些没被 cap sync 链进 CapApp-SPM/Package.swift（selfImplemented 除外）。 */
+export function unlinkedSpmPlugins(packageSwift: string, plugins: string[], selfImplemented?: string[]): string[];

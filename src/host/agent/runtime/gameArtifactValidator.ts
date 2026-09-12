@@ -136,12 +136,43 @@ interface ArtifactSourceViews {
   code: string;
 }
 
+/**
+ * N-GAMEVALIDATOR-STRIP-COMMENTS · 27 处存在性判据的视图路由。
+ *
+ * comments = 剥 HTML/JS/CSS 注释，字符串保留。
+ * code     = comments 再剥 <script> 里 JS 字符串/模板内部。
+ * original = 不动。
+ *
+ * 注释伪造会假绿、字符串伪造也假绿 → code（标识符/赋值）：
+ *   1-2  GAME_SIGNAL_CODE window.__GAME_META__/__GAME_TEST__
+ *   3-6  STRONG_INTERACTIVE 四条 window.__*
+ *   7    INTERACTIVE_TEST_CONTRACT `window.__*_TEST__ =`
+ *   8-9  INTERACTIVE_TEST_START / SNAPSHOT
+ *   10-11 INTERACTIVE_TEST_RESET / STEP
+ *   12   INTERACTIVE_TEST_SMOKE
+ *   13-14 breakout `= {` 赋值闸（META 与 TEST 各一）
+ *   15-16 extract META/TEST 对象字面量
+ *
+ * 注释伪造会假绿、但 token 合法地活在字符串/属性里 → comments：
+ *   17-19 GAME_SIGNAL_MARKUP id="game-meta" / domain:'game' / JSON domain
+ *   20    CONTROL_PATTERNS（keydown 在 addEventListener('keydown')）
+ *   21    GAMEPLAY_HINT
+ *   22-24 <canvas> / rAF|setInterval / <script>
+ *   25    META_COVERAGE / CONTROL / REACHABILITY / QUALITY / NEAR_MISS
+ *   26    looksLikeBreakoutGame + checker.validateMechanics
+ *   27    固定 canvas 尺寸 / overflow 裁切 / 响应式 CSS
+ *
+ * 不是 token 存在性，保持 original：
+ *   HTML 完整闭合、</html> 后 trailing、integrity 对「test mode」注释作弊的检测。
+ *
+ * 行为变化（相对剥视图之前）全是修正、没有回归：注释或（code 档）JS 字符串里的
+ * 假契约不再算存在；keydown 字符串、quoted META key、JSON script、HI-B1-r1 真契约、
+ * 休闲 snake light 绿灯保持原判定。
+ */
 function viewsOf(content: string): ArtifactSourceViews {
   return {
     original: content,
-    // Event names and quoted keys live in strings (addEventListener('keydown')).
     comments: maskArtifactSource(content, 'comments'),
-    // Identifier/assignment constructs must not match inside comments or JS strings.
     code: maskArtifactSource(content, 'comments-and-js-strings'),
   };
 }
@@ -711,6 +742,7 @@ export async function validateGameArtifact(
   const hasStepProbe = anyHit(INTERACTIVE_TEST_STEP_PATTERNS, views.code);
   const hasResetProbe = anyHit(INTERACTIVE_TEST_RESET_PATTERNS, views.code);
   const breakoutShaped = looksLikeBreakoutGame(views.comments, filePath);
+  // 路由见 viewsOf 上的 27 处清单：赋值闸走 code，玩法形态走 comments。行为变化=修正（假契约不再算存在）。
   // 只在 breakout 整契约缺失这条分支上用「右侧必须是直接对象字面量」的严判据：
   // 失败文案要求的就是直接对象字面量，光看 `=` 会让 `__GAME_META__ = null` 骗过闸门。
   // 故意不改 INTERACTIVE_TEST_CONTRACT_PATTERNS——那是共享常量，通用路径

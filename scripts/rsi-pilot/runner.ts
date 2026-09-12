@@ -34,6 +34,7 @@ import path from 'path';
 import crypto from 'crypto';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
+import { getProviderEndpoint } from '../../src/shared/constants/providers.ts';
 const execFileAsync = promisify(execFile);
 import { fileURLToPath } from 'url';
 import {
@@ -131,6 +132,7 @@ interface RunRecord {
   tokenUsage: TokenUsage | null;
   artifactPath: string | null;
   error: string | null;
+  repairRoundsUsed: number | null;
   /**
    * True iff this unit hit PER_RUN_HARD_TIMEOUT_MS. The underlying
    * agent.sendMessage() promise from StandaloneAgentAdapter has no exposed
@@ -161,7 +163,7 @@ type RevalidatedRunRecord = RunRecord & {
   revalidateError?: string;
 };
 
-interface RunnerContext {
+export interface RunnerContext {
   StandaloneAgentAdapter: new (config: {
     workingDirectory: string;
     modelConfig: { provider: string; model: string; apiKey?: string };
@@ -313,7 +315,7 @@ async function resolveApiKey(provider: string): Promise<string | undefined> {
   }
 }
 
-async function loadRunnerContext(): Promise<RunnerContext> {
+export async function loadRunnerContext(): Promise<RunnerContext> {
   const [{ StandaloneAgentAdapter }, { validateGameArtifact }, { inferArtifactRepairIssueCodesFromText }, { getTelemetryCollector }, { GAME_VALIDATION_TIMEOUTS }] =
     await Promise.all([
       import(AGENT_ADAPTER_PATH),
@@ -344,7 +346,9 @@ async function resolveProvenance(provider: string, model: string): Promise<EvalR
   const dirty = (await gitOutput(['-C', projectRoot, 'status', '--porcelain'])) !== '';
   let runnerSha = 'unresolved';
   try { runnerSha = crypto.createHash('sha256').update(await fs.readFile(__filename)).digest('hex').slice(0, 12); } catch { /* unresolved is retained */ }
-  return { provider, model, endpoint: 'unresolved', gitSha, gitDirty: dirty, runnerSha };
+  let endpoint = 'unresolved';
+  try { const raw = getProviderEndpoint(provider); if (raw) endpoint = new URL(raw).host; } catch { /* unresolved */ }
+  return { provider, model, endpoint, gitSha, gitDirty: dirty, runnerSha };
 }
 
 async function runOneUnit(
@@ -454,6 +458,7 @@ async function runOneUnit(
       tokenUsage,
       artifactPath,
       error: result.errors.length > 0 ? result.errors.join('; ') : null,
+      repairRoundsUsed: typeof (result as { repairRoundsUsed?: unknown }).repairRoundsUsed === 'number' ? (result as { repairRoundsUsed: number }).repairRoundsUsed : null,
     };
   } catch (error) {
     // Reference identity (not string matching) — this is the exact Error
@@ -471,6 +476,7 @@ async function runOneUnit(
       tokenUsage: null,
       artifactPath: null,
       error: error instanceof Error ? error.message : String(error),
+      repairRoundsUsed: null,
       ...(isTimeout ? { timedOut: true, abandonedInflight: true } : {}),
     };
   } finally {
@@ -565,7 +571,7 @@ function buildSummary(label: string, records: RunRecord[]) {
     perCase,
     perSubtype,
     failureCodeHistogram,
-    repairRoundsUsed: 'unobservable',
+    repairRoundsUsed: records.some((r) => r.repairRoundsUsed !== null) ? records.reduce((n, r) => n + (r.repairRoundsUsed ?? 0), 0) : 'unobservable',
     errorCount,
     // Excludes timedOut runs — a run abandoned at PER_RUN_HARD_TIMEOUT_MS
     // would otherwise pin every duration stat to ~600000ms and hide the
@@ -575,7 +581,7 @@ function buildSummary(label: string, records: RunRecord[]) {
   };
 }
 
-interface CliOpts {
+export interface CliOpts {
   casesPath: string;
   split: 'all' | Split;
   reps: number;
@@ -588,7 +594,7 @@ interface CliOpts {
   rep: number | undefined;
 }
 
-async function realRun(opts: CliOpts): Promise<void> {
+export async function realRun(opts: CliOpts, injectedCtx?: RunnerContext): Promise<void> {
   const casesFile = await loadCases(opts.casesPath);
   let cases = opts.split === 'all' ? casesFile.cases : casesFile.cases.filter((c) => c.split === opts.split);
   if (opts.ids && opts.ids.length > 0) {
@@ -617,7 +623,7 @@ async function realRun(opts: CliOpts): Promise<void> {
   await fs.mkdir(path.join(opts.outDir, 'runs'), { recursive: true });
   const runsJsonlPath = path.join(opts.outDir, 'runs.jsonl');
 
-  const ctx = await loadRunnerContext();
+  const ctx = injectedCtx ?? await loadRunnerContext();
 
   console.error(
     `RSI pilot run — label=${opts.label} split=${opts.split} reps=${opts.reps} provider=${opts.provider} model=${opts.model} units=${scheduledUnits.length}`,
@@ -688,12 +694,15 @@ async function dryRun(opts: CliOpts): Promise<void> {
   console.error(`adapter constructed OK for provider=${opts.provider} model=${opts.model}`);
   console.error(`API key found for provider "${opts.provider}": ${apiKey !== undefined}`);
 
-  console.error('offline fixture validation: SKIPPED (fixtures are private archive only)');
+  const fixturePath = path.join(path.dirname(opts.casesPath), 'fixtures', 'broken-game.html');
+  const fixtureOk = await fileExists(fixturePath);
+  if (!fixtureOk) console.error(`offline fixture validation: FAIL — missing ${fixturePath} (题集在私档，用 --cases 指定)`);
+  else console.error(`offline fixture validation: PASS (${fixturePath})`);
 
   const ok =
     subtypeMismatches.length === 0 &&
     contractGateFailures.length === 0 &&
-    true;
+    fixtureOk;
 
   console.error(`\n=== Dry run result: ${ok ? 'PASS' : 'FAIL'} ===`);
   if (!ok) process.exitCode = 1;
@@ -926,6 +935,8 @@ async function main(): Promise<void> {
 // for its PASS/FAIL verdict; everything else defaults to 0) is the harness-
 // level fix; see the RunRecord.timedOut/abandonedInflight fields for the
 // per-unit bookkeeping half of the same fallback.
-main()
-  .then(() => process.exit(process.exitCode ?? 0))
-  .catch(finishWithError);
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main()
+    .then(() => process.exit(process.exitCode ?? 0))
+    .catch(finishWithError);
+}

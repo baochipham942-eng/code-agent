@@ -1,12 +1,34 @@
 import { describe, expect, it } from 'vitest';
-import fs from 'node:fs';
+import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
+import { realRun, RSI_RUN_PROVENANCE_KEYS } from '../../../scripts/rsi-pilot/runner';
 
 describe('rsi pilot provenance contract', () => {
-  it('defines the complete persisted metadata set and writes it to both outputs', () => {
-    const RSI_RUN_PROVENANCE_KEYS = ['provider', 'model', 'endpoint', 'gitSha', 'gitDirty', 'runnerSha'];
-    const source = fs.readFileSync(path.resolve('scripts/rsi-pilot/runner.ts'), 'utf8');
-    for (const key of RSI_RUN_PROVENANCE_KEYS) expect(source).toContain(key);
-    expect(source).toContain('provenance: records[0]?.provenance ?? null');
+  it('persists provenance on every run and summary', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'rsi-prov-'));
+    const casesPath = path.join(root, 'cases.json');
+    await fs.writeFile(casesPath, JSON.stringify({ version: 1, note: '', cases: [{ id: 'x', subtype: 'runner', split: 'held_in', prompt: 'make x.html' }] }));
+    const outDir = path.join(root, 'out');
+    class StubAdapter {
+      workingDirectory: string;
+      constructor(config: any) { this.workingDirectory = config.workingDirectory; }
+      async sendMessage() { await fs.writeFile(path.join(this.workingDirectory, 'x.html'), '<html></html>'); return { responses: [], toolExecutions: [], turnCount: 1, errors: [], repairRoundsUsed: 0 }; }
+      async finalizeSession() {}
+      getSessionId() { return undefined; }
+    }
+    await realRun({ casesPath, split: 'all', reps: 1, provider: 'longcat', model: 'stub-model', label: 'test', outDir, ids: undefined, rep: undefined, limit: 1 }, {
+      StandaloneAgentAdapter: StubAdapter as any,
+      validateGameArtifact: async () => ({ passed: true, failures: [] }),
+      inferArtifactRepairIssueCodesFromText: () => [],
+      getTelemetryCollector: () => ({ getSessionData: () => null }),
+      gameValidationTimeouts: { RUNTIME_SMOKE_MS: 1, BROWSER_VISUAL_SMOKE_MS: 1, LIGHT_PLAYABILITY_SMOKE_MS: 1 },
+    });
+    const record = JSON.parse((await fs.readFile(path.join(outDir, 'runs.jsonl'), 'utf8')).trim());
+    const summary = JSON.parse(await fs.readFile(path.join(outDir, 'summary.json'), 'utf8'));
+    for (const key of RSI_RUN_PROVENANCE_KEYS) { expect(record.provenance[key]).toBeDefined(); expect(summary.provenance[key]).toBeDefined(); }
+    expect(record.provenance.model).toBe('stub-model');
+    expect(record.provenance.runnerSha).toMatch(/^[0-9a-f]{12}$/);
+    expect(record.provenance.gitSha).not.toBe('unresolved');
   });
 });

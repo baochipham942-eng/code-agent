@@ -432,6 +432,7 @@ export class StandaloneAgentAdapter implements AgentInterface {
   private memorySnapshot?: MemoryFileSnapshot[];
   /** N-EVAL-MEMORY：本题的记忆声明；未声明的 case 保持 EVAL_AGENT_DEFAULTS（两向都关）。 */
   private caseMemory?: EvalCaseMemory;
+  private repairRoundsUsed = 0;
 
   // Persisted across sendMessage() calls so multi-turn follow-ups share conversation history.
   // Cleared by reset() between cases (testRunner calls reset before each case's first prompt).
@@ -621,7 +622,9 @@ export class StandaloneAgentAdapter implements AgentInterface {
     toolExecutions: ToolExecutionRecord[];
     turnCount: number;
     errors: string[];
+    repairRoundsUsed: number;
   }> {
+    this.repairRoundsUsed = 0;
     let permissionRequests: PermissionRequestRecord[] | undefined;
     const responses: string[] = [];
     const toolExecutions: ToolExecutionRecord[] = [];
@@ -849,6 +852,9 @@ export class StandaloneAgentAdapter implements AgentInterface {
               }
             }
             switch (event.type) {
+              case 'task_progress':
+                if (event.data.phase === 'tool_running' && event.data.step?.includes('次修复')) this.repairRoundsUsed += 1;
+                break;
               case 'message':
                 if (event.data?.role === 'assistant' && event.data?.content) {
                   responses.push(event.data.content);
@@ -944,6 +950,7 @@ export class StandaloneAgentAdapter implements AgentInterface {
       toolExecutions,
       turnCount: turnCount || responses.length,
       errors,
+      repairRoundsUsed: this.repairRoundsUsed,
       ...(permissionRequests ? { permissionRequests } : {}),
     };
   }

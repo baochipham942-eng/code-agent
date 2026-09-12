@@ -3314,8 +3314,8 @@ describe('breakout whole-contract collapse (N-GAME-BREAKOUT-CONTRACT)', () => {
       const codes = createArtifactRepairSpec(full).issues.map((issue) => issue.code);
       expect(codes).toContain('missing_breakout_contract');
       const collapseHits = BREAKOUT_COLLAPSE_CODES.filter((code) => codes.includes(code));
-      expect(collapseHits.length, `${name} collapse codes=${collapseHits.join(',')}`).toBeLessThan(4);
-      expect(BREAKOUT_COLLAPSE_CODES.every((code) => codes.includes(code))).toBe(false);
+      // 钉精确集合而不是「少于 4 条」：松断言下退化到 3 条也不报警，锚点就白立了。
+      expect(collapseHits, `${name} collapse codes=${collapseHits.join(',')}`).toEqual(['missing_test_contract']);
     }
   });
 

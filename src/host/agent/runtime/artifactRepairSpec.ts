@@ -9,6 +9,7 @@ import {
   classifyBreakoutFailure,
   BREAKOUT_REPAIR_CODE_SET,
   BREAKOUT_REPAIR_CODES,
+  lookupBreakoutRepair,
   type BreakoutRepairCode,
 } from './game/breakout/repairCodes';
 import {
@@ -445,7 +446,7 @@ function messageForCode(code: ArtifactRepairIssueCode): string {
     if (entry) return entry.message;
   }
   if (BREAKOUT_REPAIR_CODE_SET.has(code as BreakoutRepairCode)) {
-    const entry = BREAKOUT_REPAIR_CODES.find((e) => e.code === code);
+    const entry = lookupBreakoutRepair(code);
     if (entry) return entry.message;
   }
   switch (code as GenericArtifactRepairIssueCode) {
@@ -608,7 +609,7 @@ function collectSubtypeRepairHints(issues: readonly ArtifactRepairIssue[]): stri
 
   for (const issue of issues) {
     if (BREAKOUT_REPAIR_CODE_SET.has(issue.code as BreakoutRepairCode)) {
-      const entry = BREAKOUT_REPAIR_CODES.find((e) => e.code === issue.code);
+      const entry = lookupBreakoutRepair(issue.code);
       if (entry) appendUnique(hints, seen, entry.hints);
     }
   }

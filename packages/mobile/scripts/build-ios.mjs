@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { resolve } from 'node:path';
-import { extractNativeTargetId, exportOptionsXml, patchPbxprojVersions, profileCoversDevice, readMobileprovision, sharedSchemeXml, summarizeProfile } from './ios-package.mjs';
+import { extractNativeTargetId, exportOptionsXml, patchPbxprojVersions, profileCoversDevice, readMobileprovision, sharedSchemeXml, summarizeProfile, unlinkedSpmPlugins, withSelfImplementedPluginClasses } from './ios-package.mjs';
 
 const build = Number(process.env.NEO_MOBILE_BUILD);
 if (!Number.isSafeInteger(build) || build < 1) throw new Error('POSITIVE_NEO_MOBILE_BUILD_REQUIRED');
@@ -52,6 +52,47 @@ if (style === 'manual' && !profileFile) missing.push('no .mobileprovision (set N
 if (!expectedDevice) missing.push('NEO_IOS_EXPECTED_UDID required so Ad Hoc export fails closed unless the profile covers the target iPhone');
 if (missing.length > 0) throw new Error(`IOS_PREREQUISITES_MISSING: ${missing.join(' | ')}`);
 
+/**
+ * iOS 侧我们自己实现、故意不用厂商原生包的插件（JS 依赖仍在，Android 走厂商实现）。
+ * vendorClass 是 cap sync 会写进 packageClassList 的那个名字——那个类不会被编译进来，
+ * 必须换成 nativeClass，Capacitor 的注册表才指向真正存在的实现。
+ */
+const SELF_IMPLEMENTED_IOS_PLUGINS = [
+  { package: 'capacitor-voice-recorder', vendorClass: 'VoiceRecorder', nativeClass: 'NeoVoiceRecorderPlugin' },
+];
+
+/** 装了哪些带 iOS 原生实现的 Capacitor 插件——以 package.json 依赖为准，不靠手抄清单。 */
+function installedIosPlugins() {
+  const dependencies = Object.keys(JSON.parse(readFileSync('package.json', 'utf8')).dependencies ?? {});
+  return dependencies.filter((name) => {
+    const manifest = resolve('node_modules', name, 'package.json');
+    if (!existsSync(manifest)) return false;
+    return Boolean(JSON.parse(readFileSync(manifest, 'utf8')).capacitor?.ios);
+  });
+}
+
+/** cap sync 之后再放第一方原生源码：sync 会重写 Package.swift，但不碰 Sources 目录。 */
+function stageNativePlugins() {
+  const sources = 'ios/App/CapApp-SPM/Sources/CapApp-SPM';
+  mkdirSync(sources, { recursive: true });
+  for (const file of readdirSync('ios-native')) {
+    copyFileSync(resolve('ios-native', file), resolve(sources, file));
+    if (!existsSync(resolve(sources, file))) throw new Error(`IOS_NATIVE_SOURCE_NOT_STAGED: ${file}`);
+  }
+  const unlinked = unlinkedSpmPlugins(readFileSync(`${sources}/../../Package.swift`, 'utf8'),
+    installedIosPlugins(), SELF_IMPLEMENTED_IOS_PLUGINS.map(plugin => plugin.package));
+  if (unlinked.length > 0) throw new Error(`IOS_PLUGINS_NOT_LINKED: ${unlinked.join(' | ')}`);
+  // 注册表按类名找类：厂商类不会被编译进来，登记名必须换成第一方类名，否则桥照样找不到实现。
+  const configPath = 'ios/App/App/capacitor.config.json';
+  const registered = withSelfImplementedPluginClasses(JSON.parse(readFileSync(configPath, 'utf8')), SELF_IMPLEMENTED_IOS_PLUGINS);
+  writeFileSync(configPath, `${JSON.stringify(registered, null, '\t')}\n`);
+  for (const { vendorClass, nativeClass } of SELF_IMPLEMENTED_IOS_PLUGINS) {
+    if (registered.packageClassList.includes(vendorClass) || !registered.packageClassList.includes(nativeClass)) {
+      throw new Error(`IOS_PLUGIN_CLASS_NOT_REGISTERED: ${nativeClass}`);
+    }
+  }
+}
+
 configureVoiceRelease();
 run('npm', ['run', 'build']);
 if (!existsSync('ios')) run('node_modules/.bin/cap', ['add', 'ios']);
@@ -65,6 +106,7 @@ if (!existsSync(scheme)) {
   writeFileSync(scheme, sharedSchemeXml(targetId));
 }
 run('node_modules/.bin/cap', ['sync', 'ios']);
+stageNativePlugins();
 configureIosLan();
 copyFileSync(resolve(root, 'src-tauri/icons/ios/AppIcon-512@2x.png'),
   resolve('ios/App/App/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png'));
@@ -104,6 +146,9 @@ const ipa = `.artifacts/neo-mobile-${version}-${build}.ipa`;
 copyFileSync(`${exportPath}/${exported}`, ipa);
 const appBundle = capture('unzip', ['-Z1', ipa]).split('\n').map(line => line.match(/^Payload\/([^/]+\.app)\/$/)?.[1]).find(Boolean);
 if (!appBundle) throw new Error('APP_BUNDLE_MISSING_IN_IPA');
+// 源码进了 SPM target 不等于真被编译进包：链接闸看的是清单，这一格看的是产物本身。
+const executable = execFileSync('unzip', ['-p', ipa, `Payload/${appBundle}/${appBundle.replace(/\.app$/, '')}`], { maxBuffer: 1 << 28 });
+if (!executable.includes('NeoVoiceRecorderPlugin')) throw new Error('IOS_VOICE_PLUGIN_MISSING_FROM_BINARY');
 const embeddedPlist = readMobileprovision(execFileSync('unzip', ['-p', ipa, `Payload/${appBundle}/embedded.mobileprovision`], { maxBuffer: 1 << 24 }));
 const summary = summarizeProfile(embeddedPlist);
 if (!summary.apsEnvironment) console.warn('PUSH_ENTITLEMENT_MISSING: profile has no aps-environment; ios:verify will fail push-entitlement-present');

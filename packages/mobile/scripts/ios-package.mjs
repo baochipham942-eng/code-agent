@@ -165,3 +165,35 @@ export function exportOptionsXml({ method, teamId, style, appId, profileName, id
 </plist>
 `;
 }
+
+/**
+ * SPM 工程里，没有 `Package.swift` 的 Capacitor 插件会被 `cap sync ios` 排除在
+ * `CapApp-SPM/Package.swift` 之外——它只打一行 warn，构建照常成功，原生类却不在二进制里，
+ * 运行时才报 "plugin is not implemented on ios"（FB-140 真机实测，这条 warn 之前每次构建都印、没人看）。
+ * 这里把「装了的插件」和「真正链进去的插件」对一遍，对不上就让构建失败。
+ * selfImplemented 是我们自己写了原生实现、故意不走厂商包的插件（见 ios-native/）。
+ */
+export function unlinkedSpmPlugins(packageSwift, plugins, selfImplemented = []) {
+  const own = new Set(selfImplemented);
+  return plugins.filter((name) => !own.has(name) && !packageSwift.includes(`node_modules/${name}"`));
+}
+
+/**
+ * Capacitor 8 不扫描 CAPBridgedPlugin，而是读 ios/App/App/capacitor.config.json 的
+ * packageClassList，逐个按类名找类（找不到就静默跳过）。cap sync 生成这张表时会把**厂商**插件的
+ * ObjC 类名写进去——即便那个包因为没有 Package.swift 根本不会被编译。于是「类进了二进制」
+ * 与「Capacitor 会注册它」是两回事：自己实现的插件必须把登记名换成第一方类名，否则
+ * 运行时照旧是 plugin is not implemented on ios（ai-review PR#1760 Important 1，已用真机
+ * 生成的 capacitor.config.json 与 Capacitor.framework 里的 packageClassList / autoRegisterPlugins 核实）。
+ */
+export function withSelfImplementedPluginClasses(config, replacements) {
+  // 形状不对就停：静默当成空表会把其余插件的登记一起丢掉，而那是整包功能级的静默损坏。
+  if (!Array.isArray(config.packageClassList)) throw new Error('IOS_PACKAGE_CLASS_LIST_MISSING');
+  const list = [...config.packageClassList];
+  for (const { vendorClass, nativeClass } of replacements) {
+    const at = list.indexOf(vendorClass);
+    if (at >= 0) list.splice(at, 1, nativeClass);
+    else if (!list.includes(nativeClass)) list.push(nativeClass);
+  }
+  return { ...config, packageClassList: list };
+}

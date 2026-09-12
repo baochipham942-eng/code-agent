@@ -34,7 +34,7 @@ import path from 'path';
 import crypto from 'crypto';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import { getProviderEndpoint } from '../../src/shared/constants/providers.ts';
+import { getProviderEndpointHost } from '../../src/shared/constants/providers.ts';
 const execFileAsync = promisify(execFile);
 import { fileURLToPath } from 'url';
 import {
@@ -70,10 +70,10 @@ const DATABASE_SERVICE_PATH = '../../src/host/services/core/databaseService.ts';
 const DEFAULT_CASES_RELATIVE_PATH = 'scripts/rsi-pilot/cases.json';
 const DEFAULT_REPS = 3;
 const DEFAULT_PROVIDER = 'longcat';
-// Spec named "LongCat-2.0"; the actual catalog id (src/shared/constants/models.ts,
-// src/shared/model-catalog.json) is "LongCat-2.0-Preview" — using the literal
-// spec string would fail at the API layer, so the real catalog id is the default.
-const DEFAULT_MODEL = 'LongCat-2.0-Preview';
+// 2026-09-12：`LongCat-2.0-Preview` 已被上游下线（GET /models 只剩 `LongCat-2.0`，
+// 见 N-EVAL-HELDOUT-STRUCTURAL-R3 证据档）。07-04 试点跑的是哪个 id 无运行记录可证——
+// 这正是本文件后来补 provenance 字段的起因（N-EVALRUN-PROVENANCE）。
+const DEFAULT_MODEL = 'LongCat-2.0';
 // Per-run hard timeout — matches BASH.MAX_TIMEOUT (src/shared/constants/tools.ts),
 // the repo's existing "10 minutes" constant; this harness lives outside src/ so
 // it is not required to import it, but the value is intentionally the same one.
@@ -274,7 +274,8 @@ async function fileExists(candidate: string): Promise<boolean> {
 }
 
 async function findNewestHtml(dir: string): Promise<string | null> {
-  let newest: { filePath: string; mtimeMs: number } | null = null;
+  // 闭包内赋值，TS 控制流会把外层 let 收窄成 null ⇒ 用容器对象绕开（typescript7 门 TS2339）
+  const newest: { value: { filePath: string; mtimeMs: number } | null } = { value: null };
 
   async function walk(current: string): Promise<void> {
     const entries = await fs.readdir(current, { withFileTypes: true });
@@ -284,15 +285,15 @@ async function findNewestHtml(dir: string): Promise<string | null> {
         await walk(full);
       } else if (entry.isFile() && entry.name.toLowerCase().endsWith('.html')) {
         const stat = await fs.stat(full);
-        if (!newest || stat.mtimeMs > newest.mtimeMs) {
-          newest = { filePath: full, mtimeMs: stat.mtimeMs };
+        if (!newest.value || stat.mtimeMs > newest.value.mtimeMs) {
+          newest.value = { filePath: full, mtimeMs: stat.mtimeMs };
         }
       }
     }
   }
 
   await walk(dir);
-  return newest ? newest.filePath : null;
+  return newest.value ? newest.value.filePath : null;
 }
 
 async function locateArtifact(workspaceDir: string, prompt: string): Promise<string | null> {
@@ -346,8 +347,7 @@ async function resolveProvenance(provider: string, model: string): Promise<EvalR
   const dirty = (await gitOutput(['-C', projectRoot, 'status', '--porcelain'])) !== '';
   let runnerSha = 'unresolved';
   try { runnerSha = crypto.createHash('sha256').update(await fs.readFile(__filename)).digest('hex').slice(0, 12); } catch { /* unresolved is retained */ }
-  let endpoint = 'unresolved';
-  try { const raw = getProviderEndpoint(provider); if (raw) endpoint = new URL(raw).host; } catch { /* unresolved */ }
+  const endpoint = getProviderEndpointHost(provider) ?? 'unresolved';
   return { provider, model, endpoint, gitSha, gitDirty: dirty, runnerSha };
 }
 
@@ -694,15 +694,27 @@ async function dryRun(opts: CliOpts): Promise<void> {
   console.error(`adapter constructed OK for provider=${opts.provider} model=${opts.model}`);
   console.error(`API key found for provider "${opts.provider}": ${apiKey !== undefined}`);
 
+  // fixture 与题集同在私档（cases.json 旁的 fixtures/），不随 runner 进仓。
   const fixturePath = path.join(path.dirname(opts.casesPath), 'fixtures', 'broken-game.html');
-  const fixtureOk = await fileExists(fixturePath);
-  if (!fixtureOk) console.error(`offline fixture validation: FAIL — missing ${fixturePath} (题集在私档，用 --cases 指定)`);
-  else console.error(`offline fixture validation: PASS (${fixturePath})`);
+  if (!(await fileExists(fixturePath))) {
+    throw new Error(`Missing fixture: ${fixturePath}（题集与 fixtures 在私档，用 --cases 指向私档的 cases.json）`);
+  }
+  const validation = await ctx.validateGameArtifact(
+    fixturePath,
+    buildFullContractValidationOptions(ctx.gameValidationTimeouts),
+  );
+  const failuresRaw = collectFailureStrings(validation);
+  const codes = classifyFailures(failuresRaw, ctx.inferArtifactRepairIssueCodesFromText);
+  console.error(`broken fixture passed: ${validation.passed} (expected false)`);
+  console.error(`broken fixture failuresRaw count: ${failuresRaw.length}`);
+  console.error(`broken fixture classified codes (${codes.length}): ${codes.join(', ')}`);
 
   const ok =
     subtypeMismatches.length === 0 &&
     contractGateFailures.length === 0 &&
-    fixtureOk;
+    apiKey !== undefined &&
+    validation.passed === false &&
+    codes.length > 0;
 
   console.error(`\n=== Dry run result: ${ok ? 'PASS' : 'FAIL'} ===`);
   if (!ok) process.exitCode = 1;

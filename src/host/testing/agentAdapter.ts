@@ -15,6 +15,8 @@ import type { InferenceOptions } from '../model/types';
 import type { ConversationExecutionIntent } from '../../shared/contract/conversationEnvelope';
 import { createLogger } from '../services/infra/logger';
 import { MODEL_MAX_TOKENS } from '../../shared/constants';
+import { ARTIFACT_REPAIR_PROGRESS_MARKER } from '../../shared/constants/repair';
+import { getProviderEndpointHost } from '../../shared/constants/providers';
 import { app } from '../platform';
 import { runWithCompressionPipelineOverride } from '../context/compressionPipeline';
 import { runWithScaffoldProfileOverrides } from '../agent/runtime/scaffoldProfile';
@@ -853,7 +855,7 @@ export class StandaloneAgentAdapter implements AgentInterface {
             }
             switch (event.type) {
               case 'task_progress':
-                if (event.data.phase === 'tool_running' && event.data.step?.includes('次修复')) this.repairRoundsUsed += 1;
+                if (event.data.phase === 'tool_running' && event.data.step?.includes(ARTIFACT_REPAIR_PROGRESS_MARKER)) this.repairRoundsUsed += 1;
                 break;
               case 'message':
                 if (event.data?.role === 'assistant' && event.data?.content) {
@@ -1034,11 +1036,14 @@ export class StandaloneAgentAdapter implements AgentInterface {
     }
   }
 
-  getAgentInfo(): { name: string; model: string; provider: string } {
+  getAgentInfo(): { name: string; model: string; provider: string; endpoint?: string } {
+    // endpoint = 本次真正会发请求的 host，只用于解释"换了端点"这类跨轮差异（N-EVALRUN-PROVENANCE）
+    const endpoint = getProviderEndpointHost(this.modelConfig.provider, this.modelConfig.baseUrl);
     return {
       name: 'agent-runtime',
       model: this.modelConfig.model,
       provider: this.modelConfig.provider,
+      ...(endpoint ? { endpoint } : {}),
     };
   }
 

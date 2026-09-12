@@ -117,7 +117,7 @@ export interface AgentInterface {
   /** Reset the agent state for a new test */
   reset(): Promise<void>;
   /** Get current agent info */
-  getAgentInfo(): { name: string; model: string; provider: string };
+  getAgentInfo(): { name: string; model: string; provider: string; endpoint?: string };
   /** Get the current session ID (optional) */
   getSessionId?(): string | undefined;
   /** Flush/end the current telemetry session after a case completes (optional) */
@@ -447,7 +447,7 @@ export class TestRunner {
       results,
       environment: {
         model: genInfo.model,
-        provider: genInfo.provider,
+        provider: genInfo.provider, ...(genInfo.endpoint ? { endpoint: genInfo.endpoint } : {}),
         workingDirectory: this.config.workingDirectory,
         // roadmap 2.4 A/B 归因（audit D-R3）：记录 variant 臂，两臂结果可对比
         providerVariantArm: isProviderVariantDisabled() ? 'variant-off' : 'variant-on',

@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { realRun, RSI_RUN_PROVENANCE_KEYS } from '../../../scripts/rsi-pilot/runner';
+import { ARTIFACT_REPAIR_PROGRESS_MARKER, formatArtifactRepairProgress } from '../../../src/shared/constants/repair';
 
 describe('rsi pilot provenance contract', () => {
   it('persists provenance on every run and summary', async () => {
@@ -30,5 +31,10 @@ describe('rsi pilot provenance contract', () => {
     expect(record.provenance.model).toBe('stub-model');
     expect(record.provenance.runnerSha).toMatch(/^[0-9a-f]{12}$/);
     expect(record.provenance.gitSha).not.toBe('unresolved');
+  });
+
+  it('repair progress text carries the marker the adapter counts repairRoundsUsed by', () => {
+    expect(formatArtifactRepairProgress(1)).toContain(ARTIFACT_REPAIR_PROGRESS_MARKER);
+    expect(formatArtifactRepairProgress(1)).toContain('第 1/4');
   });
 });

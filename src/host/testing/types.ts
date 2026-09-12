@@ -593,6 +593,8 @@ export interface TestRunSummary {
   environment: {
     model: string;
     provider: string;
+    /** 请求实际落到的 host（不含 key/path）；adapter 拿不到 baseUrl 时缺席（N-EVALRUN-PROVENANCE） */
+    endpoint?: string;
     workingDirectory: string;
     /** roadmap 2.4 A/B 归因（audit D-R3）：provider 变体臂，
      *  由 CODE_AGENT_DISABLE_PROVIDER_VARIANT 决定 */
@@ -1249,4 +1251,6 @@ export interface TrendDataPoint {
   costExceeded?: number;
   /** roadmap 2.4 A/B 归因（audit D-R3）：同 commit 两臂在 trend 里靠它区分 */
   providerVariantArm?: 'variant-on' | 'variant-off';
+  /** "provider/model"（含 endpoint host 时为 "provider/model@host"）：跨 commit 看趋势必须能回答「那一点是哪个模型跑的」（N-EVALRUN-PROVENANCE）；历史条目缺席 */
+  model?: string;
 }

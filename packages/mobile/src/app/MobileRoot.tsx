@@ -111,6 +111,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
   const managing = useRef(false);
   const swipe = useRef<{ x: number; y: number } | null>(null);
   const recording = useRef(false);
+  const [voiceFailureShown, setVoiceFailureShown] = useState(false);
   const theme = state.preferences.appearance === 'system' ? (systemDark ? 'dark' : 'light') : state.preferences.appearance;
   const currentPage = state.sheet?.pages.at(-1);
   const pendingApprovals = useMemo(() => {
@@ -218,7 +219,9 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
     : companion.commandError && ['COMPANION_TRANSFER_INTERRUPTED', 'ATTACHMENT_INCOMPLETE', 'COMPANION_INTERRUPTED', 'COMPANION_NETWORK_UNAVAILABLE', 'COMPANION_CHANNEL_CLOSED'].includes(companion.commandError) ? text.transferInterrupted
     // 转写失败由输入区那条提示负责（它带阶段和真实错误码）；这里再来一句「电脑那边拒绝了这条操作」
     // 只是把同一件事说两遍——真机上就是上下叠着两行（2026-09-12 build 24 实测）。
-    : companion.commandError === 'COMPANION_TRANSCRIPTION_FAILED' ? null
+    // 只有输入区**真的在显示**这条失败时才让位：切会话会把输入区重挂、取消后 ack 才回来，
+    // 那些时候它手里没有这条失败，无条件让位等于让失败一个落点都没有。
+    : companion.commandError === 'COMPANION_TRANSCRIPTION_FAILED' && voiceFailureShown ? null
     : companion.commandError ? text.commandRejected : null;
   const selectSession = (id: string) => { companion.selectSession(id); state.navigate('new'); };
   const manage: typeof companion.manage = async (...args) => {
@@ -298,7 +301,8 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
         </p>}
         <Composer key={`${companion.binding?.hostKey}:${companion.sessionId}`} text={text}
           draft={state.preferences.drafts[state.draftKey] ?? ''} editDraft={state.editDraft}
-          offline={!!companion.binding && companion.status !== 'connected'}
+          // 暂停不是离线：胶囊那边显示已连接，占位却说「先写下来，连接后再发送」就自相矛盾。
+          offline={!!companion.binding && !connection.connected}
           sendDisabled={!(state.preferences.drafts[state.draftKey] ?? '').trim() || companion.busy || companion.pending}
           send={() => {
             // companionStore.send 在没有 sessionId 时会静默 return（只勾了项目的二维码
@@ -314,7 +318,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
           transcribe={audio => companion.transcribe(audio, companion.sessionId!, companion.binding!.hostKey)}
           voiceDisabled={companion.status !== 'connected' || companion.busy || companion.pending}
           voicePending={companion.pending} voiceOutcome={companion.voiceOutcome}
-          onRecording={active => { recording.current = active; }} />
+          onVoiceState={({ recording: active, failed }) => { recording.current = active; setVoiceFailureShown(failed); }} />
       </div>
     </main>
     {state.drawer && <div className="drawer-layer" inert={!!state.sheet}>

@@ -25,14 +25,14 @@ function mount(overrides: {
   const transcribe = vi.fn(overrides.transcribe ?? (async () => {}));
   const send = vi.fn();
   const openModel = vi.fn();
-  const onRecording = vi.fn();
+  const onVoiceState = vi.fn();
   render(<Composer text={text} draft={overrides.draft ?? ''} editDraft={() => {}} offline={overrides.offline ?? false}
     sendDisabled={!(overrides.draft ?? '').trim()} send={send}
     modelLabel={overrides.modelLabel === undefined ? 'DeepSeek V4.1 Flash' : overrides.modelLabel} openModel={openModel}
     attach={'attach' in overrides ? overrides.attach : () => {}} attachDisabled={false}
     recorder={overrides.recorder === false ? undefined : recorder} transcribe={transcribe}
-    voiceDisabled={false} voicePending={false} voiceOutcome={overrides.voiceOutcome ?? null} onRecording={onRecording} />);
-  return { transcribe, send, openModel, onRecording };
+    voiceDisabled={false} voicePending={false} voiceOutcome={overrides.voiceOutcome ?? null} onVoiceState={onVoiceState} />);
+  return { transcribe, send, openModel, onVoiceState };
 }
 
 const clickMic = () => fireEvent.click(screen.getByRole('button', { name: text.voice }));
@@ -74,7 +74,7 @@ describe('Composer 布局契约（design.html composer()）', () => {
   });
 
   it('录音中整块输入框换成语音面板：来源、计时、居中停止键，输入框与工具行不在场', async () => {
-    const { onRecording } = mount({ draft: '已经写了一半' });
+    const { onVoiceState } = mount({ draft: '已经写了一半' });
     clickMic();
     await screen.findByRole('button', { name: text.stopRecording });
     expect(screen.getByText(text.voiceSource)).toBeTruthy();
@@ -87,7 +87,7 @@ describe('Composer 布局契约（design.html composer()）', () => {
     expect(document.querySelector('.composer-tools')).toBeNull();
     expect(document.querySelector('.composer')?.className).toContain('voice-composer');
     // 录音态要上报给 MobileRoot——右滑打开会话列表在录音时必须失效（design.md §5 手势表）
-    expect(onRecording).toHaveBeenLastCalledWith(true);
+    expect(onVoiceState).toHaveBeenLastCalledWith({ recording: true, failed: false });
   });
 });
 
@@ -150,5 +150,16 @@ describe('VoiceCapture failure reporting', () => {
     expect(document.querySelector('.composer')?.className).not.toContain('voice-composer');
     expect(document.querySelector('.voice-notice')?.compareDocumentPosition(document.querySelector('.composer')!))
       .toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+});
+
+describe('输入区与连接状态的口径一致', () => {
+  afterEach(cleanup);
+
+  it('转写失败在不在场要如实上报——通用提示条据此决定让不让位', async () => {
+    const { onVoiceState } = mount({ start: async () => { throw new Error('MICROPHONE_DENIED'); } });
+    clickMic();
+    await screen.findByText(text.microphoneDenied);
+    expect(onVoiceState).toHaveBeenLastCalledWith({ recording: false, failed: true });
   });
 });

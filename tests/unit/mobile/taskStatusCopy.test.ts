@@ -84,6 +84,11 @@ describe('connectionCopy', () => {
       .toEqual({ label: text.rejected, connected: false, retry: true });
   });
 
+  it('暂停期间的占位文案不能与胶囊打架：连着就不说「连接后再发送」', () => {
+    expect(connectionCopy(text, state({ status: 'offline', paused: true })).connected).toBe(true);
+    expect(connectionCopy(text, state({ status: 'offline', paused: false })).connected).toBe(false);
+  });
+
   it('正在连接时不给重试按钮（点了也是重来一遍）', () => {
     expect(connectionCopy(text, state({ status: 'connecting' })))
       .toEqual({ label: text.connecting, connected: false, retry: false });

@@ -109,7 +109,7 @@ export function VoicePanel({ text, phase, pending, elapsedMs, transcript, stop, 
     <div className="voice-source">{text.voiceSource}</div>
     <div className="voice-label" role="status">
       <span className="dot" aria-hidden="true" />
-      {listening ? text.voiceListening : pending ? text.transcribing : text.loading}
+      {listening ? text.voiceListening : pending || phase === 'ready' || phase === 'stopping' ? text.transcribing : text.voicePreparing}
       <span className="flex" /><span className="small">{clock(elapsedMs)}</span>
     </div>
     <div className="transcription">{transcript}{listening && <span className="caret" aria-hidden="true" />}</div>

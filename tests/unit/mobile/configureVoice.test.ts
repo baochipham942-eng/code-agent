@@ -77,36 +77,36 @@ describe('configureVoiceRelease', () => {
     if (existsSync(fixtureRoot)) rmSync(fixtureRoot, { recursive: true, force: true });
   });
 
-  it('applies all four patches and stays idempotent on a second run', () => {
+  it('applies both android patches and stays idempotent on a second run', () => {
     const root = plant();
     configureVoiceRelease(root);
-    const swiftPlugin = read(root, 'ios/Plugin/VoiceRecorder.swift');
-    expect(swiftPlugin).toContain('import UIKit');
-    expect(swiftPlugin).toContain('neoBackgroundObserver');
     const javaPlugin = read(root, `${JAVA_DIR}/VoiceRecorder.java`);
     expect(javaPlugin).toContain('neoReleaseRecording');
     expect(javaPlugin).toContain('public synchronized void startRecording(');
     expect(javaPlugin).toContain('public synchronized void stopRecording(');
     expect(read(root, `${JAVA_DIR}/CustomMediaRecorder.java`)).toContain('finally { currentRecordingStatus = CurrentRecordingStatus.NONE; }');
-    expect(read(root, 'ios/Plugin/CustomMediaRecorder.swift')).toContain('audioRecorder?.stop()');
     expect(() => configureVoiceRelease(root)).not.toThrow();
-    expect(read(root, 'ios/Plugin/VoiceRecorder.swift')).toBe(swiftPlugin);
     expect(read(root, `${JAVA_DIR}/VoiceRecorder.java`)).toBe(javaPlugin);
+  });
+
+  // iOS 侧的两处补丁打的是厂商插件的 iOS 源码，而它在 SPM 工程里从未被编译过
+  // （没有 Package.swift，cap sync 只 warn 就排除，FB-140 真机实测）。iOS 录音已改第一方实现，
+  // 这里钉住「幽灵补丁不许回来」：改了也白改，却会让人以为 iOS 行为被这个脚本管着。
+  it('leaves the vendor ios sources untouched', () => {
+    const root = plant();
+    configureVoiceRelease(root);
+    expect(read(root, 'ios/Plugin/VoiceRecorder.swift')).toBe(SWIFT_PLUGIN);
+    expect(read(root, 'ios/Plugin/CustomMediaRecorder.swift')).toBe(SWIFT_RECORDER);
+  });
+
+  it('does not depend on the vendor ios sources existing at all', () => {
+    const root = plant();
+    rmSync(path.join(root, 'ios'), { recursive: true, force: true });
+    expect(() => configureVoiceRelease(root)).not.toThrow();
   });
 
   // ai-review #1742 第 5 轮 Important（arbitrate 二审维持）：replace 未命中静默写回原文，
   // 上游漂移后构建全绿但补丁整个消失。锚点不在必须 throw。
-  it('throws VOICE_IOS_PLUGIN_SOURCE_CHANGED when the swift plugin anchor drifted', () => {
-    const root = plant({ ['ios/Plugin/VoiceRecorder.swift']: SWIFT_PLUGIN.replace('    private var customMediaRecorder: CustomMediaRecorder?', '    var customMediaRecorder: CustomMediaRecorder?') });
-    expect(() => configureVoiceRelease(root)).toThrow('VOICE_IOS_PLUGIN_SOURCE_CHANGED');
-    expect(read(root, 'ios/Plugin/VoiceRecorder.swift')).not.toContain('neoBackgroundObserver');
-  });
-
-  it('throws VOICE_IOS_PLUGIN_SOURCE_CHANGED when the swift import anchor drifted', () => {
-    const root = plant({ ['ios/Plugin/VoiceRecorder.swift']: SWIFT_PLUGIN.replace('import Foundation', 'import UIKit') });
-    expect(() => configureVoiceRelease(root)).toThrow('VOICE_IOS_PLUGIN_SOURCE_CHANGED');
-  });
-
   it('throws VOICE_ANDROID_PLUGIN_SOURCE_CHANGED when the java field anchor drifted', () => {
     const root = plant({ [`${JAVA_DIR}/VoiceRecorder.java`]: JAVA_PLUGIN.replace('    private CustomMediaRecorder mediaRecorder;', '    CustomMediaRecorder mediaRecorder;') });
     expect(() => configureVoiceRelease(root)).toThrow('VOICE_ANDROID_PLUGIN_SOURCE_CHANGED');

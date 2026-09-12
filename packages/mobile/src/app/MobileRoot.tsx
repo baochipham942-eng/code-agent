@@ -317,7 +317,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
           recorder={companion.sessionId ? ports.recorder : undefined}
           transcribe={audio => companion.transcribe(audio, companion.sessionId!, companion.binding!.hostKey)}
           voiceDisabled={companion.status !== 'connected' || companion.busy || companion.pending}
-          voicePending={companion.pending} voiceOutcome={companion.voiceOutcome}
+          voicePending={companion.pending} voiceOutcome={companion.voiceOutcome} voiceErrorCode={companion.commandError}
           onVoiceState={({ recording: active, failed }) => { recording.current = active; setVoiceFailureShown(failed); }} />
       </div>
     </main>
@@ -354,7 +354,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
         <p>{text.lanHint}</p>
         {companion.status === 'connected' ? <div className="connection-success" role="status"><span className="connection-check"><AppIcon name="check" /></span><strong>{text.connected}</strong><p>{text.connectedNext}</p></div>
           : <p role="status">{companion.status === 'connecting' ? text.connecting : companion.status === 'storageError' ? text.secureStorageError : companion.connectionError ? text[companion.connectionError] : text.unconnected}</p>}
-        {companion.status === 'connected' && <button className="primary" onClick={() => state.navigate('new')}>{text.enterConversation}</button>}
+        {connection.connected && <button className="primary" onClick={() => state.navigate('new')}>{text.enterConversation}</button>}
         {!ports.companion && <p>{text.nativeConnectionOnly}</p>}
         <button className={companion.status === 'connected' ? undefined : 'primary'} disabled={!ports.companion || companion.busy || companion.pending} onClick={() => void pairAndOpenConversation()}>{text.scan}</button>
         {ports.companion && <button disabled={companion.busy} onClick={() => void companion.reconnect()}>{text.reconnect}</button>}

@@ -15,10 +15,12 @@ export type VoicePhase = 'idle' | 'starting' | 'recording' | 'stopping' | 'ready
 type Audio = { audioData: string; mimeType: string; durationMs: number };
 
 /** 录音状态机。UI 分两处落地（工具行的麦克风按钮、替换输入框的语音面板），所以状态不放在任一处。 */
-export function useVoiceCapture({ recorder, pending, outcome, transcribe }: {
+export function useVoiceCapture({ recorder, pending, outcome, errorCode, transcribe }: {
   recorder: PlatformPorts['recorder'];
   pending: boolean;
   outcome: 'done' | 'error' | null;
+  /** 最近一条命令被拒的真实错误码：转写失败是从这里回来的，不是靠 transcribe 抛错。 */
+  errorCode: string | null;
   transcribe(audio: Audio): Promise<void>;
 }) {
   const [phase, setPhase] = useState<VoicePhase>('idle');
@@ -54,7 +56,14 @@ export function useVoiceCapture({ recorder, pending, outcome, transcribe }: {
     document.addEventListener('visibilitychange', hide);
     return () => { cancelled.current = true; clearTimeout(timer.current); document.removeEventListener('visibilitychange', hide); void stop(true); };
   }, [recorder]);
-  useEffect(() => { if (outcome === 'done' && !pending) { audio.current = null; setFailure(null); setPhase('idle'); } }, [outcome, pending]);
+  useEffect(() => {
+    if (pending) return;
+    if (outcome === 'done') { audio.current = null; setFailure(null); setPhase('idle'); }
+    // 电脑拒绝转写时 companion.transcribe **不抛错**（safely 吞掉异常），失败只从 outcome 回来。
+    // 不认这一档的话，面板会停在「正在转写」把输入框占住，取消又会把这次录音丢掉，
+    // 同一段音频再也重试不了（grok ai-review Important）。
+    else if (outcome === 'error') fail('transcribe', errorCode ?? 'COMPANION_TRANSCRIPTION_FAILED');
+  }, [outcome, pending, errorCode]);
   useEffect(() => {
     if (phase !== 'recording') return;
     const tick = setInterval(() => setElapsedMs(Date.now() - startedAt.current), 500);

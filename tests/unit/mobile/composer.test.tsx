@@ -15,6 +15,7 @@ function mount(overrides: {
   offline?: boolean;
   modelLabel?: string | null;
   voiceOutcome?: 'done' | 'error' | null;
+  voiceErrorCode?: string | null;
   attach?: (() => void) | undefined;
   recorder?: boolean;
 } = {}) {
@@ -31,7 +32,7 @@ function mount(overrides: {
     modelLabel={overrides.modelLabel === undefined ? 'DeepSeek V4.1 Flash' : overrides.modelLabel} openModel={openModel}
     attach={'attach' in overrides ? overrides.attach : () => {}} attachDisabled={false}
     recorder={overrides.recorder === false ? undefined : recorder} transcribe={transcribe}
-    voiceDisabled={false} voicePending={false} voiceOutcome={overrides.voiceOutcome ?? null} onVoiceState={onVoiceState} />);
+    voiceDisabled={false} voicePending={false} voiceOutcome={overrides.voiceOutcome ?? null} voiceErrorCode={overrides.voiceErrorCode ?? null} onVoiceState={onVoiceState} />);
   return { transcribe, send, openModel, onVoiceState };
 }
 
@@ -161,5 +162,33 @@ describe('输入区与连接状态的口径一致', () => {
     clickMic();
     await screen.findByText(text.microphoneDenied);
     expect(onVoiceState).toHaveBeenLastCalledWith({ recording: false, failed: true });
+  });
+});
+
+describe('电脑拒绝转写：失败只从 voiceOutcome 回来，不是抛错', () => {
+  afterEach(cleanup);
+
+  it('面板要收尾、带真实错误码报出来、同一段音频还能重试', async () => {
+    // 生产里 companion.transcribe 被 safely 包着，拒绝不会抛错——只把 voiceOutcome 置成 error。
+    // 不认这一档的话，面板停在「正在转写」把输入框占住，取消又会把这次录音丢掉。
+    const recorder = { start: async () => {}, stop: async () => ({ audioData: 'YXVkaW8=', mimeType: 'audio/aac', durationMs: 1000 }) };
+    const transcribe = vi.fn(async () => {});
+    const props = {
+      text, draft: '', editDraft: () => {}, offline: false, sendDisabled: true, send: () => {},
+      modelLabel: null, openModel: () => {}, attach: () => {}, attachDisabled: false,
+      recorder, transcribe, voiceDisabled: false, onVoiceState: () => {},
+    };
+    const view = render(<Composer {...props} voicePending={false} voiceOutcome={null} voiceErrorCode={null} />);
+    fireEvent.click(screen.getByRole('button', { name: text.voice }));
+    fireEvent.click(await screen.findByRole('button', { name: text.stopRecording }));
+    await waitFor(() => expect(transcribe).toHaveBeenCalled());
+    // 主机结算成失败
+    view.rerender(<Composer {...props} voicePending={false} voiceOutcome="error" voiceErrorCode="COMPANION_TRANSCRIPTION_FAILED" />);
+    await waitFor(() => expect(screen.getByText(`${text.voiceTranscribeFailed} · COMPANION_TRANSCRIPTION_FAILED`)).toBeTruthy());
+    expect(screen.getByTestId('draft')).toBeTruthy();
+    expect(document.querySelector('.voice-composer')).toBeNull();
+    // 同一段音频可以再来一次，不用重录
+    fireEvent.click(screen.getByRole('button', { name: text.retry }));
+    await waitFor(() => expect(transcribe).toHaveBeenCalledTimes(2));
   });
 });

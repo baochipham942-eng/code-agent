@@ -12,7 +12,7 @@ import { useVoiceCapture, VoicePanel } from './VoiceCapture';
  */
 export function Composer({
   text, draft, editDraft, offline, sendDisabled, send, modelLabel, openModel,
-  attach, attachDisabled, recorder, transcribe, voiceDisabled, voicePending, voiceOutcome, onVoiceState,
+  attach, attachDisabled, recorder, transcribe, voiceDisabled, voicePending, voiceOutcome, voiceErrorCode, onVoiceState,
 }: {
   text: ReturnType<typeof messages>;
   draft: string;
@@ -30,12 +30,14 @@ export function Composer({
   voiceDisabled: boolean;
   voicePending: boolean;
   voiceOutcome: 'done' | 'error' | null;
+  /** 最近一条命令被拒的真实错误码，转写失败时要带上它才定位得了。 */
+  voiceErrorCode: string | null;
   /** 上报输入区自己的状态：录音中（禁横滑）、以及「转写失败正由我显示」（通用提示条据此让位）。 */
   onVoiceState(state: { recording: boolean; failed: boolean }): void;
 }) {
   const textarea = useRef<HTMLTextAreaElement>(null);
   const composing = useRef(false);
-  const voice = useVoiceCapture({ recorder, pending: voicePending, outcome: voiceOutcome, transcribe });
+  const voice = useVoiceCapture({ recorder, pending: voicePending, outcome: voiceOutcome, errorCode: voiceErrorCode, transcribe });
   useEffect(() => {
     const input = textarea.current;
     if (input) { input.style.height = 'auto'; input.style.height = `${Math.min(input.scrollHeight, 140)}px`; }

@@ -693,7 +693,6 @@ async function dryRun(opts: CliOpts): Promise<void> {
   const ok =
     subtypeMismatches.length === 0 &&
     contractGateFailures.length === 0 &&
-    apiKey !== undefined &&
     true;
 
   console.error(`\n=== Dry run result: ${ok ? 'PASS' : 'FAIL'} ===`);

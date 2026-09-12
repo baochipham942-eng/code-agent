@@ -28,6 +28,7 @@ interface State {
   voiceOutcome: 'done' | 'error' | null;
   /** 返回「这条命令有没有真发出去」：分片伪流式要靠它决定重排队，静默丢片就没人知道了。 */
   transcribe(audio: { audioData: string; mimeType: string; durationMs: number }, sessionId: string, hostKey: string, continuation?: boolean): Promise<boolean>;
+  discardPendingTranscript(): void;
   library: CompanionLibrary | null; history: Record<string, CompanionHistory>; libraryError: boolean;
   refreshLibrary(more?: boolean): Promise<void>; loadHistory(id: string, more?: boolean): Promise<void>;
   manage(action: 'session.create' | 'session.rename' | 'session.archive' | 'session.delete' | 'session.model', payload: Record<string, unknown>, target?: string): Promise<void>;
@@ -82,6 +83,8 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
   let syncing = false;
   /** 在飞的这条转写是不是「同一次录音的后续分片」——只影响草稿里要不要换行，故不持久化。 */
   let transcriptContinuation = false;
+  /** 已被用户取消、结果要丢弃的那条转写命令。 */
+  let discardTranscript: string | null = null;
 
   const store = createStore<State>((set, get) => {
     const persist = async (next: Saved) => {
@@ -112,7 +115,9 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
       }
       if (pending.action === 'voice.transcribe') {
         if (record.state === 'accepted' && typeof record.result.text === 'string' && onTranscript) {
-          await onTranscript(record.result.text, pending.sessionId, saved!.binding!.hostKey, pending.commandId, transcriptContinuation); set({ voiceOutcome: 'done' });
+          // 用户已经取消了这次录音：这条是晚到结果，不许再往草稿里写（screen-contract「取消过滤晚到结果」）。
+          if (discardTranscript === pending.commandId) set({ voiceOutcome: 'done' });
+          else { await onTranscript(record.result.text, pending.sessionId, saved!.binding!.hostKey, pending.commandId, transcriptContinuation); set({ voiceOutcome: 'done' }); }
         } else set({ voiceOutcome: 'error' });
       }
       await persist({ ...saved!, pending: undefined });
@@ -263,17 +268,31 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
           set({ sessionId, runId: last?.kind === 'run_started' ? String(last.payload.runId) : null, terminal: null, artifacts: [], preview: null, savedPreview: false, savedPreviewName: null });
         }
       },
-      transcribe: async (audio, sessionId, hostKey, continuation = false) => await safely(async () => {
-        if (get().sessionId !== sessionId || get().binding?.hostKey !== hostKey) return false;
-        if (!saved?.binding || !client || saved.pending || !canAddressSession(get())) return false;
-        const command = companionCommandSchema.parse({ version: 1, deviceId: saved.binding.deviceId, scopeEpoch: saved.binding.scopeEpoch,
-          commandId: crypto.randomUUID(), sessionId: get().sessionId, action: 'voice.transcribe', payload: audio });
-        // 这一条是不是「同一次录音的后续分片」只活在内存里：进程被杀后重放那条 pending 命令
-        // 最多让草稿多一个换行，不会丢字，所以不进持久化结构。
-        transcriptContinuation = continuation;
-        await persist({ ...saved, pending: command }); set({ pending: true, voiceOutcome: null }); await deliver();
-        return true;
-      }) ?? false,
+      transcribe: async (audio, sessionId, hostKey, continuation = false) => {
+        // 「发出去了没有」的判据是**进没进待确认槽**，不是 deliver 有没有成功：
+        // 一旦 persist 成 saved.pending，这条命令重连后一定会被结算、结果会进草稿。
+        // 此时若因为 deliver 抛错回 false，调用方（分片队列）会把同一段音频再发一遍，
+        // 草稿里出现重复的字（grok ai-review Important）。
+        let queued = false;
+        await safely(async () => {
+          if (get().sessionId !== sessionId || get().binding?.hostKey !== hostKey) return;
+          if (!saved?.binding || !client || saved.pending || !canAddressSession(get())) return;
+          const command = companionCommandSchema.parse({ version: 1, deviceId: saved.binding.deviceId, scopeEpoch: saved.binding.scopeEpoch,
+            commandId: crypto.randomUUID(), sessionId: get().sessionId, action: 'voice.transcribe', payload: audio });
+          // 这一条是不是「同一次录音的后续分片」只活在内存里：进程被杀后重放那条 pending 命令
+          // 最多让草稿多一个换行，不会丢字，所以不进持久化结构。
+          transcriptContinuation = continuation;
+          discardTranscript = null;
+          await persist({ ...saved, pending: command }); set({ pending: true, voiceOutcome: null });
+          queued = true;
+          await deliver();
+        });
+        return queued;
+      },
+      /** 取消录音：在飞那条的结果属于「晚到结果」，按 screen-contract 的语音契约过滤掉，不进草稿。 */
+      discardPendingTranscript: () => {
+        if (saved?.pending?.action === 'voice.transcribe') discardTranscript = saved.pending.commandId;
+      },
       send: text => safely(async () => {
         if (!saved?.binding || !client || saved.pending || !canAddressSession(get())) return;
         const command = companionCommandSchema.parse({ version: 1, deviceId: saved.binding.deviceId, scopeEpoch: saved.binding.scopeEpoch,

@@ -42,7 +42,8 @@ export function joinTranscript(draft: string, text: string, continuation: boolea
   if (!draft) return text;
   if (!text) return draft;
   if (!continuation) return `${draft}\n${text}`;
-  const cjk = /[\u3000-\u303f\u3400-\u9fff\uff00-\uffef]/;
+  // 假名、韩文音节、CJK 兼容区都要算进来：漏了就会在日韩分片之间多一个空格。
+  const cjk = /[\u3000-\u30ff\u3400-\u9fff\uac00-\ud7af\uf900-\ufaff\ufe30-\ufe4f\uff00-\uffef]/;
   return cjk.test(draft.at(-1)!) || cjk.test(text[0]) ? draft + text : `${draft} ${text}`;
 }
 

@@ -326,6 +326,30 @@ describe('LAN companion: real HTTP + Noise + SQLite', () => {
     expect(restarted.getState().pending).toBe(false); expect(cleared).toBe('persist before dispatch'); expect(executions).toBe(1);
     restarted.getState().pause();
   });
+  it('分片已进待确认槽后断网：transcribe 必须报「已发出」，否则同一段音频会被传两遍', async () => {
+    // grok ai-review #1764 Important：判据是「进没进待确认槽」，不是 deliver 成没成功。
+    // 一旦 persist 成 saved.pending，重连后这条一定会被结算、结果会进草稿；此时若回 false，
+    // 分片队列会把队头那段用新 commandId 再发一次，草稿里出现重复的字。
+    let storage: string | null = null; let lose = true;
+    const port = { read: async () => storage, write: async (value: string) => { storage = value; },
+      scan: async () => JSON.stringify(server.invite(['shared'])),
+      post: async (url: string, body: unknown) => {
+        const result = await post(url, body);
+        if (url.endsWith('/exchange') && lose) { lose = false; throw new Error('RECEIPT_LOST'); }
+        return result;
+      },
+    };
+    const phone = createCompanionStore(port, () => {}, async () => {});
+    try {
+      await phone.getState().pair();
+      const { sessionId, binding } = phone.getState();
+      const sent = await phone.getState().transcribe(
+        { audioData: 'YXVkaW8=', mimeType: 'audio/aac', durationMs: 4000 }, sessionId!, binding!.hostKey);
+      expect(sent).toBe(true);
+      expect(phone.getState().pending).toBe(true);
+    } finally { phone.getState().pause(); }
+  });
+
   it('cache-full phone still previews a fully downloaded artifact', async () => {
     // 真 LAN + Noise + 真 CompanionFileService；手机缓存配额 1 字节必然 STORAGE_FULL。
     // 文件完整回传并通过 SHA-256 后预览必须照常，commandError 只提示 STORAGE_FULL。

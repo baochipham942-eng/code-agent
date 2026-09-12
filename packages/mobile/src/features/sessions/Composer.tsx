@@ -12,7 +12,7 @@ import { useVoiceCapture, VoicePanel } from './VoiceCapture';
  */
 export function Composer({
   text, draft, editDraft, offline, sendDisabled, send, modelLabel, openModel,
-  attach, attachDisabled, recorder, transcribe, voiceDisabled, voicePending, voiceOutcome, voiceErrorCode, onRecording,
+  attach, attachDisabled, recorder, transcribe, discardPendingTranscript, voiceDisabled, voicePending, voiceOutcome, voiceErrorCode, onRecording,
 }: {
   text: ReturnType<typeof messages>;
   draft: string;
@@ -27,6 +27,7 @@ export function Composer({
   attachDisabled: boolean;
   recorder: PlatformPorts['recorder'];
   transcribe(audio: { audioData: string; mimeType: string; durationMs: number }, continuation: boolean): Promise<boolean>;
+  discardPendingTranscript(): void;
   voiceDisabled: boolean;
   voicePending: boolean;
   voiceOutcome: 'done' | 'error' | null;
@@ -36,7 +37,7 @@ export function Composer({
 }) {
   const textarea = useRef<HTMLTextAreaElement>(null);
   const composing = useRef(false);
-  const voice = useVoiceCapture({ recorder, pending: voicePending, outcome: voiceOutcome, errorCode: voiceErrorCode, transcribe });
+  const voice = useVoiceCapture({ recorder, pending: voicePending, outcome: voiceOutcome, errorCode: voiceErrorCode, transcribe, discardPending: discardPendingTranscript });
   useEffect(() => {
     const input = textarea.current;
     if (input) { input.style.height = 'auto'; input.style.height = `${Math.min(input.scrollHeight, 140)}px`; }

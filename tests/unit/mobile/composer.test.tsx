@@ -23,6 +23,7 @@ function mount(overrides: {
     stop: overrides.stop ?? (async () => ({ audioData: 'YXVkaW8=', mimeType: 'audio/aac', durationMs: 1000 })),
   };
   const transcribe = vi.fn(overrides.transcribe ?? (async () => true));
+  const discardPendingTranscript = vi.fn();
   const send = vi.fn();
   const openModel = vi.fn();
   const onRecording = vi.fn();
@@ -30,9 +31,9 @@ function mount(overrides: {
     sendDisabled={!(overrides.draft ?? '').trim()} send={send}
     modelLabel={overrides.modelLabel === undefined ? 'DeepSeek V4.1 Flash' : overrides.modelLabel} openModel={openModel}
     attach={'attach' in overrides ? overrides.attach : () => {}} attachDisabled={false}
-    recorder={overrides.recorder === false ? undefined : recorder} transcribe={transcribe}
+    recorder={overrides.recorder === false ? undefined : recorder} transcribe={transcribe} discardPendingTranscript={discardPendingTranscript}
     voiceDisabled={false} voicePending={false} voiceOutcome={overrides.voiceOutcome ?? null} voiceErrorCode={null} onRecording={onRecording} />);
-  return { transcribe, send, openModel, onRecording };
+  return { transcribe, send, openModel, onRecording, discardPendingTranscript };
 }
 
 const clickMic = () => fireEvent.click(screen.getByRole('button', { name: text.voice }));
@@ -156,8 +157,9 @@ describe('VoiceCapture failure reporting', () => {
 // ——— 分片伪流式（N-VOICE-CHUNKED-STREAM）———
 // 这个 Harness 照搬 companionStore 的真实时序：transcribe 发出后 pending=true / outcome=null，
 // 主机结算后才 pending=false + outcome。协议一次只允许一条在飞，所以队列必须串行。
-function ChunkHarness({ sent, verdict = () => 'done' as const, refuseFirst = false }: {
-  sent: (audioData: string, continuation: boolean) => void; verdict?: (seq: number) => 'done' | 'error'; refuseFirst?: boolean;
+function ChunkHarness({ sent, verdict = () => 'done' as const, refuseFirst = false, ackDelay = 10 }: {
+  sent: (audioData: string, continuation: boolean) => void; verdict?: (seq: number) => 'done' | 'error';
+  refuseFirst?: boolean; ackDelay?: number;
 }) {
   const [pending, setPending] = React.useState(false);
   const [outcome, setOutcome] = React.useState<'done' | 'error' | null>(null);
@@ -179,12 +181,12 @@ function ChunkHarness({ sent, verdict = () => 'done' as const, refuseFirst = fal
       const result = verdict(n);
       if (result === 'done') setDraft(previous => previous + `段${n}`);
       setOutcome(result); setPending(false);
-    }, 10);
+    }, ackDelay);
     return true;
   };
   return <Composer text={text} draft={draft} editDraft={setDraft} offline={false} sendDisabled={!draft} send={() => {}}
     modelLabel="DeepSeek V4.1 Flash" openModel={() => {}} attach={() => {}} attachDisabled={false}
-    recorder={recorder} transcribe={transcribe} voiceDisabled={false} voicePending={pending}
+    recorder={recorder} transcribe={transcribe} discardPendingTranscript={() => {}} voiceDisabled={false} voicePending={pending}
     voiceOutcome={outcome} voiceErrorCode={null} onRecording={() => {}} />;
 }
 
@@ -252,5 +254,40 @@ describe('分片伪流式语音输入', () => {
     expect(screen.getByTestId('draft')).toBeTruthy();
     expect(document.querySelector('.composer')?.className).not.toContain('voice-composer');
     expect((screen.getByTestId('draft') as HTMLTextAreaElement).value).toContain('段1');
+  });
+});
+
+// ——— grok ai-review #1764 的五条，逐条钉住 ———
+describe('ai-review #1764 回归', () => {
+  afterEach(() => { vi.useRealTimers(); cleanup(); });
+
+  it('Important·每段都录空时不许静悄悄关掉面板，要带真实错误码报出来', async () => {
+    // 点一下麦克风就停、或插件把每段都判空：队列和 retryable 都是空的，
+    // 旧写法直接 reset 回 idle，用户点了麦克风什么都没发生（相对基线 VoiceInput 是回归）。
+    mount({ stop: async () => { throw new Error('EMPTY_RECORDING'); } });
+    clickMic();
+    fireEvent.click(await screen.findByRole('button', { name: text.stopRecording }));
+    await waitFor(() => expect(screen.getByText(`${text.voiceRecordFailed} · EMPTY_RECORDING`)).toBeTruthy());
+    expect(screen.getByTestId('draft')).toBeTruthy();
+  });
+
+  it('Nit·满上限自动收尾后不再显示「正在听你说」，停止键不留成死键', async () => {
+    // 判据必须落在「录音已到点、队列还没排空」那段窗口里：等排空了面板本来就关了，
+    // 两种写法都看不出差别（第一版测试就是这么写的，变异没转红）。
+    vi.useFakeTimers();
+    const sent = vi.fn();
+    render(<ChunkHarness sent={sent} ackDelay={30_000} />);
+    fireEvent.click(screen.getByRole('button', { name: text.voice }));
+    await advance(61_000, 1_000);
+    expect(document.querySelector('.voice-composer')).toBeTruthy();
+    expect(screen.queryByText(text.voiceListening)).toBeNull();
+    expect(screen.queryByRole('button', { name: text.stopRecording })).toBeNull();
+  });
+
+  it('Nit·取消录音要把在飞那条的结果当晚到结果丢掉', async () => {
+    const { discardPendingTranscript } = mount();
+    clickMic();
+    fireEvent.click(await screen.findByRole('button', { name: text.cancelRecording }));
+    expect(discardPendingTranscript).toHaveBeenCalled();
   });
 });

@@ -176,6 +176,9 @@ describe('joinTranscript', () => {
     ['中文分片续写不补空格', '重点看一下它们的', '定位和传播方式', true, '重点看一下它们的定位和传播方式'],
     ['中文标点结尾也不补空格', '整理好了。', '还要补一页', true, '整理好了。还要补一页'],
     ['英文分片续写补一个空格，别把两个词粘死', 'brand research', 'and positioning', true, 'brand research and positioning'],
+    // grok ai-review #1764 Nit：日韩也算 CJK，漏了就在词间多空格
+    ['日文假名相接不补空格', 'これは', 'テストです', true, 'これはテストです'],
+    ['韩文音节相接不补空格', '안녕하', '세요', true, '안녕하세요'],
     ['空转写不动草稿', '已有文字', '', true, '已有文字'],
   ])('%s', (_name, draft, text, continuation, expected) => {
     expect(joinTranscript(draft, text, continuation)).toBe(expected);

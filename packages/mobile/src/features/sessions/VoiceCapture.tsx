@@ -26,13 +26,15 @@ type Audio = { audioData: string; mimeType: string; durationMs: number };
  * 所以录音走一条主循环、上传走一条队列，两边都不并发；`transcribe` 回报「发出去了没有」，
  * 没发出去的分片留在队头等下一拍，不静默丢。
  */
-export function useVoiceCapture({ recorder, pending, outcome, errorCode, transcribe }: {
+export function useVoiceCapture({ recorder, pending, outcome, errorCode, transcribe, discardPending }: {
   recorder: PlatformPorts['recorder'];
   pending: boolean;
   outcome: 'done' | 'error' | null;
   /** 最近一条命令被拒的真实错误码，用来给「整段都没转出来」配上可定位的原因。 */
   errorCode: string | null;
   transcribe(audio: Audio, continuation: boolean): Promise<boolean>;
+  /** 取消录音时调用：在飞那条转写的结果按语音契约当晚到结果丢掉，不进草稿。 */
+  discardPending(): void;
 }) {
   const [phase, setPhase] = useState<VoicePhase>('idle');
   const [failure, setFailure] = useState<VoiceFailure | null>(null);
@@ -44,7 +46,8 @@ export function useVoiceCapture({ recorder, pending, outcome, errorCode, transcr
   const queue = useRef<Audio[]>([]);
   const awaiting = useRef<Audio | null>(null);
   const retryable = useRef<Audio[]>([]);
-  const lastReason = useRef<string | null>(null);
+  /** 这次录音里最后一次失败的真实原因（录音阶段/转写阶段都记）——一段都没成文时要靠它报错。 */
+  const lastFailure = useRef<VoiceFailure | null>(null);
   const sending = useRef(false);
   const sentAny = useRef(false);
   const active = useRef(false);
@@ -61,12 +64,13 @@ export function useVoiceCapture({ recorder, pending, outcome, errorCode, transcr
   /** 清掉这次录音的全部在途数据，但不碰 stopRequest——它可能是「正在取消」的唯一记号。 */
   const clearQueue = () => {
     queue.current = []; awaiting.current = null; sending.current = false;
-    sentAny.current = false; ended.current = false; lastReason.current = null;
+    sentAny.current = false; ended.current = false; lastFailure.current = null;
     setDropped(0); setQueued(0);
   };
   const reset = () => { clearQueue(); active.current = false; stopRequest.current = null; };
+  const drop = (failure: VoiceFailure) => { lastFailure.current = failure; setDropped(count => count + 1); };
   const enqueue = (value: Audio) => {
-    if (value.audioData.length > L.voiceBase64Limit) { setDropped(count => count + 1); return; }
+    if (value.audioData.length > L.voiceBase64Limit) { drop({ stage: 'record', reason: 'AUDIO_TOO_LARGE' }); return; }
     queue.current.push(value); syncQueued();
   };
   /** 等一个分片的时长；停止/取消会提前唤醒，不用等满这一段。 */
@@ -88,10 +92,12 @@ export function useVoiceCapture({ recorder, pending, outcome, errorCode, transcr
         if (stopRequest.current === 'discard') { active.current = false; reset(); setPhase('idle'); return; }
         // 整段静音时插件抛 EMPTY_RECORDING——那只该丢这一段，不该毁掉整次录音。
         if (!(error instanceof Error && error.message === 'EMPTY_RECORDING')) { active.current = false; fail('record', error); return; }
-        setDropped(count => count + 1);
+        drop({ stage: 'record', reason: 'EMPTY_RECORDING' });
       }
       if (value && stopRequest.current !== 'discard') enqueue(value);
-      if (last) { active.current = false; break; }
+      // 到 60s 上限是我们自己收的尾：不切 stopping 的话，面板会一直显示「正在听你说」，
+      // 而停止键因为 active 已经是 false 点了没反应（grok ai-review Nit，真实死键）。
+      if (last) { active.current = false; if (stopRequest.current === null) setPhase('stopping'); break; }
       try { await recorder!.start(); }
       catch (error) { active.current = false; fail('record', error); return; }
     }
@@ -113,6 +119,7 @@ export function useVoiceCapture({ recorder, pending, outcome, errorCode, transcr
     } catch (error) { fail('record', error); }
   };
   const endRecording = (discard: boolean) => {
+    if (discard) discardPending();
     // 先立记号：录音可能还停在 recorder.start() 的 await 里（phase='starting'），
     // 那时 active 还是 false，但这次取消必须被 start() 看见，不能当没发生。
     stopRequest.current = discard ? 'discard' : 'keep';
@@ -147,9 +154,9 @@ export function useVoiceCapture({ recorder, pending, outcome, errorCode, transcr
       try { sent = await transcribe(chunk, sentAny.current); }
       catch (error) {
         // 抛出 = 这条命令这次没戏。记下真实原因、把这段留给重试，别把队列卡死在队头。
-        lastReason.current = error instanceof Error && error.message ? error.message : String(error);
-        queue.current.shift(); retryable.current.push(chunk);
-        sending.current = false; setDropped(count => count + 1); syncQueued(); setTick(count => count + 1);
+        queue.current.shift(); retryable.current.push(chunk); sending.current = false;
+        drop({ stage: 'transcribe', reason: error instanceof Error && error.message ? error.message : String(error) });
+        syncQueued(); setTick(count => count + 1);
         return;
       }
       sending.current = false;
@@ -162,7 +169,7 @@ export function useVoiceCapture({ recorder, pending, outcome, errorCode, transcr
   useEffect(() => {
     if (!awaiting.current || pending || outcome === null) return;
     if (outcome === 'done') sentAny.current = true;
-    else { retryable.current.push(awaiting.current); setDropped(count => count + 1); }
+    else { retryable.current.push(awaiting.current); drop({ stage: 'transcribe', reason: errorCode ?? 'COMPANION_TRANSCRIPTION_FAILED' }); }
     awaiting.current = null; syncQueued(); setTick(count => count + 1);
   }, [pending, outcome, tick]);
 
@@ -170,14 +177,17 @@ export function useVoiceCapture({ recorder, pending, outcome, errorCode, transcr
   useEffect(() => {
     if (!ended.current || phase === 'idle' || phase === 'error') return;
     if (pending || sending.current || awaiting.current || queue.current.length) return;
-    if (!sentAny.current && retryable.current.length) fail('transcribe', lastReason.current ?? errorCode ?? 'COMPANION_TRANSCRIPTION_FAILED');
+    // 一段都没成文就必须报出来。只看 retryable 会漏掉「每段都 EMPTY_RECORDING」那条路径——
+    // 那时队列和 retryable 都是空的，面板会静悄悄关掉、用户点了麦克风什么都没发生
+    // （grok ai-review Important；相对基线 VoiceInput 是回归，它在这条路上会报 EMPTY_RECORDING）。
+    if (!sentAny.current && lastFailure.current) { setFailure(lastFailure.current); setPhase('error'); }
     else { reset(); setPhase('idle'); }
     ended.current = false;
   }, [phase, pending, queued, tick, errorCode]);
 
   const retry = () => {
     if (!retryable.current.length) { void start(); return; }
-    setFailure(null); setPhase('ready'); ended.current = true; lastReason.current = null;
+    setFailure(null); setPhase('ready'); ended.current = true; lastFailure.current = null;
     queue.current.push(...retryable.current); retryable.current = [];
     setDropped(0); syncQueued(); setTick(count => count + 1);
   };
@@ -210,7 +220,7 @@ export function VoicePanel({ text, phase, pending, elapsedMs, transcript, droppe
     <div className="voice-source">{text.voiceSource}</div>
     <div className="voice-label" role="status">
       <span className="dot" aria-hidden="true" />
-      {listening ? text.voiceListening : pending ? text.transcribing : text.loading}
+      {listening ? text.voiceListening : pending || phase === 'ready' || phase === 'stopping' ? text.transcribing : text.voicePreparing}
       <span className="flex" /><span className="small">{clock(elapsedMs)}</span>
     </div>
     <div className="transcription">{transcript}{listening && <span className="caret" aria-hidden="true" />}</div>

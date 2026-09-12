@@ -304,6 +304,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
           attachDisabled={!canAddressSession(companion) || companion.busy || companion.pending}
           recorder={companion.sessionId ? ports.recorder : undefined}
           transcribe={(audio, continuation) => companion.transcribe(audio, companion.sessionId!, companion.binding!.hostKey, continuation)}
+          discardPendingTranscript={companion.discardPendingTranscript}
           voiceDisabled={companion.status !== 'connected' || companion.busy || companion.pending}
           voicePending={companion.pending} voiceOutcome={companion.voiceOutcome} voiceErrorCode={companion.commandError}
           onRecording={active => { recording.current = active; }} />

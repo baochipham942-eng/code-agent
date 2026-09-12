@@ -14,7 +14,9 @@ export function LibrarySheet({ library, sessionId, text, busy, mode, select, man
   const [deleting, setDeleting] = useState(false);
   const project = library.projects.find(p => p.id === projectId);
   const [modelKey, setModel] = useState(() => {
-    const model = library.models.find(m => m.provider === session?.provider && m.model === session?.model) ?? library.models[0];
+    // 会话已有的模型 > 电脑的默认模型 > 列表第一项（列表顺序不代表电脑的选择）
+    const model = library.models.find(m => m.provider === session?.provider && m.model === session?.model)
+      ?? library.models.find(m => m.isDefault) ?? library.models[0];
     return model ? JSON.stringify([model.provider, model.model]) : '';
   });
   const model = library.models.find(m => JSON.stringify([m.provider, m.model]) === modelKey);

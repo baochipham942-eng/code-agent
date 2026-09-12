@@ -6,6 +6,7 @@ import { readFileSync } from 'node:fs';
 const swift = readFileSync('packages/mobile/ios-native/NeoVoiceRecorder.swift', 'utf8');
 const capacitorPort = readFileSync('packages/mobile/src/platform/capacitor.ts', 'utf8');
 const buildScript = readFileSync('packages/mobile/scripts/build-ios.mjs', 'utf8');
+const companionContract = readFileSync('src/shared/contract/companion.ts', 'utf8');
 
 describe('first-party ios voice recorder contract', () => {
   it('registers under the js name the app actually calls', () => {
@@ -34,6 +35,10 @@ describe('first-party ios voice recorder contract', () => {
       expect(swift).toContain(`"${field}"`);
       expect(capacitorPort).toContain(field);
     }
+    // Host 侧 mimeType 是 enum、durationMs 是 .positive()：值写错整条 voice.transcribe 被拒
+    expect(swift).toContain('"mimeType": "audio/aac"');
+    expect(companionContract).toContain("'audio/aac'");
+    expect(swift).toContain('max(1, Int(recorder.currentTime * 1000))');
   });
 
   it('keeps the vendor error codes, which the UI now shows verbatim', () => {

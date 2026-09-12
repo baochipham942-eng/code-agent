@@ -187,7 +187,9 @@ export function unlinkedSpmPlugins(packageSwift, plugins, selfImplemented = []) 
  * 生成的 capacitor.config.json 与 Capacitor.framework 里的 packageClassList / autoRegisterPlugins 核实）。
  */
 export function withSelfImplementedPluginClasses(config, replacements) {
-  const list = Array.isArray(config.packageClassList) ? [...config.packageClassList] : [];
+  // 形状不对就停：静默当成空表会把其余插件的登记一起丢掉，而那是整包功能级的静默损坏。
+  if (!Array.isArray(config.packageClassList)) throw new Error('IOS_PACKAGE_CLASS_LIST_MISSING');
+  const list = [...config.packageClassList];
   for (const { vendorClass, nativeClass } of replacements) {
     const at = list.indexOf(vendorClass);
     if (at >= 0) list.splice(at, 1, nativeClass);

@@ -196,6 +196,13 @@ describe('capacitor plugin registration list', () => {
       .toEqual(once.packageClassList);
   });
 
+  it('refuses to rewrite a config whose class list is missing or malformed', () => {
+    // 静默当成空表 = 其余插件的登记被一起丢掉，那是整包功能级的静默损坏
+    for (const broken of [{}, { packageClassList: 'AppPlugin' }, { packageClassList: null }]) {
+      expect(() => withSelfImplementedPluginClasses(broken, replacements)).toThrow('IOS_PACKAGE_CLASS_LIST_MISSING');
+    }
+  });
+
   it('keeps every other key of the config untouched', () => {
     expect(withSelfImplementedPluginClasses(config, replacements).appId).toBe('dev.neo.companion.preview');
   });

@@ -43,6 +43,7 @@ public class NeoVoiceRecorderPlugin: CAPPlugin, CAPBridgedPlugin {
     private let queue = DispatchQueue(label: "ai.neo.companion.voice-recorder")
     private var recorder: AVAudioRecorder?
     private var fileURL: URL?
+    private var previousCategory: AVAudioSession.Category?
     private var backgroundObserver: NSObjectProtocol?
 
     override public func load() {
@@ -88,6 +89,9 @@ public class NeoVoiceRecorderPlugin: CAPPlugin, CAPBridgedPlugin {
                 .appendingPathComponent("neo-voice-\(UUID().uuidString).m4a")
             do {
                 let session = AVAudioSession.sharedInstance()
+                // 录音会把共享会话切成 playAndRecord；停录后要还回去，否则这个进程后续播放
+                // 一直停在录音用的路由上。
+                self.previousCategory = session.category
                 try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker])
                 try session.setActive(true)
                 let recorder = try AVAudioRecorder(url: url, settings: Self.recordingSettings)
@@ -113,8 +117,9 @@ public class NeoVoiceRecorderPlugin: CAPPlugin, CAPBridgedPlugin {
                 call.reject(Failure.recordingHasNotStarted)
                 return
             }
-            // currentTime 只在录音进行中有效，必须在 stop() 之前读。
-            let durationMs = Int(recorder.currentTime * 1000)
+            // currentTime 只在录音进行中有效，必须在 stop() 之前读；
+            // Host 侧 schema 是 durationMs.positive()，截断出来的 0 会让整条 voice.transcribe 被拒。
+            let durationMs = max(1, Int(recorder.currentTime * 1000))
             self.teardown(deleteRecording: false)
             defer { try? FileManager.default.removeItem(at: url) }
             guard let data = try? Data(contentsOf: url), !data.isEmpty else {
@@ -133,7 +138,10 @@ public class NeoVoiceRecorderPlugin: CAPPlugin, CAPBridgedPlugin {
     private func teardown(deleteRecording: Bool) {
         recorder?.stop()
         recorder = nil
-        try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
+        let session = AVAudioSession.sharedInstance()
+        try? session.setActive(false, options: [.notifyOthersOnDeactivation])
+        if let category = previousCategory { try? session.setCategory(category) }
+        previousCategory = nil
         if deleteRecording, let url = fileURL { try? FileManager.default.removeItem(at: url) }
         fileURL = nil
     }

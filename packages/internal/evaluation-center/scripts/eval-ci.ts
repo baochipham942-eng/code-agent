@@ -1551,6 +1551,7 @@ async function mainImpl(
     newPasses: delta.comparable ? delta.newPasses.length : 0,
     mode: effectiveReal ? 'real' : 'mock',
     providerVariantArm: providerVariantArm(),
+    model: `${summary.environment.provider}/${summary.environment.model}${summary.environment.endpoint ? `@${summary.environment.endpoint}` : ''}`,
     ...(summary.infraExcluded ? { infraExcluded: summary.infraExcluded } : {}),
     ...(summary.costExceeded ? { costExceeded: summary.costExceeded } : {}),
   };

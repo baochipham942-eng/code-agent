@@ -15,6 +15,8 @@ import type { InferenceOptions } from '../model/types';
 import type { ConversationExecutionIntent } from '../../shared/contract/conversationEnvelope';
 import { createLogger } from '../services/infra/logger';
 import { MODEL_MAX_TOKENS } from '../../shared/constants';
+import { ARTIFACT_REPAIR_PROGRESS_MARKER } from '../../shared/constants/repair';
+import { getProviderEndpointHost } from '../../shared/constants/providers';
 import { app } from '../platform';
 import { runWithCompressionPipelineOverride } from '../context/compressionPipeline';
 import { runWithScaffoldProfileOverrides } from '../agent/runtime/scaffoldProfile';
@@ -432,6 +434,7 @@ export class StandaloneAgentAdapter implements AgentInterface {
   private memorySnapshot?: MemoryFileSnapshot[];
   /** N-EVAL-MEMORY：本题的记忆声明；未声明的 case 保持 EVAL_AGENT_DEFAULTS（两向都关）。 */
   private caseMemory?: EvalCaseMemory;
+  private repairRoundsUsed = 0;
 
   // Persisted across sendMessage() calls so multi-turn follow-ups share conversation history.
   // Cleared by reset() between cases (testRunner calls reset before each case's first prompt).
@@ -621,7 +624,9 @@ export class StandaloneAgentAdapter implements AgentInterface {
     toolExecutions: ToolExecutionRecord[];
     turnCount: number;
     errors: string[];
+    repairRoundsUsed: number;
   }> {
+    this.repairRoundsUsed = 0;
     let permissionRequests: PermissionRequestRecord[] | undefined;
     const responses: string[] = [];
     const toolExecutions: ToolExecutionRecord[] = [];
@@ -849,6 +854,9 @@ export class StandaloneAgentAdapter implements AgentInterface {
               }
             }
             switch (event.type) {
+              case 'task_progress':
+                if (event.data.phase === 'tool_running' && event.data.step?.includes(ARTIFACT_REPAIR_PROGRESS_MARKER)) this.repairRoundsUsed += 1;
+                break;
               case 'message':
                 if (event.data?.role === 'assistant' && event.data?.content) {
                   responses.push(event.data.content);
@@ -944,6 +952,7 @@ export class StandaloneAgentAdapter implements AgentInterface {
       toolExecutions,
       turnCount: turnCount || responses.length,
       errors,
+      repairRoundsUsed: this.repairRoundsUsed,
       ...(permissionRequests ? { permissionRequests } : {}),
     };
   }
@@ -1027,11 +1036,14 @@ export class StandaloneAgentAdapter implements AgentInterface {
     }
   }
 
-  getAgentInfo(): { name: string; model: string; provider: string } {
+  getAgentInfo(): { name: string; model: string; provider: string; endpoint?: string } {
+    // endpoint = 本次真正会发请求的 host，只用于解释"换了端点"这类跨轮差异（N-EVALRUN-PROVENANCE）
+    const endpoint = getProviderEndpointHost(this.modelConfig.provider, this.modelConfig.baseUrl);
     return {
       name: 'agent-runtime',
       model: this.modelConfig.model,
       provider: this.modelConfig.provider,
+      ...(endpoint ? { endpoint } : {}),
     };
   }
 

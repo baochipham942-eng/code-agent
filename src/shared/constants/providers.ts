@@ -308,6 +308,12 @@ export function getProviderEndpoint(provider: string | null | undefined): string
   return getProviderInfo(provider)?.endpoint;
 }
 
+/** 请求会落到的 host（不含 key/path）：显式 baseUrl 优先，否则 provider 表；解析不了返回 undefined。跨轮取证用（N-EVALRUN-PROVENANCE） */
+export function getProviderEndpointHost(provider: string | null | undefined, baseUrl?: string): string | undefined {
+  const raw = baseUrl ?? getProviderEndpoint(provider);
+  try { return raw ? new URL(raw).host : undefined; } catch { return undefined; }
+}
+
 export function getProviderEndpointForProtocol(
   provider: string | null | undefined,
   protocol?: 'openai' | 'claude' | 'responses',

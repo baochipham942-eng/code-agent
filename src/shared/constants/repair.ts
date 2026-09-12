@@ -17,6 +17,15 @@ export const REPAIR_PROMPT_LIMITS = {
 // When either reaches this value the repair turn is force-stopped.
 export const ARTIFACT_REPAIR_MAX_ATTEMPTS = 4;
 
+/**
+ * 修复进度文案的锚点（N-EVALRUN-PROVENANCE）：lifecycle 发、StandaloneAgentAdapter 数
+ * repairRoundsUsed 靠它识别。两端钉在同一常量上，改文案只能改这里。
+ */
+export const ARTIFACT_REPAIR_PROGRESS_MARKER = '次修复';
+export function formatArtifactRepairProgress(attempts: number): string {
+  return `artifact 验收失败，正在准备第 ${attempts}/${ARTIFACT_REPAIR_MAX_ATTEMPTS} ${ARTIFACT_REPAIR_PROGRESS_MARKER}...`;
+}
+
 // ============================================================
 // 修复策略裁决（patience + 修复/重写双信号，maka 借鉴批 WP3）
 // 行业对齐：OpenHands StuckDetector（重复模式 4 次硬停）、

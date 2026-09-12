@@ -21,7 +21,7 @@ function makeAgent(): AgentInterface {
       errors: [],
     })),
     reset: vi.fn(async () => undefined),
-    getAgentInfo: () => ({ name: 'mock-agent', model: 'mock-model', provider: 'mock' }),
+    getAgentInfo: () => ({ name: 'mock-agent', model: 'mock-model', provider: 'mock', endpoint: 'mock.example.test' }),
   };
 }
 
@@ -81,6 +81,23 @@ describe('testRunner report fields', () => {
     expect(summary.results[0]).toMatchObject({ usageStatus: 'usage_unavailable' });
     expect(summary.results[0].usage).toBeUndefined();
     expect(summary.results[0].costUsd).toBeUndefined();
+  });
+
+  it('environment carries provider/model/endpoint from the agent so cross-run diffs are attributable', async () => {
+    const summary = await runSuite([
+      'name: provenance',
+      'cases:',
+      '  - id: provenance',
+      '    type: task',
+      '    description: provenance fixture',
+      '    prompt: respond',
+      '    expect:',
+      '      response_contains: [response]',
+      '',
+    ].join('\n'));
+
+    expect(summary.environment).toMatchObject({ provider: 'mock', model: 'mock-model', endpoint: 'mock.example.test' });
+    expect(summary.gitCommit).toMatch(/^[0-9a-f]{40}$|^unknown$/);
   });
 
   it('copies prompt and follow_up_prompts into TestResult for report drill-down', async () => {

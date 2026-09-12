@@ -675,8 +675,12 @@ export async function validateGameArtifact(
   const hasStepProbe = INTERACTIVE_TEST_STEP_PATTERNS.some((pattern) => pattern.test(content));
   const hasResetProbe = INTERACTIVE_TEST_RESET_PATTERNS.some((pattern) => pattern.test(content));
   const breakoutShaped = looksLikeBreakoutGame(content, filePath);
-  const hasGameMetaAssignment = /window\.__(?:GAME|INTERACTIVE)_META__\s*=/i.test(content);
-  const hasTestContractAssignment = INTERACTIVE_TEST_CONTRACT_PATTERNS.some((pattern) => pattern.test(content));
+  // 只在 breakout 整契约缺失这条分支上用「右侧必须是直接对象字面量」的严判据：
+  // 失败文案要求的就是直接对象字面量，光看 `=` 会让 `__GAME_META__ = null` 骗过闸门。
+  // 故意不改 INTERACTIVE_TEST_CONTRACT_PATTERNS——那是共享常量，:732/:740 的通用路径
+  // 还在用它，收紧它等于顺带收紧所有搭便车的消费方。
+  const hasGameMetaAssignment = /window\.__(?:GAME|INTERACTIVE)_META__\s*=\s*\{/i.test(content);
+  const hasTestContractAssignment = /window\.__(?:GAME|INTERACTIVE)_TEST__\s*=\s*\{/i.test(content);
   const breakoutWholeContractMissing = breakoutShaped && !hasGameMetaAssignment && !hasTestContractAssignment;
 
   if (breakoutShaped && (!hasGameMetaAssignment || !hasTestContractAssignment)) {

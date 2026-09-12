@@ -3349,4 +3349,22 @@ describe('breakout whole-contract collapse (N-GAME-BREAKOUT-CONTRACT)', () => {
     expect(light.passed).toBe(false);
     expect(light.failures.some((failure) => failure.includes('breakout 缺少 window.__GAME_META__'))).toBe(true);
   });
+
+  it('a null contract assignment does not satisfy the gate (ai-review #1759 nit)', async () => {
+    const { readFile } = await import('fs/promises');
+    const sourcePath = path.join(BREAKOUT_FIXTURE_DIR, 'HI-B1-r1-brick-breaker.html');
+    const original = await readFile(sourcePath, 'utf-8');
+    // 只把「= {」换成「= null;」：赋值 token 还在，右侧不再是直接对象字面量。
+    // 光看 `=` 的判据会放行这种空壳，闸门就白立了。
+    const hollow = original
+      .replace(/window\.__GAME_META__\s*=\s*\{[\s\S]*?(?=window\.__GAME_TEST__)/, 'window.__GAME_META__ = null;\n')
+      .replace(/window\.__GAME_TEST__\s*=\s*\{[\s\S]*?(?=\s*\/\/ Start game loop|\s*requestAnimationFrame|\s*\)\(\);)/, 'window.__GAME_TEST__ = null;\n');
+    expect(hollow).toContain('window.__GAME_META__ =');
+    expect(hollow).toContain('window.__GAME_TEST__ =');
+    expect(hollow).not.toContain('window.__GAME_META__ = {');
+    const filePath = await writeTempHtml(hollow, 'brick-breaker.html');
+    const light = await validateGameArtifact(filePath, { contractLevel: 'light' });
+    expect(light.passed).toBe(false);
+    expect(light.failures.some((failure) => failure.includes('breakout 缺少 window.__GAME_META__'))).toBe(true);
+  });
 });

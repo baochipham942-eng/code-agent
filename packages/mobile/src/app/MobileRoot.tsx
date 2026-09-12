@@ -30,6 +30,21 @@ function PreviewMedia({ name, mimeType, bytes }: { name: string; mimeType: strin
   return <p>{name}</p>;
 }
 
+/**
+ * 状态行文案。待确认命令按 action 分：语音转写不是「发送」，套用「请勿重复发送」会把用户
+ * 指到一个不存在的风险上（2026-09-12 真机反馈）。抽成纯函数是为了让这条分支可单测——
+ * 它此前是 JSX 里的内联三元，测不到。
+ */
+export function taskStatusCopy(
+  text: ReturnType<typeof messages>,
+  companion: { pending: boolean; pendingAction: string | null; runId: string | null;
+    terminal: 'complete' | 'stopped' | 'failed' | null },
+): string {
+  if (companion.pending) return companion.pendingAction === 'voice.transcribe' ? text.transcribing : text.pendingCommand;
+  if (companion.runId) return text.running;
+  return companion.terminal ? text[companion.terminal] : '';
+}
+
 export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures: boolean }) {
   const [store] = useState(() => createMobileStore(ports.preferences));
   const [companionStore] = useState(() => createCompanionStore(ports.companion, (acceptedText, sessionId, hostKey) => {
@@ -232,7 +247,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
           <button className="connection-pill" data-connected={companion.status === 'connected'} onClick={() => state.openSheet('remote')}>
             <span aria-hidden="true" className="status-dot" />{companion.status === 'connected' ? text.connected : companion.status === 'connecting' ? text.connecting : text.reconnect}
           </button>
-          <span>{companion.pending ? text.pendingCommand : companion.runId ? text.running : companion.terminal ? text[companion.terminal] : ''}</span>
+          <span>{taskStatusCopy(text, companion)}</span>
           {companion.runId && <button disabled={companion.busy || companion.pending || companion.status !== 'connected'} onClick={() => void companion.stop()}>{text.stop}</button>}
         </div>}
         {companion.binding && !['connected', 'connecting'].includes(companion.status) && <div className="connection-recovery">

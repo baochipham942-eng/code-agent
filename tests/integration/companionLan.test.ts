@@ -248,6 +248,56 @@ describe('LAN companion: real HTTP + Noise + SQLite', () => {
     expect(restarted.getState().status).toBe('connected'); expect(gateway.pairedDevices()).toHaveLength(1);
     restarted.getState().pause();
   });
+  it('待确认命令的文案按 action 分：语音转写不套用「请勿重复发送」', async () => {
+    // 真机反馈（2026-09-12）：转写期间状态行写的是「正在核对电脑是否已接收，请勿重复发送」——
+    // 用户既没发送什么，也不存在重复发送的风险，那句话是给 message.send 写的。
+    const identity = createIdentity();
+    const pendingVoice = {
+      version: 1, deviceId: 'device-1', scopeEpoch: 1, commandId: 'cmd-voice',
+      sessionId: 'shared', action: 'voice.transcribe',
+      payload: { audioData: 'YXVkaW8=', mimeType: 'audio/aac', durationMs: 1200 },
+    };
+    const seed = (pending: unknown) => JSON.stringify({
+      version: 1, publicKey: toHex(identity.publicKey), secretKey: toHex(identity.secretKey), pending,
+    });
+
+    const voice = createCompanionStore({ read: async () => seed(pendingVoice), write: async () => {},
+      scan: async () => '', post }, () => {});
+    await voice.getState().hydrate();
+    expect(voice.getState()).toMatchObject({ pending: true, pendingAction: 'voice.transcribe' });
+
+    const send = createCompanionStore({ read: async () => seed({ ...pendingVoice, commandId: 'cmd-send',
+      action: 'message.send', payload: { text: 'hi' } }), write: async () => {}, scan: async () => '', post }, () => {});
+    await send.getState().hydrate();
+    expect(send.getState()).toMatchObject({ pending: true, pendingAction: 'message.send' });
+
+    const idle = createCompanionStore({ read: async () => seed(undefined), write: async () => {},
+      scan: async () => '', post }, () => {});
+    await idle.getState().hydrate();
+    expect(idle.getState()).toMatchObject({ pending: false, pendingAction: null });
+  });
+
+  it('活着的那条路径也标出命令身份：发命令期间 pendingAction 被置起、settle 后归零', async () => {
+    // 上一条用例走的是重启恢复（hydrate）。这条守的是日常路径（persist）——
+    // 两条都得标，否则文案会在其中一条上串台。
+    let storage: string | null = null;
+    const phone = createCompanionStore({ read: async () => storage,
+      write: async (value: string) => { storage = value; },
+      scan: async () => JSON.stringify(server.invite(['shared'])), post }, () => {});
+    try {
+      await phone.getState().pair();
+      const seen: { pending: boolean; action: string | null }[] = [];
+      const unsubscribe = phone.subscribe(state => seen.push({ pending: state.pending, action: state.pendingAction }));
+      await phone.getState().send('pending-copy-正文');
+      unsubscribe();
+      expect(seen.map(sample => sample.action)).toContain('message.send');
+      // 两个字段必须同一拍翻：出现过 pending=true + action=null 的中间帧，
+      // 状态行就会在结算瞬间闪回「请勿重复发送」。
+      expect(seen.filter(sample => sample.pending && sample.action === null)).toEqual([]);
+      expect(phone.getState()).toMatchObject({ pending: false, pendingAction: null });
+    } finally { phone.getState().pause(); }
+  });
+
   it('phone storage failure prevents dispatch and keeps the draft', async () => {
     let storage: string | null = null; let fail = false; let cleared = false;
     const phone = createCompanionStore({ read: async () => storage,

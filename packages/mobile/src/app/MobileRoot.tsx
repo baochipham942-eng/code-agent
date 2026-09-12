@@ -10,6 +10,7 @@ import { unavailableNotificationPort } from '../platform/notifications';
 import { COMPANION_LIMITS } from '../../../../src/shared/constants/companion';
 import { ApprovalCard } from '../features/sessions/ApprovalCard';
 import { CompanionConversation } from '../features/sessions/CompanionConversation';
+import type { CompanionLibrary } from '../../../../src/shared/contract/companionLibrary';
 import { messages } from '../i18n';
 import { bytesToArrayBuffer } from '../platform/fileCache';
 import { createBackCoordinator } from './backCoordinator';
@@ -28,6 +29,19 @@ function PreviewMedia({ name, mimeType, bytes }: { name: string; mimeType: strin
   if (url) return <img className="preview-media" alt={name} src={url} />;
   if (mimeType.startsWith('text/')) return <pre className="preview-text">{new TextDecoder().decode(bytes)}</pre>;
   return <p>{name}</p>;
+}
+
+/**
+ * 输入区模型胶囊的文案（design.html composer 的 .model）：显示这条会话当前在用的模型。
+ * 模型表里查不到就退回会话自己的模型 id——电脑的可用模型列表会剔掉没配 key 的 provider，
+ * 而会话可能正用着其中一个（2026-09-12 build 24 真机：会话是 custom-glm-coding/glm-5.3-flash，
+ * 不在列表里）。查不到只说明「没有好看的名字」，不说明「没有模型」，隐藏胶囊等于把事实藏了；
+ * 同理也不拿列表第一个冒充当前模型（那正是 FB-141 那类谎）。
+ */
+export function composerModelLabel(library: CompanionLibrary | null, sessionId: string | null): string | null {
+  const session = library?.sessions.find(item => item.id === sessionId);
+  if (!session || !library) return null;
+  return library.models.find(m => m.provider === session.provider && m.model === session.model)?.label ?? session.model;
 }
 
 /**
@@ -92,8 +106,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
   const otherApproval = pendingApprovals.find(card => card.sessionId !== companion.sessionId);
   // 输入区的模型胶囊（design.html composer 的 .model）：显示这条会话当前在用的模型，
   // 没有会话或还没读到模型表时不显示——不拿列表第一个冒充当前模型。
-  const session = companion.library?.sessions.find(item => item.id === companion.sessionId);
-  const sessionModelLabel = companion.library?.models.find(m => m.provider === session?.provider && m.model === session?.model)?.label ?? null;
+  const sessionModelLabel = composerModelLabel(companion.library, companion.sessionId);
 
   // Text selections inside the composer never surface through window.getSelection on WebKit,
   // and long-press selection on WebView only lives in the element's own range.
@@ -184,6 +197,9 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
     : companion.commandError === 'COMPANION_EXPORT_FAILED' ? text.exportFailed
     : companion.commandError === 'ARTIFACT_MISSING' ? text.artifactMissing
     : companion.commandError && ['COMPANION_TRANSFER_INTERRUPTED', 'ATTACHMENT_INCOMPLETE', 'COMPANION_INTERRUPTED', 'COMPANION_NETWORK_UNAVAILABLE', 'COMPANION_CHANNEL_CLOSED'].includes(companion.commandError) ? text.transferInterrupted
+    // 转写失败由输入区那条提示负责（它带阶段和真实错误码）；这里再来一句「电脑那边拒绝了这条操作」
+    // 只是把同一件事说两遍——真机上就是上下叠着两行（2026-09-12 build 24 实测）。
+    : companion.commandError === 'COMPANION_TRANSCRIPTION_FAILED' ? null
     : companion.commandError ? text.commandRejected : null;
   const selectSession = (id: string) => { companion.selectSession(id); state.navigate('new'); };
   const manage: typeof companion.manage = async (...args) => {
@@ -254,7 +270,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
         </div>}
         {companion.libraryError && <p className="notice" role="status">{text.libraryError}<button onClick={() => void companion.reconnect()}>{text.reconnect}</button></p>}
         {fixtures && <p className="caption">{text.fixtureNotice}</p>}
-        {(state.saveError || nativeError || companion.commandError || (state.sendAttempted && !canAddressSession(companion))) && <p role="status" className="notice">
+        {(state.saveError || nativeError || (companion.commandError && commandNotice) || (state.sendAttempted && !canAddressSession(companion))) && <p role="status" className="notice">
           {state.saveError ? text.saveError
             : nativeError ? text.nativeError
             : commandNotice ? commandNotice

@@ -135,4 +135,29 @@ describe('notificationStore', () => {
     expect(notifications.getState().registration).toBe('failed');
     expect(notifications.getState().lastFailure).toBe('CHANNEL_MISSING:gms_or_vendor');
   });
+
+  it('undoes a registration that lands after the user turned notifications off', async () => {
+    let preference = true;
+    let release: () => void = () => {};
+    const pending = new Promise<void>(resolve => { release = resolve; });
+    const unregistered: number[] = [];
+    const notifications = createNotificationStore({
+      port: port({ permission: 'granted' }),
+      preference: { get: () => preference, set: value => { preference = value; } },
+      session: {
+        status: () => 'connected',
+        register: async () => { await pending; return { kind: 'registered' }; },
+        unregister: async () => { unregistered.push(1); },
+        openRoute: async () => {},
+        reconnect: async () => {},
+      },
+    });
+    await notifications.getState().refresh();
+    const registering = notifications.getState().setPreference(true);
+    await notifications.getState().setPreference(false);
+    release();
+    await registering;
+    expect(notifications.getState().registration).toBe('unregistered');
+    expect(unregistered).toHaveLength(1);
+  });
 });

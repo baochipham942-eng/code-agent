@@ -57,6 +57,14 @@ export function createNotificationStore(deps: {
       }
       set({ registration: 'registering', lastFailure: null });
       const result = await deps.session.register(token.token);
+      // Switching the preference off mid-register sees 'registering', not 'registered', so that
+      // path cannot unregister for us. Re-read it here or the Host keeps pushing to a phone that
+      // has already turned notifications off.
+      if (!get().preference) {
+        if (result.kind === 'registered') await deps.session.unregister();
+        set({ registration: 'unregistered', lastFailure: null });
+        return;
+      }
       set(result.kind === 'registered'
         ? { registration: 'registered', lastFailure: null }
         : { registration: 'failed', lastFailure: result.kind });

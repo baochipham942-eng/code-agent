@@ -58,25 +58,6 @@ export type CompanionPushDispatchResult =
   | { accepted: false; code: 'CHANNEL_MISSING'; missing: CompanionPushChannelMissing }
   | { accepted: false; code: 'DEVICE_REVOKED' | 'SCOPE_DENIED' | 'NOT_REGISTERED' | 'EXPIRED' | 'TOKEN_UNWRAP_FAILED' };
 
-export interface CompanionPushChannelGap {
-  id: CompanionPushChannelMissing;
-  present: false;
-}
-
-/** Inventory of this-round channel gaps. Android vendor/GMS is always missing. */
-export function companionPushChannelGaps(input: {
-  apsEnvironment: string | null;
-  apnsKeyPath: string | null;
-}): CompanionPushChannelGap[] {
-  const gaps: CompanionPushChannelGap[] = [];
-  if (!input.apnsKeyPath) gaps.push({ id: 'apns_auth_key', present: false });
-  if (input.apsEnvironment !== 'production' && input.apsEnvironment !== 'development') {
-    gaps.push({ id: 'aps_entitlement', present: false });
-  }
-  gaps.push({ id: 'gms_or_vendor', present: false });
-  return gaps;
-}
-
 export function companionPushTitleKey(kind: string, payload: Record<string, unknown>): CompanionPushTitleKey | null {
   if (kind === 'approval') return payload.status === 'pending' ? COMPANION_PUSH_TITLE_KEYS.approval : null;
   if (kind === 'agent_complete' || kind === 'agent_cancelled' || kind === 'error') return COMPANION_PUSH_TITLE_KEYS[kind];

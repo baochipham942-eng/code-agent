@@ -5,7 +5,6 @@ import Database from 'better-sqlite3';
 import type BetterSqlite3 from 'better-sqlite3';
 import { CompanionGateway } from '../../../src/host/services/companion/CompanionGateway';
 import { CompanionPushOutbox } from '../../../src/host/services/companion/CompanionPushOutbox';
-import { companionPushChannelGaps } from '../../../src/shared/contract/companionPush';
 import { unwrapPushToken, wrapPushToken } from '../../../src/host/services/companion/companionPushProviders';
 import { COMPANION_LIMITS as L } from '../../../src/shared/constants/companion';
 
@@ -170,11 +169,6 @@ describe('CompanionPushOutbox', () => {
   it('does not notify a closed approval', () => {
     gateway.publish('session-1', 'approval', { status: 'closed' });
     expect(push.rowsFor('phone-1')).toEqual([]);
-  });
-
-  it('lists the three channel gaps without asking for an Apple account', () => {
-    expect(companionPushChannelGaps({ apsEnvironment: null, apnsKeyPath: null }).map(gap => gap.id))
-      .toEqual(['apns_auth_key', 'aps_entitlement', 'gms_or_vendor']);
   });
 
   it('wraps and unwraps a token', () => {

@@ -448,10 +448,3 @@ export const arkanoidChecker = new BreakoutChecker('arkanoid');
 gameSubtypeRegistry.register(breakoutChecker);
 gameSubtypeRegistry.register(arkanoidChecker);
 
-export {
-  BREAKOUT_REPAIR_CODES,
-  BREAKOUT_REPAIR_CODE_SET,
-  classifyBreakoutFailure,
-  lookupBreakoutRepair,
-} from './repairCodes';
-export type { BreakoutRepairCode } from './repairCodes';

@@ -165,3 +165,15 @@ export function exportOptionsXml({ method, teamId, style, appId, profileName, id
 </plist>
 `;
 }
+
+/**
+ * SPM 工程里，没有 `Package.swift` 的 Capacitor 插件会被 `cap sync ios` 排除在
+ * `CapApp-SPM/Package.swift` 之外——它只打一行 warn，构建照常成功，原生类却不在二进制里，
+ * 运行时才报 "plugin is not implemented on ios"（FB-140 真机实测，这条 warn 之前每次构建都印、没人看）。
+ * 这里把「装了的插件」和「真正链进去的插件」对一遍，对不上就让构建失败。
+ * selfImplemented 是我们自己写了原生实现、故意不走厂商包的插件（见 ios-native/）。
+ */
+export function unlinkedSpmPlugins(packageSwift, plugins, selfImplemented = []) {
+  const own = new Set(selfImplemented);
+  return plugins.filter((name) => !own.has(name) && !packageSwift.includes(`node_modules/${name}"`));
+}

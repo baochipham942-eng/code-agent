@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   assertPushEntitlement, exportOptionsXml, extractNativeTargetId, extractPlistXml, parsePlistXml, patchPbxprojVersions,
-  profileCoversDevice, readMobileprovision, summarizeProfile,
+  profileCoversDevice, readMobileprovision, summarizeProfile, unlinkedSpmPlugins,
 } from '../../../packages/mobile/scripts/ios-package.mjs';
 import { ensureAndroidPushPermission, mergeRemoteNotificationMode } from '../../../packages/mobile/scripts/configure-lan.mjs';
 
@@ -135,5 +135,40 @@ describe('plist parser primitives', () => {
   });
   it('rejects truncated input with a position, not a wrong answer', () => {
     expect(() => parsePlistXml('<plist version="1.0"><dict><key>k</key><string>unterminated')).toThrow(/PLIST_UNTERMINATED_STRING/);
+  });
+});
+
+describe('SPM plugin linkage', () => {
+  // cap sync 写出来的真实形状：每个链进去的插件一行 .package(name:…, path: "../../../node_modules/<包名>")
+  const packageSwift = `// swift-tools-version: 5.9
+let package = Package(
+    dependencies: [
+        .package(url: "https://github.com/ionic-team/capacitor-swift-pm.git", exact: "8.5.1"),
+        .package(name: "CapacitorApp", path: "../../../node_modules/@capacitor/app"),
+        .package(name: "CapacitorKeyboard", path: "../../../node_modules/@capacitor/keyboard")
+    ]
+)`;
+
+  it('names the plugin cap sync silently dropped for having no Package.swift', () => {
+    expect(unlinkedSpmPlugins(packageSwift, ['@capacitor/app', '@capacitor/keyboard', 'capacitor-voice-recorder']))
+      .toEqual(['capacitor-voice-recorder']);
+  });
+
+  it('does not flag a plugin we implement natively ourselves', () => {
+    expect(unlinkedSpmPlugins(packageSwift, ['@capacitor/app', 'capacitor-voice-recorder'], ['capacitor-voice-recorder']))
+      .toEqual([]);
+  });
+
+  it('matches the whole package name, not a prefix of a longer entry', () => {
+    // 只链了 app-launcher，没链 app。子串匹配会在 ".../node_modules/@capacitor/app-launcher" 里
+    // 找到 "@capacitor/app"，把没链的那个误判成已链接——那正是这道闸要防的静默放行。
+    const onlyLauncher = `.package(name: "CapacitorAppLauncher", path: "../../../node_modules/@capacitor/app-launcher")`;
+    expect(unlinkedSpmPlugins(onlyLauncher, ['@capacitor/app'])).toEqual(['@capacitor/app']);
+    expect(unlinkedSpmPlugins(onlyLauncher, ['@capacitor/app-launcher'])).toEqual([]);
+  });
+
+  it('reports every unlinked plugin, not just the first', () => {
+    expect(unlinkedSpmPlugins(packageSwift, ['capacitor-voice-recorder', '@capacitor/filesystem']))
+      .toEqual(['capacitor-voice-recorder', '@capacitor/filesystem']);
   });
 });

@@ -41,6 +41,8 @@ export const COMPANION_LIMITS = {
   /** 录音期间每隔这么久切一段传一段：短了 whisper 认不准（<2s 明显变差），长了草稿追加得太慢。 */
   voiceChunkMs: 4_000,
   pollIntervalMs: 1_000,
+  /** 有命令在飞时的轮询间隔：结算回执只能靠轮询取回，1 秒一拍等于每段转写白等半秒。 */
+  pendingPollIntervalMs: 250,
   uiPresenceTtlMs: 15_000,
   lanPort: 8182,
   approvalPreviewLength: 16_000,

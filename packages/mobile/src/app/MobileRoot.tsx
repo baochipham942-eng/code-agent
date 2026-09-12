@@ -174,9 +174,17 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
     void notifyStore.getState().recover();
     void companionStore.getState().refreshLibrary();
     void companionStore.getState().sync();
-    const timer = setInterval(() => { void companionStore.getState().sync(); }, COMPANION_LIMITS.pollIntervalMs);
-    return () => clearInterval(timer);
   }, [companion.status, companionStore, notifyStore]);
+  useEffect(() => {
+    if (companion.status !== 'connected') return;
+    // 待确认命令的结算只能靠轮询取回，所以转写在飞时把节奏加密：1 秒一拍意味着每段转写平均
+    // 白等半秒（2026-09-12 真机：14 段云端往返均值只有 905ms，轮询这半秒是「识别有点久」
+    // 四个来源里最便宜的一个）。只对 voice.transcribe 加密：它秒级就结算，别的命令（跑任务、
+    // 传文件）可能挂很久，全局加密等于长时间空转电台。
+    const timer = setInterval(() => { void companionStore.getState().sync(); },
+      companion.pendingAction === 'voice.transcribe' ? COMPANION_LIMITS.pendingPollIntervalMs : COMPANION_LIMITS.pollIntervalMs);
+    return () => clearInterval(timer);
+  }, [companion.status, companion.pendingAction, companionStore]);
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     // #1737 起 systemBars 是可选口（并非所有宿主都提供系统栏控制），必须可选链。

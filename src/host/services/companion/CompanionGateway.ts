@@ -302,6 +302,12 @@ export class CompanionGateway {
     this.db.prepare('INSERT OR IGNORE INTO companion_session_cleanup (session_id) VALUES (?)').run(sessionId);
   }
 
+  /** Batch form of isForgotten(): the list path filters a whole page without compiling SQL per session. */
+  forgottenSessions(): ReadonlySet<string> {
+    const rows = this.db.prepare('SELECT session_id FROM companion_session_cleanup').all() as { session_id: string }[];
+    return new Set(rows.map(row => row.session_id));
+  }
+
   publish(sessionId: string | null, kind: string, payload: Record<string, unknown>, now = this.now()): CompanionEvent {
     this.pruneEvents(now);
     const seq = this.nextSeq();

@@ -166,12 +166,18 @@ describe('ModelRouter', () => {
     // （2026-08-13 真机 config 核实：存量配置的 deepseek 与全部 custom-* 都带着它）。
     // 矩阵按模型声明的 responses 行必须在 'openai' 下继续生效，否则矩阵对存量配置全是死代码。
     expect((router as any).getDynamicCustomProvider({
+      provider: 'deepseek', model: 'deepseek-flash', protocol: 'openai',
+    })).toBeInstanceOf(ResponsesProvider);
+    expect((router as any).getDynamicCustomProvider({
       provider: 'deepseek', model: 'deepseek-v4-flash', protocol: 'openai',
     })).toBeInstanceOf(ResponsesProvider);
     expect((router as any).getDynamicCustomProvider({
       provider: 'custom-tokenrhythm', model: 'deepseek-v4-flash-0731', protocol: 'openai',
     })).toBeInstanceOf(ResponsesProvider);
-    // 负例（验收判据）：中转站同名 flash 没有矩阵行，仍走 OpenAI 兼容通用实现（chat-completions）。
+    // 负例：基元 deepseek-flash 不支持 Responses；同名旧 flash 也没有矩阵行。
+    expect((router as any).getDynamicCustomProvider({
+      provider: 'custom-tokenrhythm', model: 'deepseek-flash', protocol: 'openai',
+    })).toBeInstanceOf(OpenAIProvider);
     expect((router as any).getDynamicCustomProvider({
       provider: 'custom-tokenrhythm', model: 'deepseek-v4-flash', protocol: 'openai',
     })).toBeInstanceOf(OpenAIProvider);
@@ -179,7 +185,7 @@ describe('ModelRouter', () => {
 
   it('routes DeepSeek fallback targets through the matrix protocol without a user override', () => {
     const fallback = PROVIDER_FALLBACK_CHAIN.longcat.find(
-      (candidate) => candidate.provider === 'deepseek' && candidate.model === 'deepseek-v4-flash',
+      (candidate) => candidate.provider === 'deepseek' && candidate.model === 'deepseek-flash',
     );
     expect(fallback).toBeDefined();
     expect((router as any).getDynamicCustomProvider({
@@ -428,10 +434,10 @@ describe('ModelRouter', () => {
 
     it('should allow overriding fallback models', () => {
       router.setFallbackModel('vision', 'openai', 'gpt-4o');
-      // 用 deepseek（无 vision 模型），强制走默认 fallback 而非 same-provider
+      // 用 minimax（无 vision 模型），强制走默认 fallback 而非 same-provider
       const originalConfig: ModelConfig = {
-        provider: 'deepseek',
-        model: 'deepseek-chat',
+        provider: 'minimax',
+        model: 'abab6.5-chat',
         maxTokens: 8192,
       };
       const fallback = router.getFallbackConfig('vision', originalConfig);
@@ -2017,7 +2023,7 @@ describe('ModelRouter', () => {
       const zhipuProvider = {
         inference: vi.fn().mockRejectedValue(new Error('zhipu temporary failure')),
       } as any;
-      // 降级链上的 deepseek 条目是 deepseek-v4-flash，能力矩阵已把它切到 Responses 协议，
+      // 降级链上的 deepseek 条目是 deepseek-flash，能力矩阵已把它切到 Responses 协议，
       // 所以这一跳由 ResponsesProvider 承接，原生 DeepSeekProvider 不再被调用。
       // 链的顺序语义（deepseek 排在 moonshot 前）不变，变的只是谁来执行这一跳。
       const responsesProvider = {

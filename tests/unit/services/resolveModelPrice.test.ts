@@ -31,8 +31,10 @@ describe('resolveModelPrice 五档证据等级', () => {
   });
 
   it('内置 provider 仍使用同名模型的官方策展价', () => {
-    const price = resolveModelPrice('deepseek', 'deepseek-v4-flash');
-    expect(price).toMatchObject({ source: 'catalog', inputPerMTok: 0.14, outputPerMTok: 0.28 });
+    const price = resolveModelPrice('deepseek', 'deepseek-flash');
+    expect(price).toMatchObject({ source: 'catalog', inputPerMTok: 0.3, outputPerMTok: 1.2 });
+    const legacy = resolveModelPrice('deepseek', 'deepseek-v4-flash');
+    expect(legacy).toMatchObject({ source: 'catalog', inputPerMTok: 0.3, outputPerMTok: 1.2 });
   });
 
   it('内置 provider 的别名仍被识别为官方策展价', () => {

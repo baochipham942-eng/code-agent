@@ -50,9 +50,8 @@ import { describeChildExit, isAbnormalExit, isChildGone } from './childProcessSt
 const PROVIDER_DEFAULT_MODEL: Record<string, string> = {
   xiaomi: 'mimo-v2.5-pro',
   zhipu: 'glm-5',
-  // 与 config.json 的 deepseek 条目对齐（api.deepseek.com 现在只认 v4-pro / v4-flash，
-  // 老别名 deepseek-chat 虽仍被解析成 v4-flash，但按真实默认写才不会误导）
-  deepseek: 'deepseek-v4-flash',
+  // 与 config.json 的 deepseek 条目对齐（api.deepseek.com 当前 Flash 名为 deepseek-flash）
+  deepseek: 'deepseek-flash',
   moonshot: 'kimi-k2.5',
   groq: 'llama-3.3-70b-versatile',
 };

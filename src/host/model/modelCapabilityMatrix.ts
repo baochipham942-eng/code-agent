@@ -34,6 +34,7 @@ const MATRIX: ModelCapabilityMatrix = {
       // DeepSeek 要求历史中每条 assistant 消息都回传 reasoning_content（可以为空）。
     },
     models: {
+      'deepseek-flash': { protocol: 'responses', search: { mode: 'deepseek-responses' } },
       'deepseek-v4-flash': { protocol: 'responses', search: { mode: 'deepseek-responses' } },
     },
   },

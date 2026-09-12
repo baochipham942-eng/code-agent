@@ -1,15 +1,13 @@
 import { z } from 'zod';
 import { COMPANION_LIMITS } from '../constants/companion';
 
-const COMPANION_PUSH_KINDS = ['agent_complete', 'agent_cancelled', 'error', 'approval'] as const;
-type CompanionPushKind = (typeof COMPANION_PUSH_KINDS)[number];
-
 const COMPANION_PUSH_TITLE_KEYS = {
   agent_complete: 'task_complete',
   agent_cancelled: 'task_stopped',
   error: 'task_failed',
   approval: 'approval_needed',
 } as const;
+type CompanionPushKind = keyof typeof COMPANION_PUSH_TITLE_KEYS;
 export type CompanionPushTitleKey = (typeof COMPANION_PUSH_TITLE_KEYS)[CompanionPushKind];
 
 const companionPushProviderSchema = z.enum(['apns', 'fcm', 'vendor']);

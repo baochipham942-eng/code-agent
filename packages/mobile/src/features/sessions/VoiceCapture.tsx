@@ -288,6 +288,9 @@ export function useVoiceCapture({ recorder, pending, result, ready, transcribe, 
     setPhase('idle');
   }, [tick, ready]);
 
+  // ponytail: 补发的分片一律接到草稿末尾——中间那段失败、后面几段已经成文时，补回来的字
+  // 位置是错的（末段失败则位置对）。要按原位插回去，得让草稿记住每一段落在哪个区间，
+  // 那是 appendTranscript 的结构变更，压到 N-VOICE-REALTIME-STT 一起做（那条线本来就要重做切段）。
   const retry = () => {
     const t = take.current;
     if (!t?.retry.length) { void start(); return; }

@@ -474,6 +474,34 @@ describe('LAN companion: real HTTP + Noise + SQLite', () => {
         commandError: 'COMPANION_COMMAND_RECONCILING_TIMEOUT' });
     } finally { phone.getState().pause(); await server2.stop(); db2.close(); }
   });
+
+  it('已取消的那次录音走「超时回收」清槽，同样不报错——清槽三条路共用一个判据', async () => {
+    // grok ai-review Nit：第一版只堵住了「结算被拒」那一条，deliver 当场被拒与 reconciling
+    // 超时回收照样写 commandError。修一处必须回头问同一个形状还有几处，判据抽在一处。
+    const db2 = new Database(':memory:');
+    const gateway2 = new CompanionGateway(db2, { now: () => now,
+      dispatch: () => ({ state: 'reconciling', result: { code: 'COMMAND_RECONCILING' } }) });
+    const server2 = new LanCompanionServer(gateway2, hostIdentity, () => now);
+    await server2.start(address!, 0);
+    let storage: string | null = null;
+    const phone = createCompanionStore({ read: async () => storage, write: async value => { storage = value; },
+      scan: async () => JSON.stringify(server2.invite(['shared'])), post }, () => {}, async () => {});
+    try {
+      await phone.getState().pair();
+      const { sessionId, binding } = phone.getState();
+      const paired = now;
+      now -= L.reconcilingRecoveryMs + 1_000;
+      const commandId = await phone.getState().transcribe(
+        { audioData: 'YXVkaW8=', mimeType: 'audio/aac', durationMs: 4000 }, sessionId!, binding!.hostKey, false, 'take-1');
+      phone.getState().discardPendingTranscript('take-1');
+      now = paired;
+      await phone.getState().reconnect();
+      expect(phone.getState().commandError).toBeNull();
+      // 结论照旧要给出来，否则分片队列一直等 ack
+      expect(phone.getState()).toMatchObject({ pending: false, voiceResult: { commandId, outcome: 'error' } });
+    } finally { phone.getState().pause(); await server2.stop(); db2.close(); }
+  });
+
   it('cache-full phone still previews a fully downloaded artifact', async () => {
     // 真 LAN + Noise + 真 CompanionFileService；手机缓存配额 1 字节必然 STORAGE_FULL。
     // 文件完整回传并通过 SHA-256 后预览必须照常，commandError 只提示 STORAGE_FULL。

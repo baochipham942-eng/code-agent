@@ -134,6 +134,15 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
       }
       catch (error) { client?.close(); set({ status: 'storageError' }); throw error; }
     };
+    /**
+     * 待确认槽里那条语音命令，是不是用户已经撤掉的那次录音的。
+     * 清槽的路有三条（结算被拒 / deliver 当场被拒 / reconciling 超时回收），三条都会写
+     * `commandError`；撤掉的动作不该再报错，所以判据抽在这里一处，别只堵住其中一条
+     *（grok ai-review Nit：只补了结算那条，另外两条照样冒「电脑那边拒绝了这条操作」）。
+     * 必须在 persist 清掉 `saved.pending` **之前**取值。
+     */
+    const pendingVoiceDiscarded = () => saved?.pending?.action === 'voice.transcribe'
+      && voiceTake !== null && discardedTakes.has(voiceTake);
     const createClient = () => {
       if (!saved || !port) throw new Error('COMPANION_NATIVE_REQUIRED');
       client?.close();
@@ -143,7 +152,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
     const accepted = async (record: CompanionCommandRecord) => {
       const pending = saved?.pending;
       /** 这条是被用户取消掉的那次录音的——被拒时不要再弹通用报错，那个动作他已经撤了。 */
-      let discardedVoice = false;
+      const discardedVoice = pendingVoiceDiscarded();
       if (!pending || !companionAckMatches(pending, record)) throw new Error('COMPANION_INVALID_ACK');
       if (record.state === 'reconciling') return;
       if (!['accepted', 'resolved', 'rejected', 'conflict'].includes(record.state)) throw new Error('COMPANION_INVALID_ACK');
@@ -155,7 +164,6 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         // 用户已经取消了这次录音：这条是晚到结果，不许再往草稿里写（screen-contract「取消过滤晚到结果」）。
         // 代号不在这里清：一次取消可能有好几段在飞/在途，被第一条 ack 消耗掉的话，
         // 后面那几段照样写进草稿（grok ai-review Important）。下一段自带新代号，不会误伤。
-        discardedVoice = voiceTake !== null && discardedTakes.has(voiceTake);
         if (record.state === 'accepted' && typeof record.result.text === 'string' && onTranscript && !discardedVoice) {
           await onTranscript(record.result.text, pending.sessionId, saved!.binding!.hostKey, pending.commandId, transcriptContinuation);
           set({ voiceResult: { commandId: pending.commandId, outcome: 'done' } });
@@ -188,8 +196,9 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
       // Do not redispatch an uncertain command. Release the UI lock while
       // leaving the user's draft untouched (the command payload is separate
       // from the draft store); the host reservation is never reused.
+      const discardedVoice = pendingVoiceDiscarded();
       await persist({ ...saved!, pending: undefined });
-      set({ pending: false, commandError: 'COMPANION_COMMAND_RECONCILING_TIMEOUT' });
+      set({ pending: false, ...(discardedVoice ? {} : { commandError: 'COMPANION_COMMAND_RECONCILING_TIMEOUT' }) });
       return true;
     };
     const deliver = async (): Promise<CompanionCommandRecord | null> => {
@@ -202,11 +211,14 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
       if (['rejected', 'conflict', 'approval_conflict'].includes(result.kind)) {
         // 拒绝理由要跟着这条命令的结果走，否则输入区只拿得到 persist 那道兜底的通用码。
         const voice = saved.pending?.action === 'voice.transcribe' ? saved.pending.commandId : null;
+        const discardedVoice = pendingVoiceDiscarded();
         await persist({ ...saved, pending: undefined });
         // 按语义分，不按「它是不是 rejected」分。桌面或另一台手机先批了同一条审批时，
         // 网关回的是 approval_conflict——那是正常抢答，把整台设备停掉是错的。
         set(typeof result.reason === 'string' && DEVICE_LEVEL_REASONS.has(result.reason)
+          // 设备级的拒绝照报：那是「这台设备不能用了」，与用户撤没撤这次录音无关。
           ? { pending: false, status: 'rejected', connectionError: 'connectionRejected' }
+          : discardedVoice ? { pending: false }
           : { pending: false, commandError: result.kind === 'approval_conflict' ? 'COMPANION_APPROVAL_CONFLICT' : result.reason ?? 'COMPANION_COMMAND_REJECTED' });
         if (voice) set({ voiceResult: { commandId: voice, outcome: 'error', code: get().commandError ?? undefined } });
         return result.command ?? null;

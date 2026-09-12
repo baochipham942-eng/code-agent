@@ -373,6 +373,7 @@ async function runOneUnit(
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let agent: any = null;
+  let timeoutHandle: NodeJS.Timeout | undefined;
   // Hoisted above try/catch (not declared inline in the try block) so the
   // catch clause can identify a timeout by reference equality against the
   // exact Error instance the race rejected with — see the isTimeout check below.
@@ -396,7 +397,7 @@ async function runOneUnit(
     const result = await Promise.race([
       agent.sendMessage(evalCase.prompt),
       new Promise<never>((_, reject) => {
-        setTimeout(() => reject(timeoutError), PER_RUN_HARD_TIMEOUT_MS);
+        timeoutHandle = setTimeout(() => reject(timeoutError), PER_RUN_HARD_TIMEOUT_MS);
       }),
     ]);
 
@@ -486,6 +487,8 @@ async function runOneUnit(
       ...(isTimeout ? { timedOut: true as const, ...(abandonedInflight ? { abandonedInflight: true as const } : {}) } : {}),
     };
   } finally {
+    // 不清的话 10 分钟定时器会把事件循环钉住，秒级跑完的 unit 也要等它到期才退出（ai-review #1765 第 3 轮）
+    if (timeoutHandle) clearTimeout(timeoutHandle);
     if (agent) {
       try {
         await agent.finalizeSession();

@@ -267,6 +267,34 @@ describe('SpeechTranscriptionService', () => {
     }));
   });
 
+  it('手机送来的 audio/aac 落盘成 .m4a——Groq 按扩展名收文件，.aac 会被 400 拒掉', async () => {
+    // 2026-09-12 同字节差分实测：同一段音频命名 .m4a 转写成功，命名 .aac 得
+    // 400 unsupported_audio_format（列表里没有 aac）。手机两端（iOS AVAudioRecorder /
+    // Android MediaRecorder）报的都是 audio/aac，而字节本身就是 MP4 容器。
+    configureSpeech({ mode: 'cloud-only' });
+    const service = new SpeechTranscriptionService();
+
+    await service.transcribe({ audioData: makeAudioData(), mimeType: 'audio/aac', source: 'composer' });
+
+    const file = groqCreateMock.mock.calls.at(-1)?.[0]?.file as { path?: string } | undefined;
+    expect(String(file?.path)).toMatch(/\.m4a$/);
+  });
+
+  it.each([
+    ['audio/aac', '.m4a'],
+    ['audio/mp4', '.m4a'],
+    ['audio/wav', '.wav'],
+    ['audio/webm', '.webm'],
+  ])('%s 落盘扩展名是 %s', async (mimeType, extension) => {
+    configureSpeech({ mode: 'cloud-only' });
+    const service = new SpeechTranscriptionService();
+
+    await service.transcribe({ audioData: makeAudioData(), mimeType, source: 'composer' });
+
+    const file = groqCreateMock.mock.calls.at(-1)?.[0]?.file as { path?: string } | undefined;
+    expect(String(file?.path).endsWith(extension)).toBe(true);
+  });
+
   it('local-first 两条通道都断时报「没有可用通道」且不可重试（不把锅记在 Groq 头上）', async () => {
     // 真机现场：本机没装 whisper-cpp，又没配 Groq key —— 旧行为只报「未配置 Groq API Key」
     // 并给一个点了没用的「重试」，把用户指到错的地方。

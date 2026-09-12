@@ -27,7 +27,9 @@ describe('generate-game-skill-content', () => {
     expect(GAME_SKILL_GENERATION_CONTRACT.platformer).toContain('nearby authored smoke scenarios');
     expect(GAME_SKILL_GENERATION_CONTRACT.runner).toContain('Player auto-moves along `forwardAxis`');
     expect(GAME_SKILL_GENERATION_CONTRACT.runner).toContain('legitimate empty / "none" input');
+    expect(GAME_SKILL_GENERATION_CONTRACT.breakout).toContain('do not emit `</html>` until both `window.__GAME_META__`');
     expect(GAME_SKILL_REPAIR_HINTS.platformer).toContain('missing_gameplay_mechanics');
     expect(GAME_SKILL_REPAIR_HINTS.runner).toContain('runner_no_distance_progression');
+    expect(GAME_SKILL_REPAIR_HINTS.breakout).toContain('missing_breakout_contract');
   });
 });

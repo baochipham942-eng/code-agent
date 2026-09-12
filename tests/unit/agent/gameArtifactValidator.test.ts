@@ -3253,3 +3253,118 @@ describe('validateGameArtifact', () => {
     expect(result.failures.some((failure) => failure.includes('对象存在、机制注册或覆盖声明'))).toBe(false);
   });
 });
+
+const BREAKOUT_COLLAPSE_CODES = [
+  'missing_coverage_metadata',
+  'missing_controls_metadata',
+  'missing_reachability_metadata',
+  'smoke_missing_coverage',
+  'missing_test_contract',
+  'missing_contract_start',
+  'missing_contract_snapshot',
+  'missing_contract_smoke',
+] as const;
+
+const BREAKOUT_FIXTURE_DIR = path.resolve(
+  __dirname,
+  '../../fixtures/game/breakout-contract-collapse',
+);
+
+describe('breakout whole-contract collapse (N-GAME-BREAKOUT-CONTRACT)', () => {
+  it('light still passes a casual snake without META/TEST', async () => {
+    const html = [
+      '<!doctype html>',
+      '<html><head><style>#game{max-width:calc(100vw - 16px);height:auto;aspect-ratio:1/1;}</style></head>',
+      '<body>',
+      '<canvas id="game" width="400" height="400"></canvas>',
+      '<div>得分: <span id="score">0</span> 关卡: <span id="level">1</span></div>',
+      '<script>',
+      "  const ctx = document.getElementById('game').getContext('2d');",
+      '  let score = 0; let level = 1; let snake = [[5, 5]]; let dir = [1, 0]; let food = [10, 10];',
+      "  document.addEventListener('keydown', (e) => {",
+      "    if (e.key === 'ArrowUp') dir = [0, -1];",
+      '  });',
+      '  function loop() { requestAnimationFrame(loop); }',
+      '  loop();',
+      '</script>',
+      '</body></html>',
+    ].join('\n');
+    const lightPath = await writeTempHtml(html, 'casual-game-light.html');
+    const light = await validateGameArtifact(lightPath, { contractLevel: 'light' });
+    expect(light.passed).toBe(true);
+    expect(light.failures.some((failure) => failure.includes('breakout 缺少'))).toBe(false);
+  });
+
+  it('light fails a playable breakout that never entered the contract path', async () => {
+    const filePath = path.join(BREAKOUT_FIXTURE_DIR, 'HI-B1-r2-brick-breaker.html');
+    const light = await validateGameArtifact(filePath, { contractLevel: 'light' });
+    expect(light.shouldValidate).toBe(true);
+    expect(light.passed).toBe(false);
+    expect(light.failures.some((failure) => failure.includes('breakout 缺少 window.__GAME_META__'))).toBe(true);
+  });
+
+  it('full validation of HI-B1-r2 and HO-B1-r3 drops the 8-code collapse signature and fail-louds integrity', async () => {
+    const { createArtifactRepairSpec } = await import('../../../src/host/agent/runtime/artifactRepairSpec');
+    for (const name of ['HI-B1-r2-brick-breaker.html', 'HO-B1-r3-pixel-breakout.html'] as const) {
+      const filePath = path.join(BREAKOUT_FIXTURE_DIR, name);
+      const full = await validateGameArtifact(filePath, { contractLevel: 'full' });
+      expect(full.passed).toBe(false);
+      expect(full.checks).toContain('test contract integrity: step() and runSmokeTest() are both absent');
+      expect(full.failures.some((failure) => failure.includes('breakout 缺少 window.__GAME_META__'))).toBe(true);
+      const codes = createArtifactRepairSpec(full).issues.map((issue) => issue.code);
+      expect(codes).toContain('missing_breakout_contract');
+      const collapseHits = BREAKOUT_COLLAPSE_CODES.filter((code) => codes.includes(code));
+      // 钉精确集合而不是「少于 4 条」：松断言下退化到 3 条也不报警，锚点就白立了。
+      expect(collapseHits, `${name} collapse codes=${collapseHits.join(',')}`).toEqual(['missing_test_contract']);
+    }
+  });
+
+  it('reverse mutation: a same-case artifact that did write the contract is not classified as whole-contract collapse', async () => {
+    const { createArtifactRepairSpec } = await import('../../../src/host/agent/runtime/artifactRepairSpec');
+    const filePath = path.join(BREAKOUT_FIXTURE_DIR, 'HI-B1-r1-brick-breaker.html');
+    const full = await validateGameArtifact(filePath, { contractLevel: 'full' });
+    const codes = createArtifactRepairSpec(full).issues.map((issue) => issue.code);
+    expect(codes).not.toContain('missing_breakout_contract');
+    expect(full.checks).not.toContain('test contract integrity: step() and runSmokeTest() are both absent');
+    expect(BREAKOUT_COLLAPSE_CODES.every((code) => codes.includes(code))).toBe(false);
+  });
+
+  it('reverse mutation: stripping META/TEST from a contracted breakout reintroduces missing_breakout_contract + integrity', async () => {
+    const { createArtifactRepairSpec } = await import('../../../src/host/agent/runtime/artifactRepairSpec');
+    const { readFile } = await import('fs/promises');
+    const sourcePath = path.join(BREAKOUT_FIXTURE_DIR, 'HI-B1-r1-brick-breaker.html');
+    const original = await readFile(sourcePath, 'utf-8');
+    expect(original).toContain('window.__GAME_META__');
+    expect(original).toContain('window.__GAME_TEST__');
+    const stripped = original
+      .replace(/window\.__GAME_META__\s*=[\s\S]*?(?=window\.__GAME_TEST__)/, '')
+      .replace(/window\.__GAME_TEST__\s*=[\s\S]*?(?=\s*\/\/ Start game loop|\s*requestAnimationFrame|\s*\)\(\);)/, '');
+    expect(stripped).not.toContain('window.__GAME_META__');
+    expect(stripped).not.toContain('window.__GAME_TEST__');
+    const filePath = await writeTempHtml(stripped, 'brick-breaker.html');
+    const full = await validateGameArtifact(filePath, { contractLevel: 'full' });
+    const light = await validateGameArtifact(filePath, { contractLevel: 'light' });
+    expect(full.checks).toContain('test contract integrity: step() and runSmokeTest() are both absent');
+    expect(createArtifactRepairSpec(full).issues.map((issue) => issue.code)).toContain('missing_breakout_contract');
+    expect(light.passed).toBe(false);
+    expect(light.failures.some((failure) => failure.includes('breakout 缺少 window.__GAME_META__'))).toBe(true);
+  });
+
+  it('a null contract assignment does not satisfy the gate (ai-review #1759 nit)', async () => {
+    const { readFile } = await import('fs/promises');
+    const sourcePath = path.join(BREAKOUT_FIXTURE_DIR, 'HI-B1-r1-brick-breaker.html');
+    const original = await readFile(sourcePath, 'utf-8');
+    // 只把「= {」换成「= null;」：赋值 token 还在，右侧不再是直接对象字面量。
+    // 光看 `=` 的判据会放行这种空壳，闸门就白立了。
+    const hollow = original
+      .replace(/window\.__GAME_META__\s*=\s*\{[\s\S]*?(?=window\.__GAME_TEST__)/, 'window.__GAME_META__ = null;\n')
+      .replace(/window\.__GAME_TEST__\s*=\s*\{[\s\S]*?(?=\s*\/\/ Start game loop|\s*requestAnimationFrame|\s*\)\(\);)/, 'window.__GAME_TEST__ = null;\n');
+    expect(hollow).toContain('window.__GAME_META__ =');
+    expect(hollow).toContain('window.__GAME_TEST__ =');
+    expect(hollow).not.toContain('window.__GAME_META__ = {');
+    const filePath = await writeTempHtml(hollow, 'brick-breaker.html');
+    const light = await validateGameArtifact(filePath, { contractLevel: 'light' });
+    expect(light.passed).toBe(false);
+    expect(light.failures.some((failure) => failure.includes('breakout 缺少 window.__GAME_META__'))).toBe(true);
+  });
+});

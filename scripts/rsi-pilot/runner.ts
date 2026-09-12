@@ -107,7 +107,8 @@ interface EvalRunProvenance {
   model: string;
   endpoint: string;
   gitSha: string;
-  gitDirty: boolean;
+  /** 脏树 true/false；git 状态查询本身失败时 'unresolved'——环境故障不冒充真脏树（ai-review #1765 Nit） */
+  gitDirty: boolean | 'unresolved';
   runnerSha: string;
 }
 
@@ -335,16 +336,17 @@ export async function loadRunnerContext(): Promise<RunnerContext> {
   };
 }
 
-async function gitOutput(args: string[]): Promise<string> {
+async function gitOutput(args: string[]): Promise<string | null> {
   try {
     const { stdout } = await execFileAsync('git', args, { cwd: projectRoot });
     return stdout.trim();
-  } catch { return 'unresolved'; }
+  } catch { return null; }
 }
 
 async function resolveProvenance(provider: string, model: string): Promise<EvalRunProvenance> {
-  const gitSha = await gitOutput(['-C', projectRoot, 'rev-parse', 'HEAD']);
-  const dirty = (await gitOutput(['-C', projectRoot, 'status', '--porcelain'])) !== '';
+  const gitSha = (await gitOutput(['-C', projectRoot, 'rev-parse', 'HEAD'])) ?? 'unresolved';
+  const status = await gitOutput(['-C', projectRoot, 'status', '--porcelain']);
+  const dirty: boolean | 'unresolved' = status === null ? 'unresolved' : status !== '';
   let runnerSha = 'unresolved';
   try { runnerSha = crypto.createHash('sha256').update(await fs.readFile(__filename)).digest('hex').slice(0, 12); } catch { /* unresolved is retained */ }
   const endpoint = getProviderEndpointHost(provider) ?? 'unresolved';

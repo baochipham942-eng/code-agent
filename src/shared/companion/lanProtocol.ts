@@ -1,10 +1,16 @@
 import { COMPANION_LIMITS as L } from '../constants/companion';
 
+/**
+ * endpoint 是「此刻一定连得上」的那个地址（私网 IPv4 字面量），altEndpoint 是宿主的 mDNS 名。
+ * 两个都给：mDNS 名换网后仍有效（宿主换网不用重扫码），但它不是哪儿都能解析——
+ * 2026-09-12 真机实测，Mac 连着 iPhone 热点时手机解析不了宿主的 .local（Safari 直连同样「找不到服务器」），
+ * 只广告 mDNS 名会让这个官方推荐场景 100% 配不上。
+ */
 export interface LanInvitation {
-  version: 1; endpoint: string; inviteId: string; psk: string; hostKey: string; expiresAt: number;
+  version: 1; endpoint: string; altEndpoint?: string; inviteId: string; psk: string; hostKey: string; expiresAt: number;
 }
 export interface LanBinding {
-  version: 1; endpoint: string; hostKey: string; deviceId: string; scopeEpoch: number; scope: string[];
+  version: 1; endpoint: string; altEndpoint?: string; hostKey: string; deviceId: string; scopeEpoch: number; scope: string[];
 }
 export const LAN_PROLOGUE = 'neo-companion/lan/v1';
 export function toHex(value: Uint8Array): string {
@@ -71,6 +77,11 @@ export function parseInvitation(raw: string, now = Date.now()): LanInvitation {
   if (v.version !== 1 || typeof v.endpoint !== 'string' || typeof v.inviteId !== 'string' ||
       !/^[0-9a-f-]{36}$/.test(v.inviteId) || !Number.isSafeInteger(v.expiresAt) ||
       v.expiresAt <= now || v.expiresAt > now + L.invitationTtlMs) throw new Error('COMPANION_INVALID_INVITATION');
-  validateLanEndpoint(v.endpoint); fromHex(v.psk, 32); fromHex(v.hostKey, 32);
+  validateLanEndpoint(v.endpoint);
+  if (v.altEndpoint !== undefined) {
+    if (typeof v.altEndpoint !== 'string') throw new Error('COMPANION_INVALID_INVITATION');
+    validateLanEndpoint(v.altEndpoint);
+  }
+  fromHex(v.psk, 32); fromHex(v.hostKey, 32);
   return v;
 }

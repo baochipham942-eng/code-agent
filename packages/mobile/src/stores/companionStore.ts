@@ -101,12 +101,18 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
   const store = createStore<State>((set, get) => {
     const persist = async (next: Saved) => {
       if (!port) throw new Error('COMPANION_NATIVE_REQUIRED');
+      // 待确认槽被清掉、而这条语音还没有任何结论 ⇒ 给它一个终局。
+      // 清槽的路不止「结算」一条：被拒（scope_denied / scope_epoch_mismatch…）、抢答冲突、
+      // reconciling 超时回收，都在别处清槽而不写 voiceOutcome；分片队列等的就是这个 outcome，
+      // 等不到就一直 awaiting，语音面板永不收口（grok ai-review Important）。
+      // 结算成功那条路在调用本函数之前已经把 voiceOutcome 置好，不会被这里覆盖。
+      const orphanVoice = saved?.pending?.action === 'voice.transcribe' && !next.pending && get().voiceOutcome === null;
       try {
         await port.write(JSON.stringify(next)); saved = next;
         // 落盘记录是待确认命令的唯一真源，派生放在这一处，省得九个 set({pending}) 各自同步。
         // 两个字段必须同一拍置起：只改 pendingAction 的话，结算那一帧会是
         // pending=true + pendingAction=null，状态行闪回「请勿重复发送」——正是本单要消掉的那句。
-        set({ pending: Boolean(next.pending), pendingAction: next.pending?.action ?? null });
+        set({ pending: Boolean(next.pending), pendingAction: next.pending?.action ?? null, ...(orphanVoice ? { voiceOutcome: 'error' as const } : {}) });
       }
       catch (error) { client?.close(); set({ status: 'storageError' }); throw error; }
     };

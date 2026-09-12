@@ -370,6 +370,36 @@ describe('LAN companion: real HTTP + Noise + SQLite', () => {
     } finally { phone.getState().pause(); }
   });
 
+  it('待确认的语音命令被回收时也必须给出结论，否则分片队列一直等 ack、面板永不收口', async () => {
+    // grok ai-review #1764 Important：清待确认槽的路不止「结算」一条——被拒、抢答冲突、
+    // reconciling 超时回收都在别处清槽，谁都没写 voiceOutcome。分片队列等的就是这个 outcome，
+    // 等不到就一直 awaiting，语音面板永远收不了口。
+    // 这里复现最真实的那条：主机收下了转写请求（reconciling），但一直没结算。
+    const db2 = new Database(':memory:');
+    const gateway2 = new CompanionGateway(db2, { now: () => now,
+      dispatch: () => ({ state: 'reconciling', result: { code: 'COMMAND_RECONCILING' } }) });
+    const server2 = new LanCompanionServer(gateway2, hostIdentity, () => now);
+    await server2.start(address!, 0);
+    let storage: string | null = null;
+    const phone = createCompanionStore({ read: async () => storage, write: async value => { storage = value; },
+      scan: async () => JSON.stringify(server2.invite(['shared'])), post }, () => {}, async () => {});
+    try {
+      await phone.getState().pair();
+      const { sessionId, binding } = phone.getState();
+      // 把主机的钟拨回去下这条命令，等价于「这条 reconciling 已经躺了超过回收窗口」——
+      // 回收判据读的是主机记的 createdAt 与手机本地时钟之差。
+      const paired = now;
+      now -= L.reconcilingRecoveryMs + 1_000;
+      await phone.getState().transcribe(
+        { audioData: 'YXVkaW8=', mimeType: 'audio/aac', durationMs: 4000 }, sessionId!, binding!.hostKey);
+      expect(phone.getState()).toMatchObject({ pending: true, voiceOutcome: null });
+      now = paired;
+      // 回到前台重连：走的就是那条「躺太久了，回收掉」的路径
+      await phone.getState().reconnect();
+      expect(phone.getState()).toMatchObject({ pending: false, voiceOutcome: 'error',
+        commandError: 'COMPANION_COMMAND_RECONCILING_TIMEOUT' });
+    } finally { phone.getState().pause(); await server2.stop(); db2.close(); }
+  });
   it('cache-full phone still previews a fully downloaded artifact', async () => {
     // 真 LAN + Noise + 真 CompanionFileService；手机缓存配额 1 字节必然 STORAGE_FULL。
     // 文件完整回传并通过 SHA-256 后预览必须照常，commandError 只提示 STORAGE_FULL。

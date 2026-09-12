@@ -37,11 +37,12 @@ function PreviewMedia({ name, mimeType, bytes }: { name: string; mimeType: strin
  */
 export function taskStatusCopy(
   text: ReturnType<typeof messages>,
-  companion: { pending: boolean; pendingAction: string | null; runId: string | null; terminal: string | null },
+  companion: { pending: boolean; pendingAction: string | null; runId: string | null;
+    terminal: 'complete' | 'stopped' | 'failed' | null },
 ): string {
   if (companion.pending) return companion.pendingAction === 'voice.transcribe' ? text.transcribing : text.pendingCommand;
   if (companion.runId) return text.running;
-  return companion.terminal ? (text as unknown as Record<string, string>)[companion.terminal] ?? '' : '';
+  return companion.terminal ? text[companion.terminal] : '';
 }
 
 export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures: boolean }) {

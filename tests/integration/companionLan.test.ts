@@ -286,12 +286,15 @@ describe('LAN companion: real HTTP + Noise + SQLite', () => {
       scan: async () => JSON.stringify(server.invite(['shared'])), post }, () => {});
     try {
       await phone.getState().pair();
-      const seen: (string | null)[] = [];
-      const unsubscribe = phone.subscribe(state => seen.push(state.pendingAction));
+      const seen: { pending: boolean; action: string | null }[] = [];
+      const unsubscribe = phone.subscribe(state => seen.push({ pending: state.pending, action: state.pendingAction }));
       await phone.getState().send('pending-copy-正文');
       unsubscribe();
-      expect(seen).toContain('message.send');
-      expect(phone.getState().pendingAction).toBeNull();
+      expect(seen.map(sample => sample.action)).toContain('message.send');
+      // 两个字段必须同一拍翻：出现过 pending=true + action=null 的中间帧，
+      // 状态行就会在结算瞬间闪回「请勿重复发送」。
+      expect(seen.filter(sample => sample.pending && sample.action === null)).toEqual([]);
+      expect(phone.getState()).toMatchObject({ pending: false, pendingAction: null });
     } finally { phone.getState().pause(); }
   });
 

@@ -86,7 +86,9 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
       try {
         await port.write(JSON.stringify(next)); saved = next;
         // 落盘记录是待确认命令的唯一真源，派生放在这一处，省得九个 set({pending}) 各自同步。
-        set({ pendingAction: next.pending?.action ?? null });
+        // 两个字段必须同一拍置起：只改 pendingAction 的话，结算那一帧会是
+        // pending=true + pendingAction=null，状态行闪回「请勿重复发送」——正是本单要消掉的那句。
+        set({ pending: Boolean(next.pending), pendingAction: next.pending?.action ?? null });
       }
       catch (error) { client?.close(); set({ status: 'storageError' }); throw error; }
     };

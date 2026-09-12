@@ -326,6 +326,182 @@ describe('LAN companion: real HTTP + Noise + SQLite', () => {
     expect(restarted.getState().pending).toBe(false); expect(cleared).toBe('persist before dispatch'); expect(executions).toBe(1);
     restarted.getState().pause();
   });
+  it('退到后台是「暂停」不是「连不上」：pause 只在连着的时候立 paused 标记', async () => {
+    // 爸 2026-09-12 真机：Neo 还没关，应用切换器的卡片上就写着「电脑尚未连接，草稿已保留」——
+    // app 一退后台我们主动 pause() 关掉连接，界面立刻翻成报错形态，而 iOS 快照正是那一刻拍的。
+    let storage: string | null = null;
+    const phone = createCompanionStore({ read: async () => storage, write: async (value: string) => { storage = value; },
+      scan: async () => JSON.stringify(server.invite(['shared'])), post }, () => {});
+    try {
+      await phone.getState().pair();
+      expect(phone.getState().status).toBe('connected');
+      // iOS 退后台会连发两次生命周期回调：第二次不能把暂停标记打回去，
+      // 否则爸看到的那个「卡片上写着未连接」的假警报原样回来。
+      phone.getState().pause(); phone.getState().pause();
+      expect(phone.getState()).toMatchObject({ status: 'offline', paused: true });
+      // 回到前台重连要把暂停标记清掉，否则真断线时界面还以为自己只是在后台
+      await phone.getState().reconnect();
+      expect(phone.getState()).toMatchObject({ status: 'connected', paused: false });
+      // 真断线之后再退后台：报错不能被「只是暂停」盖掉
+      server.revoke(phone.getState().binding!.deviceId);
+      await phone.getState().sync();
+      expect(phone.getState().paused).toBe(false);
+      phone.getState().pause();
+      expect(phone.getState().paused).toBe(false);
+    } finally { phone.getState().pause(); }
+  });
+
+  it('分片已进待确认槽后断网：transcribe 必须报「已发出」，否则同一段音频会被传两遍', async () => {
+    // grok ai-review #1764 Important：判据是「进没进待确认槽」，不是 deliver 成没成功。
+    // 一旦 persist 成 saved.pending，重连后这条一定会被结算、结果会进草稿；此时若回 false，
+    // 分片队列会把队头那段用新 commandId 再发一次，草稿里出现重复的字。
+    let storage: string | null = null; let lose = true;
+    const port = { read: async () => storage, write: async (value: string) => { storage = value; },
+      scan: async () => JSON.stringify(server.invite(['shared'])),
+      post: async (url: string, body: unknown) => {
+        const result = await post(url, body);
+        if (url.endsWith('/exchange') && lose) { lose = false; throw new Error('RECEIPT_LOST'); }
+        return result;
+      },
+    };
+    const phone = createCompanionStore(port, () => {}, async () => {});
+    try {
+      await phone.getState().pair();
+      const { sessionId, binding } = phone.getState();
+      const sent = await phone.getState().transcribe(
+        { audioData: 'YXVkaW8=', mimeType: 'audio/aac', durationMs: 4000 }, sessionId!, binding!.hostKey);
+      expect(typeof sent).toBe('string');
+      expect(phone.getState().pending).toBe(true);
+    } finally { phone.getState().pause(); }
+  });
+
+  it('取消过的录音，晚到 ack 不许因为「后来又取消了一次」而漏网', async () => {
+    // grok ai-review Important：取消槽只有一个，后一次取消会把前一次的代号盖掉。
+    // 真机时序：取消 A（A 的分片已进待确认槽、ack 还在路上）→ 立刻再点麦克风录 B
+    //（B 的分片发不出去，槽还被 A 占着，所以在飞的代号仍是 A）→ 再取消 B → A 的 ack 到了。
+    // 判据一被盖掉，用户刚撤掉的那句话照样写进输入框。
+    const db2 = new Database(':memory:');
+    const gateway2 = new CompanionGateway(db2, { now: () => now,
+      dispatch: () => ({ state: 'accepted', result: { text: '取消掉的那句话' } }) });
+    const server2 = new LanCompanionServer(gateway2, hostIdentity, () => now);
+    await server2.start(address!, 0);
+    let storage: string | null = null; let lose = true;
+    const transcripts: string[] = [];
+    const port = { read: async () => storage, write: async (value: string) => { storage = value; },
+      scan: async () => JSON.stringify(server2.invite(['shared'])),
+      post: async (url: string, body: unknown) => {
+        const result = await post(url, body);
+        // 吞掉命令回执：主机已经收下并转好了，手机这边 deliver 抛错，结算要等重连后的 status
+        // 查询——ack 于是落在两次取消**之后**，正是覆盖那个判据的窗口。
+        if (url.endsWith('/exchange') && lose) { lose = false; throw new Error('RECEIPT_LOST'); }
+        return result;
+      } };
+    const phone = createCompanionStore(port, () => {}, async text => { transcripts.push(text); });
+    try {
+      await phone.getState().pair();
+      const { sessionId, binding } = phone.getState();
+      await phone.getState().transcribe({ audioData: 'YXVkaW8=', mimeType: 'audio/aac', durationMs: 4000 },
+        sessionId!, binding!.hostKey, false, 'take-1');
+      expect(phone.getState().pending).toBe(true);
+      phone.getState().discardPendingTranscript('take-1');
+      phone.getState().discardPendingTranscript('take-2');
+      await phone.getState().reconnect();
+      expect(phone.getState().pending).toBe(false);
+      expect(transcripts).toEqual([]);
+    } finally { phone.getState().pause(); await server2.stop(); db2.close(); }
+  });
+
+  it('取消掉的那次转写被拒，不再弹一句通用报错——那个动作用户已经撤了', async () => {
+    // grok ai-review Nit：取消之后冒出「电脑那边拒绝了这条操作」，说的是用户刚撤掉的动作。
+    // 输入区那条带阶段的失败提示此刻也不在场（面板已经收了），所以这句没有任何可操作性。
+    const db2 = new Database(':memory:');
+    const gateway2 = new CompanionGateway(db2, { now: () => now,
+      dispatch: () => ({ state: 'rejected', result: { code: 'COMPANION_TRANSCRIPTION_FAILED' } }) });
+    const server2 = new LanCompanionServer(gateway2, hostIdentity, () => now);
+    await server2.start(address!, 0);
+    let storage: string | null = null; let lose = true;
+    const port = { read: async () => storage, write: async (value: string) => { storage = value; },
+      scan: async () => JSON.stringify(server2.invite(['shared'])),
+      post: async (url: string, body: unknown) => {
+        const result = await post(url, body);
+        if (url.endsWith('/exchange') && lose) { lose = false; throw new Error('RECEIPT_LOST'); }
+        return result;
+      } };
+    const phone = createCompanionStore(port, () => {}, async () => {});
+    try {
+      await phone.getState().pair();
+      const { sessionId, binding } = phone.getState();
+      await phone.getState().transcribe({ audioData: 'YXVkaW8=', mimeType: 'audio/aac', durationMs: 4000 },
+        sessionId!, binding!.hostKey, false, 'take-1');
+      phone.getState().discardPendingTranscript('take-1');
+      await phone.getState().reconnect();
+      expect(phone.getState().pending).toBe(false);
+      expect(phone.getState().commandError).toBeNull();
+      // 结论照旧要给出来，否则分片队列一直等 ack
+      expect(phone.getState().voiceResult?.outcome).toBe('error');
+    } finally { phone.getState().pause(); await server2.stop(); db2.close(); }
+  });
+
+  it('待确认的语音命令被回收时也必须给出结论，否则分片队列一直等 ack、面板永不收口', async () => {
+    // grok ai-review #1764 Important：清待确认槽的路不止「结算」一条——被拒、抢答冲突、
+    // reconciling 超时回收都在别处清槽，谁都没写结果。分片队列等的就是这条命令的结果，
+    // 等不到就一直 awaiting，语音面板永远收不了口。
+    // 这里复现最真实的那条：主机收下了转写请求（reconciling），但一直没结算。
+    const db2 = new Database(':memory:');
+    const gateway2 = new CompanionGateway(db2, { now: () => now,
+      dispatch: () => ({ state: 'reconciling', result: { code: 'COMMAND_RECONCILING' } }) });
+    const server2 = new LanCompanionServer(gateway2, hostIdentity, () => now);
+    await server2.start(address!, 0);
+    let storage: string | null = null;
+    const phone = createCompanionStore({ read: async () => storage, write: async value => { storage = value; },
+      scan: async () => JSON.stringify(server2.invite(['shared'])), post }, () => {}, async () => {});
+    try {
+      await phone.getState().pair();
+      const { sessionId, binding } = phone.getState();
+      // 把主机的钟拨回去下这条命令，等价于「这条 reconciling 已经躺了超过回收窗口」——
+      // 回收判据读的是主机记的 createdAt 与手机本地时钟之差。
+      const paired = now;
+      now -= L.reconcilingRecoveryMs + 1_000;
+      const commandId = await phone.getState().transcribe(
+        { audioData: 'YXVkaW8=', mimeType: 'audio/aac', durationMs: 4000 }, sessionId!, binding!.hostKey);
+      expect(phone.getState()).toMatchObject({ pending: true, voiceResult: null });
+      now = paired;
+      // 回到前台重连：走的就是那条「躺太久了，回收掉」的路径
+      await phone.getState().reconnect();
+      // 结论必须认得出「是哪条命令的」：粘着的全局 outcome 会被下一次录音读成自己的。
+      expect(phone.getState()).toMatchObject({ pending: false,
+        voiceResult: { commandId, outcome: 'error' },
+        commandError: 'COMPANION_COMMAND_RECONCILING_TIMEOUT' });
+    } finally { phone.getState().pause(); await server2.stop(); db2.close(); }
+  });
+
+  it('已取消的那次录音走「超时回收」清槽，同样不报错——清槽三条路共用一个判据', async () => {
+    // grok ai-review Nit：第一版只堵住了「结算被拒」那一条，deliver 当场被拒与 reconciling
+    // 超时回收照样写 commandError。修一处必须回头问同一个形状还有几处，判据抽在一处。
+    const db2 = new Database(':memory:');
+    const gateway2 = new CompanionGateway(db2, { now: () => now,
+      dispatch: () => ({ state: 'reconciling', result: { code: 'COMMAND_RECONCILING' } }) });
+    const server2 = new LanCompanionServer(gateway2, hostIdentity, () => now);
+    await server2.start(address!, 0);
+    let storage: string | null = null;
+    const phone = createCompanionStore({ read: async () => storage, write: async value => { storage = value; },
+      scan: async () => JSON.stringify(server2.invite(['shared'])), post }, () => {}, async () => {});
+    try {
+      await phone.getState().pair();
+      const { sessionId, binding } = phone.getState();
+      const paired = now;
+      now -= L.reconcilingRecoveryMs + 1_000;
+      const commandId = await phone.getState().transcribe(
+        { audioData: 'YXVkaW8=', mimeType: 'audio/aac', durationMs: 4000 }, sessionId!, binding!.hostKey, false, 'take-1');
+      phone.getState().discardPendingTranscript('take-1');
+      now = paired;
+      await phone.getState().reconnect();
+      expect(phone.getState().commandError).toBeNull();
+      // 结论照旧要给出来，否则分片队列一直等 ack
+      expect(phone.getState()).toMatchObject({ pending: false, voiceResult: { commandId, outcome: 'error' } });
+    } finally { phone.getState().pause(); await server2.stop(); db2.close(); }
+  });
+
   it('cache-full phone still previews a fully downloaded artifact', async () => {
     // 真 LAN + Noise + 真 CompanionFileService；手机缓存配额 1 字节必然 STORAGE_FULL。
     // 文件完整回传并通过 SHA-256 后预览必须照常，commandError 只提示 STORAGE_FULL。

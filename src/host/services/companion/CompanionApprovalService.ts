@@ -46,6 +46,7 @@ export class CompanionApprovalService {
   }
 
   refresh(): void {
+    if (!this.gateway.hasLiveDevices()) return;
     const live = this.pending();
     const displayable = new Set<string>();
     for (const request of live) {
@@ -94,6 +95,9 @@ export class CompanionApprovalService {
     const resolved = { ...current, status: command.payload.decision, resolvedBy: command.deviceId };
     this.gateway.registerDecision(resolved);
     this.gateway.publish(current.sessionId, 'approval', { ...resolved });
+    // A resolved card is never republished. Leaving it in publishedEpoch would
+    // grow with every phone decision for the life of the process.
+    this.publishedEpoch.delete(current.requestId);
     return { kind: 'accepted', command: { deviceId: command.deviceId, commandId: command.commandId, action: command.action,
       sessionId: command.sessionId, payloadHash: '', state: 'resolved', createdAt: Date.now(), result: { decision: resolved.status, requestId: current.requestId } } };
   }

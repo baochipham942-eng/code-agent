@@ -42,6 +42,10 @@ export const COMPANION_LIMITS = {
   uiPresenceTtlMs: 15_000,
   lanPort: 8182,
   approvalPreviewLength: 16_000,
+  /** Physically delete companion_events older than this; sync must not keep serving them. */
+  eventTtlMs: 7 * 24 * 60 * 60 * 1000,
+  /** Hard cap on companion_events rows; oldest created_at are deleted first. */
+  eventMaxRows: 10_000,
   /** Pending commands older than this cannot reasonably still be resolving. */
   reconcilingRecoveryMs: 300_000,
   fileMaxBytes: FILE.MAX_SIZE,

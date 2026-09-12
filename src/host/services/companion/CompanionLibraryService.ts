@@ -15,6 +15,17 @@ import { createLogger } from '../infra/logger';
 
 const logger = createLogger('CompanionLibrary');
 
+/** Page-level form of canAccessSession(): grants plus the cleanup queue, so a session queued for
+ * cleanup stays hidden even if the store lists it again (cloud sync can flip isDeleted back before
+ * cleanup drains the queue). Its sessionVisible check is deliberately absent, not forgotten: that
+ * dep resolves to getSession(id, { userId: owner }), whose filters (is_deleted = 0 and the same
+ * owner) are exactly the ones listSessions() already applied, so it is true for every row here. */
+function sessionAccessible(grants: readonly string[], forgotten: ReadonlySet<string>, session: { id: string; projectId?: string | null }): boolean {
+  if (session.id.startsWith('project:') || forgotten.has(session.id)) return false;
+  if (grants.includes(session.id)) return true;
+  return !!session.projectId && grants.includes(projectGrant(session.projectId));
+}
+
 /** Mobile reuses the desktop repositories, model catalogue and session services. */
 export class CompanionLibraryService {
   constructor(private readonly gateway: CompanionGateway, private readonly isRunning: (id: string) => boolean) {}
@@ -27,7 +38,9 @@ export class CompanionLibraryService {
     return getDatabase().getProjectRepo().listProjects().map(p => ({ id: p.id, name: p.name }));
   }
 
-  sessionProject(id: string): string | null { return getDatabase().getSession(id, { includeDeleted: true, userId: getAuthService().getCurrentUser()?.id ?? null })?.projectId ?? null; }
+  sessionExists(id: string): boolean { return this.session(id) !== null; }
+
+  sessionProject(id: string): string | null { return this.session(id)?.projectId ?? null; }
 
   workspaceOf(id: string): string | null {
     const session = this.session(id);
@@ -62,13 +75,16 @@ export class CompanionLibraryService {
       return { sessionId: request.sessionId, messages: messages.reverse(), nextOffset };
 
     }
+    const grants = this.gateway.grants(deviceId);
+    const forgotten = this.gateway.forgottenSessions();
     const sessions: ReturnType<typeof db.listSessions> = [];
     for (let offset = 0; ; offset += L.librarySessionLimit) {
       const page = db.listSessions(L.librarySessionLimit, offset, true, owner);
-      sessions.push(...page.filter(s => this.gateway.canAccessSession(deviceId, s.id)));
+      for (const session of page) {
+        if (sessionAccessible(grants, forgotten, session)) sessions.push(session);
+      }
       if (page.length < L.librarySessionLimit) break;
     }
-    const grants = this.gateway.grants(deviceId);
     const projects = this.projects().filter(p => grants.includes(projectGrant(p.id)) || sessions.some(s => s.projectId === p.id))
       .map(p => ({ ...p, canCreate: grants.includes(projectGrant(p.id)) }));
     const models = buildRuntimeModelOptions(getConfigService().getSettings()).map(({ provider, model, label, providerLabel }) => ({ provider, model, label, providerLabel }));
@@ -118,15 +134,23 @@ export class CompanionLibraryService {
   }
 
   async cleanup(): Promise<void> {
-    const db = getDatabase().getDb();
-    if (!db) { logger.warn('Companion cleanup skipped: database unavailable, jobs stay queued'); return; }
-    for (const { session_id: id } of db.prepare('SELECT session_id FROM companion_session_cleanup').all() as { session_id: string }[]) {
-      try { await getSessionManager().cleanupDeletedSession(id); db.prepare('DELETE FROM companion_session_cleanup WHERE session_id = ?').run(id); }
-      catch (error) {
-        // Retain the cleanup job across Host restarts; the deletion receipt stays committed.
-        // Silence would hide a row that retries on every boot and never succeeds.
-        logger.warn('Companion deleted-session cleanup failed, will retry next boot', { sessionId: id, error });
+    try {
+      const db = getDatabase().getDb();
+      if (!db) { logger.warn('Companion cleanup skipped: database unavailable, jobs stay queued'); return; }
+      for (const { session_id: id } of db.prepare('SELECT session_id FROM companion_session_cleanup').all() as { session_id: string }[]) {
+        try {
+          await getSessionManager().cleanupDeletedSession(id);
+          this.gateway.forgetSession(id);
+          db.prepare('DELETE FROM companion_session_cleanup WHERE session_id = ?').run(id);
+        }
+        catch (error) {
+          // Retain the cleanup job across Host restarts; the deletion receipt stays committed.
+          // Silence would hide a row that retries on every boot and never succeeds.
+          logger.warn('Companion deleted-session cleanup failed, will retry next boot', { sessionId: id, error });
+        }
       }
+    } catch (error) {
+      logger.warn('Companion deleted-session cleanup unavailable', error);
     }
   }
 

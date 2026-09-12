@@ -273,6 +273,7 @@ export function createApp(deps: CreateAppDeps): express.Express {
       };
       const gateway = new CompanionGateway(db, {
         sessionProject: id => requireLibrary().sessionProject(id),
+        sessionVisible: id => requireLibrary().sessionExists(id),
         read: (deviceId, request) => {
           if (request.kind !== 'artifacts') return requireLibrary().read(deviceId, request);
           if (!services.files) throw new Error('COMPANION_LIBRARY_UNAVAILABLE');
@@ -332,11 +333,14 @@ export function createApp(deps: CreateAppDeps): express.Express {
         wrapKey: loadPushWrapKeySync(resolveCodeAgentDataDir()),
         apnsKeyPath: process.env.NEO_APNS_KEY_PATH || null,
       });
-      void services.library.cleanup();
+      void services.library.cleanup().catch((error) => {
+        logger.warn('Companion deleted-session cleanup unavailable', error);
+      });
       if (getPendingPermissionRequests && deps.deliverCompanionPermission) {
         approvals = new CompanionApprovalService(gateway, getPendingPermissionRequests, deps.deliverCompanionPermission);
       }
       publishCompanionEvent = (sessionId, kind, payload) => {
+        if (!gateway.hasLiveDevices()) return;
         // 成果复制只对「有已配对手机」的桌面发生：没配对过的用户每次成图都复制一份
         // 进项目目录且无任何清理路径，是纯浪费（claude 复审 Important 2）。
         // pairedDevices() 是 SQL JOIN，只在真的涉及成果的两个 kind 里才算（流式事件每帧都过这里）。

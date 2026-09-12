@@ -15,8 +15,10 @@ import { createLogger } from '../infra/logger';
 
 const logger = createLogger('CompanionLibrary');
 
-function sessionAccessible(grants: readonly string[], session: { id: string; projectId?: string | null }): boolean {
-  if (session.id.startsWith('project:')) return false;
+/** Mirrors canAccessSession() for a whole page: a session queued for cleanup stays hidden even if
+ * the store lists it again (cloud sync can flip isDeleted back before cleanup drains the queue). */
+function sessionAccessible(grants: readonly string[], forgotten: ReadonlySet<string>, session: { id: string; projectId?: string | null }): boolean {
+  if (session.id.startsWith('project:') || forgotten.has(session.id)) return false;
   if (grants.includes(session.id)) return true;
   return !!session.projectId && grants.includes(projectGrant(session.projectId));
 }
@@ -71,11 +73,12 @@ export class CompanionLibraryService {
 
     }
     const grants = this.gateway.grants(deviceId);
+    const forgotten = this.gateway.forgottenSessions();
     const sessions: ReturnType<typeof db.listSessions> = [];
     for (let offset = 0; ; offset += L.librarySessionLimit) {
       const page = db.listSessions(L.librarySessionLimit, offset, true, owner);
       for (const session of page) {
-        if (sessionAccessible(grants, session)) sessions.push(session);
+        if (sessionAccessible(grants, forgotten, session)) sessions.push(session);
       }
       if (page.length < L.librarySessionLimit) break;
     }

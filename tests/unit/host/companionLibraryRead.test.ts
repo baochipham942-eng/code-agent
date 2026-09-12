@@ -102,4 +102,14 @@ describe('companion library listing compiles access SQL once', () => {
     expect(large.prepares, 'prepare count must not grow linearly with session count').toBe(small.prepares);
     expect(large.prepares).toBeLessThan(20);
   });
+
+  it('hides a session queued for cleanup even when the store still lists it', async () => {
+    const deviceId = gateway.issueDeviceCredential([projectGrant('one')]).deviceId;
+    gateway.forgetSession('s0');
+    const { result, access } = await readLibrary(4, deviceId);
+    const ids = (result as { sessions: { id: string }[] }).sessions.map(row => row.id);
+    expect(ids).not.toContain('s0');
+    expect(ids).toContain('s2');
+    expect(access).not.toHaveBeenCalled();
+  });
 });

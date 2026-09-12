@@ -34,6 +34,13 @@ interface State {
   /** Why the last command was refused. Connection-level standing stays in `status`. */
   commandError: string | null;
   status: 'unpaired' | 'connecting' | 'connected' | 'offline' | 'storageError' | 'rejected';
+  /**
+   * 「是我们自己把一条活连接停了」——app 退到后台时 pause() 会关掉客户端。
+   * 这与「连不上电脑」在 status 上都是 offline，但对用户是两件事：后台期间没有任何事
+   * 需要他做，报「电脑尚未连接，请重试」是假警报，而 iOS 的应用切换器快照恰好拍在这一刻
+   * （2026-09-12 爸真机反馈：Neo 还没关，卡片上就写着未连接）。
+   */
+  paused: boolean;
   binding: LanBinding | null; sessionId: string | null; pending: boolean; busy: boolean;
   /** 待确认命令是哪一条：状态行的文案按它分——语音转写不是「发送」，不该提醒「请勿重复发送」。 */
   pendingAction: CompanionCommand['action'] | null;
@@ -178,7 +185,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
     };
     return {
       voiceOutcome: null, library: null, history: {}, libraryError: false,
-      connectionError: null, commandError: null, routeError: null, status: 'unpaired', binding: null, sessionId: null, busy: false, pending: false, pendingAction: null, events: [], runId: null, terminal: null,
+      connectionError: null, commandError: null, routeError: null, status: 'unpaired', paused: false, binding: null, sessionId: null, busy: false, pending: false, pendingAction: null, events: [], runId: null, terminal: null,
       artifacts: [], preview: null, savedPreview: false, savedPreviewName: null, cacheUsage: files?.cache.inspect() ?? null,
       hydrate: async () => {
         if (!port || get().busy) return;
@@ -195,6 +202,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         } catch { set({ busy: false, status: 'storageError' }); }
       },
       pair: () => safely(async () => {
+        set({ paused: false });
         if (!port || saved?.pending) return;
         const raw = await port.scan().catch(() => { throw new Error('COMPANION_SCAN_FAILED'); });
         let invitation;
@@ -214,7 +222,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
       reconnect: () => safely(async () => {
         const target = saved?.binding ?? saved?.candidate;
         if (!target) return;
-        set({ status: 'connecting' });
+        set({ status: 'connecting', paused: false });
         const binding = await createClient().recover(target, saved?.binding);
         await persist({ ...saved!, binding, candidate: undefined });
         epoch = binding.scopeEpoch;
@@ -224,7 +232,12 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
           if (record && !(await recoverStalePending(record))) await accepted(record); else if (!record) await deliver();
         }
       }),
-      pause: () => { client?.close(); if (get().binding) set({ status: 'offline' }); },
+      pause: () => {
+        // 只有「本来连着」才算暂停：原本就断着的话，报错该继续留在界面上。
+        const live = get().status === 'connected';
+        client?.close();
+        if (get().binding) set({ status: 'offline', paused: live });
+      },
       refreshLibrary: async (more = false) => {
         if (!client || get().status !== 'connected') return;
         try {

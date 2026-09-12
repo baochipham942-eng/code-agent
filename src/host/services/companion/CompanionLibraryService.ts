@@ -15,8 +15,11 @@ import { createLogger } from '../infra/logger';
 
 const logger = createLogger('CompanionLibrary');
 
-/** Mirrors canAccessSession() for a whole page: a session queued for cleanup stays hidden even if
- * the store lists it again (cloud sync can flip isDeleted back before cleanup drains the queue). */
+/** Page-level form of canAccessSession(): grants plus the cleanup queue, so a session queued for
+ * cleanup stays hidden even if the store lists it again (cloud sync can flip isDeleted back before
+ * cleanup drains the queue). Its sessionVisible check is deliberately absent, not forgotten: that
+ * dep resolves to getSession(id, { userId: owner }), whose filters (is_deleted = 0 and the same
+ * owner) are exactly the ones listSessions() already applied, so it is true for every row here. */
 function sessionAccessible(grants: readonly string[], forgotten: ReadonlySet<string>, session: { id: string; projectId?: string | null }): boolean {
   if (session.id.startsWith('project:') || forgotten.has(session.id)) return false;
   if (grants.includes(session.id)) return true;

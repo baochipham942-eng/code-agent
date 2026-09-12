@@ -38,6 +38,8 @@ export const COMPANION_LIMITS = {
   maxRequestRecords: 32,
   voiceBase64Limit: 1_800_000,
   voiceDurationMs: 60_000,
+  /** 录音期间每隔这么久切一段传一段：短了 whisper 认不准（<2s 明显变差），长了草稿追加得太慢。 */
+  voiceChunkMs: 4_000,
   pollIntervalMs: 1_000,
   uiPresenceTtlMs: 15_000,
   lanPort: 8182,

@@ -16,7 +16,8 @@ interface State {
   openDrawer(): void; closeDrawer(): void; navigate(route: Route): void;
   openSheet(page: SheetPage): void; pushSheet(page: SheetPage): void; closeSheet(): void; back(): boolean;
   attemptSend(): void;
-  appendTranscript(text: string, key: string, commandId: string): Promise<void>;
+  /** continuation = 同一次录音的后续分片，接着上一段写，不另起一行。 */
+  appendTranscript(text: string, key: string, commandId: string, continuation?: boolean): Promise<void>;
   acknowledgeDraft(text: string, key?: string): Promise<void>;
 }
 const defaults = (): Preferences => ({ schema: 1, drafts: { new: '', fixture: '' }, appearance: 'system', nickname: '', notifyEnabled: false });
@@ -30,6 +31,19 @@ function decode(raw: string | null): Preferences {
     throw new Error('INVALID_PREFERENCES');
   }
   return { schema: 1, transcriptCommands: v.transcriptCommands ?? {}, drafts: Object.fromEntries(Object.entries(v.drafts).filter(([, value]) => typeof value === 'string')), appearance: v.appearance!, nickname: v.nickname, notifyEnabled: v.notifyEnabled === true };
+}
+
+/**
+ * 转写文字并进草稿。整段转写（或一次录音的第一段）另起一行，与用户已经打的字分开；
+ * 同一次录音的后续分片接着上一段写——分片是我们自己切的，不该在用户的句子里插换行。
+ * 中日韩字符相接不补空格，拉丁文补一个，免得把两个词粘成一个。
+ */
+export function joinTranscript(draft: string, text: string, continuation: boolean): string {
+  if (!draft) return text;
+  if (!text) return draft;
+  if (!continuation) return `${draft}\n${text}`;
+  const cjk = /[\u3000-\u303f\u3400-\u9fff\uff00-\uffef]/;
+  return cjk.test(draft.at(-1)!) || cjk.test(text[0]) ? draft + text : `${draft} ${text}`;
 }
 
 export function createMobileStore(port: PlatformPorts['preferences']) {
@@ -109,11 +123,11 @@ export function createMobileStore(port: PlatformPorts['preferences']) {
         return false;
       },
       attemptSend: () => { if (get().ready && (get().preferences.drafts[get().draftKey] ?? '').trim()) set({ sendAttempted: true }); },
-      appendTranscript: async (text, key, commandId) => {
+      appendTranscript: async (text, key, commandId, continuation = false) => {
         const { preferences } = get();
         if (!get().ready) throw new Error('COMPANION_DRAFT_NOT_READY');
         if (preferences.transcriptCommands?.[key] !== commandId) {
-          set({ preferences: { ...preferences, drafts: { ...preferences.drafts, [key]: [preferences.drafts[key], text].filter(Boolean).join('\n') },
+          set({ preferences: { ...preferences, drafts: { ...preferences.drafts, [key]: joinTranscript(preferences.drafts[key] ?? '', text, continuation) },
             transcriptCommands: { ...preferences.transcriptCommands, [key]: commandId } } }); persist();
         } else if (get().saveError) persist();
         for (;;) { const tail = pending; await tail; if (tail === pending) break; }

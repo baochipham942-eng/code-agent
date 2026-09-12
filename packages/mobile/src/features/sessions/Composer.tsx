@@ -12,7 +12,7 @@ import { useVoiceCapture, VoicePanel } from './VoiceCapture';
  */
 export function Composer({
   text, draft, editDraft, offline, sendDisabled, send, modelLabel, openModel,
-  attach, attachDisabled, recorder, transcribe, voiceDisabled, voicePending, voiceOutcome, onRecording,
+  attach, attachDisabled, recorder, transcribe, voiceDisabled, voicePending, voiceOutcome, voiceErrorCode, onRecording,
 }: {
   text: ReturnType<typeof messages>;
   draft: string;
@@ -26,15 +26,17 @@ export function Composer({
   attach?: () => void;
   attachDisabled: boolean;
   recorder: PlatformPorts['recorder'];
-  transcribe(audio: { audioData: string; mimeType: string; durationMs: number }): Promise<void>;
+  transcribe(audio: { audioData: string; mimeType: string; durationMs: number }, continuation: boolean): Promise<boolean>;
   voiceDisabled: boolean;
   voicePending: boolean;
   voiceOutcome: 'done' | 'error' | null;
+  /** 最近一条命令被拒的真实错误码：整段都没转出来时，提示里带上它才定位得了。 */
+  voiceErrorCode: string | null;
   onRecording(active: boolean): void;
 }) {
   const textarea = useRef<HTMLTextAreaElement>(null);
   const composing = useRef(false);
-  const voice = useVoiceCapture({ recorder, pending: voicePending, outcome: voiceOutcome, transcribe });
+  const voice = useVoiceCapture({ recorder, pending: voicePending, outcome: voiceOutcome, errorCode: voiceErrorCode, transcribe });
   useEffect(() => {
     const input = textarea.current;
     if (input) { input.style.height = 'auto'; input.style.height = `${Math.min(input.scrollHeight, 140)}px`; }
@@ -50,7 +52,7 @@ export function Composer({
     {!voice.panelOpen && voiceOutcome === 'done' && draft.trim() && <div className="compose-hint">{text.voiceReviewHint}</div>}
     <div className={voice.panelOpen ? 'composer voice-composer' : 'composer'}>
       {voice.panelOpen
-        ? <VoicePanel text={text} phase={voice.phase} pending={voicePending} elapsedMs={voice.elapsedMs} transcript={draft}
+        ? <VoicePanel text={text} phase={voice.phase} pending={voicePending} elapsedMs={voice.elapsedMs} transcript={draft} dropped={voice.dropped}
           stop={voice.stop} cancel={voice.cancel} />
         : <>
           <textarea ref={textarea} aria-label={text.draft} placeholder={offline ? text.offlinePlaceholder : text.placeholder} rows={1}

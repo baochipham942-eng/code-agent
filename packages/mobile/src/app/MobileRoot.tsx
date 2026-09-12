@@ -49,7 +49,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
   const [store] = useState(() => createMobileStore(ports.preferences));
   const [companionStore] = useState(() => createCompanionStore(ports.companion, (acceptedText, sessionId, hostKey) => {
     return store.getState().acknowledgeDraft(acceptedText, `${hostKey}:${sessionId}`);
-  }, (text, sessionId, hostKey, commandId) => store.getState().appendTranscript(text, `${hostKey}:${sessionId}`, commandId), ports.files));
+  }, (text, sessionId, hostKey, commandId, continuation) => store.getState().appendTranscript(text, `${hostKey}:${sessionId}`, commandId, continuation), ports.files));
   const [notifyStore] = useState(() => createNotificationStore({
     port: ports.notifications ?? unavailableNotificationPort,
     preference: {
@@ -279,9 +279,9 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
           attach={ports.files && (() => void ports.files!.pick('file').then(picked => { if (picked) void companion.upload(picked); }).catch(error => { if (error instanceof Error && error.message === 'UPLOAD_TOO_LARGE') companionStore.setState({ commandError: 'UPLOAD_TOO_LARGE' }); }))}
           attachDisabled={!canAddressSession(companion) || companion.busy || companion.pending}
           recorder={companion.sessionId ? ports.recorder : undefined}
-          transcribe={audio => companion.transcribe(audio, companion.sessionId!, companion.binding!.hostKey)}
+          transcribe={(audio, continuation) => companion.transcribe(audio, companion.sessionId!, companion.binding!.hostKey, continuation)}
           voiceDisabled={companion.status !== 'connected' || companion.busy || companion.pending}
-          voicePending={companion.pending} voiceOutcome={companion.voiceOutcome}
+          voicePending={companion.pending} voiceOutcome={companion.voiceOutcome} voiceErrorCode={companion.commandError}
           onRecording={active => { recording.current = active; }} />
       </div>
     </main>

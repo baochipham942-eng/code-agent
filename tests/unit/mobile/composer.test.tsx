@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import React from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { Composer } from '../../../packages/mobile/src/features/sessions/Composer';
 import { messages } from '../../../packages/mobile/src/i18n';
 
@@ -10,7 +10,7 @@ const text = messages('zh');
 function mount(overrides: {
   start?: () => Promise<void>;
   stop?: () => Promise<{ audioData: string; mimeType: string; durationMs: number }>;
-  transcribe?: (audio: { audioData: string; mimeType: string; durationMs: number }) => Promise<void>;
+  transcribe?: (audio: { audioData: string; mimeType: string; durationMs: number }) => Promise<boolean>;
   draft?: string;
   offline?: boolean;
   modelLabel?: string | null;
@@ -22,7 +22,7 @@ function mount(overrides: {
     start: overrides.start ?? (async () => {}),
     stop: overrides.stop ?? (async () => ({ audioData: 'YXVkaW8=', mimeType: 'audio/aac', durationMs: 1000 })),
   };
-  const transcribe = vi.fn(overrides.transcribe ?? (async () => {}));
+  const transcribe = vi.fn(overrides.transcribe ?? (async () => true));
   const send = vi.fn();
   const openModel = vi.fn();
   const onRecording = vi.fn();
@@ -31,7 +31,7 @@ function mount(overrides: {
     modelLabel={overrides.modelLabel === undefined ? 'DeepSeek V4.1 Flash' : overrides.modelLabel} openModel={openModel}
     attach={'attach' in overrides ? overrides.attach : () => {}} attachDisabled={false}
     recorder={overrides.recorder === false ? undefined : recorder} transcribe={transcribe}
-    voiceDisabled={false} voicePending={false} voiceOutcome={overrides.voiceOutcome ?? null} onRecording={onRecording} />);
+    voiceDisabled={false} voicePending={false} voiceOutcome={overrides.voiceOutcome ?? null} voiceErrorCode={null} onRecording={onRecording} />);
   return { transcribe, send, openModel, onRecording };
 }
 
@@ -150,5 +150,107 @@ describe('VoiceCapture failure reporting', () => {
     expect(document.querySelector('.composer')?.className).not.toContain('voice-composer');
     expect(document.querySelector('.voice-notice')?.compareDocumentPosition(document.querySelector('.composer')!))
       .toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+});
+
+// ——— 分片伪流式（N-VOICE-CHUNKED-STREAM）———
+// 这个 Harness 照搬 companionStore 的真实时序：transcribe 发出后 pending=true / outcome=null，
+// 主机结算后才 pending=false + outcome。协议一次只允许一条在飞，所以队列必须串行。
+function ChunkHarness({ sent, verdict = () => 'done' as const, refuseFirst = false }: {
+  sent: (audioData: string, continuation: boolean) => void; verdict?: (seq: number) => 'done' | 'error'; refuseFirst?: boolean;
+}) {
+  const [pending, setPending] = React.useState(false);
+  const [outcome, setOutcome] = React.useState<'done' | 'error' | null>(null);
+  const [draft, setDraft] = React.useState('');
+  const seq = React.useRef(0);
+  const refused = React.useRef(false);
+  // 录音口必须是稳定引用（生产里是 ports.recorder 单例）：每渲染换一个新对象会让
+  // useVoiceCapture 的清理副作用把正在录的这次当作「录音口换了」收掉。
+  const recorder = React.useRef({
+    start: async () => {},
+    stop: async () => ({ audioData: `chunk${seq.current + 1}`, mimeType: 'audio/aac', durationMs: 4000 }),
+  }).current;
+  const transcribe = async (audio: { audioData: string }, continuation: boolean) => {
+    sent(audio.audioData, continuation);
+    if (refuseFirst && !refused.current) { refused.current = true; return false; }
+    const n = ++seq.current;
+    setPending(true); setOutcome(null);
+    setTimeout(() => {
+      const result = verdict(n);
+      if (result === 'done') setDraft(previous => previous + `段${n}`);
+      setOutcome(result); setPending(false);
+    }, 10);
+    return true;
+  };
+  return <Composer text={text} draft={draft} editDraft={setDraft} offline={false} sendDisabled={!draft} send={() => {}}
+    modelLabel="DeepSeek V4.1 Flash" openModel={() => {}} attach={() => {}} attachDisabled={false}
+    recorder={recorder} transcribe={transcribe} voiceDisabled={false} voicePending={pending}
+    voiceOutcome={outcome} voiceErrorCode={null} onRecording={() => {}} />;
+}
+
+
+// React 只在 act 退出时冲刷渲染与副作用，队列泵就活在副作用里：一次性推进 13 秒
+// 只会在最后冲刷一次（实测只发出 1 段）。按小步推进才等价于真机上的时间流逝。
+const advance = async (ms: number, step = 250) => {
+  for (let passed = 0; passed < ms; passed += step) {
+    await act(async () => { await vi.advanceTimersByTimeAsync(step); });
+  }
+};
+
+describe('分片伪流式语音输入', () => {
+  afterEach(() => { vi.useRealTimers(); cleanup(); });
+
+  it('说话期间每个分片就传一段，草稿逐段追加，不用等松手', async () => {
+    vi.useFakeTimers();
+    const sent = vi.fn();
+    render(<ChunkHarness sent={sent} />);
+    fireEvent.click(screen.getByRole('button', { name: text.voice }));
+    await advance(0);
+    // 三个分片的时长过去：还没点停止，字就应该已经在草稿里了
+    await advance(13_000);
+    expect(sent.mock.calls.length).toBeGreaterThanOrEqual(3);
+    expect(document.querySelector('.transcription')?.textContent).toContain('段1');
+    expect(document.querySelector('.transcription')?.textContent).toContain('段2');
+    // 第一段另起一行，后续分片接着上一段写
+    expect(sent.mock.calls[0][1]).toBe(false);
+    expect(sent.mock.calls[1][1]).toBe(true);
+    // 录音还在继续：停止键还在
+    expect(screen.getByRole('button', { name: text.stopRecording })).toBeTruthy();
+  });
+
+  it('任一分片失败只丢那一段：其余照常成文，面板标出来', async () => {
+    vi.useFakeTimers();
+    const sent = vi.fn();
+    render(<ChunkHarness sent={sent} verdict={n => (n === 2 ? 'error' : 'done')} />);
+    fireEvent.click(screen.getByRole('button', { name: text.voice }));
+    await advance(13_000);
+    expect(screen.getByText(text.voiceChunkDropped)).toBeTruthy();
+    expect(document.querySelector('.transcription')?.textContent).toContain('段1');
+    expect(document.querySelector('.transcription')?.textContent).toContain('段3');
+    // 整段没有被判失败：不弹「转写未完成」
+    expect(screen.queryByText(new RegExp(text.voiceTranscribeFailed))).toBeNull();
+  });
+
+  it('协议在忙时分片不丢，下一拍补发', async () => {
+    vi.useFakeTimers();
+    const sent = vi.fn();
+    render(<ChunkHarness sent={sent} refuseFirst />);
+    fireEvent.click(screen.getByRole('button', { name: text.voice }));
+    await advance(6_000);
+    // 第一次被拒（没发出去），同一段必须再来一次，不能悄悄丢
+    expect(sent.mock.calls.filter(([id]) => id === 'chunk1').length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('点停止后收尾：最后一段传完、面板关闭、文字留在输入框', async () => {
+    vi.useFakeTimers();
+    const sent = vi.fn();
+    render(<ChunkHarness sent={sent} />);
+    fireEvent.click(screen.getByRole('button', { name: text.voice }));
+    await advance(5_000);
+    fireEvent.click(screen.getByRole('button', { name: text.stopRecording }));
+    await advance(1_000);
+    expect(screen.getByTestId('draft')).toBeTruthy();
+    expect(document.querySelector('.composer')?.className).not.toContain('voice-composer');
+    expect((screen.getByTestId('draft') as HTMLTextAreaElement).value).toContain('段1');
   });
 });

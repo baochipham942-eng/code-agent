@@ -26,7 +26,8 @@ const DEVICE_LEVEL_REASONS = new Set(['device_revoked', 'device_unknown', 'scope
 
 interface State {
   voiceOutcome: 'done' | 'error' | null;
-  transcribe(audio: { audioData: string; mimeType: string; durationMs: number }, sessionId: string, hostKey: string): Promise<void>;
+  /** 返回「这条命令有没有真发出去」：分片伪流式要靠它决定重排队，静默丢片就没人知道了。 */
+  transcribe(audio: { audioData: string; mimeType: string; durationMs: number }, sessionId: string, hostKey: string, continuation?: boolean): Promise<boolean>;
   library: CompanionLibrary | null; history: Record<string, CompanionHistory>; libraryError: boolean;
   refreshLibrary(more?: boolean): Promise<void>; loadHistory(id: string, more?: boolean): Promise<void>;
   manage(action: 'session.create' | 'session.rename' | 'session.archive' | 'session.delete' | 'session.model', payload: Record<string, unknown>, target?: string): Promise<void>;
@@ -74,11 +75,13 @@ export function companionAckMatches(
     && record.sessionId === pending.sessionId && record.action === pending.action;
 }
 
-export function createCompanionStore(port: PlatformPorts['companion'], onAccepted: (text: string, sessionId: string, hostKey: string) => void | Promise<void>, onTranscript?: (text: string, sessionId: string, hostKey: string, commandId: string) => Promise<void>, files?: FilePorts) {
+export function createCompanionStore(port: PlatformPorts['companion'], onAccepted: (text: string, sessionId: string, hostKey: string) => void | Promise<void>, onTranscript?: (text: string, sessionId: string, hostKey: string, commandId: string, continuation: boolean) => Promise<void>, files?: FilePorts) {
   let saved: Saved | null = null;
   let client: LanCompanionClient | null = null;
   let epoch = 1; let cursor = 0;
   let syncing = false;
+  /** 在飞的这条转写是不是「同一次录音的后续分片」——只影响草稿里要不要换行，故不持久化。 */
+  let transcriptContinuation = false;
 
   const store = createStore<State>((set, get) => {
     const persist = async (next: Saved) => {
@@ -109,7 +112,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
       }
       if (pending.action === 'voice.transcribe') {
         if (record.state === 'accepted' && typeof record.result.text === 'string' && onTranscript) {
-          await onTranscript(record.result.text, pending.sessionId, saved!.binding!.hostKey, pending.commandId); set({ voiceOutcome: 'done' });
+          await onTranscript(record.result.text, pending.sessionId, saved!.binding!.hostKey, pending.commandId, transcriptContinuation); set({ voiceOutcome: 'done' });
         } else set({ voiceOutcome: 'error' });
       }
       await persist({ ...saved!, pending: undefined });
@@ -162,10 +165,10 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
       if (saved?.pending) await persist({ ...saved, pending: undefined });
       set({ pending: false });
     };
-    const safely = async (work: () => Promise<void>) => {
-      if (get().busy) return;
+    const safely = async <T>(work: () => Promise<T>): Promise<T | undefined> => {
+      if (get().busy) return undefined;
       set({ busy: true, connectionError: null, commandError: null });
-      try { await work(); } catch (error) {
+      try { return await work(); } catch (error) {
         client?.close();
         const code = error instanceof Error ? error.message : '';
         const connectionError: ConnectionError = code === 'COMPANION_INVALID_INVITATION' ? 'connectionQrInvalid'
@@ -260,13 +263,17 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
           set({ sessionId, runId: last?.kind === 'run_started' ? String(last.payload.runId) : null, terminal: null, artifacts: [], preview: null, savedPreview: false, savedPreviewName: null });
         }
       },
-      transcribe: (audio, sessionId, hostKey) => safely(async () => {
-        if (get().sessionId !== sessionId || get().binding?.hostKey !== hostKey) return;
-        if (!saved?.binding || !client || saved.pending || !canAddressSession(get())) return;
+      transcribe: async (audio, sessionId, hostKey, continuation = false) => await safely(async () => {
+        if (get().sessionId !== sessionId || get().binding?.hostKey !== hostKey) return false;
+        if (!saved?.binding || !client || saved.pending || !canAddressSession(get())) return false;
         const command = companionCommandSchema.parse({ version: 1, deviceId: saved.binding.deviceId, scopeEpoch: saved.binding.scopeEpoch,
           commandId: crypto.randomUUID(), sessionId: get().sessionId, action: 'voice.transcribe', payload: audio });
+        // 这一条是不是「同一次录音的后续分片」只活在内存里：进程被杀后重放那条 pending 命令
+        // 最多让草稿多一个换行，不会丢字，所以不进持久化结构。
+        transcriptContinuation = continuation;
         await persist({ ...saved, pending: command }); set({ pending: true, voiceOutcome: null }); await deliver();
-      }),
+        return true;
+      }) ?? false,
       send: text => safely(async () => {
         if (!saved?.binding || !client || saved.pending || !canAddressSession(get())) return;
         const command = companionCommandSchema.parse({ version: 1, deviceId: saved.binding.deviceId, scopeEpoch: saved.binding.scopeEpoch,

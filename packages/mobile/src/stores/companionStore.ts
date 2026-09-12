@@ -35,6 +35,8 @@ interface State {
   commandError: string | null;
   status: 'unpaired' | 'connecting' | 'connected' | 'offline' | 'storageError' | 'rejected';
   binding: LanBinding | null; sessionId: string | null; pending: boolean; busy: boolean;
+  /** 待确认命令是哪一条：状态行的文案按它分——语音转写不是「发送」，不该提醒「请勿重复发送」。 */
+  pendingAction: CompanionCommand['action'] | null;
   events: CompanionEvent[]; runId: string | null; terminal: 'complete' | 'stopped' | 'failed' | null;
   hydrate(): Promise<void>; pair(): Promise<void>; reconnect(): Promise<void>; pause(): void;
   respond(requestId: string, decision: 'approved' | 'rejected'): Promise<void>;
@@ -81,7 +83,11 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
   const store = createStore<State>((set, get) => {
     const persist = async (next: Saved) => {
       if (!port) throw new Error('COMPANION_NATIVE_REQUIRED');
-      try { await port.write(JSON.stringify(next)); saved = next; }
+      try {
+        await port.write(JSON.stringify(next)); saved = next;
+        // 落盘记录是待确认命令的唯一真源，派生放在这一处，省得九个 set({pending}) 各自同步。
+        set({ pendingAction: next.pending?.action ?? null });
+      }
       catch (error) { client?.close(); set({ status: 'storageError' }); throw error; }
     };
     const createClient = () => {
@@ -170,7 +176,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
     };
     return {
       voiceOutcome: null, library: null, history: {}, libraryError: false,
-      connectionError: null, commandError: null, routeError: null, status: 'unpaired', binding: null, sessionId: null, busy: false, pending: false, events: [], runId: null, terminal: null,
+      connectionError: null, commandError: null, routeError: null, status: 'unpaired', binding: null, sessionId: null, busy: false, pending: false, pendingAction: null, events: [], runId: null, terminal: null,
       artifacts: [], preview: null, savedPreview: false, savedPreviewName: null, cacheUsage: files?.cache.inspect() ?? null,
       hydrate: async () => {
         if (!port || get().busy) return;
@@ -182,7 +188,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
           fromHex(value.publicKey, 32); fromHex(value.secretKey, 32);
           if (value.pending) companionCommandSchema.parse(value.pending);
           saved = value;
-          set({ busy: false, binding: value.binding ?? null, sessionId: value.binding?.scope.find(id => !id.startsWith('project:')) ?? null, pending: !!value.pending });
+          set({ busy: false, binding: value.binding ?? null, sessionId: value.binding?.scope.find(id => !id.startsWith('project:')) ?? null, pending: !!value.pending, pendingAction: value.pending?.action ?? null });
           if (value.candidate || value.binding) await get().reconnect();
         } catch { set({ busy: false, status: 'storageError' }); }
       },

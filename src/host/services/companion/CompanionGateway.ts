@@ -46,6 +46,8 @@ export interface CompanionDispatchResult {
 export interface CompanionGatewayDeps {
   now?: () => number;
   sessionProject?: (sessionId: string) => string | null;
+  /** Live (not tombstoned) session. Deleted sessions must not reappear on /sync. */
+  sessionVisible?: (sessionId: string) => boolean;
   read?: (deviceId: string, request: CompanionRead) => Promise<unknown>;
   refreshDecisions?: () => void;
   dispatch?: (command: CompanionCommand) => CompanionDispatchResult;
@@ -95,6 +97,7 @@ export class CompanionGateway {
       UNION ALL SELECT COALESCE(MAX(scope_epoch), 1) AS epoch FROM companion_devices
     )`).get() as SqlRow | undefined;
     this.currentEpoch = Math.max(1, Number(row?.epoch ?? 1));
+    this.pruneEvents();
   }
 
   registerDevice(device: CompanionDevice): void {
@@ -266,7 +269,7 @@ export class CompanionGateway {
       const record = this.getCommand(command.deviceId, command.commandId);
       if (record?.state !== 'reconciling') throw new Error('COMPANION_COMMAND_CLOSED');
       write();
-      if (command.action === 'session.delete') this.db.prepare('INSERT OR IGNORE INTO companion_session_cleanup (session_id) VALUES (?)').run(command.sessionId);
+      if (command.action === 'session.delete') this.forgetSession(command.sessionId);
       this.settleCommand(command.deviceId, command.commandId, 'accepted', result);
     })();
   }
@@ -289,21 +292,34 @@ export class CompanionGateway {
     return allowed ? this.deliverCommand(allowed) : null;
   }
 
+  hasLiveDevices(): boolean {
+    return !!this.db.prepare('SELECT 1 FROM companion_devices WHERE revoked_at IS NULL LIMIT 1').get();
+  }
+
+  forgetSession(sessionId: string): void {
+    this.db.prepare('DELETE FROM companion_events WHERE session_id = ?').run(sessionId);
+    this.db.prepare('DELETE FROM companion_decisions WHERE session_id = ?').run(sessionId);
+    this.db.prepare('INSERT OR IGNORE INTO companion_session_cleanup (session_id) VALUES (?)').run(sessionId);
+  }
+
   publish(sessionId: string | null, kind: string, payload: Record<string, unknown>, now = this.now()): CompanionEvent {
-    const seqRow = this.db.prepare('SELECT COALESCE(MAX(seq), 0) AS seq FROM companion_events WHERE epoch = ?').get(this.currentEpoch) as SqlRow;
+    this.pruneEvents(now);
+    const seq = this.nextSeq();
     const event: CompanionEvent = {
       eventId: randomUUID(),
       epoch: this.currentEpoch,
-      seq: Number(seqRow.seq) + 1,
+      seq: seq + 1,
       sessionId,
       kind,
       payload,
       createdAt: now,
     };
+    if (!this.hasLiveDevices()) return { ...event, seq };
     this.db.prepare(`
       INSERT INTO companion_events (event_id, epoch, seq, session_id, kind, payload_json, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `).run(event.eventId, event.epoch, event.seq, event.sessionId, event.kind, JSON.stringify(event.payload), event.createdAt);
+    this.pruneEvents(now);
     return event;
   }
 
@@ -355,6 +371,8 @@ export class CompanionGateway {
   canAccessSession(deviceId: string, sessionId: string): boolean {
     const device = this.getDevice(deviceId);
     if (device?.revokedAt !== null || sessionId.startsWith('project:')) return false;
+    if (this.isForgotten(sessionId)) return false;
+    if (this.deps.sessionVisible && !this.deps.sessionVisible(sessionId)) return false;
     if (device.scope.includes(sessionId)) return true;
     const project = this.deps.sessionProject?.(sessionId);
     return !!project && device.scope.includes(projectGrant(project));
@@ -395,6 +413,22 @@ export class CompanionGateway {
   private nextSeq(): number {
     const row = this.db.prepare('SELECT COALESCE(MAX(seq), 0) AS seq FROM companion_events WHERE epoch = ?').get(this.currentEpoch) as SqlRow;
     return Number(row.seq);
+  }
+
+  private isForgotten(sessionId: string): boolean {
+    return !!this.db.prepare('SELECT 1 FROM companion_session_cleanup WHERE session_id = ?').get(sessionId);
+  }
+
+  private pruneEvents(now = this.now()): void {
+    this.db.prepare('DELETE FROM companion_events WHERE created_at < ?').run(now - COMPANION_LIMITS.eventTtlMs);
+    this.db.prepare('DELETE FROM companion_events WHERE epoch < ?').run(this.currentEpoch);
+    const count = Number((this.db.prepare('SELECT COUNT(*) AS n FROM companion_events').get() as SqlRow).n);
+    if (count <= COMPANION_LIMITS.eventMaxRows) return;
+    this.db.prepare(`
+      DELETE FROM companion_events WHERE event_id IN (
+        SELECT event_id FROM companion_events ORDER BY created_at ASC, epoch ASC, seq ASC LIMIT ?
+      )
+    `).run(count - COMPANION_LIMITS.eventMaxRows);
   }
 
   private ensureSchema(): void {

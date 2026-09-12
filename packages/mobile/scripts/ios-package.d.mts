@@ -34,5 +34,5 @@ export function unlinkedSpmPlugins(packageSwift: string, plugins: string[], self
 
 export interface SelfImplementedPluginClass { vendorClass: string; nativeClass: string }
 /** 把 packageClassList 里厂商插件的登记名换成第一方类名（Capacitor 按这张表 NSClassFromString）。 */
-export declare function withSelfImplementedPluginClasses<T extends { packageClassList?: string[] }>(
+export declare function withSelfImplementedPluginClasses<T extends object>(
   config: T, replacements: SelfImplementedPluginClass[]): T & { packageClassList: string[] };

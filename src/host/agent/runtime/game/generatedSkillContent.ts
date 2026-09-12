@@ -5,6 +5,9 @@ export const GAME_SKILL_GENERATION_CONTRACT: Record<string, string> = {
   "breakout": `> This section is build-time inlined into game prompt assembly so the SKILL.md
 > stays a single-source-of-truth reference for breakout generation guidance.
 
+- Hard stop: do not emit \`</html>\` until both \`window.__GAME_META__\` and
+  \`window.__GAME_TEST__\` exist as one direct object assignment each. Finishing
+  the paddle/ball/brick loop is not finishing the artifact.
 - Translate genre/reference into mechanics, not only visual skin.
 - Breakout artifacts must expose \`__GAME_META__\` with \`subtype: 'breakout'\`
   or an arkanoid-compatible subtype/genre/type value.
@@ -148,6 +151,7 @@ Coverage names returned by \`runSmokeTest().coverage\`:
 export const GAME_SKILL_REPAIR_HINTS: Record<string, string> = {
   "breakout": `| Failure Code | Hint |
 |--------------|------|
+| \`missing_breakout_contract\` | Do not close \`</html>\` until \`window.__GAME_META__\` and \`window.__GAME_TEST__\` are each one direct object literal. Keep the live loop, then add \`subtype: 'breakout'\`, dispatchable controls, the five powerups, quoted reset ids, and \`start/reset/snapshot/step/runSmokeTest\`. |
 | \`breakout 缺少 paddleX 可观测状态\` | Expose \`paddleX\` or \`paddle.x\` from \`snapshot()\`. Wire ArrowLeft/ArrowRight or left/right input so \`reset('paddleMove')\` followed by live \`step()\` changes that value. |
 | \`breakout 缺少 ball 坐标/速度状态\` | Expose \`ball.x\`, \`ball.y\`, and velocity/speed such as \`ball.vx\`, \`ball.vy\`, \`ball.dx\`, \`ball.dy\`, or \`ball.speed\`. Make Space launch move ball coordinates in both \`reset('launch')\` and the real initial browser state. |
 | \`breakout 缺少 wallBounceCount\` | Add \`wallBounceCount\` and increment it only when live ball-wall collision reverses direction. \`reset('wallBounce')\` should place the ball near a wall and prove \`wallBounceCount > before\`. |
@@ -174,7 +178,9 @@ Other breakout-specific repair hints:
   make a real mechanic invisible to validation.
 - Do not fake powerup evidence with display-only labels. The checker accepts a
   typed after snapshot mention as a fallback, but robust games should expose
-  the concrete state delta for each powerup.`,
+  the concrete state delta for each powerup.
+- If the playable loop is done but \`__GAME_META__\` / \`__GAME_TEST__\` are missing,
+  add those two object literals before \`</html>\` instead of rewriting the game.`,
   "platformer": `| Failure Code | Hint |
 |--------------|------|
 | \`missing_gameplay_mechanics\` | Add \`gameplayMechanics\` to \`__GAME_META__\` with \`enemies\`, \`blocks\`, \`abilities\`, \`gates\`, \`comboChallenge\` (each an array, never a map). Implement collision: stomp marks enemy defeated and bounces \`player.vy\`; bump marks block used and spawns the ability; ability changes movement; gate checks ability before route access. |

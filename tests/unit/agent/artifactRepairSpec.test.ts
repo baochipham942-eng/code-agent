@@ -235,6 +235,17 @@ describe('artifactRepairSpec', () => {
     ]);
   });
 
+  it('classifies breakout whole-contract absence as missing_breakout_contract', () => {
+    const spec = createArtifactRepairSpec(summary([
+      'breakout 缺少 window.__GAME_META__ 或 window.__GAME_TEST__ 对象赋值；可玩的挡板/弹球循环写完也不算交付完成，必须在 </html> 之前补上这两个直接对象字面量。',
+    ]));
+
+    expect(spec.issues.map((issue) => issue.code)).toEqual(['missing_breakout_contract']);
+    expect(spec.issues[0].repairInstruction).toContain('</html>');
+    const formatted = formatArtifactRepairSpecForPrompt(spec);
+    expect(formatted).toContain('missing_breakout_contract');
+  });
+
   it('falls back to generic_validation_failure for unknown text', () => {
     const spec = createArtifactRepairSpec(summary(['一个新的 validator 失败文本。']));
 

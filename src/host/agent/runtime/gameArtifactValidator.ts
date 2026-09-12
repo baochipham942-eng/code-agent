@@ -15,6 +15,7 @@ import {
 import { runLightPlayabilitySmoke } from './browser/lightPlayabilitySmoke';
 import { GAME_VALIDATION_TIMEOUTS } from '../../../shared/constants/game';
 import { gameSubtypeRegistry } from './gameArtifactSubtypeRegistry';
+import { looksLikeBreakoutGame } from './game/breakout/BreakoutChecker';
 
 export type { RuntimeSmokeSummary } from './gameArtifactRuntimeSmoke';
 
@@ -95,6 +96,7 @@ function makeValidationCacheKey(
   return [
     path.resolve(filePath),
     contentHash,
+    options.contractLevel ?? 'full',
     options.runRuntimeSmoke ? 'runtime' : 'static',
     runtimeTimeoutMs,
     options.requireRuntimeSmoke ? 'require-runtime' : 'runtime-optional',
@@ -536,6 +538,14 @@ function validateTestContractIntegrity(content: string, contractSnippet?: Contra
   const smokeSnippet = extractFunctionSnippet(contractContent, 'runSmokeTest');
 
   if (!stepSnippet && !smokeSnippet) {
+    const hasContractObject = Boolean(contractSnippet)
+      || /window\.__(?:GAME|INTERACTIVE)_TEST__\s*=/i.test(contractContent);
+    if (!hasContractObject) {
+      checks.push('test contract integrity: step() and runSmokeTest() are both absent');
+      failures.push(
+        '测试合约完整性检查失败：没有可检查的 step() 或 runSmokeTest() 函数体。契约整段缺失时 integrity 不能静默通过；请补上 window.__GAME_TEST__ 或 window.__INTERACTIVE_TEST__ 的完整对象字面量。',
+      );
+    }
     return { failures, checks };
   }
 
@@ -664,6 +674,18 @@ export async function validateGameArtifact(
 
   const hasStepProbe = INTERACTIVE_TEST_STEP_PATTERNS.some((pattern) => pattern.test(content));
   const hasResetProbe = INTERACTIVE_TEST_RESET_PATTERNS.some((pattern) => pattern.test(content));
+  const breakoutShaped = looksLikeBreakoutGame(content, filePath);
+  const hasGameMetaAssignment = /window\.__(?:GAME|INTERACTIVE)_META__\s*=/i.test(content);
+  const hasTestContractAssignment = INTERACTIVE_TEST_CONTRACT_PATTERNS.some((pattern) => pattern.test(content));
+  const breakoutWholeContractMissing = breakoutShaped && !hasGameMetaAssignment && !hasTestContractAssignment;
+
+  if (breakoutShaped && (!hasGameMetaAssignment || !hasTestContractAssignment)) {
+    failures.push(
+      'breakout 缺少 window.__GAME_META__ 或 window.__GAME_TEST__ 对象赋值；可玩的挡板/弹球循环写完也不算交付完成，必须在 </html> 之前补上这两个直接对象字面量。',
+    );
+  } else if (breakoutShaped) {
+    checks.push('breakout contract objects declared');
+  }
 
   if (!CONTROL_PATTERNS.some((pattern) => pattern.test(content)) && !hasStepProbe) {
     failures.push('缺少明确的用户输入入口，无法确认玩家能实际操作游戏。');
@@ -673,7 +695,8 @@ export async function validateGameArtifact(
 
   // 重契约：完整 __GAME_META__ / 可达性 / 测试合约元数据，仅 goal/验收模式强制；
   // 普通聊天里随手生成的交互产物（light）跳过，只要"能跑"即可，不卡内部机器可读契约。
-  if (contractLevel === 'full') {
+  // breakout 例外：整段 META/TEST 都没有时只报一条 subtype 码 + integrity，不散射 8 条零件缺失。
+  if (contractLevel === 'full' && !breakoutWholeContractMissing) {
   if (!META_COVERAGE_PATTERNS.some((pattern) => pattern.test(content))) {
     failures.push('缺少可用于验收的关卡、片段、场景或目标元数据；工程层不能只凭源码猜游戏是否完整。');
   } else {
@@ -745,10 +768,17 @@ export async function validateGameArtifact(
   const contractIntegrity = validateTestContractIntegrity(content, interactiveContractSnippet);
   checks.push(...contractIntegrity.checks);
   failures.push(...contractIntegrity.failures);
+  } else if (contractLevel === 'full' && breakoutWholeContractMissing) {
+    const contractIntegrity = validateTestContractIntegrity(
+      content,
+      extractInteractiveContractSnippet(content),
+    );
+    checks.push(...contractIntegrity.checks);
+    failures.push(...contractIntegrity.failures);
   } // end contractLevel === 'full'（重契约元数据校验，仅 goal/验收模式强制）
 
   const hasSmokeProbe = INTERACTIVE_TEST_SMOKE_PATTERNS.some((pattern) => pattern.test(content));
-  if (contractLevel === 'full' && !hasSmokeProbe) {
+  if (contractLevel === 'full' && !hasSmokeProbe && !breakoutWholeContractMissing) {
     failures.push('交互测试合约缺少 runSmokeTest()，验收无法用真实输入证明游戏可操作。');
   } else if (hasSmokeProbe) {
     checks.push('interactive runtime smoke probe detected');

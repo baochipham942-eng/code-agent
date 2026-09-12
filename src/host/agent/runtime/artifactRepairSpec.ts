@@ -2,8 +2,15 @@ import type { GameArtifactValidationSummary } from './gameArtifactValidator';
 import { REPAIR_PROMPT_LIMITS } from '../../../shared/constants/repair';
 import { gameSubtypeRegistry } from './game/registry';
 // side-effect imports — 各 subtype checker 自注册并提供 subtype-specific repair codes
+import './game/breakout/BreakoutChecker';
 import './game/platformer/PlatformerChecker';
 import './game/runner/RunnerChecker';
+import {
+  classifyBreakoutFailure,
+  BREAKOUT_REPAIR_CODE_SET,
+  BREAKOUT_REPAIR_CODES,
+  type BreakoutRepairCode,
+} from './game/breakout/repairCodes';
 import {
   classifyPlatformerFailure,
   PLATFORMER_REPAIR_CODE_SET,
@@ -55,7 +62,8 @@ export type GenericArtifactRepairIssueCode =
 export type ArtifactRepairIssueCode =
   | GenericArtifactRepairIssueCode
   | PlatformerRepairCode
-  | RunnerRepairCode;
+  | RunnerRepairCode
+  | BreakoutRepairCode;
 
 export interface ArtifactRepairIssue {
   code: ArtifactRepairIssueCode;
@@ -117,6 +125,15 @@ function classifyFailureViaRegistry(text: string): FailureClassification | undef
     return {
       code: runnerEntry.code,
       repairInstruction: fromChecker ?? runnerEntry.repairInstruction,
+    };
+  }
+  const breakoutEntry = classifyBreakoutFailure(text);
+  if (breakoutEntry) {
+    const checker = gameSubtypeRegistry.get('breakout');
+    const fromChecker = checker?.repairGuidance(breakoutEntry.code);
+    return {
+      code: breakoutEntry.code,
+      repairInstruction: fromChecker ?? breakoutEntry.repairInstruction,
     };
   }
   return undefined;
@@ -352,6 +369,7 @@ function subtypeRepairCodes(): string[] {
   return [
     ...PLATFORMER_REPAIR_CODES.map((entry) => entry.code),
     ...RUNNER_REPAIR_CODES.map((entry) => entry.code),
+    ...BREAKOUT_REPAIR_CODES.map((entry) => entry.code),
   ];
 }
 
@@ -424,6 +442,10 @@ function messageForCode(code: ArtifactRepairIssueCode): string {
   }
   if (RUNNER_REPAIR_CODE_SET.has(code as RunnerRepairCode)) {
     const entry = RUNNER_REPAIR_CODES.find((e) => e.code === code);
+    if (entry) return entry.message;
+  }
+  if (BREAKOUT_REPAIR_CODE_SET.has(code as BreakoutRepairCode)) {
+    const entry = BREAKOUT_REPAIR_CODES.find((e) => e.code === code);
     if (entry) return entry.message;
   }
   switch (code as GenericArtifactRepairIssueCode) {
@@ -580,6 +602,13 @@ function collectSubtypeRepairHints(issues: readonly ArtifactRepairIssue[]): stri
   for (const issue of issues) {
     if (RUNNER_REPAIR_CODE_SET.has(issue.code as RunnerRepairCode)) {
       const entry = RUNNER_REPAIR_CODES.find((e) => e.code === issue.code);
+      if (entry) appendUnique(hints, seen, entry.hints);
+    }
+  }
+
+  for (const issue of issues) {
+    if (BREAKOUT_REPAIR_CODE_SET.has(issue.code as BreakoutRepairCode)) {
+      const entry = BREAKOUT_REPAIR_CODES.find((e) => e.code === issue.code);
       if (entry) appendUnique(hints, seen, entry.hints);
     }
   }

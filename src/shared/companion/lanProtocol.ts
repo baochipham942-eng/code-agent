@@ -47,7 +47,10 @@ export function isLanPeer(peer: string): boolean {
 /**
  * RFC 6762 reserves `.local` for mDNS: public DNS never answers it, so such a name can only
  * resolve to a host on the same link — the same reach a private IPv4 literal has. Unlike the
- * literal it survives the host changing networks, which is why an invitation prefers it.
+ * literal it survives the host changing networks, which is why an invitation carries it as the
+ * alternate address (`altEndpoint`) — it is the alternate rather than the primary because reachable
+ * is not the same as resolvable: a phone hosting the personal hotspot its host sits on cannot
+ * resolve that host's `.local` at all (2026-09-12 真机实测).
  * Reach is not trust: the peer still has to pass the Noise handshake against the pinned hostKey,
  * so a squatted mDNS name gets an attacker a TCP connection and nothing else.
  */
@@ -57,8 +60,10 @@ function isMdnsHostname(host: string): boolean {
 /**
  * What a phone stores has to outlive the address it was paired on: an IPv4 literal dies the moment
  * the host joins another network (or the same one with a new lease), and the only cure is scanning
- * a fresh QR. An mDNS name does not move, so an invitation advertises it whenever the host has one
- * and keeps the literal for hosts that do not (Linux/Windows without Bonjour).
+ * a fresh QR. An mDNS name does not move, so an invitation carries it alongside the literal whenever
+ * the host has one — the literal stays the primary address (it is what definitely answers right now,
+ * and what phones built before altEndpoint understand), the name is what a paired phone falls back to
+ * after the host changes networks. Hosts without Bonjour (Linux/Windows) only ever get the literal.
  */
 export function lanAdvertisedHost(address: string, mdnsName: string | null): string {
   return mdnsName && isMdnsHostname(mdnsName) ? mdnsName.toLowerCase() : address;

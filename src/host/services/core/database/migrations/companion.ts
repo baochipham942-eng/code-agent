@@ -83,6 +83,30 @@ export function applyCompanionSchema(db: BetterSqlite3.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_companion_artifacts_session
       ON companion_artifacts(session_id, created_at);
+    CREATE TABLE IF NOT EXISTS companion_push_registrations (
+      device_id TEXT PRIMARY KEY,
+      provider TEXT NOT NULL,
+      environment TEXT NOT NULL,
+      token_wrap TEXT NOT NULL,
+      token_hash TEXT NOT NULL,
+      registered_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS companion_push_outbox (
+      event_id TEXT NOT NULL,
+      device_id TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      session_id TEXT NOT NULL,
+      state TEXT NOT NULL,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      expires_at INTEGER NOT NULL,
+      route_token TEXT NOT NULL UNIQUE,
+      payload_json TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      UNIQUE(event_id, device_id, kind)
+    );
+    CREATE INDEX IF NOT EXISTS idx_companion_push_outbox_state_expires
+      ON companion_push_outbox(state, expires_at);
   `);
   // Companion unit tests use an isolated SQLite file without `sessions`.
   // The host schema creates that table first; attach the cascade only then.

@@ -4,7 +4,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { profileCoversDevice, readMobileprovision, summarizeProfile } from './ios-package.mjs';
+import { assertPushEntitlement, profileCoversDevice, readMobileprovision, summarizeProfile } from './ios-package.mjs';
 
 const [ipaArgument, handoffArgument] = process.argv.slice(2);
 if (!ipaArgument) throw new Error('USAGE: ios:verify IPA [HANDOFF_COPY]');
@@ -53,6 +53,10 @@ try {
   const expected = process.env.NEO_IOS_EXPECTED_UDID;
   if (!expected) throw new Error('NEO_IOS_EXPECTED_UDID_REQUIRED');
   check('covers-expected-device', profileCoversDevice(profilePlist, expected));
+  let pushEntitlement = summary.apsEnvironment;
+  try { pushEntitlement = assertPushEntitlement(summary); } catch { pushEntitlement = null; }
+  check('push-entitlement-present', pushEntitlement === 'production' || pushEntitlement === 'development',
+    { apsEnvironment: summary.apsEnvironment, note: 'missing aps-environment fails closed; empty is not success' });
 } catch (error) {
   checks.push({ name: 'execution', status: 'FAIL', reason: error.message }); process.exitCode = 1;
 } finally {

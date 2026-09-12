@@ -61,6 +61,7 @@ import { createAdminReviewQueueRouter } from './routes/adminReviewQueue';
 import { createCompanionRouter } from './routes/companion';
 import { createCompanionProvisioningRouter } from './routes/companionProvisioning';
 import { CompanionGateway } from '../host/services/companion/CompanionGateway';
+import { CompanionPushOutbox, loadPushWrapKeySync } from '../host/services/companion/CompanionPushOutbox';
 import { projectCompanionEvent } from '../host/services/companion/projectCompanionEvent';
 import { CompanionApprovalService } from '../host/services/companion/CompanionApprovalService';
 import type { PermissionResponse } from '../shared/contract/permission';
@@ -263,7 +264,7 @@ export function createApp(deps: CreateAppDeps): express.Express {
       // gateway 与 library 互相依赖：gateway 的回调要调 library，library 又要拿 gateway。
       // 用一个 const 容器打破这个环，而不是先声明后赋值的 let——后者读起来像「可能被改」，
       // 实际只赋值一次，而且回调里读到的是同一个坑位。
-      const services: { library?: CompanionLibraryService; files?: CompanionFileService } = {};
+      const services: { library?: CompanionLibraryService; files?: CompanionFileService; push?: CompanionPushOutbox } = {};
       const requireLibrary = () => {
         const library = services.library;
         // 回调只在路由挂载之后才可能触发，那时 library 早已就位；真取不到就说明接线断了。
@@ -280,6 +281,8 @@ export function createApp(deps: CreateAppDeps): express.Express {
         },
         refreshDecisions: () => approvals?.refresh(),
         decide: command => approvals?.respond(command) ?? { kind: 'rejected', reason: 'unsupported_action' },
+        onPublish: event => { services.push?.enqueue(event); void services.push?.flush(); },
+        onRevoke: deviceId => services.push?.forgetDevice(deviceId),
         dispatch: (command) => {
           if (command.action.startsWith('files.')) {
             return services.files?.dispatch(command) ?? { state: 'rejected', result: { code: 'HOST_UNAVAILABLE' } };
@@ -326,6 +329,10 @@ export function createApp(deps: CreateAppDeps): express.Express {
       });
       services.library = new CompanionLibraryService(gateway, id => !!runRegistry.resolve({ sessionId: id }));
       services.files = new CompanionFileService(db, gateway, id => requireLibrary().workspaceOf(id));
+      services.push = new CompanionPushOutbox(db, gateway, {
+        wrapKey: loadPushWrapKeySync(resolveCodeAgentDataDir()),
+        apnsKeyPath: process.env.NEO_APNS_KEY_PATH || null,
+      });
       void services.library.cleanup().catch((error) => {
         logger.warn('Companion deleted-session cleanup unavailable', error);
       });
@@ -370,7 +377,7 @@ export function createApp(deps: CreateAppDeps): express.Express {
       const lan = new LanCompanionManager(gateway, () => loadLanIdentity(resolveCodeAgentDataDir()), async () => {
         const sessions = await (await tryGetSessionManager())?.listSessions() ?? [];
         return sessions.map(session => ({ id: session.id, title: session.title }));
-      }, () => requireLibrary().projects());
+      }, () => requireLibrary().projects(), services.push);
       // Both halves must hold: a phone is reachable for this session, AND this particular
       // card is renderable. With no approvals service there is no companion approval path.
       hasCompanionApprovalUi = (sessionId, request) => lan.hasApprovalUi(sessionId) && approvals?.canDisplay(request) === true;

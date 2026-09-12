@@ -22,6 +22,22 @@ export interface FilePorts {
   cache: FileCache;
 }
 
+export type OsPermission = 'unknown' | 'requesting' | 'granted' | 'limited' | 'denied' | 'restricted';
+export type NetworkStatus = 'unknown' | 'online' | 'offline';
+export type PushProvider = 'apns' | 'fcm' | 'vendor';
+export type PushToken = { provider: PushProvider; token: string; environment: 'production' | 'sandbox' };
+export type TokenResult =
+  | { kind: 'token'; token: PushToken }
+  | { kind: 'unavailable'; code: 'CHANNEL_MISSING'; missing: 'apns_entitlement' | 'gms_or_vendor' };
+
+export interface NotificationPort {
+  permission: { read(): Promise<OsPermission>; request(): Promise<OsPermission> };
+  token: { current(): Promise<TokenResult>; subscribe(onChange: (result: TokenResult) => void): Dispose };
+  tap: { subscribe(onTap: (routeToken: string) => void): Promise<Dispose> };
+  openSettings(): Promise<void>;
+  network: { read(): NetworkStatus };
+}
+
 export interface PlatformPorts {
   recorder?: { start(): Promise<void>; stop(): Promise<{ audioData: string; mimeType: string; durationMs: number }>; };
   companion?: {
@@ -29,6 +45,7 @@ export interface PlatformPorts {
     scan(): Promise<string>; post(url: string, body: unknown): Promise<unknown>;
   };
   files?: FilePorts;
+  notifications?: NotificationPort;
   preferences: { get(): Promise<string | null>; set(value: string): Promise<void> };
   appInfo: { read(): Promise<{ version: string; build: string }> };
   lifecycle: { subscribe(onActive: (active: boolean) => void, onBack: () => void): Promise<Dispose>; leave(): Promise<void> };

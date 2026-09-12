@@ -1,13 +1,19 @@
 import type { messages } from '../../i18n';
 import type { Appearance, SheetPage } from '../../stores/mobileStore';
+import type { OsPermission } from '../../platform/ports';
+import type { RegistrationStatus } from '../../stores/notificationStore';
 import { NeoBrandMark } from '../brand/NeoBrandMark';
 import { AppIcon } from '../../app/AppIcon';
 
-export function SettingsPage({ page, text, appearance, nickname, profileDraft, appInfo, open, chooseAppearance, editProfile, saveProfile, storage }: {
+export function SettingsPage({ page, text, appearance, nickname, profileDraft, appInfo, open, chooseAppearance, editProfile, saveProfile, storage, notifications }: {
   page: SheetPage; text: ReturnType<typeof messages>; appearance: Appearance; nickname: string;
   profileDraft: string; appInfo: { version: string; build: string } | null;
   open(page: SheetPage): void; chooseAppearance(value: Appearance): void; editProfile(value: string): void; saveProfile(): void;
   storage?: { previewBytes: number; result: 'clean' | null; confirm: boolean; onConfirm(): void; onClear(): void };
+  notifications?: {
+    preference: boolean; osPermission: OsPermission; registration: RegistrationStatus; lastFailure: string | null;
+    onToggle(value: boolean): void; onRequest(): void; onOpenSettings(): void;
+  };
 }) {
   const row = (target: SheetPage, detail?: string) => <button className="settings-row" data-testid={`open-${target}`} onClick={() => open(target)}>
     <span>{text[target]}</span><span className="row-detail">{detail}<AppIcon name="chevron" /></span>
@@ -17,7 +23,7 @@ export function SettingsPage({ page, text, appearance, nickname, profileDraft, a
       <button className="profile-card" onClick={() => open('profile')} data-testid="open-profile">
         <span className="avatar">{(nickname || text.guest).slice(0, 1)}</span><strong>{nickname || text.guest}</strong><AppIcon name="chevron" />
       </button>
-      <p className="group-title">{text.preferences}</p><div className="settings-group">{row('appearance', text[appearance])}{row('storage')}</div>
+      <p className="group-title">{text.preferences}</p><div className="settings-group">{row('appearance', text[appearance])}{row('storage')}{row('notifications', notifications?.preference ? text.notificationOn : text.notificationOff)}</div>
       <p className="group-title">{text.support}</p><div className="settings-group">{row('help')}{row('about')}</div>
     </>;
     case 'appearance': return <div className="settings-group" role="group" aria-label={text.appearance}>
@@ -42,6 +48,22 @@ export function SettingsPage({ page, text, appearance, nickname, profileDraft, a
       {storage?.confirm
         ? <><p role="alert">{text.clearCacheConfirm}</p><button className="primary" onClick={storage.onClear}>{text.confirmClear}</button></>
         : <button className="primary" onClick={storage?.onConfirm}>{text.clearCache}</button>}
+    </div>;
+    case 'notifications': return <div>
+      <div className="settings-group">
+        <button className="settings-row" data-testid="notify-toggle" aria-pressed={notifications?.preference === true}
+          onClick={() => notifications?.onToggle(!notifications.preference)}>
+          <span>{text.notificationPreference}</span>{notifications?.preference && <AppIcon name="check" />}
+        </button>
+      </div>
+      {notifications?.osPermission === 'denied' || notifications?.osPermission === 'restricted'
+        ? <><p className="caption">{text.notificationDenied}</p>
+          <button className="primary" data-testid="notify-settings" onClick={() => notifications?.onOpenSettings()}>{text.openSystemSettings}</button></>
+        : notifications?.lastFailure?.startsWith('CHANNEL_MISSING')
+          ? <p className="caption" role="status">{text.notificationFailed}</p>
+          : notifications?.registration === 'registered' ? <p className="caption" role="status">{text.notificationReady}</p>
+            : !notifications?.preference ? <button className="primary" data-testid="notify-enable" onClick={() => { notifications?.onToggle(true); notifications?.onRequest(); }}>{text.enableNotifications}</button>
+              : null}
     </div>;
     case 'preview': return null;
     case 'projects': return <p>{text.noProjects}</p>;

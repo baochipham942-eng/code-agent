@@ -57,6 +57,9 @@ export const COMPANION_LIMITS = {
   fileRootDir: '.neo-companion',
   fileStagingDir: 'staging',
   fileUploadsDir: 'uploads',
+  /** Outbox rows past this age are expired; opening them re-reads the live session. */
+  pushTtlMs: 86_400_000,
+  pushMaxAttempts: 5,
 } as const;
 
 const RETRYABLE_FILE_CODES = new Set([

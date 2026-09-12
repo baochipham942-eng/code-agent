@@ -5,6 +5,8 @@ import { useStore } from 'zustand';
 import type { PlatformPorts } from '../platform/ports';
 import { createMobileStore } from '../stores/mobileStore';
 import { canAddressSession, createCompanionStore } from '../stores/companionStore';
+import { createNotificationStore } from '../stores/notificationStore';
+import { unavailableNotificationPort } from '../platform/notifications';
 import { COMPANION_LIMITS } from '../../../../src/shared/constants/companion';
 import { ApprovalCard } from '../features/sessions/ApprovalCard';
 import { CompanionConversation } from '../features/sessions/CompanionConversation';
@@ -33,7 +35,22 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
   const [companionStore] = useState(() => createCompanionStore(ports.companion, (acceptedText, sessionId, hostKey) => {
     return store.getState().acknowledgeDraft(acceptedText, `${hostKey}:${sessionId}`);
   }, (text, sessionId, hostKey, commandId) => store.getState().appendTranscript(text, `${hostKey}:${sessionId}`, commandId), ports.files));
+  const [notifyStore] = useState(() => createNotificationStore({
+    port: ports.notifications ?? unavailableNotificationPort,
+    preference: {
+      get: () => store.getState().preferences.notifyEnabled,
+      set: value => store.getState().setNotifyEnabled(value),
+    },
+    session: {
+      status: () => companionStore.getState().status,
+      register: input => companionStore.getState().registerPush(input),
+      unregister: () => companionStore.getState().unregisterPush(),
+      openRoute: token => companionStore.getState().openRoute(token),
+      reconnect: () => companionStore.getState().reconnect(),
+    },
+  }));
   const companion = useStore(companionStore);
+  const notify = useStore(notifyStore);
   const state = useStore(store);
   const text = messages(navigator.language);
   const [appInfo, setAppInfo] = useState<{ version: string; build: string } | null>(null);
@@ -95,8 +112,14 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
     });
     register(ports.lifecycle.subscribe(active => {
       if (!active) { void store.getState().flush(); companionStore.getState().pause(); }
-      else if (companionStore.getState().binding) void companionStore.getState().reconnect();
+      else {
+        if (companionStore.getState().binding) void companionStore.getState().reconnect();
+        void notifyStore.getState().recover();
+      }
     }, back.onBack));
+    register((ports.notifications ?? unavailableNotificationPort).tap.subscribe(token => {
+      void notifyStore.getState().handleTap(token);
+    }));
     register(ports.keyboard.subscribe(visible => { keyboardVisible.current = visible; }));
     const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') { event.preventDefault(); back.onBack(); } };
     document.addEventListener('keydown', escape);
@@ -113,15 +136,16 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
       document.removeEventListener('keydown', escape); document.removeEventListener('neo-system-night', change); query.removeEventListener('change', change);
       window.removeEventListener('resize', resize); window.visualViewport?.removeEventListener('resize', resize);
     };
-  }, [ports, store, companionStore]);
+  }, [ports, store, companionStore, notifyStore]);
   useEffect(() => { if (state.ready) void companionStore.getState().hydrate(); }, [state.ready, companionStore]);
   useEffect(() => {
     if (companion.status !== 'connected') return;
+    void notifyStore.getState().recover();
     void companionStore.getState().refreshLibrary();
     void companionStore.getState().sync();
     const timer = setInterval(() => { void companionStore.getState().sync(); }, COMPANION_LIMITS.pollIntervalMs);
     return () => clearInterval(timer);
-  }, [companion.status, companionStore]);
+  }, [companion.status, companionStore, notifyStore]);
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     // #1737 起 systemBars 是可选口（并非所有宿主都提供系统栏控制），必须可选链。
@@ -289,7 +313,13 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
         editProfile={state.editProfile} saveProfile={state.saveProfile}
         storage={{ previewBytes: companion.cacheUsage?.previewBytes ?? 0, result: cacheResult, confirm: cacheConfirm,
           onConfirm: () => setCacheConfirm(true),
-          onClear: () => { companion.clearCache(); setCacheResult('clean'); setCacheConfirm(false); } }} />}
+          onClear: () => { companion.clearCache(); setCacheResult('clean'); setCacheConfirm(false); } }}
+        notifications={{
+          preference: notify.preference, osPermission: notify.osPermission, registration: notify.registration, lastFailure: notify.lastFailure,
+          onToggle: value => void notifyStore.getState().setPreference(value),
+          onRequest: () => void notifyStore.getState().requestFromUser(),
+          onOpenSettings: () => void (ports.notifications ?? unavailableNotificationPort).openSettings(),
+        }} />}
     </SheetHost>}
   </div>;
 }

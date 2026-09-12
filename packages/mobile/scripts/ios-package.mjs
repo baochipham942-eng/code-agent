@@ -89,6 +89,14 @@ export function summarizeProfile(plist, now = new Date()) {
   };
 }
 
+/** MI-03: missing aps-environment is a failed check, not a silent empty field. */
+export function assertPushEntitlement(summary) {
+  if (summary.apsEnvironment !== 'production' && summary.apsEnvironment !== 'development') {
+    throw new Error('PUSH_ENTITLEMENT_MISSING');
+  }
+  return summary.apsEnvironment;
+}
+
 export function profileCoversDevice(plist, udid) {
   const devices = Array.isArray(plist.ProvisionedDevices) ? plist.ProvisionedDevices : [];
   return devices.includes(udid);

@@ -9,6 +9,7 @@ import type { FilePorts, PlatformPorts } from './ports';
 import { bytesToArrayBuffer, bytesToBase64, FileCache } from './fileCache';
 import { FILE_ACCEPT, IMAGE_ACCEPT } from './fileAccept';
 import { nativeCompanionPort } from './nativeCompanion';
+import { createNotificationPort } from './notifications';
 
 const PREFERENCES_KEY = 'neo.mobile.preferences.v1';
 
@@ -81,6 +82,11 @@ export const capacitorPorts: PlatformPorts = {
     },
   } : undefined,
   companion: Capacitor.isNativePlatform() ? nativeCompanionPort : undefined,
+  notifications: createNotificationPort(Capacitor.getPlatform(), async () => {
+    const open = (App as { openUrl?: (opts: { url: string }) => Promise<void> }).openUrl;
+    if (!open) return;
+    try { await open({ url: 'app-settings:' }); } catch { /* user opens Settings by hand */ }
+  }),
   files: webFilePorts(new FileCache()),
   preferences: {
     get: async () => (await Preferences.get({ key: PREFERENCES_KEY })).value,

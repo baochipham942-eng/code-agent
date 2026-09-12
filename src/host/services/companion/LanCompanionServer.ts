@@ -8,6 +8,7 @@ import { fromHex, toHex, isPrivateIPv4, type LanInvitation } from '../../../shar
 import { createHandshake, NoiseChannel } from '../../../shared/companion/noiseChannel';
 import { companionCommandSchema, type CompanionEvent } from '../../../shared/contract/companion';
 import type { CompanionGateway } from './CompanionGateway';
+import type { CompanionPushOutbox } from './CompanionPushOutbox';
 
 interface Invitation { id: string; psk: string; expiresAt: number; scope: string[] }
 interface Pending { noise: Noise; invite: Invitation; expiresAt: number }
@@ -33,7 +34,7 @@ export class LanCompanionServer {
   private handshakeCount = 0;
 
   constructor(private readonly gateway: CompanionGateway, private readonly identity: KeyPair,
-    private readonly now = Date.now) {}
+    private readonly now = Date.now, private readonly push?: CompanionPushOutbox) {}
 
   async start(address: string, port: number = L.lanPort): Promise<void> {
     if (this.server) return;
@@ -174,13 +175,24 @@ export class LanCompanionServer {
       if (!Array.isArray(body.frame) || body.frame.length > L.maxRequestRecords) throw new Error('COMPANION_INVALID_FRAME');
       const device = this.gateway.identityDevice(channel.publicKey);
       if (!device) throw new Error('COMPANION_DEVICE_REVOKED');
-      const request = channel.cipher.open(body.frame) as { requestId?: unknown; action?: unknown; command?: unknown; epoch?: unknown; afterSeq?: unknown; commandId?: unknown; query?: unknown };
+      const request = channel.cipher.open(body.frame) as {
+        requestId?: unknown; action?: unknown; command?: unknown; epoch?: unknown; afterSeq?: unknown;
+        commandId?: unknown; query?: unknown; provider?: unknown; token?: unknown; environment?: unknown; routeToken?: unknown;
+      };
       if (!request || typeof request.requestId !== 'string' || request.requestId.length > L.idLength) throw new Error('COMPANION_INVALID_REQUEST');
       let result: unknown;
       if (request.action === 'command') {
         const command = companionCommandSchema.parse(request.command);
         if (command.deviceId !== device.deviceId) throw new Error('COMPANION_IDENTITY_MISMATCH');
         result = this.gateway.submit(command);
+      } else if (request.action === 'push.register') {
+        result = this.push?.register(device.deviceId, { provider: request.provider, token: request.token, environment: request.environment })
+          ?? { kind: 'rejected', reason: 'unsupported_action' };
+      } else if (request.action === 'push.unregister') {
+        result = this.push?.unregister(device.deviceId) ?? { kind: 'rejected', reason: 'unsupported_action' };
+      } else if (request.action === 'push.open') {
+        result = this.push?.open(device.deviceId, { routeToken: request.routeToken })
+          ?? { kind: 'rejected', reason: 'unsupported_action' };
       } else if (request.action === 'read') {
         result = await this.gateway.read(device.deviceId, request.query);
       } else if (request.action === 'sync') {

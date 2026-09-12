@@ -1,4 +1,4 @@
-import { VoiceInput } from '../features/sessions/VoiceInput';
+import { Composer } from '../features/sessions/Composer';
 import { LibrarySheet } from '../features/sessions/LibrarySheet';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from 'zustand';
@@ -76,10 +76,9 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
   const [systemDark, setSystemDark] = useState(() => document.documentElement.dataset.systemNight === 'true'
     || matchMedia('(prefers-color-scheme: dark)').matches);
   const keyboardVisible = useRef(false);
-  const composing = useRef(false);
   const managing = useRef(false);
   const swipe = useRef<{ x: number; y: number } | null>(null);
-  const textarea = useRef<HTMLTextAreaElement>(null);
+  const recording = useRef(false);
   const theme = state.preferences.appearance === 'system' ? (systemDark ? 'dark' : 'light') : state.preferences.appearance;
   const currentPage = state.sheet?.pages.at(-1);
   const pendingApprovals = useMemo(() => {
@@ -91,6 +90,10 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
   }, [companion.events, companion.sessionId]);
   const mineApproval = pendingApprovals.find(card => card.sessionId === companion.sessionId);
   const otherApproval = pendingApprovals.find(card => card.sessionId !== companion.sessionId);
+  // 输入区的模型胶囊（design.html composer 的 .model）：显示这条会话当前在用的模型，
+  // 没有会话或还没读到模型表时不显示——不拿列表第一个冒充当前模型。
+  const session = companion.library?.sessions.find(item => item.id === companion.sessionId);
+  const sessionModelLabel = companion.library?.models.find(m => m.provider === session?.provider && m.model === session?.model)?.label ?? null;
 
   // Text selections inside the composer never surface through window.getSelection on WebKit,
   // and long-press selection on WebView only lives in the element's own range.
@@ -168,11 +171,6 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
   }, [ports, theme]);
 
   useEffect(() => {
-    const input = textarea.current;
-    if (input) { input.style.height = 'auto'; input.style.height = `${Math.min(input.scrollHeight, 140)}px`; }
-  }, [state.preferences.drafts, state.ready]);
-
-  useEffect(() => {
     if (companion.sessionId && companion.binding && state.route !== 'fixture') {
       store.getState().activateDraft(`${companion.binding.hostKey}:${companion.sessionId}`);
       void companionStore.getState().loadHistory(companion.sessionId);
@@ -207,7 +205,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
 
   const gestureStart = (event: React.TouchEvent) => {
     const touch = event.touches[0];
-    if (!touch || event.touches.length !== 1 || state.sheet || keyboardVisible.current ||
+    if (!touch || event.touches.length !== 1 || state.sheet || keyboardVisible.current || recording.current ||
       textSelected() || (event.target as Element).closest('button,input,textarea,[data-testid="history"]') || touch.clientX < 24) return;
     swipe.current = { x: touch.clientX, y: touch.clientY };
   };
@@ -266,24 +264,25 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
           {!state.saveError && !nativeError && !companion.commandError && companion.status === 'connected'
             && <button onClick={() => state.openSheet('projects')}>{text.projects}</button>}
         </p>}
-        <div className="composer">
-          <textarea ref={textarea} aria-label={text.draft} placeholder={text.placeholder} rows={1}
-            value={(state.preferences.drafts[state.draftKey] ?? '')} data-testid="draft"
-            onCompositionStart={() => { composing.current = true; }} onCompositionEnd={() => { composing.current = false; }}
-            onChange={event => state.editDraft(event.target.value)} />
-          <div className="composer-actions"><button aria-label={text.projects} onClick={() => state.openSheet('projects')}><AppIcon name="plus" /></button>
-            {ports.files && <button aria-label={text.attach} disabled={!canAddressSession(companion) || companion.busy || companion.pending} onClick={() => void ports.files!.pick('file').then(picked => { if (picked) void companion.upload(picked); }).catch(error => { if (error instanceof Error && error.message === 'UPLOAD_TOO_LARGE') companionStore.setState({ commandError: 'UPLOAD_TOO_LARGE' }); })}><AppIcon name="attach" /></button>}
-            {ports.recorder && companion.sessionId && <VoiceInput key={`${companion.binding?.hostKey}:${companion.sessionId}`} recorder={ports.recorder} text={text}
-              disabled={companion.status !== 'connected' || companion.busy || companion.pending} pending={companion.pending} outcome={companion.voiceOutcome} transcribe={audio => companion.transcribe(audio, companion.sessionId!, companion.binding!.hostKey)} />}
-            <button className="send" aria-label={text.send} data-testid="send" disabled={!(state.preferences.drafts[state.draftKey] ?? '').trim() || companion.busy || companion.pending}
-              onClick={() => { if (!composing.current) {
-                // companionStore.send 在没有 sessionId 时会静默 return（只勾了项目的二维码
-                // 配对就是这个形态）。不把这一档也走 attemptSend 的话，用户看到「已连接」、
-                // 点发送却什么都不发生——无报错、无 pending、草稿不清，只能反复点。
-                if (canAddressSession(companion) && state.route !== 'fixture') void companion.send((state.preferences.drafts[state.draftKey] ?? ''));
-                else state.attemptSend();
-              } }}><AppIcon name="arrow" /></button></div>
-        </div>
+        <Composer key={`${companion.binding?.hostKey}:${companion.sessionId}`} text={text}
+          draft={state.preferences.drafts[state.draftKey] ?? ''} editDraft={state.editDraft}
+          offline={!!companion.binding && companion.status !== 'connected'}
+          sendDisabled={!(state.preferences.drafts[state.draftKey] ?? '').trim() || companion.busy || companion.pending}
+          send={() => {
+            // companionStore.send 在没有 sessionId 时会静默 return（只勾了项目的二维码
+            // 配对就是这个形态）。不把这一档也走 attemptSend 的话，用户看到「已连接」、
+            // 点发送却什么都不发生——无报错、无 pending、草稿不清，只能反复点。
+            if (canAddressSession(companion) && state.route !== 'fixture') void companion.send((state.preferences.drafts[state.draftKey] ?? ''));
+            else state.attemptSend();
+          }}
+          modelLabel={sessionModelLabel} openModel={() => state.openSheet('more')}
+          attach={ports.files && (() => void ports.files!.pick('file').then(picked => { if (picked) void companion.upload(picked); }).catch(error => { if (error instanceof Error && error.message === 'UPLOAD_TOO_LARGE') companionStore.setState({ commandError: 'UPLOAD_TOO_LARGE' }); }))}
+          attachDisabled={!canAddressSession(companion) || companion.busy || companion.pending}
+          recorder={companion.sessionId ? ports.recorder : undefined}
+          transcribe={audio => companion.transcribe(audio, companion.sessionId!, companion.binding!.hostKey)}
+          voiceDisabled={companion.status !== 'connected' || companion.busy || companion.pending}
+          voicePending={companion.pending} voiceOutcome={companion.voiceOutcome}
+          onRecording={active => { recording.current = active; }} />
       </div>
     </main>
     {state.drawer && <div className="drawer-layer" inert={!!state.sheet}>

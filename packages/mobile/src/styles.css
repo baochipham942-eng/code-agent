@@ -1,5 +1,5 @@
-:root { font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif; color: var(--text); background: var(--bg); color-scheme: light; --bg: #fff; --text: #161616; --muted: #65656b; --group: #f3f3f6; --line: #e5e5ea; --surface: #fff; --scrim: #0006; }
-:root[data-theme='dark'] { color-scheme: dark; --bg: #171719; --text: #f5f5f7; --muted: #b0b0b6; --group: #262629; --line: #3b3b3f; --surface: #212124; --scrim: #0009; }
+:root { font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif; color: var(--text); background: var(--bg); color-scheme: light; --bg: #fff; --text: #161616; --muted: #65656b; --group: #f3f3f6; --line: #e5e5ea; --surface: #fff; --scrim: #0006; --accent: #0f766e; }
+:root[data-theme='dark'] { color-scheme: dark; --bg: #171719; --text: #f5f5f7; --muted: #b0b0b6; --group: #262629; --line: #3b3b3f; --surface: #212124; --scrim: #0009; --accent: #35b3a4; }
 /* Native MainActivity injects --safe-area-inset-* (Android WebView 95 has no env()); iOS falls back to env(). Single source: never combine both. */
 :root { --safe-top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px)); --safe-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)); }
 * { box-sizing: border-box; }
@@ -17,12 +17,22 @@ button:focus-visible,input:focus-visible,textarea:focus-visible { outline: 2px s
 h1 { font-size: 27px; line-height: 1.3; letter-spacing: -.7px; text-align: center; font-weight: 600; }
 h2 { font-size: 19px; line-height: 1.35; margin: 0; overflow-wrap: anywhere; }
 p { line-height: 1.5; overflow-wrap: anywhere; }
-.composer-area { flex-shrink: 0; padding: 4px 14px max(10px, var(--safe-bottom)); }
-.composer { border: 1px solid var(--line); background: var(--group); border-radius: 28px; padding: 13px 10px 8px; }
-textarea { display: block; width: 100%; min-height: 48px; max-height: 140px; border: 0; padding: 0 10px; background: transparent; resize: none; line-height: 1.4; font-size: 17px; }
+.composer-area { flex-shrink: 0; padding: 12px 15px max(6px, var(--safe-bottom)); }
+.composer { border: 1px solid var(--line); background: var(--surface); border-radius: 29px; padding: 14px 10px 7px; }
+textarea { display: block; width: 100%; min-height: 65px; max-height: 140px; border: 0; padding: 2px 10px; background: transparent; resize: none; line-height: 1.5; font-size: 17px; }
 textarea::placeholder { color: var(--muted); }
-.composer-actions { display: flex; align-items: center; justify-content: space-between; margin-top: 4px; }
-.composer-actions button { font-size: 26px; border-radius: 50%; }.send,.primary { background: var(--text); color: var(--bg); }
+/* 设计稿的工具行是两簇：左 [添加材料][模型 ⌄]，右 [麦克风][发送]，中间一个弹性空隙。 */
+.composer-tools { display: flex; align-items: center; gap: 0; }
+.composer-tools .spacer { flex: 1; }
+.composer-tools button { border-radius: 50%; }
+.composer-tools .model { display: flex; align-items: center; gap: 3px; min-width: 48px; max-width: 42%; padding: 0 7px; border-radius: 24px; font-size: 12px; color: var(--muted); }
+.composer-tools .model .app-icon { width: 12px; height: 12px; }
+.model-name { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.send,.primary { background: var(--text); color: var(--bg); }
+/* 发送禁用是「还不能发」，不是「坏了」：设计稿用浅底浅箭头，不用整体半透明。 */
+.send:disabled { opacity: 1; color: var(--muted); background: var(--group); }
+.compose-hint { font-size: 12px; color: var(--muted); padding: 0 8px 8px; line-height: 1.5; }
+.voice-notice { display: flex; align-items: center; gap: 8px; }
 .caption,.notice,.group-title { color: var(--muted); font-size: 14px; }.caption { margin: 4px 4px 8px; text-align: center; }.notice { margin: 4px 8px 8px; }
 .drawer-layer,.sheet-layer { position: fixed; inset: 0; height: var(--viewport-height, 100vh); }.drawer-layer { z-index: 10; }.sheet-layer { z-index: 20; }
 .scrim { position: absolute; inset: 0; width: 100%; height: 100%; background: var(--scrim); border-radius: 0; }
@@ -89,21 +99,37 @@ input { width: 100%; padding: 16px; background: var(--surface); border: 1px soli
 select { width: 100%; min-height: 48px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; color: var(--text); background: var(--surface); font: inherit; }
 .library-sheet .settings-group { margin: 10px 0; } .danger { color: #c43b38; } .drawer-history [aria-current='page'] { background: var(--group); }
 
-.voice-card { display: grid; grid-template-columns: 44px minmax(0,1fr) 44px; align-items: center; flex: 1; text-align: center; font-size: 12px; } .voice-card button { font-size: 14px; min-width: 44px; } .voice-card .recording-stop { justify-self: center; width: 48px; background: #c43b38; color: white; border-radius: 50%; }
+.composer.voice-composer { border-radius: 28px; padding: 17px 14px 8px; }
+.voice-source { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+.voice-label { display: flex; gap: 8px; align-items: center; font-size: 14px; margin: 0 4px 12px; }
+.voice-label .flex { flex: 1; min-width: 0; }
+.voice-label .small { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.voice-label .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); flex-shrink: 0; animation: breathe 1.5s ease-in-out infinite; }
+.transcription { font-size: 17px; line-height: 1.7; margin: 8px 4px 14px; min-height: 90px; max-height: 30dvh; overflow: auto; overflow-wrap: anywhere; white-space: pre-wrap; }
+.caret { display: inline-block; width: 2px; height: 16px; background: var(--accent); vertical-align: middle; animation: breathe 1s infinite; }
+.waveform { display: flex; height: 35px; align-items: center; justify-content: center; gap: 4px; margin: 9px 0 14px; }
+.waveform i { width: 3px; border-radius: 3px; background: var(--text); animation: wave 1.1s infinite ease-in-out alternate; }
+/* 停止键严格居中（设计稿 grid 1fr 52px 1fr），取消在左、右侧留同宽占位。 */
+.voice-controls { display: grid; grid-template-columns: 1fr 52px 1fr; align-items: center; }
+.voice-controls .text-btn { justify-self: start; min-width: 48px; padding: 8px 4px; font-size: 15px; color: var(--muted); }
+.voice-controls .record-stop { justify-self: center; width: 52px; height: 52px; min-width: 52px; min-height: 52px; border-radius: 50%; background: var(--text); color: var(--bg); }
+.voice-controls .record-stop .app-icon { width: 18px; height: 18px; }
+.record-stop-placeholder,.voice-control-spacer { display: block; height: 48px; }
+@keyframes wave { 0% { transform: scaleY(.6); } 100% { transform: scaleY(1.1); } }
+@keyframes breathe { 0%,100% { opacity: 1; } 50% { opacity: .45; } }
+@media (prefers-reduced-motion: reduce) { .waveform i,.caret,.voice-label .dot { animation: none; } }
 
 /* AppIcon: 描边图标的尺寸与居中；颜色一律 currentColor，由上下文上色。 */
 .app-icon { width: 20px; height: 20px; display: block; flex: none; }
-.topbar button,.drawer header button,.composer-actions button,.sheet-header button,.voice-card button { display: inline-flex; align-items: center; justify-content: center; }
+.topbar button,.drawer header button,.composer-tools button,.sheet-header button,.voice-controls button { display: inline-flex; align-items: center; justify-content: center; }
 .topbar .app-icon,.drawer header .app-icon { width: 22px; height: 22px; }
-.composer-actions .app-icon { width: 21px; height: 21px; }
+.composer-tools .app-icon { width: 21px; height: 21px; }
 .sheet-header .app-icon { width: 22px; height: 22px; }
 .personal-bar .app-icon { color: var(--muted); }
 .row-detail { display: inline-flex; align-items: center; gap: 4px; }
 .settings-row .app-icon,.profile-card .app-icon { width: 18px; height: 18px; color: var(--muted); }
 .settings-row .app-icon[data-name='check'] { color: var(--text); }
 .connection-check .app-icon { width: 16px; height: 16px; }
-.voice-card .app-icon { width: 20px; height: 20px; }
-.voice-card .recording-stop .app-icon { width: 18px; height: 18px; }
 
 .artifact-card { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; width: 100%; margin: 8px 0; padding: 12px 16px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); text-align: left; }
 .artifact-card span { color: var(--muted); font-size: 13px; }

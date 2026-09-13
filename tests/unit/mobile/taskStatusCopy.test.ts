@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { composerModelLabel, connectionCopy, taskStatusCopy } from '../../../packages/mobile/src/app/MobileRoot';
+import { commandNoticeCopy, composerModelLabel, connectionCopy, taskStatusCopy } from '../../../packages/mobile/src/app/MobileRoot';
 import type { CompanionLibrary } from '../../../src/shared/contract/companionLibrary';
 import { messages } from '../../../packages/mobile/src/i18n';
 
@@ -100,5 +100,28 @@ describe('connectionCopy', () => {
     for (const status of ['offline', 'storageError', 'rejected'] as const) {
       expect(connectionCopy(text, state({ status })).label).not.toBe(text.reconnect);
     }
+  });
+});
+
+describe('通用提示条：转写失败不许和输入区那条叠成两句', () => {
+  const notice = (commandError: string | null, commandErrorAction: string | null, voiceFailureShown: boolean) =>
+    commandNoticeCopy(text, { commandError, commandErrorAction }, voiceFailureShown);
+
+  it.each([
+    ['COMPANION_TRANSCRIPTION_FAILED'],
+    // 结算原样带回真实错误码之后，这些都会出现在 commandError 上——按码名列白名单必漏
+    ['COMPANION_TRANSCRIPTION_UNAVAILABLE'],
+    ['GROQ_RATE_LIMITED'],
+  ])('转写失败码 %s 在输入区正显示它时让位', (code) => {
+    expect(notice(code, 'voice.transcribe', true)).toBeNull();
+  });
+
+  it('输入区手里没有这条失败时不让位——否则它一个落点都没有', () => {
+    expect(notice('COMPANION_TRANSCRIPTION_FAILED', 'voice.transcribe', false)).toBe(text.commandRejected);
+  });
+
+  it('别的动作失败照常报，不被语音那条判据误伤', () => {
+    expect(notice('COMPANION_COMMAND_REJECTED', 'message.send', true)).toBe(text.commandRejected);
+    expect(notice('UPLOAD_TOO_LARGE', 'files.upload', true)).toBe(text.uploadTooLarge);
   });
 });

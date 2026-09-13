@@ -9,16 +9,22 @@ button { min-width: 48px; min-height: 48px; border: 0; background: transparent; 
 button:disabled { opacity: .45; cursor: default; }
 button:focus-visible,input:focus-visible,textarea:focus-visible { outline: 2px solid #668ded; outline-offset: 2px; }
 .app { height: var(--viewport-height, 100vh); overflow: hidden; font-size: 17px; }
-.conversation { display: flex; flex-direction: column; height: 100%; padding-top: var(--safe-top); }
+/* 输入区是浮在会话之上的一层：它的高矮不许改动会话区的可视高度（见 MobileRoot 的 --composer-h）。 */
+.conversation { position: relative; display: flex; flex-direction: column; height: 100%; padding-top: var(--safe-top); }
 .topbar,.drawer header { display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; padding: 6px 14px; }
 .topbar button { font-size: 25px; border-radius: 50%; }
-.welcome { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 16px 28px; overflow: auto; }
+.welcome { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 16px 28px calc(16px + var(--composer-h, 132px)); overflow: auto; }
 .brand-mark { display: block; flex-shrink: 0; }
 h1 { font-size: 27px; line-height: 1.3; letter-spacing: -.7px; text-align: center; font-weight: 600; }
 h2 { font-size: 19px; line-height: 1.35; margin: 0; overflow-wrap: anywhere; }
 p { line-height: 1.5; overflow-wrap: anywhere; }
-.composer-area { flex-shrink: 0; padding: 12px 15px max(6px, var(--safe-bottom)); }
+.composer-area { position: absolute; left: 0; right: 0; bottom: 0; background: var(--bg); padding: 12px 15px max(6px, var(--safe-bottom)); }
 .composer { border: 1px solid var(--line); background: var(--surface); border-radius: 29px; padding: 14px 10px 7px; }
+/* 焦点指示挪到胶囊自己身上：文本框在规范上任何聚焦都命中 :focus-visible（不止键盘），
+   全局那道 2px 直角描边会套在 29px 圆角外面，而且 #668ded 根本不在调色板里。
+   指示本身不能删（键盘可达性），换成胶囊描边变色 + 同色细环，形状跟着圆角走。 */
+.composer:focus-within { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.composer textarea:focus-visible { outline: none; }
 textarea { display: block; width: 100%; min-height: 65px; max-height: 140px; border: 0; padding: 2px 10px; background: transparent; resize: none; line-height: 1.5; font-size: 17px; }
 textarea::placeholder { color: var(--muted); }
 /* 设计稿的工具行是两簇：左 [添加材料][模型 ⌄]，右 [麦克风][发送]，中间一个弹性空隙。 */
@@ -51,9 +57,10 @@ textarea::placeholder { color: var(--muted); }
 .profile-card { display: flex; align-items: center; gap: 12px; width: 100%; padding: 18px 10px; text-align: left; }.profile-card strong { flex: 1; overflow-wrap: anywhere; }
 input { width: 100%; padding: 16px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; font-size: 17px; }.primary { border-radius: 24px; width: 100%; margin-top: 18px; }
 .about { text-align: center; padding: 18px 8px; }.about p { color: var(--muted); }
-.virtual-history { flex: 1; min-height: 0; overflow: auto; overflow-anchor: none; overscroll-behavior: contain; }.history-row { left: 0; right: 0; padding: 16px 24px; border-bottom: 1px solid var(--line); overflow: auto; }.history-row p { margin: 8px 0; color: var(--muted); font-size: 15px; }
+.virtual-history { flex: 1; min-height: 0; overflow: auto; overflow-anchor: none; overscroll-behavior: contain; padding-bottom: var(--composer-h, 132px); }.history-row { left: 0; right: 0; padding: 16px 24px; border-bottom: 1px solid var(--line); overflow: auto; }.history-row p { margin: 8px 0; color: var(--muted); font-size: 15px; }
 .loading { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 30px; }
-@media (max-height: 520px) { .welcome { padding: 4px 20px; }.welcome .brand-mark { display: none; }h1 { font-size: 21px; margin: 10px; }.composer textarea { min-height: 28px; max-height: 80px; }.composer { padding-top: 8px; } }
+/* 矮屏也要给浮层留底：只压上下留白，不能把 --composer-h 那份让位一起压掉（grok ai-review Nit）。 */
+@media (max-height: 520px) { .welcome { padding: 4px 20px calc(4px + var(--composer-h, 132px)); }.welcome .brand-mark { display: none; }h1 { font-size: 21px; margin: 10px; }.composer textarea { min-height: 28px; max-height: 80px; }.composer { padding-top: 8px; } }
 .lan-messages { flex: 1; min-height: 0; overflow: auto; padding: 16px; }
 .lan-message { white-space: pre-wrap; overflow-wrap: anywhere; padding: 12px; line-height: 1.6; }
 .lan-message.from-user { margin-left: 24px; background: var(--surface); border-radius: 16px; }
@@ -76,10 +83,13 @@ input { width: 100%; padding: 16px; background: var(--surface); border: 1px soli
 .status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); }
 [data-connected='true'] .status-dot { background: #168365; }
 .message-region { position: relative; display: flex; flex: 1; min-height: 0; }
-.lan-messages { overscroll-behavior: contain; padding: 8px 20px 20px; }
+/* 底部让出输入区那一层的高度。--composer-h 还没量到时用一个够大的兜底，宁可多留白也别被盖住。 */
+.lan-messages { overscroll-behavior: contain; padding: 8px 20px calc(20px + var(--composer-h, 132px)); }
 .lan-message { padding: 8px 0; margin: 12px 0 22px; line-height: 1.7; font-size: 16px; }
 .lan-message.from-user { width: fit-content; max-width: 88%; margin-left: auto; background: var(--group); padding: 12px 16px; border-radius: 22px; }
-.jump-latest { position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); background: var(--surface); border: 1px solid var(--line); box-shadow: 0 3px 12px #0001; border-radius: 24px; font-size: 13px; padding: 6px 16px; }
+/* message-region 现在一直铺到会话底边（输入区是浮层，不占流），所以这颗按钮也要避开那一层，
+   否则它正好落在输入区后面，用户滚上去看历史时点不到（grok ai-review Important）。 */
+.jump-latest { position: absolute; bottom: calc(10px + var(--composer-h, 132px)); left: 50%; transform: translateX(-50%); background: var(--surface); border: 1px solid var(--line); box-shadow: 0 3px 12px #0001; border-radius: 24px; font-size: 13px; padding: 6px 16px; }
 .approval-card { background: var(--surface); border-color: var(--line); }
 .approval-tray .approval-card { padding: 12px; border: 1px solid var(--line); box-shadow: 0 2px 12px #0001; max-height: min(300px, 38dvh); }
 .approval-card > strong { font-size: 14px; }

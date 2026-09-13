@@ -104,8 +104,9 @@ describe('Composer 布局契约（design.html composer()）', () => {
     expect(screen.getByText(text.voiceListening)).toBeTruthy();
     expect(screen.getByText('00:00')).toBeTruthy();
     expect(document.querySelectorAll('.waveform i').length).toBe(38);
-    // 识别文字区显示的就是最终会留在输入框里的那段草稿
-    expect(document.querySelector('.transcription')?.textContent).toContain('已经写了一半');
+    // 识别文字区只显示**这一次录音**识别出来的部分：录音前用户自己打的字不许出现在这里，
+    // 否则看起来像是刚刚识别出来的（2026-09-13 爸真机推翻了 09-12 我自己定的「显示整条草稿」）。
+    expect(document.querySelector('.transcription')?.textContent).toBe('');
     expect(screen.queryByTestId('draft')).toBeNull();
     expect(document.querySelector('.composer-tools')).toBeNull();
     expect(document.querySelector('.composer')?.className).toContain('voice-composer');
@@ -180,8 +181,11 @@ describe('VoiceCapture failure reporting', () => {
 // 这个 Harness 照搬 companionStore 的真实时序：transcribe 进了待确认槽就回 commandId、
 // pending=true，主机结算后才 pending=false + 一条**认 commandId** 的 result。
 // 协议一次只允许一条在飞，所以队列必须串行。
-function ChunkHarness({ sent, verdict = () => 'done' as const, refuseFirst = false, refuseAll = false, ackDelay = 10, ready = true, onStart, stopDelay = 0, sendDelay = 0 }: {
-  sent: (audioData: string, continuation: boolean, take?: string) => void; verdict?: (seq: number) => 'done' | 'error';
+function ChunkHarness({ sent, verdict = () => 'done' as const, refuseFirst = false, refuseAll = false, ackDelay = 10, ready = true, onStart, stopDelay = 0, sendDelay = 0, initialDraft = '' }: {
+  sent: (audioData: string, continuation: boolean, take?: string) => void;
+  /** 'silent' = 主机回「这段没人说话」（HALLUCINATION / EMPTY_RESULT），不是失败。 */
+  verdict?: (seq: number) => 'done' | 'error' | 'silent';
+  initialDraft?: string;
   refuseFirst?: boolean; refuseAll?: boolean; ackDelay?: number; ready?: boolean; onStart?: () => void;
   /** recorder.stop() 的耗时（真机切口 ~0.32s）。 */
   stopDelay?: number;
@@ -190,7 +194,7 @@ function ChunkHarness({ sent, verdict = () => 'done' as const, refuseFirst = fal
 }) {
   const [pending, setPending] = React.useState(false);
   const [result, setResult] = React.useState<VoiceResult | null>(null);
-  const [draft, setDraft] = React.useState('');
+  const [draft, setDraft] = React.useState(initialDraft);
   const seq = React.useRef(0);
   const refused = React.useRef(false);
   /** 照搬 companionStore 的取消语义：被取消的那**次录音**，晚到结果一律不写进草稿。 */
@@ -212,6 +216,7 @@ function ChunkHarness({ sent, verdict = () => 'done' as const, refuseFirst = fal
     const settle = () => {
       const outcome = verdict(n);
       if (outcome === 'done' && discarded.current !== take) setDraft(previous => previous + `段${n}`);
+      // 静音段主机不回文本，草稿一个字都不动——分片下这是常态，不是丢片。
       setResult({ commandId, outcome }); setPending(false);
     };
     // ackDelay=0 走真机常态那条路：deliver 当场就把 ack 带回来，结果比 commandId 还早进 store，
@@ -558,5 +563,58 @@ describe('一次录音是显式对象 + 代号：所有异步续段先比代号'
     fireEvent.click(screen.getByRole('button', { name: text.retry }));
     await advance(6_000);
     expect(sent.mock.calls.length - before).toBe(2);
+  });
+});
+
+describe('build 27 真机四条（爸 2026-09-13）', () => {
+  afterEach(() => { vi.useRealTimers(); cleanup(); });
+
+  it('静音段不是失败：不报错、不计丢片、不进重试队列，面板照常收口', async () => {
+    // Host 的幻觉护栏在 4 秒分片下是常态开火——真机 30 段命中 13 段（43%）。
+    // 把它当失败的话，用户每隔几秒看到一次「转写未完成 / 有片段没转成文字」，
+    // 重试还会把一堆静音再传一遍。
+    vi.useFakeTimers();
+    const sent = vi.fn();
+    render(<ChunkHarness sent={sent} verdict={n => (n === 2 ? 'silent' : 'done')} />);
+    fireEvent.click(screen.getByRole('button', { name: text.voice }));
+    await advance(10_000);
+    fireEvent.click(screen.getByRole('button', { name: text.stopRecording }));
+    await advance(2_000);
+    expect(screen.getByTestId('draft')).toBeTruthy();
+    expect(screen.queryByText(new RegExp(text.voiceChunkDropped))).toBeNull();
+    expect(screen.queryByText(new RegExp(text.voiceTranscribeFailed))).toBeNull();
+    expect(screen.queryByRole('button', { name: text.retry })).toBeNull();
+    // 说了话的那几段照常成文
+    expect((screen.getByTestId('draft') as HTMLTextAreaElement).value).toContain('段1');
+  });
+
+  it('整段全是静音也只是干净收口，不留一个报错卡在那儿', async () => {
+    vi.useFakeTimers();
+    const sent = vi.fn();
+    render(<ChunkHarness sent={sent} verdict={() => 'silent'} />);
+    fireEvent.click(screen.getByRole('button', { name: text.voice }));
+    await advance(6_000);
+    fireEvent.click(screen.getByRole('button', { name: text.stopRecording }));
+    await advance(2_000);
+    expect(screen.getByTestId('draft')).toBeTruthy();
+    expect(document.querySelector('.voice-composer')).toBeNull();
+    expect(document.querySelector('.voice-notice')).toBeNull();
+  });
+
+  it('录音面板只显示这一次识别出来的字，录音前已有的草稿不许混进识别区', async () => {
+    vi.useFakeTimers();
+    const sent = vi.fn();
+    render(<ChunkHarness sent={sent} initialDraft="我之前自己打的字" />);
+    fireEvent.click(screen.getByRole('button', { name: text.voice }));
+    await advance(6_000);
+    const shown = document.querySelector('.transcription')?.textContent ?? '';
+    expect(shown).not.toContain('我之前自己打的字');
+    expect(shown).toContain('段1');
+    // 输入框里两段都得在——面板只是显示范围变了，不是把用户的字弄丢了
+    fireEvent.click(screen.getByRole('button', { name: text.stopRecording }));
+    await advance(2_000);
+    const draft = (screen.getByTestId('draft') as HTMLTextAreaElement).value;
+    expect(draft).toContain('我之前自己打的字');
+    expect(draft).toContain('段1');
   });
 });

@@ -5,6 +5,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { GUMMY_REALTIME_PRESTART_FRAME_LIMIT, GUMMY_REALTIME_SAMPLE_RATE } from '../../../shared/constants/voice';
+import { COMPANION_LIMITS } from '../../../shared/constants/companion';
 import type { CompanionDictationEvent } from '../../../shared/contract/companionDictation';
 import type { CompanionDictationPort } from '../capabilities/hostCapabilityPorts';
 import { getDashscopeApiKey } from '../media/imageGenerationService';
@@ -101,8 +102,13 @@ export function createCompanionDictationRelay(): CompanionDictationPort {
       if (session?.streamId !== streamId) {
         return { ok: false, code: 'COMPANION_DICTATION_INACTIVE', events: [] };
       }
+      const deadline = Date.now() + Math.max(0, COMPANION_LIMITS.requestTimeoutMs - 2_000);
+      while (!session.handle && Date.now() < deadline && sessions.get(deviceId) === session) {
+        await new Promise(resolve => setTimeout(resolve, 50));
+      }
       try {
         if (session.handle) await session.handle.finish();
+        else session.events.push({ type: 'error', code: 'SPEECH_NO_CHANNEL', message: 'upstream connect incomplete' });
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Gummy realtime finish failed';
         session.events.push({ type: 'error', code: 'SPEECH_NO_CHANNEL', message });

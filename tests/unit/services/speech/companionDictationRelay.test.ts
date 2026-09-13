@@ -103,6 +103,34 @@ describe('companionDictationRelay', () => {
     });
   });
 
+  it('stop waits for a late handshake and flushes PCM buffered during connect', async () => {
+    let releaseConnect: (() => void) | undefined;
+    transport.connect.mockImplementationOnce(async (options: {
+      onTranscript: typeof transport.onTranscript;
+      onError: typeof transport.onError;
+    }) => {
+      await new Promise<void>(resolve => { releaseConnect = resolve; });
+      transport.onTranscript = options.onTranscript;
+      transport.onError = options.onError;
+      return {
+        sendAudio: transport.sendAudio,
+        finish: transport.finish,
+        close: transport.close,
+      };
+    });
+    const port = createCompanionDictationRelay();
+    const opened = await port.open('device-1');
+    if (!opened.ok) throw new Error('expected open');
+    const pcm = Buffer.from([1, 0, 2, 0]);
+    expect(port.audio('device-1', opened.streamId, pcm)).toEqual({ ok: true, events: [] });
+    expect(transport.sendAudio).not.toHaveBeenCalled();
+    const stopping = port.stop('device-1', opened.streamId);
+    releaseConnect?.();
+    await stopping;
+    expect(transport.sendAudio).toHaveBeenCalledWith(pcm);
+    expect(transport.finish).toHaveBeenCalled();
+  });
+
   it('release closes the upstream without waiting for finish', async () => {
     const port = createCompanionDictationRelay();
     await port.open('device-1');

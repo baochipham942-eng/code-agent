@@ -388,7 +388,8 @@ async function resolveProvenance(provider: string, model: string): Promise<EvalR
   const status = await gitOutput(['-C', projectRoot, 'status', '--porcelain']);
   const dirty: boolean | 'unresolved' = status === null ? 'unresolved' : status !== '';
   let runnerSha = 'unresolved';
-  try { runnerSha = crypto.createHash('sha256').update(await fs.readFile(__filename)).digest('hex').slice(0, 12); } catch { /* unresolved is retained */ }
+  // __filename 在 ESM（npx tsx 直跑）下不存在⇒ #1765 起 runnerSha 一直是 'unresolved'，vitest 的 CJS 垫片把它遮住了
+  try { runnerSha = crypto.createHash('sha256').update(await fs.readFile(fileURLToPath(import.meta.url))).digest('hex').slice(0, 12); } catch { /* unresolved is retained */ }
   const endpoint = getProviderEndpointHost(provider) ?? 'unresolved';
   return { provider, model, endpoint, gitSha, gitDirty: dirty, runnerSha };
 }

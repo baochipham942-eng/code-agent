@@ -320,6 +320,11 @@ export class CompanionGateway {
     return !!this.db.prepare('SELECT 1 FROM companion_devices WHERE revoked_at IS NULL LIMIT 1').get();
   }
 
+  /** True when at least one unrevoked device canAccessSession(sessionId). */
+  hasLiveDeviceForSession(sessionId: string): boolean {
+    return this.activeDevices().some(device => this.canAccessSession(device.deviceId, sessionId));
+  }
+
   forgetSession(sessionId: string): void {
     this.db.prepare('DELETE FROM companion_events WHERE session_id = ?').run(sessionId);
     this.db.prepare('DELETE FROM companion_decisions WHERE session_id = ?').run(sessionId);

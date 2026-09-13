@@ -26,11 +26,15 @@ export class CompanionQuestionService implements UserQuestionRoute {
   constructor(private readonly gateway: CompanionGateway) {}
 
   canOffer(sessionId: string | undefined): boolean {
-    return Boolean(sessionId && this.gateway.hasLiveDevices());
+    // Tools that omit sessionId never had a companion session to scope against.
+    // Keep the old "cannot offer" answer; claiming them would hang the prompt
+    // (offer=true, phone sync filters them out) until timeout.
+    if (!sessionId) return false;
+    return this.gateway.hasLiveDeviceForSession(sessionId);
   }
 
   offer(request: UserQuestionRequest, respond: (response: UserQuestionResponse) => void): boolean {
-    if (!request.sessionId || !this.gateway.hasLiveDevices()) return false;
+    if (!request.sessionId || !this.gateway.hasLiveDeviceForSession(request.sessionId)) return false;
     if (!this.card(request)) return false;
     this.offered.set(request.id, { request, sessionId: request.sessionId, respond });
     this.refresh();

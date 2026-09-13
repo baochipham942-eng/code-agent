@@ -238,6 +238,48 @@ describe('companion question and plan cards use the desktop decision points', ()
     }
   });
 
+  it('does not offer a question for a session no live phone can access', () => {
+    const other: UserQuestionRequest = { ...questionRequest, id: 'q-other', sessionId: 'unshared' };
+    expect(questions.canOffer('unshared')).toBe(false);
+    expect(questions.canOffer(undefined)).toBe(false);
+    expect(questions.offer(other, () => {})).toBe(false);
+    expect(gateway.getDecision('q-other')).toBeNull();
+    expect(canOfferRegisteredUserQuestion('unshared')).toBe(false);
+    expect(canOfferRegisteredUserQuestion(undefined)).toBe(false);
+    expect(questions.canOffer(sessionId)).toBe(true);
+    expect(questions.offer(questionRequest, () => {})).toBe(true);
+    expect(gateway.getDecision('q-1')).toMatchObject({ status: 'pending', kind: 'question' });
+    expect(gateway.syncForDevice('phone', 1, 0).events.some(event => event.kind === 'question' && event.sessionId === sessionId)).toBe(true);
+  });
+
+  it('does not project a plan for a session no live phone can access', async () => {
+    vi.useFakeTimers();
+    const otherScope: SwarmRunScope = { sessionId: 'unshared', runId: 'run-other', treeId: 'tree-other' };
+    gate.submitForApproval({
+      agentId: 'agent-1', agentName: 'Coder', coordinatorId: 'coord',
+      plan: 'secret plan for B', risk: { level: 'medium', reasons: ['Dangerous command: rm'] },
+      scope: otherScope,
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    plans.refresh();
+    const otherId = gate.getPendingPlans(otherScope)[0].id;
+    expect(gateway.getDecision(otherId)).toBeNull();
+    expect(db.prepare("SELECT COUNT(*) AS n FROM companion_events WHERE kind = 'plan'").get()).toEqual({ n: 0 });
+    expect(gate.getPendingPlans(otherScope)).toHaveLength(1);
+
+    gate.submitForApproval({
+      agentId: 'agent-2', agentName: 'Coder', coordinatorId: 'coord',
+      plan: 'shared plan for A', risk: { level: 'medium', reasons: ['Dangerous command: rm'] },
+      scope,
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    plans.refresh();
+    const sharedId = gate.getPendingPlans(scope)[0].id;
+    expect(gateway.getDecision(sharedId)).toMatchObject({ status: 'pending', kind: 'plan' });
+    expect(gateway.syncForDevice('phone', 1, 0).events.some(event => event.kind === 'plan' && event.sessionId === sessionId)).toBe(true);
+    vi.useRealTimers();
+  });
+
   it('companion still receives questions when the voice bridge is registered but not bound', () => {
     const cleanupVoice = registerUserQuestionRoute({
       canOffer: () => false,

@@ -140,6 +140,29 @@ describe('CompanionGateway', () => {
     expect(db.prepare('SELECT COUNT(*) AS n FROM companion_events').get()).toEqual({ n: 0 });
   });
 
+  it('hasLiveDeviceForSession follows canAccessSession, not mere device presence', () => {
+    expect(gateway.hasLiveDeviceForSession('session-1')).toBe(true);
+    expect(gateway.hasLiveDeviceForSession('session-2')).toBe(false);
+    gateway.revokeDevice('phone-1', 1100);
+    expect(gateway.hasLiveDeviceForSession('session-1')).toBe(false);
+  });
+
+  it('hasLiveDeviceForSession admits a project grant the same way canAccessSession does', () => {
+    db.close();
+    db = new Database(':memory:');
+    gateway = new CompanionGateway(db, {
+      now: () => 1000,
+      sessionProject: id => id === 'member' ? 'one' : null,
+    });
+    gateway.registerDevice({
+      deviceId: 'phone-p', credentialHash: 'hash-p', scopeEpoch: 1,
+      scope: ['project:one'], revokedAt: null,
+    });
+    expect(gateway.hasLiveDeviceForSession('member')).toBe(true);
+    expect(gateway.hasLiveDeviceForSession('other')).toBe(false);
+    expect(gateway.canAccessSession('phone-p', 'member')).toBe(true);
+  });
+
   it('physically deletes companion_events when a session is forgotten', () => {
     gateway.publish('session-1', 'message', { content: 'secret-body' });
     gateway.publish('session-1', 'tool_call_start', { id: 't1', name: 'read_file' });

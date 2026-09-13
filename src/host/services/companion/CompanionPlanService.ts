@@ -57,6 +57,7 @@ export class CompanionPlanService {
     const live = this.pending();
     const displayable = new Set<string>();
     for (const request of live) {
+      if (!this.gateway.hasLiveDeviceForSession(request.sessionId)) continue;
       const card = this.card(request);
       if (!card) continue;
       const { preview, sessionId } = card;

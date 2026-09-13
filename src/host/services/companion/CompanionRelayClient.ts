@@ -1,4 +1,5 @@
 import WebSocket from 'ws';
+import { randomBytes } from 'node:crypto';
 import type { KeyPair } from 'noise-handshake';
 import { COMPANION_LIMITS as L } from '../../../shared/constants/companion';
 import { createHandshake, NoiseChannel } from '../../../shared/companion/noiseChannel';
@@ -66,6 +67,20 @@ export class CompanionRelayClient {
   advertise(route: CompanionRelayRoute): void {
     this.routes.set(route.deviceRef, route);
     if (this.socket?.readyState === WebSocket.OPEN) this.sendRegister(route);
+  }
+
+  routeTokenFor(deviceRef: string): string | null {
+    return this.routes.get(deviceRef)?.routeToken ?? null;
+  }
+
+  private bindPairedDevices(): void {
+    for (const device of this.deps.gateway.pairedDevices()) {
+      if (this.routes.has(device.deviceId)) continue;
+      this.advertise({
+        deviceRef: device.deviceId,
+        routeToken: randomBytes(24).toString('base64url'),
+      });
+    }
   }
 
   async start(): Promise<void> {
@@ -170,6 +185,7 @@ export class CompanionRelayClient {
         this.controlSeq = 0;
         this.peerSeq.clear();
         this.dropSessions();
+        this.bindPairedDevices();
         for (const route of this.routes.values()) this.sendRegister(route);
         if (this.socket?.readyState === WebSocket.OPEN) {
           for (const frame of this.buffer.drain()) this.socket.send(JSON.stringify(frame));
@@ -208,6 +224,7 @@ export class CompanionRelayClient {
 
   private beat(): void {
     if (this.socket?.readyState !== WebSocket.OPEN) return;
+    this.bindPairedDevices();
     for (const route of this.routes.values()) {
       this.push({ v: 1, kind: 'heartbeat', envelope: this.controlEnvelope(route), ciphertext: '' });
     }

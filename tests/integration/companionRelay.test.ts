@@ -122,6 +122,23 @@ describe('companion relay: loopback fake relay + host dial-out', () => {
     expect(executions).toBe(0);
   });
 
+  it('registers already-paired devices on dial-out without a prior advertise', async () => {
+    await host.stop();
+    const paired = gateway.pairedDevices()[0];
+    if (!paired) throw new Error('expected a paired device');
+    const client = new CompanionRelayClient({
+      gateway,
+      identity: hostIdentity,
+      config: { url: relay.url, credentialRef: 'companion-relay', reconnectBackoffMs: [30, 60, 120] },
+      credential: SECRET,
+      jitter: () => 0.5,
+    });
+    await client.start();
+    expect(client.routeTokenFor(paired.deviceId)).toMatch(/^[A-Za-z0-9_-]{16,}$/);
+    await vi.waitFor(() => expect(relay.routeCount).toBeGreaterThan(0));
+    await client.stop();
+  });
+
   it('does not queue without bound while disconnected', async () => {
     const oversized = {
       v: 1 as const, kind: 'forward' as const,

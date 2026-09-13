@@ -1,20 +1,30 @@
 import { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
-import { COMPANION_MANAGE_CHANNEL } from '@shared/constants/companion';
-import type { CompanionManagementResult } from '@shared/contract/companionManagement';
+import { COMPANION_LIMITS, COMPANION_MANAGE_CHANNEL } from '@shared/constants/companion';
+import { hasFullProjectScope, projectScope } from '@shared/contract/companionLibrary';
+import type { CompanionManagementResult, CompanionPairedDevice } from '@shared/contract/companionManagement';
 import { invoke } from '../../../../services/ipcService';
 import { useI18n } from '../../../../hooks/useI18n';
-import { companionText } from '../../../../i18n/companion';
+import { companionErrorCopy, companionText } from '../../../../i18n/companion';
 import { Button } from '../../../primitives';
 import { SettingsSection } from '../SettingsLayout';
 
+type Status = Extract<CompanionManagementResult, { kind: 'status' }>;
+type Copy = (typeof companionText)['zh'];
+
 export function CompanionSection() {
-  const { language } = useI18n(); const text = companionText[language];
-  const [status, setStatus] = useState<Extract<CompanionManagementResult, { kind: 'status' }> | null>(null);
-  const [scope, setScope] = useState<string[]>([]);
+  const { language } = useI18n();
+  const text = companionText[language];
+  const locale = language === 'en' ? 'en-US' : 'zh-CN';
+  const [status, setStatus] = useState<Status | null>(null);
   const [qr, setQr] = useState<{ image: string; expiresAt: number } | null>(null);
-  const [busy, setBusy] = useState(false); const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [expired, setExpired] = useState(false);
+  const projects = status?.projects ?? [];
+  const grants = projectScope(projects).slice(0, COMPANION_LIMITS.maxScopeSessions);
+  const capped = (status?.projects?.length ?? 0) > grants.length;
+  const canInvite = !!status && grants.length > 0;
   const refresh = async () => {
     const result = await invoke(COMPANION_MANAGE_CHANNEL, { action: 'status' });
     if (result?.kind !== 'status') throw new Error('COMPANION_UNAVAILABLE');
@@ -22,8 +32,20 @@ export function CompanionSection() {
   };
   const run = async (work: () => Promise<void>) => {
     setBusy(true); setError(null);
-    try { await work(); } catch (caught) { const detail = caught instanceof Error ? caught.message : String(caught); console.error('[companion] management failed', caught); setError(detail || 'UNKNOWN_ERROR'); } finally { setBusy(false); }
+    try { await work(); } catch (caught) {
+      const detail = caught instanceof Error ? caught.message : String(caught);
+      console.error('[companion] management failed', caught);
+      setError(companionErrorCopy(text, detail || 'UNKNOWN_ERROR'));
+    } finally { setBusy(false); }
   };
+  const invite = () => void run(async () => {
+    if (!grants.length) return;
+    setQr(null); setExpired(false);
+    const result = await invoke(COMPANION_MANAGE_CHANNEL, { action: 'invite', scope: grants });
+    if (result.kind !== 'invitation') throw new Error('COMPANION_UNAVAILABLE');
+    const image = await QRCode.toDataURL(JSON.stringify(result.invitation), { width: 320, margin: 2, errorCorrectionLevel: 'M' });
+    setQr({ image, expiresAt: result.invitation.expiresAt });
+  });
   useEffect(() => { void run(refresh); }, []);
   useEffect(() => {
     if (!qr) return;
@@ -31,38 +53,53 @@ export function CompanionSection() {
     return () => clearTimeout(timer);
   }, [qr]);
   return <SettingsSection title={text.title} description={text.description}>
-    <fieldset disabled={busy} className="space-y-3">
-      <legend className="text-sm mb-2">{text.scope}</legend>
-      {status?.sessions.length === 0 && <p>{text.empty}</p>}
-      {status?.sessions.map(session => <label key={session.id} className="flex gap-2 text-sm">
-        <input type="checkbox" checked={scope.includes(session.id)} onChange={event => {
-          setScope(event.target.checked ? [...scope, session.id] : scope.filter(id => id !== session.id)); setQr(null);
-        }} />{session.title}
-      </label>)}
-      <p className="text-sm">{text.projectScope}</p>
-      {status?.projects?.map(project => <label key={project.id} className="flex gap-2 text-sm">
-        <input type="checkbox" checked={scope.includes(`project:${project.id}`)} onChange={event => {
-          const grant = `project:${project.id}`;
-          setScope(event.target.checked ? [...scope, grant] : scope.filter(id => id !== grant)); setQr(null);
-        }} />{project.name}
-      </label>)}
-      <div className="flex gap-3"><Button variant="primary" size="sm" loading={busy} disabled={!scope.length || busy} onClick={() => void run(async () => {
-        setQr(null); setExpired(false);
-        const result = await invoke(COMPANION_MANAGE_CHANNEL, { action: 'invite', scope });
-        if (result.kind !== 'invitation') throw new Error('COMPANION_UNAVAILABLE');
-        const image = await QRCode.toDataURL(JSON.stringify(result.invitation), { width: 320, margin: 2, errorCorrectionLevel: 'M' });
-        setQr({ image, expiresAt: result.invitation.expiresAt });
-      })}>{busy ? text.working : text.create}</Button>
-        <Button variant="secondary" size="sm" onClick={() => void run(refresh)}>{text.refresh}</Button></div>
-      {qr && <div><img src={qr.image} alt={text.qr} width={320} height={320} /><p>{text.expires}</p></div>}
-      {expired && <p role="status">{text.expired}</p>}
-      {!!status?.devices.length && <p>{text.devices}</p>}
-      {status?.devices.map((device, index) => <div key={device.deviceId} className="flex gap-3 text-sm">
-        <span>{text.phone} {index + 1}</span><Button variant="danger" size="sm" onClick={() => void run(async () => {
-          await invoke(COMPANION_MANAGE_CHANNEL, { action: 'revoke', deviceId: device.deviceId }); await refresh();
-        })}>{text.revoke}</Button>
-      </div>)}
-      {error && <p role="alert">{text.error} <code>{error}</code></p>}
+    <fieldset disabled={busy} className="space-y-4">
+      {status && !projects.length && <p className="text-sm text-zinc-400">{text.empty}</p>}
+      {capped && <p role="status">{text.scopeCapped}</p>}
+      <div className="flex flex-wrap items-start gap-5">
+        {qr && <img src={qr.image} alt={text.qr} width={320} height={320} className="rounded-lg bg-white p-2" />}
+        <div className="space-y-2 text-sm">
+          <p>{text.scanHint}</p>
+          {/* LanInvitation has no verification-code field; protocol change is a separate ticket. */}
+          <p className="text-xs text-zinc-500">{qr ? text.expires : expired ? text.expired : text.expires}</p>
+          <div className="flex flex-wrap gap-3">
+            <Button variant="primary" size="sm" loading={busy} disabled={!canInvite || busy} onClick={invite}>
+              {busy ? text.working : qr || expired ? text.regenerate : text.create}
+            </Button>
+            <Button variant="secondary" size="sm" onClick={() => void run(refresh)}>{text.refresh}</Button>
+          </div>
+        </div>
+      </div>
+      {expired && !qr && <p role="status">{text.expired}</p>}
+      <p className="text-xs text-zinc-500">{text.awayHint}</p>
+      <div className="space-y-2">
+        <p className="text-sm font-medium text-zinc-200">{text.devices}</p>
+        {status && !status.devices.length && <p className="text-sm text-zinc-400">{text.noDevices}</p>}
+        {status?.devices.map((device, index) => (
+          <DeviceRow key={device.deviceId} device={device} index={index} projects={projects} text={text} locale={locale}
+            busy={busy} onRevoke={() => void run(async () => {
+              await invoke(COMPANION_MANAGE_CHANNEL, { action: 'revoke', deviceId: device.deviceId });
+              await refresh();
+            })} />
+        ))}
+      </div>
+      {error && <p role="alert">{error}</p>}
     </fieldset>
   </SettingsSection>;
+}
+
+function DeviceRow({ device, index, projects, text, locale, busy, onRevoke }: {
+  device: CompanionPairedDevice; index: number; projects: { id: string; name: string }[];
+  text: Copy; locale: string; busy: boolean; onRevoke: () => void;
+}) {
+  const full = hasFullProjectScope(device.scope, projects);
+  return <div className="flex flex-wrap items-start justify-between gap-3 text-sm">
+    <div className="space-y-1">
+      <p>{device.name?.trim() || `${text.phone} ${index + 1}`}</p>
+      {device.pairedAt != null && <p className="text-xs text-zinc-500">{text.pairedAt} {new Date(device.pairedAt).toLocaleString(locale)}</p>}
+      <p className="text-xs text-zinc-400">{full ? text.scopeAll : text.scopeLimited}</p>
+      {!full && <p className="text-xs text-zinc-500">{text.legacyScope}</p>}
+    </div>
+    <Button variant="danger" size="sm" disabled={busy} onClick={onRevoke}>{text.revoke}</Button>
+  </div>;
 }

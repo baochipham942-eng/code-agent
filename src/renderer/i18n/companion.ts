@@ -1,18 +1,71 @@
 export const companionText = {
   zh: {
-    projectScope: '可选：允许管理所选项目中的会话（含新建、历史、重命名和删除）。未勾选的项目不会共享。',
-    title: '连接手机', description: '手机和电脑连接同一网络，在手机 Neo 中扫描二维码。电脑需要保持开启。',
-    scope: '允许手机访问的会话', create: '生成配对二维码', refresh: '刷新', empty: '先创建一个会话，再连接手机。',
-    qr: 'Neo 手机配对二维码', expires: '二维码两分钟内有效，配对成功后失效。', expired: '二维码已过期，请重新生成。',
-    devices: '已配对手机', revoke: '撤销连接', error: '连接设置暂不可用，请确认电脑已连接局域网后重试。',
-    phone: '手机', working: '正在处理',
+    title: '连接手机',
+    description: '让手机接着处理电脑上的工作。手机和电脑需连接同一网络，电脑需要保持开启。',
+    scanHint: '打开手机 Neo，扫描此码',
+    create: '生成配对二维码',
+    regenerate: '重新生成二维码',
+    refresh: '刷新',
+    empty: '先在电脑上创建一个项目，再连接手机。',
+    qr: 'Neo 手机配对二维码',
+    expires: '2 分钟内有效 · 仅可使用一次',
+    expired: '二维码已过期，请重新生成。',
+    devices: '已配对设备',
+    noDevices: '还没有配对的手机。',
+    revoke: '撤销连接',
+    error: '连接设置暂不可用，请确认电脑已连接局域网后重试。',
+    errorLan: '当前没有可用的局域网地址，请确认电脑已连接网络后重试。',
+    errorScope: '这次邀请无法覆盖全部项目，请刷新后重试。',
+    scopeCapped: '项目数量超过这次邀请的上限，将只授权列表中的前一部分。其余项目需之后重新配对。',
+    errorSession: '项目列表已变化，请刷新后重新生成。',
+    errorUnavailable: '连接服务暂不可用，请稍后重试。',
+    phone: '手机',
+    working: '正在处理',
+    awayHint: '外出使用时，请保持电脑开机、联网并运行 Neo。',
+    scopeAll: '全部会话',
+    scopeLimited: '部分会话',
+    legacyScope: '旧授权范围，重新配对可覆盖全部会话',
+    pairedAt: '配对时间',
   },
   en: {
-    projectScope: 'Optional: manage conversations in selected projects, including creation, history, rename and deletion. Unchecked projects stay private.',
-    title: 'Connect a phone', description: 'Connect both devices to the same network and scan this code in Neo on your phone. Keep this computer on.',
-    scope: 'Conversations this phone can access', create: 'Create pairing code', refresh: 'Refresh', empty: 'Create a conversation before connecting your phone.',
-    qr: 'Neo phone pairing code', expires: 'Valid for two minutes and one pairing.', expired: 'Code expired. Create a new code.',
-    devices: 'Paired phones', revoke: 'Revoke connection', error: 'Connection settings unavailable. Check the local network and retry.',
-    phone: 'Phone', working: 'Working',
+    title: 'Connect a phone',
+    description: 'Let your phone continue work from this computer. Connect both devices to the same network and keep this computer on.',
+    scanHint: 'Open Neo on your phone and scan this code',
+    create: 'Create pairing code',
+    regenerate: 'Create a new code',
+    refresh: 'Refresh',
+    empty: 'Create a project on this computer before connecting your phone.',
+    qr: 'Neo phone pairing code',
+    expires: 'Valid for 2 minutes · one pairing only',
+    expired: 'Code expired. Create a new code.',
+    devices: 'Paired phones',
+    noDevices: 'No paired phone yet.',
+    revoke: 'Revoke connection',
+    error: 'Connection settings unavailable. Check the local network and retry.',
+    errorLan: 'No local network address is available. Connect this computer to a network and retry.',
+    errorScope: 'This invite cannot cover every project. Refresh and retry.',
+    scopeCapped: 'There are more projects than one invite can cover. This code authorizes the first part of the list. Pair again later for the rest.',
+    errorSession: 'The project list changed. Refresh and create a new code.',
+    errorUnavailable: 'The connection service is unavailable. Retry in a moment.',
+    phone: 'Phone',
+    working: 'Working',
+    awayHint: 'When away, keep this computer on, online, and running Neo.',
+    scopeAll: 'All conversations',
+    scopeLimited: 'Limited access',
+    legacyScope: 'Older access range. Pair again to cover every conversation.',
+    pairedAt: 'Paired',
   },
 };
+
+type Copy = (typeof companionText)['zh'];
+
+/** Map host error codes to i18n; always keep the stable code in parentheses. */
+export function companionErrorCopy(text: Copy, detail: string): string {
+  const code = detail.match(/COMPANION_[A-Z0-9_]+/)?.[0] ?? 'UNKNOWN_ERROR';
+  const mapped = code === 'COMPANION_LAN_UNAVAILABLE' ? text.errorLan
+    : code === 'COMPANION_INVALID_SCOPE' ? text.errorScope
+    : code === 'COMPANION_SESSION_NOT_FOUND' ? text.errorSession
+    : code === 'COMPANION_UNAVAILABLE' ? text.errorUnavailable
+    : text.error;
+  return `${mapped} (${code})`;
+}

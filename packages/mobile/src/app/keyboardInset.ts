@@ -14,9 +14,9 @@ export function applyKeyboardInset(area: HTMLElement, fromPx: number, toPx: numb
   const next = Math.max(0, Math.round(toPx));
   const ms = keyboardTransitionMs(fromPx, next);
   const duration = ms === 0 ? '0s' : `${ms}ms`;
-  document.documentElement.style.setProperty('--keyboard-h', `${next}px`);
   document.documentElement.style.setProperty('--keyboard-duration', duration);
   document.documentElement.style.setProperty('--keyboard-easing', KEYBOARD_EASING);
+  document.documentElement.style.setProperty('--keyboard-h', `${next}px`);
   document.documentElement.toggleAttribute('data-keyboard-inset', next > 0);
   area.style.transition = ms === 0 ? 'none' : `transform ${duration} ${KEYBOARD_EASING}`;
   area.style.transform = next === 0 ? 'none' : `translate3d(0, -${next}px, 0)`;

@@ -3,6 +3,7 @@
 /* Native MainActivity injects --safe-area-inset-* (Android WebView 95 has no env()); iOS falls back to env(). Single source: never combine both. */
 :root { --safe-top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px)); --safe-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)); }
 @property --keyboard-h { syntax: '<length>'; inherits: true; initial-value: 0px; }
+html { transition: --keyboard-h var(--keyboard-duration, 0s) var(--keyboard-easing, linear); }
 * { box-sizing: border-box; }
 body { margin: 0; overscroll-behavior: none; }
 button,input,textarea { font: inherit; color: inherit; }

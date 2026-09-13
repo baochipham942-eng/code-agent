@@ -31,6 +31,7 @@ describe('applyKeyboardInset', () => {
     expect(area.style.transform).toBe('translate3d(0, -336px, 0)');
     expect(area.style.transition).toContain(`${KEYBOARD_ANIMATION_MS}ms`);
     expect(area.hasAttribute('data-keyboard-inset')).toBe(true);
+    expect(document.documentElement.style.getPropertyValue('--keyboard-duration')).toBe(`${KEYBOARD_ANIMATION_MS}ms`);
     expect(document.documentElement.style.getPropertyValue('--keyboard-h')).toBe('336px');
     expect(document.documentElement.hasAttribute('data-keyboard-inset')).toBe(true);
 

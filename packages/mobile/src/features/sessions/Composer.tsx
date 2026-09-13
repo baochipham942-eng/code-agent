@@ -40,6 +40,13 @@ export function Composer({
 }) {
   const textarea = useRef<HTMLTextAreaElement>(null);
   const composing = useRef(false);
+  /**
+   * 这次录音开始前草稿已经有多长——面板里的「识别文字」只显示这之后追加的部分。
+   * 直接把整条 draft 显示出去的话，用户录音前自己打的字会出现在识别区，
+   * 看起来像是刚刚识别出来的（2026-09-13 爸真机推翻了 09-12 我自己定的这个行为）。
+   * 面板关着时一直跟着草稿走，面板一开就冻住——录音期间输入框不在场，草稿只会被转写追加。
+   */
+  const spokenFrom = useRef(0);
   const voice = useVoiceCapture({ recorder, pending: voicePending, result: voiceResult, ready: voiceReady, transcribe, discardPending: discardPendingTranscript });
   useEffect(() => {
     const input = textarea.current;
@@ -49,6 +56,7 @@ export function Composer({
   // 否则通用提示条让位之后，转写失败可能一个落点都没有（grok ai-review Nit）。
   useEffect(() => { onVoiceState({ recording: voice.panelOpen, failed: !!voice.failure }); },
     [voice.panelOpen, voice.failure, onVoiceState]);
+  useEffect(() => { if (!voice.panelOpen) spokenFrom.current = draft.length; }, [voice.panelOpen, draft]);
   const notice = voice.failure?.reason === 'MICROPHONE_DENIED' ? text.microphoneDenied
     // 部分成功：其余几段已经在草稿里了，说成「转写未完成」是把整次录音都判死
     : voice.failure?.partial ? `${text.voiceChunkDropped} · ${voice.failure.reason}`
@@ -60,7 +68,8 @@ export function Composer({
     {!voice.panelOpen && !voice.failure && voice.transcribed && draft.trim() && <div className="compose-hint">{text.voiceReviewHint}</div>}
     <div className={voice.panelOpen ? 'composer voice-composer' : 'composer'}>
       {voice.panelOpen
-        ? <VoicePanel text={text} phase={voice.phase} pending={voicePending} elapsedMs={voice.elapsedMs} transcript={draft} dropped={voice.dropped}
+        ? <VoicePanel text={text} phase={voice.phase} pending={voicePending} elapsedMs={voice.elapsedMs}
+          transcript={draft.slice(spokenFrom.current).trimStart()} dropped={voice.dropped}
           stop={voice.stop} cancel={voice.cancel} />
         : <>
           <textarea ref={textarea} aria-label={text.draft} placeholder={offline ? text.offlinePlaceholder : text.placeholder} rows={1}

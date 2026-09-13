@@ -8,7 +8,7 @@ import {
   type EvalCompareArm,
 } from '@shared/contract/evaluation';
 import { resolveProductionShape } from './productionShape';
-import { validateHarnessKnobs } from '@host/agent/runtime/harnessKnobs';
+import { validateHarnessKnobs } from '@shared/constants/harnessKnobs';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);

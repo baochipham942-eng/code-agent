@@ -3,7 +3,7 @@ import { SCAFFOLD_PROFILE } from '@shared/constants/agent';
 import { AGENT_RUNTIME_DEFAULTS, getDefaultInstalledBuiltinPluginIds } from '@host/agent/agentRuntimeDefaults';
 import { DEFAULT_GOAL_ALLOW_SWARM } from '@host/agent/goalModeController';
 import { resolveScaffoldProfileForModel } from '@host/agent/runtime/scaffoldProfile';
-import { HARNESS_KNOB_DEFAULTS } from '@host/agent/runtime/harnessKnobs';
+import { HARNESS_KNOB_DEFAULTS } from '@shared/constants/harnessKnobs';
 import { DEFAULT_COMPRESSION_PIPELINE_ENABLED } from '@host/context/compressionPipeline';
 import { getConfigService } from '@host/services/core/configService';
 import { DEFAULT_SETTINGS } from '@host/services/core/configDefaults';

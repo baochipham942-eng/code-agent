@@ -196,6 +196,38 @@ describe('VoiceLiveSettingsSection', () => {
     });
   });
 
+  it('保存分钟上限，清空时显式保存 0', async () => {
+    settingsGet({ live: { callMinuteLimit: 8 } });
+    render(<VoiceLiveSettingsSection />);
+    const input = await screen.findByTestId('voice-minute-limit');
+    expect((input as HTMLInputElement).value).toBe('8');
+
+    fireEvent.change(input, { target: { value: '5' } });
+    fireEvent.blur(input);
+    await waitFor(() => {
+      const saved = invokeDomainMock.mock.calls.filter((call) => call[1] === 'set').at(-1)?.[2] as Partial<AppSettings>;
+      expect(saved.voice?.live?.callMinuteLimit).toBe(5);
+    });
+
+    fireEvent.change(input, { target: { value: '' } });
+    fireEvent.blur(input);
+    await waitFor(() => {
+      const saved = invokeDomainMock.mock.calls.filter((call) => call[1] === 'set').at(-1)?.[2] as Partial<AppSettings>;
+      expect(saved.voice?.live?.callMinuteLimit).toBe(0);
+    });
+  });
+
+  it('超限动作可改为提醒并挂断', async () => {
+    settingsGet({ live: { callCostLimitAction: 'warn' } });
+    render(<VoiceLiveSettingsSection />);
+    const select = await screen.findByTestId('voice-cost-limit-action');
+    fireEvent.change(select, { target: { value: 'hangup' } });
+    await waitFor(() => {
+      const saved = invokeDomainMock.mock.calls.filter((call) => call[1] === 'set').at(-1)?.[2] as Partial<AppSettings>;
+      expect(saved.voice?.live?.callCostLimitAction).toBe('hangup');
+    });
+  });
+
   it('随时开口引导绑定无冲突全局键，并在冲突时拒绝覆盖', async () => {
     settingsGet(undefined);
     render(<VoiceLiveSettingsSection />);

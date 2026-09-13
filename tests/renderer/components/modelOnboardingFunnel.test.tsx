@@ -158,12 +158,18 @@ beforeEach(() => {
         models: [{ id: 'claude-sonnet-4', label: 'Claude Sonnet 4' }],
       });
     }
+    if (action === 'get') return Promise.resolve({});
     if (action === 'set') return Promise.resolve(undefined);
     throw new Error(`Unexpected action: ${action} ${JSON.stringify(payload)}`);
   });
 });
 
 afterEach(cleanup);
+
+async function continuePastModelAndSkipVoiceHotkey() {
+  fireEvent.click(screen.getByTestId('onboarding-continue-to-chat'));
+  fireEvent.click(await screen.findByTestId('onboarding-voice-hotkey-skip'));
+}
 
 describe('two-step onboarding', () => {
   it('greets first-run users with the habitat welcome above the first step', async () => {
@@ -207,7 +213,7 @@ describe('two-step onboarding', () => {
 
     expect(screen.getByTestId('onboarding-step-model').getAttribute('data-active')).toBe('true');
     expect(screen.getByText('GPT-5.5')).toBeTruthy();
-    fireEvent.click(screen.getByTestId('onboarding-continue-to-chat'));
+    await continuePastModelAndSkipVoiceHotkey();
 
     await waitFor(() => expect(updateSessionEngine).toHaveBeenCalledWith('session-1', expect.objectContaining({
       kind: 'codex_cli',
@@ -225,7 +231,7 @@ describe('two-step onboarding', () => {
       .then((section) => section.querySelector('[data-onboarding-engine="grok_cli"]')!));
 
     expect(screen.getByText('Grok 4.5')).toBeTruthy();
-    fireEvent.click(screen.getByTestId('onboarding-continue-to-chat'));
+    await continuePastModelAndSkipVoiceHotkey();
 
     await waitFor(() => expect(updateSessionEngine).toHaveBeenCalledWith('session-1', expect.objectContaining({
       kind: 'grok_cli',
@@ -243,7 +249,7 @@ describe('two-step onboarding', () => {
     render(<ModelOnboardingModal onComplete={onComplete} />);
     fireEvent.click(await screen.findByTestId('onboarding-subscription-sources')
       .then((section) => section.querySelector('[data-onboarding-engine="codex_cli"]')!));
-    fireEvent.click(screen.getByTestId('onboarding-continue-to-chat'));
+    await continuePastModelAndSkipVoiceHotkey();
 
     await waitFor(() => expect(onComplete).toHaveBeenCalledTimes(1));
     expect(updateSessionEngine).not.toHaveBeenCalled();
@@ -296,7 +302,7 @@ describe('two-step onboarding', () => {
       'test_connection',
       expect.objectContaining({ provider: 'custom', protocol: 'claude' }),
     );
-    fireEvent.click(screen.getByTestId('onboarding-continue-to-chat'));
+    await continuePastModelAndSkipVoiceHotkey();
     await waitFor(() => expect(onComplete).toHaveBeenCalledWith(expect.objectContaining({
       provider: 'custom',
       model: 'claude-sonnet-4',

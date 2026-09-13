@@ -69,6 +69,7 @@ export const enSettingsCore = {
       voiceLive: 'Live Voice',
       voiceLiveVoice: 'Live Voice timbre',
       voiceLiveInterrupt: 'Interrupt mode',
+      voiceCallBudget: 'Call budget',
       voiceConversationModel: 'Live Voice model',
       whisperModel: 'Whisper model',
       transcriptionLanguage: 'Transcription language',

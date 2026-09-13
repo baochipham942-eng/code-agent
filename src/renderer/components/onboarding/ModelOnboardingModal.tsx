@@ -1,5 +1,6 @@
 // ============================================================================
-// ModelOnboardingModal —— 首次启动模型配置向导（连接来源 → 默认模型 两步）
+// ModelOnboardingModal —— 首次启动模型配置向导（连接来源 → 默认模型 两步，
+// 其后紧跟「随时开口」绑键卡：不塞进 ONBOARDING_STEPS，避免改漏斗契约）。
 //
 // P3 品牌升级「抵达新栖地」欢迎时刻（拍板 2026-08-02）：欢迎内容不独立成步，
 // 而是作为首步（step === 'source'）页面的上半区同屏渲染——侵入最小，不增加
@@ -8,7 +9,7 @@
 // 慢转 26s/周，静态 fx），reduced-motion 由组件内建停转。
 // ============================================================================
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft,
   Check,
@@ -38,6 +39,7 @@ import ipcService from '../../services/ipcService';
 import { useI18n } from '../../hooks/useI18n';
 import { useAppStore } from '../../stores/appStore';
 import { useSessionStore } from '../../stores/sessionStore';
+import { useBundledCapabilityStore } from '../../stores/bundledCapabilityStore';
 import {
   buildOnboardingModelSelection,
   getOnboardingProviderCards,
@@ -49,6 +51,9 @@ import {
   type OnboardingRoute,
   type OnboardingStep,
 } from './modelOnboarding';
+import { VoiceHotkeyOnboardingStep } from './VoiceHotkeyOnboardingStep';
+
+type ModalStep = OnboardingStep | 'voiceHotkey';
 
 interface ProviderTestResult {
   success: boolean;
@@ -200,7 +205,10 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
   const cards = useMemo(() => getOnboardingProviderCards(), []);
   const { t } = useI18n();
   const text = t.onboarding;
-  const [step, setStep] = useState<OnboardingStep>('source');
+  const [step, setStep] = useState<ModalStep>('source');
+  const voiceLiveInstalled = useBundledCapabilityStore(
+    (state) => state.installed['builtin.voice-live'],
+  );
   const [route, setRoute] = useState<OnboardingRoute>('subscription');
   const [engineSources, setEngineSources] = useState<AgentEngineSourceDescriptor[] | null>(null);
   const [engineCatalog, setEngineCatalog] = useState<AgentEngineModelCatalog | null>(null);
@@ -222,6 +230,7 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
       : null
   );
   const updateSessionEngine = useSessionStore((state) => state.updateSessionEngine);
+  const finishingRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -342,6 +351,8 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
   };
 
   const completeOnboarding = async () => {
+    if (finishingRef.current) return;
+    finishingRef.current = true;
     setStatus('saving');
     setMessage('');
     try {
@@ -409,6 +420,7 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
       } as Partial<AppSettings>);
       onComplete(selection.modelConfig);
     } catch (error) {
+      finishingRef.current = false;
       setStatus('error');
       setMessage(error instanceof Error ? error.message : text.saveFailedFallback);
     }
@@ -431,17 +443,19 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
         <div className="flex w-full items-center justify-between gap-3">
           <div className={`text-xs ${status === 'error' ? 'text-badge-danger' : 'text-zinc-500'}`}>
             {isBusy ? <Loader2 className="mr-1 inline h-3.5 w-3.5 animate-spin" /> : null}
-            {message || (route === 'subscription' ? '官方登录凭证始终由对应客户端管理' : text.keyStaysLocal)}
+            {message || (step === 'voiceHotkey'
+              ? text.voiceHotkeyImmediateHint
+              : route === 'subscription' ? '官方登录凭证始终由对应客户端管理' : text.keyStaysLocal)}
           </div>
           <div className="flex items-center gap-2">
             {step === 'source' && onSkip ? (
               <Button variant="ghost" onClick={onSkip} disabled={isBusy}>{text.skipButton}</Button>
             ) : null}
-            {step === 'model' ? (
+            {step === 'model' || step === 'voiceHotkey' ? (
               <Button
                 variant="ghost"
                 onClick={() => {
-                  setStep('source');
+                  setStep(step === 'voiceHotkey' ? 'model' : 'source');
                   setStatus('idle');
                   setMessage('');
                 }}
@@ -449,6 +463,16 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
                 leftIcon={<ArrowLeft className="h-4 w-4" />}
               >
                 返回
+              </Button>
+            ) : null}
+            {step === 'voiceHotkey' ? (
+              <Button
+                variant="ghost"
+                data-testid="onboarding-voice-hotkey-skip"
+                onClick={() => void completeOnboarding()}
+                disabled={isBusy}
+              >
+                {text.voiceHotkeySkip}
               </Button>
             ) : null}
             {step === 'source' && route === 'api' ? (
@@ -464,14 +488,17 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
             {step === 'model' ? (
               <Button
                 data-testid="onboarding-continue-to-chat"
-                onClick={() => void completeOnboarding()}
-                loading={isBusy}
+                onClick={() => {
+                  setStatus('idle');
+                  setMessage('');
+                  setStep('voiceHotkey');
+                }}
                 disabled={route === 'subscription'
                   ? !selectedSource
                     || (selectedSource.modelSelection === 'runtime_catalog' && !selectedModel)
                   : !selectedModel}
               >
-                继续开始
+                {text.nextButton}
               </Button>
             ) : null}
           </div>
@@ -498,7 +525,8 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
         <div className="grid grid-cols-2 gap-2 text-xs text-zinc-400" data-testid="onboarding-stepper">
           {ONBOARDING_STEPS.map((id, index) => {
             const active = step === id;
-            const done = ONBOARDING_STEPS.indexOf(step) > index;
+            const stepIndex = step === 'voiceHotkey' ? ONBOARDING_STEPS.length : ONBOARDING_STEPS.indexOf(step);
+            const done = stepIndex > index;
             return (
               <div
                 key={id}
@@ -519,7 +547,13 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
           })}
         </div>
 
-        {step === 'source' ? (
+        {step === 'voiceHotkey' ? (
+          <VoiceHotkeyOnboardingStep
+            canCapture={Boolean(voiceLiveInstalled)}
+            disabled={isBusy}
+            onBound={() => void completeOnboarding()}
+          />
+        ) : step === 'source' ? (
           <>
             <div
               className="flex border-b border-zinc-700"

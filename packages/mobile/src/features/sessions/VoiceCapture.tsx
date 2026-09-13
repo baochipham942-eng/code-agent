@@ -77,8 +77,6 @@ export function useVoiceCapture({ recorder, pending, result, ready, transcribe, 
   const [phase, setPhase] = useState<VoicePhase>('idle');
   const [failure, setFailure] = useState<VoiceFailure | null>(null);
   const [elapsedMs, setElapsedMs] = useState(0);
-  /** 这次录音有字成文了——「可以改完再发」的提示据此显示，不再读跨会话粘着的全局 outcome。 */
-  const [transcribed, setTranscribed] = useState(false);
   const [tick, setTick] = useState(0);
 
   const take = useRef<Take | null>(null);
@@ -164,7 +162,7 @@ export function useVoiceCapture({ recorder, pending, result, ready, transcribe, 
     previous?.wake?.();
     if (running.current) await running.current;
     if (!mine(t)) return;   // 等的期间又被点了，让最后那次赢
-    setFailure(null); setTranscribed(false); setPhase('starting');
+    setFailure(null); setPhase('starting');
     t.startedAt = Date.now(); setElapsedMs(0);
     try {
       await recorder.start();
@@ -287,7 +285,6 @@ export function useVoiceCapture({ recorder, pending, result, ready, transcribe, 
       setPhase('error');
       return;
     }
-    setTranscribed(t.sentAny);
     take.current = null;
     setPhase('idle');
   }, [tick, ready]);
@@ -304,7 +301,7 @@ export function useVoiceCapture({ recorder, pending, result, ready, transcribe, 
     bump();
   };
   return {
-    phase, failure, elapsedMs, transcribed, dropped: take.current?.dropped ?? 0,
+    phase, failure, elapsedMs, dropped: take.current?.dropped ?? 0,
     // 面板只在「正在录 / 正在转写」时替换输入框；失败按设计稿落在输入区上方，输入框要留给用户改字。
     panelOpen: phase !== 'idle' && phase !== 'error',
     start, stop, cancel, retry,

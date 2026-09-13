@@ -63,35 +63,21 @@ describe('Composer 布局契约（design.html composer()）', () => {
     expect(screen.getByTestId('draft').getAttribute('placeholder')).toBe(text.offlinePlaceholder);
   });
 
-  it('转写回填后提示可以改完再发，且不自动发送', async () => {
+  it('纯打字不许冒出「已转成文字」这类提示——输入框上方本来就不该有它（爸 2026-09-13 拍板去掉）', async () => {
+    // 这条提示原本在一次成功录音之后显示，而那个标记跨编辑粘着：录完音再打字，它还挂在那儿。
+    // 爸看过之后判定这条提示整个不需要，连同标记一起删——粘着的毛病也就没了。
     vi.useFakeTimers();
     render(<ChunkHarness sent={vi.fn()} />);
     fireEvent.click(screen.getByRole('button', { name: text.voice }));
     await advance(5_000);
     fireEvent.click(screen.getByRole('button', { name: text.stopRecording }));
     await advance(1_000);
-    expect(screen.getByText(text.voiceReviewHint)).toBeTruthy();
-    // 草稿被清掉（发出去了）之后提示自然收起
-    fireEvent.change(screen.getByTestId('draft'), { target: { value: '' } });
-    expect(screen.queryByText(text.voiceReviewHint)).toBeNull();
-    vi.useRealTimers();
-  });
-
-  it('上一次录音成文不该留给下一次：重录后取消，提示不许还挂在那儿', async () => {
-    // 提示以前读的是 store 里那个粘着的 voiceOutcome==='done'，它跨录音、跨会话都不清，
-    // 于是下一次录音取消之后、甚至换一个会话之后，只要草稿非空就照样说「已转成文字」。
-    vi.useFakeTimers();
-    render(<ChunkHarness sent={vi.fn()} />);
-    fireEvent.click(screen.getByRole('button', { name: text.voice }));
-    await advance(5_000);
-    fireEvent.click(screen.getByRole('button', { name: text.stopRecording }));
-    await advance(1_000);
-    expect(screen.getByText(text.voiceReviewHint)).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: text.voice }));
-    await advance(1_000);
-    fireEvent.click(screen.getByRole('button', { name: text.cancelRecording }));
-    await advance(500);
+    // 录完、字已成文（最能触发那条提示的时刻）
     expect((screen.getByTestId('draft') as HTMLTextAreaElement).value).toContain('段1');
+    expect(screen.queryByText(text.voiceReviewHint)).toBeNull();
+    expect(document.querySelector('.compose-hint')).toBeNull();
+    // 再打几个字，同样不许冒出来
+    fireEvent.change(screen.getByTestId('draft'), { target: { value: '段1 我自己又打了几个字' } });
     expect(screen.queryByText(text.voiceReviewHint)).toBeNull();
     vi.useRealTimers();
   });

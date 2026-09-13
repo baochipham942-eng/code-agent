@@ -49,7 +49,7 @@ try {
       preferences:{get:async()=>localStorage.getItem('drafts'),set:async v=>localStorage.setItem('drafts',v)},
       companion:{read:()=>window.lanRead(),write:v=>window.lanWrite(v),scan:()=>window.lanScan(),post:(url,body)=>window.lanPost(url,body)},
       appInfo:{read:async()=>({version:'acceptance',build:'real-host'})},
-      lifecycle:{subscribe:async()=>()=>{},leave:async()=>{}},keyboard:{subscribe:async()=>()=>{},hide:async()=>{}},systemBars:{setStyle:async()=>{}}
+      lifecycle:{subscribe:async()=>()=>{},leave:async()=>{}},keyboard:{subscribe:async()=>()=>{},subscribeFrame:async()=>()=>{},hide:async()=>{}},systemBars:{setStyle:async()=>{}}
     }}/>);`,resolveDir:process.cwd(),loader:'tsx'},bundle:true,platform:'browser',format:'iife',jsx:'automatic',outfile:resolve(directory,'mobile.js')});
   http=createServer((req,res)=>{if(req.url==='/mobile.js'||req.url==='/mobile.css'){res.setHeader('content-type',req.url.endsWith('.css')?'text/css':'application/javascript');res.end(readFileSync(resolve(directory,req.url.slice(1))));}else res.end('<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/mobile.css"><div id="root"></div><script src="/mobile.js"></script>');});
   await new Promise(resolve=>http.listen(0,'127.0.0.1',resolve));

@@ -14,6 +14,7 @@ import type { CompanionLibrary } from '../../../../src/shared/contract/companion
 import { messages } from '../i18n';
 import { bytesToArrayBuffer } from '../platform/fileCache';
 import { createBackCoordinator } from './backCoordinator';
+import { applyKeyboardInset } from './keyboardInset';
 import { SheetHost } from './SheetHost';
 import { SettingsPage } from '../features/settings/SettingsPage';
 import { VirtualHistory } from '../features/sessions/VirtualHistory';
@@ -133,6 +134,9 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
   const [systemDark, setSystemDark] = useState(() => document.documentElement.dataset.systemNight === 'true'
     || matchMedia('(prefers-color-scheme: dark)').matches);
   const keyboardVisible = useRef(false);
+  const composerNode = useRef<HTMLDivElement | null>(null);
+  const keyboardInset = useRef(0);
+  const viewportFrozen = useRef<number | null>(null);
   const managing = useRef(false);
   const swipe = useRef<{ x: number; y: number } | null>(null);
   const recording = useRef(false);
@@ -156,6 +160,9 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
   const composerArea = useCallback((node: HTMLDivElement | null) => {
     composerObserver.current?.disconnect();
     composerObserver.current = null;
+    composerNode.current = node;
+    // loading → ready 时节点才挂上；若 willShow 已经到了，补一次，别等下一次键盘事件。
+    if (node && keyboardInset.current > 0) applyKeyboardInset(node, 0, keyboardInset.current);
     // 往上找会话根而不是另拿一个 ref：ref 回调是自下而上触发的，父节点的 ref 这时可能还没挂上。
     const root = node?.closest<HTMLElement>('.conversation');
     if (!node || !root) return;
@@ -233,27 +240,39 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
     register((ports.notifications ?? unavailableNotificationPort).tap.subscribe(token => {
       void notifyStore.getState().handleTap(token);
     }));
-    register(ports.keyboard.subscribe(visible => { keyboardVisible.current = visible; }));
+    let frame = 0;
+    const applyViewportHeight = () => {
+      frame = 0;
+      // iOS 键盘期间冻结为 innerHeight：visualViewport 会跟着键盘缩，再写进 --viewport-height
+      // 就是整页布局追合成器。Android 不订 subscribeFrame，冻结保持 null，继续跟 visualViewport。
+      const height = viewportFrozen.current ?? window.visualViewport?.height ?? innerHeight;
+      document.documentElement.style.setProperty('--viewport-height', `${height}px`);
+    };
+    const resize = () => { if (!frame) frame = requestAnimationFrame(applyViewportHeight); };
+    applyViewportHeight();   // 首帧直接落地，别等下一帧才有高度
+    window.addEventListener('resize', resize); window.visualViewport?.addEventListener('resize', resize);
+    register(ports.keyboard.subscribe(visible => {
+      keyboardVisible.current = visible;
+      // DidHide 才解冻：WillHide 时输入区还在往下落，不能让 .app 高度同时追 visualViewport。
+      if (!visible) { viewportFrozen.current = null; applyViewportHeight(); }
+    }));
+    register(ports.keyboard.subscribeFrame(next => {
+      const from = keyboardInset.current;
+      const to = Math.max(0, Math.round(next.height));
+      if (next.phase === 'will-show') {
+        viewportFrozen.current = window.innerHeight;
+        applyViewportHeight();
+      }
+      keyboardInset.current = to;
+      const node = composerNode.current;
+      if (node) applyKeyboardInset(node, from, to);
+    }));
     const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') { event.preventDefault(); back.onBack(); } };
     document.addEventListener('keydown', escape);
     const query = matchMedia('(prefers-color-scheme: dark)');
     const change = () => setSystemDark(document.documentElement.dataset.systemNight === 'true' || query.matches);
     document.addEventListener('neo-system-night', change);
     query.addEventListener('change', change);
-    // Native resize and visualViewport already reflect IME; never subtract keyboard height twice.
-    //
-    // 但**每帧最多写一次**：`.app` 的高度绑在 --viewport-height 上，而 iOS 键盘那 ~300ms 动画里
-    // visualViewport 的 resize 会连着触发几十次，每次直写都让整页重排一遍——爸 2026-09-13
-    // 报的「输入框获取焦点并展示在键盘上也等了一会儿」，能省的就是这部分（动画本身是 iOS 的，动不了）。
-    // 用 rAF 合并：中间那些值本来就没人看得见，落地的是每帧最后那个。
-    let frame = 0;
-    const applyViewportHeight = () => {
-      frame = 0;
-      document.documentElement.style.setProperty('--viewport-height', `${window.visualViewport?.height ?? innerHeight}px`);
-    };
-    const resize = () => { if (!frame) frame = requestAnimationFrame(applyViewportHeight); };
-    applyViewportHeight();   // 首帧直接落地，别等下一帧才有高度
-    window.addEventListener('resize', resize); window.visualViewport?.addEventListener('resize', resize);
     return () => {
       companionStore.getState().pause();
       disposed = true; cleanups.forEach(cleanup => cleanup());

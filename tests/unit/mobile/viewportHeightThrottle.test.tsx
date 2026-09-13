@@ -11,7 +11,7 @@ const ports: PlatformPorts = {
   preferences: { get: async () => null, set: async () => {} },
   appInfo: { read: async () => ({ version: '0.1.0', build: '30' }) },
   lifecycle: { subscribe: async () => () => {}, leave: async () => {} },
-  keyboard: { subscribe: async () => () => {}, hide: async () => {} },
+  keyboard: { subscribe: async () => () => {}, subscribeFrame: async () => () => {}, hide: async () => {} },
 };
 
 // jsdom 没有 matchMedia / visualViewport；前者 MobileRoot 挂载时就要用，后者缺席时代码

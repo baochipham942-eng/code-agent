@@ -6,6 +6,7 @@ import { Keyboard } from '@capacitor/keyboard';
 import { Preferences } from '@capacitor/preferences';
 import { companionFileMime, COMPANION_LIMITS } from '../../../../src/shared/constants/companion';
 import type { FilePorts, PlatformPorts } from './ports';
+import { createKeyboardPort } from './keyboardPort';
 import { bytesToArrayBuffer, bytesToBase64, FileCache } from './fileCache';
 import { FILE_ACCEPT, IMAGE_ACCEPT } from './fileAccept';
 import { nativeCompanionPort } from './nativeCompanion';
@@ -103,17 +104,7 @@ export const capacitorPorts: PlatformPorts = {
     },
     leave: () => App.minimizeApp(),
   },
-  keyboard: {
-    subscribe: async onVisible => {
-      if (!Capacitor.isNativePlatform()) return () => {};
-      const show = await Keyboard.addListener('keyboardDidShow', () => onVisible(true));
-      try {
-        const hide = await Keyboard.addListener('keyboardDidHide', () => onVisible(false));
-        return () => { void show.remove(); void hide.remove(); };
-      } catch (error) { await show.remove(); throw error; }
-    },
-    hide: async () => { if (Capacitor.isNativePlatform()) await Keyboard.hide(); },
-  },
+  keyboard: createKeyboardPort(Keyboard, Capacitor.getPlatform()),
   // Icon shade follows the resolved theme; on web there are no system bars, so degrade silently like appInfo.
   systemBars: {
     setStyle: async appearance => {

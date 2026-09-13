@@ -6,7 +6,6 @@ import {
   LLM_SPECIAL_TOKEN_PLACEHOLDER,
 } from '../../../src/shared/constants/llmSpecialTokens';
 import {
-  BOUNDARY_NONCE_HEX_LENGTH,
   buildSecurityWarningMessage,
   foundRoleDelimiterTokens,
   generateBoundaryNonce,
@@ -17,7 +16,13 @@ import {
   InputSanitizer,
   resetInputSanitizer,
 } from '../../../src/host/security/inputSanitizer';
-import { patternsForScope } from '../../../src/host/security/patterns/injectionPatterns';
+import {
+  INJECTION_PATTERNS,
+  patternAppliesToScope,
+} from '../../../src/host/security/patterns/injectionPatterns';
+
+// 16 bytes via crypto.randomBytes → hex（与 untrustedContentBoundary 的 NONCE_BYTES 对齐）
+const NONCE_HEX_LENGTH = 32;
 
 const BOUNDARY_SOURCE = path.resolve(
   __dirname,
@@ -32,7 +37,7 @@ describe('untrustedContentBoundary', () => {
 
     const nonce = generateBoundaryNonce();
     expect(nonce).toMatch(/^[0-9a-f]+$/);
-    expect(nonce).toHaveLength(BOUNDARY_NONCE_HEX_LENGTH);
+    expect(nonce).toHaveLength(NONCE_HEX_LENGTH);
   });
 
   it('returns a different nonce on every call', () => {
@@ -44,7 +49,7 @@ describe('untrustedContentBoundary', () => {
   });
 
   it('strips every occurrence of the nonce from untrusted text', () => {
-    const nonce = 'a'.repeat(BOUNDARY_NONCE_HEX_LENGTH);
+    const nonce = 'a'.repeat(NONCE_HEX_LENGTH);
     const input = `before ${nonce} middle ${nonce} after`;
     expect(stripBoundaryNonce(input, nonce)).toBe('before  middle  after');
   });
@@ -174,8 +179,8 @@ describe('InputSanitizer nonce + strip + scope', () => {
   });
 
   it('strict pattern set is a superset of the lenient set', () => {
-    const lenient = patternsForScope('lenient');
-    const strict = patternsForScope('strict');
+    const lenient = INJECTION_PATTERNS.filter((pattern) => patternAppliesToScope(pattern, 'lenient'));
+    const strict = INJECTION_PATTERNS.filter((pattern) => patternAppliesToScope(pattern, 'strict'));
     expect(strict.length).toBeGreaterThan(lenient.length);
     expect(lenient.every((pattern) => strict.includes(pattern))).toBe(true);
     expect(lenient.every((pattern) => (pattern.scope ?? 'lenient') === 'lenient')).toBe(true);

@@ -35,10 +35,6 @@ export function patternAppliesToScope(
   return (pattern.scope ?? 'lenient') === 'lenient';
 }
 
-export function patternsForScope(scope: InjectionPatternScope): InjectionPattern[] {
-  return INJECTION_PATTERNS.filter((pattern) => patternAppliesToScope(pattern, scope));
-}
-
 const SHELL_TOKEN = '(?:ba|z|da|c|k|tc|a|fi)?sh';
 
 /**

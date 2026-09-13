@@ -14,8 +14,6 @@ import {
 
 const NONCE_BYTES = 16;
 
-export const BOUNDARY_NONCE_HEX_LENGTH = NONCE_BYTES * 2;
-
 export function generateBoundaryNonce(): string {
   return randomBytes(NONCE_BYTES).toString('hex');
 }

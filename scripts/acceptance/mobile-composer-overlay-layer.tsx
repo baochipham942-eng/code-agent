@@ -41,7 +41,8 @@ const html = `<!doctype html><html><head><meta charset="utf-8"><style>${css}</st
   });
   const sync = () => {
     root.style.setProperty('--composer-h', area.offsetHeight + 'px');
-    // 复刻 MobileRoot → CompanionConversation 的重新贴底（真实接线由 mobileRootLayout 单测钉住）
+    // 复刻 MobileRoot → CompanionConversation 的重新贴底
+    // （真实接线由 tests/unit/mobile/companionConversationRepin.test.tsx 钉住）
     if (following) scroller.scrollTop = scroller.scrollHeight;
   };
   sync(); new ResizeObserver(sync).observe(area);

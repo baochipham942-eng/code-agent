@@ -152,7 +152,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
    */
   useEffect(() => {
     const area = composerArea.current, root = conversation.current;
-    if (!area || !root || typeof ResizeObserver === 'undefined') return;
+    if (!area || !root) return;
     const sync = () => {
       const height = area.offsetHeight;
       root.style.setProperty('--composer-h', `${height}px`);
@@ -160,7 +160,11 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
       // 而「跟到底」原本只在消息变化时跑（验收②）。
       setComposerHeight(height);
     };
+    // 先量一次再谈观察：没有 ResizeObserver 的宿主（老安卓 WebView）如果连这一次都不写，
+    // --composer-h 就停在 132px 那个兜底上——审批卡一撑高，「回到最新」又被盖回去了
+    // （grok ai-review Nit）。量一次至少让首屏是对的，之后不跟着变是这类宿主的已知上限。
     sync();
+    if (typeof ResizeObserver === 'undefined') return;
     const observer = new ResizeObserver(sync);
     observer.observe(area);
     return () => observer.disconnect();

@@ -19,8 +19,12 @@ export function LibrarySheet({ library, sessionId, text, busy, mode, select, man
    * 模型名（不是「未知」），而紧挨着的「使用此模型」照样可点——用户以为在确认当前，一点就把
    * 会话换掉了（爸 2026-09-12 真机：会话实为 custom-glm-coding/glm-5.3-flash，下拉写着
    * DeepSeek V4.1 Flash）。所以给它补一条只读项，让下拉说真话、让那个按钮保持禁用。
+   *
+   * 只在「会话操作」这一档补：这条只读项的意思是「这条会话正在用的那个」，不是一个可选项。
+   * 项目页那档是**新建**会话，把它列进去等于让用户拿一个电脑上没配的模型去建会话，
+   * Host 会直接拒（grok ai-review Important）。
    */
-  const options = session && !library.models.some(m => m.provider === session.provider && m.model === session.model)
+  const options = mode === 'more' && session && !library.models.some(m => m.provider === session.provider && m.model === session.model)
     ? [...library.models, { provider: session.provider, model: session.model, label: session.model, providerLabel: text.modelNotConfigured }]
     : library.models;
   const [modelKey, setModel] = useState(() => {

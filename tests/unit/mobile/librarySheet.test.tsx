@@ -91,6 +91,20 @@ describe('会话操作里的模型下拉必须说真话（N-MOBILE-MODELPICK-LIE
     expect(manage).toHaveBeenCalledWith('session.model', { provider: 'deepseek', model: 'deepseek-chat' });
   });
 
+  it('未配置的只读项不许出现在「新建会话」那一档——那是可选项，不是当前项', () => {
+    // grok ai-review Important：项目页是**新建**会话，把「电脑上未配置」列进去等于让用户
+    // 拿一个电脑上没配的模型去建会话，Host 会直接拒，界面只剩一句「电脑那边拒绝了这条操作」。
+    const manage = vi.fn(async () => {});
+    render(<LibrarySheet library={{ ...library, ...offListSession }} sessionId="s1" text={text} busy={false} mode="projects"
+      select={() => {}} loadMore={() => {}} manage={manage} />);
+    expect(screen.queryByText(new RegExp(text.modelNotConfigured))).toBeNull();
+    const select = screen.getByLabelText(text.model) as HTMLSelectElement;
+    expect(select.value).toBe(key('deepseek', 'deepseek-chat'));
+    fireEvent.click(screen.getByRole('button', { name: text.newSession }));
+    expect(manage).toHaveBeenCalledWith('session.create',
+      expect.objectContaining({ provider: 'deepseek', model: 'deepseek-chat' }), 'project:one');
+  });
+
   it('会话用的模型在列表里时不许多长出一条只读项', () => {
     const inList = { sessions: [{ id: 's1', title: 'x', projectId: 'one', provider: 'deepseek', model: 'deepseek-chat' }] } as unknown as Partial<CompanionLibrary>;
     render(<LibrarySheet library={{ ...library, ...inList }} sessionId="s1" text={text} busy={false} mode="more"

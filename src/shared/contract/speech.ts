@@ -16,7 +16,9 @@ export type SpeechCloudProvider = 'groq';
  *
  * 手机与 Host 共用这一份表：Host 产码、手机据此判「跳过还是报错」，分成两份必然漂。
  */
-export const SPEECH_SILENT_CODES = ['EMPTY_RESULT', 'HALLUCINATION'] as const;
+export const SPEECH_EMPTY_RESULT_CODE = 'EMPTY_RESULT';
+export const SPEECH_HALLUCINATION_CODE = 'HALLUCINATION';
+export const SPEECH_SILENT_CODES = [SPEECH_EMPTY_RESULT_CODE, SPEECH_HALLUCINATION_CODE] as const;
 export type SpeechSilentCode = (typeof SPEECH_SILENT_CODES)[number];
 export const isSpeechSilentCode = (code: unknown): code is SpeechSilentCode =>
   typeof code === 'string' && (SPEECH_SILENT_CODES as readonly string[]).includes(code);

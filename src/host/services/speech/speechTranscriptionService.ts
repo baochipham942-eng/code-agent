@@ -17,7 +17,8 @@ import {
   type SpeechTranscriptionSegment,
   type SpeechTranscriptionEngine,
   type SpeechTranscriptionMode,
-  SPEECH_SILENT_CODES,
+  SPEECH_EMPTY_RESULT_CODE,
+  SPEECH_HALLUCINATION_CODE,
 } from '../../../shared/contract/speech';
 import { getConfigService } from '../core/configService';
 import { createLogger } from '../infra/logger';
@@ -40,10 +41,20 @@ const RETAINED_AUDIO_TTL_MS = 24 * 60 * 60 * 1000;
 /**
  * whisper 在静音/近静音上会吐训练语料里的字幕尾巴。
  * 逐条列举必漏——2026-09-13 真机吐出「杨茜茜字幕志愿者」，而表里只有「字幕由」「字幕制作」。
- * 凡是有「家族」的（字幕 + 角色词、subtitle + by/volunteer）一律写成一条正则，别再往下加词。
+ * 凡是有「家族」的一律写成一条正则，别再往下加词。
+ *
+ * **但家族要收紧到「署名形状」，不是见「字幕」就杀。** 判据是两种错的代价不对称：
+ * 漏一条幻觉 = 草稿里多一句垃圾，用户看得见、删掉就是；误杀一条 = 这 4 秒真话**无声消失**
+ * ——静音段改成静默跳过之后（本单），误杀连「有片段没转成文字」的提示都不会留。
+ * 所以「字幕组」「字幕制作」「字幕翻译」这些**既是署名又是日常词**的，必须再带一个
+ * 署名记号（冒号 / 出品压制 / 「由…」）才算；只有「字幕由」「字幕志愿者」这种
+ * 日常说不出来的才裸配。
  */
 const HALLUCINATION_PATTERNS: (string | RegExp)[] = [
-  /字幕(由|志愿者|制作|组|翻译|君羊)/,
+  /字幕(由|志愿者)/,
+  /字幕(组|制作|翻译)\s*[:：]/,
+  /字幕组(出品|制作|压制|发布|翻译)/,
+  /由.{0,10}字幕组/,
   /subtitle(s)?\s*(by|volunteer)/i,
   '请不吝点赞',
   '订阅转发',
@@ -89,6 +100,24 @@ function getTextFromTranscriptionResult(result: unknown): string {
   if (!result || typeof result !== 'object' || Array.isArray(result)) return '';
   const text = (result as Record<string, unknown>).text;
   return typeof text === 'string' ? text : '';
+}
+
+/**
+ * 转写结果 → companion 结算载荷。
+ *
+ * **真实错误码必须带回手机**：静音/幻觉那一族（`SPEECH_SILENT_CODES`）在分片路径上不是失败，
+ * 手机要靠这个码决定「静默跳过还是报错」。一律压成 `COMPANION_TRANSCRIPTION_FAILED` 的话，
+ * 手机侧那条判据在生产里恒不成立——2026-09-13 第一版就是这么把整条修法接成死线的
+ * （grok ai-review Important；当时集成测试是手工给网关塞 HALLUCINATION 才绿的，
+ * 替身比真实写入点宽容）。抽成纯函数是为了让真实写入点和判据落在同一处。
+ */
+export function companionTranscriptionSettlement(
+  result: Pick<SpeechTranscribeResult, 'success' | 'engine' | 'text' | 'code'>,
+): { state: 'accepted' | 'rejected'; result: Record<string, unknown> } {
+  if (result.success && result.engine === 'groq') {
+    return { state: 'accepted', result: { text: result.text, engine: result.engine } };
+  }
+  return { state: 'rejected', result: { code: typeof result.code === 'string' ? result.code : 'COMPANION_TRANSCRIPTION_FAILED' } };
 }
 
 function isHallucination(text: string): boolean {
@@ -233,7 +262,7 @@ function ensureMeaningfulText(
     return {
       success: false,
       error: '未识别到语音内容',
-      code: SPEECH_SILENT_CODES[0],
+      code: SPEECH_EMPTY_RESULT_CODE,
       recoverable: true,
       engine,
       ...meta,
@@ -244,7 +273,7 @@ function ensureMeaningfulText(
     return {
       success: false,
       error: '未识别到有效语音，请重新说话',
-      code: SPEECH_SILENT_CODES[1],
+      code: SPEECH_HALLUCINATION_CODE,
       hallucination: true,
       recoverable: true,
       engine,

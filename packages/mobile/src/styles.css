@@ -9,15 +9,16 @@ button { min-width: 48px; min-height: 48px; border: 0; background: transparent; 
 button:disabled { opacity: .45; cursor: default; }
 button:focus-visible,input:focus-visible,textarea:focus-visible { outline: 2px solid #668ded; outline-offset: 2px; }
 .app { height: var(--viewport-height, 100vh); overflow: hidden; font-size: 17px; }
-.conversation { display: flex; flex-direction: column; height: 100%; padding-top: var(--safe-top); }
+/* 输入区是浮在会话之上的一层：它的高矮不许改动会话区的可视高度（见 MobileRoot 的 --composer-h）。 */
+.conversation { position: relative; display: flex; flex-direction: column; height: 100%; padding-top: var(--safe-top); }
 .topbar,.drawer header { display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; padding: 6px 14px; }
 .topbar button { font-size: 25px; border-radius: 50%; }
-.welcome { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 16px 28px; overflow: auto; }
+.welcome { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 16px 28px calc(16px + var(--composer-h, 132px)); overflow: auto; }
 .brand-mark { display: block; flex-shrink: 0; }
 h1 { font-size: 27px; line-height: 1.3; letter-spacing: -.7px; text-align: center; font-weight: 600; }
 h2 { font-size: 19px; line-height: 1.35; margin: 0; overflow-wrap: anywhere; }
 p { line-height: 1.5; overflow-wrap: anywhere; }
-.composer-area { flex-shrink: 0; padding: 12px 15px max(6px, var(--safe-bottom)); }
+.composer-area { position: absolute; left: 0; right: 0; bottom: 0; background: var(--bg); padding: 12px 15px max(6px, var(--safe-bottom)); }
 .composer { border: 1px solid var(--line); background: var(--surface); border-radius: 29px; padding: 14px 10px 7px; }
 /* 焦点指示挪到胶囊自己身上：文本框在规范上任何聚焦都命中 :focus-visible（不止键盘），
    全局那道 2px 直角描边会套在 29px 圆角外面，而且 #668ded 根本不在调色板里。
@@ -56,7 +57,7 @@ textarea::placeholder { color: var(--muted); }
 .profile-card { display: flex; align-items: center; gap: 12px; width: 100%; padding: 18px 10px; text-align: left; }.profile-card strong { flex: 1; overflow-wrap: anywhere; }
 input { width: 100%; padding: 16px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; font-size: 17px; }.primary { border-radius: 24px; width: 100%; margin-top: 18px; }
 .about { text-align: center; padding: 18px 8px; }.about p { color: var(--muted); }
-.virtual-history { flex: 1; min-height: 0; overflow: auto; overflow-anchor: none; overscroll-behavior: contain; }.history-row { left: 0; right: 0; padding: 16px 24px; border-bottom: 1px solid var(--line); overflow: auto; }.history-row p { margin: 8px 0; color: var(--muted); font-size: 15px; }
+.virtual-history { flex: 1; min-height: 0; overflow: auto; overflow-anchor: none; overscroll-behavior: contain; padding-bottom: var(--composer-h, 132px); }.history-row { left: 0; right: 0; padding: 16px 24px; border-bottom: 1px solid var(--line); overflow: auto; }.history-row p { margin: 8px 0; color: var(--muted); font-size: 15px; }
 .loading { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 30px; }
 @media (max-height: 520px) { .welcome { padding: 4px 20px; }.welcome .brand-mark { display: none; }h1 { font-size: 21px; margin: 10px; }.composer textarea { min-height: 28px; max-height: 80px; }.composer { padding-top: 8px; } }
 .lan-messages { flex: 1; min-height: 0; overflow: auto; padding: 16px; }
@@ -81,7 +82,8 @@ input { width: 100%; padding: 16px; background: var(--surface); border: 1px soli
 .status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); }
 [data-connected='true'] .status-dot { background: #168365; }
 .message-region { position: relative; display: flex; flex: 1; min-height: 0; }
-.lan-messages { overscroll-behavior: contain; padding: 8px 20px 20px; }
+/* 底部让出输入区那一层的高度。--composer-h 还没量到时用一个够大的兜底，宁可多留白也别被盖住。 */
+.lan-messages { overscroll-behavior: contain; padding: 8px 20px calc(20px + var(--composer-h, 132px)); }
 .lan-message { padding: 8px 0; margin: 12px 0 22px; line-height: 1.7; font-size: 16px; }
 .lan-message.from-user { width: fit-content; max-width: 88%; margin-left: auto; background: var(--group); padding: 12px 16px; border-radius: 22px; }
 .jump-latest { position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); background: var(--surface); border: 1px solid var(--line); box-shadow: 0 3px 12px #0001; border-radius: 24px; font-size: 13px; padding: 6px 16px; }

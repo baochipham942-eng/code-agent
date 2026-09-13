@@ -111,6 +111,35 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
   const managing = useRef(false);
   const swipe = useRef<{ x: number; y: number } | null>(null);
   const recording = useRef(false);
+  const conversation = useRef<HTMLElement>(null);
+  const composerArea = useRef<HTMLDivElement>(null);
+  const [composerHeight, setComposerHeight] = useState(0);
+  /**
+   * 输入区是**浮在**会话上的一层，不是挤它的兄弟（爸 2026-09-13：删字时上方 trace 抖动，
+   * 「输入框内的内容不应该影响到上方 trace，应该是前后两层」）。
+   *
+   * 会话区的可视高度必须与输入区高度无关：它们同在一条 flex 流里时，输入区一变高矮就改
+   * `.lan-messages` 的 clientHeight，浏览器保留（贴底时 clamp）scrollTop ⇒ 内容位移，
+   * 而 CompanionConversation 的「跟到底」只在消息变化时跑、不管缩放，位移之后没人纠正。
+   * 会改高矮的不止 textarea 自适应：审批卡弹出、状态行换行都在这一块里，所以观察整块，
+   * 把实测高度发布成 --composer-h，由滚动容器拿去做**底部内边距**——
+   * 只改 scrollHeight、不改 clientHeight，不贴底时可视内容一动不动。
+   */
+  useEffect(() => {
+    const area = composerArea.current, root = conversation.current;
+    if (!area || !root || typeof ResizeObserver === 'undefined') return;
+    const sync = () => {
+      const height = area.offsetHeight;
+      root.style.setProperty('--composer-h', `${height}px`);
+      // 贴底的人要跟着这层一起走：padding 变高会把最后一条顶到这层后面去，
+      // 而「跟到底」原本只在消息变化时跑（验收②）。
+      setComposerHeight(height);
+    };
+    sync();
+    const observer = new ResizeObserver(sync);
+    observer.observe(area);
+    return () => observer.disconnect();
+  }, []);
   const [voiceFailureShown, setVoiceFailureShown] = useState(false);
   const theme = state.preferences.appearance === 'system' ? (systemDark ? 'dark' : 'light') : state.preferences.appearance;
   const currentPage = state.sheet?.pages.at(-1);
@@ -266,17 +295,17 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
     {state.loadError && <button onClick={() => void state.hydrate()}>{text.retry}</button>}</div>;
 
   return <div className="app" data-theme={theme} onTouchStart={gestureStart} onTouchEnd={gestureEnd} onTouchCancel={() => { swipe.current = null; }}>
-    <main className="conversation" inert={state.drawer || !!state.sheet}>
+    <main className="conversation" ref={conversation} inert={state.drawer || !!state.sheet}>
       <header className="topbar"><button aria-label={text.sessions} data-testid="open-drawer" onClick={state.openDrawer}><AppIcon name="menu" /></button>
         <strong>{companion.sessionId ? companion.library?.sessions.find(s => s.id === companion.sessionId)?.title ?? `${text.sharedSession} ${(companion.binding?.scope.indexOf(companion.sessionId) ?? 0) + 1}` : state.route === 'new' ? text.neo : text.fixture}</strong><button aria-label={text.more} data-testid="open-more" onClick={() => state.openSheet('more')}><AppIcon name="more" /></button></header>
       {state.route === 'fixture' && fixtures ? <VirtualHistory text={text} /> : companion.sessionId && (companion.history[companion.sessionId]?.messages.length || companion.history[companion.sessionId]?.nextOffset != null || companion.artifacts.length || companion.events.some(event => event.sessionId === companion.sessionId))
-        ? <CompanionConversation history={companion.history[companion.sessionId]} loadMore={() => void companion.loadHistory(companion.sessionId!, true)} hidePendingApprovals events={companion.events} artifacts={companion.artifacts} sessionId={companion.sessionId} text={text}
+        ? <CompanionConversation history={companion.history[companion.sessionId]} loadMore={() => void companion.loadHistory(companion.sessionId!, true)} hidePendingApprovals events={companion.events} artifacts={companion.artifacts} sessionId={companion.sessionId} text={text} composerHeight={composerHeight}
           disabled={companion.busy || companion.pending || companion.status !== 'connected'} respond={companion.respond}
           openArtifact={id => void companion.previewArtifact(id).then(() => {
             if (companionStore.getState().preview) store.getState().openSheet('preview');
           })} />
         : <div className="welcome"><NeoBrandMark /><h1>{companion.status === 'connected' ? text.connectedReady : text.welcome}</h1>{companion.status === 'connected' && <p className="connection-next">{text.connectedNext}</p>}</div>}
-      <div className="composer-area">
+      <div className="composer-area" ref={composerArea}>
         {/* 本会话的审批优先在托盘里就地给控件——CompanionConversation 被传了
             hidePendingApprovals，它不会再渲染 pending 卡片，所以这里是本会话审批**唯一**的
             落点。原写法只看全局第一条：会话 A 先有一条没处理的审批时，在会话 B 触发的审批

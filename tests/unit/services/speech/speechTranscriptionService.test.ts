@@ -45,6 +45,7 @@ import {
 } from '../../../../src/host/services/media/whisperCppTranscriber';
 import {
   clearRetainedSpeechAudio,
+  companionTranscriptionSettlement,
   SpeechTranscriptionService,
 } from '../../../../src/host/services/speech/speechTranscriptionService';
 
@@ -315,10 +316,14 @@ describe('SpeechTranscriptionService', () => {
     expect(result.code).toBe('HALLUCINATION');
   });
 
-  it('正常说话里带「字幕」两个字不许误杀', async () => {
-    // 家族正则只认「字幕+角色词」，用户真说「帮我把字幕对齐一下」不能被当成幻觉丢掉。
+  it.each([
+    ['帮我把这段视频的字幕对齐一下'],
+    // 「翻译」是动词：光凭「字幕翻译」四个字拦，会把这句正常口令误杀（grok ai-review Nit）
+    ['把这段字幕翻译成英文'],
+    ['字幕组这个词怎么翻译比较好'],
+  ])('正常说话里带「字幕」的口令「%s」不许误杀', async (text) => {
     configureSpeech({ mode: 'cloud-only' });
-    groqCreateMock.mockResolvedValueOnce('帮我把这段视频的字幕对齐一下');
+    groqCreateMock.mockResolvedValueOnce(text);
     const service = new SpeechTranscriptionService();
 
     const result = await service.transcribe({ audioData: makeAudioData(), mimeType: 'audio/aac', source: 'composer' });
@@ -404,5 +409,32 @@ describe('SpeechTranscriptionService', () => {
 
     expect(cleared.deletedFiles).toBeGreaterThanOrEqual(1);
     expect(fs.existsSync(result.audioPath)).toBe(false);
+  });
+});
+
+describe('companionTranscriptionSettlement：真实错误码必须带回手机', () => {
+  // 2026-09-13 grok ai-review Important：第一版把所有失败一律压成 COMPANION_TRANSCRIPTION_FAILED，
+  // 手机侧那条「静音段不是失败」的判据在生产里恒不成立——整条修法接成了死线。
+  // 当时集成测试是手工给网关塞 HALLUCINATION 才绿的：替身比真实写入点宽容。
+  it.each([
+    ['HALLUCINATION'],
+    ['EMPTY_RESULT'],
+    ['COMPANION_TRANSCRIPTION_UNAVAILABLE'],
+  ])('失败码 %s 原样带回，不许压成通用码', (code) => {
+    const settlement = companionTranscriptionSettlement({ success: false, engine: 'groq', code } as never);
+    expect(settlement.state).toBe('rejected');
+    expect(settlement.result.code).toBe(code);
+  });
+
+  it('没有码时才退到通用码', () => {
+    const settlement = companionTranscriptionSettlement({ success: false, engine: 'groq' } as never);
+    expect(settlement.result.code).toBe('COMPANION_TRANSCRIPTION_FAILED');
+  });
+
+  it('成功只认 groq 引擎，本地引擎的成功也按失败结算（既有口径不许放宽）', () => {
+    expect(companionTranscriptionSettlement({ success: true, engine: 'groq', text: '你好' } as never))
+      .toEqual({ state: 'accepted', result: { text: '你好', engine: 'groq' } });
+    expect(companionTranscriptionSettlement({ success: true, engine: 'local-whisper', text: '你好' } as never).state)
+      .toBe('rejected');
   });
 });

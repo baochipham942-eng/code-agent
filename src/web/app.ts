@@ -57,6 +57,7 @@ import type { PendingDevPermissionRequest } from './routes/dev';
 import { createBackgroundRouter } from './routes/background';
 import { dispatchHostWebRoute } from '../host/services/capabilities/hostCapabilityContributions';
 import { getRegisteredSpeechTranscriber } from '../host/services/capabilities/hostCapabilityPorts';
+import { companionTranscriptionSettlement } from '../host/services/speech/speechTranscriptionService';
 import { createAdminReviewQueueRouter } from './routes/adminReviewQueue';
 import { createCompanionRouter } from './routes/companion';
 import { createCompanionProvisioningRouter } from './routes/companionProvisioning';
@@ -293,8 +294,11 @@ export function createApp(deps: CreateAppDeps): express.Express {
             const transcribe = getRegisteredSpeechTranscriber();
             if (!transcribe) return { state: 'rejected', result: { code: 'COMPANION_TRANSCRIPTION_UNAVAILABLE' } };
             void transcribe({ ...command.payload, mode: 'cloud-only', source: 'composer', keepAudioOnFailure: false, durationSeconds: command.payload.durationMs / 1000 })
-              .then(result => gateway.settleCommand(command.deviceId, command.commandId, result.success && result.engine === 'groq' ? 'accepted' : 'rejected',
-                result.success && result.engine === 'groq' ? { text: result.text, engine: result.engine } : { code: 'COMPANION_TRANSCRIPTION_FAILED' }),
+              .then(result => {
+                // 真实错误码要带回去：手机按它分「这段没人说话」与「真失败」。
+                const settlement = companionTranscriptionSettlement(result);
+                return gateway.settleCommand(command.deviceId, command.commandId, settlement.state, settlement.result);
+              },
                 () => gateway.settleCommand(command.deviceId, command.commandId, 'rejected', { code: 'COMPANION_TRANSCRIPTION_FAILED' }));
             return { state: 'reconciling', result: { code: 'COMMAND_RECONCILING' } };
           }

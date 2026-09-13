@@ -19,7 +19,7 @@ import { fromHex, toHex, isLanPeer, isPrivateIPv4, lanAdvertisedHost, parseInvit
 import { LanCompanionClient, type LanPost } from '../../packages/mobile/src/platform/lanCompanionClient';
 import { COMPANION_EVENT_DROPPED, COMPANION_LIMITS as L } from '../../src/shared/constants/companion';
 import { createCompanionStore } from '../../packages/mobile/src/stores/companionStore';
-import { companionTranscriptionSettlement } from '../../src/host/services/speech/speechTranscriptionService';
+import { companionTranscriptionSettlement } from '../../src/shared/contract/speech';
 import type { CompanionSyncResult } from '../../src/shared/contract/companion';
 import vector from '../fixtures/companion/lan-noise-vector.json';
 

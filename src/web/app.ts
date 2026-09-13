@@ -57,7 +57,7 @@ import type { PendingDevPermissionRequest } from './routes/dev';
 import { createBackgroundRouter } from './routes/background';
 import { dispatchHostWebRoute } from '../host/services/capabilities/hostCapabilityContributions';
 import { getRegisteredSpeechTranscriber } from '../host/services/capabilities/hostCapabilityPorts';
-import { companionTranscriptionSettlement } from '../host/services/speech/speechTranscriptionService';
+import { companionTranscriptionSettlement } from '../shared/contract/speech';
 import { createAdminReviewQueueRouter } from './routes/adminReviewQueue';
 import { createCompanionRouter } from './routes/companion';
 import { createCompanionProvisioningRouter } from './routes/companionProvisioning';

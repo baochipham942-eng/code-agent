@@ -45,9 +45,9 @@ import {
 } from '../../../../src/host/services/media/whisperCppTranscriber';
 import {
   clearRetainedSpeechAudio,
-  companionTranscriptionSettlement,
   SpeechTranscriptionService,
 } from '../../../../src/host/services/speech/speechTranscriptionService';
+import { companionTranscriptionSettlement } from '../../../../src/shared/contract/speech';
 
 function makeAudioData(size = 2048): string {
   return Buffer.alloc(size, 1).toString('base64');

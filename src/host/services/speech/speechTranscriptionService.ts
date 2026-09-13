@@ -102,24 +102,6 @@ function getTextFromTranscriptionResult(result: unknown): string {
   return typeof text === 'string' ? text : '';
 }
 
-/**
- * 转写结果 → companion 结算载荷。
- *
- * **真实错误码必须带回手机**：静音/幻觉那一族（`SPEECH_SILENT_CODES`）在分片路径上不是失败，
- * 手机要靠这个码决定「静默跳过还是报错」。一律压成 `COMPANION_TRANSCRIPTION_FAILED` 的话，
- * 手机侧那条判据在生产里恒不成立——2026-09-13 第一版就是这么把整条修法接成死线的
- * （grok ai-review Important；当时集成测试是手工给网关塞 HALLUCINATION 才绿的，
- * 替身比真实写入点宽容）。抽成纯函数是为了让真实写入点和判据落在同一处。
- */
-export function companionTranscriptionSettlement(
-  result: Pick<SpeechTranscribeResult, 'success' | 'engine' | 'text' | 'code'>,
-): { state: 'accepted' | 'rejected'; result: Record<string, unknown> } {
-  if (result.success && result.engine === 'groq') {
-    return { state: 'accepted', result: { text: result.text, engine: result.engine } };
-  }
-  return { state: 'rejected', result: { code: typeof result.code === 'string' ? result.code : 'COMPANION_TRANSCRIPTION_FAILED' } };
-}
-
 function isHallucination(text: string): boolean {
   const lowerText = text.toLowerCase();
   return HALLUCINATION_PATTERNS.some((pattern) =>

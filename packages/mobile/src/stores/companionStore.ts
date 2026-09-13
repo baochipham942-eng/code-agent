@@ -8,7 +8,6 @@ import { companionCommandSchema } from '../../../../src/shared/contract/companio
 import { LanCompanionClient } from '../platform/lanCompanionClient';
 import type { FilePorts, PlatformPorts, PickedFile } from '../platform/ports';
 import { companionFileMime, companionFileRetryable, COMPANION_LIMITS } from '../../../../src/shared/constants/companion';
-import { isSpeechSilentCode } from '../../../../src/shared/contract/speech';
 import { base64ToBytes, bytesToBase64, sha256Hex, type CacheInspect } from '../platform/fileCache';
 
 interface Saved {
@@ -180,7 +179,9 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         } else {
           // 「这段没人说话」是第三种结局：分片下停顿段本来就是空的，当失败就是每隔几秒报一次错。
           const code = typeof record.result.code === 'string' ? record.result.code : undefined;
-          silentVoice = isSpeechSilentCode(code);
+          // 「这段没人说话」由主机在结算时给出结论（`silent`），手机不自己再判一次码——
+          // 两边各判各的，码一变就漂。
+          silentVoice = record.result.silent === true;
           set({ voiceResult: { commandId: pending.commandId, outcome: silentVoice ? 'silent' : 'error', code } });
         }
       }

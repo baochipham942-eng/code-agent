@@ -1,6 +1,6 @@
 import { Composer } from '../features/sessions/Composer';
 import { LibrarySheet } from '../features/sessions/LibrarySheet';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from 'zustand';
 import type { PlatformPorts } from '../platform/ports';
 import { createMobileStore } from '../stores/mobileStore';
@@ -136,9 +136,8 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
   const managing = useRef(false);
   const swipe = useRef<{ x: number; y: number } | null>(null);
   const recording = useRef(false);
-  const conversation = useRef<HTMLElement>(null);
-  const composerArea = useRef<HTMLDivElement>(null);
   const [composerHeight, setComposerHeight] = useState(0);
+  const composerObserver = useRef<ResizeObserver | null>(null);
   /**
    * 输入区是**浮在**会话上的一层，不是挤它的兄弟（爸 2026-09-13：删字时上方 trace 抖动，
    * 「输入框内的内容不应该影响到上方 trace，应该是前后两层」）。
@@ -150,24 +149,29 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
    * 把实测高度发布成 --composer-h，由滚动容器拿去做**底部内边距**——
    * 只改 scrollHeight、不改 clientHeight，不贴底时可视内容一动不动。
    */
-  useEffect(() => {
-    const area = composerArea.current, root = conversation.current;
-    if (!area || !root) return;
+  // 用**回调 ref** 而不是 useEffect：MobileRoot 首帧是 loading（`!state.ready` 时整棵会话树
+  // 都不在 DOM 里），依赖写 [] 的 effect 就在那一帧跑掉、refs 全空、之后永不重跑，
+  // --composer-h 永远停在 132px 兜底——而**每一次真实启动都会经过那一帧**
+  // （grok ai-review Important）。回调 ref 在节点真正挂上时才跑，没有这个时序坑。
+  const composerArea = useCallback((node: HTMLDivElement | null) => {
+    composerObserver.current?.disconnect();
+    composerObserver.current = null;
+    // 往上找会话根而不是另拿一个 ref：ref 回调是自下而上触发的，父节点的 ref 这时可能还没挂上。
+    const root = node?.closest<HTMLElement>('.conversation');
+    if (!node || !root) return;
     const sync = () => {
-      const height = area.offsetHeight;
+      const height = node.offsetHeight;
       root.style.setProperty('--composer-h', `${height}px`);
       // 贴底的人要跟着这层一起走：padding 变高会把最后一条顶到这层后面去，
       // 而「跟到底」原本只在消息变化时跑（验收②）。
       setComposerHeight(height);
     };
     // 先量一次再谈观察：没有 ResizeObserver 的宿主（老安卓 WebView）如果连这一次都不写，
-    // --composer-h 就停在 132px 那个兜底上——审批卡一撑高，「回到最新」又被盖回去了
-    // （grok ai-review Nit）。量一次至少让首屏是对的，之后不跟着变是这类宿主的已知上限。
+    // 首屏就是错的。量一次至少让首屏对，之后不跟着变是这类宿主的已知上限。
     sync();
     if (typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver(sync);
-    observer.observe(area);
-    return () => observer.disconnect();
+    composerObserver.current = new ResizeObserver(sync);
+    composerObserver.current.observe(node);
   }, []);
   const [voiceFailureShown, setVoiceFailureShown] = useState(false);
   const theme = state.preferences.appearance === 'system' ? (systemDark ? 'dark' : 'light') : state.preferences.appearance;
@@ -313,7 +317,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
     {state.loadError && <button onClick={() => void state.hydrate()}>{text.retry}</button>}</div>;
 
   return <div className="app" data-theme={theme} onTouchStart={gestureStart} onTouchEnd={gestureEnd} onTouchCancel={() => { swipe.current = null; }}>
-    <main className="conversation" ref={conversation} inert={state.drawer || !!state.sheet}>
+    <main className="conversation" inert={state.drawer || !!state.sheet}>
       <header className="topbar"><button aria-label={text.sessions} data-testid="open-drawer" onClick={state.openDrawer}><AppIcon name="menu" /></button>
         <strong>{companion.sessionId ? companion.library?.sessions.find(s => s.id === companion.sessionId)?.title ?? `${text.sharedSession} ${(companion.binding?.scope.indexOf(companion.sessionId) ?? 0) + 1}` : state.route === 'new' ? text.neo : text.fixture}</strong><button aria-label={text.more} data-testid="open-more" onClick={() => state.openSheet('more')}><AppIcon name="more" /></button></header>
       {state.route === 'fixture' && fixtures ? <VirtualHistory text={text} /> : companion.sessionId && (companion.history[companion.sessionId]?.messages.length || companion.history[companion.sessionId]?.nextOffset != null || companion.artifacts.length || companion.events.some(event => event.sessionId === companion.sessionId))

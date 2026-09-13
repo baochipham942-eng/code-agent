@@ -20,8 +20,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const css = fs.readFileSync(path.resolve(here, '../../packages/mobile/src/styles.css'), 'utf8');
 
 /** 与 MobileRoot 的 `<main className="conversation">` 子树同构：topbar / message-region / composer-area。 */
-const html = `<!doctype html><html><head><meta charset="utf-8"><style>${css}</style></head><body>
-<div class="app"><div class="conversation" id="conversation">
+const conversationTree = `<div class="conversation" id="conversation">
   <div class="topbar"><strong>会话</strong></div>
   <div class="message-region"><div class="lan-messages" id="scroller">
     ${Array.from({ length: 40 }, (_, i) => `<div class="lan-message" id="m${i}">第 ${i} 条消息，用来把滚动区撑高</div>`).join('')}
@@ -30,22 +29,42 @@ const html = `<!doctype html><html><head><meta charset="utf-8"><style>${css}</st
     <div class="composer"><textarea id="ta" rows="1"></textarea><div class="composer-tools"><span class="spacer"></span></div></div>
     <div class="task-status"><span>状态行</span></div>
   </div>
-</div></div>
+</div>`;
+
+/**
+ * MobileRoot 首帧是 loading（`!state.ready` 时整棵会话树都不在 DOM 里），所以复刻也必须
+ * 先画 loading、再挂会话树——直接把 DOM 铺齐的话，「量高的接线在 loading 那一帧空跑掉」
+ * 这一整类问题在这份判据里恒绿（grok ai-review Nit，而那正是同一轮 Important 的形状）。
+ */
+const html = `<!doctype html><html><head><meta charset="utf-8"><style>${css}</style></head><body>
+<div class="app" id="app"><div class="loading"><p>正在载入…</p></div></div>
 <script>
-  // 照搬 MobileRoot 那个 ResizeObserver：把输入区实测高度发布成 --composer-h
-  const area = document.getElementById('area'), root = document.getElementById('conversation');
-  const scroller = document.getElementById('scroller');
-  let following = true;
-  scroller.addEventListener('scroll', () => {
-    following = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 80;
-  });
-  const sync = () => {
-    root.style.setProperty('--composer-h', area.offsetHeight + 'px');
-    // 复刻 MobileRoot → CompanionConversation 的重新贴底
-    // （真实接线由 tests/unit/mobile/companionConversationRepin.test.tsx 钉住）
-    if (following) scroller.scrollTop = scroller.scrollHeight;
+  // 照搬 MobileRoot：用**回调 ref** 的时机——节点真正挂上时才接线，不是渲染第一帧就接
+  const mountConversation = () => {
+    document.getElementById('app').innerHTML = ${JSON.stringify(conversationTree)};
+    attach(document.getElementById('area'));
   };
-  sync(); new ResizeObserver(sync).observe(area);
+  window.mountConversation = mountConversation;
+  let observer = null;
+  function attach(area) {
+    observer?.disconnect(); observer = null;
+    const root = area?.closest('.conversation');
+    if (!area || !root) return;
+    const scroller = document.getElementById('scroller');
+    let following = true;
+    scroller.addEventListener('scroll', () => {
+      following = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 80;
+    });
+    const sync = () => {
+      root.style.setProperty('--composer-h', area.offsetHeight + 'px');
+      // 复刻 MobileRoot → CompanionConversation 的重新贴底
+      // （真实接线由 tests/unit/mobile/companionConversationRepin.test.tsx 钉住）
+      if (following) scroller.scrollTop = scroller.scrollHeight;
+    };
+    sync();
+    observer = new ResizeObserver(sync);
+    observer.observe(area);
+  }
 </script></body></html>`;
 
 type Probe = { clientHeight: number; scrollTop: number; anchorTop: number; areaHeight: number; lastVisible: boolean; jumpVisible: boolean };
@@ -58,8 +77,9 @@ type Probe = { clientHeight: number; scrollTop: number; anchorTop: number; areaH
 function assertReplicaStillMatches(): string[] {
   const source = fs.readFileSync(path.resolve(here, '../../packages/mobile/src/app/MobileRoot.tsx'), 'utf8');
   const required: [string, string][] = [
-    ['className="conversation" ref={conversation}', '会话根元素（--composer-h 挂在它身上）'],
+    ["closest<HTMLElement>('.conversation')", '往上找会话根（--composer-h 挂在它身上）'],
     ['className="composer-area" ref={composerArea}', '输入区那一层（被观察的就是它）'],
+    ['const composerArea = useCallback', '用回调 ref 挂观察者——effect+[] 会在 loading 那一帧空跑掉'],
     ["setProperty('--composer-h'", '把实测高度发布成 CSS 变量'],
     ['composerHeight={composerHeight}', '把高度传给会话区做重新贴底'],
   ];
@@ -76,6 +96,8 @@ async function main(): Promise<void> {
   const browser = await chromium.launch();
   const page = await browser.newPage({ viewport: { width: 393, height: 852 } });
   await page.setContent(html);
+  // 先停在 loading 那一帧，再把会话树挂上去——真机每一次启动都走这条路
+  await page.evaluate(() => (window as unknown as { mountConversation: () => void }).mountConversation());
 
   const probe = (): Promise<Probe> => page.evaluate(() => {
     const scroller = document.getElementById('scroller')!;
@@ -107,6 +129,17 @@ async function main(): Promise<void> {
 
   const failures: string[] = [];
   const near = (a: number, b: number, slack = 1) => Math.abs(a - b) <= slack;
+
+  // ── 场景零：过了 loading 帧之后，量高必须真的接上 ──
+  await settle();
+  const published = await page.evaluate(() =>
+    document.getElementById('conversation')!.style.getPropertyValue('--composer-h'));
+  const measured = await page.evaluate(() => document.getElementById('area')!.offsetHeight);
+  if (!published) {
+    failures.push('过了 loading 帧之后 --composer-h 一次都没写过——量高没接电，会一直停在 132px 兜底');
+  } else if (!near(parseFloat(published), measured, 1)) {
+    failures.push(`--composer-h 与实测不符：写的是 ${published}，实测 ${measured}px`);
+  }
 
   // ── 场景一：没贴底（滚到中间）时，输入区长高/变矮，可视内容必须一动不动 ──
   await page.evaluate(() => { document.getElementById('scroller')!.scrollTop = 400; });

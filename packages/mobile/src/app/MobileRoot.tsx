@@ -1,4 +1,4 @@
-import { VoiceInput } from '../features/sessions/VoiceInput';
+import { Composer } from '../features/sessions/Composer';
 import { LibrarySheet } from '../features/sessions/LibrarySheet';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from 'zustand';
@@ -10,6 +10,7 @@ import { unavailableNotificationPort } from '../platform/notifications';
 import { COMPANION_LIMITS } from '../../../../src/shared/constants/companion';
 import { ApprovalCard } from '../features/sessions/ApprovalCard';
 import { CompanionConversation } from '../features/sessions/CompanionConversation';
+import type { CompanionLibrary } from '../../../../src/shared/contract/companionLibrary';
 import { messages } from '../i18n';
 import { bytesToArrayBuffer } from '../platform/fileCache';
 import { createBackCoordinator } from './backCoordinator';
@@ -31,6 +32,37 @@ function PreviewMedia({ name, mimeType, bytes }: { name: string; mimeType: strin
 }
 
 /**
+ * 连接那一行的文案与动作。合成一条的原因（2026-09-12 爸真机反馈）：原来「连接胶囊说『重新连接』」
+ * 与「下面一行说『电脑尚未连接，草稿已保留』+ 重试」是同一件事说两遍，用户看到两行提示。
+ * 后台暂停期间（paused）不报错：那时没有任何事需要用户做，报「请重试」是假警报。
+ */
+export function connectionCopy(
+  text: ReturnType<typeof messages>,
+  companion: { status: string; paused: boolean; connectionError: string | null },
+): { label: string; connected: boolean; retry: boolean } {
+  if (companion.status === 'connected' || companion.paused) return { label: text.connected, connected: true, retry: false };
+  if (companion.status === 'connecting') return { label: text.connecting, connected: false, retry: false };
+  const label = companion.status === 'storageError' ? text.secureStorageError
+    : companion.status === 'rejected' ? text.rejected
+    : companion.connectionError ? text[companion.connectionError as keyof typeof text]
+    : text.unconnected;
+  return { label, connected: false, retry: true };
+}
+
+/**
+ * 输入区模型胶囊的文案（design.html composer 的 .model）：显示这条会话当前在用的模型。
+ * 模型表里查不到就退回会话自己的模型 id——电脑的可用模型列表会剔掉没配 key 的 provider，
+ * 而会话可能正用着其中一个（2026-09-12 build 24 真机：会话是 custom-glm-coding/glm-5.3-flash，
+ * 不在列表里）。查不到只说明「没有好看的名字」，不说明「没有模型」，隐藏胶囊等于把事实藏了；
+ * 同理也不拿列表第一个冒充当前模型（那正是 FB-141 那类谎）。
+ */
+export function composerModelLabel(library: CompanionLibrary | null, sessionId: string | null): string | null {
+  const session = library?.sessions.find(item => item.id === sessionId);
+  if (!session || !library) return null;
+  return library.models.find(m => m.provider === session.provider && m.model === session.model)?.label ?? session.model;
+}
+
+/**
  * 状态行文案。待确认命令按 action 分：语音转写不是「发送」，套用「请勿重复发送」会把用户
  * 指到一个不存在的风险上（2026-09-12 真机反馈）。抽成纯函数是为了让这条分支可单测——
  * 它此前是 JSX 里的内联三元，测不到。
@@ -49,7 +81,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
   const [store] = useState(() => createMobileStore(ports.preferences));
   const [companionStore] = useState(() => createCompanionStore(ports.companion, (acceptedText, sessionId, hostKey) => {
     return store.getState().acknowledgeDraft(acceptedText, `${hostKey}:${sessionId}`);
-  }, (text, sessionId, hostKey, commandId) => store.getState().appendTranscript(text, `${hostKey}:${sessionId}`, commandId), ports.files));
+  }, (text, sessionId, hostKey, commandId, continuation) => store.getState().appendTranscript(text, `${hostKey}:${sessionId}`, commandId, continuation), ports.files));
   const [notifyStore] = useState(() => createNotificationStore({
     port: ports.notifications ?? unavailableNotificationPort,
     preference: {
@@ -76,10 +108,10 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
   const [systemDark, setSystemDark] = useState(() => document.documentElement.dataset.systemNight === 'true'
     || matchMedia('(prefers-color-scheme: dark)').matches);
   const keyboardVisible = useRef(false);
-  const composing = useRef(false);
   const managing = useRef(false);
   const swipe = useRef<{ x: number; y: number } | null>(null);
-  const textarea = useRef<HTMLTextAreaElement>(null);
+  const recording = useRef(false);
+  const [voiceFailureShown, setVoiceFailureShown] = useState(false);
   const theme = state.preferences.appearance === 'system' ? (systemDark ? 'dark' : 'light') : state.preferences.appearance;
   const currentPage = state.sheet?.pages.at(-1);
   const pendingApprovals = useMemo(() => {
@@ -91,6 +123,10 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
   }, [companion.events, companion.sessionId]);
   const mineApproval = pendingApprovals.find(card => card.sessionId === companion.sessionId);
   const otherApproval = pendingApprovals.find(card => card.sessionId !== companion.sessionId);
+  // 输入区的模型胶囊（design.html composer 的 .model）：显示这条会话当前在用的模型，
+  // 没有会话或还没读到模型表时不显示——不拿列表第一个冒充当前模型。
+  const sessionModelLabel = composerModelLabel(companion.library, companion.sessionId);
+  const connection = connectionCopy(text, companion);
 
   // Text selections inside the composer never surface through window.getSelection on WebKit,
   // and long-press selection on WebView only lives in the element's own range.
@@ -158,19 +194,22 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
     void notifyStore.getState().recover();
     void companionStore.getState().refreshLibrary();
     void companionStore.getState().sync();
-    const timer = setInterval(() => { void companionStore.getState().sync(); }, COMPANION_LIMITS.pollIntervalMs);
-    return () => clearInterval(timer);
   }, [companion.status, companionStore, notifyStore]);
+  useEffect(() => {
+    if (companion.status !== 'connected') return;
+    // 待确认命令的结算只能靠轮询取回，所以转写在飞时把节奏加密：1 秒一拍意味着每段转写平均
+    // 白等半秒（2026-09-12 真机：14 段云端往返均值只有 905ms，轮询这半秒是「识别有点久」
+    // 四个来源里最便宜的一个）。只对 voice.transcribe 加密：它秒级就结算，别的命令（跑任务、
+    // 传文件）可能挂很久，全局加密等于长时间空转电台。
+    const timer = setInterval(() => { void companionStore.getState().sync(); },
+      companion.pendingAction === 'voice.transcribe' ? COMPANION_LIMITS.pendingPollIntervalMs : COMPANION_LIMITS.pollIntervalMs);
+    return () => clearInterval(timer);
+  }, [companion.status, companion.pendingAction, companionStore]);
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     // #1737 起 systemBars 是可选口（并非所有宿主都提供系统栏控制），必须可选链。
     void ports.systemBars?.setStyle(theme).catch(() => {});
   }, [ports, theme]);
-
-  useEffect(() => {
-    const input = textarea.current;
-    if (input) { input.style.height = 'auto'; input.style.height = `${Math.min(input.scrollHeight, 140)}px`; }
-  }, [state.preferences.drafts, state.ready]);
 
   useEffect(() => {
     if (companion.sessionId && companion.binding && state.route !== 'fixture') {
@@ -186,6 +225,11 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
     : companion.commandError === 'COMPANION_EXPORT_FAILED' ? text.exportFailed
     : companion.commandError === 'ARTIFACT_MISSING' ? text.artifactMissing
     : companion.commandError && ['COMPANION_TRANSFER_INTERRUPTED', 'ATTACHMENT_INCOMPLETE', 'COMPANION_INTERRUPTED', 'COMPANION_NETWORK_UNAVAILABLE', 'COMPANION_CHANNEL_CLOSED'].includes(companion.commandError) ? text.transferInterrupted
+    // 转写失败由输入区那条提示负责（它带阶段和真实错误码）；这里再来一句「电脑那边拒绝了这条操作」
+    // 只是把同一件事说两遍——真机上就是上下叠着两行（2026-09-12 build 24 实测）。
+    // 但只有它**真的在显示**时才让位：切会话会把输入区重挂、取消后 ack 才回来，
+    // 那些时候输入区手里没有这条失败，无条件让位等于让它一个落点都没有（grok ai-review Nit）。
+    : companion.commandError === 'COMPANION_TRANSCRIPTION_FAILED' && voiceFailureShown ? null
     : companion.commandError ? text.commandRejected : null;
   const selectSession = (id: string) => { companion.selectSession(id); state.navigate('new'); };
   const manage: typeof companion.manage = async (...args) => {
@@ -207,7 +251,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
 
   const gestureStart = (event: React.TouchEvent) => {
     const touch = event.touches[0];
-    if (!touch || event.touches.length !== 1 || state.sheet || keyboardVisible.current ||
+    if (!touch || event.touches.length !== 1 || state.sheet || keyboardVisible.current || recording.current ||
       textSelected() || (event.target as Element).closest('button,input,textarea,[data-testid="history"]') || touch.clientX < 24) return;
     swipe.current = { x: touch.clientX, y: touch.clientY };
   };
@@ -244,19 +288,16 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
           {otherApproval && <button className="primary" onClick={() => selectSession(String(otherApproval.sessionId))}>{text.reviewApproval}</button>}
         </div>}
         {companion.binding && <div className="task-status" role="status">
-          <button className="connection-pill" data-connected={companion.status === 'connected'} onClick={() => state.openSheet('remote')}>
-            <span aria-hidden="true" className="status-dot" />{companion.status === 'connected' ? text.connected : companion.status === 'connecting' ? text.connecting : text.reconnect}
+          <button className="connection-pill" data-connected={connection.connected} onClick={() => state.openSheet('remote')}>
+            <span aria-hidden="true" className="status-dot" />{connection.label}
           </button>
           <span>{taskStatusCopy(text, companion)}</span>
           {companion.runId && <button disabled={companion.busy || companion.pending || companion.status !== 'connected'} onClick={() => void companion.stop()}>{text.stop}</button>}
-        </div>}
-        {companion.binding && !['connected', 'connecting'].includes(companion.status) && <div className="connection-recovery">
-          <p>{companion.status === 'storageError' ? text.secureStorageError : companion.status === 'rejected' ? text.rejected : companion.connectionError ? text[companion.connectionError] : text.unconnected}</p>
-          <button disabled={companion.busy} onClick={() => void companion.reconnect()}>{text.retry}</button>
+          {connection.retry && <button disabled={companion.busy} onClick={() => void companion.reconnect()}>{text.retry}</button>}
         </div>}
         {companion.libraryError && <p className="notice" role="status">{text.libraryError}<button onClick={() => void companion.reconnect()}>{text.reconnect}</button></p>}
         {fixtures && <p className="caption">{text.fixtureNotice}</p>}
-        {(state.saveError || nativeError || companion.commandError || (state.sendAttempted && !canAddressSession(companion))) && <p role="status" className="notice">
+        {(state.saveError || nativeError || (companion.commandError && commandNotice) || (state.sendAttempted && !canAddressSession(companion))) && <p role="status" className="notice">
           {state.saveError ? text.saveError
             : nativeError ? text.nativeError
             : commandNotice ? commandNotice
@@ -266,24 +307,29 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
           {!state.saveError && !nativeError && !companion.commandError && companion.status === 'connected'
             && <button onClick={() => state.openSheet('projects')}>{text.projects}</button>}
         </p>}
-        <div className="composer">
-          <textarea ref={textarea} aria-label={text.draft} placeholder={text.placeholder} rows={1}
-            value={(state.preferences.drafts[state.draftKey] ?? '')} data-testid="draft"
-            onCompositionStart={() => { composing.current = true; }} onCompositionEnd={() => { composing.current = false; }}
-            onChange={event => state.editDraft(event.target.value)} />
-          <div className="composer-actions"><button aria-label={text.projects} onClick={() => state.openSheet('projects')}><AppIcon name="plus" /></button>
-            {ports.files && <button aria-label={text.attach} disabled={!canAddressSession(companion) || companion.busy || companion.pending} onClick={() => void ports.files!.pick('file').then(picked => { if (picked) void companion.upload(picked); }).catch(error => { if (error instanceof Error && error.message === 'UPLOAD_TOO_LARGE') companionStore.setState({ commandError: 'UPLOAD_TOO_LARGE' }); })}><AppIcon name="attach" /></button>}
-            {ports.recorder && companion.sessionId && <VoiceInput key={`${companion.binding?.hostKey}:${companion.sessionId}`} recorder={ports.recorder} text={text}
-              disabled={companion.status !== 'connected' || companion.busy || companion.pending} pending={companion.pending} outcome={companion.voiceOutcome} transcribe={audio => companion.transcribe(audio, companion.sessionId!, companion.binding!.hostKey)} />}
-            <button className="send" aria-label={text.send} data-testid="send" disabled={!(state.preferences.drafts[state.draftKey] ?? '').trim() || companion.busy || companion.pending}
-              onClick={() => { if (!composing.current) {
-                // companionStore.send 在没有 sessionId 时会静默 return（只勾了项目的二维码
-                // 配对就是这个形态）。不把这一档也走 attemptSend 的话，用户看到「已连接」、
-                // 点发送却什么都不发生——无报错、无 pending、草稿不清，只能反复点。
-                if (canAddressSession(companion) && state.route !== 'fixture') void companion.send((state.preferences.drafts[state.draftKey] ?? ''));
-                else state.attemptSend();
-              } }}><AppIcon name="arrow" /></button></div>
-        </div>
+        <Composer key={`${companion.binding?.hostKey}:${companion.sessionId}`} text={text}
+          draft={state.preferences.drafts[state.draftKey] ?? ''} editDraft={state.editDraft}
+          // 暂停不是离线：胶囊那边显示已连接，占位却说「先写下来，连接后再发送」就自相矛盾
+          // （grok ai-review Nit，正是爸看到的那张后台快照）。
+          offline={!!companion.binding && !connection.connected}
+          sendDisabled={!(state.preferences.drafts[state.draftKey] ?? '').trim() || companion.busy || companion.pending}
+          send={() => {
+            // companionStore.send 在没有 sessionId 时会静默 return（只勾了项目的二维码
+            // 配对就是这个形态）。不把这一档也走 attemptSend 的话，用户看到「已连接」、
+            // 点发送却什么都不发生——无报错、无 pending、草稿不清，只能反复点。
+            if (canAddressSession(companion) && state.route !== 'fixture') void companion.send((state.preferences.drafts[state.draftKey] ?? ''));
+            else state.attemptSend();
+          }}
+          modelLabel={sessionModelLabel} openModel={() => state.openSheet('more')}
+          attach={ports.files && (() => void ports.files!.pick('file').then(picked => { if (picked) void companion.upload(picked); }).catch(error => { if (error instanceof Error && error.message === 'UPLOAD_TOO_LARGE') companionStore.setState({ commandError: 'UPLOAD_TOO_LARGE' }); }))}
+          attachDisabled={!canAddressSession(companion) || companion.busy || companion.pending}
+          recorder={companion.sessionId ? ports.recorder : undefined}
+          transcribe={(audio, continuation, take) => companion.transcribe(audio, companion.sessionId!, companion.binding!.hostKey, continuation, take)}
+          discardPendingTranscript={companion.discardPendingTranscript}
+          voiceDisabled={companion.status !== 'connected' || companion.busy || companion.pending}
+          voicePending={companion.pending} voiceResult={companion.voiceResult}
+          voiceReady={canAddressSession(companion)}
+          onVoiceState={({ recording: active, failed }) => { recording.current = active; setVoiceFailureShown(failed); }} />
       </div>
     </main>
     {state.drawer && <div className="drawer-layer" inert={!!state.sheet}>

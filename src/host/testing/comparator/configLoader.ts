@@ -3,6 +3,7 @@ import fs from 'fs/promises';
 import * as yaml from 'js-yaml';
 import type { CompareConfiguration } from '../types';
 import { SPAWN_GUARD } from '../../../shared/constants/agent';
+import { validateHarnessKnobs } from '../../../shared/constants/harnessKnobs';
 import { validateDiscoverableSkills } from '../skillSelection';
 
 function optionalString(value: unknown, field: string, filePath: string): string | undefined {
@@ -117,6 +118,8 @@ export async function loadCompareConfig(
           thinkingInjection: optionalBoolean(parsedHarness.thinkingInjection, 'harness.thinkingInjection', filePath),
           hooksEnabled: optionalBoolean(parsedHarness.hooksEnabled, 'harness.hooksEnabled', filePath),
           toolMode: optionalEnum(parsedHarness.toolMode, ['all', 'deferred'], 'harness.toolMode', filePath),
+          // 行为策略数值旋钮：与评测请求走同一校验器（未知键/非正数/比例越界拒），不许静默丢掉
+          knobs: parsedHarness.knobs === undefined ? undefined : validateHarnessKnobs(parsedHarness.knobs),
         }
       : undefined,
     memory: parsedMemory

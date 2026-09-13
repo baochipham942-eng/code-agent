@@ -31,6 +31,7 @@ const SCRIPT = join(repoRoot, 'scripts', 'worktree-bootstrap.sh');
 // 与 scripts/worktree-bootstrap.sh 里的清单保持一致；改脚本清单时必须同步这里。
 const LINK_ITEMS = [
   'node_modules',
+  'vercel-api/node_modules',
   '.husky/_',
   'scripts/rtk',
   'scripts/uv',
@@ -63,6 +64,7 @@ function makeSourceTree(dir: string): void {
   // 主树的 .git 是目录（与 linked worktree 的指针文件相对），顺手造上以防回归。
   mkdirSync(join(dir, '.git'), { recursive: true });
   writeFake(dir, 'node_modules/some-pkg/index.js');
+  writeFake(dir, 'vercel-api/node_modules/some-pkg/index.js');
   writeFake(dir, '.husky/_/h');
   writeFake(dir, '.husky/_/pre-commit');
   chmodSync(join(dir, '.husky/_/pre-commit'), 0o755);
@@ -173,6 +175,7 @@ describe('worktree-bootstrap.sh', () => {
     expect(second.stdout).toContain(`link=0 copy=0 skip=${ALL_ITEMS.length}`);
     expect(snapshotTree(target)).toEqual(first);
     expect(lstatSync(join(target, 'node_modules')).isSymbolicLink()).toBe(true);
+    expect(lstatSync(join(target, 'vercel-api/node_modules')).isSymbolicLink()).toBe(true);
     expect(lstatSync(join(target, 'dist/native')).isSymbolicLink()).toBe(false);
   });
 

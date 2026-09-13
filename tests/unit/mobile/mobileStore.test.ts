@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createMobileStore } from '../../../packages/mobile/src/stores/mobileStore';
+import { createMobileStore, joinTranscript } from '../../../packages/mobile/src/stores/mobileStore';
 import { canAddressSession } from '../../../packages/mobile/src/stores/companionStore';
 
 function disk(initial: string | null = null) {
@@ -158,6 +158,31 @@ it('transcription receipts append once to the originating draft and never send i
   expect(next.getState().preferences.drafts['host:a']).toBe('existing\nspoken words');
   expect(next.getState().preferences.drafts['host:b']).toBe('other session');
   expect(next.getState().sendAttempted).toBe(false);
+});
+
+it('分片续写接着上一段写，不在用户句子里插换行', async () => {
+  const store = createMobileStore(disk()); await store.getState().hydrate();
+  store.getState().activateDraft('host:a'); store.getState().editDraft('我先说一句');
+  await store.getState().appendTranscript('帮我整理资料', 'host:a', 'chunk-1');
+  await store.getState().appendTranscript('重点看定位', 'host:a', 'chunk-2', true);
+  // 第一段与用户已打的字分行；同一次录音的第二段接着写
+  expect(store.getState().preferences.drafts['host:a']).toBe('我先说一句\n帮我整理资料重点看定位');
+});
+
+describe('joinTranscript', () => {
+  it.each([
+    ['空草稿直接用转写结果', '', '你好', false, '你好'],
+    ['整段转写另起一行', '已有文字', '你好', false, '已有文字\n你好'],
+    ['中文分片续写不补空格', '重点看一下它们的', '定位和传播方式', true, '重点看一下它们的定位和传播方式'],
+    ['中文标点结尾也不补空格', '整理好了。', '还要补一页', true, '整理好了。还要补一页'],
+    ['英文分片续写补一个空格，别把两个词粘死', 'brand research', 'and positioning', true, 'brand research and positioning'],
+    // grok ai-review #1764 Nit：日韩也算 CJK，漏了就在词间多空格
+    ['日文假名相接不补空格', 'これは', 'テストです', true, 'これはテストです'],
+    ['韩文音节相接不补空格', '안녕하', '세요', true, '안녕하세요'],
+    ['空转写不动草稿', '已有文字', '', true, '已有文字'],
+  ])('%s', (_name, draft, text, continuation, expected) => {
+    expect(joinTranscript(draft, text, continuation)).toBe(expected);
+  });
 });
 
 // ai-review #1742 Important：send / transcribe / respond 三处在没有可寻址会话时都是**静默

@@ -87,5 +87,6 @@ describe('电容配置与接线', () => {
     expect(css).toContain('.sheet { position: absolute; bottom: var(--keyboard-h, 0px);');
     expect(css).toContain('max-height: calc(100% - max(16px, var(--safe-top)) - var(--keyboard-h, 0px));');
     expect(css).toContain('html { transition: --keyboard-h var(--keyboard-duration, 0s) var(--keyboard-easing, linear); }');
+    expect(css).not.toMatch(/\.sheet \{[^}]*transition:/);
   });
 });

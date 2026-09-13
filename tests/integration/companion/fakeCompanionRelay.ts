@@ -86,8 +86,8 @@ export class FakeCompanionRelay {
   }
 
   private accept(socket: WebSocket, request: IncomingMessage): void {
-    const url = new URL(request.url ?? '/', 'http://127.0.0.1');
-    const auth = url.searchParams.get('auth') ?? '';
+    const header = request.headers.authorization;
+    const auth = typeof header === 'string' ? header.replace(/^Bearer\s+/i, '').trim() : '';
     if (!sameSecret(auth, this.credential)) { socket.close(); return; }
     socket.on('message', data => {
       const raw = String(data);

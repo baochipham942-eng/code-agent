@@ -18,7 +18,7 @@
 
 - `v`：协议版本，预留字段；当前只接受 `1`。
 - `url`：受信 relay 的 WSS 地址。非环回必须 `wss:`；环回 `ws:` 仅给本地 fake relay。
-- `credentialRef`：路由凭据引用，短 TTL，不是长期内容密钥。
+- `credentialRef`：路由凭据引用，短 TTL，不是长期内容密钥。拨号时走 WebSocket `Authorization` 头，不放进 URL。
 - `reconnectBackoffMs`：断开后的重连退避（毫秒）。缺省 1/2/4/8/16/30 秒并加抖动。
 
 Relay 只见信封（route token、设备身份引用、seq、TTL）和密文负载；不执行任务、不存全量历史、不接收长期内容密钥。消息仅有界内存转发，断开不无限排队。命令语义仍走 CompanionGateway（幂等键穿透 relay 层）。撤销时 Host 发 `revoke` 帧，relay 同步断路。

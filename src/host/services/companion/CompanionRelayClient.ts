@@ -158,9 +158,9 @@ export class CompanionRelayClient {
   private async dial(): Promise<void> {
     if (this.stopped) return;
     await new Promise<void>((resolve, reject) => {
-      const url = new URL(this.deps.config.url);
-      url.searchParams.set('auth', this.deps.credential);
-      const socket = new this.WebSocketImpl(url.toString());
+      const socket = new this.WebSocketImpl(this.deps.config.url, {
+        headers: { authorization: `Bearer ${this.deps.credential}` },
+      });
       const timer = setTimeout(() => { socket.terminate(); reject(new Error('COMPANION_RELAY_CONNECT_TIMEOUT')); }, L.relayConnectTimeoutMs);
       socket.once('open', () => {
         clearTimeout(timer);

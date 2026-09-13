@@ -36,10 +36,8 @@ export class RelayPhoneStub {
 
   async connect(url: string, credential: string): Promise<void> {
     this.close();
-    const target = new URL(url);
-    target.searchParams.set('auth', credential);
     await new Promise<void>((resolve, reject) => {
-      const socket = new WebSocket(target.toString());
+      const socket = new WebSocket(url, { headers: { authorization: `Bearer ${credential}` } });
       const timer = setTimeout(() => { socket.terminate(); reject(new Error('COMPANION_RELAY_CONNECT_TIMEOUT')); }, L.relayConnectTimeoutMs);
       socket.once('open', () => {
         clearTimeout(timer);

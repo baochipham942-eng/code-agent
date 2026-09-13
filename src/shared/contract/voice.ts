@@ -289,7 +289,7 @@ export type VoiceEvent =
   /** 通话预算快照。未设上限时 host 不发。 */
   | ({ type: 'budget' } & VoiceBudgetSnapshot);
 
-export type VoiceSessionEndedReason = 'idle-timeout' | 'budget';
+type VoiceSessionEndedReason = 'idle-timeout' | 'budget';
 
 export type VoiceBudgetLevel = 'none' | 'silent' | 'warning' | 'blocked';
 

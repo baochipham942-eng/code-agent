@@ -2,7 +2,7 @@
 import React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { COMPANION_MANAGE_CHANNEL } from '../../../src/shared/constants/companion';
+import { COMPANION_LIMITS, COMPANION_MANAGE_CHANNEL } from '../../../src/shared/constants/companion';
 import { companionText } from '../../../src/renderer/i18n/companion';
 import type { CompanionManagementResult } from '../../../src/shared/contract/companionManagement';
 
@@ -63,6 +63,18 @@ describe('CompanionSection pairing UI', () => {
     expect(screen.getByText(text.scanHint)).toBeTruthy();
     expect(screen.getByText(text.expires)).toBeTruthy();
     expect(screen.getByText(text.awayHint)).toBeTruthy();
+  });
+
+  it('still invites when there are more projects than one invite can cover', async () => {
+    const extra = Array.from({ length: COMPANION_LIMITS.maxScopeSessions + 1 }, (_, i) => ({ id: `p${i}`, name: `P${i}` }));
+    mockManage(status({ projects: extra }));
+    render(<CompanionSection />);
+    expect(await screen.findByText(text.scopeCapped)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: text.create }));
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith(COMPANION_MANAGE_CHANNEL, {
+      action: 'invite',
+      scope: extra.slice(0, COMPANION_LIMITS.maxScopeSessions).map(project => `project:${project.id}`),
+    }));
   });
 
   it('shows an empty-library state and does not invite', async () => {

@@ -1,7 +1,7 @@
 export const companionText = {
   zh: {
     title: '连接手机',
-    description: '让手机接着处理电脑上的工作。配对后，手机使用蜂窝网络或其他 Wi-Fi 也可连接。',
+    description: '让手机接着处理电脑上的工作。手机和电脑需连接同一网络，电脑需要保持开启。',
     scanHint: '打开手机 Neo，扫描此码',
     create: '生成配对二维码',
     regenerate: '重新生成二维码',
@@ -15,7 +15,8 @@ export const companionText = {
     revoke: '撤销连接',
     error: '连接设置暂不可用，请确认电脑已连接局域网后重试。',
     errorLan: '当前没有可用的局域网地址，请确认电脑已连接网络后重试。',
-    errorScope: '这次邀请无法覆盖全部项目，请减少项目数量后重试。',
+    errorScope: '这次邀请无法覆盖全部项目，请刷新后重试。',
+    scopeCapped: '项目数量超过这次邀请的上限，将只授权列表中的前一部分。其余项目需之后重新配对。',
     errorSession: '项目列表已变化，请刷新后重新生成。',
     errorUnavailable: '连接服务暂不可用，请稍后重试。',
     phone: '手机',
@@ -28,7 +29,7 @@ export const companionText = {
   },
   en: {
     title: 'Connect a phone',
-    description: 'Let your phone continue work from this computer. After pairing, the phone can connect over cellular or another Wi-Fi.',
+    description: 'Let your phone continue work from this computer. Connect both devices to the same network and keep this computer on.',
     scanHint: 'Open Neo on your phone and scan this code',
     create: 'Create pairing code',
     regenerate: 'Create a new code',
@@ -42,7 +43,8 @@ export const companionText = {
     revoke: 'Revoke connection',
     error: 'Connection settings unavailable. Check the local network and retry.',
     errorLan: 'No local network address is available. Connect this computer to a network and retry.',
-    errorScope: 'This invite cannot cover every project. Reduce the number of projects and retry.',
+    errorScope: 'This invite cannot cover every project. Refresh and retry.',
+    scopeCapped: 'There are more projects than one invite can cover. This code authorizes the first part of the list. Pair again later for the rest.',
     errorSession: 'The project list changed. Refresh and create a new code.',
     errorUnavailable: 'The connection service is unavailable. Retry in a moment.',
     phone: 'Phone',

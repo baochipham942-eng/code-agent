@@ -33,8 +33,9 @@ export function CompanionSection() {
   const [error, setError] = useState<string | null>(null);
   const [expired, setExpired] = useState(false);
   const projects = status?.projects ?? [];
-  const grants = projectScope(projects);
-  const canInvite = !!status && grants.length > 0 && grants.length <= COMPANION_LIMITS.maxScopeSessions;
+  const grants = projectScope(projects).slice(0, COMPANION_LIMITS.maxScopeSessions);
+  const capped = (status?.projects?.length ?? 0) > grants.length;
+  const canInvite = !!status && grants.length > 0;
   const refresh = async () => {
     const result = await invoke(COMPANION_MANAGE_CHANNEL, { action: 'status' });
     if (result?.kind !== 'status') throw new Error('COMPANION_UNAVAILABLE');
@@ -50,7 +51,6 @@ export function CompanionSection() {
   };
   const invite = () => void run(async () => {
     if (!grants.length) return;
-    if (grants.length > COMPANION_LIMITS.maxScopeSessions) throw new Error('COMPANION_INVALID_SCOPE');
     setQr(null); setExpired(false);
     const result = await invoke(COMPANION_MANAGE_CHANNEL, { action: 'invite', scope: grants });
     if (result.kind !== 'invitation') throw new Error('COMPANION_UNAVAILABLE');
@@ -66,6 +66,7 @@ export function CompanionSection() {
   return <SettingsSection title={text.title} description={text.description}>
     <fieldset disabled={busy} className="space-y-4">
       {status && !projects.length && <p className="text-sm text-zinc-400">{text.empty}</p>}
+      {capped && <p role="status">{text.scopeCapped}</p>}
       <div className="flex flex-wrap items-start gap-5">
         {qr && <img src={qr.image} alt={text.qr} width={320} height={320} className="rounded-lg bg-white p-2" />}
         <div className="space-y-2 text-sm">

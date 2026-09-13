@@ -11,7 +11,13 @@ import type {
   VoiceBudgetExceedAction,
   VoiceBudgetLevel,
   VoiceBudgetSnapshot,
+  VoiceEvent,
+  VoiceTokenUsage,
 } from '../../../shared/contract/voice';
+import { estimateRealtimeVoiceCost } from '../../../shared/pricing/estimateRealtimeVoiceCost';
+import { createLogger } from '../infra/logger';
+
+const logger = createLogger('VoiceBudget');
 
 export interface VoiceBudgetConfig {
   minuteLimit: number | null;
@@ -79,4 +85,97 @@ export function evaluateVoiceBudget(
     costAmount,
     costLimit,
   };
+}
+
+export interface VoiceBudgetSubject {
+  id: string;
+  ending: boolean;
+  startedAt: number;
+  conversationModel: string;
+  tokenUsage: { value?: VoiceTokenUsage };
+}
+
+interface VoiceBudgetWatch {
+  config: VoiceBudgetConfig;
+  lastLevel: VoiceBudgetLevel;
+  timer: NodeJS.Timeout | null;
+}
+
+const watches = new Map<string, VoiceBudgetWatch>();
+
+export function tickVoiceBudget(
+  session: VoiceBudgetSubject,
+  send: (event: VoiceEvent) => void,
+  hangup: () => void,
+): void {
+  const watch = watches.get(session.id);
+  if (!watch || session.ending) return;
+  const estimate = session.tokenUsage.value
+    ? estimateRealtimeVoiceCost(session.conversationModel, session.tokenUsage.value)
+    : null;
+  const evaluation = evaluateVoiceBudget({
+    elapsedMs: Date.now() - session.startedAt,
+    costAmount: estimate?.amount ?? null,
+    minuteLimit: watch.config.minuteLimit,
+    costLimit: watch.config.costLimit,
+  });
+  send({
+    type: 'budget',
+    ...evaluation,
+    costCurrency: estimate?.currency ?? null,
+  });
+  const previous = watch.lastLevel;
+  if (evaluation.level === 'silent' && previous === 'none') {
+    logger.info('voice budget silent threshold', {
+      voiceSessionId: session.id,
+      usageRatio: evaluation.usageRatio,
+    });
+  }
+  if (evaluation.level === 'warning' && previous !== 'warning' && previous !== 'blocked') {
+    send({
+      type: 'notice',
+      code: 'VOICE_BUDGET_WARNING',
+      message: 'VOICE_BUDGET_WARNING',
+    });
+  }
+  if (evaluation.level === 'blocked' && previous !== 'blocked') {
+    send({
+      type: 'notice',
+      code: 'VOICE_BUDGET_EXCEEDED',
+      message: 'VOICE_BUDGET_EXCEEDED',
+    });
+    watch.lastLevel = evaluation.level;
+    if (watch.config.exceedAction === 'hangup') {
+      send({ type: 'session.ended', reason: 'budget' });
+      hangup();
+      return;
+    }
+  }
+  watch.lastLevel = evaluation.level;
+}
+
+export function startVoiceBudgetWatch(
+  session: VoiceBudgetSubject,
+  live: VoiceLiveSettings | undefined,
+  send: (event: VoiceEvent) => void,
+  hangup: () => void,
+  isCurrent: () => boolean,
+): void {
+  stopVoiceBudgetWatch(session.id);
+  const config = resolveVoiceBudgetConfig(live);
+  if (!isVoiceBudgetConfigured(config)) return;
+  const watch: VoiceBudgetWatch = { config, lastLevel: 'none', timer: null };
+  watches.set(session.id, watch);
+  tickVoiceBudget(session, send, hangup);
+  watch.timer = setInterval(() => {
+    if (isCurrent()) tickVoiceBudget(session, send, hangup);
+  }, VOICE_BUDGET.EVAL_INTERVAL_MS);
+  watch.timer.unref?.();
+}
+
+export function stopVoiceBudgetWatch(sessionId: string): void {
+  const watch = watches.get(sessionId);
+  if (!watch) return;
+  if (watch.timer) clearInterval(watch.timer);
+  watches.delete(sessionId);
 }

@@ -16,6 +16,7 @@ import {
   type DurableRunRolloutPolicy,
 } from './durableRunRollout';
 import { DurableRunReadService } from './durableRunReadService';
+import { armBackgroundSubagentDurableLedger } from '../agent/backgroundSubagentDurableLedger';
 
 export class DurableRunRolloutInitializationError extends Error {
   readonly code = 'DURABLE_RUN_ROLLOUT_INITIALIZATION_FAILED';
@@ -94,6 +95,9 @@ export function assembleDurableRun(
       }),
     };
   }
+  // durable 激活：后台子代理 spawn 从此等待账本 configure（fail-closed），
+  // 不再悄悄退回纯内存。legacy 分支永不 arm，spawn 行为与改造前一致。
+  armBackgroundSubagentDurableLedger();
   if (!input.repository) {
     throw new DurableRunRolloutInitializationError(
       `${policy.mode} requires initialized Durable Run migration and repository`,

@@ -5,8 +5,9 @@
  * 这条不变量在那里根本不可观测。为什么不能用截图：这是运动伪影，两张图各自都"对"，
  * 错的是它们之间的那一跳。所以在真引擎里量数。
  *
- * 用真 styles.css + 真 DOM 形状（形状本身由 tests/unit/mobile/mobileRootLayout.test.tsx
- * 钉住与 MobileRoot 一致，两边一起改才作数）。
+ * 用真 styles.css + 真 DOM 形状。复刻与真组件的接线由两道兜：下面的 assertReplicaStillMatches()
+ * 对着 MobileRoot 源码核承重点，重新贴底那一半由 tests/unit/mobile/companionConversationRepin.test.tsx
+ * 在 jsdom 里钉。
  *
  * 跑法：npx tsx scripts/acceptance/mobile-composer-overlay-layer.tsx
  */
@@ -24,7 +25,7 @@ const html = `<!doctype html><html><head><meta charset="utf-8"><style>${css}</st
   <div class="topbar"><strong>会话</strong></div>
   <div class="message-region"><div class="lan-messages" id="scroller">
     ${Array.from({ length: 40 }, (_, i) => `<div class="lan-message" id="m${i}">第 ${i} 条消息，用来把滚动区撑高</div>`).join('')}
-  </div></div>
+  </div><button class="jump-latest" id="jump">回到最新</button></div>
   <div class="composer-area" id="area">
     <div class="composer"><textarea id="ta" rows="1"></textarea><div class="composer-tools"><span class="spacer"></span></div></div>
     <div class="task-status"><span>状态行</span></div>
@@ -87,6 +88,10 @@ async function main(): Promise<void> {
       areaHeight: area.offsetHeight,
       // 最后一条消息的底边不许被输入区那一层盖住
       lastVisible: last.bottom <= area.getBoundingClientRect().top + 1,
+      // 「回到最新」也不许落在那一层后面——它是浮在 message-region 上的，而 message-region
+      // 现在一直铺到会话底边
+      jumpVisible: document.getElementById('jump')!.getBoundingClientRect().bottom
+        <= area.getBoundingClientRect().top + 1,
     };
   });
 
@@ -126,7 +131,14 @@ async function main(): Promise<void> {
     await settle();
     const bottom = await probe();
     if (!bottom.lastVisible) failures.push(`输入区高 ${bottom.areaHeight}px 贴底时，最后一条消息被盖住了`);
+    if (!bottom.jumpVisible) failures.push(`输入区高 ${bottom.areaHeight}px 时，「回到最新」被输入区那一层盖住了（点不到）`);
   }
+
+  // ── 场景三：矮屏（媒体查询会重写留白）也要给浮层留底 ──
+  await page.setViewportSize({ width: 393, height: 500 });
+  await setComposerHeight(140);
+  const short = await probe();
+  if (!short.jumpVisible) failures.push(`矮屏 500px 下「回到最新」被输入区那一层盖住了`);
 
   await browser.close();
   if (failures.length) {

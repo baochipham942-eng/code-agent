@@ -59,7 +59,8 @@ input { width: 100%; padding: 16px; background: var(--surface); border: 1px soli
 .about { text-align: center; padding: 18px 8px; }.about p { color: var(--muted); }
 .virtual-history { flex: 1; min-height: 0; overflow: auto; overflow-anchor: none; overscroll-behavior: contain; padding-bottom: var(--composer-h, 132px); }.history-row { left: 0; right: 0; padding: 16px 24px; border-bottom: 1px solid var(--line); overflow: auto; }.history-row p { margin: 8px 0; color: var(--muted); font-size: 15px; }
 .loading { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 30px; }
-@media (max-height: 520px) { .welcome { padding: 4px 20px; }.welcome .brand-mark { display: none; }h1 { font-size: 21px; margin: 10px; }.composer textarea { min-height: 28px; max-height: 80px; }.composer { padding-top: 8px; } }
+/* 矮屏也要给浮层留底：只压上下留白，不能把 --composer-h 那份让位一起压掉（grok ai-review Nit）。 */
+@media (max-height: 520px) { .welcome { padding: 4px 20px calc(4px + var(--composer-h, 132px)); }.welcome .brand-mark { display: none; }h1 { font-size: 21px; margin: 10px; }.composer textarea { min-height: 28px; max-height: 80px; }.composer { padding-top: 8px; } }
 .lan-messages { flex: 1; min-height: 0; overflow: auto; padding: 16px; }
 .lan-message { white-space: pre-wrap; overflow-wrap: anywhere; padding: 12px; line-height: 1.6; }
 .lan-message.from-user { margin-left: 24px; background: var(--surface); border-radius: 16px; }
@@ -86,7 +87,9 @@ input { width: 100%; padding: 16px; background: var(--surface); border: 1px soli
 .lan-messages { overscroll-behavior: contain; padding: 8px 20px calc(20px + var(--composer-h, 132px)); }
 .lan-message { padding: 8px 0; margin: 12px 0 22px; line-height: 1.7; font-size: 16px; }
 .lan-message.from-user { width: fit-content; max-width: 88%; margin-left: auto; background: var(--group); padding: 12px 16px; border-radius: 22px; }
-.jump-latest { position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); background: var(--surface); border: 1px solid var(--line); box-shadow: 0 3px 12px #0001; border-radius: 24px; font-size: 13px; padding: 6px 16px; }
+/* message-region 现在一直铺到会话底边（输入区是浮层，不占流），所以这颗按钮也要避开那一层，
+   否则它正好落在输入区后面，用户滚上去看历史时点不到（grok ai-review Important）。 */
+.jump-latest { position: absolute; bottom: calc(10px + var(--composer-h, 132px)); left: 50%; transform: translateX(-50%); background: var(--surface); border: 1px solid var(--line); box-shadow: 0 3px 12px #0001; border-radius: 24px; font-size: 13px; padding: 6px 16px; }
 .approval-card { background: var(--surface); border-color: var(--line); }
 .approval-tray .approval-card { padding: 12px; border: 1px solid var(--line); box-shadow: 0 2px 12px #0001; max-height: min(300px, 38dvh); }
 .approval-card > strong { font-size: 14px; }

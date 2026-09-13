@@ -19,6 +19,7 @@ import { fromHex, toHex, isLanPeer, isPrivateIPv4, lanAdvertisedHost, parseInvit
 import { LanCompanionClient, type LanPost } from '../../packages/mobile/src/platform/lanCompanionClient';
 import { COMPANION_EVENT_DROPPED, COMPANION_LIMITS as L } from '../../src/shared/constants/companion';
 import { createCompanionStore } from '../../packages/mobile/src/stores/companionStore';
+import { companionTranscriptionSettlement } from '../../src/host/services/speech/speechTranscriptionService';
 import type { CompanionSyncResult } from '../../src/shared/contract/companion';
 import vector from '../fixtures/companion/lan-noise-vector.json';
 
@@ -417,7 +418,10 @@ describe('LAN companion: real HTTP + Noise + SQLite', () => {
     // 说的是「这段没人说话」，在分片路径上不是失败。
     const db2 = new Database(':memory:');
     const gateway2 = new CompanionGateway(db2, { now: () => now,
-      dispatch: () => ({ state: 'rejected', result: { code: 'HALLUCINATION' } }) });
+      // 替身必须走**生产的**结算映射：第一版手工塞 { code:'HALLUCINATION' } 全绿，而真实写入点
+      // 当时把所有失败压成 COMPANION_TRANSCRIPTION_FAILED，手机侧判据在生产里恒不成立
+      // ——替身比真实依赖宽容，全量绿真机红（grok ai-review Important）。
+      dispatch: () => companionTranscriptionSettlement({ success: false, engine: 'groq', code: 'HALLUCINATION' } as never) });
     const server2 = new LanCompanionServer(gateway2, hostIdentity, () => now);
     await server2.start(address!, 0);
     let storage: string | null = null;
@@ -438,7 +442,7 @@ describe('LAN companion: real HTTP + Noise + SQLite', () => {
     // 判据不能宽成「voice.transcribe 被拒就不报错」——网络/鉴权/主机 5xx 必须让用户看见。
     const db2 = new Database(':memory:');
     const gateway2 = new CompanionGateway(db2, { now: () => now,
-      dispatch: () => ({ state: 'rejected', result: { code: 'COMPANION_TRANSCRIPTION_FAILED' } }) });
+      dispatch: () => companionTranscriptionSettlement({ success: false, engine: 'groq', code: 'COMPANION_TRANSCRIPTION_FAILED' } as never) });
     const server2 = new LanCompanionServer(gateway2, hostIdentity, () => now);
     await server2.start(address!, 0);
     let storage: string | null = null;
@@ -460,7 +464,7 @@ describe('LAN companion: real HTTP + Noise + SQLite', () => {
     // 输入区那条带阶段的失败提示此刻也不在场（面板已经收了），所以这句没有任何可操作性。
     const db2 = new Database(':memory:');
     const gateway2 = new CompanionGateway(db2, { now: () => now,
-      dispatch: () => ({ state: 'rejected', result: { code: 'COMPANION_TRANSCRIPTION_FAILED' } }) });
+      dispatch: () => companionTranscriptionSettlement({ success: false, engine: 'groq', code: 'COMPANION_TRANSCRIPTION_FAILED' } as never) });
     const server2 = new LanCompanionServer(gateway2, hostIdentity, () => now);
     await server2.start(address!, 0);
     let storage: string | null = null; let lose = true;

@@ -219,6 +219,11 @@ export interface RunnerContext {
   };
   /** 生产默认旋钮全表；无 --profile 时原样盖进 run 记录 */
   HARNESS_KNOB_DEFAULTS: Record<string, number>;
+  /**
+   * 评测库就绪（真跑 = better-sqlite3 初始化）。放进 ctx 是因为 vitest 里没有原生模块，
+   * 原先内联的初始化在单测里必抛⇒ 适配器从未被构造过，取证测试只在核「抛错前写下的字段」。
+   */
+  ensureEvalDatabase: () => Promise<void>;
 }
 
 function resolvePath(rawPath: string): string {
@@ -373,6 +378,16 @@ export async function loadRunnerContext(): Promise<RunnerContext> {
     getTelemetryCollector,
     gameValidationTimeouts: GAME_VALIDATION_TIMEOUTS,
     HARNESS_KNOB_DEFAULTS,
+    ensureEvalDatabase: async () => {
+      const { getDatabase } = await import(DATABASE_SERVICE_PATH);
+      const db = getDatabase();
+      if (!db.isReady) {
+        await db.initialize();
+      }
+      if (!db.isReady) {
+        throw new Error('eval database failed to initialize under CODE_AGENT_DATA_DIR');
+      }
+    },
   };
 }
 
@@ -430,14 +445,7 @@ async function runOneUnit(
   // exact Error instance the race rejected with — see the isTimeout check below.
   const timeoutError = new Error(`per-run hard timeout after ${PER_RUN_HARD_TIMEOUT_MS}ms`);
   try {
-    const { getDatabase } = await import(DATABASE_SERVICE_PATH);
-    const db = getDatabase();
-    if (!db.isReady) {
-      await db.initialize();
-    }
-    if (!db.isReady) {
-      throw new Error('eval database failed to initialize under CODE_AGENT_DATA_DIR');
-    }
+    await ctx.ensureEvalDatabase();
     const apiKey = await resolveApiKey(opts.provider);
     agent = new ctx.StandaloneAgentAdapter({
       workingDirectory: workspaceDir,
@@ -708,6 +716,8 @@ export async function realRun(opts: CliOpts, injectedCtx?: RunnerContext): Promi
       provider: opts.provider,
       model: opts.model,
       outDir: opts.outDir,
+      knobs: opts.knobs,
+      profilePath: opts.profilePath,
     });
     records.push(record);
     await fs.appendFile(runsJsonlPath, `${JSON.stringify(record)}\n`, 'utf-8');

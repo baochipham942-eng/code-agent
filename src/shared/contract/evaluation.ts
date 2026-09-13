@@ -4,6 +4,7 @@
 
 import type { TelemetryCompleteness } from './evaluationReplay';
 import type { PostLaunchConsentScope, PostLaunchSignalKind, PostLaunchDimension } from './postLaunchScore';
+import { normalizeHarnessKnobs } from '../constants/harnessKnobs';
 
 export const EVAL_RUN_EVENT_SCHEMA_VERSION = 4 as const;
 export const EVAL_REPEAT_MAX = 10;
@@ -134,9 +135,8 @@ export function effectiveArmSignature(config: EvalCompareArm, baseline: EvalComp
           thinkingInjection: arm.harness.thinkingInjection ?? null,
           hooksEnabled: arm.harness.hooksEnabled ?? null,
           toolMode: arm.harness.toolMode ?? null,
-          knobs: arm.harness.knobs
-            ? Object.fromEntries(Object.entries(arm.harness.knobs).sort(([a], [b]) => a.localeCompare(b)))
-            : null,
+          // 省略 / 空对象 / 显式写默认值 三者归一为同一全表，否则「配置不同行为相同」会被当成有效 A/B
+          knobs: normalizeHarnessKnobs(arm.harness.knobs),
         }
       : null,
     memory: arm.memory,

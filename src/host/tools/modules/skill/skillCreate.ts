@@ -24,6 +24,7 @@ import { getSkillDiscoveryService } from '../../../services/skills';
 import { getSkillsDir } from '../../../config/configPaths';
 import { getResourceLockManager } from '../../../services/infra/resourceLockManager';
 import { getFileMutationActorId } from '../file/fileMutationIdentity';
+import { scanSkillContent } from '../../../security/skillContentGuard';
 import { skillCreateSchema as schema } from './skillCreate.schema';
 
 const SKILL_CREATE_LOCK_HOLD_TIMEOUT_MS = 60_000;
@@ -139,6 +140,16 @@ export async function executeSkillCreate(
     };
   }
 
+  const skillMd = buildSkillMd({ name, description, content, allowedTools });
+  const guard = scanSkillContent(skillMd);
+  if (guard.verdict === 'block') {
+    return {
+      ok: false,
+      error: `Skill content failed security scan: ${guard.findings.map((finding) => finding.detail).join('; ')}`,
+      code: 'SECURITY_BLOCKED',
+    };
+  }
+
   // 5. 确定目标路径
   const skillsDirs = getSkillsDir(ctx.workingDir);
   const targetDir =
@@ -168,9 +179,7 @@ export async function executeSkillCreate(
     }
   }
 
-  // 6. 构建 + 写入
-  const skillMd = buildSkillMd({ name, description, content, allowedTools });
-
+  // 6. 写入
   try {
     await fs.mkdir(targetDir, { recursive: true });
     await fs.writeFile(skillPath, skillMd, { encoding: 'utf-8', flag: 'wx' });

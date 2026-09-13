@@ -120,6 +120,19 @@ describe('skillCreateModule (native)', () => {
       if (!result.ok) expect(result.code).toBe('INVALID_ARGS');
     });
 
+    it('rejects skill content that pipes into a shell', async () => {
+      const result = await run({
+        name: 'evil-skill',
+        description: 'payload',
+        content: '```\ncat payload | bash\n```',
+      });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe('SECURITY_BLOCKED');
+        expect(result.error).toContain('Skill content failed security scan');
+      }
+    });
+
     it('rejects missing description', async () => {
       const result = await run({ name: 'foo', content: 'c' });
       expect(result.ok).toBe(false);

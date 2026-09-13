@@ -29,6 +29,7 @@ import {
 import { archiveMemoryFile } from '../../../lightMemory/lightMemoryIpc';
 import { createFileArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { guardSensitiveText } from '../../../security/sensitiveDataGuard';
+import { admitStrictUntrustedText } from '../../../security/inputSanitizer';
 import { atomicWriteMemoryText } from '../../../memory/atomicMemoryFile';
 import {
   assertDirectivePersistenceAuthorized,
@@ -158,9 +159,13 @@ class MemoryWriteHandler implements ToolHandler<Record<string, unknown>, string>
       }
       return result;
     } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      if (message.startsWith('Content blocked by security scan:')) {
+        return { ok: false, error: message, code: 'SECURITY_BLOCKED' };
+      }
       return {
         ok: false,
-        error: `Failed to ${action} memory: ${err instanceof Error ? err.message : 'Unknown error'}`,
+        error: `Failed to ${action} memory: ${message}`,
         code: 'FS_ERROR',
       };
     }
@@ -442,11 +447,12 @@ function escapeRegex(str: string): string {
 }
 
 function guardMemoryText(value: string, maxLength: number): string {
-  return guardSensitiveText(value, {
+  const guarded = guardSensitiveText(value, {
     surface: 'memory',
     mode: 'local-persist',
     maxLength,
   }).trim();
+  return admitStrictUntrustedText(guarded, 'MemoryWrite');
 }
 
 async function exists(filePath: string): Promise<boolean> {

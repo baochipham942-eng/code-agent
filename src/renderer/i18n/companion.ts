@@ -56,3 +56,16 @@ export const companionText = {
     pairedAt: 'Paired',
   },
 };
+
+type Copy = (typeof companionText)['zh'];
+
+/** Map host error codes to i18n; always keep the stable code in parentheses. */
+export function companionErrorCopy(text: Copy, detail: string): string {
+  const code = detail.match(/COMPANION_[A-Z0-9_]+/)?.[0] ?? 'UNKNOWN_ERROR';
+  const mapped = code === 'COMPANION_LAN_UNAVAILABLE' ? text.errorLan
+    : code === 'COMPANION_INVALID_SCOPE' ? text.errorScope
+    : code === 'COMPANION_SESSION_NOT_FOUND' ? text.errorSession
+    : code === 'COMPANION_UNAVAILABLE' ? text.errorUnavailable
+    : text.error;
+  return `${mapped} (${code})`;
+}

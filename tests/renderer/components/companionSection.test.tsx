@@ -3,7 +3,7 @@ import React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { COMPANION_LIMITS, COMPANION_MANAGE_CHANNEL } from '../../../src/shared/constants/companion';
-import { companionText } from '../../../src/renderer/i18n/companion';
+import { companionErrorCopy, companionText } from '../../../src/renderer/i18n/companion';
 import type { CompanionManagementResult } from '../../../src/shared/contract/companionManagement';
 
 const invoke = vi.hoisted(() => vi.fn());
@@ -13,7 +13,7 @@ vi.mock('../../../src/renderer/services/ipcService', () => ({ invoke }));
 vi.mock('../../../src/renderer/hooks/useI18n', () => ({ useI18n: () => ({ language: 'zh' }) }));
 vi.mock('qrcode', () => ({ default: { toDataURL } }));
 
-import { CompanionSection, companionErrorCopy } from '../../../src/renderer/components/features/settings/sections/CompanionSection';
+import { CompanionSection } from '../../../src/renderer/components/features/settings/sections/CompanionSection';
 
 const text = companionText.zh;
 

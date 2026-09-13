@@ -5,23 +5,12 @@ import { hasFullProjectScope, projectScope } from '@shared/contract/companionLib
 import type { CompanionManagementResult, CompanionPairedDevice } from '@shared/contract/companionManagement';
 import { invoke } from '../../../../services/ipcService';
 import { useI18n } from '../../../../hooks/useI18n';
-import { companionText } from '../../../../i18n/companion';
+import { companionErrorCopy, companionText } from '../../../../i18n/companion';
 import { Button } from '../../../primitives';
 import { SettingsSection } from '../SettingsLayout';
 
 type Status = Extract<CompanionManagementResult, { kind: 'status' }>;
 type Copy = (typeof companionText)['zh'];
-
-/** Map host error codes to i18n; always keep the stable code in parentheses. */
-export function companionErrorCopy(text: Copy, detail: string): string {
-  const code = detail.match(/COMPANION_[A-Z0-9_]+/)?.[0] ?? 'UNKNOWN_ERROR';
-  const mapped = code === 'COMPANION_LAN_UNAVAILABLE' ? text.errorLan
-    : code === 'COMPANION_INVALID_SCOPE' ? text.errorScope
-    : code === 'COMPANION_SESSION_NOT_FOUND' ? text.errorSession
-    : code === 'COMPANION_UNAVAILABLE' ? text.errorUnavailable
-    : text.error;
-  return `${mapped} (${code})`;
-}
 
 export function CompanionSection() {
   const { language } = useI18n();

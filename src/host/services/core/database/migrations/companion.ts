@@ -111,7 +111,12 @@ export function applyCompanionSchema(db: BetterSqlite3.Database): void {
   `);
   try {
     db.exec(`ALTER TABLE companion_decisions ADD COLUMN kind TEXT NOT NULL DEFAULT 'approval'`);
-  } catch { /* column already present on databases created with the kind field */ }
+  } catch (error) {
+    // Duplicate column is expected on databases created with the kind field.
+    if (!/duplicate column name/i.test(error instanceof Error ? error.message : String(error))) {
+      throw error;
+    }
+  }
   // Companion unit tests use an isolated SQLite file without `sessions`.
   // The host schema creates that table first; attach the cascade only then.
   if (db.prepare(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'sessions'`).get()) {

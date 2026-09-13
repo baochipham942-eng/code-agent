@@ -72,6 +72,19 @@ export const COMPANION_LIMITS = {
   /** Outbox rows past this age are expired; opening them re-reads the live session. */
   pushTtlMs: 86_400_000,
   pushMaxAttempts: 5,
+  /** Host dial-out relay: absent/disabled config must not change LAN behavior. */
+  relayConfigFile: 'companion-relay.json',
+  relayCredentialService: 'dev.neo.companion.relay.v1',
+  /** Routing credential TTL; not a long-term content key. */
+  relayRouteTokenTtlMs: 60_000,
+  relayMaxBufferedFrames: 32,
+  relayMaxBufferedBytes: 256 * 1024,
+  relayReconnectBackoffMs: [1_000, 2_000, 4_000, 8_000, 16_000, 30_000],
+  relayHeartbeatMs: 20_000,
+  relayIdleMs: 60_000,
+  relayConnectTimeoutMs: 10_000,
+  relaySeqHold: 16,
+  relayAuthLength: 16,
 } as const;
 
 const RETRYABLE_FILE_CODES = new Set([

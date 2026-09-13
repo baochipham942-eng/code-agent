@@ -11,6 +11,7 @@ import { hasActiveDictationStream } from './dictationStreamService';
 import { hasActiveSpeechTranscription } from './speechTranscriptionService';
 import { clearRetainedSpeechAudio, getSpeechTranscriptionService } from './speechTranscriptionService';
 import { attachDictationClient } from './dictationStreamService';
+import { createCompanionDictationRelay, hasActiveCompanionDictation } from './companionDictationRelay';
 import { createVoiceInputWebRouteContribution } from './voiceInputWebContribution';
 
 export const voiceInputCapabilityDescriptor: BundledHostCapabilityDescriptor = {
@@ -19,7 +20,7 @@ export const voiceInputCapabilityDescriptor: BundledHostCapabilityDescriptor = {
   dependencies: [],
   permissions: ['microphone', 'network', 'clipboard', 'accessibility', 'shell'],
   beforeUninstall() {
-    if (hasActiveDictationStream() || hasActiveSpeechTranscription() || hasActiveVoicePaste()) {
+    if (hasActiveDictationStream() || hasActiveCompanionDictation() || hasActiveSpeechTranscription() || hasActiveVoicePaste()) {
       throw new Error('语音输入正在录音或转写，请结束当前听写后再卸载。');
     }
   },
@@ -31,6 +32,8 @@ export const voiceInputCapabilityDescriptor: BundledHostCapabilityDescriptor = {
     });
     const cleanupPasteConfig = configureVoicePasteTranscription(transcribe);
     host.registerSpeechTranscriber(transcribe);
+    const dictationRelay = createCompanionDictationRelay();
+    host.registerCompanionDictation(dictationRelay);
     host.registerIpcHandler(registerSpeechHandlers);
     host.registerIpcHandler(registerVoicePasteHandlers);
     host.registerWebRoute(createVoiceInputWebRouteContribution());
@@ -38,6 +41,7 @@ export const voiceInputCapabilityDescriptor: BundledHostCapabilityDescriptor = {
     host.registerShortcut(registerVoicePasteShortcut);
     host.publishRendererCapabilityState();
     return async () => {
+      dictationRelay.releaseAll();
       await cleanupPasteConfig();
       await cleanupSpeechConfig();
     };

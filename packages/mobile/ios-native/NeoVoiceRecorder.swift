@@ -21,6 +21,8 @@ public class NeoVoiceRecorderPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "hasAudioRecordingPermission", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "startRecording", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "stopRecording", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "startPcmRecording", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "stopPcmRecording", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getCurrentStatus", returnType: CAPPluginReturnPromise)
     ]
 
@@ -40,9 +42,15 @@ public class NeoVoiceRecorderPlugin: CAPPlugin, CAPBridgedPlugin {
         AVEncoderAudioQualityKey: AVAudioQuality.medium.rawValue
     ]
 
+    /// Must match `GUMMY_REALTIME_SAMPLE_RATE` in src/shared/constants/voice.ts.
+    private static let pcmSampleRate: Double = 16_000
+
     private let queue = DispatchQueue(label: "ai.neo.companion.voice-recorder")
     private var recorder: AVAudioRecorder?
     private var fileURL: URL?
+    private var engine: AVAudioEngine?
+    private var converter: AVAudioConverter?
+    private var pcmToken = UUID()
     private var previousCategory: AVAudioSession.Category?
     private var backgroundObserver: NSObjectProtocol?
 
@@ -76,14 +84,14 @@ public class NeoVoiceRecorderPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func getCurrentStatus(_ call: CAPPluginCall) {
         queue.async { [weak self] in
-            call.resolve(["status": self?.recorder == nil ? "NONE" : "RECORDING"])
+            call.resolve(["status": (self?.recorder == nil && self?.engine == nil) ? "NONE" : "RECORDING"])
         }
     }
 
     @objc func startRecording(_ call: CAPPluginCall) {
         queue.async { [weak self] in
             guard let self else { return }
-            guard self.recorder == nil else { call.reject(Failure.alreadyRecording); return }
+            guard self.recorder == nil, self.engine == nil else { call.reject(Failure.alreadyRecording); return }
             guard Self.permissionGranted() else { call.reject(Failure.missingPermission); return }
             let url = FileManager.default.temporaryDirectory
                 .appendingPathComponent("neo-voice-\(UUID().uuidString).m4a")
@@ -107,6 +115,54 @@ public class NeoVoiceRecorderPlugin: CAPPlugin, CAPBridgedPlugin {
                 self.teardown(deleteRecording: true)
                 call.reject(Failure.failedToRecord)
             }
+        }
+    }
+
+    @objc func startPcmRecording(_ call: CAPPluginCall) {
+        queue.async { [weak self] in
+            guard let self else { return }
+            guard self.recorder == nil, self.engine == nil else { call.reject(Failure.alreadyRecording); return }
+            guard Self.permissionGranted() else { call.reject(Failure.missingPermission); return }
+            do {
+                let session = AVAudioSession.sharedInstance()
+                self.previousCategory = session.category
+                try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker])
+                try session.setActive(true)
+                let engine = AVAudioEngine()
+                let input = engine.inputNode
+                let inputFormat = input.outputFormat(forBus: 0)
+                guard let targetFormat = AVAudioFormat(
+                    commonFormat: .pcmFormatInt16,
+                    sampleRate: Self.pcmSampleRate,
+                    channels: 1,
+                    interleaved: true
+                ), let converter = AVAudioConverter(from: inputFormat, to: targetFormat) else {
+                    throw CocoaError(.fileWriteUnknown)
+                }
+                let token = UUID()
+                self.pcmToken = token
+                self.converter = converter
+                let bufferSize = AVAudioFrameCount(max(512, inputFormat.sampleRate * 0.1))
+                input.installTap(onBus: 0, bufferSize: bufferSize, format: inputFormat) { [weak self] buffer, _ in
+                    // Convert on the audio thread: the tap buffer is reused after this callback returns.
+                    self?.emitPcm(buffer: buffer, token: token, converter: converter, targetFormat: targetFormat)
+                }
+                try engine.start()
+                self.engine = engine
+                call.resolve(["value": true, "sampleRate": Int(Self.pcmSampleRate)])
+            } catch {
+                self.teardownPcm()
+                call.reject(Failure.failedToRecord)
+            }
+        }
+    }
+
+    @objc func stopPcmRecording(_ call: CAPPluginCall) {
+        queue.async { [weak self] in
+            guard let self else { return }
+            guard self.engine != nil else { call.reject(Failure.recordingHasNotStarted); return }
+            self.teardownPcm()
+            call.resolve(["value": true])
         }
     }
 
@@ -135,13 +191,52 @@ public class NeoVoiceRecorderPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
-    private func teardown(deleteRecording: Bool) {
-        recorder?.stop()
-        recorder = nil
+    private func emitPcm(buffer: AVAudioPCMBuffer, token: UUID, converter: AVAudioConverter, targetFormat: AVAudioFormat) {
+        let ratio = targetFormat.sampleRate / buffer.format.sampleRate
+        let outFrames = AVAudioFrameCount((Double(buffer.frameLength) * ratio).rounded(.up))
+        guard let out = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: max(outFrames, 1)) else { return }
+        var error: NSError?
+        var consumed = false
+        let status = converter.convert(to: out, error: &error) { _, outStatus in
+            if consumed {
+                outStatus.pointee = .noDataNow
+                return nil
+            }
+            consumed = true
+            outStatus.pointee = .haveData
+            return buffer
+        }
+        guard status != .error, let channels = out.int16ChannelData, out.frameLength > 0 else { return }
+        let bytes = Int(out.frameLength) * MemoryLayout<Int16>.size
+        let data = Data(bytes: channels[0], count: bytes)
+        let durationMs = max(1, Int(Double(out.frameLength) / targetFormat.sampleRate * 1000))
+        queue.async { [weak self] in
+            guard let self, self.pcmToken == token, self.engine != nil else { return }
+            self.notifyListeners("pcmFrame", data: [
+                "pcm": data.base64EncodedString(),
+                "durationMs": durationMs
+            ])
+        }
+    }
+
+    private func teardownPcm() {
+        pcmToken = UUID()
+        if let engine {
+            engine.inputNode.removeTap(onBus: 0)
+            engine.stop()
+        }
+        engine = nil
+        converter = nil
         let session = AVAudioSession.sharedInstance()
         try? session.setActive(false, options: [.notifyOthersOnDeactivation])
         if let category = previousCategory { try? session.setCategory(category) }
         previousCategory = nil
+    }
+
+    private func teardown(deleteRecording: Bool) {
+        recorder?.stop()
+        recorder = nil
+        teardownPcm()
         if deleteRecording, let url = fileURL { try? FileManager.default.removeItem(at: url) }
         fileURL = nil
     }

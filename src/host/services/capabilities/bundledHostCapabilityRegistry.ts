@@ -20,10 +20,12 @@ import { voiceLiveCapabilityDescriptor } from '../voice/voiceLiveCapability';
 import { voiceInputCapabilityDescriptor } from '../speech/voiceInputCapability';
 import { recordBundledHostCapabilityLifecycle } from './capabilityPackageLifecycle';
 import {
+  registerCompanionDictation,
   registerSpeechTranscriber,
   registerTurnOutcomeResolver,
   registerUserQuestionRoute,
   registerVoiceInstructionsRefresher,
+  type CompanionDictationPort,
   type HostCapabilityCleanup,
   type SpeechTranscriber,
   type TurnOutcomeResolver,
@@ -59,6 +61,7 @@ interface HostCapabilityContext {
   registerUserQuestionRoute: (route: UserQuestionRoute) => HostCapabilityCleanup;
   registerVoiceInstructionsRefresher: (refresher: () => void) => HostCapabilityCleanup;
   registerSpeechTranscriber: (transcriber: SpeechTranscriber) => HostCapabilityCleanup;
+  registerCompanionDictation: (port: CompanionDictationPort) => HostCapabilityCleanup;
   publishRendererCapabilityState: () => void;
 }
 
@@ -366,6 +369,7 @@ export class BundledHostCapabilityRegistry {
       registerUserQuestionRoute: (route) => track(registerUserQuestionRoute(route)),
       registerVoiceInstructionsRefresher: (refresher) => track(registerVoiceInstructionsRefresher(refresher)),
       registerSpeechTranscriber: (transcriber) => track(registerSpeechTranscriber(transcriber)),
+      registerCompanionDictation: (port) => track(registerCompanionDictation(port)),
       publishRendererCapabilityState: () => {
         this.published.add(descriptor.id);
         track(() => { this.published.delete(descriptor.id); });

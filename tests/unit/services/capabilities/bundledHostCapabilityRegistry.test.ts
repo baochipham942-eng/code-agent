@@ -41,6 +41,7 @@ function cleanupHost(): HostCapabilityContext {
     registerTurnOutcomeResolver: vi.fn(() => cleanup),
     registerUserQuestionRoute: vi.fn(() => cleanup),
     registerSpeechTranscriber: vi.fn(() => cleanup),
+    registerCompanionDictation: vi.fn(() => cleanup),
     registerVoiceInstructionsRefresher: vi.fn(() => cleanup),
     publishRendererCapabilityState: vi.fn(),
   };
@@ -249,6 +250,8 @@ describe('BundledHostCapabilityRegistry', () => {
     expect(host.registerWebRoute).toHaveBeenCalledOnce();
     expect(host.registerWebSocketUpgrade).toHaveBeenCalledOnce();
     expect(host.registerShortcut).toHaveBeenCalledOnce();
+    expect(host.registerSpeechTranscriber).toHaveBeenCalledOnce();
+    expect(host.registerCompanionDictation).toHaveBeenCalledOnce();
     expect(host.publishRendererCapabilityState).toHaveBeenCalledOnce();
     await cleanup();
   });

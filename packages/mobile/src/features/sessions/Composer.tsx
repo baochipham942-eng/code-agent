@@ -3,7 +3,9 @@ import type { PlatformPorts } from '../../platform/ports';
 import type { messages } from '../../i18n';
 import { AppIcon } from '../../app/AppIcon';
 import { useVoiceCapture, VoicePanel } from './VoiceCapture';
+import type { DictationPort } from './VoiceCapture';
 import type { VoiceResult } from '../../stores/companionStore';
+import { joinTranscript } from '../../stores/mobileStore';
 
 /**
  * 输入区。布局契约是设计稿 design.html 的 composer()：
@@ -13,7 +15,7 @@ import type { VoiceResult } from '../../stores/companionStore';
  */
 export function Composer({
   text, draft, editDraft, offline, sendDisabled, send, modelLabel, openModel,
-  attach, attachDisabled, recorder, transcribe, discardPendingTranscript, voiceDisabled, voicePending, voiceResult, voiceReady, onVoiceState,
+  attach, attachDisabled, recorder, transcribe, discardPendingTranscript, commitSpoken, dictation, voiceDisabled, voicePending, voiceResult, voiceReady, onVoiceState,
 }: {
   text: ReturnType<typeof messages>;
   draft: string;
@@ -29,6 +31,8 @@ export function Composer({
   recorder: PlatformPorts['recorder'];
   transcribe(audio: { audioData: string; mimeType: string; durationMs: number }, continuation: boolean, take: string): Promise<string | null>;
   discardPendingTranscript(take: string): void;
+  commitSpoken?(text: string, continuation: boolean, take: string, sentenceId: number): Promise<void>;
+  dictation?: DictationPort;
   voiceDisabled: boolean;
   voicePending: boolean;
   /** 最近一条转写命令的结果，带 commandId 与真实错误码。 */
@@ -47,7 +51,7 @@ export function Composer({
    * 面板关着时一直跟着草稿走，面板一开就冻住——录音期间输入框不在场，草稿只会被转写追加。
    */
   const spokenFrom = useRef(0);
-  const voice = useVoiceCapture({ recorder, pending: voicePending, result: voiceResult, ready: voiceReady, transcribe, discardPending: discardPendingTranscript });
+  const voice = useVoiceCapture({ recorder, pending: voicePending, result: voiceResult, ready: voiceReady, transcribe, discardPending: discardPendingTranscript, dictation, commitSpoken });
   useEffect(() => {
     const input = textarea.current;
     if (input) { input.style.height = 'auto'; input.style.height = `${Math.min(input.scrollHeight, 140)}px`; }
@@ -67,7 +71,10 @@ export function Composer({
     <div className={voice.panelOpen ? 'composer voice-composer' : 'composer'}>
       {voice.panelOpen
         ? <VoicePanel text={text} phase={voice.phase} pending={voicePending} elapsedMs={voice.elapsedMs}
-          transcript={draft.slice(spokenFrom.current).trimStart()} dropped={voice.dropped}
+          transcript={voice.degraded
+            ? draft.slice(spokenFrom.current).trimStart()
+            : voice.spoken || joinTranscript(draft.slice(spokenFrom.current).trimStart(), voice.partial, true)}
+          dropped={voice.dropped} degraded={voice.degraded}
           stop={voice.stop} cancel={voice.cancel} />
         : <>
           <textarea ref={textarea} aria-label={text.draft} placeholder={offline ? text.offlinePlaceholder : text.placeholder} rows={1}

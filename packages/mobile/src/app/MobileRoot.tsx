@@ -408,6 +408,16 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
           recorder={companion.sessionId ? ports.recorder : undefined}
           transcribe={(audio, continuation, take) => companion.transcribe(audio, companion.sessionId!, companion.binding!.hostKey, continuation, take)}
           discardPendingTranscript={companion.discardPendingTranscript}
+          commitSpoken={(text, continuation, take, sentenceId) => companion.commitDictation(text, continuation, take, sentenceId)}
+          dictation={companion.binding?.dictation === true && companion.status === 'connected'
+            ? {
+              available: true,
+              open: companion.dictationOpen,
+              audio: companion.dictationAudio,
+              stop: companion.dictationStop,
+              close: companion.dictationClose,
+            }
+            : undefined}
           voiceDisabled={companion.status !== 'connected' || companion.busy || companion.pending}
           voicePending={companion.pending} voiceResult={companion.voiceResult}
           voiceReady={canAddressSession(companion)}

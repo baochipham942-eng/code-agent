@@ -37,6 +37,10 @@ export const COMPANION_LIMITS = {
   maxMessageRecords: 64,
   maxRequestRecords: 32,
   voiceBase64Limit: 1_800_000,
+  /** One PCM16 16 kHz mono frame over Noise; ~1s of audio. Host rejects larger. */
+  voicePcmBase64Limit: 48_000,
+  /** Must match GUMMY_REALTIME_SAMPLE_RATE; pinned by tests/unit/mobile/realtimeDictation.test.ts. */
+  voicePcmSampleRate: 16_000,
   voiceDurationMs: 60_000,
   /** 录音期间每隔这么久切一段传一段：短了 whisper 认不准（<2s 明显变差），长了草稿追加得太慢。 */
   voiceChunkMs: 4_000,

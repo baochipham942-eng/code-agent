@@ -8,6 +8,7 @@ import { COMPANION_EVENT_DROPPED, COMPANION_LIMITS as L } from '../../../shared/
 import { fromHex, toHex, isLanPeer, isPrivateIPv4, lanAdvertisedHost, type LanInvitation } from '../../../shared/companion/lanProtocol';
 import { createHandshake, NoiseChannel } from '../../../shared/companion/noiseChannel';
 import { companionCommandSchema, type CompanionEvent } from '../../../shared/contract/companion';
+import { getRegisteredCompanionDictation } from '../capabilities/hostCapabilityPorts';
 import type { CompanionGateway } from './CompanionGateway';
 import type { CompanionPushOutbox } from './CompanionPushOutbox';
 
@@ -106,6 +107,7 @@ export class LanCompanionServer {
   }
 
   revoke(deviceId: string): void {
+    getRegisteredCompanionDictation()?.release(deviceId);
     this.gateway.revokeDevice(deviceId);
     this.prune();
   }
@@ -123,7 +125,10 @@ export class LanCompanionServer {
   async stop(): Promise<void> {
     if (this.sweep) clearInterval(this.sweep);
     this.invitation = null; this.pending.clear();
-    for (const c of this.channels.values()) c.cipher.close();
+    for (const c of this.channels.values()) {
+      this.releaseDictation(c.publicKey);
+      c.cipher.close();
+    }
     this.channels.clear();
     const server = this.server; this.server = null;
     if (server) { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); }
@@ -134,6 +139,7 @@ export class LanCompanionServer {
     if (this.invitation && this.invitation.expiresAt <= now) this.invitation = null;
     for (const [id, p] of this.pending) if (p.expiresAt <= now || p.invite !== this.invitation) this.pending.delete(id);
     for (const [id, c] of this.channels) if (c.expiresAt <= now || !this.gateway.identityDevice(c.publicKey)) {
+      this.releaseDictation(c.publicKey);
       c.cipher.close(); this.channels.delete(id);
     }
   }
@@ -163,7 +169,7 @@ export class LanCompanionServer {
     const frame = toHex(noise.send());
     const cipher = new NoiseChannel(noise);
     this.channels.set(channelId, { cipher, publicKey, expiresAt: this.now() + L.channelTtlMs, lastSeenAt: null });
-    return { channelId, frame, welcome: cipher.seal(device) };
+    return { channelId, frame, welcome: cipher.seal(this.welcome(device)) };
   }
 
   private finish(body: ChannelBody) {
@@ -179,7 +185,7 @@ export class LanCompanionServer {
     const device = this.gateway.pairIdentity(publicKey, pending.invite.scope);
     const cipher = new NoiseChannel(pending.noise);
     this.channels.set(id, { cipher, publicKey, expiresAt: this.now() + L.channelTtlMs, lastSeenAt: null });
-    return { welcome: cipher.seal(device) };
+    return { welcome: cipher.seal(this.welcome(device)) };
   }
 
   private async exchange(body: ChannelBody) {
@@ -194,6 +200,7 @@ export class LanCompanionServer {
       const request = channel.cipher.open(body.frame) as {
         requestId?: unknown; action?: unknown; command?: unknown; epoch?: unknown; afterSeq?: unknown;
         commandId?: unknown; query?: unknown; provider?: unknown; token?: unknown; environment?: unknown; routeToken?: unknown;
+        op?: unknown; pcm?: unknown; streamId?: unknown;
       };
       if (!request || typeof request.requestId !== 'string' || request.requestId.length > L.idLength) throw new Error('COMPANION_INVALID_REQUEST');
       let result: unknown;
@@ -233,6 +240,8 @@ export class LanCompanionServer {
         result = { ...page, events, nextSeq };
       } else if (request.action === 'status' && typeof request.commandId === 'string' && request.commandId.length <= L.idLength) {
         result = this.gateway.commandStatus(device.deviceId, request.commandId);
+      } else if (request.action === 'dictation') {
+        result = await this.dictation(device.deviceId, request);
       } else throw new Error('COMPANION_UNSUPPORTED_ACTION');
       const frame = channel.cipher.seal({ requestId: request.requestId, result });
       const lastSeenAt = this.now();
@@ -240,7 +249,40 @@ export class LanCompanionServer {
       channel.expiresAt = lastSeenAt + L.channelTtlMs;
       return { frame };
     } catch (error) {
+      this.releaseDictation(channel.publicKey);
       channel.cipher.close(); this.channels.delete(id); throw error;
     }
+  }
+
+  private welcome(device: { deviceId: string; scopeEpoch: number; scope: readonly string[] }) {
+    return getRegisteredCompanionDictation()
+      ? { ...device, dictation: true as const }
+      : device;
+  }
+
+  private releaseDictation(publicKey: string): void {
+    const device = this.gateway.identityDevice(publicKey);
+    if (device) getRegisteredCompanionDictation()?.release(device.deviceId);
+  }
+
+  private async dictation(deviceId: string, request: { op?: unknown; pcm?: unknown; streamId?: unknown }) {
+    const port = getRegisteredCompanionDictation();
+    if (!port) return { ok: false, code: 'COMPANION_DICTATION_UNAVAILABLE', events: [] };
+    if (request.op === 'open') return port.open(deviceId);
+    if (request.op === 'close') {
+      port.release(deviceId);
+      return { ok: true, events: [] };
+    }
+    if (typeof request.streamId !== 'string' || !request.streamId || request.streamId.length > L.idLength) {
+      return { ok: false, code: 'COMPANION_DICTATION_INACTIVE', events: [] };
+    }
+    if (request.op === 'stop') return port.stop(deviceId, request.streamId);
+    if (request.op !== 'audio' || typeof request.pcm !== 'string' || request.pcm.length > L.voicePcmBase64Limit
+      || !/^[A-Za-z0-9+/]+={0,2}$/.test(request.pcm)) {
+      return { ok: false, code: 'COMPANION_INVALID_FRAME', events: [] };
+    }
+    const pcm = Buffer.from(request.pcm, 'base64');
+    if (pcm.length === 0 || pcm.length % 2 !== 0) return { ok: false, code: 'COMPANION_INVALID_FRAME', events: [] };
+    return port.audio(deviceId, request.streamId, pcm);
   }
 }

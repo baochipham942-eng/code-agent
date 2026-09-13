@@ -1,6 +1,7 @@
 import { VoiceRecorder } from 'capacitor-voice-recorder';
 import { App } from '@capacitor/app';
 import { Capacitor, SystemBars, SystemBarsStyle } from '@capacitor/core';
+
 import { Directory, Filesystem } from '@capacitor/filesystem';
 import { Keyboard } from '@capacitor/keyboard';
 import { Preferences } from '@capacitor/preferences';
@@ -70,8 +71,16 @@ function webFilePorts(cache: FileCache): FilePorts {
   };
 }
 
-export const capacitorPorts: PlatformPorts = {
-  recorder: Capacitor.isNativePlatform() ? {
+type PcmBridge = {
+  startPcmRecording(): Promise<{ value: boolean; sampleRate?: number }>;
+  stopPcmRecording(): Promise<{ value: boolean }>;
+  addListener(event: 'pcmFrame', cb: (frame: { pcm: string; durationMs: number }) => void): Promise<{ remove: () => Promise<void> }>;
+};
+
+const pcmBridge = VoiceRecorder as unknown as PcmBridge;
+
+function nativeRecorder(): NonNullable<PlatformPorts['recorder']> {
+  const recorder: NonNullable<PlatformPorts['recorder']> = {
     start: async () => {
       if (!(await VoiceRecorder.requestAudioRecordingPermission()).value) throw new Error('MICROPHONE_DENIED');
       await VoiceRecorder.startRecording();
@@ -81,7 +90,32 @@ export const capacitorPorts: PlatformPorts = {
       if (!value.recordDataBase64) throw new Error('EMPTY_RECORDING');
       return { audioData: value.recordDataBase64, mimeType: value.mimeType.split(';')[0], durationMs: value.msDuration };
     },
-  } : undefined,
+  };
+  // PCM tap is first-party iOS only. Android still uses the vendor file recorder.
+  if (Capacitor.getPlatform() !== 'ios') return recorder;
+  let pcmListen: Promise<{ remove: () => Promise<void> }> | null = null;
+  recorder.startPcm = async () => {
+    if (!(await VoiceRecorder.requestAudioRecordingPermission()).value) throw new Error('MICROPHONE_DENIED');
+    if (pcmListen) await pcmListen;
+    const result = await pcmBridge.startPcmRecording();
+    return { sampleRate: result.sampleRate ?? COMPANION_LIMITS.voicePcmSampleRate };
+  };
+  recorder.stopPcm = async () => { await pcmBridge.stopPcmRecording(); };
+  recorder.subscribePcm = onFrame => {
+    let handle: { remove: () => Promise<void> } | null = null;
+    let closed = false;
+    pcmListen = pcmBridge.addListener('pcmFrame', frame => { if (!closed) onFrame(frame); }).then(listener => {
+      if (closed) void listener.remove();
+      else handle = listener;
+      return listener;
+    });
+    return () => { closed = true; void handle?.remove(); pcmListen = null; };
+  };
+  return recorder;
+}
+
+export const capacitorPorts: PlatformPorts = {
+  recorder: Capacitor.isNativePlatform() ? nativeRecorder() : undefined,
   companion: Capacitor.isNativePlatform() ? nativeCompanionPort : undefined,
   notifications: createNotificationPort(Capacitor.getPlatform(), async () => {
     const open = (App as { openUrl?: (opts: { url: string }) => Promise<void> }).openUrl;

@@ -1,5 +1,9 @@
 import type { UserQuestionRequest, UserQuestionResponse } from '../../../shared/contract';
 import type { SpeechTranscribeOptions, SpeechTranscribeResult } from '../../../shared/contract/speech';
+import type {
+  CompanionDictationFrameResult,
+  CompanionDictationOpenResult,
+} from '../../../shared/contract/companionDictation';
 
 export type HostCapabilityCleanup = () => void | Promise<void>;
 export type TurnOutcomeResolver = (
@@ -17,6 +21,18 @@ interface SpeechTranscriptionInput extends SpeechTranscribeOptions {
 }
 export type SpeechTranscriber = (request: SpeechTranscriptionInput) => Promise<SpeechTranscribeResult>;
 
+/**
+ * Companion dictation relay. Declared here so host/companion can call it without
+ * importing `services/speech` (voiceHostReverseDependency).
+ */
+export interface CompanionDictationPort {
+  open(deviceId: string): Promise<CompanionDictationOpenResult>;
+  audio(deviceId: string, streamId: string, pcm: Buffer): CompanionDictationFrameResult;
+  stop(deviceId: string, streamId: string): Promise<CompanionDictationFrameResult>;
+  release(deviceId: string): void;
+  releaseAll(): void;
+}
+
 export interface UserQuestionRoute {
   canOffer: (sessionId: string | undefined) => boolean;
   offer: (
@@ -30,6 +46,7 @@ let turnOutcomeResolver: TurnOutcomeResolver | null = null;
 let userQuestionRoute: UserQuestionRoute | null = null;
 let voiceInstructionsRefresher: (() => void) | null = null;
 let speechTranscriber: SpeechTranscriber | null = null;
+let companionDictation: CompanionDictationPort | null = null;
 
 function exclusiveRegistration<T>(
   current: T | null,
@@ -112,6 +129,24 @@ export function registerSpeechTranscriber(transcriber: SpeechTranscriber): HostC
 /** null when the voice-input capability is not installed — callers must fail closed, not wait. */
 export function getRegisteredSpeechTranscriber(): SpeechTranscriber | null {
   return speechTranscriber;
+}
+
+export function registerCompanionDictation(port: CompanionDictationPort): HostCapabilityCleanup {
+  const cleanup = exclusiveRegistration(
+    companionDictation,
+    port,
+    'companion dictation',
+    () => {
+      if (companionDictation === port) companionDictation = null;
+    },
+  );
+  companionDictation = port;
+  return cleanup;
+}
+
+/** null when the voice-input capability is not installed — phone must stay on chunked transcribe. */
+export function getRegisteredCompanionDictation(): CompanionDictationPort | null {
+  return companionDictation;
 }
 
 export function registerVoiceInstructionsRefresher(refresher: () => void): HostCapabilityCleanup {

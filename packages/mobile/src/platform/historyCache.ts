@@ -78,9 +78,9 @@ export class HistoryCache {
   private writing: Promise<void> = Promise.resolve();
 
   constructor(
-    private readonly quota = L.historyCacheQuotaBytes,
-    private readonly messageLimit = L.historyWindowMessages,
-    private readonly now = Date.now,
+    private readonly quota: number = L.historyCacheQuotaBytes,
+    private readonly messageLimit: number = L.historyWindowMessages,
+    private readonly now: () => number = Date.now,
     private readonly store?: HistoryCacheStore,
   ) {}
 

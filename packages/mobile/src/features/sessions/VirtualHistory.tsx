@@ -4,7 +4,7 @@ import type { messages } from '../../i18n';
 
 export function VirtualHistory({ text }: { text: ReturnType<typeof messages> }) {
   const viewport = useRef<HTMLDivElement>(null);
-  const [count, setCount] = useState(COMPANION_LIMITS.historyWindowMessages);
+  const [count, setCount] = useState<number>(COMPANION_LIMITS.historyWindowMessages);
   const [top, setTop] = useState(0);
   const [height, setHeight] = useState(600);
   const rowHeight = 112;

@@ -36,20 +36,6 @@ export const CONTEXT_LEDGER = {
   SCHEMA_HASH_ALGORITHM: 'sha256',
 } as const;
 
-/** Agent 配置 */
-export const AGENT = {
-  /** 最大迭代次数 */
-  MAX_ITERATIONS: 30,
-  /** 最大重试次数 */
-  MAX_RETRIES: 3,
-  /** 默认超时时间 (ms) */
-  DEFAULT_TIMEOUT: 60000,
-  /** 最大消息长度 */
-  MAX_MESSAGE_LENGTH: 100000,
-  /** 子任务最大深度 */
-  MAX_SUBTASK_DEPTH: 5,
-} as const;
-
 /** SpawnGuard 子代理守卫（spawn 并发 + 嵌套深度） */
 export const SPAWN_GUARD = {
   /** 整棵 spawn 树共享的最大并发 agent 数 */
@@ -60,44 +46,6 @@ export const SPAWN_GUARD = {
   HARD_MAX_SPAWN_DEPTH: 5,
   /** 超额 spawn 在全树槽位池里等待的默认时长。 */
   QUEUE_WAIT_TIMEOUT_MS: 30_000,
-} as const;
-
-/** Agent 超时配置 (按角色) */
-export const AGENT_TIMEOUT = {
-  PLANNER: 60000,
-  RESEARCHER: 120000,
-  CODER: 180000,
-  REVIEWER: 90000,
-  WRITER: 120000,
-  TESTER: 180000,
-  COORDINATOR: 300000,
-} as const;
-
-/** Agent 迭代配置 (按角色) */
-export const AGENT_ITERATIONS = {
-  PLANNER: 15,
-  RESEARCHER: 20,
-  CODER: 30,
-  REVIEWER: 20,
-  WRITER: 25,
-  TESTER: 25,
-  COORDINATOR: 50,
-} as const;
-
-/** Agent 复杂度配置 */
-export const AGENT_COMPLEXITY = {
-  LOW: {
-    maxTurns: 5,
-    timeout: 30_000,
-  },
-  MEDIUM: {
-    maxTurns: 15,
-    timeout: 120_000,
-  },
-  HIGH: {
-    maxTurns: 50,
-    timeout: 600_000,
-  },
 } as const;
 
 /** 预定义 Agent 超时配置 */
@@ -306,16 +254,6 @@ export const AGENT_WAKE = {
   TICK_INTERVAL_MS: 30_000,
   /** 单次挂起最长等多久（30 天）。再长就该做成自动化任务而不是挂起一轮对话。 */
   MAX_SLEEP_MS: 30 * 24 * 60 * 60 * 1000,
-} as const;
-
-/** 规划配置 */
-export const PLANNING = {
-  /** 最大 TODO 数量 */
-  MAX_TODOS: 50,
-  /** 最大 Findings 数量 */
-  MAX_FINDINGS: 100,
-  /** 计划文件最大大小 */
-  MAX_PLAN_SIZE: 50000,
 } as const;
 
 

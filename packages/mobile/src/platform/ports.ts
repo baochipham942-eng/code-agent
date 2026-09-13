@@ -1,8 +1,8 @@
 import type { FileCache } from './fileCache';
 
-export type Dispose = () => void;
+type Dispose = () => void;
 
-export type KeyboardFrame = { height: number; phase: 'will-show' | 'will-hide' };
+type KeyboardFrame = { height: number; phase: 'will-show' | 'will-hide' };
 
 export interface PickedFile {
   name: string;
@@ -11,7 +11,7 @@ export interface PickedFile {
   bytes: Uint8Array;
 }
 
-export interface FileExportResult {
+interface FileExportResult {
   status: 'saved' | 'cancelled' | 'error';
   code?: string;
   /** 实际落盘文件名（同名去重后可能与请求名不同）。 */
@@ -26,7 +26,7 @@ export interface FilePorts {
 
 export type OsPermission = 'unknown' | 'requesting' | 'granted' | 'limited' | 'denied' | 'restricted';
 export type NetworkStatus = 'unknown' | 'online' | 'offline';
-export type PushProvider = 'apns' | 'fcm' | 'vendor';
+type PushProvider = 'apns' | 'fcm' | 'vendor';
 export type PushToken = { provider: PushProvider; token: string; environment: 'production' | 'sandbox' };
 export type TokenResult =
   | { kind: 'token'; token: PushToken }

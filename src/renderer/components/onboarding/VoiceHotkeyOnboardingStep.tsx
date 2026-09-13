@@ -15,6 +15,7 @@ import { useI18n } from '../../hooks/useI18n';
 import { interpolate } from '../../i18n/interpolate';
 import ipcService from '../../services/ipcService';
 import { createLogger } from '../../utils/logger';
+import { Button } from '../primitives';
 import { evaluateVoiceCallToggleHotkey } from './evaluateVoiceCallToggleHotkey';
 
 const logger = createLogger('VoiceHotkeyOnboarding');
@@ -146,8 +147,10 @@ export const VoiceHotkeyOnboardingStep: React.FC<VoiceHotkeyOnboardingStepProps>
           </p>
           {canCapture ? (
             <div className="mt-3 flex items-center gap-3">
-              <button
+              <Button
                 type="button"
+                variant="secondary"
+                size="sm"
                 data-testid="onboarding-voice-hotkey-bind"
                 disabled={captureBlocked}
                 onClick={() => {
@@ -155,10 +158,9 @@ export const VoiceHotkeyOnboardingStep: React.FC<VoiceHotkeyOnboardingStepProps>
                   setMessage('');
                   setRecording(true);
                 }}
-                className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-xs text-zinc-200 hover:border-zinc-600 disabled:opacity-50"
               >
                 {recording ? text.voiceHotkeyRecording : text.voiceHotkeyBind}
-              </button>
+              </Button>
               <span data-testid="onboarding-voice-hotkey-current" className="text-xs text-zinc-400">
                 {current?.enabled && current.accelerator
                   ? formatShortcutForDisplay(current.accelerator, platform)

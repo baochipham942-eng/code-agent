@@ -241,13 +241,25 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
     document.addEventListener('neo-system-night', change);
     query.addEventListener('change', change);
     // Native resize and visualViewport already reflect IME; never subtract keyboard height twice.
-    const resize = () => document.documentElement.style.setProperty('--viewport-height', `${window.visualViewport?.height ?? innerHeight}px`);
-    resize(); window.addEventListener('resize', resize); window.visualViewport?.addEventListener('resize', resize);
+    //
+    // 但**每帧最多写一次**：`.app` 的高度绑在 --viewport-height 上，而 iOS 键盘那 ~300ms 动画里
+    // visualViewport 的 resize 会连着触发几十次，每次直写都让整页重排一遍——爸 2026-09-13
+    // 报的「输入框获取焦点并展示在键盘上也等了一会儿」，能省的就是这部分（动画本身是 iOS 的，动不了）。
+    // 用 rAF 合并：中间那些值本来就没人看得见，落地的是每帧最后那个。
+    let frame = 0;
+    const applyViewportHeight = () => {
+      frame = 0;
+      document.documentElement.style.setProperty('--viewport-height', `${window.visualViewport?.height ?? innerHeight}px`);
+    };
+    const resize = () => { if (!frame) frame = requestAnimationFrame(applyViewportHeight); };
+    applyViewportHeight();   // 首帧直接落地，别等下一帧才有高度
+    window.addEventListener('resize', resize); window.visualViewport?.addEventListener('resize', resize);
     return () => {
       companionStore.getState().pause();
       disposed = true; cleanups.forEach(cleanup => cleanup());
       document.removeEventListener('keydown', escape); document.removeEventListener('neo-system-night', change); query.removeEventListener('change', change);
       window.removeEventListener('resize', resize); window.visualViewport?.removeEventListener('resize', resize);
+      if (frame) cancelAnimationFrame(frame);
     };
   }, [ports, store, companionStore, notifyStore]);
   useEffect(() => { if (state.ready) void companionStore.getState().hydrate(); }, [state.ready, companionStore]);

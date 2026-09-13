@@ -47,7 +47,7 @@ const html = `<!doctype html><html><head><meta charset="utf-8"><style>${css}</st
   sync(); new ResizeObserver(sync).observe(area);
 </script></body></html>`;
 
-type Probe = { clientHeight: number; scrollTop: number; anchorTop: number; areaHeight: number; lastVisible: boolean };
+type Probe = { clientHeight: number; scrollTop: number; anchorTop: number; areaHeight: number; lastVisible: boolean; jumpVisible: boolean };
 
 /**
  * 这份 HTML 是 MobileRoot 子树的**复刻**，复刻就有跟着漂的风险：真组件改了类名，

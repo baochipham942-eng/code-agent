@@ -105,6 +105,8 @@ export function useVoiceCapture({ recorder, pending, result, ready, transcribe, 
 
   const take = useRef<Take | null>(null);
   const running = useRef<Promise<void> | null>(null);
+  const dictationRef = useRef(dictation);
+  dictationRef.current = dictation;
 
   /** take 是可变对象，改完必须 bump 一下界面才看得见——全模块只有这一个重渲染触发器。 */
   const bump = () => setTick(count => count + 1);
@@ -135,15 +137,35 @@ export function useVoiceCapture({ recorder, pending, result, ready, transcribe, 
         bump();
         return 'error';
       }
+      const previousPartial = t.draft.partial;
+      const previousId = t.draft.sentenceId;
       t.draft = applyDictationEvent(t.draft, event);
       if (event.type === 'final') {
         void commitSpoken?.(event.text, t.committedAny, t.id, event.sentenceId);
+        t.committedAny = true;
+        t.sentAny = true;
+      } else if (previousId !== null && event.sentenceId !== previousId && previousPartial) {
+        void commitSpoken?.(previousPartial, t.committedAny, t.id, previousId);
         t.committedAny = true;
         t.sentAny = true;
       }
     }
     bump();
     return 'ok';
+  };
+
+  const commitPartial = (t: Take) => {
+    if (!t.draft.partial) return;
+    void commitSpoken?.(t.draft.partial, t.committedAny, t.id, t.draft.sentenceId ?? 0);
+    t.committedAny = true;
+    t.sentAny = true;
+    t.draft = { ...t.draft, partial: '' };
+  };
+
+  const trackRelease = (t: Take) => {
+    const done = release(t);
+    running.current = done;
+    void done.finally(() => { if (running.current === done) running.current = null; });
   };
 
   const fail = (t: Take, stage: VoiceFailure['stage'], error: unknown) => {
@@ -251,6 +273,7 @@ export function useVoiceCapture({ recorder, pending, result, ready, transcribe, 
     }
     t.streamId = null;
     if (!mine(t)) return;
+    commitPartial(t);
     t.drained = true;
     bump();
   };
@@ -269,30 +292,41 @@ export function useVoiceCapture({ recorder, pending, result, ready, transcribe, 
     t.startedAt = Date.now(); setElapsedMs(0);
     try {
       if (recorder.startPcm && dictation?.available) {
-        await recorder.startPcm();
-        t.pcmLive = true;
-        if (!mine(t) || t.stopping) { await release(t); if (mine(t)) { take.current = null; setPhase('idle'); } return; }
-        let opened: CompanionDictationOpenResult;
-        try { opened = await dictation.open(); }
-        catch (error) {
-          opened = { ok: false, code: error instanceof Error ? error.message : 'COMPANION_DICTATION_UNAVAILABLE' };
+        try {
+          await recorder.startPcm();
+          t.pcmLive = true;
+        } catch (error) {
+          const code = error instanceof Error ? error.message : String(error);
+          if (code === 'MICROPHONE_DENIED' || code === 'MISSING_PERMISSION') { fail(t, 'record', error); return; }
+          t.degraded = true;
         }
-        if (!mine(t) || t.stopping) { await release(t); if (mine(t)) { take.current = null; setPhase('idle'); } return; }
-        if (opened.ok && opened.sampleRate === L.voicePcmSampleRate) {
-          t.mode = 'realtime';
-          t.streamId = opened.streamId;
+        if (t.pcmLive) {
           t.unsub = recorder.subscribePcm?.(frame => {
-            if (!mine(t) || t.mode !== 'realtime') return;
+            if (!mine(t) || !t.pcmLive) return;
             if (frame.pcm.length > L.voicePcmBase64Limit) { t.dropped += 1; bump(); return; }
             t.pcmQueue.push(frame); bump();
           }) ?? null;
-          setPhase('recording');
-          return;
+          if (!mine(t) || t.stopping) { await release(t); if (mine(t)) { take.current = null; setPhase('idle'); } return; }
+          let opened: CompanionDictationOpenResult;
+          try { opened = await dictation.open(); }
+          catch (error) {
+            opened = { ok: false, code: error instanceof Error ? error.message : 'COMPANION_DICTATION_UNAVAILABLE' };
+          }
+          if (!mine(t) || t.stopping) { await release(t); if (mine(t)) { take.current = null; setPhase('idle'); } return; }
+          if (opened.ok && opened.sampleRate === L.voicePcmSampleRate) {
+            t.mode = 'realtime';
+            t.streamId = opened.streamId;
+            setPhase('recording');
+            bump();
+            return;
+          }
+          t.degraded = true;
+          t.unsub?.(); t.unsub = null;
+          t.pcmQueue = [];
+          t.pcmLive = false;
+          await recorder.stopPcm?.().catch(() => {});
+          if (!mine(t) || t.stopping) { if (mine(t)) { take.current = null; setPhase('idle'); } return; }
         }
-        t.degraded = true;
-        t.pcmLive = false;
-        await recorder.stopPcm?.().catch(() => {});
-        if (!mine(t) || t.stopping) { if (mine(t)) { take.current = null; setPhase('idle'); } return; }
       }
       await recorder.start();
       t.live = true;
@@ -321,9 +355,10 @@ export function useVoiceCapture({ recorder, pending, result, ready, transcribe, 
     // 于是「取消掉的话」照样写进输入框（grok ai-review Important）。
     take.current = null;
     discardPending(t.id);
-    if (t.mode === 'realtime' || t.streamId) void dictation?.close();
-    // 录音口不在这里收：循环的 finally 与 start() 的续段各自负责把自己开的那个还回去，
-    // 这里再来一遍只是让「谁负责关麦克风」多一个答案（变异实证：删掉它一条测试都不红）。
+    if (t.mode === 'realtime' || t.streamId) void dictationRef.current?.close();
+    // 分片路径由 run() 的 finally 还麦克风。实时路径没有那条循环，取消必须自己 stopPcm，
+    // 并把 promise 挂到 running，下一次 start 才能等 engine 还回来。
+    if (t.pcmLive || t.mode === 'realtime') trackRelease(t);
     t.wake?.();
     setFailure(null); setPhase('idle');
   };
@@ -340,7 +375,7 @@ export function useVoiceCapture({ recorder, pending, result, ready, transcribe, 
       // ——基线 VoiceInput 在这条路上走 stop(true)，根本不会发起转写（grok ai-review Important）。
       take.current = null;
       discardPending(t.id);
-      if (t.mode === 'realtime' || t.streamId) void dictation?.close();
+      if (t.mode === 'realtime' || t.streamId) void dictationRef.current?.close();
       t.wake?.(); void release(t);
     };
   }, [recorder]);

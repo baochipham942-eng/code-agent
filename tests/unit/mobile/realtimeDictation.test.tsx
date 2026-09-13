@@ -25,6 +25,7 @@ function RealtimeHarness({
   commit,
   transcribe,
   available = true,
+  stopPcm,
 }: {
   dictation: {
     open: () => Promise<CompanionDictationOpenResult>;
@@ -36,6 +37,7 @@ function RealtimeHarness({
   commit?: (text: string, continuation: boolean) => void;
   transcribe?: () => Promise<string | null>;
   available?: boolean;
+  stopPcm?: () => Promise<void>;
 }) {
   const [draft, setDraft] = React.useState('');
   const listeners = React.useRef<Array<(frame: { pcm: string; durationMs: number }) => void>>([]);
@@ -43,7 +45,7 @@ function RealtimeHarness({
     start: async () => {},
     stop: async () => ({ audioData: 'chunk1', mimeType: 'audio/aac' as const, durationMs: 4000 }),
     startPcm: async () => ({ sampleRate: COMPANION_LIMITS.voicePcmSampleRate }),
-    stopPcm: async () => {},
+    stopPcm: async () => { await stopPcm?.(); },
     subscribePcm: (onFrame: (frame: { pcm: string; durationMs: number }) => void) => {
       listeners.current.push(onFrame);
       pcm?.(frame => listeners.current.forEach(listener => listener(frame)));
@@ -149,6 +151,76 @@ describe('realtime dictation', () => {
     expect(screen.getByText(text.voiceDegraded)).toBeTruthy();
     await advance(5_000);
     expect(transcribe).toHaveBeenCalled();
+  });
+
+  it('cancel on the realtime path stops the PCM engine so the next take can start', async () => {
+    vi.useFakeTimers();
+    const stopPcm = vi.fn(async () => {});
+    let resolveOpen: ((value: CompanionDictationOpenResult) => void) | undefined;
+    render(<RealtimeHarness
+      stopPcm={stopPcm}
+      dictation={{
+        open: () => new Promise(resolve => { resolveOpen = resolve; }),
+        audio: async () => ({ ok: true, events: [] }),
+        stop: async () => ({ ok: true, events: [] }),
+        close: async () => {},
+      }}
+    />);
+    fireEvent.click(screen.getByRole('button', { name: text.voice }));
+    await advance(20);
+    fireEvent.click(screen.getByRole('button', { name: text.cancelRecording }));
+    await advance(20);
+    expect(stopPcm).toHaveBeenCalled();
+    resolveOpen?.({ ok: true, streamId: 'late', sampleRate: COMPANION_LIMITS.voicePcmSampleRate });
+  });
+
+  it('keeps PCM frames that arrive while dictation.open is still in flight', async () => {
+    vi.useFakeTimers();
+    const audio = vi.fn(async () => ({ ok: true, events: [] as CompanionDictationEvent[] }));
+    let resolveOpen: ((value: CompanionDictationOpenResult) => void) | undefined;
+    let emit: ((frame: { pcm: string; durationMs: number }) => void) | undefined;
+    render(<RealtimeHarness
+      pcm={next => { emit = next; }}
+      dictation={{
+        open: () => new Promise(resolve => { resolveOpen = resolve; }),
+        audio,
+        stop: async () => ({ ok: true, events: [] }),
+        close: async () => {},
+      }}
+    />);
+    fireEvent.click(screen.getByRole('button', { name: text.voice }));
+    await advance(20);
+    await act(async () => { emit?.({ pcm: 'AAEA', durationMs: 20 }); });
+    expect(audio).not.toHaveBeenCalled();
+    await act(async () => {
+      resolveOpen?.({ ok: true, streamId: 'stream-1', sampleRate: COMPANION_LIMITS.voicePcmSampleRate });
+    });
+    await advance(50);
+    expect(audio).toHaveBeenCalledWith('stream-1', 'AAEA');
+  });
+
+  it('commits a leftover partial when the user stops and Host never sends a final', async () => {
+    vi.useFakeTimers();
+    const commit = vi.fn();
+    let emit: ((frame: { pcm: string; durationMs: number }) => void) | undefined;
+    render(<RealtimeHarness
+      pcm={next => { emit = next; }}
+      commit={commit}
+      dictation={{
+        open: async () => ({ ok: true, streamId: 'stream-1', sampleRate: COMPANION_LIMITS.voicePcmSampleRate }),
+        audio: async () => ({ ok: true, events: [{ type: 'partial', text: '还没定稿', sentenceId: 1 }] }),
+        stop: async () => ({ ok: true, events: [] }),
+        close: async () => {},
+      }}
+    />);
+    fireEvent.click(screen.getByRole('button', { name: text.voice }));
+    await advance(20);
+    await act(async () => { emit?.({ pcm: 'AAEA', durationMs: 20 }); });
+    await advance(50);
+    fireEvent.click(screen.getByRole('button', { name: text.stopRecording }));
+    await advance(50);
+    expect(commit).toHaveBeenCalledWith('还没定稿', false);
+    expect((screen.getByTestId('draft') as HTMLTextAreaElement).value).toContain('还没定稿');
   });
 
   it('degrades at open when Host has no channel, without calling transcribe as dictation', async () => {

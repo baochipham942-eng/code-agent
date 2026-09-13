@@ -87,15 +87,44 @@ describe('osSandboxPolicy', () => {
     expect(decision.code).toBe(OS_SANDBOX_CODES.DEGRADED_UNAVAILABLE);
   });
 
-  it('平台沙箱不可用时 bypass 仍要求 wrap（由调用方硬报错）', () => {
+  it('平台沙箱不可用时 bypass 在显式 opt-in（env=true）下仍硬失败', () => {
     const decision = resolveOsSandboxDecision({
       ...base,
       command: 'echo hello',
       permissionMode: 'bypassPermissions',
       sandboxAvailable: false,
+      sandboxEnv: 'true',
     });
     expect(decision.apply).toBe(true);
     expect(decision.degradeIfUnavailable).toBe(false);
+  });
+
+  it('env 未设时 bypass / unattended 按灰度处理：不可用降级、可走白名单例外（PR #1789 claude 复审 Important）', () => {
+    const unavailable = resolveOsSandboxDecision({
+      ...base,
+      command: 'npm test',
+      permissionMode: 'bypassPermissions',
+      sandboxAvailable: false,
+    });
+    expect(unavailable.apply).toBe(false);
+    expect(unavailable.degraded).toBe(true);
+    expect(unavailable.code).toBe(OS_SANDBOX_CODES.DEGRADED_UNAVAILABLE);
+
+    const unattended = resolveOsSandboxDecision({
+      ...base,
+      command: 'npm test',
+      permissionMode: 'default',
+      unattended: true,
+      sandboxAvailable: false,
+    });
+    expect(unattended.code).toBe(OS_SANDBOX_CODES.DEGRADED_UNAVAILABLE);
+
+    const dockerOnBypass = resolveOsSandboxDecision({
+      ...base,
+      command: 'docker compose up',
+      permissionMode: 'bypassPermissions',
+    });
+    expect(dockerOnBypass.exception).toBe('docker_engine');
   });
 
   it('平台沙箱不可用时多根显式降级而不是硬报错（旧默认本就裸跑）', () => {
@@ -112,13 +141,26 @@ describe('osSandboxPolicy', () => {
     expect(decision.degradeIfUnavailable).toBe(true);
   });
 
-  it('多根叠加 bypass 时不随多根降级，仍 fail-closed（PR #1789 复审）', () => {
+  it('eval real root 无 opt-in 也永远严格：不可用硬失败', () => {
+    const decision = resolveOsSandboxDecision({
+      ...base,
+      command: 'echo hello',
+      permissionMode: 'default',
+      evalRealRoot: true,
+      sandboxAvailable: false,
+    });
+    expect(decision.apply).toBe(true);
+    expect(decision.degradeIfUnavailable).toBe(false);
+  });
+
+  it('多根叠加 bypass 且显式 opt-in 时不随多根降级，仍 fail-closed（PR #1789 复审）', () => {
     const decision = resolveOsSandboxDecision({
       ...base,
       command: 'echo hello',
       permissionMode: 'bypassPermissions',
       multiRoot: true,
       sandboxAvailable: false,
+      sandboxEnv: 'true',
     });
     expect(decision.apply).toBe(true);
     expect(decision.degradeIfUnavailable).toBe(false);
@@ -159,11 +201,12 @@ describe('osSandboxPolicy', () => {
       .toBe('docker_engine');
   });
 
-  it('bypass 不走白名单例外', () => {
+  it('bypass 显式 opt-in（env=true）时不走白名单例外', () => {
     expect(resolveOsSandboxDecision({
       ...base,
       command: 'docker build .',
       permissionMode: 'bypassPermissions',
+      sandboxEnv: 'true',
     }).apply).toBe(true);
   });
 

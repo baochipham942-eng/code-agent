@@ -26,6 +26,8 @@ export interface OsSandboxDecisionInput {
   multiRoot: boolean;
   sandboxAvailable: boolean;
   sandboxEnabled?: boolean;
+  /** Raw OS_SANDBOX_ENABLED env value; 'true' = operator opt-in to strict required semantics. */
+  sandboxEnv?: string;
   platform?: NodeJS.Platform;
 }
 
@@ -53,6 +55,11 @@ interface UnsandboxableException {
 // Command-position only: the name must start the command or follow a shell
 // command separator (`;` `&` `|` `(`). Matching plain arguments (e.g. `echo
 // docker`, `cat open`) would false-positive into a degraded naked run.
+// ponytail: quotes and newlines are not command syntax here — `git commit -m
+// "wip; open later"` false-positives into the exception (degrades, no worse
+// than baseline), and `cd x\ndocker build .` misses the exception (wraps and
+// fails inside the jail). Both fail toward the old behavior, not toward a
+// wider hole; shell-token parsing belongs to commandParse if this ever bites.
 const COMMAND_TOKEN = (names: string[]): RegExp => new RegExp(
   `(?:^|[;&|(])\\s*(?:sudo\\s+|command\\s+|env\\s+)?(?:${names
     .map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
@@ -97,14 +104,6 @@ function isRolloutMode(mode: OsSandboxPermissionMode): boolean {
   return mode === 'default' || mode === 'acceptEdits';
 }
 
-function isRequiredSandboxContext(input: OsSandboxDecisionInput): boolean {
-  return input.writeFence
-    || input.unattended
-    || input.evalRealRoot
-    || input.multiRoot
-    || input.permissionMode === 'bypassPermissions';
-}
-
 /**
  * Decide whether bash must wrap, may degrade, or is outside the gray rollout.
  *
@@ -113,8 +112,10 @@ function isRequiredSandboxContext(input: OsSandboxDecisionInput): boolean {
  */
 export function resolveOsSandboxDecision(input: OsSandboxDecisionInput): OsSandboxDecision {
   const enabled = input.sandboxEnabled ?? isOsSandboxEnabled();
+  const envRaw = input.sandboxEnv
+    ?? (typeof process === 'undefined' ? undefined : process.env.OS_SANDBOX_ENABLED);
+  const explicitOptIn = envRaw === 'true';
   const platform = input.platform ?? process.platform;
-  const required = isRequiredSandboxContext(input);
   const rollout = isRolloutMode(input.permissionMode);
 
   if (input.writeFence) {
@@ -141,7 +142,19 @@ export function resolveOsSandboxDecision(input: OsSandboxDecisionInput): OsSandb
     };
   }
 
-  if (!required && !rollout) {
+  // 严格强制（不可用硬失败、不走白名单例外）：eval 永远严格（红线只认 jail）；
+  // bypass / unattended / 多根仅在操作者显式 OS_SANDBOX_ENABLED=true 时严格
+  // ——这是 main 的旧 opt-in 语义。env 未设时它们按灰度处理：可用就 wrap、
+  // 不可用降级带标记、可走例外；否则 Windows / 无 bwrap Linux 上一直在用的
+  // cron 与 bypass 会话会被默认硬失败打死（PR #1789 claude 复审 Important；
+  // 与 R1 多根同一条理由，适用面一致）。
+  const strictRequired = input.evalRealRoot
+    || ((input.unattended || input.permissionMode === 'bypassPermissions' || input.multiRoot)
+      && explicitOptIn);
+  const wraps = strictRequired || rollout
+    || input.unattended || input.permissionMode === 'bypassPermissions' || input.multiRoot;
+
+  if (!wraps) {
     return {
       apply: false,
       sandboxed: false,
@@ -151,7 +164,9 @@ export function resolveOsSandboxDecision(input: OsSandboxDecisionInput): OsSandb
     };
   }
 
-  const unsandboxable = !required ? classifyUnsandboxableCommand(input.command, platform) : undefined;
+  const unsandboxable = !strictRequired
+    ? classifyUnsandboxableCommand(input.command, platform)
+    : undefined;
   if (unsandboxable) {
     return {
       apply: false,
@@ -163,15 +178,7 @@ export function resolveOsSandboxDecision(input: OsSandboxDecisionInput): OsSandb
     };
   }
 
-  // multiRoot 也降级：多根在旧默认（env 未开）下本就裸跑，无沙箱平台（CI ubuntu
-  // 无 bwrap / Windows）硬报错会把一直在用的会话打死；降级带标记不静默。
-  // 但多根叠加强制场景（bypass / unattended / write-fence / eval）时仍硬失败
-  // （PR #1789 复审：required 交集不随多根一起降级）。
-  const hardRequired = input.writeFence
-    || input.unattended
-    || input.evalRealRoot
-    || input.permissionMode === 'bypassPermissions';
-  const degradeIfUnavailable = (rollout && !required) || (input.multiRoot && !hardRequired);
+  const degradeIfUnavailable = !strictRequired;
   if (!input.sandboxAvailable) {
     if (degradeIfUnavailable) {
       return {

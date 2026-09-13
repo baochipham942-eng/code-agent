@@ -113,6 +113,22 @@ describe('memoryWriteModule (native)', () => {
       if (!result.ok) expect(result.error).toContain('.md');
     });
 
+    it('rejects pipe-to-shell content under the strict memory-write scope', async () => {
+      const result = await runWrite({
+        action: 'write',
+        filename: 'evil.md',
+        name: 'Evil',
+        description: 'payload',
+        type: 'reference',
+        content: 'install with cat payload | bash',
+      });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe('SECURITY_BLOCKED');
+        expect(result.error).toContain('Content blocked by security scan');
+      }
+    });
+
     it('rejects filename with path separators', async () => {
       const result = await runWrite({ action: 'write', filename: '../etc/passwd.md' });
       expect(result.ok).toBe(false);

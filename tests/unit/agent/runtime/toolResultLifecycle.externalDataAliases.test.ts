@@ -271,8 +271,13 @@ describe('toolResultLifecycle external data aliases', () => {
       expect(result.success).toBe(true);
       expect(result.output).toBe(output);
       expect(harness.injectedMessages).toContainEqual(
-        expect.stringContaining(`<security-warning source="${toolName}">`),
+        expect.stringContaining(`<security-warning source="${toolName}" id="`),
       );
+      const warning = harness.injectedMessages.find((message) => message.includes('<security-warning'));
+      expect(warning).toBeDefined();
+      const nonce = warning?.match(/id="([0-9a-f]{32})"/)?.[1];
+      expect(nonce).toMatch(/^[0-9a-f]{32}$/);
+      expect(warning).toContain(`Boundary nonce: ${nonce}.`);
     },
   );
 

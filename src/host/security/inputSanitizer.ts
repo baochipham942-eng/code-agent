@@ -6,8 +6,20 @@
 // 轻量无状态，AgentLoop 直接持有。
 
 import { createLogger } from '../services/infra/logger';
-import { INJECTION_PATTERNS, type InjectionPattern } from './patterns/injectionPatterns';
+import {
+  INJECTION_PATTERNS,
+  patternAppliesToScope,
+  type InjectionAttackCategory,
+  type InjectionPattern,
+  type InjectionPatternScope,
+} from './patterns/injectionPatterns';
 import { getSensitiveDetector } from './sensitiveDetector';
+import {
+  foundRoleDelimiterTokens,
+  generateBoundaryNonce,
+  stripBoundaryNonce,
+  stripSpecialTokenLiterals,
+} from './untrustedContentBoundary';
 
 const logger = createLogger('InputSanitizer');
 
@@ -16,10 +28,17 @@ const logger = createLogger('InputSanitizer');
 // ----------------------------------------------------------------------------
 
 export interface SanitizationWarning {
-  type: 'prompt_injection' | 'jailbreak_attempt' | 'data_exfiltration' | 'instruction_override' | 'sensitive_data';
+  type: InjectionAttackCategory;
   severity: 'low' | 'medium' | 'high' | 'critical';
   pattern: string;
   description: string;
+}
+
+export interface SanitizeOptions {
+  /** Tool results default to lenient; memory writes and skill install use strict. */
+  scope?: InjectionPatternScope;
+  /** Test seam: supply a known nonce instead of generating one. */
+  nonce?: string;
 }
 
 export interface SanitizationResult {
@@ -28,6 +47,9 @@ export interface SanitizationResult {
   warnings: SanitizationWarning[];
   blocked: boolean;
   riskScore: number; // 0-1
+  /** Unforgeable boundary token for this sanitize call. Empty when input is empty. */
+  nonce: string;
+  strippedSpecialTokens: string[];
 }
 
 export type SanitizationMode = 'strict' | 'moderate' | 'permissive';
@@ -78,24 +100,49 @@ export class InputSanitizer {
   }
 
   /**
-   * 扫描输入内容，检测 prompt injection 和其他安全风险
+   * 扫描输入内容，检测 prompt injection 和其他安全风险。
+   * 先无条件剥离模型控制 token 与本轮 nonce，再跑 block/annotate 检测。
    *
    * @param input - 外部数据内容
    * @param source - 数据来源工具名（如 'web_fetch', 'mcp'）
    */
-  sanitize(input: string, source: string): SanitizationResult {
+  sanitize(input: string, source: string, options?: SanitizeOptions): SanitizationResult {
     if (!input || input.length === 0) {
-      return { safe: true, sanitized: input, warnings: [], blocked: false, riskScore: 0 };
+      return {
+        safe: true,
+        sanitized: input,
+        warnings: [],
+        blocked: false,
+        riskScore: 0,
+        nonce: '',
+        strippedSpecialTokens: [],
+      };
     }
+
+    const scope: InjectionPatternScope = options?.scope ?? 'lenient';
+    const nonce = options?.nonce ?? generateBoundaryNonce();
+    const { text: withoutSpecialTokens, found: strippedSpecialTokens } = stripSpecialTokenLiterals(input);
+    const sanitized = stripBoundaryNonce(withoutSpecialTokens, nonce);
 
     const warnings: SanitizationWarning[] = [];
 
-    // 1. 检测 prompt injection 模式
-    for (const { pattern, type, severity, description } of this.allPatterns) {
+    if (foundRoleDelimiterTokens(strippedSpecialTokens)) {
+      warnings.push({
+        type: 'instruction_override',
+        severity: 'critical',
+        pattern: 'llm-special-token',
+        description: '使用已知的系统标记格式注入指令',
+      });
+    }
+
+    // 1. 检测 prompt injection 模式（scope 过滤后，在剥离后的文本上跑）
+    for (const item of this.allPatterns) {
+      if (!patternAppliesToScope(item, scope)) continue;
+      const { pattern, type, severity, description } = item;
       // 重置 lastIndex（全局正则）
       pattern.lastIndex = 0;
 
-      if (pattern.test(input)) {
+      if (pattern.test(sanitized)) {
         warnings.push({
           type,
           severity,
@@ -107,7 +154,7 @@ export class InputSanitizer {
 
     // 2. 复用 SensitiveDetector 检测泄露的凭证
     const sensitiveDetector = getSensitiveDetector();
-    const sensitiveResult = sensitiveDetector.detect(input);
+    const sensitiveResult = sensitiveDetector.detect(sanitized);
     if (sensitiveResult.hasSensitive) {
       for (const match of sensitiveResult.matches) {
         if (match.confidence === 'high' || match.confidence === 'medium') {
@@ -143,15 +190,18 @@ export class InputSanitizer {
         riskScore: riskScore.toFixed(2),
         blocked,
         types: [...new Set(warnings.map(w => w.type))],
+        scope,
       });
     }
 
     return {
       safe,
-      sanitized: input, // 不修改原始内容，只报告
+      sanitized,
       warnings,
       blocked,
       riskScore,
+      nonce,
+      strippedSpecialTokens,
     };
   }
 
@@ -176,6 +226,17 @@ export class InputSanitizer {
     // 归一化到 0-1，使用 sigmoid-like 函数
     return Math.min(1, totalWeight / 2);
   }
+}
+
+/** Fail-closed persist path for memory writes (strict scope). Throws if blocked. */
+export function admitStrictUntrustedText(text: string, source: string): string {
+  const result = getInputSanitizer().sanitize(text, source, { scope: 'strict' });
+  if (result.blocked) {
+    throw new Error(
+      `Content blocked by security scan: ${result.warnings.map((warning) => warning.description).join('; ')}`,
+    );
+  }
+  return result.sanitized;
 }
 
 // ----------------------------------------------------------------------------

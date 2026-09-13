@@ -227,6 +227,9 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         // 拒绝理由要跟着这条命令的结果走，否则输入区只拿得到 persist 那道兜底的通用码。
         const voice = saved.pending?.action === 'voice.transcribe' ? saved.pending.commandId : null;
         const discardedVoice = pendingVoiceDiscarded();
+        // 动作也要在 persist 清槽**之前**捕获：清完再读恒是 null，按动作让位在这条路上直接失效
+        //（grok ai-review Nit；同 voice / discardedVoice 一个纪律，我漏了这一个）。
+        const rejectedAction = saved.pending?.action ?? null;
         await persist({ ...saved, pending: undefined });
         // 按语义分，不按「它是不是 rejected」分。桌面或另一台手机先批了同一条审批时，
         // 网关回的是 approval_conflict——那是正常抢答，把整台设备停掉是错的。
@@ -234,7 +237,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
           // 设备级的拒绝照报：那是「这台设备不能用了」，与用户撤没撤这次录音无关。
           ? { pending: false, status: 'rejected', connectionError: 'connectionRejected' }
           : discardedVoice ? { pending: false }
-          : { pending: false, commandError: result.kind === 'approval_conflict' ? 'COMPANION_APPROVAL_CONFLICT' : result.reason ?? 'COMPANION_COMMAND_REJECTED', commandErrorAction: saved.pending?.action ?? null });
+          : { pending: false, commandError: result.kind === 'approval_conflict' ? 'COMPANION_APPROVAL_CONFLICT' : result.reason ?? 'COMPANION_COMMAND_REJECTED', commandErrorAction: rejectedAction });
         if (voice) set({ voiceResult: { commandId: voice, outcome: 'error', code: get().commandError ?? undefined } });
         return result.command ?? null;
       }

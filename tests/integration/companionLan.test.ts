@@ -412,6 +412,27 @@ describe('LAN companion: real HTTP + Noise + SQLite', () => {
     } finally { phone.getState().pause(); await server2.stop(); db2.close(); }
   });
 
+  it('deliver 当场被拒时 commandErrorAction 要认得出是哪种命令——必须在清槽前捕获', async () => {
+    // grok ai-review Nit：动作原本是在 persist 清掉 saved.pending **之后**才读的，恒是 null，
+    // 于是「通用提示条按动作给输入区让位」这条判据在这条路上直接失效。
+    // 走 approval.respond：本测试的网关没有 decide 处理器 ⇒ 当场回 unsupported_action，
+    // 那是非设备级拒绝，正好落在 deliver 的 rejected 分支（此前这条路一条判据都没有）。
+    let storage: string | null = null;
+    const phone = createCompanionStore({ read: async () => storage, write: async (value: string) => { storage = value; },
+      scan: async () => JSON.stringify(server.invite(['shared'])), post }, () => {});
+    try {
+      await phone.getState().pair();
+      const sessionId = phone.getState().sessionId!;
+      phone.setState({ events: [{ kind: 'approval', sessionId,
+        payload: { requestId: 'r1', status: 'pending', revision: 1, operationDigest: 'd1' } }] as never });
+      await phone.getState().respond('r1', 'approved');
+      expect(phone.getState()).toMatchObject({
+        commandError: 'unsupported_action',
+        commandErrorAction: 'approval.respond',
+      });
+    } finally { phone.getState().pause(); }
+  });
+
   it('主机回「这段没人说话」时结论是 silent、不写 commandError——分片下静音是常态不是失败', async () => {
     // 2026-09-13 爸真机：4 秒分片让 Host 的幻觉护栏 30 段里开火 13 段（43%），
     // 每开火一次手机就弹一句「电脑那边拒绝了这条操作」。HALLUCINATION / EMPTY_RESULT

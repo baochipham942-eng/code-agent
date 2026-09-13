@@ -417,18 +417,20 @@ describe('companionTranscriptionSettlement：真实错误码必须带回手机',
   // 手机侧那条「静音段不是失败」的判据在生产里恒不成立——整条修法接成了死线。
   // 当时集成测试是手工给网关塞 HALLUCINATION 才绿的：替身比真实写入点宽容。
   it.each([
-    ['HALLUCINATION'],
-    ['EMPTY_RESULT'],
-    ['COMPANION_TRANSCRIPTION_UNAVAILABLE'],
-  ])('失败码 %s 原样带回，不许压成通用码', (code) => {
+    ['HALLUCINATION', true],
+    ['EMPTY_RESULT', true],
+    // 真失败不是「没人说话」：判成 silent 的话手机会静默吞掉，用户连重试入口都没有
+    ['COMPANION_TRANSCRIPTION_UNAVAILABLE', false],
+    ['COMPANION_TRANSCRIPTION_FAILED', false],
+  ])('失败码 %s 原样带回，且 silent=%s（结论由主机给，手机不自己判）', (code, silent) => {
     const settlement = companionTranscriptionSettlement({ success: false, engine: 'groq', code } as never);
     expect(settlement.state).toBe('rejected');
-    expect(settlement.result.code).toBe(code);
+    expect(settlement.result).toMatchObject({ code, silent });
   });
 
-  it('没有码时才退到通用码', () => {
+  it('没有码时才退到通用码，且不当成静音', () => {
     const settlement = companionTranscriptionSettlement({ success: false, engine: 'groq' } as never);
-    expect(settlement.result.code).toBe('COMPANION_TRANSCRIPTION_FAILED');
+    expect(settlement.result).toMatchObject({ code: 'COMPANION_TRANSCRIPTION_FAILED', silent: false });
   });
 
   it('成功只认 groq 引擎，本地引擎的成功也按失败结算（既有口径不许放宽）', () => {
@@ -436,5 +438,25 @@ describe('companionTranscriptionSettlement：真实错误码必须带回手机',
       .toEqual({ state: 'accepted', result: { text: '你好', engine: 'groq' } });
     expect(companionTranscriptionSettlement({ success: true, engine: 'local-whisper', text: '你好' } as never).state)
       .toBe('rejected');
+  });
+});
+
+describe('幻觉家族与收紧规则不许自相矛盾', () => {
+  it.each([
+    // 署名动词：是幻觉
+    ['本片由天空字幕组压制', false],
+    ['字幕组出品', false],
+    ['由某某字幕组翻译', false],
+    // 日常动词：不是幻觉，误杀的代价是用户这 4 秒真话无声消失
+    ['字幕组翻译得挺好', true],
+    ['这个字幕组翻译水平不错', true],
+  ])('「%s」放行=%s', async (text, shouldPass) => {
+    configureSpeech({ mode: 'cloud-only' });
+    groqCreateMock.mockResolvedValueOnce(text);
+    const service = new SpeechTranscriptionService();
+
+    const result = await service.transcribe({ audioData: makeAudioData(), mimeType: 'audio/aac', source: 'composer' });
+
+    expect(result.success).toBe(shouldPass);
   });
 });

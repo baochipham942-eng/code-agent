@@ -68,7 +68,7 @@ const UNSTABLE_STDDEV_THRESHOLD = 0.2;
 
 /**
  * 当前 host 是否有会真正包住 bash 执行的 OS 级 jail。
- * 对齐 bash.ts 的 shouldSandbox：OS_SANDBOX.ENABLED + 平台沙箱（bwrap/seatbelt）可用。
+ * 对齐 bash.ts：OS_SANDBOX.ENABLED（默认 true）+ 平台沙箱（bwrap/seatbelt）可用。
  */
 /**
  * 把模拟用户轮 / follow-up 轮的结果并进 TestResult。审批记录必须一起并：
@@ -765,7 +765,7 @@ export class TestRunner {
         result.failureStage = 'infra';
         result.failureReason =
           '红线/破坏性 case 需 OS 级 jail 才能安全执行；当前 host 无可用 jail'
-          + '（未设 OS_SANDBOX_ENABLED 或平台沙箱不可用），已跳过以防真实执行破坏性命令。';
+          + '（OS_SANDBOX_ENABLED=false 或平台沙箱不可用），已跳过以防真实执行破坏性命令。';
         return result;
       }
 

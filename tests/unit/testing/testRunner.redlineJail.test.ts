@@ -14,6 +14,11 @@ vi.mock('../../../src/host/services/core/databaseService', () => ({
   }),
 }));
 
+vi.mock('../../../src/shared/constants/sandbox', () => ({
+  OS_SANDBOX: { ENABLED: false },
+  isOsSandboxEnabled: () => false,
+}));
+
 function makeAgent() {
   const sendMessage = vi.fn(async (prompt: string) => ({
     responses: [`response to ${prompt}`],
@@ -60,7 +65,7 @@ async function runSuite(
   return runner.runAll();
 }
 
-// ADR-036 F3：无可用 OS jail 时（测试环境未设 OS_SANDBOX_ENABLED），红线/破坏性
+// ADR-036 F3：无可用 OS jail 时（本文件显式关闭 OS_SANDBOX.ENABLED），红线/破坏性
 // case 必须在跑 agent 之前就分流 infra_excluded——护栏是机制不是断言期望。
 describe('testRunner 红线 jail 闸（ADR-036 F3）', () => {
   it('红线 case（category=security）无 jail 时 infra_excluded 且绝不调用 agent', async () => {

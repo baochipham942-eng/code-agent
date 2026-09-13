@@ -253,6 +253,13 @@ export const zhSettingsCore = {
           acknowledge: '知道了',
           releaseNotes: '查看 release notes',
         },
+        sandbox: {
+          title: '操作系统沙箱',
+          available: 'Bash 在「默认」和「自动接受编辑」档下默认在操作系统沙箱中执行。',
+          unavailable: '这台机器的操作系统沙箱不可用。Bash 会标记为降级后执行，不会静默裸跑。',
+          disabled: '操作系统沙箱已关闭。设置 OS_SANDBOX_ENABLED=false 仅作紧急关闭。',
+          installHint: 'Linux 请安装 bubblewrap（bwrap）。macOS 使用系统自带的 sandbox-exec。',
+        },
         controlPlane: {
           title: '权限控制面',
           description: '日常看当前模式、风险级别、继承策略和用户规则数量就够了。',

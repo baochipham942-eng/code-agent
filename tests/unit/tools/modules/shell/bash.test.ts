@@ -111,6 +111,7 @@ const denyAll: CanUseToolFn = async () => ({ allow: false, reason: 'blocked' });
 describe('bashModule (native)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    wrapMock.mockImplementation((cmd: unknown) => ({ command: cmd, cleanup: cleanupMock }));
     startBackgroundTaskMock.mockReset();
     createPtySessionMock.mockReset();
     getPtySessionOutputMock.mockReset();
@@ -906,26 +907,94 @@ describe('bashModule 设计画布会话硬控（designCanvasActive）', () => {
 
 describe('bashModule OS 沙箱 gating（bypassPermissions）', () => {
   const modeMgr = getPermissionModeManager();
+  let unpinAvailable: (() => void) | undefined;
 
   beforeEach(() => {
     vi.clearAllMocks();
     wrapMock.mockReturnValue({ command: 'echo __SANDBOXED__', cleanup: cleanupMock });
     modeMgr.setMode('default', true);
+    const manager = getSandboxManager();
+    unpinAvailable = () => undefined;
+    const availableSpy = vi.spyOn(manager, 'isAvailable').mockReturnValue(true);
+    unpinAvailable = () => availableSpy.mockRestore();
   });
   afterEach(() => {
+    unpinAvailable?.();
     modeMgr.setMode('default', true);
     delete process.env.CODE_AGENT_EVAL_REAL_ROOT;
     delete process.env.AUTO_TEST_API_KEY;
     delete process.env.AUTO_TEST_BASE_URL;
     delete process.env.NEO_SCRIPTED_APPROVAL_POLICY;
+    process.env.OS_SANDBOX_ENABLED = 'true';
   });
 
-  it('default 档：不包装，直接执行原命令', async () => {
+  it('default 档：包装命令并执行包装结果', async () => {
+    const canUse = vi.fn(async () => ({ allow: true as const }));
     const handler = await bashModule.createHandler();
+    const result = await handler.execute({ command: 'echo plain-output' }, makeCtx(), canUse);
+    expect(wrapMock).toHaveBeenCalledTimes(1);
+    expect(canUse).toHaveBeenCalledWith(
+      'Bash',
+      expect.objectContaining({ command: 'echo plain-output' }),
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.output).toContain('__SANDBOXED__');
+      expect(result.meta?.sandboxed).toBe(true);
+    }
+  });
+
+  it('acceptEdits 档：包装命令', async () => {
+    modeMgr.setMode('acceptEdits', true);
+    const handler = await bashModule.createHandler();
+    const result = await handler.execute({ command: 'echo plain-output' }, makeCtx(), allowAll);
+    expect(wrapMock).toHaveBeenCalledTimes(1);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.meta?.sandboxed).toBe(true);
+  });
+
+  it('OS_SANDBOX_ENABLED=false：default 档不包装', async () => {
+    process.env.OS_SANDBOX_ENABLED = 'false';
+    const handler = await bashModule.createHandler();
+    wrapMock.mockImplementation((cmd: unknown) => ({ command: cmd, cleanup: cleanupMock }));
     const result = await handler.execute({ command: 'echo plain-output' }, makeCtx(), allowAll);
     expect(wrapMock).not.toHaveBeenCalled();
     expect(result.ok).toBe(true);
-    if (result.ok) expect(result.output).toContain('plain-output');
+    if (result.ok) {
+      expect(result.output).toContain('plain-output');
+      expect(result.meta?.sandboxed).toBe(false);
+      expect(result.meta?.sandbox).toMatchObject({ code: 'OS_SANDBOX_DEGRADED_DISABLED', degraded: true });
+    }
+  });
+
+  it('default 档 + docker：显式降级不包装', async () => {
+    wrapMock.mockImplementation((cmd: unknown) => ({ command: cmd, cleanup: cleanupMock }));
+    const handler = await bashModule.createHandler();
+    const result = await handler.execute({ command: 'docker __neo_sandbox_probe__' }, makeCtx(), allowAll);
+    expect(wrapMock).not.toHaveBeenCalled();
+    expect(result.meta?.sandboxed).toBe(false);
+    expect(result.meta?.sandbox).toMatchObject({
+      degraded: true,
+      code: 'OS_SANDBOX_DEGRADED_UNSANDBOXABLE',
+      exception: 'docker_engine',
+    });
+  });
+
+  it('default 档 + wrap 失败：显式降级执行原命令，不硬报错', async () => {
+    wrapMock.mockImplementation(() => {
+      throw new Error('sandbox-exec unavailable');
+    });
+    const handler = await bashModule.createHandler();
+    const result = await handler.execute({ command: 'echo plain-output' }, makeCtx(), allowAll);
+    expect(wrapMock).toHaveBeenCalled();
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.output).toContain('plain-output');
+      expect(result.meta?.sandbox).toMatchObject({
+        degraded: true,
+        code: 'OS_SANDBOX_DEGRADED_UNAVAILABLE',
+      });
+    }
   });
 
   it('real eval denies the source repository and removes its path from every shell child env', async () => {
@@ -1413,6 +1482,7 @@ describe('bashModule child-env secret whitelist (A8)', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    wrapMock.mockImplementation((cmd: unknown) => ({ command: cmd, cleanup: cleanupMock }));
     startBackgroundTaskMock.mockReset();
     createPtySessionMock.mockReset();
     savedDataDir = process.env.CODE_AGENT_DATA_DIR;

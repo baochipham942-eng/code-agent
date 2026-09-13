@@ -16,9 +16,24 @@ import { useI18n } from '../../hooks/useI18n';
 import { useAppStore } from '../../stores/appStore';
 import { resolveHostReasonCopy } from '../../utils/hostReasonPresentation';
 import { permissionConsequence } from './permissionPresentation';
+import { OS_SANDBOX_CODES } from '@shared/constants/sandbox';
 
 interface RequestDetailsProps {
   request: PermissionRequest;
+}
+
+function sandboxStatusCopy(
+  sandbox: NonNullable<PermissionRequest['details']['sandbox']>,
+  labels: { sandboxApplied: string; sandboxDegraded: string; sandboxDegradedUnsandboxable: string; sandboxDegradedUnavailable: string; sandboxDegradedDisabled: string },
+): string {
+  if (sandbox.code === OS_SANDBOX_CODES.DEGRADED_UNSANDBOXABLE) {
+    return labels.sandboxDegradedUnsandboxable.replace('{exception}', sandbox.exception ?? sandbox.code);
+  }
+  if (sandbox.code === OS_SANDBOX_CODES.DEGRADED_UNAVAILABLE) return labels.sandboxDegradedUnavailable;
+  if (sandbox.code === OS_SANDBOX_CODES.DEGRADED_DISABLED) return labels.sandboxDegradedDisabled;
+  if (sandbox.degraded) return labels.sandboxDegraded;
+  if (sandbox.applied) return labels.sandboxApplied;
+  return labels.sandboxDegraded;
 }
 
 export function RequestDetails({ request }: RequestDetailsProps) {
@@ -75,6 +90,15 @@ export function RequestDetails({ request }: RequestDetailsProps) {
           isCode
           isDangerous={type === 'dangerous_command'}
         />
+      )}
+
+      {details.sandbox && (
+        <p
+          className={`text-xs leading-5 ${details.sandbox.degraded ? 'text-badge-warning' : 'text-zinc-400'}`}
+          data-testid="permission-sandbox-status"
+        >
+          {sandboxStatusCopy(details.sandbox, labels)}
+        </p>
       )}
 
       {/* URL */}

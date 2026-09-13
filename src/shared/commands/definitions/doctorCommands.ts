@@ -134,7 +134,7 @@ async function runViaGuiSurface(): Promise<DoctorReport> {
 export const doctorCommand: CommandDefinition = {
   id: 'doctor',
   name: '系统诊断',
-  description: '运行 9 类健康检查（环境/数据库/网络/MCP/Hooks/版本…）',
+  description: '运行健康检查（环境含 OS 沙箱 / 数据库 / 网络 / MCP / Hooks / 版本…）',
   category: 'system',
   surfaces: ['cli', 'gui'],
   aliases: ['diagnose'],

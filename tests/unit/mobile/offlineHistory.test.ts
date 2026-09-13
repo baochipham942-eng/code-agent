@@ -6,8 +6,7 @@ import { createCompanionStore } from '../../../packages/mobile/src/stores/compan
 import { createMobileStore } from '../../../packages/mobile/src/stores/mobileStore';
 import { FileCache } from '../../../packages/mobile/src/platform/fileCache';
 import { HistoryCache } from '../../../packages/mobile/src/platform/historyCache';
-import { offlineHistoryCopy } from '../../../packages/mobile/src/app/MobileRoot';
-import { messages } from '../../../packages/mobile/src/i18n';
+import { messages, offlineHistoryCopy } from '../../../packages/mobile/src/i18n';
 import type { CompanionCommand, CompanionEvent } from '../../../src/shared/contract/companion';
 
 const harness = vi.hoisted(() => ({

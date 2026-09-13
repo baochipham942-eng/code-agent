@@ -175,3 +175,17 @@ const en: Record<keyof typeof zh, string> = {
   reviewPlan: 'Review the pending plan in your conversation',
 };
 export function messages(language: string) { return language.startsWith('zh') ? zh : en; }
+
+/**
+ * Offline reread banner. Pause still looks connected (background snapshot must not say
+ * "read-only"); live connected hides it. Only the true disconnected cache path shows it.
+ */
+export function offlineHistoryCopy(
+  text: ReturnType<typeof messages>,
+  companion: { status: string; paused: boolean; lastSyncAt: number | null },
+  hasCache: boolean,
+): string | null {
+  if (!hasCache || companion.paused || companion.status !== 'offline') return null;
+  const when = companion.lastSyncAt != null ? ` · ${text.lastSynced} ${new Date(companion.lastSyncAt).toLocaleString()}` : '';
+  return `${text.offlineReadonly}${when}`;
+}

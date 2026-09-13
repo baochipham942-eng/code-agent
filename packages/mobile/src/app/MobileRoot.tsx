@@ -13,7 +13,7 @@ import { QuestionCard } from '../features/sessions/QuestionCard';
 import { PlanCard } from '../features/sessions/PlanCard';
 import { CompanionConversation } from '../features/sessions/CompanionConversation';
 import type { CompanionLibrary } from '../../../../src/shared/contract/companionLibrary';
-import { messages } from '../i18n';
+import { messages, offlineHistoryCopy } from '../i18n';
 import { createBackCoordinator } from './backCoordinator';
 import { PreviewMedia } from '../features/sessions/PreviewMedia';
 import { applyKeyboardInset } from './keyboardInset';
@@ -39,20 +39,6 @@ export function connectionCopy(
     : companion.connectionError ? text[companion.connectionError as keyof typeof text]
     : text.unconnected;
   return { label, connected: false, retry: true };
-}
-
-/**
- * Offline reread banner. Pause still looks connected (background snapshot must not say
- * "read-only"); live connected hides it. Only the true disconnected cache path shows it.
- */
-export function offlineHistoryCopy(
-  text: ReturnType<typeof messages>,
-  companion: { status: string; paused: boolean; lastSyncAt: number | null },
-  hasCache: boolean,
-): string | null {
-  if (!hasCache || companion.paused || companion.status !== 'offline') return null;
-  const when = companion.lastSyncAt != null ? ` · ${text.lastSynced} ${new Date(companion.lastSyncAt).toLocaleString()}` : '';
-  return `${text.offlineReadonly}${when}`;
 }
 
 /**

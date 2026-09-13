@@ -32,7 +32,7 @@ describe('companion uses the desktop live approval authority', () => {
     registerForegroundPermissionIsland(sessionId, island);
     const deliver = installPermissionResponseHandler({ handlers, pendingDevPermissions: new Map(), getCurrentSessionId: () => sessionId,
       logger: { info: () => {}, warn: () => {} } });
-    gateway = new CompanionGateway(db, { refreshDecisions: () => service.refresh(), decide: command => service.respond(command) });
+    gateway = new CompanionGateway(db, { refreshDecisions: () => service.refresh(), decide: command => command.action === 'approval.respond' ? service.respond(command) : { kind: 'rejected', reason: 'unsupported_action' } });
     service = new CompanionApprovalService(gateway, listForegroundPermissionRequests, deliver);
     gateway.registerDevice({ deviceId: 'phone', credentialHash: 'hash', scope: [sessionId], scopeEpoch: 1, revokedAt: null });
   });
@@ -153,7 +153,7 @@ describe('an approval no surface can render must keep its fail-closed timeout', 
     registerForegroundPermissionIsland(sessionId, island);
     const deliver = installPermissionResponseHandler({ handlers: new Map(), pendingDevPermissions: new Map(),
       getCurrentSessionId: () => sessionId, logger: { info: () => {}, warn: () => {} } });
-    gateway = new CompanionGateway(db, { refreshDecisions: () => service.refresh(), decide: command => service.respond(command) });
+    gateway = new CompanionGateway(db, { refreshDecisions: () => service.refresh(), decide: command => command.action === 'approval.respond' ? service.respond(command) : { kind: 'rejected', reason: 'unsupported_action' } });
     service = new CompanionApprovalService(gateway, listForegroundPermissionRequests, deliver);
     gateway.registerDevice({ deviceId: 'phone', credentialHash: 'hash', scope: [sessionId], scopeEpoch: 1, revokedAt: null });
   });
@@ -271,7 +271,7 @@ describe('a half-open retry path must not lock the device', () => {
       getCurrentSessionId: () => sessionId, logger: { info: () => {}, warn: () => {} } });
     gateway = new CompanionGateway(db, {
       refreshDecisions: () => service.refresh(),
-      decide: command => service.respond(command),
+      decide: command => command.action === 'approval.respond' ? service.respond(command) : { kind: 'rejected', reason: 'unsupported_action' },
       dispatch: () => ({ state: 'accepted', result: { runId: 'run-after-retry' } }),
     });
     service = new CompanionApprovalService(gateway, listForegroundPermissionRequests, deliver);

@@ -269,13 +269,17 @@ export function createApp(deps: CreateAppDeps): express.Express {
   try {
     const db = getDatabase().getDb();
     if (db) {
-      let approvals: CompanionApprovalService | undefined;
-      let questions: CompanionQuestionService | undefined;
-      let plans: CompanionPlanService | undefined;
       // gateway 与 library 互相依赖：gateway 的回调要调 library，library 又要拿 gateway。
       // 用一个 const 容器打破这个环，而不是先声明后赋值的 let——后者读起来像「可能被改」，
       // 实际只赋值一次，而且回调里读到的是同一个坑位。
-      const services: { library?: CompanionLibraryService; files?: CompanionFileService; push?: CompanionPushOutbox } = {};
+      const services: {
+        library?: CompanionLibraryService;
+        files?: CompanionFileService;
+        push?: CompanionPushOutbox;
+        approvals?: CompanionApprovalService;
+        questions?: CompanionQuestionService;
+        plans?: CompanionPlanService;
+      } = {};
       const requireLibrary = () => {
         const library = services.library;
         // 回调只在路由挂载之后才可能触发，那时 library 早已就位；真取不到就说明接线断了。
@@ -290,11 +294,11 @@ export function createApp(deps: CreateAppDeps): express.Express {
           if (!services.files) throw new Error('COMPANION_LIBRARY_UNAVAILABLE');
           return Promise.resolve(services.files.list(request.sessionId));
         },
-        refreshDecisions: () => { approvals?.refresh(); questions?.refresh(); plans?.refresh(); },
+        refreshDecisions: () => { services.approvals?.refresh(); services.questions?.refresh(); services.plans?.refresh(); },
         decide: command => {
-          if (command.action === 'approval.respond') return approvals?.respond(command) ?? { kind: 'rejected', reason: 'unsupported_action' };
-          if (command.action === 'question.respond') return questions?.respond(command) ?? { kind: 'rejected', reason: 'unsupported_action' };
-          if (command.action === 'plan.respond') return plans?.respond(command) ?? { kind: 'rejected', reason: 'unsupported_action' };
+          if (command.action === 'approval.respond') return services.approvals?.respond(command) ?? { kind: 'rejected', reason: 'unsupported_action' };
+          if (command.action === 'question.respond') return services.questions?.respond(command) ?? { kind: 'rejected', reason: 'unsupported_action' };
+          if (command.action === 'plan.respond') return services.plans?.respond(command) ?? { kind: 'rejected', reason: 'unsupported_action' };
           return { kind: 'rejected', reason: 'unsupported_action' };
         },
         onPublish: event => { services.push?.enqueue(event); void services.push?.flush(); },
@@ -356,11 +360,11 @@ export function createApp(deps: CreateAppDeps): express.Express {
         logger.warn('Companion deleted-session cleanup unavailable', error);
       });
       if (getPendingPermissionRequests && deps.deliverCompanionPermission) {
-        approvals = new CompanionApprovalService(gateway, getPendingPermissionRequests, deps.deliverCompanionPermission);
+        services.approvals = new CompanionApprovalService(gateway, getPendingPermissionRequests, deps.deliverCompanionPermission);
       }
-      questions = new CompanionQuestionService(gateway);
-      cleanupQuestionRoute = registerUserQuestionRoute(questions);
-      plans = new CompanionPlanService(gateway, () => getPlanApprovalGate().getPendingPlans().flatMap(plan => {
+      services.questions = new CompanionQuestionService(gateway);
+      cleanupQuestionRoute = registerUserQuestionRoute(services.questions);
+      services.plans = new CompanionPlanService(gateway, () => getPlanApprovalGate().getPendingPlans().flatMap(plan => {
         const sessionId = plan.scope?.sessionId;
         if (!sessionId) return [];
         return [{ id: plan.id, sessionId, plan: plan.plan, agentName: plan.agentName, risk: plan.risk }];
@@ -414,7 +418,7 @@ export function createApp(deps: CreateAppDeps): express.Express {
       }, () => requireLibrary().projects(), services.push);
       // Both halves must hold: a phone is reachable for this session, AND this particular
       // card is renderable. With no approvals service there is no companion approval path.
-      hasCompanionApprovalUi = (sessionId, request) => lan.hasApprovalUi(sessionId) && approvals?.canDisplay(request) === true;
+      hasCompanionApprovalUi = (sessionId, request) => lan.hasApprovalUi(sessionId) && services.approvals?.canDisplay(request) === true;
       handlers.set(COMPANION_MANAGE_CHANNEL, (_event, request) => lan.manage(request));
       // Web transport sends `companion:manage` to /api/companion/manage.
       // Keep an explicit route so browser/web builds can generate invitations

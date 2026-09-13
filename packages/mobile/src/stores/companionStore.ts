@@ -36,6 +36,20 @@ const DEVICE_LEVEL_REASONS = new Set(['device_revoked', 'device_unknown', 'scope
  */
 export type VoiceResult = { commandId: string; outcome: 'done' | 'error' | 'silent'; code?: string };
 
+/**
+ * 输入区附件 chip 的瞬态传输状态。进度从 upload() 既有 prepare/chunk/commit 循环导出，
+ * 不进 persist(Saved)——进程被杀后用户重新选文件即可，把 bytes 写进配对盘没有意义。
+ */
+export type UploadProgress = {
+  id: string;
+  name: string;
+  totalBytes: number;
+  sentBytes: number;
+  phase: 'preparing' | 'transferring' | 'complete' | 'failed';
+  error?: string;
+  retryable?: boolean;
+};
+
 interface State {
   voiceResult: VoiceResult | null;
   /** 返回这条命令的 commandId（已进待确认槽）；没发出去回 null，分片队列据此重排队，不静默丢片。 */
@@ -81,7 +95,11 @@ interface State {
   selectSession(id: string): void; send(text: string): Promise<void>; stop(): Promise<void>; sync(): Promise<void>;
   artifacts: CompanionArtifact[]; preview: (CompanionArtifact & { bytes: Uint8Array }) | null; savedPreview: boolean; savedPreviewName: string | null;
   cacheUsage: CacheInspect | null;
-  upload(file: PickedFile): Promise<void>;
+  /** 输入区附件 chip。瞬态，不进 persist(Saved)。 */
+  uploadProgress: UploadProgress[];
+  upload(file: PickedFile, transferId?: string): Promise<void>;
+  retryUpload(id: string): Promise<void>;
+  removeUpload(id: string): void;
   previewArtifact(artifactId: string): Promise<void>;
   closePreview(): void;
   savePreview(): Promise<void>;
@@ -129,10 +147,20 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
    */
   let voiceTake: string | null = null;
   const discardedTakes = new Set<string>();
+  /** 失败重传要用原文件；不进 Zustand/Saved，避免把 bytes 写进配对盘。 */
+  const heldAttachments = new Map<string, PickedFile>();
 
   const store = createStore<State>((set, get) => {
     const persist = async (next: Saved) => {
       if (!port) throw new Error('COMPANION_NATIVE_REQUIRED');
+      // 只写 Saved 的已知字段：hydrate 的 JSON.parse 可能带上盘里多出来的键
+      // （比如误写入的 uploadProgress），spread next 会把瞬态字段写进配对盘。
+      const record: Saved = {
+        version: 1, publicKey: next.publicKey, secretKey: next.secretKey,
+        ...(next.candidate ? { candidate: next.candidate } : {}),
+        ...(next.binding ? { binding: next.binding } : {}),
+        ...(next.pending ? { pending: next.pending } : {}),
+      };
       // 待确认槽被清掉、而这条语音还没有任何结论 ⇒ 给它一个终局。
       // 清槽的路不止「结算」一条：被拒（scope_denied / scope_epoch_mismatch…）、抢答冲突、
       // reconciling 超时回收，都在别处清槽而不写结果；分片队列等的就是这条命令的结果，
@@ -141,7 +169,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
       const orphanVoice = saved?.pending?.action === 'voice.transcribe' && !next.pending
         && get().voiceResult?.commandId !== saved.pending.commandId ? saved.pending.commandId : null;
       try {
-        await port.write(JSON.stringify(next)); saved = next;
+        await port.write(JSON.stringify(record)); saved = record;
         // 落盘记录是待确认命令的唯一真源，派生放在这一处，省得九个 set({pending}) 各自同步。
         // 两个字段必须同一拍置起：只改 pendingAction 的话，结算那一帧会是
         // pending=true + pendingAction=null，状态行闪回「请勿重复发送」——正是本单要消掉的那句。
@@ -149,6 +177,9 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
           ...(orphanVoice ? { voiceResult: { commandId: orphanVoice, outcome: 'error' as const } } : {}) });
       }
       catch (error) { client?.close(); set({ status: 'storageError' }); throw error; }
+    };
+    const patchUpload = (id: string, partial: Partial<UploadProgress>) => {
+      set({ uploadProgress: get().uploadProgress.map(item => item.id === id ? { ...item, ...partial } : item) });
     };
     /**
      * 待确认槽里那条语音命令，是不是用户已经撤掉的那次录音的。
@@ -274,6 +305,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
       voiceResult: null, library: null, history: {}, libraryError: false,
       connectionError: null, commandError: null, commandErrorAction: null, routeError: null, status: 'unpaired', paused: false, binding: null, sessionId: null, busy: false, pending: false, pendingAction: null, events: [], runId: null, terminal: null,
       artifacts: [], preview: null, savedPreview: false, savedPreviewName: null, cacheUsage: files?.cache.inspect() ?? null,
+      uploadProgress: [],
       hydrate: async () => {
         if (!port || get().busy) return;
         set({ busy: true });
@@ -304,7 +336,8 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         const binding = await createClient().pair(raw);
         await persist({ ...saved!, binding, candidate: undefined });
         epoch = binding.scopeEpoch; cursor = 0;
-        set({ status: 'connected', binding, sessionId: binding.scope.find(id => !id.startsWith('project:')) ?? null, library: null, history: {}, events: [], artifacts: [], preview: null, savedPreviewName: null, runId: null, terminal: null });
+        heldAttachments.clear();
+        set({ status: 'connected', binding, sessionId: binding.scope.find(id => !id.startsWith('project:')) ?? null, library: null, history: {}, events: [], artifacts: [], preview: null, savedPreviewName: null, runId: null, terminal: null, uploadProgress: [] });
       }),
       reconnect: () => safely(async () => {
         const target = saved?.binding ?? saved?.candidate;
@@ -360,7 +393,8 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
           const last = events.filter(e => ['run_started', 'agent_complete', 'agent_cancelled', 'error'].includes(e.kind)).at(-1);
           // artifacts/preview 是当前会话作用域：切会话必须清掉，否则 offline 时
           // refreshArtifacts 提前 return，B 会话会一直显示 A 会话的成果卡（点开必 ARTIFACT_MISSING）。
-          set({ sessionId, runId: last?.kind === 'run_started' ? String(last.payload.runId) : null, terminal: null, artifacts: [], preview: null, savedPreview: false, savedPreviewName: null });
+          heldAttachments.clear();
+          set({ sessionId, runId: last?.kind === 'run_started' ? String(last.payload.runId) : null, terminal: null, artifacts: [], preview: null, savedPreview: false, savedPreviewName: null, uploadProgress: [] });
         }
       },
       transcribe: async (audio, sessionId, hostKey, continuation = false, take = null) => {
@@ -495,15 +529,27 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
           set({ artifacts: page.artifacts });
         } catch { set({ libraryError: true }); }
       },
-      upload: file => safely(async () => {
-        if (!saved?.binding || !client || saved.pending || !canAddressSession(get())) return;
+      upload: (file, existingId) => safely(async () => {
+        const id = existingId ?? crypto.randomUUID();
+        const totalBytes = file.bytes.byteLength;
+        if (!existingId) {
+          heldAttachments.set(id, file);
+          set({ uploadProgress: [...get().uploadProgress, { id, name: file.name, totalBytes, sentBytes: 0, phase: 'preparing' }] });
+        } else {
+          patchUpload(id, { phase: 'preparing', sentBytes: 0, error: undefined });
+        }
+        const fail = (code: string) => {
+          patchUpload(id, { phase: 'failed', error: code, retryable: companionFileRetryable(code) });
+        };
+        if (!saved?.binding || !client || saved.pending || !canAddressSession(get())) {
+          fail('COMPANION_TRANSFER_INTERRUPTED'); return;
+        }
         if (file.size > COMPANION_LIMITS.fileMaxBytes || file.bytes.byteLength > COMPANION_LIMITS.fileMaxBytes) {
-          set({ commandError: 'UPLOAD_TOO_LARGE' }); return;
+          fail('UPLOAD_TOO_LARGE'); return;
         }
         // 扩展名权威：picker 已按扩展名归一化（归不了的是空串），这里不再信任何声明值。
         const mime = companionFileMime(file.name, '');
-        if (!mime) { set({ commandError: 'COMPANION_FILE_TYPE_DENIED' }); return; }
-        const sha256 = await sha256Hex(file.bytes);
+        if (!mime) { fail('COMPANION_FILE_TYPE_DENIED'); return; }
         const base = { version: 1 as const, deviceId: saved.binding.deviceId, scopeEpoch: saved.binding.scopeEpoch, sessionId: get().sessionId! };
         const enqueue = async (command: CompanionCommand) => {
           await persist({ ...saved!, pending: command }); set({ pending: true });
@@ -515,14 +561,17 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         };
         let transferId = '';
         try {
+          const sha256 = await sha256Hex(file.bytes);
           const prepared = await enqueue(companionCommandSchema.parse({ ...base, commandId: crypto.randomUUID(), action: 'files.prepare', payload: { name: file.name, mimeType: mime, size: file.bytes.byteLength, sha256 } }));
           transferId = typeof prepared.result.transferId === 'string' ? prepared.result.transferId : '';
           if (!transferId) throw new Error('COMPANION_INVALID_ACK');
+          patchUpload(id, { phase: 'transferring', sentBytes: 0 });
           for (let offset = 0; offset < file.bytes.byteLength; offset += COMPANION_LIMITS.fileChunkBytes) {
             const slice = file.bytes.subarray(offset, offset + COMPANION_LIMITS.fileChunkBytes);
             const data = bytesToBase64(slice);
             await enqueue(companionCommandSchema.parse({ ...base, commandId: crypto.randomUUID(), action: 'files.chunk',
               payload: { transferId, offset, data, sha256: await sha256Hex(slice) } }));
+            patchUpload(id, { phase: 'transferring', sentBytes: Math.min(offset + slice.byteLength, totalBytes) });
           }
           const committed = await enqueue(companionCommandSchema.parse({ ...base, commandId: crypto.randomUUID(), action: 'files.commit', payload: { transferId, sha256 } }));
           if (typeof committed.result.artifactId === 'string') {
@@ -534,6 +583,8 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
             };
             set({ artifacts: [...get().artifacts.filter(item => item.artifactId !== artifact.artifactId), artifact] });
           }
+          heldAttachments.delete(id);
+          patchUpload(id, { phase: 'complete', sentBytes: totalBytes, error: undefined, retryable: false });
         } catch (error) {
           if (transferId && saved?.binding && client) {
             try {
@@ -542,9 +593,19 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
           }
           await releasePending();
           const code = error instanceof Error ? error.message : 'COMPANION_TRANSFER_INTERRUPTED';
-          set({ commandError: companionFileRetryable(code) || code === 'UPLOAD_TOO_LARGE' || code === 'COMPANION_FILE_TYPE_DENIED' ? code : 'COMPANION_TRANSFER_INTERRUPTED' });
+          fail(companionFileRetryable(code) || code === 'UPLOAD_TOO_LARGE' || code === 'COMPANION_FILE_TYPE_DENIED' ? code : 'COMPANION_TRANSFER_INTERRUPTED');
         }
       }),
+      retryUpload: id => {
+        const current = get().uploadProgress.find(item => item.id === id);
+        const file = heldAttachments.get(id);
+        if (!current || current.phase !== 'failed' || !current.error || !companionFileRetryable(current.error) || !file) return Promise.resolve();
+        return get().upload(file, id);
+      },
+      removeUpload: id => {
+        heldAttachments.delete(id);
+        set({ uploadProgress: get().uploadProgress.filter(item => item.id !== id) });
+      },
       previewArtifact: artifactId => safely(async () => {
         if (!saved?.binding || !client || saved.pending || !canAddressSession(get()) || !files) return;
         const listed = get().artifacts.find(item => item.artifactId === artifactId);

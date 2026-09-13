@@ -2,7 +2,7 @@ import { constants as fsConstants, existsSync, accessSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { app, getBuildInfo } from '@host/platform';
-import { OS_SANDBOX } from '@shared/constants/sandbox';
+import { isOsSandboxEnabled } from '@shared/constants/sandbox';
 import type { EvalEnvironmentProbe } from '@shared/contract/evaluation';
 import { getSandboxManager } from '@host/sandbox';
 
@@ -113,9 +113,9 @@ export function inspectEvalEnvironment(input: {
     packaged,
     platform,
     osJail: {
-      enabled: OS_SANDBOX.ENABLED,
+      enabled: isOsSandboxEnabled(),
       available: osJailAvailable,
-      active: OS_SANDBOX.ENABLED && osJailAvailable,
+      active: isOsSandboxEnabled() && osJailAvailable,
     },
     git: { available: gitAvailable, repository: gitRepository },
     proxy,

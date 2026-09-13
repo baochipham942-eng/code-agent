@@ -101,7 +101,13 @@ describe('sensitive sandbox paths', () => {
     expect(isProtectedWritePath(path.join(dataDir, 'hooks', 'hooks.json'), opts)).toBe(true);
     expect(isProtectedWritePath(path.join(dataDir, 'session-permission-modes.json'), opts)).toBe(true);
     expect(isProtectedWritePath(path.join(dataDir, 'exec-policy.json'), opts)).toBe(true);
+    expect(isProtectedWritePath(path.join(dataDir, 'permissions.json'), opts)).toBe(true);
+    expect(isProtectedWritePath(path.join(dataDir, 'mcp.json'), opts)).toBe(true);
     expect(isProtectedWritePath(path.join(project, CONFIG_DIR_NEW, 'exec-policy.json'), opts)).toBe(true);
+    expect(isProtectedWritePath(path.join(project, CONFIG_DIR_NEW, 'settings.json'), opts)).toBe(true);
+    expect(isProtectedWritePath(path.join(project, CONFIG_DIR_NEW, 'permissions.json'), opts)).toBe(true);
+    expect(isProtectedWritePath(path.join(project, CONFIG_DIR_NEW, 'hooks', 'hooks.json'), opts)).toBe(true);
+    expect(isProtectedWritePath(path.join(project, CONFIG_DIR_NEW, 'mcp.json'), opts)).toBe(true);
     expect(isProtectedWritePath(path.join(project, 'code-agent-policy.toml'), opts)).toBe(true);
     expect(isProtectedWritePath(path.join(project, '.git', 'config'), opts)).toBe(true);
     expect(isProtectedWritePath(path.join(project, '.gitconfig'), opts)).toBe(true);
@@ -115,5 +121,6 @@ describe('sensitive sandbox paths', () => {
     expect(isProtectedWritePath(path.join(dataDir, 'notes.txt'), opts)).toBe(false);
     expect(isProtectedWritePath(path.join(dataDir, 'code-agent-policy.toml'), opts)).toBe(false);
     expect(isProtectedWritePath(path.join(dataDir, CONFIG_DIR_NEW, 'exec-policy.json'), opts)).toBe(false);
+    expect(isProtectedWritePath(path.join(project, CONFIG_DIR_NEW, 'settings.local.json'), opts)).toBe(false);
   });
 });

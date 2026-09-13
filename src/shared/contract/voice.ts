@@ -240,8 +240,8 @@ export const VOICE_LIVE_SETTINGS_UPDATED_EVENT = 'voice-live-settings-updated';
 /** 上游 → Host 归一化后的事件。Renderer 只认这一套，换 provider 不改前端。 */
 export type VoiceEvent =
   | { type: 'state'; state: 'connecting' | 'live' | 'closed' }
-  /** 通话自然结束；与需要用户处理的 error 分流。 */
-  | { type: 'session.ended'; reason: 'idle-timeout' }
+  /** 通话自然结束；与需要用户处理的 error 分流。host 预算强挂也走这条，不走 error。 */
+  | { type: 'session.ended'; reason: VoiceSessionEndedReason }
   /** 用户说的话（上游 ASR），final 时 done=true */
   | { type: 'user.transcript'; text: string; done: boolean; itemId?: string; candidateId?: string }
   /** 助手说的话的字幕 */
@@ -285,7 +285,26 @@ export type VoiceEvent =
    * 例如注册了 tools 但 session.updated 回显 tools: null（模型不支持 function calling）。
    */
   | { type: 'notice'; code: VoiceMessageCode; message: string; detail?: string }
-  | { type: 'error'; code: VoiceMessageCode; message: string; detail?: string };
+  | { type: 'error'; code: VoiceMessageCode; message: string; detail?: string }
+  /** 通话预算快照。未设上限时 host 不发。 */
+  | ({ type: 'budget' } & VoiceBudgetSnapshot);
+
+export type VoiceSessionEndedReason = 'idle-timeout' | 'budget';
+
+export type VoiceBudgetLevel = 'none' | 'silent' | 'warning' | 'blocked';
+
+export type VoiceBudgetExceedAction = 'warn' | 'hangup';
+
+/** host → renderer 的通话预算快照。分钟与成本双轨，usageRatio 取已配置轨的最大值。 */
+export interface VoiceBudgetSnapshot {
+  level: VoiceBudgetLevel;
+  usageRatio: number;
+  minutesUsed: number;
+  minutesLimit: number | null;
+  costAmount: number | null;
+  costCurrency: 'CNY' | 'USD' | null;
+  costLimit: number | null;
+}
 
 /**
  * 发给用户看的所有提示/错误的编号（host 与 renderer 两侧都在这里登记）。**新增一条必须加进这里**——
@@ -313,7 +332,9 @@ export type VoiceMessageCode =
   | 'RECONNECT_FAILED'
   | 'MICROPHONE_PERMISSION_DENIED'
   | 'AUDIO_CAPTURE_FAILED'
-  | 'NATIVE_AEC_FAILED';
+  | 'NATIVE_AEC_FAILED'
+  | 'VOICE_BUDGET_WARNING'
+  | 'VOICE_BUDGET_EXCEEDED';
 
 /**
  * 用户此刻在看什么（方案 §6.5 的 `[Context — Focus]`，批 H）。

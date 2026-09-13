@@ -101,6 +101,8 @@ export const voiceZh: VoiceTranslations = {
       MICROPHONE_PERMISSION_DENIED: '麦克风权限被拒绝，请在系统设置中允许后重试',
       AUDIO_CAPTURE_FAILED: '打不开麦克风，检查一下是不是被别的程序占用了',
       NATIVE_AEC_FAILED: '系统回声消除没起来，建议戴耳机通话',
+      VOICE_BUDGET_WARNING: '这通电话已接近你设的预算上限',
+      VOICE_BUDGET_EXCEEDED: '这通电话已到你设的预算上限',
     },
     permission: {
       title: '需要确认',
@@ -421,6 +423,8 @@ export const voiceEn = {
       MICROPHONE_PERMISSION_DENIED: 'Microphone access was denied — allow it in System Settings and retry',
       AUDIO_CAPTURE_FAILED: 'Could not open the microphone — check whether another app is using it',
       NATIVE_AEC_FAILED: 'System echo cancellation did not start — headphones are recommended',
+      VOICE_BUDGET_WARNING: 'This call is approaching the budget you set',
+      VOICE_BUDGET_EXCEEDED: 'This call has reached the budget you set',
     } satisfies Record<VoiceMessageCode, string>,
     permission: {
       title: 'Confirmation required',

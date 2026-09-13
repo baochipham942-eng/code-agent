@@ -278,6 +278,19 @@ export const VOICE_UPSTREAM_RESPONSE_SILENCE_DEGRADED_FACTOR = 0.75;
 export const VOICE_SESSION_MAX_DURATION_MS = 10 * 60 * 1000;
 
 /**
+ * 用户自配的单通预算闸。默认不阻断：未配置上限时只剩 VOICE_SESSION_MAX_DURATION_MS 硬顶。
+ * 档位比例对齐 Goal / 全局预算闸（70% 静默日志 / 85% 用户告警 / 100% 到上限）。
+ */
+export const VOICE_BUDGET = {
+  SILENT_RATIO: 0.7,
+  WARNING_RATIO: 0.85,
+  BLOCK_RATIO: 1,
+  /** 时间轨要连续评估，不能只等 token 事件。 */
+  EVAL_INTERVAL_MS: 1_000,
+  DEFAULT_EXCEED_ACTION: 'warn',
+} as const;
+
+/**
  * 挂断后的上游排水窗（ms）：用户 ASR completed 与助手 transcript done 常在挂断后
  * ~1s 内才到，立刻关 WS 会把这通电话说过的话全部丢掉（2026-07-26 真机：12s 通话
  * 落库只剩摘要）。窗口内到达的 final 照常落库，超时后再关。

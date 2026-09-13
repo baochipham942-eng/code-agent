@@ -48,9 +48,14 @@ export function resolveVoiceLiveEnabled(
 export interface VoiceLiveSettings {
   /** 总开关：undefined = 默认开启；false = Composer 不显示实时通话入口 */
   enabled?: boolean;
-  /** 单通实时语音预估成本上限；未配置或 <=0 = 不设限。 */
+  /** 单通分钟上限；未配置或 <=0 = 不设限。硬顶仍是 VOICE_SESSION_MAX_DURATION_MS。 */
+  callMinuteLimit?: number;
+  /**
+   * 单通预估成本上限，币种跟随当前实时模型刊例价（见 REALTIME_VOICE_PRICING_PER_1M）。
+   * 未配置或 <=0 = 不设限。
+   */
   callCostLimit?: number;
-  /** 到限动作：默认只提醒；用户可显式改为自动挂断。 */
+  /** 分钟或成本任一到上限时的动作：默认只提醒；用户可显式改为自动挂断。 */
   callCostLimitAction?: 'warn' | 'hangup';
   /**
    * 实时语音 Provider。存量配置没有该字段时读取为 DashScope；

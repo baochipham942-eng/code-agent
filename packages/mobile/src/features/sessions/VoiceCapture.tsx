@@ -9,7 +9,7 @@ import type {
   CompanionDictationOpenResult,
 } from '../../../../../src/shared/contract/companionDictation';
 import { AppIcon } from '../../app/AppIcon';
-import { applyDictationEvent, emptyDictationDraft, type DictationDraft } from './dictationDraft';
+import { applyDictationEvent, dictationDisplay, emptyDictationDraft, type DictationDraft } from './dictationDraft';
 
 /**
  * 失败必须带阶段和真实错误码：录音阶段（权限/插件/设备被占）与转写阶段（电脑没收到或没转出来）
@@ -292,27 +292,34 @@ export function useVoiceCapture({ recorder, pending, result, ready, transcribe, 
     t.startedAt = Date.now(); setElapsedMs(0);
     try {
       if (recorder.startPcm && dictation?.available) {
+        t.unsub = recorder.subscribePcm?.(frame => {
+          if (!mine(t) || !t.pcmLive) return;
+          if (frame.pcm.length > L.voicePcmBase64Limit) { t.dropped += 1; bump(); return; }
+          t.pcmQueue.push(frame); bump();
+        }) ?? null;
         try {
           await recorder.startPcm();
           t.pcmLive = true;
         } catch (error) {
+          t.unsub?.(); t.unsub = null;
           const code = error instanceof Error ? error.message : String(error);
           if (code === 'MICROPHONE_DENIED' || code === 'MISSING_PERMISSION') { fail(t, 'record', error); return; }
           t.degraded = true;
         }
         if (t.pcmLive) {
-          t.unsub = recorder.subscribePcm?.(frame => {
-            if (!mine(t) || !t.pcmLive) return;
-            if (frame.pcm.length > L.voicePcmBase64Limit) { t.dropped += 1; bump(); return; }
-            t.pcmQueue.push(frame); bump();
-          }) ?? null;
-          if (!mine(t) || t.stopping) { await release(t); if (mine(t)) { take.current = null; setPhase('idle'); } return; }
+          if (!mine(t) || t.stopping) {
+            void dictationRef.current?.close();
+            await release(t); if (mine(t)) { take.current = null; setPhase('idle'); } return;
+          }
           let opened: CompanionDictationOpenResult;
           try { opened = await dictation.open(); }
           catch (error) {
             opened = { ok: false, code: error instanceof Error ? error.message : 'COMPANION_DICTATION_UNAVAILABLE' };
           }
-          if (!mine(t) || t.stopping) { await release(t); if (mine(t)) { take.current = null; setPhase('idle'); } return; }
+          if (!mine(t) || t.stopping) {
+            void dictationRef.current?.close();
+            await release(t); if (mine(t)) { take.current = null; setPhase('idle'); } return;
+          }
           if (opened.ok && opened.sampleRate === L.voicePcmSampleRate) {
             t.mode = 'realtime';
             t.streamId = opened.streamId;
@@ -320,6 +327,7 @@ export function useVoiceCapture({ recorder, pending, result, ready, transcribe, 
             bump();
             return;
           }
+          if (opened.ok) void dictationRef.current?.close();
           t.degraded = true;
           t.unsub?.(); t.unsub = null;
           t.pcmQueue = [];
@@ -355,7 +363,9 @@ export function useVoiceCapture({ recorder, pending, result, ready, transcribe, 
     // 于是「取消掉的话」照样写进输入框（grok ai-review Important）。
     take.current = null;
     discardPending(t.id);
-    if (t.mode === 'realtime' || t.streamId) void dictationRef.current?.close();
+    // pcmLive covers the open() handshake: session may land after cancel, and start()'s
+    // continuation also close()s if the take is no longer mine.
+    if (t.pcmLive || t.mode === 'realtime' || t.streamId) void dictationRef.current?.close();
     // 分片路径由 run() 的 finally 还麦克风。实时路径没有那条循环，取消必须自己 stopPcm，
     // 并把 promise 挂到 running，下一次 start 才能等 engine 还回来。
     if (t.pcmLive || t.mode === 'realtime') trackRelease(t);
@@ -375,7 +385,7 @@ export function useVoiceCapture({ recorder, pending, result, ready, transcribe, 
       // ——基线 VoiceInput 在这条路上走 stop(true)，根本不会发起转写（grok ai-review Important）。
       take.current = null;
       discardPending(t.id);
-      if (t.mode === 'realtime' || t.streamId) void dictationRef.current?.close();
+      if (t.pcmLive || t.mode === 'realtime' || t.streamId) void dictationRef.current?.close();
       t.wake?.(); void release(t);
     };
   }, [recorder]);
@@ -494,6 +504,7 @@ export function useVoiceCapture({ recorder, pending, result, ready, transcribe, 
   return {
     phase, failure, elapsedMs, dropped: take.current?.dropped ?? 0,
     partial: take.current?.draft.partial ?? '',
+    spoken: take.current ? dictationDisplay(take.current.draft) : '',
     degraded: take.current?.degraded ?? false,
     // 面板只在「正在录 / 正在转写」时替换输入框；失败按设计稿落在输入区上方，输入框要留给用户改字。
     panelOpen: phase !== 'idle' && phase !== 'error',

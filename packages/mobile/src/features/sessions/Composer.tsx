@@ -71,7 +71,7 @@ export function Composer({
     <div className={voice.panelOpen ? 'composer voice-composer' : 'composer'}>
       {voice.panelOpen
         ? <VoicePanel text={text} phase={voice.phase} pending={voicePending} elapsedMs={voice.elapsedMs}
-          transcript={joinTranscript(draft.slice(spokenFrom.current).trimStart(), voice.partial, true)}
+          transcript={voice.spoken || joinTranscript(draft.slice(spokenFrom.current).trimStart(), voice.partial, true)}
           dropped={voice.dropped} degraded={voice.degraded}
           stop={voice.stop} cancel={voice.cancel} />
         : <>

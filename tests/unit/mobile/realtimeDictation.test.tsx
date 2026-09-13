@@ -156,6 +156,7 @@ describe('realtime dictation', () => {
   it('cancel on the realtime path stops the PCM engine so the next take can start', async () => {
     vi.useFakeTimers();
     const stopPcm = vi.fn(async () => {});
+    const close = vi.fn(async () => {});
     let resolveOpen: ((value: CompanionDictationOpenResult) => void) | undefined;
     render(<RealtimeHarness
       stopPcm={stopPcm}
@@ -163,7 +164,7 @@ describe('realtime dictation', () => {
         open: () => new Promise(resolve => { resolveOpen = resolve; }),
         audio: async () => ({ ok: true, events: [] }),
         stop: async () => ({ ok: true, events: [] }),
-        close: async () => {},
+        close,
       }}
     />);
     fireEvent.click(screen.getByRole('button', { name: text.voice }));
@@ -171,6 +172,7 @@ describe('realtime dictation', () => {
     fireEvent.click(screen.getByRole('button', { name: text.cancelRecording }));
     await advance(20);
     expect(stopPcm).toHaveBeenCalled();
+    expect(close).toHaveBeenCalled();
     resolveOpen?.({ ok: true, streamId: 'late', sampleRate: COMPANION_LIMITS.voicePcmSampleRate });
   });
 

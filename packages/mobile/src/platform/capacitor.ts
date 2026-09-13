@@ -93,8 +93,10 @@ function nativeRecorder(): NonNullable<PlatformPorts['recorder']> {
   };
   // PCM tap is first-party iOS only. Android still uses the vendor file recorder.
   if (Capacitor.getPlatform() !== 'ios') return recorder;
+  let pcmListen: Promise<{ remove: () => Promise<void> }> | null = null;
   recorder.startPcm = async () => {
     if (!(await VoiceRecorder.requestAudioRecordingPermission()).value) throw new Error('MICROPHONE_DENIED');
+    if (pcmListen) await pcmListen;
     const result = await pcmBridge.startPcmRecording();
     return { sampleRate: result.sampleRate ?? COMPANION_LIMITS.voicePcmSampleRate };
   };
@@ -102,11 +104,12 @@ function nativeRecorder(): NonNullable<PlatformPorts['recorder']> {
   recorder.subscribePcm = onFrame => {
     let handle: { remove: () => Promise<void> } | null = null;
     let closed = false;
-    void pcmBridge.addListener('pcmFrame', frame => { if (!closed) onFrame(frame); }).then(listener => {
+    pcmListen = pcmBridge.addListener('pcmFrame', frame => { if (!closed) onFrame(frame); }).then(listener => {
       if (closed) void listener.remove();
       else handle = listener;
+      return listener;
     });
-    return () => { closed = true; void handle?.remove(); };
+    return () => { closed = true; void handle?.remove(); pcmListen = null; };
   };
   return recorder;
 }

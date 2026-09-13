@@ -14,6 +14,11 @@ function joinSpoken(left: string, right: string): string {
   return joinTranscript(left, right, Boolean(left));
 }
 
+export function dictationDisplay(draft: DictationDraft): string {
+  if (!draft.partial) return draft.committed;
+  return joinSpoken(draft.committed, draft.partial);
+}
+
 export function applyDictationEvent(draft: DictationDraft, event: CompanionDictationEvent): DictationDraft {
   if (event.type === 'error') return draft;
   if (event.type === 'partial') {

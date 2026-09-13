@@ -70,6 +70,7 @@ import { CompanionPlanService } from '../host/services/companion/CompanionPlanSe
 import { getPlanApprovalGate } from '../host/agent/planApproval';
 import type { PermissionResponse } from '../shared/contract/permission';
 import { LanCompanionManager } from '../host/services/companion/LanCompanionManager';
+import { startCompanionRelayIfConfigured } from '../host/services/companion/CompanionRelayClient';
 import { IdleSleepInhibitor } from '../host/services/desktop/idleSleepInhibitor';
 import { loadLanIdentity } from '../host/services/companion/lanIdentity';
 import { COMPANION_MANAGE_CHANNEL } from '../shared/constants/companion';
@@ -253,6 +254,8 @@ export function createApp(deps: CreateAppDeps): express.Express {
   // registerCompanionShutdown 只保存一个回调（webServer.ts 的 stopCompanion 单槽），
   // 必须注册一次组合回调；companion 侧句柄在 db 分支里接线，未接线时安全跳过。
   let companionLan: { stop(): Promise<void> } | undefined;
+  let companionRelay: { stop(): Promise<void> } | undefined;
+  let companionRelayAbandoned = false;
   const idleSleepInhibitor = new IdleSleepInhibitor(
     () => runRegistry.size > 0,
     () => (inhibitorGateway?.pairedDevices().length ?? 0) > 0,
@@ -263,6 +266,8 @@ export function createApp(deps: CreateAppDeps): express.Express {
   deps.registerCompanionShutdown?.(async () => {
     cleanupQuestionRoute();
     await idleSleepInhibitor.stop();
+    companionRelayAbandoned = true;
+    await companionRelay?.stop();
     await companionLan?.stop();
   });
 
@@ -279,6 +284,7 @@ export function createApp(deps: CreateAppDeps): express.Express {
         approvals?: CompanionApprovalService;
         questions?: CompanionQuestionService;
         plans?: CompanionPlanService;
+        relay?: { revoke(deviceId: string): void };
       } = {};
       const requireLibrary = () => {
         const library = services.library;
@@ -302,7 +308,7 @@ export function createApp(deps: CreateAppDeps): express.Express {
           return { kind: 'rejected', reason: 'unsupported_action' };
         },
         onPublish: event => { services.push?.enqueue(event); void services.push?.flush(); },
-        onRevoke: deviceId => services.push?.forgetDevice(deviceId),
+        onRevoke: deviceId => { services.push?.forgetDevice(deviceId); services.relay?.revoke(deviceId); },
         dispatch: (command) => {
           if (command.action.startsWith('files.')) {
             return services.files?.dispatch(command) ?? { state: 'rejected', result: { code: 'HOST_UNAVAILABLE' } };
@@ -433,6 +439,20 @@ export function createApp(deps: CreateAppDeps): express.Express {
       });
       companionLan = lan;
       void lan.restore().catch(() => logger.warn('Companion LAN restore unavailable'));
+      void startCompanionRelayIfConfigured({
+        dataDirectory: resolveCodeAgentDataDir(),
+        gateway,
+        loadIdentity: () => loadLanIdentity(resolveCodeAgentDataDir()),
+        logger,
+      }).then(client => {
+        if (!client) return;
+        if (companionRelayAbandoned) {
+          void client.stop();
+          return;
+        }
+        services.relay = client;
+        companionRelay = client;
+      }).catch(() => logger.warn('Companion relay dial-out skipped'));
       app.use('/companion', createCompanionRouter({
         gateway,
         authenticate: (deviceId, credential) => gateway.authenticateDevice(deviceId, credential),

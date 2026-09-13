@@ -98,6 +98,20 @@ describe('osSandboxPolicy', () => {
     expect(decision.degradeIfUnavailable).toBe(false);
   });
 
+  it('平台沙箱不可用时多根显式降级而不是硬报错（旧默认本就裸跑）', () => {
+    const decision = resolveOsSandboxDecision({
+      ...base,
+      command: 'echo hello',
+      permissionMode: 'default',
+      multiRoot: true,
+      sandboxAvailable: false,
+    });
+    expect(decision.apply).toBe(false);
+    expect(decision.degraded).toBe(true);
+    expect(decision.code).toBe(OS_SANDBOX_CODES.DEGRADED_UNAVAILABLE);
+    expect(decision.degradeIfUnavailable).toBe(true);
+  });
+
   it('docker / open 在 default 档进入白名单例外', () => {
     expect(classifyUnsandboxableCommand('docker build .', 'darwin')?.id).toBe('docker_engine');
     expect(classifyUnsandboxableCommand('sudo podman ps', 'linux')?.id).toBe('docker_engine');

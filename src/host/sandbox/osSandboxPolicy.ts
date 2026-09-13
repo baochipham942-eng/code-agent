@@ -158,7 +158,10 @@ export function resolveOsSandboxDecision(input: OsSandboxDecisionInput): OsSandb
     };
   }
 
-  const degradeIfUnavailable = rollout && !required;
+  // multiRoot 也降级：多根在旧默认（env 未开）下本就裸跑，无沙箱平台（CI ubuntu
+  // 无 bwrap / Windows）硬报错会把一直在用的会话打死；降级带标记不静默。
+  // bypass / unattended / write-fence / eval 仍硬失败（fail-closed）。
+  const degradeIfUnavailable = (rollout && !required) || input.multiRoot;
   if (!input.sandboxAvailable) {
     if (degradeIfUnavailable) {
       return {

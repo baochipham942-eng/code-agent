@@ -1186,6 +1186,28 @@
                 "summary"
               ],
               "additionalProperties": false
+            },
+            "sandbox": {
+              "type": "object",
+              "properties": {
+                "applied": {
+                  "type": "boolean"
+                },
+                "degraded": {
+                  "type": "boolean"
+                },
+                "code": {
+                  "type": "string"
+                },
+                "exception": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "applied",
+                "code"
+              ],
+              "additionalProperties": false
             }
           },
           "additionalProperties": false

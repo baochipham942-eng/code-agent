@@ -115,11 +115,15 @@ interface State {
 /**
  * 「这条命令此刻有没有一个可寻址的会话」——send / transcribe / respond 三处共用的判据。
  * 任何一项不满足时它们都是**静默 return**，所以界面不能只看 status==='connected'：
- * 只勾了项目的二维码配对后 sessionId 为 null，手机写着「已连接」，点发送却什么都不发生
- * （无报错、无 pending、草稿不清），用户只能反复点。
+ * 全量 project 授权（或旧的只授权项目）配对后 sessionId 为 null，必须先从库列表选会话。
  */
 export function canAddressSession(state: Pick<State, 'status' | 'sessionId'>): boolean {
   return state.status === 'connected' && Boolean(state.sessionId);
+}
+
+/** Connected with only project grants: open LibrarySheet instead of pinning a conversation. */
+export function needsLibraryPick(state: Pick<State, 'status' | 'sessionId'>): boolean {
+  return state.status === 'connected' && !state.sessionId;
 }
 
 /** Receipt identity: a status/result from a different command must not settle this one. */

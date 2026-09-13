@@ -140,6 +140,14 @@ describe('CompanionGateway', () => {
     expect(db.prepare('SELECT COUNT(*) AS n FROM companion_events').get()).toEqual({ n: 0 });
   });
 
+  it('pairedDevices exposes pairing time without rewriting stored scope', () => {
+    gateway = new CompanionGateway(db, { now: () => 1000 });
+    const device = gateway.pairIdentity('ab'.repeat(32), ['session-1']);
+    expect(gateway.pairedDevices()).toEqual([{ deviceId: device.deviceId, scope: ['session-1'], pairedAt: 1000 }]);
+    expect(gateway.canAccessSession(device.deviceId, 'session-1')).toBe(true);
+    expect(gateway.canAccessSession(device.deviceId, 'session-2')).toBe(false);
+  });
+
   it('hasLiveDeviceForSession follows canAccessSession, not mere device presence', () => {
     expect(gateway.hasLiveDeviceForSession('session-1')).toBe(true);
     expect(gateway.hasLiveDeviceForSession('session-2')).toBe(false);

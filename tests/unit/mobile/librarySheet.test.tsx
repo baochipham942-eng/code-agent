@@ -27,6 +27,21 @@ function mount(overrides: Partial<CompanionLibrary> = {}) {
   return { manage, select: screen.getByLabelText(text.model) as HTMLSelectElement };
 }
 
+describe('全项目授权下先选会话', () => {
+  afterEach(cleanup);
+
+  it('sessionId 为空时列出项目里的会话，点选后再进入对话', () => {
+    const select = vi.fn();
+    render(<LibrarySheet library={{
+      ...library,
+      sessions: [{ id: 's1', title: 'Talk', projectId: 'one', updatedAt: 1, archived: false, provider: 'deepseek', model: 'deepseek-chat' }],
+    }} sessionId={null} text={text} busy={false} mode="projects"
+      select={select} loadMore={() => {}} manage={vi.fn(async () => {})} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Talk' }));
+    expect(select).toHaveBeenCalledWith('s1');
+  });
+});
+
 describe('mobile model picker default', () => {
   afterEach(cleanup);
 

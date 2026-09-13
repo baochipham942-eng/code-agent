@@ -1,4 +1,5 @@
 import { companionReadSchema, projectGrant, type CompanionRead } from '../../../shared/contract/companionLibrary';
+import type { CompanionPairedDevice } from '../../../shared/contract/companionManagement';
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import type BetterSqlite3 from 'better-sqlite3';
 import { applyCompanionSchema } from '../core/database/migrations/companion';
@@ -106,14 +107,14 @@ export class CompanionGateway {
 
   registerDevice(device: CompanionDevice): void {
     this.db.prepare(`
-      INSERT INTO companion_devices (device_id, credential_hash, scope_json, scope_epoch, revoked_at)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO companion_devices (device_id, credential_hash, scope_json, scope_epoch, revoked_at, created_at)
+      VALUES (?, ?, ?, ?, ?, ?)
       ON CONFLICT(device_id) DO UPDATE SET
         credential_hash = excluded.credential_hash,
         scope_json = excluded.scope_json,
         scope_epoch = excluded.scope_epoch,
         revoked_at = excluded.revoked_at
-    `).run(device.deviceId, device.credentialHash, JSON.stringify(device.scope), device.scopeEpoch, device.revokedAt);
+    `).run(device.deviceId, device.credentialHash, JSON.stringify(device.scope), device.scopeEpoch, device.revokedAt, this.now());
   }
 
   issueDeviceCredential(scope: readonly string[], scopeEpoch = this.currentEpoch): CompanionDeviceCredential {
@@ -147,10 +148,14 @@ export class CompanionGateway {
       ? { deviceId: device.deviceId, scopeEpoch: device.scopeEpoch, scope: [...device.scope] } : null;
   }
 
-  pairedDevices(): { deviceId: string; scope: string[] }[] {
-    return (this.db.prepare(`SELECT d.device_id, d.scope_json FROM companion_identity_keys k
+  pairedDevices(): CompanionPairedDevice[] {
+    return (this.db.prepare(`SELECT d.device_id, d.scope_json, d.created_at FROM companion_identity_keys k
       JOIN companion_devices d ON d.device_id = k.device_id WHERE d.revoked_at IS NULL`).all() as SqlRow[])
-      .map(row => ({ deviceId: String(row.device_id), scope: JSON.parse(String(row.scope_json)) as string[] }));
+      .map(row => ({
+        deviceId: String(row.device_id),
+        scope: JSON.parse(String(row.scope_json)) as string[],
+        ...(row.created_at == null ? {} : { pairedAt: Number(row.created_at) }),
+      }));
   }
 
   revokeDevice(deviceId: string, now = this.now()): number {

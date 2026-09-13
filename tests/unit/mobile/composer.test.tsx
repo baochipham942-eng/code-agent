@@ -3,7 +3,7 @@ import React from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { Composer } from '../../../packages/mobile/src/features/sessions/Composer';
-import type { VoiceResult } from '../../../packages/mobile/src/stores/companionStore';
+import type { UploadProgress, VoiceResult } from '../../../packages/mobile/src/stores/companionStore';
 import { messages } from '../../../packages/mobile/src/i18n';
 
 const text = messages('zh');
@@ -602,5 +602,85 @@ describe('build 27 真机四条（爸 2026-09-13）', () => {
     const draft = (screen.getByTestId('draft') as HTMLTextAreaElement).value;
     expect(draft).toContain('我之前自己打的字');
     expect(draft).toContain('段1');
+  });
+});
+
+function attachment(patch: Partial<UploadProgress> & Pick<UploadProgress, 'phase'>): UploadProgress {
+  return { id: 'att-1', name: '品牌资料.pdf', totalBytes: 2_400_000, sentBytes: 0, ...patch };
+}
+
+function mountWithAttachment(item: UploadProgress, extras: {
+  draft?: string;
+  editDraft?: (value: string) => void;
+  retry?: (id: string) => void;
+  remove?: (id: string) => void;
+} = {}) {
+  const editDraft = extras.editDraft ?? vi.fn();
+  const retry = extras.retry ?? vi.fn();
+  const remove = extras.remove ?? vi.fn();
+  render(<Composer text={text} draft={extras.draft ?? '帮我分析这份资料'} editDraft={editDraft} offline={false}
+    sendDisabled={false} send={() => {}} modelLabel="DeepSeek V4.1 Flash" openModel={() => {}}
+    attach={() => {}} attachDisabled={false} attachments={[item]} retryAttachment={retry} removeAttachment={remove}
+    recorder={{ start: async () => {}, stop: async () => ({ audioData: 'YXVkaW8=', mimeType: 'audio/aac', durationMs: 1000 }) }}
+    transcribe={async () => 'cmd-1'} discardPendingTranscript={() => {}}
+    voiceDisabled={false} voicePending={false} voiceResult={null} voiceReady onVoiceState={() => {}} />);
+  return { editDraft, retry, remove };
+}
+
+describe('输入区附件 chip（withAttachment / fileUploading / fileUploadFailed）', () => {
+  afterEach(cleanup);
+
+  it('传输中显示文件名、已传/总字节进度，输入框仍可改字', () => {
+    const { editDraft } = mountWithAttachment(attachment({
+      phase: 'transferring', sentBytes: 24 * 1024, totalBytes: 48 * 1024,
+    }));
+    const chip = screen.getByTestId('attachment-chip');
+    expect(chip.getAttribute('data-phase')).toBe('transferring');
+    expect(screen.getByTestId('attachment-name').textContent).toBe('品牌资料.pdf');
+    expect(chip.textContent).toContain(text.attachTransferring);
+    expect(chip.textContent).toContain('24.0 KB');
+    expect(chip.textContent).toContain('48.0 KB');
+    expect(screen.getByTestId('attachment-progress')).toBeTruthy();
+    // 未准备好时不声称已经传到电脑 / Neo 已读到材料
+    expect(chip.textContent).not.toContain(text.attachComplete);
+    fireEvent.change(screen.getByTestId('draft'), { target: { value: '帮我分析这份资料，再补一句' } });
+    expect(editDraft).toHaveBeenCalledWith('帮我分析这份资料，再补一句');
+  });
+
+  it('失败归到这颗 chip：可重传、可移除，两条都不碰草稿', () => {
+    const { editDraft, retry, remove } = mountWithAttachment(attachment({
+      phase: 'failed', error: 'COMPANION_CHANNEL_CLOSED', retryable: true,
+    }), { draft: '重点比较三家品牌的定位。' });
+    const chip = screen.getByTestId('attachment-chip');
+    expect(chip.getAttribute('data-phase')).toBe('failed');
+    expect(chip.textContent).toContain(text.attachFailed);
+    expect(screen.getByRole('button', { name: text.attachRetry })).toBeTruthy();
+    expect(screen.getByRole('button', { name: text.attachRemove })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: text.attachRetry }));
+    fireEvent.click(screen.getByRole('button', { name: text.attachRemove }));
+    expect(retry).toHaveBeenCalledWith('att-1');
+    expect(remove).toHaveBeenCalledWith('att-1');
+    expect(editDraft).not.toHaveBeenCalled();
+    expect((screen.getByTestId('draft') as HTMLTextAreaElement).value).toBe('重点比较三家品牌的定位。');
+  });
+
+  it('完成态显示已传到电脑，可移除、不可重传，移除仍保留文字', () => {
+    const { editDraft, retry, remove } = mountWithAttachment(attachment({
+      phase: 'complete', sentBytes: 2_400_000,
+    }));
+    const chip = screen.getByTestId('attachment-chip');
+    expect(chip.getAttribute('data-phase')).toBe('complete');
+    expect(chip.textContent).toContain(text.attachComplete);
+    expect(screen.queryByRole('button', { name: text.attachRetry })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: text.attachRemove }));
+    expect(remove).toHaveBeenCalledWith('att-1');
+    expect(retry).not.toHaveBeenCalled();
+    expect(editDraft).not.toHaveBeenCalled();
+  });
+
+  it('类型拒绝这类不可重传的失败只给移除，不给重传', () => {
+    mountWithAttachment(attachment({ phase: 'failed', error: 'COMPANION_FILE_TYPE_DENIED' }));
+    expect(screen.getByRole('button', { name: text.attachRemove })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: text.attachRetry })).toBeNull();
   });
 });

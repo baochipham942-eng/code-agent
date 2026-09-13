@@ -9,9 +9,9 @@ const configs = [
 ] as const;
 
 describe('knip 扫描范围含 packages/mobile', () => {
-  it.each(configs)('%s 的 entry 和 project 都含 packages/mobile', (file) => {
+  it.each(configs)('%s 的入口是 main.tsx、project 含 src', (file) => {
     const config = JSON.parse(readFileSync(file, 'utf8')) as { entry: string[]; project: string[] };
-    expect(config.entry.some(pattern => pattern.includes('packages/mobile'))).toBe(true);
-    expect(config.project.some(pattern => pattern.includes('packages/mobile'))).toBe(true);
+    expect(config.entry).toContain('packages/mobile/src/main.tsx');
+    expect(config.project).toContain('packages/mobile/src/**/*.{ts,tsx}');
   });
 });

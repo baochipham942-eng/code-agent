@@ -13,7 +13,7 @@ import { QuestionCard } from '../features/sessions/QuestionCard';
 import { PlanCard } from '../features/sessions/PlanCard';
 import { CompanionConversation } from '../features/sessions/CompanionConversation';
 import type { CompanionLibrary } from '../../../../src/shared/contract/companionLibrary';
-import { messages } from '../i18n';
+import { messages, offlineHistoryCopy } from '../i18n';
 import { createBackCoordinator } from './backCoordinator';
 import { PreviewMedia } from '../features/sessions/PreviewMedia';
 import { applyKeyboardInset } from './keyboardInset';
@@ -98,7 +98,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
   const [store] = useState(() => createMobileStore(ports.preferences));
   const [companionStore] = useState(() => createCompanionStore(ports.companion, (acceptedText, sessionId, hostKey) => {
     return store.getState().acknowledgeDraft(acceptedText, `${hostKey}:${sessionId}`);
-  }, (text, sessionId, hostKey, commandId, continuation) => store.getState().appendTranscript(text, `${hostKey}:${sessionId}`, commandId, continuation), ports.files));
+  }, (text, sessionId, hostKey, commandId, continuation) => store.getState().appendTranscript(text, `${hostKey}:${sessionId}`, commandId, continuation), ports.files, ports.historyCache));
   const [notifyStore] = useState(() => createNotificationStore({
     port: ports.notifications ?? unavailableNotificationPort,
     preference: {
@@ -191,6 +191,9 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
   // 没有会话或还没读到模型表时不显示——不拿列表第一个冒充当前模型。
   const sessionModelLabel = composerModelLabel(companion.library, companion.sessionId);
   const connection = connectionCopy(text, companion);
+  const cachedHistory = companion.sessionId ? companion.history[companion.sessionId] : undefined;
+  const hasCachedConversation = Boolean(cachedHistory?.messages.length || companion.events.some(event => event.sessionId === companion.sessionId));
+  const offlineCopy = offlineHistoryCopy(text, companion, hasCachedConversation);
 
   // Text selections inside the composer never surface through window.getSelection on WebKit,
   // and long-press selection on WebView only lives in the element's own range.
@@ -348,6 +351,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
         <strong>{companion.sessionId ? companion.library?.sessions.find(s => s.id === companion.sessionId)?.title ?? `${text.sharedSession} ${(companion.binding?.scope.indexOf(companion.sessionId) ?? 0) + 1}` : state.route === 'new' ? text.neo : text.fixture}</strong><button aria-label={text.more} data-testid="open-more" onClick={() => state.openSheet('more')}><AppIcon name="more" /></button></header>
       {state.route === 'fixture' && fixtures ? <VirtualHistory text={text} /> : companion.sessionId && (companion.history[companion.sessionId]?.messages.length || companion.history[companion.sessionId]?.nextOffset != null || companion.artifacts.length || companion.events.some(event => event.sessionId === companion.sessionId))
         ? <CompanionConversation history={companion.history[companion.sessionId]} loadMore={() => void companion.loadHistory(companion.sessionId!, true)} hidePendingApprovals events={companion.events} artifacts={companion.artifacts} sessionId={companion.sessionId} text={text} composerHeight={composerHeight}
+          offline={companion.status !== 'connected'}
           disabled={companion.busy || companion.pending || companion.status !== 'connected'} respond={companion.respond}
           respondQuestion={companion.respondQuestion} respondPlan={companion.respondPlan}
           openArtifact={id => void companion.previewArtifact(id).then(() => {
@@ -377,6 +381,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
             <span aria-hidden="true" className="status-dot" />{connection.label}
           </button>
           <span>{taskStatusCopy(text, companion)}</span>
+          {offlineCopy && <span data-testid="offline-readonly">{offlineCopy}</span>}
           {companion.runId && <button disabled={companion.busy || companion.pending || companion.status !== 'connected'} onClick={() => void companion.stop()}>{text.stop}</button>}
           {connection.retry && <button disabled={companion.busy} onClick={() => void companion.reconnect()}>{text.retry}</button>}
         </div>}
@@ -472,7 +477,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
       </div> : <SettingsPage page={currentPage} text={text} appearance={state.preferences.appearance} nickname={state.preferences.nickname}
         profileDraft={state.profileDraft} appInfo={appInfo} open={state.pushSheet} chooseAppearance={state.setAppearance}
         editProfile={state.editProfile} saveProfile={state.saveProfile}
-        storage={{ previewBytes: companion.cacheUsage?.previewBytes ?? 0, result: cacheResult, confirm: cacheConfirm,
+        storage={{ previewBytes: companion.cacheUsage?.previewBytes ?? 0, conversationBytes: companion.cacheUsage?.conversationBytes ?? 0, result: cacheResult, confirm: cacheConfirm,
           onConfirm: () => setCacheConfirm(true),
           onClear: () => { companion.clearCache(); setCacheResult('clean'); setCacheConfirm(false); } }}
         notifications={{

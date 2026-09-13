@@ -20,6 +20,7 @@ import { getProviderEndpointHost } from '../../shared/constants/providers';
 import { app } from '../platform';
 import { runWithCompressionPipelineOverride } from '../context/compressionPipeline';
 import { runWithScaffoldProfileOverrides } from '../agent/runtime/scaffoldProfile';
+import { runWithHarnessKnobs } from '../agent/runtime/harnessKnobs';
 import { runWithMemoryModelOverride } from '../model/memoryModelOverrideScope';
 import { getMockCasePolicy } from './mockEvalPolicy';
 import type { PermissionRequestData } from '../tools/types';
@@ -129,11 +130,13 @@ function runWithHarnessOverrideScope<T>(
   harness: HarnessVariantConfig | undefined,
   callback: () => T,
 ): T {
-  return runWithCompressionPipelineOverride(harness?.compressionPipeline, () =>
-    runWithScaffoldProfileOverrides({
-      scaffoldProfile: harness?.scaffoldProfile,
-      thinkingInjection: harness?.thinkingInjection,
-    }, callback),
+  return runWithHarnessKnobs(harness?.knobs, () =>
+    runWithCompressionPipelineOverride(harness?.compressionPipeline, () =>
+      runWithScaffoldProfileOverrides({
+        scaffoldProfile: harness?.scaffoldProfile,
+        thinkingInjection: harness?.thinkingInjection,
+      }, callback),
+    ),
   );
 }
 

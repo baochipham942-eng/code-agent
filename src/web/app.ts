@@ -255,6 +255,7 @@ export function createApp(deps: CreateAppDeps): express.Express {
   // 必须注册一次组合回调；companion 侧句柄在 db 分支里接线，未接线时安全跳过。
   let companionLan: { stop(): Promise<void> } | undefined;
   let companionRelay: { stop(): Promise<void> } | undefined;
+  let companionRelayAbandoned = false;
   const idleSleepInhibitor = new IdleSleepInhibitor(
     () => runRegistry.size > 0,
     () => (inhibitorGateway?.pairedDevices().length ?? 0) > 0,
@@ -265,6 +266,7 @@ export function createApp(deps: CreateAppDeps): express.Express {
   deps.registerCompanionShutdown?.(async () => {
     cleanupQuestionRoute();
     await idleSleepInhibitor.stop();
+    companionRelayAbandoned = true;
     await companionRelay?.stop();
     await companionLan?.stop();
   });
@@ -444,6 +446,10 @@ export function createApp(deps: CreateAppDeps): express.Express {
         logger,
       }).then(client => {
         if (!client) return;
+        if (companionRelayAbandoned) {
+          void client.stop();
+          return;
+        }
         services.relay = client;
         companionRelay = client;
       }).catch(() => logger.warn('Companion relay dial-out skipped'));

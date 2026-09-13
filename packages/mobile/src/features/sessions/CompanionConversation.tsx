@@ -1,10 +1,12 @@
 import type { CompanionArtifact, CompanionHistory } from '../../../../../src/shared/contract/companionLibrary';
 import { useLayoutEffect, useRef, useState } from 'react';
 import { ApprovalCard } from './ApprovalCard';
+import { QuestionCard } from './QuestionCard';
+import { PlanCard } from './PlanCard';
 import type { CompanionEvent } from '../../../../../src/shared/contract/companion';
 import type { messages } from '../../i18n';
 
-export function CompanionConversation({ history, loadMore, hidePendingApprovals = false, events, artifacts, sessionId, text, disabled, respond, openArtifact, composerHeight = 0 }: { history?: CompanionHistory; loadMore(): void; hidePendingApprovals?: boolean; events: CompanionEvent[]; artifacts: CompanionArtifact[]; sessionId: string; text: ReturnType<typeof messages>; disabled: boolean; respond: (requestId: string, decision: 'approved' | 'rejected') => Promise<void>; openArtifact(id: string): void;
+export function CompanionConversation({ history, loadMore, hidePendingApprovals = false, events, artifacts, sessionId, text, disabled, respond, respondQuestion, respondPlan, openArtifact, composerHeight = 0 }: { history?: CompanionHistory; loadMore(): void; hidePendingApprovals?: boolean; events: CompanionEvent[]; artifacts: CompanionArtifact[]; sessionId: string; text: ReturnType<typeof messages>; disabled: boolean; respond: (requestId: string, decision: 'approved' | 'rejected') => Promise<void>; respondQuestion: (requestId: string, answers: Record<string, string | string[]>, declined?: boolean, reason?: string) => Promise<void>; respondPlan: (requestId: string, decision: 'approved' | 'rejected', feedback?: string) => Promise<void>; openArtifact(id: string): void;
   /** 输入区那一层的实测高度：它一变，滚动区的底部内边距跟着变，贴底的人得重新贴一次。 */
   composerHeight?: number }) {
   const scroller = useRef<HTMLDivElement>(null);
@@ -15,6 +17,8 @@ export function CompanionConversation({ history, loadMore, hidePendingApprovals 
     if (following.current && scroller.current) scroller.current.scrollTop = scroller.current.scrollHeight;
   }, [events, sessionId, history, composerHeight]);
   const approvals = new Map<string, Record<string, unknown>>();
+  const questions = new Map<string, Record<string, unknown>>();
+  const plans = new Map<string, Record<string, unknown>>();
   const activeStreams = new Map<string, string>();
   const committedStreams = new Set<string>();
   const aliases = new Map<string, string>();
@@ -24,6 +28,8 @@ export function CompanionConversation({ history, loadMore, hidePendingApprovals 
     if (event.sessionId !== sessionId) continue;
     const p = event.payload;
     if (event.kind === 'approval' && typeof p.requestId === 'string') approvals.set(p.requestId, { ...approvals.get(p.requestId), ...p });
+    if (event.kind === 'question' && typeof p.requestId === 'string') questions.set(p.requestId, { ...questions.get(p.requestId), ...p });
+    if (event.kind === 'plan' && typeof p.requestId === 'string') plans.set(p.requestId, { ...plans.get(p.requestId), ...p });
     const run = String(p.runId ?? sessionId);
     const id = `${run}:${String(p.id ?? p.messageId ?? p.turnId ?? event.eventId)}`;
     if (event.kind === 'message' && typeof p.content === 'string') {
@@ -55,6 +61,10 @@ export function CompanionConversation({ history, loadMore, hidePendingApprovals 
     {Array.from(rows, ([id, row]) => <p key={id} className={`lan-message ${row.role === 'user' ? 'from-user' : ''}`}>{row.content}{row.truncated && <small className="notice">{text.historyTruncated}</small>}</p>)}
     {Array.from(approvals, ([id, card]) => (!hidePendingApprovals || card.status !== 'pending') && <ApprovalCard key={id} card={card} text={text} disabled={disabled}
       respond={decision => respond(id, decision)} />)}
+    {Array.from(questions, ([id, card]) => (!hidePendingApprovals || card.status !== 'pending') && <QuestionCard key={id} card={card} text={text} disabled={disabled}
+      respond={answers => respondQuestion(id, answers)} skip={reason => respondQuestion(id, {}, true, reason)} />)}
+    {Array.from(plans, ([id, card]) => (!hidePendingApprovals || card.status !== 'pending') && <PlanCard key={id} card={card} text={text} disabled={disabled}
+      respond={(decision, feedback) => respondPlan(id, decision, feedback)} />)}
     {(() => {
       // 「正在生成」只留还未完成的：tool_call_end 投影带同一 toolCallId 到达后即消失，
       // 不再长期挂在只增不减的 events 流里。

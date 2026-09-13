@@ -20,7 +20,7 @@ const respond = vi.fn(async () => {});
 
 function view(composerHeight: number) {
   return <CompanionConversation events={events} artifacts={[]} sessionId="s1" text={text} history={history}
-    loadMore={() => {}} disabled={false} respond={respond} openArtifact={() => {}} composerHeight={composerHeight} />;
+    loadMore={() => {}} disabled={false} respond={respond} respondQuestion={async () => {}} respondPlan={async () => {}} openArtifact={() => {}} composerHeight={composerHeight} />;
 }
 
 function mount(composerHeight: number) {

@@ -9,6 +9,8 @@ import { createNotificationStore } from '../stores/notificationStore';
 import { unavailableNotificationPort } from '../platform/notifications';
 import { COMPANION_LIMITS } from '../../../../src/shared/constants/companion';
 import { ApprovalCard } from '../features/sessions/ApprovalCard';
+import { QuestionCard } from '../features/sessions/QuestionCard';
+import { PlanCard } from '../features/sessions/PlanCard';
 import { CompanionConversation } from '../features/sessions/CompanionConversation';
 import type { CompanionLibrary } from '../../../../src/shared/contract/companionLibrary';
 import { messages } from '../i18n';
@@ -183,15 +185,19 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
   const [voiceFailureShown, setVoiceFailureShown] = useState(false);
   const theme = state.preferences.appearance === 'system' ? (systemDark ? 'dark' : 'light') : state.preferences.appearance;
   const currentPage = state.sheet?.pages.at(-1);
-  const pendingApprovals = useMemo(() => {
+  const pendingDecisions = useMemo(() => {
     const cards = new Map<string, Record<string, unknown>>();
-    for (const event of companion.events) if (event.kind === 'approval' && typeof event.payload.requestId === 'string') {
-      cards.set(event.payload.requestId, { ...cards.get(event.payload.requestId), ...event.payload, sessionId: event.sessionId });
+    for (const event of companion.events) {
+      if ((event.kind === 'approval' || event.kind === 'question' || event.kind === 'plan') && typeof event.payload.requestId === 'string') {
+        cards.set(`${event.kind}:${event.payload.requestId}`, { ...cards.get(`${event.kind}:${event.payload.requestId}`), ...event.payload, sessionId: event.sessionId, kind: event.kind });
+      }
     }
     return [...cards.values()].filter(card => card.status === 'pending');
   }, [companion.events, companion.sessionId]);
-  const mineApproval = pendingApprovals.find(card => card.sessionId === companion.sessionId);
-  const otherApproval = pendingApprovals.find(card => card.sessionId !== companion.sessionId);
+  const otherDecision = pendingDecisions.find(card => card.sessionId !== companion.sessionId);
+  const trayCard = pendingDecisions.find(card => card.sessionId === companion.sessionId && card.kind === 'approval')
+    ?? pendingDecisions.find(card => card.sessionId === companion.sessionId && card.kind === 'question')
+    ?? pendingDecisions.find(card => card.sessionId === companion.sessionId && card.kind === 'plan');
   // 输入区的模型胶囊（design.html composer 的 .model）：显示这条会话当前在用的模型，
   // 没有会话或还没读到模型表时不显示——不拿列表第一个冒充当前模型。
   const sessionModelLabel = composerModelLabel(companion.library, companion.sessionId);
@@ -354,6 +360,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
       {state.route === 'fixture' && fixtures ? <VirtualHistory text={text} /> : companion.sessionId && (companion.history[companion.sessionId]?.messages.length || companion.history[companion.sessionId]?.nextOffset != null || companion.artifacts.length || companion.events.some(event => event.sessionId === companion.sessionId))
         ? <CompanionConversation history={companion.history[companion.sessionId]} loadMore={() => void companion.loadHistory(companion.sessionId!, true)} hidePendingApprovals events={companion.events} artifacts={companion.artifacts} sessionId={companion.sessionId} text={text} composerHeight={composerHeight}
           disabled={companion.busy || companion.pending || companion.status !== 'connected'} respond={companion.respond}
+          respondQuestion={companion.respondQuestion} respondPlan={companion.respondPlan}
           openArtifact={id => void companion.previewArtifact(id).then(() => {
             if (companionStore.getState().preview) store.getState().openSheet('preview');
           })} />
@@ -364,10 +371,17 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
             落点。原写法只看全局第一条：会话 A 先有一条没处理的审批时，在会话 B 触发的审批
             既不在对话里、也不在托盘里，B 的 run 在手机上没有任何 approve/deny 可点，
             用户得先猜到要去 A 处理完才能回来。别的会话那条仍然给一个跳转按钮，不互相挤掉。 */}
-        {(mineApproval || otherApproval) && <div className="approval-tray" aria-live="polite">
-          {mineApproval && <ApprovalCard card={mineApproval} text={text} disabled={companion.busy || companion.pending || companion.status !== 'connected'}
-            respond={decision => companion.respond(String(mineApproval.requestId), decision)} />}
-          {otherApproval && <button className="primary" onClick={() => selectSession(String(otherApproval.sessionId))}>{text.reviewApproval}</button>}
+        {(trayCard || otherDecision) && <div className="approval-tray" aria-live="polite">
+          {trayCard?.kind === 'approval' && <ApprovalCard card={trayCard} text={text} disabled={companion.busy || companion.pending || companion.status !== 'connected'}
+            respond={decision => companion.respond(String(trayCard.requestId), decision)} />}
+          {trayCard?.kind === 'question' && <QuestionCard card={trayCard} text={text} disabled={companion.busy || companion.pending || companion.status !== 'connected'}
+            respond={answers => companion.respondQuestion(String(trayCard.requestId), answers)}
+            skip={reason => companion.respondQuestion(String(trayCard.requestId), {}, true, reason)} />}
+          {trayCard?.kind === 'plan' && <PlanCard card={trayCard} text={text} disabled={companion.busy || companion.pending || companion.status !== 'connected'}
+            respond={(decision, feedback) => companion.respondPlan(String(trayCard.requestId), decision, feedback)} />}
+          {otherDecision && <button className="primary" onClick={() => selectSession(String(otherDecision.sessionId))}>{
+            otherDecision.kind === 'question' ? text.reviewQuestion : otherDecision.kind === 'plan' ? text.reviewPlan : text.reviewApproval
+          }</button>}
         </div>}
         {companion.binding && <div className="task-status" role="status">
           <button className="connection-pill" data-connected={connection.connected} onClick={() => state.openSheet('remote')}>
@@ -442,7 +456,9 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
     </div>}
     {state.sheet && currentPage && <SheetHost page={currentPage} title={text[currentPage]} hasParent={state.sheet.pages.length > 1}
       close={() => { if (currentPage === 'preview') companion.closePreview(); state.closeSheet(); }} back={() => { if (currentPage === 'preview') companion.closePreview(); state.back(); }} text={text}>
-      {pendingApprovals.length > 0 && <button className="primary" onClick={() => selectSession(String(pendingApprovals[0].sessionId))}>{text.reviewApproval}</button>}
+      {pendingDecisions.length > 0 && <button className="primary" onClick={() => selectSession(String(pendingDecisions[0].sessionId))}>{
+        pendingDecisions[0].kind === 'question' ? text.reviewQuestion : pendingDecisions[0].kind === 'plan' ? text.reviewPlan : text.reviewApproval
+      }</button>}
       {(currentPage === 'projects' || currentPage === 'more') && companion.binding ? <>
         {companion.library ? <LibrarySheet key={`${currentPage}:${companion.sessionId}`} library={companion.library} sessionId={companion.sessionId} text={text} mode={currentPage} busy={companion.busy || companion.pending || companion.status !== 'connected'} select={selectSession} manage={manage} loadMore={() => void companion.refreshLibrary(true)} /> : <p>{companion.libraryError ? text.libraryError : text.loading}</p>}
         <button onClick={() => void companion.refreshLibrary()}>{text.retry}</button>

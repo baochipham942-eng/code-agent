@@ -66,11 +66,11 @@ export class CompanionApprovalService {
       const decision = unchanged
         ? old
         : { requestId: request.id, sessionId, revision: (old?.revision ?? 0) + 1,
-          operationDigest, status: 'pending' as const, resolvedBy: null };
+          operationDigest, status: 'pending' as const, resolvedBy: null, kind: 'approval' as const };
       if (!unchanged) this.gateway.registerDecision(decision);
       this.publishedEpoch.set(request.id, this.gateway.publish(sessionId, 'approval', { ...decision, preview }).epoch);
     }
-    for (const decision of this.gateway.pendingDecisions()) {
+    for (const decision of this.gateway.pendingDecisions('approval')) {
       if (!displayable.has(decision.requestId)) {
         const closed = { ...decision, status: 'closed' as const };
         this.gateway.registerDecision(closed);
@@ -92,7 +92,7 @@ export class CompanionApprovalService {
       this.refresh();
       return { kind: 'approval_conflict', current: this.gateway.getDecision(current.requestId) ?? current };
     }
-    const resolved = { ...current, status: command.payload.decision, resolvedBy: command.deviceId };
+    const resolved = { ...current, status: command.payload.decision, resolvedBy: command.deviceId, kind: 'approval' as const };
     this.gateway.registerDecision(resolved);
     this.gateway.publish(current.sessionId, 'approval', { ...resolved });
     // A resolved card is never republished. Leaving it in publishedEpoch would

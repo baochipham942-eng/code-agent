@@ -67,6 +67,16 @@ const zh = {
   nativeError: '系统交互暂不可用，请重新打开应用。',
   helpBody: '文字会保留在此设备。连接电脑后才能发送；从左上角可打开历史和设置。',
   next: '打开', drag: '下滑关闭弹层', draft: '消息草稿',
+  question: '需要你的回答', questionRecommended: '推荐', questionOther: '其他',
+  questionOtherPlaceholder: '输入你的答案…', questionSubmit: '回答', questionSkip: '跳过',
+  questionClosed: '此问题已在另一端回答或已失效', questionMultiSelect: '可多选',
+  unreadableQuestion: '无法完整读取问题内容，请跳过或回电脑处理。',
+  reviewQuestion: '有待回答的问题，返回会话处理',
+  plan: '确认执行计划', planApprove: '按此计划执行', planReject: '拒绝',
+  planFeedback: '调整说明', planFeedbackPlaceholder: '要调整计划，可以写在这里',
+  planClosed: '此计划已在另一端处理或已失效', planRisk: '风险',
+  unreadablePlan: '无法完整读取计划内容，请拒绝或回电脑处理。',
+  reviewPlan: '有待确认的计划，返回会话处理',
 };
 const en: Record<keyof typeof zh, string> = {
   approvalTarget: 'Target',
@@ -137,5 +147,15 @@ const en: Record<keyof typeof zh, string> = {
   saved: 'Saved on this device', nativeError: 'System interaction unavailable. Please reopen the app.',
   helpBody: 'Text stays on this device. Connect a computer to send it. Open history and settings from the top left.',
   next: 'Open', drag: 'Drag down to close', draft: 'Message draft',
+  question: 'Answer needed', questionRecommended: 'Recommended', questionOther: 'Other',
+  questionOtherPlaceholder: 'Type your answer…', questionSubmit: 'Answer', questionSkip: 'Skip',
+  questionClosed: 'This question was answered elsewhere or is no longer active', questionMultiSelect: 'Multiple answers allowed',
+  unreadableQuestion: 'Cannot read the complete question. Skip it or review on your computer.',
+  reviewQuestion: 'Review the pending question in your conversation',
+  plan: 'Confirm this plan', planApprove: 'Start this plan', planReject: 'Reject',
+  planFeedback: 'How to change it', planFeedbackPlaceholder: 'Describe how the plan should change',
+  planClosed: 'This plan was handled elsewhere or is no longer active', planRisk: 'Risk',
+  unreadablePlan: 'Cannot read the complete plan. Reject it or review on your computer.',
+  reviewPlan: 'Review the pending plan in your conversation',
 };
 export function messages(language: string) { return language.startsWith('zh') ? zh : en; }

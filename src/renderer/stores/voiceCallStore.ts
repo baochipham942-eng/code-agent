@@ -7,7 +7,7 @@
 // ============================================================================
 
 import { create } from 'zustand';
-import type { VoiceMessageCode, VoiceTokenUsage, VoiceWorkItem } from '@shared/contract/voice';
+import type { VoiceBudgetSnapshot, VoiceMessageCode, VoiceTokenUsage, VoiceWorkItem } from '@shared/contract/voice';
 import type { RealtimeVoiceCostEstimate } from '@shared/pricing/estimateRealtimeVoiceCost';
 import type { VoiceLiveSettings } from '@shared/contract/settings';
 
@@ -71,9 +71,7 @@ interface VoiceCallStoreState {
   ttfa: { modelMs?: number; perceivedMs?: number } | null;
   tokenUsage: VoiceTokenUsage;
   costEstimate: RealtimeVoiceCostEstimate | null;
-  costLimit: number | null;
-  costLimitAction: 'warn' | 'hangup';
-  costLimitExceeded: boolean;
+  budget: VoiceBudgetSnapshot | null;
 
   /** 以下动作只由 voiceCallBridge 调用 */
   dialStarted: (sessionId: string, activeAgentId: string | undefined, interruptMode: VoiceInterruptMode) => void;
@@ -96,7 +94,7 @@ interface VoiceCallStoreState {
     reconnecting: boolean,
     progress?: { attempt: number; maxAttempts: number },
   ) => void;
-  costConfigured: (limit: number | null, action: 'warn' | 'hangup') => void;
+  budgetApplied: (budget: VoiceBudgetSnapshot) => void;
   usageApplied: (usage: VoiceTokenUsage, estimate: RealtimeVoiceCostEstimate | null) => void;
   reset: () => void;
 }
@@ -133,9 +131,7 @@ const INITIAL = {
     outputTextTokens: 0,
   },
   costEstimate: null,
-  costLimit: null,
-  costLimitAction: 'warn' as const,
-  costLimitExceeded: false,
+  budget: null,
 };
 
 export const useVoiceCallStore = create<VoiceCallStoreState>((set) => ({
@@ -178,14 +174,8 @@ export const useVoiceCallStore = create<VoiceCallStoreState>((set) => ({
       reconnectAttempt: reconnecting ? progress?.attempt ?? 0 : 0,
       reconnectMaxAttempts: reconnecting ? progress?.maxAttempts ?? 0 : 0,
     }),
-  costConfigured: (costLimit, costLimitAction) => set({ costLimit, costLimitAction }),
-  usageApplied: (tokenUsage, costEstimate) => set((state) => ({
-    tokenUsage,
-    costEstimate,
-    costLimitExceeded: costEstimate !== null
-      && state.costLimit !== null
-      && costEstimate.amount >= state.costLimit,
-  })),
+  budgetApplied: (budget) => set({ budget }),
+  usageApplied: (tokenUsage, costEstimate) => set({ tokenUsage, costEstimate }),
 
   reset: () => set({ ...INITIAL }),
 }));

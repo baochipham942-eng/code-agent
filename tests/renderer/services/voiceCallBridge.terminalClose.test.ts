@@ -182,4 +182,25 @@ describe('voiceCallBridge 终止关闭 vs 网络抖动', () => {
     expect(useVoiceCallStore.getState().error).toBeNull();
     expect(toastMocks.info).toHaveBeenCalledWith('长时间没有对话，通话已自动结束');
   });
+
+  it('host 预算快照写入 store，budget 挂断回 idle 且不进 error', async () => {
+    const socket = await dialAndOpen();
+    socket.simulateEvent({ type: 'state', state: 'live' });
+    socket.simulateEvent({
+      type: 'budget',
+      level: 'blocked',
+      usageRatio: 1,
+      minutesUsed: 5,
+      minutesLimit: 5,
+      costAmount: null,
+      costCurrency: null,
+      costLimit: null,
+    });
+    expect(useVoiceCallStore.getState().budget).toMatchObject({ level: 'blocked', minutesLimit: 5 });
+
+    socket.simulateEvent({ type: 'session.ended', reason: 'budget' });
+    expect(useVoiceCallStore.getState().phase).toBe('idle');
+    expect(useVoiceCallStore.getState().error).toBeNull();
+    expect(useVoiceCallStore.getState().budget).toBeNull();
+  });
 });

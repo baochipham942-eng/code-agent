@@ -43,6 +43,7 @@ import { ToastContainer } from './components/Toast';
 import { ProviderStatusNotice } from './components/ProviderStatusNotice';
 import { SessionExpiredNotice } from './components/SessionExpiredNotice';
 import { BudgetAlertNotice } from './components/BudgetAlertNotice';
+import { VoiceBudgetAlertNotice } from './components/VoiceBudgetAlertNotice';
 import { RuntimeNotices } from './components/RuntimeNotices';
 import { FolderTrustDialog } from './components/FolderTrustDialog';
 import { useFolderTrustPrompt } from './hooks/useFolderTrustPrompt';
@@ -885,6 +886,7 @@ export const App: React.FC = () => {
       <ToastContainer />
       <ProviderStatusNotice />
       <BudgetAlertNotice />
+      <VoiceBudgetAlertNotice />
       <RuntimeNotices />
       <ExpertWorkbenchAutoOpen />
       <SessionExpiredNotice />

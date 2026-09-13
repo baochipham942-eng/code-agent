@@ -37,6 +37,9 @@ export const voiceZh: VoiceTranslations = {
       estimatedCost: '预估 {cost}',
       costUnavailable: '暂无法预估费用',
       costLimitReached: '本次通话预估成本已到上限（{cost}）',
+      budgetMinutes: '已用 {used} 分钟 / 预算 {limit} 分钟',
+      budgetCost: '{used} / {limit}',
+      settingsAction: '去设置',
       /** 通话录音进行中的持续可见指示（N-L7-REC）。 */
       recordCallsIndicator: '录音中',
     },
@@ -360,6 +363,9 @@ export const voiceEn = {
       estimatedCost: 'Est. {cost}',
       costUnavailable: 'Cost estimate unavailable',
       costLimitReached: 'This call reached its estimated cost limit ({cost})',
+      budgetMinutes: '{used} min used / {limit} min budget',
+      budgetCost: '{used} / {limit}',
+      settingsAction: 'Settings',
       recordCallsIndicator: 'Recording',
     },
     status: {

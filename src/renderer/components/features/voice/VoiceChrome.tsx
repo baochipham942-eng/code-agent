@@ -113,6 +113,15 @@ function formatCallDuration(startedAt: number | null, now: number): string {
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
+function formatBudgetMinutes(value: number): string {
+  const rounded = Math.round(value * 10) / 10;
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+}
+
+function formatVoiceMoney(amount: number, currency: 'CNY' | 'USD'): string {
+  return `${currency === 'CNY' ? '¥' : '$'}${amount.toFixed(4)}`;
+}
+
 function useCallDuration(startedAt: number | null): string {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -129,12 +138,22 @@ export const VoiceChrome: React.FC<{ sessionId: string | null }> = ({ sessionId:
   const store = useVoiceCallStore();
   const visual = selectVoiceVisualState(store);
   const duration = useCallDuration(store.startedAt);
-  const costLabel = store.costEstimate
-    ? t.voice.live.estimatedCost.replace(
-        '{cost}',
-        `${store.costEstimate.currency === 'CNY' ? '¥' : '$'}${store.costEstimate.amount.toFixed(4)}`,
-      )
-    : t.voice.live.costUnavailable;
+  const budget = store.budget;
+  const budgetMinutesLabel = budget?.minutesLimit != null
+    ? t.voice.live.budgetMinutes
+      .replace('{used}', formatBudgetMinutes(budget.minutesUsed))
+      .replace('{limit}', formatBudgetMinutes(budget.minutesLimit))
+    : null;
+  const costLabel = budget?.costLimit != null && budget.costAmount != null && budget.costCurrency
+    ? t.voice.live.budgetCost
+      .replace('{used}', formatVoiceMoney(budget.costAmount, budget.costCurrency))
+      .replace('{limit}', formatVoiceMoney(budget.costLimit, budget.costCurrency))
+    : store.costEstimate
+      ? t.voice.live.estimatedCost.replace(
+          '{cost}',
+          formatVoiceMoney(store.costEstimate.amount, store.costEstimate.currency),
+        )
+      : t.voice.live.costUnavailable;
   useRegisterComposerInProgress('voice', visual !== 'idle');
   const isCurrentInProgress = useComposerNoticeStore((state) => (
     selectIsCurrentComposerInProgress(state, 'voice')
@@ -185,6 +204,11 @@ export const VoiceChrome: React.FC<{ sessionId: string | null }> = ({ sessionId:
           </span>
           <span className="shrink-0 opacity-50">&nbsp;·&nbsp;</span>
           <span className="min-w-0 truncate">{statusText}</span>
+          {budgetMinutesLabel && (
+            <span data-testid="voice-call-budget" className="ml-1.5 shrink-0 opacity-70">
+              · {budgetMinutesLabel}
+            </span>
+          )}
           <span data-testid="voice-call-cost" className="ml-1.5 shrink-0 opacity-70">
             · {costLabel}
           </span>

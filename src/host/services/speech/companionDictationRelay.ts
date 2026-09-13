@@ -4,7 +4,11 @@
 // ============================================================================
 
 import { randomUUID } from 'node:crypto';
-import { GUMMY_REALTIME_PRESTART_FRAME_LIMIT, GUMMY_REALTIME_SAMPLE_RATE } from '../../../shared/constants/voice';
+import {
+  GUMMY_REALTIME_FINISH_TIMEOUT_MS,
+  GUMMY_REALTIME_PRESTART_FRAME_LIMIT,
+  GUMMY_REALTIME_SAMPLE_RATE,
+} from '../../../shared/constants/voice';
 import { COMPANION_LIMITS } from '../../../shared/constants/companion';
 import type { CompanionDictationEvent } from '../../../shared/contract/companionDictation';
 import type { CompanionDictationPort } from '../capabilities/hostCapabilityPorts';
@@ -94,6 +98,9 @@ export function createCompanionDictationRelay(): CompanionDictationPort {
       }
       if (session.handle) session.handle.sendAudio(pcm);
       else if (session.pending.length < GUMMY_REALTIME_PRESTART_FRAME_LIMIT) session.pending.push(pcm);
+      else if (!session.events.some(event => event.type === 'error')) {
+        session.events.push({ type: 'error', code: 'SPEECH_NO_CHANNEL', message: 'prestart overflow' });
+      }
       return { ok: true, events: drain(session) };
     },
 
@@ -102,7 +109,7 @@ export function createCompanionDictationRelay(): CompanionDictationPort {
       if (session?.streamId !== streamId) {
         return { ok: false, code: 'COMPANION_DICTATION_INACTIVE', events: [] };
       }
-      const deadline = Date.now() + Math.max(0, COMPANION_LIMITS.requestTimeoutMs - 2_000);
+      const deadline = Date.now() + Math.max(0, COMPANION_LIMITS.requestTimeoutMs - GUMMY_REALTIME_FINISH_TIMEOUT_MS - 1_000);
       while (!session.handle && Date.now() < deadline && sessions.get(deviceId) === session) {
         await new Promise(resolve => setTimeout(resolve, 50));
       }

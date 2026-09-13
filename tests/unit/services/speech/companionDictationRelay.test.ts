@@ -48,6 +48,20 @@ describe('companionDictationRelay', () => {
     createCompanionDictationRelay().releaseAll();
   });
 
+  it('signals the phone to degrade instead of silently dropping PCM while Gummy is still connecting', async () => {
+    transport.connect.mockImplementationOnce(() => new Promise(() => {}));
+    const port = createCompanionDictationRelay();
+    const opened = await port.open('device-1');
+    if (!opened.ok) throw new Error('expected open');
+    const frame = Buffer.from([1, 0]);
+    for (let i = 0; i < 40; i++) port.audio('device-1', opened.streamId, frame);
+    expect(port.audio('device-1', opened.streamId, frame)).toEqual({
+      ok: true,
+      events: [{ type: 'error', code: 'SPEECH_NO_CHANNEL', message: 'prestart overflow' }],
+    });
+    port.release('device-1');
+  });
+
   it('open returns before the Gummy handshake so a 15s connect cannot blow the 10s LAN exchange', async () => {
     transport.connect.mockImplementationOnce(() => new Promise(() => {}));
     const port = createCompanionDictationRelay();

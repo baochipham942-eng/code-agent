@@ -270,7 +270,9 @@ export function useVoiceCapture({ recorder, pending, result, ready, transcribe, 
         if (applyEvents(t, result.events) === 'error' && !t.committedAny && !t.draft.partial) {
           t.failure = { stage: 'transcribe', reason: 'SPEECH_NO_CHANNEL' };
         }
-      } catch { /* already-spoken text stays */ }
+      } catch {
+        if (!t.committedAny && !t.draft.partial) t.failure = { stage: 'transcribe', reason: 'COMPANION_CHANNEL_CLOSED' };
+      }
     }
     t.streamId = null;
     if (!mine(t)) return;

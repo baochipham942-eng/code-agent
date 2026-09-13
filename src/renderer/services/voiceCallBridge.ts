@@ -74,8 +74,6 @@ async function readVoiceRuntimeSettings(): Promise<{
   echoCancellation: 'auto' | 'off';
   inputDevice?: VoiceInputDeviceSettings;
   conversationModel: string;
-  costLimit: number | null;
-  costLimitAction: 'warn' | 'hangup';
 }> {
   try {
     const settings = await ipcService.invokeDomain<AppSettings>(IPC_DOMAINS.SETTINGS, 'get');
@@ -84,20 +82,12 @@ async function readVoiceRuntimeSettings(): Promise<{
       echoCancellation: settings.voice?.live?.echoCancellation ?? 'auto',
       inputDevice: normalizeVoiceInputDevice(settings.voice?.inputDevice),
       conversationModel: settings.voice?.live?.conversationModel ?? QWEN_OMNI_REALTIME_MODEL,
-      costLimit: typeof settings.voice?.live?.callCostLimit === 'number'
-        && Number.isFinite(settings.voice.live.callCostLimit)
-        && settings.voice.live.callCostLimit > 0
-        ? settings.voice.live.callCostLimit
-        : null,
-      costLimitAction: settings.voice?.live?.callCostLimitAction ?? 'warn',
     };
   } catch {
     return {
       interruptMode: 'server_vad',
       echoCancellation: 'auto',
       conversationModel: QWEN_OMNI_REALTIME_MODEL,
-      costLimit: null,
-      costLimitAction: 'warn',
     };
   }
 }
@@ -546,8 +536,6 @@ class VoiceCallBridge {
       echoCancellation,
       inputDevice,
       conversationModel,
-      costLimit,
-      costLimitAction,
     } = await readVoiceRuntimeSettings();
     if (useVoiceCallStore.getState().phase !== 'idle') return; // await 期间状态被改，别抢
     this.inputDevice = inputDevice;
@@ -564,7 +552,6 @@ class VoiceCallBridge {
       outputTextTokens: 0,
     };
     this.store().dialStarted(sessionId, activeAgentId, interruptMode);
-    this.store().costConfigured(costLimit, costLimitAction);
     this.intentionalClose = false;
     this.hasGoneLive = false;
     this.reconnectAttempt = 0;
@@ -1072,18 +1059,11 @@ class VoiceCallBridge {
       case 'response.done':
         if (event.responseId && this.cancelledResponseIds.has(event.responseId)) break;
         if (event.usage) {
-          const alreadyExceeded = this.store().costLimitExceeded;
           this.accumulatedUsage = addVoiceTokenUsage(this.accumulatedUsage, event.usage);
-          const estimate = estimateRealtimeVoiceCost(this.conversationModel, this.accumulatedUsage);
-          this.store().usageApplied(this.accumulatedUsage, estimate);
-          const costState = this.store();
-          if (!alreadyExceeded && costState.costLimitExceeded) {
-            const formatted = estimate
-              ? `${estimate.currency === 'CNY' ? '¥' : '$'}${estimate.amount.toFixed(4)}`
-              : '';
-            toast.warning(getT().voice.live.costLimitReached.replace('{cost}', formatted));
-            if (costState.costLimitAction === 'hangup') this.hangUp();
-          }
+          this.store().usageApplied(
+            this.accumulatedUsage,
+            estimateRealtimeVoiceCost(this.conversationModel, this.accumulatedUsage),
+          );
         }
         this.store().eventApplied({
           assistantSpeaking: false,
@@ -1093,6 +1073,11 @@ class VoiceCallBridge {
       case 'work.upsert':
         this.store().eventApplied({ workItem: event.item });
         break;
+      case 'budget': {
+        const { type: _budgetType, ...snapshot } = event;
+        this.store().budgetApplied(snapshot);
+        break;
+      }
       case 'notice':
         this.store().eventApplied({
           notice: { code: event.code, message: event.message, ...(event.detail ? { detail: event.detail } : {}) },

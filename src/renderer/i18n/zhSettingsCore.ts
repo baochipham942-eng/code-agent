@@ -69,6 +69,7 @@ export const zhSettingsCore = {
       voiceLive: '实时语音',
       voiceLiveVoice: '实时语音音色',
       voiceLiveInterrupt: '打断方式',
+      voiceCallBudget: '通话预算',
       voiceConversationModel: '实时语音模型',
       whisperModel: 'Whisper 模型',
       transcriptionLanguage: '转写语言',

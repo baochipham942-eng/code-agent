@@ -45,6 +45,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   // Voice Live（实时语音）
   { tab: 'voiceLive', labelKey: 'voiceLive', keywords: ['voice', 'live voice', 'call', 'realtime', 'real-time', 'voice call', 'voice chat'], requiresAnyCapability: ['builtin.voice-live'] },
   { tab: 'voiceLive', labelKey: 'voiceLiveInterrupt', keywords: ['interrupt', 'barge-in', 'vad', 'sensitivity', 'turn detection'], requiresAnyCapability: ['builtin.voice-live'] },
+  { tab: 'voiceLive', labelKey: 'voiceCallBudget', keywords: ['budget', 'cost limit', 'minute limit', 'call cap', 'hangup', 'voice budget'], requiresAnyCapability: ['builtin.voice-live'] },
 
   // Voice Model（语音模型：T1 收拢通话模型/音色/转写模型）
   { tab: 'voiceModel', labelKey: 'voiceConversationModel', keywords: ['voice', 'call model', 'conversation model', 'realtime model', 'qwen omni', 'voice model'], requiresAnyCapability: ['builtin.voice-live'] },

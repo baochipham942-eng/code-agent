@@ -37,6 +37,7 @@ import {
 } from './voiceContextAssembler';
 import { isVoiceScreenContextSupported } from './voiceScreenContext';
 import { addTokenUsage, recordVoiceCall } from './voiceUsageLedger';
+import { startVoiceBudgetWatch, stopVoiceBudgetWatch, tickVoiceBudget } from './voiceBudget';
 import { consumeVoiceCallFailure, observeVoiceEventFailure, persistVoiceCallFailure } from './voiceFailurePersistence';
 import { VOICE_TOOL_DEFINITIONS, executeVoiceTool } from './voiceTools';
 import type { SystemEventMessageMetadata } from '../../../shared/contract/systemEventRegistry';
@@ -383,7 +384,7 @@ async function teardown(reason: string): Promise<void> {
   endVoiceQuestionSession(session.neoSessionId);
   settleNarrationsForTeardown(session);
   active = null;
-  clearTimeout(session.maxDurationTimer);
+  clearTimeout(session.maxDurationTimer); stopVoiceBudgetWatch(session.id);
   if (session.graceTimer) clearTimeout(session.graceTimer);
   if (session.inboundAudioWatchdogTimer) clearTimeout(session.inboundAudioWatchdogTimer);
   for (const candidate of session.interruption.candidates.values()) {
@@ -867,6 +868,7 @@ async function connectAndBind(
           }
           if (event.usage && tokenUsage.accepting) {
             tokenUsage.value = addTokenUsage(tokenUsage.value, event.usage);
+            if (active?.id === id) tickVoiceBudget(active, (event) => send(clientRef.current, event), () => { void teardown('budget-exceeded'); });
           }
           const key = event.responseId ?? 'legacy';
           const narrationEvidence = event.responseId
@@ -1034,12 +1036,10 @@ async function connectAndBind(
     narrationResponses,
     tokenUsage,
     narration: createNarrationState(),
-    maxDurationTimer: setTimeout(() => {
-      logger.warn('session hit max duration, force closing', { voiceSessionId: id });
-      void teardown('max-duration');
-    }, VOICE_SESSION_MAX_DURATION_MS),
+    maxDurationTimer: setTimeout(() => { logger.warn('session hit max duration, force closing', { voiceSessionId: id }); void teardown('max-duration'); }, VOICE_SESSION_MAX_DURATION_MS),
   };
   active = session;
+  startVoiceBudgetWatch(session, liveSettings, (event) => send(session.clientRef.current, event), () => { void teardown('budget-exceeded'); }, () => active?.id === id && !active.ending);
   // 录音指示以「recorder 真的建起来了」为准，不是「开关开着」。
   if (recorder) send(client, { type: 'recording', active: true });
   voiceprint.activate({

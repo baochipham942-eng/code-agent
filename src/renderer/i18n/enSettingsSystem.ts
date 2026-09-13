@@ -73,6 +73,8 @@ export const enSettingsSystem = {
       },
       persistence: {
         title: 'History persistence is unavailable',
+        degradedTitle: 'Search is degraded',
+        degradedFtsDisabled: 'Full-text index is temporarily unavailable; fallback search is in use. Writes are unaffected.',
         reasonPrefix: ' Reason: ',
       },
       controlPlane: {

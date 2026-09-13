@@ -488,9 +488,15 @@ export const DataSettings: React.FC = () => {
         <div className="flex items-start gap-2 rounded-lg border border-badge-warning/30 bg-amber-500/10 px-3 py-2 text-sm text-badge-warning">
           <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
           <div className="min-w-0">
-            <div className="font-medium">{dataText.persistence.title}</div>
+            <div className="font-medium">
+              {persistenceHealth.status === 'degraded'
+                ? dataText.persistence.degradedTitle
+                : dataText.persistence.title}
+            </div>
             <div className="mt-0.5 text-xs text-badge-warning/80">
-              {persistenceWarningText}
+              {persistenceHealth.status === 'degraded'
+                ? dataText.persistence.degradedFtsDisabled
+                : persistenceWarningText}
               {persistenceHealth.reason ? `${dataText.persistence.reasonPrefix}${persistenceHealth.reason}` : ''}
             </div>
           </div>

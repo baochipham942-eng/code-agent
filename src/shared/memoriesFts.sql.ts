@@ -10,8 +10,9 @@
 // 超出"最近 N 条"窗口的混合召回。
 // ============================================================================
 
-export const MEMORIES_FTS_TABLE_SQL = `
-  CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
+function memoriesFtsTableSql(tableName: string, ifNotExists: boolean): string {
+  return `
+  CREATE VIRTUAL TABLE ${ifNotExists ? 'IF NOT EXISTS ' : ''}${tableName} USING fts5(
     memory_id UNINDEXED,
     type UNINDEXED,
     category UNINDEXED,
@@ -20,13 +21,17 @@ export const MEMORIES_FTS_TABLE_SQL = `
     tokenize = 'trigram'
   )
 `;
+}
 
-const INSERT_COLUMNS =
-  'INSERT INTO memories_fts (memory_id, type, category, content, summary)';
+export const MEMORIES_FTS_TABLE_SQL = memoriesFtsTableSql('memories_fts', true);
 
-function insertSelect(ref: string, fromMemories: boolean): string {
+function insertColumns(tableName: string): string {
+  return `INSERT INTO ${tableName} (memory_id, type, category, content, summary)`;
+}
+
+function insertSelect(ref: string, fromMemories: boolean, tableName = 'memories_fts'): string {
   return `
-    ${INSERT_COLUMNS}
+    ${insertColumns(tableName)}
     SELECT ${ref}.id, ${ref}.type, ${ref}.category,
            COALESCE(${ref}.content, ''), COALESCE(${ref}.summary, '')
     ${fromMemories ? `FROM memories ${ref}` : ''}`;
@@ -48,6 +53,72 @@ export function runMemoriesFtsBackfill(db: {
     const inserted = Number(db.prepare(MEMORIES_FTS_BACKFILL_SQL).run().changes ?? 0);
     db.exec('COMMIT');
     return inserted;
+  } catch (err) {
+    try {
+      db.exec('ROLLBACK');
+    } catch {
+      // 事务已被 SQLite 自动回滚时 ROLLBACK 会报错，忽略
+    }
+    throw err;
+  }
+}
+
+type MemoriesFtsDatabase = {
+  exec(sql: string): unknown;
+  prepare(sql: string): {
+    all(): unknown[];
+    get(): unknown;
+    run(): { changes?: number | bigint };
+  };
+};
+
+function quoteSqlIdentifier(identifier: string): string {
+  return `"${identifier.replaceAll('"', '""')}"`;
+}
+
+function memoriesTriggerDefinitions(db: MemoriesFtsDatabase): Array<{ name: string; sql: string }> {
+  return db.prepare(`
+    SELECT name, sql
+    FROM sqlite_master
+    WHERE type = 'trigger'
+      AND instr(sql, 'memories_fts') > 0
+      AND sql IS NOT NULL
+  `).all() as Array<{ name: string; sql: string }>;
+}
+
+/**
+ * 在独立 staging FTS 中全量重建，校验后于同一事务内替换正式表。
+ * 与 rebuildSessionMessagesFts / rebuildTranscriptFts 同阶梯。
+ */
+export function rebuildMemoriesFts(db: MemoriesFtsDatabase): number {
+  const stagingTable = 'memories_fts_rebuild';
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const triggers = memoriesTriggerDefinitions(db);
+    db.exec(`DROP TABLE IF EXISTS ${stagingTable}`);
+    db.exec(memoriesFtsTableSql(stagingTable, false));
+    db.prepare(insertSelect('m', true, stagingTable)).run();
+
+    const sourceRows = Number(
+      (db.prepare('SELECT COUNT(*) AS count FROM memories').get() as { count: number | bigint }).count,
+    );
+    const stagingRows = Number(
+      (db.prepare(`SELECT COUNT(*) AS count FROM ${stagingTable}`).get() as { count: number | bigint }).count,
+    );
+    if (stagingRows !== sourceRows) {
+      throw new Error(`Memories FTS rebuild row count mismatch: source=${sourceRows}, staging=${stagingRows}`);
+    }
+
+    for (const trigger of triggers) {
+      db.exec(`DROP TRIGGER ${quoteSqlIdentifier(trigger.name)}`);
+    }
+    db.exec('DROP TABLE memories_fts');
+    db.exec(`ALTER TABLE ${stagingTable} RENAME TO memories_fts`);
+    for (const trigger of triggers) {
+      db.exec(trigger.sql);
+    }
+    db.exec('COMMIT');
+    return stagingRows;
   } catch (err) {
     try {
       db.exec('ROLLBACK');

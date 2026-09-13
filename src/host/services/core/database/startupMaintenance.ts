@@ -14,6 +14,7 @@ import type { PermissionDecisionRepository } from '../repositories/PermissionDec
 import type { createLogger } from '../../infra/logger';
 import { persistCancelledToolCallClosures } from '../../../agent/runtime/cancelledToolCallClosure';
 import { backfillTelemetrySessionTitles } from '../../../telemetry/telemetrySessionTitleBackfill';
+import { repairCorruptFtsOnStartup } from './ftsRepair';
 
 type Logger = ReturnType<typeof createLogger>;
 
@@ -124,6 +125,9 @@ export function runStartupMaintenance(deps: StartupMaintenanceDeps): RecoverySna
     Date.now(),
   );
   step('ledger-health');
+
+  repairCorruptFtsOnStartup(db);
+  step('fts-repair');
 
   // 首次升级后：从已有 messages 表 backfill episodic FTS 索引（幂等）
   sessionRepo.backfillSessionMessagesFts();

@@ -10,7 +10,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function isPersistenceHealth(value: unknown): value is PersistenceHealth {
   if (!isRecord(value)) return false;
   return (
-    (value.status === 'available' || value.status === 'unavailable') &&
+    (value.status === 'available' || value.status === 'unavailable' || value.status === 'degraded') &&
     (value.mode === 'database' || value.mode === 'memory') &&
     typeof value.durable === 'boolean' &&
     typeof value.message === 'string' &&
@@ -41,7 +41,7 @@ function normalizeBaseUrl(baseUrl: string): string {
 }
 
 export function shouldShowPersistenceWarning(health: PersistenceHealth | null | undefined): health is PersistenceHealth {
-  return Boolean(health && !health.durable);
+  return Boolean(health && (!health.durable || health.status === 'degraded'));
 }
 
 export function getPersistenceWarningText(health: PersistenceHealth | null | undefined): string {

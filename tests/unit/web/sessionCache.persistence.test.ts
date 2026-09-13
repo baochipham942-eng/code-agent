@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Message } from '../../../src/shared/contract';
 import {
+  markFtsTableDisabledForTests,
+  resetFtsRepairStateForTests,
+} from '../../../src/host/services/core/database/ftsRepair';
+import { SQLITE_FTS } from '../../../src/shared/constants';
+import {
   getPersistenceHealth,
   setDbAvailable,
   toCachedSessionMessages,
@@ -11,6 +16,7 @@ import {
 } from '../../../src/web/helpers/webSessionStore';
 
 afterEach(() => {
+  resetFtsRepairStateForTests();
   setDbAvailable(false, new Error('test reset'));
   sessionMessages.clear();
 });
@@ -24,6 +30,18 @@ describe('web session persistence health', () => {
       mode: 'database',
       durable: true,
       message: '历史会持久化到本机数据库。',
+    });
+  });
+
+  it('overlays FTS_DISABLED as degraded without flipping durable off', () => {
+    setDbAvailable(true);
+    markFtsTableDisabledForTests('session_messages_fts');
+
+    expect(getPersistenceHealth()).toMatchObject({
+      status: 'degraded',
+      mode: 'database',
+      durable: true,
+      reason: SQLITE_FTS.DISABLED_REASON,
     });
   });
 

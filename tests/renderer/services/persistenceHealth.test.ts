@@ -33,6 +33,18 @@ describe('persistence health renderer helpers', () => {
     expect(shouldShowPersistenceWarning(null)).toBe(false);
   });
 
+  it('shows a warning when persistence is degraded but still durable', () => {
+    const degraded = {
+      status: 'degraded',
+      mode: 'database',
+      durable: true,
+      message: '历史会持久化到本机数据库。',
+      reason: 'FTS_DISABLED',
+      checkedAt: 30,
+    } satisfies PersistenceHealth;
+    expect(shouldShowPersistenceWarning(degraded)).toBe(true);
+  });
+
   it('keeps a clear fallback warning when health text is missing', () => {
     expect(getPersistenceWarningText(unavailable)).toBe('历史持久化不可用，当前只会话内有效。');
     expect(getPersistenceWarningText(null)).toBe('历史持久化不可用，当前只会话内有效。');

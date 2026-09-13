@@ -48,6 +48,15 @@ describe('companionDictationRelay', () => {
     createCompanionDictationRelay().releaseAll();
   });
 
+  it('open returns before the Gummy handshake so a 15s connect cannot blow the 10s LAN exchange', async () => {
+    transport.connect.mockImplementationOnce(() => new Promise(() => {}));
+    const port = createCompanionDictationRelay();
+    await expect(port.open('device-1')).resolves.toMatchObject({ ok: true, sampleRate: GUMMY_REALTIME_SAMPLE_RATE });
+    expect(hasActiveCompanionDictation()).toBe(true);
+    port.release('device-1');
+    expect(hasActiveCompanionDictation()).toBe(false);
+  });
+
   it('refuses to open when Host has no DashScope key — phone must degrade, not hold a key', async () => {
     key.value = null;
     const port = createCompanionDictationRelay();
@@ -61,10 +70,11 @@ describe('companionDictationRelay', () => {
     expect(opened).toMatchObject({ ok: true, sampleRate: GUMMY_REALTIME_SAMPLE_RATE });
     if (!opened.ok) throw new Error('expected open');
     expect(hasActiveCompanionDictation()).toBe(true);
+    await vi.waitFor(() => expect(transport.connect).toHaveBeenCalled());
 
     const pcm = Buffer.from([1, 0, 2, 0]);
     expect(port.audio('device-1', opened.streamId, pcm)).toEqual({ ok: true, events: [] });
-    expect(transport.sendAudio).toHaveBeenCalledWith(pcm);
+    await vi.waitFor(() => expect(transport.sendAudio).toHaveBeenCalledWith(pcm));
 
     transport.onTranscript?.({ text: '你', sentenceId: 1, done: false });
     transport.onTranscript?.({ text: '你好', sentenceId: 1, done: true });
@@ -85,6 +95,7 @@ describe('companionDictationRelay', () => {
     const port = createCompanionDictationRelay();
     const opened = await port.open('device-1');
     if (!opened.ok) throw new Error('expected open');
+    await vi.waitFor(() => expect(transport.connect).toHaveBeenCalled());
     transport.onError?.('SPEECH_NO_CHANNEL', 'upstream closed');
     expect(port.audio('device-1', opened.streamId, Buffer.from([0, 0]))).toEqual({
       ok: true,
@@ -95,6 +106,7 @@ describe('companionDictationRelay', () => {
   it('release closes the upstream without waiting for finish', async () => {
     const port = createCompanionDictationRelay();
     await port.open('device-1');
+    await vi.waitFor(() => expect(transport.connect).toHaveBeenCalled());
     port.release('device-1');
     expect(transport.close).toHaveBeenCalled();
     expect(hasActiveCompanionDictation()).toBe(false);

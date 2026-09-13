@@ -237,6 +237,7 @@ export function useVoiceCapture({ recorder, pending, result, ready, transcribe, 
     t.degraded = true;
     t.mode = 'chunked';
     t.streamId = null;
+    void dictationRef.current?.close();
     t.pcmQueue = [];
     t.unsub?.(); t.unsub = null;
     if (t.pcmLive) { t.pcmLive = false; await recorder?.stopPcm?.().catch(() => {}); }
@@ -293,7 +294,7 @@ export function useVoiceCapture({ recorder, pending, result, ready, transcribe, 
     try {
       if (recorder.startPcm && dictation?.available) {
         t.unsub = recorder.subscribePcm?.(frame => {
-          if (!mine(t) || !t.pcmLive) return;
+          if (!mine(t)) return;
           if (frame.pcm.length > L.voicePcmBase64Limit) { t.dropped += 1; bump(); return; }
           t.pcmQueue.push(frame); bump();
         }) ?? null;

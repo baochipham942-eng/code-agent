@@ -125,6 +125,7 @@ describe('realtime dictation', () => {
     vi.useFakeTimers();
     const transcribe = vi.fn(async () => 'cmd-1');
     const commit = vi.fn();
+    const close = vi.fn(async () => {});
     let emit: ((frame: { pcm: string; durationMs: number }) => void) | undefined;
     render(<RealtimeHarness
       pcm={next => { emit = next; }}
@@ -140,7 +141,7 @@ describe('realtime dictation', () => {
           ],
         }),
         stop: async () => ({ ok: true, events: [] }),
-        close: async () => {},
+        close,
       }}
     />);
     fireEvent.click(screen.getByRole('button', { name: text.voice }));
@@ -148,6 +149,7 @@ describe('realtime dictation', () => {
     await act(async () => { emit?.({ pcm: 'AAEA', durationMs: 20 }); });
     await advance(200);
     expect(commit).toHaveBeenCalledWith('已经说了', false);
+    expect(close).toHaveBeenCalled();
     expect(screen.getByText(text.voiceDegraded)).toBeTruthy();
     await advance(5_000);
     expect(transcribe).toHaveBeenCalled();

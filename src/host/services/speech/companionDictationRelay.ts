@@ -4,7 +4,7 @@
 // ============================================================================
 
 import { randomUUID } from 'node:crypto';
-import { GUMMY_REALTIME_SAMPLE_RATE } from '../../../shared/constants/voice';
+import { GUMMY_REALTIME_PRESTART_FRAME_LIMIT, GUMMY_REALTIME_SAMPLE_RATE } from '../../../shared/constants/voice';
 import type { CompanionDictationEvent } from '../../../shared/contract/companionDictation';
 import type { CompanionDictationPort } from '../capabilities/hostCapabilityPorts';
 import { getDashscopeApiKey } from '../media/imageGenerationService';
@@ -15,7 +15,8 @@ const logger = createLogger('CompanionDictation');
 
 type Session = {
   streamId: string;
-  handle: GummyRealtimeHandle;
+  handle: GummyRealtimeHandle | null;
+  pending: Buffer[];
   events: CompanionDictationEvent[];
   abort: AbortController;
 };
@@ -37,7 +38,7 @@ function drop(deviceId: string): void {
   if (!session) return;
   sessions.delete(deviceId);
   session.abort.abort();
-  session.handle.close();
+  session.handle?.close();
 }
 
 export function createCompanionDictationRelay(): CompanionDictationPort {
@@ -48,34 +49,40 @@ export function createCompanionDictationRelay(): CompanionDictationPort {
       if (!apiKey) return { ok: false, code: 'SPEECH_NO_CHANNEL' };
       const streamId = randomUUID();
       const abort = new AbortController();
-      const events: CompanionDictationEvent[] = [];
-      let handle: GummyRealtimeHandle;
-      try {
-        handle = await connectGummyRealtime({
-          apiKey,
-          streamId,
-          signal: abort.signal,
-          onTranscript: ({ text, sentenceId, done }) => {
-            const session = sessions.get(deviceId);
-            if (session?.streamId !== streamId) return;
-            session.events.push({ type: done ? 'final' : 'partial', text, sentenceId });
-          },
-          onError: (code, message) => {
-            const session = sessions.get(deviceId);
-            if (session?.streamId !== streamId) return;
-            session.events.push({ type: 'error', code, message });
-          },
-        });
-      } catch (err) {
+      const session: Session = { streamId, handle: null, pending: [], events: [], abort };
+      sessions.set(deviceId, session);
+      // Must not await Gummy here: LAN exchange times out at 10s, Gummy connect waits 15s.
+      void connectGummyRealtime({
+        apiKey,
+        streamId,
+        signal: abort.signal,
+        onTranscript: ({ text, sentenceId, done }) => {
+          const current = sessions.get(deviceId);
+          if (current?.streamId !== streamId) return;
+          current.events.push({ type: done ? 'final' : 'partial', text, sentenceId });
+        },
+        onError: (code, message) => {
+          const current = sessions.get(deviceId);
+          if (current?.streamId !== streamId) return;
+          current.events.push({ type: 'error', code, message });
+        },
+      }).then(handle => {
+        const current = sessions.get(deviceId);
+        if (current?.streamId !== streamId || abort.signal.aborted) {
+          handle.close();
+          return;
+        }
+        current.handle = handle;
+        for (const frame of current.pending) handle.sendAudio(frame);
+        current.pending = [];
+      }).catch((err: unknown) => {
         const message = err instanceof Error ? err.message : 'Gummy realtime connection failed';
         logger.warn('upstream connect failed', { streamId, message });
-        return { ok: false, code: 'SPEECH_NO_CHANNEL' };
-      }
-      if (abort.signal.aborted) {
-        handle.close();
-        return { ok: false, code: 'SPEECH_NO_CHANNEL' };
-      }
-      sessions.set(deviceId, { streamId, handle, events, abort });
+        const current = sessions.get(deviceId);
+        if (current?.streamId === streamId) {
+          current.events.push({ type: 'error', code: 'SPEECH_NO_CHANNEL', message });
+        }
+      });
       return { ok: true, streamId, sampleRate: GUMMY_REALTIME_SAMPLE_RATE };
     },
 
@@ -84,7 +91,8 @@ export function createCompanionDictationRelay(): CompanionDictationPort {
       if (session?.streamId !== streamId) {
         return { ok: false, code: 'COMPANION_DICTATION_INACTIVE', events: [] };
       }
-      session.handle.sendAudio(pcm);
+      if (session.handle) session.handle.sendAudio(pcm);
+      else if (session.pending.length < GUMMY_REALTIME_PRESTART_FRAME_LIMIT) session.pending.push(pcm);
       return { ok: true, events: drain(session) };
     },
 
@@ -94,7 +102,7 @@ export function createCompanionDictationRelay(): CompanionDictationPort {
         return { ok: false, code: 'COMPANION_DICTATION_INACTIVE', events: [] };
       }
       try {
-        await session.handle.finish();
+        if (session.handle) await session.handle.finish();
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Gummy realtime finish failed';
         session.events.push({ type: 'error', code: 'SPEECH_NO_CHANNEL', message });

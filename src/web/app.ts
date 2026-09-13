@@ -56,7 +56,7 @@ import { createDevRouter } from './routes/dev';
 import type { PendingDevPermissionRequest } from './routes/dev';
 import { createBackgroundRouter } from './routes/background';
 import { dispatchHostWebRoute } from '../host/services/capabilities/hostCapabilityContributions';
-import { getRegisteredSpeechTranscriber } from '../host/services/capabilities/hostCapabilityPorts';
+import { getRegisteredSpeechTranscriber, registerUserQuestionRoute } from '../host/services/capabilities/hostCapabilityPorts';
 import { companionTranscriptionSettlement } from '../shared/contract/speech';
 import { createAdminReviewQueueRouter } from './routes/adminReviewQueue';
 import { createCompanionRouter } from './routes/companion';
@@ -65,6 +65,9 @@ import { CompanionGateway } from '../host/services/companion/CompanionGateway';
 import { CompanionPushOutbox, loadPushWrapKeySync } from '../host/services/companion/CompanionPushOutbox';
 import { projectCompanionEvent } from '../host/services/companion/projectCompanionEvent';
 import { CompanionApprovalService } from '../host/services/companion/CompanionApprovalService';
+import { CompanionQuestionService } from '../host/services/companion/CompanionQuestionService';
+import { CompanionPlanService } from '../host/services/companion/CompanionPlanService';
+import { getPlanApprovalGate } from '../host/agent/planApproval';
 import type { PermissionResponse } from '../shared/contract/permission';
 import { LanCompanionManager } from '../host/services/companion/LanCompanionManager';
 import { IdleSleepInhibitor } from '../host/services/desktop/idleSleepInhibitor';
@@ -256,16 +259,27 @@ export function createApp(deps: CreateAppDeps): express.Express {
     { logger },
   );
   idleSleepInhibitor.start();
-  deps.registerCompanionShutdown?.(async () => { await idleSleepInhibitor.stop(); await companionLan?.stop(); });
+  let cleanupQuestionRoute: () => void = () => {};
+  deps.registerCompanionShutdown?.(async () => {
+    cleanupQuestionRoute();
+    await idleSleepInhibitor.stop();
+    await companionLan?.stop();
+  });
 
   try {
     const db = getDatabase().getDb();
     if (db) {
-      let approvals: CompanionApprovalService | undefined;
       // gateway 与 library 互相依赖：gateway 的回调要调 library，library 又要拿 gateway。
       // 用一个 const 容器打破这个环，而不是先声明后赋值的 let——后者读起来像「可能被改」，
       // 实际只赋值一次，而且回调里读到的是同一个坑位。
-      const services: { library?: CompanionLibraryService; files?: CompanionFileService; push?: CompanionPushOutbox } = {};
+      const services: {
+        library?: CompanionLibraryService;
+        files?: CompanionFileService;
+        push?: CompanionPushOutbox;
+        approvals?: CompanionApprovalService;
+        questions?: CompanionQuestionService;
+        plans?: CompanionPlanService;
+      } = {};
       const requireLibrary = () => {
         const library = services.library;
         // 回调只在路由挂载之后才可能触发，那时 library 早已就位；真取不到就说明接线断了。
@@ -280,8 +294,13 @@ export function createApp(deps: CreateAppDeps): express.Express {
           if (!services.files) throw new Error('COMPANION_LIBRARY_UNAVAILABLE');
           return Promise.resolve(services.files.list(request.sessionId));
         },
-        refreshDecisions: () => approvals?.refresh(),
-        decide: command => approvals?.respond(command) ?? { kind: 'rejected', reason: 'unsupported_action' },
+        refreshDecisions: () => { services.approvals?.refresh(); services.questions?.refresh(); services.plans?.refresh(); },
+        decide: command => {
+          if (command.action === 'approval.respond') return services.approvals?.respond(command) ?? { kind: 'rejected', reason: 'unsupported_action' };
+          if (command.action === 'question.respond') return services.questions?.respond(command) ?? { kind: 'rejected', reason: 'unsupported_action' };
+          if (command.action === 'plan.respond') return services.plans?.respond(command) ?? { kind: 'rejected', reason: 'unsupported_action' };
+          return { kind: 'rejected', reason: 'unsupported_action' };
+        },
         onPublish: event => { services.push?.enqueue(event); void services.push?.flush(); },
         onRevoke: deviceId => services.push?.forgetDevice(deviceId),
         dispatch: (command) => {
@@ -341,8 +360,23 @@ export function createApp(deps: CreateAppDeps): express.Express {
         logger.warn('Companion deleted-session cleanup unavailable', error);
       });
       if (getPendingPermissionRequests && deps.deliverCompanionPermission) {
-        approvals = new CompanionApprovalService(gateway, getPendingPermissionRequests, deps.deliverCompanionPermission);
+        services.approvals = new CompanionApprovalService(gateway, getPendingPermissionRequests, deps.deliverCompanionPermission);
       }
+      services.questions = new CompanionQuestionService(gateway);
+      cleanupQuestionRoute = registerUserQuestionRoute(services.questions);
+      services.plans = new CompanionPlanService(gateway, () => getPlanApprovalGate().getPendingPlans().flatMap(plan => {
+        const sessionId = plan.scope?.sessionId;
+        if (!sessionId) return [];
+        return [{ id: plan.id, sessionId, plan: plan.plan, agentName: plan.agentName, risk: plan.risk }];
+      }), (planId, approved, feedback, sessionId) => {
+        const gate = getPlanApprovalGate();
+        const plan = gate.getPlan(planId);
+        if (plan?.status !== 'pending' || plan.scope?.sessionId !== sessionId) {
+          return { success: false, data: { closed: true } };
+        }
+        const ok = approved ? gate.approve(planId, feedback) : gate.reject(planId, feedback?.trim() || 'Rejected');
+        return { success: ok };
+      });
       publishCompanionEvent = (sessionId, kind, payload) => {
         if (!gateway.hasLiveDevices()) return;
         // 成果复制只对「有已配对手机」的桌面发生：没配对过的用户每次成图都复制一份
@@ -384,7 +418,7 @@ export function createApp(deps: CreateAppDeps): express.Express {
       }, () => requireLibrary().projects(), services.push);
       // Both halves must hold: a phone is reachable for this session, AND this particular
       // card is renderable. With no approvals service there is no companion approval path.
-      hasCompanionApprovalUi = (sessionId, request) => lan.hasApprovalUi(sessionId) && approvals?.canDisplay(request) === true;
+      hasCompanionApprovalUi = (sessionId, request) => lan.hasApprovalUi(sessionId) && services.approvals?.canDisplay(request) === true;
       handlers.set(COMPANION_MANAGE_CHANNEL, (_event, request) => lan.manage(request));
       // Web transport sends `companion:manage` to /api/companion/manage.
       // Keep an explicit route so browser/web builds can generate invitations

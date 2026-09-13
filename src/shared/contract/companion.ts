@@ -20,6 +20,31 @@ export const companionCommandSchema = z.discriminatedUnion('action', [
     expectedRevision: z.number().int().nonnegative().safe(),
     payload: z.object({ requestId: id, decision: z.enum(['approved', 'rejected']), operationDigest: id }).strict(),
   }).strict(),
+  z.object({ ...commandFields, action: z.literal('question.respond'),
+    expectedRevision: z.number().int().nonnegative().safe(),
+    payload: z.object({
+      requestId: id,
+      operationDigest: id,
+      answers: z.record(
+        z.string().min(1).max(COMPANION_LIMITS.messageLength),
+        z.union([
+          z.string().min(1).max(COMPANION_LIMITS.messageLength),
+          z.array(z.string().min(1).max(COMPANION_LIMITS.messageLength)).min(1),
+        ]),
+      ).optional(),
+      declined: z.literal(true).optional(),
+      reason: z.string().max(COMPANION_LIMITS.messageLength).optional(),
+    }).strict().refine(payload => payload.declined === true || (payload.answers != null && Object.keys(payload.answers).length > 0)),
+  }).strict(),
+  z.object({ ...commandFields, action: z.literal('plan.respond'),
+    expectedRevision: z.number().int().nonnegative().safe(),
+    payload: z.object({
+      requestId: id,
+      operationDigest: id,
+      decision: z.enum(['approved', 'rejected']),
+      feedback: z.string().max(COMPANION_LIMITS.messageLength).optional(),
+    }).strict(),
+  }).strict(),
   z.object({ ...commandFields, action: z.literal('session.create'),
     payload: z.object({ title: z.string().trim().min(1).max(160), provider: id, model: id }).strict(),
   }).strict(),
@@ -111,6 +136,15 @@ export interface CompanionEvent {
   createdAt: number;
 }
 
+export type CompanionDecisionKind = 'approval' | 'question' | 'plan';
+export type CompanionDecisionCommand = Extract<CompanionCommand, {
+  action: 'approval.respond' | 'question.respond' | 'plan.respond'
+}>;
+
+export function isCompanionDecisionCommand(command: CompanionCommand): command is CompanionDecisionCommand {
+  return command.action === 'approval.respond' || command.action === 'question.respond' || command.action === 'plan.respond';
+}
+
 export interface CompanionDecision {
   requestId: string;
   sessionId: string;
@@ -118,6 +152,7 @@ export interface CompanionDecision {
   status: 'pending' | 'approved' | 'rejected' | 'closed';
   resolvedBy: string | null;
   operationDigest: string | null;
+  kind?: CompanionDecisionKind;
 }
 
 export type CompanionSubmitResult =

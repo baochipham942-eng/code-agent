@@ -2,12 +2,14 @@ import { companionReadSchema, projectGrant, type CompanionRead } from '../../../
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import type BetterSqlite3 from 'better-sqlite3';
 import { applyCompanionSchema } from '../core/database/migrations/companion';
-import { companionCommandSchema } from '../../../shared/contract/companion';
+import { companionCommandSchema, isCompanionDecisionCommand } from '../../../shared/contract/companion';
 import { COMPANION_LIMITS } from '../../../shared/constants/companion';
 import type {
   CompanionCommand,
   CompanionCommandRecord,
   CompanionDecision,
+  CompanionDecisionCommand,
+  CompanionDecisionKind,
   CompanionDeviceCredential,
   CompanionDevice,
   CompanionEvent,
@@ -52,7 +54,7 @@ export interface CompanionGatewayDeps {
   refreshDecisions?: () => void;
   dispatch?: (command: CompanionCommand) => CompanionDispatchResult;
   /** Must resolve through the same authoritative service used by the desktop. */
-  decide?: (command: Extract<CompanionCommand, { action: 'approval.respond' }>) => CompanionSubmitResult;
+  decide?: (command: CompanionDecisionCommand) => CompanionSubmitResult;
   onPublish?: (event: CompanionEvent) => void;
   onRevoke?: (deviceId: string) => void;
 }
@@ -89,7 +91,7 @@ export class CompanionGateway {
     // command ID can retry the still-pending desktop approval.
     this.db.prepare(`DELETE FROM companion_decision_claims
       WHERE EXISTS (SELECT 1 FROM companion_commands c
-        WHERE c.action = 'approval.respond' AND c.state = 'rejected'
+        WHERE c.action IN ('approval.respond', 'question.respond', 'plan.respond') AND c.state = 'rejected'
           AND json_extract(c.result_json, '$.code') = 'COMPANION_INTERRUPTED'
           AND EXISTS (SELECT 1 FROM companion_decisions d
             WHERE d.request_id = companion_decision_claims.request_id
@@ -198,14 +200,15 @@ export class CompanionGateway {
     }
 
     const decide = this.decide;
-    if (command.action === 'approval.respond') {
+    const decisionCommand = isCompanionDecisionCommand(command) ? command : null;
+    if (decisionCommand) {
       // A separate companion-only CAS cannot authorize a desktop operation.
       if (!decide) return { kind: 'rejected', reason: 'unsupported_action' };
       this.refreshDecisions();
-      const current = this.getDecision(command.payload.requestId);
-      if (current?.sessionId !== command.sessionId) return { kind: 'rejected', reason: 'scope_denied' };
-      if (current.revision !== command.expectedRevision || current.status !== 'pending' ||
-          current.operationDigest !== command.payload.operationDigest) {
+      const current = this.getDecision(decisionCommand.payload.requestId);
+      if (current?.sessionId !== decisionCommand.sessionId) return { kind: 'rejected', reason: 'scope_denied' };
+      if (current.revision !== decisionCommand.expectedRevision || current.status !== 'pending' ||
+          current.operationDigest !== decisionCommand.payload.operationDigest) {
         return { kind: 'approval_conflict', current };
       }
     }
@@ -233,13 +236,13 @@ export class CompanionGateway {
       // `decide &&` only restates the guard above (an approval without an authority
       // already returned); it keeps the narrowing here without a non-null assertion,
       // and an impossible miss degrades to dispatch's HOST_UNAVAILABLE, not a crash.
-      if (decide && command.action === 'approval.respond') {
+      if (decide && decisionCommand) {
         // A different command ID must not redispatch an uncertain logical decision.
         const claimed = this.db.prepare(`INSERT OR IGNORE INTO companion_decision_claims
           (request_id, revision, operation_digest) VALUES (?, ?, ?)`).run(
-            command.payload.requestId, command.expectedRevision, command.payload.operationDigest);
+            decisionCommand.payload.requestId, decisionCommand.expectedRevision, decisionCommand.payload.operationDigest);
         if (!claimed.changes) return { kind: 'replayed', command: record };
-        const decision = decide(command);
+        const decision = decide(decisionCommand);
         if (decision.kind !== 'accepted' && decision.kind !== 'replayed') {
           // The claim exists to stop a *second* command ID from redispatching a decision
           // whose outcome is unknown. A definite non-decision is not that: nothing was
@@ -249,7 +252,7 @@ export class CompanionGateway {
           // A same-commandId replay is still caught earlier, by the command row itself.
           this.db.prepare(`DELETE FROM companion_decision_claims
             WHERE request_id = ? AND revision = ? AND operation_digest = ?`).run(
-              command.payload.requestId, command.expectedRevision, command.payload.operationDigest);
+              decisionCommand.payload.requestId, decisionCommand.expectedRevision, decisionCommand.payload.operationDigest);
           record.state = 'rejected';
           record.result = { decision };
         } else {
@@ -298,8 +301,10 @@ export class CompanionGateway {
       WHERE device_id = ? AND command_id = ? AND state = 'reconciling'`).run(state, JSON.stringify(result), deviceId, commandId);
   }
 
-  pendingDecisions(): CompanionDecision[] {
-    const rows = this.db.prepare("SELECT request_id FROM companion_decisions WHERE status = 'pending'").all() as SqlRow[];
+  pendingDecisions(kind?: CompanionDecisionKind): CompanionDecision[] {
+    const rows = (kind
+      ? this.db.prepare("SELECT request_id FROM companion_decisions WHERE status = 'pending' AND COALESCE(kind, 'approval') = ?").all(kind)
+      : this.db.prepare("SELECT request_id FROM companion_decisions WHERE status = 'pending'").all()) as SqlRow[];
     return rows.flatMap(row => { const decision = this.getDecision(String(row.request_id)); return decision ? [decision] : []; });
   }
 
@@ -313,6 +318,11 @@ export class CompanionGateway {
 
   hasLiveDevices(): boolean {
     return !!this.db.prepare('SELECT 1 FROM companion_devices WHERE revoked_at IS NULL LIMIT 1').get();
+  }
+
+  /** True when at least one unrevoked device canAccessSession(sessionId). */
+  hasLiveDeviceForSession(sessionId: string): boolean {
+    return this.activeDevices().some(device => this.canAccessSession(device.deviceId, sessionId));
   }
 
   forgetSession(sessionId: string): void {
@@ -352,14 +362,15 @@ export class CompanionGateway {
   registerDecision(decision: CompanionDecision): void {
     this.db.prepare(`
       INSERT INTO companion_decisions
-        (request_id, session_id, revision, status, resolved_by, operation_digest)
-      VALUES (?, ?, ?, ?, ?, ?)
+        (request_id, session_id, revision, status, resolved_by, operation_digest, kind)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(request_id) DO UPDATE SET
         session_id = excluded.session_id,
         revision = excluded.revision,
         status = excluded.status,
         resolved_by = excluded.resolved_by,
-        operation_digest = excluded.operation_digest
+        operation_digest = excluded.operation_digest,
+        kind = excluded.kind
     `).run(
       decision.requestId,
       decision.sessionId,
@@ -367,6 +378,7 @@ export class CompanionGateway {
       decision.status,
       decision.resolvedBy,
       decision.operationDigest,
+      decision.kind ?? 'approval',
     );
   }
 
@@ -433,7 +445,7 @@ export class CompanionGateway {
   getDecision(requestId: string): CompanionDecision | null {
     const row = this.db.prepare('SELECT * FROM companion_decisions WHERE request_id = ?').get(requestId) as SqlRow | undefined;
     if (!row) return null;
-    return { requestId: String(row.request_id), sessionId: String(row.session_id), revision: Number(row.revision), status: row.status as CompanionDecision['status'], resolvedBy: row.resolved_by == null ? null : String(row.resolved_by), operationDigest: row.operation_digest == null ? null : String(row.operation_digest) };
+    return { requestId: String(row.request_id), sessionId: String(row.session_id), revision: Number(row.revision), status: row.status as CompanionDecision['status'], resolvedBy: row.resolved_by == null ? null : String(row.resolved_by), operationDigest: row.operation_digest == null ? null : String(row.operation_digest), kind: row.kind === 'question' || row.kind === 'plan' ? row.kind : 'approval' };
   }
 
   private nextSeq(): number {

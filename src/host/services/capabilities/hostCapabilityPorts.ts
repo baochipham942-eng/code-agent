@@ -43,7 +43,7 @@ export interface UserQuestionRoute {
 }
 
 let turnOutcomeResolver: TurnOutcomeResolver | null = null;
-let userQuestionRoute: UserQuestionRoute | null = null;
+const userQuestionRoutes: UserQuestionRoute[] = [];
 let voiceInstructionsRefresher: (() => void) | null = null;
 let speechTranscriber: SpeechTranscriber | null = null;
 let companionDictation: CompanionDictationPort | null = null;
@@ -86,31 +86,37 @@ export async function resolveRegisteredTurnOutcome(
 }
 
 export function registerUserQuestionRoute(route: UserQuestionRoute): HostCapabilityCleanup {
-  const cleanup = exclusiveRegistration(
-    userQuestionRoute,
-    route,
-    'user question route',
-    () => {
-      if (userQuestionRoute === route) userQuestionRoute = null;
-    },
-  );
-  userQuestionRoute = route;
-  return cleanup;
+  // Fan-out, not exclusive: the voice bridge and the companion phone both need
+  // the same pending question. A single slot would let whichever registers
+  // second steal the route (or throw), so a live voice call would squeeze the
+  // phone out — or the phone would squeeze the voice call out.
+  userQuestionRoutes.push(route);
+  let active = true;
+  return () => {
+    if (!active) return;
+    active = false;
+    const index = userQuestionRoutes.indexOf(route);
+    if (index >= 0) userQuestionRoutes.splice(index, 1);
+  };
 }
 
 export function canOfferRegisteredUserQuestion(sessionId: string | undefined): boolean {
-  return userQuestionRoute?.canOffer(sessionId) ?? false;
+  return userQuestionRoutes.some(route => route.canOffer(sessionId));
 }
 
 export function offerRegisteredUserQuestion(
   request: UserQuestionRequest,
   respond: (response: UserQuestionResponse) => void,
 ): boolean {
-  return userQuestionRoute?.offer(request, respond) ?? false;
+  let offered = false;
+  for (const route of [...userQuestionRoutes]) {
+    if (route.offer(request, respond)) offered = true;
+  }
+  return offered;
 }
 
 export function cancelRegisteredUserQuestion(requestId: string): void {
-  userQuestionRoute?.cancel(requestId);
+  for (const route of [...userQuestionRoutes]) route.cancel(requestId);
 }
 
 export function registerSpeechTranscriber(transcriber: SpeechTranscriber): HostCapabilityCleanup {

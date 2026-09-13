@@ -93,15 +93,18 @@ describe('CompanionGateway', () => {
     ['message.send', { text: 'hello' }],
     ['run.cancel', { runId: 'run-1' }],
     ['approval.respond', { requestId: 'request', decision: 'approved', operationDigest: 'digest' }],
+    ['question.respond', { requestId: 'request', operationDigest: 'digest', declined: true as const }],
+    ['plan.respond', { requestId: 'request', operationDigest: 'digest', decision: 'approved' as const }],
     ['files.prepare', { name: 'photo.png', mimeType: 'image/png', size: 4, sha256: 'a'.repeat(64) }],
   ] as const)('recovers an interrupted %s reservation on host restart', (action, payload) => {
+    const decision = action === 'approval.respond' || action === 'question.respond' || action === 'plan.respond';
     const first = new CompanionGateway(db, { now: () => 1000, dispatch: () => ({ state: 'reconciling' }),
-      decide: action === 'approval.respond' ? (() => { throw new Error('uncertain'); }) : undefined });
+      decide: decision ? (() => { throw new Error('uncertain'); }) : undefined });
     first.registerDevice({ deviceId: 'phone-1', credentialHash: 'hash-phone-1', scopeEpoch: 1, scope: ['session-1'], revokedAt: null });
     const command = { version: 1 as const, commandId: `interrupted-${action}`, deviceId: 'phone-1', scopeEpoch: 1,
-      sessionId: 'session-1', action, ...(action === 'approval.respond' ? { expectedRevision: 1 } : {}), payload } as const;
-    if (action === 'approval.respond') first.registerDecision({ requestId: 'request', sessionId: 'session-1', revision: 1, status: 'pending', resolvedBy: null, operationDigest: 'digest' });
-    expect(first.submit(command).kind).toBe(action === 'approval.respond' ? 'replayed' : 'accepted');
+      sessionId: 'session-1', action, ...(decision ? { expectedRevision: 1 } : {}), payload } as const;
+    if (decision) first.registerDecision({ requestId: 'request', sessionId: 'session-1', revision: 1, status: 'pending', resolvedBy: null, operationDigest: 'digest' });
+    expect(first.submit(command).kind).toBe(decision ? 'replayed' : 'accepted');
     const restarted = new CompanionGateway(db);
     expect(restarted.commandStatus('phone-1', command.commandId)).toMatchObject({ state: 'rejected', result: { code: 'COMPANION_INTERRUPTED' } });
   });
@@ -135,6 +138,29 @@ describe('CompanionGateway', () => {
     gateway.revokeDevice('phone-1', 1100);
     gateway.publish('session-1', 'message', { content: 'after-revoke' });
     expect(db.prepare('SELECT COUNT(*) AS n FROM companion_events').get()).toEqual({ n: 0 });
+  });
+
+  it('hasLiveDeviceForSession follows canAccessSession, not mere device presence', () => {
+    expect(gateway.hasLiveDeviceForSession('session-1')).toBe(true);
+    expect(gateway.hasLiveDeviceForSession('session-2')).toBe(false);
+    gateway.revokeDevice('phone-1', 1100);
+    expect(gateway.hasLiveDeviceForSession('session-1')).toBe(false);
+  });
+
+  it('hasLiveDeviceForSession admits a project grant the same way canAccessSession does', () => {
+    db.close();
+    db = new Database(':memory:');
+    gateway = new CompanionGateway(db, {
+      now: () => 1000,
+      sessionProject: id => id === 'member' ? 'one' : null,
+    });
+    gateway.registerDevice({
+      deviceId: 'phone-p', credentialHash: 'hash-p', scopeEpoch: 1,
+      scope: ['project:one'], revokedAt: null,
+    });
+    expect(gateway.hasLiveDeviceForSession('member')).toBe(true);
+    expect(gateway.hasLiveDeviceForSession('other')).toBe(false);
+    expect(gateway.canAccessSession('phone-p', 'member')).toBe(true);
   });
 
   it('physically deletes companion_events when a session is forgotten', () => {

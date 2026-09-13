@@ -88,6 +88,8 @@ interface State {
   events: CompanionEvent[]; runId: string | null; terminal: 'complete' | 'stopped' | 'failed' | null;
   hydrate(): Promise<void>; pair(): Promise<void>; reconnect(): Promise<void>; pause(): void;
   respond(requestId: string, decision: 'approved' | 'rejected'): Promise<void>;
+  respondQuestion(requestId: string, answers: Record<string, string | string[]>, declined?: boolean, reason?: string): Promise<void>;
+  respondPlan(requestId: string, decision: 'approved' | 'rejected', feedback?: string): Promise<void>;
   routeError: string | null;
   registerPush(input: CompanionPushRegister): Promise<CompanionPushRegisterResult>;
   unregisterPush(): Promise<void>;
@@ -388,7 +390,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         await persist({ ...saved, pending: command }); set({ pending: true }); await deliver();
       }),
       selectSession: sessionId => {
-        if ((get().library?.sessions.some(s => s.id === sessionId) || get().binding?.scope.includes(sessionId) || get().events.some(e => e.sessionId === sessionId && e.kind === 'approval')) && !get().busy) {
+        if ((get().library?.sessions.some(s => s.id === sessionId) || get().binding?.scope.includes(sessionId) || get().events.some(e => e.sessionId === sessionId && (e.kind === 'approval' || e.kind === 'question' || e.kind === 'plan'))) && !get().busy) {
           const events = get().events.filter(e => e.sessionId === sessionId);
           const last = events.filter(e => ['run_started', 'agent_complete', 'agent_cancelled', 'error'].includes(e.kind)).at(-1);
           // artifacts/preview 是当前会话作用域：切会话必须清掉，否则 offline 时
@@ -486,6 +488,26 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         const command = companionCommandSchema.parse({ version: 1, deviceId: saved.binding.deviceId, scopeEpoch: saved.binding.scopeEpoch,
           commandId: crypto.randomUUID(), sessionId: get().sessionId, action: 'approval.respond', expectedRevision: latest.revision,
           payload: { requestId, decision, operationDigest: latest.operationDigest } });
+        await persist({ ...saved, pending: command }); set({ pending: true }); await deliver();
+      }),
+      respondQuestion: (requestId, answers, declined, reason) => safely(async () => {
+        if (!saved?.binding || saved.pending || !canAddressSession(get())) return;
+        const latest = get().events.filter(event => event.kind === 'question' && event.sessionId === get().sessionId && event.payload.requestId === requestId).at(-1)?.payload;
+        if (!latest || latest.status !== 'pending') return;
+        const command = companionCommandSchema.parse({ version: 1, deviceId: saved.binding.deviceId, scopeEpoch: saved.binding.scopeEpoch,
+          commandId: crypto.randomUUID(), sessionId: get().sessionId, action: 'question.respond', expectedRevision: latest.revision,
+          payload: declined
+            ? { requestId, operationDigest: latest.operationDigest, declined: true, ...(reason ? { reason } : {}) }
+            : { requestId, operationDigest: latest.operationDigest, answers } });
+        await persist({ ...saved, pending: command }); set({ pending: true }); await deliver();
+      }),
+      respondPlan: (requestId, decision, feedback) => safely(async () => {
+        if (!saved?.binding || saved.pending || !canAddressSession(get())) return;
+        const latest = get().events.filter(event => event.kind === 'plan' && event.sessionId === get().sessionId && event.payload.requestId === requestId).at(-1)?.payload;
+        if (!latest || latest.status !== 'pending') return;
+        const command = companionCommandSchema.parse({ version: 1, deviceId: saved.binding.deviceId, scopeEpoch: saved.binding.scopeEpoch,
+          commandId: crypto.randomUUID(), sessionId: get().sessionId, action: 'plan.respond', expectedRevision: latest.revision,
+          payload: { requestId, decision, operationDigest: latest.operationDigest, ...(feedback ? { feedback } : {}) } });
         await persist({ ...saved, pending: command }); set({ pending: true }); await deliver();
       }),
       sync: async () => {

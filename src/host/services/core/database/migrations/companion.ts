@@ -38,7 +38,8 @@ export function applyCompanionSchema(db: BetterSqlite3.Database): void {
       revision INTEGER NOT NULL,
       status TEXT NOT NULL,
       resolved_by TEXT,
-      operation_digest TEXT
+      operation_digest TEXT,
+      kind TEXT NOT NULL DEFAULT 'approval'
     );
     CREATE TABLE IF NOT EXISTS companion_decision_claims (
       request_id TEXT NOT NULL,
@@ -108,6 +109,9 @@ export function applyCompanionSchema(db: BetterSqlite3.Database): void {
     CREATE INDEX IF NOT EXISTS idx_companion_push_outbox_state_expires
       ON companion_push_outbox(state, expires_at);
   `);
+  try {
+    db.exec(`ALTER TABLE companion_decisions ADD COLUMN kind TEXT NOT NULL DEFAULT 'approval'`);
+  } catch { /* column already present on databases created with the kind field */ }
   // Companion unit tests use an isolated SQLite file without `sessions`.
   // The host schema creates that table first; attach the cascade only then.
   if (db.prepare(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'sessions'`).get()) {

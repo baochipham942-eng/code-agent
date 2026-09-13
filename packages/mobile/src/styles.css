@@ -113,6 +113,13 @@ input { width: 100%; padding: 16px; background: var(--surface); border: 1px soli
 .approval-actions { gap: 8px; }
 .approval-actions button { flex: 1; min-height: 44px; border-radius: 22px; background: var(--group); font-size: 14px; }
 .approval-actions button:last-child { background: var(--text); color: var(--bg); }
+.question-block { margin: 8px 0; }
+.question-block .option { display: block; width: 100%; text-align: left; border-radius: 16px; background: var(--group); padding: 10px 14px; margin: 6px 0; }
+.question-block .option.selected { background: var(--text); color: var(--bg); }
+.question-block .option small { display: block; color: var(--muted); font-size: 12px; }
+.question-block .option.selected small { color: inherit; opacity: .75; }
+.question-other { display: block; margin: 8px 0; font-size: 13px; color: var(--muted); }
+.question-other input, .question-other textarea { display: block; width: 100%; margin-top: 6px; min-height: 44px; border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; background: var(--surface); }
 @media (max-height: 520px) { .composer-area, .composer-area[data-keyboard-inset] { padding-bottom: 4px; } .approval-tray .approval-card { max-height: 36dvh; padding: 8px; } .approval-summary > div { padding: 1px 0; } .task-status { min-height: 28px; } .task-status button { min-height: 28px; } }
 
 select { width: 100%; min-height: 48px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; color: var(--text); background: var(--surface); font: inherit; }

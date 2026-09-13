@@ -150,6 +150,22 @@ export class HistoryCache {
     this.rememberSync();
   }
 
+  dropSession(sessionId: string): void {
+    if (!this.sessions.delete(sessionId)) return;
+    this.persist();
+  }
+
+  retainSessions(allowed: Iterable<string>): void {
+    const keep = new Set(allowed);
+    let changed = false;
+    for (const sessionId of [...this.sessions.keys()]) {
+      if (keep.has(sessionId)) continue;
+      this.sessions.delete(sessionId);
+      changed = true;
+    }
+    if (changed) this.persist();
+  }
+
   clear(): { freedBytes: number } {
     const freedBytes = this.total();
     this.sessions.clear();
@@ -168,9 +184,10 @@ export class HistoryCache {
       this.lastSyncAt = typeof value.lastSyncAt === 'number' ? value.lastSyncAt : null;
       for (const [sessionId, entry] of Object.entries(value.sessions)) {
         if (!sessionId || !entry || !Array.isArray(entry.messages)) continue;
+        const messages = entry.messages.filter(isCachedMessage);
         const bucket: SessionBucket = {
           sessionId,
-          messages: entry.messages.filter(isCachedMessage),
+          messages: messages.length > this.messageLimit ? messages.slice(-this.messageLimit) : messages,
           cards: Array.isArray(entry.cards) ? entry.cards.filter(isCardEvent) : [],
           atime: typeof entry.atime === 'number' ? entry.atime : 0,
           size: 0,

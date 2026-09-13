@@ -166,6 +166,25 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
       set({ history: {}, events: [], lastSyncAt: null, cacheUsage: inspectBoth() });
       return freed;
     };
+    const explicitSessionIds = (scope: readonly string[]) => scope.filter(id => !id.startsWith('project:'));
+    const applyHistoryView = (historyState: Record<string, CompanionHistory>, events: CompanionEvent[], sessionId: string | null) => {
+      set({ history: historyState, events, lastSyncAt: history.snapshot().lastSyncAt, cacheUsage: inspectBoth(), sessionId });
+    };
+    const pruneUnscopedHistory = (previousScope: readonly string[], nextScope: readonly string[]) => {
+      const nextExplicit = new Set(explicitSessionIds(nextScope));
+      const droppedExplicit = explicitSessionIds(previousScope).filter(id => !nextExplicit.has(id));
+      const lostProject = previousScope.some(id => id.startsWith('project:') && !nextScope.includes(id));
+      for (const id of droppedExplicit) history.dropSession(id);
+      if (lostProject) history.retainSessions(nextExplicit);
+      if (!droppedExplicit.length && !lostProject) return;
+      const drop = new Set(droppedExplicit);
+      const allowed = lostProject ? nextExplicit : null;
+      const keep = (id: string) => (allowed ? allowed.has(id) : !drop.has(id));
+      const nextHistory = Object.fromEntries(Object.entries(get().history).filter(([id]) => keep(id)));
+      const nextEvents = get().events.filter(event => !event.sessionId || keep(event.sessionId));
+      const current = get().sessionId;
+      applyHistoryView(nextHistory, nextEvents, current && !keep(current) ? (explicitSessionIds(nextScope)[0] ?? null) : current);
+    };
     const persist = async (next: Saved) => {
       if (!port) throw new Error('COMPANION_NATIVE_REQUIRED');
       // 只写 Saved 的已知字段：hydrate 的 JSON.parse 可能带上盘里多出来的键
@@ -374,10 +393,12 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
       reconnect: () => safely(async () => {
         const target = saved?.binding ?? saved?.candidate;
         if (!target) return;
+        const previousScope = get().binding?.scope ?? saved?.binding?.scope ?? [];
         set({ status: 'connecting', paused: false });
         const binding = await createClient().recover(target, saved?.binding);
         await persist({ ...saved!, binding, candidate: undefined });
         epoch = binding.scopeEpoch;
+        pruneUnscopedHistory(previousScope, binding.scope);
         set({ status: 'connected', binding, sessionId: get().sessionId ?? binding.scope.find(id => !id.startsWith('project:')) ?? null });
         if (saved?.pending) {
           const record = await client!.request({ action: 'status', commandId: saved.pending.commandId }) as CompanionCommandRecord | null;

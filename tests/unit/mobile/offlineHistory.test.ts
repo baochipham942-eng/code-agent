@@ -12,6 +12,7 @@ import type { CompanionCommand, CompanionEvent } from '../../../src/shared/contr
 
 const harness = vi.hoisted(() => ({
   recoverError: null as string | null,
+  recoverScope: null as string[] | null,
   syncResult: { kind: 'events' as string, epoch: 1, nextSeq: 0, events: [] as CompanionEvent[] },
   commandKind: 'accepted' as string,
   commandReason: undefined as string | undefined,
@@ -27,7 +28,8 @@ vi.mock('../../../packages/mobile/src/platform/lanCompanionClient', () => {
       async pair() { return binding; }
       async recover(_target: unknown, existing?: typeof binding) {
         if (harness.recoverError) throw new Error(harness.recoverError);
-        return existing ?? binding;
+        const base = existing ?? binding;
+        return harness.recoverScope ? { ...base, scope: harness.recoverScope } : base;
       }
       async request(payload: { action?: string; command?: CompanionCommand }) {
         if (payload.action === 'sync') return harness.syncResult;
@@ -97,12 +99,14 @@ async function connected(history: HistoryCache, identity: ReturnType<typeof disk
 describe('offline conversation cache', () => {
   beforeEach(() => {
     harness.recoverError = null;
+    harness.recoverScope = null;
     harness.syncResult = { kind: 'events', epoch: 1, nextSeq: 0, events: [] };
     harness.commandKind = 'accepted';
     harness.commandReason = undefined;
   });
   afterEach(() => {
     harness.recoverError = null;
+    harness.recoverScope = null;
     harness.commandKind = 'accepted';
     harness.commandReason = undefined;
   });
@@ -247,6 +251,54 @@ describe('offline conversation cache', () => {
     expect(store.getState().history).toEqual({});
     expect(historyDisk.snapshot()).not.toContain('cached body');
     expect(JSON.parse((await prefs.read())!).drafts.new).toBe('keep-this-draft');
+  });
+
+  it('drops cached sessions that leave binding.scope after reconnect', async () => {
+    const historyDisk = disk();
+    const history = new HistoryCache(undefined, undefined, Date.now, historyDisk);
+    history.putMessages('session-1', [{ id: 'a', role: 'user', content: 'keep-me', timestamp: 1 }]);
+    history.putMessages('session-2', [{ id: 'b', role: 'user', content: 'revoked-session', timestamp: 1 }]);
+    await history.flush();
+    const identity = createIdentity();
+    const storage = disk(JSON.stringify({
+      version: 1,
+      publicKey: toHex(identity.publicKey),
+      secretKey: toHex(identity.secretKey),
+      binding: {
+        version: 1, endpoint: 'http://10.0.0.1:8182', hostKey: toHex(identity.publicKey),
+        deviceId: 'phone-1', scopeEpoch: 1, scope: ['session-1', 'session-2'],
+      },
+    }));
+    harness.recoverScope = ['session-1'];
+    const store = createCompanionStore({
+      read: () => storage.read(), write: value => storage.write(value), scan: async () => '', post: async () => ({}),
+    }, () => {}, undefined, undefined, history);
+    await store.getState().hydrate();
+    await history.flush();
+    expect(store.getState().status).toBe('connected');
+    expect(store.getState().history['session-1']?.messages[0]?.content).toBe('keep-me');
+    expect(store.getState().history['session-2']).toBeUndefined();
+    expect(history.snapshot().history['session-2']).toBeUndefined();
+    expect(historyDisk.snapshot()).not.toContain('revoked-session');
+  });
+
+  it('applies the per-session window when hydrating a disk cache that is too long', async () => {
+    const historyDisk = disk(JSON.stringify({
+      version: 1, lastSyncAt: 1,
+      sessions: {
+        'session-1': {
+          messages: [
+            { id: 'a', role: 'user', content: 'old', timestamp: 1 },
+            { id: 'b', role: 'user', content: 'mid', timestamp: 2 },
+            { id: 'c', role: 'user', content: 'new', timestamp: 3 },
+          ],
+          cards: [], atime: 1,
+        },
+      },
+    }));
+    const cache = new HistoryCache(undefined, 2, Date.now, historyDisk);
+    await cache.hydrate();
+    expect(cache.snapshot().history['session-1'].messages.map(message => message.id)).toEqual(['b', 'c']);
   });
 
   it('drops history cache when pairing identity is gone', async () => {

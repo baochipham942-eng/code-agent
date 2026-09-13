@@ -23,6 +23,14 @@ p { line-height: 1.5; overflow-wrap: anywhere; }
 .composer-area { position: absolute; left: 0; right: 0; bottom: 0; background: var(--bg); padding: 12px 15px max(6px, var(--safe-bottom)); }
 .composer-area[data-keyboard-inset] { padding-bottom: 6px; }
 .composer { border: 1px solid var(--line); background: var(--surface); border-radius: 29px; padding: 14px 10px 7px; }
+.composer .attachment { display: flex; align-items: flex-start; gap: 10px; border-radius: 14px; background: var(--group); padding: 10px; margin: 0 7px 10px; }
+.composer .attachment .flex { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.composer .attachment .small { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.composer .attachment .app-icon { width: 18px; height: 18px; margin-top: 2px; color: var(--muted); }
+.composer .attachment-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.composer .attachment-actions button { min-width: 48px; min-height: 48px; font-size: 13px; color: var(--muted); }
+.composer .progress-track { height: 4px; background: var(--line); border-radius: 4px; margin-top: 8px; overflow: hidden; }
+.composer .progress-track > span { display: block; height: 100%; background: var(--accent); border-radius: 4px; }
 /* 输入框聚焦**不要任何描边变化**（爸 2026-09-13 真机看过青色版后拍板）。
    全局那道 2px 直角描边必须仍然压掉：文本框在规范上任何聚焦都命中 :focus-visible（不止键盘），
    它会套在 29px 圆角外面，而且 #668ded 根本不在调色板里。

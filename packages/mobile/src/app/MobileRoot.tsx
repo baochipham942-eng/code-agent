@@ -14,25 +14,14 @@ import { PlanCard } from '../features/sessions/PlanCard';
 import { CompanionConversation } from '../features/sessions/CompanionConversation';
 import type { CompanionLibrary } from '../../../../src/shared/contract/companionLibrary';
 import { messages } from '../i18n';
-import { bytesToArrayBuffer } from '../platform/fileCache';
 import { createBackCoordinator } from './backCoordinator';
+import { PreviewMedia } from '../features/sessions/PreviewMedia';
 import { applyKeyboardInset } from './keyboardInset';
 import { SheetHost } from './SheetHost';
 import { SettingsPage } from '../features/settings/SettingsPage';
 import { VirtualHistory } from '../features/sessions/VirtualHistory';
 import { NeoBrandMark } from '../features/brand/NeoBrandMark';
 import { AppIcon } from './AppIcon';
-
-// 预览 object URL 只在 preview 变化时创建、卸载/变更时 revoke——sync 每秒重渲染不能累积 Blob。
-function PreviewMedia({ name, mimeType, bytes }: { name: string; mimeType: string; bytes: Uint8Array }) {
-  const url = useMemo(() => mimeType.startsWith('image/')
-    ? URL.createObjectURL(new Blob([bytesToArrayBuffer(bytes)], { type: mimeType })) : null,
-  [mimeType, bytes]);
-  useEffect(() => () => { if (url) URL.revokeObjectURL(url); }, [url]);
-  if (url) return <img className="preview-media" alt={name} src={url} />;
-  if (mimeType.startsWith('text/')) return <pre className="preview-text">{new TextDecoder().decode(bytes)}</pre>;
-  return <p>{name}</p>;
-}
 
 /**
  * 连接那一行的文案与动作。合成一条的原因（2026-09-12 爸真机反馈）：原来「连接胶囊说『重新连接』」
@@ -419,6 +408,9 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
           modelLabel={sessionModelLabel} openModel={() => state.openSheet('more')}
           attach={ports.files && (() => void ports.files!.pick('file').then(picked => { if (picked) void companion.upload(picked); }).catch(error => { if (error instanceof Error && error.message === 'UPLOAD_TOO_LARGE') companionStore.setState({ commandError: 'UPLOAD_TOO_LARGE' }); }))}
           attachDisabled={!canAddressSession(companion) || companion.busy || companion.pending}
+          attachments={companion.uploadProgress}
+          retryAttachment={id => { void companion.retryUpload(id); }}
+          removeAttachment={companion.removeUpload}
           recorder={companion.sessionId ? ports.recorder : undefined}
           transcribe={(audio, continuation, take) => companion.transcribe(audio, companion.sessionId!, companion.binding!.hostKey, continuation, take)}
           discardPendingTranscript={companion.discardPendingTranscript}

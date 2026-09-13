@@ -4,8 +4,23 @@ import type { messages } from '../../i18n';
 import { AppIcon } from '../../app/AppIcon';
 import { useVoiceCapture, VoicePanel } from './VoiceCapture';
 import type { DictationPort } from './VoiceCapture';
-import type { VoiceResult } from '../../stores/companionStore';
+import type { UploadProgress, VoiceResult } from '../../stores/companionStore';
 import { joinTranscript } from '../../stores/mobileStore';
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function attachmentStatus(text: ReturnType<typeof messages>, item: UploadProgress): string {
+  if (item.phase === 'preparing') return text.attachPreparing;
+  if (item.phase === 'transferring') return `${text.attachTransferring} · ${formatBytes(item.sentBytes)} / ${formatBytes(item.totalBytes)}`;
+  if (item.phase === 'complete') return text.attachComplete;
+  if (item.error === 'UPLOAD_TOO_LARGE') return text.uploadTooLarge;
+  if (item.error === 'COMPANION_FILE_TYPE_DENIED') return text.fileTypeDenied;
+  return text.attachFailed;
+}
 
 /**
  * 输入区。布局契约是设计稿 design.html 的 composer()：
@@ -15,7 +30,8 @@ import { joinTranscript } from '../../stores/mobileStore';
  */
 export function Composer({
   text, draft, editDraft, offline, sendDisabled, send, modelLabel, openModel,
-  attach, attachDisabled, recorder, transcribe, discardPendingTranscript, commitSpoken, dictation, voiceDisabled, voicePending, voiceResult, voiceReady, onVoiceState,
+  attach, attachDisabled, attachments, retryAttachment, removeAttachment,
+  recorder, transcribe, discardPendingTranscript, commitSpoken, dictation, voiceDisabled, voicePending, voiceResult, voiceReady, onVoiceState,
 }: {
   text: ReturnType<typeof messages>;
   draft: string;
@@ -28,6 +44,9 @@ export function Composer({
   openModel(): void;
   attach?: () => void;
   attachDisabled: boolean;
+  attachments?: UploadProgress[];
+  retryAttachment?(id: string): void;
+  removeAttachment?(id: string): void;
   recorder: PlatformPorts['recorder'];
   transcribe(audio: { audioData: string; mimeType: string; durationMs: number }, continuation: boolean, take: string): Promise<string | null>;
   discardPendingTranscript(take: string): void;
@@ -77,6 +96,24 @@ export function Composer({
           dropped={voice.dropped} degraded={voice.degraded}
           stop={voice.stop} cancel={voice.cancel} />
         : <>
+          {attachments?.map(item => {
+            const canRetry = item.phase === 'failed' && item.retryable === true;
+            const canRemove = item.phase === 'failed' || item.phase === 'complete';
+            return <div key={item.id} className="attachment" data-testid="attachment-chip" data-phase={item.phase}>
+              <AppIcon name="file" />
+              <div className="flex">
+                <div data-testid="attachment-name">{item.name}</div>
+                <div className="small" role="status">{attachmentStatus(text, item)}</div>
+                {item.phase === 'transferring' && <div className="progress-track" data-testid="attachment-progress">
+                  <span style={{ width: `${item.totalBytes ? Math.round((item.sentBytes / item.totalBytes) * 100) : 0}%` }} />
+                </div>}
+              </div>
+              <div className="attachment-actions">
+                {canRetry && <button type="button" aria-label={text.attachRetry} onClick={() => retryAttachment?.(item.id)}>{text.attachRetry}</button>}
+                {canRemove && <button type="button" aria-label={text.attachRemove} onClick={() => removeAttachment?.(item.id)}><AppIcon name="close" /></button>}
+              </div>
+            </div>;
+          })}
           <textarea ref={textarea} aria-label={text.draft} placeholder={offline ? text.offlinePlaceholder : text.placeholder} rows={1}
             value={draft} data-testid="draft"
             onCompositionStart={() => { composing.current = true; }} onCompositionEnd={() => { composing.current = false; }}

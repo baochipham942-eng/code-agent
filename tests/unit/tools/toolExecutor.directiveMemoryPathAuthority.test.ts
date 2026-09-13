@@ -354,7 +354,7 @@ describe('ToolExecutor directive memory — headless（无交互界面）策略'
   // RQ-066 复现：uncertain（解析不出写目标）不等于「要写记忆目录」。这些形态
   // 没有任何确定目标落进记忆目录，headless 下不得再被记忆门劫杀，连探针都不该发。
   it.each([
-    ['变量重定向目标', 'echo hi > "$OUT/file.txt"'],
+    ['变量重定向目标（env 未定义）', 'echo hi > "$RQ066_UNSET_DIR/file.txt"'],
     ['echo && echo 复合命令', 'echo a && echo b'],
   ])('headless 下 %s 不触碰记忆目录 → 不再以记忆门错误失败', async (_label, command) => {
     const requestPermission = vi.fn(async () => ({ approved: false, denialSource: 'no-approval-ui' as const }));
@@ -371,6 +371,54 @@ describe('ToolExecutor directive memory — headless（无交互界面）策略'
     expect(requestPermission).not.toHaveBeenCalledWith(
       expect.objectContaining({ type: 'file_write', tool: 'Bash' }),
     );
+  });
+
+  it('headless 下变量重定向经 env 展开后落在目录外 → 不门（ai-review Important 的放行半）', async () => {
+    process.env.RQ066_OUT = '/tmp';
+    try {
+      const requestPermission = vi.fn(async () => ({ approved: false, denialSource: 'no-approval-ui' as const }));
+      const executor = new ToolExecutor({ workingDirectory: '/tmp', requestPermission });
+      executor.setAuditEnabled(false);
+
+      const result = await executor.execute(
+        'Bash',
+        { command: 'echo hi > "$RQ066_OUT/file.txt"' },
+        { preApprovedTools: new Set(['Bash']) },
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.error).not.toBe(DIRECTIVE_MEMORY_HEADLESS_NO_UI_ERROR);
+      expect(mocks.execute).toHaveBeenCalledOnce();
+      expect(requestPermission).not.toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'file_write', tool: 'Bash' }),
+      );
+    } finally {
+      delete process.env.RQ066_OUT;
+    }
+  });
+
+  it('红线：变量重定向经 env 展开后落进记忆目录 → headless 被拒后仍被门住（ai-review Important）', async () => {
+    process.env.RQ066_OUT = memoryDir;
+    try {
+      const executor = new ToolExecutor({
+        workingDirectory: '/tmp',
+        requestPermission: vi.fn(async () => ({ approved: false, denialSource: 'no-approval-ui' as const })),
+      });
+      executor.setAuditEnabled(false);
+
+      const result = await executor.execute(
+        'Bash',
+        { command: 'echo directive > "$RQ066_OUT/c1.md"' },
+        { preApprovedTools: new Set(['Bash']) },
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe(DIRECTIVE_MEMORY_HEADLESS_NO_UI_ERROR);
+      expect(result.metadata).toMatchObject({ code: 'DIRECTIVE_MEMORY_CONFIRMATION_REQUIRED' });
+      expect(mocks.execute).not.toHaveBeenCalled();
+    } finally {
+      delete process.env.RQ066_OUT;
+    }
   });
 
   it('headless 下动态替换解析失败的命令也不许以记忆门错误失败（其它安全门照常，不在本单管辖面）', async () => {

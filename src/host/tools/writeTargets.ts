@@ -29,7 +29,7 @@ function isPathLikeParameter(key: string): boolean {
   return PATH_LIKE_SUFFIXES.has(normalized.split('_').at(-1) ?? '');
 }
 
-function resolveToolPath(rawPath: string, workingDirectory: string): string {
+export function resolveToolPath(rawPath: string, workingDirectory: string): string {
   const expanded = rawPath === '~'
     ? os.homedir()
     : rawPath.startsWith('~/')
@@ -38,6 +38,27 @@ function resolveToolPath(rawPath: string, workingDirectory: string): string {
   return resolveCanonicalRunPath(
     path.isAbsolute(expanded) ? expanded : path.resolve(workingDirectory, expanded),
   );
+}
+
+/**
+ * 路径边界匹配（PR #1790 ai-review Nit）：evidence 出现处的前面必须是文本首或
+ * token 界字符（空白 / `~` 引号 `=`），后面必须是文本尾或 `/`。子串匹配会把
+ * `notes.code-agent/memory2`、`详见 .code-agent/memory 目录` 这类普通文本/近似
+ * 目录名当成指向该路径的证据，误报确认门。
+ * 已知取舍：alias 后紧跟 `;`/空白的非写义提及（`cd .code-agent/memory; …`）不再
+ * 命中——重定向写目标由分词器路径单独兜住，这里只补「藏在命令文本里的提及」。
+ */
+export function hasPathBoundaryMention(text: string, evidence: string): boolean {
+  let from = 0;
+  for (;;) {
+    const index = text.indexOf(evidence, from);
+    if (index < 0) return false;
+    const beforeOk = index === 0 || /\s/.test(text[index - 1]) || '/~\'"='.includes(text[index - 1]);
+    const after = text[index + evidence.length];
+    const afterOk = after === undefined || after === '/';
+    if (beforeOk && afterOk) return true;
+    from = index + 1;
+  }
 }
 
 function readShellWord(command: string, start: number): { raw: string; end: number } {
@@ -396,7 +417,9 @@ function descriptorAssessment(
   if (canonical.parsingFailed && redirectTargets.length > 0) {
     uncertain.push(`uncertain-command-analysis:${canonical.failureReason ?? 'parse-failure'}`);
   }
-  if (canonical.command.includes(memoryDir) || canonical.command.includes(memoryAlias)) targets.push(memoryDir);
+  // 路径边界匹配（Nit 修订）：子串会把命令文本里顺带提到的 `.code-agent/memory`
+  // 当成写记忆目录；真路径必有 token 界 + 后随 `/` 或文本尾，见 hasPathBoundaryMention。
+  if (hasPathBoundaryMention(canonical.command, memoryDir) || hasPathBoundaryMention(canonical.command, memoryAlias)) targets.push(memoryDir);
   for (const rawTarget of redirectTargets) {
     const target = rawTarget;
     if (!target || /[$`*?{}]/.test(target)) {

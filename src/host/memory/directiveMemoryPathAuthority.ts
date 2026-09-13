@@ -5,7 +5,7 @@ import type {
 } from '../../shared/contract';
 import { getMemoryDir } from '../lightMemory/indexLoader';
 import { resolveCanonicalRunPath } from '../runtime/runContext';
-import { resolveToolWriteTargets } from '../tools/writeTargets';
+import { hasPathBoundaryMention, resolveToolPath, resolveToolWriteTargets } from '../tools/writeTargets';
 import type { DirectiveMemoryConfirmationResult } from './directiveMemoryConfirmation';
 
 export interface DirectiveMemoryWriteAssessment {
@@ -20,11 +20,74 @@ interface AssessInput {
   params: Record<string, unknown>;
   workingDirectory: string;
   agentRole?: string;
+  /**
+   * 这次调用实际会拿到的子进程 env（门跑在 dispatch 前，bash 模块的 sanitized env
+   * 尚未组装，调用方传其基准 process.env；测试传显式小字典）。用于展开 uncertain
+   * 写目标里的 $VAR/${VAR} 核验真实去向（PR #1790 ai-review Important）。
+   */
+  env?: Record<string, string | undefined>;
 }
 
 function isInside(candidate: string, root: string): boolean {
   const relative = path.relative(root, candidate);
   return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+}
+
+/** uncertain 条目里唯一带路径词的前缀；`uncertain:<param>` 与 `uncertain-command-analysis:<reason>` 没有路径载荷。 */
+const UNCERTAIN_REDIRECTION_PREFIX = 'uncertain-redirection:';
+
+/** 与 writeTargets 出口同口径：含这些字符的目标解析不出确定路径。 */
+const EXPANSION_MARKERS = /[$`*?{}]/;
+
+/** `$VAR` / `${VAR}`；`$(...)` 命令替换不匹配（`(` 不在变量名字符集里）。 */
+const VAR_REFERENCE = /\$(?:\{([A-Za-z_][A-Za-z0-9_]*)\}|([A-Za-z_][A-Za-z0-9_]*))/g;
+
+/** 用 env 展开词里的 $VAR/${VAR}；任一变量查不到 → undefined（展开不了，由调用方决定残余方向）。 */
+function expandWithEnv(
+  word: string,
+  env: Record<string, string | undefined>,
+): string | undefined {
+  let missing = false;
+  const expanded = word.replace(VAR_REFERENCE, (match, braced: string | undefined, bare: string | undefined) => {
+    const value = env[braced ?? bare ?? ''];
+    if (value === undefined) {
+      missing = true;
+      return match;
+    }
+    return value;
+  });
+  return missing ? undefined : expanded;
+}
+
+/**
+ * 判定一条 uncertain 是否指向记忆目录，返回要并入确认面的目标（undefined = 不门）。
+ * ai-review Important（PR #1790）：变量重定向必须先用这次调用实际 env 展开核验——
+ * `OUT=~/.code-agent/memory; echo hi > "$OUT/f.md"` 不能靠「解析不出」逃过确认门。
+ * 展开后落进记忆目录 → 门住；展开后在目录外 → 不门；变量查不到 / 仍含 `$(...)` 等
+ * 展开不了的 → 只做字面证据判定，字面也没证据就不门（有意接受的残余：对展开不了的
+ * 一律 fail-closed 正是 RQ-066 要治的病，全量 fail-closed 不许回退）。
+ */
+function uncertainMemoryTarget(
+  entry: string,
+  memoryDir: string,
+  memoryAlias: string,
+  workingDirectory: string,
+  env: Record<string, string | undefined>,
+): string | undefined {
+  if (!entry.startsWith(UNCERTAIN_REDIRECTION_PREFIX)) return undefined;
+  const word = entry.slice(UNCERTAIN_REDIRECTION_PREFIX.length);
+  const candidate = expandWithEnv(word, env) ?? word;
+  if (!EXPANSION_MARKERS.test(candidate)) {
+    // 完全展开（或本就没有变量）：按确定目标核验真实去向。
+    const resolved = resolveToolPath(candidate, workingDirectory);
+    return isInside(resolved, memoryDir) ? resolved : undefined;
+  }
+  // 仍解析不出（glob / 命令替换 / 缺变量）：只剩字面证据，且必须是路径边界命中
+  // （Nit：普通文本顺带提到 .code-agent/memory 不算证据）。
+  return hasPathBoundaryMention(candidate, memoryDir)
+    || hasPathBoundaryMention(candidate, memoryAlias)
+    ? entry
+    : undefined;
 }
 
 export function assessDirectiveMemoryWrite(input: AssessInput): DirectiveMemoryWriteAssessment {
@@ -43,15 +106,16 @@ export function assessDirectiveMemoryWrite(input: AssessInput): DirectiveMemoryW
   // 重定向、解析失败兜底等，RQ-066）。把无证据的 uncertain 并进 targets，会把根本没碰
   // 记忆目录的命令（`echo hi > "$OUT/f"`、`echo a && echo b` 一类）也拽进确认门，
   // headless 下整条 Bash 被 DIRECTIVE_MEMORY_HEADLESS_NO_UI_ERROR 劫杀。
-  // 只在 uncertain 条目本身带着指向记忆目录的证据（原始词含记忆目录路径或别名，
-  // 与 writeTargets 的 memoryAlias 同口径）时保持 fail-closed；确定目标落进记忆目录的
-  // 判定（含 canonical.command 字面值命中）完全不受影响。
+  // uncertain 先经 env 展开核验真实去向、再做路径边界的字面证据判定（详见
+  // uncertainMemoryTarget）；确定目标落进记忆目录的判定（含 canonical.command
+  // 字面值命中）完全不受影响。
   const memoryAlias = path.join(path.basename(path.dirname(memoryDir)), path.basename(memoryDir));
+  const env = input.env ?? {};
   const targets = [
     ...resolved.targets.filter((target) => isInside(target, memoryDir)),
-    ...resolved.uncertain.filter(
-      (entry) => entry.includes(memoryDir) || entry.includes(memoryAlias),
-    ),
+    ...resolved.uncertain
+      .map((entry) => uncertainMemoryTarget(entry, memoryDir, memoryAlias, input.workingDirectory, env))
+      .filter((target): target is string => target !== undefined),
   ];
   const uniqueTargets = [...new Set(targets)].sort();
   const fingerprint = JSON.stringify({

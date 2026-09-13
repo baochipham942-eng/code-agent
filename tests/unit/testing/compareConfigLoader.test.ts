@@ -24,6 +24,8 @@ describe('loadCompareConfig unified arm schema', () => {
       '  thinkingInjection: false',
       '  hooksEnabled: true',
       '  toolMode: all',
+      '  knobs:',
+      '    subagent.compactionThreshold: 0.7',
       'memory:',
       '  longTerm: true',
       '  routingModel: memory-model',
@@ -42,6 +44,7 @@ describe('loadCompareConfig unified arm schema', () => {
         thinkingInjection: false,
         hooksEnabled: true,
         toolMode: 'all',
+        knobs: { 'subagent.compactionThreshold': 0.7 },
       },
       memory: { longTerm: true, routingModel: 'memory-model' },
       reasoningEffort: 'xhigh',
@@ -70,6 +73,9 @@ describe('loadCompareConfig unified arm schema', () => {
     const toolMode = path.join(dir, 'tool-mode.yaml');
     await writeFile(effort, 'name: candidate\nreasoningEffort: ultra\n');
     await writeFile(toolMode, 'name: candidate\nharness:\n  toolMode: hidden\n');
+    const badKnob = path.join(dir, 'bad-knob.yaml');
+    await writeFile(badKnob, 'name: candidate\nharness:\n  knobs:\n    bogus.key: 1\n');
+    await expect(loadCompareConfig(badKnob)).rejects.toThrow(/未知旋钮/);
 
     await expect(loadCompareConfig(effort)).rejects.toThrow(/reasoningEffort.*low, medium, high, xhigh/);
     await expect(loadCompareConfig(toolMode)).rejects.toThrow(/harness\.toolMode.*all, deferred/);

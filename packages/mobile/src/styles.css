@@ -19,6 +19,11 @@ h2 { font-size: 19px; line-height: 1.35; margin: 0; overflow-wrap: anywhere; }
 p { line-height: 1.5; overflow-wrap: anywhere; }
 .composer-area { flex-shrink: 0; padding: 12px 15px max(6px, var(--safe-bottom)); }
 .composer { border: 1px solid var(--line); background: var(--surface); border-radius: 29px; padding: 14px 10px 7px; }
+/* 焦点指示挪到胶囊自己身上：文本框在规范上任何聚焦都命中 :focus-visible（不止键盘），
+   全局那道 2px 直角描边会套在 29px 圆角外面，而且 #668ded 根本不在调色板里。
+   指示本身不能删（键盘可达性），换成胶囊描边变色 + 同色细环，形状跟着圆角走。 */
+.composer:focus-within { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.composer textarea:focus-visible { outline: none; }
 textarea { display: block; width: 100%; min-height: 65px; max-height: 140px; border: 0; padding: 2px 10px; background: transparent; resize: none; line-height: 1.5; font-size: 17px; }
 textarea::placeholder { color: var(--muted); }
 /* 设计稿的工具行是两簇：左 [添加材料][模型 ⌄]，右 [麦克风][发送]，中间一个弹性空隙。 */

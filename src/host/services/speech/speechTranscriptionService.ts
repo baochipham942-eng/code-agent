@@ -17,6 +17,7 @@ import {
   type SpeechTranscriptionSegment,
   type SpeechTranscriptionEngine,
   type SpeechTranscriptionMode,
+  SPEECH_SILENT_CODES,
 } from '../../../shared/contract/speech';
 import { getConfigService } from '../core/configService';
 import { createLogger } from '../infra/logger';
@@ -36,7 +37,14 @@ const MIN_COMPOSER_AUDIO_BYTES = 500;
 const CHUNK_AUDIO_AFTER_SECONDS = 60;
 const RETAINED_AUDIO_TTL_MS = 24 * 60 * 60 * 1000;
 
-const HALLUCINATION_PATTERNS = [
+/**
+ * whisper 在静音/近静音上会吐训练语料里的字幕尾巴。
+ * 逐条列举必漏——2026-09-13 真机吐出「杨茜茜字幕志愿者」，而表里只有「字幕由」「字幕制作」。
+ * 凡是有「家族」的（字幕 + 角色词、subtitle + by/volunteer）一律写成一条正则，别再往下加词。
+ */
+const HALLUCINATION_PATTERNS: (string | RegExp)[] = [
+  /字幕(由|志愿者|制作|组|翻译|君羊)/,
+  /subtitle(s)?\s*(by|volunteer)/i,
   '请不吝点赞',
   '订阅转发',
   '打赏支持',
@@ -54,9 +62,6 @@ const HALLUCINATION_PATTERNS = [
   'thanks for watching',
   'please subscribe',
   'like and subscribe',
-  '字幕由',
-  '字幕制作',
-  'subtitles by',
   'amara.org',
 ];
 
@@ -88,7 +93,8 @@ function getTextFromTranscriptionResult(result: unknown): string {
 
 function isHallucination(text: string): boolean {
   const lowerText = text.toLowerCase();
-  return HALLUCINATION_PATTERNS.some((pattern) => lowerText.includes(pattern.toLowerCase()));
+  return HALLUCINATION_PATTERNS.some((pattern) =>
+    pattern instanceof RegExp ? pattern.test(text) : lowerText.includes(pattern.toLowerCase()));
 }
 
 function getAudioExtension(mimeType: string): string {
@@ -227,7 +233,7 @@ function ensureMeaningfulText(
     return {
       success: false,
       error: '未识别到语音内容',
-      code: 'EMPTY_RESULT',
+      code: SPEECH_SILENT_CODES[0],
       recoverable: true,
       engine,
       ...meta,
@@ -238,7 +244,7 @@ function ensureMeaningfulText(
     return {
       success: false,
       error: '未识别到有效语音，请重新说话',
-      code: 'HALLUCINATION',
+      code: SPEECH_SILENT_CODES[1],
       hallucination: true,
       recoverable: true,
       engine,

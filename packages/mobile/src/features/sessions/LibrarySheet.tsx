@@ -13,13 +13,23 @@ export function LibrarySheet({ library, sessionId, text, busy, mode, select, man
   const [title, setTitle] = useState(session?.title ?? '');
   const [deleting, setDeleting] = useState(false);
   const project = library.projects.find(p => p.id === projectId);
+  /**
+   * 这条会话正在用的模型**可能不在列表里**：`library.models` 由电脑侧 buildRuntimeModelOptions
+   * 产出，会剔掉没配 key 的 provider。查不到就退到列表第一项的话，下拉显示的是另一个**真实**
+   * 模型名（不是「未知」），而紧挨着的「使用此模型」照样可点——用户以为在确认当前，一点就把
+   * 会话换掉了（爸 2026-09-12 真机：会话实为 custom-glm-coding/glm-5.3-flash，下拉写着
+   * DeepSeek V4.1 Flash）。所以给它补一条只读项，让下拉说真话、让那个按钮保持禁用。
+   */
+  const options = session && !library.models.some(m => m.provider === session.provider && m.model === session.model)
+    ? [...library.models, { provider: session.provider, model: session.model, label: session.model, providerLabel: text.modelNotConfigured }]
+    : library.models;
   const [modelKey, setModel] = useState(() => {
     // 会话已有的模型 > 电脑的默认模型 > 列表第一项（列表顺序不代表电脑的选择）
-    const model = library.models.find(m => m.provider === session?.provider && m.model === session?.model)
+    const model = options.find(m => m.provider === session?.provider && m.model === session?.model)
       ?? library.models.find(m => m.isDefault) ?? library.models[0];
     return model ? JSON.stringify([model.provider, model.model]) : '';
   });
-  const model = library.models.find(m => JSON.stringify([m.provider, m.model]) === modelKey);
+  const model = options.find(m => JSON.stringify([m.provider, m.model]) === modelKey);
   return <div className="library-sheet">
     {mode === 'projects' ? <>
       <p className="caption">{text.authorizedProjects}</p>
@@ -45,7 +55,7 @@ export function LibrarySheet({ library, sessionId, text, busy, mode, select, man
     {library.nextOffset != null && <button disabled={busy} onClick={loadMore}>{text.loadHistory}</button>}
     <label className="group-title" htmlFor="model-select">{text.model}</label>
     <select id="model-select" value={modelKey} disabled={busy} onChange={e => setModel(e.target.value)}>
-      {library.models.map(m => <option key={JSON.stringify([m.provider, m.model])} value={JSON.stringify([m.provider, m.model])}>{m.providerLabel} · {m.label}</option>)}
+      {options.map(m => <option key={JSON.stringify([m.provider, m.model])} value={JSON.stringify([m.provider, m.model])}>{m.providerLabel} · {m.label}</option>)}
     </select>
     {mode === 'more' && session && <button className="primary" disabled={busy || !model || (model.provider === session.provider && model.model === session.model)} onClick={() => model && void manage('session.model', { provider: model.provider, model: model.model })}>{text.useModel}</button>}
   </div>;

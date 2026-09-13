@@ -48,3 +48,54 @@ describe('mobile model picker default', () => {
     expect(select.value).toBe(key('moonshot', 'kimi-k2.6'));
   });
 });
+
+describe('会话操作里的模型下拉必须说真话（N-MOBILE-MODELPICK-LIES）', () => {
+  afterEach(cleanup);
+
+  // 爸 2026-09-12 真机：会话实为 custom-glm-coding/glm-5.3-flash，下拉却写着
+  // "DeepSeek · DeepSeek V4.1 Flash"，而紧挨着就是「使用此模型」——一点就把会话换掉了。
+  // 根因：library.models 由电脑侧 buildRuntimeModelOptions 产出，会剔掉没配 key 的 provider。
+  const offListSession = {
+    sessions: [{ id: 's1', title: '用一句话说明 cowork 是什么', projectId: 'one',
+      provider: 'custom-glm-coding', model: 'glm-5.3-flash' }],
+  } as unknown as Partial<CompanionLibrary>;
+
+  function mountMore() {
+    const manage = vi.fn(async () => {});
+    render(<LibrarySheet library={{ ...library, ...offListSession }} sessionId="s1" text={text} busy={false} mode="more"
+      select={() => {}} loadMore={() => {}} manage={manage} />);
+    return { manage, select: screen.getByLabelText(text.model) as HTMLSelectElement };
+  }
+
+  it('会话用的模型不在列表里时，下拉显示的是它本身，不是拿别的模型冒充', () => {
+    const { select } = mountMore();
+    expect(select.value).toBe(key('custom-glm-coding', 'glm-5.3-flash'));
+    // 显示文案要让人看懂它为什么不在列表里，而不是假装一切正常
+    expect(screen.getByText(`${text.modelNotConfigured} · glm-5.3-flash`)).toBeTruthy();
+    // 绝不能显示成列表里那两个真实模型中的任何一个
+    expect(select.value).not.toBe(key('deepseek', 'deepseek-chat'));
+    expect(select.value).not.toBe(key('moonshot', 'kimi-k2.6'));
+  });
+
+  it('「使用此模型」在没真正改选之前保持禁用——它不是「确认当前」', () => {
+    mountMore();
+    expect((screen.getByRole('button', { name: text.useModel }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('真的改选了别的模型，按钮才可点，且按改选的那个提交', () => {
+    const { manage, select } = mountMore();
+    fireEvent.change(select, { target: { value: key('deepseek', 'deepseek-chat') } });
+    const use = screen.getByRole('button', { name: text.useModel }) as HTMLButtonElement;
+    expect(use.disabled).toBe(false);
+    fireEvent.click(use);
+    expect(manage).toHaveBeenCalledWith('session.model', { provider: 'deepseek', model: 'deepseek-chat' });
+  });
+
+  it('会话用的模型在列表里时不许多长出一条只读项', () => {
+    const inList = { sessions: [{ id: 's1', title: 'x', projectId: 'one', provider: 'deepseek', model: 'deepseek-chat' }] } as unknown as Partial<CompanionLibrary>;
+    render(<LibrarySheet library={{ ...library, ...inList }} sessionId="s1" text={text} busy={false} mode="more"
+      select={() => {}} loadMore={() => {}} manage={vi.fn(async () => {})} />);
+    expect(document.querySelectorAll('#model-select option').length).toBe(library.models.length);
+    expect(screen.queryByText(new RegExp(text.modelNotConfigured))).toBeNull();
+  });
+});

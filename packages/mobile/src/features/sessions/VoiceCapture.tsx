@@ -255,6 +255,10 @@ export function useVoiceCapture({ recorder, pending, result, ready, transcribe, 
     const t = take.current;
     if (!t?.awaiting || !result || result.commandId !== t.awaiting.commandId) return;
     if (result.outcome === 'done') { t.sentAny = true; t.awaiting = null; bump(); return; }
+    // 「这 4 秒没人说话」：当没发生——不报错、不计丢片、不进重试队列。
+    // 句子之间的停顿段在 4 秒分片下是常态（真机 30 段里 13 段），把它算成丢片的话
+    // 面板会一直挂着「有片段没转成文字」，重试还会把一堆静音再传一遍。
+    if (result.outcome === 'silent') { t.awaiting = null; bump(); return; }
     t.retry.push(t.awaiting.chunk); t.awaiting = null;
     drop(t, { stage: 'transcribe', reason: result.code });
   }, [result, tick]);

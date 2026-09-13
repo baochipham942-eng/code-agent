@@ -411,6 +411,50 @@ describe('LAN companion: real HTTP + Noise + SQLite', () => {
     } finally { phone.getState().pause(); await server2.stop(); db2.close(); }
   });
 
+  it('主机回「这段没人说话」时结论是 silent、不写 commandError——分片下静音是常态不是失败', async () => {
+    // 2026-09-13 爸真机：4 秒分片让 Host 的幻觉护栏 30 段里开火 13 段（43%），
+    // 每开火一次手机就弹一句「电脑那边拒绝了这条操作」。HALLUCINATION / EMPTY_RESULT
+    // 说的是「这段没人说话」，在分片路径上不是失败。
+    const db2 = new Database(':memory:');
+    const gateway2 = new CompanionGateway(db2, { now: () => now,
+      dispatch: () => ({ state: 'rejected', result: { code: 'HALLUCINATION' } }) });
+    const server2 = new LanCompanionServer(gateway2, hostIdentity, () => now);
+    await server2.start(address!, 0);
+    let storage: string | null = null;
+    const phone = createCompanionStore({ read: async () => storage, write: async value => { storage = value; },
+      scan: async () => JSON.stringify(server2.invite(['shared'])), post }, () => {}, async () => {});
+    try {
+      await phone.getState().pair();
+      const { sessionId, binding } = phone.getState();
+      const commandId = await phone.getState().transcribe(
+        { audioData: 'YXVkaW8=', mimeType: 'audio/aac', durationMs: 4000 }, sessionId!, binding!.hostKey, false, 'take-1');
+      expect(phone.getState()).toMatchObject({ pending: false,
+        voiceResult: { commandId, outcome: 'silent', code: 'HALLUCINATION' } });
+      expect(phone.getState().commandError).toBeNull();
+    } finally { phone.getState().pause(); await server2.stop(); db2.close(); }
+  });
+
+  it('真失败照旧报错：只有「没人说话」那一族才静默跳过', async () => {
+    // 判据不能宽成「voice.transcribe 被拒就不报错」——网络/鉴权/主机 5xx 必须让用户看见。
+    const db2 = new Database(':memory:');
+    const gateway2 = new CompanionGateway(db2, { now: () => now,
+      dispatch: () => ({ state: 'rejected', result: { code: 'COMPANION_TRANSCRIPTION_FAILED' } }) });
+    const server2 = new LanCompanionServer(gateway2, hostIdentity, () => now);
+    await server2.start(address!, 0);
+    let storage: string | null = null;
+    const phone = createCompanionStore({ read: async () => storage, write: async value => { storage = value; },
+      scan: async () => JSON.stringify(server2.invite(['shared'])), post }, () => {}, async () => {});
+    try {
+      await phone.getState().pair();
+      const { sessionId, binding } = phone.getState();
+      const commandId = await phone.getState().transcribe(
+        { audioData: 'YXVkaW8=', mimeType: 'audio/aac', durationMs: 4000 }, sessionId!, binding!.hostKey, false, 'take-1');
+      expect(phone.getState()).toMatchObject({
+        voiceResult: { commandId, outcome: 'error', code: 'COMPANION_TRANSCRIPTION_FAILED' },
+        commandError: 'COMPANION_TRANSCRIPTION_FAILED' });
+    } finally { phone.getState().pause(); await server2.stop(); db2.close(); }
+  });
+
   it('取消掉的那次转写被拒，不再弹一句通用报错——那个动作用户已经撤了', async () => {
     // grok ai-review Nit：取消之后冒出「电脑那边拒绝了这条操作」，说的是用户刚撤掉的动作。
     // 输入区那条带阶段的失败提示此刻也不在场（面板已经收了），所以这句没有任何可操作性。

@@ -8,6 +8,7 @@ import { companionCommandSchema } from '../../../../src/shared/contract/companio
 import { LanCompanionClient } from '../platform/lanCompanionClient';
 import type { FilePorts, PlatformPorts, PickedFile } from '../platform/ports';
 import { companionFileMime, companionFileRetryable, COMPANION_LIMITS } from '../../../../src/shared/constants/companion';
+import { isSpeechSilentCode } from '../../../../src/shared/contract/speech';
 import { base64ToBytes, bytesToBase64, sha256Hex, type CacheInspect } from '../platform/fileCache';
 
 interface Saved {
@@ -30,7 +31,7 @@ const DEVICE_LEVEL_REASONS = new Set(['device_revoked', 'device_unknown', 'scope
  * 下一次录音照样读得到，于是每加一条修法就多一道交叉判据（七轮 ai-review 的共因）。
  * 认 commandId 之后，陈旧结果连匹配都匹配不上，不需要谁负责去清它。
  */
-export type VoiceResult = { commandId: string; outcome: 'done' | 'error'; code?: string };
+export type VoiceResult = { commandId: string; outcome: 'done' | 'error' | 'silent'; code?: string };
 
 interface State {
   voiceResult: VoiceResult | null;
@@ -153,6 +154,8 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
       const pending = saved?.pending;
       /** 这条是被用户取消掉的那次录音的——被拒时不要再弹通用报错，那个动作他已经撤了。 */
       const discardedVoice = pendingVoiceDiscarded();
+      /** 这条转写回的是「这段没人说话」——同样不该弹通用报错（2026-09-13 真机 43% 的段都是它）。 */
+      let silentVoice = false;
       if (!pending || !companionAckMatches(pending, record)) throw new Error('COMPANION_INVALID_ACK');
       if (record.state === 'reconciling') return;
       if (!['accepted', 'resolved', 'rejected', 'conflict'].includes(record.state)) throw new Error('COMPANION_INVALID_ACK');
@@ -167,8 +170,12 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         if (record.state === 'accepted' && typeof record.result.text === 'string' && onTranscript && !discardedVoice) {
           await onTranscript(record.result.text, pending.sessionId, saved!.binding!.hostKey, pending.commandId, transcriptContinuation);
           set({ voiceResult: { commandId: pending.commandId, outcome: 'done' } });
-        } else set({ voiceResult: { commandId: pending.commandId, outcome: 'error',
-          code: typeof record.result.code === 'string' ? record.result.code : undefined } });
+        } else {
+          // 「这段没人说话」是第三种结局：分片下停顿段本来就是空的，当失败就是每隔几秒报一次错。
+          const code = typeof record.result.code === 'string' ? record.result.code : undefined;
+          silentVoice = isSpeechSilentCode(code);
+          set({ voiceResult: { commandId: pending.commandId, outcome: silentVoice ? 'silent' : 'error', code } });
+        }
       }
       await persist({ ...saved!, pending: undefined });
       set({ pending: false });
@@ -177,7 +184,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         // 置成 status:'rejected' 会挡住 sync 和后续每一条命令，事件流从此停摆到手动重连。
         // 已取消的那次录音被拒不报：再弹一句「电脑那边拒绝了这条操作」，说的是用户刚撤掉的动作
         // （grok ai-review Nit）。
-        if (!discardedVoice) set({ commandError: typeof record.result.code === 'string' ? record.result.code : 'COMPANION_COMMAND_REJECTED' });
+        if (!discardedVoice && !silentVoice) set({ commandError: typeof record.result.code === 'string' ? record.result.code : 'COMPANION_COMMAND_REJECTED' });
         return;
       }
       if (pending.action === 'session.create' && typeof record.result.sessionId === 'string') set({ sessionId: record.result.sessionId, runId: null, terminal: null });

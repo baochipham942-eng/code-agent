@@ -295,6 +295,37 @@ describe('SpeechTranscriptionService', () => {
     expect(String(file?.path).endsWith(extension)).toBe(true);
   });
 
+  it.each([
+    ['杨茜茜字幕志愿者'],
+    ['字幕志愿者 李某某'],
+    ['本视频字幕组出品'],
+    ['字幕翻译：某某'],
+    ['Subtitles by volunteer'],
+    ['subtitle by someone'],
+  ])('静音上吐出来的字幕尾巴「%s」要按家族拦住，不是逐条列举', async (text) => {
+    // 2026-09-13 爸真机：环境只有鸟叫，输入框里冒出「杨茜茜字幕志愿者」。
+    // 当时表里有「字幕由」「字幕制作」却没有「字幕志愿者」——逐条列举必漏，改成家族正则。
+    configureSpeech({ mode: 'cloud-only' });
+    groqCreateMock.mockResolvedValueOnce(text);
+    const service = new SpeechTranscriptionService();
+
+    const result = await service.transcribe({ audioData: makeAudioData(), mimeType: 'audio/aac', source: 'composer' });
+
+    expect(result.success).toBe(false);
+    expect(result.code).toBe('HALLUCINATION');
+  });
+
+  it('正常说话里带「字幕」两个字不许误杀', async () => {
+    // 家族正则只认「字幕+角色词」，用户真说「帮我把字幕对齐一下」不能被当成幻觉丢掉。
+    configureSpeech({ mode: 'cloud-only' });
+    groqCreateMock.mockResolvedValueOnce('帮我把这段视频的字幕对齐一下');
+    const service = new SpeechTranscriptionService();
+
+    const result = await service.transcribe({ audioData: makeAudioData(), mimeType: 'audio/aac', source: 'composer' });
+
+    expect(result.success).toBe(true);
+  });
+
   it('local-first 两条通道都断时报「没有可用通道」且不可重试（不把锅记在 Groq 头上）', async () => {
     // 真机现场：本机没装 whisper-cpp，又没配 Groq key —— 旧行为只报「未配置 Groq API Key」
     // 并给一个点了没用的「重试」，把用户指到错的地方。

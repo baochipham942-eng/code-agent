@@ -666,6 +666,7 @@ async function main(): Promise<void> {
           .waitFor({ state: 'visible', timeout: 10_000 });
       }
       await onboarding.getByTestId('onboarding-continue-to-chat').click();
+      await onboarding.getByTestId('onboarding-voice-hotkey-skip').click();
       await onboarding.waitFor({ state: 'hidden', timeout: 10_000 });
       await trustAcceptanceWorkspaceIfVisible(page);
     }

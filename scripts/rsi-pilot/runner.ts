@@ -10,6 +10,9 @@
 // Usage:
 //   npx tsx scripts/rsi-pilot/runner.ts --dry-run --label wiring --out <dir>
 //   npx tsx scripts/rsi-pilot/runner.ts --label baseline --out <dir> [--split all|held_in|held_out]
+//   npx tsx scripts/rsi-pilot/runner.ts --label knobs-a --out <dir> --profile <profile.json>
+//     profile.json = { "knobs": { <HARNESS_KNOB_DEFAULTS 的键>: number } }，由 harness-profile.ts emit 生成；
+//     不带 --profile = 生产默认，run 记录里 harness.knobs 仍写全表（取证用）。
 //                                        [--reps 3] [--provider longcat] [--model LongCat-2.0-Preview]
 //                                        [--limit N] [--cases <path>]
 //   npx tsx scripts/rsi-pilot/runner.ts --revalidate <resultsDir> [--cases <path>]
@@ -58,6 +61,7 @@ const projectRoot = path.resolve(scriptDir, '../..');
 // depth under scripts/ as scripts/acceptance/, so the relative prefix matches
 // what scripts/acceptance/platformer-gameplay-generation.ts uses.
 const AGENT_ADAPTER_PATH = '../../src/host/testing/agentAdapter.ts';
+const HARNESS_KNOBS_PATH = '../../src/host/agent/runtime/harnessKnobs.ts';
 const GAME_VALIDATOR_PATH = '../../src/host/agent/runtime/gameArtifactValidator.ts';
 const ARTIFACT_REPAIR_SPEC_PATH = '../../src/host/agent/runtime/artifactRepairSpec.ts';
 const GAME_CONSTANTS_PATH = '../../src/shared/constants/game.ts';
@@ -117,8 +121,25 @@ type MissingRsiProvenanceKey = Exclude<keyof EvalRunProvenance, (typeof RSI_RUN_
 const _rsiProvenanceKeysExhaustive: MissingRsiProvenanceKey extends never ? true : never = true;
 void _rsiProvenanceKeysExhaustive;
 
+
+/** 读 profile 文件并用共享校验器过一遍（顶层非对象 / 缺 knobs / 未知键 / 非正数 / 比例越界直接拒，绝不静默按默认跑）。 */
+async function loadHarnessProfile(profilePath: string): Promise<Record<string, number>> {
+  const abs = path.isAbsolute(profilePath) ? profilePath : path.join(process.cwd(), profilePath);
+  const raw: unknown = JSON.parse(await fs.readFile(abs, 'utf-8'));
+  const { validateHarnessProfile } = await import(HARNESS_KNOBS_PATH) as typeof import('../../src/host/agent/runtime/harnessKnobs');
+  return validateHarnessProfile(raw) as Record<string, number>;
+}
+
+interface RunHarnessStamp {
+  /** --profile 文件路径（相对 cwd 原样）；无 = null */
+  profile: string | null;
+  /** 本 run 生效的旋钮全表（无 profile 时 = HARNESS_KNOB_DEFAULTS 原样） */
+  knobs: Record<string, number>;
+}
+
 interface RunRecord {
   provenance: EvalRunProvenance;
+  harness: RunHarnessStamp;
   label: string;
   caseId: string;
   subtype: GameSubtype;
@@ -161,8 +182,9 @@ type RevalidatedRunRecord = RunRecord & {
 export interface RunnerContext {
   StandaloneAgentAdapter: new (config: {
     workingDirectory: string;
-    modelConfig: { provider: string; model: string; apiKey?: string };
+    modelConfig: { provider: string; model: string; apiKey?: string; baseUrl?: string };
     toolMode: 'all' | 'deferred';
+    harness?: { name: string; knobs: Record<string, number> };
   }) => {
     sendMessage: (prompt: string) => Promise<{
       responses: string[];
@@ -195,6 +217,13 @@ export interface RunnerContext {
     BROWSER_VISUAL_SMOKE_MS: number;
     LIGHT_PLAYABILITY_SMOKE_MS: number;
   };
+  /** 生产默认旋钮全表；无 --profile 时原样盖进 run 记录 */
+  HARNESS_KNOB_DEFAULTS: Record<string, number>;
+  /**
+   * 评测库就绪（真跑 = better-sqlite3 初始化）。放进 ctx 是因为 vitest 里没有原生模块，
+   * 原先内联的初始化在单测里必抛⇒ 适配器从未被构造过，取证测试只在核「抛错前写下的字段」。
+   */
+  ensureEvalDatabase: () => Promise<void>;
 }
 
 function resolvePath(rawPath: string): string {
@@ -301,6 +330,25 @@ async function locateArtifact(workspaceDir: string, prompt: string): Promise<str
   return findNewestHtml(workspaceDir);
 }
 
+/**
+ * custom-* provider（如 GLM Coding Plan 的 custom-glm-coding）的 baseUrl 只在数据目录 config.json 的
+ * models.providers 里，AiSdkAdapter 对内置目录外的 provider 不会自己找；不传就 "无法解析 baseURL"。
+ * 内置 provider 返回 undefined，走原有解析路径不变。
+ */
+async function resolveConfiguredBaseUrl(provider: string): Promise<string | undefined> {
+  const dataDir = process.env.CODE_AGENT_DATA_DIR;
+  if (!dataDir) return undefined;
+  try {
+    const raw = JSON.parse(await fs.readFile(path.join(dataDir, 'config.json'), 'utf-8')) as {
+      models?: { providers?: Record<string, { baseUrl?: unknown }> };
+    };
+    const baseUrl = raw.models?.providers?.[provider]?.baseUrl;
+    return typeof baseUrl === 'string' && baseUrl.trim() ? baseUrl.trim() : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 async function resolveApiKey(provider: string): Promise<string | undefined> {
   const envKey = process.env[`${provider.toUpperCase()}_API_KEY`];
   if (envKey && envKey.trim()) return envKey.trim();
@@ -321,6 +369,7 @@ export async function loadRunnerContext(): Promise<RunnerContext> {
       import(TELEMETRY_PATH),
       import(GAME_CONSTANTS_PATH),
     ]);
+  const { HARNESS_KNOB_DEFAULTS } = await import(HARNESS_KNOBS_PATH) as typeof import('../../src/host/agent/runtime/harnessKnobs');
 
   return {
     StandaloneAgentAdapter,
@@ -328,6 +377,17 @@ export async function loadRunnerContext(): Promise<RunnerContext> {
     inferArtifactRepairIssueCodesFromText,
     getTelemetryCollector,
     gameValidationTimeouts: GAME_VALIDATION_TIMEOUTS,
+    HARNESS_KNOB_DEFAULTS,
+    ensureEvalDatabase: async () => {
+      const { getDatabase } = await import(DATABASE_SERVICE_PATH);
+      const db = getDatabase();
+      if (!db.isReady) {
+        await db.initialize();
+      }
+      if (!db.isReady) {
+        throw new Error('eval database failed to initialize under CODE_AGENT_DATA_DIR');
+      }
+    },
   };
 }
 
@@ -343,7 +403,8 @@ async function resolveProvenance(provider: string, model: string): Promise<EvalR
   const status = await gitOutput(['-C', projectRoot, 'status', '--porcelain']);
   const dirty: boolean | 'unresolved' = status === null ? 'unresolved' : status !== '';
   let runnerSha = 'unresolved';
-  try { runnerSha = crypto.createHash('sha256').update(await fs.readFile(__filename)).digest('hex').slice(0, 12); } catch { /* unresolved is retained */ }
+  // __filename 在 ESM（npx tsx 直跑）下不存在⇒ #1765 起 runnerSha 一直是 'unresolved'，vitest 的 CJS 垫片把它遮住了
+  try { runnerSha = crypto.createHash('sha256').update(await fs.readFile(fileURLToPath(import.meta.url))).digest('hex').slice(0, 12); } catch { /* unresolved is retained */ }
   const endpoint = getProviderEndpointHost(provider) ?? 'unresolved';
   return { provider, model, endpoint, gitSha, gitDirty: dirty, runnerSha };
 }
@@ -352,7 +413,7 @@ async function runOneUnit(
   ctx: RunnerContext,
   evalCase: EvalCase,
   rep: number,
-  opts: { label: string; provider: string; model: string; outDir: string },
+  opts: Pick<CliOpts, 'label' | 'provider' | 'model' | 'outDir' | 'knobs' | 'profilePath'>,
 ): Promise<RunRecord> {
   const startedAtMs = Date.now();
   const startedAt = new Date(startedAtMs).toISOString();
@@ -361,8 +422,13 @@ async function runOneUnit(
   await fs.mkdir(workspaceDir, { recursive: true });
 
   const provenance = await resolveProvenance(opts.provider, opts.model);
+  const harness: RunHarnessStamp = {
+    profile: opts.profilePath ?? null,
+    knobs: { ...ctx.HARNESS_KNOB_DEFAULTS, ...(opts.knobs ?? {}) },
+  };
   const base = {
     provenance,
+    harness,
     label: opts.label,
     caseId: evalCase.id,
     subtype: evalCase.subtype,
@@ -379,19 +445,13 @@ async function runOneUnit(
   // exact Error instance the race rejected with — see the isTimeout check below.
   const timeoutError = new Error(`per-run hard timeout after ${PER_RUN_HARD_TIMEOUT_MS}ms`);
   try {
-    const { getDatabase } = await import(DATABASE_SERVICE_PATH);
-    const db = getDatabase();
-    if (!db.isReady) {
-      await db.initialize();
-    }
-    if (!db.isReady) {
-      throw new Error('eval database failed to initialize under CODE_AGENT_DATA_DIR');
-    }
+    await ctx.ensureEvalDatabase();
     const apiKey = await resolveApiKey(opts.provider);
     agent = new ctx.StandaloneAgentAdapter({
       workingDirectory: workspaceDir,
-      modelConfig: { provider: opts.provider, model: opts.model, apiKey },
+      modelConfig: { provider: opts.provider, model: opts.model, apiKey, baseUrl: await resolveConfiguredBaseUrl(opts.provider) },
       toolMode: 'deferred',
+      ...(opts.knobs ? { harness: { name: opts.label, knobs: opts.knobs } } : {}),
     });
 
     const result = await Promise.race([
@@ -570,6 +630,7 @@ function buildSummary(label: string, records: RunRecord[]) {
     label,
     generatedAt: new Date().toISOString(),
     provenance: records[0]?.provenance ?? null,
+    harness: records[0]?.harness ?? null,
     totalRuns: records.length,
     totalDurationMs,
     overall: {
@@ -601,6 +662,9 @@ export interface CliOpts {
   outDir: string;
   ids: string[] | undefined;
   rep: number | undefined;
+  /** --profile 解析后的旋钮覆盖；无 = 生产默认 */
+  knobs?: Record<string, number>;
+  profilePath?: string;
 }
 
 export async function realRun(opts: CliOpts, injectedCtx?: RunnerContext): Promise<void> {
@@ -652,6 +716,8 @@ export async function realRun(opts: CliOpts, injectedCtx?: RunnerContext): Promi
       provider: opts.provider,
       model: opts.model,
       outDir: opts.outDir,
+      knobs: opts.knobs,
+      profilePath: opts.profilePath,
     });
     records.push(record);
     await fs.appendFile(runsJsonlPath, `${JSON.stringify(record)}\n`, 'utf-8');
@@ -701,7 +767,7 @@ async function dryRun(opts: CliOpts): Promise<void> {
   const apiKey = await resolveApiKey(opts.provider);
   new ctx.StandaloneAgentAdapter({
     workingDirectory: workspaceDir,
-    modelConfig: { provider: opts.provider, model: opts.model, apiKey },
+    modelConfig: { provider: opts.provider, model: opts.model, apiKey, baseUrl: await resolveConfiguredBaseUrl(opts.provider) },
     toolMode: 'deferred',
   });
   console.error(`adapter constructed OK for provider=${opts.provider} model=${opts.model}`);
@@ -939,7 +1005,9 @@ async function main(): Promise<void> {
   const outDir = path.isAbsolute(outDirRaw) ? outDirRaw : path.join(process.cwd(), outDirRaw);
   await fs.mkdir(outDir, { recursive: true });
 
-  const opts: CliOpts = { casesPath, split: splitRaw, reps, provider, model, limit, label, outDir, ids, rep };
+  const profilePath = getStringOption(args, 'profile');
+  const knobs = profilePath ? await loadHarnessProfile(profilePath) : undefined;
+  const opts: CliOpts = { casesPath, split: splitRaw, reps, provider, model, limit, label, outDir, ids, rep, knobs, profilePath };
 
   if (hasFlag(args, 'dry-run')) {
     await dryRun(opts);

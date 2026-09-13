@@ -34,6 +34,7 @@ usage() {
 
 把 gitignored 的构建输入从主树引导进一个**新开的** git worktree：
   - 软链（构建期只读）：node_modules、.husky/_、scripts/rtk、scripts/uv、scripts/poppler
+  - 软链（构建期只读）：vercel-api/node_modules
   - 软链（共享编译缓存）：src-tauri/target
   - 拷贝（构建期会被写）：dist/native、dist/bundled-node、4 个 swift helper
 幂等，重复跑不报错；绝不写主树。
@@ -120,6 +121,7 @@ fi
 remedy_for() {
   case "$1" in
     node_modules)                  echo "npm ci" ;;
+    vercel-api/node_modules)       echo "npm ci --prefix vercel-api --ignore-scripts" ;;
     .husky/_)                      echo "npm run prepare" ;;
     scripts/rtk)                   echo "bash scripts/fetch-rtk.sh" ;;
     scripts/uv)                    echo "bash scripts/fetch-uv.sh" ;;
@@ -137,6 +139,7 @@ remedy_for() {
 
 LINK_ITEMS=(
   "node_modules"
+  "vercel-api/node_modules"
   ".husky/_"
   "scripts/rtk"
   "scripts/uv"

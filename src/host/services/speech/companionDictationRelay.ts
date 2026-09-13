@@ -5,11 +5,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { GUMMY_REALTIME_SAMPLE_RATE } from '../../../shared/constants/voice';
-import type {
-  CompanionDictationEvent,
-  CompanionDictationFrameResult,
-  CompanionDictationOpenResult,
-} from '../../../shared/contract/companionDictation';
+import type { CompanionDictationEvent } from '../../../shared/contract/companionDictation';
 import type { CompanionDictationPort } from '../capabilities/hostCapabilityPorts';
 import { getDashscopeApiKey } from '../media/imageGenerationService';
 import { createLogger } from '../infra/logger';

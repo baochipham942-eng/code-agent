@@ -868,7 +868,7 @@ async function connectAndBind(
           }
           if (event.usage && tokenUsage.accepting) {
             tokenUsage.value = addTokenUsage(tokenUsage.value, event.usage);
-            if (active?.id === id) tickVoiceBudget(active, (event) => send(active.clientRef.current, event), () => { void teardown('budget-exceeded'); });
+            if (active?.id === id) tickVoiceBudget(active, (event) => send(clientRef.current, event), () => { void teardown('budget-exceeded'); });
           }
           const key = event.responseId ?? 'legacy';
           const narrationEvidence = event.responseId

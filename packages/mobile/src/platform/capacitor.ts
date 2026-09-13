@@ -9,11 +9,13 @@ import { companionFileMime, COMPANION_LIMITS } from '../../../../src/shared/cons
 import type { FilePorts, PlatformPorts } from './ports';
 import { createKeyboardPort } from './keyboardPort';
 import { bytesToArrayBuffer, bytesToBase64, FileCache } from './fileCache';
+import { HistoryCache } from './historyCache';
 import { FILE_ACCEPT, IMAGE_ACCEPT } from './fileAccept';
 import { nativeCompanionPort } from './nativeCompanion';
 import { createNotificationPort } from './notifications';
 
 const PREFERENCES_KEY = 'neo.mobile.preferences.v1';
+const HISTORY_CACHE_KEY = 'neo.companion.history.v1';
 
 function webFilePorts(cache: FileCache): FilePorts {
   return {
@@ -123,6 +125,10 @@ export const capacitorPorts: PlatformPorts = {
     try { await open({ url: 'app-settings:' }); } catch { /* user opens Settings by hand */ }
   }),
   files: webFilePorts(new FileCache()),
+  historyCache: new HistoryCache(undefined, undefined, Date.now, {
+    read: async () => (await Preferences.get({ key: HISTORY_CACHE_KEY })).value,
+    write: async value => { await Preferences.set({ key: HISTORY_CACHE_KEY, value }); },
+  }),
   preferences: {
     get: async () => (await Preferences.get({ key: PREFERENCES_KEY })).value,
     set: async value => { await Preferences.set({ key: PREFERENCES_KEY, value }); },

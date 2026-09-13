@@ -9,7 +9,7 @@ export function SettingsPage({ page, text, appearance, nickname, profileDraft, a
   page: SheetPage; text: ReturnType<typeof messages>; appearance: Appearance; nickname: string;
   profileDraft: string; appInfo: { version: string; build: string } | null;
   open(page: SheetPage): void; chooseAppearance(value: Appearance): void; editProfile(value: string): void; saveProfile(): void;
-  storage?: { previewBytes: number; result: 'clean' | null; confirm: boolean; onConfirm(): void; onClear(): void };
+  storage?: { previewBytes: number; conversationBytes?: number; result: 'clean' | null; confirm: boolean; onConfirm(): void; onClear(): void };
   notifications?: {
     preference: boolean; osPermission: OsPermission; registration: RegistrationStatus; lastFailure: string | null;
     onToggle(value: boolean): void; onRequest(): void; onOpenSettings(): void;
@@ -43,7 +43,10 @@ export function SettingsPage({ page, text, appearance, nickname, profileDraft, a
     case 'help': return <p>{text.helpBody}</p>;
     case 'storage': return <div>
       <p className="caption">{text.storageProtected}</p>
-      <div className="settings-group"><div className="settings-row"><span>{text.storageUsage}</span><span className="row-detail">{Math.ceil((storage?.previewBytes ?? 0) / (1024 * 1024))} MB</span></div></div>
+      <div className="settings-group">
+        <div className="settings-row"><span>{text.storageUsage}</span><span className="row-detail">{Math.ceil((storage?.previewBytes ?? 0) / (1024 * 1024))} MB</span></div>
+        <div className="settings-row"><span>{text.storageConversation}</span><span className="row-detail">{Math.ceil((storage?.conversationBytes ?? 0) / (1024 * 1024))} MB</span></div>
+      </div>
       {storage?.result === 'clean' && <p className="notice" role="status">{text.cacheCleared}</p>}
       {storage?.confirm
         ? <><p role="alert">{text.clearCacheConfirm}</p><button className="primary" onClick={storage.onClear}>{text.confirmClear}</button></>

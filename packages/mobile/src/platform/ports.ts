@@ -1,4 +1,5 @@
 import type { FileCache } from './fileCache';
+import type { HistoryCache } from './historyCache';
 
 type Dispose = () => void;
 
@@ -53,6 +54,8 @@ export interface PlatformPorts {
     scan(): Promise<string>; post(url: string, body: unknown): Promise<unknown>;
   };
   files?: FilePorts;
+  /** App-private conversation body cache. Separate from pairing identity and drafts. */
+  historyCache?: HistoryCache;
   notifications?: NotificationPort;
   preferences: { get(): Promise<string | null>; set(value: string): Promise<void> };
   appInfo: { read(): Promise<{ version: string; build: string }> };

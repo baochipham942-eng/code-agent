@@ -58,6 +58,7 @@ export const onboardingZh = {
     voiceHotkeyUnavailableDescription: '实时通话还没装好，这一步可以先跳过。装好后可在设置里绑定快捷键。',
     voiceHotkeyImmediateHint: '绑定后立即生效，不用重启。',
     voiceHotkeySaveFailed: '快捷键保存失败，请稍后重试。',
+    voiceHotkeyLoadFailed: '快捷键配置读取失败，无法绑定，以免覆盖已有快捷键。请跳过这一步，稍后再到设置里绑定。',
   },
 };
 
@@ -121,5 +122,6 @@ export const onboardingEn = {
     voiceHotkeyUnavailableDescription: 'Live Voice is not installed yet. Skip this step; you can bind a shortcut in Settings after it is installed.',
     voiceHotkeyImmediateHint: 'The shortcut takes effect immediately. No restart needed.',
     voiceHotkeySaveFailed: 'Could not save the shortcut. Please try again.',
+    voiceHotkeyLoadFailed: 'Could not load shortcut settings. Binding is disabled so existing shortcuts are not overwritten. Skip this step and bind later in Settings.',
   },
 };

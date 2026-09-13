@@ -19,6 +19,8 @@ import { evaluateVoiceCallToggleHotkey } from './evaluateVoiceCallToggleHotkey';
 
 const logger = createLogger('VoiceHotkeyOnboarding');
 
+type SettingsLoadState = 'pending' | 'ready' | 'failed';
+
 export interface VoiceHotkeyOnboardingStepProps {
   canCapture: boolean;
   disabled?: boolean;
@@ -36,32 +38,50 @@ export const VoiceHotkeyOnboardingStep: React.FC<VoiceHotkeyOnboardingStepProps>
   const [keybindings, setKeybindings] = useState<KeybindingsSettings>(() =>
     createDefaultKeybindingsSettings(platform),
   );
+  const [loadState, setLoadState] = useState<SettingsLoadState>('pending');
   const [recording, setRecording] = useState(false);
   const [message, setMessage] = useState('');
   const [messageTone, setMessageTone] = useState<'error' | 'info'>('info');
+  const settingsReady = loadState === 'ready';
+  const captureBlocked = disabled || !settingsReady;
 
   useEffect(() => {
-    if (!canCapture) return;
+    if (!canCapture) {
+      setLoadState('pending');
+      return;
+    }
     let cancelled = false;
+    setLoadState('pending');
+    setRecording(false);
     void ipcService.invokeDomain<AppSettings>(IPC_DOMAINS.SETTINGS, 'get')
       .then((settings) => {
         if (cancelled) return;
         setKeybindings(mergeKeybindingsWithDefaults(settings?.keybindings, platform));
+        setLoadState('ready');
       })
       .catch((error) => {
         logger.error('load keybindings for onboarding hotkey failed', error);
+        if (cancelled) return;
+        setRecording(false);
+        setLoadState('failed');
+        setMessage(text.voiceHotkeyLoadFailed);
+        setMessageTone('error');
       });
     return () => {
       cancelled = true;
     };
-  }, [canCapture, platform]);
+  }, [canCapture, platform, text.voiceHotkeyLoadFailed]);
 
   useEffect(() => {
-    if (!recording || disabled) return;
+    if (!recording || captureBlocked) return;
     const handleKeyDown = (event: KeyboardEvent) => {
       event.preventDefault();
       event.stopPropagation();
       if (event.key === 'Escape') {
+        setRecording(false);
+        return;
+      }
+      if (!settingsReady) {
         setRecording(false);
         return;
       }
@@ -102,7 +122,16 @@ export const VoiceHotkeyOnboardingStep: React.FC<VoiceHotkeyOnboardingStepProps>
     };
     window.addEventListener('keydown', handleKeyDown, true);
     return () => window.removeEventListener('keydown', handleKeyDown, true);
-  }, [disabled, keybindings, onBound, platform, recording, t.settings.keybindings, text]);
+  }, [
+    captureBlocked,
+    keybindings,
+    onBound,
+    platform,
+    recording,
+    settingsReady,
+    t.settings.keybindings,
+    text,
+  ]);
 
   const current = mergeKeybindingsWithDefaults(keybindings, platform).bindings['voice.callToggle'];
 
@@ -120,8 +149,9 @@ export const VoiceHotkeyOnboardingStep: React.FC<VoiceHotkeyOnboardingStepProps>
               <button
                 type="button"
                 data-testid="onboarding-voice-hotkey-bind"
-                disabled={disabled}
+                disabled={captureBlocked}
                 onClick={() => {
+                  if (captureBlocked) return;
                   setMessage('');
                   setRecording(true);
                 }}

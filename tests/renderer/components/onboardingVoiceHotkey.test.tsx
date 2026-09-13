@@ -5,6 +5,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentEngineSourceDescriptor } from '../../../src/shared/contract/agentEngine';
 import type { AppSettings } from '../../../src/shared/contract';
+import { IPC_DOMAINS } from '../../../src/shared/ipc';
 import { onboardingZh } from '../../../src/renderer/i18n/onboarding';
 import { useBundledCapabilityStore } from '../../../src/renderer/stores/bundledCapabilityStore';
 
@@ -79,32 +80,56 @@ function settingsSetCalls() {
   ]>;
 }
 
+function stubIpc(options?: {
+  getSettings?: () => Promise<Partial<AppSettings>>;
+}) {
+  invokeDomain.mockImplementation((_domain: string, action: string) => {
+    if (action === 'listSources') return Promise.resolve(sources);
+    if (action === 'listModels') {
+      return Promise.resolve({
+        catalog: {
+          version: 'fixture',
+          updatedAt: '2026-07-30T00:00:00.000Z',
+          engines: [{
+            kind: 'codex_cli',
+            defaultModel: 'gpt-5.5',
+            models: [{ id: 'gpt-5.5', label: 'GPT-5.5', capabilities: ['code'], recommended: true }],
+          }],
+        },
+        source: 'local_discovery',
+        diagnostics: [],
+      });
+    }
+    if (action === 'get') {
+      if (_domain === IPC_DOMAINS.SETTINGS) {
+        return options?.getSettings ? options.getSettings() : Promise.resolve({});
+      }
+      return Promise.resolve({});
+    }
+    if (action === 'set') return Promise.resolve(undefined);
+    throw new Error(`Unexpected action: ${action}`);
+  });
+}
+
+async function startCapture() {
+  const bind = await screen.findByTestId('onboarding-voice-hotkey-bind') as HTMLButtonElement;
+  await waitFor(() => expect(bind.disabled).toBe(false));
+  fireEvent.click(bind);
+  return bind;
+}
+
+function enableVoiceLive() {
+  useBundledCapabilityStore.setState({
+    installed: { 'builtin.voice-live': true, 'builtin.voice-input': false },
+  });
+}
+
 describe('onboarding speak-anytime hotkey card', () => {
   beforeEach(() => {
     updateSessionEngine.mockReset();
     updateSessionEngine.mockResolvedValue(undefined);
     invokeDomain.mockReset();
-    invokeDomain.mockImplementation((_domain: string, action: string) => {
-      if (action === 'listSources') return Promise.resolve(sources);
-      if (action === 'listModels') {
-        return Promise.resolve({
-          catalog: {
-            version: 'fixture',
-            updatedAt: '2026-07-30T00:00:00.000Z',
-            engines: [{
-              kind: 'codex_cli',
-              defaultModel: 'gpt-5.5',
-              models: [{ id: 'gpt-5.5', label: 'GPT-5.5', capabilities: ['code'], recommended: true }],
-            }],
-          },
-          source: 'local_discovery',
-          diagnostics: [],
-        });
-      }
-      if (action === 'get') return Promise.resolve({});
-      if (action === 'set') return Promise.resolve(undefined);
-      throw new Error(`Unexpected action: ${action}`);
-    });
+    stubIpc();
     useBundledCapabilityStore.setState({
       installed: { 'builtin.voice-live': false, 'builtin.voice-input': false },
     });
@@ -132,14 +157,12 @@ describe('onboarding speak-anytime hotkey card', () => {
   });
 
   it('blocks a colliding shortcut and does not persist it', async () => {
-    useBundledCapabilityStore.setState({
-      installed: { 'builtin.voice-live': true, 'builtin.voice-input': false },
-    });
+    enableVoiceLive();
     const onComplete = vi.fn();
     render(<ModelOnboardingModal onComplete={onComplete} />);
     await goToVoiceStep();
 
-    fireEvent.click(await screen.findByTestId('onboarding-voice-hotkey-bind'));
+    await startCapture();
     fireEvent.keyDown(window, { key: 'a', ctrlKey: true, shiftKey: true });
 
     const message = await screen.findByTestId('onboarding-voice-hotkey-message');
@@ -150,13 +173,11 @@ describe('onboarding speak-anytime hotkey card', () => {
   });
 
   it('blocks a system-reserved shortcut with a readable reason', async () => {
-    useBundledCapabilityStore.setState({
-      installed: { 'builtin.voice-live': true, 'builtin.voice-input': false },
-    });
+    enableVoiceLive();
     render(<ModelOnboardingModal onComplete={vi.fn()} />);
     await goToVoiceStep();
 
-    fireEvent.click(await screen.findByTestId('onboarding-voice-hotkey-bind'));
+    await startCapture();
     fireEvent.keyDown(window, { key: 'Tab', altKey: true });
 
     const message = await screen.findByTestId('onboarding-voice-hotkey-message');
@@ -165,14 +186,22 @@ describe('onboarding speak-anytime hotkey card', () => {
   });
 
   it('persists a free shortcut through the existing keybindings settings path and finishes', async () => {
-    useBundledCapabilityStore.setState({
-      installed: { 'builtin.voice-live': true, 'builtin.voice-input': false },
+    enableVoiceLive();
+    stubIpc({
+      getSettings: () => Promise.resolve({
+        keybindings: {
+          version: 1,
+          bindings: {
+            'app.toggle': { enabled: true, accelerator: 'Ctrl+Alt+T' },
+          },
+        },
+      }),
     });
     const onComplete = vi.fn();
     render(<ModelOnboardingModal onComplete={onComplete} />);
     await goToVoiceStep();
 
-    fireEvent.click(await screen.findByTestId('onboarding-voice-hotkey-bind'));
+    await startCapture();
     fireEvent.keyDown(window, { key: 'v', ctrlKey: true, shiftKey: true });
 
     await waitFor(() => expect(onComplete).toHaveBeenCalledTimes(1));
@@ -181,5 +210,35 @@ describe('onboarding speak-anytime hotkey card', () => {
       enabled: true,
       accelerator: 'Ctrl+Shift+V',
     });
+    expect(keybindingSave?.[2].keybindings?.bindings['app.toggle']).toEqual({
+      enabled: true,
+      accelerator: 'Ctrl+Alt+T',
+    });
+  });
+
+  it('disables capture and does not persist defaults when existing shortcuts cannot be loaded', async () => {
+    enableVoiceLive();
+    stubIpc({
+      getSettings: () => Promise.reject(new Error('settings get failed')),
+    });
+    const onComplete = vi.fn();
+    render(<ModelOnboardingModal onComplete={onComplete} />);
+    await goToVoiceStep();
+
+    const message = await screen.findByTestId('onboarding-voice-hotkey-message');
+    expect(message.textContent).toBe(text.voiceHotkeyLoadFailed);
+    expect(message.className).toContain('text-badge-danger');
+
+    const bind = screen.getByTestId('onboarding-voice-hotkey-bind') as HTMLButtonElement;
+    expect(bind.disabled).toBe(true);
+    fireEvent.click(bind);
+    fireEvent.keyDown(window, { key: 'v', ctrlKey: true, shiftKey: true });
+
+    expect(onComplete).not.toHaveBeenCalled();
+    expect(settingsSetCalls().some(([, , payload]) => payload.keybindings)).toBe(false);
+
+    fireEvent.click(screen.getByTestId('onboarding-voice-hotkey-skip'));
+    await waitFor(() => expect(onComplete).toHaveBeenCalledTimes(1));
+    expect(settingsSetCalls().some(([, , payload]) => payload.keybindings)).toBe(false);
   });
 });

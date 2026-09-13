@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from 'zustand';
 import type { PlatformPorts } from '../platform/ports';
 import { createMobileStore } from '../stores/mobileStore';
-import { canAddressSession, createCompanionStore } from '../stores/companionStore';
+import { canAddressSession, createCompanionStore, needsLibraryPick } from '../stores/companionStore';
 import { createNotificationStore } from '../stores/notificationStore';
 import { unavailableNotificationPort } from '../platform/notifications';
 import { COMPANION_LIMITS } from '../../../../src/shared/constants/companion';
@@ -309,6 +309,14 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
       void companionStore.getState().refreshArtifacts();
     } else if (state.route !== 'fixture') store.getState().activateDraft('new');
   }, [companion.sessionId, companion.binding?.hostKey, companion.status, state.route, store, companionStore]);
+  const previousCompanionStatus = useRef(companion.status);
+  useEffect(() => {
+    const previous = previousCompanionStatus.current;
+    previousCompanionStatus.current = companion.status;
+    if (needsLibraryPick({ status: companion.status, sessionId: companion.sessionId }) && previous !== 'connected') {
+      store.getState().openSheet('projects');
+    }
+  }, [companion.status, companion.sessionId, store]);
   useEffect(() => { if (currentPage !== 'storage') { setCacheConfirm(false); setCacheResult(null); } }, [currentPage]);
   const commandNotice = commandNoticeCopy(text, companion, voiceFailureShown);
   const selectSession = (id: string) => { companion.selectSession(id); state.navigate('new'); };
@@ -326,7 +334,8 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
   const pairAndOpenConversation = async () => {
     await companionStore.getState().pair();
     const result = companionStore.getState();
-    if (result.status === 'connected' && result.sessionId) store.getState().navigate('new');
+    if (needsLibraryPick(result)) store.getState().openSheet('projects');
+    else if (result.status === 'connected' && result.sessionId) store.getState().navigate('new');
   };
 
   const gestureStart = (event: React.TouchEvent) => {

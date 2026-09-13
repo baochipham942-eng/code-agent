@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
 import { CompanionGateway } from '../../../src/host/services/companion/CompanionGateway';
+import { hasFullProjectScope, projectScope } from '../../../src/shared/contract/companionLibrary';
 
 function fixture() {
   const db = new Database(':memory:');
@@ -17,6 +18,17 @@ function fixture() {
 }
 
 describe('companion explicit project scope', () => {
+  it('does not expand an old session grant when later invites cover every project', () => {
+    const f = fixture();
+    try {
+      const full = f.gateway.issueDeviceCredential(projectScope([{ id: 'one' }, { id: 'two' }]));
+      expect(hasFullProjectScope(full.scope, [{ id: 'one' }, { id: 'two' }])).toBe(true);
+      expect(f.gateway.canAccessSession(full.deviceId, 'a')).toBe(true);
+      expect(f.gateway.canAccessSession(full.deviceId, 'secret')).toBe(true);
+      expect(f.gateway.canAccessSession(f.device.deviceId, 'secret')).toBe(false);
+      expect(f.gateway.canAccessSession(f.device.deviceId, 'b')).toBe(false);
+    } finally { f.db.close(); }
+  });
   it('keeps old session grants narrow and only admits explicitly shared project members', () => {
     const f = fixture();
     try {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createMobileStore, joinTranscript } from '../../../packages/mobile/src/stores/mobileStore';
-import { canAddressSession } from '../../../packages/mobile/src/stores/companionStore';
+import { canAddressSession, needsLibraryPick } from '../../../packages/mobile/src/stores/companionStore';
 
 function disk(initial: string | null = null) {
   let value = initial;
@@ -185,17 +185,25 @@ describe('joinTranscript', () => {
   });
 });
 
-// ai-review #1742 Important：send / transcribe / respond 三处在没有可寻址会话时都是**静默
-// return**。界面若只按 status==='connected' 分流，用只勾项目的二维码配对（本 PR 新增的项目
-// 授权形态）后 sessionId 为 null，手机写着「已连接，可以发任务」，点发送却什么都不发生——
-// 无报错、无提示、无 pending、草稿不清，用户只能反复点。这条判据是那三处与界面的唯一共用来源。
+// send / transcribe / respond 在没有可寻址会话时都是静默 return。全量 project 授权
+// 配对后 sessionId 为 null，必须进库列表选会话，不能假装已经在对话里。
 describe('canAddressSession', () => {
   it.each([
     ['已连接且选了会话', { status: 'connected' as const, sessionId: 's1' }, true],
-    ['已连接但没有会话（只勾项目的配对）', { status: 'connected' as const, sessionId: null }, false],
+    ['已连接但没有会话（全量项目授权）', { status: 'connected' as const, sessionId: null }, false],
     ['有会话但没连上', { status: 'offline' as const, sessionId: 's1' }, false],
     ['未配对', { status: 'unpaired' as const, sessionId: null }, false],
   ])('%s', (_label, state, expected) => {
     expect(canAddressSession(state)).toBe(expected);
+  });
+});
+
+describe('needsLibraryPick', () => {
+  it.each([
+    ['全量项目授权后进库选会话', { status: 'connected' as const, sessionId: null }, true],
+    ['已选会话则进对话', { status: 'connected' as const, sessionId: 's1' }, false],
+    ['还没连上不弹库', { status: 'connecting' as const, sessionId: null }, false],
+  ])('%s', (_label, state, expected) => {
+    expect(needsLibraryPick(state)).toBe(expected);
   });
 });

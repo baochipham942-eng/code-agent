@@ -9,7 +9,8 @@ export function applyCompanionSchema(db: BetterSqlite3.Database): void {
       credential_hash TEXT NOT NULL DEFAULT '',
       scope_json TEXT NOT NULL,
       scope_epoch INTEGER NOT NULL,
-      revoked_at INTEGER
+      revoked_at INTEGER,
+      created_at INTEGER
     );
     CREATE TABLE IF NOT EXISTS companion_commands (
       device_id TEXT NOT NULL,
@@ -113,6 +114,13 @@ export function applyCompanionSchema(db: BetterSqlite3.Database): void {
     db.exec(`ALTER TABLE companion_decisions ADD COLUMN kind TEXT NOT NULL DEFAULT 'approval'`);
   } catch (error) {
     // Duplicate column is expected on databases created with the kind field.
+    if (!/duplicate column name/i.test(error instanceof Error ? error.message : String(error))) {
+      throw error;
+    }
+  }
+  try {
+    db.exec(`ALTER TABLE companion_devices ADD COLUMN created_at INTEGER`);
+  } catch (error) {
     if (!/duplicate column name/i.test(error instanceof Error ? error.message : String(error))) {
       throw error;
     }

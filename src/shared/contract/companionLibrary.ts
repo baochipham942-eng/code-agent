@@ -3,6 +3,14 @@ import { COMPANION_LIMITS as L } from '../constants/companion';
 
 /** Project grants are explicit desktop choices; existing session grants stay narrow. */
 export const projectGrant = (id: string) => `project:${id}`;
+/** Invite scope for every current project. Empty library must not call invite. */
+export function projectScope(projects: readonly { id: string }[]): string[] {
+  return projects.map(project => projectGrant(project.id));
+}
+/** True when stored grants cover every current project. Missing any project is a narrow/legacy device. */
+export function hasFullProjectScope(scope: readonly string[], projects: readonly { id: string }[]): boolean {
+  return projects.length > 0 && projects.every(project => scope.includes(projectGrant(project.id)));
+}
 export const companionReadSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('library'), offset: z.number().int().nonnegative().safe().default(0) }).strict(),
   z.object({ kind: z.literal('history'), sessionId: z.string().min(1).max(L.idLength),

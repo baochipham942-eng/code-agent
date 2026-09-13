@@ -19,13 +19,13 @@ import { createLogger } from '../infra/logger';
 
 const logger = createLogger('VoiceBudget');
 
-export interface VoiceBudgetConfig {
+interface VoiceBudgetConfig {
   minuteLimit: number | null;
   costLimit: number | null;
   exceedAction: VoiceBudgetExceedAction;
 }
 
-export interface VoiceBudgetEvaluationInput {
+interface VoiceBudgetEvaluationInput {
   elapsedMs: number;
   costAmount: number | null;
   minuteLimit: number | null;
@@ -36,7 +36,7 @@ function finitePositive(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null;
 }
 
-export function resolveVoiceBudgetConfig(live: VoiceLiveSettings | undefined): VoiceBudgetConfig {
+function resolveVoiceBudgetConfig(live: VoiceLiveSettings | undefined): VoiceBudgetConfig {
   const exceedAction: VoiceBudgetExceedAction = live?.callCostLimitAction === 'hangup'
     ? 'hangup'
     : VOICE_BUDGET.DEFAULT_EXCEED_ACTION;
@@ -47,7 +47,7 @@ export function resolveVoiceBudgetConfig(live: VoiceLiveSettings | undefined): V
   };
 }
 
-export function isVoiceBudgetConfigured(config: VoiceBudgetConfig): boolean {
+function isVoiceBudgetConfigured(config: VoiceBudgetConfig): boolean {
   return config.minuteLimit !== null || config.costLimit !== null;
 }
 
@@ -62,7 +62,7 @@ function levelForRatio(ratio: number): VoiceBudgetLevel {
  * 纯函数：按已用分钟 / 已估成本相对各自上限取最大占用比，再映射到三档。
  * 未设的轨不参与；成本上限在尚无估算时也不参与（避免把「还没账单」当成 0% 安全）。
  */
-export function evaluateVoiceBudget(
+function evaluateVoiceBudget(
   input: VoiceBudgetEvaluationInput,
 ): Omit<VoiceBudgetSnapshot, 'costCurrency'> {
   const minutesUsed = Math.max(0, input.elapsedMs) / 60_000;

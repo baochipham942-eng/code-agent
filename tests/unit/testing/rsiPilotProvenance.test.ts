@@ -24,6 +24,7 @@ describe('rsi pilot provenance contract', () => {
       inferArtifactRepairIssueCodesFromText: () => [],
       getTelemetryCollector: () => ({ getSessionData: () => null }),
       gameValidationTimeouts: { RUNTIME_SMOKE_MS: 1, BROWSER_VISUAL_SMOKE_MS: 1, LIGHT_PLAYABILITY_SMOKE_MS: 1 },
+      HARNESS_KNOB_DEFAULTS: { 'subagent.compactionThreshold': 0.8 },
     });
     const record = JSON.parse((await fs.readFile(path.join(outDir, 'runs.jsonl'), 'utf8')).trim());
     const summary = JSON.parse(await fs.readFile(path.join(outDir, 'summary.json'), 'utf8'));
@@ -31,6 +32,9 @@ describe('rsi pilot provenance contract', () => {
     expect(record.provenance.model).toBe('stub-model');
     expect(record.provenance.runnerSha).toMatch(/^[0-9a-f]{12}$/);
     expect(record.provenance.gitSha).not.toBe('unresolved');
+    // N-HARNESS-PROFILE-SURFACE：无 --profile 时 run 记录与汇总照样盖全表（取证），profile 为 null
+    expect(record.harness).toEqual({ profile: null, knobs: { 'subagent.compactionThreshold': 0.8 } });
+    expect(summary.harness).toEqual(record.harness);
   });
 
   it('repair progress text carries the marker the adapter counts repairRoundsUsed by', () => {

@@ -9,6 +9,7 @@
 import { createLogger } from '../services/infra/logger';
 import { estimateTokens } from '../context/tokenEstimator';
 import { SUBAGENT_COMPACTION } from '../../shared/constants';
+import { getHarnessKnob } from './runtime/harnessKnobs';
 import { resolveContextWindow } from '../model/modelLimits';
 import { fileReadTracker } from '../tools/fileReadTracker';
 
@@ -96,7 +97,7 @@ export function compactSubagentMessages(
   }
 
   const contextWindow = resolveContextWindow(model, provider);
-  const threshold = contextWindow * SUBAGENT_COMPACTION.THRESHOLD;
+  const threshold = contextWindow * getHarnessKnob('subagent.compactionThreshold');
   const currentTokens = estimateTotalTokens(messages);
 
   if (currentTokens <= threshold) {

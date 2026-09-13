@@ -78,7 +78,6 @@ export {
   logger,
   MAX_PERSISTENT_SYSTEM_CONTEXT_ITEM_TOKENS,
   MAX_PERSISTENT_SYSTEM_CONTEXT_ITEMS,
-  MAX_PERSISTENT_SYSTEM_CONTEXT_TOKENS,
   MAX_SYSTEM_PROMPT_TOKENS,
   normalizePersistentSystemContextKey,
 } from './contextAssembly/shared';

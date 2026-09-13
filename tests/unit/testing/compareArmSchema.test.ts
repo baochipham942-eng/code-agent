@@ -80,6 +80,7 @@ describe('统一实验臂 schema', () => {
       thinkingInjection: true,
       hooksEnabled: false,
       toolMode: 'all',
+      knobs: { 'subagent.compactionThreshold': 0.8 },
     };
     const base: CompareConfiguration = {
       ...BASELINE,
@@ -99,6 +100,7 @@ describe('统一实验臂 schema', () => {
       { thinkingInjection: false },
       { hooksEnabled: true },
       { toolMode: 'deferred' },
+      { knobs: { 'subagent.compactionThreshold': 0.7 } },
     ];
     for (const flip of harnessFlips) {
       const candidate: CompareConfiguration = { ...same, harness: { ...fullHarness, ...flip } };

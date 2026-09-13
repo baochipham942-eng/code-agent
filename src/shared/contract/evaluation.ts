@@ -22,6 +22,8 @@ export interface EvalCompareHarness {
   thinkingInjection?: boolean;
   hooksEnabled?: boolean;
   toolMode?: 'all' | 'deferred';
+  /** 行为策略数值旋钮（键集见 host runtime/harnessKnobs.ts HARNESS_KNOB_DEFAULTS）；省略 = 生产默认 */
+  knobs?: Record<string, number>;
 }
 
 /** Shared experiment-arm contract consumed by host, bridge and the internal UI. */
@@ -132,6 +134,9 @@ export function effectiveArmSignature(config: EvalCompareArm, baseline: EvalComp
           thinkingInjection: arm.harness.thinkingInjection ?? null,
           hooksEnabled: arm.harness.hooksEnabled ?? null,
           toolMode: arm.harness.toolMode ?? null,
+          knobs: arm.harness.knobs
+            ? Object.fromEntries(Object.entries(arm.harness.knobs).sort(([a], [b]) => a.localeCompare(b)))
+            : null,
         }
       : null,
     memory: arm.memory,
@@ -262,6 +267,8 @@ export interface EvalRunStamp {
       thinkingInjection?: boolean;
       hooksEnabled?: boolean;
       toolMode?: 'all' | 'deferred';
+      /** 本轮生效的旋钮全表（生产臂 = HARNESS_KNOB_DEFAULTS 原样） */
+      knobs?: Record<string, number>;
     } | null;
   };
   divergesFromProduction: string[];

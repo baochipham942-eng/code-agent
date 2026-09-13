@@ -8,6 +8,7 @@ import {
   type EvalCompareArm,
 } from '@shared/contract/evaluation';
 import { resolveProductionShape } from './productionShape';
+import { validateHarnessKnobs } from '@host/agent/runtime/harnessKnobs';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -78,6 +79,7 @@ export function validateEvalCompareArm(value: unknown): EvalCompareArm {
       thinkingInjection: optionalBoolean(harnessValue, 'thinkingInjection'),
       hooksEnabled: optionalBoolean(harnessValue, 'hooksEnabled'),
       toolMode: optionalString(harnessValue, 'toolMode') as 'all' | 'deferred' | undefined,
+      knobs: harnessValue.knobs === undefined ? undefined : validateHarnessKnobs(harnessValue.knobs),
     } : undefined,
     memory: memoryValue ? {
       longTerm: optionalBoolean(memoryValue, 'longTerm'),

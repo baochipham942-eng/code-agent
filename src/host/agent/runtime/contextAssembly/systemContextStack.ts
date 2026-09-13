@@ -12,9 +12,9 @@ import type { ContextAssemblyCtx } from './shared';
 import type { AdvisoryTailKey } from '../turnState';
 import { persistRuntimeState } from '../runtimeStatePersistence';
 import { attachMessageCorrelation } from '../turnQuality';
+import { getHarnessKnob } from '../harnessKnobs';
 import {
   logger,
-  MAX_PERSISTENT_SYSTEM_CONTEXT_TOKENS,
   MAX_PERSISTENT_SYSTEM_CONTEXT_ITEMS,
   MAX_PERSISTENT_SYSTEM_CONTEXT_ITEM_TOKENS,
   normalizePersistentSystemContextKey,
@@ -184,7 +184,7 @@ export function getBudgetedPersistentSystemContext(ctx: ContextAssemblyCtx): str
     const trimmed = ctx.truncatePersistentSystemContext(normalized, MAX_PERSISTENT_SYSTEM_CONTEXT_ITEM_TOKENS);
     const itemTokens = estimateTokens(trimmed);
     if (selected.length >= MAX_PERSISTENT_SYSTEM_CONTEXT_ITEMS) continue;
-    if (usedTokens + itemTokens > MAX_PERSISTENT_SYSTEM_CONTEXT_TOKENS) continue;
+    if (usedTokens + itemTokens > getHarnessKnob('context.persistentSystemContextTokens')) continue;
 
     selected.unshift(trimmed);
     usedTokens += itemTokens;

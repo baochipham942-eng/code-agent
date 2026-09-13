@@ -2,6 +2,7 @@
 // Agent Auto-Testing Framework - Type Definitions
 // ============================================================================
 
+import type { HarnessKnobs } from '../agent/runtime/harnessKnobs';
 import type {
   EvalRunStamp,
   EvalFailureClassification,
@@ -661,6 +662,8 @@ export interface HarnessVariantConfig {
   hooksEnabled?: boolean;
   /** 工具集维度：'all' 全量加载 | 'deferred' 延迟加载（裁剪模型可见工具面） */
   toolMode?: 'all' | 'deferred';
+  /** 行为策略数值旋钮（N-HARNESS-PROFILE-SURFACE）；省略 = 生产默认，逐字不变 */
+  knobs?: HarnessKnobs;
 }
 
 /**

@@ -184,6 +184,12 @@ const permissionRequestSchema = typed<PermissionRequest>(z.object({
       diff: z.string().optional(),
       summary: z.string(),
     }).optional(),
+    sandbox: z.object({
+      applied: z.boolean(),
+      degraded: z.boolean().optional(),
+      code: z.string(),
+      exception: z.string().optional(),
+    }).optional(),
   }),
   reason: z.string().optional(),
   reasonCode: z.string().optional(),

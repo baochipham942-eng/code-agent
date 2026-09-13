@@ -52,6 +52,12 @@ export interface PermissionRequestDetails {
     diff?: string;
     summary: string;
   };
+  sandbox?: {
+    applied: boolean;
+    degraded?: boolean;
+    code: string;
+    exception?: string;
+  };
 }
 
 // 权限请求

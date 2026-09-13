@@ -303,6 +303,7 @@ export class AuditLogger {
     error?: string;
     securityFlags?: string[];
     riskLevel?: AuditEntry['riskLevel'];
+    metadata?: Record<string, unknown>;
   }): void {
     this.log({
       eventType: 'tool_usage',

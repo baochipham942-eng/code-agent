@@ -81,6 +81,9 @@ export enum HostReasonCode {
   GoalAbortTimeBudget = 'GOAL_ABORT_TIME_BUDGET',
   GoalAbortUnreachable = 'GOAL_ABORT_UNREACHABLE',
   GoalAbortRepeatedAction = 'GOAL_ABORT_REPEATED_ACTION',
+  OsSandboxApplied = 'OS_SANDBOX_APPLIED',
+  OsSandboxDegraded = 'OS_SANDBOX_DEGRADED',
+  OsSandboxUnavailable = 'OS_SANDBOX_UNAVAILABLE',
 }
 
 export interface HostReasonPayload {
@@ -161,6 +164,13 @@ export interface PermissionRequest {
       after?: string;
       diff?: string;
       summary: string;
+    };
+    /** OS sandbox decision for bash; renderer i18n maps `code`. */
+    sandbox?: {
+      applied: boolean;
+      degraded?: boolean;
+      code: string;
+      exception?: string;
     };
   };
   /** 人类可读原因文案（向后兼容，旧路径仍只读此字段） */

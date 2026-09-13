@@ -59,4 +59,23 @@ describe('DecisionTrace host reason rendering', () => {
     fireEvent.click(screen.getByRole('button', { name: /审批决策链/ }));
     expect(screen.getByText('legacy decision reason')).toBeTruthy();
   });
+
+  it('bash 审批卡展示 OS 沙箱降级文案', () => {
+    render(<RequestDetails request={{
+      id: 'permission-sandbox',
+      tool: 'Bash',
+      type: 'command',
+      details: {
+        command: 'docker build .',
+        sandbox: {
+          applied: false,
+          degraded: true,
+          code: 'OS_SANDBOX_DEGRADED_UNSANDBOXABLE',
+          exception: 'docker_engine',
+        },
+      },
+    }} />);
+    expect(screen.getByTestId('permission-sandbox-status').textContent).toMatch(/docker_engine/);
+    expect(screen.getByTestId('permission-sandbox-status').textContent).toMatch(/无隔离/);
+  });
 });

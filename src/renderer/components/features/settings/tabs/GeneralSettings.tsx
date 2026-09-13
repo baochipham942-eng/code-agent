@@ -36,6 +36,8 @@ import ipcService from '../../../../services/ipcService';
 import { toast } from '../../../../hooks/useToast';
 import { useI18n } from '../../../../hooks/useI18n';
 import { zh } from '../../../../i18n/zh';
+import { useDoctorStore } from '../../../../stores/doctorStore';
+import { OS_SANDBOX_DOCTOR_ITEM_NAME } from '@shared/constants/sandbox';
 
 export type PermissionMode = 'default' | 'readOnly' | 'acceptEdits' | 'bypassPermissions';
 export type InheritanceMode = 'strict-inherit' | 'child-narrow' | 'independent';
@@ -256,6 +258,9 @@ function getRuleRows(ruleSummary: PermissionRuleSummary, text: GeneralSettingsTe
 export const GeneralSettings: React.FC = () => {
   const { t } = useI18n();
   const generalText = t.settings.general.permissions;
+  const sandboxDoctor = useDoctorStore((state) =>
+    state.report?.items.find((item) => item.name === OS_SANDBOX_DOCTOR_ITEM_NAME),
+  );
   const budgetText = t.settings.general.budget;
   const isAdmin = useAuthStore((state) => state.user?.isAdmin === true);
   const [permissionMode, setPermissionMode] = useState<PermissionMode>('default');
@@ -436,6 +441,24 @@ export const GeneralSettings: React.FC = () => {
       description={generalText.pageDescription}
     >
       <WebModeBanner />
+
+      <SettingsSection
+        title={generalText.sandbox.title}
+        description={
+          sandboxDoctor?.status === 'warn' || sandboxDoctor?.status === 'fail'
+            ? (sandboxDoctor.message.includes('disabled')
+              ? generalText.sandbox.disabled
+              : generalText.sandbox.unavailable)
+            : generalText.sandbox.available
+        }
+      >
+        <p
+          className={`text-xs leading-5 ${sandboxDoctor?.status === 'warn' || sandboxDoctor?.status === 'fail' ? 'text-badge-warning' : 'text-zinc-500'}`}
+          data-testid="os-sandbox-settings-hint"
+        >
+          {sandboxDoctor?.suggestion || sandboxDoctor?.details || generalText.sandbox.installHint}
+        </p>
+      </SettingsSection>
 
       <div id="budget-settings-section" tabIndex={-1} data-testid="budget-settings-section">
         <SettingsSection title={budgetText.title} description={budgetText.description}>

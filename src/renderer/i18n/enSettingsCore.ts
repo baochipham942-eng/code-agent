@@ -253,6 +253,13 @@ export const enSettingsCore = {
           acknowledge: 'Got it',
           releaseNotes: 'View release notes',
         },
+        sandbox: {
+          title: 'OS sandbox',
+          available: 'Bash runs inside the OS sandbox by default in Default and Accept edits modes.',
+          unavailable: 'OS sandbox is unavailable on this machine. Bash will run with an explicit degradation mark instead of a silent naked fallback.',
+          disabled: 'OS sandbox is turned off. OS_SANDBOX_ENABLED=false is an emergency opt-out only.',
+          installHint: 'On Linux, install bubblewrap (bwrap). macOS uses the built-in sandbox-exec.',
+        },
         controlPlane: {
           title: 'Permission control plane',
           description: 'Most daily checks only need the current mode, risk level, inheritance policy, and user rule count.',

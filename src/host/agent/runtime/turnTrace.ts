@@ -104,6 +104,8 @@ export interface TraceEventDataMap {
     durationMs: number;
     error: string | null;
     fromCache: boolean;
+    /** True when the bash command actually ran inside the OS jail. */
+    sandboxed?: boolean;
   };
   compaction: {
     layersTriggered: string[];

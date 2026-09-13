@@ -43,6 +43,7 @@ class ToolAttemptTrace {
       success: result.success, durationMs,
       error: result.error ? redactSecrets(result.error) : null,
       fromCache: result.metadata?.fromCache === true,
+      ...(typeof result.metadata?.sandboxed === 'boolean' ? { sandboxed: result.metadata.sandboxed } : {}),
       consecutiveErrors: this.consecutiveErrors,
       ...(recoveredFrom?.length ? { recoveredFrom } : {}),
     });

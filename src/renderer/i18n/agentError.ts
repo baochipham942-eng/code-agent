@@ -36,6 +36,9 @@ const hostReasonZh = {
   [HostReasonCode.GoalAbortTimeBudget]: { summary: '目标还没完成，已停止继续执行', detail: '本次运行已达到时间上限。你可以重试，或新开会话继续。' },
   [HostReasonCode.GoalAbortUnreachable]: { summary: '当前条件下无法完成这个目标', detail: '请补充所需条件后重试，或新开会话调整目标。' },
   [HostReasonCode.GoalAbortRepeatedAction]: { summary: '执行陷入重复，已停止继续尝试', detail: '请调整目标后重试，或新开会话继续。' },
+  [HostReasonCode.OsSandboxApplied]: { summary: '命令将在操作系统沙箱中执行' },
+  [HostReasonCode.OsSandboxDegraded]: { summary: '操作系统沙箱未套用，将在无隔离环境下执行' },
+  [HostReasonCode.OsSandboxUnavailable]: { summary: '操作系统沙箱不可用，已拒绝执行' },
 } satisfies Record<HostReasonCode, { summary: string; detail?: string }>;
 
 const hostReasonEn: typeof hostReasonZh = {
@@ -72,6 +75,9 @@ const hostReasonEn: typeof hostReasonZh = {
   [HostReasonCode.GoalAbortTimeBudget]: { summary: 'The goal is unfinished, so execution stopped', detail: 'This run reached its time limit. Retry, or start a new session to continue.' },
   [HostReasonCode.GoalAbortUnreachable]: { summary: 'This goal cannot be completed under the current conditions', detail: 'Provide the missing requirements and retry, or adjust the goal in a new session.' },
   [HostReasonCode.GoalAbortRepeatedAction]: { summary: 'Execution became repetitive and was stopped', detail: 'Adjust the goal and retry, or start a new session to continue.' },
+  [HostReasonCode.OsSandboxApplied]: { summary: 'The command will run inside the OS sandbox' },
+  [HostReasonCode.OsSandboxDegraded]: { summary: 'The OS sandbox was not applied; the command will run without isolation' },
+  [HostReasonCode.OsSandboxUnavailable]: { summary: 'The OS sandbox is unavailable, so the command was refused' },
 };
 // agentError 域词条（AgentErrorCard 会话区错误卡片）—— zh/en 同文件相邻维护。
 // 卡片文案按 category 表驱动：title 一句话说发生了什么，suggestion 给建议动作，

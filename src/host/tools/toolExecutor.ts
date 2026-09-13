@@ -63,6 +63,11 @@ import { applyEditedArgs } from '../../shared/contract/permissionEdit';
 import { EXTERNAL_SIDE_EFFECT_TRACE_RULE, EXTERNAL_SIDE_EFFECT_TRACE_REASON, isExternalSideEffectTool, extractStandingGrantTarget } from './externalSideEffect';
 import { isRunPathInsideWorkspace, resolveCanonicalRunPath, type RunContext } from '../runtime/runContext';
 import { writeFenceObligationRoot } from '../sandbox/writeFence';
+import { getSandboxManager } from '../sandbox';
+import {
+  resolveOsSandboxDecision,
+  type OsSandboxPermissionMode,
+} from '../sandbox/osSandboxPolicy';
 import { resolveBackgroundWorkspaceAuthority } from '../runtime/workspaceAuthority';
 import { resolveWorkspacePath } from '../runtime/workspaceScope';
 import { isDangerousCommand, sanitizeToolParams, toolMatchesPatternSet, truncateToolOutput } from './toolExecutorHelpers';
@@ -116,6 +121,20 @@ import type { SkillDiscoveryService } from '../services/skills/skillDiscoverySer
 import type { TelemetryCollector } from '../telemetry/telemetryCollector';
 
 const logger = createLogger('ToolExecutor');
+
+function sandboxAuditMetadata(
+  metadata: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined {
+  if (!metadata) return undefined;
+  const sandbox = metadata.sandbox;
+  const sandboxed = metadata.sandboxed;
+  if (typeof sandboxed !== 'boolean' && (sandbox === undefined || sandbox === null)) return undefined;
+  return {
+    ...(typeof sandboxed === 'boolean' ? { sandboxed } : {}),
+    ...(sandbox && typeof sandbox === 'object' ? { sandbox } : {}),
+  };
+}
+
 const FILE_MUTATION_LOCK_HOLD_TIMEOUT_MS = 60_000;
 const FILE_MUTATION_LOCK_WAIT_TIMEOUT_MS = 10_000;
 
@@ -1799,6 +1818,23 @@ export class ToolExecutor {
         permissionRequest.details.affectedPath = affectedPath;
         permissionRequest.details.affectedFileCount = await countAffectedFiles(affectedPath);
       }
+      if (isBashToolName(policyToolName) && typeof params.command === 'string') {
+        const sandboxDecision = resolveOsSandboxDecision({
+          command: params.command,
+          permissionMode: getPermissionModeManager().getModeForSession(effectiveSessionId) as OsSandboxPermissionMode,
+          unattended: getPermissionModeManager().isUnattendedSession(effectiveSessionId),
+          writeFence: context.requiresOsWriteFence === true,
+          evalRealRoot: process.env.CODE_AGENT_EVAL_REAL_ROOT !== undefined,
+          multiRoot: (this.runContext?.workspaceScope?.roots.length ?? 0) > 1,
+          sandboxAvailable: getSandboxManager().isAvailable(),
+        });
+        permissionRequest.details.sandbox = {
+          applied: sandboxDecision.sandboxed,
+          degraded: sandboxDecision.degraded,
+          code: sandboxDecision.code,
+          ...(sandboxDecision.exception ? { exception: sandboxDecision.exception } : {}),
+        };
+      }
       permissionRequest.sessionId = effectiveSessionId;
       // resolved 审批结果回到 renderer 后，靠现成 tool call id 锚到对应步骤旁展示。
       // 只补关联字段，不复制参数或另建历史存储。
@@ -2186,6 +2222,7 @@ export class ToolExecutor {
           error: result.error,
           securityFlags: commandValidation?.securityFlags,
           riskLevel: commandValidation?.riskLevel,
+          metadata: sandboxAuditMetadata(result.metadata),
         });
       }
 

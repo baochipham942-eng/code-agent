@@ -32,7 +32,8 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { bashSchema as schema } from './bash.schema';
-import { BASH, OS_SANDBOX } from '../../../../shared/constants';
+import { BASH, OS_SANDBOX_CODES } from '../../../../shared/constants';
+import { HostReasonCode, createHostReason } from '../../../../shared/contract/permission';
 import { startBackgroundTask } from '../../shell/backgroundTasks';
 import { spawnWindowsShell, killProcessTree } from '../../shell/platformShell';
 import { createPtySession, getPtySessionOutput } from '../../shell/ptyExecutor';
@@ -49,7 +50,12 @@ import { spillToolResultArchive, buildSpillNotice } from '../../../utils/toolRes
 import { checkCommandPolicy } from './commandPolicy';
 import { rewriteBashCommand } from './rtkRewriter';
 import { getPermissionModeManager } from '../../../permissions/modes';
-import { resolveSandboxNetworkPolicy, wrapCommandForSandbox } from '../../../sandbox';
+import { getSandboxManager, resolveSandboxNetworkPolicy, wrapCommandForSandbox } from '../../../sandbox';
+import {
+  resolveOsSandboxDecision,
+  type OsSandboxDecision,
+  type OsSandboxPermissionMode,
+} from '../../../sandbox/osSandboxPolicy';
 import { containWriteFenceWorkspaceRoot, isOsWriteFenceAvailable } from '../../../sandbox/writeFence';
 import { resolveCanonicalRunPath } from '../../../runtime/runContext';
 
@@ -557,12 +563,46 @@ interface BashMeta extends Record<string, unknown> {
   duration?: number;
   description?: string;
   codexThreadId?: string;
+  sandboxed?: boolean;
+  sandbox?: {
+    applied: boolean;
+    degraded: boolean;
+    code: string;
+    exception?: string;
+  };
+  hostReason?: ReturnType<typeof createHostReason>;
   shellPath?: {
     source: string;
     pathEntryCount: number;
     degraded: boolean;
     fallbackApplied: boolean;
     fallbackEntries: string[];
+  };
+}
+
+function buildSandboxMeta(decision: OsSandboxDecision): Pick<BashMeta, 'sandboxed' | 'sandbox' | 'hostReason'> {
+  const sandbox = {
+    applied: decision.sandboxed,
+    degraded: decision.degraded,
+    code: decision.code,
+    ...(decision.exception ? { exception: decision.exception } : {}),
+  };
+  const hostReason = decision.degraded
+    ? createHostReason(
+      HostReasonCode.OsSandboxDegraded,
+      `OS sandbox degraded: ${decision.code}${decision.exception ? ` (${decision.exception})` : ''}`,
+      {
+        reasonCode: decision.code,
+        ...(decision.exception ? { exception: decision.exception } : {}),
+      },
+    )
+    : decision.code === OS_SANDBOX_CODES.UNAVAILABLE
+      ? createHostReason(HostReasonCode.OsSandboxUnavailable, 'OS sandbox is required but unavailable')
+      : undefined;
+  return {
+    sandboxed: decision.sandboxed,
+    sandbox,
+    ...(hostReason ? { hostReason } : {}),
   };
 }
 
@@ -588,6 +628,25 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
       return { ok: false, error: 'command must not be empty', code: 'INVALID_ARGS' };
     }
 
+    const command = unwrapSelfReference(rawCommand);
+    const implicitBackground = rewriteImplicitBackgroundCommand(command);
+    const normalizedCommand = implicitBackground.command;
+    const permissionModeManager = getPermissionModeManager();
+    // Reverse mutation: ignore requiresOsWriteFence ⇒ skip-confirm writes run naked.
+    const writeFence = ctx.requiresOsWriteFence === true;
+    const fenceRoot = writeFence
+      ? containWriteFenceWorkspaceRoot(ctx.writeFenceWorkspaceRoot)
+      : undefined;
+    let sandboxDecision = resolveOsSandboxDecision({
+      command: normalizedCommand,
+      permissionMode: permissionModeManager.getModeForSession(ctx.sessionId) as OsSandboxPermissionMode,
+      unattended: permissionModeManager.isUnattendedSession(ctx.sessionId),
+      writeFence,
+      evalRealRoot: process.env.CODE_AGENT_EVAL_REAL_ROOT !== undefined,
+      multiRoot: (ctx.workspaceScope?.roots.length ?? 0) > 1,
+      sandboxAvailable: getSandboxManager().isAvailable(),
+    });
+
     const permit = await canUseTool(schema.name, args);
     if (!permit.allow) {
       return { ok: false, error: `permission denied: ${permit.reason}`, code: 'PERMISSION_DENIED' };
@@ -595,8 +654,6 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
     if (ctx.abortSignal.aborted) {
       return { ok: false, error: 'aborted', code: 'ABORTED' };
     }
-
-    const command = unwrapSelfReference(rawCommand);
 
     // -------------------------------------------------------------------------
     // 设计画布会话硬控（跨进程）：本轮是设计画布会话且命令是"用代码画图"时，
@@ -630,8 +687,6 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
         return { ok: false, error: 'workspace is not a usable path: empty', code: 'INVALID_ARGS' };
       }
     }
-    const implicitBackground = rewriteImplicitBackgroundCommand(command);
-    const normalizedCommand = implicitBackground.command;
     const runInBackground = (args.run_in_background as boolean | undefined) ?? implicitBackground.rewritten;
     const usePty = args.pty as boolean | undefined;
     const cols = (args.cols as number) || 80;
@@ -639,32 +694,17 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
     const waitForCompletion = args.wait_for_completion as boolean | undefined;
 
     // -------------------------------------------------------------------------
-    // OS 沙箱（bypassPermissions / YOLO 档 + 无人值守会话）
-    // 把命令包装成带沙箱前缀的 shell 命令，前台/PTY/后台三条路径统一使用，
-    // 复用各自执行器已有的流式 / abort / 错误语义。沙箱不可用时硬报错，绝不静默裸跑。
-    // 审出 MED：无人值守钳制（bypass→acceptEdits）不能顺带撤掉唯一的 OS 级围栏——
-    // unattended 会话不论钳后档位，命令一律带沙箱跑。
+    // OS 沙箱（default / acceptEdits 灰度默认开；bypass / unattended / write-fence 强制）
+    // 三条执行路径统一 applySandbox。不可用时：强制档硬报错，灰度档显式降级，绝不静默裸跑。
     // -------------------------------------------------------------------------
-    const permissionModeManager = getPermissionModeManager();
-    // Reverse mutation: ignore requiresOsWriteFence ⇒ skip-confirm writes run naked.
-    const writeFence = ctx.requiresOsWriteFence === true;
-    const fenceRoot = writeFence
-      ? containWriteFenceWorkspaceRoot(ctx.writeFenceWorkspaceRoot)
-      : undefined;
-    const shouldSandbox = writeFence || (OS_SANDBOX.ENABLED
-      && (process.env.CODE_AGENT_EVAL_REAL_ROOT !== undefined
-        || permissionModeManager.getModeForSession(ctx.sessionId) === 'bypassPermissions'
-        || permissionModeManager.isUnattendedSession(ctx.sessionId)
-        || (ctx.workspaceScope?.roots.length ?? 0) > 1));
     let sandboxCleanup: (() => void) | undefined;
     const cleanupSandbox = () => {
       const cleanup = sandboxCleanup;
       sandboxCleanup = undefined;
       cleanup?.();
     };
-    /** shouldSandbox 时把命令包装成带沙箱前缀的 shell 命令，否则原样返回 */
     const applySandbox = (cmd: string): { ok: true; command: string } | { ok: false; error: string } => {
-      if (!shouldSandbox) return { ok: true, command: cmd };
+      if (!sandboxDecision.apply) return { ok: true, command: cmd };
       try {
         if (writeFence && (!fenceRoot || !isOsWriteFenceAvailable())) {
           throw new Error('write fence cannot contain workspace root');
@@ -688,15 +728,36 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
           }),
         });
         sandboxCleanup = wrapped.cleanup;
+        sandboxDecision = {
+          ...sandboxDecision,
+          sandboxed: true,
+          degraded: false,
+          code: OS_SANDBOX_CODES.APPLIED,
+        };
         return { ok: true, command: wrapped.command };
       } catch (err) {
         const detail = err instanceof Error ? err.message : String(err);
+        if (sandboxDecision.degradeIfUnavailable) {
+          sandboxDecision = {
+            apply: false,
+            sandboxed: false,
+            degraded: true,
+            degradeIfUnavailable: true,
+            code: OS_SANDBOX_CODES.DEGRADED_UNAVAILABLE,
+          };
+          return { ok: true, command: cmd };
+        }
+        sandboxDecision = {
+          ...sandboxDecision,
+          sandboxed: false,
+          degraded: false,
+          code: OS_SANDBOX_CODES.UNAVAILABLE,
+        };
         return {
           ok: false,
           error: writeFence
-            ? `区内写入免确认要求 OS 沙箱可用，但当前不可用：${detail}。请安装 bubblewrap（Linux）或切换到 default 档。`
-            : `bypassPermissions 档要求 OS 沙箱可用，但当前不可用：${detail}。` +
-              `请安装 bubblewrap（Linux）或切换到 default 档。`,
+            ? `OS write-fence requires an OS sandbox, but it is unavailable: ${detail}`
+            : `OS sandbox is required but unavailable: ${detail}`,
         };
       }
     };
@@ -708,7 +769,14 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
     // -------------------------------------------------------------------------
     if (usePty) {
       const sandboxed = applySandbox(normalizedCommand);
-      if (!sandboxed.ok) return { ok: false, error: sandboxed.error, code: 'SANDBOX_UNAVAILABLE' };
+      if (!sandboxed.ok) {
+        return {
+          ok: false,
+          error: sandboxed.error,
+          code: 'SANDBOX_UNAVAILABLE',
+          meta: buildSandboxMeta(sandboxDecision),
+        };
+      }
       let result: ReturnType<typeof createPtySession>;
       try {
         result = createPtySession({
@@ -725,7 +793,7 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
           // secret vars would leak straight back in (ptyExecutor spreads
           // process.env UNDER the passed env) — so never inherit.
           inheritProcessEnv: false,
-          sandboxed: shouldSandbox,
+          sandboxed: sandboxDecision.sandboxed,
           ...(sandboxCleanup ? { onExit: cleanupSandbox } : {}),
         });
       } catch (error) {
@@ -773,6 +841,7 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
           exitCode: output.exitCode,
           duration: output.duration,
           pty: true,
+          ...buildSandboxMeta(sandboxDecision),
         };
 
         if (output.status === 'completed') {
@@ -786,7 +855,7 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
           command: normalizedCommand,
           message: failureMessage,
           code: output.exitCode,
-          sandboxed: shouldSandbox,
+          sandboxed: sandboxDecision.sandboxed,
           workingDirectory,
         });
         return {
@@ -816,6 +885,7 @@ Use process_kill to terminate the session.`;
         ok: true,
         output: msg,
         meta: {
+          ...buildSandboxMeta(sandboxDecision),
           sessionId: result.sessionId,
           outputFile: result.outputFile,
           artifact: result.outputFile
@@ -833,14 +903,21 @@ Use process_kill to terminate the session.`;
     // -------------------------------------------------------------------------
     if (runInBackground) {
       const sandboxed = applySandbox(normalizedCommand);
-      if (!sandboxed.ok) return { ok: false, error: sandboxed.error, code: 'SANDBOX_UNAVAILABLE' };
+      if (!sandboxed.ok) {
+        return {
+          ok: false,
+          error: sandboxed.error,
+          code: 'SANDBOX_UNAVAILABLE',
+          meta: buildSandboxMeta(sandboxDecision),
+        };
+      }
       let result: ReturnType<typeof startBackgroundTask>;
       try {
         result = startBackgroundTask(sandboxed.command, workingDirectory, timeout, {
           sessionId: ctx.sessionId,
           toolCallId: ctx.currentToolCallId,
           env: createEvalSafeShellEnv(undefined, workingDirectory, ctx.logger),
-          sandboxed: shouldSandbox,
+          sandboxed: sandboxDecision.sandboxed,
           ...(sandboxCleanup ? { onExit: cleanupSandbox } : {}),
         });
       } catch (error) {
@@ -881,6 +958,7 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
         ok: true,
         output: msg,
         meta: {
+          ...buildSandboxMeta(sandboxDecision),
           taskId: result.taskId,
           outputFile: result.outputFile,
           artifact: result.outputFile
@@ -947,7 +1025,14 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
     };
 
     const sandboxedFg = applySandbox(commandForExecution);
-    if (!sandboxedFg.ok) return { ok: false, error: sandboxedFg.error, code: 'SANDBOX_UNAVAILABLE' };
+    if (!sandboxedFg.ok) {
+      return {
+        ok: false,
+        error: sandboxedFg.error,
+        code: 'SANDBOX_UNAVAILABLE',
+        meta: buildSandboxMeta(sandboxDecision),
+      };
+    }
 
     try {
       // 并行：生成动态描述（不阻塞命令执行）
@@ -992,6 +1077,7 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
         ok: true,
         output: cwdPrefix + output,
         meta: {
+          ...buildSandboxMeta(sandboxDecision),
           ...(dynamicDesc ? { description: dynamicDesc } : {}),
           process: {
             command: normalizedCommand,
@@ -1037,7 +1123,7 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
         signal: typeof errObj.signal === 'string' ? errObj.signal as NodeJS.Signals : undefined,
         code: typeof errObj.code === 'number' || typeof errObj.code === 'string' ? errObj.code : undefined,
         durationMs: typeof errObj.durationMs === 'number' ? errObj.durationMs : undefined,
-        sandboxed: shouldSandbox,
+        sandboxed: sandboxDecision.sandboxed,
         workingDirectory,
       });
       const withDiagnostics = (msg: string) => appendFailureDiagnostics(msg, diagnostics);
@@ -1048,7 +1134,7 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
           ok: false,
           error: 'aborted',
           code: 'ABORTED',
-          meta: { ...(errorOutput ? { output: errorOutput } : {}), shellPath: shellPathMeta },
+          meta: { ...buildSandboxMeta(sandboxDecision), ...(errorOutput ? { output: errorOutput } : {}), shellPath: shellPathMeta },
         };
       }
 
@@ -1057,7 +1143,7 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
           ok: false,
           error: withOutput(`Command timed out after ${timeout / 1000} seconds. Consider using run_in_background=true for long-running commands.`),
           code: 'TIMEOUT',
-          meta: { ...(errorOutput ? { output: errorOutput } : {}), shellPath: shellPathMeta },
+          meta: { ...buildSandboxMeta(sandboxDecision), ...(errorOutput ? { output: errorOutput } : {}), shellPath: shellPathMeta },
         };
       }
 
@@ -1065,7 +1151,7 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
         ok: false,
         error: withDiagnostics(withOutput(errMsg || 'Command execution failed')),
         code: 'FS_ERROR',
-        meta: { ...(errorOutput ? { output: errorOutput } : {}), shellPath: shellPathMeta },
+        meta: { ...buildSandboxMeta(sandboxDecision), ...(errorOutput ? { output: errorOutput } : {}), shellPath: shellPathMeta },
       };
     } finally {
       // PTY/后台路径把 cleanup 交给执行器的退出回调；这里只收前台路径。

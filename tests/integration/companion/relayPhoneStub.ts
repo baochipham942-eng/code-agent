@@ -198,9 +198,10 @@ export class RelayPhoneStub {
 
   private readBinding(value: unknown, endpoint: string, hostKey: string): LanBinding {
     const v = value as Partial<LanBinding>;
-    if (!v || typeof v.deviceId !== 'string' || !Number.isSafeInteger(v.scopeEpoch) || !Array.isArray(v.scope)) {
+    if (!v || typeof v.deviceId !== 'string' || typeof v.scopeEpoch !== 'number' || !Number.isSafeInteger(v.scopeEpoch) ||
+        !Array.isArray(v.scope) || v.scope.some(id => typeof id !== 'string')) {
       throw new Error('COMPANION_INVALID_BINDING');
     }
-    return { version: 1, endpoint, hostKey, deviceId: v.deviceId, scopeEpoch: v.scopeEpoch, scope: v.scope as string[] };
+    return { version: 1, endpoint, hostKey, deviceId: v.deviceId, scopeEpoch: v.scopeEpoch, scope: v.scope };
   }
 }

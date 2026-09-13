@@ -197,7 +197,7 @@ export class CompanionRelayClient {
   private scheduleReconnect(): void {
     if (this.stopped || !this.allowReconnect || this.reconnectTimer) return;
     const steps = this.deps.config.reconnectBackoffMs;
-    const delay = steps[Math.min(this.attempt, steps.length - 1)]! * (0.5 + this.jitter());
+    const delay = (steps[Math.min(this.attempt, steps.length - 1)] ?? L.relayReconnectBackoffMs[0]) * (0.5 + this.jitter());
     this.attempt += 1;
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;

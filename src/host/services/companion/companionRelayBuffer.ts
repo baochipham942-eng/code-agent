@@ -9,8 +9,8 @@ export class RelayOutboundBuffer {
   private bytes = 0;
   dropped = 0;
   constructor(
-    private readonly maxFrames = L.relayMaxBufferedFrames,
-    private readonly maxBytes = L.relayMaxBufferedBytes,
+    private readonly maxFrames: number = L.relayMaxBufferedFrames,
+    private readonly maxBytes: number = L.relayMaxBufferedBytes,
   ) {}
 
   get size(): number { return this.frames.length; }
@@ -42,7 +42,7 @@ export class RelayOutboundBuffer {
 export class RelaySeqBuffer {
   private expected = 0;
   private readonly held = new Map<number, CompanionRelayFrame>();
-  constructor(private readonly maxHeld = L.relaySeqHold) {}
+  constructor(private readonly maxHeld: number = L.relaySeqHold) {}
 
   reset(): void {
     this.expected = 0;
@@ -59,7 +59,9 @@ export class RelaySeqBuffer {
       const ready = [frame];
       this.expected += 1;
       while (this.held.has(this.expected)) {
-        ready.push(this.held.get(this.expected)!);
+        const next = this.held.get(this.expected);
+        if (!next) break;
+        ready.push(next);
         this.held.delete(this.expected);
         this.expected += 1;
       }

@@ -2,7 +2,7 @@
 // Agent Auto-Testing Framework - Type Definitions
 // ============================================================================
 
-import type { HarnessKnobs } from '../agent/runtime/harnessKnobs';
+import type { HarnessKnobs } from '../../shared/constants/harnessKnobs';
 import type {
   EvalRunStamp,
   EvalFailureClassification,

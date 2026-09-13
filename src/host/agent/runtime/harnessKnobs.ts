@@ -10,8 +10,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { HARNESS_KNOB_DEFAULTS, type HarnessKnobKey, type HarnessKnobs } from '../../../shared/constants/harnessKnobs';
 
-export { HARNESS_KNOB_DEFAULTS, validateHarnessKnobs, validateHarnessProfile, type HarnessKnobKey, type HarnessKnobs } from '../../../shared/constants/harnessKnobs';
-
 const knobScope = new AsyncLocalStorage<HarnessKnobs>();
 
 /** 空表直接透传：默认路径不进 AsyncLocalStorage，与现状零差异。 */

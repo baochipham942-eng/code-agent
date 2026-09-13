@@ -1,12 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import {
-  HARNESS_KNOB_DEFAULTS,
-  getHarnessKnob,
-  runWithHarnessKnobs,
-  validateHarnessKnobs,
-  validateHarnessProfile,
-  type HarnessKnobKey,
-} from '../../../src/host/agent/runtime/harnessKnobs';
+import { getHarnessKnob, runWithHarnessKnobs } from '../../../src/host/agent/runtime/harnessKnobs';
+import { HARNESS_KNOB_DEFAULTS, validateHarnessKnobs, type HarnessKnobKey } from '../../../src/shared/constants/harnessKnobs';
+import { validateHarnessProfile } from '../../../scripts/rsi-pilot/harnessProfileFile';
 import { SUBAGENT_COMPACTION, SYSTEM_PROMPT_BUDGET } from '../../../src/shared/constants/agent';
 import { getSystemPromptBudget } from '../../../src/host/agent/runtime/contextAssembly/shared';
 

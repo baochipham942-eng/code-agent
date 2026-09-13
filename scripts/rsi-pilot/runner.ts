@@ -61,7 +61,7 @@ const projectRoot = path.resolve(scriptDir, '../..');
 // depth under scripts/ as scripts/acceptance/, so the relative prefix matches
 // what scripts/acceptance/platformer-gameplay-generation.ts uses.
 const AGENT_ADAPTER_PATH = '../../src/host/testing/agentAdapter.ts';
-const HARNESS_KNOBS_PATH = '../../src/host/agent/runtime/harnessKnobs.ts';
+const HARNESS_KNOBS_PATH = '../../src/shared/constants/harnessKnobs.ts';
 const GAME_VALIDATOR_PATH = '../../src/host/agent/runtime/gameArtifactValidator.ts';
 const ARTIFACT_REPAIR_SPEC_PATH = '../../src/host/agent/runtime/artifactRepairSpec.ts';
 const GAME_CONSTANTS_PATH = '../../src/shared/constants/game.ts';
@@ -126,7 +126,7 @@ void _rsiProvenanceKeysExhaustive;
 async function loadHarnessProfile(profilePath: string): Promise<Record<string, number>> {
   const abs = path.isAbsolute(profilePath) ? profilePath : path.join(process.cwd(), profilePath);
   const raw: unknown = JSON.parse(await fs.readFile(abs, 'utf-8'));
-  const { validateHarnessProfile } = await import(HARNESS_KNOBS_PATH) as typeof import('../../src/host/agent/runtime/harnessKnobs');
+  const { validateHarnessProfile } = await import('./harnessProfileFile.ts');
   return validateHarnessProfile(raw) as Record<string, number>;
 }
 
@@ -369,7 +369,7 @@ export async function loadRunnerContext(): Promise<RunnerContext> {
       import(TELEMETRY_PATH),
       import(GAME_CONSTANTS_PATH),
     ]);
-  const { HARNESS_KNOB_DEFAULTS } = await import(HARNESS_KNOBS_PATH) as typeof import('../../src/host/agent/runtime/harnessKnobs');
+  const { HARNESS_KNOB_DEFAULTS } = await import(HARNESS_KNOBS_PATH) as typeof import('../../src/shared/constants/harnessKnobs');
 
   return {
     StandaloneAgentAdapter,

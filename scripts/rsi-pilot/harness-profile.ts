@@ -11,10 +11,10 @@ import fs from 'fs/promises';
 import path from 'path';
 import {
   HARNESS_KNOB_DEFAULTS,
-  validateHarnessProfile,
   type HarnessKnobKey,
   type HarnessKnobs,
-} from '../../src/host/agent/runtime/harnessKnobs.ts';
+} from '../../src/shared/constants/harnessKnobs.ts';
+import { validateHarnessProfile } from './harnessProfileFile.ts';
 
 /** 两份旋钮表的人读 diff：只列不同项，缺省键按默认值比。 */
 function diffHarnessKnobs(before: HarnessKnobs, after: HarnessKnobs): string[] {

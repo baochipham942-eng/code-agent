@@ -813,7 +813,11 @@ export async function validateGameArtifact(
     && !interactiveContractSnippet
   ) {
     failures.push('交互测试合约没有形成可平衡解析的对象字面量；请把 window.__INTERACTIVE_TEST__ / window.__GAME_TEST__ 修成一个直接赋值的平衡对象字面量，形如 window.__GAME_TEST__ = { start() {...}, reset(levelOrScenario) {...}, snapshot() {...}, step(inputState = {}, frames = 1) {...}, runSmokeTest() { return { passed, checks, failures, coverage }; } }; 不要放在注释、函数/类/IIFE/Object.assign 外壳里，也不要在对象闭合后留下重复或孤立的方法尾巴。');
-  } else if (interactiveContractSnippet && hasOrphanedContractTail(views.comments, interactiveContractSnippet)) {
+  // 🔴 这一处必须喂 original：hasOrphanedContractTail 的 split 分隔符之一就是注释
+  // (`// Auto-run smoke test`)，喂剥注释的视图会让该分隔符永远匹配不到，取到的尾巴
+  // 比实际更长，从而把合约之后的正常代码误判成「孤立尾巴」（假阳性）。
+  // 它与 `</html>` 后 trailing 同属「结构问题，不是 token 假绿」那一档，归 original。
+  } else if (interactiveContractSnippet && hasOrphanedContractTail(views.original, interactiveContractSnippet)) {
     failures.push('交互测试合约闭合后仍然残留游离的 start/reset/snapshot/step/runSmokeTest 方法尾巴；请删除重复或孤立的 contract tail，再保留一份真实生效的测试合约。');
   }
 

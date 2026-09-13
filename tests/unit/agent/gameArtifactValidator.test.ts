@@ -3185,6 +3185,43 @@ describe('validateGameArtifact', () => {
     expect(result.failures.some((failure) => failure.includes('游离'))).toBe(true);
   });
 
+  it('the Auto-run comment separator still ends the orphan-tail scan (ai-review #1766 Important)', async () => {
+    // hasOrphanedContractTail 的 split 分隔符之一是注释 `// Auto-run smoke test`。
+    // 若喂剥注释的视图，该分隔符永远匹配不到，尾巴被取得比实际长，
+    // 合约之后本属正常的 start()/runSmokeTest() 会被误判成「孤立尾巴」。
+    // 本用例走完整 validateGameArtifact，不是对字面量跑裸正则。
+    const filePath = await writeTempHtml(`
+      <!doctype html>
+      <html>
+      <body>
+        <canvas id="game" width="800" height="600"></canvas>
+        <script>
+          const state = { progress: 0, score: 0, mode: 'playing' };
+          document.addEventListener('keydown', () => { state.progress += 1; });
+          window.__GAME_META__ = {
+            domain: 'game',
+            controls: { ArrowRight: 'Move right' },
+            levels: [{ id: '1' }],
+          };
+          window.__GAME_TEST__ = {
+            start() { return this.snapshot(); },
+            reset(levelOrScenario) { state.progress = 0; return this.snapshot(); },
+            snapshot() { return { progress: state.progress, mode: state.mode }; },
+            step(inputState = {}, frames = 1) { state.progress += frames; return this.snapshot(); },
+            runSmokeTest() { return { passed: true, checks: [], failures: [], coverage: {} }; }
+          };
+          // Auto-run smoke test
+          start() { return state; },
+          runSmokeTest() { return { passed: true }; }
+        </script>
+      </body>
+      </html>
+    `);
+    const result = await validateGameArtifact(filePath, { contractLevel: 'full' });
+    const orphanHit = result.failures.some((f) => f.includes('孤立'));
+    expect(orphanHit, `failures=${result.failures.join(' | ')}`).toBe(false);
+  });
+
   it('inspects only the active balanced test contract instead of orphaned tail snippets', async () => {
     const filePath = await writeTempHtml(`
       <!doctype html>

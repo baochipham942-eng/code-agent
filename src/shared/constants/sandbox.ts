@@ -15,16 +15,6 @@ export function isOsSandboxEnabled(): boolean {
   return process.env.OS_SANDBOX_ENABLED !== 'false';
 }
 
-export const OS_SANDBOX = {
-  /**
-   * 是否对 bash 执行启用 OS 级沙箱。
-   * 默认 true；显式 `OS_SANDBOX_ENABLED=false` 关闭。
-   */
-  get ENABLED(): boolean {
-    return isOsSandboxEnabled();
-  },
-};
-
 /** Doctor / 设置页用的稳定检查项名；渲染层按 name 查找，不要改字符串。 */
 export const OS_SANDBOX_DOCTOR_ITEM_NAME = 'OS sandbox';
 

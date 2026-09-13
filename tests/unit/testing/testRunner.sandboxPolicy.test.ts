@@ -6,7 +6,7 @@ import type { AgentInterface } from '../../../src/host/testing/testRunner';
 import type { TestRunSummary } from '../../../src/host/testing/types';
 
 vi.mock('../../../src/shared/constants/sandbox', () => ({
-  OS_SANDBOX: { ENABLED: true },
+  isOsSandboxEnabled: () => true,
 }));
 
 vi.mock('../../../src/host/sandbox', () => ({

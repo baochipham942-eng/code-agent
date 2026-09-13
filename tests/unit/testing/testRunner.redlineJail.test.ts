@@ -15,7 +15,6 @@ vi.mock('../../../src/host/services/core/databaseService', () => ({
 }));
 
 vi.mock('../../../src/shared/constants/sandbox', () => ({
-  OS_SANDBOX: { ENABLED: false },
   isOsSandboxEnabled: () => false,
 }));
 

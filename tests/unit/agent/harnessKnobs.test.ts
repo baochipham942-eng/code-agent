@@ -4,6 +4,7 @@ import {
   getHarnessKnob,
   runWithHarnessKnobs,
   validateHarnessKnobs,
+  validateHarnessProfile,
   type HarnessKnobKey,
 } from '../../../src/host/agent/runtime/harnessKnobs';
 import { SUBAGENT_COMPACTION, SYSTEM_PROMPT_BUDGET } from '../../../src/shared/constants/agent';
@@ -58,5 +59,14 @@ describe('harnessKnobs', () => {
     expect(() => validateHarnessKnobs({ 'subagent.compactionThreshold': 1.5 })).toThrow(/比例/);
     expect(() => validateHarnessKnobs([])).toThrow(/对象/);
     expect(validateHarnessKnobs({ 'subagent.compactionThreshold': 0.7 })).toEqual({ 'subagent.compactionThreshold': 0.7 });
+  });
+
+  it('profile 文件级：顶层非对象 / 缺 knobs 键一律拒，不许静默按默认跑（PR#1769 R3）', () => {
+    expect(() => validateHarnessProfile([])).toThrow(/顶层必须是对象/);
+    expect(() => validateHarnessProfile(null)).toThrow(/顶层必须是对象/);
+    expect(() => validateHarnessProfile({})).toThrow(/缺少 knobs/);
+    expect(() => validateHarnessProfile({ knobs: [] })).toThrow(/必须是对象/);
+    expect(() => validateHarnessProfile({ knobs: { bogus: 1 } })).toThrow(/未知旋钮/);
+    expect(validateHarnessProfile({ knobs: { 'subagent.compactionThreshold': 0.7 } })).toEqual({ 'subagent.compactionThreshold': 0.7 });
   });
 });

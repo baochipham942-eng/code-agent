@@ -48,6 +48,20 @@ export function validateHarnessKnobs(value: unknown): HarnessKnobs {
 }
 
 /**
+ * profile 文件级校验：顶层必须是带 `knobs` 键的对象（`[]`、`{}`、缺键都拒），再走 validateHarnessKnobs。
+ * 不许「文件非法但按默认跑」——run 记录会盖上 profile 路径，结果会被错误归因（PR#1769 ai-review R3）。
+ */
+export function validateHarnessProfile(value: unknown): HarnessKnobs {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error('harness profile 顶层必须是对象：{ "knobs": { … } }');
+  }
+  if (!('knobs' in value)) {
+    throw new Error('harness profile 缺少 knobs 键：{ "knobs": { … } }');
+  }
+  return validateHarnessKnobs((value as { knobs: unknown }).knobs);
+}
+
+/**
  * 归一化为「默认表 + 覆盖」的全表（键按字典序）。省略、空对象、显式写成默认值三者结果相同——
  * 实验臂签名用它比较，避免「配置看着不同、行为完全一样」的假 A/B（PR#1769 ai-review）。
  */

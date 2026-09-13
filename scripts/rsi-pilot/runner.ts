@@ -122,12 +122,12 @@ const _rsiProvenanceKeysExhaustive: MissingRsiProvenanceKey extends never ? true
 void _rsiProvenanceKeysExhaustive;
 
 
-/** 读 profile 文件并用 host 的校验器过一遍（未知键 / 非正数 / 比例越界直接拒）。 */
+/** 读 profile 文件并用共享校验器过一遍（顶层非对象 / 缺 knobs / 未知键 / 非正数 / 比例越界直接拒，绝不静默按默认跑）。 */
 async function loadHarnessProfile(profilePath: string): Promise<Record<string, number>> {
   const abs = path.isAbsolute(profilePath) ? profilePath : path.join(process.cwd(), profilePath);
-  const raw = JSON.parse(await fs.readFile(abs, 'utf-8')) as { knobs?: unknown };
-  const { validateHarnessKnobs } = await import(HARNESS_KNOBS_PATH) as typeof import('../../src/host/agent/runtime/harnessKnobs');
-  return validateHarnessKnobs(raw.knobs ?? {}) as Record<string, number>;
+  const raw: unknown = JSON.parse(await fs.readFile(abs, 'utf-8'));
+  const { validateHarnessProfile } = await import(HARNESS_KNOBS_PATH) as typeof import('../../src/host/agent/runtime/harnessKnobs');
+  return validateHarnessProfile(raw) as Record<string, number>;
 }
 
 interface RunHarnessStamp {

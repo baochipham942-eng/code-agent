@@ -11,7 +11,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import {
   HARNESS_KNOB_DEFAULTS,
-  validateHarnessKnobs,
+  validateHarnessProfile,
   type HarnessKnobKey,
   type HarnessKnobs,
 } from '../../src/host/agent/runtime/harnessKnobs.ts';
@@ -27,8 +27,7 @@ function diffHarnessKnobs(before: HarnessKnobs, after: HarnessKnobs): string[] {
 
 async function readProfile(file: string): Promise<HarnessKnobs> {
   const abs = path.isAbsolute(file) ? file : path.join(process.cwd(), file);
-  const raw = JSON.parse(await fs.readFile(abs, 'utf-8')) as { knobs?: unknown };
-  return validateHarnessKnobs(raw.knobs ?? {});
+  return validateHarnessProfile(JSON.parse(await fs.readFile(abs, 'utf-8')));
 }
 
 async function main(): Promise<void> {

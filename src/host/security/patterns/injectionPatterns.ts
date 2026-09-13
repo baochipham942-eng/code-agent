@@ -2,21 +2,109 @@
 // Prompt Injection Detection Patterns
 // ============================================================================
 
+export type InjectionAttackCategory =
+  | 'prompt_injection'
+  | 'jailbreak_attempt'
+  | 'data_exfiltration'
+  | 'instruction_override'
+  | 'sensitive_data'
+  | 'obfuscation_rce';
+
+/** lenient = tool results; strict = memory writes + skill install (superset of lenient). */
+export type InjectionPatternScope = 'lenient' | 'strict';
+
 export interface InjectionPattern {
   pattern: RegExp;
-  type: 'prompt_injection' | 'jailbreak_attempt' | 'data_exfiltration' | 'instruction_override' | 'sensitive_data';
+  type: InjectionAttackCategory;
   severity: 'low' | 'medium' | 'high' | 'critical';
   description: string;
+  /**
+   * Omit or `lenient`: applies to tool results and every stricter consumer.
+   * `strict`: memory writes and skill installation only.
+   */
+  scope?: InjectionPatternScope;
+  /** Stable id for skillContentGuard obfuscation findings. */
+  flag?: string;
 }
 
+export function patternAppliesToScope(
+  pattern: InjectionPattern,
+  scope: InjectionPatternScope,
+): boolean {
+  if (scope === 'strict') return true;
+  return (pattern.scope ?? 'lenient') === 'lenient';
+}
+
+export function patternsForScope(scope: InjectionPatternScope): InjectionPattern[] {
+  return INJECTION_PATTERNS.filter((pattern) => patternAppliesToScope(pattern, scope));
+}
+
+const SHELL_TOKEN = '(?:ba|z|da|c|k|tc|a|fi)?sh';
+
 /**
- * 检测 prompt injection / jailbreak 的正则模式
+ * Obfuscation / RCE signatures — unique regex source, consumed by
+ * INJECTION_PATTERNS (strict scope) and skillContentGuard.
+ */
+export const OBFUSCATION_PATTERNS: Array<InjectionPattern & { flag: string }> = [
+  {
+    pattern: new RegExp(
+      `\\|\\s*(sudo\\s+)?(env\\s+|busybox\\s+)?([\\w./-]*/)?(?:${SHELL_TOKEN}|pwsh|powershell)\\b`,
+      'i',
+    ),
+    type: 'obfuscation_rce',
+    severity: 'critical',
+    description: '管道将内容送入 shell 解释器',
+    scope: 'strict',
+    flag: 'pipe_to_shell',
+  },
+  {
+    pattern: /\beval\b[^\n]*[$`(]/i,
+    type: 'obfuscation_rce',
+    severity: 'critical',
+    description: 'eval 动态执行',
+    scope: 'strict',
+    flag: 'eval_dynamic',
+  },
+  {
+    pattern: new RegExp(`\\b${SHELL_TOKEN}\\b[^\\n]*\\/dev\\/tcp\\/`, 'i'),
+    type: 'obfuscation_rce',
+    severity: 'critical',
+    description: '通过 /dev/tcp 反弹 shell',
+    scope: 'strict',
+    flag: 'reverse_shell_devtcp',
+  },
+  {
+    pattern: /\bnc\b[^\n]*-e\s*\/(bin|usr)\/[a-z/]*sh/i,
+    type: 'obfuscation_rce',
+    severity: 'critical',
+    description: 'netcat 反弹 shell',
+    scope: 'strict',
+    flag: 'netcat_reverse_shell',
+  },
+  {
+    pattern: /[$`]\(?\s*(curl|wget|fetch)\b[^)`\n]*\)?/i,
+    type: 'obfuscation_rce',
+    severity: 'critical',
+    description: '命令替换中下载远程内容',
+    scope: 'strict',
+    flag: 'cmdsubst_download',
+  },
+  {
+    pattern: /[<>]\(\s*(curl|wget|fetch)\b/i,
+    type: 'obfuscation_rce',
+    severity: 'critical',
+    description: '进程替换中下载执行',
+    scope: 'strict',
+    flag: 'procsub_download',
+  },
+];
+
+/**
+ * 检测 prompt injection / jailbreak 的正则模式（唯一正则库）
  *
- * 分为 4 个类别：
- * 1. 指令覆盖 - 试图覆盖系统指令
- * 2. 角色劫持 - 试图改变 AI 角色
- * 3. 数据窃取 - 试图提取系统信息
- * 4. 越狱尝试 - 已知的 jailbreak 模式
+ * 按攻击类别分组，并分 scope：
+ * - lenient（默认）：工具结果
+ * - strict：记忆写入与 skill 安装（含下方混淆 / RCE 签名）
  */
 export const INJECTION_PATTERNS: InjectionPattern[] = [
   // =========================================================================
@@ -190,4 +278,11 @@ export const INJECTION_PATTERNS: InjectionPattern[] = [
     severity: 'medium',
     description: '外部数据包含 API 密钥',
   },
+
+  // =========================================================================
+  // 混淆 / RCE / 外泄签名 (obfuscation_rce) — strict only
+  // 从 skillContentGuard 并入，不另起第二套正则库。工具结果不跑这些，
+  // 避免教程页里的 `curl | bash` 误伤；记忆写入与 skill 安装 fail-closed。
+  // =========================================================================
+  ...OBFUSCATION_PATTERNS,
 ];

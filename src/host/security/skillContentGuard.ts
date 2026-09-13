@@ -13,6 +13,8 @@
 import { validateCommand } from './commandSafety';
 import { getSensitiveDetector } from './sensitiveDetector';
 import { canonicalizeCommand } from './canonicalizeCommand';
+import { OBFUSCATION_PATTERNS } from './patterns/injectionPatterns';
+import { stripSpecialTokenLiterals } from './untrustedContentBoundary';
 
 export interface SkillGuardFinding {
   kind: 'dangerous_command' | 'embedded_secret';
@@ -118,32 +120,6 @@ export function findDynamicCommandName(normalized: string): string | null {
   return null;
 }
 
-// 已知 shell 名（用于"管道进 shell"匹配；刻意不含 ssh —— ssh 不以这些前缀开头，不会误命中）
-const SHELL_TOKEN = '(?:ba|z|da|c|k|tc|a|fi)?sh';
-
-// 混淆 / RCE / 外泄签名：validateCommand 不一定覆盖的"下载并执行 / 反弹 shell"等模式。
-// 在归一化（去引号/反斜杠/IFS 后）的文本上匹配，正常 skill 里几乎不会出现，命中即拦。
-const OBFUSCATION_PATTERNS: Array<{ re: RegExp; flag: string }> = [
-  // 任意内容管道进解释器（不限 decoder；覆盖绝对路径 /bin/sh、env bash、busybox sh、pwsh/powershell）
-  {
-    re: new RegExp(
-      `\\|\\s*(sudo\\s+)?(env\\s+|busybox\\s+)?([\\w./-]*/)?(?:${SHELL_TOKEN}|pwsh|powershell)\\b`,
-      'i',
-    ),
-    flag: 'pipe_to_shell',
-  },
-  // eval 动态执行（命令替换 / 反引号 / 子表达式）
-  { re: /\beval\b[^\n]*[$`(]/i, flag: 'eval_dynamic' },
-  // 反弹 shell：/dev/tcp 重定向
-  { re: new RegExp(`\\b${SHELL_TOKEN}\\b[^\\n]*\\/dev\\/tcp\\/`, 'i'), flag: 'reverse_shell_devtcp' },
-  // netcat 反弹 shell
-  { re: /\bnc\b[^\n]*-e\s*\/(bin|usr)\/[a-z/]*sh/i, flag: 'netcat_reverse_shell' },
-  // 命令替换里下载：$(curl ...) / `wget ...`
-  { re: /[$`]\(?\s*(curl|wget|fetch)\b[^)`\n]*\)?/i, flag: 'cmdsubst_download' },
-  // 进程替换里下载执行：bash <(curl ...) / sh <(wget ...)
-  { re: /[<>]\(\s*(curl|wget|fetch)\b/i, flag: 'procsub_download' },
-];
-
 /**
  * 扫描前 shell 语义归一化：把常见的"拆词/混淆命令名"还原，防止绕过命令检测。
  * 不追求完整 shell 解析，但覆盖 Codex 复审点出的原生绕过面：
@@ -160,6 +136,13 @@ export function normalizeForScan(content: string): string {
 
 export function scanSkillContent(content: string): SkillGuardResult {
   const findings: SkillGuardFinding[] = [];
+  const { found: specialTokens } = stripSpecialTokenLiterals(content);
+  if (specialTokens.length > 0) {
+    findings.push({
+      kind: 'dangerous_command',
+      detail: `模型控制 token：${[...new Set(specialTokens)].slice(0, 3).join(', ')}`,
+    });
+  }
   const normalized = normalizeForScan(content);
 
   // fenced / inline code 中无法可靠拆词的 shell 片段不可进入 skill。Markdown 的
@@ -194,9 +177,10 @@ export function scanSkillContent(content: string): SkillGuardResult {
     }
   }
 
-  // 2) 混淆 / RCE / 外泄签名（对归一化后的全文匹配）
-  for (const { re, flag } of OBFUSCATION_PATTERNS) {
-    const m = normalized.match(re);
+  // 2) 混淆 / RCE / 外泄签名（对归一化后的全文匹配；正则唯一源在 injectionPatterns）
+  for (const { pattern, flag } of OBFUSCATION_PATTERNS) {
+    pattern.lastIndex = 0;
+    const m = normalized.match(pattern);
     if (m) {
       findings.push({ kind: 'dangerous_command', detail: `可疑混淆/远程执行（${flag}）：${m[0].slice(0, 80)}` });
     }

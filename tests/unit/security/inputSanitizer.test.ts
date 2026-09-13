@@ -33,6 +33,7 @@ describe('InputSanitizer', () => {
       const input = 'Some normal API response with data: { "count": 42 }';
       const result = sanitizer.sanitize(input, 'web_search');
       expect(result.sanitized).toBe(input);
+      expect(result.nonce).toMatch(/^[0-9a-f]{32}$/);
     });
 
     it('should scan PascalCase WebSearch and WebFetch sources', () => {

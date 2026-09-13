@@ -43,15 +43,18 @@ export interface OsSandboxDecision {
   exception?: string;
 }
 
-export interface UnsandboxableException {
+interface UnsandboxableException {
   id: string;
   /** Why this class cannot run inside the OS jail. Required: each add is a relaxation. */
   reason: string;
   match: (command: string, platform: NodeJS.Platform) => boolean;
 }
 
+// Command-position only: the name must start the command or follow a shell
+// command separator (`;` `&` `|` `(`). Matching plain arguments (e.g. `echo
+// docker`, `cat open`) would false-positive into a degraded naked run.
 const COMMAND_TOKEN = (names: string[]): RegExp => new RegExp(
-  `(?:^|[\\s;&|()])(?:sudo\\s+|command\\s+|env\\s+)?(?:${names
+  `(?:^|[;&|(])\\s*(?:sudo\\s+|command\\s+|env\\s+)?(?:${names
     .map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
     .join('|')})(?=$|[\\s;&|()])`,
   'i',
@@ -66,7 +69,7 @@ const MACOS_LAUNCH_PATTERN = COMMAND_TOKEN(['open', 'osascript']);
  * unattended, write-fence, eval, multi-root) still wrap — a failed jail is
  * safer than a silent hole in those paths.
  */
-export const UNSANDBOXABLE_EXCEPTIONS: readonly UnsandboxableException[] = [
+const UNSANDBOXABLE_EXCEPTIONS: readonly UnsandboxableException[] = [
   {
     id: 'docker_engine',
     reason:
@@ -83,7 +86,7 @@ export const UNSANDBOXABLE_EXCEPTIONS: readonly UnsandboxableException[] = [
   },
 ];
 
-export function classifyUnsandboxableCommand(
+function classifyUnsandboxableCommand(
   command: string,
   platform: NodeJS.Platform = process.platform,
 ): UnsandboxableException | undefined {

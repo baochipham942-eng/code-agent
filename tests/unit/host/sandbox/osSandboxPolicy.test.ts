@@ -1,10 +1,10 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { OS_SANDBOX_CODES } from '../../../../src/shared/constants/sandbox';
-import {
-  classifyUnsandboxableCommand,
-  resolveOsSandboxDecision,
-  UNSANDBOXABLE_EXCEPTIONS,
-} from '../../../../src/host/sandbox/osSandboxPolicy';
+import { resolveOsSandboxDecision } from '../../../../src/host/sandbox/osSandboxPolicy';
+
+const POLICY_SOURCE = path.resolve(__dirname, '../../../../src/host/sandbox/osSandboxPolicy.ts');
 
 const base = {
   sandboxAvailable: true,
@@ -113,20 +113,26 @@ describe('osSandboxPolicy', () => {
   });
 
   it('docker / open 在 default 档进入白名单例外', () => {
-    expect(classifyUnsandboxableCommand('docker build .', 'darwin')?.id).toBe('docker_engine');
-    expect(classifyUnsandboxableCommand('sudo podman ps', 'linux')?.id).toBe('docker_engine');
-    expect(classifyUnsandboxableCommand('open Preview.app', 'darwin')?.id).toBe('macos_launch_services');
-    expect(classifyUnsandboxableCommand('open Preview.app', 'linux')).toBeUndefined();
-    expect(resolveOsSandboxDecision({
-      ...base,
-      command: 'docker build .',
-      permissionMode: 'default',
-    })).toMatchObject({
-      apply: false,
-      degraded: true,
-      exception: 'docker_engine',
+    const degradeOf = (command: string, platform: NodeJS.Platform) =>
+      resolveOsSandboxDecision({ ...base, command, permissionMode: 'default', platform });
+    expect(degradeOf('docker build .', 'darwin')).toMatchObject({
+      apply: false, degraded: true, exception: 'docker_engine',
       code: OS_SANDBOX_CODES.DEGRADED_UNSANDBOXABLE,
     });
+    expect(degradeOf('sudo podman ps', 'linux').exception).toBe('docker_engine');
+    expect(degradeOf('open Preview.app', 'darwin').exception).toBe('macos_launch_services');
+    expect(degradeOf('open Preview.app', 'linux').apply).toBe(true);
+  });
+
+  it('白名单例外只认命令位：参数里的 docker/open 不降级（PR #1789 复审 Important）', () => {
+    for (const command of ['echo docker build .', 'cat open', 'echo "osascript -e hi"', 'printf %s podman']) {
+      const decision = resolveOsSandboxDecision({ ...base, command, permissionMode: 'default' });
+      expect(decision.apply).toBe(true);
+      expect(decision.degraded).toBe(false);
+    }
+    // 命令连接符之后仍认命令位
+    expect(resolveOsSandboxDecision({ ...base, command: 'cd x && docker build .', permissionMode: 'default' }).exception)
+      .toBe('docker_engine');
   });
 
   it('bypass 不走白名单例外', () => {
@@ -138,9 +144,11 @@ describe('osSandboxPolicy', () => {
   });
 
   it('每条白名单例外都有理由', () => {
-    expect(UNSANDBOXABLE_EXCEPTIONS.length).toBeLessThanOrEqual(10);
-    for (const entry of UNSANDBOXABLE_EXCEPTIONS) {
-      expect(entry.reason.trim().length).toBeGreaterThan(20);
-    }
+    const source = readFileSync(POLICY_SOURCE, 'utf8');
+    const ids = source.match(/^ {4}id: '/gm) ?? [];
+    const reasons = source.match(/^ {4}reason:/gm) ?? [];
+    expect(ids.length).toBeGreaterThan(0);
+    expect(ids.length).toBeLessThanOrEqual(10);
+    expect(reasons.length).toBe(ids.length);
   });
 });

@@ -1,11 +1,31 @@
 import { describe, expect, it, vi } from 'vitest';
-import { formatOsSandboxProbe, osSandboxInstallHint, probeOsSandbox } from '../../../../src/host/sandbox/probe';
+import { formatOsSandboxProbe, probeOsSandbox } from '../../../../src/host/sandbox/probe';
 import { getSandboxManager } from '../../../../src/host/sandbox';
 
 describe('OS sandbox probe', () => {
   it('install hint names bubblewrap on Linux when unavailable', () => {
-    expect(osSandboxInstallHint('linux', false)).toMatch(/bubblewrap/);
-    expect(osSandboxInstallHint('darwin', true)).toMatch(/ready/i);
+    const manager = getSandboxManager();
+    const spy = vi.spyOn(manager, 'getStatus').mockReturnValue({
+      platform: 'linux',
+      available: false,
+      technology: null,
+      error: 'bwrap missing',
+    });
+    try {
+      expect(probeOsSandbox({ homeDir: '/Users/tester' }).installHint).toMatch(/bubblewrap/);
+    } finally {
+      spy.mockRestore();
+    }
+    const spyReady = vi.spyOn(manager, 'getStatus').mockReturnValue({
+      platform: 'darwin',
+      available: true,
+      technology: 'Seatbelt',
+    });
+    try {
+      expect(probeOsSandbox({ homeDir: '/Users/tester' }).installHint).toMatch(/ready/i);
+    } finally {
+      spyReady.mockRestore();
+    }
   });
 
   it('probe snapshot includes rollout modes and sensitive denies with ~ prefix', () => {

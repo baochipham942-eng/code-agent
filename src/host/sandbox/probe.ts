@@ -25,7 +25,7 @@ function displayPath(filePath: string, homeDir: string): string {
   return filePath;
 }
 
-export function osSandboxInstallHint(
+function osSandboxInstallHint(
   platform: NodeJS.Platform = process.platform,
   available: boolean,
 ): string {

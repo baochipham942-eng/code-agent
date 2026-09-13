@@ -1070,6 +1070,26 @@ fn strip_verbatim_prefix(p: PathBuf) -> PathBuf {
     p
 }
 
+/// Bundle-internal roots derived from the running executable. Release builds
+/// ignore cwd (untrusted), so packaged-smoke's spawn of Contents/MacOS/<exe>
+/// must still find Contents/Resources/dist/web/webServer.cjs even when
+/// NSBundle resource_dir() is empty.
+fn packaged_exe_roots(exe_path: &Path) -> Vec<PathBuf> {
+    let mut roots = Vec::new();
+    let Some(exe_dir) = exe_path.parent() else {
+        return roots;
+    };
+    roots.push(exe_dir.to_path_buf());
+    if let Some(contents) = exe_dir.parent() {
+        roots.push(contents.to_path_buf());
+        roots.push(contents.join("Resources"));
+        if let Some(bundle) = contents.parent() {
+            roots.push(bundle.to_path_buf());
+        }
+    }
+    roots
+}
+
 fn candidate_roots(app: &tauri::AppHandle) -> Vec<PathBuf> {
     let mut dev_roots = Vec::new();
     let mut packaged_roots = Vec::new();
@@ -1100,18 +1120,7 @@ fn candidate_roots(app: &tauri::AppHandle) -> Vec<PathBuf> {
     }
 
     if let Ok(exe_path) = env::current_exe() {
-        let exe_path = strip_verbatim_prefix(exe_path);
-        if let Some(exe_dir) = exe_path.parent() {
-            packaged_roots.push(exe_dir.to_path_buf());
-
-            if let Some(parent) = exe_dir.parent() {
-                packaged_roots.push(parent.to_path_buf());
-
-                if let Some(grandparent) = parent.parent() {
-                    packaged_roots.push(grandparent.to_path_buf());
-                }
-            }
-        }
+        packaged_roots.extend(packaged_exe_roots(&strip_verbatim_prefix(exe_path)));
     }
 
     let mut roots = Vec::new();
@@ -2854,9 +2863,9 @@ mod runtime_env_tests {
     use super::{
         better_sqlite3_prebuild_name, bundled_node_candidates, channel_web_port, desktop_shell_channel,
         desktop_shell_event_payload, desktop_shell_resource_preflight, dev_channel_data_dir,
-        dev_slot, parse_port_holder_pids, previous_boot_failure_from_value,
+        dev_slot, packaged_exe_roots, parse_port_holder_pids, previous_boot_failure_from_value,
         renderer_navigation_failure_message,
-        required_resource_failures, web_server_node_env, web_server_runtime_env,
+        required_resource_failures, web_server_runtime_env, web_server_node_env,
         DesktopShellBootDiagnostics, DesktopShellBootStage, DesktopShellResourceStatus,
         BUNDLED_RUNTIME_ROOT_ENV, DEV_WEB_PORT, PROD_WEB_PORT, RESOURCE_DIR_ENV,
     };
@@ -2891,6 +2900,20 @@ mod runtime_env_tests {
 
     #[cfg(not(unix))]
     fn make_executable(_path: &Path) {}
+
+    #[test]
+    fn packaged_exe_roots_include_macos_resources() {
+        let roots = packaged_exe_roots(Path::new(
+            "/tmp/Agent Neo.app/Contents/MacOS/code-agent-tauri",
+        ));
+        assert!(
+            roots.contains(&PathBuf::from("/tmp/Agent Neo.app/Contents/Resources")),
+            "inner-executable launch must see Contents/Resources: {roots:?}"
+        );
+        assert!(roots.contains(&PathBuf::from("/tmp/Agent Neo.app/Contents/MacOS")));
+        assert!(roots.contains(&PathBuf::from("/tmp/Agent Neo.app/Contents")));
+        assert!(roots.contains(&PathBuf::from("/tmp/Agent Neo.app")));
+    }
 
     #[test]
     fn includes_bundled_runtime_root_for_web_server() {

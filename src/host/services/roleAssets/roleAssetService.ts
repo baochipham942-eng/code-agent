@@ -17,6 +17,7 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import { createLogger } from '../infra/logger';
 import { guardSensitiveText } from '../../security/sensitiveDataGuard';
+import { admitStrictUntrustedText } from '../../security/inputSanitizer';
 import { ROLE_ASSETS } from '../../../shared/constants';
 import {
   getRoleDir,
@@ -445,11 +446,12 @@ function sanitizeMemoryFilename(filename: string): string {
 }
 
 function guardText(value: string, maxLength: number): string {
-  return guardSensitiveText(value, {
+  const guarded = guardSensitiveText(value, {
     surface: 'memory',
     mode: 'local-persist',
     maxLength,
   }).trim();
+  return admitStrictUntrustedText(guarded, 'scoped_memory_write');
 }
 
 async function exists(filePath: string): Promise<boolean> {

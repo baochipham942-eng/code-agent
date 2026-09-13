@@ -2,15 +2,27 @@
 
 import { execFileSync, spawn } from 'node:child_process';
 import fs from 'node:fs';
+import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
+import { fileURLToPath } from 'node:url';
 import {
   assertNoSensitiveDesktopShellDiagnostics,
   classifyDesktopShellDiagnostics,
   desktopShellDiagnosticsFailureMessage,
   extractDesktopShellDiagnostics,
 } from './desktop-shell-diagnostics.mjs';
+import {
+  inspectCompanionBundle,
+  sanitizeCompanionInvitation,
+  verifyPackagedCompanionEvidence,
+} from './lib/desktop-shell-packaged-companion.mjs';
+
+export { verifyPackagedCompanionEvidence } from './lib/desktop-shell-packaged-companion.mjs';
+
+const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = path.resolve(SCRIPT_DIR, '..');
 
 const DEFAULT_TIMEOUT_MS = 120_000;
 const BOOT_FILE = 'desktop-shell-boot-latest.json';
@@ -197,6 +209,193 @@ function readDevToken(dataDir) {
   } catch {
     return null;
   }
+}
+
+function resolveTauriAppResourcesRoot(appPath) {
+  const appResourcesDir = path.join(appPath, 'Contents', 'Resources');
+  const legacy = path.join(appResourcesDir, '_up_');
+  if (fs.existsSync(legacy) && fs.statSync(legacy).isDirectory()) return legacy;
+  return appResourcesDir;
+}
+
+function parseLanEndpoint(endpoint) {
+  try {
+    const url = new URL(endpoint);
+    const port = Number(url.port);
+    if (!url.hostname || !Number.isInteger(port) || port <= 0) return null;
+    return { host: url.hostname, port };
+  } catch {
+    return null;
+  }
+}
+
+function probeTcp(host, port, timeoutMs = 1500) {
+  return new Promise((resolve) => {
+    const socket = net.connect({ host, port });
+    const timer = setTimeout(() => {
+      socket.destroy();
+      resolve({ listening: false, error: 'timeout' });
+    }, timeoutMs);
+    socket.once('connect', () => {
+      clearTimeout(timer);
+      socket.end();
+      resolve({ listening: true });
+    });
+    socket.once('error', (error) => {
+      clearTimeout(timer);
+      resolve({ listening: false, error: error.code ?? error.message });
+    });
+  });
+}
+
+function readListenSample(port) {
+  try {
+    const output = execFileSync('/usr/sbin/lsof', ['-nP', `-iTCP:${port}`, '-sTCP:LISTEN'], {
+      encoding: 'utf8',
+      timeout: 3000,
+    });
+    return output.trim().split('\n').slice(0, 4);
+  } catch {
+    return [];
+  }
+}
+
+function authorizedFetch(baseUrl, token, route, body, timeoutMs) {
+  return fetchJson(`${baseUrl}${route}`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body,
+    timeoutMs,
+  });
+}
+
+function runCompanionRoundtrip(invitationFile, outFile) {
+  const script = path.join(SCRIPT_DIR, 'acceptance', 'packaged-companion-roundtrip.ts');
+  const tsxCli = path.join(REPO_ROOT, 'node_modules', 'tsx', 'dist', 'cli.mjs');
+  execFileSync(process.execPath, [tsxCli, script, '--invitation-file', invitationFile, '--out', outFile], {
+    cwd: REPO_ROOT,
+    encoding: 'utf8',
+    timeout: 20_000,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  return JSON.parse(fs.readFileSync(outFile, 'utf8'));
+}
+
+async function collectCompanionEvidence({ appPath, dataDir, port, roundtrip }) {
+  const baseUrl = `http://localhost:${port}`;
+  const token = readDevToken(dataDir);
+  const resourcesRoot = resolveTauriAppResourcesRoot(appPath);
+  const bundlePath = path.join(resourcesRoot, 'dist', 'web', 'webServer.bundle.cjs');
+  const markers = inspectCompanionBundle(bundlePath);
+  const notReady = (error) => ({
+    markers,
+    session: { ok: false, error },
+    invite: { ok: false, error },
+    invitation: null,
+    listen: { listening: false, error },
+    roundtrip: roundtrip ? { attempted: true, paired: false, error, approval: { status: 'NOT_RUN', reason: 'pairing did not start' } } : null,
+  });
+  if (!token) return notReady('auth token file not ready');
+
+  const workspace = path.join(dataDir, 'companion-smoke-workspace');
+  fs.mkdirSync(workspace, { recursive: true });
+  let session = { ok: false };
+  try {
+    const created = await authorizedFetch(baseUrl, token, '/api/sessions', {
+      title: 'packaged-companion-smoke',
+      workingDirectory: workspace,
+    }, 5000);
+    const sessionId = isRecord(created.body?.data) ? created.body.data.id : created.body?.id;
+    session = {
+      ok: created.ok && typeof sessionId === 'string' && sessionId.length > 0,
+      status: created.status,
+      sessionId: typeof sessionId === 'string' ? sessionId : undefined,
+      error: created.ok ? undefined : (created.body?.error ?? `HTTP_${created.status}`),
+    };
+  } catch (error) {
+    session = { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+
+  let invite = { ok: false };
+  let invitation = null;
+  let rawInvitation = null;
+  let listen = { listening: false };
+  if (session.ok && session.sessionId) {
+    try {
+      const invited = await authorizedFetch(baseUrl, token, '/api/companion/manage', {
+        action: 'invite',
+        scope: [session.sessionId],
+      }, 8000);
+      const body = isRecord(invited.body) ? invited.body : null;
+      invite = {
+        ok: invited.ok,
+        status: invited.status,
+        kind: body?.kind,
+        error: invited.ok ? undefined : (body?.error ?? `HTTP_${invited.status}`),
+      };
+      rawInvitation = isRecord(body?.invitation) ? body.invitation : null;
+      invitation = sanitizeCompanionInvitation(rawInvitation);
+      const parsed = typeof rawInvitation?.endpoint === 'string' ? parseLanEndpoint(rawInvitation.endpoint) : null;
+      if (parsed) {
+        const probed = await probeTcp(parsed.host, parsed.port);
+        listen = {
+          endpoint: rawInvitation.endpoint,
+          host: parsed.host,
+          port: parsed.port,
+          listening: probed.listening,
+          error: probed.error,
+          lsofSample: readListenSample(parsed.port),
+        };
+      } else {
+        listen = { listening: false, error: 'invite did not include a parseable endpoint' };
+      }
+    } catch (error) {
+      invite = { ok: false, error: error instanceof Error ? error.message : String(error) };
+      listen = { listening: false, error: invite.error };
+    }
+  }
+
+  let roundtripResult = null;
+  if (roundtrip) {
+    if (!rawInvitation || invite.kind !== 'invitation' || !listen.listening) {
+      roundtripResult = {
+        attempted: true,
+        paired: false,
+        error: 'invite/listen not ready',
+        approval: { status: 'NOT_RUN', reason: 'pairing did not start' },
+      };
+    } else {
+      const invitationFile = path.join(dataDir, 'companion-invite.json');
+      const roundtripOut = path.join(dataDir, 'companion-roundtrip.json');
+      fs.writeFileSync(invitationFile, `${JSON.stringify(rawInvitation)}\n`);
+      fs.chmodSync(invitationFile, 0o600);
+      try {
+        const live = runCompanionRoundtrip(invitationFile, roundtripOut);
+        roundtripResult = {
+          attempted: true,
+          paired: live.paired === true,
+          deviceId: live.deviceId,
+          scopeEpoch: live.scopeEpoch,
+          syncNextSeq: live.syncNextSeq ?? null,
+          error: live.error,
+          approval: live.approval ?? { status: 'NOT_RUN', reason: 'roundtrip did not report approval status' },
+        };
+      } catch (error) {
+        let parsed = null;
+        try { parsed = JSON.parse(fs.readFileSync(roundtripOut, 'utf8')); } catch { parsed = null; }
+        roundtripResult = {
+          attempted: true,
+          paired: parsed?.paired === true,
+          error: parsed?.error ?? (error instanceof Error ? error.message : String(error)),
+          approval: parsed?.approval ?? { status: 'NOT_RUN', reason: 'pairing did not complete, so approval was not attempted' },
+        };
+      } finally {
+        try { fs.unlinkSync(invitationFile); } catch { /* invitation material must not linger */ }
+      }
+    }
+  }
+
+  return { markers, session, invite, invitation, listen, roundtrip: roundtripResult };
 }
 
 async function readDomainDiagnostics(baseUrl, dataDir) {
@@ -514,6 +713,8 @@ function parseCliArgs(args) {
     skipLaunch: hasFlag(args, '--skip-launch'),
     keepRunning: hasFlag(args, '--keep-running'),
     healthOnly: hasFlag(args, '--health-only'),
+    companion: hasFlag(args, '--companion') || hasFlag(args, '--companion-roundtrip'),
+    companionRoundtrip: hasFlag(args, '--companion-roundtrip'),
     json: hasFlag(args, '--json'),
     outFile: readArg(args, '--out') ? path.resolve(readArg(args, '--out')) : undefined,
   };
@@ -534,6 +735,9 @@ function usage() {
     '  --skip-launch      Do not launch the app; only probe the given data-dir/port.',
     '  --keep-running     Leave the launched app process running.',
     '  --health-only      Require a fresh matching boot and healthy /api/health; skip full runtime diagnostics.',
+    '  --companion        After boot, create a session, call manage invite, and require the LAN port to listen.',
+    '  --companion-roundtrip',
+    '                      Also pair with the production LAN client stub. Implies --companion.',
     '  --out <file>        Write the JSON smoke result to a file.',
     '  --json              Print JSON.',
   ].join('\n');
@@ -599,6 +803,26 @@ async function main() {
     }
 
     const result = await collectEvidence({ ...options, startedAtMs });
+    if (options.companion && !options.healthOnly && result.evidence?.health) {
+      const companionEvidence = await collectCompanionEvidence({
+        appPath: options.appPath,
+        dataDir: options.dataDir,
+        port: options.port,
+        roundtrip: options.companionRoundtrip,
+      });
+      const companion = verifyPackagedCompanionEvidence(companionEvidence);
+      result.companion = companion;
+      result.summary = {
+        ...result.summary,
+        companionOk: companion.ok,
+        companionLanPort: companion.summary.lanPort,
+        companionInviteKind: companion.summary.inviteKind,
+        companionPaired: companion.summary.paired,
+      };
+      for (const failure of companion.failures) result.failures.push(failure);
+      for (const warning of companion.warnings) result.warnings.push(warning);
+      if (!companion.ok) result.ok = false;
+    }
     if (launched && launched.getOutput() && result.failures.length > 0) {
       result.launch = {
         executable: launched.executable,

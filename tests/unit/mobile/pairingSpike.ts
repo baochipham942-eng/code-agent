@@ -18,7 +18,6 @@ export function issueInvitation(issuer: Identity, ttlMs = 120_000, now = Date.no
 }
 
 export function encodeInvitation(invite: Invitation): string { return Buffer.from(JSON.stringify(invite)).toString('base64url'); }
-export function decodeInvitation(encoded: string): Invitation { return JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8')) as Invitation; }
 
 export function acceptInvitation(invite: Invitation, host: Identity, phone: Identity, now = Date.now()): { host: DeviceRecord; phone: DeviceRecord; sessionKey: Buffer } {
   if (invite.version !== 1) throw new PairingError('PROTOCOL_DOWNGRADE');

@@ -5,9 +5,20 @@
     "src/web/webServer.ts",
     "src/host/mcp/mcp-server-entry.ts",
     "src/renderer/index.tsx",
-    "packages/bridge/src/index.ts"
+    "packages/bridge/src/index.ts",
+    "packages/mobile/src/main.tsx"
   ],
-  "project": ["src/**/*.{ts,tsx}"],
-  "ignoreDependencies": [".*"],
-  "ignoreBinaries": [".*"]
+  "project": [
+    "src/**/*.{ts,tsx}",
+    "packages/mobile/src/**/*.{ts,tsx}"
+  ],
+  "ignoreDependencies": [
+    ".*"
+  ],
+  "ignoreBinaries": [
+    ".*"
+  ],
+  "ignore": [
+    "packages/mobile/src/env.d.ts"
+  ]
 }

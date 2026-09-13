@@ -1,7 +1,7 @@
 /** iPhone 完整弹出的惯例时长。插件不把 duration 传给 JS（capacitor-plugins#287）。 */
 export const KEYBOARD_ANIMATION_MS = 250;
 /** iOS 键盘曲线的业界近似。系统曲线是私有的，JS 拿不到。 */
-export const KEYBOARD_EASING = 'cubic-bezier(0.32, 0.72, 0, 1)';
+const KEYBOARD_EASING = 'cubic-bezier(0.32, 0.72, 0, 1)';
 /** QuickType / 候选条高度变化远小于整键盘，系统 duration 是 0。 */
 const KEYBOARD_SNAP_PX = 80;
 

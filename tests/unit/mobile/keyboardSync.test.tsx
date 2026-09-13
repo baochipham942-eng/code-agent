@@ -3,7 +3,9 @@ import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, render, waitFor } from '@testing-library/react';
 import { MobileRoot } from '../../../packages/mobile/src/app/MobileRoot';
-import type { KeyboardFrame, PlatformPorts } from '../../../packages/mobile/src/platform/ports';
+import type { PlatformPorts } from '../../../packages/mobile/src/platform/ports';
+
+type KeyboardFrame = { height: number; phase: 'will-show' | 'will-hide' };
 
 describe('输入区跟 iOS 键盘 willShow 同步（爸 2026-09-13：同一条曲线）', () => {
   let onVisible: ((visible: boolean) => void) | undefined;

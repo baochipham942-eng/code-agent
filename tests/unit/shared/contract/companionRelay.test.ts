@@ -72,6 +72,9 @@ describe('companion relay contract', () => {
     expect(() => resolveCompanionRelayConfig({
       v: 1, enabled: true, url: 'wss://user:pass@relay.example.invalid/companion', credentialRef: 'companion-relay',
     })).toThrow('COMPANION_RELAY_INVALID_URL');
+    expect(() => resolveCompanionRelayConfig({
+      v: 1, enabled: true, url: 'wss://relay.example.invalid/companion?token=secret', credentialRef: 'companion-relay',
+    })).toThrow('COMPANION_RELAY_INVALID_URL');
   });
 
   it('parses the committed config template shape as disabled', () => {

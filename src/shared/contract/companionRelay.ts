@@ -69,7 +69,7 @@ export function companionRelayFrameExpired(frame: CompanionRelayFrame, now: numb
 function parseCompanionRelayUrl(raw: string): string {
   let url: URL;
   try { url = new URL(raw); } catch { throw new Error('COMPANION_RELAY_INVALID_URL'); }
-  if (url.username || url.password || url.hash) throw new Error('COMPANION_RELAY_INVALID_URL');
+  if (url.username || url.password || url.hash || url.search) throw new Error('COMPANION_RELAY_INVALID_URL');
   const host = url.hostname.toLowerCase();
   const loopback = host === 'localhost' || host === '127.0.0.1' || host === '[::1]' || host === '::1';
   if (url.protocol === 'ws:') {

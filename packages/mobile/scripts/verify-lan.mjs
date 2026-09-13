@@ -46,7 +46,7 @@ await build({ stdin: { contents: `
     companion: { read: () => window.lanRead(), write: value => window.lanWrite(value), scan: () => window.lanScan(), post: (url, body) => window.lanPost(url, body) },
     appInfo: { read: async () => ({ version: 'test', build: 'lan-browser' }) },
     lifecycle: { subscribe: async () => () => {}, leave: async () => {} },
-    keyboard: { subscribe: async () => () => {}, hide: async () => {} },
+    keyboard: { subscribe: async () => () => {}, subscribeFrame: async () => () => {}, hide: async () => {} },
     systemBars: { setStyle: async () => {} },
   }} />);
 `, resolveDir: process.cwd(), loader: 'tsx' }, bundle: true, platform: 'browser', format: 'iife', jsx: 'automatic', outfile: resolve(directory, 'browser.js') });

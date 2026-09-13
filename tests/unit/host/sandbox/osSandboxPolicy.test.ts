@@ -112,6 +112,30 @@ describe('osSandboxPolicy', () => {
     expect(decision.degradeIfUnavailable).toBe(true);
   });
 
+  it('多根叠加 bypass 时不随多根降级，仍 fail-closed（PR #1789 复审）', () => {
+    const decision = resolveOsSandboxDecision({
+      ...base,
+      command: 'echo hello',
+      permissionMode: 'bypassPermissions',
+      multiRoot: true,
+      sandboxAvailable: false,
+    });
+    expect(decision.apply).toBe(true);
+    expect(decision.degradeIfUnavailable).toBe(false);
+  });
+
+  it('紧急刹车（env=false）下 bypass 不 wrap 但带降级标记，不静默（PR #1789 复审）', () => {
+    const decision = resolveOsSandboxDecision({
+      ...base,
+      command: 'echo hello',
+      permissionMode: 'bypassPermissions',
+      sandboxEnabled: false,
+    });
+    expect(decision.apply).toBe(false);
+    expect(decision.degraded).toBe(true);
+    expect(decision.code).toBe(OS_SANDBOX_CODES.DEGRADED_DISABLED);
+  });
+
   it('docker / open 在 default 档进入白名单例外', () => {
     const degradeOf = (command: string, platform: NodeJS.Platform) =>
       resolveOsSandboxDecision({ ...base, command, permissionMode: 'default', platform });

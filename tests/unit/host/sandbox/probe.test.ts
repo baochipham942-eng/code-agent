@@ -8,7 +8,6 @@ describe('OS sandbox probe', () => {
     const spy = vi.spyOn(manager, 'getStatus').mockReturnValue({
       platform: 'linux',
       available: false,
-      technology: null,
       error: 'bwrap missing',
     });
     try {

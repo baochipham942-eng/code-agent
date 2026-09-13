@@ -128,14 +128,16 @@ export function resolveOsSandboxDecision(input: OsSandboxDecisionInput): OsSandb
   }
 
   if (!enabled) {
-    // Master switch off: same as the old env-gated default, except write-fence
-    // already returned above. Required modes do not silently keep wrapping.
+    // 紧急刹车：恢复翻默认前行为（任何档都不 wrap），刹车只能由操作者在
+    // 进程启动时拉（模型改不了宿主进程 env），所以不 fail-closed——但一律
+    // 带降级标记，不静默。强制场景的 fail-closed 作用于「开关开但沙箱
+    // 不可用」，不作用于这条显式刹车。
     return {
       apply: false,
       sandboxed: false,
-      degraded: rollout,
+      degraded: true,
       degradeIfUnavailable: false,
-      code: rollout ? OS_SANDBOX_CODES.DEGRADED_DISABLED : OS_SANDBOX_CODES.MODE_NOT_IN_ROLLOUT,
+      code: OS_SANDBOX_CODES.DEGRADED_DISABLED,
     };
   }
 
@@ -163,8 +165,13 @@ export function resolveOsSandboxDecision(input: OsSandboxDecisionInput): OsSandb
 
   // multiRoot 也降级：多根在旧默认（env 未开）下本就裸跑，无沙箱平台（CI ubuntu
   // 无 bwrap / Windows）硬报错会把一直在用的会话打死；降级带标记不静默。
-  // bypass / unattended / write-fence / eval 仍硬失败（fail-closed）。
-  const degradeIfUnavailable = (rollout && !required) || input.multiRoot;
+  // 但多根叠加强制场景（bypass / unattended / write-fence / eval）时仍硬失败
+  // （PR #1789 复审：required 交集不随多根一起降级）。
+  const hardRequired = input.writeFence
+    || input.unattended
+    || input.evalRealRoot
+    || input.permissionMode === 'bypassPermissions';
+  const degradeIfUnavailable = (rollout && !required) || (input.multiRoot && !hardRequired);
   if (!input.sandboxAvailable) {
     if (degradeIfUnavailable) {
       return {

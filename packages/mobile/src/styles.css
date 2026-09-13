@@ -2,6 +2,7 @@
 :root[data-theme='dark'] { color-scheme: dark; --bg: #171719; --text: #f5f5f7; --muted: #b0b0b6; --group: #262629; --line: #3b3b3f; --surface: #212124; --scrim: #0009; --accent: #35b3a4; }
 /* Native MainActivity injects --safe-area-inset-* (Android WebView 95 has no env()); iOS falls back to env(). Single source: never combine both. */
 :root { --safe-top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px)); --safe-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)); }
+@property --keyboard-h { syntax: '<length>'; inherits: true; initial-value: 0px; }
 * { box-sizing: border-box; }
 body { margin: 0; overscroll-behavior: none; }
 button,input,textarea { font: inherit; color: inherit; }
@@ -49,7 +50,8 @@ textarea::placeholder { color: var(--muted); }
 .group-title { display: block; margin: 20px 14px 8px; }
 .personal-bar { display: flex; align-items: center; gap: 12px; padding: 14px 20px; border-top: 1px solid var(--line); text-align: left; flex-shrink: 0; }.personal-bar strong { flex: 1; overflow-wrap: anywhere; }
 .avatar { display: grid; place-items: center; background: var(--group); border-radius: 50%; width: 42px; height: 42px; flex-shrink: 0; }
-.sheet { position: absolute; bottom: 0; width: 100%; max-height: calc(100% - max(16px, var(--safe-top))); min-height: 230px; display: flex; flex-direction: column; background: var(--group); border-radius: 28px 28px 0 0; padding-bottom: max(16px, var(--safe-bottom)); outline: none; }
+.sheet { position: absolute; bottom: var(--keyboard-h, 0px); width: 100%; max-height: calc(100% - max(16px, var(--safe-top)) - var(--keyboard-h, 0px)); min-height: 230px; display: flex; flex-direction: column; background: var(--group); border-radius: 28px 28px 0 0; padding-bottom: max(16px, var(--safe-bottom)); outline: none; transition: bottom var(--keyboard-duration, 0s) var(--keyboard-easing, linear), max-height var(--keyboard-duration, 0s) var(--keyboard-easing, linear); }
+html[data-keyboard-inset] .sheet { padding-bottom: 16px; }
 .drag-handle { height: 24px; flex-shrink: 0; display: grid; place-items: center; touch-action: none; }.drag-handle span { width: 36px; height: 5px; border-radius: 4px; background: var(--muted); opacity: .5; }
 .sheet-header { display: grid; grid-template-columns: 48px 1fr 48px; align-items: center; gap: 10px; padding: 0 12px 8px; text-align: center; flex-shrink: 0; }.sheet-header button { font-size: 29px; }
 .sheet-content { padding: 0 20px 24px; overflow: auto; overscroll-behavior: contain; min-height: 0; }

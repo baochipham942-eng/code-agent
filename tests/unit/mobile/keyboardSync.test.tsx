@@ -35,7 +35,13 @@ describe('输入区跟 iOS 键盘 willShow 同步（爸 2026-09-13：同一条�
     Object.defineProperty(window, 'innerHeight', { configurable: true, value: 800 });
   });
 
-  afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks(); cleanup(); });
+  afterEach(() => {
+    vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks(); cleanup();
+    document.documentElement.style.removeProperty('--keyboard-h');
+    document.documentElement.style.removeProperty('--keyboard-duration');
+    document.documentElement.style.removeProperty('--keyboard-easing');
+    document.documentElement.removeAttribute('data-keyboard-inset');
+  });
 
   async function mount() {
     await act(async () => { render(<MobileRoot ports={ports} fixtures={false} />); });
@@ -51,7 +57,7 @@ describe('输入区跟 iOS 键盘 willShow 同步（爸 2026-09-13：同一条�
     const area = document.querySelector('.composer-area') as HTMLElement;
     act(() => { onFrame!({ height: 336, phase: 'will-show' }); });
     expect(area.style.transform).toBe('translate3d(0, -336px, 0)');
-    expect((area.closest('.conversation') as HTMLElement).style.getPropertyValue('--keyboard-h')).toBe('336px');
+    expect(document.documentElement.style.getPropertyValue('--keyboard-h')).toBe('336px');
 
     const afterWill = area.style.transform;
     act(() => { onVisible!(true); });
@@ -63,7 +69,7 @@ describe('输入区跟 iOS 键盘 willShow 同步（爸 2026-09-13：同一条�
     const area = document.querySelector('.composer-area') as HTMLElement;
     act(() => { onVisible!(true); });
     expect(area.style.transform).toBe('');
-    expect((area.closest('.conversation') as HTMLElement).style.getPropertyValue('--keyboard-h')).toBe('');
+    expect(document.documentElement.style.getPropertyValue('--keyboard-h')).toBe('');
   });
 
   it('键盘升起后 visualViewport 缩小不许改 --viewport-height；willHide 仍冻结，DidHide 才解冻', async () => {

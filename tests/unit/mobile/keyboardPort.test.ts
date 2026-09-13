@@ -84,5 +84,7 @@ describe('电容配置与接线', () => {
     expect(css).toContain('.lan-messages { overscroll-behavior: contain; padding: 8px 20px calc(20px + var(--composer-h, 132px) + var(--keyboard-h, 0px)); }');
     expect(css).toContain('.jump-latest { position: absolute; bottom: calc(10px + var(--composer-h, 132px) + var(--keyboard-h, 0px));');
     expect(css).toContain('.composer-area[data-keyboard-inset] { padding-bottom: 6px; }');
+    expect(css).toContain('.sheet { position: absolute; bottom: var(--keyboard-h, 0px);');
+    expect(css).toContain('max-height: calc(100% - max(16px, var(--safe-top)) - var(--keyboard-h, 0px));');
   });
 });

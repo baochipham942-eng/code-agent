@@ -9,12 +9,16 @@ export function keyboardTransitionMs(fromPx: number, toPx: number): number {
   return Math.abs(toPx - fromPx) < KEYBOARD_SNAP_PX ? 0 : KEYBOARD_ANIMATION_MS;
 }
 
-/** 输入区用 transform 跟键盘；--keyboard-h 给会话底部让位（布局一次到位，不跟动画逐帧改 .app 高度）。 */
+/** 输入区用 transform 跟键盘；--keyboard-h 写在 :root，会话底部和 sheet 一起让位。 */
 export function applyKeyboardInset(area: HTMLElement, fromPx: number, toPx: number): void {
   const next = Math.max(0, Math.round(toPx));
   const ms = keyboardTransitionMs(fromPx, next);
-  area.style.transition = ms === 0 ? 'none' : `transform ${ms}ms ${KEYBOARD_EASING}`;
+  const duration = ms === 0 ? '0s' : `${ms}ms`;
+  document.documentElement.style.setProperty('--keyboard-h', `${next}px`);
+  document.documentElement.style.setProperty('--keyboard-duration', duration);
+  document.documentElement.style.setProperty('--keyboard-easing', KEYBOARD_EASING);
+  document.documentElement.toggleAttribute('data-keyboard-inset', next > 0);
+  area.style.transition = ms === 0 ? 'none' : `transform ${duration} ${KEYBOARD_EASING}`;
   area.style.transform = next === 0 ? 'none' : `translate3d(0, -${next}px, 0)`;
   area.toggleAttribute('data-keyboard-inset', next > 0);
-  area.closest<HTMLElement>('.conversation')?.style.setProperty('--keyboard-h', `${next}px`);
 }

@@ -37,7 +37,6 @@ textarea::placeholder { color: var(--muted); }
 .send,.primary { background: var(--text); color: var(--bg); }
 /* 发送禁用是「还不能发」，不是「坏了」：设计稿用浅底浅箭头，不用整体半透明。 */
 .send:disabled { opacity: 1; color: var(--muted); background: var(--group); }
-.compose-hint { font-size: 12px; color: var(--muted); padding: 0 8px 8px; line-height: 1.5; }
 .voice-notice { display: flex; align-items: center; gap: 8px; }
 .caption,.notice,.group-title { color: var(--muted); font-size: 14px; }.caption { margin: 4px 4px 8px; text-align: center; }.notice { margin: 4px 8px 8px; }
 .drawer-layer,.sheet-layer { position: fixed; inset: 0; height: var(--viewport-height, 100vh); }.drawer-layer { z-index: 10; }.sheet-layer { z-index: 20; }

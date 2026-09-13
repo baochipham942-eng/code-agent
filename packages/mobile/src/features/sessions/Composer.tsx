@@ -64,8 +64,6 @@ export function Composer({
     : null;
   return <>
     {notice && <p className="notice voice-notice" role="status">{notice}<button onClick={voice.retry}>{text.retry}</button></p>}
-    {/* 转写回填后回到普通编辑态：说明可以改完再发，不自动提交（design.html voiceReview）。 */}
-    {!voice.panelOpen && !voice.failure && voice.transcribed && draft.trim() && <div className="compose-hint">{text.voiceReviewHint}</div>}
     <div className={voice.panelOpen ? 'composer voice-composer' : 'composer'}>
       {voice.panelOpen
         ? <VoicePanel text={text} phase={voice.phase} pending={voicePending} elapsedMs={voice.elapsedMs}

@@ -24,6 +24,10 @@ export const COMPANION_LIMITS = {
   librarySessionLimit: 500,
   historyByteLimit: 512_000,
   historyMessageCharacters: 64_000,
+  /** VirtualHistory fixture window; per-session offline history cache cap. */
+  historyWindowMessages: 1000,
+  /** Total on-device conversation cache across sessions (message text + tool cards). */
+  historyCacheQuotaBytes: 16 * 1024 * 1024,
   maxScopeSessions: 32,
   requestTimeoutMs: 10_000,
   invitationTtlMs: 120_000,

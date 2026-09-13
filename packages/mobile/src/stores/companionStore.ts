@@ -13,6 +13,7 @@ import { LanCompanionClient } from '../platform/lanCompanionClient';
 import type { FilePorts, PlatformPorts, PickedFile } from '../platform/ports';
 import { companionFileMime, companionFileRetryable, COMPANION_LIMITS } from '../../../../src/shared/constants/companion';
 import { base64ToBytes, bytesToBase64, sha256Hex, type CacheInspect } from '../platform/fileCache';
+import { HistoryCache } from '../platform/historyCache';
 
 interface Saved {
   version: 1; publicKey: string; secretKey: string;
@@ -97,6 +98,8 @@ interface State {
   selectSession(id: string): void; send(text: string): Promise<void>; stop(): Promise<void>; sync(): Promise<void>;
   artifacts: CompanionArtifact[]; preview: (CompanionArtifact & { bytes: Uint8Array }) | null; savedPreview: boolean; savedPreviewName: string | null;
   cacheUsage: CacheInspect | null;
+  /** Last successful sync that wrote the conversation cache. Null until a sync lands. */
+  lastSyncAt: number | null;
   /** 输入区附件 chip。瞬态，不进 persist(Saved)。 */
   uploadProgress: UploadProgress[];
   upload(file: PickedFile, transferId?: string): Promise<void>;
@@ -128,7 +131,7 @@ export function companionAckMatches(
     && record.sessionId === pending.sessionId && record.action === pending.action;
 }
 
-export function createCompanionStore(port: PlatformPorts['companion'], onAccepted: (text: string, sessionId: string, hostKey: string) => void | Promise<void>, onTranscript?: (text: string, sessionId: string, hostKey: string, commandId: string, continuation: boolean) => Promise<void>, files?: FilePorts) {
+export function createCompanionStore(port: PlatformPorts['companion'], onAccepted: (text: string, sessionId: string, hostKey: string) => void | Promise<void>, onTranscript?: (text: string, sessionId: string, hostKey: string, commandId: string, continuation: boolean) => Promise<void>, files?: FilePorts, historyCache?: HistoryCache) {
   let saved: Saved | null = null;
   let client: LanCompanionClient | null = null;
   let epoch = 1; let cursor = 0;
@@ -151,8 +154,18 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
   const discardedTakes = new Set<string>();
   /** 失败重传要用原文件；不进 Zustand/Saved，避免把 bytes 写进配对盘。 */
   const heldAttachments = new Map<string, PickedFile>();
+  const history = historyCache ?? new HistoryCache();
 
   const store = createStore<State>((set, get) => {
+    const inspectBoth = (): CacheInspect => {
+      const preview = files?.cache.inspect() ?? { previewBytes: 0, conversationBytes: 0, protectedBytes: 0 };
+      return { previewBytes: preview.previewBytes, conversationBytes: history.inspect().conversationBytes, protectedBytes: preview.protectedBytes };
+    };
+    const wipeHistoryCache = () => {
+      const freed = history.clear();
+      set({ history: {}, events: [], lastSyncAt: null, cacheUsage: inspectBoth() });
+      return freed;
+    };
     const persist = async (next: Saved) => {
       if (!port) throw new Error('COMPANION_NATIVE_REQUIRED');
       // 只写 Saved 的已知字段：hydrate 的 JSON.parse 可能带上盘里多出来的键
@@ -275,11 +288,15 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         await persist({ ...saved, pending: undefined });
         // 按语义分，不按「它是不是 rejected」分。桌面或另一台手机先批了同一条审批时，
         // 网关回的是 approval_conflict——那是正常抢答，把整台设备停掉是错的。
-        set(typeof result.reason === 'string' && DEVICE_LEVEL_REASONS.has(result.reason)
+        if (typeof result.reason === 'string' && DEVICE_LEVEL_REASONS.has(result.reason)) {
           // 设备级的拒绝照报：那是「这台设备不能用了」，与用户撤没撤这次录音无关。
-          ? { pending: false, status: 'rejected', connectionError: 'connectionRejected' }
-          : discardedVoice ? { pending: false }
-          : { pending: false, commandError: result.kind === 'approval_conflict' ? 'COMPANION_APPROVAL_CONFLICT' : result.reason ?? 'COMPANION_COMMAND_REJECTED', commandErrorAction: rejectedAction });
+          wipeHistoryCache();
+          set({ pending: false, status: 'rejected', connectionError: 'connectionRejected' });
+        } else if (discardedVoice) {
+          set({ pending: false });
+        } else {
+          set({ pending: false, commandError: result.kind === 'approval_conflict' ? 'COMPANION_APPROVAL_CONFLICT' : result.reason ?? 'COMPANION_COMMAND_REJECTED', commandErrorAction: rejectedAction });
+        }
         if (voice) set({ voiceResult: { commandId: voice, outcome: 'error', code: get().commandError ?? undefined } });
         return result.command ?? null;
       }
@@ -306,19 +323,31 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
     return {
       voiceResult: null, library: null, history: {}, libraryError: false,
       connectionError: null, commandError: null, commandErrorAction: null, routeError: null, status: 'unpaired', paused: false, binding: null, sessionId: null, busy: false, pending: false, pendingAction: null, events: [], runId: null, terminal: null,
-      artifacts: [], preview: null, savedPreview: false, savedPreviewName: null, cacheUsage: files?.cache.inspect() ?? null,
+      artifacts: [], preview: null, savedPreview: false, savedPreviewName: null, cacheUsage: inspectBoth(), lastSyncAt: null,
       uploadProgress: [],
       hydrate: async () => {
         if (!port || get().busy) return;
         set({ busy: true });
         try {
-          const raw = await port.read(); if (!raw) { set({ busy: false }); return; }
+          const raw = await port.read();
+          if (!raw) {
+            wipeHistoryCache();
+            set({ busy: false });
+            return;
+          }
           const value = JSON.parse(raw) as Saved;
           if (value.version !== 1) throw new Error('COMPANION_INVALID_STORAGE');
           fromHex(value.publicKey, 32); fromHex(value.secretKey, 32);
           if (value.pending) companionCommandSchema.parse(value.pending);
           saved = value;
-          set({ busy: false, binding: value.binding ?? null, sessionId: value.binding?.scope.find(id => !id.startsWith('project:')) ?? null, pending: !!value.pending, pendingAction: value.pending?.action ?? null });
+          try { await history.hydrate(); } catch { /* conversation cache is best-effort and must not fail pairing identity */ }
+          const restored = history.snapshot();
+          set({
+            busy: false, binding: value.binding ?? null,
+            sessionId: value.binding?.scope.find(id => !id.startsWith('project:')) ?? null,
+            pending: !!value.pending, pendingAction: value.pending?.action ?? null,
+            history: restored.history, events: restored.events, lastSyncAt: restored.lastSyncAt, cacheUsage: inspectBoth(),
+          });
           if (value.candidate || value.binding) await get().reconnect();
         } catch { set({ busy: false, status: 'storageError' }); }
       },
@@ -339,7 +368,8 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         await persist({ ...saved!, binding, candidate: undefined });
         epoch = binding.scopeEpoch; cursor = 0;
         heldAttachments.clear();
-        set({ status: 'connected', binding, sessionId: binding.scope.find(id => !id.startsWith('project:')) ?? null, library: null, history: {}, events: [], artifacts: [], preview: null, savedPreviewName: null, runId: null, terminal: null, uploadProgress: [] });
+        wipeHistoryCache();
+        set({ status: 'connected', binding, sessionId: binding.scope.find(id => !id.startsWith('project:')) ?? null, library: null, history: {}, events: [], artifacts: [], preview: null, savedPreviewName: null, runId: null, terminal: null, uploadProgress: [], lastSyncAt: null });
       }),
       reconnect: () => safely(async () => {
         const target = saved?.binding ?? saved?.candidate;
@@ -380,7 +410,9 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
           if (more && old?.nextOffset === null) return;
           const page = await client.request({ action: 'read', query: { kind: 'history', sessionId: id, offset: more ? old?.nextOffset ?? 0 : 0 } }) as CompanionHistory;
           if (page.sessionId !== id || !Array.isArray(page.messages)) throw new Error('COMPANION_INVALID_HISTORY');
-          set({ history: { ...get().history, [id]: { ...page, messages: more ? [...page.messages, ...(old?.messages ?? [])] : page.messages } }, libraryError: false });
+          const messages = more ? [...page.messages, ...(old?.messages ?? [])] : page.messages;
+          set({ history: { ...get().history, [id]: { ...page, messages } }, libraryError: false });
+          history.putMessages(id, messages);
         } catch { set({ libraryError: true }); }
       },
       manage: (action, payload, target) => safely(async () => {
@@ -517,9 +549,11 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
           const result = await client.request({ action: 'sync', epoch, afterSeq: cursor }) as CompanionSyncResult;
           if (result.kind === 'snapshot_required') { epoch = result.epoch; cursor = 0; set({ events: [] }); return; }
           // 被撤销不是网络问题：混进通用 offline 会让这台设备一直重试、永远不知道自己已被踢。
-          if (result.kind === 'revoked') { client?.close(); set({ status: 'rejected', connectionError: 'connectionRejected' }); return; }
+          if (result.kind === 'revoked') { client?.close(); wipeHistoryCache(); set({ status: 'rejected', connectionError: 'connectionRejected' }); return; }
           if (result.kind !== 'events' || result.epoch !== epoch || !Number.isSafeInteger(result.nextSeq) || result.nextSeq < cursor || !Array.isArray(result.events)) throw new Error('COMPANION_INVALID_SYNC');
           set({ events: [...get().events, ...result.events] }); cursor = result.nextSeq;
+          history.ingestEvents(result.events);
+          set({ lastSyncAt: history.snapshot().lastSyncAt, cacheUsage: inspectBoth() });
           for (const event of result.events) if (event.sessionId === get().sessionId && (event.kind === 'run_started' || (event.kind === 'message' && event.payload.role === 'user') || !get().runId || event.payload.runId === get().runId)) {
             if ((event.kind === 'run_started' || (event.kind === 'message' && event.payload.role === 'user')) && typeof event.payload.runId === 'string') set({ runId: event.payload.runId, terminal: null });
             if (event.kind === 'agent_complete') set({ runId: null, terminal: 'complete' });
@@ -665,7 +699,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
           } catch {
             cacheFailed = true;
           }
-          set({ preview: { ...listed, bytes }, savedPreview: false, savedPreviewName: null, cacheUsage: files.cache.inspect(), commandError: cacheFailed ? 'STORAGE_FULL' : null });
+          set({ preview: { ...listed, bytes }, savedPreview: false, savedPreviewName: null, cacheUsage: inspectBoth(), commandError: cacheFailed ? 'STORAGE_FULL' : null });
         } catch (error) {
           await releasePending();
           const code = error instanceof Error ? error.message : 'ARTIFACT_MISSING';
@@ -683,9 +717,10 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
       },
       clearCache: () => {
         const usage = files?.cache.clear() ?? { freedBytes: 0, remainingBytes: 0, failedEntries: [] };
-        set({ cacheUsage: files?.cache.inspect() ?? null, preview: null, savedPreview: false });
-        // previewBytes 报告本次释放的预览字节（不是清理后的剩余——那个恒为 0，没有信息量）。
-        return { previewBytes: usage.freedBytes, conversationBytes: 0, protectedBytes: 0 };
+        const conversation = wipeHistoryCache();
+        set({ cacheUsage: inspectBoth(), preview: null, savedPreview: false });
+        // previewBytes / conversationBytes 报告本次释放的字节（不是清理后的剩余——那个恒为 0）。
+        return { previewBytes: usage.freedBytes, conversationBytes: conversation.freedBytes, protectedBytes: 0 };
       },
     };
   });

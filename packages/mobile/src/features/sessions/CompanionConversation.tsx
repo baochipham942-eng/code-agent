@@ -6,9 +6,11 @@ import { PlanCard } from './PlanCard';
 import type { CompanionEvent } from '../../../../../src/shared/contract/companion';
 import type { messages } from '../../i18n';
 
-export function CompanionConversation({ history, loadMore, hidePendingApprovals = false, events, artifacts, sessionId, text, disabled, respond, respondQuestion, respondPlan, openArtifact, composerHeight = 0 }: { history?: CompanionHistory; loadMore(): void; hidePendingApprovals?: boolean; events: CompanionEvent[]; artifacts: CompanionArtifact[]; sessionId: string; text: ReturnType<typeof messages>; disabled: boolean; respond: (requestId: string, decision: 'approved' | 'rejected') => Promise<void>; respondQuestion: (requestId: string, answers: Record<string, string | string[]>, declined?: boolean, reason?: string) => Promise<void>; respondPlan: (requestId: string, decision: 'approved' | 'rejected', feedback?: string) => Promise<void>; openArtifact(id: string): void;
+export function CompanionConversation({ history, loadMore, hidePendingApprovals = false, events, artifacts, sessionId, text, disabled, respond, respondQuestion, respondPlan, openArtifact, composerHeight = 0, offline = false }: { history?: CompanionHistory; loadMore(): void; hidePendingApprovals?: boolean; events: CompanionEvent[]; artifacts: CompanionArtifact[]; sessionId: string; text: ReturnType<typeof messages>; disabled: boolean; respond: (requestId: string, decision: 'approved' | 'rejected') => Promise<void>; respondQuestion: (requestId: string, answers: Record<string, string | string[]>, declined?: boolean, reason?: string) => Promise<void>; respondPlan: (requestId: string, decision: 'approved' | 'rejected', feedback?: string) => Promise<void>; openArtifact(id: string): void;
   /** 输入区那一层的实测高度：它一变，滚动区的底部内边距跟着变，贴底的人得重新贴一次。 */
-  composerHeight?: number }) {
+  composerHeight?: number;
+  /** Offline reread: hide load-more (it cannot fetch) without changing the composer. */
+  offline?: boolean }) {
   const scroller = useRef<HTMLDivElement>(null);
   const following = useRef(true);
   const [showLatest, setShowLatest] = useState(false);
@@ -57,7 +59,7 @@ export function CompanionConversation({ history, loadMore, hidePendingApprovals 
     following.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
     setShowLatest(!following.current);
   }} className="lan-messages" aria-label={text.history} aria-live="polite">
-    {history?.nextOffset != null && <button onClick={loadMore}>{text.loadHistory}</button>}
+    {history?.nextOffset != null && !offline && <button onClick={loadMore}>{text.loadHistory}</button>}
     {Array.from(rows, ([id, row]) => <p key={id} className={`lan-message ${row.role === 'user' ? 'from-user' : ''}`}>{row.content}{row.truncated && <small className="notice">{text.historyTruncated}</small>}</p>)}
     {Array.from(approvals, ([id, card]) => (!hidePendingApprovals || card.status !== 'pending') && <ApprovalCard key={id} card={card} text={text} disabled={disabled}
       respond={decision => respond(id, decision)} />)}

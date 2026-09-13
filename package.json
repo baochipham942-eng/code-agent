@@ -192,6 +192,7 @@
     "release:poppler:fetch": "node scripts/fetch-poppler-sidecar.mjs",
     "release:renderer-bundle": "npx tsx scripts/build-renderer-bundle.mjs",
     "desktop-shell:packaged-smoke": "node scripts/desktop-shell-packaged-smoke.mjs",
+    "desktop-shell:packaged-companion-smoke": "node scripts/desktop-shell-packaged-smoke.mjs --companion --companion-roundtrip",
     "release:post-publish": "node scripts/release-post-publish-verify.mjs",
     "verify:webserver-boot": "node scripts/verify-webserver-boot.mjs",
     "verify:browser-runtime": "node scripts/verify-browser-runtime.mjs",

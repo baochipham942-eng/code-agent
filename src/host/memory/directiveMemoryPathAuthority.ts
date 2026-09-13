@@ -39,9 +39,19 @@ export function assessDirectiveMemoryWrite(input: AssessInput): DirectiveMemoryW
   // 「参数名不像路径」那一类（命令字符串、自造参数名），那类仍需显式 pathAuthority。
   // read 档不写盘，扫了只是白费 + 徒增误报。
   const resolved = resolveToolWriteTargets(input);
+  // uncertain ≠ 「要写记忆目录」：它只表示解析不出写目标（复合命令里的变量/反引号
+  // 重定向、解析失败兜底等，RQ-066）。把无证据的 uncertain 并进 targets，会把根本没碰
+  // 记忆目录的命令（`echo hi > "$OUT/f"`、`echo a && echo b` 一类）也拽进确认门，
+  // headless 下整条 Bash 被 DIRECTIVE_MEMORY_HEADLESS_NO_UI_ERROR 劫杀。
+  // 只在 uncertain 条目本身带着指向记忆目录的证据（原始词含记忆目录路径或别名，
+  // 与 writeTargets 的 memoryAlias 同口径）时保持 fail-closed；确定目标落进记忆目录的
+  // 判定（含 canonical.command 字面值命中）完全不受影响。
+  const memoryAlias = path.join(path.basename(path.dirname(memoryDir)), path.basename(memoryDir));
   const targets = [
     ...resolved.targets.filter((target) => isInside(target, memoryDir)),
-    ...resolved.uncertain,
+    ...resolved.uncertain.filter(
+      (entry) => entry.includes(memoryDir) || entry.includes(memoryAlias),
+    ),
   ];
   const uniqueTargets = [...new Set(targets)].sort();
   const fingerprint = JSON.stringify({

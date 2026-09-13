@@ -41,7 +41,13 @@ export interface NotificationPort {
 }
 
 export interface PlatformPorts {
-  recorder?: { start(): Promise<void>; stop(): Promise<{ audioData: string; mimeType: string; durationMs: number }>; };
+  recorder?: {
+    start(): Promise<void>;
+    stop(): Promise<{ audioData: string; mimeType: string; durationMs: number }>;
+    startPcm?(): Promise<{ sampleRate: number }>;
+    stopPcm?(): Promise<void>;
+    subscribePcm?(onFrame: (frame: { pcm: string; durationMs: number }) => void): () => void;
+  };
   companion?: {
     read(): Promise<string | null>; write(value: string): Promise<void>;
     scan(): Promise<string>; post(url: string, body: unknown): Promise<unknown>;

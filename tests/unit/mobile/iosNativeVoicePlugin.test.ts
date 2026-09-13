@@ -28,6 +28,15 @@ describe('first-party ios voice recorder contract', () => {
       expect(swift).toContain(`CAPPluginMethod(name: "${method}"`);
       expect(swift).toContain(`@objc func ${method}(`);
     }
+    for (const method of ['startPcmRecording', 'stopPcmRecording']) {
+      expect(capacitorPort).toContain(`${method}()`);
+      expect(swift).toContain(`CAPPluginMethod(name: "${method}"`);
+      expect(swift).toContain(`@objc func ${method}(`);
+    }
+    expect(swift).toContain('pcmFormatInt16');
+    expect(swift).toContain('16_000');
+    expect(swift).toContain('pcmFrame');
+    expect(capacitorPort).toContain("'pcmFrame'");
   });
 
   it('returns the fields the port reads back off a recording', () => {

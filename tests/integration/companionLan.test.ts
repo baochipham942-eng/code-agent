@@ -21,6 +21,8 @@ import { COMPANION_EVENT_DROPPED, COMPANION_LIMITS as L } from '../../src/shared
 import { createCompanionStore } from '../../packages/mobile/src/stores/companionStore';
 import { companionTranscriptionSettlement } from '../../src/shared/contract/speech';
 import type { CompanionSyncResult } from '../../src/shared/contract/companion';
+import { registerCompanionDictation, type CompanionDictationPort } from '../../src/host/services/capabilities/hostCapabilityPorts';
+import type { CompanionDictationOpenResult } from '../../src/shared/contract/companionDictation';
 import vector from '../fixtures/companion/lan-noise-vector.json';
 
 describe('LAN companion: real HTTP + Noise + SQLite', () => {
@@ -950,5 +952,69 @@ describe('LAN manager network changes (mocked network and listener)', () => {
       t.setAddresses('10.1.1.2'); await t.invite();
       expect(t.start).toHaveBeenLastCalledWith('10.1.1.2');
     } finally { await t.manager.stop(); t.db.close(); }
+  });
+});
+
+describe('LAN companion dictation (not a persisted command)', () => {
+  let db: Database.Database;
+  let gateway: CompanionGateway;
+  let server: LanCompanionServer;
+  let client: LanCompanionClient;
+  let unregister: () => void;
+  const hostIdentity = createIdentity();
+  const phoneIdentity = createIdentity();
+  const address = Object.values(networkInterfaces()).flat().find(n => n?.family === 'IPv4' && isPrivateIPv4(n.address))?.address;
+  const post: LanPost = async (url, body) => {
+    const res = await fetch(url, { method: 'POST', redirect: 'error', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    const raw = await res.text();
+    if (!res.ok) throw new Error(`HTTP_${res.status}`);
+    return JSON.parse(raw);
+  };
+  const fake: CompanionDictationPort = {
+    open: vi.fn(async (): Promise<CompanionDictationOpenResult> => ({ ok: true, streamId: 'stream-1', sampleRate: L.voicePcmSampleRate })),
+    audio: vi.fn(() => ({ ok: true, events: [{ type: 'partial' as const, text: '你', sentenceId: 1 }] })),
+    stop: vi.fn(async () => ({ ok: true, events: [{ type: 'final' as const, text: '你好', sentenceId: 1 }] })),
+    release: vi.fn(),
+    releaseAll: vi.fn(),
+  };
+
+  beforeEach(async () => {
+    if (!address) throw new Error('LAN_TEST_REQUIRES_PRIVATE_IPV4_ON_FLEET');
+    unregister = registerCompanionDictation(fake);
+    db = new Database(':memory:');
+    gateway = new CompanionGateway(db, { dispatch: () => ({ state: 'accepted', result: { runId: 'test-run' } }) });
+    server = new LanCompanionServer(gateway, hostIdentity, Date.now);
+    await server.start(address, 0);
+    client = new LanCompanionClient(phoneIdentity, post);
+  });
+  afterEach(async () => {
+    client?.close();
+    await server?.stop();
+    db?.close();
+    unregister?.();
+    vi.clearAllMocks();
+  });
+
+  it('advertises dictation on welcome and relays frames without a command row', async () => {
+    const binding = await client.pair(JSON.stringify(server.invite(['shared'])));
+    expect(binding.dictation).toBe(true);
+    const opened = await client.request({ action: 'dictation', op: 'open' }) as { ok: true; streamId: string };
+    expect(opened).toMatchObject({ ok: true, streamId: 'stream-1', sampleRate: L.voicePcmSampleRate });
+    const pcm = Buffer.alloc(4).toString('base64');
+    expect(await client.request({ action: 'dictation', op: 'audio', streamId: opened.streamId, pcm }))
+      .toEqual({ ok: true, events: [{ type: 'partial', text: '你', sentenceId: 1 }] });
+    expect(await client.request({ action: 'dictation', op: 'stop', streamId: opened.streamId }))
+      .toEqual({ ok: true, events: [{ type: 'final', text: '你好', sentenceId: 1 }] });
+    expect(gateway.commandStatus(binding.deviceId, 'stream-1')).toBeNull();
+  });
+
+  it('keeps the Noise channel when dictation is unavailable so the phone can fall back to chunked', async () => {
+    unregister();
+    const binding = await client.pair(JSON.stringify(server.invite(['shared'])));
+    expect(binding.dictation).toBeUndefined();
+    expect(await client.request({ action: 'dictation', op: 'open' }))
+      .toEqual({ ok: false, code: 'COMPANION_DICTATION_UNAVAILABLE', events: [] });
+    expect(await client.request({ action: 'sync', epoch: binding.scopeEpoch, afterSeq: 0 }))
+      .toMatchObject({ events: [] });
   });
 });

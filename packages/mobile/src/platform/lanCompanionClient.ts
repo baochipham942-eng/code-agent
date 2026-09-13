@@ -120,6 +120,7 @@ export class LanCompanionClient {
       throw new Error('COMPANION_INVALID_BINDING');
     }
     return { version: 1, endpoint, ...(altEndpoint ? { altEndpoint } : {}), hostKey,
-      deviceId: v.deviceId, scopeEpoch: Number(v.scopeEpoch), scope: v.scope };
+      deviceId: v.deviceId, scopeEpoch: Number(v.scopeEpoch), scope: v.scope,
+      ...(v.dictation === true ? { dictation: true as const } : {}) };
   }
 }

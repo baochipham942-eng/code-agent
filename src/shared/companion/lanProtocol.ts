@@ -11,6 +11,8 @@ export interface LanInvitation {
 }
 export interface LanBinding {
   version: 1; endpoint: string; altEndpoint?: string; hostKey: string; deviceId: string; scopeEpoch: number; scope: string[];
+  /** Host advertises the dictation exchange action. Absent on older hosts — phone must not send it. */
+  dictation?: true;
 }
 export const LAN_PROLOGUE = 'neo-companion/lan/v1';
 export function toHex(value: Uint8Array): string {

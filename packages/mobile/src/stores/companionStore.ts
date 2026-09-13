@@ -3,6 +3,10 @@ import { createStore } from 'zustand/vanilla';
 import { createIdentity } from '../../../../src/shared/companion/noiseChannel';
 import { fromHex, toHex, parseInvitation, type LanBinding } from '../../../../src/shared/companion/lanProtocol';
 import type { CompanionCommand, CompanionCommandRecord, CompanionEvent, CompanionSyncResult } from '../../../../src/shared/contract/companion';
+import type {
+  CompanionDictationFrameResult,
+  CompanionDictationOpenResult,
+} from '../../../../src/shared/contract/companionDictation';
 import type { CompanionPushRegister, CompanionPushRegisterResult, CompanionPushOpenResult } from '../../../../src/shared/contract/companionPush';
 import { companionCommandSchema } from '../../../../src/shared/contract/companion';
 import { LanCompanionClient } from '../platform/lanCompanionClient';
@@ -38,6 +42,11 @@ interface State {
   transcribe(audio: { audioData: string; mimeType: string; durationMs: number }, sessionId: string, hostKey: string, continuation?: boolean, take?: string | null): Promise<string | null>;
   /** 取消这次录音：晚到的结果不进草稿。按录音代号点名。 */
   discardPendingTranscript(take: string): void;
+  dictationOpen(): Promise<CompanionDictationOpenResult>;
+  dictationAudio(streamId: string, pcm: string): Promise<CompanionDictationFrameResult>;
+  dictationStop(streamId: string): Promise<CompanionDictationFrameResult>;
+  dictationClose(): Promise<void>;
+  commitDictation(text: string, continuation: boolean, take: string, sentenceId: number): Promise<void>;
   library: CompanionLibrary | null; history: Record<string, CompanionHistory>; libraryError: boolean;
   refreshLibrary(more?: boolean): Promise<void>; loadHistory(id: string, more?: boolean): Promise<void>;
   manage(action: 'session.create' | 'session.rename' | 'session.archive' | 'session.delete' | 'session.model', payload: Record<string, unknown>, target?: string): Promise<void>;
@@ -380,6 +389,34 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
       },
       /** 取消录音：在飞那条的结果属于「晚到结果」，按 screen-contract 的语音契约过滤掉，不进草稿。 */
       discardPendingTranscript: take => { discardedTakes.add(take); },
+      dictationOpen: async () => {
+        if (!client || get().status !== 'connected' || get().binding?.dictation !== true) {
+          return { ok: false, code: 'COMPANION_DICTATION_UNAVAILABLE' };
+        }
+        return await client.request({ action: 'dictation', op: 'open' }) as CompanionDictationOpenResult;
+      },
+      dictationAudio: async (streamId, pcm) => {
+        if (!client || get().status !== 'connected') {
+          return { ok: false, code: 'COMPANION_DICTATION_UNAVAILABLE', events: [] };
+        }
+        return await client.request({ action: 'dictation', op: 'audio', streamId, pcm }) as CompanionDictationFrameResult;
+      },
+      dictationStop: async streamId => {
+        if (!client || get().status !== 'connected') {
+          return { ok: false, code: 'COMPANION_DICTATION_UNAVAILABLE', events: [] };
+        }
+        return await client.request({ action: 'dictation', op: 'stop', streamId }) as CompanionDictationFrameResult;
+      },
+      dictationClose: async () => {
+        if (!client || get().status !== 'connected') return;
+        await client.request({ action: 'dictation', op: 'close' });
+      },
+      commitDictation: async (text, continuation, take, sentenceId) => {
+        const sessionId = get().sessionId;
+        if (!onTranscript || !saved?.binding || !sessionId) return;
+        if (discardedTakes.has(take)) return;
+        await onTranscript(text, sessionId, saved.binding.hostKey, `dictation:${take}:${sentenceId}`, continuation);
+      },
       send: text => safely(async () => {
         if (!saved?.binding || !client || saved.pending || !canAddressSession(get())) return;
         const command = companionCommandSchema.parse({ version: 1, deviceId: saved.binding.deviceId, scopeEpoch: saved.binding.scopeEpoch,

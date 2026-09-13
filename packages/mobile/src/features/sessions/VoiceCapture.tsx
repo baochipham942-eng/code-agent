@@ -3,7 +3,13 @@ import type { PlatformPorts } from '../../platform/ports';
 import type { messages } from '../../i18n';
 import type { VoiceResult } from '../../stores/companionStore';
 import { COMPANION_LIMITS as L } from '../../../../../src/shared/constants/companion';
+import type {
+  CompanionDictationEvent,
+  CompanionDictationFrameResult,
+  CompanionDictationOpenResult,
+} from '../../../../../src/shared/contract/companionDictation';
 import { AppIcon } from '../../app/AppIcon';
+import { applyDictationEvent, emptyDictationDraft, type DictationDraft } from './dictationDraft';
 
 /**
  * 失败必须带阶段和真实错误码：录音阶段（权限/插件/设备被占）与转写阶段（电脑没收到或没转出来）
@@ -44,6 +50,22 @@ type Take = {
   stopping: boolean;
   startedAt: number;
   wake: (() => void) | null;
+  mode: 'chunked' | 'realtime';
+  degraded: boolean;
+  streamId: string | null;
+  draft: DictationDraft;
+  committedAny: boolean;
+  pcmLive: boolean;
+  unsub: (() => void) | null;
+  pcmQueue: { pcm: string; durationMs: number }[];
+};
+
+export type DictationPort = {
+  available: boolean;
+  open(): Promise<CompanionDictationOpenResult>;
+  audio(streamId: string, pcm: string): Promise<CompanionDictationFrameResult>;
+  stop(streamId: string): Promise<CompanionDictationFrameResult>;
+  close(): Promise<void>;
 };
 
 /** 代号在模块级发，跨 mount 也不重号：Composer 会随会话重挂，计数器从 0 重来会撞上一次的代号。 */
@@ -61,7 +83,7 @@ let takeSeq = 0;
  * 所以录音走一条主循环、上传走一条队列，两边都不并发；`transcribe` 回报这条命令的 commandId，
  * 没发出去的分片留在队头等下一拍，不静默丢。
  */
-export function useVoiceCapture({ recorder, pending, result, ready, transcribe, discardPending }: {
+export function useVoiceCapture({ recorder, pending, result, ready, transcribe, discardPending, dictation, commitSpoken }: {
   recorder: PlatformPorts['recorder'];
   /** 协议此刻有没有待确认命令。这是队列泵的**前置条件**（发不出去就别发），不是相位判据。 */
   pending: boolean;
@@ -73,6 +95,8 @@ export function useVoiceCapture({ recorder, pending, result, ready, transcribe, 
   transcribe(audio: Chunk, continuation: boolean, take: string): Promise<string | null>;
   /** 取消这次录音：晚到的结果按语音契约丢掉，不进草稿。按代号点名，不是一个粘着的开关。 */
   discardPending(take: string): void;
+  dictation?: DictationPort;
+  commitSpoken?(text: string, continuation: boolean, take: string, sentenceId: number): Promise<void>;
 }) {
   const [phase, setPhase] = useState<VoicePhase>('idle');
   const [failure, setFailure] = useState<VoiceFailure | null>(null);
@@ -88,7 +112,8 @@ export function useVoiceCapture({ recorder, pending, result, ready, transcribe, 
   const open = () => {
     const t: Take = { id: `take-${++takeSeq}`, queue: [], awaiting: null, retry: [], sending: false,
       sentAny: false, failure: null, dropped: 0, live: false, drained: false, stopping: false,
-      startedAt: Date.now(), wake: null };
+      startedAt: Date.now(), wake: null, mode: 'chunked', degraded: false, streamId: null,
+      draft: emptyDictationDraft(), committedAny: false, pcmLive: false, unsub: null, pcmQueue: [] };
     take.current = t;
     return t;
   };
@@ -98,7 +123,28 @@ export function useVoiceCapture({ recorder, pending, result, ready, transcribe, 
   * 与它配对的铁律：`recorder.start()` 一 resolve 就立刻置 live，**早于**任何身份判断——
   * 中间插一个 `if (!mine(t)) return` 的话，切段时被取消就会留下一个谁都不认领的开着的麦克风。
   */
-  const release = async (t: Take) => { if (t.live) { t.live = false; await recorder?.stop().catch(() => {}); } };
+  const release = async (t: Take) => {
+    t.unsub?.(); t.unsub = null;
+    if (t.pcmLive) { t.pcmLive = false; await recorder?.stopPcm?.().catch(() => {}); }
+    if (t.live) { t.live = false; await recorder?.stop().catch(() => {}); }
+  };
+
+  const applyEvents = (t: Take, events: CompanionDictationEvent[]): 'ok' | 'error' => {
+    for (const event of events) {
+      if (event.type === 'error') {
+        bump();
+        return 'error';
+      }
+      t.draft = applyDictationEvent(t.draft, event);
+      if (event.type === 'final') {
+        void commitSpoken?.(event.text, t.committedAny, t.id, event.sentenceId);
+        t.committedAny = true;
+        t.sentAny = true;
+      }
+    }
+    bump();
+    return 'ok';
+  };
 
   const fail = (t: Take, stage: VoiceFailure['stage'], error: unknown) => {
     if (!mine(t)) return;
@@ -152,6 +198,63 @@ export function useVoiceCapture({ recorder, pending, result, ready, transcribe, 
     } finally { await release(t); }
   };
 
+  const beginChunked = (t: Take) => {
+    const loop = run(t);
+    running.current = loop;
+    void loop.finally(() => { if (running.current === loop) running.current = null; });
+  };
+
+  const degradeToChunked = async (t: Take) => {
+    if (!mine(t) || t.mode === 'chunked') return;
+    if (t.draft.partial) {
+      void commitSpoken?.(t.draft.partial, t.committedAny, t.id, t.draft.sentenceId ?? 0);
+      t.committedAny = true;
+      t.sentAny = true;
+      t.draft = { ...t.draft, partial: '' };
+    }
+    t.degraded = true;
+    t.mode = 'chunked';
+    t.streamId = null;
+    t.pcmQueue = [];
+    t.unsub?.(); t.unsub = null;
+    if (t.pcmLive) { t.pcmLive = false; await recorder?.stopPcm?.().catch(() => {}); }
+    bump();
+    if (t.stopping || !mine(t)) { t.drained = true; bump(); return; }
+    try {
+      await recorder!.start();
+      t.live = true;
+      if (!mine(t) || t.stopping) { await release(t); if (mine(t)) { t.drained = true; bump(); } return; }
+      beginChunked(t);
+    } catch (error) { fail(t, 'record', error); }
+  };
+
+  const finishRealtime = async (t: Take) => {
+    if (!mine(t) || t.mode !== 'realtime') return;
+    setPhase('stopping');
+    t.unsub?.(); t.unsub = null;
+    if (t.pcmLive) { t.pcmLive = false; await recorder?.stopPcm?.().catch(() => {}); }
+    if (!mine(t)) return;
+    while (t.pcmQueue.length && t.streamId && dictation) {
+      const frame = t.pcmQueue.shift()!;
+      try {
+        const result = await dictation.audio(t.streamId, frame.pcm);
+        if (applyEvents(t, result.events) === 'error' || result.ok === false) break;
+      } catch { break; }
+    }
+    if (t.streamId && dictation && mine(t)) {
+      try {
+        const result = await dictation.stop(t.streamId);
+        if (applyEvents(t, result.events) === 'error' && !t.committedAny && !t.draft.partial) {
+          t.failure = { stage: 'transcribe', reason: 'SPEECH_NO_CHANNEL' };
+        }
+      } catch { /* already-spoken text stays */ }
+    }
+    t.streamId = null;
+    if (!mine(t)) return;
+    t.drained = true;
+    bump();
+  };
+
   const start = async () => {
     if (!recorder) return;
     // 先占住身份：上一次录音（以及它所有在途的续段）从这一行起就不算数了。
@@ -165,13 +268,38 @@ export function useVoiceCapture({ recorder, pending, result, ready, transcribe, 
     setFailure(null); setPhase('starting');
     t.startedAt = Date.now(); setElapsedMs(0);
     try {
+      if (recorder.startPcm && dictation?.available) {
+        await recorder.startPcm();
+        t.pcmLive = true;
+        if (!mine(t) || t.stopping) { await release(t); if (mine(t)) { take.current = null; setPhase('idle'); } return; }
+        let opened: CompanionDictationOpenResult;
+        try { opened = await dictation.open(); }
+        catch (error) {
+          opened = { ok: false, code: error instanceof Error ? error.message : 'COMPANION_DICTATION_UNAVAILABLE' };
+        }
+        if (!mine(t) || t.stopping) { await release(t); if (mine(t)) { take.current = null; setPhase('idle'); } return; }
+        if (opened.ok && opened.sampleRate === L.voicePcmSampleRate) {
+          t.mode = 'realtime';
+          t.streamId = opened.streamId;
+          t.unsub = recorder.subscribePcm?.(frame => {
+            if (!mine(t) || t.mode !== 'realtime') return;
+            if (frame.pcm.length > L.voicePcmBase64Limit) { t.dropped += 1; bump(); return; }
+            t.pcmQueue.push(frame); bump();
+          }) ?? null;
+          setPhase('recording');
+          return;
+        }
+        t.degraded = true;
+        t.pcmLive = false;
+        await recorder.stopPcm?.().catch(() => {});
+        if (!mine(t) || t.stopping) { if (mine(t)) { take.current = null; setPhase('idle'); } return; }
+      }
       await recorder.start();
       t.live = true;
+      t.mode = 'chunked';
       if (!mine(t) || t.stopping) { await release(t); if (mine(t)) { take.current = null; setPhase('idle'); } return; }
       setPhase('recording');
-      const loop = run(t);
-      running.current = loop;
-      void loop.finally(() => { if (running.current === loop) running.current = null; });
+      beginChunked(t);
     } catch (error) { fail(t, 'record', error); }
   };
 
@@ -183,6 +311,7 @@ export function useVoiceCapture({ recorder, pending, result, ready, transcribe, 
     t.stopping = true;
     if (phase !== 'starting') setPhase('stopping');
     t.wake?.();
+    if (t.mode === 'realtime') void finishRealtime(t);
   };
   const cancel = () => {
     const t = take.current;
@@ -192,6 +321,7 @@ export function useVoiceCapture({ recorder, pending, result, ready, transcribe, 
     // 于是「取消掉的话」照样写进输入框（grok ai-review Important）。
     take.current = null;
     discardPending(t.id);
+    if (t.mode === 'realtime' || t.streamId) void dictation?.close();
     // 录音口不在这里收：循环的 finally 与 start() 的续段各自负责把自己开的那个还回去，
     // 这里再来一遍只是让「谁负责关麦克风」多一个答案（变异实证：删掉它一条测试都不红）。
     t.wake?.();
@@ -210,14 +340,40 @@ export function useVoiceCapture({ recorder, pending, result, ready, transcribe, 
       // ——基线 VoiceInput 在这条路上走 stop(true)，根本不会发起转写（grok ai-review Important）。
       take.current = null;
       discardPending(t.id);
+      if (t.mode === 'realtime' || t.streamId) void dictation?.close();
       t.wake?.(); void release(t);
     };
   }, [recorder]);
   useEffect(() => {
     if (phase !== 'recording') return;
-    const timer = setInterval(() => { const t = take.current; if (t) setElapsedMs(Date.now() - t.startedAt); }, 500);
+    const timer = setInterval(() => {
+      const t = take.current;
+      if (!t) return;
+      setElapsedMs(Date.now() - t.startedAt);
+      if (Date.now() - t.startedAt >= L.voiceDurationMs && !t.stopping) stop();
+    }, 500);
     return () => clearInterval(timer);
   }, [phase]);
+
+  useEffect(() => {
+    const t = take.current;
+    if (!t || t.mode !== 'realtime' || !t.streamId || t.sending || !t.pcmQueue.length || !dictation) return;
+    t.sending = true;
+    const frame = t.pcmQueue.shift()!;
+    void (async () => {
+      try {
+        const reply = await dictation.audio(t.streamId!, frame.pcm);
+        if (!mine(t)) return;
+        const status = applyEvents(t, reply.events);
+        t.sending = false;
+        if (status === 'error' || reply.ok === false) { await degradeToChunked(t); return; }
+        bump();
+      } catch {
+        t.sending = false;
+        if (mine(t)) await degradeToChunked(t);
+      }
+    })();
+  }, [tick, dictation]);
 
   // 队列泵：一次只发一条，进了待确认槽才出队；没发出去（协议在忙）留在队头，下一拍再试。
   // 明知发不出去（没连上电脑）就别空转：每一拍都把 sending 置起，会让收尾那个副作用
@@ -302,6 +458,8 @@ export function useVoiceCapture({ recorder, pending, result, ready, transcribe, 
   };
   return {
     phase, failure, elapsedMs, dropped: take.current?.dropped ?? 0,
+    partial: take.current?.draft.partial ?? '',
+    degraded: take.current?.degraded ?? false,
     // 面板只在「正在录 / 正在转写」时替换输入框；失败按设计稿落在输入区上方，输入框要留给用户改字。
     panelOpen: phase !== 'idle' && phase !== 'error',
     start, stop, cancel, retry,
@@ -319,9 +477,10 @@ const clock = (ms: number) => {
 const BARS = Array.from({ length: 38 }, (_, i) => ({ height: 8 + (i * 17 % 27), delay: (i % 7) * 0.12 }));
 
 /** 录音中的输入区：来源 → 状态与计时 → 识别文字 → 波形 → 控制行（停止键严格居中）。 */
-export function VoicePanel({ text, phase, pending, elapsedMs, transcript, dropped, stop, cancel }: {
+export function VoicePanel({ text, phase, pending, elapsedMs, transcript, dropped, degraded, stop, cancel }: {
   text: ReturnType<typeof messages>;
   phase: VoicePhase; pending: boolean; elapsedMs: number; transcript: string; dropped: number;
+  degraded?: boolean;
   stop(): void; cancel(): void;
 }) {
   const listening = phase === 'recording';
@@ -334,6 +493,7 @@ export function VoicePanel({ text, phase, pending, elapsedMs, transcript, droppe
     </div>
     <div className="transcription">{transcript}{listening && <span className="caret" aria-hidden="true" />}</div>
     {dropped > 0 && <p className="voice-dropped" role="status">{text.voiceChunkDropped}</p>}
+    {degraded && <p className="voice-dropped" role="status">{text.voiceDegraded}</p>}
     <div className="waveform" aria-hidden="true">
       {BARS.map((bar, i) => <i key={i} style={{ height: `${bar.height}px`, animationDelay: `${bar.delay}s` }} />)}
     </div>

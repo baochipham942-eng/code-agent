@@ -47,6 +47,29 @@ describe('companion APNs provider', () => {
     expect(production.send).toEqual(expect.any(Function));
   });
 
+  it('routes each send to the request environment, not the host NEO_APNS_ENV default', async () => {
+    const key = writeTempApnsKey();
+    const productionFake = await listenFakeApns();
+    const sandboxFake = await listenFakeApns();
+    cleanup.push(
+      () => productionFake.stop(),
+      () => sandboxFake.stop(),
+      () => rmSync(key.dir, { recursive: true, force: true }),
+    );
+    const transport = companionApnsOutboxTransport(envFor(key.keyPath, 'production'), {
+      authority: environment => environment === 'sandbox' ? sandboxFake.authority : productionFake.authority,
+    });
+    expect(transport.authority).toBe(COMPANION_APNS.productionAuthority);
+    expect(await transport.send!({ provider: 'apns', environment: 'sandbox', token: DEVICE_TOKEN, payload }))
+      .toEqual({ accepted: true });
+    expect(await transport.send!({ provider: 'apns', environment: 'production', token: DEVICE_TOKEN, payload }))
+      .toEqual({ accepted: true });
+    expect(sandboxFake.requests).toHaveLength(1);
+    expect(productionFake.requests).toHaveLength(1);
+    expect(sandboxFake.requests[0].path).toBe(`${COMPANION_APNS.pathPrefix}${DEVICE_TOKEN}`);
+    expect(productionFake.requests[0].path).toBe(`${COMPANION_APNS.pathPrefix}${DEVICE_TOKEN}`);
+  });
+
   it('signs an ES256 JWT whose header, payload, and signature verify', async () => {
     const key = writeTempApnsKey();
     const fake = await listenFakeApns();

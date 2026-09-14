@@ -27,7 +27,7 @@ interface CompanionApnsTransport {
 }
 
 interface CompanionApnsTransportOverrides {
-  authority?: string;
+  authority?: string | ((environment: CompanionPushEnvironment) => string);
   now?: () => number;
 }
 
@@ -76,17 +76,25 @@ export function companionApnsOutboxTransport(
 ): CompanionApnsTransport {
   const config = readCompanionApnsConfig(env);
   if (!config) return { apnsKeyPath: null };
-  const authority = overrides?.authority ?? companionApnsAuthority(config.environment);
   return {
     apnsKeyPath: config.keyPath,
-    authority,
-    send: createCompanionApnsSender(config, { ...overrides, authority }),
+    authority: companionApnsAuthority(config.environment),
+    send: createCompanionApnsSender(config, overrides ?? {}),
   };
+}
+
+function resolveApnsAuthority(
+  environment: CompanionPushEnvironment,
+  override?: CompanionApnsTransportOverrides['authority'],
+): string {
+  if (typeof override === 'function') return override(environment);
+  if (override) return override;
+  return companionApnsAuthority(environment);
 }
 
 function createCompanionApnsSender(
   config: CompanionApnsConfig,
-  overrides: CompanionApnsTransportOverrides & { authority: string },
+  overrides: CompanionApnsTransportOverrides,
 ): (request: PushSendRequest) => Promise<CompanionPushDispatchResult> {
   const now = overrides.now ?? Date.now;
   let cachedJwt = '';
@@ -112,9 +120,10 @@ function createCompanionApnsSender(
     }
     const jwt = mint(false);
     if (!jwt) return { accepted: false, code: 'CHANNEL_MISSING', missing: 'apns_auth_key' };
+    const authority = resolveApnsAuthority(request.environment, overrides.authority);
     try {
       let response = await postApns({
-        authority: overrides.authority,
+        authority,
         jwt,
         deviceToken: request.token,
         topic: config.bundleId,
@@ -126,7 +135,7 @@ function createCompanionApnsSender(
         const refreshed = mint(true);
         if (!refreshed) return { accepted: false, code: 'CHANNEL_MISSING', missing: 'apns_auth_key' };
         response = await postApns({
-          authority: overrides.authority,
+          authority,
           jwt: refreshed,
           deviceToken: request.token,
           topic: config.bundleId,

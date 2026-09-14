@@ -216,6 +216,25 @@ describe('EvalCaseDrawer', () => {
     expect(toasts.success).toHaveBeenCalledWith('已写回');
   });
 
+  it('勾「进金标集」后保存带 gold:true；不勾不带这个键', async () => {
+    evaluation.invoke.mockImplementation(async (channel: string) => {
+      if (channel === EVALUATION_CHANNELS.LIST_ANNOTATIONS) return { annotations: [], latestByReviewer: [] };
+      if (channel === EVALUATION_CHANNELS.SAVE_ANNOTATION) {
+        return { annotation: { id: 'g1', experimentId: 'run-1', caseId: 'case-1', reviewerId: 'me', dims: {}, consentScope: 'metadata', createdAt: Date.now(), mine: true, gold: true } };
+      }
+      return detail();
+    });
+    render(<EvalCaseDrawer target={{ experimentId: 'run-1', caseId: 'case-1' }} onClose={vi.fn()} />);
+    fireEvent.click(await screen.findByLabelText('任务完成了吗 · 是'));
+    fireEvent.click(screen.getByLabelText('进金标集'));
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    await waitFor(() => expect(evaluation.invoke).toHaveBeenCalledWith(
+      EVALUATION_CHANNELS.SAVE_ANNOTATION,
+      expect.objectContaining({ dims: { task_completed: 'yes' }, gold: true }),
+    ));
+    expect((screen.getByLabelText('进金标集') as HTMLInputElement).checked).toBe(true);
+  });
+
   it('T6：只预填 mine 标注，保存时 supersedesId 指向我的上一版', async () => {
     const mine = {
       id: 'mine-1', experimentId: 'run-1', caseId: 'case-1', reviewerId: 'host-reviewer',

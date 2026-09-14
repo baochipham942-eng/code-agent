@@ -36,5 +36,18 @@ describe('AI review run stamp', () => {
     });
     expect(stamp.scorers.aiReview).toEqual(['task_completed']);
     expect(stamp.scorers.aiReviewCalibration.task_completed).toBe(expected);
+    expect(stamp.scorers.judgeSameSource).toBe(false);
+  });
+
+  it('评审模型与被测模型同一 provider ⇒ 身份戳打同源裁判', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'eval-ai-stamp-same-'));
+    const caseDir = path.join(root, 'cases');
+    await mkdir(caseDir, { recursive: true });
+    const stamp = buildRunStamp({
+      workingDir: root, testCaseDir: caseDir, mode: 'real', provider: 'judge-provider', model: 'tested-model',
+      split: 'held-in', judge: 'rules', aiReview: ['task_completed'], estimatedCases: 2,
+      shape: { skills: [], plugins: [], memory: false, swarm: false, harness: null },
+    });
+    expect(stamp.scorers.judgeSameSource).toBe(true);
   });
 });

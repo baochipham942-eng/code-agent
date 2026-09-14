@@ -255,6 +255,8 @@ export function buildRunStamp(opts: {
           ? resolveCalibrationId(opts.workingDir, `${dimension}@${judgeModel}`)
           : 'uncalibrated',
       ])),
+      // 同源裁判：评审模型与被测模型同一 provider，自我偏好未隔离（N-EVAL-JUDGE-HUMANGOLD）。
+      judgeSameSource: judgeIdentity ? judgeIdentity.provider === opts.provider : false,
     },
     k: opts.trialsPerCase ?? 1,
     aggregationRuleVersion: AGGREGATION_RULES[

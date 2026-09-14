@@ -29,6 +29,7 @@ export const EvalCaseAnnotation: React.FC<EvalCaseAnnotationProps> = ({ target }
   const [overall, setOverall] = useState<'up' | 'down'>();
   const [note, setNote] = useState('');
   const [dims, setDims] = useState<Partial<Record<AiReviewDimension, 'yes' | 'no'>>>({});
+  const [gold, setGold] = useState(false);
   const [mine, setMine] = useState<EvalAnnotation>();
   const [others, setOthers] = useState<EvalAnnotation[]>([]);
   const [state, setState] = useState<'loading' | 'ready' | 'saving' | 'error'>('loading');
@@ -48,6 +49,7 @@ export const EvalCaseAnnotation: React.FC<EvalCaseAnnotationProps> = ({ target }
         setOverall(own?.overall);
         setNote(own?.note ?? '');
         setDims(own?.dims ?? {});
+        setGold(own?.gold === true);
         setState('ready');
       })
       .catch(() => {
@@ -78,6 +80,7 @@ export const EvalCaseAnnotation: React.FC<EvalCaseAnnotationProps> = ({ target }
         note: note || undefined,
         dims,
         supersedesId: mine?.id,
+        ...(gold ? { gold: true } : {}),
       });
       setMine(result.annotation);
       setState('ready');
@@ -123,6 +126,12 @@ export const EvalCaseAnnotation: React.FC<EvalCaseAnnotationProps> = ({ target }
         ))}
       </div>
       <p className="mb-3 text-[10px] text-zinc-600">{labels.dimensionHelp}</p>
+      <label className="mb-1 flex items-center gap-2 text-[11px] text-zinc-300">
+        <input type="checkbox" checked={gold} aria-label={labels.gold}
+          onChange={(event) => setGold(event.target.checked)} />
+        {labels.gold}
+      </label>
+      <p className="mb-3 text-[10px] text-zinc-600">{labels.goldHelp}</p>
       <Button size="sm" disabled={state === 'loading' || state === 'saving' || tooLong}
         loading={state === 'saving'} onClick={() => void save()}>{state === 'saving' ? labels.saving : labels.save}</Button>
       {error && <p className="mt-2 text-[11px] text-badge-danger">{error}</p>}

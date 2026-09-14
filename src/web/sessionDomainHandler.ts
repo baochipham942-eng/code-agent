@@ -1,55 +1,41 @@
-import type { HandlerFn } from '../host/platform';
+// ============================================================================
+// Web Session Command Context（RQ-183 刀 2）
+// ============================================================================
+//
+// 本文件曾是 web standalone 的 session domain handler 独立 switch（与桌面
+// session.ipc.ts 双实现、同一个 action 两边各注册一次）。刀 2 起域通道走单源
+// 路由表（src/host/ipc/domainRoutes/sessionRoutes.ts），两侧差异全部沉入
+// SessionCommandContext——本文件退化为 web context 工厂：原 switch 的实现
+// 原样平移成 context 方法（惰性 createSessionApplicationService + SessionManager
+// 直调四动作 + modelSessionState + 写后失效），行为严格不变。
 import type { DurableRunReadService } from '../host/app/durableRunReadService';
+import type { ModelProvider, Session } from '../shared/contract';
+import type {
+  SessionListQueryOptions,
+  SwitchModelParams,
+} from '../shared/contract/appService';
 import { getModelSessionState } from '../host/session/modelSessionState';
 import {
   clearPersistedModelOverride,
   persistModelOverride,
   rehydrateModelOverrideFromSession,
 } from '../host/session/modelOverridePersistence';
-import type { ModelProvider, Session } from '../shared/contract';
+import {
+  SessionBackendUnavailableError,
+  type SessionCommandContext,
+  type SessionCommandService,
+} from '../host/ipc/domainRoutes/sessionRoutes';
 import { invalidateSessionMessagesProjection } from './helpers/webSessionStore';
 
-type SessionDomainPayload = {
-  sessionId?: string;
-  provider?: ModelProvider;
-  model?: string;
-  temperature?: number;
-  maxTokens?: number;
-  adaptive?: boolean;
-  includeArchived?: boolean;
-  title?: string;
-  workingDirectory?: string;
-  expertRoleId?: string;
-  /** findExpertThread：按专家 roleId 查最近活跃的专家主 thread */
-  roleId?: string;
-  userMessageId?: string;
-  anchorUserMessageId?: string;
-  anchorAssistantMessageId?: string;
-  idempotencyKey?: string;
-  rewindId?: string;
-  checkpointMessageId?: string;
-  sourceSessionId?: string;
-  workspaceMode?: 'shared_current' | 'isolated_at_anchor';
-  updates?: Partial<Session>;
-  /** getRecap：上次查看这个会话的时间戳，只追赶它之后收口的轮次 */
-  since?: number;
-};
-
-type SessionDomainIpcRequest = {
-  action: string;
-  payload?: SessionDomainPayload;
-};
-
-type SessionDomainHandlerDependencies = {
-  handlers: Map<string, HandlerFn>;
+export interface WebSessionContextDependencies {
   getDbAvailable: () => boolean;
   hasActiveRun: (sessionId: string) => boolean;
   getCurrentSessionId: () => string | null;
   setCurrentSessionId: (sessionId: string) => void;
   getDurableRunReadService: () => DurableRunReadService | undefined;
-};
+}
 
-async function createSessionApplicationService(deps: SessionDomainHandlerDependencies) {
+async function createSessionApplicationService(deps: WebSessionContextDependencies) {
   const [{ AgentAppServiceImpl }, { getTaskManager }, { getConfigService }] = await Promise.all([
     import('../host/app/agentAppService'),
     import('../host/task'),
@@ -65,496 +51,155 @@ async function createSessionApplicationService(deps: SessionDomainHandlerDepende
   );
 }
 
-export function installSessionDomainHandler(deps: SessionDomainHandlerDependencies): void {
-  deps.handlers.set('domain:session', async (_event: unknown, request: SessionDomainIpcRequest) => {
-    const { action, payload } = request;
-    try {
-      if (action === 'switchModel') {
-        if (!payload?.sessionId || !payload?.provider || !payload?.model) {
-          return { success: false, error: { code: 'INVALID_PAYLOAD', message: 'sessionId, provider and model are required' } };
-        }
-        const override = {
-          provider: payload.provider,
-          model: payload.model,
-          temperature: payload.temperature,
-          maxTokens: payload.maxTokens,
-          adaptive: payload.adaptive,
-        };
-        getModelSessionState().setOverride(payload.sessionId, override);
-        const persisted = deps.getDbAvailable()
-          ? await persistModelOverride(payload.sessionId, override)
-          : false;
-        return {
-          success: true,
-          data: {
-            provider: payload.provider,
-            model: payload.model,
-            adaptive: payload.adaptive,
-            persisted,
-          },
-        };
-      }
+type SessionManager = Awaited<ReturnType<typeof import('../host/services/infra/sessionManager').getSessionManager>>;
 
-      if (action === 'getModelOverride') {
-        if (!payload?.sessionId) {
-          return { success: false, error: { code: 'INVALID_PAYLOAD', message: 'sessionId is required' } };
-        }
-        let override = getModelSessionState().getOverride(payload.sessionId);
+/** backend 门（原 web handler 开关原样）：DB 未就绪或 SessionManager 不可用 → SERVICE_UNAVAILABLE */
+async function requireSessionBackend(deps: WebSessionContextDependencies): Promise<void> {
+  if (!deps.getDbAvailable()) {
+    throw new SessionBackendUnavailableError();
+  }
+  const { getSessionManager } = await import('../host/services/infra/sessionManager');
+  try {
+    getSessionManager();
+  } catch {
+    throw new SessionBackendUnavailableError();
+  }
+}
+
+async function resolveSessionManager(deps: WebSessionContextDependencies): Promise<SessionManager> {
+  await requireSessionBackend(deps);
+  const { getSessionManager } = await import('../host/services/infra/sessionManager');
+  return getSessionManager();
+}
+
+/** web 实现（方案 2.2 表「现状平移」列）：与原 switch 逐 case 等价 */
+export function createWebSessionContext(deps: WebSessionContextDependencies): SessionCommandContext {
+  return {
+    // 每请求惰性构造（durableRunReadService 异步装配，构造时机不同会冻结 undefined，
+    // 保持原 handler 每请求构造的现状）
+    sessions: async (): Promise<SessionCommandService> => {
+      await requireSessionBackend(deps);
+      return createSessionApplicationService(deps);
+    },
+
+    ensureBackend: async () => {
+      await requireSessionBackend(deps);
+    },
+
+    // —— sm 直调四动作（1.2 drift 表拍板归属 web；桌面实现是 AppService 直连语义） ——
+    listSessions: (options?: SessionListQueryOptions) =>
+      resolveSessionManager(deps).then((sm) => sm.listSessions(options)),
+
+    loadSession: (sessionId: string) =>
+      resolveSessionManager(deps).then((sm) => sm.restoreSession(sessionId)),
+
+    deleteSession: (sessionId: string) =>
+      resolveSessionManager(deps).then((sm) => sm.deleteSession(sessionId)),
+
+    updateSession: (sessionId: string, updates: Partial<Session>) =>
+      resolveSessionManager(deps).then((sm) => sm.updateSession(sessionId, updates)),
+
+    // —— load 装饰：streamSnapshot + activeRun（runtime-only 字段，不进 DB） ——
+    decorateLoadedSession: async (session: Session) => {
+      const { loadStreamSnapshot } = await import('../host/session/streamSnapshot');
+      const streamSnapshot = loadStreamSnapshot({
+        workingDir: session.workingDirectory,
+        sessionId: session.id,
+      });
+      if (streamSnapshot?.sessionId === session.id) {
+        (session as { streamSnapshot?: unknown }).streamSnapshot = streamSnapshot;
+      }
+      // 前端的「这个会话在不在跑」是纯内存态，刷新即清零；宿主这边 runRegistry 才是真源。
+      // 不带这一条，刷新页面后前端一律显示空闲，而宿主可能还在跑同一轮——真机实测
+      // 断连后那一轮又跑了 51 秒，期间屏幕空闲、排队卡还显示「立即发送」，用户一点就撞车
+      // （2026-08-01 C3）。
+      (session as { activeRun?: boolean }).activeRun = deps.hasActiveRun(session.id);
+    },
+
+    // —— fork / rewind 构造（runRegistry 状态源，原 web 直构原样） ——
+    forkSession: async (params) => {
+      await requireSessionBackend(deps);
+      const { getDatabase } = await import('../host/services/core/databaseService');
+      const { getAuthService } = await import('../host/services/auth/authService');
+      const { SessionForkService } = await import('../host/services/sessionFork/SessionForkService');
+      const service = new SessionForkService(getDatabase(), {
+        getRuntimeStatus: (sessionId) => deps.hasActiveRun(sessionId) ? 'running' : undefined,
+        ownerUserId: getAuthService().getCurrentUser()?.id ?? null,
+      });
+      return service.createFork(params);
+    },
+
+    rewindConversation: async (params) => {
+      const sm = await resolveSessionManager(deps);
+      const { getDatabase } = await import('../host/services/core/databaseService');
+      const { getAuthService } = await import('../host/services/auth/authService');
+      const { SessionRewindService } = await import('../host/services/sessionRewind/SessionRewindService');
+      const data = await new SessionRewindService(getDatabase(), {
+        getRuntimeStatus: (id) => deps.hasActiveRun(id) ? 'running' : undefined,
+        ownerUserId: getAuthService().getCurrentUser()?.id ?? null,
+      }).rewindConversation(params);
+      sm.invalidateSessionCache(params.sessionId);
+      invalidateSessionMessagesProjection(params.sessionId);
+      return data;
+    },
+
+    restoreConversationRewind: async (params) => {
+      const sm = await resolveSessionManager(deps);
+      const { getDatabase } = await import('../host/services/core/databaseService');
+      const { getAuthService } = await import('../host/services/auth/authService');
+      const { SessionRewindService } = await import('../host/services/sessionRewind/SessionRewindService');
+      const data = await new SessionRewindService(getDatabase(), {
+        getRuntimeStatus: (id) => deps.hasActiveRun(id) ? 'running' : undefined,
+        ownerUserId: getAuthService().getCurrentUser()?.id ?? null,
+      }).restoreConversation(params);
+      sm.invalidateSessionCache(params.sessionId);
+      invalidateSessionMessagesProjection(params.sessionId);
+      return data;
+    },
+
+    // —— 写后失效：rewind/checkout/redo 后缓存 + 投影一并失效（原 web 语义） ——
+    invalidateAfterWrite: async (sessionId: string) => {
+      const sm = await resolveSessionManager(deps);
+      sm.invalidateSessionCache(sessionId);
+      invalidateSessionMessagesProjection(sessionId);
+    },
+
+    // —— model override：modelSessionState + db 门控持久化（原 web 三段原样） ——
+    modelOverride: {
+      switchModel: async (params: SwitchModelParams) => {
+        const override = {
+          provider: params.provider as ModelProvider,
+          model: params.model,
+          temperature: params.temperature,
+          maxTokens: params.maxTokens,
+          adaptive: params.adaptive,
+        };
+        getModelSessionState().setOverride(params.sessionId, override);
+        const persisted = deps.getDbAvailable()
+          ? await persistModelOverride(params.sessionId, override)
+          : false;
+        return { persisted };
+      },
+
+      getOverride: async (sessionId: string) => {
+        let override = getModelSessionState().getOverride(sessionId);
         if (!override && deps.getDbAvailable()) {
           try {
             const { getSessionManager } = await import('../host/services/infra/sessionManager');
-            const session = await getSessionManager().getSession(payload.sessionId, 1);
+            const session = await getSessionManager().getSession(sessionId, 1);
             override = rehydrateModelOverrideFromSession(session);
           } catch { /* Session missing or DB unavailable: preserve null fallback. */ }
         }
-        return { success: true, data: override };
-      }
+        return override;
+      },
 
-      if (action === 'clearModelOverride') {
-        if (!payload?.sessionId) {
-          return { success: false, error: { code: 'INVALID_PAYLOAD', message: 'sessionId is required' } };
-        }
-        getModelSessionState().clearOverride(payload.sessionId);
+      clearOverride: async (sessionId: string) => {
+        getModelSessionState().clearOverride(sessionId);
         const cleared = deps.getDbAvailable()
-          ? await clearPersistedModelOverride(payload.sessionId)
+          ? await clearPersistedModelOverride(sessionId)
           : false;
-        return { success: true, data: { persisted: cleared } };
-      }
-
-      let sm: Awaited<ReturnType<typeof import('../host/services/infra/sessionManager').getSessionManager>> | null = null;
-      if (deps.getDbAvailable()) {
-        try {
-          const { getSessionManager } = await import('../host/services/infra/sessionManager');
-          sm = getSessionManager();
-        } catch { /* DB not available */ }
-      }
-      if (!sm) {
-        return { success: false, error: { code: 'SERVICE_UNAVAILABLE', message: 'SessionManager not available' } };
-      }
-
-      let data: unknown;
-      switch (action) {
-        case 'list':
-          data = await sm.listSessions(payload as { includeArchived?: boolean } | undefined);
-          break;
-        case 'findExpertThread': {
-          // web standalone 的 session domain handler 是独立于桌面 IPC 的一份（src/host/ipc/session.ipc.ts
-          // 只服务 Electron），同一个 action 必须在两边各注册一次；通用桥 /api/domain/:domain/:action 不变。
-          const roleId = typeof payload?.roleId === 'string' ? payload.roleId.trim() : '';
-          if (!roleId) {
-            return { success: false, error: { code: 'INVALID_PAYLOAD', message: 'roleId is required' } };
-          }
-          const session = await sm.findLatestExpertThreadSession(roleId);
-          data = { sessionId: session?.id ?? null };
-          break;
-        }
-        case 'create':
-          data = await (await createSessionApplicationService(deps)).createSession({
-            title: payload?.title || 'New Session',
-            workingDirectory: typeof payload?.workingDirectory === 'string'
-              ? payload.workingDirectory
-              : undefined,
-            expertRoleId: payload?.expertRoleId,
-          });
-          break;
-        case 'load': {
-          const session = await sm.restoreSession(payload?.sessionId as string);
-          if (session) {
-            const { loadStreamSnapshot } = await import('../host/session/streamSnapshot');
-            const streamSnapshot = loadStreamSnapshot({
-              workingDir: session.workingDirectory,
-              sessionId: session.id,
-            });
-            if (streamSnapshot?.sessionId === session.id) {
-              (session as { streamSnapshot?: unknown }).streamSnapshot = streamSnapshot;
-            }
-            // 前端的「这个会话在不在跑」是纯内存态，刷新即清零；宿主这边 runRegistry 才是真源。
-            // 不带这一条，刷新页面后前端一律显示空闲，而宿主可能还在跑同一轮——真机实测
-            // 断连后那一轮又跑了 51 秒，期间屏幕空闲、排队卡还显示「立即发送」，用户一点就撞车
-            // （2026-08-01 C3）。runtime-only 字段，跟 streamSnapshot 同款挂法，不进 DB。
-            (session as { activeRun?: boolean }).activeRun = deps.hasActiveRun(session.id);
-          }
-          data = session;
-          break;
-        }
-        case 'delete':
-          await sm.deleteSession(payload?.sessionId as string);
-          data = null;
-          break;
-        case 'getMessages':
-          data = await sm.getMessages(payload?.sessionId as string);
-          break;
-        case 'getSessionTasks': {
-          const sessionId = typeof payload?.sessionId === 'string' ? payload.sessionId.trim() : '';
-          if (!sessionId) {
-            return {
-              success: false,
-              error: { code: 'INVALID_PAYLOAD', message: 'sessionId is required' },
-            };
-          }
-          const { listTasks } = await import('../host/services/planning/taskStore');
-          data = listTasks(sessionId);
-          break;
-        }
-        case 'fork': {
-          const sourceSessionId = typeof payload?.sourceSessionId === 'string'
-            ? payload.sourceSessionId.trim()
-            : '';
-          const anchorAssistantMessageId = typeof payload?.anchorAssistantMessageId === 'string'
-            ? payload.anchorAssistantMessageId.trim()
-            : '';
-          const idempotencyKey = typeof payload?.idempotencyKey === 'string'
-            ? payload.idempotencyKey.trim()
-            : '';
-          if (!sourceSessionId || !anchorAssistantMessageId || !idempotencyKey) {
-            return {
-              success: false,
-              error: {
-                code: 'INVALID_PAYLOAD',
-                message: 'sourceSessionId, anchorAssistantMessageId and idempotencyKey are required',
-              },
-            };
-          }
-          const { getDatabase } = await import('../host/services/core/databaseService');
-          const { getAuthService } = await import('../host/services/auth/authService');
-          const { SessionForkService } = await import('../host/services/sessionFork/SessionForkService');
-          const service = new SessionForkService(getDatabase(), {
-            getRuntimeStatus: (sessionId) => deps.hasActiveRun(sessionId) ? 'running' : undefined,
-            ownerUserId: getAuthService().getCurrentUser()?.id ?? null,
-          });
-          data = await service.createFork({
-            sourceSessionId,
-            anchorAssistantMessageId,
-            idempotencyKey,
-            workspaceMode: payload?.workspaceMode === 'isolated_at_anchor'
-              ? 'isolated_at_anchor'
-              : 'shared_current',
-          });
-          break;
-        }
-        case 'getForkLineage': {
-          const sessionId = typeof payload?.sessionId === 'string' ? payload.sessionId.trim() : '';
-          if (!sessionId) {
-            return { success: false, error: { code: 'INVALID_PAYLOAD', message: 'sessionId is required' } };
-          }
-          const { getDatabase } = await import('../host/services/core/databaseService');
-          const { getAuthService } = await import('../host/services/auth/authService');
-          const { SessionForkService } = await import('../host/services/sessionFork/SessionForkService');
-          data = new SessionForkService(getDatabase(), {
-            ownerUserId: getAuthService().getCurrentUser()?.id ?? null,
-          }).getLineage(sessionId);
-          break;
-        }
-        case 'listForkChildren': {
-          const sessionId = typeof payload?.sessionId === 'string' ? payload.sessionId.trim() : '';
-          if (!sessionId) {
-            return { success: false, error: { code: 'INVALID_PAYLOAD', message: 'sessionId is required' } };
-          }
-          const { getDatabase } = await import('../host/services/core/databaseService');
-          const { getAuthService } = await import('../host/services/auth/authService');
-          const { SessionForkService } = await import('../host/services/sessionFork/SessionForkService');
-          data = new SessionForkService(getDatabase(), {
-            ownerUserId: getAuthService().getCurrentUser()?.id ?? null,
-          }).listChildren(sessionId);
-          break;
-        }
-        case 'exportSessionFork':
-        case 'importSessionFork':
-        case 'enqueueSessionForkSync':
-        case 'ingestSessionForkSync':
-        case 'importReadySessionForkSync':
-        case 'searchSessionForkExports':
-        case 'readSessionForkTree':
-        case 'readSessionForkNeighborhood': {
-          const portabilityPayload = (payload ?? {}) as Record<string, unknown>;
-          const appService = await createSessionApplicationService(deps);
-          if (action === 'exportSessionFork') {
-            data = await appService.exportSessionFork(
-              portabilityPayload as unknown as import('../shared/contract/sessionForkPortability').ExportSessionForkRequest,
-            );
-            break;
-          }
-          if (action === 'importSessionFork') {
-            data = await appService.importSessionFork(
-              portabilityPayload as unknown as import('../shared/contract/sessionForkPortability').ImportSessionForkRequest,
-            );
-            break;
-          }
-          if (action === 'enqueueSessionForkSync') {
-            data = await appService.enqueueSessionForkSync(
-              portabilityPayload as unknown as import('../shared/contract/sessionForkPortability').EnqueueSessionForkSyncRequest,
-            );
-          } else if (action === 'ingestSessionForkSync') {
-            data = await appService.ingestSessionForkSync(
-              portabilityPayload as unknown as import('../shared/contract/sessionForkPortability').IngestSessionForkSyncRequest,
-            );
-          } else if (action === 'importReadySessionForkSync') {
-            data = await appService.importReadySessionForkSync(
-              portabilityPayload as unknown as import('../shared/contract/sessionForkPortability').ImportReadySessionForkSyncRequest,
-            );
-          } else if (action === 'searchSessionForkExports') {
-            data = await appService.searchSessionForkExports(
-              portabilityPayload as unknown as import('../shared/contract/sessionForkPortability').SearchSessionForkExportsRequest,
-            );
-          } else if (action === 'readSessionForkTree') {
-            data = await appService.readSessionForkTree(
-              portabilityPayload as unknown as import('../shared/contract/sessionForkPortability').ReadSessionForkTreeRequest,
-            );
-          } else {
-            data = await appService.readSessionForkNeighborhood(
-              portabilityPayload as unknown as import('../shared/contract/sessionForkPortability').ReadSessionForkNeighborhoodRequest,
-            );
-          }
-          break;
-        }
-        case 'replayConversationBranch':
-        case 'compareConversationBranches':
-        case 'traceConversationProvenance':
-        case 'auditConversationLineage':
-        case 'quarantineConversationLineage':
-        case 'repairConversationLineage':
-        case 'recordConversationEvaluationAttribution':
-        case 'listConversationEvaluationAttributions': {
-          const branchPayload = (payload ?? {}) as Record<string, unknown>;
-          const { getDatabase } = await import('../host/services/core/databaseService');
-          const { getAuthService } = await import('../host/services/auth/authService');
-          const database = getDatabase();
-          const ownerUserId = getAuthService().getCurrentUser()?.id ?? null;
-          const requireBoundary = (sessionId: string) => {
-            const session = database.getSession(sessionId, { userId: ownerUserId });
-            if (!session) {
-              throw new Error(`SESSION_ACCESS_DENIED: session ${sessionId} was not found for the current owner`);
-            }
-            return { ownerUserId, projectId: session.projectId ?? null };
-          };
-          const sessionId = typeof branchPayload.sessionId === 'string'
-            ? branchPayload.sessionId.trim()
-            : '';
-          if (action === 'compareConversationBranches') {
-            const leftSessionId = typeof branchPayload.leftSessionId === 'string'
-              ? branchPayload.leftSessionId.trim()
-              : '';
-            const rightSessionId = typeof branchPayload.rightSessionId === 'string'
-              ? branchPayload.rightSessionId.trim()
-              : '';
-            if (!leftSessionId || !rightSessionId) {
-              return {
-                success: false,
-                error: { code: 'INVALID_PAYLOAD', message: 'leftSessionId and rightSessionId are required' },
-              };
-            }
-            const boundary = requireBoundary(leftSessionId);
-            const rightBoundary = requireBoundary(rightSessionId);
-            if (
-              boundary.ownerUserId !== rightBoundary.ownerUserId
-              || boundary.projectId !== rightBoundary.projectId
-            ) {
-              throw new Error('PROJECT_MISMATCH: conversation branches must share one exact owner and project');
-            }
-            data = database.compareConversationBranches(leftSessionId, rightSessionId, boundary);
-            break;
-          }
-          if (!sessionId) {
-            return {
-              success: false,
-              error: { code: 'INVALID_PAYLOAD', message: 'sessionId is required' },
-            };
-          }
-          const boundary = requireBoundary(sessionId);
-          if (action === 'replayConversationBranch') {
-            data = database.replayConversationBranch(
-              sessionId,
-              boundary,
-              branchPayload.options as {
-                includeRewound?: boolean;
-                allowRepairOverride?: boolean;
-              } | undefined,
-            );
-          } else if (action === 'traceConversationProvenance') {
-            const messageId = typeof branchPayload.messageId === 'string'
-              ? branchPayload.messageId.trim()
-              : '';
-            if (!messageId) {
-              return {
-                success: false,
-                error: { code: 'INVALID_PAYLOAD', message: 'messageId is required' },
-              };
-            }
-            data = database.traceConversationProvenance(sessionId, messageId, boundary);
-          } else if (action === 'auditConversationLineage') {
-            data = database.auditConversationLineage(sessionId, boundary);
-          } else if (action === 'quarantineConversationLineage') {
-            const idempotencyKey = typeof branchPayload.idempotencyKey === 'string'
-              ? branchPayload.idempotencyKey.trim()
-              : '';
-            if (!idempotencyKey) {
-              return {
-                success: false,
-                error: { code: 'INVALID_PAYLOAD', message: 'idempotencyKey is required' },
-              };
-            }
-            data = database.quarantineConversationLineage(sessionId, boundary, idempotencyKey);
-          } else if (action === 'repairConversationLineage') {
-            data = database.repairConversationLineage({
-              sessionId,
-              boundary,
-              issueDigest: String(branchPayload.issueDigest ?? ''),
-              reason: String(branchPayload.reason ?? ''),
-              idempotencyKey: String(branchPayload.idempotencyKey ?? ''),
-            });
-          } else if (action === 'recordConversationEvaluationAttribution') {
-            data = database.recordConversationEvaluationAttribution({
-              sessionId,
-              boundary,
-              evaluationId: String(branchPayload.evaluationId ?? ''),
-              runId: typeof branchPayload.runId === 'string' ? branchPayload.runId : null,
-              metric: String(branchPayload.metric ?? ''),
-              value: Number(branchPayload.value),
-              attributedMessageIds: Array.isArray(branchPayload.attributedMessageIds)
-                ? branchPayload.attributedMessageIds.filter((value: unknown): value is string => typeof value === 'string')
-                : [],
-              idempotencyKey: String(branchPayload.idempotencyKey ?? ''),
-            });
-          } else {
-            data = database.listConversationEvaluationAttributions(sessionId, boundary);
-          }
-          break;
-        }
-        case 'getRecap': {
-          const sessionId = typeof payload?.sessionId === 'string' ? payload.sessionId.trim() : '';
-          if (!sessionId) {
-            return {
-              success: false,
-              error: { code: 'INVALID_PAYLOAD', message: 'sessionId is required' },
-            };
-          }
-          const since = typeof payload?.since === 'number' ? payload.since : 0;
-          const { getSessionRecap } = await import('../host/session/sessionRecapService');
-          data = await getSessionRecap(sessionId, since);
-          break;
-        }
-        case 'recoverHistory': {
-          const { recoverHistoricalSession } = await import('../host/ipc/historicalSessionRecovery');
-          data = recoverHistoricalSession(
-            payload as import('../shared/contract/historicalSessionRecovery').HistoricalSessionRecoveryRequest,
-          );
-          break;
-        }
-        case 'rewindConversation':
-        case 'rewindToPrompt': {
-          const sessionId = typeof payload?.sessionId === 'string' ? payload.sessionId.trim() : '';
-          const userMessageId = typeof payload?.anchorUserMessageId === 'string'
-            ? payload.anchorUserMessageId.trim()
-            : typeof payload?.userMessageId === 'string'
-              ? payload.userMessageId.trim()
-              : '';
-          const isLegacyRewind = action === 'rewindToPrompt';
-          const suppliedIdempotencyKey = typeof payload?.idempotencyKey === 'string'
-            ? payload.idempotencyKey.trim()
-            : '';
-          if (!sessionId || !userMessageId || (!isLegacyRewind && !suppliedIdempotencyKey)) {
-            return {
-              success: false,
-              error: {
-                code: 'INVALID_PAYLOAD',
-                message: isLegacyRewind
-                  ? 'sessionId and userMessageId are required'
-                  : 'sessionId, anchorUserMessageId and idempotencyKey are required',
-              },
-            };
-          }
-          const { getDatabase } = await import('../host/services/core/databaseService');
-          const { getAuthService } = await import('../host/services/auth/authService');
-          const { SessionRewindService } = await import('../host/services/sessionRewind/SessionRewindService');
-          data = await new SessionRewindService(getDatabase(), {
-            getRuntimeStatus: (id) => deps.hasActiveRun(id) ? 'running' : undefined,
-            ownerUserId: getAuthService().getCurrentUser()?.id ?? null,
-          }).rewindConversation({
-            sessionId,
-            anchorUserMessageId: userMessageId,
-            idempotencyKey: suppliedIdempotencyKey
-              ? suppliedIdempotencyKey
-              : `legacy:${sessionId}:${userMessageId}`,
-          });
-          sm.invalidateSessionCache(sessionId);
-          invalidateSessionMessagesProjection(sessionId);
-          break;
-        }
-        case 'restoreConversationRewind': {
-          const sessionId = typeof payload?.sessionId === 'string' ? payload.sessionId.trim() : '';
-          const rewindId = typeof payload?.rewindId === 'string' ? payload.rewindId.trim() : '';
-          if (!sessionId || !rewindId) {
-            return {
-              success: false,
-              error: { code: 'INVALID_PAYLOAD', message: 'sessionId and rewindId are required' },
-            };
-          }
-          const { getDatabase } = await import('../host/services/core/databaseService');
-          const { getAuthService } = await import('../host/services/auth/authService');
-          const { SessionRewindService } = await import('../host/services/sessionRewind/SessionRewindService');
-          data = await new SessionRewindService(getDatabase(), {
-            getRuntimeStatus: (id) => deps.hasActiveRun(id) ? 'running' : undefined,
-            ownerUserId: getAuthService().getCurrentUser()?.id ?? null,
-          }).restoreConversation({ sessionId, rewindId });
-          sm.invalidateSessionCache(sessionId);
-          invalidateSessionMessagesProjection(sessionId);
-          break;
-        }
-        case 'restoreWorkspaceFilesAtCheckpoint': {
-          const appService = await createSessionApplicationService(deps);
-          data = await appService.restoreWorkspaceFilesAtCheckpoint({
-            sessionId: typeof payload?.sessionId === 'string' ? payload.sessionId : '',
-            checkpointMessageId: typeof payload?.checkpointMessageId === 'string'
-              ? payload.checkpointMessageId
-              : '',
-          });
-          break;
-        }
-        case 'turnCheckout': {
-          const appService = await createSessionApplicationService(deps);
-          data = await appService.turnCheckout({
-            sessionId: typeof payload?.sessionId === 'string' ? payload.sessionId : '',
-            userMessageId: typeof payload?.userMessageId === 'string' ? payload.userMessageId : '',
-            ...(typeof payload?.idempotencyKey === 'string'
-              ? { idempotencyKey: payload.idempotencyKey }
-              : {}),
-          });
-          sm.invalidateSessionCache(typeof payload?.sessionId === 'string' ? payload.sessionId : '');
-          invalidateSessionMessagesProjection(typeof payload?.sessionId === 'string' ? payload.sessionId : '');
-          break;
-        }
-        case 'turnRedo': {
-          const appService = await createSessionApplicationService(deps);
-          data = await appService.turnRedo({
-            sessionId: typeof payload?.sessionId === 'string' ? payload.sessionId : '',
-            rewindId: typeof payload?.rewindId === 'string' ? payload.rewindId : '',
-          });
-          sm.invalidateSessionCache(typeof payload?.sessionId === 'string' ? payload.sessionId : '');
-          invalidateSessionMessagesProjection(typeof payload?.sessionId === 'string' ? payload.sessionId : '');
-          break;
-        }
-        case 'export':
-          data = await sm.exportSession(payload?.sessionId as string);
-          break;
-        case 'update':
-          await sm.updateSession(payload?.sessionId as string, payload?.updates || {});
-          data = null;
-          break;
-        case 'archive':
-          data = await sm.archiveSession(payload?.sessionId as string);
-          break;
-        case 'unarchive':
-          data = await sm.unarchiveSession(payload?.sessionId as string);
-          break;
-        default:
-          return { success: false, error: { code: 'INVALID_ACTION', message: `Unknown session action: ${action}` } };
-      }
-      return { success: true, data };
-    } catch (error) {
-      const code = error && typeof error === 'object' && 'code' in error && typeof error.code === 'string'
-        ? error.code
-        : 'INTERNAL_ERROR';
-      return { success: false, error: { code, message: error instanceof Error ? error.message : String(error) } };
-    }
-  });
+        return { persisted: cleared };
+      },
+    },
+  };
 }

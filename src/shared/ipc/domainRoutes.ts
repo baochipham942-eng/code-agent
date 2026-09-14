@@ -47,4 +47,15 @@ export interface DomainRouteTable<Req extends DomainRouteRequest, Ctx = unknown>
   actions: DomainRouteHandlers<Req, Ctx>;
   /** 领域错误 → IPC error code 判定；未提供或未命中时装配器兜底 INTERNAL_ERROR */
   resolveErrorCode?: (error: unknown) => string | undefined;
+  /**
+   * 未知 action 兜底文案（默认 `Unknown action: <action>`）。个别域的既有错误契约
+   * 前缀不同（如 session 域 web 形态的 `Unknown session action: <action>`），表化
+   * 迁移期用它保持响应逐字不变。
+   */
+  unknownActionMessage?: (action: unknown) => string;
+  /**
+   * 该表面暂缓（web:false）的 action 清单——keys 仍在 actions 里（桩 handler 抛
+   * INVALID_ACTION），此字段是给 parity 门做「只减不增」棘轮的对账标记。
+   */
+  disabledActions?: readonly string[];
 }

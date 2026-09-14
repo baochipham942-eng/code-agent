@@ -2,94 +2,91 @@ import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 
-const source = fs.readFileSync(
+// RQ-183 刀 2：session 域单源表化后，本静态门从「比对 web/desktop 两份 switch」改为
+// 钉死单源结构的两个落点：表（sessionRoutes.ts）只经 ctx 分发不私连服务实现；
+// web context（sessionDomainHandler.ts）的 fork/rewind 构造保持原 web 语义
+// （SessionForkService/SessionRewindService 直构，不耦合 checkpoint 截断）。
+
+const routesSource = fs.readFileSync(
+  path.resolve(__dirname, '../../../src/host/ipc/domainRoutes/sessionRoutes.ts'),
+  'utf8',
+);
+const webContextSource = fs.readFileSync(
   path.resolve(__dirname, '../../../src/web/sessionDomainHandler.ts'),
   'utf8',
 );
 
-function caseBody(name: string): string {
-  const start = source.indexOf(`case '${name}':`);
-  expect(start).toBeGreaterThan(-1);
-  const next = source.indexOf("\n        case '", start + 1);
-  return source.slice(start, next === -1 ? source.length : next);
+/** 从锚点截一段定长窗口（成员体足够覆盖；contain 断言不需要精确块边界），锚点失效即红 */
+function memberBody(source: string, anchor: string, windowChars = 1000): string {
+  const start = source.indexOf(anchor);
+  expect(start, `找不到锚点「${anchor}」——结构变了，更新本门`).toBeGreaterThan(-1);
+  return source.slice(start, start + windowChars);
 }
 
-describe('web session Fork parity', () => {
-  it('uses the same SessionForkService and never routes through checkpoint rewind/truncation', () => {
-    const body = caseBody('fork');
+describe('session 单源表（sessionRoutes.ts）', () => {
+  it('fork/rewind 家族只经 ctx 分发，表内不私连 checkpoint/截断实现', () => {
+    for (const anchor of ['fork: async', 'rewindConversation: async', 'rewindToPrompt: async', 'restoreConversationRewind: async']) {
+      const body = memberBody(routesSource, anchor);
+      expect(body).toContain('ctx.');
+      expect(body).not.toContain('rewindFiles');
+      expect(body).not.toContain('truncateMessagesAfter');
+      expect(body).not.toContain('applyPromptRewind');
+      expect(body).not.toContain('getFileCheckpointService');
+    }
+  });
+
+  it('portability 走 ctx.sessions()（appService 面），不直连 database.importSessionFork', () => {
+    for (const call of ['exportSessionFork', 'importSessionFork', 'enqueueSessionForkSync', 'ingestSessionForkSync', 'importReadySessionForkSync', 'searchSessionForkExports', 'readSessionForkTree', 'readSessionForkNeighborhood']) {
+      const body = memberBody(routesSource, `${call}: async`, 400);
+      expect(body).toContain(`).${call}(`);
+      expect(body).not.toContain('database.importSessionFork');
+      expect(body).not.toContain('database.publishImportedIsolatedWorkspace');
+    }
+  });
+
+  it('rewindToPrompt 保留 anchor/userMessage 双名与 legacy 幂等合成', () => {
+    const body = memberBody(routesSource, 'rewindToPrompt: async');
+    expect(body).toContain('anchorUserMessageId');
+    expect(body).toContain('userMessageId');
+    expect(body).toContain('legacy:');
+  });
+
+  it('delete 统一桌面同款清理：browser link 结束 + 终端 PTY dispose', () => {
+    const body = memberBody(routesSource, 'delete: async');
+    expect(body).toContain("getUserBrowserLinkService().end(sessionId, 'session-switch')");
+    expect(body).toContain('disposeTerminalSession(sessionId)');
+    expect(body).toContain('ctx.deleteSession(sessionId)');
+  });
+});
+
+describe('web context（sessionDomainHandler.ts）保持原 web 构造语义', () => {
+  it('forkSession 用 SessionForkService 直构 + runRegistry 状态源', () => {
+    const body = memberBody(webContextSource, 'forkSession: async');
     expect(body).toContain('SessionForkService');
-    expect(body).toContain('service.createFork');
+    expect(body).toContain('service.createFork(params)');
     expect(body).toContain('ownerUserId: getAuthService().getCurrentUser()?.id ?? null');
     expect(body).not.toContain('rewindFiles');
-    expect(body).not.toContain('truncateMessagesAfter');
-    expect(body).not.toContain('applyPromptRewind');
   });
 
-  it('exposes lineage reads through the same service', () => {
-    const lineage = caseBody('getForkLineage');
-    const children = caseBody('listForkChildren');
-    expect(lineage).toContain('.getLineage(sessionId)');
-    expect(lineage).toContain('ownerUserId: getAuthService().getCurrentUser()?.id ?? null');
-    expect(children).toContain('.listChildren(sessionId)');
-    expect(children).toContain('ownerUserId: getAuthService().getCurrentUser()?.id ?? null');
+  it('rewind 家族用 SessionRewindService 直构，落库后双失效', () => {
+    for (const anchor of ['rewindConversation: async', 'restoreConversationRewind: async']) {
+      const body = memberBody(webContextSource, anchor);
+      expect(body).toContain('SessionRewindService');
+      expect(body).toContain('ownerUserId: getAuthService().getCurrentUser()?.id ?? null');
+      expect(body).toContain('invalidateSessionMessagesProjection');
+    }
+    expect(memberBody(webContextSource, 'rewindConversation: async')).toContain('.rewindConversation(params)');
+    expect(memberBody(webContextSource, 'restoreConversationRewind: async')).toContain('.restoreConversation(params)');
   });
 
-  it('routes portability and sync through the shared application service', () => {
-    const start = source.indexOf("case 'exportSessionFork':");
-    const end = source.indexOf("case 'replayConversationBranch':", start);
-    expect(start).toBeGreaterThan(-1);
-    expect(end).toBeGreaterThan(start);
-    const body = source.slice(start, end);
-    expect(body).toContain('createSessionApplicationService(deps)');
-    expect(body).toContain('appService.exportSessionFork');
-    expect(body).toContain('appService.importSessionFork');
-    expect(body).toContain('appService.enqueueSessionForkSync');
-    expect(body).toContain('appService.ingestSessionForkSync');
-    expect(body).toContain('appService.importReadySessionForkSync');
-    expect(body).not.toContain('database.importSessionFork');
-    expect(body).not.toContain('database.publishImportedIsolatedWorkspace');
-  });
-});
-
-describe('web conversation Rewind parity', () => {
-  it('uses SessionRewindService without coupling message visibility to file restore', () => {
-    const body = caseBody('rewindToPrompt');
-    expect(body).toContain('SessionRewindService');
-    expect(body).toContain('.rewindConversation');
-    expect(body).toContain('ownerUserId: getAuthService().getCurrentUser()?.id ?? null');
-    expect(body).toContain("const isLegacyRewind = action === 'rewindToPrompt'");
-    expect(body).toContain('!isLegacyRewind && !suppliedIdempotencyKey');
-    expect(body).not.toContain('getFileCheckpointService');
-    expect(body).not.toContain('rewindFiles');
+  it('一致动作面走 createSessionApplicationService 惰性装配（现状平移）', () => {
+    expect(webContextSource).toContain('createSessionApplicationService(deps)');
+    expect(memberBody(webContextSource, 'sessions: async')).toContain('requireSessionBackend');
   });
 
-  it('exposes explicit conversation recovery', () => {
-    expect(caseBody('restoreConversationRewind')).toContain('.restoreConversation');
-  });
-
-  it('routes explicit workspace file restore through the shared application service', () => {
-    const body = caseBody('restoreWorkspaceFilesAtCheckpoint');
-    expect(body).toContain('createSessionApplicationService(deps)');
-    expect(body).toContain('.restoreWorkspaceFilesAtCheckpoint');
-    expect(body).not.toContain('SessionRewindService');
-    expect(body).not.toContain('getFileCheckpointService');
-    expect(body).not.toContain('rewindFiles');
-  });
-});
-
-describe('web conversation lineage repair parity', () => {
-  it('routes the public repair action to compatibility projection reconstruction', () => {
-    const start = source.indexOf("} else if (action === 'repairConversationLineage') {");
-    const end = source.indexOf("} else if (action === 'recordConversationEvaluationAttribution') {", start);
-    expect(start).toBeGreaterThan(-1);
-    expect(end).toBeGreaterThan(start);
-    const body = source.slice(start, end);
-    expect(body).toContain('database.repairConversationLineage({');
-    expect(body).toContain('sessionId,');
-    expect(body).toContain('boundary,');
-    expect(body).toContain('issueDigest:');
-    expect(body).toContain('reason:');
-    expect(body).toContain('idempotencyKey:');
-    expect(body).not.toContain('recordConversationLineageRepairOverride');
+  it('sm 直调四动作不走 appService（drift 拍板归属 web 的基座行为）', () => {
+    for (const anchor of ['listSessions: (', 'loadSession: (', 'deleteSession: (', 'updateSession: (']) {
+      expect(memberBody(webContextSource, anchor)).toContain('resolveSessionManager');
+    }
   });
 });

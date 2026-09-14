@@ -15,9 +15,11 @@ import { channelSchema } from '../../../../src/shared/ipc/schemas/core';
 import type { DomainRouteTable } from '../../../../src/shared/ipc/domainRoutes';
 import {
   defineDomainRoutes,
-  extractDomainActions,
   installDomainRoutes,
 } from '../../../../src/host/ipc/domainRoutes/registry';
+
+// 结构枚举器挂既有函数对象上（knip 生产档无测试入口，独立 export 必成 dead export）
+const { extractDomainActions } = installDomainRoutes;
 
 type Invoke = (event: unknown, raw: unknown) => Promise<unknown>;
 
@@ -156,6 +158,26 @@ describe('installDomainRoutes', () => {
     await expect(registered.get('domain:test-enum')?.(undefined, { action: 'constructor' })).resolves.toEqual({
       success: false,
       error: { code: 'INVALID_ACTION', message: 'Unknown action: constructor' },
+    });
+  });
+
+  it('unknownActionMessage 覆盖默认兜底文案（域错误契约逐字保持）', async () => {
+    const table = defineDomainRoutes(
+      channelSchema({ channel: 'domain:test-msg', payload: EnumRequestSchema }),
+      {
+        echo: async () => null,
+        ping: async () => null,
+      },
+      { unknownActionMessage: (action) => `Unknown session action: ${String(action)}` },
+    );
+    const { registered, target } = createTarget();
+    installDomainRoutes(target, table, { prefix: 'neo' });
+
+    await expect(
+      registered.get('domain:test-msg')?.(undefined, { action: 'nope' }),
+    ).resolves.toEqual({
+      success: false,
+      error: { code: 'INVALID_ACTION', message: 'Unknown session action: nope' },
     });
   });
 

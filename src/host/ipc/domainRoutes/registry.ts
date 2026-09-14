@@ -15,9 +15,10 @@
 // （payload safeParse 失败 → INVALID_PAYLOAD）；本装配器面向既有域 switch 的表化迁移，
 // payload 透传不校验——迁移期行为严格不变，payload zod 细化是表立之后的增量（方案 2.5）。
 //
-// ⚠️ 刀 1 状态：尚无生产域装配本原语（消费方只有门骨架与测试），setupAllIpcHandlers
-// 装配顺序不动。新命令一律进域表，别再开独立 REST 面（存量流式/上传/历史兼容面除外，
-// 见方案 1.5 登记清单）。
+// ⚠️ 装配现状（RQ-183 刀 2 起）：session 域经 installDomainRoutes 进
+// setupAllIpcHandlers（生产唯一装配点，webServer 注入 web context 时装 web 形态表）。
+// 其余域仍是手写 switch，迁一个域加一张表。新命令一律进域表，别再开独立 REST 面
+// （存量流式/上传/历史兼容面除外，见方案 1.5 登记清单）。
 
 import { ZodDiscriminatedUnion, ZodEnum, ZodLiteral, ZodObject, ZodUnion, type z } from 'zod';
 import type {
@@ -32,6 +33,10 @@ import type { IpcMain } from '../../platform/ipcTypes';
 /** 领域错误 → IPC error code 的判定（如 session 域的 SessionForkError instanceof 家族） */
 export interface DomainRouteOptions {
   resolveErrorCode?: (error: unknown) => string | undefined;
+  /** 未知 action 兜底文案（默认 `Unknown action: <action>`），保持既有域错误契约逐字不变 */
+  unknownActionMessage?: (action: unknown) => string;
+  /** 该表面暂缓（web:false）的 action 桩清单，parity 门棘轮对账用 */
+  disabledActions?: readonly string[];
 }
 
 /**
@@ -48,6 +53,8 @@ export function defineDomainRoutes<Req extends DomainRouteRequest, Ctx>(
     requestSchema: schema,
     actions: handlers,
     ...(options?.resolveErrorCode ? { resolveErrorCode: options.resolveErrorCode } : {}),
+    ...(options?.unknownActionMessage ? { unknownActionMessage: options.unknownActionMessage } : {}),
+    ...(options?.disabledActions ? { disabledActions: options.disabledActions } : {}),
   };
 }
 
@@ -55,12 +62,12 @@ export function defineDomainRoutes<Req extends DomainRouteRequest, Ctx>(
  * 把域路由表装配进 handlers Map。装配前做双向防漂移校验（表 ⊄ schema / schema ⊄ 表
  * 都拒绝装配）——编译期穷尽之外的运行时兜底，挡动态构造/as-any 绕过类型的表错位。
  */
-export function installDomainRoutes<Req extends DomainRouteRequest, Ctx>(
+function installDomainRoutesImpl<Req extends DomainRouteRequest, Ctx>(
   target: Pick<IpcMain, 'handle'>,
   table: DomainRouteTable<Req, Ctx>,
   ctx: Ctx,
 ): void {
-  const schemaActions = extractDomainActions(table.requestSchema.payload);
+  const schemaActions = collectDomainActions(table.requestSchema.payload);
   if (schemaActions.size === 0) {
     throw new Error(
       `[domainRoutes] ${table.channel}: request schema 提取到 0 个 action——schema 形态不被识别或传错了 schema，拒绝装配`,
@@ -90,12 +97,15 @@ export function installDomainRoutes<Req extends DomainRouteRequest, Ctx>(
       : undefined;
 
     if (!handler) {
-      // 未知 action 兜底，对齐 session.ipc.ts:304-311 现状语义
+      // 未知 action 兜底，对齐 session.ipc.ts:304-311 现状语义；个别域用
+      // unknownActionMessage 保持既有错误契约逐字不变（如 web session 的前缀差异）
       return {
         success: false,
         error: {
           code: 'INVALID_ACTION',
-          message: `Unknown action: ${String(action)}`,
+          message: table.unknownActionMessage
+            ? table.unknownActionMessage(action)
+            : `Unknown action: ${String(action)}`,
         },
       };
     }
@@ -121,11 +131,21 @@ export function installDomainRoutes<Req extends DomainRouteRequest, Ctx>(
  * z.discriminatedUnion('action', [...]) 与 z.object({ action: z.enum/literal/union })。
  * 认不出的形态返回空集合，调用方自举纪律兜底（门红 / install 抛错）。
  */
-export function extractDomainActions(requestSchema: unknown): ReadonlySet<string> {
+function collectDomainActions(requestSchema: unknown): ReadonlySet<string> {
   const actions = new Set<string>();
   collectActionLiterals(requestSchema, actions);
   return actions;
 }
+
+/**
+ * 装配器导出。extractDomainActions（结构枚举器）是测试专用导出，按施工环境硬门
+ * 挂在既有函数对象上（knip 生产档 entry 不含 tests，独立 export 必成 dead
+ * export）——parity 门与原语单测经 installDomainRoutes.extractDomainActions 取用，
+ * Object.assign 的交叉类型让挂载属性在类型侧同样可见，不需要 namespace 合并。
+ */
+export const installDomainRoutes = Object.assign(installDomainRoutesImpl, {
+  extractDomainActions: collectDomainActions,
+});
 
 function collectActionLiterals(node: unknown, out: Set<string>): void {
   if (node instanceof ZodDiscriminatedUnion) {

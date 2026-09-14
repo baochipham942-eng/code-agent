@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "note": "2026-09-14 N-ROUTE-SINGLESOURCE-KNIFE1（RQ-183 刀1，爸拍板的四刀分期之纯地基刀）：src/shared/ipc/domainRoutes.ts、src/host/ipc/domainRoutes/registry.ts、src/host/ipc/domainRoutes/demo.ts 三个新文件暂入不可达基线——消费方在刀 2（session 域表化，下一 PR）接线，届时按棘轮 revivedFiles 机制复活移出；不是把断电当存量。上一笔 2026-09-13 N-KNIP-MOBILE-BLINDSPOT：扫描范围纳入 packages/mobile，符号数变化含「手机消费的共享导出不再假死」和「手机侧只给单测用的导出首次入账」，不是清理战果。",
+  "note": "2026-09-13 N-KNIP-MOBILE-BLINDSPOT：扫描范围纳入 packages/mobile。符号数变化含「手机消费的共享导出不再假死」和「手机侧只给单测用的导出首次入账」，不是清理战果。真死的 decodeInvitation / Dispose / FileExportResult / PushProvider / KEYBOARD_EASING / KeyboardFrame 已删或去 export，没有塞进基线。",
   "symbols": [
     {
       "file": "packages/internal/evaluation-center/src/host/evaluation/trajectory/trajectoryExporter.ts",
@@ -17698,8 +17698,6 @@
     "src/host/errors/recoveryEngine.ts",
     "src/host/errors/recoveryTypes.ts",
     "src/host/errors/types.ts",
-    "src/host/ipc/domainRoutes/demo.ts",
-    "src/host/ipc/domainRoutes/registry.ts",
     "src/host/ipc/error.ipc.ts",
     "src/host/model/providers/index.ts",
     "src/host/planning/autoPlanner.ts",
@@ -17784,7 +17782,6 @@
     "src/renderer/utils/workspaceRevisions.ts",
     "src/shared/contract/contextObservability.ts",
     "src/shared/contract/cowork.ts",
-    "src/shared/contract/managed.ts",
-    "src/shared/ipc/domainRoutes.ts"
+    "src/shared/contract/managed.ts"
   ]
 }

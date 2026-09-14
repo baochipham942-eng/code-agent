@@ -55,6 +55,23 @@ export function foundRoleDelimiterTokens(found: readonly string[]): boolean {
   return found.some((token) => ROLE_DELIMITER_LOOKUP.has(token.toLowerCase()));
 }
 
+/**
+ * Wrap untrusted text in a nonce-tagged boundary envelope. The nonce must come from
+ * the same sanitize call that stripped it from the content, so the content cannot
+ * forge a matching boundary id. Tag style mirrors the security-warning envelope.
+ */
+export function wrapUntrustedContentBoundary(params: {
+  nonce: string;
+  source: string;
+  content: string;
+}): string {
+  return (
+    `<untrusted-content source="${params.source}" id="${params.nonce}">\n` +
+    params.content + '\n' +
+    `</untrusted-content>`
+  );
+}
+
 export function buildSecurityWarningMessage(params: {
   nonce: string;
   source: string;

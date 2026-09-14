@@ -11,6 +11,7 @@ import {
   generateBoundaryNonce,
   stripBoundaryNonce,
   stripSpecialTokenLiterals,
+  wrapUntrustedContentBoundary,
 } from '../../../src/host/security/untrustedContentBoundary';
 import {
   InputSanitizer,
@@ -101,6 +102,20 @@ describe('untrustedContentBoundary', () => {
     expect(message).toContain(`<security-warning source="web_fetch" id="${nonce}">`);
     expect(message).toContain(`Boundary nonce: ${nonce}.`);
     expect(message).toContain('⚠️ The following security concerns were detected in external data:');
+  });
+
+  it('wraps untrusted content in a nonce-tagged boundary envelope around the exact body', () => {
+    const nonce = generateBoundaryNonce();
+    const wrapped = wrapUntrustedContentBoundary({
+      nonce,
+      source: 'queued-peer-agent-message',
+      content: '我这边的数据好了',
+    });
+    expect(wrapped).toBe(
+      `<untrusted-content source="queued-peer-agent-message" id="${nonce}">\n` +
+      '我这边的数据好了\n' +
+      `</untrusted-content>`,
+    );
   });
 });
 

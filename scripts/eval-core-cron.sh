@@ -100,7 +100,7 @@ echo "=== exit=$EXIT"
 REPORT_MD="$(grep -a 'Reports saved to:' "$LOG" | tail -1 | sed -e 's/\x1b\[[0-9;]*m//g' -e 's/.*Reports saved to: //' -e 's/[[:space:]]*$//')"
 REPORT_JSON="${REPORT_MD%.md}.json"
 if [ -z "$REPORT_MD" ] || [ ! -f "$REPORT_JSON" ]; then
-  echo "=== 本轮没有报告（exit=$EXIT），无法比对；见上方 eval-ci 输出"
+  echo "=== 本轮没有报告（exit=${EXIT}），无法比对；见上方 eval-ci 输出"
   printf '# core 集周跑 %s\n\n⚠ exit %s：没有产出报告，见 %s\n' "$DATE" "$EXIT" "$LOG" > "$INBOX/$DATE.md"
   exit "$EXIT"
 fi

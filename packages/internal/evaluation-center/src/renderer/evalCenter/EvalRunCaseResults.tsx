@@ -8,6 +8,8 @@ interface EvalRunCaseResultsProps {
   runId: string;
   caseResults: Record<string, EvalBaselineCaseResult> | undefined;
   labels: EvalRunPanelLabels;
+  /** 组内最近 N 轮全 passed 的题（零区分度），行尾灰标 */
+  alwaysPassedCaseIds?: Set<string>;
   onOpenCase(caseId: string): void;
 }
 
@@ -37,7 +39,7 @@ function statusClassName(status: EvalDisplayStatus): string {
 }
 
 export const EvalRunCaseResults: React.FC<EvalRunCaseResultsProps> = ({
-  runId, caseResults, labels, onOpenCase,
+  runId, caseResults, labels, alwaysPassedCaseIds, onOpenCase,
 }) => {
   const cases = Object.entries(caseResults ?? {});
 
@@ -62,6 +64,11 @@ export const EvalRunCaseResults: React.FC<EvalRunCaseResultsProps> = ({
                   <span className="text-zinc-500">
                     {labels.runCaseScore.replace('{score}', String(result.score))}
                   </span>
+                  {alwaysPassedCaseIds?.has(caseId) && (
+                    <span data-testid="benchmark-run-case-always-passed" className="rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-500">
+                      {labels.alwaysPassed}
+                    </span>
+                  )}
                 </span>
               </Button>
             </li>

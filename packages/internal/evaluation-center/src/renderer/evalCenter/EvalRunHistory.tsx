@@ -17,6 +17,7 @@ import { EmptyState } from '@renderer/components/primitives/EmptyState';
 import { groupExperimentsByDataset, normalizeDatasetName, type EvalDatasetGroup } from './evalDatasetName';
 import { EvalCaseDrawer, type EvalCaseDrawerTarget } from './EvalCaseDrawer';
 import {
+  alwaysPassedCaseIds,
   comparabilityTag,
   computeDeltaPp,
   regressionsAgainstBaseline,
@@ -338,6 +339,8 @@ export const EvalRunHistory: React.FC<EvalRunHistoryProps> = ({
         )}
         {loadState === 'ready' && groups.map((group) => {
           const baseline = baselineGroups[group.key];
+          // group.runs 已按时间倒序；连续 5 轮全过的题在逐题展开里打灰标（只标不动统计）
+          const alwaysPassed = alwaysPassedCaseIds(group.runs.map((run) => run.caseResults ?? {}));
           const orderedRuns = baseline?.experimentId
             ? [...group.runs].sort((a, b) => {
               if (a.id === baseline.experimentId) return -1;
@@ -404,6 +407,7 @@ export const EvalRunHistory: React.FC<EvalRunHistoryProps> = ({
                           runId={run.id}
                           caseResults={run.caseResults}
                           labels={labels}
+                          alwaysPassedCaseIds={alwaysPassed}
                           onOpenCase={(caseId) => setDrawerTarget({ experimentId: run.id, caseId })}
                         />
                       )}

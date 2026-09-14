@@ -1,6 +1,6 @@
 // AI SDK 适配器 per-request 超时 —— 锁住迁移时丢失、现已补回的超时契约：
 //  - 非流式 generateText：requestTimeoutMs 到点 abort 本次请求 → 抛 'timeout of …' → withTransientRetry 重试。
-//  - 流式 streamText：firstByteTimeoutMs（首字节前卡住→重试）+ inactivityTimeoutMs（已出 delta 后卡住→不重试，抛错）。
+//  - 流式 streamText：firstByteTimeoutMs（首字节前卡住→重试）+ inactivityTimeoutMs（已出 delta 后卡住→断点续接，ADR-068 D3）。
 // 背景：旧 axios/sseStream 路径有 PROVIDER_TIMEOUT/SSE_FIRST_BYTE/SSE_INACTIVITY；AI SDK 走 fetch 无默认超时，
 // 迁移漏带 → provider 卡住会一直挂到外层预算（子代理 90s 硬超时）耗尽，无 per-request 早退+重试。
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
@@ -110,22 +110,26 @@ describe('inferenceViaAiSdk —— per-request 超时 + 重试', () => {
     expect(result.content).toBe('hello');
   });
 
-  it('流式：已出 delta 后卡住到 inactivityTimeoutMs → stream inactivity timeout → 不重试，抛错', async () => {
+  it('流式：已出 delta 后卡住到 inactivityTimeoutMs → stream inactivity timeout → 断点续接（ADR-068 D3 主场景），断点态延续', async () => {
     let calls = 0;
     vi.mocked(streamText).mockImplementation((opts: Parameters<typeof streamText>[0]) => {
       calls += 1;
       // 先吐一个 delta（emittedOutput=true），随后卡住。
-      return hangingStream((opts as { abortSignal?: AbortSignal }).abortSignal, [{ type: 'text-delta', id: 't', text: 'partial' }]);
+      if (calls === 1) return hangingStream((opts as { abortSignal?: AbortSignal }).abortSignal, [{ type: 'text-delta', id: 't', text: 'partial' }]);
+      return streamOf([
+        { type: 'text-delta', id: 't', text: 'resumed' },
+        { type: 'finish', finishReason: 'stop', totalUsage: { inputTokens: 1, outputTokens: 1 } },
+      ]);
     });
     const col = makeCollector();
 
     const p = inferenceViaAiSdk([{ role: 'user', content: 'hi' }], [], CONFIG, col.onStream, undefined, { firstByteTimeoutMs: 9000, inactivityTimeoutMs: 1000 });
-    const settled = p.then(() => 'resolved', (e) => (e instanceof Error ? e.message : String(e)));
-    await vi.advanceTimersByTimeAsync(1000); // inactivity 看门狗 abort
-    const outcome = await settled;
+    await vi.advanceTimersByTimeAsync(1000); // inactivity 看门狗 abort 第一次（已吐 delta → 走续接）
+    await vi.advanceTimersByTimeAsync(1000); // 续接退避（base 1s × jitter 1.0）
+    const result = await p;
 
-    expect(outcome).toMatch(/stream inactivity timeout/);
-    expect(calls).toBe(1); // 已出 delta → 不重试
-    expect(col.byType('error').length).toBe(1);
+    expect(calls).toBe(2);
+    expect(result.content).toBe('partialresumed'); // 断点态 seed：续写追加在已吐内容之后
+    expect(col.byType('error').length).toBe(0); // 续接成功，无 error
   });
 });

@@ -1,5 +1,6 @@
 // AI SDK 适配器流式路径 —— 锁住 streamText stream 事件 → StreamChunk（项目契约）
-// → ModelResponse 的映射，以及 emittedOutput 闸门重试（首字节前才重试、绝不 mid-stream 重试）。
+// → ModelResponse 的映射，以及 emittedOutput 闸门（首字节前才重试；首字节后的瞬态断流走
+// ADR-068 刀 1 的续接分支，见 aiSdkAdapterStreamResume.test.ts——确定性错误仍直接抛）。
 // 主 loop 是 HOT 路径 + 用户可见聊天，这套映射的语义漂移最危险，故用受控事件流单测覆盖。
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { streamText, generateText } from 'ai';
@@ -394,20 +395,21 @@ describe('inferenceViaAiSdk —— emittedOutput 闸门重试', () => {
     expect(vi.mocked(streamText)).toHaveBeenCalledTimes(1); // 不重试
   });
 
-  it('已吐过 delta 后的瞬态错误：绝不 mid-stream 重试，直接抛', async () => {
+  it('已吐过 delta 后的确定性错误（401 auth）：不续接直接抛（瞬态断流的续接见 aiSdkAdapterStreamResume.test.ts）', async () => {
+    const auth401 = Object.assign(new Error('invalid_api_key'), { status: 401 });
     vi.mocked(streamText)
       .mockReturnValueOnce(fakeStream([
         { type: 'text-delta', id: 't', text: 'Hello' },
-        { type: 'error', error: new Error('ECONNRESET') },
+        { type: 'error', error: auth401 },
       ]))
       .mockReturnValueOnce(fakeStream([{ type: 'text-delta', id: 't', text: 'SHOULD-NOT-RUN' }]));
     const col = makeCollector();
 
     await expect(
       inferenceViaAiSdk([{ role: 'user', content: 'x' }], [], CONFIG, col.onStream),
-    ).rejects.toThrow(/ECONNRESET/);
+    ).rejects.toThrow(/invalid_api_key/);
 
-    expect(vi.mocked(streamText)).toHaveBeenCalledTimes(1); // 没重试
+    expect(vi.mocked(streamText)).toHaveBeenCalledTimes(1); // 确定性错误不进续接分支
     expect(col.texts()).toBe('Hello'); // 用户只看到已吐的部分
     expect(col.byType('error').length).toBeGreaterThan(0);
   });

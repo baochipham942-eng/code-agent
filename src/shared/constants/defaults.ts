@@ -12,6 +12,17 @@ export const SSE_FIRST_BYTE_TIMEOUT = 60_000;
 export const SSE_INACTIVITY_TIMEOUT =
   (typeof process !== 'undefined' && Number(process.env?.SSE_INACTIVITY_TIMEOUT_MS)) || 120_000;
 
+/** 首字节后断流续接预算（ADR-068 D4）：已向用户吐过 delta 的可续接断流，最多续接次数。
+ *  独立于首字节前的 STREAM_MAX_RETRIES=4（那边没有 output 沉没成本且用户无感，维持不变）。
+ *  env 可覆盖；本文件被 renderer 打包，env 读取沿用上面的 typeof 守卫形状。 */
+export const STREAM_RECONNECT_MAX =
+  (typeof process !== 'undefined' && Number(process.env?.STREAM_RECONNECT_MAX)) || 2;
+
+/** 断流续接退避封顶（ms，ADR-068 D4）：续接是打字中的中断，要快恢复不是越等越稳——
+ *  指数退避复用 computeRetryBackoffMs 但封顶压到 4s（首字节前重试封顶 16s 不变）；
+ *  429 的 retry-after 优先且不受此封顶。 */
+export const STREAM_RECONNECT_BACKOFF_CAP_MS = 4_000;
+
 /** 默认 Provider — LongCat API 开放平台（2026-07-13 起替代小米 MiMo：Token Plan key 失效 401） */
 export const DEFAULT_PROVIDER = 'longcat' as const;
 

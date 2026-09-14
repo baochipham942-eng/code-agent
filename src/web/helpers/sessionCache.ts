@@ -111,7 +111,8 @@ function markPersistenceRecovered(backupTakenAt: number): void {
 
 export function markPersistenceDegraded(reason: string): void {
   if (!dbAvailable) return;
-  if (persistenceHealth.status === 'recovered' || persistenceHealth.status === 'unavailable') return;
+  if (persistenceHealth.status === 'unavailable') return;
+  // recovered 是一次性事件通知，不遮挡持续性降级：quick_check 失败 / 局部损坏要顶掉它
   persistenceHealth = {
     ...persistenceHealth,
     status: 'degraded',
@@ -132,7 +133,8 @@ export function applyDbIntegrityOutcome(outcome: DbIntegrityOutcome): void {
 
 export function getPersistenceHealth(): PersistenceHealth {
   const health = { ...persistenceHealth };
-  if (health.status !== 'available') return health;
+  // FTS 降级是持续状态：available 和 recovered（一次性通知）都要被它覆盖
+  if (health.status !== 'available' && health.status !== 'recovered') return health;
   if (getDisabledFtsTables().length > 0) {
     return {
       ...health,

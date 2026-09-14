@@ -123,7 +123,7 @@ describe('web session persistence health', () => {
     });
   });
 
-  it('marks local damage as degraded and ignores FTS overlay once recovered', () => {
+  it('marks local damage as degraded', () => {
     setDbAvailable(true);
     markPersistenceDegraded(SQLITE_INTEGRITY.LOCAL_CORRUPT);
     expect(getPersistenceHealth()).toMatchObject({
@@ -131,10 +131,44 @@ describe('web session persistence health', () => {
       reason: SQLITE_INTEGRITY.LOCAL_CORRUPT,
       durable: true,
     });
+  });
 
+  // recovered 是一次性事件通知；持续性降级（quick_check 失败）优先于它展示
+  it('lets a later quick_check failure override the recovered notice', () => {
+    setDbAvailable(true);
+    applyDbIntegrityOutcome({ kind: 'recovered', backupTakenAt: 1, isolatedPath: '/tmp/x' });
+    expect(getPersistenceHealth().status).toBe('recovered');
+
+    markPersistenceDegraded(SQLITE_INTEGRITY.QUICK_CHECK_FAILED);
+    expect(getPersistenceHealth()).toMatchObject({
+      status: 'degraded',
+      reason: SQLITE_INTEGRITY.QUICK_CHECK_FAILED,
+      durable: true,
+    });
+  });
+
+  // recovered 不遮挡 FTS 持续降级：恢复出来的库 FTS 坏了/回填中，用户要看到搜索降级
+  it('overlays FTS degradation on top of the recovered notice', () => {
+    setDbAvailable(true);
     applyDbIntegrityOutcome({ kind: 'recovered', backupTakenAt: 1, isolatedPath: '/tmp/x' });
     repairFtsTable.markDisabledForTests('session_messages_fts');
-    markPersistenceDegraded(SQLITE_INTEGRITY.QUICK_CHECK_FAILED);
+    expect(getPersistenceHealth()).toMatchObject({
+      status: 'degraded',
+      reason: SQLITE_FTS.DISABLED_REASON,
+      durable: true,
+    });
+  });
+
+  it('keeps the recovered notice when nothing else is degraded', () => {
+    setDbAvailable(true);
+    applyDbIntegrityOutcome({ kind: 'recovered', backupTakenAt: 1, isolatedPath: '/tmp/x' });
+    repairFtsTable.markEmptyForTests('session_messages_fts');
+    expect(getPersistenceHealth()).toMatchObject({
+      status: 'degraded',
+      reason: SQLITE_FTS.EMPTY_RECREATED_REASON,
+    });
+
+    repairFtsTable.resetStateForTests();
     expect(getPersistenceHealth().status).toBe('recovered');
   });
 });

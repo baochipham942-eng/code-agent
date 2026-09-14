@@ -3,14 +3,14 @@
 - 状态：待爸拍板
 - 日期：2026-09-14
 - 工单：N-STREAM-RESUME-ADR（RQ-214，SOTA 体检 D09-04 并入，模型合同线 P0）
-- 相关：ADR-032（请求形状前缀稳定——续接重发仍吃 prompt cache 的前提）、ADR-037（durable run kernel；已知限制表「自动重发可能重复收费，不能承诺 exactly-once」同口径）、N-LOOP-DURABLE-K2（进程重启的 close-only 恢复，与本单的进程内续接分界）、D09-04 设计草案（SOTA 体检输入，本 ADR 对其逐条重拍）
+- 相关：ADR-032（请求形状前缀稳定——续接重发仍吃 prompt cache 的前提）、ADR-037（durable run kernel；已知限制表「自动重发可能重复收费，不能承诺 exactly-once」同口径）、N-LOOP-DURABLE-K2（进程重启的 close-only 恢复，与本单的进程内续接分界）、N-INTERRUPT-REPLAY（中断轮 resumable 回放形态先例，2026-08-26 落地）、D09-04 / D02-01 设计草案（SOTA 体检输入，本 ADR 对其逐条重拍）
 - as-built 基线：origin/main@c2d1db78b（勘察树 `feat/stream-resume-adr`）
 
 本 ADR 只定形状，不改代码、不配基线。爸拍板后才拆施工单。
 
 ## 背景
 
-`aiSdkAdapter.ts:1051-1054` 的 `!emittedOutput` 闸门：吐出第一个用户可见 delta（text / reasoning / tool_call_start，`:957/:970/:976/:993` 四处置 true）之后，任何断流——网络抖动、provider 5xx、看门狗超时、合盖休眠导致的 socket 挂断——直接 `onStream({type:'error'})` + throw，一次抖动 = 已生成的 output tokens 全部沉没 + 整轮重来全价 + 用户看到红色报错（RQ-214：🔴 一次网络抖动=白跑一轮）。`docs/ARCHITECTURE.md:551` 把闸门写成设计意图：「已输出内容后的流式重试受 adapter 限制，防止把两次回答拼成一次」。
+`aiSdkAdapter.ts:1051-1054` 的 `!emittedOutput` 闸门：吐出第一个用户可见 delta（text / reasoning / tool_call_start，`:957/:970/:976/:993` 四处置 true）之后，任何断流——网络抖动、provider 5xx、看门狗超时、合盖休眠导致的 socket 挂断——直接 `onStream({type:'error'})` + throw，一次抖动 = 已生成的 output tokens 全部沉没 + 整轮重来全价 + 用户看到红色报错（RQ-214：🔴 一次网络抖动=白跑一轮）。`docs/ARCHITECTURE.md:551` 把闸门写成设计意图：「已输出内容后的流式重试受 adapter 限制，防止把两次回答拼成一次」。竞品对照（体检 D02-01）：六家对照里四家已 shipped 断流续接，艾克斯/劳拉/爸三票一致「本季做」。
 
 本 ADR 按「取舍已过期」立论，当年两条前提逐条复核：
 
@@ -62,6 +62,7 @@
 ### D4 重试预算与幂等
 
 - `STREAM_RECONNECT_MAX`（默认 2，env 可覆盖）从首字节前预算拆出，常量进 `shared/constants`；首字节前重试维持 `STREAM_MAX_RETRIES=4` 不变（那边没有 output 沉没成本，且用户无感）。
+- **前台 / 无人值守分档**（D02-01 三票一致指向）：前台轮首次自动续接、预算耗尽即转 error 交还用户；无人值守轮（goal / cron / `--ephemeral` 等无 UI 盯守）无条件自动续跑，预算取 `UNATTENDED_STREAM_RECONNECT_MAX=5`，并以「同 run 连续断流 ≥3 次熔断」防断流-续跑死循环——熔断后不再重发，收尾成 resumable 中断态（D5 形态）。
 - 退避复用 `computeRetryBackoffMs`（base 1s、±25% jitter），续接场景封顶压到 4s（打字中断要快恢复，不是越长越稳）；429 的 retry-after 优先。
 - 计费与幂等：与 ARCHITECTURE.md:677 已知限制（ADR-037「自动重发可能重复收费；返回复核，不能承诺 exactly-once」）同一口径——**不承诺幂等，靠预算封顶 + usage 全量记账让成本可见**。续接重发与原请求共享逐字相同的前缀（system + history + user），ADR-032 的请求形状稳定保证 provider prompt cache 命中原前缀，增量 input 计费只有 assistant prefix 段。原次已生成 output 是沉没成本，usage 合并后如实入账。
 - 安全幂等比计费幂等更硬：半截 tool_call 丢弃重生成（D2），续接永不执行不完整参数。
@@ -70,7 +71,7 @@
 
 - 断流续接中：聊天流里**同一条 streaming assistant 消息**内嵌一个状态行「连接中断，正在续接 n/N」（D09-04 草案原文），不新开第二条消息、不叠全局 banner；复用 `StreamInterruptionReason` 中断提示的既有词表与呈现位（`streamInterruptionPresentation.ts`）。
 - 续接成功：状态行消除，delta 无缝继续（B1）或新消息起头（B2，带一次性续接说明）。
-- 预算耗尽：转 error 态 + partial 按带中断标记落库保留，错误呈现带「重试」动作（衔接现有错误呈现）。
+- 预算耗尽：转 error 态 + partial 按带中断标记落库保留，回放复用 N-INTERRUPT-REPLAY 已落的 resumable 回放形态（时间线工具行 + `DecisionSlot`，中断原因由落库标记派生），「重试」动作挂在 DecisionSlot——不发明第三种中断呈现。
 - 语义先例：voiceCall 的 reconnecting（`voiceCallStore.ts:53`「同一通电话，work items / 计时都不重置」）——续接是同一轮回答，不重置 turn。
 - CLI 可见性：复用 adapter `retryEvents` 'retry' 事件通道（`aiSdkAdapter.ts:1059` 现有先例）扩展 reconnect 语义，打一行提示。
 
@@ -114,10 +115,10 @@
 | 单 | 内容 | 门 | 依赖 |
 |---|---|---|---|
 | 刀 0 能力表 | `modelCapabilityMatrix` 加 `streamResume` 档位（deepseek `prefix-param` 带 /beta 端点、openrouter / gemini `trailing-assistant`、claude 按模型分档 ≤4.5 可 / 4.6+ none、openai none、其余 unknown）；不改任何行为 | 单测（档位解析、claude 4.6+ 与 ≤4.5 分档正确）+ 反向变异（把 claude-opus-4-7 判成可 prefix → 分档断言红） | — |
-| 刀 1 续接状态机与预算 | `STREAM_RECONNECT_MAX` 常量；断流识别（`isRetryableModelCallError` + `timedOutKind` + `emittedOutput`）；`emittedOutput=true` 时改走 resume 分支：accumulator 断点态 seed、abort 短路、预算耗尽回落现有 error+throw；首字节前路径零改动 | 单测（断点后第二 attempt 请求携带前缀态、abort 不续接、预算耗尽转 throw、首字节前重试不回归）+ 反向变异（把 seed 改回全新累积器 → 断点态断言红） | 0 |
+| 刀 1 续接状态机与预算 | `STREAM_RECONNECT_MAX` / `UNATTENDED_STREAM_RECONNECT_MAX` 常量与前台/无人值守分档、连续断流熔断计数；断流识别（`isRetryableModelCallError` + `timedOutKind` + `emittedOutput`）；`emittedOutput=true` 时改走 resume 分支：accumulator 断点态 seed、abort 短路、预算耗尽回落现有 error+throw；首字节前路径零改动 | 单测（断点后第二 attempt 请求携带前缀态、abort 不续接、预算耗尽转 throw、无人值守分档取高预算、熔断计数到阈值停止重发、首字节前重试不回归）+ 反向变异（把 seed 改回全新累积器 → 断点态断言红） | 0 |
 | 刀 2 B1 prefix 请求形状 | 按能力表拼末条 assistant prefix（文本前缀 + 完整 tool_calls，半截丢弃）；vendorCompat `transformRequestBody` 注入 `prefix:true` / 切 /beta 端点；claude 4.6+ 自动落 B2；messages 前缀与原请求逐字一致（prompt cache 命中前提） | 单测（per provider 请求体形状、半截 tool_call 不进 prefix、前缀逐字一致不变量）+ 反向变异（prefix 拼接错位/漏掉 → 一致性断言红） | 0, 1 |
 | 刀 3 B2 兜底与计量 | 无合同档 / B1 失败：partial 以带 `interruptionReason` 的 assistant 消息落库（对齐 `preserveStreamedPartial` 形态，补齐 error 路径不落库的缺口），续答新消息不拼缝；usage 跨 attempt 合并；loop 层已吐后整轮重发路径（network retry / artifact 非流式重试）收编：先保片段再重发 | 单测（B2 两段式落库、usage 合并、loop 层重发不丢 partial 不 append 拼缝）+ 反向变异（把分段改回 append 冒充单次 → 分段断言红） | 1 |
-| 刀 4 UI 信号 | 「连接中断，正在续接 n/N」内嵌同一 streaming 消息，一屏一个信号；成功消除 / B2 新消息说明 / 失败转 error 保留 partial；`retryEvents` 扩展 reconnect（CLI 一行） | 单测（n/N 计数、终态转换）+ E2E 断流注入（信号出现 → B1 续接无缝）+ 反向变异（去掉信号事件 → E2E 断言红） | 1 |
+| 刀 4 UI 信号 | 「连接中断，正在续接 n/N」内嵌同一 streaming 消息，一屏一个信号；成功消除 / B2 新消息说明 / 失败转 error 保留 partial，耗尽态回放复用 N-INTERRUPT-REPLAY 的 resumable 形态（时间线行 + DecisionSlot 挂「重试」）；`retryEvents` 扩展 reconnect（CLI 一行） | 单测（n/N 计数、终态转换）+ E2E 断流注入（信号出现 → B1 续接无缝）+ 反向变异（去掉信号事件 → E2E 断言红） | 1 |
 
 顺序：刀 0 → 刀 1 → 刀 2 / 刀 3 可并行 → 刀 4。刀 3 先行单独落地即兑现「不再白跑一轮」的主要止损。
 
@@ -144,3 +145,4 @@
 3. **Anthropic prefill 在 Claude 4.6+ 返回 400**（官方文档 2026-09-14 核实）：D09-04 草案设想的「assistant prefix 续写」对仓内默认 `claude-opus-4-7` 不成立，能力表必须按模型分档——这是对草案的一处实质修正。
 4. streamSnapshot 的 evidence-only 拍板（`stableForExecution:false`）本 ADR 不推翻：进程死回来的恢复仍是证据回放不自动续写；本 ADR 只管进程内 in-flight 断流。两者以「进程是否活着」分界。
 5. DeepSeek prefix 续写在 `/beta` 端点（非仓内 `MODEL_API_ENDPOINTS.deepseek` 主端点），刀 2 需端点覆盖能力；`@ai-sdk/deepseek` 不一定暴露该形状，必要时走 vendorCompat 手搓请求体。
+6. 台账标题（D02-01·三票一致）比任务书正文七点多两项设计指向——「无人值守轮无条件续跑、前台首次自动再失败交人」与「复用 preserveStreamedPartial 与 N-INTERRUPT-REPLAY 形态」——正文未展开，本 ADR 已分别并入 D4（分档+熔断）与 D5（回放形态复用）。

@@ -20,7 +20,7 @@ interface FileExportResult {
 }
 
 export interface FilePorts {
-  pick(kind: 'image' | 'file'): Promise<PickedFile | null>;
+  pick(kind: 'image' | 'file' | 'camera'): Promise<PickedFile | null>;
   save(file: { name: string; mimeType: string; bytes: Uint8Array }): Promise<FileExportResult>;
   cache: FileCache;
 }

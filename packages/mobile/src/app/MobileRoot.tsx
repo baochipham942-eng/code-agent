@@ -1,4 +1,5 @@
 import { Composer } from '../features/sessions/Composer';
+import { AttachmentSheet } from '../features/sessions/AttachmentSheet';
 import { LibrarySheet } from '../features/sessions/LibrarySheet';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from 'zustand';
@@ -7,6 +8,7 @@ import { createMobileStore } from '../stores/mobileStore';
 import { canAddressSession, createCompanionStore, needsLibraryPick } from '../stores/companionStore';
 import { createNotificationStore } from '../stores/notificationStore';
 import { unavailableNotificationPort } from '../platform/notifications';
+import { pickAttachment } from '../platform/cameraPick';
 import { COMPANION_LIMITS } from '../../../../src/shared/constants/companion';
 import { ApprovalCard } from '../features/sessions/ApprovalCard';
 import { QuestionCard } from '../features/sessions/QuestionCard';
@@ -420,7 +422,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
             else state.attemptSend();
           }}
           modelLabel={sessionModelLabel} openModel={() => state.openSheet('more')}
-          attach={ports.files && (() => void ports.files!.pick('file').then(picked => { if (picked) void companion.upload(picked); }).catch(error => { if (error instanceof Error && error.message === 'UPLOAD_TOO_LARGE') companionStore.setState({ commandError: 'UPLOAD_TOO_LARGE' }); }))}
+          attach={ports.files && (() => state.openSheet('attachment'))}
           attachDisabled={!canAddressSession(companion) || companion.busy || companion.pending}
           attachments={companion.uploadProgress}
           retryAttachment={id => { void companion.retryUpload(id); }}
@@ -483,7 +485,31 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
         {!ports.companion && <p>{text.nativeConnectionOnly}</p>}
         <button className={companion.status === 'connected' ? undefined : 'primary'} disabled={!ports.companion || companion.busy || companion.pending} onClick={() => void pairAndOpenConversation()}>{text.scan}</button>
         {ports.companion && <button disabled={companion.busy} onClick={() => void companion.reconnect()}>{text.reconnect}</button>}
-      </div> : <SettingsPage page={currentPage} text={text} appearance={state.preferences.appearance} nickname={state.preferences.nickname}
+      </div> : (currentPage === 'attachment' || currentPage === 'cameraDenied') ? <AttachmentSheet
+        mode={currentPage} text={text}
+        onPick={kind => {
+          if (!ports.files) return;
+          void pickAttachment(ports.files.pick, kind, file => companionStore.getState().upload(file)).then(outcome => {
+            if (outcome === 'denied') {
+              if (store.getState().sheet) store.getState().pushSheet('cameraDenied');
+              else store.getState().openSheet('cameraDenied');
+              return;
+            }
+            if (outcome === 'too-large') {
+              store.getState().closeSheet();
+              companionStore.setState({ commandError: 'UPLOAD_TOO_LARGE' });
+              return;
+            }
+            if (outcome === 'type-denied') {
+              store.getState().closeSheet();
+              companionStore.setState({ commandError: 'COMPANION_FILE_TYPE_DENIED' });
+              return;
+            }
+            if (outcome === 'picked') store.getState().closeSheet();
+          }).catch(() => { /* camera plugin failures are not upload failures */ });
+        }}
+        onOpenSettings={() => void (ports.notifications ?? unavailableNotificationPort).openSettings()}
+      /> : <SettingsPage page={currentPage} text={text} appearance={state.preferences.appearance} nickname={state.preferences.nickname}
         profileDraft={state.profileDraft} appInfo={appInfo} open={state.pushSheet} chooseAppearance={state.setAppearance}
         editProfile={state.editProfile} saveProfile={state.saveProfile}
         storage={{ previewBytes: companion.cacheUsage?.previewBytes ?? 0, conversationBytes: companion.cacheUsage?.conversationBytes ?? 0, result: cacheResult, confirm: cacheConfirm,

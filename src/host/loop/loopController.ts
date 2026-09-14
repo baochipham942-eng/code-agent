@@ -11,7 +11,10 @@
 // Slice 2 后台化：LoopController 仍是内存里的执行器（loop 本就跑在主进程单例上，
 // 切走/关会话不会被杀），这里只把生命周期**镜像**进 backgroundTaskLedger——
 // 登记 kind='loop' 的任务、每轮更新进度、终态发系统通知 + 入台账通知，
-// 让后台运行的 loop 在任务面板可见、跑完能提醒。App 重启恢复运行不在本切片范围。
+// 让后台运行的 loop 在任务面板可见、跑完能提醒。
+//
+// 刀2-c：`adopt(state, ledgerCtx)` 从 durable cursor 重建内存态并续跑——
+// dispatching/awaiting_reply 重跑当轮（at-least-once）；sleeping 按 nextRunAt 重排。
 // ============================================================================
 
 import { randomUUID } from 'node:crypto';
@@ -35,6 +38,7 @@ import {
   getLoopDurableLedger,
   isLoopDurableArmed,
   waitForLoopDurableLedger,
+  type LoopAdoptLedgerContext,
   type LoopEngineCursor,
 } from './loopDurableLedger';
 import { resolveLoopParentRunId } from './loopDurableParent';
@@ -74,11 +78,34 @@ function formatLoopCadence(state: Pick<LoopRunState, 'intervalMs'>): string {
   return `每 ${hours} 小时`;
 }
 
+interface LoopTurnOrchestrator {
+  sendMessage(
+    prompt: string,
+    attachments: undefined,
+    options: {
+      inputSource: 'automation';
+      mode: 'normal';
+      historyVisibility: 'meta';
+      deniedToolNames: string[];
+    },
+  ): Promise<unknown>;
+}
+
+interface LoopRuntimePorts {
+  getOrchestrator?(sessionId: string): LoopTurnOrchestrator | null;
+  readSession?(
+    sessionId: string,
+    lookback: number,
+  ): Promise<{ messages: Array<{ role: string; content: unknown }> } | null>;
+}
+
 export class LoopController {
   private loops = new Map<string, LoopRunState>();
   private aborted = new Set<string>();
   private timers = new Map<string, NodeJS.Timeout>();
   private waiters = new Map<string, () => void>();
+
+  constructor(private readonly ports: LoopRuntimePorts = {}) {}
 
   async start(config: LoopRunConfig): Promise<LoopRunState> {
     const id = `loop_${randomUUID()}`;
@@ -140,6 +167,28 @@ export class LoopController {
         this.stop(s.id, 'user');
       }
     }
+  }
+
+  /**
+   * 从 durable cursor 重建内存态并续跑。已在跑的同 id 直接返回（dispatcher duplicate）。
+   * dispatching/awaiting_reply → 重跑当轮；sleeping → 按 nextRunAt 重排（过期立即跑）。
+   */
+  adopt(state: LoopRunState, ledgerCtx: LoopAdoptLedgerContext): LoopRunState {
+    const existing = this.loops.get(state.id);
+    if (existing?.status === 'running') return { ...existing };
+
+    const adopted: LoopRunState = {
+      ...state,
+      status: 'running',
+      durable: true,
+      phase: state.phase ?? 'sleeping',
+    };
+    this.loops.set(adopted.id, adopted);
+    const ledger = getLoopDurableLedger();
+    if (ledger) ledger.adopt(adopted.id, ledgerCtx);
+    this.registerTask(adopted);
+    void this.resumeLoop(adopted.id);
+    return { ...adopted };
   }
 
   private finish(id: string, status: LoopStatus, reason: LoopStopReason, error?: string): void {
@@ -224,7 +273,8 @@ export class LoopController {
   private async finalizeDurable(state: LoopRunState): Promise<void> {
     const ledger = getLoopDurableLedger();
     // untracked = 账本已失联（fence/持久化故障时已停写）；此处不再补写，
-    // durable 行留 running，租约到期由 sweeper 的收口版恢复收成 interrupted_by_restart。
+    // durable 行留 running，租约到期由 sweeper 认领后走刀2-c 恢复 handler：
+    // 可续跑则 adopt 续跑，否则降级收口成 interrupted_by_restart。
     if (!ledger?.isTracked(state.id)) return;
     const outcome = state.status === 'completed'
       ? 'completed'
@@ -404,6 +454,25 @@ export class LoopController {
     }
   }
 
+  private async resumeLoop(id: string): Promise<void> {
+    const state = this.loops.get(id);
+    if (state?.status !== 'running') return;
+    const phase = state.phase ?? 'sleeping';
+    if (phase === 'sleeping') {
+      const remaining = (state.nextRunAt ?? 0) - Date.now();
+      if (remaining > 0) {
+        await this.sleep(id, remaining);
+        if (this.aborted.has(id) || this.loops.get(id)?.status !== 'running') {
+          this.aborted.delete(id);
+          this.timers.delete(id);
+          this.waiters.delete(id);
+          return;
+        }
+      }
+    }
+    await this.runLoop(id);
+  }
+
   private async runLoop(id: string): Promise<void> {
     const state = this.loops.get(id);
     if (!state) return;
@@ -420,7 +489,8 @@ export class LoopController {
         this.syncTaskProgress(state);
         await this.checkpointDispatched(state);
 
-        const orchestrator = getTaskManager().getOrCreateCurrentOrchestrator(state.sessionId);
+        const orchestrator = this.ports.getOrchestrator?.(state.sessionId)
+          ?? getTaskManager().getOrCreateCurrentOrchestrator(state.sessionId);
         if (!orchestrator) {
           this.finish(id, 'failed', 'error', `orchestrator unavailable for session ${state.sessionId}`);
           break;
@@ -470,7 +540,9 @@ export class LoopController {
 
   private async readLastAssistantReply(sessionId: string): Promise<string> {
     try {
-      const session = await getSessionManager().getSession(sessionId, REPLY_LOOKBACK);
+      const session = this.ports.readSession
+        ? await this.ports.readSession(sessionId, REPLY_LOOKBACK)
+        : await getSessionManager().getSession(sessionId, REPLY_LOOKBACK);
       const messages = session?.messages ?? [];
       for (let i = messages.length - 1; i >= 0; i--) {
         if (messages[i].role === 'assistant') {

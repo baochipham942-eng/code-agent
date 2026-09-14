@@ -1,8 +1,8 @@
 // ============================================================================
-// N-LOOP-DURABLE-K2 刀2-b：loop durable 账本 + 收口版恢复
+// N-LOOP-DURABLE-K2 刀2-b/2-c：loop durable 账本 + 续跑恢复
 // - begin 落 running 行；每轮双 checkpoint；finalize 先收 op 再 terminal
 // - heartbeat fence 后停写；长 sleep 心跳不停不被 sweeper 误收
-// - 残留 running → interrupted_by_restart 收口 + 投影一次
+// - cursor 坏 / session 已删 → interrupted 收口；dispatching 重跑 / sleeping 重排
 // ============================================================================
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -23,6 +23,7 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
   }),
 }));
 
+import { LOOP_DONE_MARKER } from '../../../src/shared/contract/loop';
 import {
   LOOP_DURABLE_PARENT_MISSING_CODE,
   LOOP_INTERRUPTED_REASON,
@@ -34,8 +35,14 @@ import {
   type LoopEngineCursor,
 } from '../../../src/host/loop/loopDurableLedger';
 import { LoopController } from '../../../src/host/loop/loopController';
-import { createLoopRecoveryHandler } from '../../../src/host/loop/loopRecoveryHandler';
+import {
+  LOOP_RECOVERY_RERUN_REASON,
+  LOOP_RECOVERY_SLEEP_REASON,
+  createLoopRecoveryHandler,
+} from '../../../src/host/loop/loopRecoveryHandler';
+import { DurableRecoveryDispatcher } from '../../../src/host/runtime/durableRecoveryDispatcher';
 import { DurableRunKernel, DurableRunPersistenceUnavailableError } from '../../../src/host/runtime/durableRunKernel';
+import type { RunRehydrationPlan } from '../../../src/host/runtime/durableRunStores';
 import { RunRegistry } from '../../../src/host/runtime/runRegistry';
 import { DurableRunRepository } from '../../../src/host/services/core/repositories/DurableRunRepository';
 import {
@@ -287,7 +294,7 @@ describe('Loop durable ledger (N-LOOP-DURABLE-K2 刀2-b)', () => {
     db.close();
   });
 
-  it('残留 running 行被启动恢复收口成 interrupted_by_restart，投影一次', async () => {
+  it('cursor 损坏时恢复降级收口成 interrupted_by_restart，投影一次', async () => {
     const { db, repository, ledger } = createStack('process-1');
     await ledger.begin({
       loopId: 'loop_crash',
@@ -308,9 +315,25 @@ describe('Loop durable ledger (N-LOOP-DURABLE-K2 刀2-b)', () => {
     const crashedAt = Date.now() + 120_000;
     const plans = await recoveredRegistry.recoverDurable(crashedAt);
     expect(plans).toHaveLength(1);
+    const broken = {
+      ...plans[0]!,
+      checkpoint: plans[0]!.checkpoint
+        ? {
+          ...plans[0]!.checkpoint,
+          cursor: { ...plans[0]!.checkpoint.cursor, engineCursor: { kind: 'nope' } },
+        }
+        : null,
+      envelope: {
+        ...plans[0]!.envelope,
+        cursor: { ...plans[0]!.envelope.cursor, engineCursor: { garbage: true } },
+      },
+    };
 
-    const handler = createLoopRecoveryHandler({ registry: recoveredRegistry });
-    const outcome = await handler.recover(plans[0], crashedAt);
+    const handler = createLoopRecoveryHandler({
+      registry: recoveredRegistry,
+      sessionExists: () => true,
+    });
+    const outcome = await handler.recover(broken, crashedAt);
     expect(outcome).toMatchObject({ status: 'recovered', reason: LOOP_INTERRUPTED_REASON });
 
     const closed = (await repository.get('loop_crash'))!;
@@ -641,6 +664,460 @@ describe('Loop durable ledger (N-LOOP-DURABLE-K2 刀2-b)', () => {
     const assertion = expect(timedOut).rejects.toBeInstanceOf(DurableRunPersistenceUnavailableError);
     await vi.advanceTimersByTimeAsync(5_000);
     await assertion;
+    db.close();
+  });
+});
+
+function resumeCursor(
+  partial: Partial<LoopEngineCursor> & Pick<LoopEngineCursor, 'turn' | 'phase'>,
+  config: Partial<LoopEngineCursor['config']> = {},
+): LoopEngineCursor {
+  return {
+    schemaVersion: 1,
+    kind: 'loop',
+    ...partial,
+    config: { prompt: '盯构建', maxTurns: 5, ...partial.config, ...config },
+  };
+}
+
+async function seedRunningLoop(input: {
+  ledger: LoopDurableLedger;
+  loopId: string;
+  phase: LoopEngineCursor['phase'];
+  turn: number;
+  nextRunAt?: number;
+  maxTurns?: number;
+  intervalMs?: number;
+}): Promise<void> {
+  const maxTurns = input.maxTurns ?? 5;
+  const config = {
+    prompt: '盯构建',
+    maxTurns,
+    ...(input.intervalMs !== undefined ? { intervalMs: input.intervalMs } : {}),
+  };
+  await input.ledger.begin({
+    loopId: input.loopId,
+    sessionId: 'session-loop',
+    parentRunId: 'run-parent',
+    config,
+    startedAt: 1_000,
+  });
+  if (input.phase === 'sleeping' && input.turn === 0 && input.nextRunAt === undefined) return;
+  const dispatchedTurn = input.phase === 'sleeping' ? input.turn : input.turn + 1;
+  if (dispatchedTurn < 1) return;
+  await input.ledger.turnDispatched(input.loopId, {
+    turn: dispatchedTurn,
+    cursor: resumeCursor({ turn: dispatchedTurn - 1, phase: 'dispatching' }, config),
+  });
+  if (input.phase !== 'sleeping') return;
+  await input.ledger.turnCompleted(input.loopId, {
+    turn: dispatchedTurn,
+    cursor: resumeCursor({
+      turn: dispatchedTurn,
+      phase: 'sleeping',
+      ...(input.nextRunAt !== undefined ? { nextRunAt: input.nextRunAt } : {}),
+    }, config),
+    waitMs: input.intervalMs,
+  });
+}
+
+function makeResumeController(
+  replies: string[],
+  sendMessage: ReturnType<typeof vi.fn<(
+    prompt: string,
+    attachments: undefined,
+    options: { historyVisibility: string },
+  ) => Promise<void>>> = vi.fn(async () => undefined),
+) {
+  let index = 0;
+  const controller = new LoopController({
+    getOrchestrator: () => ({ sendMessage }),
+    readSession: async () => ({
+      messages: [{ role: 'assistant', content: replies[Math.min(index, replies.length - 1)] ?? '' }],
+    }),
+  });
+  sendMessage.mockImplementation(async () => {
+    index += 1;
+  });
+  return { controller, sendMessage };
+}
+
+async function recoverPlan(
+  repository: InstanceType<typeof DurableRunRepository>,
+  crashedAt = Date.now() + 120_000,
+) {
+  const kernel2 = new DurableRunKernel({
+    stores: repository,
+    ownerId: 'native-host',
+    processInstanceId: `process-recover-${crashedAt}`,
+    leaseDurationMs: 60_000,
+  });
+  const recoveredRegistry = new RunRegistry();
+  recoveredRegistry.configureDurableKernel(kernel2);
+  const plans = await recoveredRegistry.recoverDurable(crashedAt);
+  return { recoveredRegistry, plans, crashedAt };
+}
+
+describe('Loop recovery handler (N-LOOP-DURABLE-K2 刀2-c)', () => {
+  beforeEach(() => {
+    resetLoopDurableLedger();
+    resetBackgroundTaskLedgerForTest();
+  });
+
+  afterEach(() => {
+    resetLoopDurableLedger();
+    resetBackgroundTaskLedgerForTest();
+  });
+
+  it('dispatching 崩溃后重跑当轮（at-least-once，prompt 仍是该轮）', async () => {
+    const { db, repository, ledger } = createStack();
+    await seedRunningLoop({ ledger, loopId: 'loop_dispatch', phase: 'dispatching', turn: 0 });
+    const { recoveredRegistry, plans, crashedAt } = await recoverPlan(repository);
+    expect(plans).toHaveLength(1);
+    expect(plans[0]!.pendingOperations[0]).toMatchObject({
+      status: 'unknown',
+      requiresHumanConfirmation: true,
+    });
+
+    const { controller, sendMessage } = makeResumeController([LOOP_DONE_MARKER]);
+    const handler = createLoopRecoveryHandler({
+      registry: recoveredRegistry,
+      controller,
+      sessionExists: () => true,
+    });
+    const outcome = await handler.recover(plans[0]!, crashedAt);
+    expect(outcome).toMatchObject({
+      status: 'recovered',
+      reason: LOOP_RECOVERY_RERUN_REASON,
+      detail: { extraMetaTurnExpected: true, phase: 'dispatching', turn: 0 },
+    });
+
+    await vi.waitFor(() => {
+      expect(controller.get('loop_dispatch')?.status).toBe('completed');
+    });
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+    expect(sendMessage).toHaveBeenCalledWith(
+      expect.stringContaining('第 1 轮'),
+      undefined,
+      expect.objectContaining({ historyVisibility: 'meta' }),
+    );
+    expect((await repository.get('loop_dispatch'))?.status).toBe('completed');
+    expect((await repository.get('loop_dispatch'))?.terminal?.reason).toBe('condition_met');
+    recoveredRegistry.clear();
+    db.close();
+  });
+
+  it('sleeping 中崩溃按 nextRunAt 重排，过期立即跑', async () => {
+    const { db, repository, ledger } = createStack();
+    await seedRunningLoop({
+      ledger,
+      loopId: 'loop_sleep_expired',
+      phase: 'sleeping',
+      turn: 1,
+      nextRunAt: Date.now() - 5_000,
+      intervalMs: 30_000,
+    });
+    const { recoveredRegistry, plans, crashedAt } = await recoverPlan(repository);
+    const { controller, sendMessage } = makeResumeController([LOOP_DONE_MARKER]);
+    const handler = createLoopRecoveryHandler({
+      registry: recoveredRegistry,
+      controller,
+      sessionExists: () => true,
+    });
+    const outcome = await handler.recover(plans[0]!, crashedAt);
+    expect(outcome).toMatchObject({
+      status: 'recovered',
+      reason: LOOP_RECOVERY_SLEEP_REASON,
+      detail: { extraMetaTurnExpected: false, phase: 'sleeping', turn: 1 },
+    });
+    await vi.waitFor(() => {
+      expect(controller.get('loop_sleep_expired')?.status).toBe('completed');
+    });
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+    expect(sendMessage).toHaveBeenCalledWith(
+      expect.stringContaining('第 2 轮'),
+      undefined,
+      expect.objectContaining({ historyVisibility: 'meta' }),
+    );
+    recoveredRegistry.clear();
+    db.close();
+  });
+
+  it('sleeping 未到期时先等 remaining，不立刻发当轮', async () => {
+    const { db, repository, ledger } = createStack();
+    await seedRunningLoop({
+      ledger,
+      loopId: 'loop_sleep_wait',
+      phase: 'sleeping',
+      turn: 1,
+      nextRunAt: Date.now() + 250,
+      intervalMs: 250,
+    });
+    const { recoveredRegistry, plans, crashedAt } = await recoverPlan(repository);
+    const { controller, sendMessage } = makeResumeController([LOOP_DONE_MARKER]);
+    const handler = createLoopRecoveryHandler({
+      registry: recoveredRegistry,
+      controller,
+      sessionExists: () => true,
+    });
+    await handler.recover(plans[0]!, crashedAt);
+    expect(sendMessage).not.toHaveBeenCalled();
+    await vi.waitFor(() => {
+      expect(sendMessage).toHaveBeenCalledTimes(1);
+    }, { timeout: 2_000 });
+    await vi.waitFor(() => {
+      expect(controller.get('loop_sleep_wait')?.status).toBe('completed');
+    });
+    recoveredRegistry.clear();
+    db.close();
+  });
+
+  it('cursor 损坏 → interrupted 收口，不崩不挂', async () => {
+    const { db, repository, ledger } = createStack();
+    await seedRunningLoop({ ledger, loopId: 'loop_bad_cursor', phase: 'sleeping', turn: 0 });
+    const { recoveredRegistry, plans, crashedAt } = await recoverPlan(repository);
+    const broken: RunRehydrationPlan = {
+      ...plans[0]!,
+      checkpoint: plans[0]!.checkpoint
+        ? {
+          ...plans[0]!.checkpoint,
+          cursor: { ...plans[0]!.checkpoint.cursor, engineCursor: { kind: 'nope' } },
+        }
+        : null,
+      envelope: {
+        ...plans[0]!.envelope,
+        cursor: { ...plans[0]!.envelope.cursor, engineCursor: { garbage: true } },
+      },
+    };
+    const { controller, sendMessage } = makeResumeController([LOOP_DONE_MARKER]);
+    const handler = createLoopRecoveryHandler({
+      registry: recoveredRegistry,
+      controller,
+      sessionExists: () => true,
+    });
+    const outcome = await handler.recover(broken, crashedAt);
+    expect(outcome).toMatchObject({
+      status: 'recovered',
+      reason: LOOP_INTERRUPTED_REASON,
+      detail: { recoveryFallback: 'invalid_loop_cursor' },
+    });
+    expect(sendMessage).not.toHaveBeenCalled();
+    expect(controller.get('loop_bad_cursor')).toBeNull();
+    const closed = (await repository.get('loop_bad_cursor'))!;
+    expect(closed.status).toBe('failed');
+    expect(closed.terminal?.reason).toBe(LOOP_INTERRUPTED_REASON);
+    expect(getBackgroundTaskLedger().drainNotifications('session-loop')).toHaveLength(1);
+    recoveredRegistry.clear();
+    db.close();
+  });
+
+  it('session 已删 → 收口，不 adopt', async () => {
+    const { db, repository, ledger } = createStack();
+    await seedRunningLoop({ ledger, loopId: 'loop_session_gone', phase: 'dispatching', turn: 0 });
+    const { recoveredRegistry, plans, crashedAt } = await recoverPlan(repository);
+    const { controller, sendMessage } = makeResumeController([LOOP_DONE_MARKER]);
+    const handler = createLoopRecoveryHandler({
+      registry: recoveredRegistry,
+      controller,
+      sessionExists: () => false,
+    });
+    const outcome = await handler.recover(plans[0]!, crashedAt);
+    expect(outcome).toMatchObject({
+      status: 'recovered',
+      reason: LOOP_INTERRUPTED_REASON,
+      detail: { recoveryFallback: 'session_missing' },
+    });
+    expect(sendMessage).not.toHaveBeenCalled();
+    expect(controller.list()).toEqual([]);
+    expect((await repository.get('loop_session_gone'))?.status).toBe('failed');
+    recoveredRegistry.clear();
+    db.close();
+  });
+
+  it('dispatcher duplicate 去重：同一 plan 第二次 dispatch 为 duplicate', async () => {
+    const { db, repository, ledger } = createStack();
+    await seedRunningLoop({
+      ledger,
+      loopId: 'loop_dup',
+      phase: 'sleeping',
+      turn: 1,
+      nextRunAt: Date.now() + 60_000,
+      intervalMs: 60_000,
+    });
+    const { recoveredRegistry, plans, crashedAt } = await recoverPlan(repository);
+    const { controller } = makeResumeController(['还在跑']);
+    const handler = createLoopRecoveryHandler({
+      registry: recoveredRegistry,
+      controller,
+      sessionExists: () => true,
+    });
+    const dispatcher = new DurableRecoveryDispatcher();
+    dispatcher.registerEngineHandler(handler);
+    const first = await dispatcher.dispatch(plans, crashedAt);
+    const second = await dispatcher.dispatch(plans, crashedAt);
+    expect(first[0]).toMatchObject({
+      handler: 'loop',
+      status: 'recovered',
+      reason: LOOP_RECOVERY_SLEEP_REASON,
+    });
+    expect(second[0]).toMatchObject({
+      handler: 'loop',
+      status: 'duplicate',
+    });
+    controller.stop('loop_dup');
+    await dispatcher.shutdown();
+    recoveredRegistry.clear();
+    db.close();
+  });
+
+  it('adopt 后 condition_met 收口并通知', async () => {
+    const { db, repository, ledger } = createStack();
+    await seedRunningLoop({ ledger, loopId: 'loop_done', phase: 'sleeping', turn: 0 });
+    const { recoveredRegistry, plans, crashedAt } = await recoverPlan(repository);
+    const { controller } = makeResumeController([`好了\n${LOOP_DONE_MARKER}`]);
+    const handler = createLoopRecoveryHandler({
+      registry: recoveredRegistry,
+      controller,
+      sessionExists: () => true,
+    });
+    await handler.recover(plans[0]!, crashedAt);
+    await vi.waitFor(() => {
+      expect(controller.get('loop_done')).toMatchObject({ status: 'completed', stopReason: 'condition_met' });
+    });
+    expect((await repository.get('loop_done'))?.terminal).toMatchObject({
+      status: 'completed',
+      reason: 'condition_met',
+    });
+    expect(getBackgroundTaskLedger().drainNotifications('session-loop')[0]).toMatchObject({
+      type: 'task_completed',
+    });
+    recoveredRegistry.clear();
+    db.close();
+  });
+
+  it('adopt 后 maxTurns 收口并通知', async () => {
+    const { db, repository, ledger } = createStack();
+    await seedRunningLoop({
+      ledger,
+      loopId: 'loop_max',
+      phase: 'sleeping',
+      turn: 0,
+      maxTurns: 1,
+    });
+    const { recoveredRegistry, plans, crashedAt } = await recoverPlan(repository);
+    const { controller } = makeResumeController(['还没好']);
+    const handler = createLoopRecoveryHandler({
+      registry: recoveredRegistry,
+      controller,
+      sessionExists: () => true,
+    });
+    await handler.recover(plans[0]!, crashedAt);
+    await vi.waitFor(() => {
+      expect(controller.get('loop_max')).toMatchObject({ status: 'completed', stopReason: 'max_turns' });
+    });
+    expect((await repository.get('loop_max'))?.terminal).toMatchObject({
+      status: 'completed',
+      reason: 'max_turns',
+    });
+    recoveredRegistry.clear();
+    db.close();
+  });
+
+  it('adopt 后 user-stop 收口为 cancelled', async () => {
+    const { db, repository, ledger } = createStack();
+    await seedRunningLoop({
+      ledger,
+      loopId: 'loop_stop',
+      phase: 'sleeping',
+      turn: 1,
+      nextRunAt: Date.now() + 60_000,
+      intervalMs: 60_000,
+    });
+    const { recoveredRegistry, plans, crashedAt } = await recoverPlan(repository);
+    const { controller, sendMessage } = makeResumeController(['还在跑']);
+    const handler = createLoopRecoveryHandler({
+      registry: recoveredRegistry,
+      controller,
+      sessionExists: () => true,
+    });
+    await handler.recover(plans[0]!, crashedAt);
+    expect(controller.get('loop_stop')?.status).toBe('running');
+    controller.stop('loop_stop');
+    await vi.waitFor(async () => {
+      expect((await repository.get('loop_stop'))?.status).toBe('cancelled');
+    });
+    expect(controller.get('loop_stop')).toMatchObject({ status: 'stopped', stopReason: 'user' });
+    expect(sendMessage).not.toHaveBeenCalled();
+    recoveredRegistry.clear();
+    db.close();
+  });
+
+  it('adopt 后出错收口 failed 并通知', async () => {
+    const { db, repository, ledger } = createStack();
+    await seedRunningLoop({ ledger, loopId: 'loop_err', phase: 'sleeping', turn: 0 });
+    const { recoveredRegistry, plans, crashedAt } = await recoverPlan(repository);
+    const sendMessage = vi.fn(async () => {
+      throw new Error('model exploded');
+    });
+    const controller = new LoopController({
+      getOrchestrator: () => ({ sendMessage }),
+      readSession: async () => ({ messages: [] }),
+    });
+    const handler = createLoopRecoveryHandler({
+      registry: recoveredRegistry,
+      controller,
+      sessionExists: () => true,
+    });
+    await handler.recover(plans[0]!, crashedAt);
+    await vi.waitFor(() => {
+      expect(controller.get('loop_err')).toMatchObject({ status: 'failed', stopReason: 'error' });
+    });
+    expect((await repository.get('loop_err'))?.terminal).toMatchObject({
+      status: 'failed',
+      reason: 'model exploded',
+    });
+    expect(getBackgroundTaskLedger().drainNotifications('session-loop')[0]).toMatchObject({
+      type: 'task_failed',
+    });
+    recoveredRegistry.clear();
+    db.close();
+  });
+
+  it('续跑后心跳不断租，sweeper 不会误收（R4）', async () => {
+    const { db, repository, ledger } = createStack('process-1', 800);
+    await seedRunningLoop({
+      ledger,
+      loopId: 'loop_hb',
+      phase: 'sleeping',
+      turn: 1,
+      nextRunAt: Date.now() + 60_000,
+      intervalMs: 60_000,
+    });
+    const { recoveredRegistry, plans, crashedAt } = await recoverPlan(repository, Date.now() + 120_000);
+    const { controller } = makeResumeController(['还在跑']);
+    const handler = createLoopRecoveryHandler({
+      registry: recoveredRegistry,
+      controller,
+      sessionExists: () => true,
+    });
+    await handler.recover(plans[0]!, crashedAt);
+    expect(controller.get('loop_hb')?.status).toBe('running');
+    await new Promise((resolve) => setTimeout(resolve, 2_000));
+    expect((await repository.get('loop_hb'))?.status).toBe('running');
+
+    const kernel3 = new DurableRunKernel({
+      stores: repository,
+      ownerId: 'native-host',
+      processInstanceId: 'process-sweeper',
+      leaseDurationMs: 800,
+    });
+    const sweeper = new RunRegistry();
+    sweeper.configureDurableKernel(kernel3);
+    expect(await sweeper.recoverDurable(Date.now())).toEqual([]);
+    controller.stop('loop_hb');
+    ledger.dispose();
+    recoveredRegistry.clear();
+    sweeper.clear();
     db.close();
   });
 });

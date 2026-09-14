@@ -3,7 +3,8 @@
 //
 // LoopController 仍是内存执行器。本模块给 /loop 补 durable 事实源（照抄
 // BackgroundSubagentDurableLedger 的 begin/finalize/track/arm+configure+waitFor
-// 形态）。本棒恢复仍只收口、不续跑（adopt / sleeping 重排是刀2-c）。
+// 形态）。刀2-c：恢复后 `adopt()` 把认领到的 owner/attempt 接回 liveRuns，心跳
+// 与每轮 checkpoint 继续由本账本驱动。
 //
 //   1. start 时：run_id = loop id（loop_<uuid>），engine_kind='loop'，
 //      parent_run_id 必须带（前台 run 血缘，不占活跃根唯一位）。落账完成才允许
@@ -96,6 +97,12 @@ export interface LoopDurableFinalizeInput {
   turn: number;
   cursor: LoopEngineCursor;
   finishedAt: number;
+}
+
+/** 恢复认领后把新 owner/attempt 接回账本，heartbeat / checkpoint / finalize 才能继续写。 */
+export interface LoopAdoptLedgerContext {
+  owner: RunOwnerLease;
+  attempt: number;
 }
 
 export function readLoopEngineCursor(cursor: unknown): LoopEngineCursor | null {
@@ -298,6 +305,11 @@ export class LoopDurableLedger {
 
   isTracked(loopId: string): boolean {
     return this.liveRuns.has(loopId);
+  }
+
+  /** 恢复续跑：用认领后的 lease 接回心跳，不 createRun。 */
+  adopt(loopId: string, ctx: LoopAdoptLedgerContext, now = Date.now()): void {
+    this.track(loopId, ctx.owner, ctx.attempt, now);
   }
 
   dispose(): void {

@@ -43,6 +43,8 @@ export interface PermissionRequestDetails {
   affectedFileCount?: number;
   /** Host 对写入目标的 stat 结论；渲染层只消费，缺省按 regular。 */
   targetKind?: FileTargetKind;
+  /** ADR-067 D3：host 透传的 peer 消息触发标注；渲染层只消费，缺省不显示。 */
+  triggeredByAgentMessage?: { senderAgentId?: string };
   path?: string; // 兼容旧版 API
   // E2: 确认门控预览
   preview?: {

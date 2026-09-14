@@ -21,11 +21,16 @@ export function ApprovalCard({ request, selected, feedback, diffExpanded }: {
   const summary = writeChangeSummary(request);
   const canDiff = editDiffPreview(request) !== null;
   const diff = diffExpanded ? editDiffPreview(request) : null;
+  // ADR-067 D3：peer 消息触发的动作在卡上标明来源（与 renderer PermissionCard 同一标注）
+  const peerTrigger = request.details?.triggeredByAgentMessage as { senderAgentId?: string } | undefined;
   return (
     <Box flexDirection="column" paddingX={1}>
       <Text bold color={danger ? 'red' : 'yellow'}>
         {danger ? '⚠ 危险操作需要许可' : '⚠ 需要许可'}
       </Text>
+      {peerTrigger ? (
+        <Text color="yellow">{`此动作由 agent ${peerTrigger.senderAgentId ?? '?'} 的消息触发，请确认后再允许`}</Text>
+      ) : null}
       <Text>
         <Text bold>{request.tool}</Text>
         <Text dimColor>  {approvalTarget(request)}</Text>

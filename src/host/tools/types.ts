@@ -196,6 +196,11 @@ export interface PermissionRequestData {
   runId?: string;
   parentToolUseId?: string;
   forceConfirm?: boolean;
+  /**
+   * ADR-067 D3：本轮最新输入的 origin 链（可多条，判定取最不可信者）。
+   * 由 ToolExecutor 从 ExecuteOptions 透传；含 peer-agent 时写/执行类一律 forceConfirm。
+   */
+  turnOrigin?: import('../agent/messageOrigin').AgentMessageOrigin[];
   type: 'file_read' | 'file_write' | 'file_edit' | 'command' | 'network' | 'dangerous_command' | 'directory_access';
   tool: string;
   details: Record<string, unknown>;

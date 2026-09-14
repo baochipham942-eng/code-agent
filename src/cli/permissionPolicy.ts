@@ -78,6 +78,24 @@ export function createCLIPermissionHandler(
 
   return async (request: PermissionRequestData): Promise<PermissionAskResult> => {
     if (options.dangerouslySkipPermissions) {
+      // ADR-067 D3：bypass 不豁免 peer 转述——skip 档没有审批 UI，peer 消息触发的
+      // 写/执行一律 fail-closed（与无人值守闸同一语义），不许被逃生门静默放行。
+      const peerTrigger = request.details?.triggeredByAgentMessage as { senderAgentId?: string } | undefined;
+      if (peerTrigger) {
+        const sender = peerTrigger.senderAgentId ?? 'unknown';
+        warn(
+          `[permission] 拒绝 peer 消息触发的操作: ${request.tool} — 由 agent ${sender} 的消息触发。`
+          + ' --dangerously-skip-permissions 不豁免其他 agent 转述的写入/执行；'
+          + '请用户本人在交互会话中直接发起该操作。',
+        );
+        return {
+          approved: false,
+          denialSource: 'no-approval-ui',
+          message: `${request.tool} 被自动拒绝：本次操作由 agent ${sender} 的消息触发，`
+            + '当前环境没有审批界面（--dangerously-skip-permissions 不豁免 peer 转述的写入/执行）。'
+            + '请用户本人在交互会话中直接发起该操作。',
+        };
+      }
       return { approved: true, approvalSource: 'skip-permissions' };
     }
     const provider = interactiveApprovalProvider;

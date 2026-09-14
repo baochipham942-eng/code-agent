@@ -69,7 +69,9 @@ function formatPersistenceFailureReason(error: unknown): string | undefined {
   if (!error) return undefined;
   if (typeof error === 'object' && error !== null && 'code' in error) {
     const code = (error as { code?: unknown }).code;
-    if (code === SQLITE_INTEGRITY.CORRUPT_NO_BACKUP) return SQLITE_INTEGRITY.CORRUPT_NO_BACKUP;
+    if (code === SQLITE_INTEGRITY.CORRUPT_NO_BACKUP || code === SQLITE_INTEGRITY.RESTORE_FAILED) {
+      return code;
+    }
   }
   if (error instanceof Error) return error.message;
   const reason = String(error);

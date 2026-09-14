@@ -176,13 +176,17 @@ export const probeDatabaseIntegrity = Object.assign(
   },
 );
 
-/** 灾难性损坏始终尝试恢复；上次 quick_check 失败时局部损坏也升级为尝试恢复。 */
+/**
+ * 灾难性损坏始终尝试恢复；.integrity-failed 在（上次 Tier 2 quick_check 判过失败）时
+ * local 与 ok 都升级为尝试恢复——Tier 2 全扫的判决优先于 Tier 1 浅探针（方案档 §2.1:
+ * 「下次启动 Tier 1 升级为尝试恢复」)。Tier 1 通过无权清标记。
+ */
 export function shouldAttemptRestore(
   probe: IntegrityProbeResult,
   options: { escalate: boolean },
 ): boolean {
   if (probe.severity === 'catastrophic') return true;
-  return options.escalate && probe.severity === 'local';
+  return options.escalate;
 }
 
 export function integrityMarkerPath(dataDir: string, fileName: string): string {
@@ -231,19 +235,44 @@ export function clearIntegrityFailedMarker(dataDir: string): void {
   }
 }
 
-export function hasUnrecoverableMarker(dataDir: string): boolean {
+function hasUnrecoverableMarker(dataDir: string): boolean {
   return fs.existsSync(integrityMarkerPath(dataDir, SQLITE_INTEGRITY.MARKER_UNRECOVERABLE));
 }
 
-export function writeUnrecoverableMarker(dataDir: string, isolatedPath: string): void {
+/**
+ * 不可恢复标记：第一行稳定 code,第二行隔离后的坏库路径。
+ * code 随标记落盘,重启后抛出的 DatabaseIntegrityError 与失败现场同 code
+ * (无备份 = DB_CORRUPT_NO_BACKUP;复制/打开恢复副本失败 = DB_RESTORE_FAILED)。
+ */
+export function writeUnrecoverableMarker(
+  dataDir: string,
+  isolatedPath: string,
+  code: string = SQLITE_INTEGRITY.CORRUPT_NO_BACKUP,
+): void {
   try {
     fs.writeFileSync(
       integrityMarkerPath(dataDir, SQLITE_INTEGRITY.MARKER_UNRECOVERABLE),
-      isolatedPath,
+      `${code}\n${isolatedPath}`,
       'utf8',
     );
   } catch {
     // ignore
+  }
+}
+
+export function readUnrecoverableMarker(
+  dataDir: string,
+): { code: string; isolatedPath: string } | null {
+  try {
+    const raw = fs.readFileSync(
+      integrityMarkerPath(dataDir, SQLITE_INTEGRITY.MARKER_UNRECOVERABLE),
+      'utf8',
+    );
+    const [code, isolatedPath] = raw.split('\n');
+    if (!code) return null;
+    return { code, isolatedPath: isolatedPath ?? '' };
+  } catch {
+    return null;
   }
 }
 

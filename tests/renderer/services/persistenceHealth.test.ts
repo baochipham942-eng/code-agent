@@ -77,6 +77,19 @@ describe('persistence health renderer helpers', () => {
       .toBe(zh.settings.data.persistence.corruptNoBackup);
   });
 
+  it('translates DB_RESTORE_FAILED with its own copy', () => {
+    const restoreFailed = {
+      status: 'unavailable',
+      mode: 'memory',
+      durable: false,
+      message: 'DB_RESTORE_FAILED',
+      reason: SQLITE_INTEGRITY.RESTORE_FAILED,
+      checkedAt: 60,
+    } satisfies PersistenceHealth;
+    expect(describePersistenceBanner(restoreFailed, zh.settings.data.persistence).body)
+      .toBe(zh.settings.data.persistence.restoreFailed);
+  });
+
   it('keeps a clear fallback warning when health text is missing', () => {
     expect(getPersistenceWarningText(unavailable)).toBe('历史持久化不可用，当前只会话内有效。');
     expect(getPersistenceWarningText(null)).toBe('历史持久化不可用，当前只会话内有效。');

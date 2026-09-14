@@ -48,6 +48,55 @@ describe('runDbRetention', () => {
     expect(result.backup).toBe('completed');
   });
 
+  // 顺序:quick_check 结果先行,备份门看「本次失败」与「上次失败标记」
+  it('runs quick_check before the daily backup', async () => {
+    const backup = vi.fn().mockResolvedValue('completed');
+    const integrityCheck = vi.fn().mockResolvedValue('ok');
+    await runDbRetention({
+      now: NOW, storage: fakeStorage(),
+      vacuum: vi.fn().mockResolvedValue('not-due'),
+      readLastVacuumAt: () => NOW,
+      writeLastVacuumAt: vi.fn(),
+      backup,
+      integrityCheck,
+      readLastIntegrityAt: () => null,
+      writeLastIntegrityAt: vi.fn(),
+    });
+    expect(integrityCheck.mock.invocationCallOrder[0]).toBeLessThan(backup.mock.invocationCallOrder[0]);
+  });
+
+  it('skips the daily backup when this run quick_check failed', async () => {
+    const backup = vi.fn().mockResolvedValue('completed');
+    const result = await runDbRetention({
+      now: NOW, storage: fakeStorage(),
+      vacuum: vi.fn().mockResolvedValue('not-due'),
+      readLastVacuumAt: () => NOW,
+      writeLastVacuumAt: vi.fn(),
+      backup,
+      integrityCheck: vi.fn().mockResolvedValue('failed'),
+      readLastIntegrityAt: () => null,
+      writeLastIntegrityAt: vi.fn(),
+    });
+    expect(backup).not.toHaveBeenCalled();
+    expect(result.backup).toBe('skipped-integrity-failed');
+  });
+
+  it('skips the daily backup while the .integrity-failed marker is set', async () => {
+    const backup = vi.fn().mockResolvedValue('completed');
+    const result = await runDbRetention({
+      now: NOW, storage: fakeStorage(),
+      vacuum: vi.fn().mockResolvedValue('not-due'),
+      readLastVacuumAt: () => NOW,
+      writeLastVacuumAt: vi.fn(),
+      backup,
+      integrityCheck: vi.fn().mockResolvedValue('not-due'),
+      readLastIntegrityAt: () => NOW,
+      hasIntegrityFailed: () => true,
+    });
+    expect(backup).not.toHaveBeenCalled();
+    expect(result.backup).toBe('skipped-integrity-failed');
+  });
+
   it('总是调用 pruneAgedTelemetry(now)', async () => {
     const storage = fakeStorage();
     await runDbRetention({

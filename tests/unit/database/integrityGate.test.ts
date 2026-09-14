@@ -9,7 +9,9 @@ import type BetterSqlite3 from 'better-sqlite3';
 
 import {
   probeDatabaseIntegrity,
+  readUnrecoverableMarker,
   shouldAttemptRestore,
+  writeUnrecoverableMarker,
 } from '../../../src/host/services/core/database/integrityGate';
 import { SQLITE_INTEGRITY } from '../../../src/shared/constants';
 // 夹具走生产 applySchema（messagesSchemaFixtureGate 要求），不再手抄 messages DDL。
@@ -129,7 +131,7 @@ describe('probeDatabaseIntegrity', () => {
 });
 
 describe('shouldAttemptRestore', () => {
-  it('restores catastrophic always, local only when last quick_check failed', () => {
+  it('restores catastrophic always; .integrity-failed escalates local AND Tier-1-pass to restore', () => {
     expect(shouldAttemptRestore(
       { severity: 'catastrophic', sqliteMasterOk: false, tables: [], elapsedMs: 1 },
       { escalate: false },
@@ -142,9 +144,35 @@ describe('shouldAttemptRestore', () => {
       { severity: 'local', sqliteMasterOk: true, tables: [], elapsedMs: 1 },
       { escalate: true },
     )).toBe(true);
+    // 方案档 §2.1:quick_check 失败后下次启动升级为尝试恢复——Tier 2 全扫判决优先于 Tier 1 浅探针
     expect(shouldAttemptRestore(
       { severity: 'ok', sqliteMasterOk: true, tables: [], elapsedMs: 1 },
       { escalate: true },
+    )).toBe(true);
+    expect(shouldAttemptRestore(
+      { severity: 'ok', sqliteMasterOk: true, tables: [], elapsedMs: 1 },
+      { escalate: false },
     )).toBe(false);
+  });
+});
+
+describe('unrecoverable marker', () => {
+  it('round-trips the stable code with the isolated path', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'neo-unrecoverable-'));
+    try {
+      expect(readUnrecoverableMarker(dir)).toBeNull();
+      writeUnrecoverableMarker(dir, '/data/code-agent.db.corrupt-1', SQLITE_INTEGRITY.RESTORE_FAILED);
+      expect(readUnrecoverableMarker(dir)).toEqual({
+        code: SQLITE_INTEGRITY.RESTORE_FAILED,
+        isolatedPath: '/data/code-agent.db.corrupt-1',
+      });
+      writeUnrecoverableMarker(dir, '/data/code-agent.db.corrupt-2');
+      expect(readUnrecoverableMarker(dir)).toEqual({
+        code: SQLITE_INTEGRITY.CORRUPT_NO_BACKUP,
+        isolatedPath: '/data/code-agent.db.corrupt-2',
+      });
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

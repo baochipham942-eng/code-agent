@@ -15,7 +15,7 @@ import { fileURLToPath } from 'url';
 import type BetterSqlite3 from 'better-sqlite3';
 import { SQLITE_INTEGRITY } from '../../../shared/constants';
 import { loadBetterSqlite3 } from '../core/database/nativeLoader';
-import { evaluateQuickCheck } from '../core/database/integrityGate';
+import { evaluateQuickCheck, hasIntegrityFailedMarker } from '../core/database/integrityGate';
 import { createLogger } from './logger';
 
 const logger = createLogger('DbBackup');
@@ -25,6 +25,7 @@ export type BackupOutcome =
   | 'completed'
   | 'not-due'
   | 'skipped-low-disk'
+  | 'skipped-integrity-failed'
   | 'skipped-no-db'
   | 'failed';
 
@@ -37,6 +38,8 @@ export interface RotateBackupOptions {
   readLastBackupAt?: () => number | null;
   writeLastBackupAt?: (ts: number) => void;
   hasFreeSpace?: (dbPath: string) => Promise<{ ok: boolean; detail: string }>;
+  /** 完整性失败判定(测试用);默认读 dataDir 的 .integrity-failed 标记 */
+  integrityFailed?: () => boolean;
 }
 
 function backupSlotPath(dbPath: string, slot: number): string {
@@ -115,6 +118,16 @@ export const rotateDatabaseBackup = Object.assign(
   const keep = options.keep ?? SQLITE_INTEGRITY.BACKUP_KEEP;
   const readLast = options.readLastBackupAt ?? (() => defaultReadLastBackupAt(options.dbPath));
   const writeLast = options.writeLastBackupAt ?? ((ts: number) => defaultWriteLastBackupAt(options.dbPath, ts));
+
+  // .integrity-failed 在 = 当前库可能带 Tier 1 看不见的页级损坏。此时轮转会用
+  // 带坏库顶掉好备份,灾难性损坏时无好副本可恢复——force(VACUUM 前备份)也不豁免。
+  // 标记只能由成功恢复 / Tier 2 复测通过清除,之后轮转自然恢复。
+  const integrityFailed = options.integrityFailed
+    ?? (() => hasIntegrityFailedMarker(path.dirname(options.dbPath)));
+  if (integrityFailed()) {
+    logger.warn('Database backup skipped: .integrity-failed marker set (not overwriting a good backup with a suspect db)');
+    return 'skipped-integrity-failed';
+  }
 
   if (!options.force && !shouldRunBackup(now, readLast())) {
     return 'not-due';

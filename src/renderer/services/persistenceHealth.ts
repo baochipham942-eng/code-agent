@@ -59,6 +59,7 @@ export interface PersistenceBannerCopy {
   recoveredTitle: string;
   recoveredBody: string;
   corruptNoBackup: string;
+  restoreFailed: string;
   reasonPrefix: string;
 }
 
@@ -100,6 +101,9 @@ export function describePersistenceBanner(
   }
   if (health.status === 'unavailable' && health.reason === SQLITE_INTEGRITY.CORRUPT_NO_BACKUP) {
     return { title: copy.title, body: copy.corruptNoBackup };
+  }
+  if (health.status === 'unavailable' && health.reason === SQLITE_INTEGRITY.RESTORE_FAILED) {
+    return { title: copy.title, body: copy.restoreFailed };
   }
   const reason = health.reason ? `${copy.reasonPrefix}${health.reason}` : '';
   return { title: copy.title, body: `${getPersistenceWarningText(health)}${reason}` };

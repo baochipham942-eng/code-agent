@@ -80,6 +80,8 @@ function defaultVacuum(): Promise<VacuumOutcome> {
 /**
  * VACUUM 子进程动刀前先落一份备份（2026-07-31 SIGBUS 事故的对症保险）。
  * 备份失败只报警，VACUUM 仍按自身磁盘检查决定是否继续。
+ * .integrity-failed 在时 rotateDatabaseBackup 内部拒轮转（force 不豁免）：
+ * 带坏库的备份会顶掉好副本。
  */
 async function backupThenVacuum(): Promise<VacuumOutcome> {
   const database = getDatabase();
@@ -161,6 +163,8 @@ export interface DbRetentionOptions {
   integrityCheck?: () => Promise<QuickCheckOutcome>;
   readLastIntegrityAt?: () => number | null;
   writeLastIntegrityAt?: (ts: number) => void;
+  /** 上次 Tier 2 quick_check 失败标记(测试 seam);生产默认由 rotateDatabaseBackup 内部读标记兜底 */
+  hasIntegrityFailed?: () => boolean;
 }
 
 export interface DbRetentionResult {
@@ -201,12 +205,34 @@ export async function runDbRetention(options: DbRetentionOptions = {}): Promise<
     return { pruned, vacuum: 'db-unavailable', backup: 'skipped-no-db', integrityCheck: 'db-unavailable' };
   }
 
+  // quick_check 结果先行:备份门要看本次结果——带坏库轮转会顶掉好备份。
+  let integrityOutcome: QuickCheckOutcome = 'not-due';
+  if (shouldRunIntegrityCheck(now, readLastIntegrityAt())) {
+    try {
+      integrityOutcome = await integrityCheck();
+    } catch (error) {
+      logger.warn('Database quick_check failed', error as Error);
+      integrityOutcome = 'spawn-failed';
+    }
+    if (shouldPersistIntegrityMarker(integrityOutcome)) {
+      writeLastIntegrityAt(now);
+    }
+  }
+
+  // 本次 quick_check 失败或 .integrity-failed 标记还在:跳过备份轮转,
+  // 不用可能带页级损坏的当前库顶掉好备份(VACUUM 前备份在 rotateDatabaseBackup 内过同一门)。
+  const integrityFailed = integrityOutcome === 'failed' || (options.hasIntegrityFailed?.() ?? false);
   let backupOutcome: BackupOutcome;
-  try {
-    backupOutcome = await backup();
-  } catch (error) {
-    logger.warn('Database backup failed', error as Error);
-    backupOutcome = 'failed';
+  if (integrityFailed) {
+    logger.warn('Database backup skipped: integrity check failed (keeping existing good backups)');
+    backupOutcome = 'skipped-integrity-failed';
+  } else {
+    try {
+      backupOutcome = await backup();
+    } catch (error) {
+      logger.warn('Database backup failed', error as Error);
+      backupOutcome = 'failed';
+    }
   }
 
   let vacuumOutcome: VacuumOutcome = 'not-due';
@@ -220,19 +246,6 @@ export async function runDbRetention(options: DbRetentionOptions = {}): Promise<
     }
     if (shouldPersistVacuumMarker(vacuumOutcome)) {
       writeLastVacuumAt(now);
-    }
-  }
-
-  let integrityOutcome: QuickCheckOutcome = 'not-due';
-  if (shouldRunIntegrityCheck(now, readLastIntegrityAt())) {
-    try {
-      integrityOutcome = await integrityCheck();
-    } catch (error) {
-      logger.warn('Database quick_check failed', error as Error);
-      integrityOutcome = 'spawn-failed';
-    }
-    if (shouldPersistIntegrityMarker(integrityOutcome)) {
-      writeLastIntegrityAt(now);
     }
   }
 

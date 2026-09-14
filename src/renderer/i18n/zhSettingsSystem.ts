@@ -83,6 +83,7 @@ export const zhSettingsSystem = {
         recoveredTitle: '已从备份恢复',
         recoveredBody: '已从本地备份恢复数据库。备份时间：{timestamp}。该时间点之后的更改可能丢失。',
         corruptNoBackup: '数据库已损坏且没有可用备份，当前会话只保存在内存中。',
+        restoreFailed: '从备份恢复失败（可能是磁盘空间不足），当前会话只保存在内存中。损坏的库和备份都已保留，未被删除。',
         reasonPrefix: ' 原因：',
       },
       controlPlane: {

@@ -40,6 +40,8 @@ export const SQLITE_INTEGRITY = {
   TIER1_PROBE_BUDGET_MS: 200,
   /** 无可用备份时 PersistenceHealth.reason 稳定 code；host 不加裸中文 */
   CORRUPT_NO_BACKUP: 'DB_CORRUPT_NO_BACKUP',
+  /** 备份还在但复制/打开恢复副本失败（如磁盘满）；不可重试，严禁空路径建空库顶替 */
+  RESTORE_FAILED: 'DB_RESTORE_FAILED',
   /** 已从备份恢复；reason 形如 DB_RECOVERED_FROM_BACKUP:<ISO> */
   RECOVERED_FROM_BACKUP: 'DB_RECOVERED_FROM_BACKUP',
   /** Tier 2 quick_check 失败 */

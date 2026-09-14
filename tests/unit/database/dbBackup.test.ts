@@ -96,6 +96,25 @@ describe('rotateDatabaseBackup', () => {
     });
     expect(result).toBe('skipped-low-disk');
   });
+
+  // .integrity-failed 在 = 当前库可能带 Tier 1 看不见的页级损坏;
+  // 用带坏库轮转会把好备份顶掉,灾难性损坏时无好副本可恢复。force(VACUUM 前)也不豁免。
+  it('skips rotation (even forced) while .integrity-failed is set, keeping existing slots', async () => {
+    const dbPath = tmpDb();
+    fs.writeFileSync(backupSlotPath(dbPath, 1), 'known-good');
+    const backupTo = vi.fn().mockResolvedValue(undefined);
+    const result = await rotateDatabaseBackup({
+      dbPath,
+      now: NOW,
+      force: true,
+      backupTo,
+      hasFreeSpace: async () => ({ ok: true, detail: 'ok' }),
+      integrityFailed: () => true,
+    });
+    expect(result).toBe('skipped-integrity-failed');
+    expect(backupTo).not.toHaveBeenCalled();
+    expect(fs.readFileSync(backupSlotPath(dbPath, 1), 'utf8')).toBe('known-good');
+  });
 });
 
 describe('findLatestGoodBackup', () => {

@@ -17,8 +17,8 @@ import { ensureWalShmConsistency } from './database/walShmConsistency';
 import {
   clearIntegrityFailedMarker,
   hasIntegrityFailedMarker,
-  hasUnrecoverableMarker,
   probeDatabaseIntegrity,
+  readUnrecoverableMarker,
   shouldAttemptRestore,
   writeUnrecoverableMarker,
   type DbIntegrityOutcome,
@@ -371,8 +371,10 @@ export class DatabaseService extends DurableRunDatabaseSupport {
     const { step, summary } = createInitStepTimer();
     const dataDir = path.dirname(this.dbPath);
 
-    if (hasUnrecoverableMarker(dataDir)) {
-      throw new DatabaseIntegrityError(SQLITE_INTEGRITY.CORRUPT_NO_BACKUP);
+    // 不可恢复标记带稳定 code:与失败现场同 code 抛出,且永不落到空路径建空库
+    const unrecoverable = readUnrecoverableMarker(dataDir);
+    if (unrecoverable) {
+      throw new DatabaseIntegrityError(unrecoverable.code);
     }
 
     // 开库前的 -shm 一致性保障：过小就补大，永不删除（见 walShmConsistency.ts 顶部注释）
@@ -410,7 +412,9 @@ export class DatabaseService extends DurableRunDatabaseSupport {
           );
         } else {
           this._integrityOutcome = { kind: 'ok' };
-          clearIntegrityFailedMarker(dataDir);
+          // Tier 1(LIMIT 1 浅探针)通过无权清 .integrity-failed:
+          // 标记只能由成功的恢复或 Tier 2 quick_check 复测通过清除。
+          // 标记在时上面 shouldAttemptRestore 已升级为尝试恢复,走不到这里。
         }
       } else {
         step('integrity-probe');
@@ -549,19 +553,31 @@ export class DatabaseService extends DurableRunDatabaseSupport {
 
     const backup = findLatestGoodBackup(this.dbPath, quickCheckFileSync);
     if (!backup) {
-      writeUnrecoverableMarker(path.dirname(this.dbPath), isolatedPath);
+      writeUnrecoverableMarker(path.dirname(this.dbPath), isolatedPath, SQLITE_INTEGRITY.CORRUPT_NO_BACKUP);
       throw new DatabaseIntegrityError(SQLITE_INTEGRITY.CORRUPT_NO_BACKUP);
     }
 
-    copyBackupIntoPlace(backup.path, this.dbPath);
-    ensureWalShmConsistency(this.dbPath, logger);
-    this.openDatabaseConnection();
+    try {
+      copyBackupIntoPlace(backup.path, this.dbPath);
+      ensureWalShmConsistency(this.dbPath, logger);
+      this.openDatabaseConnection();
+    } catch (err) {
+      // 复制/打开恢复副本失败(磁盘满、权限等):绝不交给 _scheduleRetry——
+      // 重试会在空路径上 new Database 造空库顶替,用户历史看起来被清空,
+      // 且每日备份轮转会在两天内把好备份顶掉。备份与隔离坏库都还在,
+      // 标记挡住下次启动的空库创建;本进程 fail-closed,不重试。
+      const code = isSqliteIntegritySignal(err)
+        ? SQLITE_INTEGRITY.CORRUPT_NO_BACKUP
+        : SQLITE_INTEGRITY.RESTORE_FAILED;
+      writeUnrecoverableMarker(path.dirname(this.dbPath), isolatedPath, code);
+      throw new DatabaseIntegrityError(code);
+    }
     if (!this.db) {
       throw new Error('Database not opened');
     }
     const post = probeDatabaseIntegrity(this.db);
     if (post.severity === 'catastrophic') {
-      writeUnrecoverableMarker(path.dirname(this.dbPath), isolatedPath);
+      writeUnrecoverableMarker(path.dirname(this.dbPath), isolatedPath, SQLITE_INTEGRITY.CORRUPT_NO_BACKUP);
       throw new DatabaseIntegrityError(SQLITE_INTEGRITY.CORRUPT_NO_BACKUP);
     }
     this._integrityOutcome = {

@@ -50,33 +50,33 @@ describe('companion uses the desktop live approval authority', () => {
   it('mobile approval releases the actual pending tool Promise and closes the desktop request', async () => {
     const { promise, request, command } = pending();
     expect(gateway.syncForDevice('phone', 1, 0).events[0].payload.preview).toContain('bounded test content');
-    expect(gateway.submit(command).kind).toBe('accepted');
+    expect((await gateway.submit(command)).kind).toBe('accepted');
     await expect(promise).resolves.toEqual({ approved: true, approvalSource: 'user' });
     expect(island.listPendingRequests()).toEqual([]);
     expect(await handlers.get(IPC_CHANNELS.AGENT_PERMISSION_RESPONSE)!(null, request.id, 'deny', sessionId)).toMatchObject({ success: false });
-    expect(gateway.submit({ ...command, commandId: 'command-two' }).kind).toBe('approval_conflict');
+    expect((await gateway.submit({ ...command, commandId: 'command-two' })).kind).toBe('approval_conflict');
   });
   it('drops publishedEpoch for a request after respond succeeds', async () => {
     const { promise, request, command } = pending();
     const published = (service as unknown as { publishedEpoch: Map<string, number> }).publishedEpoch;
     expect(published.has(request.id)).toBe(true);
-    expect(gateway.submit(command).kind).toBe('accepted');
+    expect((await gateway.submit(command)).kind).toBe('accepted');
     await expect(promise).resolves.toEqual({ approved: true, approvalSource: 'user' });
     expect(published.has(request.id)).toBe(false);
   });
   it('desktop winning first prevents a stale mobile approval', async () => {
     const { promise, request, command } = pending();
     await handlers.get(IPC_CHANNELS.AGENT_PERMISSION_RESPONSE)!(null, request.id, 'deny', sessionId);
-    expect(gateway.submit(command).kind).toBe('approval_conflict');
+    expect((await gateway.submit(command)).kind).toBe('approval_conflict');
     await expect(promise).resolves.toMatchObject({ approved: false });
   });
   it('lost durable receipt cannot repeat the same logical approval with a new command ID', async () => {
     const { promise, command } = pending();
     db.exec("CREATE TRIGGER fail_receipt BEFORE UPDATE ON companion_commands BEGIN SELECT RAISE(ABORT, 'injected'); END");
-    expect(gateway.submit(command)).toMatchObject({ command: { state: 'reconciling' } });
+    expect(await gateway.submit(command)).toMatchObject({ command: { state: 'reconciling' } });
     await expect(promise).resolves.toMatchObject({ approved: true });
-    expect(gateway.submit(command)).toMatchObject({ command: { state: 'reconciling' } });
-    expect(gateway.submit({ ...command, commandId: 'another' }).kind).toBe('approval_conflict');
+    expect(await gateway.submit(command)).toMatchObject({ command: { state: 'reconciling' } });
+    expect((await gateway.submit({ ...command, commandId: 'another' })).kind).toBe('approval_conflict');
     expect(db.prepare('SELECT COUNT(*) AS n FROM companion_decision_claims').get()).toEqual({ n: 1 });
   });
   it.each(['revision', 'digest', 'session'] as const)('rejects a changed %s before delivery', async field => {
@@ -84,13 +84,13 @@ describe('companion uses the desktop live approval authority', () => {
     if (field === 'revision') command.expectedRevision++;
     if (field === 'digest') command.payload.operationDigest = 'wrong-digest';
     if (field === 'session') command.sessionId = 'unshared';
-    expect(gateway.submit(command).kind).toBe(field === 'session' ? 'rejected' : 'approval_conflict');
+    expect((await gateway.submit(command)).kind).toBe(field === 'session' ? 'rejected' : 'approval_conflict');
     expect(island.listPendingRequests()).toHaveLength(1);
     island.drainPendingPermissions(); await expect(promise).resolves.toMatchObject({ approved: false });
   });
   it('mobile denial reaches the real pending operation', async () => {
     const { promise, command } = pending(); command.payload.decision = 'rejected';
-    expect(gateway.submit(command)).toMatchObject({ command: { state: 'resolved', result: { decision: 'rejected' } } });
+    expect(await gateway.submit(command)).toMatchObject({ command: { state: 'resolved', result: { decision: 'rejected' } } });
     await expect(promise).resolves.toMatchObject({ approved: false, denialSource: 'user' });
   });
   it('oversized operation details never create an actionable truncated card', () => {
@@ -293,7 +293,7 @@ describe('a half-open retry path must not lock the device', () => {
 
     // 台账这一次写不进去（等价于瞬时 SQLITE_BUSY）：裁决必然没做成
     db.exec("CREATE TRIGGER fail_parked BEFORE UPDATE ON pending_approvals BEGIN SELECT RAISE(ABORT, 'SQLITE_BUSY injected'); END");
-    expect(gateway.submit(respond('first'))).toMatchObject({ command: { state: 'rejected' } });
+    expect(await gateway.submit(respond('first'))).toMatchObject({ command: { state: 'rejected' } });
     expect(gateway.getDecision(request.id)).toMatchObject({ status: 'pending' });
     expect(db.prepare('SELECT status FROM pending_approvals WHERE id = ?').get(request.id)).toEqual({ status: 'pending' });
     // 没做成就不许留下 claim——留着的话下面这次重试会被静默吞掉
@@ -301,7 +301,7 @@ describe('a half-open retry path must not lock the device', () => {
 
     db.exec('DROP TRIGGER fail_parked');
     // 这一步就是我们上一轮把用户引向的动作：换个 commandId 再点一次
-    const retried = gateway.submit(respond('second'));
+    const retried = await gateway.submit(respond('second'));
     expect(retried).toMatchObject({ kind: 'accepted', command: { state: 'resolved', result: { decision: 'approved' } } });
     // 不是 reconciling：companionStore 见到 reconciling 会直接 return，pending 永不清除
     expect(gateway.commandStatus('phone', 'second')?.state).toBe('resolved');
@@ -310,10 +310,10 @@ describe('a half-open retry path must not lock the device', () => {
     expect(db.prepare('SELECT status FROM pending_approvals WHERE id = ?').get(request.id)).toEqual({ status: 'approved' });
     // 成功之后 claim 必须留着：换 commandId 不得重放一个已经生效的逻辑裁决
     expect(claims()).toBe(1);
-    expect(gateway.submit(respond('third')).kind).toBe('approval_conflict');
+    expect((await gateway.submit(respond('third'))).kind).toBe('approval_conflict');
 
     // 设备没被卡死：后续普通命令照常受理
-    expect(gateway.submit({ version: 1, deviceId: 'phone', scopeEpoch: 1, commandId: 'after-retry',
+    expect(await gateway.submit({ version: 1, deviceId: 'phone', scopeEpoch: 1, commandId: 'after-retry',
       sessionId, action: 'message.send', payload: { text: 'still usable' } }))
       .toMatchObject({ kind: 'accepted', command: { state: 'accepted' } });
   });

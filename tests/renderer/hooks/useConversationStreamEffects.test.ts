@@ -307,6 +307,97 @@ describe('applyConversationStreamEvent host-owned user message', () => {
   });
 });
 
+
+describe('applyConversationStreamEvent plan_approval_update', () => {
+  const planMessage: Message = {
+    id: 'message-plan',
+    role: 'assistant',
+    content: '',
+    timestamp: 1,
+    toolCalls: [{
+      id: 'tool-plan',
+      name: 'exit_plan_mode',
+      arguments: {},
+      result: {
+        toolCallId: 'tool-plan',
+        success: true,
+        metadata: { planApproval: { status: 'starting', originalPlan: '1. Read', steps: [] } },
+      },
+    }],
+  };
+
+  it('把宿主异步落定的审批记录合进消息副本（failed 卡据此重现）', () => {
+    const messagesRef = { current: [planMessage] };
+    const updated: Message[] = [];
+    const actions = {
+      addMessage: () => {},
+      updateMessage: (id: string, patch: Partial<Message>) => {
+        updated.push({ id, ...patch } as Message);
+      },
+      setMessages: (next: Message[]) => {
+        messagesRef.current = next;
+      },
+      getMessages: () => messagesRef.current,
+      queueUpdate: () => {},
+      now: () => 500,
+      generateId: () => 'generated',
+    };
+
+    applyConversationStreamEvent(
+      {
+        type: 'plan_approval_update',
+        data: {
+          sessionId: 'session-1',
+          messageId: 'message-plan',
+          toolCallId: 'tool-plan',
+          approval: {
+            status: 'failed',
+            originalPlan: '1. Read',
+            steps: [],
+            failureReason: 'Session s1 is already running',
+          },
+        },
+      },
+      { currentTurnMessageId: null, committedAssistantMessageIds: new Set<string>(), lastDeltaSeqByTurn: new Map<string, number>() },
+      actions,
+    );
+
+    expect(updated).toHaveLength(1);
+    expect(updated[0].id).toBe('message-plan');
+    const record = updated[0].toolCalls?.[0].result?.metadata?.planApproval as { status: string; failureReason?: string };
+    expect(record).toMatchObject({ status: 'failed', failureReason: 'Session s1 is already running' });
+    // 原消息对象不被就地改写。
+    expect((planMessage.toolCalls?.[0].result?.metadata?.planApproval as { status: string }).status).toBe('starting');
+  });
+
+  it('消息不在本地时不动作', () => {
+    const actions = {
+      addMessage: () => {},
+      updateMessage: () => {
+        throw new Error('must not update');
+      },
+      setMessages: () => {},
+      getMessages: () => [] as Message[],
+      queueUpdate: () => {},
+      now: () => 500,
+      generateId: () => 'generated',
+    };
+    applyConversationStreamEvent(
+      {
+        type: 'plan_approval_update',
+        data: {
+          sessionId: 'session-1',
+          messageId: 'message-gone',
+          toolCallId: 'tool-plan',
+          approval: { status: 'approved', originalPlan: '1. Read', steps: [] },
+        },
+      },
+      { currentTurnMessageId: null, committedAssistantMessageIds: new Set<string>(), lastDeltaSeqByTurn: new Map<string, number>() },
+      actions,
+    );
+  });
+});
+
 describe('applyConversationStreamEvent model_decision', () => {
   it('attaches the model decision to the current assistant message', () => {
     let messages: Message[] = [

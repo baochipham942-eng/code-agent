@@ -38,13 +38,13 @@ export function createCompanionRouter({ gateway, authenticate }: CompanionRouter
     next();
   });
 
-  router.post('/commands', (req, res) => {
+  router.post('/commands', async (req, res) => {
     const body = req.body as { deviceId?: unknown } | undefined;
     if (body?.deviceId !== deviceOf(req)) {
       res.status(403).json({ success: false, error: { code: 'COMPANION_IDENTITY_MISMATCH' } });
       return;
     }
-    const result = gateway.submit(req.body);
+    const result = await gateway.submit(req.body);
     if (result.kind === 'accepted' || result.kind === 'replayed') {
       res.status(result.kind === 'replayed' ? 200 : 202).json({ success: true, data: result });
       return;

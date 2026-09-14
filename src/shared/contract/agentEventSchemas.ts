@@ -17,6 +17,7 @@ import type {
   MemoryLearnedData,
   MessageDeltaData,
   MessageSnapshotData,
+  PlanApprovalUpdateEventData,
   ResearchCompleteData,
   ResearchDetectedData,
   ResearchErrorData,
@@ -448,6 +449,7 @@ const stabilityByType = {
   stream_tool_call_delta: 'experimental',
   todo_update: 'experimental',
   task_update: 'experimental',
+  plan_approval_update: 'experimental',
   turn_diff: 'experimental',
   notification: 'experimental',
   routing_resolved: 'experimental',
@@ -539,6 +541,28 @@ const StreamToolCallStartEventSchema = event('stream_tool_call_start', z.object(
 const StreamToolCallDeltaEventSchema = event('stream_tool_call_delta', z.object({ index: z.number().optional(), name: z.string().optional(), argumentsDelta: z.string().optional(), turnId: z.string().optional(), parentToolUseId: z.string().optional() }));
 const TodoUpdateEventSchema = event('todo_update', z.array(todoItemSchema));
 const TaskUpdateEventSchema = event('task_update', taskUpdateSchema);
+const planApprovalStepSchema = z.object({
+  id: z.string(),
+  content: z.string(),
+  originalContent: z.string(),
+  edited: z.boolean().optional(),
+});
+const PlanApprovalUpdateEventSchema = event('plan_approval_update', typed<PlanApprovalUpdateEventData>(z.object({
+  sessionId: z.string(),
+  messageId: z.string(),
+  toolCallId: z.string(),
+  approval: z.object({
+    status: z.enum(['pending', 'starting', 'approved', 'failed', 'cancelled', 'revision_requested']),
+    originalPlan: z.string(),
+    steps: z.array(planApprovalStepSchema),
+    removedSteps: z.array(planApprovalStepSchema).optional(),
+    reordered: z.boolean().optional(),
+    decidedAt: z.number().optional(),
+    feedback: z.string().optional(),
+    failureReason: z.string().optional(),
+    failedAt: z.number().optional(),
+  }),
+})));
 const TurnDiffEventSchema = event('turn_diff', typed<TurnDiffEventData>(z.object({
   turnId: z.string(),
   files: z.array(z.object({
@@ -660,7 +684,7 @@ export const AgentEventSchema = z.discriminatedUnion('type', [
   ArtifactWriteStartedEventSchema, PermissionRequestEventSchema, ModelDecisionEventSchema, HookTriggerEventSchema,
   HookStartedEventSchema, ErrorEventSchema, MessageDeltaEventSchema, MessageSnapshotEventSchema, StreamChunkEventSchema,
   StreamReasoningEventSchema, StreamToolCallStartEventSchema, StreamToolCallDeltaEventSchema, TodoUpdateEventSchema,
-  TaskUpdateEventSchema, TurnDiffEventSchema, NotificationEventSchema, RoutingResolvedEventSchema, ArtifactLocatorEventSchema,
+  TaskUpdateEventSchema, PlanApprovalUpdateEventSchema, TurnDiffEventSchema, NotificationEventSchema, RoutingResolvedEventSchema, ArtifactLocatorEventSchema,
   AgentCompleteEventSchema, AgentCancelledEventSchema, GoalIterationEventSchema, GoalGateEventSchema,
   GoalCompleteEventSchema, AgentThinkingEventSchema, TurnStartEventSchema, TurnEndEventSchema,
   SubagentActivityEventSchema, SubagentRunEndEventSchema, SkillActivatedEventSchema, MemoryInjectedEventSchema, MemoryWrittenEventSchema,

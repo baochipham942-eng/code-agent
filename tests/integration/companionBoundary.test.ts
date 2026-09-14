@@ -90,27 +90,28 @@ describe('companion device boundary (HTTP + persistent SQLite)', () => {
     await request('/commands', command());
     expect(await (await request('/commands/command-1', undefined, other)).json()).toEqual({ success: true, data: { kind: 'not_seen' } });
   });
-  it('reserves a command durably when the final receipt write fails', () => {
+  it('reserves a command durably when the final receipt write fails', async () => {
     db.exec("CREATE TRIGGER fail_receipt BEFORE UPDATE ON companion_commands BEGIN SELECT RAISE(ABORT, 'injected receipt failure'); END");
-    const result = gateway.submit(command());
+    // 回执写入失败在 submit 内部转成 rejected promise（async 化后不再同步抛），断言走 rejects。
+    const result = await gateway.submit(command());
     expect(result).toMatchObject({ kind: 'replayed', command: { state: 'reconciling' } });
     expect(executions).toBe(1);
     db.exec('DROP TRIGGER fail_receipt');
     db.close();
     db = new Database(join(directory, 'test.db'));
     const restarted = new CompanionGateway(db, { dispatch });
-    expect(restarted.submit(command())).toMatchObject({ kind: 'replayed', command: { state: 'rejected', result: { code: 'COMPANION_INTERRUPTED' } } });
+    expect(await restarted.submit(command())).toMatchObject({ kind: 'replayed', command: { state: 'rejected', result: { code: 'COMPANION_INTERRUPTED' } } });
     expect(executions).toBe(1);
   });
-  it('does not dispatch if the durable reservation cannot be saved', () => {
+  it('does not dispatch if the durable reservation cannot be saved', async () => {
     db.exec("CREATE TRIGGER fail_reservation BEFORE INSERT ON companion_commands BEGIN SELECT RAISE(ABORT, 'injected reservation failure'); END");
-    expect(() => gateway.submit(command())).toThrow('injected reservation failure');
+    await expect(gateway.submit(command())).rejects.toThrow('injected reservation failure');
     expect(executions).toBe(0);
   });
-  it('does not blindly redispatch after an uncertain execution exception', () => {
+  it('does not blindly redispatch after an uncertain execution exception', async () => {
     const uncertain = new CompanionGateway(db, { dispatch: () => { executions += 1; throw new Error('injected after side effect'); } });
-    expect(uncertain.submit(command())).toMatchObject({ command: { state: 'reconciling' } });
-    expect(uncertain.submit(command())).toMatchObject({ command: { state: 'reconciling' } });
+    expect(await uncertain.submit(command())).toMatchObject({ command: { state: 'reconciling' } });
+    expect(await uncertain.submit(command())).toMatchObject({ command: { state: 'reconciling' } });
     expect(executions).toBe(1);
   });
   it.each([null, {}, { text: '   ' }, { text: 'ok', providerKey: 'forbidden' }])('rejects invalid message payload %j before dispatch', async payload => {

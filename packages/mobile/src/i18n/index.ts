@@ -110,6 +110,7 @@ const zh = {
   plan: '确认执行计划', planApprove: '按此计划执行', planReject: '拒绝',
   planFeedback: '调整说明', planFeedbackPlaceholder: '要调整计划，可以写在这里',
   planClosed: '此计划已在另一端处理或已失效', planRisk: '风险',
+  planStartFailed: '上次没能开始执行：',
   unreadablePlan: '无法完整读取计划内容，请拒绝或回电脑处理。',
   reviewPlan: '有待确认的计划，返回会话处理',
 };
@@ -226,6 +227,7 @@ const en: Record<keyof typeof zh, string> = {
   plan: 'Confirm this plan', planApprove: 'Start this plan', planReject: 'Reject',
   planFeedback: 'How to change it', planFeedbackPlaceholder: 'Describe how the plan should change',
   planClosed: 'This plan was handled elsewhere or is no longer active', planRisk: 'Risk',
+  planStartFailed: 'Failed to start last time: ',
   unreadablePlan: 'Cannot read the complete plan. Reject it or review on your computer.',
   reviewPlan: 'Review the pending plan in your conversation',
 };

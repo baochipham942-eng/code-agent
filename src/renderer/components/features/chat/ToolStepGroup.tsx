@@ -383,8 +383,11 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
 
   // 纯内部动作组：不渲染主流行（对齐「内部流水不进用户主视角」）。
   // 必须放在全部 hooks 之后，避免条件性调用 hooks。
+  // failed 与 pending 一样交还交互卡（带失败原因、可重试），不落成只读存证。
   if (planApproval && toolCalls.length === 1) {
-    return planApproval.status === 'pending' ? null : <PlanApprovalEvidence approval={planApproval} />;
+    return planApproval.status === 'pending' || planApproval.status === 'failed'
+      ? null
+      : <PlanApprovalEvidence approval={planApproval} />;
   }
   if (streamVisibleNodes.length === 0 || !label) {
     return null;

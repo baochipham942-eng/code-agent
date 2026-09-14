@@ -154,6 +154,12 @@ export function generateMarkdownReport(
   lines.push(generateScoreAuthoritySection(summary.results));
   lines.push('');
 
+  // 分层通过率：总体之外至少一层，分母外数字必须与通过率并列出现
+  lines.push('## 分层通过率');
+  lines.push('');
+  lines.push(...generateBreakdownSection(summary));
+  lines.push('');
+
   const aiReviewSection = generateAiReviewSection(summary.results);
   if (aiReviewSection) {
     lines.push('## AI 评审（并列 · 不进通过率）');
@@ -737,6 +743,49 @@ function generateScoreAuthoritySection(results: TestResult[]): string {
   lines.push('> 通过率只读取确定性断言；self_check 不作能力证据；AI 评审在下方并列展示，不属于分数权威桶。');
 
   return lines.join('\n');
+}
+
+/** 分层通过率的分母：与 generateScoreAuthoritySection 的「确定性断言」桶同口径。 */
+function isBreakdownDenominator(result: TestResult): boolean {
+  return (result.scoreAuthority ?? 'unknown') === 'deterministic_assertion'
+    && result.status !== 'skipped'
+    && result.status !== 'infra_excluded'
+    && result.status !== 'cost_exceeded';
+}
+
+const BREAKDOWN_DIMENSIONS: Array<{ label: string; keysOf: (result: TestResult) => string[] }> = [
+  { label: 'category', keysOf: (r) => [r.caseMeta?.category ?? '未标注'] },
+  { label: 'difficulty', keysOf: (r) => [r.caseMeta?.difficulty ?? '未标注'] },
+  { label: 'layer', keysOf: (r) => [r.caseMeta?.layer ?? '未标注'] },
+  { label: 'tag', keysOf: (r) => (r.caseMeta?.tags.length ? r.caseMeta.tags : ['未标注']) },
+];
+
+/** 按 category / difficulty / layer / tag 各一张表；一题多 tag 会进多行，tag 表分母之和不等于总分母。 */
+export function generateBreakdownSection(summary: TestRunSummary): string[] {
+  const denominator = summary.results.filter(isBreakdownDenominator);
+  const lines: string[] = [];
+  for (const dimension of BREAKDOWN_DIMENSIONS) {
+    const rows = new Map<string, { total: number; passed: number }>();
+    for (const result of denominator) {
+      for (const key of dimension.keysOf(result)) {
+        const row = rows.get(key) ?? { total: 0, passed: 0 };
+        row.total += 1;
+        if (result.status === 'passed' && !result.invalid) row.passed += 1;
+        rows.set(key, row);
+      }
+    }
+    lines.push(`### 按 ${dimension.label}`, '', `| ${dimension.label} | 分母 | 通过 | 通过率 |`, '|------|-----:|-----:|-------:|');
+    for (const [key, row] of [...rows.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+      lines.push(`| ${key} | ${row.total} | ${row.passed} | ${(row.passed / row.total * 100).toFixed(1)}% |`);
+    }
+    if (rows.size === 0) lines.push('| （无确定性断言题） | 0 | 0 | -- |');
+    lines.push('');
+  }
+  lines.push(
+    `> 分母外：infra_excluded ${summary.infraExcluded ?? 0} · cost_exceeded ${summary.costExceeded ?? 0} · retired ${summary.retiredSkipped?.length ?? 0} · not_run ${summary.notRun} · invalid ${summary.invalidCases}`,
+    '> 分母只含确定性断言桶且非 skipped/infra_excluded/cost_exceeded 的题；not_run 无权威桶不进分母；invalid 在分母但不计通过。',
+  );
+  return lines;
 }
 
 const AI_REVIEW_LABELS: Record<AiReviewDimension, string> = {

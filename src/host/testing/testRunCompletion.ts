@@ -1,4 +1,4 @@
-import type { TestCase, TestResult } from './types';
+import type { TestCase, TestCaseMeta, TestResult } from './types';
 
 export interface CompletedPlannedResults {
   results: TestResult[];
@@ -40,7 +40,17 @@ export function createNotRunResult(testCase: TestCase, reason?: string): TestRes
   };
 }
 
-/** 按计划顺序补齐未执行题，并在补齐前判断本轮是否真正跑满。 */
+/** 报告分层用的题目元数据快照；tags 合并 inheritedTags 去重，其余字段缺席就不写。 */
+export function toCaseMeta(testCase: TestCase): TestCaseMeta {
+  return {
+    tags: [...new Set([...(testCase.tags ?? []), ...(testCase.inheritedTags ?? [])])],
+    ...(testCase.category ? { category: testCase.category } : {}),
+    ...(testCase.difficulty ? { difficulty: testCase.difficulty } : {}),
+    ...(testCase.layer ? { layer: testCase.layer } : {}),
+  };
+}
+
+/** 按计划顺序补齐未执行题，并在补齐前判断本轮是否真正跑满；顺手把题目元数据抄进每条结果（报告层不回读题库）。 */
 export function completePlannedResults(
   plannedCases: TestCase[],
   executedResults: TestResult[],
@@ -49,9 +59,11 @@ export function completePlannedResults(
 ): CompletedPlannedResults {
   const resultById = new Map(executedResults.map((result) => [result.testId, result]));
   const completedBeforeFill = plannedCases.every((testCase) => resultById.has(testCase.id));
-  const results = plannedCases.map(
-    (testCase) => resultById.get(testCase.id) ?? createNotRunResult(testCase, abortReason),
-  );
+  const results = plannedCases.map((testCase) => {
+    const result = resultById.get(testCase.id) ?? createNotRunResult(testCase, abortReason);
+    result.caseMeta = toCaseMeta(testCase);
+    return result;
+  });
   const notRun = results.filter((result) => result.status === 'not_run').length;
   return {
     results,

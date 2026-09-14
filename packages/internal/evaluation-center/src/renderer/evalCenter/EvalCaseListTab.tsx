@@ -92,6 +92,19 @@ export const EvalCaseListTab: React.FC = () => {
     () => [...new Set(validItems.map((item) => item.layer))].sort((a, b) => a.localeCompare(b)),
     [validItems],
   );
+  // 分布矩阵：行=layer、列=category（无 category 归「未分类」），只数在用题（排除 retired/draft）；空格=覆盖盲区
+  const matrix = useMemo(() => {
+    const active = validItems.filter((item) => !item.retired && !item.isDraft);
+    const categories = [...new Set(active.map((item) => item.category ?? ''))]
+      .sort((a, b) => (a === '' ? 1 : b === '' ? -1 : a.localeCompare(b)));
+    const rows = [...new Set(active.map((item) => item.layer))].sort((a, b) => a.localeCompare(b));
+    const counts = new Map<string, number>();
+    for (const item of active) {
+      const key = `${item.layer}\u0000${item.category ?? ''}`;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    return { rows, categories, count: (layer: string, category: string) => counts.get(`${layer}\u0000${category}`) ?? 0 };
+  }, [validItems]);
   const filteredItems = useMemo(() => items.filter((item) => {
     if (isParseError(item)) return !layerFilter && !splitFilter && !expectFilter && statusFilter !== 'archived';
     if (layerFilter && item.layer !== layerFilter) return false;
@@ -181,6 +194,41 @@ export const EvalCaseListTab: React.FC = () => {
           </div>
         </div>
         <p className="mt-2 text-xs text-zinc-500">{c.specialHint}</p>
+        {matrix.rows.length > 0 && (
+          <div className="mt-2 overflow-x-auto" data-testid="eval-case-matrix">
+            <div className="mb-1 text-[10px] text-zinc-500">{c.matrixTitle}</div>
+            <table className="border-separate border-spacing-0 text-[11px]">
+              <thead>
+                <tr>
+                  <th className="border-b border-zinc-800 px-2 py-1 text-left font-medium text-zinc-500">{c.filterLayer}</th>
+                  {matrix.categories.map((category) => (
+                    <th key={category || '__none'} className="border-b border-zinc-800 px-2 py-1 text-right font-medium text-zinc-500">{category || c.matrixUncategorized}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {matrix.rows.map((layer) => (
+                  <tr key={layer}>
+                    <td className="px-2 py-1 text-zinc-300">{layer}</td>
+                    {matrix.categories.map((category) => {
+                      const n = matrix.count(layer, category);
+                      return (
+                        <td
+                          key={category || '__none'}
+                          data-testid={n === 0 ? 'eval-case-matrix-empty' : 'eval-case-matrix-cell'}
+                          title={n === 0 ? c.matrixEmptyHint : undefined}
+                          className={`px-2 py-1 text-right font-mono ${n === 0 ? 'bg-red-500/10 text-badge-danger' : 'text-zinc-200'}`}
+                        >
+                          {n}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       <div className="flex shrink-0 flex-wrap items-end gap-2 border-b border-zinc-800 px-3 py-2">

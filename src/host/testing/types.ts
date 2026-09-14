@@ -227,6 +227,14 @@ export interface SimTurnRecord {
   responsesBefore: number;
 }
 
+/** TestCase 里分层通过率要用的钥匙；tags 已合并 inheritedTags 并去重。 */
+export interface TestCaseMeta {
+  tags: string[];
+  category?: TestCategory;
+  difficulty?: TestDifficulty;
+  layer?: string;
+}
+
 /**
  * Single test case definition
  */
@@ -468,6 +476,8 @@ export interface TestResult {
   score: number;
   /** 本 case 内每个 skill 的真实激活次数；缺省/空对象均表示未触发。 */
   skillActivations?: Record<string, number>;
+  /** 题目元数据快照（分层通过率用）；建 summary 时从 TestCase 抄入，报告不回读题库（题库可能已改）。 */
+  caseMeta?: TestCaseMeta;
   /** N-EVAL-MEMORY：本 case 的记忆注入落账（memory_recalled 的证据源；adapter 没接记录器时缺席）。 */
   memoryRecall?: MemoryRecallRecord;
   /** N-EVAL-MEMORY：跑完、cleanup 之前的记忆目录快照（memory_written 的证据源；同上缺席语义）。 */

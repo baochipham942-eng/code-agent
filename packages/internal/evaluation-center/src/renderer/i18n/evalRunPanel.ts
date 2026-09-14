@@ -93,6 +93,7 @@ export interface EvalRunPanelLabels {
   hideRunCases: string;
   noRunCases: string;
   runCaseScore: string;
+  alwaysPassed: string;
   runCaseStatus: EvalStatusLabels;
   selectForCompare: string;
   incompleteCannotCompare: string;
@@ -222,6 +223,7 @@ export const evalRunPanelZh: EvalRunPanelDictionary = {
     hideRunCases: '收起逐题',
     noRunCases: '本轮没有逐题结果',
     runCaseScore: '得分 {score}',
+    alwaysPassed: '5 轮全过',
     runCaseStatus: { passed: '通过', failed: '失败', infra: '环境故障', invalid: '判废', skipped: '跳过', costExceeded: '成本超限', notRun: '未执行', partial: '部分通过', error: '出错' },
     selectForCompare: '选择这轮用于对比',
     incompleteCannotCompare: '未跑满的轮次不能用于对比',
@@ -348,6 +350,7 @@ export const evalRunPanelEn: EvalRunPanelDictionary = {
     hideRunCases: 'Hide cases',
     noRunCases: 'No case results were recorded for this run',
     runCaseScore: 'Score {score}',
+    alwaysPassed: 'Passed 5 runs in a row',
     runCaseStatus: { passed: 'Passed', failed: 'Failed', infra: 'Environment issue', invalid: 'Invalid', skipped: 'Skipped', costExceeded: 'Cost limit reached', notRun: 'Not run', partial: 'Partially passed', error: 'Error' },
     selectForCompare: 'Select this run for comparison',
     incompleteCannotCompare: 'Incomplete runs cannot be compared',

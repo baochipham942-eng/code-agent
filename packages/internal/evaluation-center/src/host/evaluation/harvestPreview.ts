@@ -7,6 +7,7 @@
 
 import type BetterSqlite3 from 'better-sqlite3';
 import type {
+  EvalAttributionTriple,
   HarvestDraftSeed,
   HarvestFieldKey,
   HarvestPreviewRequest,
@@ -14,7 +15,7 @@ import type {
   StructuredReplay,
 } from '@shared/contract/evaluation';
 import type { PostLaunchConsentScope, PostLaunchReflowCandidate } from '@shared/contract/postLaunchScore';
-import { HARVEST_LOCKED_FIELDS } from '@shared/contract/evaluation';
+import { HARVEST_LOCKED_FIELDS, isEvalAttribution, isEvalSeverity } from '@shared/contract/evaluation';
 import { deriveHarvestSeed, resolveFeedbackTurn } from './harvestCandidates';
 import { queryNegativeFeedback, resolveFeedbackTargetMessage } from './trajectoryToCase';
 import { isPostLaunchReflowEnabled } from '@host/testing/postlaunch/postLaunchGate';
@@ -171,6 +172,49 @@ function listSessionMessages(
   }
 }
 
+/**
+ * 这场会话最近一条人工评审上的归因三件套（ADR-071 D5）。
+ * 🔴 只取「最新那一行」再看它有没有归因，不在 SQL 里过滤 attribution_json IS NOT NULL：
+ * annotations 是 append-only 表，「取消归因」= 追加一条这一列为 null 的新行（与 #1823
+ * 的金标同一套语义），按非空过滤会把已撤销的旧归因当现行。
+ */
+function latestSessionAttribution(
+  db: BetterSqlite3.Database,
+  sessionId: string,
+): EvalAttributionTriple | undefined {
+  let row: { attribution_json?: string | null } | undefined;
+  try {
+    row = db.prepare(`
+    SELECT a.attribution_json AS attribution_json
+    FROM annotations a
+    JOIN experiment_cases c
+      ON c.experiment_id = a.experiment_id AND c.case_id = a.case_id
+    WHERE c.session_id = ?
+    ORDER BY a.created_at DESC, a.rowid DESC
+    LIMIT 1
+  `).get(sessionId) as { attribution_json?: string | null } | undefined;
+  } catch {
+    // 归因只是草稿描述的加料，取不到不该把整场会话的预览一起拖挂。
+    return undefined;
+  }
+  if (!row?.attribution_json) return undefined;
+  try {
+    const parsed = JSON.parse(row.attribution_json) as Record<string, unknown>;
+    if (!isEvalAttribution(parsed.attribution) || !isEvalSeverity(parsed.severity)) return undefined;
+    if (typeof parsed.evidence !== 'string' || !parsed.evidence) return undefined;
+    return {
+      attribution: parsed.attribution,
+      severity: parsed.severity,
+      evidence: parsed.evidence,
+      ...(typeof parsed.suggestion === 'string' && parsed.suggestion
+        ? { suggestion: parsed.suggestion }
+        : {}),
+    };
+  } catch {
+    return undefined;
+  }
+}
+
 function listHarvestTurnRows(db: BetterSqlite3.Database, sessionId: string): HarvestTurnRow[] {
   const rows = db.prepare(`
     SELECT id, turn_number, start_time, turn_type, parent_turn_id
@@ -289,6 +333,7 @@ export async function buildHarvestPreview(payload: HarvestPreviewRequest): Promi
         ? getPostLaunchConsentScope(db, sessionId)
         : 'full_session';
       const turnRows = postLaunchReflow && db ? listHarvestTurnRows(db, sessionId) : [];
+      const attribution = db ? latestSessionAttribution(db, sessionId) : undefined;
       const messages = postLaunchReflow ? listSessionMessages(database, sessionId) : [];
       const scopedReplay = postLaunchReflow
         ? scopeReplayToCandidate(replay, sessionCandidates, consentScope, turnRows, messages)
@@ -302,6 +347,7 @@ export async function buildHarvestPreview(payload: HarvestPreviewRequest): Promi
         negativeFeedbackAt: db
           ? queryNegativeFeedback(db, { limit: NEGATIVE_FEEDBACK_LIMIT, sessionId }).map((row) => row.createdAt)
           : [],
+        ...(attribution ? { attribution } : {}),
       });
       if (!seed.prompt) throw new Error('这场会话没有可用的用户原话');
       if (postLaunchReflow) {

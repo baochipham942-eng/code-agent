@@ -15,6 +15,8 @@ import { enumerateCaseBank, saveCaseBank } from '../testing/caseBank';
 import type {
   AiReviewDimension,
   EvalAnnotation,
+  EvalAttributionTriple,
+  EvalFeedbackPushRequest,
   EvalCaseListEntry,
   EvalExperimentCaseDetail,
   HarvestPreviewRequest,
@@ -24,6 +26,14 @@ import type {
   SaveEvalCaseRequest,
 } from '@shared/contract/evaluation';
 import { buildHarvestPreview } from '../evaluation/harvestPreview';
+import { pushEvalFeedback } from '../evaluation/feedbackHook';
+import {
+  EVAL_ATTRIBUTIONS,
+  EVAL_SEVERITIES,
+  isEvalAttribution,
+  isEvalSeverity,
+  isFeedbackPoolCandidate,
+} from '@shared/contract/evaluation';
 import { getEvalRunBridge, type EvalRunBridge } from '../evaluation/evalRunBridge';
 import { inspectEvalEnvironment } from '../evaluation/evalEnvironment';
 import { inspectEvalRunPanel } from '../evaluation/evalRunPanelProbe';
@@ -181,11 +191,33 @@ export function registerEvaluationHandlers(
       dims_json: JSON.stringify(request.dims),
       consent_scope: 'metadata',
       calibration_split: request.gold ? 'gold' : null,
+      // 「取消归因」与「取消金标」同一套：追加一条这一列为 null 的新行，不改旧行。
+      attribution_json: request.attribution ? JSON.stringify(request.attribution) : null,
       supersedes_id: request.supersedesId ?? null,
       created_at: Date.now(),
     };
     db.insertAnnotation(row);
     return { annotation: annotationFromRow(row, reviewerId) } satisfies SaveEvalAnnotationResult;
+  });
+
+  ipcMain.handle(EVALUATION_CHANNELS.PUSH_FEEDBACK, async (_event, payload: unknown) => {
+    const denied = getChannelAccessIpcError(EVALUATION_CHANNELS.PUSH_FEEDBACK, 'Evaluation feedback push');
+    if (denied) return denied;
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+      throw new Error('Feedback push request is required');
+    }
+    const value = payload as Record<string, unknown>;
+    const request: EvalFeedbackPushRequest = {
+      experimentId: requireNonEmptyString(value.experimentId, 'experimentId'),
+      caseId: requireNonEmptyString(value.caseId, 'caseId'),
+      triple: validateAttributionTriple(value.triple),
+      ...(typeof value.failureReason === 'string' ? { failureReason: value.failureReason } : {}),
+    };
+    // 真缺陷才进反馈池：场景适配 / 系统配置 且 P0/P1（ADR-071 D5）。
+    if (!isFeedbackPoolCandidate(request.triple)) {
+      throw new Error('Only scenario_fit or system_config at P0/P1 goes to the feedback pool');
+    }
+    return pushEvalFeedback(request);
   });
 
   ipcMain.handle(
@@ -312,6 +344,9 @@ function validateAnnotationRequest(payload: unknown): SaveEvalAnnotationRequest 
   if (value.gold !== undefined && typeof value.gold !== 'boolean') {
     throw new Error('gold must be a boolean');
   }
+  const attribution = value.attribution === undefined
+    ? undefined
+    : validateAttributionTriple(value.attribution);
   const dims: Partial<Record<AiReviewDimension, 'yes' | 'no'>> = {};
   for (const [dimension, verdict] of Object.entries(value.dims)) {
     if (!isAiReviewDimension(dimension) || (verdict !== 'yes' && verdict !== 'no')) {
@@ -330,6 +365,36 @@ function validateAnnotationRequest(payload: unknown): SaveEvalAnnotationRequest 
     ...(typeof value.note === 'string' ? { note: value.note } : {}),
     ...(supersedesId ? { supersedesId } : {}),
     ...(value.gold === true ? { gold: true } : {}),
+    ...(attribution ? { attribution } : {}),
+  };
+}
+
+/**
+ * 归因三件套校验（ADR-071 D4）。归因枚举外、定级不是 P0~P3、证据为空一律整条拒收——
+ * 三件套是给人读的结论，缺一格就不是结论。
+ */
+function validateAttributionTriple(payload: unknown): EvalAttributionTriple {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    throw new Error('attribution must be an object');
+  }
+  const value = payload as Record<string, unknown>;
+  if (!isEvalAttribution(value.attribution)) {
+    throw new Error(`attribution must be one of ${EVAL_ATTRIBUTIONS.join(', ')}`);
+  }
+  if (!isEvalSeverity(value.severity)) {
+    throw new Error(`severity must be one of ${EVAL_SEVERITIES.join(', ')}`);
+  }
+  const evidence = requireNonEmptyString(value.evidence, 'attribution.evidence');
+  if (evidence.length > 2000) throw new Error('attribution.evidence must be no longer than 2000 characters');
+  if (value.suggestion !== undefined
+    && (typeof value.suggestion !== 'string' || value.suggestion.length > 2000)) {
+    throw new Error('attribution.suggestion must be a string no longer than 2000 characters');
+  }
+  return {
+    attribution: value.attribution,
+    severity: value.severity,
+    evidence,
+    ...(typeof value.suggestion === 'string' && value.suggestion ? { suggestion: value.suggestion } : {}),
   };
 }
 function requireNonEmptyString(value: unknown, name: string): string {
@@ -346,6 +411,7 @@ function currentReviewerId(): string {
 
 function annotationFromRow(row: AnnotationRow, reviewerId: string): EvalAnnotation {
   const dims = safeParseJsonRecord(row.dims_json) ?? {};
+  const attribution = parseAttribution(row.attribution_json);
   return {
     id: row.id,
     experimentId: row.experiment_id,
@@ -359,7 +425,18 @@ function annotationFromRow(row: AnnotationRow, reviewerId: string): EvalAnnotati
     createdAt: row.created_at,
     mine: row.reviewer_id === reviewerId,
     ...(row.calibration_split === 'gold' ? { gold: true } : {}),
+    ...(attribution ? { attribution } : {}),
   };
+}
+
+function parseAttribution(raw: string | null): EvalAttributionTriple | undefined {
+  if (!raw) return undefined;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return validateAttributionTriple(parsed);
+  } catch {
+    return undefined;
+  }
 }
 
 async function loadOptionalCaseContext(

@@ -11,7 +11,8 @@ import { evalRunPanelZh } from '@internal-evaluation/renderer/i18n/evalRunPanel'
 
 const evaluation = vi.hoisted(() => ({ invoke: vi.fn() }));
 const ipc = vi.hoisted(() => ({ invoke: vi.fn(), invokeDomain: vi.fn() }));
-const toasts = vi.hoisted(() => ({ success: vi.fn() }));
+const toasts = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }));
+const clipboard = vi.hoisted(() => ({ writeText: vi.fn(async () => undefined) }));
 
 vi.mock('@internal-evaluation/renderer/evaluationRunIpc', () => ({
   invokeEvaluation: evaluation.invoke,
@@ -20,7 +21,7 @@ vi.mock('../../../src/renderer/services/ipcService', () => ({
   default: { invoke: ipc.invoke, invokeDomain: ipc.invokeDomain },
 }));
 vi.mock('../../../src/renderer/hooks/useToast', () => ({
-  toast: { success: toasts.success },
+  toast: { success: toasts.success, error: toasts.error },
 }));
 
 import { EvalCaseDrawer } from '@internal-evaluation/renderer/evalCenter/EvalCaseDrawer';
@@ -59,6 +60,91 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+});
+
+describe('归因三件套（ADR-071 D4/Q4）', () => {
+  beforeEach(() => {
+    Object.defineProperty(globalThis.navigator, 'clipboard', {
+      value: clipboard, configurable: true, writable: true,
+    });
+  });
+
+  function annotationIpc(extra: Record<string, unknown> = {}) {
+    evaluation.invoke.mockImplementation(async (channel: string) => {
+      if (channel === EVALUATION_CHANNELS.LIST_ANNOTATIONS) return { annotations: [], latestByReviewer: [] };
+      if (channel === EVALUATION_CHANNELS.SAVE_ANNOTATION) {
+        return { annotation: { id: 'a1', experimentId: 'run-1', caseId: 'case-1', reviewerId: 'me', dims: {}, consentScope: 'metadata', createdAt: Date.now(), mine: true } };
+      }
+      if (channel === EVALUATION_CHANNELS.PUSH_FEEDBACK) {
+        return { evidenceDir: '/data/eval-feedback/x', hookRan: true, ...extra };
+      }
+      return detail();
+    });
+  }
+
+  function fillTriple() {
+    fireEvent.click(screen.getByLabelText('场景适配'));
+    fireEvent.change(screen.getByPlaceholderText('引用输出或工具调用，一句话'), {
+      target: { value: '第 3 步直接写文件，没先问' },
+    });
+    fireEvent.click(screen.getByLabelText('风险定级 P1'));
+  }
+
+  it('填全三件套后保存带 attribution；只选归因不填证据时不让保存', async () => {
+    annotationIpc();
+    render(<EvalCaseDrawer target={{ experimentId: 'run-1', caseId: 'case-1' }} onClose={vi.fn()} />);
+    fireEvent.click(await screen.findByLabelText('场景适配'));
+    expect(screen.getByTestId('eval-case-attribution-incomplete')).toBeTruthy();
+    expect((screen.getByRole('button', { name: '保存' }) as HTMLButtonElement).disabled).toBe(true);
+
+    fireEvent.change(screen.getByPlaceholderText('引用输出或工具调用，一句话'), {
+      target: { value: '第 3 步直接写文件，没先问' },
+    });
+    fireEvent.click(screen.getByLabelText('风险定级 P1'));
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    await waitFor(() => expect(evaluation.invoke).toHaveBeenCalledWith(
+      EVALUATION_CHANNELS.SAVE_ANNOTATION,
+      expect.objectContaining({
+        attribution: {
+          attribution: 'scenario_fit', severity: 'P1', evidence: '第 3 步直接写文件，没先问',
+        },
+      }),
+    ));
+  });
+
+  it('进反馈池：配了钩子就执行并回显目录', async () => {
+    annotationIpc();
+    render(<EvalCaseDrawer target={{ experimentId: 'run-1', caseId: 'case-1' }} onClose={vi.fn()} />);
+    await screen.findByTestId('eval-case-attribution');
+    fillTriple();
+    fireEvent.click(screen.getByRole('button', { name: '进反馈池' }));
+    await waitFor(() => expect(toasts.success)
+      .toHaveBeenCalledWith('证据已写到 /data/eval-feedback/x'));
+    expect(clipboard.writeText).not.toHaveBeenCalled();
+  });
+
+  it('没配钩子（hookRan=false）时按钮退化成复制 fb add 命令，证据仍已落盘', async () => {
+    annotationIpc({ hookRan: false });
+    render(<EvalCaseDrawer target={{ experimentId: 'run-1', caseId: 'case-1' }} onClose={vi.fn()} />);
+    await screen.findByTestId('eval-case-attribution');
+    fillTriple();
+    fireEvent.click(screen.getByRole('button', { name: '进反馈池' }));
+    await waitFor(() => expect(clipboard.writeText).toHaveBeenCalledWith(
+      'fb add "缺陷·case-1：第 3 步直接写文件，没先问"',
+    ));
+  });
+
+  it('模型能力 / P2 这种不是真缺陷，进反馈池按钮不可点', async () => {
+    annotationIpc();
+    render(<EvalCaseDrawer target={{ experimentId: 'run-1', caseId: 'case-1' }} onClose={vi.fn()} />);
+    await screen.findByTestId('eval-case-attribution');
+    fireEvent.click(screen.getByLabelText('模型能力'));
+    fireEvent.change(screen.getByPlaceholderText('引用输出或工具调用，一句话'), {
+      target: { value: '模型答错了' },
+    });
+    fireEvent.click(screen.getByLabelText('风险定级 P2'));
+    expect((screen.getByRole('button', { name: '进反馈池' }) as HTMLButtonElement).disabled).toBe(true);
+  });
 });
 
 describe('EvalCaseDrawer', () => {

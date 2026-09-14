@@ -11,6 +11,8 @@ export interface AnnotationRow {
   dims_json: string;
   consent_scope: 'metadata' | 'turn_excerpt' | 'full_session';
   calibration_split: string | null;
+  /** 归因三件套 JSON（ADR-071 D4）；null = 这一版没填归因。 */
+  attribution_json: string | null;
   supersedes_id: string | null;
   created_at: number;
 }
@@ -22,8 +24,8 @@ export class AnnotationRepository {
     this.db.prepare(`
       INSERT INTO annotations (
         id, experiment_id, case_id, reviewer_id, overall, note, dims_json,
-        consent_scope, calibration_split, supersedes_id, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        consent_scope, calibration_split, attribution_json, supersedes_id, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       row.id,
       row.experiment_id,
@@ -34,6 +36,7 @@ export class AnnotationRepository {
       row.dims_json,
       row.consent_scope,
       row.calibration_split,
+      row.attribution_json,
       row.supersedes_id,
       row.created_at,
     );
@@ -42,7 +45,7 @@ export class AnnotationRepository {
   listForCase(experimentId: string, caseId: string): AnnotationRow[] {
     return this.db.prepare(`
       SELECT id, experiment_id, case_id, reviewer_id, overall, note, dims_json,
-             consent_scope, calibration_split, supersedes_id, created_at
+             consent_scope, calibration_split, attribution_json, supersedes_id, created_at
       FROM annotations
       WHERE experiment_id = ? AND case_id = ?
       ORDER BY created_at DESC, rowid DESC
@@ -59,7 +62,7 @@ export class AnnotationRepository {
   listForExperiment(experimentId: string): AnnotationRow[] {
     return this.db.prepare(`
       SELECT id, experiment_id, case_id, reviewer_id, overall, note, dims_json,
-             consent_scope, calibration_split, supersedes_id, created_at
+             consent_scope, calibration_split, attribution_json, supersedes_id, created_at
       FROM annotations
       WHERE experiment_id = ?
       ORDER BY created_at DESC, rowid DESC

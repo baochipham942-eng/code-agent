@@ -6,7 +6,7 @@ function row(overrides: Partial<AnnotationRow>): AnnotationRow {
   return {
     id: 'a', experiment_id: 'run-1', case_id: 'case-1', reviewer_id: 'r1', overall: null, note: null,
     dims_json: JSON.stringify({ task_completed: 'yes' }), consent_scope: 'metadata', calibration_split: 'gold',
-    supersedes_id: null, created_at: 1, ...overrides,
+    attribution_json: null, supersedes_id: null, created_at: 1, ...overrides,
   };
 }
 

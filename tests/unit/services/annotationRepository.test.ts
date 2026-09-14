@@ -32,6 +32,7 @@ function row(overrides: Partial<AnnotationRow> = {}): AnnotationRow {
     overall: 'down',
     note: 'missing evidence',
     dims_json: JSON.stringify({ task_completed: 'no' }),
+    attribution_json: null,
     consent_scope: 'metadata',
     calibration_split: null,
     supersedes_id: null,

@@ -22,7 +22,7 @@ const FALLBACK_SPLIT_COUNTS: EvalRunPanelProbe['splitCounts'] = {
   'held-in': 76,
   'held-out': 52,
   safety: 12,
-  core: 40,
+  core: 0, // core 是可选桶：切分文件没有它就显示 0，别让面板承诺后端会拒绝的题数
 };
 
 function readSplitCounts(repositoryRoot?: string): EvalRunPanelProbe['splitCounts'] {

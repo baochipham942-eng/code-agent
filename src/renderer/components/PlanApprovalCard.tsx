@@ -46,7 +46,11 @@ export const PlanApprovalEvidence: React.FC<{ approval: PlanApprovalRecord }> = 
     ? t.planApproval.approvedSummary.replace('{count}', String(approval.steps.length))
     : approval.status === 'revision_requested'
       ? t.planApproval.revisionSummary
-      : t.planApproval.cancelledSummary;
+      : approval.status === 'starting'
+        ? t.planApproval.startingSummary
+        : approval.status === 'failed'
+          ? t.planApproval.failedSummary
+          : t.planApproval.cancelledSummary;
 
   return (
     <div className="my-1 rounded-lg border border-zinc-800 bg-zinc-900/70" data-testid="plan-approval-evidence">
@@ -247,6 +251,15 @@ export const PlanApprovalCard: React.FC<{
         </div>
 
         <div className="max-h-[50vh] overflow-y-auto px-4 py-3">
+          {target.approval.status === 'failed' && (
+            <div
+              className="mb-3 rounded-md border border-badge-danger/40 bg-red-500/10 px-3 py-2 text-xs leading-5 text-badge-danger"
+              data-testid="plan-approval-failure"
+            >
+              <span className="font-medium">{t.planApproval.startFailed}</span>
+              {target.approval.failureReason && <span className="ml-1 break-all">{target.approval.failureReason}</span>}
+            </div>
+          )}
           {mode === 'steps' ? (
             <>
               <p className="mb-3 text-sm text-zinc-200">{t.planApproval.question}</p>

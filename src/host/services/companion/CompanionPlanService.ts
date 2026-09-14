@@ -40,6 +40,9 @@ export interface CompanionPlanRequest {
   plan: string;
   agentName?: string;
   risk?: { level: string; reasons: string[] };
+  /** 启动失败的原因与落定时刻：failed（及其重试 starting 期）才带，变化会改变 operationDigest 触发卡片重发布。 */
+  failureReason?: string;
+  failedAt?: number;
 }
 
 /**
@@ -59,7 +62,7 @@ export class CompanionPlanService {
   constructor(
     private readonly gateway: CompanionGateway,
     private readonly pending: () => CompanionPlanRequest[],
-    private readonly deliver: (planId: string, approved: boolean, feedback: string | undefined, sessionId: string) => { success: boolean; data?: { closed?: boolean } },
+    private readonly deliver: (planId: string, approved: boolean, feedback: string | undefined, sessionId: string) => Promise<{ success: boolean; data?: { closed?: boolean } }> | { success: boolean; data?: { closed?: boolean } },
     private readonly inspect?: (requestId: string) => CompanionPlanInspection | null,
   ) {}
 
@@ -73,6 +76,7 @@ export class CompanionPlanService {
       plan: request.plan,
       ...(request.agentName ? { agentName: request.agentName } : {}),
       ...(request.risk ? { risk: request.risk } : {}),
+      ...(request.failureReason ? { failureReason: request.failureReason } : {}),
     }, null, 2);
     return preview.length > COMPANION_LIMITS.approvalPreviewLength ? null : { preview, sessionId: request.sessionId };
   }
@@ -132,14 +136,14 @@ export class CompanionPlanService {
     this.sourceIds.delete(current.requestId);
   }
 
-  respond(command: Extract<CompanionCommand, { action: 'plan.respond' }>): CompanionSubmitResult {
+  async respond(command: Extract<CompanionCommand, { action: 'plan.respond' }>): Promise<CompanionSubmitResult> {
     this.refresh();
     const current = this.gateway.getDecision(command.payload.requestId);
     if (current?.sessionId !== command.sessionId) return { kind: 'rejected', reason: 'scope_denied' };
     if (current.status !== 'pending' || current.revision !== command.expectedRevision || current.operationDigest !== command.payload.operationDigest) {
       return { kind: 'approval_conflict', current };
     }
-    const outcome = this.deliver(
+    const outcome = await this.deliver(
       this.sourceIds.get(current.requestId) ?? current.requestId,
       command.payload.decision === 'approved',
       command.payload.feedback,

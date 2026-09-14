@@ -62,6 +62,20 @@ describe('AgentEventSchema', () => {
       },
     },
     { type: 'agent_complete', data: null },
+    {
+      type: 'plan_approval_update',
+      data: {
+        sessionId: 'session-1',
+        messageId: 'message-plan',
+        toolCallId: 'tool-plan',
+        approval: {
+          status: 'failed',
+          originalPlan: '1. Read code',
+          steps: [{ id: 'step-1', content: 'Read code', originalContent: 'Read code' }],
+          failureReason: 'Session session-1 is already running',
+        },
+      },
+    },
   ] as const;
 
   it('accepts representative legal events across the stable contract', () => {
@@ -97,9 +111,9 @@ describe('AgentEventSchema', () => {
 
   it('exports stability metadata and the stable type set from the same source', () => {
     const stabilityMetadata = AgentEventSchema.options.map((schema) => schema.meta()?.stability);
-    expect(stabilityMetadata).toHaveLength(74);
+    expect(stabilityMetadata).toHaveLength(75);
     expect(stabilityMetadata.filter((stability) => stability === 'stable')).toHaveLength(12);
-    expect(stabilityMetadata.filter((stability) => stability === 'experimental')).toHaveLength(62);
+    expect(stabilityMetadata.filter((stability) => stability === 'experimental')).toHaveLength(63);
     expect(STABLE_EVENT_TYPES).toEqual(new Set([
       'message',
       'tool_call_start',

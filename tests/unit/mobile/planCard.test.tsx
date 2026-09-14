@@ -70,6 +70,18 @@ describe('PlanCard', () => {
     expect(screen.queryByText(text.planApprove)).toBeNull();
   });
 
+  it('启动失败重发布的卡显示失败原因且仍可批准（同一记录重试）', () => {
+    const failedPreview = JSON.stringify({
+      plan: '1. Read host',
+      failureReason: 'Session s1 is already running',
+    });
+    const respond = vi.fn(async () => {});
+    render(<PlanCard card={{ preview: failedPreview, status: 'pending' }} text={text} disabled={false} respond={respond} />);
+    expect(screen.getByRole('alert').textContent).toContain('Session s1 is already running');
+    fireEvent.click(screen.getByText(text.planApprove));
+    expect(respond).toHaveBeenCalledWith('approved', undefined);
+  });
+
   it('english copy is present for the same keys', () => {
     const en = messages('en');
     const { rerender } = render(<PlanCard card={{ preview, status: 'closed', outcome: 'cancelled' }} text={en} disabled={false} respond={async () => {}} />);

@@ -285,4 +285,23 @@ describe('taskStore — tree ids / owner / events (roadmap 2.6)', () => {
     const task = taskStore.createTask('event-fail', { subject: 'X', description: 'x' });
     expect(task.id).toBe('1');
   });
+
+  it('demoteInProgressTasks：启动失败回收台账——in_progress 退回 pending，终态不动，无台账返回 null', async () => {
+    const taskStore = await import('../../../src/host/services/planning/taskStore');
+    const first = taskStore.replaceTasksAtomically('demote-session', ['step one', 'step two']);
+    expect(first[0].status).toBe('in_progress');
+    expect(first[1].status).toBe('pending');
+    // 模拟首步真实完成（终态必须保留）
+    taskStore.updateTask('demote-session', first[0].id, { status: 'completed', evidenceRefs: testEvidence() });
+    taskStore.updateTask('demote-session', first[1].id, { status: 'in_progress' });
+
+    const demoted = taskStore.demoteInProgressTasks('demote-session');
+    expect(demoted).not.toBeNull();
+    const byId = new Map((demoted ?? []).map((task) => [task.id, task]));
+    expect(byId.get(first[0].id)?.status).toBe('completed');
+    expect(byId.get(first[1].id)?.status).toBe('pending');
+    // 回收动作记成 unstarted 事件（pending ← in_progress）
+    expect(recordedEvents().some((event) => event.kind === 'unstarted' && event.taskId === first[1].id)).toBe(true);
+    expect(taskStore.demoteInProgressTasks('empty-session')).toBeNull();
+  });
 });

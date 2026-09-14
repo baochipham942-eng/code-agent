@@ -267,7 +267,7 @@ export class LanCompanionServer {
       if (request.action === 'command') {
         const command = companionCommandSchema.parse(request.command);
         if (command.deviceId !== device.deviceId) throw new Error('COMPANION_IDENTITY_MISMATCH');
-        result = this.gateway.submit(command);
+        result = await this.gateway.submit(command);
       } else if (request.action === 'push.register') {
         result = this.push?.register(device.deviceId, { provider: request.provider, token: request.token, environment: request.environment })
           ?? { kind: 'rejected', reason: 'unsupported_action' };

@@ -170,6 +170,24 @@ describe('PlanApprovalCard', () => {
     expect(mocks.invokeDomain).not.toHaveBeenCalled();
   });
 
+  it('失败后卡片带着原因重现且可再批准（同一记录重试）', () => {
+    const failed: PlanApprovalRecord = { ...approval, status: 'failed', failureReason: 'Session s1 is already running', decidedAt: 10 };
+    render(<PlanApprovalCard target={{ ...target, approval: failed }} />);
+    const banner = screen.getByTestId('plan-approval-failure');
+    expect(banner.textContent).toContain('Session s1 is already running');
+    // 按钮仍然在：失败卡可再次批准/取消。
+    expect(screen.getByTestId('plan-approve-button')).toBeTruthy();
+    expect(screen.getByText('计划 · 拒绝')).toBeTruthy();
+  });
+
+  it('存证行区分 starting 与 failed 摘要', () => {
+    render(<PlanApprovalEvidence approval={{ ...approval, status: 'starting', decidedAt: 10 }} />);
+    expect(screen.getByText('计划 · 启动中')).toBeTruthy();
+    cleanup();
+    render(<PlanApprovalEvidence approval={{ ...approval, status: 'failed', failureReason: 'No active session', decidedAt: 10 }} />);
+    expect(screen.getByText('计划 · 启动失败')).toBeTruthy();
+  });
+
   it('renders approved evidence as a success-green collapsed row with edited marks', () => {
     render(<PlanApprovalEvidence approval={{
       ...approval,

@@ -39,74 +39,12 @@ import {
 import { rebuildSessionMessagesFts } from '../../../src/host/services/core/database/sessionMessagesFts';
 import { SessionRepository } from '../../../src/host/services/core/repositories/SessionRepository';
 import type { Message } from '../../../src/shared/contract';
+import { applyTestSessionSchema } from '../../utils/applyTestSessionSchema';
 
+// 夹具走生产 applySchema（messagesSchemaFixtureGate 要求），不再手抄 messages DDL。
 function createSchema(db: BetterSqlite3.Database): void {
   db.pragma('journal_mode = WAL');
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS sessions (
-      id TEXT PRIMARY KEY,
-      user_id TEXT,
-      title TEXT NOT NULL,
-      model_provider TEXT NOT NULL,
-      model_name TEXT NOT NULL,
-      working_directory TEXT,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL,
-      is_deleted INTEGER NOT NULL DEFAULT 0,
-      synced_at INTEGER,
-      status TEXT DEFAULT 'idle',
-      workspace TEXT,
-      last_token_usage TEXT,
-      git_branch TEXT
-    );
-    CREATE TABLE IF NOT EXISTS messages (
-      id TEXT PRIMARY KEY,
-      session_id TEXT NOT NULL,
-      role TEXT NOT NULL,
-      content TEXT NOT NULL,
-      timestamp INTEGER NOT NULL,
-      tool_calls TEXT,
-      tool_results TEXT,
-      responses_output TEXT,
-      attachments TEXT,
-      thinking TEXT,
-      effort_level TEXT,
-      synced_at INTEGER,
-      content_parts TEXT,
-      metadata TEXT,
-      is_meta INTEGER NOT NULL DEFAULT 0,
-      compaction TEXT,
-      visibility TEXT NOT NULL DEFAULT 'active',
-      hidden_by_rewind_id TEXT,
-      hidden_at INTEGER
-    );
-    CREATE VIRTUAL TABLE IF NOT EXISTS session_messages_fts USING fts5(
-      message_id UNINDEXED,
-      session_id UNINDEXED,
-      role UNINDEXED,
-      content,
-      timestamp UNINDEXED,
-      tokenize = 'trigram'
-    );
-    CREATE TRIGGER IF NOT EXISTS messages_ai_fts AFTER INSERT ON messages BEGIN
-      INSERT INTO session_messages_fts (message_id, session_id, role, content, timestamp)
-      SELECT new.id, new.session_id, new.role, COALESCE(new.content, ''), new.timestamp
-      WHERE COALESCE(new.is_meta, 0) = 0
-        AND COALESCE(new.content, '') NOT LIKE '%【循环模式 · 第%轮】%'
-        AND COALESCE(new.content, '') NOT LIKE '%[[LOOP_WAIT]]%';
-    END;
-    CREATE TRIGGER IF NOT EXISTS messages_ad_fts AFTER DELETE ON messages BEGIN
-      DELETE FROM session_messages_fts WHERE message_id = old.id;
-    END;
-    CREATE TRIGGER IF NOT EXISTS messages_au_fts AFTER UPDATE OF content, is_meta ON messages BEGIN
-      DELETE FROM session_messages_fts WHERE message_id = old.id;
-      INSERT INTO session_messages_fts (message_id, session_id, role, content, timestamp)
-      SELECT new.id, new.session_id, new.role, COALESCE(new.content, ''), new.timestamp
-      WHERE COALESCE(new.is_meta, 0) = 0
-        AND COALESCE(new.content, '') NOT LIKE '%【循环模式 · 第%轮】%'
-        AND COALESCE(new.content, '') NOT LIKE '%[[LOOP_WAIT]]%';
-    END;
-  `);
+  applyTestSessionSchema(db);
 }
 
 function insertSession(db: BetterSqlite3.Database, id: string): void {

@@ -30,6 +30,7 @@ import {
   rmIsContainedInWorkspace,
   type RecursiveRmPathContext,
 } from './recursiveRmPathSafety';
+import { assessEgressPrecheck } from './egressPrecheck';
 
 const logger = createLogger('CommandSafety');
 
@@ -320,6 +321,14 @@ export function isKnownSafeCommand(command: string, shell: ShellKind = defaultSh
     return isKnownSafeWindowsCommand(command, UNCONDITIONALLY_SAFE);
   }
 
+  // ADR-066 D5 刀 0：出网预检命中（字面私网/元数据目的地，或网络命令目的地
+  // 文本不可解析）的命令不走免审批捷径——与 validateCommand 的 high 升级同判据。
+  // 吃原文而非 canonical.command：canonicalize 会剥引号，把 bash -c 'curl …' 的
+  // 脚本文本拆散，预检必须在还带着引号的原文上跑（parseShellCommand 内部自行归一）。
+  if (assessEgressPrecheck(command)) {
+    return false;
+  }
+
   // 2. Qualification uses the command identity as written.  The shared parser's
   // broader execution view is intentionally reserved for write-target extraction.
   const executions = qualificationExecutions(command);
@@ -544,6 +553,24 @@ export function validateCommand(
   if (SENSITIVE_ENV_PATTERNS.some(p => p.test(normalized))) {
     securityFlags.push('env_access');
     if (highestRisk === 'safe') highestRisk = 'low';
+  }
+
+  // ADR-066 D5 刀 0：bash 出网文本预检。posix 命令文法，powershell 由 windowsRules 管。
+  // 命中只升 high 走确认，不硬毙（避免误杀内网开发）；硬拒绝在刀 3 代理侧。
+  // 吃原文而非 normalized：canonicalize 剥引号会把 bash -c 'curl …' 的脚本拆散。
+  if (shell === 'posix') {
+    const egress = assessEgressPrecheck(command ?? '');
+    if (egress) {
+      securityFlags.push(
+        egress.kind === 'private-host' ? 'egress_private_host' : 'egress_unresolvable_target');
+      if (riskOrder.indexOf('high') > riskOrder.indexOf(highestRisk)) {
+        highestRisk = 'high';
+        blockReason = egress.kind === 'private-host'
+          ? `Network command destination is a private/loopback/metadata host: ${egress.host}`
+          : `Network command '${egress.tool}' destination is not resolvable from the command text`;
+        suggestion = 'Confirm the destination; private network and cloud metadata endpoints require explicit approval';
+      }
+    }
   }
 
   return {

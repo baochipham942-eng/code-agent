@@ -24,6 +24,7 @@ export PATH="/opt/homebrew/bin:/usr/local/bin:$HOME/.npm-global/bin:$PATH"
 
 case "${1:-}" in
   --install)
+    case "$REPO" in *[\&\<\>\"\']*) echo "REPO 含 XML 特殊字符，拒绝生成 plist: ${REPO}"; exit 1 ;; esac
     mkdir -p "$(dirname "$PLIST")" "$LOG_DIR"
     cat > "$PLIST" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>

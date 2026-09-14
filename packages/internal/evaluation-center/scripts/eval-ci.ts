@@ -1168,6 +1168,11 @@ async function mainImpl(
       console.error(chalk.red(`  Error: ${error instanceof Error ? error.message : String(error)}`));
       process.exit(1);
     }
+    // core 是可选桶（eval-split.ts 不生成它）：缺失时 fail-closed 点名，别让周跑对着空集「成功」退出。
+    if (effectiveSplit === 'core' && !splitFile.core?.length) {
+      console.error(chalk.red(`  Error: 切分文件（seed=${splitFile.seed}）没有 core 桶——周跑核心集需先在 eval-splits.json 加 core（held-in 子集，见 N-EVAL-CORESET-CRON 证据档）。`));
+      process.exit(1);
+    }
     fullSelectedCaseIds = applySplitFilter(undefined, splitFile, effectiveSplit)
       .filter((id) => runnableCaseIds.has(id));
     ids = applySplitFilter(rawIds, splitFile, effectiveSplit);

@@ -76,7 +76,7 @@ describe('defineSessionRoutes 表面差异', () => {
     installDomainRoutes(target, defineSessionRoutes('web'), {
       ...createDummyContext(),
       sessions: async () => svc,
-    } as SessionCommandContext);
+    } as unknown as SessionCommandContext);
     const invoke = registered.get('domain:session');
 
     await expect(invoke?.(undefined, { action: 'exportDiagnostics', payload: { sessionId: 's1' } }))
@@ -102,7 +102,7 @@ describe('defineSessionRoutes 表面差异', () => {
     installDomainRoutes(target, defineSessionRoutes('web'), {
       ...createDummyContext(),
       sessions: async () => svc,
-    } as SessionCommandContext);
+    } as unknown as SessionCommandContext);
 
     const response = await registered.get('domain:session')?.(undefined, {
       action: 'search',
@@ -125,7 +125,7 @@ describe('defineSessionRoutes 表面差异', () => {
       sessions: async () => {
         throw unavailable;
       },
-    } as SessionCommandContext);
+    } as unknown as SessionCommandContext);
     for (const action of ['exportDiagnostics', 'exportMarkdown', 'getMemoryContext', 'import', 'search']) {
       await expect(
         registered.get('domain:session')?.(undefined, { action, payload: { sessionId: 's1', query: 'q' } }),

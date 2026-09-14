@@ -8,6 +8,30 @@ import type {
 import { getMemoryDir } from '../lightMemory/indexLoader';
 import { resolveCanonicalRunPath } from '../runtime/runContext';
 import { canonicalizeCommand, ANSI_C_ESCAPES } from '../security/canonicalizeCommand';
+import { parseShellCommand } from '../security/commandParse';
+
+/**
+ * 命令里的字面环境变量赋值（PR #1790 三轮 ai-review Important）。
+ * shell 语义：命令内 `OUT=x; …> "$OUT/f"` 用的是 x，与进程导出的 env 无关——只拿
+ * process.env 展开 `$OUT` 会漏掉这个形态，让确定写记忆目录的命令逃过 directive
+ * 记忆门。复用 commandParse 已暴露的 `environmentAssignments`（独立赋值段由
+ * expandSegments 进 carried、前缀赋值 `OUT=x cmd` 直接挂 execution，shell-quote
+ * 已把引号值化）。值含 `$`/`反引号` 的（`OUT=$(date)`、`OUT=$OTHER` 链到查不到的）
+ * 不是字面值，跳过——展开不了，与 uncertain 的既有残余同口径：不门。
+ * 已知局限：`sh -c 'OUT=x; …>$OUT/f'` 这种赋值藏在内嵌脚本里的形态不在本函数
+ * 视野内（parser 的嵌套展开不给内嵌脚本回填赋值表），按展开不了处理。
+ */
+export function shellLiteralAssignments(command: string): Record<string, string> {
+  const assignments: Record<string, string> = {};
+  for (const execution of parseShellCommand(command).executions) {
+    for (const assignment of execution.environmentAssignments ?? []) {
+      const match = /^([A-Za-z_][A-Za-z0-9_]*)=([\s\S]*)$/.exec(assignment);
+      if (!match || /[$`]/.test(match[2])) continue;
+      assignments[match[1]] = match[2];
+    }
+  }
+  return assignments;
+}
 
 export interface ResolveToolWriteTargetsInput {
   definition: ToolDefinition;

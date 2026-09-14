@@ -5,7 +5,7 @@ import type {
 } from '../../shared/contract';
 import { getMemoryDir } from '../lightMemory/indexLoader';
 import { resolveCanonicalRunPath } from '../runtime/runContext';
-import { hasPathBoundaryMention, resolveToolPath, resolveToolWriteTargets } from '../tools/writeTargets';
+import { hasPathBoundaryMention, resolveToolPath, resolveToolWriteTargets, shellLiteralAssignments } from '../tools/writeTargets';
 import type { DirectiveMemoryConfirmationResult } from './directiveMemoryConfirmation';
 
 export interface DirectiveMemoryWriteAssessment {
@@ -42,14 +42,14 @@ const EXPANSION_MARKERS = /[$`*?{}]/;
 /** `$VAR` / `${VAR}`；`$(...)` 命令替换不匹配（`(` 不在变量名字符集里）。 */
 const VAR_REFERENCE = /\$(?:\{([A-Za-z_][A-Za-z0-9_]*)\}|([A-Za-z_][A-Za-z0-9_]*))/g;
 
-/** 用 env 展开词里的 $VAR/${VAR}；任一变量查不到 → undefined（展开不了，由调用方决定残余方向）。 */
+/** 用 lookup 展开词里的 $VAR/${VAR}；任一变量查不到 → undefined（展开不了，由调用方决定残余方向）。 */
 function expandWithEnv(
   word: string,
-  env: Record<string, string | undefined>,
+  lookup: (name: string) => string | undefined,
 ): string | undefined {
   let missing = false;
   const expanded = word.replace(VAR_REFERENCE, (match, braced: string | undefined, bare: string | undefined) => {
-    const value = env[braced ?? bare ?? ''];
+    const value = lookup(braced ?? bare ?? '');
     if (value === undefined) {
       missing = true;
       return match;
@@ -72,11 +72,11 @@ function uncertainMemoryTarget(
   memoryDir: string,
   memoryAlias: string,
   workingDirectory: string,
-  env: Record<string, string | undefined>,
+  lookup: (name: string) => string | undefined,
 ): string | undefined {
   if (!entry.startsWith(UNCERTAIN_REDIRECTION_PREFIX)) return undefined;
   const word = entry.slice(UNCERTAIN_REDIRECTION_PREFIX.length);
-  const candidate = expandWithEnv(word, env) ?? word;
+  const candidate = expandWithEnv(word, lookup) ?? word;
   if (!EXPANSION_MARKERS.test(candidate)) {
     // 完全展开（或本就没有变量）：按确定目标核验真实去向。
     const resolved = resolveToolPath(candidate, workingDirectory);
@@ -111,10 +111,21 @@ export function assessDirectiveMemoryWrite(input: AssessInput): DirectiveMemoryW
   // 字面值命中）完全不受影响。
   const memoryAlias = path.join(path.basename(path.dirname(memoryDir)), path.basename(memoryDir));
   const env = input.env ?? {};
+  // 展开 $VAR 的查找顺序（shell 语义，PR #1790 三轮 ai-review Important）：
+  // 命令内字面赋值优先（`OUT=x; …> "$OUT/f"` 用的是 x，与导出 env 无关）→ 再回落
+  // AssessInput.env（process.env 基准）。赋值解析复用 commandParse 的
+  // environmentAssignments，见 writeTargets.shellLiteralAssignments。
+  const commandAssignments: Record<string, string> = {};
+  for (const descriptor of input.definition.pathAuthority ?? []) {
+    if (descriptor.kind !== 'shell') continue;
+    const command = input.params[descriptor.commandParameter];
+    if (typeof command === 'string') Object.assign(commandAssignments, shellLiteralAssignments(command));
+  }
+  const lookup = (name: string): string | undefined => commandAssignments[name] ?? env[name];
   const targets = [
     ...resolved.targets.filter((target) => isInside(target, memoryDir)),
     ...resolved.uncertain
-      .map((entry) => uncertainMemoryTarget(entry, memoryDir, memoryAlias, input.workingDirectory, env))
+      .map((entry) => uncertainMemoryTarget(entry, memoryDir, memoryAlias, input.workingDirectory, lookup))
       .filter((target): target is string => target !== undefined),
   ];
   const uniqueTargets = [...new Set(targets)].sort();

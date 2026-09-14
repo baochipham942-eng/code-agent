@@ -83,6 +83,13 @@ describe('RQ-066 复现：uncertain 但不触碰记忆目录，不触发 directi
     ['普通文本顺带提到 .code-agent/memory（前界非边界）', { command: 'echo hi > /tmp/notes.code-agent/memory/*.md' }],
     // Nit：别名后面不是 /（近似目录名 memory2）→ 不算证据
     ['近似目录名 .code-agent/memory2（后界非边界）', { command: 'echo hi > /tmp/.code-agent/memory2/*.md' }],
+    // 命令内字面赋值指向目录外 → 展开核验后不门
+    ['命令内赋值 OUT=/tmp/x 指向目录外', { command: 'OUT=/tmp/x; echo hi > "$OUT/f"' }],
+    // 命令内赋值的值非字面（OUT=$(date)）→ 展开不了 → 不门
+    // （有意接受的残余，与缺变量同口径：对它 fail-closed 正是 RQ-066 的病）
+    ['命令内赋值的值非字面（OUT=$(date)）', { command: 'OUT=$(date); echo hi > "$OUT/f"' }],
+    // 命令内赋值优先于导出 env（shell 语义）：命令说 /tmp 就是 /tmp，env 说记忆目录也不算
+    ['命令内赋值优先于 env（OUT=/tmp 覆盖 env 的记忆目录）', { command: 'OUT=/tmp; echo hi > "$OUT/f"' }, { OUT: MEMORY_DIR }],
   ];
 
   it.each(noGateCases)('%s → requiresConfirmation === false', (_label, params, env) => {
@@ -134,6 +141,30 @@ describe('红线：确定写记忆目录、env 展开命中、或路径边界字
     const assessment = assessBash(
       { command: 'echo hi > "${OUT}/file.md"' },
       { OUT: MEMORY_DIR },
+    );
+    expect(assessment.requiresConfirmation).toBe(true);
+    expect(assessment.targets).toContain(
+      resolveCanonicalRunPath(path.join(MEMORY_DIR, 'file.md')),
+    );
+  });
+
+  it('ai-review 三轮 Important：命令内赋值指向记忆目录（OUT 不在 env 里）→ 门住', () => {
+    const assessment = assessBash(
+      { command: `OUT=${MEMORY_DIR}; echo hi > "$OUT/file.md"` },
+      {},
+    );
+    expect(assessment.requiresConfirmation).toBe(true);
+    expect(assessment.targets).toContain(
+      resolveCanonicalRunPath(path.join(MEMORY_DIR, 'file.md')),
+    );
+  });
+
+  it('ai-review 三轮 Important：前缀赋值形态 OUT=<记忆目录> sh -c … → 门住', () => {
+    // commandParse 把前缀赋值挂上内嵌脚本的 execution（environmentAssignments），
+    // 这个形态在 parser 能力范围内，必须门住。
+    const assessment = assessBash(
+      { command: `OUT=${MEMORY_DIR} sh -c 'echo hi > "$OUT/file.md"'` },
+      {},
     );
     expect(assessment.requiresConfirmation).toBe(true);
     expect(assessment.targets).toContain(

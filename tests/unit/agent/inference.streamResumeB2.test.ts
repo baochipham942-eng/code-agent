@@ -21,9 +21,10 @@ import { ArtifactState } from '../../../src/host/agent/runtime/artifactState';
 import type { AgentEvent } from '../../../src/shared/contract/agent';
 import type { StreamCallback } from '../../../src/host/model/types';
 
-const { mockGetApiKey, mockGetSettings } = vi.hoisted(() => ({
+const { mockGetApiKey, mockGetSettings, mockAddMessageToSession } = vi.hoisted(() => ({
   mockGetApiKey: vi.fn(() => 'mock-key'),
   mockGetSettings: vi.fn(() => ({ models: { providers: {} } })),
+  mockAddMessageToSession: vi.fn(() => Promise.resolve()),
 }));
 
 vi.mock('../../../src/host/observability/posthogNode', () => ({ trackNode: vi.fn() }));
@@ -44,7 +45,7 @@ vi.mock('../../../src/host/services', () => ({
     startGenerationInSpan: vi.fn(),
     endGeneration: vi.fn(),
   }),
-  getSessionManager: () => ({ addMessageToSession: vi.fn().mockResolvedValue(undefined) }),
+  getSessionManager: () => ({ addMessageToSession: mockAddMessageToSession }),
 }));
 
 vi.mock('../../../src/host/mcp/logCollector.js', () => ({
@@ -203,6 +204,25 @@ describe('contextAssembly inference —— B2 诚实分段与重发收编（ADR-
     expect(response.content).toBe('续答正文。');
     // renderer 的 message_delta append 通道两段照发（呈现分野是刀 4）：数据层分段以落库为准
     expect(streamedText(ctx)).toBe('断点片段。续答正文。');
+  });
+
+  it('stream_break：persistMessage 未注入时降级 sessionManager.addMessageToSession（PR #1828 复审 Important）', async () => {
+    const ctx = buildCtx(); // 不注入 persistMessage
+    ctx.runtime.modelRouter.inference = vi.fn((_messages, _tools, _cfg, onStream?: StreamCallback) => {
+      onStream?.({ type: 'text', content: '断点片段。' });
+      onStream?.({ type: 'stream_break', error: 'ECONNRESET' });
+      onStream?.({ type: 'text', content: '续答正文。' });
+      return Promise.resolve({ type: 'text' as const, content: '续答正文。', finishReason: 'stop' });
+    });
+
+    const response = await inference(ctx);
+
+    expect(response.content).toBe('续答正文。');
+    // 保片段是 fire-and-forget：等微任务排空再断言（对齐 addAndPersistMessage 的降级链）
+    await vi.waitFor(() => expect(mockAddMessageToSession).toHaveBeenCalledTimes(1));
+    const [sessionId, partial] = mockAddMessageToSession.mock.calls[0] as unknown as [string, { content: string }];
+    expect(sessionId).toBe('session-1');
+    expect(partial.content).toBe('断点片段。\n\n[连接中断 — 部分回答已保留]');
   });
 
   it('network retry：重发前先保片段（persist 早于重发派发），重发消息不含 partial，turn 不拼缝', async () => {

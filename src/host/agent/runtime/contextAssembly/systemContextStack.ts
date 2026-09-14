@@ -374,9 +374,31 @@ export function persistStreamedPartialBeforeResend(ctx: ContextAssemblyCtx, mark
   };
   ctx.runtime.turn.resetStreamedContent();
   logger.info('[AgentLoop] 断点 partial 已分段落库（ADR-068 刀 3）', { reason, charCount: streamed.length });
-  void Promise.resolve(ctx.runtime.persistMessage?.(partialMessage)).catch((err: unknown) => {
-    logger.warn('[AgentLoop] persist streamed partial before resend failed:', err);
-  });
+  // 持久化链路对齐 addAndPersistMessage：persistMessage callback 缺失或失败时降级
+  // sessionManager.addMessageToSession（idempotent），全失败只 warn 不抛——「保片段」
+  // 落库失败不应反过来打断重发本身。
+  void (async () => {
+    let persisted = false;
+    if (ctx.runtime.persistMessage) {
+      try {
+        await ctx.runtime.persistMessage(partialMessage);
+        persisted = true;
+      } catch (err: unknown) {
+        logger.warn('[AgentLoop] persistMessage callback failed for streamed partial; falling back to sessionManager', {
+          sessionId: ctx.runtime.sessionId,
+          messageId: partialMessage.id,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+    if (!persisted && ctx.runtime.sessionId) {
+      try {
+        await getSessionManager().addMessageToSession(ctx.runtime.sessionId, partialMessage);
+      } catch (err: unknown) {
+        logger.warn('[AgentLoop] persist streamed partial before resend failed:', err);
+      }
+    }
+  })();
 }
 
 export function recordContextEventsForMessage(ctx: ContextAssemblyCtx, message: Message): void {

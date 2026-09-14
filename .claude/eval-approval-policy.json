@@ -98,22 +98,6 @@
       }
     },
     {
-      "id": "allow-bash-directive-memory-probe-in-eval",
-      "effect": "allow",
-      "tool": "Bash",
-      "match": {
-        "requestType": "file_write"
-      }
-    },
-    {
-      "id": "allow-lowercase-bash-directive-memory-probe-in-eval",
-      "effect": "allow",
-      "tool": "bash",
-      "match": {
-        "requestType": "file_write"
-      }
-    },
-    {
       "id": "deny-image_process-in-eval-workspace",
       "effect": "deny",
       "tool": "image_process",

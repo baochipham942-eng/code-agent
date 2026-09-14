@@ -60,6 +60,8 @@ const zh = {
 
   artifacts: '成果文件', preview: '预览', saveToDevice: '保存到此设备', savedToDevice: '已保存到此设备', exportFailed: '保存失败，请重试。',
   previewHint: '先预览，确认后再保存。不会自动写入相册或文件。',
+  pdfInlineUnavailable: '当前设备不能在应用内打开 PDF。保存到此设备后，用系统文件或阅读器打开。',
+  pdfOpenExternally: '保存后用系统应用打开',
   storage: '存储与缓存', storageUsage: '预览缓存', storageConversation: '会话缓存',
   storageProtected: '草稿、配对与设置不在缓存里，清理不会删除它们。',
   clearCache: '清理缓存', clearCacheConfirm: '将删除可重新下载的预览副本和本机会话缓存。草稿、配对和设置会保留。',
@@ -154,6 +156,8 @@ const en: Record<keyof typeof zh, string> = {
 
   artifacts: 'Files', preview: 'Preview', saveToDevice: 'Save on this device', savedToDevice: 'Saved on this device', exportFailed: 'Could not save. Retry.',
   previewHint: 'Preview first, then save. Nothing is written to Photos or Files until you save.',
+  pdfInlineUnavailable: 'This device cannot show a PDF inside Neo. Save it here, then open it with Files or a PDF reader.',
+  pdfOpenExternally: 'Save, then open with a system app',
   storage: 'Storage and cache', storageUsage: 'Preview cache', storageConversation: 'Conversation cache',
   storageProtected: 'Drafts, pairing, and settings are not in the cache. Clearing it will not delete them.',
   clearCache: 'Clear cache', clearCacheConfirm: 'This deletes preview copies that can be downloaded again and cached conversations on this phone. Drafts, pairing, and settings stay.',

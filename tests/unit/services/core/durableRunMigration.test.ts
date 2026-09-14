@@ -163,4 +163,100 @@ describe('Durable Run migration draft', () => {
     expect(db.pragma('foreign_keys', { simple: true })).toBe(1);
     db.close();
   });
+
+  const createLegacyDurableRuns = (db: Database.Database, kinds: string) => {
+    db.exec(`
+      CREATE TABLE durable_runs (
+        run_id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        parent_run_id TEXT,
+        engine_kind TEXT NOT NULL CHECK (engine_kind IN (${kinds})),
+        engine_ref_json TEXT,
+        status TEXT NOT NULL CHECK (status IN ('created','running','waiting','paused','recovering','completed','failed','cancelled')),
+        attempt INTEGER NOT NULL CHECK (attempt >= 1),
+        next_event_seq INTEGER NOT NULL DEFAULT 1 CHECK (next_event_seq >= 1),
+        checkpoint_seq INTEGER NOT NULL DEFAULT 0 CHECK (checkpoint_seq >= 0),
+        envelope_json TEXT NOT NULL,
+        owner_id TEXT,
+        process_instance_id TEXT,
+        owner_epoch INTEGER NOT NULL DEFAULT 0 CHECK (owner_epoch >= 0),
+        lease_expires_at INTEGER,
+        terminal_event_seq INTEGER,
+        terminal_at INTEGER,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+    `);
+  };
+
+  it('preserves kinds added by a branch merged earlier (loop-durable-k2 adds loop first)', () => {
+    const db = new Database(':memory:');
+    db.pragma('foreign_keys = ON');
+    // 模拟对方先合 main：已有库 CHECK 已含 'loop'。
+    createLegacyDurableRuns(db, "'native','agent_team','dynamic_workflow','external_cli','loop'");
+    db.prepare(`
+      INSERT INTO durable_runs
+        (run_id, session_id, engine_kind, status, attempt, envelope_json, created_at, updated_at)
+        VALUES ('run-loop', 'session-1', 'loop', 'running', 1, '{}', 1, 1)
+    `).run();
+
+    applyDurableRunMigrationDraft(db);
+
+    // 旧行保留，subagent_single 放行，且 'loop' 仍在 CHECK 里（插 loop 行不炸）
+    expect(db.prepare('SELECT run_id, engine_kind FROM durable_runs').all())
+      .toEqual([{ run_id: 'run-loop', engine_kind: 'loop' }]);
+    db.prepare(`
+      INSERT INTO durable_runs
+        (run_id, session_id, engine_kind, status, attempt, envelope_json, created_at, updated_at)
+        VALUES ('run-bg', 'session-2', 'subagent_single', 'running', 1, '{}', 2, 2)
+    `).run();
+    db.prepare(`
+      INSERT INTO durable_runs
+        (run_id, session_id, engine_kind, status, attempt, envelope_json, created_at, updated_at)
+        VALUES ('run-loop-2', 'session-3', 'loop', 'running', 1, '{}', 3, 3)
+    `).run();
+    const sql = (db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'durable_runs'").get() as { sql: string }).sql;
+    expect(sql).toContain("'loop'");
+    db.close();
+  });
+
+  it('is a no-op when subagent_single is already present', () => {
+    const db = new Database(':memory:');
+    db.pragma('foreign_keys = ON');
+    createLegacyDurableRuns(db, "'native','subagent_single'");
+    db.prepare(`
+      INSERT INTO durable_runs
+        (run_id, session_id, engine_kind, status, attempt, envelope_json, created_at, updated_at)
+        VALUES ('run-1', 'session-1', 'native', 'running', 1, '{}', 1, 1)
+    `).run();
+    const before = (db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'durable_runs'").get() as { sql: string }).sql;
+
+    applyDurableRunMigrationDraft(db);
+
+    const after = (db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'durable_runs'").get() as { sql: string }).sql;
+    expect(after).toBe(before);
+    expect(db.prepare('SELECT run_id FROM durable_runs').all()).toEqual([{ run_id: 'run-1' }]);
+    db.close();
+  });
+
+  it('keeps unknown kinds untouched when widening', () => {
+    const db = new Database(':memory:');
+    db.pragma('foreign_keys = ON');
+    // 手工塞一个本分支不认识的 kind，重建后必须原样保留。
+    createLegacyDurableRuns(db, "'native','future_x'");
+    db.prepare(`
+      INSERT INTO durable_runs
+        (run_id, session_id, engine_kind, status, attempt, envelope_json, created_at, updated_at)
+        VALUES ('run-future', 'session-1', 'future_x', 'running', 1, '{}', 1, 1)
+    `).run();
+
+    applyDurableRunMigrationDraft(db);
+
+    const sql = (db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'durable_runs'").get() as { sql: string }).sql;
+    expect(sql).toContain("'future_x'");
+    expect(sql).toContain("'subagent_single'");
+    expect(db.prepare('SELECT run_id, engine_kind FROM durable_runs').all())
+      .toEqual([{ run_id: 'run-future', engine_kind: 'future_x' }]);
+    db.close();
+  });
 });

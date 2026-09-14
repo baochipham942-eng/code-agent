@@ -1,5 +1,14 @@
 import type BetterSqlite3 from 'better-sqlite3';
 
+/** Fresh durable_runs CHECK. Widen does not compare against this list; it only adds missing 'subagent_single'. */
+const FRESH_DURABLE_RUN_ENGINE_KINDS = [
+  'native',
+  'agent_team',
+  'dynamic_workflow',
+  'external_cli',
+  'subagent_single',
+] as const;
+
 /**
  * S0 migration draft. It is intentionally not called by DatabaseService yet.
  * S1 owns production repository wiring and the rollout switch.
@@ -7,34 +16,7 @@ import type BetterSqlite3 from 'better-sqlite3';
 export function applyDurableRunMigrationDraft(db: BetterSqlite3.Database): void {
   widenDurableRunsEngineKindCheck(db);
   db.exec(`
-    CREATE TABLE IF NOT EXISTS durable_runs (
-      run_id TEXT PRIMARY KEY,
-      session_id TEXT NOT NULL,
-      parent_run_id TEXT,
-      engine_kind TEXT NOT NULL CHECK (engine_kind IN ('native','agent_team','dynamic_workflow','external_cli','subagent_single')),
-      engine_ref_json TEXT,
-      status TEXT NOT NULL CHECK (status IN ('created','running','waiting','paused','recovering','completed','failed','cancelled')),
-      attempt INTEGER NOT NULL CHECK (attempt >= 1),
-      next_event_seq INTEGER NOT NULL DEFAULT 1 CHECK (next_event_seq >= 1),
-      checkpoint_seq INTEGER NOT NULL DEFAULT 0 CHECK (checkpoint_seq >= 0),
-      envelope_json TEXT NOT NULL,
-      owner_id TEXT,
-      process_instance_id TEXT,
-      owner_epoch INTEGER NOT NULL DEFAULT 0 CHECK (owner_epoch >= 0),
-      lease_expires_at INTEGER,
-      terminal_event_seq INTEGER,
-      terminal_at INTEGER,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL,
-      CHECK (
-        (owner_epoch = 0 AND owner_id IS NULL AND process_instance_id IS NULL AND lease_expires_at IS NULL)
-        OR (owner_epoch >= 1 AND owner_id IS NOT NULL AND process_instance_id IS NOT NULL AND lease_expires_at IS NOT NULL)
-      ),
-      CHECK (
-        (status IN ('completed','failed','cancelled') AND terminal_event_seq IS NOT NULL AND terminal_at IS NOT NULL)
-        OR (status NOT IN ('completed','failed','cancelled') AND terminal_event_seq IS NULL AND terminal_at IS NULL)
-      )
-    );
+    ${createDurableRunsTableSql('durable_runs', FRESH_DURABLE_RUN_ENGINE_KINDS, true)};
 
     CREATE INDEX IF NOT EXISTS idx_durable_runs_session ON durable_runs (session_id, created_at);
     CREATE INDEX IF NOT EXISTS idx_durable_runs_recovery ON durable_runs (status, lease_expires_at);
@@ -136,49 +118,37 @@ export function rollbackDurableRunMigrationDraft(db: BetterSqlite3.Database): vo
 /**
  * N-BGSPAWN-DURABLE：durable_runs.engine_kind 的 CHECK 原先只放 4 种 engine，
  * 后台单子代理收口需要 'subagent_single'。SQLite 不能 ALTER CHECK，已建库只能
- * 建新表搬数据再改名。子表（attempts/events/...）带 ON DELETE CASCADE 外键指向
- * durable_runs，DROP 母表时若 foreign_keys 还开着会把子表行级联清掉，所以重建
- * 全程在 foreign_keys=OFF 下做（pragma 在事务外切换才生效），结束后恢复。
- * 索引随 DROP TABLE 一起消失，由上面 exec 里的 CREATE INDEX IF NOT EXISTS 重建。
+ * 建新表搬数据再改名。
+ *
+ * R1 会师：RQ-125（loop-durable-k2，未合 main）用同构 widen 加 'loop'。两笔合入
+ * 顺序不定，所以这里必须读现有 CHECK 清单、缺 'subagent_single' 才重建，并把已有
+ * kind（含 'loop' 或任何未知 kind）原样带上。不许拿一份写死的目标清单整体替换——
+ * 否则先合者加的 'loop' 会被后合者抹掉。已含 'subagent_single' 则 no-op
+ * （不碰 foreign_keys、不搬表）；解析不出 CHECK 清单则 throw，拒绝 widen（fail-closed）。
+ *
+ * 子表（attempts/events/...）带 ON DELETE CASCADE 外键指向 durable_runs，DROP 母表
+ * 时若 foreign_keys 还开着会把子表行级联清掉，所以重建全程在 foreign_keys=OFF 下做
+ * （pragma 在事务外切换才生效），结束后恢复。索引随 DROP TABLE 一起消失，由上面
+ * exec 里的 CREATE INDEX IF NOT EXISTS 重建。
  */
 function widenDurableRunsEngineKindCheck(db: BetterSqlite3.Database): void {
   const row = db.prepare(`
     SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'durable_runs' LIMIT 1
   `).get() as { sql?: string } | undefined;
-  if (!row?.sql || row.sql.includes("'subagent_single'")) return;
+  if (!row?.sql) return;
 
+  const existing = parseEngineKindsFromCreateSql(row.sql);
+  if (!existing) {
+    throw new Error('durable_runs.engine_kind CHECK is unreadable; refuse to widen');
+  }
+  if (existing.includes('subagent_single')) return;
+
+  const widened = [...existing, 'subagent_single'];
   db.pragma('foreign_keys = OFF');
   try {
     db.transaction(() => {
       db.exec(`
-        CREATE TABLE durable_runs_new (
-          run_id TEXT PRIMARY KEY,
-          session_id TEXT NOT NULL,
-          parent_run_id TEXT,
-          engine_kind TEXT NOT NULL CHECK (engine_kind IN ('native','agent_team','dynamic_workflow','external_cli','subagent_single')),
-          engine_ref_json TEXT,
-          status TEXT NOT NULL CHECK (status IN ('created','running','waiting','paused','recovering','completed','failed','cancelled')),
-          attempt INTEGER NOT NULL CHECK (attempt >= 1),
-          next_event_seq INTEGER NOT NULL DEFAULT 1 CHECK (next_event_seq >= 1),
-          checkpoint_seq INTEGER NOT NULL DEFAULT 0 CHECK (checkpoint_seq >= 0),
-          envelope_json TEXT NOT NULL,
-          owner_id TEXT,
-          process_instance_id TEXT,
-          owner_epoch INTEGER NOT NULL DEFAULT 0 CHECK (owner_epoch >= 0),
-          lease_expires_at INTEGER,
-          terminal_event_seq INTEGER,
-          terminal_at INTEGER,
-          created_at INTEGER NOT NULL,
-          updated_at INTEGER NOT NULL,
-          CHECK (
-            (owner_epoch = 0 AND owner_id IS NULL AND process_instance_id IS NULL AND lease_expires_at IS NULL)
-            OR (owner_epoch >= 1 AND owner_id IS NOT NULL AND process_instance_id IS NOT NULL AND lease_expires_at IS NOT NULL)
-          ),
-          CHECK (
-            (status IN ('completed','failed','cancelled') AND terminal_event_seq IS NOT NULL AND terminal_at IS NOT NULL)
-            OR (status NOT IN ('completed','failed','cancelled') AND terminal_event_seq IS NULL AND terminal_at IS NULL)
-          )
-        );
+        ${createDurableRunsTableSql('durable_runs_new', widened, false)};
         INSERT INTO durable_runs_new (
           run_id, session_id, parent_run_id, engine_kind, engine_ref_json, status, attempt,
           next_event_seq, checkpoint_seq, envelope_json, owner_id, process_instance_id,
@@ -196,4 +166,65 @@ function widenDurableRunsEngineKindCheck(db: BetterSqlite3.Database): void {
   } finally {
     db.pragma('foreign_keys = ON');
   }
+}
+
+function parseEngineKindsFromCreateSql(sql: string): string[] | null {
+  const match = sql.match(
+    /engine_kind\s+TEXT\s+NOT\s+NULL\s+CHECK\s*\(\s*engine_kind\s+IN\s*\(([^)]+)\)\s*\)/i,
+  );
+  if (!match) return null;
+  const kinds = [...match[1].matchAll(/'([^']+)'/g)].map((entry) => entry[1]);
+  return kinds.length > 0 ? kinds : null;
+}
+
+function quoteSqlIdent(name: string): string {
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+    throw new Error(`unsafe SQL identifier: ${name}`);
+  }
+  return name;
+}
+
+function quoteEngineKindList(kinds: readonly string[]): string {
+  for (const kind of kinds) {
+    if (!/^[a-z][a-z0-9_]*$/.test(kind)) {
+      throw new Error(`unsafe durable_runs engine_kind: ${kind}`);
+    }
+  }
+  return kinds.map((kind) => `'${kind}'`).join(',');
+}
+
+function createDurableRunsTableSql(
+  tableName: string,
+  engineKinds: readonly string[],
+  ifNotExists: boolean,
+): string {
+  const exists = ifNotExists ? 'IF NOT EXISTS ' : '';
+  return `CREATE TABLE ${exists}${quoteSqlIdent(tableName)} (
+      run_id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      parent_run_id TEXT,
+      engine_kind TEXT NOT NULL CHECK (engine_kind IN (${quoteEngineKindList(engineKinds)})),
+      engine_ref_json TEXT,
+      status TEXT NOT NULL CHECK (status IN ('created','running','waiting','paused','recovering','completed','failed','cancelled')),
+      attempt INTEGER NOT NULL CHECK (attempt >= 1),
+      next_event_seq INTEGER NOT NULL DEFAULT 1 CHECK (next_event_seq >= 1),
+      checkpoint_seq INTEGER NOT NULL DEFAULT 0 CHECK (checkpoint_seq >= 0),
+      envelope_json TEXT NOT NULL,
+      owner_id TEXT,
+      process_instance_id TEXT,
+      owner_epoch INTEGER NOT NULL DEFAULT 0 CHECK (owner_epoch >= 0),
+      lease_expires_at INTEGER,
+      terminal_event_seq INTEGER,
+      terminal_at INTEGER,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      CHECK (
+        (owner_epoch = 0 AND owner_id IS NULL AND process_instance_id IS NULL AND lease_expires_at IS NULL)
+        OR (owner_epoch >= 1 AND owner_id IS NOT NULL AND process_instance_id IS NOT NULL AND lease_expires_at IS NOT NULL)
+      ),
+      CHECK (
+        (status IN ('completed','failed','cancelled') AND terminal_event_seq IS NOT NULL AND terminal_at IS NOT NULL)
+        OR (status NOT IN ('completed','failed','cancelled') AND terminal_event_seq IS NULL AND terminal_at IS NULL)
+      )
+    )`;
 }

@@ -103,6 +103,29 @@ describe('persistence health renderer helpers', () => {
       .toContain(zh.settings.data.persistence.restoreLowDisk);
   });
 
+  it('translates DB_READONLY and LEDGER_CORRUPT instead of leaking a host message', () => {
+    const readonly = {
+      status: 'degraded',
+      mode: 'database',
+      durable: false,
+      message: 'History is readable; writes are refused.',
+      reason: SQLITE_INTEGRITY.READONLY,
+      checkedAt: 80,
+    } satisfies PersistenceHealth;
+    expect(describePersistenceBanner(readonly, zh.settings.data.persistence).body)
+      .toContain(zh.settings.data.persistence.degradedReadonly);
+    const ledger = {
+      status: 'degraded',
+      mode: 'database',
+      durable: true,
+      message: 'ignored',
+      reason: SQLITE_INTEGRITY.LEDGER_CORRUPT,
+      checkedAt: 81,
+    } satisfies PersistenceHealth;
+    expect(describePersistenceBanner(ledger, zh.settings.data.persistence).body)
+      .toContain(zh.settings.data.persistence.degradedLedgerCorrupt);
+  });
+
   it('keeps a clear fallback warning when health text is missing', () => {
     expect(getPersistenceWarningText(unavailable)).toBe('历史持久化不可用，当前只会话内有效。');
     expect(getPersistenceWarningText(null)).toBe('历史持久化不可用，当前只会话内有效。');

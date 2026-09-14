@@ -78,6 +78,8 @@ export const enSettingsSystem = {
         degradedFtsReindexing: 'Full-text index was recreated and history is being backfilled; search may be temporarily incomplete. Writes are unaffected.',
         degradedQuickCheck: 'Database integrity check failed. The next launch will try to restore from a backup.',
         degradedLocal: 'Some tables are damaged. Diagnostics were recorded; writes still work.',
+        degradedReadonly: 'The database is damaged and opened read-only. History and search still work; new sessions, memory writes, and runs are refused.',
+        degradedLedgerCorrupt: 'Audit ledgers are damaged. History still works; some diagnostic records may be missing.',
         recoveredTitle: 'Restored from backup',
         recoveredBody: 'The database was restored from a local backup taken at {timestamp}. Changes after that point may be lost.',
         corruptNoBackup: 'The database is corrupt and no usable backup was found. This session is memory-only.',

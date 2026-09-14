@@ -47,6 +47,8 @@ interface DurableRunAssemblyInput {
   processInstanceId: string;
   env?: NodeJS.ProcessEnv;
   leaseDurationMs?: number;
+  /** degraded/readonly/corrupt：装配 stores=null 的 kernel，创建 run 必抛 DURABLE_RUN_PERSISTENCE_UNAVAILABLE。 */
+  persistenceUnavailable?: boolean;
 }
 
 interface DurableRunRecoveryInput {
@@ -90,6 +92,34 @@ export function assembleDurableRun(
       recover: async () => ({
         policy,
         kernel: null,
+        recoveryRuntime: null,
+        readService,
+        recoveryResults: [],
+        shutdown: async () => undefined,
+      }),
+    };
+  }
+  // 只读降级/持久化不可用（刀3）：装配 stores=null 的 kernel——durable 激活语义下
+  // 创建 run 必抛 DURABLE_RUN_PERSISTENCE_UNAVAILABLE（fail-closed），不退回 legacy 纯内存。
+  if (input.persistenceUnavailable) {
+    const kernel = new DurableRunKernel({
+      stores: null,
+      ownerId: input.ownerId,
+      processInstanceId: input.processInstanceId,
+      leaseDurationMs: input.leaseDurationMs ?? DEFAULT_DURABLE_RUN_LEASE_DURATION_MS,
+    });
+    input.registry.configureDurableKernel(kernel);
+    // 与主路径同一不变量：arm 只许在 configure 成功之后；spawn 落账时被
+    // stores-null kernel fail-closed 拒绝，而不是死等一个永远不会 configure 的账本。
+    armBackgroundSubagentDurableLedger();
+    armLoopDurableLedger();
+    return {
+      policy,
+      kernel,
+      readService,
+      recover: async () => ({
+        policy,
+        kernel,
         recoveryRuntime: null,
         readService,
         recoveryResults: [],

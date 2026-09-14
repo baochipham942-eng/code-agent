@@ -634,8 +634,9 @@ async function initializeServices(): Promise<void> {
       capabilityBootstrap,
       assemble: () => assembleDurableRun({
         registry: runRegistry,
-        repository: durableRunRolloutPolicy.durableActivation
-          ? databaseForDurableRun?.getDurableRunRepository() ?? null
+        persistenceUnavailable: databaseForDurableRun.isDegradedMode(),
+        repository: durableRunRolloutPolicy.durableActivation && !databaseForDurableRun.isDegradedMode()
+          ? databaseForDurableRun.getDurableRunRepository()
           : null,
         ownerId: 'web-native-host',
         processInstanceId: `web-${process.pid}-${randomUUID()}`,

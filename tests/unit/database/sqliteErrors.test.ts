@@ -1,9 +1,16 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import {
   classifySqliteIntegrityError,
   DatabaseIntegrityError,
+  DatabaseReadOnlyError,
   isSqliteCorruptionError,
 } from '../../../src/host/services/core/database/sqliteErrors';
+import {
+  getLedgerCorruptionStreak,
+  recordLedgerWriteError,
+  setLedgerCorruptionListener,
+} from '../../../src/host/services/core/database/ledgerCorruptionMonitor';
+import { SQLITE_INTEGRITY } from '../../../src/shared/constants';
 
 function sqliteError(code: string, message: string): Error {
   return Object.assign(new Error(message), { name: 'SqliteError', code });
@@ -86,5 +93,54 @@ describe('classifySqliteIntegrityError', () => {
     const err = new DatabaseIntegrityError('DB_CORRUPT_NO_BACKUP');
     expect(err.code).toBe('DB_CORRUPT_NO_BACKUP');
     expect(err.message).toBe('DB_CORRUPT_NO_BACKUP');
+  });
+
+  it('DatabaseReadOnlyError exposes the stable DB_READONLY code', () => {
+    const err = new DatabaseReadOnlyError();
+    expect(err.code).toBe(SQLITE_INTEGRITY.READONLY);
+    expect(err.message).not.toMatch(/[一-鿿]/);
+  });
+});
+
+describe('ledger corruption monitor', () => {
+  afterEach(() => {
+    recordLedgerWriteError.resetForTests();
+  });
+
+  it('degrades only after consecutive corruption errors and ignores transients', () => {
+    const signals: Array<{ reason: string; consecutive: number }> = [];
+    const warnings: string[] = [];
+    setLedgerCorruptionListener((signal) => signals.push(signal));
+    const warn = (message: string) => { warnings.push(message); };
+
+    recordLedgerWriteError(sqliteError('SQLITE_CORRUPT', 'database disk image is malformed'), warn);
+    recordLedgerWriteError(sqliteError('SQLITE_CORRUPT', 'database disk image is malformed'), warn);
+    expect(getLedgerCorruptionStreak()).toBe(2);
+    expect(signals).toEqual([]);
+
+    // 瞬时 IOERR / BUSY 不计数且清零（分类走刀2 的 classifySqliteIntegrityError）
+    recordLedgerWriteError(sqliteError('SQLITE_IOERR_SHMMAP', 'disk I/O error'), warn);
+    expect(getLedgerCorruptionStreak()).toBe(0);
+    recordLedgerWriteError(new Error('SQLITE_BUSY: database is locked'), warn);
+    expect(getLedgerCorruptionStreak()).toBe(0);
+    expect(signals).toEqual([]);
+
+    recordLedgerWriteError(sqliteError('SQLITE_CORRUPT', 'database disk image is malformed'), warn);
+    recordLedgerWriteError(sqliteError('SQLITE_CORRUPT', 'database disk image is malformed'), warn);
+    recordLedgerWriteError(sqliteError('SQLITE_CORRUPT', 'database disk image is malformed'), warn);
+    expect(getLedgerCorruptionStreak()).toBe(SQLITE_INTEGRITY.LEDGER_CORRUPTION_THRESHOLD);
+    expect(signals).toEqual([{
+      reason: SQLITE_INTEGRITY.LEDGER_CORRUPT,
+      consecutive: SQLITE_INTEGRITY.LEDGER_CORRUPTION_THRESHOLD,
+    }]);
+    expect(warnings.some((line) => line.includes('ledger corruption threshold reached'))).toBe(true);
+  });
+
+  it('does not count read-only refusals as corruption', () => {
+    const signals: unknown[] = [];
+    setLedgerCorruptionListener((signal) => signals.push(signal));
+    recordLedgerWriteError(new DatabaseReadOnlyError(), () => undefined);
+    expect(getLedgerCorruptionStreak()).toBe(0);
+    expect(signals).toEqual([]);
   });
 });

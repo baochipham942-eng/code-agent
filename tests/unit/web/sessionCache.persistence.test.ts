@@ -159,6 +159,20 @@ describe('web session persistence health', () => {
     });
   });
 
+  // 刀3:只读降级是 database 模式但不 durable;后续 degraded 信号（账本计数）不遮挡它
+  it('reports read-only degraded persistence as database mode that is not durable', () => {
+    setDbAvailable(true);
+    applyDbIntegrityOutcome({ kind: 'readonly', path: '/tmp/code-agent.db' });
+    expect(getPersistenceHealth()).toMatchObject({
+      status: 'degraded',
+      mode: 'database',
+      durable: false,
+      reason: SQLITE_INTEGRITY.READONLY,
+    });
+    markPersistenceDegraded(SQLITE_INTEGRITY.LEDGER_CORRUPT);
+    expect(getPersistenceHealth().reason).toBe(SQLITE_INTEGRITY.READONLY);
+  });
+
   // recovered 不遮挡 FTS 持续降级：恢复出来的库 FTS 坏了/回填中，用户要看到搜索降级
   it('overlays FTS degradation on top of the recovered notice', () => {
     setDbAvailable(true);

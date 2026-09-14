@@ -114,6 +114,8 @@ function markPersistenceRecovered(backupTakenAt: number): void {
 export function markPersistenceDegraded(reason: string): void {
   if (!dbAvailable) return;
   if (persistenceHealth.status === 'unavailable') return;
+  // 只读降级是更深的状态：后续 degraded 信号（如账本计数）不遮挡它
+  if (persistenceHealth.reason === SQLITE_INTEGRITY.READONLY) return;
   // recovered 是一次性事件通知，不遮挡持续性降级：quick_check 失败 / 局部损坏要顶掉它
   persistenceHealth = {
     ...persistenceHealth,
@@ -123,9 +125,25 @@ export function markPersistenceDegraded(reason: string): void {
   };
 }
 
+function markPersistenceReadonly(): void {
+  dbAvailable = true;
+  persistenceHealth = {
+    status: 'degraded',
+    mode: 'database',
+    durable: false,
+    message: 'History is readable; writes are refused.',
+    reason: SQLITE_INTEGRITY.READONLY,
+    checkedAt: Date.now(),
+  };
+}
+
 export function applyDbIntegrityOutcome(outcome: DbIntegrityOutcome): void {
   if (outcome.kind === 'recovered') {
     markPersistenceRecovered(outcome.backupTakenAt);
+    return;
+  }
+  if (outcome.kind === 'readonly') {
+    markPersistenceReadonly();
     return;
   }
   if (outcome.kind === 'local') {

@@ -28,7 +28,9 @@ vi.mock('../../../src/host/services/infra/dbBackup', async (importOriginal) => {
 });
 
 import { DatabaseService } from '../../../src/host/services/core/databaseService';
-import { DatabaseIntegrityError } from '../../../src/host/services/core/database/sqliteErrors';
+import { DatabaseIntegrityError, DatabaseReadOnlyError } from '../../../src/host/services/core/database/sqliteErrors';
+import { openReadOnlyDatabase } from '../../../src/host/services/core/database/readOnlyDegraded';
+import { recordLedgerWriteError, getLedgerCorruptionStreak } from '../../../src/host/services/core/database/ledgerCorruptionMonitor';
 import {
   hasIntegrityFailedMarker,
   readUnrecoverableMarker,
@@ -36,7 +38,11 @@ import {
 } from '../../../src/host/services/core/database/integrityGate';
 import { copyBackupIntoPlace } from '../../../src/host/services/infra/dbBackup';
 import { SQLITE_INTEGRITY } from '../../../src/shared/constants';
+import { assembleDurableRun } from '../../../src/host/app/initializeDurableRun';
+import { DurableRunPersistenceUnavailableError } from '../../../src/host/runtime/durableRunKernel';
+import { RunRegistry } from '../../../src/host/runtime/runRegistry';
 import {
+  applyDbIntegrityOutcome,
   getPersistenceHealth,
   setDbAvailable,
 } from '../../../src/web/helpers/sessionCache';
@@ -63,6 +69,7 @@ describe('corrupt database recovery during init', () => {
     if (previousDataDir === undefined) delete process.env.CODE_AGENT_DATA_DIR;
     else process.env.CODE_AGENT_DATA_DIR = previousDataDir;
     setDbAvailable(false, new Error('test reset'));
+    recordLedgerWriteError.resetForTests();
     for (const dir of dirs.splice(0)) {
       fs.rmSync(dir, { recursive: true, force: true });
     }
@@ -342,4 +349,147 @@ describe('corrupt database recovery during init', () => {
     expect(titles.map((row) => row.title)).toEqual(['backup-point']);
     healed.close();
   }, 60_000);
+
+  it('opens a WAL database readonly without checkpointing and refuses writes with a stable code', () => {
+    const dir = tmpDir();
+    const dbPath = path.join(dir, 't.db');
+    const writable = new Database(dbPath);
+    writable.pragma('journal_mode = WAL');
+    writable.exec('CREATE TABLE sessions (id TEXT PRIMARY KEY, title TEXT)');
+    writable.prepare('INSERT INTO sessions VALUES (?, ?)').run('s1', 'keep-me');
+    writable.pragma('wal_checkpoint(TRUNCATE)');
+    writable.close();
+    for (const suffix of ['-wal', '-shm'] as const) {
+      try { fs.rmSync(`${dbPath}${suffix}`); } catch { /* ignore */ }
+    }
+
+    const readonly = openReadOnlyDatabase(Database, dbPath);
+    expect(readonly.prepare('SELECT title FROM sessions').all()).toEqual([{ title: 'keep-me' }]);
+    expect(() => readonly.prepare('INSERT INTO sessions VALUES (?, ?)').run('s2', 'nope'))
+      .toThrow(DatabaseReadOnlyError);
+    try {
+      readonly.exec('CREATE TABLE x (id TEXT)');
+      throw new Error('exec should have refused');
+    } catch (err) {
+      expect(err).toBeInstanceOf(DatabaseReadOnlyError);
+      expect((err as DatabaseReadOnlyError).code).toBe(SQLITE_INTEGRITY.READONLY);
+    }
+    readonly.close();
+  });
+
+  // 刀3 融合点:无备份坏库不再直接进内存模式——先落 .db-unrecoverable(保自愈口子),
+  // 再只读打开隔离副本给用户读历史;只读也打不开才抛 DB_CORRUPT_NO_BACKUP。
+  // (打开期的 SQLITE_CORRUPT 用 nativeLoader 一次性注入,等价于 WAL 恢复期判坏。)
+  it('keeps history readable and refuses writes when a corrupt db has no backup', async () => {
+    const dir = tmpDir();
+    const dbPath = path.join(dir, 'code-agent.db');
+
+    const first = new DatabaseService(dir);
+    await first.initialize();
+    first.getDb()!.prepare(INSERT_SESSION_SQL).run('sess-history', 'readable-history', 'openai', 'gpt-5', dir, 1, 1);
+    first.getDb()!.pragma('wal_checkpoint(TRUNCATE)');
+    first.close();
+
+    openFailure.current = Object.assign(new Error('database disk image is malformed'), {
+      name: 'SqliteError',
+      code: 'SQLITE_CORRUPT',
+    });
+
+    const degraded = new DatabaseService(dir);
+    await degraded.initialize();
+    expect(degraded.isReady).toBe(true);
+    expect(degraded.isDegradedMode()).toBe(true);
+    expect(degraded.getIntegrityOutcome()).toMatchObject({ kind: 'readonly' });
+    // 坏库已隔离(永不删除)、不可恢复标记带着隔离路径落盘——下次启动自愈口子仍在
+    expect(fs.existsSync(dbPath)).toBe(false);
+    expect(fs.readdirSync(dir).some((name) => name.startsWith('code-agent.db.corrupt-'))).toBe(true);
+    expect(readUnrecoverableMarker(dir)?.code).toBe(SQLITE_INTEGRITY.CORRUPT_NO_BACKUP);
+
+    expect(degraded.getSession('sess-history')?.title).toBe('readable-history');
+    try {
+      degraded.createSessionWithId('sess-new', {
+        title: 'should-refuse',
+        modelConfig: { provider: 'openai', model: 'gpt-5' },
+      });
+      throw new Error('createSessionWithId should have refused');
+    } catch (err) {
+      expect(err).toBeInstanceOf(DatabaseReadOnlyError);
+      expect((err as DatabaseReadOnlyError).code).toBe(SQLITE_INTEGRITY.READONLY);
+    }
+    // 账本 append 仍 fail-safe 吞掉,且只读拒绝不计入 corruption 计数
+    expect(() => degraded.appendUsageRecord({
+      model: 'gpt-5', provider: 'openai', inputTokens: 1, outputTokens: 1, recordedAt: 2,
+    })).not.toThrow();
+    expect(getLedgerCorruptionStreak()).toBe(0);
+
+    applyDbIntegrityOutcome(degraded.getIntegrityOutcome());
+    expect(getPersistenceHealth()).toMatchObject({
+      status: 'degraded',
+      mode: 'database',
+      durable: false,
+      reason: SQLITE_INTEGRITY.READONLY,
+    });
+    degraded.close();
+  }, 60_000);
+
+  // 重启优先级:自愈恢复 > readonly > 内存模式。标记在 + 无备份 → 再进只读;
+  // 一旦手里有了过 quick_check 的好备份,自愈恢复摘掉标记,不再只读。
+  it('re-enters readonly on restart and self-heals once a good backup appears', async () => {
+    const dir = tmpDir();
+    const dbPath = path.join(dir, 'code-agent.db');
+
+    const first = new DatabaseService(dir);
+    await first.initialize();
+    first.getDb()!.prepare(INSERT_SESSION_SQL).run('sess-history', 'readable-history', 'openai', 'gpt-5', dir, 1, 1);
+    first.getDb()!.pragma('wal_checkpoint(TRUNCATE)');
+    first.close();
+
+    openFailure.current = Object.assign(new Error('database disk image is malformed'), {
+      name: 'SqliteError',
+      code: 'SQLITE_CORRUPT',
+    });
+    const degraded = new DatabaseService(dir);
+    await degraded.initialize();
+    expect(degraded.isDegradedMode()).toBe(true);
+    const isolatedPath = readUnrecoverableMarker(dir)?.isolatedPath;
+    expect(isolatedPath).toBeTruthy();
+    degraded.close();
+
+    // 无备份重启:自愈口子找不到恢复源,回到只读而不是内存模式
+    const again = new DatabaseService(dir);
+    await again.initialize();
+    expect(again.isDegradedMode()).toBe(true);
+    expect(again.getSession('sess-history')?.title).toBe('readable-history');
+    again.close();
+
+    // 用户/运维补了一份好备份:同一路径下次启动自愈恢复、摘标记
+    fs.copyFileSync(isolatedPath!, `${dbPath}.backup-1`);
+    const healed = new DatabaseService(dir);
+    await healed.initialize();
+    expect(healed.isDegradedMode()).toBe(false);
+    expect(healed.getIntegrityOutcome().kind).toBe('recovered');
+    expect(readUnrecoverableMarker(dir)).toBeNull();
+    expect(healed.getSession('sess-history')?.title).toBe('readable-history');
+    healed.close();
+  }, 60_000);
+
+  it('installs a kernel that refuses run creation when persistence is degraded', async () => {
+    const registry = new RunRegistry();
+    const assembly = assembleDurableRun({
+      registry,
+      repository: null,
+      persistenceUnavailable: true,
+      ownerId: 'owner',
+      processInstanceId: 'process',
+      env: { CODE_AGENT_DURABLE_RUN_MODE: 'durable_preferred' },
+    });
+    expect(assembly.kernel).not.toBeNull();
+    await expect(registry.waitForDurableKernel(1)).resolves.toBe(true);
+    await expect(assembly.kernel!.createNativeRun({
+      runId: 'run-degraded', sessionId: 'session-1', now: 1,
+    })).rejects.toBeInstanceOf(DurableRunPersistenceUnavailableError);
+    const runtime = await assembly.recover({ dataDir: '/tmp', now: 1 });
+    expect(runtime.recoveryRuntime).toBeNull();
+    await runtime.shutdown();
+  });
 });

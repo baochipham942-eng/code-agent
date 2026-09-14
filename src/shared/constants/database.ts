@@ -50,6 +50,12 @@ export const SQLITE_INTEGRITY = {
   QUICK_CHECK_FAILED: 'DB_QUICK_CHECK_FAILED',
   /** 局部表损坏（未隔离） */
   LOCAL_CORRUPT: 'DB_LOCAL_CORRUPT',
+  /** 只读降级：写路径 DatabaseReadOnlyError.code / PersistenceHealth.reason */
+  READONLY: 'DB_READONLY',
+  /** 账本连续 corruption 达阈值后 PersistenceHealth.reason */
+  LEDGER_CORRUPT: 'LEDGER_CORRUPT',
+  /** 账本 corruption 连续失败阈值；瞬时/非损坏错误清零 */
+  LEDGER_CORRUPTION_THRESHOLD: 3,
   MARKER_INTEGRITY: '.last-integrity-check',
   MARKER_INTEGRITY_FAILED: '.integrity-failed',
   MARKER_BACKUP: '.last-db-backup',

@@ -44,7 +44,8 @@ export type DbIntegrityOutcome =
   | { kind: 'ok' }
   | { kind: 'recovered'; backupTakenAt: number; isolatedPath: string }
   | { kind: 'local'; tables: string[] }
-  | { kind: 'degraded'; reason: string };
+  | { kind: 'degraded'; reason: string }
+  | { kind: 'readonly'; path: string };
 
 export type IntegrityCheckListener = (result: { ok: boolean; detail?: string }) => void;
 

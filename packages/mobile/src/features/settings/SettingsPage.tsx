@@ -68,7 +68,10 @@ export function SettingsPage({ page, text, appearance, nickname, profileDraft, a
             : !notifications?.preference ? <button className="primary" data-testid="notify-enable" onClick={() => { notifications?.onToggle(true); notifications?.onRequest(); }}>{text.enableNotifications}</button>
               : null}
     </div>;
-    case 'preview': return null;
+    case 'preview':
+    case 'attachment':
+    case 'cameraDenied':
+      return null;
     case 'projects': return <p>{text.noProjects}</p>;
     case 'remote': return <><h3>{text.noComputers}</h3><p>{text.baseNotice}</p></>;
     case 'more': return <div className="settings-group">{row('projects')}{row('remote')}</div>;

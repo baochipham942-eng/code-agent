@@ -538,7 +538,7 @@ export class ModelRouter {
     // Inference cache (non-streaming only)
     if (!onStream) {
       const cache = getInferenceCache();
-      const cacheKey = cache.computeKey(messages, config);
+      const cacheKey = cache.computeKey(messages, config, tools, normalizedOptions);
       const cached = cache.get(cacheKey);
       if (cached) {
         logger.info(`[Cache] Hit for ${config.provider}/${config.model}`);
@@ -597,10 +597,10 @@ export class ModelRouter {
           const result = await this._callProviderWithArtifactFallback(messages, tools, adaptedConfig, onStream, signal, normalizedOptions);
           this.assertUsableArtifactResponse(messages, result, adaptedConfig);
           adaptiveRouter.recordOutcome(complexity, adaptedConfig.provider, true, 0);
-          // Cache non-streaming text responses
+          // Cache non-streaming text responses — key 归属于实际产出响应的 adaptedConfig
           if (!onStream && result.type === 'text') {
             const cache = getInferenceCache();
-            const cacheKey = cache.computeKey(messages, config);
+            const cacheKey = cache.computeKey(messages, adaptedConfig, tools, normalizedOptions);
             cache.set(cacheKey, result);
           }
           return result;
@@ -630,7 +630,7 @@ export class ModelRouter {
       // Cache non-streaming text responses
       if (!onStream && result.type === 'text') {
         const cache = getInferenceCache();
-        const cacheKey = cache.computeKey(messages, effectiveConfig);
+        const cacheKey = cache.computeKey(messages, effectiveConfig, tools, normalizedOptions);
         cache.set(cacheKey, result);
       }
 
@@ -794,10 +794,10 @@ export class ModelRouter {
           result.actualModel = fallback.model;
           result.fallback = fallbackMetadata;
 
-          // Cache non-streaming text responses
+          // Cache non-streaming text responses — key 归属于实际产出响应的 fallbackConfig
           if (!onStream && result.type === 'text') {
             const cache = getInferenceCache();
-            const cacheKey = cache.computeKey(messages, effectiveConfig);
+            const cacheKey = cache.computeKey(messages, fallbackConfig, tools, normalizedOptions);
             cache.set(cacheKey, result);
           }
 

@@ -1,7 +1,11 @@
-// ADR-068 刀 1：首字节后断流续接状态机 —— 锁住：
-//  - 断点后第二 attempt 的 accumulator 用断点态 seed：content / reasoning / 完整 toolCalls
-//    延续，续写 delta 追加其上；半截 tool_call（JSON.parse 不可过）丢弃不进 seed；
-//  - tool_call index 映射跨 attempt 稳定（续写新发的 call 接着断点前序号编）；
+// ADR-068 刀 1+3：首字节后断流续接状态机与 B2 诚实分段 —— 锁住：
+//  - 刀 3 B2（当前一刀的常态，prefix 请求形状是刀 2）：断流重发是全新生成——发
+//    stream_break 信号（调用方据此把断点 partial 带中断标记落库），续答 accumulator
+//    全新，最终 response 只含续答段；绝不把重发内容 append 进旧消息冒充单次生成（D2）；
+//  - B1 断点态 seed（seedAccumulatorFromBreakpoint，经测试钩子直接单测——刀 2 接线前
+//    B1 分支不可达）：content / reasoning / 完整 toolCalls 延续；半截 tool_call 丢弃；
+//    tool_call index 跨 attempt 稳定；
+//  - 刀 3 usage 跨 attempt 合并：单轮 usage = Σ 各次尝试（含断流 attempt 上报过的）；
 //  - abort 不续接（续接退避可中断，醒后回落 throw，不发 error chunk）；
 //  - 预算耗尽（STREAM_RECONNECT_MAX 默认 2）回落现有 onStream error + throw；
 //  - 429 retry-after 优先于指数退避，且不受续接 4s 封顶；
@@ -90,8 +94,8 @@ afterEach(() => {
   vi.resetModules();
 });
 
-describe('inferenceViaAiSdk —— 首字节后断流续接（ADR-068 刀 1）', () => {
-  it('断点后第二 attempt 携带断点态：text/reasoning/完整 toolCalls 延续，半截 tool_call 丢弃', async () => {
+describe('inferenceViaAiSdk —— 首字节后断流续接（ADR-068 刀 1+3）', () => {
+  it('刀 3 B2 诚实分段：断流重发是全新生成——发 stream_break，续答 accumulator 全新不拼缝', async () => {
     vi.mocked(streamText)
       .mockReturnValueOnce(fakeStream([
         { type: 'reasoning-delta', id: 'r', text: 'thinking ' },
@@ -99,9 +103,6 @@ describe('inferenceViaAiSdk —— 首字节后断流续接（ADR-068 刀 1）',
         { type: 'tool-input-start', id: 'call_ok', toolName: 'Read' },
         { type: 'tool-input-delta', id: 'call_ok', delta: '{"path":"a.ts"}' },
         { type: 'tool-call', toolCallId: 'call_ok', toolName: 'Read', input: { path: 'a.ts' } },
-        // 半截 tool_call：argsText JSON.parse 不可过 → 永不进 seed（D2，判据复用 getIncompleteToolCallIds）
-        { type: 'tool-input-start', id: 'call_half', toolName: 'Write' },
-        { type: 'tool-input-delta', id: 'call_half', delta: '{"path":"/tm' },
         { type: 'error', error: new Error('ECONNRESET') },
       ]))
       .mockReturnValueOnce(fakeStream([
@@ -118,24 +119,55 @@ describe('inferenceViaAiSdk —— 首字节后断流续接（ADR-068 刀 1）',
     const res = await p;
 
     expect(vi.mocked(streamText)).toHaveBeenCalledTimes(2);
-    // 断点态 seed 生效：续写追加在断点内容之后，不是全新累积器
-    expect(res.content).toBe('partial resumed');
-    expect(res.thinking).toBe('thinking ');
+    // B2 分段信号：断流点发出，调用方（loop 层）据此把断点 partial 落库另起一段
+    const breaks = col.byType('stream_break');
+    expect(breaks).toHaveLength(1);
+    expect(breaks[0].error).toBe('ECONNRESET');
+    // 续答是全新累积器：response 只含续答段，不含断点片段（D2：跨次生成不拼进同一条消息）
+    expect(res.content).toBe(' resumed');
+    expect(res.thinking).toBeUndefined();
     expect(res.toolCalls).toEqual([
-      { id: 'call_ok', name: 'Read', arguments: { path: 'a.ts' } },
       { id: 'call_new', name: 'Read', arguments: { path: 'b.ts' } },
     ]);
     expect(res.contentParts).toEqual([
-      { type: 'text', text: 'partial' },
-      { type: 'tool_call', toolCallId: 'call_ok' },
       { type: 'text', text: ' resumed' },
       { type: 'tool_call', toolCallId: 'call_new' },
     ]);
-    // tool_call index 跨 attempt 稳定（D2）：call_ok=0、call_half=1（断流前已发），
-    // 续写新发的 call_new 接 2，不与已 seed 的 index 冲突
-    expect(col.byType('tool_call_start').map((c) => c.toolCall?.index)).toEqual([0, 1, 2]);
-    // 两次 attempt 的 delta 都对用户 emit（append 语义，renderer 消息不重置）
+    // 续答 tool_call 从新消息自己的 0 号 index 起（断点的 call 已随 partial 交给调用方）
+    expect(col.byType('tool_call_start').map((c) => c.toolCall?.index)).toEqual([0, 0]);
+    // 两次 attempt 的 delta 都照常 emit（append 通道的分离是 loop 层职责，见其单测）
     expect(col.texts()).toBe('partial resumed');
+  });
+
+  it('刀 3 usage 跨 attempt 合并：单轮 usage = Σ 各次尝试（断流 attempt 报过的 usage 并入）', async () => {
+    vi.mocked(streamText)
+      .mockReturnValueOnce(fakeStream([
+        { type: 'text-delta', id: 't', text: 'partial' },
+        // finish 先到、流随后断：该 attempt 的 usage 已上报，属真实计费
+        // （AI SDK usage 形状：cache 细节在 inputTokenDetails，inputTokens 为含缓存总量）
+        { type: 'finish', finishReason: 'stop', totalUsage: { inputTokens: 16, outputTokens: 4, inputTokenDetails: { cacheReadTokens: 6, noCacheTokens: 10 } } },
+        { type: 'error', error: new Error('ECONNRESET') },
+      ]))
+      .mockReturnValueOnce(fakeStream([
+        { type: 'text-delta', id: 't2', text: 'ok' },
+        { type: 'finish', finishReason: 'stop', totalUsage: { inputTokens: 20, outputTokens: 5, inputTokenDetails: { cacheWriteTokens: 3, noCacheTokens: 20 } } },
+      ]));
+    const col = makeCollector();
+
+    const p = inferenceViaAiSdk([{ role: 'user', content: 'x' }], [], CONFIG, col.onStream);
+    await vi.advanceTimersByTimeAsync(1000);
+    const res = await p;
+
+    expect(res.usage).toEqual({
+      inputTokens: 30, // 10 + 20：两次尝试的 input 都是真实花费
+      outputTokens: 9, // 4 + 5
+      cacheReadTokens: 6, // 仅第一次上报
+      cacheCreationTokens: 3, // 仅第二次上报
+    });
+    // 展示层单轮 usage 事件也发合并后的总额
+    const usageChunks = col.byType('usage');
+    expect(usageChunks).toHaveLength(1);
+    expect(usageChunks[0]).toMatchObject({ inputTokens: 30, outputTokens: 9 });
   });
 
   it('abort 不续接：续接退避中 abort 立即醒来，不重发、抛原错误、不发 error chunk（abort 永远优先）', async () => {
@@ -196,7 +228,7 @@ describe('inferenceViaAiSdk —— 首字节后断流续接（ADR-068 刀 1）',
     const res = await p;
 
     expect(vi.mocked(streamText)).toHaveBeenCalledTimes(2);
-    expect(res.content).toBe('partialok');
+    expect(res.content).toBe('ok'); // B2：续答段 only，断点片段由调用方分段落库
     expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('7000ms 后断点续接 (1/2)'));
   });
 
@@ -258,5 +290,55 @@ describe('STREAM_RECONNECT_MAX 常量解析', () => {
     const fallback = await import('../../../src/shared/constants/defaults');
     expect(fallback.STREAM_RECONNECT_MAX).toBe(2); // NaN → 回落默认
     vi.resetModules();
+  });
+});
+
+describe('seedAccumulatorFromBreakpoint —— B1 断点态 seed（ADR-068 刀 1，测试钩子直达）', () => {
+  // B1 分支在刀 2（prefix 请求形状）接线前不可达（STREAM_RESUME_B1_PREFIX_SHAPE_LANDED
+  // 恒 false，一切续接走 B2），断点态行为靠挂在 inferenceViaAiSdk 上的测试钩子锁住；
+  // 刀 2 翻开关后由端到端用例接管。StreamAccumulator 不是公开类型，这里按需描形。
+  type SeedAcc = {
+    content: string; reasoning: string; charCount: number; nextToolIndex: number;
+    finishReason?: string; usage?: unknown; lastPartType: 'text' | 'tool_call' | null;
+    contentParts: Array<{ type: 'text'; text: string } | { type: 'tool_call'; toolCallId: string }>;
+    toolCalls: Map<string, { id: string; name: string; argsText: string; input?: Record<string, unknown>; index: number }>;
+  };
+  type SeedResult = Pick<SeedAcc, 'content' | 'reasoning' | 'contentParts' | 'toolCalls' | 'nextToolIndex' | 'finishReason' | 'usage'>;
+  const seed = (inferenceViaAiSdk as { __seedAccumulatorFromBreakpoint?: (acc: SeedAcc) => SeedResult }).__seedAccumulatorFromBreakpoint;
+
+  it('content/reasoning/完整 toolCalls 延续；半截 tool_call 丢弃；index 跨 attempt 稳定', () => {
+    const acc: SeedAcc = {
+      content: 'partial',
+      reasoning: 'thinking ',
+      finishReason: undefined,
+      usage: undefined,
+      toolCalls: new Map([
+        ['call_ok', { id: 'call_ok', name: 'Read', argsText: '', input: { path: 'a.ts' }, index: 0 }],
+        // 半截：argsText JSON.parse 不可过 → 永不进 seed（D2，判据复用 getIncompleteToolCallIds）
+        ['call_half', { id: 'call_half', name: 'Write', argsText: '{"path":"/tm', index: 1 }],
+      ]),
+      contentParts: [
+        { type: 'text', text: 'partial' },
+        { type: 'tool_call', toolCallId: 'call_ok' },
+        { type: 'tool_call', toolCallId: 'call_half' },
+      ],
+      lastPartType: 'tool_call',
+      charCount: 7,
+      nextToolIndex: 2,
+    };
+    const seeded = seed!(acc);
+
+    expect(seeded.content).toBe('partial');
+    expect(seeded.reasoning).toBe('thinking ');
+    expect([...seeded.toolCalls.keys()]).toEqual(['call_ok']); // 半截丢弃
+    expect(seeded.contentParts).toEqual([
+      { type: 'text', text: 'partial' },
+      { type: 'tool_call', toolCallId: 'call_ok' }, // 半截的 contentParts 条目一并移除
+    ]);
+    // 断点处未 finish：终态字段不带入（usage 账在 streamViaAiSdk 的合并变量上）
+    expect(seeded.finishReason).toBeUndefined();
+    expect(seeded.usage).toBeUndefined();
+    // index 映射跨 attempt 稳定（D2）：续写新发的 tool_call 接着断点前序号编
+    expect(seeded.nextToolIndex).toBe(2);
   });
 });

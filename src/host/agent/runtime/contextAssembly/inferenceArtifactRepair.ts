@@ -12,6 +12,7 @@ import {
   getArtifactRepairToolPolicy,
   isArtifactRepairWritePriority as isArtifactRepairWritePriorityForGuard,
 } from '../artifactRepairGuard';
+import { persistStreamedPartialBeforeResend, STREAM_BREAK_SEGMENT_MARKER } from './systemContextStack';
 import type { ContextAssemblyCtx } from './shared';
 import { logger } from './shared';
 
@@ -79,6 +80,53 @@ export function getNetworkRetryBudget(errMsg: string, errCode: string | undefine
   if (isFastConnectionFailure) return 2;
 
   return 1;
+}
+
+/**
+ * loop 层网络瞬态错误重试（从 inference.ts 纯结构性抽出，零行为改动；N-STREAM-RESUME-KNIFE3
+ * 时并入「先保片段再重发」——ADR-068 刀 3 收编 as-built 备注 1：network retry 原本在已吐
+ * delta 后整轮重发且 resetStreamedContent() 丢片段）。返回重试结果；不重试/重试失败返回
+ * undefined，调用方回落终错路径。
+ */
+export async function runNetworkErrorRecovery(
+  ctx: ContextAssemblyCtx,
+  errorInfo: { errMsg: string; errCode: string | undefined; isSlowProviderTimeout: boolean },
+): Promise<ModelResponse | undefined> {
+  const { errMsg, errCode, isSlowProviderTimeout } = errorInfo;
+  const isNetworkError = /ECONNRESET|ETIMEDOUT|ECONNREFUSED|socket hang up|TLS connection|ERR_SSL_DECRYPTION_FAILED_OR_BAD_RECORD_MAC|SSL_DECRYPTION_FAILED_OR_BAD_RECORD_MAC|bad record mac|network socket disconnected|request timeout|timeout after \d+ms|timed out/i.test(errMsg)
+    || /ECONNRESET|ETIMEDOUT|ECONNREFUSED/i.test(errCode || '');
+  const maxNetworkRetries = getNetworkRetryBudget(
+    errMsg,
+    errCode,
+    Boolean(ctx.runtime.artifact.repairGuard),
+  );
+  const networkRetryCount = ctx.runtime.contextHealth.networkRetryCount ?? (ctx.inferenceRecovery._networkRetried ? 1 : 0);
+  const shouldRetryNetworkError =
+    isNetworkError
+    && networkRetryCount < maxNetworkRetries
+    && ctx.runtime.inferenceOptions?.disableRuntimeNetworkRetry !== true
+    && !(ctx.runtime.artifact.repairGuard && isSlowProviderTimeout);
+  if (!shouldRetryNetworkError) return undefined;
+  ctx.inferenceRecovery._networkRetried = true;
+  ctx.runtime.contextHealth.setNetworkRetryCount(networkRetryCount + 1);
+  // ADR-068 刀 3 收编：network retry 原本整轮重发还丢片段——先保片段再重发（重发输出
+  // 另起一段不 append 拼缝，与 adapter 层同一边界）。
+  persistStreamedPartialBeforeResend(ctx, STREAM_BREAK_SEGMENT_MARKER, 'loop 层网络重发');
+  logger.warn(`[AgentLoop] Network error "${errMsg}" (code=${errCode}), retrying inference (${ctx.runtime.contextHealth.networkRetryCount}/${maxNetworkRetries})...`);
+  await new Promise(r => setTimeout(r, 2000));
+  try {
+    const retryResult = await ctx.inference();
+    ctx.inferenceRecovery._networkRetried = false;
+    ctx.runtime.contextHealth.setNetworkRetryCount(0);
+    return retryResult;
+  } catch (retryErr) {
+    if ((ctx.runtime.contextHealth.networkRetryCount ?? 0) >= maxNetworkRetries) {
+      ctx.inferenceRecovery._networkRetried = false;
+      ctx.runtime.contextHealth.setNetworkRetryCount(0);
+    }
+    logger.error('[AgentLoop] Network retry also failed:', retryErr);
+  }
+  return undefined;
 }
 
 export function isArtifactRepairMode(ctx: ContextAssemblyCtx): boolean {

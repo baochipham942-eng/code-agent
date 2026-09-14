@@ -22,8 +22,9 @@
 // 子代理认领走并误收成 interrupted。heartbeat 被 fence（owner 易主）后停止写
 // 账本——之后的 terminal 必然被 fence，留给收口路径处理。
 //
-// 开关语义：assembleDurableRun 在 durable 激活时 arm + configureDurableKernel
-// 时 configure；legacy 模式两者都不发生，registry 走纯内存，行为与改造前一致。
+// 开关语义：assembleDurableRun 在 durable 激活且 kernel 配置成功后 arm（配置在
+// configureDurableKernel 里完成，assemble 全程同步）；legacy 模式或初始化失败时
+// 两者都不发生，registry 走纯内存，行为与改造前一致。
 // ============================================================================
 
 import type { PendingOperation, RunOwnerLease } from '../../shared/contract/durableRun';
@@ -229,8 +230,9 @@ let armed = false;
 let configureWaiters: Array<(ledger: BackgroundSubagentDurableLedger | null) => void> = [];
 
 /**
- * durable 模式入口（assembleDurableRun）在 kernel 就绪前先 arm：此后 spawn 会等
- * configure 而不是悄悄退回纯内存。legacy 模式永不 arm，spawn 行为与改造前一致。
+ * durable 模式入口（assembleDurableRun）在 kernel configure 成功后 arm：此后 spawn
+ * 走账本落行而不是纯内存。assemble 是同步的，arm 与 configure 之间没有窗口；初始化
+ * 失败的路径根本不会走到 arm，进程维持 legacy 纯内存（spawn 行为与改造前一致）。
  */
 export function armBackgroundSubagentDurableLedger(): void {
   armed = true;
@@ -266,8 +268,9 @@ export function isBackgroundSubagentDurableArmed(): boolean {
 }
 
 /**
- * armed 但 kernel 尚未就绪（冷启动窗口）时等 configure；超时仍没有账本则
- * fail-closed——durable 模式下宁可让这次后台 spawn 失败，也不让它落不进账本。
+ * armed 但 configure 尚未发生时等 configure（生产路径 assemble 同步完成 arm+configure，
+ * 该等待主要留给测试与验收探针）；超时仍没有账本则 fail-closed——durable 模式下宁可
+ * 让这次后台 spawn 失败，也不让它落不进账本。
  */
 export function waitForBackgroundSubagentDurableLedger(
   timeoutMs: number = SERVICE_TIMEOUTS.BOOTSTRAP,

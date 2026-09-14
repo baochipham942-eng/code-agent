@@ -13,6 +13,7 @@ import {
   PlanApprovalCard,
   PlanApprovalEvidence,
 } from '../../../src/renderer/components/PlanApprovalCard';
+import { findPendingPlanApproval, getPlanApprovalRecord } from '../../../src/renderer/utils/planApprovalView';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
 
 const approval: PlanApprovalRecord = {
@@ -168,6 +169,43 @@ describe('PlanApprovalCard', () => {
     fireEvent.keyDown(window, { key: 'Escape' });
     expect(screen.getByTestId('plan-approval-collapsed')).toBeTruthy();
     expect(mocks.invokeDomain).not.toHaveBeenCalled();
+  });
+
+  it('findPendingPlanApproval 认 failed 为可决定卡：启动失败后卡片重现可重试', () => {
+    const failedMessage: Message = {
+      ...message,
+      toolCalls: [{
+        ...message.toolCalls![0],
+        result: {
+          ...message.toolCalls![0].result!,
+          metadata: {
+            planApproval: { ...approval, status: 'failed', failureReason: 'No active session', decidedAt: 10 },
+          },
+        },
+      }],
+    };
+    const target = findPendingPlanApproval([failedMessage], 'session-1');
+    expect(target?.approval.status).toBe('failed');
+    expect(target?.approval.failureReason).toBe('No active session');
+    // starting / approved 不再出交互卡。
+    const startingTarget = findPendingPlanApproval([{
+      ...message,
+      toolCalls: [{
+        ...message.toolCalls![0],
+        result: { ...message.toolCalls![0].result!, metadata: { planApproval: { ...approval, status: 'starting' } } },
+      }],
+    }], 'session-1');
+    expect(startingTarget).toBeNull();
+  });
+
+  it('getPlanApprovalRecord 接受新状态（starting/failed）不丢卡', () => {
+    for (const status of ['starting', 'failed'] as const) {
+      const record = getPlanApprovalRecord({
+        ...message.toolCalls![0],
+        result: { ...message.toolCalls![0].result!, metadata: { planApproval: { ...approval, status } } },
+      });
+      expect(record?.status).toBe(status);
+    }
   });
 
   it('失败后卡片带着原因重现且可再批准（同一记录重试）', () => {

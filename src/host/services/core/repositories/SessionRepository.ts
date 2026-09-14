@@ -53,7 +53,7 @@ import {
   clearAllMessagesWithLedger,
   reconcileMessageProjectionOrderWithLedger,
 } from './sessionRepositoryMessageLedger';
-import { runWithFtsWriteRepair } from '../database/ftsRepair';
+import { runTransactionWithFtsRepair, runWithFtsWriteRepair } from '../database/ftsRepair';
 
 export type { StoredSession, StoredMessage };
 export type {
@@ -692,7 +692,7 @@ export class SessionRepository {
         });
       }
     };
-    runWithFtsWriteRepair(this.db, this.db.transaction(replaceBody));
+    runTransactionWithFtsRepair(this.db, this.db.transaction(replaceBody));
   }
 
   reconcileMessageProjectionOrder(sessionId: string, reason: string, createdAt = Date.now()): void {

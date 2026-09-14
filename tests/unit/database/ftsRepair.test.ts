@@ -189,6 +189,37 @@ describe('ftsRepair ladder', () => {
     db.close();
   });
 
+  it('replaceMessages survives FTS shadow-page corruption: repair runs outside the transaction and retry applies the replacement', () => {
+    const dbPath = tmpDb();
+    let { db, repo } = openRepo(dbPath);
+    createSchema(db);
+    insertSession(db, 'sess-1');
+    seedMessages(repo, 50);
+    db.close();
+
+    corruptFtsShadowPages(dbPath, { leafOnly: false });
+
+    ({ db, repo } = openRepo(dbPath));
+    const replacement = [
+      makeMessage('m-r0', 'replacement needle alpha', 9_000),
+      makeMessage('m-r1', 'replacement needle beta', 9_001),
+    ];
+    expect(() => repo.replaceMessages('sess-1', replacement, 9_100)).not.toThrow();
+
+    const rows = db.prepare(`
+      SELECT id
+      FROM messages
+      WHERE session_id = ?
+      ORDER BY timestamp ASC, rowid ASC
+    `).all('sess-1') as Array<{ id: string }>;
+    expect(rows.map((row) => row.id)).toEqual(['m-r0', 'm-r1']);
+    expect(isFtsDisabled('session_messages_fts')).toBe(false);
+    const hits = repo.searchSessionMessagesFts('replacement needle', { limit: 10 });
+    expect(hits.some((hit) => hit.messageId === 'm-r0')).toBe(true);
+    expect(hits.some((hit) => hit.messageId === 'm-r1')).toBe(true);
+    db.close();
+  });
+
   it('drop+recreates an empty table when rebuild is injected to fail, and LIKE still recalls', () => {
     const dbPath = tmpDb();
     let { db, repo } = openRepo(dbPath);

@@ -234,6 +234,24 @@ export function runWithFtsWriteRepair(db: BetterSqlite3.Database, fn: () => void
   }
 }
 
+/**
+ * 事务写路径的修复包装。事务函数抛损坏错误时，better-sqlite3 通常已回滚
+ * （inTransaction=false），但损坏库上 ROLLBACK 本身可能失败、事务仍挂着——
+ * 两种情况下都必须先在事务外跑修复阶梯，再整体重试一次事务。
+ * 事务已整体回滚，重跑幂等；重试仍坏则把错误抛给调用方。
+ */
+export function runTransactionWithFtsRepair(db: BetterSqlite3.Database, tx: () => void): void {
+  try {
+    tx();
+    return;
+  } catch (err) {
+    if (!isSqliteCorruptionError(err)) throw err;
+    rollbackIfNeeded(db);
+    repairMessageProjectionFts(db);
+  }
+  tx();
+}
+
 export function repairCorruptFtsOnStartup(db: BetterSqlite3.Database): void {
   for (const table of FTS_TABLES) {
     try {

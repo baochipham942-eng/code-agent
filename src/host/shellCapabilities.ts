@@ -12,6 +12,7 @@ import {
   type ShellCapabilityRisk,
 } from '../shared/contract/shellCapabilities';
 import { IPC_DOMAINS, type IPCDomain } from '../shared/ipc/domains';
+import { sessionRoutes } from './ipc/domainRoutes/sessionRoutes';
 
 const DEFAULT_SINCE_VERSION = '0.16.93';
 
@@ -51,6 +52,13 @@ const NATIVE_TAURI_COMMANDS = [
   'shutdown_web_server_for_update',
   'warm_compile_cache_after_install',
 ] as const;
+
+// session 域自 RQ-183 刀 4 起从单源路由表派生（方案 2.4）：action 集合的真源是
+// sessionRoutes 表，本清单不再手工维护——加/删 action 改表即可，这里自动跟。
+// 手工只剩 since 版本（DEFAULT_SINCE_VERSION）与高危标记（HIGH_RISK_CAPABILITIES）。
+// 其余域表化后照此逐域切换（挂后续单）；未表化域仍手工维护，由 domainRouteParity
+// 的全域单向门盯「清单 ⊆ 实际 handler」+ 缺报棘轮。
+const SESSION_TABLE_ACTIONS: readonly string[] = Object.keys(sessionRoutes.actions);
 
 const CAPABILITY_DOMAIN_ACTIONS = {
   [IPC_DOMAINS.ACTIVITY]: [
@@ -357,54 +365,8 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'restoreFactory',
     'writeProjectMemory',
   ],
-  [IPC_DOMAINS.SESSION]: [
-    'archive',
-    'auditConversationLineage',
-    'clearModelOverride',
-    'compareConversationBranches',
-    'create',
-    'delete',
-    'enqueueSessionForkSync',
-    'export',
-    'exportDiagnostics',
-    'exportMarkdown',
-    'exportSessionFork',
-    'fork',
-    'getForkLineage',
-    'findExpertThread',
-    'getMemoryContext',
-    'getMessages',
-    'getModelOverride',
-    'getRecap',
-    'getSessionTasks',
-    'import',
-    'importReadySessionForkSync',
-    'importSessionFork',
-    'ingestSessionForkSync',
-    'list',
-    'listConversationEvaluationAttributions',
-    'listForkChildren',
-    'load',
-    'quarantineConversationLineage',
-    'readSessionForkNeighborhood',
-    'readSessionForkTree',
-    'recordConversationEvaluationAttribution',
-    'recoverHistory',
-    'repairConversationLineage',
-    'replayConversationBranch',
-    'restoreConversationRewind',
-    'restoreWorkspaceFilesAtCheckpoint',
-    'rewindConversation',
-    'rewindToPrompt',
-    'search',
-    'searchSessionForkExports',
-    'traceConversationProvenance',
-    'switchModel',
-    'turnCheckout',
-    'turnRedo',
-    'unarchive',
-    'update',
-  ],
+  // session 域：派生自 sessionRoutes 表（见上），手工清单已删
+  [IPC_DOMAINS.SESSION]: SESSION_TABLE_ACTIONS,
   [IPC_DOMAINS.SESSION_AUTOMATION]: [
     'countPendingReview',
     'getSessionSummary',

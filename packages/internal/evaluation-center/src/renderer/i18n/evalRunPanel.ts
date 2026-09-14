@@ -165,7 +165,7 @@ export const evalRunPanelZh: EvalRunPanelDictionary = {
     calibrationReasons: {
       no_record: '无记录', below_threshold: '一致性未达标', prompt_changed: '提示词改过',
       not_enough_pairs: '金标不足 N<20', superseded: '按旧标准，需重跑', judge_changed: '评审模型已变',
-      abstain_rate: '弃权率超 20%',
+      abstain_rate: '弃权率过高',
     },
     needsExpectation: '这题集没有逐题期望，评审不了',
     referenceOnly: '结果只作参考，不作能力证据',
@@ -291,7 +291,7 @@ export const evalRunPanelEn: EvalRunPanelDictionary = {
     calibrationReasons: {
       no_record: 'No record', below_threshold: 'Agreement below requirement', prompt_changed: 'Prompt changed',
       not_enough_pairs: 'Not enough gold labels N<20', superseded: 'Old standard; rerun required', judge_changed: 'Review model changed',
-      abstain_rate: 'Abstained on more than 20%',
+      abstain_rate: 'Abstained too often',
     },
     needsExpectation: 'This case set has no per-case expectation for this review',
     referenceOnly: 'Reference only; not capability evidence',

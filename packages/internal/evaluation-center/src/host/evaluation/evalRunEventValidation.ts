@@ -126,7 +126,7 @@ function validateAiReview(value: unknown): void {
     if (!isAiReviewDimension(dimension) || !isRecord(rawVerdict)) {
       throw new Error('评测用例 aiReview 含未知维度或无效结果。');
     }
-    if (!['yes', 'no', 'unavailable'].includes(String(rawVerdict.verdict))) {
+    if (!['yes', 'no', 'abstain', 'unavailable'].includes(String(rawVerdict.verdict))) {
       throw new Error('评测用例 aiReview verdict 不受支持。');
     }
     for (const key of ['reasoning', 'judgeModel', 'promptHash']) requireString(rawVerdict, key);

@@ -42,6 +42,10 @@ import {
   AutoAgentDurableRuntime,
   configureAutoAgentDurableRuntime,
 } from '../agent/autoAgentDurableRuntime';
+import {
+  LoopDurableLedger,
+  configureLoopDurableLedger,
+} from '../loop/loopDurableLedger';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { isNativeRecoveryDescriptor, type NativeRecoveryDescriptor } from './nativeRecoveryHost';
@@ -90,6 +94,7 @@ export class RunRegistry implements AgentTeamDurableParentHost {
     configureAgentTeamDurableRuntime(new AgentTeamDurableRuntime(kernel, this));
     configureAutoAgentDurableRuntime(new AutoAgentDurableRuntime(kernel, this));
     configureBackgroundSubagentDurableLedger(new BackgroundSubagentDurableLedger(kernel));
+    configureLoopDurableLedger(new LoopDurableLedger(kernel));
   }
 
   /** Durable kernel 是启动后异步配置的（冷启实测约 13s）；硬依赖 durable 的入口先等它就绪再决定成败。 */

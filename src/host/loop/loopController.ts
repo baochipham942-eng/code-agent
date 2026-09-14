@@ -27,6 +27,16 @@ import {
 import type { TaskStatus } from '../../shared/contract/backgroundTask';
 import { buildTurnPrompt, detectDoneMarker, parseWaitMs } from './loopPrompt';
 import { captureLoopOwnerStamp } from './loopOwnership';
+import {
+  LOOP_DURABLE_PARENT_MISSING_CODE,
+  LOOP_INTERRUPTED_REASON,
+  LoopDurableStartError,
+  getLoopDurableLedger,
+  isLoopDurableArmed,
+  waitForLoopDurableLedger,
+  type LoopEngineCursor,
+} from './loopDurableLedger';
+import { resolveLoopParentRunId } from './loopDurableParent';
 import { getTaskManager } from '../task';
 import { getSessionManager } from '../services/infra/sessionManager';
 import { getBackgroundTaskLedger } from '../task/backgroundTaskLedger';
@@ -69,20 +79,27 @@ export class LoopController {
   private timers = new Map<string, NodeJS.Timeout>();
   private waiters = new Map<string, () => void>();
 
-  start(config: LoopRunConfig): LoopRunState {
+  async start(config: LoopRunConfig): Promise<LoopRunState> {
     const id = `loop_${randomUUID()}`;
+    const wantsDurable = isLoopDurableArmed() && config.durable !== false;
+    const maxTurns = config.maxTurns && config.maxTurns > 0 ? config.maxTurns : LOOP_DEFAULT_MAX_TURNS;
     const state: LoopRunState = {
       id,
       sessionId: config.sessionId,
       prompt: config.prompt,
       intervalMs: config.intervalMs,
-      maxTurns: config.maxTurns && config.maxTurns > 0 ? config.maxTurns : LOOP_DEFAULT_MAX_TURNS,
+      maxTurns,
       until: config.until,
       handoffPrompt: config.handoffPrompt,
       turn: 0,
       status: 'running',
       startedAt: Date.now(),
+      durable: wantsDurable,
+      phase: 'sleeping',
     };
+    if (wantsDurable) {
+      await this.beginDurable(state);
+    }
     this.loops.set(id, state);
     this.registerTask(state);
     this.recordAutomationCreated(state);
@@ -100,6 +117,7 @@ export class LoopController {
       state.stopReason = reason;
       state.nextRunAt = undefined;
       this.finalizeTask(state);
+      void this.finalizeDurable(state);
     }
     return { ...state };
   }
@@ -131,6 +149,90 @@ export class LoopController {
     s.nextRunAt = undefined;
     if (error) s.error = error;
     this.finalizeTask(s);
+    void this.finalizeDurable(s);
+  }
+
+  private async beginDurable(state: LoopRunState): Promise<void> {
+    const ledger = getLoopDurableLedger() ?? await waitForLoopDurableLedger();
+    const parentRunId = resolveLoopParentRunId(state.sessionId);
+    if (!parentRunId) {
+      throw new LoopDurableStartError(
+        LOOP_DURABLE_PARENT_MISSING_CODE,
+        'Cannot start a durable loop because this session has no foreground run to parent it',
+      );
+    }
+    await ledger.begin({
+      loopId: state.id,
+      sessionId: state.sessionId,
+      parentRunId,
+      config: {
+        prompt: state.prompt,
+        maxTurns: state.maxTurns,
+        ...(state.intervalMs !== undefined ? { intervalMs: state.intervalMs } : {}),
+        ...(state.until ? { until: state.until } : {}),
+        ...(state.handoffPrompt ? { handoffPrompt: state.handoffPrompt } : {}),
+      },
+      startedAt: state.startedAt,
+    });
+  }
+
+  private engineCursor(state: LoopRunState): LoopEngineCursor {
+    const inFlight = state.phase === 'dispatching' || state.phase === 'awaiting_reply';
+    return {
+      schemaVersion: 1,
+      kind: 'loop',
+      config: {
+        prompt: state.prompt,
+        maxTurns: state.maxTurns,
+        ...(state.intervalMs !== undefined ? { intervalMs: state.intervalMs } : {}),
+        ...(state.until ? { until: state.until } : {}),
+        ...(state.handoffPrompt ? { handoffPrompt: state.handoffPrompt } : {}),
+      },
+      turn: inFlight ? Math.max(0, state.turn - 1) : state.turn,
+      phase: state.phase ?? 'sleeping',
+      ...(state.lastTurnAt !== undefined ? { lastTurnAt: state.lastTurnAt } : {}),
+      ...(state.nextRunAt !== undefined ? { nextRunAt: state.nextRunAt } : {}),
+    };
+  }
+
+  private async checkpointDispatched(state: LoopRunState): Promise<void> {
+    const ledger = getLoopDurableLedger();
+    if (!ledger?.isTracked(state.id)) return;
+    await ledger.turnDispatched(state.id, { turn: state.turn, cursor: this.engineCursor(state) });
+  }
+
+  private async checkpointCompleted(
+    state: LoopRunState,
+    extra: { done?: boolean; waitMs?: number } = {},
+  ): Promise<void> {
+    const ledger = getLoopDurableLedger();
+    if (!ledger?.isTracked(state.id)) return;
+    await ledger.turnCompleted(state.id, {
+      turn: state.turn,
+      cursor: this.engineCursor(state),
+      ...extra,
+    });
+  }
+
+  private async finalizeDurable(state: LoopRunState): Promise<void> {
+    const ledger = getLoopDurableLedger();
+    if (!ledger?.isTracked(state.id)) return;
+    const outcome = state.status === 'completed'
+      ? 'completed'
+      : state.status === 'stopped' ? 'cancelled' : 'failed';
+    try {
+      await ledger.finalize(state.id, {
+        outcome,
+        reason: state.error
+          ?? (state.stopReason === 'user' ? 'user' : state.stopReason)
+          ?? (outcome === 'failed' ? LOOP_INTERRUPTED_REASON : undefined),
+        turn: state.turn,
+        cursor: this.engineCursor(state),
+        finishedAt: Date.now(),
+      });
+    } catch (err) {
+      logger.warn(`finalizeDurable failed for ${state.id}:`, err);
+    }
   }
 
   // --------------------------------------------------------------------------
@@ -305,7 +407,9 @@ export class LoopController {
         state.turn += 1;
         state.lastTurnAt = Date.now();
         state.nextRunAt = undefined;
+        state.phase = 'dispatching';
         this.syncTaskProgress(state);
+        await this.checkpointDispatched(state);
 
         const orchestrator = getTaskManager().getOrCreateCurrentOrchestrator(state.sessionId);
         if (!orchestrator) {
@@ -321,16 +425,23 @@ export class LoopController {
         });
         if (this.aborted.has(id)) break;
 
+        state.phase = 'awaiting_reply';
         const reply = await this.readLastAssistantReply(state.sessionId);
         if (detectDoneMarker(reply)) {
+          state.phase = 'sleeping';
+          await this.checkpointCompleted(state, { done: true });
           this.finish(id, 'completed', 'condition_met');
           break;
         }
 
         const waitMs = state.intervalMs ?? parseWaitMs(reply) ?? 0;
+        state.phase = 'sleeping';
         if (waitMs > 0) {
           state.nextRunAt = Date.now() + waitMs;
+          await this.checkpointCompleted(state, { waitMs });
           await this.sleep(id, waitMs);
+        } else {
+          await this.checkpointCompleted(state, { waitMs: 0 });
         }
       }
     } catch (err) {

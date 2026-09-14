@@ -169,6 +169,56 @@ describe('markInterruptedLoops（N-LOOP-DURABLE 刀1：启动时把残留 runnin
     expect(drained[0].message).not.toMatch(/第 \d+ 轮/);
   });
 
+  it('durable_runs 存在非终态 loop 行时跳过：留给 recovery dispatcher，不重复收口', async () => {
+    const db = createGhostDb();
+    db.exec(`
+      CREATE TABLE durable_runs (
+        run_id TEXT PRIMARY KEY,
+        engine_kind TEXT NOT NULL,
+        status TEXT NOT NULL
+      )
+    `);
+    db.prepare(`INSERT INTO durable_runs (run_id, engine_kind, status) VALUES (?, 'loop', 'running')`)
+      .run('loop_durable');
+    insertAutomation(db, {
+      id: 'loop:loop_durable',
+      sessionId: 'session-1',
+      title: '循环 · 可恢复',
+      sourceRefId: 'loop_durable',
+      owner: { pid: deadOwnerPid() },
+    });
+
+    expect(await markInterruptedLoops(db)).toBe(0);
+    expect(automationStatus(db, 'loop:loop_durable')).toBe('running');
+
+    const revived = createBackgroundTaskLedger();
+    revived.setStore(new SqliteBackgroundTaskStore(db));
+    expect(revived.drainNotifications('session-1')).toHaveLength(0);
+  });
+
+  it('durable_runs 已终态的 loop 不跳过：刀1 仍收口非 durable 残留', async () => {
+    const db = createGhostDb();
+    db.exec(`
+      CREATE TABLE durable_runs (
+        run_id TEXT PRIMARY KEY,
+        engine_kind TEXT NOT NULL,
+        status TEXT NOT NULL
+      )
+    `);
+    db.prepare(`INSERT INTO durable_runs (run_id, engine_kind, status) VALUES (?, 'loop', 'failed')`)
+      .run('loop_closed');
+    insertAutomation(db, {
+      id: 'loop:loop_closed',
+      sessionId: 'session-1',
+      title: '循环 · 已终态账本',
+      sourceRefId: 'loop_closed',
+      owner: { pid: deadOwnerPid() },
+    });
+
+    expect(await markInterruptedLoops(db)).toBe(1);
+    expect(automationStatus(db, 'loop:loop_closed')).toBe('failed');
+  });
+
   it('幂等：同一批残留重复扫，第二次不重复收口、不重复发通知', async () => {
     const db = createGhostDb();
     insertAutomation(db, {

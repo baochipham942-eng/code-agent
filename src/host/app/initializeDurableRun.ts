@@ -17,6 +17,7 @@ import {
 } from './durableRunRollout';
 import { DurableRunReadService } from './durableRunReadService';
 import { armBackgroundSubagentDurableLedger } from '../agent/backgroundSubagentDurableLedger';
+import { armLoopDurableLedger, resetLoopDurableLedger } from '../loop/loopDurableLedger';
 
 export class DurableRunRolloutInitializationError extends Error {
   readonly code = 'DURABLE_RUN_ROLLOUT_INITIALIZATION_FAILED';
@@ -81,6 +82,7 @@ export function assembleDurableRun(
   const policy = resolveDurableRunRollout(input.env);
   const readService = new DurableRunReadService(policy, input.repository);
   if (!policy.durableActivation) {
+    resetLoopDurableLedger();
     return {
       policy,
       kernel: null,
@@ -117,6 +119,9 @@ export function assembleDurableRun(
     // 账本（waitFor 30s 超时后失败），尽管此时进程实为 legacy 纯内存、任务本可以跑。
     // armed 的终态只能是「configure 成功」或「从未 arm（legacy 纯内存）」，不许停在中间。
     armBackgroundSubagentDurableLedger();
+    // 与 armBackgroundSubagentDurableLedger 同理：只在 kernel 配置成功后 arm，
+    // 避免 assemble 失败残留 armed 让 /loop 死等一个永远不会 configure 的账本。
+    armLoopDurableLedger();
     return {
       policy,
       kernel,

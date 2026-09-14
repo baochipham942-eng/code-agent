@@ -18,6 +18,8 @@ export interface ParsedLoopCommand {
   until?: string;
   handoffPrompt?: string;
   budget?: number;
+  /** true = 显式退回纯内存 loop（不登记 durable run）。 */
+  ephemeral?: boolean;
 }
 
 /** 是否是 /loop 命令（用于 handleSubmit 提前拦截判断）。 */
@@ -25,10 +27,11 @@ export function isLoopCommand(raw: string): boolean {
   return /^\/loop\b/.test(raw.trim());
 }
 
-const FLAG_NAMES = 'max-turns|until|handoff|then|budget';
+const VALUE_FLAG_NAMES = 'max-turns|until|handoff|then|budget';
+const FLAG_NAMES = `${VALUE_FLAG_NAMES}|ephemeral`;
 const FIRST_FLAG_RE = new RegExp(`(^|\\s)--(?:${FLAG_NAMES})\\b`);
 const FLAG_VALUE_RE = new RegExp(
-  `--(${FLAG_NAMES})\\s+("([^"]*)"|'([^']*)'|((?:(?!\\s--(?:${FLAG_NAMES})\\b).)*))`,
+  `--(${VALUE_FLAG_NAMES})\\s+("([^"]*)"|'([^']*)'|((?:(?!\\s--(?:${VALUE_FLAG_NAMES})\\b).)*))`,
   'gs',
 );
 
@@ -59,7 +62,12 @@ export function parseLoopCommand(raw: string): ParsedLoopCommand | null {
   const head = trimmed.match(/^\/loop\b\s*([\s\S]*)$/);
   if (!head) return null;
 
-  const rest = head[1];
+  let rest = head[1];
+  let ephemeral = false;
+  rest = rest.replace(/(^|\s)--ephemeral(?=\s|$)/g, (match, prefix: string) => {
+    ephemeral = true;
+    return prefix;
+  });
   const firstFlagIdx = rest.search(FIRST_FLAG_RE);
   const body = (firstFlagIdx === -1 ? rest : rest.slice(0, firstFlagIdx)).trim();
   const flagSection = firstFlagIdx === -1 ? '' : rest.slice(firstFlagIdx);
@@ -77,6 +85,7 @@ export function parseLoopCommand(raw: string): ParsedLoopCommand | null {
 
   const result: ParsedLoopCommand = { prompt };
   if (intervalMs !== undefined) result.intervalMs = intervalMs;
+  if (ephemeral) result.ephemeral = true;
 
   FLAG_VALUE_RE.lastIndex = 0;
   let fm: RegExpExecArray | null;

@@ -1,12 +1,13 @@
 import type BetterSqlite3 from 'better-sqlite3';
 
-/** Fresh durable_runs CHECK. Widen does not compare against this list; it only adds missing 'subagent_single'. */
+/** Fresh durable_runs CHECK。widen 不拿本清单做整体比较——只把清单里缺的 kind 增量补进现有 CHECK（现有未知 kind 原样保留）。 */
 const FRESH_DURABLE_RUN_ENGINE_KINDS = [
   'native',
   'agent_team',
   'dynamic_workflow',
   'external_cli',
   'subagent_single',
+  'loop',
 ] as const;
 
 /**
@@ -116,27 +117,27 @@ export function rollbackDurableRunMigrationDraft(db: BetterSqlite3.Database): vo
 }
 
 /**
- * N-BGSPAWN-DURABLE：durable_runs.engine_kind 的 CHECK 原先只放 4 种 engine，
- * 后台单子代理收口需要 'subagent_single'。SQLite 不能 ALTER CHECK，已建库只能
- * 建新表搬数据再改名。
+ * N-BGSPAWN-DURABLE + N-LOOP-DURABLE-K2 会师版：durable_runs.engine_kind 的 CHECK
+ * 原先只放 4 种 engine，bgspawn 收口需要 'subagent_single'、loop 续跑需要 'loop'。
+ * SQLite 不能 ALTER CHECK，已建库只能建新表搬数据再改名。
  *
- * R1 会师：RQ-125（loop-durable-k2，未合 main）用同构 widen 加 'loop'。两笔合入
- * 顺序不定，所以这里必须读现有 CHECK 清单、缺 'subagent_single' 才重建，并把已有
- * kind（含 'loop' 或任何未知 kind）原样带上。不许拿一份写死的目标清单整体替换——
- * 否则先合者加的 'loop' 会被后合者抹掉。已含 'subagent_single' 则 no-op
- * （不碰 foreign_keys、不搬表）；解析不出 CHECK 清单则 throw，拒绝 widen（fail-closed）。
+ * 两笔合入顺序不定，所以 widen 必须读现有 CHECK 清单、把 FRESH 清单里缺的 kind
+ * 增量补上（缺几个补几个），已有 kind——含对方分支加的或任何未知 kind——原样带上。
+ * 不许拿写死的目标清单整体替换，否则先合者加的 kind 会被后合者抹掉。现有 CHECK
+ * 已覆盖 FRESH 清单则 no-op（不碰 foreign_keys、不搬表）；解析不出 CHECK 清单则
+ * throw，拒绝 widen（fail-closed）。
  *
- * ai-review 修复（2026-09-14）：重建搬数据不再写死列清单——若已有库被其他迁移加过列，
- * 写死清单会静默丢列丢数据。改为建新表后用 PRAGMA table_info 动态读双方列、只搬交集；
- * 现有表出现新表 DDL 不认识的列则 throw 拒绝迁移（fail-closed：宁可拒迁也不静默丢
- * 数据，由人工决定那列往哪去）。反向（新表有、旧表没有的列）靠列默认值/可空兜底，
- * 若新列是 NOT NULL 无默认，INSERT 会当场报错回滚，同样是 fail-closed。
+ * ai-review 修复（2026-09-14，两笔同构各修一次）：重建搬数据不写死列清单——若已有库
+ * 被其他迁移加过列，写死清单会静默丢列丢数据。改为建新表后用 PRAGMA table_info 动态
+ * 读双方列、只搬交集；现有表出现新表 DDL 不认识的列则 throw 拒绝迁移（fail-closed：
+ * 宁可拒迁也不静默丢数据，由人工决定那列往哪去）。反向（新表有、旧表没有的列）靠列
+ * 默认值/可空兜底，若新列是 NOT NULL 无默认，INSERT 会当场报错回滚，同样 fail-closed。
  *
  * 子表（attempts/events/...）带 ON DELETE CASCADE 外键指向 durable_runs，DROP 母表
  * 时若 foreign_keys 还开着会把子表行级联清掉，所以重建全程在 foreign_keys=OFF 下做
- * （pragma 在事务外切换才生效），结束后恢复为进入时的原值（ai-review nit 2026-09-14，
- * 同 PR#1804：调用方连接可能本来就关着外键，无条件写 ON 会改掉调用方状态）。索引随
- * DROP TABLE 一起消失，由上面 exec 里的 CREATE INDEX IF NOT EXISTS 重建。
+ * （pragma 在事务外切换才生效），结束后恢复为进入时的原值（调用方连接可能本来就关着
+ * 外键，无条件写 ON 会改掉调用方状态）。索引随 DROP TABLE 一起消失，由上面 exec 里的
+ * CREATE INDEX IF NOT EXISTS 重建。
  */
 function widenDurableRunsEngineKindCheck(db: BetterSqlite3.Database): void {
   const row = db.prepare(`
@@ -148,9 +149,10 @@ function widenDurableRunsEngineKindCheck(db: BetterSqlite3.Database): void {
   if (!existing) {
     throw new Error('durable_runs.engine_kind CHECK is unreadable; refuse to widen');
   }
-  if (existing.includes('subagent_single')) return;
+  const missing = FRESH_DURABLE_RUN_ENGINE_KINDS.filter((kind) => !existing.includes(kind));
+  if (missing.length === 0) return;
 
-  const widened = [...existing, 'subagent_single'];
+  const widened = [...existing, ...missing];
   const foreignKeysBefore = db.pragma('foreign_keys', { simple: true }) as number;
   db.pragma('foreign_keys = OFF');
   try {

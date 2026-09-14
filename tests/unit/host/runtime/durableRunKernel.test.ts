@@ -34,6 +34,7 @@ describe('DurableRunKernel', () => {
     ['agent-team', { kind: 'agent_team', treeId: 'tree-1' } as const],
     ['dynamic-workflow', { kind: 'dynamic_workflow', workflowId: 'workflow-1' } as const],
     ['external-cli', { kind: 'external_cli', engine: 'codex_cli', externalSessionId: 'ext-1' } as const],
+    ['loop', { kind: 'loop' } as const],
   ])('creates a shared envelope for %s without changing its engine reference', async (runId, engine) => {
     const { db, kernel, repository } = createKernel();
 
@@ -104,6 +105,7 @@ describe('DurableRunKernel', () => {
       { kind: 'agent_team' } as const,
       { kind: 'dynamic_workflow' } as const,
       { kind: 'external_cli', engine: 'claude_code' } as const,
+      { kind: 'loop' } as const,
     ];
 
     for (const [index, engine] of engines.entries()) {

@@ -22,6 +22,108 @@ function tableNames(db: Database.Database): string[] {
     .map((row) => (row as { name: string }).name);
 }
 
+function durableRunsCreateSql(db: Database.Database): string {
+  const row = db.prepare(
+    "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'durable_runs' LIMIT 1",
+  ).get() as { sql?: string } | undefined;
+  if (!row?.sql) throw new Error('durable_runs table is missing');
+  return row.sql;
+}
+
+function engineKindsInCheck(sql: string): string[] {
+  const match = sql.match(/engine_kind\s+TEXT\s+NOT\s+NULL\s+CHECK\s*\(\s*engine_kind\s+IN\s*\(([^)]+)\)\s*\)/i);
+  if (!match) throw new Error('durable_runs engine_kind CHECK is missing');
+  return [...match[1].matchAll(/'([^']+)'/g)].map((entry) => entry[1]);
+}
+
+function durableRunsIndexes(db: Database.Database): string[] {
+  return db.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'durable_runs'").all()
+    .map((row) => (row as { name: string }).name);
+}
+
+function createLegacyDurableRunsWithChildren(db: Database.Database, engineKinds: string[]): void {
+  const kinds = engineKinds.map((kind) => `'${kind}'`).join(',');
+  db.exec(`
+    CREATE TABLE durable_runs (
+      run_id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      parent_run_id TEXT,
+      engine_kind TEXT NOT NULL CHECK (engine_kind IN (${kinds})),
+      engine_ref_json TEXT,
+      status TEXT NOT NULL CHECK (status IN ('created','running','waiting','paused','recovering','completed','failed','cancelled')),
+      attempt INTEGER NOT NULL CHECK (attempt >= 1),
+      next_event_seq INTEGER NOT NULL DEFAULT 1 CHECK (next_event_seq >= 1),
+      checkpoint_seq INTEGER NOT NULL DEFAULT 0 CHECK (checkpoint_seq >= 0),
+      envelope_json TEXT NOT NULL,
+      owner_id TEXT,
+      process_instance_id TEXT,
+      owner_epoch INTEGER NOT NULL DEFAULT 0 CHECK (owner_epoch >= 0),
+      lease_expires_at INTEGER,
+      terminal_event_seq INTEGER,
+      terminal_at INTEGER,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE TABLE durable_run_attempts (
+      run_id TEXT NOT NULL,
+      attempt INTEGER NOT NULL,
+      process_instance_id TEXT NOT NULL,
+      owner_id TEXT NOT NULL,
+      owner_epoch INTEGER NOT NULL,
+      status TEXT NOT NULL,
+      resumed_from_checkpoint_seq INTEGER,
+      recovery_reason TEXT,
+      started_at INTEGER NOT NULL,
+      ended_at INTEGER,
+      PRIMARY KEY (run_id, attempt),
+      FOREIGN KEY (run_id) REFERENCES durable_runs(run_id) ON DELETE CASCADE
+    );
+    CREATE TABLE durable_run_events (
+      run_id TEXT NOT NULL,
+      seq INTEGER NOT NULL,
+      attempt INTEGER NOT NULL,
+      event_type TEXT NOT NULL,
+      event_json TEXT NOT NULL,
+      recorded_at INTEGER NOT NULL,
+      PRIMARY KEY (run_id, seq),
+      FOREIGN KEY (run_id) REFERENCES durable_runs(run_id) ON DELETE CASCADE
+    );
+    INSERT INTO durable_runs
+      (run_id, session_id, engine_kind, status, attempt, envelope_json, created_at, updated_at)
+      VALUES ('run-legacy', 'session-1', 'native', 'running', 1, '{}', 1, 1);
+    INSERT INTO durable_run_attempts
+      (run_id, attempt, process_instance_id, owner_id, owner_epoch, status, started_at)
+      VALUES ('run-legacy', 1, 'p1', 'owner', 1, 'active', 1);
+    INSERT INTO durable_run_events
+      (run_id, seq, attempt, event_type, event_json, recorded_at)
+      VALUES ('run-legacy', 1, 1, 'run_started', '{}', 1);
+  `);
+}
+
+function insertLoopChild(db: Database.Database): void {
+  db.prepare(`
+    INSERT INTO durable_runs
+      (run_id, session_id, parent_run_id, engine_kind, status, attempt, envelope_json, created_at, updated_at)
+      VALUES ('run-loop', 'session-1', 'run-legacy', 'loop', 'running', 1, '{}', 2, 2)
+  `).run();
+}
+
+function insertLoopChildOnFresh(db: Database.Database): void {
+  db.prepare(`
+    INSERT INTO durable_runs
+      (run_id, session_id, parent_run_id, engine_kind, status, attempt, envelope_json, created_at, updated_at)
+      VALUES ('run-loop', 'session-fresh', NULL, 'loop', 'running', 1, '{}', 1, 1)
+  `).run();
+}
+
+function expectBogusEngineKindRejected(db: Database.Database): void {
+  expect(() => db.prepare(`
+    INSERT INTO durable_runs
+      (run_id, session_id, engine_kind, status, attempt, envelope_json, created_at, updated_at)
+      VALUES ('run-bogus', 'session-2', 'bogus', 'running', 1, '{}', 3, 3)
+  `).run()).toThrow();
+}
+
 describe('Durable Run migration draft', () => {
   it('adds isolated, append-safe run tables without changing legacy session data', () => {
     const db = new Database(':memory:');
@@ -220,10 +322,10 @@ describe('Durable Run migration draft', () => {
     db.close();
   });
 
-  it('is a no-op when subagent_single is already present', () => {
+  it('is a no-op when the fresh CHECK kinds (subagent_single and loop) are all present', () => {
     const db = new Database(':memory:');
     db.pragma('foreign_keys = ON');
-    createLegacyDurableRuns(db, "'native','subagent_single'");
+    createLegacyDurableRuns(db, "'native','agent_team','dynamic_workflow','external_cli','subagent_single','loop'");
     db.prepare(`
       INSERT INTO durable_runs
         (run_id, session_id, engine_kind, status, attempt, envelope_json, created_at, updated_at)
@@ -336,6 +438,124 @@ describe('Durable Run migration draft', () => {
       .toEqual([{ run_id: 'run-old', engine_kind: 'native', engine_ref_json: null }]);
     const sql = (db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'durable_runs'").get() as { sql: string }).sql;
     expect(sql).toContain("'subagent_single'");
+    db.close();
+  });
+
+  it('widens the engine_kind CHECK on existing databases without losing child rows (N-LOOP-DURABLE-K2)', () => {
+    const db = new Database(':memory:');
+    db.pragma('foreign_keys = ON');
+    createLegacyDurableRunsWithChildren(db, ['native', 'agent_team', 'dynamic_workflow', 'external_cli']);
+
+    applyDurableRunMigrationDraft(db);
+
+    expect(db.prepare('SELECT run_id, engine_kind FROM durable_runs').all())
+      .toEqual([{ run_id: 'run-legacy', engine_kind: 'native' }]);
+    expect(db.prepare('SELECT run_id FROM durable_run_attempts').all()).toEqual([{ run_id: 'run-legacy' }]);
+    expect(db.prepare('SELECT run_id, seq FROM durable_run_events').all())
+      .toEqual([{ run_id: 'run-legacy', seq: 1 }]);
+    expect(engineKindsInCheck(durableRunsCreateSql(db))).toEqual([
+      'native', 'agent_team', 'dynamic_workflow', 'external_cli', 'subagent_single', 'loop',
+    ]);
+
+    insertLoopChild(db);
+    expectBogusEngineKindRejected(db);
+
+    const sqlAfterWiden = durableRunsCreateSql(db);
+    applyDurableRunMigrationDraft(db);
+    expect(durableRunsCreateSql(db)).toBe(sqlAfterWiden);
+    expect(db.prepare('SELECT run_id FROM durable_runs ORDER BY run_id').all())
+      .toEqual([{ run_id: 'run-legacy' }, { run_id: 'run-loop' }]);
+
+    const indexes = durableRunsIndexes(db);
+    expect(indexes).toContain('idx_durable_runs_active_session');
+    expect(indexes).toContain('idx_durable_runs_session');
+    expect(indexes).toContain('idx_durable_runs_recovery');
+    expect(db.pragma('foreign_keys', { simple: true })).toBe(1);
+    db.close();
+  });
+
+  it('is a no-op when the existing CHECK already contains loop', () => {
+    const db = new Database(':memory:');
+    db.pragma('foreign_keys = ON');
+    applyDurableRunMigrationDraft(db);
+    insertLoopChildOnFresh(db);
+
+    const sqlBefore = durableRunsCreateSql(db);
+    const kindsBefore = engineKindsInCheck(sqlBefore);
+    expect(kindsBefore).toContain('loop');
+
+    applyDurableRunMigrationDraft(db);
+
+    expect(durableRunsCreateSql(db)).toBe(sqlBefore);
+    expect(engineKindsInCheck(durableRunsCreateSql(db))).toEqual(kindsBefore);
+    expect(db.prepare('SELECT run_id, engine_kind FROM durable_runs ORDER BY run_id').all())
+      .toEqual([{ run_id: 'run-loop', engine_kind: 'loop' }]);
+    expect(db.pragma('foreign_keys', { simple: true })).toBe(1);
+    db.close();
+  });
+
+  it('adds loop onto a CHECK that already contains subagent_single without dropping it (RQ-101 first)', () => {
+    const db = new Database(':memory:');
+    db.pragma('foreign_keys = ON');
+    createLegacyDurableRunsWithChildren(db, [
+      'native', 'agent_team', 'dynamic_workflow', 'external_cli', 'subagent_single',
+    ]);
+    db.prepare(`
+      INSERT INTO durable_runs
+        (run_id, session_id, parent_run_id, engine_kind, status, attempt, envelope_json, created_at, updated_at)
+        VALUES ('run-bg', 'session-1', 'run-legacy', 'subagent_single', 'running', 1, '{}', 2, 2)
+    `).run();
+
+    applyDurableRunMigrationDraft(db);
+
+    const kinds = engineKindsInCheck(durableRunsCreateSql(db));
+    expect(kinds).toEqual([
+      'native', 'agent_team', 'dynamic_workflow', 'external_cli', 'subagent_single', 'loop',
+    ]);
+    expect(db.prepare('SELECT run_id, engine_kind FROM durable_runs ORDER BY run_id').all()).toEqual([
+      { run_id: 'run-bg', engine_kind: 'subagent_single' },
+      { run_id: 'run-legacy', engine_kind: 'native' },
+    ]);
+    expect(db.prepare('SELECT run_id FROM durable_run_attempts').all()).toEqual([{ run_id: 'run-legacy' }]);
+    expect(db.prepare('SELECT run_id FROM durable_run_events').all()).toEqual([{ run_id: 'run-legacy' }]);
+
+    insertLoopChild(db);
+    expect(db.prepare("SELECT run_id FROM durable_runs WHERE engine_kind = 'loop'").all())
+      .toEqual([{ run_id: 'run-loop' }]);
+    expectBogusEngineKindRejected(db);
+
+    const sqlAfterWiden = durableRunsCreateSql(db);
+    applyDurableRunMigrationDraft(db);
+    expect(durableRunsCreateSql(db)).toBe(sqlAfterWiden);
+    expect(engineKindsInCheck(durableRunsCreateSql(db))).toEqual(kinds);
+    expect(durableRunsIndexes(db)).toContain('idx_durable_runs_active_session');
+    expect(db.pragma('foreign_keys', { simple: true })).toBe(1);
+    db.close();
+  });
+
+  it('restores foreign_keys to OFF when the caller had it off before widen (ai-review Important)', () => {
+    const db = new Database(':memory:');
+    db.pragma('foreign_keys = ON');
+    createLegacyDurableRunsWithChildren(db, ['native', 'agent_team', 'dynamic_workflow', 'external_cli']);
+    db.pragma('foreign_keys = OFF');
+    expect(db.pragma('foreign_keys', { simple: true })).toBe(0);
+
+    applyDurableRunMigrationDraft(db);
+
+    expect(engineKindsInCheck(durableRunsCreateSql(db))).toContain('loop');
+    expect(db.pragma('foreign_keys', { simple: true })).toBe(0);
+    db.close();
+  });
+
+  it('restores foreign_keys to ON when the caller had the default on before widen', () => {
+    const db = new Database(':memory:');
+    db.pragma('foreign_keys = ON');
+    createLegacyDurableRunsWithChildren(db, ['native', 'agent_team', 'dynamic_workflow', 'external_cli']);
+
+    applyDurableRunMigrationDraft(db);
+
+    expect(engineKindsInCheck(durableRunsCreateSql(db))).toContain('loop');
+    expect(db.pragma('foreign_keys', { simple: true })).toBe(1);
     db.close();
   });
 });

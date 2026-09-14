@@ -16,10 +16,10 @@ import type { ModelConfig } from '../../../src/shared/contract/model';
 const xiaomi = (over: Partial<ModelConfig> = {}): ModelConfig =>
   ({ provider: 'xiaomi', model: 'mimo-v2.5-pro', apiKey: 'k', ...over }) as ModelConfig;
 
-describe('buildVendorCompatSettings — deepseek reasoning_effort（QE-01：默认引擎此前无此映射）', () => {
-  const deepseek = (over: Partial<ModelConfig> = {}): ModelConfig =>
-    ({ provider: 'deepseek', model: 'deepseek-reasoner', apiKey: 'k', ...over }) as ModelConfig;
+const deepseek = (over: Partial<ModelConfig> = {}): ModelConfig =>
+  ({ provider: 'deepseek', model: 'deepseek-reasoner', apiKey: 'k', ...over }) as ModelConfig;
 
+describe('buildVendorCompatSettings — deepseek reasoning_effort（QE-01：默认引擎此前无此映射）', () => {
   it('config.reasoningEffort 存在 → 注入 body.reasoning_effort', () => {
     const settings = buildVendorCompatSettings(deepseek({ reasoningEffort: 'low' } as Partial<ModelConfig>));
     expect(settings.transformRequestBody).toBeTypeOf('function');
@@ -35,6 +35,50 @@ describe('buildVendorCompatSettings — deepseek reasoning_effort（QE-01：默�
     });
     expect(body).not.toHaveProperty('reasoning_effort');
     expect(body.messages).toEqual([{ role: 'assistant', content: 'history', reasoning_content: '' }]);
+  });
+});
+
+describe('buildVendorCompatSettings — ADR-068 刀 2 B1 续接 prefix 注入（prefix-param 档 deepseek）', () => {
+  it('末条 assistant（B1 续接请求独有形状）→ 注入 prefix:true，且 reasoning_content 补齐覆盖 prefix 消息', () => {
+    const settings = buildVendorCompatSettings(deepseek());
+    const body = settings.transformRequestBody!({
+      model: 'deepseek-chat',
+      messages: [
+        { role: 'user', content: 'x' },
+        { role: 'assistant', content: 'partial' },
+      ],
+    });
+    expect(body.prefix).toBe(true);
+    // DeepSeek 要求所有 assistant 消息回传 reasoning_content——prefix 消息不例外
+    expect(body.messages).toEqual([
+      { role: 'user', content: 'x' },
+      { role: 'assistant', content: 'partial', reasoning_content: '' },
+    ]);
+  });
+
+  it('末条 user（正常请求）→ 不注入 prefix（双保险：参数不泄漏进正常请求）', () => {
+    const settings = buildVendorCompatSettings(deepseek());
+    const body = settings.transformRequestBody!({
+      messages: [
+        { role: 'user', content: 'x' },
+        { role: 'assistant', content: 'h' },
+        { role: 'user', content: 'y' },
+      ],
+    });
+    expect(body).not.toHaveProperty('prefix');
+    // 历史补齐照常（档位行为不受 prefix 检测影响）
+    expect((body.messages as unknown[])[1]).toMatchObject({ reasoning_content: '' });
+  });
+
+  it('trailing-assistant 档（openrouter）与 unknown 档（xiaomi）无 prefix 参数注入——该档只拼消息', () => {
+    // openrouter 走 @openrouter/ai-sdk-provider，不经 buildVendorCompatSettings 的 transform
+    expect(buildVendorCompatSettings({ provider: 'openrouter', model: 'x' } as ModelConfig).transformRequestBody)
+      .toBeUndefined();
+    // xiaomi（unknown 档）transform 只管 thinking/采样：末条 assistant 也不注入 prefix
+    const body = buildVendorCompatSettings(xiaomi()).transformRequestBody!({
+      messages: [{ role: 'assistant', content: 'partial' }],
+    });
+    expect(body).not.toHaveProperty('prefix');
   });
 });
 

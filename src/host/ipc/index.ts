@@ -13,6 +13,7 @@ const logger = createLogger('IPC');
 
 import { registerAgentHandlers } from './agent.ipc';
 import { registerSessionHandlers } from './session.ipc';
+import type { SessionCommandContext } from './domainRoutes/sessionRoutes';
 import { registerAuthHandlers } from './auth.ipc';
 import { registerAdminHandlers } from './admin.ipc';
 import { registerSyncHandlers } from './sync.ipc';
@@ -103,6 +104,11 @@ export interface IpcDependencies {
    */
   onQueuedInputEnqueued?: (sessionId: string) => void;
   onQueuedInputSendNow?: NonNullable<QueuedInputHandlerDependencies['sendNow']>;
+  /**
+   * web 模式的 session 域命令上下文（RQ-183 刀 2 单装配点）：webServer 注入时
+   * session 域装 web 形态表（惰性装配 + sm 直调平移），缺省装桌面全量形态。
+   */
+  sessionCommandContext?: SessionCommandContext;
 }
 
 /**
@@ -120,8 +126,9 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
   // Agent handlers (via AgentApplicationService)
   registerAgentHandlers(ipcMain, getAppService);
 
-  // Session handlers (via AgentApplicationService)
-  registerSessionHandlers(ipcMain, getAppService);
+  // Session handlers (via AgentApplicationService) —— 域通道走单源路由表（RQ-183 刀 2），
+  // webServer 注入 web context 时装 web 形态，此后 webServer 不再覆盖 domain:session
+  registerSessionHandlers(ipcMain, getAppService, deps.sessionCommandContext);
 
   // Auth handlers
   registerAuthHandlers(ipcMain);

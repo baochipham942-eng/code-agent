@@ -232,6 +232,46 @@ describe('WebSessionStore', () => {
     );
   });
 
+  it('commitTurn 落库 user 侧保留 isMeta（meta 轮不混进可见历史）', async () => {
+    setDbAvailable(true);
+    const db = createDatabaseStub();
+    db.getSession.mockReturnValue({ id: 'meta-turn', title: 'Existing' });
+    const store = createWebSessionStore({
+      tryGetSessionManager: async () => null,
+      logger,
+      getDatabase: async () => db as unknown as DatabaseService,
+    });
+    await store.commitTurn({
+      sessionId: 'meta-turn',
+      title: 'approved plan',
+      modelConfig: { provider: 'xiaomi', model: 'mimo-v2.5-pro' },
+      historyLength: 0,
+      userMessagePrePersistedDb: false,
+      userMessage: {
+        id: 'user-meta',
+        role: 'user',
+        content: '<approved-plan>…</approved-plan>',
+        timestamp: 1,
+        isMeta: true,
+      },
+      turn: {
+        assistantText: '',
+        assistantThinking: '',
+        assistantMetadata: undefined,
+        assistantToolCalls: [],
+        lastLoopAssistantMessageId: undefined,
+        contentParts: [],
+        runCancelled: false,
+        hasAssistantOutput: () => false,
+        hasInterleaving: () => false,
+      },
+    });
+    expect(db.addMessage).toHaveBeenCalledWith(
+      'meta-turn',
+      expect.objectContaining({ id: 'user-meta', isMeta: true }),
+    );
+  });
+
   it('commitTurn does not rewrite a custom session title on the first user message', async () => {
     setDbAvailable(true);
     const db = createDatabaseStub();

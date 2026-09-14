@@ -1358,6 +1358,33 @@ describe('createAgentRouter', () => {
       });
     });
 
+    it('body 带 historyVisibility=meta → pre-persist 落库的 user message 带 isMeta（计划内部 prompt 不混进可见历史）', async () => {
+      setDbAvailable(true);
+      const controller = new AbortController();
+      const response = await fetch(`${baseUrl}/api/run`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          prompt: '<approved-plan>…</approved-plan> Execute this approved plan now.',
+          sessionId: 'session-meta-prepersist',
+          historyVisibility: 'meta',
+        }),
+        signal: controller.signal,
+      });
+      expect(response.ok).toBe(true);
+      await waitForAssertion(() => {
+        expect(mockDb.addMessage).toHaveBeenCalled();
+      });
+      expect(mockDb.addMessage).toHaveBeenCalledWith(
+        'session-meta-prepersist',
+        expect.objectContaining({ role: 'user', isMeta: true }),
+      );
+      controller.abort();
+      await waitForAssertion(() => {
+        expect(mockCancel).toHaveBeenCalled();
+      });
+    });
+
     it('body 不带 → thinkingEnabled 缺省 true、effortLevel 不设（复杂度自动档）', async () => {
       const controller = new AbortController();
       const response = await fetch(`${baseUrl}/api/run`, {

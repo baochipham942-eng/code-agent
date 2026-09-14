@@ -2,9 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { Message } from '../../../src/shared/contract';
 import {
   markFtsTableAvailable,
-  markFtsTableDisabledForTests,
-  markFtsTableEmptyForTests,
-  resetFtsRepairStateForTests,
+  repairFtsTable,
 } from '../../../src/host/services/core/database/ftsRepair';
 import { SQLITE_FTS } from '../../../src/shared/constants';
 import {
@@ -18,7 +16,7 @@ import {
 } from '../../../src/web/helpers/webSessionStore';
 
 afterEach(() => {
-  resetFtsRepairStateForTests();
+  repairFtsTable.resetStateForTests();
   setDbAvailable(false, new Error('test reset'));
   sessionMessages.clear();
 });
@@ -37,7 +35,7 @@ describe('web session persistence health', () => {
 
   it('overlays FTS_DISABLED as degraded without flipping durable off', () => {
     setDbAvailable(true);
-    markFtsTableDisabledForTests('session_messages_fts');
+    repairFtsTable.markDisabledForTests('session_messages_fts');
 
     expect(getPersistenceHealth()).toMatchObject({
       status: 'degraded',
@@ -49,7 +47,7 @@ describe('web session persistence health', () => {
 
   it('overlays FTS_EMPTY_RECREATED as degraded while the index awaits backfill', () => {
     setDbAvailable(true);
-    markFtsTableEmptyForTests('session_messages_fts');
+    repairFtsTable.markEmptyForTests('session_messages_fts');
 
     expect(getPersistenceHealth()).toMatchObject({
       status: 'degraded',
@@ -61,8 +59,8 @@ describe('web session persistence health', () => {
 
   it('keeps FTS_DISABLED precedence when a table is disabled and another is empty', () => {
     setDbAvailable(true);
-    markFtsTableEmptyForTests('session_messages_fts');
-    markFtsTableDisabledForTests('transcript_fts');
+    repairFtsTable.markEmptyForTests('session_messages_fts');
+    repairFtsTable.markDisabledForTests('transcript_fts');
 
     expect(getPersistenceHealth()).toMatchObject({
       status: 'degraded',
@@ -72,7 +70,7 @@ describe('web session persistence health', () => {
 
   it('recovers to available once the empty state clears after backfill', () => {
     setDbAvailable(true);
-    markFtsTableEmptyForTests('session_messages_fts');
+    repairFtsTable.markEmptyForTests('session_messages_fts');
     expect(getPersistenceHealth().status).toBe('degraded');
 
     markFtsTableAvailable('session_messages_fts');

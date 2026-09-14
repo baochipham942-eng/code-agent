@@ -9,21 +9,25 @@ import type BetterSqlite3 from 'better-sqlite3';
 
 // 注入「修复阶梯自身抛错」：默认放行真实现，单测翻转开关。
 // 真实现经 vi.mock 包装后仍是同一个 availability 状态机（importOriginal 透传）。
+// Object.assign 透传挂在 repairFtsTable 上的测试助手（resetStateForTests 等）。
 const ftsRepairMockState = vi.hoisted(() => ({ repairShouldThrow: false }));
 vi.mock('../../../src/host/services/core/database/ftsRepair', async (importOriginal) => {
   const original = await importOriginal<typeof import('../../../src/host/services/core/database/ftsRepair')>();
   return {
     ...original,
-    repairFtsTable: (
-      db: BetterSqlite3.Database,
-      table: Parameters<typeof original.repairFtsTable>[1],
-      hooks?: Parameters<typeof original.repairFtsTable>[2],
-    ) => {
-      if (ftsRepairMockState.repairShouldThrow) {
-        throw new Error('injected repair ladder failure');
-      }
-      return original.repairFtsTable(db, table, hooks);
-    },
+    repairFtsTable: Object.assign(
+      (
+        db: BetterSqlite3.Database,
+        table: Parameters<typeof original.repairFtsTable>[1],
+        hooks?: Parameters<typeof original.repairFtsTable>[2],
+      ) => {
+        if (ftsRepairMockState.repairShouldThrow) {
+          throw new Error('injected repair ladder failure');
+        }
+        return original.repairFtsTable(db, table, hooks);
+      },
+      original.repairFtsTable,
+    ),
   };
 });
 
@@ -31,10 +35,8 @@ import {
   getDisabledFtsTables,
   isFtsDisabled,
   isFtsSearchDegraded,
-  markFtsTableDisabledForTests,
   repairCorruptFtsOnStartup,
   repairFtsTable,
-  resetFtsRepairStateForTests,
 } from '../../../src/host/services/core/database/ftsRepair';
 import { rebuildSessionMessagesFts } from '../../../src/host/services/core/database/sessionMessagesFts';
 import { SessionRepository } from '../../../src/host/services/core/repositories/SessionRepository';
@@ -101,7 +103,7 @@ describe('ftsRepair ladder', () => {
 
   afterEach(() => {
     ftsRepairMockState.repairShouldThrow = false;
-    resetFtsRepairStateForTests();
+    repairFtsTable.resetStateForTests();
     for (const dir of dirs.splice(0)) {
       fs.rmSync(dir, { recursive: true, force: true });
     }
@@ -356,7 +358,7 @@ describe('ftsRepair ladder', () => {
     seedMessages(repo, 10);
     // visibility 是兼容性 cache 字段；rewind 后的消息应从默认搜索消失、includeRewound 时保留
     repo.updateMessage('m-2', { visibility: 'rewound' }, 'sess-1');
-    markFtsTableDisabledForTests('session_messages_fts');
+    repairFtsTable.markDisabledForTests('session_messages_fts');
 
     const visibleOnly = repo.searchSessionMessagesFts('needle', { limit: 50 });
     expect(visibleOnly.some((hit) => hit.messageId === 'm-2')).toBe(false);

@@ -16,7 +16,7 @@ import { isSqliteCorruptionError } from './sqliteErrors';
 
 const logger = createLogger('FtsRepair');
 
-export const FTS_TABLES = ['session_messages_fts', 'transcript_fts', 'memories_fts'] as const;
+const FTS_TABLES = ['session_messages_fts', 'transcript_fts', 'memories_fts'] as const;
 export type FtsTableName = (typeof FTS_TABLES)[number];
 export type FtsRepairOutcome = 'rebuilt' | 'empty-recreated' | 'disabled';
 type FtsAvailability = 'ok' | 'empty' | 'disabled';
@@ -156,19 +156,7 @@ export function markFtsTableRepairFailed(table: FtsTableName): void {
   availability.set(table, 'disabled');
 }
 
-export function resetFtsRepairStateForTests(): void {
-  availability.clear();
-}
-
-export function markFtsTableDisabledForTests(table: FtsTableName): void {
-  availability.set(table, 'disabled');
-}
-
-export function markFtsTableEmptyForTests(table: FtsTableName): void {
-  availability.set(table, 'empty');
-}
-
-export function isFtsTableCorrupt(db: BetterSqlite3.Database, table: FtsTableName): boolean {
+function isFtsTableCorrupt(db: BetterSqlite3.Database, table: FtsTableName): boolean {
   const quoted = quoteSqlIdentifier(table);
   try {
     db.prepare(`SELECT 1 FROM ${quoted} LIMIT 1`).get();
@@ -183,61 +171,78 @@ export function isFtsTableCorrupt(db: BetterSqlite3.Database, table: FtsTableNam
   return false;
 }
 
-export function repairFtsTable(
-  db: BetterSqlite3.Database,
-  table: FtsTableName,
-  hooks: Partial<FtsRepairHooks> = {},
-): FtsRepairOutcome {
-  const rebuild = hooks.rebuild ?? ((database) => defaultRebuild(database, table));
-  const recreateEmpty = hooks.recreateEmpty ?? ((database) => recreateEmptyFtsTable(database, table));
+export const repairFtsTable = Object.assign(
+  function repairFtsTable(
+    db: BetterSqlite3.Database,
+    table: FtsTableName,
+    hooks: Partial<FtsRepairHooks> = {},
+  ): FtsRepairOutcome {
+    const rebuild = hooks.rebuild ?? ((database) => defaultRebuild(database, table));
+    const recreateEmpty = hooks.recreateEmpty ?? ((database) => recreateEmptyFtsTable(database, table));
 
-  try {
-    rebuild(db);
-    availability.set(table, 'ok');
-    logger.info('FTS rebuilt', { table, outcome: 'rebuilt' });
-    return 'rebuilt';
-  } catch (err) {
-    logger.warn('rebuild failed; trying empty recreate', { table, error: err });
-  }
+    try {
+      rebuild(db);
+      availability.set(table, 'ok');
+      logger.info('FTS rebuilt', { table, outcome: 'rebuilt' });
+      return 'rebuilt';
+    } catch (err) {
+      logger.warn('rebuild failed; trying empty recreate', { table, error: err });
+    }
 
-  try {
-    recreateEmpty(db);
-  } catch (err) {
-    logger.warn('empty recreate failed; disabling FTS writes', { table, error: err });
-    disableFtsWrites(db, table);
-    availability.set(table, 'disabled');
-    logger.warn('FTS disabled; search will use LIKE fallback', {
+    try {
+      recreateEmpty(db);
+    } catch (err) {
+      logger.warn('empty recreate failed; disabling FTS writes', { table, error: err });
+      disableFtsWrites(db, table);
+      availability.set(table, 'disabled');
+      logger.warn('FTS disabled; search will use LIKE fallback', {
+        table,
+        outcome: 'disabled',
+        reason: SQLITE_FTS.DISABLED_REASON,
+      });
+      return 'disabled';
+    }
+
+    // 空表重建成功后立刻回填：损坏页已随 DROP/隔离消失，源表完好时重建应当成功。
+    // 成功则降级态当场消除（健康面不报警）；仍失败（如源表也坏）保持 empty 降级态，
+    // 由 PersistenceHealth 报 FTS_EMPTY_RECREATED，启动 backfill 兜底。
+    try {
+      const refilled = rebuild(db);
+      availability.set(table, 'ok');
+      logger.info('FTS refilled after empty recreate', { table, outcome: 'rebuilt', rows: refilled });
+      return 'rebuilt';
+    } catch (err) {
+      logger.warn('refill after empty recreate failed; staying degraded', { table, error: err });
+    }
+
+    availability.set(table, 'empty');
+    logger.warn('FTS recreated empty', {
       table,
-      outcome: 'disabled',
-      reason: SQLITE_FTS.DISABLED_REASON,
+      outcome: 'empty-recreated',
+      reason: SQLITE_FTS.EMPTY_RECREATED_REASON,
     });
-    return 'disabled';
-  }
-
-  // 空表重建成功后立刻回填：损坏页已随 DROP/隔离消失，源表完好时重建应当成功。
-  // 成功则降级态当场消除（健康面不报警）；仍失败（如源表也坏）保持 empty 降级态，
-  // 由 PersistenceHealth 报 FTS_EMPTY_RECREATED，启动 backfill 兜底。
-  try {
-    const refilled = rebuild(db);
-    availability.set(table, 'ok');
-    logger.info('FTS refilled after empty recreate', { table, outcome: 'rebuilt', rows: refilled });
-    return 'rebuilt';
-  } catch (err) {
-    logger.warn('refill after empty recreate failed; staying degraded', { table, error: err });
-  }
-
-  availability.set(table, 'empty');
-  logger.warn('FTS recreated empty', {
-    table,
-    outcome: 'empty-recreated',
-    reason: SQLITE_FTS.EMPTY_RECREATED_REASON,
-  });
-  return 'empty-recreated';
-}
+    return 'empty-recreated';
+  },
+  {
+    // 测试用助手挂在既有导出上，不作为新 export（knip production 棘轮不认新死导出，见 #1727 同款写法）。
+    /** 测试用：清空降级状态机 */
+    resetStateForTests(): void {
+      availability.clear();
+    },
+    /** 测试用：直接落 disabled 降级态 */
+    markDisabledForTests(table: FtsTableName): void {
+      availability.set(table, 'disabled');
+    },
+    /** 测试用：直接落 empty 降级态 */
+    markEmptyForTests(table: FtsTableName): void {
+      availability.set(table, 'empty');
+    },
+  },
+);
 
 const MESSAGE_FTS_TABLES: FtsTableName[] = ['session_messages_fts', 'transcript_fts'];
 
-export function repairMessageProjectionFts(db: BetterSqlite3.Database): void {
+function repairMessageProjectionFts(db: BetterSqlite3.Database): void {
   const targets = MESSAGE_FTS_TABLES.filter((table) => {
     if (isFtsDisabled(table)) return true;
     return isFtsTableCorrupt(db, table);

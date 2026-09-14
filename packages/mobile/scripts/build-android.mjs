@@ -1,6 +1,7 @@
 import { configureVoiceRelease } from './configure-voice.mjs';
 import './remote-only.mjs';
 import { configureAndroidLan } from './configure-lan.mjs';
+import { assembleDebugOffline } from './gradle-offline-warm.mjs';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, readdirSync } from 'node:fs';
@@ -104,7 +105,7 @@ if (!manifestTemplate.includes('enableOnBackInvokedCallback')) {
 }
 run('node_modules/.bin/cap', ['sync', 'android']);
 configureAndroidLan();
-run('./gradlew', ['--offline', '--no-daemon', '--max-workers=2', 'assembleDebug'], resolve('android'));
+assembleDebugOffline({ cwd: resolve('android') });
 mkdirSync('.artifacts', { recursive: true });
 const apk = `.artifacts/neo-mobile-${version}-${build}.apk`;
 copyFileSync('android/app/build/outputs/apk/debug/app-debug.apk', apk);

@@ -416,7 +416,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
           openArtifact={id => void companion.previewArtifact(id).then(() => {
             if (companionStore.getState().preview) store.getState().openSheet('preview');
           })} />
-        : <div className="welcome"><NeoBrandMark /><h1>{companion.status === 'connected' ? text.connectedReady : text.welcome}</h1>{companion.status === 'connected' && <p className="connection-next">{text.connectedNext}</p>}</div>}
+        : <div className="welcome"><NeoBrandMark variant="mark" size={47} /><h1>{companion.status === 'connected' ? text.connectedReady : text.welcome}</h1>{companion.status === 'connected' && <p className="connection-next">{text.connectedNext}</p>}</div>}
       <div className="composer-area" ref={composerArea}>
         {/* 本会话的审批优先在托盘里就地给控件——CompanionConversation 被传了
             hidePendingApprovals，它不会再渲染 pending 卡片，所以这里是本会话审批**唯一**的

@@ -1,5 +1,6 @@
 import type { CompanionArtifact, CompanionHistory } from '../../../../../src/shared/contract/companionLibrary';
 import { useLayoutEffect, useRef, useState } from 'react';
+import { NeoBrandMark } from '../brand/NeoBrandMark';
 import { ApprovalCard } from './ApprovalCard';
 import { QuestionCard } from './QuestionCard';
 import { PlanCard } from './PlanCard';
@@ -60,7 +61,12 @@ export function CompanionConversation({ history, loadMore, hidePendingApprovals 
     setShowLatest(!following.current);
   }} className="lan-messages" aria-label={text.history} aria-live="polite">
     {history?.nextOffset != null && !offline && <button onClick={loadMore}>{text.loadHistory}</button>}
-    {Array.from(rows, ([id, row]) => <p key={id} className={`lan-message ${row.role === 'user' ? 'from-user' : ''}`}>{row.content}{row.truncated && <small className="notice">{text.historyTruncated}</small>}</p>)}
+    {Array.from(rows, ([id, row]) => row.role === 'user'
+      ? <p key={id} className="lan-message from-user">{row.content}{row.truncated && <small className="notice">{text.historyTruncated}</small>}</p>
+      : <div key={id} className="lan-message">
+        <div className="assistant-label"><NeoBrandMark variant="mark" size={24} /><span>{text.neo}</span></div>
+        <p className="assistant-text">{row.content}{row.truncated && <small className="notice">{text.historyTruncated}</small>}</p>
+      </div>)}
     {Array.from(approvals, ([id, card]) => (!hidePendingApprovals || card.status !== 'pending') && <ApprovalCard key={id} card={card} text={text} disabled={disabled}
       respond={decision => respond(id, decision)} />)}
     {Array.from(questions, ([id, card]) => (!hidePendingApprovals || card.status !== 'pending') && <QuestionCard key={id} card={card} text={text} disabled={disabled}

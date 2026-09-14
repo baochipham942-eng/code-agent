@@ -6,6 +6,7 @@ import type { CompanionManagementResult, CompanionPairedDevice } from '@shared/c
 import { invoke } from '../../../../services/ipcService';
 import { useI18n } from '../../../../hooks/useI18n';
 import { companionErrorCopy, companionText } from '../../../../i18n/companion';
+import { deriveInvitationVerify, formatInvitationVerify } from '@shared/companion/lanProtocol';
 import { Button } from '../../../primitives';
 import { SettingsSection } from '../SettingsLayout';
 
@@ -17,7 +18,7 @@ export function CompanionSection() {
   const text = companionText[language];
   const locale = language === 'en' ? 'en-US' : 'zh-CN';
   const [status, setStatus] = useState<Status | null>(null);
-  const [qr, setQr] = useState<{ image: string; expiresAt: number } | null>(null);
+  const [qr, setQr] = useState<{ image: string; expiresAt: number; verify?: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expired, setExpired] = useState(false);
@@ -44,7 +45,11 @@ export function CompanionSection() {
     const result = await invoke(COMPANION_MANAGE_CHANNEL, { action: 'invite', scope: grants });
     if (result.kind !== 'invitation') throw new Error('COMPANION_UNAVAILABLE');
     const image = await QRCode.toDataURL(JSON.stringify(result.invitation), { width: 320, margin: 2, errorCorrectionLevel: 'M' });
-    setQr({ image, expiresAt: result.invitation.expiresAt });
+    setQr({
+      image, expiresAt: result.invitation.expiresAt,
+      verify: result.invitation.verify
+        ? deriveInvitationVerify(result.invitation.psk, result.invitation.hostKey) : undefined,
+    });
   });
   useEffect(() => { void run(refresh); }, []);
   useEffect(() => {
@@ -60,7 +65,12 @@ export function CompanionSection() {
         {qr && <img src={qr.image} alt={text.qr} width={320} height={320} className="rounded-lg bg-white p-2" />}
         <div className="space-y-2 text-sm">
           <p>{text.scanHint}</p>
-          {/* LanInvitation has no verification-code field; protocol change is a separate ticket. */}
+          {qr?.verify && <>
+            <p className="text-xs text-zinc-500">{text.verifyLabel}</p>
+            <p className="font-mono text-2xl tracking-[0.2em] text-zinc-100" data-testid="companion-verify">
+              {formatInvitationVerify(qr.verify)}
+            </p>
+          </>}
           <p className="text-xs text-zinc-500">{qr ? text.expires : expired ? text.expired : text.expires}</p>
           <div className="flex flex-wrap gap-3">
             <Button variant="primary" size="sm" loading={busy} disabled={!canInvite || busy} onClick={invite}>

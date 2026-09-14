@@ -5,7 +5,7 @@ import express from 'express';
 import type Noise from 'noise-handshake';
 import type { KeyPair } from 'noise-handshake';
 import { COMPANION_EVENT_DROPPED, COMPANION_LIMITS as L } from '../../../shared/constants/companion';
-import { fromHex, toHex, isLanPeer, isPrivateIPv4, lanAdvertisedHost, type LanInvitation } from '../../../shared/companion/lanProtocol';
+import { deriveInvitationVerify, fromHex, toHex, isLanPeer, isPrivateIPv4, lanAdvertisedHost, type LanInvitation } from '../../../shared/companion/lanProtocol';
 import { createHandshake, NoiseChannel } from '../../../shared/companion/noiseChannel';
 import { companionCommandSchema, type CompanionEvent } from '../../../shared/contract/companion';
 import { getRegisteredCompanionDictation } from '../capabilities/hostCapabilityPorts';
@@ -101,9 +101,10 @@ export class LanCompanionServer {
     }
     this.pending.clear();
     this.invitation = { id: randomUUID(), psk: randomBytes(32).toString('hex'), scope: [...new Set(scope)], expiresAt: this.now() + L.invitationTtlMs };
+    const hostKey = toHex(this.identity.publicKey);
     return { version: 1, endpoint: this.endpoint, ...(this.altEndpoint ? { altEndpoint: this.altEndpoint } : {}),
-      inviteId: this.invitation.id, psk: this.invitation.psk,
-      hostKey: toHex(this.identity.publicKey), expiresAt: this.invitation.expiresAt };
+      inviteId: this.invitation.id, psk: this.invitation.psk, hostKey, expiresAt: this.invitation.expiresAt,
+      verify: deriveInvitationVerify(this.invitation.psk, hostKey) };
   }
 
   revoke(deviceId: string): void {

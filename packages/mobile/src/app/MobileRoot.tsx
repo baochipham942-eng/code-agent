@@ -21,6 +21,8 @@ import { PreviewMedia } from '../features/sessions/PreviewMedia';
 import { applyKeyboardInset } from './keyboardInset';
 import { SheetHost } from './SheetHost';
 import { SettingsPage } from '../features/settings/SettingsPage';
+import { PairConfirm } from '../features/settings/PairConfirm';
+import { deriveInvitationVerify, parseInvitation, type LanInvitation } from '../../../../src/shared/companion/lanProtocol';
 import { VirtualHistory } from '../features/sessions/VirtualHistory';
 import { NeoBrandMark } from '../features/brand/NeoBrandMark';
 import { AppIcon } from './AppIcon';
@@ -69,6 +71,13 @@ export function taskStatusCopy(
   if (companion.pending) return companion.pendingAction === 'voice.transcribe' ? text.transcribing : text.pendingCommand;
   if (companion.runId) return text.running;
   return companion.terminal ? text[companion.terminal] : '';
+}
+
+function invitationHostLabel(invitation: LanInvitation): string | null {
+  try {
+    const host = new URL(invitation.altEndpoint ?? invitation.endpoint).hostname;
+    return host.endsWith('.local') ? host.slice(0, -'.local'.length) : null;
+  } catch { return null; }
 }
 
 /**
@@ -174,6 +183,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
     composerObserver.current.observe(node);
   }, []);
   const [voiceFailureShown, setVoiceFailureShown] = useState(false);
+  const [pendingInvite, setPendingInvite] = useState<{ raw: string; invitation: LanInvitation } | null>(null);
   const theme = state.preferences.appearance === 'system' ? (systemDark ? 'dark' : 'light') : state.preferences.appearance;
   const currentPage = state.sheet?.pages.at(-1);
   const pendingDecisions = useMemo(() => {
@@ -333,11 +343,34 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
       if (companion.status === 'connected') store.getState().navigate('new');
     }
   }, [companion.pending, companion.busy, companion.status, store]);
-  const pairAndOpenConversation = async () => {
-    await companionStore.getState().pair();
+  const finishPair = async (raw?: string) => {
+    await companionStore.getState().pair(raw);
     const result = companionStore.getState();
     if (needsLibraryPick(result)) store.getState().openSheet('projects');
     else if (result.status === 'connected' && result.sessionId) store.getState().navigate('new');
+  };
+  const pairAndOpenConversation = async () => {
+    if (!ports.companion) return;
+    let raw: string;
+    try { raw = await ports.companion.scan(); }
+    catch { companionStore.setState({ status: 'offline', connectionError: 'connectionScanFailed' }); return; }
+    let invitation: LanInvitation;
+    try { invitation = parseInvitation(raw); }
+    catch { await finishPair(raw); return; }
+    if (!invitation.verify) { await finishPair(raw); return; }
+    setPendingInvite({ raw, invitation });
+    if (store.getState().sheet) store.getState().pushSheet('pairConfirm');
+    else store.getState().openSheet('pairConfirm');
+  };
+  const confirmPendingInvite = async () => {
+    const pending = pendingInvite;
+    setPendingInvite(null);
+    store.getState().back();
+    if (pending) await finishPair(pending.raw);
+  };
+  const dismissPendingInvite = () => {
+    setPendingInvite(null);
+    store.getState().back();
   };
 
   const gestureStart = (event: React.TouchEvent) => {
@@ -463,7 +496,15 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
       </aside>
     </div>}
     {state.sheet && currentPage && <SheetHost page={currentPage} title={text[currentPage]} hasParent={state.sheet.pages.length > 1}
-      close={() => { if (currentPage === 'preview') companion.closePreview(); state.closeSheet(); }} back={() => { if (currentPage === 'preview') companion.closePreview(); state.back(); }} text={text}>
+      close={() => {
+        if (currentPage === 'preview') companion.closePreview();
+        if (currentPage === 'pairConfirm') setPendingInvite(null);
+        state.closeSheet();
+      }} back={() => {
+        if (currentPage === 'preview') companion.closePreview();
+        if (currentPage === 'pairConfirm') setPendingInvite(null);
+        state.back();
+      }} text={text}>
       {pendingDecisions.length > 0 && <button className="primary" onClick={() => selectSession(String(pendingDecisions[0].sessionId))}>{
         pendingDecisions[0].kind === 'question' ? text.reviewQuestion : pendingDecisions[0].kind === 'plan' ? text.reviewPlan : text.reviewApproval
       }</button>}
@@ -486,7 +527,11 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
         {!ports.companion && <p>{text.nativeConnectionOnly}</p>}
         <button className={companion.status === 'connected' ? undefined : 'primary'} disabled={!ports.companion || companion.busy || companion.pending} onClick={() => void pairAndOpenConversation()}>{text.scan}</button>
         {ports.companion && <button disabled={companion.busy} onClick={() => void companion.reconnect()}>{text.reconnect}</button>}
-      </div> : (currentPage === 'attachment' || currentPage === 'cameraDenied') ? <AttachmentSheet
+      </div> : currentPage === 'pairConfirm' && pendingInvite ? <PairConfirm
+        name={invitationHostLabel(pendingInvite.invitation) ?? text.pairConfirmComputer}
+        verify={deriveInvitationVerify(pendingInvite.invitation.psk, pendingInvite.invitation.hostKey)}
+        text={text} onConfirm={() => void confirmPendingInvite()} onReject={dismissPendingInvite}
+      /> : (currentPage === 'attachment' || currentPage === 'cameraDenied') ? <AttachmentSheet
         mode={currentPage} text={text}
         onPick={kind => {
           if (!ports.files) return;

@@ -87,7 +87,7 @@ interface State {
   /** 待确认命令是哪一条：状态行的文案按它分——语音转写不是「发送」，不该提醒「请勿重复发送」。 */
   pendingAction: CompanionCommand['action'] | null;
   events: CompanionEvent[]; runId: string | null; terminal: 'complete' | 'stopped' | 'failed' | null;
-  hydrate(): Promise<void>; pair(): Promise<void>; reconnect(): Promise<void>; pause(): void;
+  hydrate(): Promise<void>; pair(raw?: string): Promise<void>; reconnect(): Promise<void>; pause(): void;
   respond(requestId: string, decision: 'approved' | 'rejected'): Promise<void>;
   respondQuestion(requestId: string, answers: Record<string, string | string[]>, declined?: boolean, reason?: string): Promise<void>;
   respondPlan(requestId: string, decision: 'approved' | 'rejected', feedback?: string): Promise<void>;
@@ -374,12 +374,12 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
           if (value.candidate || value.binding) await get().reconnect();
         } catch { set({ busy: false, status: 'storageError' }); }
       },
-      pair: () => safely(async () => {
+      pair: (raw?: string) => safely(async () => {
         set({ paused: false });
         if (!port || saved?.pending) return;
-        const raw = await port.scan().catch(() => { throw new Error('COMPANION_SCAN_FAILED'); });
+        const payload = raw ?? await port.scan().catch(() => { throw new Error('COMPANION_SCAN_FAILED'); });
         let invitation;
-        try { invitation = parseInvitation(raw); } catch { throw new Error('COMPANION_INVALID_INVITATION'); }
+        try { invitation = parseInvitation(payload); } catch { throw new Error('COMPANION_INVALID_INVITATION'); }
         set({ status: 'connecting' });
         if (!saved) {
           const identity = createIdentity();
@@ -387,7 +387,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
           identity.secretKey.fill(0);
         }
         await persist({ ...saved!, candidate: { endpoint: invitation.endpoint, ...(invitation.altEndpoint ? { altEndpoint: invitation.altEndpoint } : {}), hostKey: invitation.hostKey }, binding: undefined });
-        const binding = await createClient().pair(raw);
+        const binding = await createClient().pair(payload);
         await persist({ ...saved!, binding, candidate: undefined });
         epoch = binding.scopeEpoch; cursor = 0;
         heldAttachments.clear();

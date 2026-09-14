@@ -8,6 +8,7 @@
 //      环境变量 NEO_EVAL_FEEDBACK_DIR 传入（不拼进命令串——题 id 是外来文本）。
 // 没配命令就只落盘，抽屉那边退化成「复制命令文本」。
 // ============================================================================
+import { randomUUID } from 'node:crypto';
 import { exec } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -43,7 +44,8 @@ export async function pushEvalFeedback(
   const evidenceDir = path.join(
     getUserDataPath(),
     'eval-feedback',
-    `${stamp}-${slug(request.caseId)}`,
+    // 后缀是随机的：同一题同一毫秒连点两次也各落各的，不互相覆盖。
+    `${stamp}-${slug(request.caseId)}-${randomUUID().slice(0, 8)}`,
   );
   await mkdir(evidenceDir, { recursive: true });
   await writeFile(
@@ -63,10 +65,16 @@ export async function pushEvalFeedback(
 
   const command = hookCommand();
   if (!command) return { evidenceDir, hookRan: false };
-  const { stdout, stderr } = await execAsync(command, {
-    timeout: HOOK_TIMEOUT_MS,
-    env: { ...process.env, NEO_EVAL_FEEDBACK_DIR: evidenceDir },
-  });
-  const output = `${stdout}${stderr}`.trim().slice(-OUTPUT_TAIL_CHARS);
-  return { evidenceDir, hookRan: true, ...(output ? { output } : {}) };
+  try {
+    const { stdout, stderr } = await execAsync(command, {
+      timeout: HOOK_TIMEOUT_MS,
+      env: { ...process.env, NEO_EVAL_FEEDBACK_DIR: evidenceDir },
+    });
+    const output = `${stdout}${stderr}`.trim().slice(-OUTPUT_TAIL_CHARS);
+    return { evidenceDir, hookRan: true, ...(output ? { output } : {}) };
+  } catch (error) {
+    // 钩子挂了不等于这次反馈没了：证据已经落盘，把目录一起报回去，界面退回「复制命令」。
+    const message = (error instanceof Error ? error.message : String(error)).slice(-OUTPUT_TAIL_CHARS);
+    return { evidenceDir, hookRan: false, hookError: message };
+  }
 }

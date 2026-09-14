@@ -44,6 +44,25 @@ describe('进反馈池钩子（ADR-071 Q4）', () => {
     });
   });
 
+  it('同一题同一毫秒推两次各落各的目录，不互相覆盖', async () => {
+    const now = 1_700_000_000_000;
+    const [first, second] = await Promise.all([
+      pushEvalFeedback(request, now),
+      pushEvalFeedback(request, now),
+    ]);
+    expect(first.evidenceDir).not.toBe(second.evidenceDir);
+    expect((await readdir(env.userData))[0]).toBeTruthy();
+    expect(await readdir(path.join(env.userData, 'eval-feedback'))).toHaveLength(2);
+  });
+
+  it('钩子跑挂了不丢证据：hookRan=false + hookError，证据目录照样报回去', async () => {
+    env.command = 'exit 3';
+    const result = await pushEvalFeedback(request, 1_700_000_000_000);
+    expect(result.hookRan).toBe(false);
+    expect(result.hookError).toBeTruthy();
+    expect(await readdir(result.evidenceDir)).toEqual(['evidence.json']);
+  });
+
   it('配了命令就执行，证据目录经环境变量传入而不是拼进命令串', async () => {
     env.command = 'printf "%s" "$NEO_EVAL_FEEDBACK_DIR"';
     const result = await pushEvalFeedback(request, 1_700_000_000_000);

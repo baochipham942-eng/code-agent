@@ -60,8 +60,10 @@ export interface EvalFeedbackPushRequest {
 export interface EvalFeedbackPushResult {
   /** 证据落盘目录（无论有没有配钩子命令都会写）。 */
   evidenceDir: string;
-  /** 配了 settings.evaluation.feedbackHookCommand 才会执行。 */
+  /** 配了 settings.evaluation.feedbackHookCommand 且跑成了才是 true。 */
   hookRan: boolean;
   /** 钩子命令的输出尾巴，供 toast 回显。 */
   output?: string;
+  /** 配了钩子但没跑成：证据仍已落盘，界面退回「复制命令」这条路。 */
+  hookError?: string;
 }

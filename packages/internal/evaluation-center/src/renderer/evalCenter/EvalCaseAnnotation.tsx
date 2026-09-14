@@ -61,6 +61,8 @@ export const EvalCaseAnnotation: React.FC<EvalCaseAnnotationProps> = ({ target }
   const [evidence, setEvidence] = useState('');
   const [suggestion, setSuggestion] = useState('');
   const [severity, setSeverity] = useState<EvalSeverity>();
+  /** 这一版三件套已经推过一次：推送中与推送成功都不让再点，免得同一条反馈落两份。 */
+  const [pushState, setPushState] = useState<'idle' | 'pushing' | 'done'>('idle');
   const [mine, setMine] = useState<EvalAnnotation>();
   const [others, setOthers] = useState<EvalAnnotation[]>([]);
   const [state, setState] = useState<'loading' | 'ready' | 'saving' | 'error'>('loading');
@@ -130,27 +132,30 @@ export const EvalCaseAnnotation: React.FC<EvalCaseAnnotationProps> = ({ target }
   const triple = buildTriple(attribution, evidence, suggestion, severity);
   // 动了归因这一段却没填全 = 不保存；全空（没动过）照常保存，不逼人填。
   const incomplete = Boolean(attribution || severity || evidence.trim()) && !triple;
-  const canPush = Boolean(triple && isFeedbackPoolCandidate(triple));
+  const canPush = Boolean(triple && isFeedbackPoolCandidate(triple)) && pushState === 'idle';
 
   const pushToFeedbackPool = async () => {
     if (!triple) return;
+    setPushState('pushing');
     try {
       const result = await invokeEvaluation(EVALUATION_CHANNELS.PUSH_FEEDBACK, {
         experimentId: target.experimentId,
         caseId: target.caseId,
         triple,
       });
+      setPushState('done');
       if (result.hookRan) {
         toast.success(labels.feedbackPushed.replace('{dir}', result.evidenceDir));
         return;
       }
-      // 没配钩子命令：按钮退化成「复制 fb add 命令」，证据仍已落盘。
+      // 没配钩子命令、或钩子跑挂了：都退化成「复制 fb add 命令」，证据都已落盘。
       const title = `缺陷·${target.caseId}：${triple.evidence}`;
       await navigator.clipboard?.writeText(
         labels.feedbackCommand.replace('{title}', title).replace('{dir}', result.evidenceDir),
       );
-      toast.success(labels.feedbackCopied);
+      toast.success(result.hookError ? labels.feedbackFailed : labels.feedbackCopied);
     } catch {
+      setPushState('idle');
       toast.error(labels.feedbackFailed);
     }
   };
@@ -197,14 +202,15 @@ export const EvalCaseAnnotation: React.FC<EvalCaseAnnotationProps> = ({ target }
           {EVAL_ATTRIBUTIONS.map((value) => (
             <Button key={value} size="sm" variant="ghost" aria-pressed={attribution === value}
               aria-label={labels[value]} className={attribution === value ? pressed : ''}
-              onClick={() => setAttribution((current) => current === value ? undefined : value)}>
+              onClick={() => { setPushState('idle'); setAttribution((current) => current === value ? undefined : value); }}>
               {labels[value]}
             </Button>
           ))}
         </div>
         <label className="mb-1 block text-[11px] text-zinc-400" htmlFor="eval-annotation-evidence">{labels.evidence}</label>
         <Textarea id="eval-annotation-evidence" value={evidence} minRows={1} maxRows={3} autoResize
-          placeholder={labels.evidencePlaceholder} onChange={(event) => setEvidence(event.target.value)} />
+          placeholder={labels.evidencePlaceholder}
+          onChange={(event) => { setPushState('idle'); setEvidence(event.target.value); }} />
         <label className="mb-1 mt-2 block text-[11px] text-zinc-400" htmlFor="eval-annotation-suggestion">{labels.suggestion}</label>
         <Textarea id="eval-annotation-suggestion" value={suggestion} minRows={1} maxRows={3} autoResize
           placeholder={labels.suggestionPlaceholder} onChange={(event) => setSuggestion(event.target.value)} />
@@ -213,7 +219,7 @@ export const EvalCaseAnnotation: React.FC<EvalCaseAnnotationProps> = ({ target }
           {EVAL_SEVERITIES.map((value) => (
             <Button key={value} size="sm" variant="ghost" aria-pressed={severity === value}
               aria-label={`${labels.severity} ${value}`} className={severity === value ? pressed : ''}
-              onClick={() => setSeverity((current) => current === value ? undefined : value)}>{value}</Button>
+              onClick={() => { setPushState('idle'); setSeverity((current) => current === value ? undefined : value); }}>{value}</Button>
           ))}
         </div>
         <p className="mt-1 text-[10px] text-zinc-600">{labels.severityHelp}</p>

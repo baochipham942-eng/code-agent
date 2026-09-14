@@ -134,6 +134,29 @@ describe('归因三件套（ADR-071 D4/Q4）', () => {
     ));
   });
 
+  it('推成功后按钮锁住，同一条归因不会落两份；改动三件套任一格才解锁', async () => {
+    annotationIpc();
+    render(<EvalCaseDrawer target={{ experimentId: 'run-1', caseId: 'case-1' }} onClose={vi.fn()} />);
+    await screen.findByTestId('eval-case-attribution');
+    fillTriple();
+    fireEvent.click(screen.getByRole('button', { name: '进反馈池' }));
+    await waitFor(() => expect((screen.getByRole('button', { name: '进反馈池' }) as HTMLButtonElement).disabled).toBe(true));
+    fireEvent.change(screen.getByPlaceholderText('引用输出或工具调用，一句话'), {
+      target: { value: '改了证据' },
+    });
+    expect((screen.getByRole('button', { name: '进反馈池' }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('钩子跑挂了也退化成复制命令，并提示证据已落盘', async () => {
+    annotationIpc({ hookRan: false, hookError: 'exit 3' });
+    render(<EvalCaseDrawer target={{ experimentId: 'run-1', caseId: 'case-1' }} onClose={vi.fn()} />);
+    await screen.findByTestId('eval-case-attribution');
+    fillTriple();
+    fireEvent.click(screen.getByRole('button', { name: '进反馈池' }));
+    await waitFor(() => expect(clipboard.writeText).toHaveBeenCalled());
+    expect(toasts.success).toHaveBeenCalledWith('钩子没跑成；证据已落盘，fb add 命令已复制');
+  });
+
   it('模型能力 / P2 这种不是真缺陷，进反馈池按钮不可点', async () => {
     annotationIpc();
     render(<EvalCaseDrawer target={{ experimentId: 'run-1', caseId: 'case-1' }} onClose={vi.fn()} />);

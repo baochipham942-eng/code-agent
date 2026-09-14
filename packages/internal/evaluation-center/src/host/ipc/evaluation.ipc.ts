@@ -180,7 +180,7 @@ export function registerEvaluationHandlers(
       note: request.note ?? null,
       dims_json: JSON.stringify(request.dims),
       consent_scope: 'metadata',
-      calibration_split: null,
+      calibration_split: request.gold ? 'gold' : null,
       supersedes_id: request.supersedesId ?? null,
       created_at: Date.now(),
     };
@@ -309,6 +309,9 @@ function validateAnnotationRequest(payload: unknown): SaveEvalAnnotationRequest 
   if (!value.dims || typeof value.dims !== 'object' || Array.isArray(value.dims)) {
     throw new Error('dims must be an object');
   }
+  if (value.gold !== undefined && typeof value.gold !== 'boolean') {
+    throw new Error('gold must be a boolean');
+  }
   const dims: Partial<Record<AiReviewDimension, 'yes' | 'no'>> = {};
   for (const [dimension, verdict] of Object.entries(value.dims)) {
     if (!isAiReviewDimension(dimension) || (verdict !== 'yes' && verdict !== 'no')) {
@@ -326,6 +329,7 @@ function validateAnnotationRequest(payload: unknown): SaveEvalAnnotationRequest 
     ...(value.overall === 'up' || value.overall === 'down' ? { overall: value.overall } : {}),
     ...(typeof value.note === 'string' ? { note: value.note } : {}),
     ...(supersedesId ? { supersedesId } : {}),
+    ...(value.gold === true ? { gold: true } : {}),
   };
 }
 function requireNonEmptyString(value: unknown, name: string): string {
@@ -354,6 +358,7 @@ function annotationFromRow(row: AnnotationRow, reviewerId: string): EvalAnnotati
     ...(row.supersedes_id ? { supersedesId: row.supersedes_id } : {}),
     createdAt: row.created_at,
     mine: row.reviewer_id === reviewerId,
+    ...(row.calibration_split === 'gold' ? { gold: true } : {}),
   };
 }
 

@@ -10,6 +10,7 @@ const SHARED_INSTRUCTIONS = [
   '证据不足以下判就写“无法确定”，不要硬判——弃权会转人工判定，硬判会污染统计。',
 ].join('\n');
 
+// docs/eval/annotation-guideline.md §2 的评审问题必须与下面逐字一致（tests/unit/testing/annotationGuidelineSync.test.ts 读本文件源码把关）。
 const DEFAULT_AI_REVIEW_PROMPTS: Readonly<Record<AiReviewDimension, string>> = {
   task_completed: `${SHARED_INSTRUCTIONS}\n评审问题：Agent 是否真正完成了题目要求，并给出了可用结果？`,
   tool_choice: `${SHARED_INSTRUCTIONS}\n评审问题：Agent 选择的工具是否符合这道题声明的逐题期望？`,

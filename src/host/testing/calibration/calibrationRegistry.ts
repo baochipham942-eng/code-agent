@@ -72,6 +72,7 @@ export function isTrustedCalibration(record: LoadedJudgeCalibrationRecord): bool
   return (
     record.kappa >= CALIBRATION_TRUST_THRESHOLDS.minKappa &&
     record.pairs >= CALIBRATION_TRUST_THRESHOLDS.minPairs &&
+    // ponytail: 弃权不进 κ 配对，判官可在 20% 内靠弃权躲难题抬 κ；要堵这条路得按题难度分层算弃权率，先不做
     (record.abstainRate ?? 0) <= CALIBRATION_TRUST_THRESHOLDS.maxAbstainRate &&
     (
       lowerBound >= CALIBRATION_TRUST_THRESHOLDS.minKappaLowerBound

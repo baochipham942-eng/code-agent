@@ -4,6 +4,7 @@
 // ============================================================================
 
 import { resolveSubagentPreset } from './subagentFirstRunPreset';
+import { collectTurnOrigins, type AgentMessageOrigin } from './messageOrigin';
 import type { ToolCall } from '../../shared/contract';
 import { ModelRouter } from '../model/modelRouter';
 import { inferenceViaAiSdk, aiSdkSupportsProvider } from '../model/adapters/aiSdkAdapter';
@@ -184,6 +185,9 @@ export class SubagentExecutor {
     let iterations = 0;
     let finalOutput = '';
     const doomLoopGuard = new SubagentDoomLoopGuard();
+    // ADR-067 D3：本轮最新输入的 origin 链。drain 注入时刷新；无注入的迭代保留
+    // 上一条（peer 指令的影响跨 iteration 持续，直到下一条新输入到达）。
+    let currentTurnOrigin: AgentMessageOrigin[] | undefined;
     // 跨迭代累加 outputTokens，供 dynamic-workflow 的 BudgetTracker 计费（每次推理后累加）。
     let outputTokensUsed = 0;
     let descendantUsage: SubagentUsage = { cost: 0, tokensUsed: 0 };
@@ -575,6 +579,8 @@ export class SubagentExecutor {
             ...(context.spawnGuardId ? getSpawnGuard().drainMessages(context.spawnGuardId) : []),
             ...externalMessages,
           ];
+          // ADR-067 D3：本轮注入消息的 origin 链挂上 turn context，权限判定取最不可信者
+          currentTurnOrigin = collectTurnOrigins(pendingMessages) ?? currentTurnOrigin;
           const injected = drainSubagentMessages({
             agentName: config.name,
             messages,
@@ -930,6 +936,8 @@ export class SubagentExecutor {
                   spawnParentTimeoutMs: timeout,
                   parentRemainingBudget: getRemainingTreeBudget(),
                   spawnParentAgentId: context.spawnGuardId,
+                  // ADR-067 D3：本轮输入 origin 链进权限判定（peer 起源写/执行升人工确认）
+                  turnOrigin: currentTurnOrigin,
                   // 持久化角色 ID → 透传给工具层（MemoryWrite/Read scope='role' 路由用）
                   agentRole: config.roleId,
                   hookManager: context.hooks as import('../hooks/hookManager').HookManager | undefined,

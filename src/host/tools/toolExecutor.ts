@@ -51,6 +51,7 @@ import {
   CLASSIFIER_ERROR_TRACE_RULE,
   INJECTED_PERMISSION_HANDLER_TRACE_RULE,
   commandAnalysisDenialError,
+  peerOriginUnattendedDenialError,
   permissionDenialError,
   readOnlyDenialError,
   readOnlyForcesConfirmationFor,
@@ -58,6 +59,7 @@ import {
   resolveToolPermissionClassification,
 } from './toolPermissionClassification';
 import { getPermissionModeManager } from '../permissions/modes';
+import { pickLeastTrustedOrigin, type AgentMessageOrigin } from '../agent/messageOrigin';
 import { normalizePermissionAskResult, type RequestPermissionResult } from '../../shared/contract/permission';
 import { applyEditedArgs } from '../../shared/contract/permissionEdit';
 import { EXTERNAL_SIDE_EFFECT_TRACE_RULE, EXTERNAL_SIDE_EFFECT_TRACE_REASON, isExternalSideEffectTool, extractStandingGrantTarget } from './externalSideEffect';
@@ -407,6 +409,12 @@ export interface ExecuteOptions {
   // （validateCommand / classifyPermission / exec policy / 审计 / cache）。
   // 这保证 subagent 与主 agent 走同一条 ToolExecutor 管道，而非绕过权限的旁路。
   subagentPolicy?: { allowedTools: Set<string>; check: (toolName: string, params: Record<string, unknown>) => 'deny' | 'ask' };
+  /**
+   * ADR-067 D3：本轮最新输入的 origin 链（可多条，判定取最不可信者）。
+   * 子代理 loop 在 drain 注入时挂载；主 agent 常规用户输入铸 user 起源。
+   * 含 peer-agent 时写/执行类一律 forceConfirm；无人值守 fail-closed 拒绝。
+   */
+  turnOrigin?: AgentMessageOrigin[];
 }
 
 // ----------------------------------------------------------------------------
@@ -1429,6 +1437,44 @@ export class ToolExecutor {
         projectRoot: this.writeWorkspaceRoot ?? this.executionCwd,
       }));
     const readOnlyForcesConfirmation = readOnlyForcesConfirmationFor(sessionPermissionMode, toolDef);
+    // ADR-067 D3：本轮最新输入含 peer-agent 消息时，写/执行类一律升人工确认。
+    // origin 链取最不可信者；只读工具不升档；无 turnOrigin（旧调用方/无注入轮）不升档。
+    const turnPeerOrigin = pickLeastTrustedOrigin(options.turnOrigin);
+    const peerOriginForcesConfirmation = turnPeerOrigin?.senderKind === 'peer-agent'
+      && toolDef.permissionLevel !== 'read';
+    // 无人值守不豁免（ADR-067 D3）：peer 转述的写/执行 fail-closed 拒绝，不进审批/
+    // 停车挂起——放在所有自动放行捷径（preApproved/safeCommand/classifier/档位）之前。
+    // validateCommand 硬毙与 policy enforcer deny 已在前面出过；exec-policy forbidden 与
+    // 本闸同为拒绝，谁在前只影响归因文案，不影响拒绝结果。
+    if (
+      peerOriginForcesConfirmation
+      && getPermissionModeManager().isUnattendedSession(effectiveSessionId)
+    ) {
+      const failure = peerOriginUnattendedDenialError(executionToolName, turnPeerOrigin?.senderAgentId);
+      logger.warn('Peer-origin write/execute denied in unattended session', {
+        tool: executionToolName,
+        senderAgentId: turnPeerOrigin?.senderAgentId,
+      });
+      recordDecision(
+        executionToolName,
+        params,
+        'policy-deny',
+        'peer-origin-unattended',
+        permStartTime,
+        undefined,
+        effectiveSessionId,
+        this.ledgerOrigin,
+      );
+      return {
+        success: false,
+        error: failure.modelText,
+        metadata: {
+          code: failure.code,
+          failureCode: AgentFailureCode.PermissionDenied,
+          hostReason: failure,
+        },
+      };
+    }
     const shellDesktopAutomation = isBashToolName(policyToolName)
       ? classifyShellDesktopAutomation(params.command)
       : null;
@@ -1489,6 +1535,7 @@ export class ToolExecutor {
     const isPreApproved = !boundaryViolation
       && !guardFabricForcesApproval
       && !protectedWriteForcesConfirmation
+      && !peerOriginForcesConfirmation
       && !commandAnalysisFailedReason
       && !shellDesktopAutomation
       && !consequenceForcesClassification
@@ -1507,7 +1554,7 @@ export class ToolExecutor {
     // exec-policy forbidden 留在放行守卫外：学来的 allow 不得放行受保护路径，
     // 但用户显式 forbidden 仍硬拒，不得被 protectedWriteForcesConfirmation 降成可批卡。
     let isSafeCommand = false;
-    if (isBashToolName(policyToolName) && params.command && !commandAnalysisFailedReason && !shellDesktopAutomation && !isPreApproved && !guardFabricForcesApproval && !this.forcePermissionHandler) {
+    if (isBashToolName(policyToolName) && params.command && !commandAnalysisFailedReason && !shellDesktopAutomation && !isPreApproved && !guardFabricForcesApproval && !this.forcePermissionHandler && !peerOriginForcesConfirmation) {
       const cmd = params.command as string;
 
       // 1. 检查 exec policy 持久化规则（forbidden 先于受保护路径熔断）
@@ -1554,7 +1601,7 @@ export class ToolExecutor {
       }
     }
 
-    if ((toolDef.requiresPermission || readArgumentForcesClassification) && (commandAnalysisFailedReason || this.forcePermissionHandler || writeWithoutWorkspaceAuthority || guardFabricForcesApproval || protectedWriteForcesConfirmation || policyForcesConfirmation || unresolvedWriteTargetForcesAsk || boundaryViolation || readOnlyForcesConfirmation || shellDesktopAutomation || consequenceForcesClassification || argumentForcesClassification || (!isPreApproved && !isSafeCommand))) {
+    if ((toolDef.requiresPermission || readArgumentForcesClassification || peerOriginForcesConfirmation) && (commandAnalysisFailedReason || this.forcePermissionHandler || writeWithoutWorkspaceAuthority || guardFabricForcesApproval || protectedWriteForcesConfirmation || policyForcesConfirmation || unresolvedWriteTargetForcesAsk || boundaryViolation || readOnlyForcesConfirmation || shellDesktopAutomation || consequenceForcesClassification || argumentForcesClassification || peerOriginForcesConfirmation || (!isPreApproved && !isSafeCommand))) {
       // P1: Auto-approve classifier — 规则+LLM 自动判断安全性
       let needsUserApproval = true;
       // 信任边界 ask（W3 写边界）→ forceConfirm：终审层便利放行必须让路（同 directory_access）。
@@ -1619,6 +1666,7 @@ export class ToolExecutor {
             permStartTime,
             readOnlyForcesConfirmation,
             sessionPermissionMode,
+            peerOriginForcesConfirmation,
           });
           // B1: EXTERNAL 风险类打标进 decisionTrace（result='allow'，不改变审批结果，仅供
           // B2 无人值守停车 / B4 target 授权与审计消费）。此处入 traceBuilder 覆盖 deny/ask 路径；
@@ -1767,6 +1815,7 @@ export class ToolExecutor {
         && !unresolvedWriteTargetForcesAsk
         && !boundaryViolation
         && !readOnlyForcesConfirmation
+        && !peerOriginForcesConfirmation
         && !commandAnalysisFailedReason
         && getSessionAutomationService().matchStandingGrant(effectiveSessionId, executionToolName, standingGrantTarget)
       ) {
@@ -1858,6 +1907,19 @@ export class ToolExecutor {
       }
       if (unresolvedWriteTargetForcesAsk) {
         permissionRequest.reasonCode = PermissionRequestReason.UncertainWriteTargetWithPathDeny;
+      }
+
+      // ADR-067 D3：peer 消息触发的写/执行逐次真人确认（devModeAutoApprove /
+      // autoApprove[level] / 权限记忆 / CLI auto 档全部对 forceConfirm 让路，与 B1 同机制），
+      // 审批负载标明「此动作由 agent X 的消息触发」。
+      if (peerOriginForcesConfirmation) {
+        permissionRequest.forceConfirm = true;
+        permissionRequest.details.triggeredByAgentMessage = {
+          senderAgentId: turnPeerOrigin?.senderAgentId,
+        };
+      }
+      if (options.turnOrigin) {
+        permissionRequest.turnOrigin = options.turnOrigin;
       }
 
       // Attach decision trace to permission request

@@ -225,6 +225,75 @@ export function withApsEnvironment(xml, environment) {
   return xml.replace('<dict>', `<dict>\n\t<key>aps-environment</key>\n\t<string>${environment}</string>`);
 }
 
+/** Capacitor's ios template has no App.entitlements; profile aps-environment is not a binary declaration. */
+export function appEntitlementsXml(environment) {
+  if (environment !== 'production' && environment !== 'development') throw new Error('IOS_APS_ENVIRONMENT_INVALID');
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>aps-environment</key>
+	<string>${environment}</string>
+</dict>
+</plist>
+`;
+}
+
+/**
+ * CODE_SIGN_ENTITLEMENTS on the App target (the two configs that stamp PRODUCT_BUNDLE_IDENTIFIER).
+ * Project-level configs are left alone. Repeat calls replace the same assignment; they do not stack.
+ */
+export function withCodeSignEntitlements(content, { relativePath, appId }) {
+  if (typeof relativePath !== 'string' || !relativePath || relativePath.includes('..') || /[\n;]/.test(relativePath)) {
+    throw new Error('IOS_ENTITLEMENTS_PATH_INVALID');
+  }
+  if (typeof appId !== 'string' || !appId) throw new Error('IOS_ENTITLEMENTS_PATH_INVALID');
+  const assignment = `CODE_SIGN_ENTITLEMENTS = ${relativePath};`;
+  let appConfigurations = 0;
+  const next = content.replace(/buildSettings = \{([\s\S]*?)\n(\s*)\};/g, (block, settings, indent) => {
+    if (!settings.includes(`PRODUCT_BUNDLE_IDENTIFIER = ${appId};`)) return block;
+    appConfigurations += 1;
+    if (/CODE_SIGN_ENTITLEMENTS = [^;]*;/.test(settings)) {
+      settings = settings.replace(/CODE_SIGN_ENTITLEMENTS = [^;]*;/g, assignment);
+    } else {
+      settings = `${settings}\n${indent}\t${assignment}`;
+    }
+    return `buildSettings = {${settings}\n${indent}};`;
+  });
+  if (appConfigurations !== 2) throw new Error('IOS_APP_ENTITLEMENTS_CONFIGURATIONS_CHANGED');
+  return next;
+}
+
+export function ensureAppPushEntitlements({ existingXml = null, pbxproj, environment, appId, relativePath = 'App/App.entitlements' }) {
+  const entitlementsXml = withApsEnvironment(existingXml || appEntitlementsXml(environment), environment);
+  return { entitlementsXml, pbxproj: withCodeSignEntitlements(pbxproj, { relativePath, appId }) };
+}
+
+/**
+ * codesign -d --entitlements :- dumps XML on stdout (sometimes after an Executable= line or a binary prefix).
+ * Profile entitlements are a different file; this parser is only for the signed binary dump.
+ */
+export function parseEntitlementsDump(dump) {
+  const text = Buffer.isBuffer(dump) ? dump.toString('utf8') : String(dump);
+  const xmlStart = text.indexOf('<?xml');
+  const plistStart = text.indexOf('<plist');
+  const start = xmlStart >= 0 ? xmlStart : plistStart;
+  if (start < 0) throw new Error('IOS_BINARY_ENTITLEMENTS_UNREADABLE');
+  const parsed = parsePlistXml(text.slice(start));
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('IOS_BINARY_ENTITLEMENTS_UNREADABLE');
+  }
+  return { apsEnvironment: stringOrNull(parsed['aps-environment']) };
+}
+
+export function assertBinaryPushEntitlement(dump) {
+  const summary = parseEntitlementsDump(dump);
+  if (summary.apsEnvironment !== 'production' && summary.apsEnvironment !== 'development') {
+    throw new Error('IOS_BINARY_APS_ENVIRONMENT_MISSING');
+  }
+  return summary.apsEnvironment;
+}
+
 export function withSelfImplementedPluginClasses(config, replacements) {
   // 形状不对就停：静默当成空表会把其余插件的登记一起丢掉，而那是整包功能级的静默损坏。
   if (!Array.isArray(config.packageClassList)) throw new Error('IOS_PACKAGE_CLASS_LIST_MISSING');

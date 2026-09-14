@@ -1,12 +1,12 @@
 import { configureVoiceRelease } from './configure-voice.mjs';
 import './remote-only.mjs';
 import { configureIosLan } from './configure-lan.mjs';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { resolve } from 'node:path';
-import { extractNativeTargetId, exportOptionsXml, patchPbxprojVersions, profileCoversDevice, readMobileprovision, sharedSchemeXml, summarizeProfile, unlinkedSpmPlugins, withApsEnvironment, withPushAppDelegateHooks, withSelfImplementedPluginClasses } from './ios-package.mjs';
+import { assertBinaryPushEntitlement, ensureAppPushEntitlements, extractNativeTargetId, exportOptionsXml, patchPbxprojVersions, profileCoversDevice, readMobileprovision, sharedSchemeXml, summarizeProfile, unlinkedSpmPlugins, withPushAppDelegateHooks, withSelfImplementedPluginClasses } from './ios-package.mjs';
 
 const build = Number(process.env.NEO_MOBILE_BUILD);
 if (!Number.isSafeInteger(build) || build < 1) throw new Error('POSITIVE_NEO_MOBILE_BUILD_REQUIRED');
@@ -115,9 +115,17 @@ writeFileSync(appDelegate, patchedDelegate);
 if (!patchedDelegate.includes('capacitorDidRegisterForRemoteNotifications')) throw new Error('IOS_PUSH_APPDELEGATE_NOT_WIRED');
 const profileSummary = profileFile ? summarizeProfile(readMobileprovision(readFileSync(profileFile))) : null;
 const entitlements = 'ios/App/App/App.entitlements';
-if (existsSync(entitlements)) {
-  const aps = profileSummary?.apsEnvironment === 'development' ? 'development' : 'production';
-  writeFileSync(entitlements, withApsEnvironment(readFileSync(entitlements, 'utf8'), aps));
+const aps = profileSummary?.apsEnvironment === 'development' ? 'development' : 'production';
+const ensured = ensureAppPushEntitlements({
+  existingXml: existsSync(entitlements) ? readFileSync(entitlements, 'utf8') : null,
+  pbxproj: readFileSync(pbxproj, 'utf8'),
+  environment: aps,
+  appId,
+});
+writeFileSync(entitlements, ensured.entitlementsXml);
+writeFileSync(pbxproj, ensured.pbxproj);
+if (!ensured.pbxproj.includes('CODE_SIGN_ENTITLEMENTS = App/App.entitlements;')) {
+  throw new Error('IOS_CODE_SIGN_ENTITLEMENTS_NOT_WIRED');
 }
 copyFileSync(resolve(root, 'src-tauri/icons/ios/AppIcon-512@2x.png'),
   resolve('ios/App/App/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png'));
@@ -160,6 +168,17 @@ if (!appBundle) throw new Error('APP_BUNDLE_MISSING_IN_IPA');
 const executable = execFileSync('unzip', ['-p', ipa, `Payload/${appBundle}/${appBundle.replace(/\.app$/, '')}`], { maxBuffer: 1 << 28 });
 if (!executable.includes('NeoVoiceRecorderPlugin')) throw new Error('IOS_VOICE_PLUGIN_MISSING_FROM_BINARY');
 if (!executable.includes('PushNotificationsPlugin')) throw new Error('IOS_PUSH_PLUGIN_MISSING_FROM_BINARY');
+// 描述文件有 aps-environment 不等于二进制声明了它：register() 读的是 app entitlements。
+const inspect = '.artifacts/ios-binary-entitlements';
+rmSync(inspect, { recursive: true, force: true });
+mkdirSync(inspect, { recursive: true });
+run('unzip', ['-q', '-o', ipa, '-d', inspect]);
+const signedApp = `${inspect}/Payload/${appBundle}`;
+const dumped = spawnSync('codesign', ['-d', '--entitlements', ':-', signedApp], { encoding: 'utf8' });
+if (dumped.status !== 0) {
+  throw new Error(`IOS_BINARY_ENTITLEMENTS_UNREADABLE: ${String(dumped.stderr ?? dumped.error?.message ?? 'codesign failed').split('\n')[0].trim()}`);
+}
+assertBinaryPushEntitlement(`${dumped.stdout ?? ''}\n${dumped.stderr ?? ''}`);
 const embeddedPlist = readMobileprovision(execFileSync('unzip', ['-p', ipa, `Payload/${appBundle}/embedded.mobileprovision`], { maxBuffer: 1 << 24 }));
 const summary = summarizeProfile(embeddedPlist);
 if (!summary.apsEnvironment) console.warn('PUSH_ENTITLEMENT_MISSING: profile has no aps-environment; ios:verify will fail push-entitlement-present');

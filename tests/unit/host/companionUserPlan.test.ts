@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { PLAN_APPROVAL_CONFIRMATION_TYPE } from '../../../src/shared/contract/planApproval';
 
 const getRecentMessages = vi.hoisted(() => vi.fn((_sessionId: string, _limit: number) => [] as unknown[]));
+const getMessages = vi.hoisted(() => vi.fn((_sessionId: string) => [] as unknown[]));
 
 type ResolveApprovalFn = (
   request: unknown,
@@ -13,6 +14,7 @@ vi.mock('../../../src/host/services/core/databaseService', () => ({
   getDatabase: () => ({
     isReady: true,
     getRecentMessages: (sessionId: string, limit: number) => getRecentMessages(sessionId, limit),
+    getMessages: (sessionId: string) => getMessages(sessionId),
   }),
 }));
 vi.mock('../../../src/host/services/planning/planApprovalService', () => ({
@@ -90,7 +92,7 @@ describe('companionUserPlan registers ChatView exit_plan_mode cards', () => {
         planApproval: APPROVAL,
       },
     });
-    getRecentMessages.mockReturnValueOnce([{
+    getMessages.mockReturnValueOnce([{
       id: 'msg-1',
       toolCalls: [{ id, result: { metadata: { planApproval: APPROVAL } } }],
     }]);
@@ -106,5 +108,32 @@ describe('companionUserPlan registers ChatView exit_plan_mode cards', () => {
     });
     expect(deliverCompanionUserPlan(id, true, undefined, 'session-a', startRun)).toEqual({ success: true });
     expect(startRun).toHaveBeenCalledWith('session-a', prompt, { historyVisibility: 'meta', disableAutoAgent: true });
+  });
+
+  it('回读走全量消息而非固定窗口：审批卡滑出最近消息后仍可处理（不僵尸）', () => {
+    const id = `stale-window-${Date.now()}`;
+    noteCompanionUserPlan('session-a', {
+      toolCallId: id,
+      success: true,
+      metadata: {
+        confirmationType: PLAN_APPROVAL_CONFIRMATION_TYPE,
+        plan: PLAN,
+        planApproval: APPROVAL,
+      },
+    });
+    // 卡片存续期间会话继续，原始 toolCall 早已滑出任何「最近 N 条」窗口。
+    getRecentMessages.mockReturnValueOnce([]);
+    getMessages.mockReturnValueOnce([
+      { id: 'msg-old', toolCalls: [{ id: 'other-call', result: { metadata: {} } }] },
+      { id: 'msg-plan', toolCalls: [{ id, result: { metadata: { planApproval: APPROVAL } } }] },
+    ]);
+    const startRun = vi.fn(async () => {});
+    resolveApproval.mockImplementationOnce(async (_request: unknown, deps: { appService: { sendMessage: (envelope: unknown) => Promise<void> } }) => {
+      await deps.appService.sendMessage({ content: PLAN, sessionId: 'session-a' });
+      return { approval: null, tasks: [] };
+    });
+    expect(deliverCompanionUserPlan(id, true, undefined, 'session-a', startRun)).toEqual({ success: true });
+    expect(getMessages).toHaveBeenCalledWith('session-a');
+    expect(startRun).toHaveBeenCalled();
   });
 });

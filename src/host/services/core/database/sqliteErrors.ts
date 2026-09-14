@@ -8,6 +8,8 @@
  * 会把还能读的库改名,无备份时永久内存模式——临时 IOERR 永远到不了那步。
  */
 
+import { SQLITE_INTEGRITY } from '../../../../shared/constants';
+
 function readStringProp(err: object, key: string): string {
   if (!(key in err)) return '';
   const value = (err as Record<string, unknown>)[key];
@@ -84,5 +86,18 @@ export class DatabaseIntegrityError extends Error {
     super(message);
     this.name = 'DatabaseIntegrityError';
     this.code = code;
+  }
+}
+
+/**
+ * 只读降级写路径统一错误。code 稳定，host 不加裸中文；renderer i18n 翻译。
+ * SQLITE_READONLY 也归到这个 code，避免把 better-sqlite3 原文送上用户面。
+ */
+export class DatabaseReadOnlyError extends Error {
+  readonly code = SQLITE_INTEGRITY.READONLY;
+
+  constructor() {
+    super('Database is read-only (degraded); refusing to write');
+    this.name = 'DatabaseReadOnlyError';
   }
 }

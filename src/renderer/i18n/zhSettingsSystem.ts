@@ -80,6 +80,8 @@ export const zhSettingsSystem = {
         degradedFtsReindexing: '全文索引已重建，历史回填进行中；搜索可能暂时不完整，写入不受影响。',
         degradedQuickCheck: '数据库完整性检查未通过，下次启动将尝试从备份恢复。',
         degradedLocal: '部分数据表损坏，已记录诊断；写入路径仍可用。',
+        degradedReadonly: '数据库已损坏，已用只读模式打开。可以查看历史和搜索，但不能新建会话、写入记忆或启动任务。',
+        degradedLedgerCorrupt: '审计账本已损坏。历史仍可读，部分诊断记录可能缺失。',
         recoveredTitle: '已从备份恢复',
         recoveredBody: '已从本地备份恢复数据库。备份时间：{timestamp}。该时间点之后的更改可能丢失。',
         corruptNoBackup: '数据库已损坏且没有可用备份，当前会话只保存在内存中。',

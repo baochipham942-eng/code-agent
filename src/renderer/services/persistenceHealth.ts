@@ -56,6 +56,8 @@ export interface PersistenceBannerCopy {
   degradedFtsReindexing: string;
   degradedQuickCheck: string;
   degradedLocal: string;
+  degradedReadonly: string;
+  degradedLedgerCorrupt: string;
   recoveredTitle: string;
   recoveredBody: string;
   corruptNoBackup: string;
@@ -100,6 +102,12 @@ export function describePersistenceBanner(
     }
     if (health.reason === SQLITE_INTEGRITY.RESTORE_LOW_DISK) {
       return { title: copy.degradedTitle, body: `${copy.restoreLowDisk}${reason}` };
+    }
+    if (health.reason === SQLITE_INTEGRITY.READONLY) {
+      return { title: copy.degradedTitle, body: `${copy.degradedReadonly}${reason}` };
+    }
+    if (health.reason === SQLITE_INTEGRITY.LEDGER_CORRUPT) {
+      return { title: copy.degradedTitle, body: `${copy.degradedLedgerCorrupt}${reason}` };
     }
     return { title: copy.degradedTitle, body: `${health.message}${reason}` };
   }

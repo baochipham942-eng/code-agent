@@ -26,7 +26,7 @@ const pending = new Map<string, { sessionId: string; toolCallId: string; plan: s
 
 export type CompanionPlanRunOptions = { historyVisibility?: 'meta'; disableAutoAgent?: boolean };
 
-export function companionPlanRunFromEnvelope(
+function companionPlanRunFromEnvelope(
   envelope: { content?: unknown; sessionId?: unknown; options?: Record<string, unknown> },
   fallback: { sessionId: string; plan: string },
 ): { sessionId: string; prompt: string } & CompanionPlanRunOptions {

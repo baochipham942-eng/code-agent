@@ -40,6 +40,31 @@ function withDeepSeekReasoningContentCompat(
   };
 }
 
+// ── ADR-068 刀 2：B1 续接请求（末条 assistant prefix）的 vendor body 注入 ──
+// prefix-param 档（当前仅 deepseek）的官方合同：prefix:true + /beta 端点
+// （api-docs.deepseek.com/zh-cn/guides/chat_prefix_completion）。@ai-sdk/deepseek 不暴露
+// 该形状，transformRequestBody 手搓顶层 body 参数（reasoning_effort 同先例）。注入条件
+// 双重收紧：档位 prefix-param + body.messages 末条 assistant——后者是 B1 续接请求的
+// 独有形状（正常请求末条恒为 user/tool），防 prefix 参数泄漏进正常请求。端点切换
+// （/beta）不在 body 层，由 adapter 重建 model 时按能力表 endpointPath 处理。
+function withStreamResumePrefixCompat(
+  config: ModelConfig,
+  vendorTransform?: (body: Record<string, unknown>) => Record<string, unknown>,
+): ((body: Record<string, unknown>) => Record<string, unknown>) | undefined {
+  if (resolveModelCapabilities(config.provider, config.model).streamResume?.mode !== 'prefix-param') {
+    return vendorTransform;
+  }
+  return (body) => {
+    const transformed = vendorTransform ? vendorTransform(body) : body;
+    const messages = Array.isArray(transformed.messages) ? (transformed.messages as unknown[]) : [];
+    const last = messages[messages.length - 1];
+    if (!last || typeof last !== 'object' || (last as Record<string, unknown>).role !== 'assistant') {
+      return transformed;
+    }
+    return { ...transformed, prefix: true };
+  };
+}
+
 export function buildVendorCompatSettings(config: ModelConfig, options?: { searchEnabled?: boolean }): OpenAICompatVendorSettings {
   let settings: OpenAICompatVendorSettings;
   switch (config.provider) {
@@ -115,7 +140,13 @@ export function buildVendorCompatSettings(config: ModelConfig, options?: { searc
   }
   return {
     ...finalSettings,
-    transformRequestBody: withDeepSeekReasoningContentCompat(config, settings.transformRequestBody),
+    // 组合顺序：prefix 注入先跑（只加顶层 prefix:true，不碰 messages），reasoning_content
+    // 兼容后跑（遍历所有 assistant 消息补字段，B1 续接的 prefix 消息同受覆盖——DeepSeek
+    // 要求所有 assistant 消息回传该字段，prefix 消息不例外）。
+    transformRequestBody: withStreamResumePrefixCompat(
+      config,
+      withDeepSeekReasoningContentCompat(config, settings.transformRequestBody),
+    ),
   };
 }
 

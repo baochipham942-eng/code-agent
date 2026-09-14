@@ -37,6 +37,7 @@ import {
   isFtsSearchDegraded,
   repairCorruptFtsOnStartup,
   repairFtsTable,
+  runTransactionWithFtsRepair,
 } from '../../../src/host/services/core/database/ftsRepair';
 import { rebuildSessionMessagesFts } from '../../../src/host/services/core/database/sessionMessagesFts';
 import { SessionRepository } from '../../../src/host/services/core/repositories/SessionRepository';
@@ -489,6 +490,66 @@ describe('ftsRepair ladder', () => {
     // 再跑一遍仍不动 FTS——不重复删建
     expect(repo.backfillSessionMessagesFts()).toBe(0);
     expect((db.prepare('SELECT COUNT(*) AS c FROM session_messages_fts').get() as { c: number }).c).toBe(20);
+    db.close();
+  });
+
+  it('nested in an outer transaction: corruption rethrows without touching the caller-owned transaction', () => {
+    const dbPath = tmpDb();
+    let { db, repo } = openRepo(dbPath);
+    createSchema(db);
+    insertSession(db, 'sess-1');
+    seedMessages(repo, 50);
+    db.close();
+
+    corruptFtsShadowPages(dbPath, { fullPage: true });
+    ({ db, repo } = openRepo(dbPath));
+
+    // FTS vtab 损坏错误会由 SQLite 自动回滚整个事务栈(实测 savepoint 直接消失),
+    // 所以坏点之后外层函数体内的一切都在裸跑。这正是审查指认的半提交形态
+    // (evidenceInvalidationService 的 immediate 事务套 updateMessage):
+    // wrapper 必须在进入时发现不是自己的事务就原样上抛,让外层函数体在坏点中止;
+    // 若 wrapper 修复+重试,重试写入裸提交、外层后续写入继续裸提交,COMMIT 才报
+    // no active transaction——sess-after 落库、m-3 被改写。
+    const outer = db.transaction(() => {
+      insertSession(db, 'sess-before');
+      runTransactionWithFtsRepair(db, db.transaction(() => {
+        repo.updateMessage('m-3', { content: 'nested rewrite needle' }, 'sess-1');
+      }));
+      insertSession(db, 'sess-after');
+    });
+    expect(() => outer()).toThrow(/malformed/);
+
+    // 外层整体回滚(SQLite 自动),坏点后的写入从未执行
+    expect(db.prepare(`SELECT id FROM sessions WHERE id = 'sess-before'`).get()).toBeUndefined();
+    expect(db.prepare(`SELECT id FROM sessions WHERE id = 'sess-after'`).get()).toBeUndefined();
+    const row = db.prepare(`SELECT content FROM messages WHERE id = 'm-3'`).get() as { content: string };
+    expect(row.content).not.toBe('nested rewrite needle');
+    expect(db.inTransaction).toBe(false);
+    db.close();
+  });
+
+  it('FTS5 syntax errors rethrow (FTS_ERROR semantics); corruption still degrades', () => {
+    const dbPath = tmpDb();
+    let { db, repo } = openRepo(dbPath);
+    createSchema(db);
+    insertSession(db, 'sess-1');
+    seedMessages(repo, 20);
+
+    // 双引号开头的查询不走转义(normalizeFtsQuery 契约),未闭合引号 → fts5 语法错误。
+    // 非损坏错误必须原样上抛,episodicRecall/history 的 FTS_ERROR 提示才到得了。
+    expect(() => repo.searchSessionMessagesFts('"unclosed', { limit: 10 })).toThrow();
+    expect(() => repo.countSessionMessagesFts('"unclosed')).toThrow();
+    expect(() => repo.searchTranscriptFts('"unclosed')).toThrow();
+    db.close();
+
+    // 损坏类:transcript 搜索降级返回 [] 不抛,修复阶梯自愈后降级态消除
+    corruptFtsShadowPages(dbPath, { names: ['transcript_fts_data', 'transcript_fts_idx'], leafOnly: false });
+    ({ db, repo } = openRepo(dbPath));
+    expect(() => repo.searchTranscriptFts('needle', { limit: 10 })).not.toThrow();
+    expect(repo.searchTranscriptFts('needle', { limit: 10 })).toEqual(
+      expect.arrayContaining([]),
+    );
+    expect(isFtsSearchDegraded('transcript_fts')).toBe(false);
     db.close();
   });
 

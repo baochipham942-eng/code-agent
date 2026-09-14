@@ -239,23 +239,19 @@ export function runSessionMessagesFtsSearch(db: BetterSqlite3.Database,
   try {
     return executeSessionMessagesFtsSearch(db, trimmed, options);
   } catch (err) {
-    if (isSqliteCorruptionError(err)) {
-      tryRepairFtsTableForSearch(db, 'session_messages_fts');
-      if (isFtsSearchDegraded('session_messages_fts')) {
-        return runFtsUnavailableLikeSearch(db, trimmed, options);
-      }
-      try {
-        return executeSessionMessagesFtsSearch(db, trimmed, options);
-      } catch (retryErr) {
-        logger.warn('[EpisodicFts] search failed after repair', { query: trimmed, error: retryErr });
-        return runFtsUnavailableLikeSearch(db, trimmed, options);
-      }
+    // 非损坏错误（FTS5 语法错误等）原样上抛:episodicRecall 的 FTS_ERROR
+    // 「修查询语法」提示语义靠它,不许吞成空结果。
+    if (!isSqliteCorruptionError(err)) throw err;
+    tryRepairFtsTableForSearch(db, 'session_messages_fts');
+    if (isFtsSearchDegraded('session_messages_fts')) {
+      return runFtsUnavailableLikeSearch(db, trimmed, options);
     }
-    logger.warn('[EpisodicFts] search failed', {
-      query: trimmed,
-      error: err
-    });
-    return [];
+    try {
+      return executeSessionMessagesFtsSearch(db, trimmed, options);
+    } catch (retryErr) {
+      logger.warn('[EpisodicFts] search failed after repair', { query: trimmed, error: retryErr });
+      return runFtsUnavailableLikeSearch(db, trimmed, options);
+    }
   }
 }
 
@@ -332,23 +328,17 @@ export function runSessionMessagesFtsCount(db: BetterSqlite3.Database,
   try {
     return executeSessionMessagesFtsCount(db, trimmed, options);
   } catch (err) {
-    if (isSqliteCorruptionError(err)) {
-      tryRepairFtsTableForSearch(db, 'session_messages_fts');
-      if (isFtsSearchDegraded('session_messages_fts')) {
-        return runFtsUnavailableLikeCount(db, trimmed, options);
-      }
-      try {
-        return executeSessionMessagesFtsCount(db, trimmed, options);
-      } catch (retryErr) {
-        logger.warn('[EpisodicFts] count failed after repair', { query: trimmed, error: retryErr });
-        return runFtsUnavailableLikeCount(db, trimmed, options);
-      }
+    if (!isSqliteCorruptionError(err)) throw err;
+    tryRepairFtsTableForSearch(db, 'session_messages_fts');
+    if (isFtsSearchDegraded('session_messages_fts')) {
+      return runFtsUnavailableLikeCount(db, trimmed, options);
     }
-    logger.warn('[EpisodicFts] count failed', {
-      query: trimmed,
-      error: err
-    });
-    return EMPTY_FTS_COUNT;
+    try {
+      return executeSessionMessagesFtsCount(db, trimmed, options);
+    } catch (retryErr) {
+      logger.warn('[EpisodicFts] count failed after repair', { query: trimmed, error: retryErr });
+      return runFtsUnavailableLikeCount(db, trimmed, options);
+    }
   }
 }
 
@@ -435,10 +425,11 @@ export function runTranscriptFtsSearch(db: BetterSqlite3.Database,
       timestamp: Number(row.timestamp ?? 0)
     }));
   } catch (err) {
-    if (isSqliteCorruptionError(err)) {
-      tryRepairFtsTableForSearch(db, 'transcript_fts');
-    }
-    logger.warn('[TranscriptFts] search failed', { query: trimmed, error: err });
+    // 非损坏错误（FTS5 语法错误等）原样上抛:history.ts 的 FTS_ERROR
+    // 「修查询语法」提示语义靠它;只有损坏类才走修复/降级。
+    if (!isSqliteCorruptionError(err)) throw err;
+    tryRepairFtsTableForSearch(db, 'transcript_fts');
+    logger.warn('[TranscriptFts] search degraded after corruption', { query: trimmed, error: err });
     return [];
   }
 }

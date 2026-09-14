@@ -324,13 +324,20 @@ export function runWithFtsWriteRepair(db: BetterSqlite3.Database, fn: () => void
  * 两种情况下都必须先在事务外跑修复阶梯，再整体重试一次事务。
  * 事务已整体回滚，重跑幂等；重试仍坏则把错误抛给调用方。
  * 探针确认 FTS 没坏（坏在源表/别处）时不动 FTS 表、原样上抛。
+ *
+ * 事务归属：进入时已在调用方的外层事务里（inTransaction===true）则不做
+ * rollback/修复/重试，原样上抛——ROLLBACK 会把外层事务一起回滚，随后的重试
+ * 和后续写入会逐条裸提交，外层 COMMIT 报 no active transaction（半提交）。
+ * 嵌套场景下外层会整体回滚，重试语义归最外层调用方（见
+ * evidenceInvalidationService 的 immediate 事务里套 updateMessage 的情形）。
  */
 export function runTransactionWithFtsRepair(db: BetterSqlite3.Database, tx: () => void): void {
+  const ownsTransaction = !db.inTransaction;
   try {
     tx();
     return;
   } catch (err) {
-    if (!isSqliteCorruptionError(err)) throw err;
+    if (!ownsTransaction || !isSqliteCorruptionError(err)) throw err;
     rollbackIfNeeded(db);
     if (!repairMessageProjectionFts(db)) throw err;
   }

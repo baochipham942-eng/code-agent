@@ -52,12 +52,30 @@ function normalizeCommand(command: string): string {
   return command.replace(/\s+/g, ' ').trim();
 }
 
-/** 收集本会话内实际写过的文件路径（Write/Edit/Append 的 file_path 参数） */
+/**
+ * 有对应成功结果的 toolCallId 集合。结果由 messageProcessor 以 role:'tool' 消息的
+ * toolResults 落进 ctx.messages（按 toolCallId 与 assistant 消息的 toolCalls 配对）；
+ * 审批拒绝 / 权限 BLOCK / 非零退出 / 超时 / 取消闭合一律 success:false，进行中或
+ * 结果丢失则无配对结果——两者都不算「执行过」（证据闸宁严勿松）。
+ */
+function successfulToolCallIds(ctx: RuntimeContext): Set<string> {
+  const succeeded = new Set<string>();
+  for (const message of ctx.messages || []) {
+    for (const result of message.toolResults || []) {
+      if (result.toolCallId && result.success === true) succeeded.add(result.toolCallId);
+    }
+  }
+  return succeeded;
+}
+
+/** 收集本会话内实际写过的文件路径（Write/Edit/Append 的 file_path 参数，只认成功结果） */
 function collectWrittenFiles(ctx: RuntimeContext): string[] {
+  const succeeded = successfulToolCallIds(ctx);
   const written: string[] = [];
   for (const message of ctx.messages || []) {
     for (const toolCall of message.toolCalls || []) {
       if (!/^(write|edit|append)$/i.test(toolCall.name || '')) continue;
+      if (!succeeded.has(toolCall.id)) continue;
       const filePath = toolCall.arguments?.file_path;
       if (typeof filePath === 'string' && filePath.trim()) written.push(filePath.trim());
     }
@@ -65,12 +83,14 @@ function collectWrittenFiles(ctx: RuntimeContext): string[] {
   return written;
 }
 
-/** 收集本会话内实际执行过的 shell 命令（Bash 族工具调用的 command 参数） */
+/** 收集本会话内实际执行过的 shell 命令（Bash 族工具调用的 command 参数，只认成功结果） */
 function collectExecutedCommands(ctx: RuntimeContext): string[] {
+  const succeeded = successfulToolCallIds(ctx);
   const executed: string[] = [];
   for (const message of ctx.messages || []) {
     for (const toolCall of message.toolCalls || []) {
       if (!/^bash$/i.test(toolCall.name || '')) continue;
+      if (!succeeded.has(toolCall.id)) continue;
       const command = toolCall.arguments?.command;
       if (typeof command === 'string' && command.trim()) {
         executed.push(normalizeCommand(command));
@@ -80,10 +100,19 @@ function collectExecutedCommands(ctx: RuntimeContext): string[] {
   return executed;
 }
 
+/** 声称命令里出现任一 shell 操作符即失去前缀兼容资格（防 `git status && rm -rf x` 借道短命令的执行记录）。 */
+const SHELL_OPERATOR_PATTERN = /&&|\|\||;|\||>|<|`|\$\(/;
+
 function commandWasExecuted(claimed: string, executed: string[]): boolean {
   const normalized = normalizeCommand(claimed);
   if (!normalized) return false;
-  return executed.some((cmd) => cmd.includes(normalized) || normalized.includes(cmd));
+  return executed.some((cmd) => {
+    if (cmd === normalized) return true;
+    // 兼容「声称 npm test、实际执行 npm test -- foo」：已执行命令以声称命令开头且紧跟空格，
+    // 且声称命令本身不含 shell 操作符。其余（双向子串等）一律不算——短命令的执行记录
+    // 证明不了更长的声称命令真的跑过。
+    return !SHELL_OPERATOR_PATTERN.test(normalized) && cmd.startsWith(`${normalized} `);
+  });
 }
 
 function collectChangedRepositoryEvidence(ctx: RuntimeContext): EvidenceRef[] {

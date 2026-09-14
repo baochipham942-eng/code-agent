@@ -43,7 +43,8 @@ export interface EvalCaseDrawerLabels {
   excludedFailure: string;
   aiReview: string;
   aiReviewNote: string;
-  verdict: Record<'yes' | 'no' | 'unavailable', string>;
+  verdict: Record<'yes' | 'no' | 'abstain' | 'unavailable', string>;
+  abstainHint: string;
   source: string;
   sourceManual: string;
   sourceSession: string;
@@ -72,7 +73,7 @@ export const evalCaseDrawerZh = {
     checkSummary: '{total} 条判定 {passed} 过 {failed} 挂 → {judgement}', judgedPassed: '判通过', judgedFailed: '判失败',
     excludedExplanation: '本题不计入通过率（{status}），不是能力失败。通过率按总数减去跳过、环境故障和成本超限后计算。', excludedShort: '不计入通过率',
     excludedFailure: '错误摘要：{reason}', aiReview: 'AI 评审', aiReviewNote: '并列 · 不进通过率',
-    verdict: { yes: '是', no: '否', unavailable: '不可用' }, source: '来源', sourceManual: '手写', sourceSession: '从会话转成题目',
+    verdict: { yes: '是', no: '否', abstain: '无法确定', unavailable: '不可用' }, abstainHint: 'AI 评审有 {count} 维弃权，请在下方人工评审里判定', source: '来源', sourceManual: '手写', sourceSession: '从会话转成题目',
     dailySet: '日常集', heldOutSet: '留出集', safetySet: '安全集', openReport: '打开本轮报告', editCase: '在题库中编辑',
     caseCost: '本题实付 {cost}',
   } satisfies EvalCaseDrawerLabels,
@@ -95,7 +96,7 @@ export const evalCaseDrawerEn = {
     checkSummary: '{total} checks, {passed} passed, {failed} failed → {judgement}', judgedPassed: 'passed', judgedFailed: 'failed',
     excludedExplanation: 'This case is excluded from the pass rate ({status}); it is not an ability failure. The pass rate excludes skipped cases, environment issues, and cost-limit cases.', excludedShort: 'Excluded from pass rate',
     excludedFailure: 'Error summary: {reason}', aiReview: 'AI review', aiReviewNote: 'Parallel result · excluded from pass rate',
-    verdict: { yes: 'Yes', no: 'No', unavailable: 'Unavailable' }, source: 'Source', sourceManual: 'Written manually', sourceSession: 'Created from a session',
+    verdict: { yes: 'Yes', no: 'No', abstain: 'Unsure', unavailable: 'Unavailable' }, abstainHint: 'The AI review abstained on {count} dimension(s); please decide in the human review below', source: 'Source', sourceManual: 'Written manually', sourceSession: 'Created from a session',
     dailySet: 'Daily set', heldOutSet: 'Held-out set', safetySet: 'Safety set', openReport: 'Open run report', editCase: 'Edit in case bank',
     caseCost: 'This case {cost}',
   } satisfies EvalCaseDrawerLabels,

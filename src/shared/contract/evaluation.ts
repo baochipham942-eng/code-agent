@@ -216,7 +216,8 @@ export interface ListEvalAnnotationsResult {
 }
 
 export interface AiReviewVerdict {
-  verdict: 'yes' | 'no' | 'unavailable';
+  /** abstain = 判官自报「无法确定」：不进是/否统计，交人工判定（N-EVAL-JUDGE-ABSTAIN）。 */
+  verdict: 'yes' | 'no' | 'abstain' | 'unavailable';
   reasoning: string;
   judgeModel: string;
   promptHash: string;
@@ -368,7 +369,7 @@ export interface EvalRunPanelProbe {
     dim: AiReviewDimension;
     calibration: {
       state: 'calibrated' | 'uncalibrated';
-      reason?: 'no_record' | 'below_threshold' | 'prompt_changed' | 'not_enough_pairs' | 'superseded' | 'judge_changed';
+      reason?: 'no_record' | 'below_threshold' | 'prompt_changed' | 'not_enough_pairs' | 'superseded' | 'judge_changed' | 'abstain_rate';
       kappa?: number;
       pairs?: number;
       computedAt?: string;

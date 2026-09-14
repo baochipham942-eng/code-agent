@@ -610,7 +610,23 @@ export function searchSessions(
   const startTime = Date.now();
 
   if (canUseFtsSource(query, options, ftsSource)) {
-    return searchSessionsViaFts(query, options, cache, ftsSource, startTime);
+    // 非损坏错误（用户输入的 FTS5 语法错误等）在仓储层原样上抛（工具链要
+    // FTS_ERROR 语义）；跨会话搜索框的基线 UX 是空结果——这里一处兜住
+    // searchSessionsViaFts 内的 search+count 两条，不许把语法错误抛穿 IPC。
+    // 损坏类在仓储层已自愈/降级，不会抛到这里。
+    try {
+      return searchSessionsViaFts(query, options, cache, ftsSource, startTime);
+    } catch (err) {
+      logger.warn('FTS search rejected query; returning empty results', { query, error: err });
+      return {
+        query,
+        totalMatches: 0,
+        sessionsWithMatches: 0,
+        results: [],
+        searchTime: Date.now() - startTime,
+        truncated: false,
+      };
+    }
   }
 
   const {

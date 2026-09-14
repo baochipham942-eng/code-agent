@@ -19,7 +19,10 @@ NEO_MOBILE_BUILD=1 NEO_MOBILE_FIXTURES=1 npm run android:build
 
 The build script generates the Android project from pinned Capacitor dependencies,
 sets versionName from this package and versionCode from `NEO_MOBILE_BUILD`, then
-builds offline using the existing Gradle cache. It does not silently install SDKs.
+builds offline using the existing Gradle cache. If `--offline` fails because a newly
+introduced native dependency is not cached, the script logs that, resolves
+dependencies online once, and retries `--offline`. It does not silently install
+SDKs; missing SDK or platform components still fail closed.
 `android/`, dependencies, packages and reports stay outside Git. Check the generated
 manifest's sourceDirty flag; delivery packages must come from a clean commit.
 The preview identity is separate from the historical Spike app. Increase the build

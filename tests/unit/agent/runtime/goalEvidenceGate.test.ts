@@ -6,7 +6,7 @@ import { execFileSync } from 'child_process';
 import { runGoalEvidenceGate } from '../../../../src/host/agent/runtime/goalEvidenceGate';
 import { GOAL_MODE } from '../../../../src/shared/constants/agent';
 import type { RuntimeContext } from '../../../../src/host/agent/runtime/runtimeContext';
-import type { ToolCall } from '../../../../src/shared/contract';
+import type { Message, ToolCall, ToolResult } from '../../../../src/shared/contract';
 import { ArtifactState } from '../../../../src/host/agent/runtime/artifactState';
 
 function makeCtx(overrides: Record<string, unknown> = {}): RuntimeContext {
@@ -26,6 +26,53 @@ function makeCall(evidence?: Record<string, unknown>): ToolCall {
     name: 'attempt_completion',
     arguments: { summary: 'done', ...(evidence ? { evidence } : {}) },
   } as ToolCall;
+}
+
+/** assistant 消息：携带模型发起的 toolCalls */
+function assistantMsg(toolCalls: ToolCall[]): Message {
+  return { id: 'm1', role: 'assistant', content: '', timestamp: 1, toolCalls } as Message;
+}
+
+/**
+ * role:'tool' 消息：工具结果落进 ctx.messages 的真实形状（messageProcessor.ts 末尾
+ * addAndPersistMessage，字段 toolResults: ToolResult[]，按 toolCallId 与 toolCalls 配对）。
+ */
+function resultsMsg(results: ToolResult[]): Message {
+  return { id: 'm2', role: 'tool', content: JSON.stringify(results), timestamp: 2, toolResults: results } as Message;
+}
+
+function okResult(toolCallId: string): ToolResult {
+  return { toolCallId, success: true, output: 'ok', duration: 10 };
+}
+
+/** 审批拒绝（toolExecutor.ts ask-denied 分支：metadata.failureCode = AgentFailureCode.PermissionDenied） */
+function deniedResult(toolCallId: string): ToolResult {
+  return {
+    toolCallId,
+    success: false,
+    error: 'Permission denied by user: Bash',
+    metadata: { failureCode: 'permission-denied' },
+  };
+}
+
+/** bash 非零退出（bash.ts waitForCompletion：'Command exited with code N'） */
+function failedResult(toolCallId: string): ToolResult {
+  return { toolCallId, success: false, error: 'Command exited with code 1', metadata: { code: 'FS_ERROR' } };
+}
+
+/** headless 无审批 UI fail-closed（permission.ts code PERMISSION_DENIED_NO_APPROVAL_UI） */
+function headlessDeniedResult(toolCallId: string): ToolResult {
+  return { toolCallId, success: false, error: 'permission denied: no approval UI available', metadata: { code: 'PERMISSION_DENIED_NO_APPROVAL_UI' } };
+}
+
+/** 超时（前台 timeout kill → reject） */
+function timeoutResult(toolCallId: string): ToolResult {
+  return { toolCallId, success: false, error: 'Error: Command timed out after 30000ms', duration: 30000 };
+}
+
+/** run 取消（toolExecutionEngine.buildSuppressedCancelledResult 形状） */
+function cancelledResult(toolCallId: string): ToolResult {
+  return { toolCallId, success: false, error: 'cancelled', duration: 5, metadata: { cancelledByRun: true } };
 }
 
 describe('runGoalEvidenceGate（闸0 公开证据自证）', () => {
@@ -71,10 +118,8 @@ describe('runGoalEvidenceGate（闸0 公开证据自证）', () => {
   it('自报命令与会话内真实执行记录匹配 → pass', () => {
     const ctx = makeCtx({
       messages: [
-        {
-          id: 'm1', role: 'assistant', content: '', timestamp: 1,
-          toolCalls: [{ id: 't1', name: 'Bash', arguments: { command: 'npx vitest run   tests/unit' } }],
-        },
+        assistantMsg([{ id: 't1', name: 'Bash', arguments: { command: 'npx vitest run   tests/unit' } }]),
+        resultsMsg([okResult('t1')]),
       ],
     });
 
@@ -98,10 +143,8 @@ describe('runGoalEvidenceGate（闸0 公开证据自证）', () => {
         declaredDeliverables: { finalArtifacts: ['promised.html'], declaredAtMs: 1 },
       }),
       messages: [
-        {
-          id: 'm1', role: 'assistant', content: '', timestamp: 1,
-          toolCalls: [{ id: 't1', name: 'Bash', arguments: { command: 'echo ok' } }],
-        },
+        assistantMsg([{ id: 't1', name: 'Bash', arguments: { command: 'echo ok' } }]),
+        resultsMsg([okResult('t1')]),
       ],
     });
 
@@ -122,13 +165,11 @@ describe('runGoalEvidenceGate（闸0 公开证据自证）', () => {
         declaredDeliverables: { finalArtifacts: ['app.html'], declaredAtMs: 1 },
       }),
       messages: [
-        {
-          id: 'm1', role: 'assistant', content: '', timestamp: 1,
-          toolCalls: [
-            { id: 't1', name: 'Write', arguments: { file_path: 'app.html', content: 'x' } },
-            { id: 't2', name: 'Write', arguments: { file_path: 'stray-notes.md', content: 'x' } },
-          ],
-        },
+        assistantMsg([
+          { id: 't1', name: 'Write', arguments: { file_path: 'app.html', content: 'x' } },
+          { id: 't2', name: 'Write', arguments: { file_path: 'stray-notes.md', content: 'x' } },
+        ]),
+        resultsMsg([okResult('t1'), okResult('t2')]),
       ],
     });
 
@@ -154,10 +195,10 @@ describe('runGoalEvidenceGate（闸0 公开证据自证）', () => {
     }
     const ctx = makeCtx({
       workingDirectory: roots[0],
-      messages: [{
-        id: 'm1', role: 'assistant', content: '', timestamp: 1,
-        toolCalls: [{ id: 't1', name: 'Bash', arguments: { command: 'npm test' } }],
-      }],
+      messages: [
+        assistantMsg([{ id: 't1', name: 'Bash', arguments: { command: 'npm test' } }]),
+        resultsMsg([okResult('t1')]),
+      ],
       workspaceScope: {
         projectId: 'project-1',
         primaryRoot: roots[0],
@@ -185,5 +226,157 @@ describe('runGoalEvidenceGate（闸0 公开证据自证）', () => {
 
     expect(result.verdict).toBe('exhausted_release');
     expect(result.reason).toContain('bounces exhausted');
+  });
+});
+
+describe('N-GOALEVIDENCE-DENIEDCALLS：被拒/失败的调用不算执行过', () => {
+  it.each([
+    ['审批拒绝（metadata.failureCode=permission-denied）', deniedResult],
+    ['执行失败（Command exited with code 1）', failedResult],
+    ['headless 无审批 UI fail-closed（PERMISSION_DENIED_NO_APPROVAL_UI）', headlessDeniedResult],
+    ['超时（Command timed out）', timeoutResult],
+    ['run 取消（error=cancelled）', cancelledResult],
+  ])('Bash 调用%s → 声称执行过 ⇒ 打回', (_label, buildResult) => {
+    const ctx = makeCtx({
+      messages: [
+        assistantMsg([{ id: 't1', name: 'Bash', arguments: { command: 'npm test' } }]),
+        resultsMsg([buildResult('t1')]),
+      ],
+    });
+
+    const result = runGoalEvidenceGate(ctx, makeCall({ commands: ['npm test'] }));
+
+    expect(result.verdict).toBe('bounce');
+    expect(result.feedback).toContain('npm test');
+    expect(result.evidenceRefs.some((ref) => ref.kind === 'tool')).toBe(false);
+  });
+
+  it('Bash 调用尚无结果（进行中/结果丢失）→ 声称执行过 ⇒ 打回', () => {
+    const ctx = makeCtx({
+      messages: [assistantMsg([{ id: 't1', name: 'Bash', arguments: { command: 'npm test' } }])],
+    });
+
+    const result = runGoalEvidenceGate(ctx, makeCall({ commands: ['npm test'] }));
+
+    expect(result.verdict).toBe('bounce');
+  });
+
+  it('成功执行 git status，声称 `git status && rm -rf x` ⇒ 打回（短命令的执行记录证明不了更长的声称）', () => {
+    const ctx = makeCtx({
+      messages: [
+        assistantMsg([{ id: 't1', name: 'Bash', arguments: { command: 'git status' } }]),
+        resultsMsg([okResult('t1')]),
+      ],
+    });
+
+    const result = runGoalEvidenceGate(ctx, makeCall({ commands: ['git status && rm -rf x'] }));
+
+    expect(result.verdict).toBe('bounce');
+    expect(result.feedback).toContain('git status && rm -rf x');
+  });
+
+  it('声称命令是已执行命令的前缀（npm test / 实际 npm test -- foo）且不含 shell 操作符 ⇒ 放行（简写兼容）', () => {
+    const ctx = makeCtx({
+      messages: [
+        assistantMsg([{ id: 't1', name: 'Bash', arguments: { command: 'npm test -- foo' } }]),
+        resultsMsg([okResult('t1')]),
+      ],
+    });
+
+    const result = runGoalEvidenceGate(ctx, makeCall({ commands: ['npm test'] }));
+
+    expect(result.verdict).toBe('pass');
+    expect(result.evidenceRefs[0]).toMatchObject({ kind: 'tool' });
+  });
+
+  it('声称命令含管道等 shell 操作符时失去前缀兼容资格 ⇒ 打回', () => {
+    const ctx = makeCtx({
+      messages: [
+        assistantMsg([{ id: 't1', name: 'Bash', arguments: { command: 'cat log.txt | grep error' } }]),
+        resultsMsg([okResult('t1')]),
+      ],
+    });
+
+    const result = runGoalEvidenceGate(ctx, makeCall({ commands: ['cat log.txt | grep error; rm x'] }));
+
+    expect(result.verdict).toBe('bounce');
+  });
+
+  it('同轮混合成功与被拒调用，只声称成功的那个 ⇒ 放行；只声称被拒的那个 ⇒ 打回', () => {
+    const ctx = makeCtx({
+      messages: [
+        assistantMsg([
+          { id: 't1', name: 'Bash', arguments: { command: 'cargo check' } },
+          { id: 't2', name: 'Bash', arguments: { command: 'npm test' } },
+        ]),
+        resultsMsg([okResult('t1'), deniedResult('t2')]),
+      ],
+    });
+
+    const ok = runGoalEvidenceGate(makeCtx({ messages: ctx.messages }), makeCall({ commands: ['cargo check'] }));
+    expect(ok.verdict).toBe('pass');
+
+    const denied = runGoalEvidenceGate(makeCtx({ messages: ctx.messages }), makeCall({ commands: ['npm test'] }));
+    expect(denied.verdict).toBe('bounce');
+  });
+
+  it('被拒绝的 Write 声称写过某文件（文件从未落盘）⇒ 打回', async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'evidence-gate-denied-write-'));
+    const ctx = makeCtx({
+      workingDirectory: dir,
+      messages: [
+        assistantMsg([{ id: 'w1', name: 'Write', arguments: { file_path: 'report.html', content: '<html></html>' } }]),
+        resultsMsg([deniedResult('w1')]),
+      ],
+    });
+
+    const result = runGoalEvidenceGate(ctx, makeCall({ deliverables: ['report.html'] }));
+
+    expect(result.verdict).toBe('bounce');
+    expect(result.feedback).toContain('report.html');
+  });
+
+  it('被拒/失败的 Write 不进散落写入清单：stray 警告不出现（写入未发生）', async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'evidence-gate-denied-stray-'));
+    await writeFile(path.join(dir, 'app.html'), '<html></html>', 'utf8');
+    const ctx = makeCtx({
+      workingDirectory: dir,
+      artifact: ArtifactState.forTest({
+        declaredDeliverables: { finalArtifacts: ['app.html'], declaredAtMs: 1 },
+      }),
+      messages: [
+        assistantMsg([
+          { id: 'w1', name: 'Write', arguments: { file_path: 'app.html', content: 'x' } },
+          { id: 'w2', name: 'Write', arguments: { file_path: 'stray.md', content: 'x' } },
+        ]),
+        resultsMsg([okResult('w1'), deniedResult('w2')]),
+      ],
+    });
+
+    const result = runGoalEvidenceGate(ctx, makeCall({ deliverables: ['app.html'] }));
+
+    expect(result.verdict).toBe('pass');
+    expect(result.reason).not.toContain('workspace hygiene warning');
+  });
+
+  it('成功执行的命令与写入原样放行（保护原有功能）', async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'evidence-gate-ok-'));
+    await writeFile(path.join(dir, 'report.html'), '<html></html>', 'utf8');
+    const ctx = makeCtx({
+      workingDirectory: dir,
+      messages: [
+        assistantMsg([
+          { id: 't1', name: 'Bash', arguments: { command: 'npm test' } },
+          { id: 'w1', name: 'Write', arguments: { file_path: 'report.html', content: '<html></html>' } },
+        ]),
+        resultsMsg([okResult('t1'), okResult('w1')]),
+      ],
+    });
+
+    const result = runGoalEvidenceGate(ctx, makeCall({ deliverables: ['report.html'], commands: ['npm test'] }));
+
+    expect(result.verdict).toBe('pass');
+    expect(result.evidenceRefs.some((ref) => ref.kind === 'file')).toBe(true);
+    expect(result.evidenceRefs.some((ref) => ref.kind === 'tool')).toBe(true);
   });
 });

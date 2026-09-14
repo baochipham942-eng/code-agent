@@ -127,9 +127,11 @@ describe('evaluation baseline package-private IPC', () => {
   it('T4/T5：连续设置保留操作记录，两组读回逐题结果', async () => {
     const handlers = setup();
     state.loadExperiment.mockImplementation((id: string) => (
-      id === 'safety' ? loadedExperiment(id, 'safety', 2) : loadedExperiment(id)
+      id === 'safety' ? loadedExperiment(id, 'safety', 2)
+        : id === 'core' ? loadedExperiment(id, 'core', 1)
+          : loadedExperiment(id)
     ));
-    for (const experimentId of ['first', 'second', 'safety']) {
+    for (const experimentId of ['first', 'second', 'safety', 'core']) {
       await expect(handlers.get(EVALUATION_CHANNELS.SET_BASELINE)!(null, { experimentId }))
         .resolves.toMatchObject({ baseline: { experimentId } });
     }
@@ -142,7 +144,8 @@ describe('evaluation baseline package-private IPC', () => {
     const info = await handlers.get(EVALUATION_CHANNELS.BASELINE_INFO)!(null) as {
       groups: Record<string, { experimentId: string; caseResults: Record<string, unknown> }>;
     };
-    expect(Object.keys(info.groups).sort()).toEqual(['held-in::1', 'safety::2']);
+    // core 基线文件 eval-baseline.core.k1.json 也要被枚举到（周跑在 UI 对账靠它）
+    expect(Object.keys(info.groups).sort()).toEqual(['core::1', 'held-in::1', 'safety::2']);
     expect(info.groups['held-in::1']).toMatchObject({
       experimentId: 'second',
       caseResults: { 'case-1': { status: 'passed', score: 1 } },

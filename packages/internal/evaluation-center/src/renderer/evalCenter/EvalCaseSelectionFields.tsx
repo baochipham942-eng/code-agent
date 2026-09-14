@@ -36,7 +36,8 @@ export const EvalCaseSelectionFields: React.FC<{
           ['safety', labels.safetySet],
           ['core', labels.coreSet],
         ] as const).map(([value, label]) => {
-          const disabled = value === 'safety' && !safetyAvailable;
+          // core 是可选桶：切分文件没有它（探针计数 0）就不让选，别等提交后才被后端拒绝。
+          const disabled = (value === 'safety' && !safetyAvailable) || (value === 'core' && probe?.splitCounts.core === 0);
           return (
             <button /* ds-allow:button: 评测集单选卡片，Button primitive 无整行 radio card 变体 */
               key={value}

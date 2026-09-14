@@ -42,9 +42,7 @@ import { diagnoseSandboxDenial } from '../../shell/sandboxFailureDiagnostics';
 import { getShellPathDiagnostics } from '../../../services/infra/shellEnvironment';
 import { extractBashFacts, dataFingerprintStore } from '../../dataFingerprint';
 import { createFileArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
-import { createSanitizedEnv } from '../../../utils/sanitizeEnv';
-import { filterSecretEnvVars } from '../../../utils/envSecretFilter';
-import { getEnvFilterPolicy } from '../../../security/policyLoader';
+import { createEvalSafeShellEnv } from './evalSafeShellEnv';
 import { truncateMiddleErrorAware } from '../../../utils/truncate';
 import { spillToolResultArchive, buildSpillNotice } from '../../../utils/toolResultSpill';
 import { checkCommandPolicy } from './commandPolicy';
@@ -62,38 +60,6 @@ import { resolveCanonicalRunPath } from '../../../runtime/runContext';
 const MAX_TIMEOUT_MS = BASH.MAX_TIMEOUT;
 const BACKGROUND_TRAILING_OPERATOR = /(?:^|[;\n])\s*([^;&|\n][\s\S]*?)\s*&\s*$/;
 const MAX_LIVE_OUTPUT_DELTA_LENGTH = 2_000;
-
-function createEvalSafeShellEnv(
-  extra: Record<string, string | undefined> | undefined,
-  projectDir: string,
-  logger?: ToolContext['logger'],
-): Record<string, string> {
-  const env = createSanitizedEnv(extra);
-  if (process.env.CODE_AGENT_EVAL_REAL_ROOT !== undefined) {
-    delete env.CODE_AGENT_EVAL_REAL_ROOT;
-    delete env.AUTO_TEST_API_KEY;
-    delete env.AUTO_TEST_BASE_URL;
-    delete env.NEO_SCRIPTED_APPROVAL_POLICY;
-  }
-
-  // A8 env secret whitelist: strip secret-looking vars (*_KEY/*_TOKEN/
-  // *_SECRET/...) from the CHILD process env. This module is shared by
-  // CLI/desktop/web, so the filter applies on all three ends by default
-  // (intended — A8 is P0). The AGENT process itself is untouched: it keeps
-  // its own process.env with provider API keys for model calls.
-  // Escape hatch: [env_filter] in code-agent-policy.toml
-  // (strip_secret_vars=false, or allowed_secret_vars=[...]).
-  const envFilter = getEnvFilterPolicy(projectDir);
-  if (!envFilter.strip_secret_vars) return env;
-  const { env: filtered, strippedNames } = filterSecretEnvVars(env, {
-    allowedNames: envFilter.allowed_secret_vars,
-  });
-  if (strippedNames.length > 0) {
-    // Names only — values must never touch logs.
-    logger?.debug('Bash child env: stripped secret-looking vars', { names: strippedNames });
-  }
-  return filtered;
-}
 
 /**
  * 解包 self-referential 工具调用：
@@ -703,7 +669,7 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
       sandboxCleanup = undefined;
       cleanup?.();
     };
-    const applySandbox = (cmd: string): { ok: true; command: string } | { ok: false; error: string } => {
+    const applySandbox = (cmd: string, allowNetwork: boolean): { ok: true; command: string } | { ok: false; error: string } => {
       if (!sandboxDecision.apply) return { ok: true, command: cmd };
       try {
         if (writeFence && (!fenceRoot || !isOsWriteFenceAvailable())) {
@@ -722,10 +688,7 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
           deniedReadRoots: process.env.CODE_AGENT_EVAL_REAL_ROOT
             ? [process.env.CODE_AGENT_EVAL_REAL_ROOT]
             : undefined,
-          allowNetwork: resolveSandboxNetworkPolicy({
-            command: cmd,
-            redline: ctx.executionIntent?.redline === true,
-          }),
+          allowNetwork,
         });
         sandboxCleanup = wrapped.cleanup;
         sandboxDecision = {
@@ -768,12 +731,29 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
     // PTY 执行
     // -------------------------------------------------------------------------
     if (usePty) {
-      const sandboxed = applySandbox(normalizedCommand);
+      const allowNetwork = resolveSandboxNetworkPolicy({
+        command: normalizedCommand,
+        redline: ctx.executionIntent?.redline === true,
+      });
+      const sandboxed = applySandbox(normalizedCommand, allowNetwork);
       if (!sandboxed.ok) {
         return {
           ok: false,
           error: sandboxed.error,
           code: 'SANDBOX_UNAVAILABLE',
+          meta: buildSandboxMeta(sandboxDecision),
+        };
+      }
+      const childEnv = createEvalSafeShellEnv(undefined, workingDirectory, ctx.logger, {
+        allowNetwork,
+        command: normalizedCommand,
+      });
+      if (!childEnv.ok) {
+        cleanupSandbox();
+        return {
+          ok: false,
+          error: childEnv.error,
+          code: childEnv.code,
           meta: buildSandboxMeta(sandboxDecision),
         };
       }
@@ -787,7 +767,7 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
           maxRuntime: timeout,
           sessionId: ctx.sessionId,
           toolCallId: ctx.currentToolCallId,
-          env: createEvalSafeShellEnv(undefined, workingDirectory, ctx.logger),
+          env: childEnv.env,
           // The passed env already contains the full sanitized process.env minus
           // filtered secrets. If we also inherited process.env here, the filtered
           // secret vars would leak straight back in (ptyExecutor spreads
@@ -902,7 +882,11 @@ Use process_kill to terminate the session.`;
     // 后台任务
     // -------------------------------------------------------------------------
     if (runInBackground) {
-      const sandboxed = applySandbox(normalizedCommand);
+      const allowNetwork = resolveSandboxNetworkPolicy({
+        command: normalizedCommand,
+        redline: ctx.executionIntent?.redline === true,
+      });
+      const sandboxed = applySandbox(normalizedCommand, allowNetwork);
       if (!sandboxed.ok) {
         return {
           ok: false,
@@ -911,12 +895,25 @@ Use process_kill to terminate the session.`;
           meta: buildSandboxMeta(sandboxDecision),
         };
       }
+      const childEnv = createEvalSafeShellEnv(undefined, workingDirectory, ctx.logger, {
+        allowNetwork,
+        command: normalizedCommand,
+      });
+      if (!childEnv.ok) {
+        cleanupSandbox();
+        return {
+          ok: false,
+          error: childEnv.error,
+          code: childEnv.code,
+          meta: buildSandboxMeta(sandboxDecision),
+        };
+      }
       let result: ReturnType<typeof startBackgroundTask>;
       try {
         result = startBackgroundTask(sandboxed.command, workingDirectory, timeout, {
           sessionId: ctx.sessionId,
           toolCallId: ctx.currentToolCallId,
-          env: createEvalSafeShellEnv(undefined, workingDirectory, ctx.logger),
+          env: childEnv.env,
           sandboxed: sandboxDecision.sandboxed,
           ...(sandboxCleanup ? { onExit: cleanupSandbox } : {}),
         });
@@ -1024,13 +1021,33 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
       fallbackEntries: shellPathDiagnostics.fallbackEntries,
     };
 
-    const sandboxedFg = applySandbox(commandForExecution);
+    const allowNetworkFg = resolveSandboxNetworkPolicy({
+      command: commandForExecution,
+      redline: ctx.executionIntent?.redline === true,
+    });
+    const sandboxedFg = applySandbox(commandForExecution, allowNetworkFg);
     if (!sandboxedFg.ok) {
       return {
         ok: false,
         error: sandboxedFg.error,
         code: 'SANDBOX_UNAVAILABLE',
         meta: buildSandboxMeta(sandboxDecision),
+      };
+    }
+
+    const childEnvFg = createEvalSafeShellEnv({
+      PATH: shellPathDiagnostics.path,
+    }, workingDirectory, ctx.logger, {
+      allowNetwork: allowNetworkFg,
+      command: commandForExecution,
+    });
+    if (!childEnvFg.ok) {
+      cleanupSandbox();
+      return {
+        ok: false,
+        error: childEnvFg.error,
+        code: childEnvFg.code,
+        meta: { ...buildSandboxMeta(sandboxDecision), shellPath: shellPathMeta },
       };
     }
 
@@ -1046,9 +1063,7 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
         abortSignal: ctx.abortSignal,
         ctx,
         startedAt,
-        env: createEvalSafeShellEnv({
-          PATH: shellPathDiagnostics.path,
-        }, workingDirectory, ctx.logger),
+        env: childEnvFg.env,
       });
 
       let output = stdout;

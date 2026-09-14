@@ -199,25 +199,35 @@ describe('corrupt database recovery during init', () => {
     svc.close();
   }, 60_000);
 
-  // 标记在 + Tier 1 通过 + 无备份:隔离(不删除)+ 不可恢复标记 + 稳定 code;
-  // Tier 1 通过无权清 .integrity-failed。
-  it('fails closed when .integrity-failed is set, Tier 1 passes, and no backup exists', async () => {
+  // ai-review 第三轮:升级恢复必须手里先有恢复源。标记在 + Tier 1 通过 + 无好备份
+  // → 不隔离还能读的库(隔离了就是永久内存模式,而 main 上同一个库还能用),
+  // 留在当前库继续跑 + degraded(稳定 code),标记留给 Tier 2 复测定夺。
+  it('keeps serving the readable db when .integrity-failed is set but no good backup exists', async () => {
     const dir = tmpDir();
     const dbPath = path.join(dir, 'code-agent.db');
 
     const first = new DatabaseService(dir);
     await first.initialize();
+    first.getDb()!.prepare(INSERT_SESSION_SQL).run('sess-1', 'still-here', 'openai', 'gpt-5', dir, 1, 1);
     first.close();
     writeIntegrityFailedMarker(dir, Date.now());
 
-    const failed = new DatabaseService(dir);
-    await expect(failed.initialize()).rejects.toMatchObject({
-      code: SQLITE_INTEGRITY.CORRUPT_NO_BACKUP,
+    const svc = new DatabaseService(dir);
+    await svc.initialize();
+    expect(svc.getIntegrityOutcome()).toEqual({
+      kind: 'degraded',
+      reason: SQLITE_INTEGRITY.QUICK_CHECK_FAILED,
     });
-    expect(failed.isReady).toBe(false);
-    expect(fs.existsSync(dbPath)).toBe(false);
-    expect(fs.readdirSync(dir).some((name) => name.startsWith('code-agent.db.corrupt-'))).toBe(true);
+    const titles = svc.getDb()!
+      .prepare('SELECT title FROM sessions')
+      .all() as Array<{ title: string }>;
+    expect(titles.map((row) => row.title)).toEqual(['still-here']);
+    svc.close();
+
+    // 当前库原样保留:不隔离、不写不可恢复标记、失败标记留待 Tier 2 复测
+    expect(fs.existsSync(dbPath)).toBe(true);
+    expect(fs.readdirSync(dir).some((name) => name.startsWith('code-agent.db.corrupt-'))).toBe(false);
+    expect(readUnrecoverableMarker(dir)).toBeNull();
     expect(hasIntegrityFailedMarker(dir)).toBe(true);
-    expect(readUnrecoverableMarker(dir)?.code).toBe(SQLITE_INTEGRITY.CORRUPT_NO_BACKUP);
   }, 60_000);
 });

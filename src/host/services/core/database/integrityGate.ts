@@ -43,7 +43,8 @@ export interface IntegrityProbeResult {
 export type DbIntegrityOutcome =
   | { kind: 'ok' }
   | { kind: 'recovered'; backupTakenAt: number; isolatedPath: string }
-  | { kind: 'local'; tables: string[] };
+  | { kind: 'local'; tables: string[] }
+  | { kind: 'degraded'; reason: string };
 
 export type IntegrityCheckListener = (result: { ok: boolean; detail?: string }) => void;
 

@@ -133,6 +133,18 @@ describe('web session persistence health', () => {
     });
   });
 
+  // 升级恢复无好备份时的落点：不隔离，degraded + 稳定 code（第三轮）
+  it('maps a quick-check-failed integrity outcome to degraded with the stable code', () => {
+    setDbAvailable(true);
+    applyDbIntegrityOutcome({ kind: 'degraded', reason: SQLITE_INTEGRITY.QUICK_CHECK_FAILED });
+
+    expect(getPersistenceHealth()).toMatchObject({
+      status: 'degraded',
+      reason: SQLITE_INTEGRITY.QUICK_CHECK_FAILED,
+      durable: true,
+    });
+  });
+
   // recovered 是一次性事件通知；持续性降级（quick_check 失败）优先于它展示
   it('lets a later quick_check failure override the recovered notice', () => {
     setDbAvailable(true);

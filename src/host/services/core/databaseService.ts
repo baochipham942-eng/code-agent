@@ -403,7 +403,25 @@ export class DatabaseService extends DurableRunDatabaseSupport {
           `[DatabaseService] integrity probe: severity=${probe.severity} elapsed=${Math.round(probe.elapsedMs)}ms`,
         );
         if (shouldAttemptRestore(probe, { escalate: hasIntegrityFailedMarker(dataDir) })) {
-          this.restoreFromBackupOrThrow();
+          if (probe.severity === 'catastrophic') {
+            // 库已不可读:隔离是对的,走恢复/不可恢复标记原路径
+            this.restoreFromBackupOrThrow();
+          } else {
+            // 升级恢复(方案档 §2.1):先 preflight 确认手里有通过 quick_check 的
+            // 备份才隔离改名。没有好备份不隔离还能读的库——隔离了就是永久内存模式
+            // (老用户从没做过备份时新会话全丢,而 main 上同一个库还能用)。
+            // 留在当前库继续跑 + degraded,标记留给 Tier 2 复测或用户处置。
+            const preflight = findLatestGoodBackup(this.dbPath, quickCheckFileSync);
+            if (preflight) {
+              this.restoreFromBackupOrThrow(preflight);
+            } else {
+              this._integrityOutcome = { kind: 'degraded', reason: SQLITE_INTEGRITY.QUICK_CHECK_FAILED };
+              logger.warn(
+                '[DatabaseService] .integrity-failed set but no quick_check-good backup; ' +
+                  'keeping the readable db in service (degraded) instead of isolating it',
+              );
+            }
+          }
         } else if (probe.severity === 'local') {
           const tables = probe.tables.filter((row) => !row.ok).map((row) => row.table);
           this._integrityOutcome = { kind: 'local', tables };
@@ -531,10 +549,13 @@ export class DatabaseService extends DurableRunDatabaseSupport {
   /**
    * 整库灾难性损坏：隔离改名（永不删除）后从最近一份 quick_check 通过的备份恢复。
    *
+   * preflightBackup：升级恢复路径在隔离前已确认过的好备份（手里有恢复源才隔离）;
+   * 灾难性路径不传——库已不可读,内部现找。
+   *
    * 双进程共写 data dir：恢复出的新库对仍在跑的旧进程不可见；旧进程继续写已经
    * 隔离改名的坏库。两边不会接到同一份文件上。重启后收敛到新库。
    */
-  private restoreFromBackupOrThrow(): void {
+  private restoreFromBackupOrThrow(preflightBackup?: { path: string; mtimeMs: number }): void {
     if (this.db) {
       try {
         this.db.close();
@@ -551,7 +572,7 @@ export class DatabaseService extends DurableRunDatabaseSupport {
         'A still-running peer keeps writing the isolated files; this process opens a restored copy the peer cannot see; restart converges.',
     );
 
-    const backup = findLatestGoodBackup(this.dbPath, quickCheckFileSync);
+    const backup = preflightBackup ?? findLatestGoodBackup(this.dbPath, quickCheckFileSync);
     if (!backup) {
       writeUnrecoverableMarker(path.dirname(this.dbPath), isolatedPath, SQLITE_INTEGRITY.CORRUPT_NO_BACKUP);
       throw new DatabaseIntegrityError(SQLITE_INTEGRITY.CORRUPT_NO_BACKUP);

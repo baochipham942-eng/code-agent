@@ -130,6 +130,10 @@ export function applyDbIntegrityOutcome(outcome: DbIntegrityOutcome): void {
   }
   if (outcome.kind === 'local') {
     markPersistenceDegraded(SQLITE_INTEGRITY.LOCAL_CORRUPT);
+    return;
+  }
+  if (outcome.kind === 'degraded') {
+    markPersistenceDegraded(outcome.reason);
   }
 }
 

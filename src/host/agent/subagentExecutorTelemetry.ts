@@ -150,7 +150,9 @@ function injectedTextPrefix(msg: AgentMessage): string {
     case 'dependency':
       return 'Dependency message';
     case 'peer-agent':
-      return `Peer agent ${origin.senderAgentId ?? msg.from}`;
+      // senderAgentId 只取宿主铸造的 origin；不可信的 from 展示串一律不进前缀
+      // （无 origin 的伪造 from='user' 不许渲染成 "[Peer agent user]:"）。
+      return origin.senderAgentId ? `Peer agent ${origin.senderAgentId}` : 'Peer agent';
   }
 }
 

@@ -68,10 +68,12 @@ function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
   } as unknown as ToolContext;
 }
 
-/** 子代理内执行 send_input 的宿主 ctx（ADR-067：落队必须铸 peer-agent）。 */
+/** 子代理内执行 send_input 的宿主 ctx（ADR-067：落队必须铸 peer-agent；判据 spawnDepth 只有子代理管线才设）。 */
 function makePeerCtx(): ToolContext {
   return makeCtx({
     agentId: 'peer-sender',
+    spawnDepth: 1,
+    spawnParentAgentId: 'parent-agent',
     subagent: { agentName: 'Peer', agentRole: 'coder' },
   } as Partial<ToolContext>);
 }

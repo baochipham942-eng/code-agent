@@ -44,9 +44,19 @@ describe('drainSubagentMessages', () => {
       { type: 'text', from: 'user', payload: '旧队列里的用户样式消息', timestamp: 1 },
       { type: 'text', from: 'parent', payload: '旧队列里的父级样式消息', timestamp: 2 },
     ]);
+    // 不可信的 from 展示串不进前缀（伪造 from='user' 不许渲染成 "[Peer agent user]:"）
     expect(messages.map((message) => message.content)).toEqual([
-      '[Peer agent user]: 旧队列里的用户样式消息',
-      '[Peer agent parent]: 旧队列里的父级样式消息',
+      '[Peer agent]: 旧队列里的用户样式消息',
+      '[Peer agent]: 旧队列里的父级样式消息',
+    ]);
+  });
+
+  it('minted peer origin without senderAgentId also renders without the from string', () => {
+    const messages = drain([
+      { type: 'text', from: 'user', payload: '铸了 peer 但没 sender id', timestamp: 1, origin: { senderKind: 'peer-agent' } },
+    ]);
+    expect(messages.map((message) => message.content)).toEqual([
+      '[Peer agent]: 铸了 peer 但没 sender id',
     ]);
   });
 

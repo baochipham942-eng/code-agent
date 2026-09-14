@@ -26,6 +26,8 @@ import { getTeammateService, resetTeammateService } from '../../../src/host/agen
 import { teammateModule } from '../../../src/host/tools/modules/multiagent/teammate';
 import { getEventBus, shutdownEventBus } from '../../../src/host/services/eventing/bus';
 import { mintToolMessageOrigin } from '../../../src/host/agent/messageOrigin';
+import { buildProtocolContext } from '../../../src/host/tools/dispatch/shadowAdapter';
+import type { ToolContext as LegacyToolContext } from '../../../src/host/tools/types';
 import type { SubagentResult } from '../../../src/host/agent/subagentExecutor';
 import type { CanUseToolFn, ToolContext } from '../../../src/host/protocol/tools';
 import {
@@ -210,6 +212,8 @@ describe('TeammateService 入队铸造', () => {
       logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
       emit: () => void 0,
       agentId: 'agent-b',
+      spawnDepth: 1,
+      spawnParentAgentId: 'parent-agent',
       subagent: { agentName: 'B', agentRole: 'coder' },
     } as unknown as ToolContext;
 
@@ -245,11 +249,11 @@ describe('mintToolMessageOrigin（工具入队点铸造）', () => {
     turnId: 'turn-1',
   } as Partial<ToolContext> as ToolContext;
 
-  it('子代理内执行（ctx.subagent 由宿主设置）→ peer-agent + 真实 senderAgentId', () => {
+  it('子代理管线（spawnDepth 只有子代理执行才设）→ peer-agent + 真实 senderAgentId', () => {
     const origin = mintToolMessageOrigin({
       ...baseCtx,
       agentId: 'agent-b',
-      subagent: { agentName: 'B', agentRole: 'coder' },
+      spawnDepth: 1,
     } as Partial<ToolContext> as ToolContext);
     expect(origin).toEqual({
       senderKind: 'peer-agent',
@@ -260,7 +264,7 @@ describe('mintToolMessageOrigin（工具入队点铸造）', () => {
     });
   });
 
-  it('主代理执行 → orchestrator，不带 senderAgentId', () => {
+  it('主代理执行（无 spawnDepth）→ orchestrator，不带 senderAgentId', () => {
     const origin = mintToolMessageOrigin(baseCtx);
     expect(origin.senderKind).toBe('orchestrator');
     expect(origin.senderAgentId).toBeUndefined();
@@ -271,9 +275,65 @@ describe('mintToolMessageOrigin（工具入队点铸造）', () => {
     const origin = mintToolMessageOrigin({
       ...baseCtx,
       agentId: 'agent-b',
-      subagent: { agentName: 'B', agentRole: 'coder' },
+      spawnDepth: 1,
       swarmRunScope: { sessionId: 'sess-1', runId: 'team-run-1', treeId: 'tree-1' },
     } as Partial<ToolContext> as ToolContext);
     expect(origin.runId).toBe('team-run-1');
+  });
+});
+
+// PR #1798 复审 Important：判据不许用 Boolean(ctx.subagent)——buildProtocolContext 对
+// 每次工具调用（含主代理）都构造 subagent 对象。以下两条走真实构造点验证：
+// legacy ctx 形状照 toolExecutor 的构造字面量（toolExecutor.ts:1255-1301；主循环
+// toolExecutionEngine.ts:810-852 不传 spawnDepth，子代理管线 subagentExecutor.ts:919-945 必传）。
+describe('mintToolMessageOrigin × buildProtocolContext 真实构造', () => {
+  it('主代理 legacy ctx（无 spawnDepth）经 buildProtocolContext 后铸 orchestrator', () => {
+    const legacyCtx = {
+      sessionId: 'sess-main',
+      runId: 'run-main',
+      workingDirectory: '/tmp/work',
+      requestPermission: async () => true,
+      agentId: 'main-orchestrator',
+      agentRole: 'persistent-role',
+      currentToolCallId: 'toolu_main',
+    } as unknown as LegacyToolContext;
+    const protoCtx = buildProtocolContext({
+      sessionId: 'sess-main',
+      runId: 'run-main',
+      workingDirectory: '/tmp/work',
+      legacyCtx,
+    });
+    // 反向变异锚点：adapter 对主代理也构造 subagent 对象——若判据退回
+    // Boolean(ctx.subagent)，这里会被误铸成 peer-agent，本测试必须红。
+    expect(protoCtx.subagent).toBeTruthy();
+    const origin = mintToolMessageOrigin(protoCtx);
+    expect(origin).toMatchObject({ senderKind: 'orchestrator', sessionId: 'sess-main' });
+    expect(origin.senderAgentId).toBeUndefined();
+  });
+
+  it('子代理 legacy ctx（spawnDepth/spawnParentAgentId）经 buildProtocolContext 后铸 peer-agent', () => {
+    const legacyCtx = {
+      sessionId: 'sess-team',
+      runId: 'run-team',
+      workingDirectory: '/tmp/work',
+      requestPermission: async () => true,
+      agentId: 'agent-b',
+      agentRole: 'coder',
+      spawnDepth: 1,
+      spawnParentAgentId: 'agent-parent',
+      currentToolCallId: 'toolu_sub',
+    } as unknown as LegacyToolContext;
+    const protoCtx = buildProtocolContext({
+      sessionId: 'sess-team',
+      runId: 'run-team',
+      workingDirectory: '/tmp/work',
+      legacyCtx,
+    });
+    const origin = mintToolMessageOrigin(protoCtx);
+    expect(origin).toMatchObject({
+      senderKind: 'peer-agent',
+      senderAgentId: 'agent-b',
+      sessionId: 'sess-team',
+    });
   });
 });

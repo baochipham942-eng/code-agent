@@ -11,7 +11,7 @@
 
 import type { ToolContext } from '../protocol/tools';
 
-export type MessageSenderKind = 'user' | 'orchestrator' | 'peer-agent' | 'dependency';
+type MessageSenderKind = 'user' | 'orchestrator' | 'peer-agent' | 'dependency';
 
 export interface AgentMessageOrigin {
   senderKind: MessageSenderKind;
@@ -85,13 +85,19 @@ export function originSenderId(origin: AgentMessageOrigin | undefined, fallbackF
 }
 
 /**
- * 工具入队点铸造：身份只取宿主持有的 ToolContext（ctx.subagent 仅在工具运行于
- * 子代理内时由宿主设置），发送方参数不得自报来源。
+ * 工具入队点铸造：身份只取宿主持有的 ToolContext 字段，发送方参数不得自报来源。
+ *
+ * 判据是 `ctx.spawnDepth`：只有子代理管线（subagentExecutor → toolExecutor options）
+ * 才设置它（spawn 链 ≥1），主循环（toolExecutionEngine）从不传。
+ * 不能用 `ctx.subagent`——shadowAdapter.buildProtocolContext 对每次工具调用（含主
+ * 代理）都构造 subagent 对象（legacyCtx 必填、永远有值），Boolean(ctx.subagent) 恒真；
+ * `ctx.subagent?.agentName` 也不行——toolExecutor 构造的 legacy ctx 从不写 agentName，
+ * 经 legacy 桥时该字段恒 undefined，会把 peer 误判成 orchestrator（洗白方向）。
  */
 export function mintToolMessageOrigin(
-  ctx: Pick<ToolContext, 'agentId' | 'sessionId' | 'runId' | 'turnId' | 'subagent' | 'swarmRunScope'>,
+  ctx: Pick<ToolContext, 'agentId' | 'sessionId' | 'runId' | 'turnId' | 'spawnDepth' | 'swarmRunScope'>,
 ): AgentMessageOrigin {
-  const isPeerAgent = Boolean(ctx.subagent);
+  const isPeerAgent = ctx.spawnDepth !== undefined;
   return {
     senderKind: isPeerAgent ? 'peer-agent' : 'orchestrator',
     ...(isPeerAgent && ctx.agentId ? { senderAgentId: ctx.agentId } : {}),

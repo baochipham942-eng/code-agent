@@ -72,6 +72,8 @@ export const COMPANION_LIMITS = {
   reconcilingRecoveryMs: 300_000,
   fileMaxBytes: FILE.MAX_SIZE,
   /** Raw chunk size so base64 + JSON stay inside one Noise payload (≤48 KiB). */
+  /** Tiny uploads finish in one poll; keep preparing/transferring visible at least this long. */
+  attachChipMinVisibleMs: 400,
   fileChunkBytes: FILE_CHUNK_BYTES,
   fileChunkBase64Limit: Math.ceil(FILE_CHUNK_BYTES / 3) * 4,
   fileNameLength: 180,

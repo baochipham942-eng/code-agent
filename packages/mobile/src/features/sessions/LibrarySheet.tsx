@@ -40,12 +40,20 @@ export function LibrarySheet({ library, sessionId, text, busy, mode, select, man
       <div className="settings-group">{library.projects.map(p => <button key={p.id} className="settings-row" aria-pressed={p.id === projectId} onClick={() => setProject(p.id)}><span>{p.name}</span>{p.id === projectId && <AppIcon name="check" />}</button>)}</div>
       {!library.projects.length && <p>{text.projectGrantRequired}</p>}
       {project && <><h3>{project.name}</h3>
-        <div className="settings-group">{library.sessions.filter(s => s.projectId === projectId).map(s => <button className="settings-row" key={s.id} disabled={busy} onClick={() => select(s.id)}>{s.title}{s.archived ? ` · ${text.archived}` : ''}</button>)}</div>
+        <div className="settings-group">{library.sessions.filter(s => s.projectId === projectId).map(s => <button className="settings-row" key={s.id} data-testid={`session-${s.id}`} data-session-id={s.id} disabled={busy} onClick={() => select(s.id)}>{s.title}{s.archived ? ` · ${text.archived}` : ''}</button>)}</div>
         {!library.sessions.some(s => s.projectId === projectId) && <p>{text.emptyHistory}</p>}
         {project.canCreate ? <>
-          <label className="group-title" htmlFor="new-title">{text.newSession}</label>
-          <input id="new-title" value={title} maxLength={160} placeholder={text.sessionName} onChange={e => setTitle(e.target.value)} />
-          <button className="primary" disabled={busy || !model} onClick={() => model && void manage('session.create', { title: title.trim() || text.newSession, provider: model.provider, model: model.model }, `project:${project.id}`)}>{text.newSession}</button>
+          <p className="caption">{text.usingProject.replace('{name}', project.name)}</p>
+          <button className="primary" data-testid="start-session" disabled={busy || !model} onClick={() => model && void manage('session.create', { title: title.trim() || text.newSession, provider: model.provider, model: model.model }, `project:${project.id}`)}>{text.newSession}</button>
+          <details className="advanced">
+            <summary>{text.advancedOptions}</summary>
+            <label className="group-title" htmlFor="new-title">{text.sessionName}</label>
+            <input id="new-title" value={title} maxLength={160} placeholder={text.sessionName} onChange={e => setTitle(e.target.value)} />
+            <label className="group-title" htmlFor="model-select">{text.model}</label>
+            <select id="model-select" value={modelKey} disabled={busy} onChange={e => setModel(e.target.value)}>
+              {options.map(m => <option key={JSON.stringify([m.provider, m.model])} value={JSON.stringify([m.provider, m.model])}>{m.providerLabel} · {m.label}</option>)}
+            </select>
+          </details>
         </> : <p>{text.projectGrantRequired}</p>}
       </>}
     </> : session ? <>
@@ -57,10 +65,12 @@ export function LibrarySheet({ library, sessionId, text, busy, mode, select, man
         : <button className="settings-row danger" disabled={busy} onClick={() => setDeleting(true)}>{text.deleteSession}</button>}
     </> : <p>{text.emptyHistory}</p>}
     {library.nextOffset != null && <button disabled={busy} onClick={loadMore}>{text.loadHistory}</button>}
-    <label className="group-title" htmlFor="model-select">{text.model}</label>
-    <select id="model-select" value={modelKey} disabled={busy} onChange={e => setModel(e.target.value)}>
-      {options.map(m => <option key={JSON.stringify([m.provider, m.model])} value={JSON.stringify([m.provider, m.model])}>{m.providerLabel} · {m.label}</option>)}
-    </select>
-    {mode === 'more' && session && <button className="primary" disabled={busy || !model || (model.provider === session.provider && model.model === session.model)} onClick={() => model && void manage('session.model', { provider: model.provider, model: model.model })}>{text.useModel}</button>}
+    {mode === 'more' && <>
+      <label className="group-title" htmlFor="model-select">{text.model}</label>
+      <select id="model-select" value={modelKey} disabled={busy} onChange={e => setModel(e.target.value)}>
+        {options.map(m => <option key={JSON.stringify([m.provider, m.model])} value={JSON.stringify([m.provider, m.model])}>{m.providerLabel} · {m.label}</option>)}
+      </select>
+      {session && <button className="primary" disabled={busy || !model || (model.provider === session.provider && model.model === session.model)} onClick={() => model && void manage('session.model', { provider: model.provider, model: model.model })}>{text.useModel}</button>}
+    </>}
   </div>;
 }

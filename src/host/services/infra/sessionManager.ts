@@ -55,6 +55,8 @@ function isDefaultSessionTitle(title: string): boolean {
   return title === 'New Chat'
     || title === 'New Session'
     || title === '新对话'
+    || title === '新会话'
+    || title === 'New conversation'
     || title.startsWith('Session ');
 }
 

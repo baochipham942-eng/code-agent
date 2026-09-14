@@ -170,6 +170,7 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
       aria-current={isSelected && !multiSelectMode ? 'true' : undefined}
       aria-label={s.openSession.replace('{title}', displayTitle)}
       data-session-id={session.id}
+      data-testid={`sidebar-session-${session.id}`}
       title={new Date(latestActivityAt).toLocaleString(localeForLanguage(language))}
       className={`group relative pl-0 pr-1.5 py-1.5 rounded-lg cursor-pointer transition-colors duration-150 ${isSelected && !multiSelectMode ? 'bg-zinc-700/60' : isChecked ? 'bg-blue-500/10 border border-badge-info/20' : 'hover:bg-zinc-800'}`}
     >

@@ -50,6 +50,19 @@ describe('mobile model picker default', () => {
     expect(select.value).toBe(key('deepseek', 'deepseek-chat'));
   });
 
+  it('one-tap create uses the computer default without requiring a name', () => {
+    const { manage } = mount();
+    fireEvent.click(screen.getByTestId('start-session'));
+    expect(manage).toHaveBeenCalledWith('session.create',
+      { title: text.newSession, provider: 'deepseek', model: 'deepseek-chat' }, 'project:one');
+  });
+
+  it('keeps name and model behind advanced options on the create sheet', () => {
+    mount();
+    expect(screen.getByText(text.advancedOptions)).toBeTruthy();
+    expect(screen.getByLabelText(text.sessionName)).toBeTruthy();
+  });
+
   it('creates the session with the computer default', () => {
     const { manage, select } = mount();
     expect(select.value).not.toBe(key('moonshot', 'kimi-k2.6'));

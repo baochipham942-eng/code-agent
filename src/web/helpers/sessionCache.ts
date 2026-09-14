@@ -8,7 +8,9 @@
 // ── 类型 ──
 
 import type { Artifact, Message, MessageAttachment, PersistenceHealth } from '../../shared/contract';
+import { SQLITE_FTS } from '../../shared/constants';
 import { sanitizeAttachmentsForPersistence, stripInlineAttachmentBlocks } from '../../shared/utils/messageAttachments';
+import { getDisabledFtsTables, getEmptyRecreatedFtsTables } from '../../host/services/core/database/ftsRepair';
 
 export interface CachedToolCall {
   id: string;
@@ -91,7 +93,23 @@ export function setDbAvailable(value: boolean, error?: unknown): void {
 }
 
 export function getPersistenceHealth(): PersistenceHealth {
-  return { ...persistenceHealth };
+  const health = { ...persistenceHealth };
+  if (health.status !== 'available') return health;
+  if (getDisabledFtsTables().length > 0) {
+    return {
+      ...health,
+      status: 'degraded',
+      reason: SQLITE_FTS.DISABLED_REASON,
+    };
+  }
+  if (getEmptyRecreatedFtsTables().length > 0) {
+    return {
+      ...health,
+      status: 'degraded',
+      reason: SQLITE_FTS.EMPTY_RECREATED_REASON,
+    };
+  }
+  return health;
 }
 
 export function toCachedSessionMessages(messages: Message[]): CachedMessage[] {

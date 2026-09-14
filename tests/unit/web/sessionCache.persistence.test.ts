@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Message } from '../../../src/shared/contract';
 import {
+  markFtsTableAvailable,
+  repairFtsTable,
+} from '../../../src/host/services/core/database/ftsRepair';
+import { SQLITE_FTS } from '../../../src/shared/constants';
+import {
   getPersistenceHealth,
   setDbAvailable,
   toCachedSessionMessages,
@@ -11,6 +16,7 @@ import {
 } from '../../../src/web/helpers/webSessionStore';
 
 afterEach(() => {
+  repairFtsTable.resetStateForTests();
   setDbAvailable(false, new Error('test reset'));
   sessionMessages.clear();
 });
@@ -25,6 +31,55 @@ describe('web session persistence health', () => {
       durable: true,
       message: '历史会持久化到本机数据库。',
     });
+  });
+
+  it('overlays FTS_DISABLED as degraded without flipping durable off', () => {
+    setDbAvailable(true);
+    repairFtsTable.markDisabledForTests('session_messages_fts');
+
+    expect(getPersistenceHealth()).toMatchObject({
+      status: 'degraded',
+      mode: 'database',
+      durable: true,
+      reason: SQLITE_FTS.DISABLED_REASON,
+    });
+  });
+
+  it('overlays FTS_EMPTY_RECREATED as degraded while the index awaits backfill', () => {
+    setDbAvailable(true);
+    repairFtsTable.markEmptyForTests('session_messages_fts');
+
+    expect(getPersistenceHealth()).toMatchObject({
+      status: 'degraded',
+      mode: 'database',
+      durable: true,
+      reason: SQLITE_FTS.EMPTY_RECREATED_REASON,
+    });
+  });
+
+  it('keeps FTS_DISABLED precedence when a table is disabled and another is empty', () => {
+    setDbAvailable(true);
+    repairFtsTable.markEmptyForTests('session_messages_fts');
+    repairFtsTable.markDisabledForTests('transcript_fts');
+
+    expect(getPersistenceHealth()).toMatchObject({
+      status: 'degraded',
+      reason: SQLITE_FTS.DISABLED_REASON,
+    });
+  });
+
+  it('recovers to available once the empty state clears after backfill', () => {
+    setDbAvailable(true);
+    repairFtsTable.markEmptyForTests('session_messages_fts');
+    expect(getPersistenceHealth().status).toBe('degraded');
+
+    markFtsTableAvailable('session_messages_fts');
+    expect(getPersistenceHealth()).toMatchObject({
+      status: 'available',
+      mode: 'database',
+      durable: true,
+    });
+    expect(getPersistenceHealth().reason).toBeUndefined();
   });
 
   it('reports memory-only fallback with the init failure reason', () => {

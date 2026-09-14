@@ -20,6 +20,7 @@ import {
   type SessionSearchFtsSource,
 } from '../../../src/host/session/search';
 import { SessionLocalCache } from '../../../src/host/session/localCache';
+import { repairFtsTable } from '../../../src/host/services/core/database/ftsRepair';
 import { SessionRepository } from '../../../src/host/services/core/repositories/SessionRepository';
 import { SESSION_SEARCH } from '../../../src/shared/constants';
 import type { Message } from '../../../src/shared/contract';
@@ -175,7 +176,40 @@ describe('searchSessions — FTS 主路径', () => {
   });
 
   afterEach(() => {
+    repairFtsTable.resetStateForTests();
     db.close();
+  });
+
+  it('FTS5 语法错误查询返回空结果而不抛错（跨会话搜索框基线 UX）', () => {
+    insertSession(db, 'sess-syntax');
+    repo.addMessage('sess-syntax', makeMessage('m1', '语法错误测试的 needle 内容', 'user', 1));
+
+    // 未闭合引号(normalizeFtsQuery 契约下不转义)→ fts5 syntax error。
+    // 仓储层上抛给工具链 FTS_ERROR;跨会话搜索链路兜成空结果,不许抛穿 IPC。
+    let result: ReturnType<typeof searchSessions> | undefined;
+    expect(() => {
+      result = searchSessions('"unclosed', {}, cache, ftsSource);
+    }).not.toThrow();
+    expect(result).toMatchObject({
+      totalMatches: 0,
+      sessionsWithMatches: 0,
+      results: [],
+      truncated: false,
+    });
+
+    // 语法错误不影响后续正常查询
+    const normal = searchSessions('needle', {}, cache, ftsSource);
+    expect(normal.results).toHaveLength(1);
+  });
+
+  it('FTS 损坏降级时跨会话搜索仍走 LIKE 兜底出结果', () => {
+    insertSession(db, 'sess-degraded');
+    repo.addMessage('sess-degraded', makeMessage('m1', '降级态里的 needle 目标', 'user', 1));
+
+    repairFtsTable.markDisabledForTests('session_messages_fts');
+    const result = searchSessions('needle', {}, cache, ftsSource);
+    expect(result.results).toHaveLength(1);
+    expect(result.results[0].sessionId).toBe('sess-degraded');
   });
 
   it('能搜到只存在于 DB、不在 LRU 缓存中的老会话', () => {

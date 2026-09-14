@@ -7,10 +7,28 @@ import type BetterSqlite3 from 'better-sqlite3';
 import { SESSION_SEARCH } from '../../../../shared/constants';
 import { TRANSCRIPT_FTS_BODY_COLUMN_INDEX, type TranscriptKind } from '../../../../shared/transcriptFts.sql';
 import { createLogger } from '../../infra/logger';
+import { isFtsSearchDegraded, markFtsTableRepairFailed, probeFtsTable, repairFtsTable, type FtsTableName } from '../database/ftsRepair';
+import { isSqliteCorruptionError } from '../database/sqliteErrors';
 import { activeMessageWhere, loopInternalMessageWhere, visibleHistoryMessageWhere } from './sessionRepositoryParsers';
 
 type SQLiteRow = Record<string, unknown>;
 const logger = createLogger('SessionRepositoryFtsSearch');
+
+/**
+ * 搜索路径的修复调用，两道门：
+ * 1. 探针确认 FTS 表没坏（坏在源表/别处）→ 不动它，重建修不好还白 DROP 完好索引；
+ * 2. 修复阶梯自身抛错（DB 只读、隔离改名失败等）不许穿出搜索接口——落降级态，
+ *    由调用方继续走 LIKE 兜底或空结果。
+ */
+function tryRepairFtsTableForSearch(db: BetterSqlite3.Database, table: FtsTableName): void {
+  try {
+    if (probeFtsTable(db, table) === 'ok') return;
+    repairFtsTable(db, table);
+  } catch (err) {
+    markFtsTableRepairFailed(table);
+    logger.warn('[EpisodicFts] repair ladder itself failed; continuing with fallback', { table, error: err });
+  }
+}
 
 /** session_messages_fts 单条命中行 */
 export interface SessionMessagesFtsHit {
@@ -109,7 +127,19 @@ function buildShortQueryFilter(
   return { clause: conditions.length > 0 ? `AND ${conditions.join(' AND ')}` : '', params };
 }
 
-function runShortQueryLikeSearch(
+/**
+ * LIKE 兜底的行过滤，对齐 FTS 正常路径口径：
+ * includeRewound 时 FTS 查纯索引表（触发器建索引时已排除 is_meta / 循环噪音，
+ * rewind 消息仍在索引里），等价物只补 is_meta + 循环噪音，不带 active 过滤；
+ * 默认路径与 visibleHistoryMessageWhere 一致。
+ */
+function likeFallbackVisibilityWhere(options: { includeRewound?: boolean }): string {
+  return options.includeRewound
+    ? `COALESCE(m.is_meta, 0) = 0 AND ${loopInternalMessageWhere('m')}`
+    : visibleHistoryMessageWhere('m');
+}
+
+function runFtsUnavailableLikeSearch(
   db: BetterSqlite3.Database,
   trimmed: string,
   options: SessionMessagesFtsSearchOptions
@@ -121,7 +151,7 @@ function runShortQueryLikeSearch(
       SELECT m.id AS message_id, m.session_id, m.role, m.content, m.timestamp
       FROM messages m
       WHERE m.content LIKE ? ESCAPE '\\' ${filter.clause}
-        AND ${visibleHistoryMessageWhere('m')}
+        AND ${likeFallbackVisibilityWhere(options)}
       ORDER BY m.timestamp DESC
       LIMIT ?
     `).all(`%${escapeLikePattern(trimmed)}%`, ...filter.params, limit) as SQLiteRow[];
@@ -133,13 +163,65 @@ function runShortQueryLikeSearch(
       timestamp: Number(row.timestamp ?? 0)
     }));
   } catch (err) {
-    logger.warn('[EpisodicFts] short-query LIKE search failed', { query: trimmed, error: err });
+    logger.warn('[EpisodicFts] LIKE search failed', { query: trimmed, error: err });
     return [];
   }
 }
 
+function shouldUseMessagesLikeFallback(
+  trimmed: string,
+  options: { shortQueryFallback?: boolean },
+): boolean {
+  // 空查询不做 LIKE 兜底：`LIKE '%%'` 会把整库历史当召回。
+  // 对齐 FTS 正常态空查询语义（下方长度门槛返回空结果/零计数）。
+  if (trimmed.length === 0) return false;
+  if (isFtsSearchDegraded('session_messages_fts')) return true;
+  return trimmed.length < SESSION_SEARCH.FTS_MIN_QUERY_LENGTH && Boolean(options.shortQueryFallback);
+}
+
 function escapeLikePattern(value: string): string {
   return value.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+}
+
+function mapSessionMessagesFtsRows(rows: SQLiteRow[]): SessionMessagesFtsHit[] {
+  return rows.map((row) => ({
+    messageId: String(row.message_id ?? ''),
+    sessionId: String(row.session_id ?? ''),
+    role: String(row.role ?? ''),
+    content: String(row.content ?? ''),
+    timestamp: Number(row.timestamp ?? 0)
+  }));
+}
+
+function executeSessionMessagesFtsSearch(
+  db: BetterSqlite3.Database,
+  trimmed: string,
+  options: SessionMessagesFtsSearchOptions,
+): SessionMessagesFtsHit[] {
+  const ftsQuery = normalizeFtsQuery(trimmed);
+  const limit = Math.max(1, Math.min(options.limit ?? 10, options.limitCap ?? SESSION_SEARCH.FTS_QUERY_LIMIT_CAP));
+  const filter = buildSessionMessagesFtsFilter(options);
+  const params: unknown[] = [ftsQuery, ...filter.params, limit];
+  const sql = options.includeRewound
+    ? `
+      SELECT f.message_id, f.session_id, f.role, f.content, f.timestamp
+      FROM session_messages_fts f
+      WHERE f.content MATCH ? ${filter.clause}
+        AND ${loopInternalMessageWhere('f')}
+      ORDER BY rank, f.timestamp DESC
+      LIMIT ?
+      `
+    : `
+      SELECT f.message_id, f.session_id, f.role, f.content, f.timestamp
+      FROM session_messages_fts f
+      JOIN messages m ON m.id = f.message_id
+      WHERE f.content MATCH ? ${filter.clause}
+        AND ${visibleHistoryMessageWhere('m')}
+      ORDER BY rank, f.timestamp DESC
+      LIMIT ?
+      `;
+  const rows = db.prepare(sql).all(...params) as SQLiteRow[];
+  return mapSessionMessagesFtsRows(rows);
 }
 
 export function runSessionMessagesFtsSearch(db: BetterSqlite3.Database,
@@ -147,50 +229,84 @@ export function runSessionMessagesFtsSearch(db: BetterSqlite3.Database,
   options: SessionMessagesFtsSearchOptions = {}
 ): SessionMessagesFtsHit[] {
   const trimmed = query.trim();
-  if (trimmed.length < SESSION_SEARCH.FTS_MIN_QUERY_LENGTH) {
-    return options.shortQueryFallback ? runShortQueryLikeSearch(db, trimmed, options) : [];
+  if (shouldUseMessagesLikeFallback(trimmed, options)) {
+    return runFtsUnavailableLikeSearch(db, trimmed, options);
   }
-
-  const ftsQuery = normalizeFtsQuery(trimmed);
-  const limit = Math.max(1, Math.min(options.limit ?? 10, options.limitCap ?? SESSION_SEARCH.FTS_QUERY_LIMIT_CAP));
-  const filter = buildSessionMessagesFtsFilter(options);
-  const params: unknown[] = [ftsQuery, ...filter.params, limit];
-
-  try {
-    const sql = options.includeRewound
-      ? `
-        SELECT f.message_id, f.session_id, f.role, f.content, f.timestamp
-        FROM session_messages_fts f
-        WHERE f.content MATCH ? ${filter.clause}
-          AND ${loopInternalMessageWhere('f')}
-        ORDER BY rank, f.timestamp DESC
-        LIMIT ?
-        `
-      : `
-        SELECT f.message_id, f.session_id, f.role, f.content, f.timestamp
-        FROM session_messages_fts f
-        JOIN messages m ON m.id = f.message_id
-        WHERE f.content MATCH ? ${filter.clause}
-          AND ${visibleHistoryMessageWhere('m')}
-        ORDER BY rank, f.timestamp DESC
-        LIMIT ?
-        `;
-    const rows = db.prepare(sql).all(...params) as SQLiteRow[];
-
-    return rows.map((row) => ({
-      messageId: String(row.message_id ?? ''),
-      sessionId: String(row.session_id ?? ''),
-      role: String(row.role ?? ''),
-      content: String(row.content ?? ''),
-      timestamp: Number(row.timestamp ?? 0)
-    }));
-  } catch (err) {
-    logger.warn('[EpisodicFts] search failed', {
-      query: trimmed,
-      error: err
-    });
+  if (trimmed.length < SESSION_SEARCH.FTS_MIN_QUERY_LENGTH) {
     return [];
   }
+
+  try {
+    return executeSessionMessagesFtsSearch(db, trimmed, options);
+  } catch (err) {
+    // 非损坏错误（FTS5 语法错误等）原样上抛:episodicRecall 的 FTS_ERROR
+    // 「修查询语法」提示语义靠它,不许吞成空结果。
+    if (!isSqliteCorruptionError(err)) throw err;
+    tryRepairFtsTableForSearch(db, 'session_messages_fts');
+    if (isFtsSearchDegraded('session_messages_fts')) {
+      return runFtsUnavailableLikeSearch(db, trimmed, options);
+    }
+    try {
+      return executeSessionMessagesFtsSearch(db, trimmed, options);
+    } catch (retryErr) {
+      logger.warn('[EpisodicFts] search failed after repair', { query: trimmed, error: retryErr });
+      return runFtsUnavailableLikeSearch(db, trimmed, options);
+    }
+  }
+}
+
+const EMPTY_FTS_COUNT = { matches: 0, sessions: 0 };
+
+function runFtsUnavailableLikeCount(
+  db: BetterSqlite3.Database,
+  trimmed: string,
+  options: SessionMessagesFtsCountOptions,
+): { matches: number; sessions: number } {
+  const filter = buildShortQueryFilter(options);
+  try {
+    const row = db.prepare(`
+      SELECT COUNT(*) AS matches, COUNT(DISTINCT m.session_id) AS sessions
+      FROM messages m
+      WHERE m.content LIKE ? ESCAPE '\\' ${filter.clause}
+        AND ${likeFallbackVisibilityWhere(options)}
+    `).get(`%${escapeLikePattern(trimmed)}%`, ...filter.params) as SQLiteRow | undefined;
+    return row
+      ? { matches: Number(row.matches ?? 0), sessions: Number(row.sessions ?? 0) }
+      : EMPTY_FTS_COUNT;
+  } catch (err) {
+    logger.warn('[EpisodicFts] LIKE count failed', { query: trimmed, error: err });
+    return EMPTY_FTS_COUNT;
+  }
+}
+
+function executeSessionMessagesFtsCount(
+  db: BetterSqlite3.Database,
+  trimmed: string,
+  options: SessionMessagesFtsCountOptions,
+): { matches: number; sessions: number } {
+  const ftsQuery = normalizeFtsQuery(trimmed);
+  const filter = buildSessionMessagesFtsFilter(options);
+  const params: unknown[] = [ftsQuery, ...filter.params];
+  const sql = options.includeRewound
+    ? `
+      SELECT COUNT(*) AS matches, COUNT(DISTINCT f.session_id) AS sessions
+      FROM session_messages_fts f
+      WHERE f.content MATCH ? ${filter.clause}
+        AND ${loopInternalMessageWhere('f')}
+      `
+    : `
+      SELECT COUNT(*) AS matches, COUNT(DISTINCT f.session_id) AS sessions
+      FROM session_messages_fts f
+      JOIN messages m ON m.id = f.message_id
+      WHERE f.content MATCH ? ${filter.clause}
+        AND ${visibleHistoryMessageWhere('m')}
+      `;
+  const row = db.prepare(sql).get(...params) as SQLiteRow | undefined;
+  if (!row) return EMPTY_FTS_COUNT;
+  return {
+    matches: Number(row.matches ?? 0),
+    sessions: Number(row.sessions ?? 0),
+  };
 }
 
 /**
@@ -201,62 +317,28 @@ export function runSessionMessagesFtsCount(db: BetterSqlite3.Database,
   query: string,
   options: SessionMessagesFtsCountOptions = {}
 ): { matches: number; sessions: number } {
-  const empty = { matches: 0, sessions: 0 };
   const trimmed = query.trim();
+  if (shouldUseMessagesLikeFallback(trimmed, options)) {
+    return runFtsUnavailableLikeCount(db, trimmed, options);
+  }
   if (trimmed.length < SESSION_SEARCH.FTS_MIN_QUERY_LENGTH) {
-    if (!options.shortQueryFallback) {
-      return empty;
-    }
-    const filter = buildShortQueryFilter(options);
-    try {
-      const row = db.prepare(`
-        SELECT COUNT(*) AS matches, COUNT(DISTINCT m.session_id) AS sessions
-        FROM messages m
-        WHERE m.content LIKE ? ESCAPE '\\' ${filter.clause}
-          AND ${visibleHistoryMessageWhere('m')}
-      `).get(`%${escapeLikePattern(trimmed)}%`, ...filter.params) as SQLiteRow | undefined;
-      return row
-        ? { matches: Number(row.matches ?? 0), sessions: Number(row.sessions ?? 0) }
-        : empty;
-    } catch (err) {
-      logger.warn('[EpisodicFts] short-query LIKE count failed', { query: trimmed, error: err });
-      return empty;
-    }
+    return EMPTY_FTS_COUNT;
   }
 
-  const ftsQuery = normalizeFtsQuery(trimmed);
-  const filter = buildSessionMessagesFtsFilter(options);
-  const params: unknown[] = [ftsQuery, ...filter.params];
-
   try {
-    const sql = options.includeRewound
-      ? `
-        SELECT COUNT(*) AS matches, COUNT(DISTINCT f.session_id) AS sessions
-        FROM session_messages_fts f
-        WHERE f.content MATCH ? ${filter.clause}
-          AND ${loopInternalMessageWhere('f')}
-        `
-      : `
-        SELECT COUNT(*) AS matches, COUNT(DISTINCT f.session_id) AS sessions
-        FROM session_messages_fts f
-        JOIN messages m ON m.id = f.message_id
-        WHERE f.content MATCH ? ${filter.clause}
-          AND ${visibleHistoryMessageWhere('m')}
-        `;
-    const row = db.prepare(sql).get(...params) as SQLiteRow | undefined;
-    if (!row) {
-      return empty;
-    }
-    return {
-      matches: Number(row.matches ?? 0),
-      sessions: Number(row.sessions ?? 0),
-    };
+    return executeSessionMessagesFtsCount(db, trimmed, options);
   } catch (err) {
-    logger.warn('[EpisodicFts] count failed', {
-      query: trimmed,
-      error: err
-    });
-    return empty;
+    if (!isSqliteCorruptionError(err)) throw err;
+    tryRepairFtsTableForSearch(db, 'session_messages_fts');
+    if (isFtsSearchDegraded('session_messages_fts')) {
+      return runFtsUnavailableLikeCount(db, trimmed, options);
+    }
+    try {
+      return executeSessionMessagesFtsCount(db, trimmed, options);
+    } catch (retryErr) {
+      logger.warn('[EpisodicFts] count failed after repair', { query: trimmed, error: retryErr });
+      return runFtsUnavailableLikeCount(db, trimmed, options);
+    }
   }
 }
 
@@ -332,13 +414,22 @@ export function runTranscriptFtsSearch(db: BetterSqlite3.Database,
       LIMIT ?
       `;
 
-  const rows = db.prepare(sql).all(...params) as SQLiteRow[];
-  return rows.map((row) => ({
-    messageId: String(row.message_id ?? ''),
-    sessionId: String(row.session_id ?? ''),
-    kind: String(row.kind ?? '') as TranscriptKind,
-    toolName: row.tool_name ? String(row.tool_name) : null,
-    snippet: String(row.snip ?? ''),
-    timestamp: Number(row.timestamp ?? 0)
-  }));
+  try {
+    const rows = db.prepare(sql).all(...params) as SQLiteRow[];
+    return rows.map((row) => ({
+      messageId: String(row.message_id ?? ''),
+      sessionId: String(row.session_id ?? ''),
+      kind: String(row.kind ?? '') as TranscriptKind,
+      toolName: row.tool_name ? String(row.tool_name) : null,
+      snippet: String(row.snip ?? ''),
+      timestamp: Number(row.timestamp ?? 0)
+    }));
+  } catch (err) {
+    // 非损坏错误（FTS5 语法错误等）原样上抛:history.ts 的 FTS_ERROR
+    // 「修查询语法」提示语义靠它;只有损坏类才走修复/降级。
+    if (!isSqliteCorruptionError(err)) throw err;
+    tryRepairFtsTableForSearch(db, 'transcript_fts');
+    logger.warn('[TranscriptFts] search degraded after corruption', { query: trimmed, error: err });
+    return [];
+  }
 }

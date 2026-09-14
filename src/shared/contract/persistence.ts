@@ -5,7 +5,7 @@
 import type { RendererServeDecision } from './desktopShell';
 import type { BuildInfo } from './buildInfo';
 
-export type PersistenceStatus = 'available' | 'unavailable';
+export type PersistenceStatus = 'available' | 'unavailable' | 'degraded';
 export type PersistenceMode = 'database' | 'memory';
 
 export interface PersistenceHealth {

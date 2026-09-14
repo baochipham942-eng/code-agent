@@ -20,9 +20,9 @@ const CAMERA_CANCEL_CODES = new Set([
   'OS-PLUG-CAMR-0006', 'OS-PLUG-CAMR-0007', 'OS-PLUG-CAMR-0010', 'USER_CANCELLED',
 ]);
 
-export type CameraPermissionState = string;
+type CameraPermissionState = string;
 
-export type CameraPhotoResult = {
+type CameraPhotoResult = {
   type?: number | string;
   uri?: string;
   path?: string;

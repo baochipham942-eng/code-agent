@@ -3,10 +3,12 @@ import { describe, expect, it, vi } from 'vitest';
 import { COMPANION_LIMITS } from '../../../src/shared/constants/companion';
 import { bytesToBase64 } from '../../../packages/mobile/src/platform/fileCache';
 import {
-  pickAttachment, pickFromCamera, toPickedFile, type CameraBridge, type CameraPhotoResult,
+  pickAttachment, pickFromCamera, toPickedFile, type CameraBridge,
 } from '../../../packages/mobile/src/platform/cameraPick';
 import { ensureAndroidCameraPermission } from '../../../packages/mobile/scripts/configure-lan.mjs';
 import { unlinkedSpmPlugins } from '../../../packages/mobile/scripts/ios-package.mjs';
+
+type CameraPhotoResult = Awaited<ReturnType<NonNullable<CameraBridge['takePhoto']>>>;
 
 const jpegBytes = new Uint8Array([0xff, 0xd8, 0xff, 0x00, 0x01]);
 const jpegB64 = bytesToBase64(jpegBytes);

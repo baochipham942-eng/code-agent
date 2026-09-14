@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { commandNoticeCopy, composerModelLabel, connectionCopy, taskStatusCopy } from '../../../packages/mobile/src/app/MobileRoot';
 import type { CompanionLibrary } from '../../../src/shared/contract/companionLibrary';
@@ -123,5 +124,25 @@ describe('通用提示条：转写失败不许和输入区那条叠成两句', (
   it('别的动作失败照常报，不被语音那条判据误伤', () => {
     expect(notice('COMPANION_COMMAND_REJECTED', 'message.send', true)).toBe(text.commandRejected);
     expect(notice('UPLOAD_TOO_LARGE', 'files.upload', true)).toBe(text.uploadTooLarge);
+  });
+
+  it('Host 信任类失败与权限拒绝分开说，不混成「电脑拒绝了这条操作」', () => {
+    expect(notice('PROJECT_SOURCE_MISSING', 'message.send', false)).toBe(text.projectSourceMissing);
+    expect(notice('PROJECT_SOURCE_CHANGED', 'message.send', false)).toBe(text.projectSourceChanged);
+    expect(notice('PROJECT_SOURCE_UNTRUSTED', 'message.send', false)).toBe(text.projectSourceUntrusted);
+    expect(notice('MODEL_AUTH', 'message.send', false)).toBe(text.modelAuthMissing);
+    expect(notice('scope_denied', 'session.create', false)).toBe(text.commandScopeDenied);
+    expect(notice('COMPANION_SCOPE_DENIED', 'session.create', false)).toBe(text.commandScopeDenied);
+    expect(notice('RUN_FAILED', 'message.send', false)).toBe(text.runFailed);
+    expect(notice('PROJECT_SOURCE_MISSING', 'message.send', false)).not.toBe(text.commandRejected);
+  });
+});
+
+describe('断网错误条重试并进文案行尾', () => {
+  const css = readFileSync('packages/mobile/src/styles.css', 'utf8');
+  it('overrides the 48px button min-height so retry does not take its own row', () => {
+    expect(css).toMatch(/\.connection-line\s*\{[^}]*align-items:\s*baseline/);
+    expect(css).toMatch(/button\.inline-retry\s*\{[^}]*min-height:\s*0/);
+    expect(css).toMatch(/\.notice\s*\{[^}]*display:\s*flex/);
   });
 });

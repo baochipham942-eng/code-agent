@@ -213,13 +213,7 @@ async function ensureDbSession(
     // renderer 端常用 '新对话' 占位 title 先创建 session 行，再发 user message。
     // 这里在 session 已存在但 title 还是默认值时，用 prompt 派生的 title 升级一次，
     // 避免 sidebar 永远停在 '新对话'。
-    const isDefaultTitle =
-      !existing.title ||
-      existing.title === '新对话' ||
-      existing.title === 'New Chat' ||
-      existing.title === 'New Session' ||
-      (typeof existing.title === 'string' && existing.title.startsWith('Session '));
-    if (isDefaultTitle && title && title !== existing.title) {
+    if (isPlaceholderSessionTitle(existing.title) && title && title !== existing.title) {
       try {
         db.updateSession(sessionId, { title, updatedAt: Date.now() });
       } catch {
@@ -298,12 +292,18 @@ function hasCliSessionLifecycle(
   );
 }
 
-function isDefaultSessionTitle(title: string | undefined): boolean {
+export function isPlaceholderSessionTitle(title: string | undefined): boolean {
   return !title
     || title === '新对话'
+    || title === '新会话'
     || title === 'New Chat'
     || title === 'New Session'
+    || title === 'New conversation'
     || title.startsWith('Session ');
+}
+
+function isDefaultSessionTitle(title: string | undefined): boolean {
+  return isPlaceholderSessionTitle(title);
 }
 
 async function prepareCliSessionForWrite(
@@ -362,7 +362,7 @@ function updateSessionMetadataProjection(
   if (existing) {
     existing.updatedAt = Date.now();
     existing.messageCount = getSessionMessageCount(sessionId);
-    if (historyLength === 0) existing.title = title;
+    if (historyLength === 0 && isPlaceholderSessionTitle(existing.title)) existing.title = title;
     return;
   }
 
@@ -585,10 +585,14 @@ export function createWebSessionStore(deps: WebSessionStoreDeps) {
               : assistantMsgId;
           }
 
-          // 更新会话标题/时间戳
-          const sessionUpdates = historyLength === 0
-            ? { title, updatedAt: Date.now() }
-            : { updatedAt: Date.now() };
+          // 更新会话标题/时间戳。首条消息只覆盖占位标题，不改用户/手机起的名字。
+          let sessionUpdates: { title?: string; updatedAt: number } = { updatedAt: Date.now() };
+          if (historyLength === 0) {
+            const existingTitle = cliSessionManager
+              ? (await cliSessionManager.getSession(sessionId, 1))?.title
+              : db?.getSession?.(sessionId)?.title ?? inMemorySessions.get(sessionId)?.title;
+            if (isPlaceholderSessionTitle(existingTitle)) sessionUpdates = { title, updatedAt: Date.now() };
+          }
           if (cliSessionManager) {
             await cliSessionManager.updateSession(sessionId, sessionUpdates);
           } else if (db) {

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createIdentity } from '../../../src/shared/companion/noiseChannel';
 import { toHex } from '../../../src/shared/companion/lanProtocol';
-import { createCompanionStore, needsLibraryPick } from '../../../packages/mobile/src/stores/companionStore';
+import { createCompanionStore, defaultCompanionSessionCreate, needsLibraryPick } from '../../../packages/mobile/src/stores/companionStore';
 
 const harness = vi.hoisted(() => ({ scope: ['project:one'] as string[] }));
 
@@ -72,5 +72,30 @@ describe('project-only companion pairing', () => {
     await store.getState().hydrate();
     expect(store.getState().sessionId).toBe('session-1');
     expect(needsLibraryPick(store.getState())).toBe(false);
+  });
+});
+
+describe('defaultCompanionSessionCreate', () => {
+  it('picks a creatable project and the computer default model', () => {
+    expect(defaultCompanionSessionCreate({
+      nextOffset: null,
+      projects: [
+        { id: 'blocked', name: 'Blocked', canCreate: false },
+        { id: 'ok', name: 'Ok', canCreate: true },
+      ],
+      sessions: [],
+      models: [
+        { provider: 'moonshot', model: 'kimi-k2.6', label: 'Kimi', providerLabel: 'Kimi' },
+        { provider: 'deepseek', model: 'deepseek-chat', label: 'DeepSeek', providerLabel: 'DeepSeek', isDefault: true },
+      ],
+    })).toEqual({ projectId: 'ok', provider: 'deepseek', model: 'deepseek-chat' });
+  });
+
+  it('returns null when nothing can be created', () => {
+    expect(defaultCompanionSessionCreate(null)).toBeNull();
+    expect(defaultCompanionSessionCreate({
+      nextOffset: null, projects: [{ id: 'blocked', name: 'Blocked', canCreate: false }],
+      sessions: [], models: [{ provider: 'deepseek', model: 'deepseek-chat', label: 'DeepSeek', providerLabel: 'DeepSeek' }],
+    })).toBeNull();
   });
 });

@@ -21,7 +21,7 @@ import {
   dbAvailable,
   type CachedMessage,
 } from '../helpers/sessionCache';
-import { createWebSessionStore } from '../helpers/webSessionStore';
+import { createWebSessionStore, isPlaceholderSessionTitle } from '../helpers/webSessionStore';
 import { syncSupabaseSessionRow } from '../helpers/supabaseSessionSync';
 import { buildGoalContract } from '../../host/agent/goalModeController';
 import {
@@ -64,6 +64,8 @@ import { sanitizeAttachmentsForPersistence, stripInlineAttachmentBlocks } from '
 import { generateMessageId } from '../../shared/utils/id';
 import { composeDesignCanvasSystemPrompt } from '../../shared/design/canvasSessionReminder';
 import { AgentRunController } from './agentRunController';
+import { getProjectSourceTrustFailureMarker } from '../../host/services/project/projectSourceTrustError';
+import { getModelAuthFailureMarker } from '../../host/model/errorClassifier';
 import { AgentRunEventCollector } from './agentRunEventCollector';
 import { RunRegistry, RunSessionConflictError } from '../../host/runtime/runRegistry';
 import {
@@ -1102,11 +1104,15 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         logger.warn(`[AgentRouter] Client disconnected before run ${runContext.runId} attached`);
       }
 
-      // 新会话时立即通知前端刷新列表（不等 agentLoop 完成）
+      // 新会话时立即通知前端刷新列表（不等 agentLoop 完成）。
+      // 只覆盖占位标题：手机/用户起过名的会话不能被首条 prompt 改写。
       if (isNewSession) {
-        const title = visiblePrompt.length > 30 ? visiblePrompt.substring(0, 30) + '...' : visiblePrompt;
-        broadcastSSE('session:updated', { sessionId, updates: { title } });
-        broadcastSSE('session:list-updated', undefined);
+        const current = await (await deps.tryGetSessionManager())?.getSession?.(sessionId);
+        if (isPlaceholderSessionTitle(current?.title)) {
+          const title = visiblePrompt.length > 30 ? visiblePrompt.substring(0, 30) + '...' : visiblePrompt;
+          broadcastSSE('session:updated', { sessionId, updates: { title } });
+          broadcastSSE('session:list-updated', undefined);
+        }
       }
 
       // === pre-persist user message before agentLoop.run ===
@@ -1251,7 +1257,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       runController.emitAgentEvent({ type: 'agent_complete', data: null });
       deps.publishCompanionEvent?.(sessionId,
         finalStatus === 'interrupted' ? 'agent_cancelled' : finalStatus === 'error' ? 'error' : 'agent_complete',
-        { event: finalStatus === 'error' ? { code: 'RUN_FAILED' } : null, runId: runContext.runId });
+        { event: finalStatus === 'error' ? { code: 'RUN_FAILED', ...(runController.lastTerminalFailure ? { failure: runController.lastTerminalFailure } : {}) } : null, runId: runContext.runId });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       if (externalEngineFailureContext) {
@@ -1266,7 +1272,8 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         disconnected: runController.disconnected,
         message,
       });
-      deps.publishCompanionEvent?.(sessionId, 'error', { event: { code: 'RUN_FAILED' }, runId: runContext?.runId });
+      const failure = getProjectSourceTrustFailureMarker(error) ?? getModelAuthFailureMarker(error) ?? runController.lastTerminalFailure;
+      deps.publishCompanionEvent?.(sessionId, 'error', { event: { code: 'RUN_FAILED', ...(failure ? { failure } : {}) }, runId: runContext?.runId });
       if (!runController.disconnected) {
         runController.emitAgentEvent({
           type: 'error',

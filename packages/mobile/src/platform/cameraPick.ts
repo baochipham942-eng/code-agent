@@ -132,6 +132,9 @@ export async function pickFromCamera(
   camera: CameraBridge,
   readUri: (uri: string) => Promise<string>,
 ): Promise<PickedFile | null> {
+  // Only request when the OS is still in prompt. Granted/limited skip the
+  // dialog; denied/restricted never re-prompt (BR-18). A leftover system
+  // alert after simctl privacy grant is OS/harness, not a second product ask.
   const current = await camera.checkPermissions();
   if (cameraPermissionBlocked(current.camera)) throw new Error('CAMERA_DENIED');
   if (!cameraPermissionReady(current.camera)) {

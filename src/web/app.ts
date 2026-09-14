@@ -68,6 +68,7 @@ import { projectCompanionEvent } from '../host/services/companion/projectCompani
 import { CompanionApprovalService } from '../host/services/companion/CompanionApprovalService';
 import { CompanionQuestionService } from '../host/services/companion/CompanionQuestionService';
 import { CompanionPlanService } from '../host/services/companion/CompanionPlanService';
+import { deliverCompanionUserPlan, listCompanionUserPlans, noteCompanionUserPlan } from '../host/services/companion/companionUserPlan';
 import { getPlanApprovalGate } from '../host/agent/planApproval';
 import type { PermissionResponse } from '../shared/contract/permission';
 import { LanCompanionManager } from '../host/services/companion/LanCompanionManager';
@@ -373,29 +374,36 @@ export function createApp(deps: CreateAppDeps): express.Express {
       }
       services.questions = new CompanionQuestionService(gateway);
       cleanupQuestionRoute = registerUserQuestionRoute(services.questions);
-      services.plans = new CompanionPlanService(gateway, () => getPlanApprovalGate().getPendingPlans().flatMap(plan => {
-        const sessionId = plan.scope?.sessionId;
-        if (!sessionId) return [];
-        return [{ id: plan.id, sessionId, plan: plan.plan, agentName: plan.agentName, risk: plan.risk }];
-      }), (planId, approved, feedback, sessionId) => {
+      services.plans = new CompanionPlanService(gateway, () => [
+        ...getPlanApprovalGate().getPendingPlans().flatMap(plan => {
+          const sessionId = plan.scope?.sessionId;
+          if (!sessionId) return [];
+          return [{ id: plan.id, sessionId, plan: plan.plan, agentName: plan.agentName, risk: plan.risk }];
+        }),
+        ...listCompanionUserPlans(),
+      ], (planId, approved, feedback, sessionId) => {
         const gate = getPlanApprovalGate();
         const plan = gate.getPlan(planId);
-        if (plan?.status !== 'pending' || plan.scope?.sessionId !== sessionId) {
-          return { success: false, data: { closed: true } };
+        if (plan?.status === 'pending' && plan.scope?.sessionId === sessionId) {
+          const ok = approved ? gate.approve(planId, feedback) : gate.reject(planId, feedback?.trim() || 'Rejected');
+          return { success: ok };
         }
-        const ok = approved ? gate.approve(planId, feedback) : gate.reject(planId, feedback?.trim() || 'Rejected');
-        return { success: ok };
+        return deliverCompanionUserPlan(planId, approved, feedback, sessionId, (id, prompt) => {
+          void companionRun?.({ sessionId: id, prompt });
+        });
       });
       publishCompanionEvent = (sessionId, kind, payload) => {
+        const raw = payload.event && typeof payload.event === 'object' && !Array.isArray(payload.event)
+          ? payload.event as Record<string, unknown> : null;
+        const notedUserPlan = kind === 'tool_call_end' && raw ? noteCompanionUserPlan(sessionId, raw) : false;
         if (!gateway.hasLiveDevices()) return;
         // 成果复制只对「有已配对手机」的桌面发生：没配对过的用户每次成图都复制一份
         // 进项目目录且无任何清理路径，是纯浪费（claude 复审 Important 2）。
         // pairedDevices() 是 SQL JOIN，只在真的涉及成果的两个 kind 里才算（流式事件每帧都过这里）。
-        const raw = payload.event && typeof payload.event === 'object' && !Array.isArray(payload.event)
-          ? payload.event as Record<string, unknown> : null;
         if (kind === 'artifact_write_started' && raw && gateway.pairedDevices().length > 0) {
           services.files?.noteWrite(sessionId, String(raw.toolCallId ?? ''), String(raw.filePath ?? ''));
         }
+        if (notedUserPlan) services.plans?.refresh();
         const projection = projectCompanionEvent(kind, payload.event);
         if (!projection) {
           // 投影被丢弃的 tool_call_end 失败帧也要清掉 pendingWrites 记账，否则条目永久滞留。

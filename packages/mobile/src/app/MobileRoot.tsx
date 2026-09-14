@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from 'zustand';
 import type { PlatformPorts } from '../platform/ports';
 import { createMobileStore } from '../stores/mobileStore';
-import { canAddressSession, createCompanionStore, needsLibraryPick } from '../stores/companionStore';
+import { canAddressSession, createCompanionStore, defaultCompanionSessionCreate, needsLibraryPick } from '../stores/companionStore';
 import { createNotificationStore } from '../stores/notificationStore';
 import { unavailableNotificationPort } from '../platform/notifications';
 import { pickAttachment } from '../platform/cameraPick';
@@ -95,6 +95,16 @@ export function commandNoticeCopy(
   if (error === 'STORAGE_FULL') return text.storageFull;
   if (error === 'COMPANION_EXPORT_FAILED') return text.exportFailed;
   if (error === 'ARTIFACT_MISSING') return text.artifactMissing;
+  if (error === 'PROJECT_SOURCE_MISSING') return text.projectSourceMissing;
+  if (error === 'PROJECT_SOURCE_CHANGED') return text.projectSourceChanged;
+  if (error === 'PROJECT_SOURCE_UNTRUSTED') return text.projectSourceUntrusted;
+  if (error === 'MODEL_AUTH') return text.modelAuthMissing;
+  if (error === 'scope_denied' || error === 'COMPANION_SCOPE_DENIED') return text.commandScopeDenied;
+  if (error === 'COMPANION_PROJECT_UNAVAILABLE') return text.projectUnavailable;
+  if (error === 'COMPANION_PROJECT_CHANGED') return text.projectChanged;
+  if (error === 'COMPANION_MODEL_UNAVAILABLE') return text.modelUnavailable;
+  if (error === 'COMPANION_SESSION_BUSY') return text.sessionBusy;
+  if (error === 'RUN_FAILED') return text.runFailed;
   if (error && ['COMPANION_TRANSFER_INTERRUPTED', 'ATTACHMENT_INCOMPLETE', 'COMPANION_INTERRUPTED', 'COMPANION_NETWORK_UNAVAILABLE', 'COMPANION_CHANNEL_CLOSED'].includes(error)) return text.transferInterrupted;
   // 转写失败由输入区那条提示负责（它带阶段和真实错误码）；这里再来一句「电脑那边拒绝了这条操作」
   // 只是把同一件事说两遍——真机上就是上下叠着两行（2026-09-12 build 24 实测）。
@@ -332,6 +342,11 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
   useEffect(() => { if (currentPage !== 'storage') { setCacheConfirm(false); setCacheResult(null); } }, [currentPage]);
   const commandNotice = commandNoticeCopy(text, companion, voiceFailureShown);
   const selectSession = (id: string) => { companion.selectSession(id); state.navigate('new'); };
+  const startDefaultSession = () => {
+    const created = defaultCompanionSessionCreate(companion.library);
+    if (!created) { state.openSheet('projects'); return; }
+    void manage('session.create', { title: text.newSession, provider: created.provider, model: created.model }, `project:${created.projectId}`);
+  };
   const manage: typeof companion.manage = async (...args) => {
     managing.current = true;
     await companion.manage(...args);
@@ -387,7 +402,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
     else if (!state.drawer && touch.clientX - start.x > 86) state.openDrawer();
   };
   if (!state.ready) return <div className="loading" role="status"><p>{state.loadError ? text.loadError : text.loading}</p>
-    {state.loadError && <button onClick={() => void state.hydrate()}>{text.retry}</button>}</div>;
+    {state.loadError && <button className="inline-retry" onClick={() => void state.hydrate()}>{text.retry}</button>}</div>;
 
   return <div className="app" data-theme={theme} onTouchStart={gestureStart} onTouchEnd={gestureEnd} onTouchCancel={() => { swipe.current = null; }}>
     <main className="conversation" inert={state.drawer || !!state.sheet}>
@@ -421,15 +436,17 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
           }</button>}
         </div>}
         {companion.binding && <div className="task-status" role="status">
-          <button className="connection-pill" data-connected={connection.connected} onClick={() => state.openSheet('remote')}>
-            <span aria-hidden="true" className="status-dot" />{connection.label}
-          </button>
+          <div className="connection-line">
+            <button className="connection-pill" data-connected={connection.connected} onClick={() => state.openSheet('remote')}>
+              <span aria-hidden="true" className="status-dot" />{connection.label}
+            </button>
+            {connection.retry && <button className="inline-retry" disabled={companion.busy} onClick={() => void companion.reconnect()}>{text.retry}</button>}
+          </div>
           <span>{taskStatusCopy(text, companion)}</span>
           {offlineCopy && <span data-testid="offline-readonly">{offlineCopy}</span>}
           {companion.runId && <button disabled={companion.busy || companion.pending || companion.status !== 'connected'} onClick={() => void companion.stop()}>{text.stop}</button>}
-          {connection.retry && <button disabled={companion.busy} onClick={() => void companion.reconnect()}>{text.retry}</button>}
         </div>}
-        {companion.libraryError && <p className="notice" role="status">{text.libraryError}<button onClick={() => void companion.reconnect()}>{text.reconnect}</button></p>}
+        {companion.libraryError && <p className="notice" role="status">{text.libraryError}<button className="inline-retry" onClick={() => void companion.reconnect()}>{text.reconnect}</button></p>}
         {fixtures && <p className="caption">{text.fixtureNotice}</p>}
         {(state.saveError || nativeError || (companion.commandError && commandNotice) || (state.sendAttempted && !canAddressSession(companion))) && <p role="status" className="notice">
           {state.saveError ? text.saveError
@@ -437,7 +454,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
             : commandNotice ? commandNotice
             : companion.status === 'connected' ? text.noSession
             : text.unconnected}
-          {state.saveError && <button onClick={() => void state.flush()}>{text.retry}</button>}
+          {state.saveError && <button className="inline-retry" onClick={() => void state.flush()}>{text.retry}</button>}
           {!state.saveError && !nativeError && !companion.commandError && companion.status === 'connected'
             && <button onClick={() => state.openSheet('projects')}>{text.projects}</button>}
         </p>}
@@ -482,11 +499,11 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
     {state.drawer && <div className="drawer-layer" inert={!!state.sheet}>
       <button className="scrim" aria-label={text.closeDrawer} onClick={state.closeDrawer} />
       <aside className="drawer" aria-label={text.sessions}>
-        <div className="drawer-functions"><header><strong>{text.neo}</strong>{<button aria-label={text.newSession} data-testid="new-session" onClick={() => companion.binding ? state.openSheet('projects') : state.navigate('new')}><AppIcon name="plus" /></button>}</header>
-          <button onClick={() => companion.binding ? state.openSheet('projects') : state.navigate('new')}>{text.newSession}</button>
+        <div className="drawer-functions"><header><strong>{text.neo}</strong>{<button aria-label={text.newSession} data-testid="new-session" onClick={() => companion.binding ? startDefaultSession() : state.navigate('new')}><AppIcon name="plus" /></button>}</header>
+          <button onClick={() => companion.binding ? startDefaultSession() : state.navigate('new')}>{text.newSession}</button>
           <button onClick={() => state.openSheet('projects')}>{text.projects}</button><button onClick={() => state.openSheet('remote')}>{text.remote}</button></div>
         <nav className="drawer-history" aria-label={text.history}><p className="group-title">{text.history}</p>
-          {companion.library?.sessions.map(session => <button key={session.id} aria-current={session.id === companion.sessionId ? 'page' : undefined} onClick={() => selectSession(session.id)}>{session.title}{session.archived ? ` · ${text.archived}` : ''}</button>)}
+          {companion.library?.sessions.map(session => <button key={session.id} data-testid={`session-${session.id}`} data-session-id={session.id} aria-current={session.id === companion.sessionId ? 'page' : undefined} onClick={() => selectSession(session.id)}>{session.title}{session.archived ? ` · ${text.archived}` : ''}</button>)}
           {companion.library?.nextOffset != null && <button onClick={() => void companion.refreshLibrary(true)}>{text.loadHistory}</button>}
           {fixtures ? Array.from({ length: 60 }, (_, n) => <button key={n} onClick={() => state.navigate('fixture')} data-testid={n === 0 ? 'fixture-session' : undefined}>{text.fixture} {n + 1}</button>) : !companion.library?.sessions.length && <p className="caption">{text.emptyHistory}</p>}
         </nav>

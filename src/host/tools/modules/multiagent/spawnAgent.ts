@@ -163,12 +163,20 @@ async function runSpawnAgent(
       const missingTools = Array.isArray(bgResult.metadata?.missingTools)
         ? bgResult.metadata.missingTools.filter((name): name is string => typeof name === 'string')
         : undefined;
+      // N-BGSPAWN-DURABLE 顺手修：metadata 里的 cost/tokensUsed 之前被这步重投影丢掉，
+      // 后台子代理「花了多少钱」连内存里都看不到（完成通知 stats.cost 恒 undefined）。
+      const cost = typeof bgResult.metadata?.cost === 'number' ? bgResult.metadata.cost : undefined;
+      const tokensUsed = typeof bgResult.metadata?.tokensUsed === 'number'
+        ? bgResult.metadata.tokensUsed
+        : undefined;
       return {
         success: bgResult.success,
         output: bgResult.success && typeof bgResult.output === 'string' ? bgResult.output : '',
         error: bgResult.success ? undefined : bgResult.error,
         toolsUsed: [],
         iterations: 0,
+        ...(cost !== undefined ? { cost } : {}),
+        ...(tokensUsed !== undefined ? { tokensUsed } : {}),
         ...(failureCode ? { failureCode } : {}),
         ...(missingTools && missingTools.length > 0 ? { missingTools } : {}),
       };

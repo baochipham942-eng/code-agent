@@ -75,6 +75,12 @@ const unionTable = defineDomainRoutes(
   },
 );
 
+// 编译期棘轮（ai-review Nit 2026-09-14）：enum 单对象表的 payload 类型不得退化为
+// undefined（Extract 对非联合请求必得 never 的坑）；退化则 42 赋不进 → tsc-tests 红
+type EnumEchoPayload = Parameters<typeof enumTable.actions.echo>[1];
+const _enumPayloadProbe: EnumEchoPayload = 42;
+void _enumPayloadProbe;
+
 describe('extractDomainActions', () => {
   it('enum-action object 形态：提取 z.enum 字面量集合', () => {
     expect(extractDomainActions(EnumRequestSchema)).toEqual(new Set(['echo', 'ping']));

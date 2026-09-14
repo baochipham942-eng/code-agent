@@ -29,7 +29,8 @@ export type DomainRouteHandlers<Req extends DomainRouteRequest, Ctx = unknown> =
   [A in Req['action'] & string]: DomainRouteHandler<Ctx, ActionPayload<Req, A>>;
 };
 
-/** 从请求联合里按 action 提取对应 payload 类型（payload 可选或缺失的 action 给 undefined） */
+/** 从请求联合里按 action 提取对应 payload 类型（payload 可选或缺失的 action 给 undefined）；
+ *  单对象 enum 表（非联合）Extract 必得 never，退回 Req 自身的 payload 类型 */
 type ActionPayload<Req extends DomainRouteRequest, A extends string> =
   Extract<Req, { action: A }> extends { payload?: infer P } ? P : undefined;
 

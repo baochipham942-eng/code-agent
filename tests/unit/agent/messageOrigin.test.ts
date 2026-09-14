@@ -22,10 +22,12 @@ import { getSpawnGuard, resetSpawnGuard } from '../../../src/host/agent/spawnGua
 import type { AgentTask } from '../../../src/host/agent/parallelAgentCoordinator';
 import { initParallelAgentCoordinator } from '../../../src/host/agent/parallelAgentCoordinator';
 import { TeammateService } from '../../../src/host/agent/teammate/teammateService';
+import { getTeammateService, resetTeammateService } from '../../../src/host/agent/teammate/teammateService';
+import { teammateModule } from '../../../src/host/tools/modules/multiagent/teammate';
 import { getEventBus, shutdownEventBus } from '../../../src/host/services/eventing/bus';
 import { mintToolMessageOrigin } from '../../../src/host/agent/messageOrigin';
 import type { SubagentResult } from '../../../src/host/agent/subagentExecutor';
-import type { ToolContext } from '../../../src/host/protocol/tools';
+import type { CanUseToolFn, ToolContext } from '../../../src/host/protocol/tools';
 import {
   createScopedSwarmAgentId,
   type SwarmEvent,
@@ -193,6 +195,33 @@ describe('TeammateService 入队铸造', () => {
     });
     expect(events).toHaveLength(1);
     expect(events[0].type).toBe('swarm:user:message');
+  });
+
+  it('teammate 工具入队点（真实服务）：子代理 ctx 铸 peer-agent 落对方收件箱', async () => {
+    resetTeammateService();
+    const service = getTeammateService();
+    service.register('target-agent', 'Target', 'reviewer');
+    const handler = await teammateModule.createHandler();
+    const allowAll: CanUseToolFn = async () => ({ allow: true });
+    const ctx = {
+      sessionId: 'sess-1',
+      workingDir: '/tmp/test',
+      abortSignal: new AbortController().signal,
+      logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+      emit: () => void 0,
+      agentId: 'agent-b',
+      subagent: { agentName: 'B', agentRole: 'coder' },
+    } as unknown as ToolContext;
+
+    const result = await handler.execute({ action: 'send', to: 'target-agent', message: '数据好了' }, ctx, allowAll);
+    expect(result.ok).toBe(true);
+    const [delivered] = service.getInbox('target-agent');
+    expect(delivered.origin).toMatchObject({
+      senderKind: 'peer-agent',
+      senderAgentId: 'agent-b',
+      sessionId: 'sess-1',
+    });
+    resetTeammateService();
   });
 
   it('存量无 origin 消息从严：事件路由按 agent 消息发（不许默认成 user）', () => {

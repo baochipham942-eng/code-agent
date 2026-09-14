@@ -561,6 +561,9 @@ export function createWebSessionStore(deps: WebSessionStoreDeps) {
               // assistant 侧一直在落 metadata，user 侧此前漏了——ADR-040 的 locator
               // 要能回读（会话重开后仍指向用户点的那个位置），这里必须对称。
               metadata: userMessage.metadata,
+              // 与 pre-persist 组装对称：meta 轮不带 isMeta 落库，后台 prompt 会
+              // 混进可见历史并被下一轮当真实用户输入（ai-review 2026-09-14）。
+              ...(userMessage.isMeta ? { isMeta: true } : {}),
             } as Message, cliSessionManager && !sessionExists
               ? { title, modelConfig }
               : undefined);

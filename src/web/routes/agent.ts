@@ -1146,6 +1146,10 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           attachments: userMsg.attachments,
           // 与 commitTurn 的 user 侧对称：chip 行 metadata（workbench/locator）随 pre-persist 落库
           metadata: userMsg.metadata,
+          // 同一对称：meta 轮（手机批准计划等后台 prompt）必须落 is_meta——pre-persist
+          // 成功后 commitTurn 会跳过 user 侧重写，这里不带 isMeta 标记就永久丢失，
+          // 计划内部 prompt 混进可见历史并被下一轮当真实用户输入（ai-review 2026-09-14）。
+          ...(userMsg.isMeta ? { isMeta: true } : {}),
         },
       });
 

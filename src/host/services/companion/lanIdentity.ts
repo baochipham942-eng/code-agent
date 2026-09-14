@@ -11,11 +11,17 @@ import { join } from 'node:path';
  *
  * Two storage tiers, and the weaker one is deliberate:
  *
- * 1. Packaged desktop builds have keytar → OS keychain. A write that cannot be read
- *    back throws, so pairing fails rather than running on a key that did not persist.
- * 2. Hosts without keytar (web server, CLI, browser dev) fall back to a **plaintext**
- *    `companion-identity.json` in the data directory, mode 0600. This is not encrypted
- *    and is not equivalent to tier 1.
+ * 1. Packaged desktop builds with a usable OS keychain (keytar setPassword + read-back
+ *    succeed) keep the identity there. This instance then uses keychain as its source.
+ * 2. Hosts without a usable keychain — module missing, or module loaded but setPassword
+ *    / read-back fails at runtime (headless web Host) — fall back to a **plaintext**
+ *    `companion-identity.json` in the data directory, mode 0600. After fallback, the
+ *    same identity must load from that file. A keychain write that cannot be read back
+ *    does not run on an in-memory key that did not persist: it commits the file and
+ *    re-reads it. One instance, one source — the failure path does not dual-write.
+ *
+ * A thrown getPassword is not "missing". Falling back or minting on a read failure
+ * would replace a keychain identity we failed to read. That throw propagates.
  *
  * ponytail: why plaintext is accepted here. Reading that file requires read access to the
  * data directory, which already holds `code-agent.db` (session content and device
@@ -53,6 +59,12 @@ async function writeFileIdentity(dataDirectory: string, encoded: string): Promis
   await writeFile(join(dataDirectory, IDENTITY_FILE), encoded, { mode: 0o600 });
 }
 
+async function persistFileIdentity(dataDirectory: string, encoded: string): Promise<void> {
+  await writeFileIdentity(dataDirectory, encoded);
+  const fromFile = await readFileIdentity(dataDirectory);
+  if (fromFile?.encoded !== encoded) throw new Error('COMPANION_SECURE_STORAGE_UNAVAILABLE');
+}
+
 export async function loadLanIdentity(dataDirectory: string): Promise<KeyPair> {
   const keytar = loadKeytar();
   if (!keytar) {
@@ -63,6 +75,8 @@ export async function loadLanIdentity(dataDirectory: string): Promise<KeyPair> {
     return identity;
   }
   const account = createHash('sha256').update(dataDirectory).digest('hex');
+  // A thrown getPassword is not "missing": do not mint or fall back to a file
+  // identity, which would replace a keychain identity we failed to read.
   const stored = await keytar.getPassword(KEYTAR_SERVICE, account);
   if (stored) return decode(stored);
   // A host that previously ran without keytar (web/CLI) already paired phones against
@@ -74,7 +88,17 @@ export async function loadLanIdentity(dataDirectory: string): Promise<KeyPair> {
   try {
     await keytar.setPassword(KEYTAR_SERVICE, account, encoded);
     if (await keytar.getPassword(KEYTAR_SERVICE, account) !== encoded) throw new Error('COMPANION_SECURE_STORAGE_UNAVAILABLE');
-    if (!existing) await writeFileIdentity(dataDirectory, encoded);
-    return identity;
-  } catch (error) { identity.secretKey.fill(0); throw error; }
+  } catch (error) {
+    const reason = error instanceof Error ? error.message.split('\n')[0] : String(error);
+    console.warn('[CompanionIdentity] OS keychain unavailable at runtime; using companion-identity.json:', reason);
+    try {
+      if (!existing) await persistFileIdentity(dataDirectory, encoded);
+      return identity;
+    } catch (fallbackError) {
+      identity.secretKey.fill(0);
+      throw fallbackError;
+    }
+  }
+  if (!existing) await writeFileIdentity(dataDirectory, encoded);
+  return identity;
 }

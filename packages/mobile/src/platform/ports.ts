@@ -31,7 +31,8 @@ type PushProvider = 'apns' | 'fcm' | 'vendor';
 export type PushToken = { provider: PushProvider; token: string; environment: 'production' | 'sandbox' };
 export type TokenResult =
   | { kind: 'token'; token: PushToken }
-  | { kind: 'unavailable'; code: 'CHANNEL_MISSING'; missing: 'apns_entitlement' | 'gms_or_vendor' };
+  | { kind: 'unavailable'; code: 'CHANNEL_MISSING'; missing: 'apns_entitlement' | 'gms_or_vendor' }
+  | { kind: 'error'; code: 'REGISTRATION_FAILED' };
 
 export interface NotificationPort {
   permission: { read(): Promise<OsPermission>; request(): Promise<OsPermission> };

@@ -47,8 +47,11 @@ export function createNotificationStore(deps: {
         return;
       }
       const token = await deps.port.token.current();
-      if (token.kind === 'unavailable') {
-        set({ registration: 'failed', lastFailure: `${token.code}:${token.missing}` });
+      if (token.kind !== 'token') {
+        set({
+          registration: 'failed',
+          lastFailure: token.kind === 'unavailable' ? `${token.code}:${token.missing}` : token.code,
+        });
         return;
       }
       if (deps.session.status() !== 'connected') {
@@ -109,7 +112,15 @@ export function createNotificationStore(deps: {
     };
   });
   deps.port.token.subscribe((result: TokenResult) => {
-    if (result.kind === 'token' && store.getState().preference) void store.getState().recover();
+    if (!store.getState().preference) return;
+    if (result.kind === 'token') {
+      void store.getState().recover();
+      return;
+    }
+    store.setState({
+      registration: 'failed',
+      lastFailure: result.kind === 'unavailable' ? `${result.code}:${result.missing}` : result.code,
+    });
   });
   return store;
 }

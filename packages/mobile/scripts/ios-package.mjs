@@ -186,6 +186,45 @@ export function unlinkedSpmPlugins(packageSwift, plugins, selfImplemented = []) 
  * 运行时照旧是 plugin is not implemented on ios（ai-review PR#1760 Important 1，已用真机
  * 生成的 capacitor.config.json 与 Capacitor.framework 里的 packageClassList / autoRegisterPlugins 核实）。
  */
+/**
+ * Capacitor's default AppDelegate does not forward APNs device tokens. Without these
+ * two posts, register() resolves and then the plugin never emits `registration`.
+ */
+export function withPushAppDelegateHooks(source) {
+  if (!source.includes('class AppDelegate') || !source.includes('import Capacitor')) {
+    throw new Error('IOS_APP_DELEGATE_MISSING');
+  }
+  if (source.includes('capacitorDidRegisterForRemoteNotifications')
+    && source.includes('capacitorDidFailToRegisterForRemoteNotifications')) {
+    return source;
+  }
+  const closing = source.lastIndexOf('}');
+  if (closing < 0) throw new Error('IOS_APP_DELEGATE_UNPATCHABLE');
+  const hooks = `
+    func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+      NotificationCenter.default.post(name: .capacitorDidRegisterForRemoteNotifications, object: deviceToken)
+    }
+
+    func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
+      NotificationCenter.default.post(name: .capacitorDidFailToRegisterForRemoteNotifications, object: error)
+    }
+
+`;
+  return `${source.slice(0, closing)}${hooks}${source.slice(closing)}`;
+}
+
+export function withApsEnvironment(xml, environment) {
+  if (environment !== 'production' && environment !== 'development') throw new Error('IOS_APS_ENVIRONMENT_INVALID');
+  if (!xml.includes('<dict>')) throw new Error('IOS_ENTITLEMENTS_UNPATCHABLE');
+  if (xml.includes('<key>aps-environment</key>')) {
+    return xml.replace(
+      /<key>aps-environment<\/key>\s*<string>[^<]*<\/string>/,
+      `<key>aps-environment</key>\n\t<string>${environment}</string>`,
+    );
+  }
+  return xml.replace('<dict>', `<dict>\n\t<key>aps-environment</key>\n\t<string>${environment}</string>`);
+}
+
 export function withSelfImplementedPluginClasses(config, replacements) {
   // 形状不对就停：静默当成空表会把其余插件的登记一起丢掉，而那是整包功能级的静默损坏。
   if (!Array.isArray(config.packageClassList)) throw new Error('IOS_PACKAGE_CLASS_LIST_MISSING');

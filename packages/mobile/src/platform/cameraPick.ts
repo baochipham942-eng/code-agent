@@ -37,8 +37,10 @@ type CameraPhotoResult = {
 export interface CameraBridge {
   checkPermissions(): Promise<{ camera: CameraPermissionState }>;
   requestPermissions(options?: { permissions: Array<'camera' | 'photos'> }): Promise<{ camera: CameraPermissionState }>;
-  takePhoto?(options: Record<string, unknown>): Promise<CameraPhotoResult>;
-  getPhoto?(options: Record<string, unknown>): Promise<CameraPhotoResult>;
+  // options 必须与 @capacitor/camera 的 ImageOptions 可比（resultType 必填），否则真插件
+  // 无法 as 成本桥（runner 真依赖 tsc 实证；测试用桩不需要 import 该包，故不直接引类型）。
+  takePhoto?(options: { resultType: 'uri' | 'base64' | 'dataUrl' } & Record<string, unknown>): Promise<CameraPhotoResult>;
+  getPhoto?(options: { resultType: 'uri' | 'base64' | 'dataUrl' } & Record<string, unknown>): Promise<CameraPhotoResult>;
 }
 
 export function toPickedFile(name: string, bytes: Uint8Array): PickedFile {
@@ -105,6 +107,7 @@ async function capturePhoto(camera: CameraBridge): Promise<CameraPhotoResult> {
   if (typeof camera.takePhoto === 'function') {
     return camera.takePhoto({
       quality: 90,
+      resultType: 'base64',
       saveToGallery: false,
       includeMetadata: true,
       encodingType: CAMERA_JPEG_ENCODING,

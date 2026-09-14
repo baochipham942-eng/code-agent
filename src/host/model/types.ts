@@ -123,8 +123,13 @@ export interface ModelResponse {
 // Streaming Types
 // ----------------------------------------------------------------------------
 
+// ADR-068 刀 3 B2 诚实分段信号（chunk.type === 'stream_break'）：
+// adapter 已决定断流重发且该续接无 prefix 合同（B2）——重发是全新生成，续答是新的一条
+// 消息。调用方收到后应把断点 partial 以带中断标记的 assistant 消息落库（形态对齐
+// conversationRuntime 的 preserveStreamedPartial），再让续写 delta 另起一段累积；
+// 不把重发内容 append 进旧消息冒充单次生成（D2 边界）。error 字段带断流原因（诊断用）。
 export interface StreamChunk {
-  type: 'text' | 'reasoning' | 'tool_call_start' | 'tool_call_delta' | 'token_estimate' | 'complete' | 'usage' | 'error';
+  type: 'text' | 'reasoning' | 'tool_call_start' | 'tool_call_delta' | 'token_estimate' | 'complete' | 'usage' | 'error' | 'stream_break';
   content?: string;
   toolCall?: {
     index: number;
@@ -140,7 +145,7 @@ export interface StreamChunk {
   providerReportedSavedTokens?: number;
   // complete event
   finishReason?: string;
-  // error event
+  // error event / stream_break 的断流原因
   error?: string;
   errorCode?: string;
 }

@@ -53,6 +53,7 @@ import {
   STREAM_RECONNECT_BACKOFF_CAP_MS,
 } from '../../../shared/constants';
 import { getIncompleteToolCallIds } from '../../session/streamSnapshot';
+import { resolveModelCapabilities } from '../modelCapabilityMatrix';
 import { PROVIDER_REGISTRY } from '../providerRegistry';
 import { resolveProviderBaseUrl, resolveProviderApiKey } from '../providers/providerResolution';
 import {
@@ -73,7 +74,6 @@ import {
 } from '../providers/shared';
 import { resolveModelRequestTemperature } from '../../../shared/modelSampling';
 import { summarizeModelErrorForUser } from '../../../shared/modelErrorDiagnostics';
-import { resolveModelCapabilities } from '../modelCapabilityMatrix';
 import { logger, makeAiSdkFetch } from './aiSdkFetch';
 import { buildVendorCompatSettings, resolveAiSdkProviderOptions } from './aiSdkVendorCompat';
 export { buildVendorCompatSettings } from './aiSdkVendorCompat';
@@ -580,6 +580,12 @@ export async function inferenceViaAiSdk(
   }
 }
 
+// 测试专用导出（挂在既有函数对象上，不新增顶层 export）：B1 分支在刀 2 接线前不可达，
+// seedAccumulatorFromBreakpoint 的断点态行为靠它直接单测；刀 2 落地翻开关后回归端到端。
+Object.assign(inferenceViaAiSdk, {
+  __seedAccumulatorFromBreakpoint: seedAccumulatorFromBreakpoint,
+});
+
 async function runInferenceViaAiSdk(
   messages: ModelMessage[],
   tools: ToolDefinition[],
@@ -827,7 +833,9 @@ function stringifyArgs(input: Record<string, unknown> | undefined, fallback: str
 // - 保留 content / contentParts / reasoning / 完整 toolCalls；
 // - 半截 tool_call（JSON.parse 不可过，判据复用 getIncompleteToolCallIds）永不进 seed，
 //   让模型重发完整调用——执行安全幂等比续接完整性更硬（D2/D4）；
-// - 请求体的 prefix 注入（末条 assistant 前缀）是刀 2，本刀只建状态机。
+// - 请求体的 prefix 注入（末条 assistant 前缀）与启用开关是刀 2；接线前 B1 分支不可达
+//   （STREAM_RESUME_B1_PREFIX_SHAPE_LANDED 恒 false，一切续接走 B2），seed 行为经
+//   inferenceViaAiSdk 上的测试钩子直接单测，刀 2 翻开关后由端到端用例接管。
 function seedAccumulatorFromBreakpoint(acc: StreamAccumulator): StreamAccumulator {
   const incompleteIds = new Set(getIncompleteToolCallIds({
     // 映射形状对齐 emitSnapshot；断点必非终态，isFinal 恒 false。
@@ -852,8 +860,8 @@ function seedAccumulatorFromBreakpoint(acc: StreamAccumulator): StreamAccumulato
     content: acc.content,
     reasoning: acc.reasoning,
     // 断点处尚未 finish：finishReason / usage 不带入断点态。usage 跨 attempt 合并记账
-    // （每次续接尝试都是真实计费，单轮 usage = Σ attempts）的落点在 ADR-068 刀 3——
-    // 届时在此累积各断流 attempt 的 usage，本刀不实现合并逻辑。
+    // （ADR-068 刀 3）在 streamViaAiSdk 里用 usageFromBrokenAttempts 累积——不挂在
+    // accumulator 上，B1/B2 两种续接形态共用同一份账。
     finishReason: undefined,
     usage: undefined,
     toolCalls,
@@ -865,6 +873,29 @@ function seedAccumulatorFromBreakpoint(acc: StreamAccumulator): StreamAccumulato
     nextToolIndex: acc.nextToolIndex,
   };
 }
+
+// ── ADR-068 刀 3：usage 跨 attempt 合并记账 ──
+// 每次续接尝试都是真实计费（重发整段 input + 各自的 output），单轮展示 usage = Σ attempts。
+// 缺侧未上报的可选字段按 0 计入求和（另一侧报了就是真实花费）。
+type StreamUsageTotal = NonNullable<StreamAccumulator['usage']>;
+function mergeAttemptUsage(a: StreamUsageTotal | undefined, b: StreamUsageTotal | undefined): StreamUsageTotal | undefined {
+  if (!a) return b;
+  if (!b) return a;
+  const sumOptional = (x: number | undefined, y: number | undefined): number | undefined =>
+    (x === undefined && y === undefined) ? undefined : (x ?? 0) + (y ?? 0);
+  return {
+    inputTokens: a.inputTokens + b.inputTokens,
+    outputTokens: a.outputTokens + b.outputTokens,
+    cacheReadTokens: sumOptional(a.cacheReadTokens, b.cacheReadTokens),
+    cacheCreationTokens: sumOptional(a.cacheCreationTokens, b.cacheCreationTokens),
+  };
+}
+
+// ADR-068 刀 3：B1 生效需两件事同时就位——能力表档位（prefix-param / trailing-assistant，
+// modelCapabilityMatrix）与刀 2 的 prefix 请求形状（把断点前缀真的拼进重发请求）。只有
+// 重发请求携带前缀，续写才是「模型以传入前缀为条件继续同一次生成」（D2 (a)）；刀 2 未接前
+// 此开关恒 false，一切续接走 B2 诚实分段（D2 (b)）——刀 2 落地时翻开它并接上 prefix 注入。
+const STREAM_RESUME_B1_PREFIX_SHAPE_LANDED = false;
 
 function finalToolInput(
   input: unknown,
@@ -930,6 +961,8 @@ async function streamViaAiSdk(params: {
   let reconnectsUsed = 0;
   // 续接 attempt 的 accumulator 断点态 seed（见 seedAccumulatorFromBreakpoint）；null = 全新累积器。
   let resumeSeed: StreamAccumulator | null = null;
+  // 断流 attempt 已上报 usage 的累积（刀 3 合并记账）：成功时并入最终 usage = Σ attempts。
+  let usageFromBrokenAttempts: StreamUsageTotal | undefined;
   const snapshotInterval = options?.snapshotIntervalMs ?? DEFAULT_SNAPSHOT_INTERVAL_MS;
   const onSnapshot = options?.onSnapshot;
 
@@ -1083,8 +1116,9 @@ async function streamViaAiSdk(params: {
       stopWatchdog();
       // 正常完成：发 usage + complete（对齐 sseStream），落最终 snapshot，累积成 ModelResponse。
       healthMonitor.recordSuccess(config.provider, Date.now() - startTime);
-      // usage 跨 attempt 合并记账的落点（ADR-068 刀 3）：断流续接时各次尝试都真实计费，
-      // 单轮展示 usage 应为 Σ attempts；当前只发最终 attempt 的 usage，合并在刀 3 落地。
+      // usage 跨 attempt 合并记账（ADR-068 刀 3）：断流续接时各次尝试都真实计费，
+      // 单轮展示 usage = Σ attempts（断流 attempt 上报过 usage 的并入，未上报的无从记起）。
+      acc.usage = mergeAttemptUsage(acc.usage, usageFromBrokenAttempts);
       if (acc.usage) {
         onStream({
           type: 'usage',
@@ -1135,7 +1169,21 @@ async function streamViaAiSdk(params: {
         && (timedOutKind === 'stream inactivity' || isRetryableModelCallError(effectiveErr));
       if (resumableStreamBreak) {
         reconnectsUsed += 1;
-        resumeSeed = seedAccumulatorFromBreakpoint(acc);
+        usageFromBrokenAttempts = mergeAttemptUsage(usageFromBrokenAttempts, acc.usage);
+        // B1/B2 分流（ADR-068 D2 + 刀 3）：B1 需要能力表合同档位与刀 2 的 prefix 请求形状
+        // 同时就位（STREAM_RESUME_B1_PREFIX_SHAPE_LANDED），续写 delta 才允许 append 进
+        // 断点同一条消息；否则走 B2 诚实分段——发 stream_break 信号让调用方把断点 partial
+        // 以带中断标记的 assistant 消息落库，续答用全新累积器另起一段，绝不把重发内容
+        // append 进旧消息冒充单次生成（D2 边界两级都禁止）。
+        const streamResumeMode = resolveModelCapabilities(config.provider, config.model).streamResume?.mode;
+        const b1PrefixContractActive = STREAM_RESUME_B1_PREFIX_SHAPE_LANDED
+          && (streamResumeMode === 'prefix-param' || streamResumeMode === 'trailing-assistant');
+        if (b1PrefixContractActive) {
+          resumeSeed = seedAccumulatorFromBreakpoint(acc);
+        } else {
+          onStream({ type: 'stream_break', error: msg });
+          logger.info(`[AiSdkAdapter] B2 诚实分段：断点 partial（${acc.charCount} 字符）交调用方落库，续答另起新消息 (${reconnectsUsed}/${reconnectMax})`);
+        }
         // 退避复用 computeRetryBackoffMs（base 1s + ±25% jitter），续接场景封顶 4s（ADR D4：
         // 打字中断要快恢复）；429 的 retry-after 优先且不受此封顶（限流等少了没用）。
         const retryAfterMs = extractRetryAfterMs(err);

@@ -84,6 +84,8 @@ LOG="$LOG_DIR/$DATE.log"
 mkdir -p "$LOG_DIR" "$INBOX"
 exec >>"$LOG" 2>&1
 cd "$REPO" || exit 1
+# 同日重跑追加进同一份日志：报告路径只在本次起点之后找，别把上一次的报告当本次的。
+RUN_START_LINE=$(wc -l < "$LOG")
 echo "=== $(date '+%FT%T%z') core 周跑开始 repo=$REPO head=$(git rev-parse --short HEAD) branch=$(git branch --show-current) max_cases=${NEO_EVAL_CORE_MAX_CASES:-50}"
 
 # key 来源：本机探针槽（~/.ship/scripts/eval-real-run.mts 从 ~/.code-agent-chatprobe 解密后只进子进程 env）。
@@ -98,7 +100,7 @@ fi
 EXIT=$?
 echo "=== exit=$EXIT"
 
-REPORT_MD="$(grep -a 'Reports saved to:' "$LOG" | tail -1 | sed -e 's/\x1b\[[0-9;]*m//g' -e 's/.*Reports saved to: //' -e 's/[[:space:]]*$//')"
+REPORT_MD="$(tail -n +"$((RUN_START_LINE + 1))" "$LOG" | grep -a 'Reports saved to:' | tail -1 | sed -e 's/\x1b\[[0-9;]*m//g' -e 's/.*Reports saved to: //' -e 's/[[:space:]]*$//')"
 REPORT_JSON="${REPORT_MD%.md}.json"
 if [ -z "$REPORT_MD" ] || [ ! -f "$REPORT_JSON" ]; then
   echo "=== 本轮没有报告（exit=${EXIT}），无法比对；见上方 eval-ci 输出"

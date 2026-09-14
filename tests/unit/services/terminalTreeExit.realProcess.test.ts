@@ -295,7 +295,9 @@ describe('Terminal 收尸接线守护（不依赖原生模块）', () => {
   });
 
   it('两个外部调用方都 await 了 dispose（不 await 等于退回发完信号就走）', () => {
-    for (const file of ['host/ipc/terminal.ipc.ts', 'host/ipc/session.ipc.ts']) {
+    // RQ-183 刀 2：session 域的 dispose 调用点从 session.ipc.ts switch 迁入单源表
+    // 的 delete handler（host/ipc/domainRoutes/sessionRoutes.ts），语义不变（仍是 await）
+    for (const file of ['host/ipc/terminal.ipc.ts', 'host/ipc/domainRoutes/sessionRoutes.ts']) {
       const source = readFileSync(join(root, file), 'utf-8');
       expect(source, `${file} 没 await disposeTerminalSession`).toContain('await disposeTerminalSession');
     }

@@ -126,6 +126,24 @@
       "files": [
         "tests/scripts/gatesLocalLock.test.ts"
       ]
+    },
+    {
+      "id": "domain-routes",
+      "paths": [
+        "src/host/ipc/domainRoutes/**",
+        "src/host/ipc/session.ipc.ts",
+        "src/host/ipc/index.ts",
+        "src/shared/ipc/domainRoutes.ts",
+        "src/shared/ipc/schemas/**",
+        "src/host/shellCapabilities.ts",
+        "src/web/sessionDomainHandler.ts",
+        "src/web/webServer.ts"
+      ],
+      "files": [
+        "tests/scripts/domainRouteParity.test.ts",
+        "tests/unit/host/ipc/domainRoutes.test.ts",
+        "tests/unit/host/ipc/sessionRoutes.test.ts"
+      ]
     }
   ],
   "sharedPackageInputs": [

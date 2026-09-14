@@ -48,6 +48,10 @@ const orchestratorState = vi.hoisted(() => ({
   sendMessage: vi.fn(),
 }));
 
+const sessionState = vi.hoisted(() => ({
+  getSession: vi.fn(),
+}));
+
 vi.mock('../../../src/host/task', () => ({
   getTaskManager: () => ({
     getOrCreateCurrentOrchestrator: () => orchestratorState,
@@ -56,9 +60,7 @@ vi.mock('../../../src/host/task', () => ({
 
 vi.mock('../../../src/host/services/infra/sessionManager', () => ({
   getSessionManager: () => ({
-    getSession: vi.fn().mockResolvedValue({
-      messages: [{ id: 'a1', role: 'assistant', content: '检查中', timestamp: 2 }],
-    }),
+    getSession: sessionState.getSession,
   }),
 }));
 
@@ -104,6 +106,10 @@ describe('Loop durable ledger (N-LOOP-DURABLE-K2 刀2-b)', () => {
     resetApplicationRunRegistryForTests();
     orchestratorState.sendMessage.mockReset();
     orchestratorState.sendMessage.mockResolvedValue(undefined);
+    sessionState.getSession.mockReset();
+    sessionState.getSession.mockResolvedValue({
+      messages: [{ id: 'a1', role: 'assistant', content: '检查中', timestamp: 2 }],
+    });
   });
 
   afterEach(() => {
@@ -517,6 +523,107 @@ describe('Loop durable ledger (N-LOOP-DURABLE-K2 刀2-b)', () => {
     });
     expect(controller.get(state.id)?.error).toContain('Durable ledger lost');
     expect(orchestratorState.sendMessage).toHaveBeenCalledTimes(1);
+    db.close();
+  });
+
+  it('stop 落在读回复窗口（finalize 先收口）：终态保持 stopped，无 task_failed，台账收口一次', async () => {
+    const { db, repository, ledger } = createStack();
+    armLoopDurableLedger();
+    configureLoopDurableLedger(ledger);
+    getApplicationRunRegistry().start({
+      runId: 'run-fg-stop',
+      sessionId: 'session-stop',
+      workspace: '/tmp',
+      cwd: '/tmp',
+    });
+    let releaseReply: (value: unknown) => void = () => undefined;
+    sessionState.getSession.mockImplementationOnce(
+      () => new Promise((resolve) => { releaseReply = resolve; }),
+    );
+    const controller = new LoopController();
+    const state = await controller.start({
+      sessionId: 'session-stop',
+      prompt: '盯构建',
+      maxTurns: 5,
+    });
+    // runLoop 已堵在 readLastAssistantReply
+    await vi.waitFor(() => {
+      expect(sessionState.getSession).toHaveBeenCalledTimes(1);
+    });
+
+    controller.stop(state.id);
+    // finalizeDurable 先完成:durable 行 terminal cancelled,账本 untrack
+    await vi.waitFor(async () => {
+      expect((await repository.get(state.id))?.status).toBe('cancelled');
+    });
+    expect(ledger.isTracked(state.id)).toBe(false);
+
+    // 在途 turnCompleted 撞上 untracked 账本 → 抛 LedgerLost → runLoop catch
+    // → 终态守卫:保持 stopped,不覆写、不重跑 finalizeTask、不推 task_failed
+    releaseReply({ messages: [{ id: 'a1', role: 'assistant', content: '检查中', timestamp: 2 }] });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    const final = controller.get(state.id)!;
+    expect(final.status).toBe('stopped');
+    expect(final.stopReason).toBe('user');
+    expect(final.error).toBeUndefined();
+    expect(getBackgroundTaskLedger().drainNotifications('session-stop')).toEqual([]);
+    expect(getBackgroundTaskLedger().getTask(state.id)?.status).toBe('cancelled');
+    expect((await repository.get(state.id))?.status).toBe('cancelled');
+    db.close();
+  });
+
+  it('stop 落在在途 checkpoint 上（并发写被 fence）：终态保持 stopped，无 task_failed', async () => {
+    const { db, repository, kernel, ledger } = createStack();
+    armLoopDurableLedger();
+    configureLoopDurableLedger(ledger);
+    getApplicationRunRegistry().start({
+      runId: 'run-fg-stop2',
+      sessionId: 'session-stop2',
+      workspace: '/tmp',
+      cwd: '/tmp',
+    });
+    // 扣住 turnCompleted 的 checkpoint,让 stop() 的 finalize 抢先写
+    let releaseHold: () => void = () => undefined;
+    const hold = new Promise<void>((resolve) => { releaseHold = resolve; });
+    let inFlightTurnCompleted: Promise<unknown> | undefined;
+    const realCheckpoint = kernel.checkpoint.bind(kernel);
+    vi.spyOn(kernel, 'checkpoint').mockImplementation((input) => {
+      const isTurnCompleted = input.events?.[0]?.type === 'loop_turn_completed';
+      const p = (async () => {
+        if (isTurnCompleted) await hold;
+        return realCheckpoint(input);
+      })();
+      if (isTurnCompleted) inFlightTurnCompleted = p;
+      return p;
+    });
+    const controller = new LoopController();
+    const state = await controller.start({
+      sessionId: 'session-stop2',
+      prompt: '盯构建',
+      maxTurns: 5,
+    });
+    await vi.waitFor(() => {
+      expect(inFlightTurnCompleted).toBeDefined();
+    });
+
+    controller.stop(state.id);
+    await vi.waitFor(async () => {
+      expect((await repository.get(state.id))?.status).toBe('cancelled');
+    });
+
+    // 放行在途 checkpoint:行已被 finalize 收成终态,写被拒(Terminal run cannot checkpoint)上抛
+    releaseHold();
+    await expect(inFlightTurnCompleted).rejects.toThrow(/fenced|stale|terminal/i);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    const final = controller.get(state.id)!;
+    expect(final.status).toBe('stopped');
+    expect(final.stopReason).toBe('user');
+    expect(final.error).toBeUndefined();
+    expect(getBackgroundTaskLedger().drainNotifications('session-stop2')).toEqual([]);
+    expect(getBackgroundTaskLedger().getTask(state.id)?.status).toBe('cancelled');
+    expect(ledger.isTracked(state.id)).toBe(false);
     db.close();
   });
 

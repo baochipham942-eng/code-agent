@@ -145,6 +145,9 @@ export class LoopController {
   private finish(id: string, status: LoopStatus, reason: LoopStopReason, error?: string): void {
     const s = this.loops.get(id);
     if (!s) return;
+    // 终态守卫:stop() 或先到的 finish 已收口时,竞态迟到的 finish(典型:在途
+    // checkpoint 撞上 finalize 后抛错)不许覆写终态、不许重跑 finalizeTask。
+    if (s.status !== 'running') return;
     s.status = status;
     s.stopReason = reason;
     s.nextRunAt = undefined;
@@ -451,8 +454,13 @@ export class LoopController {
         }
       }
     } catch (err) {
-      this.finish(id, 'failed', 'error', err instanceof Error ? err.message : String(err));
-      logger.error(`Loop ${id} failed:`, err);
+      // 判据用状态而非错误文案:stop() 已收口(status 已 stopped)时在途
+      // checkpoint 抛错(账本已失联/被 finalize 抢先收口)是预期竞态,维持
+      // stopped、不重跑 finalizeTask、不报 task_failed;其余为真实故障,收口 failed。
+      if (state.status === 'running') {
+        this.finish(id, 'failed', 'error', err instanceof Error ? err.message : String(err));
+        logger.error(`Loop ${id} failed:`, err);
+      }
     } finally {
       this.aborted.delete(id);
       this.timers.delete(id);

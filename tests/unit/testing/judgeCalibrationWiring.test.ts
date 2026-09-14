@@ -101,6 +101,12 @@ describe('isTrustedCalibration 阈值门', () => {
     expect(isTrustedCalibration(record({ pairs: 50, kappa: 0.62 }))).toBe(true);
   });
 
+  it('弃权率是上岗线第三项：κ 与样本达标但弃权率 >20% → 不可信；老记录无此字段按 0 仍可信', () => {
+    expect(isTrustedCalibration(record({ kappa: 0.8, pairs: 50, abstainRate: 0.21 }))).toBe(false);
+    expect(isTrustedCalibration(record({ kappa: 0.8, pairs: 50, abstainRate: CALIBRATION_TRUST_THRESHOLDS.maxAbstainRate }))).toBe(true);
+    expect(isTrustedCalibration(record({ kappa: 0.8, pairs: 50 }))).toBe(true);
+  });
+
   it('50 对豁免独立生效：κ=0.6 的 CI 下界不足 0.4 仍可信', () => {
     expect(approximateKappaLowerBound95(0.6, 50)).toBeLessThan(0.4);
     expect(isTrustedCalibration(record({ pairs: 50, kappa: 0.6 }))).toBe(true);
@@ -145,7 +151,18 @@ describe('AI 评审报告并列展示', () => {
   it('按维统计是/否，并明确不进通过率', () => {
     const md = generateMarkdownReport(makeSummary(aiReviewed));
     expect(md).toContain('AI 评审（并列 · 不进通过率）');
-    expect(md).toContain('| 任务完成 | 1 | 1 | 0 |');
+    expect(md).toContain('| 任务完成 | 1 | 1 | 0 | 0 |');
+  });
+
+  it('弃权单独成列，不混进是/否，也不混进不可用', () => {
+    const withAbstain = [
+      ...aiReviewed,
+      makeResult({ testId: 'j3', scoreAuthority: 'deterministic_assertion', aiReview: { task_completed: { verdict: 'abstain', reasoning: '证据不足', judgeModel: 'zhipu/glm', promptHash: 'abc' } } }),
+    ];
+    const md = generateMarkdownReport(makeSummary(withAbstain));
+    expect(md).toContain('| 维度 | 是 | 否 | 无法确定 | 不可用 |');
+    expect(md).toContain('| 任务完成 | 1 | 1 | 1 | 0 |');
+    expect(md).toContain('| j3 | 无法确定 |');
   });
 
   it('没有 AI 评审结果时不渲染并列表', () => {

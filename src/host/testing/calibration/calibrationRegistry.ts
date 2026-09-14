@@ -32,6 +32,11 @@ export interface JudgeCalibrationRecord {
   pairs: number;
   /** 虚高率 FP/(FP+TN)：judge 被讨好的主要失效模式 */
   falsePositiveRate: number;
+  /**
+   * 弃权率 abstain/(abstain+配对)：judge 自报「无法确定」的比例。弃权不进 κ 配对，
+   * 但太高 = 只答有把握的题，κ 再好也覆盖不足（N-EVAL-JUDGE-ABSTAIN）。老记录没有此字段按 0。
+   */
+  abstainRate?: number;
   /** 计算时间（ISO） */
   computedAt: string;
 }
@@ -50,13 +55,15 @@ export type LoadedJudgeCalibrationRecord = JudgeCalibrationRecord | SupersededJu
 
 /**
  * 可信阈值：κ≥0.6 = Landis-Koch substantial 档起步；
- * 样本 <20 时 κ 方差过大，不足以背书。
+ * 样本 <20 时 κ 方差过大，不足以背书；
+ * 弃权率 >20% = 只答有把握的题，有效覆盖不足，同样不发工牌。
  */
 export const CALIBRATION_TRUST_THRESHOLDS = {
   minKappa: 0.6,
   minPairs: 20,
   minKappaLowerBound: 0.4,
   pairsWaiver: 50,
+  maxAbstainRate: 0.2,
 } as const;
 
 export function isTrustedCalibration(record: LoadedJudgeCalibrationRecord): boolean {
@@ -65,6 +72,7 @@ export function isTrustedCalibration(record: LoadedJudgeCalibrationRecord): bool
   return (
     record.kappa >= CALIBRATION_TRUST_THRESHOLDS.minKappa &&
     record.pairs >= CALIBRATION_TRUST_THRESHOLDS.minPairs &&
+    (record.abstainRate ?? 0) <= CALIBRATION_TRUST_THRESHOLDS.maxAbstainRate &&
     (
       lowerBound >= CALIBRATION_TRUST_THRESHOLDS.minKappaLowerBound
       || record.pairs >= CALIBRATION_TRUST_THRESHOLDS.pairsWaiver

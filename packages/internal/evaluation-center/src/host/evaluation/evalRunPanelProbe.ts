@@ -64,6 +64,7 @@ export async function inspectEvalRunPanel(): Promise<EvalRunPanelProbe> {
     else if (record.promptHash !== getAiReviewPromptHash(id)) reason = 'prompt_changed';
     else if (judge && (record.endpoint !== judge.baseUrl || record.judgeModel !== judgeIdentity)) reason = 'judge_changed';
     else if (record.pairs < CALIBRATION_TRUST_THRESHOLDS.minPairs) reason = 'not_enough_pairs';
+    else if ((record.abstainRate ?? 0) > CALIBRATION_TRUST_THRESHOLDS.maxAbstainRate) reason = 'abstain_rate';
     else if (!isTrustedCalibration(record)) reason = 'below_threshold';
     return {
       dim: id,

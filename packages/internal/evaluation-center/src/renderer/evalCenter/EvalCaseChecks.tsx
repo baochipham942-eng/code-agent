@@ -31,6 +31,8 @@ export const EvalCaseChecks: React.FC<EvalCaseChecksProps> = ({
     () => new Map(detail.assertionCatalog.map((item) => [item.type, item.summary])),
     [detail.assertionCatalog],
   );
+  // 判官弃权的维交人工：这就是「低置信自动进标注队列」在抽屉里的落点（N-EVAL-JUDGE-ABSTAIN）。
+  const abstainedCount = Object.values(detail.aiReview ?? {}).filter((verdict) => verdict?.verdict === 'abstain').length;
 
   if (excluded) {
     return (
@@ -98,6 +100,11 @@ export const EvalCaseChecks: React.FC<EvalCaseChecksProps> = ({
               </div>
             ))}
           </div>
+          {abstainedCount > 0 && (
+            <p className="mt-2 text-badge-warning" data-testid="eval-case-ai-review-abstain">
+              {fill(labels.abstainHint, { count: abstainedCount })}
+            </p>
+          )}
         </div>
       )}
     </div>

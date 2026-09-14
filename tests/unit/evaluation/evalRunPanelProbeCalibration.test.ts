@@ -7,7 +7,8 @@ import { describe, expect, it, vi } from 'vitest';
 // 「提示词改过 ⇒ 回未校准」，但改内置提示词一个字 6 文件 28/28 仍绿——探针测试全 mock 掉了
 // inspectEvalRunPanel。这里走真探针 + 真登记文件：① 冻结当前 task_completed 提示词 hash 的登记
 // 必须判 calibrated（改提示词就红，逼人重校准并更新这个常量）；② hash 不符必须判 prompt_changed。
-const FROZEN_TASK_COMPLETED_PROMPT_HASH = 'd609345b10709e47137d0f584d84f122a9b6dbc4f4cea94be3d9f6b7a3e40093';
+// 2026-09-14 N-EVAL-JUDGE-ABSTAIN：提示词加「无法确定」弃权项，hash 随之更新——存量校准记录按 prompt_changed 作废是预期行为（工牌有效期）。
+const FROZEN_TASK_COMPLETED_PROMPT_HASH = '664f20245de419837c7254f87fe0eec374c77d5e8144d9f8629a808b825f91d8';
 
 const probeEnv = vi.hoisted(() => ({ repositoryRoot: '' }));
 
@@ -32,7 +33,7 @@ import { inspectEvalRunPanel } from '@internal-evaluation/host/evaluation/evalRu
 import { saveCalibrationRecord, type JudgeCalibrationRecord } from '../../../src/host/testing/calibration/calibrationRegistry';
 import { getAiReviewPromptHash } from '../../../src/host/testing/judge/dimensionJudge';
 
-async function registryWith(promptHash: string): Promise<void> {
+async function registryWith(promptHash: string, overrides: Partial<JudgeCalibrationRecord> = {}): Promise<void> {
   const root = await mkdtemp(path.join(os.tmpdir(), 'eval-probe-calib-'));
   const dir = path.join(root, '.code-agent');
   await mkdir(dir, { recursive: true });
@@ -50,6 +51,7 @@ async function registryWith(promptHash: string): Promise<void> {
     pairs: 50,
     falsePositiveRate: 0.1,
     computedAt: '2026-08-30T00:00:00.000Z',
+    ...overrides,
   };
   await saveCalibrationRecord(dir, record);
   probeEnv.repositoryRoot = root;
@@ -69,6 +71,13 @@ describe('打分器探针 · 提示词 hash 是校准态的真判据', () => {
     const probe = await inspectEvalRunPanel();
     const dim = probe.aiReview.find((item) => item.dim === 'task_completed');
     expect(dim?.calibration).toMatchObject({ state: 'uncalibrated', reason: 'prompt_changed' });
+  });
+
+  it('弃权率超 20% ⇒ 回未校准，理由 abstain_rate（κ 再好也不发工牌）', async () => {
+    await registryWith(FROZEN_TASK_COMPLETED_PROMPT_HASH, { abstainRate: 0.3 });
+    const probe = await inspectEvalRunPanel();
+    const dim = probe.aiReview.find((item) => item.dim === 'task_completed');
+    expect(dim?.calibration).toMatchObject({ state: 'uncalibrated', reason: 'abstain_rate' });
   });
 
   it('T5：不会跑的题数包含根目录与 drafts 下的题', async () => {

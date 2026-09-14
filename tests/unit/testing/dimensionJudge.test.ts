@@ -45,6 +45,25 @@ describe('judgeDimensions', () => {
     expect(failed.task_completed).toMatchObject({ verdict: 'unavailable', reason: 'judge_error' });
   });
 
+  it('末行“无法确定”是合法弃权：落 abstain，不落 unavailable 也不硬判成否', async () => {
+    const abstain = await judgeDimensions(
+      { testCase: testCase(), result: result(), dims: ['task_completed'] },
+      async () => '产物存在但没有验证记录，证据不足\n无法确定',
+    );
+    expect(abstain.task_completed).toMatchObject({ verdict: 'abstain', reasoning: '产物存在但没有验证记录，证据不足' });
+    expect(abstain.task_completed?.reason).toBeUndefined();
+  });
+
+  it('提示词明说可以弃权且弃权会转人工——不许把不确定逼成硬判', async () => {
+    let prompt = '';
+    await judgeDimensions(
+      { testCase: testCase(), result: result(), dims: ['task_completed'] },
+      async (value) => { prompt = value; return '按证据判断\n是'; },
+    );
+    expect(prompt).toContain('“无法确定”');
+    expect(prompt).toContain('不要硬判');
+  });
+
   it('T1：缺逐题期望的三维不调用模型并返回 unavailable/no_expectation', async () => {
     const llmCall = vi.fn(async () => '不会调用\n是');
     const judged = await judgeDimensions(

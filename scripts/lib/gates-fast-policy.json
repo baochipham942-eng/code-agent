@@ -86,6 +86,19 @@
       ]
     },
     {
+      "id": "env-secret-sentinel",
+      "paths": [
+        "src/host/tools/modules/shell/bash.ts",
+        "src/host/tools/modules/shell/evalSafeShellEnv.ts",
+        "src/host/utils/envSecretRefs.ts"
+      ],
+      "files": [
+        "tests/unit/tools/modules/shell/bash.test.ts",
+        "tests/unit/utils/envSecretRefs.test.ts",
+        "tests/unit/utils/envSecretFilter.test.ts"
+      ]
+    },
+    {
       "id": "quality",
       "paths": [
         "scripts/*gate*",

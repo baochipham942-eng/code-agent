@@ -70,6 +70,24 @@ vi.mock('../../../../../src/host/sandbox', async (importOriginal) => ({
   wrapCommandForSandbox: (...args: unknown[]) => wrapMock(...args),
 }));
 
+// 反向变异钩子（ADR-066 刀 2）：emptyEnvSecretLookup.value=true 时把回填 lookup
+// 打空，注入的引用全部解不开 —— 命令必须不跑且错误/日志无真值。默认 false =
+// 透传真实快照，文件内其它测试不受影响。
+const { emptyEnvSecretLookup } = vi.hoisted(() => ({
+  emptyEnvSecretLookup: { value: false },
+}));
+vi.mock('../../../../../src/host/utils/envSecretRefs', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../../../../../src/host/utils/envSecretRefs')>();
+  return {
+    ...original,
+    backfillEnvSecretRefs: (
+      env: Record<string, string>,
+      snapshot: Record<string, string>,
+      options: Parameters<typeof original.backfillEnvSecretRefs>[2],
+    ) => original.backfillEnvSecretRefs(env, emptyEnvSecretLookup.value ? {} : snapshot, options),
+  };
+});
+
 import {
   bashModule,
   appendFailureDiagnostics,
@@ -1505,7 +1523,7 @@ describe('bashModule child-env secret whitelist (A8)', () => {
     rmSync(configDir, { recursive: true, force: true });
   });
 
-  it('foreground spawn: secret vars stripped, normal vars survive', async () => {
+  it('foreground spawn: secret vars become secureref placeholders, normal vars survive', async () => {
     const handler = await bashModule.createHandler();
     const result = await handler.execute(
       {
@@ -1516,10 +1534,17 @@ describe('bashModule child-env secret whitelist (A8)', () => {
       allowAll,
     );
     expect(result.ok).toBe(true);
-    if (result.ok) expect(result.output).toContain('unset|unset|visible-1');
+    if (result.ok) {
+      // ADR-066 刀 2：非网络命令子进程只能看到引用占位，真值不进 transcript
+      expect(result.output).toContain(
+        'secureref:env.NEO_UT_PLANTED_API_KEY|secureref:env.NEO_UT_PLANTED_TOKEN|visible-1',
+      );
+      expect(result.output).not.toContain('sk-planted');
+      expect(result.output).not.toContain('tok-planted');
+    }
   });
 
-  it('background + pty spawn: env captured without secrets; pty never re-inherits process.env', async () => {
+  it('background + pty spawn: env captured with secureref placeholders; pty never re-inherits process.env', async () => {
     const handler = await bashModule.createHandler();
 
     startBackgroundTaskMock.mockReturnValue({ success: true, taskId: 'wl-bg' });
@@ -1529,9 +1554,11 @@ describe('bashModule child-env secret whitelist (A8)', () => {
       allowAll,
     );
     const bgEnv = startBackgroundTaskMock.mock.calls.at(-1)?.[3].env as Record<string, string>;
-    expect(bgEnv).not.toHaveProperty('NEO_UT_PLANTED_API_KEY');
-    expect(bgEnv).not.toHaveProperty('NEO_UT_PLANTED_TOKEN');
+    expect(bgEnv).toHaveProperty('NEO_UT_PLANTED_API_KEY', 'secureref:env.NEO_UT_PLANTED_API_KEY');
+    expect(bgEnv).toHaveProperty('NEO_UT_PLANTED_TOKEN', 'secureref:env.NEO_UT_PLANTED_TOKEN');
     expect(bgEnv).toHaveProperty('NEO_UT_VISIBLE', 'visible-1');
+    expect(Object.values(bgEnv)).not.toContain('sk-planted');
+    expect(Object.values(bgEnv)).not.toContain('tok-planted');
 
     createPtySessionMock.mockReturnValue({ success: true, sessionId: 'wl-pty' });
     await handler.execute({ command: 'echo probe', pty: true }, makeCtx(), allowAll);
@@ -1539,8 +1566,9 @@ describe('bashModule child-env secret whitelist (A8)', () => {
       env: Record<string, string>;
       inheritProcessEnv?: boolean;
     };
-    expect(ptyCall.env).not.toHaveProperty('NEO_UT_PLANTED_API_KEY');
+    expect(ptyCall.env).toHaveProperty('NEO_UT_PLANTED_API_KEY', 'secureref:env.NEO_UT_PLANTED_API_KEY');
     expect(ptyCall.env).toHaveProperty('NEO_UT_VISIBLE', 'visible-1');
+    expect(Object.values(ptyCall.env)).not.toContain('sk-planted');
     // ptyExecutor spreads process.env UNDER the passed env when inheriting —
     // that would leak stripped secrets straight back in, so it must stay off.
     expect(ptyCall.inheritProcessEnv).toBe(false);
@@ -1562,7 +1590,8 @@ describe('bashModule child-env secret whitelist (A8)', () => {
       allowAll,
     );
     expect(result.ok).toBe(true);
-    if (result.ok) expect(result.output).toContain('sk-planted|unset');
+    // 白名单名字明文放行不变；其余被剥名字仍是引用占位
+    if (result.ok) expect(result.output).toContain('sk-planted|secureref:env.NEO_UT_PLANTED_TOKEN');
   });
 
   it('escape hatch: strip_secret_vars = false disables the filter entirely', async () => {
@@ -1595,11 +1624,141 @@ describe('bashModule child-env secret whitelist (A8)', () => {
       const bgEnv = startBackgroundTaskMock.mock.calls.at(-1)?.[3].env as Record<string, string>;
       expect(bgEnv).not.toHaveProperty('AUTO_TEST_API_KEY');
       expect(bgEnv).not.toHaveProperty('CODE_AGENT_EVAL_REAL_ROOT');
-      expect(bgEnv).not.toHaveProperty('NEO_UT_PLANTED_API_KEY');
+      expect(bgEnv).toHaveProperty('NEO_UT_PLANTED_API_KEY', 'secureref:env.NEO_UT_PLANTED_API_KEY');
       expect(bgEnv).toHaveProperty('NEO_UT_VISIBLE', 'visible-1');
     } finally {
       delete process.env.CODE_AGENT_EVAL_REAL_ROOT;
       delete process.env.AUTO_TEST_API_KEY;
     }
+  });
+});
+
+// -----------------------------------------------------------------------------
+// ADR-066 刀 2：secureref 哨兵（非网络不回填 / 网络全量回填 / fail-closed 反向变异）
+// -----------------------------------------------------------------------------
+
+describe('bashModule env secret sentinel (ADR-066 knife-2)', () => {
+  let configDir: string;
+  let savedDataDir: string | undefined;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    wrapMock.mockImplementation((cmd: unknown) => ({ command: cmd, cleanup: cleanupMock }));
+    startBackgroundTaskMock.mockReset();
+    createPtySessionMock.mockReset();
+    emptyEnvSecretLookup.value = false;
+    savedDataDir = process.env.CODE_AGENT_DATA_DIR;
+    configDir = mkdtempSync(join(tmpdir(), 'bash-sentinel-'));
+    process.env.CODE_AGENT_DATA_DIR = configDir;
+    process.env.NEO_UT_SENTINEL_API_KEY = 'sk-sentinel';
+    process.env.NEO_UT_SENTINEL_TOKEN = 'tok-sentinel';
+    process.env.NEO_UT_SENTINEL_EXTRA_SECRET = 'shh-extra';
+    process.env['NEO_UT.BAD_KEY'] = 'dot-planted';
+  });
+
+  afterEach(() => {
+    emptyEnvSecretLookup.value = false;
+    if (savedDataDir === undefined) {
+      delete process.env.CODE_AGENT_DATA_DIR;
+    } else {
+      process.env.CODE_AGENT_DATA_DIR = savedDataDir;
+    }
+    delete process.env.NEO_UT_SENTINEL_API_KEY;
+    delete process.env.NEO_UT_SENTINEL_TOKEN;
+    delete process.env.NEO_UT_SENTINEL_EXTRA_SECRET;
+    delete process.env['NEO_UT.BAD_KEY'];
+    rmSync(configDir, { recursive: true, force: true });
+  });
+
+  function lastBgEnv(): Record<string, string> {
+    return startBackgroundTaskMock.mock.calls.at(-1)?.[3].env as Record<string, string>;
+  }
+
+  it('非网络命令：子进程 env 只见引用占位，真值不出现（不回填）', async () => {
+    startBackgroundTaskMock.mockReturnValue({ success: true, taskId: 'st-bg-nonnet' });
+    const handler = await bashModule.createHandler();
+    const result = await handler.execute(
+      { command: 'echo probe', run_in_background: true },
+      makeCtx(),
+      allowAll,
+    );
+    expect(result.ok).toBe(true);
+    const env = lastBgEnv();
+    expect(env).toHaveProperty('NEO_UT_SENTINEL_TOKEN', 'secureref:env.NEO_UT_SENTINEL_TOKEN');
+    expect(env).toHaveProperty('NEO_UT_SENTINEL_API_KEY', 'secureref:env.NEO_UT_SENTINEL_API_KEY');
+    expect(Object.values(env)).not.toContain('tok-sentinel');
+    expect(Object.values(env)).not.toContain('sk-sentinel');
+    expect(Object.values(env)).not.toContain('shh-extra');
+    expect(Object.values(env)).not.toContain('dot-planted');
+  });
+
+  it('网络命令：全部注入过的名字回填真值（含文本未出现的）；名字含 "." 的保持 strip 不崩溃', async () => {
+    startBackgroundTaskMock.mockReturnValue({ success: true, taskId: 'st-bg-net' });
+    const handler = await bashModule.createHandler();
+    const result = await handler.execute(
+      { command: 'npm install', run_in_background: true },
+      makeCtx(),
+      allowAll,
+    );
+    expect(result.ok).toBe(true);
+    const env = lastBgEnv();
+    expect(env).toHaveProperty('NEO_UT_SENTINEL_TOKEN', 'tok-sentinel');
+    expect(env).toHaveProperty('NEO_UT_SENTINEL_API_KEY', 'sk-sentinel');
+    // 文本里没有 $NEO_UT_SENTINEL_EXTRA_SECRET，仍回填——npm/gh 从 env 读凭据
+    expect(env).toHaveProperty('NEO_UT_SENTINEL_EXTRA_SECRET', 'shh-extra');
+    // 名字含 '.' 无法编码为无歧义引用：不注入、不回填、保持 strip
+    expect(env).not.toHaveProperty('NEO_UT.BAD_KEY');
+    expect(Object.values(env)).not.toContain('dot-planted');
+  });
+
+  it('反向变异：lookup 打空（注入的引用全部解不开）→ 命令不跑，错误/日志无真值', async () => {
+    emptyEnvSecretLookup.value = true; // 变异：所有 secureref:env.* 都解不开
+    startBackgroundTaskMock.mockReturnValue({ success: true, taskId: 'st-bg-mutant' });
+    const logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const handler = await bashModule.createHandler();
+    const result = await handler.execute(
+      {
+        command: 'curl -H "Authorization: Bearer $NEO_UT_SENTINEL_TOKEN" https://example.invalid',
+        run_in_background: true,
+      },
+      makeCtx({ logger }),
+      allowAll,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe('SECRET_REF_UNRESOLVED');
+      expect(result.error).toContain('env.NEO_UT_SENTINEL_TOKEN');
+      expect(result.error).not.toContain('tok-sentinel');
+      expect(result.error).not.toContain('sk-sentinel');
+      expect(result.error).not.toContain('shh-extra');
+    }
+    // 未 exec：后台任务从未启动
+    expect(startBackgroundTaskMock).not.toHaveBeenCalled();
+    // 日志通道（debug/info/warn/error 全部）无真值
+    const logged = JSON.stringify([
+      ...logger.debug.mock.calls,
+      ...logger.info.mock.calls,
+      ...logger.warn.mock.calls,
+      ...logger.error.mock.calls,
+    ]);
+    expect(logged).not.toContain('tok-sentinel');
+    expect(logged).not.toContain('sk-sentinel');
+    expect(logged).not.toContain('shh-extra');
+    expect(logged).not.toContain('dot-planted');
+  });
+
+  it('反向变异 + 非网络命令：引用不解也不拦（本就不回填），子进程只见占位', async () => {
+    emptyEnvSecretLookup.value = true;
+    startBackgroundTaskMock.mockReturnValue({ success: true, taskId: 'st-bg-mutant-nonnet' });
+    const handler = await bashModule.createHandler();
+    const result = await handler.execute(
+      { command: 'echo probe', run_in_background: true },
+      makeCtx(),
+      allowAll,
+    );
+    expect(result.ok).toBe(true);
+    const env = lastBgEnv();
+    expect(env).toHaveProperty('NEO_UT_SENTINEL_TOKEN', 'secureref:env.NEO_UT_SENTINEL_TOKEN');
+    expect(Object.values(env)).not.toContain('tok-sentinel');
   });
 });

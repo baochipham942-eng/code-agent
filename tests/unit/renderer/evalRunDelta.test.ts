@@ -5,6 +5,7 @@ import {
   computeDeltaPp,
   regressionsAgainstBaseline,
 } from '@internal-evaluation/renderer/evalCenter/evalRunDelta';
+import type { EvalBaselineCaseResult } from '../../../src/shared/contract/evaluationBaseline';
 
 describe('历史表相对对比基准变化', () => {
   it('T8：按 caseId 对齐，退步在前，独有题折叠计数', () => {
@@ -53,7 +54,7 @@ describe('零区分度标记：最近 5 轮全过', () => {
   const passed = { status: 'passed', score: 1 };
   const failed = { status: 'failed', score: 0 };
   // 5 轮 newest-first：always 每轮都过；once-failed 第 3 轮挂；absent 第 5 轮没跑
-  const runs = [
+  const runs: Array<Record<string, EvalBaselineCaseResult>> = [
     { always: passed, 'once-failed': passed, absent: passed },
     { always: passed, 'once-failed': passed, absent: passed },
     { always: passed, 'once-failed': failed, absent: passed },

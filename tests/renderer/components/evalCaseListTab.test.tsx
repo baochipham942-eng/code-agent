@@ -114,7 +114,7 @@ describe('EvalCaseListTab', () => {
   });
 
   it('分布矩阵：layer × category 四格里空格标红且带 eval-case-matrix-empty，已归档/草稿不计', async () => {
-    const base = { file: 'x.yaml', relativeDir: '', tags: [], inheritedTags: [], splits: ['held-in'] as const, turns: 1, hasExpect: true, hardened: true, source: 'manual' as const, isDraft: false };
+    const base = { file: 'x.yaml', relativeDir: '', tags: [], inheritedTags: [], splits: ['held-in' as const], turns: 1, hasExpect: true, hardened: true, source: 'manual' as const, isDraft: false };
     const items: EvalCaseListItem[] = [
       { ...base, id: 'a', layer: 'L1', category: 'basic_tool', retired: false },
       { ...base, id: 'b', layer: 'L1', category: 'task_completion', retired: false },

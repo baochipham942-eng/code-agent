@@ -480,6 +480,24 @@ describe('inferenceViaAiSdk —— B1 prefix 请求形状（ADR-068 刀 2）', (
   });
 });
 
+describe('withEndpointPath —— prefix-param 档端点覆盖（ADR-068 刀 2，测试钩子直达）', () => {
+  const withEndpointPath = (inferenceViaAiSdk as { __withEndpointPath?: (b: string, p: string) => string }).__withEndpointPath;
+
+  it('官方端点：替换末尾版本段，host 不变', () => {
+    expect(withEndpointPath!('https://api.deepseek.com/v1', '/beta')).toBe('https://api.deepseek.com/beta');
+  });
+
+  it('自定义 baseURL：保留中转站目录前缀，只换末尾版本段（ai-review：origin+path 会把 /deepseek 路由打丢）', () => {
+    expect(withEndpointPath!('https://proxy.example/deepseek/v1', '/beta')).toBe('https://proxy.example/deepseek/beta');
+  });
+
+  it('末段不是版本段：append 不覆盖自定义路径；非法 baseURL 原样返回', () => {
+    expect(withEndpointPath!('https://proxy.example', '/beta')).toBe('https://proxy.example/beta');
+    expect(withEndpointPath!('https://proxy.example/custom', '/beta')).toBe('https://proxy.example/custom/beta');
+    expect(withEndpointPath!('not-a-url', '/beta')).toBe('not-a-url');
+  });
+});
+
 describe('STREAM_RECONNECT_MAX 常量解析', () => {
   it('默认 2；env 数字覆盖；非数字回落默认（renderer 安全的 typeof 守卫形状）', async () => {
     expect(STREAM_RECONNECT_MAX).toBe(2); // 顶层 import 时无 env

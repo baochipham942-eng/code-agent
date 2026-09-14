@@ -589,11 +589,12 @@ export async function inferenceViaAiSdk(
   }
 }
 
-// 测试专用导出（挂在既有函数对象上，不新增顶层 export）：断点态筛选的单元直测入口，
-// B1 端到端形状（prefix 拼装 / 逐字一致）由 aiSdkAdapterStreamResume 测试经 streamText
-// mock 抓请求参数覆盖。
+// 测试专用导出（挂在既有函数对象上，不新增顶层 export）：断点态筛选与端点路径覆盖的
+// 单元直测入口，B1 端到端形状（prefix 拼装 / 逐字一致）由 aiSdkAdapterStreamResume 测试
+// 经 streamText mock 抓请求参数覆盖。
 Object.assign(inferenceViaAiSdk, {
   __seedAccumulatorFromBreakpoint: seedAccumulatorFromBreakpoint,
+  __withEndpointPath: withEndpointPath,
 });
 
 async function runInferenceViaAiSdk(
@@ -907,12 +908,22 @@ function mergeAttemptUsage(a: StreamUsageTotal | undefined, b: StreamUsageTotal 
 // 续接走 B2 诚实分段（D2 (b)）。刀 2 已落地：开关翻开，prefix 注入接上。
 const STREAM_RESUME_B1_PREFIX_SHAPE_LANDED = true;
 
-// ADR-068 刀 2：prefix-param 档端点覆盖——替换 baseURL 的 path 段（host 不变）。
-// MODEL_API_ENDPOINTS.deepseek 'https://api.deepseek.com/v1' + '/beta' → '.../beta'。
-// 非法 baseURL 保持原样（后续请求层自然报错，不在此吞）。
+// ADR-068 刀 2：prefix-param 档端点覆盖——替换 baseURL 末尾的版本段（…/vN → /beta），
+// host 与自定义 baseURL 的目录前缀不变（中转站路由）：官方 'https://api.deepseek.com/v1'
+// → '…/beta'；中转 'https://proxy.example/deepseek/v1' → '…/deepseek/beta'。末段不是
+// 版本段时 append（不覆盖自定义路径）。非法 baseURL 保持原样（后续请求层自然报错）。
 function withEndpointPath(baseURL: string, endpointPath: string): string {
   try {
-    return `${new URL(baseURL).origin}${endpointPath}`;
+    const u = new URL(baseURL);
+    const segments = u.pathname.replace(/\/+$/, '').split('/').filter(Boolean);
+    const normalizedPath = endpointPath.replace(/^\//, '');
+    if (segments.length > 0 && /^v\d+$/.test(segments[segments.length - 1])) {
+      segments[segments.length - 1] = normalizedPath;
+    } else {
+      segments.push(normalizedPath);
+    }
+    u.pathname = `/${segments.join('/')}`;
+    return u.toString();
   } catch {
     return baseURL;
   }

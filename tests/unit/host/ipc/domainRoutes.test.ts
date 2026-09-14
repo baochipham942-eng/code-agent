@@ -61,16 +61,17 @@ const UnionRequestSchema = z.discriminatedUnion('action', [ListReq, CreateReq]);
 const enumTable = defineDomainRoutes(
   channelSchema({ channel: 'domain:test-enum', payload: EnumRequestSchema }),
   {
-    echo: async (ctx, payload) => ({ message: `${ctx.prefix}:${String(payload ?? '')}` }),
-    ping: async (ctx) => ({ pong: ctx.prefix }),
+    // ctx 显式注解：Ctx 在 handler 签名的逆变位，字面量推断不出具体类型
+    echo: async (ctx: TestCtx, payload) => ({ message: `${ctx.prefix}:${String(payload ?? '')}` }),
+    ping: async (ctx: TestCtx) => ({ pong: ctx.prefix }),
   },
 );
 
 const unionTable = defineDomainRoutes(
   channelSchema({ channel: 'domain:test-union', payload: UnionRequestSchema }),
   {
-    list: async (ctx, payload) => ({ prefix: ctx.prefix, q: payload?.q }),
-    create: async (ctx, payload) => ({ prefix: ctx.prefix, name: payload?.name }),
+    list: async (ctx: TestCtx, payload) => ({ prefix: ctx.prefix, q: payload?.q }),
+    create: async (ctx: TestCtx, payload) => ({ prefix: ctx.prefix, name: payload?.name }),
   },
 );
 

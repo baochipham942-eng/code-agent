@@ -195,6 +195,8 @@ export interface EvalAnnotation {
   supersedesId?: string;
   createdAt: number;
   mine?: boolean;
+  /** 勾了「进金标集」：这条判定可作判官校准真值（annotations.calibration_split = 'gold'）。 */
+  gold?: boolean;
 }
 
 export interface SaveEvalAnnotationRequest {
@@ -204,6 +206,8 @@ export interface SaveEvalAnnotationRequest {
   note?: string;
   dims: Partial<Record<AiReviewDimension, 'yes' | 'no'>>;
   supersedesId?: string;
+  /** true = 进金标集；省略或 false = 普通人工评审。 */
+  gold?: boolean;
 }
 
 export interface SaveEvalAnnotationResult {
@@ -246,6 +250,11 @@ export interface EvalRunStamp {
     judgeCalibrationId: string;
     aiReview: AiReviewDimension[];
     aiReviewCalibration: Partial<Record<AiReviewDimension, string>>;
+    /**
+     * 评审模型与被测模型同一 provider（同源裁判）。同源时自我偏好未隔离，报告头明示。
+     * 可选：旧轮 stamp 没有这一位，读作 undefined = 未知，不当 false 用。
+     */
+    judgeSameSource?: boolean;
   };
   k: number;
   aggregationRuleVersion: number;

@@ -1,7 +1,11 @@
 #!/usr/bin/env npx tsx
 import { createHash } from 'node:crypto';
 import { promises as fs } from 'node:fs';
+import { homedir } from 'node:os';
 import path from 'node:path';
+import Database from 'better-sqlite3';
+import { AnnotationRepository } from '../src/host/services/core/repositories/AnnotationRepository';
+import { resolveHumanGoldLabels } from '../src/host/testing/calibration/humanGold';
 import type { AiReviewDimension } from '../src/shared/contract/evaluation';
 import { CONFIG_DIR_NEW } from '../src/shared/constants/configDir';
 import { quickTask, getQuickModelRuntimeInfo } from '../src/host/model/quickModel';
@@ -25,15 +29,40 @@ interface ReportCase {
   expectationResults?: Array<{ expectation?: { type?: string }; passed?: boolean }>;
 }
 
-function parseArgs(): { reportPath: string; dimension: CalibratableDimension } {
+type GoldSource = 'deterministic_shadow' | 'human_annotation';
+
+function readFlag(args: string[], name: string): string | undefined {
+  const inline = args.find((arg) => arg.startsWith(`${name}=`))?.slice(name.length + 1);
+  if (inline !== undefined) return inline;
+  const index = args.indexOf(name);
+  return index >= 0 ? args[index + 1] : undefined;
+}
+
+function parseArgs(): { reportPath: string; dimension: CalibratableDimension; gold: GoldSource; dataDir: string } {
   const args = process.argv.slice(2);
-  const reportPath = args.find((arg) => !arg.startsWith('--'));
-  const dimension = args.find((arg) => arg.startsWith('--dimension='))?.split('=')[1]
-    ?? (args.includes('--dimension') ? args[args.indexOf('--dimension') + 1] : undefined);
-  if (!reportPath || (dimension !== 'task_completed' && dimension !== 'confirmed_before_acting')) {
-    throw new Error('用法: npx tsx scripts/judge-calibration.ts <report.json> --dimension task_completed|confirmed_before_acting');
+  const flags = ['--dimension', '--gold', '--data-dir'];
+  const reportPath = args.find((arg, index) => !arg.startsWith('--') && !flags.includes(args[index - 1] ?? ''));
+  const dimension = readFlag(args, '--dimension');
+  const gold = readFlag(args, '--gold') ?? 'deterministic_shadow';
+  const dataDir = readFlag(args, '--data-dir') ?? process.env.CODE_AGENT_DATA_DIR?.trim() ?? path.join(homedir(), '.code-agent');
+  if (!reportPath || (dimension !== 'task_completed' && dimension !== 'confirmed_before_acting')
+    || (gold !== 'deterministic_shadow' && gold !== 'human_annotation')) {
+    throw new Error('用法: npx tsx scripts/judge-calibration.ts <report.json> --dimension task_completed|confirmed_before_acting [--gold deterministic_shadow|human_annotation] [--data-dir <dir>]');
   }
-  return { reportPath, dimension };
+  return { reportPath, dimension, gold, dataDir: path.resolve(dataDir) };
+}
+
+/**
+ * 人标金标：从 app 库读这轮实验里勾了「进金标集」的人工评审（report.runId = experiments.id）。
+ * 只读打开；每个 reviewer 取最新一条；多人分歧的题不进金标（课程口径：有争议的题不配进金标集）。
+ */
+function loadHumanGold(dataDir: string, runId: string, dimension: CalibratableDimension) {
+  const db = new Database(path.join(dataDir, 'code-agent.db'), { readonly: true, fileMustExist: true });
+  try {
+    return resolveHumanGoldLabels(new AnnotationRepository(db).listGoldForExperiment(runId), dimension);
+  } finally {
+    db.close();
+  }
 }
 
 function groundTruth(testCase: ReportCase, dimension: CalibratableDimension): CalibrationLabel | null {
@@ -81,17 +110,25 @@ function datasetFingerprint(caseIds: string[]): string {
 }
 
 async function main(): Promise<void> {
-  const { reportPath, dimension } = parseArgs();
+  const { reportPath, dimension, gold, dataDir } = parseArgs();
   const runtime = getQuickModelRuntimeInfo();
   if (!runtime) throw new Error('当前没有可用的 quick 模型配置');
   const judgeModel = `${runtime.provider}/${runtime.model}`;
-  const report = JSON.parse(await fs.readFile(reportPath, 'utf8')) as { results?: ReportCase[]; cases?: ReportCase[] };
+  const report = JSON.parse(await fs.readFile(reportPath, 'utf8')) as { runId?: string; results?: ReportCase[]; cases?: ReportCase[] };
   const cases = report.results ?? report.cases ?? [];
   const pairs: CalibrationPair[] = [];
   let abstained = 0;
 
+  let humanGold: ReturnType<typeof resolveHumanGoldLabels> | null = null;
+  if (gold === 'human_annotation') {
+    if (!report.runId) throw new Error('报告没有 runId，找不到对应实验的人工评审');
+    humanGold = loadHumanGold(dataDir, report.runId, dimension);
+    console.log(`人标金标：${humanGold.labels.size} 题可用，${humanGold.contested.length} 题多人分歧跳过，${humanGold.unlabeled.length} 题没标本维`);
+    if (humanGold.contested.length) console.log(`  分歧题：${humanGold.contested.join('、')}`);
+  }
+
   for (const reportCase of cases) {
-    const truth = groundTruth(reportCase, dimension);
+    const truth = humanGold ? humanGold.labels.get(reportCase.testId) ?? null : groundTruth(reportCase, dimension);
     if (!truth) continue;
     const input = asJudgeInput(reportCase);
     const verdicts = await judgeDimensions(
@@ -129,7 +166,7 @@ async function main(): Promise<void> {
     endpoint: runtime.baseUrl,
     judgeModel,
     datasetFingerprint: datasetFingerprint(pairs.map((pair) => pair.caseId)),
-    goldSource: 'deterministic_shadow' as const,
+    goldSource: gold,
     kappa: calibration.cohensKappa,
     agreementRate: calibration.agreementRate,
     pairs: calibration.total,
@@ -142,12 +179,13 @@ async function main(): Promise<void> {
   await saveCalibrationRecord(path.join(process.cwd(), CONFIG_DIR_NEW), record);
 
   console.log(`配对样本: ${calibration.total}`);
-  console.log(`弃权: ${abstained}/${judged}（弃权率 ${(abstainRate * 100).toFixed(1)}%，上限 ${CALIBRATION_TRUST_THRESHOLDS.maxAbstainRate * 100}%）`);
+  console.log(`金标来源: ${gold}`);
+  console.log(`弃权: ${abstained}/${judged}（弃权率 ${(abstainRate * 100).toFixed(1)}%，上限 ${(CALIBRATION_TRUST_THRESHOLDS.maxAbstainRate * 100).toFixed(0)}%）`);
   console.log(`Cohen Kappa: ${calibration.cohensKappa.toFixed(3)}`);
   console.log(`κ 95% CI 下界: ${calibration.kappaLowerBound95.toFixed(3)}`);
   console.log(isTrustedCalibration(record)
     ? '校准达标'
-    : `校准未达标（κ≥${CALIBRATION_TRUST_THRESHOLDS.minKappa} 且 CI 下界≥${CALIBRATION_TRUST_THRESHOLDS.minKappaLowerBound}，或 n≥${CALIBRATION_TRUST_THRESHOLDS.pairsWaiver}；弃权率≤${CALIBRATION_TRUST_THRESHOLDS.maxAbstainRate * 100}%）`);
+    : `校准未达标（κ≥${CALIBRATION_TRUST_THRESHOLDS.minKappa} 且 CI 下界≥${CALIBRATION_TRUST_THRESHOLDS.minKappaLowerBound}，或 n≥${CALIBRATION_TRUST_THRESHOLDS.pairsWaiver}；弃权率≤${(CALIBRATION_TRUST_THRESHOLDS.maxAbstainRate * 100).toFixed(0)}%）`);
   console.log(`报告已存: ${outputPath}`);
 }
 

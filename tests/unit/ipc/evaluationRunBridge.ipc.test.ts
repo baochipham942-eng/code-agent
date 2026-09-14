@@ -338,6 +338,23 @@ describe('evaluation run IPC admin gate', () => {
     }));
   });
 
+  it('进金标集：gold=true 落 calibration_split=gold 且回读带 gold；gold 不是布尔整条拒绝', async () => {
+    guard.denied = false;
+    const { handlers } = setup();
+    const save = handlers.get(EVALUATION_CHANNELS.SAVE_ANNOTATION)!;
+    database.loadExperimentCase.mockReturnValue({ case_id: 'case-1' });
+    database.listAnnotationsForCase.mockReturnValue([]);
+    const result = await save(null, {
+      experimentId: 'run-1', caseId: 'case-1', dims: { task_completed: 'no' }, gold: true,
+    }) as { annotation: { gold?: boolean } };
+    expect(result.annotation.gold).toBe(true);
+    expect(database.insertAnnotation).toHaveBeenCalledWith(expect.objectContaining({ calibration_split: 'gold' }));
+
+    await expect(save(null, {
+      experimentId: 'run-1', caseId: 'case-1', dims: {}, gold: 'yes',
+    })).rejects.toThrow(/gold must be a boolean/);
+  });
+
   it('T3：五维唯一来源全部可写，未知维、未知值与超长笔记整条拒绝', async () => {
     guard.denied = false;
     const { handlers } = setup();

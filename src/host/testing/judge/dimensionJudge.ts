@@ -26,6 +26,11 @@ export function getAiReviewPromptHash(dimension: AiReviewDimension): string {
   return sha256(DEFAULT_AI_REVIEW_PROMPTS[dimension]);
 }
 
+/** 判官提示词原文。docs/eval/annotation-guideline.md §2 必须与之逐字一致（测试 annotationGuidelineSync 把关）。 */
+export function getAiReviewPrompt(dimension: AiReviewDimension): string {
+  return DEFAULT_AI_REVIEW_PROMPTS[dimension];
+}
+
 function delimit(value: unknown, closingTag: string): string {
   return JSON.stringify(value, null, 2).replaceAll(`</${closingTag}>`, `<\\/${closingTag}>`);
 }

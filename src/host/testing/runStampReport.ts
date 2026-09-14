@@ -38,7 +38,10 @@ function formatScorers(stamp: EvalRunStamp): string {
   const legacyJudge = stamp.scorers.judge === 'llm'
     ? `；对比实验评审（${stamp.scorers.judgeModel}）`
     : '';
-  return `确定性断言${aiReview.length ? `；AI 评审：${aiReview.join('、')}` : ''}${legacyJudge}`;
+  const sameSource = stamp.scorers.judgeSameSource
+    ? '；⚠ 同源裁判：评审模型与被测模型同一 provider，自我偏好未隔离'
+    : '';
+  return `确定性断言${aiReview.length ? `；AI 评审：${aiReview.join('、')}` : ''}${legacyJudge}${sameSource}`;
 }
 
 /** 只列偏离生产默认的旋钮；全默认返回 null（不占行）。 */

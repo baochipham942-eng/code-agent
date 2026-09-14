@@ -761,7 +761,7 @@ const BREAKDOWN_DIMENSIONS: Array<{ label: string; keysOf: (result: TestResult) 
 ];
 
 /** 按 category / difficulty / layer / tag 各一张表；一题多 tag 会进多行，tag 表分母之和不等于总分母。 */
-export function generateBreakdownSection(summary: TestRunSummary): string[] {
+function generateBreakdownSection(summary: TestRunSummary): string[] {
   const denominator = summary.results.filter(isBreakdownDenominator);
   const lines: string[] = [];
   for (const dimension of BREAKDOWN_DIMENSIONS) {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { generateBreakdownSection, generateMarkdownReport } from '../../../src/host/testing/reportGenerator';
+import { generateMarkdownReport } from '../../../src/host/testing/reportGenerator';
 import { completePlannedResults } from '../../../src/host/testing/testRunCompletion';
 import type { TestCase, TestResult, TestRunSummary } from '../../../src/host/testing/types';
 import { UNKNOWN_EVAL_RUN_STAMP } from '../../../src/shared/contract/evaluation';
@@ -56,9 +56,14 @@ const RESULTS: TestResult[] = [
   makeResult({ testId: 'infra-1', status: 'infra_excluded', score: 0, caseMeta: { tags: ['report'], category: 'task_completion', difficulty: 'hard', layer: 'L2' } }),
 ];
 
+// 分层段不单独导出（knip production 棘轮）：走整份 Markdown 报告按行断言
+function reportLines(summary: TestRunSummary): string[] {
+  return generateMarkdownReport(summary).split('\n');
+}
+
 describe('报告分层通过率', () => {
   it('两类 category 各 2 题一挂：表里两行数字精确，分母不含 infra_excluded', () => {
-    const lines = generateBreakdownSection(makeSummary(RESULTS));
+    const lines = reportLines(makeSummary(RESULTS));
     expect(lines).toContain('| basic_tool | 2 | 2 | 100.0% |');
     expect(lines).toContain('| task_completion | 2 | 1 | 50.0% |');
     expect(lines).toContain('| easy | 2 | 2 | 100.0% |');
@@ -71,12 +76,12 @@ describe('报告分层通过率', () => {
   });
 
   it('分母外行与通过率并列出现，含 infra_excluded 1', () => {
-    const lines = generateBreakdownSection(makeSummary(RESULTS, { retiredSkipped: ['old-1', 'old-2'], notRun: 3, invalidCases: 1, costExceeded: 0 }));
+    const lines = reportLines(makeSummary(RESULTS, { retiredSkipped: ['old-1', 'old-2'], notRun: 3, invalidCases: 1, costExceeded: 0 }));
     expect(lines).toContain('> 分母外：infra_excluded 1 · cost_exceeded 0 · retired 2 · not_run 3 · invalid 1');
   });
 
   it('没有 caseMeta 的题归「未标注」；self_check 题不进分母', () => {
-    const lines = generateBreakdownSection(makeSummary([
+    const lines = reportLines(makeSummary([
       makeResult({ testId: 'legacy' }),
       makeResult({ testId: 'self', scoreAuthority: 'self_check', caseMeta: { tags: ['x'], category: 'edge_case' } }),
     ]));

@@ -472,7 +472,8 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
         <button onClick={() => void companion.refreshLibrary()}>{text.retry}</button>
       </> : currentPage === 'preview' && companion.preview ? <div className="preview-pane">
         <p className="caption">{text.previewHint}</p>
-        <PreviewMedia name={companion.preview.name} mimeType={companion.preview.mimeType} bytes={companion.preview.bytes} />
+        <PreviewMedia name={companion.preview.name} mimeType={companion.preview.mimeType} bytes={companion.preview.bytes} text={text}
+          onSave={companion.savedPreview ? undefined : () => void companion.savePreview()} />
         {/* 保存失败必须报在预览面板里——composer 区的提示被模态弹层遮住且 inert，用户看不到。 */}
         {!companion.savedPreview && companion.commandError && <p role="status" className="notice">{commandNotice}</p>}
         {companion.savedPreview ? <p role="status">{companion.savedPreviewName && companion.savedPreviewName !== companion.preview.name ? `${text.savedToDevice}：${companion.savedPreviewName}` : text.savedToDevice}</p>

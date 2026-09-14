@@ -8,6 +8,13 @@ import { validateLanEndpoint } from '../../../../src/shared/companion/lanProtoco
 const STATE_KEY = 'neo.companion.state.v1';
 const INSTALL_KEY = 'neo.companion.install.v1';
 let initialization: Promise<void> | null = null;
+/**
+ * Pairing identity stays in Keychain (`whenUnlockedThisDeviceOnly`).
+ * Debug-iphonesimulator with Sign to Run Locally has no TeamIdentifier, so
+ * SecItemAdd fails and the UI stays on storageError. Ad Hoc / Development
+ * Team signed builds (ios:build / ios:verify require TeamIdentifier) write
+ * successfully; that is the real-device path. Do not fall back to Preferences.
+ */
 const initialize = () => initialization ??= (async () => {
   await SecureStorage.setSynchronize(false);
   await SecureStorage.setDefaultKeychainAccess(KeychainAccess.whenUnlockedThisDeviceOnly);

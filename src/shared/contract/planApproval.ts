@@ -2,8 +2,19 @@ import type { SessionTask } from './planning';
 
 export const PLAN_APPROVAL_CONFIRMATION_TYPE = 'plan_approval';
 
-type PlanApprovalStatus = 'pending' | 'approved' | 'cancelled' | 'revision_requested';
+type PlanApprovalStatus =
+  | 'pending'
+  | 'starting' // 已认领（决定已落库、启动轮次已派发），启动确认前不可再次决定
+  | 'approved'
+  | 'failed' // 启动轮次失败：卡片须带原因重现，pending/failed 都允许再次决定
+  | 'cancelled'
+  | 'revision_requested';
 type PlanApprovalDecision = 'approve' | 'cancel' | 'revise';
+
+/** A card in these states accepts a new decision (first attempt or retry after failure). */
+export function isRetryablePlanApprovalStatus(status: PlanApprovalRecord['status']): boolean {
+  return status === 'pending' || status === 'failed';
+}
 
 export interface PlanApprovalStep {
   id: string;
@@ -20,6 +31,10 @@ export interface PlanApprovalRecord {
   reordered?: boolean;
   decidedAt?: number;
   feedback?: string;
+  /** 启动轮次失败的原因，仅 status === 'failed' 时出现。重试认领（starting）不清除。 */
+  failureReason?: string;
+  /** 最近一次启动失败的落定时刻。重试再败必换新值，是卡片投影 digest 的稳定判据。 */
+  failedAt?: number;
 }
 
 export interface PlanApprovalRequest {

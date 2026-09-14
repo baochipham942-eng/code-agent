@@ -27,7 +27,7 @@ interface DeviceSession {
 }
 
 /** commandId must survive the relay hop; do not mint a new id here. */
-function submitRelayedCommand(gateway: CompanionGateway, command: CompanionCommand): CompanionSubmitResult {
+function submitRelayedCommand(gateway: CompanionGateway, command: CompanionCommand): Promise<CompanionSubmitResult> {
   return gateway.submit(command);
 }
 
@@ -278,33 +278,44 @@ export class CompanionRelayClient {
 
   private handleForward(frame: CompanionRelayFrame): void {
     if (frame.kind !== 'forward') return;
-    const session = this.sessions.get(frame.envelope.deviceRef);
-    const route = this.routes.get(frame.envelope.deviceRef);
+    // 异步 submit（决定类命令要认领/落库后才能定论）后错误不再顺 onMessage 的
+    // try/catch 抛出，这里自己接住并按原语义 forget，保证回执通道不悬空。
+    void this.handleForwardAsync(frame);
+  }
+
+  private async handleForwardAsync(frame: CompanionRelayFrame): Promise<void> {
+    const deviceRef = frame.envelope.deviceRef;
+    const session = this.sessions.get(deviceRef);
+    const route = this.routes.get(deviceRef);
     if (!session || !route) return;
     const device = this.deps.gateway.identityDevice(session.publicKey);
-    if (!device) { this.revoke(frame.envelope.deviceRef); return; }
-    const request = session.cipher.open(JSON.parse(frame.ciphertext) as unknown) as {
-      requestId?: unknown; action?: unknown; command?: unknown; commandId?: unknown; epoch?: unknown; afterSeq?: unknown;
-    };
-    if (!request || typeof request.requestId !== 'string' || request.requestId.length > L.idLength) throw new Error('COMPANION_INVALID_REQUEST');
-    let result: unknown;
-    if (request.action === 'command') {
-      const command = companionCommandSchema.parse(request.command);
-      if (command.deviceId !== device.deviceId) throw new Error('COMPANION_IDENTITY_MISMATCH');
-      result = submitRelayedCommand(this.deps.gateway, command);
-    } else if (request.action === 'status' && typeof request.commandId === 'string' && request.commandId.length <= L.idLength) {
-      result = this.deps.gateway.commandStatus(device.deviceId, request.commandId);
-    } else if (request.action === 'sync') {
-      if (!Number.isSafeInteger(request.epoch) || Number(request.epoch) < 1 || !Number.isSafeInteger(request.afterSeq) || Number(request.afterSeq) < 0) {
-        throw new Error('COMPANION_INVALID_CURSOR');
-      }
-      result = this.deps.gateway.syncForDevice(device.deviceId, Number(request.epoch), Number(request.afterSeq));
-    } else throw new Error('COMPANION_UNSUPPORTED_ACTION');
-    this.push({
-      v: 1, kind: 'forward',
-      envelope: this.peerEnvelope(route, frame.envelope.idempotencyKey),
-      ciphertext: JSON.stringify(session.cipher.seal({ requestId: request.requestId, result })),
-    });
+    if (!device) { this.revoke(deviceRef); return; }
+    try {
+      const request = session.cipher.open(JSON.parse(frame.ciphertext) as unknown) as {
+        requestId?: unknown; action?: unknown; command?: unknown; commandId?: unknown; epoch?: unknown; afterSeq?: unknown;
+      };
+      if (!request || typeof request.requestId !== 'string' || request.requestId.length > L.idLength) throw new Error('COMPANION_INVALID_REQUEST');
+      let result: unknown;
+      if (request.action === 'command') {
+        const command = companionCommandSchema.parse(request.command);
+        if (command.deviceId !== device.deviceId) throw new Error('COMPANION_IDENTITY_MISMATCH');
+        result = await submitRelayedCommand(this.deps.gateway, command);
+      } else if (request.action === 'status' && typeof request.commandId === 'string' && request.commandId.length <= L.idLength) {
+        result = this.deps.gateway.commandStatus(device.deviceId, request.commandId);
+      } else if (request.action === 'sync') {
+        if (!Number.isSafeInteger(request.epoch) || Number(request.epoch) < 1 || !Number.isSafeInteger(request.afterSeq) || Number(request.afterSeq) < 0) {
+          throw new Error('COMPANION_INVALID_CURSOR');
+        }
+        result = this.deps.gateway.syncForDevice(device.deviceId, Number(request.epoch), Number(request.afterSeq));
+      } else throw new Error('COMPANION_UNSUPPORTED_ACTION');
+      this.push({
+        v: 1, kind: 'forward',
+        envelope: this.peerEnvelope(route, frame.envelope.idempotencyKey),
+        ciphertext: JSON.stringify(session.cipher.seal({ requestId: request.requestId, result })),
+      });
+    } catch {
+      this.forget(deviceRef);
+    }
   }
 }
 

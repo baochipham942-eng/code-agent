@@ -48,6 +48,7 @@ export class AgentRunController {
   private runSettled = false;
   private clientDisconnected = false;
   private runHadTerminalError = false;
+  private terminalFailure: unknown = null;
   private terminalCompletionEmitted = false;
   private readonly messageAccumulator = new MessageDeltaAccumulator();
   private readonly agentSSEBatcher;
@@ -78,6 +79,10 @@ export class AgentRunController {
 
   get hadTerminalError(): boolean {
     return this.runHadTerminalError;
+  }
+
+  get lastTerminalFailure(): unknown {
+    return this.terminalFailure;
   }
 
   canWriteSSE(): boolean {
@@ -134,6 +139,10 @@ export class AgentRunController {
   emitAgentEvent(event: AgentEvent): boolean {
     if (isTerminalErrorEvent(event)) {
       this.runHadTerminalError = true;
+      const payload = event.data && typeof event.data === 'object'
+        ? event.data as { failure?: unknown }
+        : {};
+      if (payload.failure) this.terminalFailure = payload.failure;
     }
     if (event.type === 'agent_complete' || event.type === 'agent_cancelled') {
       if (this.terminalCompletionEmitted) {

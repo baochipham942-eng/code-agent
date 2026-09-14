@@ -58,7 +58,6 @@ import {
 } from './orchestratorDagSync';
 import { seedGoalContractForRun } from './orchestratorGoalSeed';
 import { resolveRoleToolBoundary, toRoleBoundaryRunAllowlist } from '../services/roleAssets/rolePersonalization';
-
 // Sub-modules
 import { type AgentOrchestratorConfig } from './orchestrator/types';
 import {
@@ -73,6 +72,8 @@ import { createRunContext, type RunHandle } from '../runtime/runContext';
 import { selectBackgroundWorkspaceScope } from '../runtime/workspaceAuthority';
 import type { RunRegistry } from '../runtime/runRegistry';
 import { getProjectService } from '../services/project/projectService';
+import { getProjectSourceTrustFailureMarker } from '../services/project/projectSourceTrustError';
+import { getModelAuthFailureMarker } from '../model/errorClassifier';
 import { resolveWorkspacePath } from '../runtime/workspaceScope';
 import { resolveSessionWorkspaceScope } from '../services/sessionFork/workspace';
 import { getAuthService } from '../services/auth/authService';
@@ -724,8 +725,8 @@ export class AgentOrchestrator {
       }
     } catch (error) {
       logger.error('========== Normal mode EXCEPTION ==========');
-      logger.error('Error:', error);
-      logger.error('Stack:', error instanceof Error ? error.stack : 'no stack');
+      logger.error('Error:', error, error instanceof Error ? error.stack : 'no stack');
+      const failureMarker = getProjectSourceTrustFailureMarker(error) ?? getModelAuthFailureMarker(error);
       onEvent({
         type: 'error',
         data: {
@@ -737,6 +738,7 @@ export class AgentOrchestrator {
             provider: modelConfig.provider,
             model: modelConfig.model,
           },
+          ...(failureMarker ? { failure: failureMarker } : {}),
         },
       });
       terminalError = error;

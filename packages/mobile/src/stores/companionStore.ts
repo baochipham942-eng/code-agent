@@ -126,6 +126,14 @@ export function needsLibraryPick(state: Pick<State, 'status' | 'sessionId'>): bo
   return state.status === 'connected' && !state.sessionId;
 }
 
+/** Default project + default model for one-tap session create. Null when the library cannot start one. */
+export function defaultCompanionSessionCreate(library: CompanionLibrary | null): { projectId: string; provider: string; model: string } | null {
+  const project = library?.projects.find(item => item.canCreate);
+  const model = library?.models.find(item => item.isDefault) ?? library?.models[0];
+  if (!project || !model) return null;
+  return { projectId: project.id, provider: model.provider, model: model.model };
+}
+
 /** Receipt identity: a status/result from a different command must not settle this one. */
 export function companionAckMatches(
   pending: Pick<CompanionCommand, 'commandId' | 'deviceId' | 'sessionId' | 'action'>,
@@ -583,7 +591,10 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
             if ((event.kind === 'run_started' || (event.kind === 'message' && event.payload.role === 'user')) && typeof event.payload.runId === 'string') set({ runId: event.payload.runId, terminal: null });
             if (event.kind === 'agent_complete') set({ runId: null, terminal: 'complete' });
             if (event.kind === 'agent_cancelled') set({ runId: null, terminal: 'stopped' });
-            if (event.kind === 'error') set({ runId: null, terminal: 'failed' });
+            if (event.kind === 'error') {
+              const code = typeof event.payload.code === 'string' ? event.payload.code : 'RUN_FAILED';
+              set({ runId: null, terminal: 'failed', commandError: code, commandErrorAction: null });
+            }
             if (event.kind === 'artifact' && typeof event.payload.artifactId === 'string' && typeof event.payload.name === 'string') {
               const artifact: CompanionArtifact = {
                 artifactId: event.payload.artifactId, version: Number(event.payload.version ?? 1),
@@ -613,6 +624,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
       upload: (file, existingId) => safely(async () => {
         const id = existingId ?? crypto.randomUUID();
         const totalBytes = file.bytes.byteLength;
+        const visibleSince = Date.now();
         if (!existingId) {
           heldAttachments.set(id, file);
           set({ uploadProgress: [...get().uploadProgress, { id, name: file.name, totalBytes, sentBytes: 0, phase: 'preparing' }] });
@@ -665,6 +677,8 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
             set({ artifacts: [...get().artifacts.filter(item => item.artifactId !== artifact.artifactId), artifact] });
           }
           heldAttachments.delete(id);
+          const hold = COMPANION_LIMITS.attachChipMinVisibleMs - (Date.now() - visibleSince);
+          if (hold > 0) await new Promise(resolve => setTimeout(resolve, hold));
           patchUpload(id, { phase: 'complete', sentBytes: totalBytes, error: undefined, retryable: false });
         } catch (error) {
           if (transferId && saved?.binding && client) {

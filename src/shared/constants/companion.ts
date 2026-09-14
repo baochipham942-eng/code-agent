@@ -71,6 +71,8 @@ export const COMPANION_LIMITS = {
   /** Pending commands older than this cannot reasonably still be resolving. */
   reconcilingRecoveryMs: 300_000,
   fileMaxBytes: FILE.MAX_SIZE,
+  /** Tiny uploads finish in one poll; keep preparing/transferring visible at least this long. */
+  attachChipMinVisibleMs: 400,
   /** Raw chunk size so base64 + JSON stay inside one Noise payload (≤48 KiB). */
   fileChunkBytes: FILE_CHUNK_BYTES,
   fileChunkBase64Limit: Math.ceil(FILE_CHUNK_BYTES / 3) * 4,

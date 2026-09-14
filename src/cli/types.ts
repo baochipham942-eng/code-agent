@@ -94,6 +94,8 @@ export interface CLIConfig {
    *   - 界面会话不传（= 真人手动，落 NULL）——与 SessionConfig.originKind 的口径一致。
    */
   originKind?: SessionOriginKind;
+  /** Current run writes model history but not the visible chat transcript. */
+  historyVisibility?: 'visible' | 'meta';
 }
 
 /**

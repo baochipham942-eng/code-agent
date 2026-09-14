@@ -6,6 +6,7 @@ import type { ModelConfig } from './model';
 import type { ToolCall } from './tool';
 import type { PermissionRequest } from './permission';
 import type { SessionTask, TodoItem } from './planning';
+import type { PlanApprovalRecord } from './planApproval';
 import type {
   AgentEventEnvelopeSchema,
   AgentEventSchema,
@@ -112,6 +113,14 @@ export interface TaskUpdateEventData {
   taskId?: string;
   taskIds?: string[];
   source?: string;
+}
+
+/** 计划审批异步落定（starting → approved/revision_requested/failed）后推给客户端，卡片据此收敛。 */
+export interface PlanApprovalUpdateEventData {
+  sessionId: string;
+  messageId: string;
+  toolCallId: string;
+  approval: PlanApprovalRecord;
 }
 
 // Web Bridge 本地工具调用请求数据

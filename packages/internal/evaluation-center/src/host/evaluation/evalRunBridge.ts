@@ -111,7 +111,7 @@ function validateRequest(value: unknown): EvalRunRequest {
     return candidate.map((item) => item.trim());
   };
   const split = value.split;
-  if (split !== undefined && !['held-in', 'held-out', 'control', 'safety'].includes(String(split))) {
+  if (split !== undefined && !['held-in', 'held-out', 'control', 'safety', 'core'].includes(String(split))) {
     throw new Error('split 值不受支持。');
   }
   const timeoutMs = value.timeoutMs;

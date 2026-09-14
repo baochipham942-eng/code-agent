@@ -67,6 +67,7 @@ function splitLabel(split: string, labels: EvalRunPanelLabels): string {
   if (split === 'held-in') return labels.dailySet;
   if (split === 'held-out') return labels.heldOutSet;
   if (split === 'safety') return labels.safetySet;
+  if (split === 'core') return labels.coreSet;
   return split === 'all' ? labels.allSet : split;
 }
 

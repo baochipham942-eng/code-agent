@@ -6,6 +6,7 @@ const SPLIT_LABELS: Record<EvalRunStamp['evalSet']['split'], string> = {
   'held-out': '留出集',
   control: '校准集',
   safety: '安全集',
+  core: '核心集',
   all: '全部',
 };
 

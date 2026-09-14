@@ -134,8 +134,9 @@ export function rollbackDurableRunMigrationDraft(db: BetterSqlite3.Database): vo
  *
  * 子表（attempts/events/...）带 ON DELETE CASCADE 外键指向 durable_runs，DROP 母表
  * 时若 foreign_keys 还开着会把子表行级联清掉，所以重建全程在 foreign_keys=OFF 下做
- * （pragma 在事务外切换才生效），结束后恢复。索引随 DROP TABLE 一起消失，由上面
- * exec 里的 CREATE INDEX IF NOT EXISTS 重建。
+ * （pragma 在事务外切换才生效），结束后恢复为进入时的原值（ai-review nit 2026-09-14，
+ * 同 PR#1804：调用方连接可能本来就关着外键，无条件写 ON 会改掉调用方状态）。索引随
+ * DROP TABLE 一起消失，由上面 exec 里的 CREATE INDEX IF NOT EXISTS 重建。
  */
 function widenDurableRunsEngineKindCheck(db: BetterSqlite3.Database): void {
   const row = db.prepare(`
@@ -150,6 +151,7 @@ function widenDurableRunsEngineKindCheck(db: BetterSqlite3.Database): void {
   if (existing.includes('subagent_single')) return;
 
   const widened = [...existing, 'subagent_single'];
+  const foreignKeysBefore = db.pragma('foreign_keys', { simple: true }) as number;
   db.pragma('foreign_keys = OFF');
   try {
     db.transaction(() => {
@@ -170,7 +172,7 @@ function widenDurableRunsEngineKindCheck(db: BetterSqlite3.Database): void {
       `);
     })();
   } finally {
-    db.pragma('foreign_keys = ON');
+    db.pragma(`foreign_keys = ${foreignKeysBefore ? 'ON' : 'OFF'}`);
   }
 }
 

@@ -282,6 +282,25 @@ describe('Durable Run migration draft', () => {
     db.close();
   });
 
+  it('restores the caller foreign_keys state after widening (ai-review nit, same as PR#1804)', () => {
+    const cases: Array<{ before: string; expected: number }> = [
+      { before: 'OFF', expected: 0 },
+      { before: 'ON', expected: 1 },
+    ];
+    for (const { before, expected } of cases) {
+      const db = new Database(':memory:');
+      db.pragma(`foreign_keys = ${before}`);
+      createLegacyDurableRuns(db, "'native'");
+
+      applyDurableRunMigrationDraft(db);
+
+      expect(db.pragma('foreign_keys', { simple: true })).toBe(expected);
+      const sql = (db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'durable_runs'").get() as { sql: string }).sql;
+      expect(sql).toContain("'subagent_single'");
+      db.close();
+    }
+  });
+
   it('copies only the column intersection when the existing table predates a nullable column', () => {
     const db = new Database(':memory:');
     db.pragma('foreign_keys = ON');

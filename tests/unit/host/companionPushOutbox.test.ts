@@ -177,6 +177,26 @@ describe('CompanionPushOutbox', () => {
     expect(unwrapPushToken(wrapped, wrapKey)).toBe('device-token-aaaaaaaa');
   });
 
+  it('does not delete a registration that rotated while a dead-token send was in flight', async () => {
+    const box: { push?: CompanionPushOutbox } = {};
+    const sending = new CompanionPushOutbox(db, gateway, {
+      now: () => now,
+      wrapKey,
+      apnsKeyPath: '/tmp/not-a-real-key.p8',
+      send: async () => {
+        box.push?.register('phone-1', { provider: 'apns', token: 'device-token-bbbbbbbb', environment: 'production' }, 2_000);
+        return { accepted: false, code: 'NOT_REGISTERED' };
+      },
+    });
+    box.push = sending;
+    sending.register('phone-1', { provider: 'apns', token: 'device-token-aaaaaaaa', environment: 'production' });
+    gateway.publish('session-1', 'agent_complete', {});
+    await sending.flush();
+    expect(sending.rowsFor('phone-1')[0].state).toBe('failed');
+    const row = db.prepare('SELECT token_wrap FROM companion_push_registrations WHERE device_id = ?').get('phone-1') as { token_wrap: string };
+    expect(unwrapPushToken(row.token_wrap, wrapKey)).toBe('device-token-bbbbbbbb');
+  });
+
   it('does not retry a dead APNs token after NOT_REGISTERED', async () => {
     const sending = new CompanionPushOutbox(db, gateway, {
       now: () => now,

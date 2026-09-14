@@ -180,7 +180,8 @@ export class CompanionPushOutbox {
     }
     if (result.code === 'NOT_REGISTERED') {
       mark('failed');
-      this.db.prepare('DELETE FROM companion_push_registrations WHERE device_id = ?').run(deviceId);
+      this.db.prepare('DELETE FROM companion_push_registrations WHERE device_id = ? AND token_hash = ?')
+        .run(deviceId, String(registration.token_hash));
       return;
     }
     if (attempts + 1 >= L.pushMaxAttempts) mark('failed');

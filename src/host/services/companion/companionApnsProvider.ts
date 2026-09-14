@@ -189,7 +189,8 @@ function postApns(input: {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      session.close();
+      if (error) session.destroy();
+      else session.close();
       if (error) reject(error);
       else resolve(result as ApnsHttpResult);
     };

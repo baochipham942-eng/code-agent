@@ -176,4 +176,42 @@ describe('CompanionPushOutbox', () => {
     expect(wrapped).not.toContain('device-token');
     expect(unwrapPushToken(wrapped, wrapKey)).toBe('device-token-aaaaaaaa');
   });
+
+  it('does not retry a dead APNs token after NOT_REGISTERED', async () => {
+    const sending = new CompanionPushOutbox(db, gateway, {
+      now: () => now,
+      wrapKey,
+      apnsKeyPath: '/tmp/not-a-real-key.p8',
+      send: async request => { sent.push(request.token); return { accepted: false, code: 'NOT_REGISTERED' }; },
+    });
+    sending.register('phone-1', { provider: 'apns', token: 'device-token-aaaaaaaa', environment: 'production' });
+    gateway.publish('session-1', 'agent_complete', {});
+    await sending.flush();
+    expect(sending.rowsFor('phone-1')[0].state).toBe('failed');
+    expect(db.prepare('SELECT COUNT(*) AS n FROM companion_push_registrations').get()).toEqual({ n: 0 });
+    gateway.publish('session-1', 'error', {});
+    await sending.flush();
+    expect(sent).toEqual(['device-token-aaaaaaaa']);
+    expect(sending.rowsFor('phone-1').map(row => row.state)).toEqual(['failed', 'failed']);
+  });
+
+  it('keeps a retryable provider failure pending and waits Retry-After', async () => {
+    const sending = new CompanionPushOutbox(db, gateway, {
+      now: () => now,
+      wrapKey,
+      apnsKeyPath: '/tmp/not-a-real-key.p8',
+      send: async () => { sent.push(now); return { accepted: false, code: 'PROVIDER_RETRY', retryAfterMs: 5_000 }; },
+    });
+    sending.register('phone-1', { provider: 'apns', token: 'device-token-aaaaaaaa', environment: 'production' });
+    gateway.publish('session-1', 'agent_complete', {});
+    await sending.flush();
+    expect(sending.rowsFor('phone-1')[0]).toMatchObject({ state: 'pending', attempts: 1 });
+    now = 5_999;
+    await sending.flush();
+    expect(sent).toEqual([1_000]);
+    now = 6_000;
+    await sending.flush();
+    expect(sent).toEqual([1_000, 6_000]);
+    expect(sending.rowsFor('phone-1')[0].attempts).toBe(2);
+  });
 });

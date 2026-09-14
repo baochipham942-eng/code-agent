@@ -17,6 +17,14 @@ export type CompanionFileMime = (typeof FILE_EXT_MIME)[keyof typeof FILE_EXT_MIM
 
 const FILE_CHUNK_BYTES = 24 * 1024;
 
+/** Apple Push endpoint hosts. Selected by NEO_APNS_ENV at provider start. */
+export const COMPANION_APNS = {
+  productionAuthority: 'https://api.push.apple.com',
+  sandboxAuthority: 'https://api.sandbox.push.apple.com',
+  pathPrefix: '/3/device/',
+  pushType: 'alert',
+} as const;
+
 export const COMPANION_LIMITS = {
   idLength: 128,
   messageLength: 32_000,
@@ -72,6 +80,8 @@ export const COMPANION_LIMITS = {
   /** Outbox rows past this age are expired; opening them re-reads the live session. */
   pushTtlMs: 86_400_000,
   pushMaxAttempts: 5,
+  /** APNs provider JWT lifetime; Apple accepts iat within one hour. */
+  pushJwtTtlMs: 50 * 60 * 1000,
   /** Host dial-out relay: absent/disabled config must not change LAN behavior. */
   relayConfigFile: 'companion-relay.json',
   relayCredentialService: 'dev.neo.companion.relay.v1',

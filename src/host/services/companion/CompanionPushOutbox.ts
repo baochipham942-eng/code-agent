@@ -55,6 +55,7 @@ function tokenHash(token: string): string {
 export class CompanionPushOutbox {
   private readonly now: () => number;
   private flushTail: Promise<void> = Promise.resolve();
+  private readonly retryNotBefore = new Map<string, number>();
 
   constructor(
     private readonly db: BetterSqlite3.Database,
@@ -149,10 +150,14 @@ export class CompanionPushOutbox {
     const deviceId = String(row.device_id);
     const kind = String(row.kind);
     const attempts = Number(row.attempts);
+    const retryKey = `${eventId}\n${deviceId}\n${kind}`;
     const mark = (state: OutboxState) => {
+      this.retryNotBefore.delete(retryKey);
       this.db.prepare(`UPDATE companion_push_outbox SET state = ?, attempts = ? WHERE event_id = ? AND device_id = ? AND kind = ?`)
         .run(state, attempts + 1, eventId, deviceId, kind);
     };
+    const notBefore = this.retryNotBefore.get(retryKey);
+    if (notBefore && now < notBefore) return;
     if (Number(row.expires_at) <= now) { mark('expired'); return; }
     if (!this.gateway.isUsableDevice(deviceId)) { mark('skipped'); return; }
     const sessionId = String(row.session_id);
@@ -169,14 +174,22 @@ export class CompanionPushOutbox {
       payload,
     }, { apnsKeyPath: this.deps.apnsKeyPath ?? null, send: this.deps.send });
     if (result.accepted) { mark('sent'); return; }
-    if (result.code === 'CHANNEL_MISSING' || result.code === 'NOT_REGISTERED' || result.code === 'TOKEN_UNWRAP_FAILED') {
+    if (result.code === 'CHANNEL_MISSING' || result.code === 'TOKEN_UNWRAP_FAILED') {
       mark('failed');
+      return;
+    }
+    if (result.code === 'NOT_REGISTERED') {
+      mark('failed');
+      this.db.prepare('DELETE FROM companion_push_registrations WHERE device_id = ?').run(deviceId);
       return;
     }
     if (attempts + 1 >= L.pushMaxAttempts) mark('failed');
     else {
       this.db.prepare(`UPDATE companion_push_outbox SET attempts = ? WHERE event_id = ? AND device_id = ? AND kind = ?`)
         .run(attempts + 1, eventId, deviceId, kind);
+      if (result.code === 'PROVIDER_RETRY' && result.retryAfterMs && result.retryAfterMs > 0) {
+        this.retryNotBefore.set(retryKey, now + result.retryAfterMs);
+      }
     }
   }
 }

@@ -2,7 +2,12 @@ import { describe, expect, it, vi } from 'vitest';
 import { PLAN_APPROVAL_CONFIRMATION_TYPE } from '../../../src/shared/contract/planApproval';
 
 const getRecentMessages = vi.hoisted(() => vi.fn((_sessionId: string, _limit: number) => [] as unknown[]));
-const resolveApproval = vi.hoisted(() => vi.fn(() => Promise.resolve({ approval: null, tasks: [] })));
+
+type ResolveApprovalFn = (
+  request: unknown,
+  deps: { appService: { sendMessage: (envelope: unknown) => Promise<void> } },
+) => Promise<{ approval: unknown; tasks: unknown[] }>;
+const resolveApproval = vi.hoisted(() => vi.fn<ResolveApprovalFn>(() => Promise.resolve({ approval: null, tasks: [] })));
 
 vi.mock('../../../src/host/services/core/databaseService', () => ({
   getDatabase: () => ({
@@ -11,7 +16,7 @@ vi.mock('../../../src/host/services/core/databaseService', () => ({
   }),
 }));
 vi.mock('../../../src/host/services/planning/planApprovalService', () => ({
-  resolvePlanApproval: (...args: unknown[]) => resolveApproval(...args),
+  resolvePlanApproval: resolveApproval,
 }));
 vi.mock('../../../src/host/task/TaskManager', () => ({
   getTaskManager: () => ({ emitAgentEventForSession: () => {} }),

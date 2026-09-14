@@ -4,9 +4,13 @@ import {
   markFtsTableAvailable,
   repairFtsTable,
 } from '../../../src/host/services/core/database/ftsRepair';
-import { SQLITE_FTS } from '../../../src/shared/constants';
+import { setIntegrityCheckListener } from '../../../src/host/services/core/database/integrityGate';
+import { SQLITE_FTS, SQLITE_INTEGRITY } from '../../../src/shared/constants';
+import { DatabaseIntegrityError } from '../../../src/host/services/core/database/sqliteErrors';
 import {
+  applyDbIntegrityOutcome,
   getPersistenceHealth,
+  markPersistenceDegraded,
   setDbAvailable,
   toCachedSessionMessages,
 } from '../../../src/web/helpers/sessionCache';
@@ -17,6 +21,7 @@ import {
 
 afterEach(() => {
   repairFtsTable.resetStateForTests();
+  setIntegrityCheckListener(null);
   setDbAvailable(false, new Error('test reset'));
   sessionMessages.clear();
 });
@@ -92,6 +97,91 @@ describe('web session persistence health', () => {
       message: '历史持久化不可用，当前只会话内有效。',
       reason: 'native binding missing',
     });
+  });
+
+  it('uses the stable DB_CORRUPT_NO_BACKUP code instead of a raw error message', () => {
+    setDbAvailable(false, new DatabaseIntegrityError(SQLITE_INTEGRITY.CORRUPT_NO_BACKUP, 'do-not-leak'));
+
+    expect(getPersistenceHealth()).toMatchObject({
+      status: 'unavailable',
+      mode: 'memory',
+      durable: false,
+      reason: SQLITE_INTEGRITY.CORRUPT_NO_BACKUP,
+    });
+    expect(getPersistenceHealth().reason).not.toContain('do-not-leak');
+  });
+
+  it('reports recovered from backup without flipping durable off', () => {
+    setDbAvailable(true);
+    applyDbIntegrityOutcome({ kind: 'recovered', backupTakenAt: 1_700_000_000_000, isolatedPath: '/tmp/x' });
+
+    expect(getPersistenceHealth()).toMatchObject({
+      status: 'recovered',
+      mode: 'database',
+      durable: true,
+      reason: `${SQLITE_INTEGRITY.RECOVERED_FROM_BACKUP}:2023-11-14T22:13:20.000Z`,
+    });
+  });
+
+  it('marks local damage as degraded', () => {
+    setDbAvailable(true);
+    markPersistenceDegraded(SQLITE_INTEGRITY.LOCAL_CORRUPT);
+    expect(getPersistenceHealth()).toMatchObject({
+      status: 'degraded',
+      reason: SQLITE_INTEGRITY.LOCAL_CORRUPT,
+      durable: true,
+    });
+  });
+
+  // 升级恢复无好备份时的落点：不隔离，degraded + 稳定 code（第三轮）
+  it('maps a quick-check-failed integrity outcome to degraded with the stable code', () => {
+    setDbAvailable(true);
+    applyDbIntegrityOutcome({ kind: 'degraded', reason: SQLITE_INTEGRITY.QUICK_CHECK_FAILED });
+
+    expect(getPersistenceHealth()).toMatchObject({
+      status: 'degraded',
+      reason: SQLITE_INTEGRITY.QUICK_CHECK_FAILED,
+      durable: true,
+    });
+  });
+
+  // recovered 是一次性事件通知；持续性降级（quick_check 失败）优先于它展示
+  it('lets a later quick_check failure override the recovered notice', () => {
+    setDbAvailable(true);
+    applyDbIntegrityOutcome({ kind: 'recovered', backupTakenAt: 1, isolatedPath: '/tmp/x' });
+    expect(getPersistenceHealth().status).toBe('recovered');
+
+    markPersistenceDegraded(SQLITE_INTEGRITY.QUICK_CHECK_FAILED);
+    expect(getPersistenceHealth()).toMatchObject({
+      status: 'degraded',
+      reason: SQLITE_INTEGRITY.QUICK_CHECK_FAILED,
+      durable: true,
+    });
+  });
+
+  // recovered 不遮挡 FTS 持续降级：恢复出来的库 FTS 坏了/回填中，用户要看到搜索降级
+  it('overlays FTS degradation on top of the recovered notice', () => {
+    setDbAvailable(true);
+    applyDbIntegrityOutcome({ kind: 'recovered', backupTakenAt: 1, isolatedPath: '/tmp/x' });
+    repairFtsTable.markDisabledForTests('session_messages_fts');
+    expect(getPersistenceHealth()).toMatchObject({
+      status: 'degraded',
+      reason: SQLITE_FTS.DISABLED_REASON,
+      durable: true,
+    });
+  });
+
+  it('keeps the recovered notice when nothing else is degraded', () => {
+    setDbAvailable(true);
+    applyDbIntegrityOutcome({ kind: 'recovered', backupTakenAt: 1, isolatedPath: '/tmp/x' });
+    repairFtsTable.markEmptyForTests('session_messages_fts');
+    expect(getPersistenceHealth()).toMatchObject({
+      status: 'degraded',
+      reason: SQLITE_FTS.EMPTY_RECREATED_REASON,
+    });
+
+    repairFtsTable.resetStateForTests();
+    expect(getPersistenceHealth().status).toBe('recovered');
   });
 });
 

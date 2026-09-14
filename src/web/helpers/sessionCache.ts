@@ -8,7 +8,8 @@
 // ── 类型 ──
 
 import type { Artifact, Message, MessageAttachment, PersistenceHealth } from '../../shared/contract';
-import { SQLITE_FTS } from '../../shared/constants';
+import { SQLITE_FTS, SQLITE_INTEGRITY } from '../../shared/constants';
+import type { DbIntegrityOutcome } from '../../host/services/core/database/integrityGate';
 import { sanitizeAttachmentsForPersistence, stripInlineAttachmentBlocks } from '../../shared/utils/messageAttachments';
 import { getDisabledFtsTables, getEmptyRecreatedFtsTables } from '../../host/services/core/database/ftsRepair';
 
@@ -66,6 +67,12 @@ let persistenceHealth: PersistenceHealth = {
 
 function formatPersistenceFailureReason(error: unknown): string | undefined {
   if (!error) return undefined;
+  if (typeof error === 'object' && error !== null && 'code' in error) {
+    const code = (error as { code?: unknown }).code;
+    if (code === SQLITE_INTEGRITY.CORRUPT_NO_BACKUP || code === SQLITE_INTEGRITY.RESTORE_FAILED) {
+      return code;
+    }
+  }
   if (error instanceof Error) return error.message;
   const reason = String(error);
   return reason.length > 0 ? reason : undefined;
@@ -92,9 +99,48 @@ export function setDbAvailable(value: boolean, error?: unknown): void {
       };
 }
 
+function markPersistenceRecovered(backupTakenAt: number): void {
+  dbAvailable = true;
+  persistenceHealth = {
+    status: 'recovered',
+    mode: 'database',
+    durable: true,
+    message: 'Restored from a local backup.',
+    reason: `${SQLITE_INTEGRITY.RECOVERED_FROM_BACKUP}:${new Date(backupTakenAt).toISOString()}`,
+    checkedAt: Date.now(),
+  };
+}
+
+export function markPersistenceDegraded(reason: string): void {
+  if (!dbAvailable) return;
+  if (persistenceHealth.status === 'unavailable') return;
+  // recovered 是一次性事件通知，不遮挡持续性降级：quick_check 失败 / 局部损坏要顶掉它
+  persistenceHealth = {
+    ...persistenceHealth,
+    status: 'degraded',
+    reason,
+    checkedAt: Date.now(),
+  };
+}
+
+export function applyDbIntegrityOutcome(outcome: DbIntegrityOutcome): void {
+  if (outcome.kind === 'recovered') {
+    markPersistenceRecovered(outcome.backupTakenAt);
+    return;
+  }
+  if (outcome.kind === 'local') {
+    markPersistenceDegraded(SQLITE_INTEGRITY.LOCAL_CORRUPT);
+    return;
+  }
+  if (outcome.kind === 'degraded') {
+    markPersistenceDegraded(outcome.reason);
+  }
+}
+
 export function getPersistenceHealth(): PersistenceHealth {
   const health = { ...persistenceHealth };
-  if (health.status !== 'available') return health;
+  // FTS 降级是持续状态：available 和 recovered（一次性通知）都要被它覆盖
+  if (health.status !== 'available' && health.status !== 'recovered') return health;
   if (getDisabledFtsTables().length > 0) {
     return {
       ...health,

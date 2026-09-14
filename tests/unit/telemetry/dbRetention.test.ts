@@ -34,11 +34,76 @@ describe('shouldPersistVacuumMarker', () => {
 });
 
 describe('runDbRetention', () => {
+  it('启动维护链会跑备份轮转', async () => {
+    const backup = vi.fn().mockResolvedValue('completed');
+    const result = await runDbRetention({
+      now: NOW, storage: fakeStorage(),
+      vacuum: vi.fn().mockResolvedValue('not-due'),
+      readLastVacuumAt: () => NOW,
+      writeLastVacuumAt: vi.fn(),
+      backup,
+      integrityCheck: vi.fn().mockResolvedValue('not-due'),
+    });
+    expect(backup).toHaveBeenCalledOnce();
+    expect(result.backup).toBe('completed');
+  });
+
+  // 顺序:quick_check 结果先行,备份门看「本次失败」与「上次失败标记」
+  it('runs quick_check before the daily backup', async () => {
+    const backup = vi.fn().mockResolvedValue('completed');
+    const integrityCheck = vi.fn().mockResolvedValue('ok');
+    await runDbRetention({
+      now: NOW, storage: fakeStorage(),
+      vacuum: vi.fn().mockResolvedValue('not-due'),
+      readLastVacuumAt: () => NOW,
+      writeLastVacuumAt: vi.fn(),
+      backup,
+      integrityCheck,
+      readLastIntegrityAt: () => null,
+      writeLastIntegrityAt: vi.fn(),
+    });
+    expect(integrityCheck.mock.invocationCallOrder[0]).toBeLessThan(backup.mock.invocationCallOrder[0]);
+  });
+
+  it('skips the daily backup when this run quick_check failed', async () => {
+    const backup = vi.fn().mockResolvedValue('completed');
+    const result = await runDbRetention({
+      now: NOW, storage: fakeStorage(),
+      vacuum: vi.fn().mockResolvedValue('not-due'),
+      readLastVacuumAt: () => NOW,
+      writeLastVacuumAt: vi.fn(),
+      backup,
+      integrityCheck: vi.fn().mockResolvedValue('failed'),
+      readLastIntegrityAt: () => null,
+      writeLastIntegrityAt: vi.fn(),
+    });
+    expect(backup).not.toHaveBeenCalled();
+    expect(result.backup).toBe('skipped-integrity-failed');
+  });
+
+  it('skips the daily backup while the .integrity-failed marker is set', async () => {
+    const backup = vi.fn().mockResolvedValue('completed');
+    const result = await runDbRetention({
+      now: NOW, storage: fakeStorage(),
+      vacuum: vi.fn().mockResolvedValue('not-due'),
+      readLastVacuumAt: () => NOW,
+      writeLastVacuumAt: vi.fn(),
+      backup,
+      integrityCheck: vi.fn().mockResolvedValue('not-due'),
+      readLastIntegrityAt: () => NOW,
+      hasIntegrityFailed: () => true,
+    });
+    expect(backup).not.toHaveBeenCalled();
+    expect(result.backup).toBe('skipped-integrity-failed');
+  });
+
   it('总是调用 pruneAgedTelemetry(now)', async () => {
     const storage = fakeStorage();
     await runDbRetention({
       now: NOW, storage,
       vacuum: vi.fn().mockResolvedValue('completed'), readLastVacuumAt: () => NOW, writeLastVacuumAt: vi.fn(),
+      backup: vi.fn().mockResolvedValue('not-due'),
+      integrityCheck: vi.fn().mockResolvedValue('not-due'),
     });
     expect(storage.pruneAgedTelemetry).toHaveBeenCalledWith(NOW);
   });
@@ -50,6 +115,8 @@ describe('runDbRetention', () => {
     const result = await runDbRetention({
       now: NOW, storage, vacuum,
       readLastVacuumAt: () => null, writeLastVacuumAt,
+      backup: vi.fn().mockResolvedValue('not-due'),
+      integrityCheck: vi.fn().mockResolvedValue('not-due'),
     });
     expect(vacuum).toHaveBeenCalledOnce();
     expect(writeLastVacuumAt).toHaveBeenCalledWith(NOW);
@@ -62,6 +129,8 @@ describe('runDbRetention', () => {
     const result = await runDbRetention({
       now: NOW, storage, vacuum,
       readLastVacuumAt: () => NOW - 1000, writeLastVacuumAt: vi.fn(),
+      backup: vi.fn().mockResolvedValue('not-due'),
+      integrityCheck: vi.fn().mockResolvedValue('not-due'),
     });
     expect(vacuum).not.toHaveBeenCalled();
     expect(result.vacuum).toBe('not-due');
@@ -73,6 +142,8 @@ describe('runDbRetention', () => {
     const result = await runDbRetention({
       now: NOW, storage, vacuum,
       readLastVacuumAt: () => null, writeLastVacuumAt: vi.fn(),
+      backup: vi.fn().mockResolvedValue('not-due'),
+      integrityCheck: vi.fn().mockResolvedValue('not-due'),
     });
     expect(vacuum).not.toHaveBeenCalled();
     expect(result.vacuum).toBe('db-unavailable');
@@ -84,6 +155,8 @@ describe('runDbRetention', () => {
       now: NOW, storage: fakeStorage(),
       vacuum: () => { throw new Error('locked'); },
       readLastVacuumAt: () => null, writeLastVacuumAt,
+      backup: vi.fn().mockResolvedValue('not-due'),
+      integrityCheck: vi.fn().mockResolvedValue('not-due'),
     });
     expect(result.vacuum).toBe('failed');
     expect(writeLastVacuumAt).not.toHaveBeenCalled();
@@ -98,6 +171,8 @@ describe('runDbRetention', () => {
         now: NOW, storage: fakeStorage(),
         vacuum: vi.fn().mockResolvedValue(outcome),
         readLastVacuumAt: () => null, writeLastVacuumAt,
+        backup: vi.fn().mockResolvedValue('not-due'),
+        integrityCheck: vi.fn().mockResolvedValue('not-due'),
       });
       expect(result.vacuum).toBe(outcome);
       expect(writeLastVacuumAt).not.toHaveBeenCalled();

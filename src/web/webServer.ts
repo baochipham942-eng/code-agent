@@ -332,6 +332,7 @@ export function startWebCapabilityBootstrap(
 
 import { broadcastSSE, sseClients } from './helpers/sse';
 import {
+  applyDbIntegrityOutcome,
   dbAvailable,
   setDbAvailable,
 } from './helpers/sessionCache';
@@ -539,6 +540,7 @@ async function initializeServices(): Promise<void> {
     });
     databaseForDurableRun = await initDatabase();
     setDbAvailable(true);
+    applyDbIntegrityOutcome(databaseForDurableRun.getIntegrityOutcome());
     logger.info('Database initialized');
   } catch (error) {
     durableRunRolloutReady = false;

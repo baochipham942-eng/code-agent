@@ -75,9 +75,16 @@ export const zhSettingsSystem = {
       },
       persistence: {
         title: '历史持久化不可用',
-        degradedTitle: '搜索已降级',
+        degradedTitle: '存储已降级',
         degradedFtsDisabled: '全文索引暂不可用，已改用备用搜索；写入不受影响。',
         degradedFtsReindexing: '全文索引已重建，历史回填进行中；搜索可能暂时不完整，写入不受影响。',
+        degradedQuickCheck: '数据库完整性检查未通过，下次启动将尝试从备份恢复。',
+        degradedLocal: '部分数据表损坏，已记录诊断；写入路径仍可用。',
+        recoveredTitle: '已从备份恢复',
+        recoveredBody: '已从本地备份恢复数据库。备份时间：{timestamp}。该时间点之后的更改可能丢失。',
+        corruptNoBackup: '数据库已损坏且没有可用备份，当前会话只保存在内存中。',
+        restoreFailed: '从备份恢复失败（可能是磁盘空间不足），当前会话只保存在内存中。损坏的库和备份都已保留，未被删除。',
+        restoreLowDisk: '数据库完整性检查未通过，但磁盘剩余空间不足，暂时无法从备份恢复。当前数据库继续可用；释放空间后下次启动会自动重试恢复。',
         reasonPrefix: ' 原因：',
       },
       controlPlane: {

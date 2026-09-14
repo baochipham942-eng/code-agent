@@ -14,7 +14,10 @@
 //   3. 终态：先 checkpoint 收掉未决 operation，再 terminal。
 //   4. 心跳按租约 1/3 间隔。落账 fail-closed：checkpoint 失败（fence 或本地
 //      持久化故障）即停写停心跳并向上抛，LoopController 收到后立刻收口 failed，
-//      不许吞了继续跑未记录轮次——落账失败即不花钱。
+//      不许吞了继续跑未记录轮次——落账失败即不花钱。心跳失败分两类：fence
+//      （租约易主）立刻停写；SQLITE_BUSY 类瞬时抖动容忍连续 2 个窗口再 untrack
+//      ——一次抖动就 untrack 会让 stop/finish 的 finalize 静默跳过，durable
+//      行永久留 running（ai-review #1813）。
 //
 // 开关：assembleDurableRun 在 durable 激活时 arm，configureDurableKernel 时
 // configure；legacy 永不 arm。
@@ -320,12 +323,29 @@ export class LoopDurableLedger {
     this.untrack(loopId);
     const live: LiveRun = { owner, attempt };
     const intervalMs = Math.max(250, Math.floor((owner.leaseExpiresAt - now) / 3));
+    let consecutiveTransientFailures = 0;
     const timer = setInterval(() => {
       void this.kernel.heartbeat(loopId, live.owner, Date.now()).then(
         (renewed) => {
+          consecutiveTransientFailures = 0;
           live.owner = renewed;
         },
         (error: unknown) => {
+          // fence（租约易主）必须立刻停写停心跳；SQLITE_BUSY 类瞬时抖动容忍连续
+          // HEARTBEAT_TRANSIENT_RETRY_WINDOWS 个窗口（与 runRegistry 同款取舍），
+          // 超过才 untrack。
+          if (isHeartbeatFencingError(error)) {
+            logger.warn(`loop durable heartbeat fenced for ${loopId}:`, error);
+            this.untrack(loopId);
+            return;
+          }
+          if (isSqliteBusyError(error)) {
+            consecutiveTransientFailures += 1;
+            if (consecutiveTransientFailures <= HEARTBEAT_TRANSIENT_RETRY_WINDOWS) {
+              logger.warn(`loop durable heartbeat transient failure ${consecutiveTransientFailures} for ${loopId}:`, error);
+              return;
+            }
+          }
           logger.warn(`loop durable heartbeat stopped for ${loopId}:`, error);
           this.untrack(loopId);
         },
@@ -342,6 +362,22 @@ export class LoopDurableLedger {
     clearInterval(live.heartbeatTimer);
     this.liveRuns.delete(loopId);
   }
+}
+
+const HEARTBEAT_TRANSIENT_RETRY_WINDOWS = 2;
+
+function isHeartbeatFencingError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const candidate = error as Error & { code?: unknown };
+  return candidate.code === 'RUN_OWNER_FENCED'
+    || /heartbeat fenced by stale owner/i.test(candidate.message);
+}
+
+function isSqliteBusyError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const code = (error as { code?: unknown }).code;
+  return typeof code === 'string'
+    && (code === 'SQLITE_BUSY' || code.startsWith('SQLITE_BUSY_'));
 }
 
 let configured: LoopDurableLedger | null = null;

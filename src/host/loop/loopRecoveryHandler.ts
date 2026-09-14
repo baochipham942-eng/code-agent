@@ -9,6 +9,8 @@
 //   4. 重建 LoopRunState，LoopController.adopt 后续跑：
 //        dispatching / awaiting_reply → 重跑当轮（at-least-once）
 //        sleeping → 按 nextRunAt - now 重排（已过期立即跑）
+//      adopt 撞上本进程内存已是终态的同 id → 不复活，按内存终态收口该行
+//      （LOOP_RECOVERY_TERMINAL_REASON）；撞上仍在跑的同 id → 不动账本直接返回。
 // 此后 heartbeat / checkpoint / terminal 由重建后的控制器 + 账本驱动。
 // ============================================================================
 
@@ -32,6 +34,8 @@ const logger = createLogger('LoopRecoveryHandler');
 
 export const LOOP_RECOVERY_RERUN_REASON = 'rerun_in_flight_turn';
 export const LOOP_RECOVERY_SLEEP_REASON = 'reschedule_sleep';
+/** 认领回来的行在本进程内存里已是终态：adopt 按内存终态收口，不是续跑。 */
+const LOOP_RECOVERY_TERMINAL_REASON = 'terminal_state_close_out';
 
 function loopTaskTitleFromPrompt(prompt: string | undefined): string {
   const flat = (prompt ?? '').replace(/\s+/g, ' ').trim();
@@ -142,14 +146,30 @@ export function createLoopRecoveryHandler(input: {
       }
 
       const controller = input.controller ?? getLoopController();
+      let adopted: LoopRunState;
       try {
-        controller.adopt(stateFromCursor(plan, cursor), {
+        adopted = controller.adopt(stateFromCursor(plan, cursor), {
           owner,
           attempt: plan.envelope.attempt,
         });
       } catch (error) {
         logger.warn(`loop adopt failed for ${plan.envelope.runId}:`, error);
         return closeOut('adopt_failed');
+      }
+
+      // 内存里已是终态（典型：心跳曾失联的行被 sweeper 认领回来）：adopt 内部
+      // 已按内存终态把行收口，不是续跑——据实上报，不谎报 rerun/reschedule。
+      if (adopted.status !== 'running') {
+        return {
+          status: 'recovered',
+          reason: LOOP_RECOVERY_TERMINAL_REASON,
+          detail: {
+            loopId: plan.envelope.runId,
+            sessionId: plan.envelope.sessionId,
+            terminalStatus: adopted.status,
+            ...(adopted.stopReason ? { terminalReason: adopted.stopReason } : {}),
+          },
+        };
       }
 
       const rerun = cursor.phase === 'dispatching' || cursor.phase === 'awaiting_reply';

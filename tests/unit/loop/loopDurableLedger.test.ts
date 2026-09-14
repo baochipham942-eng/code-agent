@@ -1,8 +1,10 @@
 // ============================================================================
 // N-LOOP-DURABLE-K2 刀2-b/2-c：loop durable 账本 + 续跑恢复
 // - begin 落 running 行；每轮双 checkpoint；finalize 先收 op 再 terminal
-// - heartbeat fence 后停写；长 sleep 心跳不停不被 sweeper 误收
+// - heartbeat fence 后停写；瞬时 SQLITE_BUSY 容忍连续窗口不 untrack；长 sleep
+//   心跳不停不被 sweeper 误收
 // - cursor 坏 / session 已删 → interrupted 收口；dispatching 重跑 / sleeping 重排
+// - adopt 撞上内存终态 → 按终态收口不复活；撞上在跑 → 不动账本直接返回
 // ============================================================================
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -40,6 +42,9 @@ import {
   LOOP_RECOVERY_SLEEP_REASON,
   createLoopRecoveryHandler,
 } from '../../../src/host/loop/loopRecoveryHandler';
+
+// loopRecoveryHandler 不导出（knip production 零 dead export）：与 handler 内常量保持一致。
+const LOOP_RECOVERY_TERMINAL_REASON = 'terminal_state_close_out';
 import { DurableRecoveryDispatcher } from '../../../src/host/runtime/durableRecoveryDispatcher';
 import { DurableRunKernel, DurableRunPersistenceUnavailableError } from '../../../src/host/runtime/durableRunKernel';
 import type { RunRehydrationPlan } from '../../../src/host/runtime/durableRunStores';
@@ -1118,6 +1123,181 @@ describe('Loop recovery handler (N-LOOP-DURABLE-K2 刀2-c)', () => {
     ledger.dispose();
     recoveredRegistry.clear();
     sweeper.clear();
+    db.close();
+  });
+
+  it('瞬时心跳失败（SQLITE_BUSY）不 untrack，stop 后行被收口 cancelled', async () => {
+    resetApplicationRunRegistryForTests();
+    const { db, repository, kernel, ledger } = createStack('process-1', 900);
+    armLoopDurableLedger();
+    configureLoopDurableLedger(ledger);
+    getApplicationRunRegistry().start({
+      runId: 'run-fg-busy',
+      sessionId: 'session-busy',
+      workspace: '/tmp',
+      cwd: '/tmp',
+    });
+    let releaseTurn: () => void = () => undefined;
+    const sendMessage = vi.fn(() => new Promise<void>((resolve) => { releaseTurn = resolve; }));
+    const controller = new LoopController({
+      getOrchestrator: () => ({ sendMessage }),
+      readSession: async () => ({ messages: [{ role: 'assistant', content: '还在跑' }] }),
+    });
+    const state = await controller.start({
+      sessionId: 'session-busy',
+      prompt: '盯构建',
+      maxTurns: 5,
+    });
+    await vi.waitFor(() => {
+      expect(sendMessage).toHaveBeenCalledTimes(1);
+    });
+
+    // 第一次心跳注入瞬时 SQLITE_BUSY，其后照常续约：一次抖动不许 untrack，
+    // 否则 stop 的 finalize 会静默跳过、durable 行永久留 running（#1813）。
+    const realHeartbeat = kernel.heartbeat.bind(kernel);
+    let heartbeatCalls = 0;
+    const heartbeatSpy = vi.spyOn(kernel, 'heartbeat').mockImplementation(
+      (...args: Parameters<DurableRunKernel['heartbeat']>) => {
+        heartbeatCalls += 1;
+        if (heartbeatCalls === 1) {
+          return Promise.reject(Object.assign(new Error('database is locked'), { code: 'SQLITE_BUSY' }));
+        }
+        return realHeartbeat(...args);
+      },
+    );
+    await vi.waitFor(() => {
+      expect(heartbeatCalls).toBeGreaterThanOrEqual(2);
+    }, { timeout: 5_000 });
+    expect(ledger.isTracked(state.id)).toBe(true);
+    heartbeatSpy.mockRestore();
+
+    controller.stop(state.id);
+    await vi.waitFor(async () => {
+      expect((await repository.get(state.id))?.status).toBe('cancelled');
+    });
+    expect((await repository.get(state.id))?.terminal).toMatchObject({
+      status: 'cancelled',
+      reason: 'user',
+    });
+    expect(controller.get(state.id)).toMatchObject({ status: 'stopped', stopReason: 'user' });
+    releaseTurn();
+    db.close();
+  });
+
+  it('sweeper 认领内存已终态的 loop 行：adopt 按内存终态收口，不复活续跑', async () => {
+    resetApplicationRunRegistryForTests();
+    const { db, repository, kernel, ledger } = createStack('process-1', 900);
+    armLoopDurableLedger();
+    configureLoopDurableLedger(ledger);
+    getApplicationRunRegistry().start({
+      runId: 'run-fg-reclaim',
+      sessionId: 'session-reclaim',
+      workspace: '/tmp',
+      cwd: '/tmp',
+    });
+    let releaseTurn: () => void = () => undefined;
+    const sendMessage = vi.fn(() => new Promise<void>((resolve) => { releaseTurn = resolve; }));
+    const controller = new LoopController({
+      getOrchestrator: () => ({ sendMessage }),
+      readSession: async () => ({ messages: [{ role: 'assistant', content: '还在跑' }] }),
+    });
+    const state = await controller.start({
+      sessionId: 'session-reclaim',
+      prompt: '盯构建',
+      maxTurns: 5,
+    });
+    await vi.waitFor(() => {
+      expect(sendMessage).toHaveBeenCalledTimes(1);
+    });
+
+    // 病灶前提（钉住）：心跳 fence → untrack → stop 的 finalize 跳过，
+    // durable 行留 running，内存已是 stopped 终态。
+    vi.spyOn(kernel, 'heartbeat').mockRejectedValue(new Error('Heartbeat fenced by stale owner'));
+    await vi.waitFor(() => {
+      expect(ledger.isTracked(state.id)).toBe(false);
+    }, { timeout: 5_000 });
+    controller.stop(state.id);
+    expect(controller.get(state.id)).toMatchObject({ status: 'stopped', stopReason: 'user' });
+    expect((await repository.get(state.id))?.status).toBe('running');
+
+    const { recoveredRegistry, plans, crashedAt } = await recoverPlan(repository);
+    expect(plans).toHaveLength(1);
+    const handler = createLoopRecoveryHandler({
+      registry: recoveredRegistry,
+      controller,
+      sessionExists: () => true,
+    });
+    const outcome = await handler.recover(plans[0]!, crashedAt);
+    expect(outcome).toMatchObject({
+      status: 'recovered',
+      reason: LOOP_RECOVERY_TERMINAL_REASON,
+      detail: { terminalStatus: 'stopped', terminalReason: 'user' },
+    });
+
+    // 不复活：内存仍 stopped，不重跑当轮；行按内存终态收口（stopped → cancelled）。
+    expect(controller.get(state.id)).toMatchObject({ status: 'stopped', stopReason: 'user' });
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+    await vi.waitFor(async () => {
+      expect((await repository.get(state.id))?.status).toBe('cancelled');
+    });
+    expect((await repository.get(state.id))?.terminal?.reason).toBe('user');
+    releaseTurn();
+    recoveredRegistry.clear();
+    db.close();
+  });
+
+  it('adopt 撞上本进程仍在跑的同 id：直接返回，不动账本不复跑', async () => {
+    resetApplicationRunRegistryForTests();
+    const { db, repository, ledger } = createStack('process-1', 900);
+    armLoopDurableLedger();
+    configureLoopDurableLedger(ledger);
+    getApplicationRunRegistry().start({
+      runId: 'run-fg-live',
+      sessionId: 'session-live',
+      workspace: '/tmp',
+      cwd: '/tmp',
+    });
+    let releaseTurn: () => void = () => undefined;
+    const sendMessage = vi.fn(() => new Promise<void>((resolve) => { releaseTurn = resolve; }));
+    const controller = new LoopController({
+      getOrchestrator: () => ({ sendMessage }),
+      readSession: async () => ({ messages: [{ role: 'assistant', content: '还在跑' }] }),
+    });
+    const state = await controller.start({
+      sessionId: 'session-live',
+      prompt: '盯构建',
+      maxTurns: 5,
+    });
+    await vi.waitFor(() => {
+      expect(sendMessage).toHaveBeenCalledTimes(1);
+    });
+    expect(ledger.isTracked(state.id)).toBe(true);
+
+    // 防御分支：sweeper 正常不该认领租约在本进程手里的行；撞上也不许换
+    // owner、不许拉起第二个 runLoop。
+    const adoptSpy = vi.spyOn(ledger, 'adopt');
+    const returned = controller.adopt({ ...state, phase: 'sleeping' }, {
+      owner: {
+        ownerId: 'native-host',
+        processInstanceId: 'process-foreign',
+        epoch: 99,
+        leaseExpiresAt: Date.now() + 60_000,
+      },
+      attempt: 2,
+    });
+    expect(returned.status).toBe('running');
+    expect(adoptSpy).not.toHaveBeenCalled();
+
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+    expect(ledger.isTracked(state.id)).toBe(true);
+
+    // 原 tracking 未被换 owner：stop 仍正常收口。
+    controller.stop(state.id);
+    await vi.waitFor(async () => {
+      expect((await repository.get(state.id))?.status).toBe('cancelled');
+    });
+    releaseTurn();
     db.close();
   });
 });

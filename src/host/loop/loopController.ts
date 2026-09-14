@@ -170,12 +170,27 @@ export class LoopController {
   }
 
   /**
-   * 从 durable cursor 重建内存态并续跑。已在跑的同 id 直接返回（dispatcher duplicate）。
-   * dispatching/awaiting_reply → 重跑当轮；sleeping → 按 nextRunAt 重排（过期立即跑）。
+   * 从 durable cursor 重建内存态并续跑。判据一律用内存状态,与 finish() 的终态
+   * 守卫同哲学:
+   * - 同 id 仍在跑:正常不该发生(租约在本进程手里,sweeper 不该认领);防御性
+   *   直接返回,不动账本、不复跑。
+   * - 同 id 已是终态(典型:心跳曾失联被 untrack,stop/finish 的 finalize 跳过,
+   *   行留 running 被 sweeper 认领回来):不许复活续跑;把认领来的行按内存终态
+   *   收口(stopped→cancelled、failed→failed、completed→completed)。
+   * - 否则:dispatching/awaiting_reply → 重跑当轮;sleeping → 按 nextRunAt 重排
+   *   (过期立即跑)。
    */
   adopt(state: LoopRunState, ledgerCtx: LoopAdoptLedgerContext): LoopRunState {
     const existing = this.loops.get(state.id);
     if (existing?.status === 'running') return { ...existing };
+    if (existing) {
+      const ledger = getLoopDurableLedger();
+      if (ledger) {
+        ledger.adopt(existing.id, ledgerCtx);
+        void this.finalizeDurable(existing);
+      }
+      return { ...existing };
+    }
 
     const adopted: LoopRunState = {
       ...state,
@@ -272,9 +287,10 @@ export class LoopController {
 
   private async finalizeDurable(state: LoopRunState): Promise<void> {
     const ledger = getLoopDurableLedger();
-    // untracked = 账本已失联（fence/持久化故障时已停写）；此处不再补写，
+    // untracked = 账本已失联（fence 或连续瞬时失败超阈值时已停写）；此处不再补写，
     // durable 行留 running，租约到期由 sweeper 认领后走刀2-c 恢复 handler：
-    // 可续跑则 adopt 续跑，否则降级收口成 interrupted_by_restart。
+    // 本进程内存已是终态 → adopt 按内存终态收口，否则续跑或降级 interrupted。
+    // SQLITE_BUSY 单次抖动不再 untrack（见 track() 的连续窗口容忍），不走这条路。
     if (!ledger?.isTracked(state.id)) return;
     const outcome = state.status === 'completed'
       ? 'completed'

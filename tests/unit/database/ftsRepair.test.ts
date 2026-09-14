@@ -7,10 +7,31 @@ vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
 import type BetterSqlite3 from 'better-sqlite3';
 
+// 注入「修复阶梯自身抛错」：默认放行真实现，单测翻转开关。
+// 真实现经 vi.mock 包装后仍是同一个 availability 状态机（importOriginal 透传）。
+const ftsRepairMockState = vi.hoisted(() => ({ repairShouldThrow: false }));
+vi.mock('../../../src/host/services/core/database/ftsRepair', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../../../src/host/services/core/database/ftsRepair')>();
+  return {
+    ...original,
+    repairFtsTable: (
+      db: BetterSqlite3.Database,
+      table: Parameters<typeof original.repairFtsTable>[1],
+      hooks?: Parameters<typeof original.repairFtsTable>[2],
+    ) => {
+      if (ftsRepairMockState.repairShouldThrow) {
+        throw new Error('injected repair ladder failure');
+      }
+      return original.repairFtsTable(db, table, hooks);
+    },
+  };
+});
+
 import {
   getDisabledFtsTables,
   isFtsDisabled,
   isFtsSearchDegraded,
+  markFtsTableDisabledForTests,
   repairCorruptFtsOnStartup,
   repairFtsTable,
   resetFtsRepairStateForTests,
@@ -141,6 +162,7 @@ describe('ftsRepair ladder', () => {
   const dirs: string[] = [];
 
   afterEach(() => {
+    ftsRepairMockState.repairShouldThrow = false;
     resetFtsRepairStateForTests();
     for (const dir of dirs.splice(0)) {
       fs.rmSync(dir, { recursive: true, force: true });
@@ -385,6 +407,88 @@ describe('ftsRepair ladder', () => {
     expect(isFtsSearchDegraded('session_messages_fts')).toBe(false);
     const hits = repo.searchSessionMessagesFts('needle', { limit: 50 });
     expect(hits.length).toBeGreaterThan(0);
+    db.close();
+  });
+
+  it('degraded LIKE fallback keeps rewound messages when includeRewound=true, in hits and count', () => {
+    const dbPath = tmpDb();
+    const { db, repo } = openRepo(dbPath);
+    createSchema(db);
+    insertSession(db, 'sess-1');
+    seedMessages(repo, 10);
+    // visibility 是兼容性 cache 字段；rewind 后的消息应从默认搜索消失、includeRewound 时保留
+    repo.updateMessage('m-2', { visibility: 'rewound' }, 'sess-1');
+    markFtsTableDisabledForTests('session_messages_fts');
+
+    const visibleOnly = repo.searchSessionMessagesFts('needle', { limit: 50 });
+    expect(visibleOnly.some((hit) => hit.messageId === 'm-2')).toBe(false);
+
+    const withRewound = repo.searchSessionMessagesFts('needle', { limit: 50, includeRewound: true });
+    expect(withRewound.some((hit) => hit.messageId === 'm-2')).toBe(true);
+    expect(withRewound.length).toBe(visibleOnly.length + 1);
+
+    const visibleCount = repo.countSessionMessagesFts('needle');
+    const rewoundCount = repo.countSessionMessagesFts('needle', { includeRewound: true });
+    expect(rewoundCount.matches).toBe(visibleCount.matches + 1);
+    db.close();
+  });
+
+  it('search falls back to LIKE without throwing when the repair ladder itself fails (readonly DB)', () => {
+    const dbPath = tmpDb();
+    const { db, repo } = openRepo(dbPath);
+    createSchema(db);
+    insertSession(db, 'sess-1');
+    seedMessages(repo, 30);
+    db.close();
+
+    corruptFtsShadowPages(dbPath, { leafOnly: false });
+
+    // 只读打开：MATCH 抛损坏；修复阶梯的重建/重建空表全部 readonly 失败，
+    // 阶梯内部消化后落 disabled。搜索走 LIKE,不抛。
+    const roDb = new Database(dbPath, { readonly: true });
+    const roRepo = new SessionRepository(roDb);
+    let hits: ReturnType<SessionRepository['searchSessionMessagesFts']> = [];
+    expect(() => {
+      hits = roRepo.searchSessionMessagesFts('needle', { limit: 50 });
+    }).not.toThrow();
+    expect(hits.length).toBeGreaterThan(0);
+    expect(isFtsSearchDegraded('session_messages_fts')).toBe(true);
+
+    // 计数路径同样不抛且走 LIKE
+    let count = { matches: 0, sessions: 0 };
+    expect(() => {
+      count = roRepo.countSessionMessagesFts('needle');
+    }).not.toThrow();
+    expect(count.matches).toBeGreaterThan(0);
+    roDb.close();
+  });
+
+  it('search does not throw when the repair ladder itself throws; LIKE still recalls', () => {
+    const dbPath = tmpDb();
+    let { db, repo } = openRepo(dbPath);
+    createSchema(db);
+    insertSession(db, 'sess-1');
+    seedMessages(repo, 30);
+    db.close();
+
+    corruptFtsShadowPages(dbPath, { leafOnly: false });
+    ({ db, repo } = openRepo(dbPath));
+
+    // 修复阶梯自身抛错（契约上不应发生,但 sqlite_master 不可读等极端损坏下可能漏出）:
+    // 搜索接口不许把异常穿给调用方——落降级态走 LIKE。
+    ftsRepairMockState.repairShouldThrow = true;
+    let hits: ReturnType<SessionRepository['searchSessionMessagesFts']> = [];
+    expect(() => {
+      hits = repo.searchSessionMessagesFts('needle', { limit: 50 });
+    }).not.toThrow();
+    expect(hits.length).toBeGreaterThan(0);
+    expect(isFtsSearchDegraded('session_messages_fts')).toBe(true);
+
+    let count = { matches: 0, sessions: 0 };
+    expect(() => {
+      count = repo.countSessionMessagesFts('needle');
+    }).not.toThrow();
+    expect(count.matches).toBeGreaterThan(0);
     db.close();
   });
 

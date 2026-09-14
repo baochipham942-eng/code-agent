@@ -7,12 +7,25 @@ import type BetterSqlite3 from 'better-sqlite3';
 import { SESSION_SEARCH } from '../../../../shared/constants';
 import { TRANSCRIPT_FTS_BODY_COLUMN_INDEX, type TranscriptKind } from '../../../../shared/transcriptFts.sql';
 import { createLogger } from '../../infra/logger';
-import { isFtsSearchDegraded, repairFtsTable } from '../database/ftsRepair';
+import { isFtsSearchDegraded, markFtsTableRepairFailed, repairFtsTable, type FtsTableName } from '../database/ftsRepair';
 import { isSqliteCorruptionError } from '../database/sqliteErrors';
 import { activeMessageWhere, loopInternalMessageWhere, visibleHistoryMessageWhere } from './sessionRepositoryParsers';
 
 type SQLiteRow = Record<string, unknown>;
 const logger = createLogger('SessionRepositoryFtsSearch');
+
+/**
+ * 搜索路径的修复调用：修复阶梯自身抛错（DB 只读、隔离改名失败等）不许穿出
+ * 搜索接口——落降级态，由调用方继续走 LIKE 兜底或空结果。
+ */
+function tryRepairFtsTableForSearch(db: BetterSqlite3.Database, table: FtsTableName): void {
+  try {
+    repairFtsTable(db, table);
+  } catch (err) {
+    markFtsTableRepairFailed(table);
+    logger.warn('[EpisodicFts] repair ladder itself failed; continuing with fallback', { table, error: err });
+  }
+}
 
 /** session_messages_fts 单条命中行 */
 export interface SessionMessagesFtsHit {
@@ -111,6 +124,18 @@ function buildShortQueryFilter(
   return { clause: conditions.length > 0 ? `AND ${conditions.join(' AND ')}` : '', params };
 }
 
+/**
+ * LIKE 兜底的行过滤，对齐 FTS 正常路径口径：
+ * includeRewound 时 FTS 查纯索引表（触发器建索引时已排除 is_meta / 循环噪音，
+ * rewind 消息仍在索引里），等价物只补 is_meta + 循环噪音，不带 active 过滤；
+ * 默认路径与 visibleHistoryMessageWhere 一致。
+ */
+function likeFallbackVisibilityWhere(options: { includeRewound?: boolean }): string {
+  return options.includeRewound
+    ? `COALESCE(m.is_meta, 0) = 0 AND ${loopInternalMessageWhere('m')}`
+    : visibleHistoryMessageWhere('m');
+}
+
 function runFtsUnavailableLikeSearch(
   db: BetterSqlite3.Database,
   trimmed: string,
@@ -123,7 +148,7 @@ function runFtsUnavailableLikeSearch(
       SELECT m.id AS message_id, m.session_id, m.role, m.content, m.timestamp
       FROM messages m
       WHERE m.content LIKE ? ESCAPE '\\' ${filter.clause}
-        AND ${visibleHistoryMessageWhere('m')}
+        AND ${likeFallbackVisibilityWhere(options)}
       ORDER BY m.timestamp DESC
       LIMIT ?
     `).all(`%${escapeLikePattern(trimmed)}%`, ...filter.params, limit) as SQLiteRow[];
@@ -212,7 +237,7 @@ export function runSessionMessagesFtsSearch(db: BetterSqlite3.Database,
     return executeSessionMessagesFtsSearch(db, trimmed, options);
   } catch (err) {
     if (isSqliteCorruptionError(err)) {
-      repairFtsTable(db, 'session_messages_fts');
+      tryRepairFtsTableForSearch(db, 'session_messages_fts');
       if (isFtsSearchDegraded('session_messages_fts')) {
         return runFtsUnavailableLikeSearch(db, trimmed, options);
       }
@@ -244,7 +269,7 @@ function runFtsUnavailableLikeCount(
       SELECT COUNT(*) AS matches, COUNT(DISTINCT m.session_id) AS sessions
       FROM messages m
       WHERE m.content LIKE ? ESCAPE '\\' ${filter.clause}
-        AND ${visibleHistoryMessageWhere('m')}
+        AND ${likeFallbackVisibilityWhere(options)}
     `).get(`%${escapeLikePattern(trimmed)}%`, ...filter.params) as SQLiteRow | undefined;
     return row
       ? { matches: Number(row.matches ?? 0), sessions: Number(row.sessions ?? 0) }
@@ -305,7 +330,7 @@ export function runSessionMessagesFtsCount(db: BetterSqlite3.Database,
     return executeSessionMessagesFtsCount(db, trimmed, options);
   } catch (err) {
     if (isSqliteCorruptionError(err)) {
-      repairFtsTable(db, 'session_messages_fts');
+      tryRepairFtsTableForSearch(db, 'session_messages_fts');
       if (isFtsSearchDegraded('session_messages_fts')) {
         return runFtsUnavailableLikeCount(db, trimmed, options);
       }
@@ -408,7 +433,7 @@ export function runTranscriptFtsSearch(db: BetterSqlite3.Database,
     }));
   } catch (err) {
     if (isSqliteCorruptionError(err)) {
-      repairFtsTable(db, 'transcript_fts');
+      tryRepairFtsTableForSearch(db, 'transcript_fts');
     }
     logger.warn('[TranscriptFts] search failed', { query: trimmed, error: err });
     return [];

@@ -148,6 +148,14 @@ export function markFtsTableAvailable(table: FtsTableName): void {
   availability.set(table, 'ok');
 }
 
+/**
+ * 修复阶梯自身抛错（如 DB 只读、隔离改名也失败）时落降级态：
+ * 后续搜索直接走 LIKE 兜底，不再每次搜索都重复撞一遍修复阶梯。
+ */
+export function markFtsTableRepairFailed(table: FtsTableName): void {
+  availability.set(table, 'disabled');
+}
+
 export function resetFtsRepairStateForTests(): void {
   availability.clear();
 }

@@ -19,6 +19,6 @@ const summary = buildCoreSummary({ current, previous, exitCode, reportPath });
 const out = opt('--out');
 if (out) {
   fs.mkdirSync(path.dirname(out), { recursive: true });
-  fs.writeFileSync(out, `# core 集周跑 ${new Date().toISOString().slice(0, 10)}\n\n${summary}\n${prevPath ? `\n上一轮：${prevPath}\n` : ''}`);
+  fs.writeFileSync(out, `# core 集周跑 ${new Date().toLocaleDateString('sv-SE')}\n\n${summary}\n${prevPath ? `\n上一轮：${prevPath}\n` : ''}`);
 }
 console.log(summary);

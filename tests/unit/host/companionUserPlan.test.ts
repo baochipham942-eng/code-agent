@@ -136,4 +136,54 @@ describe('companionUserPlan registers ChatView exit_plan_mode cards', () => {
     expect(getMessages).toHaveBeenCalledWith('session-a');
     expect(startRun).toHaveBeenCalled();
   });
+
+  it('审批链路失败时回插计划卡：卡不消失，用户可重试', async () => {
+    const id = `retry-${Date.now()}`;
+    noteCompanionUserPlan('session-a', {
+      toolCallId: id,
+      success: true,
+      metadata: {
+        confirmationType: PLAN_APPROVAL_CONFIRMATION_TYPE,
+        plan: PLAN,
+        planApproval: APPROVAL,
+      },
+    });
+    getMessages.mockReturnValueOnce([{
+      id: 'msg-1',
+      toolCalls: [{ id, result: { metadata: { planApproval: APPROVAL } } }],
+    }]);
+    const startRun = vi.fn(async () => {
+      throw new Error('HOST_UNAVAILABLE');
+    });
+    resolveApproval.mockImplementationOnce(async (_request: unknown, deps: { appService: { sendMessage: (envelope: unknown) => Promise<void> } }) => {
+      await deps.appService.sendMessage({ content: PLAN, sessionId: 'session-a' });
+      return { approval: null, tasks: [] };
+    });
+    expect(deliverCompanionUserPlan(id, true, undefined, 'session-a', startRun)).toEqual({ success: true });
+    // fire-and-forget 的失败异步到达：等 microtask 排空后卡片必须已回插。
+    await new Promise(resolve => setImmediate(resolve));
+    await new Promise(resolve => setImmediate(resolve));
+    expect(listCompanionUserPlans().some(plan => plan.id === id)).toBe(true);
+  });
+
+  it('DB 读瞬时故障不打断审批路径：转成可控关闭', () => {
+    const id = `db-fault-${Date.now()}`;
+    noteCompanionUserPlan('session-a', {
+      toolCallId: id,
+      success: true,
+      metadata: {
+        confirmationType: PLAN_APPROVAL_CONFIRMATION_TYPE,
+        plan: PLAN,
+        planApproval: APPROVAL,
+      },
+    });
+    getMessages.mockImplementationOnce(() => {
+      throw new Error('SQLITE_BUSY');
+    });
+    expect(deliverCompanionUserPlan(id, true, undefined, 'session-a', async () => {
+      throw new Error('must not start a run');
+    })).toEqual({ success: false, data: { closed: true } });
+    // 卡片保留：瞬时故障不等于计划被解决。
+    expect(listCompanionUserPlans().some(plan => plan.id === id)).toBe(true);
+  });
 });

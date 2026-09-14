@@ -110,8 +110,14 @@ export function deliverCompanionUserPlan(
   if (!db?.isReady) return { success: false, data: { closed: true } };
   // 全量回读（与桌面 loadApprovalTarget 的 getMessages 同款）：审批是用户在手机上
   // 点击触发的一次性动作，经得起全量读；固定窗口会让滑出窗口的计划卡变僵尸——
-  // 手机仍显示待批，deliver 却永远 closed（ai-review 2026-09-14）。
-  const messages = db.getMessages(sessionId) as Message[];
+  // 手机仍显示待批，deliver 却永远 closed（ai-review 2026-09-14）。瞬时 DB 故障
+  // 转成可控关闭，不让它顺着审批路径直接抛出去（同轮 Nit）。
+  let messages: Message[];
+  try {
+    messages = db.getMessages(sessionId) as Message[];
+  } catch {
+    return { success: false, data: { closed: true } };
+  }
   const message = messages.find(entry => entry.toolCalls?.some(call => call.id === item.toolCallId));
   const toolCall = message?.toolCalls?.find(call => call.id === item.toolCallId);
   const approval = readPendingApproval(toolCall);
@@ -140,6 +146,10 @@ export function deliverCompanionUserPlan(
     taskManager: getTaskManager(),
   }).catch((error) => {
     logger.warn('Companion user plan delivery failed', error);
+    // 失败回插：resolvePlanApproval 是 fire-and-forget，同步回执已经发出去了；不回插
+    // 的话计划卡被上面的 delete 永久吞掉，宿主启动失败后用户既没执行也无法重试
+    // （ai-review 2026-09-14 第 5 轮）。回插后卡片随下一次 refresh 重新投影。
+    if (!pending.has(planId)) pending.set(planId, item);
   });
   return { success: true };
 }

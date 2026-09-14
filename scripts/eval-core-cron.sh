@@ -1,7 +1,8 @@
 #!/bin/bash
 # eval-core-cron.sh —— core 集周跑发车器（N-EVAL-CORESET-CRON）。由 launchd 每周调用，也可手工跑。
 #
-#   scripts/eval-core-cron.sh              跑一轮：eval:core --real --force，落 ~/.code-agent/eval-cron/<日期>.log
+#   scripts/eval-core-cron.sh              跑一轮：eval:core --real --scope full --max-cases 50，落 ~/.code-agent/eval-cron/<日期>.log
+#   （--scope full 才能绕过「无改动跳过」；🔴 不加 --force——eval-ci 的 --force 是「无视 --max-cases 全跑」，不是「强制跑」）
 #   scripts/eval-core-cron.sh --install    生成 plist 装进 ~/Library/LaunchAgents 并 bootstrap（每周日 21:00 本地时间）
 #   scripts/eval-core-cron.sh --uninstall  bootout 并删 plist
 #   scripts/eval-core-cron.sh --status     launchctl print 摘要
@@ -89,9 +90,9 @@ echo "=== $(date '+%FT%T%z') core 周跑开始 repo=$REPO head=$(git rev-parse -
 RUNNER="$HOME/.ship/scripts/eval-real-run.mts"
 # shellcheck disable=SC2086
 if [ -f "$RUNNER" ]; then
-  npx tsx --tsconfig tsconfig.json "$RUNNER" --split core --force --max-cases "${NEO_EVAL_CORE_MAX_CASES:-50}" ${NEO_EVAL_CORE_EXTRA_ARGS:-}
+  npx tsx --tsconfig tsconfig.json "$RUNNER" --split core --max-cases "${NEO_EVAL_CORE_MAX_CASES:-50}" ${NEO_EVAL_CORE_EXTRA_ARGS:-}
 else
-  npm run eval:core -- --real --scope full --force --max-cases "${NEO_EVAL_CORE_MAX_CASES:-50}" ${NEO_EVAL_CORE_EXTRA_ARGS:-}
+  npm run eval:core -- --real --scope full --max-cases "${NEO_EVAL_CORE_MAX_CASES:-50}" ${NEO_EVAL_CORE_EXTRA_ARGS:-}
 fi
 EXIT=$?
 echo "=== exit=$EXIT"

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolveHumanGoldLabels } from '../../../src/host/testing/calibration/humanGold';
+import { resolveHumanGoldLabels } from '../../../scripts/lib/humanGold';
 import type { AnnotationRow } from '../../../src/host/services/core/repositories/AnnotationRepository';
 
 function row(overrides: Partial<AnnotationRow>): AnnotationRow {

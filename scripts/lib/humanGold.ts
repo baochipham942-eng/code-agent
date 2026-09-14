@@ -1,5 +1,6 @@
 // ============================================================================
 // 人标金标解析 — 把「进金标集」的人工评审变成 judge 校准的真值（N-EVAL-JUDGE-HUMANGOLD）
+// 住在 scripts/lib：唯一消费方是 scripts/judge-calibration.ts，放 src/ 会被生产可达性棘轮判「断电文件」。
 // ----------------------------------------------------------------------------
 // 课程口径：金标集管「对不对」，Kappa 管「稳不稳」；金标结论必须无争议——
 // 有争议的题不配进金标集，进边界案例集。所以：每个 reviewer 只取最新一条，
@@ -7,9 +8,9 @@
 // 入参是这轮实验的**全部**人工判定：金标资格看每个 reviewer 最新那条有没有勾 gold，
 // 于是「先勾后取消」自然撤销（取消 = 追加一条没勾 gold 的新行）。
 // ============================================================================
-import type { AiReviewDimension } from '../../../shared/contract/evaluation';
-import type { AnnotationRow } from '../../services/core/repositories/AnnotationRepository';
-import type { CalibrationLabel } from './judgeCalibration';
+import type { AiReviewDimension } from '../../src/shared/contract/evaluation';
+import type { AnnotationRow } from '../../src/host/services/core/repositories/AnnotationRepository';
+import type { CalibrationLabel } from '../../src/host/testing/calibration/judgeCalibration';
 
 export interface HumanGoldResolution {
   /** caseId → 金标标签 */

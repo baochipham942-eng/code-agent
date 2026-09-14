@@ -5,7 +5,7 @@ import { homedir } from 'node:os';
 import path from 'node:path';
 import Database from 'better-sqlite3';
 import { AnnotationRepository } from '../src/host/services/core/repositories/AnnotationRepository';
-import { resolveHumanGoldLabels } from '../src/host/testing/calibration/humanGold';
+import { resolveHumanGoldLabels } from './lib/humanGold';
 import type { AiReviewDimension } from '../src/shared/contract/evaluation';
 import { CONFIG_DIR_NEW } from '../src/shared/constants/configDir';
 import { quickTask, getQuickModelRuntimeInfo } from '../src/host/model/quickModel';

@@ -3,7 +3,8 @@
 //
 // LoopController 仍是内存执行器。本模块给 /loop 补 durable 事实源（照抄
 // BackgroundSubagentDurableLedger 的 begin/finalize/track/arm+configure+waitFor
-// 形态）。本棒恢复仍只收口、不续跑（adopt / sleeping 重排是刀2-c）。
+// 形态）。刀2-c：恢复后 `adopt()` 把认领到的 owner/attempt 接回 liveRuns，心跳
+// 与每轮 checkpoint 继续由本账本驱动。
 //
 //   1. start 时：run_id = loop id（loop_<uuid>），engine_kind='loop'，
 //      parent_run_id 必须带（前台 run 血缘，不占活跃根唯一位）。落账完成才允许
@@ -13,7 +14,10 @@
 //   3. 终态：先 checkpoint 收掉未决 operation，再 terminal。
 //   4. 心跳按租约 1/3 间隔。落账 fail-closed：checkpoint 失败（fence 或本地
 //      持久化故障）即停写停心跳并向上抛，LoopController 收到后立刻收口 failed，
-//      不许吞了继续跑未记录轮次——落账失败即不花钱。
+//      不许吞了继续跑未记录轮次——落账失败即不花钱。心跳失败分两类：fence
+//      （租约易主）立刻停写；SQLITE_BUSY 类瞬时抖动容忍连续 2 个窗口再 untrack
+//      ——一次抖动就 untrack 会让 stop/finish 的 finalize 静默跳过，durable
+//      行永久留 running（ai-review #1813）。
 //
 // 开关：assembleDurableRun 在 durable 激活时 arm，configureDurableKernel 时
 // configure；legacy 永不 arm。
@@ -96,6 +100,12 @@ export interface LoopDurableFinalizeInput {
   turn: number;
   cursor: LoopEngineCursor;
   finishedAt: number;
+}
+
+/** 恢复认领后把新 owner/attempt 接回账本，heartbeat / checkpoint / finalize 才能继续写。 */
+export interface LoopAdoptLedgerContext {
+  owner: RunOwnerLease;
+  attempt: number;
 }
 
 export function readLoopEngineCursor(cursor: unknown): LoopEngineCursor | null {
@@ -300,6 +310,11 @@ export class LoopDurableLedger {
     return this.liveRuns.has(loopId);
   }
 
+  /** 恢复续跑：用认领后的 lease 接回心跳，不 createRun。 */
+  adopt(loopId: string, ctx: LoopAdoptLedgerContext, now = Date.now()): void {
+    this.track(loopId, ctx.owner, ctx.attempt, now);
+  }
+
   dispose(): void {
     for (const loopId of [...this.liveRuns.keys()]) this.untrack(loopId);
   }
@@ -308,12 +323,29 @@ export class LoopDurableLedger {
     this.untrack(loopId);
     const live: LiveRun = { owner, attempt };
     const intervalMs = Math.max(250, Math.floor((owner.leaseExpiresAt - now) / 3));
+    let consecutiveTransientFailures = 0;
     const timer = setInterval(() => {
       void this.kernel.heartbeat(loopId, live.owner, Date.now()).then(
         (renewed) => {
+          consecutiveTransientFailures = 0;
           live.owner = renewed;
         },
         (error: unknown) => {
+          // fence（租约易主）必须立刻停写停心跳；SQLITE_BUSY 类瞬时抖动容忍连续
+          // HEARTBEAT_TRANSIENT_RETRY_WINDOWS 个窗口（与 runRegistry 同款取舍），
+          // 超过才 untrack。
+          if (isHeartbeatFencingError(error)) {
+            logger.warn(`loop durable heartbeat fenced for ${loopId}:`, error);
+            this.untrack(loopId);
+            return;
+          }
+          if (isSqliteBusyError(error)) {
+            consecutiveTransientFailures += 1;
+            if (consecutiveTransientFailures <= HEARTBEAT_TRANSIENT_RETRY_WINDOWS) {
+              logger.warn(`loop durable heartbeat transient failure ${consecutiveTransientFailures} for ${loopId}:`, error);
+              return;
+            }
+          }
           logger.warn(`loop durable heartbeat stopped for ${loopId}:`, error);
           this.untrack(loopId);
         },
@@ -330,6 +362,22 @@ export class LoopDurableLedger {
     clearInterval(live.heartbeatTimer);
     this.liveRuns.delete(loopId);
   }
+}
+
+const HEARTBEAT_TRANSIENT_RETRY_WINDOWS = 2;
+
+function isHeartbeatFencingError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const candidate = error as Error & { code?: unknown };
+  return candidate.code === 'RUN_OWNER_FENCED'
+    || /heartbeat fenced by stale owner/i.test(candidate.message);
+}
+
+function isSqliteBusyError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const code = (error as { code?: unknown }).code;
+  return typeof code === 'string'
+    && (code === 'SQLITE_BUSY' || code.startsWith('SQLITE_BUSY_'));
 }
 
 let configured: LoopDurableLedger | null = null;

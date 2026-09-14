@@ -41,7 +41,7 @@ const baseTools: ToolDefinition[] = [
     name: 'get_weather',
     description: '查询城市天气',
     inputSchema: { type: 'object', properties: { city: { type: 'string' } }, required: ['city'] },
-    outputSchema: {},
+    outputSchema: { type: 'object' },
     requiresPermission: false,
     permissionLevel: 'read',
   },

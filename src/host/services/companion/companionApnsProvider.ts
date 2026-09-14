@@ -175,17 +175,16 @@ function postApns(input: {
   const path = `${COMPANION_APNS.pathPrefix}${input.deviceToken}`;
   return new Promise((resolve, reject) => {
     let settled = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
     const session = connect(input.authority);
     const finish = (error?: Error, result?: ApnsHttpResult) => {
       if (settled) return;
       settled = true;
-      if (timer) clearTimeout(timer);
+      clearTimeout(timer);
       session.close();
       if (error) reject(error);
       else resolve(result as ApnsHttpResult);
     };
-    timer = setTimeout(() => finish(new Error('APNS_TIMEOUT')), input.timeoutMs);
+    const timer = setTimeout(() => finish(new Error('APNS_TIMEOUT')), input.timeoutMs);
     session.on('error', error => finish(error instanceof Error ? error : new Error('APNS_SESSION')));
     const req = session.request({
       ':method': 'POST',

@@ -464,6 +464,34 @@ describe('ftsRepair ladder', () => {
     db.close();
   });
 
+  it('source-table corruption on the backfill path: healthy FTS is not dropped, degraded, or repeatedly recreated', () => {
+    const dbPath = tmpDb();
+    let { db, repo } = openRepo(dbPath);
+    createSchema(db);
+    insertSession(db, 'sess-1');
+    seedMessages(repo, 20);
+    const transcriptRowsBefore = (db.prepare('SELECT COUNT(*) AS c FROM transcript_fts').get() as { c: number }).c;
+    db.close();
+
+    // 坏的是 messages 本体;backfill 计数全表扫会抛损坏
+    corruptFtsShadowPages(dbPath, { names: ['messages'], leafOnly: false, fullPage: true });
+    ({ db, repo } = openRepo(dbPath));
+
+    // 启动维护语义:只报警不抛;探针确认 FTS 没坏 → 不动
+    expect(repo.backfillSessionMessagesFts()).toBe(0);
+    expect(repo.backfillTranscriptFts()).toBe(0);
+
+    expect(isFtsSearchDegraded('session_messages_fts')).toBe(false);
+    expect(isFtsSearchDegraded('transcript_fts')).toBe(false);
+    expect((db.prepare('SELECT COUNT(*) AS c FROM session_messages_fts').get() as { c: number }).c).toBe(20);
+    expect((db.prepare('SELECT COUNT(*) AS c FROM transcript_fts').get() as { c: number }).c).toBe(transcriptRowsBefore);
+
+    // 再跑一遍仍不动 FTS——不重复删建
+    expect(repo.backfillSessionMessagesFts()).toBe(0);
+    expect((db.prepare('SELECT COUNT(*) AS c FROM session_messages_fts').get() as { c: number }).c).toBe(20);
+    db.close();
+  });
+
   it('startup maintenance does not throw after FTS shadow-page corruption', () => {
     const dbPath = tmpDb();
     let { db, repo } = openRepo(dbPath);

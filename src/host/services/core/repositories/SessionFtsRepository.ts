@@ -10,7 +10,7 @@ import { createLogger } from '../../infra/logger';
 import {
   isFtsDisabled,
   markFtsTableAvailable,
-  repairFtsTable,
+  repairFtsTableIfCorrupt,
 } from '../database/ftsRepair';
 import { isSqliteCorruptionError } from '../database/sqliteErrors';
 import {
@@ -68,7 +68,7 @@ export class SessionFtsRepository {
       return rebuilt;
     } catch (err) {
       if (isSqliteCorruptionError(err)) {
-        repairFtsTable(this.db, 'session_messages_fts');
+        repairFtsTableIfCorrupt(this.db, 'session_messages_fts');
         return 0;
       }
       logger.warn('[EpisodicFts] Backfill failed (non-blocking)', { error: err });
@@ -188,7 +188,7 @@ export class SessionFtsRepository {
       return rebuilt;
     } catch (err) {
       if (isSqliteCorruptionError(err)) {
-        repairFtsTable(this.db, 'transcript_fts');
+        repairFtsTableIfCorrupt(this.db, 'transcript_fts');
         return 0;
       }
       logger.warn('[TranscriptFts] Backfill failed (non-blocking)', { error: err });

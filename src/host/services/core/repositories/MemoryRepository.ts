@@ -5,7 +5,7 @@
 import type BetterSqlite3 from 'better-sqlite3';
 import { MEMORY } from '../../../../shared/constants';
 import { normalizeFtsMatchQuery, runMemoriesFtsBackfill } from '../../../../shared/memoriesFts.sql';
-import { isFtsDisabled, isFtsSearchDegraded, markFtsTableAvailable, repairFtsTable } from '../database/ftsRepair';
+import { isFtsDisabled, isFtsSearchDegraded, markFtsTableAvailable, repairFtsTableIfCorrupt } from '../database/ftsRepair';
 import { isSqliteCorruptionError } from '../database/sqliteErrors';
 import type { MemoryRecord } from '../../../protocol/types';
 import { guardSensitiveText, guardSensitiveValue } from '../../../security/sensitiveDataGuard';
@@ -315,7 +315,7 @@ export class MemoryRepository {
       return rows.length > 0 ? rows : null;
     } catch (err) {
       if (isSqliteCorruptionError(err)) {
-        repairFtsTable(this.db, 'memories_fts');
+        repairFtsTableIfCorrupt(this.db, 'memories_fts');
       }
       // FTS 表缺失 / 语法错误 / 损坏 → LIKE 兜底
       return null;
@@ -368,7 +368,7 @@ export class MemoryRepository {
       return backfilled;
     } catch (err) {
       if (isSqliteCorruptionError(err)) {
-        repairFtsTable(this.db, 'memories_fts');
+        repairFtsTableIfCorrupt(this.db, 'memories_fts');
       }
       // backfill 失败不阻塞启动；下次启动重试（原子回滚保证 FTS 仍为空）
       return 0;

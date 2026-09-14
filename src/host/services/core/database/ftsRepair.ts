@@ -149,6 +149,24 @@ export function markFtsTableAvailable(table: FtsTableName): void {
 }
 
 /**
+ * backfill 路径的修复门（与写/搜索路径同一不变式）：探针确认 FTS 表没坏——
+ * 坏在源表（messages/memories）——就不动它：重建修不好还白 DROP 完好索引，
+ * 且每次启动 backfill 会重复删建。只报警不抛（启动维护纪律）。
+ * 探针 corrupt/unknown 才进修复阶梯。
+ */
+export function repairFtsTableIfCorrupt(db: BetterSqlite3.Database, table: FtsTableName): void {
+  try {
+    if (probeFtsTable(db, table) === 'ok') {
+      logger.warn('corruption is not in the FTS table; leaving it untouched', { table });
+      return;
+    }
+    repairFtsTable(db, table);
+  } catch (err) {
+    logger.warn('backfill repair failed (ignored)', { table, error: err });
+  }
+}
+
+/**
  * 修复阶梯自身抛错（如 DB 只读、隔离改名也失败）时落降级态：
  * 后续搜索直接走 LIKE 兜底，不再每次搜索都重复撞一遍修复阶梯。
  */

@@ -48,8 +48,8 @@ const logger = createLogger('SessionIPC');
  * 注册 Session 相关 IPC handlers。
  *
  * 域通道经 installDomainRoutes 装配单源表：webServer 注入 web context 时装 web
- * 形态（5 个 desktop-only action 保持 INVALID_ACTION 桩，生产行为平移），否则装
- * 桌面全量形态（AppService 直连 context）。
+ * 形态，否则装桌面形态。刀 3 起两形态共用同一套 handler（46 action 全量），
+ * 差异只在未知 action 兜底文案与两侧 context。
  */
 export function registerSessionHandlers(
   ipcMain: IpcMain,

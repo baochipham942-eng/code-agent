@@ -22,6 +22,7 @@ function streamState() {
     currentTurnMessageId: null as string | null,
     committedAssistantMessageIds: new Set<string>(),
     lastDeltaSeqByTurn: new Map<string, number>(),
+      segmentRedirectByTurn: new Map<string, { segmentId: string; splitAtAttempt: number }>(),
   };
 }
 
@@ -186,6 +187,7 @@ describe('reconnect/replay: assistant body renders once', () => {
       currentTurnMessageId: state.currentTurnMessageId,
       committedAssistantMessageIds: new Set(state.committedAssistantMessageIds),
       lastDeltaSeqByTurn: new Map(state.lastDeltaSeqByTurn),
+      segmentRedirectByTurn: new Map<string, { segmentId: string; splitAtAttempt: number }>(),
     };
     let afterReplay = merged;
     applyConversationStreamEvent(

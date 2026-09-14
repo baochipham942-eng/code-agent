@@ -13,6 +13,7 @@ import {
   isArtifactRepairWritePriority as isArtifactRepairWritePriorityForGuard,
 } from '../artifactRepairGuard';
 import { persistStreamedPartialBeforeResend, STREAM_BREAK_SEGMENT_MARKER } from './systemContextStack';
+import { retryEvents } from '../../../model/providers/retryStrategy';
 import type { ContextAssemblyCtx } from './shared';
 import { logger } from './shared';
 
@@ -88,6 +89,10 @@ export function getNetworkRetryBudget(errMsg: string, errCode: string | undefine
  * delta 后整轮重发且 resetStreamedContent() 丢片段）。返回重试结果；不重试/重试失败返回
  * undefined，调用方回落终错路径。
  */
+// loop 层重发前的固定等待（刀 3 既有行为）：retryEvents reconnect 的 delay 展示同一值，
+// 钉成一个常量防止两处漂移。
+const NETWORK_RETRY_DELAY_MS = 2000;
+
 export async function runNetworkErrorRecovery(
   ctx: ContextAssemblyCtx,
   errorInfo: { errMsg: string; errCode: string | undefined; isSlowProviderTimeout: boolean },
@@ -109,11 +114,31 @@ export async function runNetworkErrorRecovery(
   if (!shouldRetryNetworkError) return undefined;
   ctx.inferenceRecovery._networkRetried = true;
   ctx.runtime.contextHealth.setNetworkRetryCount(networkRetryCount + 1);
+  // ADR-068 刀 4（D5 UI 信号）：loop 层网络重发与 adapter 层续接同形——发 stream_reconnecting
+  // 让 renderer 在同一 streaming 消息内嵌「连接中断，正在续接 n/N」状态行。loop 层重发
+  // 永远是诚实分段（断点 partial 已定格落库，续答另起一段），segment 恒 'b2'。
+  ctx.runtime.onEvent({
+    type: 'stream_reconnecting',
+    data: {
+      turnId: ctx.runtime.turn.currentTurnId,
+      attempt: networkRetryCount + 1,
+      maxReconnects: maxNetworkRetries,
+      segment: 'b2',
+    },
+  });
+  retryEvents.emit('reconnect', {
+    provider: ctx.runtime.modelConfig?.provider ?? 'unknown',
+    attempt: networkRetryCount + 1,
+    maxReconnects: maxNetworkRetries,
+    delay: NETWORK_RETRY_DELAY_MS,
+    error: errMsg,
+    segment: 'b2',
+  });
   // ADR-068 刀 3 收编：network retry 原本整轮重发还丢片段——先保片段再重发（重发输出
   // 另起一段不 append 拼缝，与 adapter 层同一边界）。
   persistStreamedPartialBeforeResend(ctx, STREAM_BREAK_SEGMENT_MARKER, 'loop 层网络重发');
   logger.warn(`[AgentLoop] Network error "${errMsg}" (code=${errCode}), retrying inference (${ctx.runtime.contextHealth.networkRetryCount}/${maxNetworkRetries})...`);
-  await new Promise(r => setTimeout(r, 2000));
+  await new Promise(r => setTimeout(r, NETWORK_RETRY_DELAY_MS));
   try {
     const retryResult = await ctx.inference();
     ctx.inferenceRecovery._networkRetried = false;

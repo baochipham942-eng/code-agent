@@ -33,12 +33,14 @@ import { AgentErrorPresentation } from './AgentErrorCard';
 import { VoiceCallSummaryCard } from '../voice/VoiceCallSummaryCard';
 import { ReceiptRows } from '../../ReceiptRows';
 import { useSmoothStreamingText } from '../../../hooks/useSmoothStreamingText';
-import { Archive, AudioLines, ChevronDown, ChevronRight, AlertTriangle, Copy, Check, FileText, Link, RotateCcw, Send, Wrench } from 'lucide-react';
+import { Archive, AudioLines, ChevronDown, ChevronRight, AlertTriangle, Copy, Check, FileText, Link, RefreshCw, RotateCcw, Send, Wrench } from 'lucide-react';
 import { UI } from '@shared/constants';
 import { humanizeToolError } from '../../../utils/toolExecutionPresentation';
 import { getHumanToolLabel } from '../../../utils/toolHumanLabel';
 import { useI18n } from '../../../hooks/useI18n';
+import { interpolate } from '../../../i18n/interpolate';
 import { useMessageActionStore } from '../../../stores/messageActionStore';
+import { useStreamResumeStore } from '../../../stores/streamResumeStore';
 import { MemberInputNote } from '../expert/MemberInputNote';
 
 interface TraceNodeRendererProps {
@@ -307,6 +309,13 @@ const AssistantTextNode: React.FC<{
   const [copied, setCopied] = useState(false);
   const [selectionCopy, setSelectionCopy] = useState<SelectionCopyState | null>(null);
   const messageId = node.messageId || (node.id.endsWith('-text') ? node.id.slice(0, -5) : node.id);
+  // ADR-068 刀 4：断流续接信号只挂断流那一刻的 streaming 消息（一屏一个信号；B2 分段后
+  // 即定格的断点段），续答 delta 到达即消除（store 侧 resolveIfActivityOn）。
+  const resumeSignal = useStreamResumeStore(
+    (state) => (state.signal?.messageId === messageId ? state.signal : null),
+  );
+  const resumeNote = node.metadata?.streamResumeNote;
+  const keptBreakSegment = node.metadata?.streamInterruptionReason === 'stream-break';
 
   const { displayContent, isAnimating, tailStartIndex } = useSmoothStreamingText({
     content: node.content || '',
@@ -358,7 +367,10 @@ const AssistantTextNode: React.FC<{
     node.content
     || (node.modelDecision && shouldRenderModelDecisionChip(node.modelDecision))
     || node.metadata?.turnQuality
-    || node.metadata?.agentError,
+    || node.metadata?.agentError
+    // ADR-068 刀 4：B2 续答段刚起头时正文还空，一次性续接说明先于首字渲染
+    || resumeNote
+    || resumeSignal,
   );
   // 排查报告 §2 序列②：活动轮里「thinking 已结束但 content 尚空」的窗口——思考指示已经
   // 灭了（TurnCard.tsx 的 isThinkingPhase 判定同一节点 thinking 也空），这条守卫又让节点
@@ -431,6 +443,14 @@ const AssistantTextNode: React.FC<{
         </div>
       )}
 
+      {/* ADR-068 刀 4：B2 续答段的一次性续接说明（仅流中，host 不落库、重载不出现） */}
+      {resumeNote && (
+        <div data-testid="stream-resume-note" className="mb-1 flex items-center gap-1 text-2xs text-zinc-500">
+          <RefreshCw className="h-3 w-3" aria-hidden="true" />
+          <span>{t.chat.streamResumeSegmentNote}</span>
+        </div>
+      )}
+
       {/* Text content */}
       {node.content && (
         <div ref={contentRef} className="text-zinc-200 leading-relaxed select-text">
@@ -448,6 +468,31 @@ const AssistantTextNode: React.FC<{
           {(turnStreaming || isAnimating) && (
             <span className="sr-only">正在生成</span>
           )}
+        </div>
+      )}
+
+      {/* ADR-068 刀 4（D5）：断流续接状态行——同一 streaming 消息内嵌，一屏一个信号；
+          续答恢复（B1 无缝续打 / B2 落到续答段）或终态一到即消除。 */}
+      {resumeSignal && (
+        <div
+          data-testid="stream-resume-status"
+          role="status"
+          className="mt-1 flex items-center gap-1.5 text-2xs text-zinc-400"
+        >
+          <RefreshCw className="h-3 w-3 animate-spin" aria-hidden="true" />
+          <span>
+            {interpolate(t.chat.streamResumeReconnecting, {
+              n: resumeSignal.attempt,
+              N: resumeSignal.maxReconnects,
+            })}
+          </span>
+        </div>
+      )}
+
+      {/* B2 断点段（重载视图）：中断语义样式行——裸协议标记已在投影层剥掉不上屏 */}
+      {keptBreakSegment && !resumeSignal && (
+        <div data-testid="stream-break-kept-segment" className="mt-1 text-2xs text-zinc-500">
+          {t.chat.streamBreakKeptSegment}
         </div>
       )}
 

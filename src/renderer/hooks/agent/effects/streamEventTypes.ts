@@ -93,4 +93,9 @@ export interface ConversationStreamEventActions {
   queueUpdate: (update: Parameters<AgentEffectsProps['queueUpdate']>[0]) => void;
   now?: () => number;
   generateId?: () => string;
+  /**
+   * ADR-068 刀 4：流活动上报（delta 落到该消息）——断流续接信号据此消除
+   * （B1 无缝续打回到同一消息 / B2 续答落到分段消息，都算恢复）。
+   */
+  notifyStreamResumeActivity?: (messageId: string) => void;
 }

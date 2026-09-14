@@ -503,6 +503,7 @@ const stabilityByType = {
   tool_call_local: 'experimental',
   tool_cancel_local: 'experimental',
   suggestions_update: 'experimental',
+  stream_reconnecting: 'experimental',
 } as const satisfies Record<string, EventStability>;
 
 function event<T extends keyof typeof stabilityByType, S extends z.ZodType>(type: T, data: S) {
@@ -654,6 +655,15 @@ const StreamTokenEstimateEventSchema = event('stream_token_estimate', z.object({
 const ToolCallLocalEventSchema = event('tool_call_local', typed<LocalToolCallData>(z.object({ toolCallId: z.string(), tool: z.string(), originalTool: z.string().optional(), params: unknownRecordSchema, permissionLevel: z.enum(['L1', 'L2', 'L3']), runId: z.string(), sessionId: z.string(), workspace: z.string(), cwd: z.string() })));
 const ToolCancelLocalEventSchema = event('tool_cancel_local', typed<LocalToolCancelData>(z.object({ toolCallId: z.string(), runId: z.string(), sessionId: z.string() })));
 const SuggestionsUpdateEventSchema = event('suggestions_update', z.array(z.object({ id: z.string(), text: z.string(), source: z.string() })));
+// ADR-068 刀 4（D5）：首字节后断流续接的 UI 信号——同一轮同一 streaming 消息内嵌状态行
+// 「连接中断，正在续接 n/N」。attempt/maxReconnects 即 n/N；segment 标 B1 无缝续打还是
+// B2 诚实分段（B2 时 renderer 先定格断点消息、续答另起一段，D2 边界）。
+const StreamReconnectingEventSchema = event('stream_reconnecting', z.object({
+  turnId: z.string().optional(),
+  attempt: z.number(),
+  maxReconnects: z.number(),
+  segment: z.enum(['b1', 'b2']),
+}));
 
 export const AgentEventSchema = z.discriminatedUnion('type', [
   MessageEventSchema, SurfaceExecutionEventSchema, ToolCallStartEventSchema, ToolCallEndEventSchema,
@@ -673,7 +683,7 @@ export const AgentEventSchema = z.discriminatedUnion('type', [
   ModelSwitchedEventSchema, ToolProgressEventSchema, ToolOutputDeltaEventSchema, ToolTimeoutEventSchema,
   PlanModeEnteredEventSchema, PlanModeExitedEventSchema, TaskStatsEventSchema, ContextCompactingEventSchema,
   ContextCompactedEventSchema, StreamUsageEventSchema, StreamTokenEstimateEventSchema, ToolCallLocalEventSchema,
-  ToolCancelLocalEventSchema, SuggestionsUpdateEventSchema,
+  ToolCancelLocalEventSchema, SuggestionsUpdateEventSchema, StreamReconnectingEventSchema,
 ]).meta({
   title: 'AgentEvent',
   description: 'Neo public agent event contract. New events default to experimental; stable event shapes are additive-only.',

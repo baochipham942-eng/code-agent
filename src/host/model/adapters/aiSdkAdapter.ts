@@ -1255,7 +1255,12 @@ async function streamViaAiSdk(params: {
         // 调用，对齐 D2「半截丢弃重生成」的安全幂等精神）。半截 tool_call 已被 seed 剔除，
         // 不会误触发本判据。
         const seed = seedAccumulatorFromBreakpoint(acc);
-        if (b1PrefixContractActive && seed.toolCalls.size === 0) {
+        const isB1Segment = b1PrefixContractActive && seed.toolCalls.size === 0;
+        // ADR-068 刀 4（D5）：断流续接对用户可见——B1/B2 都发 reconnecting 信号（n/N 与
+        // 分档随行，renderer 据此在同一 streaming 消息内嵌状态行；B2 另用于分段定格）。
+        // 纯呈现信号，不参与上面的续接决策。
+        onStream({ type: 'reconnecting', attempt: reconnectsUsed, maxReconnects: reconnectMax, segment: isB1Segment ? 'b1' : 'b2' });
+        if (isB1Segment) {
           resumeSeed = seed;
         } else {
           onStream({ type: 'stream_break', error: msg });
@@ -1267,6 +1272,15 @@ async function streamViaAiSdk(params: {
         const backoffMs = computeRetryBackoffMs(reconnectsUsed - 1, STREAM_RETRY_BASE_DELAY_MS, retryAfterMs);
         const delay = retryAfterMs != null ? backoffMs : Math.min(backoffMs, STREAM_RECONNECT_BACKOFF_CAP_MS);
         logger.warn(`[AiSdkAdapter] 首字节后断流 "${msg}" (code=${code})，${delay}ms 后断点续接 (${reconnectsUsed}/${reconnectMax})${retryAfterMs != null ? ' [retry-after]' : ''}`);
+        // CLI 可见性（D5）：与非流式/首字节前重试同一事件通道扩展 reconnect 语义，订阅方打一行提示。
+        retryEvents.emit('reconnect', {
+          provider: config.provider,
+          attempt: reconnectsUsed,
+          maxReconnects: reconnectMax,
+          delay,
+          error: msg,
+          segment: isB1Segment ? 'b1' : 'b2',
+        });
         // abort 短路：续接退避与重发全程可中断（复用首字节前重试的 abortableSleep 先例），
         // 醒后已 abort 则不再重发，回落下方 throw 路径（与现状 abort 语义一致）。
         await abortableSleep(delay, signal);

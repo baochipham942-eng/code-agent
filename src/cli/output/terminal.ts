@@ -359,6 +359,14 @@ export class TerminalOutput {
   }
 
   /**
+   * ADR-068 刀 4：首字节后断流续接提示（已输出的内容不作废，断点续打/分段续答）。
+   */
+  reconnecting(provider: string, attempt: number, maxReconnects: number, delay: number): void {
+    const delayStr = delay >= 1000 ? `${(delay / 1000).toFixed(0)}s` : `${delay}ms`;
+    console.log(chalk.yellow(`  ⚡ Stream interrupted — resuming ${provider}... (${attempt}/${maxReconnects}, ${delayStr})`));
+  }
+
+  /**
    * 模型降级
    */
   modelFallback(from: string, to: string, reason: string): void {

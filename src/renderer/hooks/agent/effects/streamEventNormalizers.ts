@@ -613,6 +613,32 @@ export function normalizeStreamTextPayload(data: unknown): StreamTextPayload | n
   };
 }
 
+export interface StreamReconnectingPayload {
+  turnId?: string;
+  attempt: number;
+  maxReconnects: number;
+  segment: 'b1' | 'b2';
+}
+
+/**
+ * ADR-068 刀 4：断流续接信号（stream_reconnecting）。n/N 缺一不可、segment 只认
+ * b1/b2 稳定 code——形状不全就整条丢，宁可没信号也不挂错档的信号。
+ */
+export function normalizeStreamReconnectingPayload(data: unknown): StreamReconnectingPayload | null {
+  if (!isRecord(data)) return null;
+  const attempt = getNumberField(data, 'attempt');
+  const maxReconnects = getNumberField(data, 'maxReconnects');
+  const rawSegment = data.segment;
+  const segment = rawSegment === 'b1' || rawSegment === 'b2' ? rawSegment : undefined;
+  if (attempt === undefined || maxReconnects === undefined || segment === undefined) return null;
+  return {
+    ...(getStringField(data, 'turnId') ? { turnId: getStringField(data, 'turnId') } : {}),
+    attempt,
+    maxReconnects,
+    segment,
+  };
+}
+
 /**
  * 宿主自起轮次广播回来的用户消息。只认 role==='user' + 有 id 有正文的形状，
  * 其余一律返回 null，交给 assistant 分支——两边共用 `message` 事件名。

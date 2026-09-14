@@ -13,6 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ContextAssemblyCtx } from '../../../src/host/agent/runtime/contextAssembly';
 import { inference } from '../../../src/host/agent/runtime/contextAssembly/inference';
 import { logger } from '../../../src/host/agent/runtime/contextAssembly/shared';
+import { retryEvents } from '../../../src/host/model/providers/retryStrategy';
 import { TurnState } from '../../../src/host/agent/runtime/turnState';
 import { ControlState } from '../../../src/host/agent/runtime/controlState';
 import { ContextHealthState } from '../../../src/host/agent/runtime/contextHealthState';
@@ -164,6 +165,16 @@ function streamedText(ctx: ContextAssemblyCtx): string {
     .join('');
 }
 
+/** retryEvents 'reconnect' 订阅（CLI 一行提示的事件通道；用例内挂/卸，不吃单例脏状态）。 */
+const retryOnReconnect = vi.fn();
+beforeEach(() => {
+  retryEvents.on('reconnect', retryOnReconnect);
+});
+afterEach(() => {
+  retryEvents.removeListener('reconnect', retryOnReconnect);
+  retryOnReconnect.mockClear();
+});
+
 describe('contextAssembly inference —— B2 诚实分段与重发收编（ADR-068 刀 3）', () => {
   // 引擎无关编排断言打在 mock modelRouter.inference 上（口径同 inference.artifactRetry.test.ts）。
   const prevEngine = process.env.CODE_AGENT_MODEL_ENGINE;
@@ -204,6 +215,51 @@ describe('contextAssembly inference —— B2 诚实分段与重发收编（ADR-
     expect(response.content).toBe('续答正文。');
     // renderer 的 message_delta append 通道两段照发（呈现分野是刀 4）：数据层分段以落库为准
     expect(streamedText(ctx)).toBe('断点片段。续答正文。');
+  });
+
+  it('reconnecting（刀 4 信号）：转成 stream_reconnecting agent 事件（turnId + n/N + 分档），呈现层据此内嵌状态行', async () => {
+    const ctx = buildCtx({ persistMessage: vi.fn().mockResolvedValue(undefined) } as any);
+    ctx.runtime.modelRouter.inference = vi.fn((_messages, _tools, _cfg, onStream?: StreamCallback) => {
+      onStream?.({ type: 'text', content: '断点片段。' });
+      // B2：信号先于 stream_break（同一分流点发出，呈现与分段落库同源）
+      onStream?.({ type: 'reconnecting', attempt: 1, maxReconnects: 2, segment: 'b2' });
+      onStream?.({ type: 'stream_break', error: 'ECONNRESET' });
+      onStream?.({ type: 'text', content: '续答正文。' });
+      return Promise.resolve({ type: 'text' as const, content: '续答正文。', finishReason: 'stop' });
+    });
+
+    await inference(ctx);
+
+    // 稳定 code + 计数转发给 renderer（文案在 renderer i18n，host 不写中文文案）；
+    // 同一轮不重置 turn：事件带的就是当前 turnId
+    const events = vi.mocked(ctx.runtime.onEvent).mock.calls
+      .map(([event]: [AgentEvent]) => event)
+      .filter((event) => event.type === 'stream_reconnecting');
+    expect(events).toHaveLength(1);
+    expect(events[0].data).toEqual({
+      turnId: 'turn-1',
+      attempt: 1,
+      maxReconnects: 2,
+      segment: 'b2',
+    });
+  });
+
+  it('reconnecting 缺字段兜底：attempt/maxReconnects/segment 缺省按 1/1/b2 转发（不让呈现层拿 undefined）', async () => {
+    const ctx = buildCtx({ persistMessage: vi.fn().mockResolvedValue(undefined) } as any);
+    ctx.runtime.modelRouter.inference = vi.fn((_messages, _tools, _cfg, onStream?: StreamCallback) => {
+      onStream?.({ type: 'text', content: '片段。' });
+      onStream?.({ type: 'reconnecting' });
+      onStream?.({ type: 'stream_break', error: 'ECONNRESET' });
+      return Promise.resolve({ type: 'text' as const, content: 'ok', finishReason: 'stop' });
+    });
+
+    await inference(ctx);
+
+    const events = vi.mocked(ctx.runtime.onEvent).mock.calls
+      .map(([event]: [AgentEvent]) => event)
+      .filter((event) => event.type === 'stream_reconnecting');
+    expect(events).toHaveLength(1);
+    expect(events[0].data).toEqual({ turnId: 'turn-1', attempt: 1, maxReconnects: 1, segment: 'b2' });
   });
 
   it('stream_break：persistMessage 未注入时降级 sessionManager.addMessageToSession（PR #1828 复审 Important）', async () => {
@@ -253,6 +309,20 @@ describe('contextAssembly inference —— B2 诚实分段与重发收编（ADR-
     expect(JSON.stringify(retryMessages)).not.toContain('旧尝试片段');
     // turn 累积只有重发段：resetStreamedContent 不再丢片段，也不把两代生成拼在一起
     expect(ctx.runtime.turn.lastStreamedContent).toBe('重发后的回答。');
+    // 刀 4 信号：loop 层网络重发与 adapter 续接同形——发 stream_reconnecting（n/N 取自
+    // 本层预算，segment 恒 b2：loop 重发永远是诚实分段），CLI 走 retryEvents reconnect
+    const signalEvents = vi.mocked(ctx.runtime.onEvent).mock.calls
+      .map(([event]: [AgentEvent]) => event)
+      .filter((event) => event.type === 'stream_reconnecting');
+    expect(signalEvents).toHaveLength(1);
+    expect(signalEvents[0].data).toEqual({ turnId: 'turn-1', attempt: 1, maxReconnects: 1, segment: 'b2' });
+    expect(retryOnReconnect).toHaveBeenCalledTimes(1);
+    expect(retryOnReconnect).toHaveBeenCalledWith(expect.objectContaining({
+      attempt: 1,
+      maxReconnects: 1,
+      segment: 'b2',
+      error: 'Network request failed: socket hang up',
+    }));
   });
 
   it('artifact 非流式重试：已吐 delta 后的重试同样先保片段再重发', async () => {

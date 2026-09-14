@@ -49,7 +49,12 @@ import {
   contentHasImageParts,
   runVisionPreflightCandidates,
 } from './visionPreflight';
-import { writeAgentRecoveryNotice, persistStreamedPartialBeforeResend, STREAM_BREAK_SEGMENT_MARKER, INFERENCE_ERROR_PARTIAL_MARKER } from './systemContextStack';
+import {
+  writeAgentRecoveryNotice,
+  persistStreamedPartialBeforeResend,
+  STREAM_BREAK_SEGMENT_MARKER,
+  INFERENCE_ERROR_PARTIAL_MARKER,
+} from './systemContextStack';
 import {
   broadcastVisionPreflightUnavailable,
   buildAiSdkAdaptiveFallbackInfo,
@@ -833,6 +838,20 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
         // ADR-068 刀 3 B2：adapter 决定断流重发（续答属新一次生成）。先保 partial 再收
         // 续写 delta，续答另起一段不 append 拼缝（D2）。UI 信号是刀 4，这里只落库。
         persistStreamedPartialBeforeResend(ctx, STREAM_BREAK_SEGMENT_MARKER, `断流续接：${chunk.error ?? 'unknown'}`);
+      } else if (chunk.type === 'reconnecting') {
+        // ADR-068 刀 4（D5 UI 信号）：断流续接中——同一轮回答不重置 turn（voiceCall
+        // reconnecting 先例），renderer 在同一 streaming 消息内嵌「连接中断，正在续接 n/N」
+        // 状态行；B2 档同时用于分段定格（断点消息定格、续答另起一段带一次性说明）。
+        // host 只发稳定 code 与计数，文案在 renderer i18n。
+        ctx.runtime.onEvent({
+          type: 'stream_reconnecting',
+          data: {
+            turnId: ctx.runtime.turn.currentTurnId,
+            attempt: chunk.attempt ?? 1,
+            maxReconnects: chunk.maxReconnects ?? 1,
+            segment: chunk.segment ?? 'b2',
+          },
+        });
       } else if (chunk.type === 'error') {
         // ADR-068 as-built 备注 1 收编：streamCallback 原本没有 error 分支，流中断对日志
         // 不可见。renderer 呈现仍是刀 4；这里先让中断在日志层可见（带 provider 摘要的

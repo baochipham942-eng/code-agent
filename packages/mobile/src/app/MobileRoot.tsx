@@ -26,6 +26,7 @@ import { deriveInvitationVerify, parseInvitation, type LanInvitation } from '../
 import { VirtualHistory } from '../features/sessions/VirtualHistory';
 import { NeoBrandMark } from '../features/brand/NeoBrandMark';
 import { AppIcon } from './AppIcon';
+import { sheetLibraryStatus } from './sheetLibraryStatus';
 
 /**
  * 连接那一行的文案与动作。合成一条的原因（2026-09-12 爸真机反馈）：原来「连接胶囊说『重新连接』」
@@ -121,21 +122,6 @@ const SWIPE_MAX_DY = 60;
 /** 左缘手势区：从屏幕左缘这个宽度内起滑、向右滑够 EDGE_GESTURE_MIN_DX 即开抽屉（2026-09-14 反馈①）。 */
 const EDGE_GESTURE_START_X = 28;
 const EDGE_GESTURE_MIN_DX = 56;
-
-/**
- * 项目/会话 sheet 等「电脑里的库」时的形态（2026-09-14 build 34 反馈③）。已断连时进 sheet
- * 不许先转圈——refreshLibrary 在非 connected 下直接 return，圈是无限期的；connecting 仍算
- * 等待：那时真有一场重连在飞，直接报「连不上」是谎报，超时兜底会收口。抽成纯函数照
- * connectionCopy/taskStatusCopy 的先例，让这条分支可单测。
- */
-export function sheetLibraryStatus(
-  companion: { library: unknown; status: string; libraryError: boolean },
-  timedOut: boolean,
-): 'ready' | 'waiting' | 'unreachable' {
-  if (companion.library) return 'ready';
-  if (companion.libraryError || timedOut || (companion.status !== 'connected' && companion.status !== 'connecting')) return 'unreachable';
-  return 'waiting';
-}
 
 export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures: boolean }) {
   const [store] = useState(() => createMobileStore(ports.preferences));

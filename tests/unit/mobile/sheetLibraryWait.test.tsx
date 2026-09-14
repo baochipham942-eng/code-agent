@@ -2,7 +2,8 @@
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react';
-import { MobileRoot, sheetLibraryStatus } from '../../../packages/mobile/src/app/MobileRoot';
+import { MobileRoot } from '../../../packages/mobile/src/app/MobileRoot';
+import { sheetLibraryStatus } from '../../../packages/mobile/src/app/sheetLibraryStatus';
 import type { PlatformPorts } from '../../../packages/mobile/src/platform/ports';
 import { createIdentity } from '../../../src/shared/companion/noiseChannel';
 import { toHex } from '../../../src/shared/companion/lanProtocol';

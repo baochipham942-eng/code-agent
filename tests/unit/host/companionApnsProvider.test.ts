@@ -1,9 +1,9 @@
-import { verify } from 'node:crypto';
+import { generateKeyPairSync, verify } from 'node:crypto';
 import { rmSync } from 'node:fs';
 import { afterEach, describe, expect, it } from 'vitest';
 import { companionApnsOutboxTransport } from '../../../src/host/services/companion/companionApnsProvider';
 import { COMPANION_APNS } from '../../../src/shared/constants/companion';
-import { listenFakeApns, writeTempApnsKey } from './fakeApnsServer';
+import { listenFakeApns, writeTempApnsKey, writeTempApnsPem } from './fakeApnsServer';
 
 const KEY_ID = 'TESTKEYID1';
 const TEAM_ID = 'TESTTEAM01';
@@ -167,6 +167,48 @@ describe('companion APNs provider', () => {
     const firstIat = JSON.parse(Buffer.from(fake.requests[0].authorization.split('.')[1], 'base64url').toString('utf8')) as { iat: number };
     const secondIat = JSON.parse(Buffer.from(fake.requests[1].authorization.split('.')[1], 'base64url').toString('utf8')) as { iat: number };
     expect(secondIat.iat).toBe(firstIat.iat + 1);
+  });
+
+  it('maps a damaged or non-EC Auth Key to CHANNEL_MISSING without sending', async () => {
+    const fake = await listenFakeApns();
+    cleanup.push(() => fake.stop());
+    const rsaPem = generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey
+      .export({ type: 'pkcs8', format: 'pem' }) as string;
+    for (const pem of [
+      '-----BEGIN PRIVATE KEY-----\nnot-a-real-key\n-----END PRIVATE KEY-----\n',
+      rsaPem,
+    ]) {
+      const key = writeTempApnsPem(pem);
+      cleanup.push(() => rmSync(key.dir, { recursive: true, force: true }));
+      const transport = companionApnsOutboxTransport(envFor(key.keyPath), { authority: fake.authority });
+      await expect(transport.send!({ provider: 'apns', environment: 'production', token: DEVICE_TOKEN, payload }))
+        .resolves.toEqual({ accepted: false, code: 'CHANNEL_MISSING', missing: 'apns_auth_key' });
+    }
+    expect(fake.requests).toHaveLength(0);
+  });
+
+  it('rejects a non-hex or wrong-length device token as NOT_REGISTERED without calling APNs', async () => {
+    const key = writeTempApnsKey();
+    const fake = await listenFakeApns();
+    cleanup.push(() => fake.stop(), () => rmSync(key.dir, { recursive: true, force: true }));
+    const transport = companionApnsOutboxTransport(envFor(key.keyPath), { authority: fake.authority });
+    const malformed = [
+      'z'.repeat(COMPANION_APNS.deviceTokenHexLength),
+      DEVICE_TOKEN.slice(1),
+      `${DEVICE_TOKEN}aa`,
+      `${'a'.repeat(32)}/${'b'.repeat(31)}`,
+      'device-token-aaaaaaaa',
+    ];
+    for (const token of malformed) {
+      await expect(transport.send!({ provider: 'apns', environment: 'production', token, payload }))
+        .resolves.toEqual({ accepted: false, code: 'NOT_REGISTERED' });
+    }
+    expect(fake.requests).toHaveLength(0);
+    expect(await transport.send!({
+      provider: 'apns', environment: 'production', token: DEVICE_TOKEN.toUpperCase(), payload,
+    })).toEqual({ accepted: true });
+    expect(fake.requests).toHaveLength(1);
+    expect(fake.requests[0].path).toBe(`${COMPANION_APNS.pathPrefix}${DEVICE_TOKEN.toUpperCase()}`);
   });
 
   it('returns a retryable result and honors Retry-After seconds', async () => {

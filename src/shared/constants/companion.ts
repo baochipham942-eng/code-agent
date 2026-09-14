@@ -23,6 +23,8 @@ export const COMPANION_APNS = {
   sandboxAuthority: 'https://api.sandbox.push.apple.com',
   pathPrefix: '/3/device/',
   pushType: 'alert',
+  /** APNs device token is 32 bytes, written as 64 hex characters. */
+  deviceTokenHexLength: 64,
 } as const;
 
 export const COMPANION_LIMITS = {

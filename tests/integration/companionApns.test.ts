@@ -8,7 +8,7 @@ import { CompanionGateway } from '../../src/host/services/companion/CompanionGat
 import { CompanionPushOutbox } from '../../src/host/services/companion/CompanionPushOutbox';
 import { companionApnsOutboxTransport } from '../../src/host/services/companion/companionApnsProvider';
 import { COMPANION_APNS } from '../../src/shared/constants/companion';
-import { listenFakeApns, writeTempApnsKey } from '../unit/host/fakeApnsServer';
+import { listenFakeApns, writeTempApnsKey, writeTempApnsPem } from '../unit/host/fakeApnsServer';
 
 const wrapKey = Buffer.alloc(32, 9);
 const DEVICE_TOKEN = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
@@ -116,6 +116,35 @@ describe('companion APNs: outbox + local http2 fake APNs', () => {
     expect(push.rowsFor('phone-1')[0].state).toBe('sent');
     expect(fake.requests).toHaveLength(2);
     expect(fake.requests[0].authorization).not.toBe(fake.requests[1].authorization);
+  });
+
+  it('fails the outbox row when the Auth Key is damaged instead of leaving it pending', async () => {
+    const key = writeTempApnsPem('-----BEGIN PRIVATE KEY-----\nnot-a-real-key\n-----END PRIVATE KEY-----\n');
+    const fake = await listenFakeApns();
+    cleanup.push(() => fake.stop(), () => rmSync(key.dir, { recursive: true, force: true }));
+    const push = attach(companionApnsOutboxTransport(envFor(key.keyPath), { authority: fake.authority }));
+    push.register('phone-1', { provider: 'apns', token: DEVICE_TOKEN, environment: 'production' });
+    gateway.publish('session-1', 'agent_complete', {});
+    await expect(push.flush()).resolves.toBeUndefined();
+    expect(push.rowsFor('phone-1')[0].state).toBe('failed');
+    expect(fake.requests).toHaveLength(0);
+  });
+
+  it('drops a malformed device token as dead without calling APNs', async () => {
+    const key = writeTempApnsKey();
+    const fake = await listenFakeApns();
+    cleanup.push(() => fake.stop(), () => rmSync(key.dir, { recursive: true, force: true }));
+    const push = attach(companionApnsOutboxTransport(envFor(key.keyPath), { authority: fake.authority }));
+    push.register('phone-1', {
+      provider: 'apns',
+      token: `${'a'.repeat(32)}/${'b'.repeat(31)}`,
+      environment: 'production',
+    });
+    gateway.publish('session-1', 'agent_complete', {});
+    await push.flush();
+    expect(push.rowsFor('phone-1')[0].state).toBe('failed');
+    expect(db.prepare('SELECT COUNT(*) AS n FROM companion_push_registrations').get()).toEqual({ n: 0 });
+    expect(fake.requests).toHaveLength(0);
   });
 
   it('keeps CHANNEL_MISSING:apns_auth_key when any APNs env is absent', async () => {

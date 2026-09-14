@@ -20,12 +20,16 @@ export interface FakeApnsHandle {
   stop(): Promise<void>;
 }
 
-export function writeTempApnsKey(): { dir: string; keyPath: string; publicKey: KeyObject } {
+export function writeTempApnsPem(pem: string): { dir: string; keyPath: string } {
   const dir = mkdtempSync(join(tmpdir(), 'companion-apns-'));
-  const { privateKey, publicKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
   const keyPath = join(dir, 'AuthKey_TESTONLY.p8');
-  writeFileSync(keyPath, privateKey.export({ type: 'pkcs8', format: 'pem' }), { mode: 0o600 });
-  return { dir, keyPath, publicKey };
+  writeFileSync(keyPath, pem, { mode: 0o600 });
+  return { dir, keyPath };
+}
+
+export function writeTempApnsKey(): { dir: string; keyPath: string; publicKey: KeyObject } {
+  const { privateKey, publicKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
+  return { ...writeTempApnsPem(privateKey.export({ type: 'pkcs8', format: 'pem' }) as string), publicKey };
 }
 
 export async function listenFakeApns(): Promise<FakeApnsHandle> {

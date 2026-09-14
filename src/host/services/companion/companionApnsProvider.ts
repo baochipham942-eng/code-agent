@@ -61,11 +61,18 @@ function buildApnsPayload(payload: GeneralizedPushPayload): Record<string, unkno
   };
 }
 
+function isApnsDeviceToken(token: string): boolean {
+  return token.length === COMPANION_APNS.deviceTokenHexLength && /^[0-9a-fA-F]+$/.test(token);
+}
+
 function signCompanionApnsJwt(pem: string, keyId: string, teamId: string, iatSeconds: number): string {
   const header = base64url(JSON.stringify({ alg: 'ES256', kid: keyId }));
   const payload = base64url(JSON.stringify({ iss: teamId, iat: iatSeconds }));
   const signingInput = `${header}.${payload}`;
   const key = createPrivateKey(pem);
+  if (key.asymmetricKeyType !== 'ec') {
+    throw new Error('APNS_KEY_NOT_EC');
+  }
   const signature = sign('sha256', Buffer.from(signingInput), { key, dsaEncoding: 'ieee-p1363' });
   return `${signingInput}.${signature.toString('base64url')}`;
 }
@@ -108,7 +115,13 @@ function createCompanionApnsSender(
     if (!pem) return null;
     const seconds = Math.floor(t / 1000);
     const iat = force ? Math.max(seconds, lastIat + 1) : seconds;
-    cachedJwt = signCompanionApnsJwt(pem, config.keyId, config.teamId, iat);
+    try {
+      cachedJwt = signCompanionApnsJwt(pem, config.keyId, config.teamId, iat);
+    } catch (error) {
+      const errorCode = error instanceof Error && 'code' in error ? String((error as NodeJS.ErrnoException).code ?? '') : '';
+      logger.warn('Companion APNs JWT mint failed', { errorCode });
+      return null;
+    }
     issuedAtMs = t;
     lastIat = iat;
     return cachedJwt;
@@ -118,10 +131,13 @@ function createCompanionApnsSender(
     if (request.provider !== 'apns') {
       return { accepted: false, code: 'CHANNEL_MISSING', missing: 'gms_or_vendor' };
     }
-    const jwt = mint(false);
-    if (!jwt) return { accepted: false, code: 'CHANNEL_MISSING', missing: 'apns_auth_key' };
-    const authority = resolveApnsAuthority(request.environment, overrides.authority);
+    if (!isApnsDeviceToken(request.token)) {
+      return { accepted: false, code: 'NOT_REGISTERED' };
+    }
     try {
+      const jwt = mint(false);
+      if (!jwt) return { accepted: false, code: 'CHANNEL_MISSING', missing: 'apns_auth_key' };
+      const authority = resolveApnsAuthority(request.environment, overrides.authority);
       let response = await postApns({
         authority,
         jwt,

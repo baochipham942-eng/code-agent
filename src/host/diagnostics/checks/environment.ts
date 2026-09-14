@@ -8,6 +8,8 @@ import { stat } from 'fs/promises';
 import { join } from 'path';
 import { DOCTOR_FIX_CODES } from '../../../shared/constants/doctor';
 import { getUserConfigDir } from '../../config/configPaths';
+import { describeIntegrityCheckStatus } from '../../services/core/database/integrityGate';
+import { describeBackupStatus } from '../../services/infra/dbBackup';
 import type { DoctorItem } from '../types';
 
 const REQUIRED_SESSION_COLUMNS = ['id', 'title', 'is_deleted', 'is_archived'] as const;
@@ -72,23 +74,30 @@ export async function checkDatabase(): Promise<DoctorItem> {
       columns.map((column) => column.name).filter((name): name is string => typeof name === 'string'),
     );
     const missingColumns = REQUIRED_SESSION_COLUMNS.filter((column) => !columnNames.has(column));
+    const backupStatus = describeBackupStatus(dbPath);
+    const integrityStatus = describeIntegrityCheckStatus(getUserConfigDir());
+    const extras = `backups ${backupStatus} · quick_check ${integrityStatus}`;
     if (missingColumns.length > 0) {
       return {
         category: 'database',
         name: 'SQLite database',
         status: 'fail',
         message: `sessions schema missing: ${missingColumns.join(', ')}`,
-        details: `${sizeMB} MB · ${dbPath}`,
+        details: `${sizeMB} MB · ${dbPath} · ${extras}`,
         suggestion: '重启应用以执行数据库迁移；若仍失败，请备份后检查数据库',
         fix: { code: DOCTOR_FIX_CODES.OPEN_DATA_DIRECTORY },
       };
     }
+    const integrityFailed = integrityStatus.startsWith('failed') || integrityStatus === 'unrecoverable';
     return {
       category: 'database',
       name: 'SQLite database',
-      status: 'pass',
-      message: `${sizeMB} MB`,
+      status: integrityFailed ? 'warn' : 'pass',
+      message: `${sizeMB} MB · ${extras}`,
       details: dbPath,
+      suggestion: integrityFailed
+        ? 'The next launch will try to restore from a backup. Corrupt files are isolated, never deleted.'
+        : undefined,
     };
   } catch (err) {
     return {

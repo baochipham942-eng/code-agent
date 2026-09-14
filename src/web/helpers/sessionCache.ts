@@ -8,7 +8,8 @@
 // ── 类型 ──
 
 import type { Artifact, Message, MessageAttachment, PersistenceHealth } from '../../shared/contract';
-import { SQLITE_FTS } from '../../shared/constants';
+import { SQLITE_FTS, SQLITE_INTEGRITY } from '../../shared/constants';
+import type { DbIntegrityOutcome } from '../../host/services/core/database/integrityGate';
 import { sanitizeAttachmentsForPersistence, stripInlineAttachmentBlocks } from '../../shared/utils/messageAttachments';
 import { getDisabledFtsTables, getEmptyRecreatedFtsTables } from '../../host/services/core/database/ftsRepair';
 
@@ -66,6 +67,10 @@ let persistenceHealth: PersistenceHealth = {
 
 function formatPersistenceFailureReason(error: unknown): string | undefined {
   if (!error) return undefined;
+  if (typeof error === 'object' && error !== null && 'code' in error) {
+    const code = (error as { code?: unknown }).code;
+    if (code === SQLITE_INTEGRITY.CORRUPT_NO_BACKUP) return SQLITE_INTEGRITY.CORRUPT_NO_BACKUP;
+  }
   if (error instanceof Error) return error.message;
   const reason = String(error);
   return reason.length > 0 ? reason : undefined;
@@ -90,6 +95,39 @@ export function setDbAvailable(value: boolean, error?: unknown): void {
         reason: formatPersistenceFailureReason(error),
         checkedAt: Date.now(),
       };
+}
+
+function markPersistenceRecovered(backupTakenAt: number): void {
+  dbAvailable = true;
+  persistenceHealth = {
+    status: 'recovered',
+    mode: 'database',
+    durable: true,
+    message: 'Restored from a local backup.',
+    reason: `${SQLITE_INTEGRITY.RECOVERED_FROM_BACKUP}:${new Date(backupTakenAt).toISOString()}`,
+    checkedAt: Date.now(),
+  };
+}
+
+export function markPersistenceDegraded(reason: string): void {
+  if (!dbAvailable) return;
+  if (persistenceHealth.status === 'recovered' || persistenceHealth.status === 'unavailable') return;
+  persistenceHealth = {
+    ...persistenceHealth,
+    status: 'degraded',
+    reason,
+    checkedAt: Date.now(),
+  };
+}
+
+export function applyDbIntegrityOutcome(outcome: DbIntegrityOutcome): void {
+  if (outcome.kind === 'recovered') {
+    markPersistenceRecovered(outcome.backupTakenAt);
+    return;
+  }
+  if (outcome.kind === 'local') {
+    markPersistenceDegraded(SQLITE_INTEGRITY.LOCAL_CORRUPT);
+  }
 }
 
 export function getPersistenceHealth(): PersistenceHealth {

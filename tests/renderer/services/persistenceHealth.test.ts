@@ -1,10 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  describePersistenceBanner,
   fetchWebBuildInfo,
   getPersistenceWarningText,
   shouldShowPersistenceWarning,
 } from '../../../src/renderer/services/persistenceHealth';
 import type { BuildInfo, PersistenceHealth } from '../../../src/shared/contract';
+import { SQLITE_INTEGRITY } from '../../../src/shared/constants';
+import { zh } from '../../../src/renderer/i18n';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -43,6 +46,35 @@ describe('persistence health renderer helpers', () => {
       checkedAt: 30,
     } satisfies PersistenceHealth;
     expect(shouldShowPersistenceWarning(degraded)).toBe(true);
+  });
+
+  it('shows a warning after backup recovery', () => {
+    const recovered = {
+      status: 'recovered',
+      mode: 'database',
+      durable: true,
+      message: 'Restored from a local backup.',
+      reason: `${SQLITE_INTEGRITY.RECOVERED_FROM_BACKUP}:2026-09-14T00:00:00.000Z`,
+      checkedAt: 40,
+    } satisfies PersistenceHealth;
+    expect(shouldShowPersistenceWarning(recovered)).toBe(true);
+    expect(describePersistenceBanner(recovered, zh.settings.data.persistence)).toMatchObject({
+      title: zh.settings.data.persistence.recoveredTitle,
+      body: expect.stringContaining('2026-09-14T00:00:00.000Z'),
+    });
+  });
+
+  it('translates DB_CORRUPT_NO_BACKUP instead of leaking a host message', () => {
+    const noBackup = {
+      status: 'unavailable',
+      mode: 'memory',
+      durable: false,
+      message: 'Restored from a local backup.',
+      reason: SQLITE_INTEGRITY.CORRUPT_NO_BACKUP,
+      checkedAt: 50,
+    } satisfies PersistenceHealth;
+    expect(describePersistenceBanner(noBackup, zh.settings.data.persistence).body)
+      .toBe(zh.settings.data.persistence.corruptNoBackup);
   });
 
   it('keeps a clear fallback warning when health text is missing', () => {

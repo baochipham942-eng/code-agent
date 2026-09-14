@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { isSqliteCorruptionError } from '../../../src/host/services/core/database/sqliteErrors';
+import {
+  DatabaseIntegrityError,
+  isSqliteCorruptionError,
+  isSqliteIntegritySignal,
+} from '../../../src/host/services/core/database/sqliteErrors';
 
 function sqliteError(code: string, message: string): Error {
   return Object.assign(new Error(message), { name: 'SqliteError', code });
@@ -34,5 +38,21 @@ describe('isSqliteCorruptionError', () => {
   it('rejects malformed JSON (not database corruption)', () => {
     expect(isSqliteCorruptionError(sqliteError('SQLITE_ERROR', 'malformed JSON'))).toBe(false);
     expect(isSqliteCorruptionError(new Error('malformed JSON at offset 3'))).toBe(false);
+  });
+});
+
+describe('isSqliteIntegritySignal', () => {
+  it('accepts SQLITE_IOERR and SQLITE_CORRUPT, rejects BUSY/CANTOPEN', () => {
+    expect(isSqliteIntegritySignal(sqliteError('SQLITE_IOERR', 'disk I/O error'))).toBe(true);
+    expect(isSqliteIntegritySignal(sqliteError('SQLITE_IOERR_READ', 'I/O error'))).toBe(true);
+    expect(isSqliteIntegritySignal(sqliteError('SQLITE_CORRUPT', 'malformed'))).toBe(true);
+    expect(isSqliteIntegritySignal(sqliteError('SQLITE_BUSY', 'database is locked'))).toBe(false);
+    expect(isSqliteIntegritySignal(sqliteError('SQLITE_CANTOPEN', 'unable to open database file'))).toBe(false);
+  });
+
+  it('DatabaseIntegrityError exposes the stable code', () => {
+    const err = new DatabaseIntegrityError('DB_CORRUPT_NO_BACKUP');
+    expect(err.code).toBe('DB_CORRUPT_NO_BACKUP');
+    expect(err.message).toBe('DB_CORRUPT_NO_BACKUP');
   });
 });

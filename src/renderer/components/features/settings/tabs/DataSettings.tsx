@@ -20,7 +20,6 @@ import {
 } from 'lucide-react';
 import { IPC_DOMAINS } from '@shared/ipc';
 import { TELEMETRY_CHANNELS } from '@shared/ipc/channels';
-import { SQLITE_FTS } from '@shared/constants';
 import { Button } from '../../../primitives';
 import { createLogger } from '../../../../utils/logger';
 import { isWebMode } from '../../../../utils/platform';
@@ -31,6 +30,7 @@ import ipcService from '../../../../services/ipcService';
 import type { PersistenceHealth } from '@shared/contract';
 import type { TelemetryHealth } from '@shared/contract/telemetry';
 import {
+  describePersistenceBanner,
   fetchWebPersistenceHealth,
   getPersistenceWarningText,
   shouldShowPersistenceWarning,
@@ -400,7 +400,9 @@ export const DataSettings: React.FC = () => {
     () => buildDataManagementSummary(stats, snapshotStats, dataText),
     [dataText, snapshotStats, stats],
   );
-  const persistenceWarningText = getPersistenceWarningText(persistenceHealth);
+  const persistenceBanner = persistenceHealth
+    ? describePersistenceBanner(persistenceHealth, dataText.persistence)
+    : null;
   const summaryCards = useMemo(() => {
     const cards = [
       [
@@ -490,17 +492,10 @@ export const DataSettings: React.FC = () => {
           <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
           <div className="min-w-0">
             <div className="font-medium">
-              {persistenceHealth.status === 'degraded'
-                ? dataText.persistence.degradedTitle
-                : dataText.persistence.title}
+              {persistenceBanner?.title ?? dataText.persistence.title}
             </div>
             <div className="mt-0.5 text-xs text-badge-warning/80">
-              {persistenceHealth.status === 'degraded'
-                ? persistenceHealth.reason === SQLITE_FTS.EMPTY_RECREATED_REASON
-                  ? dataText.persistence.degradedFtsReindexing
-                  : dataText.persistence.degradedFtsDisabled
-                : persistenceWarningText}
-              {persistenceHealth.reason ? `${dataText.persistence.reasonPrefix}${persistenceHealth.reason}` : ''}
+              {persistenceBanner?.body ?? getPersistenceWarningText(persistenceHealth)}
             </div>
           </div>
         </div>

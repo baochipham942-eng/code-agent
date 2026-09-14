@@ -73,9 +73,14 @@ export const enSettingsSystem = {
       },
       persistence: {
         title: 'History persistence is unavailable',
-        degradedTitle: 'Search is degraded',
+        degradedTitle: 'Storage is degraded',
         degradedFtsDisabled: 'Full-text index is temporarily unavailable; fallback search is in use. Writes are unaffected.',
         degradedFtsReindexing: 'Full-text index was recreated and history is being backfilled; search may be temporarily incomplete. Writes are unaffected.',
+        degradedQuickCheck: 'Database integrity check failed. The next launch will try to restore from a backup.',
+        degradedLocal: 'Some tables are damaged. Diagnostics were recorded; writes still work.',
+        recoveredTitle: 'Restored from backup',
+        recoveredBody: 'The database was restored from a local backup taken at {timestamp}. Changes after that point may be lost.',
+        corruptNoBackup: 'The database is corrupt and no usable backup was found. This session is memory-only.',
         reasonPrefix: ' Reason: ',
       },
       controlPlane: {

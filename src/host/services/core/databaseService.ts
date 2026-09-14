@@ -14,6 +14,23 @@ import { applyConversationBranchSchema } from './database/schemaConversationBran
 import { applySessionForkPortabilitySchema } from './database/schemaSessionForkPortability';
 import { applyIndexes } from './database/indexes';
 import { ensureWalShmConsistency } from './database/walShmConsistency';
+import {
+  clearIntegrityFailedMarker,
+  hasIntegrityFailedMarker,
+  hasUnrecoverableMarker,
+  probeDatabaseIntegrity,
+  shouldAttemptRestore,
+  writeUnrecoverableMarker,
+  type DbIntegrityOutcome,
+} from './database/integrityGate';
+import { DatabaseIntegrityError, isSqliteIntegritySignal } from './database/sqliteErrors';
+import {
+  copyBackupIntoPlace,
+  findLatestGoodBackup,
+  isolateCorruptDatabase,
+  quickCheckFileSync,
+} from '../infra/dbBackup';
+import { SQLITE_INTEGRITY } from '../../../shared/constants';
 import { applySessionsMigrations, applyTelemetryTurnsMigrations, applyEvaluationCleanupMigration } from './database/migrations';
 import { applyDistillSignalsMigration } from './database/migrations/distillSignals';
 import { DurableRunDatabaseSupport } from './database/durableRunDatabaseSupport';
@@ -81,6 +98,14 @@ import {
 } from './repositories/sessionForkPublishedWorkspaceReader';
 
 type DatabaseRecoveryCallback = () => void;
+
+function isNonRetryableIntegrityError(err: unknown): boolean {
+  if (err instanceof DatabaseIntegrityError) return true;
+  if (err && typeof err === 'object' && 'code' in err) {
+    return (err as { code?: unknown }).code === SQLITE_INTEGRITY.CORRUPT_NO_BACKUP;
+  }
+  return false;
+}
 
 const databaseRecoveryListeners = new Set<DatabaseRecoveryCallback>();
 
@@ -251,6 +276,7 @@ export class DatabaseService extends DurableRunDatabaseSupport {
   private turnCostRepo!: TurnCostRepository;
   /** 启动时从总账重建的崩溃现场快照（ADR-022 第二期），供诊断出口/恢复消费 */
   private lastRecoverySnapshot: RecoverySnapshot | null = null;
+  private _integrityOutcome: DbIntegrityOutcome = { kind: 'ok' };
 
   constructor(dataDir: string = app.getPath('userData')) {
     super();
@@ -295,7 +321,9 @@ export class DatabaseService extends DurableRunDatabaseSupport {
     this._initFailed = false;
     this._initPromise = this._doInitialize().catch((err) => {
       this._initFailed = true;
-      this._scheduleRetry();
+      if (!isNonRetryableIntegrityError(err)) {
+        this._scheduleRetry();
+      }
       throw err;
     });
     return this._initPromise;
@@ -341,15 +369,56 @@ export class DatabaseService extends DurableRunDatabaseSupport {
     }
 
     const { step, summary } = createInitStepTimer();
+    const dataDir = path.dirname(this.dbPath);
+
+    if (hasUnrecoverableMarker(dataDir)) {
+      throw new DatabaseIntegrityError(SQLITE_INTEGRITY.CORRUPT_NO_BACKUP);
+    }
 
     // 开库前的 -shm 一致性保障：过小就补大，永不删除（见 walShmConsistency.ts 顶部注释）
     ensureWalShmConsistency(this.dbPath, logger);
 
     try {
-      this.db = new Database(this.dbPath);
-      this.db.pragma('journal_mode = WAL');
-      this.db.pragma('foreign_keys = ON');
+      let openedFromRestore = false;
+      try {
+        this.openDatabaseConnection();
+      } catch (err) {
+        if (!isSqliteIntegritySignal(err)) throw err;
+        this.restoreFromBackupOrThrow();
+        openedFromRestore = true;
+      }
       step('open+wal');
+
+      // Tier 1 必须在 applySchema / applyDurableRunMigration / runStartupMaintenance 之前。
+      // 否则恢复闭包写入会在坏库上半写。禁止在这里跑 PRAGMA quick_check / integrity_check。
+      if (!openedFromRestore) {
+        if (!this.db) {
+          throw new Error('Database not opened');
+        }
+        const probe = probeDatabaseIntegrity(this.db);
+        step('integrity-probe');
+        logger.info(
+          `[DatabaseService] integrity probe: severity=${probe.severity} elapsed=${Math.round(probe.elapsedMs)}ms`,
+        );
+        if (shouldAttemptRestore(probe, { escalate: hasIntegrityFailedMarker(dataDir) })) {
+          this.restoreFromBackupOrThrow();
+        } else if (probe.severity === 'local') {
+          const tables = probe.tables.filter((row) => !row.ok).map((row) => row.table);
+          this._integrityOutcome = { kind: 'local', tables };
+          logger.warn(
+            `[DatabaseService] local sqlite damage on ${tables.join(', ')}; not isolating (only CORRUPT/IOERR isolate)`,
+          );
+        } else {
+          this._integrityOutcome = { kind: 'ok' };
+          clearIntegrityFailedMarker(dataDir);
+        }
+      } else {
+        step('integrity-probe');
+      }
+
+      if (!this.db) {
+        throw new Error('Database not opened');
+      }
 
       applySchema(this.db, logger);
       step('schema');
@@ -446,6 +515,66 @@ export class DatabaseService extends DurableRunDatabaseSupport {
     }
   }
 
+  private openDatabaseConnection(): void {
+    if (!Database) {
+      throw new Error('better-sqlite3 not available (CLI mode or native module missing)');
+    }
+    this.db = new Database(this.dbPath);
+    this.db.pragma('journal_mode = WAL');
+    this.db.pragma('foreign_keys = ON');
+  }
+
+  /**
+   * 整库灾难性损坏：隔离改名（永不删除）后从最近一份 quick_check 通过的备份恢复。
+   *
+   * 双进程共写 data dir：恢复出的新库对仍在跑的旧进程不可见；旧进程继续写已经
+   * 隔离改名的坏库。两边不会接到同一份文件上。重启后收敛到新库。
+   */
+  private restoreFromBackupOrThrow(): void {
+    if (this.db) {
+      try {
+        this.db.close();
+      } catch (closeErr) {
+        logger.warn('[DatabaseService] Failed to close corrupt database before isolate:', closeErr);
+      }
+      this.db = null;
+    }
+
+    const now = Date.now();
+    const isolatedPath = isolateCorruptDatabase(this.dbPath, now);
+    logger.warn(
+      `[DatabaseService] isolated corrupt database as ${isolatedPath} (never deleted). ` +
+        'A still-running peer keeps writing the isolated files; this process opens a restored copy the peer cannot see; restart converges.',
+    );
+
+    const backup = findLatestGoodBackup(this.dbPath, quickCheckFileSync);
+    if (!backup) {
+      writeUnrecoverableMarker(path.dirname(this.dbPath), isolatedPath);
+      throw new DatabaseIntegrityError(SQLITE_INTEGRITY.CORRUPT_NO_BACKUP);
+    }
+
+    copyBackupIntoPlace(backup.path, this.dbPath);
+    ensureWalShmConsistency(this.dbPath, logger);
+    this.openDatabaseConnection();
+    if (!this.db) {
+      throw new Error('Database not opened');
+    }
+    const post = probeDatabaseIntegrity(this.db);
+    if (post.severity === 'catastrophic') {
+      writeUnrecoverableMarker(path.dirname(this.dbPath), isolatedPath);
+      throw new DatabaseIntegrityError(SQLITE_INTEGRITY.CORRUPT_NO_BACKUP);
+    }
+    this._integrityOutcome = {
+      kind: 'recovered',
+      backupTakenAt: backup.mtimeMs,
+      isolatedPath,
+    };
+    clearIntegrityFailedMarker(path.dirname(this.dbPath));
+    logger.warn(
+      `[DatabaseService] restored database from backup mtime=${new Date(backup.mtimeMs).toISOString()}`,
+    );
+  }
+
   private async recoverIncompleteSessionForkWorkspaces(): Promise<void> {
     const recoverable = this.sessionForkWorkspaceRepo.listRecoverableSagas();
     for (const saga of recoverable) {
@@ -518,6 +647,11 @@ export class DatabaseService extends DurableRunDatabaseSupport {
   /** 库文件绝对路径 —— 供需要在别的进程里开同一个库的场景使用（如 VACUUM 子进程） */
   getDbPath(): string {
     return this.dbPath;
+  }
+
+  /** 启动完整性结果：供 PersistenceHealth 报 recovered / degraded。 */
+  getIntegrityOutcome(): DbIntegrityOutcome {
+    return this._integrityOutcome;
   }
 
   /**

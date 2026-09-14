@@ -31,7 +31,6 @@ import {
   BackgroundSubagentDurableLedger,
   armBackgroundSubagentDurableLedger,
   configureBackgroundSubagentDurableLedger,
-  resetBackgroundSubagentDurableLedger,
   waitForBackgroundSubagentDurableLedger,
 } from '../../../src/host/agent/backgroundSubagentDurableLedger';
 import type { SubagentResult } from '../../../src/host/agent/subagentExecutorTypes';
@@ -69,11 +68,11 @@ function createStack(processInstanceId = 'process-1', leaseDurationMs = 60_000) 
 
 describe('BackgroundSubagent durable ledger (N-BGSPAWN-DURABLE)', () => {
   beforeEach(() => {
-    resetBackgroundSubagentDurableLedger();
+    configureBackgroundSubagentDurableLedger.resetForTest();
   });
 
   afterEach(() => {
-    resetBackgroundSubagentDurableLedger();
+    configureBackgroundSubagentDurableLedger.resetForTest();
     vi.useRealTimers();
   });
 
@@ -352,7 +351,7 @@ describe('BackgroundSubagent durable ledger (N-BGSPAWN-DURABLE)', () => {
     configureBackgroundSubagentDurableLedger(ledger);
     await expect(pending).resolves.toBe(ledger);
 
-    resetBackgroundSubagentDurableLedger();
+    configureBackgroundSubagentDurableLedger.resetForTest();
     armBackgroundSubagentDurableLedger();
     const timedOut = waitForBackgroundSubagentDurableLedger(5_000);
     const assertion = expect(timedOut).rejects.toBeInstanceOf(DurableRunPersistenceUnavailableError);

@@ -236,14 +236,26 @@ export function armBackgroundSubagentDurableLedger(): void {
   armed = true;
 }
 
-export function configureBackgroundSubagentDurableLedger(
-  ledger: BackgroundSubagentDurableLedger | null,
-): void {
-  configured = ledger;
-  const waiters = configureWaiters;
-  configureWaiters = [];
-  for (const resolve of waiters) resolve(ledger);
-}
+export const configureBackgroundSubagentDurableLedger = Object.assign(
+  function configureBackgroundSubagentDurableLedger(
+    ledger: BackgroundSubagentDurableLedger | null,
+  ): void {
+    configured = ledger;
+    const waiters = configureWaiters;
+    configureWaiters = [];
+    for (const resolve of waiters) resolve(ledger);
+  },
+  {
+    /** 测试用：回到未 arm、未 configure 的初始态。挂在既有导出上，不作为新 export（knip 棘轮不认新死导出，见 #1727 同款写法）。 */
+    resetForTest(): void {
+      configured = null;
+      armed = false;
+      const waiters = configureWaiters;
+      configureWaiters = [];
+      for (const resolve of waiters) resolve(null);
+    },
+  },
+);
 
 export function getBackgroundSubagentDurableLedger(): BackgroundSubagentDurableLedger | null {
   return configured;
@@ -251,15 +263,6 @@ export function getBackgroundSubagentDurableLedger(): BackgroundSubagentDurableL
 
 export function isBackgroundSubagentDurableArmed(): boolean {
   return armed;
-}
-
-/** 测试用：回到未 arm、未 configure 的初始态。 */
-export function resetBackgroundSubagentDurableLedger(): void {
-  configured = null;
-  armed = false;
-  const waiters = configureWaiters;
-  configureWaiters = [];
-  for (const resolve of waiters) resolve(null);
 }
 
 /**

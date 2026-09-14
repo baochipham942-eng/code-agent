@@ -29,6 +29,10 @@ import {
   AgentTeamDurableRuntime,
   configureAgentTeamDurableRuntime,
 } from '../agent/agentTeamDurableAdapter';
+import {
+  BackgroundSubagentDurableLedger,
+  configureBackgroundSubagentDurableLedger,
+} from '../agent/backgroundSubagentDurableLedger';
 import type {
   AgentTeamDurableParentHost,
   AgentTeamParentProjectionInput,
@@ -85,6 +89,7 @@ export class RunRegistry implements AgentTeamDurableParentHost {
     this.kernel = kernel;
     configureAgentTeamDurableRuntime(new AgentTeamDurableRuntime(kernel, this));
     configureAutoAgentDurableRuntime(new AutoAgentDurableRuntime(kernel, this));
+    configureBackgroundSubagentDurableLedger(new BackgroundSubagentDurableLedger(kernel));
   }
 
   /** Durable kernel 是启动后异步配置的（冷启实测约 13s）；硬依赖 durable 的入口先等它就绪再决定成败。 */

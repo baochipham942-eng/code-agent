@@ -214,6 +214,7 @@ function isEngineOwnedOperation(
 ): boolean {
   return (
     (engineKind === 'native' && operationKind === 'model_call') ||
-    (engineKind === 'agent_team' && operationKind === 'child_run')
+    (engineKind === 'agent_team' && operationKind === 'child_run') ||
+    (engineKind === 'subagent_single' && operationKind === 'child_run')
   );
 }

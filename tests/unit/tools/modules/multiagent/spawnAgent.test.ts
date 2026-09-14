@@ -282,6 +282,31 @@ describe('spawn_agent dispatch to protocol-native service', () => {
     }
   });
 
+  it('run_in_background 重投影保留 cost/tokensUsed（N-BGSPAWN-DURABLE 顺手修）', async () => {
+    executeSpawnAgentMock.mockResolvedValue({
+      success: true,
+      output: 'bg done',
+      metadata: { agentId: 'bg-cost-1', cost: 0.42, tokensUsed: 1234 },
+    });
+    const handler = await spawnAgentModule.createHandler();
+    const result = await handler.execute(
+      { role: 'coder', task: 'bg work', run_in_background: true },
+      makeCtx(),
+      allowAll,
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const agentId = result.meta?.agentId as string;
+      await vi.waitFor(() => {
+        expect(getBackgroundSubagentRegistry().getStatus(agentId)?.status).toBe('completed');
+      });
+      // 完成通知与 collect_agent 的「花了多少钱」都从这个重投影取
+      expect(getBackgroundSubagentRegistry().getStatus(agentId)?.result)
+        .toMatchObject({ cost: 0.42, tokensUsed: 1234 });
+    }
+  });
+
   it('前台 spawn 不标拓扑（缺省 main，行为不变）', async () => {
     executeSpawnAgentMock.mockResolvedValue({ success: true, output: 'done' });
     const handler = await spawnAgentModule.createHandler();

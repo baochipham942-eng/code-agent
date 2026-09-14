@@ -43,6 +43,26 @@ describe('拍照结果归一化成 PickedFile（扩展名权威）', () => {
     expect(picked).toEqual({ name: 'photo.jpg', mimeType: 'image/jpeg', size: jpegBytes.byteLength, bytes: jpegBytes });
   });
 
+  it('reads getPhoto path / webPath the same as takePhoto uri', async () => {
+    const full = new Uint8Array([1, 2, 3, 4, 5]);
+    for (const photo of [{ path: '/tmp/p.jpg', format: 'jpeg' }, { webPath: 'https://localhost/p.jpg', format: 'jpeg' }] as const) {
+      const picked = await pickFromCamera(camera('granted', { photo }), async ref => {
+        expect(['/tmp/p.jpg', 'https://localhost/p.jpg']).toContain(ref);
+        return bytesToBase64(full);
+      });
+      expect(picked?.bytes).toEqual(full);
+    }
+  });
+
+  it('falls back to getPhoto with base64 resultType when takePhoto is absent', async () => {
+    const port = camera('granted');
+    delete (port as { takePhoto?: unknown }).takePhoto;
+    port.getPhoto = vi.fn(async () => ({ format: 'jpeg', base64String: jpegB64 }));
+    const picked = await pickFromCamera(port, async () => '');
+    expect(port.getPhoto).toHaveBeenCalledWith(expect.objectContaining({ resultType: 'base64', source: 'CAMERA' }));
+    expect(picked?.name).toBe('photo.jpg');
+  });
+
   it('reads native uri bytes instead of the thumbnail', async () => {
     const full = new Uint8Array([1, 2, 3, 4, 5]);
     const thumb = new Uint8Array([9]);

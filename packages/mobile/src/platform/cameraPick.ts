@@ -25,6 +25,7 @@ export type CameraPermissionState = string;
 export type CameraPhotoResult = {
   type?: number | string;
   uri?: string;
+  path?: string;
   webPath?: string;
   thumbnail?: string;
   metadata?: { format?: string; size?: number };
@@ -36,7 +37,8 @@ export type CameraPhotoResult = {
 export interface CameraBridge {
   checkPermissions(): Promise<{ camera: CameraPermissionState }>;
   requestPermissions(options?: { permissions: Array<'camera' | 'photos'> }): Promise<{ camera: CameraPermissionState }>;
-  takePhoto(options: Record<string, unknown>): Promise<CameraPhotoResult>;
+  takePhoto?(options: Record<string, unknown>): Promise<CameraPhotoResult>;
+  getPhoto?(options: Record<string, unknown>): Promise<CameraPhotoResult>;
 }
 
 export function toPickedFile(name: string, bytes: Uint8Array): PickedFile {
@@ -90,9 +92,37 @@ function bytesFromCameraResult(
     return { bytes: base64ToBytes(raw), format };
   }
   if (uriBase64) return { bytes: base64ToBytes(uriBase64), format };
-  // Web takePhoto puts the full image in thumbnail when there is no native uri.
-  if (photo.thumbnail && !photo.uri) return { bytes: base64ToBytes(photo.thumbnail), format };
+  // Web takePhoto puts the full image in thumbnail when there is no native file.
+  if (photo.thumbnail && !photo.uri && !photo.path) return { bytes: base64ToBytes(photo.thumbnail), format };
   throw new Error('EMPTY_PHOTO');
+}
+
+function cameraFileRef(photo: CameraPhotoResult): string | undefined {
+  return photo.uri ?? photo.path ?? photo.webPath;
+}
+
+async function capturePhoto(camera: CameraBridge): Promise<CameraPhotoResult> {
+  if (typeof camera.takePhoto === 'function') {
+    return camera.takePhoto({
+      quality: 90,
+      saveToGallery: false,
+      includeMetadata: true,
+      encodingType: CAMERA_JPEG_ENCODING,
+      editable: 'no',
+      webUseInput: true,
+    });
+  }
+  if (typeof camera.getPhoto === 'function') {
+    return camera.getPhoto({
+      quality: 90,
+      allowEditing: false,
+      resultType: 'base64',
+      source: 'CAMERA',
+      saveToGallery: false,
+      webUseInput: true,
+    });
+  }
+  throw new Error('CAMERA_UNAVAILABLE');
 }
 
 export async function pickFromCamera(
@@ -106,21 +136,15 @@ export async function pickFromCamera(
     if (cameraPermissionBlocked(next.camera) || !cameraPermissionReady(next.camera)) throw new Error('CAMERA_DENIED');
   }
   try {
-    const photo = await camera.takePhoto({
-      quality: 90,
-      saveToGallery: false,
-      includeMetadata: true,
-      encodingType: CAMERA_JPEG_ENCODING,
-      editable: 'no',
-      webUseInput: true,
-    });
-    const uriBase64 = photo.uri ? await readUri(photo.uri) : undefined;
+    const photo = await capturePhoto(camera);
+    const ref = cameraFileRef(photo);
+    const uriBase64 = ref ? await readUri(ref) : undefined;
     const { bytes, format } = bytesFromCameraResult(photo, uriBase64);
     return toPickedFile(cameraFileName(format), bytes);
   } catch (error) {
     const outcome = cameraErrorOutcome(error);
     if (outcome === 'denied') throw new Error('CAMERA_DENIED', { cause: error });
-    if (outcome === 'cancelled' || errorMessage(error) === 'EMPTY_PHOTO') return null;
+    if (outcome === 'cancelled' || errorMessage(error) === 'EMPTY_PHOTO' || errorMessage(error) === 'CAMERA_UNAVAILABLE') return null;
     throw error;
   }
 }

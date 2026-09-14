@@ -20,6 +20,7 @@ vi.mock('../../../src/host/tools/dispatch/toolResolver', () => ({
 
 import { ToolExecutor } from '../../../src/host/tools/toolExecutor';
 import type { ToolContext } from '../../../src/host/tools/types';
+import { resetDenialRegistry } from '../../../src/host/security/denialRegistry';
 
 const READ_DEF = {
   name: 'read_file',
@@ -49,6 +50,9 @@ function captureContexts(): ToolContext[] {
 
 describe('ToolExecutor 嵌套工具再入口（PTC 执行侧）', () => {
   beforeEach(() => {
+    // ADR-067 D4 的否认登记是进程级单例：用例间必须复位，否则上一条用例的
+    // ask-denied 会把下一条同指纹调用拖进 launder-retry 降档（本文件的用例彼此独立）。
+    resetDenialRegistry();
     resolverState.getDefinition.mockReset();
     resolverState.execute.mockReset();
     resolverState.getDefinition.mockImplementation((name: string) => {

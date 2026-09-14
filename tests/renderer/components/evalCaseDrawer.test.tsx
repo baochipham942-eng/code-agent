@@ -68,6 +68,27 @@ describe('EvalCaseDrawer', () => {
     expect(screen.getByRole('dialog')).toBeTruthy();
   });
 
+  it('AI 评审弃权的维在抽屉里显示「无法确定」并提示转人工评审——这就是弃权进标注队列的落点', async () => {
+    evaluation.invoke.mockResolvedValue(detail({
+      aiReview: {
+        task_completed: { verdict: 'abstain', reasoning: '证据不足', judgeModel: 'zhipu/glm', promptHash: 'abc' },
+        confirmed_before_acting: { verdict: 'yes', reasoning: '确认过', judgeModel: 'zhipu/glm', promptHash: 'abc' },
+      },
+    }));
+    render(<EvalCaseDrawer target={{ experimentId: 'run-1', caseId: 'case-1' }} onClose={vi.fn()} />);
+    expect(await screen.findByText('无法确定')).toBeTruthy();
+    expect(screen.getByTestId('eval-case-ai-review-abstain').textContent).toBe('AI 评审有 1 维弃权，请在下方人工评审里判定');
+  });
+
+  it('AI 评审没有弃权时不出转人工提示', async () => {
+    evaluation.invoke.mockResolvedValue(detail({
+      aiReview: { task_completed: { verdict: 'no', reasoning: '没完成', judgeModel: 'zhipu/glm', promptHash: 'abc' } },
+    }));
+    render(<EvalCaseDrawer target={{ experimentId: 'run-1', caseId: 'case-1' }} onClose={vi.fn()} />);
+    await screen.findByTestId('eval-case-check-summary');
+    expect(screen.queryByTestId('eval-case-ai-review-abstain')).toBeNull();
+  });
+
   it('判定表列表头走 scoreColumn，中文是分数', async () => {
     render(<EvalCaseDrawer target={{ experimentId: 'run-1', caseId: 'case-1' }} onClose={vi.fn()} />);
     expect(await screen.findByRole('columnheader', { name: '分数' })).toBeTruthy();

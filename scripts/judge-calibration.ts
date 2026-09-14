@@ -88,6 +88,7 @@ async function main(): Promise<void> {
   const report = JSON.parse(await fs.readFile(reportPath, 'utf8')) as { results?: ReportCase[]; cases?: ReportCase[] };
   const cases = report.results ?? report.cases ?? [];
   const pairs: CalibrationPair[] = [];
+  let abstained = 0;
 
   for (const reportCase of cases) {
     const truth = groundTruth(reportCase, dimension);
@@ -103,6 +104,11 @@ async function main(): Promise<void> {
     );
     const verdict = verdicts[dimension];
     if (!verdict || verdict.verdict === 'unavailable') continue;
+    if (verdict.verdict === 'abstain') {
+      abstained += 1;
+      console.log(`○ ${reportCase.testId}: judge=无法确定 金标=${truth}（弃权，不进 κ 配对）`);
+      continue;
+    }
     pairs.push({
       caseId: reportCase.testId,
       judgeLabel: verdict.verdict === 'yes' ? 'pass' : 'fail',
@@ -113,6 +119,8 @@ async function main(): Promise<void> {
   }
 
   const calibration = computeCalibration(pairs);
+  const judged = calibration.total + abstained;
+  const abstainRate = judged > 0 ? abstained / judged : 0;
   const record = {
     standardVersion: 2 as const,
     dimension,
@@ -126,6 +134,7 @@ async function main(): Promise<void> {
     agreementRate: calibration.agreementRate,
     pairs: calibration.total,
     falsePositiveRate: calibration.falsePositiveRate,
+    abstainRate,
     computedAt: new Date().toISOString(),
   };
   const outputPath = path.join(path.dirname(reportPath), `calibration-${dimension}-${runtime.model}.json`);
@@ -133,11 +142,12 @@ async function main(): Promise<void> {
   await saveCalibrationRecord(path.join(process.cwd(), CONFIG_DIR_NEW), record);
 
   console.log(`配对样本: ${calibration.total}`);
+  console.log(`弃权: ${abstained}/${judged}（弃权率 ${(abstainRate * 100).toFixed(1)}%，上限 ${CALIBRATION_TRUST_THRESHOLDS.maxAbstainRate * 100}%）`);
   console.log(`Cohen Kappa: ${calibration.cohensKappa.toFixed(3)}`);
   console.log(`κ 95% CI 下界: ${calibration.kappaLowerBound95.toFixed(3)}`);
   console.log(isTrustedCalibration(record)
     ? '校准达标'
-    : `校准未达标（κ≥${CALIBRATION_TRUST_THRESHOLDS.minKappa} 且 CI 下界≥${CALIBRATION_TRUST_THRESHOLDS.minKappaLowerBound}，或 n≥${CALIBRATION_TRUST_THRESHOLDS.pairsWaiver}）`);
+    : `校准未达标（κ≥${CALIBRATION_TRUST_THRESHOLDS.minKappa} 且 CI 下界≥${CALIBRATION_TRUST_THRESHOLDS.minKappaLowerBound}，或 n≥${CALIBRATION_TRUST_THRESHOLDS.pairsWaiver}；弃权率≤${CALIBRATION_TRUST_THRESHOLDS.maxAbstainRate * 100}%）`);
   console.log(`报告已存: ${outputPath}`);
 }
 

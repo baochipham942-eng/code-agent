@@ -750,19 +750,19 @@ const AI_REVIEW_LABELS: Record<AiReviewDimension, string> = {
 function generateAiReviewSection(results: TestResult[]): string {
   if (!results.some((result) => result.aiReview)) return '';
   const lines = [
-    '| 维度 | 是 | 否 | 不可用 |',
-    '|------|---:|---:|-------:|',
+    '| 维度 | 是 | 否 | 无法确定 | 不可用 |',
+    '|------|---:|---:|-------:|-------:|',
   ];
   for (const dimension of AI_REVIEW_DIMENSIONS) {
     const verdicts = results.map((result) => result.aiReview?.[dimension]?.verdict).filter(Boolean);
-    lines.push(`| ${AI_REVIEW_LABELS[dimension]} | ${verdicts.filter((v) => v === 'yes').length} | ${verdicts.filter((v) => v === 'no').length} | ${verdicts.filter((v) => v === 'unavailable').length} |`);
+    lines.push(`| ${AI_REVIEW_LABELS[dimension]} | ${verdicts.filter((v) => v === 'yes').length} | ${verdicts.filter((v) => v === 'no').length} | ${verdicts.filter((v) => v === 'abstain').length} | ${verdicts.filter((v) => v === 'unavailable').length} |`);
   }
   lines.push('', `| 用例 ID | ${AI_REVIEW_DIMENSIONS.map((dimension) => AI_REVIEW_LABELS[dimension]).join(' | ')} |`);
   lines.push(`|---------|${AI_REVIEW_DIMENSIONS.map(() => '---').join('|')}|`);
   for (const result of results) {
     const cells = AI_REVIEW_DIMENSIONS.map((dimension) => {
       const verdict = result.aiReview?.[dimension]?.verdict;
-      return verdict === 'yes' ? '是' : verdict === 'no' ? '否' : verdict === 'unavailable' ? '不可用' : '—';
+      return verdict === 'yes' ? '是' : verdict === 'no' ? '否' : verdict === 'abstain' ? '无法确定' : verdict === 'unavailable' ? '不可用' : '—';
     });
     lines.push(`| ${result.testId} | ${cells.join(' | ')} |`);
   }

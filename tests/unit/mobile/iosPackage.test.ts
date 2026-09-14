@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   assertPushEntitlement, exportOptionsXml, extractNativeTargetId, extractPlistXml, parsePlistXml, patchPbxprojVersions,
-  profileCoversDevice, readMobileprovision, summarizeProfile, unlinkedSpmPlugins, withSelfImplementedPluginClasses,
+  profileCoversDevice, readMobileprovision, summarizeProfile, unlinkedSpmPlugins, withApsEnvironment,
+  withPushAppDelegateHooks, withSelfImplementedPluginClasses,
 } from '../../../packages/mobile/scripts/ios-package.mjs';
 import { ensureAndroidPushPermission, mergeRemoteNotificationMode } from '../../../packages/mobile/scripts/configure-lan.mjs';
 
@@ -170,6 +171,47 @@ let package = Package(
   it('reports every unlinked plugin, not just the first', () => {
     expect(unlinkedSpmPlugins(packageSwift, ['capacitor-voice-recorder', '@capacitor/filesystem']))
       .toEqual(['capacitor-voice-recorder', '@capacitor/filesystem']);
+  });
+
+  it('fails closed when Package.swift omitted @capacitor/push-notifications', () => {
+    expect(unlinkedSpmPlugins(packageSwift, ['@capacitor/app', '@capacitor/push-notifications']))
+      .toEqual(['@capacitor/push-notifications']);
+  });
+});
+
+describe('iOS AppDelegate and entitlements for APNs', () => {
+  const appDelegate = `import UIKit
+import Capacitor
+
+@UIApplicationMain
+class AppDelegate: UIResponder, UIApplicationDelegate {
+    var window: UIWindow?
+    func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
+        return true
+    }
+}
+`;
+
+  it('forwards APNs token and registration failure onto Capacitor notifications', () => {
+    const patched = withPushAppDelegateHooks(appDelegate);
+    expect(patched).toContain('capacitorDidRegisterForRemoteNotifications');
+    expect(patched).toContain('capacitorDidFailToRegisterForRemoteNotifications');
+    expect(withPushAppDelegateHooks(patched)).toBe(patched);
+  });
+
+  it('fails closed when AppDelegate is not the Capacitor class', () => {
+    expect(() => withPushAppDelegateHooks('class SomethingElse {}')).toThrow('IOS_APP_DELEGATE_MISSING');
+  });
+
+  it('writes aps-environment instead of leaving the entitlements dict empty', () => {
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0">
+<dict>
+</dict>
+</plist>`;
+    expect(withApsEnvironment(xml, 'production')).toContain('<string>production</string>');
+    expect(withApsEnvironment(withApsEnvironment(xml, 'production'), 'development')).toContain('<string>development</string>');
+    expect(() => withApsEnvironment('<plist></plist>', 'production')).toThrow('IOS_ENTITLEMENTS_UNPATCHABLE');
   });
 });
 

@@ -6,6 +6,7 @@ import { Capacitor, SystemBars, SystemBarsStyle } from '@capacitor/core';
 import { Directory, Filesystem } from '@capacitor/filesystem';
 import { Keyboard } from '@capacitor/keyboard';
 import { Preferences } from '@capacitor/preferences';
+import { PushNotifications } from '@capacitor/push-notifications';
 import { COMPANION_LIMITS } from '../../../../src/shared/constants/companion';
 import type { FilePorts, PlatformPorts } from './ports';
 import { pickFromCamera, toPickedFile, type CameraBridge } from './cameraPick';
@@ -130,11 +131,15 @@ function nativeRecorder(): NonNullable<PlatformPorts['recorder']> {
 export const capacitorPorts: PlatformPorts = {
   recorder: Capacitor.isNativePlatform() ? nativeRecorder() : undefined,
   companion: Capacitor.isNativePlatform() ? nativeCompanionPort : undefined,
-  notifications: createNotificationPort(Capacitor.getPlatform(), async () => {
-    const open = (App as { openUrl?: (opts: { url: string }) => Promise<void> }).openUrl;
-    if (!open) return;
-    try { await open({ url: 'app-settings:' }); } catch { /* user opens Settings by hand */ }
-  }),
+  notifications: createNotificationPort(
+    Capacitor.getPlatform(),
+    async () => {
+      const open = (App as { openUrl?: (opts: { url: string }) => Promise<void> }).openUrl;
+      if (!open) return;
+      try { await open({ url: 'app-settings:' }); } catch { /* user opens Settings by hand */ }
+    },
+    Capacitor.getPlatform() === 'ios' ? PushNotifications : undefined,
+  ),
   files: webFilePorts(new FileCache()),
   historyCache: new HistoryCache(undefined, undefined, Date.now, {
     read: async () => (await Preferences.get({ key: HISTORY_CACHE_KEY })).value,

@@ -62,9 +62,11 @@ export function SettingsPage({ page, text, appearance, nickname, profileDraft, a
       {notifications?.osPermission === 'denied' || notifications?.osPermission === 'restricted'
         ? <><p className="caption">{text.notificationDenied}</p>
           <button className="primary" data-testid="notify-settings" onClick={() => notifications?.onOpenSettings()}>{text.openSystemSettings}</button></>
-        : notifications?.lastFailure?.startsWith('CHANNEL_MISSING')
-          ? <p className="caption" role="status">{text.notificationFailed}</p>
-          : notifications?.registration === 'registered' ? <p className="caption" role="status">{text.notificationReady}</p>
+        : notifications?.lastFailure === 'REGISTRATION_FAILED'
+          ? <p className="caption" role="status">{text.notificationRegistrationError}</p>
+          : notifications?.lastFailure?.startsWith('CHANNEL_MISSING')
+            ? <p className="caption" role="status">{text.notificationFailed}</p>
+            : notifications?.registration === 'registered' ? <p className="caption" role="status">{text.notificationReady}</p>
             : !notifications?.preference ? <button className="primary" data-testid="notify-enable" onClick={() => { notifications?.onToggle(true); notifications?.onRequest(); }}>{text.enableNotifications}</button>
               : null}
     </div>;

@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { resolve } from 'node:path';
-import { extractNativeTargetId, exportOptionsXml, patchPbxprojVersions, profileCoversDevice, readMobileprovision, sharedSchemeXml, summarizeProfile, unlinkedSpmPlugins, withSelfImplementedPluginClasses } from './ios-package.mjs';
+import { extractNativeTargetId, exportOptionsXml, patchPbxprojVersions, profileCoversDevice, readMobileprovision, sharedSchemeXml, summarizeProfile, unlinkedSpmPlugins, withApsEnvironment, withPushAppDelegateHooks, withSelfImplementedPluginClasses } from './ios-package.mjs';
 
 const build = Number(process.env.NEO_MOBILE_BUILD);
 if (!Number.isSafeInteger(build) || build < 1) throw new Error('POSITIVE_NEO_MOBILE_BUILD_REQUIRED');
@@ -108,11 +108,21 @@ if (!existsSync(scheme)) {
 run('node_modules/.bin/cap', ['sync', 'ios']);
 stageNativePlugins();
 configureIosLan();
+const appDelegate = 'ios/App/App/AppDelegate.swift';
+if (!existsSync(appDelegate)) throw new Error('IOS_APP_DELEGATE_MISSING');
+const patchedDelegate = withPushAppDelegateHooks(readFileSync(appDelegate, 'utf8'));
+writeFileSync(appDelegate, patchedDelegate);
+if (!patchedDelegate.includes('capacitorDidRegisterForRemoteNotifications')) throw new Error('IOS_PUSH_APPDELEGATE_NOT_WIRED');
+const profileSummary = profileFile ? summarizeProfile(readMobileprovision(readFileSync(profileFile))) : null;
+const entitlements = 'ios/App/App/App.entitlements';
+if (existsSync(entitlements)) {
+  const aps = profileSummary?.apsEnvironment === 'development' ? 'development' : 'production';
+  writeFileSync(entitlements, withApsEnvironment(readFileSync(entitlements, 'utf8'), aps));
+}
 copyFileSync(resolve(root, 'src-tauri/icons/ios/AppIcon-512@2x.png'),
   resolve('ios/App/App/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png'));
 mkdirSync('.artifacts/ios', { recursive: true });
 const archive = '.artifacts/ios/App.xcarchive';
-const profileSummary = profileFile ? summarizeProfile(readMobileprovision(readFileSync(profileFile))) : null;
 const profileName = profileSummary ? (profileSummary.name ?? profileSummary.uuid) : null;
 const archiveArgs = ['-project', 'ios/App/App.xcodeproj', '-scheme', 'App', '-configuration', 'Release',
   '-destination', 'generic/platform=iOS', '-archivePath', archive, 'archive'];
@@ -149,6 +159,7 @@ if (!appBundle) throw new Error('APP_BUNDLE_MISSING_IN_IPA');
 // 源码进了 SPM target 不等于真被编译进包：链接闸看的是清单，这一格看的是产物本身。
 const executable = execFileSync('unzip', ['-p', ipa, `Payload/${appBundle}/${appBundle.replace(/\.app$/, '')}`], { maxBuffer: 1 << 28 });
 if (!executable.includes('NeoVoiceRecorderPlugin')) throw new Error('IOS_VOICE_PLUGIN_MISSING_FROM_BINARY');
+if (!executable.includes('PushNotificationsPlugin')) throw new Error('IOS_PUSH_PLUGIN_MISSING_FROM_BINARY');
 const embeddedPlist = readMobileprovision(execFileSync('unzip', ['-p', ipa, `Payload/${appBundle}/embedded.mobileprovision`], { maxBuffer: 1 << 24 }));
 const summary = summarizeProfile(embeddedPlist);
 if (!summary.apsEnvironment) console.warn('PUSH_ENTITLEMENT_MISSING: profile has no aps-environment; ios:verify will fail push-entitlement-present');

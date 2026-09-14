@@ -1,24 +1,36 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { canAddressSession, createCompanionStore } from '../../../packages/mobile/src/stores/companionStore';
 import { createNotificationStore } from '../../../packages/mobile/src/stores/notificationStore';
 import { nativeTokenUnavailable } from '../../../packages/mobile/src/platform/notifications';
 import type { NotificationPort, OsPermission, TokenResult } from '../../../packages/mobile/src/platform/ports';
 
-function port(opts: { permission?: OsPermission; token?: TokenResult } = {}): NotificationPort & { setPermission(next: OsPermission): void } {
+function port(opts: { permission?: OsPermission; token?: TokenResult } = {}): NotificationPort & {
+  setPermission(next: OsPermission): void;
+  emitToken(result: TokenResult): void;
+} {
   let permission = opts.permission ?? 'unknown';
+  let current = opts.token ?? { kind: 'token' as const, token: { provider: 'apns' as const, token: 'device-token-aaaaaaaa', environment: 'production' as const } };
+  const subscribers: Array<(result: TokenResult) => void> = [];
   return {
     permission: {
       read: async () => permission,
       request: async () => { permission = opts.permission === 'granted' ? 'granted' : (permission === 'unknown' ? 'denied' : permission); return permission; },
     },
     token: {
-      current: async () => opts.token ?? { kind: 'token', token: { provider: 'apns', token: 'device-token-aaaaaaaa', environment: 'production' } },
-      subscribe: () => () => {},
+      current: async () => current,
+      subscribe: onChange => {
+        subscribers.push(onChange);
+        return () => { subscribers.splice(subscribers.indexOf(onChange), 1); };
+      },
     },
     tap: { subscribe: async () => () => {} },
     openSettings: async () => {},
     network: { read: () => 'online' },
     setPermission(next: OsPermission) { permission = next; },
+    emitToken(result: TokenResult) {
+      current = result;
+      for (const subscriber of subscribers) subscriber(result);
+    },
   };
 }
 
@@ -159,5 +171,47 @@ describe('notificationStore', () => {
     await registering;
     expect(notifications.getState().registration).toBe('unregistered');
     expect(unregistered).toHaveLength(1);
+  });
+
+  it('records REGISTRATION_FAILED instead of swallowing a plugin registrationError', async () => {
+    const notifications = createNotificationStore({
+      port: port({ permission: 'granted', token: { kind: 'error', code: 'REGISTRATION_FAILED' } }),
+      preference: { get: () => true, set: () => {} },
+      session: {
+        status: () => 'connected',
+        register: async () => ({ kind: 'registered' }),
+        unregister: async () => {},
+        openRoute: async () => {},
+        reconnect: async () => {},
+      },
+    });
+    await notifications.getState().recover();
+    expect(notifications.getState().registration).toBe('failed');
+    expect(notifications.getState().lastFailure).toBe('REGISTRATION_FAILED');
+  });
+
+  it('re-uploads when the native token refreshes', async () => {
+    const native = port({ permission: 'granted' });
+    const registered: unknown[] = [];
+    const notifications = createNotificationStore({
+      port: native,
+      preference: { get: () => true, set: () => {} },
+      session: {
+        status: () => 'connected',
+        register: async input => { registered.push(input); return { kind: 'registered' }; },
+        unregister: async () => {},
+        openRoute: async () => {},
+        reconnect: async () => {},
+      },
+    });
+    await notifications.getState().recover();
+    native.emitToken({ kind: 'token', token: { provider: 'apns', token: 'device-token-bbbbbbbb', environment: 'production' } });
+    await vi.waitFor(() => {
+      expect(registered).toEqual([
+        { provider: 'apns', token: 'device-token-aaaaaaaa', environment: 'production' },
+        { provider: 'apns', token: 'device-token-bbbbbbbb', environment: 'production' },
+      ]);
+    });
+    expect(notifications.getState().registration).toBe('registered');
   });
 });

@@ -350,6 +350,154 @@ describe('ToolExecutor directive memory — headless（无交互界面）策略'
       vi.useRealTimers();
     }
   });
+
+  // RQ-066 复现：uncertain（解析不出写目标）不等于「要写记忆目录」。这些形态
+  // 没有任何确定目标落进记忆目录，headless 下不得再被记忆门劫杀，连探针都不该发。
+  it.each([
+    ['变量重定向目标（env 未定义）', 'echo hi > "$RQ066_UNSET_DIR/file.txt"'],
+    ['echo && echo 复合命令', 'echo a && echo b'],
+  ])('headless 下 %s 不触碰记忆目录 → 不再以记忆门错误失败', async (_label, command) => {
+    const requestPermission = vi.fn(async () => ({ approved: false, denialSource: 'no-approval-ui' as const }));
+    const executor = new ToolExecutor({ workingDirectory: '/tmp', requestPermission });
+    executor.setAuditEnabled(false);
+
+    const result = await executor.execute('Bash', { command }, { preApprovedTools: new Set(['Bash']) });
+
+    expect(result.success).toBe(true);
+    expect(result.error).not.toBe(DIRECTIVE_MEMORY_HEADLESS_NO_UI_ERROR);
+    expect(mocks.execute).toHaveBeenCalledOnce();
+    expect(mocks.confirmation).not.toHaveBeenCalled();
+    // 没有记忆目标 ⇒ headless 记忆探针（file_write + 记忆目录路径）根本不该发出
+    expect(requestPermission).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'file_write', tool: 'Bash' }),
+    );
+  });
+
+  it('headless 下变量重定向经 env 展开后落在目录外 → 不门（ai-review Important 的放行半）', async () => {
+    process.env.RQ066_OUT = '/tmp';
+    try {
+      const requestPermission = vi.fn(async () => ({ approved: false, denialSource: 'no-approval-ui' as const }));
+      const executor = new ToolExecutor({ workingDirectory: '/tmp', requestPermission });
+      executor.setAuditEnabled(false);
+
+      const result = await executor.execute(
+        'Bash',
+        { command: 'echo hi > "$RQ066_OUT/file.txt"' },
+        { preApprovedTools: new Set(['Bash']) },
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.error).not.toBe(DIRECTIVE_MEMORY_HEADLESS_NO_UI_ERROR);
+      expect(mocks.execute).toHaveBeenCalledOnce();
+      expect(requestPermission).not.toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'file_write', tool: 'Bash' }),
+      );
+    } finally {
+      delete process.env.RQ066_OUT;
+    }
+  });
+
+  it('红线：变量重定向经 env 展开后落进记忆目录 → headless 被拒后仍被门住（ai-review Important）', async () => {
+    process.env.RQ066_OUT = memoryDir;
+    try {
+      const executor = new ToolExecutor({
+        workingDirectory: '/tmp',
+        requestPermission: vi.fn(async () => ({ approved: false, denialSource: 'no-approval-ui' as const })),
+      });
+      executor.setAuditEnabled(false);
+
+      const result = await executor.execute(
+        'Bash',
+        { command: 'echo directive > "$RQ066_OUT/c1.md"' },
+        { preApprovedTools: new Set(['Bash']) },
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe(DIRECTIVE_MEMORY_HEADLESS_NO_UI_ERROR);
+      expect(result.metadata).toMatchObject({ code: 'DIRECTIVE_MEMORY_CONFIRMATION_REQUIRED' });
+      expect(mocks.execute).not.toHaveBeenCalled();
+    } finally {
+      delete process.env.RQ066_OUT;
+    }
+  });
+
+  it('headless 下动态替换解析失败的命令也不许以记忆门错误失败（其它安全门照常，不在本单管辖面）', async () => {
+    const requestPermission = vi.fn(async () => ({ approved: false, denialSource: 'no-approval-ui' as const }));
+    const executor = new ToolExecutor({ workingDirectory: '/tmp', requestPermission });
+    executor.setAuditEnabled(false);
+
+    // $(date) 触发 command-analysis 粘滞拒绝门（既有安全门，拒是它的事）；
+    // 本单只断它不许再以 DIRECTIVE_MEMORY_HEADLESS_NO_UI_ERROR 劫杀、不许发记忆探针。
+    const result = await executor.execute(
+      'Bash',
+      { command: 'echo "at $(date)" > /tmp/log.txt' },
+      { preApprovedTools: new Set(['Bash']) },
+    );
+
+    expect(result.error).not.toBe(DIRECTIVE_MEMORY_HEADLESS_NO_UI_ERROR);
+    expect(result.metadata?.code).not.toBe('DIRECTIVE_MEMORY_CONFIRMATION_REQUIRED');
+    expect(mocks.confirmation).not.toHaveBeenCalled();
+    expect(requestPermission).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'file_write', tool: 'Bash' }),
+    );
+  });
+
+  it('红线：确定写记忆目录的 Bash 在 headless 被拒后仍被记忆门拦下', async () => {
+    const executor = new ToolExecutor({
+      workingDirectory: '/tmp',
+      requestPermission: vi.fn(async () => ({ approved: false, denialSource: 'no-approval-ui' as const })),
+    });
+    executor.setAuditEnabled(false);
+
+    const result = await executor.execute(
+      'Bash',
+      { command: `printf directive > ${path.join(memoryDir, 'c1.md')}` },
+      { preApprovedTools: new Set(['Bash']) },
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe(DIRECTIVE_MEMORY_HEADLESS_NO_UI_ERROR);
+    expect(result.metadata).toMatchObject({ code: 'DIRECTIVE_MEMORY_CONFIRMATION_REQUIRED' });
+    expect(mocks.execute).not.toHaveBeenCalled();
+  });
+
+  it('红线：命令内赋值指向记忆目录（OUT 不在 process.env）→ headless 被拒后仍被门住（ai-review 三轮 Important）', async () => {
+    const executor = new ToolExecutor({
+      workingDirectory: '/tmp',
+      requestPermission: vi.fn(async () => ({ approved: false, denialSource: 'no-approval-ui' as const })),
+    });
+    executor.setAuditEnabled(false);
+
+    const result = await executor.execute(
+      'Bash',
+      { command: `OUT=${memoryDir}; echo directive > "$OUT/c1.md"` },
+      { preApprovedTools: new Set(['Bash']) },
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe(DIRECTIVE_MEMORY_HEADLESS_NO_UI_ERROR);
+    expect(result.metadata).toMatchObject({ code: 'DIRECTIVE_MEMORY_CONFIRMATION_REQUIRED' });
+    expect(mocks.execute).not.toHaveBeenCalled();
+  });
+
+  it('红线：同名赋值先后出现时，前一条重定向按它所属 execution 的赋值门住（ai-review 四轮原例）', async () => {
+    const executor = new ToolExecutor({
+      workingDirectory: '/tmp',
+      requestPermission: vi.fn(async () => ({ approved: false, denialSource: 'no-approval-ui' as const })),
+    });
+    executor.setAuditEnabled(false);
+
+    const result = await executor.execute(
+      'Bash',
+      { command: `OUT=${memoryDir}; echo x > "$OUT/a"; OUT=/tmp; echo y > "$OUT/b"` },
+      { preApprovedTools: new Set(['Bash']) },
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe(DIRECTIVE_MEMORY_HEADLESS_NO_UI_ERROR);
+    expect(result.metadata).toMatchObject({ code: 'DIRECTIVE_MEMORY_CONFIRMATION_REQUIRED' });
+    expect(mocks.execute).not.toHaveBeenCalled();
+  });
 });
 
 describe('ToolExecutor file ownership authority', () => {

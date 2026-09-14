@@ -41,7 +41,7 @@ export function createNotRunResult(testCase: TestCase, reason?: string): TestRes
 }
 
 /** 报告分层用的题目元数据快照；tags 合并 inheritedTags 去重，其余字段缺席就不写。 */
-export function toCaseMeta(testCase: TestCase): TestCaseMeta {
+function toCaseMeta(testCase: TestCase): TestCaseMeta {
   return {
     tags: [...new Set([...(testCase.tags ?? []), ...(testCase.inheritedTags ?? [])])],
     ...(testCase.category ? { category: testCase.category } : {}),

@@ -146,10 +146,6 @@ export function deliverCompanionUserPlan(
     taskManager: getTaskManager(),
   }).catch((error) => {
     logger.warn('Companion user plan delivery failed', error);
-    // 失败回插：resolvePlanApproval 是 fire-and-forget，同步回执已经发出去了；不回插
-    // 的话计划卡被上面的 delete 永久吞掉，宿主启动失败后用户既没执行也无法重试
-    // （ai-review 2026-09-14 第 5 轮）。回插后卡片随下一次 refresh 重新投影。
-    if (!pending.has(planId)) pending.set(planId, item);
   });
   return { success: true };
 }

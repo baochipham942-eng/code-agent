@@ -301,7 +301,7 @@ describe('全域单向门：清单 ⊆ 实际 handler（RQ-183 刀 4）', () => 
   }
 
   it('自举：IPC_DOMAINS 声明域 == 实际注册域（声明零 handler = 新死域；提取塌了也在这里红）', () => {
-    const declared = new Set(Object.values(IPC_DOMAINS));
+    const declared = new Set<string>(Object.values(IPC_DOMAINS));
     const problems = [
       ...[...declared].filter((d) => !actual.has(d) || (actual.get(d)?.size ?? 0) === 0)
         .map((d) => `  ${d} → 声明了但零 handler（死域，或提取器没认出新注册形态）`),

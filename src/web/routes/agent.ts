@@ -827,6 +827,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       });
 
       const config = agent.getConfig();
+      if (body.historyVisibility) config.historyVisibility = body.historyVisibility;
       // recent-conversations uses the product Project identity. The cwd may move and
       // WorkspaceScope may be absent on this web-native route, so bind the persisted row.
       config.projectId = persistedSession?.projectId ?? null;
@@ -991,6 +992,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         timestamp: Date.now(),
         attachments: persistedAttachments,
         ...(userMessageMetadata ? { metadata: userMessageMetadata } : {}),
+        ...(body.historyVisibility === 'meta' ? { isMeta: true } : {}),
       };
 
       // 加载历史消息 + 当前用户消息
@@ -1106,8 +1108,8 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
 
       // 新会话时立即通知前端刷新列表（不等 agentLoop 完成）。
       // 只覆盖占位标题：手机/用户起过名的会话不能被首条 prompt 改写。
-      if (isNewSession) {
-        const current = await (await deps.tryGetSessionManager())?.getSession?.(sessionId);
+      if (isNewSession && body.historyVisibility !== 'meta') {
+        const current = await (await deps.tryGetSessionManager())?.getSession?.(sessionId, 1);
         if (isPlaceholderSessionTitle(current?.title)) {
           const title = visiblePrompt.length > 30 ? visiblePrompt.substring(0, 30) + '...' : visiblePrompt;
           broadcastSSE('session:updated', { sessionId, updates: { title } });

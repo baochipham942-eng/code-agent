@@ -725,8 +725,8 @@ export class AgentOrchestrator {
       }
     } catch (error) {
       logger.error('========== Normal mode EXCEPTION ==========');
-      logger.error('Error:', error);
-      logger.error('Stack:', error instanceof Error ? error.stack : 'no stack');
+      logger.error('Error:', error, error instanceof Error ? error.stack : 'no stack');
+      const failureMarker = getProjectSourceTrustFailureMarker(error) ?? getModelAuthFailureMarker(error);
       onEvent({
         type: 'error',
         data: {
@@ -738,7 +738,7 @@ export class AgentOrchestrator {
             provider: modelConfig.provider,
             model: modelConfig.model,
           },
-          ...((marker => (marker ? { failure: marker } : {}))(getProjectSourceTrustFailureMarker(error) ?? getModelAuthFailureMarker(error))),
+          ...(failureMarker ? { failure: failureMarker } : {}),
         },
       });
       terminalError = error;

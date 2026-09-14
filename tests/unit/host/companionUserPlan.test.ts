@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { PLAN_APPROVAL_CONFIRMATION_TYPE } from '../../../src/shared/contract/planApproval';
 import {
+  companionPlanRunFromEnvelope,
   deliverCompanionUserPlan,
   listCompanionUserPlans,
   noteCompanionUserPlan,
@@ -48,8 +49,21 @@ describe('companionUserPlan registers ChatView exit_plan_mode cards', () => {
         planApproval: { status: 'pending', originalPlan: 'do the work', steps: [{ id: 'step-1', content: 'do the work', originalContent: 'do the work' }] },
       },
     });
-    expect(deliverCompanionUserPlan(id, true, undefined, 'session-a', () => {
+    expect(deliverCompanionUserPlan(id, true, undefined, 'session-a', async () => {
       throw new Error('must not start a run');
     })).toEqual({ success: false, data: { closed: true } });
+  });
+
+  it('forwards hidden plan-turn options so the follow-up is not a visible user message', () => {
+    expect(companionPlanRunFromEnvelope({
+      content: '<approved-plan>do the work</approved-plan>\nExecute this approved plan now.',
+      sessionId: 'session-a',
+      options: { mode: 'normal', historyVisibility: 'meta', disableAutoAgent: true },
+    }, { sessionId: 'fallback', plan: 'fallback' })).toEqual({
+      sessionId: 'session-a',
+      prompt: '<approved-plan>do the work</approved-plan>\nExecute this approved plan now.',
+      historyVisibility: 'meta',
+      disableAutoAgent: true,
+    });
   });
 });

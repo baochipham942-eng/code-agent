@@ -7,14 +7,39 @@ import {
 import { getDatabase } from '../core/databaseService';
 import { getTaskManager } from '../../task/TaskManager';
 import { resolvePlanApproval } from '../planning/planApprovalService';
+import { createLogger } from '../infra/logger';
 import type { CompanionPlanRequest } from './CompanionPlanService';
+
+const logger = createLogger('CompanionUserPlan');
 
 /**
  * ChatView exit_plan_mode cards live in session message metadata, not PlanApprovalGate.
  * Keep an in-memory set populated from tool_call_end so phone sync can project them
  * without scanning every session on every poll.
+ *
+ * ponytail: Map is process-local. Host restart drops pending cards until the next
+ * tool_call_end; expiry only inspects the latest 20 messages, so a card the desktop
+ * already resolved behind a long offline gap can still show until the 40-message
+ * deliver window marks it closed.
  */
 const pending = new Map<string, { sessionId: string; toolCallId: string; plan: string }>();
+
+export type CompanionPlanRunOptions = { historyVisibility?: 'meta'; disableAutoAgent?: boolean };
+
+export function companionPlanRunFromEnvelope(
+  envelope: { content?: unknown; sessionId?: unknown; options?: Record<string, unknown> },
+  fallback: { sessionId: string; plan: string },
+): { sessionId: string; prompt: string } & CompanionPlanRunOptions {
+  const prompt = typeof envelope.content === 'string' ? envelope.content : fallback.plan;
+  const sessionId = typeof envelope.sessionId === 'string' ? envelope.sessionId : fallback.sessionId;
+  const options = envelope.options && typeof envelope.options === 'object' ? envelope.options : {};
+  return {
+    sessionId,
+    prompt,
+    ...(options.historyVisibility === 'meta' ? { historyVisibility: 'meta' as const } : {}),
+    ...(options.disableAutoAgent === true ? { disableAutoAgent: true } : {}),
+  };
+}
 
 function readPendingApproval(toolCall: ToolCall | undefined): PlanApprovalRecord | null {
   const value = toolCall?.result?.metadata?.planApproval;
@@ -77,7 +102,7 @@ export function deliverCompanionUserPlan(
   approved: boolean,
   feedback: string | undefined,
   sessionId: string,
-  startRun: (sessionId: string, prompt: string) => void,
+  startRun: (sessionId: string, prompt: string, options?: CompanionPlanRunOptions) => Promise<unknown>,
 ): { success: boolean; data?: { closed?: boolean } } {
   const item = pending.get(planId);
   if (item?.sessionId !== sessionId) return { success: false, data: { closed: true } };
@@ -101,13 +126,17 @@ export function deliverCompanionUserPlan(
   };
   void resolvePlanApproval(request, {
     appService: {
-      sendMessage: async (envelope: { content?: string; sessionId?: string }) => {
-        const prompt = typeof envelope.content === 'string' ? envelope.content : item.plan;
-        startRun(envelope.sessionId ?? sessionId, prompt);
-        return undefined as never;
+      sendMessage: async (envelope: { content?: string; sessionId?: string; options?: Record<string, unknown> }) => {
+        const run = companionPlanRunFromEnvelope(envelope, { sessionId, plan: item.plan });
+        await startRun(run.sessionId, run.prompt, {
+          ...(run.historyVisibility ? { historyVisibility: run.historyVisibility } : {}),
+          ...(run.disableAutoAgent ? { disableAutoAgent: true } : {}),
+        });
       },
     } as never,
     taskManager: getTaskManager(),
-  }).catch(() => {});
+  }).catch((error) => {
+    logger.warn('Companion user plan delivery failed', error);
+  });
   return { success: true };
 }

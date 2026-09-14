@@ -388,8 +388,14 @@ export function createApp(deps: CreateAppDeps): express.Express {
           const ok = approved ? gate.approve(planId, feedback) : gate.reject(planId, feedback?.trim() || 'Rejected');
           return { success: ok };
         }
-        return deliverCompanionUserPlan(planId, approved, feedback, sessionId, (id, prompt) => {
-          void companionRun?.({ sessionId: id, prompt });
+        return deliverCompanionUserPlan(planId, approved, feedback, sessionId, (id, prompt, options) => {
+          if (!companionRun) return Promise.reject(new Error('HOST_UNAVAILABLE'));
+          return companionRun({
+            sessionId: id,
+            prompt,
+            ...(options?.historyVisibility ? { historyVisibility: options.historyVisibility } : {}),
+            ...(options?.disableAutoAgent ? { disableAutoAgent: true } : {}),
+          });
         });
       });
       publishCompanionEvent = (sessionId, kind, payload) => {

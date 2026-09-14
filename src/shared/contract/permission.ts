@@ -62,6 +62,8 @@ export enum HostReasonCode {
   PermissionClassifierFailed = 'PERMISSION_CLASSIFIER_FAILED',
   PermissionDeniedByUser = 'PERMISSION_DENIED_BY_USER',
   PermissionDeniedNoApprovalUi = 'PERMISSION_DENIED_NO_APPROVAL_UI',
+  PermissionDeniedPeerOriginUnattended = 'PERMISSION_DENIED_PEER_ORIGIN_UNATTENDED',
+  PermissionPeerOriginConfirmationRequired = 'PERMISSION_PEER_ORIGIN_CONFIRMATION_REQUIRED',
   PermissionDeniedTimeout = 'PERMISSION_DENIED_TIMEOUT',
   PermissionDeniedCancelled = 'PERMISSION_DENIED_CANCELLED',
   PermissionDeniedFailClosed = 'PERMISSION_DENIED_FAIL_CLOSED',
@@ -157,6 +159,11 @@ export interface PermissionRequest {
     standingGrantTarget?: string;
     /** directory_access：申请的访问档位（request_directory 工具透传） */
     requestedAccess?: 'read_only' | 'read_write';
+    /**
+     * ADR-067 D3：本轮输入含 peer-agent 消息时由 toolExecutor 透传，审批卡必须标明
+     * 「此动作由 agent X 的消息触发」；senderAgentId 缺省 = 来源未铸 id 的 peer 消息。
+     */
+    triggeredByAgentMessage?: { senderAgentId?: string };
     /** E2: 确认门控预览信息 */
     preview?: {
       type: 'diff' | 'command' | 'network' | 'generic';

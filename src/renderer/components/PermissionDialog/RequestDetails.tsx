@@ -45,11 +45,19 @@ export function RequestDetails({ request }: RequestDetailsProps) {
   // 兼容旧版 API：path -> filePath
   const filePath = details.filePath || details.path;
 
+  // ADR-067 D3：peer 消息触发的动作必须在卡上标明来源（写回分支同样适用）。
+  const peerOriginNotice = details.triggeredByAgentMessage ? (
+    <p className="text-xs leading-5 text-badge-warning" data-testid="permission-peer-origin">
+      {labels.triggeredByAgentMessage.replace('{sender}', details.triggeredByAgentMessage.senderAgentId ?? '?')}
+    </p>
+  ) : null;
+
   // N-WRITEBACK-EDIT：可编辑写回工具把参数全部摊开（含正文），不再用只拼 To/CC 的通用预览，
   // 也不显示按 permissionLevel 推断出来的「修改当前项目文件」边界（对邮件是误导）。
   if (request.rawArgs) {
     return (
       <div className="space-y-3">
+        {peerOriginNotice}
         <WritebackFieldsView tool={request.tool} args={request.rawArgs} />
         {request.boundary?.id === 'connector.external_write' && (
           <BoundaryDisclosure
@@ -72,6 +80,7 @@ export function RequestDetails({ request }: RequestDetailsProps) {
 
   return (
     <div className="space-y-3">
+      {peerOriginNotice}
       {permissionConsequence(request, t) && (
         <p className={`text-xs leading-5 ${type === 'dangerous_command' || request.dangerLevel === 'danger' ? 'text-badge-danger' : 'text-zinc-400'}`} data-testid="permission-consequence">
           {permissionConsequence(request, t)}

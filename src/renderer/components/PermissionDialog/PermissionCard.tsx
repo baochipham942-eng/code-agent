@@ -59,6 +59,7 @@ function normalizeRequest(
       affectedPath: request.details.affectedPath,
       affectedFileCount: request.details.affectedFileCount,
       targetKind: request.details.targetKind,
+      triggeredByAgentMessage: request.details.triggeredByAgentMessage,
       path: request.details.path,
       preview: request.details.preview,
       sandbox: request.details.sandbox,

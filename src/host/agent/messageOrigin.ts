@@ -63,6 +63,53 @@ export function resolveMessageOrigin(origin: AgentMessageOrigin | undefined): Ag
   return origin ?? { senderKind: 'peer-agent' };
 }
 
+/**
+ * 不可信度排序（ADR-067 D3「取最不可信者」）：peer-agent 最不可信，user 最可信。
+ * 一轮同时 drain 到多种来源时，权限判定按链上最不可信的那条处理。
+ */
+const UNTRUST_RANK: Record<MessageSenderKind, number> = {
+  'peer-agent': 0,
+  dependency: 1,
+  orchestrator: 2,
+  user: 3,
+};
+
+/** 从 turn 的 origin 链挑出最不可信者；空链/缺省返回 undefined（不升档，保持现状语义）。 */
+export function pickLeastTrustedOrigin(
+  origins: readonly AgentMessageOrigin[] | undefined,
+): AgentMessageOrigin | undefined {
+  if (!origins || origins.length === 0) return undefined;
+  return origins.reduce((least, origin) =>
+    UNTRUST_RANK[origin.senderKind] < UNTRUST_RANK[least.senderKind] ? origin : least);
+}
+
+/**
+ * ADR-067 D3：主代理常规用户输入铸 user 起源（维度补齐，行为不变——user 不升档）。
+ * cron/heartbeat 等机器唤醒 run 的会话本身已被标无人值守，判定由无人值守闸接管。
+ */
+export function mintUserTurnOrigin(ids: {
+  sessionId?: string;
+  runId?: string;
+  turnId?: string;
+}): AgentMessageOrigin[] {
+  return [{ senderKind: 'user', ...ids }];
+}
+
+/**
+ * 子代理 loop drain 注入时收集本轮 origin 链（ADR-067 D3）。
+ * shutdown_request 不注入上下文，不计入；存量无 origin 的消息经 resolveMessageOrigin
+ * 从严视同 peer-agent。本轮回空（无注入）返回 undefined，调用方保持上一轮的链
+ * （peer 指令的影响跨 iteration 持续，直到下一条新输入到达）。
+ */
+export function collectTurnOrigins(
+  pendingMessages: readonly AgentMessage[],
+): AgentMessageOrigin[] | undefined {
+  const origins = pendingMessages
+    .filter((message) => message.type !== 'shutdown_request')
+    .map((message) => resolveMessageOrigin(message.origin));
+  return origins.length > 0 ? origins : undefined;
+}
+
 /** from 只是展示标签：有 origin 时按 origin 生成诚实标签。 */
 export function displayFromForOrigin(origin: AgentMessageOrigin): string {
   switch (origin.senderKind) {

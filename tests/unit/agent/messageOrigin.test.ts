@@ -337,3 +337,64 @@ describe('mintToolMessageOrigin × buildProtocolContext 真实构造', () => {
     });
   });
 });
+
+// ============================================================================
+// ADR-067 刀 2：turnOrigin 链工具（pickLeastTrustedOrigin / collectTurnOrigins /
+// mintUserTurnOrigin）
+// ============================================================================
+
+import {
+  collectTurnOrigins,
+  mintUserTurnOrigin,
+  pickLeastTrustedOrigin,
+  type AgentMessageOrigin,
+} from '../../../src/host/agent/messageOrigin';
+
+describe('pickLeastTrustedOrigin（混合起源取最不可信者）', () => {
+  const user: AgentMessageOrigin = { senderKind: 'user' };
+  const orchestrator: AgentMessageOrigin = { senderKind: 'orchestrator' };
+  const dependency: AgentMessageOrigin = { senderKind: 'dependency' };
+  const peer: AgentMessageOrigin = { senderKind: 'peer-agent', senderAgentId: 'agent-b' };
+
+  it('peer-agent 最不可信，盖过 user/orchestrator/dependency', () => {
+    expect(pickLeastTrustedOrigin([user, orchestrator, peer])).toBe(peer);
+    expect(pickLeastTrustedOrigin([peer, user])).toBe(peer);
+    expect(pickLeastTrustedOrigin([user, dependency, orchestrator])).toBe(dependency);
+    expect(pickLeastTrustedOrigin([user, orchestrator])).toBe(orchestrator);
+    expect(pickLeastTrustedOrigin([user])).toBe(user);
+  });
+
+  it('空链/缺省返回 undefined（不升档，保持现状语义）', () => {
+    expect(pickLeastTrustedOrigin([])).toBeUndefined();
+    expect(pickLeastTrustedOrigin(undefined)).toBeUndefined();
+  });
+});
+
+describe('collectTurnOrigins（drain 注入时的 origin 链）', () => {
+  it('shutdown_request 不计入；存量无 origin 从严视同 peer-agent', () => {
+    const origins = collectTurnOrigins([
+      { type: 'shutdown_request', from: 'orchestrator', payload: '{}', timestamp: 1 },
+      { type: 'text', from: 'user', payload: '旧队列消息', timestamp: 2 },
+      { type: 'text', from: 'user', payload: '用户补话', timestamp: 3, origin: { senderKind: 'user' } },
+    ]);
+    expect(origins).toEqual([
+      { senderKind: 'peer-agent' },
+      { senderKind: 'user' },
+    ]);
+  });
+
+  it('本轮回空返回 undefined（调用方保留上一条链）', () => {
+    expect(collectTurnOrigins([])).toBeUndefined();
+    expect(collectTurnOrigins([
+      { type: 'shutdown_request', from: 'orchestrator', payload: '{}', timestamp: 1 },
+    ])).toBeUndefined();
+  });
+});
+
+describe('mintUserTurnOrigin（主代理常规输入铸 user 起源）', () => {
+  it('铸 senderKind=user 单条链并带 turn 身份', () => {
+    expect(mintUserTurnOrigin({ sessionId: 's', runId: 'r', turnId: 't' })).toEqual([
+      { senderKind: 'user', sessionId: 's', runId: 'r', turnId: 't' },
+    ]);
+  });
+});

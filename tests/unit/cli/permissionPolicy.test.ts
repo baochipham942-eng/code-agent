@@ -316,3 +316,25 @@ describe('createCLIPermissionHandler --permission-mode auto', () => {
     }
   });
 });
+
+describe('ADR-067 D3：skip 档不豁免 peer 消息触发的写/执行', () => {
+  it('--dangerously-skip-permissions 对带 triggeredByAgentMessage 标记的请求 fail-closed', async () => {
+    const warn = vi.fn();
+    const handler = createCLIPermissionHandler({ dangerouslySkipPermissions: true, warn });
+    const result = await handler(makeRequest({
+      forceConfirm: true,
+      details: { command: 'rm -rf /tmp/x', triggeredByAgentMessage: { senderAgentId: 'agent-b' } },
+    }));
+    expect(result.approved).toBe(false);
+    expect(result.denialSource).toBe('no-approval-ui');
+    expect(result.message).toContain('agent-b');
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0][0]).toContain('agent-b');
+  });
+
+  it('skip 档对无 peer 标记的请求维持全量放行（既有逃生门语义不变）', async () => {
+    const handler = createCLIPermissionHandler({ dangerouslySkipPermissions: true });
+    await expect(handler(makeRequest({ forceConfirm: true, details: { command: 'ls' } })))
+      .resolves.toEqual({ approved: true, approvalSource: 'skip-permissions' });
+  });
+});

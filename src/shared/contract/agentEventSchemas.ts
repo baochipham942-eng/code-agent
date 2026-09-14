@@ -660,8 +660,8 @@ const SuggestionsUpdateEventSchema = event('suggestions_update', z.array(z.objec
 // B2 诚实分段（B2 时 renderer 先定格断点消息、续答另起一段，D2 边界）。
 const StreamReconnectingEventSchema = event('stream_reconnecting', z.object({
   turnId: z.string().optional(),
-  attempt: z.number(),
-  maxReconnects: z.number(),
+  attempt: z.number().int().min(1),
+  maxReconnects: z.number().int().min(1),
   segment: z.enum(['b1', 'b2']),
 }));
 

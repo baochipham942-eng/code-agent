@@ -241,6 +241,11 @@ export function getStringField(record: Record<string, unknown>, field: string): 
   return typeof value === 'string' ? value : undefined;
 }
 
+/** ADR-068 刀 4：续接计数 n/N 只认 ≥1 的有限整数（ai-review Nit：防异常事件显示负数/小数）。 */
+function isValidReconnectCount(value: number | undefined): value is number {
+  return value !== undefined && Number.isInteger(value) && value >= 1;
+}
+
 export function getNumberField(record: Record<string, unknown>, field: string): number | undefined {
   const value = record[field];
   return typeof value === 'number' ? value : undefined;
@@ -621,8 +626,9 @@ export interface StreamReconnectingPayload {
 }
 
 /**
- * ADR-068 刀 4：断流续接信号（stream_reconnecting）。n/N 缺一不可、segment 只认
- * b1/b2 稳定 code——形状不全就整条丢，宁可没信号也不挂错档的信号。
+ * ADR-068 刀 4：断流续接信号（stream_reconnecting）。n/N 缺一不可且必须是 ≥1 的整数
+ * （异常事件不显示负数/小数计数）、segment 只认 b1/b2 稳定 code——形状不全就整条丢，
+ * 宁可没信号也不挂错档的信号。
  */
 export function normalizeStreamReconnectingPayload(data: unknown): StreamReconnectingPayload | null {
   if (!isRecord(data)) return null;
@@ -630,7 +636,9 @@ export function normalizeStreamReconnectingPayload(data: unknown): StreamReconne
   const maxReconnects = getNumberField(data, 'maxReconnects');
   const rawSegment = data.segment;
   const segment = rawSegment === 'b1' || rawSegment === 'b2' ? rawSegment : undefined;
-  if (attempt === undefined || maxReconnects === undefined || segment === undefined) return null;
+  if (
+    !isValidReconnectCount(attempt) || !isValidReconnectCount(maxReconnects) || segment === undefined
+  ) return null;
   return {
     ...(getStringField(data, 'turnId') ? { turnId: getStringField(data, 'turnId') } : {}),
     attempt,

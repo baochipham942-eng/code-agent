@@ -10,6 +10,14 @@
 // 的 isSafeImageUrl 同源（host 判定下沉到这里，避免两份私网规则漂移）。
 // ============================================================================
 
+// 云厂商元数据服务的知名主机名（IP 形式 169.254.169.254 由下面的链路本地段兜住；
+// 主机名形式只在这些云的内网解析，公网不可路由，挡掉不会误伤真实公网服务）。
+const CLOUD_METADATA_HOSTNAMES = new Set([
+  'metadata.google.internal', // GCP
+  'metadata', // 各云 metadata 服务的短名别名
+  'instance-data', // AWS EC2 上的 /etc/hosts 别名
+]);
+
 /**
  * hostname 是否私网/环回/链路本地/元数据地址（不解析 DNS）。
  * 入参可为裸 hostname（'127.0.0.1'/'localhost'）或 WHATWG URL 的 IPv6 字面量（'[::1]'）。
@@ -17,6 +25,7 @@
 export function isPrivateOrLocalHost(hostname: string): boolean {
   const h = hostname.toLowerCase();
   if (h === 'localhost') return true;
+  if (CLOUD_METADATA_HOSTNAMES.has(h)) return true;
 
   // 私网/环回/链路本地/未指定 IPv4
   const m = h.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);

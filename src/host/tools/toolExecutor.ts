@@ -52,6 +52,7 @@ import {
   INJECTED_PERMISSION_HANDLER_TRACE_RULE,
   commandAnalysisDenialError,
   peerOriginUnattendedDenialError,
+  peermsgLaunderDenialError,
   permissionDenialError,
   readOnlyDenialError,
   readOnlyForcesConfirmationFor,
@@ -60,6 +61,7 @@ import {
 } from './toolPermissionClassification';
 import { getPermissionModeManager } from '../permissions/modes';
 import { pickLeastTrustedOrigin, type AgentMessageOrigin } from '../agent/messageOrigin';
+import { computeActionFingerprint, getDenialRegistry } from '../security/denialRegistry';
 import { normalizePermissionAskResult, type RequestPermissionResult } from '../../shared/contract/permission';
 import { applyEditedArgs } from '../../shared/contract/permissionEdit';
 import { EXTERNAL_SIDE_EFFECT_TRACE_RULE, EXTERNAL_SIDE_EFFECT_TRACE_REASON, isExternalSideEffectTool, extractStandingGrantTarget } from './externalSideEffect';
@@ -1442,6 +1444,48 @@ export class ToolExecutor {
     const turnPeerOrigin = pickLeastTrustedOrigin(options.turnOrigin);
     const peerOriginForcesConfirmation = turnPeerOrigin?.senderKind === 'peer-agent'
       && toolDef.permissionLevel !== 'read';
+    // ADR-067 D4：跨 agent 否认登记 + 洗白匹配。同一动作指纹在本会话刚被拒（ask-denied）
+    // 且本轮输入含 peer-agent → 权限洗白，直接 BLOCK（不 exec；无人值守/bypass 同向，
+    // 先于一切自动放行捷径）；无 peer 来源（用户本人重试）→ launderRetryForcesAsk
+    // 降档 ask 一次，不硬毙、不 forceConfirm（审批记忆机制照走）。
+    const actionFingerprint = effectiveSessionId && toolDef.permissionLevel !== 'read'
+      ? computeActionFingerprint(executionToolName, params, bashWorkingDirectory)
+      : null;
+    const priorDenial = actionFingerprint && effectiveSessionId
+      ? getDenialRegistry().find(effectiveSessionId, actionFingerprint)
+      : undefined;
+    if (priorDenial && peerOriginForcesConfirmation) {
+      const failure = peermsgLaunderDenialError(
+        executionToolName,
+        turnPeerOrigin?.senderAgentId,
+        priorDenial.summary,
+      );
+      logger.warn('Permission laundering blocked: peer relays a just-denied action fingerprint', {
+        tool: executionToolName,
+        senderAgentId: turnPeerOrigin?.senderAgentId,
+        fingerprint: actionFingerprint,
+      });
+      recordDecision(
+        executionToolName,
+        params,
+        'policy-deny',
+        'peermsg-launder',
+        permStartTime,
+        undefined,
+        effectiveSessionId,
+        this.ledgerOrigin,
+      );
+      return {
+        success: false,
+        error: failure.modelText,
+        metadata: {
+          code: failure.code,
+          failureCode: AgentFailureCode.PermissionDenied,
+          hostReason: failure,
+        },
+      };
+    }
+    const launderRetryForcesAsk = Boolean(priorDenial);
     // 无人值守不豁免（ADR-067 D3）：peer 转述的写/执行 fail-closed 拒绝，不进审批/
     // 停车挂起——放在所有自动放行捷径（preApproved/safeCommand/classifier/档位）之前。
     // validateCommand 硬毙与 policy enforcer deny 已在前面出过；exec-policy forbidden 与
@@ -1536,6 +1580,7 @@ export class ToolExecutor {
       && !guardFabricForcesApproval
       && !protectedWriteForcesConfirmation
       && !peerOriginForcesConfirmation
+      && !launderRetryForcesAsk
       && !commandAnalysisFailedReason
       && !shellDesktopAutomation
       && !consequenceForcesClassification
@@ -1554,7 +1599,7 @@ export class ToolExecutor {
     // exec-policy forbidden 留在放行守卫外：学来的 allow 不得放行受保护路径，
     // 但用户显式 forbidden 仍硬拒，不得被 protectedWriteForcesConfirmation 降成可批卡。
     let isSafeCommand = false;
-    if (isBashToolName(policyToolName) && params.command && !commandAnalysisFailedReason && !shellDesktopAutomation && !isPreApproved && !guardFabricForcesApproval && !this.forcePermissionHandler && !peerOriginForcesConfirmation) {
+    if (isBashToolName(policyToolName) && params.command && !commandAnalysisFailedReason && !shellDesktopAutomation && !isPreApproved && !guardFabricForcesApproval && !this.forcePermissionHandler && !peerOriginForcesConfirmation && !launderRetryForcesAsk) {
       const cmd = params.command as string;
 
       // 1. 检查 exec policy 持久化规则（forbidden 先于受保护路径熔断）
@@ -1601,7 +1646,7 @@ export class ToolExecutor {
       }
     }
 
-    if ((toolDef.requiresPermission || readArgumentForcesClassification || peerOriginForcesConfirmation) && (commandAnalysisFailedReason || this.forcePermissionHandler || writeWithoutWorkspaceAuthority || guardFabricForcesApproval || protectedWriteForcesConfirmation || policyForcesConfirmation || unresolvedWriteTargetForcesAsk || boundaryViolation || readOnlyForcesConfirmation || shellDesktopAutomation || consequenceForcesClassification || argumentForcesClassification || peerOriginForcesConfirmation || (!isPreApproved && !isSafeCommand))) {
+    if ((toolDef.requiresPermission || readArgumentForcesClassification || peerOriginForcesConfirmation || launderRetryForcesAsk) && (commandAnalysisFailedReason || this.forcePermissionHandler || writeWithoutWorkspaceAuthority || guardFabricForcesApproval || protectedWriteForcesConfirmation || policyForcesConfirmation || unresolvedWriteTargetForcesAsk || boundaryViolation || readOnlyForcesConfirmation || shellDesktopAutomation || consequenceForcesClassification || argumentForcesClassification || peerOriginForcesConfirmation || launderRetryForcesAsk || (!isPreApproved && !isSafeCommand))) {
       // P1: Auto-approve classifier — 规则+LLM 自动判断安全性
       let needsUserApproval = true;
       // 信任边界 ask（W3 写边界）→ forceConfirm：终审层便利放行必须让路（同 directory_access）。
@@ -1667,6 +1712,7 @@ export class ToolExecutor {
             readOnlyForcesConfirmation,
             sessionPermissionMode,
             peerOriginForcesConfirmation,
+            launderRetryForcesAsk,
           });
           // B1: EXTERNAL 风险类打标进 decisionTrace（result='allow'，不改变审批结果，仅供
           // B2 无人值守停车 / B4 target 授权与审计消费）。此处入 traceBuilder 覆盖 deny/ask 路径；
@@ -1816,6 +1862,7 @@ export class ToolExecutor {
         && !boundaryViolation
         && !readOnlyForcesConfirmation
         && !peerOriginForcesConfirmation
+        && !launderRetryForcesAsk
         && !commandAnalysisFailedReason
         && getSessionAutomationService().matchStandingGrant(effectiveSessionId, executionToolName, standingGrantTarget)
       ) {
@@ -2022,6 +2069,15 @@ export class ToolExecutor {
       if (approved) {
         const approvalSource = ask.approvalSource ?? 'unspecified';
         traceBuilder.addStep('plan_approval', 'ask_approved', 'allow', `审批放行（来源：${approvalSource}）`);
+        // ADR-067 D4：按**实际批准生效的参数**重算指纹后复位——审批卡上改过参数时
+        // params 已是编辑后的那份（上面的 applyEditedArgs 只在这里替换）：批准 B 只清
+        // B 的登记（若有），被拒的 A 的登记自然保留，不许用修改前指纹误清。
+        const approvedFingerprint = effectiveSessionId && toolDef.permissionLevel !== 'read'
+          ? computeActionFingerprint(executionToolName, params, bashWorkingDirectory)
+          : null;
+        if (approvedFingerprint && effectiveSessionId) {
+          getDenialRegistry().clear(effectiveSessionId, approvedFingerprint);
+        }
         recordDecision(executionToolName, params, 'ask-approved', approvalSource, permStartTime, traceBuilder.build('allow'), effectiveSessionId, this.ledgerOrigin, getApprovalWaitMs(options.currentToolCallId, Date.now()));
       }
 
@@ -2089,6 +2145,18 @@ export class ToolExecutor {
           effectiveSessionId || 'unknown',
         ).catch(() => {});
         traceBuilder.addStep('plan_approval', 'ask_denied', 'deny', hostReason);
+        // ADR-067 D4：ask-denied 写入跨 agent 否认登记（sessionId + 动作指纹），
+        // 后续同指纹动作按洗白闸处置（peer 转述 BLOCK / 本人重试 forceConfirm 一次）
+        if (actionFingerprint && effectiveSessionId) {
+          getDenialRegistry().record({
+            sessionId: effectiveSessionId,
+            fingerprint: actionFingerprint,
+            toolName: executionToolName,
+            summary: String(params.command || params.file_path || params.path || executionToolName).substring(0, 80),
+            reason: denialReason,
+            timestamp: Date.now(),
+          });
+        }
         recordDecision(executionToolName, params, 'ask-denied', denialReason, permStartTime, traceBuilder.build('deny'), effectiveSessionId, this.ledgerOrigin, getApprovalWaitMs(options.currentToolCallId, Date.now()));
 
         return {

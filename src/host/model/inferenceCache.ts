@@ -4,10 +4,49 @@
 
 import { createHash } from 'crypto';
 import { createLogger } from '../services/infra/logger';
-import type { ModelMessage, ModelResponse } from './types';
-import type { ModelConfig } from '../../shared/contract';
+import type { InferenceOptions, ModelMessage, ModelResponse } from './types';
+import type { ModelConfig, ToolDefinition } from '../../shared/contract';
 
 const logger = createLogger('InferenceCache');
+
+/**
+ * 递归按键排序的稳定序列化：同内容不同键序必须得到同一个 key，
+ * 否则等价请求会因对象字面量的构造顺序不同而互相 miss。
+ */
+function stableStringify(value: unknown): string {
+  if (value === undefined) return 'null';
+  if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'null';
+  if (Array.isArray(value)) return `[${value.map(item => stableStringify(item)).join(',')}]`;
+  const entries = Object.entries(value as Record<string, unknown>)
+    .filter(([, v]) => v !== undefined)
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([k, v]) => `${JSON.stringify(k)}:${stableStringify(v)}`);
+  return `{${entries.join(',')}}`;
+}
+
+/** 消息里所有会进 provider 请求体的字段（不止 role/content）。 */
+function serializeMessage(message: ModelMessage): unknown {
+  return {
+    role: message.role,
+    content: message.content,
+    toolCalls: message.toolCalls,
+    toolCallId: message.toolCallId,
+    toolError: message.toolError,
+    toolCallText: message.toolCallText,
+    thinking: message.thinking,
+    responsesOutput: message.responsesOutput,
+    transient: message.transient,
+  };
+}
+
+/** 工具里模型可见的三个字段：name/description/inputSchema（schema 递归稳定序列化）。 */
+function serializeTool(tool: ToolDefinition): unknown {
+  return {
+    name: tool.name,
+    description: tool.description,
+    inputSchema: tool.inputSchema,
+  };
+}
 
 interface CacheEntry {
   response: ModelResponse;
@@ -28,17 +67,36 @@ export class InferenceCache {
   }
 
   /**
-   * Compute cache key from last 3 messages + model config
+   * Compute cache key from the full request payload: all messages (not just
+   * the tail), tools, output-affecting config fields, and output-affecting
+   * inference options. reasoningEffort folds options over config to mirror
+   * the provider precedence (`options?.reasoningEffort ?? config.reasoningEffort`).
+   *
+   * Deliberately NOT in the key: apiKey (credential, not output-affecting),
+   * capabilities/computerUse (descriptive metadata), promptCaching (server-side
+   * cache marker, output-transparent), adaptive (routing permission — response
+   * ownership is handled by keying writes with the config that produced them).
    */
-  computeKey(messages: ModelMessage[], config: ModelConfig): string {
-    const lastMessages = messages.slice(-3);
-    const keyData = JSON.stringify({
-      messages: lastMessages.map(m => ({
-        role: m.role,
-        content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
-      })),
+  computeKey(
+    messages: ModelMessage[],
+    config: ModelConfig,
+    tools: ToolDefinition[],
+    options?: InferenceOptions,
+  ): string {
+    const keyData = stableStringify({
+      messages: messages.map(serializeMessage),
+      tools: tools.map(serializeTool),
       provider: config.provider,
       model: config.model,
+      protocol: config.protocol,
+      baseUrl: config.baseUrl,
+      temperature: config.temperature,
+      maxTokens: config.maxTokens,
+      responseFormat: config.responseFormat,
+      thinkingBudget: config.thinkingBudget,
+      reasoningEffort: options?.reasoningEffort ?? config.reasoningEffort,
+      searchEnabled: options?.searchEnabled !== false,
+      toolChoice: options?.toolChoice,
     });
     return createHash('md5').update(keyData).digest('hex');
   }

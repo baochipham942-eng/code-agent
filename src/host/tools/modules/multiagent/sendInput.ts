@@ -20,6 +20,7 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { getSpawnGuard } from '../../../agent/spawnGuard';
+import { mintToolMessageOrigin } from '../../../agent/messageOrigin';
 import {
   getParallelAgentCoordinator,
   getParallelAgentCoordinatorRegistry,
@@ -58,12 +59,15 @@ export async function executeSendInput(
   if (target.error) return { ok: false, error: target.error, code: 'NOT_FOUND' };
   const guard = getSpawnGuard();
   const agent = target.scope ? guard.get(agentId, target.scope) : guard.get(agentId);
+  // ADR-067 D1：来源由宿主从 ctx 铸造——子代理内执行是 peer-agent（带真实
+  // senderAgentId），主代理执行是 orchestrator；落队不再是硬编码的 'user'/'parent'。
+  const messageOrigin = mintToolMessageOrigin(ctx);
 
   if (!agent) {
     const coordinator = target.scope
       ? getParallelAgentCoordinatorRegistry().get(target.scope)
       : getParallelAgentCoordinator();
-    const sentToParallelAgent = await coordinator?.sendMessage(agentId, message) ?? false;
+    const sentToParallelAgent = await coordinator?.sendMessage(agentId, message, messageOrigin) ?? false;
     if (sentToParallelAgent) {
       onProgress?.({ stage: 'completing', percent: 100 });
       return withMultiagentMeta({
@@ -90,8 +94,8 @@ export async function executeSendInput(
   }
 
   const sent = target.scope
-    ? guard.sendMessage(agentId, message, target.scope)
-    : guard.sendMessage(agentId, message);
+    ? guard.sendMessage(agentId, message, target.scope, messageOrigin)
+    : guard.sendMessage(agentId, message, undefined, messageOrigin);
   onProgress?.({ stage: 'completing', percent: 100 });
   if (sent) {
     ctx.logger.debug('send_input done', { agentId, role: agent.role });

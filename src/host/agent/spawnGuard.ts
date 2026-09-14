@@ -31,6 +31,14 @@ import {
   buildSubagentCompletionRecord,
   type SubagentCompletionKind,
 } from './subagentCompletionNotification';
+import {
+  createAgentMessage,
+  createTextMessage,
+  displayFromForOrigin,
+  type AgentMessage,
+  type AgentMessageOrigin,
+  type AgentMessageType,
+} from './messageOrigin';
 
 const logger = createLogger('SpawnGuard');
 
@@ -39,41 +47,11 @@ const logger = createLogger('SpawnGuard');
 // ============================================================================
 
 // ============================================================================
-// 结构化 Agent 消息协议
+// 结构化 Agent 消息协议（本体在 ./messageOrigin，此处 re-export 保持既有 import 路径）
 // ============================================================================
 
-export type AgentMessageType =
-  | 'text'                    // 普通文本（向后兼容）
-  | 'shutdown_request'        // 父请求子关闭
-  | 'shutdown_response'       // 子同意/拒绝关闭
-  | 'plan_approval_request'   // 子提交计划待审
-  | 'plan_approval_response'  // 父审批结果
-  | 'status_update';          // 进度汇报
-
-export interface AgentMessage {
-  /** Stable delivery identity for durable at-least-once mailboxes. */
-  id?: string;
-  /** Monotonic sequence within one Agent Team tree. */
-  seq?: number;
-  type: AgentMessageType;
-  from: string;
-  payload: string;
-  timestamp: number;
-}
-
-/** Create a text message (backward compatible shorthand) */
-export function createTextMessage(from: string, text: string): AgentMessage {
-  return { type: 'text', from, payload: text, timestamp: Date.now() };
-}
-
-/** Create a structured message */
-export function createAgentMessage(
-  type: AgentMessageType,
-  from: string,
-  payload: Record<string, unknown>
-): AgentMessage {
-  return { type, from, payload: JSON.stringify(payload), timestamp: Date.now() };
-}
+export { createAgentMessage, createTextMessage } from './messageOrigin';
+export type { AgentMessage, AgentMessageType } from './messageOrigin';
 
 export interface ManagedAgent {
   id: string;
@@ -886,14 +864,32 @@ class SpawnGuard {
   /**
    * Send a structured message to a running agent's queue.
    * Supports both string (backward compat) and AgentMessage.
+   *
+   * ADR-067 D1：origin 由宿主在此入队点统一铸造（`origin` 参数来自宿主调用方的
+   * 已核验上下文），调用方在 message 里自报的 origin 一律被覆盖；from 只作展示。
+   * 字符串捷径保持历史语义（from='parent' → orchestrator）。
    */
-  sendMessage(id: string, message: string | AgentMessage, scope?: SpawnGuardScopeFilter): boolean {
+  sendMessage(id: string, message: string | AgentMessage, scope?: SpawnGuardScopeFilter, origin?: AgentMessageOrigin): boolean {
     const agent = this.get(id, scope);
     if (!agent || !isLiveRunningStatus(agent.status)) return false;
 
+    const minted: AgentMessageOrigin | undefined = origin ?? (typeof message === 'string'
+      ? { senderKind: 'orchestrator' }
+      : undefined);
     const structured: AgentMessage = typeof message === 'string'
-      ? createTextMessage('parent', message)
-      : message;
+      ? createTextMessage(minted ? displayFromForOrigin(minted) : 'parent', message)
+      : { ...message };
+    if (minted) {
+      structured.origin = {
+        ...minted,
+        sessionId: minted.sessionId ?? agent.sessionId,
+        runId: minted.runId ?? agent.runId,
+      };
+      structured.from = displayFromForOrigin(structured.origin);
+    } else {
+      // 旧调用方未铸 origin：落队即缺失，消费方从严按 peer-agent 处置。
+      delete structured.origin;
+    }
     agent.messageQueue.push(structured);
     logger.info(`[${id}] Message queued (type: ${structured.type}, queue size: ${agent.messageQueue.length})`);
     return true;
@@ -908,8 +904,9 @@ class SpawnGuard {
     from: string,
     payload: Record<string, unknown>,
     scope?: SpawnGuardScopeFilter,
+    origin?: AgentMessageOrigin,
   ): boolean {
-    return this.sendMessage(id, createAgentMessage(type, from, payload), scope);
+    return this.sendMessage(id, createAgentMessage(type, from, payload), scope, origin);
   }
 
   /**

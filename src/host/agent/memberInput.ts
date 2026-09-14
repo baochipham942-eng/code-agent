@@ -16,6 +16,7 @@ import type {
 import type { RuntimeInputMode } from '../../shared/contract/conversationEnvelope';
 import { RUNTIME_INPUT_REDIRECT_LINE } from '../../shared/constants/runtimeInput';
 import type { AgentMessage } from './spawnGuard';
+import type { AgentMessageOrigin } from './messageOrigin';
 import type { SessionCommandTask, SessionTaskReferenceResult } from '../services/commandCenter/sessionCommandCenter';
 
 export interface MemberInputDeps {
@@ -31,7 +32,7 @@ export interface MemberInputDeps {
   }): Promise<{ delivered: boolean; persisted: boolean }>;
   spawnGuard: {
     get(id: string, scope?: { sessionId: string }): { status?: string } | undefined;
-    sendMessage(id: string, message: AgentMessage, scope?: { sessionId: string }): boolean;
+    sendMessage(id: string, message: AgentMessage, scope?: { sessionId: string }, origin?: AgentMessageOrigin): boolean;
   };
   commandCenter: {
     list(sessionId: string): Pick<SessionCommandTask, 'id' | 'status'>[];
@@ -108,12 +109,17 @@ export async function sendMemberInput(
   const agent = deps.spawnGuard.get(request.memberId, scope);
   if (!agent) return { outcome: 'rejected', reason: 'not_found' };
   if (!LIVE_SPAWN_STATUSES.has(agent.status ?? '')) return { outcome: 'rejected', reason: 'finished' };
+  // ADR-067 D1：用户补话来源由宿主在此铸造（senderKind='user'），不是路由标签自报。
   const sent = deps.spawnGuard.sendMessage(request.memberId, {
     type: 'text',
     from: 'user',
     payload: deliveryText(message, request.mode),
     timestamp: request.timestamp ?? Date.now(),
-  }, scope);
+  }, scope, {
+    senderKind: 'user',
+    sessionId: request.sessionId,
+    runId: request.runId,
+  });
   return sent
     ? { outcome: 'delivered', effect: 'next_step', persisted: false }
     : { outcome: 'rejected', reason: 'finished' };

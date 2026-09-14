@@ -6,6 +6,7 @@
 
 import type { ModelConfig } from '../../shared/contract';
 import type { AgentMessage } from './spawnGuard';
+import { resolveMessageOrigin } from './messageOrigin';
 import type { ModelMessage as ProviderModelMessage } from '../model/types';
 import type { ModelRouter } from '../model/modelRouter';
 import type { TelemetryModelCall } from '../../shared/contract/telemetry';
@@ -136,6 +137,24 @@ export function recordSubagentTelemetryTurn(
 }
 
 /**
+ * 文本消息的注入前缀按宿主铸造的 origin 生成（ADR-067 D1），不再按 from 二分
+ * 冒充 parent/user；存量无 origin 的消息从严按 peer-agent 渲染。
+ */
+function injectedTextPrefix(msg: AgentMessage): string {
+  const origin = resolveMessageOrigin(msg.origin);
+  switch (origin.senderKind) {
+    case 'user':
+      return 'User message';
+    case 'orchestrator':
+      return 'Orchestrator';
+    case 'dependency':
+      return 'Dependency message';
+    case 'peer-agent':
+      return `Peer agent ${origin.senderAgentId ?? msg.from}`;
+  }
+}
+
+/**
  * 排空结构化消息队列并注入会话（mid-loop injection）。按引用 push 到 messages，
  * 返回注入条数（>0 时调用方负责发快照）。shutdown_request 仅记录并停止本轮排空。
  */
@@ -157,9 +176,9 @@ export function drainSubagentMessages(params: {
       break;
     }
     // Text and other message types: inject into conversation
-    // 用户在成员视图直接补的话（N-SUBAGENT-INPUT）不冒充父 agent；其余文本仍是父/协调器转来的
+    // 前缀只认 origin（ADR-067）：user/orchestrator/peer 各自诚实标注，不再冒充
     const prefix = msg.type === 'text'
-      ? (msg.from === 'user' ? 'User message' : 'Parent agent message')
+      ? injectedTextPrefix(msg)
       : `Agent message (${msg.type})`;
     messages.push(createRuntimeMessage({
       role: 'user',

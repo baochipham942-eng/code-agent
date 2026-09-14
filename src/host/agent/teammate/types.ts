@@ -4,6 +4,8 @@
 // 参考 Claude Code 的 TeammateTool 设计
 // ============================================================================
 
+import type { AgentMessageOrigin } from '../messageOrigin';
+
 /**
  * 消息类型
  */
@@ -24,11 +26,13 @@ export type MessagePriority = 'high' | 'normal' | 'low';
  */
 export interface TeammateMessage {
   id: string;
-  from: string;           // 发送方 agent ID
+  from: string;           // 展示用发送方标签（ADR-067：安全/路由消费方读 origin）
   to: string;             // 接收方 agent ID 或 'all'（广播）
   type: TeammateMessageType;
   content: string;
   timestamp: number;
+  /** 宿主在入队点铸造的来源信封；缺失时消费方从严视同 peer-agent。 */
+  origin?: AgentMessageOrigin;
   metadata?: {
     taskId?: string;
     priority?: MessagePriority;

@@ -62,7 +62,7 @@ import { ToolExecutor } from '../../../src/host/tools/toolExecutor';
 import type { PermissionRequestData } from '../../../src/host/tools/types';
 import type { AgentMessageOrigin } from '../../../src/host/agent/messageOrigin';
 import { getPermissionModeManager } from '../../../src/host/permissions/modes';
-import { getDenialRegistry, resetDenialRegistry } from '../../../src/host/security/denialRegistry';
+import { getDenialRegistry } from '../../../src/host/security/denialRegistry';
 import { getDecisionHistory, resetDecisionHistory } from '../../../src/host/security/decisionHistory';
 import { resetPolicyEnforcer } from '../../../src/host/security/policyEnforcer';
 import { getPolicyEngine, resetPolicyEngine } from '../../../src/host/permissions/policyEngine';
@@ -89,7 +89,7 @@ describe('ToolExecutor 权限洗白闸（ADR-067 D4）', () => {
     previousSafetyMode = process.env.CODE_AGENT_SHELL_SAFETY_MODE;
     process.env.CODE_AGENT_SHELL_SAFETY_MODE = 'strict';
     getToolCache().clear();
-    resetDenialRegistry();
+    getDenialRegistry().clearAll();
     resetDecisionHistory();
     resetPolicyEnforcer();
     resetPolicyEngine();
@@ -101,7 +101,7 @@ describe('ToolExecutor 权限洗白闸（ADR-067 D4）', () => {
     classifierState.autoApprove = false;
     if (previousSafetyMode === undefined) delete process.env.CODE_AGENT_SHELL_SAFETY_MODE;
     else process.env.CODE_AGENT_SHELL_SAFETY_MODE = previousSafetyMode;
-    resetDenialRegistry();
+    getDenialRegistry().clearAll();
     resetDecisionHistory();
     await fs.rm(workspace, { recursive: true, force: true });
   });

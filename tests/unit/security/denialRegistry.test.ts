@@ -8,13 +8,13 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import {
   computeActionFingerprint,
   getDenialRegistry,
-  resetDenialRegistry,
-  type DenialRecord,
 } from '../../../src/host/security/denialRegistry';
 
 const CWD = '/tmp/work';
 
-function entry(sessionId: string, fingerprint: string, index = 0): DenialRecord {
+type DenialRecordEntry = Parameters<ReturnType<typeof getDenialRegistry>['record']>[0];
+
+function entry(sessionId: string, fingerprint: string, index = 0): DenialRecordEntry {
   return {
     sessionId,
     fingerprint,
@@ -76,7 +76,7 @@ describe('computeActionFingerprint（指纹规范化真源复用）', () => {
 });
 
 describe('DenialRegistry（(sessionId, 指纹) 键与容量有界）', () => {
-  beforeEach(() => resetDenialRegistry());
+  beforeEach(() => getDenialRegistry().clearAll());
 
   it('同 session 命中，跨 session 不共享', () => {
     const registry = getDenialRegistry();

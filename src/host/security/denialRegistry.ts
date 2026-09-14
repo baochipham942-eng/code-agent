@@ -41,7 +41,11 @@ export function computeActionFingerprint(
   return null;
 }
 
-export interface DenialRecord {
+/**
+ * 登记条目形状。不导出（knip 生产档只追具名 import，toolExecutor 与测试都是
+ * 结构消费——record 对象字面量 / find 返回值的属性访问，无需按名引用类型）。
+ */
+interface DenialRecord {
   sessionId: string;
   fingerprint: string;
   toolName: string;
@@ -106,6 +110,5 @@ export function getDenialRegistry(): DenialRegistry {
   return instance;
 }
 
-export function resetDenialRegistry(): void {
-  instance = null;
-}
+// 测试隔离不走导出钩子（knip 生产档 entry 不含 tests，测试专用导出必成 dead
+// export）：用例间复位调 getDenialRegistry().clearAll()，语义等价。

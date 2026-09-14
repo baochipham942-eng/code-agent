@@ -3,6 +3,8 @@
 // 用法：node scripts/eval-core-summary.mjs --report <本轮 json> [--prev <上轮 json>] --exit <code> [--out <md>]
 import fs from 'node:fs';
 import path from 'node:path';
+import process from 'node:process';
+import console from 'node:console';
 import { buildCoreSummary } from './lib/eval-core-summary.mjs';
 
 const args = process.argv.slice(2);

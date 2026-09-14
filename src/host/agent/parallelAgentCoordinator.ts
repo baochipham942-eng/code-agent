@@ -26,6 +26,7 @@ import {
   inferAgentFailureCode,
 } from '../../shared/contract/agentFailure';
 import { createTextMessage, getSpawnGuard, type AgentMessage } from './spawnGuard';
+import { displayFromForOrigin, type AgentMessageOrigin } from './messageOrigin';
 import { createLogger } from '../services/infra/logger';
 import { withTimeout } from '../services/infra/timeoutController';
 import {
@@ -809,7 +810,12 @@ export class ParallelAgentCoordinator extends EventEmitter {
     return this.taskDefinitions.has(taskId) && !this.completedTasks.has(taskId);
   }
 
-  async sendMessage(taskId: string, message: string): Promise<boolean> {
+  /**
+   * ADR-067 D1：origin 由宿主在入队点铸造（`origin` 参数来自宿主调用方的已核验
+   * 上下文）；缺省视为旧调用方，落队无 origin，消费方从严按 peer-agent 处置。
+   * from 只作展示，按 origin 生成诚实标签（不再硬编码 'user'）。
+   */
+  async sendMessage(taskId: string, message: string, origin?: AgentMessageOrigin): Promise<boolean> {
     if (!this.canReceiveMessage(taskId)) {
       return false;
     }
@@ -819,10 +825,27 @@ export class ParallelAgentCoordinator extends EventEmitter {
       return false;
     }
 
+    const minted: AgentMessageOrigin | undefined = origin
+      ? {
+          ...origin,
+          sessionId: origin.sessionId ?? this.scope?.sessionId ?? this.executionContext?.sessionId,
+          runId: origin.runId ?? this.scope?.runId ?? this.executionContext?.runId,
+        }
+      : undefined;
+    const displayFrom = minted ? displayFromForOrigin(minted) : 'peer-agent';
+
     if (this.durableController) {
       try {
-        const persisted = await this.durableController.enqueueMessage(taskId, message, 'user');
-        queue.push({ id: persisted.id, seq: persisted.seq, type: 'text', from: persisted.from, payload: persisted.body, timestamp: persisted.createdAt });
+        const persisted = await this.durableController.enqueueMessage(taskId, message, displayFrom);
+        queue.push({
+          id: persisted.id,
+          seq: persisted.seq,
+          type: 'text',
+          from: persisted.from,
+          payload: persisted.body,
+          timestamp: persisted.createdAt,
+          ...(minted ? { origin: minted } : {}),
+        });
         logger.info(`[${taskId}] Durable parallel message queued (seq: ${persisted.seq}, queue size: ${queue.length})`);
         return true;
       } catch (error) {
@@ -831,7 +854,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
       }
     }
 
-    queue.push(createTextMessage('user', message));
+    queue.push(createTextMessage(displayFrom, message, minted));
     logger.info(`[${taskId}] Parallel message queued (queue size: ${queue.length})`);
     return true;
   }

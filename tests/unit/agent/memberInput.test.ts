@@ -76,6 +76,7 @@ describe('sendMemberInput', () => {
       'agent-9',
       expect.objectContaining({ type: 'text', from: 'user', payload: '顺便把页码加上' }),
       { sessionId: 'session-a' },
+      expect.objectContaining({ senderKind: 'user', sessionId: 'session-a' }),
     );
   });
 

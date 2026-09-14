@@ -1,6 +1,6 @@
 # ADR-067：peer 消息来源铸造与权限洗白闸（provenance envelope + origin-aware permission）
 
-- 状态：**待爸拍板**
+- 状态：accepted（2026-09-14 爸拍板）
 - 日期：2026-09-14
 - 工单：N-PEERMSG-LAUNDER（RQ-072，SOTA D08-09，权限线 P0）
 - 相关：ADR-057（审批拒绝来源不许自报）、ADR-066（出网白名单，同批权限线）、N-PEERMSG-CHECK（08-23 旧档，已预言本安全问题）、N-INJECT-BOUNDARY（不可伪造注入边界）、N-MATE-SHARE / N-AGENT-ADDRESSBOOK（冷冻，放开消息面的前置依赖）

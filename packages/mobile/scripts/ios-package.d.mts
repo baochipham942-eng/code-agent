@@ -33,6 +33,17 @@ export declare function exportOptionsXml(options: ExportOptions): string;
 export function unlinkedSpmPlugins(packageSwift: string, plugins: string[], selfImplemented?: string[]): string[];
 export function withPushAppDelegateHooks(source: string): string;
 export function withApsEnvironment(xml: string, environment: 'production' | 'development'): string;
+export function appEntitlementsXml(environment: 'production' | 'development'): string;
+export function withCodeSignEntitlements(content: string, options: { relativePath: string; appId: string }): string;
+export function ensureAppPushEntitlements(options: {
+  existingXml?: string | null;
+  pbxproj: string;
+  environment: 'production' | 'development';
+  appId: string;
+  relativePath?: string;
+}): { entitlementsXml: string; pbxproj: string };
+export function parseEntitlementsDump(dump: string | Buffer): { apsEnvironment: string | null };
+export function assertBinaryPushEntitlement(dump: string | Buffer): string;
 
 export interface SelfImplementedPluginClass { vendorClass: string; nativeClass: string }
 /** 把 packageClassList 里厂商插件的登记名换成第一方类名（Capacitor 按这张表 NSClassFromString）。 */

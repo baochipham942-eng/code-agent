@@ -156,19 +156,30 @@ export function markFtsTableRepairFailed(table: FtsTableName): void {
   availability.set(table, 'disabled');
 }
 
-function isFtsTableCorrupt(db: BetterSqlite3.Database, table: FtsTableName): boolean {
+/**
+ * 逐表损坏探针：'corrupt' = 确认损坏（可进修复阶梯）；'ok' = 确认完好（不许动）；
+ * 'unknown' = 探针自身查不了（非损坏类错误，如表不存在/IO）——保守路径才用。
+ */
+export function probeFtsTable(
+  db: BetterSqlite3.Database,
+  table: FtsTableName,
+): 'corrupt' | 'ok' | 'unknown' {
   const quoted = quoteSqlIdentifier(table);
   try {
     db.prepare(`SELECT 1 FROM ${quoted} LIMIT 1`).get();
   } catch (err) {
-    return isSqliteCorruptionError(err);
+    return isSqliteCorruptionError(err) ? 'corrupt' : 'unknown';
   }
   try {
     db.prepare(`SELECT 1 FROM ${quoted} WHERE ${quoted} MATCH ? LIMIT 1`).get(SQLITE_FTS.HEALTH_PROBE_MATCH);
   } catch (err) {
-    return isSqliteCorruptionError(err);
+    return isSqliteCorruptionError(err) ? 'corrupt' : 'unknown';
   }
-  return false;
+  return 'ok';
+}
+
+function isFtsTableCorrupt(db: BetterSqlite3.Database, table: FtsTableName): boolean {
+  return probeFtsTable(db, table) === 'corrupt';
 }
 
 export const repairFtsTable = Object.assign(
@@ -242,13 +253,24 @@ export const repairFtsTable = Object.assign(
 
 const MESSAGE_FTS_TABLES: FtsTableName[] = ['session_messages_fts', 'transcript_fts'];
 
-function repairMessageProjectionFts(db: BetterSqlite3.Database): void {
-  const targets = MESSAGE_FTS_TABLES.filter((table) => {
-    if (isFtsDisabled(table)) return true;
-    return isFtsTableCorrupt(db, table);
-  });
-  const toRepair = targets.length > 0 ? targets : MESSAGE_FTS_TABLES;
-  for (const table of toRepair) {
+/**
+ * 写路径损坏后的 FTS 修复编排。返回 true = 探针确认（或无法排除）FTS 表损坏、
+ * 已送修复阶梯，调用方可重试写；false = 探针确认两张消息 FTS 表都完好——
+ * 坏在源表/别处，不动 FTS 表（重建修不好还白 DROP 完好索引），调用方应把
+ * 原错误原样上抛：主库损坏归启动恢复编排（刀2）管，不是本阶梯的事。
+ */
+function repairMessageProjectionFts(db: BetterSqlite3.Database): boolean {
+  const probes = MESSAGE_FTS_TABLES.map((table) => ({
+    table,
+    probe: isFtsDisabled(table) ? ('corrupt' as const) : probeFtsTable(db, table),
+  }));
+  let targets = probes.filter((entry) => entry.probe === 'corrupt').map((entry) => entry.table);
+  if (targets.length === 0) {
+    if (probes.every((entry) => entry.probe === 'ok')) return false;
+    // 探针不确定/查不了：保守路径，两表都送阶梯（对齐阶梯落地时的旧行为）
+    targets = MESSAGE_FTS_TABLES;
+  }
+  for (const table of targets) {
     try {
       if (isFtsDisabled(table)) {
         disableFtsWrites(db, table);
@@ -259,6 +281,7 @@ function repairMessageProjectionFts(db: BetterSqlite3.Database): void {
       logger.warn('message-projection repair failed (ignored)', { table, error: err });
     }
   }
+  return true;
 }
 
 export function runWithFtsWriteRepair(db: BetterSqlite3.Database, fn: () => void): void {
@@ -271,7 +294,8 @@ export function runWithFtsWriteRepair(db: BetterSqlite3.Database, fn: () => void
       if (db.inTransaction || !isSqliteCorruptionError(err) || attempt + 1 >= attempts) {
         throw err;
       }
-      repairMessageProjectionFts(db);
+      // 探针确认坏的不是 FTS 表 → 不动完好索引，原样上抛
+      if (!repairMessageProjectionFts(db)) throw err;
     }
   }
 }
@@ -281,6 +305,7 @@ export function runWithFtsWriteRepair(db: BetterSqlite3.Database, fn: () => void
  * （inTransaction=false），但损坏库上 ROLLBACK 本身可能失败、事务仍挂着——
  * 两种情况下都必须先在事务外跑修复阶梯，再整体重试一次事务。
  * 事务已整体回滚，重跑幂等；重试仍坏则把错误抛给调用方。
+ * 探针确认 FTS 没坏（坏在源表/别处）时不动 FTS 表、原样上抛。
  */
 export function runTransactionWithFtsRepair(db: BetterSqlite3.Database, tx: () => void): void {
   try {
@@ -289,7 +314,7 @@ export function runTransactionWithFtsRepair(db: BetterSqlite3.Database, tx: () =
   } catch (err) {
     if (!isSqliteCorruptionError(err)) throw err;
     rollbackIfNeeded(db);
-    repairMessageProjectionFts(db);
+    if (!repairMessageProjectionFts(db)) throw err;
   }
   tx();
 }

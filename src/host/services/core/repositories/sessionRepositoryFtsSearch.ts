@@ -7,7 +7,7 @@ import type BetterSqlite3 from 'better-sqlite3';
 import { SESSION_SEARCH } from '../../../../shared/constants';
 import { TRANSCRIPT_FTS_BODY_COLUMN_INDEX, type TranscriptKind } from '../../../../shared/transcriptFts.sql';
 import { createLogger } from '../../infra/logger';
-import { isFtsSearchDegraded, markFtsTableRepairFailed, repairFtsTable, type FtsTableName } from '../database/ftsRepair';
+import { isFtsSearchDegraded, markFtsTableRepairFailed, probeFtsTable, repairFtsTable, type FtsTableName } from '../database/ftsRepair';
 import { isSqliteCorruptionError } from '../database/sqliteErrors';
 import { activeMessageWhere, loopInternalMessageWhere, visibleHistoryMessageWhere } from './sessionRepositoryParsers';
 
@@ -15,11 +15,14 @@ type SQLiteRow = Record<string, unknown>;
 const logger = createLogger('SessionRepositoryFtsSearch');
 
 /**
- * 搜索路径的修复调用：修复阶梯自身抛错（DB 只读、隔离改名失败等）不许穿出
- * 搜索接口——落降级态，由调用方继续走 LIKE 兜底或空结果。
+ * 搜索路径的修复调用，两道门：
+ * 1. 探针确认 FTS 表没坏（坏在源表/别处）→ 不动它，重建修不好还白 DROP 完好索引；
+ * 2. 修复阶梯自身抛错（DB 只读、隔离改名失败等）不许穿出搜索接口——落降级态，
+ *    由调用方继续走 LIKE 兜底或空结果。
  */
 function tryRepairFtsTableForSearch(db: BetterSqlite3.Database, table: FtsTableName): void {
   try {
+    if (probeFtsTable(db, table) === 'ok') return;
     repairFtsTable(db, table);
   } catch (err) {
     markFtsTableRepairFailed(table);

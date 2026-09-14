@@ -69,7 +69,7 @@ function seedMessages(repo: SessionRepository, count: number): void {
 
 function corruptFtsShadowPages(
   dbPath: string,
-  opts: { names?: string[]; leafOnly?: boolean } = {},
+  opts: { names?: string[]; leafOnly?: boolean; fullPage?: boolean } = {},
 ): void {
   const db = new Database(dbPath);
   const pageSize = Number(db.pragma('page_size', { simple: true }));
@@ -85,7 +85,10 @@ function corruptFtsShadowPages(
   for (const page of pages) {
     if (page.pageno <= 1) continue;
     const offset = (page.pageno - 1) * pageSize;
-    for (let i = 16; i < 80 && offset + i < buf.length; i += 1) {
+    // fullPage: 整页翻转（源表损坏场景,轻量翻转插入路径读不到坏区）
+    const start = opts.fullPage ? 0 : 16;
+    const end = opts.fullPage ? pageSize : 80;
+    for (let i = start; i < end && offset + i < buf.length; i += 1) {
       buf[offset + i] ^= 0xff;
     }
   }
@@ -429,6 +432,35 @@ describe('ftsRepair ladder', () => {
       count = repo.countSessionMessagesFts('needle');
     }).not.toThrow();
     expect(count.matches).toBeGreaterThan(0);
+    db.close();
+  });
+
+  it('source-table (messages) corruption: write rethrows, healthy FTS tables are not dropped or degraded', () => {
+    const dbPath = tmpDb();
+    let { db, repo } = openRepo(dbPath);
+    createSchema(db);
+    insertSession(db, 'sess-1');
+    seedMessages(repo, 20);
+    db.close();
+
+    // 坏的是 messages 本体，不是 FTS shadow 页（整页翻转,轻量翻转插入路径读不到坏区）
+    corruptFtsShadowPages(dbPath, { names: ['messages'], leafOnly: false, fullPage: true });
+    ({ db, repo } = openRepo(dbPath));
+
+    // 主库损坏原样上抛（归启动恢复编排管）,不许被修复阶梯吞成降级
+    expect(() => repo.addMessage('sess-1', makeMessage('m-new', 'post-corrupt write needle', 2_000))).toThrow();
+
+    // 两张消息 FTS 表原样:未被 DROP、行还在、未停 empty/disabled 降级
+    expect(isFtsSearchDegraded('session_messages_fts')).toBe(false);
+    expect(isFtsSearchDegraded('transcript_fts')).toBe(false);
+    const ftsRows = db.prepare('SELECT COUNT(*) AS c FROM session_messages_fts').get() as { c: number };
+    expect(ftsRows.c).toBe(20);
+
+    // FTS 索引本身仍可用（includeRewound 查纯索引表,不碰 messages 坏页）
+    const hits = repo.searchSessionMessagesFts('needle', { limit: 50, includeRewound: true });
+    expect(hits.length).toBe(20);
+    const count = repo.countSessionMessagesFts('needle', { includeRewound: true });
+    expect(count.matches).toBe(20);
     db.close();
   });
 

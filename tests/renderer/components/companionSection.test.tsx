@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { COMPANION_LIMITS, COMPANION_MANAGE_CHANNEL } from '../../../src/shared/constants/companion';
 import { companionErrorCopy, companionText } from '../../../src/renderer/i18n/companion';
+import { deriveInvitationVerify, formatInvitationVerify } from '../../../src/shared/companion/lanProtocol';
 import type { CompanionManagementResult } from '../../../src/shared/contract/companionManagement';
 
 const invoke = vi.hoisted(() => vi.fn());
@@ -63,6 +64,21 @@ describe('CompanionSection pairing UI', () => {
     expect(screen.getByText(text.scanHint)).toBeTruthy();
     expect(screen.getByText(text.expires)).toBeTruthy();
     expect(screen.getByText(text.awayHint)).toBeTruthy();
+    expect(screen.queryByTestId('companion-verify')).toBeNull();
+  });
+
+  it('shows the grouped check code next to the QR when the invitation carries verify', async () => {
+    const issued = invitation();
+    issued.invitation.verify = deriveInvitationVerify(issued.invitation.psk, issued.invitation.hostKey);
+    invoke.mockImplementation(async (_channel: string, request: { action: string }) => (
+      request.action === 'status' ? status() : issued
+    ));
+    render(<CompanionSection />);
+    fireEvent.click(await screen.findByRole('button', { name: text.create }));
+    expect((await screen.findByTestId('companion-verify')).textContent).toBe(
+      formatInvitationVerify(issued.invitation.verify!),
+    );
+    expect(screen.getByText(text.verifyLabel)).toBeTruthy();
   });
 
   it('still invites when there are more projects than one invite can cover', async () => {

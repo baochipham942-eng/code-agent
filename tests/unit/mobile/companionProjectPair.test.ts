@@ -44,6 +44,18 @@ describe('project-only companion pairing', () => {
     expect(needsLibraryPick(store.getState())).toBe(true);
   });
 
+  it('pairs from a provided invitation payload without scanning again', async () => {
+    let scans = 0;
+    const store = createCompanionStore({
+      read: async () => null, write: async () => {},
+      scan: async () => { scans++; return invitation(); },
+      post: async () => ({}),
+    }, () => {});
+    await store.getState().pair(invitation());
+    expect(scans).toBe(0);
+    expect(store.getState().status).toBe('connected');
+  });
+
   it('still pins an old session grant so a narrow device keeps its conversation', async () => {
     harness.scope = ['session-1'];
     const identity = createIdentity();

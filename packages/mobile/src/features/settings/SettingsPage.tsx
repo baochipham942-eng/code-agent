@@ -71,6 +71,7 @@ export function SettingsPage({ page, text, appearance, nickname, profileDraft, a
     case 'preview':
     case 'attachment':
     case 'cameraDenied':
+    case 'pairConfirm':
       return null;
     case 'projects': return <p>{text.noProjects}</p>;
     case 'remote': return <><h3>{text.noComputers}</h3><p>{text.baseNotice}</p></>;

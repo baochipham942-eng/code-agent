@@ -34,6 +34,7 @@ import {
   SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS,
 } from '../../shared/constants/sessionCommandCenter';
 import { getTextForegroundToolNames } from '../../host/tools/protocolRegistry';
+import { AUTO_DELEGATION_TOOL_NAMES } from '../../host/agent/routingToolPolicy';
 import { wrapWithTurnSystemContext } from '../../host/agent/turnScaffold';
 import { buildCapabilityCandidateNotice } from '../../host/agent/capabilityCandidateNotice';
 import { getLibraryService } from '../../host/services/library/libraryService';
@@ -828,6 +829,16 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
 
       const config = agent.getConfig();
       if (body.historyVisibility) config.historyVisibility = body.historyVisibility;
+      // disableAutoAgent 透传（对照桌面 orchestrator options.disableAutoAgent 的扇出禁用）：
+      // web 路径不经 agentOrchestrator，宿主侧无自动扇出可禁，等价语义是把委派类工具收出
+      // 本轮工具面（deniedToolNames → AgentLoop filterToolsByRunPolicy）——手机批准的计划
+      // 由本循环顺序执行，模型无法再 spawn 代理执行计划外委派动作（ai-review 2026-09-14）。
+      if (body.disableAutoAgent === true) {
+        config.deniedToolNames = Array.from(new Set([
+          ...(config.deniedToolNames ?? []),
+          ...AUTO_DELEGATION_TOOL_NAMES,
+        ]));
+      }
       // recent-conversations uses the product Project identity. The cwd may move and
       // WorkspaceScope may be absent on this web-native route, so bind the persisted row.
       config.projectId = persistedSession?.projectId ?? null;

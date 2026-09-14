@@ -23,8 +23,8 @@ vi.mock('../../../src/host/services/planning/taskStore', () => ({
 import { resolvePlanApproval } from '../../../src/host/services/planning/planApprovalService';
 
 function planMessage(
-  status: 'pending' | 'starting' | 'approved' | 'failed' = 'pending',
-  extra: { failureReason?: string; feedback?: string } = {},
+  status: 'pending' | 'starting' | 'approved' | 'failed' | 'cancelled' = 'pending',
+  extra: { failureReason?: string; failedAt?: number; feedback?: string } = {},
 ): Message {
   return {
     id: 'message-plan',

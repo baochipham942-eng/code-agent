@@ -41,15 +41,15 @@ describe('CompanionFileService', () => {
 
   async function upload(bytes: Buffer, name = 'photo.png', mimeType = 'image/png') {
     const digest = sha(bytes);
-    const prepared = gateway.submit(command('files.prepare', { name, mimeType, size: bytes.length, sha256: digest }));
+    const prepared = await gateway.submit(command('files.prepare', { name, mimeType, size: bytes.length, sha256: digest }));
     expect(prepared.kind).toBe('accepted');
     const transferId = String(acceptedResult(prepared).transferId);
     for (let offset = 0; offset < bytes.length; offset += L.fileChunkBytes) {
       const slice = bytes.subarray(offset, offset + L.fileChunkBytes);
-      const chunk = gateway.submit(command('files.chunk', { transferId, offset, data: slice.toString('base64'), sha256: sha(slice) }));
+      const chunk = await gateway.submit(command('files.chunk', { transferId, offset, data: slice.toString('base64'), sha256: sha(slice) }));
       expect(chunk).toMatchObject({ kind: 'accepted', command: { state: 'accepted' } });
     }
-    return gateway.submit(command('files.commit', { transferId, sha256: digest }));
+    return await gateway.submit(command('files.commit', { transferId, sha256: digest }));
   }
 
   it('commits an upload into the authorized workspace without accepting a phone path', async () => {
@@ -60,7 +60,7 @@ describe('CompanionFileService', () => {
     const listed = files.list('session-1');
     expect(listed.artifacts).toHaveLength(1);
     expect(JSON.stringify(listed)).not.toContain(workspace);
-    const read = gateway.submit(command('files.read', { artifactId, version: 1, offset: 0, length: bytes.length }));
+    const read = await gateway.submit(command('files.read', { artifactId, version: 1, offset: 0, length: bytes.length }));
     expect(read).toMatchObject({ kind: 'accepted' });
     const data = acceptedResult(read);
     expect(data.path).toBeUndefined();
@@ -69,10 +69,10 @@ describe('CompanionFileService', () => {
     expect(readdirSync(path.join(workspace, L.fileRootDir, L.fileStagingDir), { withFileTypes: true }).filter(entry => entry.isFile())).toHaveLength(0);
   });
 
-  it('rejects oversized and disallowed types before writing', () => {
-    const tooBig = gateway.submit(command('files.prepare', { name: 'huge.png', mimeType: 'image/png', size: L.fileMaxBytes + 1, sha256: 'a'.repeat(64) }));
+  it('rejects oversized and disallowed types before writing', async () => {
+    const tooBig = await gateway.submit(command('files.prepare', { name: 'huge.png', mimeType: 'image/png', size: L.fileMaxBytes + 1, sha256: 'a'.repeat(64) }));
     expect(tooBig.kind).toBe('rejected');
-    const exe = gateway.submit(command('files.prepare', { name: 'payload.exe', mimeType: 'application/x-msdownload', size: 12, sha256: 'b'.repeat(64) }));
+    const exe = await gateway.submit(command('files.prepare', { name: 'payload.exe', mimeType: 'application/x-msdownload', size: 12, sha256: 'b'.repeat(64) }));
     expect(exe).toMatchObject({ kind: 'accepted', command: { state: 'rejected', result: { code: 'COMPANION_FILE_TYPE_DENIED' } } });
     expect(readdirSync(workspace)).toEqual([]);
   });
@@ -80,10 +80,10 @@ describe('CompanionFileService', () => {
   it('aborts an interrupted transfer so retry does not leave a half file', async () => {
     const bytes = Buffer.from('abcdefghij');
     const digest = sha(bytes);
-    const prepared = gateway.submit(command('files.prepare', { name: 'note.txt', mimeType: 'text/plain', size: bytes.length, sha256: digest }));
+    const prepared = await gateway.submit(command('files.prepare', { name: 'note.txt', mimeType: 'text/plain', size: bytes.length, sha256: digest }));
     const transferId = String(acceptedResult(prepared).transferId);
     const slice = bytes.subarray(0, 3);
-    gateway.submit(command('files.chunk', { transferId, offset: 0, data: slice.toString('base64'), sha256: sha(slice) }));
+    await gateway.submit(command('files.chunk', { transferId, offset: 0, data: slice.toString('base64'), sha256: sha(slice) }));
     expect(files.dispatch(command('files.abort', { transferId }))).toMatchObject({ state: 'accepted', result: { aborted: true } });
     const staging = path.join(workspace, L.fileRootDir, L.fileStagingDir);
     expect(readdirSync(staging).filter(name => name === transferId)).toEqual([]);
@@ -92,50 +92,50 @@ describe('CompanionFileService', () => {
     expect(files.list('session-1').artifacts).toHaveLength(1);
   });
 
-  it('expires abandoned staging on the next file command without a host restart', () => {
+  it('expires abandoned staging on the next file command without a host restart', async () => {
     let now = 1000;
     files = new CompanionFileService(db, gateway, () => workspace, undefined, () => now);
     const bytes = Buffer.from('stale-partial');
     const digest = sha(bytes);
-    const prepared = gateway.submit(command('files.prepare', { name: 'a.txt', mimeType: 'text/plain', size: bytes.length, sha256: digest }));
+    const prepared = await gateway.submit(command('files.prepare', { name: 'a.txt', mimeType: 'text/plain', size: bytes.length, sha256: digest }));
     const transferId = String(acceptedResult(prepared).transferId);
     const slice = bytes.subarray(0, 2);
-    gateway.submit(command('files.chunk', { transferId, offset: 0, data: slice.toString('base64'), sha256: sha(slice) }));
+    await gateway.submit(command('files.chunk', { transferId, offset: 0, data: slice.toString('base64'), sha256: sha(slice) }));
     now += L.reconcilingRecoveryMs + 1;
     files.dispatch(command('files.read', { artifactId: 'none', version: 1, offset: 0, length: 1 }));
     expect(db.prepare(`SELECT state FROM companion_file_transfers WHERE transfer_id = ?`).get(transferId)).toEqual({ state: 'aborted' });
     expect(readdirSync(path.join(workspace, L.fileRootDir, L.fileStagingDir))).not.toContain(transferId);
   });
 
-  it('does not abort an actively progressing transfer that crosses the recovery horizon', () => {
+  it('does not abort an actively progressing transfer that crosses the recovery horizon', async () => {
     // 大文件分片串行往返可能跨过 reconcilingRecoveryMs；chunk 刷新最后活跃时间后，
     // 自己的下一条 chunk 触发的 expireStale 不得中止它（claude 复审修正轮 6 的回归钉）。
     let now = 1000;
     files = new CompanionFileService(db, gateway, () => workspace, undefined, () => now);
     const bytes = Buffer.from('chunk-a');
     const digest = sha(bytes);
-    const prepared = gateway.submit(command('files.prepare', { name: 'a.txt', mimeType: 'text/plain', size: bytes.length, sha256: digest }));
+    const prepared = await gateway.submit(command('files.prepare', { name: 'a.txt', mimeType: 'text/plain', size: bytes.length, sha256: digest }));
     const transferId = String(acceptedResult(prepared).transferId);
     // 持续活跃但累计时长跨过 horizons：两个分片各间隔 4 分钟（< 5min horizon），累计 8 分钟
     const first = bytes.subarray(0, 2);
-    gateway.submit(command('files.chunk', { transferId, offset: 0, data: first.toString('base64'), sha256: sha(first) }));
+    await gateway.submit(command('files.chunk', { transferId, offset: 0, data: first.toString('base64'), sha256: sha(first) }));
     now += L.reconcilingRecoveryMs - 60_000;
     const second = bytes.subarray(2, 4);
-    gateway.submit(command('files.chunk', { transferId, offset: 2, data: second.toString('base64'), sha256: sha(second) }));
+    await gateway.submit(command('files.chunk', { transferId, offset: 2, data: second.toString('base64'), sha256: sha(second) }));
     now += L.reconcilingRecoveryMs - 60_000;
     const rest = bytes.subarray(4);
-    const chunk = gateway.submit(command('files.chunk', { transferId, offset: 4, data: rest.toString('base64'), sha256: sha(rest) }));
+    const chunk = await gateway.submit(command('files.chunk', { transferId, offset: 4, data: rest.toString('base64'), sha256: sha(rest) }));
     expect(chunk).toMatchObject({ kind: 'accepted', command: { state: 'accepted' } });
     expect(db.prepare(`SELECT state FROM companion_file_transfers WHERE transfer_id = ?`).get(transferId)).toEqual({ state: 'staging' });
   });
 
-  it('host restart recovers staging leftovers', () => {
+  it('host restart recovers staging leftovers', async () => {
     const bytes = Buffer.from('partial');
     const digest = sha(bytes);
-    const prepared = gateway.submit(command('files.prepare', { name: 'a.txt', mimeType: 'text/plain', size: bytes.length, sha256: digest }));
+    const prepared = await gateway.submit(command('files.prepare', { name: 'a.txt', mimeType: 'text/plain', size: bytes.length, sha256: digest }));
     const transferId = String(acceptedResult(prepared).transferId);
     const slice = bytes.subarray(0, 2);
-    gateway.submit(command('files.chunk', { transferId, offset: 0, data: slice.toString('base64'), sha256: sha(slice) }));
+    await gateway.submit(command('files.chunk', { transferId, offset: 0, data: slice.toString('base64'), sha256: sha(slice) }));
     const restarted = new CompanionFileService(db, gateway, () => workspace);
     expect(db.prepare(`SELECT state FROM companion_file_transfers WHERE transfer_id = ?`).get(transferId)).toEqual({ state: 'aborted' });
     const staging = path.join(workspace, L.fileRootDir, L.fileStagingDir);

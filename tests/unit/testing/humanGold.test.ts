@@ -19,6 +19,21 @@ describe('resolveHumanGoldLabels · 人标金标', () => {
     expect(labels.get('case-1')).toBe('fail');
   });
 
+  it('先勾金标、后取消（追加一条没勾 gold 的新行）⇒ 这题从金标集撤销', () => {
+    const resolution = resolveHumanGoldLabels([
+      row({ id: 'gold', created_at: 1, calibration_split: 'gold' }),
+      row({ id: 'revoked', created_at: 2, calibration_split: null, supersedes_id: 'gold' }),
+    ], 'task_completed');
+    expect(resolution.labels.size).toBe(0);
+    expect(resolution.unlabeled).toEqual([]);
+  });
+
+  it('没勾金标的普通评审不进金标，也不算 unlabeled', () => {
+    const resolution = resolveHumanGoldLabels([row({ calibration_split: null })], 'task_completed');
+    expect(resolution.labels.size).toBe(0);
+    expect(resolution.unlabeled).toEqual([]);
+  });
+
   it('多人分歧的题整题跳过并点名，不做多数表决', () => {
     const resolution = resolveHumanGoldLabels([
       row({ id: 'a', reviewer_id: 'r1', dims_json: JSON.stringify({ task_completed: 'yes' }) }),

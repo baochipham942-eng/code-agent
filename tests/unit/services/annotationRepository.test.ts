@@ -67,7 +67,7 @@ describe('AnnotationRepository', () => {
     }
   });
 
-  it('listGoldForExperiment 只回本轮勾了金标的行，按时间倒序', () => {
+  it('listForExperiment 回本轮全部行（含未勾金标的撤销行），按时间倒序，跨实验隔离', () => {
     const db = new Database(':memory:');
     try {
       applySchema(db, logger as never);
@@ -79,8 +79,8 @@ describe('AnnotationRepository', () => {
       repository.insert(row({ id: 'gold-new', calibration_split: 'gold', case_id: 'case-2', created_at: 30 }));
       repository.insert(row({ id: 'other-run', experiment_id: 'run-2', calibration_split: 'gold', created_at: 40 }));
 
-      expect(repository.listGoldForExperiment('run-1').map((item) => item.id)).toEqual(['gold-new', 'gold-old']);
-      expect(repository.listGoldForExperiment('run-2').map((item) => item.id)).toEqual(['other-run']);
+      expect(repository.listForExperiment('run-1').map((item) => item.id)).toEqual(['gold-new', 'gold-old', 'plain']);
+      expect(repository.listForExperiment('run-2').map((item) => item.id)).toEqual(['other-run']);
     } finally {
       db.close();
     }

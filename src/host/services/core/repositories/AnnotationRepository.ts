@@ -50,16 +50,18 @@ export class AnnotationRepository {
   }
 
   /**
-   * 一轮实验里勾了「进金标集」的全部人工判定（N-EVAL-JUDGE-HUMANGOLD）。
-   * 唯一消费方是 scripts/judge-calibration.ts --gold human_annotation；按时间倒序，
-   * 每个 reviewer 取最新一条的逻辑在 calibration/humanGold.ts。
+   * 一轮实验里的全部人工判定（N-EVAL-JUDGE-HUMANGOLD）。唯一消费方是
+   * scripts/judge-calibration.ts --gold human_annotation。故意不在 SQL 里过滤 gold：
+   * 表是 append-only，「取消进金标集」= 追加一条 calibration_split=null 的新行，
+   * 只查 gold 行会把已撤销的旧金标当现行；金标成员资格由 calibration/humanGold.ts
+   * 按每个 reviewer 的最新一条判（ai-review #1823 Important②）。
    */
-  listGoldForExperiment(experimentId: string): AnnotationRow[] {
+  listForExperiment(experimentId: string): AnnotationRow[] {
     return this.db.prepare(`
       SELECT id, experiment_id, case_id, reviewer_id, overall, note, dims_json,
              consent_scope, calibration_split, supersedes_id, created_at
       FROM annotations
-      WHERE experiment_id = ? AND calibration_split = 'gold'
+      WHERE experiment_id = ?
       ORDER BY created_at DESC, rowid DESC
     `).all(experimentId) as AnnotationRow[];
   }

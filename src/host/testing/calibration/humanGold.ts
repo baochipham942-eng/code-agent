@@ -4,6 +4,8 @@
 // 课程口径：金标集管「对不对」，Kappa 管「稳不稳」；金标结论必须无争议——
 // 有争议的题不配进金标集，进边界案例集。所以：每个 reviewer 只取最新一条，
 // 多人对同一题同一维判得不一样 ⇒ 整题跳过并点名，不做多数表决。
+// 入参是这轮实验的**全部**人工判定：金标资格看每个 reviewer 最新那条有没有勾 gold，
+// 于是「先勾后取消」自然撤销（取消 = 追加一条没勾 gold 的新行）。
 // ============================================================================
 import type { AiReviewDimension } from '../../../shared/contract/evaluation';
 import type { AnnotationRow } from '../../services/core/repositories/AnnotationRepository';
@@ -39,7 +41,9 @@ export function resolveHumanGoldLabels(rows: AnnotationRow[], dimension: AiRevie
   const contested: string[] = [];
   const unlabeled: string[] = [];
   for (const [caseId, byReviewer] of byCase) {
-    const verdicts = new Set([...byReviewer.values()].map((row) => verdictOf(row, dimension)).filter((v): v is 'yes' | 'no' => v !== null));
+    const goldRows = [...byReviewer.values()].filter((row) => row.calibration_split === 'gold');
+    if (goldRows.length === 0) continue; // 没人（或已全部取消）把这题标进金标
+    const verdicts = new Set(goldRows.map((row) => verdictOf(row, dimension)).filter((v): v is 'yes' | 'no' => v !== null));
     if (verdicts.size === 0) unlabeled.push(caseId);
     else if (verdicts.size > 1) contested.push(caseId);
     else labels.set(caseId, verdicts.has('yes') ? 'pass' : 'fail');

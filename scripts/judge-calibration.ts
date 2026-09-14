@@ -59,7 +59,7 @@ function parseArgs(): { reportPath: string; dimension: CalibratableDimension; go
 function loadHumanGold(dataDir: string, runId: string, dimension: CalibratableDimension) {
   const db = new Database(path.join(dataDir, 'code-agent.db'), { readonly: true, fileMustExist: true });
   try {
-    return resolveHumanGoldLabels(new AnnotationRepository(db).listGoldForExperiment(runId), dimension);
+    return resolveHumanGoldLabels(new AnnotationRepository(db).listForExperiment(runId), dimension);
   } finally {
     db.close();
   }
@@ -114,8 +114,21 @@ async function main(): Promise<void> {
   const runtime = getQuickModelRuntimeInfo();
   if (!runtime) throw new Error('当前没有可用的 quick 模型配置');
   const judgeModel = `${runtime.provider}/${runtime.model}`;
-  const report = JSON.parse(await fs.readFile(reportPath, 'utf8')) as { runId?: string; results?: ReportCase[]; cases?: ReportCase[] };
+  const report = JSON.parse(await fs.readFile(reportPath, 'utf8')) as {
+    runId?: string;
+    results?: ReportCase[];
+    cases?: ReportCase[];
+    environment?: { provider?: string };
+    stamp?: { scorers?: { judgeSameSource?: boolean } };
+  };
   const cases = report.results ?? report.cases ?? [];
+  // 同源裁判（评审模型与被测模型同一 provider）不接受影子金标——自我偏好会让断言真值与 judge 一起偏
+  // （docs/eval/annotation-guideline.md §5；ai-review #1823 Important①）。
+  const sameSource = report.stamp?.scorers?.judgeSameSource === true
+    || (typeof report.environment?.provider === 'string' && report.environment.provider === runtime.provider);
+  if (sameSource && gold !== 'human_annotation') {
+    throw new Error(`同源裁判（评审 ${judgeModel} 与被测 provider ${report.environment?.provider ?? runtime.provider} 同家）只接受人标金标：加 --gold human_annotation`);
+  }
   const pairs: CalibrationPair[] = [];
   let abstained = 0;
 

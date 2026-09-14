@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
 import {
-  assertPushEntitlement, exportOptionsXml, extractNativeTargetId, extractPlistXml, parsePlistXml, patchPbxprojVersions,
+  appEntitlementsXml, assertBinaryPushEntitlement, assertPushEntitlement, ensureAppPushEntitlements,
+  exportOptionsXml, extractNativeTargetId, extractPlistXml, parseEntitlementsDump, parsePlistXml, patchPbxprojVersions,
   profileCoversDevice, readMobileprovision, summarizeProfile, unlinkedSpmPlugins, withApsEnvironment,
-  withPushAppDelegateHooks, withSelfImplementedPluginClasses,
+  withCodeSignEntitlements, withPushAppDelegateHooks, withSelfImplementedPluginClasses,
 } from '../../../packages/mobile/scripts/ios-package.mjs';
 import { ensureAndroidPushPermission, mergeRemoteNotificationMode } from '../../../packages/mobile/scripts/configure-lan.mjs';
 
@@ -212,6 +214,118 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     expect(withApsEnvironment(xml, 'production')).toContain('<string>production</string>');
     expect(withApsEnvironment(withApsEnvironment(xml, 'production'), 'development')).toContain('<string>development</string>');
     expect(() => withApsEnvironment('<plist></plist>', 'production')).toThrow('IOS_ENTITLEMENTS_UNPATCHABLE');
+  });
+});
+
+const appPbxproj = `/* Begin XCBuildConfiguration section */
+		504EC31E1FED79650016851F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				PRODUCT_BUNDLE_IDENTIFIER = dev.neo.companion.preview;
+				MARKETING_VERSION = 0.1.0;
+			};
+		};
+		504EC31F1FED79650016851F /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				PRODUCT_BUNDLE_IDENTIFIER = dev.neo.companion.preview;
+				MARKETING_VERSION = 0.1.0;
+			};
+		};
+		504EC31D1FED79650016851F /* Project Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				SDKROOT = iphoneos;
+			};
+		};
+/* End XCBuildConfiguration section */`;
+
+describe('App target push entitlements wiring', () => {
+  it('creates an entitlements plist and wires CODE_SIGN_ENTITLEMENTS when the file is missing', () => {
+    const first = ensureAppPushEntitlements({
+      existingXml: null,
+      pbxproj: appPbxproj,
+      environment: 'production',
+      appId: 'dev.neo.companion.preview',
+    });
+    expect(first.entitlementsXml).toBe(appEntitlementsXml('production'));
+    expect(first.entitlementsXml).toContain('<key>aps-environment</key>');
+    expect(first.entitlementsXml).toContain('<string>production</string>');
+    expect(first.pbxproj).toContain('CODE_SIGN_ENTITLEMENTS = App/App.entitlements;');
+    expect(first.pbxproj.match(/CODE_SIGN_ENTITLEMENTS = App\/App.entitlements;/g)).toHaveLength(2);
+    expect(first.pbxproj).toMatch(/SDKROOT = iphoneos;\n\t\t\t\}/);
+    const second = ensureAppPushEntitlements({
+      existingXml: first.entitlementsXml,
+      pbxproj: first.pbxproj,
+      environment: 'production',
+      appId: 'dev.neo.companion.preview',
+    });
+    expect(second).toEqual(first);
+  });
+
+  it('follows the profile development value instead of always writing production', () => {
+    const xml = ensureAppPushEntitlements({
+      existingXml: null,
+      pbxproj: appPbxproj,
+      environment: 'development',
+      appId: 'dev.neo.companion.preview',
+    }).entitlementsXml;
+    expect(xml).toContain('<string>development</string>');
+    expect(withApsEnvironment(xml, 'development')).toBe(xml);
+  });
+
+  it('refuses to patch an unrecognized App target layout instead of signing without entitlements', () => {
+    expect(() => withCodeSignEntitlements('no build settings', {
+      relativePath: 'App/App.entitlements',
+      appId: 'dev.neo.companion.preview',
+    })).toThrow('IOS_APP_ENTITLEMENTS_CONFIGURATIONS_CHANGED');
+    expect(() => withCodeSignEntitlements(appPbxproj, {
+      relativePath: '../Other.entitlements',
+      appId: 'dev.neo.companion.preview',
+    })).toThrow('IOS_ENTITLEMENTS_PATH_INVALID');
+  });
+});
+
+describe('signed binary aps-environment', () => {
+  const emptyDump = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+</dict>
+</plist>
+`;
+  const codesignDump = `Executable=/tmp/Payload/App.app/App
+${appEntitlementsXml('production')}`;
+
+  it('fails closed when the binary entitlements omit aps-environment', () => {
+    expect(parseEntitlementsDump(emptyDump).apsEnvironment).toBeNull();
+    expect(() => assertBinaryPushEntitlement(emptyDump)).toThrow('IOS_BINARY_APS_ENVIRONMENT_MISSING');
+    expect(() => assertBinaryPushEntitlement('codesign: no entitlements')).toThrow('IOS_BINARY_ENTITLEMENTS_UNREADABLE');
+  });
+
+  it('accepts production or development from a codesign --entitlements dump', () => {
+    expect(assertBinaryPushEntitlement(codesignDump)).toBe('production');
+    expect(assertBinaryPushEntitlement(appEntitlementsXml('development'))).toBe('development');
+  });
+});
+
+describe('iOS build and verify scripts fail closed on missing binary aps-environment', () => {
+  const buildScript = readFileSync('packages/mobile/scripts/build-ios.mjs', 'utf8');
+  const verifyScript = readFileSync('packages/mobile/scripts/ios-verify.mjs', 'utf8');
+
+  it('always writes entitlements and CODE_SIGN_ENTITLEMENTS, then inspects the signed binary', () => {
+    expect(buildScript).toContain('ensureAppPushEntitlements');
+    expect(buildScript).toContain('assertBinaryPushEntitlement');
+    expect(buildScript).toContain('IOS_CODE_SIGN_ENTITLEMENTS_NOT_WIRED');
+    expect(buildScript).toContain("['-d', '--entitlements', ':-'");
+    expect(buildScript).not.toMatch(/if \(existsSync\(entitlements\)\) \{/);
+  });
+
+  it('adds a binary entitlements check without dropping the profile check', () => {
+    expect(verifyScript).toContain("check('binary-aps-environment-present'");
+    expect(verifyScript).toContain('assertBinaryPushEntitlement');
+    expect(verifyScript).toContain("check('push-entitlement-present'");
+    expect(verifyScript).toContain("['-d', '--entitlements', ':-'");
   });
 });
 

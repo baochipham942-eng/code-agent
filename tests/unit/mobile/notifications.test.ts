@@ -127,6 +127,8 @@ describe('iOS build gate covers @capacitor/push-notifications', () => {
     expect(buildScript).toContain('IOS_PLUGINS_NOT_LINKED');
     expect(buildScript).toContain('withPushAppDelegateHooks');
     expect(buildScript).toContain('IOS_PUSH_PLUGIN_MISSING_FROM_BINARY');
+    expect(buildScript).toContain('ensureAppPushEntitlements');
+    expect(buildScript).toContain('assertBinaryPushEntitlement');
   });
 
   it('wires the official plugin only on iOS and does not call it on Android', () => {

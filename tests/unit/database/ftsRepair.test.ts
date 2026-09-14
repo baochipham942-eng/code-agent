@@ -275,6 +275,42 @@ describe('ftsRepair ladder', () => {
     db.close();
   });
 
+  it('FTS disabled: empty query returns no hits and zero count, non-empty LIKE query still recalls', () => {
+    const dbPath = tmpDb();
+    let { db, repo } = openRepo(dbPath);
+    createSchema(db);
+    insertSession(db, 'sess-1');
+    seedMessages(repo, 20);
+    db.close();
+
+    corruptFtsShadowPages(dbPath, { leafOnly: true });
+    ({ db, repo } = openRepo(dbPath));
+
+    const outcome = repairFtsTable(db, 'session_messages_fts', {
+      rebuild: () => {
+        throw new Error('injected rebuild failure');
+      },
+      recreateEmpty: () => {
+        throw new Error('injected recreate failure');
+      },
+    });
+    expect(outcome).toBe('disabled');
+    expect(isFtsSearchDegraded('session_messages_fts')).toBe(true);
+
+    // 空查询不许退化成 LIKE '%%' 全库搜索
+    expect(repo.searchSessionMessagesFts('', { limit: 50 })).toEqual([]);
+    expect(repo.searchSessionMessagesFts('   ', { limit: 50 })).toEqual([]);
+    expect(repo.countSessionMessagesFts('')).toEqual({ matches: 0, sessions: 0 });
+    expect(repo.countSessionMessagesFts('   ')).toEqual({ matches: 0, sessions: 0 });
+
+    // 非空查询仍走 LIKE 兜底，有召回
+    const hits = repo.searchSessionMessagesFts('needle', { limit: 50 });
+    expect(hits.length).toBeGreaterThan(0);
+    const count = repo.countSessionMessagesFts('needle');
+    expect(count.matches).toBeGreaterThan(0);
+    db.close();
+  });
+
   it('startup maintenance does not throw after FTS shadow-page corruption', () => {
     const dbPath = tmpDb();
     let { db, repo } = openRepo(dbPath);

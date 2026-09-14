@@ -144,6 +144,9 @@ function shouldUseMessagesLikeFallback(
   trimmed: string,
   options: { shortQueryFallback?: boolean },
 ): boolean {
+  // 空查询不做 LIKE 兜底：`LIKE '%%'` 会把整库历史当召回。
+  // 对齐 FTS 正常态空查询语义（下方长度门槛返回空结果/零计数）。
+  if (trimmed.length === 0) return false;
   if (isFtsSearchDegraded('session_messages_fts')) return true;
   return trimmed.length < SESSION_SEARCH.FTS_MIN_QUERY_LENGTH && Boolean(options.shortQueryFallback);
 }

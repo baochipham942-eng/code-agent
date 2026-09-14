@@ -62,6 +62,7 @@ import { createAdminReviewQueueRouter } from './routes/adminReviewQueue';
 import { createCompanionRouter } from './routes/companion';
 import { createCompanionProvisioningRouter } from './routes/companionProvisioning';
 import { CompanionGateway } from '../host/services/companion/CompanionGateway';
+import { companionApnsOutboxTransport } from '../host/services/companion/companionApnsProvider';
 import { CompanionPushOutbox, loadPushWrapKeySync } from '../host/services/companion/CompanionPushOutbox';
 import { projectCompanionEvent } from '../host/services/companion/projectCompanionEvent';
 import { CompanionApprovalService } from '../host/services/companion/CompanionApprovalService';
@@ -358,9 +359,11 @@ export function createApp(deps: CreateAppDeps): express.Express {
       });
       services.library = new CompanionLibraryService(gateway, id => !!runRegistry.resolve({ sessionId: id }));
       services.files = new CompanionFileService(db, gateway, id => requireLibrary().workspaceOf(id));
+      const apns = companionApnsOutboxTransport(process.env);
       services.push = new CompanionPushOutbox(db, gateway, {
         wrapKey: loadPushWrapKeySync(resolveCodeAgentDataDir()),
-        apnsKeyPath: process.env.NEO_APNS_KEY_PATH || null,
+        apnsKeyPath: apns.apnsKeyPath,
+        send: apns.send,
       });
       void services.library.cleanup().catch((error) => {
         logger.warn('Companion deleted-session cleanup unavailable', error);

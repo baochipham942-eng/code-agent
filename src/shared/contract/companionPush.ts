@@ -54,7 +54,8 @@ type CompanionPushChannelMissing =
 export type CompanionPushDispatchResult =
   | { accepted: true }
   | { accepted: false; code: 'CHANNEL_MISSING'; missing: CompanionPushChannelMissing }
-  | { accepted: false; code: 'DEVICE_REVOKED' | 'SCOPE_DENIED' | 'NOT_REGISTERED' | 'EXPIRED' | 'TOKEN_UNWRAP_FAILED' };
+  | { accepted: false; code: 'DEVICE_REVOKED' | 'SCOPE_DENIED' | 'NOT_REGISTERED' | 'EXPIRED' | 'TOKEN_UNWRAP_FAILED' }
+  | { accepted: false; code: 'PROVIDER_RETRY'; retryAfterMs?: number };
 
 export function companionPushTitleKey(kind: string, payload: Record<string, unknown>): CompanionPushTitleKey | null {
   if (kind === 'approval') return payload.status === 'pending' ? COMPANION_PUSH_TITLE_KEYS.approval : null;

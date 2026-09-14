@@ -3,7 +3,8 @@
 //    stream_break 信号（调用方据此把断点 partial 带中断标记落库），续答 accumulator
 //    全新，最终 response 只含续答段；绝不把重发内容 append 进旧消息冒充单次生成（D2）；
 //  - 刀 2 B1（能力表合同档位 + STREAM_RESUME_B1_PREFIX_SHAPE_LANDED）：重发请求末条
-//    assistant prefix = 断点文本前缀 + 完整 tool_calls（半截丢弃）；与原请求共享逐字
+//    assistant prefix = 断点文本前缀（半截 tool_call 丢弃；断点含完整 tool_call 时回落
+//    B2——AI SDK 配对校验拒未配对 tool-call 的 prefill，见对应用例）；与原请求共享逐字
 //    相同前缀（ADR-032 prompt cache 命中前提）；deepseek prefix-param 档切 /beta 端点
 //    且 transformRequestBody 注入 prefix:true；trailing-assistant 档复用原 model 仅拼
 //    消息；claude 4.6+ 能力表落 none 自动走 B2；B1 attempt 首字节前失败不丢断点态；
@@ -305,17 +306,12 @@ describe('inferenceViaAiSdk —— B1 prefix 请求形状（ADR-068 刀 2）', (
     temperature: 0.7,
   } as ModelConfig;
 
-  it('B1 trailing-assistant（openrouter）：末条 assistant prefix = 文本前缀 + 完整 tool_calls；半截不进；前缀逐字一致；无 stream_break，续写 append 同一条消息', async () => {
+  it('B1 trailing-assistant（openrouter）：末条 assistant prefix = 断点文本前缀；半截 tool_call 不进；前缀逐字一致；无 stream_break，续写 append 同一条消息', async () => {
     vi.mocked(streamText)
       .mockReturnValueOnce(fakeStream([
         { type: 'text-delta', id: 't', text: 'partial ' },
-        { type: 'tool-input-start', id: 'call_ok', toolName: 'Read' },
-        { type: 'tool-input-delta', id: 'call_ok', delta: '{"path":"a.ts"}' },
-        { type: 'tool-call', toolCallId: 'call_ok', toolName: 'Read', input: { path: 'a.ts' } },
-        { type: 'tool-input-start', id: 'call_ok2', toolName: 'Read' },
-        { type: 'tool-input-delta', id: 'call_ok2', delta: '{"path":"b.ts"}' },
-        { type: 'tool-call', toolCallId: 'call_ok2', toolName: 'Read', input: { path: 'b.ts' } },
-        // 半截 tool_call：argsText JSON.parse 不可过 → 永不进 prefix（D2 铁律）
+        // 半截 tool_call：argsText JSON.parse 不可过 → seed 剔除，永不进 prefix（D2 铁律），
+        // 续写中模型重发完整调用
         { type: 'tool-input-start', id: 'call_half', toolName: 'Write' },
         { type: 'tool-input-delta', id: 'call_half', delta: '{"path":"/tm' },
         { type: 'error', error: new Error('ECONNRESET') },
@@ -337,14 +333,11 @@ describe('inferenceViaAiSdk —— B1 prefix 请求形状（ADR-068 刀 2）', (
     // 的 messages 与原请求逐字相同（含 cacheControl 断点原位不动）。
     expect(JSON.stringify(second.instructions)).toBe(JSON.stringify(first.instructions));
     expect(JSON.stringify(second.messages.slice(0, -1))).toBe(JSON.stringify(first.messages));
-    // 末条 assistant = 断点文本前缀 + 完整 tool_calls（按 index 序），半截 call_half 不在
+    // 末条 assistant = 断点文本前缀（string content，对齐 toAiMessages 空/纯文本先例），
+    // 半截 call_half 无任何结构混入
     expect(second.messages[second.messages.length - 1]).toEqual({
       role: 'assistant',
-      content: [
-        { type: 'text', text: 'partial ' },
-        { type: 'tool-call', toolCallId: 'call_ok', toolName: 'Read', input: { path: 'a.ts' } },
-        { type: 'tool-call', toolCallId: 'call_ok2', toolName: 'Read', input: { path: 'b.ts' } },
-      ],
+      content: 'partial ',
     });
     // trailing-assistant 档无 body 参数 / 端点切换：model 引用复用
     expect(second.model).toBe(first.model);
@@ -352,11 +345,35 @@ describe('inferenceViaAiSdk —— B1 prefix 请求形状（ADR-068 刀 2）', (
     expect(col.byType('stream_break')).toHaveLength(0);
     expect(res.content).toBe('partial resumed');
     expect(col.texts()).toBe('partial resumed');
-    // 完整 tool_calls 随断点态延续进最终 response（半截 call_half 不在）
-    expect(res.toolCalls).toEqual([
-      { id: 'call_ok', name: 'Read', arguments: { path: 'a.ts' } },
-      { id: 'call_ok2', name: 'Read', arguments: { path: 'b.ts' } },
-    ]);
+  });
+
+  it('B1 断点含完整 tool_call → 回落 B2：prefix assistant 带 tool-call 无配对 tool-result 会被 AI SDK 配对校验拒（MissingToolResultsError），不发非法形状', async () => {
+    vi.mocked(streamText)
+      .mockReturnValueOnce(fakeStream([
+        { type: 'text-delta', id: 't', text: 'partial ' },
+        { type: 'tool-input-start', id: 'call_ok', toolName: 'Read' },
+        { type: 'tool-input-delta', id: 'call_ok', delta: '{"path":"a.ts"}' },
+        { type: 'tool-call', toolCallId: 'call_ok', toolName: 'Read', input: { path: 'a.ts' } },
+        { type: 'error', error: new Error('ECONNRESET') },
+      ]))
+      .mockReturnValueOnce(fakeStream([
+        { type: 'text-delta', id: 't2', text: 'resumed' },
+        { type: 'finish', finishReason: 'stop', totalUsage: { inputTokens: 1, outputTokens: 1 } },
+      ]));
+    const col = makeCollector();
+
+    const p = inferenceViaAiSdk([{ role: 'user', content: 'x' }], [READ_TOOL], openrouterConfig, col.onStream);
+    await vi.advanceTimersByTimeAsync(1000);
+    const res = await p;
+
+    // 重发请求不拼 prefix assistant（原样 messages），断点 partial 以 stream_break 交调用方
+    expect(JSON.stringify(call(1).messages)).toBe(JSON.stringify(call(0).messages));
+    const breaks = col.byType('stream_break');
+    expect(breaks).toHaveLength(1);
+    expect(breaks[0].error).toBe('ECONNRESET');
+    // B2：续答全新累积器，response 只含续答段（断点的 call_ok 随 partial 分段落库）
+    expect(res.content).toBe('resumed');
+    expect(res.toolCalls).toBeUndefined();
   });
 
   it('B1 prefix-param（deepseek）：重建 model 切 /beta 端点；续接 fetch wrapper 上线 body 带 prefix:true；正常请求（末条 user）不注入', async () => {

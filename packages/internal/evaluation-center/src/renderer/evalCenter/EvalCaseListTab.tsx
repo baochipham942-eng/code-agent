@@ -33,6 +33,7 @@ function matchesSplit(item: EvalCaseListEntry, filter: string): boolean {
   if (!filter) return true;
   if (filter === 'daily') return item.splits.includes('held-in');
   if (filter === 'held-out') return item.splits.includes('held-out');
+  if (filter === 'core') return item.splits.includes('core');
   return item.splits.includes('safety');
 }
 
@@ -169,7 +170,7 @@ export const EvalCaseListTab: React.FC = () => {
 
   const splitChip = (split: EvalCaseSplitBucket) => {
     if (split === 'control') return null;
-    const label = split === 'held-in' ? c.dailySet : split === 'held-out' ? c.heldOutSet : c.safetySet;
+    const label = split === 'held-in' ? c.dailySet : split === 'held-out' ? c.heldOutSet : split === 'core' ? c.coreSet : c.safetySet;
     const classes = split === 'safety'
       ? 'border-badge-warning/30 bg-amber-500/10 text-badge-warning'
       : 'border-badge-info/30 bg-sky-500/10 text-badge-info';
@@ -246,6 +247,7 @@ export const EvalCaseListTab: React.FC = () => {
             <option value="daily">{c.filterDaily}</option>
             <option value="held-out">{c.filterHeldOut}</option>
             <option value="safety">{c.filterSafety}</option>
+            <option value="core">{c.filterCore}</option>
           </Select>
         </label>
         <label className="min-w-40 text-[10px] text-zinc-500">

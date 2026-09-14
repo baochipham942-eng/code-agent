@@ -150,7 +150,7 @@ export const EvalExperimentWizard: React.FC<{
       <section className="min-w-0 rounded-lg bg-zinc-900 p-4">
         <EvalCaseSelectionFields
           probe={probe}
-          split={split as 'held-in' | 'held-out' | 'safety'}
+          split={split as 'held-in' | 'held-out' | 'safety' | 'core'}
           tags={tags}
           maxCases={maxCases}
           labels={runLabels}

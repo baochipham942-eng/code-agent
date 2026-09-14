@@ -14,6 +14,7 @@ export interface EvalRunPanelLabels {
   dailySet: string;
   heldOutSet: string;
   safetySet: string;
+  coreSet: string;
   allSet: string;
   tags: string;
   tagCorePath: string;
@@ -137,6 +138,7 @@ export const evalRunPanelZh: EvalRunPanelDictionary = {
     dailySet: '日常集',
     heldOutSet: '留出集',
     safetySet: '安全集',
+    coreSet: '核心集',
     allSet: '全部题目',
     tags: '标签',
     tagCorePath: '核心路径',
@@ -264,6 +266,7 @@ export const evalRunPanelEn: EvalRunPanelDictionary = {
     dailySet: 'Daily set',
     heldOutSet: 'Held-out set',
     safetySet: 'Safety set',
+    coreSet: 'Core set',
     allSet: 'All cases',
     tags: 'Tags',
     tagCorePath: 'Core path',

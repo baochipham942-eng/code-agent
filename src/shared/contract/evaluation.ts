@@ -238,7 +238,7 @@ export interface EvalRunStamp {
   caseBankSha: string;
   answerSideSha: string;
   evalSet: {
-    split: 'held-in' | 'held-out' | 'control' | 'safety' | 'all';
+    split: 'held-in' | 'held-out' | 'control' | 'safety' | 'core' | 'all';
     splitsFileSha: string;
     tags: string[];
     ids: string[];
@@ -336,7 +336,7 @@ interface EvalRunStartConfig extends EvalRunStamp {
   model: string;
   provider: string;
   scope: 'smoke' | 'full';
-  split?: 'held-in' | 'held-out' | 'control' | 'safety';
+  split?: 'held-in' | 'held-out' | 'control' | 'safety' | 'core';
   tags?: string[];
   ids?: string[];
   includeRetired?: boolean;
@@ -386,7 +386,7 @@ export interface EvalRunPanelProbe {
     };
     requiresExpectation: boolean;
   }>;
-  splitCounts: Record<'held-in' | 'held-out' | 'safety', number>;
+  splitCounts: Record<'held-in' | 'held-out' | 'safety' | 'core', number>;
   unhardenedCount: number;
   quickCheck: {
     tags: string[];
@@ -638,7 +638,7 @@ export interface EvalRunRequest {
   mode?: 'real' | 'mock';
   ids?: string[];
   tags?: string[];
-  split?: 'held-in' | 'held-out' | 'control' | 'safety';
+  split?: 'held-in' | 'held-out' | 'control' | 'safety' | 'core';
   timeoutMs?: number;
   repeat?: number;
   skills?: string[];
@@ -859,7 +859,7 @@ export interface EvalExperimentCaseDetail {
   costUsd?: number;
 }
 
-export type EvalCaseSplitBucket = 'held-in' | 'held-out' | 'control' | 'safety';
+export type EvalCaseSplitBucket = 'held-in' | 'held-out' | 'control' | 'safety' | 'core';
 
 export interface EvalCaseListEntry {
   id: string;

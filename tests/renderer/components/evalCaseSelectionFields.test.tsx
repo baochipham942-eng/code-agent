@@ -21,7 +21,7 @@ function probe(unhardenedCount: number): EvalRunPanelProbe {
     estimatedCostPerCaseUsd: 0.01,
     judge: { model: 'judge', provider: 'provider', estimatedCostPerCaseUsd: 0.01 },
     aiReview: [],
-    splitCounts: { 'held-in': 2, 'held-out': 1, safety: 1 },
+    splitCounts: { 'held-in': 2, 'held-out': 1, safety: 1, core: 1 },
     unhardenedCount,
     quickCheck: { tags: ['core-path'], maxCases: 2 },
     productionArm: {

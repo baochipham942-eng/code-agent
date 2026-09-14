@@ -7,7 +7,7 @@ import { Button } from '@renderer/components/primitives/Button';
 import { Modal } from '@renderer/components/primitives/Modal';
 import { EvalCaseSelectionFields } from './EvalCaseSelectionFields';
 
-export type EvalRunSplit = Extract<NonNullable<EvalRunRequest['split']>, 'held-in' | 'held-out' | 'safety'>;
+export type EvalRunSplit = Extract<NonNullable<EvalRunRequest['split']>, 'held-in' | 'held-out' | 'safety' | 'core'>;
 
 function replace(template: string, values: Record<string, string | number>): string {
   return Object.entries(values).reduce(

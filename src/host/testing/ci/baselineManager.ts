@@ -75,7 +75,7 @@ export class BaselineManager {
   constructor(private workingDir: string, options: BaselineManagerOptions = {}) {
     assertShipGateRuleVersion();
     this.kind = options.kind ?? 'agent';
-    if (options.group && !['held-in', 'held-out', 'safety', 'all'].includes(options.group.split)) {
+    if (options.group && !['held-in', 'held-out', 'safety', 'core', 'all'].includes(options.group.split)) {
       throw new Error(`Unsupported evaluation baseline split: ${options.group.split}`);
     }
     if (options.group && (!Number.isInteger(options.group.k) || options.group.k < 1)) {

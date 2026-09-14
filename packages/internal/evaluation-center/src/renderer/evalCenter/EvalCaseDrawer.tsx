@@ -212,7 +212,7 @@ export const EvalCaseDrawer: React.FC<EvalCaseDrawerProps> = ({ target, onClose 
                 {detail.caseMetadata.tags.map((tag) => <Badge key={tag} className="border-zinc-700 text-zinc-500">{tag}</Badge>)}
                 {detail.caseMetadata.splits.filter((split) => split !== 'control').map((split) => (
                   <Badge key={split} className="border-badge-info/30 text-badge-info">
-                    {split === 'held-in' ? labels.dailySet : split === 'held-out' ? labels.heldOutSet : labels.safetySet}
+                    {split === 'held-in' ? labels.dailySet : split === 'held-out' ? labels.heldOutSet : split === 'core' ? labels.coreSet : labels.safetySet}
                   </Badge>
                 ))}
                 <Badge className="border-zinc-700 text-zinc-500">

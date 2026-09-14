@@ -3,7 +3,7 @@ import { Circle } from 'lucide-react';
 import type { EvalRunPanelProbe, EvalRunRequest } from '@shared/contract/evaluation';
 import type { EvalRunPanelLabels } from '../i18n/evalRunPanel';
 
-type EvalCaseSelectionSplit = Extract<NonNullable<EvalRunRequest['split']>, 'held-in' | 'held-out' | 'safety'>;
+type EvalCaseSelectionSplit = Extract<NonNullable<EvalRunRequest['split']>, 'held-in' | 'held-out' | 'safety' | 'core'>;
 
 const TAG_OPTIONS = [
   { id: 'core-path', labelKey: 'tagCorePath' },
@@ -34,6 +34,7 @@ export const EvalCaseSelectionFields: React.FC<{
           ['held-in', labels.dailySet],
           ['held-out', labels.heldOutSet],
           ['safety', labels.safetySet],
+          ['core', labels.coreSet],
         ] as const).map(([value, label]) => {
           const disabled = value === 'safety' && !safetyAvailable;
           return (

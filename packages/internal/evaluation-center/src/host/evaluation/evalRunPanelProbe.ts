@@ -22,6 +22,7 @@ const FALLBACK_SPLIT_COUNTS: EvalRunPanelProbe['splitCounts'] = {
   'held-in': 76,
   'held-out': 52,
   safety: 12,
+  core: 40,
 };
 
 function readSplitCounts(repositoryRoot?: string): EvalRunPanelProbe['splitCounts'] {
@@ -31,13 +32,14 @@ function readSplitCounts(repositoryRoot?: string): EvalRunPanelProbe['splitCount
       splitsPath(repositoryRoot),
       'utf8',
     )) as Record<string, unknown>;
-    const count = (key: 'heldIn' | 'heldOut' | 'safety', fallback: number): number => (
+    const count = (key: 'heldIn' | 'heldOut' | 'safety' | 'core', fallback: number): number => (
       Array.isArray(parsed[key]) ? parsed[key].length : fallback
     );
     return {
       'held-in': count('heldIn', FALLBACK_SPLIT_COUNTS['held-in']),
       'held-out': count('heldOut', FALLBACK_SPLIT_COUNTS['held-out']),
       safety: count('safety', FALLBACK_SPLIT_COUNTS.safety),
+      core: count('core', FALLBACK_SPLIT_COUNTS.core),
     };
   } catch {
     return FALLBACK_SPLIT_COUNTS;

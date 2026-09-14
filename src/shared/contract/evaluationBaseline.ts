@@ -3,7 +3,7 @@ import type {
   EvalRunStamp,
 } from './evaluation';
 
-export type EvalBaselineSplit = 'held-in' | 'held-out' | 'safety' | 'all';
+export type EvalBaselineSplit = 'held-in' | 'held-out' | 'safety' | 'core' | 'all';
 export type RunShape = EvalRunStamp['shape'];
 export type EvalBaselineGroupKey = `${EvalBaselineSplit}::${number}`;
 

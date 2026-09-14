@@ -25,6 +25,7 @@ import { BaselineManager } from '@host/testing/ci/baselineManager';
 import { createEvalBaselineManager, hasLegacyEvalBaseline } from './lib/eval-baseline-path';
 import {
   EVAL_SPLITS_RELATIVE_PATH,
+  SPLIT_BUCKETS,
   applySplitFilter,
   assertValidEvalSplits,
   loadEvalSplits,
@@ -181,10 +182,10 @@ function parseArgs(argv: string[]) {
       ids = args[++i].split(',').map((id) => id.trim()).filter(Boolean);
     } else if (arg === '--split' && i + 1 < args.length) {
       const val = args[++i];
-      if (val === 'held-in' || val === 'held-out' || val === 'control' || val === 'safety') {
-        split = val;
+      if ((SPLIT_BUCKETS as readonly string[]).includes(val)) {
+        split = val as SplitBucket;
       } else {
-        console.error(chalk.red(`Invalid split: ${val}. Use 'held-in', 'held-out', 'control' or 'safety'.`));
+        console.error(chalk.red(`Invalid split: ${val}. Use ${SPLIT_BUCKETS.map((bucket) => `'${bucket}'`).join(', ')}.`));
         process.exit(1);
       }
     } else if (arg === '--compare' && i + 1 < args.length) {
@@ -279,7 +280,7 @@ ${chalk.dim('Usage:')}
   npx tsx scripts/eval-ci.ts --ai-review <a,b>   Add independent yes/no AI review dimensions
   npx tsx scripts/eval-ci.ts --tags <a,b>       Filter test cases by tags
   npx tsx scripts/eval-ci.ts --ids <a,b>        Filter test cases by IDs
-  npx tsx scripts/eval-ci.ts --split <bucket>   Filter to 'held-in' (daily) / 'held-out' (milestone) / 'control' (judge calibration) / 'safety' (OS jail only)
+  npx tsx scripts/eval-ci.ts --split <bucket>   Filter to 'held-in' (daily) / 'held-out' (milestone) / 'control' (judge calibration) / 'safety' (OS jail only) / 'core' (weekly regression subset)
   npx tsx scripts/eval-ci.ts --force             Bypass --max-cases limit
   npx tsx scripts/eval-ci.ts --include-retired   Include cases past rotation.retire_after for replay
   npx tsx scripts/eval-ci.ts --compare <yaml>   A/B paired blind test: baseline vs candidate config
@@ -1181,7 +1182,8 @@ async function mainImpl(
       console.log(chalk.yellow('  ⚠ safety 只允许在 OS jail 生效时执行；无 jail 的运行时安全闸会在模型调用前分流。'));
     }
     if (!effectiveReal && splitFile.seed === 'core-v1-2026-07-26') {
-      if (effectiveSplit !== 'held-in') {
+      // core 是 held-in 子集，mock policy 天然覆盖；其余桶仍需先显式分类。
+      if (effectiveSplit !== 'held-in' && effectiveSplit !== 'core') {
         console.error(chalk.red(`  Error: mock policy 当前只覆盖 held-in，--split ${effectiveSplit} 需先显式分类。`));
         process.exit(1);
       }

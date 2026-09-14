@@ -77,6 +77,7 @@ export const zhSettingsSystem = {
         title: '历史持久化不可用',
         degradedTitle: '搜索已降级',
         degradedFtsDisabled: '全文索引暂不可用，已改用备用搜索；写入不受影响。',
+        degradedFtsReindexing: '全文索引已重建，历史回填进行中；搜索可能暂时不完整，写入不受影响。',
         reasonPrefix: ' 原因：',
       },
       controlPlane: {

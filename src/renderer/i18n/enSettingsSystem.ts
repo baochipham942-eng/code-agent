@@ -75,6 +75,7 @@ export const enSettingsSystem = {
         title: 'History persistence is unavailable',
         degradedTitle: 'Search is degraded',
         degradedFtsDisabled: 'Full-text index is temporarily unavailable; fallback search is in use. Writes are unaffected.',
+        degradedFtsReindexing: 'Full-text index was recreated and history is being backfilled; search may be temporarily incomplete. Writes are unaffected.',
         reasonPrefix: ' Reason: ',
       },
       controlPlane: {

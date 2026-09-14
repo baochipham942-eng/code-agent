@@ -139,12 +139,25 @@ export function getDisabledFtsTables(): FtsTableName[] {
   return FTS_TABLES.filter((table) => availability.get(table) === 'disabled');
 }
 
+export function getEmptyRecreatedFtsTables(): FtsTableName[] {
+  return FTS_TABLES.filter((table) => availability.get(table) === 'empty');
+}
+
+/** backfill 重建成功后消除 empty 降级态（disabled 态由 backfill 前置跳过，不会走到这里） */
+export function markFtsTableAvailable(table: FtsTableName): void {
+  availability.set(table, 'ok');
+}
+
 export function resetFtsRepairStateForTests(): void {
   availability.clear();
 }
 
 export function markFtsTableDisabledForTests(table: FtsTableName): void {
   availability.set(table, 'disabled');
+}
+
+export function markFtsTableEmptyForTests(table: FtsTableName): void {
+  availability.set(table, 'empty');
 }
 
 export function isFtsTableCorrupt(db: BetterSqlite3.Database, table: FtsTableName): boolean {
@@ -181,21 +194,37 @@ export function repairFtsTable(
 
   try {
     recreateEmpty(db);
-    availability.set(table, 'empty');
-    logger.warn('FTS recreated empty', { table, outcome: 'empty-recreated' });
-    return 'empty-recreated';
   } catch (err) {
     logger.warn('empty recreate failed; disabling FTS writes', { table, error: err });
+    disableFtsWrites(db, table);
+    availability.set(table, 'disabled');
+    logger.warn('FTS disabled; search will use LIKE fallback', {
+      table,
+      outcome: 'disabled',
+      reason: SQLITE_FTS.DISABLED_REASON,
+    });
+    return 'disabled';
   }
 
-  disableFtsWrites(db, table);
-  availability.set(table, 'disabled');
-  logger.warn('FTS disabled; search will use LIKE fallback', {
+  // 空表重建成功后立刻回填：损坏页已随 DROP/隔离消失，源表完好时重建应当成功。
+  // 成功则降级态当场消除（健康面不报警）；仍失败（如源表也坏）保持 empty 降级态，
+  // 由 PersistenceHealth 报 FTS_EMPTY_RECREATED，启动 backfill 兜底。
+  try {
+    const refilled = rebuild(db);
+    availability.set(table, 'ok');
+    logger.info('FTS refilled after empty recreate', { table, outcome: 'rebuilt', rows: refilled });
+    return 'rebuilt';
+  } catch (err) {
+    logger.warn('refill after empty recreate failed; staying degraded', { table, error: err });
+  }
+
+  availability.set(table, 'empty');
+  logger.warn('FTS recreated empty', {
     table,
-    outcome: 'disabled',
-    reason: SQLITE_FTS.DISABLED_REASON,
+    outcome: 'empty-recreated',
+    reason: SQLITE_FTS.EMPTY_RECREATED_REASON,
   });
-  return 'disabled';
+  return 'empty-recreated';
 }
 
 const MESSAGE_FTS_TABLES: FtsTableName[] = ['session_messages_fts', 'transcript_fts'];

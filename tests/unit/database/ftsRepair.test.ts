@@ -15,6 +15,7 @@ import {
   repairFtsTable,
   resetFtsRepairStateForTests,
 } from '../../../src/host/services/core/database/ftsRepair';
+import { rebuildSessionMessagesFts } from '../../../src/host/services/core/database/sessionMessagesFts';
 import { SessionRepository } from '../../../src/host/services/core/repositories/SessionRepository';
 import type { Message } from '../../../src/shared/contract';
 
@@ -328,6 +329,62 @@ describe('ftsRepair ladder', () => {
     expect(isFtsDisabled('session_messages_fts')).toBe(false);
     const hits = repo.searchSessionMessagesFts('updated needle', { limit: 10 });
     expect(hits.some((hit) => hit.messageId === 'm-3')).toBe(true);
+    db.close();
+  });
+
+  it('empty recreate immediately refills from source: degraded state clears without waiting for backfill', () => {
+    const dbPath = tmpDb();
+    let { db, repo } = openRepo(dbPath);
+    createSchema(db);
+    insertSession(db, 'sess-1');
+    seedMessages(repo, 20);
+    db.close();
+
+    corruptFtsShadowPages(dbPath, { leafOnly: true });
+    ({ db, repo } = openRepo(dbPath));
+
+    // 第一次重建失败（走空表重建），回填用真重建：DROP 后损坏页已消失，应当成功
+    let rebuildCalls = 0;
+    const outcome = repairFtsTable(db, 'session_messages_fts', {
+      rebuild: (database) => {
+        rebuildCalls += 1;
+        if (rebuildCalls === 1) throw new Error('injected rebuild failure');
+        return rebuildSessionMessagesFts(database);
+      },
+    });
+    expect(outcome).toBe('rebuilt');
+    expect(rebuildCalls).toBe(2);
+    expect(isFtsSearchDegraded('session_messages_fts')).toBe(false);
+    const hits = repo.searchSessionMessagesFts('needle', { limit: 50 });
+    expect(hits.length).toBeGreaterThan(0);
+    db.close();
+  });
+
+  it('startup backfill refills an empty-recreated table and clears the degraded state', () => {
+    const dbPath = tmpDb();
+    let { db, repo } = openRepo(dbPath);
+    createSchema(db);
+    insertSession(db, 'sess-1');
+    seedMessages(repo, 20);
+    db.close();
+
+    corruptFtsShadowPages(dbPath, { leafOnly: true });
+    ({ db, repo } = openRepo(dbPath));
+
+    // 重建+回填都注入失败 → 停在 empty 降级态
+    const outcome = repairFtsTable(db, 'session_messages_fts', {
+      rebuild: () => {
+        throw new Error('injected rebuild failure');
+      },
+    });
+    expect(outcome).toBe('empty-recreated');
+    expect(isFtsSearchDegraded('session_messages_fts')).toBe(true);
+
+    // 注入只挂在这次 repairFtsTable 调用；启动 backfill 走真重建，成功后降级态消除
+    repo.backfillSessionMessagesFts();
+    expect(isFtsSearchDegraded('session_messages_fts')).toBe(false);
+    const hits = repo.searchSessionMessagesFts('needle', { limit: 50 });
+    expect(hits.length).toBeGreaterThan(0);
     db.close();
   });
 

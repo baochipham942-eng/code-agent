@@ -5,7 +5,7 @@
 import type BetterSqlite3 from 'better-sqlite3';
 import { MEMORY } from '../../../../shared/constants';
 import { normalizeFtsMatchQuery, runMemoriesFtsBackfill } from '../../../../shared/memoriesFts.sql';
-import { isFtsDisabled, isFtsSearchDegraded, repairFtsTable } from '../database/ftsRepair';
+import { isFtsDisabled, isFtsSearchDegraded, markFtsTableAvailable, repairFtsTable } from '../database/ftsRepair';
 import { isSqliteCorruptionError } from '../database/sqliteErrors';
 import type { MemoryRecord } from '../../../protocol/types';
 import { guardSensitiveText, guardSensitiveValue } from '../../../security/sensitiveDataGuard';
@@ -363,7 +363,9 @@ export class MemoryRepository {
       if (ftsHasRows || !memHasRows) {
         return 0;
       }
-      return runMemoriesFtsBackfill(this.db);
+      const backfilled = runMemoriesFtsBackfill(this.db);
+      markFtsTableAvailable('memories_fts');
+      return backfilled;
     } catch (err) {
       if (isSqliteCorruptionError(err)) {
         repairFtsTable(this.db, 'memories_fts');

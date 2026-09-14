@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { IPC_DOMAINS } from '@shared/ipc';
 import { TELEMETRY_CHANNELS } from '@shared/ipc/channels';
+import { SQLITE_FTS } from '@shared/constants';
 import { Button } from '../../../primitives';
 import { createLogger } from '../../../../utils/logger';
 import { isWebMode } from '../../../../utils/platform';
@@ -495,7 +496,9 @@ export const DataSettings: React.FC = () => {
             </div>
             <div className="mt-0.5 text-xs text-badge-warning/80">
               {persistenceHealth.status === 'degraded'
-                ? dataText.persistence.degradedFtsDisabled
+                ? persistenceHealth.reason === SQLITE_FTS.EMPTY_RECREATED_REASON
+                  ? dataText.persistence.degradedFtsReindexing
+                  : dataText.persistence.degradedFtsDisabled
                 : persistenceWarningText}
               {persistenceHealth.reason ? `${dataText.persistence.reasonPrefix}${persistenceHealth.reason}` : ''}
             </div>

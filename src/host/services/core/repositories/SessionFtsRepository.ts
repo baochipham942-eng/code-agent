@@ -9,6 +9,7 @@ import {
 import { createLogger } from '../../infra/logger';
 import {
   isFtsDisabled,
+  markFtsTableAvailable,
   repairFtsTable,
 } from '../database/ftsRepair';
 import { isSqliteCorruptionError } from '../database/sqliteErrors';
@@ -63,6 +64,7 @@ export class SessionFtsRepository {
       logger.info(`[EpisodicFts] Rebuilding projection: source=${sourceRows}, fts=${ftsRows}`);
       const rebuilt = rebuildSessionMessagesFts(this.db);
       logger.info(`[EpisodicFts] Rebuild complete: ${rebuilt} rows`);
+      markFtsTableAvailable('session_messages_fts');
       return rebuilt;
     } catch (err) {
       if (isSqliteCorruptionError(err)) {
@@ -182,6 +184,7 @@ export class SessionFtsRepository {
       logger.info(`[TranscriptFts] Rebuilding projection: source=${sourceRows}, fts=${ftsRows}`);
       const rebuilt = rebuildTranscriptFts(this.db);
       logger.info(`[TranscriptFts] Rebuild complete: ${rebuilt} rows`);
+      markFtsTableAvailable('transcript_fts');
       return rebuilt;
     } catch (err) {
       if (isSqliteCorruptionError(err)) {

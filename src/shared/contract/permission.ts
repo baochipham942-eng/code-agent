@@ -64,6 +64,8 @@ export enum HostReasonCode {
   PermissionDeniedNoApprovalUi = 'PERMISSION_DENIED_NO_APPROVAL_UI',
   PermissionDeniedPeerOriginUnattended = 'PERMISSION_DENIED_PEER_ORIGIN_UNATTENDED',
   PermissionPeerOriginConfirmationRequired = 'PERMISSION_PEER_ORIGIN_CONFIRMATION_REQUIRED',
+  PermissionDeniedPeermsgLaunder = 'PERMISSION_DENIED_PEERMSG_LAUNDER',
+  PermissionLaunderRetryConfirmationRequired = 'PERMISSION_LAUNDER_RETRY_CONFIRMATION_REQUIRED',
   PermissionDeniedTimeout = 'PERMISSION_DENIED_TIMEOUT',
   PermissionDeniedCancelled = 'PERMISSION_DENIED_CANCELLED',
   PermissionDeniedFailClosed = 'PERMISSION_DENIED_FAIL_CLOSED',

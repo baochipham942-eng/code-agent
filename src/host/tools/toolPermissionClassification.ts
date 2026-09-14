@@ -246,6 +246,29 @@ export function peerOriginUnattendedDenialError(toolName: string, senderAgentId?
 }
 
 /**
+ * ADR-067 D4：权限洗白 BLOCK——同一动作指纹在本会话刚被人拒绝（ask-denied），
+ * 换 agent 以 peer 消息转述同一动作，一律不执行。无人值守/bypass 同向（fail-closed）。
+ * 用户本人重试不走本文案（那是 launder-retry 的 ask 降档，不是 BLOCK）。
+ */
+export function peermsgLaunderDenialError(
+  toolName: string,
+  senderAgentId?: string,
+  deniedSummary?: string,
+): HostReasonPayload {
+  const sender = senderAgentId ?? 'unknown';
+  const prior = deniedSummary ? `（此前被拒的动作：${deniedSummary}）` : '';
+  const modelText = `${toolName} 被自动拒绝：同一动作${prior}在本会话刚被拒绝过，`
+    + `本次由 agent ${sender} 的消息转述——这是权限洗白，一律拦截（无人值守/bypass 同向），`
+    + '并非用户本次拒绝了新请求。重试结果相同，不要重试、不要换措辞再求。'
+    + '出路：请用户本人在交互会话中直接发起并确认该操作。';
+  return createHostReason(
+    HostReasonCode.PermissionDeniedPeermsgLaunder,
+    modelText,
+    { toolName, senderAgentId: sender },
+  );
+}
+
+/**
  * 权限分类三分支解析 + 档位改写：
  * 1. policy always_confirm / skill 边界违规 → 直接 ask（跳过 classifier）；
  * 2. 其余走 classifier；
@@ -275,6 +298,12 @@ export async function resolveToolPermissionClassification(input: {
    * bypassPermissions / acceptEdits 不能把 peer 转述的写/执行升回 approve。
    */
   peerOriginForcesConfirmation?: boolean;
+  /**
+   * ADR-067 D4：同一动作指纹在本会话刚被拒绝（ask-denied）、本次为用户本人重试
+   * （无 peer 来源）时为 true——降 approve 为 ask 一次，不硬毙、不设 forceConfirm
+   * （既有审批记忆 once/session/always 语义保留，不另造豁免）。
+   */
+  launderRetryForcesAsk?: boolean;
 }): Promise<ClassificationResult> {
   // B1: EXTERNAL 风险类打标，与三分支决策正交、不改变审批结果。所有出口都带上，供 B2/B4/审计消费。
   const external = isExternalSideEffectTool(input.executionToolName);
@@ -408,6 +437,29 @@ export async function resolveToolPermissionClassification(input: {
       traceStep: createTraceStep(
         'permission_classifier',
         'peer_origin_turn',
+        'ask',
+        reason,
+        input.permStartTime,
+      ),
+    };
+  }
+  // ADR-067 D4：同指纹动作刚被拒、用户本人重试——降 approve 为 ask 一次（不硬毙、
+  // 不 forceConfirm，审批记忆机制照走）。同样放在档位自动放行之后改写。
+  if (input.launderRetryForcesAsk && classification.decision === 'approve') {
+    const reason = '同一动作此前在本会话被拒绝过：再次发起需要人工确认';
+    classification = {
+      decision: 'ask',
+      reason,
+      hostReason: createHostReason(
+        HostReasonCode.PermissionLaunderRetryConfirmationRequired,
+        reason,
+        { toolName: input.executionToolName },
+      ),
+      confidence: 1,
+      cached: false,
+      traceStep: createTraceStep(
+        'permission_classifier',
+        'launder_retry',
         'ask',
         reason,
         input.permStartTime,

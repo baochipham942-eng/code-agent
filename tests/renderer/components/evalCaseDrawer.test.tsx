@@ -130,7 +130,7 @@ describe('归因三件套（ADR-071 D4/Q4）', () => {
     fillTriple();
     fireEvent.click(screen.getByRole('button', { name: '进反馈池' }));
     await waitFor(() => expect(clipboard.writeText).toHaveBeenCalledWith(
-      'fb add "缺陷·case-1：第 3 步直接写文件，没先问"',
+      'fb add "缺陷·case-1：第 3 步直接写文件，没先问" # 证据目录：/data/eval-feedback/x',
     ));
   });
 

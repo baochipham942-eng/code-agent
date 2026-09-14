@@ -146,8 +146,10 @@ export const EvalCaseAnnotation: React.FC<EvalCaseAnnotationProps> = ({ target }
       }
       // 没配钩子命令：按钮退化成「复制 fb add 命令」，证据仍已落盘。
       const title = `缺陷·${target.caseId}：${triple.evidence}`;
-      await navigator.clipboard?.writeText(labels.feedbackCommand.replace('{title}', title));
-      toast.success(labels.feedbackCopied.replace('{dir}', result.evidenceDir));
+      await navigator.clipboard?.writeText(
+        labels.feedbackCommand.replace('{title}', title).replace('{dir}', result.evidenceDir),
+      );
+      toast.success(labels.feedbackCopied);
     } catch {
       toast.error(labels.feedbackFailed);
     }

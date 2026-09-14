@@ -407,6 +407,7 @@ describe('evaluation run IPC admin gate', () => {
     guard.denied = false;
     const { handlers } = setup();
     const push = handlers.get(EVALUATION_CHANNELS.PUSH_FEEDBACK)!;
+    database.loadExperimentCase.mockReturnValue({ case_id: 'case-1' });
     const ok = {
       experimentId: 'run-1', caseId: 'case-1',
       triple: { attribution: 'system_config', evidence: '代理没配', severity: 'P0' },
@@ -421,6 +422,11 @@ describe('evaluation run IPC admin gate', () => {
     ]) {
       await expect(push(null, { ...ok, triple })).rejects.toThrow(/feedback pool/);
     }
+    expect(feedbackHook.push).not.toHaveBeenCalled();
+
+    // 题不存在就不落证据，否则反馈池里会攒出指不到题的档。
+    database.loadExperimentCase.mockReturnValue(undefined);
+    await expect(push(null, ok)).rejects.toThrow(/does not exist/);
     expect(feedbackHook.push).not.toHaveBeenCalled();
   });
 

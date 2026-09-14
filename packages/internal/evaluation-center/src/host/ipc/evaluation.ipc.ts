@@ -217,6 +217,11 @@ export function registerEvaluationHandlers(
     if (!isFeedbackPoolCandidate(request.triple)) {
       throw new Error('Only scenario_fit or system_config at P0/P1 goes to the feedback pool');
     }
+    // 与保存标注同一道闸：题不存在就不落证据，否则反馈池里会攒出指不到题的档。
+    const { getDatabase: getDb } = await import('@host/services/core/databaseService');
+    if (!getDb().loadExperimentCase(request.experimentId, request.caseId)) {
+      throw new Error('Evaluation case does not exist');
+    }
     return pushEvalFeedback(request);
   });
 

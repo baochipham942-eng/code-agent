@@ -177,27 +177,31 @@ function listSessionMessages(
  * 🔴 只取「最新那一行」再看它有没有归因，不在 SQL 里过滤 attribution_json IS NOT NULL：
  * annotations 是 append-only 表，「取消归因」= 追加一条这一列为 null 的新行（与 #1823
  * 的金标同一套语义），按非空过滤会把已撤销的旧归因当现行。
+ * 🔴 草稿是按会话建的，没有题的身份；所以当这场会话挂在不止一道题下时（同一 session
+ * 被登记进多个 experiment_cases），「最新那条」属于哪道题无从判断，一律不拼——
+ * 宁可草稿不带归因，也不能把题 A 的责任判断安到题 B 的草稿上（ai-review #1832 Important）。
  */
 function latestSessionAttribution(
   db: BetterSqlite3.Database,
   sessionId: string,
 ): EvalAttributionTriple | undefined {
-  let row: { attribution_json?: string | null } | undefined;
+  let row: { attribution_json?: string | null; case_count?: number } | undefined;
   try {
     row = db.prepare(`
-    SELECT a.attribution_json AS attribution_json
+    SELECT a.attribution_json AS attribution_json,
+           (SELECT COUNT(DISTINCT case_id) FROM experiment_cases WHERE session_id = ?) AS case_count
     FROM annotations a
     JOIN experiment_cases c
       ON c.experiment_id = a.experiment_id AND c.case_id = a.case_id
     WHERE c.session_id = ?
     ORDER BY a.created_at DESC, a.rowid DESC
     LIMIT 1
-  `).get(sessionId) as { attribution_json?: string | null } | undefined;
+  `).get(sessionId, sessionId) as { attribution_json?: string | null; case_count?: number } | undefined;
   } catch {
     // 归因只是草稿描述的加料，取不到不该把整场会话的预览一起拖挂。
     return undefined;
   }
-  if (!row?.attribution_json) return undefined;
+  if (!row?.attribution_json || Number(row.case_count ?? 0) > 1) return undefined;
   try {
     const parsed = JSON.parse(row.attribution_json) as Record<string, unknown>;
     if (!isEvalAttribution(parsed.attribution) || !isEvalSeverity(parsed.severity)) return undefined;

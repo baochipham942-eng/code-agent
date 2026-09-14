@@ -6,6 +6,11 @@ export function ensureAndroidPushPermission(xml) {
   return xml.replace('</manifest>', '<uses-permission android:name="android.permission.POST_NOTIFICATIONS" /></manifest>');
 }
 
+export function ensureAndroidCameraPermission(xml) {
+  if (xml.includes('android.permission.CAMERA')) return xml;
+  return xml.replace('</manifest>', '<uses-permission android:name="android.permission.CAMERA" /></manifest>');
+}
+
 export function mergeRemoteNotificationMode(modes) {
   const list = Array.isArray(modes) ? modes.filter(mode => typeof mode === 'string' && mode.length > 0) : [];
   if (!list.includes('remote-notification')) list.push('remote-notification');
@@ -28,7 +33,7 @@ export function configureIosLan() {
     execFileSync('/usr/libexec/PlistBuddy', ['-c', `Add :${key} ${type} ${value}`, plist]);
   };
   set('NSMicrophoneUsageDescription', 'string', 'Record speech and transcribe it through your computer into an editable draft.');
-  set('NSCameraUsageDescription', 'string', 'Scan the pairing code shown by Neo on your computer.');
+  set('NSCameraUsageDescription', 'string', 'Scan the pairing code shown by Neo on your computer, or photograph materials you want to send.');
   set('NSLocalNetworkUsageDescription', 'string', 'Connect to your computer to send tasks and receive results in Neo.');
   const modes = mergeRemoteNotificationMode(readBackgroundModes(plist));
   try { execFileSync('/usr/libexec/PlistBuddy', ['-c', 'Delete :UIBackgroundModes', plist], { stdio: 'ignore' }); } catch {}
@@ -53,7 +58,7 @@ export function configureAndroidLan() {
   // Native HTTP carries Noise records to validated RFC1918 addresses. WebView mixed content stays disabled.
   if (/android:usesCleartextTraffic=/.test(xml)) xml = xml.replace(/android:usesCleartextTraffic="[^"]*"/, 'android:usesCleartextTraffic="true"');
   else xml = xml.replace('<application', '<application android:usesCleartextTraffic="true"');
-  if (!xml.includes('android.permission.CAMERA')) xml = xml.replace('</manifest>', '<uses-permission android:name="android.permission.CAMERA" /></manifest>');
+  xml = ensureAndroidCameraPermission(xml);
   if (!xml.includes('android.permission.RECORD_AUDIO')) xml = xml.replace('</manifest>', '<uses-permission android:name="android.permission.RECORD_AUDIO" /></manifest>');
   xml = ensureAndroidPushPermission(xml);
   // Do not restore an Android Keystore ciphertext onto a different installation.

@@ -65,6 +65,14 @@ html[data-keyboard-inset] .sheet { padding-bottom: 16px; }
 .sheet-header { display: grid; grid-template-columns: 48px 1fr 48px; align-items: center; gap: 10px; padding: 0 12px 8px; text-align: center; flex-shrink: 0; }.sheet-header button { font-size: 29px; }
 .sheet-content { padding: 0 20px 24px; overflow: auto; overscroll-behavior: contain; min-height: 0; }
 .settings-group { border-radius: 16px; background: var(--surface); overflow: hidden; }.settings-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; width: 100%; padding: 14px 16px; text-align: left; }.settings-row + .settings-row { border-top: 1px solid var(--line); }.row-detail { color: var(--muted); }
+.attach-row { display: flex; align-items: center; gap: 12px; width: 100%; padding: 14px 16px; text-align: left; }
+.attach-row + .attach-row { border-top: 1px solid var(--line); }
+.attach-row-copy { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.attach-row-copy .row-detail { font-size: 13px; }
+.attach-row .app-icon { width: 22px; height: 22px; color: var(--text); flex-shrink: 0; }
+.attach-row .app-icon[data-name='chevron'] { width: 16px; height: 16px; color: var(--muted); }
+.camera-denied-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.camera-denied-actions .primary { margin-top: 0; }
 .profile-card { display: flex; align-items: center; gap: 12px; width: 100%; padding: 18px 10px; text-align: left; }.profile-card strong { flex: 1; overflow-wrap: anywhere; }
 input { width: 100%; padding: 16px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; font-size: 17px; }.primary { border-radius: 24px; width: 100%; margin-top: 18px; }
 .about { text-align: center; padding: 18px 8px; }.about p { color: var(--muted); }
@@ -162,4 +170,7 @@ select { width: 100%; min-height: 48px; padding: 12px; border: 1px solid var(--l
 .artifact-card span { color: var(--muted); font-size: 13px; }
 .preview-pane { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
 .preview-media { width: 100%; max-height: 50vh; object-fit: contain; background: var(--surface); border-radius: 12px; }
+.preview-pdf { min-height: 50vh; border: 0; }
 .preview-text { max-height: 40vh; overflow: auto; white-space: pre-wrap; background: var(--surface); padding: 12px; border-radius: 12px; font-size: 14px; }
+.preview-fallback { display: flex; flex-direction: column; gap: 8px; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 16px; }
+.preview-fallback .primary { margin-top: 8px; }

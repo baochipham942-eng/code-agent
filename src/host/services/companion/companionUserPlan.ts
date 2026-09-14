@@ -108,7 +108,10 @@ export function deliverCompanionUserPlan(
   if (item?.sessionId !== sessionId) return { success: false, data: { closed: true } };
   const db = readyDb();
   if (!db?.isReady) return { success: false, data: { closed: true } };
-  const messages = db.getRecentMessages(sessionId, 40) as Message[];
+  // 全量回读（与桌面 loadApprovalTarget 的 getMessages 同款）：审批是用户在手机上
+  // 点击触发的一次性动作，经得起全量读；固定窗口会让滑出窗口的计划卡变僵尸——
+  // 手机仍显示待批，deliver 却永远 closed（ai-review 2026-09-14）。
+  const messages = db.getMessages(sessionId) as Message[];
   const message = messages.find(entry => entry.toolCalls?.some(call => call.id === item.toolCallId));
   const toolCall = message?.toolCalls?.find(call => call.id === item.toolCallId);
   const approval = readPendingApproval(toolCall);

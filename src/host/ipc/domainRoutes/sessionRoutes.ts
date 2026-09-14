@@ -18,6 +18,9 @@
 //                 fork 后 context 投影不在 web 生产行为内）
 //   list / update → 基座归属 web（sm 直调：list 无 durable 投影、update 无 engine 门）
 //   写后失效    → 归属 web（invalidateAfterWrite hook：invalidateSessionCache + messages projection）
+//   import / search / exportMarkdown / exportDiagnostics / getMemoryContext →
+//                 刀 2 曾以 INVALID_ACTION 桩占位（原 web handler 就没有这 5 个 case），
+//                 刀 3 起两侧同走本表真实现（ctx.sessions() → appService），棘轮清零。
 //
 // 错误契约：code 透传沿用原 web catch 的宽判定（任何带 string code 的错误透传其 code，
 // 其余 INTERNAL_ERROR）；SERVICE_UNAVAILABLE / INVALID_PAYLOAD / INVALID_ACTION 以
@@ -487,34 +490,6 @@ const SESSION_HANDLERS: DomainRouteHandlers<SessionDomainRequest, SessionCommand
   },
 };
 
-/**
- * web:false 暂缓清单（刀 2 基线平移，数量 5 不变）：desktop-only gap action 在 web
- * 形态表里是 INVALID_ACTION 桩（生产行为平移），刀 3 逐个补齐后清零。
- * 对账数据走 defineSessionRoutes('web').disabledActions（parity 门棘轮从表上读，
- * 不另设测试专用导出）。
- */
-const SESSION_PENDING_WEB_ACTIONS = [
-  'exportDiagnostics',
-  'exportMarkdown',
-  'getMemoryContext',
-  'import',
-  'search',
-] as const;
-
-const pendingWebActionStub = (action: string) => async (ctx: SessionCommandContext) => {
-  // 先过 backend 门再落桩，对齐原 web handler「门在 switch 之前」的顺序
-  await ctx.ensureBackend();
-  throw new SessionRouteError('INVALID_ACTION', `Unknown session action: ${action}`);
-};
-
-const WEB_PENDING_ACTION_STUBS = {
-  exportDiagnostics: pendingWebActionStub('exportDiagnostics'),
-  exportMarkdown: pendingWebActionStub('exportMarkdown'),
-  getMemoryContext: pendingWebActionStub('getMemoryContext'),
-  import: pendingWebActionStub('import'),
-  search: pendingWebActionStub('search'),
-} satisfies Partial<DomainRouteHandlers<SessionDomainRequest, SessionCommandContext>>;
-
 /** 错误 code 透传（原 web catch 同款宽判定）：带 string code 的错误透传，其余 INTERNAL_ERROR */
 const resolveSessionErrorCode = (error: unknown): string | undefined => {
   if (
@@ -529,22 +504,17 @@ const resolveSessionErrorCode = (error: unknown): string | undefined => {
 };
 
 /**
- * session 域路由表。`web` 形态 = 生产形态（5 个暂缓 action 落 INVALID_ACTION 桩、
- * 未知 action 文案保持 `Unknown session action: <action>`）；`desktop` 形态 = 全量
- * 真实现（AppService 直连 context 用）。
+ * session 域路由表。刀 3 起 web 形态与桌面形态共用同一套 handler（原 5 个
+ * desktop-only gap action 在 web 同样走真实现），两形态仅剩未知 action 兜底文案
+ * 差异（web: `Unknown session action: <action>`，保持既有错误契约）。
  */
 export function defineSessionRoutes(
   surface: 'desktop' | 'web',
 ): DomainRouteTable<SessionDomainRequest, SessionCommandContext> {
-  const actions: DomainRouteHandlers<SessionDomainRequest, SessionCommandContext> =
-    surface === 'web' ? { ...SESSION_HANDLERS, ...WEB_PENDING_ACTION_STUBS } : SESSION_HANDLERS;
-  return defineDomainRoutes(SessionSchemas.REQUEST, actions, {
+  return defineDomainRoutes(SessionSchemas.REQUEST, SESSION_HANDLERS, {
     resolveErrorCode: resolveSessionErrorCode,
     ...(surface === 'web'
-      ? {
-          unknownActionMessage: (action) => `Unknown session action: ${String(action)}`,
-          disabledActions: SESSION_PENDING_WEB_ACTIONS,
-        }
+      ? { unknownActionMessage: (action) => `Unknown session action: ${String(action)}` }
       : {}),
   });
 }

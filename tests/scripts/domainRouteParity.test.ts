@@ -7,7 +7,7 @@
 // 字面量集合（extractDomainActions 从 zod 提取）做集合相等——不再靠正则。
 //
 // 已表化域（session）另做三面对账：表 keys == schema == shellCapabilities 域集合
-// （新 action 三处一起改）；web:false 暂缓清单对 KNOWN 基线只减不增。
+// （新 action 三处一起改）；web:false 暂缓棘轮刀 3 清零（断言无暂缓项）。
 //
 // 自举纪律（沿旧门教训）：提取 0 个 action → 报红（锚点失效不假绿）；
 // 差集报错指名道姓一次列全（deny-list-by-name 教训）。
@@ -50,20 +50,6 @@ function inlineFixtureTable() {
     },
   );
 }
-
-/**
- * 已知存量缺口（旧门 2026-07-26 实测挖出，刀 2 基线平移、数量不变）：
- * 以下 5 个 action 是 desktop-only gap——在 web 形态表里是 INVALID_ACTION 桩，
- * 发行版全走 web 形态，等于这些能力在生产是死的（刀 3 逐个补齐后清零）。
- * 基线只减不增：修一个必须同步删掉一行，否则报红（自收紧棘轮）。
- */
-const KNOWN_PENDING_WEB_ACTIONS = new Set([
-  'exportDiagnostics',
-  'exportMarkdown',
-  'getMemoryContext',
-  'import',
-  'search',
-]);
 
 describe('域路由表 parity 门', () => {
   it('门自举：表清单非空（清单空了门就是摆设）', () => {
@@ -130,31 +116,26 @@ describe('域路由表 parity 门', () => {
     });
   }
 
-  describe('domain:session web:false 暂缓棘轮', () => {
+  describe('domain:session web:false 暂缓棘轮（刀 3 清零）', () => {
     const webTable = defineSessionRoutes('web');
-    const canonicalActions = new Set(Object.keys(sessionRoutes.actions));
 
-    it('标记集合 == 基线（只减不增；补齐一个必须同步删基线）', () => {
-      const marked = new Set<string>(webTable.disabledActions ?? []);
+    it('无暂缓项：web 形态不带任何 web:false 标记（重新禁用需先改本门并说明理由）', () => {
       expect(
-        [...marked].filter((action) => !KNOWN_PENDING_WEB_ACTIONS.has(action)),
-        '新增了 web:false 标记——基线外不许加，先更新 KNOWN_PENDING_WEB_ACTIONS',
-      ).toEqual([]);
-      expect(
-        [...KNOWN_PENDING_WEB_ACTIONS].filter((action) => !marked.has(action)),
-        '基线里有但标记集合没有——标记与基线漂移，两边对齐',
+        webTable.disabledActions ?? [],
+        'web:false 标记复活——刀 3 已把 5 个 desktop-only gap action 在 web 补齐，重新禁用必须先更新本断言并说明理由',
       ).toEqual([]);
     });
 
-    it('每个暂缓 action 都在全量表里有真实现（刀 3 清标记时必须有 handler 可接）', () => {
+    it('web 形态与全量表逐 action 同实现（两侧差异只许沉入 context，不许按 surface 换 handler）', () => {
+      const desktopHandlers = sessionRoutes.actions as Record<string, unknown>;
+      const webHandlers = webTable.actions as Record<string, unknown>;
+      const swapped = Object.keys(desktopHandlers).filter(
+        (action) => desktopHandlers[action] !== webHandlers[action],
+      );
       expect(
-        [...KNOWN_PENDING_WEB_ACTIONS].filter((action) => !canonicalActions.has(action)),
-        '全量表缺基线 action——基线过期，更新它',
+        swapped,
+        `web 形态给这些 action 换了 handler：${swapped.join(', ')}——表必须单源，surface 差异沉入 SessionCommandContext`,
       ).toEqual([]);
-    });
-
-    it('web 形态表的 disabledActions 标记与基线一致（装配面与声明面不漂移）', () => {
-      expect(new Set(webTable.disabledActions ?? [])).toEqual(KNOWN_PENDING_WEB_ACTIONS);
     });
   });
 });

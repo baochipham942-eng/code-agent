@@ -1,15 +1,18 @@
 // ============================================================================
-// Session 域路由表装配单测（RQ-183 刀 2）
+// Session 域路由表装配单测（RQ-183 刀 2 / 刀 3）
 // ============================================================================
 //
-// 钉死 web 形态表与桌面形态表的可观察差异：
-//   1. 5 个 desktop-only gap action 在 web 形态是 INVALID_ACTION 桩（生产行为平移，
-//      且桩先过 backend 门——对齐原 web handler「门在 switch 之前」的顺序）；
+// 钉死 web 形态表与桌面形态表的可观察行为：
+//   1. 刀 3 补齐的 5 个原 desktop-only gap action（import / search / exportMarkdown /
+//      exportDiagnostics / getMemoryContext）在 web 形态走真实现分发到
+//      ctx.sessions()（不再是 INVALID_ACTION 桩），参数与响应原样透传；
 //   2. 未知 action 的兜底文案两形态各自保持既有错误契约
 //      （web: `Unknown session action: x` / 桌面: `Unknown action: x`）；
 //   3. 表 handler 的 INVALID_PAYLOAD 校验在触碰 ctx 之前发生；
 //   4. 桌面 context 的 AppService 门（未初始化 → 'Services not initialized'）。
-// 表/schema/shellCapabilities 三面集合对账由 tests/scripts/domainRouteParity.test.ts 盯。
+// 表/schema/shellCapabilities 三面集合对账与 web:false 棘轮清零由
+// tests/scripts/domainRouteParity.test.ts 盯；真实 DB 的端到端行为由
+// tests/integration/session/webGapActions.test.ts 盯。
 import { describe, expect, it, vi } from 'vitest';
 import { installDomainRoutes } from '../../../../src/host/ipc/domainRoutes/registry';
 import {
@@ -62,37 +65,75 @@ describe('defineSessionRoutes 表面差异', () => {
       .toEqual(Object.keys(sessionRoutes.actions).sort());
   });
 
-  it('web 形态的 5 个暂缓 action → 先过 backend 门再 INVALID_ACTION（生产行为平移）', async () => {
+  it('刀 3 补齐的 4 个 service 型 gap action 在 web 形态分发到 sessions() 并透传响应', async () => {
     const { registered, target } = createTarget();
-    const ctx = createDummyContext();
-    installDomainRoutes(target, defineSessionRoutes('web'), ctx);
-    const invoke = registered.get('domain:session');
-
-    for (const action of ['exportDiagnostics', 'exportMarkdown', 'getMemoryContext', 'import', 'search']) {
-      await expect(invoke?.(undefined, { action, payload: { sessionId: 's1' } })).resolves.toEqual({
-        success: false,
-        error: { code: 'INVALID_ACTION', message: `Unknown session action: ${action}` },
-      });
-    }
-    expect(ctx.ensureBackend).toHaveBeenCalledTimes(5);
-  });
-
-  it('web 形态的暂缓 action 在 DB 未就绪时仍先落 SERVICE_UNAVAILABLE（门序保持）', async () => {
-    const { registered, target } = createTarget();
+    const svc = {
+      exportSessionDiagnostics: vi.fn(async (sessionId: string) => ({ diagnostics: `diag:${sessionId}` })),
+      exportSessionMarkdown: vi.fn(async (sessionId: string) => ({ markdown: `md:${sessionId}` })),
+      getMemoryContext: vi.fn(async (sessionId: string) => ({ memory: `ctx:${sessionId}` })),
+      importSession: vi.fn(async (data: unknown) => `imported:${String(data)}`),
+    };
     installDomainRoutes(target, defineSessionRoutes('web'), {
       ...createDummyContext(),
-      ensureBackend: async () => {
-        const error = new Error('SessionManager not available') as Error & { code: string };
-        error.code = 'SERVICE_UNAVAILABLE';
-        throw error;
+      sessions: async () => svc,
+    } as SessionCommandContext);
+    const invoke = registered.get('domain:session');
+
+    await expect(invoke?.(undefined, { action: 'exportDiagnostics', payload: { sessionId: 's1' } }))
+      .resolves.toEqual({ success: true, data: { diagnostics: 'diag:s1' } });
+    await expect(invoke?.(undefined, { action: 'exportMarkdown', payload: { sessionId: 's1' } }))
+      .resolves.toEqual({ success: true, data: { markdown: 'md:s1' } });
+    await expect(invoke?.(undefined, { action: 'getMemoryContext', payload: { sessionId: 's1', query: 'q' } }))
+      .resolves.toEqual({ success: true, data: { memory: 'ctx:s1' } });
+    await expect(invoke?.(undefined, { action: 'import', payload: { data: { id: 'x' } } }))
+      .resolves.toEqual({ success: true, data: 'imported:[object Object]' });
+
+    expect(svc.exportSessionDiagnostics).toHaveBeenCalledWith('s1');
+    expect(svc.exportSessionMarkdown).toHaveBeenCalledWith('s1');
+    expect(svc.getMemoryContext).toHaveBeenCalledWith('s1', undefined, 'q');
+    expect(svc.importSession).toHaveBeenCalledWith({ id: 'x' });
+  });
+
+  it('search 在 web 形态走 performCrossSessionSearch 真链路（取 sessions().listSessions 拼标题表）', async () => {
+    const { registered, target } = createTarget();
+    const svc = {
+      listSessions: vi.fn(async () => [{ id: 's1', title: 'T' }]),
+    };
+    installDomainRoutes(target, defineSessionRoutes('web'), {
+      ...createDummyContext(),
+      sessions: async () => svc,
+    } as SessionCommandContext);
+
+    const response = await registered.get('domain:session')?.(undefined, {
+      action: 'search',
+      payload: { query: 'needle' },
+    }) as { success: boolean; data: { query: string; results: unknown[] } };
+
+    expect(response.success).toBe(true);
+    expect(response.data.query).toBe('needle');
+    expect(response.data.results).toEqual([]);
+    expect(svc.listSessions).toHaveBeenCalledWith({ includeArchived: true });
+  });
+
+  it('gap action 的 backend 门失败（sessions() 抛 SERVICE_UNAVAILABLE）仍先落 code', async () => {
+    const { registered, target } = createTarget();
+    const unavailable = Object.assign(new Error('SessionManager not available'), {
+      code: 'SERVICE_UNAVAILABLE',
+    });
+    installDomainRoutes(target, defineSessionRoutes('web'), {
+      ...createDummyContext(),
+      sessions: async () => {
+        throw unavailable;
       },
-    });
-    await expect(
-      registered.get('domain:session')?.(undefined, { action: 'search', payload: {} }),
-    ).resolves.toEqual({
-      success: false,
-      error: { code: 'SERVICE_UNAVAILABLE', message: 'SessionManager not available' },
-    });
+    } as SessionCommandContext);
+    for (const action of ['exportDiagnostics', 'exportMarkdown', 'getMemoryContext', 'import', 'search']) {
+      await expect(
+        registered.get('domain:session')?.(undefined, { action, payload: { sessionId: 's1', query: 'q' } }),
+      ).resolves.toEqual({
+        success: false,
+        error: { code: 'SERVICE_UNAVAILABLE', message: 'SessionManager not available' },
+      });
+    }
   });
 
   it('未知 action 兜底文案：web `Unknown session action:` / 桌面 `Unknown action:`', async () => {

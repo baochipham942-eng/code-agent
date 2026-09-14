@@ -32,6 +32,8 @@ export interface LoopRunConfig {
   until?: string;
   /** 成功结束后发回源会话并触发下一步的显式交接提示词。 */
   handoffPrompt?: string;
+  /** 缺省跟随全局 durableActivation；false = ephemeral（纯内存，重启后不走 durable 恢复）。 */
+  durable?: boolean;
 }
 
 export interface LoopRunState {
@@ -51,4 +53,8 @@ export interface LoopRunState {
   /** 下一轮预计执行时间（运行中且处于等待间隔时有值）。 */
   nextRunAt?: number;
   error?: string;
+  /** 缺省跟随全局 durableActivation；false = ephemeral。 */
+  durable?: boolean;
+  /** 当前阶段，供后续 UI。dispatching / awaiting_reply = 当轮在途；sleeping = 等待 nextRunAt。 */
+  phase?: 'dispatching' | 'awaiting_reply' | 'sleeping';
 }

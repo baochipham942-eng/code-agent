@@ -162,6 +162,22 @@ describe('DurableRecoveryDispatcher', () => {
     ]);
   });
 
+  it('lets the loop engine own model_call recovery without an unsupported operation result', async () => {
+    const dispatcher = new DurableRecoveryDispatcher();
+    dispatcher.registerEngineHandler(engineHandler('loop'));
+    const modelOperation: PendingOperation = {
+      ...operation('loop-model', 'loop-turn-1'),
+      kind: 'model_call',
+      sideEffect: true,
+    };
+    const results = await dispatcher.dispatch([
+      plan({ runId: 'loop-model', engine: { kind: 'loop' }, operations: [modelOperation] }),
+    ]);
+    expect(results).toEqual([
+      expect.objectContaining({ phase: 'engine', handler: 'loop', status: 'recovered' }),
+    ]);
+  });
+
   it('lets the agent team engine own child recovery without an unsupported operation result', async () => {
     const dispatcher = new DurableRecoveryDispatcher();
     const recover = vi.fn(async () => ({

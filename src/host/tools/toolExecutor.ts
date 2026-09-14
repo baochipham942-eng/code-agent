@@ -980,6 +980,9 @@ export class ToolExecutor {
       params,
       workingDirectory: this.executionCwd,
       agentRole: options.agentRole,
+      // 门跑在 dispatch 前，bash 子进程的 sanitized env 尚未组装；传它的基准
+      // process.env 供 uncertain 写目标里的 $VAR 展开核验（PR #1790）。
+      env: process.env,
     });
     let directiveMemoryWriteGrant: import('../../shared/contract').DirectiveMemoryWriteGrant | undefined;
     if (directiveMemoryAssessment.requiresConfirmation) {

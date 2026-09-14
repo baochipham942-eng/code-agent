@@ -26,6 +26,12 @@ function getNumber(source: unknown, field: string): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
+function getBoolean(source: unknown, field: string): boolean | undefined {
+  if (!isRecord(source)) return undefined;
+  const value = source[field];
+  return typeof value === 'boolean' ? value : undefined;
+}
+
 export function registerLoopHandlers(): void {
   ipcHost.handle(IPC_DOMAINS.LOOP, async (_event, request: IPCRequest) => {
     const { action, payload } = request;
@@ -38,14 +44,16 @@ export function registerLoopHandlers(): void {
           const prompt = getString(payload, 'prompt');
           if (!sessionId) throw new Error('缺少 sessionId');
           if (!prompt?.trim()) throw new Error('缺少 prompt');
+          const durable = getBoolean(payload, 'durable');
           const config: LoopRunConfig = {
             sessionId,
             prompt: prompt.trim(),
             intervalMs: getNumber(payload, 'intervalMs'),
             maxTurns: getNumber(payload, 'maxTurns'),
             until: getString(payload, 'until'),
+            ...(durable !== undefined ? { durable } : {}),
           };
-          return { success: true, data: controller.start(config) } satisfies IPCResponse;
+          return { success: true, data: await controller.start(config) } satisfies IPCResponse;
         }
 
         case 'stop': {
@@ -73,9 +81,12 @@ export function registerLoopHandlers(): void {
       }
     } catch (error) {
       logger.error('Loop IPC error:', error);
+      const code = error && typeof error === 'object' && 'code' in error && typeof error.code === 'string'
+        ? error.code
+        : 'LOOP_ERROR';
       return {
         success: false,
-        error: { code: 'LOOP_ERROR', message: error instanceof Error ? error.message : 'Unknown error' },
+        error: { code, message: error instanceof Error ? error.message : 'Unknown error' },
       } satisfies IPCResponse;
     }
   });

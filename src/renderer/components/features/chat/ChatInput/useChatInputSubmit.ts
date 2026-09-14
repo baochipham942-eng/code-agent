@@ -22,7 +22,7 @@ import { useAppshotsStore } from '../../../../stores/appshotsStore';
 import { useLoopStore } from '../../../../stores/loopStore';
 import { cronClient, type CreateCronJobInput } from '../../../../services/cronClient';
 import { loopClient } from '../../../../services/loopClient';
-import ipcService, { invoke } from '../../../../services/ipcService';
+import ipcService, { invoke, DomainInvokeError } from '../../../../services/ipcService';
 import { useComposerStore } from '../../../../stores/composerStore';
 import { useTeamRecipeStore } from '../../../../stores/teamRecipeStore';
 import { launchTeamRecipe } from '../../../../utils/launchTeamRecipe';
@@ -44,6 +44,7 @@ import {
 } from '@shared/queuedInputSameId';
 import { parseScheduleCommand, isScheduleCommand } from './parseScheduleCommand';
 import { parseLoopCommand, isLoopCommand } from './parseLoopCommand';
+import { LOOP_DURABLE_PARENT_MISSING_CODE } from '@shared/contract/loop';
 import {
   parseGoalCommand,
   isGoalCommand,
@@ -435,6 +436,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
           maxTurns: parsed.maxTurns,
           until: parsed.until,
           handoffPrompt: parsed.handoffPrompt,
+          ...(parsed.ephemeral ? { durable: false } : {}),
         });
         useLoopStore.getState().track(state);
         useSessionStore.getState().addMessage(buildAutomationNoticeMessage({
@@ -456,7 +458,14 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
             : t.chatInputSubmit.loopStartedSelfPacedToast,
         );
       } catch (err) {
-        toast.error(t.chatInputSubmit.loopStartFailedPrefix + (err instanceof Error ? err.message : t.chatInput.unknownError));
+        const code = err instanceof DomainInvokeError ? err.code : undefined;
+        if (code === LOOP_DURABLE_PARENT_MISSING_CODE) {
+          toast.error(t.chatInputSubmit.loopDurableParentMissing);
+        } else if (code === 'DURABLE_RUN_PERSISTENCE_UNAVAILABLE') {
+          toast.error(t.chatInputSubmit.loopDurableUnavailable);
+        } else {
+          toast.error(t.chatInputSubmit.loopStartFailedPrefix + (err instanceof Error ? err.message : t.chatInput.unknownError));
+        }
       }
       return;
     }

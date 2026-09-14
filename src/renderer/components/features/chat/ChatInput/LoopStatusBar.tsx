@@ -54,6 +54,11 @@ export const LoopStatusBar: React.FC<LoopStatusBarProps> = ({ sessionId }) => {
               ? t.loopStatusBar.intervalSuffix.replace('{s}', String(Math.round(l.intervalMs / 1000)))
               : t.loopStatusBar.selfPacedSuffix}
           </span>
+          {l.durable ? (
+            <span className="shrink-0 rounded-md bg-blue-500/20 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide">
+              {t.loopStatusBar.recoverableBadge}
+            </span>
+          ) : null}
           <span className="min-w-0 flex-1 truncate text-badge-info/80" title={l.prompt}>
             {l.prompt}
           </span>

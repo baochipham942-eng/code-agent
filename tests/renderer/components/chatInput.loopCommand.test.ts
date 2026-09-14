@@ -55,4 +55,17 @@ describe('/loop command helpers', () => {
   it('returns null for non-loop input', () => {
     expect(parseLoopCommand('/goal 修好链路')).toBeNull();
   });
+
+  it('parses --ephemeral as a boolean flag and keeps the prompt', () => {
+    expect(parseLoopCommand('/loop --ephemeral 查部署状态')).toEqual({
+      prompt: '查部署状态',
+      ephemeral: true,
+    });
+    expect(parseLoopCommand('/loop 30s 巡检 --ephemeral --max-turns 3')).toEqual({
+      prompt: '巡检',
+      intervalMs: 30_000,
+      maxTurns: 3,
+      ephemeral: true,
+    });
+  });
 });

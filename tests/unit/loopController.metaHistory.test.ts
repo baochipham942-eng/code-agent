@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { LoopController } from '../../src/host/loop/loopController';
+import { resetLoopDurableLedger } from '../../src/host/loop/loopDurableLedger';
 
 const orchestratorState = vi.hoisted(() => ({
   sendMessage: vi.fn(),
@@ -63,6 +64,7 @@ async function waitForCall(mock: { mock: { calls: unknown[] } }): Promise<void> 
 
 describe('LoopController meta history', () => {
   beforeEach(() => {
+    resetLoopDurableLedger();
     orchestratorState.sendMessage.mockReset();
     sessionManagerState.getSession.mockReset();
     ledgerState.upsertTask.mockReset();

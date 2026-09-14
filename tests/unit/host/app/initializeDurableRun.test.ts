@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
@@ -16,6 +16,7 @@ import {
   isBackgroundSubagentDurableArmed,
 } from '../../../../src/host/agent/backgroundSubagentDurableLedger';
 import { BackgroundSubagentRegistry } from '../../../../src/host/agent/backgroundSubagentRegistry';
+import { resetLoopDurableLedger } from '../../../../src/host/loop/loopDurableLedger';
 import { RunRegistry } from '../../../../src/host/runtime/runRegistry';
 import { applyDurableRunMigrationDraft } from '../../../../src/host/services/core/database/migrations/durableRun';
 import { DurableRunRepository } from '../../../../src/host/services/core/repositories/DurableRunRepository';
@@ -27,6 +28,10 @@ function repository(): { db: Database.Database; repo: DurableRunRepository } {
 }
 
 describe('shared Durable Run application initialization', () => {
+  afterEach(() => {
+    resetLoopDurableLedger();
+  });
+
   it('fails closed when migration or repository initialization is unavailable', async () => {
     await expect(initializeDurableRun({
       registry: new RunRegistry(), repository: null, dataDir: '/tmp', ownerId: 'owner',

@@ -140,6 +140,7 @@ export const chatInputZh = {
     runningSuffix: ' 轮',
     intervalSuffix: '（每 {s}s）',
     selfPacedSuffix: '（自定步调）',
+    recoverableBadge: '可恢复',
     stop: '停止',
   },
   inputAddMenu: {
@@ -331,6 +332,8 @@ export const chatInputZh = {
     loopStartedIntervalToast: '循环已启动（每 {s}s 一轮）',
     loopStartedSelfPacedToast: '循环已启动（自定步调）',
     loopStartFailedPrefix: '启动循环失败：',
+    loopDurableParentMissing: '当前会话还没有前台对话，无法启动可恢复循环。请先发一条消息，或加 --ephemeral 仅在本进程运行。',
+    loopDurableUnavailable: '可恢复循环的账本还没就绪，这次没有启动。请稍后重试，或加 --ephemeral。',
   },
   waitingInputTray: {
     title: '排队中 · {count}',
@@ -524,6 +527,7 @@ export const chatInputEn: typeof chatInputZh = {
     runningSuffix: '',
     intervalSuffix: ' (every {s}s)',
     selfPacedSuffix: ' (self-paced)',
+    recoverableBadge: 'Recoverable',
     stop: 'Stop',
   },
   inputAddMenu: {
@@ -715,6 +719,8 @@ export const chatInputEn: typeof chatInputZh = {
     loopStartedIntervalToast: 'Loop started (every {s}s)',
     loopStartedSelfPacedToast: 'Loop started (self-paced)',
     loopStartFailedPrefix: 'Failed to start the loop: ',
+    loopDurableParentMissing: 'This session has no foreground run, so a recoverable loop cannot start. Send a message first, or pass --ephemeral to run in-memory only.',
+    loopDurableUnavailable: 'The recoverable-loop ledger is not ready. Try again in a moment, or pass --ephemeral.',
   },
   waitingInputTray: {
     title: 'Lined up · {count}',

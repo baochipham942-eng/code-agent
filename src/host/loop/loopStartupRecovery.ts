@@ -68,6 +68,100 @@ function hasSessionAutomationsTable(db: BetterSqlite3.Database): boolean {
   return row?.name === 'session_automations';
 }
 
+function hasDurableRunsTable(db: BetterSqlite3.Database): boolean {
+  const row = db.prepare(`
+    SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'durable_runs' LIMIT 1
+  `).get() as { name?: string } | undefined;
+  return row?.name === 'durable_runs';
+}
+
+/**
+ * 刀2-b：source_ref_id 在 durable_runs 存在非终态 engine_kind='loop' 行时留给
+ * recovery dispatcher 收口。刀1 先于 durable recover 跑，不跳过会把将被 durable
+ * 收口的 loop 重复收 / 谎报。
+ */
+function hasActiveDurableLoop(db: BetterSqlite3.Database, sourceRefId: string | null | undefined): boolean {
+  if (!sourceRefId || !hasDurableRunsTable(db)) return false;
+  try {
+    const row = db.prepare(`
+      SELECT 1 AS ok FROM durable_runs
+      WHERE run_id = ? AND engine_kind = 'loop'
+        AND status NOT IN ('completed', 'failed', 'cancelled')
+      LIMIT 1
+    `).get(sourceRefId) as { ok?: number } | undefined;
+    return Boolean(row);
+  } catch {
+    return false;
+  }
+}
+
+function tryGetDb(): BetterSqlite3.Database | null {
+  try {
+    return getDatabase().getDb();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * durable 收口后的投影：automation 行还在 running 则走刀1 同款三写（通知 id
+ * `${taskId}:lost` 保持幂等）；没有 automation 行时只补台账 orphaned + 通知。
+ */
+export async function projectInterruptedDurableLoop(input: {
+  loopId: string;
+  sessionId: string;
+  title?: string;
+  now?: number;
+  db?: BetterSqlite3.Database | null;
+}): Promise<void> {
+  const now = input.now ?? Date.now();
+  const handle = input.db === undefined ? tryGetDb() : input.db;
+  const title = input.title ?? '循环';
+  const ledger = getBackgroundTaskLedger();
+  if (handle) {
+    ledger.setStore(new SqliteBackgroundTaskStore(handle));
+    if (hasSessionAutomationsTable(handle)) {
+      const row = handle.prepare(`
+        SELECT id, source_session_id, title, source_ref_id, config_json, created_at, last_run_at, status
+        FROM session_automations
+        WHERE type = 'loop' AND source_ref_id = ?
+        LIMIT 1
+      `).get(input.loopId) as (InterruptedLoopRow & { status?: string }) | undefined;
+      if (row) {
+        if (row.status === 'running') await finalizeInterruptedLoop(handle, ledger, row, now);
+        return;
+      }
+    }
+  }
+  try {
+    ledger.upsertTask({
+      id: input.loopId,
+      kind: LOOP_TASK_KIND,
+      source: LOOP_TASK_KIND,
+      sessionId: input.sessionId,
+      title,
+      status: 'orphaned',
+      createdAt: now,
+      startedAt: now,
+      completedAt: now,
+      durationMs: 0,
+      summary: LOST_SUMMARY,
+      failure: { message: 'Loop was interrupted by app restart', category: 'interrupted_by_restart' },
+      metadata: { loopId: input.loopId, originalStatus: 'running', lostAt: now },
+    });
+    ledger.queueNotification({
+      id: `${input.loopId}:lost`,
+      taskId: input.loopId,
+      sessionId: input.sessionId,
+      type: 'task_failed',
+      title,
+      message: `${title} 在应用关闭时中断，未能继续`,
+    });
+  } catch (error) {
+    logger.warn(`projectInterruptedDurableLoop fallback failed for ${input.loopId}:`, error);
+  }
+}
+
 /**
  * 把残留的 running loop 收口成终态并通知。幂等：已收口的行不再命中 status='running'。
  * 只收口归属进程已确认消失的行（Important 1）；三处持久化写入同事务（Important 2）。
@@ -96,7 +190,12 @@ export async function markInterruptedLoops(db?: BetterSqlite3.Database | null): 
     let marked = 0;
     let skippedAlive = 0;
     let skippedUnowned = 0;
+    let skippedDurable = 0;
     for (const row of rows) {
+      if (hasActiveDurableLoop(handle, row.source_ref_id)) {
+        skippedDurable += 1;
+        continue;
+      }
       const liveness = resolveLoopOwnerLiveness(parseLoopOwnerStamp(row.config_json));
       if (liveness !== 'dead') {
         if (liveness === 'alive') skippedAlive += 1;
@@ -107,7 +206,7 @@ export async function markInterruptedLoops(db?: BetterSqlite3.Database | null): 
     }
     logger.info(
       `Marked ${marked} interrupted loop(s) as lost at startup`
-      + ` (skipped: ${skippedAlive} live-owner, ${skippedUnowned} unowned/legacy)`,
+      + ` (skipped: ${skippedAlive} live-owner, ${skippedUnowned} unowned/legacy, ${skippedDurable} durable)`,
     );
     return marked;
   } catch (error) {

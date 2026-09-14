@@ -19,6 +19,8 @@ export const LOOP_WAIT_MARKER = '[[LOOP_WAIT]]';
 export const LOOP_TASK_KIND = 'loop';
 /** loop 任务标题在 prompt 上的截断长度。 */
 export const LOOP_TASK_TITLE_MAX_LEN = 40;
+/** durable 模式启动时该 session 没有前台 run 可挂 parentRunId（D2 fail-closed）。 */
+export const LOOP_DURABLE_PARENT_MISSING_CODE = 'LOOP_DURABLE_PARENT_RUN_MISSING';
 
 export interface LoopRunConfig {
   sessionId: string;

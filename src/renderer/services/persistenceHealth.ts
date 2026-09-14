@@ -60,6 +60,7 @@ export interface PersistenceBannerCopy {
   recoveredBody: string;
   corruptNoBackup: string;
   restoreFailed: string;
+  restoreLowDisk: string;
   reasonPrefix: string;
 }
 
@@ -96,6 +97,9 @@ export function describePersistenceBanner(
     }
     if (health.reason === SQLITE_INTEGRITY.LOCAL_CORRUPT) {
       return { title: copy.degradedTitle, body: `${copy.degradedLocal}${reason}` };
+    }
+    if (health.reason === SQLITE_INTEGRITY.RESTORE_LOW_DISK) {
+      return { title: copy.degradedTitle, body: `${copy.restoreLowDisk}${reason}` };
     }
     return { title: copy.degradedTitle, body: `${health.message}${reason}` };
   }

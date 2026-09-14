@@ -16,6 +16,7 @@ import { applyIndexes } from './database/indexes';
 import { ensureWalShmConsistency } from './database/walShmConsistency';
 import {
   clearIntegrityFailedMarker,
+  clearUnrecoverableMarker,
   hasIntegrityFailedMarker,
   probeDatabaseIntegrity,
   readUnrecoverableMarker,
@@ -23,10 +24,11 @@ import {
   writeUnrecoverableMarker,
   type DbIntegrityOutcome,
 } from './database/integrityGate';
-import { DatabaseIntegrityError, isSqliteIntegritySignal } from './database/sqliteErrors';
+import { classifySqliteIntegrityError, DatabaseIntegrityError } from './database/sqliteErrors';
 import {
   copyBackupIntoPlace,
   findLatestGoodBackup,
+  hasFreeSpaceForBackup,
   isolateCorruptDatabase,
   quickCheckFileSync,
 } from '../infra/dbBackup';
@@ -371,23 +373,43 @@ export class DatabaseService extends DurableRunDatabaseSupport {
     const { step, summary } = createInitStepTimer();
     const dataDir = path.dirname(this.dbPath);
 
-    // 不可恢复标记带稳定 code:与失败现场同 code 抛出,且永不落到空路径建空库
+    let openedFromRestore = false;
+
+    // 不可恢复标记带稳定 code。自愈口子:手里重新有了通过 quick_check 的备份
+    // (用户拷入/上次漏扫)且磁盘够,就直接再试恢复,成功清标记;
+    // 否则按标记 code 抛出,且永不落到空路径建空库。
     const unrecoverable = readUnrecoverableMarker(dataDir);
     if (unrecoverable) {
-      throw new DatabaseIntegrityError(unrecoverable.code);
+      const healBackup = findLatestGoodBackup(this.dbPath, quickCheckFileSync);
+      const healSpace = healBackup
+        ? await hasFreeSpaceForBackup(healBackup.path).catch(() => ({ ok: false, detail: 'precheck failed' }))
+        : null;
+      if (healBackup && healSpace?.ok) {
+        this.restoreFromBackupOrThrow(healBackup);
+        clearUnrecoverableMarker(dataDir);
+        openedFromRestore = true;
+        logger.warn('[DatabaseService] healed from previously unrecoverable state via backup restore');
+      } else {
+        throw new DatabaseIntegrityError(unrecoverable.code);
+      }
     }
 
     // 开库前的 -shm 一致性保障：过小就补大，永不删除（见 walShmConsistency.ts 顶部注释）
     ensureWalShmConsistency(this.dbPath, logger);
 
     try {
-      let openedFromRestore = false;
-      try {
-        this.openDatabaseConnection();
-      } catch (err) {
-        if (!isSqliteIntegritySignal(err)) throw err;
-        this.restoreFromBackupOrThrow();
-        openedFromRestore = true;
+      if (!openedFromRestore) {
+        try {
+          this.openDatabaseConnection();
+        } catch (err) {
+          const classification = classifySqliteIntegrityError(err);
+          // 只有真损坏(CORRUPT/NOTADB/malformed)才进隔离/恢复编排;
+          // 临时或无法归类的 IOERR 原样上抛,_scheduleRetry 重开原库(main 基线行为),
+          // 永远不许把临时 IO 错误变成隔离 + 不可恢复标记。
+          if (classification !== 'corrupt') throw err;
+          this.restoreFromBackupOrThrow();
+          openedFromRestore = true;
+        }
       }
       step('open+wal');
 
@@ -410,16 +432,30 @@ export class DatabaseService extends DurableRunDatabaseSupport {
             // 升级恢复(方案档 §2.1):先 preflight 确认手里有通过 quick_check 的
             // 备份才隔离改名。没有好备份不隔离还能读的库——隔离了就是永久内存模式
             // (老用户从没做过备份时新会话全丢,而 main 上同一个库还能用)。
-            // 留在当前库继续跑 + degraded,标记留给 Tier 2 复测或用户处置。
+            // 磁盘余量不足同样不隔离:复制必然半路失败,留在当前库 + degraded,
+            // 不写任何标记,下次启动空间够了自动重试。
             const preflight = findLatestGoodBackup(this.dbPath, quickCheckFileSync);
-            if (preflight) {
-              this.restoreFromBackupOrThrow(preflight);
-            } else {
+            if (!preflight) {
               this._integrityOutcome = { kind: 'degraded', reason: SQLITE_INTEGRITY.QUICK_CHECK_FAILED };
               logger.warn(
                 '[DatabaseService] .integrity-failed set but no quick_check-good backup; ' +
                   'keeping the readable db in service (degraded) instead of isolating it',
               );
+            } else {
+              const space = await hasFreeSpaceForBackup(this.dbPath)
+                .catch((err: unknown) => {
+                  logger.warn('[DatabaseService] restore disk precheck failed; staying retryable', err as Error);
+                  return { ok: false, detail: 'precheck failed' };
+                });
+              if (space.ok) {
+                this.restoreFromBackupOrThrow(preflight);
+              } else {
+                this._integrityOutcome = { kind: 'degraded', reason: SQLITE_INTEGRITY.RESTORE_LOW_DISK };
+                logger.warn(
+                  `[DatabaseService] restore preflight: not enough free disk (${space.detail}); ` +
+                    'keeping the readable db in service (degraded, retryable next launch)',
+                );
+              }
             }
           }
         } else if (probe.severity === 'local') {
@@ -587,7 +623,7 @@ export class DatabaseService extends DurableRunDatabaseSupport {
       // 重试会在空路径上 new Database 造空库顶替,用户历史看起来被清空,
       // 且每日备份轮转会在两天内把好备份顶掉。备份与隔离坏库都还在,
       // 标记挡住下次启动的空库创建;本进程 fail-closed,不重试。
-      const code = isSqliteIntegritySignal(err)
+      const code = classifySqliteIntegrityError(err) === 'corrupt'
         ? SQLITE_INTEGRITY.CORRUPT_NO_BACKUP
         : SQLITE_INTEGRITY.RESTORE_FAILED;
       writeUnrecoverableMarker(path.dirname(this.dbPath), isolatedPath, code);

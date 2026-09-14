@@ -42,6 +42,8 @@ export const SQLITE_INTEGRITY = {
   CORRUPT_NO_BACKUP: 'DB_CORRUPT_NO_BACKUP',
   /** 备份还在但复制/打开恢复副本失败（如磁盘满）；不可重试，严禁空路径建空库顶替 */
   RESTORE_FAILED: 'DB_RESTORE_FAILED',
+  /** 升级恢复 preflight：有备份但磁盘余量不足；不隔离可读库，可重试（空间够了下次启动自动恢复） */
+  RESTORE_LOW_DISK: 'DB_RESTORE_LOW_DISK',
   /** 已从备份恢复；reason 形如 DB_RECOVERED_FROM_BACKUP:<ISO> */
   RECOVERED_FROM_BACKUP: 'DB_RECOVERED_FROM_BACKUP',
   /** Tier 2 quick_check 失败 */

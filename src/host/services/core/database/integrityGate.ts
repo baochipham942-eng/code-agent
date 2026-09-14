@@ -11,7 +11,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import type BetterSqlite3 from 'better-sqlite3';
 import { SQLITE_INTEGRITY } from '../../../../shared/constants';
-import { isSqliteIntegritySignal, readSqliteErrorCode } from './sqliteErrors';
+import { classifySqliteIntegrityError, readSqliteErrorCode } from './sqliteErrors';
 
 const INTEGRITY_CRITICAL_TABLES = [
   'sessions',
@@ -94,14 +94,16 @@ function existingTableNames(db: BetterSqlite3.Database): Set<string> | 'catastro
         .filter((name) => name.length > 0),
     );
   } catch (err) {
-    if (isSqliteIntegritySignal(err)) return 'catastrophic';
+    if (classifySqliteIntegrityError(err) === 'corrupt') return 'catastrophic';
+    // 临时/无法归类的 IOERR:拿不准,不当成损坏、不隔离
     return 'uncertain';
   }
 }
 
 /**
  * Tier 1 结构探针。空库 / 尚未 applySchema 的表记为跳过，不是损坏。
- * 非 CORRUPT/IOERR 的异常拿不准，不当成损坏、不隔离。
+ * 只有真损坏(SQLITE_CORRUPT / SQLITE_NOTADB / malformed)才记损坏;
+ * 临时 IOERR 与其他异常拿不准,不当成损坏、不隔离。
  */
 export const probeDatabaseIntegrity = Object.assign(
   function probeDatabaseIntegrity(db: BetterSqlite3.Database): IntegrityProbeResult {
@@ -109,7 +111,7 @@ export const probeDatabaseIntegrity = Object.assign(
   try {
     db.prepare('SELECT name, type FROM sqlite_master LIMIT 1').get();
   } catch (err) {
-    if (isSqliteIntegritySignal(err)) {
+    if (classifySqliteIntegrityError(err) === 'corrupt') {
       return {
         severity: 'catastrophic',
         sqliteMasterOk: false,
@@ -150,13 +152,14 @@ export const probeDatabaseIntegrity = Object.assign(
       db.prepare(`SELECT 1 FROM ${quoteIdent(table)} LIMIT 1`).get();
       tables.push({ table, ok: true });
     } catch (err) {
-      if (isSqliteIntegritySignal(err)) {
+      if (classifySqliteIntegrityError(err) === 'corrupt') {
         tables.push({
           table,
           ok: false,
           errorCode: readSqliteErrorCode(err) || 'SQLITE_CORRUPT',
         });
       } else {
+        // 临时 IOERR(SHMMAP/LOCK/FSYNC…)或无关错误:表未必坏,不记损坏
         tables.push({ table, ok: true });
       }
     }
@@ -231,6 +234,15 @@ export function writeIntegrityFailedMarker(dataDir: string, now: number): void {
 export function clearIntegrityFailedMarker(dataDir: string): void {
   try {
     fs.rmSync(integrityMarkerPath(dataDir, SQLITE_INTEGRITY.MARKER_INTEGRITY_FAILED), { force: true });
+  } catch {
+    // ignore
+  }
+}
+
+/** 自愈口子:恢复成功后清除不可恢复标记(见 databaseService 启动时的重试恢复)。 */
+export function clearUnrecoverableMarker(dataDir: string): void {
+  try {
+    fs.rmSync(integrityMarkerPath(dataDir, SQLITE_INTEGRITY.MARKER_UNRECOVERABLE), { force: true });
   } catch {
     // ignore
   }

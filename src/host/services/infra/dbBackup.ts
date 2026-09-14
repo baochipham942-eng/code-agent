@@ -84,7 +84,7 @@ function defaultWriteLastBackupAt(dbPath: string, ts: number): void {
   }
 }
 
-async function hasFreeSpaceForBackup(dbPath: string): Promise<{ ok: boolean; detail: string }> {
+export async function hasFreeSpaceForBackup(dbPath: string): Promise<{ ok: boolean; detail: string }> {
   const dbBytes = (await fs.promises.stat(dbPath)).size;
   const required = Math.ceil(dbBytes * SQLITE_INTEGRITY.BACKUP_FREE_SPACE_FACTOR);
   const stats = await fs.promises.statfs(path.dirname(dbPath));

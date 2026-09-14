@@ -6,8 +6,19 @@ import * as path from 'path';
 vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
 
+const openFailure = vi.hoisted(() => ({ current: null as Error | null }));
+
 vi.mock('../../../src/host/services/core/database/nativeLoader', () => ({
-  loadBetterSqlite3: () => Database,
+  loadBetterSqlite3: () => class extends Database {
+    constructor(...args: ConstructorParameters<typeof Database>) {
+      if (openFailure.current) {
+        const err = openFailure.current;
+        openFailure.current = null;
+        throw err;
+      }
+      super(...args);
+    }
+  },
   betterSqlite3CandidatePaths: () => [],
 }));
 
@@ -147,22 +158,16 @@ describe('corrupt database recovery during init', () => {
     });
 
     const failed = new DatabaseService(dir);
-    await expect(failed.initialize()).rejects.toBeInstanceOf(DatabaseIntegrityError);
-    await expect(failed.initialize()).rejects.toMatchObject({
-      code: SQLITE_INTEGRITY.RESTORE_FAILED,
-    });
+    const err = await failed.initialize().catch((initErr: unknown) => initErr);
+    expect(err).toBeInstanceOf(DatabaseIntegrityError);
+    expect(err).toMatchObject({ code: SQLITE_INTEGRITY.RESTORE_FAILED });
     expect(failed.isReady).toBe(false);
     // 空路径没有被顶成空库;好备份与隔离坏库都保留
     expect(fs.existsSync(dbPath)).toBe(false);
     expect(fs.existsSync(`${dbPath}.backup-1`)).toBe(true);
     expect(fs.readdirSync(dir).some((name) => name.startsWith('code-agent.db.corrupt-'))).toBe(true);
-    // 不可恢复标记带着稳定 code;再次 initialize 走标记短路,仍是同一 code(不重试)
+    // 不可恢复标记带着稳定 code 落盘(自愈口子见下一条用例:有好备份+磁盘够 → 再试恢复)
     expect(readUnrecoverableMarker(dir)?.code).toBe(SQLITE_INTEGRITY.RESTORE_FAILED);
-    const retry = new DatabaseService(dir);
-    await expect(retry.initialize()).rejects.toMatchObject({
-      code: SQLITE_INTEGRITY.RESTORE_FAILED,
-    });
-    expect(fs.existsSync(dbPath)).toBe(false);
   }, 60_000);
 
   // ai-review 第二轮 Important 3:.integrity-failed 在 + Tier 1 通过 → 升级为尝试恢复
@@ -229,5 +234,112 @@ describe('corrupt database recovery during init', () => {
     expect(fs.readdirSync(dir).some((name) => name.startsWith('code-agent.db.corrupt-'))).toBe(false);
     expect(readUnrecoverableMarker(dir)).toBeNull();
     expect(hasIntegrityFailedMarker(dir)).toBe(true);
+  }, 60_000);
+
+  // ai-review 第四轮 Important 1:临时 IOERR 子码不许进隔离/恢复编排——
+  // 原样抛可重试错误(_scheduleRetry 重开原库,main 基线行为),不隔离、不写任何标记。
+  it('treats a transient SQLITE_IOERR_SHMMAP on open as retryable, never isolating', async () => {
+    const dir = tmpDir();
+    const dbPath = path.join(dir, 'code-agent.db');
+
+    const first = new DatabaseService(dir);
+    await first.initialize();
+    first.getDb()!.prepare(INSERT_SESSION_SQL).run('sess-1', 'still-here', 'openai', 'gpt-5', dir, 1, 1);
+    first.close();
+
+    openFailure.current = Object.assign(new Error('disk I/O error'), {
+      name: 'SqliteError',
+      code: 'SQLITE_IOERR_SHMMAP',
+    });
+    const svc = new DatabaseService(dir);
+    const openErr = await svc.initialize().catch((err: unknown) => err);
+    // 原样抛可重试错误,不是 DatabaseIntegrityError(进不了隔离/恢复编排)
+    expect(openErr).toMatchObject({ code: 'SQLITE_IOERR_SHMMAP' });
+    expect(openErr).not.toBeInstanceOf(DatabaseIntegrityError);
+    // 不隔离、不写标记、原库原样
+    expect(fs.existsSync(dbPath)).toBe(true);
+    expect(fs.readdirSync(dir).some((name) => name.startsWith('code-agent.db.corrupt-'))).toBe(false);
+    expect(readUnrecoverableMarker(dir)).toBeNull();
+    expect(hasIntegrityFailedMarker(dir)).toBe(false);
+    // 可重试:重开原库成功,历史还在
+    await svc.initialize();
+    const titles = svc.getDb()!.prepare('SELECT title FROM sessions').all() as Array<{ title: string }>;
+    expect(titles.map((row) => row.title)).toEqual(['still-here']);
+    svc.close();
+  }, 60_000);
+
+  // ai-review 第四轮 Important 2:escalate preflight 空间不足 → 不隔离可读库、
+  // degraded(DB_RESTORE_LOW_DISK)、不写标记保持可重试;空间恢复后下次启动自动恢复。
+  it('does not isolate a readable db when disk is too low to restore, and heals later', async () => {
+    const dir = tmpDir();
+    const dbPath = path.join(dir, 'code-agent.db');
+
+    const first = new DatabaseService(dir);
+    await first.initialize();
+    first.getDb()!.prepare(INSERT_SESSION_SQL).run('sess-backup', 'backup-point', 'openai', 'gpt-5', dir, 1, 1);
+    first.getDb()!.pragma('wal_checkpoint(TRUNCATE)');
+    first.close();
+    fs.copyFileSync(dbPath, `${dbPath}.backup-1`);
+    writeIntegrityFailedMarker(dir, Date.now());
+
+    const statfsSpy = vi.spyOn(fs.promises, 'statfs').mockResolvedValue({
+      bavail: 1,
+      bsize: 4096,
+    } as unknown as fs.StatsFs);
+
+    const lowDisk = new DatabaseService(dir);
+    await lowDisk.initialize();
+    expect(lowDisk.getIntegrityOutcome()).toEqual({
+      kind: 'degraded',
+      reason: SQLITE_INTEGRITY.RESTORE_LOW_DISK,
+    });
+    const lowTitles = lowDisk.getDb()!.prepare('SELECT title FROM sessions').all() as Array<{ title: string }>;
+    expect(lowTitles.map((row) => row.title)).toEqual(['backup-point']);
+    lowDisk.close();
+    // 不隔离、不写标记、失败标记保留等空间恢复
+    expect(fs.existsSync(dbPath)).toBe(true);
+    expect(fs.readdirSync(dir).some((name) => name.startsWith('code-agent.db.corrupt-'))).toBe(false);
+    expect(readUnrecoverableMarker(dir)).toBeNull();
+    expect(hasIntegrityFailedMarker(dir)).toBe(true);
+
+    // 空间恢复后:同一路径自动完成恢复并清标记
+    statfsSpy.mockRestore();
+    const healed = new DatabaseService(dir);
+    await healed.initialize();
+    expect(healed.getIntegrityOutcome().kind).toBe('recovered');
+    expect(hasIntegrityFailedMarker(dir)).toBe(false);
+    healed.close();
+  }, 60_000);
+
+  // .db-unrecoverable 自愈口子:手里重新有好备份且磁盘够 → 再试恢复,成功清标记
+  it('heals a RESTORE_FAILED unrecoverable marker once a good backup and disk are available', async () => {
+    const dir = tmpDir();
+    const dbPath = path.join(dir, 'code-agent.db');
+
+    const first = new DatabaseService(dir);
+    await first.initialize();
+    first.getDb()!.prepare(INSERT_SESSION_SQL).run('sess-backup', 'backup-point', 'openai', 'gpt-5', dir, 1, 1);
+    first.getDb()!.pragma('wal_checkpoint(TRUNCATE)');
+    first.close();
+    fs.copyFileSync(dbPath, `${dbPath}.backup-1`);
+    corruptSqliteMaster(dbPath);
+
+    copyBackupMock.mockImplementationOnce(() => {
+      throw new Error('ENOSPC: no space left on device');
+    });
+    const failed = new DatabaseService(dir);
+    await expect(failed.initialize()).rejects.toMatchObject({ code: SQLITE_INTEGRITY.RESTORE_FAILED });
+    expect(readUnrecoverableMarker(dir)?.code).toBe(SQLITE_INTEGRITY.RESTORE_FAILED);
+
+    // 磁盘恢复(复制不再失败):同一次启动直接再试恢复,成功清标记
+    const healed = new DatabaseService(dir);
+    await healed.initialize();
+    expect(healed.getIntegrityOutcome().kind).toBe('recovered');
+    expect(readUnrecoverableMarker(dir)).toBeNull();
+    const titles = healed.getDb()!
+      .prepare('SELECT title FROM sessions ORDER BY created_at')
+      .all() as Array<{ title: string }>;
+    expect(titles.map((row) => row.title)).toEqual(['backup-point']);
+    healed.close();
   }, 60_000);
 });

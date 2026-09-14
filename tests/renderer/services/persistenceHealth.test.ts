@@ -90,6 +90,19 @@ describe('persistence health renderer helpers', () => {
       .toBe(zh.settings.data.persistence.restoreFailed);
   });
 
+  it('translates DB_RESTORE_LOW_DISK as degraded with its own copy', () => {
+    const lowDisk = {
+      status: 'degraded',
+      mode: 'database',
+      durable: true,
+      message: '历史会持久化到本机数据库。',
+      reason: SQLITE_INTEGRITY.RESTORE_LOW_DISK,
+      checkedAt: 70,
+    } satisfies PersistenceHealth;
+    expect(describePersistenceBanner(lowDisk, zh.settings.data.persistence).body)
+      .toContain(zh.settings.data.persistence.restoreLowDisk);
+  });
+
   it('keeps a clear fallback warning when health text is missing', () => {
     expect(getPersistenceWarningText(unavailable)).toBe('历史持久化不可用，当前只会话内有效。');
     expect(getPersistenceWarningText(null)).toBe('历史持久化不可用，当前只会话内有效。');

@@ -82,6 +82,7 @@ export const enSettingsSystem = {
         recoveredBody: 'The database was restored from a local backup taken at {timestamp}. Changes after that point may be lost.',
         corruptNoBackup: 'The database is corrupt and no usable backup was found. This session is memory-only.',
         restoreFailed: 'Restoring from a backup failed (for example, disk full). This session is memory-only. The corrupt database and the backups were kept, not deleted.',
+        restoreLowDisk: 'The database failed an integrity check, but there is not enough free disk space to restore from a backup. The current database stays in use; freeing up space will retry the restore on the next launch.',
         reasonPrefix: ' Reason: ',
       },
       controlPlane: {

@@ -84,6 +84,9 @@ class ProtocolToolResolver implements ToolResolver {
       params: args,
       workingDirectory: ctx.workingDirectory,
       agentRole: ctx.agentRole,
+      // 与 toolExecutor 确认门同一份 env 基准：fingerprint 含 targets，两边口径
+      // 必须一致，否则 grant 对不上被误拒（PR #1790）。
+      env: process.env,
     });
     if (!hasMatchingDirectiveMemoryWriteGrant(
       directiveMemoryAssessment,

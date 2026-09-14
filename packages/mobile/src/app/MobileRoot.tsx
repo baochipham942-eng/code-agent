@@ -115,6 +115,28 @@ export function commandNoticeCopy(
   return error ? text.commandRejected : null;
 }
 
+/** 抽屉手势阈值（px）。正文区开/关都是 86px 位移、60px 竖向容差；左缘起滑门槛更低（见 gestureEnd）。 */
+const SWIPE_MIN_DX = 86;
+const SWIPE_MAX_DY = 60;
+/** 左缘手势区：从屏幕左缘这个宽度内起滑、向右滑够 EDGE_GESTURE_MIN_DX 即开抽屉（2026-09-14 反馈①）。 */
+const EDGE_GESTURE_START_X = 28;
+const EDGE_GESTURE_MIN_DX = 56;
+
+/**
+ * 项目/会话 sheet 等「电脑里的库」时的形态（2026-09-14 build 34 反馈③）。已断连时进 sheet
+ * 不许先转圈——refreshLibrary 在非 connected 下直接 return，圈是无限期的；connecting 仍算
+ * 等待：那时真有一场重连在飞，直接报「连不上」是谎报，超时兜底会收口。抽成纯函数照
+ * connectionCopy/taskStatusCopy 的先例，让这条分支可单测。
+ */
+export function sheetLibraryStatus(
+  companion: { library: unknown; status: string; libraryError: boolean },
+  timedOut: boolean,
+): 'ready' | 'waiting' | 'unreachable' {
+  if (companion.library) return 'ready';
+  if (companion.libraryError || timedOut || (companion.status !== 'connected' && companion.status !== 'connecting')) return 'unreachable';
+  return 'waiting';
+}
+
 export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures: boolean }) {
   const [store] = useState(() => createMobileStore(ports.preferences));
   const [companionStore] = useState(() => createCompanionStore(ports.companion, (acceptedText, sessionId, hostKey) => {
@@ -216,6 +238,26 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
   const cachedHistory = companion.sessionId ? companion.history[companion.sessionId] : undefined;
   const hasCachedConversation = Boolean(cachedHistory?.messages.length || companion.events.some(event => event.sessionId === companion.sessionId));
   const offlineCopy = offlineHistoryCopy(text, companion, hasCachedConversation);
+  // 反馈③（2026-09-14 build 34）：项目/会话 sheet 等电脑里的库时不许无限转圈——底层 request
+  // 没有客户端超时，连接僵死时圈会一直转；到点落「连不上电脑」失败态并给重试。
+  const librarySheetWaiting = Boolean(state.sheet && (currentPage === 'projects' || currentPage === 'more') && companion.binding && !companion.library);
+  const [libraryTimedOut, setLibraryTimedOut] = useState(false);
+  const [libraryRetryEpoch, setLibraryRetryEpoch] = useState(0);
+  useEffect(() => {
+    // 每当等待重新成立（新开 sheet 或点了重试）计时从零开始；不在等时清掉标记。
+    setLibraryTimedOut(false);
+    if (!librarySheetWaiting) return;
+    const timer = setTimeout(() => setLibraryTimedOut(true), COMPANION_LIMITS.librarySheetWaitMs);
+    return () => clearTimeout(timer);
+  }, [librarySheetWaiting, libraryRetryEpoch]);
+  const retrySheetLibrary = () => {
+    setLibraryRetryEpoch(epoch => epoch + 1);   // 计时归零，重新给一轮秒级等待
+    const live = companionStore.getState();
+    // 断连时 refreshLibrary 是空转（非 connected 直接 return），重连才是真动作；
+    // 连上后既有 effect 会去读库。
+    if (live.status !== 'connected') void live.reconnect();
+    else void live.refreshLibrary();
+  };
 
   // Text selections inside the composer never surface through window.getSelection on WebKit,
   // and long-press selection on WebView only lives in the element's own range.
@@ -391,15 +433,20 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
   const gestureStart = (event: React.TouchEvent) => {
     const touch = event.touches[0];
     if (!touch || event.touches.length !== 1 || state.sheet || keyboardVisible.current || recording.current ||
-      textSelected() || (event.target as Element).closest('button,input,textarea,[data-testid="history"]') || touch.clientX < 24) return;
+      textSelected() || (event.target as Element).closest('button,input,textarea,[data-testid="history"]')) return;
     swipe.current = { x: touch.clientX, y: touch.clientY };
   };
   const gestureEnd = (event: React.TouchEvent) => {
     const start = swipe.current; swipe.current = null;
     const touch = event.changedTouches[0];
-    if (!start || !touch || textSelected() || Math.abs(touch.clientY - start.y) > 60) return;
-    if (state.drawer && touch.clientX - start.x < -86) state.closeDrawer();
-    else if (!state.drawer && touch.clientX - start.x > 86) state.openDrawer();
+    if (!start || !touch || textSelected() || Math.abs(touch.clientY - start.y) > SWIPE_MAX_DY) return;
+    const dx = touch.clientX - start.x;
+    if (state.drawer && dx < -SWIPE_MIN_DX) state.closeDrawer();
+    else if (!state.drawer && dx > SWIPE_MIN_DX) state.openDrawer();
+    // 左缘起滑专门用来开抽屉（2026-09-14 build 34 反馈①）：此前 clientX < 24 在 gestureStart
+    // 一刀切丢弃，iOS 用户最自然的左缘起滑被杀。缘区位移门槛比正文低——从缘区起滑本身就是
+    // 明确的开抽屉意图；竖向容差沿用 60px，竖向滚动照旧开不了抽屉，不吃正文滑动。
+    else if (!state.drawer && start.x < EDGE_GESTURE_START_X && dx > EDGE_GESTURE_MIN_DX) state.openDrawer();
   };
   if (!state.ready) return <div className="loading" role="status"><p>{state.loadError ? text.loadError : text.loading}</p>
     {state.loadError && <button className="inline-retry" onClick={() => void state.hydrate()}>{text.retry}</button>}</div>;
@@ -525,10 +572,15 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
       {pendingDecisions.length > 0 && <button className="primary" onClick={() => selectSession(String(pendingDecisions[0].sessionId))}>{
         pendingDecisions[0].kind === 'question' ? text.reviewQuestion : pendingDecisions[0].kind === 'plan' ? text.reviewPlan : text.reviewApproval
       }</button>}
-      {(currentPage === 'projects' || currentPage === 'more') && companion.binding ? <>
-        {companion.library ? <LibrarySheet key={`${currentPage}:${companion.sessionId}`} library={companion.library} sessionId={companion.sessionId} text={text} mode={currentPage} busy={companion.busy || companion.pending || companion.status !== 'connected'} select={selectSession} manage={manage} loadMore={() => void companion.refreshLibrary(true)} /> : <p>{companion.libraryError ? text.libraryError : text.loading}</p>}
-        <button onClick={() => void companion.refreshLibrary()}>{text.retry}</button>
-      </> : currentPage === 'preview' && companion.preview ? <div className="preview-pane">
+      {(currentPage === 'projects' || currentPage === 'more') && companion.binding ? (
+        companion.library ? <LibrarySheet key={`${currentPage}:${companion.sessionId}`} library={companion.library} sessionId={companion.sessionId} text={text} mode={currentPage} busy={companion.busy || companion.pending || companion.status !== 'connected'} select={selectSession} manage={manage} loadMore={() => void companion.refreshLibrary(true)} />
+          // 等库/失败共用一行 + 行尾重试 pill：库来自电脑，说「正在连接电脑」而不是「读取本机数据」
+          //（2026-09-14 反馈③④）；断连直接示失败态，等超时也落失败态，不无限转圈。
+          : <p className="notice sheet-wait" role="status">
+            {sheetLibraryStatus(companion, libraryTimedOut) === 'unreachable' ? text.libraryUnavailable : text.libraryLoading}
+            <button className="inline-retry" onClick={retrySheetLibrary}>{text.retry}</button>
+          </p>
+      ) : currentPage === 'preview' && companion.preview ? <div className="preview-pane">
         <p className="caption">{text.previewHint}</p>
         <PreviewMedia name={companion.preview.name} mimeType={companion.preview.mimeType} bytes={companion.preview.bytes} text={text}
           onSave={companion.savedPreview ? undefined : () => void companion.savePreview()} />
@@ -536,10 +588,16 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
         {!companion.savedPreview && companion.commandError && <p role="status" className="notice">{commandNotice}</p>}
         {companion.savedPreview ? <p role="status">{companion.savedPreviewName && companion.savedPreviewName !== companion.preview.name ? `${text.savedToDevice}：${companion.savedPreviewName}` : text.savedToDevice}</p>
           : <button className="primary" onClick={() => void companion.savePreview()}>{text.saveToDevice}</button>}
-      </div> : currentPage === 'remote' ? <div className="settings-group">
+      </div> : currentPage === 'remote' ? <div className="settings-group remote-sheet">
+        {/* 反馈⑤（2026-09-14）：两段大字收成一行主提示；具体原因与换网操作指引收进
+            「为什么连不上？」二级展开，不再与会话页断网 banner 重复整段。 */}
         <p>{text.lanHint}</p>
         {companion.status === 'connected' ? <div className="connection-success" role="status"><span className="connection-check"><AppIcon name="check" /></span><strong>{text.connected}</strong><p>{text.connectedNext}</p></div>
-          : <p role="status">{companion.status === 'connecting' ? text.connecting : companion.status === 'storageError' ? text.secureStorageError : companion.connectionError ? text[companion.connectionError] : text.unconnected}</p>}
+          : <p role="status">{companion.status === 'connecting' ? text.connecting : text.remoteNotConnected}</p>}
+        {companion.status !== 'connected' && companion.status !== 'connecting' && <details className="connection-trouble">
+          <summary>{text.connectionTrouble}</summary>
+          <p>{companion.status === 'storageError' ? text.secureStorageError : companion.connectionError ? text[companion.connectionError as keyof typeof text] : text.connectionTroubleBody}</p>
+        </details>}
         {companion.status === 'connected' && <button className="primary" onClick={() => state.navigate('new')}>{text.enterConversation}</button>}
         {!ports.companion && <p>{text.nativeConnectionOnly}</p>}
         <button className={companion.status === 'connected' ? undefined : 'primary'} disabled={!ports.companion || companion.busy || companion.pending} onClick={() => void pairAndOpenConversation()}>{text.scan}</button>

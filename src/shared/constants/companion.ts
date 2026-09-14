@@ -61,6 +61,11 @@ export const COMPANION_LIMITS = {
   pollIntervalMs: 1_000,
   /** 有命令在飞时的轮询间隔：结算回执只能靠轮询取回，1 秒一拍等于每段转写白等半秒。 */
   pendingPollIntervalMs: 250,
+  /**
+   * 手机项目/会话 sheet 等「电脑里的库」读回的最长等待（2026-09-14 build 34 反馈③）：
+   * 底层 request 没有客户端超时，连接僵死时 UI 会无限转圈；到点落「连不上电脑」失败态。
+   */
+  librarySheetWaitMs: 8_000,
   uiPresenceTtlMs: 15_000,
   lanPort: 8182,
   approvalPreviewLength: 16_000,

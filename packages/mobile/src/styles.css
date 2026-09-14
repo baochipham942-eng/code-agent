@@ -109,8 +109,13 @@ input { width: 100%; padding: 16px; background: var(--surface); border: 1px soli
 .task-status button { min-height: 36px; padding: 4px 6px; font-size: 12px; flex-shrink: 0; }
 .connection-line { display: flex; align-items: baseline; gap: 8px; width: 100%; min-width: 0; }
 .connection-pill { display: inline-flex; align-items: baseline; gap: 5px; flex: 1; min-width: 0; min-height: 0; max-width: 100%; text-align: left; white-space: normal; }
+/* 反馈②（2026-09-14 build 34）：行尾「重试」是裸文字，不像按钮。改成小 pill——描边+底色、
+   字号小一档、可点高度 ≥32px（对齐 design.html .banner button 的 min-height:32px），
+   仍贴文案行尾不独占一行（反馈①的形状保持）。 */
 .inline-retry, .task-status button.inline-retry, .notice button.inline-retry {
-  min-width: 0; min-height: 0; height: auto; padding: 0; font-size: inherit; line-height: inherit; color: var(--accent); flex-shrink: 0;
+  min-width: 0; min-height: 32px; height: auto; padding: 0 14px; font-size: 13px; line-height: 1;
+  color: var(--accent); flex-shrink: 0; align-self: center;
+  background: var(--group); border: 1px solid var(--line); border-radius: 16px;
 }
 .status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); }
 [data-connected='true'] .status-dot { background: #168365; }
@@ -147,6 +152,14 @@ select { width: 100%; min-height: 48px; padding: 12px; border: 1px solid var(--l
 .library-sheet .settings-group { margin: 10px 0; } .danger { color: #c43b38; } .drawer-history [aria-current='page'] { background: var(--group); }
 .library-sheet .advanced { margin: 12px 0; }
 .library-sheet .advanced summary { cursor: pointer; padding: 10px 0; color: var(--muted); font-size: 14px; }
+/* 反馈③⑤（2026-09-14）：sheet 等库/失败那一行（文案 + 行尾重试 pill），与连接电脑 sheet 的
+   一行主提示 + 「为什么连不上？」二级展开。 */
+.sheet-wait { margin: 12px 4px; }
+.remote-sheet { padding: 4px 16px 16px; }
+.remote-sheet > p { margin: 12px 0 0; }
+.connection-trouble { margin: 4px 0 12px; }
+.connection-trouble summary { cursor: pointer; padding: 10px 0 2px; color: var(--muted); font-size: 14px; }
+.connection-trouble p { margin: 6px 0 8px; color: var(--muted); font-size: 13px; line-height: 1.6; }
 
 .composer.voice-composer { border-radius: 28px; padding: 17px 14px 8px; }
 .voice-source { font-size: 12px; color: var(--muted); margin-bottom: 8px; }

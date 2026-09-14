@@ -138,11 +138,13 @@ describe('通用提示条：转写失败不许和输入区那条叠成两句', (
   });
 });
 
-describe('断网错误条重试并进文案行尾', () => {
+describe('重试贴文案行尾，且是可点可辨的小 pill（2026-09-14 反馈②）', () => {
   const css = readFileSync('packages/mobile/src/styles.css', 'utf8');
-  it('overrides the 48px button min-height so retry does not take its own row', () => {
+  it('overrides the 48px button min-height so retry does not take its own row, and is a ≥32px pill', () => {
     expect(css).toMatch(/\.connection-line\s*\{[^}]*align-items:\s*baseline/);
-    expect(css).toMatch(/button\.inline-retry\s*\{[^}]*min-height:\s*0/);
+    expect(css).toMatch(/button\.inline-retry\s*\{[^}]*min-height:\s*32px/);
+    expect(css).toMatch(/button\.inline-retry\s*\{[^}]*border-radius:\s*16px/);
+    expect(css).toMatch(/button\.inline-retry\s*\{[^}]*border:\s*1px solid var\(--line\)/);
     expect(css).toMatch(/\.notice\s*\{[^}]*display:\s*flex/);
   });
 });

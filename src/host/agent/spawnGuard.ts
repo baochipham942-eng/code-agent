@@ -51,7 +51,8 @@ const logger = createLogger('SpawnGuard');
 // ============================================================================
 
 export { createAgentMessage, createTextMessage } from './messageOrigin';
-export type { AgentMessage, AgentMessageType } from './messageOrigin';
+// AgentMessageType 无仓内 import 消费方（knip 棘轮），不 re-export；spawnGuard 内部自用走上方 import。
+export type { AgentMessage } from './messageOrigin';
 
 export interface ManagedAgent {
   id: string;

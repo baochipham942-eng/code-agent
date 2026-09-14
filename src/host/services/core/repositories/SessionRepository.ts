@@ -823,9 +823,9 @@ export class SessionRepository {
       }
     };
     if (this.conversationBranchRepo && recordsRevision) {
-      this.db.transaction(write)();
+      runTransactionWithFtsRepair(this.db, this.db.transaction(write));
     } else {
-      write();
+      runWithFtsWriteRepair(this.db, write);
     }
   }
 

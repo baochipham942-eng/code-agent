@@ -311,6 +311,26 @@ describe('ftsRepair ladder', () => {
     db.close();
   });
 
+  it('updateMessage survives FTS shadow-page corruption: write repair wrapper retries the update', () => {
+    const dbPath = tmpDb();
+    let { db, repo } = openRepo(dbPath);
+    createSchema(db);
+    insertSession(db, 'sess-1');
+    seedMessages(repo, 50);
+    db.close();
+
+    corruptFtsShadowPages(dbPath, { leafOnly: false });
+    ({ db, repo } = openRepo(dbPath));
+
+    expect(() => repo.updateMessage('m-3', { content: 'updated needle after corrupt' }, 'sess-1')).not.toThrow();
+    const row = db.prepare('SELECT content FROM messages WHERE id = ?').get('m-3') as { content: string };
+    expect(row.content).toBe('updated needle after corrupt');
+    expect(isFtsDisabled('session_messages_fts')).toBe(false);
+    const hits = repo.searchSessionMessagesFts('updated needle', { limit: 10 });
+    expect(hits.some((hit) => hit.messageId === 'm-3')).toBe(true);
+    db.close();
+  });
+
   it('startup maintenance does not throw after FTS shadow-page corruption', () => {
     const dbPath = tmpDb();
     let { db, repo } = openRepo(dbPath);

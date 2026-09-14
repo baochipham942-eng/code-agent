@@ -142,6 +142,15 @@ describe('installDomainRoutes', () => {
       success: false,
       error: { code: 'INVALID_ACTION', message: 'Unknown action: undefined' },
     });
+    // Object.prototype 继承键（toString/constructor）不是合法 action，不许被当 handler 分发
+    await expect(registered.get('domain:test-enum')?.(undefined, { action: 'toString' })).resolves.toEqual({
+      success: false,
+      error: { code: 'INVALID_ACTION', message: 'Unknown action: toString' },
+    });
+    await expect(registered.get('domain:test-enum')?.(undefined, { action: 'constructor' })).resolves.toEqual({
+      success: false,
+      error: { code: 'INVALID_ACTION', message: 'Unknown action: constructor' },
+    });
   });
 
   it('handler 抛错 → INTERNAL_ERROR + message（无领域 code 判定时）', async () => {

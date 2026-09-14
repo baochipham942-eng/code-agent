@@ -74,7 +74,7 @@ export function installDomainRoutes<Req extends DomainRouteRequest, Ctx>(
     );
   }
 
-  const missing = [...schemaActions].filter((action) => !(action in table.actions));
+  const missing = [...schemaActions].filter((action) => !Object.hasOwn(table.actions, action));
   if (missing.length > 0) {
     throw new Error(
       `[domainRoutes] ${table.channel}: schema 声明了但表缺 action [${missing.join(', ')}]——表与 schema 漂移，拒绝装配`,
@@ -84,7 +84,10 @@ export function installDomainRoutes<Req extends DomainRouteRequest, Ctx>(
   target.handle(table.channel, async (_event: unknown, raw: unknown) => {
     const request = raw as { action?: unknown; payload?: unknown } | null | undefined;
     const action = request && typeof request === 'object' ? request.action : undefined;
-    const handler = typeof action === 'string' ? (table.actions as Record<string, DomainRouteHandler<Ctx, unknown>>)[action] : undefined;
+    // hasOwn 而非索引直取/in：挡 Object.prototype 继承键（toString/constructor 等）被当成合法 action 分发
+    const handler = typeof action === 'string' && Object.hasOwn(table.actions, action)
+      ? (table.actions as Record<string, DomainRouteHandler<Ctx, unknown>>)[action]
+      : undefined;
 
     if (!handler) {
       // 未知 action 兜底，对齐 session.ipc.ts:304-311 现状语义

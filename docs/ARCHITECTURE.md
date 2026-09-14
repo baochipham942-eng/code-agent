@@ -127,6 +127,7 @@ flowchart LR
 | 产物按 deliverable / material / receipt 显式登记角色，不从文件名猜是否交付 | [ADR-055](./architecture/decisions/ADR-055-artifact-role-axis.md)；`src/shared/contract/artifactRoleRegistry.ts` |
 | 评测中心经内部能力包装载，普通发行包保留反馈与诊断 | [ADR-060](./architecture/decisions/ADR-060-internal-feature-runtime-loader.md)；`packages/internal/evaluation-center/README.md` |
 | bash 出网按目的地审批，子进程凭据 strip 后注入引用、仅网络命令回填 | [ADR-066](./architecture/decisions/ADR-066-egress-domain-allowlist-and-secret-sentinel.md)（待爸拍板） |
+| peer 消息来源由宿主入队铸造，peer 起源的写/执行必过人工卡，洗白按否认指纹 BLOCK | [ADR-067](./architecture/decisions/ADR-067-peer-message-provenance-and-laundering-guard.md)（待爸拍板） |
 
 ## 6. C4 视图
 
@@ -733,3 +734,4 @@ Context Health 的 bySource 是当前消息、system prompt 与已挂载技能�
 | 057 | 审批拒绝来源由处理器自报，账本不许把机器判断记成 user | accepted | `docs/releases/architecture-changelog.md` |
 | 058 | devModeAutoApprove 只在显式 dev 槽生效，机器批准独立留痕 | accepted | `docs/releases/architecture-changelog.md` |
 | 066 | 出网目的地白名单与凭据哨兵（profile 环回例外 + 宿主代理 + `secureref:env.*`） | 待爸拍板 | [ADR-066](./architecture/decisions/ADR-066-egress-domain-allowlist-and-secret-sentinel.md) |
+| 067 | peer 消息来源铸造与权限洗白闸（provenance envelope + origin-aware permission + denial ledger） | 待爸拍板 | [ADR-067](./architecture/decisions/ADR-067-peer-message-provenance-and-laundering-guard.md) |

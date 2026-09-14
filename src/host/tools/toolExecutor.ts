@@ -2069,9 +2069,14 @@ export class ToolExecutor {
       if (approved) {
         const approvalSource = ask.approvalSource ?? 'unspecified';
         traceBuilder.addStep('plan_approval', 'ask_approved', 'allow', `审批放行（来源：${approvalSource}）`);
-        // ADR-067 D4：同一指纹其后被人批准 → 洗白信号复位，恢复正常判定
-        if (actionFingerprint && effectiveSessionId) {
-          getDenialRegistry().clear(effectiveSessionId, actionFingerprint);
+        // ADR-067 D4：按**实际批准生效的参数**重算指纹后复位——审批卡上改过参数时
+        // params 已是编辑后的那份（上面的 applyEditedArgs 只在这里替换）：批准 B 只清
+        // B 的登记（若有），被拒的 A 的登记自然保留，不许用修改前指纹误清。
+        const approvedFingerprint = effectiveSessionId && toolDef.permissionLevel !== 'read'
+          ? computeActionFingerprint(executionToolName, params, bashWorkingDirectory)
+          : null;
+        if (approvedFingerprint && effectiveSessionId) {
+          getDenialRegistry().clear(effectiveSessionId, approvedFingerprint);
         }
         recordDecision(executionToolName, params, 'ask-approved', approvalSource, permStartTime, traceBuilder.build('allow'), effectiveSessionId, this.ledgerOrigin, getApprovalWaitMs(options.currentToolCallId, Date.now()));
       }

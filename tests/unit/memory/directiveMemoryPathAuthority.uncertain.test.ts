@@ -172,6 +172,62 @@ describe('红线：确定写记忆目录、env 展开命中、或路径边界字
     );
   });
 
+  it('ai-review 四轮 Important 原例：后出现的同名赋值不可回污染先前的重定向', () => {
+    // OUT=<记忆目录>; echo x > "$OUT/a"; OUT=/tmp; echo y > "$OUT/b"
+    // 全局 last-wins 合并会把第一条按 /tmp 误判漏门——第一条必须按 /记忆目录 门住，
+    // 第二条按 /tmp 不门。
+    const assessment = assessBash(
+      { command: `OUT=${MEMORY_DIR}; echo x > "$OUT/a"; OUT=/tmp; echo y > "$OUT/b"` },
+      {},
+    );
+    expect(assessment.requiresConfirmation).toBe(true);
+    expect(assessment.targets).toContain(resolveCanonicalRunPath(path.join(MEMORY_DIR, 'a')));
+    expect(assessment.targets).not.toContain(resolveCanonicalRunPath('/tmp/b'));
+  });
+
+  it('ai-review 四轮 Important 反向例：先前的赋值对后出现的重定向可见', () => {
+    // OUT=/tmp; echo x > "$OUT/a"; OUT=<记忆目录>; echo y > "$OUT/b"
+    // 第一条按 /tmp 不门，第二条按 /记忆目录 门住。
+    const assessment = assessBash(
+      { command: `OUT=/tmp; echo x > "$OUT/a"; OUT=${MEMORY_DIR}; echo y > "$OUT/b"` },
+      {},
+    );
+    expect(assessment.requiresConfirmation).toBe(true);
+    expect(assessment.targets).toContain(resolveCanonicalRunPath(path.join(MEMORY_DIR, 'b')));
+    expect(assessment.targets).not.toContain(resolveCanonicalRunPath('/tmp/a'));
+  });
+
+  it('前缀赋值只作用于所附 execution，不污染后续段', () => {
+    // OUT=/tmp true; OUT=<记忆目录> sh -c 'echo > "$OUT/b"'
+    // 第一段的前缀 OUT=/tmp 不许持久化；第二段前缀 OUT=<记忆目录> 作用于内嵌脚本 → 门住。
+    const assessment = assessBash(
+      { command: `OUT=/tmp true; OUT=${MEMORY_DIR} sh -c 'echo > "$OUT/b"'` },
+      {},
+    );
+    expect(assessment.requiresConfirmation).toBe(true);
+    expect(assessment.targets).toEqual([resolveCanonicalRunPath(path.join(MEMORY_DIR, 'b'))]);
+  });
+
+  it('env 包装的前缀赋值（env OUT=<记忆目录> sh -c …）→ 门住', () => {
+    const assessment = assessBash(
+      { command: `env OUT=${MEMORY_DIR} sh -c 'echo > "$OUT/c"'` },
+      {},
+    );
+    expect(assessment.requiresConfirmation).toBe(true);
+    expect(assessment.targets).toEqual([resolveCanonicalRunPath(path.join(MEMORY_DIR, 'c'))]);
+  });
+
+  it('内嵌脚本里的独立赋值段按序结算（sh -c 内 OUT=<记忆目录>; …> "$OUT/d"）→ 门住', () => {
+    // 前三轮的已知局限，第四轮随作用域递归解开：内嵌脚本是一个新顺序序列，
+    // 段内赋值对同脚本后续段可见。
+    const assessment = assessBash(
+      { command: `sh -c 'OUT=${MEMORY_DIR}; echo > "$OUT/d"'` },
+      {},
+    );
+    expect(assessment.requiresConfirmation).toBe(true);
+    expect(assessment.targets).toEqual([resolveCanonicalRunPath(path.join(MEMORY_DIR, 'd'))]);
+  });
+
   it('glob 目标在路径边界上指向记忆目录 → fail-closed 要求确认', () => {
     const assessment = assessBash({
       command: 'echo hi > ~/.code-agent/memory/*.md',

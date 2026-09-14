@@ -479,6 +479,25 @@ describe('ToolExecutor directive memory — headless（无交互界面）策略'
     expect(result.metadata).toMatchObject({ code: 'DIRECTIVE_MEMORY_CONFIRMATION_REQUIRED' });
     expect(mocks.execute).not.toHaveBeenCalled();
   });
+
+  it('红线：同名赋值先后出现时，前一条重定向按它所属 execution 的赋值门住（ai-review 四轮原例）', async () => {
+    const executor = new ToolExecutor({
+      workingDirectory: '/tmp',
+      requestPermission: vi.fn(async () => ({ approved: false, denialSource: 'no-approval-ui' as const })),
+    });
+    executor.setAuditEnabled(false);
+
+    const result = await executor.execute(
+      'Bash',
+      { command: `OUT=${memoryDir}; echo x > "$OUT/a"; OUT=/tmp; echo y > "$OUT/b"` },
+      { preApprovedTools: new Set(['Bash']) },
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe(DIRECTIVE_MEMORY_HEADLESS_NO_UI_ERROR);
+    expect(result.metadata).toMatchObject({ code: 'DIRECTIVE_MEMORY_CONFIRMATION_REQUIRED' });
+    expect(mocks.execute).not.toHaveBeenCalled();
+  });
 });
 
 describe('ToolExecutor file ownership authority', () => {

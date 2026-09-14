@@ -8,30 +8,6 @@ import type {
 import { getMemoryDir } from '../lightMemory/indexLoader';
 import { resolveCanonicalRunPath } from '../runtime/runContext';
 import { canonicalizeCommand, ANSI_C_ESCAPES } from '../security/canonicalizeCommand';
-import { parseShellCommand } from '../security/commandParse';
-
-/**
- * 命令里的字面环境变量赋值（PR #1790 三轮 ai-review Important）。
- * shell 语义：命令内 `OUT=x; …> "$OUT/f"` 用的是 x，与进程导出的 env 无关——只拿
- * process.env 展开 `$OUT` 会漏掉这个形态，让确定写记忆目录的命令逃过 directive
- * 记忆门。复用 commandParse 已暴露的 `environmentAssignments`（独立赋值段由
- * expandSegments 进 carried、前缀赋值 `OUT=x cmd` 直接挂 execution，shell-quote
- * 已把引号值化）。值含 `$`/`反引号` 的（`OUT=$(date)`、`OUT=$OTHER` 链到查不到的）
- * 不是字面值，跳过——展开不了，与 uncertain 的既有残余同口径：不门。
- * 已知局限：`sh -c 'OUT=x; …>$OUT/f'` 这种赋值藏在内嵌脚本里的形态不在本函数
- * 视野内（parser 的嵌套展开不给内嵌脚本回填赋值表），按展开不了处理。
- */
-export function shellLiteralAssignments(command: string): Record<string, string> {
-  const assignments: Record<string, string> = {};
-  for (const execution of parseShellCommand(command).executions) {
-    for (const assignment of execution.environmentAssignments ?? []) {
-      const match = /^([A-Za-z_][A-Za-z0-9_]*)=([\s\S]*)$/.exec(assignment);
-      if (!match || /[$`]/.test(match[2])) continue;
-      assignments[match[1]] = match[2];
-    }
-  }
-  return assignments;
-}
 
 export interface ResolveToolWriteTargetsInput {
   definition: ToolDefinition;
@@ -275,8 +251,8 @@ function argumentWriteTargets(words: string[]): string[] {
 /** 内嵌脚本宿主：`bash`/`sh`/`zsh`/`dash` 的 `-c` 后面第一个词是脚本。 */
 const NESTED_SCRIPT_SHELLS = new Set(['bash', 'sh', 'zsh', 'dash']);
 
-/** `bash -c '...'` 内嵌脚本的写目标（原始词，值化在出口统一做）。 */
-function nestedScriptTargets(words: string[]): string[] {
+/** `bash -c '...'` / eval 内嵌脚本的**文本**（词→脚本文本的值化在这步做，递归产物不多解）。 */
+function nestedScriptTexts(words: string[]): string[] {
   if (words.length < 2) return []; // eval 只要两个词（eval + 脚本）；shell 的 -c 循环自带界
   // PR #1709 复审⑤（二裁维持）：保引号分词后整段脚本是一个引号词，基线靠 canonicalize
   // 拍平顺带抓到，换成保真词法后必须主动找——而且不能只看 words[0]：`env bash -c`、
@@ -292,19 +268,114 @@ function nestedScriptTargets(words: string[]): string[] {
     // 这是「字面脚本在参数里」家族的最后一种形状：外部包装器由上面的剥壳扫描覆盖，
     // 脚本走变量的命中 $ 进 uncertain，source <(…)/ssh 远程执行超出本族。
     if (wordValue === 'eval') {
-      return collectShellTargets(words.slice(shellIndex + 1).map(shellWordValue).join(' '));
+      return [words.slice(shellIndex + 1).map(shellWordValue).join(' ')];
     }
     if (!NESTED_SCRIPT_SHELLS.has(wordValue)) continue;
     for (let flagIndex = shellIndex + 1; flagIndex < words.length - 1; flagIndex += 1) {
       const flag = shellWordValue(words[flagIndex]);
       if (/^-[a-zA-Z]*c[a-zA-Z]*$/.test(flag)) {
-        // 脚本词先值化成脚本文本（这是词→文本的必要一步），递归产物仍是原始词，不多解。
-        return collectShellTargets(shellWordValue(words[flagIndex + 1]));
+        return [shellWordValue(words[flagIndex + 1])];
       }
     }
     return [];
   }
   return [];
+}
+
+/** `bash -c '...'` 内嵌脚本的写目标（原始词，值化在出口统一做）。 */
+function nestedScriptTargets(words: string[]): string[] {
+  return nestedScriptTexts(words).flatMap(collectShellTargets);
+}
+
+export interface ScopedUncertainRedirect {
+  /** 词法值化后的重定向目标词（与 uncertain-redirection:<word> 同一条分词/值化管线，同形状）。 */
+  word: string;
+  /** 该词所属 execution 的字面赋值环境（已按段序与作用域结算）。 */
+  assignments: Record<string, string>;
+}
+
+/**
+ * 段首字面赋值词（`OUT=x` / `OUT="x y"`）。纯 `env` 包装词跳过（`env OUT=x cmd` 的
+ * 赋值作用于其后命令）；值含 `$`/反引号 的非字面值仍占赋值位但不进 map（shell 里
+ * 它确实是赋值，只是展开不了——后续查找查不到，按残余不门）。
+ */
+function leadingLiteralAssignments(words: string[]): {
+  map: Record<string, string>;
+  assignmentOnly: boolean;
+} {
+  const map: Record<string, string> = {};
+  let index = 0;
+  let sawAssignment = false;
+  if (index < words.length && path.basename(shellWordValue(words[index])) === 'env') index += 1;
+  const envPrefixed = index > 0;
+  for (; index < words.length; index += 1) {
+    const match = /^([A-Za-z_][A-Za-z0-9_]*)=([\s\S]*)$/.exec(shellWordValue(words[index]));
+    if (!match) break;
+    sawAssignment = true;
+    if (!/[$`]/.test(match[2])) map[match[1]] = match[2];
+  }
+  // `env OUT=x` 整段是跑 env 工具，不是持久赋值；只有裸赋值段才改变后续段的 shell 环境。
+  return { map, assignmentOnly: sawAssignment && index === words.length && !envPrefixed };
+}
+
+function collectScopedUncertain(
+  command: string,
+  inherited: Record<string, string>,
+  out: ScopedUncertainRedirect[],
+): void {
+  const tokens = tokenizeShellCommand(command);
+  const persisted = { ...inherited };
+  let words: string[] = [];
+  let redirects: string[] = [];
+  const flushSegment = (): void => {
+    const leading = leadingLiteralAssignments(words);
+    if (leading.assignmentOnly) {
+      // 独立赋值段：持久化到后续段（shell 语义）；前缀赋值只作用于所附段，不进 persisted。
+      Object.assign(persisted, leading.map);
+    } else if (words.length > 0) {
+      const scope = { ...persisted, ...leading.map };
+      for (const raw of redirects) {
+        const valued = shellWordValue(raw);
+        // 空词（旧 uncertain-redirection:<missing> 从不命中证据）跳过；确定目标由
+        // shellWriteTargets 的 targets 面判，这里只收解析不出的。
+        if (!valued || !/[$`*?{}]/.test(valued)) continue;
+        out.push({ word: valued, assignments: scope });
+      }
+      for (const script of nestedScriptTexts(words)) {
+        collectScopedUncertain(script, scope, out);
+      }
+    }
+    words = [];
+    redirects = [];
+  };
+  for (const token of tokens) {
+    if (token.kind === 'separator') flushSegment();
+    else if (token.kind === 'word') words.push(token.raw);
+    else redirects.push(token.raw);
+  }
+  flushSegment();
+}
+
+/**
+ * 不确定重定向目标 + 各自所属 execution 的字面赋值环境（PR #1790 三/四轮 ai-review Important）。
+ * 三轮只拿 process.env 展开 `$VAR`，识别不了命令内赋值；四轮前的全局 last-wins 合并又把
+ * `OUT=/memory; …> "$OUT/a"; OUT=/tmp; …> "$OUT/b"` 的第一条按 /tmp 误判漏门——shell 语义：
+ * 同一顺序序列里先出现的赋值对后出现的重定向可见，后出现的不可回污染先前；前缀赋值
+ * `OUT=x cmd` 只作用于所附 execution。`sh -c '…'`/eval 内嵌脚本带作用域递归，脚本内的
+ * 独立赋值段同样按序结算。
+ * ponytail: 仍看不到的是命令产物型赋值（`source env.sh`、`env -i …` 清空的包装、
+ * sudo/doas 后的前缀赋值）——升级路径是让 commandParse 把 per-execution
+ * environmentAssignments 直接带上 ShellWriteTarget（parsed 结构已具备），届时本 walk
+ * 可整体退役，别再往上堆特判。
+ */
+export function shellScopedUncertainRedirects(command: string): ScopedUncertainRedirect[] {
+  const out: ScopedUncertainRedirect[] = [];
+  collectScopedUncertain(
+    splitUnescapedNewlines(command.replace(/\\(?:\r\n?|\n)/g, '')),
+    {},
+    out,
+  );
+  return out;
 }
 
 /** 收集写目标原始词（引号/转义还在词上）；词法值化只在 shellWriteTargets 出口做一遍。 */

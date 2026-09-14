@@ -5,7 +5,7 @@ import type {
 } from '../../shared/contract';
 import { getMemoryDir } from '../lightMemory/indexLoader';
 import { resolveCanonicalRunPath } from '../runtime/runContext';
-import { hasPathBoundaryMention, resolveToolPath, resolveToolWriteTargets, shellLiteralAssignments } from '../tools/writeTargets';
+import { hasPathBoundaryMention, resolveToolPath, resolveToolWriteTargets, shellScopedUncertainRedirects } from '../tools/writeTargets';
 import type { DirectiveMemoryConfirmationResult } from './directiveMemoryConfirmation';
 
 export interface DirectiveMemoryWriteAssessment {
@@ -33,9 +33,6 @@ function isInside(candidate: string, root: string): boolean {
   return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
 }
 
-/** uncertain 条目里唯一带路径词的前缀；`uncertain:<param>` 与 `uncertain-command-analysis:<reason>` 没有路径载荷。 */
-const UNCERTAIN_REDIRECTION_PREFIX = 'uncertain-redirection:';
-
 /** 与 writeTargets 出口同口径：含这些字符的目标解析不出确定路径。 */
 const EXPANSION_MARKERS = /[$`*?{}]/;
 
@@ -60,22 +57,22 @@ function expandWithEnv(
 }
 
 /**
- * 判定一条 uncertain 是否指向记忆目录，返回要并入确认面的目标（undefined = 不门）。
- * ai-review Important（PR #1790）：变量重定向必须先用这次调用实际 env 展开核验——
+ * 判定一个解析不出的重定向目标词是否指向记忆目录，返回要并入确认面的目标
+ * （undefined = 不门）。ai-review Important（PR #1790 二至四轮）：变量重定向必须先
+ * 用它所属 execution 的赋值环境（命令内字面赋值按段序与作用域结算，见
+ * writeTargets.shellScopedUncertainRedirects；再回落本次调用的 env）展开核验——
  * `OUT=~/.code-agent/memory; echo hi > "$OUT/f.md"` 不能靠「解析不出」逃过确认门。
  * 展开后落进记忆目录 → 门住；展开后在目录外 → 不门；变量查不到 / 仍含 `$(...)` 等
  * 展开不了的 → 只做字面证据判定，字面也没证据就不门（有意接受的残余：对展开不了的
  * 一律 fail-closed 正是 RQ-066 要治的病，全量 fail-closed 不许回退）。
  */
-function uncertainMemoryTarget(
-  entry: string,
+function uncertainWordTarget(
+  word: string,
   memoryDir: string,
   memoryAlias: string,
   workingDirectory: string,
   lookup: (name: string) => string | undefined,
 ): string | undefined {
-  if (!entry.startsWith(UNCERTAIN_REDIRECTION_PREFIX)) return undefined;
-  const word = entry.slice(UNCERTAIN_REDIRECTION_PREFIX.length);
   const candidate = expandWithEnv(word, lookup) ?? word;
   if (!EXPANSION_MARKERS.test(candidate)) {
     // 完全展开（或本就没有变量）：按确定目标核验真实去向。
@@ -86,7 +83,7 @@ function uncertainMemoryTarget(
   // （Nit：普通文本顺带提到 .code-agent/memory 不算证据）。
   return hasPathBoundaryMention(candidate, memoryDir)
     || hasPathBoundaryMention(candidate, memoryAlias)
-    ? entry
+    ? word
     : undefined;
 }
 
@@ -111,21 +108,28 @@ export function assessDirectiveMemoryWrite(input: AssessInput): DirectiveMemoryW
   // 字面值命中）完全不受影响。
   const memoryAlias = path.join(path.basename(path.dirname(memoryDir)), path.basename(memoryDir));
   const env = input.env ?? {};
-  // 展开 $VAR 的查找顺序（shell 语义，PR #1790 三轮 ai-review Important）：
-  // 命令内字面赋值优先（`OUT=x; …> "$OUT/f"` 用的是 x，与导出 env 无关）→ 再回落
-  // AssessInput.env（process.env 基准）。赋值解析复用 commandParse 的
-  // environmentAssignments，见 writeTargets.shellLiteralAssignments。
-  const commandAssignments: Record<string, string> = {};
-  for (const descriptor of input.definition.pathAuthority ?? []) {
-    if (descriptor.kind !== 'shell') continue;
-    const command = input.params[descriptor.commandParameter];
-    if (typeof command === 'string') Object.assign(commandAssignments, shellLiteralAssignments(command));
-  }
-  const lookup = (name: string): string | undefined => commandAssignments[name] ?? env[name];
+  // 展开 $VAR 的查找（shell 语义，PR #1790 三/四轮 ai-review Important）：逐条不确定
+  // 重定向用它**所属 execution** 的字面赋值环境（命令内赋值按段序与作用域结算：
+  // 独立赋值段对后续可见、不回污染先前，前缀赋值只作用于所附段，见
+  // writeTargets.shellScopedUncertainRedirects）→ 再回落 AssessInput.env
+  // （process.env 基准）。全局 last-wins 合并会把先后的同名赋值拍平，四轮审查原例
+  // `OUT=/memory; …> "$OUT/a"; OUT=/tmp; …> "$OUT/b"` 第一条因此被误判漏门。
+  const scopedUncertain = (input.definition.pathAuthority ?? [])
+    .filter((descriptor) => descriptor.kind === 'shell')
+    .flatMap((descriptor) => {
+      const command = input.params[descriptor.commandParameter];
+      return typeof command === 'string' ? shellScopedUncertainRedirects(command) : [];
+    });
   const targets = [
     ...resolved.targets.filter((target) => isInside(target, memoryDir)),
-    ...resolved.uncertain
-      .map((entry) => uncertainMemoryTarget(entry, memoryDir, memoryAlias, input.workingDirectory, lookup))
+    ...scopedUncertain
+      .map(({ word, assignments }) => uncertainWordTarget(
+        word,
+        memoryDir,
+        memoryAlias,
+        input.workingDirectory,
+        (name) => assignments[name] ?? env[name],
+      ))
       .filter((target): target is string => target !== undefined),
   ];
   const uniqueTargets = [...new Set(targets)].sort();

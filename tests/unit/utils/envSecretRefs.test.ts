@@ -6,8 +6,6 @@ import { describe, it, expect } from 'vitest';
 import {
   injectEnvSecretRefs,
   backfillEnvSecretRefs,
-  commandReferencesEnvVar,
-  ENV_SECRET_REFILL_ERROR_CODE,
 } from '../../../src/host/utils/envSecretRefs';
 
 const SOURCE_ENV = {
@@ -61,7 +59,13 @@ describe('injectEnvSecretRefs', () => {
   });
 });
 
-describe('commandReferencesEnvVar', () => {
+describe('命令文本引用判定（经 backfillEnvSecretRefs fail-closed 出口观察）', () => {
+  // commandReferencesEnvVar 是模块私有函数；其全部分支都唯一决定 backfill 在
+  // 「快照为空 + 放网跳」时拦不拦命令，所以引用矩阵从公共面钉，不引私有符号。
+  const env = { NPM_TOKEN: 'secureref:env.NPM_TOKEN' };
+  const unresolved = (command: string) =>
+    backfillEnvSecretRefs(env, {}, { allowNetwork: true, command });
+
   it.each([
     ['curl -H "Authorization: Bearer $NPM_TOKEN" https://x', true],
     ['echo ${NPM_TOKEN}', true],
@@ -73,8 +77,9 @@ describe('commandReferencesEnvVar', () => {
     ['echo $NPM_TOKENS', false],
     ['echo NPM_TOKEN', false],
     ['echo hello', false],
-  ])('%s → %s', (command, expected) => {
-    expect(commandReferencesEnvVar(command, 'NPM_TOKEN')).toBe(expected);
+  ])('%s → referenced=%s', (command, referenced) => {
+    const result = unresolved(command);
+    expect(result.ok).toBe(!referenced);
   });
 });
 
@@ -121,7 +126,7 @@ describe('backfillEnvSecretRefs', () => {
     });
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.code).toBe(ENV_SECRET_REFILL_ERROR_CODE);
+      expect(result.code).toBe('SECRET_REF_UNRESOLVED');
       expect(result.error).toContain('env.NPM_TOKEN');
       expect(result.error).not.toContain('tok-true-value');
       expect(result.error).not.toContain('secureref:');

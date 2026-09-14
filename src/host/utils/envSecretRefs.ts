@@ -21,7 +21,7 @@
 
 import { encodeSecretRef, parseSecretRef } from '../mcp/secretRef';
 
-export const ENV_SECRET_REFILL_ERROR_CODE = 'SECRET_REF_UNRESOLVED';
+const ENV_SECRET_REFILL_ERROR_CODE = 'SECRET_REF_UNRESOLVED';
 
 const ENV_INTEGRATION_ID = 'env';
 
@@ -79,7 +79,7 @@ export type EnvSecretRefillResult =
   | { ok: false; error: string; code: typeof ENV_SECRET_REFILL_ERROR_CODE };
 
 /** 命令文本是否引用了该环境变量（$FOO / ${FOO} / ${FOO:-x} / ${#FOO} 等形态）。 */
-export function commandReferencesEnvVar(command: string, name: string): boolean {
+function commandReferencesEnvVar(command: string, name: string): boolean {
   const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return new RegExp(
     `\\$\\{#?${escaped}(?=[\\s}:/=%+?-])|\\$${escaped}(?![A-Za-z0-9_])`,

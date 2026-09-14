@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { isChildGone } from './childProcessState';
+import { resolveMutationAcceptanceExitCode } from './mutationExitCode';
 import { BACKGROUND_SUBAGENT_INTERRUPTED_REASON } from '../../src/host/agent/backgroundSubagentDurableLedger';
 
 const root = path.resolve(import.meta.dirname, '../..');
@@ -150,9 +151,9 @@ try {
       : null,
   })}\n`);
   if (mutation && pass) {
-    process.stderr.write(`mutation ${mutation} expected the acceptance to fail but gates stayed green\n`);
+    process.stderr.write(`mutation ${mutation} not caught: gates stayed green — 变异未被抓到,验收无效\n`);
   }
-  finalExitCode = pass ? 0 : 1;
+  finalExitCode = resolveMutationAcceptanceExitCode(pass, mutation);
 } finally {
   await rm(tempRoot, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 });
 }

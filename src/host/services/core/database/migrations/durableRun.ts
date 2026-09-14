@@ -126,6 +126,12 @@ export function rollbackDurableRunMigrationDraft(db: BetterSqlite3.Database): vo
  * 否则先合者加的 'loop' 会被后合者抹掉。已含 'subagent_single' 则 no-op
  * （不碰 foreign_keys、不搬表）；解析不出 CHECK 清单则 throw，拒绝 widen（fail-closed）。
  *
+ * ai-review 修复（2026-09-14）：重建搬数据不再写死列清单——若已有库被其他迁移加过列，
+ * 写死清单会静默丢列丢数据。改为建新表后用 PRAGMA table_info 动态读双方列、只搬交集；
+ * 现有表出现新表 DDL 不认识的列则 throw 拒绝迁移（fail-closed：宁可拒迁也不静默丢
+ * 数据，由人工决定那列往哪去）。反向（新表有、旧表没有的列）靠列默认值/可空兜底，
+ * 若新列是 NOT NULL 无默认，INSERT 会当场报错回滚，同样是 fail-closed。
+ *
  * 子表（attempts/events/...）带 ON DELETE CASCADE 外键指向 durable_runs，DROP 母表
  * 时若 foreign_keys 还开着会把子表行级联清掉，所以重建全程在 foreign_keys=OFF 下做
  * （pragma 在事务外切换才生效），结束后恢复。索引随 DROP TABLE 一起消失，由上面
@@ -147,18 +153,18 @@ function widenDurableRunsEngineKindCheck(db: BetterSqlite3.Database): void {
   db.pragma('foreign_keys = OFF');
   try {
     db.transaction(() => {
+      db.exec(createDurableRunsTableSql('durable_runs_new', widened, false));
+      const oldColumns = tableColumns(db, 'durable_runs');
+      const newColumns = tableColumns(db, 'durable_runs_new');
+      const dropped = oldColumns.filter((column) => !newColumns.includes(column));
+      if (dropped.length > 0) {
+        throw new Error(
+          `durable_runs has columns the rebuild DDL does not know: ${dropped.join(',')}; refuse to widen (would silently drop data)`,
+        );
+      }
+      const shared = newColumns.filter((column) => oldColumns.includes(column)).map(quoteSqlIdent).join(', ');
       db.exec(`
-        ${createDurableRunsTableSql('durable_runs_new', widened, false)};
-        INSERT INTO durable_runs_new (
-          run_id, session_id, parent_run_id, engine_kind, engine_ref_json, status, attempt,
-          next_event_seq, checkpoint_seq, envelope_json, owner_id, process_instance_id,
-          owner_epoch, lease_expires_at, terminal_event_seq, terminal_at, created_at, updated_at
-        )
-        SELECT
-          run_id, session_id, parent_run_id, engine_kind, engine_ref_json, status, attempt,
-          next_event_seq, checkpoint_seq, envelope_json, owner_id, process_instance_id,
-          owner_epoch, lease_expires_at, terminal_event_seq, terminal_at, created_at, updated_at
-        FROM durable_runs;
+        INSERT INTO durable_runs_new (${shared}) SELECT ${shared} FROM durable_runs;
         DROP TABLE durable_runs;
         ALTER TABLE durable_runs_new RENAME TO durable_runs;
       `);
@@ -166,6 +172,11 @@ function widenDurableRunsEngineKindCheck(db: BetterSqlite3.Database): void {
   } finally {
     db.pragma('foreign_keys = ON');
   }
+}
+
+function tableColumns(db: BetterSqlite3.Database, tableName: string): string[] {
+  return (db.pragma(`table_info(${quoteSqlIdent(tableName)})`) as Array<{ name: string }>)
+    .map((column) => column.name);
 }
 
 function parseEngineKindsFromCreateSql(sql: string): string[] | null {

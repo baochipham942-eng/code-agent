@@ -259,4 +259,64 @@ describe('Durable Run migration draft', () => {
       .toEqual([{ run_id: 'run-future', engine_kind: 'future_x' }]);
     db.close();
   });
+
+  it('refuses to widen when another migration added a column the rebuild DDL does not know (ai-review 2026-09-14)', () => {
+    const db = new Database(':memory:');
+    db.pragma('foreign_keys = ON');
+    createLegacyDurableRuns(db, "'native'");
+    db.exec(`ALTER TABLE durable_runs ADD COLUMN sync_revision INTEGER`);
+    db.prepare(`
+      INSERT INTO durable_runs
+        (run_id, session_id, engine_kind, status, attempt, envelope_json, created_at, updated_at, sync_revision)
+        VALUES ('run-extra', 'session-1', 'native', 'running', 1, '{}', 1, 1, 42)
+    `).run();
+
+    expect(() => applyDurableRunMigrationDraft(db)).toThrow(/refuse to widen/);
+
+    // fail-closed：事务回滚，原表、原列、原数据原样还在；foreign_keys 恢复 ON。
+    expect(db.prepare('SELECT run_id, sync_revision FROM durable_runs').all())
+      .toEqual([{ run_id: 'run-extra', sync_revision: 42 }]);
+    expect(db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'durable_runs_new'").all())
+      .toEqual([]);
+    expect(db.pragma('foreign_keys', { simple: true })).toBe(1);
+    db.close();
+  });
+
+  it('copies only the column intersection when the existing table predates a nullable column', () => {
+    const db = new Database(':memory:');
+    db.pragma('foreign_keys = ON');
+    // 模拟更老的库：还没有可空列 engine_ref_json。交集复制后新表该列落 NULL，不炸不丢行。
+    db.exec(`
+      CREATE TABLE durable_runs (
+        run_id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        parent_run_id TEXT,
+        engine_kind TEXT NOT NULL CHECK (engine_kind IN ('native')),
+        status TEXT NOT NULL CHECK (status IN ('created','running','waiting','paused','recovering','completed','failed','cancelled')),
+        attempt INTEGER NOT NULL CHECK (attempt >= 1),
+        next_event_seq INTEGER NOT NULL DEFAULT 1 CHECK (next_event_seq >= 1),
+        checkpoint_seq INTEGER NOT NULL DEFAULT 0 CHECK (checkpoint_seq >= 0),
+        envelope_json TEXT NOT NULL,
+        owner_id TEXT,
+        process_instance_id TEXT,
+        owner_epoch INTEGER NOT NULL DEFAULT 0 CHECK (owner_epoch >= 0),
+        lease_expires_at INTEGER,
+        terminal_event_seq INTEGER,
+        terminal_at INTEGER,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      INSERT INTO durable_runs
+        (run_id, session_id, engine_kind, status, attempt, envelope_json, created_at, updated_at)
+        VALUES ('run-old', 'session-1', 'native', 'running', 1, '{}', 1, 1);
+    `);
+
+    applyDurableRunMigrationDraft(db);
+
+    expect(db.prepare('SELECT run_id, engine_kind, engine_ref_json FROM durable_runs').all())
+      .toEqual([{ run_id: 'run-old', engine_kind: 'native', engine_ref_json: null }]);
+    const sql = (db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'durable_runs'").get() as { sql: string }).sql;
+    expect(sql).toContain("'subagent_single'");
+    db.close();
+  });
 });

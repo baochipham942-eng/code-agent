@@ -30,6 +30,7 @@ import { captureLoopOwnerStamp } from './loopOwnership';
 import {
   LOOP_DURABLE_PARENT_MISSING_CODE,
   LOOP_INTERRUPTED_REASON,
+  LoopDurableLedgerLostError,
   LoopDurableStartError,
   getLoopDurableLedger,
   isLoopDurableArmed,
@@ -196,8 +197,10 @@ export class LoopController {
   }
 
   private async checkpointDispatched(state: LoopRunState): Promise<void> {
+    if (!state.durable) return; // legacy / --ephemeral：不挂账本，行为不变
     const ledger = getLoopDurableLedger();
-    if (!ledger?.isTracked(state.id)) return;
+    // durable 模式账本失联即 fail-closed：抛给 runLoop 收口 failed，不再花钱。
+    if (!ledger) throw new LoopDurableLedgerLostError(state.id);
     await ledger.turnDispatched(state.id, { turn: state.turn, cursor: this.engineCursor(state) });
   }
 
@@ -205,8 +208,9 @@ export class LoopController {
     state: LoopRunState,
     extra: { done?: boolean; waitMs?: number } = {},
   ): Promise<void> {
+    if (!state.durable) return;
     const ledger = getLoopDurableLedger();
-    if (!ledger?.isTracked(state.id)) return;
+    if (!ledger) throw new LoopDurableLedgerLostError(state.id);
     await ledger.turnCompleted(state.id, {
       turn: state.turn,
       cursor: this.engineCursor(state),
@@ -216,6 +220,8 @@ export class LoopController {
 
   private async finalizeDurable(state: LoopRunState): Promise<void> {
     const ledger = getLoopDurableLedger();
+    // untracked = 账本已失联（fence/持久化故障时已停写）；此处不再补写，
+    // durable 行留 running，租约到期由 sweeper 的收口版恢复收成 interrupted_by_restart。
     if (!ledger?.isTracked(state.id)) return;
     const outcome = state.status === 'completed'
       ? 'completed'

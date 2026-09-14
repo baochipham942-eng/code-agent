@@ -11,8 +11,9 @@
 //   2. 每轮双 checkpoint：dispatch 前 operation dispatched + phase=dispatching；
 //      reply 处理完 operation succeeded + turn/nextRunAt/phase=sleeping。
 //   3. 终态：先 checkpoint 收掉未决 operation，再 terminal。
-//   4. 心跳按租约 1/3 间隔；fence 即停写。长 sleep 期间心跳不能停，否则 sweeper
-//      会误认领。
+//   4. 心跳按租约 1/3 间隔。落账 fail-closed：checkpoint 失败（fence 或本地
+//      持久化故障）即停写停心跳并向上抛，LoopController 收到后立刻收口 failed，
+//      不许吞了继续跑未记录轮次——落账失败即不花钱。
 //
 // 开关：assembleDurableRun 在 durable 激活时 arm，configureDurableKernel 时
 // configure；legacy 永不 arm。
@@ -39,6 +40,18 @@ export class LoopDurableStartError extends Error {
     super(message);
     this.name = 'LoopDurableStartError';
     this.code = code;
+  }
+}
+
+const LOOP_DURABLE_LEDGER_LOST_CODE = 'LOOP_DURABLE_LEDGER_LOST';
+
+/** durable loop 的账本已失联（fence 或持久化故障后 untrack）：拒绝再跑未记录轮次。 */
+export class LoopDurableLedgerLostError extends Error {
+  readonly code = LOOP_DURABLE_LEDGER_LOST_CODE;
+
+  constructor(loopId: string) {
+    super(`Durable ledger lost for ${loopId}; refusing to spend untracked loop turns`);
+    this.name = 'LoopDurableLedgerLostError';
   }
 }
 
@@ -137,7 +150,7 @@ export class LoopDurableLedger {
 
   async turnDispatched(loopId: string, input: LoopDurableTurnInput): Promise<void> {
     const live = this.liveRuns.get(loopId);
-    if (!live) return;
+    if (!live) throw new LoopDurableLedgerLostError(loopId);
     const now = input.now ?? Date.now();
     const operation = {
       ...this.kernel.prepareOperation({
@@ -169,14 +182,16 @@ export class LoopDurableLedger {
         }],
       });
     } catch (error) {
-      logger.warn(`loop durable turnDispatched stopped for ${loopId}:`, error);
+      // fence（owner 易主，另一方在续跑）或本地持久化故障：立刻停写停心跳，
+      // 错误上抛给 LoopController 收口终止——不许吞了继续产生未记录轮次。
       this.untrack(loopId);
+      throw error;
     }
   }
 
   async turnCompleted(loopId: string, input: LoopDurableTurnInput): Promise<void> {
     const live = this.liveRuns.get(loopId);
-    if (!live) return;
+    if (!live) throw new LoopDurableLedgerLostError(loopId);
     const now = input.now ?? Date.now();
     const operation = {
       ...this.kernel.prepareOperation({
@@ -213,8 +228,8 @@ export class LoopDurableLedger {
         }],
       });
     } catch (error) {
-      logger.warn(`loop durable turnCompleted stopped for ${loopId}:`, error);
       this.untrack(loopId);
+      throw error;
     }
   }
 

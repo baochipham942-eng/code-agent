@@ -218,7 +218,7 @@ describe('Loop durable ledger (N-LOOP-DURABLE-K2 刀2-b)', () => {
     db.close();
   });
 
-  it('heartbeat fence 后停写：认领后原账本 turnDispatched 不再改行', async () => {
+  it('fence（被认领）后原账本 turnDispatched 上抛停写，行不被改动', async () => {
     const { db, repository, ledger } = createStack('process-1', 1_000);
     await ledger.begin({
       loopId: 'loop_fence',
@@ -240,10 +240,12 @@ describe('Loop durable ledger (N-LOOP-DURABLE-K2 刀2-b)', () => {
     const plans = await recoveredRegistry.recoverDurable(crashedAt);
     expect(plans).toHaveLength(1);
 
-    await ledger.turnDispatched('loop_fence', {
+    // 租约已易主：checkpoint 被 fence，错误上抛且立刻停写停心跳。
+    await expect(ledger.turnDispatched('loop_fence', {
       turn: 1,
       cursor: cursor({ turn: 0, phase: 'dispatching' }),
-    });
+    })).rejects.toThrow(/fenced|ledger lost/i);
+    expect(ledger.isTracked('loop_fence')).toBe(false);
     const after = (await repository.get('loop_fence'))!;
     expect(after.attempt).toBe(2);
     expect(after.pendingOperations ?? []).toEqual([]);
@@ -392,6 +394,129 @@ describe('Loop durable ledger (N-LOOP-DURABLE-K2 刀2-b)', () => {
     await vi.waitFor(async () => {
       expect((await repository.get(state.id))?.status).not.toBe('running');
     });
+    db.close();
+  });
+
+  it('checkpoint 持久化失败上抛：loop 立刻收口 failed，一个模型调用都不发', async () => {
+    const { db, repository, kernel, ledger } = createStack();
+    armLoopDurableLedger();
+    configureLoopDurableLedger(ledger);
+    getApplicationRunRegistry().start({
+      runId: 'run-fg-fail',
+      sessionId: 'session-ckpt-fail',
+      workspace: '/tmp',
+      cwd: '/tmp',
+    });
+    // begin 走 createRun 不经 checkpoint；这一发打在 turn 1 dispatch 前的落账上
+    vi.spyOn(kernel, 'checkpoint').mockRejectedValueOnce(new Error('disk full'));
+    const controller = new LoopController();
+    const state = await controller.start({
+      sessionId: 'session-ckpt-fail',
+      prompt: '盯构建',
+      maxTurns: 5,
+    });
+
+    await vi.waitFor(() => {
+      expect(controller.get(state.id)?.status).toBe('failed');
+    });
+    expect(orchestratorState.sendMessage).not.toHaveBeenCalled();
+    expect(controller.get(state.id)?.error).toContain('disk full');
+    expect(ledger.isTracked(state.id)).toBe(false);
+    const drained = getBackgroundTaskLedger().drainNotifications('session-ckpt-fail');
+    expect(drained).toHaveLength(1);
+    expect(drained[0]).toMatchObject({ taskId: state.id, type: 'task_failed' });
+    // 本进程停写：durable 行留 running，租约到期由 sweeper 收口
+    expect((await repository.get(state.id))?.status).toBe('running');
+    db.close();
+  });
+
+  it('fence：另一进程认领后本进程立刻停写停跑，收口 failed 且不发第二轮', async () => {
+    const { db, repository, ledger } = createStack('process-1', 60_000);
+    armLoopDurableLedger();
+    configureLoopDurableLedger(ledger);
+    getApplicationRunRegistry().start({
+      runId: 'run-fg-fence',
+      sessionId: 'session-fence',
+      workspace: '/tmp',
+      cwd: '/tmp',
+    });
+    let releaseTurn: () => void = () => undefined;
+    orchestratorState.sendMessage.mockImplementationOnce(
+      () => new Promise<void>((resolve) => { releaseTurn = resolve; }),
+    );
+    const controller = new LoopController();
+    const state = await controller.start({
+      sessionId: 'session-fence',
+      prompt: '盯构建',
+      maxTurns: 5,
+    });
+    await vi.waitFor(() => {
+      expect(orchestratorState.sendMessage).toHaveBeenCalledTimes(1);
+    });
+
+    // 另一进程按崩溃恢复视角把 run 认领走（租约早已过期）
+    const kernel2 = new DurableRunKernel({
+      stores: repository,
+      ownerId: 'native-host',
+      processInstanceId: 'process-2',
+      leaseDurationMs: 60_000,
+    });
+    const recoveredRegistry = new RunRegistry();
+    recoveredRegistry.configureDurableKernel(kernel2);
+    const plans = await recoveredRegistry.recoverDurable(Date.now() + 120_000);
+    expect(plans).toHaveLength(1);
+    expect((await repository.get(state.id))?.attempt).toBe(2);
+
+    releaseTurn();
+    await vi.waitFor(() => {
+      expect(controller.get(state.id)?.status).toBe('failed');
+    });
+    expect(controller.get(state.id)?.error).toMatch(/fenced|ledger lost/i);
+    expect(orchestratorState.sendMessage).toHaveBeenCalledTimes(1);
+    // 本进程停写：行归新 owner（认领后等待调度=waiting），attempt 停在 2，不替它收口
+    const after = (await repository.get(state.id))!;
+    expect(after.attempt).toBe(2);
+    expect(after.status).toBe('waiting');
+    expect(after.terminal).toBeUndefined();
+    recoveredRegistry.clear();
+    db.close();
+  });
+
+  it('心跳失联（账本丢失）后下一轮 checkpoint 上抛 LedgerLost，loop 收口 failed', async () => {
+    const { db, kernel, ledger } = createStack('process-1', 900);
+    armLoopDurableLedger();
+    configureLoopDurableLedger(ledger);
+    getApplicationRunRegistry().start({
+      runId: 'run-fg-lost',
+      sessionId: 'session-lost',
+      workspace: '/tmp',
+      cwd: '/tmp',
+    });
+    let releaseTurn: () => void = () => undefined;
+    orchestratorState.sendMessage.mockImplementationOnce(
+      () => new Promise<void>((resolve) => { releaseTurn = resolve; }),
+    );
+    const controller = new LoopController();
+    const state = await controller.start({
+      sessionId: 'session-lost',
+      prompt: '盯构建',
+      maxTurns: 5,
+    });
+    await vi.waitFor(() => {
+      expect(orchestratorState.sendMessage).toHaveBeenCalledTimes(1);
+    });
+
+    vi.spyOn(kernel, 'heartbeat').mockRejectedValue(new Error('Heartbeat fenced by stale owner'));
+    await vi.waitFor(() => {
+      expect(ledger.isTracked(state.id)).toBe(false);
+    });
+
+    releaseTurn();
+    await vi.waitFor(() => {
+      expect(controller.get(state.id)?.status).toBe('failed');
+    });
+    expect(controller.get(state.id)?.error).toContain('Durable ledger lost');
+    expect(orchestratorState.sendMessage).toHaveBeenCalledTimes(1);
     db.close();
   });
 

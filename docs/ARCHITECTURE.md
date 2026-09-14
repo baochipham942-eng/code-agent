@@ -128,6 +128,7 @@ flowchart LR
 | 评测中心经内部能力包装载，普通发行包保留反馈与诊断 | [ADR-060](./architecture/decisions/ADR-060-internal-feature-runtime-loader.md)；`packages/internal/evaluation-center/README.md` |
 | bash 出网按目的地审批，子进程凭据 strip 后注入引用、仅网络命令回填 | [ADR-066](./architecture/decisions/ADR-066-egress-domain-allowlist-and-secret-sentinel.md)（待爸拍板） |
 | peer 消息来源由宿主入队铸造，peer 起源的写/执行必过人工卡，洗白按否认指纹 BLOCK | [ADR-067](./architecture/decisions/ADR-067-peer-message-provenance-and-laundering-guard.md) |
+| 首字节后断流按 provider 能力分档续接：prefix 合同命中时无缝续写，其余诚实分段落库，永不拼两次回答 | [ADR-068](./architecture/decisions/ADR-068-stream-resume-after-first-delta.md)（待爸拍板） |
 
 ## 6. C4 视图
 
@@ -735,3 +736,4 @@ Context Health 的 bySource 是当前消息、system prompt 与已挂载技能�
 | 058 | devModeAutoApprove 只在显式 dev 槽生效，机器批准独立留痕 | accepted | `docs/releases/architecture-changelog.md` |
 | 066 | 出网目的地白名单与凭据哨兵（profile 环回例外 + 宿主代理 + `secureref:env.*`） | 待爸拍板 | [ADR-066](./architecture/decisions/ADR-066-egress-domain-allowlist-and-secret-sentinel.md) |
 | 067 | peer 消息来源铸造与权限洗白闸（provenance envelope + origin-aware permission + denial ledger） | accepted | [ADR-067](./architecture/decisions/ADR-067-peer-message-provenance-and-laundering-guard.md) |
+| 068 | 首字节之后断流续接（provider 能力分档 + 无缝/诚实分段两级 + 独立续接预算） | 待爸拍板 | [ADR-068](./architecture/decisions/ADR-068-stream-resume-after-first-delta.md) |

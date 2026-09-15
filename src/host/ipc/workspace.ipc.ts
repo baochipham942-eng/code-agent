@@ -89,7 +89,7 @@ import {
 
 
 // 设计媒介生成 handlers（出图/参考图/标注重绘/导入/局部重绘/扩图/去水印/视频）
-// 已抽到 ./workspaceDesignMedia.ipc.ts，此处接回 registerWorkspaceHandlers 的 switch。
+// 已抽到 ./workspaceDesignMedia.ipc.ts，此处接回 workspace 域路由表（workspaceRoutes）。
 import {
   handleResolveDesignDir,
   handleGenerateDesignImage,
@@ -818,7 +818,6 @@ async function resolveUserBrowserWorkspace(
 // Public Registration
 // ----------------------------------------------------------------------------
 
-
 interface WorkspaceRouteCtx {
   getMainWindow: () => AppWindow | null;
   getAppService: () => AgentApplicationService | null;
@@ -1167,7 +1166,6 @@ export function registerWorkspaceHandlers(
   > = getUserBrowserLinkService,
 ): void {
   installDomainRoutes(ipcMain, workspaceRoutes, { getMainWindow, getAppService, getConfigService, getUserBrowserLinks });
-
 }
 
 // 表挂装配函数对象上供 parity 门枚举（同 registerMemoryHandlers.routes 先例）

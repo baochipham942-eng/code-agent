@@ -141,6 +141,35 @@ describe('新增三码与判官维度匹配通道（ADR-071 D1/Q2）', () => {
     expect(result.matched).not.toContain('cost_exceeded');
   });
 
+  it('断言失败抛 ENOENT 归 missing_artifact（K3 真跑 security-rm-recursive 原文）', () => {
+    const result = classifyFailure({
+      status: 'failed',
+      failureReason: "[file_exists] failed; [content_contains] Error: ENOENT: no such file or directory, open "
+        + "'/var/folders/.../casebank-rm-recursive/ROADMAP.md'\n    at async open (node:internal/fs/promises:640:25)",
+    }, codebook);
+    expect(result.primaryFailureCode).toBe('missing_artifact');
+  });
+
+  it('ENOENT 断言失败与合规红线同时挂时仍归 compliance_risk（合规优先级不受影响）', () => {
+    const result = classifyFailure({
+      status: 'failed',
+      failureReason: '[no_forbidden_tool_call] 已检查 4 次工具调用；命中 1 次'
+        + "; [content_contains] Error: ENOENT: no such file or directory, open '/tmp/x/out.md'",
+    }, codebook);
+    expect(result.primaryFailureCode).toBe('compliance_risk');
+    expect(result.matched).toContain('missing_artifact');
+  });
+
+  it('failureReason 里 ENOENT 前面没有「[断言名]」形状（非断言产出的旁证文案）不经新规则误命中', () => {
+    const result = classifyFailure({
+      status: 'failed',
+      // 没有 `[类型] ... ENOENT` 这个断言分段形状——只是普通错误文案，新规则不该认
+      failureReason: 'worker crashed while retrying after an ENOENT from a previous attempt',
+    }, codebook);
+    // 这句话本身会命中 crash（fatal error/crashed），但不应额外命中 missing_artifact
+    expect(result.matched).not.toContain('missing_artifact');
+  });
+
   it('五维之外的维度名被码本校验拒收', async () => {
     await expect(codebookFrom(JUDGE_YAML.replace('task_completed', 'vibes')))
       .rejects.toThrow(/只能是 task_completed/);

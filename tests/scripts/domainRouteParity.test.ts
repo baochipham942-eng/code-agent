@@ -41,6 +41,10 @@ import { registerGenerativeUIHandlers } from '../../src/host/ipc/generativeUI.ip
 import { registerFolderTrustHandlers } from '../../src/host/ipc/folderTrust.ipc';
 import { registerHookHandlers } from '../../src/host/ipc/hook.ipc';
 import { registerWorkspaceHandlers } from '../../src/host/ipc/workspace.ipc';
+import { registerAuthHandlers } from '../../src/host/ipc/auth.ipc';
+import { registerRolesHandlers } from '../../src/host/ipc/roles.ipc';
+import { registerConnectorHandlers } from '../../src/host/ipc/connector.ipc';
+import { registerAgentHandlers } from '../../src/host/ipc/agent.ipc';
 import { getShellCapabilities } from '../../src/host/shellCapabilities';
 
 // 结构枚举器挂既有函数对象上（knip 生产档无测试入口，独立 export 必成 dead export）
@@ -62,6 +66,10 @@ const generativeUIRoutes = registerGenerativeUIHandlers.routes;
 const folderTrustRoutes = registerFolderTrustHandlers.routes;
 const hookRoutes = registerHookHandlers.routes;
 const workspaceRoutes = registerWorkspaceHandlers.routes;
+const authRoutes = registerAuthHandlers.routes;
+const rolesRoutes = registerRolesHandlers.routes;
+const connectorRoutes = registerConnectorHandlers.routes;
+const agentRoutes = registerAgentHandlers.routes;
 
 /** 门盯的表清单——新域表化后加进来，门即自动覆盖该域（session 三面走 manifestDomain 断言） */
 const ROUTE_TABLES = [
@@ -83,6 +91,10 @@ const ROUTE_TABLES = [
   { table: folderTrustRoutes, manifestDomain: 'domain:folderTrust' as const },
   { table: hookRoutes, manifestDomain: 'domain:hook' as const },
   { table: workspaceRoutes, manifestDomain: 'domain:workspace' as const },
+  { table: authRoutes, manifestDomain: 'domain:auth' as const },
+  { table: rolesRoutes, manifestDomain: 'domain:roles' as const },
+  { table: connectorRoutes, manifestDomain: 'domain:connector' as const },
+  { table: agentRoutes, manifestDomain: 'domain:agent' as const },
   { table: inlineFixtureTable(), manifestDomain: undefined },
 ];
 
@@ -325,21 +337,19 @@ function collectActualDomainActions(): Map<string, Set<string>> {
   add(IPC_DOMAINS.FOLDER_TRUST, new Set(Object.keys(folderTrustRoutes.actions)));
   add(IPC_DOMAINS.HOOK, new Set(Object.keys(hookRoutes.actions)));
   add(IPC_DOMAINS.WORKSPACE, new Set(Object.keys(workspaceRoutes.actions)));
+  add(IPC_DOMAINS.AUTH, new Set(Object.keys(authRoutes.actions)));
+  add(IPC_DOMAINS.ROLES, new Set(Object.keys(rolesRoutes.actions)));
+  add(IPC_DOMAINS.CONNECTOR, new Set(Object.keys(connectorRoutes.actions)));
+  add(IPC_DOMAINS.AGENT, new Set(Object.keys(agentRoutes.actions)));
   return actual;
 }
 
 /**
- * 缺报棘轮基线（2026-09-15 建门实测 21 域 116 项，此后随域表化逐域整行核销，现存条目以下表为准）：handler 有而清单无的存量项。
- * 清单是壳兼容面、允许策略性少报——但少报集合冻结在此、只减不增：
- * 把某 action 补进 CAPABILITY_DOMAIN_ACTIONS 后必须同步从基线删掉它；
- * 新增 handler action 不登记清单 = 新缺报 = 红，要么补清单要么显式扩基线（PR 里说明理由）。
+ * 缺报棘轮基线：handler 有而清单无的存量项。现状为空（2026-09-15 已全部核销）。
+ * 新增 handler action 必须同时登记到 CAPABILITY_DOMAIN_ACTIONS 清单，否则棘轮红；确需策略性少报时显式扩基线并在 PR 说明理由。
+ * 扩基线后若再把该 action 补进清单，必须同步从基线删掉它（棘轮会以「已补进清单，从基线删掉它」报红）。
  */
-const KNOWN_UNDER_REPORTED_ACTIONS: Readonly<Record<string, readonly string[]>> = {
-  'domain:backgroundTasks': ['drainNotifications', 'getTask', 'listTasks', 'markNotificationDelivered', 'readTaskLog'],
-  'domain:provider': ['delete_realtime_voice_provider'],
-  'domain:surfaceExecution': ['startLiveStream', 'stopLiveStream'],
-  'domain:voice': ['injectUserText'],
-};
+const KNOWN_UNDER_REPORTED_ACTIONS: Readonly<Record<string, readonly string[]>> = {};
 
 describe('全域单向门：清单 ⊆ 实际 handler（RQ-183 刀 4）', () => {
   const actual = collectActualDomainActions();

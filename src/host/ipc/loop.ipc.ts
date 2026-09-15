@@ -37,7 +37,7 @@ function getBoolean(source: unknown, field: string): boolean | undefined {
 
 /**
  * loop 域单源路由表（RQ-183 续作·LOOP 刀）：原 domain switch 逐 case 平移为 handler（rawResponse：
- * handler 仍返回完整 IPCResponse）；每个 handler 按请求取 getLoopController()（同原 switch 每请求取一次）；
+ * handler 仍返回完整 IPCResponse）；每个 handler 按请求取 getLoopController()（原 switch 在 try 外取、抛错即 reject，现落 LOOP_ERROR；null 请求由抛错变 UNKNOWN_ACTION）；
  * 未知 action → UNKNOWN_ACTION `Unknown loop action: <action>`；抛错 → 错误自带 string code 透传、
  * 否则 LOOP_ERROR，非 Error → 'Unknown error'，同款日志。
  */

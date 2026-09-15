@@ -214,6 +214,11 @@ export const MEMORY_TIMEOUTS = {
 export const TEST_TIMEOUTS = {
   /** 默认测试超时 */
   DEFAULT: 60_000,
+  /**
+   * 题超时掐 run 后，等被掐那一轮 sendMessage 带着轨迹返回的宽限。
+   * cancelActiveRun 已等 loop 收尾，正常几十 ms 内返回；对齐 CANCELLATION_TIMEOUTS.GRACEFUL_SHUTDOWN_GRACE。
+   */
+  TIMEOUT_TRACE_GRACE: 5_000,
 } as const;
 
 /** 资源锁超时 */

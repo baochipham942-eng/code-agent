@@ -29,7 +29,7 @@ import { loadAllTestSuites, filterTestCases, sortByDependencies } from './testCa
 import { validateUserSimulation, evaluateSimRules, DEFAULT_SIM_MAX_TURNS } from './userSimulator';
 import { validateGoalContract } from './goalContractEval';
 import { applyCaseMemory } from './memoryEval';
-import { withTimeout } from '../services/infra/timeoutController';
+import { InFlightRound } from './timeoutTrace';
 import { runAssertions, runExpectations, countDeclaredAssertions } from './assertionEngine';
 import { execSync } from 'child_process';
 import { createLogger } from '../services/infra/logger';
@@ -733,6 +733,7 @@ export class TestRunner {
     const sendMessage = (prompt: string) => costTracker.run(() => agent.sendMessage(prompt, {
       scopedCostRecorder: costTracker.recordUsage,
     }));
+    const inFlight = new InFlightRound();
     let completedExecution = false;
 
     logger.info('Running test', { testId: testCase.id });
@@ -827,7 +828,7 @@ export class TestRunner {
       const timeout = forceTimeout ? baseTimeout : Math.round(baseTimeout * scale);
 
       // Send the test prompt (withTimeout 自动清理 timer)
-      const agentResult = await withTimeout(
+      const agentResult = await inFlight.race(
         sendMessage(testCase.prompt),
         timeout,
         `Test timeout after ${timeout}ms`,
@@ -880,7 +881,7 @@ export class TestRunner {
             // 按存量口径分流 infra_excluded（时间预算问题不是能力数据）。
             throw new Error(`Test timeout after ${timeout}ms (budget exhausted before simulated user turn)`);
           }
-          const simResult = await withTimeout(
+          const simResult = await inFlight.race(
             sendMessage(match.message!),
             remainingTime,
             `Simulated user turn timeout after ${timeout}ms`,
@@ -912,7 +913,7 @@ export class TestRunner {
           const remainingTime = timeout - (Date.now() - startTime);
           if (remainingTime <= 0) break;
 
-          const followUpResult = await withTimeout(
+          const followUpResult = await inFlight.race(
             sendMessage(followUp),
             remainingTime,
             `Follow-up timeout after ${timeout}ms`,
@@ -1044,6 +1045,11 @@ export class TestRunner {
         result.failureStage = 'timeout';
         // N-EVAL-L3-HARNESS：超时题的循环/工具不能活到下一题，这里真的掐掉。
         await agent.cancelActiveRun?.().catch((cancelError: unknown) => logger.warn('cancelActiveRun failed after timeout', { testId: testCase.id, error: String(cancelError) }));
+        // N-EVAL-TIMEOUT-K1-TRACE：掐掉后原 sendMessage 会带着已发生的轨迹 return，限时接住并入；等不到就标不可得。
+        // 掐不掉的 adapter 那一轮不会自己回来，不白等宽限。
+        const settled = agent.cancelActiveRun ? await inFlight.settle(TEST_TIMEOUTS.TIMEOUT_TRACE_GRACE) : { available: false };
+        if (settled.round) appendRound(result, settled.round);
+        result.timeoutTraceAvailable = settled.available;
       } else if (isInfraExclusionError(message)) {
         result.status = 'infra_excluded';
         result.failureStage = 'infra';

@@ -89,19 +89,19 @@ describe('companion relay contract', () => {
   // 非环回必须 wss），routeToken/credential 有最小长度——坏一条路由丢一条，不连累配对盘。
   it('parses a phone-cached route and enforces the same URL discipline', () => {
     expect(parseCompanionRelayRoute({
-      v: 1, url: 'wss://8.153.206.118:8443', routeToken: 'route-token-aaaaaa', credential: 'relay-shared-credential',
-    })).toMatchObject({ v: 1, url: 'wss://8.153.206.118:8443/', routeToken: 'route-token-aaaaaa' });
+      v: 1, url: 'wss://relay.example.invalid:8443', routeToken: 'route-token-aaaaaa', credential: 'relay-shared-credential',
+    })).toMatchObject({ v: 1, url: 'wss://relay.example.invalid:8443/', routeToken: 'route-token-aaaaaa' });
     expect(() => parseCompanionRelayRoute({
-      v: 1, url: 'ws://8.153.206.118:8443', routeToken: 'route-token-aaaaaa', credential: 'relay-shared-credential',
+      v: 1, url: 'ws://relay.example.invalid:8443', routeToken: 'route-token-aaaaaa', credential: 'relay-shared-credential',
     })).toThrow('COMPANION_RELAY_INSECURE_URL');
     expect(() => parseCompanionRelayRoute({
-      v: 1, url: 'wss://8.153.206.118:8443?token=secret', routeToken: 'route-token-aaaaaa', credential: 'relay-shared-credential',
+      v: 1, url: 'wss://relay.example.invalid:8443?token=secret', routeToken: 'route-token-aaaaaa', credential: 'relay-shared-credential',
     })).toThrow('COMPANION_RELAY_INVALID_URL');
     expect(() => parseCompanionRelayRoute({
-      v: 1, url: 'wss://8.153.206.118:8443', routeToken: 'route-token-aaaaaa', credential: 'short',
+      v: 1, url: 'wss://relay.example.invalid:8443', routeToken: 'route-token-aaaaaa', credential: 'short',
     })).toThrow('COMPANION_RELAY_INVALID_ROUTE');
     expect(() => parseCompanionRelayRoute({
-      v: 2, url: 'wss://8.153.206.118:8443', routeToken: 'route-token-aaaaaa', credential: 'relay-shared-credential',
+      v: 2, url: 'wss://relay.example.invalid:8443', routeToken: 'route-token-aaaaaa', credential: 'relay-shared-credential',
     })).toThrow('COMPANION_RELAY_INVALID_ROUTE');
     // 环回 ws 给本地 fake relay（集成测试链路）。
     expect(parseCompanionRelayRoute({

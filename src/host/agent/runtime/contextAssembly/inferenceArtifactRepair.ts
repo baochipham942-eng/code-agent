@@ -136,7 +136,7 @@ export async function runNetworkErrorRecovery(
   });
   // ADR-068 刀 3 收编：network retry 原本整轮重发还丢片段——先保片段再重发（重发输出
   // 另起一段不 append 拼缝，与 adapter 层同一边界）。
-  persistStreamedPartialBeforeResend(ctx, STREAM_BREAK_SEGMENT_MARKER, 'loop 层网络重发');
+  await persistStreamedPartialBeforeResend(ctx, STREAM_BREAK_SEGMENT_MARKER, 'loop 层网络重发');
   logger.warn(`[AgentLoop] Network error "${errMsg}" (code=${errCode}), retrying inference (${ctx.runtime.contextHealth.networkRetryCount}/${maxNetworkRetries})...`);
   await new Promise(r => setTimeout(r, NETWORK_RETRY_DELAY_MS));
   try {

@@ -772,7 +772,7 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
 
     // 原始 chunk 边来边进 turn（abort 时留住半截），同时喂给按整段判定的证据流。
     const pushContent = (text: string) => { ctx.runtime.turn.appendStreamedContent(text); contentStreamFilter.push(text); };
-    const streamCallback: StreamCallback = (chunk) => {
+    const streamCallback: StreamCallback = async (chunk) => {
       if (typeof chunk === 'string') {
         pushContent(chunk);
       } else if (chunk.type === 'text') {
@@ -837,7 +837,7 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
       } else if (chunk.type === 'stream_break') {
         // ADR-068 刀 3 B2：adapter 决定断流重发（续答属新一次生成）。先保 partial 再收
         // 续写 delta，续答另起一段不 append 拼缝（D2）。UI 信号是刀 4，这里只落库。
-        persistStreamedPartialBeforeResend(ctx, STREAM_BREAK_SEGMENT_MARKER, `断流续接：${chunk.error ?? 'unknown'}`);
+        await persistStreamedPartialBeforeResend(ctx, STREAM_BREAK_SEGMENT_MARKER, `断流续接：${chunk.error ?? 'unknown'}`);
       } else if (chunk.type === 'reconnecting') {
         // ADR-068 刀 4（D5 UI 信号）：断流续接中——同一轮回答不重置 turn（voiceCall
         // reconnecting 先例），renderer 在同一 streaming 消息内嵌「连接中断，正在续接 n/N」
@@ -1067,7 +1067,7 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
     if (isIncompleteToolStream && artifactRequest && !ctx.inferenceRecovery._artifactNonStreamingRetried) {
       ctx.inferenceRecovery._artifactNonStreamingRetried = true;
       // ADR-068 刀 3 收编：已吐 delta 后的重发先保片段再重发（重试产物是新的一条消息）。
-      persistStreamedPartialBeforeResend(ctx, STREAM_BREAK_SEGMENT_MARKER, 'artifact 非流式重发');
+      await persistStreamedPartialBeforeResend(ctx, STREAM_BREAK_SEGMENT_MARKER, 'artifact 非流式重发');
       logger.warn('[AgentLoop] Artifact tool stream ended incomplete; retrying once with non-streaming inference');
       logCollector.agent('WARN', 'Artifact tool stream incomplete; retrying non-streaming');
       await writeAgentRecoveryNotice(
@@ -1105,7 +1105,7 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
     if (shouldCompactRetryArtifactRepairWrite) {
       ctx.inferenceRecovery._artifactRepairCompactWriteRetried = true;
       // ADR-068 刀 3 收编：同上——compact 重试也是已吐 delta 后的整轮重发，先保片段再重发。
-      persistStreamedPartialBeforeResend(ctx, STREAM_BREAK_SEGMENT_MARKER, 'artifact 修复 compact 重发');
+      await persistStreamedPartialBeforeResend(ctx, STREAM_BREAK_SEGMENT_MARKER, 'artifact 修复 compact 重发');
       logger.warn('[AgentLoop] Artifact repair write-priority timed out; retrying once with compact mutation-only context');
       logCollector.agent('WARN', 'Artifact repair write-priority timed out; retrying compact mutation-only context');
       ctx.taskProgress.emitTaskProgress('generating', 'artifact 修复写入超时，正在用更小上下文重试...');
@@ -1180,7 +1180,7 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
     // ADR-068 刀 3：补齐 error 路径不落库的缺口——preserveStreamedPartial 原本只挂在
     // cancel/steer 上，推理终错（含断流续接预算耗尽转 error）时已吐 partial 直接丢。
     // 此处 partial 必然未被落库（落库与 reset 在成功/分段路径已成对出现），保一次不重。
-    persistStreamedPartialBeforeResend(ctx, INFERENCE_ERROR_PARTIAL_MARKER, '推理终错保留 partial');
+    await persistStreamedPartialBeforeResend(ctx, INFERENCE_ERROR_PARTIAL_MARKER, '推理终错保留 partial');
 
     throw error;
   }

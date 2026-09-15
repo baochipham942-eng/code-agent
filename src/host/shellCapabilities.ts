@@ -27,6 +27,7 @@ import { WindowSchemas } from '../shared/ipc/schemas/window';
 import { ProjectSchemas } from '../shared/ipc/schemas/project';
 import { TaskSchemas } from '../shared/ipc/schemas/task';
 import { GenerativeUISchemas } from '../shared/ipc/schemas/generativeUI';
+import { FolderTrustSchemas } from '../shared/ipc/schemas/folderTrust';
 
 const DEFAULT_SINCE_VERSION = '0.16.93';
 
@@ -182,10 +183,8 @@ const CAPABILITY_DOMAIN_ACTIONS = {
   ],
   // data 域：派生自 schema action 集合（== data 表 keys，parity 门三面对账），手工清单已删
   [IPC_DOMAINS.DATA]: DataSchemas.ACTIONS,
-  [IPC_DOMAINS.FOLDER_TRUST]: [
-    'get',
-    'set',
-  ],
+  // folderTrust 域：派生自 schema action 集合（== folderTrust 表 keys，parity 门三面对账），手工清单已删
+  [IPC_DOMAINS.FOLDER_TRUST]: FolderTrustSchemas.ACTIONS,
   // cron 域：派生自 schema action 集合（== cron 表 keys，parity 门三面对账）
   [IPC_DOMAINS.CRON]: CronSchemas.ACTIONS,
   // device 域：派生自 schema action 集合（== device 表 keys，parity 门三面对账）

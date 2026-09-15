@@ -291,11 +291,11 @@ export const EvalCaseListTab: React.FC = () => {
         <Button size="sm" leftIcon={<FilePlus2 className="h-3.5 w-3.5" />} onClick={() => setDraftOpen(true)}>{c.newDraft}</Button>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-auto px-3 py-2">
-        {/* 矩阵块放在列表滚动区顶部而不是 shrink-0 头部（FB-160）：1440×900 实测，
-            放头部时展开只剩 3 行可见；放滚动区里展开后往下滚就能看全列表。 */}
+      {/* 滚动容器不能带上内边距（FB-162）：sticky thead 贴的是内容区顶，py-2 会在容器顶留 8px 带子，
+          滚上来的行从带子里透出来，给 th 上底色治不到。内边距挪进各子块。 */}
+      <div className="min-h-0 flex-1 overflow-auto px-3 pb-2" data-testid="eval-case-list-scroll">
         {matrix.rows.length > 0 && (
-          <div className="mb-2">
+          <div className="mb-2 pt-2">
             <button
               type="button"
               data-testid="eval-case-matrix-toggle"

@@ -180,6 +180,14 @@ describe('EvalCaseListTab', () => {
     expect(screen.queryByTestId('eval-case-matrix')).toBeNull();
   });
 
+  it('题目表滚动容器不带上内边距，否则 sticky 表头上方留带子透出行（FB-162）', async () => {
+    render(<EvalCaseListTab />);
+    await screen.findByTestId('eval-case-row-daily-case');
+    const scroller = screen.getByTestId('eval-case-list-scroll');
+    expect(scroller.className).toContain('overflow-auto');
+    expect(scroller.className).not.toMatch(/\bp[ty]-\d/);
+  });
+
   it('题目表 sticky 表头：thead 与每个 th 都带底色，表头单元格 nowrap（FB-161）', async () => {
     render(<EvalCaseListTab />);
     const row = await screen.findByTestId('eval-case-row-daily-case');

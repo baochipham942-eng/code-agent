@@ -135,6 +135,8 @@ export interface InferenceRecoveryState {
   _artifactNonStreamingRetried: boolean;
   _artifactRepairCompactWriteRetried: boolean;
   _networkRetried: boolean;
+  /** 无人值守 run 连续遇到断流的推理轮数（ADR-068 D4 熔断计数）；某轮无断流即清零。 */
+  consecutiveStreamBreakRounds: number;
   currentModelDecision?: ModelDecisionEventData;
 }
 

@@ -111,6 +111,7 @@ export interface RuntimeContext {
   readonly systemPromptStore?: Pick<SystemPromptCache, 'store' | 'get'>;
   readonly inferenceOptions?: InferenceOptions;
   readonly historyVisibility?: 'visible' | 'meta';
+  readonly unattendedTurn?: boolean;
   readonly deniedToolNames?: string[];
   readonly allowedToolNames?: string[];
 

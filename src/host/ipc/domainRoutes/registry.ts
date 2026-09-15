@@ -41,6 +41,11 @@ export interface DomainRouteOptions {
   mapError?: (error: unknown, action: unknown) => { code: string; message: string };
   /** handler 直接返回完整 IPCResponse（含带 data 的失败响应），装配器不再包 { success: true, data } */
   rawResponse?: boolean;
+  /**
+   * 分发前的访问门（含未知 action 也先过门，对齐 prompt 等域「先鉴权再分发」的既有顺序）：
+   * 返回响应即拦截；返回 null 放行。门抛错走与 handler 相同的错误映射。
+   */
+  guard?: (action: unknown) => unknown;
   /** 该表面暂缓（web:false）的 action 桩清单，parity 门棘轮对账用 */
   disabledActions?: readonly string[];
 }
@@ -63,6 +68,7 @@ export function defineDomainRoutes<Req extends DomainRouteRequest, Ctx>(
     ...(options?.unknownActionCode ? { unknownActionCode: options.unknownActionCode } : {}),
     ...(options?.mapError ? { mapError: options.mapError } : {}),
     ...(options?.rawResponse ? { rawResponse: true } : {}),
+    ...(options?.guard ? { guard: options.guard } : {}),
     ...(options?.disabledActions ? { disabledActions: options.disabledActions } : {}),
   };
 }
@@ -105,21 +111,26 @@ function installDomainRoutesImpl<Req extends DomainRouteRequest, Ctx>(
       ? (table.actions as Record<string, DomainRouteHandler<Ctx, unknown>>)[action]
       : undefined;
 
-    if (!handler) {
-      // 未知 action 兜底，对齐 session.ipc.ts:304-311 现状语义；个别域用
-      // unknownActionMessage 保持既有错误契约逐字不变（如 web session 的前缀差异）
-      return {
-        success: false,
-        error: {
-          code: table.unknownActionCode ?? 'INVALID_ACTION',
-          message: table.unknownActionMessage
-            ? table.unknownActionMessage(action)
-            : `Unknown action: ${String(action)}`,
-        },
-      };
-    }
-
     try {
+      if (table.guard) {
+        const blocked = table.guard(action);
+        if (blocked) return blocked;
+      }
+
+      if (!handler) {
+        // 未知 action 兜底，对齐 session.ipc.ts:304-311 现状语义；个别域用
+        // unknownActionMessage 保持既有错误契约逐字不变（如 web session 的前缀差异）
+        return {
+          success: false,
+          error: {
+            code: table.unknownActionCode ?? 'INVALID_ACTION',
+            message: table.unknownActionMessage
+              ? table.unknownActionMessage(action)
+              : `Unknown action: ${String(action)}`,
+          },
+        };
+      }
+
       const result = await handler(ctx, request?.payload);
       return table.rawResponse ? result : { success: true, data: result };
     } catch (error) {

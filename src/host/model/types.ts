@@ -156,7 +156,7 @@ export interface StreamChunk {
   segment?: 'b1' | 'b2';
 }
 
-export type StreamCallback = (chunk: string | StreamChunk) => void;
+export type StreamCallback = (chunk: string | StreamChunk) => void | Promise<void>;
 
 export interface InferenceOptions {
   onSnapshot?: (snapshot: import('./providers/sseStream').StreamSnapshot) => void;

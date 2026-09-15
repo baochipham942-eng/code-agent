@@ -1263,7 +1263,9 @@ async function streamViaAiSdk(params: {
         if (isB1Segment) {
           resumeSeed = seed;
         } else {
-          onStream({ type: 'stream_break', error: msg });
+          // await：调用方在 stream_break 分支里先落库断点 partial——落库完成前不进退避
+          // 与重发，续答终稿不可能抢在 partial 前面写入（PR #1833 复审 Important）。
+          await onStream({ type: 'stream_break', error: msg });
           logger.info(`[AiSdkAdapter] B2 诚实分段：断点 partial（${acc.charCount} 字符）交调用方落库，续答另起新消息 (${reconnectsUsed}/${reconnectMax})`);
         }
         // 退避复用 computeRetryBackoffMs（base 1s + ±25% jitter），续接场景封顶 4s（ADR D4：

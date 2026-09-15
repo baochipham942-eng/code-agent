@@ -51,6 +51,7 @@ import { SessionAutomationSchemas } from '../shared/ipc/schemas/sessionAutomatio
 import { TeamSchemas } from '../shared/ipc/schemas/team';
 import { CaptureSchemas } from '../shared/ipc/schemas/capture';
 import { AgentRegistrySchemas } from '../shared/ipc/schemas/agentRegistry';
+import { LivePreviewSchemas } from '../shared/ipc/schemas/livePreview';
 
 const DEFAULT_SINCE_VERSION = '0.16.93';
 
@@ -162,19 +163,8 @@ const CAPABILITY_DOMAIN_ACTIONS = {
   [IPC_DOMAINS.GENERATIVE_UI]: GenerativeUISchemas.ACTIONS,
   // hook 域：派生自 schema action 集合（== hook 表 keys，parity 门三面对账），手工清单已删
   [IPC_DOMAINS.HOOK]: HookSchemas.ACTIONS,
-  [IPC_DOMAINS.LIVE_PREVIEW]: [
-    'applyTweak',
-    'detectFramework',
-    'getDevServerLogs',
-    'getDevServerSession',
-    'listDevServers',
-    'ping',
-    'resolveSourceLocation',
-    'startDevServer',
-    'stopDevServer',
-    'validateDevServerUrl',
-    'waitDevServerReady',
-  ],
+  // livePreview 域：派生自 schema action 集合（== livePreview 表 keys，parity 门三面对账），手工清单已删
+  [IPC_DOMAINS.LIVE_PREVIEW]: LivePreviewSchemas.ACTIONS,
   // loop 域：派生自 schema action 集合（== loop 表 keys，parity 门三面对账）
   [IPC_DOMAINS.LOOP]: LoopSchemas.ACTIONS,
   // mcp 域：派生自 schema action 集合（== mcp 表 keys，parity 门三面对账），手工清单已删

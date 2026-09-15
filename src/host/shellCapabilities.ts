@@ -31,6 +31,7 @@ import { FolderTrustSchemas } from '../shared/ipc/schemas/folderTrust';
 import { HookSchemas } from '../shared/ipc/schemas/hook';
 import { WorkspaceSchemas } from '../shared/ipc/schemas/workspace';
 import { AuthSchemas } from '../shared/ipc/schemas/auth';
+import { RolesSchemas } from '../shared/ipc/schemas/roles';
 
 const DEFAULT_SINCE_VERSION = '0.16.93';
 
@@ -288,30 +289,8 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'test_connection',
     'test_realtime_voice_provider',
   ],
-  [IPC_DOMAINS.ROLES]: [
-    'addBinding',
-    'confirmDraft',
-    'deleteMemory',
-    'detail',
-    'list',
-    'listBoundCronJobs',
-    'listBindings',
-    'listDrafts',
-    'rejectDraft',
-    'removeBinding',
-    'rolePackInstall',
-    'rolePackList',
-    'rolePackRetryMissingSkills',
-    'rolePackUninstall',
-    'setProactivity',
-    'updateMemory',
-    'updateEquipment',
-    'updateDefinitionBody',
-    'updatePersonalization',
-    'updateVisual',
-    'restoreFactory',
-    'writeProjectMemory',
-  ],
+  // roles 域：派生自 schema action 集合（== roles 表 keys，parity 门三面对账），手工清单已删
+  [IPC_DOMAINS.ROLES]: RolesSchemas.ACTIONS,
   // session 域：派生自 sessionRoutes 表（见上），手工清单已删
   [IPC_DOMAINS.SESSION]: SESSION_TABLE_ACTIONS,
   [IPC_DOMAINS.SESSION_AUTOMATION]: [

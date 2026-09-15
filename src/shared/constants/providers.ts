@@ -177,7 +177,7 @@ export interface CanonicalProviderInfo {
 export const PROVIDER_REGISTRY: Record<BuiltInModelProvider, CanonicalProviderInfo> = {
   deepseek: {
     aliases: ['deepseek'],
-    defaultModel: 'deepseek-v4-flash',
+    defaultModel: 'deepseek-flash',
     endpoint: MODEL_API_ENDPOINTS.deepseek,
     displayName: 'DeepSeek',
   },
@@ -415,16 +415,16 @@ export const PROVIDER_FALLBACK_CHAIN: Record<string, Array<{ provider: string; m
     { provider: 'zhipu', model: 'glm-4.7-flash' },
     { provider: 'openai', model: 'gpt-5.4-mini' },
     { provider: 'moonshot', model: DEFAULT_MODELS.compact },
-    { provider: 'deepseek', model: 'deepseek-v4-flash' },
+    { provider: 'deepseek', model: 'deepseek-flash' },
   ],
   xiaomi: [
     { provider: 'zhipu', model: 'glm-4.7-flash' },
     { provider: 'openai', model: 'gpt-5.4-mini' },
     { provider: 'moonshot', model: DEFAULT_MODELS.compact },
-    { provider: 'deepseek', model: 'deepseek-v4-flash' },
+    { provider: 'deepseek', model: 'deepseek-flash' },
   ],
   moonshot: [
-    { provider: 'deepseek', model: 'deepseek-v4-flash' },
+    { provider: 'deepseek', model: 'deepseek-flash' },
   ],
   deepseek: [
     { provider: 'moonshot', model: DEFAULT_MODELS.compact },
@@ -433,15 +433,15 @@ export const PROVIDER_FALLBACK_CHAIN: Record<string, Array<{ provider: string; m
     { provider: 'zhipu', model: 'glm-4.7-flash' },
     { provider: 'openai', model: 'gpt-5.4-mini' },
     { provider: 'moonshot', model: DEFAULT_MODELS.compact },
-    { provider: 'deepseek', model: 'deepseek-v4-flash' },
+    { provider: 'deepseek', model: 'deepseek-flash' },
   ],
   openai: [
     { provider: 'zhipu', model: 'glm-4.7-flash' },
     { provider: 'moonshot', model: DEFAULT_MODELS.compact },
-    { provider: 'deepseek', model: 'deepseek-v4-flash' },
+    { provider: 'deepseek', model: 'deepseek-flash' },
   ],
   zhipu: [
     { provider: 'moonshot', model: DEFAULT_MODELS.compact },
-    { provider: 'deepseek', model: 'deepseek-v4-flash' },
+    { provider: 'deepseek', model: 'deepseek-flash' },
   ],
 };

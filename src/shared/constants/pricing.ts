@@ -1,7 +1,7 @@
 import { normalizeProviderId } from './providers';
 
 /** 改动 MODEL_PRICING_PER_1M 中任一价格时必须同步递增。 */
-export const PRICING_TABLE_VERSION = 1;
+export const PRICING_TABLE_VERSION = 2;
 
 /** 模型定价条目（每 1M tokens，美元）。cacheRead/cacheWrite 缺省时按比例回退（见下方 ratio 常量）。 */
 export interface ModelPricingEntry {
@@ -45,8 +45,10 @@ export const DEFAULT_CACHE_WRITE_PRICE_RATIO = 1.25;
 
 /** 模型定价（每 1M tokens，美元）— 仅包含 PROVIDER_REGISTRY 中注册的模型 */
 export const MODEL_PRICING_PER_1M: Record<string, ModelPricingEntry> = {
-  // DeepSeek — V4 官方价格待公告，先沿用 V3.2 价格作为近似，实测后校正；缓存命中为 0.1x 档
-  'deepseek-v4-flash': { input: 0.14, output: 0.28, cacheRead: 0.014 },
+  // DeepSeek — V4.1 Flash 官方峰时刊例（2026-09-10）：cache hit $0.006 / miss $0.30 / out $1.20
+  // 兼容名 deepseek-v4-flash 已路由到 V4.1 Flash，按 Flash 价计费。
+  'deepseek-flash': { input: 0.3, output: 1.2, cacheRead: 0.006 },
+  'deepseek-v4-flash': { input: 0.3, output: 1.2, cacheRead: 0.006 },
   'deepseek-v4-pro': { input: 0.55, output: 2.19, cacheRead: 0.055 },
   'deepseek-chat': { input: 0.14, output: 0.28, cacheRead: 0.014 },
   'deepseek-coder': { input: 0.14, output: 0.28, cacheRead: 0.014 },

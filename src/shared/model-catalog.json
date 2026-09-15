@@ -1,5 +1,5 @@
 {
-  "updated": "2026-04-28",
+  "updated": "2026-09-11",
   "providers": [
     {
       "id": "openai",
@@ -125,23 +125,29 @@
       "description": "深度求索",
       "apiUrl": "https://api.deepseek.com",
       "apiKeyHint": "your-api-key",
-      "default": "deepseek-v4-flash",
+      "default": "deepseek-flash",
       "models": [
         {
-          "id": "deepseek-v4-flash",
-          "label": "DeepSeek V4 Flash",
-          "desc": "1M · 284B/13B MoE Apache 2.0"
+          "id": "deepseek-flash",
+          "label": "DeepSeek V4.1 Flash",
+          "desc": "1M · 552B MoE · 官方当前 Flash（模型支持视觉，Responses 传图未接完所以 UI 不标视觉）"
         },
         {
           "id": "deepseek-v4-pro",
           "label": "DeepSeek V4 Pro (推理)",
-          "desc": "1M · 1.6T/49B MoE 深度思考",
+          "desc": "1M · 1.6T/49B MoE 深度思考 · 9/14 起将路由到 V4.1 Flash",
           "scaffoldTier": "strong"
+        },
+        {
+          "id": "deepseek-v4-flash",
+          "label": "DeepSeek V4 Flash（兼容名）",
+          "desc": "已退役，请求路由到 V4.1 Flash 并按 Flash 价计费",
+          "evalEligible": false
         },
         {
           "id": "deepseek-chat",
           "label": "DeepSeek Chat（旧版）",
-          "desc": "128K · 2026-07-24 退役，已 route 到 V4 Flash",
+          "desc": "128K · 2026-07-24 退役，已 route 到 V4.1 Flash",
           "evalEligible": false,
           "scaffoldTier": "lite"
         },
@@ -400,10 +406,17 @@
           "evalEligible": false
         },
         {
-          "id": "deepseek/deepseek-v4-flash",
-          "label": "DeepSeek V4 Flash",
+          "id": "deepseek/deepseek-flash",
+          "label": "DeepSeek V4.1 Flash",
           "group": "DeepSeek",
-          "desc": "1M · 284B MoE",
+          "desc": "1M · 552B MoE · 原生视觉",
+          "evalEligible": false
+        },
+        {
+          "id": "deepseek/deepseek-v4-flash",
+          "label": "DeepSeek V4 Flash（兼容名）",
+          "group": "DeepSeek",
+          "desc": "已退役，路由到 V4.1 Flash",
           "evalEligible": false
         },
         {

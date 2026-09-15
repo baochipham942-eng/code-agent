@@ -10,6 +10,8 @@
 #
 # 周回归必须跑最新 main，不是主仓恰好停着的分支（FB-156：主仓停在 feat/* 上时脚本自己都不存在）。
 # 主仓在 main 上就 pull --ff-only；停在别的分支不去切它（共享地面），改用专用树 code-agent-worktrees/eval-core-main。
+# ⚠ 上限：plist 调起的仍是 $REPO/scripts/eval-core-cron.sh。主仓停在一个没有这份脚本的分支时 launchd 起不来，
+#   下面的专用树逻辑根本执行不到（FB-156 走查当天就是这个形状）。要根治得让 plist 指向一棵常驻 main 的树。
 # 环境变量：NEO_EVAL_CORE_MAX_CASES（默认 50）、NEO_EVAL_CORE_EXTRA_ARGS（透传给 eval-ci，如 --concurrency 2）、
 #           NEO_EVAL_CORE_REPO（被测仓，默认本脚本所在仓；从 worktree 装 plist 时指向主仓）。
 # 为什么是 launchd 不是 Neo cron：Neo 的调度器只在 Electron main / webServer 进程里起（neo CLI 不起），
@@ -112,6 +114,7 @@ else
     git worktree add --detach "$TREE" origin/main
   fi || { echo "!!! 专用树准备失败：$TREE"; exit 1; }
   # -e 对悬空软链是假：主仓那三处还没装依赖时会每次重建，得连 -L 一起判。
+  # ⚠ 上限：依赖借的是主仓的。主仓停在一个 package-lock 与 main 不一致的分支上时，专用树跑的是别人的依赖树。
   for M in node_modules vercel-api/node_modules admin-console/node_modules; do
     [ -e "$TREE/$M" ] || [ -L "$TREE/$M" ] || ln -s "$REPO/$M" "$TREE/$M"
   done

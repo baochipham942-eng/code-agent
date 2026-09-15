@@ -17,6 +17,7 @@ import { Select } from '@renderer/components/primitives/Select';
 import { ConfirmDialog } from '@renderer/components/composites/ConfirmDialog';
 
 // 题库 YAML 的 category 是自由文本，矩阵只认 src/host/testing/types.ts 的 TestCategory 契约四值。
+// ⚠ 这里是手抄：渲染侧进不了 host 类型，两边没有类型关联。契约加值必须同步改这里，否则新值会静默落进「其他」列。
 const TEST_CATEGORIES = ['basic_tool', 'task_completion', 'error_recovery', 'edge_case'] as const;
 const MATRIX_OTHER = '\u0000other';
 const MATRIX_MISSING = '\u0000missing';

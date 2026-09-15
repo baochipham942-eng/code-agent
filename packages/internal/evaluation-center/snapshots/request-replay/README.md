@@ -52,6 +52,7 @@ keyless 确定性假模型（`CODE_AGENT_E2E_LOCAL_AGENT_MODEL=1`）真会话的
 ## 重录确认
 
 （行为不可见改动在此追加：日期 / PR / 说明）
+- 2026-09-15 / PR #1833 / `contextAssembly/inference.ts`、`inferenceArtifactRepair.ts` 的改动（ADR-068 刀 4：reconnecting 信号转发与 loop 层信号发射，纯呈现信号不参与续接决策）不改请求拼装。本机 `acceptance:snapshot-replay:record` 重录 6 会话 13 轮，与同基线（origin/main@6a44f7756）干净树同机重录**逐字节一致**（diff -rq 零差异）；与已提交快照的差异仅为存量陈旧（日期/Shell 环境字段），与本 PR 无关。
 - 2026-09-15 / PR #1828 / `contextAssembly/inference.ts`、`inferenceArtifactRepair.ts`、`systemContextStack.ts`、`testing/e2e/e2eLocalAgentModel.ts` 的改动（ADR-068 刀 3：B2 断流分段、重发前先保片段、usage 跨 attempt 合并、E2E 断流注入）不改既有场景的请求拼装——录制语料无断流场景。本机 `acceptance:snapshot-replay:record` 重录 6 会话 13 轮，与同基线（origin/main@8e6c708e4）干净树同机重录**逐字节一致**（diff -rq 零差异）；与已提交快照的差异仅为存量陈旧（日期/Shell 环境字段与近期 main 合并漂移），与本 PR 无关。
 - 2026-09-11 / PR #1740 / `src/host/agent/runtime/contextAssembly/inference.ts` 的改动只调整 turn.streamedContent 的累加时机与 finish 时的清空顺序（abort 时留住半截正文），不改请求拼装。本机 `acceptance:snapshot-replay:record` 重录 6 会话 13 轮，与已提交快照的差异仅为环境字段：系统提示里的今日日期（09-08→09-11）与 `Default Shell`（bash→zsh），无任何消息或工具表内容漂移。
 - 2026-09-13 / PR #1769 / `contextAssembly/shared.ts` 与 `contextAssembly/systemContextStack.ts` 只把两个预算字面量（system prompt 预算下限 6000、持久系统上下文 1200）改成经 `getHarnessKnob` 读取，默认值就是原字面量，无 profile 时逐字不变。本机 `acceptance:snapshot-replay:record` 重录 6 会话 13 轮，与已提交快照的差异只有 `今天的日期`（09-08→09-13）与 `Default Shell`（/bin/bash→/bin/zsh）两类环境字段，canonicalTools 仅日期串变化；`acceptance:snapshot-replay` 回放 13 轮字节级一致。

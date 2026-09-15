@@ -1,7 +1,9 @@
 import os from 'node:os';
 import path from 'node:path';
 import type { IpcMain } from '../platform';
-import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
+import type { RawDomainRouteHandlers } from '../../shared/ipc/domainRoutes';
+import { FolderTrustSchemas, type FolderTrustDomainRequest } from '../../shared/ipc/schemas/folderTrust';
+import { defineDomainRoutes, installDomainRoutes } from './domainRoutes/registry';
 import type { AgentApplicationService } from '../../shared/contract/appService';
 import {
   evaluateFolderTrust,
@@ -76,49 +78,48 @@ export async function resolveWorkingDirectory(
   return process.cwd();
 }
 
+/**
+ * folderTrust 域单源路由表（RQ-183 续作·FOLDER_TRUST 刀）：原 domain switch 逐 case 平移为 handler（rawResponse：
+ * set 的 INVALID_PAYLOAD 失败响应逐字不变）；每个 handler 按请求解析 workingDirectory（原 switch 分发前统一解析，
+ * 未知 action 也解析；迁表后未知 action 不解析，解析本身无副作用）；未知 action → INVALID_ACTION
+ * `Unknown action: <action>`、抛错 → INTERNAL_ERROR（Error 取 message、非 Error 取 String(error)），均为装配器缺省。
+ */
+type FolderTrustRouteCtx = () => AgentApplicationService | null;
+
+const folderTrustHandlers: RawDomainRouteHandlers<FolderTrustDomainRequest, FolderTrustRouteCtx> = {
+  get: async (getAppService, payload) => ({
+    success: true,
+    data: await evaluateFolderTrust(await resolveWorkingDirectory(payload, getAppService)),
+  }),
+  set: async (getAppService, rawPayload) => {
+    const workingDirectory = await resolveWorkingDirectory(rawPayload, getAppService);
+    const payload = rawPayload as { state?: FolderTrustDecisionState; decidedBy?: string } | undefined;
+    if (payload?.state !== 'trusted' && payload?.state !== 'blocked') {
+      return {
+        success: false,
+        error: { code: 'INVALID_PAYLOAD', message: 'folderTrust:set requires state trusted or blocked.' },
+      };
+    }
+    return { success: true, data: await setFolderTrust(workingDirectory, payload.state, payload.decidedBy) };
+  },
+  revoke: async (getAppService, payload) => ({
+    success: true,
+    data: await revokeFolderTrust(await resolveWorkingDirectory(payload, getAppService)),
+  }),
+};
+
+const folderTrustRoutes = defineDomainRoutes<FolderTrustDomainRequest, FolderTrustRouteCtx>(
+  FolderTrustSchemas.REQUEST,
+  folderTrustHandlers,
+  { rawResponse: true },
+);
+
 export function registerFolderTrustHandlers(
   ipcMain: IpcMain,
   getAppService: () => AgentApplicationService | null,
 ): void {
-  ipcMain.handle(IPC_DOMAINS.FOLDER_TRUST, async (_event, request: IPCRequest): Promise<IPCResponse> => {
-    try {
-      const workingDirectory = await resolveWorkingDirectory(request.payload, getAppService);
-      let data: unknown;
-
-      switch (request.action) {
-        case 'get':
-          data = await evaluateFolderTrust(workingDirectory);
-          break;
-        case 'set': {
-          const payload = request.payload as { state?: FolderTrustDecisionState; decidedBy?: string } | undefined;
-          if (payload?.state !== 'trusted' && payload?.state !== 'blocked') {
-            return {
-              success: false,
-              error: { code: 'INVALID_PAYLOAD', message: 'folderTrust:set requires state trusted or blocked.' },
-            };
-          }
-          data = await setFolderTrust(workingDirectory, payload.state, payload.decidedBy);
-          break;
-        }
-        case 'revoke':
-          data = await revokeFolderTrust(workingDirectory);
-          break;
-        default:
-          return {
-            success: false,
-            error: { code: 'INVALID_ACTION', message: `Unknown action: ${request.action}` },
-          };
-      }
-
-      return { success: true, data };
-    } catch (error) {
-      return {
-        success: false,
-        error: {
-          code: 'INTERNAL_ERROR',
-          message: error instanceof Error ? error.message : String(error),
-        },
-      };
-    }
-  });
+  installDomainRoutes(ipcMain, folderTrustRoutes, getAppService);
 }
+
+// 表挂装配函数对象上供 parity 门枚举（同 registerMemoryHandlers.routes 先例）
+registerFolderTrustHandlers.routes = folderTrustRoutes;

@@ -22,7 +22,7 @@ function invalid(message: string): IPCResponse {
 /**
  * generativeUI 域单源路由表（RQ-183 续作·GENERATIVE_UI 刀）：原 domain switch 逐 case 平移为 handler（rawResponse：
  * handler 仍返回完整 IPCResponse，含 INVALID_ARGS 失败响应，逐字不变）；服务按请求在 handler 内取（原 switch 在 try
- * 外取、抛错即 reject，现走 mapError）；未知 action → UNKNOWN_ACTION `Unknown action: <action>`；抛错 →
+ * 外取、抛错即 reject，现走 mapError）；未知 action → UNKNOWN_ACTION `Unknown action: <action>`（文案取装配器缺省，改缺省会波及本域）；抛错 →
  * GENERATIVE_UI_ERROR（Error 取 message、非 Error 取 String(error)）+ 带 action 的 warn 日志。
  */
 const generativeUIHandlers: RawDomainRouteHandlers<GenerativeUIDomainRequest, void> = {

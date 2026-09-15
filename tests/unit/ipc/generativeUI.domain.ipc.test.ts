@@ -93,5 +93,6 @@ describe('generativeUI.ipc dispatch 特征', () => {
     h.persist.mockRejectedValueOnce('disk full');
     expect(await call('persistHtmlEdit', { sessionId: 's', messageId: 'm', sourceOrdinal: 0, baseHash: 'h', newCode: '', fields: [] }))
       .toEqual({ success: false, error: { code: 'GENERATIVE_UI_ERROR', message: 'disk full' } });
+    expect(h.logWarn).toHaveBeenLastCalledWith('Generative UI domain action failed', { action: 'persistHtmlEdit', message: 'disk full' });
   });
 });

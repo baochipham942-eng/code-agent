@@ -22,6 +22,12 @@ const TEST_CATEGORIES = ['basic_tool', 'task_completion', 'error_recovery', 'edg
 const MATRIX_OTHER = '\u0000other';
 const MATRIX_MISSING = '\u0000missing';
 
+// 覆盖盲区的唯一判据：单元格标红、收起态摘要里的红格数都走它，别各写一份。
+// 「未填」列为 0 不算盲区——没填 category 是元数据缺口，缺口另有摘要里的 n/m 计数。
+function isBlindCell(count: number, column: string): boolean {
+  return count === 0 && column !== MATRIX_MISSING;
+}
+
 type LoadState = 'loading' | 'ready' | 'error';
 type StatusFilter = 'active' | 'all' | 'normal' | 'draft' | 'archived';
 
@@ -71,6 +77,8 @@ export const EvalCaseListTab: React.FC = () => {
   const [archiveItem, setArchiveItem] = useState<EvalCaseListEntry | null>(null);
   const [archiving, setArchiving] = useState(false);
   const [highlightedCaseId, setHighlightedCaseId] = useState<string | null>(null);
+  // 矩阵默认收起（FB-160）：11 行矩阵在 shrink-0 头部里把 1440×900 的题目列表挤到只剩两行。
+  const [matrixOpen, setMatrixOpen] = useState(false);
   const focusCaseId = useEvalCenterStore((state) => state.focusCaseId);
   const clearFocusCase = useEvalCenterStore((state) => state.clearCaseTarget);
 
@@ -134,9 +142,17 @@ export const EvalCaseListTab: React.FC = () => {
     }
     const rows = [...new Set(active.map((item) => item.layer))].sort((a, b) => a.localeCompare(b));
     const columns = [...TEST_CATEGORIES, MATRIX_OTHER, MATRIX_MISSING];
+    let blind = 0;
+    for (const layer of rows) {
+      for (const column of columns) {
+        if (isBlindCell(counts.get(`${layer}\u0000${column}`) ?? 0, column)) blind += 1;
+      }
+    }
     return {
       rows,
       columns,
+      blind,
+      cells: rows.length * columns.length,
       otherKinds: otherValues.size,
       missing,
       total: active.length,
@@ -232,46 +248,6 @@ export const EvalCaseListTab: React.FC = () => {
           </div>
         </div>
         <p className="mt-2 text-xs text-zinc-500">{c.specialHint}</p>
-        {matrix.rows.length > 0 && (
-          <div className="mt-2 overflow-x-auto" data-testid="eval-case-matrix">
-            <div className="mb-1 text-[10px] text-zinc-500">{c.matrixTitle}</div>
-            <div className="mb-1 text-[10px] text-zinc-500" data-testid="eval-case-matrix-missing-note">
-              {c.matrixMissingNote.replace('{n}', String(matrix.missing)).replace('{m}', String(matrix.total))}
-            </div>
-            <table className="border-separate border-spacing-0 text-[11px]">
-              <thead>
-                <tr>
-                  <th className="border-b border-zinc-800 px-2 py-1 text-left font-medium text-zinc-500">{c.filterLayer}</th>
-                  {matrix.columns.map((column) => (
-                    <th key={column} className="whitespace-nowrap border-b border-zinc-800 px-2 py-1 text-right font-medium text-zinc-500">{matrixColumnLabel(column, c, matrix.otherKinds)}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {matrix.rows.map((layer) => (
-                  <tr key={layer}>
-                    <td className="min-w-32 whitespace-nowrap px-2 py-1 text-zinc-300">{layer}</td>
-                    {matrix.columns.map((column) => {
-                      const n = matrix.count(layer, column);
-                      // 「未填」列为 0 不标红：没填 category 不是覆盖盲区，缺口另有标题旁那行计数。
-                      const blind = n === 0 && column !== MATRIX_MISSING;
-                      return (
-                        <td
-                          key={column}
-                          data-testid={blind ? 'eval-case-matrix-empty' : 'eval-case-matrix-cell'}
-                          title={blind ? c.matrixEmptyHint : undefined}
-                          className={`px-2 py-1 text-right font-mono ${blind ? 'bg-red-500/10 text-badge-danger' : 'text-zinc-200'}`}
-                        >
-                          {n}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
       </div>
 
       <div className="flex shrink-0 flex-wrap items-end gap-2 border-b border-zinc-800 px-3 py-2">
@@ -316,15 +292,88 @@ export const EvalCaseListTab: React.FC = () => {
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto px-3 py-2">
+        {/* 矩阵块放在列表滚动区顶部而不是 shrink-0 头部（FB-160）：1440×900 实测，
+            放头部时展开只剩 3 行可见；放滚动区里展开后往下滚就能看全列表。 */}
+        {matrix.rows.length > 0 && (
+          <div className="mb-2">
+            <button
+              type="button"
+              data-testid="eval-case-matrix-toggle"
+              aria-expanded={matrixOpen}
+              onClick={() => setMatrixOpen((open) => !open)}
+              className="text-left text-[10px] text-zinc-500 hover:text-zinc-300"
+            >
+              {c.matrixSummary
+                .replace('{cells}', String(matrix.cells))
+                .replace('{blind}', String(matrix.blind))
+                .replace('{n}', String(matrix.missing))
+                .replace('{m}', String(matrix.total))}
+              <span className="ml-1 underline">{matrixOpen ? c.matrixCollapse : c.matrixExpand}</span>
+            </button>
+            {matrixOpen && (
+              <div className="mt-1 overflow-x-auto" data-testid="eval-case-matrix">
+                <div className="mb-1 text-[10px] text-zinc-500">{c.matrixTitle}</div>
+                <div className="mb-1 text-[10px] text-zinc-500" data-testid="eval-case-matrix-missing-note">
+                  {c.matrixMissingNote.replace('{n}', String(matrix.missing)).replace('{m}', String(matrix.total))}
+                </div>
+                <table className="border-separate border-spacing-0 text-[11px]">
+                  <thead>
+                    <tr>
+                      <th className="border-b border-zinc-800 px-2 py-1 text-left font-medium text-zinc-500">{c.filterLayer}</th>
+                      {matrix.columns.map((column) => (
+                        <th key={column} className="whitespace-nowrap border-b border-zinc-800 px-2 py-1 text-right font-medium text-zinc-500">{matrixColumnLabel(column, c, matrix.otherKinds)}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {matrix.rows.map((layer) => (
+                      <tr key={layer}>
+                        <td className="min-w-32 whitespace-nowrap px-2 py-1 text-zinc-300">{layer}</td>
+                        {matrix.columns.map((column) => {
+                          const n = matrix.count(layer, column);
+                          const blind = isBlindCell(n, column);
+                          return (
+                            <td
+                              key={column}
+                              data-testid={blind ? 'eval-case-matrix-empty' : 'eval-case-matrix-cell'}
+                              title={blind ? c.matrixEmptyHint : undefined}
+                              className={`px-2 py-1 text-right font-mono ${blind ? 'bg-red-500/10 text-badge-danger' : 'text-zinc-200'}`}
+                            >
+                              {n}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
         {loadState === 'loading' && <div className="py-10 text-center text-sm text-zinc-500">{c.loading}</div>}
         {loadState === 'error' && <div className="py-10 text-center text-sm text-badge-danger">{c.loadFailed.replace('{message}', loadError)}</div>}
         {loadState === 'ready' && filteredItems.length === 0 && <EmptyState variant="inline" text={c.empty} />}
         {loadState === 'ready' && filteredItems.length > 0 && (
           <table className="w-full min-w-[1180px] border-separate border-spacing-0 text-left text-xs">
-            <thead className="sticky top-0 bg-zinc-950 text-[10px] uppercase tracking-wide text-zinc-500">
+            {/* FB-161：浅色主题下爸看到行文字透过 sticky 表头。底色原来只挂在 thead 上，
+                这一条在 1440×900 的 web 真机没能复现（thead 背景照常绘制），所以下面是加固不是已证根因：
+                底色同时挂到每个 th（sticky 表头的通行写法，不依赖引擎绘制 row-group 背景）+ z-10。
+                窄列 min-w + nowrap 针对同一条反馈里的「来源/状态/操作逐字竖排」。 */}
+            <thead className="sticky top-0 z-10 bg-zinc-950 text-[10px] uppercase tracking-wide text-zinc-500">
               <tr>
-                {[c.colId, c.colLayer, c.colTags, c.colSplits, c.colTurns, c.colExpect, c.colSource, c.colStatus, c.colActions].map((label) => (
-                  <th key={label} className="border-b border-zinc-800 px-2 py-2 font-medium">{label}</th>
+                {[
+                  [c.colId, ''],
+                  [c.colLayer, ''],
+                  [c.colTags, ''],
+                  [c.colSplits, ''],
+                  [c.colTurns, 'min-w-16'],
+                  [c.colExpect, 'min-w-24'],
+                  [c.colSource, 'min-w-20'],
+                  [c.colStatus, 'min-w-16'],
+                  [c.colActions, 'min-w-32'],
+                ].map(([label, width]) => (
+                  <th key={label} className={`whitespace-nowrap border-b border-zinc-800 bg-zinc-950 px-2 py-2 font-medium ${width}`}>{label}</th>
                 ))}
               </tr>
             </thead>

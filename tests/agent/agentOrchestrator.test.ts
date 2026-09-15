@@ -251,6 +251,7 @@ const agentLoopProbe = vi.hoisted(() => ({
     searchEnabled?: boolean;
     thinkingEnabled?: boolean;
     effortLevel?: import('../../src/shared/contract/agent').EffortLevel;
+    unattendedTurn?: boolean;
     toolExecutor?: { runContext?: { workspace?: string } };
     workspaceScope?: { primaryRoot: string };
   },
@@ -496,6 +497,32 @@ describe('AgentOrchestrator', () => {
 
       expect(lastAgentLoopConfig()?.searchEnabled).toBe(false);
       expect(lastAgentLoopConfig()?.systemInstructions).toContain('unattended-system-test');
+    });
+
+    it('ADR-068 D4 无人值守轮识别：显式 unattended 或会话已标无人值守 → unattendedTurn=true；前台缺省 false', async () => {
+      const run = (sessionId: string, options: AgentRunOptions) => (orchestrator as unknown as {
+        runStandardAgentLoop(
+          content: string,
+          onEvent: (event: AgentEvent) => void,
+          modelConfig: unknown,
+          sessionId: string,
+          executionContent: string | undefined,
+          toolScope: unknown,
+          executionIntent: unknown,
+          options: AgentRunOptions,
+        ): Promise<void>;
+      }).runStandardAgentLoop('一轮', mockOnEvent, { provider: 'deepseek', model: 'deepseek-chat' }, sessionId, undefined, undefined, undefined, options);
+
+      await run('foreground-session', { mode: 'normal', disableAutoAgent: true });
+      expect(lastAgentLoopConfig()?.unattendedTurn).toBe(false);
+
+      await run('loop-session', { mode: 'normal', disableAutoAgent: true, unattended: true });
+      expect(lastAgentLoopConfig()?.unattendedTurn).toBe(true);
+
+      const cronSid = `cron-${Math.random().toString(36).slice(2)}`;
+      getPermissionModeManager().markUnattendedSession(cronSid);
+      await run(cronSid, { mode: 'normal', disableAutoAgent: true });
+      expect(lastAgentLoopConfig()?.unattendedTurn).toBe(true);
     });
 
     it('显式 effort 与 thinking 随本轮 config 进入 AgentLoop，且不被复杂度自动档覆盖', async () => {

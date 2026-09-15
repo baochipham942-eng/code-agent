@@ -156,9 +156,9 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
     return () => { cancelled = true; };
   }, [refreshStatus, refreshReady]);
 
-  // 加载隐私开关状态（desktop only）
+  // 加载隐私开关状态。web 模式也要跑：评测反馈池钩子段在 web 上同样渲染（FB-155），
+  // 早退会让输入框永远回显空串。SETTINGS 通道在 web 链路上是通的。
   useEffect(() => {
-    if (isWebMode()) return;
     (async () => {
       try {
         const s = await ipcService.invokeDomain<AppSettings | undefined>(IPC_DOMAINS.SETTINGS, 'get');
@@ -323,6 +323,33 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
     await ipcService.invokeDomain<{ cancelled: boolean }>(IPC_DOMAINS.PII, 'setup:cancel');
   }, []);
 
+  // web 模式下整页短路成横幅，但这一段必须照渲染：评测反馈池钩子是 web 链路也要能配的（FB-155）。
+  const feedbackHookSection = (
+    <SettingsSection
+      title={privacyText.evaluation.title}
+      description={privacyText.evaluation.description}
+    >
+      <div className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-3">
+        <div className="text-sm font-medium text-zinc-200">{privacyText.evaluation.label}</div>
+        <p className="mt-0.5 text-xs leading-5 text-zinc-400">{privacyText.evaluation.body}</p>
+        <input
+          type="text"
+          className="mt-2 w-full rounded-md border border-zinc-700 bg-zinc-900 px-2 py-1.5 font-mono text-xs text-zinc-200 placeholder:text-zinc-600"
+          value={feedbackHookCommand}
+          disabled={privacySaving || !isAdmin}
+          data-testid="eval-feedback-hook-command"
+          placeholder={privacyText.evaluation.placeholder}
+          onChange={(event) => { setFeedbackHookCommand(event.target.value); setFeedbackHookSaved(false); }}
+          onBlur={(event) => { void handleFeedbackHookCommit(event.target.value.trim()); }}
+        />
+        {!isAdmin ? <div className="mt-1 text-xs text-zinc-500">{privacyText.evaluation.adminHint}</div> : null}
+        {feedbackHookSaved ? (
+          <div className="mt-1 text-xs text-badge-success">{privacyText.evaluation.savedHint}</div>
+        ) : null}
+      </div>
+    </SettingsSection>
+  );
+
   if (isWebMode()) {
     return (
       <SettingsPage
@@ -330,6 +357,7 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
         description={privacyText.webDescription}
       >
         <WebModeBanner />
+        {feedbackHookSection}
       </SettingsPage>
     );
   }
@@ -530,28 +558,7 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
         </div>
       </SettingsSection>
 
-      <SettingsSection
-        title={privacyText.evaluation.title}
-        description={privacyText.evaluation.description}
-      >
-        <div className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-3">
-          <div className="text-sm font-medium text-zinc-200">{privacyText.evaluation.label}</div>
-          <p className="mt-0.5 text-xs leading-5 text-zinc-400">{privacyText.evaluation.body}</p>
-          <input
-            type="text"
-            className="mt-2 w-full rounded-md border border-zinc-700 bg-zinc-900 px-2 py-1.5 font-mono text-xs text-zinc-200 placeholder:text-zinc-600"
-            value={feedbackHookCommand}
-            disabled={privacySaving}
-            data-testid="eval-feedback-hook-command"
-            placeholder={privacyText.evaluation.placeholder}
-            onChange={(event) => { setFeedbackHookCommand(event.target.value); setFeedbackHookSaved(false); }}
-            onBlur={(event) => { void handleFeedbackHookCommit(event.target.value.trim()); }}
-          />
-          {feedbackHookSaved ? (
-            <div className="mt-1 text-xs text-badge-success">{privacyText.evaluation.savedHint}</div>
-          ) : null}
-        </div>
-      </SettingsSection>
+      {feedbackHookSection}
 
       <SettingsSection
         title={privacyText.status.title}

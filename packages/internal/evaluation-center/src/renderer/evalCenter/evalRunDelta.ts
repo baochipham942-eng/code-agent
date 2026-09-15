@@ -48,14 +48,26 @@ export function regressionsAgainstBaseline(
 /** 连续几轮全过就视为零区分度；只标不动统计。 */
 const ALWAYS_PASSED_WINDOW = 5;
 
-/** 最近 window 轮（newest-first）里每轮都 passed 的题；不足 window 轮返回空集（没资格说「全过」）。 */
+/**
+ * 每题各看自己最近 window 次「被跑到」的轮次，全 passed 才标；出现次数不足 window 不标。
+ * 不能按组内最近 window 轮数：同组各轮题集常常不相交（夹一轮单题 smoke 就把所有题的信号清零，FB-158）。
+ */
 export function alwaysPassedCaseIds(
   runs: Array<Record<string, EvalBaselineCaseResult>>,
   window = ALWAYS_PASSED_WINDOW,
 ): Set<string> {
-  const recent = runs.slice(0, window);
-  if (recent.length < window) return new Set();
-  return new Set(Object.keys(recent[0]).filter((caseId) => recent.every((run) => run[caseId]?.status === 'passed')));
+  const latest = runs[0];
+  if (!latest) return new Set();
+  return new Set(Object.keys(latest).filter((caseId) => {
+    let seen = 0;
+    for (const run of runs) {
+      const result = run[caseId];
+      if (!result) continue;
+      if (result.status !== 'passed') return false;
+      if (++seen === window) return true;
+    }
+    return false;
+  }));
 }
 
 export function comparabilityTag(input: {

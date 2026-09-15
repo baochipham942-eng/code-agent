@@ -12,6 +12,7 @@
 
 import type { z } from 'zod';
 import type { ChannelSchema } from './schemas/core';
+import type { IPCResponse } from './domains';
 
 /** 域路由请求的最小约束：带判别字段 action（discriminatedUnion 成员与 enum-action object 都满足） */
 export interface DomainRouteRequest {
@@ -27,6 +28,14 @@ export type DomainRouteHandler<Ctx, Payload> = (ctx: Ctx, payload: Payload) => u
  */
 export type DomainRouteHandlers<Req extends DomainRouteRequest, Ctx = unknown> = {
   [A in Req['action'] & string]: DomainRouteHandler<Ctx, ActionPayload<Req, A>>;
+};
+
+/**
+ * rawResponse 表的 handler 表：返回类型收紧为完整 IPCResponse（#1841 ai-review Nit 1）——
+ * 漏包响应、误返回裸 data 编译期即红。可直接传给 defineDomainRoutes（是 DomainRouteHandlers 的子类型）。
+ */
+export type RawDomainRouteHandlers<Req extends DomainRouteRequest, Ctx = unknown> = {
+  [A in Req['action'] & string]: (ctx: Ctx, payload: ActionPayload<Req, A>) => IPCResponse | Promise<IPCResponse>;
 };
 
 /** 从请求联合里按 action 提取对应 payload 类型（payload 可选或缺失的 action 给 undefined）；
@@ -53,6 +62,12 @@ export interface DomainRouteTable<Req extends DomainRouteRequest, Ctx = unknown>
    * 迁移期用它保持响应逐字不变。
    */
   unknownActionMessage?: (action: unknown) => string;
+  /** 未知 action 兜底 code（默认 INVALID_ACTION） */
+  unknownActionCode?: string;
+  /** handler 抛错 → 完整 error（提供时优先于 resolveErrorCode / INTERNAL_ERROR 兜底） */
+  mapError?: (error: unknown, action: unknown) => { code: string; message: string };
+  /** handler 返回完整 IPCResponse，装配器原样透传（不包 { success: true, data }） */
+  rawResponse?: boolean;
   /**
    * 该表面暂缓（web:false）的 action 清单——keys 仍在 actions 里（桩 handler 抛
    * INVALID_ACTION），此字段是给 parity 门做「只减不增」棘轮的对账标记。

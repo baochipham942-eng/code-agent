@@ -1022,6 +1022,8 @@ export class AgentOrchestrator {
       // 迭代数硬上限（角色主动性醒来等预算受限场景，内部文档 §6）
       maxIterations: options?.maxIterations,
       historyVisibility: options?.historyVisibility,
+      // ADR-068 D4 断流续接分档：调用方显式声明（loop 轮）或会话已标无人值守（cron/heartbeat/channel）
+      unattendedTurn: options?.unattended === true || getPermissionModeManager().isUnattendedSession(sessionId ?? undefined),
       deniedToolNames,
       allowedToolNames: boundaryAllowedToolNames,
       telemetryAdapter,

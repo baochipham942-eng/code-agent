@@ -182,6 +182,7 @@ export class AgentLoop {
       planningService: config.planningService,
       inferenceOptions: config.inferenceOptions,
       historyVisibility: config.historyVisibility,
+      unattendedTurn: config.unattendedTurn,
       deniedToolNames: config.deniedToolNames,
       allowedToolNames: config.allowedToolNames,
       hookMessageBuffer: new HookMessageBuffer(),

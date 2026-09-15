@@ -3,11 +3,13 @@
 // ============================================================================
 
 import type { IpcMain } from '../platform';
-import { IPC_CHANNELS, IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
+import { IPC_CHANNELS } from '../../shared/ipc';
 import { getSessionManager, getDatabase } from '../services';
 import type { MemoryRecord as StoredMemoryRecord } from '../services/core/repositories';
 import type { MemoryItem, MemoryCategory, MemoryExport, MemoryStats } from '../../shared/contract';
 import { createLogger } from '../services/infra/logger';
+import { MemorySchemas, type MemoryDomainRequest } from '../../shared/ipc/schemas/memory';
+import { defineDomainRoutes, installDomainRoutes } from './domainRoutes/registry';
 import {
   listMemoryFiles,
   readMemoryFile,
@@ -807,119 +809,59 @@ async function handleGetStats(): Promise<unknown> {
 /**
  * 注册 Memory 相关 IPC handlers
  */
-export function registerMemoryHandlers(ipcMain: IpcMain): void {
-  // ========== New Domain Handler (TASK-04) ==========
-  ipcMain.handle(IPC_DOMAINS.MEMORY, async (_, request: IPCRequest): Promise<IPCResponse> => {
-    const { action, payload } = request;
-
-    try {
-      let data: unknown;
-
-      switch (action) {
-        case 'getContext':
-          data = await handleGetContext(payload as { query: string });
-          break;
-        case 'searchCode':
-          data = await handleSearchCode(payload as { query: string; topK?: number });
-          break;
-        case 'searchConversations':
-          data = await handleSearchConversations(payload as { query: string; topK?: number });
-          break;
-        case 'getStats':
-          data = await handleGetStats();
-          break;
-        // Phase 2: Memory Management
-        case 'list':
-          data = await handleListMemories(payload as { category?: MemoryCategory });
-          break;
-        case 'update':
-          data = await handleUpdateMemory(payload as { id: string; content: string });
-          break;
-        case 'delete':
-          data = await handleDeleteMemory(payload as { id: string });
-          break;
-        case 'deleteByCategory':
-          data = await handleDeleteByCategory(payload as { category: MemoryCategory });
-          break;
-        case 'export':
-          data = await handleExportMemories();
-          break;
-        case 'import':
-          data = await handleImportMemories(payload as { data: MemoryExport });
-          break;
-        case 'getMemoryStats':
-          data = await handleGetMemoryStats();
-          break;
-        case 'lightList':
-          data = await listMemoryFiles();
-          break;
-        case 'lightRead':
-          data = await readMemoryFile((payload as { filename?: string })?.filename || '');
-          break;
-        case 'lightDelete':
-          data = await handleLightMemoryArchive((payload as { filename?: string })?.filename || '');
-          break;
-        case 'lightStats':
-          data = await getLightMemoryStats();
-          break;
-        case 'lightHealth':
-          data = await getLightMemoryHealth();
-          break;
-        case 'lightRebuildIndex':
-          data = await rebuildLightMemoryIndex();
-          break;
-        case 'memoryAudit':
-          data = await handleMemoryAudit(payload as MemoryAuditRequest);
-          break;
-        case 'memoryInboxResolve':
-          data = await handleMemoryInboxResolve(payload as MemoryInboxResolveRequest);
-          break;
-        case 'memoryEntries':
-          data = await handleListMemoryEntries();
-          break;
-        case 'memoryRebuildMirror':
-          data = await handleRebuildMemoryMirror();
-          break;
-        case 'memoryEntryUpdate':
-          data = await handleMemoryEntryUpdate(payload as MemoryEntryUpdateRequest);
-          break;
-        case 'memoryEntryDelete':
-          data = await handleMemoryEntryDelete(payload as MemoryEntryDeleteRequest);
-          break;
-        case 'memoryEntryBatchReview':
-          data = await handleMemoryEntryBatchReview(payload as MemoryEntryBatchReviewRequest);
-          break;
-        case 'memoryPack':
-          data = await handleMemoryPack(payload as MemoryPackRequest);
-          break;
-        case 'memoryExportV2':
-          data = await handleMemoryExportV2();
-          break;
-        case 'memoryImportV2DryRun':
-          data = await handleMemoryImportV2DryRun(payload as { bundle?: MemoryExportV2Bundle });
-          break;
-        case 'memoryImportV2Apply':
-          data = await handleMemoryImportV2Apply(payload as MemoryImportV2ApplyRequest);
-          break;
-        case 'memoryHarnessImportDryRun':
-          data = await handleMemoryHarnessImportDryRun(payload as MemoryImportDryRunRequest);
-          break;
-        case 'memoryHarnessImportApply':
-          data = await handleMemoryHarnessImportApply(payload as MemoryImportApplyRequest);
-          break;
-        case 'memoryHarnessImportConfirmDirective':
-          data = await handleMemoryHarnessImportConfirmDirective(payload as MemoryImportDirectiveConfirmRequest);
-          break;
-        default:
-          return { success: false, error: { code: 'INVALID_ACTION', message: `Unknown action: ${action}` } };
-      }
-
-      return { success: true, data };
-    } catch (error) {
+/**
+ * memory 域单源路由表（RQ-183 续作·MEMORY 刀）：取代原 domain switch，逐 action 一一对应、
+ * payload 强转原样平移（行为严格不变）。未知 action → INVALID_ACTION `Unknown action: <action>`、
+ * 抛错 → INTERNAL_ERROR 由装配器兜底，与原 switch 同形；原 catch 的错误日志经 resolveErrorCode
+ * 钩子保留（返回 undefined = 仍落 INTERNAL_ERROR，memory 域不透传领域 code）。
+ */
+const memoryRoutes = defineDomainRoutes<MemoryDomainRequest, void>(
+  MemorySchemas.REQUEST,
+  {
+    getContext: (_ctx, payload) => handleGetContext(payload as { query: string }),
+    searchCode: (_ctx, payload) => handleSearchCode(payload as { query: string; topK?: number }),
+    searchConversations: (_ctx, payload) => handleSearchConversations(payload as { query: string; topK?: number }),
+    getStats: () => handleGetStats(),
+    list: (_ctx, payload) => handleListMemories(payload as { category?: MemoryCategory }),
+    update: (_ctx, payload) => handleUpdateMemory(payload as { id: string; content: string }),
+    delete: (_ctx, payload) => handleDeleteMemory(payload as { id: string }),
+    deleteByCategory: (_ctx, payload) => handleDeleteByCategory(payload as { category: MemoryCategory }),
+    export: () => handleExportMemories(),
+    import: (_ctx, payload) => handleImportMemories(payload as { data: MemoryExport }),
+    getMemoryStats: () => handleGetMemoryStats(),
+    lightList: () => listMemoryFiles(),
+    lightRead: (_ctx, payload) => readMemoryFile((payload as { filename?: string })?.filename || ''),
+    lightDelete: (_ctx, payload) => handleLightMemoryArchive((payload as { filename?: string })?.filename || ''),
+    lightStats: () => getLightMemoryStats(),
+    lightHealth: () => getLightMemoryHealth(),
+    lightRebuildIndex: () => rebuildLightMemoryIndex(),
+    memoryAudit: (_ctx, payload) => handleMemoryAudit(payload as MemoryAuditRequest),
+    memoryInboxResolve: (_ctx, payload) => handleMemoryInboxResolve(payload as MemoryInboxResolveRequest),
+    memoryEntries: () => handleListMemoryEntries(),
+    memoryRebuildMirror: () => handleRebuildMemoryMirror(),
+    memoryEntryUpdate: (_ctx, payload) => handleMemoryEntryUpdate(payload as MemoryEntryUpdateRequest),
+    memoryEntryDelete: (_ctx, payload) => handleMemoryEntryDelete(payload as MemoryEntryDeleteRequest),
+    memoryEntryBatchReview: (_ctx, payload) => handleMemoryEntryBatchReview(payload as MemoryEntryBatchReviewRequest),
+    memoryPack: (_ctx, payload) => handleMemoryPack(payload as MemoryPackRequest),
+    memoryExportV2: () => handleMemoryExportV2(),
+    memoryImportV2DryRun: (_ctx, payload) => handleMemoryImportV2DryRun(payload as { bundle?: MemoryExportV2Bundle }),
+    memoryImportV2Apply: (_ctx, payload) => handleMemoryImportV2Apply(payload as MemoryImportV2ApplyRequest),
+    memoryHarnessImportDryRun: (_ctx, payload) => handleMemoryHarnessImportDryRun(payload as MemoryImportDryRunRequest),
+    memoryHarnessImportApply: (_ctx, payload) => handleMemoryHarnessImportApply(payload as MemoryImportApplyRequest),
+    memoryHarnessImportConfirmDirective: (_ctx, payload) =>
+      handleMemoryHarnessImportConfirmDirective(payload as MemoryImportDirectiveConfirmRequest),
+  },
+  {
+    resolveErrorCode: (error) => {
       logger.error('Memory IPC error:', error);
-      return { success: false, error: { code: 'INTERNAL_ERROR', message: error instanceof Error ? error.message : String(error) } };
-    }
-  });
+      return undefined;
+    },
+  },
+);
+
+export function registerMemoryHandlers(ipcMain: IpcMain): void {
+  // ========== Domain Handler：单源路由表（RQ-183 续作·MEMORY 刀） ==========
+  installDomainRoutes(ipcMain, memoryRoutes, undefined);
 
   // ========== Simple Memory Management Channel ==========
   // For frontend use - simpler API than domain-based
@@ -1045,3 +987,7 @@ export function registerMemoryHandlers(ipcMain: IpcMain): void {
     respondToDirectiveMemoryConfirmation(payload.id, payload.confirmed);
   });
 }
+
+// 表挂在装配函数对象上供 parity 门枚举（knip 生产档 entry 不含 tests，独立 export 必成
+// dead export；同 installDomainRoutes.extractDomainActions 先例）
+registerMemoryHandlers.routes = memoryRoutes;

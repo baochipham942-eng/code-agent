@@ -13,6 +13,9 @@ import {
 } from '../shared/contract/shellCapabilities';
 import { IPC_DOMAINS, type IPCDomain } from '../shared/ipc/domains';
 import { sessionRoutes } from './ipc/domainRoutes/sessionRoutes';
+import { MemorySchemas } from '../shared/ipc/schemas/memory';
+import { DesktopSchemas } from '../shared/ipc/schemas/desktop';
+import { TagSchemas } from '../shared/ipc/schemas/tag';
 
 const DEFAULT_SINCE_VERSION = '0.16.93';
 
@@ -177,28 +180,8 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'get',
     'set',
   ],
-  [IPC_DOMAINS.DESKTOP]: [
-    'attachBrowserRelayTab',
-    'clearManagedBrowserCookies',
-    'closeManagedBrowserSession',
-    'detachBrowserRelayTab',
-    'ensureManagedBrowserSession',
-    'getBrowserRelayState',
-    'getComputerSurfaceState',
-    'getManagedBrowserRecoverySnapshot',
-    'getManagedBrowserSession',
-    'importBrowserProfileCookies',
-    'listBrowserProfiles',
-    'listBrowserRelayTabs',
-    'listComputerSurfaceElements',
-    'observeComputerSurface',
-    'openBrowserRelayExtensionDirectory',
-    'openBrowserRelayTab',
-    'openManagedBrowserUrl',
-    'refreshManagedBrowserAccountState',
-    'startBrowserRelay',
-    'stopBrowserRelay',
-  ],
+  // desktop 域：派生自 schema action 集合（== desktop 表 keys，parity 门三面对账），手工清单已删
+  [IPC_DOMAINS.DESKTOP]: DesktopSchemas.ACTIONS,
   [IPC_DOMAINS.DIAGNOSTICS]: [
     'budget',
     'compression',
@@ -246,11 +229,8 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'setServerEnabled',
     'signOutServer',
   ],
-  [IPC_DOMAINS.MEMORY]: [
-    'memoryAudit',
-    'memoryEntryUpdate',
-    'memoryInboxResolve',
-  ],
+  // memory 域：派生自 schema action 集合（== memoryRoutes 表 keys，parity 门三面对账），手工清单已删
+  [IPC_DOMAINS.MEMORY]: MemorySchemas.ACTIONS,
   [IPC_DOMAINS.NOTIFICATION]: [
     'getRecent',
     'reportClientDelivery',
@@ -417,6 +397,8 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'start',
     'stop',
   ],
+  // tag 域：派生自 schema action 集合（== tag 表 keys，parity 门三面对账）；此前清单整域缺报 23 项
+  [IPC_DOMAINS.TAG]: TagSchemas.ACTIONS,
   [IPC_DOMAINS.TASK]: [
     'cancel',
     'cleanup',

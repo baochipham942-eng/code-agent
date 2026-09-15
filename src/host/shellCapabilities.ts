@@ -50,6 +50,7 @@ import { TerminalSchemas } from '../shared/ipc/schemas/terminal';
 import { SessionAutomationSchemas } from '../shared/ipc/schemas/sessionAutomation';
 import { TeamSchemas } from '../shared/ipc/schemas/team';
 import { CaptureSchemas } from '../shared/ipc/schemas/capture';
+import { AgentRegistrySchemas } from '../shared/ipc/schemas/agentRegistry';
 
 const DEFAULT_SINCE_VERSION = '0.16.93';
 
@@ -114,9 +115,8 @@ const CAPABILITY_DOMAIN_ACTIONS = {
   [IPC_DOMAINS.AGENT]: AgentSchemas.ACTIONS,
   // agentEngine 域：派生自 schema action 集合（== agentEngine 表 keys，parity 门三面对账），手工清单已删
   [IPC_DOMAINS.AGENT_ENGINE]: AgentEngineSchemas.ACTIONS,
-  [IPC_DOMAINS.AGENT_REGISTRY]: [
-    'list',
-  ],
+  // agents 域（AGENT_REGISTRY）：派生自 schema action 集合（== agentRegistry 表 keys，parity 门三面对账），手工清单已删
+  [IPC_DOMAINS.AGENT_REGISTRY]: AgentRegistrySchemas.ACTIONS,
   // backgroundTasks 域：defineHandler schema 化注册（BackgroundTaskSchemas.REQUEST），renderer 的任务面板 / 通知同步在调；
   // 此前整域未登记（缺报 5 项），parity 门的缺报棘轮按 defineHandler 提取对账
   [IPC_DOMAINS.BACKGROUND_TASKS]: [

@@ -4,7 +4,16 @@ import { fileURLToPath } from 'node:url';
 import * as yaml from 'js-yaml';
 
 import { isTransientError } from '../model/providers/retryStrategy';
-import { EVAL_ATTRIBUTIONS, isEvalAttribution, type EvalAttribution } from '../../shared/contract/evaluationAttribution';
+import {
+  EVAL_ATTRIBUTIONS,
+  EVAL_PROBLEM_CATEGORIES,
+  isEvalAttribution,
+  isEvalProblemCategory,
+  type EvalAttribution,
+  type EvalProblemCategory,
+} from '../../shared/contract/evaluationAttribution';
+import { AI_REVIEW_DIMENSIONS, isAiReviewDimension } from './judge/dimensions';
+import type { AiReviewDimension } from '../../shared/contract/evaluation';
 
 const FAILURE_CODEBOOK_FILE = 'eval-failcodes.yaml';
 const STDERR_TAIL_LINES = 20;
@@ -13,11 +22,21 @@ const moduleDir = typeof __dirname === 'string'
   : path.dirname(fileURLToPath(import.meta.url));
 const PACKAGED_FAILURE_CODEBOOK_DIR = path.resolve(moduleDir, '../../../.claude');
 
+/**
+ * 判官维度匹配项（ADR-071 Q2）。verdict 只能是 'no'——判官的 abstain / unavailable /
+ * yes 都不是「这个维度判坏了」，放进来会把弃权算成失败归因。
+ */
+interface FailureCodeAiReviewMatch {
+  dimension: AiReviewDimension;
+  verdict: 'no';
+}
+
 interface FailureCodeMatch {
   failureReason?: string[];
   failureStage?: string[];
   status?: string[];
   stderr?: string[];
+  aiReview?: FailureCodeAiReviewMatch[];
 }
 
 interface FailureCodeDefinition {
@@ -28,6 +47,8 @@ interface FailureCodeDefinition {
   dispositions: string[];
   /** 默认归因（ADR-071 D2）：统计先验，不是逐题判断，不进聚合口径。 */
   attribution?: EvalAttribution;
+  /** 问题分类（ADR-071 D1）：课程六类之一，报告端语言。 */
+  category?: EvalProblemCategory;
   issue?: string;
   note?: string;
 }
@@ -47,6 +68,8 @@ interface FailureClassificationInput {
   failureStage?: string;
   status?: string;
   stderr?: string | string[];
+  /** 判官结论；缺席（判官没跑，例如异常路径）时 aiReview 规则一律不命中。 */
+  aiReview?: Partial<Record<AiReviewDimension, { verdict: string }>>;
 }
 
 interface FailureClassification {
@@ -92,6 +115,36 @@ function validateRegexes(patterns: string[], field: string, filePath: string): v
   }
 }
 
+/** 判官维度匹配项的白名单校验，与 dispositions 同一条通道（ADR-071 Q2）。 */
+function aiReviewMatches(
+  value: unknown,
+  code: string,
+  filePath: string,
+): FailureCodeAiReviewMatch[] {
+  if (!Array.isArray(value) || value.length === 0) {
+    return failCodebook(filePath, `代码 ${code}.match.aiReview 必须是非空数组`);
+  }
+  return value.map((entry) => {
+    if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) {
+      return failCodebook(filePath, `代码 ${code}.match.aiReview 的每一项必须是对象`);
+    }
+    const raw = entry as Record<string, unknown>;
+    if (typeof raw.dimension !== 'string' || !isAiReviewDimension(raw.dimension)) {
+      return failCodebook(
+        filePath,
+        `代码 ${code}.match.aiReview.dimension 只能是 ${AI_REVIEW_DIMENSIONS.join(' / ')}`,
+      );
+    }
+    if (raw.verdict !== 'no') {
+      return failCodebook(
+        filePath,
+        `代码 ${code}.match.aiReview.verdict 只能是 no（判官 abstain / unavailable / yes 不命中）`,
+      );
+    }
+    return { dimension: raw.dimension, verdict: 'no' as const };
+  });
+}
+
 function validateDefinition(
   value: unknown,
   index: number,
@@ -123,6 +176,9 @@ function validateDefinition(
     }
     match[field] = values;
   }
+  if (rawMatch.aiReview !== undefined) {
+    match.aiReview = aiReviewMatches(rawMatch.aiReview, raw.code, filePath);
+  }
   if (Object.keys(match).length === 0) {
     return failCodebook(filePath, `代码 ${raw.code} 至少需要一条匹配规则`);
   }
@@ -147,6 +203,12 @@ function validateDefinition(
         failCodebook(filePath, `代码 ${raw.code} 的 known_issue 链接无效`, error);
       }
     }
+  }
+  if (raw.category !== undefined && !isEvalProblemCategory(raw.category)) {
+    return failCodebook(
+      filePath,
+      `代码 ${raw.code}.category 只能是 ${EVAL_PROBLEM_CATEGORIES.join(' / ')}`,
+    );
   }
   if (raw.attribution !== undefined && !isEvalAttribution(raw.attribution)) {
     return failCodebook(
@@ -180,6 +242,7 @@ function validateDefinition(
     match,
     dispositions: dispositions.filter((disposition) => disposition !== 'known_issue'),
     ...(isEvalAttribution(raw.attribution) ? { attribution: raw.attribution } : {}),
+    ...(isEvalProblemCategory(raw.category) ? { category: raw.category } : {}),
     ...(issue ? { issue } : {}),
     ...(typeof raw.note === 'string' ? { note: raw.note } : {}),
   };
@@ -242,6 +305,14 @@ function regexMatches(patterns: string[] | undefined, values: string[]): boolean
   }));
 }
 
+function aiReviewHits(
+  rules: FailureCodeAiReviewMatch[] | undefined,
+  aiReview: FailureClassificationInput['aiReview'],
+): boolean {
+  if (!rules?.length || !aiReview) return false;
+  return rules.some((rule) => aiReview[rule.dimension]?.verdict === rule.verdict);
+}
+
 function matchesDefinition(
   input: FailureClassificationInput,
   definition: FailureCodeDefinition,
@@ -253,6 +324,7 @@ function matchesDefinition(
     || Boolean(input.failureStage && match.failureStage?.includes(input.failureStage))
     || Boolean(input.status && match.status?.includes(input.status))
     || regexMatches(match.stderr, stderrLines)
+    || aiReviewHits(match.aiReview, input.aiReview)
   );
 }
 
@@ -329,6 +401,14 @@ export function failureCodeAttribution(
   code: string,
 ): EvalAttribution | undefined {
   return codebook.codes.find((definition) => definition.code === code)?.attribution;
+}
+
+/** 某个 code 的问题分类；报告的「问题分类」一列据此取。 */
+export function failureCodeCategory(
+  codebook: FailureCodebook,
+  code: string,
+): EvalProblemCategory | undefined {
+  return codebook.codes.find((definition) => definition.code === code)?.category;
 }
 
 export function failureCodeLabel(codebook: FailureCodebook, code: string): string {

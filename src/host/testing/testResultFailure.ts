@@ -16,6 +16,9 @@ export function classifyTestResultFailure(
     failureReason: result.failureReason,
     failureStage: result.failureStage,
     status: result.status,
+    // 判官在 testRunner.ts:1018 先跑、分类在 :1123 后跑，所以这里读到的 aiReview
+    // 就是本题最终结论；异常路径（超时/崩溃）判官没跑，aiReview 缺席、规则不命中。
+    ...(result.aiReview ? { aiReview: result.aiReview } : {}),
     stderr: [
       ...result.errors,
       ...result.toolExecutions.flatMap((execution) => execution.error ? [execution.error] : []),

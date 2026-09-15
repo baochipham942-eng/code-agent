@@ -95,7 +95,8 @@ const ZINDEX_ALLOWLIST_PATH = join(__dirname, 'design-system-zindex-allowlist.js
 
 const STICKY_RE = /\bsticky\b[^"'`}]*\btop-/;
 const SCROLLER_RE = /\boverflow-(?:auto|scroll|y-auto|y-scroll)\b/;
-const TOP_PADDING_RE = /\bp[ty]-(?:\d|\[|px)/;
+// 不吃 pt-0/py-0（零内边距无害）与 scroll-pt-*（滚动吸附偏移，不是盒内边距）
+const TOP_PADDING_RE = /(?<![\w-])p[ty]-(?:[1-9]\d*(?:\.\d+)?|\[|px)\b/;
 
 function indentOf(line) {
   return line.length - line.trimStart().length;
@@ -612,6 +613,11 @@ if (process.argv[1] && process.argv[1].endsWith('check-design-system.mjs')) {
     process.exit(0);
   }
   if (mode === '--update') {
+    // 规则 10 是硬 0：--update 只能降别的棘轮，不能把这条抬起来（否则门形同虚设）
+    if ((c['sticky-in-padded-scroller'] ?? 0) > 0) {
+      console.error(`✗ sticky-in-padded-scroller 有 ${c['sticky-in-padded-scroller']} 处违规，先修掉再 --update；这条不进棘轮`);
+      process.exit(1);
+    }
     writeFileSync(BASELINE_PATH, JSON.stringify(c, null, 2) + '\n');
     console.log('✓ 基线已更新：', JSON.stringify(c));
     process.exit(0);

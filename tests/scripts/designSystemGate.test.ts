@@ -142,6 +142,13 @@ describe('sticky-in-padded-scroller gate（FB-162）', () => {
     expect(findStickyInPaddedScrollerViolations(padded.map((l) => l.replace('py-2', 'pb-2')), 'F.tsx')).toEqual([]);
     expect(findStickyInPaddedScrollerViolations(padded.map((l) => l.replace('py-2', 'pt-[6px]')), 'F.tsx')).toHaveLength(1);
   });
+  it('pt-0 / py-0 / scroll-pt-* 不算上内边距；pt-1.5 算', () => {
+    for (const cls of ['pt-0', 'py-0', 'scroll-pt-4']) {
+      expect(findStickyInPaddedScrollerViolations(padded.map((l) => l.replace('py-2', cls)), 'F.tsx')).toEqual([]);
+    }
+    expect(findStickyInPaddedScrollerViolations(padded.map((l) => l.replace('py-2', 'pt-1.5')), 'F.tsx')).toHaveLength(1);
+  });
+
   it('ds-allow:sticky 写在 sticky 行或容器行都放行', () => {
     expect(findStickyInPaddedScrollerViolations(padded.map((l) => l.replace('bg-zinc-950">', 'bg-zinc-950"> {/* ds-allow:sticky 理由 */}')), 'F.tsx')).toEqual([]);
   });

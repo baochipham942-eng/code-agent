@@ -10,6 +10,7 @@ export const EVALUATION_CHANNELS = {
   SAVE_CASE: 'evaluation:save-case',
   HARVEST_PREVIEW: 'evaluation:harvest-preview',
   SAVE_ANNOTATION: 'evaluation:save-annotation',
+  PUSH_FEEDBACK: 'evaluation:push-feedback',
   LIST_ANNOTATIONS: 'evaluation:list-annotations',
   SET_BASELINE: 'evaluation:set-baseline',
   BASELINE_INFO: 'evaluation:baseline-info',

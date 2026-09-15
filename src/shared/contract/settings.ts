@@ -423,6 +423,16 @@ export interface AppSettings {
     /** 上线后坏案例回流入口；三态与评分开关一致，默认跟随内部槽。 */
     postLaunchReflow?: 'on' | 'off' | 'auto';
   };
+  /** 评测中心（ADR-071 Q4）。 */
+  evaluation?: {
+    /**
+     * 「进反馈池」的钩子命令。默认空 = 抽屉里的按钮退化成「复制 fb add 命令」文本。
+     * 配了才执行：宿主先把证据写进一个目录，再用 shell 跑这条命令，目录路径经环境变量
+     * NEO_EVAL_FEEDBACK_DIR 传进去（不拼进命令串，题 id 不会被当成命令片段）。
+     * 🔴 产品代码里不写任何私有工具路径，要接哪套反馈池由这条配置决定。
+     */
+    feedbackHookCommand?: string;
+  };
   /** 第三方界面插件总开关。缺省与默认配置均为关闭。 */
   pluginUi?: {
     thirdPartyEnabled?: boolean;

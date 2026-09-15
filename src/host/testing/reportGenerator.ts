@@ -7,7 +7,7 @@ import path from 'path';
 import type { BaselineDelta, TestRunSummary, TestResult } from './types';
 import { formatDuration } from '../../shared/utils/format';
 import { getRunStampReportRows } from './runStampReport';
-import { failureCodeLabel, loadProjectFailureCodebook } from './failureCodes';
+import { failureCodeAttribution, failureCodeLabel, loadProjectFailureCodebook } from './failureCodes';
 import { AI_REVIEW_DIMENSIONS } from './judge/dimensions';
 import type { AiReviewDimension } from '../../shared/contract/evaluation';
 
@@ -579,6 +579,43 @@ function formatDisposition(disposition: string): string {
   return disposition;
 }
 
+const ATTRIBUTION_LABELS: Record<string, string> = {
+  user_input: '用户输入',
+  model_capability: '模型能力',
+  scenario_fit: '场景适配',
+  system_config: '系统配置',
+};
+
+/**
+ * 默认归因分布（ADR-071 D2/Q5）。🔴 这一栏的来源是 failcodes.yaml 上的先验，
+ * 不是逐题判断，所以它单独一张表、单独一句免责，且不参与通过率等任何聚合口径。
+ * 人工归因（annotations.attribution_json）在评测中心抽屉里看，不进本文件——
+ * 报告只拿得到 TestRunSummary，读不到库。
+ */
+function generateDefaultAttributionRows(summary: TestRunSummary): string[] {
+  const codebook = reportFailureCodebook();
+  const counts: Record<string, number> = {};
+  for (const [code, count] of Object.entries(summary.failureDistribution ?? {})) {
+    const attribution = codebook ? failureCodeAttribution(codebook, code) : undefined;
+    const key = attribution ?? 'unattributed';
+    counts[key] = (counts[key] ?? 0) + count;
+  }
+  const rows = Object.entries(counts)
+    .sort(([left, leftCount], [right, rightCount]) => rightCount - leftCount || left.localeCompare(right))
+    .map(([key, count]) => `| ${ATTRIBUTION_LABELS[key] ?? '未标默认归因'} | ${count} |`);
+  return [
+    '',
+    '### 默认归因（码本先验，不进聚合口径）',
+    '',
+    '> 来自 `.claude/eval-failcodes.yaml` 的 `attribution:`，是「这个码通常是谁的错」的默认值。',
+    '> 逐题的人工归因三件套在评测中心抽屉里给，两者分开看，不混算。',
+    '',
+    '| 默认归因 | 数量 |',
+    '|----------|------|',
+    ...(rows.length > 0 ? rows : ['| 暂无 | 0 |']),
+  ];
+}
+
 function generateFailureDistributionRows(summary: TestRunSummary): string[] {
   const distribution = { unknown: 0, ...summary.failureDistribution };
   const codeRows = Object.entries(distribution)
@@ -605,6 +642,7 @@ function generateFailureDistributionRows(summary: TestRunSummary): string[] {
     .sort(([left, leftCount], [right, rightCount]) => rightCount - leftCount || left.localeCompare(right))
     .map(([disposition, count]) => `| ${formatDisposition(disposition)} | ${count} |`);
   lines.push(...(dispositionRows.length > 0 ? dispositionRows : ['| 暂无 | 0 |']));
+  lines.push(...generateDefaultAttributionRows(summary));
   return lines;
 }
 

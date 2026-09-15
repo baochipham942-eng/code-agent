@@ -1,5 +1,16 @@
 import React, { useEffect, useState } from 'react';
-import type { AiReviewDimension, EvalAnnotation } from '@shared/contract/evaluation';
+import type {
+  AiReviewDimension,
+  EvalAnnotation,
+  EvalAttribution,
+  EvalAttributionTriple,
+  EvalSeverity,
+} from '@shared/contract/evaluation';
+import {
+  EVAL_ATTRIBUTIONS,
+  EVAL_SEVERITIES,
+  isFeedbackPoolCandidate,
+} from '@shared/contract/evaluation';
 import { Button } from '@renderer/components/primitives/Button';
 import { Textarea } from '@renderer/components/primitives/Textarea';
 import { toast } from '@renderer/hooks/useToast';
@@ -9,6 +20,22 @@ import { useEvaluationI18n } from '../i18n/useEvaluationI18n';
 
 interface EvalCaseAnnotationProps {
   target: { experimentId: string; caseId: string };
+}
+
+/** 三件套齐了才算一条归因结论：缺证据或缺定级不写回（与 IPC 侧同一把尺）。 */
+function buildTriple(
+  attribution: EvalAttribution | undefined,
+  evidence: string,
+  suggestion: string,
+  severity: EvalSeverity | undefined,
+): EvalAttributionTriple | undefined {
+  if (!attribution || !severity || !evidence.trim()) return undefined;
+  return {
+    attribution,
+    severity,
+    evidence: evidence.trim(),
+    ...(suggestion.trim() ? { suggestion: suggestion.trim() } : {}),
+  };
 }
 
 function relativeTime(timestamp: number, language: string): string {
@@ -30,6 +57,12 @@ export const EvalCaseAnnotation: React.FC<EvalCaseAnnotationProps> = ({ target }
   const [note, setNote] = useState('');
   const [dims, setDims] = useState<Partial<Record<AiReviewDimension, 'yes' | 'no'>>>({});
   const [gold, setGold] = useState(false);
+  const [attribution, setAttribution] = useState<EvalAttribution>();
+  const [evidence, setEvidence] = useState('');
+  const [suggestion, setSuggestion] = useState('');
+  const [severity, setSeverity] = useState<EvalSeverity>();
+  /** 这一版三件套已经推过一次：推送中与推送成功都不让再点，免得同一条反馈落两份。 */
+  const [pushState, setPushState] = useState<'idle' | 'pushing' | 'done'>('idle');
   const [mine, setMine] = useState<EvalAnnotation>();
   const [others, setOthers] = useState<EvalAnnotation[]>([]);
   const [state, setState] = useState<'loading' | 'ready' | 'saving' | 'error'>('loading');
@@ -50,6 +83,10 @@ export const EvalCaseAnnotation: React.FC<EvalCaseAnnotationProps> = ({ target }
         setNote(own?.note ?? '');
         setDims(own?.dims ?? {});
         setGold(own?.gold === true);
+        setAttribution(own?.attribution?.attribution);
+        setEvidence(own?.attribution?.evidence ?? '');
+        setSuggestion(own?.attribution?.suggestion ?? '');
+        setSeverity(own?.attribution?.severity);
         setState('ready');
       })
       .catch(() => {
@@ -81,6 +118,7 @@ export const EvalCaseAnnotation: React.FC<EvalCaseAnnotationProps> = ({ target }
         dims,
         supersedesId: mine?.id,
         ...(gold ? { gold: true } : {}),
+        ...(triple ? { attribution: triple } : {}),
       });
       setMine(result.annotation);
       setState('ready');
@@ -88,6 +126,37 @@ export const EvalCaseAnnotation: React.FC<EvalCaseAnnotationProps> = ({ target }
     } catch {
       setError(labels.saveFailed);
       setState('error');
+    }
+  };
+
+  const triple = buildTriple(attribution, evidence, suggestion, severity);
+  // 动了归因这一段却没填全 = 不保存；全空（没动过）照常保存，不逼人填。
+  const incomplete = Boolean(attribution || severity || evidence.trim()) && !triple;
+  const canPush = Boolean(triple && isFeedbackPoolCandidate(triple)) && pushState === 'idle';
+
+  const pushToFeedbackPool = async () => {
+    if (!triple) return;
+    setPushState('pushing');
+    try {
+      const result = await invokeEvaluation(EVALUATION_CHANNELS.PUSH_FEEDBACK, {
+        experimentId: target.experimentId,
+        caseId: target.caseId,
+        triple,
+      });
+      setPushState('done');
+      if (result.hookRan) {
+        toast.success(labels.feedbackPushed.replace('{dir}', result.evidenceDir));
+        return;
+      }
+      // 没配钩子命令、或钩子跑挂了：都退化成「复制 fb add 命令」，证据都已落盘。
+      const title = `缺陷·${target.caseId}：${triple.evidence}`;
+      await navigator.clipboard?.writeText(
+        labels.feedbackCommand.replace('{title}', title).replace('{dir}', result.evidenceDir),
+      );
+      toast.success(result.hookError ? labels.feedbackFailed : labels.feedbackCopied);
+    } catch {
+      setPushState('idle');
+      toast.error(labels.feedbackFailed);
     }
   };
 
@@ -126,13 +195,48 @@ export const EvalCaseAnnotation: React.FC<EvalCaseAnnotationProps> = ({ target }
         ))}
       </div>
       <p className="mb-3 text-[10px] text-zinc-600">{labels.dimensionHelp}</p>
-      <label className="mb-1 flex items-center gap-2 text-[11px] text-zinc-300">
+      <div className="mt-4 border-t border-zinc-800 pt-3" data-testid="eval-case-attribution">
+        <h4 className="mb-1 text-[11px] font-medium text-zinc-300">{labels.attributionTitle}</h4>
+        <p className="mb-2 text-[10px] text-zinc-600">{labels.attributionHelp}</p>
+        <div className="mb-2 flex flex-wrap gap-1">
+          {EVAL_ATTRIBUTIONS.map((value) => (
+            <Button key={value} size="sm" variant="ghost" aria-pressed={attribution === value}
+              aria-label={labels[value]} className={attribution === value ? pressed : ''}
+              onClick={() => { setPushState('idle'); setAttribution((current) => current === value ? undefined : value); }}>
+              {labels[value]}
+            </Button>
+          ))}
+        </div>
+        <label className="mb-1 block text-[11px] text-zinc-400" htmlFor="eval-annotation-evidence">{labels.evidence}</label>
+        <Textarea id="eval-annotation-evidence" value={evidence} minRows={1} maxRows={3} autoResize
+          placeholder={labels.evidencePlaceholder}
+          onChange={(event) => { setPushState('idle'); setEvidence(event.target.value); }} />
+        <label className="mb-1 mt-2 block text-[11px] text-zinc-400" htmlFor="eval-annotation-suggestion">{labels.suggestion}</label>
+        <Textarea id="eval-annotation-suggestion" value={suggestion} minRows={1} maxRows={3} autoResize
+          placeholder={labels.suggestionPlaceholder} onChange={(event) => setSuggestion(event.target.value)} />
+        <div className="mt-2 flex items-center gap-2">
+          <span className="text-[11px] text-zinc-400">{labels.severity}</span>
+          {EVAL_SEVERITIES.map((value) => (
+            <Button key={value} size="sm" variant="ghost" aria-pressed={severity === value}
+              aria-label={`${labels.severity} ${value}`} className={severity === value ? pressed : ''}
+              onClick={() => { setPushState('idle'); setSeverity((current) => current === value ? undefined : value); }}>{value}</Button>
+          ))}
+        </div>
+        <p className="mt-1 text-[10px] text-zinc-600">{labels.severityHelp}</p>
+        {incomplete && <p className="mt-1 text-[10px] text-badge-danger" data-testid="eval-case-attribution-incomplete">{labels.attributionIncomplete}</p>}
+        <div className="mt-2 flex items-center gap-2">
+          <Button size="sm" variant="secondary" disabled={!canPush}
+            onClick={() => void pushToFeedbackPool()}>{labels.feedbackPush}</Button>
+          <span className="text-[10px] text-zinc-600">{labels.feedbackHint}</span>
+        </div>
+      </div>
+      <label className="mb-1 mt-4 flex items-center gap-2 text-[11px] text-zinc-300">
         <input type="checkbox" checked={gold} aria-label={labels.gold}
           onChange={(event) => setGold(event.target.checked)} />
         {labels.gold}
       </label>
       <p className="mb-3 text-[10px] text-zinc-600">{labels.goldHelp}</p>
-      <Button size="sm" disabled={state === 'loading' || state === 'saving' || tooLong}
+      <Button size="sm" disabled={state === 'loading' || state === 'saving' || tooLong || incomplete}
         loading={state === 'saving'} onClick={() => void save()}>{state === 'saving' ? labels.saving : labels.save}</Button>
       {error && <p className="mt-2 text-[11px] text-badge-danger">{error}</p>}
       {others.length > 0 && (

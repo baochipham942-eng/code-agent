@@ -147,7 +147,8 @@ async function writeCaseDrawerFixture(): Promise<{ fixturePath: string; annotati
     id: 'visual-annotation-1', experiment_id: runId, case_id: 'TC-026', reviewer_id: 'runpanel-admin',
     overall: 'down', note: '报告文件没有生成，工具调用也失败了。',
     dims_json: JSON.stringify({ task_completed: 'no', tool_choice: 'no', self_tested: 'yes' }),
-    consent_scope: 'metadata', calibration_split: null, supersedes_id: null, created_at: Date.now() - 7_200_000,
+    consent_scope: 'metadata', calibration_split: null, attribution_json: null,
+    supersedes_id: null, created_at: Date.now() - 7_200_000,
   });
   const row = annotations.listForCase(runId, 'TC-026')[0];
   if (!row) throw new Error('missing persisted visual annotation');

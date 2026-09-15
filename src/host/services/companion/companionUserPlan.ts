@@ -85,7 +85,14 @@ export function listCompanionUserPlans(): CompanionPlanRequest[] {
   const live: CompanionPlanRequest[] = [];
   for (const [id, item] of [...pending]) {
     if (db) {
-      const messages = db.getRecentMessages(item.sessionId, 20) as Message[];
+      // 这次读只用来**修剪**已不在待审批态的卡；瞬时数据库故障时不许让整个列表轮询抛错
+      // （ai-review round10 Important）——读不到就保守保留这张卡，下一拍轮询再修。
+      let messages: Message[] = [];
+      try {
+        messages = db.getRecentMessages(item.sessionId, 20) as Message[];
+      } catch (error) {
+        logger.warn('Companion plan prune read failed, keeping pending card', { sessionId: item.sessionId, toolCallId: item.toolCallId, error });
+      }
       const toolCall = messages.flatMap(message => message.toolCalls ?? []).find(call => call.id === item.toolCallId);
       if (toolCall && !readPendingApproval(toolCall)) {
         pending.delete(id);

@@ -157,4 +157,23 @@ describe('companionUserPlan registers ChatView exit_plan_mode cards', () => {
     // 卡片保留：瞬时故障不等于计划被解决。
     expect(listCompanionUserPlans().some(plan => plan.id === id)).toBe(true);
   });
+
+  it('列表轮询遇瞬时数据库故障不抛错，保守保留待审批卡（ai-review round10）', () => {
+    const id = `list-fault-${Date.now()}`;
+    noteCompanionUserPlan('session-a', {
+      toolCallId: id,
+      success: true,
+      metadata: {
+        confirmationType: PLAN_APPROVAL_CONFIRMATION_TYPE,
+        plan: PLAN,
+        planApproval: APPROVAL,
+      },
+    });
+    getRecentMessages.mockImplementationOnce(() => {
+      throw new Error('SQLITE_BUSY');
+    });
+    // 修剪读失败 ≠ 列表接口失败：返回内存投影，卡保留，下一拍轮询再修。
+    expect(() => listCompanionUserPlans()).not.toThrow();
+    expect(listCompanionUserPlans().some(plan => plan.id === id)).toBe(true);
+  });
 });

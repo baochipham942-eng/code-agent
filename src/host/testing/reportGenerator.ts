@@ -407,6 +407,11 @@ export function generateMarkdownReport(
       const expectationResults = result.expectationResults ?? [];
       lines.push(`### ${result.testId}`);
       lines.push('');
+      if (result.timeoutExpectations) {
+        const unjudged = result.timeoutExpectations.unjudged;
+        lines.push(`> 超时题：只在被掐前的轨迹上跑负向过程断言（N-EVAL-TIMEOUT-K2 起的口径，历史轮没有）${unjudged.length > 0 ? `；未判：${unjudged.join(', ')}` : ''}`);
+        lines.push('');
+      }
       lines.push('| 状态 | 描述 | 证据 |');
       lines.push('|------|------|------|');
       for (const er of expectationResults) {

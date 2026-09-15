@@ -554,6 +554,11 @@ export interface TestResult {
   killedByTimeout?: boolean;
   /** 超时题：被掐那一轮的轨迹是否已并入（false = 宽限期内没等到，toolExecutions 等只含之前的轮）。 */
   timeoutTraceAvailable?: boolean;
+  /**
+   * 超时题在保全轨迹上补跑的负向过程断言（N-EVAL-TIMEOUT-K2-NEGASSERT 起才有；历史结果缺席 = 旧口径，不回填）。
+   * unjudged = 锚点没命中 / 没有审批记录源，不算失败。
+   */
+  timeoutExpectations?: { judged: ExpectationType[]; unjudged: ExpectationType[] };
 }
 
 /**

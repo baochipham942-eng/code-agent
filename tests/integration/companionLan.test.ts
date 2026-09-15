@@ -745,6 +745,23 @@ describe('LAN companion: real HTTP + Noise + SQLite', () => {
     expect(phone.getState()).toMatchObject({ runId: null, terminal: 'complete' });
     phone.getState().pause();
   });
+  it('keeps a run failure out of the bottom notice so a later success cannot sit next to it (N-MOBILE-EXEC-STATUS ②)', async () => {
+    let storage: string | null = null;
+    const phone = createCompanionStore({ read: async () => storage, write: async value => { storage = value; },
+      scan: async () => JSON.stringify(server.invite(['shared'])), post }, () => {});
+    await phone.getState().pair();
+    gateway.publish('shared', 'message', { id: 'u1', role: 'user', content: 'first', runId: 'run-a' });
+    gateway.publish('shared', 'error', { code: 'MODEL_AUTH', runId: 'run-a' });
+    await phone.getState().sync();
+    // 失败原因随 error 事件留在会话里（CompanionConversation 挂在那次执行下面），不进全局提示条
+    expect(phone.getState()).toMatchObject({ runId: null, terminal: 'failed', commandError: null });
+    gateway.publish('shared', 'message', { id: 'u2', role: 'user', content: 'second', runId: 'run-b' });
+    gateway.publish('shared', 'agent_complete', { runId: 'run-b' });
+    await phone.getState().sync();
+    expect(phone.getState()).toMatchObject({ runId: null, terminal: 'complete', commandError: null });
+    expect(phone.getState().events.filter(event => event.kind === 'error')).toHaveLength(1);
+    phone.getState().pause();
+  });
   it('clears a pending file command after the transfer is interrupted so retry is possible', async () => {
     const invitation = JSON.stringify(server.invite(['shared']));
     let storage: string | null = null;

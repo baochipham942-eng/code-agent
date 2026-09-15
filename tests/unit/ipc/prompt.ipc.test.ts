@@ -193,3 +193,76 @@ describe('prompt.ipc access control', () => {
     expect(JSON.stringify(response.data)).not.toContain('FULL SYSTEM PROMPT');
   });
 });
+
+describe('prompt.ipc dispatch 特征（RQ-183 续作·PROMPT 刀迁表前钉住现状）', () => {
+  const admin = () => {
+    mocks.currentUser = { id: 'admin-1', email: 'admin@example.com', isAdmin: true };
+    mocks.sessionVerified = true;
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.currentUser = null;
+    mocks.sessionVerified = false;
+    delete process.env.CODE_AGENT_ALLOW_SYSTEM_PROMPT_DEBUG;
+    mocks.registry.getPromptDetail.mockReturnValue({
+      id: 'core.identity',
+      category: 'core',
+      name: 'Identity',
+      defaultText: 'default prompt',
+      override: null,
+      overridden: false,
+    });
+  });
+
+  it('权限门先于分发：未登录发未知 action 也返回 FORBIDDEN（不泄露 INVALID_ACTION）', async () => {
+    const ipc = makeFakeIpc();
+    registerPromptHandlers(ipc as never);
+    expect(await ipc.invoke({ action: 'bogus' } as IPCRequest)).toMatchObject({ success: false, error: { code: 'FORBIDDEN' } });
+  });
+
+  it('管理员发未知 action → INVALID_ACTION + Unknown action 文案', async () => {
+    admin();
+    const ipc = makeFakeIpc();
+    registerPromptHandlers(ipc as never);
+    expect(await ipc.invoke({ action: 'bogus' } as IPCRequest)).toEqual({
+      success: false,
+      error: { code: 'INVALID_ACTION', message: 'Unknown action: bogus' },
+    });
+  });
+
+  it('get / reset 返回详情；reset 先清 override', async () => {
+    admin();
+    const ipc = makeFakeIpc();
+    registerPromptHandlers(ipc as never);
+    expect(await ipc.invoke({ action: 'get', payload: { id: 'core.identity' } })).toMatchObject({ success: true, data: { id: 'core.identity' } });
+    expect(await ipc.invoke({ action: 'reset', payload: { id: 'core.identity' } })).toMatchObject({ success: true, data: { id: 'core.identity' } });
+    expect(mocks.registry.resetPromptOverride).toHaveBeenCalledWith('core.identity');
+  });
+
+  it('preview：override 优先于 defaultText；详情不存在 → data null', async () => {
+    admin();
+    const ipc = makeFakeIpc();
+    registerPromptHandlers(ipc as never);
+    mocks.registry.getPromptDetail.mockReturnValueOnce({ id: 'core.identity', defaultText: 'default prompt', override: 'patched', overridden: true });
+    expect(await ipc.invoke({ action: 'preview', payload: { id: 'core.identity' } })).toEqual({
+      success: true,
+      data: { id: 'core.identity', live: 'patched', length: 7 },
+    });
+    mocks.registry.getPromptDetail.mockReturnValueOnce(null);
+    expect(await ipc.invoke({ action: 'preview', payload: { id: 'missing' } })).toEqual({ success: true, data: null });
+  });
+
+  it('handler 抛错 → INTERNAL_ERROR + message', async () => {
+    admin();
+    const ipc = makeFakeIpc();
+    registerPromptHandlers(ipc as never);
+    mocks.registry.listPrompts.mockImplementationOnce(() => {
+      throw new Error('registry broken');
+    });
+    expect(await ipc.invoke({ action: 'list' })).toEqual({
+      success: false,
+      error: { code: 'INTERNAL_ERROR', message: 'registry broken' },
+    });
+  });
+});

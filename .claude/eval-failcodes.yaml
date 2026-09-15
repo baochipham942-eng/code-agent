@@ -137,6 +137,11 @@ codes:
         - '\bExpected file\b.{0,80}\b(?:to be created|to exist)\b'
         - '\bCannot check content\b.{0,80}\bfile\b.{0,40}\bnot found\b'
         - '(?:缺少|未生成|不存在).{0,20}(?:产物|文件|输出)'
+        # 断言失败读产物时抛 ENOENT（assertionEngine.ts evaluateExpectation
+        # 的 catch 把 error.stack 塞进 details，形如 `[content_contains] Error:
+        # ENOENT: ...`）：锚断言名形状「[类型] ... ENOENT」，同一分号分段内
+        # （join 用 '; ' 拼接各断言），不锚 ENOENT 具体措辞前后的错误文案。
+        - '\[\w+\][^;]*\bENOENT\b'
       stderr:
         - '\bENOENT\b'
         - '\b(?:artifact|file)\b.{0,40}\b(?:not found|does not exist)\b'

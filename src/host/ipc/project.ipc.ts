@@ -5,7 +5,7 @@
 // 单一 domain 处理器同时服务桌面原生 IPC 和 HTTP（domain.ts 的
 // POST /api/domain/project/:action 走同一处理器）。设计：内部文档 §5.3
 //
-// actions：集合真源见 src/shared/ipc/schemas/project.ts（33 个；表 keys、schema、shellCapabilities
+// actions：集合真源见 src/shared/ipc/schemas/project.ts（表 keys、schema、shellCapabilities
 // 由 tests/scripts/domainRouteParity.test.ts 三面对账，逐 action 语义见 projectHandlers）
 // ============================================================================
 

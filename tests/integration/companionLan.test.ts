@@ -84,7 +84,7 @@ describe('LAN companion: real HTTP + Noise + SQLite', () => {
     await new Promise<void>(resolve => squatter.listen(0, () => resolve()));
     const takenPort = (squatter.address() as { port: number }).port;
     const busy = new LanCompanionServer(gateway, hostIdentity, () => now);
-    await busy.start(address, takenPort); // 修复前：这里抛 EADDRINUSE
+    await busy.start(address!, takenPort); // 修复前：这里抛 EADDRINUSE
     const invitation = busy.invite(['shared']);
     const boundPort = Number(new URL(invitation.endpoint).port);
     expect(boundPort).not.toBe(takenPort); // 端点带的是实际端口

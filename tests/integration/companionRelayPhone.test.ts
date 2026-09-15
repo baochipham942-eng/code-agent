@@ -233,7 +233,7 @@ describe('companion relay phone: dual-path over real gateway + LAN server + fake
     // 部署形态：当前分支代码但没配 relay（relayRoute 回调缺席）⇒ {kind:'unavailable'}，
     // 不关 channel。手机不缓存路由，会话照常——relay 回落对这个 Host 就是不可用，不假死。
     legacyServer = new LanCompanionServer(gateway, hostIdentity, Date.now);
-    await legacyServer.start(address, 0);
+    await legacyServer.start(address!, 0);
     const store = phone(legacyServer);
     await store.getState().pair();
     expect(store.getState()).toMatchObject({ status: 'connected', transport: 'lan' });

@@ -10,6 +10,7 @@ import { invokeEvaluation } from '../evaluationRunIpc';
 import { useEvaluationI18n } from '../i18n/useEvaluationI18n';
 import { useEvalCenterStore } from '../stores/evalCenterStore';
 import { toast } from '@renderer/hooks/useToast';
+import { Badge } from '@renderer/components/primitives/Badge';
 import { Button } from '@renderer/components/primitives/Button';
 import { EmptyState } from '@renderer/components/primitives/EmptyState';
 import { IconButton } from '@renderer/components/primitives/IconButton';
@@ -20,6 +21,8 @@ import { ConfirmDialog } from '@renderer/components/composites/ConfirmDialog';
 // 题库 YAML 的 category 是自由文本，矩阵只认 src/host/testing/types.ts 的 TestCategory 契约四值。
 // ⚠ 这里是手抄：渲染侧进不了 host 类型，两边没有类型关联。契约加值必须同步改这里，否则新值会静默落进「其他」列。
 const TEST_CATEGORIES = ['basic_tool', 'task_completion', 'error_recovery', 'edge_case'] as const;
+// 标签列单行最多显示几个 chip（其余折成「+N」）：列定宽 w-48(192)，两个 chip 可收缩截断后仍放得下「+N」；真机 176 题里 100 题 ≤2 个标签
+const VISIBLE_TAGS = 2;
 const MATRIX_OTHER = '\u0000other';
 const MATRIX_MISSING = '\u0000missing';
 
@@ -371,9 +374,20 @@ export const EvalCaseListTab: React.FC = () => {
                       <div className="max-w-48 truncate font-mono text-[10px] text-zinc-600" title={item.file}>{item.file}</div>
                     </td>
                     <td className="border-b border-zinc-900 px-2 py-2">
-                      <div className="flex max-w-64 flex-wrap gap-1">
-                        {item.tags.map((tag) => <span key={`own-${tag}`} className="rounded border border-badge-accent/30 bg-teal-500/10 px-1.5 py-0.5 text-[10px] text-badge-accent">{tag}</span>)}
-                        {inherited.map((tag) => <span key={`inherited-${tag}`} title={c.inheritedTag} className="rounded border border-zinc-800 bg-zinc-900 px-1.5 py-0.5 text-[10px] text-zinc-500">{tag}</span>)}
+                      {/* 单行不折：最多显示前 2 个（chip 可收缩截断）+「+N」，全量挂 title；折行会把整行撑到 65~107px。
+                          定宽 w-48 而不是 max-w：单元格 min-content 按 chip 文字算会到 231px，把 1440 下表格撑出横向滚动（1221 > 1194） */}
+                      <div className="flex w-48 flex-nowrap items-center gap-1 overflow-hidden whitespace-nowrap" title={[...item.tags, ...inherited].join(', ') || undefined}>
+                        {[...item.tags.map((tag) => ({ tag, own: true })), ...inherited.map((tag) => ({ tag, own: false }))].slice(0, VISIBLE_TAGS).map(({ tag, own }) => (
+                          <Badge
+                            key={`${own ? 'own' : 'inherited'}-${tag}`}
+                            className={`min-w-0 max-w-28 text-[10px] ${own ? 'border-badge-accent/30 bg-teal-500/10 text-badge-accent' : 'border-zinc-800 bg-zinc-900 text-zinc-500'}`}
+                          >
+                            <span className="truncate" title={own ? undefined : c.inheritedTag}>{tag}</span>
+                          </Badge>
+                        ))}
+                        {item.tags.length + inherited.length > VISIBLE_TAGS && (
+                          <Badge className="shrink-0 border-zinc-800 bg-zinc-900 text-[10px] text-zinc-500">+{item.tags.length + inherited.length - VISIBLE_TAGS}</Badge>
+                        )}
                       </div>
                     </td>
                     <td className="border-b border-zinc-900 px-2 py-2">

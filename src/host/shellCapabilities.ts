@@ -19,6 +19,7 @@ import { TagSchemas } from '../shared/ipc/schemas/tag';
 import { CronSchemas } from '../shared/ipc/schemas/cron';
 import { PromptSchemas } from '../shared/ipc/schemas/prompt';
 import { DiagnosticsSchemas } from '../shared/ipc/schemas/diagnostics';
+import { DataSchemas } from '../shared/ipc/schemas/data';
 
 const DEFAULT_SINCE_VERSION = '0.16.93';
 
@@ -172,13 +173,8 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'retry',
     'setNativeEnabled',
   ],
-  [IPC_DOMAINS.DATA]: [
-    'clearSnapshots',
-    'clearToolCache',
-    'getSnapshotStats',
-    'getStats',
-    'setSnapshotRetention',
-  ],
+  // data 域：派生自 schema action 集合（== data 表 keys，parity 门三面对账），手工清单已删
+  [IPC_DOMAINS.DATA]: DataSchemas.ACTIONS,
   [IPC_DOMAINS.FOLDER_TRUST]: [
     'get',
     'set',

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../../src/shared/ipc';
 
-// settings.ipc.ts SETTINGS 域派发特征测试（RQ-183 续作·SETTINGS 刀迁表前钉住 switch 形态）：14 个 action。
+// settings.ipc.ts SETTINGS 域派发特征测试（RQ-183 续作·SETTINGS 刀迁表前钉住 switch 形态）：13 个 action。
 // 既有 settings.domain.ipc.test.ts 覆盖各 action 业务行为、admin 门只测 setDevMode 与 set 的 payload 判定、
 // 未知 action 只断言 code。这里补派发层契约：
 // - 其余四个固定 admin action（getDevMode / setServiceApiKey / getServiceApiKey / getAllServiceKeys）被拒时原样返回门错误

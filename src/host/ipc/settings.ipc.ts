@@ -884,7 +884,7 @@ export function registerSettingsHandlers(
   });
 }
 
-// 表挂装配函数对象上供 parity 门枚举（同 registerSyncHandlers.deviceRoutes 先例；settings 域仍是 switch）
+// 表挂装配函数对象上供 parity 门枚举（同 registerSyncHandlers.deviceRoutes 先例）
 registerSettingsHandlers.windowRoutes = windowRoutes;
 
 // 表挂装配函数对象上供 parity 门枚举（同 registerMemoryHandlers.routes 先例）

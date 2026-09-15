@@ -46,6 +46,7 @@ import { registerRolesHandlers } from '../../src/host/ipc/roles.ipc';
 import { registerConnectorHandlers } from '../../src/host/ipc/connector.ipc';
 import { registerAgentHandlers } from '../../src/host/ipc/agent.ipc';
 import { registerMcpHandlers } from '../../src/host/ipc/mcp.ipc';
+import { registerLibraryHandlers } from '../../src/host/ipc/library.ipc';
 import { getShellCapabilities } from '../../src/host/shellCapabilities';
 
 // 结构枚举器挂既有函数对象上（knip 生产档无测试入口，独立 export 必成 dead export）
@@ -73,6 +74,7 @@ const connectorRoutes = registerConnectorHandlers.routes;
 const agentRoutes = registerAgentHandlers.routes;
 const settingsRoutes = registerSettingsHandlers.routes;
 const mcpRoutes = registerMcpHandlers.routes;
+const libraryRoutes = registerLibraryHandlers.routes;
 
 /** 门盯的表清单——新域表化后加进来，门即自动覆盖该域（session 三面走 manifestDomain 断言） */
 const ROUTE_TABLES = [
@@ -100,6 +102,7 @@ const ROUTE_TABLES = [
   { table: agentRoutes, manifestDomain: 'domain:agent' as const },
   { table: settingsRoutes, manifestDomain: 'domain:settings' as const },
   { table: mcpRoutes, manifestDomain: 'domain:mcp' as const },
+  { table: libraryRoutes, manifestDomain: 'domain:library' as const },
   { table: inlineFixtureTable(), manifestDomain: undefined },
 ];
 
@@ -348,6 +351,7 @@ function collectActualDomainActions(): Map<string, Set<string>> {
   add(IPC_DOMAINS.AGENT, new Set(Object.keys(agentRoutes.actions)));
   add(IPC_DOMAINS.SETTINGS, new Set(Object.keys(settingsRoutes.actions)));
   add(IPC_DOMAINS.MCP, new Set(Object.keys(mcpRoutes.actions)));
+  add(IPC_DOMAINS.LIBRARY, new Set(Object.keys(libraryRoutes.actions)));
   return actual;
 }
 

@@ -18,12 +18,31 @@ export const EVAL_ATTRIBUTIONS = [
 ] as const;
 export type EvalAttribution = (typeof EVAL_ATTRIBUTIONS)[number];
 
+/**
+ * 课程六类问题分类（ADR-071 D1）。它标的是「坏成什么形态」，是报告端语言；
+ * 判官五维标的是「从哪个视角评」，是设计端语言——两者不合并（D1 附要点三）。
+ */
+export const EVAL_PROBLEM_CATEGORIES = [
+  'content_error',
+  'semantic_deviation',
+  'compliance',
+  'scenario_mismatch',
+  'response_anomaly',
+  'stability',
+] as const;
+export type EvalProblemCategory = (typeof EVAL_PROBLEM_CATEGORIES)[number];
+
 /** 风险定级 P0~P3（ADR-071 D3）。 */
 export const EVAL_SEVERITIES = ['P0', 'P1', 'P2', 'P3'] as const;
 export type EvalSeverity = (typeof EVAL_SEVERITIES)[number];
 
 export function isEvalAttribution(value: unknown): value is EvalAttribution {
   return typeof value === 'string' && (EVAL_ATTRIBUTIONS as readonly string[]).includes(value);
+}
+
+export function isEvalProblemCategory(value: unknown): value is EvalProblemCategory {
+  return typeof value === 'string'
+    && (EVAL_PROBLEM_CATEGORIES as readonly string[]).includes(value);
 }
 
 export function isEvalSeverity(value: unknown): value is EvalSeverity {

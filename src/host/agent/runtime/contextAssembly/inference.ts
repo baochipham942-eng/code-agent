@@ -776,7 +776,7 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
     // ADR-068 D4：无人值守轮（loop/cron·heartbeat·channel 会话、async_agent、goal）续接取高预算，同 run 连续断流轮数到阈值熔断（预算 0）；前台不传，adapter 用默认预算
     const unattendedRun = ctx.runtime.unattendedTurn === true || ctx.runtime.budgetScope === 'unattended' || Boolean(ctx.runtime.goalMode);
     const streamReconnectMax = unattendedRun ? (ctx.inferenceRecovery.consecutiveStreamBreakRounds >= UNATTENDED_STREAM_BREAK_CIRCUIT ? 0 : UNATTENDED_STREAM_RECONNECT_MAX) : undefined;
-    let streamBrokeThisRound = false;
+    let streamBrokeThisRound = false; let roundSucceeded = false;
     const streamCallback: StreamCallback = async (chunk) => {
       if (typeof chunk === 'string') {
         pushContent(chunk);
@@ -904,10 +904,11 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
           ? runMaxModeInference(ctx, modelMessages, effectiveTools, requestConfig, streamCallback, engineOptions)
           : runEngineInference(ctx, modelMessages, effectiveTools, requestConfig, streamCallback, inferenceAbortController.signal, engineOptions)
       ));
+      roundSucceeded = true;
     } finally {
       stopArtifactProgress();
-      // 熔断计数：成败都结算（续接预算耗尽抛错的那轮同样算断流轮）
-      if (unattendedRun) ctx.inferenceRecovery.consecutiveStreamBreakRounds = streamBrokeThisRound ? ctx.inferenceRecovery.consecutiveStreamBreakRounds + 1 : 0;
+      // 熔断计数：断流轮 +1；只有「成功且无断流」才清零——熔断轮（预算 0 不发 reconnecting）再断流抛错时计数保持，熔断不被一次失败解除（PR #1839 ai-review Important）
+      if (unattendedRun) ctx.inferenceRecovery.consecutiveStreamBreakRounds = streamBrokeThisRound ? ctx.inferenceRecovery.consecutiveStreamBreakRounds + 1 : roundSucceeded ? 0 : ctx.inferenceRecovery.consecutiveStreamBreakRounds;
     }
     if (!ctx.runtime.control.isCancelled) contentStreamFilter.finish(response.content);
     response = applyCommandCenterPreannounce(response, commandCenterPreannounce);

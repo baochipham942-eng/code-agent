@@ -140,6 +140,7 @@ function buildCtx(overrides: Partial<ContextAssemblyCtx['runtime']> = {}): Conte
       _artifactNonStreamingRetried: false,
       _artifactRepairCompactWriteRetried: false,
       _networkRetried: false,
+      consecutiveStreamBreakRounds: 0, // 与 ContextAssembly 初始化一致（缺省 undefined+1=NaN 会让熔断永不触发、测试假绿）
     },
     taskProgress: {
       emitTaskProgress: vi.fn(),
@@ -208,7 +209,7 @@ describe('contextAssembly inference —— 无人值守断流续接分档与熔�
   });
 
   it.each([
-    ['显式无人值守轮（loop / cron·heartbeat·channel 会话）', { unattendedTurn: true }],
+    ['显式无人值守轮（runtime.unattendedTurn；loop/会话级标记接线在后续 PR）', { unattendedTurn: true }],
     ['async_agent（budgetScope=unattended）', { budgetScope: 'unattended' }],
     ['goal 模式', { goalMode: { isPending: () => false } }],
   ])('%s → 续接预算取 UNATTENDED_STREAM_RECONNECT_MAX=5', async (_label, overrides) => {
@@ -222,6 +223,20 @@ describe('contextAssembly inference —— 无人值守断流续接分档与熔�
     // 轮 1-2 断流、轮 3 干净（清零）、轮 4-6 断流（连续 3）、轮 7 被熔断
     const budgets = await driveRounds(ctx, [true, true, false, true, true, true, false])();
     expect(budgets).toEqual([5, 5, 5, 5, 5, 5, 0]);
+  });
+
+  it('熔断不被熔断轮自身的失败解除：预算 0 的轮断流抛错（adapter 不发 reconnecting）后，下一轮预算仍为 0', async () => {
+    const ctx = buildCtx({ unattendedTurn: true } as any);
+    let i = 0;
+    ctx.runtime.modelRouter.inference = vi.fn((_m, _t, _c, onStream?: StreamCallback) => {
+      i += 1;
+      if (i <= 3) onStream?.({ type: 'reconnecting', attempt: 1, maxReconnects: 5, segment: 'b2' });
+      if (i === 4) return Promise.reject(new Error('stream break while circuit open'));
+      return Promise.resolve({ type: 'text' as const, content: 'ok', finishReason: 'stop' });
+    });
+    for (let n = 0; n < 5; n++) await inference(ctx).catch(() => undefined);
+    const budgets = vi.mocked(ctx.runtime.modelRouter.inference).mock.calls.map((call) => call[5]?.streamReconnectMax);
+    expect(budgets.slice(0, 5)).toEqual([5, 5, 5, 0, 0]);
   });
 });
 

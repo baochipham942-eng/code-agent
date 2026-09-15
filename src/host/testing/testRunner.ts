@@ -29,7 +29,7 @@ import { loadAllTestSuites, filterTestCases, sortByDependencies } from './testCa
 import { validateUserSimulation, evaluateSimRules, DEFAULT_SIM_MAX_TURNS } from './userSimulator';
 import { validateGoalContract } from './goalContractEval';
 import { applyCaseMemory } from './memoryEval';
-import { InFlightRound } from './timeoutTrace';
+import { appendRound, InFlightRound } from './timeoutTrace';
 import { runAssertions, runExpectations, countDeclaredAssertions } from './assertionEngine';
 import { execSync } from 'child_process';
 import { createLogger } from '../services/infra/logger';
@@ -70,19 +70,6 @@ const UNSTABLE_STDDEV_THRESHOLD = 0.2;
  * 当前 host 是否有会真正包住 bash 执行的 OS 级 jail。
  * 对齐 bash.ts：isOsSandboxEnabled()（默认 true）+ 平台沙箱（bwrap/seatbelt）可用。
  */
-/**
- * 把模拟用户轮 / follow-up 轮的结果并进 TestResult。审批记录必须一起并：
- * 「先确认」类题的危险命令发生在第二轮，只取首轮会把真弹过的审批卡数成 0
- * （09-04 L3 第八程：3 条命令只数到 2 条、产品会弹卡 0 次）。没有记录就不建数组。
- */
-function appendRound(result: TestResult, round: Pick<TestResult, 'responses' | 'toolExecutions' | 'turnCount' | 'errors' | 'permissionRequests'>): void {
-  result.responses.push(...round.responses);
-  result.toolExecutions.push(...round.toolExecutions);
-  if (round.permissionRequests) (result.permissionRequests ??= []).push(...round.permissionRequests);
-  result.turnCount += round.turnCount;
-  result.errors.push(...round.errors);
-}
-
 function isOsJailActive(): boolean {
   return isOsSandboxEnabled() && getSandboxManager().isAvailable();
 }
@@ -1047,9 +1034,7 @@ export class TestRunner {
         await agent.cancelActiveRun?.().catch((cancelError: unknown) => logger.warn('cancelActiveRun failed after timeout', { testId: testCase.id, error: String(cancelError) }));
         // N-EVAL-TIMEOUT-K1-TRACE：掐掉后原 sendMessage 会带着已发生的轨迹 return，限时接住并入；等不到就标不可得。
         // 掐不掉的 adapter 那一轮不会自己回来，不白等宽限。
-        const settled = agent.cancelActiveRun ? await inFlight.settle(TEST_TIMEOUTS.TIMEOUT_TRACE_GRACE) : { available: false };
-        if (settled.round) appendRound(result, settled.round);
-        result.timeoutTraceAvailable = settled.available;
+        result.timeoutTraceAvailable = agent.cancelActiveRun ? await inFlight.settleInto(result, TEST_TIMEOUTS.TIMEOUT_TRACE_GRACE) : false;
       } else if (isInfraExclusionError(message)) {
         result.status = 'infra_excluded';
         result.failureStage = 'infra';

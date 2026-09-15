@@ -3,7 +3,7 @@
 // ============================================================================
 
 import type { IpcMain } from '../platform';
-import { IPC_CHANNELS, IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
+import { IPC_CHANNELS } from '../../shared/ipc';
 import { getSessionManager, getDatabase } from '../services';
 import type { MemoryRecord as StoredMemoryRecord } from '../services/core/repositories';
 import type { MemoryItem, MemoryCategory, MemoryExport, MemoryStats } from '../../shared/contract';

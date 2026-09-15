@@ -13,10 +13,10 @@ import { isPrivateIPv4, validateLanEndpoint } from '../../../../src/shared/compa
  * 只替换地址，port 与 altEndpoint 原样保留：解析不改变身份，配对语义不动。
  * （不导出：只有本模块的 mdnsRefreshedEndpoint 消费，语义经它测。）
  */
-function reResolvedEndpoint(
-  target: { endpoint: string; altEndpoint?: string },
+function reResolvedEndpoint<T extends { endpoint: string; altEndpoint?: string }>(
+  target: T,
   address: string | null,
-): { endpoint: string; altEndpoint?: string } | null {
+): T | null {
   if (!address || !isPrivateIPv4(address)) return null;
   let original: URL;
   try { original = new URL(target.endpoint); } catch { return null; }
@@ -32,10 +32,10 @@ function reResolvedEndpoint(
  * LanDnsPlugin）刷新绑定地址。没有 altEndpoint、没有该口、名字不是 .local、解析失败/超时，
  * 一律返回 null——回退旧 IP。
  */
-export async function mdnsRefreshedEndpoint(
+export async function mdnsRefreshedEndpoint<T extends { endpoint: string; altEndpoint?: string }>(
   port: { resolveHost?(host: string): Promise<string | null> } | undefined,
-  target: { endpoint: string; altEndpoint?: string },
-): Promise<{ endpoint: string; altEndpoint?: string } | null> {
+  target: T,
+): Promise<T | null> {
   if (!target.altEndpoint || !port?.resolveHost) return null;
   let host: string;
   try { host = new URL(target.altEndpoint).hostname; } catch { return null; }

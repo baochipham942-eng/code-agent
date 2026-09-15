@@ -552,6 +552,8 @@ export interface TestResult {
   telemetryGate?: RealAgentRunTelemetryGate;
   /** agent 已启动，case 被 TestRunner 的超时机制终止。 */
   killedByTimeout?: boolean;
+  /** 超时题：被掐那一轮的轨迹是否已并入（false = 宽限期内没等到，toolExecutions 等只含之前的轮）。 */
+  timeoutTraceAvailable?: boolean;
 }
 
 /**

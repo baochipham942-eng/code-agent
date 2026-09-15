@@ -35,6 +35,12 @@ export interface DomainRouteOptions {
   resolveErrorCode?: (error: unknown) => string | undefined;
   /** 未知 action 兜底文案（默认 `Unknown action: <action>`），保持既有域错误契约逐字不变 */
   unknownActionMessage?: (action: unknown) => string;
+  /** 未知 action 兜底 code（默认 INVALID_ACTION；desktop/tag/cron 既有契约为 UNKNOWN_ACTION） */
+  unknownActionCode?: string;
+  /** handler 抛错 → 完整 error（code+message，可顺带记日志）；提供时优先于 resolveErrorCode/INTERNAL_ERROR 兜底 */
+  mapError?: (error: unknown, action: unknown) => { code: string; message: string };
+  /** handler 直接返回完整 IPCResponse（含带 data 的失败响应），装配器不再包 { success: true, data } */
+  rawResponse?: boolean;
   /** 该表面暂缓（web:false）的 action 桩清单，parity 门棘轮对账用 */
   disabledActions?: readonly string[];
 }
@@ -54,6 +60,9 @@ export function defineDomainRoutes<Req extends DomainRouteRequest, Ctx>(
     actions: handlers,
     ...(options?.resolveErrorCode ? { resolveErrorCode: options.resolveErrorCode } : {}),
     ...(options?.unknownActionMessage ? { unknownActionMessage: options.unknownActionMessage } : {}),
+    ...(options?.unknownActionCode ? { unknownActionCode: options.unknownActionCode } : {}),
+    ...(options?.mapError ? { mapError: options.mapError } : {}),
+    ...(options?.rawResponse ? { rawResponse: true } : {}),
     ...(options?.disabledActions ? { disabledActions: options.disabledActions } : {}),
   };
 }
@@ -102,7 +111,7 @@ function installDomainRoutesImpl<Req extends DomainRouteRequest, Ctx>(
       return {
         success: false,
         error: {
-          code: 'INVALID_ACTION',
+          code: table.unknownActionCode ?? 'INVALID_ACTION',
           message: table.unknownActionMessage
             ? table.unknownActionMessage(action)
             : `Unknown action: ${String(action)}`,
@@ -111,8 +120,10 @@ function installDomainRoutesImpl<Req extends DomainRouteRequest, Ctx>(
     }
 
     try {
-      return { success: true, data: await handler(ctx, request?.payload) };
+      const result = await handler(ctx, request?.payload);
+      return table.rawResponse ? result : { success: true, data: result };
     } catch (error) {
+      if (table.mapError) return { success: false, error: table.mapError(error, action) };
       // 错误 code 传递，对齐 session.ipc.ts:315-329：领域 code 优先、INTERNAL_ERROR 兜底
       return {
         success: false,

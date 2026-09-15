@@ -13,6 +13,7 @@ import {
 } from '../shared/contract/shellCapabilities';
 import { IPC_DOMAINS, type IPCDomain } from '../shared/ipc/domains';
 import { sessionRoutes } from './ipc/domainRoutes/sessionRoutes';
+import { MemorySchemas } from '../shared/ipc/schemas/memory';
 
 const DEFAULT_SINCE_VERSION = '0.16.93';
 
@@ -246,11 +247,8 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'setServerEnabled',
     'signOutServer',
   ],
-  [IPC_DOMAINS.MEMORY]: [
-    'memoryAudit',
-    'memoryEntryUpdate',
-    'memoryInboxResolve',
-  ],
+  // memory 域：派生自 schema action 集合（== memoryRoutes 表 keys，parity 门三面对账），手工清单已删
+  [IPC_DOMAINS.MEMORY]: MemorySchemas.ACTIONS,
   [IPC_DOMAINS.NOTIFICATION]: [
     'getRecent',
     'reportClientDelivery',

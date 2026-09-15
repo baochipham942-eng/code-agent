@@ -14,6 +14,7 @@ import {
 import { IPC_DOMAINS, type IPCDomain } from '../shared/ipc/domains';
 import { sessionRoutes } from './ipc/domainRoutes/sessionRoutes';
 import { MemorySchemas } from '../shared/ipc/schemas/memory';
+import { DesktopSchemas } from '../shared/ipc/schemas/desktop';
 
 const DEFAULT_SINCE_VERSION = '0.16.93';
 
@@ -178,28 +179,8 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'get',
     'set',
   ],
-  [IPC_DOMAINS.DESKTOP]: [
-    'attachBrowserRelayTab',
-    'clearManagedBrowserCookies',
-    'closeManagedBrowserSession',
-    'detachBrowserRelayTab',
-    'ensureManagedBrowserSession',
-    'getBrowserRelayState',
-    'getComputerSurfaceState',
-    'getManagedBrowserRecoverySnapshot',
-    'getManagedBrowserSession',
-    'importBrowserProfileCookies',
-    'listBrowserProfiles',
-    'listBrowserRelayTabs',
-    'listComputerSurfaceElements',
-    'observeComputerSurface',
-    'openBrowserRelayExtensionDirectory',
-    'openBrowserRelayTab',
-    'openManagedBrowserUrl',
-    'refreshManagedBrowserAccountState',
-    'startBrowserRelay',
-    'stopBrowserRelay',
-  ],
+  // desktop 域：派生自 schema action 集合（== desktop 表 keys，parity 门三面对账），手工清单已删
+  [IPC_DOMAINS.DESKTOP]: DesktopSchemas.ACTIONS,
   [IPC_DOMAINS.DIAGNOSTICS]: [
     'budget',
     'compression',

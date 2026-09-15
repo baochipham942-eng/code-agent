@@ -963,10 +963,8 @@ export function registerMemoryHandlers(ipcMain: IpcMain): void {
     }
   });
 
-  // ========== Legacy Handlers (Deprecated) ==========
-  // getContext / searchCode / searchConversations / getStats 四条纯别名通道已删（RQ-183 尾刀）：
-  // 表里同名 action 是唯一入口，renderer 与 web 侧零调用方。
-
+  // memory:confirm-response 走独立通道而非域表：它是 directive 记忆确认的单向回执，
+  // renderer 的 useMemoryLearning 直接调，没有对应的域 action。
   ipcMain.handle(IPC_CHANNELS.MEMORY_CONFIRM_RESPONSE, async (_: unknown, payload: { id: string; confirmed: boolean }) => {
     respondToDirectiveMemoryConfirmation(payload.id, payload.confirmed);
   });

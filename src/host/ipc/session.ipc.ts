@@ -96,8 +96,6 @@ export function registerSessionHandlers(
       return null;
     }
   });
-
-  // session:get-tasks 纯别名通道已删（RQ-183 尾刀）：表里 getSessionTasks 是唯一入口。
 }
 
 function listReviewItemsBySession(payload: SessionReviewItemsRequest): Record<string, AdminReviewQueueItem[]> {

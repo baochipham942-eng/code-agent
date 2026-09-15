@@ -41,6 +41,7 @@ import { AgentEngineSchemas } from '../shared/ipc/schemas/agentEngine';
 import { CapabilitySchemas } from '../shared/ipc/schemas/capability';
 import { PiiSchemas } from '../shared/ipc/schemas/pii';
 import { ActivitySchemas } from '../shared/ipc/schemas/activity';
+import { StatusSchemas } from '../shared/ipc/schemas/status';
 
 const DEFAULT_SINCE_VERSION = '0.16.93';
 
@@ -243,10 +244,8 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'markReviewed',
     'summarizeSessions',
   ],
-  [IPC_DOMAINS.STATUS]: [
-    'getCostStats',
-    'getTodayCost',
-  ],
+  // status 域：派生自 schema action 集合（== status 表 keys，parity 门三面对账），手工清单已删
+  [IPC_DOMAINS.STATUS]: StatusSchemas.ACTIONS,
   [IPC_DOMAINS.SURFACE_EXECUTION]: [
     'control',
     'deletePersistedTerminalFrames',

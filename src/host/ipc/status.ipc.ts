@@ -7,7 +7,9 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import { createLogger } from '../services/infra/logger';
 import { MODEL_PRICING_PER_1M, MODEL_API_ENDPOINTS, DEFAULT_PROVIDER } from '../../shared/constants';
-import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
+import type { RawDomainRouteHandlers } from '../../shared/ipc/domainRoutes';
+import { StatusSchemas, type StatusDomainRequest } from '../../shared/ipc/schemas/status';
+import { defineDomainRoutes, installDomainRoutes } from './domainRoutes/registry';
 import { getDatabase } from '../services/core/databaseService';
 
 const logger = createLogger('StatusIPC');
@@ -21,6 +23,39 @@ export const STATUS_CHANNELS = {
   CONTEXT_UPDATE: 'status:context-update',
   GIT_CHANGES_UPDATE: 'status:git-changes-update',
 } as const;
+
+/**
+ * status 域单源路由表（RQ-183 续作·STATUS 刀，仅 domain:status；status:git-info / status:network 为独立通道不动）：原 domain
+ * switch 2 个 case 平移为 rawResponse handler（getCostStats 的 INVALID_ARGS 直返）；原 try 内先取 turnCostRepo 再分发，现每个
+ * handler 首行取（取库抛错仍落 INTERNAL_ERROR，且仍先于 days 校验）。未知 action → INVALID_ACTION + `Unknown status action:`
+ * （unknownActionMessage 保持原文案）；抛错走装配器缺省 INTERNAL_ERROR。未知 action 原实现先取库（取库抛错落 INTERNAL_ERROR），
+ * 现不取库直接 INVALID_ACTION；请求体为 null / 非对象时原实现读 request.action 抛错落 INTERNAL_ERROR，现返回 INVALID_ACTION。
+ */
+const statusHandlers: RawDomainRouteHandlers<StatusDomainRequest, void> = {
+  getTodayCost: () => {
+    const repo = getDatabase().getTurnCostRepo();
+    return { success: true, data: repo.getTodayCost() };
+  },
+  getCostStats: (_ctx, payload) => {
+    const repo = getDatabase().getTurnCostRepo();
+    const days = (payload as { days?: unknown } | undefined)?.days;
+    if (!Number.isInteger(days) || Number(days) < 1) {
+      return {
+        success: false,
+        error: {
+          code: 'INVALID_ARGS',
+          message: 'getCostStats requires a positive integer payload.days',
+        },
+      };
+    }
+    return { success: true, data: repo.getCostStats(Number(days)) };
+  },
+};
+
+const statusRoutes = defineDomainRoutes<StatusDomainRequest, void>(StatusSchemas.REQUEST, statusHandlers, {
+  rawResponse: true,
+  unknownActionMessage: (action) => `Unknown status action: ${String(action)}`,
+});
 
 /**
  * 注册状态相关的 IPC handlers
@@ -70,52 +105,13 @@ export function registerStatusHandlers(ipcMain: IpcMain = ipcHost): void {
     }
   });
 
-  ipcMain.handle(
-    IPC_DOMAINS.STATUS,
-    async (_, request: IPCRequest): Promise<IPCResponse> => {
-      try {
-        const repo = getDatabase().getTurnCostRepo();
-        switch (request.action) {
-          case 'getTodayCost':
-            return { success: true, data: repo.getTodayCost() };
-
-          case 'getCostStats': {
-            const days = (request.payload as { days?: unknown } | undefined)?.days;
-            if (!Number.isInteger(days) || Number(days) < 1) {
-              return {
-                success: false,
-                error: {
-                  code: 'INVALID_ARGS',
-                  message: 'getCostStats requires a positive integer payload.days',
-                },
-              };
-            }
-            return { success: true, data: repo.getCostStats(Number(days)) };
-          }
-
-          default:
-            return {
-              success: false,
-              error: {
-                code: 'INVALID_ACTION',
-                message: `Unknown status action: ${request.action}`,
-              },
-            };
-        }
-      } catch (error) {
-        return {
-          success: false,
-          error: {
-            code: 'INTERNAL_ERROR',
-            message: error instanceof Error ? error.message : String(error),
-          },
-        };
-      }
-    },
-  );
+  installDomainRoutes(ipcMain, statusRoutes, undefined);
 
   logger.info('Status handlers registered');
 }
+
+// 表挂装配函数对象上供 parity 门枚举（同 registerLoopHandlers.routes 先例）
+registerStatusHandlers.routes = statusRoutes;
 
 // NOTE: 原 sendTokenUpdate（status:token-update 推送）已删除——零调用死通道，
 // token 显示改由 renderer 经 settings domain getBudgetStatus 拉活值（WP-2）。

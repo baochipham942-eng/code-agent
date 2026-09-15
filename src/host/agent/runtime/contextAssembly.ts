@@ -105,6 +105,7 @@ export class ContextAssembly {
     _artifactNonStreamingRetried: false,
     _artifactRepairCompactWriteRetried: false,
     _networkRetried: false,
+    consecutiveStreamBreakRounds: 0,
   };
 
   private readonly compressionRecovery: CompressionRecoveryState = {

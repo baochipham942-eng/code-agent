@@ -175,6 +175,56 @@ afterEach(() => {
   retryOnReconnect.mockClear();
 });
 
+describe('contextAssembly inference —— 无人值守断流续接分档与熔断（ADR-068 D4）', () => {
+  const prevEngine = process.env.CODE_AGENT_MODEL_ENGINE;
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetApiKey.mockReturnValue('mock-key');
+    mockGetSettings.mockReturnValue({ models: { providers: {} } });
+    process.env.CODE_AGENT_MODEL_ENGINE = 'legacy';
+  });
+  afterEach(() => {
+    if (prevEngine === undefined) delete process.env.CODE_AGENT_MODEL_ENGINE;
+    else process.env.CODE_AGENT_MODEL_ENGINE = prevEngine;
+  });
+
+  /** 每次推理：broke=true 时先发一次 reconnecting（该轮遇到断流）。返回每次调用收到的 options。 */
+  function driveRounds(ctx: ContextAssemblyCtx, rounds: boolean[]) {
+    let i = 0;
+    ctx.runtime.modelRouter.inference = vi.fn((_m, _t, _c, onStream?: StreamCallback) => {
+      if (rounds[i++]) onStream?.({ type: 'reconnecting', attempt: 1, maxReconnects: 5, segment: 'b2' });
+      return Promise.resolve({ type: 'text' as const, content: 'ok', finishReason: 'stop' });
+    });
+    return async () => {
+      for (let n = 0; n < rounds.length; n++) await inference(ctx);
+      return vi.mocked(ctx.runtime.modelRouter.inference).mock.calls.map((call) => call[5]?.streamReconnectMax);
+    };
+  }
+
+  it('前台轮不传 streamReconnectMax（adapter 用默认 STREAM_RECONNECT_MAX，前台预算零改动），也不累计熔断', async () => {
+    const ctx = buildCtx();
+    const budgets = await driveRounds(ctx, [true, true, true, true])();
+    expect(budgets).toEqual([undefined, undefined, undefined, undefined]);
+  });
+
+  it.each([
+    ['显式无人值守轮（loop / cron·heartbeat·channel 会话）', { unattendedTurn: true }],
+    ['async_agent（budgetScope=unattended）', { budgetScope: 'unattended' }],
+    ['goal 模式', { goalMode: { isPending: () => false } }],
+  ])('%s → 续接预算取 UNATTENDED_STREAM_RECONNECT_MAX=5', async (_label, overrides) => {
+    const ctx = buildCtx(overrides as any);
+    const budgets = await driveRounds(ctx, [false])();
+    expect(budgets).toEqual([5]);
+  });
+
+  it('熔断：同 run 连续 3 轮断流后预算置 0；中间一轮无断流即清零重计', async () => {
+    const ctx = buildCtx({ unattendedTurn: true } as any);
+    // 轮 1-2 断流、轮 3 干净（清零）、轮 4-6 断流（连续 3）、轮 7 被熔断
+    const budgets = await driveRounds(ctx, [true, true, false, true, true, true, false])();
+    expect(budgets).toEqual([5, 5, 5, 5, 5, 5, 0]);
+  });
+});
+
 describe('contextAssembly inference —— B2 诚实分段与重发收编（ADR-068 刀 3）', () => {
   // 引擎无关编排断言打在 mock modelRouter.inference 上（口径同 inference.artifactRetry.test.ts）。
   const prevEngine = process.env.CODE_AGENT_MODEL_ENGINE;

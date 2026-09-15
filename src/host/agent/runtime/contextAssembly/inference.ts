@@ -7,6 +7,7 @@ import { getConfigService, getLangfuseService, getBudgetService, BudgetAlertLeve
 import { logCollector } from '../../../mcp/logCollector.js';
 import { ContextLengthExceededError } from '../../../model/modelRouter';
 import { createSnapshotHandler } from '../../../session/streamSnapshot';
+import { UNATTENDED_STREAM_BREAK_CIRCUIT, UNATTENDED_STREAM_RECONNECT_MAX } from '../../../../shared/constants';
 import {
   getCoreToolDefinitions,
   getLoadedDeferredToolDefinitions,
@@ -772,6 +773,10 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
 
     // 原始 chunk 边来边进 turn（abort 时留住半截），同时喂给按整段判定的证据流。
     const pushContent = (text: string) => { ctx.runtime.turn.appendStreamedContent(text); contentStreamFilter.push(text); };
+    // ADR-068 D4：无人值守轮（loop/cron·heartbeat·channel 会话、async_agent、goal）续接取高预算，同 run 连续断流轮数到阈值熔断（预算 0）；前台不传，adapter 用默认预算
+    const unattendedRun = ctx.runtime.unattendedTurn === true || ctx.runtime.budgetScope === 'unattended' || Boolean(ctx.runtime.goalMode);
+    const streamReconnectMax = unattendedRun ? (ctx.inferenceRecovery.consecutiveStreamBreakRounds >= UNATTENDED_STREAM_BREAK_CIRCUIT ? 0 : UNATTENDED_STREAM_RECONNECT_MAX) : undefined;
+    let streamBrokeThisRound = false;
     const streamCallback: StreamCallback = async (chunk) => {
       if (typeof chunk === 'string') {
         pushContent(chunk);
@@ -843,6 +848,7 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
         // reconnecting 先例），renderer 在同一 streaming 消息内嵌「连接中断，正在续接 n/N」
         // 状态行；B2 档同时用于分段定格（断点消息定格、续答另起一段带一次性说明）。
         // host 只发稳定 code 与计数，文案在 renderer i18n。
+        streamBrokeThisRound = true;
         ctx.runtime.onEvent({
           type: 'stream_reconnecting',
           data: {
@@ -885,6 +891,7 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
         artifactRepairActive: Boolean(ctx.runtime.artifact.repairGuard),
         artifactRepairWritePriority,
         artifactRepairFullRewritePriority,
+        ...(streamReconnectMax !== undefined ? { streamReconnectMax } : {}),
       };
       requestManifestData = recordRequestManifest(ctx, { requestId: llmCallId, messages: modelMessages, assembledMessages: builtModelMessages, tools: effectiveTools, requestConfig });
       // 这次模型调用的整个生命周期（prepared → dispatched → succeeded/abandoned）
@@ -899,6 +906,8 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
       ));
     } finally {
       stopArtifactProgress();
+      // 熔断计数：成败都结算（续接预算耗尽抛错的那轮同样算断流轮）
+      if (unattendedRun) ctx.inferenceRecovery.consecutiveStreamBreakRounds = streamBrokeThisRound ? ctx.inferenceRecovery.consecutiveStreamBreakRounds + 1 : 0;
     }
     if (!ctx.runtime.control.isCancelled) contentStreamFilter.finish(response.content);
     response = applyCommandCenterPreannounce(response, commandCenterPreannounce);

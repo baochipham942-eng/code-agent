@@ -17,13 +17,15 @@ cases:
   # --------------------------------------------------------------------------
   - id: error-file-not-found
     type: error_handling
-    category: error_handling
+    category: error_recovery
+    tags: [error_handling]
     difficulty: easy
     description: "处理文件不存在错误"
     prompt: "读取 nonexistent-file-xyz-123.txt 文件并显示内容"
 
   - id: error-directory-not-found
     type: error_handling
+    category: error_recovery
     description: "处理目录不存在错误"
     prompt: "列出 /this/path/does/not/exist/12345 目录的内容"
 
@@ -32,6 +34,7 @@ cases:
   # --------------------------------------------------------------------------
   - id: error-permission-denied
     type: error_handling
+    category: error_recovery
     description: "处理权限拒绝错误"
     prompt: "尝试读取 /etc/shadow 文件"
 
@@ -40,11 +43,13 @@ cases:
   # --------------------------------------------------------------------------
   - id: error-command-failed
     type: error_handling
+    category: error_recovery
     description: "处理命令执行失败"
     prompt: "执行命令 this-command-does-not-exist-xyz"
 
   - id: error-command-syntax
     type: error_handling
+    category: error_recovery
     description: "处理命令语法错误"
     prompt: "执行 bash 命令：if then else"
 
@@ -72,6 +77,7 @@ cases:
   # --------------------------------------------------------------------------
   - id: error-handle-long-task
     type: error_handling
+    category: error_recovery
     description: "长时间任务不崩溃"
     prompt: "搜索 src 目录下所有包含 'function' 的文件"
     timeout: 90000
@@ -81,5 +87,6 @@ cases:
   # --------------------------------------------------------------------------
   - id: error-invalid-json
     type: error_handling
+    category: error_recovery
     description: "处理无效路径"
     prompt: "读取文件路径：\"\""

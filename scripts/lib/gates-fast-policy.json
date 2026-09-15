@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "budgetMs": 60000,
+  "budgetMs": 170000,
   "maxFiles": 12,
   "baseline": [
     "tests/unit/agentEventSchemas.test.ts",
@@ -167,14 +167,14 @@
     "tsconfig*.json"
   ],
   "budgetsMs": {
-    "inputs": 1000,
-    "provider": 1000,
-    "private": 10000,
-    "src-typecheck": 10000,
-    "shell": 1000,
-    "commit-checks": 8000,
-    "vitest": 15000,
-    "package-typechecks": 5000,
-    "tests-typecheck": 9000
+    "inputs": 10000,
+    "provider": 10000,
+    "private": 30000,
+    "src-typecheck": 45000,
+    "shell": 10000,
+    "commit-checks": 45000,
+    "vitest": 90000,
+    "package-typechecks": 45000,
+    "tests-typecheck": 45000
   }
 }

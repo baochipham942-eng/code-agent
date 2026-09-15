@@ -17,6 +17,8 @@ import { resolveProviderIconAsset, saveProviderIconAsset } from '../services/pro
 import { handleDiscoverModels, type DiscoveredProviderModel, type DiscoverModelsResult } from './provider.ipc';
 import { refreshRegisteredVoiceInstructions } from '../services/capabilities/hostCapabilityPorts';
 import { createLogger } from '../services/infra/logger';
+import { WindowSchemas, type WindowDomainRequest } from '../../shared/ipc/schemas/window';
+import { defineDomainRoutes, installDomainRoutes } from './domainRoutes/registry';
 import { extractDocxParagraphsFromBuffer } from '../tools/artifacts/docxParagraphLocator';
 import {
   resolveSheetCoordinate,
@@ -471,6 +473,35 @@ async function handleSetBudgetConfig(
   syncBudgetServiceFromConfig(configService.getBudgetConfig());
 }
 
+/** 按请求取聚焦窗口（保留原动态 import，不改模块加载顺序） */
+async function getFocusedAppWindow() {
+  const { AppWindow } = await import('../platform');
+  return AppWindow.getFocusedWindow();
+}
+
+/**
+ * window 域单源路由表（RQ-183 续作·WINDOW 刀）：原 domain switch 逐 case 平移（handler 返回 null，装配器包
+ * { success: true, data: null }）；聚焦窗口按请求取（原 switch 在 try 外取、抛错即 reject，现落 INTERNAL_ERROR）；
+ * 未知 action → INVALID_ACTION `Unknown action: <action>`、抛错 → INTERNAL_ERROR（Error 取 message、非 Error 取
+ * String(error)），均为装配器缺省。
+ */
+const windowRoutes = defineDomainRoutes<WindowDomainRequest, void>(WindowSchemas.REQUEST, {
+  minimize: async () => {
+    (await getFocusedAppWindow())?.minimize();
+    return null;
+  },
+  maximize: async () => {
+    const mainWindow = await getFocusedAppWindow();
+    if (mainWindow?.isMaximized()) mainWindow.unmaximize();
+    else mainWindow?.maximize();
+    return null;
+  },
+  close: async () => {
+    (await getFocusedAppWindow())?.close();
+    return null;
+  },
+});
+
 // ----------------------------------------------------------------------------
 // Public Registration
 // ----------------------------------------------------------------------------
@@ -557,32 +588,8 @@ export function registerSettingsHandlers(
     }
   });
 
-  // ========== Window Domain Handler (TASK-04) ==========
-  ipcMain.handle(IPC_DOMAINS.WINDOW, async (_, request: IPCRequest): Promise<IPCResponse> => {
-    const { action } = request;
-    const { AppWindow } = await import('../platform');
-    const mainWindow = AppWindow.getFocusedWindow();
-
-    try {
-      switch (action) {
-        case 'minimize':
-          mainWindow?.minimize();
-          break;
-        case 'maximize':
-          if (mainWindow?.isMaximized()) mainWindow.unmaximize();
-          else mainWindow?.maximize();
-          break;
-        case 'close':
-          mainWindow?.close();
-          break;
-        default:
-          return { success: false, error: { code: 'INVALID_ACTION', message: `Unknown action: ${action}` } };
-      }
-      return { success: true, data: null };
-    } catch (error) {
-      return { success: false, error: { code: 'INTERNAL_ERROR', message: error instanceof Error ? error.message : String(error) } };
-    }
-  });
+  // window 域：单源路由表装配（RQ-183 续作·WINDOW 刀）
+  installDomainRoutes(ipcMain, windowRoutes, undefined);
 
   // ========== Legacy Handlers (Deprecated) ==========
 
@@ -876,3 +883,6 @@ export function registerSettingsHandlers(
     return result;
   });
 }
+
+// 表挂装配函数对象上供 parity 门枚举（同 registerSyncHandlers.deviceRoutes 先例；settings 域仍是 switch）
+registerSettingsHandlers.windowRoutes = windowRoutes;

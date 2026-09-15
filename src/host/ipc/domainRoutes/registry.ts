@@ -29,9 +29,10 @@ import type {
 } from '../../../shared/ipc/domainRoutes';
 import type { ChannelSchema } from '../../../shared/ipc/schemas/core';
 import type { IpcMain } from '../../platform/ipcTypes';
+import type { IPCResponse } from '../../../shared/ipc/domains';
 
 /** 领域错误 → IPC error code 的判定（如 session 域的 SessionForkError instanceof 家族） */
-export interface DomainRouteOptions {
+export interface DomainRouteOptions<Ctx = unknown> {
   resolveErrorCode?: (error: unknown) => string | undefined;
   /** 未知 action 兜底文案（默认 `Unknown action: <action>`），保持既有域错误契约逐字不变 */
   unknownActionMessage?: (action: unknown) => string;
@@ -43,9 +44,10 @@ export interface DomainRouteOptions {
   rawResponse?: boolean;
   /**
    * 分发前的访问门（含未知 action 也先过门，对齐 prompt 等域「先鉴权再分发」的既有顺序）：
-   * 返回响应即拦截；返回 null 放行。门抛错走与 handler 相同的错误映射。
+   * 返回响应即拦截；返回 null 放行（同步：返回类型收紧为 IPCResponse | null，防 async 门的 Promise 恒真被当拦截，#1848 Nit 1）。门抛错走与 handler 相同的错误映射。
+   * 第二参为装配 ctx（TASK 刀：门要按运行期依赖判定，如 TaskManager 缺席）。
    */
-  guard?: (action: unknown) => unknown;
+  guard?: (action: unknown, ctx: Ctx) => IPCResponse | null;
   /** 该表面暂缓（web:false）的 action 桩清单，parity 门棘轮对账用 */
   disabledActions?: readonly string[];
 }
@@ -57,7 +59,7 @@ export interface DomainRouteOptions {
 export function defineDomainRoutes<Req extends DomainRouteRequest, Ctx>(
   schema: ChannelSchema<z.ZodType<Req>>,
   handlers: DomainRouteHandlers<Req, Ctx>,
-  options?: DomainRouteOptions,
+  options?: DomainRouteOptions<Ctx>,
 ): DomainRouteTable<Req, Ctx> {
   return {
     channel: schema.channel,
@@ -113,7 +115,7 @@ function installDomainRoutesImpl<Req extends DomainRouteRequest, Ctx>(
 
     try {
       if (table.guard) {
-        const blocked = table.guard(action);
+        const blocked = table.guard(action, ctx);
         if (blocked) return blocked;
       }
 

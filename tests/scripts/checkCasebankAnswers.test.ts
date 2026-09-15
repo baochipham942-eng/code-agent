@@ -45,7 +45,7 @@ async function fixture(): Promise<Fixture> {
       id,
       type: 'task',
       prompt: id,
-      ...(index < 24 ? { category: 'security' } : {}),
+      ...(index < 24 ? { tags: ['security'] } : {}),
     })),
   };
   const answerFile = {

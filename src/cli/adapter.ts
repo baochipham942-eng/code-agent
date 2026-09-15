@@ -44,6 +44,10 @@ function getErrorMessage(error: unknown): string {
 retryEvents.on('retry', (info: { provider: string; attempt: number; maxRetries: number; delay: number; error: string }) => {
   terminalOutput.retrying(info.provider, info.attempt, info.maxRetries, info.delay);
 });
+// ADR-068 刀 4：断流续接同一事件通道的 reconnect 语义（adapter 续接 / loop 网络重发都发）
+retryEvents.on('reconnect', (info: { provider: string; attempt: number; maxReconnects: number; delay: number; error: string }) => {
+  terminalOutput.reconnecting(info.provider, info.attempt, info.maxReconnects, info.delay);
+});
 
 /**
  * CLI Agent 运行器

@@ -129,7 +129,7 @@ export interface ModelResponse {
 // conversationRuntime 的 preserveStreamedPartial），再让续写 delta 另起一段累积；
 // 不把重发内容 append 进旧消息冒充单次生成（D2 边界）。error 字段带断流原因（诊断用）。
 export interface StreamChunk {
-  type: 'text' | 'reasoning' | 'tool_call_start' | 'tool_call_delta' | 'token_estimate' | 'complete' | 'usage' | 'error' | 'stream_break';
+  type: 'text' | 'reasoning' | 'tool_call_start' | 'tool_call_delta' | 'token_estimate' | 'complete' | 'usage' | 'error' | 'stream_break' | 'reconnecting';
   content?: string;
   toolCall?: {
     index: number;
@@ -148,9 +148,15 @@ export interface StreamChunk {
   // error event / stream_break 的断流原因
   error?: string;
   errorCode?: string;
+  // ADR-068 刀 4（D5 UI 信号）：reconnecting 专用——attempt/maxReconnects 即状态行的
+  // n/N；segment 标 B1（prefix 合同档无缝续打）还是 B2（诚实分段，断点消息定格、
+  // 续答另起一段）。纯呈现信号，不带续接决策（分流逻辑见 aiSdkAdapter 断流分支）。
+  attempt?: number;
+  maxReconnects?: number;
+  segment?: 'b1' | 'b2';
 }
 
-export type StreamCallback = (chunk: string | StreamChunk) => void;
+export type StreamCallback = (chunk: string | StreamChunk) => void | Promise<void>;
 
 export interface InferenceOptions {
   onSnapshot?: (snapshot: import('./providers/sseStream').StreamSnapshot) => void;

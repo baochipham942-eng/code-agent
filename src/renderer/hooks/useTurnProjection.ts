@@ -22,6 +22,7 @@ import { isStreamRecoveryMessage } from '../utils/streamRecoveryMessage';
 import {
   isPersistedStreamInterruptionMessage,
   streamInterruptionReasonFromContent,
+  stripStreamBreakMarker,
 } from '../utils/streamInterruptionPresentation';
 
 type MessageModelDecision = NonNullable<Message['modelDecision']>;
@@ -556,10 +557,16 @@ export function projectTurns(
         // 中断轮的唯一时间线信号由 recovery 工具节点承载。落库 marker 前的 partial
         // 与 snapshot.content 是同一段流式正文，二者都继续投影会在重载后重复两遍，
         // 也会破坏“灰字一行 + 决策槽一行”的单信号形态。
-        if (streamInterruptionReason && (
+        // ADR-068 刀 4 例外：断流续接的断点段（stream-break）不 suppression——它的
+        // 正文是真实答案的前半段（recovery 消息自己的文本仍被上方原规则压掉，不会
+        // 双渲染），只剥掉正文尾部的裸协议标记，中断语义走样式行。
+        const streamBreakKeptSegment = streamInterruptionReason === 'stream-break' && !recoveryMessage;
+        if (streamInterruptionReason && !streamBreakKeptSegment && (
           recoveryMessage
           || isPersistedStreamInterruptionMessage(msg)
         )) return;
+        const projectedContent = streamBreakKeptSegment ? stripStreamBreakMarker(content) : content;
+        if (streamBreakKeptSegment && !projectedContent.trim()) return;
         // 模型回显：小模型有时把工具结果 JSON 当正文复述，整段吞掉不当答案渲染。
         if (isToolResultEcho(content)) return;
         // 去重：连续相同的模型决策只在首个节点显示，避免每条消息都刷"用户选择 mimo"
@@ -579,7 +586,7 @@ export function projectTurns(
           id: index && index > 1 ? `${msg.id}-text-${index}` : `${msg.id}-text`,
           messageId: msg.id,
           type: 'assistant_text',
-          content,
+          content: projectedContent,
           timestamp: msg.timestamp,
           reasoning: attachReasoning ? msg.reasoning : undefined,
           thinking: attachReasoning ? msg.thinking : undefined,

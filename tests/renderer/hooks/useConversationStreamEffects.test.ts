@@ -132,6 +132,7 @@ describe('removeUncommittedAssistantDraft', () => {
       currentTurnMessageId: 'turn-1',
       committedAssistantMessageIds: new Set<string>(),
     lastDeltaSeqByTurn: new Map<string, number>(),
+      segmentRedirectByTurn: new Map<string, { segmentId: string; splitAtAttempt: number }>(),
     };
 
     applyConversationStreamEvent(
@@ -201,7 +202,8 @@ describe('applyConversationStreamEvent input redirect receipt', () => {
         interruptedTools: ['Bash'],
       },
     };
-    const state = { currentTurnMessageId: 'turn-1', committedAssistantMessageIds: new Set<string>(), lastDeltaSeqByTurn: new Map<string, number>() };
+    const state = { currentTurnMessageId: 'turn-1', committedAssistantMessageIds: new Set<string>(), lastDeltaSeqByTurn: new Map<string, number>(),
+      segmentRedirectByTurn: new Map<string, { segmentId: string; splitAtAttempt: number }>() };
 
     applyConversationStreamEvent(event, state, actions);
     applyConversationStreamEvent(event, state, actions);
@@ -245,7 +247,8 @@ describe('applyConversationStreamEvent host-owned user message', () => {
           timestamp: 400,
         },
       },
-      { currentTurnMessageId: null, committedAssistantMessageIds: new Set<string>(), lastDeltaSeqByTurn: new Map<string, number>() },
+      { currentTurnMessageId: null, committedAssistantMessageIds: new Set<string>(), lastDeltaSeqByTurn: new Map<string, number>(),
+      segmentRedirectByTurn: new Map<string, { segmentId: string; splitAtAttempt: number }>() },
       makeActions(messagesRef),
     );
 
@@ -273,7 +276,8 @@ describe('applyConversationStreamEvent host-owned user message', () => {
         type: 'message',
         data: { id: 'queued-input-1', role: 'user', content: '已经在屏幕上了', timestamp: 400 },
       },
-      { currentTurnMessageId: null, committedAssistantMessageIds: new Set<string>(), lastDeltaSeqByTurn: new Map<string, number>() },
+      { currentTurnMessageId: null, committedAssistantMessageIds: new Set<string>(), lastDeltaSeqByTurn: new Map<string, number>(),
+      segmentRedirectByTurn: new Map<string, { segmentId: string; splitAtAttempt: number }>() },
       makeActions(messagesRef),
     );
 
@@ -292,7 +296,8 @@ describe('applyConversationStreamEvent host-owned user message', () => {
         type: 'message',
         data: { id: 'turn-1', turnId: 'turn-1', content: '完整回答' },
       },
-      { currentTurnMessageId: 'turn-1', committedAssistantMessageIds: new Set<string>(), lastDeltaSeqByTurn: new Map<string, number>() },
+      { currentTurnMessageId: 'turn-1', committedAssistantMessageIds: new Set<string>(), lastDeltaSeqByTurn: new Map<string, number>(),
+      segmentRedirectByTurn: new Map<string, { segmentId: string; splitAtAttempt: number }>() },
       {
         ...makeActions(messagesRef),
         updateMessage: (id: string, changes: Partial<Message>) => {
@@ -385,6 +390,7 @@ describe('applyConversationStreamEvent model_decision', () => {
         currentTurnMessageId: 'turn-1',
         committedAssistantMessageIds: new Set<string>(),
     lastDeltaSeqByTurn: new Map<string, number>(),
+      segmentRedirectByTurn: new Map<string, { segmentId: string; splitAtAttempt: number }>(),
       },
       {
         addMessage: (message) => {
@@ -515,6 +521,7 @@ describe('applyConversationStreamEvent model_decision', () => {
         currentTurnMessageId: 'turn-1',
         committedAssistantMessageIds: new Set<string>(),
     lastDeltaSeqByTurn: new Map<string, number>(),
+      segmentRedirectByTurn: new Map<string, { segmentId: string; splitAtAttempt: number }>(),
       },
       {
         addMessage: (message) => {
@@ -646,6 +653,7 @@ describe('applyConversationStreamEvent model_fallback', () => {
         currentTurnMessageId: 'turn-1',
         committedAssistantMessageIds: new Set<string>(),
     lastDeltaSeqByTurn: new Map<string, number>(),
+      segmentRedirectByTurn: new Map<string, { segmentId: string; splitAtAttempt: number }>(),
       },
       {
         addMessage: (message) => {
@@ -726,6 +734,7 @@ describe('applyConversationStreamEvent meta turns', () => {
       currentTurnMessageId: null,
       committedAssistantMessageIds: new Set<string>(),
     lastDeltaSeqByTurn: new Map<string, number>(),
+      segmentRedirectByTurn: new Map<string, { segmentId: string; splitAtAttempt: number }>(),
     };
 
     applyConversationStreamEvent(
@@ -768,6 +777,7 @@ describe('applyConversationStreamEvent meta turns', () => {
       currentTurnMessageId: 'assistant-visible',
       committedAssistantMessageIds: new Set<string>(['assistant-visible']),
       lastDeltaSeqByTurn: new Map<string, number>(),
+      segmentRedirectByTurn: new Map<string, { segmentId: string; splitAtAttempt: number }>(),
     };
 
     const actions = {
@@ -829,6 +839,7 @@ describe('applyConversationStreamEvent meta turns', () => {
       currentTurnMessageId: 'turn-meta',
       committedAssistantMessageIds: new Set<string>(),
     lastDeltaSeqByTurn: new Map<string, number>(),
+      segmentRedirectByTurn: new Map<string, { segmentId: string; splitAtAttempt: number }>(),
     };
 
     applyConversationStreamEvent(
@@ -886,6 +897,7 @@ describe('mergeCommittedAssistantContent', () => {
       currentTurnMessageId: 'turn-1',
       committedAssistantMessageIds: new Set<string>(),
     lastDeltaSeqByTurn: new Map<string, number>(),
+      segmentRedirectByTurn: new Map<string, { segmentId: string; splitAtAttempt: number }>(),
     };
 
     applyConversationStreamEvent(
@@ -941,6 +953,7 @@ describe('mergeCommittedAssistantContent', () => {
       currentTurnMessageId: 'turn-1',
       committedAssistantMessageIds: new Set<string>(),
     lastDeltaSeqByTurn: new Map<string, number>(),
+      segmentRedirectByTurn: new Map<string, { segmentId: string; splitAtAttempt: number }>(),
     };
 
     applyConversationStreamEvent(
@@ -1030,6 +1043,7 @@ describe('mergeCommittedAssistantContent', () => {
       currentTurnMessageId: 'turn-1',
       committedAssistantMessageIds: new Set<string>(),
     lastDeltaSeqByTurn: new Map<string, number>(),
+      segmentRedirectByTurn: new Map<string, { segmentId: string; splitAtAttempt: number }>(),
     };
 
     applyConversationStreamEvent(
@@ -1137,6 +1151,7 @@ describe('applyConversationStreamEvent contentParts adoption', () => {
       currentTurnMessageId: 'turn-1',
       committedAssistantMessageIds: new Set<string>(),
     lastDeltaSeqByTurn: new Map<string, number>(),
+      segmentRedirectByTurn: new Map<string, { segmentId: string; splitAtAttempt: number }>(),
     };
 
     applyConversationStreamEvent(
@@ -1194,6 +1209,7 @@ describe('applyConversationStreamEvent contentParts adoption', () => {
       currentTurnMessageId: 'turn-1',
       committedAssistantMessageIds: new Set<string>(),
     lastDeltaSeqByTurn: new Map<string, number>(),
+      segmentRedirectByTurn: new Map<string, { segmentId: string; splitAtAttempt: number }>(),
     };
 
     applyConversationStreamEvent(
@@ -1229,6 +1245,7 @@ describe('applyConversationStreamEvent turn_start replay', () => {
       currentTurnMessageId: null as string | null,
       committedAssistantMessageIds: new Set<string>(),
     lastDeltaSeqByTurn: new Map<string, number>(),
+      segmentRedirectByTurn: new Map<string, { segmentId: string; splitAtAttempt: number }>(),
     };
     const actions = {
       addMessage: (message: Message) => {
@@ -1291,6 +1308,7 @@ describe('applyConversationStreamEvent streaming accumulator', () => {
         currentTurnMessageId: 'turn-1',
         committedAssistantMessageIds: new Set<string>(),
     lastDeltaSeqByTurn: new Map<string, number>(),
+      segmentRedirectByTurn: new Map<string, { segmentId: string; splitAtAttempt: number }>(),
       },
       {
         addMessage: () => {},
@@ -1334,6 +1352,7 @@ describe('applyConversationStreamEvent streaming accumulator', () => {
         currentTurnMessageId: 'turn-1',
         committedAssistantMessageIds: new Set<string>(),
     lastDeltaSeqByTurn: new Map<string, number>(),
+      segmentRedirectByTurn: new Map<string, { segmentId: string; splitAtAttempt: number }>(),
       },
       {
         addMessage: () => {},
@@ -1375,6 +1394,7 @@ describe('applyConversationStreamEvent streaming accumulator', () => {
         currentTurnMessageId: 'turn-1',
         committedAssistantMessageIds: new Set<string>(),
     lastDeltaSeqByTurn: new Map<string, number>(),
+      segmentRedirectByTurn: new Map<string, { segmentId: string; splitAtAttempt: number }>(),
       },
       {
         addMessage: () => {},
@@ -1417,6 +1437,7 @@ describe('applyConversationStreamEvent streaming accumulator', () => {
         currentTurnMessageId: 'turn-1',
         committedAssistantMessageIds: new Set<string>(),
     lastDeltaSeqByTurn: new Map<string, number>(),
+      segmentRedirectByTurn: new Map<string, { segmentId: string; splitAtAttempt: number }>(),
       },
       {
         addMessage: () => {},
@@ -1443,7 +1464,8 @@ import { useStatusStore } from '../../../src/renderer/stores/statusStore';
 
 function costStreamHarness() {
   return {
-    state: { currentTurnMessageId: null, committedAssistantMessageIds: new Set<string>(), lastDeltaSeqByTurn: new Map<string, number>() },
+    state: { currentTurnMessageId: null, committedAssistantMessageIds: new Set<string>(), lastDeltaSeqByTurn: new Map<string, number>(),
+      segmentRedirectByTurn: new Map<string, { segmentId: string; splitAtAttempt: number }>() },
     actions: {
       addMessage: vi.fn(),
       appendStreamingMessageDelta: vi.fn(),
@@ -1524,6 +1546,7 @@ describe('applyConversationStreamEvent 按 deltaSeq 判重放', () => {
       currentTurnMessageId: 'turn-seq',
       committedAssistantMessageIds: new Set<string>(),
     lastDeltaSeqByTurn: new Map<string, number>(),
+      segmentRedirectByTurn: new Map<string, { segmentId: string; splitAtAttempt: number }>(),
     };
     messagesRef.current = [{ id: 'turn-seq', role: 'assistant', content: '', timestamp: 1 }];
     return { messagesRef, actions, state };
@@ -1552,6 +1575,7 @@ describe('applyConversationStreamEvent 按 deltaSeq 判重放', () => {
       set currentTurnMessageId(v: string | null) { currentTurnMessageId = v; },
       committedAssistantMessageIds: new Set<string>(),
       lastDeltaSeqByTurn: shared,
+      segmentRedirectByTurn: new Map<string, { segmentId: string; splitAtAttempt: number }>(),
     });
     applyConversationStreamEvent(chunk(LONG, 1), freshState(), actions as never);
     applyConversationStreamEvent(chunk(LONG, 1), freshState(), actions as never);
@@ -1589,5 +1613,328 @@ describe('applyConversationStreamEvent 按 deltaSeq 判重放', () => {
     applyConversationStreamEvent(chunk(LONG, 1), state, actions as never);
     applyConversationStreamEvent(chunk(LONG, 1), state, actions as never);
     expect(messagesRef.current[0].content).toBe(LONG);
+  });
+});
+
+// ============================================================================
+// ADR-068 刀 4：断流续接信号（stream_reconnecting）与 B2 诚实分段
+// ============================================================================
+import { useStreamResumeStore } from '../../../src/renderer/stores/streamResumeStore';
+
+describe('applyConversationStreamEvent stream_reconnecting（ADR-068 刀 4）', () => {
+  const makeResumeHarness = () => {
+    const messagesRef = { current: [
+      { id: 'user-1', role: 'user', content: '写一段', timestamp: 100 },
+      { id: 'turn-b2', role: 'assistant', content: 'PART1__断点片段。', timestamp: 120, toolCalls: [] },
+    ] as Message[] };
+    const activity: string[] = [];
+    const actions = {
+      addMessage: (message: Message) => { messagesRef.current = [...messagesRef.current, message]; },
+      appendStreamingMessageDelta: (messageId: string, delta: { content?: string; reasoning?: string }) => {
+        messagesRef.current = messagesRef.current.map((m) => (
+          m.id === messageId ? { ...m, content: `${m.content}${delta.content ?? ''}` } : m
+        ));
+      },
+      updateMessage: (id: string, updates: Partial<Message>) => {
+        messagesRef.current = messagesRef.current.map((m) => (m.id === id ? { ...m, ...updates } : m));
+      },
+      setMessages: (next: Message[]) => { messagesRef.current = next; },
+      getMessages: () => messagesRef.current,
+      queueUpdate: () => {},
+      now: () => 500,
+      generateId: (() => { let n = 0; return () => `segment-${++n}`; })(),
+      // 照生产接线（hook 里挂的就是 store 的恢复探测），另记录调用序供断言
+      notifyStreamResumeActivity: (messageId: string) => {
+        activity.push(messageId);
+        useStreamResumeStore.getState().resolveIfActivityOn(messageId);
+      },
+    };
+    const state = {
+      currentTurnMessageId: 'turn-b2',
+      committedAssistantMessageIds: new Set<string>(),
+      lastDeltaSeqByTurn: new Map<string, number>(),
+      segmentRedirectByTurn: new Map<string, { segmentId: string; splitAtAttempt: number }>(),
+    };
+    return { messagesRef, actions, state, activity };
+  };
+
+  beforeEach(() => { useStreamResumeStore.getState().clear(); });
+  afterEach(() => { useStreamResumeStore.getState().clear(); });
+
+  it('B1：只挂信号不分段——状态行挂当前 streaming 消息，同轮同消息续打', () => {
+    const { messagesRef, actions, state } = makeResumeHarness();
+
+    applyConversationStreamEvent(
+      { type: 'stream_reconnecting', data: { turnId: 'turn-b2', attempt: 1, maxReconnects: 2, segment: 'b1' } },
+      state,
+      actions,
+    );
+
+    // 不新开第二条消息（B1 无缝续打，delta 无缝继续）
+    expect(messagesRef.current).toHaveLength(2);
+    expect(state.currentTurnMessageId).toBe('turn-b2');
+    const signal = useStreamResumeStore.getState().signal;
+    expect(signal).toMatchObject({ turnId: 'turn-b2', messageId: 'turn-b2', attempt: 1, maxReconnects: 2 });
+    expect(signal?.segmentMessageId).toBeUndefined();
+  });
+
+  it('B2：断点段定格 + 续答另起一段带一次性说明；后续 delta 重定向到续答段不拼缝；恢复即消信号', () => {
+    const { messagesRef, actions, state, activity } = makeResumeHarness();
+
+    applyConversationStreamEvent(
+      { type: 'stream_reconnecting', data: { turnId: 'turn-b2', attempt: 1, maxReconnects: 2, segment: 'b2' } },
+      state,
+      actions,
+    );
+
+    // 断点段定格（PART1 原样保留）+ 续答段（带一次性续接说明，一次性=仅流中）
+    expect(messagesRef.current).toHaveLength(3);
+    const segment = messagesRef.current[2];
+    expect(segment.role).toBe('assistant');
+    expect(segment.content).toBe('');
+    expect(segment.metadata?.streamResumeNote).toEqual({ attempt: 1, maxReconnects: 2 });
+    expect(messagesRef.current[1].content).toBe('PART1__断点片段。');
+    // 信号挂断点段（PART1），并登记续答段
+    expect(useStreamResumeStore.getState().signal).toMatchObject({
+      turnId: 'turn-b2', messageId: 'turn-b2', segmentMessageId: 'segment-1',
+    });
+    expect(state.currentTurnMessageId).toBe('segment-1');
+
+    // host 的续答 delta 仍按原 turnId 寻址 → 重定向到续答段，绝不 append 进断点段（D2）
+    applyConversationStreamEvent(
+      { type: 'message_delta', data: { role: 'assistant', path: 'content', op: 'append', text: 'PART2__续答。', messageId: 'turn-b2', turnId: 'turn-b2', deltaSeq: 1 } },
+      state,
+      actions,
+    );
+    expect(messagesRef.current[1].content).toBe('PART1__断点片段。'); // 断点段纹丝不动
+    expect(messagesRef.current[2].content).toBe('PART2__续答。'); // 续答落到新段
+    // 续答恢复即消除信号（状态行消失，B2 呈现交给续答段的一次性说明）
+    expect(useStreamResumeStore.getState().signal).toBeNull();
+    expect(activity).toContain('segment-1');
+  });
+
+  it('B2 重放幂等：同一条信号重放不二次切段（SSE Last-Event-ID 重连场景）', () => {
+    const { messagesRef, actions, state } = makeResumeHarness();
+    const signal = { turnId: 'turn-b2', attempt: 1, maxReconnects: 2, segment: 'b2' } as const;
+
+    applyConversationStreamEvent({ type: 'stream_reconnecting', data: signal }, state, actions);
+    const segmentId = state.currentTurnMessageId;
+    applyConversationStreamEvent({ type: 'stream_reconnecting', data: signal }, state, actions);
+
+    expect(messagesRef.current).toHaveLength(3); // 只切了一次段
+    expect(state.currentTurnMessageId).toBe(segmentId);
+    expect(useStreamResumeStore.getState().signal).toMatchObject({ segmentMessageId: segmentId });
+  });
+
+  it('B2 第二次断流：续答段也定格，attempt 递增切新段', () => {
+    const { messagesRef, actions, state } = makeResumeHarness();
+
+    applyConversationStreamEvent(
+      { type: 'stream_reconnecting', data: { turnId: 'turn-b2', attempt: 1, maxReconnects: 2, segment: 'b2' } },
+      state,
+      actions,
+    );
+    applyConversationStreamEvent(
+      { type: 'message_delta', data: { role: 'assistant', path: 'content', op: 'append', text: 'PART2 半截。', messageId: 'turn-b2', deltaSeq: 1 } },
+      state,
+      actions,
+    );
+    useStreamResumeStore.getState().clear(); // 恢复后信号已消（两次断流之间正常续过）
+    applyConversationStreamEvent(
+      { type: 'stream_reconnecting', data: { turnId: 'turn-b2', attempt: 2, maxReconnects: 2, segment: 'b2' } },
+      state,
+      actions,
+    );
+
+    // 第二刀切在续答段上：segment-1 定格，segment-2 是新的续答段
+    expect(messagesRef.current).toHaveLength(4);
+    expect(messagesRef.current[2].content).toBe('PART2 半截。');
+    expect(state.currentTurnMessageId).toBe('segment-2');
+    expect(useStreamResumeStore.getState().signal).toMatchObject({
+      messageId: 'segment-1', segmentMessageId: 'segment-2', attempt: 2,
+    });
+  });
+
+  it('commit 落到续答段：终稿替换续答段内容（不顶掉断点段），信号随 commit 消除', () => {
+    const { messagesRef, actions, state } = makeResumeHarness();
+
+    applyConversationStreamEvent(
+      { type: 'stream_reconnecting', data: { turnId: 'turn-b2', attempt: 1, maxReconnects: 2, segment: 'b2' } },
+      state,
+      actions,
+    );
+    applyConversationStreamEvent(
+      { type: 'message_delta', data: { role: 'assistant', path: 'content', op: 'append', text: 'PART2 流中。', messageId: 'turn-b2', deltaSeq: 1 } },
+      state,
+      actions,
+    );
+
+    // 终稿 commit（host assistant message 事件不带顶层 turnId → 寻址 currentTurnMessageId）
+    applyConversationStreamEvent(
+      { type: 'message', data: { id: 'final-1', role: 'assistant', content: 'PART2__终稿。', toolCalls: [] } },
+      state,
+      actions,
+    );
+
+    expect(messagesRef.current[1].content).toBe('PART1__断点片段。'); // 断点段不被顶替
+    expect(messagesRef.current[2].content).toBe('PART2__终稿。'); // 终稿落续答段
+    expect(useStreamResumeStore.getState().signal).toBeNull();
+  });
+
+  it('旧轮迟到的 stream_reconnecting 不碰新轮消息：带 turnId 只对账该轮，找不属地消息就丢弃（ai-review Important）', () => {
+    const messagesRef = { current: [
+      { id: 'user-1', role: 'user', content: '写一段', timestamp: 100 },
+      { id: 'turn-old', role: 'assistant', content: '旧轮断点片段。', timestamp: 120, toolCalls: [] },
+      { id: 'user-2', role: 'user', content: '再写一段', timestamp: 200 },
+      { id: 'turn-new', role: 'assistant', content: '新轮回答正文。', timestamp: 220, toolCalls: [] },
+    ] as Message[] };
+    const actions = {
+      addMessage: (message: Message) => { messagesRef.current = [...messagesRef.current, message]; },
+      updateMessage: (id: string, updates: Partial<Message>) => {
+        messagesRef.current = messagesRef.current.map((m) => (m.id === id ? { ...m, ...updates } : m));
+      },
+      setMessages: (next: Message[]) => { messagesRef.current = next; },
+      getMessages: () => messagesRef.current,
+      queueUpdate: (update: { type: string; messageId: string; content?: string }) => {
+        if (update.type === 'append' && update.content) {
+          messagesRef.current = messagesRef.current.map((m) => (
+            m.id === update.messageId ? { ...m, content: `${m.content}${update.content}` } : m
+          ));
+        }
+      },
+      now: () => 500,
+    };
+    const state = {
+      // 新轮已是 current；旧轮的迟到信号带自己的 turnId 到达
+      currentTurnMessageId: 'turn-new',
+      committedAssistantMessageIds: new Set<string>(),
+      lastDeltaSeqByTurn: new Map<string, number>(),
+      segmentRedirectByTurn: new Map<string, { segmentId: string; splitAtAttempt: number }>(),
+    };
+
+    applyConversationStreamEvent(
+      { type: 'stream_reconnecting', data: { turnId: 'turn-old', attempt: 1, maxReconnects: 2, segment: 'b2' } },
+      state,
+      actions,
+    );
+
+    // 新轮消息纹丝不动：不切段、不建重定向、新轮 current 不被顶掉
+    expect(messagesRef.current).toHaveLength(4);
+    expect(messagesRef.current[3].content).toBe('新轮回答正文。');
+    expect(state.currentTurnMessageId).toBe('turn-new');
+    expect(state.segmentRedirectByTurn.size).toBe(0);
+    // 死轮信号整条丢弃：连信号都不挂（那轮已收尾，冻结消息就是它的诚实终态）
+    expect(useStreamResumeStore.getState().signal).toBeNull();
+    // 新轮 delta 照常落新轮消息（无重定向劫持）
+    applyConversationStreamEvent(
+      { type: 'message_delta', data: { role: 'assistant', path: 'content', op: 'append', text: '（续）', messageId: 'turn-new', deltaSeq: 1 } },
+      state,
+      actions,
+    );
+    expect(messagesRef.current[3].content).toBe('新轮回答正文。（续）');
+  });
+
+  it('turn_start 新轮：旧轮信号与分段重定向过期（终态之外的第二道清除）', () => {
+    const { actions, state } = makeResumeHarness();
+
+    applyConversationStreamEvent(
+      { type: 'stream_reconnecting', data: { turnId: 'turn-b2', attempt: 1, maxReconnects: 2, segment: 'b2' } },
+      state,
+      actions,
+    );
+    applyConversationStreamEvent(
+      { type: 'turn_start', data: { turnId: 'turn-next' } },
+      state,
+      actions,
+    );
+
+    expect(useStreamResumeStore.getState().signal).toBeNull();
+    expect(state.segmentRedirectByTurn.size).toBe(0);
+    // 同轮 turn_start 重放不清自己的重定向（清了会把续答接回断点段）
+    applyConversationStreamEvent(
+      { type: 'stream_reconnecting', data: { turnId: 'turn-b2', attempt: 1, maxReconnects: 2, segment: 'b2' } },
+      { ...state, currentTurnMessageId: null },
+      actions,
+    );
+    applyConversationStreamEvent(
+      { type: 'turn_start', data: { turnId: 'turn-b2' } },
+      state,
+      actions,
+    );
+    expect(state.segmentRedirectByTurn.has('turn-b2')).toBe(true);
+  });
+
+  it('空断点 B2：无可分段正文（host 侧 partial 落库本就是 no-op）只挂信号不切段', () => {
+    const messagesRef = { current: [
+      { id: 'turn-empty', role: 'assistant', content: '', timestamp: 120, toolCalls: [] },
+    ] as Message[] };
+    const actions = {
+      addMessage: (message: Message) => { messagesRef.current = [...messagesRef.current, message]; },
+      updateMessage: () => {},
+      setMessages: (next: Message[]) => { messagesRef.current = next; },
+      getMessages: () => messagesRef.current,
+      queueUpdate: () => {},
+      now: () => 500,
+    };
+    const state = {
+      currentTurnMessageId: 'turn-empty',
+      committedAssistantMessageIds: new Set<string>(),
+      lastDeltaSeqByTurn: new Map<string, number>(),
+      segmentRedirectByTurn: new Map<string, { segmentId: string; splitAtAttempt: number }>(),
+    };
+
+    applyConversationStreamEvent(
+      { type: 'stream_reconnecting', data: { turnId: 'turn-empty', attempt: 1, maxReconnects: 2, segment: 'b2' } },
+      state,
+      actions,
+    );
+
+    expect(messagesRef.current).toHaveLength(1);
+    expect(useStreamResumeStore.getState().signal).toMatchObject({ messageId: 'turn-empty' });
+  });
+});
+
+describe('streamResumeStore 信号生命周期（ADR-068 刀 4：一屏一个信号）', () => {
+  beforeEach(() => { useStreamResumeStore.getState().clear(); });
+  afterEach(() => { useStreamResumeStore.getState().clear(); });
+
+  it('setSignal 覆写 n/N（连续断流递增），全局单例', () => {
+    const store = useStreamResumeStore.getState();
+    store.setSignal({ turnId: 't1', messageId: 'm1', attempt: 1, maxReconnects: 2, signaledAt: 1 });
+    store.setSignal({ turnId: 't1', messageId: 'm1', attempt: 2, maxReconnects: 2, signaledAt: 2 });
+
+    expect(useStreamResumeStore.getState().signal).toMatchObject({ attempt: 2, maxReconnects: 2, messageId: 'm1' });
+  });
+
+  it('attachSegment 补登记 B2 续答段；无信号时 no-op', () => {
+    useStreamResumeStore.getState().attachSegment('seg-1');
+    expect(useStreamResumeStore.getState().signal).toBeNull();
+
+    useStreamResumeStore.getState().setSignal({ turnId: 't1', messageId: 'm1', attempt: 1, maxReconnects: 2, signaledAt: 1 });
+    useStreamResumeStore.getState().attachSegment('seg-1');
+    expect(useStreamResumeStore.getState().signal).toMatchObject({ segmentMessageId: 'seg-1' });
+  });
+
+  it('resolveIfActivityOn：命中挂载消息（B1 无缝续打）或续答段（B2）都算恢复；别的消息不动', () => {
+    const store = useStreamResumeStore.getState();
+    store.setSignal({ turnId: 't1', messageId: 'm1', attempt: 1, maxReconnects: 2, signaledAt: 1 });
+    useStreamResumeStore.getState().attachSegment('seg-1');
+
+    // 无关消息的流活动不打断信号（同一屏里别的消息在动 ≠ 断流恢复了）
+    useStreamResumeStore.getState().resolveIfActivityOn('other');
+    expect(useStreamResumeStore.getState().signal).not.toBeNull();
+
+    // B1：续答 delta 回到同一消息
+    useStreamResumeStore.getState().resolveIfActivityOn('m1');
+    expect(useStreamResumeStore.getState().signal).toBeNull();
+
+    // B2：续答 delta 落到续答段
+    useStreamResumeStore.getState().setSignal({ turnId: 't1', messageId: 'm1', segmentMessageId: 'seg-1', attempt: 1, maxReconnects: 2, signaledAt: 3 });
+    useStreamResumeStore.getState().resolveIfActivityOn('seg-1');
+    expect(useStreamResumeStore.getState().signal).toBeNull();
+
+    // 空 messageId / 无信号时安全 no-op
+    useStreamResumeStore.getState().resolveIfActivityOn(undefined);
+    useStreamResumeStore.getState().resolveIfActivityOn('m1');
   });
 });

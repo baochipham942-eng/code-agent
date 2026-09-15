@@ -8,6 +8,10 @@ import {
 
 const USER_CANCELLED_MARKER = /\[cancelled\]/i;
 const SESSION_SWITCH_MARKER = /\[未完成\s*[—-]\s*切换会话中断\]/;
+// ADR-068 刀 3 落库、刀 4 消费：B2 断流分段 / 终错保留 partial 的两个正文标记
+// （host systemContextStack 的 STREAM_BREAK_SEGMENT_MARKER / INFERENCE_ERROR_PARTIAL_MARKER）。
+// 词表消费归展示层：裸标记文本不上屏，剥掉后由样式行按稳定枚举呈现。
+const STREAM_BREAK_MARKER = /\[\s*(?:连接中断|生成中断)\s*[—-]\s*部分回答已保留\s*\]/u;
 const WRITE_TOOLS = new Set(['Write', 'write_file']);
 
 function isRecoveryMessage(message: Message, turnId?: string): boolean {
@@ -21,7 +25,16 @@ export function streamInterruptionReasonFromContent(
   if (!content) return null;
   if (USER_CANCELLED_MARKER.test(content)) return 'user';
   if (SESSION_SWITCH_MARKER.test(content)) return 'session-switch';
+  if (STREAM_BREAK_MARKER.test(content)) return 'stream-break';
   return null;
+}
+
+/**
+ * 剥掉正文尾部的断流保留标记（含前导空白），供重载视图渲染断点段——裸协议串不上屏，
+ * 中断语义由 metadata.streamInterruptionReason 驱动的样式行承载。非断流正文原样返回。
+ */
+export function stripStreamBreakMarker(content: string): string {
+  return content.replace(/\s*\[\s*(?:连接中断|生成中断)\s*[—-]\s*部分回答已保留\s*\]\s*$/u, '');
 }
 
 export function isPersistedStreamInterruptionMessage(message: Message): boolean {

@@ -5,7 +5,7 @@
       "$ref": "#/$defs/__schema0"
     },
     {
-      "$ref": "#/$defs/__schema229"
+      "$ref": "#/$defs/__schema232"
     }
   ],
   "title": "AgentEventEnvelope",
@@ -231,6 +231,9 @@
         },
         {
           "$ref": "#/$defs/__schema226"
+        },
+        {
+          "$ref": "#/$defs/__schema229"
         }
       ],
       "title": "AgentEvent",
@@ -5532,6 +5535,59 @@
       }
     },
     "__schema229": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "$ref": "#/$defs/__schema230"
+        },
+        "data": {
+          "$ref": "#/$defs/__schema231"
+        }
+      },
+      "required": [
+        "type",
+        "data"
+      ],
+      "additionalProperties": false,
+      "stability": "experimental",
+      "description": "Experimental event. Its shape may change or be removed."
+    },
+    "__schema230": {
+      "type": "string",
+      "const": "stream_reconnecting"
+    },
+    "__schema231": {
+      "type": "object",
+      "properties": {
+        "turnId": {
+          "type": "string"
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "maxReconnects": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "segment": {
+          "type": "string",
+          "enum": [
+            "b1",
+            "b2"
+          ]
+        }
+      },
+      "required": [
+        "attempt",
+        "maxReconnects",
+        "segment"
+      ],
+      "additionalProperties": false
+    },
+    "__schema232": {
       "type": "object",
       "properties": {
         "streamEpoch": {

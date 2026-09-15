@@ -363,7 +363,7 @@ export const INFERENCE_ERROR_PARTIAL_MARKER = '\n\n[生成中断 — 部分回�
  * 落库后 resetStreamedContent：续答（重发输出）另起一段累积，不 append 进 partial
  * 冒充单次生成（D2 边界）。空片段 no-op（首字节前失败没有可保的内容）。
  */
-export function persistStreamedPartialBeforeResend(ctx: ContextAssemblyCtx, marker: string, reason: string): void {
+export async function persistStreamedPartialBeforeResend(ctx: ContextAssemblyCtx, marker: string, reason: string): Promise<void> {
   const streamed = ctx.runtime.turn.lastStreamedContent;
   if (!streamed) return;
   const partialMessage: Message = {
@@ -376,29 +376,28 @@ export function persistStreamedPartialBeforeResend(ctx: ContextAssemblyCtx, mark
   logger.info('[AgentLoop] 断点 partial 已分段落库（ADR-068 刀 3）', { reason, charCount: streamed.length });
   // 持久化链路对齐 addAndPersistMessage：persistMessage callback 缺失或失败时降级
   // sessionManager.addMessageToSession（idempotent），全失败只 warn 不抛——「保片段」
-  // 落库失败不应反过来打断重发本身。
-  void (async () => {
-    let persisted = false;
-    if (ctx.runtime.persistMessage) {
-      try {
-        await ctx.runtime.persistMessage(partialMessage);
-        persisted = true;
-      } catch (err: unknown) {
-        logger.warn('[AgentLoop] persistMessage callback failed for streamed partial; falling back to sessionManager', {
-          sessionId: ctx.runtime.sessionId,
-          messageId: partialMessage.id,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }
+  // 落库失败不应反过来打断重发本身。调用方必须 await：partial 先于续答终稿落库，
+  // 重载时间线不乱序（PR #1833 复审 Important）。
+  let persisted = false;
+  if (ctx.runtime.persistMessage) {
+    try {
+      await ctx.runtime.persistMessage(partialMessage);
+      persisted = true;
+    } catch (err: unknown) {
+      logger.warn('[AgentLoop] persistMessage callback failed for streamed partial; falling back to sessionManager', {
+        sessionId: ctx.runtime.sessionId,
+        messageId: partialMessage.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
-    if (!persisted && ctx.runtime.sessionId) {
-      try {
-        await getSessionManager().addMessageToSession(ctx.runtime.sessionId, partialMessage);
-      } catch (err: unknown) {
-        logger.warn('[AgentLoop] persist streamed partial before resend failed:', err);
-      }
+  }
+  if (!persisted && ctx.runtime.sessionId) {
+    try {
+      await getSessionManager().addMessageToSession(ctx.runtime.sessionId, partialMessage);
+    } catch (err: unknown) {
+      logger.warn('[AgentLoop] persist streamed partial before resend failed:', err);
     }
-  })();
+  }
 }
 
 export function recordContextEventsForMessage(ctx: ContextAssemblyCtx, message: Message): void {

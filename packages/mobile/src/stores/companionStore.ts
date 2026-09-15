@@ -290,14 +290,21 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
     };
     /** 趁 LAN 连着刷新缓存的 relay 路由（Host 重启会换 routeToken）。尽力而为，不许打断 LAN 会话。 */
     const refreshRelayRoute = async () => {
-      if (!client || client === relayClient || !saved?.binding) return;
+      if (!client || client === relayClient || !saved?.binding || !port) return;
+      // 路由探针走自己的一条短命 resume 通道，绝不碰会话通道：relay.route 是新动作，旧 Host
+      // 的 exchange 对未知动作的处置是「关 channel」——在会话通道上问一句，整条会话陪葬
+      // （2026-09-15 真机首验：配对后首次 sync 即掉线，重连-再陪葬死循环，relay 永远没机会开火）。
+      // 探针死了只是没路由可缓存；会话通道毫发无损。
+      const probe = new LanCompanionClient({ publicKey: fromHex(saved.publicKey, 32), secretKey: fromHex(saved.secretKey, 32) }, port.post);
       try {
-        const result = await client.request({ action: 'relay.route' }) as { kind?: unknown; url?: unknown; routeToken?: unknown; credential?: unknown };
+        await probe.recover(saved.binding);
+        const result = await probe.request({ action: 'relay.route' }) as { kind?: unknown; url?: unknown; routeToken?: unknown; credential?: unknown };
         if (result?.kind !== 'ok' || typeof result.url !== 'string' || typeof result.routeToken !== 'string' || typeof result.credential !== 'string') return;
         const route = parseCompanionRelayRoute({ v: 1, url: result.url, routeToken: result.routeToken, credential: result.credential });
         if (saved.relay?.url === route.url && saved.relay.routeToken === route.routeToken) return;
         await persist({ ...saved, relay: route });
       } catch { /* 路由刷新失败不影响 LAN 会话；下一次重连再试 */ }
+      finally { probe.close(); }
     };
     const accepted = async (record: CompanionCommandRecord) => {
       const pending = saved?.pending;

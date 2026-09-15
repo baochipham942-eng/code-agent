@@ -82,10 +82,21 @@ export class LanCompanionServer {
     server.on('connection', socket => {
       if (!isLanPeer(socket.remoteAddress?.replace(/^::ffff:/, '') ?? '')) socket.destroy();
     });
-    await new Promise<void>((resolve, reject) => {
+    const listenAt = (listenPort: number) => new Promise<void>((resolve, reject) => {
       server.once('error', reject);
-      server.listen(port, () => { server.off('error', reject); resolve(); });
+      server.listen(listenPort, () => { server.off('error', reject); resolve(); });
     });
+    try {
+      await listenAt(port);
+    } catch (error) {
+      // 同机多张 Host 脸并存（Dev 槽 app、独立 host-runtime）会抢 lanPort：先来的常驻，
+      // 后到的 invite 全部 EADDRINUSE，配对入口整个消失（2026-09-15 真机首验：01:04 起的
+      // 旧 Dev app 占着 8182，新 Host 一个二维码都发不出来，手机只能配到旧 app 上）。
+      // 端点随 QR/绑定走，换端口对手机零成本；invite 硬失败才是贵的。
+      if ((error as NodeJS.ErrnoException)?.code !== 'EADDRINUSE') throw error;
+      console.warn(`[companion] LAN port ${port} already in use; falling back to an ephemeral port`);
+      await listenAt(0);
+    }
     this.server = server;
     const listenPort = (server.address() as { port: number }).port;
     // 主地址用「此刻一定连得上」的字面量；mDNS 名只作备用，手机连不上主地址时才试它。

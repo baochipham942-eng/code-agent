@@ -28,6 +28,7 @@ export class InFlightRound {
 
   async race(round: Promise<AgentRound>, ms: number, message: string): Promise<AgentRound> {
     this.pending = round;
+    // 只在成功时清：超时抛错时必须留着 pending 给 settleInto 接，别改成 finally。
     const value = await withTimeout(round, ms, message);
     this.pending = undefined;
     return value;

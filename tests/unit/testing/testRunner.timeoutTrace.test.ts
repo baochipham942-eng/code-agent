@@ -124,14 +124,13 @@ describe('testRunner 超时轨迹保全（N-EVAL-TIMEOUT-K1-TRACE）', () => {
     expect(result.failure?.code).toBe('timeout');
   });
 
-  it('adapter 不实现 cancelActiveRun ⇒ 不等宽限，直接标不可得', async () => {
-    const startedAt = Date.now();
+  // 「不白等 5s 宽限」由 fakeClosed.test.ts 超时归因用例（5s 预算、真常量）兜住；这里宽限被 mock 成 100ms，只核标记。
+  it('adapter 不实现 cancelActiveRun ⇒ 直接标不可得', async () => {
     const summary = await runWith({
       sendMessage: () => new Promise(() => undefined),
       reset: async () => undefined,
       getAgentInfo: () => ({ name: 'mock', model: 'mock', provider: 'mock' }),
     }, 50);
     expect(summary.results[0]).toMatchObject({ failureStage: 'timeout', timeoutTraceAvailable: false });
-    expect(Date.now() - startedAt).toBeLessThan(2_000);
   });
 });

@@ -39,6 +39,7 @@ import { McpSchemas } from '../shared/ipc/schemas/mcp';
 import { LibrarySchemas } from '../shared/ipc/schemas/library';
 import { AgentEngineSchemas } from '../shared/ipc/schemas/agentEngine';
 import { CapabilitySchemas } from '../shared/ipc/schemas/capability';
+import { PiiSchemas } from '../shared/ipc/schemas/pii';
 
 const DEFAULT_SINCE_VERSION = '0.16.93';
 
@@ -191,12 +192,8 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'setEnabled',
     'updateSettings',
   ],
-  [IPC_DOMAINS.PII]: [
-    'setup:cancel',
-    'setup:isReady',
-    'setup:start',
-    'setup:status',
-  ],
+  // pii 域：派生自 schema action 集合（== pii 表 keys，parity 门三面对账），手工清单已删
+  [IPC_DOMAINS.PII]: PiiSchemas.ACTIONS,
   [IPC_DOMAINS.PLANNING]: [
     'getErrors',
     'getFindings',

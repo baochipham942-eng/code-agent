@@ -58,6 +58,24 @@ describe('RelayCompanionClient：连接失败三分类', () => {
     expect(socket.closed).toBe(true);
   });
 
+  it('握手/welcome 等待超时也要关连接——不许留带心跳的僵尸 socket（ai-review Important）', async () => {
+    vi.useFakeTimers();
+    const socket = new ScriptedSocket();
+    const { client } = clientWith(() => socket.socket);
+    const connected = client.connect();
+    socket.fireOpen();
+    await connected;
+    const pending = expect(client.resume({ hostKey: 'aa'.repeat(32), deviceId: 'phone-1', scopeEpoch: 1, scope: ['shared'] }))
+      .rejects.toThrow('COMPANION_NO_RESPONSE');
+    await vi.advanceTimersByTimeAsync(L.requestTimeoutMs + 10);
+    await pending;
+    expect(socket.closed).toBe(true);
+    // 心跳 interval 必须已清：过了心跳周期也不该再有任何发送。
+    const sentSoFar = socket.sent.length;
+    await vi.advanceTimersByTimeAsync(L.relayHeartbeatMs * 3);
+    expect(socket.sent.length).toBe(sentSoFar);
+  });
+
   it('relay 不可达：open 之前 error ⇒ COMPANION_RELAY_UNAVAILABLE', async () => {
     const socket = new ScriptedSocket();
     const { client } = clientWith(() => socket.socket);

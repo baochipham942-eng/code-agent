@@ -168,7 +168,9 @@ export class RelayCompanionClient {
       ciphertext: toHex(noise.send()),
     });
     this.seq = 0;
-    const hello = await reply;
+    // 等待失败（含超时）必须 drop：这条 socket 是 dialRelay 里唯一没人兜底引用的连接，
+    // 留着它就是带 20s 心跳的僵尸（ai-review Important：host 不应答正是走 relay 的典型现场）。
+    const hello = await reply.catch(error => { this.drop(error); throw error; });
     let hostKeyPinned: boolean;
     try { hostKeyPinned = noise.recv(fromHex(hello.ciphertext)).length === 0; }
     catch { hostKeyPinned = false; }
@@ -177,7 +179,7 @@ export class RelayCompanionClient {
       throw new Error('COMPANION_HOST_KEY_MISMATCH');
     }
     this.channel = new NoiseChannel(noise);
-    const welcome = await this.waitWelcome();
+    const welcome = await this.waitWelcome().catch(error => { this.drop(error); throw error; });
     const opened = this.channel.open(JSON.parse(welcome.ciphertext) as unknown) as Partial<{
       deviceId: string; scopeEpoch: number; scope: string[];
     }>;

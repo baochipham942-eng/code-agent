@@ -1305,6 +1305,86 @@ describe('createAgentRouter', () => {
       });
     });
 
+    it('body 带 disableAutoAgent=true → 委派类工具收进 deniedToolNames（批准计划顺序执行）', async () => {
+      const controller = new AbortController();
+      const response = await fetch(`${baseUrl}/api/run`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          prompt: '<approved-plan>…</approved-plan> Execute this approved plan now.',
+          sessionId: 'session-disable-auto-agent-on',
+          disableAutoAgent: true,
+        }),
+        signal: controller.signal,
+      });
+      expect(response.ok).toBe(true);
+      await waitForAssertion(() => {
+        expect(mockCreateAgentLoop).toHaveBeenCalled();
+      });
+      const config = mockCreateAgentLoop.mock.calls.at(-1)![0] as {
+        deniedToolNames?: string[];
+      };
+      expect(config.deniedToolNames).toEqual(expect.arrayContaining([
+        'Task', 'spawn_agent', 'AgentSpawn', 'teammate', 'workflow', 'workflow_orchestrate',
+      ]));
+      controller.abort();
+      await waitForAssertion(() => {
+        expect(mockCancel).toHaveBeenCalled();
+      });
+    });
+
+    it('body 不带 disableAutoAgent → 工具面不因委派收窄（deniedToolNames 无 spawn 类工具）', async () => {
+      const controller = new AbortController();
+      const response = await fetch(`${baseUrl}/api/run`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          prompt: 'hi',
+          sessionId: 'session-disable-auto-agent-off',
+        }),
+        signal: controller.signal,
+      });
+      expect(response.ok).toBe(true);
+      await waitForAssertion(() => {
+        expect(mockCreateAgentLoop).toHaveBeenCalled();
+      });
+      const config = mockCreateAgentLoop.mock.calls.at(-1)![0] as {
+        deniedToolNames?: string[];
+      };
+      expect(config.deniedToolNames ?? []).not.toEqual(expect.arrayContaining(['spawn_agent', 'Task']));
+      controller.abort();
+      await waitForAssertion(() => {
+        expect(mockCancel).toHaveBeenCalled();
+      });
+    });
+
+    it('body 带 historyVisibility=meta → pre-persist 落库的 user message 带 isMeta（计划内部 prompt 不混进可见历史）', async () => {
+      setDbAvailable(true);
+      const controller = new AbortController();
+      const response = await fetch(`${baseUrl}/api/run`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          prompt: '<approved-plan>…</approved-plan> Execute this approved plan now.',
+          sessionId: 'session-meta-prepersist',
+          historyVisibility: 'meta',
+        }),
+        signal: controller.signal,
+      });
+      expect(response.ok).toBe(true);
+      await waitForAssertion(() => {
+        expect(mockDb.addMessage).toHaveBeenCalled();
+      });
+      expect(mockDb.addMessage).toHaveBeenCalledWith(
+        'session-meta-prepersist',
+        expect.objectContaining({ role: 'user', isMeta: true }),
+      );
+      controller.abort();
+      await waitForAssertion(() => {
+        expect(mockCancel).toHaveBeenCalled();
+      });
+    });
+
     it('body 不带 → thinkingEnabled 缺省 true、effortLevel 不设（复杂度自动档）', async () => {
       const controller = new AbortController();
       const response = await fetch(`${baseUrl}/api/run`, {

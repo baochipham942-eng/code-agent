@@ -10,12 +10,14 @@ import {
   parseCompanionRelayFrame,
   type CompanionRelayFrame,
   type CompanionRelayResolved,
+  type CompanionRelayRoute,
 } from '../../../shared/contract/companionRelay';
 import type { CompanionGateway } from './CompanionGateway';
 import { RelayOutboundBuffer, RelaySeqBuffer } from './companionRelayBuffer';
 import { loadCompanionRelayConfig, loadCompanionRelayCredential } from './companionRelayConfig';
 
-interface CompanionRelayRoute {
+/** Host 侧路由表条目（deviceRef → routeToken）；与下发给手机的 CompanionRelayRoute 契约区分名。 */
+interface RelayRouteEntry {
   deviceRef: string;
   routeToken: string;
 }
@@ -34,7 +36,7 @@ function submitRelayedCommand(gateway: CompanionGateway, command: CompanionComma
 export class CompanionRelayClient {
   private socket: WebSocket | null = null;
   private readonly buffer = new RelayOutboundBuffer();
-  private readonly routes = new Map<string, CompanionRelayRoute>();
+  private readonly routes = new Map<string, RelayRouteEntry>();
   private readonly sessions = new Map<string, DeviceSession>();
   private readonly inbound = new Map<string, RelaySeqBuffer>();
   private readonly peerSeq = new Map<string, number>();
@@ -64,13 +66,30 @@ export class CompanionRelayClient {
     this.WebSocketImpl = deps.WebSocket ?? WebSocket;
   }
 
-  advertise(route: CompanionRelayRoute): void {
+  advertise(route: RelayRouteEntry): void {
     this.routes.set(route.deviceRef, route);
     if (this.socket?.readyState === WebSocket.OPEN) this.sendRegister(route);
   }
 
   routeTokenFor(deviceRef: string): string | null {
     return this.routes.get(deviceRef)?.routeToken ?? null;
+  }
+
+  /**
+   * 给一台已配对手机的完整 relay 路由（url + routeToken + 共享凭据），经 Noise 信封下发给它缓存。
+   * 没有 route 就当场铸造并注册——手机不该为等下一次 heartbeat（20s）而拿不到路由。
+   * socket 暂时断开时照常返回：token 不变，host 重连后会重新注册全部 route。
+   */
+  routeFor(deviceRef: string): CompanionRelayRoute | null {
+    if (this.stopped) return null;
+    if (!this.routes.has(deviceRef)) {
+      this.bindPairedDevices();
+      const minted = this.routes.get(deviceRef);
+      if (minted && this.socket?.readyState === WebSocket.OPEN) this.sendRegister(minted);
+    }
+    const route = this.routes.get(deviceRef);
+    if (!route) return null;
+    return { v: 1, url: this.deps.config.url, routeToken: route.routeToken, credential: this.deps.credential };
   }
 
   private bindPairedDevices(): void {
@@ -144,14 +163,14 @@ export class CompanionRelayClient {
     for (const id of [...this.sessions.keys()]) this.forget(id);
   }
 
-  private controlEnvelope(route: CompanionRelayRoute) {
+  private controlEnvelope(route: RelayRouteEntry) {
     return {
       routeToken: route.routeToken, deviceRef: route.deviceRef, seq: this.controlSeq++,
       ttlMs: L.relayRouteTokenTtlMs, issuedAt: this.now(),
     };
   }
 
-  private peerEnvelope(route: CompanionRelayRoute, idempotencyKey?: string) {
+  private peerEnvelope(route: RelayRouteEntry, idempotencyKey?: string) {
     const seq = this.peerSeq.get(route.deviceRef) ?? 0;
     this.peerSeq.set(route.deviceRef, seq + 1);
     return {
@@ -161,7 +180,7 @@ export class CompanionRelayClient {
     };
   }
 
-  private sendRegister(route: CompanionRelayRoute): void {
+  private sendRegister(route: RelayRouteEntry): void {
     this.push({ v: 1, kind: 'register', role: 'host', envelope: this.controlEnvelope(route), ciphertext: '' });
   }
 
@@ -241,7 +260,8 @@ export class CompanionRelayClient {
       if (frame.kind !== 'forward') return;
       const inbound = this.inbound.get(deviceRef) ?? new RelaySeqBuffer();
       this.inbound.set(deviceRef, inbound);
-      for (const ready of inbound.push(frame, this.now())) this.handleForward(ready);
+      // read 走 gateway 的异步读，回包在 await 之后——错误的会话拆掉仍走 forget。
+      for (const ready of inbound.push(frame, this.now())) void this.handleForward(ready).catch(() => this.forget(deviceRef));
     } catch {
       this.forget(deviceRef);
     }
@@ -276,7 +296,7 @@ export class CompanionRelayClient {
     });
   }
 
-  private handleForward(frame: CompanionRelayFrame): void {
+  private async handleForward(frame: CompanionRelayFrame): Promise<void> {
     if (frame.kind !== 'forward') return;
     const session = this.sessions.get(frame.envelope.deviceRef);
     const route = this.routes.get(frame.envelope.deviceRef);
@@ -284,7 +304,7 @@ export class CompanionRelayClient {
     const device = this.deps.gateway.identityDevice(session.publicKey);
     if (!device) { this.revoke(frame.envelope.deviceRef); return; }
     const request = session.cipher.open(JSON.parse(frame.ciphertext) as unknown) as {
-      requestId?: unknown; action?: unknown; command?: unknown; commandId?: unknown; epoch?: unknown; afterSeq?: unknown;
+      requestId?: unknown; action?: unknown; command?: unknown; commandId?: unknown; epoch?: unknown; afterSeq?: unknown; query?: unknown;
     };
     if (!request || typeof request.requestId !== 'string' || request.requestId.length > L.idLength) throw new Error('COMPANION_INVALID_REQUEST');
     let result: unknown;
@@ -292,6 +312,9 @@ export class CompanionRelayClient {
       const command = companionCommandSchema.parse(request.command);
       if (command.deviceId !== device.deviceId) throw new Error('COMPANION_IDENTITY_MISMATCH');
       result = submitRelayedCommand(this.deps.gateway, command);
+    } else if (request.action === 'read') {
+      // 与 LAN exchange 同一个读口：手机经 relay 也能读库/历史/成果列表（N-MOBILE-RELAY-PHONE）。
+      result = await this.deps.gateway.read(frame.envelope.deviceRef, request.query);
     } else if (request.action === 'status' && typeof request.commandId === 'string' && request.commandId.length <= L.idLength) {
       result = this.deps.gateway.commandStatus(device.deviceId, request.commandId);
     } else if (request.action === 'sync') {

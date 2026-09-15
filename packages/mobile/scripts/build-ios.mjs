@@ -56,9 +56,12 @@ if (missing.length > 0) throw new Error(`IOS_PREREQUISITES_MISSING: ${missing.jo
  * iOS 侧我们自己实现、故意不用厂商原生包的插件（JS 依赖仍在，Android 走厂商实现）。
  * vendorClass 是 cap sync 会写进 packageClassList 的那个名字——那个类不会被编译进来，
  * 必须换成 nativeClass，Capacitor 的注册表才指向真正存在的实现。
+ * LanDns 没有厂商包（第一方 mDNS 解析，fix4-⑤），vendorClass 仅占位：
+ * withSelfImplementedPluginClasses 找不到它时直接 push nativeClass。
  */
 const SELF_IMPLEMENTED_IOS_PLUGINS = [
   { package: 'capacitor-voice-recorder', vendorClass: 'VoiceRecorder', nativeClass: 'NeoVoiceRecorderPlugin' },
+  { package: 'neo-lan-dns', vendorClass: 'LanDns', nativeClass: 'NeoLanDnsPlugin' },
 ];
 
 /** 装了哪些带 iOS 原生实现的 Capacitor 插件——以 package.json 依赖为准，不靠手抄清单。 */
@@ -167,6 +170,9 @@ if (!appBundle) throw new Error('APP_BUNDLE_MISSING_IN_IPA');
 // 源码进了 SPM target 不等于真被编译进包：链接闸看的是清单，这一格看的是产物本身。
 const executable = execFileSync('unzip', ['-p', ipa, `Payload/${appBundle}/${appBundle.replace(/\.app$/, '')}`], { maxBuffer: 1 << 28 });
 if (!executable.includes('NeoVoiceRecorderPlugin')) throw new Error('IOS_VOICE_PLUGIN_MISSING_FROM_BINARY');
+// mDNS 解析插件同理：类名不在二进制里 = JS 侧 resolve 永远 "not implemented"，
+// 重连静默回退旧 IP（fix4-⑤ 的病根），构建期就红。
+if (!executable.includes('NeoLanDnsPlugin')) throw new Error('IOS_LAN_DNS_PLUGIN_MISSING_FROM_BINARY');
 if (!executable.includes('PushNotificationsPlugin')) throw new Error('IOS_PUSH_PLUGIN_MISSING_FROM_BINARY');
 // 描述文件有 aps-environment 不等于二进制声明了它：register() 读的是 app entitlements。
 const inspect = '.artifacts/ios-binary-entitlements';

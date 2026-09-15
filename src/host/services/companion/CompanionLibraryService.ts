@@ -52,7 +52,9 @@ export class CompanionLibraryService {
   }
 
   projects() {
-    return getDatabase().getProjectRepo().listProjects().map(p => ({ id: p.id, name: p.name }));
+    // workspacePath 用于手机侧同名项目消歧（fix5-③）：名字可重复（不同目录各建过一个
+    // workspace），路径不会。缺路径的存量项目照发 null，手机侧降级不显示消歧标签。
+    return getDatabase().getProjectRepo().listProjects().map(p => ({ id: p.id, name: p.name, workspacePath: p.workspacePath ?? null }));
   }
 
   sessionExists(id: string): boolean { return this.session(id) !== null; }

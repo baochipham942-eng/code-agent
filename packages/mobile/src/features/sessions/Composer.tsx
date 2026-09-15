@@ -86,7 +86,7 @@ export function Composer({
     : voice.failure ? `${voice.failure.stage === 'record' ? text.voiceRecordFailed : text.voiceTranscribeFailed} · ${voice.failure.reason}`
     : null;
   return <>
-    {notice && <p className="notice voice-notice" role="status">{notice}<button onClick={voice.retry}>{text.retry}</button></p>}
+    {notice && <p className="notice voice-notice" role="status">{notice}<button className="inline-retry" onClick={voice.retry}>{text.retry}</button></p>}
     <div className={voice.panelOpen ? 'composer voice-composer' : 'composer'}>
       {voice.panelOpen
         ? <VoicePanel text={text} phase={voice.phase} pending={voicePending} elapsedMs={voice.elapsedMs}

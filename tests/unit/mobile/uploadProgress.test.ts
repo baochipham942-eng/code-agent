@@ -149,4 +149,13 @@ describe('uploadProgress 从既有 upload 循环导出且不进 persist', () => 
     await second.getState().hydrate();
     expect(second.getState().uploadProgress).toEqual([]);
   });
+
+  it('keeps a tiny file in transferring until the minimum chip window', async () => {
+    const { store } = await connected();
+    const pending = store.getState().upload(txt(new Uint8Array([1, 2, 3, 4])));
+    await new Promise(resolve => setTimeout(resolve, 50));
+    expect(store.getState().uploadProgress[0]?.phase).not.toBe('complete');
+    await pending;
+    expect(store.getState().uploadProgress[0]?.phase).toBe('complete');
+  });
 });

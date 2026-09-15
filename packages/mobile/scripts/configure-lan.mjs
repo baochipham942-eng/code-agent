@@ -6,6 +6,16 @@ export function ensureAndroidPushPermission(xml) {
   return xml.replace('</manifest>', '<uses-permission android:name="android.permission.POST_NOTIFICATIONS" /></manifest>');
 }
 
+/**
+ * fix4-⑤：mDNS 单次解析要能收组播包（224.0.0.251:5353）。没有
+ * CHANGE_WIFI_MULTICAST_STATE 时 MulticastLock.acquire() 直接抛 SecurityException，
+ * 多数 Wi-Fi 驱动还会把组播包整包滤掉——解析永远等不到应答。
+ */
+export function ensureAndroidMulticastPermission(xml) {
+  if (xml.includes('android.permission.CHANGE_WIFI_MULTICAST_STATE')) return xml;
+  return xml.replace('</manifest>', '<uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" /></manifest>');
+}
+
 export function ensureAndroidCameraPermission(xml) {
   if (xml.includes('android.permission.CAMERA')) return xml;
   return xml.replace('</manifest>', '<uses-permission android:name="android.permission.CAMERA" /></manifest>');
@@ -61,6 +71,7 @@ export function configureAndroidLan() {
   xml = ensureAndroidCameraPermission(xml);
   if (!xml.includes('android.permission.RECORD_AUDIO')) xml = xml.replace('</manifest>', '<uses-permission android:name="android.permission.RECORD_AUDIO" /></manifest>');
   xml = ensureAndroidPushPermission(xml);
+  xml = ensureAndroidMulticastPermission(xml);
   // Do not restore an Android Keystore ciphertext onto a different installation.
   if (/android:allowBackup=/.test(xml)) xml = xml.replace(/android:allowBackup="[^"]*"/, 'android:allowBackup="false"');
   else xml = xml.replace('<application', '<application android:allowBackup="false"');

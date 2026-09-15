@@ -35,6 +35,7 @@ import { RolesSchemas } from '../shared/ipc/schemas/roles';
 import { ConnectorSchemas } from '../shared/ipc/schemas/connector';
 import { AgentSchemas } from '../shared/ipc/schemas/agent';
 import { SettingsSchemas } from '../shared/ipc/schemas/settings';
+import { McpSchemas } from '../shared/ipc/schemas/mcp';
 
 const DEFAULT_SINCE_VERSION = '0.16.93';
 
@@ -186,20 +187,8 @@ const CAPABILITY_DOMAIN_ACTIONS = {
   ],
   // loop 域：派生自 schema action 集合（== loop 表 keys，parity 门三面对账）
   [IPC_DOMAINS.LOOP]: LoopSchemas.ACTIONS,
-  [IPC_DOMAINS.MCP]: [
-    'addServer',
-    'cancelServerInstall',
-    'getCatalog',
-    'getServerStates',
-    'getStatus',
-    'listResources',
-    'listTools',
-    'reconnectServer',
-    'refreshFromCloud',
-    'removeServer',
-    'setServerEnabled',
-    'signOutServer',
-  ],
+  // mcp 域：派生自 schema action 集合（== mcp 表 keys，parity 门三面对账），手工清单已删
+  [IPC_DOMAINS.MCP]: McpSchemas.ACTIONS,
   // memory 域：派生自 schema action 集合（== memoryRoutes 表 keys，parity 门三面对账），手工清单已删
   [IPC_DOMAINS.MEMORY]: MemorySchemas.ACTIONS,
   [IPC_DOMAINS.NOTIFICATION]: [

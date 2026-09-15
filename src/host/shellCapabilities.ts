@@ -47,6 +47,7 @@ import { OpenchronicleSchemas } from '../shared/ipc/schemas/openchronicle';
 import { SoulSchemas } from '../shared/ipc/schemas/soul';
 import { PlanningSchemas } from '../shared/ipc/schemas/planning';
 import { TerminalSchemas } from '../shared/ipc/schemas/terminal';
+import { SessionAutomationSchemas } from '../shared/ipc/schemas/sessionAutomation';
 
 const DEFAULT_SINCE_VERSION = '0.16.93';
 
@@ -229,15 +230,8 @@ const CAPABILITY_DOMAIN_ACTIONS = {
   [IPC_DOMAINS.ROLES]: RolesSchemas.ACTIONS,
   // session 域：派生自 sessionRoutes 表（见上），手工清单已删
   [IPC_DOMAINS.SESSION]: SESSION_TABLE_ACTIONS,
-  [IPC_DOMAINS.SESSION_AUTOMATION]: [
-    'countPendingReview',
-    'getSessionSummary',
-    'listBySession',
-    'listParkedApprovals',
-    'listPendingReview',
-    'markReviewed',
-    'summarizeSessions',
-  ],
+  // sessionAutomation 域：派生自 schema action 集合（== sessionAutomation 表 keys，parity 门三面对账），手工清单已删
+  [IPC_DOMAINS.SESSION_AUTOMATION]: SessionAutomationSchemas.ACTIONS,
   // status 域：派生自 schema action 集合（== status 表 keys，parity 门三面对账），手工清单已删
   [IPC_DOMAINS.STATUS]: StatusSchemas.ACTIONS,
   [IPC_DOMAINS.SURFACE_EXECUTION]: [

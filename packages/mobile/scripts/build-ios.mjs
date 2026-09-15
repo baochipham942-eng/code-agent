@@ -6,7 +6,8 @@ import { createHash } from 'node:crypto';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { resolve } from 'node:path';
-import { assertBinaryPushEntitlement, ensureAppPushEntitlements, extractNativeTargetId, exportOptionsXml, patchPbxprojVersions, profileCoversDevice, readMobileprovision, sharedSchemeXml, summarizeProfile, unlinkedSpmPlugins, withPushAppDelegateHooks, withSelfImplementedPluginClasses } from './ios-package.mjs';
+import { assertBinaryPushEntitlement, ensureAppPushEntitlements, extractNativeTargetId, exportOptionsXml, LOCALIZABLE_REGIONS, localizableStrings, patchPbxprojVersions, profileCoversDevice, pushAlertStrings, readMobileprovision, sharedSchemeXml, summarizeProfile, unlinkedSpmPlugins, withLocalizableStrings, withPushAppDelegateHooks, withSelfImplementedPluginClasses } from './ios-package.mjs';
+import { messages, runOutcomeCopy } from '../src/i18n/index.ts';
 
 const build = Number(process.env.NEO_MOBILE_BUILD);
 if (!Number.isSafeInteger(build) || build < 1) throw new Error('POSITIVE_NEO_MOBILE_BUILD_REQUIRED');
@@ -62,6 +63,8 @@ if (missing.length > 0) throw new Error(`IOS_PREREQUISITES_MISSING: ${missing.jo
 const SELF_IMPLEMENTED_IOS_PLUGINS = [
   { package: 'capacitor-voice-recorder', vendorClass: 'VoiceRecorder', nativeClass: 'NeoVoiceRecorderPlugin' },
   { package: 'neo-lan-dns', vendorClass: 'LanDns', nativeClass: 'NeoLanDnsPlugin' },
+  // 前台推送按会话抑制（N-MOBILE-EXEC-STATUS ④），同 LanDns：没有厂商包，vendorClass 仅占位。
+  { package: 'neo-push-presentation', vendorClass: 'PushPresentation', nativeClass: 'NeoPushPresentationPlugin' },
 ];
 
 /** 装了哪些带 iOS 原生实现的 Capacitor 插件——以 package.json 依赖为准，不靠手抄清单。 */
@@ -111,6 +114,14 @@ if (!existsSync(scheme)) {
 run('node_modules/.bin/cap', ['sync', 'ios']);
 stageNativePlugins();
 configureIosLan();
+// 推送横幅正文（N-MOBILE-EXEC-STATUS ⑤）：Host 只发 loc-key，系统在 app 包里查 Localizable.strings，
+// 查不到就把 key 原样当正文。两张表由 src/i18n 生成，工程里挂进 Resources。
+for (const [region, language] of LOCALIZABLE_REGIONS) {
+  mkdirSync(`ios/App/App/${region}.lproj`, { recursive: true });
+  const text = messages(language);
+  writeFileSync(`ios/App/App/${region}.lproj/Localizable.strings`, localizableStrings(pushAlertStrings(text, runOutcomeCopy(text, 'failed'))));
+}
+writeFileSync(pbxproj, withLocalizableStrings(readFileSync(pbxproj, 'utf8')));
 const appDelegate = 'ios/App/App/AppDelegate.swift';
 if (!existsSync(appDelegate)) throw new Error('IOS_APP_DELEGATE_MISSING');
 const patchedDelegate = withPushAppDelegateHooks(readFileSync(appDelegate, 'utf8'));
@@ -174,6 +185,12 @@ if (!executable.includes('NeoVoiceRecorderPlugin')) throw new Error('IOS_VOICE_P
 // 重连静默回退旧 IP（fix4-⑤ 的病根），构建期就红。
 if (!executable.includes('NeoLanDnsPlugin')) throw new Error('IOS_LAN_DNS_PLUGIN_MISSING_FROM_BINARY');
 if (!executable.includes('PushNotificationsPlugin')) throw new Error('IOS_PUSH_PLUGIN_MISSING_FROM_BINARY');
+if (!executable.includes('NeoPushPresentationPlugin')) throw new Error('IOS_PUSH_PRESENTATION_PLUGIN_MISSING_FROM_BINARY');
+// 工程里挂上了不等于进了包：loc-key 查的是包里的表，这一格看产物本身。
+const bundled = capture('unzip', ['-Z1', ipa]).split('\n');
+for (const [region] of LOCALIZABLE_REGIONS) {
+  if (!bundled.includes(`Payload/${appBundle}/${region}.lproj/Localizable.strings`)) throw new Error(`IOS_PUSH_STRINGS_MISSING_FROM_BUNDLE: ${region}`);
+}
 // 描述文件有 aps-environment 不等于二进制声明了它：register() 读的是 app entitlements。
 const inspect = '.artifacts/ios-binary-entitlements';
 rmSync(inspect, { recursive: true, force: true });

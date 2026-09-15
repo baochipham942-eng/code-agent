@@ -39,6 +39,8 @@ export interface NotificationPort {
   permission: { read(): Promise<OsPermission>; request(): Promise<OsPermission> };
   token: { current(): Promise<TokenResult>; subscribe(onChange: (result: TokenResult) => void): Dispose };
   tap: { subscribe(onTap: (routeToken: string) => void): Promise<Dispose> };
+  /** 前台来推送时问一句要不要弹（decide 回 false = 不弹）；只有 iOS 第一方插件提供。 */
+  foreground?: { subscribe(decide: (routeToken: string | null) => Promise<boolean>): Promise<Dispose> };
   openSettings(): Promise<void>;
   network: { read(): NetworkStatus };
 }

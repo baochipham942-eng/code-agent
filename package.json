@@ -136,6 +136,7 @@
     "build:cli": "npm_config_cache=/tmp/code-agent-npm-cache npx tsx esbuild.config.ts cli",
     "smoke:cli": "node scripts/smoke-cli-entry.cjs",
     "build:bridge": "npm_config_cache=/tmp/code-agent-npm-cache npx tsx esbuild.config.ts bridge",
+    "build:relay": "npm_config_cache=/tmp/code-agent-npm-cache npx tsx esbuild.config.ts relay",
     "dev:cli": "npm_config_cache=/tmp/code-agent-npm-cache npx tsx esbuild.config.ts cli --dev",
     "build:test-runner": "npm_config_cache=/tmp/code-agent-npm-cache npx tsx esbuild.config.ts test-runner",
     "test:research": "bash scripts/test-deep-research.sh",

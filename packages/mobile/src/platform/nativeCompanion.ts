@@ -6,6 +6,7 @@ import { COMPANION_LIMITS as L } from '../../../../src/shared/constants/companio
 import { isPrivateIPv4, validateLanEndpoint } from '../../../../src/shared/companion/lanProtocol';
 import { classifyHttpFailure } from './httpFailure';
 import { LanDns } from './lanDns';
+import { browserRelayDial } from './relayCompanionClient';
 
 const STATE_KEY = 'neo.companion.state.v1';
 const INSTALL_KEY = 'neo.companion.install.v1';
@@ -51,4 +52,5 @@ export const nativeCompanionPort: NonNullable<PlatformPorts['companion']> = {
       return address && isPrivateIPv4(address) ? address : null;
     } catch { return null; }
   },
+  dialRelay: browserRelayDial,
 };

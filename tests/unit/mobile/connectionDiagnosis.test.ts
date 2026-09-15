@@ -38,6 +38,17 @@ describe('connectionDiagnosis：三分类 → 一句人话 + 主动作', () => {
     expect(connectionDiagnosis(en, state('connectionRefused')).sentence).toBe(en.connectionRefused);
     expect(en.connectionUnavailable).toContain('not responding');
   });
+
+  // N-MOBILE-RELAY-PHONE：LAN 与跨网中继都没走通时的 relay 档——按 relay 失败原因给句子，
+  // 主动作仍是重连（重连先试 LAN 再落 relay，不是重新扫码）。
+  it('④ relay 档：中继连不上/路由被拒 → 各自的句子 + 重新连接', () => {
+    expect(connectionDiagnosis(text, state('connectionRelayUnavailable')))
+      .toEqual({ sentence: text.connectionRelayUnavailable, action: 'reconnect' });
+    expect(connectionDiagnosis(text, state('connectionRelayRejected')))
+      .toEqual({ sentence: text.connectionRelayRejected, action: 'reconnect' });
+    expect(text.connectionRelayUnavailable).toContain('中继');
+    expect(text.connectionRelayRejected).toContain('中继');
+  });
 });
 
 describe('lastSyncCopy：上次同步 x 分钟前', () => {

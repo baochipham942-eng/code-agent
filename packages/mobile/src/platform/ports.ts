@@ -1,5 +1,6 @@
 import type { FileCache } from './fileCache';
 import type { HistoryCache } from './historyCache';
+import type { RelayDialSocket } from './relayCompanionClient';
 
 type Dispose = () => void;
 
@@ -55,6 +56,11 @@ export interface PlatformPorts {
     scan(): Promise<string>; post(url: string, body: unknown): Promise<unknown>;
     /** One-shot mDNS resolve of a `.local` hostname to a private IPv4 (fix4-⑤). Null = use the old address. */
     resolveHost?(host: string): Promise<string | null>;
+    /**
+     * 拨 relay WSS（N-MOBILE-RELAY-PHONE）。headers 由能设头的运行时消费；WebView 的
+     * WebSocket 设不了头，部署侧前置层注入凭据。缺省走 browserRelayDial。
+     */
+    dialRelay?(url: string, headers: { authorization: string }): RelayDialSocket;
   };
   files?: FilePorts;
   /** App-private conversation body cache. Separate from pairing identity and drafts. */

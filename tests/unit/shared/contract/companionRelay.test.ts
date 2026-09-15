@@ -3,6 +3,7 @@ import { COMPANION_LIMITS as L } from '../../../../src/shared/constants/companio
 import {
   companionRelayFrameExpired,
   parseCompanionRelayFrame,
+  parseCompanionRelayRoute,
   resolveCompanionRelayConfig,
 } from '../../../../src/shared/contract/companionRelay';
 
@@ -82,5 +83,29 @@ describe('companion relay contract', () => {
       v: 1, enabled: false, url: 'wss://relay.example.invalid/companion',
       credentialRef: 'companion-relay', reconnectBackoffMs: [...L.relayReconnectBackoffMs],
     })).toBeNull();
+  });
+
+  // N-MOBILE-RELAY-PHONE：手机缓存的 relay 路由与 config 同一条 URL 纪律（凭据不进 URL，
+  // 非环回必须 wss），routeToken/credential 有最小长度——坏一条路由丢一条，不连累配对盘。
+  it('parses a phone-cached route and enforces the same URL discipline', () => {
+    expect(parseCompanionRelayRoute({
+      v: 1, url: 'wss://8.153.206.118:8443', routeToken: 'route-token-aaaaaa', credential: 'relay-shared-credential',
+    })).toMatchObject({ v: 1, url: 'wss://8.153.206.118:8443/', routeToken: 'route-token-aaaaaa' });
+    expect(() => parseCompanionRelayRoute({
+      v: 1, url: 'ws://8.153.206.118:8443', routeToken: 'route-token-aaaaaa', credential: 'relay-shared-credential',
+    })).toThrow('COMPANION_RELAY_INSECURE_URL');
+    expect(() => parseCompanionRelayRoute({
+      v: 1, url: 'wss://8.153.206.118:8443?token=secret', routeToken: 'route-token-aaaaaa', credential: 'relay-shared-credential',
+    })).toThrow('COMPANION_RELAY_INVALID_URL');
+    expect(() => parseCompanionRelayRoute({
+      v: 1, url: 'wss://8.153.206.118:8443', routeToken: 'route-token-aaaaaa', credential: 'short',
+    })).toThrow('COMPANION_RELAY_INVALID_ROUTE');
+    expect(() => parseCompanionRelayRoute({
+      v: 2, url: 'wss://8.153.206.118:8443', routeToken: 'route-token-aaaaaa', credential: 'relay-shared-credential',
+    })).toThrow('COMPANION_RELAY_INVALID_ROUTE');
+    // 环回 ws 给本地 fake relay（集成测试链路）。
+    expect(parseCompanionRelayRoute({
+      v: 1, url: 'ws://127.0.0.1:8791', routeToken: 'route-token-aaaaaa', credential: 'relay-shared-credential',
+    }).url).toContain('127.0.0.1');
   });
 });

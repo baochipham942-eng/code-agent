@@ -37,7 +37,9 @@ export class LanCompanionServer {
   private handshakeCount = 0;
 
   constructor(private readonly gateway: CompanionGateway, private readonly identity: KeyPair,
-    private readonly now = Date.now, private readonly push?: CompanionPushOutbox) {}
+    private readonly now = Date.now, private readonly push?: CompanionPushOutbox,
+    /** 手机经 LAN 问「我的 relay 路由是什么」；没有 relay 客户端时回 unavailable。 */
+    private readonly relayRoute?: (deviceId: string) => import('../../../shared/contract/companionRelay').CompanionRelayRoute | null) {}
 
   async start(address: string, port: number = L.lanPort): Promise<void> {
     if (this.server) return;
@@ -219,6 +221,10 @@ export class LanCompanionServer {
           ?? { kind: 'rejected', reason: 'unsupported_action' };
       } else if (request.action === 'read') {
         result = await this.gateway.read(device.deviceId, request.query);
+      } else if (request.action === 'relay.route') {
+        // 路由发现：手机趁 LAN 还连着把 relay 路由缓存下来，LAN 断了才有路可落（N-MOBILE-RELAY-PHONE）。
+        const route = this.relayRoute?.(device.deviceId) ?? null;
+        result = route ? { kind: 'ok' as const, ...route } : { kind: 'unavailable' as const };
       } else if (request.action === 'sync') {
         if (!Number.isSafeInteger(request.epoch) || Number(request.epoch) < 1 || !Number.isSafeInteger(request.afterSeq) || Number(request.afterSeq) < 0) throw new Error('COMPANION_INVALID_CURSOR');
         const page = this.gateway.syncForDevice(device.deviceId, Number(request.epoch), Number(request.afterSeq));

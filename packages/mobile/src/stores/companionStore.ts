@@ -9,7 +9,9 @@ import type {
 } from '../../../../src/shared/contract/companionDictation';
 import type { CompanionPushRegister, CompanionPushRegisterResult, CompanionPushOpenResult } from '../../../../src/shared/contract/companionPush';
 import { companionCommandSchema } from '../../../../src/shared/contract/companion';
+import { parseCompanionRelayRoute, type CompanionRelayRoute } from '../../../../src/shared/contract/companionRelay';
 import { LanCompanionClient } from '../platform/lanCompanionClient';
+import { RelayCompanionClient, browserRelayDial } from '../platform/relayCompanionClient';
 import type { FilePorts, PlatformPorts, PickedFile } from '../platform/ports';
 import { companionFileMime, companionFileRetryable, COMPANION_LIMITS } from '../../../../src/shared/constants/companion';
 import { base64ToBytes, bytesToBase64, sha256Hex, type CacheInspect } from '../platform/fileCache';
@@ -19,8 +21,13 @@ import { mdnsRefreshedEndpoint } from '../platform/mdnsEndpoint';
 interface Saved {
   version: 1; publicKey: string; secretKey: string;
   candidate?: { endpoint: string; altEndpoint?: string; hostKey: string }; binding?: LanBinding; pending?: CompanionCommand;
+  /** LAN 连着时从 Host 拿到的 relay 路由（含共享凭据，随整份配对记录进 Keychain）。 */
+  relay?: CompanionRelayRoute;
 }
-type ConnectionError = 'connectionQrInvalid' | 'connectionScanFailed' | 'connectionRejected' | 'connectionRefused' | 'connectionUnavailable' | 'connectionFailed';
+type ConnectionError = 'connectionQrInvalid' | 'connectionScanFailed' | 'connectionRejected' | 'connectionRefused' | 'connectionUnavailable' | 'connectionFailed'
+  | 'connectionRelayUnavailable' | 'connectionRelayRejected';
+/** 双径（N-MOBILE-RELAY-PHONE）：LAN 直连优先；relay 是跨网回落路。UI 据此区分「经中继」。 */
+type CompanionTransport = 'lan' | 'relay';
 
 /**
  * 只有这几种 reason 说的是「这台设备不能用了」——撤销、主机不认、授权不覆盖、epoch 已翻篇，
@@ -77,6 +84,8 @@ interface State {
    */
   commandErrorAction: CompanionCommand['action'] | null;
   status: 'unpaired' | 'connecting' | 'connected' | 'offline' | 'storageError' | 'rejected';
+  /** 这次连接走的是哪条路：LAN 直连还是 relay 中继（null = 未连接）。 */
+  transport: CompanionTransport | null;
   /**
    * 「是我们自己把一条活连接停了」——app 退到后台时 pause() 会关掉客户端。
    * 这与「连不上电脑」在 status 上都是 offline，但对用户是两件事：后台期间没有任何事
@@ -144,9 +153,17 @@ export function companionAckMatches(
     && record.sessionId === pending.sessionId && record.action === pending.action;
 }
 
+/** LAN 与 relay 两个客户端共同的最小面：所有 store 路径只认这两个动作。 */
+interface CompanionChannel {
+  request(payload: Record<string, unknown>): Promise<unknown>;
+  close(): void;
+}
+
 export function createCompanionStore(port: PlatformPorts['companion'], onAccepted: (text: string, sessionId: string, hostKey: string) => void | Promise<void>, onTranscript?: (text: string, sessionId: string, hostKey: string, commandId: string, continuation: boolean) => Promise<void>, files?: FilePorts, historyCache?: HistoryCache) {
   let saved: Saved | null = null;
-  let client: LanCompanionClient | null = null;
+  let client: CompanionChannel | null = null;
+  /** 双径不双跑：任一时刻只有一条活通道，另一条的句柄只用来收尾 close。 */
+  let relayClient: RelayCompanionClient | null = null;
   let epoch = 1; let cursor = 0;
   let syncing = false;
   /** 在飞的这条转写是不是「同一次录音的后续分片」——只影响草稿里要不要换行，故不持久化。 */
@@ -207,6 +224,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         ...(next.candidate ? { candidate: next.candidate } : {}),
         ...(next.binding ? { binding: next.binding } : {}),
         ...(next.pending ? { pending: next.pending } : {}),
+        ...(next.relay ? { relay: next.relay } : {}),
       };
       // 待确认槽被清掉、而这条语音还没有任何结论 ⇒ 给它一个终局。
       // 清槽的路不止「结算」一条：被拒（scope_denied / scope_epoch_mismatch…）、抢答冲突、
@@ -237,11 +255,49 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
      */
     const pendingVoiceDiscarded = () => saved?.pending?.action === 'voice.transcribe'
       && voiceTake !== null && discardedTakes.has(voiceTake);
-    const createClient = () => {
+    const createClient = (): LanCompanionClient => {
       if (!saved || !port) throw new Error('COMPANION_NATIVE_REQUIRED');
       client?.close();
-      client = new LanCompanionClient({ publicKey: fromHex(saved.publicKey, 32), secretKey: fromHex(saved.secretKey, 32) }, port.post);
-      return client;
+      const lan = new LanCompanionClient({ publicKey: fromHex(saved.publicKey, 32), secretKey: fromHex(saved.secretKey, 32) }, port.post);
+      client = lan;
+      return lan;
+    };
+    /**
+     * 落 relay（N-MOBILE-RELAY-PHONE）：用配对时缓存的路由拨 WSS、IK 握手回 Host。
+     * 绑定身份以 LAN 配对时的缓存为准逐字段校验——relay 只换路，不换身份；
+     * resume 成功后 `client` 指到 relay 通道，LAN 客户端此刻必然已关（recover 失败即关）。
+     */
+    const dialRelay = async (): Promise<RelayCompanionClient> => {
+      if (!saved?.relay || !saved.binding) throw new Error('COMPANION_RELAY_UNCONFIGURED');
+      relayClient?.close();
+      const relay = new RelayCompanionClient({
+        identity: { publicKey: fromHex(saved.publicKey, 32), secretKey: fromHex(saved.secretKey, 32) },
+        route: saved.relay,
+        deviceRef: saved.binding.deviceId,
+        dial: port?.dialRelay ?? browserRelayDial,
+        onRevoked: () => {
+          relayClient?.close();
+          client?.close();
+          wipeHistoryCache();
+          set({ status: 'rejected', connectionError: 'connectionRejected', transport: null });
+        },
+      });
+      await relay.connect();
+      await relay.resume({ hostKey: saved.binding.hostKey, deviceId: saved.binding.deviceId, scopeEpoch: saved.binding.scopeEpoch, scope: saved.binding.scope });
+      relayClient = relay;
+      client = relay;
+      return relay;
+    };
+    /** 趁 LAN 连着刷新缓存的 relay 路由（Host 重启会换 routeToken）。尽力而为，不许打断 LAN 会话。 */
+    const refreshRelayRoute = async () => {
+      if (!client || client === relayClient || !saved?.binding) return;
+      try {
+        const result = await client.request({ action: 'relay.route' }) as { kind?: unknown; url?: unknown; routeToken?: unknown; credential?: unknown };
+        if (result?.kind !== 'ok' || typeof result.url !== 'string' || typeof result.routeToken !== 'string' || typeof result.credential !== 'string') return;
+        const route = parseCompanionRelayRoute({ v: 1, url: result.url, routeToken: result.routeToken, credential: result.credential });
+        if (saved.relay?.url === route.url && saved.relay.routeToken === route.routeToken) return;
+        await persist({ ...saved, relay: route });
+      } catch { /* 路由刷新失败不影响 LAN 会话；下一次重连再试 */ }
     };
     const accepted = async (record: CompanionCommandRecord) => {
       const pending = saved?.pending;
@@ -323,7 +379,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         if (typeof result.reason === 'string' && DEVICE_LEVEL_REASONS.has(result.reason)) {
           // 设备级的拒绝照报：那是「这台设备不能用了」，与用户撤没撤这次录音无关。
           wipeHistoryCache();
-          set({ pending: false, status: 'rejected', connectionError: 'connectionRejected' });
+          set({ pending: false, status: 'rejected', connectionError: 'connectionRejected', transport: null });
         } else if (discardedVoice) {
           set({ pending: false });
         } else {
@@ -344,20 +400,30 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
       try { return await work(); } catch (error) {
         client?.close();
         const code = error instanceof Error ? error.message : '';
-        // 三分类（fix4-②）：握手/身份失败、连接被拒绝、超时/无响应——其余网络码都归
-        // 「没回应」那一类，UI 按类给人话，不再一律「无法连接电脑」。
+        // 三分类（fix4-②）+ relay 档（N-MOBILE-RELAY-PHONE）：握手/身份失败、连接被拒绝、
+        // 超时/无响应、relay 路失败（连不上/凭据被拒）——其余网络码都归「没回应」那一类，
+        // UI 按类给人话，不再一律「无法连接电脑」。
         const connectionError: ConnectionError = code === 'COMPANION_INVALID_INVITATION' ? 'connectionQrInvalid'
           : code === 'COMPANION_SCAN_FAILED' ? 'connectionScanFailed'
           : code === 'COMPANION_PAIRING_REJECTED' ? 'connectionRejected'
           : code === 'COMPANION_CONNECTION_REFUSED' ? 'connectionRefused'
+          : code === 'COMPANION_RELAY_AUTH_REJECTED' ? 'connectionRelayRejected'
+          : code === 'COMPANION_RELAY_UNAVAILABLE' || code === 'COMPANION_RELAY_CONNECT_TIMEOUT' ? 'connectionRelayUnavailable'
           : code === 'COMPANION_NETWORK_UNAVAILABLE' || code === 'COMPANION_NO_RESPONSE' ? 'connectionUnavailable' : 'connectionFailed';
-        if (get().status !== 'storageError') set({ status: 'offline', connectionError });
+        if (get().status !== 'storageError') set({ status: 'offline', connectionError, transport: null });
       }
       finally { set({ busy: false }); }
     };
+    /** （重）连上后结算待确认命令：两条路（LAN/relay）共用同一套 status 查询与补投。 */
+    const reconcilePending = async () => {
+      if (!saved?.pending || !client) return;
+      const record = await client.request({ action: 'status', commandId: saved.pending.commandId }) as CompanionCommandRecord | null;
+      if (record && !(await recoverStalePending(record))) await accepted(record);
+      else if (!record) await deliver();
+    };
     return {
       voiceResult: null, library: null, history: {}, libraryError: false,
-      connectionError: null, commandError: null, commandErrorAction: null, routeError: null, status: 'unpaired', paused: false, binding: null, sessionId: null, busy: false, pending: false, pendingAction: null, events: [], runId: null, terminal: null,
+      connectionError: null, commandError: null, commandErrorAction: null, routeError: null, status: 'unpaired', paused: false, transport: null, binding: null, sessionId: null, busy: false, pending: false, pendingAction: null, events: [], runId: null, terminal: null,
       artifacts: [], preview: null, savedPreview: false, savedPreviewName: null, cacheUsage: inspectBoth(), lastSyncAt: null,
       uploadProgress: [],
       hydrate: async () => {
@@ -374,6 +440,9 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
           if (value.version !== 1) throw new Error('COMPANION_INVALID_STORAGE');
           fromHex(value.publicKey, 32); fromHex(value.secretKey, 32);
           if (value.pending) companionCommandSchema.parse(value.pending);
+          // 缓存的 relay 路由不整份拒绝配对盘：坏一条路由丢一条，配对身份不该跟着陪葬。
+          try { if (value.relay) value.relay = parseCompanionRelayRoute(value.relay); }
+          catch { delete value.relay; }
           saved = value;
           try { await history.hydrate(); } catch { /* conversation cache is best-effort and must not fail pairing identity */ }
           const restored = history.snapshot();
@@ -404,7 +473,9 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         epoch = binding.scopeEpoch; cursor = 0;
         heldAttachments.clear();
         wipeHistoryCache();
-        set({ status: 'connected', binding, sessionId: binding.scope.find(id => !id.startsWith('project:')) ?? null, library: null, history: {}, events: [], artifacts: [], preview: null, savedPreviewName: null, runId: null, terminal: null, uploadProgress: [], lastSyncAt: null });
+        set({ status: 'connected', transport: 'lan', binding, sessionId: binding.scope.find(id => !id.startsWith('project:')) ?? null, library: null, history: {}, events: [], artifacts: [], preview: null, savedPreviewName: null, runId: null, terminal: null, uploadProgress: [], lastSyncAt: null });
+        // 趁配对的 LAN 会话还热着把 relay 路由缓存下来，LAN 断了才有路可落。
+        await refreshRelayRoute();
       }),
       reconnect: () => safely(async () => {
         const savedTarget = saved?.binding ?? saved?.candidate;
@@ -415,15 +486,28 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         const target = await mdnsRefreshedEndpoint(port, savedTarget) ?? savedTarget;
         const previousScope = get().binding?.scope ?? saved?.binding?.scope ?? [];
         set({ status: 'connecting', paused: false });
-        const binding = await createClient().recover(target, saved?.binding);
+        let binding: LanBinding;
+        try {
+          binding = await createClient().recover(target, saved?.binding);
+        } catch (lanError) {
+          // 双径（N-MOBILE-RELAY-PHONE）：LAN 失败/不可达且有缓存路由时落 relay。
+          // recover 失败已把 LAN 客户端关掉，此刻起只有 relay 一条活通道——不双跑。
+          // 没有路由就原样抛 LAN 的错误：那是用户看得懂的那句。
+          if (!saved?.relay || !saved?.binding) throw lanError;
+          await dialRelay();
+          set({ status: 'connected', transport: 'relay', paused: false });
+          await reconcilePending();
+          return;
+        }
+        // LAN 恢复即收敛到直连：createClient 的 client?.close() 已把 relay 通道关掉
+        //（同一时刻只有一条活通道），这里只清记账。
+        relayClient = null;
         await persist({ ...saved!, binding, candidate: undefined });
         epoch = binding.scopeEpoch;
         pruneUnscopedHistory(previousScope, binding.scope);
-        set({ status: 'connected', binding, sessionId: get().sessionId ?? binding.scope.find(id => !id.startsWith('project:')) ?? null });
-        if (saved?.pending) {
-          const record = await client!.request({ action: 'status', commandId: saved.pending.commandId }) as CompanionCommandRecord | null;
-          if (record && !(await recoverStalePending(record))) await accepted(record); else if (!record) await deliver();
-        }
+        set({ status: 'connected', transport: 'lan', binding, sessionId: get().sessionId ?? binding.scope.find(id => !id.startsWith('project:')) ?? null });
+        await refreshRelayRoute();
+        await reconcilePending();
       }),
       pause: () => {
         // 只有「本来连着」才算暂停：原本就断着的话，报错该继续留在界面上。
@@ -431,8 +515,10 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         // 按「当前是否连着」重算就会把 paused 打回 false——爸报的那个假警报原样回来
         // （grok ai-review Nit）。暂停标记只由 pair / reconnect 清。
         const live = get().status === 'connected' || get().paused;
+        // client 即当前活通道（LAN 或 relay），关它就够；relayClient 只是记账。
         client?.close();
-        if (get().binding) set({ status: 'offline', paused: live });
+        relayClient = null;
+        if (get().binding) set({ status: 'offline', paused: live, transport: null });
       },
       refreshLibrary: async (more = false) => {
         if (!client || get().status !== 'connected') return;
@@ -517,25 +603,26 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
       /** 取消录音：在飞那条的结果属于「晚到结果」，按 screen-contract 的语音契约过滤掉，不进草稿。 */
       discardPendingTranscript: take => { discardedTakes.add(take); },
       dictationOpen: async () => {
-        if (!client || get().status !== 'connected' || get().binding?.dictation !== true) {
+        // relay 面不提供实时听写（Host 只在 LAN exchange 上挂 dictation 口）；回落到分段转写。
+        if (!client || get().status !== 'connected' || get().transport === 'relay' || get().binding?.dictation !== true) {
           return { ok: false, code: 'COMPANION_DICTATION_UNAVAILABLE' };
         }
         return await client.request({ action: 'dictation', op: 'open' }) as CompanionDictationOpenResult;
       },
       dictationAudio: async (streamId, pcm) => {
-        if (!client || get().status !== 'connected') {
+        if (!client || get().status !== 'connected' || get().transport === 'relay') {
           return { ok: false, code: 'COMPANION_DICTATION_UNAVAILABLE', events: [] };
         }
         return await client.request({ action: 'dictation', op: 'audio', streamId, pcm }) as CompanionDictationFrameResult;
       },
       dictationStop: async streamId => {
-        if (!client || get().status !== 'connected') {
+        if (!client || get().status !== 'connected' || get().transport === 'relay') {
           return { ok: false, code: 'COMPANION_DICTATION_UNAVAILABLE', events: [] };
         }
         return await client.request({ action: 'dictation', op: 'stop', streamId }) as CompanionDictationFrameResult;
       },
       dictationClose: async () => {
-        if (!client || get().status !== 'connected') return;
+        if (!client || get().status !== 'connected' || get().transport === 'relay') return;
         await client.request({ action: 'dictation', op: 'close' });
       },
       commitDictation: async (text, continuation, take, sentenceId) => {
@@ -557,15 +644,18 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         await persist({ ...saved, pending: command }); set({ pending: true }); await deliver();
       }),
       registerPush: async input => {
-        if (!client || get().status !== 'connected') return { kind: 'rejected', reason: 'unsupported_action' };
+        // 推送注册只在 LAN 面上提供；relay 下按「主机不支持」结算，回到 LAN 会自动补注册。
+        if (!client || get().status !== 'connected' || get().transport === 'relay') return { kind: 'rejected', reason: 'unsupported_action' };
         return await client.request({ action: 'push.register', provider: input.provider, token: input.token, environment: input.environment }) as CompanionPushRegisterResult;
       },
       unregisterPush: async () => {
-        if (!client || get().status !== 'connected') return;
+        if (!client || get().status !== 'connected' || get().transport === 'relay') return;
         await client.request({ action: 'push.unregister' });
       },
       openRoute: async routeToken => {
         if (!client || get().status !== 'connected') { set({ routeError: 'auth_required' }); return; }
+        // relay 面没有 push.open：事件流照常同步（tap 后的 sync 会拉到新事件），只是不自动跳会话。
+        if (get().transport === 'relay') { set({ routeError: 'unsupported_action' }); return; }
         const result = await client.request({ action: 'push.open', routeToken }) as CompanionPushOpenResult;
         if (result.kind === 'rejected') { set({ routeError: result.reason }); return; }
         set({ routeError: null });
@@ -608,7 +698,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
           const result = await client.request({ action: 'sync', epoch, afterSeq: cursor }) as CompanionSyncResult;
           if (result.kind === 'snapshot_required') { epoch = result.epoch; cursor = 0; set({ events: [] }); return; }
           // 被撤销不是网络问题：混进通用 offline 会让这台设备一直重试、永远不知道自己已被踢。
-          if (result.kind === 'revoked') { client?.close(); wipeHistoryCache(); set({ status: 'rejected', connectionError: 'connectionRejected' }); return; }
+          if (result.kind === 'revoked') { client?.close(); if (relayClient) { relayClient.close(); relayClient = null; } wipeHistoryCache(); set({ status: 'rejected', connectionError: 'connectionRejected', transport: null }); return; }
           if (result.kind !== 'events' || result.epoch !== epoch || !Number.isSafeInteger(result.nextSeq) || result.nextSeq < cursor || !Array.isArray(result.events)) throw new Error('COMPANION_INVALID_SYNC');
           set({ events: [...get().events, ...result.events] }); cursor = result.nextSeq;
           history.ingestEvents(result.events);
@@ -636,7 +726,7 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
             const record = await client.request({ action: 'status', commandId: pendingId }) as CompanionCommandRecord | null;
             if (record && saved?.pending?.commandId === pendingId && !(await recoverStalePending(record))) await accepted(record);
           }
-        } catch { client?.close(); if (get().status !== 'storageError') set({ status: 'offline', connectionError: 'connectionUnavailable' }); }
+        } catch { client?.close(); if (relayClient && client === relayClient) relayClient = null; if (get().status !== 'storageError') set({ status: 'offline', connectionError: 'connectionUnavailable', transport: null }); }
         finally { syncing = false; }
       },
       refreshArtifacts: async () => {

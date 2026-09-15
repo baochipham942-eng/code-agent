@@ -1,7 +1,8 @@
 import type { messages } from '../i18n';
 
 /**
- * 连接失败的三分类诊断（fix4-②，爸拍板）：①超时/无响应 ②连接被拒绝 ③握手/身份校验失败。
+ * 连接失败的分类诊断（fix4-② 三分类 + relay 档，N-MOBILE-RELAY-PHONE）：①超时/无响应
+ * ②连接被拒绝 ③握手/身份校验失败 ④relay 路失败（LAN 与中继都没走通）。
  * 分类由连接层上抛的 connectionError 决定（nativeCompanion 把原生网络错误分成
  * COMPANION_CONNECTION_REFUSED / 其余网络失败，companionStore 再映射到 connectionError），
  * UI 只按这里的分类给一句人话 + 一个主动作，不再铺 Wi-Fi 说明书。
@@ -17,6 +18,11 @@ export function connectionDiagnosis(
   // 一样，重连救不回来，主动作是重新扫码。
   if (error === 'connectionRejected' || error === 'connectionQrInvalid' || error === 'connectionScanFailed') {
     return { sentence: text[error], action: 'scan' };
+  }
+  // ④ relay 档（N-MOBILE-RELAY-PHONE）：走到这里说明 LAN 已失败、relay 也失败——按 relay
+  // 的失败原因给句子（连不上 / 路由被拒），主动作仍是重连：重连先试 LAN，再落 relay。
+  if (error === 'connectionRelayUnavailable' || error === 'connectionRelayRejected') {
+    return { sentence: text[error], action: 'reconnect' };
   }
   // ② 连接被拒绝：宿主可达但端口没人听——Neo 没在运行。
   if (error === 'connectionRefused') return { sentence: text.connectionRefused, action: 'reconnect' };

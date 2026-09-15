@@ -256,7 +256,7 @@ export function createApp(deps: CreateAppDeps): express.Express {
   // registerCompanionShutdown 只保存一个回调（webServer.ts 的 stopCompanion 单槽），
   // 必须注册一次组合回调；companion 侧句柄在 db 分支里接线，未接线时安全跳过。
   let companionLan: { stop(): Promise<void> } | undefined;
-  let companionRelay: { stop(): Promise<void> } | undefined;
+  let companionRelay: { stop(): Promise<void>; routeFor(deviceId: string): import('../shared/contract/companionRelay').CompanionRelayRoute | null } | undefined;
   let companionRelayAbandoned = false;
   const idleSleepInhibitor = new IdleSleepInhibitor(
     () => runRegistry.size > 0,
@@ -438,7 +438,9 @@ export function createApp(deps: CreateAppDeps): express.Express {
       const lan = new LanCompanionManager(gateway, () => loadLanIdentity(resolveCodeAgentDataDir()), async () => {
         const sessions = await (await tryGetSessionManager())?.listSessions() ?? [];
         return sessions.map(session => ({ id: session.id, title: session.title }));
-      }, () => requireLibrary().projects(), services.push);
+      }, () => requireLibrary().projects(), services.push,
+      // relay 客户端是异步拨起的：手机问路由时它可能还没就绪——闭包读当前值，null 即 unavailable。
+      deviceId => companionRelay?.routeFor(deviceId) ?? null);
       // Both halves must hold: a phone is reachable for this session, AND this particular
       // card is renderable. With no approvals service there is no companion approval path.
       hasCompanionApprovalUi = (sessionId, request) => lan.hasApprovalUi(sessionId) && services.approvals?.canDisplay(request) === true;

@@ -38,9 +38,12 @@ import { CLICK_SWALLOW_MS, DRAWER_SETTLE_MS, EDGE_GESTURE_START_X, drawerPanOffs
  */
 export function connectionCopy(
   text: ReturnType<typeof messages>,
-  companion: { status: string; paused: boolean; connectionError: string | null },
+  companion: { status: string; paused: boolean; connectionError: string | null; transport?: string | null },
 ): { label: string; connected: boolean; retry: boolean } {
-  if (companion.status === 'connected' || companion.paused) return { label: text.connected, connected: true, retry: false };
+  // 经 relay 连接是同一台电脑的另一条路：连接胶囊要能区分「直连」与「跨网中继」。
+  if (companion.status === 'connected' || companion.paused) {
+    return { label: companion.status === 'connected' && companion.transport === 'relay' ? text.connectedRelay : text.connected, connected: true, retry: false };
+  }
   if (companion.status === 'connecting') return { label: text.connecting, connected: false, retry: false };
   const label = companion.status === 'storageError' ? text.secureStorageError
     : companion.status === 'rejected' ? text.rejected
@@ -718,6 +721,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
               <span className="connection-check"><AppIcon name="check" /></span>
               <strong>{hostName}</strong>
               <p>{lastSyncCopy(text, companion.lastSyncAt, Date.now()) ?? text.connectedNext}</p>
+              {companion.transport === 'relay' && <p className="caption">{text.connectionViaRelay}</p>}
             </div>
             <button className="primary" onClick={() => state.navigate('new')}>{text.enterConversation}</button>
           </>

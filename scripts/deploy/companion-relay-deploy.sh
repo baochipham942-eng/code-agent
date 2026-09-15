@@ -80,6 +80,8 @@ set -euo pipefail
 systemctl daemon-reload
 systemctl enable neo-companion-relay.service >/dev/null
 systemctl restart neo-companion-relay.service
+# 先清上轮残留：否则本轮 curl 全失败时旧的 /tmp/relay-healthz.json 仍非空，验活假绿。
+rm -f /tmp/relay-healthz.json
 for _ in $(seq 1 20); do
   if curl -fsS "http://127.0.0.1:$REMOTE_PORT/healthz" >/tmp/relay-healthz.json 2>/dev/null; then
     echo "healthz: $(cat /tmp/relay-healthz.json)"

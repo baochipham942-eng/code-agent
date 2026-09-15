@@ -245,6 +245,8 @@ function settingsUpdateRequiresAdmin(updates: Partial<AppSettings>): boolean {
     'confirmationGate',
     'budget',
     'pluginUi',
+    // evaluation.feedbackHookCommand 会被宿主用系统 shell 执行，跟 pluginUi 同档。
+    'evaluation',
   ];
 
   return adminOnlyKeys.some((key) => Object.prototype.hasOwnProperty.call(updates, key));

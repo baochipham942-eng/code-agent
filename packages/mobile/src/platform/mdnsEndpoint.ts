@@ -1,4 +1,4 @@
-import { isPrivateIPv4 } from '../../../../src/shared/companion/lanProtocol';
+import { isPrivateIPv4, validateLanEndpoint } from '../../../../src/shared/companion/lanProtocol';
 
 /**
  * mDNS 重解析治旧 IP（fix4-⑤，爸拍板的根因修）。绑定里的 endpoint 是配对那一刻的私网
@@ -21,7 +21,10 @@ function reResolvedEndpoint(
   let original: URL;
   try { original = new URL(target.endpoint); } catch { return null; }
   if (original.hostname === address) return null;
-  return { ...target, endpoint: `http://${address}:${original.port}` };
+  // 拼好的端点过一遍协议的同一道校验（ai-review Nit）：地址/端口规则将来变化时，
+  // 这里不会拼出一条 validateLanEndpoint 不认的 endpoint 出去。
+  const endpoint = validateLanEndpoint(`http://${address}:${original.port}`);
+  return { ...target, endpoint };
 }
 
 /**

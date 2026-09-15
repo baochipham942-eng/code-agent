@@ -16,8 +16,10 @@ public class NeoLanDnsPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "resolve", returnType: CAPPluginReturnPromise)
     ]
 
-    /// getaddrinfo 阻塞且没有取消口；超时后放工作线程自生自灭（一次一条，不会堆积成池）。
-    /// 兜底 3000 与 COMPANION_LIMITS.mdnsResolveTimeoutMs 同源——JS 侧每次都会显式传参。
+    /// getaddrinfo 阻塞且没有取消口。并发上限=1：`queue` 是串行队列，第二次 resolve 会
+    /// 排到第一次（连同它的超时等待）结束才开始，超时后遗留的那一条 getaddrinfo 由系统
+    /// 自己收（mDNS 解析自带秒级内部超时），不会堆积成池。兜底 3000 与
+    /// COMPANION_LIMITS.mdnsResolveTimeoutMs 同源——JS 侧每次都会显式传参。
     private static let fallbackTimeoutMs = 3_000
     private let queue = DispatchQueue(label: "ai.neo.companion.lan-dns")
 

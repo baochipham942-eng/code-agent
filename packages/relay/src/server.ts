@@ -44,6 +44,7 @@ interface QueuedFrame {
   from: CompanionRelayRole;
   payload: string;
   bytes: number;
+  expiresAt: number;
 }
 
 function sameSecret(left: string, right: string): boolean {
@@ -210,12 +211,19 @@ export class CompanionRelayServer {
         this.options.logger?.warn('route_capacity_reached', { routes: this.routes.size });
         return;
       }
+      const existing = this.bindings.get(socket);
+      if (existing && existing.role !== frame.role) {
+        // A connection speaks one role for its whole life; letting a device flip to
+        // host mid-connection would hand it the revoke path.
+        this.stats.droppedNoRoute += 1;
+        this.options.logger?.warn('register_role_mismatch', { role: frame.role, token: tokenPrefix(token) });
+        return;
+      }
       const route: Route = this.routes.get(token) ?? { expiresAt: this.now() + L.relayRouteTokenTtlMs };
       route[frame.role] = socket;
       route.expiresAt = this.now() + L.relayRouteTokenTtlMs;
       this.routes.set(token, route);
-      const binding = this.bindings.get(socket) ?? { role: frame.role, tokens: new Set<string>() };
-      binding.role = frame.role;
+      const binding = existing ?? { role: frame.role, tokens: new Set<string>() };
       binding.tokens.add(token);
       this.bindings.set(socket, binding);
       this.options.logger?.info('registered', { role: frame.role, token: tokenPrefix(token) });
@@ -267,7 +275,7 @@ export class CompanionRelayServer {
         this.stats.droppedBacklog += 1;
         return;
       }
-      queued.push({ from: binding.role, payload: raw, bytes });
+      queued.push({ from: binding.role, payload: raw, bytes, expiresAt: frame.envelope.issuedAt + frame.envelope.ttlMs });
       this.waiting.set(token, queued);
       this.waitingBytes.set(token, (this.waitingBytes.get(token) ?? 0) + bytes);
       return;
@@ -286,7 +294,13 @@ export class CompanionRelayServer {
     if (route.host.readyState !== WebSocket.OPEN || route.device.readyState !== WebSocket.OPEN) return;
     this.waiting.delete(token);
     this.waitingBytes.delete(token);
+    const now = this.now();
     for (const item of queued) {
+      if (item.expiresAt <= now) {
+        // Frames must not outlive their envelope TTL while waiting for the peer.
+        this.stats.droppedExpired += 1;
+        continue;
+      }
       const to = item.from === 'host' ? route.device : route.host;
       if (to.readyState === WebSocket.OPEN) {
         to.send(item.payload);

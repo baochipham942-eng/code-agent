@@ -254,6 +254,75 @@ describe('companion relay: production server + host dial-out', () => {
     await server2.stop();
   });
 
+  it('pins the connection role at first register: a device cannot flip to host to earn revoke', async () => {
+    const binding = await pair();
+    const statsBefore = relay.currentStats;
+    const intruder = new WebSocket(url, { headers: { authorization: `Bearer ${SECRET}` } });
+    await new Promise<void>(resolve => intruder.once('open', () => resolve()));
+    const own = 'route-token-dddddd';
+    intruder.send(JSON.stringify({
+      v: 1, kind: 'register', role: 'device',
+      envelope: { routeToken: own, deviceRef: binding.deviceId, seq: 0, ttlMs: L.relayRouteTokenTtlMs, issuedAt: Date.now() },
+      ciphertext: '',
+    }));
+    await new Promise(resolve => setTimeout(resolve, 100));
+    intruder.send(JSON.stringify({
+      v: 1, kind: 'register', role: 'host',
+      envelope: { routeToken: TOKEN, deviceRef: binding.deviceId, seq: 1, ttlMs: L.relayRouteTokenTtlMs, issuedAt: Date.now() },
+      ciphertext: '',
+    }));
+    await new Promise(resolve => setTimeout(resolve, 100));
+    intruder.send(JSON.stringify({
+      v: 1, kind: 'revoke',
+      envelope: { routeToken: TOKEN, deviceRef: binding.deviceId, seq: 2, ttlMs: L.relayRouteTokenTtlMs, issuedAt: Date.now() },
+      ciphertext: '',
+    }));
+    await new Promise(resolve => setTimeout(resolve, 200));
+    expect(phone.connected).toBe(true);
+    expect(relay.currentStats.revoked).toBe(statsBefore.revoked);
+    expect(relay.currentStats.droppedNoRoute).toBeGreaterThanOrEqual(2);
+    intruder.close();
+  });
+
+  it('drops queued frames that expired while waiting for the peer', async () => {
+    let fakeNow = Date.now();
+    const server2 = new CompanionRelayServer({ credential: SECRET, port: await freePort(), now: () => fakeNow });
+    const port2 = (await server2.listen()).port;
+    const queueToken = 'route-token-eeeeee';
+    const deviceSide = new WebSocket(`ws://127.0.0.1:${port2}`, { headers: { authorization: `Bearer ${SECRET}` } });
+    await new Promise<void>(resolve => deviceSide.once('open', () => resolve()));
+    deviceSide.send(JSON.stringify({
+      v: 1, kind: 'register', role: 'device',
+      envelope: { routeToken: queueToken, deviceRef: 'phone-1', seq: 0, ttlMs: L.relayRouteTokenTtlMs, issuedAt: fakeNow },
+      ciphertext: '',
+    }));
+    for (let seq = 1; seq <= 2; seq += 1) {
+      deviceSide.send(JSON.stringify({
+        v: 1, kind: 'forward',
+        envelope: { routeToken: queueToken, deviceRef: 'phone-1', seq, ttlMs: 5_000, issuedAt: fakeNow },
+        ciphertext: 'x'.repeat(64),
+      }));
+    }
+    await vi.waitFor(() => expect(server2.currentStats.queuedFrames).toBe(2));
+    fakeNow += 6_000;
+    const hostSide = new WebSocket(`ws://127.0.0.1:${port2}`, { headers: { authorization: `Bearer ${SECRET}` } });
+    await new Promise<void>(resolve => hostSide.once('open', () => resolve()));
+    hostSide.send(JSON.stringify({
+      v: 1, kind: 'register', role: 'host',
+      envelope: { routeToken: queueToken, deviceRef: 'phone-1', seq: 0, ttlMs: L.relayRouteTokenTtlMs, issuedAt: fakeNow },
+      ciphertext: '',
+    }));
+    await vi.waitFor(() => {
+      const stats = server2.currentStats;
+      expect(stats.queuedFrames).toBe(0);
+      expect(stats.droppedExpired).toBe(2);
+      expect(stats.forwarded).toBe(0);
+    });
+    deviceSide.close();
+    hostSide.close();
+    await server2.stop();
+  });
+
   it('does not re-execute after a relay restart when the commandId survives the hop', async () => {
     const binding = await pair();
     const cmd = command(binding.deviceId, 'once', 'restart-replay');

@@ -46,6 +46,7 @@ import { NotificationSchemas } from '../shared/ipc/schemas/notification';
 import { OpenchronicleSchemas } from '../shared/ipc/schemas/openchronicle';
 import { SoulSchemas } from '../shared/ipc/schemas/soul';
 import { PlanningSchemas } from '../shared/ipc/schemas/planning';
+import { TerminalSchemas } from '../shared/ipc/schemas/terminal';
 
 const DEFAULT_SINCE_VERSION = '0.16.93';
 
@@ -260,14 +261,8 @@ const CAPABILITY_DOMAIN_ACTIONS = {
   [IPC_DOMAINS.TAG]: TagSchemas.ACTIONS,
   // task 域：派生自 schema action 集合（== task 表 keys，parity 门三面对账），手工清单已删
   [IPC_DOMAINS.TASK]: TaskSchemas.ACTIONS,
-  [IPC_DOMAINS.TERMINAL]: [
-    'close',
-    'list',
-    'open',
-    'resize',
-    'snapshot',
-    'write',
-  ],
+  // terminal 域：派生自 schema action 集合（== terminal 表 keys，parity 门三面对账），手工清单已删
+  [IPC_DOMAINS.TERMINAL]: TerminalSchemas.ACTIONS,
   [IPC_DOMAINS.TEAM]: [
     'confirmDraft',
     'knownRoles',

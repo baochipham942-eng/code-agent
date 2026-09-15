@@ -4,7 +4,8 @@
 
 import type { IpcMain } from '../platform';
 import { app } from '../platform';
-import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
+import { UpdateSchemas, type UpdateDomainRequest } from '../../shared/ipc/schemas/update';
+import { defineDomainRoutes, installDomainRoutes } from './domainRoutes/registry';
 import type {
   PrepareRuntimeAssetsResult,
   RendererBundleStatus,
@@ -92,61 +93,58 @@ async function handlePrepareRuntimeAssets(payload?: { assetId?: string }): Promi
 // ----------------------------------------------------------------------------
 
 /**
+ * update 域单源路由表（RQ-183 续作·UPDATE 刀）：原 domain switch 10 个 `…; data = X; break;` case 平移为默认模式 handler（data= 前的
+ * 语句原样保留，data= 改 return，装配器包 { success: true, data }）。未知 action 与抛错恰为装配器缺省（INVALID_ACTION
+ * `Unknown action: <action>` / INTERNAL_ERROR + Error.message / String(error)，与原文逐字一致），零配置。
+ * 请求体为 null / 非对象时原实现在 try 外解构抛错（IPC reject），现返回 INVALID_ACTION。
+ */
+const updateRoutes = defineDomainRoutes<UpdateDomainRequest, void>(UpdateSchemas.REQUEST, {
+  check: async (_ctx, _payload) => {
+    return await handleCheck();
+  },
+  getInfo: async (_ctx, _payload) => {
+    return await handleGetInfo();
+  },
+  download: async (_ctx, payload) => {
+    return await handleDownload(payload as { downloadUrl: string });
+  },
+  openFile: async (_ctx, payload) => {
+    await handleOpenFile(payload as { filePath: string });
+    return null;
+  },
+  openUrl: async (_ctx, payload) => {
+    await handleOpenUrl(payload as { url: string });
+    return null;
+  },
+  startAutoCheck: async (_ctx, _payload) => {
+    await handleStartAutoCheck();
+    return null;
+  },
+  stopAutoCheck: async (_ctx, _payload) => {
+    await handleStopAutoCheck();
+    return null;
+  },
+  runtimeAssetsStatus: async (_ctx, _payload) => {
+    return await handleRuntimeAssetsStatus();
+  },
+  rendererBundleStatus: async (_ctx, _payload) => {
+    return await handleRendererBundleStatus();
+  },
+  prepareRuntimeAssets: async (_ctx, payload) => {
+    return await handlePrepareRuntimeAssets(payload as { assetId?: string } | undefined);
+  },
+});
+
+/**
  * 注册 Update 相关 IPC handlers
  */
 export function registerUpdateHandlers(ipcMain: IpcMain): void {
   // ========== New Domain Handler (TASK-04) ==========
-  ipcMain.handle(IPC_DOMAINS.UPDATE, async (_, request: IPCRequest): Promise<IPCResponse> => {
-    const { action, payload } = request;
-
-    try {
-      let data: unknown;
-
-      switch (action) {
-        case 'check':
-          data = await handleCheck();
-          break;
-        case 'getInfo':
-          data = await handleGetInfo();
-          break;
-        case 'download':
-          data = await handleDownload(payload as { downloadUrl: string });
-          break;
-        case 'openFile':
-          await handleOpenFile(payload as { filePath: string });
-          data = null;
-          break;
-        case 'openUrl':
-          await handleOpenUrl(payload as { url: string });
-          data = null;
-          break;
-        case 'startAutoCheck':
-          await handleStartAutoCheck();
-          data = null;
-          break;
-        case 'stopAutoCheck':
-          await handleStopAutoCheck();
-          data = null;
-          break;
-        case 'runtimeAssetsStatus':
-          data = await handleRuntimeAssetsStatus();
-          break;
-        case 'rendererBundleStatus':
-          data = await handleRendererBundleStatus();
-          break;
-        case 'prepareRuntimeAssets':
-          data = await handlePrepareRuntimeAssets(payload as { assetId?: string } | undefined);
-          break;
-        default:
-          return { success: false, error: { code: 'INVALID_ACTION', message: `Unknown action: ${action}` } };
-      }
-
-      return { success: true, data };
-    } catch (error) {
-      return { success: false, error: { code: 'INTERNAL_ERROR', message: error instanceof Error ? error.message : String(error) } };
-    }
-  });
+  installDomainRoutes(ipcMain, updateRoutes, undefined);
 
   // ========== Legacy Handlers (Deprecated) ==========
 
 }
+
+// 表挂装配函数对象上供 parity 门枚举（同 registerMcpHandlers.routes 先例）
+registerUpdateHandlers.routes = updateRoutes;

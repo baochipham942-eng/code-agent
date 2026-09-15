@@ -58,13 +58,14 @@ chmod 0644 "$REMOTE_APP_DIR/neo-companion-relay.cjs.new"
 mv -f "$REMOTE_APP_DIR/neo-companion-relay.cjs.new" "$REMOTE_APP_DIR/neo-companion-relay.cjs"
 REMOTE
 
-echo "==> writing env file (credential via stdin, never in argv)"
+echo "==> writing env file (credential via stdin pipe, never in argv)"
+# 注意：不能把 printf 管道和 heredoc 混在同一个 ssh 上——heredoc 会抢占 stdin，
+# 远端 cat 会把剩余脚本吃掉（首版部署实测：relay.env 没落地、unit 起不来）。
+# 所以这里用独立的 ssh 连接，env 内容走 /dev/stdin 管道。
 printf 'NEO_RELAY_PORT=%s\nNEO_RELAY_BIND=127.0.0.1\nNEO_RELAY_CREDENTIAL=%s\n' "$REMOTE_PORT" "$CREDENTIAL" \
-  | ssh "$REMOTE_HOST" REMOTE_ENV_DIR="$REMOTE_ENV_DIR" bash -s <<'REMOTE'
+  | ssh "$REMOTE_HOST" "install -o neorelay -g neorelay -m 0600 /dev/stdin $REMOTE_ENV_DIR/relay.env.new"
+ssh "$REMOTE_HOST" REMOTE_ENV_DIR="$REMOTE_ENV_DIR" bash -s <<'REMOTE'
 set -euo pipefail
-cat > "$REMOTE_ENV_DIR/relay.env.new"
-chown neorelay:neorelay "$REMOTE_ENV_DIR/relay.env.new"
-chmod 0600 "$REMOTE_ENV_DIR/relay.env.new"
 if cmp -s "$REMOTE_ENV_DIR/relay.env.new" "$REMOTE_ENV_DIR/relay.env"; then
   rm -f "$REMOTE_ENV_DIR/relay.env.new"; echo "env unchanged"
 else
@@ -93,5 +94,4 @@ REMOTE
 
 echo "==> deploy receipt"
 echo "host=$REMOTE_HOST port=$REMOTE_PORT sha256=$SHA256"
-systemd-unit=packages/relay/deploy/neo-companion-relay.service
-echo "unit=$systemd-unit credential=$LOCAL_SECRET (Host 启用时由编排写入钥匙串 dev.neo.companion.relay.v1)"
+echo "unit=packages/relay/deploy/neo-companion-relay.service credential=$LOCAL_SECRET (Host 启用时由编排写入钥匙串 dev.neo.companion.relay.v1)"

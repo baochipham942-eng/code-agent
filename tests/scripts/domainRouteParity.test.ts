@@ -26,16 +26,19 @@ import {
 } from '../../src/host/ipc/domainRoutes/sessionRoutes';
 import { defineDomainRoutes, installDomainRoutes } from '../../src/host/ipc/domainRoutes/registry';
 import { registerMemoryHandlers } from '../../src/host/ipc/memory.ipc';
+import { registerDesktopHandlers } from '../../src/host/ipc/desktop.ipc';
 import { getShellCapabilities } from '../../src/host/shellCapabilities';
 
 // 结构枚举器挂既有函数对象上（knip 生产档无测试入口，独立 export 必成 dead export）
 const { extractDomainActions } = installDomainRoutes;
 const memoryRoutes = registerMemoryHandlers.routes;
+const desktopRoutes = registerDesktopHandlers.routes;
 
 /** 门盯的表清单——新域表化后加进来，门即自动覆盖该域（session 三面走 manifestDomain 断言） */
 const ROUTE_TABLES = [
   { table: sessionRoutes, manifestDomain: 'domain:session' as const },
   { table: memoryRoutes, manifestDomain: 'domain:memory' as const },
+  { table: desktopRoutes, manifestDomain: 'domain:desktop' as const },
   { table: inlineFixtureTable(), manifestDomain: undefined },
 ];
 
@@ -262,6 +265,7 @@ function collectActualDomainActions(): Map<string, Set<string>> {
   // session 域：单源路由表结构枚举（表化域不走源码提取）
   add(IPC_DOMAINS.SESSION, new Set(Object.keys(sessionRoutes.actions)));
   add(IPC_DOMAINS.MEMORY, new Set(Object.keys(memoryRoutes.actions)));
+  add(IPC_DOMAINS.DESKTOP, new Set(Object.keys(desktopRoutes.actions)));
   return actual;
 }
 
@@ -275,7 +279,6 @@ const KNOWN_UNDER_REPORTED_ACTIONS: Readonly<Record<string, readonly string[]>> 
   'domain:backgroundTasks': ['drainNotifications', 'getTask', 'listTasks', 'markNotificationDelivered', 'readTaskLog'],
   'domain:cron': ['createJob', 'deleteJob', 'generateFromPrompt', 'getExecutions', 'getRecentExecutions', 'getStats', 'listJobs', 'triggerJob', 'updateJob'],
   'domain:data': ['cacheCleanExpired', 'cacheClear', 'cacheGetStats'],
-  'domain:desktop': ['getAudioCaptureStatus', 'getAudioSegments', 'getCurrentContext', 'getStats', 'getStatus', 'listRecent', 'search', 'startAudioCapture', 'stopAudioCapture'],
   'domain:device': ['list', 'register', 'remove'],
   'domain:diagnostics': ['recovery', 'sessionLedger', 'swarmLedgerBackfill', 'swarmReconcile', 'swarmReconcileScan'],
   'domain:folderTrust': ['revoke'],

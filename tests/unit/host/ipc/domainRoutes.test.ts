@@ -222,6 +222,40 @@ describe('installDomainRoutes', () => {
     });
   });
 
+  it('unknownActionCode / mapError / rawResponse：既有域错误契约与带 data 的失败响应逐字透传（DESKTOP 刀）', async () => {
+    const table = defineDomainRoutes(
+      channelSchema({ channel: 'domain:test-raw', payload: EnumRequestSchema }),
+      {
+        echo: async () => ({ success: false, error: { code: 'AUDIO_START_FAILED', message: 'no sox' }, data: { capturing: false } }),
+        ping: async () => {
+          throw 'not-an-error';
+        },
+      },
+      {
+        rawResponse: true,
+        unknownActionCode: 'UNKNOWN_ACTION',
+        mapError: (error, action) => ({ code: 'DESKTOP_ERROR', message: `${String(action)}:${error instanceof Error ? error.message : 'Unknown error'}` }),
+      },
+    );
+    const { registered, target } = createTarget();
+    installDomainRoutes(target, table, { prefix: 'neo' });
+    const call = registered.get('domain:test-raw');
+
+    await expect(call?.(undefined, { action: 'echo' })).resolves.toEqual({
+      success: false,
+      error: { code: 'AUDIO_START_FAILED', message: 'no sox' },
+      data: { capturing: false },
+    });
+    await expect(call?.(undefined, { action: 'ping' })).resolves.toEqual({
+      success: false,
+      error: { code: 'DESKTOP_ERROR', message: 'ping:Unknown error' },
+    });
+    await expect(call?.(undefined, { action: 'nope' })).resolves.toEqual({
+      success: false,
+      error: { code: 'UNKNOWN_ACTION', message: 'Unknown action: nope' },
+    });
+  });
+
   it('表带 schema 未声明的 action → 拒绝装配', () => {
     const { target } = createTarget();
     const drifted = {

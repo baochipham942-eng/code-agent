@@ -3,7 +3,10 @@
 // ============================================================================
 
 import type { IpcMain } from '../platform';
-import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '@shared/ipc';
+import type { IPCResponse } from '@shared/ipc';
+import type { DomainRouteHandlers } from '@shared/ipc/domainRoutes';
+import { DesktopSchemas, type DesktopDomainRequest } from '@shared/ipc/schemas/desktop';
+import { defineDomainRoutes, installDomainRoutes } from './domainRoutes/registry';
 import type {
   BrowserProfileSourceId,
   DesktopSearchQuery,
@@ -116,414 +119,410 @@ function toComputerSurfaceAxQuality(value: unknown): ComputerSurfaceAxQuality | 
   };
 }
 
+type NativeDesktopService = ReturnType<typeof getNativeDesktopService>;
+
+/**
+ * desktop 域单源路由表（RQ-183 续作·DESKTOP 刀）：原 domain switch 逐 case 平移为 handler
+ * （rawResponse：handler 仍返回完整 IPCResponse，含 observe/listElements/startAudio 带 data 的
+ * 失败响应，逐字不变）；未知 action → UNKNOWN_ACTION `Unknown action: <action>`；抛错 →
+ * DESKTOP_ERROR + 同款日志（mapError）。
+ */
+const desktopHandlers: DomainRouteHandlers<DesktopDomainRequest, NativeDesktopService> = {
+    getStatus: async (service, _raw) => {
+      return { success: true, data: service.getStatus() } satisfies IPCResponse<unknown>;
+    },
+    getCurrentContext: async (service, _raw) => {
+      return { success: true, data: service.getCurrentContext() } satisfies IPCResponse<unknown>;
+    },
+    getManagedBrowserSession: async (_service, _raw) => {
+      // 画面/地址栏读的是 surface 绑定那扇窗（user-browser-link 等），不是默认单例
+      return {
+        success: true,
+        data: getManagedBrowserProviderAdapter().getPreferredUiSessionState()
+          ?? browserService.getSessionState(),
+      } satisfies IPCResponse<unknown>;
+    },
+    ensureManagedBrowserSession: async (_service, raw) => {
+      const payload = raw as {
+        url?: string;
+        mode?: ManagedBrowserMode;
+        provider?: ManagedBrowserProviderPreference;
+        profileMode?: ManagedBrowserProfileMode;
+        leaseOwner?: string;
+        leaseTtlMs?: number;
+        proxy?: ManagedBrowserProxyInput | null;
+      } | undefined;
+      const launchOptions = {
+        mode: payload?.mode,
+        provider: payload?.provider,
+        profileMode: payload?.profileMode || 'isolated' as ManagedBrowserProfileMode,
+        leaseOwner: payload?.leaseOwner || 'desktop-ipc',
+        leaseTtlMs: payload?.leaseTtlMs,
+        proxy: payload?.proxy,
+      };
+      return {
+        success: true,
+        data: await browserService.ensureSession(payload?.url || 'about:blank', launchOptions),
+      } satisfies IPCResponse<unknown>;
+    },
+    openManagedBrowserUrl: async (_service, raw) => {
+      const payload = raw as {
+        url?: string;
+        mode?: ManagedBrowserMode;
+        provider?: ManagedBrowserProviderPreference;
+        profileMode?: ManagedBrowserProfileMode;
+        leaseOwner?: string;
+        leaseTtlMs?: number;
+        proxy?: ManagedBrowserProxyInput | null;
+      } | undefined;
+      const url = normalizeBrowserUrl(payload?.url);
+      const launchOptions = {
+        mode: payload?.mode || 'visible' as ManagedBrowserMode,
+        provider: payload?.provider,
+        profileMode: payload?.profileMode || 'isolated' as ManagedBrowserProfileMode,
+        leaseOwner: payload?.leaseOwner || 'browser-surface',
+        leaseTtlMs: payload?.leaseTtlMs,
+        proxy: payload?.proxy,
+      };
+      const current = browserService.getSessionState();
+      if (current.running && launchOptions.mode === 'visible' && current.mode === 'headless') {
+        await browserService.close();
+      }
+      await browserService.ensureSession('about:blank', launchOptions);
+      const next = browserService.getSessionState();
+      if (next.activeTab) {
+        await browserService.navigate(url, next.activeTab.id);
+      } else {
+        await browserService.newTab(url);
+      }
+      return {
+        success: true,
+        data: browserService.getSessionState(),
+      } satisfies IPCResponse<unknown>;
+    },
+    refreshManagedBrowserAccountState: async (_service, _raw) => {
+      return {
+        success: true,
+        data: {
+          accountState: await browserService.getAccountStateSummary(),
+          session: browserService.getSessionState(),
+        },
+      } satisfies IPCResponse<unknown>;
+    },
+    listBrowserProfiles: async (_service, _raw) => {
+      return {
+        success: true,
+        data: listImportableBrowserProfiles(),
+      } satisfies IPCResponse<unknown>;
+    },
+    importBrowserProfileCookies: async (_service, raw) => {
+      const payload = raw as {
+        source?: string;
+        profileId?: string;
+        domainAllowlist?: string[];
+        includeExpired?: boolean;
+        userConfirmed?: boolean;
+      } | undefined;
+      if (!payload?.source || !payload?.profileId) {
+        throw new Error('source and profileId are required for importBrowserProfileCookies.');
+      }
+      if (payload.userConfirmed !== true) {
+        throw new Error('Profile cookie import requires explicit userConfirmed=true (ADR-041).');
+      }
+      const subject = { conversationId: 'desktop-ipc', runId: 'interactive-user', agentId: 'user' };
+      const scope = {
+        source: payload.source,
+        profileId: payload.profileId,
+        ...(Array.isArray(payload.domainAllowlist)
+          ? { domainAllowlist: payload.domainAllowlist }
+          : {}),
+      };
+      const approvalService = getBrowserProfileImportApprovalService();
+      const approval = approvalService.issue({ subject, scope });
+      if (!approvalService.consume({ token: approval.token, subject, scope })) {
+        throw new Error('SURFACE_APPROVAL_INVALID: profile cookie import approval could not be consumed.');
+      }
+      const result = await importBrowserProfileCookiesViaService(browserService, {
+        source: payload.source as BrowserProfileSourceId,
+        profileId: payload.profileId,
+        domainAllowlist: Array.isArray(payload.domainAllowlist) ? payload.domainAllowlist : undefined,
+        includeExpired: payload.includeExpired === true,
+        userConfirmed: true,
+      });
+      return {
+        success: true,
+        data: {
+          result,
+          session: browserService.getSessionState(),
+          approval: {
+            mode: 'host_signed_one_time',
+            scopeHash: approval.scopeHash,
+            expiresAt: approval.expiresAt,
+          },
+        },
+      } satisfies IPCResponse<unknown>;
+    },
+    clearManagedBrowserCookies: async (_service, _raw) => {
+      return {
+        success: true,
+        data: {
+          accountState: await clearManagedBrowserCookiesViaService(browserService),
+          session: browserService.getSessionState(),
+        },
+      } satisfies IPCResponse<unknown>;
+    },
+    startBrowserRelay: async (_service, _raw) => {
+      return {
+        success: true,
+        data: await browserRelayService.ensureStarted(),
+      } satisfies IPCResponse<unknown>;
+    },
+    stopBrowserRelay: async (_service, _raw) => {
+      return {
+        success: true,
+        data: await browserRelayService.stop(),
+      } satisfies IPCResponse<unknown>;
+    },
+    getBrowserRelayState: async (_service, _raw) => {
+      return {
+        success: true,
+        data: browserRelayService.getState(),
+      } satisfies IPCResponse<unknown>;
+    },
+    openBrowserRelayExtensionDirectory: async (_service, _raw) => {
+      const extensionPath = browserRelayService.getState().extensionPath;
+      if (!extensionPath) {
+        throw new Error('Browser relay extension directory not found.');
+      }
+      await shell.openPath(extensionPath);
+      return {
+        success: true,
+        data: browserRelayService.getState(),
+      } satisfies IPCResponse<unknown>;
+    },
+    listBrowserRelayTabs: async (_service, _raw) => {
+      throw new Error('BROWSER_TAB_BORROW_REQUIRED: select and approve the current tab only in the Relay extension popup.');
+    },
+    openBrowserRelayTab: (service, raw) => desktopHandlers.listBrowserRelayTabs(service, raw),
+    attachBrowserRelayTab: (service, raw) => desktopHandlers.listBrowserRelayTabs(service, raw),
+    detachBrowserRelayTab: (service, raw) => desktopHandlers.listBrowserRelayTabs(service, raw),
+    getManagedBrowserRecoverySnapshot: async (_service, raw) => {
+      const payload = raw as { includeAccessibility?: boolean; tabId?: string } | undefined;
+      const [domSnapshot, accessibilitySnapshot] = await Promise.all([
+        browserService.getDomSnapshot(payload?.tabId),
+        payload?.includeAccessibility === false
+          ? Promise.resolve(null)
+          : browserService.getAccessibilitySnapshot(payload?.tabId),
+      ]);
+      return {
+        success: true,
+        data: summarizeManagedBrowserRecoverySnapshotData({
+          session: browserService.getSessionState(),
+          domSnapshot,
+          accessibilitySnapshot,
+        }),
+      } satisfies IPCResponse<unknown>;
+    },
+    observeComputerSurface: async (_service, raw) => {
+      const payload = raw as { targetApp?: string; includeScreenshot?: boolean } | undefined;
+      const computerSurface = getComputerSurface();
+      const snapshot = await computerSurface.observe({
+        targetApp: payload?.targetApp,
+        includeScreenshot: payload?.includeScreenshot === true,
+      });
+      const failureKind = typeof snapshot.failureKind === 'string' ? snapshot.failureKind : null;
+      const blockingReasons = Array.isArray(snapshot.blockingReasons)
+        ? snapshot.blockingReasons.filter((item): item is string => typeof item === 'string')
+        : undefined;
+      const recommendedAction = typeof snapshot.recommendedAction === 'string' ? snapshot.recommendedAction : null;
+      const data = {
+        snapshot,
+        state: computerSurface.getState({
+          targetApp: failureKind ? null : snapshot.appName || payload?.targetApp || undefined,
+          blockedReason: failureKind
+            ? blockingReasons?.join(' ') || 'Computer Surface observe blocked'
+            : null,
+          failureKind,
+          blockingReasons,
+          recommendedAction,
+        }),
+      };
+      if (failureKind) {
+        return {
+          success: false,
+          error: {
+            code: 'COMPUTER_SURFACE_OBSERVE_FAILED',
+            message: blockingReasons?.[0] || 'Computer Surface observe blocked',
+          },
+          data,
+        } satisfies IPCResponse<unknown>;
+      }
+      return {
+        success: true,
+        data,
+      } satisfies IPCResponse<unknown>;
+    },
+    listComputerSurfaceElements: async (_service, raw) => {
+      const payload = raw as {
+        targetApp?: string;
+        limit?: number;
+        maxDepth?: number;
+      } | undefined;
+      const computerSurface = getComputerSurface();
+      const result = await computerSurface.listBackgroundElements({
+        action: 'get_ax_elements',
+        targetApp: payload?.targetApp,
+        limit: payload?.limit,
+        maxDepth: payload?.maxDepth,
+      });
+      const metadata = asRecord(result.metadata);
+      const targetApp = metadata?.targetApp === null
+        ? null
+        : typeof metadata?.targetApp === 'string'
+          ? metadata.targetApp
+          : payload?.targetApp || null;
+      const failureKind = toComputerSurfaceFailureKind(metadata?.failureKind)
+        ?? (result.success ? null : 'evidence_unavailable');
+      const blockingReasons = Array.isArray(metadata?.blockingReasons)
+        ? metadata.blockingReasons.filter((item): item is string => typeof item === 'string')
+        : result.success
+          ? undefined
+          : [result.error || 'Computer Surface AX candidate read failed'];
+      const recommendedAction = typeof metadata?.recommendedAction === 'string'
+        ? metadata.recommendedAction
+        : null;
+      const axQuality = toComputerSurfaceAxQuality(metadata?.axQuality);
+      const state = computerSurface.getState({
+        targetApp,
+        blockedReason: result.success ? null : result.error || null,
+        mode: 'background_ax',
+        failureKind,
+        blockingReasons,
+        recommendedAction,
+        axQuality,
+      });
+      if (!result.success) {
+        return {
+          success: false,
+          error: {
+            code: 'COMPUTER_SURFACE_LIST_ELEMENTS_FAILED',
+            message: result.error || 'Failed to list Computer Surface elements',
+          },
+          data: {
+            state,
+            output: result.output,
+            metadata: result.metadata,
+          },
+        } satisfies IPCResponse<unknown>;
+      }
+      return {
+        success: true,
+        data: {
+          state,
+          output: result.output,
+          metadata: result.metadata,
+        },
+      } satisfies IPCResponse<unknown>;
+    },
+    closeManagedBrowserSession: async (_service, _raw) => {
+      await browserService.close();
+      return { success: true, data: browserService.getSessionState() } satisfies IPCResponse<unknown>;
+    },
+    getComputerSurfaceState: async (_service, raw) => {
+      const payload = raw as { targetApp?: string } | undefined;
+      return {
+        success: true,
+        data: getComputerSurface().getState({
+          targetApp: payload?.targetApp || undefined,
+        }),
+      } satisfies IPCResponse<unknown>;
+    },
+    listRecent: async (service, raw) => {
+      const payload = raw as { limit?: number } | undefined;
+      return { success: true, data: service.listRecent(payload?.limit || 10) } satisfies IPCResponse<unknown>;
+    },
+    search: async (service, raw) => {
+      const payload = raw as DesktopSearchQuery;
+      return { success: true, data: service.search(payload) } satisfies IPCResponse<unknown>;
+    },
+    getStats: async (service, raw) => {
+      const payload = (raw || {}) as DesktopTimelineQuery;
+      return { success: true, data: service.getStats(payload) } satisfies IPCResponse<unknown>;
+    },
+    getAudioSegments: async (service, raw) => {
+      const payload = raw as { from: number; to: number };
+      return { success: true, data: service.listAudioSegments(payload.from, payload.to) } satisfies IPCResponse<unknown>;
+    },
+    startAudioCapture: async (_service, raw) => {
+      if (manualAudioActive) {
+        return { success: true, data: getAudioCaptureStatus() } satisfies IPCResponse<unknown>;
+      }
+      const payload = raw as { fifoPath?: string; mode?: 'microphone' | 'system-audio' } | undefined;
+      const fifoPath = payload?.fifoPath;
+      const mode = payload?.mode || 'microphone';
+      if (process.platform === 'darwin' && process.arch === 'arm64') {
+        const runtimeStatus = await getRuntimeAssetsStatus();
+        const vadStatus = runtimeStatus.assets.find((asset) => asset.id === 'onnxruntime-vad');
+        if (vadStatus?.state === 'missing') {
+          await prepareRuntimeAssetOnDemand('onnxruntime-vad');
+        }
+      }
+      manualAudioActive = true;
+      await startDesktopAudioCapture(fifoPath, mode);
+      const audioSt = getAudioCaptureStatus();
+      if (!audioSt.capturing) {
+        // 启动失败 — 回退标志位，返回错误原因
+        manualAudioActive = false;
+        const reason = !audioSt.soxAvailable
+          ? 'sox 未安装，请运行: brew install sox'
+          : audioSt.asrEngine === 'none'
+            ? '未找到 ASR 引擎（whisper-cpp 或 qwen3-asr）'
+            : 'VAD 初始化失败';
+        return {
+          success: false,
+          error: { code: 'AUDIO_START_FAILED', message: `录音启动失败：${reason}` },
+          data: audioSt,
+        } satisfies IPCResponse<unknown>;
+      }
+      return { success: true, data: audioSt } satisfies IPCResponse<unknown>;
+    },
+    stopAudioCapture: async (_service, _raw) => {
+      manualAudioActive = false;
+      stopDesktopAudioCapture();
+      return { success: true, data: getAudioCaptureStatus() } satisfies IPCResponse<unknown>;
+    },
+    getAudioCaptureStatus: async (_service, _raw) => {
+      return { success: true, data: getAudioCaptureStatus() } satisfies IPCResponse<unknown>;
+    },
+};
+
+const desktopRoutes = defineDomainRoutes<DesktopDomainRequest, NativeDesktopService>(
+  DesktopSchemas.REQUEST,
+  desktopHandlers,
+  {
+    rawResponse: true,
+    unknownActionCode: 'UNKNOWN_ACTION',
+    mapError: (error, action) => {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      logger.error('Desktop IPC error', { action, error: message });
+      return { code: 'DESKTOP_ERROR', message };
+    },
+  },
+);
+
 export function registerDesktopHandlers(ipcMain: IpcMain): void {
   const service = getNativeDesktopService();
 
-  ipcMain.handle(IPC_DOMAINS.DESKTOP, async (_event, request: IPCRequest) => {
-    try {
-      switch (request.action) {
-        case 'getStatus':
-          return { success: true, data: service.getStatus() } satisfies IPCResponse<unknown>;
-
-        case 'getCurrentContext':
-          return { success: true, data: service.getCurrentContext() } satisfies IPCResponse<unknown>;
-
-        case 'getManagedBrowserSession':
-          // 画面/地址栏读的是 surface 绑定那扇窗（user-browser-link 等），不是默认单例
-          return {
-            success: true,
-            data: getManagedBrowserProviderAdapter().getPreferredUiSessionState()
-              ?? browserService.getSessionState(),
-          } satisfies IPCResponse<unknown>;
-
-        case 'ensureManagedBrowserSession': {
-          const payload = request.payload as {
-            url?: string;
-            mode?: ManagedBrowserMode;
-            provider?: ManagedBrowserProviderPreference;
-            profileMode?: ManagedBrowserProfileMode;
-            leaseOwner?: string;
-            leaseTtlMs?: number;
-            proxy?: ManagedBrowserProxyInput | null;
-          } | undefined;
-          const launchOptions = {
-            mode: payload?.mode,
-            provider: payload?.provider,
-            profileMode: payload?.profileMode || 'isolated' as ManagedBrowserProfileMode,
-            leaseOwner: payload?.leaseOwner || 'desktop-ipc',
-            leaseTtlMs: payload?.leaseTtlMs,
-            proxy: payload?.proxy,
-          };
-          return {
-            success: true,
-            data: await browserService.ensureSession(payload?.url || 'about:blank', launchOptions),
-          } satisfies IPCResponse<unknown>;
-        }
-
-        case 'openManagedBrowserUrl': {
-          const payload = request.payload as {
-            url?: string;
-            mode?: ManagedBrowserMode;
-            provider?: ManagedBrowserProviderPreference;
-            profileMode?: ManagedBrowserProfileMode;
-            leaseOwner?: string;
-            leaseTtlMs?: number;
-            proxy?: ManagedBrowserProxyInput | null;
-          } | undefined;
-          const url = normalizeBrowserUrl(payload?.url);
-          const launchOptions = {
-            mode: payload?.mode || 'visible' as ManagedBrowserMode,
-            provider: payload?.provider,
-            profileMode: payload?.profileMode || 'isolated' as ManagedBrowserProfileMode,
-            leaseOwner: payload?.leaseOwner || 'browser-surface',
-            leaseTtlMs: payload?.leaseTtlMs,
-            proxy: payload?.proxy,
-          };
-          const current = browserService.getSessionState();
-          if (current.running && launchOptions.mode === 'visible' && current.mode === 'headless') {
-            await browserService.close();
-          }
-          await browserService.ensureSession('about:blank', launchOptions);
-          const next = browserService.getSessionState();
-          if (next.activeTab) {
-            await browserService.navigate(url, next.activeTab.id);
-          } else {
-            await browserService.newTab(url);
-          }
-          return {
-            success: true,
-            data: browserService.getSessionState(),
-          } satisfies IPCResponse<unknown>;
-        }
-
-        case 'refreshManagedBrowserAccountState':
-          return {
-            success: true,
-            data: {
-              accountState: await browserService.getAccountStateSummary(),
-              session: browserService.getSessionState(),
-            },
-          } satisfies IPCResponse<unknown>;
-
-        case 'listBrowserProfiles':
-          return {
-            success: true,
-            data: listImportableBrowserProfiles(),
-          } satisfies IPCResponse<unknown>;
-
-        case 'importBrowserProfileCookies': {
-          const payload = request.payload as {
-            source?: string;
-            profileId?: string;
-            domainAllowlist?: string[];
-            includeExpired?: boolean;
-            userConfirmed?: boolean;
-          } | undefined;
-          if (!payload?.source || !payload?.profileId) {
-            throw new Error('source and profileId are required for importBrowserProfileCookies.');
-          }
-          if (payload.userConfirmed !== true) {
-            throw new Error('Profile cookie import requires explicit userConfirmed=true (ADR-041).');
-          }
-          const subject = { conversationId: 'desktop-ipc', runId: 'interactive-user', agentId: 'user' };
-          const scope = {
-            source: payload.source,
-            profileId: payload.profileId,
-            ...(Array.isArray(payload.domainAllowlist)
-              ? { domainAllowlist: payload.domainAllowlist }
-              : {}),
-          };
-          const approvalService = getBrowserProfileImportApprovalService();
-          const approval = approvalService.issue({ subject, scope });
-          if (!approvalService.consume({ token: approval.token, subject, scope })) {
-            throw new Error('SURFACE_APPROVAL_INVALID: profile cookie import approval could not be consumed.');
-          }
-          const result = await importBrowserProfileCookiesViaService(browserService, {
-            source: payload.source as BrowserProfileSourceId,
-            profileId: payload.profileId,
-            domainAllowlist: Array.isArray(payload.domainAllowlist) ? payload.domainAllowlist : undefined,
-            includeExpired: payload.includeExpired === true,
-            userConfirmed: true,
-          });
-          return {
-            success: true,
-            data: {
-              result,
-              session: browserService.getSessionState(),
-              approval: {
-                mode: 'host_signed_one_time',
-                scopeHash: approval.scopeHash,
-                expiresAt: approval.expiresAt,
-              },
-            },
-          } satisfies IPCResponse<unknown>;
-        }
-
-        case 'clearManagedBrowserCookies':
-          return {
-            success: true,
-            data: {
-              accountState: await clearManagedBrowserCookiesViaService(browserService),
-              session: browserService.getSessionState(),
-            },
-          } satisfies IPCResponse<unknown>;
-
-        case 'startBrowserRelay':
-          return {
-            success: true,
-            data: await browserRelayService.ensureStarted(),
-          } satisfies IPCResponse<unknown>;
-
-        case 'stopBrowserRelay':
-          return {
-            success: true,
-            data: await browserRelayService.stop(),
-          } satisfies IPCResponse<unknown>;
-
-        case 'getBrowserRelayState':
-          return {
-            success: true,
-            data: browserRelayService.getState(),
-          } satisfies IPCResponse<unknown>;
-
-        case 'openBrowserRelayExtensionDirectory': {
-          const extensionPath = browserRelayService.getState().extensionPath;
-          if (!extensionPath) {
-            throw new Error('Browser relay extension directory not found.');
-          }
-          await shell.openPath(extensionPath);
-          return {
-            success: true,
-            data: browserRelayService.getState(),
-          } satisfies IPCResponse<unknown>;
-        }
-
-        case 'listBrowserRelayTabs':
-        case 'openBrowserRelayTab':
-        case 'attachBrowserRelayTab':
-        case 'detachBrowserRelayTab':
-          throw new Error('BROWSER_TAB_BORROW_REQUIRED: select and approve the current tab only in the Relay extension popup.');
-
-        case 'getManagedBrowserRecoverySnapshot': {
-          const payload = request.payload as { includeAccessibility?: boolean; tabId?: string } | undefined;
-          const [domSnapshot, accessibilitySnapshot] = await Promise.all([
-            browserService.getDomSnapshot(payload?.tabId),
-            payload?.includeAccessibility === false
-              ? Promise.resolve(null)
-              : browserService.getAccessibilitySnapshot(payload?.tabId),
-          ]);
-          return {
-            success: true,
-            data: summarizeManagedBrowserRecoverySnapshotData({
-              session: browserService.getSessionState(),
-              domSnapshot,
-              accessibilitySnapshot,
-            }),
-          } satisfies IPCResponse<unknown>;
-        }
-
-        case 'observeComputerSurface': {
-          const payload = request.payload as { targetApp?: string; includeScreenshot?: boolean } | undefined;
-          const computerSurface = getComputerSurface();
-          const snapshot = await computerSurface.observe({
-            targetApp: payload?.targetApp,
-            includeScreenshot: payload?.includeScreenshot === true,
-          });
-          const failureKind = typeof snapshot.failureKind === 'string' ? snapshot.failureKind : null;
-          const blockingReasons = Array.isArray(snapshot.blockingReasons)
-            ? snapshot.blockingReasons.filter((item): item is string => typeof item === 'string')
-            : undefined;
-          const recommendedAction = typeof snapshot.recommendedAction === 'string' ? snapshot.recommendedAction : null;
-          const data = {
-            snapshot,
-            state: computerSurface.getState({
-              targetApp: failureKind ? null : snapshot.appName || payload?.targetApp || undefined,
-              blockedReason: failureKind
-                ? blockingReasons?.join(' ') || 'Computer Surface observe blocked'
-                : null,
-              failureKind,
-              blockingReasons,
-              recommendedAction,
-            }),
-          };
-          if (failureKind) {
-            return {
-              success: false,
-              error: {
-                code: 'COMPUTER_SURFACE_OBSERVE_FAILED',
-                message: blockingReasons?.[0] || 'Computer Surface observe blocked',
-              },
-              data,
-            } satisfies IPCResponse<unknown>;
-          }
-          return {
-            success: true,
-            data,
-          } satisfies IPCResponse<unknown>;
-        }
-
-        case 'listComputerSurfaceElements': {
-          const payload = request.payload as {
-            targetApp?: string;
-            limit?: number;
-            maxDepth?: number;
-          } | undefined;
-          const computerSurface = getComputerSurface();
-          const result = await computerSurface.listBackgroundElements({
-            action: 'get_ax_elements',
-            targetApp: payload?.targetApp,
-            limit: payload?.limit,
-            maxDepth: payload?.maxDepth,
-          });
-          const metadata = asRecord(result.metadata);
-          const targetApp = metadata?.targetApp === null
-            ? null
-            : typeof metadata?.targetApp === 'string'
-              ? metadata.targetApp
-              : payload?.targetApp || null;
-          const failureKind = toComputerSurfaceFailureKind(metadata?.failureKind)
-            ?? (result.success ? null : 'evidence_unavailable');
-          const blockingReasons = Array.isArray(metadata?.blockingReasons)
-            ? metadata.blockingReasons.filter((item): item is string => typeof item === 'string')
-            : result.success
-              ? undefined
-              : [result.error || 'Computer Surface AX candidate read failed'];
-          const recommendedAction = typeof metadata?.recommendedAction === 'string'
-            ? metadata.recommendedAction
-            : null;
-          const axQuality = toComputerSurfaceAxQuality(metadata?.axQuality);
-          const state = computerSurface.getState({
-            targetApp,
-            blockedReason: result.success ? null : result.error || null,
-            mode: 'background_ax',
-            failureKind,
-            blockingReasons,
-            recommendedAction,
-            axQuality,
-          });
-          if (!result.success) {
-            return {
-              success: false,
-              error: {
-                code: 'COMPUTER_SURFACE_LIST_ELEMENTS_FAILED',
-                message: result.error || 'Failed to list Computer Surface elements',
-              },
-              data: {
-                state,
-                output: result.output,
-                metadata: result.metadata,
-              },
-            } satisfies IPCResponse<unknown>;
-          }
-          return {
-            success: true,
-            data: {
-              state,
-              output: result.output,
-              metadata: result.metadata,
-            },
-          } satisfies IPCResponse<unknown>;
-        }
-
-        case 'closeManagedBrowserSession':
-          await browserService.close();
-          return { success: true, data: browserService.getSessionState() } satisfies IPCResponse<unknown>;
-
-        case 'getComputerSurfaceState': {
-          const payload = request.payload as { targetApp?: string } | undefined;
-          return {
-            success: true,
-            data: getComputerSurface().getState({
-              targetApp: payload?.targetApp || undefined,
-            }),
-          } satisfies IPCResponse<unknown>;
-        }
-
-        case 'listRecent': {
-          const payload = request.payload as { limit?: number } | undefined;
-          return { success: true, data: service.listRecent(payload?.limit || 10) } satisfies IPCResponse<unknown>;
-        }
-
-        case 'search': {
-          const payload = request.payload as DesktopSearchQuery;
-          return { success: true, data: service.search(payload) } satisfies IPCResponse<unknown>;
-        }
-
-        case 'getStats': {
-          const payload = (request.payload || {}) as DesktopTimelineQuery;
-          return { success: true, data: service.getStats(payload) } satisfies IPCResponse<unknown>;
-        }
-
-        case 'getAudioSegments': {
-          const payload = request.payload as { from: number; to: number };
-          return { success: true, data: service.listAudioSegments(payload.from, payload.to) } satisfies IPCResponse<unknown>;
-        }
-
-        case 'startAudioCapture': {
-          if (manualAudioActive) {
-            return { success: true, data: getAudioCaptureStatus() } satisfies IPCResponse<unknown>;
-          }
-          const payload = request.payload as { fifoPath?: string; mode?: 'microphone' | 'system-audio' } | undefined;
-          const fifoPath = payload?.fifoPath;
-          const mode = payload?.mode || 'microphone';
-          if (process.platform === 'darwin' && process.arch === 'arm64') {
-            const runtimeStatus = await getRuntimeAssetsStatus();
-            const vadStatus = runtimeStatus.assets.find((asset) => asset.id === 'onnxruntime-vad');
-            if (vadStatus?.state === 'missing') {
-              await prepareRuntimeAssetOnDemand('onnxruntime-vad');
-            }
-          }
-          manualAudioActive = true;
-          await startDesktopAudioCapture(fifoPath, mode);
-          const audioSt = getAudioCaptureStatus();
-          if (!audioSt.capturing) {
-            // 启动失败 — 回退标志位，返回错误原因
-            manualAudioActive = false;
-            const reason = !audioSt.soxAvailable
-              ? 'sox 未安装，请运行: brew install sox'
-              : audioSt.asrEngine === 'none'
-                ? '未找到 ASR 引擎（whisper-cpp 或 qwen3-asr）'
-                : 'VAD 初始化失败';
-            return {
-              success: false,
-              error: { code: 'AUDIO_START_FAILED', message: `录音启动失败：${reason}` },
-              data: audioSt,
-            } satisfies IPCResponse<unknown>;
-          }
-          return { success: true, data: audioSt } satisfies IPCResponse<unknown>;
-        }
-
-        case 'stopAudioCapture': {
-          manualAudioActive = false;
-          stopDesktopAudioCapture();
-          return { success: true, data: getAudioCaptureStatus() } satisfies IPCResponse<unknown>;
-        }
-
-        case 'getAudioCaptureStatus': {
-          return { success: true, data: getAudioCaptureStatus() } satisfies IPCResponse<unknown>;
-        }
-
-        default:
-          return {
-            success: false,
-            error: { code: 'UNKNOWN_ACTION', message: `Unknown action: ${request.action}` },
-          } satisfies IPCResponse<unknown>;
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      logger.error('Desktop IPC error', { action: request.action, error: message });
-      return {
-        success: false,
-        error: { code: 'DESKTOP_ERROR', message },
-      } satisfies IPCResponse<unknown>;
-    }
-  });
+  installDomainRoutes(ipcMain, desktopRoutes, service);
 
   // 启动后台视觉分析器（自动分析有截图但无 analyzeText 的事件）
   startDesktopVisionAnalyzer();
 
   logger.info('Desktop handlers registered');
 }
+
+// 表挂装配函数对象上供 parity 门枚举（knip 生产档无测试入口，同 registerMemoryHandlers.routes 先例）
+registerDesktopHandlers.routes = desktopRoutes;
 
 export function summarizeManagedBrowserRecoverySnapshotData(input: {
   session: unknown;

@@ -13,8 +13,9 @@ const isWebMode = vi.hoisted(() => vi.fn(() => false));
 
 vi.mock('../../../src/renderer/utils/platform', () => ({ isWebMode }));
 vi.mock('../../../src/renderer/hooks/useI18n', () => ({ useI18n: () => ({ t: zh }) }));
+const isAdmin = vi.hoisted(() => ({ value: true }));
 vi.mock('../../../src/renderer/stores/authStore', () => ({
-  useAuthStore: (selector: (state: { user: { isAdmin: boolean } }) => unknown) => selector({ user: { isAdmin: true } }),
+  useAuthStore: (selector: (state: { user: { isAdmin: boolean } }) => unknown) => selector({ user: { isAdmin: isAdmin.value } }),
 }));
 vi.mock('../../../src/renderer/services/ipcService', () => ({
   default: { invokeDomain, on: vi.fn() },
@@ -25,6 +26,7 @@ import PrivacySettings from '../../../src/renderer/components/features/settings/
 afterEach(() => {
   cleanup();
   isWebMode.mockReturnValue(false);
+  isAdmin.value = true;
 });
 
 function mockIpc(settings: Record<string, unknown>): void {
@@ -103,5 +105,17 @@ describe('PrivacySettings 评测反馈池钩子命令', () => {
         { evaluation: { feedbackHookCommand: 'fb add --from-dir "$NEO_EVAL_FEEDBACK_DIR"' } },
       );
     });
+  });
+
+  // 命令由宿主用系统 shell 执行：web 上的非管理员看得到但改不了（host 侧 adminOnlyKeys 也拦一道）。
+  it('非管理员在 web 上只读：输入框 disabled 并给出管理员提示', async () => {
+    isWebMode.mockReturnValue(true);
+    isAdmin.value = false;
+    mockIpc({ evaluation: { feedbackHookCommand: 'fb add' } });
+    render(<PrivacySettings />);
+
+    const input = await screen.findByTestId('eval-feedback-hook-command');
+    await waitFor(() => expect((input as HTMLInputElement).disabled).toBe(true));
+    expect(screen.getByText(zh.settings.privacy.evaluation.adminHint)).toBeTruthy();
   });
 });

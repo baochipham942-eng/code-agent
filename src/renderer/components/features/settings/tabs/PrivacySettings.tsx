@@ -336,12 +336,13 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
           type="text"
           className="mt-2 w-full rounded-md border border-zinc-700 bg-zinc-900 px-2 py-1.5 font-mono text-xs text-zinc-200 placeholder:text-zinc-600"
           value={feedbackHookCommand}
-          disabled={privacySaving}
+          disabled={privacySaving || !isAdmin}
           data-testid="eval-feedback-hook-command"
           placeholder={privacyText.evaluation.placeholder}
           onChange={(event) => { setFeedbackHookCommand(event.target.value); setFeedbackHookSaved(false); }}
           onBlur={(event) => { void handleFeedbackHookCommit(event.target.value.trim()); }}
         />
+        {!isAdmin ? <div className="mt-1 text-xs text-zinc-500">{privacyText.evaluation.adminHint}</div> : null}
         {feedbackHookSaved ? (
           <div className="mt-1 text-xs text-badge-success">{privacyText.evaluation.savedHint}</div>
         ) : null}

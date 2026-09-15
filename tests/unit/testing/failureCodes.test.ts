@@ -158,7 +158,7 @@ codes:
     try {
       const loaded = loadProjectFailureCodebookWithSource(projectDir);
       expect(loaded.source).toBe('bundled');
-      expect(loaded.codebook.codes).toHaveLength(7);
+      expect(loaded.codebook.codes).toHaveLength(10);
       expect(warn).toHaveBeenCalledWith(expect.stringMatching(/未找到项目失败原因码本.*使用内置码本/));
     } finally {
       warn.mockRestore();

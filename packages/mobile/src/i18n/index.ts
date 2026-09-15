@@ -1,5 +1,3 @@
-import type { CompanionPushTitleKey } from '../../../../src/shared/contract/companionPush';
-
 const zh = {
   approvalTarget: '目标',
   voice: '语音输入', cancel: '取消', cancelRecording: '取消录音', stopRecording: '停止录音并转写', transcribing: '正在转写',
@@ -272,17 +270,6 @@ export function runOutcomeCopy(text: ReturnType<typeof messages>, kind: 'complet
     : code === 'MODEL_AUTH' ? text.modelAuthMissing
     : text.runFailed;
   return `${text.failed}${text === zh ? '：' : ': '}${reason}`;
-}
-
-/**
- * 推送横幅正文（N-MOBILE-EXEC-STATUS ⑤）。Host 只发 APNs 的 loc-key（= titleKey），iOS 在 app 包里的
- * Localizable.strings 查正文；包里没有这张表时系统把 key 原样当正文——build 40 真机横幅写着 task_complete。
- * build-ios 用它生成 en / zh-Hans 两张表。按 titleKey 全集定型：Host 新增一种推送而这里没跟上，typecheck 就红。
- * 推送里不带失败码，失败只能给通用原因；具体原因在会话里那次执行下面。
- */
-export function pushAlertStrings(language: string): Record<CompanionPushTitleKey, string> {
-  const text = messages(language);
-  return { task_complete: text.complete, task_stopped: text.stopped, task_failed: runOutcomeCopy(text, 'failed'), approval_needed: text.approval };
 }
 
 /**

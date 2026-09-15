@@ -6,8 +6,8 @@ import { createHash } from 'node:crypto';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { resolve } from 'node:path';
-import { assertBinaryPushEntitlement, ensureAppPushEntitlements, extractNativeTargetId, exportOptionsXml, LOCALIZABLE_REGIONS, localizableStrings, patchPbxprojVersions, profileCoversDevice, readMobileprovision, sharedSchemeXml, summarizeProfile, unlinkedSpmPlugins, withLocalizableStrings, withPushAppDelegateHooks, withSelfImplementedPluginClasses } from './ios-package.mjs';
-import { pushAlertStrings } from '../src/i18n/index.ts';
+import { assertBinaryPushEntitlement, ensureAppPushEntitlements, extractNativeTargetId, exportOptionsXml, LOCALIZABLE_REGIONS, localizableStrings, patchPbxprojVersions, profileCoversDevice, pushAlertStrings, readMobileprovision, sharedSchemeXml, summarizeProfile, unlinkedSpmPlugins, withLocalizableStrings, withPushAppDelegateHooks, withSelfImplementedPluginClasses } from './ios-package.mjs';
+import { messages, runOutcomeCopy } from '../src/i18n/index.ts';
 
 const build = Number(process.env.NEO_MOBILE_BUILD);
 if (!Number.isSafeInteger(build) || build < 1) throw new Error('POSITIVE_NEO_MOBILE_BUILD_REQUIRED');
@@ -118,7 +118,8 @@ configureIosLan();
 // 查不到就把 key 原样当正文。两张表由 src/i18n 生成，工程里挂进 Resources。
 for (const [region, language] of LOCALIZABLE_REGIONS) {
   mkdirSync(`ios/App/App/${region}.lproj`, { recursive: true });
-  writeFileSync(`ios/App/App/${region}.lproj/Localizable.strings`, localizableStrings(pushAlertStrings(language)));
+  const text = messages(language);
+  writeFileSync(`ios/App/App/${region}.lproj/Localizable.strings`, localizableStrings(pushAlertStrings(text, runOutcomeCopy(text, 'failed'))));
 }
 writeFileSync(pbxproj, withLocalizableStrings(readFileSync(pbxproj, 'utf8')));
 const appDelegate = 'ios/App/App/AppDelegate.swift';

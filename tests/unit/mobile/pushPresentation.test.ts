@@ -3,8 +3,14 @@ import { describe, expect, it, vi } from 'vitest';
 import { createNotificationStore } from '../../../packages/mobile/src/stores/notificationStore';
 import { createNotificationPort } from '../../../packages/mobile/src/platform/notifications';
 import type { NotificationPort } from '../../../packages/mobile/src/platform/ports';
-import { messages, pushAlertStrings } from '../../../packages/mobile/src/i18n';
-import { LOCALIZABLE_REGIONS, localizableStrings, withLocalizableStrings } from '../../../packages/mobile/scripts/ios-package.mjs';
+import { messages, runOutcomeCopy } from '../../../packages/mobile/src/i18n';
+import { LOCALIZABLE_REGIONS, localizableStrings, pushAlertStrings as mapPushAlerts, withLocalizableStrings } from '../../../packages/mobile/scripts/ios-package.mjs';
+
+/** 与 build-ios 同一种拼法：文案全部取自 i18n。 */
+const pushAlertStrings = (language: string) => {
+  const text = messages(language);
+  return mapPushAlerts(text, runOutcomeCopy(text, 'failed'));
+};
 import { companionPushTitleKey } from '../../../src/shared/contract/companionPush';
 
 const port: NotificationPort = {

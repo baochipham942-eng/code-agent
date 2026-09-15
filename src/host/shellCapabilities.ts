@@ -23,6 +23,7 @@ import { DataSchemas } from '../shared/ipc/schemas/data';
 import { LoopSchemas } from '../shared/ipc/schemas/loop';
 import { SyncSchemas } from '../shared/ipc/schemas/sync';
 import { DeviceSchemas } from '../shared/ipc/schemas/device';
+import { WindowSchemas } from '../shared/ipc/schemas/window';
 
 const DEFAULT_SINCE_VERSION = '0.16.93';
 
@@ -439,6 +440,8 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'startAutoCheck',
     'stopAutoCheck',
   ],
+  // window 域：派生自 schema action 集合（== window 表 keys，parity 门三面对账）
+  [IPC_DOMAINS.WINDOW]: WindowSchemas.ACTIONS,
   [IPC_DOMAINS.WORKSPACE]: [
     'createFile',
     'createFolder',

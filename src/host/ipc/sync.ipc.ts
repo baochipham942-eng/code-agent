@@ -55,7 +55,7 @@ async function handleDeviceRemove(payload: { deviceId: string }): Promise<void> 
 /**
  * sync / device 两域单源路由表（RQ-183 续作·SYNC+DEVICE 刀）：原两个 domain switch 逐 case 平移（handler
  * 返回 data，装配器包 { success: true, data }；原 `data = null` 的 case 显式返回 null）；未知 action →
- * INVALID_ACTION `Unknown action: <action>`、抛错 → INTERNAL_ERROR + String(error)，均为装配器缺省。
+ * INVALID_ACTION `Unknown action: <action>`、抛错 → INTERNAL_ERROR（Error 取 message、非 Error 取 String(error)），均为装配器缺省。
  */
 const syncRoutes = defineDomainRoutes<SyncDomainRequest, void>(SyncSchemas.REQUEST, {
   getStatus: () => handleGetStatus(),

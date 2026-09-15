@@ -34,6 +34,7 @@ import { registerDiagnosticsHandlers } from '../../src/host/ipc/diagnostics.ipc'
 import { registerDataHandlers } from '../../src/host/ipc/data.ipc';
 import { registerLoopHandlers } from '../../src/host/ipc/loop.ipc';
 import { registerSyncHandlers } from '../../src/host/ipc/sync.ipc';
+import { registerSettingsHandlers } from '../../src/host/ipc/settings.ipc';
 import { getShellCapabilities } from '../../src/host/shellCapabilities';
 
 // 结构枚举器挂既有函数对象上（knip 生产档无测试入口，独立 export 必成 dead export）
@@ -48,6 +49,7 @@ const dataRoutes = registerDataHandlers.routes;
 const loopRoutes = registerLoopHandlers.routes;
 const syncRoutes = registerSyncHandlers.routes;
 const deviceRoutes = registerSyncHandlers.deviceRoutes;
+const windowRoutes = registerSettingsHandlers.windowRoutes;
 
 /** 门盯的表清单——新域表化后加进来，门即自动覆盖该域（session 三面走 manifestDomain 断言） */
 const ROUTE_TABLES = [
@@ -62,6 +64,7 @@ const ROUTE_TABLES = [
   { table: loopRoutes, manifestDomain: 'domain:loop' as const },
   { table: syncRoutes, manifestDomain: 'domain:sync' as const },
   { table: deviceRoutes, manifestDomain: 'domain:device' as const },
+  { table: windowRoutes, manifestDomain: 'domain:window' as const },
   { table: inlineFixtureTable(), manifestDomain: undefined },
 ];
 
@@ -297,6 +300,7 @@ function collectActualDomainActions(): Map<string, Set<string>> {
   add(IPC_DOMAINS.LOOP, new Set(Object.keys(loopRoutes.actions)));
   add(IPC_DOMAINS.SYNC, new Set(Object.keys(syncRoutes.actions)));
   add(IPC_DOMAINS.DEVICE, new Set(Object.keys(deviceRoutes.actions)));
+  add(IPC_DOMAINS.WINDOW, new Set(Object.keys(windowRoutes.actions)));
   return actual;
 }
 
@@ -316,7 +320,6 @@ const KNOWN_UNDER_REPORTED_ACTIONS: Readonly<Record<string, readonly string[]>> 
   'domain:surfaceExecution': ['startLiveStream', 'stopLiveStream'],
   'domain:task': ['cancelBackgroundTask'],
   'domain:voice': ['injectUserText'],
-  'domain:window': ['close', 'maximize', 'minimize'],
   'domain:workspace': ['closeLinkInRail', 'controlUserBrowserHistory', 'dispatchUserBrowserInput', 'openExternal', 'openLinkInRail', 'setUserBrowserViewport'],};
 
 describe('全域单向门：清单 ⊆ 实际 handler（RQ-183 刀 4）', () => {

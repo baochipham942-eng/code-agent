@@ -325,7 +325,7 @@ export const EvalCaseListTab: React.FC = () => {
             <thead className="sticky top-0 z-10 bg-zinc-950 text-[10px] uppercase tracking-wide text-zinc-500">
               <tr>
                 {[
-                  [c.colId, 'w-1/5 max-w-xs'],
+                  [c.colId, 'w-1/5'],
                   [c.colLayer, ''],
                   [c.colTags, ''],
                   [c.colSplits, ''],

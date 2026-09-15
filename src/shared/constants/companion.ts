@@ -66,6 +66,11 @@ export const COMPANION_LIMITS = {
    * 底层 request 没有客户端超时，连接僵死时 UI 会无限转圈；到点落「连不上电脑」失败态。
    */
   librarySheetWaitMs: 8_000,
+  /**
+   * 单次 mDNS 重解析的超时（fix4-⑤）：到点即回退绑定里的旧地址，别把重连卡在 DNS 上。
+   * 原生两侧（NeoLanDnsPlugin / LanDnsPlugin）由 JS 传参消费，这里是唯一真源。
+   */
+  mdnsResolveTimeoutMs: 3_000,
   uiPresenceTtlMs: 15_000,
   lanPort: 8182,
   approvalPreviewLength: 16_000,

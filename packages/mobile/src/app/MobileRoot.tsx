@@ -27,6 +27,8 @@ import { VirtualHistory } from '../features/sessions/VirtualHistory';
 import { NeoBrandMark } from '../features/brand/NeoBrandMark';
 import { AppIcon } from './AppIcon';
 import { sheetLibraryStatus } from './sheetLibraryStatus';
+import { connectionDiagnosis, lastSyncCopy } from './connectionDiagnosis';
+import { DRAWER_SETTLE_MS, EDGE_GESTURE_START_X, drawerPanOffset, drawerPanState, drawerWidthPx, gestureAxis } from './drawerGesture';
 
 /**
  * 连接那一行的文案与动作。合成一条的原因（2026-09-12 爸真机反馈）：原来「连接胶囊说『重新连接』」
@@ -74,7 +76,8 @@ export function taskStatusCopy(
   return companion.terminal ? text[companion.terminal] : '';
 }
 
-function invitationHostLabel(invitation: LanInvitation): string | null {
+/** 电脑名：mDNS 名去掉 .local；没有 mDNS 名（Linux/Windows 宿主）时给 null，调用方退回 IP。 */
+function invitationHostLabel(invitation: { endpoint: string; altEndpoint?: string }): string | null {
   try {
     const host = new URL(invitation.altEndpoint ?? invitation.endpoint).hostname;
     return host.endsWith('.local') ? host.slice(0, -'.local'.length) : null;
@@ -116,12 +119,12 @@ export function commandNoticeCopy(
   return error ? text.commandRejected : null;
 }
 
-/** 抽屉手势阈值（px）。正文区开/关都是 86px 位移、60px 竖向容差；左缘起滑门槛更低（见 gestureEnd）。 */
-const SWIPE_MIN_DX = 86;
-const SWIPE_MAX_DY = 60;
-/** 左缘手势区：从屏幕左缘这个宽度内起滑、向右滑够 EDGE_GESTURE_MIN_DX 即开抽屉（2026-09-14 反馈①）。 */
-const EDGE_GESTURE_START_X = 28;
-const EDGE_GESTURE_MIN_DX = 56;
+/**
+ * 抽屉手势（fix4-①，2026-09-14 build 35 反馈⑥）：touchmove 阶段 1:1 跟手、松手按
+ * 速度+过半双判据落态。判定逻辑抽在 drawerGesture.ts（纯函数，可单测）；这里的
+ * swipe ref 只记起手与上一帧位置（算松手速度），pan state 驱动跟手 transform。
+ */
+type DrawerPan = { dx: number; settle: 'open' | 'close' | null };
 
 export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures: boolean }) {
   const [store] = useState(() => createMobileStore(ports.preferences));
@@ -158,7 +161,11 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
   const keyboardInset = useRef(0);
   const viewportFrozen = useRef<number | null>(null);
   const managing = useRef(false);
-  const swipe = useRef<{ x: number; y: number } | null>(null);
+  const swipe = useRef<{ x: number; y: number; lastX: number; lastT: number; axis: 'horizontal' | 'vertical' | null } | null>(null);
+  /** 拖拽中的抽屉：dx 为位移、settle 非空表示松手后正带 transition 回弹到目标态。 */
+  const [pan, setPan] = useState<DrawerPan | null>(null);
+  const settleTimer = useRef(0);
+  useEffect(() => () => clearTimeout(settleTimer.current), []);
   const recording = useRef(false);
   const [composerHeight, setComposerHeight] = useState(0);
   const composerObserver = useRef<ResizeObserver | null>(null);
@@ -416,28 +423,60 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
     store.getState().back();
   };
 
+  const settleDrawer = (target: 'open' | 'close') => {
+    // 目标态先落（open 时层保持挂载），transform 带 transition 滑过去；动画时长后清 pan，
+    // close 到那一刻才 closeDrawer 卸载层。settle 的 260ms 窗口内忽略新手势。
+    if (target === 'open') state.openDrawer();
+    setPan(current => ({ dx: current?.dx ?? 0, settle: target }));
+    clearTimeout(settleTimer.current);
+    settleTimer.current = window.setTimeout(() => {
+      setPan(null);
+      if (target === 'close') state.closeDrawer();
+    }, DRAWER_SETTLE_MS);
+  };
   const gestureStart = (event: React.TouchEvent) => {
     const touch = event.touches[0];
-    if (!touch || event.touches.length !== 1 || state.sheet || keyboardVisible.current || recording.current ||
-      textSelected() || (event.target as Element).closest('button,input,textarea,[data-testid="history"]')) return;
-    swipe.current = { x: touch.clientX, y: touch.clientY };
+    if (!touch || event.touches.length !== 1 || state.sheet || pan || keyboardVisible.current || recording.current || textSelected()) return;
+    // 抽屉开着时层内任何位置（含会话按钮）都可起手左拖关闭——按钮没有横滑语义，点按不受影响
+    //（没有位移就不锁轴，touchend 直接放过）。关闭态下按钮/input 的起手仍归控件本身。
+    if ((event.target as Element).closest('button,input,textarea,[data-testid="history"]') && !state.drawer) return;
+    swipe.current = { x: touch.clientX, y: touch.clientY, lastX: touch.clientX, lastT: event.timeStamp, axis: null };
+  };
+  const gestureMove = (event: React.TouchEvent) => {
+    const track = swipe.current;
+    const touch = event.touches[0];
+    if (!track || !touch) return;
+    const dx = touch.clientX - track.x;
+    const dy = touch.clientY - track.y;
+    if (!track.axis) {
+      const axis = gestureAxis(dx, dy, track.x < EDGE_GESTURE_START_X);
+      if (!axis) return;
+      // 竖滑让位滚动：清掉跟踪，原生滚动照常吃这次手势（缘区只降横滑门槛，不抢竖滑）。
+      if (axis === 'vertical') { swipe.current = null; return; }
+      track.axis = axis;
+    }
+    track.lastX = touch.clientX; track.lastT = event.timeStamp;
+    setPan({ dx, settle: null });
   };
   const gestureEnd = (event: React.TouchEvent) => {
-    const start = swipe.current; swipe.current = null;
+    const track = swipe.current; swipe.current = null;
     const touch = event.changedTouches[0];
-    if (!start || !touch || textSelected() || Math.abs(touch.clientY - start.y) > SWIPE_MAX_DY) return;
-    const dx = touch.clientX - start.x;
-    if (state.drawer && dx < -SWIPE_MIN_DX) state.closeDrawer();
-    else if (!state.drawer && dx > SWIPE_MIN_DX) state.openDrawer();
-    // 左缘起滑专门用来开抽屉（2026-09-14 build 34 反馈①）：此前 clientX < 24 在 gestureStart
-    // 一刀切丢弃，iOS 用户最自然的左缘起滑被杀。缘区位移门槛比正文低——从缘区起滑本身就是
-    // 明确的开抽屉意图；竖向容差沿用 60px，竖向滚动照旧开不了抽屉，不吃正文滑动。
-    else if (!state.drawer && start.x < EDGE_GESTURE_START_X && dx > EDGE_GESTURE_MIN_DX) state.openDrawer();
+    if (!track || !track.axis || !touch || textSelected()) return;
+    const dx = touch.clientX - track.x;
+    // 末帧速度：dt 为 0（没触发过 move 或同帧松手）按慢拖处理，速度判据让位给过半。
+    const dt = event.timeStamp - track.lastT;
+    const vx = dt > 0 ? (touch.clientX - track.lastX) / dt : 0;
+    settleDrawer(drawerPanState(dx, vx, state.drawer, drawerWidthPx(window.innerWidth)));
+  };
+  const gestureCancel = () => {
+    // 系统夺走手势（来电/控制中心）：松不开也不许卡在半开——按当前态回弹。
+    swipe.current = null;
+    if (pan) settleDrawer(state.drawer ? 'open' : 'close');
   };
   if (!state.ready) return <div className="loading" role="status"><p>{state.loadError ? text.loadError : text.loading}</p>
     {state.loadError && <button className="inline-retry" onClick={() => void state.hydrate()}>{text.retry}</button>}</div>;
 
-  return <div className="app" data-theme={theme} onTouchStart={gestureStart} onTouchEnd={gestureEnd} onTouchCancel={() => { swipe.current = null; }}>
+  return <div className="app" data-theme={theme} onTouchStart={gestureStart} onTouchMove={gestureMove} onTouchEnd={gestureEnd} onTouchCancel={gestureCancel}>
     <main className="conversation" inert={state.drawer || !!state.sheet}>
       <header className="topbar"><button aria-label={text.sessions} data-testid="open-drawer" onClick={state.openDrawer}><AppIcon name="menu" /></button>
         <strong>{companion.sessionId ? companion.library?.sessions.find(s => s.id === companion.sessionId)?.title ?? `${text.sharedSession} ${(companion.binding?.scope.indexOf(companion.sessionId) ?? 0) + 1}` : state.route === 'new' ? text.neo : text.fixture}</strong><button aria-label={text.more} data-testid="open-more" onClick={() => state.openSheet('more')}><AppIcon name="more" /></button></header>
@@ -529,8 +568,16 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
           onVoiceState={({ recording: active, failed }) => { recording.current = active; setVoiceFailureShown(failed); }} />
       </div>
     </main>
-    {state.drawer && <div className="drawer-layer" inert={!!state.sheet}>
-      <button className="scrim" aria-label={text.closeDrawer} onClick={state.closeDrawer} />
+    {(state.drawer || pan) && (() => {
+      // 拖拽/回弹期间用 --drawer-x 驱动 1:1 跟手；settle 时目标是端点（0 / -width），
+      // CSS transition 从当前视觉位置滑过去。遮罩透明度 = 可见比例。
+      const width = drawerWidthPx(window.innerWidth);
+      const offset = pan
+        ? pan.settle === 'open' ? 0 : pan.settle === 'close' ? -width : drawerPanOffset(pan.dx, width, state.drawer)
+        : 0;
+      return <div className="drawer-layer" data-testid="drawer-layer" inert={!!state.sheet} data-settling={pan?.settle ?? undefined}
+        style={(pan ? { '--drawer-x': `${offset}px`, '--scrim-alpha': String(Math.max(0, Math.min(1, 1 + offset / width))) } : {}) as React.CSSProperties}>
+        <button className="scrim" aria-label={text.closeDrawer} onClick={state.closeDrawer} />
       <aside className="drawer" aria-label={text.sessions}>
         <div className="drawer-functions"><header><strong>{text.neo}</strong>{<button aria-label={text.newSession} data-testid="new-session" onClick={() => companion.binding ? startDefaultSession() : state.navigate('new')}><AppIcon name="plus" /></button>}</header>
           <button onClick={() => companion.binding ? startDefaultSession() : state.navigate('new')}>{text.newSession}</button>
@@ -544,7 +591,8 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
           <span className="avatar">{(state.preferences.nickname || text.guest).slice(0, 1)}</span><strong>{state.preferences.nickname || text.guest}</strong><AppIcon name="settings" />
         </button>
       </aside>
-    </div>}
+      </div>;
+    })()}
     {state.sheet && currentPage && <SheetHost page={currentPage} title={text[currentPage]} hasParent={state.sheet.pages.length > 1}
       close={() => {
         if (currentPage === 'preview') companion.closePreview();
@@ -560,12 +608,17 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
       }</button>}
       {(currentPage === 'projects' || currentPage === 'more') && companion.binding ? (
         companion.library ? <LibrarySheet key={`${currentPage}:${companion.sessionId}`} library={companion.library} sessionId={companion.sessionId} text={text} mode={currentPage} busy={companion.busy || companion.pending || companion.status !== 'connected'} select={selectSession} manage={manage} loadMore={() => void companion.refreshLibrary(true)} />
-          // 等库/失败共用一行 + 行尾重试 pill：库来自电脑，说「正在连接电脑」而不是「读取本机数据」
-          //（2026-09-14 反馈③④）；断连直接示失败态，等超时也落失败态，不无限转圈。
-          : <p className="notice sheet-wait" role="status">
-            {sheetLibraryStatus(companion, libraryTimedOut) === 'unreachable' ? text.libraryUnavailable : text.libraryLoading}
-            <button className="inline-retry" onClick={retrySheetLibrary}>{text.retry}</button>
-          </p>
+          // fix4-④：等库 = spinner + 一句「正在连接电脑…」（秒级超时兜底，不无限转圈）；
+          // 失败 = 状态页（标题 + 诊断句 + 主按钮重新连接 + 次按钮去连接电脑），不再用
+          // 「一行文案 + 行尾 pill」。行尾重试 pill 只保留在会话页断网 banner 单行场景。
+          : sheetLibraryStatus(companion, libraryTimedOut) === 'unreachable'
+            ? <div className="sheet-fail" role="status" data-testid="sheet-unreachable">
+              <strong>{text.cannotReachComputer}</strong>
+              <p>{companion.status === 'storageError' ? text.secureStorageError : connectionDiagnosis(text, companion).sentence}</p>
+              <button className="primary" onClick={retrySheetLibrary}>{text.reconnect}</button>
+              <button className="sheet-secondary" onClick={() => state.pushSheet('remote')}>{text.goRemote}</button>
+            </div>
+            : <p className="notice sheet-wait" role="status"><span className="spinner" aria-hidden="true" />{text.libraryLoading}</p>
       ) : currentPage === 'preview' && companion.preview ? <div className="preview-pane">
         <p className="caption">{text.previewHint}</p>
         <PreviewMedia name={companion.preview.name} mimeType={companion.preview.mimeType} bytes={companion.preview.bytes} text={text}
@@ -574,21 +627,40 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
         {!companion.savedPreview && companion.commandError && <p role="status" className="notice">{commandNotice}</p>}
         {companion.savedPreview ? <p role="status">{companion.savedPreviewName && companion.savedPreviewName !== companion.preview.name ? `${text.savedToDevice}：${companion.savedPreviewName}` : text.savedToDevice}</p>
           : <button className="primary" onClick={() => void companion.savePreview()}>{text.saveToDevice}</button>}
-      </div> : currentPage === 'remote' ? <div className="settings-group remote-sheet">
-        {/* 反馈⑤（2026-09-14）：两段大字收成一行主提示；具体原因与换网操作指引收进
-            「为什么连不上？」二级展开，不再与会话页断网 banner 重复整段。 */}
-        <p>{text.lanHint}</p>
-        {companion.status === 'connected' ? <div className="connection-success" role="status"><span className="connection-check"><AppIcon name="check" /></span><strong>{text.connected}</strong><p>{text.connectedNext}</p></div>
-          : <p role="status">{companion.status === 'connecting' ? text.connecting : text.remoteNotConnected}</p>}
-        {companion.status !== 'connected' && companion.status !== 'connecting' && <details className="connection-trouble">
-          <summary>{text.connectionTrouble}</summary>
-          <p>{companion.status === 'storageError' ? text.secureStorageError : companion.connectionError ? text[companion.connectionError as keyof typeof text] : text.connectionTroubleBody}</p>
-        </details>}
-        {companion.status === 'connected' && <button className="primary" onClick={() => state.navigate('new')}>{text.enterConversation}</button>}
-        {!ports.companion && <p>{text.nativeConnectionOnly}</p>}
-        <button className={companion.status === 'connected' ? undefined : 'primary'} disabled={!ports.companion || companion.busy || companion.pending} onClick={() => void pairAndOpenConversation()}>{text.scan}</button>
-        {ports.companion && <button disabled={companion.busy} onClick={() => void companion.reconnect()}>{text.reconnect}</button>}
-      </div> : currentPage === 'pairConfirm' && pendingInvite ? <PairConfirm
+      </div> : currentPage === 'remote' ? (() => {
+        // fix4-③：连接电脑 sheet 重构成状态机，一态一主操作。Wi-Fi 说明书两段删掉——
+        // 连不上时诊断句（三分类，见 connectionDiagnosis）已把「下一步做什么」说清。
+        // 连接中只有 spinner + 一句话，不许同时出现「重新连接」按钮（按了也是重来一遍）。
+        const diagnosis = connectionDiagnosis(text, companion);
+        const hostName = companion.binding
+          ? invitationHostLabel(companion.binding) ?? new URL(companion.binding.endpoint).hostname
+          : null;
+        return <div className="settings-group remote-sheet">
+          {companion.status === 'connected' && companion.binding ? <>
+            <div className="connection-success" role="status">
+              <span className="connection-check"><AppIcon name="check" /></span>
+              <strong>{hostName}</strong>
+              <p>{lastSyncCopy(text, companion.lastSyncAt, Date.now()) ?? text.connectedNext}</p>
+            </div>
+            <button className="primary" onClick={() => state.navigate('new')}>{text.enterConversation}</button>
+          </>
+          : companion.status === 'connecting' ? <div className="remote-state" role="status" data-testid="remote-connecting">
+            <span className="spinner" aria-hidden="true" />{text.libraryLoading}
+          </div>
+          : !companion.binding ? <div className="remote-failed" role="status">
+            <strong>{text.noComputers}</strong>
+            <button className="primary" disabled={!ports.companion} onClick={() => void pairAndOpenConversation()}>{text.scan}</button>
+          </div>
+          : <div className="remote-failed" role="status" data-testid="remote-unreachable">
+            <strong>{text.cannotReachComputer}</strong>
+            <p>{companion.status === 'storageError' ? text.secureStorageError : diagnosis.sentence}</p>
+            {diagnosis.action === 'scan'
+              ? <button className="primary" disabled={!ports.companion || companion.busy || companion.pending} onClick={() => void pairAndOpenConversation()}>{text.scan}</button>
+              : <button className="primary" disabled={!ports.companion || companion.busy} onClick={() => void companion.reconnect()}>{text.reconnect}</button>}
+          </div>}
+          {!ports.companion && <p>{text.nativeConnectionOnly}</p>}
+        </div>;
+      })() : currentPage === 'pairConfirm' && pendingInvite ? <PairConfirm
         name={invitationHostLabel(pendingInvite.invitation) ?? text.pairConfirmComputer}
         verify={deriveInvitationVerify(pendingInvite.invitation.psk, pendingInvite.invitation.hostKey)}
         text={text} onConfirm={() => void confirmPendingInvite()} onReject={dismissPendingInvite}

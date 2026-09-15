@@ -14,12 +14,13 @@ import type { FilePorts, PlatformPorts, PickedFile } from '../platform/ports';
 import { companionFileMime, companionFileRetryable, COMPANION_LIMITS } from '../../../../src/shared/constants/companion';
 import { base64ToBytes, bytesToBase64, sha256Hex, type CacheInspect } from '../platform/fileCache';
 import { HistoryCache } from '../platform/historyCache';
+import { mdnsRefreshedEndpoint } from '../platform/mdnsEndpoint';
 
 interface Saved {
   version: 1; publicKey: string; secretKey: string;
   candidate?: { endpoint: string; altEndpoint?: string; hostKey: string }; binding?: LanBinding; pending?: CompanionCommand;
 }
-type ConnectionError = 'connectionQrInvalid' | 'connectionScanFailed' | 'connectionRejected' | 'connectionUnavailable' | 'connectionFailed';
+type ConnectionError = 'connectionQrInvalid' | 'connectionScanFailed' | 'connectionRejected' | 'connectionRefused' | 'connectionUnavailable' | 'connectionFailed';
 
 /**
  * 只有这几种 reason 说的是「这台设备不能用了」——撤销、主机不认、授权不覆盖、epoch 已翻篇，
@@ -343,10 +344,13 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
       try { return await work(); } catch (error) {
         client?.close();
         const code = error instanceof Error ? error.message : '';
+        // 三分类（fix4-②）：握手/身份失败、连接被拒绝、超时/无响应——其余网络码都归
+        // 「没回应」那一类，UI 按类给人话，不再一律「无法连接电脑」。
         const connectionError: ConnectionError = code === 'COMPANION_INVALID_INVITATION' ? 'connectionQrInvalid'
           : code === 'COMPANION_SCAN_FAILED' ? 'connectionScanFailed'
           : code === 'COMPANION_PAIRING_REJECTED' ? 'connectionRejected'
-          : code === 'COMPANION_NETWORK_UNAVAILABLE' ? 'connectionUnavailable' : 'connectionFailed';
+          : code === 'COMPANION_CONNECTION_REFUSED' ? 'connectionRefused'
+          : code === 'COMPANION_NETWORK_UNAVAILABLE' || code === 'COMPANION_NO_RESPONSE' ? 'connectionUnavailable' : 'connectionFailed';
         if (get().status !== 'storageError') set({ status: 'offline', connectionError });
       }
       finally { set({ busy: false }); }
@@ -403,8 +407,12 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         set({ status: 'connected', binding, sessionId: binding.scope.find(id => !id.startsWith('project:')) ?? null, library: null, history: {}, events: [], artifacts: [], preview: null, savedPreviewName: null, runId: null, terminal: null, uploadProgress: [], lastSyncAt: null });
       }),
       reconnect: () => safely(async () => {
-        const target = saved?.binding ?? saved?.candidate;
-        if (!target) return;
+        const savedTarget = saved?.binding ?? saved?.candidate;
+        if (!savedTarget) return;
+        // mDNS 重解析治旧 IP（fix4-⑤）：先用绑定里的主机名重新解析，解析到则用新地址拨，
+        // 解析不到回退旧地址。recover 成功后 binding.endpoint 就是这次拨通的地址，
+        // persist 会把它写回绑定——地址更新、身份不动（hostKey/deviceId/scope 照旧校验）。
+        const target = await mdnsRefreshedEndpoint(port, savedTarget) ?? savedTarget;
         const previousScope = get().binding?.scope ?? saved?.binding?.scope ?? [];
         set({ status: 'connecting', paused: false });
         const binding = await createClient().recover(target, saved?.binding);

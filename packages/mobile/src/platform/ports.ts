@@ -53,6 +53,8 @@ export interface PlatformPorts {
   companion?: {
     read(): Promise<string | null>; write(value: string): Promise<void>;
     scan(): Promise<string>; post(url: string, body: unknown): Promise<unknown>;
+    /** One-shot mDNS resolve of a `.local` hostname to a private IPv4 (fix4-⑤). Null = use the old address. */
+    resolveHost?(host: string): Promise<string | null>;
   };
   files?: FilePorts;
   /** App-private conversation body cache. Separate from pairing identity and drafts. */

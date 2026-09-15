@@ -11,22 +11,30 @@ import { COMPANION_LIMITS } from '../../../src/shared/constants/companion';
 import { messages } from '../../../packages/mobile/src/i18n';
 
 /**
- * 反馈③（2026-09-14 build 34）：电脑断连/连接僵死时，项目/会话 sheet 不许无限转圈——
- * 秒级超时落「连不上电脑」失败态并给重试；已断连时进 sheet 直接示失败态。
+ * fix4-③④（2026-09-15）：项目/会话 sheet 等库 = spinner + 一句「正在连接电脑…」，失败 =
+ * 状态页（标题「连不上电脑」+ 诊断句 + 重新连接 + 去连接电脑）；连接电脑 sheet 状态机
+ * （连接中只有 spinner，已连接给电脑名+上次同步，连不上按分类给诊断句与主按钮）。
  * LanCompanionClient 整个 mock 掉（companionProjectPair.test.ts 的形态）：recover 可控成败，
- * read 类 request 永远悬着就是「连接僵死」的形状。
+ * read 类 request 悬着就是「连接僵死」的形状。
  */
-const harness = vi.hoisted(() => ({ mode: 'hang' as 'hang' | 'reject' }));
+const harness = vi.hoisted(() => ({ mode: 'hang' as 'hang' | 'reject' | 'refused' | 'rejectIdentity' | 'connectHang' | 'ok' }));
 
 vi.mock('../../../packages/mobile/src/platform/lanCompanionClient', () => ({
   LanCompanionClient: class {
     async pair() { throw new Error('COMPANION_PAIRING_REJECTED'); }
     async recover() {
       if (harness.mode === 'reject') throw new Error('COMPANION_NETWORK_UNAVAILABLE');
-      return { version: 1 as const, endpoint: 'http://192.168.1.2:8182', hostKey: 'aa'.repeat(32), deviceId: 'phone-1', scopeEpoch: 1, scope: ['project:one'] };
+      if (harness.mode === 'refused') throw new Error('COMPANION_CONNECTION_REFUSED');
+      if (harness.mode === 'rejectIdentity') throw new Error('COMPANION_PAIRING_REJECTED');
+      if (harness.mode === 'connectHang') return new Promise(() => { /* 重连在飞 */ });
+      return { version: 1 as const, endpoint: 'http://192.168.1.2:8182', altEndpoint: 'http://imac.local:8182', hostKey: 'aa'.repeat(32), deviceId: 'phone-1', scopeEpoch: 1, scope: ['project:one'] };
     }
     async request(payload: unknown) {
-      if ((payload as { action?: string }).action === 'read') return new Promise(() => { /* 连接僵死：读回永远不回来 */ });
+      const action = (payload as { action?: string }).action;
+      if (action === 'read') {
+        if (harness.mode === 'ok') return { sessions: [], projects: [], models: [] };
+        return new Promise(() => { /* 连接僵死：读回永远不回来 */ });
+      }
       return { kind: 'events', epoch: 1, nextSeq: 0, events: [] };
     }
     close() {}
@@ -37,13 +45,13 @@ function savedWithProjectBinding(): string {
   const identity = createIdentity();
   return JSON.stringify({
     version: 1, publicKey: toHex(identity.publicKey), secretKey: toHex(identity.secretKey),
-    binding: { version: 1, endpoint: 'http://192.168.1.2:8182', hostKey: toHex(identity.publicKey), deviceId: 'phone-1', scopeEpoch: 1, scope: ['project:one'] },
+    binding: { version: 1, endpoint: 'http://192.168.1.2:8182', altEndpoint: 'http://imac.local:8182', hostKey: toHex(identity.publicKey), deviceId: 'phone-1', scopeEpoch: 1, scope: ['project:one'] },
   });
 }
 
 const ports = (): PlatformPorts => ({
   preferences: { get: async () => null, set: async () => {} },
-  appInfo: { read: async () => ({ version: '0.1.0', build: '34' }) },
+  appInfo: { read: async () => ({ version: '0.1.0', build: '35' }) },
   lifecycle: { subscribe: async () => () => {}, leave: async () => {} },
   keyboard: { subscribe: async () => () => {}, subscribeFrame: async () => () => {}, hide: async () => {} },
   companion: { read: async () => savedWithProjectBinding(), write: async () => {}, scan: async () => { throw new Error('unused'); }, post: async () => ({}) },
@@ -100,8 +108,8 @@ async function openRemoteSheetFromDrawer() {
   fireEvent.click(remote);
 }
 
-describe('项目 sheet 等库：超时落失败态，断连不转圈（真机反馈③）', () => {
-  it('连着但库迟迟读不到：先等待，到 librarySheetWaitMs 落「连不上电脑」+ 重试 pill', async () => {
+describe('项目 sheet：等库 spinner，失败态是状态页（反馈③④ + fix4-④）', () => {
+  it('连着但库迟迟读不到：先 spinner +「正在连接电脑…」，无重试 pill', async () => {
     vi.useFakeTimers();
     harness.mode = 'hang';
     await act(async () => { render(<MobileRoot ports={ports()} fixtures={false} />); });
@@ -111,43 +119,103 @@ describe('项目 sheet 等库：超时落失败态，断连不转圈（真机反
     }
     const waiting = document.querySelector('.sheet-wait');
     expect(waiting).toBeTruthy();
-    // 反馈④：库来自电脑——说「正在连接电脑…」，不再说「正在读取本机数据」
     expect(waiting?.textContent).toContain('正在连接电脑…');
-    expect(waiting?.textContent).not.toContain('本机');
-    expect(waiting?.querySelector('button.inline-retry')).toBeTruthy();
+    expect(waiting?.querySelector('.spinner')).toBeTruthy();
+    expect(waiting?.querySelector('button')).toBeNull();
 
     await act(async () => { await vi.advanceTimersByTimeAsync(COMPANION_LIMITS.librarySheetWaitMs); });
-    const failed = document.querySelector('.sheet-wait');
+    const failed = document.querySelector('[data-testid="sheet-unreachable"]');
+    expect(failed).toBeTruthy();
     expect(failed?.textContent).toContain('连不上电脑');
+    expect(failed?.textContent).toContain('电脑没回应');
     expect(failed?.textContent).not.toContain('正在连接电脑…');
-    expect(failed?.querySelector('button.inline-retry')).toBeTruthy();
+    expect([...failed?.querySelectorAll('button') ?? []].map(button => button.textContent)).toEqual(['重新连接', '去连接电脑']);
   });
 
-  it('已断连时进 sheet 直接示失败态，不先转圈', async () => {
-    harness.mode = 'reject';
+  it('已断连时进 sheet 直接示状态页，不先转圈；诊断句按失败分类（连接被拒绝）', async () => {
+    harness.mode = 'refused';
     await act(async () => { render(<MobileRoot ports={ports()} fixtures={false} />); });
     await waitFor(() => { expect(document.querySelector('.app')).toBeTruthy(); });
     await openProjectsSheetFromDrawer();
-    const line = document.querySelector('.sheet-wait');
-    expect(line?.textContent).toContain('连不上电脑');
-    expect(line?.textContent).not.toContain('正在连接电脑');
-    expect(line?.querySelector('button.inline-retry')).toBeTruthy();
+    const failed = document.querySelector('[data-testid="sheet-unreachable"]');
+    expect(failed).toBeTruthy();
+    expect(failed?.textContent).toContain('连不上电脑');
+    expect(failed?.textContent).toContain('电脑上的 Neo 没在运行');
+    expect(failed?.textContent).not.toContain('正在连接电脑');
   });
 
-  it('连接电脑 sheet 一行主提示；具体原因收进「为什么连不上？」二级（反馈⑤）', async () => {
-    harness.mode = 'reject';
+  it('「去连接电脑」次按钮跳到连接电脑 sheet（不替换项目 sheet，可返回）', async () => {
+    harness.mode = 'refused';
+    await act(async () => { render(<MobileRoot ports={ports()} fixtures={false} />); });
+    await waitFor(() => { expect(document.querySelector('.app')).toBeTruthy(); });
+    await openProjectsSheetFromDrawer();
+    const goRemote = [...document.querySelectorAll('[data-testid="sheet-unreachable"] button')]
+      .find(button => button.textContent === text.goRemote) as HTMLElement;
+    fireEvent.click(goRemote);
+    expect(document.querySelector('[data-page="remote"]')).toBeTruthy();
+    // 有父级可返回（projects 还在栈里）
+    const back = document.querySelector('.sheet-header button[aria-label="返回上一级"]') as HTMLElement;
+    expect(back).toBeTruthy();
+    fireEvent.click(back);
+    expect(document.querySelector('[data-testid="sheet-unreachable"]')).toBeTruthy();
+  });
+});
+
+describe('连接电脑 sheet 状态机：一态一主操作（fix4-③）', () => {
+  it('连接中：只有「正在连接电脑…」+ spinner，没有「重新连接」也没有扫码按钮', async () => {
+    harness.mode = 'connectHang';
     await act(async () => { render(<MobileRoot ports={ports()} fixtures={false} />); });
     await waitFor(() => { expect(document.querySelector('.app')).toBeTruthy(); });
     await openRemoteSheetFromDrawer();
-    const group = document.querySelector('.remote-sheet');
-    expect(group).toBeTruthy();
-    expect(group?.textContent).toContain(text.lanHint);
-    // 状态行只剩一句，不再把与会话页 banner 重复的整段 connectionUnavailable 铺在 sheet 里
-    const statusLine = group?.querySelector('p[role="status"]');
-    expect(statusLine?.textContent).toBe(text.remoteNotConnected);
-    expect(statusLine?.textContent).not.toContain('无法连接电脑');
-    const trouble = group?.querySelector('details.connection-trouble');
-    expect(trouble?.querySelector('summary')?.textContent).toBe(text.connectionTrouble);
-    expect(trouble?.textContent).toContain('同一 Wi-Fi');
+    const connecting = document.querySelector('[data-testid="remote-connecting"]');
+    expect(connecting).toBeTruthy();
+    expect(connecting?.textContent).toContain('正在连接电脑…');
+    expect(connecting?.querySelector('.spinner')).toBeTruthy();
+    const sheet = document.querySelector('.remote-sheet') as HTMLElement;
+    expect([...sheet.querySelectorAll('button')]).toEqual([]);
+    expect(sheet.textContent).not.toContain('同一 Wi-Fi');
+  });
+
+  it('连不上（连接被拒绝）：诊断句「电脑上的 Neo 没在运行」+ 主按钮「重新连接」', async () => {
+    harness.mode = 'refused';
+    await act(async () => { render(<MobileRoot ports={ports()} fixtures={false} />); });
+    await waitFor(() => { expect(document.querySelector('.app')).toBeTruthy(); });
+    await openRemoteSheetFromDrawer();
+    const failed = document.querySelector('[data-testid="remote-unreachable"]');
+    expect(failed).toBeTruthy();
+    expect(failed?.textContent).toContain('连不上电脑');
+    expect(failed?.textContent).toContain('电脑上的 Neo 没在运行');
+    const buttons = [...failed?.querySelectorAll('button') ?? []].map(button => button.textContent);
+    expect(buttons).toContain(text.reconnect);
+    expect(buttons).not.toContain(text.scan);
+  });
+
+  it('连不上（配对失效）：诊断句「需要重新扫码」+ 主按钮换「扫描电脑二维码」，不给重新连接', async () => {
+    harness.mode = 'rejectIdentity';
+    await act(async () => { render(<MobileRoot ports={ports()} fixtures={false} />); });
+    await waitFor(() => { expect(document.querySelector('.app')).toBeTruthy(); });
+    await openRemoteSheetFromDrawer();
+    const failed = document.querySelector('[data-testid="remote-unreachable"]');
+    expect(failed?.textContent).toContain('配对信息已失效');
+    expect(failed?.textContent).toContain('重新扫码');
+    const buttons = [...failed?.querySelectorAll('button') ?? []].map(button => button.textContent);
+    expect(buttons).toContain(text.scan);
+    expect(buttons).not.toContain(text.reconnect);
+  });
+
+  it('已连接：电脑名（mDNS 名去 .local）+ 上次同步时间，不给重连按钮', async () => {
+    harness.mode = 'ok';
+    await act(async () => { render(<MobileRoot ports={ports()} fixtures={false} />); });
+    // 连上 + 只授权项目 ⇒ 项目 sheet 自动弹；先关掉再从抽屉进连接电脑 sheet
+    await waitFor(() => { expect(document.querySelector('[data-testid="sheet-host"]')).toBeTruthy(); });
+    fireEvent.click(document.querySelector('.sheet-header button[aria-label="关闭弹层"]') as HTMLElement);
+    await waitFor(() => { expect(document.querySelector('[data-testid="sheet-host"]')).toBeNull(); });
+    await openRemoteSheetFromDrawer();
+    const success = document.querySelector('.connection-success');
+    expect(success).toBeTruthy();
+    expect(success?.textContent).toContain('imac');
+    await waitFor(() => { expect(success?.textContent).toContain('上次同步'); });
+    const buttons = [...document.querySelectorAll('.remote-sheet button')].map(button => button.textContent);
+    expect(buttons).not.toContain(text.reconnect);
   });
 });

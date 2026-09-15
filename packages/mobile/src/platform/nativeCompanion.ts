@@ -3,7 +3,9 @@ import { Preferences } from '@capacitor/preferences';
 import { SecureStorage, KeychainAccess } from '@aparajita/capacitor-secure-storage';
 import type { PlatformPorts } from './ports';
 import { COMPANION_LIMITS as L } from '../../../../src/shared/constants/companion';
-import { validateLanEndpoint } from '../../../../src/shared/companion/lanProtocol';
+import { isPrivateIPv4, validateLanEndpoint } from '../../../../src/shared/companion/lanProtocol';
+import { classifyHttpFailure } from './httpFailure';
+import { LanDns } from './lanDns';
 
 const STATE_KEY = 'neo.companion.state.v1';
 const INSTALL_KEY = 'neo.companion.install.v1';
@@ -34,9 +36,19 @@ export const nativeCompanionPort: NonNullable<PlatformPorts['companion']> = {
     if (!['/v1/hello', '/v1/finish', '/v1/exchange'].includes(target.pathname) || target.search || target.hash || target.username || target.password) throw new Error('COMPANION_INVALID_LAN_ENDPOINT');
     const response = await CapacitorHttp.post({ url, headers: { 'content-type': 'application/json' }, data: body,
       disableRedirects: true, connectTimeout: L.requestTimeoutMs, readTimeout: L.requestTimeoutMs, responseType: 'json',
-    }).catch(() => { throw new Error('COMPANION_NETWORK_UNAVAILABLE'); });
+      // 失败分类（fix4-②）：拒绝/超时/其余分三路上抛，store 再映射成用户可分辨的诊断。
+    }).catch((error: unknown) => { throw new Error(classifyHttpFailure(error)); });
     if (response.url === url && response.status === 403 && target.pathname !== '/v1/exchange') throw new Error('COMPANION_PAIRING_REJECTED');
     if (response.status !== 200 || response.url !== url) throw new Error('COMPANION_NETWORK_UNAVAILABLE');
     return response.data as unknown;
+  },
+  resolveHost: async host => {
+    // 只解析 .local 主机名：字面量 IP 没有可重解析的东西；返回地址必须是私网 IPv4
+    // （与 validateLanEndpoint 同一口径），其余视为没解析到。
+    if (!host.toLowerCase().endsWith('.local')) return null;
+    try {
+      const { address } = await LanDns.resolve({ host, timeoutMs: L.mdnsResolveTimeoutMs });
+      return address && isPrivateIPv4(address) ? address : null;
+    } catch { return null; }
   },
 };

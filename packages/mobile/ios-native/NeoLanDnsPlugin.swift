@@ -24,7 +24,8 @@ public class NeoLanDnsPlugin: CAPPlugin, CAPBridgedPlugin {
     private let queue = DispatchQueue(label: "ai.neo.companion.lan-dns")
 
     @objc func resolve(_ call: CAPPluginCall) {
-        guard let host = call.getString("host"), !host.isEmpty else {
+        // 与 Android 侧 LanDnsPlugin 同一口径：只接 .local 主机名（JS 层已滤过，这里再守一道）。
+        guard let host = call.getString("host"), host.lowercased().hasSuffix(".local"), !host.isEmpty else {
             call.reject("INVALID_HOST")
             return
         }

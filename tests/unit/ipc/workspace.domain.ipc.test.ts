@@ -5,12 +5,17 @@ import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../../src/sha
 // 覆盖 openLinkInRail / closeLinkInRail / dispatchUserBrowserInput / controlUserBrowserHistory 的委派与空 workspace 兜底，
 // 其余 13 份 workspace* 测试直测内部 helper、不经派发。这里补派发层：缺报的 openExternal（只认 http(s)）与
 // setUserBrowserViewport（显式 workspace 与宽高透传）、closeLinkInRail 缺省 reason、shareLink 五件套 fallthrough 按 action
-// 路由、未知 action 的 INVALID_ACTION 'Unknown action:'、抛错兜底 INTERNAL_ERROR（Error → message、非 Error → String）。
+// 路由、publishVersion 赋值后推送分享链接的副作用、未知 action 的 INVALID_ACTION 'Unknown action:'、抛错兜底 INTERNAL_ERROR（Error → message、非 Error → String）。
 // 迁表后本文件零改动全绿即行为不变证明。
 
 const h = vi.hoisted(() => ({
   openExternal: vi.fn(async (..._a: unknown[]) => undefined),
   share: vi.fn(async (..._a: unknown[]) => ({ ok: true })),
+  publishVersion: vi.fn((..._a: unknown[]) => ({ version: 3 })),
+  getPublishState: vi.fn((..._a: unknown[]) => ({ state: 'published' })),
+  listPublishedVersions: vi.fn((..._a: unknown[]) => [{ version: 3 }]),
+  getShareLink: vi.fn((..._a: unknown[]) => ({ share: null as null | { revokedAt?: number } })),
+  pushLatest: vi.fn(async (..._a: unknown[]) => undefined),
 }));
 
 vi.mock('../../../src/host/platform', async (importOriginal) => ({
@@ -19,6 +24,17 @@ vi.mock('../../../src/host/platform', async (importOriginal) => ({
 }));
 vi.mock('../../../src/host/ipc/workspaceShareLink.ipc', () => ({
   handleWorkspaceShareLinkAction: (...a: unknown[]) => h.share(...a),
+}));
+vi.mock('../../../src/host/tools/modules/document/publishedVersions', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../src/host/tools/modules/document/publishedVersions')>()),
+  publishVersion: (...a: unknown[]) => h.publishVersion(...a),
+  getPublishState: (...a: unknown[]) => h.getPublishState(...a),
+  listPublishedVersions: (...a: unknown[]) => h.listPublishedVersions(...a),
+}));
+vi.mock('../../../src/host/tools/modules/document/shareLink', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../src/host/tools/modules/document/shareLink')>()),
+  getShareLink: (...a: unknown[]) => h.getShareLink(...a),
+  pushLatestToShareLink: (...a: unknown[]) => h.pushLatest(...a),
 }));
 
 import { registerWorkspaceHandlers } from '../../../src/host/ipc/workspace.ipc';
@@ -80,6 +96,22 @@ describe('workspace.ipc dispatch 特征：路由与兜底', () => {
       expect(h.share).toHaveBeenLastCalledWith(action, payload);
     }
     expect(h.share).toHaveBeenCalledTimes(5);
+  });
+
+  it('publishVersion：返回新版本 + 发布态 + 版本列表；有未撤销分享链接才推送最新版（赋值之后的副作用）', async () => {
+    const payload = { filePath: '/ws/deck.html', note: 'v3' };
+    expect(await call('publishVersion', payload)).toEqual({
+      success: true,
+      data: { publishedVersion: { version: 3 }, publishState: { state: 'published' }, publishedVersions: [{ version: 3 }] },
+    });
+    expect(h.publishVersion).toHaveBeenCalledWith('/ws/deck.html', 'v3');
+    expect(h.pushLatest).not.toHaveBeenCalled();
+    h.getShareLink.mockReturnValueOnce({ share: { revokedAt: 123 } });
+    await call('publishVersion', payload);
+    expect(h.pushLatest).not.toHaveBeenCalled();
+    h.getShareLink.mockReturnValueOnce({ share: {} });
+    await call('publishVersion', payload);
+    expect(h.pushLatest).toHaveBeenCalledWith('/ws/deck.html');
   });
 
   it('未知 action → INVALID_ACTION + Unknown action 文案', async () => {

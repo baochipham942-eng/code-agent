@@ -1781,6 +1781,59 @@ describe('applyConversationStreamEvent stream_reconnecting（ADR-068 刀 4）', 
     expect(useStreamResumeStore.getState().signal).toBeNull();
   });
 
+  it('旧轮迟到的 stream_reconnecting 不碰新轮消息：带 turnId 只对账该轮，找不属地消息就丢弃（ai-review Important）', () => {
+    const messagesRef = { current: [
+      { id: 'user-1', role: 'user', content: '写一段', timestamp: 100 },
+      { id: 'turn-old', role: 'assistant', content: '旧轮断点片段。', timestamp: 120, toolCalls: [] },
+      { id: 'user-2', role: 'user', content: '再写一段', timestamp: 200 },
+      { id: 'turn-new', role: 'assistant', content: '新轮回答正文。', timestamp: 220, toolCalls: [] },
+    ] as Message[] };
+    const actions = {
+      addMessage: (message: Message) => { messagesRef.current = [...messagesRef.current, message]; },
+      updateMessage: (id: string, updates: Partial<Message>) => {
+        messagesRef.current = messagesRef.current.map((m) => (m.id === id ? { ...m, ...updates } : m));
+      },
+      setMessages: (next: Message[]) => { messagesRef.current = next; },
+      getMessages: () => messagesRef.current,
+      queueUpdate: (update: { type: string; messageId: string; content?: string }) => {
+        if (update.type === 'append' && update.content) {
+          messagesRef.current = messagesRef.current.map((m) => (
+            m.id === update.messageId ? { ...m, content: `${m.content}${update.content}` } : m
+          ));
+        }
+      },
+      now: () => 500,
+    };
+    const state = {
+      // 新轮已是 current；旧轮的迟到信号带自己的 turnId 到达
+      currentTurnMessageId: 'turn-new',
+      committedAssistantMessageIds: new Set<string>(),
+      lastDeltaSeqByTurn: new Map<string, number>(),
+      segmentRedirectByTurn: new Map<string, { segmentId: string; splitAtAttempt: number }>(),
+    };
+
+    applyConversationStreamEvent(
+      { type: 'stream_reconnecting', data: { turnId: 'turn-old', attempt: 1, maxReconnects: 2, segment: 'b2' } },
+      state,
+      actions,
+    );
+
+    // 新轮消息纹丝不动：不切段、不建重定向、新轮 current 不被顶掉
+    expect(messagesRef.current).toHaveLength(4);
+    expect(messagesRef.current[3].content).toBe('新轮回答正文。');
+    expect(state.currentTurnMessageId).toBe('turn-new');
+    expect(state.segmentRedirectByTurn.size).toBe(0);
+    // 死轮信号整条丢弃：连信号都不挂（那轮已收尾，冻结消息就是它的诚实终态）
+    expect(useStreamResumeStore.getState().signal).toBeNull();
+    // 新轮 delta 照常落新轮消息（无重定向劫持）
+    applyConversationStreamEvent(
+      { type: 'message_delta', data: { role: 'assistant', path: 'content', op: 'append', text: '（续）', messageId: 'turn-new', deltaSeq: 1 } },
+      state,
+      actions,
+    );
+    expect(messagesRef.current[3].content).toBe('新轮回答正文。（续）');
+  });
+
   it('turn_start 新轮：旧轮信号与分段重定向过期（终态之外的第二道清除）', () => {
     const { actions, state } = makeResumeHarness();
 

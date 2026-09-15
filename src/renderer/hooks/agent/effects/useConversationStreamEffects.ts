@@ -341,13 +341,19 @@ export function applyConversationStreamEvent(
         const turnId = reconnectData.turnId || state.currentTurnMessageId;
         if (!turnId) break;
         const freshMsgs = getFreshMessages();
-        // 断流时的 streaming 消息：优先 renderer 眼中的当前段（B2 已分段后=续答段，
-        // 第二次断流定格的是它），兜底按事件 turnId 找（重水化恢复时 currentTurnMessageId 已丢）。
-        const draft = freshMsgs.find(m => m.id === state.currentTurnMessageId && m.role === 'assistant')
+        // 事件的 turnId 是对账锚点（ai-review Important）：带 turnId 的断流只接受属于该轮的
+        // 消息（当前 streaming 消息 id===turnId，或该轮 B2 分段注册的续答段）。当前指向别的
+        // 轮 = 旧轮的迟到信号（那轮已收尾）——整条丢弃，不冒认新轮消息切段、不给死轮建段、
+        // 不劫持 current 指针。兜底按事件 turnId 找消息只在重水化（current 已丢）时轮得到。
+        const redirect = state.segmentRedirectByTurn.get(turnId);
+        const currentId = state.currentTurnMessageId;
+        const currentBelongsToEventTurn = currentId === turnId
+          || (redirect ? currentId === redirect.segmentId : false);
+        if (reconnectData.turnId && currentId != null && !currentBelongsToEventTurn) break;
+        const draft = freshMsgs.find(m => m.id === currentId && m.role === 'assistant')
           ?? freshMsgs.find(m => m.id === turnId && m.role === 'assistant');
         if (!draft) break;
         const resumeStore = useStreamResumeStore.getState();
-        const redirect = state.segmentRedirectByTurn.get(turnId);
         // 分段只对「新断流」做（attempt 递增）；SSE 重连重放同一条信号时续答段已在，
         // 再切一段会把已恢复的轮切成孤儿——splitAtAttempt 就是防这个的。
         const needsSplit = reconnectData.segment === 'b2'

@@ -3,7 +3,9 @@
 // ============================================================================
 
 import type { IpcMain } from '../platform';
-import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
+import { SyncSchemas, type SyncDomainRequest } from '../../shared/ipc/schemas/sync';
+import { DeviceSchemas, type DeviceDomainRequest } from '../../shared/ipc/schemas/device';
+import { defineDomainRoutes, installDomainRoutes } from './domainRoutes/registry';
 import type { SyncStatus, DeviceInfo } from '../../shared/contract';
 import { getAuthService, getSyncService } from '../services';
 
@@ -51,73 +53,44 @@ async function handleDeviceRemove(payload: { deviceId: string }): Promise<void> 
 // ----------------------------------------------------------------------------
 
 /**
+ * sync / device 两域单源路由表（RQ-183 续作·SYNC+DEVICE 刀）：原两个 domain switch 逐 case 平移（handler
+ * 返回 data，装配器包 { success: true, data }；原 `data = null` 的 case 显式返回 null）；未知 action →
+ * INVALID_ACTION `Unknown action: <action>`、抛错 → INTERNAL_ERROR + String(error)，均为装配器缺省。
+ */
+const syncRoutes = defineDomainRoutes<SyncDomainRequest, void>(SyncSchemas.REQUEST, {
+  getStatus: () => handleGetStatus(),
+  start: async () => {
+    await handleStart();
+    return null;
+  },
+  stop: async () => {
+    await handleStop();
+    return null;
+  },
+  forceFull: () => handleForceFull(),
+  resolveConflict: async (_ctx, payload) => {
+    await handleResolveConflict(payload as { conflictId: string; resolution: 'local' | 'remote' | 'merge' });
+    return null;
+  },
+});
+
+const deviceRoutes = defineDomainRoutes<DeviceDomainRequest, void>(DeviceSchemas.REQUEST, {
+  register: () => handleDeviceRegister(),
+  list: () => handleDeviceList(),
+  remove: async (_ctx, payload) => {
+    await handleDeviceRemove(payload as { deviceId: string });
+    return null;
+  },
+});
+
+/**
  * 注册 Sync 相关 IPC handlers
  */
 export function registerSyncHandlers(ipcMain: IpcMain): void {
-  // ========== New Domain Handler (TASK-04) ==========
-  ipcMain.handle(IPC_DOMAINS.SYNC, async (_, request: IPCRequest): Promise<IPCResponse> => {
-    const { action, payload } = request;
-
-    try {
-      let data: unknown;
-
-      switch (action) {
-        case 'getStatus':
-          data = await handleGetStatus();
-          break;
-        case 'start':
-          await handleStart();
-          data = null;
-          break;
-        case 'stop':
-          await handleStop();
-          data = null;
-          break;
-        case 'forceFull':
-          data = await handleForceFull();
-          break;
-        case 'resolveConflict':
-          await handleResolveConflict(payload as { conflictId: string; resolution: 'local' | 'remote' | 'merge' });
-          data = null;
-          break;
-        default:
-          return { success: false, error: { code: 'INVALID_ACTION', message: `Unknown action: ${action}` } };
-      }
-
-      return { success: true, data };
-    } catch (error) {
-      return { success: false, error: { code: 'INTERNAL_ERROR', message: error instanceof Error ? error.message : String(error) } };
-    }
-  });
-
-  // ========== Device Domain Handler (TASK-04) ==========
-  ipcMain.handle(IPC_DOMAINS.DEVICE, async (_, request: IPCRequest): Promise<IPCResponse> => {
-    const { action, payload } = request;
-
-    try {
-      let data: unknown;
-
-      switch (action) {
-        case 'register':
-          data = await handleDeviceRegister();
-          break;
-        case 'list':
-          data = await handleDeviceList();
-          break;
-        case 'remove':
-          await handleDeviceRemove(payload as { deviceId: string });
-          data = null;
-          break;
-        default:
-          return { success: false, error: { code: 'INVALID_ACTION', message: `Unknown action: ${action}` } };
-      }
-
-      return { success: true, data };
-    } catch (error) {
-      return { success: false, error: { code: 'INTERNAL_ERROR', message: error instanceof Error ? error.message : String(error) } };
-    }
-  });
-
-  // ========== Legacy Handlers (Deprecated) ==========
-
+  installDomainRoutes(ipcMain, syncRoutes, undefined);
+  installDomainRoutes(ipcMain, deviceRoutes, undefined);
 }
+
+// 表挂装配函数对象上供 parity 门枚举（同 registerMemoryHandlers.routes 先例；同文件两域两张表）
+registerSyncHandlers.routes = syncRoutes;
+registerSyncHandlers.deviceRoutes = deviceRoutes;

@@ -137,10 +137,18 @@ export class RelayCompanionClient {
       socket.onOpen(() => {
         opened = true;
         clearTimeout(timer);
-        this.push({
-          v: 1, kind: 'register', role: 'device',
-          envelope: this.controlEnvelope(), ciphertext: '',
-        });
+        try {
+          this.push({
+            v: 1, kind: 'register', role: 'device',
+            envelope: this.controlEnvelope(), ciphertext: '',
+          });
+        } catch {
+          // open 与 register 之间 socket 就死了（send 抛）：timer 已清，必须在此结算，
+          // 否则 connect 永挂（ai-review Nit）。
+          this.drop(new Error('COMPANION_RELAY_UNAVAILABLE'));
+          reject(new Error('COMPANION_RELAY_UNAVAILABLE'));
+          return;
+        }
         if (!this.heartbeat) {
           this.heartbeat = setInterval(() => {
             // socket 正在死的时候 send 可能抛：close 事件会来结算，这里吞掉即可。
@@ -180,9 +188,16 @@ export class RelayCompanionClient {
     }
     this.channel = new NoiseChannel(noise);
     const welcome = await this.waitWelcome().catch(error => { this.drop(error); throw error; });
-    const opened = this.channel.open(JSON.parse(welcome.ciphertext) as unknown) as Partial<{
-      deviceId: string; scopeEpoch: number; scope: string[];
-    }>;
+    // welcome 解不开（密文损坏/被换）＝会话已不可信：同样要走 drop，别留带心跳的孤儿连接。
+    let opened: Partial<{ deviceId: string; scopeEpoch: number; scope: string[] }>;
+    try {
+      opened = this.channel.open(JSON.parse(welcome.ciphertext) as unknown) as Partial<{
+        deviceId: string; scopeEpoch: number; scope: string[];
+      }>;
+    } catch (error) {
+      this.drop(error instanceof Error ? error : new Error('COMPANION_INVALID_FRAME'));
+      throw new Error('COMPANION_INVALID_FRAME', { cause: error });
+    }
     if (opened?.deviceId !== expected.deviceId || opened?.scopeEpoch !== expected.scopeEpoch
       || JSON.stringify(opened?.scope ?? []) !== JSON.stringify(expected.scope)) {
       this.drop(new Error('COMPANION_BINDING_CHANGED'));

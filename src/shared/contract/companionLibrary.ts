@@ -25,7 +25,11 @@ interface CompanionSessionSummary {
 }
 export interface CompanionLibrary {
   nextOffset: number | null;
-  projects: { id: string; name: string; canCreate: boolean }[];
+  /**
+   * workspacePath = 电脑上这个项目的工作目录（fix5-③，2026-09-15 build 36 反馈⑦：4 个同名
+   * workspace 无消歧）。可缺省——旧 Host 不带它，手机侧消歧标签跟着降级为不显示。
+   */
+  projects: { id: string; name: string; canCreate: boolean; workspacePath?: string | null }[];
   sessions: CompanionSessionSummary[];
   /** isDefault = 电脑自己新建会话会用的那个模型；手机的下拉默认必须跟着它，不是跟着列表顺序。 */
   models: { provider: string; model: string; label: string; providerLabel: string; isDefault?: true }[];

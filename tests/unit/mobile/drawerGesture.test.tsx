@@ -5,7 +5,7 @@ import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react
 import { MobileRoot } from '../../../packages/mobile/src/app/MobileRoot';
 import type { PlatformPorts } from '../../../packages/mobile/src/platform/ports';
 import {
-  DRAWER_SETTLE_MS, drawerPanOffset, drawerPanState, drawerWidthPx, gestureAxis,
+  DRAWER_SETTLE_MS, drawerPanOffset, drawerPanState, drawerWidthPx, gestureAxis, shouldSwallowClick,
 } from '../../../packages/mobile/src/app/drawerGesture';
 
 // 抽屉手势（fix4-①，2026-09-15 build 35 反馈⑥）：左缘起滑从 touchend 死手势改成
@@ -109,6 +109,18 @@ describe('纯判定：drawerPanOffset（1:1 跟手的 clamp）', () => {
     expect(drawerPanOffset(-100, WIDTH, true)).toBe(-100);
     expect(drawerPanOffset(50, WIDTH, true)).toBe(0);
     expect(drawerPanOffset(-WIDTH - 50, WIDTH, true)).toBe(-WIDTH);
+  });
+});
+
+describe('纯判定：shouldSwallowClick（fix5-②：锁轴拖拽后吞合成 click）', () => {
+  it('横向锁轴成立 → 吞（button 起点拖关后松手，click 不许变成点中会话）', () => {
+    expect(shouldSwallowClick('horizontal')).toBe(true);
+  });
+  it('轻点没锁轴（axis=null）→ 不吞，click 就是用户本意', () => {
+    expect(shouldSwallowClick(null)).toBe(false);
+  });
+  it('竖向锁轴不吞（值会位滚动让位，列全只为类型完整）', () => {
+    expect(shouldSwallowClick('vertical')).toBe(false);
   });
 });
 

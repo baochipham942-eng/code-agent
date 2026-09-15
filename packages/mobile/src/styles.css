@@ -158,6 +158,17 @@ input { width: 100%; padding: 16px; background: var(--surface); border: 1px soli
 
 select { width: 100%; min-height: 48px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; color: var(--text); background: var(--surface); font: inherit; }
 .library-sheet .settings-group { margin: 10px 0; } .danger { color: #c43b38; } .drawer-history [aria-current='page'] { background: var(--group); }
+/* 项目选择器主层（fix5-③，2026-09-15）：行=文件夹图标+名称/副标题两行+会话前进 chevron，
+   形状照设计稿 design.html 的 pickRow（list-row + .flex + .small）。 */
+.project-row { display: flex; align-items: stretch; }
+.project-row + .project-row { border-top: 1px solid var(--line); }
+.project-row .project-main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; padding: 12px 4px 12px 0; text-align: left; }
+.project-row .project-main .app-icon { width: 18px; height: 18px; color: var(--muted); flex-shrink: 0; }
+.project-row .flex { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.project-row .flex p { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.project-row .flex .small { font-size: 12px; color: var(--muted); }
+.project-row .project-more { padding: 8px 10px; align-self: center; flex-shrink: 0; }
+.sheet-note { color: var(--muted); font-size: 13px; line-height: 1.7; margin: 14px 2px; }
 .library-sheet .advanced { margin: 12px 0; }
 .library-sheet .advanced summary { cursor: pointer; padding: 10px 0; color: var(--muted); font-size: 14px; }
 /* fix4（2026-09-15）：sheet 等库 = spinner + 一句「正在连接电脑…」；失败 = 状态页

@@ -8,6 +8,9 @@ const zh = {
   historyTruncated: '这条较长的历史消息仅显示部分内容，完整内容保留在电脑。',
   authorizedProjects: '仅显示电脑授权的项目与会话', projectGrantRequired: '需要在电脑上重新配对以覆盖全部会话后，才能在此项目新建会话。', sessionName: '会话名称', rename: '保存名称', archive: '归档会话', unarchive: '取消归档', archived: '已归档', deleteSession: '删除会话', deleteConfirmation: '将从电脑删除此会话。此操作无法撤回。', keepSession: '保留', confirmDelete: '确认删除', model: '模型', useModel: '使用此模型', modelNotConfigured: '电脑上未配置', libraryError: '项目或历史未读取完整，请重连后重试。', loadHistory: '继续加载历史',
   advancedOptions: '高级选项', usingProject: '会使用「{name}」里的资料。',
+  // 项目选择器（fix5-③，2026-09-15 build 36 反馈⑦）：主层=选择器，会话列表是同弹层前进页。
+  chooseProject: '选择项目', projectSessions: '项目会话', projectScopeNote: '新任务会使用所选项目的资料与工作范围。',
+  recentUseSessions: '最近使用 · {n} 个会话', sessionsCount: '{n} 个会话', recentSessions: '最近', openProjectSessions: '查看项目会话',
 
   operation: '操作', impact: '影响', technicalDetails: '查看技术详情', writeOperation: '写入文件', readOperation: '读取文件', commandOperation: '运行命令', requestedOperation: '执行请求的操作', targetInDetails: '见操作详情', writeImpact: '将写入或替换目标内容', commandImpact: '将按下方命令操作电脑，请展开核对', operationImpact: '仅允许当前请求，后续操作仍需确认', unreadableApproval: '无法完整读取操作内容，请拒绝或回电脑处理。',
   running: '电脑正在处理', latest: '回到最新',
@@ -127,6 +130,8 @@ const en: Record<keyof typeof zh, string> = {
   historyTruncated: 'This long historical message is partially shown. The complete text remains on your computer.',
   authorizedProjects: 'Only projects and conversations shared by your computer', projectGrantRequired: 'Pair again on your computer to cover every conversation before creating one in this project.', sessionName: 'Conversation name', rename: 'Save name', archive: 'Archive conversation', unarchive: 'Unarchive', archived: 'Archived', deleteSession: 'Delete conversation', deleteConfirmation: 'Delete this conversation from your computer? This cannot be undone.', keepSession: 'Keep', confirmDelete: 'Confirm deletion', model: 'Model', useModel: 'Use this model', modelNotConfigured: 'Not configured on computer', libraryError: 'Projects or history could not be fully loaded. Reconnect and retry.', loadHistory: 'Load more history',
   advancedOptions: 'Advanced options', usingProject: 'This uses materials in “{name}”.',
+  chooseProject: 'Choose a project', projectSessions: 'Project conversations', projectScopeNote: 'New tasks will use the materials and scope of the selected project.',
+  recentUseSessions: 'Recent · {n} conversations', sessionsCount: '{n} conversations', recentSessions: 'Recent', openProjectSessions: 'Open project conversations',
 
   operation: 'Operation', impact: 'Impact', technicalDetails: 'Technical details', writeOperation: 'Write file', readOperation: 'Read file', commandOperation: 'Run command', requestedOperation: 'Perform requested operation', targetInDetails: 'See operation details', writeImpact: 'Writes or replaces the target content', commandImpact: 'Runs the command below on your computer. Expand to review.', operationImpact: 'Allows this request only. Later operations still require confirmation.', unreadableApproval: 'Cannot read the complete operation. Deny or review on your computer.',
   running: 'Working on your computer', latest: 'Jump to latest',

@@ -9,7 +9,7 @@ import type { StoredSession } from '../../../src/host/protocol/types';
 
 const listSessions = vi.hoisted(() => vi.fn<(limit: number, offset: number) => StoredSession[]>());
 const getSession = vi.hoisted(() => vi.fn());
-const listProjects = vi.hoisted(() => vi.fn(() => [{ id: 'one', name: 'One' }, { id: 'two', name: 'Two' }]));
+const listProjects = vi.hoisted(() => vi.fn((): { id: string; name: string; workspacePath?: string | null }[] => [{ id: 'one', name: 'One' }, { id: 'two', name: 'Two' }]));
 
 vi.mock('../../../src/host/services/core/databaseService', () => ({
   getDatabase: () => ({
@@ -111,5 +111,20 @@ describe('companion library listing compiles access SQL once', () => {
     expect(ids).not.toContain('s0');
     expect(ids).toContain('s2');
     expect(access).not.toHaveBeenCalled();
+  });
+
+  // fix5-③（2026-09-15 build 36 反馈⑦）：同名项目用路径消歧，手机侧标签需要工作目录。
+  it('projects carry workspacePath for the phone-side disambiguation label (null when absent)', async () => {
+    const deviceId = gateway.issueDeviceCredential([projectGrant('one'), projectGrant('two')]).deviceId;
+    listProjects.mockReturnValue([
+      { id: 'one', name: 'workspace', workspacePath: '/Users/linchen/Downloads/ai/workspace' },
+      { id: 'two', name: 'workspace', workspacePath: null },
+    ]);
+    const { result } = await readLibrary(2, deviceId);
+    const projects = (result as { projects: { id: string; workspacePath?: string | null; canCreate: boolean }[] }).projects;
+    expect(projects).toEqual([
+      { id: 'one', name: 'workspace', workspacePath: '/Users/linchen/Downloads/ai/workspace', canCreate: true },
+      { id: 'two', name: 'workspace', workspacePath: null, canCreate: true },
+    ]);
   });
 });

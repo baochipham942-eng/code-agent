@@ -17,6 +17,21 @@ export const EDGE_GESTURE_START_X = 28;
 const FLICK_VELOCITY_PX_PER_MS = 0.5;
 /** 松手回弹动画时长；commit 定时器比它略长，保证动画播完再卸载/清 transform。 */
 export const DRAWER_SETTLE_MS = 260;
+/**
+ * 锁轴拖拽后吞 click 的窗口（fix5-②，2026-09-15 build 36 反馈⑦）：拖过 AXIS_LOCK_PX 松手时
+ * 浏览器仍会合成 click——起手与落点在同一条会话行上时它就落在会话按钮上，「拖一半松手」
+ * 变成点中会话。比 260ms 回弹略宽，覆盖 Android 较慢的 click 合成；窗口过了自动恢复点按。
+ */
+export const CLICK_SWALLOW_MS = 300;
+
+/**
+ * 这次 touchend 之后的 click 要不要吞：只有**锁过轴**的拖拽才吞（拖动成立，click 必是拖拽
+ * 的副产品）；没锁轴的轻点 axis=null，click 就是用户本意，照常放行。竖向锁轴在 gestureMove
+ * 里已让位滚动、到不了松手这里，列出只为类型完整。
+ */
+export function shouldSwallowClick(axis: 'horizontal' | 'vertical' | null): boolean {
+  return axis === 'horizontal';
+}
 
 /** 抽屉宽度与 styles.css 的 .drawer 同源：min(86vw, 360px)。 */
 export function drawerWidthPx(viewport: number): number {

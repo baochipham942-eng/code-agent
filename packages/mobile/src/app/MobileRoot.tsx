@@ -16,6 +16,7 @@ import { PlanCard } from '../features/sessions/PlanCard';
 import { CompanionConversation } from '../features/sessions/CompanionConversation';
 import type { CompanionLibrary } from '../../../../src/shared/contract/companionLibrary';
 import { messages, offlineHistoryCopy } from '../i18n';
+import { projectDisplayName } from '../features/sessions/projectRows';
 import { createBackCoordinator } from './backCoordinator';
 import { PreviewMedia } from '../features/sessions/PreviewMedia';
 import { applyKeyboardInset } from './keyboardInset';
@@ -28,7 +29,7 @@ import { NeoBrandMark } from '../features/brand/NeoBrandMark';
 import { AppIcon } from './AppIcon';
 import { sheetLibraryStatus } from './sheetLibraryStatus';
 import { connectionDiagnosis, lastSyncCopy } from './connectionDiagnosis';
-import { DRAWER_SETTLE_MS, EDGE_GESTURE_START_X, drawerPanOffset, drawerPanState, drawerWidthPx, gestureAxis } from './drawerGesture';
+import { CLICK_SWALLOW_MS, DRAWER_SETTLE_MS, EDGE_GESTURE_START_X, drawerPanOffset, drawerPanState, drawerWidthPx, gestureAxis, shouldSwallowClick } from './drawerGesture';
 
 /**
  * 连接那一行的文案与动作。合成一条的原因（2026-09-12 爸真机反馈）：原来「连接胶囊说『重新连接』」
@@ -165,7 +166,12 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
   /** 拖拽中的抽屉：dx 为位移、settle 非空表示松手后正带 transition 回弹到目标态。 */
   const [pan, setPan] = useState<DrawerPan | null>(null);
   const settleTimer = useRef(0);
-  useEffect(() => () => clearTimeout(settleTimer.current), []);
+  // 锁轴拖拽后的 click 吞掉窗口（fix5-②）：拖一半松手时合成的 click 落在起手的会话行上，
+  // 会变成「点中会话」。吞一次即复位——窗口内若没有 click 跟来（拖到 scrim 上松手），
+  // 到点由定时器自清，下一次真实点按不受影响。
+  const swallowClick = useRef(false);
+  const swallowTimer = useRef(0);
+  useEffect(() => () => { clearTimeout(settleTimer.current); clearTimeout(swallowTimer.current); }, []);
   const recording = useRef(false);
   const [composerHeight, setComposerHeight] = useState(0);
   const composerObserver = useRef<ResizeObserver | null>(null);
@@ -209,6 +215,8 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
   }, []);
   const [voiceFailureShown, setVoiceFailureShown] = useState(false);
   const [pendingInvite, setPendingInvite] = useState<{ raw: string; invitation: LanInvitation } | null>(null);
+  // 项目会话前进页（fix5-③）当前在看的项目：主层选择器的 chevron 进来，返回弹回主层。
+  const [sessionProjectId, setSessionProjectId] = useState<string | null>(null);
   const theme = state.preferences.appearance === 'system' ? (systemDark ? 'dark' : 'light') : state.preferences.appearance;
   const currentPage = state.sheet?.pages.at(-1);
   const pendingDecisions = useMemo(() => {
@@ -233,7 +241,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
   const offlineCopy = offlineHistoryCopy(text, companion, hasCachedConversation);
   // 反馈③（2026-09-14 build 34）：项目/会话 sheet 等电脑里的库时不许无限转圈——底层 request
   // 没有客户端超时，连接僵死时圈会一直转；到点落「连不上电脑」失败态并给重试。
-  const librarySheetWaiting = Boolean(state.sheet && (currentPage === 'projects' || currentPage === 'more') && companion.binding && !companion.library);
+  const librarySheetWaiting = Boolean(state.sheet && (currentPage === 'projects' || currentPage === 'projectSessions' || currentPage === 'more') && companion.binding && !companion.library);
   const [libraryTimedOut, setLibraryTimedOut] = useState(false);
   const [libraryRetryEpoch, setLibraryRetryEpoch] = useState(0);
   useEffect(() => {
@@ -376,7 +384,14 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
   }, [companion.status, companion.sessionId, store]);
   useEffect(() => { if (currentPage !== 'storage') { setCacheConfirm(false); setCacheResult(null); } }, [currentPage]);
   const commandNotice = commandNoticeCopy(text, companion, voiceFailureShown);
-  const selectSession = (id: string) => { companion.selectSession(id); state.navigate('new'); };
+  // 选中即收边栏（fix5-①，2026-09-15 build 36 反馈⑦）：抽屉会话行、别会话待确认跳转、sheet 里的
+  // 待确认跳转三处都走这里。navigate 虽也带 drawer:false，收边栏是选会话的第一意图，
+  // 显式先关——不把它押在路由切换的副作用上。
+  const selectSession = (id: string) => { companion.selectSession(id); state.closeDrawer(); state.navigate('new'); };
+  // 主层选择器 → 项目会话前进页（同弹层 push，返回弹回主层，不堆在主层里）。
+  const openProjectSessions = (id: string) => { setSessionProjectId(id); state.pushSheet('projectSessions'); };
+  // 项目会话前进页的标题 = 主层那一行的显示名（同名项目带路径消歧），点进行页标题就是刚才点的那行。
+  const sessionProject = companion.library?.projects.find(p => p.id === sessionProjectId) ?? null;
   const startDefaultSession = () => {
     const created = defaultCompanionSessionCreate(companion.library);
     if (!created) { state.openSheet('projects'); return; }
@@ -462,6 +477,12 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
     const track = swipe.current; swipe.current = null;
     const touch = event.changedTouches[0];
     if (!track || !track.axis || !touch || textSelected()) return;
+    // 拖拽成立：随后的合成 click 是拖拽的副产品，吞掉（轻点没锁轴、不走这里，照常点按）。
+    if (shouldSwallowClick(track.axis)) {
+      clearTimeout(swallowTimer.current);
+      swallowClick.current = true;
+      swallowTimer.current = window.setTimeout(() => { swallowClick.current = false; }, CLICK_SWALLOW_MS);
+    }
     const dx = touch.clientX - track.x;
     // 末帧速度：dt 为 0（没触发过 move 或同帧松手）按慢拖处理，速度判据让位给过半。
     const dt = event.timeStamp - track.lastT;
@@ -476,7 +497,15 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
   if (!state.ready) return <div className="loading" role="status"><p>{state.loadError ? text.loadError : text.loading}</p>
     {state.loadError && <button className="inline-retry" onClick={() => void state.hydrate()}>{text.retry}</button>}</div>;
 
-  return <div className="app" data-theme={theme} onTouchStart={gestureStart} onTouchMove={gestureMove} onTouchEnd={gestureEnd} onTouchCancel={gestureCancel}>
+  return <div className="app" data-theme={theme} onTouchStart={gestureStart} onTouchMove={gestureMove} onTouchEnd={gestureEnd} onTouchCancel={gestureCancel}
+    onClickCapture={event => {
+      if (!swallowClick.current) return;
+      // capture 阶段拦在根上：拖拽副产品的 click 到不了会话按钮/scrim；吞一次即复位，
+      // 窗口内后续的真实点按不受影响。
+      event.preventDefault();
+      event.stopPropagation();
+      swallowClick.current = false;
+    }}>
     <main className="conversation" inert={state.drawer || !!state.sheet}>
       <header className="topbar"><button aria-label={text.sessions} data-testid="open-drawer" onClick={state.openDrawer}><AppIcon name="menu" /></button>
         <strong>{companion.sessionId ? companion.library?.sessions.find(s => s.id === companion.sessionId)?.title ?? `${text.sharedSession} ${(companion.binding?.scope.indexOf(companion.sessionId) ?? 0) + 1}` : state.route === 'new' ? text.neo : text.fixture}</strong><button aria-label={text.more} data-testid="open-more" onClick={() => state.openSheet('more')}><AppIcon name="more" /></button></header>
@@ -593,7 +622,11 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
       </aside>
       </div>;
     })()}
-    {state.sheet && currentPage && <SheetHost page={currentPage} title={text[currentPage]} hasParent={state.sheet.pages.length > 1}
+    {state.sheet && currentPage && <SheetHost page={currentPage}
+      title={currentPage === 'projects' ? text.chooseProject
+        : currentPage === 'projectSessions' ? sessionProject && companion.library ? projectDisplayName(sessionProject, companion.library.projects) : text.projectSessions
+        : text[currentPage]}
+      hasParent={state.sheet.pages.length > 1}
       close={() => {
         if (currentPage === 'preview') companion.closePreview();
         if (currentPage === 'pairConfirm') setPendingInvite(null);
@@ -606,8 +639,11 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
       {pendingDecisions.length > 0 && <button className="primary" onClick={() => selectSession(String(pendingDecisions[0].sessionId))}>{
         pendingDecisions[0].kind === 'question' ? text.reviewQuestion : pendingDecisions[0].kind === 'plan' ? text.reviewPlan : text.reviewApproval
       }</button>}
-      {(currentPage === 'projects' || currentPage === 'more') && companion.binding ? (
-        companion.library ? <LibrarySheet key={`${currentPage}:${companion.sessionId}`} library={companion.library} sessionId={companion.sessionId} text={text} mode={currentPage} busy={companion.busy || companion.pending || companion.status !== 'connected'} select={selectSession} manage={manage} loadMore={() => void companion.refreshLibrary(true)} />
+      {(currentPage === 'projects' || currentPage === 'projectSessions' || currentPage === 'more') && companion.binding ? (
+        companion.library ? <LibrarySheet key={`${currentPage}:${companion.sessionId}`} library={companion.library} sessionId={companion.sessionId} text={text}
+          mode={currentPage === 'more' ? 'more' : currentPage === 'projectSessions' ? 'projectSessions' : 'projects'}
+          projectId={sessionProjectId} busy={companion.busy || companion.pending || companion.status !== 'connected'} select={selectSession} manage={manage}
+          loadMore={() => void companion.refreshLibrary(true)} openProjectSessions={openProjectSessions} />
           // fix4-④：等库 = spinner + 一句「正在连接电脑…」（秒级超时兜底，不无限转圈）；
           // 失败 = 状态页（标题 + 诊断句 + 主按钮重新连接 + 次按钮去连接电脑），不再用
           // 「一行文案 + 行尾 pill」。行尾重试 pill 只保留在会话页断网 banner 单行场景。

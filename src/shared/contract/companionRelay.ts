@@ -89,3 +89,22 @@ export function resolveCompanionRelayConfig(raw: unknown): CompanionRelayResolve
     reconnectBackoffMs: parsed.data.reconnectBackoffMs ?? L.relayReconnectBackoffMs,
   };
 }
+
+/**
+ * 一台已配对手机的 relay 路由：Host 经 Noise 加密信道下发给手机缓存，LAN 不可达时按它拨 relay。
+ * routeToken 是 Host 进程内铸造的短 TTL 路由凭据；credential 与 Host 拨 relay 用的是同一个
+ * 共享路由凭据（不是长期内容密钥）。手机缓存它进配对盘（设备上是 Keychain）。
+ */
+const companionRelayRouteSchema = z.object({
+  v: z.literal(COMPANION_RELAY_PROTOCOL_VERSION),
+  url: z.string().trim().min(1).max(2_048),
+  routeToken,
+  credential: z.string().trim().min(L.relayAuthLength).max(256),
+}).strict();
+export type CompanionRelayRoute = z.infer<typeof companionRelayRouteSchema>;
+
+export function parseCompanionRelayRoute(raw: unknown): CompanionRelayRoute {
+  const parsed = companionRelayRouteSchema.safeParse(raw);
+  if (!parsed.success) throw new Error('COMPANION_RELAY_INVALID_ROUTE');
+  return { ...parsed.data, url: parseCompanionRelayUrl(parsed.data.url) };
+}

@@ -5,6 +5,7 @@ vi.mock('node:os', async (importOriginal) => {
   return { ...actual, networkInterfaces: vi.fn(actual.networkInterfaces) };
 });
 import Database from 'better-sqlite3';
+import { createServer } from 'node:http';
 import { hostname, networkInterfaces } from 'node:os';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -74,6 +75,25 @@ describe('LAN companion: real HTTP + Noise + SQLite', () => {
     for (const altEndpoint of ['http://evil.example:8182', 'http://8.8.8.8:8182', 'http://192.168.1.2:8182/path', 42]) {
       expect(() => parseInvitation(JSON.stringify({ ...invitation, altEndpoint }))).toThrow();
     }
+  });
+
+  it('falls back to an ephemeral port when the LAN port is taken instead of failing the invite (真机首验回归 2026-09-15)', async () => {
+    // 同机另一张 Host 脸常驻 lanPort（现场：01:04 起的旧 Dev app 占着 8182，新 Host 的
+    // invite 全部 EADDRINUSE，配对入口整个消失）。占位者用 wildcard 绑定制造真冲突。
+    const squatter = createServer();
+    await new Promise<void>(resolve => squatter.listen(0, () => resolve()));
+    const takenPort = (squatter.address() as { port: number }).port;
+    const busy = new LanCompanionServer(gateway, hostIdentity, () => now);
+    await busy.start(address!, takenPort); // 修复前：这里抛 EADDRINUSE
+    const invitation = busy.invite(['shared']);
+    const boundPort = Number(new URL(invitation.endpoint).port);
+    expect(boundPort).not.toBe(takenPort); // 端点带的是实际端口
+    expect(boundPort).toBeGreaterThan(0);
+    // 换了端口也得真能配上对——端点随 QR/绑定走，手机无感。
+    const binding = await client.pair(JSON.stringify(invitation));
+    expect(binding.deviceId).toBeTruthy();
+    await busy.stop();
+    await new Promise<void>(resolve => squatter.close(() => resolve()));
   });
 
   it('pairs over the alternate address when the primary one is dead, and remembers which worked', async () => {
@@ -312,12 +332,15 @@ describe('LAN companion: real HTTP + Noise + SQLite', () => {
     expect(phone.getState().status).toBe('storageError'); expect(executions).toBe(0); expect(cleared).toBe(false);
   });
   it('phone restart reconciles a pending command using the same persisted ID', async () => {
-    let storage: string | null = null; let lose = true; let cleared = '';
-    const port = { read: async () => storage, write: async (value: string) => { storage = value; },
+    let storage: string | null = null; let lose = false; let armed = false; let cleared = '';
+    // 丢的是「命令的回执」不是「配对后第一个 exchange」——路由探针（relay.route）在配对后
+    // 也会做一次 exchange，按序号丢会误伤它。按「命令进待确认槽」武装，才与实现顺序解耦。
+    const port = { read: async () => storage, write: async (value: string) => { storage = value;
+        if ((JSON.parse(value) as { pending?: unknown }).pending) armed = true; },
       scan: async () => JSON.stringify(server.invite(['shared'])),
       post: async (url: string, body: unknown) => {
         const result = await post(url, body);
-        if (url.endsWith('/exchange') && lose) { lose = false; throw new Error('RECEIPT_LOST'); }
+        if (url.endsWith('/exchange') && armed && !lose) { lose = true; throw new Error('RECEIPT_LOST'); }
         return result;
       },
     };
@@ -358,12 +381,13 @@ describe('LAN companion: real HTTP + Noise + SQLite', () => {
     // grok ai-review #1764 Important：判据是「进没进待确认槽」，不是 deliver 成没成功。
     // 一旦 persist 成 saved.pending，重连后这条一定会被结算、结果会进草稿；此时若回 false，
     // 分片队列会把队头那段用新 commandId 再发一次，草稿里出现重复的字。
-    let storage: string | null = null; let lose = true;
-    const port = { read: async () => storage, write: async (value: string) => { storage = value; },
+    let storage: string | null = null; let lose = false; let armed = false;
+    const port = { read: async () => storage, write: async (value: string) => { storage = value;
+        if ((JSON.parse(value) as { pending?: unknown }).pending) armed = true; },
       scan: async () => JSON.stringify(server.invite(['shared'])),
       post: async (url: string, body: unknown) => {
         const result = await post(url, body);
-        if (url.endsWith('/exchange') && lose) { lose = false; throw new Error('RECEIPT_LOST'); }
+        if (url.endsWith('/exchange') && armed && !lose) { lose = true; throw new Error('RECEIPT_LOST'); }
         return result;
       },
     };
@@ -388,15 +412,17 @@ describe('LAN companion: real HTTP + Noise + SQLite', () => {
       dispatch: () => ({ state: 'accepted', result: { text: '取消掉的那句话' } }) });
     const server2 = new LanCompanionServer(gateway2, hostIdentity, () => now);
     await server2.start(address!, 0);
-    let storage: string | null = null; let lose = true;
+    let storage: string | null = null; let lose = false; let armed = false;
     const transcripts: string[] = [];
-    const port = { read: async () => storage, write: async (value: string) => { storage = value; },
+    const port = { read: async () => storage, write: async (value: string) => { storage = value;
+        if ((JSON.parse(value) as { pending?: unknown }).pending) armed = true; },
       scan: async () => JSON.stringify(server2.invite(['shared'])),
       post: async (url: string, body: unknown) => {
         const result = await post(url, body);
         // 吞掉命令回执：主机已经收下并转好了，手机这边 deliver 抛错，结算要等重连后的 status
-        // 查询——ack 于是落在两次取消**之后**，正是覆盖那个判据的窗口。
-        if (url.endsWith('/exchange') && lose) { lose = false; throw new Error('RECEIPT_LOST'); }
+        // 查询——ack 于是落在两次取消**之后**，正是覆盖那个判据的窗口。按「命令进待确认槽」
+        // 武装（路由探针的 exchange 不许被误伤），丢的就是命令那一发。
+        if (url.endsWith('/exchange') && armed && !lose) { lose = true; throw new Error('RECEIPT_LOST'); }
         return result;
       } };
     const phone = createCompanionStore(port, () => {}, async text => { transcripts.push(text); });

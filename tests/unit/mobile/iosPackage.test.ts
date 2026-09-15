@@ -43,6 +43,23 @@ describe('mobileprovision parsing and classification', () => {
   it('throws instead of guessing when the profile has no plist payload', () => {
     expect(() => extractPlistXml(Buffer.from('garbage-without-plist'))).toThrow('MOBILEPROVISION_PLIST_MISSING');
   });
+  it('writes pairing identity with whenUnlockedThisDeviceOnly and does not fall back to Preferences', () => {
+    const source = readFileSync('packages/mobile/src/platform/nativeCompanion.ts', 'utf8');
+    expect(source).toContain('KeychainAccess.whenUnlockedThisDeviceOnly');
+    expect(source).toContain('SecureStorage.set');
+    expect(source).not.toMatch(/Preferences\.set\(\{\s*key:\s*STATE_KEY/);
+    expect(source).toContain('Sign to Run Locally');
+    expect(source).toContain('TeamIdentifier');
+  });
+
+  it('signed Ad Hoc profiles carry TeamIdentifier; empty team is the simulator Sign to Run Locally shape', () => {
+    const signed = summarizeProfile(readMobileprovision(asProfileBuffer(profileXml({ devices: [targetUdid], expires: '2027-01-01T00:00:00Z' }))));
+    expect(signed.teamIdentifier).toEqual(['D7CVTJ72NV']);
+    expect(signed.method).toBe('ad-hoc');
+    const unsigned = summarizeProfile({ TeamIdentifier: [] });
+    expect(unsigned.teamIdentifier).toEqual([]);
+  });
+
   it('classifies ad-hoc (devices, no debugging) versus development (devices, debugging) versus app-store (no devices)', () => {
     expect(summarizeProfile(readMobileprovision(asProfileBuffer(profileXml({ devices: [targetUdid], expires: '2027-01-01T00:00:00Z' })))).method).toBe('ad-hoc');
     expect(summarizeProfile(readMobileprovision(asProfileBuffer(profileXml({ taskAllow: true, devices: [targetUdid], expires: '2027-01-01T00:00:00Z' })))).method).toBe('development');

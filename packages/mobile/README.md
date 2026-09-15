@@ -69,6 +69,20 @@ version comes from the built package rather than a design mock, and the code
 signature names the team. On-iPhone install and update acceptance (MI-01/02) stay
 with the device.
 
+### Simulator Debug vs signed Keychain
+
+Pairing identity is written with `@aparajita/capacitor-secure-storage` and
+`KeychainAccess.whenUnlockedThisDeviceOnly`. That write needs a TeamIdentifier.
+
+| Build variant | TeamIdentifier | Pairing identity survives process kill |
+|---|---|---|
+| `ios:build` Ad Hoc / Development Team (`ios:verify` requires `TeamIdentifier=`) | yes | yes — this is the iPhone path |
+| Xcode Debug-iphonesimulator, Sign to Run Locally (`adhoc -`) | no | no — Keychain `set` fails, UI stays on `storageError` |
+
+This is a signing variant, not a product fallback. Simulator acceptance may inject
+an in-process SecureStorage stub; that stub is not shipped. Do not store pairing
+secrets in Preferences.
+
 试用安装与更新（给使用者）：
 
 1. 没有蒲公英扫码入口。不要打开自称安装页的网页。IPA **不进 git**，由舰队机 `ios:build` 产出。

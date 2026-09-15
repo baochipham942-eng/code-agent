@@ -29,7 +29,18 @@ export function projectCompanionEvent(kind: string, value: unknown): Record<stri
       return typeof event.id === 'string' && typeof event.name === 'string' ? { id: event.id, name: event.name } : null;
     case 'tool_call_end':
       return typeof event.toolCallId === 'string' && typeof event.success === 'boolean' ? { toolCallId: event.toolCallId, success: event.success } : null;
-    case 'error': return { code: 'RUN_FAILED' };
+    case 'error': {
+      const failure = event.failure && typeof event.failure === 'object' && !Array.isArray(event.failure)
+        ? event.failure as { code?: unknown; kind?: unknown }
+        : null;
+      if (failure?.code === 'PROJECT_SOURCE_TRUST') {
+        if (failure.kind === 'source_missing') return { code: 'PROJECT_SOURCE_MISSING' };
+        if (failure.kind === 'identity_changed') return { code: 'PROJECT_SOURCE_CHANGED' };
+        if (failure.kind === 'not_trusted') return { code: 'PROJECT_SOURCE_UNTRUSTED' };
+      }
+      if (failure?.code === 'MODEL_AUTH') return { code: 'MODEL_AUTH' };
+      return { code: 'RUN_FAILED' };
+    }
     case 'artifact_write_started': {
       if (typeof event.toolCallId !== 'string') return null;
       const raw = typeof event.filePath === 'string' ? event.filePath.replaceAll('\\', '/') : '';

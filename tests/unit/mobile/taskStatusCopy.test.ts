@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { commandNoticeCopy, composerModelLabel, connectionCopy, taskStatusCopy } from '../../../packages/mobile/src/app/MobileRoot';
 import type { CompanionLibrary } from '../../../src/shared/contract/companionLibrary';
@@ -104,8 +105,9 @@ describe('connectionCopy', () => {
 });
 
 describe('通用提示条：转写失败不许和输入区那条叠成两句', () => {
-  const notice = (commandError: string | null, commandErrorAction: string | null, voiceFailureShown: boolean) =>
-    commandNoticeCopy(text, { commandError, commandErrorAction }, voiceFailureShown);
+  const notice = (commandError: string | null, commandErrorAction: string | null, voiceFailureShown: boolean,
+    patch: Partial<Parameters<typeof commandNoticeCopy>[1]> = {}) =>
+    commandNoticeCopy(text, { commandError, commandErrorAction, status: 'connected', paused: false, connectionError: null, ...patch }, voiceFailureShown);
 
   it.each([
     ['COMPANION_TRANSCRIPTION_FAILED'],
@@ -123,5 +125,54 @@ describe('通用提示条：转写失败不许和输入区那条叠成两句', (
   it('别的动作失败照常报，不被语音那条判据误伤', () => {
     expect(notice('COMPANION_COMMAND_REJECTED', 'message.send', true)).toBe(text.commandRejected);
     expect(notice('UPLOAD_TOO_LARGE', 'files.upload', true)).toBe(text.uploadTooLarge);
+  });
+
+  it('Host 信任类失败与权限拒绝分开说，不混成「电脑拒绝了这条操作」', () => {
+    expect(notice('PROJECT_SOURCE_MISSING', 'message.send', false)).toBe(text.projectSourceMissing);
+    expect(notice('PROJECT_SOURCE_CHANGED', 'message.send', false)).toBe(text.projectSourceChanged);
+    expect(notice('PROJECT_SOURCE_UNTRUSTED', 'message.send', false)).toBe(text.projectSourceUntrusted);
+    expect(notice('MODEL_AUTH', 'message.send', false)).toBe(text.modelAuthMissing);
+    expect(notice('scope_denied', 'message.send', false)).toBe(text.commandScopeDenied);
+    expect(notice('COMPANION_SCOPE_DENIED', 'message.send', false)).toBe(text.commandScopeDenied);
+    expect(notice('RUN_FAILED', 'message.send', false)).toBe(text.runFailed);
+    expect(notice('PROJECT_SOURCE_MISSING', 'message.send', false)).not.toBe(text.commandRejected);
+  });
+
+  it('session.create 的失败点名「会话没建成」（fix6-②，build 37「点了没反应」）：原因照旧，但用户得知道是什么没成', () => {
+    expect(notice('scope_denied', 'session.create', false)).toBe(`${text.sessionCreateFailed}：${text.commandScopeDenied}`);
+    expect(notice('COMPANION_SCOPE_DENIED', 'session.create', false)).toBe(`${text.sessionCreateFailed}：${text.commandScopeDenied}`);
+    expect(notice('COMPANION_PROJECT_UNAVAILABLE', 'session.create', false)).toBe(`${text.sessionCreateFailed}：${text.projectUnavailable}`);
+    // 别的动作失败不加前缀（重命名失败不是「会话没建成」）
+    expect(notice('COMPANION_PROJECT_UNAVAILABLE', 'session.rename', false)).toBe(text.projectUnavailable);
+  });
+
+  it('连接不在时（manage 守卫挡下）：按连接胶囊同一套三分类给诊断句，不另造连接文案', () => {
+    expect(notice('COMPANION_NOT_CONNECTED', 'session.create', false, { status: 'offline', connectionError: 'connectionRefused' }))
+      .toBe(`${text.sessionCreateFailed}：${text.connectionRefused}`);
+    expect(notice('COMPANION_NOT_CONNECTED', 'session.create', false, { status: 'offline', connectionError: 'connectionUnavailable' }))
+      .toBe(`${text.sessionCreateFailed}：${text.connectionUnavailable}`);
+    expect(notice('COMPANION_NOT_CONNECTED', 'session.create', false, { status: 'connecting' }))
+      .toBe(`${text.sessionCreateFailed}：${text.connecting}`);
+    // 非创建动作的同类失败不加前缀
+    expect(notice('COMPANION_NOT_CONNECTED', 'session.rename', false, { status: 'offline', connectionError: 'connectionRefused' }))
+      .toBe(text.connectionRefused);
+  });
+
+  it('槽被上一条未结算命令占着 / 旧 Host 不认这条命令：各给一句点名的人话', () => {
+    expect(notice('COMPANION_COMMAND_IN_FLIGHT', 'session.create', false))
+      .toBe(`${text.sessionCreateFailed}：${text.commandInFlight}`);
+    expect(notice('COMPANION_UNSUPPORTED_ACTION', 'session.create', false))
+      .toBe(`${text.sessionCreateFailed}：${text.hostTooOld}`);
+  });
+});
+
+describe('重试贴文案行尾，且是可点可辨的小 pill（2026-09-14 反馈②）', () => {
+  const css = readFileSync('packages/mobile/src/styles.css', 'utf8');
+  it('overrides the 48px button min-height so retry does not take its own row, and is a ≥32px pill', () => {
+    expect(css).toMatch(/\.connection-line\s*\{[^}]*align-items:\s*baseline/);
+    expect(css).toMatch(/button\.inline-retry\s*\{[^}]*min-height:\s*32px/);
+    expect(css).toMatch(/button\.inline-retry\s*\{[^}]*border-radius:\s*16px/);
+    expect(css).toMatch(/button\.inline-retry\s*\{[^}]*border:\s*1px solid var\(--line\)/);
+    expect(css).toMatch(/\.notice\s*\{[^}]*display:\s*flex/);
   });
 });

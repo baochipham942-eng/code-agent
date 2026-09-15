@@ -22,7 +22,8 @@ export class LanCompanionManager {
   constructor(private readonly gateway: CompanionGateway, private readonly loadIdentity: () => Promise<KeyPair>,
     private readonly listSessions: () => Promise<{ id: string; title: string }[]>,
     private readonly listProjects: () => { id: string; name: string }[] = () => [],
-    private readonly push?: CompanionPushOutbox) {}
+    private readonly push?: CompanionPushOutbox,
+    private readonly relayRoute?: (deviceId: string) => import('../../../shared/contract/companionRelay').CompanionRelayRoute | null) {}
 
   async restore(): Promise<void> { if (this.gateway.pairedDevices().length) await this.start(); }
 
@@ -53,7 +54,7 @@ export class LanCompanionManager {
       await this.server?.stop(); this.server = null; this.address = null;
       const address = addresses[0];
       if (!address) throw new Error('COMPANION_LAN_UNAVAILABLE');
-      const server = new LanCompanionServer(this.gateway, await this.loadIdentity(), Date.now, this.push);
+      const server = new LanCompanionServer(this.gateway, await this.loadIdentity(), Date.now, this.push, this.relayRoute);
       await server.start(address); this.server = server; this.address = address; return server;
     })().finally(() => { this.starting = null; });
     return this.starting;

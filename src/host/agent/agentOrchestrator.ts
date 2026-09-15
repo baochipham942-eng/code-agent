@@ -58,7 +58,6 @@ import {
 } from './orchestratorDagSync';
 import { seedGoalContractForRun } from './orchestratorGoalSeed';
 import { resolveRoleToolBoundary, toRoleBoundaryRunAllowlist } from '../services/roleAssets/rolePersonalization';
-
 // Sub-modules
 import { type AgentOrchestratorConfig } from './orchestrator/types';
 import {
@@ -73,6 +72,8 @@ import { createRunContext, type RunHandle } from '../runtime/runContext';
 import { selectBackgroundWorkspaceScope } from '../runtime/workspaceAuthority';
 import type { RunRegistry } from '../runtime/runRegistry';
 import { getProjectService } from '../services/project/projectService';
+import { getProjectSourceTrustFailureMarker } from '../services/project/projectSourceTrustError';
+import { getModelAuthFailureMarker } from '../model/errorClassifier';
 import { resolveWorkspacePath } from '../runtime/workspaceScope';
 import { resolveSessionWorkspaceScope } from '../services/sessionFork/workspace';
 import { getAuthService } from '../services/auth/authService';
@@ -724,8 +725,8 @@ export class AgentOrchestrator {
       }
     } catch (error) {
       logger.error('========== Normal mode EXCEPTION ==========');
-      logger.error('Error:', error);
-      logger.error('Stack:', error instanceof Error ? error.stack : 'no stack');
+      logger.error('Error:', error, error instanceof Error ? error.stack : 'no stack');
+      const failureMarker = getProjectSourceTrustFailureMarker(error) ?? getModelAuthFailureMarker(error);
       onEvent({
         type: 'error',
         data: {
@@ -733,10 +734,8 @@ export class AgentOrchestrator {
           // 同一次失败会经由多个出口各发一条 error（这里 + runFinalizer 的 RUN_FAILED）。
           // 渲染侧按后到的覆盖，所以每一条都得带这一轮真跑的模型，缺一条就把前面
           // 带对的那条盖掉——真机 2026-08-01：卡片指认了一个根本没跑过的模型。
-          details: {
-            provider: modelConfig.provider,
-            model: modelConfig.model,
-          },
+          details: { provider: modelConfig.provider, model: modelConfig.model },
+          ...(failureMarker ? { failure: failureMarker } : {}),
         },
       });
       terminalError = error;

@@ -25,6 +25,8 @@ export function classifyTestResultFailure(
     code: classified.primaryFailureCode,
     dispositions: classified.dispositions,
     symptoms: classified.matched,
+    // 默认归因（ADR-071 D2）：跟着最高优先码走，报告里单独一栏，不进聚合口径。
+    ...(classified.attribution ? { attribution: classified.attribution } : {}),
   };
   try {
     assertFailureDispositionConsistency(result.status, failure.dispositions);
@@ -36,6 +38,7 @@ export function classifyTestResultFailure(
     return {
       ...failure,
       code: 'unknown',
+      attribution: undefined,
       symptoms: [...new Set([...failure.symptoms, 'disposition_inconsistent'])],
     };
   }

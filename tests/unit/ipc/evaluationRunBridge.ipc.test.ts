@@ -17,7 +17,7 @@ const panelProbe = vi.hoisted(() => ({
     estimatedCostPerCaseUsd: 0.0021,
     judge: { model: 'glm-4.7', provider: 'zhipu', estimatedCostPerCaseUsd: 0.01 },
     aiReview: [{ dim: 'task_completed', requiresExpectation: false, calibration: { state: 'uncalibrated', reason: 'no_record' } }],
-    splitCounts: { 'held-in': 76, 'held-out': 52, safety: 12 },
+    splitCounts: { 'held-in': 76, 'held-out': 52, safety: 12, core: 40 },
     unhardenedCount: 0,
     quickCheck: { tags: ['core-path'], maxCases: 12 },
     environment: {
@@ -43,6 +43,13 @@ const database = vi.hoisted(() => ({
   insertAnnotation: vi.fn(),
 }));
 const auth = vi.hoisted(() => ({ reviewerId: 'host-reviewer' }));
+const feedbackHook = vi.hoisted(() => ({
+  push: vi.fn(async () => ({ evidenceDir: '/data/eval-feedback/x', hookRan: true })),
+}));
+
+vi.mock('@internal-evaluation/host/evaluation/feedbackHook', () => ({
+  pushEvalFeedback: feedbackHook.push,
+}));
 
 vi.mock('../../../src/host/ipc/adminGuard', () => ({
   getAdminAccessIpcError: () => guard.denied
@@ -353,6 +360,74 @@ describe('evaluation run IPC admin gate', () => {
     await expect(save(null, {
       experimentId: 'run-1', caseId: 'case-1', dims: {}, gold: 'yes',
     })).rejects.toThrow(/gold must be a boolean/);
+  });
+
+  it('归因三件套：四值内落 attribution_json 并回读；枚举外、定级外、缺证据整条拒绝（ADR-071 D4）', async () => {
+    guard.denied = false;
+    const { handlers } = setup();
+    const save = handlers.get(EVALUATION_CHANNELS.SAVE_ANNOTATION)!;
+    database.loadExperimentCase.mockReturnValue({ case_id: 'case-1' });
+    database.listAnnotationsForCase.mockReturnValue([]);
+    const triple = {
+      attribution: 'scenario_fit', evidence: '第 3 步直接写文件，没先问',
+      suggestion: '在 write 前加确认', severity: 'P1',
+    };
+    const result = await save(null, {
+      experimentId: 'run-1', caseId: 'case-1', dims: {}, attribution: triple,
+    }) as { annotation: { attribution?: typeof triple } };
+    const [row] = database.insertAnnotation.mock.calls[0] as [{ attribution_json: string }];
+    expect(JSON.parse(row.attribution_json)).toEqual(triple);
+    expect(result.annotation.attribution).toEqual(triple);
+
+    for (const [bad, message] of [
+      [{ ...triple, attribution: 'the_weather' }, /attribution must be one of/],
+      [{ ...triple, severity: 'P9' }, /severity must be one of/],
+      [{ attribution: 'user_input', severity: 'P0' }, /attribution\.evidence is required/],
+      ['scenario_fit', /attribution must be an object/],
+    ] as const) {
+      await expect(save(null, {
+        experimentId: 'run-1', caseId: 'case-1', dims: {}, attribution: bad,
+      })).rejects.toThrow(message);
+    }
+  });
+
+  it('没填归因的那一版落 attribution_json=null——「取消归因」靠追加新行，不改旧行', async () => {
+    guard.denied = false;
+    const { handlers } = setup();
+    const save = handlers.get(EVALUATION_CHANNELS.SAVE_ANNOTATION)!;
+    database.loadExperimentCase.mockReturnValue({ case_id: 'case-1' });
+    database.listAnnotationsForCase.mockReturnValue([]);
+    await save(null, { experimentId: 'run-1', caseId: 'case-1', dims: {} });
+    expect(database.insertAnnotation).toHaveBeenCalledWith(expect.objectContaining({
+      attribution_json: null,
+    }));
+  });
+
+  it('进反馈池：只放场景适配/系统配置且 P0/P1，其余整条拒绝（ADR-071 D5）', async () => {
+    guard.denied = false;
+    const { handlers } = setup();
+    const push = handlers.get(EVALUATION_CHANNELS.PUSH_FEEDBACK)!;
+    database.loadExperimentCase.mockReturnValue({ case_id: 'case-1' });
+    const ok = {
+      experimentId: 'run-1', caseId: 'case-1',
+      triple: { attribution: 'system_config', evidence: '代理没配', severity: 'P0' },
+    };
+    await expect(push(null, ok)).resolves.toMatchObject({ hookRan: true });
+    expect(feedbackHook.push).toHaveBeenCalledWith(expect.objectContaining({ caseId: 'case-1' }));
+
+    feedbackHook.push.mockClear();
+    for (const triple of [
+      { attribution: 'model_capability', evidence: '模型答错', severity: 'P0' },
+      { attribution: 'system_config', evidence: '小瑕疵', severity: 'P2' },
+    ]) {
+      await expect(push(null, { ...ok, triple })).rejects.toThrow(/feedback pool/);
+    }
+    expect(feedbackHook.push).not.toHaveBeenCalled();
+
+    // 题不存在就不落证据，否则反馈池里会攒出指不到题的档。
+    database.loadExperimentCase.mockReturnValue(undefined);
+    await expect(push(null, ok)).rejects.toThrow(/does not exist/);
+    expect(feedbackHook.push).not.toHaveBeenCalled();
   });
 
   it('T3：五维唯一来源全部可写，未知维、未知值与超长笔记整条拒绝', async () => {

@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import * as yaml from 'js-yaml';
 
 import { isTransientError } from '../model/providers/retryStrategy';
+import { EVAL_ATTRIBUTIONS, isEvalAttribution, type EvalAttribution } from '../../shared/contract/evaluationAttribution';
 
 const FAILURE_CODEBOOK_FILE = 'eval-failcodes.yaml';
 const STDERR_TAIL_LINES = 20;
@@ -25,6 +26,8 @@ interface FailureCodeDefinition {
   priority: number;
   match: FailureCodeMatch;
   dispositions: string[];
+  /** 默认归因（ADR-071 D2）：统计先验，不是逐题判断，不进聚合口径。 */
+  attribution?: EvalAttribution;
   issue?: string;
   note?: string;
 }
@@ -50,6 +53,8 @@ interface FailureClassification {
   primaryFailureCode: string;
   dispositions: string[];
   matched: string[];
+  /** 最高优先码上的默认归因；该码没写就没有。 */
+  attribution?: EvalAttribution;
 }
 
 function failCodebook(filePath: string, message: string, cause?: unknown): never {
@@ -143,6 +148,12 @@ function validateDefinition(
       }
     }
   }
+  if (raw.attribution !== undefined && !isEvalAttribution(raw.attribution)) {
+    return failCodebook(
+      filePath,
+      `代码 ${raw.code}.attribution 只能是 ${EVAL_ATTRIBUTIONS.join(' / ')}`,
+    );
+  }
   const issue = raw.issue;
   if (issue !== undefined) {
     if (typeof issue !== 'string') {
@@ -168,6 +179,7 @@ function validateDefinition(
     priority: raw.priority as number,
     match,
     dispositions: dispositions.filter((disposition) => disposition !== 'known_issue'),
+    ...(isEvalAttribution(raw.attribution) ? { attribution: raw.attribution } : {}),
     ...(issue ? { issue } : {}),
     ...(typeof raw.note === 'string' ? { note: raw.note } : {}),
   };
@@ -288,10 +300,12 @@ export function classifyFailure(
     if (definition.issue) dispositions.add(`known_issue:${definition.issue}`);
   }
   addFixedDispositions(input, stderrLines, dispositions);
+  const primary = matchedDefinitions[0];
   return {
-    primaryFailureCode: matchedDefinitions[0]?.code ?? 'unknown',
+    primaryFailureCode: primary?.code ?? 'unknown',
     dispositions: [...dispositions].sort(),
     matched: matchedDefinitions.map((definition) => definition.code),
+    ...(primary?.attribution ? { attribution: primary.attribution } : {}),
   };
 }
 
@@ -307,6 +321,14 @@ export function assertFailureDispositionConsistency(
       + `not_in_denominator=${excludedDisposition ? '有' : '无'}`,
     );
   }
+}
+
+/** 某个 code 在码本上写的默认归因；报告的「默认归因」一栏据此取。 */
+export function failureCodeAttribution(
+  codebook: FailureCodebook,
+  code: string,
+): EvalAttribution | undefined {
+  return codebook.codes.find((definition) => definition.code === code)?.attribution;
 }
 
 export function failureCodeLabel(codebook: FailureCodebook, code: string): string {

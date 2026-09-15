@@ -113,6 +113,31 @@ describe('EvalCaseListTab', () => {
     expect(row.textContent).toContain('不会进跑分');
   });
 
+  it('分布矩阵：layer × category 四格里空格标红且带 eval-case-matrix-empty，已归档/草稿不计', async () => {
+    const base = { file: 'x.yaml', relativeDir: '', tags: [], inheritedTags: [], splits: ['held-in' as const], turns: 1, hasExpect: true, hardened: true, source: 'manual' as const, isDraft: false };
+    const items: EvalCaseListItem[] = [
+      { ...base, id: 'a', layer: 'L1', category: 'basic_tool', retired: false },
+      { ...base, id: 'b', layer: 'L1', category: 'task_completion', retired: false },
+      { ...base, id: 'c', layer: 'L2', category: 'basic_tool', retired: false },
+      // 已归档的题恰好落在空格上：算进去矩阵就没有盲区了
+      { ...base, id: 'd-archived', layer: 'L2', category: 'task_completion', retired: true },
+      { ...base, id: 'e-draft', file: 'drafts/e.yaml', relativeDir: 'drafts', layer: 'L2', category: 'task_completion', retired: false, isDraft: true },
+    ];
+    ipc.invoke.mockImplementation(async (channel: string) =>
+      (channel === EVALUATION_CHANNELS.LIST_CASES ? items : { action: 'archive', id: 'x', file: 'x' }));
+    render(<EvalCaseListTab />);
+    await screen.findByTestId('eval-case-matrix');
+
+    expect(screen.getAllByTestId('eval-case-matrix-cell')).toHaveLength(3);
+    const empty = screen.getAllByTestId('eval-case-matrix-empty');
+    expect(empty).toHaveLength(1);
+    expect(empty[0].textContent).toBe('0');
+    expect(empty[0].className).toContain('text-badge-danger');
+    // 行 L2、列 task_completion 那格
+    const l2Row = empty[0].closest('tr');
+    expect(l2Row?.textContent?.startsWith('L2')).toBe(true);
+  });
+
   it('状态筛选可单独查看已归档题', async () => {
     render(<EvalCaseListTab />);
     await screen.findByTestId('eval-case-row-daily-case');

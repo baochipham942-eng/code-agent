@@ -79,6 +79,12 @@ describe('applySplitFilter', () => {
   it('显式 ids 与桶取交集（挡住把 held-out 混进日常迭代）', () => {
     expect(applySplitFilter(['a', 'd'], splitFile(), 'held-in')).toEqual(['a']);
   });
+
+  it('core 桶：旧切分文件没有这一桶时为空，有则按桶返回', () => {
+    expect(applySplitFilter(undefined, splitFile(), 'core')).toEqual([]);
+    expect(applySplitFilter(undefined, { ...splitFile(), core: ['b', 'c'] }, 'core')).toEqual(['b', 'c']);
+    expect(applySplitFilter(['a', 'c'], { ...splitFile(), core: ['b', 'c'] }, 'core')).toEqual(['c']);
+  });
 });
 
 describe('切分资产硬门', () => {
@@ -86,6 +92,13 @@ describe('切分资产硬门', () => {
     const file = splitFile();
     file.heldIn.push('d');
     expect(() => assertValidEvalSplits(file)).toThrow(/held-in\/held-out overlap.*d/);
+  });
+
+  it('core 只能取自 held-in（不泄露 held-out、不混 safety）', () => {
+    expect(() => assertValidEvalSplits({ ...splitFile(), core: ['a', 'd', 's'] }))
+      .toThrow(/core must be a held-in subset: d, s/);
+    expect(() => assertValidEvalSplits({ ...splitFile(), core: ['a', 'a'] })).toThrow(/core contains duplicate ids: a/);
+    expect(() => assertValidEvalSplits({ ...splitFile(), core: ['a', 'b'] })).not.toThrow();
   });
 
   it('拒绝红线 case 留在能力回归桶', () => {

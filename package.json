@@ -151,6 +151,7 @@
     "check:release-evidence-registry": "npx tsx scripts/ci/check-release-evidence-registry.ts",
     "postinstall": "npm run rebuild-native:system",
     "eval": "npx tsx packages/internal/evaluation-center/scripts/eval-ci.ts --split held-in",
+    "eval:core": "npx tsx packages/internal/evaluation-center/scripts/eval-ci.ts --split core",
     "voice-eval": "npx tsx tests/eval/voice/run.ts",
     "trajectory:audit": "npx tsx packages/internal/evaluation-center/scripts/export-agent-trajectories.ts",
     "trajectory:collect-sample": "npx tsx packages/internal/evaluation-center/scripts/collect-agent-trajectory-sample.ts",

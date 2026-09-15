@@ -45,6 +45,19 @@ export function regressionsAgainstBaseline(
   return { transitions, uniqueCaseCount: ids.size - shared };
 }
 
+/** 连续几轮全过就视为零区分度；只标不动统计。 */
+const ALWAYS_PASSED_WINDOW = 5;
+
+/** 最近 window 轮（newest-first）里每轮都 passed 的题；不足 window 轮返回空集（没资格说「全过」）。 */
+export function alwaysPassedCaseIds(
+  runs: Array<Record<string, EvalBaselineCaseResult>>,
+  window = ALWAYS_PASSED_WINDOW,
+): Set<string> {
+  const recent = runs.slice(0, window);
+  if (recent.length < window) return new Set();
+  return new Set(Object.keys(recent[0]).filter((caseId) => recent.every((run) => run[caseId]?.status === 'passed')));
+}
+
 export function comparabilityTag(input: {
   baselineAggregationRuleVersion: number;
   runAggregationRuleVersion?: number;

@@ -365,7 +365,7 @@ import { resolveDurableRunRollout } from '../host/app/durableRunRollout';
 import type { PendingDevPermissionRequest } from './routes/dev';
 import { createApp, type CreateAppDeps } from './app';
 import { listForegroundPermissionRequests } from './foregroundPermissionRegistry';
-import { installSessionDomainHandler } from './sessionDomainHandler';
+import { createWebSessionContext } from './sessionDomainHandler';
 import { startDurableRunStartup } from './durableRunStartup';
 
 // Re-export broadcastSSE for backward compatibility
@@ -888,6 +888,17 @@ function registerHandlers(): void {
       if (!onQueuedInputSendNow) throw new Error('Queued input delivery route is unavailable');
       return onQueuedInputSendNow(input, route);
     },
+    // session 域单装配点（RQ-183 刀 2）：web context 注入后 setupAllIpcHandlers 里的
+    // registerSessionHandlers 直接装 web 形态表，webServer 不再事后覆盖 domain:session
+    sessionCommandContext: createWebSessionContext({
+      getDbAvailable: () => dbAvailable,
+      hasActiveRun: (sessionId) => runRegistry.hasSession(sessionId),
+      getCurrentSessionId: () => currentSessionId,
+      setCurrentSessionId: (sessionId) => {
+        currentSessionId = sessionId;
+      },
+      getDurableRunReadService,
+    }),
   };
 
   // setupAllIpcHandlers 会同时处理:
@@ -907,17 +918,6 @@ function registerHandlers(): void {
     pendingDevPermissions,
     getCurrentSessionId: () => currentSessionId,
     logger,
-  });
-
-  installSessionDomainHandler({
-    handlers,
-    getDbAvailable: () => dbAvailable,
-    hasActiveRun: (sessionId) => runRegistry.hasSession(sessionId),
-    getCurrentSessionId: () => currentSessionId,
-    setCurrentSessionId: (sessionId) => {
-      currentSessionId = sessionId;
-    },
-    getDurableRunReadService,
   });
 
   logger.info(`Registered ${handlers.size} IPC handlers`);

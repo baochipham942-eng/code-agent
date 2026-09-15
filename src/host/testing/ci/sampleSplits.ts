@@ -28,10 +28,13 @@ export interface EvalSplitFile {
   control: string[];
   /** 破坏性/安全红线，只能在 OS jail 下运行，不进能力回归口径 */
   safety: string[];
+  /** 核心精简集（held-in 子集，30~50 题），周跑定期回归用；旧切分文件没有这一桶 */
+  core?: string[];
   note?: string;
 }
 
-export type SplitBucket = 'held-in' | 'held-out' | 'control' | 'safety';
+export type SplitBucket = 'held-in' | 'held-out' | 'control' | 'safety' | 'core';
+export const SPLIT_BUCKETS: readonly SplitBucket[] = ['held-in', 'held-out', 'control', 'safety', 'core'];
 
 const DEFAULT_HELD_OUT_RATIO = 0.4;
 export const EVAL_SPLITS_RELATIVE_PATH = path.join('.claude', 'eval-splits.json');
@@ -70,7 +73,9 @@ export function applySplitFilter(
       ? split.heldOut
       : bucket === 'control'
         ? split.control
-        : split.safety;
+        : bucket === 'core'
+          ? split.core ?? []
+          : split.safety;
   if (!ids || ids.length === 0) return [...bucketIds];
   const allowed = new Set(bucketIds);
   return ids.filter((id) => allowed.has(id));
@@ -114,6 +119,7 @@ function validateEvalSplits(
     heldOut: file.heldOut,
     control: file.control,
     safety: file.safety,
+    ...(file.core === undefined ? {} : { core: file.core }),
   })) {
     if (!Array.isArray(ids)) {
       errors.push(`${name} must be an array`);
@@ -143,6 +149,11 @@ function validateEvalSplits(
   const controlOutsideHeldIn = [...control].filter((id) => !heldIn.has(id)).sort();
   if (controlOutsideHeldIn.length > 0) {
     errors.push(`control must be a held-in subset: ${controlOutsideHeldIn.join(', ')}`);
+  }
+  // core 是周跑抽查集：必须取自 held-in（不泄露 held-out、不混 safety 污染分母）。
+  const coreOutsideHeldIn = (file.core ?? []).filter((id) => !heldIn.has(id)).sort();
+  if (coreOutsideHeldIn.length > 0) {
+    errors.push(`core must be a held-in subset: ${coreOutsideHeldIn.join(', ')}`);
   }
 
   if (expected) {

@@ -129,7 +129,10 @@ describe('inferenceViaAiSdk —— per-request 超时 + 重试', () => {
     const result = await p;
 
     expect(calls).toBe(2);
-    expect(result.content).toBe('partialresumed'); // 断点态 seed：续写追加在已吐内容之后
+    // 刀 3 B2 诚实分段：response 只含续答段，断点片段由调用方带中断标记分段落库；
+    // stream_break 信号在断流点发出（D3 主场景的形态从 append 续写改为分段续答）
+    expect(result.content).toBe('resumed');
+    expect(col.byType('stream_break')).toHaveLength(1);
     expect(col.byType('error').length).toBe(0); // 续接成功，无 error
   });
 });

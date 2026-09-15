@@ -1,11 +1,16 @@
 // ============================================================================
 // Session IPC Handlers - session:* 通道
 // ============================================================================
+//
+// 域通道（IPC_DOMAINS.SESSION）自 RQ-183 刀 2 起走单源路由表
+// （src/host/ipc/domainRoutes/sessionRoutes.ts）：46 个 action 的校验/handler 表
+// 与两侧上下文差异全部沉入 SessionCommandContext，本文件只保留装配与 legacy 通道。
+// 生产唯一装配点是 setupAllIpcHandlers（全仓只有 webServer 一个调用点）。
 
 import type { IpcMain } from '../platform';
-import { IPC_CHANNELS, IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
+import { IPC_CHANNELS } from '../../shared/ipc';
 import type { Message } from '../../shared/contract';
-import type { AgentApplicationService, SwitchModelParams } from '../../shared/contract/appService';
+import type { AgentApplicationService } from '../../shared/contract/appService';
 import type {
   CrossSessionSearchOptions,
   CrossSessionSearchResults,
@@ -16,7 +21,6 @@ import {
   listAdminReviewQueueItems,
   type AdminReviewQueueItem,
 } from '../../shared/contract/productClosure';
-import { disposeTerminalSession } from '../services/terminal/terminalSessionManager';
 import { getDefaultSearchManager, type SessionSearchFtsSource } from '../session/search';
 import {
   getDefaultCache,
@@ -26,16 +30,13 @@ import { SESSION_SEARCH } from '../../shared/constants';
 import { createLogger } from '../services/infra/logger';
 import { assertAdminAccess } from './adminGuard';
 import { getArtifactIssueRepository } from '../services/core/repositories/ArtifactIssueRepository';
-import { SessionForkError } from '../../shared/contract/sessionFork';
-import { SessionRewindError } from '../../shared/contract/sessionRewind';
-import { ConversationBranchError } from '../../shared/contract/conversationBranch';
-import { SessionForkPortabilityError } from '../../shared/contract/sessionForkPortability';
-import { WorkspaceFileRestoreError } from '../../shared/contract/fileRestore';
-import { getUserBrowserLinkService } from '../services/surfaceExecution/UserBrowserLinkService';
-import { recoverHistoricalSession } from './historicalSessionRecovery';
-
-/** Inline stub — old memoryTriggerService removed */
-type SessionMemoryContext = unknown;
+import { installDomainRoutes } from './domainRoutes/registry';
+import {
+  createDesktopSessionContext,
+  defineSessionRoutes,
+  sessionRoutes,
+  type SessionCommandContext,
+} from './domainRoutes/sessionRoutes';
 
 const logger = createLogger('SessionIPC');
 
@@ -44,11 +45,16 @@ const logger = createLogger('SessionIPC');
 // ----------------------------------------------------------------------------
 
 /**
- * 注册 Session 相关 IPC handlers
+ * 注册 Session 相关 IPC handlers。
+ *
+ * 域通道经 installDomainRoutes 装配单源表：webServer 注入 web context 时装 web
+ * 形态，否则装桌面形态。刀 3 起两形态共用同一套 handler（46 action 全量），
+ * 差异只在未知 action 兜底文案与两侧 context。
  */
 export function registerSessionHandlers(
   ipcMain: IpcMain,
-  getAppService: () => AgentApplicationService | null
+  getAppService: () => AgentApplicationService | null,
+  webContext?: SessionCommandContext,
 ): void {
   const requireAppService = (): AgentApplicationService => {
     const svc = getAppService();
@@ -56,280 +62,14 @@ export function registerSessionHandlers(
     return svc;
   };
 
-  // ========== New Domain Handler (TASK-04) ==========
-  ipcMain.handle(IPC_DOMAINS.SESSION, async (_, request: IPCRequest): Promise<IPCResponse> => {
-    const { action, payload } = request;
+  // ========== Domain Handler（单源路由表，RQ-183 刀 2） ==========
+  installDomainRoutes(
+    ipcMain,
+    webContext ? defineSessionRoutes('web') : sessionRoutes,
+    webContext ?? createDesktopSessionContext(getAppService),
+  );
 
-    try {
-      let data: unknown;
-
-      switch (action) {
-        case 'recoverHistory':
-          data = recoverHistoricalSession(payload as import('../../shared/contract/historicalSessionRecovery').HistoricalSessionRecoveryRequest);
-          break;
-        case 'list':
-          data = await requireAppService().listSessions(payload as import('../../shared/contract/appService').SessionListQueryOptions | undefined);
-          break;
-        case 'findExpertThread':
-          data = await requireAppService().findExpertThreadSession((payload as { roleId: string }).roleId);
-          break;
-        case 'create':
-          data = await requireAppService().createSession(payload as import('../../shared/contract/appService').CreateSessionConfig);
-          break;
-        case 'load':
-          data = await requireAppService().loadSession((payload as { sessionId: string }).sessionId);
-          break;
-        case 'delete': {
-          const deletedSessionId = (payload as { sessionId: string }).sessionId;
-          await getUserBrowserLinkService().end(deletedSessionId, 'session-switch').catch((error) => {
-            logger.warn('Failed to end user browser run before deleting session', {
-              sessionId: deletedSessionId,
-              message: error instanceof Error ? error.message : String(error),
-            });
-          });
-          await requireAppService().deleteSession(deletedSessionId);
-          // 会话没了，它那个长生命周期 PTY 不能继续挂着（没有超时会自己收它）。
-          // await：dispose 现在等整树确认退出才返回，不 await 就退回「发完信号就走」。
-          await disposeTerminalSession(deletedSessionId);
-          data = null;
-          break;
-        }
-        case 'getMessages':
-          data = await requireAppService().getMessages((payload as { sessionId: string }).sessionId);
-          break;
-        case 'getSessionTasks':
-          data = await requireAppService().getSessionTasks((payload as { sessionId: string }).sessionId);
-          break;
-        case 'fork':
-          data = await requireAppService().forkSession(
-            payload as import('../../shared/contract/sessionFork').CreateSessionForkRequest,
-          );
-          break;
-        case 'getForkLineage':
-          data = await requireAppService().getForkLineage((payload as { sessionId: string }).sessionId);
-          break;
-        case 'listForkChildren':
-          data = await requireAppService().listForkChildren((payload as { sessionId: string }).sessionId);
-          break;
-        case 'exportSessionFork':
-          data = await requireAppService().exportSessionFork(
-            payload as import('../../shared/contract/sessionForkPortability').ExportSessionForkRequest,
-          );
-          break;
-        case 'importSessionFork':
-          data = await requireAppService().importSessionFork(
-            payload as import('../../shared/contract/sessionForkPortability').ImportSessionForkRequest,
-          );
-          break;
-        case 'enqueueSessionForkSync':
-          data = await requireAppService().enqueueSessionForkSync(
-            payload as import('../../shared/contract/sessionForkPortability').EnqueueSessionForkSyncRequest,
-          );
-          break;
-        case 'ingestSessionForkSync':
-          data = await requireAppService().ingestSessionForkSync(
-            payload as import('../../shared/contract/sessionForkPortability').IngestSessionForkSyncRequest,
-          );
-          break;
-        case 'importReadySessionForkSync':
-          data = await requireAppService().importReadySessionForkSync(
-            payload as import('../../shared/contract/sessionForkPortability').ImportReadySessionForkSyncRequest,
-          );
-          break;
-        case 'searchSessionForkExports':
-          data = await requireAppService().searchSessionForkExports(
-            payload as import('../../shared/contract/sessionForkPortability').SearchSessionForkExportsRequest,
-          );
-          break;
-        case 'readSessionForkTree':
-          data = await requireAppService().readSessionForkTree(
-            payload as import('../../shared/contract/sessionForkPortability').ReadSessionForkTreeRequest,
-          );
-          break;
-        case 'readSessionForkNeighborhood':
-          data = await requireAppService().readSessionForkNeighborhood(
-            payload as import('../../shared/contract/sessionForkPortability').ReadSessionForkNeighborhoodRequest,
-          );
-          break;
-        case 'replayConversationBranch': {
-          const p = payload as {
-            sessionId: string;
-            options?: { includeRewound?: boolean; allowRepairOverride?: boolean };
-          };
-          data = await requireAppService().replayConversationBranch(p.sessionId, p.options);
-          break;
-        }
-        case 'compareConversationBranches': {
-          const p = payload as { leftSessionId: string; rightSessionId: string };
-          data = await requireAppService().compareConversationBranches(
-            p.leftSessionId,
-            p.rightSessionId,
-          );
-          break;
-        }
-        case 'traceConversationProvenance': {
-          const p = payload as { sessionId: string; messageId: string };
-          data = await requireAppService().traceConversationProvenance(p.sessionId, p.messageId);
-          break;
-        }
-        case 'auditConversationLineage':
-          data = await requireAppService().auditConversationLineage(
-            (payload as { sessionId: string }).sessionId,
-          );
-          break;
-        case 'quarantineConversationLineage': {
-          const p = payload as { sessionId: string; idempotencyKey: string };
-          data = await requireAppService().quarantineConversationLineage(
-            p.sessionId,
-            p.idempotencyKey,
-          );
-          break;
-        }
-        case 'repairConversationLineage':
-          data = await requireAppService().repairConversationLineage(
-            payload as {
-              sessionId: string;
-              issueDigest: string;
-              reason: string;
-              idempotencyKey: string;
-            },
-          );
-          break;
-        case 'recordConversationEvaluationAttribution':
-          data = await requireAppService().recordConversationEvaluationAttribution(
-            payload as {
-              sessionId: string;
-              evaluationId: string;
-              runId?: string | null;
-              metric: string;
-              value: number;
-              attributedMessageIds: string[];
-              idempotencyKey: string;
-            },
-          );
-          break;
-        case 'listConversationEvaluationAttributions':
-          data = await requireAppService().listConversationEvaluationAttributions(
-            (payload as { sessionId: string }).sessionId,
-          );
-          break;
-        case 'getRecap': {
-          // A6 回会话追赶：素材只来自产物快照 + 任务账本，不读消息流水。
-          const p = payload as { sessionId: string; since?: number };
-          const { getSessionRecap } = await import('../session/sessionRecapService');
-          data = await getSessionRecap(p.sessionId, typeof p.since === 'number' ? p.since : 0);
-          break;
-        }
-        case 'rewindToPrompt': {
-          const p = payload as { sessionId: string; userMessageId: string; idempotencyKey?: string };
-          data = await requireAppService().rewindToPrompt(p);
-          break;
-        }
-        case 'rewindConversation':
-          data = await requireAppService().rewindConversation(
-            payload as import('../../shared/contract/sessionRewind').RewindConversationRequest,
-          );
-          break;
-        case 'restoreConversationRewind':
-          data = await requireAppService().restoreConversationRewind(
-            payload as import('../../shared/contract/sessionRewind').RestoreConversationRewindRequest,
-          );
-          break;
-        case 'restoreWorkspaceFilesAtCheckpoint':
-          data = await requireAppService().restoreWorkspaceFilesAtCheckpoint(
-            payload as import('../../shared/contract/fileRestore').RestoreWorkspaceFilesAtCheckpointRequest,
-          );
-          break;
-        case 'turnCheckout':
-          data = await requireAppService().turnCheckout(
-            payload as import('../../shared/contract/turnCheckout').TurnCheckoutRequest,
-          );
-          break;
-        case 'turnRedo':
-          data = await requireAppService().turnRedo(
-            payload as import('../../shared/contract/turnCheckout').TurnRedoRequest,
-          );
-          break;
-        case 'export':
-          data = await requireAppService().exportSession((payload as { sessionId: string }).sessionId);
-          break;
-        case 'exportMarkdown':
-          data = await requireAppService().exportSessionMarkdown((payload as { sessionId: string }).sessionId);
-          break;
-        case 'exportDiagnostics':
-          data = await requireAppService().exportSessionDiagnostics((payload as { sessionId: string }).sessionId);
-          break;
-        case 'import':
-          data = await requireAppService().importSession((payload as { data: unknown }).data);
-          break;
-        case 'getMemoryContext': {
-          const p = payload as { sessionId: string; workingDirectory?: string; query?: string };
-          data = await requireAppService().getMemoryContext(p.sessionId, p.workingDirectory, p.query) as SessionMemoryContext;
-          break;
-        }
-        case 'update': {
-          const p = payload as { sessionId: string; updates: Partial<import('../../shared/contract/session').Session> };
-          await requireAppService().updateSession(p.sessionId, p.updates);
-          data = null;
-          break;
-        }
-        case 'archive':
-          data = await requireAppService().archiveSession((payload as { sessionId: string }).sessionId);
-          break;
-        case 'unarchive':
-          data = await requireAppService().unarchiveSession((payload as { sessionId: string }).sessionId);
-          break;
-        case 'switchModel': {
-          const p = payload as SwitchModelParams;
-          const result = await requireAppService().switchModel(p);
-          data = { provider: p.provider, model: p.model, persisted: result.persisted };
-          break;
-        }
-        case 'getModelOverride': {
-          const { sessionId } = payload as { sessionId: string };
-          data = requireAppService().getModelOverride(sessionId);
-          break;
-        }
-        case 'clearModelOverride': {
-          const { sessionId } = payload as { sessionId: string };
-          const result = await requireAppService().clearModelOverride(sessionId);
-          data = { persisted: result.persisted };
-          break;
-        }
-        case 'search': {
-          const p = payload as { query: string; options?: CrossSessionSearchOptions };
-          data = await performCrossSessionSearch(p.query, p.options, requireAppService);
-          break;
-        }
-        default:
-          return {
-            success: false,
-            error: {
-              code: 'INVALID_ACTION',
-              message: `Unknown action: ${action}`,
-            },
-          };
-      }
-
-      return { success: true, data };
-    } catch (error) {
-      return {
-        success: false,
-        error: {
-          code: error instanceof SessionForkError
-            || error instanceof SessionRewindError
-            || error instanceof ConversationBranchError
-            || error instanceof SessionForkPortabilityError
-            || error instanceof WorkspaceFileRestoreError
-            ? error.code
-            : 'INTERNAL_ERROR',
-          message: error instanceof Error ? error.message : String(error),
-        },
-      };
-    }
-  });
-
-  // ========== Legacy Handlers (Deprecated) ==========
+  // ========== Legacy Handlers (Deprecated，方案 2.5 不收) ==========
 
   // Load older messages (pagination)
   ipcMain.handle(IPC_CHANNELS.SESSION_LOAD_OLDER_MESSAGES, async (_, payload: { sessionId: string; beforeTimestamp: number; limit?: number }) => {

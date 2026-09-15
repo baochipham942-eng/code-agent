@@ -7,7 +7,7 @@ import path from 'path';
 import type { BaselineDelta, TestRunSummary, TestResult } from './types';
 import { formatDuration } from '../../shared/utils/format';
 import { getRunStampReportRows } from './runStampReport';
-import { failureCodeLabel, loadProjectFailureCodebook } from './failureCodes';
+import { failureCodeAttribution, failureCodeLabel, loadProjectFailureCodebook } from './failureCodes';
 import { AI_REVIEW_DIMENSIONS } from './judge/dimensions';
 import type { AiReviewDimension } from '../../shared/contract/evaluation';
 
@@ -152,6 +152,12 @@ export function generateMarkdownReport(
   lines.push('## 评分权威分桶');
   lines.push('');
   lines.push(generateScoreAuthoritySection(summary.results));
+  lines.push('');
+
+  // 分层通过率：总体之外至少一层，分母外数字必须与通过率并列出现
+  lines.push('## 分层通过率');
+  lines.push('');
+  lines.push(...generateBreakdownSection(summary));
   lines.push('');
 
   const aiReviewSection = generateAiReviewSection(summary.results);
@@ -573,6 +579,43 @@ function formatDisposition(disposition: string): string {
   return disposition;
 }
 
+const ATTRIBUTION_LABELS: Record<string, string> = {
+  user_input: '用户输入',
+  model_capability: '模型能力',
+  scenario_fit: '场景适配',
+  system_config: '系统配置',
+};
+
+/**
+ * 默认归因分布（ADR-071 D2/Q5）。🔴 这一栏的来源是 failcodes.yaml 上的先验，
+ * 不是逐题判断，所以它单独一张表、单独一句免责，且不参与通过率等任何聚合口径。
+ * 人工归因（annotations.attribution_json）在评测中心抽屉里看，不进本文件——
+ * 报告只拿得到 TestRunSummary，读不到库。
+ */
+function generateDefaultAttributionRows(summary: TestRunSummary): string[] {
+  const codebook = reportFailureCodebook();
+  const counts: Record<string, number> = {};
+  for (const [code, count] of Object.entries(summary.failureDistribution ?? {})) {
+    const attribution = codebook ? failureCodeAttribution(codebook, code) : undefined;
+    const key = attribution ?? 'unattributed';
+    counts[key] = (counts[key] ?? 0) + count;
+  }
+  const rows = Object.entries(counts)
+    .sort(([left, leftCount], [right, rightCount]) => rightCount - leftCount || left.localeCompare(right))
+    .map(([key, count]) => `| ${ATTRIBUTION_LABELS[key] ?? '未标默认归因'} | ${count} |`);
+  return [
+    '',
+    '### 默认归因（码本先验，不进聚合口径）',
+    '',
+    '> 来自 `.claude/eval-failcodes.yaml` 的 `attribution:`，是「这个码通常是谁的错」的默认值。',
+    '> 逐题的人工归因三件套在评测中心抽屉里给，两者分开看，不混算。',
+    '',
+    '| 默认归因 | 数量 |',
+    '|----------|------|',
+    ...(rows.length > 0 ? rows : ['| 暂无 | 0 |']),
+  ];
+}
+
 function generateFailureDistributionRows(summary: TestRunSummary): string[] {
   const distribution = { unknown: 0, ...summary.failureDistribution };
   const codeRows = Object.entries(distribution)
@@ -599,6 +642,7 @@ function generateFailureDistributionRows(summary: TestRunSummary): string[] {
     .sort(([left, leftCount], [right, rightCount]) => rightCount - leftCount || left.localeCompare(right))
     .map(([disposition, count]) => `| ${formatDisposition(disposition)} | ${count} |`);
   lines.push(...(dispositionRows.length > 0 ? dispositionRows : ['| 暂无 | 0 |']));
+  lines.push(...generateDefaultAttributionRows(summary));
   return lines;
 }
 
@@ -737,6 +781,49 @@ function generateScoreAuthoritySection(results: TestResult[]): string {
   lines.push('> 通过率只读取确定性断言；self_check 不作能力证据；AI 评审在下方并列展示，不属于分数权威桶。');
 
   return lines.join('\n');
+}
+
+/** 分层通过率的分母：与 generateScoreAuthoritySection 的「确定性断言」桶同口径。 */
+function isBreakdownDenominator(result: TestResult): boolean {
+  return (result.scoreAuthority ?? 'unknown') === 'deterministic_assertion'
+    && result.status !== 'skipped'
+    && result.status !== 'infra_excluded'
+    && result.status !== 'cost_exceeded';
+}
+
+const BREAKDOWN_DIMENSIONS: Array<{ label: string; keysOf: (result: TestResult) => string[] }> = [
+  { label: 'category', keysOf: (r) => [r.caseMeta?.category ?? '未标注'] },
+  { label: 'difficulty', keysOf: (r) => [r.caseMeta?.difficulty ?? '未标注'] },
+  { label: 'layer', keysOf: (r) => [r.caseMeta?.layer ?? '未标注'] },
+  { label: 'tag', keysOf: (r) => (r.caseMeta?.tags.length ? r.caseMeta.tags : ['未标注']) },
+];
+
+/** 按 category / difficulty / layer / tag 各一张表；一题多 tag 会进多行，tag 表分母之和不等于总分母。 */
+function generateBreakdownSection(summary: TestRunSummary): string[] {
+  const denominator = summary.results.filter(isBreakdownDenominator);
+  const lines: string[] = [];
+  for (const dimension of BREAKDOWN_DIMENSIONS) {
+    const rows = new Map<string, { total: number; passed: number }>();
+    for (const result of denominator) {
+      for (const key of dimension.keysOf(result)) {
+        const row = rows.get(key) ?? { total: 0, passed: 0 };
+        row.total += 1;
+        if (result.status === 'passed' && !result.invalid) row.passed += 1;
+        rows.set(key, row);
+      }
+    }
+    lines.push(`### 按 ${dimension.label}`, '', `| ${dimension.label} | 分母 | 通过 | 通过率 |`, '|------|-----:|-----:|-------:|');
+    for (const [key, row] of [...rows.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+      lines.push(`| ${key} | ${row.total} | ${row.passed} | ${(row.passed / row.total * 100).toFixed(1)}% |`);
+    }
+    if (rows.size === 0) lines.push('| （无确定性断言题） | 0 | 0 | -- |');
+    lines.push('');
+  }
+  lines.push(
+    `> 分母外：infra_excluded ${summary.infraExcluded ?? 0} · cost_exceeded ${summary.costExceeded ?? 0} · retired ${summary.retiredSkipped?.length ?? 0} · not_run ${summary.notRun} · invalid ${summary.invalidCases}`,
+    '> 分母只含确定性断言桶且非 skipped/infra_excluded/cost_exceeded 的题；not_run 无权威桶不进分母；invalid 在分母但不计通过。',
+  );
+  return lines;
 }
 
 const AI_REVIEW_LABELS: Record<AiReviewDimension, string> = {

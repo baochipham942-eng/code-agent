@@ -1,6 +1,6 @@
 # ADR-068：首字节之后断流续接（stream resume after first delta）
 
-- 状态：待爸拍板
+- 状态：已拍板（2026-09-14 爸；刀 0–3 已合 main：#1819/#1822/#1828/#1830，刀 4 UI 信号收官中）
 - 日期：2026-09-14
 - 工单：N-STREAM-RESUME-ADR（RQ-214，SOTA 体检 D09-04 并入，模型合同线 P0）
 - 相关：ADR-032（请求形状前缀稳定——续接重发仍吃 prompt cache 的前提）、ADR-037（durable run kernel；已知限制表「自动重发可能重复收费，不能承诺 exactly-once」同口径）、N-LOOP-DURABLE-K2（进程重启的 close-only 恢复，与本单的进程内续接分界）、N-INTERRUPT-REPLAY（中断轮 resumable 回放形态先例，2026-08-26 落地）、D09-04 / D02-01 设计草案（SOTA 体检输入，本 ADR 对其逐条重拍）
@@ -42,7 +42,7 @@
 
 边界定义：**用户看到的每一条 assistant 消息，其文本必须来自单次连续生成；跨次生成的内容只有两种合法呈现——(a) B1 无缝续接：续写 delta 从断点 append 到同一条消息，合法性来自 provider 的 prefix 合同（模型以传入前缀为条件继续同一次生成）；(b) B2 诚实分段：断点片段以带 `interruptionReason` 标记的 assistant 消息落库（形态对齐 `preserveStreamedPartial`），续答是新的一条消息。** 把重发的全新生成 append 到已有片段后面冒充同一次生成，即「拼两次回答」，两级都禁止。
 
-- tool_call 累积态：断点处 `argsText` 半截的 tool_call **永不执行、永不进 prefix**（对齐 streamSnapshot `stableForExecution:false` / `executionToolCalls:[]` 的既有拍板）；只有完整（`JSON.parse` 可过，复用 `getIncompleteToolCallIds` 判据）的 tool_call 才可作为 prefix 的一部分回传，半截的丢弃让模型重发完整调用。tool_call index 映射跨 attempt 保持稳定。
+- tool_call 累积态：断点处 `argsText` 半截的 tool_call **永不执行、永不进 prefix**（对齐 streamSnapshot `stableForExecution:false` / `executionToolCalls:[]` 的既有拍板）；只有完整（`JSON.parse` 可过，复用 `getIncompleteToolCallIds` 判据）的 tool_call 才可作为 prefix 的一部分回传，半截的丢弃让模型重发完整调用。tool_call index 映射跨 attempt 保持稳定。**（2026-09-15 施工回写：「完整 tool_call 作为 prefix 回传」在 AI SDK 路径上不可达——`convertToLanguageModelPrompt` 的 tool-call/tool-result 配对校验在请求发出前即抛 `MissingToolResultsError`（实证 `node_modules/ai/dist/index.js:1438-1449`，ai-review PR #1830 一轮 Important）。落地收敛为：B1 仅覆盖 text-only 断点（绝大多数 streaming 断流形态），断点含完整 tool_call 时回落 B2 诚实分段——partial 分段落库、模型重发完整调用，同等安全语义。）**
 - B1 打破「每次尝试全新累积器」不变量（`aiSdkAdapter.ts:878-880` 的注释明说该不变量依赖闸门）：续接 attempt 的 accumulator 必须用断点态 seed（content / contentParts / reasoning / 完整 toolCalls），续写 delta 追加其上。
 - 持久化：B1 成功后落库的就是一条完整 assistant 消息（前缀 + 续写，天然一体）；B2 / 预算耗尽时片段带中断标记落库——补齐现状缺口：**error 路径今天不落库 partial**（`preserveStreamedPartial` 只挂在 cancel/steer 上，`conversationRuntime.ts:1175/:1221`）。
 - usage 跨 attempt 合并记账（每次尝试都是真实计费），展示层单轮 usage = Σ 各次尝试。
@@ -145,4 +145,5 @@
 3. **Anthropic prefill 在 Claude 4.6+ 返回 400**（官方文档 2026-09-14 核实）：D09-04 草案设想的「assistant prefix 续写」对仓内默认 `claude-opus-4-7` 不成立，能力表必须按模型分档——这是对草案的一处实质修正。
 4. streamSnapshot 的 evidence-only 拍板（`stableForExecution:false`）本 ADR 不推翻：进程死回来的恢复仍是证据回放不自动续写；本 ADR 只管进程内 in-flight 断流。两者以「进程是否活着」分界。
 5. DeepSeek prefix 续写在 `/beta` 端点（非仓内 `MODEL_API_ENDPOINTS.deepseek` 主端点），刀 2 需端点覆盖能力；`@ai-sdk/deepseek` 不一定暴露该形状，必要时走 vendorCompat 手搓请求体。
+6. **施工落地与本文的偏差汇总**（2026-09-15 回写，细节见各刀证据档）：① D2 完整 tool_call 进 prefix 不可达，改 B1 text-only + 含 tool_call 断点落 B2（见 D2 回写段）；② 端点覆盖只替换 baseURL 末尾版本段（`…/vN → /beta`），自定义中转站的目录前缀保留（PR #1830 二轮 Important）；③ B1 attempt 首字节前瞬态失败须把 `resumeSeed` 挂回再 continue，否则断点态静默丢失；④ 刀 3 真机复现坐实了 as-built 备注 1 的 loop 层暴露面（修复前 DB 里 partial 一字不留），收编为「先保片段再重发」；⑤ 断点 partial 持久化对齐 `addAndPersistMessage` 降级链（persistMessage 缺失/失败降级 sessionManager，PR #1828 复审 Important）。
 6. 台账标题（D02-01·三票一致）比任务书正文七点多两项设计指向——「无人值守轮无条件续跑、前台首次自动再失败交人」与「复用 preserveStreamedPartial 与 N-INTERRUPT-REPLAY 形态」——正文未展开，本 ADR 已分别并入 D4（分档+熔断）与 D5（回放形态复用）。

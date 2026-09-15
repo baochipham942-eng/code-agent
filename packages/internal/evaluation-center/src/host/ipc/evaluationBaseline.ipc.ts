@@ -21,7 +21,7 @@ import type {
 import { inspectEvalEnvironment } from '../evaluation/evalEnvironment';
 import { EVALUATION_CHANNELS } from '../../shared/evaluationChannels';
 
-const BASELINE_FILE = /^eval-baseline\.(held-in|held-out|safety|all)\.k([1-9]\d*)\.json$/;
+const BASELINE_FILE = /^eval-baseline\.(held-in|held-out|safety|core|all)\.k([1-9]\d*)\.json$/;
 
 function record(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' && !Array.isArray(value)
@@ -75,7 +75,7 @@ function currentUserId(): string {
 function splitFromConfig(config: Record<string, unknown>): EvalBaselineSplit | null {
   const evalSet = record(config.evalSet);
   const value = typeof config.split === 'string' ? config.split : evalSet?.split;
-  return value === 'held-in' || value === 'held-out' || value === 'safety' || value === 'all'
+  return value === 'held-in' || value === 'held-out' || value === 'safety' || value === 'core' || value === 'all'
     ? value
     : null;
 }

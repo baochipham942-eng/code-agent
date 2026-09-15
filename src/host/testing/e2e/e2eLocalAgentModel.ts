@@ -30,6 +30,17 @@ const E2E_BACKGROUND_APPROVAL_CALL_ID = 'e2e-background-approval';
 const E2E_SNAPSHOT_QA_MARKER = 'E2E_SNAPSHOT_REPLAY_QA';
 const E2E_SNAPSHOT_WRITE_MARKER = 'E2E_SNAPSHOT_REPLAY_WRITE';
 const E2E_SNAPSHOT_BASH_MARKER = 'E2E_SNAPSHOT_REPLAY_BASH';
+// N-STREAM-RESUME-KNIFE3：断流续接复现专用 marker（ADR-068 as-built 备注 1 的真机
+// 复现要求）。含 marker 的请求：前 N 次（env CODE_AGENT_E2E_STREAM_BREAK_FAILURES，
+// 默认 1）先流出 PART1 文本再抛 loop 层认得的网络瞬态错（触发 network retry /
+// adapter 续接路径），N 次后流出 PART2 正常收尾——两次生成的内容刻意不同，拼缝/
+// 丢片段一眼可辨。计数是进程内的：webServer 一个进程一剂，重跑要重启服务。
+const E2E_STREAM_BREAK_MARKER = 'E2E_STREAM_BREAK_RETRY';
+// 句末必须有强边界（。！？）——documentEvidenceStream 只在整句处向前端放行，
+// 没有边界时 PART1 永远攒在缓冲里，renderer 上看不见，拼缝/丢片段就不可观察。
+const E2E_STREAM_BREAK_PART1 = 'E2E_STREAM_BREAK_PART1__这段生成会被网络错误打断。';
+const E2E_STREAM_BREAK_PART2 = 'E2E_STREAM_BREAK_PART2__这是重发后的全新生成。';
+let e2eStreamBreakFailuresRemaining = -1;
 const E2E_SNAPSHOT_READ_WRITE_MARKER = 'E2E_SNAPSHOT_REPLAY_READ_WRITE';
 const E2E_SNAPSHOT_WRITE_CALL_ID = 'e2e-snapshot-replay-write';
 const E2E_SNAPSHOT_BASH_CALL_ID = 'e2e-snapshot-replay-bash';
@@ -677,6 +688,35 @@ function buildSnapshotReplayE2EResponse(
   return null;
 }
 
+function buildStreamBreakE2EResponse(
+  messages: ModelMessage[],
+  onStream?: StreamCallback,
+  env: NodeJS.ProcessEnv = process.env,
+): ModelResponse | null {
+  if (!latestUserText(messages).includes(E2E_STREAM_BREAK_MARKER)) return null;
+  if (e2eStreamBreakFailuresRemaining < 0) {
+    const configured = Number(env.CODE_AGENT_E2E_STREAM_BREAK_FAILURES);
+    e2eStreamBreakFailuresRemaining = Number.isFinite(configured) && configured > 0
+      ? Math.floor(configured)
+      : 1;
+  }
+  if (e2eStreamBreakFailuresRemaining > 0) {
+    e2eStreamBreakFailuresRemaining -= 1;
+    onStream?.({ type: 'text', content: E2E_STREAM_BREAK_PART1 });
+    throw new Error(`Network request failed: socket hang up (E2E_STREAM_BREAK_RETRY ${E2E_STREAM_BREAK_MARKER})`);
+  }
+  onStream?.({ type: 'text', content: E2E_STREAM_BREAK_PART2 });
+  onStream?.({ type: 'complete', finishReason: 'stop' });
+  return {
+    type: 'text',
+    content: E2E_STREAM_BREAK_PART2,
+    finishReason: 'stop',
+    actualProvider: 'acceptance',
+    actualModel: 'e2e-local-agent-model',
+    usage: { inputTokens: 150, outputTokens: 30 },
+  };
+}
+
 export function buildE2ELocalAgentModelResponse(
   messages: ModelMessage[],
   tools: ToolDefinition[],
@@ -684,6 +724,9 @@ export function buildE2ELocalAgentModelResponse(
   onStream?: StreamCallback,
   env: NodeJS.ProcessEnv = process.env,
 ): ModelResponse {
+  const streamBreakResponse = buildStreamBreakE2EResponse(messages, onStream, env);
+  if (streamBreakResponse) return streamBreakResponse;
+
   const snapshotReplayResponse = buildSnapshotReplayE2EResponse(messages, tools, onStream, env);
   if (snapshotReplayResponse) return snapshotReplayResponse;
 

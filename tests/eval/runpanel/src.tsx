@@ -64,7 +64,7 @@ const probe: EvalRunPanelProbe = {
     { dim: 'no_extra_changes', requiresExpectation: true, calibration: { state: 'uncalibrated', reason: 'prompt_changed' } },
     { dim: 'self_tested', requiresExpectation: true, calibration: { state: 'uncalibrated', reason: 'superseded' } },
   ],
-  splitCounts: { 'held-in': 76, 'held-out': 52, safety: 12 },
+  splitCounts: { 'held-in': 76, 'held-out': 52, safety: 12, core: 40 },
   unhardenedCount: 2,
   quickCheck: { tags: ['core-path'], maxCases: 12 },
   productionArm: {

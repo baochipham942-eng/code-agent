@@ -197,6 +197,8 @@ export interface EvalAnnotation {
   mine?: boolean;
   /** 勾了「进金标集」：这条判定可作判官校准真值（annotations.calibration_split = 'gold'）。 */
   gold?: boolean;
+  /** 人工归因三件套 + 定级（annotations.attribution_json）。与 yaml 上的默认归因分开算。 */
+  attribution?: EvalAttributionTriple;
 }
 
 export interface SaveEvalAnnotationRequest {
@@ -208,6 +210,8 @@ export interface SaveEvalAnnotationRequest {
   supersedesId?: string;
   /** true = 进金标集；省略或 false = 普通人工评审。 */
   gold?: boolean;
+  /** 人工归因三件套；省略 = 这一版没填归因。 */
+  attribution?: EvalAttributionTriple;
 }
 
 export interface SaveEvalAnnotationResult {
@@ -232,13 +236,18 @@ export interface EvalFailureClassification {
   code: string;
   dispositions: string[];
   symptoms: string[];
+  /**
+   * 默认归因：命中的最高优先码在 failcodes.yaml 上写的 `attribution:`。
+   * 🔴 这是统计先验不是这一题的判断，不进任何聚合口径（ADR-071 Q5）。
+   */
+  attribution?: EvalAttribution;
 }
 
 export interface EvalRunStamp {
   caseBankSha: string;
   answerSideSha: string;
   evalSet: {
-    split: 'held-in' | 'held-out' | 'control' | 'safety' | 'all';
+    split: 'held-in' | 'held-out' | 'control' | 'safety' | 'core' | 'all';
     splitsFileSha: string;
     tags: string[];
     ids: string[];
@@ -336,7 +345,7 @@ interface EvalRunStartConfig extends EvalRunStamp {
   model: string;
   provider: string;
   scope: 'smoke' | 'full';
-  split?: 'held-in' | 'held-out' | 'control' | 'safety';
+  split?: 'held-in' | 'held-out' | 'control' | 'safety' | 'core';
   tags?: string[];
   ids?: string[];
   includeRetired?: boolean;
@@ -386,7 +395,7 @@ export interface EvalRunPanelProbe {
     };
     requiresExpectation: boolean;
   }>;
-  splitCounts: Record<'held-in' | 'held-out' | 'safety', number>;
+  splitCounts: Record<'held-in' | 'held-out' | 'safety' | 'core', number>;
   unhardenedCount: number;
   quickCheck: {
     tags: string[];
@@ -638,7 +647,7 @@ export interface EvalRunRequest {
   mode?: 'real' | 'mock';
   ids?: string[];
   tags?: string[];
-  split?: 'held-in' | 'held-out' | 'control' | 'safety';
+  split?: 'held-in' | 'held-out' | 'control' | 'safety' | 'core';
   timeoutMs?: number;
   repeat?: number;
   skills?: string[];
@@ -859,7 +868,7 @@ export interface EvalExperimentCaseDetail {
   costUsd?: number;
 }
 
-export type EvalCaseSplitBucket = 'held-in' | 'held-out' | 'control' | 'safety';
+export type EvalCaseSplitBucket = 'held-in' | 'held-out' | 'control' | 'safety' | 'core';
 
 export interface EvalCaseListEntry {
   id: string;
@@ -893,6 +902,9 @@ export type EvalCaseListItem = EvalCaseListEntry | EvalCaseListParseError;
 
 // 「从会话转成题目」的契约拆在 evaluationHarvest.ts，消费方仍从本文件取。
 export * from './evaluationHarvest';
+// 归因码本（ADR-071）同理拆在 evaluationAttribution.ts。
+export * from './evaluationAttribution';
+import type { EvalAttribution, EvalAttributionTriple } from './evaluationAttribution';
 
 import type { EvalDraftCaseType as EvalDraftCaseTypeRef, HarvestCandidate as HarvestCandidateRef } from './evaluationHarvest';
 

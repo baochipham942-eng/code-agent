@@ -13,6 +13,9 @@ const db = vi.hoisted(() => ({
   replay: vi.fn(),
   session: vi.fn(),
   feedback: vi.fn(),
+  /** annotations ⨝ experiment_cases 取这场会话最新一行（ADR-071 D5）。 */
+  latestAnnotation: vi.fn(() => undefined as
+    { attribution_json: string | null; case_count?: number } | undefined),
   messages: vi.fn(() => [] as Array<{ id: string; timestamp: number }>),
   turns: vi.fn(() => [] as Array<{
     id: string;
@@ -54,6 +57,7 @@ vi.mock('@host/services/core/databaseService', () => ({
     getDb: () => ({
       prepare: (sql: string) => ({
         all: () => (String(sql).includes('telemetry_turns') ? db.turns() : db.feedback()),
+        get: () => (String(sql).includes('attribution_json') ? db.latestAnnotation() : undefined),
       }),
     }),
   }),
@@ -124,8 +128,10 @@ function seedOf(turns: ReplayTurn[], options: {
   negativeFeedbackAt?: number[];
   workingDirectory?: string;
   grade?: 'excellent' | 'good' | 'watch' | 'risk';
+  attribution?: Parameters<typeof deriveHarvestSeed>[0]['attribution'];
 } = {}) {
   return deriveHarvestSeed({
+    ...(options.attribution ? { attribution: options.attribution } : {}),
     replay: replay(turns, options.grade),
     sessionTitle: '生成销售报告',
     workingDirectory: options.workingDirectory ?? WORKDIR,
@@ -266,6 +272,37 @@ describe('预览编排', () => {
     expect(result.seeds).toHaveLength(1);
     expect(result.failed).toEqual([{ sessionId: 'sess-fake-0002', error: '这场会话没有可回放的记录' }]);
     expect(result.seeds[0].tags[0]).toBe('harvest-0904');
+  });
+
+  it('归因三件套随草稿带走：最新那条人工评审拼进 description（ADR-071 D5）', async () => {
+    db.latestAnnotation.mockReturnValue({
+      attribution_json: JSON.stringify({
+        attribution: 'scenario_fit', evidence: '第 3 步直接写文件，没先问',
+        suggestion: '在 write 前加确认', severity: 'P1',
+      }),
+      case_count: 1,
+    });
+    const result = await buildHarvestPreview({ sessionIds: ['sess-fake-0001'], fields: [] });
+    expect(result.seeds[0].description).toBe(
+      '一场会话｜人工归因：场景适配／P1；证据：第 3 步直接写文件，没先问；建议：在 write 前加确认',
+    );
+  });
+
+  it('这场会话挂在不止一道题下时一律不拼——不能把题 A 的责任判断安到题 B 的草稿上', async () => {
+    db.latestAnnotation.mockReturnValue({
+      attribution_json: JSON.stringify({
+        attribution: 'scenario_fit', evidence: '第 3 步直接写文件，没先问', severity: 'P1',
+      }),
+      case_count: 2,
+    });
+    const result = await buildHarvestPreview({ sessionIds: ['sess-fake-0001'], fields: [] });
+    expect(result.seeds[0].description).toBe('一场会话');
+  });
+
+  it('最新那条取消了归因（attribution_json 为 null）就不拼——撤销后不许复活旧归因', async () => {
+    db.latestAnnotation.mockReturnValue({ attribution_json: null });
+    const result = await buildHarvestPreview({ sessionIds: ['sess-fake-0001'], fields: [] });
+    expect(result.seeds[0].description).toBe('一场会话');
   });
 
   it('前端没传锁定行也照样带上来源会话（来源必须留）', async () => {

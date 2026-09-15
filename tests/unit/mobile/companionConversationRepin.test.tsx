@@ -43,7 +43,8 @@ describe('输入区那一层长高矮时，贴底的人要重新贴底（N-COMPO
     const { rendered, scroller } = mount(120);
     scroller.scrollTop = 0;
     rendered.rerender(view(213));
-    expect(scroller.scrollTop).toBe(5000);
+    // 跟到最后一条下沿贴住输入区上沿：4900 − (600 − 213)（N-MOBILE-EXEC-STATUS ③ 起不再多滚那段留白）
+    expect(scroller.scrollTop).toBe(4513);
   });
 
   it('同一个高度重渲染不做多余的事', () => {
@@ -64,8 +65,8 @@ describe('输入区那一层长高矮时，贴底的人要重新贴底（N-COMPO
 });
 
 // build 40 真机：进会话第一条上半被顶栏裁掉。贴底把 scrollTop 拉到 scrollHeight，而 scrollHeight 里算着
-// 最后一条的下外边距和给输入区留的底部留白——内容本身放得下时，贴底会把第一条推出可视区顶上。
-describe('整段放得下时从顶部排，第一条完整可见（N-MOBILE-EXEC-STATUS ③）', () => {
+// 最后一条的下外边距和输入区上方的留白（真引擎 42px）——会话约莫一屏时，这段多滚正好切掉第一条上半截。
+describe('跟到底只滚到露出最后一条为止，第一条不被多滚出去（N-MOBILE-EXEC-STATUS ③）', () => {
   afterEach(cleanup);
 
   it('内容下沿在输入区那一层之上：scrollTop 停在 0，不贴底', () => {
@@ -77,11 +78,11 @@ describe('整段放得下时从顶部排，第一条完整可见（N-MOBILE-EXEC
     expect(scroller.scrollTop).toBe(0);
   });
 
-  it('内容真的放不下：照旧贴底，最新那条在输入区上面', () => {
+  it('放不下：只滚到最后一条下沿贴住输入区上沿（700 − 450 = 250），不再多滚那段留白到 scrollHeight', () => {
     const { rendered, scroller } = mount(120, { scrollHeight: 900, contentBottom: 700 });
     scroller.scrollTop = 0;
     rendered.rerender(view(150));
-    expect(scroller.scrollTop).toBe(900);
+    expect(scroller.scrollTop).toBe(250);
   });
 
   it('输入区还没量到高度（0）时不判，照旧贴底', () => {

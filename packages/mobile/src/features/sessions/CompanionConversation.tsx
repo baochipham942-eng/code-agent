@@ -10,17 +10,18 @@ import { runOutcomeCopy, type messages } from '../../i18n';
 type RunOutcome = { anchor: string | undefined; kind: 'complete' | 'stopped' | 'failed'; code?: string };
 
 /**
- * 整段会话放得下时从顶部排，不贴底（build 40 真机：进会话第一条上半被顶栏裁掉）。
- * 贴底把 scrollTop 拉到 scrollHeight，而 scrollHeight 里还算着最后一条的下外边距和给输入区留的底部留白；
- * 内容本身放得下、加上留白才超出一点时，贴底会把第一条往上推出可视区——正好切掉它的上半截。
- * 判据：最后一个元素的下沿在输入区那一层（含键盘）之上，就是全放得下。输入区还没量到高度时不判，照旧贴底。
+ * 「跟到底」只滚到刚好露出最后一个元素的下沿为止（build 40 真机：进会话第一条上半被顶栏裁掉）。
+ * 原来一律把 scrollTop 拉到 scrollHeight，而 scrollHeight 里还算着最后一条的下外边距和输入区上方的留白
+ * （真引擎实测 42px）：会话约莫一屏时，这 42px 的多滚正好把第一条的上半截推出可视区。
+ * 现在最后一条的下沿贴着输入区那一层（含键盘）的上沿，整段放得下时就停在 0。
+ * 输入区还没量到高度时量不准，照旧拉到底。
  */
-function contentFitsAboveComposer(el: HTMLElement, composerHeight: number): boolean {
+function followTop(el: HTMLElement, composerHeight: number): number {
   const last = el.lastElementChild;
-  if (!last || composerHeight <= 0) return false;
+  if (!last || composerHeight <= 0) return el.scrollHeight;
   const keyboard = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--keyboard-h')) || 0;
   const bottom = last.getBoundingClientRect().bottom - el.getBoundingClientRect().top + el.scrollTop;
-  return bottom <= el.clientHeight - composerHeight - keyboard;
+  return Math.min(el.scrollHeight, Math.max(0, Math.ceil(bottom - (el.clientHeight - composerHeight - keyboard))));
 }
 
 export function CompanionConversation({ history, loadMore, hidePendingApprovals = false, events, artifacts, sessionId, text, disabled, respond, respondQuestion, respondPlan, openArtifact, composerHeight = 0, offline = false, running = null }: { history?: CompanionHistory; loadMore(): void; hidePendingApprovals?: boolean; events: CompanionEvent[]; artifacts: CompanionArtifact[]; sessionId: string; text: ReturnType<typeof messages>; disabled: boolean; respond: (requestId: string, decision: 'approved' | 'rejected') => Promise<void>; respondQuestion: (requestId: string, answers: Record<string, string | string[]>, declined?: boolean, reason?: string) => Promise<void>; respondPlan: (requestId: string, decision: 'approved' | 'rejected', feedback?: string) => Promise<void>; openArtifact(id: string): void;
@@ -38,7 +39,7 @@ export function CompanionConversation({ history, loadMore, hidePendingApprovals 
   useLayoutEffect(() => {
     const el = scroller.current;
     if (!following.current || !el) return;
-    el.scrollTop = contentFitsAboveComposer(el, composerHeight) ? 0 : el.scrollHeight;
+    el.scrollTop = followTop(el, composerHeight);
   }, [events, sessionId, history, composerHeight, isRunning]);
   const approvals = new Map<string, Record<string, unknown>>();
   const questions = new Map<string, Record<string, unknown>>();

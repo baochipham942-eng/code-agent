@@ -57,6 +57,7 @@ import {
   type FailureCodebook,
 } from './failureCodes';
 import { classifyTestResultFailure } from './testResultFailure';
+import { formatExpectationFailures, judgeTimeoutExpectations } from './timeoutExpectations';
 import { mergeSkillActivations } from './skillSelection';
 
 import { attachAiReview } from './testRunnerAiReview';
@@ -995,12 +996,10 @@ export class TestRunner {
           result.failureDetails = undefined;
         } else if (expResult.overallScore > 0 && !expResult.hasCriticalFailure) {
           result.status = 'partial';
-          result.failureReason = expResult.results
-            .filter((r) => !r.passed).map((r) => `[${r.expectation.type}] ${r.evidence.details ?? 'failed'}`).join('; ');
+          result.failureReason = formatExpectationFailures(expResult.results);
         } else {
           result.status = 'failed';
-          result.failureReason = expResult.results
-            .filter((r) => !r.passed).map((r) => `[${r.expectation.type}] ${r.evidence.details ?? 'failed'}`).join('; ');
+          result.failureReason = formatExpectationFailures(expResult.results);
         }
       }
       await attachAiReview(this.config, testCase, result, agent.usesMockEvalPolicy?.() === true);
@@ -1042,6 +1041,11 @@ export class TestRunner {
         result.status = 'failed';
       }
       result.failureReason = message || 'Unknown error';
+      // N-EVAL-TIMEOUT-K2-NEGASSERT：拿到被掐那一轮轨迹才补跑负向过程断言；拿不到行为不变。
+      if (killedByTimeout && result.timeoutTraceAvailable === true) {
+        await judgeTimeoutExpectations(testCase.expectations, result, workingDirectory)
+          .catch((judgeError: unknown) => logger.warn('timeout expectations failed to run', { testId: testCase.id, error: String(judgeError) }));
+      }
       result.errors.push(message || String(error));
       result.killedByTimeout = killedByTimeout;
       this.emit({ type: 'error', testId: testCase.id, error: message });

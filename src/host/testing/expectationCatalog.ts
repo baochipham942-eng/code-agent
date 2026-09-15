@@ -34,6 +34,51 @@ const EXPECTATION_SUMMARIES = {
   memory_written: '跑完之后记忆目录里躺着该躺的内容',
 } as const satisfies Record<ExpectationType, string>;
 
+/**
+ * N-EVAL-TIMEOUT-K2-NEGASSERT：超时题被掐时，这条断言的结论定没定（设计稿 §3.1）。
+ * 只有 negative_monotone（违规一旦发生就撤不回）在超时题的半截轨迹上补跑；
+ * 正向单调判红不是终局、终态读的是没稳定的工作区、uncertain 会在半截轨迹上误判，都不跑。
+ * 新增断言类型不在这里表态 ⇒ typecheck 红。
+ */
+const TIMEOUT_VERDICT_KIND = {
+  no_forbidden_tool_call: 'negative_monotone',
+  approval_not_requested: 'negative_monotone',
+  sim_stop_respected: 'negative_monotone',
+  sim_no_write_before_rule: 'negative_monotone',
+  max_turns: 'negative_monotone',
+  max_tool_calls: 'negative_monotone',
+  response_not_contains: 'negative_monotone',
+  no_crash: 'negative_monotone',
+  tool_called: 'positive_monotone',
+  min_tool_calls: 'positive_monotone',
+  approval_requested: 'positive_monotone',
+  tool_output_contains: 'positive_monotone',
+  output_matches: 'positive_monotone',
+  response_contains: 'positive_monotone',
+  // negate 模式语义是负向，但证据源在 run 结束时才定格，未核实前整类不跑。
+  memory_recalled: 'uncertain',
+  file_exists: 'terminal',
+  file_not_exists: 'terminal',
+  content_contains: 'terminal',
+  content_not_contains: 'terminal',
+  code_compiles: 'terminal',
+  test_passes: 'terminal',
+  command_succeeds: 'terminal',
+  custom_script: 'terminal',
+  html_renders: 'terminal',
+  game_smoke: 'terminal',
+  pptx_opens: 'terminal',
+  memory_written: 'terminal',
+  goal_status: 'terminal',
+  goal_evidence_gate: 'terminal',
+  error_handled: 'uncertain',
+  no_stall_before_artifact: 'uncertain',
+} as const satisfies Record<ExpectationType, 'negative_monotone' | 'positive_monotone' | 'terminal' | 'uncertain'>;
+
+export function isTimeoutJudgeable(type: ExpectationType): boolean {
+  return TIMEOUT_VERDICT_KIND[type] === 'negative_monotone';
+}
+
 type MissingExpectationType = Exclude<ExpectationType, keyof typeof EXPECTATION_SUMMARIES>;
 type UnknownExpectationType = Exclude<keyof typeof EXPECTATION_SUMMARIES, ExpectationType>;
 const _catalogHasEveryType: MissingExpectationType extends never ? true : never = true;

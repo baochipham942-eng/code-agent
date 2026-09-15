@@ -221,6 +221,26 @@ describe('EvalCaseListTab', () => {
     expect(minW).toBeLessThanOrEqual(1170);
   });
 
+  it('标签列单行不折：超过 2 个折成「+N」，全量挂 title（static-contract，几何见真机证据）', async () => {
+    const manyTags: EvalCaseListItem = {
+      id: 'many-tags', file: 'x.yaml', relativeDir: '', layer: 'L1', tags: ['a', 'b', 'c'], inheritedTags: ['d'],
+      splits: ['held-in'], turns: 1, hasExpect: true, hardened: true, source: 'manual', retired: false, isDraft: false,
+    };
+    ipc.invoke.mockImplementation(async (channel: string) =>
+      (channel === EVALUATION_CHANNELS.LIST_CASES ? [manyTags] : { action: 'archive', id: 'x', file: 'x' }));
+    render(<EvalCaseListTab />);
+    const row = await screen.findByTestId('eval-case-row-many-tags');
+    const tagCell = row.children[2].firstElementChild as HTMLElement;
+    expect(tagCell.className).toContain('flex-nowrap');
+    expect(tagCell.className).toContain('whitespace-nowrap');
+    expect(tagCell.className).toContain('overflow-hidden');
+    expect(tagCell.className).not.toContain('flex-wrap ');
+    // 定宽而非 max-w：max-w 下单元格 min-content 按 chip 文字算，1440 下表格被撑到 1221 > 1194 出横向滚动
+    expect(tagCell.className.split(' ')).toContain('w-48');
+    expect(tagCell.getAttribute('title')).toBe('a, b, c, d');
+    expect([...tagCell.children].map((el) => el.textContent)).toEqual(['a', 'b', '+2']);
+  });
+
   it('题目表 sticky 表头：thead 与每个 th 都带底色，表头单元格 nowrap（FB-161）', async () => {
     render(<EvalCaseListTab />);
     const row = await screen.findByTestId('eval-case-row-daily-case');

@@ -361,7 +361,10 @@ export const EvalCaseListTab: React.FC = () => {
                     className={`${status === 'archived' ? 'opacity-55' : ''} ${unavailable ? 'opacity-60 saturate-50' : ''} ${highlightedCaseId === item.id ? 'bg-teal-500/10' : ''}`}
                     data-testid={`eval-case-row-${item.id}`}
                   >
-                    <td className="max-w-xs truncate border-b border-zinc-900 px-2 py-2 font-mono text-zinc-300" title={item.id}>{item.id}</td>
+                    {/* td 上的 max-width 在 auto 表格布局里不生效，截断挂在内层 div 上，否则多出的表宽都分给 id 列 */}
+                    <td className="border-b border-zinc-900 px-2 py-2 font-mono text-zinc-300">
+                      <div className="max-w-48 truncate" title={item.id}>{item.id}</div>
+                    </td>
                     <td className="border-b border-zinc-900 px-2 py-2">
                       <div className="text-zinc-300">{item.layer}</div>
                       <div className="max-w-48 truncate font-mono text-[10px] text-zinc-600" title={item.file}>{item.file}</div>

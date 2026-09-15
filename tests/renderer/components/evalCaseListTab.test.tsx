@@ -216,9 +216,9 @@ describe('EvalCaseListTab', () => {
     expect(headers.slice(4).every((th) => /min-w-\d+/.test(th.className))).toBe(true);
     // ID 列限宽（FB-163），长 id 截断并挂 title
     expect(headers[0].className).toContain('w-1/5');
-    const idCell = row.querySelector('td') as HTMLTableCellElement;
-    expect(idCell.className).toContain('truncate');
-    expect(idCell.getAttribute('title')).toBe('daily-case');
+    const idText = row.querySelector('td > div') as HTMLDivElement;
+    expect(idText.className).toContain('truncate');
+    expect(idText.getAttribute('title')).toBe('daily-case');
     // 操作列图标化，不再是会折行的文字按钮
     expect(row.querySelector('[aria-label="复制路径"]')).toBeTruthy();
     expect(row.textContent).not.toContain('复制路径');

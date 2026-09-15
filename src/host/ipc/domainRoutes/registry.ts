@@ -39,7 +39,7 @@ export interface DomainRouteOptions<Ctx = unknown> {
   /** 未知 action 兜底 code（默认 INVALID_ACTION；desktop/tag/cron 既有契约为 UNKNOWN_ACTION） */
   unknownActionCode?: string;
   /** handler 抛错 → 完整 error（code+message，可顺带记日志）；提供时优先于 resolveErrorCode/INTERNAL_ERROR 兜底 */
-  mapError?: (error: unknown, action: unknown) => { code: string; message: string };
+  mapError?: (error: unknown, action: unknown) => { code: string; message: string; details?: unknown };
   /** handler 直接返回完整 IPCResponse（含带 data 的失败响应），装配器不再包 { success: true, data } */
   rawResponse?: boolean;
   /**

@@ -37,6 +37,7 @@ import { AgentSchemas } from '../shared/ipc/schemas/agent';
 import { SettingsSchemas } from '../shared/ipc/schemas/settings';
 import { McpSchemas } from '../shared/ipc/schemas/mcp';
 import { LibrarySchemas } from '../shared/ipc/schemas/library';
+import { AgentEngineSchemas } from '../shared/ipc/schemas/agentEngine';
 
 const DEFAULT_SINCE_VERSION = '0.16.93';
 
@@ -101,17 +102,8 @@ const CAPABILITY_DOMAIN_ACTIONS = {
   ],
   // agent 域：派生自 schema action 集合（== agent 表 keys，parity 门三面对账），手工清单已删
   [IPC_DOMAINS.AGENT]: AgentSchemas.ACTIONS,
-  [IPC_DOMAINS.AGENT_ENGINE]: [
-    'detect',
-    'get',
-    'list',
-    'listHistory',
-    'listModels',
-    'listSources',
-    'previewHistory',
-    'select',
-    'selectModel',
-  ],
+  // agentEngine 域：派生自 schema action 集合（== agentEngine 表 keys，parity 门三面对账），手工清单已删
+  [IPC_DOMAINS.AGENT_ENGINE]: AgentEngineSchemas.ACTIONS,
   [IPC_DOMAINS.AGENT_REGISTRY]: [
     'list',
   ],

@@ -9,7 +9,7 @@
 
 import { create } from 'zustand';
 
-export interface StreamResumeSignal {
+interface StreamResumeSignal {
   /** 断流轮的 turn id（事件寻址与终态对账用） */
   turnId: string;
   /** 状态行挂载的消息（断流时的 streaming 消息；B2 分段后它就是定格的断点段） */

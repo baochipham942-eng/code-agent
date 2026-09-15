@@ -96,7 +96,7 @@ const ZINDEX_ALLOWLIST_PATH = join(__dirname, 'design-system-zindex-allowlist.js
 const STICKY_RE = /\bsticky\b[^"'`}]*\btop-/;
 const SCROLLER_RE = /\boverflow-(?:auto|scroll|y-auto|y-scroll)\b/;
 // 不吃 pt-0/py-0（零内边距无害）与 scroll-pt-*（滚动吸附偏移，不是盒内边距）
-const TOP_PADDING_RE = /(?<![\w-])p[ty]-(?:[1-9]\d*(?:\.\d+)?|\[|px)\b/;
+const TOP_PADDING_RE = /(?<![\w-])p[ty]-(?:0\.\d+|[1-9]\d*(?:\.\d+)?|\[|px)\b/;
 
 function indentOf(line) {
   return line.length - line.trimStart().length;

@@ -33,6 +33,7 @@ import { WorkspaceSchemas } from '../shared/ipc/schemas/workspace';
 import { AuthSchemas } from '../shared/ipc/schemas/auth';
 import { RolesSchemas } from '../shared/ipc/schemas/roles';
 import { ConnectorSchemas } from '../shared/ipc/schemas/connector';
+import { AgentSchemas } from '../shared/ipc/schemas/agent';
 
 const DEFAULT_SINCE_VERSION = '0.16.93';
 
@@ -95,21 +96,8 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'setSharedRelay',
     'updateInviteCode',
   ],
-  [IPC_DOMAINS.AGENT]: [
-    'cancel',
-    'closeAgent',
-    'getSessionPermissionMode',
-    'getTree',
-    'getWorktreeReview',
-    'interrupt',
-    'pause',
-    'permissionResponse',
-    'resume',
-    'send',
-    'sendMemberInput',
-    'setPermissionMode',
-    'setSessionPermissionMode',
-  ],
+  // agent 域：派生自 schema action 集合（== agent 表 keys，parity 门三面对账），手工清单已删
+  [IPC_DOMAINS.AGENT]: AgentSchemas.ACTIONS,
   [IPC_DOMAINS.AGENT_ENGINE]: [
     'detect',
     'get',

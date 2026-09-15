@@ -19,6 +19,7 @@ cases:
   # --------------------------------------------------------------------------
   - id: vision-analyze-image
     type: task
+    category: task_completion
     description: "分析图片内容"
     # setup 不依赖 PIL：PIL 缺席时旧 fallback 只画得出 1x1 PNG，回复里不可能有任何可辨内容，
     # 断言就只能松到「调过一次工具」。改成纯 zlib 手写 PNG，任何机器上都得到同一张
@@ -53,6 +54,7 @@ cases:
 
   - id: vision-screenshot-describe
     type: task
+    category: task_completion
     description: "截屏并描述"
     prompt: "截取当前屏幕的截图，保存到 test-screenshot.png"
     cleanup:
@@ -64,6 +66,7 @@ cases:
   # --------------------------------------------------------------------------
   - id: vision-batch-filter
     type: task
+    category: task_completion
     description: "批量图片筛选"
     # 同 vision-analyze-image：纯 zlib 手写三张 96x96 纯色图，不依赖 PIL。
     setup:
@@ -93,6 +96,7 @@ cases:
   # --------------------------------------------------------------------------
   - id: vision-ui-to-code
     type: task
+    category: task_completion
     description: "根据 UI 描述生成代码"
     prompt: "帮我生成一个简单的 HTML 页面 test-ui.html，包含：一个蓝色标题栏（写着 'Code Agent'）、一个文本输入框、一个绿色的'发送'按钮"
     cleanup:
@@ -109,6 +113,7 @@ cases:
   # 装/不装的分差就落在这一格上。
   - id: plugin-validate-html-selfcheck
     type: task
+    category: task_completion
     description: "用 in-app 验证工具自检生成的页面"
     tags:
       - plugin-surface
@@ -131,6 +136,7 @@ cases:
 
   - id: plugin-browser-local-page
     type: task
+    category: task_completion
     description: "用浏览器工具打开本地页面并读回标题"
     tags:
       - plugin-surface

@@ -32,6 +32,10 @@ import { registerCronHandlers } from '../../src/host/ipc/cron.ipc';
 import { registerPromptHandlers } from '../../src/host/ipc/prompt.ipc';
 import { registerDiagnosticsHandlers } from '../../src/host/ipc/diagnostics.ipc';
 import { registerDataHandlers } from '../../src/host/ipc/data.ipc';
+import { registerLoopHandlers } from '../../src/host/ipc/loop.ipc';
+import { registerSyncHandlers } from '../../src/host/ipc/sync.ipc';
+import { registerSettingsHandlers } from '../../src/host/ipc/settings.ipc';
+import { registerProjectHandlers } from '../../src/host/ipc/project.ipc';
 import { getShellCapabilities } from '../../src/host/shellCapabilities';
 
 // 结构枚举器挂既有函数对象上（knip 生产档无测试入口，独立 export 必成 dead export）
@@ -43,6 +47,11 @@ const cronRoutes = registerCronHandlers.routes;
 const promptRoutes = registerPromptHandlers.routes;
 const diagnosticsRoutes = registerDiagnosticsHandlers.routes;
 const dataRoutes = registerDataHandlers.routes;
+const loopRoutes = registerLoopHandlers.routes;
+const syncRoutes = registerSyncHandlers.routes;
+const deviceRoutes = registerSyncHandlers.deviceRoutes;
+const windowRoutes = registerSettingsHandlers.windowRoutes;
+const projectRoutes = registerProjectHandlers.routes;
 
 /** 门盯的表清单——新域表化后加进来，门即自动覆盖该域（session 三面走 manifestDomain 断言） */
 const ROUTE_TABLES = [
@@ -54,6 +63,11 @@ const ROUTE_TABLES = [
   { table: promptRoutes, manifestDomain: 'domain:prompt' as const },
   { table: diagnosticsRoutes, manifestDomain: 'domain:diagnostics' as const },
   { table: dataRoutes, manifestDomain: 'domain:data' as const },
+  { table: loopRoutes, manifestDomain: 'domain:loop' as const },
+  { table: syncRoutes, manifestDomain: 'domain:sync' as const },
+  { table: deviceRoutes, manifestDomain: 'domain:device' as const },
+  { table: windowRoutes, manifestDomain: 'domain:window' as const },
+  { table: projectRoutes, manifestDomain: 'domain:project' as const },
   { table: inlineFixtureTable(), manifestDomain: undefined },
 ];
 
@@ -286,29 +300,29 @@ function collectActualDomainActions(): Map<string, Set<string>> {
   add(IPC_DOMAINS.PROMPT, new Set(Object.keys(promptRoutes.actions)));
   add(IPC_DOMAINS.DIAGNOSTICS, new Set(Object.keys(diagnosticsRoutes.actions)));
   add(IPC_DOMAINS.DATA, new Set(Object.keys(dataRoutes.actions)));
+  add(IPC_DOMAINS.LOOP, new Set(Object.keys(loopRoutes.actions)));
+  add(IPC_DOMAINS.SYNC, new Set(Object.keys(syncRoutes.actions)));
+  add(IPC_DOMAINS.DEVICE, new Set(Object.keys(deviceRoutes.actions)));
+  add(IPC_DOMAINS.WINDOW, new Set(Object.keys(windowRoutes.actions)));
+  add(IPC_DOMAINS.PROJECT, new Set(Object.keys(projectRoutes.actions)));
   return actual;
 }
 
 /**
- * 缺报棘轮基线（2026-09-15 建门实测，21 域 116 项）：handler 有而清单无的存量项。
+ * 缺报棘轮基线（2026-09-15 建门实测 21 域 116 项，此后随域表化逐域整行核销，现存条目以下表为准）：handler 有而清单无的存量项。
  * 清单是壳兼容面、允许策略性少报——但少报集合冻结在此、只减不增：
  * 把某 action 补进 CAPABILITY_DOMAIN_ACTIONS 后必须同步从基线删掉它；
  * 新增 handler action 不登记清单 = 新缺报 = 红，要么补清单要么显式扩基线（PR 里说明理由）。
  */
 const KNOWN_UNDER_REPORTED_ACTIONS: Readonly<Record<string, readonly string[]>> = {
   'domain:backgroundTasks': ['drainNotifications', 'getTask', 'listTasks', 'markNotificationDelivered', 'readTaskLog'],
-  'domain:device': ['list', 'register', 'remove'],
   'domain:folderTrust': ['revoke'],
   'domain:generativeUI': ['capabilities'],
   'domain:hook': ['setEnabled'],
-  'domain:loop': ['get', 'list', 'start', 'stop'],
-  'domain:project': ['redeemInvite', 'revokeInvite'],
   'domain:provider': ['delete_realtime_voice_provider'],
   'domain:surfaceExecution': ['startLiveStream', 'stopLiveStream'],
-  'domain:sync': ['resolveConflict'],
   'domain:task': ['cancelBackgroundTask'],
   'domain:voice': ['injectUserText'],
-  'domain:window': ['close', 'maximize', 'minimize'],
   'domain:workspace': ['closeLinkInRail', 'controlUserBrowserHistory', 'dispatchUserBrowserInput', 'openExternal', 'openLinkInRail', 'setUserBrowserViewport'],};
 
 describe('全域单向门：清单 ⊆ 实际 handler（RQ-183 刀 4）', () => {

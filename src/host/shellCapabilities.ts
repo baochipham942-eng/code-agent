@@ -20,6 +20,11 @@ import { CronSchemas } from '../shared/ipc/schemas/cron';
 import { PromptSchemas } from '../shared/ipc/schemas/prompt';
 import { DiagnosticsSchemas } from '../shared/ipc/schemas/diagnostics';
 import { DataSchemas } from '../shared/ipc/schemas/data';
+import { LoopSchemas } from '../shared/ipc/schemas/loop';
+import { SyncSchemas } from '../shared/ipc/schemas/sync';
+import { DeviceSchemas } from '../shared/ipc/schemas/device';
+import { WindowSchemas } from '../shared/ipc/schemas/window';
+import { ProjectSchemas } from '../shared/ipc/schemas/project';
 
 const DEFAULT_SINCE_VERSION = '0.16.93';
 
@@ -179,8 +184,10 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'get',
     'set',
   ],
-  // cron 域：派生自 schema action 集合（== cron 表 keys，parity 门三面对账）；此前清单整域缺报 9 项
+  // cron 域：派生自 schema action 集合（== cron 表 keys，parity 门三面对账）
   [IPC_DOMAINS.CRON]: CronSchemas.ACTIONS,
+  // device 域：派生自 schema action 集合（== device 表 keys，parity 门三面对账）
+  [IPC_DOMAINS.DEVICE]: DeviceSchemas.ACTIONS,
   // desktop 域：派生自 schema action 集合（== desktop 表 keys，parity 门三面对账），手工清单已删
   [IPC_DOMAINS.DESKTOP]: DesktopSchemas.ACTIONS,
   // diagnostics 域：派生自 schema action 集合（== diagnostics 表 keys，parity 门三面对账），手工清单已删
@@ -209,6 +216,8 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'validateDevServerUrl',
     'waitDevServerReady',
   ],
+  // loop 域：派生自 schema action 集合（== loop 表 keys，parity 门三面对账）
+  [IPC_DOMAINS.LOOP]: LoopSchemas.ACTIONS,
   [IPC_DOMAINS.MCP]: [
     'addServer',
     'cancelServerInstall',
@@ -248,39 +257,8 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'getState',
     'respondApproval',
   ],
-  [IPC_DOMAINS.PROJECT]: [
-    'addGoal',
-    'addRole',
-    'addSource',
-    'artifactIssues',
-    'artifacts',
-    'createInvite',
-    'createSpace',
-    'create',
-    'deleteProject',
-    'detail',
-    'gitStates',
-    'list',
-    'listCapabilitySelections',
-    'listCloudCards',
-    'listMembers',
-    'listWithActivity',
-    'promoteToCloudSpace',
-    'promoteToSpace',
-    'removeRole',
-    'removeSource',
-    'rename',
-    'resyncCloudCards',
-    'selectCapability',
-    'setPrimarySource',
-    'setDescription',
-    'setStatus',
-    'sources',
-    'unselectCapability',
-    'updateGoalStatus',
-    'updateProject',
-    'updateSourceAccess',
-  ],
+  // project 域：派生自 schema action 集合（== project 表 keys，parity 门三面对账），手工清单已删
+  [IPC_DOMAINS.PROJECT]: ProjectSchemas.ACTIONS,
   [IPC_DOMAINS.QUEUED_INPUT]: [
     'enqueue',
     'list',
@@ -387,13 +365,9 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'resetProfile',
     'saveProfile',
   ],
-  [IPC_DOMAINS.SYNC]: [
-    'forceFull',
-    'getStatus',
-    'start',
-    'stop',
-  ],
-  // tag 域：派生自 schema action 集合（== tag 表 keys，parity 门三面对账）；此前清单整域缺报 23 项
+  // sync 域：派生自 schema action 集合（== sync 表 keys，parity 门三面对账），手工清单已删
+  [IPC_DOMAINS.SYNC]: SyncSchemas.ACTIONS,
+  // tag 域：派生自 schema action 集合（== tag 表 keys，parity 门三面对账）
   [IPC_DOMAINS.TAG]: TagSchemas.ACTIONS,
   [IPC_DOMAINS.TASK]: [
     'cancel',
@@ -436,6 +410,8 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'startAutoCheck',
     'stopAutoCheck',
   ],
+  // window 域：派生自 schema action 集合（== window 表 keys，parity 门三面对账）
+  [IPC_DOMAINS.WINDOW]: WindowSchemas.ACTIONS,
   [IPC_DOMAINS.WORKSPACE]: [
     'createFile',
     'createFolder',

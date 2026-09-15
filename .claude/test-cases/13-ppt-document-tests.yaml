@@ -18,6 +18,7 @@ cases:
   # --------------------------------------------------------------------------
   - id: ppt-simple-create
     type: task
+    category: task_completion
     description: "生成简单 PPT"
     prompt: "帮我做一个 3 页的 PPT，主题是 AI Agent 架构概述，保存为 test-simple.pptx"
     cleanup:
@@ -26,6 +27,7 @@ cases:
 
   - id: ppt-from-outline
     type: task
+    category: task_completion
     description: "根据大纲生成 PPT"
     setup:
       - |
@@ -55,6 +57,7 @@ cases:
   # --------------------------------------------------------------------------
   - id: doc-markdown-to-structured
     type: task
+    category: task_completion
     description: "Markdown 转结构化数据"
     setup:
       - |
@@ -88,6 +91,7 @@ cases:
   # --------------------------------------------------------------------------
   - id: doc-data-to-report
     type: task
+    category: task_completion
     description: "数据文件生成分析报告"
     setup:
       - |

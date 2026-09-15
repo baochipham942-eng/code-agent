@@ -83,6 +83,7 @@ export async function resolveWorkingDirectory(
  * set 的 INVALID_PAYLOAD 失败响应逐字不变）；每个 handler 按请求解析 workingDirectory（原 switch 分发前统一解析，
  * 未知 action 也解析；迁表后未知 action 不解析，解析本身无副作用）；未知 action → INVALID_ACTION
  * `Unknown action: <action>`、抛错 → INTERNAL_ERROR（Error 取 message、非 Error 取 String(error)），均为装配器缺省。
+ * 请求体为 null / 非对象时由原 INTERNAL_ERROR 变为 INVALID_ACTION（真实调用方不发此形状）。
  */
 type FolderTrustRouteCtx = () => AgentApplicationService | null;
 

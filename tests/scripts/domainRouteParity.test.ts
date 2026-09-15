@@ -39,6 +39,7 @@ import { registerProjectHandlers } from '../../src/host/ipc/project.ipc';
 import { registerTaskHandlers } from '../../src/host/ipc/task.ipc';
 import { registerGenerativeUIHandlers } from '../../src/host/ipc/generativeUI.ipc';
 import { registerFolderTrustHandlers } from '../../src/host/ipc/folderTrust.ipc';
+import { registerHookHandlers } from '../../src/host/ipc/hook.ipc';
 import { getShellCapabilities } from '../../src/host/shellCapabilities';
 
 // 结构枚举器挂既有函数对象上（knip 生产档无测试入口，独立 export 必成 dead export）
@@ -58,6 +59,7 @@ const projectRoutes = registerProjectHandlers.routes;
 const taskRoutes = registerTaskHandlers.routes;
 const generativeUIRoutes = registerGenerativeUIHandlers.routes;
 const folderTrustRoutes = registerFolderTrustHandlers.routes;
+const hookRoutes = registerHookHandlers.routes;
 
 /** 门盯的表清单——新域表化后加进来，门即自动覆盖该域（session 三面走 manifestDomain 断言） */
 const ROUTE_TABLES = [
@@ -77,6 +79,7 @@ const ROUTE_TABLES = [
   { table: taskRoutes, manifestDomain: 'domain:task' as const },
   { table: generativeUIRoutes, manifestDomain: 'domain:generativeUI' as const },
   { table: folderTrustRoutes, manifestDomain: 'domain:folderTrust' as const },
+  { table: hookRoutes, manifestDomain: 'domain:hook' as const },
   { table: inlineFixtureTable(), manifestDomain: undefined },
 ];
 
@@ -317,6 +320,7 @@ function collectActualDomainActions(): Map<string, Set<string>> {
   add(IPC_DOMAINS.TASK, new Set(Object.keys(taskRoutes.actions)));
   add(IPC_DOMAINS.GENERATIVE_UI, new Set(Object.keys(generativeUIRoutes.actions)));
   add(IPC_DOMAINS.FOLDER_TRUST, new Set(Object.keys(folderTrustRoutes.actions)));
+  add(IPC_DOMAINS.HOOK, new Set(Object.keys(hookRoutes.actions)));
   return actual;
 }
 
@@ -328,7 +332,6 @@ function collectActualDomainActions(): Map<string, Set<string>> {
  */
 const KNOWN_UNDER_REPORTED_ACTIONS: Readonly<Record<string, readonly string[]>> = {
   'domain:backgroundTasks': ['drainNotifications', 'getTask', 'listTasks', 'markNotificationDelivered', 'readTaskLog'],
-  'domain:hook': ['setEnabled'],
   'domain:provider': ['delete_realtime_voice_provider'],
   'domain:surfaceExecution': ['startLiveStream', 'stopLiveStream'],
   'domain:voice': ['injectUserText'],

@@ -28,6 +28,7 @@ import { ProjectSchemas } from '../shared/ipc/schemas/project';
 import { TaskSchemas } from '../shared/ipc/schemas/task';
 import { GenerativeUISchemas } from '../shared/ipc/schemas/generativeUI';
 import { FolderTrustSchemas } from '../shared/ipc/schemas/folderTrust';
+import { HookSchemas } from '../shared/ipc/schemas/hook';
 
 const DEFAULT_SINCE_VERSION = '0.16.93';
 
@@ -195,11 +196,8 @@ const CAPABILITY_DOMAIN_ACTIONS = {
   [IPC_DOMAINS.DIAGNOSTICS]: DiagnosticsSchemas.ACTIONS,
   // generativeUI 域：派生自 schema action 集合（== generativeUI 表 keys，parity 门三面对账），手工清单已删
   [IPC_DOMAINS.GENERATIVE_UI]: GenerativeUISchemas.ACTIONS,
-  [IPC_DOMAINS.HOOK]: [
-    'list',
-    'openConfigFile',
-    'revealConfigFolder',
-  ],
+  // hook 域：派生自 schema action 集合（== hook 表 keys，parity 门三面对账），手工清单已删
+  [IPC_DOMAINS.HOOK]: HookSchemas.ACTIONS,
   [IPC_DOMAINS.LIVE_PREVIEW]: [
     'applyTweak',
     'detectFramework',

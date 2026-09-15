@@ -6,7 +6,8 @@ import * as path from 'path';
 import * as os from 'os';
 import { shell } from '../platform';
 import type { IpcMain } from '../platform';
-import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
+import { HookSchemas, type HookDomainRequest } from '../../shared/ipc/schemas/hook';
+import { defineDomainRoutes, installDomainRoutes } from './domainRoutes/registry';
 import type { AgentApplicationService } from '../../shared/contract/appService';
 import { CONFIG_DIR_NEW } from '../config/configPaths';
 import { loadAllHooksConfig, getHooksConfigPaths, makeHookKey, type HookDefinition } from '../hooks/configParser';
@@ -142,69 +143,56 @@ export async function setHookEnabled(
   return { matched };
 }
 
+type HookRouteCtx = () => AgentApplicationService | null;
+
+/**
+ * hook 域单源路由表（RQ-183 续作·HOOK 刀）：原 domain switch 逐 case 平移（handler 返回 data，装配器包
+ * { success: true, data }）；管理员门平移为 guard（分发前、未知 action 也先过门，门在装配器 try 内，与原顺序一致）；
+ * 缺参抛错 / 未知 action → INVALID_ACTION `Unknown action: <action>` / 抛错 → INTERNAL_ERROR（Error 取 message、
+ * 非 Error 取 String(error)），均为装配器缺省。
+ */
+const hookRoutes = defineDomainRoutes<HookDomainRequest, HookRouteCtx>(
+  HookSchemas.REQUEST,
+  {
+    list: (getAppService) => buildSummary(getAppService()?.getWorkingDirectory() ?? null),
+    openConfigFile: async (_ctx, payload) => {
+      const { filePath } = payload as { filePath: string };
+      if (!filePath) throw new Error('Missing filePath');
+      // 不存在时，先确保父目录存在（让 shell 打开后用户能直接保存）
+      const fs = await import('fs');
+      const dir = path.dirname(filePath);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      if (!fs.existsSync(filePath)) {
+        fs.writeFileSync(filePath, '{\n  "hooks": {}\n}\n', 'utf-8');
+      }
+      await shell.openPath(filePath);
+      return { opened: filePath };
+    },
+    setEnabled: async (_ctx, payload) => {
+      const { filePath, key, enabled } = payload as {
+        filePath: string;
+        key: string;
+        enabled: boolean;
+      };
+      if (!filePath || !key) throw new Error('Missing filePath or key');
+      return setHookEnabled(filePath, key, enabled);
+    },
+    revealConfigFolder: async (_ctx, payload) => {
+      const { filePath } = payload as { filePath: string };
+      if (!filePath) throw new Error('Missing filePath');
+      shell.showItemInFolder(filePath);
+      return { revealed: filePath };
+    },
+  },
+  { guard: () => getAdminAccessIpcError('Hooks') },
+);
+
 export function registerHookHandlers(
   ipcMain: IpcMain,
   getAppService: () => AgentApplicationService | null,
 ): void {
-  ipcMain.handle(IPC_DOMAINS.HOOK, async (_, request: IPCRequest): Promise<IPCResponse> => {
-    const { action, payload } = request;
-
-    try {
-      const accessError = getAdminAccessIpcError('Hooks');
-      if (accessError) return accessError;
-
-      let data: unknown;
-
-      switch (action) {
-        case 'list': {
-          const wd = getAppService()?.getWorkingDirectory() ?? null;
-          data = await buildSummary(wd);
-          break;
-        }
-        case 'openConfigFile': {
-          const { filePath } = payload as { filePath: string };
-          if (!filePath) throw new Error('Missing filePath');
-          // 不存在时，先确保父目录存在（让 shell 打开后用户能直接保存）
-          const fs = await import('fs');
-          const dir = path.dirname(filePath);
-          if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-          if (!fs.existsSync(filePath)) {
-            fs.writeFileSync(filePath, '{\n  "hooks": {}\n}\n', 'utf-8');
-          }
-          await shell.openPath(filePath);
-          data = { opened: filePath };
-          break;
-        }
-        case 'setEnabled': {
-          const { filePath, key, enabled } = payload as {
-            filePath: string;
-            key: string;
-            enabled: boolean;
-          };
-          if (!filePath || !key) throw new Error('Missing filePath or key');
-          data = await setHookEnabled(filePath, key, enabled);
-          break;
-        }
-        case 'revealConfigFolder': {
-          const { filePath } = payload as { filePath: string };
-          if (!filePath) throw new Error('Missing filePath');
-          shell.showItemInFolder(filePath);
-          data = { revealed: filePath };
-          break;
-        }
-        default:
-          return {
-            success: false,
-            error: { code: 'INVALID_ACTION', message: `Unknown action: ${action}` },
-          };
-      }
-
-      return { success: true, data };
-    } catch (error) {
-      return {
-        success: false,
-        error: { code: 'INTERNAL_ERROR', message: error instanceof Error ? error.message : String(error) },
-      };
-    }
-  });
+  installDomainRoutes(ipcMain, hookRoutes, getAppService);
 }
+
+// 表挂装配函数对象上供 parity 门枚举（同 registerMemoryHandlers.routes 先例）
+registerHookHandlers.routes = hookRoutes;

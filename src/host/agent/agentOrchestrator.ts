@@ -734,10 +734,7 @@ export class AgentOrchestrator {
           // 同一次失败会经由多个出口各发一条 error（这里 + runFinalizer 的 RUN_FAILED）。
           // 渲染侧按后到的覆盖，所以每一条都得带这一轮真跑的模型，缺一条就把前面
           // 带对的那条盖掉——真机 2026-08-01：卡片指认了一个根本没跑过的模型。
-          details: {
-            provider: modelConfig.provider,
-            model: modelConfig.model,
-          },
+          details: { provider: modelConfig.provider, model: modelConfig.model },
           ...(failureMarker ? { failure: failureMarker } : {}),
         },
       });

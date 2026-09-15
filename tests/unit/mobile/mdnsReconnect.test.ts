@@ -145,3 +145,15 @@ describe('LanDns 第一方插件合同（iOS / Android / JS 三侧）', () => {
     expect(buildAndroid).toContain('call.getInt("timeoutMs"');
   });
 });
+
+describe('Android mDNS 查询头（ai-review PR#1814 Important①）', () => {
+  it('DNS 头是完整 12 字节：ID 与 flags 各 2 字节，QDCOUNT 落在偏移 4', () => {
+    const buildAndroid = readFileSync('packages/mobile/scripts/build-android.mjs', 'utf8');
+    const start = buildAndroid.indexOf('private static byte[] buildQuery(String host)');
+    const header = buildAndroid.slice(start, buildAndroid.indexOf('for (String label', start));
+    const bytes = [...header.matchAll(/out\.write\((\d+)\);/g)].map(match => Number(match[1]));
+    expect(bytes).toHaveLength(12);
+    // 解析侧 parseAAnswer 从 data[4..5] 读 QDCOUNT、从偏移 12 开始读问题段
+    expect(bytes.slice(4, 6)).toEqual([0, 1]);
+  });
+});

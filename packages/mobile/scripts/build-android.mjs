@@ -194,7 +194,8 @@ public class LanDnsPlugin extends Plugin {
     /** Standard DNS query: header + one question (host, A, IN). */
     private static byte[] buildQuery(String host) {
         ByteArrayOutputStream out = new ByteArrayOutputStream(host.length() + 18);
-        out.write(0); out.write(0); // id 0, flags 0 (standard query)
+        out.write(0); out.write(0); // ID 0
+        out.write(0); out.write(0); // flags 0 (standard query)
         out.write(0); out.write(1); // QDCOUNT 1
         out.write(0); out.write(0); // ANCOUNT
         out.write(0); out.write(0); // NSCOUNT

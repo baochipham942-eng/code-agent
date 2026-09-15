@@ -728,8 +728,11 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
           : companion.status === 'connecting' ? <div className="remote-state" role="status" data-testid="remote-connecting">
             <span className="spinner" aria-hidden="true" />{text.libraryLoading}
           </div>
-          : !companion.binding ? <div className="remote-failed" role="status">
+          : !companion.binding ? <div className="remote-failed" role="status" data-testid="remote-unpaired">
             <strong>{text.noComputers}</strong>
+            {/* 没配对过也会失败：扫码没成、本机安全存储读不出。标题仍是「还没连接电脑」，但原因要说出来，
+                否则存储故障被说成「没有电脑」，用户照着再扫也好不了（ai-review PR#1814 Important④）。 */}
+            {(companion.status === 'storageError' || companion.connectionError) && <p>{companion.status === 'storageError' ? text.secureStorageError : diagnosis.sentence}</p>}
             <button className="primary" disabled={!ports.companion} onClick={() => void pairAndOpenConversation()}>{text.scan}</button>
           </div>
           : <div className="remote-failed" role="status" data-testid="remote-unreachable">

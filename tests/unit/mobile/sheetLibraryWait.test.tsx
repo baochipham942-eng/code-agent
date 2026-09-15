@@ -219,3 +219,27 @@ describe('连接电脑 sheet 状态机：一态一主操作（fix4-③）', () =
     expect(buttons).not.toContain(text.reconnect);
   });
 });
+
+describe('没配对过时连接电脑 sheet 不吞失败原因（ai-review PR#1814 Important④）', () => {
+  it('扫码失败：「还没连接电脑」下面给出扫码失败的诊断句', async () => {
+    const base = ports();
+    const withScanFailure: PlatformPorts = { ...base, companion: { ...base.companion!, read: async () => null, scan: async () => { throw new Error('cancelled'); } } };
+    await act(async () => { render(<MobileRoot ports={withScanFailure} fixtures={false} />); });
+    await waitFor(() => { expect(document.querySelector('.app')).toBeTruthy(); });
+    await openRemoteSheetFromDrawer();
+    const unpaired = document.querySelector('[data-testid="remote-unpaired"]');
+    expect(unpaired?.textContent).toContain(text.noComputers);
+    expect(unpaired?.textContent).not.toContain(text.connectionScanFailed);
+    fireEvent.click([...unpaired!.querySelectorAll('button')].find(button => button.textContent === text.scan) as HTMLElement);
+    await waitFor(() => { expect(document.querySelector('[data-testid="remote-unpaired"]')?.textContent).toContain(text.connectionScanFailed); });
+  });
+
+  it('本机安全存储读不出：不止说「没有电脑」，给出存储故障的句子', async () => {
+    const base = ports();
+    const withStorageFailure: PlatformPorts = { ...base, companion: { ...base.companion!, read: async () => { throw new Error('keychain unavailable'); } } };
+    await act(async () => { render(<MobileRoot ports={withStorageFailure} fixtures={false} />); });
+    await waitFor(() => { expect(document.querySelector('.app')).toBeTruthy(); });
+    await openRemoteSheetFromDrawer();
+    await waitFor(() => { expect(document.querySelector('[data-testid="remote-unpaired"]')?.textContent).toContain(text.secureStorageError); });
+  });
+});

@@ -4,6 +4,7 @@ import { generateMessageId } from '@shared/utils/id';
 import type { Message, ToolCall } from '@shared/contract';
 import { createLogger } from '../../../utils/logger';
 import { useSessionStore } from '../../../stores/sessionStore';
+import { useStreamResumeStore } from '../../../stores/streamResumeStore';
 import { userMessageReplacement } from '../../../utils/optimisticUserSend';
 import { useStatusStore } from '../../../stores/statusStore';
 import { useTurnExecutionStore } from '../../../stores/turnExecutionStore';
@@ -45,6 +46,7 @@ import {
   normalizeModelDecisionPayload,
   normalizeModelFallbackPayload,
   normalizeRoutingResolvedPayload,
+  normalizeStreamReconnectingPayload,
   normalizeStreamTextPayload,
   normalizeTurnIdPayload,
   normalizeUserMessagePayload,
@@ -115,6 +117,26 @@ export interface ConversationStreamState {
    * 渲染层照抄同一口径：序号回头就是重放，没有序号才回落到内容判定。
    */
   lastDeltaSeqByTurn: Map<string, number>;
+  /**
+   * ADR-068 刀 4（B2 诚实分段）：turnId → { 续答段消息 id, 分段时的 attempt }。B2 断流后
+   * host 的续答 delta 仍按原 turnId 寻址（emitAssistantMessageDelta 的 messageId=
+   * currentTurnId 不变），不重定向就会 append 进定格的断点段冒充单次生成（D2 禁止）。
+   * splitAtAttempt 用于重放幂等：attempt 不超过已分段水位时不二次切段。无分段时查不到，
+   * 行为与改前完全一致。
+   */
+  segmentRedirectByTurn: Map<string, { segmentId: string; splitAtAttempt: number }>;
+}
+
+/**
+ * B2 分段后的目标消息解析：显式 turnId/messageId 先过重定向表，再查消息列表。
+ * 顺序不能反——断点段消息的 id 就是原 turnId，直接命中就永远轮不到重定向。
+ */
+function resolveStreamTargetId(
+  state: ConversationStreamState,
+  targetMessageId: string | null | undefined,
+): string | null | undefined {
+  if (!targetMessageId) return targetMessageId;
+  return state.segmentRedirectByTurn.get(targetMessageId)?.segmentId ?? targetMessageId;
 }
 
 function appendAssistantStreamDelta(
@@ -122,6 +144,8 @@ function appendAssistantStreamDelta(
   messageId: string,
   delta: { content?: string; reasoning?: string },
 ): void {
+  // 续答恢复即消除断流信号（B1 回到同一消息 / B2 落到续答段都在这里过）
+  actions.notifyStreamResumeActivity?.(messageId);
   if (actions.appendStreamingMessageDelta) {
     actions.appendStreamingMessageDelta(messageId, delta);
     return;
@@ -166,6 +190,16 @@ export function applyConversationStreamEvent(
       {
         const turnData = normalizeTurnIdPayload(event.data);
         const turnId = turnData.turnId || makeId();
+        // ADR-068 刀 4：新轮开始 = 旧轮的续接信号与分段重定向过期（终态事件之外的
+        // 第二道清除）。只清别的轮——同轮 turn_start 重放时清掉自己会把已分段的
+        // 续答接回断点段，拼缝。
+        const priorSignal = useStreamResumeStore.getState().signal;
+        if (priorSignal && priorSignal.turnId !== turnId) {
+          useStreamResumeStore.getState().clear();
+        }
+        for (const key of [...state.segmentRedirectByTurn.keys()]) {
+          if (key !== turnId) state.segmentRedirectByTurn.delete(key);
+        }
         if (turnData.isMeta) {
           state.currentTurnMessageId = turnId;
           state.committedAssistantMessageIds.delete(turnId);
@@ -196,7 +230,7 @@ export function applyConversationStreamEvent(
         const chunkData = normalizeStreamTextPayload(event.data);
         if (!chunkData?.content) break;
         if (chunkData.isMeta) break;
-        const targetMessageId = chunkData.turnId || state.currentTurnMessageId;
+        const targetMessageId = resolveStreamTargetId(state, chunkData.turnId || state.currentTurnMessageId);
         // 序号回头 = 重连重放，整条丢；有序号时不再看内容（内容判不了重放）。
         if (!acceptDeltaSeq(state, targetMessageId, (event.data as { deltaSeq?: unknown } | undefined)?.deltaSeq)) break;
         const freshMsgs = getFreshMessages();
@@ -249,7 +283,7 @@ export function applyConversationStreamEvent(
         const deltaData = normalizeMessageDeltaPayload(event.data);
         if (!deltaData?.text) break;
         if (deltaData.isMeta) break;
-        const targetMessageId = deltaData.messageId || deltaData.turnId || state.currentTurnMessageId;
+        const targetMessageId = resolveStreamTargetId(state, deltaData.messageId || deltaData.turnId || state.currentTurnMessageId);
         // 生产里真正带 deltaSeq 的就是这条分支（eventBatcher 只在 message_delta 上透传），
         // 序号去重必须接在这里，接漏了等于没接（ai-review #1696 第三轮）。
         const deltaSeq = (event.data as { deltaSeq?: unknown } | undefined)?.deltaSeq;
@@ -281,7 +315,7 @@ export function applyConversationStreamEvent(
         const snapshotData = normalizeMessageSnapshotPayload(event.data);
         if (!snapshotData) break;
         if (snapshotData.isMeta) break;
-        const targetMessageId = snapshotData.turnId || snapshotData.messageId || state.currentTurnMessageId;
+        const targetMessageId = resolveStreamTargetId(state, snapshotData.turnId || snapshotData.messageId || state.currentTurnMessageId);
         const freshMsgs = getFreshMessages();
         const targetMessage = targetMessageId
           ? freshMsgs.find(m => m.id === targetMessageId)
@@ -291,6 +325,81 @@ export function applyConversationStreamEvent(
           actions.updateMessage(targetMessage.id, {
             content: snapshotData.content,
             reasoning: snapshotData.reasoning,
+          });
+        }
+      }
+      break;
+
+    case 'stream_reconnecting':
+      {
+        // ADR-068 刀 4（D5）：断流续接信号——同一轮回答不重置 turn（voiceCall reconnecting
+        // 先例），状态行挂断流那一刻的 streaming 消息；B2 档同时把断流消息定格成独立段、
+        // 续答另起一段（带一次性续接说明），后续按原 turnId 寻址的 delta 重定向到续答段，
+        // 绝不 append 进断点段冒充单次生成（D2 边界）。
+        const reconnectData = normalizeStreamReconnectingPayload(event.data);
+        if (!reconnectData) break;
+        const turnId = reconnectData.turnId || state.currentTurnMessageId;
+        if (!turnId) break;
+        const freshMsgs = getFreshMessages();
+        // 事件的 turnId 是对账锚点（ai-review Important）：带 turnId 的断流只接受属于该轮的
+        // 消息（当前 streaming 消息 id===turnId，或该轮 B2 分段注册的续答段）。当前指向别的
+        // 轮 = 旧轮的迟到信号（那轮已收尾）——整条丢弃，不冒认新轮消息切段、不给死轮建段、
+        // 不劫持 current 指针。兜底按事件 turnId 找消息只在重水化（current 已丢）时轮得到。
+        const redirect = state.segmentRedirectByTurn.get(turnId);
+        const currentId = state.currentTurnMessageId;
+        const currentBelongsToEventTurn = currentId === turnId
+          || (redirect ? currentId === redirect.segmentId : false);
+        if (reconnectData.turnId && currentId != null && !currentBelongsToEventTurn) break;
+        const draft = freshMsgs.find(m => m.id === currentId && m.role === 'assistant')
+          ?? freshMsgs.find(m => m.id === turnId && m.role === 'assistant');
+        if (!draft) break;
+        const resumeStore = useStreamResumeStore.getState();
+        // 分段只对「新断流」做（attempt 递增）；SSE 重连重放同一条信号时续答段已在，
+        // 再切一段会把已恢复的轮切成孤儿——splitAtAttempt 就是防这个的。
+        const needsSplit = reconnectData.segment === 'b2'
+          && Boolean(draft.content?.trim())
+          && (!redirect || reconnectData.attempt > redirect.splitAtAttempt);
+        if (needsSplit) {
+          const segmentMessage: Message = {
+            id: makeId(),
+            role: 'assistant',
+            content: '',
+            timestamp: now(),
+            toolCalls: [],
+            metadata: {
+              // correlation.turnId 与 turn_start 建的 streaming 消息同款：续答段是 renderer
+              // 侧构造、id 与 host 落库终稿不同——没有这个配对键，收尾 session/load 的
+              // live-tail 合并配不上对，DB 终稿与 live 续答段会并成两条重复正文。
+              correlation: { turnId },
+              streamResumeNote: { attempt: reconnectData.attempt, maxReconnects: reconnectData.maxReconnects },
+            },
+          };
+          actions.addMessage(segmentMessage);
+          state.segmentRedirectByTurn.set(turnId, {
+            segmentId: segmentMessage.id,
+            splitAtAttempt: reconnectData.attempt,
+          });
+          state.currentTurnMessageId = segmentMessage.id;
+          state.committedAssistantMessageIds.delete(segmentMessage.id);
+          resumeStore.setSignal({
+            turnId,
+            messageId: draft.id,
+            segmentMessageId: segmentMessage.id,
+            attempt: reconnectData.attempt,
+            maxReconnects: reconnectData.maxReconnects,
+            signaledAt: now(),
+          });
+        } else {
+          // B1 无缝续打不动消息；重放/空断点（无可见正文，host 侧 partial 落库本就是 no-op）
+          // 只刷新信号。重放时续答段可能已在——挂回原断点段与续答段的信号关系。
+          const segmentId = redirect?.segmentId;
+          resumeStore.setSignal({
+            turnId,
+            messageId: draft.id,
+            ...(segmentId ? { segmentMessageId: segmentId } : {}),
+            attempt: reconnectData.attempt,
+            maxReconnects: reconnectData.maxReconnects,
+            signaledAt: now(),
           });
         }
       }
@@ -371,7 +480,7 @@ export function applyConversationStreamEvent(
 
         const messageData = normalizeAssistantMessagePayload(event.data);
         if (!messageData) break;
-        const targetMessageId = messageData.turnId || state.currentTurnMessageId;
+        const targetMessageId = resolveStreamTargetId(state, messageData.turnId || state.currentTurnMessageId);
         const targetMessage = targetMessageId
           ? getFreshMessages().find(m => m.id === targetMessageId)
           : getFreshMessages()[getFreshMessages().length - 1];
@@ -394,6 +503,8 @@ export function applyConversationStreamEvent(
           if (messageData.id) {
             state.committedAssistantMessageIds.add(messageData.id);
           }
+          // 续答终稿落到分段消息 = 恢复完成，消除断流信号（B1 同消息 commit 同理）
+          actions.notifyStreamResumeActivity?.(targetMessage.id);
 
           const existingContent = targetMessage.content || '';
           const newContent = messageData.content || '';
@@ -448,7 +559,7 @@ export function applyConversationStreamEvent(
         const reasoningData = normalizeStreamTextPayload(event.data);
         if (!reasoningData?.content) break;
         if (reasoningData.isMeta) break;
-        const targetMessageId = reasoningData.turnId || state.currentTurnMessageId;
+        const targetMessageId = resolveStreamTargetId(state, reasoningData.turnId || state.currentTurnMessageId);
         const targetMessage = targetMessageId
           ? getFreshMessages().find(m => m.id === targetMessageId)
           : getFreshMessages()[getFreshMessages().length - 1];
@@ -486,6 +597,8 @@ export const useConversationStreamEffects = ({
   // 等于每次调用都丢一次（ai-review #1696 第三轮抓到；我的单测复用了同一个 state 对象，
   // 夹具寿命与生产不一致所以照样绿——这类断言必须让夹具跟生产同寿命）。
   const lastDeltaSeqByTurnRef = useRef<Map<string, number>>(new Map());
+  // ADR-068 刀 4：B2 分段重定向同因挂 ref（同 lastDeltaSeqByTurn 的寿命要求）
+  const segmentRedirectByTurnRef = useRef<Map<string, { segmentId: string; splitAtAttempt: number }>>(new Map());
 
   useEffect(() => {
     const unsubscribe = ipcService.on('agent:event', (event: AgentEvent) => {
@@ -604,6 +717,7 @@ export const useConversationStreamEffects = ({
               },
               committedAssistantMessageIds: committedAssistantMessageIdsRef.current,
               lastDeltaSeqByTurn: lastDeltaSeqByTurnRef.current,
+              segmentRedirectByTurn: segmentRedirectByTurnRef.current,
             },
             {
               addMessage,
@@ -612,6 +726,7 @@ export const useConversationStreamEffects = ({
               setMessages: (messages) => useSessionStore.getState().setMessages(messages),
               getMessages: getFreshMessages,
               queueUpdate,
+              notifyStreamResumeActivity: (messageId) => useStreamResumeStore.getState().resolveIfActivityOn(messageId),
             },
           );
           logger.debug('turn_start - created message', { turnId: currentTurnMessageIdRef.current, sessionId: eventSessionId });
@@ -622,10 +737,19 @@ export const useConversationStreamEffects = ({
         case 'message_snapshot':
         case 'model_decision':
         case 'stream_usage':
+        case 'stream_reconnecting':
           lastEventAtRef.current = Date.now();
           logHandledEvent();
           if (!isCurrentSessionEvent) {
             break;
+          }
+          if (event.type === 'stream_reconnecting') {
+            // 断流判定前先把流式缓冲落地：delta 走 accumulator（setTimeout 定时 flush 进
+            // messages），断流事件同步到达时 PART1 可能还在缓冲里——不冲掉就当「空断点」
+            // 处理，B2 不切段、续答 append 进断点段拼缝（D2，e2e stream-resume 抓到的
+            // 真机形状；单测的 actions 直写 messages，形状与生产不一致测不出这个）。
+            flushRef.current();
+            flushStreamingMessages();
           }
           applyConversationStreamEvent(
             event,
@@ -638,6 +762,7 @@ export const useConversationStreamEffects = ({
               },
               committedAssistantMessageIds: committedAssistantMessageIdsRef.current,
               lastDeltaSeqByTurn: lastDeltaSeqByTurnRef.current,
+              segmentRedirectByTurn: segmentRedirectByTurnRef.current,
             },
             {
               addMessage,
@@ -646,6 +771,7 @@ export const useConversationStreamEffects = ({
               setMessages: (messages) => useSessionStore.getState().setMessages(messages),
               getMessages: getFreshMessages,
               queueUpdate,
+              notifyStreamResumeActivity: (messageId) => useStreamResumeStore.getState().resolveIfActivityOn(messageId),
             },
           );
           break;
@@ -669,6 +795,7 @@ export const useConversationStreamEffects = ({
               },
               committedAssistantMessageIds: committedAssistantMessageIdsRef.current,
               lastDeltaSeqByTurn: lastDeltaSeqByTurnRef.current,
+              segmentRedirectByTurn: segmentRedirectByTurnRef.current,
             },
             {
               addMessage,
@@ -677,6 +804,7 @@ export const useConversationStreamEffects = ({
               setMessages: (messages) => useSessionStore.getState().setMessages(messages),
               getMessages: getFreshMessages,
               queueUpdate,
+              notifyStreamResumeActivity: (messageId) => useStreamResumeStore.getState().resolveIfActivityOn(messageId),
             },
           );
           break;
@@ -698,6 +826,7 @@ export const useConversationStreamEffects = ({
               },
               committedAssistantMessageIds: committedAssistantMessageIdsRef.current,
               lastDeltaSeqByTurn: lastDeltaSeqByTurnRef.current,
+              segmentRedirectByTurn: segmentRedirectByTurnRef.current,
             },
             {
               addMessage,
@@ -706,6 +835,7 @@ export const useConversationStreamEffects = ({
               setMessages: (messages) => useSessionStore.getState().setMessages(messages),
               getMessages: getFreshMessages,
               queueUpdate,
+              notifyStreamResumeActivity: (messageId) => useStreamResumeStore.getState().resolveIfActivityOn(messageId),
             },
           );
           break;
@@ -722,6 +852,16 @@ export const useConversationStreamEffects = ({
           }
           flushRef.current();
           flushStreamingMessages();
+          // ADR-068 刀 4：轮终态——续接信号兜底消除（成功续答早在 delta 到达时消过，
+          // 这里兜「预算耗尽转 error」「取消」等终路），分段重定向同轮作废。
+          {
+            const endedTurnId = normalizeTurnIdPayload(event.data).turnId;
+            const signal = useStreamResumeStore.getState().signal;
+            if (!endedTurnId || signal?.turnId === endedTurnId) {
+              useStreamResumeStore.getState().clear();
+            }
+            if (endedTurnId) segmentRedirectByTurnRef.current.delete(endedTurnId);
+          }
           logger.debug('turn_end', { turnId: normalizeTurnIdPayload(event.data).turnId });
           break;
 
@@ -770,6 +910,7 @@ export const useConversationStreamEffects = ({
               },
               committedAssistantMessageIds: committedAssistantMessageIdsRef.current,
               lastDeltaSeqByTurn: lastDeltaSeqByTurnRef.current,
+              segmentRedirectByTurn: segmentRedirectByTurnRef.current,
             },
             {
               addMessage,
@@ -778,6 +919,7 @@ export const useConversationStreamEffects = ({
               setMessages: (messages) => useSessionStore.getState().setMessages(messages),
               getMessages: getFreshMessages,
               queueUpdate,
+              notifyStreamResumeActivity: (messageId) => useStreamResumeStore.getState().resolveIfActivityOn(messageId),
             },
           );
           break;
@@ -821,6 +963,7 @@ export const useConversationStreamEffects = ({
               },
               committedAssistantMessageIds: committedAssistantMessageIdsRef.current,
               lastDeltaSeqByTurn: lastDeltaSeqByTurnRef.current,
+              segmentRedirectByTurn: segmentRedirectByTurnRef.current,
             },
             {
               addMessage,
@@ -829,6 +972,7 @@ export const useConversationStreamEffects = ({
               setMessages: (messages) => useSessionStore.getState().setMessages(messages),
               getMessages: getFreshMessages,
               queueUpdate,
+              notifyStreamResumeActivity: (messageId) => useStreamResumeStore.getState().resolveIfActivityOn(messageId),
             },
           );
           break;

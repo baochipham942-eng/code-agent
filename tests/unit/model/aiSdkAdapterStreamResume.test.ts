@@ -23,6 +23,7 @@ import axios from 'axios';
 import { createDeepSeek } from '@ai-sdk/deepseek';
 import { inferenceViaAiSdk } from '../../../src/host/model/adapters/aiSdkAdapter';
 import { logger } from '../../../src/host/model/adapters/aiSdkFetch';
+import { retryEvents } from '../../../src/host/model/providers/retryStrategy';
 import { STREAM_RECONNECT_MAX } from '../../../src/shared/constants';
 import type { StreamChunk, StreamCallback } from '../../../src/host/model/types';
 import type { ModelConfig, ToolDefinition } from '../../../src/shared/contract';
@@ -141,6 +142,10 @@ describe('inferenceViaAiSdk —— 首字节后断流续接（ADR-068 刀 1+3）
     const breaks = col.byType('stream_break');
     expect(breaks).toHaveLength(1);
     expect(breaks[0].error).toBe('ECONNRESET');
+    // 刀 4 UI 信号：B2 断流点先发 reconnecting（n/N + 分档），呈现层据此内嵌状态行
+    const signals = col.byType('reconnecting');
+    expect(signals).toHaveLength(1);
+    expect(signals[0]).toMatchObject({ attempt: 1, maxReconnects: 2, segment: 'b2' });
     // 续答是全新累积器：response 只含续答段，不含断点片段（D2：跨次生成不拼进同一条消息）
     expect(res.content).toBe(' resumed');
     expect(res.thinking).toBeUndefined();
@@ -292,6 +297,47 @@ describe('inferenceViaAiSdk —— 首字节后断流续接（ADR-068 刀 1+3）
     expect(outcome).toBe('ECONNRESET');
     expect(vi.mocked(streamText)).toHaveBeenCalledTimes(1); // 调用方自带重试循环 → 本层单次尝试
   });
+
+  it('刀 4 信号：连续断流 reconnecting n/N 递增（1/2 → 2/2），retryEvents 同步发 reconnect；预算耗尽不再发', async () => {
+    vi.mocked(streamText).mockImplementation(() => fakeStream(BREAK_AFTER_DELTA));
+    const col = makeCollector();
+    // 静态 import（与本文件顶层 adapter 同一模块图）：afterEach 的 resetModules 会把
+    // 动态 import 拆成第二个实例，listener 就永远听不到 adapter 发的事件
+    const onReconnect = vi.fn();
+    retryEvents.on('reconnect', onReconnect);
+    try {
+      const p = inferenceViaAiSdk([{ role: 'user', content: 'x' }], [], CONFIG, col.onStream);
+      const settled = p.then(() => 'resolved', (e: unknown) => (e instanceof Error ? e.message : String(e)));
+      await vi.advanceTimersByTimeAsync(1000); // 续接 #1
+      await vi.advanceTimersByTimeAsync(2000); // 续接 #2
+      await vi.advanceTimersByTimeAsync(4000); // 预算耗尽 → error + throw
+      const outcome = await settled;
+
+      expect(outcome).toBe('ECONNRESET');
+      // n/N 计数正确：两次续接各一条信号，attempt 递增到预算上限；耗尽后回落 error 不再发
+      const signals = col.byType('reconnecting');
+      expect(signals.map((s) => [s.attempt, s.maxReconnects, s.segment])).toEqual([
+        [1, 2, 'b2'], // xiaomi 能力表 unknown 档 → B2
+        [2, 2, 'b2'],
+      ]);
+      // CLI 可见性：与 'retry' 同一事件通道的 reconnect 语义，每次续接一行（D5）
+      expect(onReconnect).toHaveBeenCalledTimes(2);
+      expect(onReconnect).toHaveBeenNthCalledWith(1, expect.objectContaining({
+        provider: 'xiaomi',
+        attempt: 1,
+        maxReconnects: 2,
+        segment: 'b2',
+        error: 'ECONNRESET',
+      }));
+      expect(onReconnect).toHaveBeenNthCalledWith(2, expect.objectContaining({
+        attempt: 2,
+        maxReconnects: 2,
+      }));
+      expect(col.byType('error')).toHaveLength(1); // 耗尽回落现有 error 呈现（刀 3 已钉死）
+    } finally {
+      retryEvents.removeListener('reconnect', onReconnect);
+    }
+  });
 });
 
 describe('inferenceViaAiSdk —— B1 prefix 请求形状（ADR-068 刀 2）', () => {
@@ -343,6 +389,10 @@ describe('inferenceViaAiSdk —— B1 prefix 请求形状（ADR-068 刀 2）', (
     expect(second.model).toBe(first.model);
     // B1 无缝：无 B2 分段信号，续写 delta append 进断点同一条消息（同一 accumulator seed）
     expect(col.byType('stream_break')).toHaveLength(0);
+    // 刀 4 UI 信号：B1 同样发 reconnecting（分档 b1，同一消息内嵌状态行后无缝续打）
+    const signals = col.byType('reconnecting');
+    expect(signals).toHaveLength(1);
+    expect(signals[0]).toMatchObject({ attempt: 1, maxReconnects: 2, segment: 'b1' });
     expect(res.content).toBe('partial resumed');
     expect(col.texts()).toBe('partial resumed');
   });

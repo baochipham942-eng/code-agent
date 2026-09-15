@@ -11,6 +11,7 @@ type OutcomeKey =
   | 'cancelled-by-user'
   | 'interrupted-session-switch'
   | 'interrupted-restart'
+  | 'interrupted-stream-break'
   | 'interrupted-by-parent'
   | 'interrupted-unknown'
   | 'failed-tool'
@@ -44,6 +45,7 @@ const STREAM_INTERRUPTION_OUTCOME_KEYS = {
   user: 'cancelled-by-user',
   'session-switch': 'interrupted-session-switch',
   'app-restart': 'interrupted-restart',
+  'stream-break': 'interrupted-stream-break',
 } as const satisfies Record<StreamInterruptionReason, OutcomeKey>;
 
 /** One active/passive verdict shared by every stream-interruption surface. */
@@ -72,6 +74,12 @@ export const outcomeWordsZh: OutcomeWordsBundle = {
       badge: { label: '已中断', reason: '应用重启时中断' },
       detail: { label: '任务已中断', reason: '应用重启时中断' },
       notification: { label: '任务已中断', reason: '应用重启时中断' },
+    },
+    'interrupted-stream-break': {
+      timeline: { label: '已中断', reason: '网络断连时中断' },
+      badge: { label: '已中断', reason: '网络断连时中断' },
+      detail: { label: '任务已中断', reason: '网络断连时中断' },
+      notification: { label: '任务已中断', reason: '网络断连时中断' },
     },
     'interrupted-by-parent': {
       timeline: { label: '已中断', reason: '上级任务停止了这次执行' },
@@ -185,6 +193,12 @@ export const outcomeWordsEn: OutcomeWordsBundle = {
       badge: { label: 'Interrupted', reason: 'Interrupted when the app restarted' },
       detail: { label: 'Task interrupted', reason: 'Interrupted when the app restarted' },
       notification: { label: 'Task interrupted', reason: 'Interrupted when the app restarted' },
+    },
+    'interrupted-stream-break': {
+      timeline: { label: 'Interrupted', reason: 'Interrupted when the connection dropped' },
+      badge: { label: 'Interrupted', reason: 'Interrupted when the connection dropped' },
+      detail: { label: 'Task interrupted', reason: 'Interrupted when the connection dropped' },
+      notification: { label: 'Task interrupted', reason: 'Interrupted when the connection dropped' },
     },
     'interrupted-by-parent': {
       timeline: { label: 'Interrupted', reason: 'The parent task stopped this run' },

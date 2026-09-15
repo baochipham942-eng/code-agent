@@ -5,6 +5,7 @@ import { hasInsufficientBalanceSignal } from '@shared/utils/providerError';
 import { createLogger } from '../../../utils/logger';
 import { useAppStore } from '../../../stores/appStore';
 import { useSessionStore } from '../../../stores/sessionStore';
+import { useStreamResumeStore } from '../../../stores/streamResumeStore';
 import { useTaskStore, type SessionStatus } from '../../../stores/taskStore';
 import ipcService from '../../../services/ipcService';
 import type { AgentEffectsProps } from '../useAgentEffects';
@@ -340,6 +341,9 @@ export const useSessionLifecycleEffects = ({
               attachAgentErrorToLatestAssistant(agentError);
             }
           }
+          // ADR-068 刀 4：预算耗尽转 error——断流续接信号让位给错误呈现（AgentErrorCard
+          // 带重试动作衔接既有错误呈现，partial 刀 3 已带标记落库）。
+          useStreamResumeStore.getState().clear();
           clearSessionProcessing();
           refreshContextHealth();
           break;
@@ -348,6 +352,8 @@ export const useSessionLifecycleEffects = ({
         case 'agent_cancelled':
           lastEventAtRef.current = Date.now();
           logHandledEvent();
+          // ADR-068 刀 4：run 终态——断流续接信号兜底消除（正常恢复早在续答 delta 到达时消过）
+          useStreamResumeStore.getState().clear();
           if (isCurrentSessionEvent) {
             flushRef.current();
             setActiveToolProgress(null);

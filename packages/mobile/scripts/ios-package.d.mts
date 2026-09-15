@@ -45,6 +45,12 @@ export function ensureAppPushEntitlements(options: {
 export function parseEntitlementsDump(dump: string | Buffer): { apsEnvironment: string | null };
 export function assertBinaryPushEntitlement(dump: string | Buffer): string;
 
+/** 推送正文本地化的区：[lproj 目录名, i18n 语言]。 */
+export declare const LOCALIZABLE_REGIONS: [string, string][];
+export declare function localizableStrings(entries: Record<string, string>): string;
+/** 把 Localizable.strings 挂进 App target 的 Resources，幂等；锚点缺失抛 IOS_LOCALIZABLE_UNPATCHABLE。 */
+export declare function withLocalizableStrings(content: string): string;
+
 export interface SelfImplementedPluginClass { vendorClass: string; nativeClass: string }
 /** 把 packageClassList 里厂商插件的登记名换成第一方类名（Capacitor 按这张表 NSClassFromString）。 */
 export declare function withSelfImplementedPluginClasses<T extends object>(

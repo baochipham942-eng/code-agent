@@ -186,6 +186,55 @@ export function unlinkedSpmPlugins(packageSwift, plugins, selfImplemented = []) 
  * 运行时照旧是 plugin is not implemented on ios（ai-review PR#1760 Important 1，已用真机
  * 生成的 capacitor.config.json 与 Capacitor.framework 里的 packageClassList / autoRegisterPlugins 核实）。
  */
+/** 推送正文本地化的两个区：lproj 目录名 → i18n 语言（N-MOBILE-EXEC-STATUS ⑤）。 */
+export const LOCALIZABLE_REGIONS = [['en', 'en'], ['zh-Hans', 'zh']];
+
+/** Apple .strings 表：每行 "key" = "value";，引号、反斜杠、换行转义。 */
+export function localizableStrings(entries) {
+  const quote = value => `"${String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n')}"`;
+  return `${Object.entries(entries).map(([key, value]) => `${quote(key)} = ${quote(value)};`).join('\n')}\n`;
+}
+
+/**
+ * 把 Localizable.strings 挂进 App target 的 Resources（Capacitor 模板里没有这张表，APNs 的 loc-key
+ * 查不到就把 key 原样当横幅正文）。照模板里 Main.storyboard 的形状写一个 PBXVariantGroup，
+ * knownRegions 补上缺的区。锚点缺一个就停，不带着半截工程去签包。幂等。
+ */
+export function withLocalizableStrings(content) {
+  if (content.includes('/* Localizable.strings in Resources */')) return content;
+  const buildId = 'A1B2C3D4E5F6070809000001';
+  const groupId = 'A1B2C3D4E5F6070809000002';
+  const refs = LOCALIZABLE_REGIONS.map(([region], index) => ({ region, id: `A1B2C3D4E5F607080900001${index}` }));
+  const at = (source, anchor, from = 0) => {
+    const found = from < 0 ? -1 : source.indexOf(anchor, from);
+    if (found < 0) throw new Error(`IOS_LOCALIZABLE_UNPATCHABLE: ${anchor.trim()}`);
+    return found + anchor.length;
+  };
+  const insert = (source, index, text) => `${source.slice(0, index)}${text}${source.slice(index)}`;
+  let out = content;
+  out = insert(out, at(out, '/* Begin PBXBuildFile section */\n'),
+    `\t\t${buildId} /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = ${groupId} /* Localizable.strings */; };\n`);
+  out = insert(out, at(out, '/* Begin PBXFileReference section */\n'), refs.map(({ region, id }) =>
+    `\t\t${id} /* ${region} */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ${region}; path = ${region}.lproj/Localizable.strings; sourceTree = "<group>"; };\n`).join(''));
+  // App 组：与模板里的 Main.storyboard 同组（PBXGroup 段里它是组的一个子项）
+  out = insert(out, at(out, '/* Main.storyboard */,\n', out.indexOf('/* Begin PBXGroup section */')),
+    `\t\t\t\t${groupId} /* Localizable.strings */,\n`);
+  out = insert(out, at(out, 'files = (\n', out.indexOf('isa = PBXResourcesBuildPhase;')),
+    `\t\t\t\t${buildId} /* Localizable.strings in Resources */,\n`);
+  const variantEnd = at(out, '/* End PBXVariantGroup section */') - '/* End PBXVariantGroup section */'.length;
+  out = insert(out, variantEnd, `\t\t${groupId} /* Localizable.strings */ = {\n\t\t\tisa = PBXVariantGroup;\n\t\t\tchildren = (\n${
+    refs.map(({ region, id }) => `\t\t\t\t${id} /* ${region} */,\n`).join('')}\t\t\t);\n\t\t\tname = Localizable.strings;\n\t\t\tsourceTree = "<group>";\n\t\t};\n`);
+  let regionsPatched = false;
+  out = out.replace(/(knownRegions = \()([\s\S]*?)(\n\s*\);)/, (_block, open, regions, close) => {
+    regionsPatched = true;
+    const missing = LOCALIZABLE_REGIONS.map(([region]) => region)
+      .filter(region => !new RegExp(`^\\s*"?${region}"?,$`, 'm').test(regions));
+    return `${open}${regions}${missing.map(region => `\n\t\t\t\t"${region}",`).join('')}${close}`;
+  });
+  if (!regionsPatched) throw new Error('IOS_LOCALIZABLE_UNPATCHABLE: knownRegions');
+  return out;
+}
+
 /**
  * Capacitor's default AppDelegate does not forward APNs device tokens. Without these
  * two posts, register() resolves and then the plugin never emits `registration`.

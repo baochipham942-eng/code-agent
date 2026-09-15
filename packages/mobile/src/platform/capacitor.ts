@@ -1,7 +1,7 @@
 import { VoiceRecorder } from 'capacitor-voice-recorder';
 import { App } from '@capacitor/app';
 import { Camera } from '@capacitor/camera';
-import { Capacitor, SystemBars, SystemBarsStyle } from '@capacitor/core';
+import { Capacitor, registerPlugin, SystemBars, SystemBarsStyle } from '@capacitor/core';
 
 import { Directory, Filesystem } from '@capacitor/filesystem';
 import { Keyboard } from '@capacitor/keyboard';
@@ -15,7 +15,7 @@ import { bytesToArrayBuffer, bytesToBase64, FileCache } from './fileCache';
 import { HistoryCache } from './historyCache';
 import { FILE_ACCEPT, IMAGE_ACCEPT } from './fileAccept';
 import { nativeCompanionPort } from './nativeCompanion';
-import { createNotificationPort } from './notifications';
+import { createNotificationPort, type PushPresentationBridge } from './notifications';
 
 const PREFERENCES_KEY = 'neo.mobile.preferences.v1';
 const HISTORY_CACHE_KEY = 'neo.companion.history.v1';
@@ -139,6 +139,7 @@ export const capacitorPorts: PlatformPorts = {
       try { await open({ url: 'app-settings:' }); } catch { /* user opens Settings by hand */ }
     },
     Capacitor.getPlatform() === 'ios' ? PushNotifications : undefined,
+    Capacitor.getPlatform() === 'ios' ? registerPlugin<PushPresentationBridge>('PushPresentation') : undefined,
   ),
   files: webFilePorts(new FileCache()),
   historyCache: new HistoryCache(undefined, undefined, Date.now, {

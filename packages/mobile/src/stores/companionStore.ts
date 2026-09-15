@@ -105,6 +105,8 @@ interface State {
   registerPush(input: CompanionPushRegister): Promise<CompanionPushRegisterResult>;
   unregisterPush(): Promise<void>;
   openRoute(routeToken: string): Promise<void>;
+  /** 推送属于哪条会话：只查不跳转（前台抑制用）。查不到、没连着、走 relay 时给 null。 */
+  resolveRoute(routeToken: string): Promise<string | null>;
   selectSession(id: string): void; send(text: string): Promise<void>; stop(): Promise<void>; sync(): Promise<void>;
   artifacts: CompanionArtifact[]; preview: (CompanionArtifact & { bytes: Uint8Array }) | null; savedPreview: boolean; savedPreviewName: string | null;
   cacheUsage: CacheInspect | null;
@@ -669,6 +671,12 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         get().selectSession(result.sessionId);
         await get().sync();
       },
+      resolveRoute: async routeToken => {
+        // push.open 在 Host 侧是纯查询（按 routeToken 查 outbox 行的 session_id），这里只取会话、不选中不同步。
+        if (!client || get().status !== 'connected' || get().transport === 'relay') return null;
+        const result = await client.request({ action: 'push.open', routeToken }) as CompanionPushOpenResult;
+        return result.kind === 'rejected' ? null : result.sessionId;
+      },
       respond: (requestId, decision) => safely(async () => {
         if (!saved?.binding || saved.pending || !canAddressSession(get())) return;
         const latest = get().events.filter(event => event.kind === 'approval' && event.sessionId === get().sessionId && event.payload.requestId === requestId).at(-1)?.payload;
@@ -715,8 +723,9 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
             if (event.kind === 'agent_complete') set({ runId: null, terminal: 'complete' });
             if (event.kind === 'agent_cancelled') set({ runId: null, terminal: 'stopped' });
             if (event.kind === 'error') {
-              const code = typeof event.payload.code === 'string' ? event.payload.code : 'RUN_FAILED';
-              set({ runId: null, terminal: 'failed', commandError: code, commandErrorAction: null });
+              // 执行失败不进底部提示条（N-MOBILE-EXEC-STATUS ②）：原因随 error 事件挂在那次执行下面。
+              // 进 commandError 的话它一直不清，下一次任务成功后「完成」「没有完成」两句同屏并列。
+              set({ runId: null, terminal: 'failed' });
             }
             if (event.kind === 'artifact' && typeof event.payload.artifactId === 'string' && typeof event.payload.name === 'string') {
               const artifact: CompanionArtifact = {

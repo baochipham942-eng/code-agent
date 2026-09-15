@@ -69,15 +69,16 @@ export function composerModelLabel(library: CompanionLibrary | null, sessionId: 
  * 状态行文案。待确认命令按 action 分：语音转写不是「发送」，套用「请勿重复发送」会把用户
  * 指到一个不存在的风险上（2026-09-12 真机反馈）。抽成纯函数是为了让这条分支可单测——
  * 它此前是 JSX 里的内联三元，测不到。
+ *
+ * 只说命令，不说执行（N-MOBILE-EXEC-STATUS）：「电脑正在处理」和「任务已完成/失败」归属到那次执行，
+ * 在会话里挂在对应消息下面；底栏再说一遍就是离消息流远、多次任务后互相矛盾的那一行。
  */
 export function taskStatusCopy(
   text: ReturnType<typeof messages>,
-  companion: { pending: boolean; pendingAction: string | null; runId: string | null;
-    terminal: 'complete' | 'stopped' | 'failed' | null },
+  companion: { pending: boolean; pendingAction: string | null },
 ): string {
-  if (companion.pending) return companion.pendingAction === 'voice.transcribe' ? text.transcribing : text.pendingCommand;
-  if (companion.runId) return text.running;
-  return companion.terminal ? text[companion.terminal] : '';
+  if (!companion.pending) return '';
+  return companion.pendingAction === 'voice.transcribe' ? text.transcribing : text.pendingCommand;
 }
 
 /** 电脑名：mDNS 名去掉 .local；没有 mDNS 名（Linux/Windows 宿主）时给 null，调用方退回 IP。 */
@@ -152,6 +153,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
   const [companionStore] = useState(() => createCompanionStore(ports.companion, (acceptedText, sessionId, hostKey) => {
     return store.getState().acknowledgeDraft(acceptedText, `${hostKey}:${sessionId}`);
   }, (text, sessionId, hostKey, commandId, continuation) => store.getState().appendTranscript(text, `${hostKey}:${sessionId}`, commandId, continuation), ports.files, ports.historyCache));
+  const appActive = useRef(true);
   const [notifyStore] = useState(() => createNotificationStore({
     port: ports.notifications ?? unavailableNotificationPort,
     preference: {
@@ -164,6 +166,13 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
       unregister: () => companionStore.getState().unregisterPush(),
       openRoute: token => companionStore.getState().openRoute(token),
       reconnect: () => companionStore.getState().reconnect(),
+      // 「正在看」= 前台、会话页没被抽屉/弹层盖着、连着电脑（离线时会话里不会就地出新状态，照常弹）。
+      viewing: () => {
+        const ui = store.getState();
+        const live = companionStore.getState();
+        return appActive.current && !ui.drawer && !ui.sheet && ui.route !== 'fixture' && live.status === 'connected' ? live.sessionId : null;
+      },
+      resolveRoute: token => companionStore.getState().resolveRoute(token),
     },
   }));
   const companion = useStore(companionStore);
@@ -317,6 +326,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
       onNativeError: () => setNativeError(true),
     });
     register(ports.lifecycle.subscribe(active => {
+      appActive.current = active;
       if (!active) { void store.getState().flush(); companionStore.getState().pause(); }
       else {
         if (companionStore.getState().binding) void companionStore.getState().reconnect();
@@ -326,6 +336,9 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
     register((ports.notifications ?? unavailableNotificationPort).tap.subscribe(token => {
       void notifyStore.getState().handleTap(token);
     }));
+    // 前台正看着同一条会话时不弹系统推送（N-MOBILE-EXEC-STATUS ④）：会话里已经就地显示了，横幅是重复打扰。
+    const foreground = (ports.notifications ?? unavailableNotificationPort).foreground;
+    if (foreground) register(foreground.subscribe(routeToken => notifyStore.getState().decideForeground(routeToken)));
     let frame = 0;
     const applyViewportHeight = () => {
       frame = 0;
@@ -542,6 +555,7 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
       {state.route === 'fixture' && fixtures ? <VirtualHistory text={text} /> : companion.sessionId && (companion.history[companion.sessionId]?.messages.length || companion.history[companion.sessionId]?.nextOffset != null || companion.artifacts.length || companion.events.some(event => event.sessionId === companion.sessionId))
         ? <CompanionConversation history={companion.history[companion.sessionId]} loadMore={() => void companion.loadHistory(companion.sessionId!, true)} hidePendingApprovals events={companion.events} artifacts={companion.artifacts} sessionId={companion.sessionId} text={text} composerHeight={composerHeight}
           offline={companion.status !== 'connected'}
+          running={companion.runId ? { stop: () => void companion.stop(), stopDisabled: companion.busy || companion.pending || companion.status !== 'connected' } : null}
           disabled={companion.busy || companion.pending || companion.status !== 'connected'} respond={companion.respond}
           respondQuestion={companion.respondQuestion} respondPlan={companion.respondPlan}
           openArtifact={id => void companion.previewArtifact(id).then(() => {
@@ -589,7 +603,6 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
           </div>
           <span>{taskStatusCopy(text, companion)}</span>
           {offlineCopy && <span data-testid="offline-readonly">{offlineCopy}</span>}
-          {companion.runId && <button disabled={companion.busy || companion.pending || companion.status !== 'connected'} onClick={() => void companion.stop()}>{text.stop}</button>}
         </div>}
         {companion.libraryError && <p className="notice" role="status">{text.libraryError}<button className="inline-retry" onClick={() => void companion.reconnect()}>{text.reconnect}</button></p>}
         {fixtures && <p className="caption">{text.fixtureNotice}</p>}

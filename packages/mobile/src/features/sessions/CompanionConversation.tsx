@@ -1,24 +1,45 @@
 import type { CompanionArtifact, CompanionHistory } from '../../../../../src/shared/contract/companionLibrary';
-import { useLayoutEffect, useRef, useState } from 'react';
+import { Fragment, useLayoutEffect, useRef, useState } from 'react';
 import { NeoBrandMark } from '../brand/NeoBrandMark';
 import { ApprovalCard } from './ApprovalCard';
 import { QuestionCard } from './QuestionCard';
 import { PlanCard } from './PlanCard';
 import type { CompanionEvent } from '../../../../../src/shared/contract/companion';
-import type { messages } from '../../i18n';
+import { runOutcomeCopy, type messages } from '../../i18n';
 
-export function CompanionConversation({ history, loadMore, hidePendingApprovals = false, events, artifacts, sessionId, text, disabled, respond, respondQuestion, respondPlan, openArtifact, composerHeight = 0, offline = false }: { history?: CompanionHistory; loadMore(): void; hidePendingApprovals?: boolean; events: CompanionEvent[]; artifacts: CompanionArtifact[]; sessionId: string; text: ReturnType<typeof messages>; disabled: boolean; respond: (requestId: string, decision: 'approved' | 'rejected') => Promise<void>; respondQuestion: (requestId: string, answers: Record<string, string | string[]>, declined?: boolean, reason?: string) => Promise<void>; respondPlan: (requestId: string, decision: 'approved' | 'rejected', feedback?: string) => Promise<void>; openArtifact(id: string): void;
+type RunOutcome = { anchor: string | undefined; kind: 'complete' | 'stopped' | 'failed'; code?: string };
+
+/**
+ * 整段会话放得下时从顶部排，不贴底（build 40 真机：进会话第一条上半被顶栏裁掉）。
+ * 贴底把 scrollTop 拉到 scrollHeight，而 scrollHeight 里还算着最后一条的下外边距和给输入区留的底部留白；
+ * 内容本身放得下、加上留白才超出一点时，贴底会把第一条往上推出可视区——正好切掉它的上半截。
+ * 判据：最后一个元素的下沿在输入区那一层（含键盘）之上，就是全放得下。输入区还没量到高度时不判，照旧贴底。
+ */
+function contentFitsAboveComposer(el: HTMLElement, composerHeight: number): boolean {
+  const last = el.lastElementChild;
+  if (!last || composerHeight <= 0) return false;
+  const keyboard = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--keyboard-h')) || 0;
+  const bottom = last.getBoundingClientRect().bottom - el.getBoundingClientRect().top + el.scrollTop;
+  return bottom <= el.clientHeight - composerHeight - keyboard;
+}
+
+export function CompanionConversation({ history, loadMore, hidePendingApprovals = false, events, artifacts, sessionId, text, disabled, respond, respondQuestion, respondPlan, openArtifact, composerHeight = 0, offline = false, running = null }: { history?: CompanionHistory; loadMore(): void; hidePendingApprovals?: boolean; events: CompanionEvent[]; artifacts: CompanionArtifact[]; sessionId: string; text: ReturnType<typeof messages>; disabled: boolean; respond: (requestId: string, decision: 'approved' | 'rejected') => Promise<void>; respondQuestion: (requestId: string, answers: Record<string, string | string[]>, declined?: boolean, reason?: string) => Promise<void>; respondPlan: (requestId: string, decision: 'approved' | 'rejected', feedback?: string) => Promise<void>; openArtifact(id: string): void;
   /** 输入区那一层的实测高度：它一变，滚动区的底部内边距跟着变，贴底的人得重新贴一次。 */
   composerHeight?: number;
   /** Offline reread: hide load-more (it cannot fetch) without changing the composer. */
-  offline?: boolean }) {
+  offline?: boolean;
+  /** 这条会话正在电脑上跑：最后一条下面给执行条。null = 没在跑，执行条不渲染（任务一结束就消失）。 */
+  running?: { stop(): void; stopDisabled: boolean } | null }) {
   const scroller = useRef<HTMLDivElement>(null);
   const following = useRef(true);
   const [showLatest, setShowLatest] = useState(false);
+  const isRunning = Boolean(running);
   useLayoutEffect(() => { following.current = true; setShowLatest(false); }, [sessionId]);
   useLayoutEffect(() => {
-    if (following.current && scroller.current) scroller.current.scrollTop = scroller.current.scrollHeight;
-  }, [events, sessionId, history, composerHeight]);
+    const el = scroller.current;
+    if (!following.current || !el) return;
+    el.scrollTop = contentFitsAboveComposer(el, composerHeight) ? 0 : el.scrollHeight;
+  }, [events, sessionId, history, composerHeight, isRunning]);
   const approvals = new Map<string, Record<string, unknown>>();
   const questions = new Map<string, Record<string, unknown>>();
   const plans = new Map<string, Record<string, unknown>>();
@@ -26,6 +47,10 @@ export function CompanionConversation({ history, loadMore, hidePendingApprovals 
   const committedStreams = new Set<string>();
   const aliases = new Map<string, string>();
   const rows = new Map<string, { role: string; content: string; truncated?: boolean }>();
+  // 终态按执行（runId）归属，挂在那次执行当时的最后一行下面：多次任务各行其是，
+  // 不再按到达顺序堆在会话底部互相矛盾（build 40 真机：「任务已完成」和「没有完成」两行并列）。
+  const outcomes = new Map<string, RunOutcome>();
+  let lastRow: string | undefined = history?.messages.at(-1)?.id;
   for (const message of history?.messages ?? []) rows.set(message.id, { role: message.role, content: message.content, truncated: message.truncated });
   for (const event of events) {
     if (event.sessionId !== sessionId) continue;
@@ -42,31 +67,42 @@ export function CompanionConversation({ history, loadMore, hidePendingApprovals 
       const key = durableId;
       if (stream) rows.delete(stream);
       rows.set(key, { role: String(p.role), content: p.content });
-      if (stream) { aliases.set(id, key); aliases.set(stream, key); committedStreams.add(stream); committedStreams.add(key); activeStreams.delete(run); }
+      lastRow = key;
+      if (stream) {
+        aliases.set(id, key); aliases.set(stream, key); committedStreams.add(stream); committedStreams.add(key); activeStreams.delete(run);
+        for (const outcome of outcomes.values()) if (outcome.anchor === stream) outcome.anchor = key;
+      }
     } else if (event.kind === 'message_snapshot' || event.kind === 'message_delta') {
       const key = aliases.get(id) ?? id;
       if (committedStreams.has(key)) continue;
       if (event.kind === 'message_snapshot' && typeof p.content === 'string') {
-        activeStreams.set(run, key); rows.set(key, { role: 'assistant', content: p.content });
+        activeStreams.set(run, key); rows.set(key, { role: 'assistant', content: p.content }); lastRow = key;
       } else if (event.kind === 'message_delta' && typeof p.text === 'string') {
         activeStreams.set(run, key);
         const old = rows.get(key)?.content ?? '';
-        rows.set(key, { role: 'assistant', content: p.op === 'append' ? old + p.text : p.text });
+        rows.set(key, { role: 'assistant', content: p.op === 'append' ? old + p.text : p.text }); lastRow = key;
       }
+    } else if (event.kind === 'agent_complete' || event.kind === 'agent_cancelled' || event.kind === 'error') {
+      const kind = event.kind === 'agent_complete' ? 'complete' : event.kind === 'agent_cancelled' ? 'stopped' : 'failed';
+      // 同一次执行先报错再收尾时失败说了算：这次任务没有完成。
+      if (outcomes.get(run)?.kind !== 'failed') outcomes.set(run, { anchor: lastRow, kind, code: typeof p.code === 'string' ? p.code : undefined });
     }
   }
+  const outcomesAt = (anchor: string | undefined) => Array.from(outcomes).filter(([, outcome]) => outcome.anchor === anchor)
+    .map(([run, outcome]) => <p key={`outcome:${run}`} className="run-outcome" data-outcome={outcome.kind}>{runOutcomeCopy(text, outcome.kind, outcome.code)}</p>);
   return <div className="message-region"><div ref={scroller} onScroll={() => {
     const el = scroller.current!;
     following.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
     setShowLatest(!following.current);
   }} className="lan-messages" aria-label={text.history} aria-live="polite">
     {history?.nextOffset != null && !offline && <button onClick={loadMore}>{text.loadHistory}</button>}
-    {Array.from(rows, ([id, row]) => row.role === 'user'
-      ? <p key={id} className="lan-message from-user">{row.content}{row.truncated && <small className="notice">{text.historyTruncated}</small>}</p>
-      : <div key={id} className="lan-message">
+    {outcomesAt(undefined)}
+    {Array.from(rows, ([id, row]) => <Fragment key={id}>{row.role === 'user'
+      ? <p className="lan-message from-user">{row.content}{row.truncated && <small className="notice">{text.historyTruncated}</small>}</p>
+      : <div className="lan-message">
         <div className="assistant-label"><NeoBrandMark variant="mark" size={24} /><span>{text.neo}</span></div>
         <p className="assistant-text">{row.content}{row.truncated && <small className="notice">{text.historyTruncated}</small>}</p>
-      </div>)}
+      </div>}{outcomesAt(id)}</Fragment>)}
     {Array.from(approvals, ([id, card]) => (!hidePendingApprovals || card.status !== 'pending') && <ApprovalCard key={id} card={card} text={text} disabled={disabled}
       respond={decision => respond(id, decision)} />)}
     {Array.from(questions, ([id, card]) => (!hidePendingApprovals || card.status !== 'pending') && <QuestionCard key={id} card={card} text={text} disabled={disabled}
@@ -84,6 +120,9 @@ export function CompanionConversation({ history, loadMore, hidePendingApprovals 
     {artifacts.map(artifact => <button key={artifact.artifactId} className="artifact-card" disabled={disabled} onClick={() => openArtifact(artifact.artifactId)}>
       <strong>{artifact.name}</strong><span>{artifact.origin === 'upload' ? text.fromPhone : text.artifacts}</span>
     </button>)}
+    {/* 执行条：形状照桌面 StreamingIndicator——一个呼吸点说「还活着」，一句在做什么，一个停止。 */}
+    {running && <div className="run-strip" data-testid="run-strip"><span className="run-dot" aria-hidden="true" /><span>{text.running}</span>
+      <button disabled={running.stopDisabled} onClick={running.stop}>{text.stop}</button></div>}
   </div>{showLatest && <button className="jump-latest" onClick={() => {
     following.current = true; scroller.current!.scrollTop = scroller.current!.scrollHeight; setShowLatest(false);
   }}>{text.latest} ↓</button>}</div>;

@@ -6,7 +6,7 @@ import { messages } from '../../../packages/mobile/src/i18n';
 
 const text = messages('zh');
 const state = (patch: Partial<Parameters<typeof taskStatusCopy>[1]> = {}) => ({
-  pending: false, pendingAction: null, runId: null, terminal: null, ...patch,
+  pending: false, pendingAction: null, ...patch,
 });
 
 describe('task status copy', () => {
@@ -23,14 +23,18 @@ describe('task status copy', () => {
     }
   });
 
-  it('没有待确认命令时，运行中与终态的文案不受影响', () => {
-    expect(taskStatusCopy(text, state({ runId: 'run-1' }))).toBe(text.running);
-    expect(taskStatusCopy(text, state({ terminal: 'complete' }))).toBe(text.complete);
-    expect(taskStatusCopy(text, state())).toBe('');
+  it('运行中与终态不进底栏：它们挂在会话里那次执行下面（N-MOBILE-EXEC-STATUS ①②）', () => {
+    // build 40 真机：底栏「电脑正在处理…停止任务」离消息流远；「任务已完成」「没有完成」按到达顺序堆在底部互相矛盾。
+    for (const live of [
+      { pending: false, pendingAction: null, runId: 'run-1', terminal: null },
+      { pending: false, pendingAction: null, runId: null, terminal: 'complete' as const },
+      { pending: false, pendingAction: null, runId: null, terminal: 'failed' as const },
+    ]) expect(taskStatusCopy(text, live)).toBe('');
   });
 
-  it('待确认命令压过运行中状态', () => {
-    expect(taskStatusCopy(text, state({ pending: true, pendingAction: 'message.send', runId: 'run-1' }))).toBe(text.pendingCommand);
+  it('待确认命令照旧说，与有没有在跑无关', () => {
+    const live = { pending: true, pendingAction: 'message.send', runId: 'run-1', terminal: null };
+    expect(taskStatusCopy(text, live)).toBe(text.pendingCommand);
   });
 });
 

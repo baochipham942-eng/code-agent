@@ -1,3 +1,5 @@
+import type { CompanionPushTitleKey } from '../../../../src/shared/contract/companionPush';
+
 const zh = {
   approvalTarget: '目标',
   voice: '语音输入', cancel: '取消', cancelRecording: '取消录音', stopRecording: '停止录音并转写', transcribing: '正在转写',
@@ -257,6 +259,31 @@ const en: Record<keyof typeof zh, string> = {
   reviewPlan: 'Review the pending plan in your conversation',
 };
 export function messages(language: string) { return language.startsWith('zh') ? zh : en; }
+
+/**
+ * 一次执行结束后挂在它下面的那一行（N-MOBILE-EXEC-STATUS ②）。失败带原因：信任类与模型 key
+ * 各有一句能照着做的人话，其余统一「电脑执行时出了问题，没有完成」。
+ */
+export function runOutcomeCopy(text: ReturnType<typeof messages>, kind: 'complete' | 'stopped' | 'failed', code?: string): string {
+  if (kind !== 'failed') return text[kind];
+  const reason = code === 'PROJECT_SOURCE_MISSING' ? text.projectSourceMissing
+    : code === 'PROJECT_SOURCE_CHANGED' ? text.projectSourceChanged
+    : code === 'PROJECT_SOURCE_UNTRUSTED' ? text.projectSourceUntrusted
+    : code === 'MODEL_AUTH' ? text.modelAuthMissing
+    : text.runFailed;
+  return `${text.failed}${text === zh ? '：' : ': '}${reason}`;
+}
+
+/**
+ * 推送横幅正文（N-MOBILE-EXEC-STATUS ⑤）。Host 只发 APNs 的 loc-key（= titleKey），iOS 在 app 包里的
+ * Localizable.strings 查正文；包里没有这张表时系统把 key 原样当正文——build 40 真机横幅写着 task_complete。
+ * build-ios 用它生成 en / zh-Hans 两张表。按 titleKey 全集定型：Host 新增一种推送而这里没跟上，typecheck 就红。
+ * 推送里不带失败码，失败只能给通用原因；具体原因在会话里那次执行下面。
+ */
+export function pushAlertStrings(language: string): Record<CompanionPushTitleKey, string> {
+  const text = messages(language);
+  return { task_complete: text.complete, task_stopped: text.stopped, task_failed: runOutcomeCopy(text, 'failed'), approval_needed: text.approval };
+}
 
 /**
  * Offline reread banner. Pause still looks connected (background snapshot must not say

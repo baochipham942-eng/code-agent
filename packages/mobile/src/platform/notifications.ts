@@ -15,6 +15,16 @@ interface PushNotificationBridge {
   ): Promise<ListenerHandle>;
 }
 
+/**
+ * 第一方 iOS 插件（ios-native/NeoPushPresentationPlugin.swift）：前台来推送时先发 willPresent 问 JS，
+ * JS 用 decide 回话要不要弹。插件那头有超时兜底，JS 回不了话就照常弹。
+ */
+export interface PushPresentationBridge {
+  enable(): Promise<void>;
+  decide(options: { id: string; present: boolean }): Promise<void>;
+  addListener(event: 'willPresent', cb: (event: { id: string; routeToken?: string }) => void): Promise<ListenerHandle>;
+}
+
 /** Android has no GMS/vendor adapter this round; do not invent an FCM token. */
 export function nativeTokenUnavailable(platform: string): TokenResult {
   return {
@@ -49,6 +59,7 @@ export function createNotificationPort(
   platform: string,
   openSettings: () => Promise<void> = async () => {},
   bridge?: PushNotificationBridge,
+  presentation?: PushPresentationBridge,
 ): NotificationPort {
   // Android: no GMS/vendor channel. Never call the push plugin (register() would look
   // like FCM exists). Report granted so the store can surface CHANNEL_MISSING rather
@@ -180,6 +191,21 @@ export function createNotificationPort(
         return () => { tapListeners.delete(onTap); };
       },
     },
+    ...(presentation ? {
+      foreground: {
+        subscribe: async (decide: (routeToken: string | null) => Promise<boolean>) => {
+          const handle = await presentation.addListener('willPresent', ({ id, routeToken }) => {
+            void decide(typeof routeToken === 'string' && routeToken ? routeToken : null)
+              .catch(() => true)
+              .then(present => presentation.decide({ id, present }))
+              .catch(() => {});
+          });
+          // 旧包里没有这个插件：退回「前台照常弹」，不当成原生错误（那会把整页标成系统交互不可用）。
+          try { await presentation.enable(); } catch { await handle.remove(); return () => {}; }
+          return () => { void handle.remove(); };
+        },
+      },
+    } : {}),
     openSettings,
     network: networkStatus(),
   };

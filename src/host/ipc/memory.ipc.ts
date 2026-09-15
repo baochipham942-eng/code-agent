@@ -815,7 +815,7 @@ async function handleGetStats(): Promise<unknown> {
  * 抛错 → INTERNAL_ERROR 由装配器兜底，与原 switch 同形；原 catch 的错误日志经 resolveErrorCode
  * 钩子保留（返回 undefined = 仍落 INTERNAL_ERROR，memory 域不透传领域 code）。
  */
-export const memoryRoutes = defineDomainRoutes<MemoryDomainRequest, void>(
+const memoryRoutes = defineDomainRoutes<MemoryDomainRequest, void>(
   MemorySchemas.REQUEST,
   {
     getContext: (_ctx, payload) => handleGetContext(payload as { query: string }),
@@ -987,3 +987,7 @@ export function registerMemoryHandlers(ipcMain: IpcMain): void {
     respondToDirectiveMemoryConfirmation(payload.id, payload.confirmed);
   });
 }
+
+// 表挂在装配函数对象上供 parity 门枚举（knip 生产档 entry 不含 tests，独立 export 必成
+// dead export；同 installDomainRoutes.extractDomainActions 先例）
+registerMemoryHandlers.routes = memoryRoutes;

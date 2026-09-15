@@ -25,11 +25,12 @@ import {
   sessionRoutes,
 } from '../../src/host/ipc/domainRoutes/sessionRoutes';
 import { defineDomainRoutes, installDomainRoutes } from '../../src/host/ipc/domainRoutes/registry';
-import { memoryRoutes } from '../../src/host/ipc/memory.ipc';
+import { registerMemoryHandlers } from '../../src/host/ipc/memory.ipc';
 import { getShellCapabilities } from '../../src/host/shellCapabilities';
 
 // 结构枚举器挂既有函数对象上（knip 生产档无测试入口，独立 export 必成 dead export）
 const { extractDomainActions } = installDomainRoutes;
+const memoryRoutes = registerMemoryHandlers.routes;
 
 /** 门盯的表清单——新域表化后加进来，门即自动覆盖该域（session 三面走 manifestDomain 断言） */
 const ROUTE_TABLES = [

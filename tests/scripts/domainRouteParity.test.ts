@@ -29,6 +29,7 @@ import { registerMemoryHandlers } from '../../src/host/ipc/memory.ipc';
 import { registerDesktopHandlers } from '../../src/host/ipc/desktop.ipc';
 import { registerTagHandlers } from '../../src/host/ipc/tag.ipc';
 import { registerCronHandlers } from '../../src/host/ipc/cron.ipc';
+import { registerPromptHandlers } from '../../src/host/ipc/prompt.ipc';
 import { getShellCapabilities } from '../../src/host/shellCapabilities';
 
 // 结构枚举器挂既有函数对象上（knip 生产档无测试入口，独立 export 必成 dead export）
@@ -37,6 +38,7 @@ const memoryRoutes = registerMemoryHandlers.routes;
 const desktopRoutes = registerDesktopHandlers.routes;
 const tagRoutes = registerTagHandlers.routes;
 const cronRoutes = registerCronHandlers.routes;
+const promptRoutes = registerPromptHandlers.routes;
 
 /** 门盯的表清单——新域表化后加进来，门即自动覆盖该域（session 三面走 manifestDomain 断言） */
 const ROUTE_TABLES = [
@@ -45,6 +47,7 @@ const ROUTE_TABLES = [
   { table: desktopRoutes, manifestDomain: 'domain:desktop' as const },
   { table: tagRoutes, manifestDomain: 'domain:tag' as const },
   { table: cronRoutes, manifestDomain: 'domain:cron' as const },
+  { table: promptRoutes, manifestDomain: 'domain:prompt' as const },
   { table: inlineFixtureTable(), manifestDomain: undefined },
 ];
 
@@ -274,6 +277,7 @@ function collectActualDomainActions(): Map<string, Set<string>> {
   add(IPC_DOMAINS.DESKTOP, new Set(Object.keys(desktopRoutes.actions)));
   add(IPC_DOMAINS.TAG, new Set(Object.keys(tagRoutes.actions)));
   add(IPC_DOMAINS.CRON, new Set(Object.keys(cronRoutes.actions)));
+  add(IPC_DOMAINS.PROMPT, new Set(Object.keys(promptRoutes.actions)));
   return actual;
 }
 
@@ -293,7 +297,6 @@ const KNOWN_UNDER_REPORTED_ACTIONS: Readonly<Record<string, readonly string[]>> 
   'domain:hook': ['setEnabled'],
   'domain:loop': ['get', 'list', 'start', 'stop'],
   'domain:project': ['redeemInvite', 'revokeInvite'],
-  'domain:prompt': ['debugSystemPrompt', 'get', 'list', 'preview', 'reset', 'set', 'stackSummary'],
   'domain:provider': ['delete_realtime_voice_provider'],
   'domain:surfaceExecution': ['startLiveStream', 'stopLiveStream'],
   'domain:sync': ['resolveConflict'],

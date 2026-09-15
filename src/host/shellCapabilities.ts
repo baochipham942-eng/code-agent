@@ -49,6 +49,7 @@ import { PlanningSchemas } from '../shared/ipc/schemas/planning';
 import { TerminalSchemas } from '../shared/ipc/schemas/terminal';
 import { SessionAutomationSchemas } from '../shared/ipc/schemas/sessionAutomation';
 import { TeamSchemas } from '../shared/ipc/schemas/team';
+import { CaptureSchemas } from '../shared/ipc/schemas/capture';
 
 const DEFAULT_SINCE_VERSION = '0.16.93';
 
@@ -129,17 +130,8 @@ const CAPABILITY_DOMAIN_ACTIONS = {
   [IPC_DOMAINS.AUTH]: AuthSchemas.ACTIONS,
   // capability 域：派生自 schema action 集合（== capability 表 keys，parity 门三面对账），手工清单已删
   [IPC_DOMAINS.CAPABILITY]: CapabilitySchemas.ACTIONS,
-  [IPC_DOMAINS.CAPTURE]: [
-    'capture',
-    'delete',
-    'get',
-    'importFiles',
-    'list',
-    'search',
-    'selectFiles',
-    'stats',
-    'wechatStatus',
-  ],
+  // capture 域：派生自 schema action 集合（== capture 表 keys，parity 门三面对账），手工清单已删
+  [IPC_DOMAINS.CAPTURE]: CaptureSchemas.ACTIONS,
   [IPC_DOMAINS.VOICE]: [
     'injectUserText',
     'reportFailure',

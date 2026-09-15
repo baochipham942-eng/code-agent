@@ -1007,7 +1007,8 @@ async function streamViaAiSdk(params: {
   const maxRetries = options?.disableProviderTransientRetry ? 0 : STREAM_MAX_RETRIES;
   // ADR-068 刀 1：首字节后断流续接预算，与首字节前的 maxRetries 双轨独立计数——
   // disableProviderTransientRetry（调用方自带重试循环）对本层两类重试一体生效。
-  const reconnectMax = options?.disableProviderTransientRetry ? 0 : STREAM_RECONNECT_MAX;
+  // 无人值守分档/熔断由调用方经 streamReconnectMax 传入（adapter 不识别轮次来源）。
+  const reconnectMax = options?.disableProviderTransientRetry ? 0 : (options?.streamReconnectMax ?? STREAM_RECONNECT_MAX);
   let reconnectsUsed = 0;
   // 续接 attempt 的 accumulator 断点态 seed（见 seedAccumulatorFromBreakpoint）；null = 全新累积器。
   let resumeSeed: StreamAccumulator | null = null;

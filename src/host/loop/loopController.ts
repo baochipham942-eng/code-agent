@@ -87,6 +87,7 @@ interface LoopTurnOrchestrator {
       mode: 'normal';
       historyVisibility: 'meta';
       deniedToolNames: string[];
+      unattended: true;
     },
   ): Promise<unknown>;
 }
@@ -517,6 +518,8 @@ export class LoopController {
           mode: 'normal',
           historyVisibility: 'meta',
           deniedToolNames: ['AskUserQuestion', 'ask_user_question'],
+          // loop 轮（含 --ephemeral）无人盯守：断流续接取无人值守预算（ADR-068 D4）
+          unattended: true,
         });
         if (this.aborted.has(id)) break;
 

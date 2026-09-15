@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../../src/shared/ipc';
 
-// connector.ipc.ts 派发特征测试（RQ-183 续作·CONNECTOR 刀迁表前钉住 switch 形态）：派发层 14 个 action，
+// connector.ipc.ts 派发特征测试（RQ-183 续作·CONNECTOR 刀迁表前钉住 switch 形态）：派发层 15 个 action，
 // connector.dispatch.ipc.test.ts 覆盖 9 个原生动作 + 未知 action，connector.oauth.ipc.test.ts 覆盖 oauthStatus /
 // Connect / CancelConnect / Disconnect 与 ADMIN_REQUIRED。这里补：oauthSaveDescriptor 缺 payload 的抛错映射，
 // 以及 catch 的 code 判定链——错误自带 string code 原样透传 → 非 string code 回落 → 管理员安装文案 → ADMIN_REQUIRED

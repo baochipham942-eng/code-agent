@@ -69,7 +69,7 @@ export interface DomainRouteTable<Req extends DomainRouteRequest, Ctx = unknown>
   /** handler 返回完整 IPCResponse，装配器原样透传（不包 { success: true, data }） */
   rawResponse?: boolean;
   /** 分发前访问门（未知 action 也先过门）：返回响应即拦截，null 放行 */
-  guard?: (action: unknown) => IPCResponse | null;
+  guard?: (action: unknown, ctx: Ctx) => IPCResponse | null;
   /**
    * 该表面暂缓（web:false）的 action 清单——keys 仍在 actions 里（桩 handler 抛
    * INVALID_ACTION），此字段是给 parity 门做「只减不增」棘轮的对账标记。

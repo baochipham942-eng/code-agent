@@ -36,6 +36,7 @@ import { registerLoopHandlers } from '../../src/host/ipc/loop.ipc';
 import { registerSyncHandlers } from '../../src/host/ipc/sync.ipc';
 import { registerSettingsHandlers } from '../../src/host/ipc/settings.ipc';
 import { registerProjectHandlers } from '../../src/host/ipc/project.ipc';
+import { registerTaskHandlers } from '../../src/host/ipc/task.ipc';
 import { getShellCapabilities } from '../../src/host/shellCapabilities';
 
 // 结构枚举器挂既有函数对象上（knip 生产档无测试入口，独立 export 必成 dead export）
@@ -52,6 +53,7 @@ const syncRoutes = registerSyncHandlers.routes;
 const deviceRoutes = registerSyncHandlers.deviceRoutes;
 const windowRoutes = registerSettingsHandlers.windowRoutes;
 const projectRoutes = registerProjectHandlers.routes;
+const taskRoutes = registerTaskHandlers.routes;
 
 /** 门盯的表清单——新域表化后加进来，门即自动覆盖该域（session 三面走 manifestDomain 断言） */
 const ROUTE_TABLES = [
@@ -68,6 +70,7 @@ const ROUTE_TABLES = [
   { table: deviceRoutes, manifestDomain: 'domain:device' as const },
   { table: windowRoutes, manifestDomain: 'domain:window' as const },
   { table: projectRoutes, manifestDomain: 'domain:project' as const },
+  { table: taskRoutes, manifestDomain: 'domain:task' as const },
   { table: inlineFixtureTable(), manifestDomain: undefined },
 ];
 
@@ -305,6 +308,7 @@ function collectActualDomainActions(): Map<string, Set<string>> {
   add(IPC_DOMAINS.DEVICE, new Set(Object.keys(deviceRoutes.actions)));
   add(IPC_DOMAINS.WINDOW, new Set(Object.keys(windowRoutes.actions)));
   add(IPC_DOMAINS.PROJECT, new Set(Object.keys(projectRoutes.actions)));
+  add(IPC_DOMAINS.TASK, new Set(Object.keys(taskRoutes.actions)));
   return actual;
 }
 
@@ -321,7 +325,6 @@ const KNOWN_UNDER_REPORTED_ACTIONS: Readonly<Record<string, readonly string[]>> 
   'domain:hook': ['setEnabled'],
   'domain:provider': ['delete_realtime_voice_provider'],
   'domain:surfaceExecution': ['startLiveStream', 'stopLiveStream'],
-  'domain:task': ['cancelBackgroundTask'],
   'domain:voice': ['injectUserText'],
   'domain:workspace': ['closeLinkInRail', 'controlUserBrowserHistory', 'dispatchUserBrowserInput', 'openExternal', 'openLinkInRail', 'setUserBrowserViewport'],};
 

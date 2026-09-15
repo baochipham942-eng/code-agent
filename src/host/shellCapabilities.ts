@@ -25,6 +25,7 @@ import { SyncSchemas } from '../shared/ipc/schemas/sync';
 import { DeviceSchemas } from '../shared/ipc/schemas/device';
 import { WindowSchemas } from '../shared/ipc/schemas/window';
 import { ProjectSchemas } from '../shared/ipc/schemas/project';
+import { TaskSchemas } from '../shared/ipc/schemas/task';
 
 const DEFAULT_SINCE_VERSION = '0.16.93';
 
@@ -369,16 +370,8 @@ const CAPABILITY_DOMAIN_ACTIONS = {
   [IPC_DOMAINS.SYNC]: SyncSchemas.ACTIONS,
   // tag 域：派生自 schema action 集合（== tag 表 keys，parity 门三面对账）
   [IPC_DOMAINS.TAG]: TagSchemas.ACTIONS,
-  [IPC_DOMAINS.TASK]: [
-    'cancel',
-    'cleanup',
-    'getAllStates',
-    'getQueue',
-    'getState',
-    'getStats',
-    'interrupt',
-    'start',
-  ],
+  // task 域：派生自 schema action 集合（== task 表 keys，parity 门三面对账），手工清单已删
+  [IPC_DOMAINS.TASK]: TaskSchemas.ACTIONS,
   [IPC_DOMAINS.TERMINAL]: [
     'close',
     'list',

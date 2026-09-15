@@ -48,6 +48,7 @@ import { SoulSchemas } from '../shared/ipc/schemas/soul';
 import { PlanningSchemas } from '../shared/ipc/schemas/planning';
 import { TerminalSchemas } from '../shared/ipc/schemas/terminal';
 import { SessionAutomationSchemas } from '../shared/ipc/schemas/sessionAutomation';
+import { TeamSchemas } from '../shared/ipc/schemas/team';
 
 const DEFAULT_SINCE_VERSION = '0.16.93';
 
@@ -257,17 +258,8 @@ const CAPABILITY_DOMAIN_ACTIONS = {
   [IPC_DOMAINS.TASK]: TaskSchemas.ACTIONS,
   // terminal 域：派生自 schema action 集合（== terminal 表 keys，parity 门三面对账），手工清单已删
   [IPC_DOMAINS.TERMINAL]: TerminalSchemas.ACTIONS,
-  [IPC_DOMAINS.TEAM]: [
-    'confirmDraft',
-    'knownRoles',
-    'launchRecipe',
-    'listDrafts',
-    'recipeCreate',
-    'recipeDelete',
-    'recipeList',
-    'recipeUpdate',
-    'rejectDraft',
-  ],
+  // team 域：派生自 schema action 集合（== team 表 keys，parity 门三面对账），手工清单已删
+  [IPC_DOMAINS.TEAM]: TeamSchemas.ACTIONS,
   [IPC_DOMAINS.UPDATE]: [
     'check',
     'download',

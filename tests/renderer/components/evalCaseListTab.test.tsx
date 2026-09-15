@@ -130,6 +130,8 @@ describe('EvalCaseListTab', () => {
     ipc.invoke.mockImplementation(async (channel: string) =>
       (channel === EVALUATION_CHANNELS.LIST_CASES ? items : { action: 'archive', id: 'x', file: 'x' }));
     render(<EvalCaseListTab />);
+    // 默认收起，展开后才渲染矩阵表
+    fireEvent.click(await screen.findByTestId('eval-case-matrix-toggle'));
     await screen.findByTestId('eval-case-matrix');
 
     // 2 行 × 6 列（basic_tool / task_completion / error_recovery / edge_case / 其他 / 未填）
@@ -152,6 +154,46 @@ describe('EvalCaseListTab', () => {
 
     expect(screen.getByTestId('eval-case-matrix-missing-note').textContent)
       .toContain('未填 category 的在用题 1/5');
+  });
+
+  it('分布矩阵默认收起，摘要报格数/红格/未填，点击展开后才渲染矩阵表（FB-160）', async () => {
+    const base = { file: 'x.yaml', relativeDir: '', tags: [], inheritedTags: [], splits: ['held-in' as const], turns: 1, hasExpect: true, hardened: true, source: 'manual' as const, isDraft: false, retired: false };
+    const items: EvalCaseListItem[] = [
+      { ...base, id: 'a', layer: 'L1', category: 'basic_tool' },
+      { ...base, id: 'n', layer: 'L1' },
+    ];
+    ipc.invoke.mockImplementation(async (channel: string) =>
+      (channel === EVALUATION_CHANNELS.LIST_CASES ? items : { action: 'archive', id: 'x', file: 'x' }));
+    render(<EvalCaseListTab />);
+
+    const toggle = await screen.findByTestId('eval-case-matrix-toggle');
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByTestId('eval-case-matrix')).toBeNull();
+    // 1 行 × 6 列 = 6 格；红格 4（四契约列里 basic_tool 有数，其余 3 个 + 「其他」列）；未填 1/2
+    expect(toggle.textContent).toContain('6 格 · 红格 4 · 未填 category 1/2');
+
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getByTestId('eval-case-matrix')).toBeTruthy();
+
+    fireEvent.click(toggle);
+    expect(screen.queryByTestId('eval-case-matrix')).toBeNull();
+  });
+
+  it('题目表 sticky 表头：thead 与每个 th 都带底色，表头单元格 nowrap（FB-161）', async () => {
+    render(<EvalCaseListTab />);
+    const row = await screen.findByTestId('eval-case-row-daily-case');
+    const thead = (row.closest('table') as HTMLTableElement).querySelector('thead') as HTMLTableSectionElement;
+    // 底色不能只挂 thead：真机反馈里行文字透了上来，所以每个 th 也要自带底色
+    expect(thead.className).toContain('sticky');
+    expect(thead.className).toContain('z-10');
+    expect(thead.className).toContain('bg-zinc-950');
+    const headers = [...thead.querySelectorAll('th')];
+    expect(headers).toHaveLength(9);
+    expect(headers.every((th) => th.className.includes('bg-zinc-950'))).toBe(true);
+    expect(headers.every((th) => th.className.includes('whitespace-nowrap'))).toBe(true);
+    // 来源/状态/操作等窄列给最小宽度，否则表头被挤成逐字竖排
+    expect(headers.slice(4).every((th) => /min-w-\d+/.test(th.className))).toBe(true);
   });
 
   it('状态筛选可单独查看已归档题', async () => {

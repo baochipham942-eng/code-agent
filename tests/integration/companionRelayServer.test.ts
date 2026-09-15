@@ -200,6 +200,60 @@ describe('companion relay: production server + host dial-out', () => {
     expired.close();
   });
 
+  it('ignores revoke sent by the device side or for a route the sender never registered', async () => {
+    const binding = await pair();
+    const statsBefore = relay.currentStats;
+    const intruder = new WebSocket(url, { headers: { authorization: `Bearer ${SECRET}` } });
+    await new Promise<void>(resolve => intruder.once('open', () => resolve()));
+    const control = (kind: 'revoke' | 'heartbeat', routeToken: string) => intruder.send(JSON.stringify({
+      v: 1, kind,
+      envelope: { routeToken, deviceRef: binding.deviceId, seq: 0, ttlMs: L.relayRouteTokenTtlMs, issuedAt: Date.now() },
+      ciphertext: '',
+    }));
+    control('revoke', TOKEN);
+    control('revoke', 'route-token-cccccc');
+    await new Promise(resolve => setTimeout(resolve, 200));
+    expect(phone.connected).toBe(true);
+    expect(relay.currentStats.revoked).toBe(statsBefore.revoked);
+    expect(relay.currentStats.droppedNoRoute).toBeGreaterThanOrEqual(2);
+    intruder.close();
+    gateway.revokeDevice(binding.deviceId);
+    host.revoke(binding.deviceId);
+    await vi.waitFor(() => expect(phone.connected).toBe(false));
+  });
+
+  it('keeps one host connection serving many tokens and refreshes only heartbeated routes', async () => {
+    let fakeNow = Date.now();
+    const server2 = new CompanionRelayServer({ credential: SECRET, port: await freePort(), now: () => fakeNow });
+    const port2 = (await server2.listen()).port;
+    const multiHost = new WebSocket(`ws://127.0.0.1:${port2}`, { headers: { authorization: `Bearer ${SECRET}` } });
+    await new Promise<void>(resolve => multiHost.once('open', () => resolve()));
+    const tokenA = 'route-token-aaaaaa';
+    const tokenB = 'route-token-bbbbbb';
+    const register = (token: string) => multiHost.send(JSON.stringify({
+      v: 1, kind: 'register', role: 'host',
+      envelope: { routeToken: token, deviceRef: 'phone-1', seq: 0, ttlMs: L.relayRouteTokenTtlMs, issuedAt: fakeNow },
+      ciphertext: '',
+    }));
+    register(tokenA);
+    register(tokenB);
+    await vi.waitFor(() => expect(server2.currentStats.routes).toBe(2));
+
+    fakeNow += 10_000;
+    multiHost.send(JSON.stringify({
+      v: 1, kind: 'heartbeat',
+      envelope: { routeToken: tokenA, deviceRef: 'phone-1', seq: 1, ttlMs: L.relayRouteTokenTtlMs, issuedAt: fakeNow },
+      ciphertext: '',
+    }));
+    await new Promise(resolve => setTimeout(resolve, 100));
+    // A 刷新到 +70s，B 仍是注册时的 +60s：推进到 +65s，只扫掉 B。
+    fakeNow += 55_000;
+    server2.sweep();
+    expect(server2.currentStats.routes).toBe(1);
+    multiHost.close();
+    await server2.stop();
+  });
+
   it('does not re-execute after a relay restart when the commandId survives the hop', async () => {
     const binding = await pair();
     const cmd = command(binding.deviceId, 'once', 'restart-replay');

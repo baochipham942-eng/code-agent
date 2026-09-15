@@ -36,8 +36,8 @@ interface Route {
 
 interface Binding {
   role: CompanionRelayRole;
-  token: string;
-  lastSeenAt: number;
+  /** One connection may serve many routes: the host socket registers one token per paired device. */
+  tokens: Set<string>;
 }
 
 interface QueuedFrame {
@@ -145,7 +145,7 @@ export class CompanionRelayServer {
       const seen = this.lastSeen.get(client) ?? 0;
       if (now - seen <= L.relayIdleMs) continue;
       const binding = this.bindings.get(client);
-      if (binding && this.routes.has(binding.token)) continue;
+      if (binding && [...binding.tokens].some(token => this.routes.has(token))) continue;
       this.options.logger?.info('connection_idle_closed', {});
       client.close();
     }
@@ -190,10 +190,12 @@ export class CompanionRelayServer {
   private detach(socket: WebSocket): void {
     const binding = this.bindings.get(socket);
     if (!binding) return;
-    const route = this.routes.get(binding.token);
-    if (!route) return;
-    if (route[binding.role] === socket) delete route[binding.role];
-    if (!route.host && !route.device) this.routes.delete(binding.token);
+    for (const token of binding.tokens) {
+      const route = this.routes.get(token);
+      if (!route) continue;
+      if (route[binding.role] === socket) delete route[binding.role];
+      if (!route.host && !route.device) this.routes.delete(token);
+    }
   }
 
   private onFrame(socket: WebSocket, frame: CompanionRelayFrame, raw: string): void {
@@ -212,28 +214,47 @@ export class CompanionRelayServer {
       route[frame.role] = socket;
       route.expiresAt = this.now() + L.relayRouteTokenTtlMs;
       this.routes.set(token, route);
-      this.bindings.set(socket, { role: frame.role, token, lastSeenAt: this.now() });
+      const binding = this.bindings.get(socket) ?? { role: frame.role, tokens: new Set<string>() };
+      binding.role = frame.role;
+      binding.tokens.add(token);
+      this.bindings.set(socket, binding);
       this.options.logger?.info('registered', { role: frame.role, token: tokenPrefix(token) });
       this.flushWaiting(token, route);
       return;
     }
     if (frame.kind === 'heartbeat') {
+      const binding = this.bindings.get(socket);
       const route = this.routes.get(token);
-      if (route) route.expiresAt = this.now() + L.relayRouteTokenTtlMs;
+      if (route && binding?.tokens.has(token)) route.expiresAt = this.now() + L.relayRouteTokenTtlMs;
       return;
     }
     if (frame.kind === 'revoke') {
+      // Only the host side of this exact route may break the device; otherwise any
+      // credential holder could DoS other routes by name.
+      const binding = this.bindings.get(socket);
+      if (!binding || binding.role !== 'host' || !binding.tokens.has(token)) {
+        this.stats.droppedNoRoute += 1;
+        this.options.logger?.warn('revoke_rejected', { token: tokenPrefix(token) });
+        return;
+      }
       this.breakDevice(token);
       return;
     }
     if (frame.kind === 'unregister' || frame.kind === 'disconnect') {
-      this.detach(socket);
+      const binding = this.bindings.get(socket);
+      const route = this.routes.get(token);
+      if (route && binding?.tokens.has(token) && route[binding.role] === socket) {
+        delete route[binding.role];
+        binding.tokens.delete(token);
+        if (!route.host && !route.device) this.routes.delete(token);
+      }
       return;
     }
     if (frame.kind === 'ack') return;
     const route = this.routes.get(token);
     const binding = this.bindings.get(socket);
-    if (!route || !binding || route.expiresAt <= this.now() || route[binding.role] !== socket) {
+    if (!route || !binding || route.expiresAt <= this.now()
+      || !binding.tokens.has(token) || route[binding.role] !== socket) {
       this.stats.droppedNoRoute += 1;
       return;
     }

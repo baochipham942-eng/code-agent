@@ -7,7 +7,9 @@ import { CompanionRelayServer, type CompanionRelayLogger } from './server';
  * neo-companion-relay 独立服务入口。所有输入走环境变量（systemd EnvironmentFile）：
  *   NEO_RELAY_PORT             监听端口（必填）
  *   NEO_RELAY_CREDENTIAL       路由凭据（与 NEO_RELAY_CREDENTIAL_FILE 二选一）
- *   NEO_RELAY_CREDENTIAL_FILE  凭据文件路径（600，部署脚本写入）
+ *   NEO_RELAY_CREDENTIAL_FILE  凭据文件路径（600，部署脚本写入）。注意：随附 systemd unit
+ *                              开了 ProtectHome=true，/home 下的路径读不到——文件放 /etc 一类
+ *                              系统路径，或在 unit 里放宽 ProtectHome
  *   NEO_RELAY_BIND             监听地址，只接受回环地址，缺省 127.0.0.1
  * 日志为 JSON 行打到 stdout，由 journald 接管。TLS 终止与公网暴露是反代层（Caddy）的活。
  */

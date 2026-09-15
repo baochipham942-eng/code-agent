@@ -8,7 +8,9 @@
 
 import path from 'node:path';
 import type { IpcMain } from '../platform';
-import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
+import type { RawDomainRouteHandlers } from '../../shared/ipc/domainRoutes';
+import { LivePreviewSchemas, type LivePreviewDomainRequest } from '../../shared/ipc/schemas/livePreview';
+import { defineDomainRoutes, installDomainRoutes } from './domainRoutes/registry';
 import { getDevServerManager } from '../services/infra/devServerManager';
 import { applyTweak } from '../tools/livePreview/tweakWriter';
 import type { ClassMutation, TweakLocation } from '../../shared/livePreview/tweak';
@@ -104,110 +106,103 @@ function requireSessionId(payload: unknown): string {
   return sid;
 }
 
-export function registerLivePreviewHandlers(ipcMain: IpcMain): void {
-  ipcMain.handle(IPC_DOMAINS.LIVE_PREVIEW, async (_event, req: IPCRequest): Promise<IPCResponse> => {
-    try {
-      switch (req.action) {
-        case 'ping':
-          return { success: true, data: { pong: true, version: '0.2.0' } };
-
-        case 'validateDevServerUrl': {
-          const payload = req.payload as { url?: string };
-          if (!payload?.url) {
-            return { success: false, error: { code: 'INVALID_ARGS', message: 'url is required' } };
-          }
-          const result = validateLivePreviewDevServerUrl(payload.url);
-          if (!result.ok) {
-            return { success: false, error: { code: 'INVALID_URL', message: result.reason } };
-          }
-          return { success: true, data: { url: result.url } };
-        }
-
-        case 'resolveSourceLocation': {
-          const payload = req.payload as ResolveSourceLocationRequest;
-          if (!payload?.file) {
-            return { success: false, error: { code: 'INVALID_ARGS', message: 'file is required' } };
-          }
-          const data = resolveLivePreviewSourceLocation(payload);
-          return { success: true, data };
-        }
-
-        // --------------------------------------------------------------------
-        // V2-A devServerManager
-        // --------------------------------------------------------------------
-        case 'detectFramework': {
-          const projectPath = requireProjectPath(req.payload);
-          const data = getDevServerManager().detect(projectPath);
-          return { success: true, data };
-        }
-
-        case 'startDevServer': {
-          const projectPath = requireProjectPath(req.payload);
-          // 同步返回 status='starting' 的 session；renderer 调
-          // waitDevServerReady 拿 URL，或用 getDevServerSession 轮询 status
-          const session = getDevServerManager().start(projectPath);
-          return { success: true, data: session };
-        }
-
-        case 'waitDevServerReady': {
-          const sessionId = requireSessionId(req.payload);
-          const url = await getDevServerManager().waitForReady(sessionId);
-          return { success: true, data: { url } };
-        }
-
-        case 'stopDevServer': {
-          const sessionId = requireSessionId(req.payload);
-          await getDevServerManager().stop(sessionId);
-          return { success: true, data: { sessionId } };
-        }
-
-        case 'getDevServerSession': {
-          const sessionId = requireSessionId(req.payload);
-          const session = getDevServerManager().get(sessionId);
-          return { success: true, data: session };
-        }
-
-        case 'getDevServerLogs': {
-          const sessionId = requireSessionId(req.payload);
-          const logs = getDevServerManager().getLogs(sessionId);
-          return { success: true, data: logs };
-        }
-
-        case 'listDevServers': {
-          const data = getDevServerManager().list();
-          return { success: true, data };
-        }
-
-        // --------------------------------------------------------------------
-        // V2-B Tweak 面板
-        // --------------------------------------------------------------------
-        case 'applyTweak': {
-          const payload = req.payload as { location?: TweakLocation; mutation?: ClassMutation };
-          if (!payload?.location || !payload?.mutation) {
-            return { success: false, error: { code: 'INVALID_ARGS', message: 'location + mutation required' } };
-          }
-          // 路径必须绝对，避免 cwd 漂移导致改错文件
-          if (!path.isAbsolute(payload.location.file)) {
-            return { success: false, error: { code: 'INVALID_ARGS', message: 'file must be absolute' } };
-          }
-          const data = applyTweak(payload.location, payload.mutation);
-          return { success: true, data };
-        }
-
-        default:
-          return {
-            success: false,
-            error: { code: 'UNKNOWN_ACTION', message: `未知 action: ${req.action}` },
-          };
-      }
-    } catch (err) {
-      return {
-        success: false,
-        error: {
-          code: 'LIVE_PREVIEW_ERROR',
-          message: err instanceof Error ? err.message : String(err),
-        },
-      };
+/**
+ * livePreview 域单源路由表（RQ-183 续作·LIVE_PREVIEW 刀）：原 domain switch 11 个 case 逐 case 平移为 handler（rawResponse：
+ * INVALID_ARGS / INVALID_URL 业务失败原样直返；case 间分组注释随下一个 handler 保留）。`req.payload` → 参数 `requestPayload`
+ *（validateDevServerUrl / resolveSourceLocation / applyTweak 体内自有 `const payload`）。未知 action → UNKNOWN_ACTION + `未知 action:`
+ *（unknownActionCode / unknownActionMessage 保持原中文文案）；抛错 code 固定 LIVE_PREVIEW_ERROR（resolveErrorCode），message 由装配器取
+ * Error.message / String(error)，与原 catch 一致。请求体为 null / 非对象时原实现在 try 内读 req.action 抛错落 LIVE_PREVIEW_ERROR，
+ * 现返回 UNKNOWN_ACTION。
+ */
+const livePreviewHandlers: RawDomainRouteHandlers<LivePreviewDomainRequest, void> = {
+  ping: async (_ctx, _requestPayload) => {
+    return { success: true, data: { pong: true, version: '0.2.0' } };
+  },
+  validateDevServerUrl: async (_ctx, requestPayload) => {
+    const payload = requestPayload as { url?: string };
+    if (!payload?.url) {
+      return { success: false, error: { code: 'INVALID_ARGS', message: 'url is required' } };
     }
-  });
+    const result = validateLivePreviewDevServerUrl(payload.url);
+    if (!result.ok) {
+      return { success: false, error: { code: 'INVALID_URL', message: result.reason } };
+    }
+    return { success: true, data: { url: result.url } };
+  },
+  resolveSourceLocation: async (_ctx, requestPayload) => {
+    const payload = requestPayload as ResolveSourceLocationRequest;
+    if (!payload?.file) {
+      return { success: false, error: { code: 'INVALID_ARGS', message: 'file is required' } };
+    }
+    const data = resolveLivePreviewSourceLocation(payload);
+    return { success: true, data };
+  },
+  // --------------------------------------------------------------------
+  // V2-A devServerManager
+  // --------------------------------------------------------------------
+  detectFramework: async (_ctx, requestPayload) => {
+    const projectPath = requireProjectPath(requestPayload);
+    const data = getDevServerManager().detect(projectPath);
+    return { success: true, data };
+  },
+  startDevServer: async (_ctx, requestPayload) => {
+    const projectPath = requireProjectPath(requestPayload);
+    // 同步返回 status='starting' 的 session；renderer 调
+    // waitDevServerReady 拿 URL，或用 getDevServerSession 轮询 status
+    const session = getDevServerManager().start(projectPath);
+    return { success: true, data: session };
+  },
+  waitDevServerReady: async (_ctx, requestPayload) => {
+    const sessionId = requireSessionId(requestPayload);
+    const url = await getDevServerManager().waitForReady(sessionId);
+    return { success: true, data: { url } };
+  },
+  stopDevServer: async (_ctx, requestPayload) => {
+    const sessionId = requireSessionId(requestPayload);
+    await getDevServerManager().stop(sessionId);
+    return { success: true, data: { sessionId } };
+  },
+  getDevServerSession: async (_ctx, requestPayload) => {
+    const sessionId = requireSessionId(requestPayload);
+    const session = getDevServerManager().get(sessionId);
+    return { success: true, data: session };
+  },
+  getDevServerLogs: async (_ctx, requestPayload) => {
+    const sessionId = requireSessionId(requestPayload);
+    const logs = getDevServerManager().getLogs(sessionId);
+    return { success: true, data: logs };
+  },
+  listDevServers: async (_ctx, _requestPayload) => {
+    const data = getDevServerManager().list();
+    return { success: true, data };
+  },
+  // --------------------------------------------------------------------
+  // V2-B Tweak 面板
+  // --------------------------------------------------------------------
+  applyTweak: async (_ctx, requestPayload) => {
+    const payload = requestPayload as { location?: TweakLocation; mutation?: ClassMutation };
+    if (!payload?.location || !payload?.mutation) {
+      return { success: false, error: { code: 'INVALID_ARGS', message: 'location + mutation required' } };
+    }
+    // 路径必须绝对，避免 cwd 漂移导致改错文件
+    if (!path.isAbsolute(payload.location.file)) {
+      return { success: false, error: { code: 'INVALID_ARGS', message: 'file must be absolute' } };
+    }
+    const data = applyTweak(payload.location, payload.mutation);
+    return { success: true, data };
+  },
+};
+
+const livePreviewRoutes = defineDomainRoutes<LivePreviewDomainRequest, void>(LivePreviewSchemas.REQUEST, livePreviewHandlers, {
+  rawResponse: true,
+  unknownActionCode: 'UNKNOWN_ACTION',
+  unknownActionMessage: (action) => `未知 action: ${String(action)}`,
+  resolveErrorCode: () => 'LIVE_PREVIEW_ERROR',
+});
+
+export function registerLivePreviewHandlers(ipcMain: IpcMain): void {
+  installDomainRoutes(ipcMain, livePreviewRoutes, undefined);
 }
+
+// 表挂装配函数对象上供 parity 门枚举（同 registerLoopHandlers.routes 先例）
+registerLivePreviewHandlers.routes = livePreviewRoutes;

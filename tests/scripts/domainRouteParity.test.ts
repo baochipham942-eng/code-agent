@@ -32,6 +32,7 @@ import { registerCronHandlers } from '../../src/host/ipc/cron.ipc';
 import { registerPromptHandlers } from '../../src/host/ipc/prompt.ipc';
 import { registerDiagnosticsHandlers } from '../../src/host/ipc/diagnostics.ipc';
 import { registerDataHandlers } from '../../src/host/ipc/data.ipc';
+import { registerLoopHandlers } from '../../src/host/ipc/loop.ipc';
 import { getShellCapabilities } from '../../src/host/shellCapabilities';
 
 // 结构枚举器挂既有函数对象上（knip 生产档无测试入口，独立 export 必成 dead export）
@@ -43,6 +44,7 @@ const cronRoutes = registerCronHandlers.routes;
 const promptRoutes = registerPromptHandlers.routes;
 const diagnosticsRoutes = registerDiagnosticsHandlers.routes;
 const dataRoutes = registerDataHandlers.routes;
+const loopRoutes = registerLoopHandlers.routes;
 
 /** 门盯的表清单——新域表化后加进来，门即自动覆盖该域（session 三面走 manifestDomain 断言） */
 const ROUTE_TABLES = [
@@ -54,6 +56,7 @@ const ROUTE_TABLES = [
   { table: promptRoutes, manifestDomain: 'domain:prompt' as const },
   { table: diagnosticsRoutes, manifestDomain: 'domain:diagnostics' as const },
   { table: dataRoutes, manifestDomain: 'domain:data' as const },
+  { table: loopRoutes, manifestDomain: 'domain:loop' as const },
   { table: inlineFixtureTable(), manifestDomain: undefined },
 ];
 
@@ -286,6 +289,7 @@ function collectActualDomainActions(): Map<string, Set<string>> {
   add(IPC_DOMAINS.PROMPT, new Set(Object.keys(promptRoutes.actions)));
   add(IPC_DOMAINS.DIAGNOSTICS, new Set(Object.keys(diagnosticsRoutes.actions)));
   add(IPC_DOMAINS.DATA, new Set(Object.keys(dataRoutes.actions)));
+  add(IPC_DOMAINS.LOOP, new Set(Object.keys(loopRoutes.actions)));
   return actual;
 }
 
@@ -301,7 +305,6 @@ const KNOWN_UNDER_REPORTED_ACTIONS: Readonly<Record<string, readonly string[]>> 
   'domain:folderTrust': ['revoke'],
   'domain:generativeUI': ['capabilities'],
   'domain:hook': ['setEnabled'],
-  'domain:loop': ['get', 'list', 'start', 'stop'],
   'domain:project': ['redeemInvite', 'revokeInvite'],
   'domain:provider': ['delete_realtime_voice_provider'],
   'domain:surfaceExecution': ['startLiveStream', 'stopLiveStream'],

@@ -57,6 +57,7 @@ import { registerOpenchronicleHandlers } from '../../src/host/ipc/openchronicle.
 import { registerSoulHandlers } from '../../src/host/ipc/soul.ipc';
 import { registerPlanningHandlers } from '../../src/host/ipc/planning.ipc';
 import { registerTerminalHandlers } from '../../src/host/ipc/terminal.ipc';
+import { registerSessionAutomationHandlers } from '../../src/host/ipc/sessionAutomation.ipc';
 import { getShellCapabilities } from '../../src/host/shellCapabilities';
 
 // 结构枚举器挂既有函数对象上（knip 生产档无测试入口，独立 export 必成 dead export）
@@ -95,6 +96,7 @@ const openchronicleRoutes = registerOpenchronicleHandlers.routes;
 const soulRoutes = registerSoulHandlers.routes;
 const planningRoutes = registerPlanningHandlers.routes;
 const terminalRoutes = registerTerminalHandlers.routes;
+const sessionAutomationRoutes = registerSessionAutomationHandlers.routes;
 
 /** 门盯的表清单——新域表化后加进来，门即自动覆盖该域（session 三面走 manifestDomain 断言） */
 const ROUTE_TABLES = [
@@ -133,6 +135,7 @@ const ROUTE_TABLES = [
   { table: soulRoutes, manifestDomain: 'domain:soul' as const },
   { table: planningRoutes, manifestDomain: 'domain:planning' as const },
   { table: terminalRoutes, manifestDomain: 'domain:terminal' as const },
+  { table: sessionAutomationRoutes, manifestDomain: 'domain:sessionAutomation' as const },
   { table: inlineFixtureTable(), manifestDomain: undefined },
 ];
 
@@ -392,6 +395,7 @@ function collectActualDomainActions(): Map<string, Set<string>> {
   add(IPC_DOMAINS.SOUL, new Set(Object.keys(soulRoutes.actions)));
   add(IPC_DOMAINS.PLANNING, new Set(Object.keys(planningRoutes.actions)));
   add(IPC_DOMAINS.TERMINAL, new Set(Object.keys(terminalRoutes.actions)));
+  add(IPC_DOMAINS.SESSION_AUTOMATION, new Set(Object.keys(sessionAutomationRoutes.actions)));
   return actual;
 }
 

@@ -20,6 +20,7 @@ import { CronSchemas } from '../shared/ipc/schemas/cron';
 import { PromptSchemas } from '../shared/ipc/schemas/prompt';
 import { DiagnosticsSchemas } from '../shared/ipc/schemas/diagnostics';
 import { DataSchemas } from '../shared/ipc/schemas/data';
+import { LoopSchemas } from '../shared/ipc/schemas/loop';
 
 const DEFAULT_SINCE_VERSION = '0.16.93';
 
@@ -209,6 +210,8 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'validateDevServerUrl',
     'waitDevServerReady',
   ],
+  // loop 域：派生自 schema action 集合（== loop 表 keys，parity 门三面对账）；此前清单整域缺报 4 项
+  [IPC_DOMAINS.LOOP]: LoopSchemas.ACTIONS,
   [IPC_DOMAINS.MCP]: [
     'addServer',
     'cancelServerInstall',

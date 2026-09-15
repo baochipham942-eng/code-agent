@@ -18,6 +18,7 @@ import { DesktopSchemas } from '../shared/ipc/schemas/desktop';
 import { TagSchemas } from '../shared/ipc/schemas/tag';
 import { CronSchemas } from '../shared/ipc/schemas/cron';
 import { PromptSchemas } from '../shared/ipc/schemas/prompt';
+import { DiagnosticsSchemas } from '../shared/ipc/schemas/diagnostics';
 
 const DEFAULT_SINCE_VERSION = '0.16.93';
 
@@ -186,15 +187,8 @@ const CAPABILITY_DOMAIN_ACTIONS = {
   [IPC_DOMAINS.CRON]: CronSchemas.ACTIONS,
   // desktop 域：派生自 schema action 集合（== desktop 表 keys，parity 门三面对账），手工清单已删
   [IPC_DOMAINS.DESKTOP]: DesktopSchemas.ACTIONS,
-  [IPC_DOMAINS.DIAGNOSTICS]: [
-    'budget',
-    'compression',
-    'decisions',
-    'desktopShell',
-    'execPolicy',
-    'exportAppBundle',
-    'logClientError',
-  ],
+  // diagnostics 域：派生自 schema action 集合（== diagnostics 表 keys，parity 门三面对账），手工清单已删
+  [IPC_DOMAINS.DIAGNOSTICS]: DiagnosticsSchemas.ACTIONS,
   [IPC_DOMAINS.GENERATIVE_UI]: [
     'applyEvent',
     'persistHtmlEdit',

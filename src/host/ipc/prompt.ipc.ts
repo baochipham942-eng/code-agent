@@ -66,7 +66,8 @@ const promptRoutes = defineDomainRoutes<PromptDomainRequest, void>(
       const { id } = payload as { id: string };
       const detail = getPromptDetail(id);
       if (!detail) return null;
-      // 这里直接用 detail.override ?? detail.defaultText，走一遍消费方路径更接近实际拼装时的行为
+      // 这里直接用 detail.override ?? detail.defaultText 是可接受的简化；更贴近实际拼装的做法是
+      // 走一遍消费方路径（String(promptProxy) 触发 Proxy valueOf），原实现同样取简化值（#1848 Nit 3）
       const live = detail.override ?? detail.defaultText;
       return { id, live, length: live.length };
     },

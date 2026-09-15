@@ -34,6 +34,7 @@ import { AuthSchemas } from '../shared/ipc/schemas/auth';
 import { RolesSchemas } from '../shared/ipc/schemas/roles';
 import { ConnectorSchemas } from '../shared/ipc/schemas/connector';
 import { AgentSchemas } from '../shared/ipc/schemas/agent';
+import { SettingsSchemas } from '../shared/ipc/schemas/settings';
 
 const DEFAULT_SINCE_VERSION = '0.16.93';
 
@@ -291,21 +292,8 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'startLiveStream',
     'stopLiveStream',
   ],
-  [IPC_DOMAINS.SETTINGS]: [
-    'checkApiKeyConfigured',
-    'get',
-    'getAllServiceKeys',
-    'getBudgetStatus',
-    'getDevMode',
-    'getServiceApiKey',
-    'resolveProviderIconAsset',
-    'saveProviderIconAsset',
-    'set',
-    'setBudgetConfig',
-    'setDevMode',
-    'setServiceApiKey',
-    'testApiKey',
-  ],
+  // settings 域：派生自 schema action 集合（== settings 表 keys，parity 门三面对账），手工清单已删
+  [IPC_DOMAINS.SETTINGS]: SettingsSchemas.ACTIONS,
   [IPC_DOMAINS.SOUL]: [
     'getDefault',
     'getProfile',

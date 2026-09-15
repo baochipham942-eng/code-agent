@@ -306,8 +306,9 @@ React 侧**当前唯一真源是 NeoBrandMark 内联 SVG**,不接资产文件的
    用 `ds-allow:color` 写明背景理由;主题自适应表面应改用会随主题翻转的 zinc 前景 token。
 10. `sticky-in-padded-scroller` — 禁 `sticky top-*` 元素的最近 `overflow-auto/scroll` 滚动祖先带
    `pt-*`/`py-*`。sticky 贴的是容器内容区顶,上内边距会在容器顶留一条带子,滚上来的行从带子里透出,
-   给表头上底色治不到(FB-162,`EvalCaseListTab.tsx` #1844)。内边距放进子块;硬断言基线 0;
-   `ds-allow:sticky` 豁免。
+   给表头上底色治不到(FB-162,`EvalCaseListTab.tsx` #1844)。内边距放进子块;基线 0 且 `--update`
+   拒绝把这条抬高(脚本里挡住,不同于其他棘轮项);`pt-0`/`scroll-pt-*` 不算;`ds-allow:sticky` 豁免。
+   上限:祖先按同文件 JSX 缩进近似,className 拆到 `cn()` 多行或滚动容器在父组件时看不见,靠 review。
 
 另有若干**硬断言**(非棘轮,任何回退直接红):
 

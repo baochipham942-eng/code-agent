@@ -43,6 +43,7 @@ import { registerHookHandlers } from '../../src/host/ipc/hook.ipc';
 import { registerWorkspaceHandlers } from '../../src/host/ipc/workspace.ipc';
 import { registerAuthHandlers } from '../../src/host/ipc/auth.ipc';
 import { registerRolesHandlers } from '../../src/host/ipc/roles.ipc';
+import { registerConnectorHandlers } from '../../src/host/ipc/connector.ipc';
 import { getShellCapabilities } from '../../src/host/shellCapabilities';
 
 // 结构枚举器挂既有函数对象上（knip 生产档无测试入口，独立 export 必成 dead export）
@@ -66,6 +67,7 @@ const hookRoutes = registerHookHandlers.routes;
 const workspaceRoutes = registerWorkspaceHandlers.routes;
 const authRoutes = registerAuthHandlers.routes;
 const rolesRoutes = registerRolesHandlers.routes;
+const connectorRoutes = registerConnectorHandlers.routes;
 
 /** 门盯的表清单——新域表化后加进来，门即自动覆盖该域（session 三面走 manifestDomain 断言） */
 const ROUTE_TABLES = [
@@ -89,6 +91,7 @@ const ROUTE_TABLES = [
   { table: workspaceRoutes, manifestDomain: 'domain:workspace' as const },
   { table: authRoutes, manifestDomain: 'domain:auth' as const },
   { table: rolesRoutes, manifestDomain: 'domain:roles' as const },
+  { table: connectorRoutes, manifestDomain: 'domain:connector' as const },
   { table: inlineFixtureTable(), manifestDomain: undefined },
 ];
 
@@ -333,6 +336,7 @@ function collectActualDomainActions(): Map<string, Set<string>> {
   add(IPC_DOMAINS.WORKSPACE, new Set(Object.keys(workspaceRoutes.actions)));
   add(IPC_DOMAINS.AUTH, new Set(Object.keys(authRoutes.actions)));
   add(IPC_DOMAINS.ROLES, new Set(Object.keys(rolesRoutes.actions)));
+  add(IPC_DOMAINS.CONNECTOR, new Set(Object.keys(connectorRoutes.actions)));
   return actual;
 }
 

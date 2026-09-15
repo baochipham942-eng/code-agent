@@ -167,6 +167,8 @@ export interface ResearchProgressData {
 export interface AgentRunOptions {
   /** Host producer identity; automated input must not cancel a user's pending time wake. */
   inputSource?: 'user' | 'automation';
+  /** 本轮无人盯守（loop 轮等）：断流续接取无人值守预算（ADR-068 D4）。缺省按前台处理。 */
+  unattended?: boolean;
   mode: 'normal' | 'deep-research';
   /** Optional per-run allow/deny list for externally delivered AgentEvents. */
   eventFilter?: import('../protocol/events/eventFilter').AgentEventFilter;

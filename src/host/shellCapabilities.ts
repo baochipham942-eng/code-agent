@@ -121,6 +121,15 @@ const CAPABILITY_DOMAIN_ACTIONS = {
   [IPC_DOMAINS.AGENT_REGISTRY]: [
     'list',
   ],
+  // backgroundTasks 域：defineHandler schema 化注册（BackgroundTaskSchemas.REQUEST），renderer 的任务面板 / 通知同步在调；
+  // 此前整域未登记（缺报 5 项），parity 门的缺报棘轮按 defineHandler 提取对账
+  [IPC_DOMAINS.BACKGROUND_TASKS]: [
+    'drainNotifications',
+    'getTask',
+    'listTasks',
+    'markNotificationDelivered',
+    'readTaskLog',
+  ],
   [IPC_DOMAINS.AUTH]: [
     'clearSavedCredentials',
     'generateQuickToken',
@@ -165,6 +174,7 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'voiceprintOverview',
     'voiceprintPrepareModel',
     'voiceprintRegister',
+    'injectUserText',
   ],
   [IPC_DOMAINS.CONNECTOR]: [
     'disconnect',
@@ -290,6 +300,7 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'save_realtime_voice_provider',
     'test_connection',
     'test_realtime_voice_provider',
+    'delete_realtime_voice_provider',
   ],
   [IPC_DOMAINS.ROLES]: [
     'addBinding',
@@ -338,6 +349,8 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'getPersistedTerminalFrame',
     'getSnapshot',
     'persistTerminalFrame',
+    'startLiveStream',
+    'stopLiveStream',
   ],
   [IPC_DOMAINS.SETTINGS]: [
     'checkApiKeyConfigured',

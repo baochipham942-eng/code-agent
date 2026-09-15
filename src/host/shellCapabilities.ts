@@ -44,6 +44,7 @@ import { ActivitySchemas } from '../shared/ipc/schemas/activity';
 import { StatusSchemas } from '../shared/ipc/schemas/status';
 import { NotificationSchemas } from '../shared/ipc/schemas/notification';
 import { OpenchronicleSchemas } from '../shared/ipc/schemas/openchronicle';
+import { SoulSchemas } from '../shared/ipc/schemas/soul';
 
 const DEFAULT_SINCE_VERSION = '0.16.93';
 
@@ -255,13 +256,8 @@ const CAPABILITY_DOMAIN_ACTIONS = {
   ],
   // settings 域：派生自 schema action 集合（== settings 表 keys，parity 门三面对账），手工清单已删
   [IPC_DOMAINS.SETTINGS]: SettingsSchemas.ACTIONS,
-  [IPC_DOMAINS.SOUL]: [
-    'getDefault',
-    'getProfile',
-    'getStatus',
-    'resetProfile',
-    'saveProfile',
-  ],
+  // soul 域：派生自 schema action 集合（== soul 表 keys，parity 门三面对账），手工清单已删
+  [IPC_DOMAINS.SOUL]: SoulSchemas.ACTIONS,
   // sync 域：派生自 schema action 集合（== sync 表 keys，parity 门三面对账），手工清单已删
   [IPC_DOMAINS.SYNC]: SyncSchemas.ACTIONS,
   // tag 域：派生自 schema action 集合（== tag 表 keys，parity 门三面对账）

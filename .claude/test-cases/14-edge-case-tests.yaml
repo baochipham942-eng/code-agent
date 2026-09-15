@@ -17,6 +17,7 @@ cases:
   # --------------------------------------------------------------------------
   - id: edge-unicode-filename
     type: task
+    category: edge_case
     description: "处理 Unicode 文件名"
     prompt: "创建一个名为 test-中文文件.txt 的文件，内容写 '测试中文文件名'"
     cleanup:
@@ -24,6 +25,7 @@ cases:
 
   - id: edge-space-filename
     type: task
+    category: edge_case
     description: "处理含空格文件名"
     prompt: "创建一个名为 'test file with spaces.txt' 的文件，写入 'spaces work'"
     cleanup:
@@ -34,11 +36,13 @@ cases:
   # --------------------------------------------------------------------------
   - id: edge-single-word
     type: conversation
+    category: edge_case
     description: "单词输入"
     prompt: "帮助"
 
   - id: edge-emoji-input
     type: conversation
+    category: edge_case
     description: "纯 Emoji 输入"
     prompt: "👍"
 
@@ -47,11 +51,13 @@ cases:
   # --------------------------------------------------------------------------
   - id: edge-contradictory
     type: conversation
+    category: edge_case
     description: "矛盾指令处理"
     prompt: "创建一个文件 test-contra.txt 但不要写入任何内容也不要创建任何文件"
 
   - id: edge-multiple-tasks
     type: conversation
+    category: edge_case
     description: "一句话多个无关任务"
     prompt: "帮我查看天气、计算 1+1、列出当前目录文件、翻译一段英文"
 
@@ -60,6 +66,7 @@ cases:
   # --------------------------------------------------------------------------
   - id: edge-malformed-json
     type: task
+    category: edge_case
     description: "处理畸形 JSON"
     setup:
       - |
@@ -70,6 +77,7 @@ cases:
 
   - id: edge-mixed-encoding
     type: task
+    category: edge_case
     description: "处理特殊编码内容"
     setup:
       - |
@@ -83,6 +91,7 @@ cases:
   # --------------------------------------------------------------------------
   - id: edge-deep-path
     type: task
+    category: edge_case
     description: "深层路径创建和读取"
     prompt: "创建 test-deep/a/b/c/d/deep-file.txt 文件，写入 'deep path test'，然后读取确认内容"
     cleanup:
@@ -90,6 +99,7 @@ cases:
 
   - id: edge-dotfile
     type: task
+    category: edge_case
     description: "处理隐藏文件（dotfile）"
     prompt: "创建 .test-hidden-config 文件，写入 'hidden=true'，然后读取确认"
     cleanup:

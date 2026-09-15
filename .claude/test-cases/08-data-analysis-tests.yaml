@@ -17,6 +17,7 @@ cases:
   # --------------------------------------------------------------------------
   - id: data-csv-basic
     type: task
+    category: task_completion
     description: "CSV 基础统计分析"
     setup:
       - |
@@ -36,6 +37,7 @@ cases:
 
   - id: data-csv-aggregate
     type: task
+    category: task_completion
     description: "CSV 分组聚合"
     setup:
       - |
@@ -58,6 +60,7 @@ cases:
   # --------------------------------------------------------------------------
   - id: data-json-transform
     type: task
+    category: task_completion
     description: "JSON 数据转换"
     setup:
       - |
@@ -77,6 +80,7 @@ cases:
   # --------------------------------------------------------------------------
   - id: data-cleaning
     type: task
+    category: task_completion
     description: "数据清洗 - 处理缺失值和异常"
     setup:
       - |

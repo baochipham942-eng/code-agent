@@ -67,21 +67,24 @@ cases:
 
   - id: prompt-smoke-toolsearch-json-arguments
     type: task
-    category: tool_discovery
+    category: task_completion
+    tags: [tool_discovery]
     difficulty: easy
     description: "Load a deferred tool with ToolSearch JSON arguments"
     prompt: "Use ToolSearch to search for browser tooling. Then reply with the loaded or discovered tool name."
 
   - id: prompt-smoke-task-single-delegate
     type: task
-    category: multiagent
+    category: task_completion
+    tags: [multiagent]
     difficulty: easy
     description: "Use Task as a single synchronous delegate"
     prompt: "Use exactly one Task delegate to inspect package.json and return the package name. Do not spawn parallel delegates."
 
   - id: prompt-smoke-git-status-no-commit
     type: task
-    category: git_workflow
+    category: task_completion
+    tags: [git_workflow]
     difficulty: easy
     description: "Inspect git state without auto-commit behavior"
     setup:

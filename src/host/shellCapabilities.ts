@@ -38,6 +38,7 @@ import { SettingsSchemas } from '../shared/ipc/schemas/settings';
 import { McpSchemas } from '../shared/ipc/schemas/mcp';
 import { LibrarySchemas } from '../shared/ipc/schemas/library';
 import { AgentEngineSchemas } from '../shared/ipc/schemas/agentEngine';
+import { CapabilitySchemas } from '../shared/ipc/schemas/capability';
 
 const DEFAULT_SINCE_VERSION = '0.16.93';
 
@@ -118,12 +119,8 @@ const CAPABILITY_DOMAIN_ACTIONS = {
   ],
   // auth 域：派生自 schema action 集合（== auth 表 keys，parity 门三面对账），手工清单已删
   [IPC_DOMAINS.AUTH]: AuthSchemas.ACTIONS,
-  [IPC_DOMAINS.CAPABILITY]: [
-    'installDraft',
-    'list',
-    'removeDraft',
-    'setEnabled',
-  ],
+  // capability 域：派生自 schema action 集合（== capability 表 keys，parity 门三面对账），手工清单已删
+  [IPC_DOMAINS.CAPABILITY]: CapabilitySchemas.ACTIONS,
   [IPC_DOMAINS.CAPTURE]: [
     'capture',
     'delete',

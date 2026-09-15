@@ -47,7 +47,7 @@ function isExternalEngineKind(kind: AgentEngineKind | undefined): kind is Extern
  * `{ success: true, data }`）。未知 action 用装配器缺省（INVALID_ACTION `Unknown action: <action>`，与原文逐字一致）。抛错映射原样
  * 进 mapError：AgentEngineCapabilityError / AgentEngineHistoryImportError 取自带 code + details，AgentEngineModelIncompatibleError →
  * MODEL_NOT_FOUND + details，其余 INTERNAL_ERROR（无 details 键）。registry 原在 try 外取（抛错即 IPC reject），现在 handler 内取、
- * 抛错落 INTERNAL_ERROR；请求体为 null / 非对象时原实现在 try 内读 request.action 抛错（IPC reject），现返回 INVALID_ACTION。
+ * 抛错落 INTERNAL_ERROR；请求体为 null / 非对象时原实现在 try 内读 request.action 抛错落 INTERNAL_ERROR，现返回 INVALID_ACTION。
  */
 const agentEngineHandlers: RawDomainRouteHandlers<AgentEngineDomainRequest, void> = {
   detect: async (_ctx, _requestPayload) => {

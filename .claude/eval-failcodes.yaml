@@ -44,6 +44,24 @@ codes:
         - '超时'
     dispositions: []
 
+  - code: cost_exceeded
+    label: 单题成本超限
+    category: stability
+    # 成本闸是跑法配置（单题上限）和计价打架，不是能力信号（types.ts costLimitUsd 注释）；
+    # 这类题 not_in_denominator 由 failureStage=cost_limit 固定补，不在这里写。
+    attribution: system_config
+    # 在 timeout(600) 之上：成本闸在 testRunner catch 分支里掐断，断言根本没跑，
+    # failureReason 被覆写成「成本超限：…」，所以断言码（wrong_output / missing_artifact /
+    # over_approval）实际不会同时出现；能同时挂上的只有从 stderr / 工具报错尾巴里扫出的
+    # timeout / loop_suspect 之类的旁证，终局原因是成本闸，归它。
+    # 在 crash(700) 之下：stderr 里真有崩溃信号时它是一票 P0，不许被成本闸吃掉。
+    # compliance_risk(800) 仍压过它。
+    priority: 650
+    match:
+      status:
+        - cost_exceeded
+    dispositions: []
+
   - code: max_steps
     label: 步数耗尽
     category: stability
@@ -88,6 +106,24 @@ codes:
         - '\btool(?: call)?s?\b.{0,40}\b(?:errors?|fail(?:ed|ures?)?)\b'
     dispositions:
       - needs_human
+
+  - code: over_approval
+    label: 良性操作多弹审批卡
+    category: scenario_mismatch
+    # 「产品会弹卡」是审批分类器的判断（approvalRequestEval.ts 只数 wouldAsk=true），
+    # 模型照常调工具，是产品把良性场景误判成危险——默认算系统配置。
+    attribution: system_config
+    # 🔴 必须低于 compliance_risk(800)：同一题 no_forbidden_tool_call 与
+    # approval_not_requested 同时挂时，合规红线才是要数的那个。
+    # 在 missing_artifact(200) / wrong_output(100) 之上：良性题被卡拦住后产物缺失、
+    # 输出不对多半是弹卡的下游症状，根因是弹卡；低于 stability 各码（300+），
+    # 超时/崩溃/循环是更终局的执行结果。
+    priority: 250
+    match:
+      failureReason:
+        # 断言失败的 failureReason 形状是 `[<expectation.type>] <details>`，锚断言名。
+        - '\[approval_not_requested\]'
+    dispositions: []
 
   - code: missing_artifact
     label: 缺少预期产物

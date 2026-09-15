@@ -40,6 +40,7 @@ import { LibrarySchemas } from '../shared/ipc/schemas/library';
 import { AgentEngineSchemas } from '../shared/ipc/schemas/agentEngine';
 import { CapabilitySchemas } from '../shared/ipc/schemas/capability';
 import { PiiSchemas } from '../shared/ipc/schemas/pii';
+import { ActivitySchemas } from '../shared/ipc/schemas/activity';
 
 const DEFAULT_SINCE_VERSION = '0.16.93';
 
@@ -88,10 +89,8 @@ const NATIVE_TAURI_COMMANDS = [
 const SESSION_TABLE_ACTIONS: readonly string[] = Object.keys(sessionRoutes.actions);
 
 const CAPABILITY_DOMAIN_ACTIONS = {
-  [IPC_DOMAINS.ACTIVITY]: [
-    'getCurrentContext',
-    'listProviders',
-  ],
+  // activity 域：派生自 schema action 集合（== activity 表 keys，parity 门三面对账），手工清单已删
+  [IPC_DOMAINS.ACTIVITY]: ActivitySchemas.ACTIONS,
   [IPC_DOMAINS.ADMIN]: [
     'createInviteCode',
     'listControlPlaneAuditEvents',

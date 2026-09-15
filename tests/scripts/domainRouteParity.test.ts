@@ -52,6 +52,7 @@ import { registerCapabilityHandlers } from '../../src/host/ipc/capability.ipc';
 import { registerPiiHandlers } from '../../src/host/ipc/pii.ipc';
 import { registerActivityHandlers } from '../../src/host/ipc/activity.ipc';
 import { registerStatusHandlers } from '../../src/host/ipc/status.ipc';
+import { registerNotificationHandlers } from '../../src/host/ipc/notification.ipc';
 import { getShellCapabilities } from '../../src/host/shellCapabilities';
 
 // 结构枚举器挂既有函数对象上（knip 生产档无测试入口，独立 export 必成 dead export）
@@ -85,6 +86,7 @@ const capabilityRoutes = registerCapabilityHandlers.routes;
 const piiRoutes = registerPiiHandlers.routes;
 const activityRoutes = registerActivityHandlers.routes;
 const statusRoutes = registerStatusHandlers.routes;
+const notificationRoutes = registerNotificationHandlers.routes;
 
 /** 门盯的表清单——新域表化后加进来，门即自动覆盖该域（session 三面走 manifestDomain 断言） */
 const ROUTE_TABLES = [
@@ -118,6 +120,7 @@ const ROUTE_TABLES = [
   { table: piiRoutes, manifestDomain: 'domain:pii' as const },
   { table: activityRoutes, manifestDomain: 'domain:activity' as const },
   { table: statusRoutes, manifestDomain: 'domain:status' as const },
+  { table: notificationRoutes, manifestDomain: 'domain:notification' as const },
   { table: inlineFixtureTable(), manifestDomain: undefined },
 ];
 
@@ -372,6 +375,7 @@ function collectActualDomainActions(): Map<string, Set<string>> {
   add(IPC_DOMAINS.PII, new Set(Object.keys(piiRoutes.actions)));
   add(IPC_DOMAINS.ACTIVITY, new Set(Object.keys(activityRoutes.actions)));
   add(IPC_DOMAINS.STATUS, new Set(Object.keys(statusRoutes.actions)));
+  add(IPC_DOMAINS.NOTIFICATION, new Set(Object.keys(notificationRoutes.actions)));
   return actual;
 }
 

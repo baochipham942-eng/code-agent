@@ -6,7 +6,7 @@ import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../../src/sha
 // 既有 statusCost.ipc.test.ts 覆盖 getTodayCost 双传输、getCostStats 合法 days 与 days=0 的 code。这里补派发层契约：
 // - getCostStats 非法 days（0 / 1.5 / 字符串 / 缺 payload）→ INVALID_ARGS 完整文案，且不查库
 // - 未知 action → INVALID_ACTION + `Unknown status action: <action>` 完整文案（带 status 前缀，非装配器缺省）
-// - 抛错（取库在 try 内）→ INTERNAL_ERROR：Error 取 message、非 Error 取 String(error)
+// - 抛错（取库在各 handler 内，由装配器 try 兜住）→ INTERNAL_ERROR：Error 取 message、非 Error 取 String(error)
 // 迁表后本文件零改动全绿即行为不变证明。
 
 const env = vi.hoisted(() => ({

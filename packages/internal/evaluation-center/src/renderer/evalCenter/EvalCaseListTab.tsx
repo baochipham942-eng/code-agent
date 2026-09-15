@@ -22,6 +22,12 @@ const TEST_CATEGORIES = ['basic_tool', 'task_completion', 'error_recovery', 'edg
 const MATRIX_OTHER = '\u0000other';
 const MATRIX_MISSING = '\u0000missing';
 
+// 覆盖盲区的唯一判据：单元格标红、收起态摘要里的红格数都走它，别各写一份。
+// 「未填」列为 0 不算盲区——没填 category 是元数据缺口，缺口另有摘要里的 n/m 计数。
+function isBlindCell(count: number, column: string): boolean {
+  return count === 0 && column !== MATRIX_MISSING;
+}
+
 type LoadState = 'loading' | 'ready' | 'error';
 type StatusFilter = 'active' | 'all' | 'normal' | 'draft' | 'archived';
 
@@ -136,11 +142,10 @@ export const EvalCaseListTab: React.FC = () => {
     }
     const rows = [...new Set(active.map((item) => item.layer))].sort((a, b) => a.localeCompare(b));
     const columns = [...TEST_CATEGORIES, MATRIX_OTHER, MATRIX_MISSING];
-    // 收起态摘要要报红格数，口径与下面单元格的 blind 判定一致：未填列的 0 不算盲区。
     let blind = 0;
     for (const layer of rows) {
       for (const column of columns) {
-        if (column !== MATRIX_MISSING && !counts.has(`${layer}\u0000${column}`)) blind += 1;
+        if (isBlindCell(counts.get(`${layer}\u0000${column}`) ?? 0, column)) blind += 1;
       }
     }
     return {
@@ -306,44 +311,43 @@ export const EvalCaseListTab: React.FC = () => {
               <span className="ml-1 underline">{matrixOpen ? c.matrixCollapse : c.matrixExpand}</span>
             </button>
             {matrixOpen && (
-          <div className="mt-1 overflow-x-auto" data-testid="eval-case-matrix">
-            <div className="mb-1 text-[10px] text-zinc-500">{c.matrixTitle}</div>
-            <div className="mb-1 text-[10px] text-zinc-500" data-testid="eval-case-matrix-missing-note">
-              {c.matrixMissingNote.replace('{n}', String(matrix.missing)).replace('{m}', String(matrix.total))}
-            </div>
-            <table className="border-separate border-spacing-0 text-[11px]">
-              <thead>
-                <tr>
-                  <th className="border-b border-zinc-800 px-2 py-1 text-left font-medium text-zinc-500">{c.filterLayer}</th>
-                  {matrix.columns.map((column) => (
-                    <th key={column} className="whitespace-nowrap border-b border-zinc-800 px-2 py-1 text-right font-medium text-zinc-500">{matrixColumnLabel(column, c, matrix.otherKinds)}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {matrix.rows.map((layer) => (
-                  <tr key={layer}>
-                    <td className="min-w-32 whitespace-nowrap px-2 py-1 text-zinc-300">{layer}</td>
-                    {matrix.columns.map((column) => {
-                      const n = matrix.count(layer, column);
-                      // 「未填」列为 0 不标红：没填 category 不是覆盖盲区，缺口另有标题旁那行计数。
-                      const blind = n === 0 && column !== MATRIX_MISSING;
-                      return (
-                        <td
-                          key={column}
-                          data-testid={blind ? 'eval-case-matrix-empty' : 'eval-case-matrix-cell'}
-                          title={blind ? c.matrixEmptyHint : undefined}
-                          className={`px-2 py-1 text-right font-mono ${blind ? 'bg-red-500/10 text-badge-danger' : 'text-zinc-200'}`}
-                        >
-                          {n}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+              <div className="mt-1 overflow-x-auto" data-testid="eval-case-matrix">
+                <div className="mb-1 text-[10px] text-zinc-500">{c.matrixTitle}</div>
+                <div className="mb-1 text-[10px] text-zinc-500" data-testid="eval-case-matrix-missing-note">
+                  {c.matrixMissingNote.replace('{n}', String(matrix.missing)).replace('{m}', String(matrix.total))}
+                </div>
+                <table className="border-separate border-spacing-0 text-[11px]">
+                  <thead>
+                    <tr>
+                      <th className="border-b border-zinc-800 px-2 py-1 text-left font-medium text-zinc-500">{c.filterLayer}</th>
+                      {matrix.columns.map((column) => (
+                        <th key={column} className="whitespace-nowrap border-b border-zinc-800 px-2 py-1 text-right font-medium text-zinc-500">{matrixColumnLabel(column, c, matrix.otherKinds)}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {matrix.rows.map((layer) => (
+                      <tr key={layer}>
+                        <td className="min-w-32 whitespace-nowrap px-2 py-1 text-zinc-300">{layer}</td>
+                        {matrix.columns.map((column) => {
+                          const n = matrix.count(layer, column);
+                          const blind = isBlindCell(n, column);
+                          return (
+                            <td
+                              key={column}
+                              data-testid={blind ? 'eval-case-matrix-empty' : 'eval-case-matrix-cell'}
+                              title={blind ? c.matrixEmptyHint : undefined}
+                              className={`px-2 py-1 text-right font-mono ${blind ? 'bg-red-500/10 text-badge-danger' : 'text-zinc-200'}`}
+                            >
+                              {n}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
         )}

@@ -260,7 +260,7 @@ export const EvalCaseListTab: React.FC = () => {
               </div>
             </div>
             {matrix.rows.length > 0 && (
-              <Button size="sm" variant="ghost" data-testid="eval-case-matrix-toggle" aria-haspopup="dialog" onClick={() => setMatrixOpen(true)}>
+              <Button size="sm" variant="ghost" className="shrink-0 whitespace-nowrap" data-testid="eval-case-matrix-toggle" aria-haspopup="dialog" onClick={() => setMatrixOpen(true)}>
                 {c.matrixView}
               </Button>
             )}
@@ -317,7 +317,8 @@ export const EvalCaseListTab: React.FC = () => {
         {loadState === 'error' && <div className="py-10 text-center text-sm text-badge-danger">{c.loadFailed.replace('{message}', loadError)}</div>}
         {loadState === 'ready' && filteredItems.length === 0 && <EmptyState variant="inline" text={c.empty} />}
         {loadState === 'ready' && filteredItems.length > 0 && (
-          <table className="w-full min-w-[1180px] border-separate border-spacing-0 text-left text-xs">
+          // 下限要 ≤ 1440 宽窗口下滚动区可用宽（1194 − px-3 两侧 24 = 1170），否则表 + 左右内边距撑出横向滚动条
+          <table className="w-full min-w-[1100px] border-separate border-spacing-0 text-left text-xs">
             {/* FB-161：浅色主题下爸看到行文字透过 sticky 表头。底色原来只挂在 thead 上，
                 这一条在 1440×900 的 web 真机没能复现（thead 背景照常绘制），所以下面是加固不是已证根因：
                 底色同时挂到每个 th（sticky 表头的通行写法，不依赖引擎绘制 row-group 背景）+ z-10。
@@ -376,7 +377,8 @@ export const EvalCaseListTab: React.FC = () => {
                       </div>
                     </td>
                     <td className="border-b border-zinc-900 px-2 py-2">
-                      <div className="flex flex-wrap items-center gap-1">
+                      {/* 同行不折：最多两个 chip + 「校准样本」，内容有限，折行会把整行撑高（59 vs 49px） */}
+                      <div className="flex flex-nowrap items-center gap-1 whitespace-nowrap">
                         {item.splits.map(splitChip)}
                         {item.splits.includes('control') && <span className="text-[10px] text-zinc-600">{c.calibrationSample}</span>}
                       </div>

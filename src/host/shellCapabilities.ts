@@ -42,6 +42,7 @@ import { CapabilitySchemas } from '../shared/ipc/schemas/capability';
 import { PiiSchemas } from '../shared/ipc/schemas/pii';
 import { ActivitySchemas } from '../shared/ipc/schemas/activity';
 import { StatusSchemas } from '../shared/ipc/schemas/status';
+import { NotificationSchemas } from '../shared/ipc/schemas/notification';
 
 const DEFAULT_SINCE_VERSION = '0.16.93';
 
@@ -182,10 +183,8 @@ const CAPABILITY_DOMAIN_ACTIONS = {
   [IPC_DOMAINS.MCP]: McpSchemas.ACTIONS,
   // memory 域：派生自 schema action 集合（== memoryRoutes 表 keys，parity 门三面对账），手工清单已删
   [IPC_DOMAINS.MEMORY]: MemorySchemas.ACTIONS,
-  [IPC_DOMAINS.NOTIFICATION]: [
-    'getRecent',
-    'reportClientDelivery',
-  ],
+  // notification 域：派生自 schema action 集合（== notification 表 keys，parity 门三面对账），手工清单已删
+  [IPC_DOMAINS.NOTIFICATION]: NotificationSchemas.ACTIONS,
   [IPC_DOMAINS.OPENCHRONICLE]: [
     'getSettings',
     'getStatus',

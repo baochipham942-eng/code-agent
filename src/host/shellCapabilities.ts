@@ -30,6 +30,7 @@ import { GenerativeUISchemas } from '../shared/ipc/schemas/generativeUI';
 import { FolderTrustSchemas } from '../shared/ipc/schemas/folderTrust';
 import { HookSchemas } from '../shared/ipc/schemas/hook';
 import { WorkspaceSchemas } from '../shared/ipc/schemas/workspace';
+import { AuthSchemas } from '../shared/ipc/schemas/auth';
 
 const DEFAULT_SINCE_VERSION = '0.16.93';
 
@@ -130,23 +131,8 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'markNotificationDelivered',
     'readTaskLog',
   ],
-  [IPC_DOMAINS.AUTH]: [
-    'clearSavedCredentials',
-    'generateQuickToken',
-    'getSavedCredentials',
-    'getStatus',
-    'getUser',
-    'passwordResetCallback',
-    'resetPassword',
-    'saveCredentials',
-    'signInEmail',
-    'signInOAuth',
-    'signInToken',
-    'signOut',
-    'signUpEmail',
-    'updatePassword',
-    'updateProfile',
-  ],
+  // auth 域：派生自 schema action 集合（== auth 表 keys，parity 门三面对账），手工清单已删
+  [IPC_DOMAINS.AUTH]: AuthSchemas.ACTIONS,
   [IPC_DOMAINS.CAPABILITY]: [
     'installDraft',
     'list',
@@ -165,6 +151,7 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'wechatStatus',
   ],
   [IPC_DOMAINS.VOICE]: [
+    'injectUserText',
     'reportFailure',
     // 通话录音（N-L7-REC）：设置页与导出勾选框都读它，旧壳不认识要降级。
     'recordingOverview',
@@ -174,7 +161,6 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'voiceprintOverview',
     'voiceprintPrepareModel',
     'voiceprintRegister',
-    'injectUserText',
   ],
   [IPC_DOMAINS.CONNECTOR]: [
     'disconnect',
@@ -290,6 +276,7 @@ const CAPABILITY_DOMAIN_ACTIONS = {
   // prompt 域：派生自 schema action 集合（== prompt 表 keys，parity 门三面对账）；此前清单整域缺报 7 项
   [IPC_DOMAINS.PROMPT]: PromptSchemas.ACTIONS,
   [IPC_DOMAINS.PROVIDER]: [
+    'delete_realtime_voice_provider',
     'discover_models',
     'getHealthStatus',
     'get_search_capabilities',
@@ -300,7 +287,6 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'save_realtime_voice_provider',
     'test_connection',
     'test_realtime_voice_provider',
-    'delete_realtime_voice_provider',
   ],
   [IPC_DOMAINS.ROLES]: [
     'addBinding',

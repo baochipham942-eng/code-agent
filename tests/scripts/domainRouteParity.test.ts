@@ -25,14 +25,17 @@ import {
   sessionRoutes,
 } from '../../src/host/ipc/domainRoutes/sessionRoutes';
 import { defineDomainRoutes, installDomainRoutes } from '../../src/host/ipc/domainRoutes/registry';
+import { registerMemoryHandlers } from '../../src/host/ipc/memory.ipc';
 import { getShellCapabilities } from '../../src/host/shellCapabilities';
 
 // 结构枚举器挂既有函数对象上（knip 生产档无测试入口，独立 export 必成 dead export）
 const { extractDomainActions } = installDomainRoutes;
+const memoryRoutes = registerMemoryHandlers.routes;
 
 /** 门盯的表清单——新域表化后加进来，门即自动覆盖该域（session 三面走 manifestDomain 断言） */
 const ROUTE_TABLES = [
   { table: sessionRoutes, manifestDomain: 'domain:session' as const },
+  { table: memoryRoutes, manifestDomain: 'domain:memory' as const },
   { table: inlineFixtureTable(), manifestDomain: undefined },
 ];
 
@@ -258,6 +261,7 @@ function collectActualDomainActions(): Map<string, Set<string>> {
   add(IPC_DOMAINS.PROVIDER, providerContributed);
   // session 域：单源路由表结构枚举（表化域不走源码提取）
   add(IPC_DOMAINS.SESSION, new Set(Object.keys(sessionRoutes.actions)));
+  add(IPC_DOMAINS.MEMORY, new Set(Object.keys(memoryRoutes.actions)));
   return actual;
 }
 
@@ -278,7 +282,6 @@ const KNOWN_UNDER_REPORTED_ACTIONS: Readonly<Record<string, readonly string[]>> 
   'domain:generativeUI': ['capabilities'],
   'domain:hook': ['setEnabled'],
   'domain:loop': ['get', 'list', 'start', 'stop'],
-  'domain:memory': ['delete', 'deleteByCategory', 'export', 'getContext', 'getMemoryStats', 'getStats', 'import', 'lightDelete', 'lightHealth', 'lightList', 'lightRead', 'lightRebuildIndex', 'lightStats', 'list', 'memoryEntries', 'memoryEntryBatchReview', 'memoryEntryDelete', 'memoryExportV2', 'memoryHarnessImportApply', 'memoryHarnessImportConfirmDirective', 'memoryHarnessImportDryRun', 'memoryImportV2Apply', 'memoryImportV2DryRun', 'memoryPack', 'memoryRebuildMirror', 'searchCode', 'searchConversations', 'update'],
   'domain:project': ['redeemInvite', 'revokeInvite'],
   'domain:prompt': ['debugSystemPrompt', 'get', 'list', 'preview', 'reset', 'set', 'stackSummary'],
   'domain:provider': ['delete_realtime_voice_provider'],

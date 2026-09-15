@@ -132,34 +132,6 @@ export interface SessionExport {
   todos: TodoItem[];
 }
 
-export interface SearchResult {
-  id: string;
-  content: string;
-  score: number;
-  metadata: {
-    source: 'file' | 'conversation' | 'knowledge';
-    path?: string;
-    sessionId?: string;
-    category?: string;
-    timestamp?: number;
-  };
-}
-
-export interface MemoryContextResult {
-  ragContext: string;
-  projectKnowledge: Array<{ key: string; value: unknown }>;
-  relevantCode: SearchResult[];
-  relevantConversations: SearchResult[];
-}
-
-export interface MemoryStats {
-  sessionCount: number;
-  messageCount: number;
-  toolCacheSize: number;
-  vectorStoreSize: number;
-  projectKnowledgeCount: number;
-}
-
 export interface SessionReviewItemsRequest {
   sessionIds: string[];
   includeReviewed?: boolean;

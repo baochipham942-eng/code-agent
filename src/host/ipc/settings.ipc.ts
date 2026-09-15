@@ -604,25 +604,8 @@ export function registerSettingsHandlers(
     return handleSetIntegration(getConfigService, payload);
   });
 
-  /** @deprecated Use IPC_DOMAINS.WINDOW with action: 'minimize' */
-  ipcMain.handle(IPC_CHANNELS.WINDOW_MINIMIZE, async () => {
-    const { AppWindow } = await import('../platform');
-    AppWindow.getFocusedWindow()?.minimize();
-  });
-
-  /** @deprecated Use IPC_DOMAINS.WINDOW with action: 'maximize' */
-  ipcMain.handle(IPC_CHANNELS.WINDOW_MAXIMIZE, async () => {
-    const { AppWindow } = await import('../platform');
-    const mainWindow = AppWindow.getFocusedWindow();
-    if (mainWindow?.isMaximized()) mainWindow.unmaximize();
-    else mainWindow?.maximize();
-  });
-
-  /** @deprecated Use IPC_DOMAINS.WINDOW with action: 'close' */
-  ipcMain.handle(IPC_CHANNELS.WINDOW_CLOSE, async () => {
-    const { AppWindow } = await import('../platform');
-    AppWindow.getFocusedWindow()?.close();
-  });
+  // window:minimize / maximize / close 三条纯别名通道已删（RQ-183 尾刀）：
+  // 上面 installDomainRoutes(windowRoutes) 装的 window 域表是唯一入口，零调用方。
 
   ipcMain.handle(IPC_CHANNELS.APP_GET_VERSION, async (): Promise<string> => app.getVersion());
 

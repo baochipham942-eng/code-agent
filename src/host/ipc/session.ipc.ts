@@ -97,9 +97,7 @@ export function registerSessionHandlers(
     }
   });
 
-  ipcMain.handle(IPC_CHANNELS.SESSION_GET_TASKS, async (_, sessionId: string) => {
-    return requireAppService().getSessionTasks(sessionId);
-  });
+  // session:get-tasks 纯别名通道已删（RQ-183 尾刀）：表里 getSessionTasks 是唯一入口。
 }
 
 function listReviewItemsBySession(payload: SessionReviewItemsRequest): Record<string, AdminReviewQueueItem[]> {

@@ -964,24 +964,8 @@ export function registerMemoryHandlers(ipcMain: IpcMain): void {
   });
 
   // ========== Legacy Handlers (Deprecated) ==========
-
-  /** @deprecated Use IPC_DOMAINS.MEMORY with action: 'getContext' */
-  ipcMain.handle(IPC_CHANNELS.MEMORY_GET_CONTEXT, async (_, query: string) =>
-    handleGetContext({ query })
-  );
-
-  /** @deprecated Use IPC_DOMAINS.MEMORY with action: 'searchCode' */
-  ipcMain.handle(IPC_CHANNELS.MEMORY_SEARCH_CODE, async (_, query: string, topK?: number) =>
-    handleSearchCode({ query, topK })
-  );
-
-  /** @deprecated Use IPC_DOMAINS.MEMORY with action: 'searchConversations' */
-  ipcMain.handle(IPC_CHANNELS.MEMORY_SEARCH_CONVERSATIONS, async (_, query: string, topK?: number) =>
-    handleSearchConversations({ query, topK })
-  );
-
-  /** @deprecated Use IPC_DOMAINS.MEMORY with action: 'getStats' */
-  ipcMain.handle(IPC_CHANNELS.MEMORY_GET_STATS, async () => handleGetStats());
+  // getContext / searchCode / searchConversations / getStats 四条纯别名通道已删（RQ-183 尾刀）：
+  // 表里同名 action 是唯一入口，renderer 与 web 侧零调用方。
 
   ipcMain.handle(IPC_CHANNELS.MEMORY_CONFIRM_RESPONSE, async (_: unknown, payload: { id: string; confirmed: boolean }) => {
     respondToDirectiveMemoryConfirmation(payload.id, payload.confirmed);

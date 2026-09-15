@@ -189,6 +189,16 @@ export function unlinkedSpmPlugins(packageSwift, plugins, selfImplemented = []) 
 /** 推送正文本地化的两个区：lproj 目录名 → i18n 语言（N-MOBILE-EXEC-STATUS ⑤）。 */
 export const LOCALIZABLE_REGIONS = [['en', 'en'], ['zh-Hans', 'zh']];
 
+/**
+ * 推送横幅正文（N-MOBILE-EXEC-STATUS ⑤）。Host 只发 APNs 的 loc-key（= titleKey），iOS 在 app 包里的
+ * Localizable.strings 查正文；包里没有这张表时系统把 key 原样当正文——build 40 真机横幅写着 task_complete。
+ * 文案全部取自 src/i18n（text 与 failedLine 由 build-ios 传入），这里只把 Host 的 titleKey 对到文案上。
+ * 只有构建脚本用，所以放脚本侧，不从 i18n 导出。推送里不带失败码，失败只能给通用原因；具体原因在会话里那次执行下面。
+ */
+export function pushAlertStrings(text, failedLine) {
+  return { task_complete: text.complete, task_stopped: text.stopped, task_failed: failedLine, approval_needed: text.approval };
+}
+
 /** Apple .strings 表：每行 "key" = "value";，引号、反斜杠、换行转义。 */
 export function localizableStrings(entries) {
   const quote = value => `"${String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n')}"`;

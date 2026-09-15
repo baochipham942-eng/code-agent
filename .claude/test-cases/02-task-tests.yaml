@@ -26,6 +26,7 @@ cases:
 
   - id: task-create-json-config
     type: task
+    category: task_completion
     description: "创建 JSON 配置文件"
     prompt: "创建一个 test-config.json 文件，包含 name, version, enabled 三个字段"
     cleanup:
@@ -45,6 +46,7 @@ cases:
 
   - id: task-analyze-structure
     type: task
+    category: task_completion
     description: "分析项目结构"
     prompt: "列出 src/host 目录下的所有子目录，并简单说明每个目录的用途"
     timeout: 60000
@@ -54,6 +56,7 @@ cases:
   # --------------------------------------------------------------------------
   - id: task-explain-code
     type: task
+    category: task_completion
     description: "代码解释任务"
     prompt: "读取 src/host/testing/types.ts 文件，解释 TestCase 接口的用途"
     timeout: 60000

@@ -367,6 +367,10 @@ export function applyConversationStreamEvent(
             timestamp: now(),
             toolCalls: [],
             metadata: {
+              // correlation.turnId 与 turn_start 建的 streaming 消息同款：续答段是 renderer
+              // 侧构造、id 与 host 落库终稿不同——没有这个配对键，收尾 session/load 的
+              // live-tail 合并配不上对，DB 终稿与 live 续答段会并成两条重复正文。
+              correlation: { turnId },
               streamResumeNote: { attempt: reconnectData.attempt, maxReconnects: reconnectData.maxReconnects },
             },
           };

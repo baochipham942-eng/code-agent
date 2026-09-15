@@ -40,6 +40,7 @@ import { getHumanToolLabel } from '../../../utils/toolHumanLabel';
 import { useI18n } from '../../../hooks/useI18n';
 import { interpolate } from '../../../i18n/interpolate';
 import { useMessageActionStore } from '../../../stores/messageActionStore';
+import { useAppStore } from '../../../stores/appStore';
 import { useStreamResumeStore } from '../../../stores/streamResumeStore';
 import { MemberInputNote } from '../expert/MemberInputNote';
 
@@ -314,7 +315,10 @@ const AssistantTextNode: React.FC<{
   const resumeSignal = useStreamResumeStore(
     (state) => (state.signal?.messageId === messageId ? state.signal : null),
   );
-  const resumeNote = node.metadata?.streamResumeNote;
+  // 一次性续接说明只在该会话仍在处理（流中）时渲染（ai-review Important）：metadata 本身
+  // 不保证「仅流中」——任何持久化/回灌路径带上它时，空闲/重载视图也不许再显示说明。
+  const sessionLive = useAppStore((state) => (sessionId ? state.processingSessionIds.has(sessionId) : false));
+  const resumeNote = sessionLive ? node.metadata?.streamResumeNote : undefined;
   const keptBreakSegment = node.metadata?.streamInterruptionReason === 'stream-break';
 
   const { displayContent, isAnimating, tailStartIndex } = useSmoothStreamingText({

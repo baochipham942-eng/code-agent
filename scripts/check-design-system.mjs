@@ -21,6 +21,10 @@
 //                             现存债务以棘轮锁住；`ds-allow:color` 豁免
 //   9. theme-blind-white-hover-foreground: 禁无主题分支的 hover:text-white；固定深色背景
 //                             必须用 `ds-allow:color` 写明理由
+//  10. sticky-in-padded-scroller: 禁 `sticky top-*` 元素的最近 overflow 滚动祖先带上内边距
+//                             （pt-*/py-*）——sticky 贴的是内容区顶，内边距会在容器顶留一条带子，
+//                             滚上来的行从带子里透出（09-15 题库表 FB-162 实付）。本条额外扫
+//                             packages/internal/*/src/renderer；`ds-allow:sticky` 豁免
 //
 // 对比度断言（默认门已 enforce，--contrast 看明细）：四套主题按各自真实用法场景
 // 核对 WCAG ≥4.5:1。2026-07-02 产品负责人拍板方案 A：dark/light brand 加深至
@@ -41,6 +45,12 @@ import { fileURLToPath } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
 const SCAN_ROOT = join(ROOT, 'src/renderer');
+// 规则 10 额外扫描内部插件的 renderer（评测中心等），它们不在 src/renderer 下
+const INTERNAL_RENDERER_ROOTS = existsSync(join(ROOT, 'packages/internal'))
+  ? readdirSync(join(ROOT, 'packages/internal'))
+    .map((name) => join(ROOT, 'packages/internal', name, 'src/renderer'))
+    .filter((dir) => existsSync(dir))
+  : [];
 const BASELINE_PATH = join(__dirname, 'design-system-baseline.json');
 
 // 契约 §5 自动豁免：数据可视化豁免目录（这些路径下的 hex 不计违规）
@@ -82,6 +92,40 @@ const THEME_BLIND_BRIGHT_FOREGROUND_PALETTE_EXEMPTIONS = new Set([
 export const LOCAL_DISPLAY_PRIMITIVE_RE = /\b(?:const|function)\s+(?:EmptyState|Badge)\b/;
 
 const ZINDEX_ALLOWLIST_PATH = join(__dirname, 'design-system-zindex-allowlist.json');
+
+const STICKY_RE = /\bsticky\b[^"'`}]*\btop-/;
+const SCROLLER_RE = /\boverflow-(?:auto|scroll|y-auto|y-scroll)\b/;
+const TOP_PADDING_RE = /\bp[ty]-(?:\d|\[|px)/;
+
+function indentOf(line) {
+  return line.length - line.trimStart().length;
+}
+
+/**
+ * 规则 10：`sticky top-*` 元素往上找最近的、缩进更浅的 overflow 滚动容器，
+ * 它的 className 带 pt-N / py-N 即违规。按 JSX 缩进近似祖先关系（同一文件内）。
+ */
+export function findStickyInPaddedScrollerViolations(lines, rel) {
+  const out = [];
+  lines.forEach((line, i) => {
+    if (!STICKY_RE.test(line) || isAllowed(line, ['sticky'])) return;
+    const indent = indentOf(line);
+    for (let j = i - 1; j >= 0; j--) {
+      const prev = lines[j];
+      if (!prev.trim()) continue;
+      if (indentOf(prev) >= indent) continue;
+      if (!SCROLLER_RE.test(prev)) {
+        if (indentOf(prev) === 0) break;
+        continue;
+      }
+      if (TOP_PADDING_RE.test(prev) && !isAllowed(prev, ['sticky'])) {
+        out.push(`${rel}:${i + 1} 滚动容器 ${rel}:${j + 1} 带上内边距`);
+      }
+      break;
+    }
+  });
+  return out;
+}
 
 function isAllowed(line, kinds) {
   for (const k of kinds) if (line.includes('ds-allow:' + k)) return true;
@@ -184,7 +228,16 @@ export function scan(scanRoot = SCAN_ROOT) {
     'theme-blind-bright-foreground': [],
     'theme-blind-white-hover-foreground': [],
     'stale-zindex-allowlist': [],
+    'sticky-in-padded-scroller': [],
   };
+  for (const root of [scanRoot, ...INTERNAL_RENDERER_ROOTS]) {
+    for (const file of walk(root)) {
+      const rel = relative(ROOT, file);
+      violations['sticky-in-padded-scroller'].push(
+        ...findStickyInPaddedScrollerViolations(readFileSync(file, 'utf8').split('\n'), rel),
+      );
+    }
+  }
   let brightForegroundTargetCount = 0;
   // 裸 z-index 用法先收集（file+value），扫完后与 allowlist 双向核对
   const zUsages = [];

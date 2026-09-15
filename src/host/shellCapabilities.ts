@@ -52,6 +52,7 @@ import { TeamSchemas } from '../shared/ipc/schemas/team';
 import { CaptureSchemas } from '../shared/ipc/schemas/capture';
 import { AgentRegistrySchemas } from '../shared/ipc/schemas/agentRegistry';
 import { LivePreviewSchemas } from '../shared/ipc/schemas/livePreview';
+import { UpdateSchemas } from '../shared/ipc/schemas/update';
 
 const DEFAULT_SINCE_VERSION = '0.16.93';
 
@@ -242,18 +243,8 @@ const CAPABILITY_DOMAIN_ACTIONS = {
   [IPC_DOMAINS.TERMINAL]: TerminalSchemas.ACTIONS,
   // team 域：派生自 schema action 集合（== team 表 keys，parity 门三面对账），手工清单已删
   [IPC_DOMAINS.TEAM]: TeamSchemas.ACTIONS,
-  [IPC_DOMAINS.UPDATE]: [
-    'check',
-    'download',
-    'getInfo',
-    'openFile',
-    'openUrl',
-    'prepareRuntimeAssets',
-    'rendererBundleStatus',
-    'runtimeAssetsStatus',
-    'startAutoCheck',
-    'stopAutoCheck',
-  ],
+  // update 域：派生自 schema action 集合（== update 表 keys，parity 门三面对账），手工清单已删
+  [IPC_DOMAINS.UPDATE]: UpdateSchemas.ACTIONS,
   // window 域：派生自 schema action 集合（== window 表 keys，parity 门三面对账）
   [IPC_DOMAINS.WINDOW]: WindowSchemas.ACTIONS,
   // workspace 域：派生自 schema action 集合（== workspace 表 keys，parity 门三面对账），手工清单已删

@@ -1,0 +1,20 @@
+[Unit]
+Description=Agent Neo companion relay
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=neorelay
+Group=neorelay
+EnvironmentFile=/etc/neo-relay/relay.env
+ExecStart=/usr/local/bin/node /opt/neo-relay/neo-companion-relay.cjs
+Restart=always
+RestartSec=2
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+
+[Install]
+WantedBy=multi-user.target

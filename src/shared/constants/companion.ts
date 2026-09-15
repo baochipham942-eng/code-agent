@@ -16,6 +16,10 @@ const FILE_EXT_MIME = {
 export type CompanionFileMime = (typeof FILE_EXT_MIME)[keyof typeof FILE_EXT_MIME];
 
 const FILE_CHUNK_BYTES = 24 * 1024;
+const MAX_FRAME_BYTES = 65_535;
+const MAX_REQUEST_RECORDS = 32;
+/** relay WS 层入站上限在 schema 密文上限之上的信封 JSON 余量。 */
+const RELAY_WIRE_HEADROOM_BYTES = 2_048;
 
 /** Apple Push endpoint hosts. Selected by NEO_APNS_ENV at provider start. */
 export const COMPANION_APNS = {
@@ -46,10 +50,10 @@ export const COMPANION_LIMITS = {
   maxChannels: 32,
   maxHandshakes: 8,
   maxFrames: 10_000,
-  maxFrameBytes: 65_535,
+  maxFrameBytes: MAX_FRAME_BYTES,
   maxPayloadBytes: 60_000,
   maxMessageRecords: 64,
-  maxRequestRecords: 32,
+  maxRequestRecords: MAX_REQUEST_RECORDS,
   voiceBase64Limit: 1_800_000,
   /** One PCM16 16 kHz mono frame over Noise; ~1s of audio. Host rejects larger. */
   voicePcmBase64Limit: 48_000,
@@ -109,6 +113,12 @@ export const COMPANION_LIMITS = {
   relayConnectTimeoutMs: 10_000,
   relaySeqHold: 16,
   relayAuthLength: 16,
+  /** relay 服务端：单条 WS 入站帧的字节上限（schema 密文上限 + 信封余量）。 */
+  relayMaxWireFrameBytes: MAX_FRAME_BYTES * MAX_REQUEST_RECORDS + RELAY_WIRE_HEADROOM_BYTES,
+  /** relay 服务端：并发 route（token）上限，超出的新注册直接丢弃。 */
+  relayMaxRoutes: 256,
+  /** relay 服务端：过期 route / 空闲连接清扫周期。 */
+  relaySweepMs: 15_000,
 } as const;
 
 const RETRYABLE_FILE_CODES = new Set([

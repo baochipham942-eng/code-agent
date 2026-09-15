@@ -1,0 +1,14 @@
+{
+  "name": "@code-agent/relay",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Standalone companion relay service for Agent Neo (deploys behind a TLS reverse proxy)",
+  "type": "module",
+  "bin": {
+    "neo-companion-relay": "../../dist/relay/neo-companion-relay.cjs"
+  },
+  "scripts": {
+    "build": "npm --prefix ../.. run build:relay",
+    "start": "node ../../dist/relay/neo-companion-relay.cjs"
+  }
+}

@@ -4,7 +4,9 @@
 
 import fs from 'fs/promises';
 import type { IpcMain } from '../platform';
-import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
+import type { DomainRouteHandlers } from '../../shared/ipc/domainRoutes';
+import { McpSchemas, type McpDomainRequest } from '../../shared/ipc/schemas/mcp';
+import { defineDomainRoutes, installDomainRoutes } from './domainRoutes/registry';
 import {
   getMCPClient,
   isHttpStreamableConfig,
@@ -636,114 +638,110 @@ async function handleRefreshFromCloud(): Promise<void> {
 // ----------------------------------------------------------------------------
 
 /**
+ * mcp 域单源路由表（RQ-183 续作·MCP 刀）：原 domain switch 12 个以「data = …; break;」收尾的 case 由脚本平移为默认模式
+ * handler（data= 前的语句原样保留，data= 改 return）；`options` 改走装配 ctx。未知 action 用装配器缺省（INVALID_ACTION
+ * `Unknown action: <action>`，与原文逐字一致）。抛错 code 判定链原样进 resolveErrorCode：McpInstallInProgressError →
+ * 其 code（INSTALL_IN_PROGRESS）、AbortError → CANCELLED、其余 INTERNAL_ERROR；message 由装配器取 Error.message /
+ * String(error)，与原 catch 一致。请求体为 null / 非对象时，原实现在 try 外解构抛错（IPC reject），现返回 INVALID_ACTION。
+ */
+const mcpHandlers: DomainRouteHandlers<McpDomainRequest, RegisterMcpHandlersOptions> = {
+  getStatus: async (_ctx, _requestPayload) => {
+    return await handleGetStatus();
+  },
+  getCatalog: async (_ctx, _requestPayload) => {
+    // MCP 推荐目录（云端下发优先，内置兜底）
+    return getCloudConfigService().getMcpCatalog();
+  },
+  listTools: async (_ctx, _requestPayload) => {
+    return await handleListTools();
+  },
+  listResources: async (_ctx, _requestPayload) => {
+    return await handleListResources();
+  },
+  getServerStates: async (_ctx, _requestPayload) => {
+    return await handleGetServerStates();
+  },
+  addServer: async (ctx, requestPayload) => {
+    const payload = asRecord(requestPayload, 'payload');
+    const scope = readMcpSettingsServerScope(payload.scope);
+    const workingDirectory = ctx.getWorkingDirectory?.();
+    if (scope === 'project' && !workingDirectory) {
+      throw new Error('Working directory is unavailable');
+    }
+    const config = asRecord(payload.config ?? payload, 'config');
+    const serverName = readRequiredString(config, 'name', 'Server name is required');
+    return await runMcpInstall(
+      serverName,
+      (signal) => handleAddServer(payload, workingDirectory, scope, signal),
+    );
+  },
+  cancelServerInstall: async (_ctx, requestPayload) => {
+    const payload = requestPayload as { serverName: string };
+    const controller = activeMcpInstalls.get(payload.serverName);
+    if (controller) {
+      controller.abort(new DOMException('MCP server installation cancelled', 'AbortError'));
+    }
+    return { cancelled: Boolean(controller) };
+  },
+  removeServer: async (ctx, requestPayload) => {
+    const payload = requestPayload as { serverName: string };
+    await handleRemoveServer(payload.serverName, ctx.getWorkingDirectory?.());
+    return { success: true };
+  },
+  setServerEnabled: async (ctx, requestPayload) => {
+    const payload = requestPayload as { serverName: string; enabled: boolean };
+    if (payload.enabled) {
+      await runMcpInstall(
+        payload.serverName,
+        (signal) => handleSetServerEnabled(
+          payload.serverName,
+          true,
+          ctx.getWorkingDirectory?.(),
+          signal,
+        ),
+      );
+    } else {
+      await handleSetServerEnabled(
+        payload.serverName,
+        false,
+        ctx.getWorkingDirectory?.(),
+      );
+    }
+    return { success: true };
+  },
+  reconnectServer: async (_ctx, requestPayload) => {
+    const payload = requestPayload as { serverName: string };
+    return await handleReconnectServer(payload.serverName);
+  },
+  signOutServer: async (_ctx, requestPayload) => {
+    const payload = requestPayload as { serverName: string };
+    return await handleSignOutServer(payload.serverName);
+  },
+  refreshFromCloud: async (_ctx, _requestPayload) => {
+    await handleRefreshFromCloud();
+    return { success: true };
+  },
+};
+
+const mcpRoutes = defineDomainRoutes<McpDomainRequest, RegisterMcpHandlersOptions>(McpSchemas.REQUEST, mcpHandlers, {
+  resolveErrorCode: (error) => (
+    error instanceof McpInstallInProgressError
+      ? error.code
+      : isAbortError(error)
+        ? 'CANCELLED'
+        : undefined
+  ),
+});
+
+/**
  * 注册 MCP 相关 IPC handlers
  */
 export function registerMcpHandlers(ipcMain: IpcMain, options: RegisterMcpHandlersOptions = {}): void {
-  // ========== New Domain Handler (TASK-04) ==========
-  ipcMain.handle(IPC_DOMAINS.MCP, async (_, request: IPCRequest): Promise<IPCResponse> => {
-    const { action } = request;
-
-    try {
-      let data: unknown;
-
-      switch (action) {
-        case 'getStatus':
-          data = await handleGetStatus();
-          break;
-        case 'getCatalog':
-          // MCP 推荐目录（云端下发优先，内置兜底）
-          data = getCloudConfigService().getMcpCatalog();
-          break;
-        case 'listTools':
-          data = await handleListTools();
-          break;
-        case 'listResources':
-          data = await handleListResources();
-          break;
-        case 'getServerStates':
-          data = await handleGetServerStates();
-          break;
-        case 'addServer': {
-          const payload = asRecord(request.payload, 'payload');
-          const scope = readMcpSettingsServerScope(payload.scope);
-          const workingDirectory = options.getWorkingDirectory?.();
-          if (scope === 'project' && !workingDirectory) {
-            throw new Error('Working directory is unavailable');
-          }
-          const config = asRecord(payload.config ?? payload, 'config');
-          const serverName = readRequiredString(config, 'name', 'Server name is required');
-          data = await runMcpInstall(
-            serverName,
-            (signal) => handleAddServer(payload, workingDirectory, scope, signal),
-          );
-          break;
-        }
-        case 'cancelServerInstall': {
-          const payload = request.payload as { serverName: string };
-          const controller = activeMcpInstalls.get(payload.serverName);
-          if (controller) {
-            controller.abort(new DOMException('MCP server installation cancelled', 'AbortError'));
-          }
-          data = { cancelled: Boolean(controller) };
-          break;
-        }
-        case 'removeServer': {
-          const payload = request.payload as { serverName: string };
-          await handleRemoveServer(payload.serverName, options.getWorkingDirectory?.());
-          data = { success: true };
-          break;
-        }
-        case 'setServerEnabled': {
-          const payload = request.payload as { serverName: string; enabled: boolean };
-          if (payload.enabled) {
-            await runMcpInstall(
-              payload.serverName,
-              (signal) => handleSetServerEnabled(
-                payload.serverName,
-                true,
-                options.getWorkingDirectory?.(),
-                signal,
-              ),
-            );
-          } else {
-            await handleSetServerEnabled(
-              payload.serverName,
-              false,
-              options.getWorkingDirectory?.(),
-            );
-          }
-          data = { success: true };
-          break;
-        }
-        case 'reconnectServer': {
-          const payload = request.payload as { serverName: string };
-          data = await handleReconnectServer(payload.serverName);
-          break;
-        }
-        case 'signOutServer': {
-          const payload = request.payload as { serverName: string };
-          data = await handleSignOutServer(payload.serverName);
-          break;
-        }
-        case 'refreshFromCloud':
-          await handleRefreshFromCloud();
-          data = { success: true };
-          break;
-        default:
-          return { success: false, error: { code: 'INVALID_ACTION', message: `Unknown action: ${action}` } };
-      }
-
-      return { success: true, data };
-    } catch (error) {
-      const code = error instanceof McpInstallInProgressError
-        ? error.code
-        : isAbortError(error)
-          ? 'CANCELLED'
-          : 'INTERNAL_ERROR';
-      return { success: false, error: { code, message: error instanceof Error ? error.message : String(error) } };
-    }
-  });
+  installDomainRoutes(ipcMain, mcpRoutes, options);
 
   // ========== Legacy Handlers (Deprecated) ==========
 
 }
+
+// 表挂装配函数对象上供 parity 门枚举（同 registerMemoryHandlers.routes 先例）
+registerMcpHandlers.routes = mcpRoutes;

@@ -4,7 +4,8 @@
 
 import type { IpcMain, AppWindow } from '../platform';
 import { dialog } from '../platform';
-import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
+import { WorkspaceSchemas, type WorkspaceDomainRequest } from '../../shared/ipc/schemas/workspace';
+import { defineDomainRoutes, installDomainRoutes } from './domainRoutes/registry';
 import { IPC_CHANNELS } from '../../shared/ipc/legacy-channels';
 import { handleSaveTextToDownloads, handleSaveBinaryToDownloads } from './workspaceSaveExport';
 import { htmlToPdf, imageToPdf } from '../services/design/pdfExport';
@@ -88,7 +89,7 @@ import {
 
 
 // 设计媒介生成 handlers（出图/参考图/标注重绘/导入/局部重绘/扩图/去水印/视频）
-// 已抽到 ./workspaceDesignMedia.ipc.ts，此处接回 registerWorkspaceHandlers 的 switch。
+// 已抽到 ./workspaceDesignMedia.ipc.ts，此处接回 workspace 域路由表（workspaceRoutes）。
 import {
   handleResolveDesignDir,
   handleGenerateDesignImage,
@@ -817,6 +818,340 @@ async function resolveUserBrowserWorkspace(
 // Public Registration
 // ----------------------------------------------------------------------------
 
+interface WorkspaceRouteCtx {
+  getMainWindow: () => AppWindow | null;
+  getAppService: () => AgentApplicationService | null;
+  getConfigService: () => ConfigService | null;
+  getUserBrowserLinks: () => Pick<
+    UserBrowserLinkService,
+    'open' | 'end' | 'history' | 'dispatchUserInput' | 'setViewport'
+  >;
+}
+
+/**
+ * workspace 域单源路由表（RQ-183 续作·WORKSPACE 刀）：原 domain switch 69 个 case 由脚本逐 case 平移（`data = X; break;`
+ * → `return X;`，case 体其余原文只改缩进）；shareLink 五件套原 fallthrough 拆成五个 handler 各自带 action 委派；ctx 打包
+ * 注册时注入的四个 getter，handler 只解构用到的。未知 action → INVALID_ACTION `Unknown action: <action>`、抛错 →
+ * INTERNAL_ERROR（Error 取 message、非 Error 取 String(error)），均为装配器缺省。请求体为 null / 非对象时，原实现在
+ * try 外解构抛错（IPC 调用 reject），现返回 INVALID_ACTION。
+ */
+const workspaceRoutes = defineDomainRoutes<WorkspaceDomainRequest, WorkspaceRouteCtx>(WorkspaceSchemas.REQUEST, {
+  selectDirectory: async ({ getMainWindow, getAppService, getConfigService }, _payload) => {
+    return await handleSelectDirectory(getMainWindow, getAppService, getConfigService);
+  },
+  getCurrent: async ({ getAppService }, _payload) => {
+    return await handleGetCurrent(getAppService);
+  },
+  setCurrent: async ({ getMainWindow, getAppService, getConfigService }, payload) => {
+    return await handleSetCurrent(payload as { dir: string | null | undefined }, getAppService, getMainWindow, getConfigService);
+  },
+  listRecent: async ({ getConfigService }, _payload) => {
+    return await handleListRecent(getConfigService);
+  },
+  listVisualImageModels: async ({ getConfigService }, _payload) => {
+    return await handleListVisualImageModels(
+      () => getConfigService()?.getSettings() ?? null,
+      (p) => { try { return !!getSecureStorage().getApiKey(p); } catch { return false; } },
+    );
+  },
+  listCustomImageModels: async (_ctx, _payload) => {
+    return await handleListCustomImageModels();
+  },
+  saveCustomImageModel: async (_ctx, payload) => {
+    return await handleSaveCustomImageModel(
+      payload as { label: string; baseUrl: string; modelName: string; costCnyPerImage?: number; apiKey: string },
+    );
+  },
+  deleteCustomImageModel: async (_ctx, payload) => {
+    return await handleDeleteCustomImageModel(payload as { id: string });
+  },
+  listCustomVideoModels: async (_ctx, _payload) => {
+    return await handleListCustomVideoModels();
+  },
+  saveCustomVideoModel: async (_ctx, payload) => {
+    return await handleSaveCustomVideoModel(
+      payload as { label: string; baseUrl: string; modelName: string; costCnyPerVideo?: number; apiKey: string },
+    );
+  },
+  deleteCustomVideoModel: async (_ctx, payload) => {
+    return await handleDeleteCustomVideoModel(payload as { id: string });
+  },
+  getDesignSettings: async (_ctx, _payload) => {
+    return await handleGetDesignSettings();
+  },
+  updateDesignSettings: async (_ctx, payload) => {
+    return await handleUpdateDesignSettings(payload as Partial<DesignSettings>);
+  },
+  removeRecent: async ({ getConfigService }, payload) => {
+    return await handleRemoveRecent(payload as { dir: string | null | undefined }, getConfigService);
+  },
+  listFiles: async (_ctx, payload) => {
+    return await handleListFiles(payload as { dirPath: string });
+  },
+  findFile: async (_ctx, payload) => {
+    return await handleFindFile(payload as { dirPath: string; name: string });
+  },
+  readFile: async (_ctx, payload) => {
+    return await handleReadFile(payload as { filePath: string });
+  },
+  readBinary: async (_ctx, payload) => {
+    return await handleReadBinary(payload as { filePath: string });
+  },
+  getFileMetadata: async (_ctx, payload) => {
+    return await handleGetFileMetadata(payload as { filePath: string });
+  },
+  getPublishInfo: async (_ctx, payload) => {
+    const { filePath } = payload as { filePath: string };
+    return {
+      publishState: getPublishState(filePath),
+      publishedVersions: listPublishedVersions(filePath),
+    };
+  },
+  publishVersion: async (_ctx, payload) => {
+    const publishPayload = payload as { filePath: string; note?: string };
+    const publishedVersion = publishVersion(publishPayload.filePath, publishPayload.note);
+    const data = {
+      publishedVersion,
+      publishState: getPublishState(publishPayload.filePath),
+      publishedVersions: listPublishedVersions(publishPayload.filePath),
+    };
+    const shareInfo = getShareLink(publishPayload.filePath);
+    if (shareInfo.share && !shareInfo.share.revokedAt) {
+      void pushLatestToShareLink(publishPayload.filePath).catch(() => undefined);
+    }
+    return data;
+  },
+  getShareLink: (_ctx, payload) => handleWorkspaceShareLinkAction('getShareLink', payload),
+  createShareLink: (_ctx, payload) => handleWorkspaceShareLinkAction('createShareLink', payload),
+  updateShareLinkTtl: (_ctx, payload) => handleWorkspaceShareLinkAction('updateShareLinkTtl', payload),
+  pushShareLink: (_ctx, payload) => handleWorkspaceShareLinkAction('pushShareLink', payload),
+  revokeShareLink: (_ctx, payload) => handleWorkspaceShareLinkAction('revokeShareLink', payload),
+  writeFile: async (_ctx, payload) => {
+    return await handleWriteFile(payload as { filePath: string; content: string });
+  },
+  saveTextToDownloads: async (_ctx, payload) => {
+    return await handleSaveTextToDownloads(payload as { fileName: string; content: string });
+  },
+  saveBinaryToDownloads: async (_ctx, payload) => {
+    return await handleSaveBinaryToDownloads(payload as { fileName: string; base64: string });
+  },
+  exportPrototypePdf: async (_ctx, payload) => {
+    return await handleExportPrototypePdf(payload as { html: string; outputName: string });
+  },
+  exportImagePdf: async (_ctx, payload) => {
+    return await handleExportImagePdf(
+      payload as { imagePath?: string; dataUrl?: string; outputName: string },
+    );
+  },
+  exportCanvasPptx: async (_ctx, payload) => {
+    return await handleExportCanvasPptx(
+      payload as { images?: Array<{ imagePath?: string; dataUrl?: string }>; outputName: string },
+    );
+  },
+  generateSlidesDeck: async (_ctx, payload) => {
+    return await handleGenerateSlidesDeck(payload as GenerateSlidesDeckPayload);
+  },
+  generateSlidesOutline: async (_ctx, payload) => {
+    return await handleGenerateSlidesOutline(payload as GenerateSlidesOutlinePayload);
+  },
+  generateSlidesPreview: async (_ctx, payload) => {
+    return await handleGenerateSlidesPreview(payload as GenerateSlidesPreviewPayload);
+  },
+  createFile: async (_ctx, payload) => {
+    return await handleCreateFile(payload as { filePath: string; content?: string });
+  },
+  createFolder: async (_ctx, payload) => {
+    return await handleCreateFolder(payload as { dirPath: string });
+  },
+  openPath: async ({ getAppService }, payload) => {
+    return await handleOpenPath(payload as { filePath: string }, getAppService);
+  },
+  openExternal: async (_ctx, payload) => {
+    return await handleOpenExternal(payload as { url: string });
+  },
+  openLinkInRail: async ({ getUserBrowserLinks }, payload) => {
+    // 空态自动建会话后 renderer 可能还没拿到 cwd：workspace 缺失时按会话解析，
+    // 再兜底默认 work 目录（2026-08-05 产品负责人：浏览器空态输网址应直接可用）。
+    const linkPayload = payload as { conversationId: string; url: string; workspace?: string };
+    return await getUserBrowserLinks().open({
+      conversationId: linkPayload.conversationId,
+      url: linkPayload.url,
+      workspace: await resolveUserBrowserWorkspace(
+        linkPayload.conversationId,
+        linkPayload.workspace,
+      ),
+    });
+  },
+  controlUserBrowserHistory: async ({ getUserBrowserLinks }, payload) => {
+    // 与 openLinkInRail 同兜底：快速对话 workingDirectory 为空时不能卡死后退/刷新
+    // （R2 真机：导航成功但 history 因 workspace 必填静默失败）。
+    const historyPayload = payload as {
+      conversationId: string;
+      workspace?: string;
+      action: 'back' | 'forward' | 'reload';
+    };
+    return await getUserBrowserLinks().history({
+      conversationId: historyPayload.conversationId,
+      workspace: await resolveUserBrowserWorkspace(
+        historyPayload.conversationId,
+        historyPayload.workspace,
+      ),
+      action: historyPayload.action,
+    });
+  },
+  dispatchUserBrowserInput: async ({ getUserBrowserLinks }, payload) => {
+    // 与 openLinkInRail 同兜底：画面透传不能要求用户先绑工作区
+    // （R2 真机：stage 可交互但 client/host 因空 workspace 零 dispatch）。
+    const inputPayload = payload as {
+      conversationId: string;
+      workspace?: string;
+      input: unknown;
+    };
+    return await getUserBrowserLinks().dispatchUserInput({
+      conversationId: inputPayload.conversationId,
+      workspace: await resolveUserBrowserWorkspace(
+        inputPayload.conversationId,
+        inputPayload.workspace,
+      ),
+      input: inputPayload.input,
+    });
+  },
+  setUserBrowserViewport: async ({ getUserBrowserLinks }, payload) => {
+    // R4：stage CSS 尺寸跟随 → setViewport；workspace 与 open/dispatch 同兜底。
+    const viewportPayload = payload as {
+      conversationId: string;
+      workspace?: string;
+      width: number;
+      height: number;
+    };
+    return await getUserBrowserLinks().setViewport({
+      conversationId: viewportPayload.conversationId,
+      workspace: await resolveUserBrowserWorkspace(
+        viewportPayload.conversationId,
+        viewportPayload.workspace,
+      ),
+      width: viewportPayload.width,
+      height: viewportPayload.height,
+    });
+  },
+  closeLinkInRail: async ({ getUserBrowserLinks }, payload) => {
+    const closePayload = payload as { conversationId: string; reason?: 'user' | 'session-switch' };
+    return await getUserBrowserLinks().end(
+      closePayload.conversationId,
+      closePayload.reason || 'user',
+    );
+  },
+  showItemInFolder: async ({ getAppService }, payload) => {
+    return await handleShowItemInFolder(payload as { filePath: string }, getAppService);
+  },
+  downloadFile: async (_ctx, payload) => {
+    return await handleDownloadFile(payload as { url: string; filename?: string });
+  },
+  exportBundle: async ({ getAppService }, payload) => {
+    return await handleExportBundle(payload as WorkspaceExportBundlePayload, getAppService);
+  },
+  inspectArchive: async (_ctx, payload) => {
+    return await handleInspectArchive(payload as { filePath: string; limit?: number });
+  },
+  inspectPresentation: async (_ctx, payload) => {
+    return await handleInspectPresentation(payload as { filePath: string; limit?: number });
+  },
+  previewPresentation: async (_ctx, payload) => {
+    return await handlePreviewPresentation(payload as { filePath: string });
+  },
+  getDesignMdSummary: async (_ctx, payload) => {
+    return await handleGetDesignMdSummary(payload as { cwd?: string | null });
+  },
+  getConfigScope: async ({ getAppService }, payload) => {
+    return await handleGetConfigScope(payload as { workingDirectory?: string | null } | undefined, getAppService);
+  },
+  resolveDesignDir: async (_ctx, _payload) => {
+    return await handleResolveDesignDir();
+  },
+  generateDesignImage: async ({ getConfigService }, payload) => {
+    return await handleGenerateDesignImage(
+      payload as { prompt: string; aspectRatio?: string; outputPath: string; model?: string },
+      () => getConfigService()?.getSettings() ?? null,
+    );
+  },
+  editDesignImage: async (_ctx, payload) => {
+    return await handleEditDesignImage(
+      payload as { prompt: string; baseImagePath: string; maskDataUrl: string; outputPath: string },
+    );
+  },
+  editImageByAnnotation: async (_ctx, payload) => {
+    return await handleEditImageByAnnotation(
+      payload as { model: string; annotatedImageDataUrl: string; instruction: string; outputPath: string },
+    );
+  },
+  importDesignImage: async (_ctx, payload) => {
+    return await handleImportDesignImage(payload as { dataUrl: string; outputPath: string });
+  },
+  importDesignImageFromPath: async ({ getAppService }, payload) => {
+    // 会话级 cwd 也要进允许名单：快速对话的图产物在会话工作目录下，
+    // 只认 app 级 cwd 会误拦（2026-08-05「sourcePath 路径越界」真机反馈）。
+    const importPayload = payload as { sourcePath: string; outputPath: string; sessionId?: string };
+    let sessionWorkingDirectory: string | undefined;
+    if (importPayload.sessionId) {
+      const { getSessionManager } = await import('../services/infra/sessionManager');
+      sessionWorkingDirectory = (await getSessionManager().getSession(importPayload.sessionId, 1))?.workingDirectory ?? undefined;
+    }
+    return await handleImportDesignImageFromPath(
+      importPayload,
+      [sessionWorkingDirectory, getAppService()?.getWorkingDirectory()],
+    );
+  },
+  expandDesignImage: async (_ctx, payload) => {
+    return await handleExpandDesignImage(
+      payload as ExpandDesignImagePayload,
+    );
+  },
+  removeWatermarkDesignImage: async (_ctx, payload) => {
+    return await handleRemoveWatermarkDesignImage(
+      payload as { baseImagePath: string; outputPath: string; prompt?: string },
+    );
+  },
+  generateDesignVideo: async ({ getConfigService }, payload) => {
+    return await handleGenerateDesignVideo(
+      payload as { mode: 't2v' | 'i2v'; prompt?: string; baseImagePath?: string; outputPath: string; model: string; durationSec?: number },
+      () => getConfigService()?.getSettings() ?? null,
+    );
+  },
+  generateDesignMusic: async ({ getConfigService }, payload) => {
+    return await handleGenerateDesignMusic(
+      payload as { prompt?: string; lyrics?: string; outputPath: string; model: string },
+      () => getConfigService()?.getSettings() ?? null,
+    );
+  },
+  listVisualVideoModels: async ({ getConfigService }, _payload) => {
+    return await handleListVisualVideoModels(
+      () => getConfigService()?.getSettings() ?? null,
+      (p) => { try { return !!getSecureStorage().getApiKey(p); } catch { return false; } },
+    );
+  },
+  listVisualMusicModels: async ({ getConfigService }, _payload) => {
+    return await handleListVisualMusicModels(
+      () => getConfigService()?.getSettings() ?? null,
+      (p) => { try { return !!getSecureStorage().getApiKey(p); } catch { return false; } },
+    );
+  },
+  listBrands: async (_ctx, _payload) => {
+    return await handleListBrands();
+  },
+  saveBrand: async (_ctx, payload) => {
+    return await handleSaveBrand(payload as { brand: Partial<BrandContract> });
+  },
+  deleteBrand: async (_ctx, payload) => {
+    return await handleDeleteBrand(payload as { id: string });
+  },
+  setActiveBrand: async (_ctx, payload) => {
+    return await handleSetActiveBrand(payload as { id: string | null });
+  },
+  extractBrandFromImage: async (_ctx, payload) => {
+    return await handleExtractBrandFromImage(payload as { dataUrl?: string; imagePath?: string });
+  },
+});
+
 /**
  * 注册 Workspace 相关 IPC handlers
  */
@@ -830,346 +1165,8 @@ export function registerWorkspaceHandlers(
     'open' | 'end' | 'history' | 'dispatchUserInput' | 'setViewport'
   > = getUserBrowserLinkService,
 ): void {
-  // ========== New Domain Handler (TASK-04) ==========
-  ipcMain.handle(IPC_DOMAINS.WORKSPACE, async (_, request: IPCRequest): Promise<IPCResponse> => {
-    const { action, payload } = request;
-
-    try {
-      let data: unknown;
-
-      switch (action) {
-        case 'selectDirectory':
-          data = await handleSelectDirectory(getMainWindow, getAppService, getConfigService);
-          break;
-        case 'getCurrent':
-          data = await handleGetCurrent(getAppService);
-          break;
-        case 'setCurrent':
-          data = await handleSetCurrent(payload as { dir: string | null | undefined }, getAppService, getMainWindow, getConfigService);
-          break;
-        case 'listRecent':
-          data = await handleListRecent(getConfigService);
-          break;
-        case 'listVisualImageModels':
-          data = await handleListVisualImageModels(
-            () => getConfigService()?.getSettings() ?? null,
-            (p) => { try { return !!getSecureStorage().getApiKey(p); } catch { return false; } },
-          );
-          break;
-        case 'listCustomImageModels':
-          data = await handleListCustomImageModels();
-          break;
-        case 'saveCustomImageModel':
-          data = await handleSaveCustomImageModel(
-            payload as { label: string; baseUrl: string; modelName: string; costCnyPerImage?: number; apiKey: string },
-          );
-          break;
-        case 'deleteCustomImageModel':
-          data = await handleDeleteCustomImageModel(payload as { id: string });
-          break;
-        case 'listCustomVideoModels':
-          data = await handleListCustomVideoModels();
-          break;
-        case 'saveCustomVideoModel':
-          data = await handleSaveCustomVideoModel(
-            payload as { label: string; baseUrl: string; modelName: string; costCnyPerVideo?: number; apiKey: string },
-          );
-          break;
-        case 'deleteCustomVideoModel':
-          data = await handleDeleteCustomVideoModel(payload as { id: string });
-          break;
-        case 'getDesignSettings':
-          data = await handleGetDesignSettings();
-          break;
-        case 'updateDesignSettings':
-          data = await handleUpdateDesignSettings(payload as Partial<DesignSettings>);
-          break;
-        case 'removeRecent':
-          data = await handleRemoveRecent(payload as { dir: string | null | undefined }, getConfigService);
-          break;
-        case 'listFiles':
-          data = await handleListFiles(payload as { dirPath: string });
-          break;
-        case 'findFile':
-          data = await handleFindFile(payload as { dirPath: string; name: string });
-          break;
-        case 'readFile':
-          data = await handleReadFile(payload as { filePath: string });
-          break;
-        case 'readBinary':
-          data = await handleReadBinary(payload as { filePath: string });
-          break;
-        case 'getFileMetadata':
-          data = await handleGetFileMetadata(payload as { filePath: string });
-          break;
-        case 'getPublishInfo': {
-          const { filePath } = payload as { filePath: string };
-          data = {
-            publishState: getPublishState(filePath),
-            publishedVersions: listPublishedVersions(filePath),
-          };
-          break;
-        }
-        case 'publishVersion': {
-          const publishPayload = payload as { filePath: string; note?: string };
-          const publishedVersion = publishVersion(publishPayload.filePath, publishPayload.note);
-          data = {
-            publishedVersion,
-            publishState: getPublishState(publishPayload.filePath),
-            publishedVersions: listPublishedVersions(publishPayload.filePath),
-          };
-          const shareInfo = getShareLink(publishPayload.filePath);
-          if (shareInfo.share && !shareInfo.share.revokedAt) {
-            void pushLatestToShareLink(publishPayload.filePath).catch(() => undefined);
-          }
-          break;
-        }
-        case 'getShareLink':
-        case 'createShareLink':
-        case 'updateShareLinkTtl':
-        case 'pushShareLink':
-        case 'revokeShareLink': {
-          data = await handleWorkspaceShareLinkAction(action, payload);
-          break;
-        }
-        case 'writeFile':
-          data = await handleWriteFile(payload as { filePath: string; content: string });
-          break;
-        case 'saveTextToDownloads':
-          data = await handleSaveTextToDownloads(payload as { fileName: string; content: string });
-          break;
-        case 'saveBinaryToDownloads':
-          data = await handleSaveBinaryToDownloads(payload as { fileName: string; base64: string });
-          break;
-        case 'exportPrototypePdf':
-          data = await handleExportPrototypePdf(payload as { html: string; outputName: string });
-          break;
-        case 'exportImagePdf':
-          data = await handleExportImagePdf(
-            payload as { imagePath?: string; dataUrl?: string; outputName: string },
-          );
-          break;
-        case 'exportCanvasPptx':
-          data = await handleExportCanvasPptx(
-            payload as { images?: Array<{ imagePath?: string; dataUrl?: string }>; outputName: string },
-          );
-          break;
-        case 'generateSlidesDeck':
-          data = await handleGenerateSlidesDeck(payload as GenerateSlidesDeckPayload);
-          break;
-        case 'generateSlidesOutline':
-          data = await handleGenerateSlidesOutline(payload as GenerateSlidesOutlinePayload);
-          break;
-        case 'generateSlidesPreview':
-          data = await handleGenerateSlidesPreview(payload as GenerateSlidesPreviewPayload);
-          break;
-        case 'createFile':
-          data = await handleCreateFile(payload as { filePath: string; content?: string });
-          break;
-        case 'createFolder':
-          data = await handleCreateFolder(payload as { dirPath: string });
-          break;
-        case 'openPath':
-          data = await handleOpenPath(payload as { filePath: string }, getAppService);
-          break;
-        case 'openExternal':
-          data = await handleOpenExternal(payload as { url: string });
-          break;
-        case 'openLinkInRail': {
-          // 空态自动建会话后 renderer 可能还没拿到 cwd：workspace 缺失时按会话解析，
-          // 再兜底默认 work 目录（2026-08-05 产品负责人：浏览器空态输网址应直接可用）。
-          const linkPayload = payload as { conversationId: string; url: string; workspace?: string };
-          data = await getUserBrowserLinks().open({
-            conversationId: linkPayload.conversationId,
-            url: linkPayload.url,
-            workspace: await resolveUserBrowserWorkspace(
-              linkPayload.conversationId,
-              linkPayload.workspace,
-            ),
-          });
-          break;
-        }
-        case 'controlUserBrowserHistory': {
-          // 与 openLinkInRail 同兜底：快速对话 workingDirectory 为空时不能卡死后退/刷新
-          // （R2 真机：导航成功但 history 因 workspace 必填静默失败）。
-          const historyPayload = payload as {
-            conversationId: string;
-            workspace?: string;
-            action: 'back' | 'forward' | 'reload';
-          };
-          data = await getUserBrowserLinks().history({
-            conversationId: historyPayload.conversationId,
-            workspace: await resolveUserBrowserWorkspace(
-              historyPayload.conversationId,
-              historyPayload.workspace,
-            ),
-            action: historyPayload.action,
-          });
-          break;
-        }
-        case 'dispatchUserBrowserInput': {
-          // 与 openLinkInRail 同兜底：画面透传不能要求用户先绑工作区
-          // （R2 真机：stage 可交互但 client/host 因空 workspace 零 dispatch）。
-          const inputPayload = payload as {
-            conversationId: string;
-            workspace?: string;
-            input: unknown;
-          };
-          data = await getUserBrowserLinks().dispatchUserInput({
-            conversationId: inputPayload.conversationId,
-            workspace: await resolveUserBrowserWorkspace(
-              inputPayload.conversationId,
-              inputPayload.workspace,
-            ),
-            input: inputPayload.input,
-          });
-          break;
-        }
-        case 'setUserBrowserViewport': {
-          // R4：stage CSS 尺寸跟随 → setViewport；workspace 与 open/dispatch 同兜底。
-          const viewportPayload = payload as {
-            conversationId: string;
-            workspace?: string;
-            width: number;
-            height: number;
-          };
-          data = await getUserBrowserLinks().setViewport({
-            conversationId: viewportPayload.conversationId,
-            workspace: await resolveUserBrowserWorkspace(
-              viewportPayload.conversationId,
-              viewportPayload.workspace,
-            ),
-            width: viewportPayload.width,
-            height: viewportPayload.height,
-          });
-          break;
-        }
-        case 'closeLinkInRail': {
-          const closePayload = payload as { conversationId: string; reason?: 'user' | 'session-switch' };
-          data = await getUserBrowserLinks().end(
-            closePayload.conversationId,
-            closePayload.reason || 'user',
-          );
-          break;
-        }
-        case 'showItemInFolder':
-          data = await handleShowItemInFolder(payload as { filePath: string }, getAppService);
-          break;
-        case 'downloadFile':
-          data = await handleDownloadFile(payload as { url: string; filename?: string });
-          break;
-        case 'exportBundle':
-          data = await handleExportBundle(payload as WorkspaceExportBundlePayload, getAppService);
-          break;
-        case 'inspectArchive':
-          data = await handleInspectArchive(payload as { filePath: string; limit?: number });
-          break;
-        case 'inspectPresentation':
-          data = await handleInspectPresentation(payload as { filePath: string; limit?: number });
-          break;
-        case 'previewPresentation':
-          data = await handlePreviewPresentation(payload as { filePath: string });
-          break;
-        case 'getDesignMdSummary':
-          data = await handleGetDesignMdSummary(payload as { cwd?: string | null });
-          break;
-        case 'getConfigScope':
-          data = await handleGetConfigScope(payload as { workingDirectory?: string | null } | undefined, getAppService);
-          break;
-        case 'resolveDesignDir':
-          data = await handleResolveDesignDir();
-          break;
-        case 'generateDesignImage':
-          data = await handleGenerateDesignImage(
-            payload as { prompt: string; aspectRatio?: string; outputPath: string; model?: string },
-            () => getConfigService()?.getSettings() ?? null,
-          );
-          break;
-        case 'editDesignImage':
-          data = await handleEditDesignImage(
-            payload as { prompt: string; baseImagePath: string; maskDataUrl: string; outputPath: string },
-          );
-          break;
-        case 'editImageByAnnotation':
-          data = await handleEditImageByAnnotation(
-            payload as { model: string; annotatedImageDataUrl: string; instruction: string; outputPath: string },
-          );
-          break;
-        case 'importDesignImage':
-          data = await handleImportDesignImage(payload as { dataUrl: string; outputPath: string });
-          break;
-        case 'importDesignImageFromPath': {
-          // 会话级 cwd 也要进允许名单：快速对话的图产物在会话工作目录下，
-          // 只认 app 级 cwd 会误拦（2026-08-05「sourcePath 路径越界」真机反馈）。
-          const importPayload = payload as { sourcePath: string; outputPath: string; sessionId?: string };
-          let sessionWorkingDirectory: string | undefined;
-          if (importPayload.sessionId) {
-            const { getSessionManager } = await import('../services/infra/sessionManager');
-            sessionWorkingDirectory = (await getSessionManager().getSession(importPayload.sessionId, 1))?.workingDirectory ?? undefined;
-          }
-          data = await handleImportDesignImageFromPath(
-            importPayload,
-            [sessionWorkingDirectory, getAppService()?.getWorkingDirectory()],
-          );
-          break;
-        }
-        case 'expandDesignImage':
-          data = await handleExpandDesignImage(
-            payload as ExpandDesignImagePayload,
-          );
-          break;
-        case 'removeWatermarkDesignImage':
-          data = await handleRemoveWatermarkDesignImage(
-            payload as { baseImagePath: string; outputPath: string; prompt?: string },
-          );
-          break;
-        case 'generateDesignVideo':
-          data = await handleGenerateDesignVideo(
-            payload as { mode: 't2v' | 'i2v'; prompt?: string; baseImagePath?: string; outputPath: string; model: string; durationSec?: number },
-            () => getConfigService()?.getSettings() ?? null,
-          );
-          break;
-        case 'generateDesignMusic':
-          data = await handleGenerateDesignMusic(
-            payload as { prompt?: string; lyrics?: string; outputPath: string; model: string },
-            () => getConfigService()?.getSettings() ?? null,
-          );
-          break;
-        case 'listVisualVideoModels':
-          data = await handleListVisualVideoModels(
-            () => getConfigService()?.getSettings() ?? null,
-            (p) => { try { return !!getSecureStorage().getApiKey(p); } catch { return false; } },
-          );
-          break;
-        case 'listVisualMusicModels':
-          data = await handleListVisualMusicModels(
-            () => getConfigService()?.getSettings() ?? null,
-            (p) => { try { return !!getSecureStorage().getApiKey(p); } catch { return false; } },
-          );
-          break;
-        case 'listBrands':
-          data = await handleListBrands();
-          break;
-        case 'saveBrand':
-          data = await handleSaveBrand(payload as { brand: Partial<BrandContract> });
-          break;
-        case 'deleteBrand':
-          data = await handleDeleteBrand(payload as { id: string });
-          break;
-        case 'setActiveBrand':
-          data = await handleSetActiveBrand(payload as { id: string | null });
-          break;
-        case 'extractBrandFromImage':
-          data = await handleExtractBrandFromImage(payload as { dataUrl?: string; imagePath?: string });
-          break;
-        default:
-          return { success: false, error: { code: 'INVALID_ACTION', message: `Unknown action: ${action}` } };
-      }
-
-      return { success: true, data };
-    } catch (error) {
-      return { success: false, error: { code: 'INTERNAL_ERROR', message: error instanceof Error ? error.message : String(error) } };
-    }
-  });
-
+  installDomainRoutes(ipcMain, workspaceRoutes, { getMainWindow, getAppService, getConfigService, getUserBrowserLinks });
 }
+
+// 表挂装配函数对象上供 parity 门枚举（同 registerMemoryHandlers.routes 先例）
+registerWorkspaceHandlers.routes = workspaceRoutes;

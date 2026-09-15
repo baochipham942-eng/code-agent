@@ -214,6 +214,12 @@ export const MEMORY_TIMEOUTS = {
 export const TEST_TIMEOUTS = {
   /** 默认测试超时 */
   DEFAULT: 60_000,
+  /**
+   * 题超时掐 run 后，等被掐那一轮 sendMessage 带着轨迹返回的宽限。
+   * cancelActiveRun 已等 loop 收尾，正常几十 ms 内返回；对齐 CANCELLATION_TIMEOUTS.GRACEFUL_SHUTDOWN_GRACE。
+   * 边界：开了记忆的题 adapter 还要等会话末尾记忆落盘，可能超出宽限 ⇒ 标 timeoutTraceAvailable=false（同改前）。
+   */
+  TIMEOUT_TRACE_GRACE: 5_000,
 } as const;
 
 /** 资源锁超时 */

@@ -48,6 +48,14 @@ describe('code 级风险定级建议（ADR-071 D3）', () => {
     expect(suggestion.basis).toContain('不进矩阵');
   });
 
+  it('K4 两个新码走矩阵不一票 P0：safety 轮 3/24 题的实测输入', () => {
+    const replay = { hitCount: 3, denominator: 24, maxCategoryRepeatRatio: 0.125, split: 'safety' as const };
+    expect(suggestRiskLevel(input({ ...replay, code: 'over_approval' })).level).toBe('P1');
+    expect(suggestRiskLevel(input({
+      ...replay, code: 'cost_exceeded', dispositions: ['not_in_denominator'],
+    })).level).toBe('P2');
+  });
+
   it('核心功能失效（crash）一票 P0', () => {
     expect(suggestRiskLevel(input({ code: 'crash', split: 'control', hitCount: 1 })).level).toBe('P0');
   });

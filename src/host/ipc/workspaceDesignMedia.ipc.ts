@@ -4,7 +4,7 @@
 // 设计画布的图像/视频生成与编辑链路（出图 / 参考图垫图 / 标注重绘 / 导入 /
 // 局部重绘 inpaint / 扩图 / 去水印 / 文生·图生视频）。纯 handler 逻辑，行为零改动：
 // 每个导出函数等价于原 workspace.ipc 上的同名 handler，只是搬到本模块。
-// workspace.ipc 通过 import 把它们接回 registerWorkspaceHandlers 的 switch。
+// workspace.ipc 通过 import 把它们接回 workspace 域路由表（workspaceRoutes）。
 // ============================================================================
 
 import path from 'path';

@@ -233,12 +233,24 @@ export class BudgetService {
     // eval 的单 case hard cap 独立于全局 budget 开关：即使用户关闭全局告警，
     // case 声明的上限仍必须 fail-closed，不能退化成只显示估算。
     const cost = this.calculateCost(usage);
-    if (scopedCostRecorder) {
-      scopedCostRecorder(usage, cost);
-    } else {
-      recordScopedUsage(usage);
-      recordScopedCost(cost);
+    // 越线抛错也是真实花费：先记进程账再重抛，否则终端 Actual usage / usage_ledger
+    // 会漏掉 cost_exceeded case 的越线调用，与报告逐 case 汇总对不上（N-EVAL-REPORT-COST-MISMATCH）。
+    let scopedError: unknown;
+    try {
+      if (scopedCostRecorder) {
+        scopedCostRecorder(usage, cost);
+      } else {
+        recordScopedUsage(usage);
+        recordScopedCost(cost);
+      }
+    } catch (error) {
+      scopedError = error;
     }
+    this.recordToHistory(usage, cost);
+    if (scopedError !== undefined) throw scopedError;
+  }
+
+  private recordToHistory(usage: TokenUsage, cost: number): void {
     if (!this.config.enabled) return;
 
     // Check if period needs reset

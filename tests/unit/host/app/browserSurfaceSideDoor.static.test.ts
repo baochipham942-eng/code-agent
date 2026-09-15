@@ -31,9 +31,12 @@ describe('Browser Surface side-door wiring', () => {
     expect(handler).not.toMatch(/getBrowserService|browserService\.|relayActionFacade|executeRelay/);
   });
 
-  it('does not remove the separate user-initiated openExternal capability', () => {
+  it('does not remove the separate user-initiated openExternal capability', async () => {
+    // 锚不变量而非源码形状：workspace 域路由表仍声明 openExternal（RQ-183 表化后不再有 switch case），
+    // 且该能力仍走用户主动的 shell.openExternal。
+    const { registerWorkspaceHandlers } = await import('../../../../src/host/ipc/workspace.ipc');
+    expect(Object.hasOwn(registerWorkspaceHandlers.routes.actions, 'openExternal')).toBe(true);
     const source = readFileSync(resolve(repoRoot, 'src/host/ipc/workspace.ipc.ts'), 'utf8');
-    expect(source).toContain("case 'openExternal':");
     expect(source).toContain('await shell.openExternal(payload.url)');
   });
 });

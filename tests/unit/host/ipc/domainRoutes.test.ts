@@ -284,6 +284,29 @@ describe('installDomainRoutes', () => {
     expect(seenCtx).toEqual({ prefix: 'neo' });
   });
 
+  it('guard 收到请求 payload（SETTINGS 刀：门按 payload 判定）；未知 action 与缺 payload 同样传入', async () => {
+    const seen: unknown[] = [];
+    const table = defineDomainRoutes(
+      channelSchema({ channel: 'domain:test-guard-payload', payload: EnumRequestSchema }),
+      { echo: async () => 'echoed', ping: async () => null },
+      {
+        guard: (_action, _ctx, payload) => {
+          seen.push(payload);
+          return (payload as { admin?: boolean } | undefined)?.admin ? { success: false, error: { code: 'FORBIDDEN', message: 'admin only' } } : null;
+        },
+      },
+    );
+    const { registered, target } = createTarget();
+    installDomainRoutes(target, table, { prefix: 'neo' });
+    const call = registered.get('domain:test-guard-payload');
+
+    await expect(call?.(undefined, { action: 'echo', payload: { admin: true } })).resolves.toEqual({ success: false, error: { code: 'FORBIDDEN', message: 'admin only' } });
+    await expect(call?.(undefined, { action: 'echo', payload: { admin: false } })).resolves.toEqual({ success: true, data: 'echoed' });
+    await expect(call?.(undefined, { action: 'bogus', payload: { admin: true } })).resolves.toEqual({ success: false, error: { code: 'FORBIDDEN', message: 'admin only' } });
+    await call?.(undefined, { action: 'echo' });
+    expect(seen).toEqual([{ admin: true }, { admin: false }, { admin: true }, undefined]);
+  });
+
   it('表带 schema 未声明的 action → 拒绝装配', () => {
     const { target } = createTarget();
     const drifted = {

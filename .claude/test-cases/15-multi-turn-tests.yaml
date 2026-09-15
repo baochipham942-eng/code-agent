@@ -19,6 +19,7 @@ cases:
   # --------------------------------------------------------------------------
   - id: multi-turn-context-memory
     type: conversation
+    category: task_completion
     description: "记住上一轮提到的信息"
     prompt: "读取 package.json，告诉我项目名称和版本号"
     follow_up_prompts:
@@ -26,6 +27,7 @@ cases:
 
   - id: multi-turn-pronoun-resolution
     type: conversation
+    category: task_completion
     description: "指代消解 - 理解'它'、'那个'指什么"
     prompt: "读取 tsconfig.json 文件"
     follow_up_prompts:
@@ -36,6 +38,7 @@ cases:
   # --------------------------------------------------------------------------
   - id: multi-turn-incremental-task
     type: task
+    category: task_completion
     description: "分步完成任务"
     prompt: "创建 test-multi-step.ts 文件，先写一个 add 函数"
     follow_up_prompts:
@@ -46,6 +49,7 @@ cases:
 
   - id: multi-turn-correction
     type: task
+    category: task_completion
     description: "根据反馈修正"
     prompt: "创建 test-greeting.ts，写一个 greet 函数，接收名字参数，返回问候语"
     follow_up_prompts:
@@ -58,6 +62,7 @@ cases:
   # --------------------------------------------------------------------------
   - id: multi-turn-drill-down
     type: task
+    category: task_completion
     description: "逐步深入分析"
     prompt: "列出 src/host 目录下有哪些子目录"
     follow_up_prompts:
@@ -66,6 +71,7 @@ cases:
 
   - id: multi-turn-build-on-previous
     type: task
+    category: task_completion
     description: "基于前轮结果继续"
     setup:
       - |
@@ -88,6 +94,7 @@ cases:
   # --------------------------------------------------------------------------
   - id: multi-turn-misunderstand-fix
     type: conversation
+    category: task_completion
     description: "纠正误解"
     prompt: "帮我看看 src 目录"
     follow_up_prompts:
@@ -95,6 +102,7 @@ cases:
 
   - id: multi-turn-add-constraint
     type: task
+    category: task_completion
     description: "追加约束条件"
     prompt: "创建 test-config.json，写一个配置对象，包含 host 和 port"
     follow_up_prompts:

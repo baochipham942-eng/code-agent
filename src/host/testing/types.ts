@@ -832,7 +832,9 @@ export interface StatisticalRunSummary {
 
 export type TestDifficulty = 'easy' | 'medium' | 'hard';
 
-export type TestCategory = 'basic_tool' | 'task_completion' | 'error_recovery' | 'edge_case';
+export const TEST_CATEGORIES = ['basic_tool', 'task_completion', 'error_recovery', 'edge_case'] as const;
+
+export type TestCategory = typeof TEST_CATEGORIES[number];
 
 export type ExpectationType =
   | 'file_exists' | 'file_not_exists'

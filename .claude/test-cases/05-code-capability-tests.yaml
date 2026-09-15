@@ -17,6 +17,7 @@ cases:
   # --------------------------------------------------------------------------
   - id: debug-syntax-error
     type: task
+    category: task_completion
     description: "调试语法错误 - 缺少括号"
     setup:
       - "echo 'function add(a, b { return a + b; }' > test-debug-syntax.js"
@@ -27,6 +28,7 @@ cases:
 
   - id: debug-logic-error
     type: task
+    category: task_completion
     description: "调试逻辑错误 - 数组越界"
     setup:
       - |
@@ -47,6 +49,7 @@ cases:
 
   - id: debug-runtime-error
     type: task
+    category: task_completion
     description: "调试运行时错误 - TypeError"
     setup:
       - |
@@ -71,6 +74,7 @@ cases:
   # --------------------------------------------------------------------------
   - id: codegen-python
     type: task
+    category: task_completion
     description: "生成 Python 代码"
     prompt: "创建 test-fibonacci.py，实现一个计算斐波那契数列第 n 项的函数，包含边界检查"
     cleanup:
@@ -78,6 +82,7 @@ cases:
 
   - id: codegen-typescript
     type: task
+    category: task_completion
     description: "生成 TypeScript 代码"
     prompt: "创建 test-stack.ts，实现一个泛型栈（Stack<T>），包含 push、pop、peek、isEmpty 方法"
     cleanup:
@@ -91,6 +96,7 @@ cases:
   # --------------------------------------------------------------------------
   - id: refactor-extract-function
     type: task
+    category: task_completion
     description: "重构 - 提取函数"
     setup:
       - |
@@ -116,6 +122,7 @@ cases:
 
   - id: refactor-rename-variable
     type: task
+    category: task_completion
     description: "重构 - 变量重命名（语义改善）"
     setup:
       - |
@@ -141,6 +148,7 @@ cases:
   # --------------------------------------------------------------------------
   - id: codegen-unit-test
     type: task
+    category: task_completion
     description: "为已有函数生成单元测试"
     setup:
       - |

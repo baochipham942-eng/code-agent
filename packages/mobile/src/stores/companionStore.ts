@@ -456,12 +456,30 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
           history.putMessages(id, messages);
         } catch { set({ libraryError: true }); }
       },
-      manage: (action, payload, target) => safely(async () => {
-        if (!saved?.binding || !client || saved.pending || get().status !== 'connected') return;
-        const command = companionCommandSchema.parse({ version: 1, deviceId: saved.binding.deviceId, scopeEpoch: saved.binding.scopeEpoch,
-          commandId: crypto.randomUUID(), sessionId: target ?? get().sessionId, action, payload });
-        await persist({ ...saved, pending: command }); set({ pending: true }); await deliver();
-      }),
+      manage: (action, payload, target) => {
+        // 守卫不满足时不再静默 return（fix6-②，2026-09-15 build 37「点了没反应」）：哪一档
+        // 不满足就报哪一档，否则 UI 无从知道这条命令根本没发出去。判在 safely **之前**：
+        // safely 进场会清 connectionError，之后再报「没连上」就连三分类诊断句一起丢掉
+        //（连接胶囊的诊断也一并保住，不被这次注定失败的点按抹平）。
+        // binding 在守卫里捕获：safely 的闭包不继承 saved 的窄化，而 saved 只会被重赋为非空记录。
+        const binding = saved?.binding;
+        if (!binding || !client || saved?.pending || get().status !== 'connected') {
+          set({ commandError: get().status !== 'connected' ? 'COMPANION_NOT_CONNECTED' : 'COMPANION_COMMAND_IN_FLIGHT', commandErrorAction: action });
+          return Promise.resolve();
+        }
+        return safely(async () => {
+          const command = companionCommandSchema.parse({ version: 1, deviceId: binding.deviceId, scopeEpoch: binding.scopeEpoch,
+            commandId: crypto.randomUUID(), sessionId: target ?? get().sessionId, action, payload });
+          await persist({ ...saved!, pending: command }); set({ pending: true });
+          try { await deliver(); }
+          catch (error) {
+            // 发送途中断连/超时也要点名「是这件事没成」；连接态仍交给 safely 收口（offline +
+            // 三分类 connectionError），重抛不吞——pending 已持久化，重连后会照常结算。
+            set({ commandError: 'COMPANION_NOT_CONNECTED', commandErrorAction: action });
+            throw error;
+          }
+        });
+      },
       selectSession: sessionId => {
         if ((get().library?.sessions.some(s => s.id === sessionId) || get().binding?.scope.includes(sessionId) || get().events.some(e => e.sessionId === sessionId && (e.kind === 'approval' || e.kind === 'question' || e.kind === 'plan'))) && !get().busy) {
           const events = get().events.filter(e => e.sessionId === sessionId);

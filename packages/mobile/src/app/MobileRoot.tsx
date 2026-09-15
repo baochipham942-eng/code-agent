@@ -91,33 +91,50 @@ function invitationHostLabel(invitation: { endpoint: string; altEndpoint?: strin
  */
 export function commandNoticeCopy(
   text: ReturnType<typeof messages>,
-  companion: { commandError: string | null; commandErrorAction: string | null },
+  companion: { commandError: string | null; commandErrorAction: string | null; status: string; paused: boolean; connectionError: string | null },
   voiceFailureShown: boolean,
 ): string | null {
+  /**
+   * session.create 的失败要**点名什么没成**（fix6-②，build 37 爸真机「点了没反应」）：
+   * 错误码只说原因（项目不可用/没权限/…），不点名的话用户看到一句人话却不知道是
+   * 「新会话没建起来」，+ 像是没生效。
+   */
+  const named = (copy: string) => companion.commandErrorAction === 'session.create' ? `${text.sessionCreateFailed}：${copy}` : copy;
   const error = companion.commandError;
-  if (error === 'UPLOAD_TOO_LARGE') return text.uploadTooLarge;
-  if (error === 'COMPANION_FILE_TYPE_DENIED') return text.fileTypeDenied;
-  if (error === 'STORAGE_FULL') return text.storageFull;
-  if (error === 'COMPANION_EXPORT_FAILED') return text.exportFailed;
-  if (error === 'ARTIFACT_MISSING') return text.artifactMissing;
-  if (error === 'PROJECT_SOURCE_MISSING') return text.projectSourceMissing;
-  if (error === 'PROJECT_SOURCE_CHANGED') return text.projectSourceChanged;
-  if (error === 'PROJECT_SOURCE_UNTRUSTED') return text.projectSourceUntrusted;
-  if (error === 'MODEL_AUTH') return text.modelAuthMissing;
-  if (error === 'scope_denied' || error === 'COMPANION_SCOPE_DENIED') return text.commandScopeDenied;
-  if (error === 'COMPANION_PROJECT_UNAVAILABLE') return text.projectUnavailable;
-  if (error === 'COMPANION_PROJECT_CHANGED') return text.projectChanged;
-  if (error === 'COMPANION_MODEL_UNAVAILABLE') return text.modelUnavailable;
-  if (error === 'COMPANION_SESSION_BUSY') return text.sessionBusy;
-  if (error === 'RUN_FAILED') return text.runFailed;
-  if (error && ['COMPANION_TRANSFER_INTERRUPTED', 'ATTACHMENT_INCOMPLETE', 'COMPANION_INTERRUPTED', 'COMPANION_NETWORK_UNAVAILABLE', 'COMPANION_CHANNEL_CLOSED'].includes(error)) return text.transferInterrupted;
-  // 转写失败由输入区那条提示负责（它带阶段和真实错误码）；这里再来一句「电脑那边拒绝了这条操作」
-  // 只是把同一件事说两遍——真机上就是上下叠着两行（2026-09-12 build 24 实测）。
-  // 按**动作**分而不是按码名列白名单：结算原样带回真实错误码之后，白名单外的转写失败会叠出两句
-  // （grok ai-review Nit）。但只有输入区**真的在显示**它时才让位：切会话会把输入区重挂、
-  // 取消后 ack 才回来，那些时候输入区手里没有这条失败，无条件让位等于让它一个落点都没有。
-  if (companion.commandErrorAction === 'voice.transcribe' && voiceFailureShown) return null;
-  return error ? text.commandRejected : null;
+  // 点 + 时连接不在（companionStore.manage 的守卫）：按连接胶囊同一套三分类诊断给句子，
+  // 不另造一套连接文案。
+  if (error === 'COMPANION_NOT_CONNECTED') return named(connectionCopy(text, companion).label);
+  // 槽被上一条未结算命令占着：说的是在飞的那条，不是这次点按。
+  if (error === 'COMPANION_COMMAND_IN_FLIGHT') return named(text.commandInFlight);
+  // 旧 Host 不认这条命令/参数时，按「电脑太旧」给人话，不报笼统的「拒绝了这条操作」。
+  if (error === 'COMPANION_UNSUPPORTED_ACTION') return named(text.hostTooOld);
+  const base = (): string | null => {
+    if (error === 'UPLOAD_TOO_LARGE') return text.uploadTooLarge;
+    if (error === 'COMPANION_FILE_TYPE_DENIED') return text.fileTypeDenied;
+    if (error === 'STORAGE_FULL') return text.storageFull;
+    if (error === 'COMPANION_EXPORT_FAILED') return text.exportFailed;
+    if (error === 'ARTIFACT_MISSING') return text.artifactMissing;
+    if (error === 'PROJECT_SOURCE_MISSING') return text.projectSourceMissing;
+    if (error === 'PROJECT_SOURCE_CHANGED') return text.projectSourceChanged;
+    if (error === 'PROJECT_SOURCE_UNTRUSTED') return text.projectSourceUntrusted;
+    if (error === 'MODEL_AUTH') return text.modelAuthMissing;
+    if (error === 'scope_denied' || error === 'COMPANION_SCOPE_DENIED') return text.commandScopeDenied;
+    if (error === 'COMPANION_PROJECT_UNAVAILABLE') return text.projectUnavailable;
+    if (error === 'COMPANION_PROJECT_CHANGED') return text.projectChanged;
+    if (error === 'COMPANION_MODEL_UNAVAILABLE') return text.modelUnavailable;
+    if (error === 'COMPANION_SESSION_BUSY') return text.sessionBusy;
+    if (error === 'RUN_FAILED') return text.runFailed;
+    if (error && ['COMPANION_TRANSFER_INTERRUPTED', 'ATTACHMENT_INCOMPLETE', 'COMPANION_INTERRUPTED', 'COMPANION_NETWORK_UNAVAILABLE', 'COMPANION_CHANNEL_CLOSED'].includes(error)) return text.transferInterrupted;
+    // 转写失败由输入区那条提示负责（它带阶段和真实错误码）；这里再来一句「电脑那边拒绝了这条操作」
+    // 只是把同一件事说两遍——真机上就是上下叠着两行（2026-09-12 build 24 实测）。
+    // 按**动作**分而不是按码名列白名单：结算原样带回真实错误码之后，白名单外的转写失败会叠出两句
+    // （grok ai-review Nit）。但只有输入区**真的在显示**它时才让位：切会话会把输入区重挂、
+    // 取消后 ack 才回来，那些时候输入区手里没有这条失败，无条件让位等于让它一个落点都没有。
+    if (companion.commandErrorAction === 'voice.transcribe' && voiceFailureShown) return null;
+    return error ? text.commandRejected : null;
+  };
+  const copy = base();
+  return copy === null ? null : named(copy);
 }
 
 /**
@@ -217,6 +234,9 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
   const [pendingInvite, setPendingInvite] = useState<{ raw: string; invitation: LanInvitation } | null>(null);
   // 项目会话前进页（fix5-③）当前在看的项目：主层选择器的 chevron 进来，返回弹回主层。
   const [sessionProjectId, setSessionProjectId] = useState<string | null>(null);
+  // 刚由 session.create 建好、还没说过话的会话 id：空会话就绪态据此说「新会话已建好」而不是
+  // 通用的「已就绪」。只认 id——切走再切回的旧空会话不冒充「刚建好」（fix6-①）。
+  const [justCreated, setJustCreated] = useState<string | null>(null);
   const theme = state.preferences.appearance === 'system' ? (systemDark ? 'dark' : 'light') : state.preferences.appearance;
   const currentPage = state.sheet?.pages.at(-1);
   const pendingDecisions = useMemo(() => {
@@ -399,8 +419,15 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
   };
   const manage: typeof companion.manage = async (...args) => {
     managing.current = true;
+    const before = companionStore.getState().sessionId;
     await companion.manage(...args);
-    if (!companionStore.getState().pending && companionStore.getState().status === 'connected') state.navigate('new');
+    const live = companionStore.getState();
+    // session.create 无论成败都收层（fix6-②，build 37「点了没反应」）：成功要进新会话；
+    // 失败时抽屉/弹层正盖在提示条上，不收层失败反馈等于没有。
+    if (args[0] === 'session.create' || (!live.pending && live.status === 'connected')) {
+      if (args[0] === 'session.create' && live.sessionId && live.sessionId !== before) setJustCreated(live.sessionId);
+      state.navigate('new');
+    }
   };
   useEffect(() => {
     if (managing.current && !companion.pending && !companion.busy) {
@@ -517,6 +544,20 @@ export function MobileRoot({ ports, fixtures }: { ports: PlatformPorts; fixtures
           openArtifact={id => void companion.previewArtifact(id).then(() => {
             if (companionStore.getState().preview) store.getState().openSheet('preview');
           })} />
+        : companion.sessionId ? (() => {
+          // 空会话就绪态（fix6-①，2026-09-15 build 37「点了没反应」）：已选中但还没说过话的
+          // 会话不许再演无会话的欢迎屏——两屏一模一样，点 + 建成后看起来就是「原地零变化」。
+          // 刚建的会话点名「新会话已建好」；其余空会话（从历史选进来的）说通用的「已就绪」。
+          // 不自动聚焦输入区：手机上未经点按就弹键盘会顶走视口，就绪态+占位符已足够指路。
+          const session = companion.library?.sessions.find(s => s.id === companion.sessionId);
+          const project = session?.projectId != null ? companion.library?.projects.find(p => p.id === session.projectId) : undefined;
+          return <div className="welcome" data-testid="session-empty">
+            <NeoBrandMark variant="mark" size={47} />
+            <h1>{justCreated === companion.sessionId ? text.sessionCreated : text.sessionReady}</h1>
+            {project && <p className="connection-next">{text.usingProject.replace('{name}', project.name)}</p>}
+            {companion.status === 'connected' && <p className="connection-next">{text.connectedNext}</p>}
+          </div>;
+        })()
         : <div className="welcome"><NeoBrandMark variant="mark" size={47} /><h1>{companion.status === 'connected' ? text.connectedReady : text.welcome}</h1>{companion.status === 'connected' && <p className="connection-next">{text.connectedNext}</p>}</div>}
       <div className="composer-area" ref={composerArea}>
         {/* 本会话的审批优先在托盘里就地给控件——CompanionConversation 被传了

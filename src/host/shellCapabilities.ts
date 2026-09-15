@@ -36,6 +36,7 @@ import { ConnectorSchemas } from '../shared/ipc/schemas/connector';
 import { AgentSchemas } from '../shared/ipc/schemas/agent';
 import { SettingsSchemas } from '../shared/ipc/schemas/settings';
 import { McpSchemas } from '../shared/ipc/schemas/mcp';
+import { LibrarySchemas } from '../shared/ipc/schemas/library';
 
 const DEFAULT_SINCE_VERSION = '0.16.93';
 
@@ -227,17 +228,8 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'sendNow',
     'update',
   ],
-  [IPC_DOMAINS.LIBRARY]: [
-    'addItem',
-    'delete',
-    'get',
-    'getPin',
-    'importFiles',
-    'list',
-    'pinnedItems',
-    'setPin',
-    'update',
-  ],
+  // library 域：派生自 schema action 集合（== library 表 keys，parity 门三面对账），手工清单已删
+  [IPC_DOMAINS.LIBRARY]: LibrarySchemas.ACTIONS,
   // prompt 域：派生自 schema action 集合（== prompt 表 keys，parity 门三面对账）；此前清单整域缺报 7 项
   [IPC_DOMAINS.PROMPT]: PromptSchemas.ACTIONS,
   [IPC_DOMAINS.PROVIDER]: [

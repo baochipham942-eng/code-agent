@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 // @ts-expect-error —— 纯 JS 静态门脚本，无类型声明
-import { findThemeBlindBrightForegroundMatches, findThemeBlindBrightForegroundViolations, findThemeBlindWhiteHoverForegroundMatches, findThemeBlindWhiteHoverForegroundViolations, scan } from '../../scripts/check-design-system.mjs';
+import { findStickyInPaddedScrollerViolations, findThemeBlindBrightForegroundMatches, findThemeBlindBrightForegroundViolations, findThemeBlindWhiteHoverForegroundMatches, findThemeBlindWhiteHoverForegroundViolations, scan } from '../../scripts/check-design-system.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const baseline = JSON.parse(
@@ -123,5 +123,46 @@ describe('theme-blind white hover foreground gate', () => {
         'Fixture.tsx:12',
       ),
     ).toEqual([]);
+  });
+});
+
+describe('sticky-in-padded-scroller gate（FB-162）', () => {
+  const padded = [
+    '<div className="min-h-0 flex-1 overflow-auto px-3 py-2">',
+    '  <table>',
+    '    <thead className="sticky top-0 z-10 bg-zinc-950">',
+    '    </thead>',
+    '  </table>',
+    '</div>',
+  ];
+  it('滚动容器带 py-2 且内含 sticky top-0 ⇒ 违规并指出容器行', () => {
+    expect(findStickyInPaddedScrollerViolations(padded, 'F.tsx')).toEqual(['F.tsx:3 滚动容器 F.tsx:1 带上内边距']);
+  });
+  it('滚动容器只有 pb/px ⇒ 不违规；pt-[N] 也算上内边距', () => {
+    expect(findStickyInPaddedScrollerViolations(padded.map((l) => l.replace('py-2', 'pb-2')), 'F.tsx')).toEqual([]);
+    expect(findStickyInPaddedScrollerViolations(padded.map((l) => l.replace('py-2', 'pt-[6px]')), 'F.tsx')).toHaveLength(1);
+  });
+  it('pt-0 / py-0 / scroll-pt-* 不算上内边距；pt-1.5 算', () => {
+    for (const cls of ['pt-0', 'py-0', 'scroll-pt-4']) {
+      expect(findStickyInPaddedScrollerViolations(padded.map((l) => l.replace('py-2', cls)), 'F.tsx')).toEqual([]);
+    }
+    for (const cls of ['pt-1.5', 'pt-0.5', 'py-0.5']) {
+      expect(findStickyInPaddedScrollerViolations(padded.map((l) => l.replace('py-2', cls)), 'F.tsx'), cls).toHaveLength(1);
+    }
+  });
+
+  it('ds-allow:sticky 写在 sticky 行或容器行都放行', () => {
+    expect(findStickyInPaddedScrollerViolations(padded.map((l) => l.replace('bg-zinc-950">', 'bg-zinc-950"> {/* ds-allow:sticky 理由 */}')), 'F.tsx')).toEqual([]);
+  });
+  it('只认更浅缩进的祖先：同级兄弟的滚动容器不算', () => {
+    const sibling = [
+      '<div>',
+      '  <div className="overflow-auto py-2" />',
+      '  <div className="overflow-auto">',
+      '    <thead className="sticky top-0" />',
+      '  </div>',
+      '</div>',
+    ];
+    expect(findStickyInPaddedScrollerViolations(sibling, 'F.tsx')).toEqual([]);
   });
 });

@@ -256,6 +256,31 @@ describe('installDomainRoutes', () => {
     });
   });
 
+  it('guard：分发前拦截（未知 action 也先过门）；放行后照常分发；门抛错走错误映射（PROMPT 刀）', async () => {
+    let mode: 'block' | 'pass' | 'throw' = 'block';
+    const table = defineDomainRoutes(
+      channelSchema({ channel: 'domain:test-guard', payload: EnumRequestSchema }),
+      { echo: async () => 'echoed', ping: async () => null },
+      {
+        guard: (action) => {
+          if (mode === 'throw') throw new Error(`guard boom ${String(action)}`);
+          return mode === 'block' ? { success: false, error: { code: 'FORBIDDEN', message: 'nope' } } : null;
+        },
+      },
+    );
+    const { registered, target } = createTarget();
+    installDomainRoutes(target, table, { prefix: 'neo' });
+    const call = registered.get('domain:test-guard');
+
+    await expect(call?.(undefined, { action: 'echo' })).resolves.toEqual({ success: false, error: { code: 'FORBIDDEN', message: 'nope' } });
+    await expect(call?.(undefined, { action: 'bogus' })).resolves.toEqual({ success: false, error: { code: 'FORBIDDEN', message: 'nope' } });
+    mode = 'pass';
+    await expect(call?.(undefined, { action: 'echo' })).resolves.toEqual({ success: true, data: 'echoed' });
+    await expect(call?.(undefined, { action: 'bogus' })).resolves.toEqual({ success: false, error: { code: 'INVALID_ACTION', message: 'Unknown action: bogus' } });
+    mode = 'throw';
+    await expect(call?.(undefined, { action: 'echo' })).resolves.toEqual({ success: false, error: { code: 'INTERNAL_ERROR', message: 'guard boom echo' } });
+  });
+
   it('表带 schema 未声明的 action → 拒绝装配', () => {
     const { target } = createTarget();
     const drifted = {

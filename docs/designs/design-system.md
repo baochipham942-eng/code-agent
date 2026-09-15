@@ -288,7 +288,7 @@ React 侧**当前唯一真源是 NeoBrandMark 内联 SVG**,不接资产文件的
 ## §5 守卫机制(machine-checkable 的一半)
 
 `scripts/check-design-system.mjs` 是静态门,本文档是它注释里指的"契约"。
-**九条规则**(扫描 `src/renderer`,测试文件除外):
+**十条规则**(扫描 `src/renderer`,测试文件除外;第 10 条额外扫 `packages/internal/*/src/renderer`):
 
 1. `hardcoded-hex` — 禁硬编码 `#rrggbb`,走 token。
 2. `bare-button` — 禁裸 `<button>`,走 `primitives/` 的 Button/IconButton。
@@ -304,6 +304,11 @@ React 侧**当前唯一真源是 NeoBrandMark 内联 SVG**,不接资产文件的
 9. `theme-blind-white-hover-foreground` — 禁 `hover:text-white` / `group-hover:text-white`
    在没有 `dark:` 主题分支时进入 renderer。白色 hover 只适用于固定深色背景,这类例外必须
    用 `ds-allow:color` 写明背景理由;主题自适应表面应改用会随主题翻转的 zinc 前景 token。
+10. `sticky-in-padded-scroller` — 禁 `sticky top-*` 元素的最近 `overflow-auto/scroll` 滚动祖先带
+   `pt-*`/`py-*`。sticky 贴的是容器内容区顶,上内边距会在容器顶留一条带子,滚上来的行从带子里透出,
+   给表头上底色治不到(FB-162,`EvalCaseListTab.tsx` #1844)。内边距放进子块;基线 0 且 `--update`
+   拒绝把这条抬高(脚本里挡住,不同于其他棘轮项);`pt-0`/`scroll-pt-*` 不算;`ds-allow:sticky` 豁免。
+   上限:祖先按同文件 JSX 缩进近似,className 拆到 `cn()` 多行或滚动容器在父组件时看不见,靠 review。
 
 另有若干**硬断言**(非棘轮,任何回退直接红):
 
@@ -320,7 +325,7 @@ React 侧**当前唯一真源是 NeoBrandMark 内联 SVG**,不接资产文件的
 
 **豁免写法**(必须显式、必须带理由):
 
-- 行内: `// ds-allow:<kind> 理由`(kind = `viz`/`button`/`modal`/`radius`/`z`/`important`/`primitive`/`brand`/`color`);裸 `ds-allow` 放行任意规则,是给特殊场景留的口子,慎用。
+- 行内: `// ds-allow:<kind> 理由`(kind = `viz`/`button`/`modal`/`radius`/`z`/`important`/`primitive`/`brand`/`color`/`sticky`);裸 `ds-allow` 放行任意规则,是给特殊场景留的口子,慎用。
 - 区块: `// ds-allow:start 理由` … `// ds-allow:end` 之间整段跳过(品牌贴图调色板、品牌图标字面色用这个)。
 - 自动豁免: 数据可视化目录(脚本内 `VIZ_EXEMPT` 清单)与模板字符串内 hex(注入 iframe 的自包含 HTML,CSS 变量级联不进去)。
 

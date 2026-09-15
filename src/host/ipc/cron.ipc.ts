@@ -3,7 +3,10 @@
 // ============================================================================
 
 import { ipcHost } from '../platform';
-import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
+import type { IPCResponse } from '../../shared/ipc';
+import type { RawDomainRouteHandlers } from '../../shared/ipc/domainRoutes';
+import { CronSchemas, type CronDomainRequest } from '../../shared/ipc/schemas/cron';
+import { defineDomainRoutes, installDomainRoutes } from './domainRoutes/registry';
 import { getCronService } from '../cron/cronService';
 import { ModelRouter } from '../model/modelRouter';
 import { createLogger } from '../services/infra/logger';
@@ -87,110 +90,112 @@ const CRON_GENERATION_SYSTEM_PROMPT = `你是一个定时任务配置助手。�
 - 尽量从描述中推断合理的调度方式和参数
 - 只返回 JSON，不要任何解释`;
 
-export function registerCronHandlers(): void {
-  ipcHost.handle(IPC_DOMAINS.CRON, async (_event, request: IPCRequest) => {
-    const { action, payload } = request;
+/**
+ * cron 域单源路由表（RQ-183 续作·CRON 刀）：原 domain switch 逐 case 平移为 handler（rawResponse：
+ * handler 仍返回完整 IPCResponse，含 generateFromPrompt 的 INVALID_INPUT / PARSE_ERROR 失败响应，
+ * 逐字不变）；每个 handler 按请求取 getCronService()（同原 switch 每请求取一次）；未知 action →
+ * UNKNOWN_ACTION `Unknown cron action: <action>`；抛错 → CRON_ERROR + 同款日志。
+ */
+const cronHandlers: RawDomainRouteHandlers<CronDomainRequest, void> = {
+  listJobs: async (_ctx, payload) => {
     const cronService = getCronService();
-
-    try {
-      switch (action) {
-        case 'listJobs': {
-          const filter = getCronJobFilter(payload);
-          const jobs = cronService.listJobs(filter);
-          return { success: true, data: jobs } satisfies IPCResponse;
-        }
-
-        case 'createJob': {
-          const job = await cronService.createJob(getCreateCronJobPayload(payload));
-          return { success: true, data: job } satisfies IPCResponse;
-        }
-
-        case 'updateJob': {
-          const { jobId, updates } = getUpdateCronJobRequest(payload);
-          const job = await cronService.updateJob(jobId, updates);
-          return { success: true, data: job } satisfies IPCResponse;
-        }
-
-        case 'deleteJob': {
-          const jobId = getStringField(payload, 'jobId');
-          if (!jobId) throw new Error('Invalid cron job id');
-          const result = await cronService.deleteJob(jobId);
-          return { success: true, data: result } satisfies IPCResponse;
-        }
-
-        case 'triggerJob': {
-          const jobId = getStringField(payload, 'jobId');
-          if (!jobId) throw new Error('Invalid cron job id');
-          const execution = await cronService.triggerJob(jobId);
-          return { success: true, data: execution } satisfies IPCResponse;
-        }
-
-        case 'getExecutions': {
-          const jobId = getStringField(payload, 'jobId');
-          if (!jobId) throw new Error('Invalid cron job id');
-          const limit = getNumberField(payload, 'limit');
-          const executions = cronService.getJobExecutions(jobId, limit);
-          return { success: true, data: executions } satisfies IPCResponse;
-        }
-
-        case 'getRecentExecutions': {
-          const limit = getNumberField(payload, 'limit');
-          const executions = cronService.getRecentExecutions(limit);
-          return { success: true, data: executions } satisfies IPCResponse;
-        }
-
-        case 'getStats': {
-          const stats = cronService.getStats();
-          return { success: true, data: stats } satisfies IPCResponse;
-        }
-
-        case 'generateFromPrompt': {
-          const prompt = getStringField(payload, 'prompt');
-          if (!prompt?.trim()) {
-            return { success: false, error: { code: 'INVALID_INPUT', message: '请输入任务描述' } } satisfies IPCResponse;
-          }
-          const router = new ModelRouter();
-          // 注入当前时间锚点：LLM 默认拿训练期日期，会把「明天/下周」算成过去时间，
-          // 生成 at 类型任务静默不跑（艾克斯 in-app 验证抓到）。必须给当前时间做基准。
-          const nowAnchor = `\n\n【当前时间】${new Date().toISOString()}（UTC，默认时区 Asia/Shanghai）。`
-            + `用户用「今天/明天/今晚/本周/下周」等相对时间时，必须以此为基准换算成将来的绝对时间，`
-            + `生成的 at 类型 datetime 绝不能早于当前时间。`;
-          // 跟随项目默认 provider（mimo 包月），取代原硬编码 zhipu——app 的 zhipu
-          // 端点经 0ki 中转，中转 key 一旦失效会直接卡死 /schedule 的自然语言生成。
-          const response = await router.chat({
-            provider: DEFAULT_PROVIDER,
-            model: DEFAULT_MODEL,
-            messages: [
-              { role: 'system', content: CRON_GENERATION_SYSTEM_PROMPT + nowAnchor },
-              { role: 'user', content: prompt.trim() },
-            ],
-            maxTokens: 1024,
-          });
-          const raw = response.content || '';
-          const jsonMatch = raw.match(/\{[\s\S]*\}/);
-          if (!jsonMatch) {
-            return { success: false, error: { code: 'PARSE_ERROR', message: 'AI 返回格式异常，请重试或换个描述方式' } } satisfies IPCResponse;
-          }
-          try {
-            const draft: unknown = JSON.parse(jsonMatch[0]);
-            return { success: true, data: draft } satisfies IPCResponse;
-          } catch {
-            return { success: false, error: { code: 'PARSE_ERROR', message: 'AI 返回的 JSON 解析失败，请重试' } } satisfies IPCResponse;
-          }
-        }
-
-        default:
-          return {
-            success: false,
-            error: { code: 'UNKNOWN_ACTION', message: `Unknown cron action: ${action}` },
-          } satisfies IPCResponse;
-      }
-    } catch (error) {
-      logger.error('Cron IPC error:', error);
-      return {
-        success: false,
-        error: { code: 'CRON_ERROR', message: error instanceof Error ? error.message : 'Unknown error' },
-      } satisfies IPCResponse;
+    const filter = getCronJobFilter(payload);
+    const jobs = cronService.listJobs(filter);
+    return { success: true, data: jobs } satisfies IPCResponse;
+  },
+  createJob: async (_ctx, payload) => {
+    const cronService = getCronService();
+    const job = await cronService.createJob(getCreateCronJobPayload(payload));
+    return { success: true, data: job } satisfies IPCResponse;
+  },
+  updateJob: async (_ctx, payload) => {
+    const cronService = getCronService();
+    const { jobId, updates } = getUpdateCronJobRequest(payload);
+    const job = await cronService.updateJob(jobId, updates);
+    return { success: true, data: job } satisfies IPCResponse;
+  },
+  deleteJob: async (_ctx, payload) => {
+    const cronService = getCronService();
+    const jobId = getStringField(payload, 'jobId');
+    if (!jobId) throw new Error('Invalid cron job id');
+    const result = await cronService.deleteJob(jobId);
+    return { success: true, data: result } satisfies IPCResponse;
+  },
+  triggerJob: async (_ctx, payload) => {
+    const cronService = getCronService();
+    const jobId = getStringField(payload, 'jobId');
+    if (!jobId) throw new Error('Invalid cron job id');
+    const execution = await cronService.triggerJob(jobId);
+    return { success: true, data: execution } satisfies IPCResponse;
+  },
+  getExecutions: async (_ctx, payload) => {
+    const cronService = getCronService();
+    const jobId = getStringField(payload, 'jobId');
+    if (!jobId) throw new Error('Invalid cron job id');
+    const limit = getNumberField(payload, 'limit');
+    const executions = cronService.getJobExecutions(jobId, limit);
+    return { success: true, data: executions } satisfies IPCResponse;
+  },
+  getRecentExecutions: async (_ctx, payload) => {
+    const cronService = getCronService();
+    const limit = getNumberField(payload, 'limit');
+    const executions = cronService.getRecentExecutions(limit);
+    return { success: true, data: executions } satisfies IPCResponse;
+  },
+  getStats: async (_ctx, _payload) => {
+    const cronService = getCronService();
+    const stats = cronService.getStats();
+    return { success: true, data: stats } satisfies IPCResponse;
+  },
+  generateFromPrompt: async (_ctx, payload) => {
+    const prompt = getStringField(payload, 'prompt');
+    if (!prompt?.trim()) {
+      return { success: false, error: { code: 'INVALID_INPUT', message: '请输入任务描述' } } satisfies IPCResponse;
     }
-  });
+    const router = new ModelRouter();
+    // 注入当前时间锚点：LLM 默认拿训练期日期，会把「明天/下周」算成过去时间，
+    // 生成 at 类型任务静默不跑（艾克斯 in-app 验证抓到）。必须给当前时间做基准。
+    const nowAnchor = `\n\n【当前时间】${new Date().toISOString()}（UTC，默认时区 Asia/Shanghai）。`
+      + `用户用「今天/明天/今晚/本周/下周」等相对时间时，必须以此为基准换算成将来的绝对时间，`
+      + `生成的 at 类型 datetime 绝不能早于当前时间。`;
+    // 跟随项目默认 provider（mimo 包月），取代原硬编码 zhipu——app 的 zhipu
+    // 端点经 0ki 中转，中转 key 一旦失效会直接卡死 /schedule 的自然语言生成。
+    const response = await router.chat({
+      provider: DEFAULT_PROVIDER,
+      model: DEFAULT_MODEL,
+      messages: [
+        { role: 'system', content: CRON_GENERATION_SYSTEM_PROMPT + nowAnchor },
+        { role: 'user', content: prompt.trim() },
+      ],
+      maxTokens: 1024,
+    });
+    const raw = response.content || '';
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      return { success: false, error: { code: 'PARSE_ERROR', message: 'AI 返回格式异常，请重试或换个描述方式' } } satisfies IPCResponse;
+    }
+    try {
+      const draft: unknown = JSON.parse(jsonMatch[0]);
+      return { success: true, data: draft } satisfies IPCResponse;
+    } catch {
+      return { success: false, error: { code: 'PARSE_ERROR', message: 'AI 返回的 JSON 解析失败，请重试' } } satisfies IPCResponse;
+    }
+  },
+};
+
+const cronRoutes = defineDomainRoutes<CronDomainRequest, void>(CronSchemas.REQUEST, cronHandlers, {
+  rawResponse: true,
+  unknownActionCode: 'UNKNOWN_ACTION',
+  unknownActionMessage: (action) => `Unknown cron action: ${String(action)}`,
+  mapError: (error) => {
+    logger.error('Cron IPC error:', error);
+    return { code: 'CRON_ERROR', message: error instanceof Error ? error.message : 'Unknown error' };
+  },
+});
+
+export function registerCronHandlers(): void {
+  installDomainRoutes(ipcHost, cronRoutes, undefined);
 }
+
+// 表挂装配函数对象上供 parity 门枚举（同 registerMemoryHandlers.routes 先例）
+registerCronHandlers.routes = cronRoutes;

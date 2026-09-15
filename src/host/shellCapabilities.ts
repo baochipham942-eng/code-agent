@@ -16,6 +16,8 @@ import { sessionRoutes } from './ipc/domainRoutes/sessionRoutes';
 import { MemorySchemas } from '../shared/ipc/schemas/memory';
 import { DesktopSchemas } from '../shared/ipc/schemas/desktop';
 import { TagSchemas } from '../shared/ipc/schemas/tag';
+import { CronSchemas } from '../shared/ipc/schemas/cron';
+import { PromptSchemas } from '../shared/ipc/schemas/prompt';
 
 const DEFAULT_SINCE_VERSION = '0.16.93';
 
@@ -180,6 +182,8 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'get',
     'set',
   ],
+  // cron 域：派生自 schema action 集合（== cron 表 keys，parity 门三面对账）；此前清单整域缺报 9 项
+  [IPC_DOMAINS.CRON]: CronSchemas.ACTIONS,
   // desktop 域：派生自 schema action 集合（== desktop 表 keys，parity 门三面对账），手工清单已删
   [IPC_DOMAINS.DESKTOP]: DesktopSchemas.ACTIONS,
   [IPC_DOMAINS.DIAGNOSTICS]: [
@@ -309,6 +313,8 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'setPin',
     'update',
   ],
+  // prompt 域：派生自 schema action 集合（== prompt 表 keys，parity 门三面对账）；此前清单整域缺报 7 项
+  [IPC_DOMAINS.PROMPT]: PromptSchemas.ACTIONS,
   [IPC_DOMAINS.PROVIDER]: [
     'discover_models',
     'getHealthStatus',

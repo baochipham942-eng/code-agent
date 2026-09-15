@@ -70,6 +70,7 @@ const authRoutes = registerAuthHandlers.routes;
 const rolesRoutes = registerRolesHandlers.routes;
 const connectorRoutes = registerConnectorHandlers.routes;
 const agentRoutes = registerAgentHandlers.routes;
+const settingsRoutes = registerSettingsHandlers.routes;
 
 /** 门盯的表清单——新域表化后加进来，门即自动覆盖该域（session 三面走 manifestDomain 断言） */
 const ROUTE_TABLES = [
@@ -95,6 +96,7 @@ const ROUTE_TABLES = [
   { table: rolesRoutes, manifestDomain: 'domain:roles' as const },
   { table: connectorRoutes, manifestDomain: 'domain:connector' as const },
   { table: agentRoutes, manifestDomain: 'domain:agent' as const },
+  { table: settingsRoutes, manifestDomain: 'domain:settings' as const },
   { table: inlineFixtureTable(), manifestDomain: undefined },
 ];
 
@@ -341,6 +343,7 @@ function collectActualDomainActions(): Map<string, Set<string>> {
   add(IPC_DOMAINS.ROLES, new Set(Object.keys(rolesRoutes.actions)));
   add(IPC_DOMAINS.CONNECTOR, new Set(Object.keys(connectorRoutes.actions)));
   add(IPC_DOMAINS.AGENT, new Set(Object.keys(agentRoutes.actions)));
+  add(IPC_DOMAINS.SETTINGS, new Set(Object.keys(settingsRoutes.actions)));
   return actual;
 }
 

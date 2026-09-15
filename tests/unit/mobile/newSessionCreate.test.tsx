@@ -39,7 +39,7 @@ vi.mock('../../../packages/mobile/src/platform/lanCompanionClient', () => ({
             { id: 's1', title: '会话一', projectId: 'one', updatedAt: 2, archived: false, provider: 'deepseek', model: 'deepseek-chat' },
             ...(harness.created ? [{ id: 'mobile-new-1', title: '新会话', projectId: 'one', updatedAt: 3, archived: false, provider: 'deepseek', model: 'deepseek-chat' }] : []),
           ],
-          projects: [{ id: 'one', name: '工作项目', canCreate: true, workspacePath: '/Users/linchen/Downloads/ai/workspace' }],
+          projects: [{ id: 'one', name: '工作项目', canCreate: true, workspacePath: '/Users/neo/Downloads/ai/workspace' }],
           models: [{ provider: 'deepseek', model: 'deepseek-chat', label: 'DeepSeek Chat', providerLabel: 'DeepSeek', isDefault: true }],
         };
       }

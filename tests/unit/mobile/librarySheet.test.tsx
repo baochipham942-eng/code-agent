@@ -41,9 +41,9 @@ describe('项目选择器主层（fix5-③：行=名称+副标题，会话在前
   it('同名项目用路径父一级消歧，独名项目不显示路径', () => {
     const withDup: Partial<CompanionLibrary> = {
       projects: [
-        { id: 'a', name: 'workspace', canCreate: true, workspacePath: '/Users/linchen/Downloads/ai/workspace' },
+        { id: 'a', name: 'workspace', canCreate: true, workspacePath: '/Users/neo/Downloads/ai/workspace' },
         { id: 'b', name: 'workspace', canCreate: true, workspacePath: '/private/tmp/neo-verify/workspace' },
-        { id: 'c', name: '品牌提案', canCreate: true, workspacePath: '/Users/linchen/Downloads/ai/brand' },
+        { id: 'c', name: '品牌提案', canCreate: true, workspacePath: '/Users/neo/Downloads/ai/brand' },
       ],
     };
     render(<LibrarySheet library={{ ...library, ...withDup }} sessionId={null} text={text} busy={false} mode="projects"
@@ -161,11 +161,11 @@ describe('同名消歧标签的路径判定', () => {
     { id: 'b', name: 'workspace', canCreate: true, workspacePath: '/other/workspace' },
   ];
   it('取父目录一级；/Users/<name> 折叠为 ~', () => {
-    expect(projectDisplayName(projects('/Users/linchen/Downloads/ai/workspace')[0], projects('/Users/linchen/Downloads/ai/workspace'))).toBe('workspace · ~/Downloads/ai');
+    expect(projectDisplayName(projects('/Users/neo/Downloads/ai/workspace')[0], projects('/Users/neo/Downloads/ai/workspace'))).toBe('workspace · ~/Downloads/ai');
     expect(projectDisplayName(projects('/private/tmp/neo-verify/workspace')[0], projects('/private/tmp/neo-verify/workspace'))).toBe('workspace · /private/tmp/neo-verify');
   });
   it('超长从中间截断，长度封顶', () => {
-    const deep = projects('/Users/linchen/Downloads/ai/some/very/deeply/nested/dir/workspace');
+    const deep = projects('/Users/neo/Downloads/ai/some/very/deeply/nested/dir/workspace');
     const label = projectDisplayName(deep[0], deep);
     expect(label).toBe('workspace · ~/Downloads/…/nested/dir');
     expect(label.length).toBeLessThanOrEqual('workspace · '.length + 24);

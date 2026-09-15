@@ -17,7 +17,7 @@ export interface ProjectRowModel {
 
 /**
  * 工作目录 → 消歧标签：取父目录一级（`…/ai/workspace` → `…/ai`），macOS 用户目录折叠成
- * `~`（`/Users/linchen/Downloads/ai` → `~/Downloads/ai`），超过 maxChars 从中间截断（两头
+ * `~`（`/Users/neo/Downloads/ai` → `~/Downloads/ai`），超过 maxChars 从中间截断（两头
  * 保留目录名最有辨识度的部分）。
  */
 function workspaceParentLabel(path: string, maxChars = 24): string {

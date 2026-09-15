@@ -117,13 +117,13 @@ describe('companion library listing compiles access SQL once', () => {
   it('projects carry workspacePath for the phone-side disambiguation label (null when absent)', async () => {
     const deviceId = gateway.issueDeviceCredential([projectGrant('one'), projectGrant('two')]).deviceId;
     listProjects.mockReturnValue([
-      { id: 'one', name: 'workspace', workspacePath: '/Users/linchen/Downloads/ai/workspace' },
+      { id: 'one', name: 'workspace', workspacePath: '/Users/neo/Downloads/ai/workspace' },
       { id: 'two', name: 'workspace', workspacePath: null },
     ]);
     const { result } = await readLibrary(2, deviceId);
     const projects = (result as { projects: { id: string; workspacePath?: string | null; canCreate: boolean }[] }).projects;
     expect(projects).toEqual([
-      { id: 'one', name: 'workspace', workspacePath: '/Users/linchen/Downloads/ai/workspace', canCreate: true },
+      { id: 'one', name: 'workspace', workspacePath: '/Users/neo/Downloads/ai/workspace', canCreate: true },
       { id: 'two', name: 'workspace', workspacePath: null, canCreate: true },
     ]);
   });

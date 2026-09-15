@@ -25,7 +25,7 @@ vi.mock('../../../packages/mobile/src/platform/lanCompanionClient', () => ({
       if (action === 'read') return {
         nextOffset: null,
         projects: [
-          { id: 'one', name: 'workspace', canCreate: true, workspacePath: '/Users/linchen/Downloads/ai/workspace' },
+          { id: 'one', name: 'workspace', canCreate: true, workspacePath: '/Users/neo/Downloads/ai/workspace' },
           { id: 'two', name: 'workspace', canCreate: false, workspacePath: '/private/tmp/neo-verify/workspace' },
         ],
         sessions: [

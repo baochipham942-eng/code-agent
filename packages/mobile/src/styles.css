@@ -54,7 +54,9 @@ textarea::placeholder { color: var(--muted); }
 .send:disabled { opacity: 1; color: var(--muted); background: var(--group); }
 .voice-notice { display: flex; align-items: center; gap: 8px; }
 .caption,.notice,.group-title { color: var(--muted); font-size: 14px; }.caption { margin: 4px 4px 8px; text-align: center; }
-.notice { margin: 4px 8px 8px; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+/* banner 文案折行时 pill 与整段文字垂直居中（baseline 会让 pill 贴第一行基线、第二行悬空——2026-09-15 爸两次真机反馈的对齐问题）。 */
+.notice { margin: 4px 8px 8px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.notice > :first-child { flex: 1; min-width: 0; }
 .drawer-layer,.sheet-layer { position: fixed; inset: 0; height: var(--viewport-height, 100vh); }.drawer-layer { z-index: 10; }.sheet-layer { z-index: 20; }
 /* fix4-①：抽屉跟手拖拽。--drawer-x/--scrim-alpha 由 MobileRoot 在拖拽/回弹期间写入；
    横滑交给手势层（pan-y），竖向滚动（抽屉历史列表）照常归浏览器。 */

@@ -40,6 +40,7 @@ import { registerTaskHandlers } from '../../src/host/ipc/task.ipc';
 import { registerGenerativeUIHandlers } from '../../src/host/ipc/generativeUI.ipc';
 import { registerFolderTrustHandlers } from '../../src/host/ipc/folderTrust.ipc';
 import { registerHookHandlers } from '../../src/host/ipc/hook.ipc';
+import { registerWorkspaceHandlers } from '../../src/host/ipc/workspace.ipc';
 import { getShellCapabilities } from '../../src/host/shellCapabilities';
 
 // 结构枚举器挂既有函数对象上（knip 生产档无测试入口，独立 export 必成 dead export）
@@ -60,6 +61,7 @@ const taskRoutes = registerTaskHandlers.routes;
 const generativeUIRoutes = registerGenerativeUIHandlers.routes;
 const folderTrustRoutes = registerFolderTrustHandlers.routes;
 const hookRoutes = registerHookHandlers.routes;
+const workspaceRoutes = registerWorkspaceHandlers.routes;
 
 /** 门盯的表清单——新域表化后加进来，门即自动覆盖该域（session 三面走 manifestDomain 断言） */
 const ROUTE_TABLES = [
@@ -80,6 +82,7 @@ const ROUTE_TABLES = [
   { table: generativeUIRoutes, manifestDomain: 'domain:generativeUI' as const },
   { table: folderTrustRoutes, manifestDomain: 'domain:folderTrust' as const },
   { table: hookRoutes, manifestDomain: 'domain:hook' as const },
+  { table: workspaceRoutes, manifestDomain: 'domain:workspace' as const },
   { table: inlineFixtureTable(), manifestDomain: undefined },
 ];
 
@@ -321,6 +324,7 @@ function collectActualDomainActions(): Map<string, Set<string>> {
   add(IPC_DOMAINS.GENERATIVE_UI, new Set(Object.keys(generativeUIRoutes.actions)));
   add(IPC_DOMAINS.FOLDER_TRUST, new Set(Object.keys(folderTrustRoutes.actions)));
   add(IPC_DOMAINS.HOOK, new Set(Object.keys(hookRoutes.actions)));
+  add(IPC_DOMAINS.WORKSPACE, new Set(Object.keys(workspaceRoutes.actions)));
   return actual;
 }
 
@@ -335,7 +339,7 @@ const KNOWN_UNDER_REPORTED_ACTIONS: Readonly<Record<string, readonly string[]>> 
   'domain:provider': ['delete_realtime_voice_provider'],
   'domain:surfaceExecution': ['startLiveStream', 'stopLiveStream'],
   'domain:voice': ['injectUserText'],
-  'domain:workspace': ['closeLinkInRail', 'controlUserBrowserHistory', 'dispatchUserBrowserInput', 'openExternal', 'openLinkInRail', 'setUserBrowserViewport'],};
+};
 
 describe('全域单向门：清单 ⊆ 实际 handler（RQ-183 刀 4）', () => {
   const actual = collectActualDomainActions();

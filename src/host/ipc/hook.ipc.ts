@@ -149,7 +149,8 @@ type HookRouteCtx = () => AgentApplicationService | null;
  * hook 域单源路由表（RQ-183 续作·HOOK 刀）：原 domain switch 逐 case 平移（handler 返回 data，装配器包
  * { success: true, data }）；管理员门平移为 guard（分发前、未知 action 也先过门，门在装配器 try 内，与原顺序一致）；
  * 缺参抛错 / 未知 action → INVALID_ACTION `Unknown action: <action>` / 抛错 → INTERNAL_ERROR（Error 取 message、
- * 非 Error 取 String(error)），均为装配器缺省。
+ * 非 Error 取 String(error)），均为装配器缺省。请求体为 null / 非对象时，原实现在 try 外解构抛错（IPC 调用 reject），
+ * 现先过门（非管理员 FORBIDDEN）、管理员下返回 INVALID_ACTION。
  */
 const hookRoutes = defineDomainRoutes<HookDomainRequest, HookRouteCtx>(
   HookSchemas.REQUEST,

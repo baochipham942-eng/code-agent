@@ -26,6 +26,7 @@ import { DeviceSchemas } from '../shared/ipc/schemas/device';
 import { WindowSchemas } from '../shared/ipc/schemas/window';
 import { ProjectSchemas } from '../shared/ipc/schemas/project';
 import { TaskSchemas } from '../shared/ipc/schemas/task';
+import { GenerativeUISchemas } from '../shared/ipc/schemas/generativeUI';
 
 const DEFAULT_SINCE_VERSION = '0.16.93';
 
@@ -193,12 +194,8 @@ const CAPABILITY_DOMAIN_ACTIONS = {
   [IPC_DOMAINS.DESKTOP]: DesktopSchemas.ACTIONS,
   // diagnostics 域：派生自 schema action 集合（== diagnostics 表 keys，parity 门三面对账），手工清单已删
   [IPC_DOMAINS.DIAGNOSTICS]: DiagnosticsSchemas.ACTIONS,
-  [IPC_DOMAINS.GENERATIVE_UI]: [
-    'applyEvent',
-    'persistHtmlEdit',
-    'resolveInstance',
-    'resolveManifest',
-  ],
+  // generativeUI 域：派生自 schema action 集合（== generativeUI 表 keys，parity 门三面对账），手工清单已删
+  [IPC_DOMAINS.GENERATIVE_UI]: GenerativeUISchemas.ACTIONS,
   [IPC_DOMAINS.HOOK]: [
     'list',
     'openConfigFile',

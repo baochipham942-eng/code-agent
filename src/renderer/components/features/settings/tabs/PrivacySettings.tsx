@@ -114,6 +114,9 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
   const [postLaunchScoring, setPostLaunchScoring] = useState<'on' | 'off' | 'auto'>('auto');
   const [postLaunchReflow, setPostLaunchReflow] = useState<'on' | 'off' | 'auto'>('auto');
   const [thirdPartyUiEnabled, setThirdPartyUiEnabled] = useState(false);
+  // 评测反馈池钩子命令（ADR-071 Q4）。空串 = 抽屉按钮退化成「复制 fb add 命令」。
+  const [feedbackHookCommand, setFeedbackHookCommand] = useState('');
+  const [feedbackHookSaved, setFeedbackHookSaved] = useState(false);
   const [privacySaving, setPrivacySaving] = useState(false);
   const privacyCfgRef = useRef<NonNullable<AppSettings['privacy']> | undefined>(undefined);
   const pluginUiCfgRef = useRef<NonNullable<AppSettings['pluginUi']> | undefined>(undefined);
@@ -167,6 +170,7 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
         setPostLaunchScoring(s?.privacy?.postLaunchScoring ?? 'auto');
         setPostLaunchReflow(s?.privacy?.postLaunchReflow ?? 'auto');
         setThirdPartyUiEnabled(isThirdPartyPluginUiEnabled(s));
+        setFeedbackHookCommand(s?.evaluation?.feedbackHookCommand ?? '');
       } catch {
         // ignore — 保持各项产品默认值
       }
@@ -224,6 +228,30 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
       setPrivacySaving(false);
     }
   }, [postLaunchReflow]);
+
+  // 焦点离开才写盘：命令是逐字符输入的，每敲一下都过一次 settings IPC 没必要。
+  const handleFeedbackHookCommit = useCallback(async (next: string) => {
+    setPrivacySaving(true);
+    setFeedbackHookSaved(false);
+    try {
+      await ipcService.invokeDomain(
+        IPC_DOMAINS.SETTINGS,
+        'set',
+        { evaluation: { feedbackHookCommand: next } } as Partial<AppSettings>,
+      );
+      setFeedbackHookSaved(true);
+    } catch {
+      // 保存失败就把界面退回磁盘上的值，别显示一个其实没生效的命令。
+      try {
+        const s = await ipcService.invokeDomain<AppSettings | undefined>(IPC_DOMAINS.SETTINGS, 'get');
+        setFeedbackHookCommand(s?.evaluation?.feedbackHookCommand ?? '');
+      } catch {
+        // ignore
+      }
+    } finally {
+      setPrivacySaving(false);
+    }
+  }, []);
 
   const handlePrivacyToggle = useCallback(async (
     key: 'usageDataEnabled' | 'crashReportingEnabled',
@@ -499,6 +527,29 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
               </select>
             </div>
           </div>
+        </div>
+      </SettingsSection>
+
+      <SettingsSection
+        title={privacyText.evaluation.title}
+        description={privacyText.evaluation.description}
+      >
+        <div className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-3">
+          <div className="text-sm font-medium text-zinc-200">{privacyText.evaluation.label}</div>
+          <p className="mt-0.5 text-xs leading-5 text-zinc-400">{privacyText.evaluation.body}</p>
+          <input
+            type="text"
+            className="mt-2 w-full rounded-md border border-zinc-700 bg-zinc-900 px-2 py-1.5 font-mono text-xs text-zinc-200 placeholder:text-zinc-600"
+            value={feedbackHookCommand}
+            disabled={privacySaving}
+            data-testid="eval-feedback-hook-command"
+            placeholder={privacyText.evaluation.placeholder}
+            onChange={(event) => { setFeedbackHookCommand(event.target.value); setFeedbackHookSaved(false); }}
+            onBlur={(event) => { void handleFeedbackHookCommit(event.target.value.trim()); }}
+          />
+          {feedbackHookSaved ? (
+            <div className="mt-1 text-xs text-badge-success">{privacyText.evaluation.savedHint}</div>
+          ) : null}
         </div>
       </SettingsSection>
 

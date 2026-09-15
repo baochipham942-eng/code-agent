@@ -7,7 +7,13 @@ import path from 'path';
 import type { BaselineDelta, TestRunSummary, TestResult } from './types';
 import { formatDuration } from '../../shared/utils/format';
 import { getRunStampReportRows } from './runStampReport';
-import { failureCodeAttribution, failureCodeLabel, loadProjectFailureCodebook } from './failureCodes';
+import {
+  failureCodeAttribution,
+  failureCodeCategory,
+  failureCodeLabel,
+  loadProjectFailureCodebook,
+} from './failureCodes';
+import { suggestRiskLevel, type RiskLevelInput } from './riskLevel';
 import { AI_REVIEW_DIMENSIONS } from './judge/dimensions';
 import type { AiReviewDimension } from '../../shared/contract/evaluation';
 
@@ -616,6 +622,47 @@ function generateDefaultAttributionRows(summary: TestRunSummary): string[] {
   ];
 }
 
+const PROBLEM_CATEGORY_LABELS: Record<string, string> = {
+  content_error: '内容错误',
+  semantic_deviation: '语义偏差',
+  compliance: '合规风险',
+  scenario_mismatch: '场景不匹配',
+  response_anomaly: '回复异常',
+  stability: '稳定性问题',
+};
+
+/**
+ * 某个 code 的定级输入（ADR-071 D3）。category 取 caseMeta.category（题目分类），
+ * 与 failcode 上的 category（问题分类）不是一回事，别混。
+ */
+function riskInputFor(summary: TestRunSummary, code: string, hitCount: number): RiskLevelInput {
+  const hits = summary.results.filter((result) => result.failure?.code === code);
+  const categoryTotals = new Map<string, number>();
+  for (const result of summary.results) {
+    const key = result.caseMeta?.category ?? '未标注';
+    categoryTotals.set(key, (categoryTotals.get(key) ?? 0) + 1);
+  }
+  const categoryHits = new Map<string, number>();
+  for (const result of hits) {
+    const key = result.caseMeta?.category ?? '未标注';
+    categoryHits.set(key, (categoryHits.get(key) ?? 0) + 1);
+  }
+  let maxCategoryRepeatRatio = 0;
+  for (const [key, count] of categoryHits) {
+    const total = categoryTotals.get(key) ?? 0;
+    if (total > 0) maxCategoryRepeatRatio = Math.max(maxCategoryRepeatRatio, count / total);
+  }
+  return {
+    code,
+    hitCount,
+    denominator: summary.results.length,
+    maxCategoryRepeatRatio,
+    allTrialsFailed: hits.some((result) => result.trialAggregate?.c === 0),
+    split: summary.stamp.evalSet.split,
+    dispositions: [...new Set(hits.flatMap((result) => result.failure?.dispositions ?? []))],
+  };
+}
+
 function generateFailureDistributionRows(summary: TestRunSummary): string[] {
   const distribution = { unknown: 0, ...summary.failureDistribution };
   const codeRows = Object.entries(distribution)
@@ -628,10 +675,19 @@ function generateFailureDistributionRows(summary: TestRunSummary): string[] {
     }
     return counts;
   }, {});
+  const codebook = reportFailureCodebook();
   const lines = [
-    '| 失败原因 | 数量 |',
-    '|----------|------|',
-    ...codeRows.map(([code, count]) => `| ${formatFailureCode(code)} | ${count} |`),
+    '> 「风险等级（建议）」是本轮按 code 自动算出的**建议值**（ADR-071 D3 矩阵），',
+    '> 与抽屉里人给的**题级**定级是两个口径：分开看，不相加、不互相覆盖。',
+    '',
+    '| 失败原因 | 问题分类 | 数量 | 风险等级（建议） | 依据 |',
+    '|----------|----------|------|------------------|------|',
+    ...codeRows.map(([code, count]) => {
+      const category = codebook ? failureCodeCategory(codebook, code) : undefined;
+      const risk = suggestRiskLevel(riskInputFor(summary, code, count));
+      const categoryLabel = category ? PROBLEM_CATEGORY_LABELS[category] ?? category : '未标注';
+      return `| ${formatFailureCode(code)} | ${categoryLabel} | ${count} | ${risk.level} | ${risk.basis} |`;
+    }),
     '',
     '### 处置标签',
     '',

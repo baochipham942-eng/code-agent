@@ -329,17 +329,12 @@ function collectActualDomainActions(): Map<string, Set<string>> {
 }
 
 /**
- * 缺报棘轮基线（2026-09-15 建门实测 21 域 116 项，此后随域表化逐域整行核销，现存条目以下表为准）：handler 有而清单无的存量项。
+ * 缺报棘轮基线（2026-09-15 建门实测 21 域 116 项，同日随域表化与清单补登记全部核销，基线已清零；棘轮保留：新增 handler action 不登记清单即红）：handler 有而清单无的存量项。
  * 清单是壳兼容面、允许策略性少报——但少报集合冻结在此、只减不增：
  * 把某 action 补进 CAPABILITY_DOMAIN_ACTIONS 后必须同步从基线删掉它；
  * 新增 handler action 不登记清单 = 新缺报 = 红，要么补清单要么显式扩基线（PR 里说明理由）。
  */
-const KNOWN_UNDER_REPORTED_ACTIONS: Readonly<Record<string, readonly string[]>> = {
-  'domain:backgroundTasks': ['drainNotifications', 'getTask', 'listTasks', 'markNotificationDelivered', 'readTaskLog'],
-  'domain:provider': ['delete_realtime_voice_provider'],
-  'domain:surfaceExecution': ['startLiveStream', 'stopLiveStream'],
-  'domain:voice': ['injectUserText'],
-};
+const KNOWN_UNDER_REPORTED_ACTIONS: Readonly<Record<string, readonly string[]>> = {};
 
 describe('全域单向门：清单 ⊆ 实际 handler（RQ-183 刀 4）', () => {
   const actual = collectActualDomainActions();

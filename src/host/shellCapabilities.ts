@@ -24,6 +24,7 @@ import { LoopSchemas } from '../shared/ipc/schemas/loop';
 import { SyncSchemas } from '../shared/ipc/schemas/sync';
 import { DeviceSchemas } from '../shared/ipc/schemas/device';
 import { WindowSchemas } from '../shared/ipc/schemas/window';
+import { ProjectSchemas } from '../shared/ipc/schemas/project';
 
 const DEFAULT_SINCE_VERSION = '0.16.93';
 
@@ -256,39 +257,8 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'getState',
     'respondApproval',
   ],
-  [IPC_DOMAINS.PROJECT]: [
-    'addGoal',
-    'addRole',
-    'addSource',
-    'artifactIssues',
-    'artifacts',
-    'createInvite',
-    'createSpace',
-    'create',
-    'deleteProject',
-    'detail',
-    'gitStates',
-    'list',
-    'listCapabilitySelections',
-    'listCloudCards',
-    'listMembers',
-    'listWithActivity',
-    'promoteToCloudSpace',
-    'promoteToSpace',
-    'removeRole',
-    'removeSource',
-    'rename',
-    'resyncCloudCards',
-    'selectCapability',
-    'setPrimarySource',
-    'setDescription',
-    'setStatus',
-    'sources',
-    'unselectCapability',
-    'updateGoalStatus',
-    'updateProject',
-    'updateSourceAccess',
-  ],
+  // project 域：派生自 schema action 集合（== project 表 keys，parity 门三面对账），手工清单已删
+  [IPC_DOMAINS.PROJECT]: ProjectSchemas.ACTIONS,
   [IPC_DOMAINS.QUEUED_INPUT]: [
     'enqueue',
     'list',

@@ -473,17 +473,18 @@ async function handleSetBudgetConfig(
   syncBudgetServiceFromConfig(configService.getBudgetConfig());
 }
 
+/** 按请求取聚焦窗口（保留原动态 import，不改模块加载顺序） */
+async function getFocusedAppWindow() {
+  const { AppWindow } = await import('../platform');
+  return AppWindow.getFocusedWindow();
+}
+
 /**
  * window 域单源路由表（RQ-183 续作·WINDOW 刀）：原 domain switch 逐 case 平移（handler 返回 null，装配器包
  * { success: true, data: null }）；聚焦窗口按请求取（原 switch 在 try 外取、抛错即 reject，现落 INTERNAL_ERROR）；
  * 未知 action → INVALID_ACTION `Unknown action: <action>`、抛错 → INTERNAL_ERROR（Error 取 message、非 Error 取
  * String(error)），均为装配器缺省。
  */
-async function getFocusedAppWindow() {
-  const { AppWindow } = await import('../platform');
-  return AppWindow.getFocusedWindow();
-}
-
 const windowRoutes = defineDomainRoutes<WindowDomainRequest, void>(WindowSchemas.REQUEST, {
   minimize: async () => {
     (await getFocusedAppWindow())?.minimize();

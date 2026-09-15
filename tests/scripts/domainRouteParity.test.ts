@@ -27,18 +27,21 @@ import {
 import { defineDomainRoutes, installDomainRoutes } from '../../src/host/ipc/domainRoutes/registry';
 import { registerMemoryHandlers } from '../../src/host/ipc/memory.ipc';
 import { registerDesktopHandlers } from '../../src/host/ipc/desktop.ipc';
+import { registerTagHandlers } from '../../src/host/ipc/tag.ipc';
 import { getShellCapabilities } from '../../src/host/shellCapabilities';
 
 // 结构枚举器挂既有函数对象上（knip 生产档无测试入口，独立 export 必成 dead export）
 const { extractDomainActions } = installDomainRoutes;
 const memoryRoutes = registerMemoryHandlers.routes;
 const desktopRoutes = registerDesktopHandlers.routes;
+const tagRoutes = registerTagHandlers.routes;
 
 /** 门盯的表清单——新域表化后加进来，门即自动覆盖该域（session 三面走 manifestDomain 断言） */
 const ROUTE_TABLES = [
   { table: sessionRoutes, manifestDomain: 'domain:session' as const },
   { table: memoryRoutes, manifestDomain: 'domain:memory' as const },
   { table: desktopRoutes, manifestDomain: 'domain:desktop' as const },
+  { table: tagRoutes, manifestDomain: 'domain:tag' as const },
   { table: inlineFixtureTable(), manifestDomain: undefined },
 ];
 
@@ -266,6 +269,7 @@ function collectActualDomainActions(): Map<string, Set<string>> {
   add(IPC_DOMAINS.SESSION, new Set(Object.keys(sessionRoutes.actions)));
   add(IPC_DOMAINS.MEMORY, new Set(Object.keys(memoryRoutes.actions)));
   add(IPC_DOMAINS.DESKTOP, new Set(Object.keys(desktopRoutes.actions)));
+  add(IPC_DOMAINS.TAG, new Set(Object.keys(tagRoutes.actions)));
   return actual;
 }
 
@@ -290,7 +294,6 @@ const KNOWN_UNDER_REPORTED_ACTIONS: Readonly<Record<string, readonly string[]>> 
   'domain:provider': ['delete_realtime_voice_provider'],
   'domain:surfaceExecution': ['startLiveStream', 'stopLiveStream'],
   'domain:sync': ['resolveConflict'],
-  'domain:tag': ['acceptResult', 'appendDelta', 'approve', 'approveMemoryCandidate', 'approveRevision', 'archive', 'cancel', 'continueAndRun', 'createAndRun', 'createDraft', 'get', 'list', 'listAll', 'listByProject', 'listBySourceConversation', 'read', 'reject', 'rejectMemoryCandidate', 'rejectRevision', 'requestChanges', 'updateDraftRevision', 'updateMeta', 'updateRevision'],
   'domain:task': ['cancelBackgroundTask'],
   'domain:voice': ['injectUserText'],
   'domain:window': ['close', 'maximize', 'minimize'],

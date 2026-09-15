@@ -257,10 +257,12 @@ function getStatus() {
  * 请求体为 null / 非对象时原实现在 try 外解构抛错（IPC reject），现返回 INVALID_ACTION。
  */
 const piiRoutes = defineDomainRoutes<PiiDomainRequest, void>(PiiSchemas.REQUEST, {
+  /* eslint-disable @typescript-eslint/naming-convention -- action 名是 IPC 线协议字面量（renderer 调用 'setup:start' 等），不是标识符 */
   'setup:start': () => startSetup(),
   'setup:cancel': () => cancelSetup(),
   'setup:status': () => getStatus(),
   'setup:isReady': () => checkReady(),
+  /* eslint-enable @typescript-eslint/naming-convention */
 }, {
   mapError: (error, action) => {
     logger.error('pii ipc handler error', { action, error: error instanceof Error ? error.message : String(error) });

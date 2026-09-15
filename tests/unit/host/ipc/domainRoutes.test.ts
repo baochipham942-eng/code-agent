@@ -256,6 +256,39 @@ describe('installDomainRoutes', () => {
     });
   });
 
+  it('mapError 返回 details 时原样透传；不返回 details 时 error 无 details 键（AGENT_ENGINE 刀）', async () => {
+    const table = defineDomainRoutes(
+      channelSchema({ channel: 'domain:test-details', payload: EnumRequestSchema }),
+      {
+        echo: async () => {
+          throw Object.assign(new Error('no fork'), { engine: 'codex' });
+        },
+        ping: async () => {
+          throw new Error('plain');
+        },
+      },
+      {
+        rawResponse: true,
+        mapError: (error) => (
+          error instanceof Error && 'engine' in error
+            ? { code: 'CAPABILITY_UNSUPPORTED', message: error.message, details: { engine: error.engine } }
+            : { code: 'INTERNAL_ERROR', message: error instanceof Error ? error.message : String(error) }
+        ),
+      },
+    );
+    const { registered, target } = createTarget();
+    installDomainRoutes(target, table, { prefix: 'neo' });
+    const call = registered.get('domain:test-details');
+
+    await expect(call?.(undefined, { action: 'echo' })).resolves.toEqual({
+      success: false,
+      error: { code: 'CAPABILITY_UNSUPPORTED', message: 'no fork', details: { engine: 'codex' } },
+    });
+    const plain = await call?.(undefined, { action: 'ping' }) as { error: Record<string, unknown> };
+    expect(plain.error).toEqual({ code: 'INTERNAL_ERROR', message: 'plain' });
+    expect(Object.keys(plain.error)).toEqual(['code', 'message']);
+  });
+
   it('guard：分发前拦截（未知 action 也先过门）；放行后照常分发；门抛错走错误映射（PROMPT 刀）；门收到装配 ctx（TASK 刀）', async () => {
     let mode: 'block' | 'pass' | 'throw' = 'block';
     let seenCtx: unknown;

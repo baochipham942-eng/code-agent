@@ -65,7 +65,7 @@ export interface DomainRouteTable<Req extends DomainRouteRequest, Ctx = unknown>
   /** 未知 action 兜底 code（默认 INVALID_ACTION） */
   unknownActionCode?: string;
   /** handler 抛错 → 完整 error（提供时优先于 resolveErrorCode / INTERNAL_ERROR 兜底） */
-  mapError?: (error: unknown, action: unknown) => { code: string; message: string };
+  mapError?: (error: unknown, action: unknown) => { code: string; message: string; details?: unknown };
   /** handler 返回完整 IPCResponse，装配器原样透传（不包 { success: true, data }） */
   rawResponse?: boolean;
   /** 分发前访问门（未知 action 也先过门）：返回响应即拦截，null 放行 */

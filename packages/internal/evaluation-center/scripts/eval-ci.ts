@@ -1483,10 +1483,13 @@ async function mainImpl(
   if (effectiveReal) {
     const { getBudgetService } = await import('@host/services');
     const usage = getBudgetService().getUsageHistory();
-    const totalIn = usage.reduce((s, u) => s + u.inputTokens, 0);
+    // 与报告「成本与用量」同口径：prompt = 非缓存输入 + cache read + cache write。
+    // 这是进程级账：比逐 case 汇总多出的部分 = case 作用域外、同进程记进 budget 的调用。
+    const totalIn = usage.reduce((s, u) => s + u.inputTokens + (u.cacheReadTokens ?? 0) + (u.cacheCreationTokens ?? 0), 0);
+    const totalCacheRead = usage.reduce((s, u) => s + (u.cacheReadTokens ?? 0), 0);
     const totalOut = usage.reduce((s, u) => s + u.outputTokens, 0);
     console.log(chalk.cyan(
-      `  Actual usage: ${totalIn.toLocaleString()} in / ${totalOut.toLocaleString()} out tokens, ` +
+      `  Actual usage (process budget): ${totalIn.toLocaleString()} prompt (incl. ${totalCacheRead.toLocaleString()} cache read) / ${totalOut.toLocaleString()} out tokens, ` +
       `cost $${getBudgetService().getCurrentCost().toFixed(4)} (maxMode=${process.env.CODE_AGENT_MAX_MODE === '1' ? 'on' : 'off'})`
     ));
   }

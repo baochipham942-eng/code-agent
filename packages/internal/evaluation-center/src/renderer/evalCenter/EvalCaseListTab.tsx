@@ -16,11 +16,26 @@ import { Modal, ModalFooter } from '@renderer/components/primitives/Modal';
 import { Select } from '@renderer/components/primitives/Select';
 import { ConfirmDialog } from '@renderer/components/composites/ConfirmDialog';
 
+// 题库 YAML 的 category 是自由文本，矩阵只认 src/host/testing/types.ts 的 TestCategory 契约四值。
+const TEST_CATEGORIES = ['basic_tool', 'task_completion', 'error_recovery', 'edge_case'] as const;
+const MATRIX_OTHER = '\u0000other';
+const MATRIX_MISSING = '\u0000missing';
+
 type LoadState = 'loading' | 'ready' | 'error';
 type StatusFilter = 'active' | 'all' | 'normal' | 'draft' | 'archived';
 
 function isParseError(item: EvalCaseListItem): item is Extract<EvalCaseListItem, { parseError: string }> {
   return 'parseError' in item;
+}
+
+function matrixColumnLabel(
+  column: string,
+  c: { matrixOther: string; matrixMissing: string },
+  otherKinds: number,
+): string {
+  if (column === MATRIX_OTHER) return c.matrixOther.replace('{n}', String(otherKinds));
+  if (column === MATRIX_MISSING) return c.matrixMissing;
+  return column;
 }
 
 function statusOf(item: EvalCaseListEntry): Exclude<StatusFilter, 'active' | 'all'> {
@@ -93,18 +108,39 @@ export const EvalCaseListTab: React.FC = () => {
     () => [...new Set(validItems.map((item) => item.layer))].sort((a, b) => a.localeCompare(b)),
     [validItems],
   );
-  // 分布矩阵：行=layer、列=category（无 category 归「未分类」），只数在用题（排除 retired/draft）；空格=覆盖盲区
+  // 分布矩阵：行=layer、列=归一后的 category，只数在用题（排除 retired/draft）；空格=覆盖盲区。
+  // 列归一（FB-157）：题库 YAML 里 category 是自由文本（15 个值），直接当轴会让 165 格里 138 格标红，
+  // 红的是元数据没维护不是覆盖盲区。契约四值各占一列，其余非空值合并成「其他」，没填的进「未填」列且不标红。
   const matrix = useMemo(() => {
     const active = validItems.filter((item) => !item.retired && !item.isDraft);
-    const categories = [...new Set(active.map((item) => item.category ?? ''))]
-      .sort((a, b) => (a === '' ? 1 : b === '' ? -1 : a.localeCompare(b)));
-    const rows = [...new Set(active.map((item) => item.layer))].sort((a, b) => a.localeCompare(b));
     const counts = new Map<string, number>();
+    const otherValues = new Set<string>();
+    let missing = 0;
     for (const item of active) {
-      const key = `${item.layer}\u0000${item.category ?? ''}`;
+      const raw = item.category ?? '';
+      let column: string;
+      if (!raw) {
+        column = MATRIX_MISSING;
+        missing += 1;
+      } else if ((TEST_CATEGORIES as readonly string[]).includes(raw)) {
+        column = raw;
+      } else {
+        column = MATRIX_OTHER;
+        otherValues.add(raw);
+      }
+      const key = `${item.layer}\u0000${column}`;
       counts.set(key, (counts.get(key) ?? 0) + 1);
     }
-    return { rows, categories, count: (layer: string, category: string) => counts.get(`${layer}\u0000${category}`) ?? 0 };
+    const rows = [...new Set(active.map((item) => item.layer))].sort((a, b) => a.localeCompare(b));
+    const columns = [...TEST_CATEGORIES, MATRIX_OTHER, MATRIX_MISSING];
+    return {
+      rows,
+      columns,
+      otherKinds: otherValues.size,
+      missing,
+      total: active.length,
+      count: (layer: string, column: string) => counts.get(`${layer}\u0000${column}`) ?? 0,
+    };
   }, [validItems]);
   const filteredItems = useMemo(() => items.filter((item) => {
     if (isParseError(item)) return !layerFilter && !splitFilter && !expectFilter && statusFilter !== 'archived';
@@ -198,27 +234,32 @@ export const EvalCaseListTab: React.FC = () => {
         {matrix.rows.length > 0 && (
           <div className="mt-2 overflow-x-auto" data-testid="eval-case-matrix">
             <div className="mb-1 text-[10px] text-zinc-500">{c.matrixTitle}</div>
+            <div className="mb-1 text-[10px] text-zinc-500" data-testid="eval-case-matrix-missing-note">
+              {c.matrixMissingNote.replace('{n}', String(matrix.missing)).replace('{m}', String(matrix.total))}
+            </div>
             <table className="border-separate border-spacing-0 text-[11px]">
               <thead>
                 <tr>
                   <th className="border-b border-zinc-800 px-2 py-1 text-left font-medium text-zinc-500">{c.filterLayer}</th>
-                  {matrix.categories.map((category) => (
-                    <th key={category || '__none'} className="border-b border-zinc-800 px-2 py-1 text-right font-medium text-zinc-500">{category || c.matrixUncategorized}</th>
+                  {matrix.columns.map((column) => (
+                    <th key={column} className="whitespace-nowrap border-b border-zinc-800 px-2 py-1 text-right font-medium text-zinc-500">{matrixColumnLabel(column, c, matrix.otherKinds)}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {matrix.rows.map((layer) => (
                   <tr key={layer}>
-                    <td className="px-2 py-1 text-zinc-300">{layer}</td>
-                    {matrix.categories.map((category) => {
-                      const n = matrix.count(layer, category);
+                    <td className="min-w-32 whitespace-nowrap px-2 py-1 text-zinc-300">{layer}</td>
+                    {matrix.columns.map((column) => {
+                      const n = matrix.count(layer, column);
+                      // 「未填」列为 0 不标红：没填 category 不是覆盖盲区，缺口另有标题旁那行计数。
+                      const blind = n === 0 && column !== MATRIX_MISSING;
                       return (
                         <td
-                          key={category || '__none'}
-                          data-testid={n === 0 ? 'eval-case-matrix-empty' : 'eval-case-matrix-cell'}
-                          title={n === 0 ? c.matrixEmptyHint : undefined}
-                          className={`px-2 py-1 text-right font-mono ${n === 0 ? 'bg-red-500/10 text-badge-danger' : 'text-zinc-200'}`}
+                          key={column}
+                          data-testid={blind ? 'eval-case-matrix-empty' : 'eval-case-matrix-cell'}
+                          title={blind ? c.matrixEmptyHint : undefined}
+                          className={`px-2 py-1 text-right font-mono ${blind ? 'bg-red-500/10 text-badge-danger' : 'text-zinc-200'}`}
                         >
                           {n}
                         </td>

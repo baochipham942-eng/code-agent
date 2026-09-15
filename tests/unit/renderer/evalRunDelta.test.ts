@@ -50,10 +50,10 @@ describe('历史表相对对比基准变化', () => {
   });
 });
 
-describe('零区分度标记：最近 5 轮全过', () => {
+describe('零区分度标记：每题最近 5 次被跑全过', () => {
   const passed = { status: 'passed', score: 1 };
   const failed = { status: 'failed', score: 0 };
-  // 5 轮 newest-first：always 每轮都过；once-failed 第 3 轮挂；absent 第 5 轮没跑
+  // 5 轮 newest-first：always 每轮都过；once-failed 第 3 轮挂；absent 只被跑到 4 次
   const runs: Array<Record<string, EvalBaselineCaseResult>> = [
     { always: passed, 'once-failed': passed, absent: passed },
     { always: passed, 'once-failed': passed, absent: passed },
@@ -62,16 +62,31 @@ describe('零区分度标记：最近 5 轮全过', () => {
     { always: passed, 'once-failed': passed },
   ];
 
-  it('5 轮全 passed 的题有标，1 轮 failed 或缺席的题无标', () => {
+  it('被跑到的 5 次全 passed 才有标：挂过一次或只跑到 4 次的都无标', () => {
     const marked = alwaysPassedCaseIds(runs);
     expect([...marked]).toEqual(['always']);
   });
 
-  it('不足 5 轮没资格说全过：返回空集', () => {
+  it('被跑到的次数不足 5 次没资格说全过：返回空集', () => {
     expect(alwaysPassedCaseIds(runs.slice(0, 4)).size).toBe(0);
   });
 
-  it('只看最近 5 轮：第 6 轮的失败不影响', () => {
+  it('只看每题最近 5 次被跑：第 6 次的失败不影响', () => {
     expect(alwaysPassedCaseIds([...runs, { always: failed }]).has('always')).toBe(true);
+  });
+
+  // FB-158：held-in 组 5 轮题集不相交（两轮只有 1 道 bash-pwd），按「组内最近 5 轮」判会把所有题清零。
+  it('题集不相交：中间夹一轮单题 smoke，其余题照样按自己最近 5 次判', () => {
+    const wide = { wide: passed, other: passed };
+    const marked = alwaysPassedCaseIds([
+      wide,
+      { lonely: passed },
+      wide,
+      wide,
+      { lonely: passed },
+      wide,
+      wide,
+    ]);
+    expect([...marked].sort()).toEqual(['other', 'wide']);
   });
 });

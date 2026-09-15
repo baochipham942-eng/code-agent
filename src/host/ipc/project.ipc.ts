@@ -5,25 +5,8 @@
 // 单一 domain 处理器同时服务桌面原生 IPC 和 HTTP（domain.ts 的
 // POST /api/domain/project/:action 走同一处理器）。设计：内部文档 §5.3
 //
-// actions:
-// - list            -> 项目列表（{ includeArchived? }）
-// - create          -> 显式创建项目（{ name, workspacePath?, description? }）
-// - detail          -> 项目详情（project + goals + roles + sessionIds）
-// - rename          -> 改名（{ projectId, name }）
-// - setDescription  -> 改描述（{ projectId, description? }）
-// - setStatus       -> 改状态（{ projectId, status }）
-// - promoteToCloudSpace -> 创建云项目壳并写回本地映射（{ projectId }）
-// - createInvite    -> owner 创建邀请码（{ projectId, expiresInHours, maxUses }）
-// - revokeInvite    -> owner 撤销邀请码（{ code }）
-// - redeemInvite    -> 兑换邀请码并补本地占位项目（{ code }）
-// - listMembers     -> 读取空间成员卡（{ projectId }）
-// - listCloudCards  -> 读取其他成员共享的只读卡元数据（{ projectId }）
-// - resyncCloudCards-> 重新推送本机卡元数据到云端（{ projectId }）
-// - addGoal         -> 新增目标（{ projectId, goal, verify?, review? }）
-// - updateGoalStatus-> 更新目标状态（{ goalId, status, lastRunSessionId? }）
-// - addRole         -> 角色入驻（{ projectId, roleId }）
-// - removeRole      -> 角色退出（{ projectId, roleId }）
-// - artifactIssues  -> 产物质量问题查询（{ artifactIds, status?, limit? }）
+// actions：集合真源见 src/shared/ipc/schemas/project.ts（33 个；表 keys、schema、shellCapabilities
+// 由 tests/scripts/domainRouteParity.test.ts 三面对账，逐 action 语义见 projectHandlers）
 // ============================================================================
 
 import type { IpcMain } from '../platform';

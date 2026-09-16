@@ -101,8 +101,12 @@ export function CompanionConversation({ history, loadMore, hidePendingApprovals 
     } else if (event.kind === 'agent_cancelled' || event.kind === 'error') {
       const kind = event.kind === 'agent_cancelled' ? 'stopped' : 'failed';
       // 同一次执行先报错再收尾时失败说了算：这次任务没有完成（agent_complete 不落行，也就抹不掉这条）。
-      if (outcomes.get(run)?.kind !== 'failed') outcomes.set(run, { anchor: lastRow, kind, code: typeof p.code === 'string' ? p.code : undefined,
-        ...(typeof p.provider === 'string' && typeof p.model === 'string' ? { provider: p.provider, model: p.model } : {}) });
+      const failedModel = typeof p.provider === 'string' && typeof p.model === 'string' ? { provider: p.provider, model: p.model } : {};
+      const existing = outcomes.get(run);
+      if (existing?.kind !== 'failed') outcomes.set(run, { anchor: lastRow, kind, code: typeof p.code === 'string' ? p.code : undefined, ...failedModel });
+      // 电脑对同一次失败会从两个出口各发一条 error，只有一条带着失败的模型（远端验收实测 seq 36 带、37 不带）；
+      // 按到达顺序取第一条的话，顺序一反卡片就收不起来。哪条带就补哪条。
+      else if (!existing.provider && 'provider' in failedModel) Object.assign(existing, failedModel);
     }
   }
   /**

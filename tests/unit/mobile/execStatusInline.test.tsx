@@ -158,6 +158,9 @@ describe('执行状态挂在对应那次执行下面（N-MOBILE-EXEC-STATUS ①�
     expect(card()).not.toBeNull();
     rerender(conv([failed[0], ev('error', { code: 'MODEL_AUTH', runId: 'r1' })], { provider: 'longcat', model: 'LongCat-2.0' }));
     expect(card()).not.toBeNull();
+    // 电脑同一次失败发两条 error，不带模型的那条先到：照样认得失败的是哪个模型（远端验收 seq 36/37）
+    rerender(conv([failed[0], ev('error', { code: 'MODEL_AUTH', runId: 'r1' }), failed[1]], { provider: 'longcat', model: 'LongCat-2.0' }));
+    expect(card()).toBeNull();
   });
 
   it('只成功的一轮：回复下面什么都不挂——回复本身就是成功的证据', () => {

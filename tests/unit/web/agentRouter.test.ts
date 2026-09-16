@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import express from 'express';
 import http from 'http';
 import { mkdtemp, rm } from 'fs/promises';
@@ -530,6 +531,21 @@ describe('createAgentRouter', () => {
     expect(runRegistry.getBySessionId('companion-activation')?.context.runId).toBe(activation.runId);
     expect(publish).toHaveBeenCalledWith('companion-activation', 'run_started', { event: {}, runId: activation.runId });
     await runRegistry.getBySessionId('companion-activation')!.cancel('user');
+  });
+
+  // 爸 2026-09-16 真机：回复早已显示，手机执行条还挂 3 秒——agent_complete 排在执行后的云端同步之后，
+  // 未登录时云端访问要先失败一轮恢复登录。夹具里的执行跑不到收尾，这里钉源码顺序（static-contract）；
+  // 运行时证据是真机数据库里 message 与 agent_complete 两个事件的时间差。
+  it('publishes the terminal companion event before the post-run cloud sync', () => {
+    const source = readFileSync('src/web/routes/agent.ts', 'utf8');
+    const commit = source.indexOf('await sessionStore.commitTurn({');
+    const terminal = source.indexOf("finalStatus === 'interrupted' ? 'agent_cancelled' : finalStatus === 'error' ? 'error' : 'agent_complete'", commit);
+    const cloud = source.indexOf('// ── 持久化到 Supabase（Web 模式云端同步）──', commit);
+    // 前提自证：三个锚点都在
+    expect(commit).toBeGreaterThan(0);
+    expect(terminal).toBeGreaterThan(commit);
+    expect(cloud).toBeGreaterThan(commit);
+    expect(terminal).toBeLessThan(cloud);
   });
 
   it('cancelling a companion run releases its real pending approval with denial', async () => {

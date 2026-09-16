@@ -11,6 +11,7 @@ import { projectGrant, type CompanionRead, type CompanionLibrary, type Companion
 import { UNSORTED_PROJECT_ID } from '../../../shared/contract/project';
 import type { CompanionCommand } from '../../../shared/contract/companion';
 import type { CompanionGateway } from './CompanionGateway';
+import { stripInterruptionMarkers } from './projectCompanionEvent';
 import { MODEL_OVERRIDE_METADATA_KEY, persistModelOverride, readPersistedModelOverride } from '../../session/modelOverridePersistence';
 import { getProviderHealthMonitor } from '../../model/providerHealthMonitor';
 import { getModelSessionState } from '../../session/modelSessionState';
@@ -106,15 +107,18 @@ export class CompanionLibraryService {
           AND (? = 0 OR rowid < ?) ORDER BY rowid DESC LIMIT ?`).all(request.sessionId, request.offset, request.offset, L.syncPageSize) as
           { cursor: number; id: string; role: string; content: string; timestamp: number }[];
       const messages: CompanionHistory['messages'] = [];
-      let bytes = 512; let nextOffset: number | null = null;
+      let bytes = 512; let nextOffset: number | null = null; let consumed = 0;
       for (const row of rows) {
-        const message = { id: row.id, role: row.role, content: row.content.slice(0, L.historyMessageCharacters), timestamp: row.timestamp,
-          truncated: row.content.length > L.historyMessageCharacters };
+        // 历史里的中断标记同样不出手机边界（与实时事件同一个函数）；只剩标记的助手行跳过，但分页游标照常前进
+        const content = row.role === 'assistant' ? stripInterruptionMarkers(row.content) : row.content;
+        if (row.role === 'assistant' && !content.trim() && row.content.trim()) { nextOffset = row.cursor; consumed += 1; continue; }
+        const message = { id: row.id, role: row.role, content: content.slice(0, L.historyMessageCharacters), timestamp: row.timestamp,
+          truncated: content.length > L.historyMessageCharacters };
         const size = Buffer.byteLength(JSON.stringify(message));
         if (bytes + size > L.historyByteLimit) break;
-        messages.push(message); bytes += size; nextOffset = row.cursor;
+        messages.push(message); bytes += size; nextOffset = row.cursor; consumed += 1;
       }
-      if (messages.length === rows.length && rows.length < L.syncPageSize) nextOffset = null;
+      if (consumed === rows.length && rows.length < L.syncPageSize) nextOffset = null;
       return { sessionId: request.sessionId, messages: messages.reverse(), nextOffset };
 
     }

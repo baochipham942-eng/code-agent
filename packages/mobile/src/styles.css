@@ -127,7 +127,8 @@ input { width: 100%; padding: 16px; background: var(--surface); border: 1px soli
   color: var(--accent); flex: none; white-space: nowrap; align-self: center;
   background: var(--group); border: 1px solid var(--line); border-radius: 16px;
 }
-.status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); }
+/* flex: none：连接文案换行时圆点不许被横向挤成椭圆（爸 2026-09-16 真机） */
+.status-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--muted); }
 [data-connected='true'] .status-dot { background: #168365; }
 .message-region { position: relative; display: flex; flex: 1; min-height: 0; }
 /* 底部让出输入区那一层的高度。--composer-h 还没量到时用一个够大的兜底，宁可多留白也别被盖住。 */

@@ -195,3 +195,19 @@ describe('重试贴文案行尾，且是可点可辨的小 pill（2026-09-14 反
     expect(css).toMatch(/\.notice\s*\{[^}]*display:\s*flex/);
   });
 });
+
+// 爸 2026-09-16：「不要特别强调电脑正在做什么，将来移动端是可以直接连接云端 Agent 的」。
+// 运行状态、执行结果、模型、上传这些跟「谁在执行」有关的文案不点名电脑；连接/配对，以及「去电脑上怎么修」的指引不在此列。
+describe('执行与模型文案不绑定「电脑」', () => {
+  const agentNeutralKeys = ['running', 'runFailed', 'connectedNext', 'artifactWriting', 'sessionBusy', 'modelAuthMissing', 'modelAuthTitle',
+    'modelAuthDetail', 'modelConfigured', 'modelNotConfigured', 'modelRecentlyFailed', 'modelUnavailable', 'modelScopeNote',
+    'commandRejected', 'pendingCommand', 'attachTransferring', 'attachComplete', 'attachDestinationHint', 'transferInterrupted',
+    'historyTruncated', 'deleteConfirmation'] as const;
+  it.each(['zh', 'en'])('%s', language => {
+    const copy = messages(language);
+    for (const key of agentNeutralKeys) {
+      expect(copy[key], key).toBeTruthy();
+      expect(copy[key], key).not.toMatch(/电脑|computer/i);
+    }
+  });
+});

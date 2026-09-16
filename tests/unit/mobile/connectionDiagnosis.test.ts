@@ -15,7 +15,9 @@ describe('connectionDiagnosis：三分类 → 一句人话 + 主动作', () => {
       expect(connectionDiagnosis(text, state(error))).toEqual({ sentence: text.connectionUnavailable, action: 'reconnect' });
     }
     expect(text.connectionUnavailable).toContain('电脑没回应');
-    expect(text.connectionUnavailable).toContain('睡眠');
+    // 承重点是「说出两个最可能的原因」，不是某个措辞（N-MOBILE-CONNCOPY-PLAIN 改过一次用词）。
+    expect(text.connectionUnavailable).toContain('睡');
+    expect(text.connectionUnavailable).toContain('网络');
   });
 
   it('② 连接被拒绝 → Neo 没在运行 + 重新连接', () => {
@@ -39,15 +41,16 @@ describe('connectionDiagnosis：三分类 → 一句人话 + 主动作', () => {
     expect(en.connectionUnavailable).toContain('not responding');
   });
 
-  // N-MOBILE-RELAY-PHONE：LAN 与跨网中继都没走通时的 relay 档——按 relay 失败原因给句子，
-  // 主动作仍是重连（重连先试 LAN 再落 relay，不是重新扫码）。
-  it('④ relay 档：中继连不上/路由被拒 → 各自的句子 + 重新连接', () => {
+  // N-MOBILE-RELAY-PHONE：LAN 与跨网中继都没走通时的档——主动作仍是重连（重连先试 LAN 再落
+  // relay，不是重新扫码）。**文案里不再出现「中继」这个实现词**（N-MOBILE-CONNCOPY-PLAIN）：
+  // 用户对中继做不了任何事，把它写出来只会让人以为自己漏了一步。
+  it('④ 两条路都没走通：各自的句子 + 重新连接，句子里说「连不上电脑」而不是「中继」', () => {
     expect(connectionDiagnosis(text, state('connectionRelayUnavailable')))
       .toEqual({ sentence: text.connectionRelayUnavailable, action: 'reconnect' });
     expect(connectionDiagnosis(text, state('connectionRelayRejected')))
       .toEqual({ sentence: text.connectionRelayRejected, action: 'reconnect' });
-    expect(text.connectionRelayUnavailable).toContain('中继');
-    expect(text.connectionRelayRejected).toContain('中继');
+    expect(text.connectionRelayUnavailable).toContain('连不上电脑');
+    expect(text.connectionRelayRejected).toContain('电脑');
   });
 });
 
@@ -84,5 +87,49 @@ describe('classifyHttpFailure：原生 HTTP 失败分类（信号源见 httpFail
     expect(classifyHttpFailure({ code: 'NSURLErrorDomain', message: 'The Internet connection appears to be offline.' })).toBe('COMPANION_NETWORK_UNAVAILABLE');
     expect(classifyHttpFailure(new Error('boom'))).toBe('COMPANION_NETWORK_UNAVAILABLE');
     expect(classifyHttpFailure(undefined)).toBe('COMPANION_NETWORK_UNAVAILABLE');
+  });
+});
+
+/**
+ * N-MOBILE-CONNCOPY-PLAIN（爸 2026-09-16 build 42 真机：「明明在同一个网络下，而且还这么多
+ * 技术术语」）。两条判据，都钉在「用户读到什么」上：
+ * ① 用户面一个内部实现词都不许有；
+ * ② 给出的动作必须在**任何**网络形态下成立——原文案让用户「回电脑的 Wi-Fi 重连一次」，
+ *    而他电脑连的就是这台手机的热点，根本没有别的 Wi-Fi 可回。
+ * 逐条遍历所有连接失败文案，不只看被点名的那一条。
+ */
+describe('连接失败文案：说人话，且给的动作得做得到', () => {
+  const zh = messages('zh');
+  const en = messages('en');
+  const keys = ['connectionQrInvalid', 'connectionScanFailed', 'connectionRejected',
+    'connectionRefused', 'connectionUnavailable', 'connectionRelayUnavailable', 'connectionRelayRejected'] as const;
+
+  it('零内部实现词', () => {
+    // 「中继 / 路由 / relay / mDNS / .local / 端口」都是实现细节，用户没有任何办法对它们做事。
+    const banned = [/中继/, /路由/, /relay/i, /mDNS/i, /\.local/, /端口/, /IP 地址/];
+    for (const key of keys) {
+      for (const [lang, copy] of [['zh', zh[key]], ['en', en[key]]] as const) {
+        // 只拿**文案本身**去匹配：把 key 名拼进去的话，connectionRelay* 这几个键名自己就会
+        // 命中 /relay/i，判据变成恒红——错在判据，不在文案（第一版就是这么红的）。
+        for (const pattern of banned) {
+          expect(pattern.test(copy), `${lang}:${key} 命中违禁词 ${pattern} → ${copy}`).toBe(false);
+        }
+      }
+    }
+  });
+
+  it('不把用户指向一个未必存在的 Wi-Fi——电脑挂手机热点时没有别的 Wi-Fi 可回', () => {
+    // 可以说「不在同一个网络」（陈述现象），不可以说「回电脑的 Wi-Fi」（指派一个做不到的动作）。
+    for (const key of keys) {
+      expect(/回电脑的 ?Wi-?Fi|同一 ?Wi-?Fi/.test(zh[key]), `${key} → ${zh[key]}`).toBe(false);
+      expect(/reconnect on .*Wi-?Fi|same Wi-?Fi/i.test(en[key]), `${key} → ${en[key]}`).toBe(false);
+    }
+  });
+
+  it('两条「彻底连不上」的文案都给出重新扫码这条一定有效的出路', () => {
+    for (const key of ['connectionRelayUnavailable', 'connectionRelayRejected'] as const) {
+      expect(zh[key]).toContain('二维码');
+      expect(en[key]).toMatch(/scan it/);
+    }
   });
 });

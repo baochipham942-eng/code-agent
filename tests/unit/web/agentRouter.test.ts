@@ -12,6 +12,7 @@ import { createCLIAgent } from '../../../src/cli/adapter';
 import { buildQueuedAgentRunBody, createAgentRouter } from '../../../src/web/routes/agent';
 import { OrchestratorPermissionIsland } from '../../../src/host/agent/orchestratorPermissions';
 import { HostReasonCode, type Message } from '../../../src/shared/contract';
+import { MOBILE_SOURCE_CONTEXT_LINES } from '../../../src/host/app/workbenchTurnContext';
 import type { PendingOperation, RunCheckpoint, RunEngineRef, RunOwnerLease } from '../../../src/shared/contract/durableRun';
 import type { DurableCheckpointInput, PrepareOperationInput, PrepareToolOperationInput } from '../../../src/host/runtime/durableRunKernel';
 import {
@@ -531,6 +532,38 @@ describe('createAgentRouter', () => {
     expect(runRegistry.getBySessionId('companion-activation')?.context.runId).toBe(activation.runId);
     expect(publish).toHaveBeenCalledWith('companion-activation', 'run_started', { event: {}, runId: activation.runId });
     await runRegistry.getBySessionId('companion-activation')!.cancel('user');
+  });
+
+  // N-MOBILE-SOURCE-CONTEXT：手机发起的轮次模型要知道用户在手机上；桌面发起的不能带
+  it('companion runs carry the mobile source context into the model-facing prompt; desktop runs do not', async () => {
+    await closeServer();
+    let start: Parameters<NonNullable<Parameters<typeof createAgentRouter>[0]['registerCompanionRun']>>[0] | undefined;
+    await startAgentApi({ registerCompanionRun: value => { start = value; } });
+    const lastUserContent = () => {
+      const messages = mockCreateAgentLoop.mock.calls.at(-1)![2] as Message[];
+      return String(messages.filter(m => m.role === 'user').at(-1)!.content);
+    };
+    mockCreateAgentLoop.mockClear();
+    await start!({ version: 1, sessionId: 'companion-source-phone', prompt: '手机上的问题' });
+    await vi.waitFor(() => expect(mockCreateAgentLoop).toHaveBeenCalled());
+    expect(lastUserContent()).toContain('<user_request>\n手机上的问题');
+    expect(lastUserContent()).toContain(MOBILE_SOURCE_CONTEXT_LINES[0]);
+    await runRegistry.getBySessionId('companion-source-phone')!.cancel('user');
+
+    mockCreateAgentLoop.mockClear();
+    const controller = new AbortController();
+    try {
+      const response = await fetch(`${baseUrl}/api/run`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ prompt: '桌面上的问题', sessionId: 'desktop-source', context: { selectedSkillIds: ['skill-a'] } }),
+        signal: controller.signal,
+      });
+      expect(response.ok).toBe(true);
+      await vi.waitFor(() => expect(mockCreateAgentLoop).toHaveBeenCalled());
+      // 前提自证：桌面这轮确实拼了 turnSystemContext（不是因为没包装才「没有」）
+      expect(lastUserContent()).toContain('<user_request>\n桌面上的问题');
+      expect(lastUserContent()).not.toContain(MOBILE_SOURCE_CONTEXT_LINES[0]);
+    } finally { controller.abort(); }
   });
 
   // 爸 2026-09-16 真机：回复早已显示，手机执行条还挂 3 秒——agent_complete 排在执行后的云端同步之后，

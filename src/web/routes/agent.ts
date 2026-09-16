@@ -1334,7 +1334,8 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
 
   deps.registerCompanionRun?.((body) => new Promise((resolve, reject) => {
     let activated = false;
-    void runAgentTurn(body, createOfflineAgentRunResponseSink(), {
+    // 伴随 App 的所有运行（发消息、确认计划后续跑）都从这里进：统一标来源端
+    void runAgentTurn({ ...body, context: { ...body.context, clientSurface: 'mobile' } }, createOfflineAgentRunResponseSink(), {
       connectedClient: false,
       onDurableActivated: ({ runId }) => {
         activated = true;

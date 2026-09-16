@@ -8,6 +8,7 @@ import fs from 'fs';
 import { randomUUID } from 'crypto';
 import type { Request, Response } from 'express';
 import { getUserDataPath } from '../../host/platform/appPaths';
+import { getDefaultWorkDirectory } from '../../host/config/configPaths';
 import { MANAGED_BROWSER_ARTIFACT_DIR } from '../../host/services/infra/browser/managedBrowserHelpers';
 import { resolveNativeDesktopCandidateRoots } from '../../host/services/desktop/nativeDesktopService';
 import { PRESENTATION_PREVIEW_CACHE_DIRNAME } from '../../host/tools/media/ppt/constants';
@@ -219,6 +220,7 @@ export function handleScreenshot(
   const isScreenshotDir = isPathWithinBase(resolved, path.join(userData, MANAGED_BROWSER_ARTIFACT_DIR))
     || isPathWithinBase(resolved, path.join(userData, 'appshots'))
     || isPathWithinBase(resolved, path.join(userData, 'cache', PRESENTATION_PREVIEW_CACHE_DIRNAME))
+    || isPathWithinBase(resolved, getDefaultWorkDirectory())
     || isPathWithinBase(resolved, path.join(userData, 'work'))
     || isBoundSessionArtifactPath(resolved, accessScope.sessionWorkingDirectories ?? [])
     || nativeDesktopPrefixes.some((prefix) => normalized.startsWith(prefix));

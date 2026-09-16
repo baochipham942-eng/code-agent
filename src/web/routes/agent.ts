@@ -2,8 +2,6 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 import fs from 'fs/promises';
-import os from 'os';
-import path from 'path';
 import { randomUUID } from 'node:crypto';
 import type { MessageAttachment, MessageMetadata, Session, SessionStatus } from '../../shared/contract';
 import type { ModelProvider } from '../../shared/contract/model';
@@ -89,6 +87,7 @@ import { steerOrQueue } from '../../host/runtime/steerQueueFence';
 import { QueuedInputRepository } from '../../host/services/core/repositories/QueuedInputRepository';
 import { getDatabase } from '../../host/services/core/databaseService';
 import { getLogsPath } from '../../host/platform/appPaths';
+import { getDefaultWorkDirectory } from '../../host/config/configPaths';
 import { hasInteractiveUi } from '../../host/platform';
 import { getProjectService } from '../../host/services/project/projectService';
 import { getAuthService } from '../../host/services/auth/authService';
@@ -177,8 +176,7 @@ function extractWorkingDirectory(value: unknown): string | undefined {
 }
 
 async function ensureDefaultWebWorkingDirectory(): Promise<string> {
-  const dataDir = process.env.CODE_AGENT_DATA_DIR?.trim() || path.join(os.homedir(), '.code-agent');
-  const workDir = path.join(dataDir, 'work');
+  const workDir = getDefaultWorkDirectory();
   await fs.mkdir(workDir, { recursive: true });
   return workDir;
 }

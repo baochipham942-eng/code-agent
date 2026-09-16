@@ -505,6 +505,7 @@ describe('createAgentRouter', () => {
     await closeServer();
     if (tempDataDir) {
       await rm(tempDataDir, { recursive: true, force: true });
+      await rm(`${tempDataDir}-work`, { recursive: true, force: true });
       tempDataDir = undefined;
     }
     queuedInputTestDb?.close();
@@ -4078,7 +4079,8 @@ describe('createAgentRouter', () => {
     await response.text();
 
     expect(createCLIAgent).toHaveBeenCalledWith(expect.objectContaining({
-      project: join(tempDataDir, 'work'),
+      // 默认目录不在数据目录里（后台写边界按设计拒绝数据目录）：嵌套数据目录放在旁边
+      project: `${tempDataDir}-work`,
     }));
   });
 

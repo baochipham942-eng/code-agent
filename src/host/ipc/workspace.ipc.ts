@@ -56,6 +56,7 @@ import type { ConfigService } from '../services';
 import { readDesignMdSummary } from '../../design/design-md-loader';
 import { IMAGE_MODELS, VIDEO_MODELS } from '../../shared/constants/visualModels';
 import { getConfigService } from '../services/core/configService';
+import { getDefaultWorkDirectory } from '../config/configPaths';
 import {
   getDashscopeApiKey,
   getZhipuOfficialApiKey,
@@ -804,11 +805,8 @@ async function resolveUserBrowserWorkspace(
     }
   }
   if (!resolved) {
-    const pathMod = await import('path');
-    const osMod = await import('os');
     const fsMod = await import('fs');
-    const dataDir = process.env.CODE_AGENT_DATA_DIR?.trim() || pathMod.join(osMod.homedir(), '.code-agent');
-    resolved = pathMod.join(dataDir, 'work');
+    resolved = getDefaultWorkDirectory();
     await fsMod.promises.mkdir(resolved, { recursive: true });
   }
   return resolved;

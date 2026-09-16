@@ -64,6 +64,23 @@ export function getUserConfigDir(): string {
 }
 
 /**
+ * 没有项目目录的会话（「未分类」、快速对话）默认工作目录。所有兜底点共用这一个函数。
+ *
+ * 不能放在数据目录里：后台任务的写权限（resolveBackgroundWorkspaceAuthority）按设计拒绝数据目录，
+ * 放在 <dataDir>/work 时未分类会话派后台任务必然 WORKSPACE_REQUIRED（爸 2026-09-16 真机）。
+ * 爸 2026-09-16 拍板放主目录下用户看得见的 ~/Neo（不放「文稿」：macOS 会弹授权，拒了就写不了）。
+ * - 数据目录直接挂在主目录下：正式版 ~/.code-agent → ~/Neo；测试槽 ~/.code-agent-dev → ~/Neo-dev（测试产物不混进正式目录）
+ * - 其余嵌套数据目录（测试临时目录、远端验收宿主）：放在数据目录旁边 <dataDir>-work，不往真实主目录写
+ */
+export function getDefaultWorkDirectory(env: NodeJS.ProcessEnv = process.env): string {
+  const home = path.resolve(env.CODE_AGENT_HOME || os.homedir());
+  const dataDir = path.resolve(env.CODE_AGENT_DATA_DIR?.trim() || path.join(home, CONFIG_DIR_NEW));
+  if (path.dirname(dataDir) !== home) return `${dataDir}-work`;
+  const slot = path.basename(dataDir).replace(/^\.+/, '').replace(/^code-agent-?/, '');
+  return path.join(home, slot ? `Neo-${slot}` : 'Neo');
+}
+
+/**
  * Get user-level config directory (legacy format)
  */
 export function getUserConfigDirLegacy(): string {

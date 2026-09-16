@@ -8,7 +8,7 @@ describe('folder trust working directory resolution', () => {
     } as never), {
       CODE_AGENT_WEB_MODE: 'true',
       CODE_AGENT_DATA_DIR: '/tmp/neo-data',
-    })).toBe('/tmp/neo-data/work');
+    })).toBe('/tmp/neo-data-work');
   });
 
   it('keeps an explicit session directory authoritative', async () => {
@@ -36,7 +36,7 @@ describe('folder trust working directory resolution', () => {
       () => ({ getWorkingDirectory: () => '/tmp/bootstrap-cwd' } as never),
       { CODE_AGENT_WEB_MODE: 'true', CODE_AGENT_DATA_DIR: '/tmp/neo-data' },
       async () => null,
-    )).toBe('/tmp/neo-data/work');
+    )).toBe('/tmp/neo-data-work');
   });
 
   it('falls back when session exists but has no workingDirectory', async () => {
@@ -45,7 +45,7 @@ describe('folder trust working directory resolution', () => {
       () => ({ getWorkingDirectory: () => '/tmp/bootstrap-cwd' } as never),
       { CODE_AGENT_WEB_MODE: 'true', CODE_AGENT_DATA_DIR: '/tmp/neo-data' },
       async () => '   ',
-    )).toBe('/tmp/neo-data/work');
+    )).toBe('/tmp/neo-data-work');
   });
 
   it('explicit workingDirectory wins over sessionId', async () => {

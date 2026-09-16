@@ -13,6 +13,7 @@ import {
 } from '../../../../src/host/runtime/workspaceAuthority';
 import { executeDelegateTask } from '../../../../src/host/tools/modules/commandCenter/sessionCommandCenter';
 import { createWorkspaceScope } from '../../../../src/host/runtime/workspaceScope';
+import { getDefaultWorkDirectory } from '../../../../src/host/config/configPaths';
 
 function workspaceScope(path: string) {
   return createWorkspaceScope(`project-${path}`, [{
@@ -103,6 +104,28 @@ describe('delegate_task workspace authority', () => {
       { workspace: dataWork, workspaceScope: workspaceScope(dataWork) },
       { homeDirectories: [home], dataDirectory: `${home}/.code-agent-dev` },
     )).toBeUndefined();
+  });
+
+  // 爸 2026-09-16 真机：「未分类」会话派后台任务必然 WORKSPACE_REQUIRED——默认工作目录原来是 <dataDir>/work，
+  // 恰好落在上面这条按设计拒绝的数据目录里。默认目录挪到主目录下（~/Neo、测试槽 ~/Neo-dev）后必须能当写边界。
+  it('the default work directory for project-less sessions is an acceptable background write boundary', () => {
+    const home = '/tmp/test-home';
+    for (const dataName of ['.code-agent', '.code-agent-dev']) {
+      const env = { CODE_AGENT_HOME: home, CODE_AGENT_DATA_DIR: `${home}/${dataName}` };
+      const workDir = getDefaultWorkDirectory(env);
+      expect(workDir).toBe(dataName === '.code-agent' ? `${home}/Neo` : `${home}/Neo-dev`);
+      expect(resolveBackgroundWorkspaceAuthority(
+        { workspace: workDir, workspaceScope: workspaceScope(workDir) },
+        { homeDirectories: [home], dataDirectory: env.CODE_AGENT_DATA_DIR },
+      ), `${workDir} 应当能当后台写边界`).toBeDefined();
+    }
+    // 嵌套数据目录（测试临时目录、远端验收宿主）：放在数据目录旁边，不往真实主目录写，也不进数据目录
+    const nested = { CODE_AGENT_HOME: home, CODE_AGENT_DATA_DIR: '/tmp/verify-host/data' };
+    expect(getDefaultWorkDirectory(nested)).toBe('/tmp/verify-host/data-work');
+    expect(resolveBackgroundWorkspaceAuthority(
+      { workspace: '/tmp/verify-host/data-work', workspaceScope: workspaceScope('/tmp/verify-host/data-work') },
+      { homeDirectories: [home], dataDirectory: nested.CODE_AGENT_DATA_DIR },
+    )).toBeDefined();
   });
 
   // 对抗审查实测出来的绕过：只查「root 在敏感目录里面」，不查「root 包含敏感目录」。

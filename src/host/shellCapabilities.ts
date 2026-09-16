@@ -254,8 +254,9 @@ const CAPABILITY_DOMAIN_ACTIONS = {
 const HIGH_RISK_CAPABILITIES = new Set([
   makeShellCapabilityId(IPC_DOMAINS.AGENT, 'send'),
   // oauthSetSecret 落用户机密、oauthSaveDescriptor 改授权与注入边界、oauthConnect 发起
-  // 对外授权。inferRisk 按词段猜最多给到 medium（set/save 在词中），而这三条是机密与
-  // 授权边界，要 high——判据够不着的个例才进这份清单。
+  // 对外授权。判据自身够不着 high：set / save 在词中只到 medium，而 oauthConnect 切词是
+  // oauth|connect，connect 不在 MUTATION_VERBS（表里只有 disconnect），只到 low。
+  // 三条都是机密与授权边界，要 high——判据够不着的个例才进这份清单。
   makeShellCapabilityId(IPC_DOMAINS.CONNECTOR, 'oauthConnect'),
   makeShellCapabilityId(IPC_DOMAINS.CONNECTOR, 'oauthSaveDescriptor'),
   makeShellCapabilityId(IPC_DOMAINS.CONNECTOR, 'oauthSetSecret'),

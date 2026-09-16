@@ -1023,6 +1023,7 @@ export class AgentOrchestrator {
       unattendedTurn: options?.unattended === true || getPermissionModeManager().isUnattendedSession(sessionId ?? undefined),
       deniedToolNames,
       allowedToolNames: boundaryAllowedToolNames,
+      foregroundToolFace: options?.foregroundToolFace === true && !roleToolBoundary,
       telemetryAdapter,
       persistMessage: sessionId
         ? async (message: Message) => {

@@ -170,6 +170,8 @@ export interface ToolContext {
   readonly deniedToolNames?: readonly string[];
   /** 当前 run 的工具白名单（CLI --tools 等）；spawn_agent 收窄子代理工具面时与之交集。 */
   readonly allowedToolNames?: readonly string[];
+  /** 本轮 allowedToolNames 只是会话指挥台前台 brain 自己的工具面（ADR-059），不是 run 级硬边界：子代理不继承它，按角色声明拿工具（N-SUBAGENT-WEBSEARCH-INHERIT）。 */
+  readonly foregroundToolFace?: boolean;
   /** Opaque run-scoped SkillDiscoveryService handle. */
   readonly skillDiscoveryService?: unknown;
   /** Opaque run-scoped telemetry owner for spawned agents. */

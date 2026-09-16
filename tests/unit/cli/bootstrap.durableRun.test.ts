@@ -232,9 +232,10 @@ describe('initializeCLIServices durable wiring', () => {
     createAgentLoop({
       workingDirectory: process.cwd(), modelConfig: { provider: 'openai', model: 'test-model' },
       outputFormat: 'text', enablePlanning: false, enableHooks: false, debug: false,
-      taskManagerToolsEnabled: enabled, allowedToolNames: names, deniedToolNames: ['cancel_task'],
+      taskManagerToolsEnabled: enabled, allowedToolNames: names, deniedToolNames: ['cancel_task'], foregroundToolFace: enabled,
     }, vi.fn());
     const runtimeConfig = mocks.agentLoopConfigs.at(-1) as Parameters<typeof filterToolsByRunPolicy>[1];
+    expect((runtimeConfig as { foregroundToolFace?: boolean }).foregroundToolFace).toBe(enabled);
     expect(filterToolsByRunPolicy(tools, runtimeConfig).map((tool) => tool.name))
       .toEqual(enabled ? ['delegate_task', 'steer_task', 'task_status'] : []);
     expect(runtimeConfig.deniedToolNames).toContain('cancel_task');

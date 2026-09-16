@@ -1317,8 +1317,10 @@ describe('createAgentRouter', () => {
         allowedToolNames?: string[];
         maxIterations?: number;
         taskManagerToolsEnabled?: boolean;
+        foregroundToolFace?: boolean;
       };
       expect(config.taskManagerToolsEnabled).toBe(true);
+      expect(config.foregroundToolFace).toBe(true);
       expect(config.allowedToolNames).toEqual(expect.arrayContaining(['Read', 'Edit', 'Write']));
       expect(config.allowedToolNames).not.toEqual(expect.arrayContaining(['Append', 'Bash']));
       expect(config.maxIterations).toBe(8);
